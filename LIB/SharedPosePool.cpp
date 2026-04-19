@@ -103,15 +103,14 @@ bool SharedPosePool::is_full() const noexcept
 double SharedPosePool::best_energy() const noexcept
 {
     std::lock_guard<std::mutex> lock(mtx_);
-    // Sentinel: DBL_MAX (not infinity — UB under -ffast-math/-ffinite-math-only)
-    if (used_ == 0) return std::numeric_limits<double>::max();
+    if (used_ == 0) return std::numeric_limits<double>::infinity();
     return pool_[0].energy;
 }
 
 double SharedPosePool::worst_energy() const noexcept
 {
     std::lock_guard<std::mutex> lock(mtx_);
-    if (used_ == 0) return std::numeric_limits<double>::max();
+    if (used_ == 0) return std::numeric_limits<double>::infinity();
     return pool_[static_cast<size_t>(used_ - 1)].energy;
 }
 

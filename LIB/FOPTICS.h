@@ -11,9 +11,6 @@
 #include <cmath>
 #include <memory>
 #include "TurboQuant.h"
-#ifdef FLEXAIDS_USE_METAL
-#include "MetalRMSDBridge.h"
-#endif
 
 
 int roll_die();
@@ -90,14 +87,8 @@ class FastOPTICS
 		int nDimensions;
 		bool useGPU;	// true when CUDA-accelerated neighbour search is active
 		bool useTQNN;	// true when TurboQuant compressed NN is active
-		bool useMetalRMSD; // true when Metal GPU precomputed pairwise RMSD is active
 		std::unique_ptr<turboquant::NearestNeighborIndex> tqnn_index_;
-
-		// Metal GPU precomputed pairwise distance matrix (N x N, row-major)
-		// When useMetalRMSD is true, compute_distance uses this lookup
-		// instead of per-call Euclidean computation.
-		std::vector<float> metalDistMatrix;
-
+		
 		// FOPTICS algorithm attributes
 		int iOrder;
 		std::vector< int > order;
@@ -115,8 +106,7 @@ class FastOPTICS
 		// private methods
 		void 	ExpandClusterOrder(int);
 		void 	normalizeDistances();
-		void 	precompute_metal_distances();  // batch Metal GPU pairwise RMSD
-
+	
 	
 	protected:
 		// protected methods to be used by RandomProjectedNeighborsAndDensities::methods()

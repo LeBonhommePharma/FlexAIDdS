@@ -42,7 +42,6 @@
 #include "GPUContextPool.h"
 #include "fast_optics.hpp"
 #include "NATURaL/NATURaLDualAssembly.h"
-#include "InStreamClustering.h"
 
 // in milliseconds
 # define SLEEP GA_SLEEP_MS
@@ -350,12 +349,6 @@ int GA(FA_Global* FA, GB_Global* GB,VC_Global* VC,chromosome** chrom,chromosome*
 	int    stagnation_count  = 0;
 	bool   ga_stagnant = false;
 
-	// ── InStreamClustering: online medoid clustering during GA ──
-	flexaids::InStreamCluster instream_cluster(
-	    GA_INSTREAM_RMSD_THRESHOLD,
-	    GA_INSTREAM_MAX_MEDOIDS,
-	    GB->num_genes);
-
 	////// Genetic Algorithm ///////
 	////////////////////////////////
 	for(i=0;i<GB->max_generations;i++)
@@ -525,23 +518,6 @@ int GA(FA_Global* FA, GB_Global* GB,VC_Global* VC,chromosome** chrom,chromosome*
 		n_chrom_snapshot += save_num_chrom;
 
 
-		// ── InStreamClustering: merge top-K elites every N generations ──
-		if (((i + 1) % GA_INSTREAM_INTERVAL == 0) && save_num_chrom > 0) {
-			const int top_k = std::min(GA_INSTREAM_TOP_K, save_num_chrom);
-			std::vector<float> elite_genes(static_cast<size_t>(top_k) * GB->num_genes);
-			std::vector<double> elite_scores(top_k);
-			for (int ek = 0; ek < top_k; ++ek) {
-				for (int g = 0; g < GB->num_genes; ++g) {
-					elite_genes[static_cast<size_t>(ek) * GB->num_genes + g] =
-						static_cast<float>((*chrom)[ek].genes[g].to_ic);
-				}
-				elite_scores[ek] = (*chrom)[ek].app_evalue;
-			}
-			instream_cluster.merge_elites(
-				elite_genes.data(), elite_scores.data(),
-				top_k, i + 1, GB->num_genes);
-		}
-
 		if(strcmp(GB->fitness_model,"PSHARE")==0){
 			QuickSort((*chrom),0,GB->num_chrom-1,false);
 
@@ -565,20 +541,6 @@ int GA(FA_Global* FA, GB_Global* GB,VC_Global* VC,chromosome** chrom,chromosome*
 	if (FA->htpmode == false) {write_par((*chrom),(*gene_lim),i+1,outfile,GB->num_chrom,GB->num_genes);}
 
 	printf("sorting chrom_snapshot\n");
-
-	// ── InStreamClustering: finalize and report ──
-	{
-		auto medoids = instream_cluster.finalize();
-		printf("--- InStreamClustering: %d clusters from %lld total merges ---\n",
-		       instream_cluster.cluster_count(),
-		       (long long)instream_cluster.total_merged());
-		if (!medoids.empty()) {
-			printf("  Best cluster score: %.4f (members: %d, first seen: gen %d)\n",
-			       medoids[0].best_score,
-			       medoids[0].member_count,
-			       medoids[0].first_seen_gen);
-		}
-	}
 	//quicksort_app_evalue((*chrom_snapshot),0,n_chrom_snapshot-1);
 	QuickSort((*chrom_snapshot),0,n_chrom_snapshot-1,true);
 

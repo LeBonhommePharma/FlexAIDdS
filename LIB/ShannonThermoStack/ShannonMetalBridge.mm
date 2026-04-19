@@ -4,9 +4,6 @@
 // Persistent device/pipeline/queue caching eliminates per-call init overhead.
 // Dispatches: histogram, Boltzmann weights, parallel sum, log-sum-exp.
 //
-// NOTE: Metal Shading Language does not support double. All GPU buffers use
-// float (FP32). This bridge converts double↔float at the host boundary.
-//
 // Apache-2.0 © 2026 Le Bonhomme Pharma
 #import <Metal/Metal.h>
 #import <Foundation/Foundation.h>
@@ -105,15 +102,6 @@ static double cpu_shannon_fallback(const std::vector<double>& energies, int num_
     return cpu_shannon_from_bins(bins);
 }
 
-// ─── double → float conversion helper ───────────────────────────────────────
-
-static std::vector<float> to_float(const std::vector<double>& src) {
-    std::vector<float> dst(src.size());
-    for (size_t i = 0; i < src.size(); ++i)
-        dst[i] = static_cast<float>(src[i]);
-    return dst;
-}
-
 // ─── Shannon entropy (GPU) ──────────────────────────────────────────────────
 
 double compute_shannon_entropy_metal(const std::vector<double>& energies,
@@ -128,16 +116,14 @@ double compute_shannon_entropy_metal(const std::vector<double>& energies,
     }
 
     NSUInteger n = energies.size();
-    float min_v = static_cast<float>(*std::min_element(energies.begin(), energies.end()));
-    float max_v = static_cast<float>(*std::max_element(energies.begin(), energies.end()));
-    if (max_v - min_v < 1e-12f) return 0.0;
-    float bw = (max_v - min_v) / num_bins + 1e-10f;
+    double min_v = *std::min_element(energies.begin(), energies.end());
+    double max_v = *std::max_element(energies.begin(), energies.end());
+    if (max_v - min_v < 1e-12) return 0.0;
+    double bw = (max_v - min_v) / num_bins + 1e-10;
 
-    // Convert double → float for GPU
-    std::vector<float> energies_f = to_float(energies);
-
-    id<MTLBuffer> energy_buf = [ctx.device newBufferWithBytes:energies_f.data()
-                                                       length:n * sizeof(float)
+    // Buffers (shared memory — zero-copy on Apple Silicon)
+    id<MTLBuffer> energy_buf = [ctx.device newBufferWithBytes:energies.data()
+                                                       length:n * sizeof(double)
                                                       options:MTLResourceStorageModeShared];
     id<MTLBuffer> bin_buf = [ctx.device newBufferWithLength:num_bins * sizeof(int)
                                                     options:MTLResourceStorageModeShared];
@@ -151,8 +137,8 @@ double compute_shannon_entropy_metal(const std::vector<double>& energies,
     [enc setBuffer:bin_buf    offset:0 atIndex:1];
     [enc setBytes:&n          length:sizeof(NSUInteger) atIndex:2];
     [enc setBytes:&num_bins   length:sizeof(int)        atIndex:3];
-    [enc setBytes:&min_v      length:sizeof(float)      atIndex:4];
-    [enc setBytes:&bw         length:sizeof(float)      atIndex:5];
+    [enc setBytes:&min_v      length:sizeof(double)     atIndex:4];
+    [enc setBytes:&bw         length:sizeof(double)     atIndex:5];
 
     MTLSize tpg = MTLSizeMake(256, 1, 1);
     MTLSize ng  = MTLSizeMake((n + 255) / 256, 1, 1);
@@ -184,8 +170,7 @@ std::vector<double> compute_boltzmann_weights_metal(
 
     // Pre-compute E_min on CPU (single pass)
     E_min = *std::min_element(energies.begin(), energies.end());
-    float neg_beta_f = static_cast<float>(-beta);
-    float E_min_f = static_cast<float>(E_min);
+    double neg_beta = -beta;
 
     if (!ctx.valid || !ctx.boltzmannPipeline) {
         // CPU fallback
@@ -197,14 +182,11 @@ std::vector<double> compute_boltzmann_weights_metal(
         return weights;
     }
 
-    // Convert double → float for GPU
-    std::vector<float> energies_f = to_float(energies);
-
     // GPU path
-    id<MTLBuffer> energy_buf = [ctx.device newBufferWithBytes:energies_f.data()
-                                                       length:n * sizeof(float)
+    id<MTLBuffer> energy_buf = [ctx.device newBufferWithBytes:energies.data()
+                                                       length:n * sizeof(double)
                                                       options:MTLResourceStorageModeShared];
-    id<MTLBuffer> weight_buf = [ctx.device newBufferWithLength:n * sizeof(float)
+    id<MTLBuffer> weight_buf = [ctx.device newBufferWithLength:n * sizeof(double)
                                                        options:MTLResourceStorageModeShared];
 
     id<MTLCommandBuffer> cmd = [ctx.queue commandBuffer];
@@ -215,8 +197,8 @@ std::vector<double> compute_boltzmann_weights_metal(
     [enc setBuffer:weight_buf  offset:0 atIndex:1];
     uint32_t n32 = static_cast<uint32_t>(n);
     [enc setBytes:&n32       length:sizeof(uint32_t) atIndex:2];
-    [enc setBytes:&neg_beta_f length:sizeof(float)    atIndex:3];
-    [enc setBytes:&E_min_f   length:sizeof(float)     atIndex:4];
+    [enc setBytes:&neg_beta  length:sizeof(double)   atIndex:3];
+    [enc setBytes:&E_min     length:sizeof(double)   atIndex:4];
 
     MTLSize tpg = MTLSizeMake(256, 1, 1);
     MTLSize ng  = MTLSizeMake((n + 255) / 256, 1, 1);
@@ -226,7 +208,7 @@ std::vector<double> compute_boltzmann_weights_metal(
     // If sum reduction pipeline is available, use GPU for sum too
     if (ctx.sumReducePipeline && n > 1024) {
         NSUInteger numGroups = (n + 255) / 256;
-        id<MTLBuffer> partial_buf = [ctx.device newBufferWithLength:numGroups * sizeof(float)
+        id<MTLBuffer> partial_buf = [ctx.device newBufferWithLength:numGroups * sizeof(double)
                                                             options:MTLResourceStorageModeShared];
 
         id<MTLComputeCommandEncoder> enc2 = [cmd computeCommandEncoder];
@@ -240,28 +222,25 @@ std::vector<double> compute_boltzmann_weights_metal(
         [cmd commit];
         [cmd waitUntilCompleted];
 
-        // Final sum on CPU from partial sums (small array, float→double)
-        float* partials = static_cast<float*>(partial_buf.contents);
+        // Final sum on CPU from partial sums (small array)
+        double* partials = static_cast<double*>(partial_buf.contents);
         sum_w = 0.0;
         for (NSUInteger i = 0; i < numGroups; ++i)
-            sum_w += static_cast<double>(partials[i]);
+            sum_w += partials[i];
     } else {
         [cmd commit];
         [cmd waitUntilCompleted];
 
-        // Sum on CPU (float→double)
-        float* w = static_cast<float*>(weight_buf.contents);
+        // Sum on CPU
+        double* w = static_cast<double*>(weight_buf.contents);
         sum_w = 0.0;
         for (NSUInteger i = 0; i < n; ++i)
-            sum_w += static_cast<double>(w[i]);
+            sum_w += w[i];
     }
 
-    // Copy results (float→double)
-    float* w = static_cast<float*>(weight_buf.contents);
-    std::vector<double> weights(n);
-    for (NSUInteger i = 0; i < n; ++i)
-        weights[i] = static_cast<double>(w[i]);
-    return weights;
+    // Copy results
+    double* w = static_cast<double*>(weight_buf.contents);
+    return std::vector<double>(w, w + n);
 }
 
 // ─── Log-sum-exp (GPU) ─────────────────────────────────────────────────────
@@ -283,15 +262,11 @@ double log_sum_exp_metal(const std::vector<double>& values) {
         return x_max + std::log(sum);
     }
 
-    // Convert double → float for GPU
-    std::vector<float> values_f = to_float(values);
-    float x_max_f = static_cast<float>(x_max);
-
     // GPU: compute exp(x - x_max) then sum
-    id<MTLBuffer> val_buf = [ctx.device newBufferWithBytes:values_f.data()
-                                                    length:n * sizeof(float)
+    id<MTLBuffer> val_buf = [ctx.device newBufferWithBytes:values.data()
+                                                    length:n * sizeof(double)
                                                    options:MTLResourceStorageModeShared];
-    id<MTLBuffer> exp_buf = [ctx.device newBufferWithLength:n * sizeof(float)
+    id<MTLBuffer> exp_buf = [ctx.device newBufferWithLength:n * sizeof(double)
                                                     options:MTLResourceStorageModeShared];
 
     id<MTLCommandBuffer> cmd = [ctx.queue commandBuffer];
@@ -302,7 +277,7 @@ double log_sum_exp_metal(const std::vector<double>& values) {
     [enc setBuffer:val_buf offset:0 atIndex:0];
     [enc setBuffer:exp_buf offset:0 atIndex:1];
     [enc setBytes:&n32     length:sizeof(uint32_t) atIndex:2];
-    [enc setBytes:&x_max_f length:sizeof(float)    atIndex:3];
+    [enc setBytes:&x_max   length:sizeof(double)   atIndex:3];
 
     MTLSize tpg = MTLSizeMake(256, 1, 1);
     MTLSize ng  = MTLSizeMake((n + 255) / 256, 1, 1);
@@ -311,11 +286,11 @@ double log_sum_exp_metal(const std::vector<double>& values) {
     [cmd commit];
     [cmd waitUntilCompleted];
 
-    // CPU sum of exp-shifted values (float→double)
-    float* exp_data = static_cast<float*>(exp_buf.contents);
+    // CPU sum of exp-shifted values
+    double* exp_data = static_cast<double*>(exp_buf.contents);
     double sum = 0.0;
     for (NSUInteger i = 0; i < n; ++i)
-        sum += static_cast<double>(exp_data[i]);
+        sum += exp_data[i];
 
     return x_max + std::log(sum);
 }

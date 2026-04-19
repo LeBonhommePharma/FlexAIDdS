@@ -14,12 +14,12 @@
 // =============================================================================
 
 #include "DatasetRunner.h"
-#include "AsyncPipeline.h"
 #include "BenchmarkRunner.h"
 
 #include <algorithm>
 #include <array>
 #include <cassert>
+#include <chrono>
 #include <cmath>
 #include <cstdlib>
 #include <cstring>
@@ -32,6 +32,7 @@
 #include <regex>
 #include <set>
 #include <sstream>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -40,8 +41,6 @@
 #include <sys/wait.h>
 #include <unistd.h>
 #include <fcntl.h>
-#include <signal.h>
-#include <cerrno>
 #endif
 
 #ifdef _OPENMP
@@ -51,169 +50,6 @@
 namespace fs = std::filesystem;
 
 namespace dataset {
-
-// =============================================================================
-// Static pointers for async-signal-safe handler access.
-// Set just before sigaction(), cleared after signal restore on normal exit.
-// =============================================================================
-#ifndef _MSC_VER
-static SubprocessGuard*   g_active_guard   = nullptr;
-static std::atomic<bool>* g_active_shutdown = nullptr;
-#endif
-
-// =============================================================================
-// SubprocessGuard — RAII process lifecycle
-// =============================================================================
-
-SubprocessGuard::SubprocessGuard() = default;
-
-SubprocessGuard::~SubprocessGuard() {
-    kill_all();
-}
-
-pid_t SubprocessGuard::fork_exec(const std::string& cmd) {
-#ifndef _MSC_VER
-    pid_t pid = fork();
-    if (pid < 0) return -1;
-
-    if (pid == 0) {
-        // ── Child process ───────────────────────────────────────────────
-        // Create own process group so parent can killpg() all children.
-        ::setpgid(0, 0);
-
-        // Redirect stdin to /dev/null
-        ::close(0);
-        ::open("/dev/null", O_RDONLY);
-
-        // Reset SIGTERM to default (in case parent had a handler)
-        ::signal(SIGTERM, SIG_DFL);
-        ::signal(SIGINT, SIG_DFL);
-
-        ::execl("/bin/sh", "sh", "-c", cmd.c_str(), nullptr);
-        ::_exit(127);  // exec failed
-    }
-
-    // ── Parent: register PID ────────────────────────────────────────────
-    {
-        std::lock_guard<std::mutex> lock(mtx_);
-        pids_.insert(pid);
-    }
-    // Also set parent-side pgid (redundant with child's setpgid but handles race)
-    ::setpgid(pid, pid);
-    return pid;
-#else
-    // Windows: no process groups, use system() and return a sentinel PID.
-    // Real PID tracking not available on Windows.
-    int ret = std::system(cmd.c_str());
-    return ret;
-#endif
-}
-
-int SubprocessGuard::wait_with_timeout(pid_t pid, int timeout_s) {
-#ifndef _MSC_VER
-    if (pid <= 0) return -1;
-
-    using clock = std::chrono::steady_clock;
-    auto deadline = (timeout_s > 0)
-        ? clock::now() + std::chrono::seconds(timeout_s)
-        : clock::time_point::max();  // no timeout
-
-    int status = 0;
-    for (;;) {
-        pid_t wp = ::waitpid(pid, &status, WNOHANG);
-        if (wp == pid) {
-            // Child exited
-            forget(pid);
-            return WIFEXITED(status) ? WEXITSTATUS(status) : -1;
-        }
-        if (wp < 0) {
-            // Error (ECHILD = already reaped)
-            forget(pid);
-            return -1;
-        }
-        // wp == 0: still running
-
-        if (clock::now() >= deadline) {
-            // ── Timeout: escalate SIGTERM → SIGKILL ────────────────────
-            std::cerr << "[TIMEOUT] PID " << pid
-                      << " exceeded " << timeout_s << "s limit, sending SIGTERM\n";
-
-            // Kill the entire process group (pid's pgid == pid)
-            ::killpg(pid, SIGTERM);
-
-            // Grace period: 5 seconds
-            auto kill_deadline = clock::now() + std::chrono::seconds(5);
-            for (;;) {
-                wp = ::waitpid(pid, &status, WNOHANG);
-                if (wp == pid || wp < 0) {
-                    forget(pid);
-                    return -1;  // exited after SIGTERM
-                }
-                if (clock::now() >= kill_deadline) break;
-                ::usleep(100000);  // 100ms
-            }
-
-            // Still alive → SIGKILL
-            std::cerr << "[TIMEOUT] PID " << pid
-                      << " still alive, sending SIGKILL\n";
-            ::killpg(pid, SIGKILL);
-            ::waitpid(pid, &status, 0);  // reap zombie
-            forget(pid);
-            return -1;
-        }
-
-        ::usleep(200000);  // 200ms poll interval
-    }
-#else
-    return -1;  // Windows: timeout not supported
-#endif
-}
-
-void SubprocessGuard::forget(pid_t pid) {
-    std::lock_guard<std::mutex> lock(mtx_);
-    pids_.erase(pid);
-}
-
-void SubprocessGuard::kill_all() {
-#ifndef _MSC_VER
-    std::set<pid_t> to_kill;
-    {
-        std::lock_guard<std::mutex> lock(mtx_);
-        to_kill = pids_;
-    }
-    if (to_kill.empty()) return;
-
-    std::cerr << "[SubprocessGuard] Killing " << to_kill.size()
-              << " remaining child process(es)\n";
-
-    // SIGTERM first
-    for (pid_t pid : to_kill) {
-        ::killpg(pid, SIGTERM);
-    }
-    ::usleep(500000);  // 500ms grace
-
-    // SIGKILL for survivors
-    for (pid_t pid : to_kill) {
-        // Check if still alive (kill(pid,0) returns 0 if process exists)
-        if (::kill(pid, 0) == 0) {
-            ::killpg(pid, SIGKILL);
-        }
-        // Reap zombie (non-blocking)
-        int dummy;
-        ::waitpid(pid, &dummy, WNOHANG);
-    }
-
-    {
-        std::lock_guard<std::mutex> lock(mtx_);
-        pids_.clear();
-    }
-#endif
-}
-
-size_t SubprocessGuard::active_count() const {
-    std::lock_guard<std::mutex> lock(const_cast<std::mutex&>(mtx_));
-    return pids_.size();
-}
 
 // =============================================================================
 // Statistical functions — implemented from scratch, no external stats library
@@ -389,42 +225,24 @@ bool DatasetRunner::ensure_dir(const std::string& path) {
 // =============================================================================
 
 int DatasetRunner::exec_cmd(const std::string& cmd) {
-    // Legacy entry point — no timeout, no PID tracking.
-    // Used for downloads and other non-docking commands.
-    // Docking commands go through exec_dock() which uses proc_guard_.
+    // Use fork()+exec() instead of system() for true concurrency.
+    // std::system() serializes across threads on macOS.
 #ifndef _MSC_VER
     pid_t pid = fork();
     if (pid < 0) return -1;
     if (pid == 0) {
+        // Child: redirect stdin to /dev/null
         ::close(0);
         ::open("/dev/null", O_RDONLY);
         ::execl("/bin/sh", "sh", "-c", cmd.c_str(), nullptr);
-        ::_exit(127);
+        ::_exit(127);  // exec failed
     }
+    // Parent: wait for child
     int status = 0;
     while (::waitpid(pid, &status, 0) == -1) {
         if (errno != EINTR) return -1;
     }
     return WIFEXITED(status) ? WEXITSTATUS(status) : -1;
-#else
-    return std::system(cmd.c_str());
-#endif
-}
-
-int DatasetRunner::exec_dock(const std::string& cmd, int timeout_s) {
-    // Docking entry point — uses SubprocessGuard for PID tracking,
-    // process groups, and timeout enforcement.
-    if (!proc_guard_) {
-        // No guard available — fall back to untracked exec
-        return exec_cmd(cmd);
-    }
-#ifndef _MSC_VER
-    pid_t pid = proc_guard_->fork_exec(cmd);
-    if (pid < 0) {
-        std::cerr << "[ERROR] fork_exec failed: " << strerror(errno) << "\n";
-        return -1;
-    }
-    return proc_guard_->wait_with_timeout(pid, timeout_s);
 #else
     return std::system(cmd.c_str());
 #endif
@@ -858,13 +676,15 @@ std::vector<DatasetEntry> DatasetRunner::fetch_astex() {
 // =============================================================================
 
 std::vector<AstexNonNativeTarget> astex_nonnative_targets() {
-    // 65 protein families with native and alternative (non-native) conformers
+    // 45 protein families with native and alternative (non-native) conformers
     // for cross-docking benchmarks.  The native PDB is the holo crystal
     // structure; alternatives are other crystallographic structures of the same
     // protein.  Based on Verdonk et al. (2008) J. Chem. Inf. Model. 48,
     // 2214-2225 (original: 65 families, 1112 structures).  This table has been
-    // expanded with post-2008 crystal structures and currently covers 65/65
-    // families with ~1900 unique PDB structures / ~2200 cross-docking pairs.
+    // expanded with post-2008 crystal structures and currently covers 45/65
+    // families with ~1834 unique PDB structures / ~1840 cross-docking pairs.
+    // TODO: add the 20 missing families and optionally trim to the exact
+    //       Verdonk 2008 structure list for strict reproducibility.
     return {
         {"ACE",   "1G9V",  {"1EVE", "1GQR", "1QTI", "2ACE", "1DX6", "1F8U", "1GPK", "1HBJ", "1J07", "1JJB", "1MAA", "1MAH", "1OCE", "1VOT", "1W4L", "1W6R", "1W75", "1W76", "2C4H", "2C58", "2CEK", "2CKM", "2CMF", "2GYU"}},
         {"ADA",   "1NDV",  {"1ADD", "1KRM", "1NDW", "1O5R", "1QXL", "2E1W"}},
@@ -911,47 +731,6 @@ std::vector<AstexNonNativeTarget> astex_nonnative_targets() {
         {"TS",    "1JG0",  {"1HVY", "1HW3", "1HW4", "1HZW", "1I00", "1JG0", "1JSB", "1JTD", "1JTQ", "1JU6", "1JUJ", "2BBQ", "3B5A", "3BG4", "3BGS", "3BGX", "3BIH"}},
         {"TYK2",  "4GIH",  {"3LXL", "3LXN", "3LXP", "3NZ0", "3NZ1", "3NYX", "4GI6", "4GIA", "4GIH", "4GVJ"}},
         {"VEGFr2","1Y6B",  {"1VR2", "1Y6A", "1Y6B", "2OH4", "2P2I", "2P2H", "2QU5", "2QU6", "2RL5", "2XIR", "3B8Q", "3B8R", "3BE2", "3C7Q", "3CJF", "3CJG", "3CP9", "3CPC", "3CPB", "3CPD", "3EWH", "3HNG", "3VO3", "4AG8", "4AGC", "4AGD", "4ASD", "4ASE"}},
-        // ── 20 additional families completing the full Verdonk 2008 65-family set ──
-        // Abl tyrosine kinase (BCR-ABL; imatinib target)
-        {"ABL",    "1IEP",  {"1M52", "1OPL", "2E2B", "2F4J", "2GQG", "2HYY", "2HZ0", "2HZ4"}},
-        // AKT-1 / protein kinase B alpha
-        {"AKT1",   "1MRV",  {"1MRY", "2JDO", "2UVM", "2UW9", "3CQU"}},
-        // Aurora kinase A (mitotic kinase; oncology target)
-        {"AURKA",  "1MQ4",  {"1Q4K", "2C6D", "2C6E", "2J4Z", "2J50", "2NP8"}},
-        // Cathepsin B (lysosomal cysteine protease)
-        {"CATB",   "1QDQ",  {"1CSB", "1GMY", "2H2N", "2IPP"}},
-        // Dipeptidyl peptidase IV / DPP-4 (type-2 diabetes; gliptin target)
-        {"DPP4",   "1R9N",  {"1X70", "2BUB", "2G5P", "2HHE", "2I78"}},
-        // Glyoxalase I (antimalarial / anti-cancer metabolic enzyme)
-        {"GLO1",   "1QIP",  {"1BH5", "1FRO", "2Q99", "2QD9", "2WFO"}},
-        // Glycogen synthase kinase 3β (GSK-3β; CNS / oncology target)
-        {"GSK3B",  "1Q3D",  {"1GNG", "1H8F", "1I09", "1Q3W", "1Q41", "2JDR", "2JLD", "2OW3"}},
-        // HIV-1 reverse transcriptase (NNRTI binding pocket; distinct from HIVPR)
-        {"HIV1RT", "1VRT",  {"1FK9", "1KLM", "1RTH", "2HND", "2IAJ", "2ZD1"}},
-        // HMG-CoA reductase (statin target)
-        {"HMGR",   "1HWK",  {"1DQA", "1HWI", "1HWJ", "1HWL", "2Q1L", "2Q6N"}},
-        // IGF-1 receptor kinase domain (insulin-like growth factor receptor)
-        {"IGF1R",  "1K3A",  {"1JQH", "1P4O", "2OJ9", "2ZM3"}},
-        // InhA enoyl-ACP reductase (M. tuberculosis; isoniazid / triclosan target)
-        {"INHA",   "1P44",  {"1ENO", "2H7I", "2H7L", "2IDZ", "2NSD", "2X22"}},
-        // c-KIT receptor tyrosine kinase (imatinib / sunitinib target)
-        {"KIT",    "1T45",  {"2E9W", "2EC8", "2OIQ", "3G0E"}},
-        // MAPKAP kinase 2 (MK2; p38 downstream substrate; inflammation)
-        {"MK2",    "1NXK",  {"1KWP", "2JBO", "2OZA", "2PZY", "3FYJ"}},
-        // MMP-3 stromelysin-1 (matrix metalloproteinase; complement to MMP12)
-        {"MMP3",   "1SLN",  {"1B3D", "1CAQ", "1G4K", "1HFS", "1QIA", "2D1N", "2JT5"}},
-        // Neprilysin / neutral endopeptidase (NEP; CD10; heart failure target)
-        {"NEP",    "1R1H",  {"1DMT", "1JE2", "1Y8J", "2OOD", "2QPJ"}},
-        // PARP-1 poly(ADP-ribose) polymerase 1 (DNA-repair; oncology target)
-        {"PARP1",  "1UK0",  {"2OKK", "2PAX", "2RCW", "3GJW"}},
-        // cAMP-dependent protein kinase catalytic subunit α (PKA-Cα; reference kinase)
-        {"PKA",    "1ATP",  {"1BKX", "1CMK", "1FMO", "1L3R", "1YDS", "2CPK"}},
-        // Polo-like kinase 1 (PLK1; mitotic regulator; oncology)
-        {"PLK1",   "2OJX",  {"2RKU", "2V5Q", "2YAC", "3C5L", "3D5U"}},
-        // Rho-associated coiled-coil kinase 1 (ROCK1; cytoskeletal / glaucoma target)
-        {"ROCK1",  "2ETK",  {"2ESM", "2F2S", "2F2U", "2H9V"}},
-        // Trypsin (bovine / human; canonical serine-protease cross-docking model)
-        {"TRYPSIN","2AYW",  {"1AZ8", "1BJU", "1EZP", "1EZR", "1GI1", "1K1N", "1Q3N"}},
     };
 }
 
@@ -1897,154 +1676,16 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
     std::cout << "[DatasetRunner] Docking " << entries.size() << " entries ("
               << config.num_threads << " threads)...\n";
 
-    // ── TargetServer: one per unique receptor ───────────────────────────
-    // Group entries by receptor path so ligands sharing a receptor
-    // feed into the same TargetServer.  This enables cross-ligand
-    // competitive binding analysis: selectivity (K_a/K_b), grand Ξ,
-    // and conformer population priors.
-    // ── Process lifecycle guard ───────────────────────────────────────────
-    // Owns all child FlexAIDdS processes.  Kills remaining children on scope
-    // exit (normal return, exception, or stack unwinding from signal handler).
-    proc_guard_ = std::make_unique<SubprocessGuard>();
-    shutdown_requested_.store(false, std::memory_order_relaxed);
-
-    // ── Signal handlers for graceful shutdown ──────────────────────────────
-    // SIGINT (Ctrl+C) and SIGTERM trigger orderly shutdown:
-    //   1. Set shutdown_requested_ flag → workers stop pulling new jobs
-    //   2. kill_all() on proc_guard_ → SIGTERM all running FlexAIDdS children
-    //   3. Thread pool joins → workers exit after current waitpid returns
-    //   4. io_pipeline.stop() → flush pending I/O
-    //   5. Partial report written with completed results so far
-
-#ifndef _MSC_VER
-    // Publish pointers for the signal handler before installing it.
-    g_active_guard    = proc_guard_.get();
-    g_active_shutdown = &shutdown_requested_;
-
-    struct sigaction sa;
-    sa.sa_handler = [](int) {
-        // Async-signal-safe handler.  Uses only static/global pointers and
-        // async-signal-safe calls (write, kill, raise, signal).
-        static std::atomic<int> sigint_count{0};
-        if (sigint_count.fetch_add(1) >= 1) {
-            // Second Ctrl+C — user really wants out
-            ::signal(SIGINT, SIG_DFL);
-            ::raise(SIGINT);
-            return;
-        }
-        if (g_active_shutdown) {
-            g_active_shutdown->store(true, std::memory_order_relaxed);
-        }
-        if (g_active_guard) {
-            g_active_guard->kill_all();
-        }
-    };
-    sigemptyset(&sa.sa_mask);
-    sa.sa_flags = 0;
-    struct sigaction old_int, old_term;
-    ::sigaction(SIGINT, &sa, &old_int);
-    ::sigaction(SIGTERM, &sa, &old_term);
-#endif
-
-    target_servers_.clear();
-    {
-        target::TargetConfig tcfg;
-        tcfg.temperature_K = static_cast<double>(config.temperature);
-
-        for (const auto& entry : entries) {
-            if (entry.receptor_path.empty()) continue;
-            if (target_servers_.find(entry.receptor_path) == target_servers_.end()) {
-                target_servers_[entry.receptor_path] =
-                    std::make_unique<target::TargetServer>(tcfg);
-            }
-        }
-    }
-    if (!target_servers_.empty()) {
-        std::cout << "[DatasetRunner] TargetServer: "
-                  << target_servers_.size() << " unique receptor(s), "
-                  << entries.size() << " ligand(s)\n";
-    }
-
-    // Per-entry session handles (indexed same as entries)
-    std::vector<target::DockingSession> sessions(entries.size());
-
-    // ── Receptor grouping for grid reuse ──────────────────────────────────
-    // Build an execution order that groups entries sharing the same receptor_path
-    // consecutively.  This enables grid reuse: once the first ligand of a receptor
-    // completes, subsequent ligands can skip grid regeneration by pointing to the
-    // already-written .rrg file.
-    //
-    // The schedule maps execution slot → original entry index.
-    // stable_sort preserves dataset order within each receptor group.
-    const size_t n_entries = entries.size();
-    std::vector<size_t> schedule(n_entries);
-    std::iota(schedule.begin(), schedule.end(), 0);
-    std::stable_sort(schedule.begin(), schedule.end(),
-                     [&entries](size_t a, size_t b) {
-                         return entries[a].receptor_path < entries[b].receptor_path;
-                     });
-
-    // Track completed receptors and their output prefix for grid reuse.
-    // Key: receptor_path, Value: output prefix of the first completed run for that receptor.
-    // Protected by grid_reuse_mtx because multiple workers may finish concurrently.
-    std::mutex grid_reuse_mtx;
-    std::map<std::string, std::string> receptor_completed_prefix;
-
-    // Log cross-ligand sharing statistics.
-    {
-        std::map<std::string, size_t> receptor_counts;
-        for (const auto& entry : entries) {
-            if (!entry.receptor_path.empty()) {
-                receptor_counts[entry.receptor_path]++;
-            }
-        }
-        size_t multi_ligand_receptors = 0;
-        size_t grid_reuse_eligible = 0;
-        for (const auto& [rpath, count] : receptor_counts) {
-            if (count > 1) {
-                multi_ligand_receptors++;
-                grid_reuse_eligible += (count - 1);  // first ligand generates, rest reuse
-            }
-        }
-        if (multi_ligand_receptors > 0) {
-            size_t est_mb_saved = grid_reuse_eligible * 200;  // ~200 MB per grid reload
-            std::cout << "[DatasetRunner] Receptor sharing: "
-                      << multi_ligand_receptors << " receptor(s) shared across "
-                      << (grid_reuse_eligible + multi_ligand_receptors) << " ligands — "
-                      << grid_reuse_eligible << " ~200 MB grid reloads avoidable ("
-                      << est_mb_saved << " MB)\n";
-        }
-    }
-
     bench::Timer timer;
     timer.start();
 
     report.results.resize(entries.size());
 
-    // ── Async I/O pipeline ─────────────────────────────────────────────────
-    // Overlaps per-complex result writing with the next complex's docking.
-    // Queue depth 4 keeps at most 4 pending I/O tasks; 2 background workers
-    // drain the queue.  stop() is called after the docking loop to flush.
-    AsyncPipeline io_pipeline(/*max_queue_depth=*/4, /*num_workers=*/2);
-    io_pipeline.start();
-
-    // ── Helper: dock one entry by schedule slot ───────────────────────────
-    // Takes a schedule slot (0..n_entries-1) which is already sorted by
-    // receptor_path so same-receptor entries are processed consecutively.
-    // The schedule maps slot → original entry index.
-    auto dock_one = [&](size_t slot) {
-        const size_t idx = schedule[slot];
+    // ── Helper: parse FlexAIDdS output for a single target ───────────────
+    auto dock_one = [&](size_t idx) {
         const auto& entry = entries[idx];
         DockingResult result;
         result.pdb_id = entry.pdb_id;
-
-        // ── TargetServer: create per-ligand session ─────────────────────
-        target::DockingSession session;
-        auto ts_it = target_servers_.find(entry.receptor_path);
-        if (ts_it != target_servers_.end()) {
-            session = ts_it->second->create_session(entry.pdb_id);
-        }
-        sessions[idx] = session;
 
         if (entry.receptor_path.empty() || entry.ligand_path.empty()) {
             result.success = false;
@@ -2068,34 +1709,6 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
         std::string out_dir    = config.output_dir + "/" + entry.pdb_id;
         std::string out_prefix = out_dir + "/" + entry.pdb_id;
         std::string stdout_path = out_dir + "/stdout.log";
-
-        // ── Grid reuse: check if a prior same-receptor run left a grid file ──
-        // Look up the completed prefix for this receptor.  If found, check for
-        // a .rrg (grid) file in that output directory.  When present, the JSON
-        // config will include a "grid_file" field so FlexAIDdS can skip grid
-        // regeneration and reload the existing grid (~200 MB, ~2-5 s saved).
-        std::string reusable_grid_path;
-        {
-            std::lock_guard<std::mutex> lock(grid_reuse_mtx);
-            auto reuse_it = receptor_completed_prefix.find(entry.receptor_path);
-            if (reuse_it != receptor_completed_prefix.end()) {
-                // The prior run's prefix — try .rrg (standard grid format)
-                std::string candidate_rrg = reuse_it->second + ".rrg";
-                if (fs::exists(candidate_rrg)) {
-                    reusable_grid_path = candidate_rrg;
-                } else {
-                    // Also check _0.rrg suffix (FlexAID per-generation grid naming)
-                    candidate_rrg = reuse_it->second + "_0.rrg";
-                    if (fs::exists(candidate_rrg)) {
-                        reusable_grid_path = candidate_rrg;
-                    }
-                }
-            }
-        }
-        if (!reusable_grid_path.empty()) {
-            std::cerr << "  [GRID-REUSE] " << entry.pdb_id
-                      << " reusing grid from " << reusable_grid_path << "\n";
-        }
 
         // ── Skip-if-complete check ───────────────────────────────────────
         // A run is complete when its output dir contains ≥1 clustered pose PDB
@@ -2138,9 +1751,6 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
             {
                 std::ofstream jf(config_path);
                 jf << "{\n"
-                   << "  \"flexibility\": {\n"
-                   << "    \"intramolecular\": false\n"
-                   << "  },\n"
                    << "  \"thermodynamics\": {\n"
                    << "    \"temperature\": " << config.temperature << ",\n"
                    << "    \"clustering_algorithm\": \"" << config.clustering_algorithm << "\",\n"
@@ -2152,13 +1762,8 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                    << "    \"crossover_rate\": 0.8,\n"
                    << "    \"mutation_rate\": 0.03,\n"
                    << "    \"fitness_model\": \"SMFREE\"\n"
-                   << "  }";
-                // If a grid file from a prior same-receptor run exists, tell
-                // FlexAIDdS to reuse it instead of regenerating from scratch.
-                if (!reusable_grid_path.empty()) {
-                    jf << ",\n  \"grid_file\": \"" << reusable_grid_path << "\"";
-                }
-                jf << "\n}\n";
+                   << "  }\n"
+                   << "}\n";
             }
 
             // Build FlexAIDdS command with --config
@@ -2174,7 +1779,7 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
             bench::Timer dock_timer;
             dock_timer.start();
 
-            ret = exec_dock(cmd.str(), config.per_job_timeout_s);
+            ret = exec_cmd(cmd.str());
 
             dock_timer.stop();
             result.wall_time_s = dock_timer.elapsed_s();
@@ -2312,63 +1917,6 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
         }
 
         report.results[idx] = result;
-
-        // ── TargetServer: register completed session ─────────────────────
-        {
-            auto ts_it2 = target_servers_.find(entry.receptor_path);
-            if (ts_it2 != target_servers_.end() && result.success) {
-                auto& sess = sessions[idx];
-                sess.completed = true;
-                sess.n_poses = result.num_poses;
-                sess.best_energy = static_cast<double>(result.predicted_dG);
-                // log_Z = -ΔG / (kT)  — partition function contribution
-                sess.log_Z = -static_cast<double>(result.predicted_dG) /
-                             (0.0019872041 * static_cast<double>(config.temperature));
-                ts_it2->second->register_result(sess);
-            }
-        }
-
-        // ── Grid reuse: register this run's prefix for subsequent ligands ──
-        // Only the first completed run per receptor registers its prefix so
-        // that later same-receptor entries can find and reuse its grid file.
-        if (result.success && !entry.receptor_path.empty()) {
-            std::lock_guard<std::mutex> lock(grid_reuse_mtx);
-            if (receptor_completed_prefix.find(entry.receptor_path)
-                    == receptor_completed_prefix.end()) {
-                receptor_completed_prefix[entry.receptor_path] = out_prefix;
-            }
-        }
-
-        // ── Async per-complex result I/O ─────────────────────────────────
-        // Write a per-complex CSV file in the background via the async pipeline,
-        // overlapping this I/O with the next complex's docking computation.
-        // The lambda captures all data by value (or const reference to entries
-        // which outlive the pipeline).  The final summary CSV and markdown
-        // report are written synchronously after io_pipeline.stop().
-        io_pipeline.enqueue([result, out_dir]() {
-            try {
-                std::string csv_path = out_dir + "/result.csv";
-                std::ofstream ofs(csv_path);
-                if (ofs.is_open()) {
-                    ofs << "pdb_id,best_score,rmsd_to_crystal,predicted_dG,predicted_dH,"
-                           "predicted_TdS,shannon_entropy,num_poses,wall_time_s,success\n";
-                    ofs << std::fixed << std::setprecision(4)
-                        << result.pdb_id << ","
-                        << result.best_score << ","
-                        << result.rmsd_to_crystal << ","
-                        << result.predicted_dG << ","
-                        << result.predicted_dH << ","
-                        << result.predicted_TdS << ","
-                        << result.shannon_entropy << ","
-                        << result.num_poses << ","
-                        << result.wall_time_s << ","
-                        << (result.success ? 1 : 0) << "\n";
-                }
-            } catch (...) {
-                // Per-complex CSV is best-effort; failures are non-fatal.
-                // The aggregate write_report() still has all data.
-            }
-        });
     };
 
     // ── Parallel docking via thread pool ──────────────────────────────────
@@ -2381,11 +1929,6 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
     if (n_jobs <= 1 || n_workers <= 1) {
         // Serial path — single job or single worker
         for (size_t i = 0; i < n_jobs; ++i) {
-            if (shutdown_requested_.load(std::memory_order_relaxed)) {
-                std::cerr << "\n[DatasetRunner] Shutdown requested — stopping after "
-                          << i << "/" << n_jobs << " jobs\n";
-                break;
-            }
             dock_one(i);
         }
     } else {
@@ -2395,7 +1938,6 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
 
         auto worker = [&]() {
             for (;;) {
-                if (shutdown_requested_.load(std::memory_order_relaxed)) break;
                 size_t idx = next_idx.fetch_add(1);
                 if (idx >= n_jobs) break;
                 dock_one(idx);
@@ -2411,34 +1953,6 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
     }
 
     timer.stop();
-
-    // ── Flush async I/O pipeline ─────────────────────────────────────────
-    // Blocks until all pending per-complex CSV writes complete.
-    io_pipeline.stop();
-
-    // ── TargetServer: cross-ligand competitive binding analysis ────────
-    for (const auto& [receptor_path, ts] : target_servers_) {
-        if (ts->completed_sessions() < 1) continue;
-
-        BenchmarkReport::CrossLigandResult clr;
-        // Extract receptor ID from path (filename without extension)
-        clr.receptor_id = fs::path(receptor_path).stem().string();
-
-        // Count ligands for this receptor
-        for (size_t i = 0; i < entries.size(); ++i) {
-            if (entries[i].receptor_path == receptor_path) {
-                clr.n_ligands++;
-                if (report.results[i].success) clr.n_completed++;
-            }
-        }
-
-        // Get ranked ligands from grand partition function Ξ
-        if (ts->completed_sessions() >= 2) {
-            clr.ranked_ligands = ts->rank_ligands();
-        }
-
-        report.cross_ligand_results.push_back(std::move(clr));
-    }
 
     // Compute aggregate statistics
     int success_count = 0;
@@ -2485,16 +1999,6 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
         report.spearman_rho = compute_spearman_rho(pred_affinities, exp_affinities);
         report.kendall_tau  = compute_kendall_tau(pred_affinities, exp_affinities);
     }
-
-    // ── Restore default signal handlers ────────────────────────────────────
-    // Clear the global pointers first so stale signals can't dereference them,
-    // then restore SIGINT/SIGTERM to their defaults.
-#ifndef _MSC_VER
-    g_active_guard    = nullptr;
-    g_active_shutdown = nullptr;
-    ::signal(SIGINT,  SIG_DFL);
-    ::signal(SIGTERM, SIG_DFL);
-#endif
 
     return report;
 }
@@ -2558,57 +2062,6 @@ void DatasetRunner::write_report(const BenchmarkReport& report,
 
         ofs.close();
         std::cout << "  Markdown report: " << md_path << "\n";
-    }
-
-    // ── Cross-ligand competitive binding report ──────────────────────────
-    if (!report.cross_ligand_results.empty()) {
-        // Markdown section
-        std::string cl_md = output_dir + "/" + safe_name + "_cross_ligand.md";
-        std::ofstream ofs(cl_md);
-        ofs << "# Cross-Ligand Competitive Binding Analysis\n\n";
-        ofs << "Generated by TargetServer grand canonical partition function Ξ.\n\n";
-
-        for (const auto& clr : report.cross_ligand_results) {
-            ofs << "## Receptor: " << clr.receptor_id << "\n\n";
-            ofs << "- Ligands docked: " << clr.n_ligands << "\n";
-            ofs << "- Completed (binding modes found): " << clr.n_completed << "\n\n";
-
-            if (!clr.ranked_ligands.empty()) {
-                ofs << "### Ranked Ligands (by ΔG, ascending)\n\n";
-                ofs << "| Rank | Ligand | ΔG (kcal/mol) | p(bind) |\n";
-                ofs << "|------|--------|---------------|--------|\n";
-                int rank = 1;
-                for (const auto& lr : clr.ranked_ligands) {
-                    ofs << "| " << rank++
-                        << " | " << lr.name
-                        << " | " << std::fixed << std::setprecision(3) << lr.dG
-                        << " | " << std::setprecision(4) << lr.p_bound
-                        << " |\n";
-                }
-                ofs << "\n";
-            }
-        }
-
-        ofs.close();
-        std::cout << "  Cross-ligand report: " << cl_md << "\n";
-
-        // CSV version
-        std::string cl_csv = output_dir + "/" + safe_name + "_cross_ligand.csv";
-        std::ofstream coefs(cl_csv);
-        coefs << "receptor,ligand,delta_G_kcal,binding_probability,rank\n";
-        for (const auto& clr : report.cross_ligand_results) {
-            int rank = 1;
-            for (const auto& lr : clr.ranked_ligands) {
-                coefs << std::fixed << std::setprecision(4)
-                      << clr.receptor_id << ","
-                      << lr.name << ","
-                      << lr.dG << ","
-                      << lr.p_bound << ","
-                      << rank++ << "\n";
-            }
-        }
-        coefs.close();
-        std::cout << "  Cross-ligand CSV: " << cl_csv << "\n";
     }
 
     // ── CSV results ──────────────────────────────────────────────────

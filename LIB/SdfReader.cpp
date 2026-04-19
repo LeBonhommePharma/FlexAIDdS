@@ -129,63 +129,25 @@ int read_sdf_ligand(FA_Global* FA, atom** atoms, resid** residue,
         satoms[i].elem[3] = '\0';
     }
 
-    // Read bond block.
-    // Guard: if the header claims 0 bonds but bond records exist in the file
-    // (e.g. SDF written by an extractor that forgot to update the counts line),
-    // scan the remaining lines and recover the bonds automatically.
-    if (nbonds > 0) {
-        for (int i = 0; i < nbonds; ++i) {
-            if (!fgets(buf, sizeof(buf), fp)) {
-                fprintf(stderr, "ERROR: premature EOF in SDF bond block at bond %d\n", i + 1);
-                fclose(fp); return 0;
-            }
-            // V2000: atom1(0-2), atom2(3-5), type(6-8) — 3-char right-justified integers
-            char f1[4], f2[4], f3[4];
-            strncpy(f1, buf, 3); f1[3] = '\0';
-            strncpy(f2, buf + 3, 3); f2[3] = '\0';
-            strncpy(f3, buf + 6, 3); f3[3] = '\0';
-            sbonds[i].a1 = atoi(f1);
-            sbonds[i].a2 = atoi(f2);
-            sbonds[i].type = atoi(f3);
+    // Read bond block
+    for (int i = 0; i < nbonds; ++i) {
+        if (!fgets(buf, sizeof(buf), fp)) {
+            fprintf(stderr, "ERROR: premature EOF in SDF bond block at bond %d\n", i + 1);
+            fclose(fp); return 0;
         }
-    } else {
-        // Header said 0 bonds — scan remaining lines for bond records.
-        // A V2000 bond line has two atom indices (1-based, ≤9999) in cols 0-5
-        // followed by a bond type digit, with no decimal point in the first 9 chars.
-        while (fgets(buf, sizeof(buf), fp)) {
-            // Stop at properties block or next molecule
-            if (strncmp(buf, "M  END", 6) == 0 ||
-                strncmp(buf, "$$$$",   4) == 0) break;
-            // Skip lines that are clearly not bond records
-            if (strlen(buf) < 9) continue;
-            bool has_decimal = false;
-            for (int c = 0; c < 9; ++c)
-                if (buf[c] == '.') { has_decimal = true; break; }
-            if (has_decimal) continue;  // atom lines have decimal coords
-            // Parse as bond record: first 6 chars must be two valid integers
-            char f1[4], f2[4], f3[4];
-            strncpy(f1, buf, 3); f1[3] = '\0';
-            strncpy(f2, buf + 3, 3); f2[3] = '\0';
-            strncpy(f3, buf + 6, 3); f3[3] = '\0';
-            int a1 = atoi(f1), a2 = atoi(f2), btype = atoi(f3);
-            if (a1 < 1 || a1 > natoms || a2 < 1 || a2 > natoms) continue;
-            if (btype < 1 || btype > 8) continue;  // valid MDL bond types 1-8
-            sbonds.push_back({a1, a2, btype});
-        }
-        if (!sbonds.empty())
-            fprintf(stderr,
-                "WARN: SDF counts line claimed 0 bonds but %d bond records found — "
-                "using recovered bonds.\n", (int)sbonds.size());
-        // Rewind: fclose+reopen would be needed for a full restart, but we're done
-        // reading; the caller uses sbonds directly so no further reads needed.
-        fclose(fp);
-        fp = nullptr;
+        // V2000: atom1(0-2), atom2(3-5), type(6-8) — 3-char right-justified integers
+        char f1[4], f2[4], f3[4];
+        strncpy(f1, buf, 3); f1[3] = '\0';
+        strncpy(f2, buf + 3, 3); f2[3] = '\0';
+        strncpy(f3, buf + 6, 3); f3[3] = '\0';
+        sbonds[i].a1 = atoi(f1);
+        sbonds[i].a2 = atoi(f2);
+        sbonds[i].type = atoi(f3);
     }
 
-    if (fp) fclose(fp);
+    fclose(fp);
 
-    int nbonds_actual = (int)sbonds.size();
-    printf("read_sdf_ligand: %d atoms, %d bonds\n", natoms, nbonds_actual);
+    printf("read_sdf_ligand: %d atoms, %d bonds\n", natoms, nbonds);
 
     /* ── Populate FA structures (same pattern as read_lig / Mol2Reader) ── */
 
@@ -290,23 +252,6 @@ int read_sdf_ligand(FA_Global* FA, atom** atoms, resid** residue,
 
         if (ao.bond[0] < 6) { ao.bond[0]++; ao.bond[ao.bond[0]] = fa2; }
         if (at.bond[0] < 6) { at.bond[0]++; at.bond[at.bond[0]] = fa1; }
-    }
-
-    // Build bonded matrix, shortest paths, and shortflex (mirrors read_lig.cpp)
-    {
-        int fa = (*residue)[FA->res_cnt].fatm[0];
-        int la = (*residue)[FA->res_cnt].latm[0];
-        int n  = la - fa + 1;
-        int bondlist[MAX_ATM_HET];
-        int neighbours[MAX_ATM_HET];
-        int nbonded;
-        for (int ai = fa; ai <= la; ai++) {
-            nbonded = 0;
-            bondedlist(*atoms, ai, FA->bloops, &nbonded, bondlist, neighbours);
-            update_bonded(&(*residue)[FA->res_cnt], n, nbonded, bondlist, neighbours);
-        }
-        shortest_path(&(*residue)[FA->res_cnt], n, *atoms);
-        assign_shortflex(&(*residue)[FA->res_cnt], n, (*residue)[FA->res_cnt].fdih, *atoms);
     }
 
     // Finalise optres for the ligand (mirrors read_lig.cpp logic)

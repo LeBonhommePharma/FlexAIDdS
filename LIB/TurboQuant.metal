@@ -48,13 +48,13 @@ kernel void turboquant_quantize(
     device float*        norms       [[buffer(3)]],  // [N] output L2 norms
     device const float*  boundaries  [[buffer(4)]],  // [num_boundaries]
     constant QuantizeParams& params  [[buffer(5)]],
-    uint  tg_pos     [[threadgroup_position_in_grid]],
+    uint2 tg_pos     [[threadgroup_position_in_grid]],
     uint  tid        [[thread_index_in_threadgroup]],
     uint  tg_size    [[threads_per_threadgroup]],
     uint  simd_lane  [[thread_index_in_simdgroup]],
     uint  simd_id    [[simdgroup_index_in_threadgroup]])
 {
-    const uint vec_id = tg_pos;
+    const uint vec_id = tg_pos.x;
     const uint j      = tid;
     const uint d      = params.d;
     const uint num_bd = params.num_boundaries;
@@ -126,10 +126,10 @@ kernel void turboquant_dequantize(
     device const float*   centroids  [[buffer(2)]],  // [k] codebook centroids
     device float*         output     [[buffer(3)]],  // [N × d] output vectors
     constant QuantizeParams& params  [[buffer(4)]],
-    uint  tg_pos     [[threadgroup_position_in_grid]],
+    uint2 tg_pos     [[threadgroup_position_in_grid]],
     uint  tid        [[thread_index_in_threadgroup]])
 {
-    const uint vec_id = tg_pos;
+    const uint vec_id = tg_pos.x;
     const uint j      = tid;
     const uint d      = params.d;
     const uint k      = params.num_centroids;

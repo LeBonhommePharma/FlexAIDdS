@@ -90,18 +90,7 @@ def _build_parser() -> argparse.ArgumentParser:
         type=int,
         default=1,
         metavar="N",
-        help="Local worker threads for parallel target evaluation (default: 1).",
-    )
-    p.add_argument(
-        "--omp-threads",
-        type=int,
-        default=None,
-        metavar="N",
-        help=(
-            "OMP_NUM_THREADS to set per FlexAID subprocess. "
-            "Default: 2 when --workers > 1, else 4. "
-            "Override via FLEXAIDDS_OMP_THREADS env var."
-        ),
+        help="Local worker processes for parallel target evaluation (default: 1).",
     )
 
     # --- I/O ---
@@ -211,7 +200,6 @@ def main(argv: list[str] | None = None) -> int:
         binary=args.binary,
         temperature=args.temperature,
         n_workers=args.workers,
-        omp_threads=args.omp_threads,
         use_mpi=args.distributed,
         cache_dir=args.data_dir,
         bootstrap_ci=args.bootstrap,
