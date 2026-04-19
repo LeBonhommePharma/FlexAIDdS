@@ -75,6 +75,7 @@ double vcfunction(FA_Global* FA,VC_Global* VC,atom* atoms,resid* residue, std::v
 	}
 	
 	for(int i=0; i<FA->atm_cnt_real; ++i) {
+		if(VC->Calc[i].atom == NULL) continue;
 		
 		cfstr* cfs = NULL;
 #if DEBUG_LEVEL > 0
@@ -127,7 +128,8 @@ double vcfunction(FA_Global* FA,VC_Global* VC,atom* atoms,resid* residue, std::v
 				// get first atom of residue
 				int fatm = residue[rnum].fatm[0];
 				
-				if(intramolecular && residue[rnum].bonded[atomcont-fatm][atomzero-fatm] >= 0)
+				if(intramolecular && residue[rnum].bonded != NULL &&
+				   residue[rnum].bonded[atomcont-fatm][atomzero-fatm] >= 0)
 				{
 					atoms[atomzero].acs -= VC->ca_rec[currindex].area;
 				}
@@ -234,7 +236,7 @@ double vcfunction(FA_Global* FA,VC_Global* VC,atom* atoms,resid* residue, std::v
 		
 			// is contact atom bonded to atom zero
 			// if YES, skip contact atom
-			if(intraresidue)
+			if(intraresidue && residue[rnum].bonded != NULL)
 			{
 				// always skip atoms forming a bond or angle with each other
 				if(residue[rnum].bonded[atomcont-fatm][atomzero-fatm] >= 0)
@@ -576,6 +578,7 @@ double vcfunction(FA_Global* FA,VC_Global* VC,atom* atoms,resid* residue, std::v
 double get_yval(struct energy_matrix* energy_matrix, double relative_area)
 {
 	double yval = 0.0;
+	if(energy_matrix->energy_values == NULL) return 0.0;
 	
 	// a single value in matrix (weighted by area)
 	if(energy_matrix->weight)

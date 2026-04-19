@@ -1568,44 +1568,182 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
     report.dataset_name = entries.front().source;
     report.total_systems = static_cast<int>(entries.size());
 
+    // ── Locate FlexAIDdS binary ──────────────────────────────────────────
+    // Search: (1) FLEXAIDDS_BUILD env, (2) build/ subdirs of repo, (3) PATH
+    std::string flexaidds_bin;
+    const char* env_build = std::getenv("FLEXAIDDS_BUILD");
+    if (env_build && fs::exists(std::string(env_build) + "/FlexAIDdS")) {
+        flexaidds_bin = std::string(env_build) + "/FlexAIDdS";
+    } else if (env_build && fs::exists(std::string(env_build) + "/FlexAID")) {
+        flexaidds_bin = std::string(env_build) + "/FlexAID";
+    } else {
+        // Try to find relative to the benchmark data cache
+        const char* env_repo = std::getenv("FLEXAIDDS_REPO");
+        if (env_repo) {
+            std::vector<std::string> candidates = {
+                std::string(env_repo) + "/build/FlexAIDdS",
+                std::string(env_repo) + "/build/FlexAID",
+                std::string(env_repo) + "/BIN/FlexAIDdS",
+                std::string(env_repo) + "/BIN/FlexAID",
+            };
+            for (const auto& c : candidates) {
+                if (fs::exists(c)) { flexaidds_bin = c; break; }
+            }
+        }
+    }
+    // Fallback: hope it's on PATH
+    if (flexaidds_bin.empty()) flexaidds_bin = "FlexAIDdS";
+
+    std::cout << "[DatasetRunner] Using binary: " << flexaidds_bin << "\n";
+    std::cout << "[DatasetRunner] Docking " << entries.size() << " entries ("
+              << config.num_threads << " threads)...\n";
+
     bench::Timer timer;
     timer.start();
 
     report.results.resize(entries.size());
 
-#ifdef _OPENMP
-#pragma omp parallel for schedule(dynamic) if(entries.size() > 1) num_threads(config.num_threads > 0 ? config.num_threads : 1)
-#endif
-    for (size_t i = 0; i < entries.size(); ++i) {
-        const auto& entry = entries[i];
+    // ── Helper: parse FlexAIDdS output for a single target ───────────────
+    auto dock_one = [&](size_t idx) {
+        const auto& entry = entries[idx];
         DockingResult result;
         result.pdb_id = entry.pdb_id;
 
         if (entry.receptor_path.empty() || entry.ligand_path.empty()) {
             result.success = false;
             result.rmsd_to_crystal = 999.0f;
-            report.results[i] = result;
-            continue;
+            report.results[idx] = result;
+            return;
         }
 
-        // Time the docking
+        if (!fs::exists(entry.receptor_path) || !fs::exists(entry.ligand_path)) {
+            std::cerr << "  [WARN] Missing file for " << entry.pdb_id
+                      << ": rec=" << entry.receptor_path
+                      << " lig=" << entry.ligand_path << "\n";
+            result.success = false;
+            result.rmsd_to_crystal = 999.0f;
+            report.results[idx] = result;
+            return;
+        }
+
+        // Per-target output directory
+        std::string out_dir = config.output_dir + "/" + entry.pdb_id;
+        ensure_dir(out_dir);
+        std::string out_prefix = out_dir + "/" + entry.pdb_id;
+
+        // Build FlexAIDdS command
+        // Output goes to per-target dir; stderr captured for diagnostics
+        std::ostringstream cmd;
+        cmd << "'" << flexaidds_bin << "' "
+            << "'" << entry.receptor_path << "' "
+            << "'" << entry.ligand_path << "' "
+            << "-o '" << out_prefix << "' "
+            << "2>'" << out_dir << "/stderr.log' "
+            << ">'" << out_dir << "/stdout.log'";
+        // NOTE: FlexAIDdS may still write legacy output near the binary;
+        // the -o flag sets the output prefix for the _INI and clustered files.
+
         bench::Timer dock_timer;
         dock_timer.start();
 
-        // Deterministic surrogate path for benchmark orchestration.
-        // This keeps the dataset runner fully parallel and produces stable
-        // metrics even when full engine integration is unavailable here.
-        const double path_signal = static_cast<double>(
-            entry.receptor_path.size() + entry.ligand_path.size());
-        result.rmsd_to_crystal = static_cast<float>(1.0 + std::fmod(path_signal, 250.0) / 100.0);
-        result.predicted_dG = static_cast<float>(-0.2 * result.rmsd_to_crystal);
-        result.best_score = result.predicted_dG;
+        int ret = exec_cmd(cmd.str());
 
         dock_timer.stop();
         result.wall_time_s = dock_timer.elapsed_s();
-        result.success = (result.rmsd_to_crystal < 2.0f);
 
-        report.results[i] = result;
+        // ── Parse results ────────────────────────────────────────────────
+        // Check for output files: <prefix>_INI.pdb, clustered PDBs
+        int n_poses = 0;
+        float best_cf = 0.0f;
+        float best_dG = 0.0f;
+
+        // Count clustered output PDBs
+        try {
+            for (const auto& f : fs::directory_iterator(out_dir)) {
+                std::string fname = f.path().filename().string();
+                // FlexAID output: <prefix>_mode_N.pdb or <prefix>_cluster_N.pdb
+                if ((fname.find("_mode_") != std::string::npos ||
+                     fname.find("_cluster_") != std::string::npos) &&
+                    fname.size() > 4 && fname.substr(fname.size()-4) == ".pdb") {
+                    n_poses++;
+                }
+            }
+        } catch (...) {}
+
+        // Parse stdout for n_chrom_snapshot and CF scores
+        std::string stdout_path = out_dir + "/stdout.log";
+        std::ifstream stdout_file(stdout_path);
+        if (stdout_file.is_open()) {
+            std::string line;
+            while (std::getline(stdout_file, line)) {
+                // "n_chrom_snapshot=N"
+                if (line.find("n_chrom_snapshot=") != std::string::npos) {
+                    auto pos = line.find('=');
+                    if (pos != std::string::npos) {
+                        try { n_poses = std::max(n_poses, std::stoi(line.substr(pos+1))); }
+                        catch (...) {}
+                    }
+                }
+                // "REMARK CF=%f" — extract best contact function score
+                if (line.find("REMARK CF=") != std::string::npos) {
+                    auto pos = line.find("CF=");
+                    if (pos != std::string::npos) {
+                        try { best_cf = std::stof(line.substr(pos+3)); }
+                        catch (...) {}
+                    }
+                }
+                // Thermodynamic output lines
+                if (line.find("dG=") != std::string::npos || line.find("ΔG=") != std::string::npos) {
+                    auto pos = line.find("=");
+                    if (pos != std::string::npos) {
+                        try { best_dG = std::stof(line.substr(pos+1)); }
+                        catch (...) {}
+                    }
+                }
+            }
+        }
+
+        result.num_poses = n_poses;
+        result.best_score = best_cf;
+        result.predicted_dG = (best_dG != 0.0f) ? best_dG : best_cf;
+
+        // Success = FlexAIDdS exited 0 AND produced output poses
+        result.success = (ret == 0 && n_poses > 0);
+
+        // If FlexAIDdS ran but produced no output, check stderr for clues
+        if (ret == 0 && n_poses == 0) {
+            std::string stderr_path = out_dir + "/stderr.log";
+            std::ifstream stderr_file(stderr_path);
+            if (stderr_file.is_open()) {
+                std::string err_line;
+                int err_lines = 0;
+                std::cerr << "  [WARN] " << entry.pdb_id
+                          << " exited 0 but produced no output poses. stderr:\n";
+                while (std::getline(stderr_file, err_line) && err_lines < 5) {
+                    std::cerr << "    " << err_line << "\n";
+                    err_lines++;
+                }
+            }
+        }
+
+        // RMSD: we'd need the crystal pose for real RMSD.
+        // For now, if the target succeeded (poses produced), set a sentinel.
+        // Real RMSD requires superposing the top pose against the crystal ligand.
+        if (result.success) {
+            // TODO: compute actual RMSD by reading top cluster PDB vs crystal
+            result.rmsd_to_crystal = 0.0f; // placeholder — needs crystal comparison
+        } else {
+            result.rmsd_to_crystal = 999.0f;
+        }
+
+        report.results[idx] = result;
+    };
+
+#ifdef _OPENMP
+#pragma omp parallel for schedule(dynamic) if(entries.size() > 1) num_threads(config.num_threads > 0 ? config.num_threads : 1)
+#endif
+    for (size_t i = 0; i < entries.size(); ++i) {
+        dock_one(i);
     }
 
     timer.stop();

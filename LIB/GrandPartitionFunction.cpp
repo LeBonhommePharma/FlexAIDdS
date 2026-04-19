@@ -177,7 +177,8 @@ double GrandPartitionFunction::selectivity(const std::string& a,
                                             const std::string& b) const
 {
     double diff = log_selectivity(a, b);
-    if (diff > 700.0)  return std::numeric_limits<double>::infinity();
+    // Sentinel: DBL_MAX (not infinity — UB under -ffast-math/-ffinite-math-only)
+    if (diff > 700.0)  return std::numeric_limits<double>::max();
     if (diff < -700.0) return 0.0;
     return std::exp(diff);
 }

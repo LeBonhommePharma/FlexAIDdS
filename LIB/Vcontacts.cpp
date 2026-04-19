@@ -1756,6 +1756,7 @@ int get_contlist4(atom* atoms,int atomzero, contactlist contlist[],
 	currindex = ca_index[atomzero];
 	while(currindex != -1) {
 		//printf("atom %d marked as contact\n",Calc[ca_rec[currindex].atom].atom->number);
+			if(Calc[ca_rec[currindex].atom].atom == NULL) { currindex = ca_rec[currindex].prev; continue; }
 		Calc[ca_rec[currindex].atom].done = 'C'; // makes contact
 		currindex = ca_rec[currindex].prev;
 	}
@@ -1774,6 +1775,7 @@ int get_contlist4(atom* atoms,int atomzero, contactlist contlist[],
 			//printf("nument=%d\tbai=%d\n",box[boxi].nument,bai);
             
 			atomj = Calclist[box[boxi].first+bai]; 
+			if(Calc[atomj].atom == NULL) { ++bai; continue; }
 			
 			/*
 			  if(!Calc[atomj].exposed && clash_value != NULL){
@@ -1813,7 +1815,9 @@ int get_contlist4(atom* atoms,int atomzero, contactlist contlist[],
 				if(clash_value != NULL){
 					if(contlist[NC].dist < clashdist){
 						int fatm = residue[Calc[atomzero].atom->ofres].fatm[0];
-						if(!intramolecular || residue[Calc[atomzero].atom->ofres].bonded[num_atm[Calc[atomzero].atom->number]-fatm][num_atm[Calc[atomj].atom->number]-fatm] < 0){
+						int** rb = residue[Calc[atomzero].atom->ofres].bonded;
+						if(!intramolecular || rb == NULL ||
+						   rb[num_atm[Calc[atomzero].atom->number]-fatm][num_atm[Calc[atomj].atom->number]-fatm] < 0){
 							*clash_value += KWALL*(pow(contlist[NC].dist,-12.0)-pow(clashdist,-12.0));
 						}
 					}

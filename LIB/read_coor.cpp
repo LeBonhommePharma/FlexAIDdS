@@ -82,9 +82,34 @@ void read_coor(FA_Global* FA,atom** atoms,resid** residue,char line[], char res_
 		//(*atoms)[FA->atm_cnt].radius=assign_radius((*atoms)[FA->atm_cnt].name);
 		
 		int type = atoi(&line[76]);
-		if(type && type >= 1 && type <= FA->ntypes)
+		if(type && type >= 1 && type <= FA->ntypes) {
 			(*atoms)[FA->atm_cnt].type = type;
-		else fprintf(stderr, "Invalid or unknown atom type for target atom number %d\n", (*atoms)[FA->atm_cnt].number);
+		} else {
+			// Raw PDBs from RCSB have element symbols (C, N, O, etc.)
+			// in columns 76-78, not numeric type codes.  Map element to a
+			// provisional FlexAID type (overwritten later by assign_types()
+			// from AMINO.def): 1=H, 2=C, 3=N, 4=O, 5=S, 6=neutral/other
+			char elem[3] = {' ', ' ', '\0'};
+			if(line[76] != '\0' && line[76] != '\n' && line[76] != '\r')
+				elem[0] = line[76];
+			if(line[77] != '\0' && line[77] != '\n' && line[77] != '\r')
+				elem[1] = line[77];
+			char* e = elem;
+			if(*e == ' ') e++;
+
+			if(e[0]=='C') type = 2;
+			else if(e[0]=='N') type = 3;
+			else if(e[0]=='O') type = 4;
+			else if(e[0]=='S') type = 5;
+			else if(e[0]=='H') type = 1;
+			else if(e[0]=='P') type = 6;
+			else if(e[0]=='F') type = 6;
+			else if(e[0]=='I') type = 6;
+			else if(e[0]=='B' && e[1]=='r') type = 6;
+			else type = 6;
+
+			(*atoms)[FA->atm_cnt].type = type;
+		}
 		
 		for(j=0;j<=4;j++){num_char[j]=line[j+6];}
 		num_char[5]='\0';
