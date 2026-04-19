@@ -169,7 +169,11 @@ if(MSVC)
         NOMINMAX
     )
 else()
-    target_compile_options(flexaid_core PRIVATE -Wall -O3 -ffast-math)
+    # -fno-finite-math-only: keep -ffast-math optimizations but preserve
+    # infinity()/NaN semantics used as sentinels in fast_optics, BindingMode,
+    # SharedPosePool, GrandPartitionFunction, UnifiedHardwareDispatch, etc.
+    target_compile_options(flexaid_core PRIVATE
+        -Wall -O3 -ffast-math -fno-finite-math-only)
 endif()
 
 # ─── Required dependencies ───────────────────────────────────────────────

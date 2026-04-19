@@ -254,6 +254,23 @@ int read_sdf_ligand(FA_Global* FA, atom** atoms, resid** residue,
         if (at.bond[0] < 6) { at.bond[0]++; at.bond[at.bond[0]] = fa1; }
     }
 
+    // Build bonded matrix, shortest paths, and shortflex (mirrors read_lig.cpp)
+    {
+        int fa = (*residue)[FA->res_cnt].fatm[0];
+        int la = (*residue)[FA->res_cnt].latm[0];
+        int n  = la - fa + 1;
+        int bondlist[MAX_ATM_HET];
+        int neighbours[MAX_ATM_HET];
+        int nbonded;
+        for (int ai = fa; ai <= la; ai++) {
+            nbonded = 0;
+            bondedlist(*atoms, ai, FA->bloops, &nbonded, bondlist, neighbours);
+            update_bonded(&(*residue)[FA->res_cnt], n, nbonded, bondlist, neighbours);
+        }
+        shortest_path(&(*residue)[FA->res_cnt], n, *atoms);
+        assign_shortflex(&(*residue)[FA->res_cnt], n, (*residue)[FA->res_cnt].fdih, *atoms);
+    }
+
     // Finalise optres for the ligand (mirrors read_lig.cpp logic)
     FA->optres[0].rnum = FA->res_cnt;
     FA->optres[0].type = 1;
