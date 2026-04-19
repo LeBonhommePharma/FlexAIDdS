@@ -23,6 +23,7 @@
 #endif
 
 #include <Eigen/Dense>
+#include <cmath>
 
 #ifdef FLEXAIDS_USE_CUDA
 #include "cuda_eval.cuh"
@@ -341,6 +342,13 @@ int GA(FA_Global* FA, GB_Global* GB,VC_Global* VC,chromosome** chrom,chromosome*
 	}
 
 	////////////////////////////////
+	// Stagnation detection: terminate GA when best fitness stops improving
+	const int STAGNATION_WINDOW = 100;   // check every N generations
+	const int STAGNATION_LIMIT  = 300;   // break after this many stagnant windows
+	double prev_best_fitness = -1e30;
+	int    stagnation_count  = 0;
+	bool   ga_stagnant = false;
+
 	////// Genetic Algorithm ///////
 	////////////////////////////////
 	for(i=0;i<GB->max_generations;i++)
@@ -448,6 +456,21 @@ int GA(FA_Global* FA, GB_Global* GB,VC_Global* VC,chromosome** chrom,chromosome*
 		//printf("------fitness stats-------\navg=%8.3f\tmax=%8.3f\n",GB->fit_avg,GB->fit_max);
         //getchar();
 
+		// Stagnation detection: check if best fitness has plateaued
+		if ((i + 1) % STAGNATION_WINDOW == 0 && i > 0) {
+			if (std::abs(GB->fit_max - prev_best_fitness) < 1e-6) {
+				stagnation_count += STAGNATION_WINDOW;
+				if (stagnation_count >= STAGNATION_LIMIT) {
+					printf("GA terminated early: fitness stagnant for %d generations (best=%.4f)\n", stagnation_count, GB->fit_max);
+					ga_stagnant = true;
+					break;
+				}
+			} else {
+				stagnation_count = 0;
+			}
+			prev_best_fitness = GB->fit_max;
+		}
+
 		// Entropy convergence check (opt-in via ENTRCNVG config keyword)
 		if (GB->entropy_convergence &&
 		    ((i + 1) % GB->entropy_check_interval == 0)) {
@@ -509,6 +532,8 @@ int GA(FA_Global* FA, GB_Global* GB,VC_Global* VC,chromosome** chrom,chromosome*
 	printf("%d ligand conformers rejected\n", nrejected);
 	if (entropy_converged)
 		printf("GA terminated early by entropy convergence\n");
+		if (ga_stagnant)
+			printf("GA terminated early by fitness stagnation\n");
 
 	QuickSort((*chrom),0,GB->num_chrom-1,true);
 

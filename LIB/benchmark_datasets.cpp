@@ -251,6 +251,10 @@ int main(int argc, char** argv) {
     bool prepare_only = false;
     bool list_codes_only = false;
     bool force_rerun = false;
+    int ga_generations = 0;
+    int ga_population = 0;
+    double temperature = 0.0;
+    std::string clustering;
 
     for (int i = 1; i < argc; ++i) {
         std::string arg(argv[i]);
@@ -292,6 +296,22 @@ int main(int argc, char** argv) {
             force_rerun = true;
             continue;
         }
+        if (arg == "--ga-generations" && i + 1 < argc) {
+            ga_generations = std::atoi(argv[++i]);
+            continue;
+        }
+        if (arg == "--ga-population" && i + 1 < argc) {
+            ga_population = std::atoi(argv[++i]);
+            continue;
+        }
+        if (arg == "--temperature" && i + 1 < argc) {
+            temperature = std::atof(argv[++i]);
+            continue;
+        }
+        if (arg == "--clustering" && i + 1 < argc) {
+            clustering = argv[++i];
+            continue;
+        }
 
         // Fallback: if first positional arg, treat as benchmark name
         if (benchmark_name.empty()) {
@@ -314,6 +334,10 @@ int main(int argc, char** argv) {
     config.gpu_backend = gpu_backend;
     config.output_dir = output_dir;
     config.skip_completed = !force_rerun;
+    if (ga_generations > 0)    config.ga_generations = ga_generations;
+    if (ga_population > 0)     config.ga_population = ga_population;
+    if (temperature > 0.0)      config.temperature = static_cast<float>(temperature);
+    if (!clustering.empty())    config.clustering_algorithm = clustering;
 
     std::cout << "═══════════════════════════════════════════════════════════════\n";
     std::cout << "  FlexAIDdS Benchmark Dataset Runner\n";
@@ -325,6 +349,9 @@ int main(int argc, char** argv) {
     if (use_gpu) {
         std::cout << "  GPU:     " << gpu_backend << "\n";
     }
+    std::cout << "  GA:      pop=" << config.ga_population << " gen=" << config.ga_generations << "\n";
+    std::cout << "  Temp:    " << config.temperature << " K\n";
+    std::cout << "  Cluster: " << config.clustering_algorithm << "\n";
     std::cout << "\n";
 
     // Handle "all" benchmark

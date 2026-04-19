@@ -1746,17 +1746,35 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
         if (!skip) {
             ensure_dir(out_dir);
 
-            // Build FlexAIDdS command
-            // Output goes to per-target dir; stderr captured for diagnostics
+            // Generate per-target JSON config for FlexAIDdS
+            std::string config_path = out_dir + "/dock_config.json";
+            {
+                std::ofstream jf(config_path);
+                jf << "{\n"
+                   << "  \"thermodynamics\": {\n"
+                   << "    \"temperature\": " << config.temperature << ",\n"
+                   << "    \"clustering_algorithm\": \"" << config.clustering_algorithm << "\",\n"
+                   << "    \"cluster_rmsd\": 2.0\n"
+                   << "  },\n"
+                   << "  \"ga\": {\n"
+                   << "    \"num_chromosomes\": " << config.ga_population << ",\n"
+                   << "    \"num_generations\": " << config.ga_generations << ",\n"
+                   << "    \"crossover_rate\": 0.8,\n"
+                   << "    \"mutation_rate\": 0.03,\n"
+                   << "    \"fitness_model\": \"SMFREE\"\n"
+                   << "  }\n"
+                   << "}\n";
+            }
+
+            // Build FlexAIDdS command with --config
             std::ostringstream cmd;
             cmd << "'" << flexaidds_bin << "' "
                 << "'" << entry.receptor_path << "' "
                 << "'" << entry.ligand_path << "' "
+                << "--config '" << config_path << "' "
                 << "-o '" << out_prefix << "' "
                 << "2>'" << out_dir << "/stderr.log' "
                 << ">'" << stdout_path << "'";
-            // NOTE: FlexAIDdS may still write legacy output near the binary;
-            // the -o flag sets the output prefix for the _INI and clustered files.
 
             bench::Timer dock_timer;
             dock_timer.start();

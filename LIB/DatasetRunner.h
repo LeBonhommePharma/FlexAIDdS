@@ -157,6 +157,7 @@ struct DockingConfig {
     bool   use_gpu{false};
     std::string gpu_backend{"cuda"};  // "cuda" or "metal"
     std::string output_dir{"."};
+    std::string clustering_algorithm{"CF"}; // "CF", "FO" (FastOPTICS), or "DP" (DensityPeak)
     /// When true (default), skip targets whose output directory already contains
     /// at least one clustered pose PDB and a non-empty stdout.log.
     /// Stuck runs (0 pose PDBs) are never considered complete and are always re-run.
