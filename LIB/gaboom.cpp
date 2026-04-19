@@ -1306,7 +1306,7 @@ void calculate_fitness(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* chr
 				chrom[c].cf.gist   = 0.0;
 				chrom[c].cf.hbond  = 0.0;
 				chrom[c].cf.totsas = 0.0;
-				chrom[c].cf.rclash = (h_wal[c] > GA_WALL_CLASH_THRESHOLD) ? 1 : 0;
+				chrom[c].cf.rclash = (h_wal[c] > CLASH_THRESHOLD) ? 1 : 0;
 				chrom[c].evalue     = get_cf_evalue(&chrom[c].cf);
 				chrom[c].app_evalue = get_apparent_cf_evalue(&chrom[c].cf);
 				ccbm_inject_strain(FA, chrom[c], gene_lim);  // CCBM strain

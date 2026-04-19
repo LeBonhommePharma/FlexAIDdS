@@ -36,6 +36,13 @@
 #include <string>
 #include <vector>
 
+#ifndef _MSC_VER
+#include <sys/types.h>
+#include <sys/wait.h>
+#include <unistd.h>
+#include <fcntl.h>
+#endif
+
 #ifdef _OPENMP
 #include <omp.h>
 #endif
@@ -218,7 +225,27 @@ bool DatasetRunner::ensure_dir(const std::string& path) {
 // =============================================================================
 
 int DatasetRunner::exec_cmd(const std::string& cmd) {
+    // Use fork()+exec() instead of system() for true concurrency.
+    // std::system() serializes across threads on macOS.
+#ifndef _MSC_VER
+    pid_t pid = fork();
+    if (pid < 0) return -1;
+    if (pid == 0) {
+        // Child: redirect stdin to /dev/null
+        ::close(0);
+        ::open("/dev/null", O_RDONLY);
+        ::execl("/bin/sh", "sh", "-c", cmd.c_str(), nullptr);
+        ::_exit(127);  // exec failed
+    }
+    // Parent: wait for child
+    int status = 0;
+    while (::waitpid(pid, &status, 0) == -1) {
+        if (errno != EINTR) return -1;
+    }
+    return WIFEXITED(status) ? WEXITSTATUS(status) : -1;
+#else
     return std::system(cmd.c_str());
+#endif
 }
 
 std::string DatasetRunner::exec_cmd_output(const std::string& cmd) {
@@ -1739,11 +1766,37 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
         report.results[idx] = result;
     };
 
-#ifdef _OPENMP
-#pragma omp parallel for schedule(dynamic) if(entries.size() > 1) num_threads(config.num_threads > 0 ? config.num_threads : 1)
-#endif
-    for (size_t i = 0; i < entries.size(); ++i) {
-        dock_one(i);
+    // ── Parallel docking via thread pool ──────────────────────────────────
+    // OpenMP is unavailable on macOS (Apple Clang), so we use std::thread.
+    // config.num_threads controls how many FlexAIDdS processes run concurrently.
+    const size_t n_workers = (config.num_threads > 0)
+        ? static_cast<size_t>(config.num_threads) : 1;
+    const size_t n_jobs = entries.size();
+
+    if (n_jobs <= 1 || n_workers <= 1) {
+        // Serial path — single job or single worker
+        for (size_t i = 0; i < n_jobs; ++i) {
+            dock_one(i);
+        }
+    } else {
+        // Thread pool: atomically distribute indices to workers
+        std::atomic<size_t> next_idx{0};
+        std::mutex cout_mtx;  // protect interleaved stdout/cerr
+
+        auto worker = [&]() {
+            for (;;) {
+                size_t idx = next_idx.fetch_add(1);
+                if (idx >= n_jobs) break;
+                dock_one(idx);
+            }
+        };
+
+        std::vector<std::thread> pool;
+        pool.reserve(n_workers);
+        for (size_t w = 0; w < n_workers; ++w) {
+            pool.emplace_back(worker);
+        }
+        for (auto& t : pool) t.join();
     }
 
     timer.stop();

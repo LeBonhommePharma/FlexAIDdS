@@ -26,6 +26,9 @@
 #include <set>
 #include <sstream>
 #include <string>
+#include <thread>
+#include <mutex>
+#include <atomic>
 #include <vector>
 
 namespace dataset {
