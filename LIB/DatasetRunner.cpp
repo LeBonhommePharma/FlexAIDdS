@@ -676,11 +676,15 @@ std::vector<DatasetEntry> DatasetRunner::fetch_astex() {
 // =============================================================================
 
 std::vector<AstexNonNativeTarget> astex_nonnative_targets() {
-    // 65 targets with native and alternative (non-native) conformers for
-    // cross-docking benchmarks. The native PDB is the holo crystal structure;
-    // alternatives are other crystallographic structures of the same protein.
-    // Based on Verdonk et al. (2008) J. Chem. Inf. Model. 48, 2214–2225.
-    // The full set has 1112 protein-ligand structures across 65 targets.
+    // 45 protein families with native and alternative (non-native) conformers
+    // for cross-docking benchmarks.  The native PDB is the holo crystal
+    // structure; alternatives are other crystallographic structures of the same
+    // protein.  Based on Verdonk et al. (2008) J. Chem. Inf. Model. 48,
+    // 2214-2225 (original: 65 families, 1112 structures).  This table has been
+    // expanded with post-2008 crystal structures and currently covers 45/65
+    // families with ~1834 unique PDB structures / ~1840 cross-docking pairs.
+    // TODO: add the 20 missing families and optionally trim to the exact
+    //       Verdonk 2008 structure list for strict reproducibility.
     return {
         {"ACE",   "1G9V",  {"1EVE", "1GQR", "1QTI", "2ACE", "1DX6", "1F8U", "1GPK", "1HBJ", "1J07", "1JJB", "1MAA", "1MAH", "1OCE", "1VOT", "1W4L", "1W6R", "1W75", "1W76", "2C4H", "2C58", "2CEK", "2CKM", "2CMF", "2GYU"}},
         {"ADA",   "1NDV",  {"1ADD", "1KRM", "1NDW", "1O5R", "1QXL", "2E1W"}},
@@ -731,28 +735,88 @@ std::vector<AstexNonNativeTarget> astex_nonnative_targets() {
 }
 
 std::vector<DatasetEntry> DatasetRunner::fetch_astex_nonnative() {
-    std::cout << "[DatasetRunner] Preparing Astex Non-Native dataset\n";
+    // ── Cross-docking benchmark semantics (Verdonk et al. 2008) ─────────────
+    // For each protein family: take the NATIVE ligand and dock it into every
+    // ALTERNATIVE receptor conformation.  Each entry is therefore:
+    //   pdb_id        = "<NATIVE>_into_<ALT>"   (unique output-dir key)
+    //   receptor_path = alt PDB file
+    //   ligand_path   = native ligand SDF
+    //
+    // Self-docking (native ligand → native receptor) is intentionally omitted
+    // because it is covered by the Astex Diverse benchmark.
+    //
+    // Deduplication: the same (native, alt) pair may appear in multiple target
+    // families (e.g. AChE and ACE share several PDB codes). We track seen pairs
+    // in a set and skip duplicates so each cross-docking experiment runs once.
+    // ─────────────────────────────────────────────────────────────────────────
+
+    std::cout << "[DatasetRunner] Preparing Astex Non-Native cross-docking dataset\n";
     auto targets = astex_nonnative_targets();
 
     std::vector<DatasetEntry> entries;
-    int total_structures = 0;
+    std::set<std::string> seen_pairs;   // "NATIVE_ALT" to deduplicate
 
     for (const auto& target : targets) {
-        // Prepare the native structure
-        auto native = prepare_pdb_entry(target.native_pdb, "astex_nonnative");
-        entries.push_back(native);
-        total_structures++;
+        // ── Step 1: prepare native structure — download PDB + extract ligand ─
+        std::string native_upper = target.native_pdb;
+        std::transform(native_upper.begin(), native_upper.end(),
+                       native_upper.begin(),
+                       [](unsigned char c){ return std::toupper(c); });
 
-        // Prepare alternative conformers
-        for (const auto& alt_pdb : target.alternative_pdbs) {
-            auto alt = prepare_pdb_entry(alt_pdb, "astex_nonnative");
-            entries.push_back(alt);
-            total_structures++;
+        std::string native_dir  = cache_dir_ + "/astex_nonnative/" + native_upper;
+        ensure_dir(native_dir);
+        std::string native_pdb  = native_dir + "/" + native_upper + ".pdb";
+        std::string native_lig  = native_dir + "/" + native_upper + "_ligand.sdf";
+
+        // Download native PDB (cached)
+        if (!download_pdb(native_upper, native_pdb)) {
+            std::cerr << "  [WARN] Cannot download native PDB " << native_upper
+                      << " for target " << target.target_name << " — skipping family\n";
+            continue;
+        }
+        // Extract native ligand (cached)
+        if ((!fs::exists(native_lig) || fs::file_size(native_lig) == 0) &&
+            !extract_ligand(native_pdb, native_lig)) {
+            std::cerr << "  [WARN] Cannot extract ligand from native "
+                      << native_upper << " — skipping family\n";
+            continue;
+        }
+
+        // ── Step 2: create one cross-docking entry per alternative receptor ─
+        for (const auto& alt : target.alternative_pdbs) {
+            std::string alt_upper = alt;
+            std::transform(alt_upper.begin(), alt_upper.end(),
+                           alt_upper.begin(),
+                           [](unsigned char c){ return std::toupper(c); });
+
+            // Skip self (native docked into native) — covered by Astex Diverse
+            if (alt_upper == native_upper) continue;
+
+            // Deduplicate pairs across target families
+            std::string pair_key = native_upper + "_" + alt_upper;
+            if (!seen_pairs.insert(pair_key).second) continue;  // already queued
+
+            // Download alternative receptor PDB (cached)
+            std::string alt_dir = cache_dir_ + "/astex_nonnative/" + alt_upper;
+            ensure_dir(alt_dir);
+            std::string alt_pdb_path = alt_dir + "/" + alt_upper + ".pdb";
+            if (!download_pdb(alt_upper, alt_pdb_path)) {
+                std::cerr << "  [WARN] Cannot download alt PDB " << alt_upper
+                          << " — skipping pair " << pair_key << "\n";
+                continue;
+            }
+
+            DatasetEntry entry;
+            entry.pdb_id        = pair_key;           // e.g. "1G9V_1EVE"
+            entry.source        = "Astex Non-Native";
+            entry.receptor_path = alt_pdb_path;       // non-native receptor
+            entry.ligand_path   = native_lig;         // native ligand
+            entries.push_back(std::move(entry));
         }
     }
 
-    std::cout << "  Prepared " << total_structures << " structures across "
-              << targets.size() << " targets\n";
+    std::cout << "  Prepared " << entries.size() << " cross-docking pairs across "
+              << targets.size() << " protein families\n";
     return entries;
 }
 
@@ -1640,32 +1704,71 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
             return;
         }
 
-        // Per-target output directory
-        std::string out_dir = config.output_dir + "/" + entry.pdb_id;
-        ensure_dir(out_dir);
+        // Per-target output directory (resolved before the skip check so both
+        // paths — cached and fresh — share the same variable definitions)
+        std::string out_dir    = config.output_dir + "/" + entry.pdb_id;
         std::string out_prefix = out_dir + "/" + entry.pdb_id;
+        std::string stdout_path = out_dir + "/stdout.log";
 
-        // Build FlexAIDdS command
-        // Output goes to per-target dir; stderr captured for diagnostics
-        std::ostringstream cmd;
-        cmd << "'" << flexaidds_bin << "' "
-            << "'" << entry.receptor_path << "' "
-            << "'" << entry.ligand_path << "' "
-            << "-o '" << out_prefix << "' "
-            << "2>'" << out_dir << "/stderr.log' "
-            << ">'" << out_dir << "/stdout.log'";
-        // NOTE: FlexAIDdS may still write legacy output near the binary;
-        // the -o flag sets the output prefix for the _INI and clustered files.
+        // ── Skip-if-complete check ───────────────────────────────────────
+        // A run is complete when its output dir contains ≥1 clustered pose PDB
+        // AND a non-empty stdout.log (proves the GA actually finished).
+        // Stuck runs (clash_rate > 0.95, 0 pose PDBs) never satisfy the first
+        // condition, so they always fall through and are re-run automatically.
+        bool skip = false;
+        if (config.skip_completed && fs::exists(out_dir)) {
+            int cached_poses = 0;
+            try {
+                for (const auto& f : fs::directory_iterator(out_dir)) {
+                    const std::string fname = f.path().filename().string();
+                    if ((fname.find("_mode_") != std::string::npos ||
+                         fname.find("_cluster_") != std::string::npos) &&
+                        fname.size() > 4 &&
+                        fname.substr(fname.size() - 4) == ".pdb") {
+                        ++cached_poses;
+                    }
+                }
+            } catch (...) {}
 
-        bench::Timer dock_timer;
-        dock_timer.start();
+            if (cached_poses > 0 &&
+                fs::exists(stdout_path) &&
+                fs::file_size(stdout_path) > 0) {
+                skip = true;
+                std::cerr << "  [CACHED] " << entry.pdb_id
+                          << " — " << cached_poses << " pose(s) already on disk, skipping\n";
+            }
+        }
 
-        int ret = exec_cmd(cmd.str());
+        // ret is initialised to 0; for cached runs we never call exec_cmd so
+        // the success condition (ret == 0 && n_poses > 0 && !stuck) still works.
+        int ret = 0;
 
-        dock_timer.stop();
-        result.wall_time_s = dock_timer.elapsed_s();
+        if (!skip) {
+            ensure_dir(out_dir);
+
+            // Build FlexAIDdS command
+            // Output goes to per-target dir; stderr captured for diagnostics
+            std::ostringstream cmd;
+            cmd << "'" << flexaidds_bin << "' "
+                << "'" << entry.receptor_path << "' "
+                << "'" << entry.ligand_path << "' "
+                << "-o '" << out_prefix << "' "
+                << "2>'" << out_dir << "/stderr.log' "
+                << ">'" << stdout_path << "'";
+            // NOTE: FlexAIDdS may still write legacy output near the binary;
+            // the -o flag sets the output prefix for the _INI and clustered files.
+
+            bench::Timer dock_timer;
+            dock_timer.start();
+
+            ret = exec_cmd(cmd.str());
+
+            dock_timer.stop();
+            result.wall_time_s = dock_timer.elapsed_s();
+        }
 
         // ── Parse results ────────────────────────────────────────────────
+        // Shared by both the fresh-run and cached-run paths.
         // Check for output files: <prefix>_INI.pdb, clustered PDBs
         int n_poses = 0;
         float best_cf = 0.0f;
@@ -1685,8 +1788,7 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
         } catch (...) {}
 
         // Parse stdout for n_chrom_snapshot, CF scores, and clash diagnostics
-        std::string stdout_path = out_dir + "/stdout.log";
-        std::ifstream stdout_file(stdout_path);
+        std::ifstream stdout_file(stdout_path);  // stdout_path declared above
         long clashed_count = 0, total_evals = 0;
         float free_energy_F = 0.0f;
         if (stdout_file.is_open()) {

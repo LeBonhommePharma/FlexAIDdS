@@ -51,6 +51,7 @@ static void print_usage(const char* progname) {
     printf("  --threads <N>      Number of threads (default: 1)\n");
     printf("  --gpu <backend>    Enable GPU (cuda or metal)\n");
     printf("  --cache <dir>      Cache directory (default: ~/.flexaidds/benchmarks/)\n");
+    printf("  --force            Re-run even if results already exist (ignore cache)\n");
     printf("  --prepare-only     Download and prepare only (no docking)\n");
     printf("  --list-codes       List PDB codes for a dataset and exit\n");
     printf("  -h, --help         Show this help\n\n");
@@ -249,6 +250,7 @@ int main(int argc, char** argv) {
     std::string gpu_backend = "cuda";
     bool prepare_only = false;
     bool list_codes_only = false;
+    bool force_rerun = false;
 
     for (int i = 1; i < argc; ++i) {
         std::string arg(argv[i]);
@@ -286,6 +288,10 @@ int main(int argc, char** argv) {
             list_codes_only = true;
             continue;
         }
+        if (arg == "--force") {
+            force_rerun = true;
+            continue;
+        }
 
         // Fallback: if first positional arg, treat as benchmark name
         if (benchmark_name.empty()) {
@@ -307,6 +313,7 @@ int main(int argc, char** argv) {
     config.use_gpu = use_gpu;
     config.gpu_backend = gpu_backend;
     config.output_dir = output_dir;
+    config.skip_completed = !force_rerun;
 
     std::cout << "═══════════════════════════════════════════════════════════════\n";
     std::cout << "  FlexAIDdS Benchmark Dataset Runner\n";
@@ -314,6 +321,7 @@ int main(int argc, char** argv) {
     std::cout << "  Cache:   " << runner.cache_dir() << "\n";
     std::cout << "  Output:  " << output_dir << "\n";
     std::cout << "  Threads: " << threads << "\n";
+    std::cout << "  Skip existing results: " << (config.skip_completed ? "yes (use --force to override)" : "no") << "\n";
     if (use_gpu) {
         std::cout << "  GPU:     " << gpu_backend << "\n";
     }

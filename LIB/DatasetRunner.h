@@ -40,7 +40,8 @@ namespace dataset {
 /// Known benchmark dataset identifiers
 enum class BenchmarkSet {
     ASTEX_DIVERSE,      // 85 complexes
-    ASTEX_NON_NATIVE,   // 65 targets, 1112 structures
+    ASTEX_NON_NATIVE,   // 45 protein families (table), ~1840 cross-docking pairs
+                        // (Verdonk 2008 original: 65 families, 1112 structures)
     HAP2,               // 59 targets (Holo/Apo/Predicted)
     CASF_2016,          // 285 complexes (PDBbind core)
     POSEBUSTERS,        // 308 complexes
@@ -156,6 +157,10 @@ struct DockingConfig {
     bool   use_gpu{false};
     std::string gpu_backend{"cuda"};  // "cuda" or "metal"
     std::string output_dir{"."};
+    /// When true (default), skip targets whose output directory already contains
+    /// at least one clustered pose PDB and a non-empty stdout.log.
+    /// Stuck runs (0 pose PDBs) are never considered complete and are always re-run.
+    bool   skip_completed{true};
 };
 
 // =============================================================================
