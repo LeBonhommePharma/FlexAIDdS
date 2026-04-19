@@ -31,6 +31,13 @@
 #include <atomic>
 #include <vector>
 
+#ifndef _MSC_VER
+#include <sys/types.h>   // pid_t
+#include <signal.h>      // kill, SIGTERM, SIGKILL
+#endif
+
+#include "TargetServer.h"
+
 namespace dataset {
 
 // =============================================================================
@@ -40,7 +47,7 @@ namespace dataset {
 /// Known benchmark dataset identifiers
 enum class BenchmarkSet {
     ASTEX_DIVERSE,      // 85 complexes
-    ASTEX_NON_NATIVE,   // 45 protein families (table), ~1840 cross-docking pairs
+    ASTEX_NON_NATIVE,   // 65 protein families (table), ~2200 cross-docking pairs
                         // (Verdonk 2008 original: 65 families, 1112 structures)
     HAP2,               // 59 targets (Holo/Apo/Predicted)
     CASF_2016,          // 285 complexes (PDBbind core)
@@ -143,6 +150,16 @@ struct BenchmarkReport {
     double spearman_rho{0.0};
     double kendall_tau{0.0};
     std::vector<DockingResult> results;
+
+    // ── Cross-ligand competitive binding analysis (per receptor) ─────────
+    /// One entry per unique receptor that had ≥2 ligands docked.
+    struct CrossLigandResult {
+        std::string receptor_id;                       // PDB code of the receptor
+        int n_ligands{0};                              // total ligands docked against this receptor
+        int n_completed{0};                            // ligands that produced binding modes
+        std::vector<target::GrandPartitionFunction::LigandRank> ranked_ligands;  // sorted by ΔG
+    };
+    std::vector<CrossLigandResult> cross_ligand_results;
 };
 
 // =============================================================================
@@ -162,6 +179,45 @@ struct DockingConfig {
     /// at least one clustered pose PDB and a non-empty stdout.log.
     /// Stuck runs (0 pose PDBs) are never considered complete and are always re-run.
     bool   skip_completed{true};
+    /// Per-job timeout in seconds. 0 = no timeout (block indefinitely).
+    /// Default 600s (10 min) — generous for standard benchmarks.
+    int    per_job_timeout_s{600};
+};
+
+// =============================================================================
+// SubprocessGuard — RAII process lifecycle manager
+// =============================================================================
+
+/// Tracks all spawned child PIDs and kills them on destruction.
+/// Creates a dedicated process group so children can be killed as a batch.
+/// Thread-safe: all mutations go through an internal mutex.
+class SubprocessGuard {
+public:
+    SubprocessGuard();
+    ~SubprocessGuard();
+
+    /// Fork, set process group, exec.  Returns child PID (or -1 on failure).
+    /// The child PID is registered for automatic cleanup.
+    pid_t fork_exec(const std::string& cmd);
+
+    /// Wait for a specific child with a timeout.
+    /// Returns exit code (0-255) on normal exit, -1 on signal/timeout/error.
+    /// On timeout, sends SIGTERM then SIGKILL after grace period.
+    int wait_with_timeout(pid_t pid, int timeout_s);
+
+    /// Unregister a PID (called after successful wait).
+    void forget(pid_t pid);
+
+    /// Kill ALL remaining registered children (SIGTERM, then SIGKILL).
+    /// Called automatically by destructor, but safe to call manually.
+    void kill_all();
+
+    /// Number of currently tracked (still-running) children.
+    size_t active_count() const;
+
+private:
+    std::mutex mtx_;
+    std::set<pid_t> pids_;
 };
 
 // =============================================================================
@@ -260,6 +316,21 @@ public:
 private:
     std::string cache_dir_;
 
+    // ── Subprocess lifecycle ─────────────────────────────────────────
+    /// RAII guard that tracks all spawned children and kills on destruction.
+    /// Shared across all worker threads in run().
+    std::unique_ptr<SubprocessGuard> proc_guard_;
+
+    /// Atomic shutdown flag — set by SIGINT/SIGTERM handler or manual stop.
+    /// Worker threads check this before launching each new job.
+    std::atomic<bool> shutdown_requested_{false};
+
+    // ── TargetServer integration ─────────────────────────────────────
+    // One TargetServer per unique receptor. Keyed by receptor_path.
+    // Populated in run() before the thread pool starts.
+    std::map<std::string, std::unique_ptr<target::TargetServer>> target_servers_;
+    std::mutex target_server_mtx_;  // protects target_servers_ map creation
+
     // ── Dataset-specific fetchers ────────────────────────────────────
 
     std::vector<DatasetEntry> fetch_astex();
@@ -283,6 +354,10 @@ private:
 
     /// Execute a system command and capture stdout
     std::string exec_cmd_output(const std::string& cmd);
+
+    /// Execute a docking command with PID tracking and timeout.
+    /// Uses SubprocessGuard for process groups and orphan cleanup.
+    int exec_dock(const std::string& cmd, int timeout_s);
 
     /// Ensure a directory exists (create recursively if needed)
     bool ensure_dir(const std::string& path);

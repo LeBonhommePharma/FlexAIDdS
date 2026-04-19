@@ -68,6 +68,7 @@ add_library(flexaid_core OBJECT
     cluster.cpp
     DensityPeak_Cluster.cpp
     FastOPTICS_cluster.cpp
+    MinibatchSampler.cpp
     FOPTICS.cpp
     fast_optics.cpp
     BindingMode.cpp
@@ -107,6 +108,8 @@ add_library(flexaid_core OBJECT
     hardware_detect.cpp
     UnifiedHardwareDispatch.cpp
     ShannonThermoStack/ShannonThermoStack.cpp
+    # ── Shannon Thermodynamic GA (entropy-collapse driver) ──
+    shannon_ga.cpp
     LigandRingFlex/RingConformerLibrary.cpp
     LigandRingFlex/SugarPucker.cpp
     LigandRingFlex/LigandRingFlex.cpp
@@ -137,10 +140,13 @@ add_library(flexaid_core OBJECT
     # ── TargetServer ──
     TargetValidation.cpp
     GrandPartitionFunction.cpp
+    MultiSiteGPF.cpp
     TargetKnowledgeBase.cpp
     TargetServer.cpp
     # ── MPI transport (stubs when MPI is off) ──
     MPITransport.cpp
+    # ── InStreamClustering: online medoid clustering during GA ──
+    InStreamClustering.cpp
 )
 
 target_include_directories(flexaid_core PUBLIC

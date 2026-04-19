@@ -290,6 +290,7 @@ target_sources(FlexAID PRIVATE
         LIB/cluster.cpp
         LIB/DensityPeak_Cluster.cpp
         LIB/FastOPTICS_cluster.cpp
+        LIB/MinibatchSampler.cpp
         LIB/FOPTICS.cpp
         LIB/fast_optics.cpp
         LIB/BindingMode.cpp
@@ -364,6 +365,8 @@ target_sources(FlexAID PRIVATE
         LIB/MultiSiteGPF.cpp
         LIB/TargetKnowledgeBase.cpp
         LIB/TargetServer.cpp
+        # ── InStreamClustering: online medoid clustering during GA ──
+        LIB/InStreamClustering.cpp
 )
 
 target_include_directories(FlexAID PRIVATE
@@ -534,6 +537,35 @@ if(FLEXAIDS_USE_METAL)
     add_dependencies(FlexAID TurboQuantMetal)
     target_compile_definitions(FlexAID PRIVATE
         TURBOQUANT_METALLIB_PATH="${TQ_METALLIB}"
+    )
+    # MetalRMSD bridge (GPU pairwise RMSD for FOPTICS clustering)
+    target_sources(FlexAID PRIVATE LIB/MetalRMSDBridge.mm)
+    set_source_files_properties(LIB/MetalRMSDBridge.mm PROPERTIES
+        LANGUAGE OBJCXX
+        COMPILE_FLAGS "-std=c++20 -fno-objc-arc"
+    )
+    # Compile MetalRMSD.metal shader → .metallib
+    set(RMSD_METAL_SRC  "${CMAKE_CURRENT_SOURCE_DIR}/LIB/MetalRMSD.metal")
+    set(RMSD_AIR        "${CMAKE_CURRENT_BINARY_DIR}/MetalRMSD.air")
+    set(RMSD_METALLIB   "${CMAKE_CURRENT_BINARY_DIR}/MetalRMSD.metallib")
+    add_custom_command(
+        OUTPUT  "${RMSD_AIR}"
+        COMMAND xcrun -sdk macosx metal -c "${RMSD_METAL_SRC}" -o "${RMSD_AIR}"
+        DEPENDS "${RMSD_METAL_SRC}"
+        COMMENT "Compiling MetalRMSD Metal shader"
+        VERBATIM
+    )
+    add_custom_command(
+        OUTPUT  "${RMSD_METALLIB}"
+        COMMAND xcrun -sdk macosx metallib "${RMSD_AIR}" -o "${RMSD_METALLIB}"
+        DEPENDS "${RMSD_AIR}"
+        COMMENT "Linking MetalRMSD.metallib"
+        VERBATIM
+    )
+    add_custom_target(MetalRMSDMetal DEPENDS "${RMSD_METALLIB}")
+    add_dependencies(FlexAID MetalRMSDMetal)
+    target_compile_definitions(FlexAID PRIVATE
+        METALRMSD_METALLIB_PATH="${RMSD_METALLIB}"
     )
 endif()
 
@@ -810,7 +842,35 @@ if(BUILD_FLEXAIDDS_FAST)
         target_compile_definitions(FlexAIDdS PRIVATE
             TURBOQUANT_METALLIB_PATH="${TQ_METALLIB_DS}"
         )
-        message(STATUS "FlexAIDdS: Metal GPU acceleration enabled (Shannon + CavityDetect + TurboQuant)")
+        # MetalRMSD bridge + shader (GPU pairwise RMSD for FOPTICS clustering)
+        target_sources(FlexAIDdS PRIVATE LIB/MetalRMSDBridge.mm)
+        set_source_files_properties(LIB/MetalRMSDBridge.mm PROPERTIES
+            LANGUAGE OBJCXX
+            COMPILE_FLAGS "-std=c++20 -fno-objc-arc"
+        )
+        set(RMSD_METAL_SRC_DS  "${CMAKE_CURRENT_SOURCE_DIR}/LIB/MetalRMSD.metal")
+        set(RMSD_AIR_DS         "${CMAKE_CURRENT_BINARY_DIR}/MetalRMSD_ds.air")
+        set(RMSD_METALLIB_DS    "${CMAKE_CURRENT_BINARY_DIR}/MetalRMSD_ds.metallib")
+        add_custom_command(
+            OUTPUT  "${RMSD_AIR_DS}"
+            COMMAND xcrun -sdk macosx metal -c "${RMSD_METAL_SRC_DS}" -o "${RMSD_AIR_DS}"
+            DEPENDS "${RMSD_METAL_SRC_DS}"
+            COMMENT "Compiling MetalRMSD Metal shader (FlexAIDdS)"
+            VERBATIM
+        )
+        add_custom_command(
+            OUTPUT  "${RMSD_METALLIB_DS}"
+            COMMAND xcrun -sdk macosx metallib "${RMSD_AIR_DS}" -o "${RMSD_METALLIB_DS}"
+            DEPENDS "${RMSD_AIR_DS}"
+            COMMENT "Linking MetalRMSD_ds.metallib"
+            VERBATIM
+        )
+        add_custom_target(MetalRMSDMetalDS DEPENDS "${RMSD_METALLIB_DS}")
+        add_dependencies(FlexAIDdS MetalRMSDMetalDS)
+        target_compile_definitions(FlexAIDdS PRIVATE
+            METALRMSD_METALLIB_PATH="${RMSD_METALLIB_DS}"
+        )
+        message(STATUS "FlexAIDdS: Metal GPU acceleration enabled (Shannon + CavityDetect + TurboQuant + MetalRMSD)")
     endif()
 
     message(STATUS "FlexAIDdS fast executable enabled")
@@ -882,6 +942,7 @@ if(ENABLE_BENCHMARK_DATASETS)
     add_executable(benchmark_datasets
         LIB/benchmark_datasets.cpp
         LIB/DatasetRunner.cpp
+        LIB/AsyncPipeline.cpp
     )
     target_include_directories(benchmark_datasets PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/LIB)
     if(MSVC)
@@ -1818,6 +1879,7 @@ flexaids_configure_simd(test_cavity_detect)
     add_executable(test_dataset_runner
         tests/test_dataset_runner.cpp
         LIB/DatasetRunner.cpp
+        LIB/AsyncPipeline.cpp
     )
     target_include_directories(test_dataset_runner PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/LIB)
     target_link_libraries(test_dataset_runner PRIVATE GTest::gtest GTest::gtest_main)

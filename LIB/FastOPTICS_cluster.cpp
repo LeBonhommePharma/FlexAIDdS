@@ -1,12 +1,28 @@
 #include "FOPTICS.h"
 #include "fast_optics.hpp"
+#include "MinibatchSampler.h"
+#include <set>
 
 void FastOPTICS_cluster(FA_Global* FA, GB_Global* GB, VC_Global* VC, chromosome* chrom, genlim* gene_lim, atom* atoms, resid* residue, gridpoint* cleftgrid, int nChrom, char* end_strfile, char* tmp_end_strfile, char* dockinp, char* gainp)
 {
-    // Base neighbourhood size: at least 5, scales with snapshot population.
-    // A value of ~nChrom/20 gives a 5 % neighbourhood, consistent with
-    // typical OPTICS minPts heuristics for molecular-docking pose sets.
-    int minPoints = std::max(5, nChrom / 20);
+    // Adaptive minPoints based on conformational diversity.
+    // Compute the ratio of distinct CF values to total snapshots.
+    // When the landscape is flat (few distinct CFs), minPoints must be small
+    // to find clusters.  When diverse, larger minPoints gives robust clusters.
+    int minPoints;
+    {
+        std::set<double> distinct_cf;
+        for (int i = 0; i < nChrom; ++i)
+            distinct_cf.insert(chrom[i].evalue);
+        double diversity_ratio = static_cast<double>(distinct_cf.size()) / static_cast<double>(nChrom);
+
+        // Map diversity [0,1] → minPoints fraction [0.5%, 5%] of population
+        //   diversity=0.001 (flat)  → minPoints ≈ 0.5% × nChrom (very small)
+        //   diversity=0.50  (rich)  → minPoints ≈ 2.8% × nChrom
+        //   diversity=1.00  (max)   → minPoints ≈ 5% × nChrom
+        double fraction = 0.005 + 0.045 * diversity_ratio;
+        minPoints = std::max(5, std::min(50, static_cast<int>(fraction * nChrom)));
+    }
 
     // Optional super-cluster pre-filter using lightweight FastOPTICS.
     // Identifies the dominant energy basin and compacts filtered poses
@@ -39,6 +55,67 @@ void FastOPTICS_cluster(FA_Global* FA, GB_Global* GB, VC_Global* VC, chromosome*
             printf("--- SuperCluster pre-filter: %zu / %d poses in dominant basin ---\n",
                    sc_indices.size(), nChrom);
             nChrom = static_cast<int>(sc_indices.size());
+        }
+    }
+
+    // ── Minibatch pre-filter (farthest-point sampling) ─────────────────────
+    // When the population exceeds a configurable threshold, reduce to ~5K
+    // diverse representatives before clustering.  This turns O(N^2) clustering
+    // into O(k*N + k^2) where k << N, giving ~100x speedup for large ensembles.
+    {
+        const int MINIBATCH_THRESHOLD = 10000;  // only activate above this size
+        const int MINIBATCH_TARGET    = 5000;   // target representative count
+
+        if (nChrom > MINIBATCH_THRESHOLD) {
+            // Build coordinate cache (same pattern as cluster.cpp)
+            const int nAtoms_mb = residue[atoms[FA->map_par[0].atm].ofres].latm[0]
+                                - residue[atoms[FA->map_par[0].atm].ofres].fatm[0] + 1;
+            const int stride_mb = nAtoms_mb * 3;
+
+            minibatch::CoordCache coord_cache;
+            coord_cache.n_chrom = nChrom;
+            coord_cache.stride  = stride_mb;
+            coord_cache.data.resize(static_cast<std::size_t>(nChrom) * stride_mb);
+
+            for (int c = 0; c < nChrom; ++c) {
+                if (c + 1 < nChrom) {
+                    calc_rmsd_chrom(FA, GB, chrom, gene_lim, atoms, residue, cleftgrid,
+                                    GB->num_genes, c, c + 1,
+                                    &coord_cache.data[static_cast<std::size_t>(c) * stride_mb],
+                                    &coord_cache.data[static_cast<std::size_t>(c + 1) * stride_mb], false);
+                } else {
+                    calc_rmsd_chrom(FA, GB, chrom, gene_lim, atoms, residue, cleftgrid,
+                                    GB->num_genes, c, c,
+                                    &coord_cache.data[static_cast<std::size_t>(c) * stride_mb], NULL, false);
+                }
+            }
+
+            // Collect energies
+            std::vector<double> energies(static_cast<std::size_t>(nChrom));
+            for (int i = 0; i < nChrom; ++i)
+                energies[i] = chrom[i].app_evalue;
+
+            // Run farthest-point sampling
+            auto sample = minibatch::MinibatchSampler::farthest_point_sample(
+                coord_cache, energies.data(), nAtoms_mb, MINIBATCH_TARGET, /*verbose=*/true);
+
+            if (sample.n_selected > 0 && sample.n_selected < nChrom) {
+                // Compact selected chromosomes to front of array
+                const auto& sel = sample.selected_indices;
+                std::vector<bool> is_selected(static_cast<std::size_t>(nChrom), false);
+                for (int idx : sel)
+                    is_selected[idx] = true;
+
+                int write_pos = 0;
+                for (int i = 0; i < nChrom; ++i) {
+                    if (is_selected[i]) {
+                        if (i != write_pos)
+                            std::swap(chrom[write_pos], chrom[i]);
+                        ++write_pos;
+                    }
+                }
+                nChrom = sample.n_selected;
+            }
         }
     }
 

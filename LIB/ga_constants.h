@@ -64,4 +64,10 @@ constexpr int GA_MAX_FLEXDEE_PARAMS = 100;        // max rotamer parameters in c
 // ── NATURaL co-translational defaults ───────────────────────────────
 constexpr double GA_NATURAL_DEFAULT_TEMP = 310.0; // default NATURaL temperature (body temp, K)
 
+// ── InStreamClustering (online medoid clustering during GA) ──────────
+constexpr int   GA_INSTREAM_INTERVAL        = 100;   // merge elites every N generations
+constexpr int   GA_INSTREAM_TOP_K           = 50;    // top K individuals to merge per batch
+constexpr int   GA_INSTREAM_MAX_MEDOIDS     = 5000;  // upper bound on medoid count
+constexpr float GA_INSTREAM_RMSD_THRESHOLD  = 2.0f;  // RMSD threshold for cluster membership (Angstrom)
+
 #endif // GA_CONSTANTS_H

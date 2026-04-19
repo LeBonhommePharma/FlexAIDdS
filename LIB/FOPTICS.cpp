@@ -4,6 +4,9 @@
 #include <random>
 #include <algorithm>
 #include <chrono>
+#ifdef FLEXAIDS_USE_METAL
+#include "MetalRMSDBridge.h"
+#endif
 
 std::random_device rd;
 std::mt19937 gen(rd());
@@ -94,6 +97,7 @@ FastOPTICS::FastOPTICS(FA_Global* FA, GB_Global* GB, VC_Global* VC, chromosome* 
     this->gene_lim = gen_lim;
 	this->N = nChrom;
 	this->useGPU = false;
+	this->useMetalRMSD = false;
 	this->useTQNN = FA->use_tqnn;
 
 	// FastOPTICS
@@ -233,7 +237,16 @@ void FastOPTICS::Execute_FastOPTICS(char* end_strfile, char* tmp_end_strfile)
 		}
 	}
 
-	// Compute OPTICS ordering
+	// ── Metal GPU pairwise RMSD precomputation ──────────────────────────────
+	// When available, precompute the full N x N distance matrix on the GPU.
+	// This replaces per-call Euclidean distance computation in
+	// ExpandClusterOrder with a simple matrix lookup, reducing clustering
+	// time for large populations from O(N^2 * D) to O(N^2) (D = dimensions).
+#ifdef FLEXAIDS_USE_METAL
+		this->precompute_metal_distances();
+#endif
+
+		// Compute OPTICS ordering
 	for(int ipt = 0; ipt < this->N; ipt++) 		// starting from 0
 //	for(int ipt = this->N-1; ipt >= 0; --ipt)	// starting from this->N-1
     {
@@ -621,6 +634,21 @@ void FastOPTICS::ExpandClusterOrder(int ipt)
 
 float FastOPTICS::compute_distance(std::pair< chromosome*,std::vector<float> > & a, std::pair< chromosome*,std::vector<float> > & b)
 {
+	// Metal GPU precomputed distance lookup
+	if (this->useMetalRMSD && !this->metalDistMatrix.empty()) {
+		// Find indices of a and b in the points vector
+		int idx_a = -1, idx_b = -1;
+		for (int p = 0; p < this->N; ++p) {
+			if (this->points[p].first == a.first) { idx_a = p; }
+			if (this->points[p].first == b.first) { idx_b = p; }
+			if (idx_a >= 0 && idx_b >= 0) break;
+		}
+		if (idx_a >= 0 && idx_b >= 0) {
+			return this->metalDistMatrix[static_cast<size_t>(idx_a) * this->N + idx_b];
+		}
+		// Fall through to CPU if indices not found (should not happen)
+	}
+
 	float distance = 0.0f;
 
 	// simple distance calculation below
@@ -917,6 +945,63 @@ void FastOPTICS::normalizeDistances()
 	std::vector<float> & Distances = this->reachDist;
 	for(std::vector<float>::iterator it = Distances.begin(); it != Distances.end(); ++it) if(*it > max && !isUndefinedDist(*it)) max = *it;
 	for(std::vector<float>::iterator it = Distances.begin(); it != Distances.end(); ++it) if(!isUndefinedDist(*it)) *it /= max;
+}
+
+void FastOPTICS::precompute_metal_distances()
+{
+#ifdef FLEXAIDS_USE_METAL
+	if (!metal_rmsd::is_metal_rmsd_available()) return;
+	if (this->N < 2 || this->points.empty()) return;
+
+	// The distance computed by FOPTICS is Euclidean distance in the
+	// vectorized Cartesian space (nDimensions = num_het_atm * 3).
+	// This is sqrt(sum_k (a[k] - b[k])^2) over all 3*M coordinates.
+	//
+	// Relationship to RMSD:
+	//   RMSD = sqrt(sum_k (a[k] - b[k])^2 / M) = euclidean_dist / sqrt(M)
+	//   euclidean_dist = RMSD * sqrt(M)
+	//
+	// The Metal kernel computes RMSD.  We convert to Euclidean distance
+	// for consistency with the existing compute_distance() output.
+
+	int n_atoms = this->FA->num_het_atm; // M atoms, nDimensions = M * 3
+
+	// Build flat coordinate buffer from points
+	std::vector<float> coords(static_cast<size_t>(this->N) * this->nDimensions);
+	for (int i = 0; i < this->N; ++i) {
+		const auto& v = this->points[i].second;
+		std::copy(v.begin(), v.end(),
+		          coords.begin() + static_cast<ptrdiff_t>(i) * this->nDimensions);
+	}
+
+	// Compute pairwise RMSD on Metal GPU
+	std::vector<float> rmsd_matrix;
+	bool used_metal = metal_rmsd::compute_pairwise_rmsd_metal(
+		coords.data(), this->N, n_atoms, rmsd_matrix);
+
+	if (!used_metal || rmsd_matrix.empty()) return;
+
+	// Convert RMSD to Euclidean distance: dist = RMSD * sqrt(M)
+	float scale = sqrtf(static_cast<float>(n_atoms));
+	this->metalDistMatrix.resize(static_cast<size_t>(this->N) * this->N);
+	for (int i = 0; i < this->N; ++i) {
+		this->metalDistMatrix[static_cast<size_t>(i) * this->N + i] = 0.0f;
+		for (int j = i + 1; j < this->N; ++j) {
+			float dist = rmsd_matrix[static_cast<size_t>(i) * this->N + j] * scale;
+			this->metalDistMatrix[static_cast<size_t>(i) * this->N + j] = dist;
+			this->metalDistMatrix[static_cast<size_t>(j) * this->N + i] = dist;
+		}
+	}
+
+	this->useMetalRMSD = true;
+	printf("--- Metal GPU pairwise RMSD precomputed ---\n");
+	printf("  Conformations = %d\n", this->N);
+	printf("  Atoms         = %d\n", n_atoms);
+	printf("  Pairs         = %lld\n", static_cast<long long>(this->N) * (this->N - 1) / 2);
+	printf("  Device        = %s\n", metal_rmsd::metal_rmsd_device_info());
+#else
+	// Metal not compiled in — no-op
+#endif
 }
 
 std::vector<float> RandomProjectedNeighborsAndDensities::Randomized_InternalCoord_Vector()
