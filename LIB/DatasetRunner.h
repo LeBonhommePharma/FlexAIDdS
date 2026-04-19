@@ -123,6 +123,11 @@ struct DockingResult {
     int   num_poses{0};               // number of binding modes found
     double wall_time_s{0.0};          // docking wall time
     bool  success{false};             // RMSD < 2.0 Å
+    // Clash diagnostics (populated from stdout parsing)
+    long  individuals_clashed{0};     // total clashing evaluations
+    long  individuals_total{0};       // total evaluations (across all generations)
+    float clash_rate{0.0f};           // clashed / total — high (>0.95) = stuck GA
+    bool  stuck{false};               // true when clash_rate > 0.95 and F > 0
 };
 
 /// Aggregate benchmark report

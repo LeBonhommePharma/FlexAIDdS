@@ -1684,17 +1684,48 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
             }
         } catch (...) {}
 
-        // Parse stdout for n_chrom_snapshot and CF scores
+        // Parse stdout for n_chrom_snapshot, CF scores, and clash diagnostics
         std::string stdout_path = out_dir + "/stdout.log";
         std::ifstream stdout_file(stdout_path);
+        long clashed_count = 0, total_evals = 0;
+        float free_energy_F = 0.0f;
         if (stdout_file.is_open()) {
             std::string line;
             while (std::getline(stdout_file, line)) {
-                // "n_chrom_snapshot=N"
+                // "n_chrom_snapshot=N" — total individuals evaluated
                 if (line.find("n_chrom_snapshot=") != std::string::npos) {
                     auto pos = line.find('=');
                     if (pos != std::string::npos) {
-                        try { n_poses = std::max(n_poses, std::stoi(line.substr(pos+1))); }
+                        try {
+                            long snap = std::stol(line.substr(pos+1));
+                            n_poses = std::max(n_poses, static_cast<int>(snap));
+                            total_evals = std::max(total_evals, snap);
+                        } catch (...) {}
+                    }
+                }
+                // "individuals clashed=N"
+                if (line.find("individuals clashed=") != std::string::npos) {
+                    auto pos = line.find("clashed=");
+                    if (pos != std::string::npos) {
+                        try { clashed_count = std::stol(line.substr(pos+8)); }
+                        catch (...) {}
+                    }
+                }
+                // "individuals skipped=N"
+                if (line.find("individuals skipped=") != std::string::npos) {
+                    auto pos = line.find("skipped=");
+                    if (pos != std::string::npos) {
+                        try {
+                            long skipped = std::stol(line.substr(pos+8));
+                            total_evals = std::max(total_evals, clashed_count + skipped);
+                        } catch (...) {}
+                    }
+                }
+                // "Free energy F  = N"
+                if (line.find("Free energy F") != std::string::npos) {
+                    auto pos = line.find('=');
+                    if (pos != std::string::npos) {
+                        try { free_energy_F = std::stof(line.substr(pos+1)); }
                         catch (...) {}
                     }
                 }
@@ -1717,12 +1748,27 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
             }
         }
 
+        // ── Clash diagnostics ────────────────────────────────────────────────
+        result.individuals_clashed = clashed_count;
+        result.individuals_total   = total_evals;
+        if (total_evals > 0)
+            result.clash_rate = static_cast<float>(clashed_count) / static_cast<float>(total_evals);
+        // "Stuck" = GA never escaped clashing geometry AND F is positive (no binding found)
+        result.stuck = (result.clash_rate > 0.95f && free_energy_F > 0.0f);
+        if (result.stuck) {
+            std::cerr << "  [STUCK] " << entry.pdb_id
+                      << "  clash=" << std::fixed << std::setprecision(1)
+                      << (result.clash_rate * 100.0f) << "%"
+                      << "  F=" << free_energy_F << " kcal/mol"
+                      << "  — likely bad SDF bonds or grid placement\n";
+        }
+
         result.num_poses = n_poses;
         result.best_score = best_cf;
         result.predicted_dG = (best_dG != 0.0f) ? best_dG : best_cf;
 
-        // Success = FlexAIDdS exited 0 AND produced output poses
-        result.success = (ret == 0 && n_poses > 0);
+        // Success = FlexAIDdS exited 0 AND produced output poses AND not stuck
+        result.success = (ret == 0 && n_poses > 0 && !result.stuck);
 
         // If FlexAIDdS ran but produced no output, check stderr for clues
         if (ret == 0 && n_poses == 0) {
