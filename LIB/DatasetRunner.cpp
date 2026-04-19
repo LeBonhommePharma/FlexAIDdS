@@ -484,8 +484,62 @@ bool DatasetRunner::extract_ligand(const std::string& pdb_path,
         return false;
     }
 
-    // Write SDF file
-    // SDF format: molecule name, counts line, atom block, bond block, properties
+    // ── Collect bonds BEFORE writing (counts line needs the total) ──────────
+    // Priority: (1) PDB CONECT records, (2) distance-based inference.
+
+    std::set<int> ligand_serials;
+    for (const auto& atom : ligand_atoms) ligand_serials.insert(atom.serial);
+
+    std::map<int, int> serial_to_idx;
+    for (size_t i = 0; i < ligand_atoms.size(); ++i)
+        serial_to_idx[ligand_atoms[i].serial] = static_cast<int>(i) + 1;
+
+    // Bond list: pairs of 1-based SDF atom indices
+    std::vector<std::pair<int,int>> bonds;
+
+    // (1) CONECT records
+    {
+        std::ifstream pdb_ifs(pdb_path);
+        std::string line;
+        std::set<std::pair<int,int>> seen;
+        while (std::getline(pdb_ifs, line)) {
+            if (line.size() < 6 || line.substr(0, 6) != "CONECT") continue;
+            while (line.size() < 31) line += ' ';
+            int central = 0;
+            try { central = std::stoi(line.substr(6, 5)); } catch (...) { continue; }
+            if (!ligand_serials.count(central)) continue;
+            for (int col = 11; col < 31 && col + 5 <= static_cast<int>(line.size()); col += 5) {
+                std::string s = line.substr(col, 5);
+                if (s.find_first_not_of(" ") == std::string::npos) continue;
+                int bonded = 0;
+                try { bonded = std::stoi(s); } catch (...) { continue; }
+                if (!ligand_serials.count(bonded)) continue;
+                auto it_a = serial_to_idx.find(central);
+                auto it_b = serial_to_idx.find(bonded);
+                if (it_a == serial_to_idx.end() || it_b == serial_to_idx.end()) continue;
+                int a = it_a->second, b = it_b->second;
+                if (a > b) std::swap(a, b);
+                if (seen.insert({a, b}).second) bonds.emplace_back(a, b);
+            }
+        }
+    }
+
+    // (2) Distance-based fallback when no CONECT records exist
+    if (bonds.empty()) {
+        const float max_bond_dist_sq = 2.0f * 2.0f;  // 2.0 Å cutoff
+        for (size_t i = 0; i < ligand_atoms.size(); ++i) {
+            for (size_t j = i + 1; j < ligand_atoms.size(); ++j) {
+                float dx = ligand_atoms[i].x - ligand_atoms[j].x;
+                float dy = ligand_atoms[i].y - ligand_atoms[j].y;
+                float dz = ligand_atoms[i].z - ligand_atoms[j].z;
+                float dist_sq = dx*dx + dy*dy + dz*dz;
+                if (dist_sq < max_bond_dist_sq && dist_sq > 0.16f)
+                    bonds.emplace_back(static_cast<int>(i)+1, static_cast<int>(j)+1);
+            }
+        }
+    }
+
+    // ── Write SDF ─────────────────────────────────────────────────────────
     std::ofstream ofs(out_sdf);
     if (!ofs) return false;
 
@@ -494,18 +548,15 @@ bool DatasetRunner::extract_ligand(const std::string& pdb_path,
     ofs << "  FlexAIDdS DatasetRunner\n";
     ofs << "  Extracted from PDB HETATM records\n";
 
-    // Counts line: aaabbblllfffcccsssxxxrrrpppiiimmmvvvvvv
-    // aaa = number of atoms, bbb = number of bonds (0 — we don't have connectivity)
+    // Counts line — write ACTUAL bond count so readers respect the block
     ofs << std::setw(3) << ligand_atoms.size()
-        << std::setw(3) << 0   // bonds (unknown without connectivity analysis)
+        << std::setw(3) << bonds.size()
         << "  0  0  0  0  0  0  0999 V2000\n";
 
     // Atom block
     for (const auto& atom : ligand_atoms) {
-        // Determine element symbol
         std::string elem = atom.element;
         if (elem.empty()) {
-            // Derive from atom name: first non-digit character
             for (char c : atom.name) {
                 if (std::isalpha(static_cast<unsigned char>(c))) {
                     elem = std::string(1, std::toupper(static_cast<unsigned char>(c)));
@@ -513,7 +564,7 @@ bool DatasetRunner::extract_ligand(const std::string& pdb_path,
                 }
             }
         }
-        if (elem.empty()) elem = "C";  // fallback
+        if (elem.empty()) elem = "C";
 
         ofs << std::fixed << std::setprecision(4)
             << std::setw(10) << atom.x
@@ -523,75 +574,11 @@ bool DatasetRunner::extract_ligand(const std::string& pdb_path,
             << " 0  0  0  0  0  0  0  0  0  0  0  0\n";
     }
 
-    // Bond block (empty — connectivity inference would require full bonding analysis)
-    // In a real pipeline, bonds can be inferred from distances or from PDB CONECT records
-
-    // Read CONECT records for bond inference
-    {
-        std::ifstream pdb_ifs(pdb_path);
-        std::string line;
-        std::set<int> ligand_serials;
-        for (const auto& atom : ligand_atoms) {
-            ligand_serials.insert(atom.serial);
-        }
-
-        // Map serial → atom index in our SDF
-        std::map<int, int> serial_to_idx;
-        for (size_t i = 0; i < ligand_atoms.size(); ++i) {
-            serial_to_idx[ligand_atoms[i].serial] = static_cast<int>(i) + 1;
-        }
-
-        std::set<std::pair<int,int>> written_bonds;
-        while (std::getline(pdb_ifs, line)) {
-            if (line.substr(0, 6) != "CONECT") continue;
-            while (line.size() < 31) line += ' ';
-
-            int central = 0;
-            try { central = std::stoi(line.substr(6, 5)); } catch (...) { continue; }
-            if (!ligand_serials.count(central)) continue;
-
-            // Each CONECT record can list up to 4 bonded atoms
-            for (int col = 11; col < 31 && col + 5 <= static_cast<int>(line.size()); col += 5) {
-                std::string s = line.substr(col, 5);
-                if (s.find_first_not_of(" ") == std::string::npos) continue;
-                int bonded = 0;
-                try { bonded = std::stoi(s); } catch (...) { continue; }
-                if (!ligand_serials.count(bonded)) continue;
-
-                auto it_a = serial_to_idx.find(central);
-                auto it_b = serial_to_idx.find(bonded);
-                if (it_a == serial_to_idx.end() || it_b == serial_to_idx.end()) continue;
-
-                int a = it_a->second, b = it_b->second;
-                if (a > b) std::swap(a, b);
-                if (written_bonds.insert({a, b}).second) {
-                    ofs << std::setw(3) << a
-                        << std::setw(3) << b
-                        << "  1  0  0  0  0\n";
-                }
-            }
-        }
-
-        // If no CONECT records found, infer bonds from distance
-        if (written_bonds.empty()) {
-            // Distance-based bond inference: typical bond lengths
-            const float max_bond_dist_sq = 2.0f * 2.0f; // 2.0 Å cutoff
-            for (size_t i = 0; i < ligand_atoms.size(); ++i) {
-                for (size_t j = i + 1; j < ligand_atoms.size(); ++j) {
-                    float dx = ligand_atoms[i].x - ligand_atoms[j].x;
-                    float dy = ligand_atoms[i].y - ligand_atoms[j].y;
-                    float dz = ligand_atoms[i].z - ligand_atoms[j].z;
-                    float dist_sq = dx*dx + dy*dy + dz*dz;
-                    if (dist_sq < max_bond_dist_sq && dist_sq > 0.16f) {
-                        int a = static_cast<int>(i) + 1;
-                        int b = static_cast<int>(j) + 1;
-                        ofs << std::setw(3) << a
-                            << std::setw(3) << b
-                            << "  1  0  0  0  0\n";
-                    }
-                }
-            }
-        }
+    // Bond block
+    for (const auto& [a, b] : bonds) {
+        ofs << std::setw(3) << a
+            << std::setw(3) << b
+            << "  1  0  0  0  0\n";
     }
 
     ofs << "M  END\n";
