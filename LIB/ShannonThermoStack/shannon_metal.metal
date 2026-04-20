@@ -7,6 +7,10 @@
 //   – Boltzmann batch kernel uses shared-memory parallel reduction
 //   – Supports arbitrary n (out-of-bounds threads are no-ops)
 //
+// NOTE: Metal does not support double-precision. All GPU kernels use float.
+// The host-side bridge (ShannonMetalBridge) casts double data to float before
+// uploading and casts results back to double after download.
+//
 // Apache-2.0 © 2026 Le Bonhomme Pharma
 #include <metal_stdlib>
 using namespace metal;
@@ -18,12 +22,12 @@ using namespace metal;
 // Uses threadgroup-local histograms to minimize global atomic contention.
 
 kernel void shannon_histogram(
-    device const double*     energies  [[buffer(0)]],
+    device const float*      energies  [[buffer(0)]],
     device atomic_int*       bins      [[buffer(1)]],
     constant uint&           n         [[buffer(2)]],
     constant int&            num_bins  [[buffer(3)]],
-    constant double&         min_v     [[buffer(4)]],
-    constant double&         bin_width [[buffer(5)]],
+    constant float&          min_v     [[buffer(4)]],
+    constant float&          bin_width [[buffer(5)]],
     uint                     gid       [[thread_position_in_grid]],
     uint                     lid       [[thread_position_in_threadgroup]],
     uint                     tg_size   [[threads_per_threadgroup]])
@@ -36,7 +40,7 @@ kernel void shannon_histogram(
 
     // Bin this thread's element (coalesced memory access pattern)
     if (gid < n) {
-        double e = energies[gid];
+        float e = energies[gid];
         int b = (int)((e - min_v) / bin_width);
         b = clamp(b, 0, num_bins - 1);
         atomic_fetch_add_explicit(&local_bins[b], 1, memory_order_relaxed);
@@ -56,14 +60,13 @@ kernel void shannon_histogram(
 // ===========================================================================
 // Computes w[i] = exp(-beta * (E[i] - E_min)) for partition function evaluation.
 // E_min must be pre-computed on CPU (single pass) and passed as constant.
-// Uses Metal's fast math exp() for Apple Silicon's FP64 units.
 
 kernel void boltzmann_weights_batch(
-    device const double*  energies     [[buffer(0)]],
-    device double*        weights      [[buffer(1)]],
+    device const float*   energies     [[buffer(0)]],
+    device float*         weights      [[buffer(1)]],
     constant uint&        n            [[buffer(2)]],
-    constant double&      neg_beta     [[buffer(3)]],
-    constant double&      E_min        [[buffer(4)]],
+    constant float&       neg_beta     [[buffer(3)]],
+    constant float&       E_min        [[buffer(4)]],
     uint                  gid          [[thread_position_in_grid]])
 {
     if (gid >= n) return;
@@ -73,28 +76,25 @@ kernel void boltzmann_weights_batch(
 // ===========================================================================
 // PARALLEL SUM REDUCTION KERNEL
 // ===========================================================================
-// Sums an array of doubles using threadgroup shared-memory reduction.
+// Sums an array of floats using threadgroup shared-memory reduction.
 // Output: partial sums (one per threadgroup), final sum done on CPU.
 
 kernel void parallel_sum_reduce(
-    device const double*   input       [[buffer(0)]],
-    device double*         partials    [[buffer(1)]],
+    device const float*    input       [[buffer(0)]],
+    device float*          partials    [[buffer(1)]],
     constant uint&         n           [[buffer(2)]],
     uint                   gid         [[thread_position_in_grid]],
     uint                   lid         [[thread_position_in_threadgroup]],
     uint                   tgid        [[threadgroup_position_in_grid]],
     uint                   tg_size     [[threads_per_threadgroup]])
 {
-    // Must match the threadgroup size dispatched by the host (256).
-    // Using a constant ensures no OOB if tg_size matches.
     constexpr uint MAX_TG_SIZE = 256;
-    threadgroup double shared[MAX_TG_SIZE];
+    threadgroup float shared[MAX_TG_SIZE];
 
-    // Guard: if runtime tg_size exceeds our shared array, bail safely
     if (lid >= MAX_TG_SIZE) return;
 
     // Load (zero-pad out-of-bounds)
-    shared[lid] = (gid < n) ? input[gid] : 0.0;
+    shared[lid] = (gid < n) ? input[gid] : 0.0f;
     threadgroup_barrier(mem_flags::mem_threadgroup);
 
     // Tree reduction within threadgroup
@@ -118,10 +118,10 @@ kernel void parallel_sum_reduce(
 // x_max must be pre-computed. Final log(sum) + x_max done on CPU.
 
 kernel void log_sum_exp_shifted(
-    device const double*  values       [[buffer(0)]],
-    device double*        exp_shifted  [[buffer(1)]],
+    device const float*   values       [[buffer(0)]],
+    device float*         exp_shifted  [[buffer(1)]],
     constant uint&        n            [[buffer(2)]],
-    constant double&      x_max        [[buffer(3)]],
+    constant float&       x_max        [[buffer(3)]],
     uint                  gid          [[thread_position_in_grid]])
 {
     if (gid >= n) return;

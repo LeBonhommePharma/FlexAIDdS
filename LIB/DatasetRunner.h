@@ -216,7 +216,7 @@ public:
     size_t active_count() const;
 
 private:
-    std::mutex mtx_;
+    mutable std::mutex mtx_;
     std::set<pid_t> pids_;
 };
 

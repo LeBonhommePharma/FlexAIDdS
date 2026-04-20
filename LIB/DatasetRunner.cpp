@@ -36,6 +36,11 @@
 #include <string>
 #include <vector>
 
+#include <sys/wait.h>
+#include <signal.h>
+#include <unistd.h>
+#include <thread>
+
 #ifndef _MSC_VER
 #include <sys/types.h>
 #include <sys/wait.h>
@@ -1767,8 +1772,20 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
             }
 
             // Build FlexAIDdS command with --config
+            // Detect WRK data directory (same location as in top.cpp auto-detect)
+            std::string data_dir_arg;
+            {
+                std::string bin_dir = flexaidds_bin;
+                auto slash = bin_dir.rfind('/');
+                if (slash != std::string::npos) bin_dir = bin_dir.substr(0, slash);
+                std::string wrk_candidate = bin_dir + "/../WRK";
+                if (fs::exists(wrk_candidate + "/MC_st0r5.2_6.dat")) {
+                    data_dir_arg = " --data-dir '" + fs::canonical(wrk_candidate).string() + "' ";
+                }
+            }
             std::ostringstream cmd;
             cmd << "'" << flexaidds_bin << "' "
+                << data_dir_arg
                 << "'" << entry.receptor_path << "' "
                 << "'" << entry.ligand_path << "' "
                 << "--config '" << config_path << "' "
@@ -2111,6 +2128,89 @@ void DatasetRunner::write_report(const BenchmarkReport& report,
         ofs.close();
         std::cout << "  Summary CSV: " << summary_csv << "\n";
     }
+}
+
+// =============================================================================
+// SubprocessGuard implementation
+// =============================================================================
+
+SubprocessGuard::SubprocessGuard() = default;
+
+SubprocessGuard::~SubprocessGuard() {
+    kill_all();
+}
+
+pid_t SubprocessGuard::fork_exec(const std::string& cmd) {
+    std::lock_guard<std::mutex> lock(mtx_);
+    pid_t pid = ::fork();
+    if (pid == 0) {
+        ::setpgid(0, 0);
+        ::execl("/bin/sh", "sh", "-c", cmd.c_str(), static_cast<char*>(nullptr));
+        ::_exit(127);
+    }
+    if (pid > 0) {
+        pids_.insert(pid);
+    }
+    return pid;
+}
+
+int SubprocessGuard::wait_with_timeout(pid_t pid, int timeout_s) {
+    using namespace std::chrono;
+    auto deadline = steady_clock::now() + seconds(timeout_s);
+
+    while (steady_clock::now() < deadline) {
+        int status = 0;
+        pid_t ret = ::waitpid(pid, &status, WNOHANG);
+        if (ret == pid) {
+            {
+                std::lock_guard<std::mutex> lock(mtx_);
+                pids_.erase(pid);
+            }
+            if (WIFEXITED(status)) return WEXITSTATUS(status);
+            return -1;
+        }
+        std::this_thread::sleep_for(milliseconds(200));
+    }
+
+    ::kill(pid, SIGTERM);
+    std::this_thread::sleep_for(milliseconds(500));
+    int status = 0;
+    pid_t ret = ::waitpid(pid, &status, WNOHANG);
+    if (ret != pid) {
+        ::kill(pid, SIGKILL);
+        ::waitpid(pid, &status, 0);
+    }
+    {
+        std::lock_guard<std::mutex> lock(mtx_);
+        pids_.erase(pid);
+    }
+    return -1;
+}
+
+void SubprocessGuard::forget(pid_t pid) {
+    std::lock_guard<std::mutex> lock(mtx_);
+    pids_.erase(pid);
+}
+
+void SubprocessGuard::kill_all() {
+    std::lock_guard<std::mutex> lock(mtx_);
+    for (auto pid : pids_) {
+        ::kill(pid, SIGTERM);
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds(500));
+    for (auto pid : pids_) {
+        ::kill(pid, SIGKILL);
+    }
+    for (auto pid : pids_) {
+        int status = 0;
+        ::waitpid(pid, &status, 0);
+    }
+    pids_.clear();
+}
+
+size_t SubprocessGuard::active_count() const {
+    std::lock_guard<std::mutex> lock(mtx_);
+    return pids_.size();
 }
 
 } // namespace dataset

@@ -359,6 +359,31 @@ int main(int argc, char **argv){
 
 	printf("base path is '%s'\n", FA->base_path);
 
+		// ── Auto-detect WRK data directory ──────────────────────────────────
+		// If data files (MC_st0r5.2_6.dat, AMINO.def) are not in base_path,
+		// try base_path/../WRK/ as a fallback.  This allows the binary to live
+		// in build/ while data files stay in WRK/ without manual symlinks.
+		// The --data-dir flag (parsed below) overrides this auto-detection.
+		{
+			char probe[MAX_PATH__];
+			snprintf(probe, MAX_PATH__, "%s/MC_st0r5.2_6.dat", FA->base_path);
+			FILE* fp = fopen(probe, "r");
+			if (fp) {
+				fclose(fp);
+				// Data files found in base_path — nothing to do
+			} else {
+				// Try ../WRK/ relative to base_path
+				snprintf(probe, MAX_PATH__, "%s/../WRK/MC_st0r5.2_6.dat", FA->base_path);
+				fp = fopen(probe, "r");
+				if (fp) {
+					fclose(fp);
+					snprintf(FA->dependencies_path, MAX_PATH__, "%s/../WRK", FA->base_path);
+					printf("auto-detected data directory: '%s'\n", FA->dependencies_path);
+				}
+			}
+		}
+
+
 	// ── CLI argument parsing ──────────────────────────────────────────────
 	bool legacy_mode = false;
 	bool use_rigid = false;
@@ -437,6 +462,16 @@ int main(int argc, char **argv){
 			}
 			if (arg == "-o" || arg == "--output") {
 				if (a + 1 < argc) output_prefix = argv[++a];
+				continue;
+			}
+			if (arg == "--data-dir") {
+				if (a + 1 < argc) {
+					strncpy(FA->dependencies_path, argv[++a], MAX_PATH__-1);
+					FA->dependencies_path[MAX_PATH__-1] = '\0';
+				} else {
+					fprintf(stderr, "ERROR: --data-dir requires a directory path\n");
+					Terminate(1);
+				}
 				continue;
 			}
 			if (arg == "--rigid")  { use_rigid = true;  continue; }

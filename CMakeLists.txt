@@ -480,6 +480,12 @@ if(FLEXAIDS_USE_METAL)
         LANGUAGE OBJCXX
         COMPILE_FLAGS "-std=c++20 -fno-objc-arc"
     )
+    # FastOPTICS Metal kNN (GPU-accelerated neighbor discovery)
+    target_sources(FlexAID PRIVATE LIB/gpu_fast_optics_metal.mm)
+    set_source_files_properties(LIB/gpu_fast_optics_metal.mm PROPERTIES
+        LANGUAGE OBJCXX
+        COMPILE_FLAGS "-std=c++20 -fno-objc-arc"
+    )
     # CavityDetect Metal bridge (Task 1.4: GPU probe-sphere generation)
     target_sources(FlexAID PRIVATE LIB/CavityDetect/CavityDetectMetalBridge.mm)
     set_source_files_properties(LIB/CavityDetect/CavityDetectMetalBridge.mm PROPERTIES
@@ -624,7 +630,8 @@ if(ENABLE_TENCOM_TOOL)
     )
     target_include_directories(tENCoM PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/LIB
-        ${CMAKE_CURRENT_SOURCE_DIR}/LIB/tENCoM)
+        ${CMAKE_CURRENT_SOURCE_DIR}/LIB/tENCoM
+        ${CMAKE_CURRENT_SOURCE_DIR}/LIB/ShannonThermoStack)
     if(MSVC)
         target_compile_options(tENCoM PRIVATE /O2 /GL /fp:fast /DNDEBUG /MT)
         target_compile_definitions(tENCoM PRIVATE
@@ -786,6 +793,12 @@ if(BUILD_FLEXAIDDS_FAST)
         target_sources(FlexAIDdS PRIVATE LIB/tENCoM/tencm_metal.mm)
         target_compile_definitions(FlexAIDdS PRIVATE FLEXAIDS_HAS_METAL_TENCM)
         set_source_files_properties(LIB/tENCoM/tencm_metal.mm PROPERTIES
+            LANGUAGE OBJCXX
+            COMPILE_FLAGS "-std=c++20 -fno-objc-arc"
+        )
+        # FastOPTICS Metal kNN (GPU-accelerated neighbor discovery)
+        target_sources(FlexAIDdS PRIVATE LIB/gpu_fast_optics_metal.mm)
+        set_source_files_properties(LIB/gpu_fast_optics_metal.mm PROPERTIES
             LANGUAGE OBJCXX
             COMPILE_FLAGS "-std=c++20 -fno-objc-arc"
         )

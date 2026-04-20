@@ -11,7 +11,7 @@
 #include <vector>
 #include <utility>
 
-struct chromosome;
+#include "gaboom.h"   // for chromosome typedef
 
 // Metal-accelerated kNN for FastOPTICS neighbor discovery.
 // Uploads Cartesian point data to GPU, launches Metal compute pipeline,
