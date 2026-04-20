@@ -303,8 +303,8 @@ TEST(GrandPartition, DefaultConcentrationIsMolar) {
 
 TEST(GrandPartition, InvalidConcentrationThrows) {
     GrandPartitionFunction gpf(300.0);
-    EXPECT_THROW(gpf.add_ligand("bad", 5.0, 0.0), std::invalid_argument);
-    EXPECT_THROW(gpf.add_ligand("bad2", 5.0, -1.0), std::invalid_argument);
+    EXPECT_THROW(gpf.add_ligand("bad", 5.0, 0.0), std::domain_error);
+    EXPECT_THROW(gpf.add_ligand("bad2", 5.0, -1.0), std::domain_error);
 }
 
 TEST(GrandPartition, ImpossibleConcentrationThrows) {

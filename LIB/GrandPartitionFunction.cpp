@@ -24,8 +24,10 @@ GrandPartitionFunction::GrandPartitionFunction(double temperature_K)
 void GrandPartitionFunction::add_ligand(const std::string& name, double log_Z,
                                          double concentration_M)
 {
+    // concentration_M: molar concentration [M]. Standard reference state = 1.0 M.
     if (concentration_M <= 0.0)
-        throw std::invalid_argument("Concentration must be positive");
+        throw std::domain_error("concentration_M must be > 0 (got "
+                                + std::to_string(concentration_M) + " M)");
     if (concentration_M > 1e3)
         throw std::invalid_argument(
             "Concentration > 1000 M — did you pass µM or nM without conversion to M?");
@@ -52,8 +54,10 @@ void GrandPartitionFunction::add_ligand(const std::string& name,
 void GrandPartitionFunction::add_or_overwrite(const std::string& name, double log_Z,
                                                double concentration_M)
 {
+    // concentration_M: molar concentration [M]. Standard reference state = 1.0 M.
     if (concentration_M <= 0.0)
-        throw std::invalid_argument("Concentration must be positive");
+        throw std::domain_error("concentration_M must be > 0 (got "
+                                + std::to_string(concentration_M) + " M)");
     if (concentration_M > 1e3)
         throw std::invalid_argument(
             "Concentration > 1000 M — did you pass µM or nM without conversion to M?");

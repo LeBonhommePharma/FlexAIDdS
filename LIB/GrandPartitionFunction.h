@@ -53,19 +53,19 @@ public:
     /// Register a ligand with its partition function and optional concentration.
     /// @param name       Ligand identifier
     /// @param log_Z      ln(Z_i) from StatMechEngine
-    /// @param concentration_M  Ligand concentration in MOLAR (M). Standard state is 1 M.
+    /// @param concentration_M  Ligand concentration in MOLAR (M). Standard reference state = 1.0 M.
     ///                         Do NOT pass µM or nM directly — convert to M first.
-    ///                         Values > 1000 M are rejected as physically impossible.
+    ///                         Values <= 0 or > 1000 M are rejected (domain_error).
     void add_ligand(const std::string& name, double log_Z, double concentration_M = 1.0);
 
     /// Convenience: extract log_Z from a StatMechEngine
-    /// @param concentration_M  Ligand concentration in MOLAR (M). Values > 1000 M rejected.
+    /// @param concentration_M  Ligand concentration in MOLAR (M). Standard reference state = 1.0 M.
     void add_ligand(const std::string& name, const statmech::StatMechEngine& engine,
                     double concentration_M = 1.0);
 
     /// Atomic insert-or-overwrite: if ligand exists, overwrite; otherwise insert.
     /// Thread-safe — avoids the TOCTOU race between has_ligand() + add/overwrite.
-    /// @param concentration_M  Ligand concentration in MOLAR (M). Values > 1000 M rejected.
+    /// @param concentration_M  Ligand concentration in MOLAR (M). Standard reference state = 1.0 M.
     void add_or_overwrite(const std::string& name, double log_Z, double concentration_M = 1.0);
 
     /// Overwrite an existing ligand's Z (e.g., after re-docking with a better estimate).
