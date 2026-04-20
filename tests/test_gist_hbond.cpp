@@ -9,7 +9,6 @@
 #include <cmath>
 #include <fstream>
 #include <filesystem>
-#include <numbers>
 
 static constexpr double EPS = 1e-6;
 

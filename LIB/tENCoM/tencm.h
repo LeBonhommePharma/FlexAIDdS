@@ -27,7 +27,6 @@
 #include <span>
 #include <concepts>
 #include <cmath>
-#include <numbers>
 #include <memory>
 #include <random>
 #include <algorithm>
