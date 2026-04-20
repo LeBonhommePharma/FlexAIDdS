@@ -203,6 +203,11 @@ TEST(GrandPartition, RemoveLigand) {
     EXPECT_FALSE(gpf.has_ligand("A"));
     EXPECT_TRUE(gpf.has_ligand("B"));
     EXPECT_LT(log_xi_after, log_xi_before);  // Ξ decreases after removal
+
+    // Remove remaining ligand — Ξ must return to 1 (empty site only).
+    gpf.remove_ligand("B");
+    // log_Xi must equal log(1) = 0 when all ligands removed at zero concentration
+    ASSERT_NEAR(gpf.log_Xi(), 0.0, 1e-12);
 }
 
 // ════════════════════════════════════════════════════════════════════════
