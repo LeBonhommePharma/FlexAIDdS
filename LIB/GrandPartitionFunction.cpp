@@ -123,7 +123,9 @@ double GrandPartitionFunction::compute_log_Xi_fresh() const
 
     if (ligands_.empty()) return 0.0;
 
-    // max over {0, log_zZ_1, ..., log_zZ_N}; the 0 represents the empty site
+    // Anchor: unoccupied state contributes log(1) = 0 to log-sum-exp.
+    // This ensures Ξ ≥ 1 always (receptor can always be empty).
+    // See: Hill, T.L. "An Introduction to Statistical Thermodynamics" §15.
     double max_val = 0.0;
     for (const auto& [name, entry] : ligands_)
         max_val = std::max(max_val, entry.log_zZ);
