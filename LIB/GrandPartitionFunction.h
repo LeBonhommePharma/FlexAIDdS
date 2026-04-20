@@ -95,6 +95,11 @@ public:
     /// Use delta_G_bind() to get ΔG_bind = F_bound − F_ref.
     [[nodiscard]] double F_bound(const std::string& name) const;
 
+    /// @deprecated Use F_bound() — free_energy() was ambiguous between Helmholtz F
+    ///             and binding ΔG_bind, causing silent errors in Kd calculations.
+    [[deprecated("Use F_bound() — free_energy() was ambiguous")]]
+    double free_energy(const std::string& name) const { return F_bound(name); }
+
     /// Binding free energy: ΔG_bind = F_bound − F_ref.
     /// @param name    Ligand name
     /// @param F_ref   Reference-state free energy (unbound ligand in solution).
