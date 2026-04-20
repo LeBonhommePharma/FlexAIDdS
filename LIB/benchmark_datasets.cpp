@@ -19,10 +19,16 @@
 #include "BenchmarkRunner.h"
 
 #include <algorithm>
+#include <chrono>
 #include <cstdio>
 #include <cstring>
 #include <filesystem>
+#include <fstream>
 #include <iostream>
+#include <numeric>
+#include <sstream>
+#include <iomanip>
+#include <ctime>
 #include <string>
 #include <vector>
 
@@ -54,6 +60,9 @@ static void print_usage(const char* progname) {
     printf("  --force            Re-run even if results already exist (ignore cache)\n");
     printf("  --prepare-only     Download and prepare only (no docking)\n");
     printf("  --list-codes       List PDB codes for a dataset and exit\n");
+    printf("  --fleet            Enable Fleet mode (JSON chunk result output)\n");
+    printf("  --chunk-id <ID>    Unique chunk identifier for Fleet mode\n");
+    printf("  --output-json <path> Write Fleet JSON result to this file\n");
     printf("  -h, --help         Show this help\n\n");
     printf("Examples:\n");
     printf("  %s --benchmark astex --output results/astex/\n", progname);
@@ -178,7 +187,80 @@ static void list_pdb_codes(dataset::BenchmarkSet set) {
     if (col % 12 != 0) printf("\n");
 }
 
-static void run_single_benchmark(const std::string& name,
+/// Write Fleet-compatible JSON chunk result.
+static void write_fleet_json(const std::string& json_path,
+                              const std::string& chunk_id,
+                              const std::string& dataset,
+                              const dataset::BenchmarkReport& report,
+                              double duration_s) {
+    std::vector<double> dG_vals, rmsd_vals;
+    int n_completed = 0;
+    for (const auto& r : report.results) {
+        if (r.success) {
+            n_completed++;
+            dG_vals.push_back(static_cast<double>(r.predicted_dG));
+            rmsd_vals.push_back(static_cast<double>(r.rmsd_to_crystal));
+        }
+    }
+    int n_failed = static_cast<int>(report.results.size()) - n_completed;
+
+    double dG_mean = 0.0, dG_std = 0.0, rmsd_mean = 0.0;
+    if (!dG_vals.empty()) {
+        dG_mean = std::accumulate(dG_vals.begin(), dG_vals.end(), 0.0) / dG_vals.size();
+        double sq_sum = 0.0;
+        for (double v : dG_vals) sq_sum += (v - dG_mean) * (v - dG_mean);
+        dG_std = dG_vals.size() > 1 ? std::sqrt(sq_sum / (dG_vals.size() - 1)) : 0.0;
+    }
+    if (!rmsd_vals.empty()) {
+        rmsd_mean = std::accumulate(rmsd_vals.begin(), rmsd_vals.end(), 0.0) / rmsd_vals.size();
+    }
+
+    auto now = std::chrono::system_clock::now();
+    auto time_t_now = std::chrono::system_clock::to_time_t(now);
+    char ts_buf[32];
+    std::strftime(ts_buf, sizeof(ts_buf), "%Y-%m-%dT%H:%M:%S", std::localtime(&time_t_now));
+
+    std::ostringstream json;
+    json << "{\n"
+         << "  \"chunk_id\": \"" << chunk_id << "\",\n"
+         << "  \"dataset\": \"" << dataset << "\",\n"
+         << "  \"n_total\": " << report.total_systems << ",\n"
+         << "  \"n_completed\": " << n_completed << ",\n"
+         << "  \"n_failed\": " << n_failed << ",\n"
+         << "  \"success_rate\": " << std::fixed << std::setprecision(4) << report.success_rate << ",\n"
+         << "  \"dG_mean\": " << std::setprecision(3) << dG_mean << ",\n"
+         << "  \"dG_std\": " << dG_std << ",\n"
+         << "  \"rmsd_mean\": " << rmsd_mean << ",\n"
+         << "  \"pearson_r\": " << std::setprecision(4) << report.pearson_r << ",\n"
+         << "  \"duration_s\": " << std::setprecision(1) << duration_s << ",\n"
+         << "  \"timestamp\": \"" << ts_buf << "\",\n"
+         << "  \"cross_ligand\": [\n";
+    for (size_t i = 0; i < report.cross_ligand_results.size(); ++i) {
+        const auto& clr = report.cross_ligand_results[i];
+        json << "    {\"receptor\": \"" << clr.receptor_id << "\","
+             << " \"n_ligands\": " << clr.n_ligands << ","
+             << " \"n_completed\": " << clr.n_completed << "}";
+        if (i + 1 < report.cross_ligand_results.size()) json << ",";
+        json << "\n";
+    }
+    json << "  ]\n}\n";
+
+    if (json_path == "-" || json_path.empty()) {
+        std::cout << json.str();
+    } else {
+        std::ofstream ofs(json_path);
+        if (ofs.is_open()) {
+            ofs << json.str();
+            std::cerr << "  [Fleet] JSON written to " << json_path << "\n";
+        } else {
+            std::cerr << "  [Fleet] WARNING: could not open " << json_path << "\n";
+            std::cout << json.str();
+        }
+    }
+}
+
+
+static dataset::BenchmarkReport run_single_benchmark(const std::string& name,
                                   dataset::DatasetRunner& runner,
                                   const dataset::DockingConfig& config,
                                   bool prepare_only,
@@ -194,7 +276,7 @@ static void run_single_benchmark(const std::string& name,
             print_publication_table(report);
             runner.write_report(report, config.output_dir);
         }
-        return;
+        return {};
     }
     if (name.substr(0, 9) == "pdb_list:") {
         std::string file_path = name.substr(9);
@@ -204,19 +286,19 @@ static void run_single_benchmark(const std::string& name,
             print_publication_table(report);
             runner.write_report(report, config.output_dir);
         }
-        return;
+        return {};
     }
 
     auto bs = dataset::parse_benchmark_set(name);
     if (!bs.has_value()) {
         fprintf(stderr, "ERROR: Unknown benchmark: '%s'\n", name.c_str());
         fprintf(stderr, "Use --help for available datasets.\n");
-        return;
+        return {};
     }
 
     if (list_codes_only) {
         list_pdb_codes(*bs);
-        return;
+        return {};
     }
 
     auto entries = runner.prepare(*bs);
@@ -224,7 +306,7 @@ static void run_single_benchmark(const std::string& name,
 
     if (prepare_only) {
         printf("  [prepare-only mode] Skipping docking.\n");
-        return;
+        return {};
     }
 
     if (!entries.empty()) {
@@ -232,7 +314,9 @@ static void run_single_benchmark(const std::string& name,
         print_publication_table(report);
         print_itc_table(report, entries);
         runner.write_report(report, config.output_dir);
+        return report;
     }
+    return {};
 }
 
 int main(int argc, char** argv) {
@@ -255,6 +339,10 @@ int main(int argc, char** argv) {
     int ga_population = 0;
     double temperature = 0.0;
     std::string clustering;
+    // Fleet mode options
+    bool fleet_mode = false;
+    std::string chunk_id;
+    std::string output_json;
 
     for (int i = 1; i < argc; ++i) {
         std::string arg(argv[i]);
@@ -312,6 +400,18 @@ int main(int argc, char** argv) {
             clustering = argv[++i];
             continue;
         }
+        if (arg == "--fleet") {
+            fleet_mode = true;
+            continue;
+        }
+        if (arg == "--chunk-id" && i + 1 < argc) {
+            chunk_id = argv[++i];
+            continue;
+        }
+        if (arg == "--output-json" && i + 1 < argc) {
+            output_json = argv[++i];
+            continue;
+        }
 
         // Fallback: if first positional arg, treat as benchmark name
         if (benchmark_name.empty()) {
@@ -352,6 +452,12 @@ int main(int argc, char** argv) {
     std::cout << "  GA:      pop=" << config.ga_population << " gen=" << config.ga_generations << "\n";
     std::cout << "  Temp:    " << config.temperature << " K\n";
     std::cout << "  Cluster: " << config.clustering_algorithm << "\n";
+    if (fleet_mode) {
+        if (chunk_id.empty()) chunk_id = benchmark_name + "_chunk";
+        std::cout << "  Fleet:   enabled (chunk_id=" << chunk_id << ")\n";
+        if (!output_json.empty())
+            std::cout << "  JSON:    " << output_json << "\n";
+    }
     std::cout << "\n";
 
     // Handle "all" benchmark
@@ -375,7 +481,14 @@ int main(int argc, char** argv) {
         std::cout << "  All benchmarks completed. Results in: " << output_dir << "\n";
         std::cout << "═══════════════════════════════════════════════════════════════\n";
     } else {
-        run_single_benchmark(benchmark_name, runner, config, prepare_only, list_codes_only);
+        auto report = run_single_benchmark(benchmark_name, runner, config, prepare_only, list_codes_only);
+
+        // Fleet mode: emit JSON chunk result
+        if (fleet_mode && report.total_systems > 0) {
+            double total_wall = 0.0;
+            for (const auto& r : report.results) total_wall += r.wall_time_s;
+            write_fleet_json(output_json, chunk_id, benchmark_name, report, total_wall);
+        }
     }
 
     return 0;

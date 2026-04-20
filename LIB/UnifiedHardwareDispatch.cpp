@@ -605,8 +605,7 @@ std::vector<double> UnifiedHardwareDispatch::compute_boltzmann_weights(
 // Boltzmann batch (span API with telemetry — from hardware_dispatch.cpp)
 // ═════════════════════════════════════════════════════════════════════════════
 
-[[maybe_unused]]
-static BoltzmannBatchResult boltzmann_scalar(
+#if 0  // currently unused — scalar boltzmann is inlined in compute_boltzmann_batchstatic BoltzmannBatchResult boltzmann_scalar(
     std::span<const double> energies, double beta)
 {
     auto start = std::chrono::steady_clock::now();
@@ -623,6 +622,7 @@ static BoltzmannBatchResult boltzmann_scalar(
     auto telemetry = make_telemetry(Backend::SCALAR, start, n);
     return { std::move(weights), log_Z, E_min, telemetry };
 }
+#endif  // boltzmann_scalar
 
 #ifdef _OPENMP
 static BoltzmannBatchResult boltzmann_openmp(
@@ -775,8 +775,7 @@ BoltzmannBatchResult UnifiedHardwareDispatch::compute_boltzmann_batch(
 
     if (!detected_) detect();
 
-    (void)best_backend(KernelType::BOLTZMANN_WEIGHTS);  // detection side-effect only
-
+    [[maybe_unused]] Backend best = best_backend(KernelType::BOLTZMANN_WEIGHTS);
 #ifdef FLEXAIDS_HAS_METAL_SHANNON
     if (is_available(Backend::METAL) && energies.size() >= 256) {
         if (ShannonMetalBridge::is_metal_available())
@@ -931,9 +930,7 @@ void UnifiedHardwareDispatch::distance2_batch(
     float* out, int n, Backend backend)
 {
     if (!detected_) detect();
-    Backend b = (backend == Backend::AUTO) ? best_backend(KernelType::DISTANCE_BATCH) : backend;
-    (void)b;  // used only in SIMD-conditional blocks below
-
+    [[maybe_unused]] Backend b = (backend == Backend::AUTO) ? best_backend(KernelType::DISTANCE_BATCH) : backend;
 #ifdef __AVX512F__
     if (b == Backend::AVX512 && is_available(Backend::AVX512)) {
         __m512 vbx = _mm512_set1_ps(bx);

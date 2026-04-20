@@ -420,6 +420,23 @@ TEST(TargetKnowledgeBase, ConcurrentMixedAccumulation) {
     EXPECT_TRUE(kb.check_invariants());
 }
 
+TEST(TargetKnowledgeBase, AllHitsRefReturnsReference) {
+    TargetKnowledgeBase kb(1, 0);
+    kb.accumulate_binding_center(1.0f, 2.0f, 3.0f, -5.0, "ref_lig");
+
+    const auto& ref = kb.all_hits_ref();
+    ASSERT_EQ(ref.size(), 1u);
+    EXPECT_FLOAT_EQ(ref[0].center[0], 1.0f);
+    EXPECT_FLOAT_EQ(ref[0].center[1], 2.0f);
+    EXPECT_FLOAT_EQ(ref[0].center[2], 3.0f);
+    EXPECT_EQ(ref[0].ligand_name, "ref_lig");
+
+    // all_hits() returns a copy; all_hits_ref() returns the same data by ref
+    auto copy = kb.all_hits();
+    EXPECT_EQ(copy.size(), ref.size());
+    EXPECT_EQ(copy[0].ligand_name, ref[0].ligand_name);
+}
+
 // ============================================================================
 // SharedPosePool — Construction
 // ============================================================================
@@ -429,8 +446,9 @@ TEST(SharedPosePool, Construction) {
     EXPECT_EQ(pool.capacity(), 50);
     EXPECT_EQ(pool.count(), 0);
     EXPECT_FALSE(pool.is_full());
-    EXPECT_EQ(pool.best_energy(), std::numeric_limits<double>::infinity());
-    EXPECT_EQ(pool.worst_energy(), std::numeric_limits<double>::infinity());
+    // Sentinel is DBL_MAX (not infinity — avoids UB under -ffast-math)
+    EXPECT_EQ(pool.best_energy(), std::numeric_limits<double>::max());
+    EXPECT_EQ(pool.worst_energy(), std::numeric_limits<double>::max());
 }
 
 TEST(SharedPosePool, ZeroCapacityThrows) {
@@ -672,7 +690,8 @@ TEST(SharedPosePool, ClearResetsPool) {
     pool.clear();
     EXPECT_EQ(pool.count(), 0);
     EXPECT_FALSE(pool.is_full());
-    EXPECT_EQ(pool.best_energy(), std::numeric_limits<double>::infinity());
+    // Sentinel is DBL_MAX (not infinity — avoids UB under -ffast-math)
+    EXPECT_EQ(pool.best_energy(), std::numeric_limits<double>::max());
 }
 
 // ============================================================================

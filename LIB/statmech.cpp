@@ -11,14 +11,14 @@
 // All sums use log-sum-exp for numerical stability when energies span
 // hundreds of kcal/mol (common in docking).
 //
-// Hardware dispatch (runtime via hardware_dispatch layer):
+// Hardware dispatch (runtime via UnifiedHardwareDispatch layer):
 //   1. AVX-512 16-wide SIMD (+ OpenMP)
 //   2. Eigen3 vectorised array ops (auto-vectorises to AVX2/AVX-512)
 //   3. OpenMP parallel reductions for large ensembles
 //   4. Scalar fallback (always available)
 
 #include "statmech.h"
-#include "hardware_dispatch.h"
+#include "UnifiedHardwareDispatch.h"
 
 #include <cmath>
 #include <algorithm>

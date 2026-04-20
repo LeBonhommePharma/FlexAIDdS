@@ -7,10 +7,8 @@
 //   – Boltzmann batch kernel uses shared-memory parallel reduction
 //   – Supports arbitrary n (out-of-bounds threads are no-ops)
 //
-// NOTE: Metal does not support double-precision. All GPU kernels use float.
-// The host-side bridge (ShannonMetalBridge) casts double data to float before
-// uploading and casts results back to double after download.
-//
+// Note: Metal Shading Language does not support double; all FP is float (FP32).
+// The host bridge (ShannonMetalBridge.mm) converts double→float before upload.//
 // Apache-2.0 © 2026 Le Bonhomme Pharma
 #include <metal_stdlib>
 using namespace metal;
@@ -22,16 +20,15 @@ using namespace metal;
 // Uses threadgroup-local histograms to minimize global atomic contention.
 
 kernel void shannon_histogram(
-    device const float*      energies  [[buffer(0)]],
-    device atomic_int*       bins      [[buffer(1)]],
-    constant uint&           n         [[buffer(2)]],
-    constant int&            num_bins  [[buffer(3)]],
-    constant float&          min_v     [[buffer(4)]],
-    constant float&          bin_width [[buffer(5)]],
-    uint                     gid       [[thread_position_in_grid]],
-    uint                     lid       [[thread_position_in_threadgroup]],
-    uint                     tg_size   [[threads_per_threadgroup]])
-{
+    device const float*     energies  [[buffer(0)]],
+    device atomic_int*      bins      [[buffer(1)]],
+    constant uint&          n         [[buffer(2)]],
+    constant int&           num_bins  [[buffer(3)]],
+    constant float&         min_v     [[buffer(4)]],
+    constant float&         bin_width [[buffer(5)]],
+    uint                    gid       [[thread_position_in_grid]],
+    uint                    lid       [[thread_position_in_threadgroup]],
+    uint                    tg_size   [[threads_per_threadgroup]]){
     // Threadgroup-local histogram to reduce global atomic pressure
     threadgroup atomic_int local_bins[256]; // max num_bins = 256
     if (lid < (uint)num_bins)
@@ -62,13 +59,12 @@ kernel void shannon_histogram(
 // E_min must be pre-computed on CPU (single pass) and passed as constant.
 
 kernel void boltzmann_weights_batch(
-    device const float*   energies     [[buffer(0)]],
-    device float*         weights      [[buffer(1)]],
-    constant uint&        n            [[buffer(2)]],
-    constant float&       neg_beta     [[buffer(3)]],
-    constant float&       E_min        [[buffer(4)]],
-    uint                  gid          [[thread_position_in_grid]])
-{
+    device const float*  energies     [[buffer(0)]],
+    device float*        weights      [[buffer(1)]],
+    constant uint&       n            [[buffer(2)]],
+    constant float&      neg_beta     [[buffer(3)]],
+    constant float&      E_min        [[buffer(4)]],
+    uint                 gid          [[thread_position_in_grid]]){
     if (gid >= n) return;
     weights[gid] = exp(neg_beta * (energies[gid] - E_min));
 }
@@ -76,19 +72,19 @@ kernel void boltzmann_weights_batch(
 // ===========================================================================
 // PARALLEL SUM REDUCTION KERNEL
 // ===========================================================================
-// Sums an array of floats using threadgroup shared-memory reduction.
+// Sums an array using threadgroup shared-memory reduction.
 // Output: partial sums (one per threadgroup), final sum done on CPU.
 
 kernel void parallel_sum_reduce(
-    device const float*    input       [[buffer(0)]],
-    device float*          partials    [[buffer(1)]],
-    constant uint&         n           [[buffer(2)]],
-    uint                   gid         [[thread_position_in_grid]],
-    uint                   lid         [[thread_position_in_threadgroup]],
-    uint                   tgid        [[threadgroup_position_in_grid]],
-    uint                   tg_size     [[threads_per_threadgroup]])
+    device const float*   input       [[buffer(0)]],
+    device float*         partials    [[buffer(1)]],
+    constant uint&        n           [[buffer(2)]],
+    uint                  gid         [[thread_position_in_grid]],
+    uint                  lid         [[thread_position_in_threadgroup]],
+    uint                  tgid        [[threadgroup_position_in_grid]],
+    uint                  tg_size     [[threads_per_threadgroup]])
 {
-    constexpr uint MAX_TG_SIZE = 256;
+    // Must match the threadgroup size dispatched by the host (256).    constexpr uint MAX_TG_SIZE = 256;
     threadgroup float shared[MAX_TG_SIZE];
 
     if (lid >= MAX_TG_SIZE) return;
@@ -118,12 +114,11 @@ kernel void parallel_sum_reduce(
 // x_max must be pre-computed. Final log(sum) + x_max done on CPU.
 
 kernel void log_sum_exp_shifted(
-    device const float*   values       [[buffer(0)]],
-    device float*         exp_shifted  [[buffer(1)]],
-    constant uint&        n            [[buffer(2)]],
-    constant float&       x_max        [[buffer(3)]],
-    uint                  gid          [[thread_position_in_grid]])
-{
+    device const float*  values       [[buffer(0)]],
+    device float*        exp_shifted  [[buffer(1)]],
+    constant uint&       n            [[buffer(2)]],
+    constant float&      x_max        [[buffer(3)]],
+    uint                 gid          [[thread_position_in_grid]]){
     if (gid >= n) return;
     exp_shifted[gid] = exp(values[gid] - x_max);
 }

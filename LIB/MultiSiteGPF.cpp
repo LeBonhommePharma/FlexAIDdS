@@ -290,7 +290,8 @@ MultiSiteGPF::cross_site_analysis() const
         css.best_site_selectivity = 0.0;
         for (int s : site_list) {
             if (s == css.best_site_idx) continue;
-            // selectivity of same ligand at different sites = Z_best / Z_other
+            [[maybe_unused]] double sel = selectivity(css.best_site_idx, ligand_name,
+                                     ligand_name);            // selectivity of same ligand at different sites = Z_best / Z_other
             // Cross-site selectivity: ratio of binding probabilities
             if (css.site_probabilities[s] > 0.0) {
                 double ratio = best_prob / css.site_probabilities[s];

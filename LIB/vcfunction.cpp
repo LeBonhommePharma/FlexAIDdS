@@ -186,7 +186,7 @@ double vcfunction(FA_Global* FA,VC_Global* VC,atom* atoms,resid* residue, std::v
 		       atoms[atomzero].radius);
 #endif
 
-	int contnum = 0;  // number of contacts (excluding bloops away atoms)
+	[[maybe_unused]] int contnum = 0;  // number of contacts (excluding bloops away atoms)
 		int currindex = VC->ca_index[i];
 		
 		while(currindex != -1) {

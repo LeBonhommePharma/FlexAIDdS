@@ -185,10 +185,12 @@ int main(int argc, char **argv){
 		Terminate(2);
 	}
 
-	memset(static_cast<void*>(FA),0,sizeof(FA_Global));
-	memset(static_cast<void*>(GB),0,sizeof(GB_Global));
-	memset(static_cast<void*>(VC),0,sizeof(VC_Global));
-
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wnontrivial-memcall"
+	std::memset(FA,0,sizeof(FA_Global));
+	std::memset(GB,0,sizeof(GB_Global));
+	std::memset(VC,0,sizeof(VC_Global));
+#pragma clang diagnostic pop
 	// MIF/RefLig/GridPrio non-zero defaults (pointers already NULL from memset)
 	FA->mif_temperature = 300.0f;
 	FA->grid_prio_percent = 100.0f;

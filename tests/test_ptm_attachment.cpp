@@ -53,7 +53,10 @@ static std::string write_test_json() {
 
 /// Build a minimal mock atom array with an ASN residue containing ND2
 static void setup_mock_receptor(FA_Global& FA, atom* atoms, resid* residue) {
+    #pragma clang diagnostic push
+    #pragma clang diagnostic ignored "-Wnontrivial-memcall"
     std::memset(&FA, 0, sizeof(FA_Global));
+    #pragma clang diagnostic pop
     std::memset(atoms, 0, sizeof(atom) * 100);
     std::memset(residue, 0, sizeof(resid) * 10);
 

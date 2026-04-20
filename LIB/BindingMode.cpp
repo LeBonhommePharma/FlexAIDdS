@@ -727,7 +727,7 @@ double BindingMode::ligand_receptor_mutual_information() const
 	if (Poses.empty()) return 0.0;
 
 	const double beta = 1.0 / (statmech::kB_kcal * static_cast<double>(Population->Temperature));
-	const int n_poses = static_cast<int>(Poses.size());
+	[[maybe_unused]] const int n_models = ccbm_max_model_index(Poses) + 1;	const int n_poses = static_cast<int>(Poses.size());
 
 	// Compute joint Boltzmann weights: w_{r,i} = exp(-β E_total(r,i))
 	std::vector<double> log_w(n_poses);

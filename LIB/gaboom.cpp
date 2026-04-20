@@ -3,7 +3,7 @@
 #include "fileio.h"
 #include "flexaid_exception.h"
 #include "ga_constants.h"
-#include "hardware_dispatch.h"
+#include "UnifiedHardwareDispatch.h"
 #include "MIFGrid.h"
 #include "CavityDetect/SpatialGrid.h"
 

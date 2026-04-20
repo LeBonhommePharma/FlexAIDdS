@@ -279,7 +279,10 @@ TEST(BindingResidues, PrintDoesNotCrash) {
 // Helper to create a minimal FA_Global for auto-flex testing
 static FA_Global make_test_fa(float* mif_energies, int mif_count, int atm_cnt) {
     FA_Global fa;
-    memset(&fa, 0, sizeof(FA_Global));
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wnontrivial-memcall"
+    std::memset(&fa, 0, sizeof(FA_Global));
+#pragma clang diagnostic pop
     fa.mif_energies = mif_energies;
     fa.mif_count = mif_count;
     fa.atm_cnt_real = atm_cnt;

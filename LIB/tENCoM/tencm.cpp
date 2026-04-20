@@ -338,9 +338,7 @@ void TorsionalENM::build_contacts()
     // ── Serial path (no OpenMP) with SIMD distance batching ──
 
     for (int i = 0; i < Np - 1; ++i) {
-        const float xi = ca_[i][0], yi = ca_[i][1], zi = ca_[i][2];
-        (void)xi; (void)yi; (void)zi; // used in SIMD paths below
-
+        [[maybe_unused]] const float xi = ca_[i][0], yi = ca_[i][1], zi = ca_[i][2];
 #if defined(__AVX512F__)
         const __m512 vxi  = _mm512_set1_ps(xi);
         const __m512 vyi  = _mm512_set1_ps(yi);

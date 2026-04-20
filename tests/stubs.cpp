@@ -83,8 +83,9 @@ void slice_grid(FA_Global*, genlim*, atom*, resid*, gridpoint**) {}
 void write_grid(FA_Global*, const gridpoint*, char[]) {}
 
 // ---------------------------------------------------------------------------
-// InStreamClustering — referenced by gaboom.cpp
+// InStreamClustering — stubs replaced by real LIB/InStreamClustering.cpp
 // ---------------------------------------------------------------------------
+#if 0
 #include "../LIB/InStreamClustering.h"
 namespace flexaids {
 InStreamCluster::InStreamCluster(float, int, int) {}
@@ -96,3 +97,4 @@ void InStreamCluster::merge_elites_from_chrom(const void*, int, int, int, int) {
 float InStreamCluster::gene_rmsd(const float*, const float*, int) { return 0.0f; }
 void InStreamCluster::merge_closest_pair(int) {}
 } // namespace flexaids
+#endif

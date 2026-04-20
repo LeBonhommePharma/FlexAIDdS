@@ -212,12 +212,15 @@ static cfstr test_sum_function(
 
 TEST(EvalSpanTest, ClampsBeyondMax) {
     FA_Global fa;
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wnontrivial-memcall"
     std::memset(&fa, 0, sizeof(FA_Global));
     GB_Global gb;
     std::memset(&gb, 0, sizeof(GB_Global));
     gb.num_genes = 2;
     VC_Global vc;
     std::memset(&vc, 0, sizeof(VC_Global));
+#pragma clang diagnostic pop
 
     genlim gl[2];
     gl[0].min = -10.0; gl[0].max = 10.0; gl[0].del = 1.0; gl[0].nbin = 20; gl[0].bin = 0.05;
@@ -249,12 +252,15 @@ TEST(EvalSpanTest, ClampsBeyondMax) {
 
 TEST(EvalSpanTest, ClampsBelowMin) {
     FA_Global fa;
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wnontrivial-memcall"
     std::memset(&fa, 0, sizeof(FA_Global));
     GB_Global gb;
     std::memset(&gb, 0, sizeof(GB_Global));
     gb.num_genes = 2;
     VC_Global vc;
     std::memset(&vc, 0, sizeof(VC_Global));
+#pragma clang diagnostic pop
 
     genlim gl[2];
     gl[0].min = -10.0; gl[0].max = 10.0; gl[0].del = 1.0; gl[0].nbin = 20; gl[0].bin = 0.05;
@@ -285,9 +291,12 @@ TEST(EvalSpanTest, ClampsBelowMin) {
 
 TEST(EvalSpanTest, WithinBoundsPassthrough) {
     FA_Global fa;
+    #pragma clang diagnostic push
+    #pragma clang diagnostic ignored "-Wnontrivial-memcall"
     std::memset(&fa, 0, sizeof(FA_Global));
     GB_Global gb;
     std::memset(&gb, 0, sizeof(GB_Global));
+    #pragma clang diagnostic pop
     gb.num_genes = 3;
     VC_Global vc;
     std::memset(&vc, 0, sizeof(VC_Global));

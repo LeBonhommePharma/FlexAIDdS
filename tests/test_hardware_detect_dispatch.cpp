@@ -12,7 +12,7 @@
 
 #include <gtest/gtest.h>
 #include "../LIB/hardware_detect.h"
-#include "../LIB/hardware_dispatch.h"
+#include "../LIB/UnifiedHardwareDispatch.h"
 #include "../LIB/simd_distance.h"
 
 #include <cmath>

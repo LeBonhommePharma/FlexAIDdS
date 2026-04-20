@@ -1,7 +1,33 @@
 # Build: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release && cmake --build build
 
 cmake_minimum_required(VERSION 3.18)
-project(FlexAID VERSION 2.0.0 LANGUAGES CXX OBJCXX)
+
+# ─── Graceful OBJCXX Fallback ──────────────────────────────────────────────
+# Detects OBJCXX compiler availability before requiring it.
+# On non-Apple or incomplete toolchain: builds with CXX only, Metal disabled.
+
+set(_ENABLED_LANGUAGES "CXX")
+
+if(APPLE)
+    execute_process(
+        COMMAND xcrun -f clang++
+        OUTPUT_QUIET ERROR_QUIET
+        RESULT_VARIABLE _XCRUN_RESULT
+    )
+    if(_XCRUN_RESULT EQUAL 0)
+        list(APPEND _ENABLED_LANGUAGES "OBJCXX")
+        set(_HAS_OBJCXX TRUE)
+        message(STATUS "Objective-C++ compiler found — Metal support enabled")
+    else()
+        set(_HAS_OBJCXX FALSE)
+        message(WARNING "Objective-C++ compiler not available — Metal support disabled")
+        set(FLEXAIDS_USE_METAL OFF CACHE BOOL "Enable Metal GPU acceleration" FORCE)
+    endif()
+else()
+    set(_HAS_OBJCXX FALSE)
+endif()
+
+project(FlexAID VERSION 2.0.0 LANGUAGES ${_ENABLED_LANGUAGES})
 
 include(CheckCXXCompilerFlag)
 
@@ -209,10 +235,16 @@ if(FLEXAIDS_USE_METAL)
     if(NOT APPLE)
         message(FATAL_ERROR "Metal acceleration is only supported on macOS")
     endif()
-    find_library(METAL_LIBRARY Metal REQUIRED)
-    find_library(FOUNDATION_LIBRARY Foundation REQUIRED)
-    find_library(METALKIT_LIBRARY MetalKit REQUIRED)
-    message(STATUS "Metal acceleration enabled")
+    
+    if(NOT _HAS_OBJCXX)
+        message(WARNING "Objective-C++ not available — disabling Metal support")
+        set(FLEXAIDS_USE_METAL OFF)
+    else()
+        find_library(METAL_LIBRARY Metal REQUIRED)
+        find_library(FOUNDATION_LIBRARY Foundation REQUIRED)
+        find_library(METALKIT_LIBRARY MetalKit REQUIRED)
+        message(STATUS "Metal acceleration enabled")
+    endif()
 else()
     if(APPLE)
         message(STATUS "Metal acceleration available but disabled (use -DFLEXAIDS_USE_METAL=ON)")
@@ -1169,6 +1201,7 @@ if(BUILD_TESTING)
         tests/test_gaboom.cpp
         tests/stubs.cpp
         LIB/gaboom.cpp
+        LIB/InStreamClustering.cpp
         LIB/GAContext.cpp
         LIB/Vcontacts.cpp
         LIB/statmech.cpp
@@ -1216,6 +1249,7 @@ if(BUILD_TESTING)
         tests/stubs.cpp
         LIB/shannon_ga.cpp
         LIB/gaboom.cpp
+        LIB/InStreamClustering.cpp
         LIB/GAContext.cpp
         LIB/Vcontacts.cpp
         LIB/statmech.cpp
@@ -1276,6 +1310,26 @@ if(BUILD_TESTING)
     endif()
     flexaids_configure_msvc_test(test_vcontacts)
     add_test(NAME VcontactsTests COMMAND test_vcontacts)
+
+    # test_vcontacts_geometry — convex-hull geometry functions (test_point, add_vedge, etc.)
+    add_executable(test_vcontacts_geometry
+        tests/test_vcontacts_geometry.cpp
+        tests/stubs.cpp
+        LIB/Vcontacts.cpp
+        LIB/geometry.cpp
+    )
+    target_include_directories(test_vcontacts_geometry PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/LIB)
+    target_link_libraries(test_vcontacts_geometry PRIVATE GTest::gtest GTest::gtest_main)
+    if(MSVC)
+        target_compile_options(test_vcontacts_geometry PRIVATE /O2)
+    else()
+        target_compile_options(test_vcontacts_geometry PRIVATE -O2)
+    endif()
+    if(FLEXAIDS_USE_OPENMP AND OpenMP_CXX_FOUND)
+        target_link_libraries(test_vcontacts_geometry PRIVATE OpenMP::OpenMP_CXX)
+    endif()
+    flexaids_configure_msvc_test(test_vcontacts_geometry)
+    add_test(NAME VcontactsGeometryTests COMMAND test_vcontacts_geometry)
 
     # test_cleft_cavity — CleftDetector + CavityDetect unit tests
     add_executable(test_cleft_cavity
@@ -1464,6 +1518,7 @@ flexaids_configure_simd(test_cavity_detect)
         tests/test_binding_mode_statmech.cpp
         tests/stubs.cpp
         LIB/gaboom.cpp
+        LIB/InStreamClustering.cpp
         LIB/GAContext.cpp
         LIB/Vcontacts.cpp
         LIB/statmech.cpp
@@ -1509,6 +1564,7 @@ flexaids_configure_simd(test_cavity_detect)
         tests/test_ccbm.cpp
         tests/stubs.cpp
         LIB/gaboom.cpp
+        LIB/InStreamClustering.cpp
         LIB/GAContext.cpp
         LIB/Vcontacts.cpp
         LIB/statmech.cpp
@@ -1554,6 +1610,7 @@ flexaids_configure_simd(test_cavity_detect)
         tests/test_binding_mode_advanced.cpp
         tests/stubs.cpp
         LIB/gaboom.cpp
+        LIB/InStreamClustering.cpp
         LIB/GAContext.cpp
         LIB/Vcontacts.cpp
         LIB/statmech.cpp
@@ -1616,6 +1673,7 @@ flexaids_configure_simd(test_cavity_detect)
         LIB/NATURaL/NucleationDetector.cpp
         LIB/UnifiedHardwareDispatch.cpp
         LIB/hardware_detect.cpp
+        LIB/InStreamClustering.cpp
     )
     target_include_directories(test_ga_core PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/LIB
@@ -1661,6 +1719,7 @@ flexaids_configure_simd(test_cavity_detect)
         LIB/NATURaL/NucleationDetector.cpp
         LIB/UnifiedHardwareDispatch.cpp
         LIB/hardware_detect.cpp
+        LIB/InStreamClustering.cpp
     )
     target_include_directories(test_ga_validation PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/LIB
@@ -1684,57 +1743,12 @@ flexaids_configure_simd(test_cavity_detect)
     flexaids_configure_msvc_test(test_ga_validation)
     add_test(NAME GAValidationTests COMMAND test_ga_validation)
 
-    # test_ga_population — GA population-level functions (fitness_stats, adapt_prob,
-    # roullete_wheel, cmp_chrom2pop, remove_dups, set_bins, crossover, mutate)
-    add_executable(test_ga_population
-        tests/test_ga_population.cpp
-        tests/stubs.cpp
-        LIB/gaboom.cpp
-        LIB/GAContext.cpp
-        LIB/Vcontacts.cpp
-        LIB/statmech.cpp
-        LIB/TurboQuant.cpp
-        LIB/geometry.cpp
-        LIB/tENCoM/tencm.cpp
-        LIB/encom.cpp
-        LIB/BindingMode.cpp
-        LIB/fast_optics.cpp
-        LIB/ShannonThermoStack/ShannonThermoStack.cpp
-        LIB/CleftDetector.cpp
-        LIB/NATURaL/NATURaLDualAssembly.cpp
-        LIB/NATURaL/RibosomeElongation.cpp
-        LIB/NATURaL/TransloconInsertion.cpp
-        LIB/NATURaL/NucleationDetector.cpp
-        LIB/UnifiedHardwareDispatch.cpp
-        LIB/hardware_detect.cpp
-    )
-    target_include_directories(test_ga_population PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/LIB
-        ${CMAKE_CURRENT_SOURCE_DIR}/LIB/tENCoM
-        ${CMAKE_CURRENT_SOURCE_DIR}/LIB/ShannonThermoStack
-        ${CMAKE_CURRENT_SOURCE_DIR}/LIB/NATURaL
-        ${CMAKE_CURRENT_SOURCE_DIR}/LIB/CavityDetect
-    )
-    target_link_libraries(test_ga_population PRIVATE GTest::gtest GTest::gtest_main)
-    if(MSVC)
-        target_compile_options(test_ga_population PRIVATE /O2)
-    else()
-        target_compile_options(test_ga_population PRIVATE -O2)
-    endif()
-    if(FLEXAIDS_USE_OPENMP AND OpenMP_CXX_FOUND)
-        target_link_libraries(test_ga_population PRIVATE OpenMP::OpenMP_CXX)
-    endif()
-    target_link_libraries(test_ga_population PRIVATE Eigen3::Eigen)
-    target_compile_definitions(test_ga_population PRIVATE FLEXAIDS_HAS_EIGEN)
-    flexaids_configure_msvc_test(test_ga_population)
-    add_test(NAME GAPopulationTests COMMAND test_ga_population)
-
-    # test_ga_operators — GA helper functions (RandomDouble, genetoic, ictogene,
-    #                     QuickSort, swap_chrom, save_snapshot, check_state, calc_rmsp)
+    # test_ga_operators — untested GA helpers (calc_poss, set_bins, validate_dups, etc.)
     add_executable(test_ga_operators
         tests/test_ga_operators.cpp
         tests/stubs.cpp
         LIB/gaboom.cpp
+        LIB/calc_rmsp.cpp
         LIB/GAContext.cpp
         LIB/Vcontacts.cpp
         LIB/statmech.cpp
@@ -1752,6 +1766,7 @@ flexaids_configure_simd(test_cavity_detect)
         LIB/NATURaL/NucleationDetector.cpp
         LIB/UnifiedHardwareDispatch.cpp
         LIB/hardware_detect.cpp
+        LIB/InStreamClustering.cpp
     )
     target_include_directories(test_ga_operators PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/LIB
@@ -1759,10 +1774,9 @@ flexaids_configure_simd(test_cavity_detect)
         ${CMAKE_CURRENT_SOURCE_DIR}/LIB/ShannonThermoStack
         ${CMAKE_CURRENT_SOURCE_DIR}/LIB/NATURaL
         ${CMAKE_CURRENT_SOURCE_DIR}/LIB/CavityDetect
-        ${CMAKE_CURRENT_SOURCE_DIR}/tests
-        ${CMAKE_CURRENT_SOURCE_DIR}
     )
-    target_link_libraries(test_ga_operators PRIVATE GTest::gtest GTest::gtest_main)
+    target_link_libraries(test_ga_operators PRIVATE GTest::gtest GTest::gtest_main Eigen3::Eigen)
+    target_compile_definitions(test_ga_operators PRIVATE FLEXAIDS_HAS_EIGEN)
     if(MSVC)
         target_compile_options(test_ga_operators PRIVATE /O2)
     else()
@@ -1771,60 +1785,15 @@ flexaids_configure_simd(test_cavity_detect)
     if(FLEXAIDS_USE_OPENMP AND OpenMP_CXX_FOUND)
         target_link_libraries(test_ga_operators PRIVATE OpenMP::OpenMP_CXX)
     endif()
-    target_link_libraries(test_ga_operators PRIVATE Eigen3::Eigen)
-    target_compile_definitions(test_ga_operators PRIVATE FLEXAIDS_HAS_EIGEN)
     flexaids_configure_msvc_test(test_ga_operators)
-    add_test(NAME GAOperatorTests COMMAND test_ga_operators)
+    add_test(NAME GAOperatorsTests COMMAND test_ga_operators)
 
-    # test_binding_mode_io — Pose construction, BindingMode pose management, BindingPopulation I/O
-    add_executable(test_binding_mode_io
-        tests/test_binding_mode_io.cpp
-        tests/stubs.cpp
-        LIB/gaboom.cpp
-        LIB/GAContext.cpp
-        LIB/Vcontacts.cpp
-        LIB/statmech.cpp
-        LIB/TurboQuant.cpp
-        LIB/geometry.cpp
-        LIB/tENCoM/tencm.cpp
-        LIB/encom.cpp
-        LIB/BindingMode.cpp
-        LIB/fast_optics.cpp
-        LIB/ShannonThermoStack/ShannonThermoStack.cpp
-        LIB/CleftDetector.cpp
-        LIB/NATURaL/NATURaLDualAssembly.cpp
-        LIB/NATURaL/RibosomeElongation.cpp
-        LIB/NATURaL/TransloconInsertion.cpp
-        LIB/NATURaL/NucleationDetector.cpp
-        LIB/UnifiedHardwareDispatch.cpp
-        LIB/hardware_detect.cpp
-    )
-    target_include_directories(test_binding_mode_io PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/LIB
-        ${CMAKE_CURRENT_SOURCE_DIR}/LIB/tENCoM
-        ${CMAKE_CURRENT_SOURCE_DIR}/LIB/ShannonThermoStack
-        ${CMAKE_CURRENT_SOURCE_DIR}/LIB/NATURaL
-        ${CMAKE_CURRENT_SOURCE_DIR}/LIB/CavityDetect
-    )
-    target_link_libraries(test_binding_mode_io PRIVATE GTest::gtest GTest::gtest_main)
-    if(MSVC)
-        target_compile_options(test_binding_mode_io PRIVATE /O2)
-    else()
-        target_compile_options(test_binding_mode_io PRIVATE -O2)
-    endif()
-    if(FLEXAIDS_USE_OPENMP AND OpenMP_CXX_FOUND)
-        target_link_libraries(test_binding_mode_io PRIVATE OpenMP::OpenMP_CXX)
-    endif()
-    target_link_libraries(test_binding_mode_io PRIVATE Eigen3::Eigen)
-    target_compile_definitions(test_binding_mode_io PRIVATE FLEXAIDS_HAS_EIGEN)
-    flexaids_configure_msvc_test(test_binding_mode_io)
-    add_test(NAME BindingModeIOTests COMMAND test_binding_mode_io)
-
-    # test_binding_mode_comparison — BindingMode comparison operators, representative, delta_G
+    # test_binding_mode_comparison — Pose/BindingMode comparison operators
     add_executable(test_binding_mode_comparison
         tests/test_binding_mode_comparison.cpp
         tests/stubs.cpp
         LIB/gaboom.cpp
+        LIB/calc_rmsp.cpp
         LIB/GAContext.cpp
         LIB/Vcontacts.cpp
         LIB/statmech.cpp
@@ -1842,6 +1811,7 @@ flexaids_configure_simd(test_cavity_detect)
         LIB/NATURaL/NucleationDetector.cpp
         LIB/UnifiedHardwareDispatch.cpp
         LIB/hardware_detect.cpp
+        LIB/InStreamClustering.cpp
     )
     target_include_directories(test_binding_mode_comparison PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/LIB
@@ -1850,7 +1820,8 @@ flexaids_configure_simd(test_cavity_detect)
         ${CMAKE_CURRENT_SOURCE_DIR}/LIB/NATURaL
         ${CMAKE_CURRENT_SOURCE_DIR}/LIB/CavityDetect
     )
-    target_link_libraries(test_binding_mode_comparison PRIVATE GTest::gtest GTest::gtest_main)
+    target_link_libraries(test_binding_mode_comparison PRIVATE GTest::gtest GTest::gtest_main Eigen3::Eigen)
+    target_compile_definitions(test_binding_mode_comparison PRIVATE FLEXAIDS_HAS_EIGEN)
     if(MSVC)
         target_compile_options(test_binding_mode_comparison PRIVATE /O2)
     else()
@@ -1859,8 +1830,6 @@ flexaids_configure_simd(test_cavity_detect)
     if(FLEXAIDS_USE_OPENMP AND OpenMP_CXX_FOUND)
         target_link_libraries(test_binding_mode_comparison PRIVATE OpenMP::OpenMP_CXX)
     endif()
-    target_link_libraries(test_binding_mode_comparison PRIVATE Eigen3::Eigen)
-    target_compile_definitions(test_binding_mode_comparison PRIVATE FLEXAIDS_HAS_EIGEN)
     flexaids_configure_msvc_test(test_binding_mode_comparison)
     add_test(NAME BindingModeComparisonTests COMMAND test_binding_mode_comparison)
 
@@ -1945,6 +1914,7 @@ flexaids_configure_simd(test_cavity_detect)
         tests/test_entropy_ga.cpp
         tests/stubs.cpp
         LIB/gaboom.cpp
+        LIB/InStreamClustering.cpp
         LIB/GAContext.cpp
         LIB/Vcontacts.cpp
         LIB/statmech.cpp
@@ -2079,7 +2049,7 @@ flexaids_configure_simd(test_cavity_detect)
         LIB/AsyncPipeline.cpp
     )
     target_include_directories(test_dataset_runner PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/LIB)
-    target_link_libraries(test_dataset_runner PRIVATE GTest::gtest GTest::gtest_main)
+    target_link_libraries(test_dataset_runner PRIVATE flexaid_core GTest::gtest GTest::gtest_main)
     if(MSVC)
         target_compile_options(test_dataset_runner PRIVATE /O2)
         target_compile_definitions(test_dataset_runner PRIVATE
@@ -2099,6 +2069,7 @@ flexaids_configure_simd(test_cavity_detect)
         tests/test_binding_mode_vibrational.cpp
         tests/stubs.cpp
         LIB/gaboom.cpp
+        LIB/InStreamClustering.cpp
         LIB/GAContext.cpp
         LIB/Vcontacts.cpp
         LIB/statmech.cpp
@@ -2580,6 +2551,7 @@ if(BUILD_SWIFT_BRIDGE)
         LIB/statmech.cpp
         LIB/TurboQuant.cpp
         LIB/gaboom.cpp
+        LIB/InStreamClustering.cpp
         LIB/GAContext.cpp
         LIB/Vcontacts.cpp
         LIB/BindingMode.cpp

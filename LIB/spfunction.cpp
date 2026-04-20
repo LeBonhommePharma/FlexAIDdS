@@ -108,7 +108,8 @@ int spfunction(FA_Global* FA,atom* atoms,resid* residue){
 	  // intramolecular atoms
 	  if(k==i){
 	    fatm = residue[i].fatm[residue[i].rot];
-	    if(residue[i].bonded[j-fatm][l-fatm] >= 0){
+	    if(residue[i].bonded != NULL &&
+	       residue[i].bonded[j-fatm][l-fatm] >= 0){
 	      // atom is bonded
 	      nbonded++;
 	      continue;

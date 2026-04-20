@@ -14,8 +14,7 @@ void read_rotobs(FA_Global* FA,rot** rotamer,char* filename)
   char residue[4];
   char chi[9];
   int nchi;
-  int nid;
-  (void)nid;
+  [[maybe_unused]] int nid;
 
   infile_ptr=NULL;
   if (!OpenFile_B(filename,"r",&infile_ptr))

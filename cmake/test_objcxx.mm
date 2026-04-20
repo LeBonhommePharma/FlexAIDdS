@@ -1,4 +1,4 @@
-// Minimal test for Objective-C++ compiler availability
+// Minimal Objective-C++ compile test
 int main() {
     return 0;
 }

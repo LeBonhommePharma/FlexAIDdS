@@ -14,8 +14,9 @@
 // Copyright 2026 Le Bonhomme Pharma. Licensed under Apache-2.0.
 // =============================================================================
 
-#include "DatasetRunner.h"
+// Include gtest FIRST to avoid macro pollution from flexaid.h (e.g. #define E)
 #include <gtest/gtest.h>
+#include "DatasetRunner.h"
 #include <cmath>
 #include <filesystem>
 #include <fstream>

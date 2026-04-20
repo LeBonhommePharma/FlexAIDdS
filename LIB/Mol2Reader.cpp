@@ -238,7 +238,7 @@ int read_mol2_ligand(FA_Global* FA, atom** atoms, resid** residue,
 
     // Build mol2_id → internal index map
     std::map<int, int> id_map;
-    int first_atm = FA->atm_cnt + 1; (void)first_atm;
+    [[maybe_unused]] int first_atm = FA->atm_cnt + 1;
 
     for (size_t ai = 0; ai < tmp_atoms.size(); ++ai) {
         FA->atm_cnt++;
