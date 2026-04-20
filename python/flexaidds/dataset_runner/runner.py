@@ -36,6 +36,7 @@ import sys
 import tempfile
 import time
 from collections import defaultdict
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field, asdict
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
@@ -482,6 +483,7 @@ class DatasetRunner:
         binary: Optional[str] = None,
         temperature: float = 300.0,
         n_workers: int = 1,
+        omp_threads: Optional[int] = None,
         use_mpi: bool = False,
         cache_dir: Optional[Union[str, Path]] = None,
         bootstrap_ci: bool = False,
@@ -494,7 +496,12 @@ class DatasetRunner:
         self.results_dir = Path(results_dir)
         self.binary = binary or os.environ.get("FLEXAIDDS_BINARY") or "FlexAID"
         self.temperature = temperature
-        self.n_workers = n_workers
+        self.n_workers = max(1, int(n_workers))
+        # OMP threads per worker: explicit > env > auto (aim for 2 on M3 Pro's 5 P-cores).
+        if omp_threads is None:
+            env_val = os.environ.get("FLEXAIDDS_OMP_THREADS")
+            omp_threads = int(env_val) if env_val else max(1, 2 if self.n_workers > 1 else 4)
+        self.omp_threads = max(1, int(omp_threads))
         self.use_mpi = use_mpi
         self.cache_dir = Path(
             cache_dir or os.environ.get("FLEXAIDDS_BENCHMARK_DATA", "benchmark_data")
@@ -644,6 +651,8 @@ class DatasetRunner:
 
                 cfg_path.write_text("\n".join(cfg_lines) + "\n")
 
+                sub_env = os.environ.copy()
+                sub_env["OMP_NUM_THREADS"] = str(self.omp_threads)
                 try:
                     result = subprocess.run(
                         [self.binary, str(cfg_path)],
@@ -651,6 +660,7 @@ class DatasetRunner:
                         text=True,
                         timeout=3600,
                         cwd=tmp_path,
+                        env=sub_env,
                     )
                     if result.returncode != 0:
                         logger.warning(
@@ -819,10 +829,9 @@ class DatasetRunner:
         completed: List[str] = []
         failed: List[str] = []
 
-        for target_id in my_targets:
+        def _run_one(target_id: str) -> Tuple[str, List[PoseScore], float]:
             t_start = time.monotonic()
             target_poses: List[PoseScore] = []
-
             for state in states:
                 receptor = None
                 if config.data_dir and not self.dry_run:
@@ -842,18 +851,39 @@ class DatasetRunner:
                     structural_state=state,
                 )
                 target_poses.extend(poses)
+            return target_id, target_poses, time.monotonic() - t_start
 
-            if target_poses:
-                all_poses.extend(target_poses)
-                completed.append(target_id)
-            else:
-                failed.append(target_id)
-                logger.warning("No poses for target %s", target_id)
-
-            logger.debug(
-                "Target %s: %d poses in %.1fs",
-                target_id, len(target_poses), time.monotonic() - t_start,
+        use_pool = self.n_workers > 1 and self._mpi_size == 1 and len(my_targets) > 1
+        if use_pool:
+            logger.info(
+                "Dispatching %d targets across %d workers (OMP_NUM_THREADS=%d per worker)",
+                len(my_targets), self.n_workers, self.omp_threads,
             )
+            with ThreadPoolExecutor(max_workers=self.n_workers) as pool:
+                for target_id, target_poses, elapsed in pool.map(_run_one, my_targets):
+                    if target_poses:
+                        all_poses.extend(target_poses)
+                        completed.append(target_id)
+                    else:
+                        failed.append(target_id)
+                        logger.warning("No poses for target %s", target_id)
+                    logger.debug(
+                        "Target %s: %d poses in %.1fs",
+                        target_id, len(target_poses), elapsed,
+                    )
+        else:
+            for target_id in my_targets:
+                target_id, target_poses, elapsed = _run_one(target_id)
+                if target_poses:
+                    all_poses.extend(target_poses)
+                    completed.append(target_id)
+                else:
+                    failed.append(target_id)
+                    logger.warning("No poses for target %s", target_id)
+                logger.debug(
+                    "Target %s: %d poses in %.1fs",
+                    target_id, len(target_poses), elapsed,
+                )
 
         # MPI gather poses to root
         if self._mpi_comm is not None:

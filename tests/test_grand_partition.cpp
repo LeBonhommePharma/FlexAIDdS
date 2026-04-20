@@ -217,8 +217,8 @@ TEST(GrandPartition, DuplicateAddThrows) {
 
 TEST(GrandPartition, QueryMissingThrows) {
     GrandPartitionFunction gpf(300.0);
-    EXPECT_THROW(gpf.binding_probability("X"), std::invalid_argument);
-    EXPECT_THROW(gpf.F_bound("X"), std::invalid_argument);
+    EXPECT_THROW((void)gpf.binding_probability("X"), std::invalid_argument);
+    EXPECT_THROW((void)gpf.F_bound("X"), std::invalid_argument);
     EXPECT_THROW(gpf.overwrite_ligand("X", 5.0), std::invalid_argument);
     EXPECT_THROW(gpf.merge_ligand("X", 5.0), std::invalid_argument);
     EXPECT_THROW(gpf.remove_ligand("X"), std::invalid_argument);
@@ -330,11 +330,12 @@ TEST(GrandPartition, LogSelectivity) {
     EXPECT_TRUE(std::isfinite(gpf.selectivity("A", "B")));
     EXPECT_NEAR(gpf.selectivity("B", "A"), 0.0, 1e-200);
 
-    // Extreme values that actually overflow
+    // Extreme values: selectivity returns DBL_MAX sentinel (not infinity —
+    // avoids UB under -ffast-math/-ffinite-math-only)
     GrandPartitionFunction gpf2(300.0);
     gpf2.add_ligand("X", 800.0);
     gpf2.add_ligand("Y", 0.0);
-    EXPECT_TRUE(std::isinf(gpf2.selectivity("X", "Y")));
+    EXPECT_EQ(gpf2.selectivity("X", "Y"), std::numeric_limits<double>::max());
     EXPECT_EQ(gpf2.selectivity("Y", "X"), 0.0);
 }
 
@@ -493,4 +494,22 @@ TEST(GrandPartition, AllLogZzAccessor) {
     }
     EXPECT_NEAR(log_zz_A, 10.0, 1e-10);
     EXPECT_NEAR(log_zz_B, std::log(0.01) + 10.0, 1e-10);
+}
+
+TEST(GrandPartition, AllLogZAccessor) {
+    GrandPartitionFunction gpf(300.0);
+    gpf.add_ligand("A", 10.0, 1.0);
+    gpf.add_ligand("B", 20.0, 0.5);
+
+    auto zz = gpf.all_log_Z();  // intrinsic log(Z), not concentration-weighted
+    ASSERT_EQ(zz.size(), 2u);
+
+    double logZ_A = 0, logZ_B = 0;
+    for (const auto& [name, val] : zz) {
+        if (name == "A") logZ_A = val;
+        if (name == "B") logZ_B = val;
+    }
+    // all_log_Z returns intrinsic partition function (no concentration weighting)
+    EXPECT_NEAR(logZ_A, 10.0, 1e-10);
+    EXPECT_NEAR(logZ_B, 20.0, 1e-10);
 }

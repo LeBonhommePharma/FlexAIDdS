@@ -501,7 +501,7 @@ int SmilesParser::compute_implicit_h(int atom_idx) const noexcept {
         a.element == Element::Ca || a.element == Element::Mg) return 0;
 
     // Compute current bond-order sum
-    float bos = mol_.bond_order_sum(atom_idx);
+    [[maybe_unused]] float bos = mol_.bond_order_sum(atom_idx);
     // Aromatic bonds: each contributes 1.5 but for H computation we use 1
     // (OpenSMILES uses integer arithmetic: aromatic bonds count as 1 for valence)
     // Count aromatic bonds and re-sum

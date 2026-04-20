@@ -31,7 +31,10 @@ protected:
 
     void SetUp() override {
         fa = new FA_Global();
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wnontrivial-memcall"
         std::memset(fa, 0, sizeof(FA_Global));
+#pragma clang diagnostic pop
         fa->temperature = static_cast<uint>(TEMP);
 
         gb = new GB_Global();

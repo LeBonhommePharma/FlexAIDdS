@@ -96,11 +96,11 @@ int compute_implicit_h(const BonMol& mol, int atom_idx) {
     }
 
     // Current bond order sum (aromatic bonds count as 1.5)
-    float bos = mol.bond_order_sum(atom_idx);
+    [[maybe_unused]] float bos = mol.bond_order_sum(atom_idx);
 
     // For implicit H, use integer bond order (aromatic = 1)
     // Count aromatic bonds and adjust
-    int  arom_bonds = 0;
+    [[maybe_unused]] int  arom_bonds = 0;
     float adj_bos   = 0.0f;
     for (int bidx : mol.bond_adj[atom_idx]) {
         const Bond& b = mol.bonds[bidx];

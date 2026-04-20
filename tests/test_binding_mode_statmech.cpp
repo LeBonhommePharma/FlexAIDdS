@@ -36,7 +36,10 @@ protected:
     void SetUp() override {
         // Initialize minimal mock structures (zero-init to avoid UB)
         mock_fa = new FA_Global();
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wnontrivial-memcall"
         std::memset(mock_fa, 0, sizeof(FA_Global));
+#pragma clang diagnostic pop
         mock_fa->temperature = static_cast<uint>(TEST_TEMPERATURE);
 
         mock_gb = new GB_Global();

@@ -75,11 +75,11 @@ int calc_region(FA_Global* FA,VC_Global* VC,atom* atoms,int atmcnt,bool non_scor
 {
 	int    i;        // atom counter
 	int    atomzero; // current center atom
-	int    boxi;
+	[[maybe_unused]] int    boxi;
 	int    NC;       // number of contacts around atomzero
 	int    NV;       // number of vertices in polyhedron around atomzero
 	float  rado;     // radius of atomzero PLUS radius of water
-	char   surfatom; // atom type, 'I' internal, 'S' surface
+	[[maybe_unused]] char   surfatom; // atom type, 'I' internal, 'S' surface
     
 	/*
 	  printf("================================\n");

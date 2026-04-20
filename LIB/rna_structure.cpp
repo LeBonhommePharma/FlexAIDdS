@@ -26,7 +26,7 @@ int rna_structure(char* infile)
     
     int n_atoms = 0;  // atom records counter
     int n_naa = 0; // nucleic acid atom counter
-    int n_aaa = 0; // amino acid atom counter
+    [[maybe_unused]] int n_aaa = 0; // amino acid atom counter
     
     if(!OpenFile_B(infile,"r",&infile_ptr)){
 		fprintf(stderr,"ERROR: Could not read PDB file %s in rna_structure\n", infile);

@@ -177,7 +177,7 @@ public:
 private:
     ROCmDeviceInfo info_;
     bool           available_ = false;
-    int            device_id_ = 0;
+    [[maybe_unused]] int            device_id_ = 0;
 
     void check_hip(hipError_t err, const char* msg);
 };

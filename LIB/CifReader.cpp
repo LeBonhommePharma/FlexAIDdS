@@ -140,6 +140,7 @@ static int get_int(const std::vector<std::string>& toks, int col_idx) {
 }
 
 // Element symbol → default FlexAID type (same mapping as SdfReader)
+#if 0  // currently unused — kept for future CIF element→type mapping
 static int element_to_type(const char* elem) {
     if (!strcmp(elem, "C"))  return 1;
     if (!strcmp(elem, "N"))  return 4;
@@ -159,7 +160,9 @@ static int element_to_type(const char* elem) {
     if (!strcmp(elem, "K"))  return 35;
     return 39; // unknown → dummy
 }
+#endif  // element_to_type
 
+#if 0  // currently unused — kept for future CIF element→radius mapping
 static float element_radius(const char* elem) {
     if (!strcmp(elem, "C"))  return 1.70f;
     if (!strcmp(elem, "N"))  return 1.55f;
@@ -173,6 +176,7 @@ static float element_radius(const char* elem) {
     if (!strcmp(elem, "H"))  return 1.20f;
     return 1.70f;
 }
+#endif  // element_radius
 
 // Core CIF parser — reads _atom_site loop, filters by group (ATOM/HETATM/both)
 // and populates FlexAID atom/resid arrays.
@@ -474,7 +478,7 @@ int read_multi_model_pdb(FA_Global* FA, atom** atoms, resid** residue,
     std::vector<ModelCoord> models;
     int current_model = 1;  // default model if no MODEL records
     bool has_model_records = false;
-    bool first_model_started = false;
+    [[maybe_unused]] bool first_model_started = false;
 
     char buf[256];
     while (fgets(buf, sizeof(buf), fp)) {
@@ -707,7 +711,7 @@ int read_multi_model_cif(FA_Global* FA, atom** atoms, resid** residue,
     }
 
     // Load first model via standard reader for topology
-    int first_model = model_map.begin()->first;
+    [[maybe_unused]] int first_model = model_map.begin()->first;
     read_cif_receptor(FA, atoms, residue, cif_file);
 
     // Group coordinates by model

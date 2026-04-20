@@ -27,7 +27,7 @@ void assign_hybridisation(BonMol& mol) {
         if (a.element == Element::H) { a.hybrid = Hybridization::SP; continue; }
 
         // Count total connections (explicit bonds + implicit H)
-        int total_connections = mol.degree(i) + a.implicit_h_count;
+        [[maybe_unused]] int total_connections = mol.degree(i) + a.implicit_h_count;
 
         // Count double and triple bonds
         bool has_triple = false;

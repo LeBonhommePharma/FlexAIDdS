@@ -143,7 +143,7 @@ public:
     double operator()(double energy) const noexcept;
 
 private:
-    double beta_;
+    [[maybe_unused]] double beta_;
     double e_min_, inv_bin_width_;
     int    n_bins_;
     std::vector<double> table_;

@@ -1,5 +1,6 @@
 #include "gaboom.h"
 #include "fileio.h"
+#include "MinibatchSampler.h"
 #ifdef _OPENMP
 #include <omp.h>
 #endif
@@ -25,17 +26,78 @@ void DensityPeak_cluster(FA_Global* FA, GB_Global* GB, VC_Global* VC, chromosome
 	float DC = 0.0f;
 	const int nAtoms = residue[atoms[FA->map_par[0].atm].ofres].latm[0] - residue[atoms[FA->map_par[0].atm].ofres].fatm[0] + 1;
 	uint maxDensity;
-	int mean, stddev;
+	[[maybe_unused]] int mean, stddev;
 	int nResults;
 	int nClusters = 0;
 	float maxDist, minDist;
 	float* RMSD;
-	double Pi;
+	[[maybe_unused]] double Pi;
 	double partition_function;
 	ClusterChrom* Chrom;
 	ClusterChrom *pChrom, *iChrom, *iiChrom, *jChrom;
 	DPcluster* Clust;
 	DPcluster *pCluster, *iClust, *jClust;
+
+	// ── Minibatch pre-filter (farthest-point sampling) ─────────────────────
+	// When the population exceeds a configurable threshold, reduce to ~5K
+	// diverse representatives before clustering.  This turns O(N^2) clustering
+	// into O(k*N + k^2) where k << N, giving ~100x speedup for large ensembles.
+	{
+		const int MINIBATCH_THRESHOLD = 10000;  // only activate above this size
+		const int MINIBATCH_TARGET    = 5000;   // target representative count
+
+		if (num_chrom > MINIBATCH_THRESHOLD) {
+			// Build coordinate cache
+			const int nAtoms_mb = residue[atoms[FA->map_par[0].atm].ofres].latm[0]
+			                    - residue[atoms[FA->map_par[0].atm].ofres].fatm[0] + 1;
+			const int stride_mb = nAtoms_mb * 3;
+
+			minibatch::CoordCache coord_cache;
+			coord_cache.n_chrom = num_chrom;
+			coord_cache.stride  = stride_mb;
+			coord_cache.data.resize(static_cast<std::size_t>(num_chrom) * stride_mb);
+
+			for (int c = 0; c < num_chrom; ++c) {
+				if (c + 1 < num_chrom) {
+					calc_rmsd_chrom(FA, GB, chrom, gene_lim, atoms, residue, cleftgrid,
+					                GB->num_genes, c, c + 1,
+					                &coord_cache.data[static_cast<std::size_t>(c) * stride_mb],
+					                &coord_cache.data[static_cast<std::size_t>(c + 1) * stride_mb], false);
+				} else {
+					calc_rmsd_chrom(FA, GB, chrom, gene_lim, atoms, residue, cleftgrid,
+					                GB->num_genes, c, c,
+					                &coord_cache.data[static_cast<std::size_t>(c) * stride_mb], NULL, false);
+				}
+			}
+
+			// Collect energies
+			std::vector<double> energies(static_cast<std::size_t>(num_chrom));
+			for (int i = 0; i < num_chrom; ++i)
+				energies[i] = chrom[i].app_evalue;
+
+			// Run farthest-point sampling
+			auto sample = minibatch::MinibatchSampler::farthest_point_sample(
+				coord_cache, energies.data(), nAtoms_mb, MINIBATCH_TARGET, /*verbose=*/true);
+
+			if (sample.n_selected > 0 && sample.n_selected < num_chrom) {
+				// Compact selected chromosomes to front of array
+				const auto& sel = sample.selected_indices;
+				std::vector<bool> is_selected(static_cast<std::size_t>(num_chrom), false);
+				for (int idx : sel)
+					is_selected[idx] = true;
+
+				int write_pos = 0;
+				for (int i = 0; i < num_chrom; ++i) {
+					if (is_selected[i]) {
+						if (i != write_pos)
+							std::swap(chrom[write_pos], chrom[i]);
+						++write_pos;
+					}
+				}
+				num_chrom = sample.n_selected;
+			}
+		}
+	}
 
 	// File and Output variables declarations
 	cfstr CF;                                /* complementarity function value */

@@ -16,7 +16,10 @@
 // ===========================================================================
 
 static void init_fa_for_reader(FA_Global* FA, atom** atoms, resid** residue) {
+    #pragma clang diagnostic push
+    #pragma clang diagnostic ignored "-Wnontrivial-memcall"
     std::memset(FA, 0, sizeof(FA_Global));
+    #pragma clang diagnostic pop
     FA->MIN_NUM_ATOM     = 100;
     FA->MIN_NUM_RESIDUE  = 10;
     FA->MIN_FLEX_BONDS   = 5;

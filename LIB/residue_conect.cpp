@@ -25,7 +25,7 @@ void residue_conect(FA_Global* FA,atom* atoms,resid* residue,char aminofile[]){
 	int conect[25][5];       /* conectivity matrix of ideal residue */
 	int dihed[10];           /* conectivity matrix of ideal residue */
 	int fdih=0;
-	int dihflag;
+	[[maybe_unused]] int dihflag;
 
 	infile_ptr=NULL;
 	if (!OpenFile_B(aminofile,"r",&infile_ptr))

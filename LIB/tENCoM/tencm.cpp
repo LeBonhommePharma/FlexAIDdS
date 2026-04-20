@@ -199,7 +199,7 @@ void TorsionalENM::build_contacts()
 {
     contacts_.clear();
     tmcontsct_.clear();
-    const int N   = static_cast<int>(ca_.size());
+    [[maybe_unused]] const int N   = static_cast<int>(ca_.size());
     const int Np  = n_protein_ca_;
     const float rc2 = cutoff_ * cutoff_;
 
@@ -337,7 +337,7 @@ void TorsionalENM::build_contacts()
     // ── Serial path (no OpenMP) with SIMD distance batching ──
 
     for (int i = 0; i < Np - 1; ++i) {
-        const float xi = ca_[i][0], yi = ca_[i][1], zi = ca_[i][2];
+        [[maybe_unused]] const float xi = ca_[i][0], yi = ca_[i][1], zi = ca_[i][2];
 
 #if defined(__AVX512F__)
         const __m512 vxi  = _mm512_set1_ps(xi);

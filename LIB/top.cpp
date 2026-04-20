@@ -185,9 +185,12 @@ int main(int argc, char **argv){
 		Terminate(2);
 	}
 
-	memset(FA,0,sizeof(FA_Global));
-	memset(GB,0,sizeof(GB_Global));
-	memset(VC,0,sizeof(VC_Global));
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wnontrivial-memcall"
+	std::memset(FA,0,sizeof(FA_Global));
+	std::memset(GB,0,sizeof(GB_Global));
+	std::memset(VC,0,sizeof(VC_Global));
+#pragma clang diagnostic pop
 
 	// MIF/RefLig/GridPrio non-zero defaults (pointers already NULL from memset)
 	FA->mif_temperature = 300.0f;
@@ -620,7 +623,7 @@ int main(int argc, char **argv){
 			char* dot = strrchr(tmpprotname, '.');
 			int random_num = static_cast<int>(std::random_device{}() % 900000 + 100000);
 			char random_str[32];
-			sprintf(random_str, "_tmp_%d.pdb", random_num);
+			snprintf(random_str, sizeof(random_str), "_tmp_%d.pdb", random_num);
 			if (dot) {
 				strcpy(dot, random_str);
 			} else {

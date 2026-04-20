@@ -25,13 +25,13 @@
 // These stubs make the file compile on any platform without ROCm.
 // They are never actually called (all paths return early if !has_rocm).
 
-static int  hipGetDeviceCount_stub(int* cnt) { *cnt = 0; return 1; }
-static int  hipSetDevice_stub(int)            { return 1; }
-static int  hipGetDeviceProperties_stub(hipDeviceProp_t*, int) { return 1; }
-static int  hipMalloc_stub(void**, size_t)    { return 1; }
-static int  hipFree_stub(void*)               { return 1; }
-static int  hipMemcpy_stub(void*, const void*, size_t, int) { return 1; }
-static int  hipDeviceSynchronize_stub()       { return 1; }
+[[maybe_unused]] static int  hipGetDeviceCount_stub(int* cnt) { *cnt = 0; return 1; }
+[[maybe_unused]] static int  hipSetDevice_stub(int)            { return 1; }
+[[maybe_unused]] static int  hipGetDeviceProperties_stub(hipDeviceProp_t*, int) { return 1; }
+[[maybe_unused]] static int  hipMalloc_stub(void**, size_t)    { return 1; }
+[[maybe_unused]] static int  hipFree_stub(void*)               { return 1; }
+[[maybe_unused]] static int  hipMemcpy_stub(void*, const void*, size_t, int) { return 1; }
+[[maybe_unused]] static int  hipDeviceSynchronize_stub()       { return 1; }
 
 #define hipGetDeviceCount    hipGetDeviceCount_stub
 #define hipSetDevice         hipSetDevice_stub
@@ -42,9 +42,9 @@ static int  hipDeviceSynchronize_stub()       { return 1; }
 #define hipDeviceSynchronize hipDeviceSynchronize_stub
 
 // Stub copy-direction enum
-constexpr int hipMemcpyHostToDevice   = 1;
-constexpr int hipMemcpyDeviceToHost   = 2;
-constexpr int hipMemcpyDeviceToDevice = 3;
+[[maybe_unused]] constexpr int hipMemcpyHostToDevice   = 1;
+[[maybe_unused]] constexpr int hipMemcpyDeviceToHost   = 2;
+[[maybe_unused]] constexpr int hipMemcpyDeviceToDevice = 3;
 
 #endif // FLEXAIDDS_HAVE_HIP
 

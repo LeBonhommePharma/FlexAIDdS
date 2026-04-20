@@ -55,6 +55,7 @@ using Clock = std::chrono::steady_clock;
 
 // ─── Eigen-accelerated Boltzmann consensus ───────────────────────────────────
 
+#if 0  // currently unused — reserved for future Eigen-accelerated consensus
 static double boltzmann_consensus_eigen(std::span<const double> dG_values,
                                          double temperature_K) {
     const int N = static_cast<int>(dG_values.size());
@@ -72,6 +73,7 @@ static double boltzmann_consensus_eigen(std::span<const double> dG_values,
     const double lse = max_exp + std::log((exponents - max_exp).exp().sum() / N);
     return -lse / beta;
 }
+#endif  // boltzmann_consensus_eigen
 
 static double surrogate_model_dock_score(const LigandResult& lr,
                                          int model_idx,

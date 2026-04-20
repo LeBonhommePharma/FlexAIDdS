@@ -19,7 +19,10 @@ void assign_types(FA_Global* FA, atom* atoms, resid* residue, char aminofile[]);
 
 static FA_Global make_fa(int ntypes = 40) {
     FA_Global fa;
+    #pragma clang diagnostic push
+    #pragma clang diagnostic ignored "-Wnontrivial-memcall"
     memset(&fa, 0, sizeof(fa));
+    #pragma clang diagnostic pop
     fa.ntypes = ntypes;
     fa.res_cnt = 1;  // one residue at index 1
     return fa;

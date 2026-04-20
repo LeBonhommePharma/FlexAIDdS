@@ -11,14 +11,14 @@
 // All sums use log-sum-exp for numerical stability when energies span
 // hundreds of kcal/mol (common in docking).
 //
-// Hardware dispatch (runtime via hardware_dispatch layer):
+// Hardware dispatch (runtime via UnifiedHardwareDispatch layer):
 //   1. AVX-512 16-wide SIMD (+ OpenMP)
 //   2. Eigen3 vectorised array ops (auto-vectorises to AVX2/AVX-512)
 //   3. OpenMP parallel reductions for large ensembles
 //   4. Scalar fallback (always available)
 
 #include "statmech.h"
-#include "hardware_dispatch.h"
+#include "UnifiedHardwareDispatch.h"
 
 #include <cmath>
 #include <algorithm>
@@ -42,7 +42,7 @@
 namespace statmech {
 
 // Threshold above which OpenMP parallelisation pays off for reductions.
-static constexpr std::size_t OMP_THRESHOLD = 4096;
+[[maybe_unused]] static constexpr std::size_t OMP_THRESHOLD = 4096;
 
 // ─── construction ────────────────────────────────────────────────────────────
 
@@ -292,7 +292,7 @@ std::vector<WHAMBin> StatMechEngine::wham(
 
     std::vector<double> raw_count(static_cast<std::size_t>(n_bins), 0.0);
     std::vector<double> boltz_sum(static_cast<std::size_t>(n_bins), 0.0);
-    double inv_bw = 1.0 / bin_w;
+    [[maybe_unused]] double inv_bw = 1.0 / bin_w;
 
 #ifdef _OPENMP
     // OpenMP parallel histogram with per-thread private bins

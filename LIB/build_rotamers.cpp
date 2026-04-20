@@ -5,7 +5,8 @@
  *
  **********************************************************************************************/
 void build_rotamers(FA_Global* FA,atom** atoms,resid* residue,rot* rotamer){
-	int   i,j,k,l,m,j1,n;
+	int   i,j,k,l,m,j1;
+	[[maybe_unused]] int n;
 	int   kres;
 	int   buildcc_list[15];
 
@@ -26,7 +27,7 @@ void build_rotamers(FA_Global* FA,atom** atoms,resid* residue,rot* rotamer){
 	int   neighbours[MAX_ATM_HET];
   
 
-	int   nindex;
+	[[maybe_unused]] int   nindex;
 	int   num_ref=0;       // builds a PDBnum to map rotamer atoms in num_atm
 
 	FILE* outrot = NULL;
