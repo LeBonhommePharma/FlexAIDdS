@@ -55,6 +55,7 @@ using Clock = std::chrono::steady_clock;
 
 // ─── Eigen-accelerated Boltzmann consensus ───────────────────────────────────
 
+[[maybe_unused]]
 static double boltzmann_consensus_eigen(std::span<const double> dG_values,
                                          double temperature_K) {
     const int N = static_cast<int>(dG_values.size());

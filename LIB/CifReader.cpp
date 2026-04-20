@@ -140,6 +140,7 @@ static int get_int(const std::vector<std::string>& toks, int col_idx) {
 }
 
 // Element symbol → default FlexAID type (same mapping as SdfReader)
+[[maybe_unused]]
 static int element_to_type(const char* elem) {
     if (!strcmp(elem, "C"))  return 1;
     if (!strcmp(elem, "N"))  return 4;
@@ -160,6 +161,7 @@ static int element_to_type(const char* elem) {
     return 39; // unknown → dummy
 }
 
+[[maybe_unused]]
 static float element_radius(const char* elem) {
     if (!strcmp(elem, "C"))  return 1.70f;
     if (!strcmp(elem, "N"))  return 1.55f;
@@ -474,7 +476,7 @@ int read_multi_model_pdb(FA_Global* FA, atom** atoms, resid** residue,
     std::vector<ModelCoord> models;
     int current_model = 1;  // default model if no MODEL records
     bool has_model_records = false;
-    bool first_model_started = false;
+    bool first_model_started = false; (void)first_model_started;
 
     char buf[256];
     while (fgets(buf, sizeof(buf), fp)) {
@@ -707,7 +709,7 @@ int read_multi_model_cif(FA_Global* FA, atom** atoms, resid** residue,
     }
 
     // Load first model via standard reader for topology
-    int first_model = model_map.begin()->first;
+    int first_model = model_map.begin()->first; (void)first_model;
     read_cif_receptor(FA, atoms, residue, cif_file);
 
     // Group coordinates by model

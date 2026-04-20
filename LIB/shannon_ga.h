@@ -96,7 +96,7 @@ public:
     const statmech::Thermodynamics& last_thermo() const noexcept { return last_thermo_; }
 
 private:
-    size_t pop_size_;
+    [[maybe_unused]] size_t pop_size_;
     double mutation_rate_;
     double temperature_K_;
     double current_entropy_;

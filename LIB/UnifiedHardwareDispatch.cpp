@@ -605,6 +605,7 @@ std::vector<double> UnifiedHardwareDispatch::compute_boltzmann_weights(
 // Boltzmann batch (span API with telemetry — from hardware_dispatch.cpp)
 // ═════════════════════════════════════════════════════════════════════════════
 
+[[maybe_unused]]
 static BoltzmannBatchResult boltzmann_scalar(
     std::span<const double> energies, double beta)
 {
@@ -774,7 +775,7 @@ BoltzmannBatchResult UnifiedHardwareDispatch::compute_boltzmann_batch(
 
     if (!detected_) detect();
 
-    Backend best = best_backend(KernelType::BOLTZMANN_WEIGHTS);
+    (void)best_backend(KernelType::BOLTZMANN_WEIGHTS);  // detection side-effect only
 
 #ifdef FLEXAIDS_HAS_METAL_SHANNON
     if (is_available(Backend::METAL) && energies.size() >= 256) {
@@ -931,6 +932,7 @@ void UnifiedHardwareDispatch::distance2_batch(
 {
     if (!detected_) detect();
     Backend b = (backend == Backend::AUTO) ? best_backend(KernelType::DISTANCE_BATCH) : backend;
+    (void)b;  // used only in SIMD-conditional blocks below
 
 #ifdef __AVX512F__
     if (b == Backend::AVX512 && is_available(Backend::AVX512)) {

@@ -30,6 +30,7 @@ ShannonThermodynamicGA::ShannonThermodynamicGA(size_t pop_size,
     , last_thermo_{}
     , rng_(std::random_device{}())
 {
+    (void)pop_size_;  // reserved for future population-level heuristics
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
