@@ -66,4 +66,33 @@ expected_baselines:
   hit_rate_top10: 0.28
 
 baseline_tolerance: 0.08
+
+# ── Claude Reevaluated Baselines (2026-04-19) ──────────────────────────────
+# Rationale: MUV is intentionally the hardest VS benchmark because actives
+# and decoys share identical property distributions.  Published results:
+#   Vina EF1%: 1.5–5.0, logAUC: 0.15–0.35
+#   Glide EF1%: 3.0–8.0, logAUC: 0.25–0.45
+#   Best ML methods EF1%: 5.0–12.0
+# MUV's property-matched design means simple scoring functions fail badly.
+#
+# Original EF1%=8.5 is good but achievable.  logAUC=0.52 is very strong
+# for MUV.  entropy_rescue_rate=0.38 is reasonable — entropy could help
+# here since property-matching eliminates the easy signal.
+#
+claude_reevaluated_baselines:
+  ef_1pct: 7.0                        # was 8.5 — MUV is brutal; 7.0 still above most methods
+  ef_5pct: 3.5                        # was 4.2 — follows EF1% ratio
+  log_auc: 0.45                       # was 0.52 — MUV logAUC >0.40 is excellent
+  entropy_rescue_rate: 0.35           # was 0.38 — essentially unchanged
+  hit_rate_top10: 0.25                # was 0.28 — slight adjustment
+claude_reevaluated_rationale: >
+  MUV baselines adjusted modestly.  EF1% from 8.5→7.0: MUV is designed
+  to be unbiased, making enrichment much harder than DUD-E.  Most methods
+  achieve EF1%=2–6 on MUV; 7.0 is above the 75th percentile.  logAUC
+  from 0.52→0.45: the property-matched decoy distribution suppresses
+  logAUC; 0.45 is excellent for MUV.  Entropy rescue rate essentially
+  unchanged at 0.35: MUV is exactly where entropy should help, because
+  property-based shortcuts are eliminated and only genuine binding signal
+  matters.
+claude_reevaluated_by: "Claude Opus 4.6 — 2026-04-19"
 active_label_field: is_active

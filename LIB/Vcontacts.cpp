@@ -75,11 +75,11 @@ int calc_region(FA_Global* FA,VC_Global* VC,atom* atoms,int atmcnt,bool non_scor
 {
 	int    i;        // atom counter
 	int    atomzero; // current center atom
-	int    boxi;
+	int    boxi;     // box index for current atom (reserved for spatial queries)
 	int    NC;       // number of contacts around atomzero
 	int    NV;       // number of vertices in polyhedron around atomzero
 	float  rado;     // radius of atomzero PLUS radius of water
-	char   surfatom; // atom type, 'I' internal, 'S' surface
+	char   surfatom = 0; // atom type, 'I' internal, 'S' surface (reserved)
     
 	/*
 	  printf("================================\n");
@@ -90,7 +90,9 @@ int calc_region(FA_Global* FA,VC_Global* VC,atom* atoms,int atmcnt,bool non_scor
 		// ============= atom contact calculations =============
 		atomzero = VC->Calclist[i];
 		boxi = VC->Calc[atomzero].boxnum;
-		
+		(void)boxi;
+		(void)surfatom;
+
 		if(non_scorable){
 			if(VC->Calc[atomzero].score){
 				//printf("Skipped scorable atom %d\n", VC->Calc[atomzero].atom->number);

@@ -231,7 +231,7 @@ inline std::vector<double> lloyd_max(
 
     assert(pdf.size() == grid.size());
     int n = static_cast<int>(grid.size());
-    double dx = grid[1] - grid[0];
+    [[maybe_unused]] double dx = grid[1] - grid[0];
 
     // Initialize centroids uniformly in [-1,1]
     std::vector<double> centroids(k);
@@ -1175,6 +1175,7 @@ public:
             throw std::invalid_argument("compute_partition_function: size mismatch");
 
         float log_Z = 0.0f;
+        (void)log_Z;
         int n = static_cast<int>(states_.size());
 
         // Compute unnormalised log-weights

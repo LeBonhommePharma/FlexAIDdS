@@ -24,7 +24,6 @@ void build_rotamers(FA_Global* FA,atom** atoms,resid* residue,rot* rotamer){
 	int   nbonded=0;
 	int   bondlist[MAX_ATM_HET];
 	int   neighbours[MAX_ATM_HET];
-  
 
 	int   nindex;
 	int   num_ref=0;       // builds a PDBnum to map rotamer atoms in num_atm

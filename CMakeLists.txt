@@ -698,7 +698,10 @@ endif()
 # LTO and native-arch flags for production deployments.
 option(BUILD_FLEXAIDDS_FAST "Build ultra-fast FlexAIDdS docking executable (LTO + native)" ON)
 if(BUILD_FLEXAIDDS_FAST)
-    add_executable(FlexAIDdS $<TARGET_OBJECTS:flexaid_core>)
+    add_executable(FlexAIDdS
+        LIB/top.cpp
+        $<TARGET_OBJECTS:flexaid_core>
+    )
     target_link_libraries(FlexAIDdS PRIVATE flexaid_core)
 
     if(MSVC)
@@ -944,6 +947,7 @@ if(ENABLE_BENCHMARK_DATASETS)
         LIB/DatasetRunner.cpp
         LIB/AsyncPipeline.cpp
     )
+    target_link_libraries(benchmark_datasets PRIVATE flexaid_core)
     target_include_directories(benchmark_datasets PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/LIB)
     if(MSVC)
         target_compile_options(benchmark_datasets PRIVATE /O2 /fp:fast)
@@ -1666,6 +1670,186 @@ flexaids_configure_simd(test_cavity_detect)
     target_compile_definitions(test_ga_validation PRIVATE FLEXAIDS_HAS_EIGEN)
     flexaids_configure_msvc_test(test_ga_validation)
     add_test(NAME GAValidationTests COMMAND test_ga_validation)
+
+    # test_ga_population — GA population-level functions (fitness_stats, adapt_prob,
+    # roullete_wheel, cmp_chrom2pop, remove_dups, set_bins, crossover, mutate)
+    add_executable(test_ga_population
+        tests/test_ga_population.cpp
+        tests/stubs.cpp
+        LIB/gaboom.cpp
+        LIB/GAContext.cpp
+        LIB/Vcontacts.cpp
+        LIB/statmech.cpp
+        LIB/TurboQuant.cpp
+        LIB/geometry.cpp
+        LIB/tENCoM/tencm.cpp
+        LIB/encom.cpp
+        LIB/BindingMode.cpp
+        LIB/fast_optics.cpp
+        LIB/ShannonThermoStack/ShannonThermoStack.cpp
+        LIB/CleftDetector.cpp
+        LIB/NATURaL/NATURaLDualAssembly.cpp
+        LIB/NATURaL/RibosomeElongation.cpp
+        LIB/NATURaL/TransloconInsertion.cpp
+        LIB/NATURaL/NucleationDetector.cpp
+        LIB/UnifiedHardwareDispatch.cpp
+        LIB/hardware_detect.cpp
+    )
+    target_include_directories(test_ga_population PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/LIB
+        ${CMAKE_CURRENT_SOURCE_DIR}/LIB/tENCoM
+        ${CMAKE_CURRENT_SOURCE_DIR}/LIB/ShannonThermoStack
+        ${CMAKE_CURRENT_SOURCE_DIR}/LIB/NATURaL
+        ${CMAKE_CURRENT_SOURCE_DIR}/LIB/CavityDetect
+    )
+    target_link_libraries(test_ga_population PRIVATE GTest::gtest GTest::gtest_main)
+    if(MSVC)
+        target_compile_options(test_ga_population PRIVATE /O2)
+    else()
+        target_compile_options(test_ga_population PRIVATE -O2)
+    endif()
+    if(FLEXAIDS_USE_OPENMP AND OpenMP_CXX_FOUND)
+        target_link_libraries(test_ga_population PRIVATE OpenMP::OpenMP_CXX)
+    endif()
+    target_link_libraries(test_ga_population PRIVATE Eigen3::Eigen)
+    target_compile_definitions(test_ga_population PRIVATE FLEXAIDS_HAS_EIGEN)
+    flexaids_configure_msvc_test(test_ga_population)
+    add_test(NAME GAPopulationTests COMMAND test_ga_population)
+
+    # test_ga_operators — GA helper functions (RandomDouble, genetoic, ictogene,
+    #                     QuickSort, swap_chrom, save_snapshot, check_state, calc_rmsp)
+    add_executable(test_ga_operators
+        tests/test_ga_operators.cpp
+        tests/stubs.cpp
+        LIB/gaboom.cpp
+        LIB/GAContext.cpp
+        LIB/Vcontacts.cpp
+        LIB/statmech.cpp
+        LIB/TurboQuant.cpp
+        LIB/geometry.cpp
+        LIB/tENCoM/tencm.cpp
+        LIB/encom.cpp
+        LIB/BindingMode.cpp
+        LIB/fast_optics.cpp
+        LIB/ShannonThermoStack/ShannonThermoStack.cpp
+        LIB/CleftDetector.cpp
+        LIB/NATURaL/NATURaLDualAssembly.cpp
+        LIB/NATURaL/RibosomeElongation.cpp
+        LIB/NATURaL/TransloconInsertion.cpp
+        LIB/NATURaL/NucleationDetector.cpp
+        LIB/UnifiedHardwareDispatch.cpp
+        LIB/hardware_detect.cpp
+    )
+    target_include_directories(test_ga_operators PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/LIB
+        ${CMAKE_CURRENT_SOURCE_DIR}/LIB/tENCoM
+        ${CMAKE_CURRENT_SOURCE_DIR}/LIB/ShannonThermoStack
+        ${CMAKE_CURRENT_SOURCE_DIR}/LIB/NATURaL
+        ${CMAKE_CURRENT_SOURCE_DIR}/LIB/CavityDetect
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests
+        ${CMAKE_CURRENT_SOURCE_DIR}
+    )
+    target_link_libraries(test_ga_operators PRIVATE GTest::gtest GTest::gtest_main)
+    if(MSVC)
+        target_compile_options(test_ga_operators PRIVATE /O2)
+    else()
+        target_compile_options(test_ga_operators PRIVATE -O2)
+    endif()
+    if(FLEXAIDS_USE_OPENMP AND OpenMP_CXX_FOUND)
+        target_link_libraries(test_ga_operators PRIVATE OpenMP::OpenMP_CXX)
+    endif()
+    target_link_libraries(test_ga_operators PRIVATE Eigen3::Eigen)
+    target_compile_definitions(test_ga_operators PRIVATE FLEXAIDS_HAS_EIGEN)
+    flexaids_configure_msvc_test(test_ga_operators)
+    add_test(NAME GAOperatorTests COMMAND test_ga_operators)
+
+    # test_binding_mode_io — Pose construction, BindingMode pose management, BindingPopulation I/O
+    add_executable(test_binding_mode_io
+        tests/test_binding_mode_io.cpp
+        tests/stubs.cpp
+        LIB/gaboom.cpp
+        LIB/GAContext.cpp
+        LIB/Vcontacts.cpp
+        LIB/statmech.cpp
+        LIB/TurboQuant.cpp
+        LIB/geometry.cpp
+        LIB/tENCoM/tencm.cpp
+        LIB/encom.cpp
+        LIB/BindingMode.cpp
+        LIB/fast_optics.cpp
+        LIB/ShannonThermoStack/ShannonThermoStack.cpp
+        LIB/CleftDetector.cpp
+        LIB/NATURaL/NATURaLDualAssembly.cpp
+        LIB/NATURaL/RibosomeElongation.cpp
+        LIB/NATURaL/TransloconInsertion.cpp
+        LIB/NATURaL/NucleationDetector.cpp
+        LIB/UnifiedHardwareDispatch.cpp
+        LIB/hardware_detect.cpp
+    )
+    target_include_directories(test_binding_mode_io PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/LIB
+        ${CMAKE_CURRENT_SOURCE_DIR}/LIB/tENCoM
+        ${CMAKE_CURRENT_SOURCE_DIR}/LIB/ShannonThermoStack
+        ${CMAKE_CURRENT_SOURCE_DIR}/LIB/NATURaL
+        ${CMAKE_CURRENT_SOURCE_DIR}/LIB/CavityDetect
+    )
+    target_link_libraries(test_binding_mode_io PRIVATE GTest::gtest GTest::gtest_main)
+    if(MSVC)
+        target_compile_options(test_binding_mode_io PRIVATE /O2)
+    else()
+        target_compile_options(test_binding_mode_io PRIVATE -O2)
+    endif()
+    if(FLEXAIDS_USE_OPENMP AND OpenMP_CXX_FOUND)
+        target_link_libraries(test_binding_mode_io PRIVATE OpenMP::OpenMP_CXX)
+    endif()
+    target_link_libraries(test_binding_mode_io PRIVATE Eigen3::Eigen)
+    target_compile_definitions(test_binding_mode_io PRIVATE FLEXAIDS_HAS_EIGEN)
+    flexaids_configure_msvc_test(test_binding_mode_io)
+    add_test(NAME BindingModeIOTests COMMAND test_binding_mode_io)
+
+    # test_binding_mode_comparison — BindingMode comparison operators, representative, delta_G
+    add_executable(test_binding_mode_comparison
+        tests/test_binding_mode_comparison.cpp
+        tests/stubs.cpp
+        LIB/gaboom.cpp
+        LIB/GAContext.cpp
+        LIB/Vcontacts.cpp
+        LIB/statmech.cpp
+        LIB/TurboQuant.cpp
+        LIB/geometry.cpp
+        LIB/tENCoM/tencm.cpp
+        LIB/encom.cpp
+        LIB/BindingMode.cpp
+        LIB/fast_optics.cpp
+        LIB/ShannonThermoStack/ShannonThermoStack.cpp
+        LIB/CleftDetector.cpp
+        LIB/NATURaL/NATURaLDualAssembly.cpp
+        LIB/NATURaL/RibosomeElongation.cpp
+        LIB/NATURaL/TransloconInsertion.cpp
+        LIB/NATURaL/NucleationDetector.cpp
+        LIB/UnifiedHardwareDispatch.cpp
+        LIB/hardware_detect.cpp
+    )
+    target_include_directories(test_binding_mode_comparison PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/LIB
+        ${CMAKE_CURRENT_SOURCE_DIR}/LIB/tENCoM
+        ${CMAKE_CURRENT_SOURCE_DIR}/LIB/ShannonThermoStack
+        ${CMAKE_CURRENT_SOURCE_DIR}/LIB/NATURaL
+        ${CMAKE_CURRENT_SOURCE_DIR}/LIB/CavityDetect
+    )
+    target_link_libraries(test_binding_mode_comparison PRIVATE GTest::gtest GTest::gtest_main)
+    if(MSVC)
+        target_compile_options(test_binding_mode_comparison PRIVATE /O2)
+    else()
+        target_compile_options(test_binding_mode_comparison PRIVATE -O2)
+    endif()
+    if(FLEXAIDS_USE_OPENMP AND OpenMP_CXX_FOUND)
+        target_link_libraries(test_binding_mode_comparison PRIVATE OpenMP::OpenMP_CXX)
+    endif()
+    target_link_libraries(test_binding_mode_comparison PRIVATE Eigen3::Eigen)
+    target_compile_definitions(test_binding_mode_comparison PRIVATE FLEXAIDS_HAS_EIGEN)
+    flexaids_configure_msvc_test(test_binding_mode_comparison)
+    add_test(NAME BindingModeComparisonTests COMMAND test_binding_mode_comparison)
 
     # test_soft_contact_matrix — 256×256 energy matrix I/O, projection, lookup
     if(FLEXAIDS_USE_256_MATRIX)

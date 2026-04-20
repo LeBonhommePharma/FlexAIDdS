@@ -25,7 +25,8 @@ void residue_conect(FA_Global* FA,atom* atoms,resid* residue,char aminofile[]){
 	int conect[25][5];       /* conectivity matrix of ideal residue */
 	int dihed[10];           /* conectivity matrix of ideal residue */
 	int fdih=0;
-	int dihflag;
+	int dihflag = 0;
+	(void)dihflag;
 
 	infile_ptr=NULL;
 	if (!OpenFile_B(aminofile,"r",&infile_ptr))
@@ -89,7 +90,7 @@ void residue_conect(FA_Global* FA,atom* atoms,resid* residue,char aminofile[]){
 			sscanf(num_char,"%d",&dihed[fdih]);
 			/*printf("fledih:%d %d or %s\n",fdih,dihed[fdih],num_char);
 			  PAUSE;*/
-			dihflag=1;
+			dihflag=1; // NOLINT: reserved for future dihedral validation
 		}
 
 

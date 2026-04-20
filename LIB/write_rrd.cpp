@@ -7,7 +7,6 @@
 int write_rrd(FA_Global* FA,GB_Global* GB,const chromosome* chrom, const genlim* gene_lim, atom* atoms,resid* residue,gridpoint* cleftgrid, int* Clus_GAPOP,float* Clus_RMSDT,char outfile[]){
 	FILE *outfile_ptr;
 	int  i,j,l;
-	char sufix[24];
 	char tmp_end_strfile[MAX_PATH__];
 	float rmsd = 0.0f;
 	float rmsd_corrected = 0.0f;
@@ -48,16 +47,13 @@ int write_DensityPeak_rrd(FA_Global* FA, GB_Global* GB, const chromosome* chrom,
 {
 	FILE *outfile_ptr;
 	int i,j,k,l;
-	char sufix[24];
 	char tmp_end_strfile[MAX_PATH__];
 	float rmsd = 0.0f;
 	float rmsd_corrected = 0.0f;
 	float ClusRMSD = 0.0f;
 	bool Hungarian = false;
 
-	sprintf(sufix,".rrd");
-	strcpy(tmp_end_strfile, outfile);
-	strcat(tmp_end_strfile, sufix);
+	snprintf(tmp_end_strfile,MAX_PATH__,"%s.rrd",outfile);
 
 	outfile_ptr = NULL;
 	if(!OpenFile_B(tmp_end_strfile,"w",&outfile_ptr)) 

@@ -26,7 +26,7 @@
 // They are never actually called (all paths return early if !has_rocm).
 
 static int  hipGetDeviceCount_stub(int* cnt) { *cnt = 0; return 1; }
-static int  hipSetDevice_stub(int)            { return 1; }
+[[maybe_unused]] static int  hipSetDevice_stub(int)            { return 1; }
 static int  hipGetDeviceProperties_stub(hipDeviceProp_t*, int) { return 1; }
 static int  hipMalloc_stub(void**, size_t)    { return 1; }
 static int  hipFree_stub(void*)               { return 1; }

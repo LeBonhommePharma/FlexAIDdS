@@ -27,3 +27,25 @@ expected_baselines:
   docking_power_top1: 0.40
   entropy_rescue_rate: 0.15
 baseline_tolerance: 0.05
+
+# ── Claude Reevaluated Baselines (2026-04-19) ──────────────────────────────
+# Rationale: This is a demo/skeleton config with 5 placeholder targets
+# (xdock1–xdock5).  Original baselines are essentially guesses since
+# no real target data is specified.  Values mirror astex_nonnative
+# (the closest real-world analog) but with wider uncertainty.
+#
+claude_reevaluated_baselines:
+  crossdock_success_rate_2A: 0.30     # was 0.35 — adjusted to realistic cross-dock range
+  crossdock_success_rate_3A: 0.50     # was 0.55 — follows 2Å
+  crossdock_mean_rmsd: 3.30           # was 3.20 — slight increase for realism
+  crossdock_median_rmsd: 2.90         # was 2.80 — follows mean
+  docking_power_top1: 0.35            # was 0.40 — conservative for unspecified targets
+  entropy_rescue_rate: 0.18           # was 0.15 — raised; cross-dock benefits from entropy
+claude_reevaluated_rationale: >
+  This config has placeholder targets (xdock1–xdock5) with no real PDB IDs,
+  so baselines are necessarily approximate.  Adjusted to match realistic
+  cross-docking literature (Vina ~25%, Glide ~35% under 2Å).  Entropy
+  rescue rate raised from 0.15→0.18 since cross-docking is precisely where
+  entropy corrections should provide the most benefit.  Recommend replacing
+  placeholder targets with real PDB codes before execution.
+claude_reevaluated_by: "Claude Opus 4.6 — 2026-04-19"

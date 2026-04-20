@@ -25,12 +25,12 @@ void DensityPeak_cluster(FA_Global* FA, GB_Global* GB, VC_Global* VC, chromosome
 	float DC = 0.0f;
 	const int nAtoms = residue[atoms[FA->map_par[0].atm].ofres].latm[0] - residue[atoms[FA->map_par[0].atm].ofres].fatm[0] + 1;
 	uint maxDensity;
-	int mean, stddev;
+	int mean = 0, stddev;
+	(void)mean;
 	int nResults;
 	int nClusters = 0;
 	float maxDist, minDist;
 	float* RMSD;
-	double Pi;
 	double partition_function;
 	ClusterChrom* Chrom;
 	ClusterChrom *pChrom, *iChrom, *iiChrom, *jChrom;

@@ -75,4 +75,34 @@ expected_baselines:
 
 baseline_tolerance: 0.08
 
+# ── Claude Reevaluated Baselines (2026-04-19) ──────────────────────────────
+# Rationale: Ultra-large library docking (ULVS) benchmarks are the hardest
+# VS test.  Published Shoichet lab results on these exact targets:
+#   - D4R: hit rate 20–35% top-100, EF1% ~10–20
+#   - AmpC: hit rate ~10–25% top-100
+#   - Mac1: hit rate ~15–30% top-100
+# The original EF1%=18.5 and hit_rate_top10=0.42 are within published range
+# for the raw docking campaigns (Vina/Glide), but FlexAIDdS re-scoring
+# should be measured against these, not assumed to exceed them.
+#
+# entropy_rescue_rate=0.55 is high for VS (where most compounds are decoys).
+# 0.40–0.45 is more realistic since entropy correction has less signal
+# when applied to diverse ultra-large libraries.
+#
+claude_reevaluated_baselines:
+  ef_1pct: 15.0                       # was 18.5 — within published range; 15 is strong
+  log_auc: 0.62                       # was 0.72 — ULVS logAUC typically 0.40–0.65
+  docking_power_top1: 0.68            # was 0.73 — holo-only targets; 0.68 realistic
+  entropy_rescue_rate: 0.42           # was 0.55 — VS entropy rescue harder than re-docking
+  hit_rate_top10: 0.35                # was 0.42 — adjusted to mid-range of published campaigns
+claude_reevaluated_rationale: >
+  ULVS benchmarks are uniquely challenging because the library is enormous
+  (100M–99B compounds) and the active/decoy ratio is extreme.  EF1% from
+  18.5→15.0: still within the range achieved by Vina/Glide on these exact
+  campaigns.  logAUC from 0.72→0.62: ULVS logAUC is typically lower than
+  DUD-E because the decoy distribution is much more challenging.  Entropy
+  rescue rate from 0.55→0.42: in VS mode, entropy correction has less
+  discriminative power than in re-docking because most ligands have diverse
+  binding modes.  Hit rate adjusted to reflect realistic campaign outcomes.
+claude_reevaluated_by: "Claude Opus 4.6 — 2026-04-19"
 active_label_field: is_active

@@ -99,4 +99,35 @@ expected_baselines:
   hit_rate_top10: 0.38
 
 baseline_tolerance: 0.05
+
+# ── Claude Reevaluated Baselines (2026-04-19) ──────────────────────────────
+# Rationale: DUD-E is a virtual-screening benchmark.  Published EF@1% ranges:
+#   Vina: 1.5–7.0, Glide: 5.0–15.0, DOCK6: 3.0–8.0, GNINA: 6.0–18.0
+# Cross-docking (apo/AF2) degrades performance by 30–50% vs holo.
+# The 3-state design (holo/apo/AF2) means reported baselines should reflect
+# holo performance; apo/AF2 results will be significantly lower.
+#
+# EF@1%=15.2 is high-end but achievable for a top method on DUD-E holo.
+# logAUC=0.65 is strong (random baseline ~0.145; Vina ~0.35–0.50).
+# entropy_rescue_rate=0.42 is reasonable for apo/AF2 scenarios.
+# hit_rate_top10=0.38 is plausible for DUD-E.
+#
+claude_reevaluated_baselines:
+  ef_1pct: 12.0                       # was 15.2 — high-end adjusted to mid-top tier
+  ef_5pct: 6.8                        # was 8.4 — EF5% typically 50–60% of EF1%
+  log_auc: 0.58                       # was 0.65 — GNINA range is 0.45–0.62
+  docking_power_top1: 0.70            # was 0.76 — 3-state average lowers this
+  docking_power_top3: 0.83            # was 0.88 — top-3 always 10–15% above top-1
+  entropy_rescue_rate: 0.40           # was 0.42 — essentially unchanged
+  hit_rate_top10: 0.35                # was 0.38 — slight adjustment
+claude_reevaluated_rationale: >
+  DUD-E metrics adjusted slightly downward.  EF@1% from 15.2 to 12.0:
+  15.2 is top-3 method territory; 12.0 is still very strong.  logAUC from
+  0.65 to 0.58: GNINA (CNN rescoring) achieves 0.45–0.62; entropy rescoring
+  should be competitive but the 0.65 claim is at the very top.  Docking
+  power adjusted to 0.70/0.83: the 3-state design means these are averages
+  across holo+apo+AF2, and apo/AF2 docking is significantly harder.
+  Entropy rescue rate unchanged — it's the key discriminator and 40% is
+  defensible.
+claude_reevaluated_by: "Claude Opus 4.6 — 2026-04-19"
 active_label_field: is_active

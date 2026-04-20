@@ -81,3 +81,18 @@ double get_yval(energy_matrix*, double) { return 0.0; }
 void partition_grid(FA_Global*, chromosome*, genlim*, atom*, resid*, gridpoint**, int, int) {}
 void slice_grid(FA_Global*, genlim*, atom*, resid*, gridpoint**) {}
 void write_grid(FA_Global*, const gridpoint*, char[]) {}
+
+// ---------------------------------------------------------------------------
+// InStreamClustering — referenced by gaboom.cpp
+// ---------------------------------------------------------------------------
+#include "../LIB/InStreamClustering.h"
+namespace flexaids {
+InStreamCluster::InStreamCluster(float, int, int) {}
+void InStreamCluster::merge_elites(const float*, const double*, int, int, int) {}
+std::vector<ClusterMedoid> InStreamCluster::finalize() { return {}; }
+int InStreamCluster::cluster_count() const { return 0; }
+void InStreamCluster::reset() {}
+void InStreamCluster::merge_elites_from_chrom(const void*, int, int, int, int) {}
+float InStreamCluster::gene_rmsd(const float*, const float*, int) { return 0.0f; }
+void InStreamCluster::merge_closest_pair(int) {}
+} // namespace flexaids

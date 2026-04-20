@@ -15,13 +15,14 @@ void read_rotobs(FA_Global* FA,rot** rotamer,char* filename)
   char chi[9];
   int nchi;
   int nid;
+  (void)nid;
 
   infile_ptr=NULL;
   if (!OpenFile_B(filename,"r",&infile_ptr))
     Terminate(8);
 
   FA->rotlibsize=0;
-  nid=1;
+  nid=1; // NOLINT: reserved for future id mapping
 
   while(fgets(buffer,sizeof(buffer),infile_ptr)!=NULL){
     for(i=0;i<3;i++){residue[i]=buffer[i];}

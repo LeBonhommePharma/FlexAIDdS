@@ -86,3 +86,44 @@ expected_baselines:
 
 # Fractional tolerance for regression detection (5% → flag if value < baseline × 0.95)
 baseline_tolerance: 0.05
+
+# ── Claude Reevaluated Baselines (2026-04-19) ──────────────────────────────
+# Rationale: Cross-referenced against CASF-2016 leaderboard (Su et al. 2019),
+# published docking-scoring benchmarks (AutoDock Vina r≈0.54, Glide r≈0.60,
+# Gold r≈0.58, RF-Score r≈0.74), and typical entropy-correction literature.
+#
+# The original pearson_r=0.88 is extraordinarily high — no published method
+# exceeds r≈0.80 on the full 285-complex CASF-2016 scoring power without
+# system-specific fitting.  FlexAIDdS's Shannon+Voronoi entropy terms are
+# novel but an r=0.88 claim needs extraordinary evidence.  A realistic first-
+# run expectation is r≈0.65–0.75; r≈0.80 would be SOTA-class.
+#
+# Docking power: AutoDock Vina achieves ~60% top-1 on Astex; Glide ~72%.
+# Entropy-aware rescoring could plausibly reach 70–78%.  Original 82% is
+# optimistic but not impossible for a GA+entropy engine on holo structures.
+#
+# EF@1%: DUD-E/CASF screening benchmarks show top methods at EF1%=5–15.
+# Original 12.5 is reasonable for a strong method.  logAUC 0.68 is high
+# but within plausible range.
+#
+# entropy_rescue_rate: 35% is conservative and reasonable for a first metric
+# on a non-curated set.
+#
+claude_reevaluated_baselines:
+  scoring_power_pearson_r: 0.72       # was 0.88 — SOTA is ~0.74–0.80; 0.88 unproven
+  scoring_power_spearman_r: 0.70      # was 0.86 — matches ~0.72–0.76 typical range
+  scoring_power_rmse: 1.80            # was 1.20 — r=0.72 implies RMSE≈1.6–2.0 kcal/mol
+  docking_power_top1: 0.74            # was 0.82 — Vina ~0.60, Glide ~0.72; entropy boost plausible
+  docking_power_top3: 0.87            # was 0.91 — top-3 is always easier; 0.85–0.90 realistic
+  ef_1pct: 12.5                       # was 12.5 — unchanged; within published range
+  log_auc: 0.62                       # was 0.68 — strong methods 0.55–0.65 on CASF screening
+  entropy_rescue_rate: 0.35           # was 0.35 — unchanged; conservative and reasonable
+claude_reevaluated_rationale: >
+  Scoring power (r=0.88) adjusted down to 0.72 because no published method
+  achieves r>0.80 on full CASF-2016 without target-specific fitting.  RMSE
+  inflated to match the revised correlation.  Docking power adjusted to
+  0.74/0.87 (between Glide and Vina).  Screening metrics (EF, logAUC)
+  adjusted slightly down to reflect realistic enrichment on 285 diverse
+  targets.  Entropy rescue rate left unchanged at 0.35 — this is FlexAIDdS's
+  unique discriminator and the claim is modest.
+claude_reevaluated_by: "Claude Opus 4.6 — 2026-04-19"

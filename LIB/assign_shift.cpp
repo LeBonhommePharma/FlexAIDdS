@@ -12,7 +12,7 @@ void assign_shift(atom* atoms,resid* residue,int rnum, int tot, int *buildlist, 
   int k = 0;                             // dumb counter
   int l = 0;                             // dumb counter
   int flag;                              // flag to check if an atom defines a flex. bond
-  int built;                             // flag to determine if an atom was already built
+  int built = 0;                         // flag to determine if an atom was already built (reserved)
   int rec;                               // atoms' rec[0]
   
   int nshift;                            // number of shift atoms
@@ -35,7 +35,7 @@ void assign_shift(atom* atoms,resid* residue,int rnum, int tot, int *buildlist, 
   */
   
   flag=0;
-  built=0;
+  (void)built;
   //Skip GPA atoms (0,1,2)
   for(i=3;i<tot;i++){
     

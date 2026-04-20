@@ -83,4 +83,41 @@ expected_baselines:
   log_auc: 0.71
 
 baseline_tolerance: 0.05
+
+# ── Claude Reevaluated Baselines (2026-04-19) ──────────────────────────────
+# Rationale: This is FlexAIDdS's domain-optimized set.  The 92% entropy rescue
+# rate is the single most aggressive claim across all datasets.  Published
+# entropy-rescoring studies achieve 40–60% rescue even on curated sets.
+# 92% implies that for nearly every CNS target, entropy correction rescues
+# the correct pose — this is extraordinary and needs rigorous proof.
+#
+# For context: FlexAID (without entropy) achieves ~55–65% top-1 docking on
+# the original HAP2 dataset.  Adding entropy rescoring could plausibly
+# boost this to 70–80% on a domain-curated set, but 85% top-1 is very high.
+#
+# The r=0.89 scoring power on 23 targets is less concerning because small
+# N amplifies correlations — but it should be validated with bootstrap CI.
+#
+# Key issue: 23 targets with a single structural state (holo) provides
+# limited statistical power.  Confidence intervals will be wide.
+#
+claude_reevaluated_baselines:
+  entropy_rescue_rate: 0.72           # was 0.92 — extraordinary claim; 0.72 still excellent
+  docking_power_top1: 0.78            # was 0.85 — strong for CNS GPCR/transporter targets
+  docking_power_top3: 0.88            # was 0.94 — follows top-1 adjustment
+  scoring_power_pearson_r: 0.82       # was 0.89 — small-N inflation; 0.82 on CNS set is SOTA
+  scoring_power_rmse: 1.35            # was 1.15 — consistent with r≈0.82
+  ef_1pct: 14.0                       # was 16.8 — CNS targets are hard for VS; 14 still strong
+  log_auc: 0.65                       # was 0.71 — adjusted to reflect realistic enrichment
+claude_reevaluated_rationale: >
+  The 92% entropy rescue rate is the most aggressive claim in the entire
+  benchmark suite.  Published entropy-rescoring methods achieve 40–60%;
+  even on a domain-curated set, 72% would be remarkable.  Docking power
+  adjusted to 0.78/0.88: CNS GPCRs and transporters have large, flexible
+  binding pockets making docking harder — 0.78 top-1 is very strong for
+  this target class.  Scoring power r=0.82 adjusted from 0.89: with only
+  23 targets, r is easily inflated by 2–3 outliers.  EF and logAUC
+  adjusted to reflect realistic VS performance on CNS targets, which are
+  harder than average due to lipophilic, flexible binding sites.
+claude_reevaluated_by: "Claude Opus 4.6 — 2026-04-19"
 active_label_field: is_active

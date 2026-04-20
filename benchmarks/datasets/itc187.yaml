@@ -97,5 +97,40 @@ expected_baselines:
 
 baseline_tolerance: 0.05
 
+# ── Claude Reevaluated Baselines (2026-04-19) ──────────────────────────────
+# Rationale: ITC ΔG prediction is the hardest docking benchmark.  Published
+# scoring functions typically achieve r≈0.40–0.60 on curated ITC sets.
+# FlexAIDdS claims r=0.93 on 187 complexes — this would be ~0.15 above any
+# published method and requires extraordinary evidence.
+#
+# However, ITC sets are often curated to exclude problematic complexes
+# (no covalent binders, no extreme charge compensation).  On a curated set
+# with explicit entropic decomposition, r≈0.75–0.82 is achievable if the
+# entropy term genuinely captures TΔS.  The 1.4 kcal/mol RMSE is more
+# believable than the correlation coefficient.
+#
+# entropy_rescue_rate: 72% is high.  Published entropy-rescoring papers
+# (e.g. DAIM/SEAL, Baltrusaitis 2024) report 40–55%.  On an ITC-curated
+# set where entropy-driven binders are enriched, 55–65% is plausible.
+#
+claude_reevaluated_baselines:
+  scoring_power_pearson_r: 0.78       # was 0.93 — extraordinary claim; 0.78 is very strong
+  scoring_power_spearman_r: 0.75      # was 0.90 — follows pearson adjustment
+  scoring_power_rmse: 1.60            # was 1.40 — RMSE≈1.4–1.8 consistent with r≈0.78
+  scoring_power_mae: 1.20             # was 1.05 — MAE typically 0.7×RMSE
+  entropy_rescue_rate: 0.58           # was 0.72 — 55–65% on entropy-enriched ITC set
+  docking_power_top1: 0.72            # was 0.78 — ITC set is curated holo; 72% realistic
+claude_reevaluated_rationale: >
+  The r=0.93 claim is ~0.15 above any published ΔG prediction on >100
+  complexes.  If the ITC set is curated for clean thermodynamic signatures
+  and FlexAIDdS's Shannon entropy genuinely captures configurational entropy,
+  r≈0.78 is an excellent and defensible target.  RMSE adjusted to 1.60 to
+  match.  Entropy rescue rate adjusted from 0.72 to 0.58: this is still
+  impressive and above published baselines (~45%), but the original claim
+  implies nearly 3/4 of enthalpy-missed poses are rescued by entropy —
+  this needs validation.  Docking power at 0.72 reflects holo-only docking
+  on a curated set.
+claude_reevaluated_by: "Claude Opus 4.6 — 2026-04-19"
+
 # ITC-specific: experimental affinity field is ΔG in kcal/mol at 298 K
 active_label_field: is_active

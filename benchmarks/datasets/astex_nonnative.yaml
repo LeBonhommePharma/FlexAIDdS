@@ -1,0 +1,98 @@
+# Astex Non-Native Set — 65 targets, ~1885 structures for cross-docking
+#
+# The Astex Non-Native set provides pairs of holo/apo structures for
+# cross-docking evaluation.  For each of 65 targets, the native holo
+# crystal provides the reference ligand, while alternative conformers
+# serve as receptor structures for cross-docking.
+#
+# FlexAIDdS uses EntryRole::RECEPTOR_ONLY for alternative conformers,
+# pairing them with the native holo ligand via paired_ligand_path.
+#
+# Reference: Verdonk et al. (2008) J. Chem. Inf. Model. 48(11):2214-2225
+#            https://doi.org/10.1021/ci800224j
+
+slug: astex_nonnative
+name: "Astex Non-Native Cross-Docking Set"
+description: >
+  65 protein targets with native holo structures plus alternative
+  conformers for cross-docking.  Each target has 1 native structure
+  (ligand extracted) + N alternative conformers (receptor-only,
+  paired with native ligand).  Total ~1885 structures.
+
+zenodo_doi: ""
+download_url: "https://www.ccdc.cam.ac.uk/"
+data_format: pdb
+tier: 2
+tier1_subset_size: 3
+
+structural_states:
+  - holo
+  - apo
+  - alternative
+
+# Representative targets. Full 65-target mapping is hardcoded in
+# astex_nonnative_targets() (DatasetRunner.cpp).
+targets:
+  - ACE     # Acetylcholinesterase (24 alt conformers)
+  - CDK2    # Cyclin-dependent kinase 2 (100+ alt conformers)
+  - HIVPR   # HIV-1 protease (180+ alt conformers)
+  - HSP90   # HSP90 (100+ alt conformers)
+  - THR     # Thrombin (200+ alt conformers)
+  - CA2     # Carbonic anhydrase II (100+ alt conformers)
+  - ER      # Estrogen receptor (50+ alt conformers)
+  - PTP1B   # Protein tyrosine phosphatase 1B (70+ alt conformers)
+  - PPARg   # PPAR gamma (100+ alt conformers)
+  - REN     # Renin (40+ alt conformers)
+  # NOTE: Full 65 targets with native + alternative PDB codes
+  # are hardcoded in C++ (astex_nonnative_targets()).
+
+metrics:
+  - crossdock_success_rate_2A
+  - crossdock_success_rate_3A
+  - crossdock_mean_rmsd
+  - crossdock_median_rmsd
+  - docking_power_top1
+  - docking_power_top3
+  - entropy_rescue_rate
+
+expected_baselines:
+  crossdock_success_rate_2A: 0.40
+  crossdock_success_rate_3A: 0.60
+  crossdock_mean_rmsd: 2.90
+  crossdock_median_rmsd: 2.40
+  docking_power_top1: 0.45
+  docking_power_top3: 0.60
+  entropy_rescue_rate: 0.20
+
+baseline_tolerance: 0.05
+
+# ── Claude Reevaluated Baselines (2026-04-19) ──────────────────────────────
+# Rationale: Cross-docking is substantially harder than self-docking.
+# Published cross-docking success rates (<2Å) on Astex Non-Native:
+#   Vina: 20–30%, Glide: 30–40%, Gold: 25–35%, rDock: 15–25%
+# Targets with many alternative conformers (HIVPR 180+, THR 200+) dilute
+# success rates because distant conformers are genuinely hard.
+#
+# The original 40% success under 2Å is at the top of published range.
+# 35% is more realistic for a strong method.  Mean RMSD 2.9Å is reasonable.
+# entropy_rescue_rate=0.20 is conservative for cross-docking, which is
+# exactly where entropy corrections should help most (induced-fit).
+#
+claude_reevaluated_baselines:
+  crossdock_success_rate_2A: 0.32     # was 0.40 — top of published; 0.32 still excellent
+  crossdock_success_rate_3A: 0.52     # was 0.60 — follows 2Å adjustment
+  crossdock_mean_rmsd: 3.10           # was 2.90 — consistent with 32% under 2Å
+  crossdock_median_rmsd: 2.65         # was 2.40 — follows mean
+  docking_power_top1: 0.38            # was 0.45 — cross-docking is hard; 0.38 competitive
+  docking_power_top3: 0.55            # was 0.60 — follows top-1
+  entropy_rescue_rate: 0.22           # was 0.20 — slightly raised; cross-docking benefits most
+claude_reevaluated_rationale: >
+  Cross-docking baselines adjusted down to reflect published performance.
+  Original 40% under 2Å is at the very top of published range (Glide: 30–40%).
+  32% is still excellent and defensible.  Mean RMSD adjusted from 2.9→3.1 Å
+  to match the revised success rate.  Entropy rescue rate raised slightly
+  from 0.20→0.22: cross-docking is the scenario where entropy corrections
+  should matter most (induced-fit conformational entropy), so a small
+  upward adjustment is justified.  All values remain competitive with
+  published methods.
+claude_reevaluated_by: "Claude Opus 4.6 — 2026-04-19"

@@ -76,4 +76,33 @@ expected_baselines:
 # For Z-score: regression if |measured| < |baseline| × (1 - tolerance)
 # i.e. score becomes less negative (less discriminating)
 baseline_tolerance: 0.08
+
+# ── Claude Reevaluated Baselines (2026-04-19) ──────────────────────────────
+# Rationale: Specificity Z-scores against a 50k compound background are
+# well-defined statistically.  Z=-2.5 for binders vs random background:
+#   - This is a 2.5σ separation, which is strong but achievable.
+#   - Published docking methods achieve Z=-1.5 to -3.0 depending on target.
+#   - Z=-2.0 to -2.5 is realistic for a good scoring function.
+#
+# EF@1%=13.2 against Enamine REAL is reasonable (comparable to DUD-E).
+# entropy_rescue_rate=0.45 is moderate and defensible.
+# logAUC=0.61 is slightly above random (0.145) but within expected range.
+#
+# Key concern: the PDB code "456C" for MMP13 is not a valid RCSB PDB ID
+# format (should be 4 characters starting with digit).  Likely a typo.
+#
+claude_reevaluated_baselines:
+  target_specificity_zscore: -2.20    # was -2.50 — still strong; 2.2σ is very good
+  entropy_rescue_rate: 0.42           # was 0.45 — slight adjustment; within noise
+  ef_1pct: 11.5                       # was 13.2 — REAL-space harder than DUD-E; 11.5 strong
+  log_auc: 0.55                       # was 0.61 — adjusted for Enamine REAL difficulty
+claude_reevaluated_rationale: >
+  Z-score adjusted from -2.50 to -2.20: 2.5σ separation against a 50k
+  property-matched background is strong but the original may be optimistic
+  for all 15 targets.  -2.20 is still well above significance threshold.
+  EF and logAUC adjusted slightly down: Enamine REAL diversity set is
+  harder than DUD-E because compounds are more drug-like and property-matched.
+  Entropy rescue rate essentially unchanged.  NOTE: MMP13 PDB "456C" is
+  likely invalid — should be verified (correct code may be 4HM9 or 5MNC).
+claude_reevaluated_by: "Claude Opus 4.6 — 2026-04-19"
 active_label_field: is_active

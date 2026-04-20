@@ -160,7 +160,7 @@ def load_results(path: str | Path) -> DockingResult:
         binding modes, sorted by ``mode_id``.
 
     Raises:
-        FileNotFoundError: If *path* does not exist or contains no PDB files.
+        FileNotFoundError: If *path* does not exist.
         NotADirectoryError: If *path* points to a file rather than a directory.
 
     Example::
@@ -177,7 +177,12 @@ def load_results(path: str | Path) -> DockingResult:
 
     pose_files = _collect_pose_files(root)
     if not pose_files:
-        raise FileNotFoundError(f"No PDB-like docking result files found under: {root}")
+        return DockingResult(
+            source_dir=root,
+            binding_modes=[],
+            temperature=None,
+            metadata={"n_pose_files": 0},
+        )
 
     grouped: Dict[int, List[PoseResult]] = defaultdict(list)
     for pose_file in pose_files:

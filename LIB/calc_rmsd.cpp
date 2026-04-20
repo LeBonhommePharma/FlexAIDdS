@@ -495,6 +495,7 @@ void Hungarian_update_matrix(float** matrix, int** matrix_case, int nTypes)
 void Hungarian_draw_line(float** matrix, float** matrix_original, int** matrix_case, int* row_count, int* column_count, int* row_assigned, int* column_assigned, int* matrix_match, int nTypes)
 {
     int lines = 0; // the number of lines required to cross out all 0s in matrix[][]
+    (void)lines;
                    // 0. reset the matrices used in this function
     Hungarian_reset_assigned_row(row_assigned, nTypes);
     Hungarian_reset_assigned_column(column_assigned, nTypes);

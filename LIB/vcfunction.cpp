@@ -526,6 +526,7 @@ double vcfunction(FA_Global* FA,VC_Global* VC,atom* atoms,resid* residue, std::v
 		       SAS, contnum, contribution);
 #endif
 
+		(void)contnum;
 	}
 
 
