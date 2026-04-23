@@ -10,8 +10,11 @@ from __future__ import annotations
 import io as _io
 import json
 import math
+import os
 import re
+import tempfile
 import time
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple, Union
@@ -24,6 +27,29 @@ import numpy as np
 # ---------------------------------------------------------------------------
 
 _R_kcal = 0.001987206  # kcal mol⁻¹ K⁻¹
+
+
+# ---------------------------------------------------------------------------
+# Hardware-aware worker detection
+# ---------------------------------------------------------------------------
+
+
+def auto_workers() -> int:
+    """Detect optimal worker count for parallel benchmark execution.
+
+    Heuristic: ``min(cpu_count // 2, mem_gb // 2.5)``, clamped to ``[1, 16]``.
+
+    On an M3 Pro (12 cores, 18 GB) this returns 6, reserving efficiency cores
+    for the OS and nested C++/OpenMP threads inside each docking subprocess.
+    """
+    cpu = os.cpu_count() or 4
+    try:
+        mem_gb = os.sysconf("SC_PAGE_SIZE") * os.sysconf("SC_PHYS_PAGES") / (1024 ** 3)
+    except (AttributeError, ValueError, OSError):
+        mem_gb = 16.0
+    by_cpu = cpu // 2
+    by_mem = int(mem_gb / 2.5)
+    return max(1, min(by_cpu, by_mem, 16))
 
 
 # ---------------------------------------------------------------------------
@@ -944,6 +970,178 @@ def run_boltz2(
     )
 
 
+# ---------------------------------------------------------------------------
+# Cloud RAID storage helpers
+# ---------------------------------------------------------------------------
+
+
+def _detect_cloud_drives() -> List[Path]:
+    """Detect available iCloud and Google Drive paths on macOS.
+
+    Returns a list of writable cloud drive directories (up to 2: iCloud, Google
+    Drive).  Falls back to an empty list on non-macOS or when drives are not
+    mounted.
+    """
+    import glob
+
+    candidates: List[Path] = []
+
+    # iCloud Drive
+    icloud = Path.home() / "Library" / "Mobile Documents" / "com~apple~CloudDocs"
+    if icloud.is_dir():
+        candidates.append(icloud)
+
+    # Google Drive (any account)
+    gd_pattern = str(Path.home() / "Library" / "CloudStorage" / "GoogleDrive-*" / "My Drive")
+    for p in sorted(glob.glob(gd_pattern)):
+        gp = Path(p)
+        if gp.is_dir():
+            candidates.append(gp)
+            break  # use first account
+
+    return candidates
+
+
+def _mirror_write(data: str, filename: str, paths: List[Path]) -> None:
+    """Write *data* to *filename* in every directory in *paths* (RAID-1 mirror).
+
+    Uses atomic temp-file + rename for crash safety.
+    """
+    for base in paths:
+        base.mkdir(parents=True, exist_ok=True)
+        target = base / filename
+        fd, tmp = tempfile.mkstemp(dir=str(base), suffix=".tmp")
+        try:
+            os.write(fd, data.encode("utf-8"))
+            os.close(fd)
+            os.replace(tmp, str(target))
+        except OSError:
+            try:
+                os.unlink(tmp)
+            except OSError:
+                pass
+
+
+# ---------------------------------------------------------------------------
+# Checkpoint helpers
+# ---------------------------------------------------------------------------
+
+
+def _save_checkpoint(
+    checkpoint_path: Path,
+    results_by_idx: Dict[int, SystemBenchmarkResult],
+    systems: List[BenchmarkSystem],
+    mirror_dirs: Optional[List[Path]] = None,
+) -> None:
+    """Atomically write partial benchmark results for crash recovery.
+
+    If *mirror_dirs* is provided the checkpoint is also mirrored to those
+    directories (iCloud + Google Drive RAID-1).
+    """
+    completed = [results_by_idx[i] for i in sorted(results_by_idx)]
+    partial = BenchmarkResult(systems=tuple(completed))
+    text = partial.to_json() or ""
+
+    # Write primary checkpoint atomically
+    checkpoint_path.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(
+        dir=str(checkpoint_path.parent), suffix=".tmp",
+    )
+    try:
+        os.write(fd, text.encode("utf-8"))
+        os.close(fd)
+        os.replace(tmp, str(checkpoint_path))
+    except OSError:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+
+    # Mirror to cloud drives
+    if mirror_dirs:
+        _mirror_write(text, checkpoint_path.name, mirror_dirs)
+
+
+def _load_checkpoint(
+    checkpoint_path: Path,
+    systems: List[BenchmarkSystem],
+) -> Dict[int, SystemBenchmarkResult]:
+    """Load previously completed systems from a checkpoint file.
+
+    Returns a mapping of system index → result for systems already finished.
+    """
+    if not checkpoint_path.is_file():
+        return {}
+
+    try:
+        prev = BenchmarkResult.from_json(checkpoint_path)
+    except (json.JSONDecodeError, KeyError, ValueError):
+        return {}
+
+    done_ids = {sr.system.system_id for sr in prev.systems}
+    idx_map: Dict[int, SystemBenchmarkResult] = {}
+
+    for idx, sys in enumerate(systems):
+        if sys.system_id in done_ids:
+            for sr in prev.systems:
+                if sr.system.system_id == sys.system_id:
+                    idx_map[idx] = SystemBenchmarkResult(
+                        system=sys,
+                        flexaidds_result=sr.flexaidds_result,
+                        boltz2_result=sr.boltz2_result,
+                    )
+                    break
+    return idx_map
+
+
+# ---------------------------------------------------------------------------
+# Parallel worker function (must be top-level for pickling)
+# ---------------------------------------------------------------------------
+
+
+def _run_single_system(
+    system: BenchmarkSystem,
+    methods: Tuple[str, ...],
+    flexaidds_binary: Optional[str],
+    timeout_per_system: int,
+    boltz2_predict_affinity: bool,
+) -> SystemBenchmarkResult:
+    """Execute all requested methods for one benchmark system.
+
+    This function is the unit of work submitted to ``ProcessPoolExecutor``.
+    It must remain a module-level function so that it is picklable.
+    """
+    fa_result = None
+    b2_result = None
+
+    if "flexaidds" in methods:
+        try:
+            fa_result = run_flexaidds(
+                system, binary=flexaidds_binary, timeout=timeout_per_system,
+            )
+        except Exception:
+            pass
+
+    if "boltz2" in methods:
+        try:
+            b2_result = run_boltz2(
+                system, predict_affinity=boltz2_predict_affinity,
+            )
+        except Exception:
+            pass
+
+    return SystemBenchmarkResult(
+        system=system,
+        flexaidds_result=fa_result,
+        boltz2_result=b2_result,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Main benchmark runner
+# ---------------------------------------------------------------------------
+
+
 def run_benchmark(
     systems: List[BenchmarkSystem],
     *,
@@ -954,6 +1152,9 @@ def run_benchmark(
     timeout_per_system: int = 3600,
     on_error: str = "skip",
     progress_callback: Optional[Callable[[str, int, int], None]] = None,
+    max_workers: Optional[int] = None,
+    checkpoint_path: Optional[Union[str, Path]] = None,
+    use_cloud_raid: bool = False,
 ) -> BenchmarkResult:
     """Run the full benchmark across all systems.
 
@@ -961,50 +1162,126 @@ def run_benchmark(
         systems: List of benchmark systems.
         methods: Which methods to run (``"flexaidds"``, ``"boltz2"``, or both).
         flexaidds_binary: Path to FlexAID executable.
-        boltz2_client: Pre-configured Boltz2Client instance.
+        boltz2_client: Pre-configured Boltz2Client instance (ignored when
+            *max_workers* > 1; each worker creates its own client).
         boltz2_predict_affinity: Request affinity from Boltz-2.
         timeout_per_system: Wall-clock timeout per system for FlexAIDdS.
         on_error: ``"skip"`` to continue on failure, ``"raise"`` to propagate.
-        progress_callback: Called with (system_id, index, total).
+        progress_callback: Called with ``(system_id, completed_count, total)``.
+        max_workers: Parallelism level.  ``None`` or ``1`` for sequential
+            execution (backward-compatible default).  ``0`` to auto-detect
+            via :func:`auto_workers`.  ``>=2`` for that exact worker count.
+        checkpoint_path: If set, partial results are saved here after each
+            system completes so that a crashed run can be resumed.
+        use_cloud_raid: If ``True``, checkpoint files are mirrored to iCloud
+            Drive and Google Drive (RAID-1) to avoid local SSD usage.
 
     Returns:
         :class:`BenchmarkResult` with all per-system results.
     """
-    results: List[SystemBenchmarkResult] = []
     total = len(systems)
 
-    for idx, system in enumerate(systems):
-        if progress_callback:
-            progress_callback(system.system_id, idx, total)
+    # Resolve checkpoint and cloud RAID paths
+    ckpt: Optional[Path] = Path(checkpoint_path) if checkpoint_path else None
+    mirror_dirs: Optional[List[Path]] = None
+    if use_cloud_raid:
+        cloud_drives = _detect_cloud_drives()
+        if cloud_drives:
+            mirror_dirs = [d / "FlexAIDdS" / "benchmarks" for d in cloud_drives]
 
-        fa_result = None
-        b2_result = None
+    # Load any previous checkpoint
+    results_by_idx: Dict[int, SystemBenchmarkResult] = {}
+    if ckpt is not None:
+        results_by_idx = _load_checkpoint(ckpt, systems)
+        if results_by_idx:
+            n_resumed = len(results_by_idx)
+            if progress_callback:
+                for idx in sorted(results_by_idx):
+                    progress_callback(systems[idx].system_id, n_resumed, total)
 
-        if "flexaidds" in methods:
-            try:
-                fa_result = run_flexaidds(
-                    system, binary=flexaidds_binary, timeout=timeout_per_system,
-                )
-            except Exception as exc:
-                if on_error == "raise":
-                    raise
-                # skip: fa_result remains None
+    # Determine effective worker count
+    effective_workers = 1
+    if max_workers is not None:
+        effective_workers = auto_workers() if max_workers == 0 else max_workers
 
-        if "boltz2" in methods:
-            try:
-                b2_result = run_boltz2(
-                    system, client=boltz2_client,
-                    predict_affinity=boltz2_predict_affinity,
-                )
-            except Exception as exc:
-                if on_error == "raise":
-                    raise
-                # skip: b2_result remains None
+    # --- Parallel path ---
+    if effective_workers > 1:
+        pending = {
+            idx: sys for idx, sys in enumerate(systems)
+            if idx not in results_by_idx
+        }
 
-        results.append(SystemBenchmarkResult(
-            system=system,
-            flexaidds_result=fa_result,
-            boltz2_result=b2_result,
-        ))
+        with ProcessPoolExecutor(max_workers=effective_workers) as executor:
+            futures = {
+                executor.submit(
+                    _run_single_system,
+                    sys,
+                    methods,
+                    flexaidds_binary,
+                    timeout_per_system,
+                    boltz2_predict_affinity,
+                ): idx
+                for idx, sys in pending.items()
+            }
 
-    return BenchmarkResult(systems=tuple(results))
+            completed_count = len(results_by_idx)
+            for future in as_completed(futures):
+                idx = futures[future]
+                try:
+                    result = future.result()
+                except Exception:
+                    if on_error == "raise":
+                        raise
+                    result = SystemBenchmarkResult(system=systems[idx])
+                results_by_idx[idx] = result
+                completed_count += 1
+                if progress_callback:
+                    progress_callback(
+                        systems[idx].system_id, completed_count, total,
+                    )
+                if ckpt is not None:
+                    _save_checkpoint(ckpt, results_by_idx, systems, mirror_dirs)
+
+    # --- Sequential path (backward-compatible) ---
+    else:
+        for idx, system in enumerate(systems):
+            if idx in results_by_idx:
+                continue
+
+            if progress_callback:
+                progress_callback(system.system_id, len(results_by_idx), total)
+
+            fa_result = None
+            b2_result = None
+
+            if "flexaidds" in methods:
+                try:
+                    fa_result = run_flexaidds(
+                        system, binary=flexaidds_binary,
+                        timeout=timeout_per_system,
+                    )
+                except Exception:
+                    if on_error == "raise":
+                        raise
+
+            if "boltz2" in methods:
+                try:
+                    b2_result = run_boltz2(
+                        system, client=boltz2_client,
+                        predict_affinity=boltz2_predict_affinity,
+                    )
+                except Exception:
+                    if on_error == "raise":
+                        raise
+
+            results_by_idx[idx] = SystemBenchmarkResult(
+                system=system,
+                flexaidds_result=fa_result,
+                boltz2_result=b2_result,
+            )
+            if ckpt is not None:
+                _save_checkpoint(ckpt, results_by_idx, systems, mirror_dirs)
+
+    # Reassemble in original order
+    ordered = [results_by_idx[i] for i in range(total) if i in results_by_idx]
+    return BenchmarkResult(systems=tuple(ordered))

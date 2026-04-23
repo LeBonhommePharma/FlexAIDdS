@@ -31,6 +31,7 @@ from .benchmark import (
     run_benchmark,
     load_benchmark_dataset,
     save_benchmark_dataset,
+    auto_workers,
 )
 
 # Pure-Python thermodynamics (always available)
@@ -240,6 +241,7 @@ __all__ = [
     "run_benchmark",
     "load_benchmark_dataset",
     "save_benchmark_dataset",
+    "auto_workers",
     # SuperCluster
     "SuperCluster",
     # tENCoM results
