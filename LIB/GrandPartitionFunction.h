@@ -130,7 +130,15 @@ public:
     /// ln[(z_A·Z_A) / (z_B·Z_B)] — apparent (concentration-weighted). Overflow-safe.
     [[nodiscard]] double log_selectivity(const std::string& a, const std::string& b) const;
 
-    /// ln(Z_A / Z_B) — intrinsic (concentration-independent). For SAR/potency series.
+    /// Intrinsic log-selectivity: ln(Z_A / Z_B) = β(ΔG_B − ΔG_A).
+    ///
+    /// Concentration-INDEPENDENT — cancels the z_i = c_i/c° factors and
+    /// depends only on the partition functions, i.e. on the binding
+    /// affinities themselves. This is the correct quantity for SAR and
+    /// potency-series comparisons where assay concentrations vary.
+    ///
+    /// Sign convention: positive ⇒ A preferred (Z_A > Z_B); negative ⇒ B preferred.
+    /// Compare with log_selectivity(), which is concentration-weighted.
     [[nodiscard]] double log_intrinsic_selectivity(const std::string& a,
                                                     const std::string& b) const;
 
