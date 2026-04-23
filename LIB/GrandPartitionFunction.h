@@ -43,6 +43,12 @@ class GrandPartitionFunction {
 public:
     explicit GrandPartitionFunction(double temperature_K = 300.0);
 
+    // ── Non-copyable, non-movable ────────────────────────────────────
+    // The receptor binding state (ligand map + Ξ cache, guarded by mtx_)
+    // is mutable. Copying would silently duplicate that state and
+    // produce divergent ensemble statistics; moving would invalidate
+    // pointers held by any concurrent observer. Construct once per
+    // binding site and share by reference/pointer.
     GrandPartitionFunction(const GrandPartitionFunction&) = delete;
     GrandPartitionFunction& operator=(const GrandPartitionFunction&) = delete;
     GrandPartitionFunction(GrandPartitionFunction&&) = delete;
