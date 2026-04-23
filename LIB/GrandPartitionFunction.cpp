@@ -165,6 +165,19 @@ double GrandPartitionFunction::empty_probability() const
     return std::exp(-log_Xi_cached());
 }
 
+double GrandPartitionFunction::mean_occupancy() const
+{
+    // ⟨n⟩ = 1 − p(empty)  (n is binary: 0 = apo, 1 = any ligand bound)
+    return 1.0 - empty_probability();
+}
+
+double GrandPartitionFunction::occupancy_variance() const
+{
+    // Var(n) = ⟨n²⟩ − ⟨n⟩²  = ⟨n⟩(1 − ⟨n⟩)  for binary n ∈ {0,1}
+    double mu = mean_occupancy();
+    return mu * (1.0 - mu);
+}
+
 double GrandPartitionFunction::F_bound(const std::string& name) const
 {
     std::scoped_lock lock(mtx_);

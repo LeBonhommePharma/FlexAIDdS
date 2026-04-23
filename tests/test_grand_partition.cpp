@@ -318,6 +318,43 @@ TEST(GrandPartition, ImpossibleConcentrationThrows) {
 }
 
 // ════════════════════════════════════════════════════════════════════════
+// mean_occupancy() and occupancy_variance()
+// ════════════════════════════════════════════════════════════════════════
+
+TEST(GrandPartition, MeanOccupancyEmpty) {
+    // No ligands → receptor is always apo → ⟨n⟩ = 0
+    GrandPartitionFunction gpf(300.0);
+    EXPECT_NEAR(gpf.mean_occupancy(), 0.0, 1e-12);
+    EXPECT_NEAR(gpf.occupancy_variance(), 0.0, 1e-12);
+}
+
+TEST(GrandPartition, MeanOccupancyStrongBinder) {
+    // Z ≫ 1 → receptor almost always occupied → ⟨n⟩ ≈ 1
+    GrandPartitionFunction gpf(300.0);
+    gpf.add_ligand("A", 500.0);  // overwhelming partition function
+    EXPECT_NEAR(gpf.mean_occupancy(), 1.0, 1e-6);
+    // Variance ≈ 0 at near-saturation
+    EXPECT_NEAR(gpf.occupancy_variance(), 0.0, 1e-6);
+}
+
+TEST(GrandPartition, MeanOccupancyHalfSaturation) {
+    // At half-saturation: log_Z = 0, concentration = 1 M → Z = 1
+    // Ξ = 1 + 1 = 2 → p(empty) = 0.5 → ⟨n⟩ = 0.5
+    GrandPartitionFunction gpf(300.0);
+    gpf.add_ligand("A", 0.0, 1.0);
+    EXPECT_NEAR(gpf.mean_occupancy(), 0.5, 1e-12);
+    // Variance is maximised at 0.25 when ⟨n⟩ = 0.5
+    EXPECT_NEAR(gpf.occupancy_variance(), 0.25, 1e-12);
+}
+
+TEST(GrandPartition, MeanOccupancyPlusPEmptyEqualsOne) {
+    GrandPartitionFunction gpf(300.0);
+    gpf.add_ligand("A", 5.0);
+    gpf.add_ligand("B", 3.0);
+    EXPECT_NEAR(gpf.mean_occupancy() + gpf.empty_probability(), 1.0, 1e-12);
+}
+
+// ════════════════════════════════════════════════════════════════════════
 // Log-selectivity (overflow-safe)
 // ════════════════════════════════════════════════════════════════════════
 

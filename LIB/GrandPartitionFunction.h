@@ -90,6 +90,16 @@ public:
     /// p(empty) = 1/Ξ = exp(−ln Ξ)
     [[nodiscard]] double empty_probability() const;
 
+    /// Mean site occupancy ⟨n⟩ = 1 − p(empty) = Σ_i p(ligand_i).
+    /// For a single binding site n ∈ {0,1}; this equals the probability
+    /// that the receptor is bound by ANY ligand.
+    [[nodiscard]] double mean_occupancy() const;
+
+    /// Occupancy variance Var(n) = ⟨n⟩·(1 − ⟨n⟩).
+    /// Maximised at 0.25 when mean_occupancy = 0.5 (half-saturation).
+    /// Useful for detecting near-saturation or near-apo conditions.
+    [[nodiscard]] double occupancy_variance() const;
+
     /// Helmholtz free energy of the bound ensemble: F_bound = −kT · ln Z_i  (kcal/mol).
     /// This is NOT the binding free energy (which requires an unbound reference).
     /// Use delta_G_bind() to get ΔG_bind = F_bound − F_ref.
