@@ -187,6 +187,7 @@ double vcfunction(FA_Global* FA,VC_Global* VC,atom* atoms,resid* residue, std::v
 #endif
 
 	[[maybe_unused]] int contnum = 0;  // number of contacts (excluding bloops away atoms)
+		int metal_cn_count = 0;  // coordination number counter for metal atoms
 		int currindex = VC->ca_index[i];
 		
 		while(currindex != -1) {
@@ -407,13 +408,38 @@ double vcfunction(FA_Global* FA,VC_Global* VC,atom* atoms,resid* residue, std::v
 						cfs->hbond += E_hb;
 					}
 
-					// Metal ion coordination potential (Morse)
+					// Metal ion coordination potential (Gaussian well)
 					if (FA->use_metal_coord) {
 						double dist = VC->ca_rec[currindex].dist;
+						// Charge-aware weight: reduce non-electrostatic component
+						// when Coulomb is also active for this pair
+						double mc_weight = FA->metal_coord_weight;
+						if (FA->use_elec) {
+							float mqA = atoms[atomzero].has_resp
+							            ? atoms[atomzero].resp_charge
+							            : atoms[atomzero].charge;
+							float mqB = atoms[atomcont].has_resp
+							            ? atoms[atomcont].resp_charge
+							            : atoms[atomcont].charge;
+							if (mqA != 0.0f && mqB != 0.0f)
+								mc_weight *= 0.3;
+						}
 						double E_mc = metal_coord::compute_metal_coord_energy(
 							atoms, atomzero, atomcont, dist,
-							FA->metal_coord_weight, FA->metal_coord_morse_a);
+							mc_weight, FA->metal_coord_sigma);
 						cfs->metal_coord += E_mc;
+						// Track coordination number for CN penalty
+						if (E_mc != 0.0) {
+							int ta = atoms[atomzero].type;
+							int tb = atoms[atomcont].type;
+							bool center_is_metal = metal_coord::is_metal_type(ta);
+							// Only count if atomzero is the metal (avoid double-counting)
+							if (center_is_metal) {
+								auto aff = metal_coord::get_donor_affinity(ta, tb);
+								if (aff && metal_coord::is_coordinating(dist, aff->ideal_dist))
+									metal_cn_count++;
+							}
+						}
 					}
 
 #if DEBUG_LEVEL > 0
@@ -465,7 +491,18 @@ double vcfunction(FA_Global* FA,VC_Global* VC,atom* atoms,resid* residue, std::v
 		
 		//    printf("Atom[%d]=%d has %d contacts\n",VC->Calc[i].,VC->Calc[i].atom->number,contnum);
 		//    printf("Atom[%d] COM=[%8.2f]\tWAL=[%8.2f]\n",VC->Calc[i].atomnum,com_atm,Ewall_atm);
-					
+
+		// Metal coordination number penalty: applied after all pairwise
+		// contacts are processed. Penalizes deviations from ideal CN.
+		if (FA->use_metal_coord && metal_cn_count > 0) {
+			const auto* mp = metal_coord::get_metal_params(atoms[atomzero].type);
+			if (mp) {
+				double E_cn = metal_coord::cn_penalty(
+					metal_cn_count, mp->ideal_cn, FA->metal_coord_cn_weight);
+				cfs->metal_coord += E_cn;
+			}
+		}
+
 		if(SAS < 0.0){ SAS = 0.0; }
 		cfs->totsas += SAS;
 		

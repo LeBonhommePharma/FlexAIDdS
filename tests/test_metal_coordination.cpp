@@ -34,34 +34,42 @@ static atom_struct make_atom(int sybyl_type, float x = 0.f, float y = 0.f,
 }
 
 // ===========================================================================
-// MORSE POTENTIAL — UNIT TESTS
+// GAUSSIAN WELL POTENTIAL — UNIT TESTS
 // ===========================================================================
 
-TEST(MorsePotential, MinimumAtIdealDistance) {
-    // At r = r0, Morse potential = well_depth
-    double E = morse_potential(2.36, 2.36, -15.0, 2.0);
-    EXPECT_NEAR(E, -15.0, EPS);
+TEST(GaussianWell, MinimumAtIdealDistance) {
+    // At r = r0, Gaussian well = well_depth
+    double e = gaussian_well(2.36, 2.36, -5.0, 0.45);
+    EXPECT_NEAR(e, -5.0, EPS);
 }
 
-TEST(MorsePotential, AsymptoteAtLargeDistance) {
-    // At large r, Morse potential -> 0
-    double E = morse_potential(10.0, 2.36, -15.0, 2.0);
-    EXPECT_NEAR(E, 0.0, 0.01);
+TEST(GaussianWell, AsymptoteAtLargeDistance) {
+    // At large r, Gaussian well -> 0
+    double e = gaussian_well(10.0, 2.36, -5.0, 0.45);
+    EXPECT_NEAR(e, 0.0, 0.001);
 }
 
-TEST(MorsePotential, RepulsiveAtShortDistance) {
-    // At r << r0, Morse potential > 0 (repulsive)
-    double E = morse_potential(1.5, 2.36, -15.0, 2.0);
-    EXPECT_GT(E, 0.0);
+TEST(GaussianWell, NoRepulsionAtShortDistance) {
+    // At r << r0, Gaussian well -> 0 (NOT repulsive, unlike Morse)
+    double e = gaussian_well(0.5, 2.36, -5.0, 0.45);
+    EXPECT_NEAR(e, 0.0, 0.01);
+    EXPECT_LE(e, 0.0);  // Always <= 0 (or zero) for negative well_depth
 }
 
-TEST(MorsePotential, SymmetricWellShape) {
+TEST(GaussianWell, SymmetricWellShape) {
     // Verify that the well is deeper at r0 than at r0 +/- delta
-    double E_center = morse_potential(2.36, 2.36, -15.0, 2.0);
-    double E_plus   = morse_potential(2.36 + 0.3, 2.36, -15.0, 2.0);
-    double E_minus  = morse_potential(2.36 - 0.3, 2.36, -15.0, 2.0);
-    EXPECT_LT(E_center, E_plus);
-    EXPECT_LT(E_center, E_minus);
+    double e_center = gaussian_well(2.36, 2.36, -5.0, 0.45);
+    double e_plus   = gaussian_well(2.36 + 0.3, 2.36, -5.0, 0.45);
+    double e_minus  = gaussian_well(2.36 - 0.3, 2.36, -5.0, 0.45);
+    EXPECT_LT(e_center, e_plus);
+    EXPECT_LT(e_center, e_minus);
+}
+
+TEST(GaussianWell, SigmaControlsWidth) {
+    // Larger sigma -> broader well -> more energy at same displacement
+    double e_narrow = gaussian_well(2.36 + 0.3, 2.36, -5.0, 0.30);
+    double e_wide   = gaussian_well(2.36 + 0.3, 2.36, -5.0, 0.60);
+    EXPECT_LT(e_wide, e_narrow);  // wider well = more negative (deeper) at +0.3
 }
 
 // ===========================================================================
@@ -102,61 +110,76 @@ TEST(MetalParams, PlaceholderMetalReturnsNull) {
 }
 
 // ===========================================================================
-// DONOR AFFINITY LOOKUP
+// DONOR AFFINITY LOOKUP — with scientific corrections
 // ===========================================================================
 
 TEST(DonorAffinity, Ca2PlusCarboxylateO) {
-    const DonorAffinity* aff = get_donor_affinity(36, 15); // Ca2+ - O.CO2
-    ASSERT_NE(aff, nullptr);
+    auto aff = get_donor_affinity(36, 15); // Ca2+ - O.CO2
+    ASSERT_TRUE(aff.has_value());
     EXPECT_NEAR(aff->ideal_dist, 2.36, EPS);
-    EXPECT_NEAR(aff->well_depth, -15.0, EPS);
+    EXPECT_NEAR(aff->well_depth, -5.0, EPS);
 }
 
 TEST(DonorAffinity, Ca2PlusCarbonylO) {
-    const DonorAffinity* aff = get_donor_affinity(36, 13); // Ca2+ - O.2
-    ASSERT_NE(aff, nullptr);
-    EXPECT_NEAR(aff->ideal_dist, 2.36, EPS);
-    EXPECT_NEAR(aff->well_depth, -12.0, EPS);
-}
-
-TEST(DonorAffinity, Ca2PlusHydroxylO) {
-    const DonorAffinity* aff = get_donor_affinity(36, 14); // Ca2+ - O.3
-    ASSERT_NE(aff, nullptr);
-    EXPECT_NEAR(aff->ideal_dist, 2.38, EPS);
-    EXPECT_NEAR(aff->well_depth, -10.0, EPS);
-}
-
-TEST(DonorAffinity, Ca2PlusNitrogenFallback) {
-    // N types (6-12) should fall back to generic N parameters
-    const DonorAffinity* aff = get_donor_affinity(36, 11); // Ca2+ - N.AM
-    ASSERT_NE(aff, nullptr);
-    EXPECT_NEAR(aff->ideal_dist, 2.50, EPS);
+    auto aff = get_donor_affinity(36, 13); // Ca2+ - O.2
+    ASSERT_TRUE(aff.has_value());
+    EXPECT_NEAR(aff->ideal_dist, 2.38, EPS);  // corrected from 2.36
     EXPECT_NEAR(aff->well_depth, -4.0, EPS);
 }
 
-TEST(DonorAffinity, Zn2PlusSulfur) {
-    const DonorAffinity* aff = get_donor_affinity(35, 18); // Zn2+ - S.3
-    ASSERT_NE(aff, nullptr);
-    EXPECT_NEAR(aff->ideal_dist, 2.30, EPS);
-    EXPECT_NEAR(aff->well_depth, -16.0, EPS);
+TEST(DonorAffinity, Ca2PlusHydroxylO_CorrectedDistance) {
+    auto aff = get_donor_affinity(36, 14); // Ca2+ - O.3
+    ASSERT_TRUE(aff.has_value());
+    EXPECT_NEAR(aff->ideal_dist, 2.43, EPS);  // corrected from 2.38 (Harding CSD)
+    EXPECT_NEAR(aff->well_depth, -3.5, EPS);
 }
 
-TEST(DonorAffinity, Zn2PlusNitrogenFallback) {
-    const DonorAffinity* aff = get_donor_affinity(35, 10); // Zn2+ - N.AR
-    ASSERT_NE(aff, nullptr);
-    EXPECT_NEAR(aff->ideal_dist, 2.05, EPS);
-    EXPECT_NEAR(aff->well_depth, -14.0, EPS);
+TEST(DonorAffinity, N4QuaternaryExcluded) {
+    // N.4 (quaternary ammonium, SYBYL 9) has NO lone pair and CANNOT
+    // coordinate metals — must return nullopt
+    auto aff = get_donor_affinity(36, 9);  // Ca2+ - N.4
+    EXPECT_FALSE(aff.has_value()) << "N.4 must not coordinate metals (no lone pair)";
+    auto aff2 = get_donor_affinity(35, 9); // Zn2+ - N.4
+    EXPECT_FALSE(aff2.has_value());
+}
+
+TEST(DonorAffinity, NAR_FullStrength) {
+    auto aff = get_donor_affinity(35, 10); // Zn2+ - N.AR (His imidazole)
+    ASSERT_TRUE(aff.has_value());
+    // N.AR gets full strength (n_strength = 1.0)
+    EXPECT_NEAR(aff->well_depth, -5.0, EPS);  // -5.0 * 1.0
+}
+
+TEST(DonorAffinity, NAM_WeakStrength) {
+    auto aff = get_donor_affinity(35, 11); // Zn2+ - N.AM (amide)
+    ASSERT_TRUE(aff.has_value());
+    // N.AM gets 20% strength (n_strength = 0.2)
+    EXPECT_NEAR(aff->well_depth, -1.0, EPS);  // -5.0 * 0.2
+}
+
+TEST(DonorAffinity, Zn2PlusSulfur) {
+    auto aff = get_donor_affinity(35, 18); // Zn2+ - S.3
+    ASSERT_TRUE(aff.has_value());
+    EXPECT_NEAR(aff->ideal_dist, 2.30, EPS);
+    EXPECT_NEAR(aff->well_depth, -6.0, EPS);  // reduced from -16.0
+}
+
+TEST(DonorAffinity, SulfoxideExcluded) {
+    // S.O (19), S.O2 (20), S.AR (21) should return nullopt
+    EXPECT_FALSE(get_donor_affinity(36, 19).has_value()) << "S.O should not coordinate";
+    EXPECT_FALSE(get_donor_affinity(35, 20).has_value()) << "S.O2 should not coordinate";
+    EXPECT_FALSE(get_donor_affinity(35, 21).has_value()) << "S.AR should not coordinate";
 }
 
 TEST(DonorAffinity, UnknownMetalDonorPair) {
     // Ca2+ with a halogen (no affinity defined)
-    EXPECT_EQ(get_donor_affinity(36, 23), nullptr); // Ca2+ - F
-    EXPECT_EQ(get_donor_affinity(36, 24), nullptr); // Ca2+ - Cl
+    EXPECT_FALSE(get_donor_affinity(36, 23).has_value()); // Ca2+ - F
+    EXPECT_FALSE(get_donor_affinity(36, 24).has_value()); // Ca2+ - Cl
 }
 
-TEST(DonorAffinity, NonMetalReturnsNull) {
-    EXPECT_EQ(get_donor_affinity(1, 14), nullptr);  // C.1 is not a metal
-    EXPECT_EQ(get_donor_affinity(14, 36), nullptr); // O.3 is not a metal
+TEST(DonorAffinity, NonMetalReturnsNullopt) {
+    EXPECT_FALSE(get_donor_affinity(1, 14).has_value());  // C.1 is not a metal
+    EXPECT_FALSE(get_donor_affinity(14, 36).has_value()); // O.3 is not a metal
 }
 
 // ===========================================================================
@@ -174,15 +197,19 @@ TEST(TypeClassification, MetalTypes) {
 }
 
 TEST(TypeClassification, DonorTypes) {
-    EXPECT_TRUE(is_coord_donor_type(13));  // O.2
-    EXPECT_TRUE(is_coord_donor_type(14));  // O.3
-    EXPECT_TRUE(is_coord_donor_type(15));  // O.CO2
-    EXPECT_TRUE(is_coord_donor_type(18));  // S.3
-    EXPECT_TRUE(is_coord_donor_type(6));   // N.1
-    EXPECT_TRUE(is_coord_donor_type(22));  // P.3
-    EXPECT_FALSE(is_coord_donor_type(1));  // C.1
-    EXPECT_FALSE(is_coord_donor_type(3));  // C.3
-    EXPECT_FALSE(is_coord_donor_type(36)); // Ca
+    EXPECT_TRUE(is_coord_donor_type(13));   // O.2
+    EXPECT_TRUE(is_coord_donor_type(14));   // O.3
+    EXPECT_TRUE(is_coord_donor_type(15));   // O.CO2
+    EXPECT_TRUE(is_coord_donor_type(18));   // S.3
+    EXPECT_TRUE(is_coord_donor_type(6));    // N.1
+    EXPECT_TRUE(is_coord_donor_type(22));   // P.3
+    EXPECT_FALSE(is_coord_donor_type(9));   // N.4 — EXCLUDED (no lone pair)
+    EXPECT_FALSE(is_coord_donor_type(1));   // C.1
+    EXPECT_FALSE(is_coord_donor_type(3));   // C.3
+    EXPECT_FALSE(is_coord_donor_type(36));  // Ca (metal, not donor)
+    EXPECT_FALSE(is_coord_donor_type(19));  // S.O — excluded
+    EXPECT_FALSE(is_coord_donor_type(20));  // S.O2 — excluded
+    EXPECT_FALSE(is_coord_donor_type(21));  // S.AR — excluded
 }
 
 // ===========================================================================
@@ -193,25 +220,26 @@ TEST(MetalCoordEnergy, Ca2PlusO_CO2_IdealDistance) {
     atom_struct atoms[2];
     atoms[0] = make_atom(36, 0.f, 0.f, 0.f);       // Ca2+
     atoms[1] = make_atom(15, 2.36f, 0.f, 0.f);      // O.CO2 at ideal distance
-    double E = compute_metal_coord_energy(atoms, 0, 1, 2.36, 1.0, 2.0);
-    // At ideal distance: E = weight * well_depth = 1.0 * -15.0
-    EXPECT_NEAR(E, -15.0, EPS);
+    double e = compute_metal_coord_energy(atoms, 0, 1, 2.36, 1.0, 0.45);
+    // At ideal distance: E = weight * well_depth = 1.0 * -5.0
+    EXPECT_NEAR(e, -5.0, EPS);
 }
 
 TEST(MetalCoordEnergy, Ca2PlusO_CO2_FarAway) {
     atom_struct atoms[2];
     atoms[0] = make_atom(36, 0.f, 0.f, 0.f);
     atoms[1] = make_atom(15, 8.0f, 0.f, 0.f);
-    double E = compute_metal_coord_energy(atoms, 0, 1, 8.0, 1.0, 2.0);
-    EXPECT_NEAR(E, 0.0, 0.01);
+    double e = compute_metal_coord_energy(atoms, 0, 1, 8.0, 1.0, 0.45);
+    EXPECT_NEAR(e, 0.0, 0.001);
 }
 
-TEST(MetalCoordEnergy, Ca2PlusO_CO2_TooClose) {
+TEST(MetalCoordEnergy, NoRepulsionAtShortDistance) {
+    // Gaussian well produces NO repulsion (unlike old Morse)
     atom_struct atoms[2];
     atoms[0] = make_atom(36, 0.f, 0.f, 0.f);
-    atoms[1] = make_atom(15, 1.5f, 0.f, 0.f);
-    double E = compute_metal_coord_energy(atoms, 0, 1, 1.5, 1.0, 2.0);
-    EXPECT_GT(E, 0.0);  // repulsive at short distance
+    atoms[1] = make_atom(15, 1.0f, 0.f, 0.f);
+    double e = compute_metal_coord_energy(atoms, 0, 1, 1.0, 1.0, 0.45);
+    EXPECT_LE(e, 0.0) << "Gaussian well should never be repulsive";
 }
 
 TEST(MetalCoordEnergy, ReverseAtomOrder) {
@@ -219,75 +247,108 @@ TEST(MetalCoordEnergy, ReverseAtomOrder) {
     atom_struct atoms[2];
     atoms[0] = make_atom(15, 2.36f, 0.f, 0.f);      // O.CO2
     atoms[1] = make_atom(36, 0.f, 0.f, 0.f);         // Ca2+
-    double E = compute_metal_coord_energy(atoms, 0, 1, 2.36, 1.0, 2.0);
-    EXPECT_NEAR(E, -15.0, EPS);
+    double e = compute_metal_coord_energy(atoms, 0, 1, 2.36, 1.0, 0.45);
+    EXPECT_NEAR(e, -5.0, EPS);
 }
 
 TEST(MetalCoordEnergy, NonMetalPairReturnsZero) {
     atom_struct atoms[2];
     atoms[0] = make_atom(3, 0.f, 0.f, 0.f);   // C.3
     atoms[1] = make_atom(14, 2.0f, 0.f, 0.f);  // O.3
-    double E = compute_metal_coord_energy(atoms, 0, 1, 2.0, 1.0, 2.0);
-    EXPECT_EQ(E, 0.0);
+    double e = compute_metal_coord_energy(atoms, 0, 1, 2.0, 1.0, 0.45);
+    EXPECT_EQ(e, 0.0);
 }
 
 TEST(MetalCoordEnergy, MetalMetalReturnsZero) {
     atom_struct atoms[2];
     atoms[0] = make_atom(36, 0.f, 0.f, 0.f);  // Ca2+
     atoms[1] = make_atom(35, 3.0f, 0.f, 0.f);  // Zn2+
-    double E = compute_metal_coord_energy(atoms, 0, 1, 3.0, 1.0, 2.0);
-    EXPECT_EQ(E, 0.0);
+    double e = compute_metal_coord_energy(atoms, 0, 1, 3.0, 1.0, 0.45);
+    EXPECT_EQ(e, 0.0);
 }
 
 TEST(MetalCoordEnergy, WeightScaling) {
     atom_struct atoms[2];
     atoms[0] = make_atom(36, 0.f, 0.f, 0.f);
     atoms[1] = make_atom(15, 2.36f, 0.f, 0.f);
-    double E1 = compute_metal_coord_energy(atoms, 0, 1, 2.36, 1.0, 2.0);
-    double E2 = compute_metal_coord_energy(atoms, 0, 1, 2.36, 2.0, 2.0);
-    EXPECT_NEAR(E2, 2.0 * E1, EPS);
+    double e1 = compute_metal_coord_energy(atoms, 0, 1, 2.36, 1.0, 0.45);
+    double e2 = compute_metal_coord_energy(atoms, 0, 1, 2.36, 2.0, 0.45);
+    EXPECT_NEAR(e2, 2.0 * e1, EPS);
 }
 
 TEST(MetalCoordEnergy, Zn2PlusS3) {
     atom_struct atoms[2];
     atoms[0] = make_atom(35, 0.f, 0.f, 0.f);       // Zn2+
     atoms[1] = make_atom(18, 2.30f, 0.f, 0.f);      // S.3
-    double E = compute_metal_coord_energy(atoms, 0, 1, 2.30, 1.0, 2.0);
-    EXPECT_NEAR(E, -16.0, EPS);
+    double e = compute_metal_coord_energy(atoms, 0, 1, 2.30, 1.0, 0.45);
+    EXPECT_NEAR(e, -6.0, EPS);
 }
 
 TEST(MetalCoordEnergy, Mg2PlusO_CO2) {
     atom_struct atoms[2];
     atoms[0] = make_atom(28, 0.f, 0.f, 0.f);       // Mg2+
     atoms[1] = make_atom(15, 2.06f, 0.f, 0.f);      // O.CO2
-    double E = compute_metal_coord_energy(atoms, 0, 1, 2.06, 1.0, 2.0);
-    EXPECT_NEAR(E, -14.0, EPS);
+    double e = compute_metal_coord_energy(atoms, 0, 1, 2.06, 1.0, 0.45);
+    EXPECT_NEAR(e, -4.5, EPS);
+}
+
+TEST(MetalCoordEnergy, N4QuaternaryReturnsZero) {
+    atom_struct atoms[2];
+    atoms[0] = make_atom(35, 0.f, 0.f, 0.f);       // Zn2+
+    atoms[1] = make_atom(9, 2.05f, 0.f, 0.f);       // N.4
+    double e = compute_metal_coord_energy(atoms, 0, 1, 2.05, 1.0, 0.45);
+    EXPECT_EQ(e, 0.0) << "N.4 should not produce metal coordination energy";
+}
+
+TEST(MetalCoordEnergy, SulfoxideReturnsZero) {
+    atom_struct atoms[2];
+    atoms[0] = make_atom(35, 0.f, 0.f, 0.f);       // Zn2+
+    atoms[1] = make_atom(19, 2.30f, 0.f, 0.f);      // S.O
+    double e = compute_metal_coord_energy(atoms, 0, 1, 2.30, 1.0, 0.45);
+    EXPECT_EQ(e, 0.0) << "S.O should not coordinate metals";
+}
+
+TEST(MetalCoordEnergy, DistanceCutoff) {
+    atom_struct atoms[2];
+    atoms[0] = make_atom(36, 0.f, 0.f, 0.f);       // Ca2+
+    atoms[1] = make_atom(15, 5.0f, 0.f, 0.f);       // O.CO2 far away
+    // ideal_dist=2.36, cutoff = 2.36 + 2.5*0.45 = 3.485
+    double e = compute_metal_coord_energy(atoms, 0, 1, 5.0, 1.0, 0.45);
+    EXPECT_EQ(e, 0.0) << "Should return 0 beyond cutoff";
 }
 
 // ===========================================================================
-// COORDINATION NUMBER PENALTY
+// COORDINATION NUMBER PENALTY — CORRECTED SIGN
 // ===========================================================================
 
 TEST(CNPenalty, IdealCNZeroPenalty) {
-    EXPECT_NEAR(cn_penalty(7, 7), 0.0, EPS);
-    EXPECT_NEAR(cn_penalty(4, 4), 0.0, EPS);
-    EXPECT_NEAR(cn_penalty(6, 6), 0.0, EPS);
+    EXPECT_NEAR(cn_penalty(7, 7, 0.5), 0.0, EPS);
+    EXPECT_NEAR(cn_penalty(4, 4, 0.5), 0.0, EPS);
+    EXPECT_NEAR(cn_penalty(6, 6, 0.5), 0.0, EPS);
 }
 
-TEST(CNPenalty, OneOffPenalty) {
-    // delta=1 → -0.5 * 1 = -0.5
-    EXPECT_NEAR(cn_penalty(6, 7), -0.5, EPS);
-    EXPECT_NEAR(cn_penalty(8, 7), -0.5, EPS);
+TEST(CNPenalty, OneOffPenalty_Positive) {
+    // delta=1 -> 0.5 * 1 = +0.5 (POSITIVE = unfavorable)
+    double pen = cn_penalty(6, 7, 0.5);
+    EXPECT_NEAR(pen, +0.5, EPS);
+    EXPECT_GT(pen, 0.0) << "CN penalty must be POSITIVE (unfavorable)";
 }
 
-TEST(CNPenalty, TwoOffPenalty) {
-    // delta=2 → -0.5 * 4 = -2.0
-    EXPECT_NEAR(cn_penalty(5, 7), -2.0, EPS);
+TEST(CNPenalty, TwoOffPenalty_Positive) {
+    // delta=2 -> 0.5 * 4 = +2.0
+    double pen = cn_penalty(5, 7, 0.5);
+    EXPECT_NEAR(pen, +2.0, EPS);
 }
 
 TEST(CNPenalty, SymmetricPenalty) {
     // Under-coordination and over-coordination penalized equally
-    EXPECT_EQ(cn_penalty(5, 7), cn_penalty(9, 7));
+    EXPECT_EQ(cn_penalty(5, 7, 0.5), cn_penalty(9, 7, 0.5));
+}
+
+TEST(CNPenalty, WeightScaling) {
+    double pen1 = cn_penalty(3, 7, 0.5);   // delta=4 -> 0.5*16 = 8.0
+    double pen2 = cn_penalty(3, 7, 1.0);   // delta=4 -> 1.0*16 = 16.0
+    EXPECT_NEAR(pen2, 2.0 * pen1, EPS);
 }
 
 // ===========================================================================
@@ -307,26 +368,27 @@ TEST(CoordCutoff, OutsideCutoff) {
 // MULTIPLE METALS — SIMULTANEOUS SCORING
 // ===========================================================================
 
-TEST(MetalCoordEnergy, FeNitrogen) {
+TEST(MetalCoordEnergy, FeNitrogen_HisImidazole) {
     atom_struct atoms[2];
     atoms[0] = make_atom(37, 0.f, 0.f, 0.f);       // Fe
-    atoms[1] = make_atom(10, 2.15f, 0.f, 0.f);      // N.AR (fallback to generic N)
-    double E = compute_metal_coord_energy(atoms, 0, 1, 2.15, 1.0, 2.0);
-    EXPECT_NEAR(E, -14.0, EPS);
+    atoms[1] = make_atom(10, 2.15f, 0.f, 0.f);      // N.AR (His imidazole)
+    double e = compute_metal_coord_energy(atoms, 0, 1, 2.15, 1.0, 0.45);
+    // Fe N.AR: -5.0 * n_strength(10) = -5.0 * 1.0 = -5.0
+    EXPECT_NEAR(e, -5.0, EPS);
 }
 
 TEST(MetalCoordEnergy, Cu2PlusSulfur) {
     atom_struct atoms[2];
     atoms[0] = make_atom(30, 0.f, 0.f, 0.f);       // Cu2+
     atoms[1] = make_atom(18, 2.15f, 0.f, 0.f);      // S.3
-    double E = compute_metal_coord_energy(atoms, 0, 1, 2.15, 1.0, 2.0);
-    EXPECT_NEAR(E, -14.0, EPS);
+    double e = compute_metal_coord_energy(atoms, 0, 1, 2.15, 1.0, 0.45);
+    EXPECT_NEAR(e, -5.5, EPS);
 }
 
 TEST(MetalCoordEnergy, UnknownDonorForMetal) {
     atom_struct atoms[2];
     atoms[0] = make_atom(36, 0.f, 0.f, 0.f);       // Ca2+
     atoms[1] = make_atom(25, 3.0f, 0.f, 0.f);       // BR — no affinity
-    double E = compute_metal_coord_energy(atoms, 0, 1, 3.0, 1.0, 2.0);
-    EXPECT_EQ(E, 0.0);
+    double e = compute_metal_coord_energy(atoms, 0, 1, 3.0, 1.0, 0.45);
+    EXPECT_EQ(e, 0.0);
 }

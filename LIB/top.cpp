@@ -13,6 +13,7 @@
 #include "ProcessLigand/CoordBuilder.h"
 #include "LibrarySplitter.h"
 #include "ReferenceEntropy.h"
+#include "assign_formal_charges.h"
 #include "CoarseScreen.h"
 #include "TwoStageScreen.h"
 #include "GISTEvaluator.h"
@@ -326,7 +327,8 @@ int main(int argc, char **argv){
 
 	FA->use_metal_coord=0;
 	FA->metal_coord_weight=1.0;
-	FA->metal_coord_morse_a=2.0;
+	FA->metal_coord_sigma=0.45;
+	FA->metal_coord_cn_weight=0.5;
 
 	FA->useflexdee=0;
 	FA->num_constraints=0;
@@ -892,6 +894,13 @@ int main(int argc, char **argv){
 		// ── 6. Assign radii and types ──
 		assign_radii_types(FA, atoms, residue);
 		printf("radii are now assigned\n");
+
+		// ── 6a. Assign formal charges to receptor atoms from PDB ──
+		// PDB files carry no charge data — this assigns AMBER ff14SB
+		// partial charges to titratable side-chains and formal charges
+		// to metal ions, enabling Coulomb electrostatics and salt bridge
+		// detection. Skips atoms that already have charges (MOL2/PTM).
+		formal_charges::assign_formal_charges(FA, atoms, residue);
 
 		// ── 6b. Set up GPA and IC origin for MOL2/SDF ligand ──
 		// generate_grid() requires residue[last].gpa to be non-NULL and

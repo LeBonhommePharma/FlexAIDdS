@@ -38,7 +38,8 @@ inline json::Value flexaid_default_config() {
             // Metal ion coordination potential
             {"metal_coord_enabled",     V(false)},
             {"metal_coord_weight",      V(1.0)},
-            {"metal_coord_morse_alpha", V(2.0)},
+            {"metal_coord_sigma",       V(0.45)},
+            {"metal_coord_cn_weight",   V(0.5)},
             // GIST desolvation grid
             {"gist_enabled",  V(false)},
             {"gist_dx_file",  V("")},

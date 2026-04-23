@@ -1082,6 +1082,18 @@ if(BUILD_TESTING)
     flexaids_configure_msvc_test(test_metal_coordination)
     add_test(NAME MetalCoordinationTests COMMAND test_metal_coordination)
 
+    # test_formal_charges — PDB formal charge assignment tests (header-only)
+    add_executable(test_formal_charges tests/test_formal_charges.cpp)
+    target_include_directories(test_formal_charges PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/LIB)
+    target_link_libraries(test_formal_charges PRIVATE GTest::gtest GTest::gtest_main)
+    if(MSVC)
+        target_compile_options(test_formal_charges PRIVATE /O2)
+    else()
+        target_compile_options(test_formal_charges PRIVATE -O2)
+    endif()
+    flexaids_configure_msvc_test(test_formal_charges)
+    add_test(NAME FormalChargeTests COMMAND test_formal_charges)
+
     # test_hardware_dispatch — ShannonThermoStack dispatch layer tests
     add_executable(test_hardware_dispatch
         tests/test_hardware_dispatch.cpp

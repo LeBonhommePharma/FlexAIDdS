@@ -396,7 +396,8 @@ struct FA_Global_struct{
 
 	int    use_metal_coord;              // enable metal ion coordination scoring
 	double metal_coord_weight;           // global weight multiplier (default 1.0)
-	double metal_coord_morse_a;          // Morse steepness parameter (default 2.0 A^-1)
+	double metal_coord_sigma;            // Gaussian width parameter (default 0.45 A)
+	double metal_coord_cn_weight;        // CN deviation penalty weight (default 0.5 kcal/mol per CN^2)
 
 	constraint* constraints;             // list of constraints
 	int num_constraints;                 // constraints counter

@@ -432,6 +432,28 @@ static int parse_cif_atom_site(
     }
 
     remove(tmp_pdb);
+
+    // Phase 4: Restore formal charges that were lost in the PDB round-trip
+    // The CIF file carried pdbx_formal_charge for metal ions and other charged
+    // atoms, but standard PDB format has no charge column. Apply them now by
+    // matching CIF serial → internal atom number via FA->num_atm[].
+    if (result) {
+        int n_restored = 0;
+        for (const auto& ca : cif_atoms) {
+            if (ca.charge == 0) continue;
+            int serial = ca.serial % 100000;  // same truncation as fprintf
+            if (serial >= 0 && serial < MAX_ATOM_NUMBER && FA->num_atm[serial] > 0) {
+                int aidx = FA->num_atm[serial];
+                if ((*atoms_ptr)[aidx].charge == 0.0f) {
+                    (*atoms_ptr)[aidx].charge = static_cast<float>(ca.charge);
+                    n_restored++;
+                }
+            }
+        }
+        if (n_restored > 0)
+            printf("CIF: restored %d formal charges from pdbx_formal_charge\n", n_restored);
+    }
+
     return result;
 }
 

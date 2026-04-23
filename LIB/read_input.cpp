@@ -218,7 +218,8 @@ void read_input(FA_Global* FA,atom** atoms, resid** residue,rot** rotamer,gridpo
 		if(strcmp(field,"HBONDW") == 0){sscanf(buffer,"%s %lf",field,&FA->hbond_weight);}
 		if(strcmp(field,"USEMTL") == 0){FA->use_metal_coord=1;}
 		if(strcmp(field,"MTLWGT") == 0){sscanf(buffer,"%s %lf",field,&FA->metal_coord_weight);}
-		if(strcmp(field,"MTLALP") == 0){sscanf(buffer,"%s %lf",field,&FA->metal_coord_morse_a);}
+		if(strcmp(field,"MTLSIG") == 0){sscanf(buffer,"%s %lf",field,&FA->metal_coord_sigma);}
+		if(strcmp(field,"MTLCNW") == 0){sscanf(buffer,"%s %lf",field,&FA->metal_coord_cn_weight);}
 		if(strcmp(field,"OUTRNG") == 0){FA->output_range=1;}
 		if(strcmp(field,"USEDEE") == 0){FA->useflexdee=1;}
 		if(strcmp(field,"IMATRX") == 0){strncpy(emat_forced,&buffer[7],MAX_PATH__-1);emat_forced[MAX_PATH__-1]='\0';}
