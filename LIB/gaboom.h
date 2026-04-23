@@ -34,7 +34,7 @@ struct GAContext;
 #define MAX_NUM_CHROM 1000
 #define MAX_GEN_LENGTH 32                         // in number of bits
 #define MAX_RANDOM_VALUE 2147483647              // upper bound of 32-bit integer
-#define SAVE_CHROM_FRACTION 1.0
+#define SAVE_CHROM_FRACTION 0.05
 
 #define QS_TYPE double
 #define QS_ASC(a,b) ((a)-(b))

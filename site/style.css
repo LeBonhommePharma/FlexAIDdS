@@ -2193,6 +2193,68 @@ code {
   opacity: 0.7;
 }
 
+.text-gradient-animated {
+  background: linear-gradient(
+    90deg,
+    var(--spectrum-burgundy),
+    var(--spectrum-wine),
+    var(--spectrum-plum),
+    var(--spectrum-violet),
+    var(--spectrum-indigo),
+    var(--spectrum-blue),
+    var(--spectrum-indigo),
+    var(--spectrum-violet),
+    var(--spectrum-plum),
+    var(--spectrum-wine),
+    var(--spectrum-burgundy)
+  );
+  background-size: 300% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: gradient-shift 6s ease-in-out infinite;
+}
+
+@keyframes gradient-shift {
+  0%   { background-position: 0% 50%; }
+  50%  { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .text-gradient-animated {
+    animation: none;
+    background: linear-gradient(135deg, var(--spectrum-burgundy), var(--spectrum-blue));
+    -webkit-background-clip: text;
+    background-clip: text;
+  }
+}
+
+.org-link {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  font-weight: 500;
+  color: var(--color-text-muted);
+  text-decoration: none;
+  white-space: nowrap;
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-1) 0;
+}
+
+.org-link:hover {
+  color: var(--color-text);
+}
+
+.hero-org {
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  color: var(--color-text-faint);
+  margin-bottom: var(--space-1);
+  letter-spacing: 0.05em;
+}
+
 /* ==========================================================================
    Architecture Pipeline Mobile Fix
    ========================================================================== */
