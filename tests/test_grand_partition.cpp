@@ -393,6 +393,81 @@ TEST(GrandPartition, IntrinsicVsApparentSelectivity) {
     EXPECT_NEAR(gpf.log_selectivity("A", "B"), std::log(100.0), 1e-10);
 }
 
+// ─────────────────────────────────────────────────────────────────────
+// Regression guards for log_intrinsic_selectivity()
+//
+// These tests exist to prevent a very specific class of "helpful
+// refactor" — namely, replacing the implementation with
+//   return log_c(a) − log_c(b);
+// which would silently compute ln(c_A/c_B) (the concentration ratio)
+// instead of ln(Z_A/Z_B) (the intrinsic affinity ratio).
+//
+// Each test below would fail under that broken implementation.
+// ─────────────────────────────────────────────────────────────────────
+
+TEST(GrandPartition, IntrinsicSelectivityIndependentOfConcentration) {
+    // Same partition functions, wildly different concentrations.
+    // Intrinsic selectivity must be zero for ALL concentration pairs.
+    // A log_c-based implementation would return ln(c_A/c_B) = ±N, not 0.
+    const double concentrations[] = {1e-9, 1e-6, 1e-3, 1.0, 100.0};
+    for (double c_a : concentrations) {
+        for (double c_b : concentrations) {
+            GrandPartitionFunction gpf(300.0);
+            gpf.add_ligand("A", 7.0, c_a);
+            gpf.add_ligand("B", 7.0, c_b);
+            EXPECT_NEAR(gpf.log_intrinsic_selectivity("A", "B"), 0.0, 1e-12)
+                << "c_a=" << c_a << " c_b=" << c_b;
+        }
+    }
+}
+
+TEST(GrandPartition, IntrinsicSelectivityTracksLogZAtAnyConcentration) {
+    // Different Z values, equal concentrations: intrinsic = log_Z_A − log_Z_B.
+    // Repeat at several concentrations — the value must not shift.
+    for (double c : {1e-9, 1e-3, 1.0, 100.0}) {
+        GrandPartitionFunction gpf(300.0);
+        gpf.add_ligand("A", 12.5, c);
+        gpf.add_ligand("B",  4.5, c);
+        EXPECT_NEAR(gpf.log_intrinsic_selectivity("A", "B"), 8.0, 1e-12)
+            << "c=" << c;
+    }
+}
+
+TEST(GrandPartition, IntrinsicSelectivityAntisymmetryAndReflexivity) {
+    GrandPartitionFunction gpf(300.0);
+    gpf.add_ligand("A", 9.0,  0.5);
+    gpf.add_ligand("B", 2.0,  0.02);
+
+    // Reflexive: ln(Z_A/Z_A) = 0
+    EXPECT_NEAR(gpf.log_intrinsic_selectivity("A", "A"), 0.0, 1e-12);
+    EXPECT_NEAR(gpf.log_intrinsic_selectivity("B", "B"), 0.0, 1e-12);
+
+    // Antisymmetric: ln(Z_A/Z_B) = −ln(Z_B/Z_A)
+    double s_ab = gpf.log_intrinsic_selectivity("A", "B");
+    double s_ba = gpf.log_intrinsic_selectivity("B", "A");
+    EXPECT_NEAR(s_ab, -s_ba, 1e-12);
+    EXPECT_NEAR(s_ab,  7.0, 1e-12);  // 9 − 2
+}
+
+TEST(GrandPartition, IntrinsicAndApparentSelectivityDifferByLogConcentrationRatio) {
+    // Algebraic identity: log_selectivity − log_intrinsic_selectivity = ln(c_A/c_B)
+    //   apparent = (log_c_A + log_Z_A) − (log_c_B + log_Z_B)
+    //   intrinsic = log_Z_A − log_Z_B
+    //   apparent − intrinsic = log_c_A − log_c_B = ln(c_A/c_B)
+    // This would collapse to 0 under a log_c-based implementation.
+    GrandPartitionFunction gpf(300.0);
+    gpf.add_ligand("A", 6.5,  2.5);   // 2.5 M
+    gpf.add_ligand("B", 1.25, 1e-4);  // 0.1 mM
+
+    double apparent  = gpf.log_selectivity("A", "B");
+    double intrinsic = gpf.log_intrinsic_selectivity("A", "B");
+    double expected_conc_ratio = std::log(2.5 / 1e-4);
+
+    EXPECT_NEAR(apparent - intrinsic, expected_conc_ratio, 1e-10);
+    // And independently: intrinsic must equal log_Z_A − log_Z_B exactly.
+    EXPECT_NEAR(intrinsic, 6.5 - 1.25, 1e-12);
+}
+
 // ════════════════════════════════════════════════════════════════════════
 // F_bound vs delta_G_bind
 // ════════════════════════════════════════════════════════════════════════

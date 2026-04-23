@@ -142,7 +142,16 @@ public:
     /// potency-series comparisons where assay concentrations vary.
     ///
     /// Sign convention: positive ⇒ A preferred (Z_A > Z_B); negative ⇒ B preferred.
-    /// Compare with log_selectivity(), which is concentration-weighted.
+    ///
+    /// Contrast with the two sibling methods:
+    ///   log_selectivity(A,B)            = (log_c_A + log_Z_A) − (log_c_B + log_Z_B)
+    ///                                   = ln(c_A/c_B) + ln(Z_A/Z_B)
+    ///   log_intrinsic_selectivity(A,B)  = log_Z_A − log_Z_B
+    ///
+    /// WARNING — do NOT "simplify" the implementation to log_c_A − log_c_B.
+    /// That returns ln(c_A/c_B), which collapses to 0 at equal concentrations
+    /// (where the binding affinities still differ) and is covered by the
+    /// regression test ConcentrationInvarianceOfIntrinsicSelectivity.
     [[nodiscard]] double log_intrinsic_selectivity(const std::string& a,
                                                     const std::string& b) const;
 

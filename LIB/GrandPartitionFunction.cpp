@@ -226,7 +226,15 @@ double GrandPartitionFunction::log_intrinsic_selectivity(const std::string& a,
         throw std::invalid_argument("Ligand '" + a + "' not found");
     if (it_b == ligands_.end())
         throw std::invalid_argument("Ligand '" + b + "' not found");
-    // ln(Z_A / Z_B) — intrinsic (concentration-independent)
+
+    // ── DO NOT CHANGE TO log_c − log_c ────────────────────────────────
+    // This method is *intrinsic* selectivity: ln(Z_A / Z_B) = β(ΔG_B − ΔG_A).
+    // It must be independent of the concentrations stored in log_c, otherwise
+    // it would just reproduce the concentration ratio and duplicate
+    // log_selectivity() at c_A = c_B = 1 M.
+    // Concentration-WEIGHTED selectivity lives in log_selectivity(), which
+    // returns (log_c_A + log_Z_A) − (log_c_B + log_Z_B).
+    // See test ConcentrationInvarianceOfIntrinsicSelectivity.
     return it_a->second.log_Z - it_b->second.log_Z;
 }
 
