@@ -39,6 +39,10 @@
 
 namespace target {
 
+/// Standard reference concentration c° used to build the fugacity z_i = c_i/c°.
+/// Fixed at 1 M per IUPAC biochemical convention.
+inline constexpr double c_standard = 1.0;
+
 class GrandPartitionFunction {
 public:
     explicit GrandPartitionFunction(double temperature_K = 300.0);

@@ -31,7 +31,7 @@ void GrandPartitionFunction::add_ligand(const std::string& name, double log_Z,
     if (concentration_M > 1e3)
         throw std::invalid_argument(
             "Concentration > 1000 M — did you pass µM or nM without conversion to M?");
-    double log_c = std::log(concentration_M);
+    double log_c = std::log(concentration_M / c_standard);  // ln(c_i / c°)
     double log_zZ = log_c + log_Z;
 
     std::scoped_lock lock(mtx_);
@@ -61,7 +61,7 @@ void GrandPartitionFunction::add_or_overwrite(const std::string& name, double lo
     if (concentration_M > 1e3)
         throw std::invalid_argument(
             "Concentration > 1000 M — did you pass µM or nM without conversion to M?");
-    double log_c = std::log(concentration_M);
+    double log_c = std::log(concentration_M / c_standard);  // ln(c_i / c°)
     double log_zZ = log_c + log_Z;
 
     std::scoped_lock lock(mtx_);
