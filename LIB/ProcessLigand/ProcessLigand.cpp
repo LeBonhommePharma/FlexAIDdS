@@ -15,19 +15,12 @@
 #include <stdexcept>
 
 // ---------------------------------------------------------------------------
-// These readers bridge into the existing FlexAIDdS LIB/ readers.
-// They translate atom/resid arrays → BonMol.
-// If the LIB/ headers are not available (standalone build), a fallback
-// minimal SDF/MOL2 reader is used instead.
+// SDF and MOL2 readers parse directly into BonMol, including:
+//   - SDF V2000: atom coords, bonds, and M CHG formal charge properties
+//   - MOL2: atom coords, SYBYL types, bonds, and partial charges
+// This avoids the heavy FA_Global dependency of the LIB/ readers
+// (SdfReader.h / Mol2Reader.h) which target the legacy atom/resid arrays.
 // ---------------------------------------------------------------------------
-#if __has_include("../LIB/SdfReader.h")
-#  include "../LIB/SdfReader.h"
-#  define HAVE_FLEXAID_SDF 1
-#endif
-#if __has_include("../LIB/Mol2Reader.h")
-#  include "../LIB/Mol2Reader.h"
-#  define HAVE_FLEXAID_MOL2 1
-#endif
 
 namespace bonmol {
 
@@ -72,13 +65,6 @@ void ProcessLigand::log(const std::string& msg) const {
 // ---------------------------------------------------------------------------
 
 BonMol ProcessLigand::load_sdf(const std::string& filepath) {
-#ifdef HAVE_FLEXAID_SDF
-    // FlexAID SdfReader currently targets atom/resid buffers used by the
-    // docking engine, while ProcessLigand owns a BonMol graph container.
-    // Until a shared translation utility is exposed in LIB/, this parser is
-    // the canonical SDF->BonMol path.
-#endif
-
     std::ifstream f(filepath);
     if (!f) throw std::runtime_error("cannot open SDF file: " + filepath);
 
@@ -145,6 +131,29 @@ BonMol ProcessLigand::load_sdf(const std::string& filepath) {
         mol.add_bond(a1, a2, order, arom);
     }
 
+    // Properties block: parse M  CHG lines for formal charges
+    while (std::getline(f, line)) {
+        // Strip trailing whitespace
+        while (!line.empty() && (line.back() == '\r' || line.back() == '\n' || line.back() == ' '))
+            line.pop_back();
+        if (line == "M  END" || line == "$$$$") break;
+
+        // M  CHG  n  aaa vvv  aaa vvv ...
+        // n = number of charge entries, each pair is atom_index(1-based) and charge
+        if (line.size() >= 9 && line.substr(0, 6) == "M  CHG") {
+            std::istringstream ss(line.substr(6));
+            int n_entries = 0;
+            ss >> n_entries;
+            for (int i = 0; i < n_entries && ss; ++i) {
+                int atom_idx = 0, charge = 0;
+                ss >> atom_idx >> charge;
+                if (atom_idx >= 1 && atom_idx <= num_atoms) {
+                    mol.atoms[atom_idx - 1].formal_charge = charge;
+                }
+            }
+        }
+    }
+
     mol.finalize();
     return mol;
 }
@@ -154,13 +163,6 @@ BonMol ProcessLigand::load_sdf(const std::string& filepath) {
 // ---------------------------------------------------------------------------
 
 BonMol ProcessLigand::load_mol2(const std::string& filepath) {
-#ifdef HAVE_FLEXAID_MOL2
-    // FlexAID Mol2Reader currently targets atom/resid buffers used by the
-    // docking engine, while ProcessLigand owns a BonMol graph container.
-    // Until a shared translation utility is exposed in LIB/, this parser is
-    // the canonical MOL2->BonMol path.
-#endif
-
     std::ifstream f(filepath);
     if (!f) throw std::runtime_error("cannot open MOL2 file: " + filepath);
 
@@ -205,8 +207,16 @@ BonMol ProcessLigand::load_mol2(const std::string& filepath) {
             Element elem = element_from_symbol(elem_str);
             int idx = mol.add_atom(elem, x, y, z);
 
+            // Read optional substructure fields and partial charge
+            // MOL2 format: atom_id name x y z type [subst_id subst_name charge]
+            int res_id = 0; std::string res_name;
+            float charge = 0.0f;
+            if (ss >> res_id >> res_name >> charge) {
+                mol.atoms[idx].partial_charge = charge;
+            }
+
             // Decode SYBYL type from atype string
-            // (mirrors Mol2Reader.cpp mapping)
+            // (mirrors Mol2Reader.cpp sybyl_to_flexaid_type mapping)
             auto sybyl_map = [](const std::string& t) -> int {
                 if (t == "C.3")   return 1;  if (t == "C.2")   return 2;
                 if (t == "C.ar")  return 3;  if (t == "C.1")   return 0;
