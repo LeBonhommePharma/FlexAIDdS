@@ -9,7 +9,7 @@
 
 [![CI](https://github.com/LeBonhommePharma/FlexAIDdS/actions/workflows/ci.yml/badge.svg)](https://github.com/LeBonhommePharma/FlexAIDdS/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
-[![C++20](https://img.shields.io/badge/C%2B%2B-20-blue.svg)](https://en.cppreference.com/w/cpp/20)
+[![C++26](https://img.shields.io/badge/C%2B%2B-26-blue.svg)](https://en.cppreference.com/w/cpp/26)
 [![Python](https://img.shields.io/badge/python-%E2%89%A5%203.9-3776AB.svg)](https://www.python.org/)
 [![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20macOS%20%7C%20Windows-lightgrey.svg)](#)
 [![Version](https://img.shields.io/badge/version-2.0.0-brightgreen.svg)](VERSION.md)
@@ -105,7 +105,7 @@ for mode in results.rank_by_free_energy():
 Released 2026-04-04 — complete rewrite of the FlexAID engine.
 
 - **Entropy-driven scoring** — full canonical ensemble thermodynamics via Shannon information theory (ΔG, ΔH, -TΔS, Cv)
-- **Multi-format input with SMILES** — dock directly from SMILES strings with automatic 3D coordinate generation; pure C++20 parser, no RDKit/Boost
+- **Multi-format input with SMILES** — dock directly from SMILES strings with automatic 3D coordinate generation; pure C++26 parser, no RDKit/Boost
 - **tENCoM vibrational entropy** — torsional elastic network contact model for backbone vibrational entropy differentials
 - **Unified hardware dispatch** — automatic runtime backend: CUDA > Metal > AVX-512 > AVX2 > OpenMP > scalar
 - **Full ligand flexibility by default** — ring conformer sampling, sugar pucker, R/S chiral center discrimination
@@ -192,7 +192,7 @@ Hardware: CUDA > Metal > AVX-512 > AVX2 > OpenMP > scalar
 
 ### Requirements
 
-- **Required**: C++20 compiler (GCC >= 10, Clang >= 10, MSVC >= 19.30), CMake >= 3.18
+- **Required**: C++26 compiler (GCC >= 14, Clang >= 18, Apple Clang >= 16 / Xcode 16, MSVC >= 19.40 / VS 2022 17.10), CMake >= 3.28
 - **Recommended**: Eigen3 (`libeigen3-dev` / `brew install eigen`)
 - **Optional**: OpenMP, CUDA Toolkit, Metal framework (macOS), pybind11, MPI
 

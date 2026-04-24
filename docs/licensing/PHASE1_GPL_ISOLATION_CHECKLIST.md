@@ -127,7 +127,7 @@ grep -i "find_package\|add_library" CMakeLists.txt | grep -v "#"
 
 ### Manual Code Review
 
-- [ ] **LIB/statmech.h**: No GPL #includes, only standard C++20
+- [ ] **LIB/statmech.h**: No GPL #includes, only standard C++26
 - [ ] **LIB/statmech.cpp**: Pure implementations, no external dependencies
 - [ ] **LIB/BindingMode.cpp**: Refactored methods, only local #includes
 - [ ] **LIB/BindingMode.h**: New declarations, no GPL dependencies

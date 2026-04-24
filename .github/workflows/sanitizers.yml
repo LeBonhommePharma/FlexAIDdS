@@ -18,12 +18,13 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y cmake ninja-build clang libeigen3-dev libomp-dev
+          # clang-18 is required for C++26 support (see CMakeLists.txt compiler gate).
+          sudo apt-get install -y cmake ninja-build clang-18 libeigen3-dev libomp-dev
 
       - name: Configure
         env:
-          CC: clang
-          CXX: clang++
+          CC: clang-18
+          CXX: clang++-18
         run: |
           cmake -S . -B build-sanitizers -G Ninja \
             -DCMAKE_BUILD_TYPE=Debug \

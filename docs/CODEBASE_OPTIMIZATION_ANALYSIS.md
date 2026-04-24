@@ -305,7 +305,7 @@ Global `std::random_device` and `std::mt19937` at file scope — not thread-safe
 
 | Setting | Value | Assessment |
 |---------|-------|------------|
-| C++ Standard | C++20 | Good |
+| C++ Standard | C++26 | Good |
 | Optimization | `-O3 -ffast-math` | Good |
 | Warnings | `-Wall` | Adequate |
 | AVX2 | `-mavx2 -mfma` | Good |
@@ -357,7 +357,7 @@ target_compile_options(flexaid_core PRIVATE -O3 -ffast-math)
 
 ### 8.5 Python Extension Missing Optimization Flags
 
-`python/setup.py` line 40 uses only `-std=c++20 -O3`, missing `-ffast-math`, SIMD flags (`-mavx2 -mfma`), and LTO. Python bindings for `StatMechEngine` and `ENCoMEngine` run 10-15% slower than equivalent C++ code.
+`python/setup.py` line 40 uses only `-std=c++26 -O3`, missing `-ffast-math`, SIMD flags (`-mavx2 -mfma`), and LTO. Python bindings for `StatMechEngine` and `ENCoMEngine` run 10-15% slower than equivalent C++ code.
 
 ### 8.6 Missing: Runtime CPU Dispatch
 

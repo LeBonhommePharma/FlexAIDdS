@@ -31,7 +31,12 @@ jobs:
 
       - name: Install C++ dependencies
         if: matrix.language == 'cpp'
-        run: sudo apt-get update && sudo apt-get install -y libeigen3-dev libboost-all-dev
+        run: |
+          sudo apt-get update
+          # gcc-14 is required for C++26 support (see CMakeLists.txt compiler gate).
+          sudo apt-get install -y libeigen3-dev libboost-all-dev gcc-14 g++-14
+          echo "CC=gcc-14" >> "$GITHUB_ENV"
+          echo "CXX=g++-14" >> "$GITHUB_ENV"
 
       - name: Build C++
         if: matrix.language == 'cpp'

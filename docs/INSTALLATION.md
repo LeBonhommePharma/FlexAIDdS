@@ -10,8 +10,8 @@ Complete build and installation instructions for FlexAID∆S on all supported pl
 
 | Dependency | Minimum Version | Notes |
 |:-----------|:----------------|:------|
-| C++ compiler | GCC ≥ 10, Clang ≥ 10, MSVC ≥ 19.30 | C++20 support required |
-| CMake | ≥ 3.18 | Build system |
+| C++ compiler | GCC ≥ 14, Clang ≥ 18, Apple Clang ≥ 16 (Xcode 16), MSVC ≥ 19.40 (VS 2022 17.10) | C++26 support required |
+| CMake | ≥ 3.28 | Build system (needed for `CXX_STANDARD 26`) |
 | Python | ≥ 3.9 | For the `flexaidds` Python package |
 
 ### Optional
@@ -26,7 +26,7 @@ Complete build and installation instructions for FlexAID∆S on all supported pl
 | pybind11 | Python ↔ C++ bindings | `pip install pybind11[global]` |
 | Ninja | Faster builds | `apt install ninja-build` / `brew install ninja` |
 
-> **Note**: No RDKit or Boost dependency is required. The ProcessLigand module (SMILES parsing, ring perception, aromaticity detection, 3D coordinate building) is implemented in pure C++20 + Eigen.
+> **Note**: No RDKit or Boost dependency is required. The ProcessLigand module (SMILES parsing, ring perception, aromaticity detection, 3D coordinate building) is implemented in pure C++26 + Eigen.
 
 ---
 

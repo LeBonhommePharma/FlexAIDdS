@@ -578,7 +578,7 @@ Closes: #42 (BindingMode-StatMechEngine disconnection)
 7. Null pointer guards on all Population access
 8. Empty BindingMode handled gracefully
 9. Temperature properly cast unsigned int → double
-10. Code compiles with -Wextra -Wall -Werror on C++20
+10. Code compiles with -Wextra -Wall -Werror on C++26
 11. Ready for Phase 2 (ShannonThermoStack GPU integration)
 
 ---

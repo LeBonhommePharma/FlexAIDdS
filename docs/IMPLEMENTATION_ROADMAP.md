@@ -454,7 +454,7 @@ option(BUILD_SWIFT_BRIDGE   "Swift bridge (macOS only)"           OFF)
 **CMakePresets.json**: Pre-configured presets for Linux GCC, Linux Clang, macOS Clang, Windows MSVC (Debug/Release).
 
 **Windows MSVC Support**:
-- MSVC ≥ 19.30 (Visual Studio 2022 17.0+) for C++20
+- MSVC ≥ 19.40 (Visual Studio 2022 17.10+) for C++26 (via `/std:c++latest`)
 - `_CRT_SECURE_NO_WARNINGS`, `_USE_MATH_DEFINES`, `NOMINMAX` across all targets
 - `flexaids_configure_msvc_test()` helper for consistent test target configuration
 - CI: Windows job in GitHub Actions

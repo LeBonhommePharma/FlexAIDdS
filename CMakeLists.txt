@@ -1,6 +1,6 @@
 # Build: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release && cmake --build build
 
-cmake_minimum_required(VERSION 3.18)
+cmake_minimum_required(VERSION 3.28)
 
 # ─── Graceful OBJCXX Fallback ──────────────────────────────────────────────
 # Detects OBJCXX compiler availability before requiring it.
@@ -31,22 +31,34 @@ project(FlexAID VERSION 2.0.0 LANGUAGES ${_ENABLED_LANGUAGES})
 
 include(CheckCXXCompilerFlag)
 
-# ─── C++20 ────────────────────────────────────────────────────────────────
-set(CMAKE_CXX_STANDARD 20)
+# ─── C++26 ────────────────────────────────────────────────────────────────
+set(CMAKE_CXX_STANDARD 26)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
-set(CMAKE_CXX_EXTENSIONS OFF)   # -std=c++20 not -std=gnu++20
+set(CMAKE_CXX_EXTENSIONS OFF)   # -std=c++26 not -std=gnu++26
 
-# Fail fast if compiler is too old to support C++20
-if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
-    if(CMAKE_CXX_COMPILER_VERSION VERSION_LESS "10.0")
+# Fail fast if compiler is too old to support C++26
+if(CMAKE_CXX_COMPILER_ID STREQUAL "AppleClang")
+    if(CMAKE_CXX_COMPILER_VERSION VERSION_LESS "16.0")
         message(FATAL_ERROR
-            "FlexAIDdS requires C++20 — found ${CMAKE_CXX_COMPILER_ID} "
-            "${CMAKE_CXX_COMPILER_VERSION}. Upgrade to GCC ≥ 10 or Clang ≥ 10.")
+            "FlexAIDdS requires C++26 — found AppleClang "
+            "${CMAKE_CXX_COMPILER_VERSION}. Upgrade to Apple Clang ≥ 16 (Xcode 16).")
+    endif()
+elseif(CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+    if(CMAKE_CXX_COMPILER_VERSION VERSION_LESS "18.0")
+        message(FATAL_ERROR
+            "FlexAIDdS requires C++26 — found Clang "
+            "${CMAKE_CXX_COMPILER_VERSION}. Upgrade to Clang ≥ 18.")
+    endif()
+elseif(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+    if(CMAKE_CXX_COMPILER_VERSION VERSION_LESS "14.0")
+        message(FATAL_ERROR
+            "FlexAIDdS requires C++26 — found GCC "
+            "${CMAKE_CXX_COMPILER_VERSION}. Upgrade to GCC ≥ 14.")
     endif()
 elseif(MSVC)
-    if(MSVC_VERSION LESS 1930)
+    if(MSVC_VERSION LESS 1940)
         message(FATAL_ERROR
-            "FlexAIDdS requires MSVC ≥ 19.30 (Visual Studio 2022 17.0+) for C++20 — "
+            "FlexAIDdS requires MSVC ≥ 19.40 (Visual Studio 2022 17.10+) for C++26 — "
             "found MSVC ${MSVC_VERSION}.")
     endif()
 endif()
@@ -467,6 +479,8 @@ LIB/tENCoM/tencm_cuda.cu                  # TENCoM contact discovery + Hessian a
             message(WARNING "CUDA < 12.6 — Blackwell targets (sm_100, sm_120) disabled")
         endif()
     endif()
+    # Host code is C++26 (see CMAKE_CXX_STANDARD above); NVCC 12.x does not accept
+    # -std=c++26, so device code stays pinned at C++17 until the CUDA toolkit catches up.
     set_target_properties(FlexAID PROPERTIES
         CUDA_SEPARABLE_COMPILATION ON
         CUDA_STANDARD 17)
@@ -496,33 +510,33 @@ if(FLEXAIDS_USE_METAL)
     )
     set_source_files_properties(LIB/metal_eval.mm PROPERTIES
         LANGUAGE OBJCXX
-        COMPILE_FLAGS "-std=c++20 -fno-objc-arc"
+        COMPILE_FLAGS "-std=c++26 -fno-objc-arc"
     )
     # Shannon Metal GPU bridge (Apple Silicon Shannon entropy histogram)
     target_sources(FlexAID PRIVATE LIB/ShannonThermoStack/ShannonMetalBridge.mm)
     target_compile_definitions(FlexAID PRIVATE FLEXAIDS_HAS_METAL_SHANNON)
     set_source_files_properties(LIB/ShannonThermoStack/ShannonMetalBridge.mm PROPERTIES
         LANGUAGE OBJCXX
-        COMPILE_FLAGS "-std=c++20 -fno-objc-arc"
+        COMPILE_FLAGS "-std=c++26 -fno-objc-arc"
     )
     # TENCoM Metal bridge (GPU contact discovery + Hessian assembly)
     target_sources(FlexAID PRIVATE LIB/tENCoM/tencm_metal.mm)
     target_compile_definitions(FlexAID PRIVATE FLEXAIDS_HAS_METAL_TENCM)
     set_source_files_properties(LIB/tENCoM/tencm_metal.mm PROPERTIES
         LANGUAGE OBJCXX
-        COMPILE_FLAGS "-std=c++20 -fno-objc-arc"
+        COMPILE_FLAGS "-std=c++26 -fno-objc-arc"
     )
     # FastOPTICS Metal kNN (GPU-accelerated neighbor discovery)
     target_sources(FlexAID PRIVATE LIB/gpu_fast_optics_metal.mm)
     set_source_files_properties(LIB/gpu_fast_optics_metal.mm PROPERTIES
         LANGUAGE OBJCXX
-        COMPILE_FLAGS "-std=c++20 -fno-objc-arc"
+        COMPILE_FLAGS "-std=c++26 -fno-objc-arc"
     )
     # CavityDetect Metal bridge (Task 1.4: GPU probe-sphere generation)
     target_sources(FlexAID PRIVATE LIB/CavityDetect/CavityDetectMetalBridge.mm)
     set_source_files_properties(LIB/CavityDetect/CavityDetectMetalBridge.mm PROPERTIES
         LANGUAGE OBJCXX
-        COMPILE_FLAGS "-std=c++20 -fno-objc-arc"
+        COMPILE_FLAGS "-std=c++26 -fno-objc-arc"
     )
     # Compile CavityDetect.metal shader → .metallib
     set(CAVITY_METAL_SRC  "${CMAKE_CURRENT_SOURCE_DIR}/LIB/CavityDetect/CavityDetect.metal")
@@ -551,7 +565,7 @@ if(FLEXAIDS_USE_METAL)
     target_sources(FlexAID PRIVATE LIB/TurboQuantMetalBridge.mm)
     set_source_files_properties(LIB/TurboQuantMetalBridge.mm PROPERTIES
         LANGUAGE OBJCXX
-        COMPILE_FLAGS "-std=c++20 -fno-objc-arc"
+        COMPILE_FLAGS "-std=c++26 -fno-objc-arc"
     )
     # Compile TurboQuant.metal shader → .metallib
     set(TQ_METAL_SRC  "${CMAKE_CURRENT_SOURCE_DIR}/LIB/TurboQuant.metal")
@@ -580,7 +594,7 @@ if(FLEXAIDS_USE_METAL)
     target_sources(FlexAID PRIVATE LIB/MetalRMSDBridge.mm)
     set_source_files_properties(LIB/MetalRMSDBridge.mm PROPERTIES
         LANGUAGE OBJCXX
-        COMPILE_FLAGS "-std=c++20 -fno-objc-arc"
+        COMPILE_FLAGS "-std=c++26 -fno-objc-arc"
     )
     # Compile MetalRMSD.metal shader → .metallib
     set(RMSD_METAL_SRC  "${CMAKE_CURRENT_SOURCE_DIR}/LIB/MetalRMSD.metal")
@@ -705,7 +719,7 @@ if(ENABLE_TENCOM_TOOL)
         target_compile_definitions(tENCoM PRIVATE FLEXAIDS_HAS_METAL_TENCM)
         set_source_files_properties(LIB/tENCoM/tencm_metal.mm PROPERTIES
             LANGUAGE OBJCXX
-            COMPILE_FLAGS "-std=c++20 -fno-objc-arc")
+            COMPILE_FLAGS "-std=c++26 -fno-objc-arc")
         target_link_libraries(tENCoM PRIVATE
             ${METAL_LIBRARY} ${FOUNDATION_LIBRARY} ${METALKIT_LIBRARY})
     endif()
@@ -789,14 +803,14 @@ if(BUILD_FLEXAIDDS_FAST)
         )
         set_source_files_properties(LIB/metal_eval.mm PROPERTIES
             LANGUAGE OBJCXX
-            COMPILE_FLAGS "-std=c++20 -fno-objc-arc"
+            COMPILE_FLAGS "-std=c++26 -fno-objc-arc"
         )
         # Shannon Metal GPU bridge (histogram binning on Apple Silicon)
         target_sources(FlexAIDdS PRIVATE LIB/ShannonThermoStack/ShannonMetalBridge.mm)
         target_compile_definitions(FlexAIDdS PRIVATE FLEXAIDS_HAS_METAL_SHANNON)
         set_source_files_properties(LIB/ShannonThermoStack/ShannonMetalBridge.mm PROPERTIES
             LANGUAGE OBJCXX
-            COMPILE_FLAGS "-std=c++20 -fno-objc-arc"
+            COMPILE_FLAGS "-std=c++26 -fno-objc-arc"
         )
         # Shannon Metal shader → .metallib
         set(SHANNON_METAL_SRC  "${CMAKE_CURRENT_SOURCE_DIR}/LIB/ShannonThermoStack/shannon_metal.metal")
@@ -826,19 +840,19 @@ if(BUILD_FLEXAIDDS_FAST)
         target_compile_definitions(FlexAIDdS PRIVATE FLEXAIDS_HAS_METAL_TENCM)
         set_source_files_properties(LIB/tENCoM/tencm_metal.mm PROPERTIES
             LANGUAGE OBJCXX
-            COMPILE_FLAGS "-std=c++20 -fno-objc-arc"
+            COMPILE_FLAGS "-std=c++26 -fno-objc-arc"
         )
         # FastOPTICS Metal kNN (GPU-accelerated neighbor discovery)
         target_sources(FlexAIDdS PRIVATE LIB/gpu_fast_optics_metal.mm)
         set_source_files_properties(LIB/gpu_fast_optics_metal.mm PROPERTIES
             LANGUAGE OBJCXX
-            COMPILE_FLAGS "-std=c++20 -fno-objc-arc"
+            COMPILE_FLAGS "-std=c++26 -fno-objc-arc"
         )
         # CavityDetect Metal bridge + shader
         target_sources(FlexAIDdS PRIVATE LIB/CavityDetect/CavityDetectMetalBridge.mm)
         set_source_files_properties(LIB/CavityDetect/CavityDetectMetalBridge.mm PROPERTIES
             LANGUAGE OBJCXX
-            COMPILE_FLAGS "-std=c++20 -fno-objc-arc"
+            COMPILE_FLAGS "-std=c++26 -fno-objc-arc"
         )
         set(CAVITY_METAL_SRC_DS  "${CMAKE_CURRENT_SOURCE_DIR}/LIB/CavityDetect/CavityDetect.metal")
         set(CAVITY_AIR_DS         "${CMAKE_CURRENT_BINARY_DIR}/CavityDetect_ds.air")
@@ -866,7 +880,7 @@ if(BUILD_FLEXAIDDS_FAST)
         target_sources(FlexAIDdS PRIVATE LIB/TurboQuantMetalBridge.mm)
         set_source_files_properties(LIB/TurboQuantMetalBridge.mm PROPERTIES
             LANGUAGE OBJCXX
-            COMPILE_FLAGS "-std=c++20 -fno-objc-arc"
+            COMPILE_FLAGS "-std=c++26 -fno-objc-arc"
         )
         set(TQ_METAL_SRC_DS  "${CMAKE_CURRENT_SOURCE_DIR}/LIB/TurboQuant.metal")
         set(TQ_AIR_DS         "${CMAKE_CURRENT_BINARY_DIR}/TurboQuant_ds.air")
@@ -894,7 +908,7 @@ if(BUILD_FLEXAIDDS_FAST)
         target_sources(FlexAIDdS PRIVATE LIB/MetalRMSDBridge.mm)
         set_source_files_properties(LIB/MetalRMSDBridge.mm PROPERTIES
             LANGUAGE OBJCXX
-            COMPILE_FLAGS "-std=c++20 -fno-objc-arc"
+            COMPILE_FLAGS "-std=c++26 -fno-objc-arc"
         )
         set(RMSD_METAL_SRC_DS  "${CMAKE_CURRENT_SOURCE_DIR}/LIB/MetalRMSD.metal")
         set(RMSD_AIR_DS         "${CMAKE_CURRENT_BINARY_DIR}/MetalRMSD_ds.air")
@@ -2013,7 +2027,7 @@ flexaids_configure_simd(test_cavity_detect)
     )
     target_include_directories(test_knowledge_pool PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/LIB)
     target_link_libraries(test_knowledge_pool PRIVATE GTest::gtest GTest::gtest_main)
-    target_compile_features(test_knowledge_pool PRIVATE cxx_std_20)
+    target_compile_features(test_knowledge_pool PRIVATE cxx_std_26)
     if(MSVC)
         target_compile_options(test_knowledge_pool PRIVATE /O2)
     else()
@@ -2031,7 +2045,7 @@ flexaids_configure_simd(test_cavity_detect)
     )
     target_include_directories(test_mol2_sdf_reader PRIVATE LIB)
     target_link_libraries(test_mol2_sdf_reader PRIVATE GTest::gtest_main)
-    target_compile_features(test_mol2_sdf_reader PRIVATE cxx_std_20)
+    target_compile_features(test_mol2_sdf_reader PRIVATE cxx_std_26)
     flexaids_configure_simd(test_mol2_sdf_reader)
     flexaids_configure_msvc_test(test_mol2_sdf_reader)
     add_test(NAME Mol2SdfReaderTests COMMAND test_mol2_sdf_reader)
@@ -2400,7 +2414,7 @@ if(BUILD_SWIFT_BRIDGE)
         LIB
     )
     set_target_properties(FlexAIDCore PROPERTIES
-        CXX_STANDARD 20
+        CXX_STANDARD 26
         CXX_STANDARD_REQUIRED ON
         POSITION_INDEPENDENT_CODE ON
     )
@@ -2411,7 +2425,7 @@ if(BUILD_SWIFT_BRIDGE)
         swift/Sources/FlexAIDCore/FXGA.mm
         PROPERTIES LANGUAGE OBJCXX
     )
-    target_compile_options(FlexAIDCore PRIVATE -std=c++20 -O2)
+    target_compile_options(FlexAIDCore PRIVATE -std=c++26 -O2)
     target_link_libraries(FlexAIDCore PUBLIC ${FOUNDATION_LIBRARY})
 
     message(STATUS "Swift bridge enabled — build target: FlexAIDCore (static library)")

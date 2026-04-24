@@ -4,7 +4,7 @@
 
 FlexAIDdS (FlexAID with ΔS Entropy) is an entropy-driven molecular docking engine combining genetic algorithms with statistical mechanics thermodynamics. It targets real-world psychopharmacology and drug discovery applications.
 
-- **Languages**: C++20 (core engine), Python (bindings/analysis), Objective-C++ (Metal GPU), CUDA (optional GPU)
+- **Languages**: C++26 (core engine), Python (bindings/analysis), Objective-C++ (Metal GPU), CUDA (optional GPU)
 - **License**: Apache-2.0 (no GPL dependencies allowed — see `THIRD_PARTY_LICENSES.md`)
 - **Lead**: Louis-Philippe Morency, PhD (Candidate), Université de Montréal, NRGlab
 
@@ -138,8 +138,8 @@ FlexAIDdS/
 
 ### Requirements
 
-- C++20 compiler (GCC >= 10, Clang >= 10, MSVC)
-- CMake >= 3.18
+- C++26 compiler (GCC >= 14, Clang >= 18, Apple Clang >= 16 / Xcode 16, MSVC >= 19.40 / VS 2022 17.10)
+- CMake >= 3.28
 - Optional: Boost, Eigen3, OpenMP, CUDA Toolkit, Metal framework, pybind11
 
 ### Build Commands
@@ -262,7 +262,7 @@ Key test files in `python/tests/`:
 
 ### C++ Style
 
-- C++20 standard
+- C++26 standard
 - Compiler flags: `-Wall -O3 -ffast-math` + SIMD flags
 - Core data structures: `chromosome` (GA gene encoding), `Pose`, `BindingMode`, `BindingPopulation`
 - Use log-sum-exp for numerical stability in partition functions
