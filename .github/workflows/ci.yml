@@ -60,42 +60,43 @@ jobs:
         include:
           - name: linux-gcc
             os: ubuntu-latest
-            cc: gcc
-            cxx: g++
+            cc: gcc-14
+            cxx: g++-14
           - name: linux-clang
             os: ubuntu-latest
-            cc: clang
-            cxx: clang++
+            cc: clang-18
+            cxx: clang++-18
           - name: macos-clang
-            os: macos-latest
+            os: macos-15
             cc: clang
             cxx: clang++
             allow_failure: true
           - name: linux-gcc-avx512
             os: ubuntu-latest
-            cc: gcc
-            cxx: g++
+            cc: gcc-14
+            cxx: g++-14
             cmake_extra: "-DFLEXAIDS_USE_AVX512=ON -DBUILD_TESTING=OFF"
           - name: linux-gcc-mpi
             os: ubuntu-latest
-            cc: gcc
-            cxx: g++
+            cc: gcc-14
+            cxx: g++-14
             cmake_extra: "-DFLEXAIDS_USE_MPI=ON"
           - name: linux-gcc-asan
             os: ubuntu-latest
-            cc: gcc
-            cxx: g++
+            cc: gcc-14
+            cxx: g++-14
             cmake_extra: >-
               -DCMAKE_CXX_FLAGS='-fsanitize=address,undefined -fno-omit-frame-pointer -g'
               -DCMAKE_EXE_LINKER_FLAGS='-fsanitize=address,undefined'
-          # windows-msvc excluded: deep MSVC C++20 incompatibilities in legacy sources
+          # windows-msvc excluded: deep MSVC C++20/C++26 incompatibilities in legacy sources
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
       - name: Install Linux dependencies
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          PKGS="cmake ninja-build libeigen3-dev libomp-dev"
+          # gcc-14 / clang-18 are required for C++26 support (see CMakeLists.txt compiler gate).
+          PKGS="cmake ninja-build libeigen3-dev libomp-dev gcc-14 g++-14 clang-18"
           if [ "${{ matrix.name }}" = "linux-gcc-mpi" ]; then
             PKGS="$PKGS libopenmpi-dev openmpi-bin"
           fi
@@ -103,6 +104,8 @@ jobs:
       - name: Install macOS dependencies
         if: runner.os == 'macOS'
         run: |
+          # Apple Clang ≥ 16 (Xcode 16) is required for C++26.
+          sudo xcode-select -s /Applications/Xcode_16.app || true
           brew install cmake ninja libomp eigen
       - name: Install Windows dependencies
         if: runner.os == 'Windows'
@@ -158,7 +161,10 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y cmake ninja-build libeigen3-dev
+          # gcc-14 is required for C++26 support (see CMakeLists.txt compiler gate).
+          sudo apt-get install -y cmake ninja-build libeigen3-dev gcc-14 g++-14
+          echo "CC=gcc-14" >> "$GITHUB_ENV"
+          echo "CXX=g++-14" >> "$GITHUB_ENV"
           python -m pip install --upgrade pip
           python -m pip install 'pybind11[global]' pytest numpy
       - name: Install build dependencies (Windows)

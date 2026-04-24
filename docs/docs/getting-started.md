@@ -2,8 +2,8 @@
 
 ## Prerequisites
 
-- C++20 compiler (GCC ≥ 10, Clang ≥ 10)
-- CMake ≥ 3.18
+- C++26 compiler (GCC ≥ 14, Clang ≥ 18, Apple Clang ≥ 16 / Xcode 16)
+- CMake ≥ 3.28
 - Python ≥ 3.9
 
 ## Build

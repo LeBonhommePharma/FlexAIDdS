@@ -50,7 +50,7 @@ This document explains how to contribute while keeping the codebase fast, scient
 
 - **Languages**
 
-  - C++20 for the core engine.
+  - C++26 for the core engine.
   - Python for high-level workflows, analysis, and CLI tooling.
 
 - **Performance**

@@ -15,11 +15,11 @@ jobs:
         include:
           - name: linux-gcc
             os: ubuntu-latest
-            cc: gcc
-            cxx: g++
+            cc: gcc-14
+            cxx: g++-14
             artifact_name: flexaidds-linux
           - name: macos-clang
-            os: macos-latest
+            os: macos-15
             cc: clang
             cxx: clang++
             artifact_name: flexaidds-macos
@@ -36,11 +36,14 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y cmake ninja-build libeigen3-dev libomp-dev
+          # gcc-14 is required for C++26 support (see CMakeLists.txt compiler gate).
+          sudo apt-get install -y cmake ninja-build libeigen3-dev libomp-dev gcc-14 g++-14
 
       - name: Install macOS dependencies
         if: runner.os == 'macOS'
         run: |
+          # Apple Clang ≥ 16 (Xcode 16) is required for C++26.
+          sudo xcode-select -s /Applications/Xcode_16.app || true
           brew install cmake ninja libomp eigen
 
       - name: Install Windows dependencies

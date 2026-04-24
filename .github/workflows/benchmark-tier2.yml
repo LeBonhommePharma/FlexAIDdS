@@ -59,8 +59,11 @@ jobs:
       - name: Install build dependencies
         run: |
           sudo apt-get update -q
+          # gcc-14 is required for C++26 support (see CMakeLists.txt compiler gate).
           sudo apt-get install -y --no-install-recommends \
-            cmake ninja-build libeigen3-dev libomp-dev libopenmpi-dev openmpi-bin
+            cmake ninja-build libeigen3-dev libomp-dev libopenmpi-dev openmpi-bin gcc-14 g++-14
+          echo "CC=gcc-14" >> "$GITHUB_ENV"
+          echo "CXX=g++-14" >> "$GITHUB_ENV"
 
       - name: Cache build artifacts
         id: cache-build

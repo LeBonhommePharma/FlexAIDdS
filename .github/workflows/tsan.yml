@@ -16,12 +16,13 @@ jobs:
       - name: Install toolchain
         run: |
           sudo apt-get update
-          sudo apt-get install -y clang ninja-build cmake
+          # clang-18 is required for C++26 support (see CMakeLists.txt compiler gate).
+          sudo apt-get install -y clang-18 ninja-build cmake
 
       - name: Configure (ThreadSanitizer)
         env:
-          CC: clang
-          CXX: clang++
+          CC: clang-18
+          CXX: clang++-18
         run: |
           cmake -S . -B build-tsan -G Ninja \
             -DCMAKE_BUILD_TYPE=RelWithDebInfo \

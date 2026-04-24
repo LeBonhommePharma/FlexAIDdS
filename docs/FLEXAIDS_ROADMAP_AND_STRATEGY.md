@@ -223,7 +223,7 @@ Remaining quick wins:
 - Web interface: upload receptor + ligand → ranked results with visualization
 - Kubernetes GPU cluster on spot instances (AWS/GCP)
 - Free tier for academics, paid tier for pharma
-- **Impact**: Most researchers can't compile C++20. Accessibility drives adoption.
+- **Impact**: Most researchers can't compile C++26 (which tightens the required toolchain further: GCC ≥ 14, Clang ≥ 18). Shipping prebuilt wheels / containers is essential for adoption.
 
 #### 15. Continuous Training at Scale
 - Automated weekly matrix updates from new PDB depositions

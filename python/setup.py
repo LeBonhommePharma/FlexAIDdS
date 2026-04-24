@@ -62,9 +62,9 @@ ext_modules = [
         ),
         language="c++",
         extra_compile_args=(
-            ["/O2", "/std:c++20", "/EHsc"]
+            ["/O2", "/std:c++latest", "/EHsc"]
             if os.name == "nt"
-            else ["-std=c++20", "-O3"]
+            else ["-std=c++26", "-O3"]
         ),
     ),
 ]

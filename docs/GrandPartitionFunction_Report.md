@@ -288,7 +288,7 @@ The thread-safe `create_session()` / `register_result()` pattern supports parall
 ### 7.1 Dependencies
 
 - **Internal**: `statmech.h` (StatMechEngine, kB_kcal constant), `TargetKnowledgeBase.h`, `TargetValidation.h`, `flexaid.h` (FA_Global, atom, resid)
-- **External**: C++20 standard library only (`<cmath>`, `<mutex>`, `<unordered_map>`, `<vector>`, `<string>`, `<algorithm>`, `<limits>`, `<stdexcept>`)
+- **External**: C++26 standard library only (`<cmath>`, `<mutex>`, `<unordered_map>`, `<vector>`, `<string>`, `<algorithm>`, `<limits>`, `<stdexcept>`)
 - **No external dependencies**: No Eigen, Boost, or third-party libraries required for GPF functionality
 
 ### 7.2 Thread Safety

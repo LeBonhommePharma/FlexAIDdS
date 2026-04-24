@@ -1,6 +1,6 @@
 // ParallelCampaign.cpp — GPU/SIMD/OpenMP-accelerated virtual screening
 //
-// C++20 throughout: std::jthread, std::atomic, std::span, std::format (where
+// C++26 throughout: std::jthread, std::atomic, std::span, std::format (where
 // available), std::ranges, constexpr math helpers, structured bindings.
 //
 // Three-level parallelism:

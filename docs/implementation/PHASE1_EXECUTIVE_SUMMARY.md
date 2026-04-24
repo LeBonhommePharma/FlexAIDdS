@@ -184,7 +184,7 @@ This integration follows **Shannon's Energy Collapse** principle:
 - [ ] Numerical agreement with legacy (< 1e-6)
 - [ ] All unit tests pass (≥85% coverage)
 - [ ] No performance regression (lazy eval eliminates overhead)
-- [ ] Code compiles: `-Wextra -Wall -Werror -std=c++20`
+- [ ] Code compiles: `-Wextra -Wall -Werror -std=c++26`
 - [ ] Backward compatible with existing code
 - [ ] WHAM free energy profiles computable
 - [ ] Documentation complete
