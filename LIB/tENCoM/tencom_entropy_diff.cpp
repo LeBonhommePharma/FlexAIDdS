@@ -23,14 +23,13 @@
 //            Frappier et al., Proteins 83(11):2073-82 (2015)
 
 #include "tencm.h"
+#include "pdb_calpha.h"
 #include "../statmech.h"
 #include "../encom.h"
 
 #include <algorithm>
-#include <array>
 #include <atomic>
 #include <cmath>
-#include <cstring>
 #include <fstream>
 #include <iomanip>
 #include <iostream>
@@ -42,65 +41,6 @@
 #ifdef _OPENMP
 #  include <omp.h>
 #endif
-
-// ─── PDB Cα parser (minimal, standalone) ─────────────────────────────────────
-
-struct CaResidue {
-    int    resnum;
-    char   chain;
-    char   resname[4];
-    float  x, y, z;
-};
-
-static std::vector<CaResidue> parse_pdb_ca(const std::string& pdb_path)
-{
-    std::ifstream ifs(pdb_path);
-    if (!ifs.is_open())
-        throw std::runtime_error("Cannot open PDB file: " + pdb_path);
-
-    std::vector<CaResidue> cas;
-    std::string line;
-
-    while (std::getline(ifs, line)) {
-        if (line.size() < 54) continue;
-
-        // Accept ATOM records only (not HETATM)
-        if (line.substr(0, 6) != "ATOM  ") continue;
-
-        // Atom name in columns 13-16 (0-indexed: 12..15)
-        std::string atom_name = line.substr(12, 4);
-        // Match " CA " (standard PDB Cα naming)
-        if (atom_name != " CA ") continue;
-
-        CaResidue ca{};
-        ca.chain = line[21];
-
-        // Residue name columns 18-20
-        std::strncpy(ca.resname, line.substr(17, 3).c_str(), 3);
-        ca.resname[3] = '\0';
-
-        // Residue number columns 23-26
-        ca.resnum = std::stoi(line.substr(22, 4));
-
-        // Coordinates: x(31-38), y(39-46), z(47-54)
-        ca.x = std::stof(line.substr(30, 8));
-        ca.y = std::stof(line.substr(38, 8));
-        ca.z = std::stof(line.substr(46, 8));
-
-        cas.push_back(ca);
-    }
-
-    return cas;
-}
-
-static std::vector<std::array<float,3>> ca_to_coords(const std::vector<CaResidue>& cas)
-{
-    std::vector<std::array<float,3>> coords;
-    coords.reserve(cas.size());
-    for (const auto& ca : cas)
-        coords.push_back({ca.x, ca.y, ca.z});
-    return coords;
-}
 
 // ─── FlexibilityMode: ligand-free BindingMode analog ─────────────────────────
 
@@ -544,24 +484,29 @@ int main(int argc, char* argv[])
     std::cout << "Temperature: " << temperature << " K\n";
     std::cout << "Cutoff: " << cutoff << " Å, k₀: " << k0 << "\n\n";
 
-    std::vector<CaResidue> ref_cas;
+    tencom_pdb::CalphaStructure ref_strct;
     try {
-        ref_cas = parse_pdb_ca(ref_path);
+        ref_strct = tencom_pdb::read_pdb_calpha(ref_path);
     } catch (const std::exception& e) {
         std::cerr << "Error parsing reference: " << e.what() << "\n";
         return 1;
     }
 
-    if (ref_cas.size() < 3) {
-        std::cerr << "Error: reference has fewer than 3 Cα atoms (" << ref_cas.size() << ")\n";
+    if (ref_strct.res_cnt < 3) {
+        std::cerr << "Error: reference has fewer than 3 backbone atoms ("
+                  << ref_strct.res_cnt << ")\n";
         return 1;
     }
 
-    std::cout << "Reference Cα atoms: " << ref_cas.size() << "\n";
+    std::cout << "Reference backbone atoms: " << ref_strct.res_cnt
+              << " (" << ref_strct.n_protein << " protein";
+    if (ref_strct.n_dna > 0) std::cout << ", " << ref_strct.n_dna << " DNA";
+    if (ref_strct.n_rna > 0) std::cout << ", " << ref_strct.n_rna << " RNA";
+    std::cout << ")\n";
 
-    auto ref_coords = ca_to_coords(ref_cas);
     tencm::TorsionalENM ref_enm;
-    ref_enm.build_from_ca(ref_coords, cutoff, k0);
+    ref_enm.build(ref_strct.atoms.data(), ref_strct.residues.data(),
+                  ref_strct.res_cnt, cutoff, k0);
 
     if (!ref_enm.is_built()) {
         std::cerr << "Error: TENCoM build failed on reference.\n";
@@ -595,9 +540,9 @@ int main(int argc, char* argv[])
     for (int ti = 0; ti < n_targets; ++ti) {
         const std::string& tgt_path = target_paths[ti];
 
-        std::vector<CaResidue> tgt_cas;
+        tencom_pdb::CalphaStructure tgt_strct;
         try {
-            tgt_cas = parse_pdb_ca(tgt_path);
+            tgt_strct = tencom_pdb::read_pdb_calpha(tgt_path);
         } catch (const std::exception& e) {
 #ifdef _OPENMP
             std::lock_guard<std::mutex> lock(io_mutex);
@@ -607,30 +552,30 @@ int main(int argc, char* argv[])
             continue;
         }
 
-        if (tgt_cas.size() < 3) {
+        if (tgt_strct.res_cnt < 3) {
 #ifdef _OPENMP
             std::lock_guard<std::mutex> lock(io_mutex);
 #endif
-            std::cerr << "  Skipping " << tgt_path << ": fewer than 3 Cα atoms ("
-                      << tgt_cas.size() << ")\n";
+            std::cerr << "  Skipping " << tgt_path << ": fewer than 3 backbone atoms ("
+                      << tgt_strct.res_cnt << ")\n";
             ++n_fail;
             continue;
         }
 
         // Chain compatibility check (warning only)
-        if (tgt_cas.size() != ref_cas.size()) {
+        if (tgt_strct.res_cnt != ref_strct.res_cnt) {
 #ifdef _OPENMP
             std::lock_guard<std::mutex> lock(io_mutex);
 #endif
-            std::cerr << "  Warning: " << tgt_path << " Cα count mismatch (ref="
-                      << ref_cas.size() << ", tgt=" << tgt_cas.size()
+            std::cerr << "  Warning: " << tgt_path << " backbone atom count mismatch (ref="
+                      << ref_strct.res_cnt << ", tgt=" << tgt_strct.res_cnt
                       << "). Proceeding with mode comparison up to min.\n";
         }
 
         // TENCoM build + diagonalise (thread-safe, no shared state)
-        auto tgt_coords = ca_to_coords(tgt_cas);
         tencm::TorsionalENM tgt_enm;
-        tgt_enm.build_from_ca(tgt_coords, cutoff, k0);
+        tgt_enm.build(tgt_strct.atoms.data(), tgt_strct.residues.data(),
+                      tgt_strct.res_cnt, cutoff, k0);
 
         if (!tgt_enm.is_built()) {
 #ifdef _OPENMP
