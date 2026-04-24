@@ -134,6 +134,9 @@ DifferentialResult compute_differential(
             Eigen::Map<Eigen::ArrayXd> pr(per_res.data(),
                 static_cast<Eigen::Index>(per_res.size()));
             pr = total_svib * (bf.cast<double>() / sum_bf);
+        } else {
+            std::cerr << "  Warning: all B-factors are zero —"
+                         " per-residue S_vib decomposition unavailable.\n";
         }
         return per_res;
     };
