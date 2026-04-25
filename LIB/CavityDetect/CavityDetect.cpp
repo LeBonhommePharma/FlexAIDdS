@@ -46,6 +46,7 @@ float CavityDetector::distance(const float* a, const float* b) const {
 // Returns the minimum remaining gap between `mid` and any atom surface:
 //   r_free = min_over_k ( dist(mid, atoms[k].coor) - atoms[k].radius )
 // This is the inner SURFNET reduction: scalar fallback for correctness.
+[[maybe_unused]]
 static float max_free_radius_scalar(
         const float* mid,
         const std::vector<atom>& atoms,
