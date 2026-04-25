@@ -67,6 +67,18 @@ if(POLICY CMP0167)
     cmake_policy(SET CMP0167 NEW)
 endif()
 
+# ─── Code coverage configuration ──────────────────────────────────────────────
+if(FLEXAIDS_ENABLE_COVERAGE)
+    if(NOT CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+        message(WARNING "Code coverage is only supported with GCC or Clang")
+        set(FLEXAIDS_ENABLE_COVERAGE OFF)
+    else()
+        message(STATUS "Code coverage enabled — building with -fprofile-arcs -ftest-coverage")
+        add_compile_options(-fprofile-arcs -ftest-coverage)
+        add_link_options(--coverage)
+    endif()
+endif()
+
 # ─── options ────────────────────────────────────────────────────────────────
 option(FLEXAIDS_USE_CUDA    "Enable CUDA GPU evaluation"          OFF)
 option(FLEXAIDS_USE_ROCM    "Enable ROCm/HIP GPU evaluation"      OFF)
@@ -80,6 +92,7 @@ option(FLEXAIDS_USE_256_MATRIX "Enable 256×256 soft contact matrix" ON)
 option(FLEXAIDS_USE_MPI     "Enable MPI distributed parallel docking" OFF)
 option(BUILD_PYTHON_BINDINGS "Build Python bindings via pybind11" OFF)
 option(FLEXAIDS_BUILD_CORE  "Build core executables (FlexAID/FlexAIDdS/tENCoM)" ON)
+option(FLEXAIDS_ENABLE_COVERAGE "Enable code coverage tracking (requires gcov/lcov)" OFF)
 
 # ─── platform / SIMD helpers ───────────────────────────────────────────────
 string(TOLOWER "${CMAKE_SYSTEM_PROCESSOR}" FLEXAIDS_SYSTEM_PROCESSOR_LOWER)

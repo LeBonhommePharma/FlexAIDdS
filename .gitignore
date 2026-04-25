@@ -84,3 +84,9 @@ data/training_runs
 !benchmarks
 !benchmarks/**
 benchmarks/**/__pycache__
+# code coverage artifacts
+*.gcda
+*.gcno
+*.gcov
+build/coverage
+lcov.info

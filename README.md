@@ -8,6 +8,7 @@
 *and statistical mechanics for accurate binding free energy prediction*
 
 [![CI](https://github.com/LeBonhommePharma/FlexAIDdS/actions/workflows/ci.yml/badge.svg)](https://github.com/LeBonhommePharma/FlexAIDdS/actions/workflows/ci.yml)
+[![Coverage](https://github.com/LeBonhommePharma/FlexAIDdS/actions/workflows/coverage.yml/badge.svg)](https://github.com/LeBonhommePharma/FlexAIDdS/actions/workflows/coverage.yml)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 [![C++26](https://img.shields.io/badge/C%2B%2B-26-blue.svg)](https://en.cppreference.com/w/cpp/26)
 [![Python](https://img.shields.io/badge/python-%E2%89%A5%203.9-3776AB.svg)](https://www.python.org/)
