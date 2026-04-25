@@ -28,6 +28,32 @@ This file documents limitations that matter for installation trust, scientific i
 - Legacy C and C++ parsing surfaces require continued hardening and regression testing.
 - Presence of an audit or policy document does not itself imply closure; fixes and automation are the real closure criteria.
 
+### Current Security Status (April 2026)
+
+**Recent Audit Results:**
+- 7 HIGH-severity buffer overflow vulnerabilities identified in config parsing (H-1 through H-7)
+- 14 MEDIUM-severity unsafe string handling patterns documented
+- 7 LOW-severity information disclosure issues noted
+
+**Remediation Timeline:**
+- Phase 1 (Code Coverage CI): ✅ COMPLETE
+- Phase 2 (Buffer Overflow Fixes): ⏳ IN PROGRESS
+- Phase 3 (DatasetRunner Integration): ⏳ PENDING
+- Phase 4 (Documentation): ✅ COMPLETE
+
+See [`SECURITY_HARDENING_ROADMAP.md`](SECURITY_HARDENING_ROADMAP.md) for details on vulnerabilities and fixes.
+
+**Recommended Mitigation** (Until Phase 2 Completes):
+- Do not process untrusted configuration files
+- Use signed configuration bundles from official sources
+- Validate config file sizes (<1MB recommended)
+- Deploy with strict filesystem permissions
+
+**Testing Infrastructure:**
+- All fixes validated with ASAN/UBSAN sanitizers
+- New test suite: `tests/test_buffer_safety.cpp` with 6+ boundary condition tests
+- Continuous coverage tracking via GitHub Actions (target ≥50%)
+
 ## Scientific interpretation limitations
 
 - Entropy-aware docking can be useful without implying universal superiority on every target class.
