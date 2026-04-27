@@ -283,7 +283,9 @@ double compute_torsional_vibrational_entropy(
     if (ev_buf.empty()) return 0.0;
 
     Eigen::Map<Eigen::ArrayXd> evals(ev_buf.data(), (int)ev_buf.size());
-    Eigen::ArrayXd ln_arg = kT / evals; // element-wise
+    // eigenvalue λ = ω²; need frequency ω = sqrt(λ) for the HO entropy formula
+    Eigen::ArrayXd freqs  = evals.sqrt();
+    Eigen::ArrayXd ln_arg = kT / freqs;  // element-wise: kT/ω
     // S_mode = kB*(1 + ln(kBT/ω)) for modes where ln_arg > 1e-6
     Eigen::ArrayXd mask = (ln_arg > 1e-6).cast<double>();
     return kB_kcal * (mask * (1.0 + ln_arg.log())).sum();
