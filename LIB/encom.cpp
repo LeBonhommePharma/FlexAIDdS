@@ -120,10 +120,13 @@ VibrationalEntropy ENCoMEngine::compute_vibrational_entropy(
         return result;
     }
 
-    // Quasi-harmonic entropy (Schlitter formula variant):
-    // S_vib = (3N - 6) × k_B × [1 + ln(2π k_B T / (ħ ω_eff))]
+    // Classical harmonic oscillator entropy per mode:
+    // S_HO = k_B × [1 + ln(k_B T / (ħ ω_eff))]
+    // The 2π factor does NOT appear in the classical HO formula.
+    // Including it would add k_B·ln(2π) ≈ 1.84·k_B per mode, yielding
+    // a systematic bias of ~109 kcal/mol per 100 modes in −TΔS_vib.
     const double kBT = kB_SI * temperature_K;         // J
-    const double arg = (2.0 * M_PI * kBT) / (hbar_SI * result.omega_eff);
+    const double arg = kBT / (hbar_SI * result.omega_eff);
 
     if (arg <= 0.0) {
         // Invalid frequency → zero entropy
