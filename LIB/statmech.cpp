@@ -167,7 +167,7 @@ Thermodynamics StatMechEngine::compute() const {
     th.free_energy    = -kT * lnZ;
     th.mean_energy    = E_avg;
     th.mean_energy_sq = E2_avg;
-    th.heat_capacity  = var / (kT * kT);
+    th.heat_capacity  = var / (kB_kcal * T_ * T_);
     th.entropy        = (E_avg - th.free_energy) / T_;
     th.std_energy     = std::sqrt(std::max(0.0, var));
     return th;

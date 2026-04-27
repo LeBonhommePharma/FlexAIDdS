@@ -122,7 +122,10 @@ TEST_F(StatMechEngineTest, TwoStatePartitionFunction) {
     double expected_E = p1 * E1 + p2 * E2;
     double expected_E2 = p1 * E1 * E1 + p2 * E2 * E2;
     double expected_var = expected_E2 - expected_E * expected_E;
-    double expected_Cv = expected_var / (kB_kcal * TEMPERATURE * kB_kcal * TEMPERATURE);
+    // Correct formula: C_V = Var(E) / (k_B · T²)
+    // The previous expected_Cv used (k_B·T)² in the denominator which matches
+    // the wrong implementation and masked the bug.
+    double expected_Cv = expected_var / (kB_kcal * TEMPERATURE * TEMPERATURE);
 
     EXPECT_NEAR(th.free_energy, expected_F, EPSILON);
     EXPECT_NEAR(th.mean_energy, expected_E, EPSILON);
