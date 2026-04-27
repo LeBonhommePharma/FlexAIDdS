@@ -626,6 +626,28 @@ TEST_F(StatMechEngineTest, HeatCapacityZeroForSingleState) {
     EXPECT_NEAR(th.heat_capacity, 0.0, EPSILON);
 }
 
+// Regression for C-1: Boltzmann weights (double in 0..1) were silently truncated
+// to int=0 when passed as multiplicity, producing log(0)=-inf → NaN everywhere.
+TEST_F(StatMechEngineTest, FractionalMultiplicityNoNaN) {
+    StatMechEngine eng(300.0);
+    eng.add_sample(-10.0, 0.5);
+    eng.add_sample(-8.0,  0.3);
+    eng.add_sample(-6.0,  0.2);
+
+    auto th = eng.compute();
+    EXPECT_FALSE(std::isnan(th.free_energy));
+    EXPECT_FALSE(std::isnan(th.entropy));
+    EXPECT_FALSE(std::isnan(th.heat_capacity));
+    EXPECT_TRUE(std::isfinite(th.free_energy));
+    EXPECT_TRUE(std::isfinite(th.entropy));
+
+    auto weights = eng.boltzmann_weights();
+    for (double w : weights) {
+        EXPECT_FALSE(std::isnan(w));
+        EXPECT_GE(w, 0.0);
+    }
+}
+
 // ===========================================================================
 // NUMERICAL STABILITY — EXTREME TEMPERATURES
 // ===========================================================================
