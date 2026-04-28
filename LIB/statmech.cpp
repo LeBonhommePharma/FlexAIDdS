@@ -56,7 +56,7 @@ StatMechEngine::StatMechEngine(double temperature_K)
 
 // ─── add_sample ──────────────────────────────────────────────────────────────
 
-void StatMechEngine::add_sample(double energy, int multiplicity) {
+void StatMechEngine::add_sample(double energy, double multiplicity) {
     ensemble_.push_back({energy, multiplicity});
 }
 
@@ -84,7 +84,7 @@ Thermodynamics StatMechEngine::compute() const {
         Eigen::ArrayXd counts(static_cast<Eigen::Index>(N));
         Eigen::ArrayXd energies(static_cast<Eigen::Index>(N));
         for (std::size_t i = 0; i < N; ++i) {
-            counts(static_cast<Eigen::Index>(i))   = static_cast<double>(ensemble_[i].count);
+            counts(static_cast<Eigen::Index>(i))   = ensemble_[i].count;
             energies(static_cast<Eigen::Index>(i)) = ensemble_[i].energy;
         }
         Eigen::ArrayXd lw = counts.log() - beta_ * energies;
@@ -167,7 +167,7 @@ Thermodynamics StatMechEngine::compute() const {
     th.free_energy    = -kT * lnZ;
     th.mean_energy    = E_avg;
     th.mean_energy_sq = E2_avg;
-    th.heat_capacity  = var / (kT * kT);
+    th.heat_capacity  = var / (kB_kcal * T_ * T_);
     th.entropy        = (E_avg - th.free_energy) / T_;
     th.std_energy     = std::sqrt(std::max(0.0, var));
     return th;
@@ -436,8 +436,8 @@ std::vector<double> StatMechEngine::serialize_energies() const {
     return out;
 }
 
-std::vector<int> StatMechEngine::serialize_multiplicities() const {
-    std::vector<int> out(ensemble_.size());
+std::vector<double> StatMechEngine::serialize_multiplicities() const {
+    std::vector<double> out(ensemble_.size());
     for (size_t i = 0; i < ensemble_.size(); ++i)
         out[i] = ensemble_[i].count;
     return out;

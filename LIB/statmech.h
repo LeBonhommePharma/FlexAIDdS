@@ -30,7 +30,7 @@ inline constexpr double kB_SI   = 1.380649e-23;  // J K⁻¹
 
 struct State {
     double energy;     // CF value (kcal/mol; negative = favourable)
-    int    count;      // degeneracy / sampling multiplicity
+    double count;      // degeneracy / sampling multiplicity (double so Boltzmann weights pass without truncation)
 };
 
 struct Thermodynamics {
@@ -68,8 +68,10 @@ class StatMechEngine {
 public:
     explicit StatMechEngine(double temperature_K = 300.0);
 
-    // Add a sampled configuration
-    void add_sample(double energy, int multiplicity = 1);
+    // Add a sampled configuration.
+    // multiplicity is double so Boltzmann weights (0.0–1.0) can be passed directly
+    // without silent int-truncation to zero (which caused log(0) = -inf).
+    void add_sample(double energy, double multiplicity = 1.0);
 
     // Compute full thermodynamics over the current ensemble
     Thermodynamics compute() const;
@@ -111,7 +113,7 @@ public:
 
     // Serialize ensemble for transport (MPI, socket, etc.)
     std::vector<double> serialize_energies() const;
-    std::vector<int>    serialize_multiplicities() const;
+    std::vector<double> serialize_multiplicities() const;
 
     // Accessors
     double temperature() const noexcept { return T_; }

@@ -122,7 +122,10 @@ TEST_F(StatMechEngineTest, TwoStatePartitionFunction) {
     double expected_E = p1 * E1 + p2 * E2;
     double expected_E2 = p1 * E1 * E1 + p2 * E2 * E2;
     double expected_var = expected_E2 - expected_E * expected_E;
-    double expected_Cv = expected_var / (kB_kcal * TEMPERATURE * kB_kcal * TEMPERATURE);
+    // Correct formula: C_V = Var(E) / (k_B · T²)
+    // The previous expected_Cv used (k_B·T)² in the denominator which matches
+    // the wrong implementation and masked the bug.
+    double expected_Cv = expected_var / (kB_kcal * TEMPERATURE * TEMPERATURE);
 
     EXPECT_NEAR(th.free_energy, expected_F, EPSILON);
     EXPECT_NEAR(th.mean_energy, expected_E, EPSILON);
@@ -624,6 +627,28 @@ TEST_F(StatMechEngineTest, HeatCapacityZeroForSingleState) {
     engine.add_sample(-10.0);
     auto th = engine.compute();
     EXPECT_NEAR(th.heat_capacity, 0.0, EPSILON);
+}
+
+// Regression for C-1: Boltzmann weights (double in 0..1) were silently truncated
+// to int=0 when passed as multiplicity, producing log(0)=-inf → NaN everywhere.
+TEST_F(StatMechEngineTest, FractionalMultiplicityNoNaN) {
+    StatMechEngine eng(300.0);
+    eng.add_sample(-10.0, 0.5);
+    eng.add_sample(-8.0,  0.3);
+    eng.add_sample(-6.0,  0.2);
+
+    auto th = eng.compute();
+    EXPECT_FALSE(std::isnan(th.free_energy));
+    EXPECT_FALSE(std::isnan(th.entropy));
+    EXPECT_FALSE(std::isnan(th.heat_capacity));
+    EXPECT_TRUE(std::isfinite(th.free_energy));
+    EXPECT_TRUE(std::isfinite(th.entropy));
+
+    auto weights = eng.boltzmann_weights();
+    for (double w : weights) {
+        EXPECT_FALSE(std::isnan(w));
+        EXPECT_GE(w, 0.0);
+    }
 }
 
 // ===========================================================================
