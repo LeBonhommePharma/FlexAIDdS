@@ -19,6 +19,8 @@ jobs:
         os: [ubuntu-latest]
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          submodules: recursive
       - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6
         with:
           python-version: '3.11'
@@ -91,12 +93,15 @@ jobs:
           # windows-msvc excluded: deep MSVC C++20/C++26 incompatibilities in legacy sources
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          submodules: recursive
       - name: Install Linux dependencies
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
           # gcc-14 / clang-18 are required for C++26 support (see CMakeLists.txt compiler gate).
-          PKGS="cmake ninja-build libeigen3-dev libomp-dev gcc-14 g++-14 clang-18"
+          # Eigen3 is vendored in LIB/vendor/eigen — no libeigen3-dev needed.
+          PKGS="cmake ninja-build libomp-dev gcc-14 g++-14 clang-18"
           if [ "${{ matrix.name }}" = "linux-gcc-mpi" ]; then
             PKGS="$PKGS libopenmpi-dev openmpi-bin"
           fi
@@ -105,12 +110,14 @@ jobs:
         if: runner.os == 'macOS'
         run: |
           # Apple Clang ≥ 16 (Xcode 16) is required for C++26.
+          # Eigen3 is vendored in LIB/vendor/eigen — no brew install eigen needed.
           sudo xcode-select -s /Applications/Xcode_16.app || true
-          brew install cmake ninja libomp eigen
+          brew install cmake ninja libomp
       - name: Install Windows dependencies
         if: runner.os == 'Windows'
         run: |
-          choco install ninja eigen -y
+          # Eigen3 is vendored in LIB/vendor/eigen — no choco install eigen needed.
+          choco install ninja -y
         shell: cmd
       - name: Configure
         shell: bash
@@ -154,6 +161,8 @@ jobs:
             allow_failure: true
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          submodules: recursive
       - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6
         with:
           python-version: '3.11'
@@ -162,7 +171,8 @@ jobs:
         run: |
           sudo apt-get update
           # gcc-14 is required for C++26 support (see CMakeLists.txt compiler gate).
-          sudo apt-get install -y cmake ninja-build libeigen3-dev gcc-14 g++-14
+          # Eigen3 is vendored in LIB/vendor/eigen — no libeigen3-dev needed.
+          sudo apt-get install -y cmake ninja-build gcc-14 g++-14
           echo "CC=gcc-14" >> "$GITHUB_ENV"
           echo "CXX=g++-14" >> "$GITHUB_ENV"
           python -m pip install --upgrade pip
@@ -171,7 +181,8 @@ jobs:
         if: runner.os == 'Windows'
         shell: cmd
         run: |
-          choco install ninja eigen -y
+          # Eigen3 is vendored in LIB/vendor/eigen — no choco install eigen needed.
+          choco install ninja -y
           python -m pip install --upgrade pip
           python -m pip install "pybind11[global]" pytest numpy
       - name: Configure Python bindings (Linux)
