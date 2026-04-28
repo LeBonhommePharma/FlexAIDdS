@@ -35,12 +35,16 @@ AND ANY EXPRESS OR IMPLIED WARRANTIES ARE DISCLAIMED.
 
 ---
 
-### Eigen (MPL 2.0)
+### Eigen (MPL 2.0) — vendored
 
 **Project:** C++ template library for linear algebra  
+**Version:** 3.4.0  
 **License:** Mozilla Public License 2.0  
 **Source:** https://gitlab.com/libeigen/eigen  
-**Use in FlexAID∆S:** SIMD vectorization, matrix operations, numerical stability
+**Vendored at:** `LIB/vendor/eigen/` (git submodule, pinned to tag `3.4.0`)  
+**Use in FlexAID∆S:** SIMD vectorization, matrix operations, eigenvalue decomposition, numerical stability
+
+Eigen is vendored directly in the repository as a git submodule so that the build works out-of-the-box on any platform without requiring `libeigen3-dev`, `brew install eigen`, or `choco install eigen`. A fresh clone with `git clone --recurse-submodules` is all that is needed.
 
 ```
 Copyright (C) 2008-2024 Eigen Contributors
