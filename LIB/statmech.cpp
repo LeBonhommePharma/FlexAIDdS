@@ -258,11 +258,14 @@ bool StatMechEngine::attempt_swap(Replica& a, Replica& b, std::mt19937& rng) {
     return false;
 }
 
-// ─── WHAM ────────────────────────────────────────────────────────────────────
-// Weighted Histogram Analysis Method (Kumar et al. 1992)
-// Simplified single-window version for post-hoc reweighting of GA ensemble.
+// ─── Boltzmann-reweighted PMF ────────────────────────────────────────────────
+// Single-window post-hoc reweighting of an ensemble onto a 1D collective
+// coordinate. NOT multi-window WHAM (Kumar et al. 1992) — that requires
+// biased simulations with per-window offsets, neither of which are
+// available here. The historical name `wham()` survives as a deprecated
+// alias in the header (see statmech.h).
 
-std::vector<WHAMBin> StatMechEngine::wham(
+std::vector<WHAMBin> StatMechEngine::boltzmann_pmf(
     std::span<const double> energies,
     std::span<const double> coordinates,
     double temperature,

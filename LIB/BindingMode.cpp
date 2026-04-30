@@ -372,7 +372,7 @@ std::vector<statmech::WHAMBin> BindingMode::free_energy_profile(
 		energies.push_back(pose.total_energy());
 	}
 
-	return statmech::StatMechEngine::wham(
+	return statmech::StatMechEngine::boltzmann_pmf(
 		energies,
 		coordinates,
 		static_cast<double>(Population->Temperature),

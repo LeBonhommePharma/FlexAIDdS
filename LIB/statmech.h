@@ -90,14 +90,40 @@ public:
     // Returns true if accepted.
     static bool attempt_swap(Replica& a, Replica& b, std::mt19937& rng);
 
-    // WHAM: weighted histogram analysis over (energy, coord) pairs
-    static std::vector<WHAMBin> wham(
+    // Boltzmann-reweighted free energy profile along a 1D collective
+    // coordinate. For each bin b:
+    //
+    //     F_b = -kT · ln( Σ_{i∈b} exp(-β E_i) / N_b )
+    //
+    // This is NOT multi-window WHAM (Kumar et al. 1992). It is a single-
+    // window post-hoc reweighting of an existing ensemble — useful for
+    // building a PMF from a converged GA trajectory along an arbitrary
+    // reaction coordinate. Multi-window WHAM requires biased simulations
+    // and per-window offsets, neither of which are provided here.
+    //
+    // Use this when you have a single biased/unbiased ensemble and want
+    // a 1D free energy curve. For umbrella-sampling unbiasing, use a
+    // dedicated multi-window WHAM implementation.
+    static std::vector<WHAMBin> boltzmann_pmf(
         std::span<const double> energies,
         std::span<const double> coordinates,
         double temperature,
         int    n_bins,
         int    max_iter  = 1000,
         double tolerance = 1e-6);
+
+    // Backward-compatible alias for the historical (misleading) name.
+    [[deprecated("This is single-window Boltzmann reweighting, not multi-window WHAM. "
+                 "Use boltzmann_pmf() — same arguments, accurate name.")]]
+    static std::vector<WHAMBin> wham(
+        std::span<const double> energies,
+        std::span<const double> coordinates,
+        double temperature,
+        int    n_bins,
+        int    max_iter  = 1000,
+        double tolerance = 1e-6) {
+        return boltzmann_pmf(energies, coordinates, temperature, n_bins, max_iter, tolerance);
+    }
 
     // Thermodynamic integration via trapezoidal rule
     static double thermodynamic_integration(std::span<const TIPoint> points);
