@@ -426,7 +426,7 @@ void StatMechEngine::merge_samples(std::span<const double> energies,
     if (energies.size() != multiplicities.size())
         throw std::invalid_argument("energies and multiplicities must have same size");
     for (size_t i = 0; i < energies.size(); ++i)
-        ensemble_.push_back({energies[i], multiplicities[i]});
+        ensemble_.push_back({energies[i], static_cast<double>(multiplicities[i])});
 }
 
 std::vector<double> StatMechEngine::serialize_energies() const {
