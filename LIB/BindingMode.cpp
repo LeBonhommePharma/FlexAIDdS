@@ -362,11 +362,14 @@ std::vector<statmech::WHAMBin> BindingMode::free_energy_profile(
 		);
 	}
 
+	// Use total_energy() = CF + receptor_strain to match rebuild_engine().
+	// Previously this used pose.CF only, so the FE profile and the main
+	// thermodynamics were computed from different energies in CCBM mode.
 	std::vector<double> energies;
 	energies.reserve(Poses.size());
 	for (const auto& pose : Poses)
 	{
-		energies.push_back(pose.CF);
+		energies.push_back(pose.total_energy());
 	}
 
 	return statmech::StatMechEngine::wham(
