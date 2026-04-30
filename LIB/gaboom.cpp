@@ -421,25 +421,41 @@ int GA(FA_Global* FA, GB_Global* GB,VC_Global* VC,chromosome** chrom,chromosome*
 				write_grid(FA,(*cleftgrid),gridfile);
 			}
 
-			// Recompute MIF for adapted grid
+			// Recompute MIF for adapted grid.
+			// Allocate new buffers BEFORE freeing old ones so OOM leaves the
+			// previous MIF intact rather than crashing on null deref.
 			if (FA->mif_enabled || FA->grid_prio_percent < 100.0f) {
 				std::vector<atom> protein_atoms(atoms, atoms + FA->atm_cnt_real);
 				cavity_detect::SpatialGrid sg;
 				sg.build(protein_atoms);
 				auto mif = mif::compute_mif(*cleftgrid, FA->num_grd,
 				                             atoms, FA->atm_cnt_real, sg);
-				free(FA->mif_energies); free(FA->mif_sorted); free(FA->mif_cdf);
-				FA->mif_count = static_cast<int>(mif.sorted_indices.size());
-				FA->mif_energies = static_cast<float*>(
-				    malloc(mif.energies.size() * sizeof(float)));
-				FA->mif_sorted = static_cast<int*>(
-				    malloc(mif.sorted_indices.size() * sizeof(int)));
-				std::copy_n(mif.energies.data(), mif.energies.size(), FA->mif_energies);
-				std::copy_n(mif.sorted_indices.data(), mif.sorted_indices.size(), FA->mif_sorted);
 				mif::build_sampling_cdf(mif, FA->mif_temperature);
-				FA->mif_cdf = static_cast<double*>(
-				    malloc(mif.cdf.size() * sizeof(double)));
-				std::copy_n(mif.cdf.data(), mif.cdf.size(), FA->mif_cdf);
+
+				const std::size_t n_energies = mif.energies.size();
+				const std::size_t n_sorted   = mif.sorted_indices.size();
+				const std::size_t n_cdf      = mif.cdf.size();
+				float*  new_energies = static_cast<float*>(malloc(n_energies * sizeof(float)));
+				int*    new_sorted   = static_cast<int*>(malloc(n_sorted * sizeof(int)));
+				double* new_cdf      = static_cast<double*>(malloc(n_cdf * sizeof(double)));
+
+				if (!new_energies || !new_sorted || !new_cdf) {
+					fprintf(stderr,
+					        "ERROR: MIF allocation failed at generation %d "
+					        "(energies=%zu sorted=%zu cdf=%zu) — keeping old MIF.\n",
+					        i+1, n_energies, n_sorted, n_cdf);
+					free(new_energies); free(new_sorted); free(new_cdf);
+				} else {
+					std::copy_n(mif.energies.data(), n_energies, new_energies);
+					std::copy_n(mif.sorted_indices.data(), n_sorted, new_sorted);
+					std::copy_n(mif.cdf.data(), n_cdf, new_cdf);
+
+					free(FA->mif_energies); free(FA->mif_sorted); free(FA->mif_cdf);
+					FA->mif_count    = static_cast<int>(n_sorted);
+					FA->mif_energies = new_energies;
+					FA->mif_sorted   = new_sorted;
+					FA->mif_cdf      = new_cdf;
+				}
 			}
 
 			validate_dups(GB, (*gene_lim), GB->num_genes);
