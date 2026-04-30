@@ -14,6 +14,7 @@
 #include <vector>
 #include <string>
 #include <cmath>
+#include <mutex>
 
 namespace shannon_thermo {
 
@@ -65,6 +66,8 @@ private:
     ShannonEnergyMatrix() = default;
     std::vector<double> matrix_; // SHANNON_BINS × SHANNON_BINS
     bool initialised_ = false;
+    mutable std::once_flag init_once_;   // serialises initialise() across threads
+    mutable std::mutex     mtx_;         // guards initialise_from_*() races
 };
 
 // ─── Shannon entropy computation ──────────────────────────────────────────────

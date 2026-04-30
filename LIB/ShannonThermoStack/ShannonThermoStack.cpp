@@ -45,27 +45,33 @@ ShannonEnergyMatrix& ShannonEnergyMatrix::instance() {
 }
 
 void ShannonEnergyMatrix::initialise() {
-    if (initialised_) return;
-    matrix_.resize(SHANNON_BINS * SHANNON_BINS);
+    // Thread-safe one-shot initialisation. Multiple threads may call this
+    // concurrently before the matrix is built; std::call_once ensures the
+    // body executes exactly once, while readers see initialised_ = true
+    // only after the matrix has been fully populated.
+    std::call_once(init_once_, [this]() {
+        std::lock_guard<std::mutex> lk(mtx_);
+        matrix_.resize(SHANNON_BINS * SHANNON_BINS);
 
-    std::mt19937 rng(42);
-    std::normal_distribution<double> perturb(0.0, 0.05);
-    const double base = 1.0 / SHANNON_BINS;
-    std::vector<double> p_i(SHANNON_BINS), p_j(SHANNON_BINS);
-    for (int k = 0; k < SHANNON_BINS; ++k) {
-        p_i[k] = std::max(1e-9, base + perturb(rng));
-        p_j[k] = std::max(1e-9, base + perturb(rng));
-    }
-    double si = 0, sj = 0;
-    for (int k = 0; k < SHANNON_BINS; ++k) { si += p_i[k]; sj += p_j[k]; }
-    for (int k = 0; k < SHANNON_BINS; ++k) { p_i[k] /= si; p_j[k] /= sj; }
+        std::mt19937 rng(42);
+        std::normal_distribution<double> perturb(0.0, 0.05);
+        const double base = 1.0 / SHANNON_BINS;
+        std::vector<double> p_i(SHANNON_BINS), p_j(SHANNON_BINS);
+        for (int k = 0; k < SHANNON_BINS; ++k) {
+            p_i[k] = std::max(1e-9, base + perturb(rng));
+            p_j[k] = std::max(1e-9, base + perturb(rng));
+        }
+        double si = 0, sj = 0;
+        for (int k = 0; k < SHANNON_BINS; ++k) { si += p_i[k]; sj += p_j[k]; }
+        for (int k = 0; k < SHANNON_BINS; ++k) { p_i[k] /= si; p_j[k] /= sj; }
 
-    const double kT    = kB_kcal * TEMPERATURE_K;
-    // Fill the entropy matrix using natural log (nats)
-    for (int i = 0; i < SHANNON_BINS; ++i)
-        for (int j = 0; j < SHANNON_BINS; ++j)
-            matrix_[i * SHANNON_BINS + j] = -kT * p_i[i] * std::log(p_j[j]);
-    initialised_ = true;
+        const double kT = kB_kcal * TEMPERATURE_K;
+        // Fill the entropy matrix using natural log (nats)
+        for (int i = 0; i < SHANNON_BINS; ++i)
+            for (int j = 0; j < SHANNON_BINS; ++j)
+                matrix_[i * SHANNON_BINS + j] = -kT * p_i[i] * std::log(p_j[j]);
+        initialised_ = true;
+    });
 }
 
 bool ShannonEnergyMatrix::initialise_from_file(const std::string& path) {
@@ -100,15 +106,20 @@ bool ShannonEnergyMatrix::initialise_from_file(const std::string& path) {
     if (static_cast<int>(nread) != SHANNON_BINS * SHANNON_BINS)
         return false;
 
+    // Lock against races with initialise() / initialise_from_data()
+    std::lock_guard<std::mutex> lk(mtx_);
     matrix_.resize(SHANNON_BINS * SHANNON_BINS);
     for (int k = 0; k < SHANNON_BINS * SHANNON_BINS; ++k)
         matrix_[k] = static_cast<double>(buf[k]);
 
     initialised_ = true;
+    // Mark the once_flag as fired so initialise() becomes a no-op.
+    std::call_once(init_once_, [](){});
     return true;
 }
 
 void ShannonEnergyMatrix::initialise_from_data(const float* data, int count) {
+    std::lock_guard<std::mutex> lk(mtx_);
     int expected = SHANNON_BINS * SHANNON_BINS;
     matrix_.resize(expected);
     int safe_count = std::min(count, expected);
@@ -117,6 +128,7 @@ void ShannonEnergyMatrix::initialise_from_data(const float* data, int count) {
     for (int k = safe_count; k < expected; ++k)
         matrix_[k] = 0.0;
     initialised_ = true;
+    std::call_once(init_once_, [](){});
 }
 
 
