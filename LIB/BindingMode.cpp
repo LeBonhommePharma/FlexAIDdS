@@ -42,17 +42,25 @@ void BindingPopulation::add_BindingMode(BindingMode& mode)
 	mode.set_energy();
 	this->BindingModes.push_back(mode);
 	this->shannon_cache_valid_ = false;  // Invalidate Shannon cache
-	this->Entropize();
+	this->sorted_ = false;               // mark for lazy re-sort
+
+	// Previously this called Entropize() on every insertion, re-sorting all
+	// existing modes (each comparison invokes compute_energy() and rebuilds
+	// the StatMechEngine). Inserting M modes was O(M² log M × N_poses).
+	// Sorting is now lazy — done in output_Population() and accessor paths.
 }
 
 
 void BindingPopulation::Entropize()
 {
+	if (this->sorted_) return;
+
 	for (std::vector<BindingMode>::iterator it = this->BindingModes.begin(); it != this->BindingModes.end(); ++it)
 	{
 		it->set_energy();
 	}
 	std::sort(this->BindingModes.begin(), this->BindingModes.end(), BindingPopulation::EnergyComparator());
+	this->sorted_ = true;
 }
 
 
@@ -92,6 +100,9 @@ BindingMode& BindingPopulation::get_binding_mode(int index)
 void BindingPopulation::output_Population(int nResults, char* end_strfile, char* tmp_end_strfile, char* dockinp, char* gainp, int minPoints)
 {
 	// Output Population information ~= output clusters informations (*.cad)
+	// Ensure the population is sorted by free energy before emitting results
+	// (lazy sort: previously every add_BindingMode triggered a full re-sort).
+	this->Entropize();
 
 	// Looping through BindingModes
 	int num_result = 0;
