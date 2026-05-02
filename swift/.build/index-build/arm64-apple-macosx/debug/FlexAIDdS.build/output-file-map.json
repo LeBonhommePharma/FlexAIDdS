@@ -1,0 +1,33 @@
+{
+  "": {
+    "swift-dependencies": "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/FlexAIDdS.build/primary.swiftdeps"
+  },
+  "/Users/lp.more/Projects/FlexAIDdS/swift/Sources/FlexAIDdS/DockingRunner.swift": {
+    "dependencies": "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/FlexAIDdS.build/DockingRunner.d",
+    "object": "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/FlexAIDdS.build/DockingRunner.swift.o",
+    "swiftmodule": "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/FlexAIDdS.build/DockingRunner~partial.swiftmodule",
+    "swift-dependencies": "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/FlexAIDdS.build/DockingRunner.swiftdeps",
+    "diagnostics": "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/FlexAIDdS.build/DockingRunner.dia"
+  },
+  "/Users/lp.more/Projects/FlexAIDdS/swift/Sources/FlexAIDdS/FlexAIDRunner.swift": {
+    "dependencies": "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/FlexAIDdS.build/FlexAIDRunner.d",
+    "object": "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/FlexAIDdS.build/FlexAIDRunner.swift.o",
+    "swiftmodule": "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/FlexAIDdS.build/FlexAIDRunner~partial.swiftmodule",
+    "swift-dependencies": "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/FlexAIDdS.build/FlexAIDRunner.swiftdeps",
+    "diagnostics": "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/FlexAIDdS.build/FlexAIDRunner.dia"
+  },
+  "/Users/lp.more/Projects/FlexAIDdS/swift/Sources/FlexAIDdS/Models.swift": {
+    "dependencies": "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/FlexAIDdS.build/Models.d",
+    "object": "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/FlexAIDdS.build/Models.swift.o",
+    "swiftmodule": "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/FlexAIDdS.build/Models~partial.swiftmodule",
+    "swift-dependencies": "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/FlexAIDdS.build/Models.swiftdeps",
+    "diagnostics": "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/FlexAIDdS.build/Models.dia"
+  },
+  "/Users/lp.more/Projects/FlexAIDdS/swift/Sources/FlexAIDdS/ThermodynamicResult.swift": {
+    "dependencies": "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/FlexAIDdS.build/ThermodynamicResult.d",
+    "object": "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/FlexAIDdS.build/ThermodynamicResult.swift.o",
+    "swiftmodule": "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/FlexAIDdS.build/ThermodynamicResult~partial.swiftmodule",
+    "swift-dependencies": "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/FlexAIDdS.build/ThermodynamicResult.swiftdeps",
+    "diagnostics": "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/FlexAIDdS.build/ThermodynamicResult.dia"
+  }
+}

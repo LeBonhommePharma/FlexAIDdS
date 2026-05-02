@@ -1,0 +1,110 @@
+{
+  "": {
+    "swift-dependencies": "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/Intelligence.build/primary.swiftdeps"
+  },
+  "/Users/lp.more/Projects/FlexAIDdS/swift/Sources/Intelligence/BindingModeNarrator.swift": {
+    "dependencies": "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/Intelligence.build/BindingModeNarrator.d",
+    "object": "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/Intelligence.build/BindingModeNarrator.swift.o",
+    "swiftmodule": "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/Intelligence.build/BindingModeNarrator~partial.swiftmodule",
+    "swift-dependencies": "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/Intelligence.build/BindingModeNarrator.swiftdeps",
+    "diagnostics": "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/Intelligence.build/BindingModeNarrator.dia"
+  },
+  "/Users/lp.more/Projects/FlexAIDdS/swift/Sources/Intelligence/CampaignJournalist.swift": {
+    "dependencies": "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/Intelligence.build/CampaignJournalist.d",
+    "object": "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/Intelligence.build/CampaignJournalist.swift.o",
+    "swiftmodule": "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/Intelligence.build/CampaignJournalist~partial.swiftmodule",
+    "swift-dependencies": "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/Intelligence.build/CampaignJournalist.swiftdeps",
+    "diagnostics": "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/Intelligence.build/CampaignJournalist.dia"
+  },
+  "/Users/lp.more/Projects/FlexAIDdS/swift/Sources/Intelligence/CleftAssessor.swift": {
+    "dependencies": "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/Intelligence.build/CleftAssessor.d",
+    "object": "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/Intelligence.build/CleftAssessor.swift.o",
+    "swiftmodule": "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/Intelligence.build/CleftAssessor~partial.swiftmodule",
+    "swift-dependencies": "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/Intelligence.build/CleftAssessor.swiftdeps",
+    "diagnostics": "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/Intelligence.build/CleftAssessor.dia"
+  },
+  "/Users/lp.more/Projects/FlexAIDdS/swift/Sources/Intelligence/ConvergenceCoach.swift": {
+    "dependencies": "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/Intelligence.build/ConvergenceCoach.d",
+    "object": "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/Intelligence.build/ConvergenceCoach.swift.o",
+    "swiftmodule": "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/Intelligence.build/ConvergenceCoach~partial.swiftmodule",
+    "swift-dependencies": "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/Intelligence.build/ConvergenceCoach.swiftdeps",
+    "diagnostics": "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/Intelligence.build/ConvergenceCoach.dia"
+  },
+  "/Users/lp.more/Projects/FlexAIDdS/swift/Sources/Intelligence/FleetExplainer.swift": {
+    "dependencies": "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/Intelligence.build/FleetExplainer.d",
+    "object": "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/Intelligence.build/FleetExplainer.swift.o",
+    "swiftmodule": "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/Intelligence.build/FleetExplainer~partial.swiftmodule",
+    "swift-dependencies": "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/Intelligence.build/FleetExplainer.swiftdeps",
+    "diagnostics": "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/Intelligence.build/FleetExplainer.dia"
+  },
+  "/Users/lp.more/Projects/FlexAIDdS/swift/Sources/Intelligence/HealthEntropyInsight.swift": {
+    "dependencies": "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/Intelligence.build/HealthEntropyInsight.d",
+    "object": "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/Intelligence.build/HealthEntropyInsight.swift.o",
+    "swiftmodule": "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/Intelligence.build/HealthEntropyInsight~partial.swiftmodule",
+    "swift-dependencies": "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/Intelligence.build/HealthEntropyInsight.swiftdeps",
+    "diagnostics": "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/Intelligence.build/HealthEntropyInsight.dia"
+  },
+  "/Users/lp.more/Projects/FlexAIDdS/swift/Sources/Intelligence/IntelligenceOracle.swift": {
+    "dependencies": "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/Intelligence.build/IntelligenceOracle.d",
+    "object": "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/Intelligence.build/IntelligenceOracle.swift.o",
+    "swiftmodule": "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/Intelligence.build/IntelligenceOracle~partial.swiftmodule",
+    "swift-dependencies": "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/Intelligence.build/IntelligenceOracle.swiftdeps",
+    "diagnostics": "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/Intelligence.build/IntelligenceOracle.dia"
+  },
+  "/Users/lp.more/Projects/FlexAIDdS/swift/Sources/Intelligence/IntelligencePipeline.swift": {
+    "dependencies": "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/Intelligence.build/IntelligencePipeline.d",
+    "object": "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/Intelligence.build/IntelligencePipeline.swift.o",
+    "swiftmodule": "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/Intelligence.build/IntelligencePipeline~partial.swiftmodule",
+    "swift-dependencies": "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/Intelligence.build/IntelligencePipeline.swiftdeps",
+    "diagnostics": "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/Intelligence.build/IntelligencePipeline.dia"
+  },
+  "/Users/lp.more/Projects/FlexAIDdS/swift/Sources/Intelligence/IntelligenceResult.swift": {
+    "dependencies": "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/Intelligence.build/IntelligenceResult.d",
+    "object": "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/Intelligence.build/IntelligenceResult.swift.o",
+    "swiftmodule": "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/Intelligence.build/IntelligenceResult~partial.swiftmodule",
+    "swift-dependencies": "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/Intelligence.build/IntelligenceResult.swiftdeps",
+    "diagnostics": "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/Intelligence.build/IntelligenceResult.dia"
+  },
+  "/Users/lp.more/Projects/FlexAIDdS/swift/Sources/Intelligence/LigandFitCritic.swift": {
+    "dependencies": "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/Intelligence.build/LigandFitCritic.d",
+    "object": "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/Intelligence.build/LigandFitCritic.swift.o",
+    "swiftmodule": "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/Intelligence.build/LigandFitCritic~partial.swiftmodule",
+    "swift-dependencies": "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/Intelligence.build/LigandFitCritic.swiftdeps",
+    "diagnostics": "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/Intelligence.build/LigandFitCritic.dia"
+  },
+  "/Users/lp.more/Projects/FlexAIDdS/swift/Sources/Intelligence/SelectivityAnalyst.swift": {
+    "dependencies": "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/Intelligence.build/SelectivityAnalyst.d",
+    "object": "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/Intelligence.build/SelectivityAnalyst.swift.o",
+    "swiftmodule": "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/Intelligence.build/SelectivityAnalyst~partial.swiftmodule",
+    "swift-dependencies": "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/Intelligence.build/SelectivityAnalyst.swiftdeps",
+    "diagnostics": "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/Intelligence.build/SelectivityAnalyst.dia"
+  },
+  "/Users/lp.more/Projects/FlexAIDdS/swift/Sources/Intelligence/ThermoReferee.swift": {
+    "dependencies": "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/Intelligence.build/ThermoReferee.d",
+    "object": "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/Intelligence.build/ThermoReferee.swift.o",
+    "swiftmodule": "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/Intelligence.build/ThermoReferee~partial.swiftmodule",
+    "swift-dependencies": "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/Intelligence.build/ThermoReferee.swiftdeps",
+    "diagnostics": "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/Intelligence.build/ThermoReferee.dia"
+  },
+  "/Users/lp.more/Projects/FlexAIDdS/swift/Sources/Intelligence/ThermoRefereeTools.swift": {
+    "dependencies": "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/Intelligence.build/ThermoRefereeTools.d",
+    "object": "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/Intelligence.build/ThermoRefereeTools.swift.o",
+    "swiftmodule": "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/Intelligence.build/ThermoRefereeTools~partial.swiftmodule",
+    "swift-dependencies": "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/Intelligence.build/ThermoRefereeTools.swiftdeps",
+    "diagnostics": "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/Intelligence.build/ThermoRefereeTools.dia"
+  },
+  "/Users/lp.more/Projects/FlexAIDdS/swift/Sources/Intelligence/ThermoRefereeTypes.swift": {
+    "dependencies": "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/Intelligence.build/ThermoRefereeTypes.d",
+    "object": "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/Intelligence.build/ThermoRefereeTypes.swift.o",
+    "swiftmodule": "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/Intelligence.build/ThermoRefereeTypes~partial.swiftmodule",
+    "swift-dependencies": "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/Intelligence.build/ThermoRefereeTypes.swiftdeps",
+    "diagnostics": "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/Intelligence.build/ThermoRefereeTypes.dia"
+  },
+  "/Users/lp.more/Projects/FlexAIDdS/swift/Sources/Intelligence/VibrationalInterpreter.swift": {
+    "dependencies": "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/Intelligence.build/VibrationalInterpreter.d",
+    "object": "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/Intelligence.build/VibrationalInterpreter.swift.o",
+    "swiftmodule": "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/Intelligence.build/VibrationalInterpreter~partial.swiftmodule",
+    "swift-dependencies": "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/Intelligence.build/VibrationalInterpreter.swiftdeps",
+    "diagnostics": "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/Intelligence.build/VibrationalInterpreter.dia"
+  }
+}

@@ -7,7 +7,7 @@
 //   – Conformational entropy  S = (⟨E⟩ − F)/T
 //   – Boltzmann-weighted probability of each sampled state
 //   – Parallel tempering (replica exchange) swap acceptance
-//   – WHAM for free energy profiles along an arbitrary coordinate
+//   – Boltzmann-reweighted PMF (free energy profiles along an arbitrary coordinate)
 //   – Thermodynamic integration (TI) via trapezoidal rule
 //   – Fast Boltzmann lookup table for inner-loop evaluation
 #pragma once
@@ -133,9 +133,12 @@ public:
     // Thermodynamically correct: Z_merged = Σ_all exp(-βE_i).
     void merge(const StatMechEngine& other);
 
-    // Merge from raw arrays (for MPI deserialization)
+    // Merge from raw arrays (for MPI deserialization).
+    // multiplicities is double to round-trip with serialize_multiplicities()
+    // (which returns vector<double> after the C-1 fix) and to allow fractional
+    // weights without silent int-truncation.
     void merge_samples(std::span<const double> energies,
-                       std::span<const int> multiplicities);
+                       std::span<const double> multiplicities);
 
     // Serialize ensemble for transport (MPI, socket, etc.)
     std::vector<double> serialize_energies() const;

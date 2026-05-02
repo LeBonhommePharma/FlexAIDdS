@@ -274,9 +274,9 @@ std::vector<WHAMBin> StatMechEngine::boltzmann_pmf(
     double tolerance)
 {
     if (energies.size() != coordinates.size())
-        throw std::invalid_argument("wham: energies and coordinates size mismatch");
+        throw std::invalid_argument("boltzmann_pmf: energies and coordinates size mismatch");
     if (energies.empty() || n_bins <= 0)
-        throw std::invalid_argument("wham: invalid input");
+        throw std::invalid_argument("boltzmann_pmf: invalid input");
 
     const std::size_t N = energies.size();
     double beta = 1.0 / (kB_kcal * temperature);
@@ -425,11 +425,11 @@ void StatMechEngine::merge(const StatMechEngine& other) {
 }
 
 void StatMechEngine::merge_samples(std::span<const double> energies,
-                                    std::span<const int> multiplicities) {
+                                    std::span<const double> multiplicities) {
     if (energies.size() != multiplicities.size())
         throw std::invalid_argument("energies and multiplicities must have same size");
     for (size_t i = 0; i < energies.size(); ++i)
-        ensemble_.push_back({energies[i], static_cast<double>(multiplicities[i])});
+        ensemble_.push_back({energies[i], multiplicities[i]});
 }
 
 std::vector<double> StatMechEngine::serialize_energies() const {

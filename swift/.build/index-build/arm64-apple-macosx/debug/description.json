@@ -1,0 +1,1769 @@
+{
+  "builtTestProducts" : [
+    {
+      "binaryPath" : "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/FlexAIDdSPackageTests.xctest/Contents/MacOS/FlexAIDdSPackageTests",
+      "packagePath" : "/Users/lp.more/Projects/FlexAIDdS/swift",
+      "productName" : "FlexAIDdSPackageTests"
+    }
+  ],
+  "copyCommands" : {
+
+  },
+  "explicitTargetDependencyImportCheckingMode" : {
+    "none" : {
+
+    }
+  },
+  "generatedSourceTargetSet" : [
+
+  ],
+  "pluginDescriptions" : [
+
+  ],
+  "swiftCommands" : {
+    "C.FleetScheduler-arm64-apple-macosx-debug.module" : {
+      "executable" : "/Applications/Xcode-beta.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc",
+      "fileList" : "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/FleetScheduler.build/sources",
+      "importPath" : "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/Modules",
+      "inputs" : [
+        {
+          "kind" : "file",
+          "name" : "/Users/lp.more/Projects/FlexAIDdS/swift/Sources/FleetScheduler/DeviceCapability.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/lp.more/Projects/FlexAIDdS/swift/Sources/FleetScheduler/FleetAggregator.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/lp.more/Projects/FlexAIDdS/swift/Sources/FleetScheduler/FleetScheduler.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/lp.more/Projects/FlexAIDdS/swift/Sources/FleetScheduler/WorkChunk.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/swift-version-39B54973F684ADAB.txt"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/Modules/FlexAIDdS.swiftmodule"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/Modules/Intelligence.swiftmodule"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/FleetScheduler.build/sources"
+        }
+      ],
+      "isLibrary" : true,
+      "moduleName" : "FleetScheduler",
+      "moduleOutputPath" : "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/Modules/FleetScheduler.swiftmodule",
+      "objects" : [
+        "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/FleetScheduler.build/DeviceCapability.swift.o",
+        "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/FleetScheduler.build/FleetAggregator.swift.o",
+        "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/FleetScheduler.build/FleetScheduler.swift.o",
+        "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/FleetScheduler.build/WorkChunk.swift.o"
+      ],
+      "otherArguments" : [
+        "-target",
+        "arm64-apple-macosx14.0",
+        "-incremental",
+        "-enable-batch-mode",
+        "-serialize-diagnostics",
+        "-Onone",
+        "-enable-testing",
+        "-j11",
+        "-DSWIFT_PACKAGE",
+        "-DDEBUG",
+        "-DSWIFT_MODULE_RESOURCE_BUNDLE_UNAVAILABLE",
+        "-Xcc",
+        "-fmodule-map-file=/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/FlexAIDCore.build/module.modulemap",
+        "-Xcc",
+        "-I",
+        "-Xcc",
+        "/Users/lp.more/Projects/FlexAIDdS/swift/Sources/FlexAIDCore/include",
+        "-module-cache-path",
+        "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/ModuleCache",
+        "-parseable-output",
+        "-parse-as-library",
+        "-emit-objc-header",
+        "-emit-objc-header-path",
+        "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/FleetScheduler.build/include/FleetScheduler-Swift.h",
+        "-swift-version",
+        "5",
+        "-Xfrontend",
+        "-experimental-lazy-typecheck",
+        "-Xfrontend",
+        "-experimental-skip-all-function-bodies",
+        "-Xfrontend",
+        "-experimental-allow-module-with-compiler-errors",
+        "-Xfrontend",
+        "-empty-abi-descriptor",
+        "-plugin-path",
+        "/Applications/Xcode-beta.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/host/plugins/testing",
+        "-sdk",
+        "/Applications/Xcode-beta.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.5.sdk",
+        "-F",
+        "/Applications/Xcode-beta.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks",
+        "-I",
+        "/Applications/Xcode-beta.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib",
+        "-L",
+        "/Applications/Xcode-beta.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib",
+        "-g",
+        "-Xcc",
+        "-isysroot",
+        "-Xcc",
+        "/Applications/Xcode-beta.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.5.sdk",
+        "-Xcc",
+        "-F",
+        "-Xcc",
+        "/Applications/Xcode-beta.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks",
+        "-Xcc",
+        "-fPIC",
+        "-Xcc",
+        "-g",
+        "-package-name",
+        "swift"
+      ],
+      "outputFileMapPath" : "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/FleetScheduler.build/output-file-map.json",
+      "outputs" : [
+        {
+          "kind" : "file",
+          "name" : "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/Modules/FleetScheduler.swiftmodule"
+        }
+      ],
+      "prepareForIndexing" : true,
+      "sources" : [
+        "/Users/lp.more/Projects/FlexAIDdS/swift/Sources/FleetScheduler/DeviceCapability.swift",
+        "/Users/lp.more/Projects/FlexAIDdS/swift/Sources/FleetScheduler/FleetAggregator.swift",
+        "/Users/lp.more/Projects/FlexAIDdS/swift/Sources/FleetScheduler/FleetScheduler.swift",
+        "/Users/lp.more/Projects/FlexAIDdS/swift/Sources/FleetScheduler/WorkChunk.swift"
+      ],
+      "tempsPath" : "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/FleetScheduler.build",
+      "wholeModuleOptimization" : false
+    },
+    "C.FlexAIDdS-arm64-apple-macosx-debug.module" : {
+      "executable" : "/Applications/Xcode-beta.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc",
+      "fileList" : "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/FlexAIDdS.build/sources",
+      "importPath" : "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/Modules",
+      "inputs" : [
+        {
+          "kind" : "file",
+          "name" : "/Users/lp.more/Projects/FlexAIDdS/swift/Sources/FlexAIDdS/DockingRunner.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/lp.more/Projects/FlexAIDdS/swift/Sources/FlexAIDdS/FlexAIDRunner.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/lp.more/Projects/FlexAIDdS/swift/Sources/FlexAIDdS/Models.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/lp.more/Projects/FlexAIDdS/swift/Sources/FlexAIDdS/ThermodynamicResult.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/swift-version-39B54973F684ADAB.txt"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/lp.more/Projects/FlexAIDdS/swift/Sources/FlexAIDCore/include/FXBoltzmannLUT.h"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/lp.more/Projects/FlexAIDdS/swift/Sources/FlexAIDCore/include/FXENCoMEngine.h"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/lp.more/Projects/FlexAIDdS/swift/Sources/FlexAIDCore/include/FXGA.h"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/lp.more/Projects/FlexAIDdS/swift/Sources/FlexAIDCore/include/FXStatMechEngine.h"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/lp.more/Projects/FlexAIDdS/swift/Sources/FlexAIDCore/include/FXTypes.h"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/lp.more/Projects/FlexAIDdS/swift/Sources/FlexAIDCore/include/FlexAIDCore.h"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/FlexAIDdS.build/sources"
+        }
+      ],
+      "isLibrary" : true,
+      "moduleName" : "FlexAIDdS",
+      "moduleOutputPath" : "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/Modules/FlexAIDdS.swiftmodule",
+      "objects" : [
+        "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/FlexAIDdS.build/DockingRunner.swift.o",
+        "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/FlexAIDdS.build/FlexAIDRunner.swift.o",
+        "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/FlexAIDdS.build/Models.swift.o",
+        "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/FlexAIDdS.build/ThermodynamicResult.swift.o"
+      ],
+      "otherArguments" : [
+        "-target",
+        "arm64-apple-macosx14.0",
+        "-incremental",
+        "-enable-batch-mode",
+        "-serialize-diagnostics",
+        "-Onone",
+        "-enable-testing",
+        "-j11",
+        "-DSWIFT_PACKAGE",
+        "-DDEBUG",
+        "-DSWIFT_MODULE_RESOURCE_BUNDLE_UNAVAILABLE",
+        "-Xcc",
+        "-fmodule-map-file=/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/FlexAIDCore.build/module.modulemap",
+        "-Xcc",
+        "-I",
+        "-Xcc",
+        "/Users/lp.more/Projects/FlexAIDdS/swift/Sources/FlexAIDCore/include",
+        "-module-cache-path",
+        "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/ModuleCache",
+        "-parseable-output",
+        "-parse-as-library",
+        "-emit-objc-header",
+        "-emit-objc-header-path",
+        "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/FlexAIDdS.build/include/FlexAIDdS-Swift.h",
+        "-swift-version",
+        "5",
+        "-Xfrontend",
+        "-experimental-lazy-typecheck",
+        "-Xfrontend",
+        "-experimental-skip-all-function-bodies",
+        "-Xfrontend",
+        "-experimental-allow-module-with-compiler-errors",
+        "-Xfrontend",
+        "-empty-abi-descriptor",
+        "-plugin-path",
+        "/Applications/Xcode-beta.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/host/plugins/testing",
+        "-sdk",
+        "/Applications/Xcode-beta.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.5.sdk",
+        "-F",
+        "/Applications/Xcode-beta.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks",
+        "-I",
+        "/Applications/Xcode-beta.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib",
+        "-L",
+        "/Applications/Xcode-beta.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib",
+        "-g",
+        "-Xcc",
+        "-isysroot",
+        "-Xcc",
+        "/Applications/Xcode-beta.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.5.sdk",
+        "-Xcc",
+        "-F",
+        "-Xcc",
+        "/Applications/Xcode-beta.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks",
+        "-Xcc",
+        "-fPIC",
+        "-Xcc",
+        "-g",
+        "-package-name",
+        "swift"
+      ],
+      "outputFileMapPath" : "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/FlexAIDdS.build/output-file-map.json",
+      "outputs" : [
+        {
+          "kind" : "file",
+          "name" : "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/Modules/FlexAIDdS.swiftmodule"
+        }
+      ],
+      "prepareForIndexing" : true,
+      "sources" : [
+        "/Users/lp.more/Projects/FlexAIDdS/swift/Sources/FlexAIDdS/DockingRunner.swift",
+        "/Users/lp.more/Projects/FlexAIDdS/swift/Sources/FlexAIDdS/FlexAIDRunner.swift",
+        "/Users/lp.more/Projects/FlexAIDdS/swift/Sources/FlexAIDdS/Models.swift",
+        "/Users/lp.more/Projects/FlexAIDdS/swift/Sources/FlexAIDdS/ThermodynamicResult.swift"
+      ],
+      "tempsPath" : "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/FlexAIDdS.build",
+      "wholeModuleOptimization" : false
+    },
+    "C.FlexAIDdSPackageTests-arm64-apple-macosx-debug.module" : {
+      "executable" : "/Applications/Xcode-beta.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc",
+      "fileList" : "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/FlexAIDdSPackageTests.build/sources",
+      "importPath" : "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/Modules",
+      "inputs" : [
+        {
+          "kind" : "file",
+          "name" : "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/FlexAIDdSPackageTests.derived/runner.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/swift-version-39B54973F684ADAB.txt"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/Modules/FlexAIDdSTests.swiftmodule"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/FlexAIDdSPackageTests.build/sources"
+        }
+      ],
+      "isLibrary" : true,
+      "moduleName" : "FlexAIDdSPackageTests",
+      "moduleOutputPath" : "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/Modules/FlexAIDdSPackageTests.swiftmodule",
+      "objects" : [
+        "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/FlexAIDdSPackageTests.build/runner.swift.o"
+      ],
+      "otherArguments" : [
+        "-target",
+        "arm64-apple-macosx14.0",
+        "-incremental",
+        "-enable-batch-mode",
+        "-serialize-diagnostics",
+        "-Onone",
+        "-enable-testing",
+        "-Xfrontend",
+        "-enable-cross-import-overlays",
+        "-j11",
+        "-DSWIFT_PACKAGE",
+        "-DDEBUG",
+        "-DSWIFT_MODULE_RESOURCE_BUNDLE_UNAVAILABLE",
+        "-Xcc",
+        "-fmodule-map-file=/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/FlexAIDCore.build/module.modulemap",
+        "-Xcc",
+        "-I",
+        "-Xcc",
+        "/Users/lp.more/Projects/FlexAIDdS/swift/Sources/FlexAIDCore/include",
+        "-module-cache-path",
+        "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/ModuleCache",
+        "-parseable-output",
+        "-parse-as-library",
+        "-emit-objc-header",
+        "-emit-objc-header-path",
+        "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/FlexAIDdSPackageTests.build/include/FlexAIDdSPackageTests-Swift.h",
+        "-Xfrontend",
+        "-experimental-lazy-typecheck",
+        "-Xfrontend",
+        "-experimental-skip-all-function-bodies",
+        "-Xfrontend",
+        "-experimental-allow-module-with-compiler-errors",
+        "-Xfrontend",
+        "-empty-abi-descriptor",
+        "-plugin-path",
+        "/Applications/Xcode-beta.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/host/plugins/testing",
+        "-sdk",
+        "/Applications/Xcode-beta.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.5.sdk",
+        "-F",
+        "/Applications/Xcode-beta.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks",
+        "-I",
+        "/Applications/Xcode-beta.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib",
+        "-L",
+        "/Applications/Xcode-beta.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib",
+        "-g",
+        "-Xcc",
+        "-isysroot",
+        "-Xcc",
+        "/Applications/Xcode-beta.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.5.sdk",
+        "-Xcc",
+        "-F",
+        "-Xcc",
+        "/Applications/Xcode-beta.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks",
+        "-Xcc",
+        "-fPIC",
+        "-Xcc",
+        "-g",
+        "-package-name",
+        "swift"
+      ],
+      "outputFileMapPath" : "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/FlexAIDdSPackageTests.build/output-file-map.json",
+      "outputs" : [
+        {
+          "kind" : "file",
+          "name" : "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/Modules/FlexAIDdSPackageTests.swiftmodule"
+        }
+      ],
+      "prepareForIndexing" : true,
+      "sources" : [
+        "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/FlexAIDdSPackageTests.derived/runner.swift"
+      ],
+      "tempsPath" : "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/FlexAIDdSPackageTests.build",
+      "wholeModuleOptimization" : false
+    },
+    "C.FlexAIDdSTests-arm64-apple-macosx-debug.module" : {
+      "executable" : "/Applications/Xcode-beta.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc",
+      "fileList" : "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/FlexAIDdSTests.build/sources",
+      "importPath" : "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/Modules",
+      "inputs" : [
+        {
+          "kind" : "file",
+          "name" : "/Users/lp.more/Projects/FlexAIDdS/swift/Tests/FlexAIDdSTests/FleetAggregatorTests.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/lp.more/Projects/FlexAIDdS/swift/Tests/FlexAIDdSTests/FleetSchedulerTests.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/lp.more/Projects/FlexAIDdS/swift/Tests/FlexAIDdSTests/IntelligenceFeatureTests.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/lp.more/Projects/FlexAIDdS/swift/Tests/FlexAIDdSTests/IntelligencePipelineTests.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/lp.more/Projects/FlexAIDdS/swift/Tests/FlexAIDdSTests/StatMechEngineTests.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/lp.more/Projects/FlexAIDdS/swift/Tests/FlexAIDdSTests/ThermoRefereeTests.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/swift-version-39B54973F684ADAB.txt"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/Modules/FlexAIDdS.swiftmodule"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/Modules/Intelligence.swiftmodule"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/Modules/FleetScheduler.swiftmodule"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/FlexAIDdSTests.build/sources"
+        }
+      ],
+      "isLibrary" : true,
+      "moduleName" : "FlexAIDdSTests",
+      "moduleOutputPath" : "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/Modules/FlexAIDdSTests.swiftmodule",
+      "objects" : [
+        "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/FlexAIDdSTests.build/FleetAggregatorTests.swift.o",
+        "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/FlexAIDdSTests.build/FleetSchedulerTests.swift.o",
+        "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/FlexAIDdSTests.build/IntelligenceFeatureTests.swift.o",
+        "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/FlexAIDdSTests.build/IntelligencePipelineTests.swift.o",
+        "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/FlexAIDdSTests.build/StatMechEngineTests.swift.o",
+        "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/FlexAIDdSTests.build/ThermoRefereeTests.swift.o"
+      ],
+      "otherArguments" : [
+        "-target",
+        "arm64-apple-macosx14.0",
+        "-incremental",
+        "-enable-batch-mode",
+        "-serialize-diagnostics",
+        "-Onone",
+        "-enable-testing",
+        "-Xfrontend",
+        "-enable-cross-import-overlays",
+        "-j11",
+        "-DSWIFT_PACKAGE",
+        "-DDEBUG",
+        "-DSWIFT_MODULE_RESOURCE_BUNDLE_UNAVAILABLE",
+        "-Xcc",
+        "-fmodule-map-file=/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/FlexAIDCore.build/module.modulemap",
+        "-Xcc",
+        "-I",
+        "-Xcc",
+        "/Users/lp.more/Projects/FlexAIDdS/swift/Sources/FlexAIDCore/include",
+        "-module-cache-path",
+        "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/ModuleCache",
+        "-parseable-output",
+        "-parse-as-library",
+        "-swift-version",
+        "5",
+        "-Xfrontend",
+        "-experimental-lazy-typecheck",
+        "-Xfrontend",
+        "-experimental-skip-all-function-bodies",
+        "-Xfrontend",
+        "-experimental-allow-module-with-compiler-errors",
+        "-Xfrontend",
+        "-empty-abi-descriptor",
+        "-plugin-path",
+        "/Applications/Xcode-beta.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/host/plugins/testing",
+        "-sdk",
+        "/Applications/Xcode-beta.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.5.sdk",
+        "-F",
+        "/Applications/Xcode-beta.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks",
+        "-I",
+        "/Applications/Xcode-beta.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib",
+        "-L",
+        "/Applications/Xcode-beta.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib",
+        "-g",
+        "-Xcc",
+        "-isysroot",
+        "-Xcc",
+        "/Applications/Xcode-beta.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.5.sdk",
+        "-Xcc",
+        "-F",
+        "-Xcc",
+        "/Applications/Xcode-beta.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks",
+        "-Xcc",
+        "-fPIC",
+        "-Xcc",
+        "-g",
+        "-package-name",
+        "swift"
+      ],
+      "outputFileMapPath" : "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/FlexAIDdSTests.build/output-file-map.json",
+      "outputs" : [
+        {
+          "kind" : "file",
+          "name" : "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/Modules/FlexAIDdSTests.swiftmodule"
+        }
+      ],
+      "prepareForIndexing" : true,
+      "sources" : [
+        "/Users/lp.more/Projects/FlexAIDdS/swift/Tests/FlexAIDdSTests/FleetAggregatorTests.swift",
+        "/Users/lp.more/Projects/FlexAIDdS/swift/Tests/FlexAIDdSTests/FleetSchedulerTests.swift",
+        "/Users/lp.more/Projects/FlexAIDdS/swift/Tests/FlexAIDdSTests/IntelligenceFeatureTests.swift",
+        "/Users/lp.more/Projects/FlexAIDdS/swift/Tests/FlexAIDdSTests/IntelligencePipelineTests.swift",
+        "/Users/lp.more/Projects/FlexAIDdS/swift/Tests/FlexAIDdSTests/StatMechEngineTests.swift",
+        "/Users/lp.more/Projects/FlexAIDdS/swift/Tests/FlexAIDdSTests/ThermoRefereeTests.swift"
+      ],
+      "tempsPath" : "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/FlexAIDdSTests.build",
+      "wholeModuleOptimization" : false
+    },
+    "C.HealthIntegration-arm64-apple-macosx-debug.module" : {
+      "executable" : "/Applications/Xcode-beta.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc",
+      "fileList" : "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/HealthIntegration.build/sources",
+      "importPath" : "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/Modules",
+      "inputs" : [
+        {
+          "kind" : "file",
+          "name" : "/Users/lp.more/Projects/FlexAIDdS/swift/Sources/HealthIntegration/BindingEntropyScore.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/lp.more/Projects/FlexAIDdS/swift/Sources/HealthIntegration/HealthKitManager.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/lp.more/Projects/FlexAIDdS/swift/Sources/HealthIntegration/ResearchKitConsent.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/swift-version-39B54973F684ADAB.txt"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/Modules/FlexAIDdS.swiftmodule"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/HealthIntegration.build/sources"
+        }
+      ],
+      "isLibrary" : true,
+      "moduleName" : "HealthIntegration",
+      "moduleOutputPath" : "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/Modules/HealthIntegration.swiftmodule",
+      "objects" : [
+        "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/HealthIntegration.build/BindingEntropyScore.swift.o",
+        "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/HealthIntegration.build/HealthKitManager.swift.o",
+        "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/HealthIntegration.build/ResearchKitConsent.swift.o"
+      ],
+      "otherArguments" : [
+        "-target",
+        "arm64-apple-macosx14.0",
+        "-incremental",
+        "-enable-batch-mode",
+        "-serialize-diagnostics",
+        "-Onone",
+        "-enable-testing",
+        "-j11",
+        "-DSWIFT_PACKAGE",
+        "-DDEBUG",
+        "-DSWIFT_MODULE_RESOURCE_BUNDLE_UNAVAILABLE",
+        "-Xcc",
+        "-fmodule-map-file=/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/FlexAIDCore.build/module.modulemap",
+        "-Xcc",
+        "-I",
+        "-Xcc",
+        "/Users/lp.more/Projects/FlexAIDdS/swift/Sources/FlexAIDCore/include",
+        "-module-cache-path",
+        "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/ModuleCache",
+        "-parseable-output",
+        "-parse-as-library",
+        "-emit-objc-header",
+        "-emit-objc-header-path",
+        "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/HealthIntegration.build/include/HealthIntegration-Swift.h",
+        "-swift-version",
+        "5",
+        "-Xfrontend",
+        "-experimental-lazy-typecheck",
+        "-Xfrontend",
+        "-experimental-skip-all-function-bodies",
+        "-Xfrontend",
+        "-experimental-allow-module-with-compiler-errors",
+        "-Xfrontend",
+        "-empty-abi-descriptor",
+        "-plugin-path",
+        "/Applications/Xcode-beta.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/host/plugins/testing",
+        "-sdk",
+        "/Applications/Xcode-beta.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.5.sdk",
+        "-F",
+        "/Applications/Xcode-beta.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks",
+        "-I",
+        "/Applications/Xcode-beta.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib",
+        "-L",
+        "/Applications/Xcode-beta.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib",
+        "-g",
+        "-Xcc",
+        "-isysroot",
+        "-Xcc",
+        "/Applications/Xcode-beta.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.5.sdk",
+        "-Xcc",
+        "-F",
+        "-Xcc",
+        "/Applications/Xcode-beta.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks",
+        "-Xcc",
+        "-fPIC",
+        "-Xcc",
+        "-g",
+        "-package-name",
+        "swift"
+      ],
+      "outputFileMapPath" : "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/HealthIntegration.build/output-file-map.json",
+      "outputs" : [
+        {
+          "kind" : "file",
+          "name" : "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/Modules/HealthIntegration.swiftmodule"
+        }
+      ],
+      "prepareForIndexing" : true,
+      "sources" : [
+        "/Users/lp.more/Projects/FlexAIDdS/swift/Sources/HealthIntegration/BindingEntropyScore.swift",
+        "/Users/lp.more/Projects/FlexAIDdS/swift/Sources/HealthIntegration/HealthKitManager.swift",
+        "/Users/lp.more/Projects/FlexAIDdS/swift/Sources/HealthIntegration/ResearchKitConsent.swift"
+      ],
+      "tempsPath" : "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/HealthIntegration.build",
+      "wholeModuleOptimization" : false
+    },
+    "C.Intelligence-arm64-apple-macosx-debug.module" : {
+      "executable" : "/Applications/Xcode-beta.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc",
+      "fileList" : "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/Intelligence.build/sources",
+      "importPath" : "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/Modules",
+      "inputs" : [
+        {
+          "kind" : "file",
+          "name" : "/Users/lp.more/Projects/FlexAIDdS/swift/Sources/Intelligence/BindingModeNarrator.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/lp.more/Projects/FlexAIDdS/swift/Sources/Intelligence/CampaignJournalist.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/lp.more/Projects/FlexAIDdS/swift/Sources/Intelligence/CleftAssessor.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/lp.more/Projects/FlexAIDdS/swift/Sources/Intelligence/ConvergenceCoach.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/lp.more/Projects/FlexAIDdS/swift/Sources/Intelligence/FleetExplainer.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/lp.more/Projects/FlexAIDdS/swift/Sources/Intelligence/HealthEntropyInsight.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/lp.more/Projects/FlexAIDdS/swift/Sources/Intelligence/IntelligenceOracle.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/lp.more/Projects/FlexAIDdS/swift/Sources/Intelligence/IntelligencePipeline.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/lp.more/Projects/FlexAIDdS/swift/Sources/Intelligence/IntelligenceResult.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/lp.more/Projects/FlexAIDdS/swift/Sources/Intelligence/LigandFitCritic.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/lp.more/Projects/FlexAIDdS/swift/Sources/Intelligence/SelectivityAnalyst.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/lp.more/Projects/FlexAIDdS/swift/Sources/Intelligence/ThermoReferee.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/lp.more/Projects/FlexAIDdS/swift/Sources/Intelligence/ThermoRefereeTools.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/lp.more/Projects/FlexAIDdS/swift/Sources/Intelligence/ThermoRefereeTypes.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/lp.more/Projects/FlexAIDdS/swift/Sources/Intelligence/VibrationalInterpreter.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/swift-version-39B54973F684ADAB.txt"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/Modules/FlexAIDdS.swiftmodule"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/Modules/HealthIntegration.swiftmodule"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/Intelligence.build/sources"
+        }
+      ],
+      "isLibrary" : true,
+      "moduleName" : "Intelligence",
+      "moduleOutputPath" : "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/Modules/Intelligence.swiftmodule",
+      "objects" : [
+        "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/Intelligence.build/BindingModeNarrator.swift.o",
+        "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/Intelligence.build/CampaignJournalist.swift.o",
+        "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/Intelligence.build/CleftAssessor.swift.o",
+        "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/Intelligence.build/ConvergenceCoach.swift.o",
+        "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/Intelligence.build/FleetExplainer.swift.o",
+        "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/Intelligence.build/HealthEntropyInsight.swift.o",
+        "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/Intelligence.build/IntelligenceOracle.swift.o",
+        "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/Intelligence.build/IntelligencePipeline.swift.o",
+        "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/Intelligence.build/IntelligenceResult.swift.o",
+        "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/Intelligence.build/LigandFitCritic.swift.o",
+        "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/Intelligence.build/SelectivityAnalyst.swift.o",
+        "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/Intelligence.build/ThermoReferee.swift.o",
+        "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/Intelligence.build/ThermoRefereeTools.swift.o",
+        "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/Intelligence.build/ThermoRefereeTypes.swift.o",
+        "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/Intelligence.build/VibrationalInterpreter.swift.o"
+      ],
+      "otherArguments" : [
+        "-target",
+        "arm64-apple-macosx14.0",
+        "-incremental",
+        "-enable-batch-mode",
+        "-serialize-diagnostics",
+        "-Onone",
+        "-enable-testing",
+        "-j11",
+        "-DSWIFT_PACKAGE",
+        "-DDEBUG",
+        "-DSWIFT_MODULE_RESOURCE_BUNDLE_UNAVAILABLE",
+        "-Xcc",
+        "-fmodule-map-file=/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/FlexAIDCore.build/module.modulemap",
+        "-Xcc",
+        "-I",
+        "-Xcc",
+        "/Users/lp.more/Projects/FlexAIDdS/swift/Sources/FlexAIDCore/include",
+        "-module-cache-path",
+        "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/ModuleCache",
+        "-parseable-output",
+        "-parse-as-library",
+        "-emit-objc-header",
+        "-emit-objc-header-path",
+        "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/Intelligence.build/include/Intelligence-Swift.h",
+        "-swift-version",
+        "5",
+        "-Xfrontend",
+        "-experimental-lazy-typecheck",
+        "-Xfrontend",
+        "-experimental-skip-all-function-bodies",
+        "-Xfrontend",
+        "-experimental-allow-module-with-compiler-errors",
+        "-Xfrontend",
+        "-empty-abi-descriptor",
+        "-plugin-path",
+        "/Applications/Xcode-beta.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/host/plugins/testing",
+        "-sdk",
+        "/Applications/Xcode-beta.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.5.sdk",
+        "-F",
+        "/Applications/Xcode-beta.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks",
+        "-I",
+        "/Applications/Xcode-beta.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib",
+        "-L",
+        "/Applications/Xcode-beta.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib",
+        "-g",
+        "-Xcc",
+        "-isysroot",
+        "-Xcc",
+        "/Applications/Xcode-beta.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.5.sdk",
+        "-Xcc",
+        "-F",
+        "-Xcc",
+        "/Applications/Xcode-beta.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks",
+        "-Xcc",
+        "-fPIC",
+        "-Xcc",
+        "-g",
+        "-package-name",
+        "swift"
+      ],
+      "outputFileMapPath" : "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/Intelligence.build/output-file-map.json",
+      "outputs" : [
+        {
+          "kind" : "file",
+          "name" : "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/Modules/Intelligence.swiftmodule"
+        }
+      ],
+      "prepareForIndexing" : true,
+      "sources" : [
+        "/Users/lp.more/Projects/FlexAIDdS/swift/Sources/Intelligence/BindingModeNarrator.swift",
+        "/Users/lp.more/Projects/FlexAIDdS/swift/Sources/Intelligence/CampaignJournalist.swift",
+        "/Users/lp.more/Projects/FlexAIDdS/swift/Sources/Intelligence/CleftAssessor.swift",
+        "/Users/lp.more/Projects/FlexAIDdS/swift/Sources/Intelligence/ConvergenceCoach.swift",
+        "/Users/lp.more/Projects/FlexAIDdS/swift/Sources/Intelligence/FleetExplainer.swift",
+        "/Users/lp.more/Projects/FlexAIDdS/swift/Sources/Intelligence/HealthEntropyInsight.swift",
+        "/Users/lp.more/Projects/FlexAIDdS/swift/Sources/Intelligence/IntelligenceOracle.swift",
+        "/Users/lp.more/Projects/FlexAIDdS/swift/Sources/Intelligence/IntelligencePipeline.swift",
+        "/Users/lp.more/Projects/FlexAIDdS/swift/Sources/Intelligence/IntelligenceResult.swift",
+        "/Users/lp.more/Projects/FlexAIDdS/swift/Sources/Intelligence/LigandFitCritic.swift",
+        "/Users/lp.more/Projects/FlexAIDdS/swift/Sources/Intelligence/SelectivityAnalyst.swift",
+        "/Users/lp.more/Projects/FlexAIDdS/swift/Sources/Intelligence/ThermoReferee.swift",
+        "/Users/lp.more/Projects/FlexAIDdS/swift/Sources/Intelligence/ThermoRefereeTools.swift",
+        "/Users/lp.more/Projects/FlexAIDdS/swift/Sources/Intelligence/ThermoRefereeTypes.swift",
+        "/Users/lp.more/Projects/FlexAIDdS/swift/Sources/Intelligence/VibrationalInterpreter.swift"
+      ],
+      "tempsPath" : "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/Intelligence.build",
+      "wholeModuleOptimization" : false
+    },
+    "C.MediaIntegration-arm64-apple-macosx-debug.module" : {
+      "executable" : "/Applications/Xcode-beta.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc",
+      "fileList" : "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/MediaIntegration.build/sources",
+      "importPath" : "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/Modules",
+      "inputs" : [
+        {
+          "kind" : "file",
+          "name" : "/Users/lp.more/Projects/FlexAIDdS/swift/Sources/MediaIntegration/FitnessRecommender.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/lp.more/Projects/FlexAIDdS/swift/Sources/MediaIntegration/MusicKitManager.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/swift-version-39B54973F684ADAB.txt"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/Modules/FlexAIDdS.swiftmodule"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/Modules/HealthIntegration.swiftmodule"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/MediaIntegration.build/sources"
+        }
+      ],
+      "isLibrary" : true,
+      "moduleName" : "MediaIntegration",
+      "moduleOutputPath" : "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/Modules/MediaIntegration.swiftmodule",
+      "objects" : [
+        "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/MediaIntegration.build/FitnessRecommender.swift.o",
+        "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/MediaIntegration.build/MusicKitManager.swift.o"
+      ],
+      "otherArguments" : [
+        "-target",
+        "arm64-apple-macosx14.0",
+        "-incremental",
+        "-enable-batch-mode",
+        "-serialize-diagnostics",
+        "-Onone",
+        "-enable-testing",
+        "-j11",
+        "-DSWIFT_PACKAGE",
+        "-DDEBUG",
+        "-DSWIFT_MODULE_RESOURCE_BUNDLE_UNAVAILABLE",
+        "-Xcc",
+        "-fmodule-map-file=/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/FlexAIDCore.build/module.modulemap",
+        "-Xcc",
+        "-I",
+        "-Xcc",
+        "/Users/lp.more/Projects/FlexAIDdS/swift/Sources/FlexAIDCore/include",
+        "-module-cache-path",
+        "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/ModuleCache",
+        "-parseable-output",
+        "-parse-as-library",
+        "-emit-objc-header",
+        "-emit-objc-header-path",
+        "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/MediaIntegration.build/include/MediaIntegration-Swift.h",
+        "-swift-version",
+        "5",
+        "-Xfrontend",
+        "-experimental-lazy-typecheck",
+        "-Xfrontend",
+        "-experimental-skip-all-function-bodies",
+        "-Xfrontend",
+        "-experimental-allow-module-with-compiler-errors",
+        "-Xfrontend",
+        "-empty-abi-descriptor",
+        "-plugin-path",
+        "/Applications/Xcode-beta.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/host/plugins/testing",
+        "-sdk",
+        "/Applications/Xcode-beta.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.5.sdk",
+        "-F",
+        "/Applications/Xcode-beta.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks",
+        "-I",
+        "/Applications/Xcode-beta.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib",
+        "-L",
+        "/Applications/Xcode-beta.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib",
+        "-g",
+        "-Xcc",
+        "-isysroot",
+        "-Xcc",
+        "/Applications/Xcode-beta.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.5.sdk",
+        "-Xcc",
+        "-F",
+        "-Xcc",
+        "/Applications/Xcode-beta.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks",
+        "-Xcc",
+        "-fPIC",
+        "-Xcc",
+        "-g",
+        "-package-name",
+        "swift"
+      ],
+      "outputFileMapPath" : "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/MediaIntegration.build/output-file-map.json",
+      "outputs" : [
+        {
+          "kind" : "file",
+          "name" : "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/Modules/MediaIntegration.swiftmodule"
+        }
+      ],
+      "prepareForIndexing" : true,
+      "sources" : [
+        "/Users/lp.more/Projects/FlexAIDdS/swift/Sources/MediaIntegration/FitnessRecommender.swift",
+        "/Users/lp.more/Projects/FlexAIDdS/swift/Sources/MediaIntegration/MusicKitManager.swift"
+      ],
+      "tempsPath" : "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/MediaIntegration.build",
+      "wholeModuleOptimization" : false
+    }
+  },
+  "swiftFrontendCommands" : {
+
+  },
+  "swiftTargetScanArgs" : {
+    "FleetScheduler" : [
+      "/Applications/Xcode-beta.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc",
+      "-module-name",
+      "FleetScheduler",
+      "-package-name",
+      "swift",
+      "-c",
+      "/Users/lp.more/Projects/FlexAIDdS/swift/Sources/FleetScheduler/DeviceCapability.swift",
+      "/Users/lp.more/Projects/FlexAIDdS/swift/Sources/FleetScheduler/FleetAggregator.swift",
+      "/Users/lp.more/Projects/FlexAIDdS/swift/Sources/FleetScheduler/FleetScheduler.swift",
+      "/Users/lp.more/Projects/FlexAIDdS/swift/Sources/FleetScheduler/WorkChunk.swift",
+      "-I",
+      "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/Modules",
+      "-target",
+      "arm64-apple-macosx14.0",
+      "-incremental",
+      "-enable-batch-mode",
+      "-serialize-diagnostics",
+      "-Onone",
+      "-enable-testing",
+      "-j11",
+      "-DSWIFT_PACKAGE",
+      "-DDEBUG",
+      "-DSWIFT_MODULE_RESOURCE_BUNDLE_UNAVAILABLE",
+      "-Xcc",
+      "-fmodule-map-file=/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/FlexAIDCore.build/module.modulemap",
+      "-Xcc",
+      "-I",
+      "-Xcc",
+      "/Users/lp.more/Projects/FlexAIDdS/swift/Sources/FlexAIDCore/include",
+      "-module-cache-path",
+      "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/ModuleCache",
+      "-parseable-output",
+      "-parse-as-library",
+      "-emit-objc-header",
+      "-emit-objc-header-path",
+      "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/FleetScheduler.build/include/FleetScheduler-Swift.h",
+      "-swift-version",
+      "5",
+      "-Xfrontend",
+      "-experimental-lazy-typecheck",
+      "-Xfrontend",
+      "-experimental-skip-all-function-bodies",
+      "-Xfrontend",
+      "-experimental-allow-module-with-compiler-errors",
+      "-Xfrontend",
+      "-empty-abi-descriptor",
+      "-plugin-path",
+      "/Applications/Xcode-beta.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/host/plugins/testing",
+      "-sdk",
+      "/Applications/Xcode-beta.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.5.sdk",
+      "-F",
+      "/Applications/Xcode-beta.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks",
+      "-I",
+      "/Applications/Xcode-beta.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib",
+      "-L",
+      "/Applications/Xcode-beta.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib",
+      "-g",
+      "-Xcc",
+      "-isysroot",
+      "-Xcc",
+      "/Applications/Xcode-beta.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.5.sdk",
+      "-Xcc",
+      "-F",
+      "-Xcc",
+      "/Applications/Xcode-beta.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks",
+      "-Xcc",
+      "-fPIC",
+      "-Xcc",
+      "-g",
+      "-package-name",
+      "swift",
+      "-driver-use-frontend-path",
+      "/Applications/Xcode-beta.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc"
+    ],
+    "FlexAIDdS" : [
+      "/Applications/Xcode-beta.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc",
+      "-module-name",
+      "FlexAIDdS",
+      "-package-name",
+      "swift",
+      "-c",
+      "/Users/lp.more/Projects/FlexAIDdS/swift/Sources/FlexAIDdS/DockingRunner.swift",
+      "/Users/lp.more/Projects/FlexAIDdS/swift/Sources/FlexAIDdS/FlexAIDRunner.swift",
+      "/Users/lp.more/Projects/FlexAIDdS/swift/Sources/FlexAIDdS/Models.swift",
+      "/Users/lp.more/Projects/FlexAIDdS/swift/Sources/FlexAIDdS/ThermodynamicResult.swift",
+      "-I",
+      "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/Modules",
+      "-target",
+      "arm64-apple-macosx14.0",
+      "-incremental",
+      "-enable-batch-mode",
+      "-serialize-diagnostics",
+      "-Onone",
+      "-enable-testing",
+      "-j11",
+      "-DSWIFT_PACKAGE",
+      "-DDEBUG",
+      "-DSWIFT_MODULE_RESOURCE_BUNDLE_UNAVAILABLE",
+      "-Xcc",
+      "-fmodule-map-file=/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/FlexAIDCore.build/module.modulemap",
+      "-Xcc",
+      "-I",
+      "-Xcc",
+      "/Users/lp.more/Projects/FlexAIDdS/swift/Sources/FlexAIDCore/include",
+      "-module-cache-path",
+      "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/ModuleCache",
+      "-parseable-output",
+      "-parse-as-library",
+      "-emit-objc-header",
+      "-emit-objc-header-path",
+      "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/FlexAIDdS.build/include/FlexAIDdS-Swift.h",
+      "-swift-version",
+      "5",
+      "-Xfrontend",
+      "-experimental-lazy-typecheck",
+      "-Xfrontend",
+      "-experimental-skip-all-function-bodies",
+      "-Xfrontend",
+      "-experimental-allow-module-with-compiler-errors",
+      "-Xfrontend",
+      "-empty-abi-descriptor",
+      "-plugin-path",
+      "/Applications/Xcode-beta.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/host/plugins/testing",
+      "-sdk",
+      "/Applications/Xcode-beta.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.5.sdk",
+      "-F",
+      "/Applications/Xcode-beta.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks",
+      "-I",
+      "/Applications/Xcode-beta.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib",
+      "-L",
+      "/Applications/Xcode-beta.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib",
+      "-g",
+      "-Xcc",
+      "-isysroot",
+      "-Xcc",
+      "/Applications/Xcode-beta.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.5.sdk",
+      "-Xcc",
+      "-F",
+      "-Xcc",
+      "/Applications/Xcode-beta.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks",
+      "-Xcc",
+      "-fPIC",
+      "-Xcc",
+      "-g",
+      "-package-name",
+      "swift",
+      "-driver-use-frontend-path",
+      "/Applications/Xcode-beta.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc"
+    ],
+    "FlexAIDdSPackageTests" : [
+      "/Applications/Xcode-beta.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc",
+      "-module-name",
+      "FlexAIDdSPackageTests",
+      "-package-name",
+      "swift",
+      "-c",
+      "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/FlexAIDdSPackageTests.derived/runner.swift",
+      "-I",
+      "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/Modules",
+      "-target",
+      "arm64-apple-macosx14.0",
+      "-incremental",
+      "-enable-batch-mode",
+      "-serialize-diagnostics",
+      "-Onone",
+      "-enable-testing",
+      "-Xfrontend",
+      "-enable-cross-import-overlays",
+      "-j11",
+      "-DSWIFT_PACKAGE",
+      "-DDEBUG",
+      "-DSWIFT_MODULE_RESOURCE_BUNDLE_UNAVAILABLE",
+      "-Xcc",
+      "-fmodule-map-file=/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/FlexAIDCore.build/module.modulemap",
+      "-Xcc",
+      "-I",
+      "-Xcc",
+      "/Users/lp.more/Projects/FlexAIDdS/swift/Sources/FlexAIDCore/include",
+      "-module-cache-path",
+      "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/ModuleCache",
+      "-parseable-output",
+      "-parse-as-library",
+      "-emit-objc-header",
+      "-emit-objc-header-path",
+      "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/FlexAIDdSPackageTests.build/include/FlexAIDdSPackageTests-Swift.h",
+      "-Xfrontend",
+      "-experimental-lazy-typecheck",
+      "-Xfrontend",
+      "-experimental-skip-all-function-bodies",
+      "-Xfrontend",
+      "-experimental-allow-module-with-compiler-errors",
+      "-Xfrontend",
+      "-empty-abi-descriptor",
+      "-plugin-path",
+      "/Applications/Xcode-beta.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/host/plugins/testing",
+      "-sdk",
+      "/Applications/Xcode-beta.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.5.sdk",
+      "-F",
+      "/Applications/Xcode-beta.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks",
+      "-I",
+      "/Applications/Xcode-beta.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib",
+      "-L",
+      "/Applications/Xcode-beta.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib",
+      "-g",
+      "-Xcc",
+      "-isysroot",
+      "-Xcc",
+      "/Applications/Xcode-beta.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.5.sdk",
+      "-Xcc",
+      "-F",
+      "-Xcc",
+      "/Applications/Xcode-beta.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks",
+      "-Xcc",
+      "-fPIC",
+      "-Xcc",
+      "-g",
+      "-package-name",
+      "swift",
+      "-driver-use-frontend-path",
+      "/Applications/Xcode-beta.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc"
+    ],
+    "FlexAIDdSTests" : [
+      "/Applications/Xcode-beta.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc",
+      "-module-name",
+      "FlexAIDdSTests",
+      "-package-name",
+      "swift",
+      "-c",
+      "/Users/lp.more/Projects/FlexAIDdS/swift/Tests/FlexAIDdSTests/FleetAggregatorTests.swift",
+      "/Users/lp.more/Projects/FlexAIDdS/swift/Tests/FlexAIDdSTests/FleetSchedulerTests.swift",
+      "/Users/lp.more/Projects/FlexAIDdS/swift/Tests/FlexAIDdSTests/IntelligenceFeatureTests.swift",
+      "/Users/lp.more/Projects/FlexAIDdS/swift/Tests/FlexAIDdSTests/IntelligencePipelineTests.swift",
+      "/Users/lp.more/Projects/FlexAIDdS/swift/Tests/FlexAIDdSTests/StatMechEngineTests.swift",
+      "/Users/lp.more/Projects/FlexAIDdS/swift/Tests/FlexAIDdSTests/ThermoRefereeTests.swift",
+      "-I",
+      "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/Modules",
+      "-target",
+      "arm64-apple-macosx14.0",
+      "-incremental",
+      "-enable-batch-mode",
+      "-serialize-diagnostics",
+      "-Onone",
+      "-enable-testing",
+      "-Xfrontend",
+      "-enable-cross-import-overlays",
+      "-j11",
+      "-DSWIFT_PACKAGE",
+      "-DDEBUG",
+      "-DSWIFT_MODULE_RESOURCE_BUNDLE_UNAVAILABLE",
+      "-Xcc",
+      "-fmodule-map-file=/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/FlexAIDCore.build/module.modulemap",
+      "-Xcc",
+      "-I",
+      "-Xcc",
+      "/Users/lp.more/Projects/FlexAIDdS/swift/Sources/FlexAIDCore/include",
+      "-module-cache-path",
+      "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/ModuleCache",
+      "-parseable-output",
+      "-parse-as-library",
+      "-swift-version",
+      "5",
+      "-Xfrontend",
+      "-experimental-lazy-typecheck",
+      "-Xfrontend",
+      "-experimental-skip-all-function-bodies",
+      "-Xfrontend",
+      "-experimental-allow-module-with-compiler-errors",
+      "-Xfrontend",
+      "-empty-abi-descriptor",
+      "-plugin-path",
+      "/Applications/Xcode-beta.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/host/plugins/testing",
+      "-sdk",
+      "/Applications/Xcode-beta.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.5.sdk",
+      "-F",
+      "/Applications/Xcode-beta.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks",
+      "-I",
+      "/Applications/Xcode-beta.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib",
+      "-L",
+      "/Applications/Xcode-beta.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib",
+      "-g",
+      "-Xcc",
+      "-isysroot",
+      "-Xcc",
+      "/Applications/Xcode-beta.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.5.sdk",
+      "-Xcc",
+      "-F",
+      "-Xcc",
+      "/Applications/Xcode-beta.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks",
+      "-Xcc",
+      "-fPIC",
+      "-Xcc",
+      "-g",
+      "-package-name",
+      "swift",
+      "-driver-use-frontend-path",
+      "/Applications/Xcode-beta.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc"
+    ],
+    "HealthIntegration" : [
+      "/Applications/Xcode-beta.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc",
+      "-module-name",
+      "HealthIntegration",
+      "-package-name",
+      "swift",
+      "-c",
+      "/Users/lp.more/Projects/FlexAIDdS/swift/Sources/HealthIntegration/BindingEntropyScore.swift",
+      "/Users/lp.more/Projects/FlexAIDdS/swift/Sources/HealthIntegration/HealthKitManager.swift",
+      "/Users/lp.more/Projects/FlexAIDdS/swift/Sources/HealthIntegration/ResearchKitConsent.swift",
+      "-I",
+      "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/Modules",
+      "-target",
+      "arm64-apple-macosx14.0",
+      "-incremental",
+      "-enable-batch-mode",
+      "-serialize-diagnostics",
+      "-Onone",
+      "-enable-testing",
+      "-j11",
+      "-DSWIFT_PACKAGE",
+      "-DDEBUG",
+      "-DSWIFT_MODULE_RESOURCE_BUNDLE_UNAVAILABLE",
+      "-Xcc",
+      "-fmodule-map-file=/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/FlexAIDCore.build/module.modulemap",
+      "-Xcc",
+      "-I",
+      "-Xcc",
+      "/Users/lp.more/Projects/FlexAIDdS/swift/Sources/FlexAIDCore/include",
+      "-module-cache-path",
+      "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/ModuleCache",
+      "-parseable-output",
+      "-parse-as-library",
+      "-emit-objc-header",
+      "-emit-objc-header-path",
+      "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/HealthIntegration.build/include/HealthIntegration-Swift.h",
+      "-swift-version",
+      "5",
+      "-Xfrontend",
+      "-experimental-lazy-typecheck",
+      "-Xfrontend",
+      "-experimental-skip-all-function-bodies",
+      "-Xfrontend",
+      "-experimental-allow-module-with-compiler-errors",
+      "-Xfrontend",
+      "-empty-abi-descriptor",
+      "-plugin-path",
+      "/Applications/Xcode-beta.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/host/plugins/testing",
+      "-sdk",
+      "/Applications/Xcode-beta.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.5.sdk",
+      "-F",
+      "/Applications/Xcode-beta.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks",
+      "-I",
+      "/Applications/Xcode-beta.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib",
+      "-L",
+      "/Applications/Xcode-beta.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib",
+      "-g",
+      "-Xcc",
+      "-isysroot",
+      "-Xcc",
+      "/Applications/Xcode-beta.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.5.sdk",
+      "-Xcc",
+      "-F",
+      "-Xcc",
+      "/Applications/Xcode-beta.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks",
+      "-Xcc",
+      "-fPIC",
+      "-Xcc",
+      "-g",
+      "-package-name",
+      "swift",
+      "-driver-use-frontend-path",
+      "/Applications/Xcode-beta.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc"
+    ],
+    "Intelligence" : [
+      "/Applications/Xcode-beta.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc",
+      "-module-name",
+      "Intelligence",
+      "-package-name",
+      "swift",
+      "-c",
+      "/Users/lp.more/Projects/FlexAIDdS/swift/Sources/Intelligence/BindingModeNarrator.swift",
+      "/Users/lp.more/Projects/FlexAIDdS/swift/Sources/Intelligence/CampaignJournalist.swift",
+      "/Users/lp.more/Projects/FlexAIDdS/swift/Sources/Intelligence/CleftAssessor.swift",
+      "/Users/lp.more/Projects/FlexAIDdS/swift/Sources/Intelligence/ConvergenceCoach.swift",
+      "/Users/lp.more/Projects/FlexAIDdS/swift/Sources/Intelligence/FleetExplainer.swift",
+      "/Users/lp.more/Projects/FlexAIDdS/swift/Sources/Intelligence/HealthEntropyInsight.swift",
+      "/Users/lp.more/Projects/FlexAIDdS/swift/Sources/Intelligence/IntelligenceOracle.swift",
+      "/Users/lp.more/Projects/FlexAIDdS/swift/Sources/Intelligence/IntelligencePipeline.swift",
+      "/Users/lp.more/Projects/FlexAIDdS/swift/Sources/Intelligence/IntelligenceResult.swift",
+      "/Users/lp.more/Projects/FlexAIDdS/swift/Sources/Intelligence/LigandFitCritic.swift",
+      "/Users/lp.more/Projects/FlexAIDdS/swift/Sources/Intelligence/SelectivityAnalyst.swift",
+      "/Users/lp.more/Projects/FlexAIDdS/swift/Sources/Intelligence/ThermoReferee.swift",
+      "/Users/lp.more/Projects/FlexAIDdS/swift/Sources/Intelligence/ThermoRefereeTools.swift",
+      "/Users/lp.more/Projects/FlexAIDdS/swift/Sources/Intelligence/ThermoRefereeTypes.swift",
+      "/Users/lp.more/Projects/FlexAIDdS/swift/Sources/Intelligence/VibrationalInterpreter.swift",
+      "-I",
+      "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/Modules",
+      "-target",
+      "arm64-apple-macosx14.0",
+      "-incremental",
+      "-enable-batch-mode",
+      "-serialize-diagnostics",
+      "-Onone",
+      "-enable-testing",
+      "-j11",
+      "-DSWIFT_PACKAGE",
+      "-DDEBUG",
+      "-DSWIFT_MODULE_RESOURCE_BUNDLE_UNAVAILABLE",
+      "-Xcc",
+      "-fmodule-map-file=/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/FlexAIDCore.build/module.modulemap",
+      "-Xcc",
+      "-I",
+      "-Xcc",
+      "/Users/lp.more/Projects/FlexAIDdS/swift/Sources/FlexAIDCore/include",
+      "-module-cache-path",
+      "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/ModuleCache",
+      "-parseable-output",
+      "-parse-as-library",
+      "-emit-objc-header",
+      "-emit-objc-header-path",
+      "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/Intelligence.build/include/Intelligence-Swift.h",
+      "-swift-version",
+      "5",
+      "-Xfrontend",
+      "-experimental-lazy-typecheck",
+      "-Xfrontend",
+      "-experimental-skip-all-function-bodies",
+      "-Xfrontend",
+      "-experimental-allow-module-with-compiler-errors",
+      "-Xfrontend",
+      "-empty-abi-descriptor",
+      "-plugin-path",
+      "/Applications/Xcode-beta.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/host/plugins/testing",
+      "-sdk",
+      "/Applications/Xcode-beta.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.5.sdk",
+      "-F",
+      "/Applications/Xcode-beta.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks",
+      "-I",
+      "/Applications/Xcode-beta.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib",
+      "-L",
+      "/Applications/Xcode-beta.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib",
+      "-g",
+      "-Xcc",
+      "-isysroot",
+      "-Xcc",
+      "/Applications/Xcode-beta.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.5.sdk",
+      "-Xcc",
+      "-F",
+      "-Xcc",
+      "/Applications/Xcode-beta.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks",
+      "-Xcc",
+      "-fPIC",
+      "-Xcc",
+      "-g",
+      "-package-name",
+      "swift",
+      "-driver-use-frontend-path",
+      "/Applications/Xcode-beta.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc"
+    ],
+    "MediaIntegration" : [
+      "/Applications/Xcode-beta.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc",
+      "-module-name",
+      "MediaIntegration",
+      "-package-name",
+      "swift",
+      "-c",
+      "/Users/lp.more/Projects/FlexAIDdS/swift/Sources/MediaIntegration/FitnessRecommender.swift",
+      "/Users/lp.more/Projects/FlexAIDdS/swift/Sources/MediaIntegration/MusicKitManager.swift",
+      "-I",
+      "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/Modules",
+      "-target",
+      "arm64-apple-macosx14.0",
+      "-incremental",
+      "-enable-batch-mode",
+      "-serialize-diagnostics",
+      "-Onone",
+      "-enable-testing",
+      "-j11",
+      "-DSWIFT_PACKAGE",
+      "-DDEBUG",
+      "-DSWIFT_MODULE_RESOURCE_BUNDLE_UNAVAILABLE",
+      "-Xcc",
+      "-fmodule-map-file=/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/FlexAIDCore.build/module.modulemap",
+      "-Xcc",
+      "-I",
+      "-Xcc",
+      "/Users/lp.more/Projects/FlexAIDdS/swift/Sources/FlexAIDCore/include",
+      "-module-cache-path",
+      "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/ModuleCache",
+      "-parseable-output",
+      "-parse-as-library",
+      "-emit-objc-header",
+      "-emit-objc-header-path",
+      "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/MediaIntegration.build/include/MediaIntegration-Swift.h",
+      "-swift-version",
+      "5",
+      "-Xfrontend",
+      "-experimental-lazy-typecheck",
+      "-Xfrontend",
+      "-experimental-skip-all-function-bodies",
+      "-Xfrontend",
+      "-experimental-allow-module-with-compiler-errors",
+      "-Xfrontend",
+      "-empty-abi-descriptor",
+      "-plugin-path",
+      "/Applications/Xcode-beta.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/host/plugins/testing",
+      "-sdk",
+      "/Applications/Xcode-beta.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.5.sdk",
+      "-F",
+      "/Applications/Xcode-beta.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks",
+      "-I",
+      "/Applications/Xcode-beta.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib",
+      "-L",
+      "/Applications/Xcode-beta.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib",
+      "-g",
+      "-Xcc",
+      "-isysroot",
+      "-Xcc",
+      "/Applications/Xcode-beta.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.5.sdk",
+      "-Xcc",
+      "-F",
+      "-Xcc",
+      "/Applications/Xcode-beta.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks",
+      "-Xcc",
+      "-fPIC",
+      "-Xcc",
+      "-g",
+      "-package-name",
+      "swift",
+      "-driver-use-frontend-path",
+      "/Applications/Xcode-beta.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc"
+    ]
+  },
+  "targetDependencyMap" : {
+    "FleetScheduler" : [
+      "Intelligence",
+      "HealthIntegration",
+      "FlexAIDdS",
+      "FlexAIDCore"
+    ],
+    "FlexAIDCore" : [
+
+    ],
+    "FlexAIDdS" : [
+      "FlexAIDCore"
+    ],
+    "FlexAIDdSPackageTests" : [
+      "FlexAIDdSTests",
+      "FleetScheduler",
+      "Intelligence",
+      "HealthIntegration",
+      "FlexAIDdS",
+      "FlexAIDCore"
+    ],
+    "FlexAIDdSTests" : [
+      "FleetScheduler",
+      "Intelligence",
+      "HealthIntegration",
+      "FlexAIDdS",
+      "FlexAIDCore"
+    ],
+    "HealthIntegration" : [
+      "FlexAIDdS",
+      "FlexAIDCore"
+    ],
+    "Intelligence" : [
+      "HealthIntegration",
+      "FlexAIDdS",
+      "FlexAIDCore"
+    ],
+    "MediaIntegration" : [
+      "HealthIntegration",
+      "FlexAIDdS",
+      "FlexAIDCore"
+    ]
+  },
+  "testDiscoveryCommands" : {
+
+  },
+  "testEntryPointCommands" : {
+
+  },
+  "traitConfiguration" : {
+    "default" : {
+
+    }
+  },
+  "writeCommands" : {
+    "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/FleetScheduler.build/sources" : {
+      "alwaysOutOfDate" : false,
+      "inputs" : [
+        {
+          "kind" : "virtual",
+          "name" : "<sources-file-list>"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/lp.more/Projects/FlexAIDdS/swift/Sources/FleetScheduler/DeviceCapability.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/lp.more/Projects/FlexAIDdS/swift/Sources/FleetScheduler/FleetAggregator.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/lp.more/Projects/FlexAIDdS/swift/Sources/FleetScheduler/FleetScheduler.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/lp.more/Projects/FlexAIDdS/swift/Sources/FleetScheduler/WorkChunk.swift"
+        }
+      ],
+      "outputFilePath" : "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/FleetScheduler.build/sources"
+    },
+    "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/FlexAIDdS.build/sources" : {
+      "alwaysOutOfDate" : false,
+      "inputs" : [
+        {
+          "kind" : "virtual",
+          "name" : "<sources-file-list>"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/lp.more/Projects/FlexAIDdS/swift/Sources/FlexAIDdS/DockingRunner.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/lp.more/Projects/FlexAIDdS/swift/Sources/FlexAIDdS/FlexAIDRunner.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/lp.more/Projects/FlexAIDdS/swift/Sources/FlexAIDdS/Models.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/lp.more/Projects/FlexAIDdS/swift/Sources/FlexAIDdS/ThermodynamicResult.swift"
+        }
+      ],
+      "outputFilePath" : "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/FlexAIDdS.build/sources"
+    },
+    "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/FlexAIDdSPackageTests.build/sources" : {
+      "alwaysOutOfDate" : false,
+      "inputs" : [
+        {
+          "kind" : "virtual",
+          "name" : "<sources-file-list>"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/FlexAIDdSPackageTests.derived/runner.swift"
+        }
+      ],
+      "outputFilePath" : "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/FlexAIDdSPackageTests.build/sources"
+    },
+    "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/FlexAIDdSTests.build/sources" : {
+      "alwaysOutOfDate" : false,
+      "inputs" : [
+        {
+          "kind" : "virtual",
+          "name" : "<sources-file-list>"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/lp.more/Projects/FlexAIDdS/swift/Tests/FlexAIDdSTests/FleetAggregatorTests.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/lp.more/Projects/FlexAIDdS/swift/Tests/FlexAIDdSTests/FleetSchedulerTests.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/lp.more/Projects/FlexAIDdS/swift/Tests/FlexAIDdSTests/IntelligenceFeatureTests.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/lp.more/Projects/FlexAIDdS/swift/Tests/FlexAIDdSTests/IntelligencePipelineTests.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/lp.more/Projects/FlexAIDdS/swift/Tests/FlexAIDdSTests/StatMechEngineTests.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/lp.more/Projects/FlexAIDdS/swift/Tests/FlexAIDdSTests/ThermoRefereeTests.swift"
+        }
+      ],
+      "outputFilePath" : "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/FlexAIDdSTests.build/sources"
+    },
+    "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/HealthIntegration.build/sources" : {
+      "alwaysOutOfDate" : false,
+      "inputs" : [
+        {
+          "kind" : "virtual",
+          "name" : "<sources-file-list>"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/lp.more/Projects/FlexAIDdS/swift/Sources/HealthIntegration/BindingEntropyScore.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/lp.more/Projects/FlexAIDdS/swift/Sources/HealthIntegration/HealthKitManager.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/lp.more/Projects/FlexAIDdS/swift/Sources/HealthIntegration/ResearchKitConsent.swift"
+        }
+      ],
+      "outputFilePath" : "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/HealthIntegration.build/sources"
+    },
+    "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/Intelligence.build/sources" : {
+      "alwaysOutOfDate" : false,
+      "inputs" : [
+        {
+          "kind" : "virtual",
+          "name" : "<sources-file-list>"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/lp.more/Projects/FlexAIDdS/swift/Sources/Intelligence/BindingModeNarrator.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/lp.more/Projects/FlexAIDdS/swift/Sources/Intelligence/CampaignJournalist.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/lp.more/Projects/FlexAIDdS/swift/Sources/Intelligence/CleftAssessor.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/lp.more/Projects/FlexAIDdS/swift/Sources/Intelligence/ConvergenceCoach.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/lp.more/Projects/FlexAIDdS/swift/Sources/Intelligence/FleetExplainer.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/lp.more/Projects/FlexAIDdS/swift/Sources/Intelligence/HealthEntropyInsight.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/lp.more/Projects/FlexAIDdS/swift/Sources/Intelligence/IntelligenceOracle.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/lp.more/Projects/FlexAIDdS/swift/Sources/Intelligence/IntelligencePipeline.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/lp.more/Projects/FlexAIDdS/swift/Sources/Intelligence/IntelligenceResult.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/lp.more/Projects/FlexAIDdS/swift/Sources/Intelligence/LigandFitCritic.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/lp.more/Projects/FlexAIDdS/swift/Sources/Intelligence/SelectivityAnalyst.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/lp.more/Projects/FlexAIDdS/swift/Sources/Intelligence/ThermoReferee.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/lp.more/Projects/FlexAIDdS/swift/Sources/Intelligence/ThermoRefereeTools.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/lp.more/Projects/FlexAIDdS/swift/Sources/Intelligence/ThermoRefereeTypes.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/lp.more/Projects/FlexAIDdS/swift/Sources/Intelligence/VibrationalInterpreter.swift"
+        }
+      ],
+      "outputFilePath" : "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/Intelligence.build/sources"
+    },
+    "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/MediaIntegration.build/sources" : {
+      "alwaysOutOfDate" : false,
+      "inputs" : [
+        {
+          "kind" : "virtual",
+          "name" : "<sources-file-list>"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/lp.more/Projects/FlexAIDdS/swift/Sources/MediaIntegration/FitnessRecommender.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/lp.more/Projects/FlexAIDdS/swift/Sources/MediaIntegration/MusicKitManager.swift"
+        }
+      ],
+      "outputFilePath" : "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/MediaIntegration.build/sources"
+    },
+    "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/swift-version-39B54973F684ADAB.txt" : {
+      "alwaysOutOfDate" : true,
+      "inputs" : [
+        {
+          "kind" : "virtual",
+          "name" : "<swift-get-version>"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Applications/Xcode-beta.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc"
+        }
+      ],
+      "outputFilePath" : "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/swift-version-39B54973F684ADAB.txt"
+    }
+  }
+}

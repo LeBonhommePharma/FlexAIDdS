@@ -15,6 +15,7 @@
 #include <string>
 #include <cmath>
 #include <mutex>
+#include <atomic>
 
 namespace shannon_thermo {
 
@@ -65,7 +66,7 @@ public:
 private:
     ShannonEnergyMatrix() = default;
     std::vector<double> matrix_; // SHANNON_BINS × SHANNON_BINS
-    bool initialised_ = false;
+    std::atomic<bool> initialised_{false};
     mutable std::once_flag init_once_;   // serialises initialise() across threads
     mutable std::mutex     mtx_;         // guards initialise_from_*() races
 };

@@ -248,7 +248,7 @@ statmech::StatMechEngine ParallelDockManager::get_global_engine() const {
         if (r.energies.empty()) continue;
         global.merge_samples(
             std::span<const double>(r.energies),
-            std::span<const int>(r.multiplicities)
+            std::span<const double>(r.multiplicities)
         );
     }
 

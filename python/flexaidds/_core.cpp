@@ -127,18 +127,18 @@ PYBIND11_MODULE(_core, m) {
             },
             py::arg("replica_a"), py::arg("replica_b"),
             "Attempt Metropolis swap between two replicas (returns True if accepted)")
-        .def_static("wham",
+        .def_static("boltzmann_pmf",
             [](const std::vector<double>& energies,
                const std::vector<double>& coordinates,
                double temperature, int n_bins, int max_iter, double tolerance) {
                 py::gil_scoped_release release;
-                return StatMechEngine::wham(energies, coordinates,
+                return StatMechEngine::boltzmann_pmf(energies, coordinates,
                     temperature, n_bins, max_iter, tolerance);
             },
             py::arg("energies"), py::arg("coordinates"),
             py::arg("temperature"), py::arg("n_bins"),
             py::arg("max_iter") = 1000, py::arg("tolerance") = 1e-6,
-            "WHAM free energy profile along a reaction coordinate")
+            "Boltzmann-reweighted PMF along a reaction coordinate")
         .def_static("thermodynamic_integration",
             [](const std::vector<TIPoint>& points) {
                 py::gil_scoped_release release;

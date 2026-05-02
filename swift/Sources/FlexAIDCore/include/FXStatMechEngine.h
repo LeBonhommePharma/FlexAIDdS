@@ -49,11 +49,14 @@ double fx_statmech_helmholtz(const double* energies, int count, double temperatu
 // Thermodynamic integration via trapezoidal rule
 double fx_statmech_thermodynamic_integration(const FXTIPoint* points, int count);
 
-// WHAM: weighted histogram analysis
+// Boltzmann-reweighted PMF (free energy profile along a reaction coordinate)
 // Returns heap-allocated array; caller must free via fx_free_wham_bins()
-FXWHAMBin* fx_statmech_wham(const double* energies, const double* coordinates,
-                             int count, double temperature, int n_bins,
-                             int max_iter, double tolerance, int* out_count);
+FXWHAMBin* fx_statmech_boltzmann_pmf(const double* energies, const double* coordinates,
+                                      int count, double temperature, int n_bins,
+                                      int max_iter, double tolerance, int* out_count);
+
+// Backward-compatible alias
+#define fx_statmech_wham fx_statmech_boltzmann_pmf
 
 // ─── Accessors ──────────────────────────────────────────────────────────────
 

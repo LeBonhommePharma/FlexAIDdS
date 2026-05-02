@@ -1,0 +1,4 @@
+module FlexAIDCore {
+    umbrella header "/Users/lp.more/Projects/FlexAIDdS/swift/Sources/FlexAIDCore/include/FlexAIDCore.h"
+    export *
+}

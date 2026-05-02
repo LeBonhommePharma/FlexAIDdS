@@ -198,6 +198,8 @@ class BindingPopulation
 		 	/// ΔG matrix between all pairs of binding modes (upper triangle, row-major)
 		 	std::vector<std::vector<double>> get_deltaG_matrix() const;
 		 	// ═══ PUBLIC ACCESSORS (for bindings) ═══
+		 	// Returns insertion order; call output_Population() or use indexed
+		 	// get_binding_mode() for energy-sorted access.
 		 	const std::vector<BindingMode>& get_binding_modes() const { return BindingModes; }
 
 		 	// ═══ POPULATION-LEVEL SHANNON ENTROPY ═══

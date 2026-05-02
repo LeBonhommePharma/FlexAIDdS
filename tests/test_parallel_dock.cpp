@@ -220,7 +220,7 @@ TEST(StatMechMerge, SerializeRoundTrip) {
     statmech::StatMechEngine reconstructed(300.0);
     reconstructed.merge_samples(
         std::span<const double>(energies),
-        std::span<const int>(mults)
+        std::span<const double>(mults)
     );
 
     auto td_orig = orig.compute();
