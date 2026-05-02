@@ -50,7 +50,9 @@ void ShannonEnergyMatrix::initialise() {
     // body executes exactly once, while readers see initialised_ = true
     // only after the matrix has been fully populated.
     std::call_once(init_once_, [this]() {
-        std::lock_guard<std::mutex> lk(mtx_);
+        // No mutex needed: call_once guarantees single-thread execution,
+        // and lookup() does not acquire mtx_ so the guard provides no
+        // additional protection against concurrent readers.
         matrix_.resize(SHANNON_BINS * SHANNON_BINS);
 
         std::mt19937 rng(42);
@@ -311,18 +313,25 @@ FullThermoResult run_shannon_thermo_stack(
     double                          base_deltaG,
     double                          temperature_K)
 {
+    // Conformational Shannon entropy of the Boltzmann distribution:
+    //     H = -Σ_i w_i · ln(w_i)        (nats)
+    //     S_conf = k_B · H              (kcal/mol·K)
+    //
+    // Previously this code histogrammed the distribution of −log(w_i) values
+    // and called compute_shannon_entropy() on that — which gives the entropy
+    // of the binned log-weight distribution, NOT the conformational entropy
+    // of the underlying Boltzmann distribution. The two differ by an
+    // arbitrary binning factor and have no thermodynamic interpretation.
     auto weights = stat_engine.boltzmann_weights();
-    std::vector<double> log_weights;
-    log_weights.reserve(weights.size());
+    double S_conf_nats = 0.0;
     for (double w : weights)
-        if (w > 0.0) log_weights.push_back(-std::log(w));
+        if (w > 0.0) S_conf_nats -= w * std::log(w);
 
-    double S_conf_nats  = compute_shannon_entropy(log_weights, DEFAULT_HIST_BINS);
     double S_vib        = tencm_model.is_built()
                           ? compute_torsional_vibrational_entropy(tencm_model.modes(), temperature_K)
                           : 0.0;
-    // Shannon H is already in nats (natural log). Convert to physical units:
-    // S_conf = k_B * H_nats
+    // Shannon H is in nats (natural log). Convert to physical units:
+    //     S_conf [kcal/(mol·K)] = k_B · H [nats]
     double S_conf_phys  = S_conf_nats * kB_kcal;
 
     // Additive decomposition: S_total = S_conf + S_vib

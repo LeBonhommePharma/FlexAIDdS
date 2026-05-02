@@ -1,5 +1,6 @@
 #include "flexaid.h"
 #include "fileio.h"
+#include "statmech.h"
 #include "CavityDetect/CavityDetect.h"
 #include "CleftDetector.h"
 #include "MIFGrid.h"
@@ -238,9 +239,13 @@ void read_input(FA_Global* FA,atom** atoms, resid** residue,rot** rotamer,gridpo
 		if(strcmp(field,"TEMPER") == 0)
 		{
 			sscanf(buffer, "%s %u", field, &FA->temperature);
-			if(FA->temperature > 0) 
+			if(FA->temperature > 0)
 			{
-				FA->beta = (double) (1.0 / FA->temperature);
+				// β = 1 / (k_B · T) so that β·E is dimensionless when E is in
+				// kcal/mol. The legacy `1.0 / FA->temperature` was off by a
+				// factor of 1/k_B ≈ 503×, breaking every exp(−β·E) in
+				// cluster.cpp and DensityPeak_Cluster.cpp.
+				FA->beta = 1.0 / (statmech::kB_kcal * static_cast<double>(FA->temperature));
 			}
 			else FA->beta = 0;
 		}

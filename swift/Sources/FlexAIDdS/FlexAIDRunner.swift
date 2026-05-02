@@ -112,16 +112,16 @@ public actor FlexAIDRunner {
         }
     }
 
-    /// WHAM: weighted histogram analysis for free energy profiles.
+    /// Boltzmann-reweighted PMF for free energy profiles along a reaction coordinate.
     /// - Parameters:
     ///   - energies: Energy values for each sample
     ///   - coordinates: Coordinate values for each sample
     ///   - temperature: Temperature in Kelvin
     ///   - nBins: Number of histogram bins
-    ///   - maxIter: Maximum WHAM iterations (default: 1000)
+    ///   - maxIter: Maximum iterations (default: 1000)
     ///   - tolerance: Convergence tolerance (default: 1e-6)
-    /// - Returns: Array of WHAM bins with free energy profile
-    public nonisolated static func wham(
+    /// - Returns: Array of bins with free energy profile
+    public nonisolated static func boltzmannPMF(
         energies: [Double], coordinates: [Double],
         temperature: Double, nBins: Int,
         maxIter: Int = 1000, tolerance: Double = 1e-6
@@ -131,7 +131,7 @@ public actor FlexAIDRunner {
         var outCount: Int32 = 0
         let ptr = energies.withUnsafeBufferPointer { eBuf in
             coordinates.withUnsafeBufferPointer { cBuf in
-                fx_statmech_wham(eBuf.baseAddress, cBuf.baseAddress,
+                fx_statmech_boltzmann_pmf(eBuf.baseAddress, cBuf.baseAddress,
                                  Int32(eBuf.count), temperature, Int32(nBins),
                                  Int32(maxIter), tolerance, &outCount)
             }

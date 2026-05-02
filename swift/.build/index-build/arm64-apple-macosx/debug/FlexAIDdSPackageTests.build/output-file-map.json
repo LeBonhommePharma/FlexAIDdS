@@ -1,0 +1,12 @@
+{
+  "": {
+    "swift-dependencies": "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/FlexAIDdSPackageTests.build/primary.swiftdeps"
+  },
+  "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/FlexAIDdSPackageTests.derived/runner.swift": {
+    "dependencies": "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/FlexAIDdSPackageTests.build/runner.d",
+    "object": "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/FlexAIDdSPackageTests.build/runner.swift.o",
+    "swiftmodule": "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/FlexAIDdSPackageTests.build/runner~partial.swiftmodule",
+    "swift-dependencies": "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/FlexAIDdSPackageTests.build/runner.swiftdeps",
+    "diagnostics": "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/FlexAIDdSPackageTests.build/runner.dia"
+  }
+}

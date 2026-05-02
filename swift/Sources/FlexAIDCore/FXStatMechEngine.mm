@@ -121,9 +121,9 @@ extern "C" double fx_statmech_thermodynamic_integration(const FXTIPoint* points,
     return statmech::StatMechEngine::thermodynamic_integration(ti_points);
 }
 
-extern "C" FXWHAMBin* fx_statmech_wham(const double* energies, const double* coordinates,
-                                         int count, double temperature, int n_bins,
-                                         int max_iter, double tolerance, int* out_count) {
+extern "C" FXWHAMBin* fx_statmech_boltzmann_pmf(const double* energies, const double* coordinates,
+                                                 int count, double temperature, int n_bins,
+                                                 int max_iter, double tolerance, int* out_count) {
     if (!energies || !coordinates || count <= 0 || !out_count) {
         if (out_count) *out_count = 0;
         return nullptr;
@@ -132,8 +132,8 @@ extern "C" FXWHAMBin* fx_statmech_wham(const double* energies, const double* coo
     std::span<const double> e_span(energies, static_cast<size_t>(count));
     std::span<const double> c_span(coordinates, static_cast<size_t>(count));
 
-    auto bins = statmech::StatMechEngine::wham(e_span, c_span, temperature,
-                                                n_bins, max_iter, tolerance);
+    auto bins = statmech::StatMechEngine::boltzmann_pmf(e_span, c_span, temperature,
+                                                         n_bins, max_iter, tolerance);
     *out_count = static_cast<int>(bins.size());
     if (bins.empty()) return nullptr;
 

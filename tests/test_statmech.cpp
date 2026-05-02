@@ -469,7 +469,7 @@ TEST_F(StatMechEngineTest, SwapStatisticsPhysical) {
 // WHAM (Weighted Histogram Analysis Method)
 // ===========================================================================
 
-TEST_F(StatMechEngineTest, WHAMBasicOutput) {
+TEST_F(StatMechEngineTest, BoltzmannPMFBasicOutput) {
     // Simple test: uniform energies, linearly spaced coordinates
     std::vector<double> energies(100);
     std::vector<double> coords(100);
@@ -478,7 +478,7 @@ TEST_F(StatMechEngineTest, WHAMBasicOutput) {
         coords[i] = static_cast<double>(i);
     }
 
-    auto bins = StatMechEngine::wham(energies, coords, TEMPERATURE, 10);
+    auto bins = StatMechEngine::boltzmann_pmf(energies, coords, TEMPERATURE, 10);
 
     ASSERT_EQ(bins.size(), 10u);
     for (const auto& bin : bins) {
@@ -488,48 +488,48 @@ TEST_F(StatMechEngineTest, WHAMBasicOutput) {
     }
 }
 
-TEST_F(StatMechEngineTest, WHAMFreeEnergyMinimumShifted) {
+TEST_F(StatMechEngineTest, BoltzmannPMFFreeEnergyMinimumShifted) {
     // All bins should have free_energy >= 0 (shifted so minimum = 0)
     std::vector<double> energies = {-15.0, -12.0, -10.0, -8.0, -6.0};
     std::vector<double> coords = {1.0, 2.0, 3.0, 4.0, 5.0};
 
-    auto bins = StatMechEngine::wham(energies, coords, TEMPERATURE, 5);
+    auto bins = StatMechEngine::boltzmann_pmf(energies, coords, TEMPERATURE, 5);
     for (const auto& bin : bins)
         EXPECT_GE(bin.free_energy, -EPSILON);
 }
 
-TEST_F(StatMechEngineTest, WHAMSizeMismatchThrows) {
+TEST_F(StatMechEngineTest, BoltzmannPMFSizeMismatchThrows) {
     std::vector<double> energies = {-10.0, -8.0};
     std::vector<double> coords = {1.0};
 
     EXPECT_THROW(
-        StatMechEngine::wham(energies, coords, TEMPERATURE, 5),
+        StatMechEngine::boltzmann_pmf(energies, coords, TEMPERATURE, 5),
         std::invalid_argument
     );
 }
 
-TEST_F(StatMechEngineTest, WHAMEmptyThrows) {
+TEST_F(StatMechEngineTest, BoltzmannPMFEmptyThrows) {
     std::vector<double> empty;
     EXPECT_THROW(
-        StatMechEngine::wham(empty, empty, TEMPERATURE, 5),
+        StatMechEngine::boltzmann_pmf(empty, empty, TEMPERATURE, 5),
         std::invalid_argument
     );
 }
 
-TEST_F(StatMechEngineTest, WHAMSingleBin) {
+TEST_F(StatMechEngineTest, BoltzmannPMFSingleBin) {
     // Edge case: single bin should produce exactly one result
     std::vector<double> energies = {-10.0, -10.0, -10.0};
     std::vector<double> coords = {0.5, 0.5, 0.5};
-    auto result = StatMechEngine::wham(energies, coords, TEMPERATURE, 1);
+    auto result = StatMechEngine::boltzmann_pmf(energies, coords, TEMPERATURE, 1);
     EXPECT_EQ(result.size(), 1u);
     EXPECT_TRUE(std::isfinite(result[0].free_energy));
 }
 
-TEST_F(StatMechEngineTest, WHAMIdenticalCoordinates) {
+TEST_F(StatMechEngineTest, BoltzmannPMFIdenticalCoordinates) {
     // All samples at same coordinate — all land in one bin
     std::vector<double> energies = {-5.0, -10.0, -15.0};
     std::vector<double> coords = {1.0, 1.0, 1.0};
-    auto result = StatMechEngine::wham(energies, coords, TEMPERATURE, 5);
+    auto result = StatMechEngine::boltzmann_pmf(energies, coords, TEMPERATURE, 5);
     // Should not crash; at least one bin populated
     int populated = 0;
     for (const auto& bin : result)

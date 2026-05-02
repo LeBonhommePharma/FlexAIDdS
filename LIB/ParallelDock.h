@@ -27,7 +27,7 @@ struct RegionResult {
     int region_id;
     statmech::Thermodynamics local_thermo;
     std::vector<double> energies;
-    std::vector<int>    multiplicities;
+    std::vector<double> multiplicities;  // double to match StatMechEngine API (post C-1)
     double best_energy;
     float  best_coor[3];
     int    num_snapshots;

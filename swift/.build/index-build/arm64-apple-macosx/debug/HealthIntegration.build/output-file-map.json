@@ -1,0 +1,26 @@
+{
+  "": {
+    "swift-dependencies": "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/HealthIntegration.build/primary.swiftdeps"
+  },
+  "/Users/lp.more/Projects/FlexAIDdS/swift/Sources/HealthIntegration/BindingEntropyScore.swift": {
+    "dependencies": "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/HealthIntegration.build/BindingEntropyScore.d",
+    "object": "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/HealthIntegration.build/BindingEntropyScore.swift.o",
+    "swiftmodule": "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/HealthIntegration.build/BindingEntropyScore~partial.swiftmodule",
+    "swift-dependencies": "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/HealthIntegration.build/BindingEntropyScore.swiftdeps",
+    "diagnostics": "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/HealthIntegration.build/BindingEntropyScore.dia"
+  },
+  "/Users/lp.more/Projects/FlexAIDdS/swift/Sources/HealthIntegration/HealthKitManager.swift": {
+    "dependencies": "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/HealthIntegration.build/HealthKitManager.d",
+    "object": "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/HealthIntegration.build/HealthKitManager.swift.o",
+    "swiftmodule": "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/HealthIntegration.build/HealthKitManager~partial.swiftmodule",
+    "swift-dependencies": "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/HealthIntegration.build/HealthKitManager.swiftdeps",
+    "diagnostics": "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/HealthIntegration.build/HealthKitManager.dia"
+  },
+  "/Users/lp.more/Projects/FlexAIDdS/swift/Sources/HealthIntegration/ResearchKitConsent.swift": {
+    "dependencies": "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/HealthIntegration.build/ResearchKitConsent.d",
+    "object": "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/HealthIntegration.build/ResearchKitConsent.swift.o",
+    "swiftmodule": "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/HealthIntegration.build/ResearchKitConsent~partial.swiftmodule",
+    "swift-dependencies": "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/HealthIntegration.build/ResearchKitConsent.swiftdeps",
+    "diagnostics": "/Users/lp.more/Projects/FlexAIDdS/swift/.build/index-build/arm64-apple-macosx/debug/HealthIntegration.build/ResearchKitConsent.dia"
+  }
+}

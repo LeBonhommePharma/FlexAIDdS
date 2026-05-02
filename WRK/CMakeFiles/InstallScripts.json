@@ -1,0 +1,12 @@
+{
+	"InstallScripts" : 
+	[
+		"/Users/lp.more/Projects/FlexAIDdS/WRK/cmake_install.cmake",
+		"/Users/lp.more/Projects/FlexAIDdS/WRK/LIB/cmake_install.cmake",
+		"/Users/lp.more/Projects/FlexAIDdS/WRK/python/cmake_install.cmake",
+		"/Users/lp.more/Projects/FlexAIDdS/WRK/_deps/googletest-build/cmake_install.cmake",
+		"/Users/lp.more/Projects/FlexAIDdS/WRK/_deps/googletest-build/googlemock/cmake_install.cmake",
+		"/Users/lp.more/Projects/FlexAIDdS/WRK/_deps/googletest-build/googletest/cmake_install.cmake"
+	],
+	"Parallel" : false
+}

@@ -84,6 +84,7 @@ const BindingMode& BindingPopulation::get_binding_mode(int index) const
 
 BindingMode& BindingPopulation::get_binding_mode(int index)
 {
+	this->Entropize();
 	if (index < 0 || index >= static_cast<int>(this->BindingModes.size()))
 	{
 		throw std::out_of_range(
@@ -618,7 +619,7 @@ std::vector<Pose>::const_iterator BindingMode::elect_Representative(bool useOPTI
 }
 
 
-inline bool const BindingMode::operator<(const BindingMode& rhs) { return (this->compute_energy() < rhs.compute_energy()); }
+inline bool const BindingMode::operator<(const BindingMode& rhs) { return (this->get_cached_energy() < rhs.get_cached_energy()); }
 
 
 /*****************************************\\

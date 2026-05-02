@@ -1,0 +1,1 @@
+/usr/bin/c++ -O3 -DNDEBUG -arch arm64 -Wl,-search_paths_first -Wl,-headerpad_max_install_names CMakeFiles/test_reflig_spectrophore.dir/tests/test_reflig_spectrophore.cpp.o -o test_reflig_spectrophore  lib/libgtest.a lib/libgtest_main.a lib/libgtest.a
