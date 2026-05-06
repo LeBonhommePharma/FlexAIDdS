@@ -1,1 +1,0 @@
-/usr/bin/c++ -O3 -DNDEBUG -arch arm64 -Wl,-search_paths_first -Wl,-headerpad_max_install_names CMakeFiles/test_ga_context.dir/tests/test_ga_context.cpp.o CMakeFiles/test_ga_context.dir/LIB/GAContext.cpp.o -o test_ga_context  lib/libgtest.a lib/libgtest_main.a lib/libgtest.a

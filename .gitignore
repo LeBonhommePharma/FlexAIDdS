@@ -7,8 +7,6 @@
 # source files
 !LIB
 !LIB/**
-!WRK
-!WRK/**
 !BIN
 !BIN/**
 !*.cpp
@@ -90,3 +88,9 @@ benchmarks/**/__pycache__
 *.gcov
 build/coverage
 lcov.info
+# build directories (CMake artifacts)
+WRK/
+build/
+build_check/
+build_opencode/
+.claude/worktrees/

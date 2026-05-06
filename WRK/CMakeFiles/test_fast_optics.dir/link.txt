@@ -1,1 +1,0 @@
-/usr/bin/c++ -O3 -DNDEBUG -arch arm64 -Wl,-search_paths_first -Wl,-headerpad_max_install_names CMakeFiles/test_fast_optics.dir/tests/test_fast_optics.cpp.o CMakeFiles/test_fast_optics.dir/LIB/fast_optics.cpp.o -o test_fast_optics  lib/libgtest.a lib/libgtest_main.a lib/libgtest.a
