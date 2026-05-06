@@ -1,0 +1,50 @@
+name: astex-diverse-tier1
+kind: scientific-validation
+status: active
+reproducibility_level: replayable-from-repository-artifacts
+purpose: >
+  Tier-1 fast validation of native-pose docking accuracy on 5 representative
+  Astex Diverse Set complexes. Full 85-complex run is tier-2.
+dataset: Astex Diverse Set (Hartshorn et al. 2007 J Med Chem 50:726-741)
+dataset_source: https://www.ccdc.cam.ac.uk/community/freeprod/astex-diverse-set/
+doi: 10.1021/jm061277y
+tier: 1
+tier1_targets:
+  - 1sq5   # CDK2 / MK1 (res 1.7 Å)
+  - 2hb1   # thrombin / staurosporine (res 1.6 Å)
+  - 1r1h   # PPARgamma / GW5 (res 1.8 Å)
+  - 1t46   # p38alpha / 2AN (res 1.6 Å)
+  - 2c69   # thymidine kinase / PLN (res 1.7 Å)
+
+entrypoint: bash benchmarks/astex_diverse/run.sh
+data_file: benchmarks/astex_diverse/astex_diverse_set.csv
+full_dataset_config: benchmarks/datasets/astex_diverse.yaml
+
+artifacts:
+  - PDB structures downloaded from RCSB (receptor + co-crystal)
+  - Ligand extracted from HETATM records (benchmark_datasets --prepare-only)
+  - FlexAIDdS docking output per target
+  - Aggregated metrics report
+
+metrics:
+  - docking_power_top1
+  - docking_power_top3
+  - mean_rmsd
+  - median_rmsd
+  - entropy_rescue_rate
+
+expected_baselines:
+  docking_power_top1: 0.70
+  docking_power_top3: 0.85
+  mean_rmsd: 2.30
+  median_rmsd: 1.95
+  entropy_rescue_rate: 0.30
+
+baseline_tolerance: 0.05
+
+notes:
+  - Tier-1 uses 5 high-resolution complexes for fast CI feedback (~10 min).
+  - Full 85-complex validation is tier-2 (benchmarks/datasets/astex_diverse.yaml).
+  - PDB structures are fetched from RCSB; ligand extraction is automated.
+  - Success criterion: RMSD < 2.0 Å vs co-crystal reference pose.
+  - All 85 entries are listed in astex_diverse_set.csv with resolution and ligand ID.

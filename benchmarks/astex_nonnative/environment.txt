@@ -1,0 +1,14 @@
+# Environment record for Astex Non-Native tier-1 benchmark
+# Fill in after a validated run to anchor reproducibility.
+
+os:
+kernel:
+compiler:
+cmake_version:
+flexaidds_git_sha:
+flexaidds_version:
+build_type: Release
+hardware_backend:        # e.g. AVX2, Metal, CUDA
+cpu_model:
+gpu_model:
+ram_gb:

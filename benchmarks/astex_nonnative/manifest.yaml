@@ -1,0 +1,58 @@
+name: astex-nonnative-tier1
+kind: scientific-validation
+status: active
+reproducibility_level: replayable-from-repository-artifacts
+purpose: >
+  Tier-1 fast validation of cross-docking (non-native) accuracy on a small
+  representative subset of Astex Non-Native pairs. Full 65-target / 1112-pair
+  run is tier-2. Tests receptor flexibility robustness.
+dataset: Astex Non-Native Set (Verdonk et al. 2008 J Chem Inf Model 48:2214-2225)
+dataset_source: https://www.ccdc.cam.ac.uk/
+doi: 10.1021/ci800224j
+tier: 1
+tier1_pairs:
+  - target: 1hwi
+    ligand_from: 1hww
+    ligand_id: STU
+    target_name: CDK2
+  - target: 1t40
+    ligand_from: 1t46
+    ligand_id: 2AN
+    target_name: p38alpha
+  - target: 2c68
+    ligand_from: 2c69
+    ligand_id: PLN
+    target_name: thymidine_kinase
+
+entrypoint: bash benchmarks/astex_nonnative/run.sh
+data_file: benchmarks/astex_nonnative/astex_non_native_set.csv
+full_dataset_config: benchmarks/datasets/astex_nonnative.yaml
+
+artifacts:
+  - PDB structures downloaded from RCSB (receptor + foreign ligand)
+  - Ligand extracted from ligand_pdb (HETATM); receptor from target_pdb
+  - FlexAIDdS docking output per pair
+  - Aggregated cross-docking metrics report
+
+metrics:
+  - crossdock_success_rate_2A
+  - crossdock_success_rate_3A
+  - crossdock_mean_rmsd
+  - crossdock_median_rmsd
+  - entropy_rescue_rate
+
+expected_baselines:
+  crossdock_success_rate_2A: 0.32
+  crossdock_success_rate_3A: 0.52
+  crossdock_mean_rmsd: 3.10
+  crossdock_median_rmsd: 2.65
+  entropy_rescue_rate: 0.22
+
+baseline_tolerance: 0.05
+
+notes:
+  - Tier-1 uses 3 representative cross-docking pairs for fast CI feedback (~15 min).
+  - Full 65-target / 1112-pair validation is tier-2.
+  - Non-native docking is harder: Vina ~20-30%, Glide ~30-40% under 2 Å.
+  - 32% success under 2 Å is competitive; FlexAIDdS entropy corrections help most here.
+  - All pairs listed in astex_non_native_set.csv (target_pdb, ligand_pdb, ligand_id).
