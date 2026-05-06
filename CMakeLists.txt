@@ -1039,6 +1039,36 @@ if(ENABLE_BENCHMARK_DATASETS)
     message(STATUS "Benchmark dataset runner enabled — build target: benchmark_datasets")
 endif()
 
+# ─── Astex Benchmark Convenience Targets ───────────────────────────────────
+# These custom targets invoke the Python DatasetRunner for the full tier-2
+# Astex benchmark runs.  They require Python and the flexaidds package installed.
+# Usage: cmake --build build --target flexaid_bench_astex_diverse
+#         cmake --build build --target flexaid_bench_astex_non_native
+find_package(Python3 QUIET COMPONENTS Interpreter)
+if(Python3_FOUND)
+    add_custom_target(flexaid_bench_astex_diverse
+        COMMAND ${Python3_EXECUTABLE} -m flexaidds.dataset_runner
+                --dataset astex_diverse --tier 2
+                --output ${CMAKE_BINARY_DIR}/benchmark_results/astex_diverse
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+        COMMENT "Running Astex Diverse Set benchmark (85 complexes, tier-2)"
+        VERBATIM
+    )
+
+    add_custom_target(flexaid_bench_astex_non_native
+        COMMAND ${Python3_EXECUTABLE} -m flexaidds.dataset_runner
+                --dataset astex_nonnative --tier 2
+                --output ${CMAKE_BINARY_DIR}/benchmark_results/astex_nonnative
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+        COMMENT "Running Astex Non-Native cross-docking benchmark (65 targets, tier-2)"
+        VERBATIM
+    )
+
+    message(STATUS "Astex benchmark targets: flexaid_bench_astex_diverse, flexaid_bench_astex_non_native")
+else()
+    message(STATUS "Python3 not found — Astex benchmark custom targets skipped")
+endif()
+
 # ─── Unit Tests (GoogleTest) ───────────────────────────────────────────────
 option(BUILD_TESTING "Build unit tests (requires GoogleTest)" OFF)
 if(BUILD_TESTING)
