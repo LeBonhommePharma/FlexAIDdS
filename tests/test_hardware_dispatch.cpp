@@ -425,8 +425,8 @@ TEST(ShannonThermoStackEdge, CustomTemperature) {
 }
 
 TEST(ShannonThermoStackEdge, DegenerateEnergyEnsemble) {
-    // All samples at same energy → Boltzmann weights are equal
-    // → -log(w) all equal → single unique value → H = 0
+    // All samples at same energy → Boltzmann weights are equal (w_i = 1/N)
+    // → S = -Σ w_i·ln(w_i) = ln(N) = ln(50) ≈ 3.912 nats
     statmech::StatMechEngine eng(298.15);
     for (int i = 0; i < 50; ++i)
         eng.add_sample(-10.0);
@@ -435,7 +435,7 @@ TEST(ShannonThermoStackEdge, DegenerateEnergyEnsemble) {
     auto result = run_shannon_thermo_stack(eng, tencm, -10.0);
 
     EXPECT_TRUE(std::isfinite(result.deltaG));
-    EXPECT_NEAR(result.shannonEntropy, 0.0, 0.01);
+    EXPECT_NEAR(result.shannonEntropy, std::log(50.0), 0.01);
 }
 
 // ===========================================================================
@@ -705,7 +705,8 @@ TEST(ShannonThermoStackEdge, TwoSampleEnsemble) {
 
 TEST(ShannonThermoStackEdge, HighlyDegenerateEnsemble) {
     // 1000 samples at -10.0, 1 outlier at -5.0
-    // Shannon entropy should be very low (dominated by one energy)
+    // Direct Shannon entropy: w_high ≈ 1000/1001, w_low ≈ 1/1001
+    // S = -w_high·ln(w_high) - w_low·ln(w_low) ≈ ln(1001) ≈ 6.91 nats
     statmech::StatMechEngine eng(298.15);
     for (int i = 0; i < 1000; ++i)
         eng.add_sample(-10.0);
@@ -715,8 +716,8 @@ TEST(ShannonThermoStackEdge, HighlyDegenerateEnsemble) {
     auto result = run_shannon_thermo_stack(eng, tencm, -10.0);
     EXPECT_TRUE(std::isfinite(result.deltaG));
     EXPECT_TRUE(std::isfinite(result.shannonEntropy));
-    // Entropy should be near zero since almost all weights are identical
-    EXPECT_LT(result.shannonEntropy, 1.0);
+    // Correct direct entropy for 1001 samples with nearly uniform weights
+    EXPECT_NEAR(result.shannonEntropy, std::log(1001.0), 0.1);
 }
 
 // --- Full stack: wide energy spread ---
