@@ -45,27 +45,35 @@ ShannonEnergyMatrix& ShannonEnergyMatrix::instance() {
 }
 
 void ShannonEnergyMatrix::initialise() {
-    if (initialised_) return;
-    matrix_.resize(SHANNON_BINS * SHANNON_BINS);
+    // Thread-safe one-shot initialisation. Multiple threads may call this
+    // concurrently before the matrix is built; std::call_once ensures the
+    // body executes exactly once, while readers see initialised_ = true
+    // only after the matrix has been fully populated.
+    std::call_once(init_once_, [this]() {
+        // No mutex needed: call_once guarantees single-thread execution,
+        // and lookup() does not acquire mtx_ so the guard provides no
+        // additional protection against concurrent readers.
+        matrix_.resize(SHANNON_BINS * SHANNON_BINS);
 
-    std::mt19937 rng(42);
-    std::normal_distribution<double> perturb(0.0, 0.05);
-    const double base = 1.0 / SHANNON_BINS;
-    std::vector<double> p_i(SHANNON_BINS), p_j(SHANNON_BINS);
-    for (int k = 0; k < SHANNON_BINS; ++k) {
-        p_i[k] = std::max(1e-9, base + perturb(rng));
-        p_j[k] = std::max(1e-9, base + perturb(rng));
-    }
-    double si = 0, sj = 0;
-    for (int k = 0; k < SHANNON_BINS; ++k) { si += p_i[k]; sj += p_j[k]; }
-    for (int k = 0; k < SHANNON_BINS; ++k) { p_i[k] /= si; p_j[k] /= sj; }
+        std::mt19937 rng(42);
+        std::normal_distribution<double> perturb(0.0, 0.05);
+        const double base = 1.0 / SHANNON_BINS;
+        std::vector<double> p_i(SHANNON_BINS), p_j(SHANNON_BINS);
+        for (int k = 0; k < SHANNON_BINS; ++k) {
+            p_i[k] = std::max(1e-9, base + perturb(rng));
+            p_j[k] = std::max(1e-9, base + perturb(rng));
+        }
+        double si = 0, sj = 0;
+        for (int k = 0; k < SHANNON_BINS; ++k) { si += p_i[k]; sj += p_j[k]; }
+        for (int k = 0; k < SHANNON_BINS; ++k) { p_i[k] /= si; p_j[k] /= sj; }
 
-    const double kT    = kB_kcal * TEMPERATURE_K;
-    // Fill the entropy matrix using natural log (nats)
-    for (int i = 0; i < SHANNON_BINS; ++i)
-        for (int j = 0; j < SHANNON_BINS; ++j)
-            matrix_[i * SHANNON_BINS + j] = -kT * p_i[i] * std::log(p_j[j]);
-    initialised_ = true;
+        const double kT = kB_kcal * TEMPERATURE_K;
+        // Fill the entropy matrix using natural log (nats)
+        for (int i = 0; i < SHANNON_BINS; ++i)
+            for (int j = 0; j < SHANNON_BINS; ++j)
+                matrix_[i * SHANNON_BINS + j] = -kT * p_i[i] * std::log(p_j[j]);
+        initialised_ = true;
+    });
 }
 
 bool ShannonEnergyMatrix::initialise_from_file(const std::string& path) {
@@ -100,15 +108,20 @@ bool ShannonEnergyMatrix::initialise_from_file(const std::string& path) {
     if (static_cast<int>(nread) != SHANNON_BINS * SHANNON_BINS)
         return false;
 
+    // Lock against races with initialise() / initialise_from_data()
+    std::lock_guard<std::mutex> lk(mtx_);
     matrix_.resize(SHANNON_BINS * SHANNON_BINS);
     for (int k = 0; k < SHANNON_BINS * SHANNON_BINS; ++k)
         matrix_[k] = static_cast<double>(buf[k]);
 
     initialised_ = true;
+    // Mark the once_flag as fired so initialise() becomes a no-op.
+    std::call_once(init_once_, [](){});
     return true;
 }
 
 void ShannonEnergyMatrix::initialise_from_data(const float* data, int count) {
+    std::lock_guard<std::mutex> lk(mtx_);
     int expected = SHANNON_BINS * SHANNON_BINS;
     matrix_.resize(expected);
     int safe_count = std::min(count, expected);
@@ -117,6 +130,7 @@ void ShannonEnergyMatrix::initialise_from_data(const float* data, int count) {
     for (int k = safe_count; k < expected; ++k)
         matrix_[k] = 0.0;
     initialised_ = true;
+    std::call_once(init_once_, [](){});
 }
 
 
@@ -283,7 +297,9 @@ double compute_torsional_vibrational_entropy(
     if (ev_buf.empty()) return 0.0;
 
     Eigen::Map<Eigen::ArrayXd> evals(ev_buf.data(), (int)ev_buf.size());
-    Eigen::ArrayXd ln_arg = kT / evals; // element-wise
+    // eigenvalue λ = ω²; need frequency ω = sqrt(λ) for the HO entropy formula
+    Eigen::ArrayXd freqs  = evals.sqrt();
+    Eigen::ArrayXd ln_arg = kT / freqs;  // element-wise: kT/ω
     // S_mode = kB*(1 + ln(kBT/ω)) for modes where ln_arg > 1e-6
     Eigen::ArrayXd mask = (ln_arg > 1e-6).cast<double>();
     return kB_kcal * (mask * (1.0 + ln_arg.log())).sum();
@@ -297,18 +313,25 @@ FullThermoResult run_shannon_thermo_stack(
     double                          base_deltaG,
     double                          temperature_K)
 {
+    // Conformational Shannon entropy of the Boltzmann distribution:
+    //     H = -Σ_i w_i · ln(w_i)        (nats)
+    //     S_conf = k_B · H              (kcal/mol·K)
+    //
+    // Previously this code histogrammed the distribution of −log(w_i) values
+    // and called compute_shannon_entropy() on that — which gives the entropy
+    // of the binned log-weight distribution, NOT the conformational entropy
+    // of the underlying Boltzmann distribution. The two differ by an
+    // arbitrary binning factor and have no thermodynamic interpretation.
     auto weights = stat_engine.boltzmann_weights();
-    std::vector<double> log_weights;
-    log_weights.reserve(weights.size());
+    double S_conf_nats = 0.0;
     for (double w : weights)
-        if (w > 0.0) log_weights.push_back(-std::log(w));
+        if (w > 0.0) S_conf_nats -= w * std::log(w);
 
-    double S_conf_nats  = compute_shannon_entropy(log_weights, DEFAULT_HIST_BINS);
     double S_vib        = tencm_model.is_built()
                           ? compute_torsional_vibrational_entropy(tencm_model.modes(), temperature_K)
                           : 0.0;
-    // Shannon H is already in nats (natural log). Convert to physical units:
-    // S_conf = k_B * H_nats
+    // Shannon H is in nats (natural log). Convert to physical units:
+    //     S_conf [kcal/(mol·K)] = k_B · H [nats]
     double S_conf_phys  = S_conf_nats * kB_kcal;
 
     // Additive decomposition: S_total = S_conf + S_vib

@@ -7,7 +7,7 @@
 //   – Conformational entropy  S = (⟨E⟩ − F)/T
 //   – Boltzmann-weighted probability of each sampled state
 //   – Parallel tempering (replica exchange) swap acceptance
-//   – WHAM for free energy profiles along an arbitrary coordinate
+//   – Boltzmann-reweighted PMF (free energy profiles along an arbitrary coordinate)
 //   – Thermodynamic integration (TI) via trapezoidal rule
 //   – Fast Boltzmann lookup table for inner-loop evaluation
 #pragma once
@@ -30,7 +30,7 @@ inline constexpr double kB_SI   = 1.380649e-23;  // J K⁻¹
 
 struct State {
     double energy;     // CF value (kcal/mol; negative = favourable)
-    int    count;      // degeneracy / sampling multiplicity
+    double count;      // degeneracy / sampling multiplicity (double so Boltzmann weights pass without truncation)
 };
 
 struct Thermodynamics {
@@ -68,8 +68,10 @@ class StatMechEngine {
 public:
     explicit StatMechEngine(double temperature_K = 300.0);
 
-    // Add a sampled configuration
-    void add_sample(double energy, int multiplicity = 1);
+    // Add a sampled configuration.
+    // multiplicity is double so Boltzmann weights (0.0–1.0) can be passed directly
+    // without silent int-truncation to zero (which caused log(0) = -inf).
+    void add_sample(double energy, double multiplicity = 1.0);
 
     // Compute full thermodynamics over the current ensemble
     Thermodynamics compute() const;
@@ -88,14 +90,40 @@ public:
     // Returns true if accepted.
     static bool attempt_swap(Replica& a, Replica& b, std::mt19937& rng);
 
-    // WHAM: weighted histogram analysis over (energy, coord) pairs
-    static std::vector<WHAMBin> wham(
+    // Boltzmann-reweighted free energy profile along a 1D collective
+    // coordinate. For each bin b:
+    //
+    //     F_b = -kT · ln( Σ_{i∈b} exp(-β E_i) / N_b )
+    //
+    // This is NOT multi-window WHAM (Kumar et al. 1992). It is a single-
+    // window post-hoc reweighting of an existing ensemble — useful for
+    // building a PMF from a converged GA trajectory along an arbitrary
+    // reaction coordinate. Multi-window WHAM requires biased simulations
+    // and per-window offsets, neither of which are provided here.
+    //
+    // Use this when you have a single biased/unbiased ensemble and want
+    // a 1D free energy curve. For umbrella-sampling unbiasing, use a
+    // dedicated multi-window WHAM implementation.
+    static std::vector<WHAMBin> boltzmann_pmf(
         std::span<const double> energies,
         std::span<const double> coordinates,
         double temperature,
         int    n_bins,
         int    max_iter  = 1000,
         double tolerance = 1e-6);
+
+    // Backward-compatible alias for the historical (misleading) name.
+    [[deprecated("This is single-window Boltzmann reweighting, not multi-window WHAM. "
+                 "Use boltzmann_pmf() — same arguments, accurate name.")]]
+    static std::vector<WHAMBin> wham(
+        std::span<const double> energies,
+        std::span<const double> coordinates,
+        double temperature,
+        int    n_bins,
+        int    max_iter  = 1000,
+        double tolerance = 1e-6) {
+        return boltzmann_pmf(energies, coordinates, temperature, n_bins, max_iter, tolerance);
+    }
 
     // Thermodynamic integration via trapezoidal rule
     static double thermodynamic_integration(std::span<const TIPoint> points);
@@ -105,13 +133,16 @@ public:
     // Thermodynamically correct: Z_merged = Σ_all exp(-βE_i).
     void merge(const StatMechEngine& other);
 
-    // Merge from raw arrays (for MPI deserialization)
+    // Merge from raw arrays (for MPI deserialization).
+    // multiplicities is double to round-trip with serialize_multiplicities()
+    // (which returns vector<double> after the C-1 fix) and to allow fractional
+    // weights without silent int-truncation.
     void merge_samples(std::span<const double> energies,
-                       std::span<const int> multiplicities);
+                       std::span<const double> multiplicities);
 
     // Serialize ensemble for transport (MPI, socket, etc.)
     std::vector<double> serialize_energies() const;
-    std::vector<int>    serialize_multiplicities() const;
+    std::vector<double> serialize_multiplicities() const;
 
     // Accessors
     double temperature() const noexcept { return T_; }

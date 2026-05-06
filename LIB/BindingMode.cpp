@@ -42,17 +42,25 @@ void BindingPopulation::add_BindingMode(BindingMode& mode)
 	mode.set_energy();
 	this->BindingModes.push_back(mode);
 	this->shannon_cache_valid_ = false;  // Invalidate Shannon cache
-	this->Entropize();
+	this->sorted_ = false;               // mark for lazy re-sort
+
+	// Previously this called Entropize() on every insertion, re-sorting all
+	// existing modes (each comparison invokes compute_energy() and rebuilds
+	// the StatMechEngine). Inserting M modes was O(M² log M × N_poses).
+	// Sorting is now lazy — done in output_Population() and accessor paths.
 }
 
 
 void BindingPopulation::Entropize()
 {
+	if (this->sorted_) return;
+
 	for (std::vector<BindingMode>::iterator it = this->BindingModes.begin(); it != this->BindingModes.end(); ++it)
 	{
 		it->set_energy();
 	}
 	std::sort(this->BindingModes.begin(), this->BindingModes.end(), BindingPopulation::EnergyComparator());
+	this->sorted_ = true;
 }
 
 
@@ -76,6 +84,7 @@ const BindingMode& BindingPopulation::get_binding_mode(int index) const
 
 BindingMode& BindingPopulation::get_binding_mode(int index)
 {
+	this->Entropize();
 	if (index < 0 || index >= static_cast<int>(this->BindingModes.size()))
 	{
 		throw std::out_of_range(
@@ -92,6 +101,9 @@ BindingMode& BindingPopulation::get_binding_mode(int index)
 void BindingPopulation::output_Population(int nResults, char* end_strfile, char* tmp_end_strfile, char* dockinp, char* gainp, int minPoints)
 {
 	// Output Population information ~= output clusters informations (*.cad)
+	// Ensure the population is sorted by free energy before emitting results
+	// (lazy sort: previously every add_BindingMode triggered a full re-sort).
+	this->Entropize();
 
 	// Looping through BindingModes
 	int num_result = 0;
@@ -362,14 +374,17 @@ std::vector<statmech::WHAMBin> BindingMode::free_energy_profile(
 		);
 	}
 
+	// Use total_energy() = CF + receptor_strain to match rebuild_engine().
+	// Previously this used pose.CF only, so the FE profile and the main
+	// thermodynamics were computed from different energies in CCBM mode.
 	std::vector<double> energies;
 	energies.reserve(Poses.size());
 	for (const auto& pose : Poses)
 	{
-		energies.push_back(pose.CF);
+		energies.push_back(pose.total_energy());
 	}
 
-	return statmech::StatMechEngine::wham(
+	return statmech::StatMechEngine::boltzmann_pmf(
 		energies,
 		coordinates,
 		static_cast<double>(Population->Temperature),
@@ -604,7 +619,7 @@ std::vector<Pose>::const_iterator BindingMode::elect_Representative(bool useOPTI
 }
 
 
-inline bool const BindingMode::operator<(const BindingMode& rhs) { return (this->compute_energy() < rhs.compute_energy()); }
+inline bool const BindingMode::operator<(const BindingMode& rhs) { return (this->get_cached_energy() < rhs.get_cached_energy()); }
 
 
 /*****************************************\\
@@ -622,7 +637,7 @@ Pose::Pose(chromosome* chrom, int index, int iorder, float dist, uint temperatur
 	  model_coords(nullptr),
 	  receptor_strain(0.0)
 {
-	this->boltzmann_weight = exp((-1.0) * (1 / static_cast<double>(temperature)) * chrom->app_evalue);
+	this->boltzmann_weight = std::exp(-chrom->app_evalue / (statmech::kB_kcal * static_cast<double>(temperature)));
 }
 
 

@@ -56,7 +56,7 @@ StatMechEngine::StatMechEngine(double temperature_K)
 
 // ─── add_sample ──────────────────────────────────────────────────────────────
 
-void StatMechEngine::add_sample(double energy, int multiplicity) {
+void StatMechEngine::add_sample(double energy, double multiplicity) {
     ensemble_.push_back({energy, multiplicity});
 }
 
@@ -84,7 +84,7 @@ Thermodynamics StatMechEngine::compute() const {
         Eigen::ArrayXd counts(static_cast<Eigen::Index>(N));
         Eigen::ArrayXd energies(static_cast<Eigen::Index>(N));
         for (std::size_t i = 0; i < N; ++i) {
-            counts(static_cast<Eigen::Index>(i))   = static_cast<double>(ensemble_[i].count);
+            counts(static_cast<Eigen::Index>(i))   = ensemble_[i].count;
             energies(static_cast<Eigen::Index>(i)) = ensemble_[i].energy;
         }
         Eigen::ArrayXd lw = counts.log() - beta_ * energies;
@@ -167,7 +167,7 @@ Thermodynamics StatMechEngine::compute() const {
     th.free_energy    = -kT * lnZ;
     th.mean_energy    = E_avg;
     th.mean_energy_sq = E2_avg;
-    th.heat_capacity  = var / (kT * kT);
+    th.heat_capacity  = var / (kB_kcal * T_ * T_);
     th.entropy        = (E_avg - th.free_energy) / T_;
     th.std_energy     = std::sqrt(std::max(0.0, var));
     return th;
@@ -258,11 +258,14 @@ bool StatMechEngine::attempt_swap(Replica& a, Replica& b, std::mt19937& rng) {
     return false;
 }
 
-// ─── WHAM ────────────────────────────────────────────────────────────────────
-// Weighted Histogram Analysis Method (Kumar et al. 1992)
-// Simplified single-window version for post-hoc reweighting of GA ensemble.
+// ─── Boltzmann-reweighted PMF ────────────────────────────────────────────────
+// Single-window post-hoc reweighting of an ensemble onto a 1D collective
+// coordinate. NOT multi-window WHAM (Kumar et al. 1992) — that requires
+// biased simulations with per-window offsets, neither of which are
+// available here. The historical name `wham()` survives as a deprecated
+// alias in the header (see statmech.h).
 
-std::vector<WHAMBin> StatMechEngine::wham(
+std::vector<WHAMBin> StatMechEngine::boltzmann_pmf(
     std::span<const double> energies,
     std::span<const double> coordinates,
     double temperature,
@@ -271,9 +274,9 @@ std::vector<WHAMBin> StatMechEngine::wham(
     double tolerance)
 {
     if (energies.size() != coordinates.size())
-        throw std::invalid_argument("wham: energies and coordinates size mismatch");
+        throw std::invalid_argument("boltzmann_pmf: energies and coordinates size mismatch");
     if (energies.empty() || n_bins <= 0)
-        throw std::invalid_argument("wham: invalid input");
+        throw std::invalid_argument("boltzmann_pmf: invalid input");
 
     const std::size_t N = energies.size();
     double beta = 1.0 / (kB_kcal * temperature);
@@ -422,7 +425,7 @@ void StatMechEngine::merge(const StatMechEngine& other) {
 }
 
 void StatMechEngine::merge_samples(std::span<const double> energies,
-                                    std::span<const int> multiplicities) {
+                                    std::span<const double> multiplicities) {
     if (energies.size() != multiplicities.size())
         throw std::invalid_argument("energies and multiplicities must have same size");
     for (size_t i = 0; i < energies.size(); ++i)
@@ -436,8 +439,8 @@ std::vector<double> StatMechEngine::serialize_energies() const {
     return out;
 }
 
-std::vector<int> StatMechEngine::serialize_multiplicities() const {
-    std::vector<int> out(ensemble_.size());
+std::vector<double> StatMechEngine::serialize_multiplicities() const {
+    std::vector<double> out(ensemble_.size());
     for (size_t i = 0; i < ensemble_.size(); ++i)
         out[i] = ensemble_[i].count;
     return out;

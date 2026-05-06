@@ -103,6 +103,11 @@ class BindingMode // aggregation of poses (Cluster)
 			// ═══ PUBLIC ACCESSORS (for bindings) ═══
 			const std::vector<Pose>&	get_poses() const { return Poses; }
 
+			// Cached free energy populated by set_energy(). Used by sort
+			// comparators to avoid recomputing the StatMechEngine on each
+			// comparison (was the source of O(N² log N) sort cost).
+			double	get_cached_energy() const noexcept { return energy; }
+
 			// ═══ CONFORMER-COUPLED ENSEMBLE THERMODYNAMICS (CCBM) ═══
 
 			/// Receptor conformer population weights:
@@ -193,6 +198,8 @@ class BindingPopulation
 		 	/// ΔG matrix between all pairs of binding modes (upper triangle, row-major)
 		 	std::vector<std::vector<double>> get_deltaG_matrix() const;
 		 	// ═══ PUBLIC ACCESSORS (for bindings) ═══
+		 	// Returns insertion order; call output_Population() or use indexed
+		 	// get_binding_mode() for energy-sorted access.
 		 	const std::vector<BindingMode>& get_binding_modes() const { return BindingModes; }
 
 		 	// ═══ POPULATION-LEVEL SHANNON ENTROPY ═══
@@ -218,14 +225,19 @@ class BindingPopulation
 		std::vector< BindingMode > 	BindingModes;	// BindingMode container
 		mutable double				shannonS_population_;	// cached Shannon entropy
 		mutable bool				shannon_cache_valid_;	// cache validity flag
+		bool						sorted_ = false;        // true iff BindingModes is currently sorted by energy
 
-		void 	 					Entropize(); 	// Sort BindinModes according to their observation frequency
-		
+		void 	 					Entropize(); 	// Sort BindinModes by cached free energy (no-op if already sorted)
+
 		struct EnergyComparator
 		{
 			inline bool operator() ( const BindingMode& BindingMode1, const BindingMode& BindingMode2 )
 			{
-				return (BindingMode1.compute_energy() < BindingMode2.compute_energy());
+				// Use the cached energy populated by set_energy() before
+				// sorting. Calling compute_energy() here re-runs the
+				// StatMechEngine on each comparison, which made
+				// std::sort take O(N log N × N_poses) per Entropize().
+				return (BindingMode1.get_cached_energy() < BindingMode2.get_cached_energy());
 			}
 		};
 };

@@ -9,6 +9,7 @@
 
 #include <random>
 #include <functional>
+#include <climits>     // SIZE_MAX
 #include <cstdint>
 #include <vector>
 #include <algorithm>
@@ -274,29 +275,40 @@ int GA(FA_Global* FA, GB_Global* GB,VC_Global* VC,chromosome** chrom,chromosome*
 	}
 
 	// *** chrom_snapshot
-	(*chrom_snapshot) = (chromosome*)malloc((GB->num_chrom*GB->max_generations)*sizeof(chromosome));
+	// Use std::size_t for the product to prevent 32-bit signed overflow
+	// (e.g., num_chrom=10000 × max_generations=100000 overflows int).
+	const std::size_t snap_count = static_cast<std::size_t>(GB->num_chrom)
+	                              * static_cast<std::size_t>(GB->max_generations);
+	if (GB->num_chrom <= 0 || GB->max_generations <= 0 ||
+	    snap_count > (SIZE_MAX / sizeof(chromosome)))
+	{
+		fprintf(stderr,"ERROR: chrom_snapshot size overflow (num_chrom=%d, max_generations=%d).\n",
+		        GB->num_chrom, GB->max_generations);
+		Terminate(2);
+	}
+	(*chrom_snapshot) = (chromosome*)malloc(snap_count * sizeof(chromosome));
 	if(!(*chrom_snapshot))
 	{
-		fprintf(stderr,"ERROR: memory allocation error for chrom_snapshot.\n");
+		fprintf(stderr,"ERROR: memory allocation error for chrom_snapshot (requested %zu bytes).\n",
+		        snap_count * sizeof(chromosome));
 		Terminate(2);
 	}
 
-	for(i=0;i<(GB->num_chrom*GB->max_generations);++i)
+	for(std::size_t snap_i = 0; snap_i < snap_count; ++snap_i)
 	{
-		(*chrom_snapshot)[i].genes = (gene*)malloc(GB->num_genes*sizeof(gene));
+		(*chrom_snapshot)[snap_i].genes = (gene*)malloc(GB->num_genes*sizeof(gene));
 
-		if(!(*chrom_snapshot)[i].genes){
-			fprintf(stderr,"ERROR: memory allocation error for chrom_snapshot[%d].genes.\n",i);
+		if(!(*chrom_snapshot)[snap_i].genes){
+			fprintf(stderr,"ERROR: memory allocation error for chrom_snapshot[%zu].genes.\n",snap_i);
 			Terminate(2);
 		}
 
-		(*chrom_snapshot)[i].app_evalue = 0.0;
-		(*chrom_snapshot)[i].evalue = 0.0;
-		(*chrom_snapshot)[i].fitnes = 0.0;
-		(*chrom_snapshot)[i].boltzmann_weight = 0.0;
-		(*chrom_snapshot)[i].free_energy = 0.0;
-		(*chrom_snapshot)[i].status = ' ';
-		//printf("chrom_snapshot[%d] allocated at address %p!\n", i, &(*chrom_snapshot)[i]);
+		(*chrom_snapshot)[snap_i].app_evalue = 0.0;
+		(*chrom_snapshot)[snap_i].evalue = 0.0;
+		(*chrom_snapshot)[snap_i].fitnes = 0.0;
+		(*chrom_snapshot)[snap_i].boltzmann_weight = 0.0;
+		(*chrom_snapshot)[snap_i].free_energy = 0.0;
+		(*chrom_snapshot)[snap_i].status = ' ';
 	}
 
 	printf("alpha %lf peaks %lf scale %lf\n",GB->alpha,GB->peaks,GB->scale);
@@ -409,25 +421,41 @@ int GA(FA_Global* FA, GB_Global* GB,VC_Global* VC,chromosome** chrom,chromosome*
 				write_grid(FA,(*cleftgrid),gridfile);
 			}
 
-			// Recompute MIF for adapted grid
+			// Recompute MIF for adapted grid.
+			// Allocate new buffers BEFORE freeing old ones so OOM leaves the
+			// previous MIF intact rather than crashing on null deref.
 			if (FA->mif_enabled || FA->grid_prio_percent < 100.0f) {
 				std::vector<atom> protein_atoms(atoms, atoms + FA->atm_cnt_real);
 				cavity_detect::SpatialGrid sg;
 				sg.build(protein_atoms);
 				auto mif = mif::compute_mif(*cleftgrid, FA->num_grd,
 				                             atoms, FA->atm_cnt_real, sg);
-				free(FA->mif_energies); free(FA->mif_sorted); free(FA->mif_cdf);
-				FA->mif_count = static_cast<int>(mif.sorted_indices.size());
-				FA->mif_energies = static_cast<float*>(
-				    malloc(mif.energies.size() * sizeof(float)));
-				FA->mif_sorted = static_cast<int*>(
-				    malloc(mif.sorted_indices.size() * sizeof(int)));
-				std::copy_n(mif.energies.data(), mif.energies.size(), FA->mif_energies);
-				std::copy_n(mif.sorted_indices.data(), mif.sorted_indices.size(), FA->mif_sorted);
 				mif::build_sampling_cdf(mif, FA->mif_temperature);
-				FA->mif_cdf = static_cast<double*>(
-				    malloc(mif.cdf.size() * sizeof(double)));
-				std::copy_n(mif.cdf.data(), mif.cdf.size(), FA->mif_cdf);
+
+				const std::size_t n_energies = mif.energies.size();
+				const std::size_t n_sorted   = mif.sorted_indices.size();
+				const std::size_t n_cdf      = mif.cdf.size();
+				float*  new_energies = static_cast<float*>(malloc(n_energies * sizeof(float)));
+				int*    new_sorted   = static_cast<int*>(malloc(n_sorted * sizeof(int)));
+				double* new_cdf      = static_cast<double*>(malloc(n_cdf * sizeof(double)));
+
+				if (!new_energies || !new_sorted || !new_cdf) {
+					fprintf(stderr,
+					        "ERROR: MIF allocation failed at generation %d "
+					        "(energies=%zu sorted=%zu cdf=%zu) — keeping old MIF.\n",
+					        i+1, n_energies, n_sorted, n_cdf);
+					free(new_energies); free(new_sorted); free(new_cdf);
+				} else {
+					std::copy_n(mif.energies.data(), n_energies, new_energies);
+					std::copy_n(mif.sorted_indices.data(), n_sorted, new_sorted);
+					std::copy_n(mif.cdf.data(), n_cdf, new_cdf);
+
+					free(FA->mif_energies); free(FA->mif_sorted); free(FA->mif_cdf);
+					FA->mif_count    = static_cast<int>(n_sorted);
+					FA->mif_energies = new_energies;
+					FA->mif_sorted   = new_sorted;
+					FA->mif_cdf      = new_cdf;
+				}
 			}
 
 			validate_dups(GB, (*gene_lim), GB->num_genes);
