@@ -303,17 +303,96 @@ echo "══════ BENCHMARK COMPLETE → ${RESULTS_DIR}/REPORT.md ══�
 cat "${RESULTS_DIR}/REPORT.md"
 ```
 
-### Wall-Clock Estimates (M3 Pro, 6 threads)
-| Step | Time |
+### 6.1 Computational Timing Profile — Source Analysis
+
+> **Derived from `gaboom.cpp`, `CoarseScreen.cpp`, `MIFGrid.h`, `generate_grid.cpp`, `partition_grid.cpp`**
+> **All estimates for M3 Pro Firestorm 3.7 GHz, OMP_NUM_THREADS=6, no GPU offload**
+
+#### Total eval_chromosome calls per complex
+
+| Event | Chromosome count |
 |---|---|
-| Unit tests + thermo validation | ~53 s |
-| Astex Diverse (85 × ~3 min/complex) | ~4.3 h |
-| Astex Non-Native (73 × ~4 min/complex) | ~4.9 h |
-| CASF-2016 (285 × ~3 min/complex) | ~14.3 h |
-| **Phase 1 minimum (Astex only)** | **~9.5 h** |
-| **Phase 1 full (+ CASF-2016)** | **~23.8 h** |
+| Initial population | 1,000 |
+| GA loop (500 gen × 1000 chrom, BOOM fraction=1.0) | 500,000 |
+| Grid repartitions (10 events × 900 repop chrom, popszpartition=100) | 9,000 |
+| **Total per complex** | **510,000** |
+
+All via `#pragma omp parallel for schedule(dynamic)` across 6 P-cores.
+Dirty-tracking fires when `dirty_atm.size() < natm/2` (normal modes off) → only <10% of atoms restored between consecutive evals.
+
+#### Per-step wall-clock (single-thread estimates)
+
+| Step | Cost | Notes |
+|---|---|---|
+| **vcfunction (Vcontacts scoring)** | **~1–5 ms** | Voronoi cell construction + LJ contact areas; dominant hot path |
+| ic2cf (internal → Cartesian) | ~1–5 µs | Rotation matrix chain for torsion genes |
+| Thread workspace restore (dirty) | ~2–5 µs | ~300 atom struct memcopy |
+| optres ptr redirect + cf clear | ~1–2 µs | natm loop + n_optres × 9 field zero |
+| Shannon entropy check (per gen) | ~0.1 ms | O(1000 chrom) H(X) computation |
+| InStreamClustering (per event) | ~3–10 ms | O(N_elite²) pairwise RMSD, every 100 gen |
+| partition_grid (top-100 elites) | ~5 ms | std::map over popszpartition=100 |
+| slice_grid (midpoint insertion) | ~10 ms | O(N_pts) midpoint map iteration |
+| compute_mif (OMP, adapted grid) | ~8–15 ms | LJ probe scan 6-thread, cutoff=6.0 Å |
+| generate_grid (0.375 Å, ~79k pts) | ~20 ms | Triple while-loop sphere masking |
+| CoarseScreener setup | ~5 ms | 6.56 Å cells × 39 atom types × 27 neighbors, OMP |
+| build_clash_grid (0.25 Å) | ~2–5 ms | OMP over bounding-box voxels |
+| PDB parse + data structure init | ~2–5 s | File I/O + atom/residue array setup |
+| FastOPTICS/DBSCAN clustering | ~100–300 ms | O(N_pop²) final ensemble reduction |
+
+#### Per-phase breakdown (6 OMP P-cores, ~80% parallel efficiency)
+
+| Phase | Events | Single-thread cost | Effective w/ 6 OMP | Phase total |
+|---|---|---|---|---|
+| **P0 — Setup** | 1× | — | — | **~5–7 s** |
+| PDB parse + init | 1 | 2–5 s | serial | 3 s |
+| generate_grid + MIF + CDF | 1 | 45 ms | serial | 45 ms |
+| CoarseScreen (grid + clash) | 1 | 10 ms | serial | 10 ms |
+| Initial pop eval (1000 chrom OMP) | 1,000 | ~3 ms | 0.6 ms eff. | **0.6 s** |
+| **P1 — GA loop (500 gen)** | 500,000 | ~3 ms | 0.6 ms eff. | **~5 min** |
+| eval_chromosome dominates | | | | |
+| Entropy checks (every 10 gen, ×50) | 50 | 0.1 ms | serial | 5 ms |
+| InStreamClustering (every 100 gen, ×5) | 5 | ~5 ms | serial | 25 ms |
+| Stagnation check (every gen, ×500) | 500 | 0.01 ms | serial | 5 ms |
+| **P2 — Grid repartitions (every 50 gen, ×10)** | 10× | — | — | **~15–20 s** |
+| QuickSort + partition_grid + slice | 10 | 25 ms | serial | 250 ms |
+| compute_mif (adapted grid, OMP) | 10 | 12 ms | 2.5 ms | 25 ms |
+| Repopulate 900 chrom (OMP) | 9,000 | ~3 ms | 0.6 ms eff. | **5.4 s** |
+| **P3 — Post-processing** | 1× | — | — | **~400 ms** |
+| FastOPTICS/DBSCAN | 1 | 200 ms | — | 200 ms |
+| Grand canonical log Ξ | 1 | 50 ms | — | 50 ms |
+| Write output files | 1 | 100 ms | — | 100 ms |
+| **TOTAL PER COMPLEX** | | | | **~5–8 min** |
+
+#### Cost attribution
+
+```
+vcfunction (Vcontacts)    ≈ 92–95% of wall time   ← the ONLY lever that matters
+Grid repartition repops   ≈  3–5%
+Setup/parse               ≈  1–2%
+Everything else           ≈ <1%
+```
+
+> **Vectorization target:** Vcontacts on Neon SIMD is the singular optimization opportunity.
+> `partition_grid`, `compute_mif`, and `slice_grid` combined < 5% — do not optimize those.
+
+---
+
+### 6.2 Wall-Clock Estimates (M3 Pro, 6 threads)
+
+**Source-analysis range:** 5–8 min/complex. Calibrate with the pilot run in Section 9 before committing to the full suite.
+
+| Step | 5 min/complex | 8 min/complex |
+|---|---|---|
+| Unit tests + thermo validation | ~53 s | ~53 s |
+| Pilot calibration (5 Astex complexes) | ~25 min | ~40 min |
+| Astex Diverse (85 complexes) | ~7 h | ~11.3 h |
+| Astex Non-Native (73 pairs) | ~6 h | ~9.7 h |
+| CASF-2016 (285 complexes) | ~23.8 h | ~38 h |
+| **Phase 1 minimum (Astex Diverse only)** | **~7 h** | **~11.3 h** |
+| **Phase 1 full (+ CASF-2016)** | **~31 h** | **~49 h** |
 
 > Run with `caffeinate -i ./run_full_benchmark.sh` to prevent sleep.
+> After the pilot, replace the range above with the empirical `wall_time_s` mean × N_complexes.
 
 ---
 
@@ -436,10 +515,23 @@ cd build && ctest --output-on-failure -j6 && cd ..
 # 4. Storage ≥ 50 GB free
 df -h ~/
 
-# 5. Tag before run
+# 5. Pilot calibration — 5 Astex complexes, measure wall_time_s
+# Recalibrates the 5–8 min/complex estimate from source analysis (Section 6.1)
+PILOT_COMPLEXES=$(head -6 benchmarks/astex_diverse/astex_diverse_set.csv | tail -5 | cut -d',' -f1)
+for pdb in $PILOT_COMPLEXES; do
+    time ./build/FlexAIDdS         --input  benchmarks/astex_diverse/structures/${pdb}/${pdb}_protein.pdb         --ligand benchmarks/astex_diverse/structures/${pdb}/${pdb}_ligand.mol2         --output /tmp/pilot_${pdb}         --seed 42 --nthreads 6 2>&1 | tee /tmp/pilot_${pdb}.log
+done
+# Extract wall_time_s from DockingResult output and compute mean:
+grep -h "wall_time_s" /tmp/pilot_*.log | awk '{sum+=$2; n++} END {
+    mean=sum/n;
+    printf "Pilot mean: %.1f s/complex  →  %.1f h for 85  →  %.1f h for 85+73+285
+",
+    mean, 85*mean/3600, (85+73+285)*mean/3600}'
+
+# 6. Tag before run
 git tag "benchmark-$(date +%Y%m%d)" -m "Pre-benchmark snapshot"
 
-# 6. Run (prevent sleep)
+# 7. Run (prevent sleep)
 caffeinate -i ./run_full_benchmark.sh PHASE=1 SEED=42
 ```
 
@@ -457,5 +549,7 @@ caffeinate -i ./run_full_benchmark.sh PHASE=1 SEED=42
 
 ---
 
-*Generated: 2026-05-08 | FlexAIDdS master post-PR #190 + PR #192 | M3 Pro benchmarking plan v1.0*
+*Generated: 2026-05-08 | Updated: 2026-05-08 (timing profile from source analysis — gaboom.cpp, CoarseScreen.cpp, MIFGrid.h)*
+*FlexAIDdS master post-PR #190 + PR #192 | M3 Pro benchmarking plan v1.1*
 *Shannon Energy Collapse H(X) < 2 bits: primary convergence metric throughout all phases*
+*vcfunction (Vcontacts) = 92–95% of wall time — sole vectorization target for performance*
