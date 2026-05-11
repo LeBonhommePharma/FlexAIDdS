@@ -18,6 +18,7 @@
 #include <span>
 #include <unordered_set>
 #include <unordered_map>
+#include <chrono>
 
 #ifdef _OPENMP
 #include <omp.h>
@@ -371,6 +372,9 @@ int GA(FA_Global* FA, GB_Global* GB,VC_Global* VC,chromosome** chrom,chromosome*
 
 	////// Genetic Algorithm ///////
 	////////////////////////////////
+	// ── Per-generation timing (bench) ──
+	double _sum_gen_ms = 0.0;
+	int    _n_gen_timed = 0;
 	for(i=0;i<GB->max_generations;i++)
 	{
 		///////////////////////////////////////////////////
@@ -382,6 +386,8 @@ int GA(FA_Global* FA, GB_Global* GB,VC_Global* VC,chromosome** chrom,chromosome*
 		}else if(state == 1){
 			break;
 		}
+
+		auto _t0_gen = std::chrono::steady_clock::now();
 
 		////////////////////////////////
 
@@ -580,6 +586,30 @@ int GA(FA_Global* FA, GB_Global* GB,VC_Global* VC,chromosome** chrom,chromosome*
 			}
 		}
 
+		// ── Record generation wall-clock ──
+		{
+			auto _t1_gen = std::chrono::steady_clock::now();
+			double _ms = std::chrono::duration<double,std::milli>(_t1_gen - _t0_gen).count();
+			_sum_gen_ms += _ms;
+			++_n_gen_timed;
+			if (i < 20)
+				fprintf(stderr, "TIMING GEN %4d: %.2f ms  (~%.3f us/eval, %d chrom)\n",
+				        i+1, _ms, _ms*1000.0/(2.0*GB->num_chrom), GB->num_chrom);
+		}
+
+	}
+
+	// ── Timing summary ──
+	if (_n_gen_timed > 0) {
+		double _avg = _sum_gen_ms / _n_gen_timed;
+		fprintf(stderr,
+		        "TIMING SUMMARY: %d gens timed, avg %.2f ms/gen, "
+		        "~%.2f us/eval (2x-pop est), "
+		        "est %.1f s for %d-gen x %d-chrom run\n",
+		        _n_gen_timed, _avg,
+		        _avg * 1000.0 / (2.0 * GB->num_chrom),
+		        _avg * GB->max_generations / 1000.0,
+		        GB->max_generations, GB->num_chrom);
 	}
 
 	printf("%d ligand conformers rejected\n", nrejected);
