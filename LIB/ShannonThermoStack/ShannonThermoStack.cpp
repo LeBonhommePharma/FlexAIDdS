@@ -289,20 +289,31 @@ double compute_torsional_vibrational_entropy(
     if (modes.empty()) return 0.0;
     const double kT = kB_kcal * temperature_K;
 
+    // Threshold floors. Prefilter on eigenvalue λ ≥ kEigenvalueFloor (1e-6) skips
+    // rigid-body modes; equivalent frequency floor is ω ≥ sqrt(1e-6) = 1e-3.
+    // We keep both layers of protection (prefilter + post-sqrt floor) as
+    // defense in depth: zero/negative eigenvalues from external sources or
+    // numerical noise must not produce ∞ in kT/ω.
+    constexpr double kEigenvalueFloor = 1e-6;
+    constexpr double kFrequencyFloor  = 1e-3;  // sqrt(kEigenvalueFloor)
+
     // Collect valid eigenvalues into Eigen array, then vectorise
     std::vector<double> ev_buf;
     ev_buf.reserve(modes.size());
     for (size_t m = 6; m < modes.size(); ++m)
-        if (modes[m].eigenvalue > 1e-6) ev_buf.push_back(modes[m].eigenvalue);
+        if (modes[m].eigenvalue > kEigenvalueFloor) ev_buf.push_back(modes[m].eigenvalue);
     if (ev_buf.empty()) return 0.0;
 
     Eigen::Map<Eigen::ArrayXd> evals(ev_buf.data(), (int)ev_buf.size());
     // eigenvalue λ = ω²; need frequency ω = sqrt(λ) for the HO entropy formula
     Eigen::ArrayXd freqs  = evals.sqrt();
-    Eigen::ArrayXd ln_arg = kT / freqs;  // element-wise: kT/ω
-    // S_mode = kB*(1 + ln(kBT/ω)) for modes where ln_arg > 1e-6
-    Eigen::ArrayXd mask = (ln_arg > 1e-6).cast<double>();
-    return kB_kcal * (mask * (1.0 + ln_arg.log())).sum();
+    // Defense in depth: clamp frequencies to floor so kT/ω is always finite,
+    // and mask out below-floor modes from the entropy sum.
+    Eigen::ArrayXd valid_mask = (freqs > kFrequencyFloor).cast<double>();
+    Eigen::ArrayXd safe_freqs = freqs.max(kFrequencyFloor);
+    Eigen::ArrayXd ln_arg = kT / safe_freqs;  // element-wise: kT/ω, always finite
+    // S_mode = kB*(1 + ln(kBT/ω)) for valid modes only
+    return kB_kcal * (valid_mask * (1.0 + ln_arg.log())).sum();
 }
 
 // ─── run_shannon_thermo_stack ────────────────────────────────────────────────

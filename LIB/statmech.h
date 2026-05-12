@@ -71,6 +71,7 @@ public:
     // Add a sampled configuration.
     // multiplicity is double so Boltzmann weights (0.0–1.0) can be passed directly
     // without silent int-truncation to zero (which caused log(0) = -inf).
+    // Precondition: multiplicity > 0 (throws std::invalid_argument otherwise).
     void add_sample(double energy, double multiplicity = 1.0);
 
     // Compute full thermodynamics over the current ensemble

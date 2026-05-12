@@ -637,6 +637,10 @@ Pose::Pose(chromosome* chrom, int index, int iorder, float dist, uint temperatur
 	  model_coords(nullptr),
 	  receptor_strain(0.0)
 {
+	// Guard against unphysical T = 0 K reaching us from a malformed config.
+	// uint promotes silently; 0 would produce division-by-zero → NaN/inf weights.
+	if (temperature == 0u)
+		throw std::domain_error("Pose: temperature must be > 0 K");
 	this->boltzmann_weight = std::exp(-chrom->app_evalue / (statmech::kB_kcal * static_cast<double>(temperature)));
 }
 

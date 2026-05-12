@@ -57,6 +57,10 @@ StatMechEngine::StatMechEngine(double temperature_K)
 // ─── add_sample ──────────────────────────────────────────────────────────────
 
 void StatMechEngine::add_sample(double energy, double multiplicity) {
+    // C-1 follow-up: silently accepting multiplicity ≤ 0 would re-introduce
+    // log(0) = -inf in compute() (counts.log() on the LSE path). Reject early.
+    if (!(multiplicity > 0.0))
+        throw std::invalid_argument("StatMechEngine::add_sample: multiplicity must be > 0");
     ensemble_.push_back({energy, multiplicity});
 }
 
@@ -167,7 +171,10 @@ Thermodynamics StatMechEngine::compute() const {
     th.free_energy    = -kT * lnZ;
     th.mean_energy    = E_avg;
     th.mean_energy_sq = E2_avg;
-    th.heat_capacity  = var / (kB_kcal * T_ * T_);
+    // var = ⟨E²⟩ − ⟨E⟩² can be slightly negative due to floating-point cancellation
+    // in near-degenerate ensembles. Clamp to 0 to keep C_V physical (≥ 0) and
+    // consistent with the std_energy guard one line below.
+    th.heat_capacity  = std::max(0.0, var) / (kB_kcal * T_ * T_);
     th.entropy        = (E_avg - th.free_energy) / T_;
     th.std_energy     = std::sqrt(std::max(0.0, var));
     return th;
@@ -428,6 +435,11 @@ void StatMechEngine::merge_samples(std::span<const double> energies,
                                     std::span<const double> multiplicities) {
     if (energies.size() != multiplicities.size())
         throw std::invalid_argument("energies and multiplicities must have same size");
+    // Same precondition as add_sample: multiplicity > 0 to prevent log(0) in compute().
+    for (size_t i = 0; i < multiplicities.size(); ++i) {
+        if (!(multiplicities[i] > 0.0))
+            throw std::invalid_argument("merge_samples: all multiplicities must be > 0");
+    }
     for (size_t i = 0; i < energies.size(); ++i)
         ensemble_.push_back({energies[i], multiplicities[i]});
 }
