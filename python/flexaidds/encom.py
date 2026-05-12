@@ -4,6 +4,11 @@ Provides Pythonic wrappers around the C++ ENCoMEngine, plus a pure-Python
 quasi-harmonic fallback for environments where the compiled extension is not
 available.
 
+Current calibration status: ENCoM eigenvalues are model-scale quantities.
+Absolute S_vib and -T*S_vib magnitudes should be treated as heuristic unless a
+benchmark protocol supplies an eigenvalue-to-frequency calibration. Differential
+comparisons under one fixed protocol are the supported use.
+
 Reference:
     Frappier et al. (2015). Proteins 83(11):2073-82.
     DOI: 10.1002/prot.24922
@@ -40,7 +45,7 @@ class NormalMode:
     Attributes:
         index:      1-based mode index.
         eigenvalue: λ_i in ENCoM arbitrary units.
-        frequency:  ω_i = sqrt(λ_i), rad/s when converted to SI.
+        frequency:  ω_i = sqrt(λ_i) before any calibration scale.
         eigenvector: Displacement vector with 3N components.
     """
     index: int = 0
@@ -57,9 +62,9 @@ class VibrationalEntropy:
     """Quasi-harmonic vibrational entropy from ENCoM normal modes.
 
     Attributes:
-        S_vib_kcal_mol_K: Vibrational entropy in kcal mol⁻¹ K⁻¹.
-        S_vib_J_mol_K:    Vibrational entropy in J mol⁻¹ K⁻¹.
-        omega_eff:         Effective angular frequency ω_eff (rad/s).
+        S_vib_kcal_mol_K: Heuristic vibrational entropy in kcal mol⁻¹ K⁻¹.
+        S_vib_J_mol_K:    Same heuristic in J mol⁻¹ K⁻¹.
+        omega_eff:         Effective model frequency ω_eff.
         n_modes:           Number of non-trivial normal modes (3N − 6).
         temperature:       Temperature in Kelvin.
     """
@@ -87,12 +92,12 @@ def _python_compute_vibrational_entropy(
     temperature_K: float = 300.0,
     eigenvalue_cutoff: float = 1e-6,
 ) -> VibrationalEntropy:
-    """Pure-Python quasi-harmonic S_vib (Schlitter 1993 approximation).
+    """Pure-Python quasi-harmonic S_vib heuristic.
 
     Used when the C++ extension is not available.  Matches the C++ engine
-    formula:
+    formula after applying the local scale factor:
         ω_eff = geometric_mean(sqrt(λ_i)  for non-trivial modes)
-        S_vib = n × k_B × [1 + ln(2π k_B T / (ħ ω_eff))]
+        S_vib = n * k_B * [1 + ln(k_B T / (hbar * omega_eff))]
     """
     non_trivial = [m for m in modes if m.eigenvalue > eigenvalue_cutoff]
     if not non_trivial:
@@ -101,14 +106,15 @@ def _python_compute_vibrational_entropy(
     # Geometric mean of frequencies in ENCoM units, then convert to SI.
     # ENCoM eigenvalues are dimensionless; we apply a scale factor so that
     # ω_eff has units of rad/s consistent with the Schlitter formula.
-    # Scale chosen to match Frappier et al. (2015) reference values.
+    # Placeholder scale for continuity with existing outputs. Treat absolute
+    # values as heuristic until benchmark-specific calibration is committed.
     _ENCOM_SCALE = 1.0e12  # rad/s per sqrt(ENCoM unit)
 
     log_sum = sum(0.5 * math.log(m.eigenvalue) for m in non_trivial)
     omega_eff = _ENCOM_SCALE * math.exp(log_sum / len(non_trivial))
 
     kT = kB_SI * temperature_K
-    x = 2.0 * math.pi * kT / (hbar_SI * omega_eff)
+    x = kT / (hbar_SI * omega_eff)
     x = max(x, 1.0)  # ln argument must be ≥ 1
 
     n = len(non_trivial)

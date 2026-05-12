@@ -370,7 +370,7 @@ TEST_F(ShannonThermoStackTest, ReportContainsMetrics) {
     auto result = run_shannon_thermo_stack(engine, tencm_model, -10.0);
 
     EXPECT_NE(result.report.find("S_conf="), std::string::npos);
-    EXPECT_NE(result.report.find("S_vib="), std::string::npos);
+    EXPECT_NE(result.report.find("S_vib_heuristic="), std::string::npos);
     EXPECT_NE(result.report.find("kcal/mol"), std::string::npos);
 }
 

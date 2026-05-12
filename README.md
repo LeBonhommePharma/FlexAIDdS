@@ -286,6 +286,10 @@ All parameters have built-in defaults. Override only what you need via JSON:
 tENCoM reference.pdb target1.pdb [target2.pdb ...] [-T temp] [-r cutoff] [-k k0] [-o prefix]
 ```
 
+tENCoM vibrational entropy is currently a relative heuristic unless a
+benchmark-specific eigenvalue-to-frequency calibration is supplied. See
+[docs/TENCOM_ENTROPY_CALIBRATION.md](docs/TENCOM_ENTROPY_CALIBRATION.md).
+
 ### Python Package
 
 ```bash
