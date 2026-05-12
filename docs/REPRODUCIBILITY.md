@@ -16,6 +16,26 @@ A claim reaches this level only when all of the following are present:
 - expected outputs and metric calculation scripts
 - recorded git SHA and environment details
 
+## Seed provenance
+
+Repository-reproducible stochastic runs must record the run-level seed. The
+canonical environment variable is:
+
+```bash
+export FLEXAID_SEED=42
+```
+
+Core fallback RNG paths that previously seeded directly from
+`std::random_device` should route through `LIB/RngSeed.h`. When
+`FLEXAID_SEED` is set, each call site derives a deterministic stream seed from
+that run seed. When it is unset, the helper falls back to `std::random_device`
+for exploratory runs.
+
+This seed is necessary provenance, not a complete determinism guarantee for
+parallel algorithms. Any benchmark intended to be replayable must also record
+thread counts, backend selection, compiler flags, input order, and whether
+parallel scheduling can change draw order.
+
 ### 2. Preliminary
 
 A claim is preliminary if it appears in documentation but is not yet backed by a replayable bundle in the repository.
