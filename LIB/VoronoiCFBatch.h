@@ -213,7 +213,7 @@ inline BatchResult batch_eval(
     auto t0 = std::chrono::steady_clock::now();
 
 #ifdef _OPENMP
-#pragma omp parallel for schedule(dynamic, 4) default(none) \
+#pragma omp parallel for schedule(dynamic, 4) \
     shared(chroms, result, ws, gene_lim, cleftgrid, function, FA, GB, \
            ref_atoms, ref_residue, N)
 #endif
