@@ -172,6 +172,8 @@ public:
 
     // ─── Dispatched compute functions (from former HardwareDispatch.h) ───
 
+    // Returns histogram Shannon entropy in nats. Convert to bits at reporting
+    // boundaries with H_bits = H_nats / ln(2).
     double compute_shannon_entropy(const std::vector<double>& values,
                                    int num_bins = 20,
                                    Backend backend = Backend::AUTO);

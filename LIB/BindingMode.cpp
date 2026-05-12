@@ -219,11 +219,11 @@ double BindingPopulation::get_shannon_entropy() const
 		return 0.0;
 	}
 
-	// Compute Shannon entropy via ShannonThermoStack (energy histogram binning)
-	double shannon_bits = shannon_thermo::compute_shannon_entropy(all_energies);
+	// Histogram entropy over CF energies, returned in nats.
+	double shannon_nats = shannon_thermo::compute_shannon_entropy(all_energies);
 
-	// Convert from dimensionless bits to thermodynamic units: S = kB * H
-	shannonS_population_ = statmech::kB_kcal * shannon_bits;
+	// Convert from dimensionless nats to thermodynamic units: S = kB * H
+	shannonS_population_ = statmech::kB_kcal * shannon_nats;
 	shannon_cache_valid_ = true;
 	return shannonS_population_;
 }
