@@ -28,31 +28,30 @@ This file documents limitations that matter for installation trust, scientific i
 - Legacy C and C++ parsing surfaces require continued hardening and regression testing.
 - Presence of an audit or policy document does not itself imply closure; fixes and automation are the real closure criteria.
 
-### Current Security Status (April 2026)
+### Current Security Status (May 2026)
 
-**Recent Audit Results:**
-- 7 HIGH-severity buffer overflow vulnerabilities identified in config parsing (H-1 through H-7)
-- 14 MEDIUM-severity unsafe string handling patterns documented
-- 7 LOW-severity information disclosure issues noted
+The March 2026 buffer-overflow audit remains useful as a historical threat
+inventory, but it is not a current closure report. Several high-risk patterns
+have since been bounded in source, while legacy C/C++ config parsing still
+requires ongoing hardening and regression tests.
 
-**Remediation Timeline:**
-- Phase 1 (Code Coverage CI): ✅ COMPLETE
-- Phase 2 (Buffer Overflow Fixes): ⏳ IN PROGRESS
-- Phase 3 (DatasetRunner Integration): ⏳ PENDING
-- Phase 4 (Documentation): ✅ COMPLETE
+**Current live status:**
+- legacy GIST config path parsing now uses bounded copy helpers instead of
+  unbounded `%s` reads
+- buffer-safety regression coverage exists in `tests/test_buffer_safety.cpp`
+- remaining unsafe string patterns should be tracked as source findings, not
+  inferred from the stale March audit totals
 
-See [`SECURITY_HARDENING_ROADMAP.md`](SECURITY_HARDENING_ROADMAP.md) for details on vulnerabilities and fixes.
+**Recommended mitigation until the legacy parser is fully retired:**
+- do not process untrusted configuration files
+- use signed or repository-controlled configuration bundles for benchmarks
+- keep config files small and reviewable
+- run parser changes under ASAN/UBSAN where available
 
-**Recommended Mitigation** (Until Phase 2 Completes):
-- Do not process untrusted configuration files
-- Use signed configuration bundles from official sources
-- Validate config file sizes (<1MB recommended)
-- Deploy with strict filesystem permissions
-
-**Testing Infrastructure:**
-- All fixes validated with ASAN/UBSAN sanitizers
-- New test suite: `tests/test_buffer_safety.cpp` with 6+ boundary condition tests
-- Continuous coverage tracking via GitHub Actions (target ≥50%)
+See [`SECURITY_HARDENING_ROADMAP.md`](SECURITY_HARDENING_ROADMAP.md) and
+[`SECURITY_AUDIT_BUFFER_OVERFLOW.md`](../SECURITY_AUDIT_BUFFER_OVERFLOW.md) for
+historical context. Treat those documents as audit inputs, not proof of current
+security closure.
 
 ## Scientific interpretation limitations
 

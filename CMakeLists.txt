@@ -2356,6 +2356,21 @@ flexaids_configure_simd(test_cavity_detect)
     flexaids_configure_msvc_test(test_gist_hbond)
     add_test(NAME GISTHBondTests COMMAND test_gist_hbond)
 
+    # test_buffer_safety — bounded legacy config parsing regressions
+    add_executable(test_buffer_safety
+        tests/test_buffer_safety.cpp
+    )
+    target_include_directories(test_buffer_safety PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/LIB)
+    target_link_libraries(test_buffer_safety PRIVATE GTest::gtest GTest::gtest_main)
+    if(MSVC)
+        target_compile_options(test_buffer_safety PRIVATE /O2)
+    else()
+        target_compile_options(test_buffer_safety PRIVATE -O2)
+    endif()
+    flexaids_configure_msvc_test(test_buffer_safety)
+    add_test(NAME BufferSafetyTests COMMAND test_buffer_safety)
+
     message(STATUS "Unit tests enabled — build targets: test_statmech, test_hardware_dispatch, test_tencom_diff, test_target_validation, test_grand_partition, test_target_server, test_multi_site_gpf")
     # test_hbond_potential — Angular-dependent H-bond potential unit tests
     add_executable(test_hbond_potential
