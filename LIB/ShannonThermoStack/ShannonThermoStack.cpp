@@ -287,7 +287,6 @@ double compute_torsional_vibrational_entropy(
     double temperature_K)
 {
     if (modes.empty()) return 0.0;
-    const double kT = kB_kcal * temperature_K;
 
     // Collect valid eigenvalues into Eigen array, then vectorise
     std::vector<double> ev_buf;
@@ -297,12 +296,14 @@ double compute_torsional_vibrational_entropy(
     if (ev_buf.empty()) return 0.0;
 
     Eigen::Map<Eigen::ArrayXd> evals(ev_buf.data(), (int)ev_buf.size());
-    // eigenvalue λ = ω²; need frequency ω = sqrt(λ) for the HO entropy formula
-    Eigen::ArrayXd freqs  = evals.sqrt();
-    Eigen::ArrayXd ln_arg = kT / freqs;  // element-wise: kT/ω
-    // S_mode = kB*(1 + ln(kBT/ω)) for modes where ln_arg > 1e-6
-    Eigen::ArrayXd mask = (ln_arg > 1e-6).cast<double>();
-    return kB_kcal * (mask * (1.0 + ln_arg.log())).sum();
+    // Model-scale omega proxy. Physical rad/s require an explicit calibration
+    // bundle; this path intentionally reports heuristic relative entropy.
+    Eigen::ArrayXd omega = evals.sqrt();
+    Eigen::ArrayXd ln_arg = (kB_SI * temperature_K) / (hbar_SI * omega);
+    auto valid = (ln_arg > 0.0) && ln_arg.isFinite();
+    Eigen::ArrayXd safe_arg = valid.select(ln_arg, 1.0);
+    Eigen::ArrayXd contribution = valid.select(1.0 + safe_arg.log(), 0.0);
+    return kB_kcal * contribution.sum();
 }
 
 // ─── run_shannon_thermo_stack ────────────────────────────────────────────────
@@ -334,9 +335,9 @@ FullThermoResult run_shannon_thermo_stack(
     //     S_conf [kcal/(mol·K)] = k_B · H [nats]
     double S_conf_phys  = S_conf_nats * kB_kcal;
 
-    // Additive decomposition: S_total = S_conf + S_vib.
-    // S_vib is a relative tENCoM heuristic unless the eigenvalue scale has
-    // been calibrated for the benchmark protocol.
+    // Additive decomposition: S_total = S_conf + S_vib
+    // Valid for independent conformational and vibrational DOFs
+    // (standard assumption in rigid-body docking + normal-mode analysis).
     double total_S      = S_conf_phys + S_vib;
     double S_contrib    = -temperature_K * total_S;
     double final_dG     = base_deltaG + S_contrib;
@@ -358,9 +359,9 @@ FullThermoResult run_shannon_thermo_stack(
         std::string("ShannonThermoStack[") + hw +
         "+Eigen"
         "]: S_conf=" + std::to_string(S_conf_nats) +
-        " nats, S_vib_heuristic=" + std::to_string(S_vib) +
-        " kcal/mol/K, ΔG=" + std::to_string(final_dG) +
-        " kcal/mol (vib requires calibration for absolute claims)";
+        " nats, S_vib=" + std::to_string(S_vib) +
+        " kcal/mol/K (model-scale heuristic), ΔG=" +
+        std::to_string(final_dG) + " kcal/mol";
 
     return { final_dG, S_conf_nats, S_vib, S_contrib, report };
 }

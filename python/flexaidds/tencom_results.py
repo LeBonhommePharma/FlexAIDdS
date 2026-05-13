@@ -37,6 +37,12 @@ class FlexModeResult:
     mode_type: str = ""             # "reference" or "target"
     source: str = ""                # PDB file path
     S_vib: float = 0.0              # kcal/mol/K
+    S_vib_status: str = "model_scale_heuristic"
+    eigenvalue_to_omega: float = 1.0
+    calibration_label: str = "model-scale"
+    calibration_provenance: str = (
+        "No mass/inertia or empirical eigenvalue-to-frequency calibration supplied"
+    )
     delta_S_vib: float = 0.0       # kcal/mol/K
     delta_F_vib: float = 0.0       # kcal/mol
     n_modes: int = 0
@@ -88,6 +94,10 @@ _KEY_ALIASES = {
     "MODE_TYPE": "mode_type",
     "SOURCE": "source",
     "S_VIB": "S_vib",
+    "S_VIB_STATUS": "S_vib_status",
+    "EIGENVALUE_TO_OMEGA": "eigenvalue_to_omega",
+    "CALIBRATION_LABEL": "calibration_label",
+    "CALIBRATION_PROVENANCE": "calibration_provenance",
     "DELTA_S_VIB": "delta_S_vib",
     "DELTA_F_VIB": "delta_F_vib",
     "N_MODES": "n_modes",
@@ -131,7 +141,10 @@ def parse_tencom_pdb(pdb_path: str) -> FlexModeResult:
                 if alias:
                     if alias in ("mode_id", "n_modes", "n_residues"):
                         setattr(result, alias, int(val))
-                    elif alias in ("S_vib", "delta_S_vib", "delta_F_vib", "temperature"):
+                    elif alias in (
+                        "S_vib", "delta_S_vib", "delta_F_vib", "temperature",
+                        "eigenvalue_to_omega",
+                    ):
                         setattr(result, alias, float(val))
                     elif alias == "full_flexibility":
                         setattr(result, alias, val.upper() == "ON")
@@ -207,6 +220,13 @@ def parse_tencom_json(json_path: str) -> FlexPopulationResult:
             mode_type=m.get("type", ""),
             source=m.get("source", ""),
             S_vib=m.get("S_vib", 0.0),
+            S_vib_status=m.get("S_vib_status", "model_scale_heuristic"),
+            eigenvalue_to_omega=m.get("eigenvalue_to_omega", 1.0),
+            calibration_label=m.get("calibration_label", "model-scale"),
+            calibration_provenance=m.get(
+                "calibration_provenance",
+                "No mass/inertia or empirical eigenvalue-to-frequency calibration supplied",
+            ),
             delta_S_vib=m.get("delta_S_vib", 0.0),
             delta_F_vib=m.get("delta_F_vib", 0.0),
             n_modes=m.get("n_modes", 0),

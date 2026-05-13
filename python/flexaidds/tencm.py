@@ -80,6 +80,8 @@ class FullThermoResult:
 
 # ── Constants ────────────────────────────────────────────────────────────────
 kB_kcal = 0.001987206  # kcal mol⁻¹ K⁻¹
+kB_SI = 1.380649e-23   # J K⁻¹
+hbar_SI = 1.054571817e-34  # J·s
 DEFAULT_CUTOFF = 9.0    # Å
 DEFAULT_K0 = 1.0        # kcal mol⁻¹ Å⁻²
 
@@ -301,20 +303,30 @@ def compute_shannon_entropy(
 def compute_torsional_vibrational_entropy(
     modes: List[TorsionalNormalMode],
     temperature_K: float = 298.15,
+    eigenvalue_to_omega: float = 1.0,
 ) -> float:
     """Compute torsional vibrational entropy from normal modes.
 
-    Sums harmonic oscillator entropy for each torsional mode:
-        S ≈ k_B × ln(k_B T / (ħ ω))  for low-frequency modes.
+    Sums classical harmonic oscillator entropy for each torsional mode:
+        S = k_B × [1 + ln(k_B T / (ħ ω))]
+        ω = eigenvalue_to_omega × sqrt(λ)
+
+    The default eigenvalue_to_omega=1.0 is a model-scale heuristic, not an
+    absolute frequency calibration.
 
     Args:
         modes:          List of TorsionalNormalMode objects.
         temperature_K:  Temperature in Kelvin.
+        eigenvalue_to_omega: rad/s per sqrt(model eigenvalue).
 
     Returns:
-        Torsional vibrational entropy in kcal/(mol·K).
+        Torsional vibrational entropy in kcal/(mol·K); model-scale heuristic
+        unless eigenvalue_to_omega is physically calibrated.
     """
-    if _HAS_CORE:
+    if not math.isfinite(eigenvalue_to_omega) or eigenvalue_to_omega <= 0.0:
+        raise ValueError("eigenvalue_to_omega must be finite and positive")
+
+    if _HAS_CORE and eigenvalue_to_omega == 1.0:
         try:
             cpp_modes = []
             for m in modes:
@@ -331,13 +343,13 @@ def compute_torsional_vibrational_entropy(
         return 0.0
 
     S_total = 0.0
-    for mode in modes:
+    for mode in modes[6:]:
         if mode.eigenvalue <= 1e-8:
             continue
-        omega = math.sqrt(mode.eigenvalue)
-        ratio = kB_kcal * temperature_K / omega
-        if ratio > 0:
-            S_total += kB_kcal * math.log(ratio)
+        omega = eigenvalue_to_omega * math.sqrt(mode.eigenvalue)
+        ratio = (kB_SI * temperature_K) / (hbar_SI * omega)
+        if ratio > 0.0 and math.isfinite(ratio):
+            S_total += kB_kcal * (1.0 + math.log(ratio))
 
     return S_total
 
@@ -399,8 +411,9 @@ def run_shannon_thermo_stack(
     report = (
         f"ShannonThermoStack (T={temperature_K:.1f} K)\n"
         f"{sc_info}"
-        f"  Shannon conf entropy    = {H_shannon:.4f} nats\n"
-        f"  Torsional vib entropy   = {S_vib:.6f} kcal/(mol·K)\n"
+        f"  Shannon conf entropy    = {H_shannon:.4f} bits\n"
+        f"  Torsional vib entropy   = {S_vib:.6f} kcal/(mol·K) "
+        f"(model-scale heuristic)\n"
         f"  Entropy contribution    = {entropy_contribution:.4f} kcal/mol (-TΔS)\n"
         f"  Total ΔG (F + vib corr) = {deltaG:.4f} kcal/mol\n"
     )

@@ -4,11 +4,6 @@ Provides Pythonic wrappers around the C++ ENCoMEngine, plus a pure-Python
 quasi-harmonic fallback for environments where the compiled extension is not
 available.
 
-Current calibration status: ENCoM eigenvalues are model-scale quantities.
-Absolute S_vib and -T*S_vib magnitudes should be treated as heuristic unless a
-benchmark protocol supplies an eigenvalue-to-frequency calibration. Differential
-comparisons under one fixed protocol are the supported use.
-
 Reference:
     Frappier et al. (2015). Proteins 83(11):2073-82.
     DOI: 10.1002/prot.24922
@@ -45,7 +40,7 @@ class NormalMode:
     Attributes:
         index:      1-based mode index.
         eigenvalue: λ_i in ENCoM arbitrary units.
-        frequency:  ω_i = sqrt(λ_i) before any calibration scale.
+        frequency:  sqrt(λ_i) in model scale unless calibrated to rad/s.
         eigenvector: Displacement vector with 3N components.
     """
     index: int = 0
@@ -58,32 +53,88 @@ class NormalMode:
 
 
 @dataclass
+class FrequencyCalibration:
+    """Eigenvalue-to-angular-frequency calibration metadata.
+
+    ENCoM/tENCoM eigenvalues are model stiffness quantities. A calibrated
+    scale is required before reporting absolute SI-frequency or absolute
+    vibrational entropy claims.
+    """
+    eigenvalue_to_omega: float = 1.0
+    calibrated: bool = False
+    label: str = "model-scale"
+    provenance: str = (
+        "No mass/inertia or empirical eigenvalue-to-frequency calibration supplied"
+    )
+
+    @classmethod
+    def model_scale(cls) -> "FrequencyCalibration":
+        return cls()
+
+    @classmethod
+    def calibrated_scale(
+        cls,
+        eigenvalue_to_omega: float,
+        label: str,
+        provenance: str = "User-supplied eigenvalue-to-frequency calibration",
+    ) -> "FrequencyCalibration":
+        if not math.isfinite(eigenvalue_to_omega) or eigenvalue_to_omega <= 0.0:
+            raise ValueError("eigenvalue_to_omega must be finite and positive")
+        return cls(
+            eigenvalue_to_omega=eigenvalue_to_omega,
+            calibrated=True,
+            label=label or "calibrated",
+            provenance=provenance,
+        )
+
+    @property
+    def status(self) -> str:
+        return "calibrated" if self.calibrated else "model_scale_heuristic"
+
+
+@dataclass
 class VibrationalEntropy:
     """Quasi-harmonic vibrational entropy from ENCoM normal modes.
 
     Attributes:
-        S_vib_kcal_mol_K: Heuristic vibrational entropy in kcal mol⁻¹ K⁻¹.
-        S_vib_J_mol_K:    Same heuristic in J mol⁻¹ K⁻¹.
-        omega_eff:         Effective model frequency ω_eff.
+        S_vib_kcal_mol_K: Vibrational entropy in kcal mol⁻¹ K⁻¹.
+        S_vib_J_mol_K:    Vibrational entropy in J mol⁻¹ K⁻¹.
+        omega_eff:         Effective angular frequency ω_eff (rad/s).
         n_modes:           Number of non-trivial normal modes (3N − 6).
         temperature:       Temperature in Kelvin.
+        eigenvalue_to_omega: Calibration scale used for omega_eff.
+        calibrated:         True only when the scale has physical/empirical provenance.
     """
     S_vib_kcal_mol_K: float = 0.0
     S_vib_J_mol_K: float = 0.0
     omega_eff: float = 0.0
     n_modes: int = 0
     temperature: float = 300.0
+    eigenvalue_to_omega: float = 1.0
+    calibrated: bool = False
+    calibration_label: str = "model-scale"
+    calibration_provenance: str = (
+        "No mass/inertia or empirical eigenvalue-to-frequency calibration supplied"
+    )
 
     @property
     def free_energy_correction(self) -> float:
         """−T·S_vib vibrational free energy correction (kcal/mol)."""
         return -self.temperature * self.S_vib_kcal_mol_K
 
+    @property
+    def absolute_claim_allowed(self) -> bool:
+        return self.calibrated
+
+    @property
+    def calibration_status(self) -> str:
+        return "calibrated" if self.calibrated else "model_scale_heuristic"
+
     def __repr__(self) -> str:
         return (
             f"<VibrationalEntropy n_modes={self.n_modes} "
             f"S_vib={self.S_vib_kcal_mol_K:.6f} kcal/(mol·K) "
-            f"T={self.temperature:.1f}K>"
+            f"T={self.temperature:.1f}K status={self.calibration_status}>"
         )
 
 
@@ -91,31 +142,41 @@ def _python_compute_vibrational_entropy(
     modes: List[NormalMode],
     temperature_K: float = 300.0,
     eigenvalue_cutoff: float = 1e-6,
+    frequency_calibration: Optional[FrequencyCalibration] = None,
 ) -> VibrationalEntropy:
-    """Pure-Python quasi-harmonic S_vib heuristic.
+    """Pure-Python classical harmonic-oscillator S_vib approximation.
 
     Used when the C++ extension is not available.  Matches the C++ engine
-    formula after applying the local scale factor:
-        ω_eff = geometric_mean(sqrt(λ_i)  for non-trivial modes)
-        S_vib = n * k_B * [1 + ln(k_B T / (hbar * omega_eff))]
+    formula:
+        ω_eff = scale × geometric_mean(sqrt(λ_i) for non-trivial modes)
+        S_vib = n × k_B × [1 + ln(k_B T / (ħ ω_eff))]
     """
+    calibration = frequency_calibration or FrequencyCalibration.model_scale()
+    if not math.isfinite(calibration.eigenvalue_to_omega) or calibration.eigenvalue_to_omega <= 0.0:
+        raise ValueError("eigenvalue_to_omega must be finite and positive")
     non_trivial = [m for m in modes if m.eigenvalue > eigenvalue_cutoff]
     if not non_trivial:
-        return VibrationalEntropy(temperature=temperature_K)
-
-    # Geometric mean of frequencies in ENCoM units, then convert to SI.
-    # ENCoM eigenvalues are dimensionless; we apply a scale factor so that
-    # ω_eff has units of rad/s consistent with the Schlitter formula.
-    # Placeholder scale for continuity with existing outputs. Treat absolute
-    # values as heuristic until benchmark-specific calibration is committed.
-    _ENCOM_SCALE = 1.0e12  # rad/s per sqrt(ENCoM unit)
+        return VibrationalEntropy(
+            temperature=temperature_K,
+            eigenvalue_to_omega=calibration.eigenvalue_to_omega,
+            calibrated=calibration.calibrated,
+            calibration_label=calibration.label,
+            calibration_provenance=calibration.provenance,
+        )
 
     log_sum = sum(0.5 * math.log(m.eigenvalue) for m in non_trivial)
-    omega_eff = _ENCOM_SCALE * math.exp(log_sum / len(non_trivial))
+    omega_eff = calibration.eigenvalue_to_omega * math.exp(log_sum / len(non_trivial))
 
     kT = kB_SI * temperature_K
     x = kT / (hbar_SI * omega_eff)
-    x = max(x, 1.0)  # ln argument must be ≥ 1
+    if x <= 0.0 or not math.isfinite(x):
+        return VibrationalEntropy(
+            temperature=temperature_K,
+            eigenvalue_to_omega=calibration.eigenvalue_to_omega,
+            calibrated=calibration.calibrated,
+            calibration_label=calibration.label,
+            calibration_provenance=calibration.provenance,
+        )
 
     n = len(non_trivial)
     S_vib_J = n * kB_SI * (1.0 + math.log(x))
@@ -128,6 +189,10 @@ def _python_compute_vibrational_entropy(
         omega_eff=omega_eff,
         n_modes=n,
         temperature=temperature_K,
+        eigenvalue_to_omega=calibration.eigenvalue_to_omega,
+        calibrated=calibration.calibrated,
+        calibration_label=calibration.label,
+        calibration_provenance=calibration.provenance,
     )
 
 
@@ -275,6 +340,7 @@ class ENCoMEngine:
         modes: List[NormalMode],
         temperature_K: float = 300.0,
         eigenvalue_cutoff: float = 1e-6,
+        frequency_calibration: Optional[FrequencyCalibration] = None,
     ) -> VibrationalEntropy:
         """Schlitter quasi-harmonic S_vib from a list of NormalMode objects.
 
@@ -286,7 +352,10 @@ class ENCoMEngine:
 
         Returns:
             VibrationalEntropy with S_vib in both kcal/(mol·K) and J/(mol·K).
+            Values are model-scale heuristic unless frequency_calibration is
+            calibrated.
         """
+        calibration = frequency_calibration or FrequencyCalibration.model_scale()
         if _HAS_CORE:
             try:
                 cpp_modes = []
@@ -297,7 +366,13 @@ class ENCoMEngine:
                     cm.frequency = m.frequency
                     cm.eigenvector = m.eigenvector
                     cpp_modes.append(cm)
-                eng = _core.ENCoMEngine(eigenvalue_cutoff=eigenvalue_cutoff)
+                eng = _core.ENCoMEngine(
+                    eigenvalue_cutoff=eigenvalue_cutoff,
+                    eigenvalue_to_omega=calibration.eigenvalue_to_omega,
+                    calibrated=calibration.calibrated,
+                    calibration_label=calibration.label,
+                    calibration_provenance=calibration.provenance,
+                )
                 vs_cpp = eng.compute_vibrational_entropy(
                     cpp_modes, temperature_K
                 )
@@ -307,12 +382,21 @@ class ENCoMEngine:
                     omega_eff=vs_cpp.omega_eff,
                     n_modes=vs_cpp.n_modes,
                     temperature=vs_cpp.temperature,
+                    eigenvalue_to_omega=getattr(vs_cpp, "eigenvalue_to_omega", calibration.eigenvalue_to_omega),
+                    calibrated=getattr(vs_cpp, "calibrated", calibration.calibrated),
+                    calibration_label=getattr(vs_cpp, "calibration_label", calibration.label),
+                    calibration_provenance=getattr(vs_cpp, "calibration_provenance", calibration.provenance),
                 )
-            except (AttributeError, RuntimeError):
+            except (AttributeError, RuntimeError, TypeError):
                 # Fall through to pure-Python implementation if C++ unavailable
                 pass
 
-        return _python_compute_vibrational_entropy(modes, temperature_K, eigenvalue_cutoff)
+        return _python_compute_vibrational_entropy(
+            modes,
+            temperature_K,
+            eigenvalue_cutoff,
+            calibration,
+        )
 
     @staticmethod
     def total_entropy(

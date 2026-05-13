@@ -12,6 +12,29 @@
 
 namespace encom {
 
+FrequencyCalibration FrequencyCalibration::model_scale() {
+    return FrequencyCalibration{};
+}
+
+FrequencyCalibration FrequencyCalibration::calibrated_scale(
+    double scale,
+    const std::string& label,
+    const std::string& provenance)
+{
+    if (!std::isfinite(scale) || scale <= 0.0) {
+        throw std::invalid_argument(
+            "Frequency calibration scale must be finite and positive");
+    }
+    FrequencyCalibration calibration;
+    calibration.eigenvalue_to_omega = scale;
+    calibration.calibrated = true;
+    calibration.label = label.empty() ? "calibrated" : label;
+    calibration.provenance = provenance.empty()
+        ? "User-supplied eigenvalue-to-frequency calibration"
+        : provenance;
+    return calibration;
+}
+
 // ──────────────────────────────────────────────────────────────────────────────
 std::vector<NormalMode> ENCoMEngine::load_modes(
     const std::string& eigenvalue_file,
@@ -57,7 +80,8 @@ std::vector<NormalMode> ENCoMEngine::load_modes(
         NormalMode mode;
         mode.index = mode_index;
         mode.eigenvalue = eigenvalues[mode_index - 1];
-        mode.frequency = std::sqrt(std::abs(mode.eigenvalue));  // ω = sqrt(λ)
+        // Model-scale frequency proxy. Physical rad/s require calibration.
+        mode.frequency = std::sqrt(std::abs(mode.eigenvalue));
         mode.eigenvector = std::move(components);
         
         modes.push_back(mode);
@@ -79,8 +103,33 @@ VibrationalEntropy ENCoMEngine::compute_vibrational_entropy(
     double temperature_K,
     double eigenvalue_cutoff)
 {
+    return compute_vibrational_entropy(
+        modes,
+        temperature_K,
+        FrequencyCalibration::model_scale(),
+        eigenvalue_cutoff);
+}
+
+VibrationalEntropy ENCoMEngine::compute_vibrational_entropy(
+    const std::vector<NormalMode>& modes,
+    double temperature_K,
+    const FrequencyCalibration& calibration,
+    double eigenvalue_cutoff)
+{
     VibrationalEntropy result;
     result.temperature = temperature_K;
+    result.eigenvalue_to_omega = calibration.eigenvalue_to_omega;
+    result.calibrated = calibration.calibrated;
+    result.calibration_label = calibration.label;
+    result.calibration_provenance = calibration.provenance;
+
+    if (!std::isfinite(temperature_K) || temperature_K <= 0.0) {
+        throw std::invalid_argument("Temperature must be finite and positive");
+    }
+    if (!calibration.valid()) {
+        throw std::invalid_argument(
+            "Frequency calibration scale must be finite and positive");
+    }
     
     // Filter non-zero modes (exclude 6 rigid-body modes: 3 translation + 3 rotation)
     // Eigen path: vectorised filtering and geometric mean
@@ -107,12 +156,13 @@ VibrationalEntropy ENCoMEngine::compute_vibrational_entropy(
     // Compute geometric mean of eigenvalues
     double geom_mean_eigenvalue = geometric_mean(nonzero_eigenvalues);
     
-    // Convert to an effective model frequency. ENCoM eigenvalues are not SI
-    // frequencies without an external calibration scale, so absolute S_vib
-    // magnitudes should be treated as heuristic unless calibrated.
-    result.omega_eff = std::sqrt(geom_mean_eigenvalue);
+    // Convert model stiffness eigenvalues to an effective angular frequency.
+    // With the default model-scale calibration this is only a relative proxy;
+    // absolute SI entropy claims require calibrated eigenvalue_to_omega.
+    result.omega_eff =
+        calibration.eigenvalue_to_omega * std::sqrt(geom_mean_eigenvalue);
 
-    if (result.omega_eff <= 0.0) {
+    if (!std::isfinite(result.omega_eff) || result.omega_eff <= 0.0) {
         // All eigenvalues below cutoff → zero vibrational entropy
         result.S_vib_kcal_mol_K = 0.0;
         result.S_vib_J_mol_K = 0.0;
@@ -127,7 +177,7 @@ VibrationalEntropy ENCoMEngine::compute_vibrational_entropy(
     const double kBT = kB_SI * temperature_K;         // J
     const double arg = kBT / (hbar_SI * result.omega_eff);
 
-    if (arg <= 0.0) {
+    if (!std::isfinite(arg) || arg <= 0.0) {
         // Invalid frequency → zero entropy
         result.S_vib_kcal_mol_K = 0.0;
         result.S_vib_J_mol_K = 0.0;

@@ -1,0 +1,96 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/LeBonhommePharma/FlexAIDdS/docs/tencom_calibration/schema.json",
+  "title": "FlexAIDdS tENCoM Frequency Calibration Bundle",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "model",
+    "status",
+    "eigenvalue_to_omega_rad_s_per_sqrt_unit",
+    "label",
+    "provenance",
+    "absolute_entropy_claims_allowed"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "integer",
+      "const": 1
+    },
+    "model": {
+      "type": "string",
+      "enum": ["ENCoM", "tENCoM", "FlexAIDdS-tENCoM"]
+    },
+    "status": {
+      "type": "string",
+      "enum": ["uncalibrated", "calibrated"]
+    },
+    "eigenvalue_to_omega_rad_s_per_sqrt_unit": {
+      "type": "number",
+      "exclusiveMinimum": 0
+    },
+    "label": {
+      "type": "string",
+      "minLength": 1
+    },
+    "provenance": {
+      "type": "string",
+      "minLength": 1
+    },
+    "training_set": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": true
+      }
+    },
+    "fit_method": {
+      "type": "string"
+    },
+    "temperature_K": {
+      "type": "number",
+      "exclusiveMinimum": 0
+    },
+    "valid_for": {
+      "type": "string"
+    },
+    "absolute_entropy_claims_allowed": {
+      "type": "boolean"
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "status": {
+            "const": "uncalibrated"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "absolute_entropy_claims_allowed": {
+            "const": false
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "status": {
+            "const": "calibrated"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "absolute_entropy_claims_allowed": {
+            "const": true
+          }
+        }
+      }
+    }
+  ]
+}

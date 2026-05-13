@@ -24,9 +24,14 @@ struct FlexMode {
     std::string label;          // human-readable label
 
     // Thermodynamic data
-    double S_vib       = 0.0;   // absolute vibrational entropy (kcal/mol/K)
+    double S_vib       = 0.0;   // vibrational entropy; heuristic unless calibrated
     double delta_S_vib = 0.0;   // relative to reference (0 for mode 0)
     double delta_F_vib = 0.0;   // -T × delta_S_vib (kcal/mol)
+    double eigenvalue_to_omega = 1.0;
+    bool   frequency_calibrated = false;
+    std::string calibration_label = "model-scale";
+    std::string calibration_provenance =
+        "No mass/inertia or empirical eigenvalue-to-frequency calibration supplied";
 
     // Per-mode eigenvalue data
     std::vector<tencom_diff::ModeComparison> mode_data;

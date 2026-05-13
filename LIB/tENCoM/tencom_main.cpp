@@ -33,6 +33,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <cerrno>
+#include <cmath>
 
 // ─── CLI argument parsing ───────────────────────────────────────────────────
 
@@ -44,6 +45,13 @@ struct Options {
     float  k0           = 1.0f;
     std::string prefix  = "tencom";
     double eigenvalue_cutoff = 1e-6;
+    double omega_scale = 1.0;
+    bool   has_omega_scale = false;
+    std::string calibration_label = "model-scale";
+    std::string calibration_provenance =
+        "No mass/inertia or empirical eigenvalue-to-frequency calibration supplied";
+    encom::FrequencyCalibration frequency_calibration =
+        encom::FrequencyCalibration::model_scale();
     bool   output_pdb   = true;
     bool   output_json  = false;
     bool   output_csv   = false;
@@ -64,6 +72,11 @@ static void print_usage(const char* progname) {
         << "  -k <k0>       Spring constant                (default: 1.0)\n"
         << "  -o <prefix>   Output file prefix             (default: tencom)\n"
         << "  -f <format>   Output format: pdb, json, csv, all (default: pdb)\n"
+        << "  --omega-scale <s>  Convert sqrt(model eigenvalue) to rad/s\n"
+        << "                  by omega = s * sqrt(lambda). Without this, S_vib is\n"
+        << "                  reported as model-scale heuristic only.\n"
+        << "  --calibration-label <text>  Label for --omega-scale provenance\n"
+        << "  --calibration-provenance <text>  Short source note for the calibration\n"
         << "  --list <file> Read target PDB paths from file (one per line)\n"
         << "  -v            Verbose output (per-mode eigenvalue lists, timing)\n"
         << "  -q            Quiet output (summary table only)\n"
@@ -143,6 +156,22 @@ static Options parse_args(int argc, char* argv[]) {
                 throw FlexAIDException("-o requires an output prefix");
             }
             opts.prefix = argv[++i];
+        } else if (arg == "--omega-scale") {
+            if (i + 1 >= argc) {
+                throw FlexAIDException("--omega-scale requires a finite positive scale");
+            }
+            opts.omega_scale = parse_double(argv[++i], "--omega-scale");
+            opts.has_omega_scale = true;
+        } else if (arg == "--calibration-label") {
+            if (i + 1 >= argc) {
+                throw FlexAIDException("--calibration-label requires text");
+            }
+            opts.calibration_label = argv[++i];
+        } else if (arg == "--calibration-provenance") {
+            if (i + 1 >= argc) {
+                throw FlexAIDException("--calibration-provenance requires text");
+            }
+            opts.calibration_provenance = argv[++i];
         } else if (arg == "--list") {
             if (i + 1 >= argc) {
                 throw FlexAIDException("--list requires a file path");
@@ -205,6 +234,20 @@ static Options parse_args(int argc, char* argv[]) {
     if (opts.k0 <= 0.0f) {
         throw FlexAIDException("Spring constant must be positive (got " + std::to_string(opts.k0) + ")");
     }
+    if (opts.has_omega_scale) {
+        if (!std::isfinite(opts.omega_scale) || opts.omega_scale <= 0.0) {
+            throw FlexAIDException("--omega-scale must be finite and positive");
+        }
+        if (opts.calibration_label == "model-scale") {
+            opts.calibration_label = "user-supplied";
+        }
+        opts.frequency_calibration = encom::FrequencyCalibration::calibrated_scale(
+            opts.omega_scale,
+            opts.calibration_label,
+            opts.calibration_provenance);
+    } else {
+        opts.frequency_calibration = encom::FrequencyCalibration::model_scale();
+    }
 
     // Verify PDB files exist
     for (const auto& path : opts.pdb_files) {
@@ -215,6 +258,16 @@ static Options parse_args(int argc, char* argv[]) {
     }
 
     return opts;
+}
+
+static void apply_calibration_metadata(
+    tencom_output::FlexMode& mode,
+    const encom::VibrationalEntropy& svib)
+{
+    mode.eigenvalue_to_omega = svib.eigenvalue_to_omega;
+    mode.frequency_calibrated = svib.calibrated;
+    mode.calibration_label = svib.calibration_label;
+    mode.calibration_provenance = svib.calibration_provenance;
 }
 
 // ─── main ───────────────────────────────────────────────────────────────────
@@ -233,7 +286,8 @@ static void run_analysis_at_temperature(
     // Compute reference vibrational entropy at this temperature
     auto ref_encom_modes = tencom_diff::to_encom_modes(ref_enm.modes());
     auto ref_svib = encom::ENCoMEngine::compute_vibrational_entropy(
-        ref_encom_modes, temperature, opts.eigenvalue_cutoff);
+        ref_encom_modes, temperature, opts.frequency_calibration,
+        opts.eigenvalue_cutoff);
 
     tencom_output::FlexMode ref_mode;
     ref_mode.mode_id = 0;
@@ -245,6 +299,7 @@ static void run_analysis_at_temperature(
     ref_mode.bfactors = ref_enm.bfactors(static_cast<float>(temperature));
     ref_mode.n_modes = ref_svib.n_modes;
     ref_mode.n_residues = ref_enm.n_residues();
+    apply_calibration_metadata(ref_mode, ref_svib);
 
     // Per-residue S_vib decomposition for reference
     {
@@ -268,7 +323,7 @@ static void run_analysis_at_temperature(
         auto diff = tencom_diff::compute_differential(
             ref_enm, tgt_enms[t],
             opts.pdb_files[0], opts.pdb_files[t + 1],
-            temperature, opts.eigenvalue_cutoff);
+            temperature, opts.frequency_calibration, opts.eigenvalue_cutoff);
 
         tencom_output::FlexMode tgt_mode;
         tgt_mode.mode_id = static_cast<int>(t + 1);
@@ -284,6 +339,7 @@ static void run_analysis_at_temperature(
         tgt_mode.per_residue_delta_svib = std::move(diff.per_residue_delta_svib);
         tgt_mode.n_modes = diff.svib_tgt.n_modes;
         tgt_mode.n_residues = tgt_enms[t].n_residues();
+        apply_calibration_metadata(tgt_mode, diff.svib_tgt);
 
         population.modes.push_back(std::move(tgt_mode));
     }
@@ -327,6 +383,12 @@ int main(int argc, char* argv[]) {
         }
         std::cout << "Contact cutoff: " << opts.cutoff << " A\n";
         std::cout << "Spring constant k0: " << opts.k0 << "\n";
+        std::cout << "Frequency calibration: "
+                  << (opts.frequency_calibration.calibrated
+                      ? "calibrated" : "model-scale heuristic")
+                  << " (" << opts.frequency_calibration.label
+                  << ", scale=" << opts.frequency_calibration.eigenvalue_to_omega
+                  << " rad/s per sqrt(model unit))\n";
         std::cout << "Full flexibility: ON\n\n";
     }
 

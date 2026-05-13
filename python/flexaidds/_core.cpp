@@ -200,7 +200,8 @@ PYBIND11_MODULE(_core, m) {
             "Create a normal mode with optional initial values")
         .def_readwrite("index",       &encom::NormalMode::index,       "1-based mode index")
         .def_readwrite("eigenvalue",  &encom::NormalMode::eigenvalue,  "eigenvalue (ENCoM units)")
-        .def_readwrite("frequency",   &encom::NormalMode::frequency,   "omega = sqrt(eigenvalue)")
+        .def_readwrite("frequency",   &encom::NormalMode::frequency,
+            "sqrt(eigenvalue) in model scale unless calibrated")
         .def_readwrite("eigenvector", &encom::NormalMode::eigenvector, "Displacement vector (3N)")
         .def("__repr__", [](const encom::NormalMode& nm) {
             return "<NormalMode " + std::to_string(nm.index) +
@@ -211,13 +212,19 @@ PYBIND11_MODULE(_core, m) {
         "Quasi-harmonic vibrational entropy from ENCoM normal modes")
         .def(py::init([](double S_vib_kcal_mol_K, double S_vib_J_mol_K,
                          double omega_eff, int n_modes, double temperature,
-                         double dG_vib_kcal_mol) {
+                         double dG_vib_kcal_mol, double eigenvalue_to_omega,
+                         bool calibrated, const std::string& calibration_label,
+                         const std::string& calibration_provenance) {
             encom::VibrationalEntropy vs;
             vs.S_vib_kcal_mol_K = S_vib_kcal_mol_K;
             vs.S_vib_J_mol_K = S_vib_J_mol_K;
             vs.omega_eff = omega_eff;
             vs.n_modes = n_modes;
             vs.temperature = temperature;
+            vs.eigenvalue_to_omega = eigenvalue_to_omega;
+            vs.calibrated = calibrated;
+            vs.calibration_label = calibration_label;
+            vs.calibration_provenance = calibration_provenance;
             (void)dG_vib_kcal_mol;
             return vs;
         }),
@@ -227,6 +234,11 @@ PYBIND11_MODULE(_core, m) {
             py::arg("n_modes") = 0,
             py::arg("temperature") = 300.0,
             py::arg("dG_vib_kcal_mol") = 0.0,
+            py::arg("eigenvalue_to_omega") = 1.0,
+            py::arg("calibrated") = false,
+            py::arg("calibration_label") = "model-scale",
+            py::arg("calibration_provenance") =
+                "No mass/inertia or empirical eigenvalue-to-frequency calibration supplied",
             "Create a VibrationalEntropy result")
         .def_readwrite("S_vib_kcal_mol_K", &encom::VibrationalEntropy::S_vib_kcal_mol_K,
             "S_vib in kcal/(mol*K)")
@@ -237,6 +249,16 @@ PYBIND11_MODULE(_core, m) {
         .def_readwrite("n_modes",          &encom::VibrationalEntropy::n_modes,
             "Number of non-trivial normal modes (3N - 6)")
         .def_readwrite("temperature",      &encom::VibrationalEntropy::temperature, "K")
+        .def_readwrite("eigenvalue_to_omega", &encom::VibrationalEntropy::eigenvalue_to_omega,
+            "rad/s per sqrt(model eigenvalue)")
+        .def_readwrite("calibrated", &encom::VibrationalEntropy::calibrated,
+            "True when a physical/empirical frequency calibration was supplied")
+        .def_readwrite("calibration_label", &encom::VibrationalEntropy::calibration_label)
+        .def_readwrite("calibration_provenance", &encom::VibrationalEntropy::calibration_provenance)
+        .def_property_readonly("absolute_claim_allowed",
+            [](const encom::VibrationalEntropy& vs) {
+                return vs.absolute_claim_allowed();
+            })
         .def_property_readonly("dG_vib_kcal_mol", [](const encom::VibrationalEntropy& vs) {
             return -vs.temperature * vs.S_vib_kcal_mol_K;
         }, "-T*S_vib vibrational free energy correction (kcal/mol)")
@@ -257,22 +279,51 @@ PYBIND11_MODULE(_core, m) {
     // ENCoMEngine wrapper that stores eigenvalue_cutoff for instance usage
     struct ENCoMEngineWrapper {
         double eigenvalue_cutoff;
-        ENCoMEngineWrapper(double cutoff = 1e-6) : eigenvalue_cutoff(cutoff) {}
+        double eigenvalue_to_omega;
+        bool calibrated;
+        std::string calibration_label;
+        std::string calibration_provenance;
+        ENCoMEngineWrapper(
+            double cutoff = 1e-6,
+            double scale = 1.0,
+            bool is_calibrated = false,
+            const std::string& label = "model-scale",
+            const std::string& provenance =
+                "No mass/inertia or empirical eigenvalue-to-frequency calibration supplied")
+            : eigenvalue_cutoff(cutoff),
+              eigenvalue_to_omega(scale),
+              calibrated(is_calibrated),
+              calibration_label(label),
+              calibration_provenance(provenance) {}
     };
 
     py::class_<ENCoMEngineWrapper>(m, "ENCoMEngine",
         "ENCoM quasi-harmonic entropy calculator")
-        .def(py::init<double>(),
+        .def(py::init<double, double, bool, const std::string&, const std::string&>(),
             py::arg("eigenvalue_cutoff") = 1e-6,
+            py::arg("eigenvalue_to_omega") = 1.0,
+            py::arg("calibrated") = false,
+            py::arg("calibration_label") = "model-scale",
+            py::arg("calibration_provenance") =
+                "No mass/inertia or empirical eigenvalue-to-frequency calibration supplied",
             "Initialize ENCoM engine with optional eigenvalue cutoff")
         .def_readwrite("eigenvalue_cutoff", &ENCoMEngineWrapper::eigenvalue_cutoff)
+        .def_readwrite("eigenvalue_to_omega", &ENCoMEngineWrapper::eigenvalue_to_omega)
+        .def_readwrite("calibrated", &ENCoMEngineWrapper::calibrated)
+        .def_readwrite("calibration_label", &ENCoMEngineWrapper::calibration_label)
+        .def_readwrite("calibration_provenance", &ENCoMEngineWrapper::calibration_provenance)
         .def("compute_vibrational_entropy",
             [](const ENCoMEngineWrapper& self,
                const std::vector<encom::NormalMode>& modes,
                double temperature) {
                 py::gil_scoped_release release;
+                encom::FrequencyCalibration calibration;
+                calibration.eigenvalue_to_omega = self.eigenvalue_to_omega;
+                calibration.calibrated = self.calibrated;
+                calibration.label = self.calibration_label;
+                calibration.provenance = self.calibration_provenance;
                 return encom::ENCoMEngine::compute_vibrational_entropy(
-                    modes, temperature, self.eigenvalue_cutoff);
+                    modes, temperature, calibration, self.eigenvalue_cutoff);
             },
             py::arg("modes"),
             py::arg("temperature") = 300.0,

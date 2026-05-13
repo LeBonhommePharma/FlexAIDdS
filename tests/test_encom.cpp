@@ -91,6 +91,35 @@ TEST(ENCoMEngine, TemperatureIsRecorded) {
     EXPECT_NEAR(result.temperature, 310.0, TOL);
 }
 
+TEST(ENCoMEngine, DefaultCalibrationIsModelScaleHeuristic) {
+    auto modes = make_modes(5);
+    auto result = ENCoMEngine::compute_vibrational_entropy(modes, 300.0);
+
+    EXPECT_FALSE(result.calibrated);
+    EXPECT_FALSE(result.absolute_claim_allowed());
+    EXPECT_NEAR(result.eigenvalue_to_omega, 1.0, TOL);
+    EXPECT_EQ(result.calibration_label, "model-scale");
+    EXPECT_STREQ(result.calibration_status(), "model_scale_heuristic");
+}
+
+TEST(ENCoMEngine, CalibratedScalePropagatesToOmega) {
+    auto modes = make_modes(5, 1.0);
+    auto calibration = FrequencyCalibration::calibrated_scale(
+        1.0e12, "synthetic-test", "unit-test scale");
+
+    auto uncalibrated = ENCoMEngine::compute_vibrational_entropy(modes, 300.0);
+    auto calibrated = ENCoMEngine::compute_vibrational_entropy(
+        modes, 300.0, calibration, 1e-6);
+
+    EXPECT_TRUE(calibrated.calibrated);
+    EXPECT_TRUE(calibrated.absolute_claim_allowed());
+    EXPECT_EQ(calibrated.calibration_label, "synthetic-test");
+    EXPECT_NEAR(calibrated.eigenvalue_to_omega, 1.0e12, 1.0);
+    EXPECT_NEAR(calibrated.omega_eff,
+                uncalibrated.omega_eff * 1.0e12,
+                std::abs(uncalibrated.omega_eff * 1.0e12) * 1e-12);
+}
+
 TEST(ENCoMEngine, OmegaEffIsPositive) {
     auto modes = make_modes(5);
     auto result = ENCoMEngine::compute_vibrational_entropy(modes, 300.0);
