@@ -1,0 +1,10 @@
+{
+  "schema_version": 1,
+  "model": "FlexAIDdS-tENCoM",
+  "status": "uncalibrated",
+  "eigenvalue_to_omega_rad_s_per_sqrt_unit": 1.0,
+  "label": "model-scale",
+  "provenance": "Default FlexAIDdS model-scale stiffness proxy. No mass/inertia or empirical frequency calibration has been supplied.",
+  "valid_for": "Relative mode ranking, relative flexibility differences, torsional sampling, and heuristic S_vib comparisons under identical model settings.",
+  "absolute_entropy_claims_allowed": false
+}

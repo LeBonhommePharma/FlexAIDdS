@@ -4,7 +4,7 @@ from .models import BindingModeResult, DockingResult, PoseResult
 from .results import load_results
 from .io import is_ion, _ION_RESNAMES, Atom, PDBStructure, read_pdb, write_pdb
 from .docking import Docking, BindingMode, BindingPopulation, Pose
-from .encom import ENCoMEngine, NormalMode, VibrationalEntropy
+from .encom import ENCoMEngine, FrequencyCalibration, NormalMode, VibrationalEntropy
 from .tencm import (
     TorsionalENM, TorsionalNormalMode, Conformer, FullThermoResult,
     compute_shannon_entropy, compute_torsional_vibrational_entropy,
@@ -197,6 +197,7 @@ __all__ = [
     "dock",
     # ENCoM
     "ENCoMEngine",
+    "FrequencyCalibration",
     "NormalMode",
     "VibrationalEntropy",
     # Torsional ENCoM

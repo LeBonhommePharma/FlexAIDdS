@@ -75,6 +75,19 @@ def test_vibrational_entropy_repr():
     assert "12" in r
 
 
+def test_frequency_calibration_metadata():
+    from flexaidds.encom import FrequencyCalibration
+
+    cal = FrequencyCalibration.calibrated_scale(
+        1.0e12,
+        "synthetic-test",
+        "unit-test scale",
+    )
+    assert cal.calibrated is True
+    assert cal.status == "calibrated"
+    assert cal.eigenvalue_to_omega == pytest.approx(1.0e12)
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # ENCoMEngine – pure-Python path (no _core)
 # ─────────────────────────────────────────────────────────────────────────────
@@ -132,6 +145,33 @@ def test_encom_compute_vibrational_entropy_higher_T_more_entropy():
     vs_low  = ENCoMEngine.compute_vibrational_entropy(modes, temperature_K=200.0)
     vs_high = ENCoMEngine.compute_vibrational_entropy(modes, temperature_K=400.0)
     assert vs_high.S_vib_kcal_mol_K > vs_low.S_vib_kcal_mol_K
+
+
+def test_encom_compute_vibrational_entropy_reports_model_scale_by_default():
+    from flexaidds.encom import ENCoMEngine, NormalMode
+
+    modes = [NormalMode(index=i + 1, eigenvalue=float(i + 1)) for i in range(6)]
+    vs = ENCoMEngine.compute_vibrational_entropy(modes, temperature_K=300.0)
+    assert vs.calibrated is False
+    assert vs.absolute_claim_allowed is False
+    assert vs.calibration_status == "model_scale_heuristic"
+
+
+def test_encom_compute_vibrational_entropy_uses_calibrated_scale():
+    from flexaidds.encom import ENCoMEngine, FrequencyCalibration, NormalMode
+
+    modes = [NormalMode(index=i + 1, eigenvalue=float(i + 1)) for i in range(6)]
+    base = ENCoMEngine.compute_vibrational_entropy(modes, temperature_K=300.0)
+    cal = FrequencyCalibration.calibrated_scale(1.0e12, "synthetic-test")
+    scaled = ENCoMEngine.compute_vibrational_entropy(
+        modes,
+        temperature_K=300.0,
+        frequency_calibration=cal,
+    )
+    assert scaled.calibrated is True
+    assert scaled.absolute_claim_allowed is True
+    assert scaled.calibration_label == "synthetic-test"
+    assert scaled.omega_eff == pytest.approx(base.omega_eff * 1.0e12)
 
 
 def test_encom_load_modes_pure_python(encom_files):
