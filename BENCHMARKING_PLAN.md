@@ -3,10 +3,7 @@
 
 > **Status:** Ready to execute on iCloud+ 2TB renewal
 > **Branch:** `master` (post PR #190 — all C-1–C-5 thermodynamic fixes merged)
-> **Primary convergence metric:** Shannon Energy Collapse H(X) < 2 bits
->
-> Core thermodynamic APIs report Shannon entropy in **nats**. Convert only at
-> reporting or convergence-boundary code with `H_bits = H_nats / ln(2)`.
+> **Primary convergence metric:** Shannon Energy Collapse H(X) < 1.3863 nats (2 bits equivalent)
 > **Thermodynamic engine:** Grand Canonical Ensemble (log Ξ, F_bound, binding selectivity)
 
 ---
@@ -34,10 +31,6 @@ export SHANNON_TRACE_LEVEL=2     # 0=off 1=final 2=per-step 3=debug
 export FLEXAID_SIMD=NEON         # disable AVX512 (not on M3), enable NEON
 export FLEXAID_SEED=42
 ```
-
-`FLEXAID_SEED` is the run-level stochastic provenance handle. Benchmark logs
-must record it with the git SHA, compiler, backend selection, and thread count.
-Unset seeds are exploratory only.
 
 ### ulimits
 ```bash
@@ -91,18 +84,17 @@ ulimit -s unlimited   # stack (tENCoM deep recursion)
 
 ### 3.1 Convergence Definition (Rigorous)
 
-```text
-H(X_t)      = -sum_i p(x_i,t) * log2(p(x_i,t))    [bits]
-H_nats(X_t) = -sum_i p(x_i,t) * ln(p(x_i,t))      [nats]
-H_bits      = H_nats / ln(2)
+```
+H_nats(X_t) = −Σᵢ p(xᵢ,t) · ln p(xᵢ,t)    [nats]
+H_bits(X_t) = H_nats(X_t) / ln(2)
+N_eff(X_t) = exp(H_nats) = 2^H_bits
 ```
 
 where `p(xᵢ,t)` is the Boltzmann-weighted probability of pose cluster *i* at step *t*.
-Core scoring and thermodynamic code should keep the natural-log form and convert
-to bits only at convergence/reporting boundaries.
 
-- **Convergence threshold:** H(X) < **2.0 bits** — >75% Boltzmann weight in ≤ 2 clusters
-- **Hard convergence (thesis-quality):** H(X) < **1.0 bit** — >50% weight in single dominant pose
+- **Convergence threshold:** H(X) < **1.3863 nats** (`2.0 bits`) — effective support `N_eff < 4` pose clusters; report top-pose and top-two weights separately
+- **Hard convergence (thesis-quality):** H(X) < **0.6931 nats** (`1.0 bit`) — implies at least one cluster carries >50% Boltzmann weight
+- **Implementation note:** current FlexAIDdS Shannon paths store and print `H` in nats. Any thesis or benchmark code that reports bits must convert explicitly with `H_bits = H_nats / ln(2)`.
 
 Physical analogy: entropy collapse = supersaturated solution precipitating one crystal. The search has found its energy funnel — analogous to radar pre-compensation locking onto a single target bearing.
 
@@ -114,12 +106,12 @@ export SHANNON_TRACE_LEVEL=2   # per-step CSV output
 
 Output format per complex:
 ```
-step, H_bits, n_clusters, top_pose_weight, top_pose_rmsd_vs_crystal
-0,    6.32,   64,         0.016,           N/A
-100,  4.71,   38,         0.031,           3.2
-500,  2.88,   14,         0.083,           1.8
-1000, 1.43,    5,         0.241,           1.1
-1500, 0.87,    2,         0.551,           0.9    ← CONVERGED
+step, H_nats, H_bits, n_clusters, top_pose_weight, top_pose_rmsd_vs_crystal
+0,    4.380,  6.32,   64,         0.016,           N/A
+100,  3.264,  4.71,   38,         0.031,           3.2
+500,  1.996,  2.88,   14,         0.083,           1.8
+1000, 0.991,  1.43,    5,         0.241,           1.1
+1500, 0.603,  0.87,    2,         0.551,           0.9    ← CONVERGED
 ```
 
 ### 3.3 H(X) vs. RMSD Correlation Analysis
@@ -562,5 +554,5 @@ caffeinate -i ./run_full_benchmark.sh PHASE=1 SEED=42
 
 *Generated: 2026-05-08 | Updated: 2026-05-08 (timing profile from source analysis — gaboom.cpp, CoarseScreen.cpp, MIFGrid.h)*
 *FlexAIDdS master post-PR #190 + PR #192 | M3 Pro benchmarking plan v1.1*
-*Shannon Energy Collapse H(X) < 2 bits: primary convergence metric throughout all phases*
+*Shannon Energy Collapse H(X) < 1.3863 nats (2 bits equivalent): primary convergence metric throughout all phases*
 *vcfunction (Vcontacts) = 92–95% of wall time — sole vectorization target for performance*

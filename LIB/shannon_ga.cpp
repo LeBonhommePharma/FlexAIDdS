@@ -210,6 +210,18 @@ CollapseResult ShannonThermodynamicGA::run(chromosome* chrom, int num_chrom,
                 gen + 1, snap.free_energy, snap.mean_energy,
                 snap.entropy, snap.shannon_H);
 
+            if (snap.shannon_H <= shannon_thermo::kHSC_soft_nats) {
+                std::fprintf(stderr,
+                    "[ShannonGA] Entropy collapse at generation %d "
+                    "(H=%.4f nats <= %.4f nats / %.1f bits)\n",
+                    gen + 1, snap.shannon_H,
+                    shannon_thermo::kHSC_soft_nats,
+                    shannon_thermo::kHSC_soft_bits);
+                result.converged = true;
+                result.final_generation = gen + 1;
+                break;
+            }
+
             // Check for entropy plateau
             if (static_cast<int>(entropy_history_.size()) >= plateau_window) {
                 bool plateau = shannon_thermo::detect_entropy_plateau(

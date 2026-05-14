@@ -21,12 +21,29 @@ namespace shannon_thermo {
 
 // ─── constants ───────────────────────────────────────────────────────────────
 inline constexpr int   SHANNON_BINS      = 256;    // mega-cluster discretisation
-inline constexpr double kB_kcal          = 0.001987206; // kcal mol⁻¹ K⁻¹
+inline constexpr double kB_kcal          = 0.001987206; // kcal mol⁻¹ K⁻¹  (= R/4184)
 inline constexpr double kB_SI            = 1.380649e-23; // J K⁻¹
 inline constexpr double hbar_SI          = 1.054571817e-34; // J·s
 inline constexpr double TEMPERATURE_K    = 298.15;
 inline constexpr int   DEFAULT_HIST_BINS = 20;
 inline constexpr int   GPU_DISPATCH_THRESHOLD = 500000; // only use GPU for N > 500K
+
+// ─── Shannon Energy Collapse thresholds ──────────────────────────────────────
+// All internal entropy APIs return nats (natural log). Convert to bits at
+// reporting/convergence boundaries only: H_bits = H_nats / ln(2).
+//
+// These named constants are the single source of truth for H(X) < threshold
+// comparisons. Never compare a nats value against the raw bits constant or
+// vice versa — always use the matching _nats or _bits form.
+//
+//   Soft collapse:  H < 2.0 bits  -> effective support < 4 clusters
+//   Hard collapse:  H < 1.0 bit   -> one cluster has >50% probability
+//
+// Derivation: H_nats = H_bits × ln(2);  ln(2) = 0.693147...
+inline constexpr double kHSC_soft_bits = 2.0;
+inline constexpr double kHSC_hard_bits = 1.0;
+inline constexpr double kHSC_soft_nats = kHSC_soft_bits * 0.6931471805599453; // 2 × ln(2)
+inline constexpr double kHSC_hard_nats = kHSC_hard_bits * 0.6931471805599453; // 1 × ln(2)
 
 // ─── result struct ───────────────────────────────────────────────────────────
 struct FullThermoResult {

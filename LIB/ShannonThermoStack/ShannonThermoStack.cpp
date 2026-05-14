@@ -296,8 +296,29 @@ double compute_torsional_vibrational_entropy(
     if (ev_buf.empty()) return 0.0;
 
     Eigen::Map<Eigen::ArrayXd> evals(ev_buf.data(), (int)ev_buf.size());
-    // Model-scale omega proxy. Physical rad/s require an explicit calibration
-    // bundle; this path intentionally reports heuristic relative entropy.
+
+    // ── Dimensional status (must be understood before touching this formula) ──
+    //
+    // omega = sqrt(ENCoM eigenvalue) is in *model units*, NOT in rad/s.
+    // The classical HO formula requires a dimensionless argument:
+    //   arg = kBT [J] / (ħ [J·s] × ω [rad/s])   →   dimensionless.
+    // Here ħ × omega_model is dimensionally J·s × model_unit^(1/2), not J.
+    // Numerically at 300 K with eigenvalue ≈ 1 (model unit):
+    //   arg ≈ (1.38e-23 × 300) / (1.055e-34 × 1) ≈ 3.9e13
+    //   ln(arg) ≈ 31.3  →  S_mode ≈ kB_kcal × 32.3 ≈ 0.064 kcal/(mol·K)
+    // The constant offset ln(kBT_SI / hbar_SI) ≈ 31.3 is physically meaningless;
+    // it cancels in differential comparisons between structures run with the
+    // same protocol:
+    //   ΔS_vib = kB_kcal × Σ ln(ω_ref / ω_target)
+    //          = (kB_kcal / 2) × Σ ln(λ_ref / λ_target)
+    // which depends only on eigenvalue *ratios*, not absolute magnitude.
+    //
+    // Absolute S_vib and -T·S_vib from this path are heuristic unless a
+    // calibration bundle maps ENCoM eigenvalues to physical rad/s, as the
+    // ENCoM/tENCoM calibration metadata path requires externally.
+    //
+    // DO NOT use the return value of this function as an absolute physical
+    // entropy without a calibrated eigenvalue scale.
     Eigen::ArrayXd omega = evals.sqrt();
     Eigen::ArrayXd ln_arg = (kB_SI * temperature_K) / (hbar_SI * omega);
     auto valid = (ln_arg > 0.0) && ln_arg.isFinite();
