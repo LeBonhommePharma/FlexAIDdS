@@ -4,7 +4,7 @@
 # Runs all benchmark tiers sequentially with memory-aware worker counts:
 #   Phase 1: C++ kernel benchmarks (dispatch, vcfbatch, tencom)
 #   Phase 2: Tier-1 dataset benchmark (CASF-2016, 5 targets, ~5 min)
-#   Phase 3: Tier-2 dataset benchmarks (all 7 datasets, sequential, hours)
+#   Phase 3: Tier-2 dataset benchmarks (all 10 datasets, sequential, hours)
 #   Phase 4: Final report consolidation + blocking mirror sync
 #
 # Each phase triggers an async rsync mirror to Google Drive.
@@ -200,12 +200,12 @@ fi
 # ─── Phase 3: Tier-2 Dataset Benchmarks ─────────────────────────────────────
 
 if [[ "$RUN_TIER2" == true ]]; then
-    phase "Phase 3: Tier-2 Dataset Benchmarks (7 datasets, sequential)"
+    phase "Phase 3: Tier-2 Dataset Benchmarks (10 datasets, sequential)"
     mkdir -p "$RESULTS/tier2"
 
     # Sequential execution to stay within 18GB RAM.
     # 2 workers per dataset: ~4.5GB per worker (3GB OS + 4GB Metal + 4.5GB×2 ≈ 16GB)
-    DATASETS=(casf2016 itc187 dude37 muv lsd_docking erds_specificity psychopharm23)
+    DATASETS=(astex_diverse astex_nonnative hap2 casf2016 itc187 dude37 muv lsd_docking erds_specificity psychopharm23)
     TIER2_REGRESSIONS=0
 
     for ds in "${DATASETS[@]}"; do

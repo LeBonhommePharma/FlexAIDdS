@@ -1048,13 +1048,14 @@ std::vector<DatasetEntry> DatasetRunner::fetch_astex_nonnative() {
 }
 
 // =============================================================================
-// HAP2 — 59 targets from FlexAID JCIM 2015 (Gaudreault & Bhatt)
-// Holo/Apo/Predicted structures for benchmarking native + non-native docking.
+// HAP2 — third validation set from FlexAID JCIM 2015
+// Gaudreault & Najmanovich, DOI: 10.1021/acs.jcim.5b00078.
+// Holo/apo protein-pair structures for non-native docking validation.
 // =============================================================================
 
 std::vector<std::string> DatasetRunner::hap2_codes() {
-    // HAP2 benchmark: 59 protein-ligand complexes used in the original
-    // FlexAID validation (Gaudreault & Bhatt 2015, JCIM)
+    // HAP2 benchmark: 59 hardcoded PDB codes from the original FlexAID
+    // validation lineage (Gaudreault & Najmanovich 2015, JCIM).
     return {
         "1A28", "1A4Q", "1A9M", "1ADB", "1AI5", "1B6M", "1B9V",
         "1BMA", "1C1B", "1C5C", "1C83", "1CBX", "1CIL", "1D3H",
@@ -1069,7 +1070,7 @@ std::vector<std::string> DatasetRunner::hap2_codes() {
 }
 
 std::vector<DatasetEntry> DatasetRunner::fetch_hap2() {
-    std::cout << "[DatasetRunner] Preparing HAP2 dataset (59 targets)\n";
+    std::cout << "[DatasetRunner] Preparing HAP2 dataset (59 targets; FlexAID JCIM 2015)\n";
     auto codes = hap2_codes();
     std::vector<DatasetEntry> entries;
     entries.reserve(codes.size());

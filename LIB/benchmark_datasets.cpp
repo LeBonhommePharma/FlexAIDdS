@@ -41,7 +41,7 @@ static void print_usage(const char* progname) {
     printf("Datasets:\n");
     printf("  astex            Astex Diverse 85 (Hartshorn et al. 2007)\n");
     printf("  astex_nonnative  Astex Non-Native 1112 (Verdonk et al. 2008)\n");
-    printf("  hap2             HAP2 59 targets (Gaudreault & Bhatt 2015)\n");
+    printf("  hap2             HAP2 59 targets (Gaudreault & Najmanovich 2015)\n");
     printf("  casf2016         CASF-2016 285 complexes (PDBbind core set)\n");
     printf("  posebusters      PoseBusters 308 (Buttenschoen et al. 2024)\n");
     printf("  dude             DUD-E 102 targets (Mysinger et al. 2012)\n");

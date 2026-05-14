@@ -32,7 +32,7 @@ chmod +x benchmarks/m3pro/*.sh
 ```bash
 ./benchmarks/m3pro/run_benchmarks.sh --kernels-only  # dispatch, vcfbatch, tencom
 ./benchmarks/m3pro/run_benchmarks.sh --tier1-only     # CASF-2016, 5 targets
-./benchmarks/m3pro/run_benchmarks.sh --tier2-only     # all 7 datasets
+./benchmarks/m3pro/run_benchmarks.sh --tier2-only     # all 10 datasets
 ```
 
 ## Storage Architecture

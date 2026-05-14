@@ -495,6 +495,9 @@ Browse the full documentation at **[lmorency.github.io/FlexAIDdS](https://lmoren
 
 | Document | Description |
 |:---------|:------------|
+| [Astex Diverse](benchmarks/datasets/astex_diverse.yaml) | FlexAID 2015 validation #1: native-pose docking on 85 holo complexes |
+| [Astex Non-Native](benchmarks/datasets/astex_nonnative.yaml) | FlexAID 2015 validation #2: cross-docking into non-native receptor conformations |
+| [HAP2](benchmarks/datasets/hap2.yaml) | FlexAID 2015 validation #3: holo/apo protein-pair benchmark from Gaudreault & Najmanovich |
 | [CASF-2016](docs/docs/benchmarks/casf2016.md) | Scoring and docking power on 285 diverse complexes |
 | [LIT-PCBA](docs/docs/benchmarks/litpcba.md) | Unbiased virtual screening across 15 PubChem targets |
 | [Cross-Docking](docs/docs/benchmarks/crossdock.md) | Non-native receptor docking validation |
