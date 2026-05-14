@@ -50,6 +50,7 @@ struct Options {
     std::string calibration_label = "model-scale";
     std::string calibration_provenance =
         "No mass/inertia or empirical eigenvalue-to-frequency calibration supplied";
+    bool   has_calibration_provenance = false;
     encom::FrequencyCalibration frequency_calibration =
         encom::FrequencyCalibration::model_scale();
     bool   output_pdb   = true;
@@ -76,7 +77,7 @@ static void print_usage(const char* progname) {
         << "                  by omega = s * sqrt(lambda). Without this, S_vib is\n"
         << "                  reported as model-scale heuristic only.\n"
         << "  --calibration-label <text>  Label for --omega-scale provenance\n"
-        << "  --calibration-provenance <text>  Short source note for the calibration\n"
+        << "  --calibration-provenance <text>  Required source note with --omega-scale\n"
         << "  --list <file> Read target PDB paths from file (one per line)\n"
         << "  -v            Verbose output (per-mode eigenvalue lists, timing)\n"
         << "  -q            Quiet output (summary table only)\n"
@@ -172,6 +173,7 @@ static Options parse_args(int argc, char* argv[]) {
                 throw FlexAIDException("--calibration-provenance requires text");
             }
             opts.calibration_provenance = argv[++i];
+            opts.has_calibration_provenance = true;
         } else if (arg == "--list") {
             if (i + 1 >= argc) {
                 throw FlexAIDException("--list requires a file path");
@@ -237,6 +239,10 @@ static Options parse_args(int argc, char* argv[]) {
     if (opts.has_omega_scale) {
         if (!std::isfinite(opts.omega_scale) || opts.omega_scale <= 0.0) {
             throw FlexAIDException("--omega-scale must be finite and positive");
+        }
+        if (!opts.has_calibration_provenance) {
+            throw FlexAIDException(
+                "--omega-scale requires --calibration-provenance; a scalar alone is not calibration provenance");
         }
         if (opts.calibration_label == "model-scale") {
             opts.calibration_label = "user-supplied";
@@ -493,7 +499,7 @@ int main(int argc, char* argv[]) {
                     auto diff = tencom_diff::compute_differential(
                         ref_enm, tgt_enms[t],
                         opts.pdb_files[0], opts.pdb_files[t + 1],
-                        T, opts.eigenvalue_cutoff);
+                        T, opts.frequency_calibration, opts.eigenvalue_cutoff);
                     ofs << "," << std::setprecision(8) << diff.delta_S_vib
                         << "," << std::setprecision(6) << diff.delta_F_vib;
                 }

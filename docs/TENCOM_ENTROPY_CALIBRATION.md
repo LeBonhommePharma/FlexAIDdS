@@ -115,6 +115,8 @@ tENCoM ref.pdb target.pdb \
 
 Only calibrated runs should be described as absolute vibrational entropy or
 absolute `-T*S_vib` free-energy corrections.
+`--calibration-provenance` is required with `--omega-scale`; a scalar conversion
+factor alone is not enough scientific provenance for absolute claims.
 
 ## Practical Use Of Stiffness
 

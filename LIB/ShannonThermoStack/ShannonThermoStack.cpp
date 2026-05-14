@@ -335,10 +335,11 @@ FullThermoResult run_shannon_thermo_stack(
     //     S_conf [kcal/(mol·K)] = k_B · H [nats]
     double S_conf_phys  = S_conf_nats * kB_kcal;
 
-    // Additive decomposition: S_total = S_conf + S_vib
-    // Valid for independent conformational and vibrational DOFs
-    // (standard assumption in rigid-body docking + normal-mode analysis).
-    double total_S      = S_conf_phys + S_vib;
+    // The torsional ENCoM path is currently model-scale only. Keep S_vib in
+    // the result/report as a relative flexibility diagnostic, but do not fold it
+    // into kcal/mol free-energy terms until a calibrated frequency path reaches
+    // this stack.
+    double total_S      = S_conf_phys;
     double S_contrib    = -temperature_K * total_S;
     double final_dG     = base_deltaG + S_contrib;
 
@@ -360,7 +361,7 @@ FullThermoResult run_shannon_thermo_stack(
         "+Eigen"
         "]: S_conf=" + std::to_string(S_conf_nats) +
         " nats, S_vib=" + std::to_string(S_vib) +
-        " kcal/mol/K (model-scale heuristic), ΔG=" +
+        " kcal/mol/K (model-scale heuristic; excluded from dG), ΔG=" +
         std::to_string(final_dG) + " kcal/mol";
 
     return { final_dG, S_conf_nats, S_vib, S_contrib, report };

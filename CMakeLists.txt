@@ -761,6 +761,41 @@ if(ENABLE_TENCOM_TOOL)
             ${METAL_LIBRARY} ${FOUNDATION_LIBRARY} ${METALKIT_LIBRARY})
     endif()
     message(STATUS "tENCoM tool enabled — build target: tENCoM")
+
+    add_executable(tencom_entropy_diff
+        LIB/tENCoM/tencom_entropy_diff.cpp
+        LIB/tENCoM/pdb_calpha.cpp
+        LIB/tENCoM/tencm.cpp
+        LIB/statmech.cpp
+        LIB/TurboQuant.cpp
+        LIB/UnifiedHardwareDispatch.cpp
+        LIB/hardware_detect.cpp
+        LIB/encom.cpp
+    )
+    target_include_directories(tencom_entropy_diff PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/LIB
+        ${CMAKE_CURRENT_SOURCE_DIR}/LIB/tENCoM)
+    if(MSVC)
+        target_compile_options(tencom_entropy_diff PRIVATE /O2 /GL /fp:fast /DNDEBUG /MT)
+        target_compile_definitions(tencom_entropy_diff PRIVATE
+            _CRT_SECURE_NO_WARNINGS _USE_MATH_DEFINES NOMINMAX)
+        target_link_options(tencom_entropy_diff PRIVATE /LTCG)
+    else()
+        target_compile_options(tencom_entropy_diff PRIVATE -O3 -ffast-math -fno-finite-math-only -flto -DNDEBUG)
+        if(NOT APPLE)
+            target_compile_options(tencom_entropy_diff PRIVATE -march=native)
+            target_link_options(tencom_entropy_diff PRIVATE -flto -s)
+        else()
+            target_link_options(tencom_entropy_diff PRIVATE -flto)
+        endif()
+    endif()
+    flexaids_configure_simd(tencom_entropy_diff)
+    if(FLEXAIDS_USE_OPENMP AND OpenMP_CXX_FOUND)
+        target_link_libraries(tencom_entropy_diff PRIVATE OpenMP::OpenMP_CXX)
+    endif()
+    target_link_libraries(tencom_entropy_diff PRIVATE Eigen3::Eigen)
+    target_compile_definitions(tencom_entropy_diff PRIVATE FLEXAIDS_HAS_EIGEN)
+    message(STATUS "Legacy tENCoM entropy diff tool enabled — build target: tencom_entropy_diff")
 endif()
 
 # ─── VoronoiCFBatch benchmark (Task 2.3) ───────────────────────────────────────

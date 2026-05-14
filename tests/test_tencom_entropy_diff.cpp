@@ -60,7 +60,11 @@ static std::vector<std::array<float,3>> perturb_helix(
 // ─── Vibrational entropy from TENCoM modes (same logic as standalone) ───────
 
 static encom::VibrationalEntropy tencom_svib(
-    const std::vector<tencm::NormalMode>& modes, double T, int skip = 6)
+    const std::vector<tencm::NormalMode>& modes,
+    double T,
+    const encom::FrequencyCalibration& calibration =
+        encom::FrequencyCalibration::model_scale(),
+    int skip = 6)
 {
     std::vector<encom::NormalMode> em;
     for (int m = skip; m < static_cast<int>(modes.size()); ++m) {
@@ -74,9 +78,13 @@ static encom::VibrationalEntropy tencom_svib(
     if (em.empty()) {
         encom::VibrationalEntropy z{};
         z.temperature = T;
+        z.eigenvalue_to_omega = calibration.eigenvalue_to_omega;
+        z.calibrated = calibration.calibrated;
+        z.calibration_label = calibration.label;
+        z.calibration_provenance = calibration.provenance;
         return z;
     }
-    return encom::ENCoMEngine::compute_vibrational_entropy(em, T);
+    return encom::ENCoMEngine::compute_vibrational_entropy(em, T, calibration);
 }
 
 // ─── Tests ──────────────────────────────────────────────────────────────────
@@ -246,4 +254,32 @@ TEST_F(TENCoMEntropyDiffTest, VibrationalEntropyPositive) {
     // Vibrational entropy should be positive at finite temperature
     EXPECT_GT(vs.S_vib_kcal_mol_K, 0.0);
     EXPECT_GT(vs.n_modes, 0);
+}
+
+TEST_F(TENCoMEntropyDiffTest, DefaultEntropyMetadataIsModelScale) {
+    tencm::TorsionalENM enm;
+    enm.build_from_ca(ca_ref_);
+
+    auto vs = tencom_svib(enm.modes(), 300.0);
+    EXPECT_FALSE(vs.calibrated);
+    EXPECT_FALSE(vs.absolute_claim_allowed());
+    EXPECT_EQ(vs.calibration_label, "model-scale");
+    EXPECT_STREQ(vs.calibration_status(), "model_scale_heuristic");
+}
+
+TEST_F(TENCoMEntropyDiffTest, CalibratedScalePropagatesInEntropyDiffHelper) {
+    tencm::TorsionalENM enm;
+    enm.build_from_ca(ca_ref_);
+    auto calibration = encom::FrequencyCalibration::calibrated_scale(
+        1.0e12, "synthetic-test", "unit-test provenance");
+
+    auto base = tencom_svib(enm.modes(), 300.0);
+    auto scaled = tencom_svib(enm.modes(), 300.0, calibration);
+
+    EXPECT_TRUE(scaled.calibrated);
+    EXPECT_TRUE(scaled.absolute_claim_allowed());
+    EXPECT_EQ(scaled.calibration_label, "synthetic-test");
+    EXPECT_NEAR(scaled.omega_eff,
+                base.omega_eff * 1.0e12,
+                std::abs(base.omega_eff * 1.0e12) * 1e-12);
 }
