@@ -71,6 +71,8 @@ struct FlexibilityMode {
     double delta_F_vib  = 0.0;   // ΔF_vib
 
     double temperature  = 300.0; // K
+    encom::FrequencyCalibration frequency_calibration =
+        encom::FrequencyCalibration::model_scale();
 };
 
 // ─── Compute vibrational entropy from TENCoM eigenvalues ─────────────────────
@@ -78,6 +80,7 @@ struct FlexibilityMode {
 static encom::VibrationalEntropy tencom_vibrational_entropy(
     const std::vector<tencm::NormalMode>& modes,
     double temperature_K,
+    const encom::FrequencyCalibration& calibration,
     int skip_rigid = 6)
 {
     // Convert tencm::NormalMode → encom::NormalMode for entropy computation
@@ -94,10 +97,15 @@ static encom::VibrationalEntropy tencom_vibrational_entropy(
     if (encom_modes.empty()) {
         encom::VibrationalEntropy zero{};
         zero.temperature = temperature_K;
+        zero.eigenvalue_to_omega = calibration.eigenvalue_to_omega;
+        zero.calibrated = calibration.calibrated;
+        zero.calibration_label = calibration.label;
+        zero.calibration_provenance = calibration.provenance;
         return zero;
     }
 
-    return encom::ENCoMEngine::compute_vibrational_entropy(encom_modes, temperature_K);
+    return encom::ENCoMEngine::compute_vibrational_entropy(
+        encom_modes, temperature_K, calibration);
 }
 
 // ─── Compute eigenvector overlap (dot product) ──────────────────────────────
@@ -122,12 +130,14 @@ static FlexibilityMode compute_flexibility_mode(
     const tencm::TorsionalENM& ref_enm,
     const tencm::TorsionalENM& tgt_enm,
     const std::string& tgt_label,
-    double temperature)
+    double temperature,
+    const encom::FrequencyCalibration& calibration)
 {
     FlexibilityMode fm;
     fm.label       = tgt_label;
     fm.temperature = temperature;
     fm.n_residues  = tgt_enm.n_residues();
+    fm.frequency_calibration = calibration;
 
     const auto& ref_modes = ref_enm.modes();
     const auto& tgt_modes = tgt_enm.modes();
@@ -161,9 +171,10 @@ static FlexibilityMode compute_flexibility_mode(
     for (int i = 0; i < n_bf; ++i)
         fm.delta_bfactors[i] = fm.tgt_bfactors[i] - fm.ref_bfactors[i];
 
-    // Vibrational entropy via ENCoM Schlitter formula
-    auto ref_vs = tencom_vibrational_entropy(ref_modes, temperature, SKIP);
-    auto tgt_vs = tencom_vibrational_entropy(tgt_modes, temperature, SKIP);
+    // Vibrational entropy via ENCoM. Default output is model-scale heuristic;
+    // only a calibrated frequency scale supports absolute free-energy claims.
+    auto ref_vs = tencom_vibrational_entropy(ref_modes, temperature, calibration, SKIP);
+    auto tgt_vs = tencom_vibrational_entropy(tgt_modes, temperature, calibration, SKIP);
 
     fm.ref_S_vib   = ref_vs.S_vib_kcal_mol_K;
     fm.tgt_S_vib   = tgt_vs.S_vib_kcal_mol_K;
@@ -192,7 +203,16 @@ static void output_flexibility_mode(const FlexibilityMode& fm,
        << "  Residues  : " << fm.n_residues << "\n"
        << "  Modes cmp : " << fm.n_matched << " (excl. 6 rigid-body)\n"
        << "  Temperature: " << std::fixed << std::setprecision(1) << fm.temperature << " K\n"
+       << "  Frequency calibration: " << fm.frequency_calibration.status()
+       << " (" << fm.frequency_calibration.label
+       << ", scale=" << std::setprecision(8)
+       << fm.frequency_calibration.eigenvalue_to_omega
+       << " rad/s per sqrt(model unit))\n"
        << "\n";
+    if (!fm.frequency_calibration.calibrated) {
+        os << "  Note: S_vib and -T*S_vib values are model-scale heuristics, "
+              "not absolute thermodynamic claims.\n\n";
+    }
 
     // ── Global thermodynamics ──
     os << "  ┌─────────────────────────────────────────────────────────────┐\n"
@@ -206,11 +226,11 @@ static void output_flexibility_mode(const FlexibilityMode& fm,
        << "  │  ΔS_vib          = " << std::setw(14) << fm.delta_S_vib
        << " kcal mol⁻¹ K⁻¹          │\n"
        << "  │                                                             │\n"
-       << "  │  F_vib (ref)     = " << std::setw(14) << fm.ref_F_vib
+       << "  │  F_vib* (ref)    = " << std::setw(14) << fm.ref_F_vib
        << " kcal mol⁻¹              │\n"
-       << "  │  F_vib (target)  = " << std::setw(14) << fm.tgt_F_vib
+       << "  │  F_vib* (target) = " << std::setw(14) << fm.tgt_F_vib
        << " kcal mol⁻¹              │\n"
-       << "  │  ΔF_vib (−TΔS)  = " << std::setw(14) << fm.delta_F_vib
+       << "  │  ΔF_vib* (−TΔS) = " << std::setw(14) << fm.delta_F_vib
        << " kcal mol⁻¹              │\n"
        << "  └─────────────────────────────────────────────────────────────┘\n\n";
 
@@ -284,8 +304,13 @@ static void output_flexibility_mode(const FlexibilityMode& fm,
     else
         os << "    → Target has similar flexibility to reference (|ΔS_vib| ≈ 0)\n";
 
-    os << "    → ΔF_vib = " << std::fixed << std::setprecision(4) << fm.delta_F_vib
-       << " kcal/mol (vibrational free energy penalty/gain)\n\n";
+    os << "    → ΔF_vib* = " << std::fixed << std::setprecision(4) << fm.delta_F_vib
+       << " kcal/mol";
+    if (fm.frequency_calibration.calibrated) {
+        os << " (calibrated vibrational free energy penalty/gain)\n\n";
+    } else {
+        os << " (model-scale heuristic; compare only within identical settings)\n\n";
+    }
 }
 
 // ─── Output: PDB REMARK block (BindingMode-compatible) ──────────────────────
@@ -307,15 +332,25 @@ static void output_pdb_remarks(const FlexibilityMode& fm,
         << "REMARK   Residues:  " << fm.n_residues << "\n"
         << "REMARK   Temperature: " << std::fixed << std::setprecision(1)
         << fm.temperature << " K\n"
+        << "REMARK   S_VIB_STATUS=" << fm.frequency_calibration.status() << "\n"
+        << "REMARK   EIGENVALUE_TO_OMEGA="
+        << std::setprecision(8) << fm.frequency_calibration.eigenvalue_to_omega << "\n"
+        << "REMARK   CALIBRATION_LABEL=" << fm.frequency_calibration.label << "\n"
+        << "REMARK   CALIBRATION_PROVENANCE="
+        << fm.frequency_calibration.provenance << "\n"
+        << "REMARK   ABSOLUTE_ENTROPY_CLAIMS_ALLOWED="
+        << (fm.frequency_calibration.calibrated ? "true" : "false") << "\n"
         << "REMARK\n"
         << "REMARK   THERMODYNAMICS\n"
         << std::fixed << std::setprecision(6)
         << "REMARK   S_vib_ref    = " << fm.ref_S_vib   << " kcal/mol/K\n"
         << "REMARK   S_vib_tgt    = " << fm.tgt_S_vib   << " kcal/mol/K\n"
         << "REMARK   delta_S_vib  = " << fm.delta_S_vib  << " kcal/mol/K\n"
-        << "REMARK   F_vib_ref    = " << fm.ref_F_vib    << " kcal/mol\n"
-        << "REMARK   F_vib_tgt    = " << fm.tgt_F_vib    << " kcal/mol\n"
-        << "REMARK   delta_F_vib  = " << fm.delta_F_vib  << " kcal/mol\n"
+        << "REMARK   F_vib_ref_star    = " << fm.ref_F_vib    << " kcal/mol\n"
+        << "REMARK   F_vib_tgt_star    = " << fm.tgt_F_vib    << " kcal/mol\n"
+        << "REMARK   delta_F_vib_star  = " << fm.delta_F_vib  << " kcal/mol\n"
+        << "REMARK   STAR_NOTE: F_vib_star terms are absolute only when "
+        << "ABSOLUTE_ENTROPY_CLAIMS_ALLOWED=true\n"
         << "REMARK\n";
 
     // Per-residue ΔB as B-factor column in pseudo-ATOM records
@@ -354,8 +389,16 @@ static void output_tsv(const FlexibilityMode& fm,
         << "# Reference: " << ref_label << "\n"
         << "# Target: " << fm.label << "\n"
         << "# Temperature: " << fm.temperature << " K\n"
+        << "# S_vib_status: " << fm.frequency_calibration.status() << "\n"
+        << "# eigenvalue_to_omega: "
+        << fm.frequency_calibration.eigenvalue_to_omega << "\n"
+        << "# calibration_label: " << fm.frequency_calibration.label << "\n"
+        << "# calibration_provenance: "
+        << fm.frequency_calibration.provenance << "\n"
+        << "# absolute_entropy_claims_allowed: "
+        << (fm.frequency_calibration.calibrated ? "true" : "false") << "\n"
         << "# delta_S_vib: " << fm.delta_S_vib << " kcal/mol/K\n"
-        << "# delta_F_vib: " << fm.delta_F_vib << " kcal/mol\n"
+        << "# delta_F_vib_star: " << fm.delta_F_vib << " kcal/mol\n"
         << "#\n";
 
     // Per-residue table
@@ -390,11 +433,14 @@ static void print_usage(const char* prog)
         << "  --temp FLOAT     Temperature in Kelvin (default: 300.0)\n"
         << "  --cutoff FLOAT   Cα contact cutoff in Å (default: 9.0)\n"
         << "  --k0 FLOAT       Spring constant k₀ (default: 1.0)\n"
+        << "  --omega-scale FLOAT  Convert sqrt(model eigenvalue) to rad/s\n"
+        << "  --calibration-label TEXT  Label for --omega-scale provenance\n"
+        << "  --calibration-provenance TEXT  Required source note with --omega-scale\n"
         << "  --outdir DIR     Output directory for PDB/TSV files (default: .)\n"
         << "  --quiet          Suppress per-mode/per-residue tables\n"
         << "  --help           Show this help\n\n"
         << "Output (per target):\n"
-        << "  Console:  FlexibilityMode report with ΔS_vib, ΔF_vib, Δλ, ΔB\n"
+        << "  Console:  FlexibilityMode report with ΔS_vib, ΔF_vib*, Δλ, ΔB\n"
         << "  *.pdb:    REMARK block + pseudo-ATOM with ΔB in B-factor column\n"
         << "  *.tsv:    Per-residue B-factor differentials for analysis\n\n";
 }
@@ -415,6 +461,14 @@ int main(int argc, char* argv[])
     double temperature = 300.0;
     float  cutoff      = tencm::DEFAULT_RC;
     float  k0          = tencm::DEFAULT_K0;
+    double omega_scale = 1.0;
+    bool has_omega_scale = false;
+    std::string calibration_label = "model-scale";
+    std::string calibration_provenance =
+        "No mass/inertia or empirical eigenvalue-to-frequency calibration supplied";
+    bool has_calibration_provenance = false;
+    encom::FrequencyCalibration frequency_calibration =
+        encom::FrequencyCalibration::model_scale();
     bool   quiet       = false;
     std::vector<std::string> target_paths;
 
@@ -433,6 +487,14 @@ int main(int argc, char* argv[])
             cutoff = std::stof(argv[++i]);
         } else if (arg == "--k0" && i + 1 < argc) {
             k0 = std::stof(argv[++i]);
+        } else if (arg == "--omega-scale" && i + 1 < argc) {
+            omega_scale = std::stod(argv[++i]);
+            has_omega_scale = true;
+        } else if (arg == "--calibration-label" && i + 1 < argc) {
+            calibration_label = argv[++i];
+        } else if (arg == "--calibration-provenance" && i + 1 < argc) {
+            calibration_provenance = argv[++i];
+            has_calibration_provenance = true;
         } else if (arg == "--outdir" && i + 1 < argc) {
             outdir = argv[++i];
         } else if (arg == "--quiet") {
@@ -444,6 +506,35 @@ int main(int argc, char* argv[])
             print_usage(argv[0]);
             return 1;
         }
+    }
+
+    if (!std::isfinite(temperature) || temperature <= 0.0) {
+        std::cerr << "Error: --temp must be finite and positive.\n";
+        return 1;
+    }
+    if (!std::isfinite(cutoff) || cutoff <= 0.0f) {
+        std::cerr << "Error: --cutoff must be finite and positive.\n";
+        return 1;
+    }
+    if (!std::isfinite(k0) || k0 <= 0.0f) {
+        std::cerr << "Error: --k0 must be finite and positive.\n";
+        return 1;
+    }
+    if (has_omega_scale) {
+        if (!std::isfinite(omega_scale) || omega_scale <= 0.0) {
+            std::cerr << "Error: --omega-scale must be finite and positive.\n";
+            return 1;
+        }
+        if (!has_calibration_provenance) {
+            std::cerr << "Error: --omega-scale requires --calibration-provenance; "
+                      << "a scalar alone is not calibration provenance.\n";
+            return 1;
+        }
+        if (calibration_label == "model-scale") {
+            calibration_label = "user-supplied";
+        }
+        frequency_calibration = encom::FrequencyCalibration::calibrated_scale(
+            omega_scale, calibration_label, calibration_provenance);
     }
 
     // Read target list from file if provided
@@ -483,6 +574,10 @@ int main(int argc, char* argv[])
     std::cout << "Targets:   " << target_paths.size() << " structure(s)\n";
     std::cout << "Temperature: " << temperature << " K\n";
     std::cout << "Cutoff: " << cutoff << " Å, k₀: " << k0 << "\n\n";
+    std::cout << "Frequency calibration: " << frequency_calibration.status()
+              << " (" << frequency_calibration.label
+              << ", scale=" << frequency_calibration.eigenvalue_to_omega
+              << " rad/s per sqrt(model unit))\n\n";
 
     tencom_pdb::CalphaStructure ref_strct;
     try {
@@ -514,12 +609,17 @@ int main(int argc, char* argv[])
     }
 
     // Compute reference vibrational entropy (report once)
-    auto ref_vs = tencom_vibrational_entropy(ref_enm.modes(), temperature);
+    auto ref_vs = tencom_vibrational_entropy(
+        ref_enm.modes(), temperature, frequency_calibration);
     std::cout << "Reference: " << ref_enm.n_residues() << " residues, "
               << ref_enm.n_bonds() << " torsional DOFs, "
               << ref_enm.modes().size() << " modes\n"
               << "Reference S_vib = " << std::fixed << std::setprecision(6)
-              << ref_vs.S_vib_kcal_mol_K << " kcal mol⁻¹ K⁻¹\n\n";
+              << ref_vs.S_vib_kcal_mol_K << " kcal mol⁻¹ K⁻¹";
+    if (!frequency_calibration.calibrated) {
+        std::cout << " (model-scale heuristic)";
+    }
+    std::cout << "\n\n";
 
     // ── Step 2: Process each target ────────────────────────────────────────
     //
@@ -587,7 +687,8 @@ int main(int argc, char* argv[])
         }
 
         // Compute FlexibilityMode (independent per target)
-        FlexibilityMode fm = compute_flexibility_mode(ref_enm, tgt_enm, tgt_path, temperature);
+        FlexibilityMode fm = compute_flexibility_mode(
+            ref_enm, tgt_enm, tgt_path, temperature, frequency_calibration);
 
         // Console output (serialised)
         {
@@ -600,7 +701,11 @@ int main(int argc, char* argv[])
             } else {
                 std::cout << "  ΔS_vib = " << std::fixed << std::setprecision(6)
                           << fm.delta_S_vib << " kcal/mol/K"
-                          << "  ΔF_vib = " << fm.delta_F_vib << " kcal/mol\n";
+                          << "  ΔF_vib* = " << fm.delta_F_vib << " kcal/mol";
+                if (!fm.frequency_calibration.calibrated) {
+                    std::cout << " (model-scale heuristic)";
+                }
+                std::cout << "\n";
             }
         }
 

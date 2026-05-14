@@ -50,6 +50,7 @@ struct DifferentialResult {
     std::vector<double> per_residue_delta_svib;
 
     double temperature;
+    encom::FrequencyCalibration frequency_calibration;
 };
 
 // Convert tencm::NormalMode vector to encom::NormalMode vector
@@ -65,6 +66,15 @@ DifferentialResult compute_differential(
     const std::string& ref_name = "reference",
     const std::string& tgt_name = "target",
     double temperature_K = 300.0,
+    double eigenvalue_cutoff = 1e-6);
+
+DifferentialResult compute_differential(
+    const tencm::TorsionalENM& ref_enm,
+    const tencm::TorsionalENM& tgt_enm,
+    const std::string& ref_name,
+    const std::string& tgt_name,
+    double temperature_K,
+    const encom::FrequencyCalibration& calibration,
     double eigenvalue_cutoff = 1e-6);
 
 }  // namespace tencom_diff

@@ -517,11 +517,22 @@ int GA(FA_Global* FA, GB_Global* GB,VC_Global* VC,chromosome** chrom,chromosome*
 		if (GB->entropy_convergence &&
 		    ((i + 1) % GB->entropy_check_interval == 0)) {
 			std::vector<double> pop_energies(GB->num_chrom);
-			for (int c = 0; c < GB->num_chrom; ++c)
+			for (int c = 0; c < GB->num_chrom; ++c) {
 				pop_energies[c] = (*chrom)[c].evalue;
+			}
 			double H = shannon_thermo::compute_shannon_entropy(
 				pop_energies, shannon_thermo::DEFAULT_HIST_BINS);
 			entropy_history.push_back(H);
+
+			if (H <= shannon_thermo::kHSC_soft_nats) {
+				printf("Entropy collapse convergence at generation %d "
+				       "(H=%.4f nats <= %.4f nats / %.1f bits)\n",
+				       i + 1, H,
+				       shannon_thermo::kHSC_soft_nats,
+				       shannon_thermo::kHSC_soft_bits);
+				entropy_converged = true;
+				break;
+			}
 
 			if (shannon_thermo::detect_entropy_plateau(
 			        entropy_history, GB->entropy_window,

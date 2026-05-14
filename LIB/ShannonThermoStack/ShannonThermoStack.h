@@ -21,17 +21,36 @@ namespace shannon_thermo {
 
 // ─── constants ───────────────────────────────────────────────────────────────
 inline constexpr int   SHANNON_BINS      = 256;    // mega-cluster discretisation
-inline constexpr double kB_kcal          = 0.001987206; // kcal mol⁻¹ K⁻¹
+inline constexpr double kB_kcal          = 0.001987206; // kcal mol⁻¹ K⁻¹  (= R/4184)
+inline constexpr double kB_SI            = 1.380649e-23; // J K⁻¹
+inline constexpr double hbar_SI          = 1.054571817e-34; // J·s
 inline constexpr double TEMPERATURE_K    = 298.15;
 inline constexpr int   DEFAULT_HIST_BINS = 20;
 inline constexpr int   GPU_DISPATCH_THRESHOLD = 500000; // only use GPU for N > 500K
 
+// ─── Shannon Energy Collapse thresholds ──────────────────────────────────────
+// All internal entropy APIs return nats (natural log). Convert to bits at
+// reporting/convergence boundaries only: H_bits = H_nats / ln(2).
+//
+// These named constants are the single source of truth for H(X) < threshold
+// comparisons. Never compare a nats value against the raw bits constant or
+// vice versa — always use the matching _nats or _bits form.
+//
+//   Soft collapse:  H < 2.0 bits  -> effective support < 4 clusters
+//   Hard collapse:  H < 1.0 bit   -> one cluster has >50% probability
+//
+// Derivation: H_nats = H_bits × ln(2);  ln(2) = 0.693147...
+inline constexpr double kHSC_soft_bits = 2.0;
+inline constexpr double kHSC_hard_bits = 1.0;
+inline constexpr double kHSC_soft_nats = kHSC_soft_bits * 0.6931471805599453; // 2 × ln(2)
+inline constexpr double kHSC_hard_nats = kHSC_hard_bits * 0.6931471805599453; // 1 × ln(2)
+
 // ─── result struct ───────────────────────────────────────────────────────────
 struct FullThermoResult {
-    double deltaG;              // total free energy (kcal/mol)
+    double deltaG;              // base ΔG plus calibrated entropy terms (kcal/mol)
     double shannonEntropy;      // dimensionless nats (conformational, natural log)
-    double torsionalVibEntropy; // kcal/mol·K (from ENCoM modes)
-    double entropyContribution; // -T*S term (kcal/mol)
+    double torsionalVibEntropy; // kcal/mol·K; heuristic unless calibrated elsewhere
+    double entropyContribution; // applied -T*S term (kcal/mol), excludes heuristics
     std::string report;
 };
 
@@ -81,9 +100,11 @@ double compute_shannon_entropy(const std::vector<double>& values,
 double compute_shannon_entropy_discrete(const std::vector<int>& states);
 
 // ─── torsional vibrational entropy from ENCoM modes ─────────────────────────
-// Sums harmonic oscillator entropy contribution for each normal mode:
-//   S_vib = kB * [ hν/kBT / (exp(hν/kBT)-1) - ln(1-exp(-hν/kBT)) ]
-// For low-frequency torsional modes approximated as: S ≈ kB * ln(kBT/hν)
+// Sums classical harmonic oscillator entropy using model-scale torsional
+// eigenvalues:
+//   S_mode = kB * [1 + ln(kBT/(hbar*omega))]
+//   omega = sqrt(lambda) unless an external calibration is introduced.
+// Uncalibrated values are useful as relative flexibility heuristics only.
 double compute_torsional_vibrational_entropy(
     const std::vector<tencm::NormalMode>& modes,
     double temperature_K = TEMPERATURE_K);

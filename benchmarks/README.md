@@ -18,6 +18,9 @@ benchmarks/
 ├── run.py                # CLI entry point
 ├── __init__.py           # Package init
 ├── datasets/             # YAML dataset configurations
+│   ├── astex_diverse.yaml # Astex Diverse Set (FlexAID 2015 validation #1)
+│   ├── astex_nonnative.yaml # Astex Non-Native Set (FlexAID 2015 validation #2)
+│   ├── hap2.yaml         # HAP2 holo/apo benchmark (FlexAID 2015 validation #3)
 │   ├── casf2016.yaml     # CASF-2016 (285 targets, 4-power benchmark)
 │   ├── itc187.yaml       # ITC-187 calorimetry gold standard
 │   ├── dude37.yaml       # DUD-E 37-target cross-docking
@@ -117,6 +120,18 @@ marks the PR check as failed.
 ---
 
 ## Datasets
+
+### FlexAID 2015 Validation Sequence
+
+These are the first-class docking benchmarks for FlexAID lineage comparisons,
+in the order used by Gaudreault & Najmanovich (2015):
+
+1. **Astex Diverse Set** (`astex_diverse`) — 85 native holo complexes for self-docking.
+2. **Astex Non-Native Set** (`astex_nonnative`) — 65 targets / 1112 structures for cross-docking into non-native receptor conformations.
+3. **HAP2** (`hap2`) — FlexAID-native holo/apo protein-pair benchmark from the 2015 JCIM paper.
+
+Run all discovered datasets with `--all`; the packaged dataset runner uses
+`benchmark_order` metadata so these three run and display first.
 
 ### CASF-2016
 - **285 complexes** from PDBbind Core Set 2016

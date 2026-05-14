@@ -49,7 +49,7 @@ enum class BenchmarkSet {
     ASTEX_DIVERSE,      // 85 complexes
     ASTEX_NON_NATIVE,   // 65 protein families (table), ~2200 cross-docking pairs
                         // (Verdonk 2008 original: 65 families, 1112 structures)
-    HAP2,               // 59 targets (Holo/Apo/Predicted)
+    HAP2,               // FlexAID JCIM 2015 HAP2 validation set
     CASF_2016,          // 285 complexes (PDBbind core)
     POSEBUSTERS,        // 308 complexes
     DUD_E,              // 102 targets + decoys
@@ -310,7 +310,7 @@ public:
     /// Get the DUD-E target list (102)
     static std::vector<std::string> dude_targets();
 
-    /// Get HAP2 target info (59 targets)
+    /// Get HAP2 target info (59 hardcoded PDB codes)
     static std::vector<std::string> hap2_codes();
 
 private:

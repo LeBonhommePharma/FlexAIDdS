@@ -11,6 +11,22 @@
 
 namespace tencom_output {
 
+static std::string json_escape(const std::string& s) {
+    std::string out;
+    out.reserve(s.size());
+    for (char c : s) {
+        switch (c) {
+        case '\\': out += "\\\\"; break;
+        case '"': out += "\\\""; break;
+        case '\n': out += "\\n"; break;
+        case '\r': out += "\\r"; break;
+        case '\t': out += "\\t"; break;
+        default: out += c; break;
+        }
+    }
+    return out;
+}
+
 // ─── FlexPopulation::sort_by_free_energy ────────────────────────────────────
 
 void FlexPopulation::sort_by_free_energy() {
@@ -54,6 +70,13 @@ void FlexPopulation::write_mode_pdb(const FlexMode& mode,
     ofs << std::setprecision(6);
     ofs << "REMARK S_VIB=" << mode.S_vib << "\n";
     ofs << "REMARK DELTA_S_VIB=" << mode.delta_S_vib << "\n";
+    ofs << "REMARK S_VIB_STATUS="
+        << (mode.frequency_calibrated ? "calibrated" : "model_scale_heuristic")
+        << "\n";
+    ofs << "REMARK EIGENVALUE_TO_OMEGA="
+        << std::setprecision(8) << mode.eigenvalue_to_omega << "\n";
+    ofs << "REMARK CALIBRATION_LABEL=" << mode.calibration_label << "\n";
+    ofs << "REMARK CALIBRATION_PROVENANCE=" << mode.calibration_provenance << "\n";
 
     ofs << std::setprecision(4);
     ofs << "REMARK DELTA_F_VIB=" << mode.delta_F_vib << "\n";
@@ -167,11 +190,23 @@ void FlexPopulation::print_summary(std::ostream& os) const {
     os << "\n=== FlexAIDdS tENCoM Vibrational Entropy Differential ===\n";
     os << "Temperature: " << temperature << " K\n";
     os << "Full flexibility: ON (all modes)\n\n";
+    if (!modes.empty()) {
+        const auto& calibration = modes.front();
+        os << "Frequency calibration: "
+           << (calibration.frequency_calibrated ? "calibrated" : "model-scale heuristic")
+           << " (" << calibration.calibration_label
+           << ", scale=" << calibration.eigenvalue_to_omega
+           << " rad/s per sqrt(model unit))\n";
+        if (!calibration.frequency_calibrated) {
+            os << "S_vib values are relative/model-scale, not absolute thermodynamic claims.\n";
+        }
+        os << "\n";
+    }
 
     os << std::left
        << std::setw(6)  << "Mode"
        << std::setw(40) << "Source"
-       << std::setw(16) << "S_vib"
+       << std::setw(16) << "S_vib*"
        << std::setw(16) << "Delta_S_vib"
        << std::setw(16) << "Delta_F_vib"
        << std::setw(10) << "N_modes"
@@ -217,6 +252,10 @@ void FlexPopulation::print_summary(std::ostream& os) const {
     }
 
     os << "\n";
+    if (!modes.empty() && !modes.front().frequency_calibrated) {
+        os << "* heuristic model-scale entropy unless an eigenvalue-to-frequency"
+              " calibration is supplied.\n\n";
+    }
 }
 
 // ─── FlexPopulation::output_all ─────────────────────────────────────────────
@@ -264,12 +303,20 @@ void FlexPopulation::write_json(
         const auto& m = modes[mi];
         ofs << "    {\n";
         ofs << "      \"mode_id\": " << m.mode_id << ",\n";
-        ofs << "      \"source\": \"" << m.pdb_path << "\",\n";
-        ofs << "      \"label\": \"" << m.label << "\",\n";
+        ofs << "      \"source\": \"" << json_escape(m.pdb_path) << "\",\n";
+        ofs << "      \"label\": \"" << json_escape(m.label) << "\",\n";
         ofs << "      \"type\": \"" << (m.mode_id == 0 ? "reference" : "target") << "\",\n";
         ofs << "      \"S_vib\": " << std::setprecision(8) << m.S_vib << ",\n";
         ofs << "      \"delta_S_vib\": " << std::setprecision(8) << m.delta_S_vib << ",\n";
         ofs << "      \"delta_F_vib\": " << std::setprecision(6) << m.delta_F_vib << ",\n";
+        ofs << "      \"S_vib_status\": \""
+            << (m.frequency_calibrated ? "calibrated" : "model_scale_heuristic")
+            << "\",\n";
+        ofs << "      \"eigenvalue_to_omega\": " << std::setprecision(8)
+            << m.eigenvalue_to_omega << ",\n";
+        ofs << "      \"calibration_label\": \"" << json_escape(m.calibration_label) << "\",\n";
+        ofs << "      \"calibration_provenance\": \""
+            << json_escape(m.calibration_provenance) << "\",\n";
         ofs << "      \"n_modes\": " << m.n_modes << ",\n";
         ofs << "      \"n_residues\": " << m.n_residues << ",\n";
 
@@ -350,7 +397,8 @@ void FlexPopulation::write_csv() const {
     }
 
     // Header
-    ofs << "mode_id,source,type,S_vib,delta_S_vib,delta_F_vib,n_modes,n_residues\n";
+    ofs << "mode_id,source,type,S_vib,S_vib_status,eigenvalue_to_omega,calibration_label,"
+           "delta_S_vib,delta_F_vib,n_modes,n_residues\n";
 
     ofs << std::fixed;
     for (const auto& m : modes) {
@@ -358,6 +406,9 @@ void FlexPopulation::write_csv() const {
             << "\"" << m.pdb_path << "\","
             << (m.mode_id == 0 ? "reference" : "target") << ","
             << std::setprecision(8) << m.S_vib << ","
+            << (m.frequency_calibrated ? "calibrated" : "model_scale_heuristic") << ","
+            << std::setprecision(8) << m.eigenvalue_to_omega << ","
+            << "\"" << m.calibration_label << "\","
             << std::setprecision(8) << m.delta_S_vib << ","
             << std::setprecision(6) << m.delta_F_vib << ","
             << m.n_modes << ","

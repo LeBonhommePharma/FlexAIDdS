@@ -23,6 +23,7 @@ std::vector<encom::NormalMode> to_encom_modes(
         encom::NormalMode em;
         em.index = i + 1;
         em.eigenvalue = tencm_modes[i].eigenvalue;
+        // Model-scale frequency proxy; physical rad/s require calibration.
         em.frequency = std::sqrt(std::abs(em.eigenvalue));
         em.eigenvector = tencm_modes[i].eigenvector;
         result.push_back(std::move(em));
@@ -41,10 +42,30 @@ DifferentialResult compute_differential(
     double temperature_K,
     double eigenvalue_cutoff)
 {
+    return compute_differential(
+        ref_enm,
+        tgt_enm,
+        ref_name,
+        tgt_name,
+        temperature_K,
+        encom::FrequencyCalibration::model_scale(),
+        eigenvalue_cutoff);
+}
+
+DifferentialResult compute_differential(
+    const tencm::TorsionalENM& ref_enm,
+    const tencm::TorsionalENM& tgt_enm,
+    const std::string& ref_name,
+    const std::string& tgt_name,
+    double temperature_K,
+    const encom::FrequencyCalibration& calibration,
+    double eigenvalue_cutoff)
+{
     DifferentialResult result;
     result.ref_name = ref_name;
     result.tgt_name = tgt_name;
     result.temperature = temperature_K;
+    result.frequency_calibration = calibration;
 
     const auto& ref_modes = ref_enm.modes();
     const auto& tgt_modes = tgt_enm.modes();
@@ -54,9 +75,9 @@ DifferentialResult compute_differential(
     auto tgt_encom = to_encom_modes(tgt_modes);
 
     result.svib_ref = encom::ENCoMEngine::compute_vibrational_entropy(
-        ref_encom, temperature_K, eigenvalue_cutoff);
+        ref_encom, temperature_K, calibration, eigenvalue_cutoff);
     result.svib_tgt = encom::ENCoMEngine::compute_vibrational_entropy(
-        tgt_encom, temperature_K, eigenvalue_cutoff);
+        tgt_encom, temperature_K, calibration, eigenvalue_cutoff);
 
     result.delta_S_vib = result.svib_tgt.S_vib_kcal_mol_K
                        - result.svib_ref.S_vib_kcal_mol_K;

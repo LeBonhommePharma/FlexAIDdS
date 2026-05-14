@@ -6,6 +6,19 @@ Performance and accuracy benchmarks for FlexAID∆S. Results below are from ongo
 
 ## Accuracy Benchmarks
 
+### FlexAID 2015 Validation Sequence
+
+The packaged benchmark dataset order starts with the three validation sets
+used by Gaudreault & Najmanovich in the original FlexAID JCIM 2015 paper:
+
+1. **Astex Diverse Set** (`astex_diverse`) — 85 native holo complexes.
+2. **Astex Non-Native Set** (`astex_nonnative`) — 65 targets / 1112 structures for non-native receptor cross-docking.
+3. **HAP2** (`hap2`) — holo/apo protein-pair validation for docking into non-native conformations.
+
+These YAML configs are shipped both under `benchmarks/datasets/` and inside
+the Python package default dataset directory, so `flexaidds-benchmark --all`
+runs them first before the broader validation suites.
+
 ### ITC-187 Calorimetry Benchmark
 
 Direct comparison of predicted vs. experimentally measured binding thermodynamics from isothermal titration calorimetry across 187 protein–ligand complexes.

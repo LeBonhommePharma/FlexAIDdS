@@ -36,7 +36,7 @@ struct GenerationThermo {
 
 // ─── convergence result ──────────────────────────────────────────────────────
 struct CollapseResult {
-    bool   converged;             // true if entropy plateau reached
+    bool   converged;             // true if entropy collapse threshold or plateau reached
     int    final_generation;      // generation at convergence (or max)
     double final_free_energy;     // F at termination
     double final_entropy;         // S at termination
@@ -80,7 +80,8 @@ public:
 
     // ── full run (standalone driver) ─────────────────────────────────────────
     // Runs the entropy-collapse GA loop for up to max_generations.
-    // Stops early if Shannon entropy plateaus within entropy_tolerance.
+    // Stops early if Shannon entropy crosses the HSC nats threshold or plateaus
+    // within entropy_tolerance.
     // The caller must have already populated and evaluated the initial population.
     CollapseResult run(chromosome* chrom, int num_chrom,
                        int num_genes, const genlim* gene_lim,

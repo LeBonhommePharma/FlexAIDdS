@@ -128,6 +128,24 @@ TEST(ShannonThermodynamicGA, CollapseThermodynamics_ShannonEntropy) {
     EXPECT_GT(snap1.shannon_H, snap2.shannon_H);
 }
 
+TEST(ShannonThermodynamicGA, ShannonEnergyCollapseThresholdsAreNats) {
+    EXPECT_NEAR(shannon_thermo::kHSC_soft_nats,
+                2.0 * std::log(2.0),
+                1e-12);
+    EXPECT_NEAR(shannon_thermo::kHSC_hard_nats,
+                std::log(2.0),
+                1e-12);
+
+    std::vector<double> collapsed = {-10.0, -10.0, -10.0, -10.0, -10.0};
+    TestPopulation pop(5, 2, collapsed);
+
+    ShannonThermodynamicGA ga(5, 0.01);
+    ga.evaluate_enthalpy_batch(pop.data(), pop.size());
+    auto snap = ga.collapse_thermodynamics(pop.data(), pop.size(), 1);
+
+    EXPECT_LT(snap.shannon_H, shannon_thermo::kHSC_soft_nats);
+}
+
 TEST(ShannonThermodynamicGA, SelectParent_PrefersBetterEnergies) {
     std::vector<double> energies = {-20.0, -1.0, -1.0, -1.0, -1.0};
     TestPopulation pop(5, 2, energies);
