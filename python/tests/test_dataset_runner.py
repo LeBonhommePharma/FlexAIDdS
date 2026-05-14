@@ -307,9 +307,24 @@ class TestDatasetRunner:
             pytest.skip("pyyaml not installed")
         runner = DatasetRunner(dry_run=True, results_dir="/tmp/flexaidds_test_results")
         configs = runner.discover_datasets()
-        assert len(configs) >= 6, f"Expected >=6 dataset configs, found {len(configs)}"
+        assert len(configs) >= 9, f"Expected >=9 dataset configs, found {len(configs)}"
         slugs = {c.slug for c in configs}
         assert "casf2016" in slugs
+        assert {"astex_diverse", "astex_nonnative", "hap2"} <= slugs
+
+    def test_flexaid_2015_datasets_are_first(self):
+        """FlexAID 2015 validation datasets should lead all-dataset runs."""
+        try:
+            import yaml  # noqa: F401
+        except ImportError:
+            pytest.skip("pyyaml not installed")
+        runner = DatasetRunner(dry_run=True, results_dir="/tmp/flexaidds_test_results")
+        configs = runner.discover_datasets()
+        assert [cfg.slug for cfg in configs[:3]] == [
+            "astex_diverse",
+            "astex_nonnative",
+            "hap2",
+        ]
 
     def test_run_single_dry_run(self, tmp_path):
         """Dry-run a single dataset at tier 1."""

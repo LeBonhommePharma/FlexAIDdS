@@ -79,6 +79,7 @@ class DatasetConfig:
         download_url:          Alternative download URL.
         tier:                  Minimum tier required to run the full dataset (1 or 2).
         tier1_subset_size:     Number of targets to use for tier-1 (PR sanity) runs.
+        benchmark_order:       Stable run/display order; lower values run first.
         targets:               Full list of target identifiers.
         structural_states:     Receptor states available (``holo``, ``apo``, ``af2``).
         metrics:               Names of metrics to compute (must exist in metrics.py).
@@ -96,6 +97,7 @@ class DatasetConfig:
     download_url: str = ""
     tier: int = 2
     tier1_subset_size: int = 5
+    benchmark_order: int = 1000
     targets: List[str] = field(default_factory=list)
     structural_states: List[str] = field(default_factory=lambda: ["holo"])
     metrics: List[str] = field(default_factory=list)
@@ -124,6 +126,7 @@ class DatasetConfig:
             download_url=raw.pop("download_url", ""),
             tier=int(raw.pop("tier", 2)),
             tier1_subset_size=int(raw.pop("tier1_subset_size", 5)),
+            benchmark_order=int(raw.pop("benchmark_order", 1000)),
             targets=list(raw.pop("targets", [])),
             structural_states=list(raw.pop("structural_states", ["holo"])),
             metrics=list(raw.pop("metrics", [])),
@@ -530,7 +533,8 @@ class DatasetRunner:
         """Discover and load all ``*.yaml`` configs from ``datasets_dir``.
 
         Returns:
-            List of :class:`DatasetConfig` objects sorted by slug.
+            List of :class:`DatasetConfig` objects sorted by benchmark order,
+            then slug.
         """
         if not self.datasets_dir.is_dir():
             logger.warning("datasets_dir does not exist: %s", self.datasets_dir)
@@ -548,7 +552,7 @@ class DatasetRunner:
             except Exception as exc:
                 logger.error("Failed to load %s: %s", yaml_path, exc)
 
-        return configs
+        return sorted(configs, key=lambda cfg: (cfg.benchmark_order, cfg.slug))
 
     def load_dataset_config(self, yaml_path: Union[str, Path]) -> DatasetConfig:
         """Load a single dataset config from an explicit path."""
