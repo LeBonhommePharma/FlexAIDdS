@@ -74,13 +74,9 @@ GenerationThermo ShannonThermodynamicGA::collapse_thermodynamics(
         chrom[i].free_energy = last_thermo_.free_energy;
     }
 
-    // Compute Shannon entropy of the energy distribution
-    std::vector<double> pop_energies(num_chrom);
-    for (int i = 0; i < num_chrom; ++i)
-        pop_energies[i] = chrom[i].evalue;
-
-    double H = shannon_thermo::compute_shannon_entropy(
-        pop_energies, shannon_thermo::DEFAULT_HIST_BINS);
+    // HSC uses the entropy of the Boltzmann pose distribution, not a histogram
+    // of raw energy values. Equal-energy poses are maximum entropy, not collapse.
+    double H = shannon_thermo::compute_shannon_entropy_probabilities(bweights);
     current_entropy_ = H;
     entropy_history_.push_back(H);
 
@@ -138,9 +134,11 @@ void ShannonThermodynamicGA::mutate_and_crossover(chromosome* chrom,
                                                     const genlim* gene_lim)
 {
     // Adaptive mutation: boost when Shannon entropy is low (population collapsed)
-    // Normalized entropy: H / ln(num_bins) ∈ [0, 1]
-    double H_max = std::log(static_cast<double>(shannon_thermo::DEFAULT_HIST_BINS));
-    double H_norm = (H_max > 0.0) ? (current_entropy_ / H_max) : 1.0;
+    // Normalized entropy: H / ln(num_chrom) in [0, 1] for the current population.
+    double H_max = (num_chrom > 1) ? std::log(static_cast<double>(num_chrom)) : 0.0;
+    double H_norm = (H_max > 0.0)
+        ? std::clamp(current_entropy_ / H_max, 0.0, 1.0)
+        : 1.0;
 
     // When H_norm → 0 (collapsed), adaptive_rate → 3× base rate (capped at 0.5)
     // When H_norm → 1 (diverse),  adaptive_rate → base rate

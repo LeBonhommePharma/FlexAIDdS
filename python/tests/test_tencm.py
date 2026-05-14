@@ -16,6 +16,7 @@ from flexaidds.tencm import (
     TorsionalNormalMode,
     Conformer,
     FullThermoResult,
+    compute_boltzmann_shannon_entropy,
     compute_shannon_entropy,
     compute_torsional_vibrational_entropy,
     run_shannon_thermo_stack,
@@ -113,6 +114,14 @@ class TestShannonEntropy:
         H = compute_shannon_entropy(values, num_bins=2)
         assert abs(H - math.log(2)) < 0.01
 
+    def test_boltzmann_entropy_equal_energies(self):
+        H = compute_boltzmann_shannon_entropy([-10.0] * 5)
+        assert H == pytest.approx(math.log(5.0))
+
+    def test_boltzmann_entropy_dominant_basin(self):
+        H = compute_boltzmann_shannon_entropy([-30.0, 0.0, 0.0, 0.0, 0.0])
+        assert H < math.log(2.0)
+
 
 # ── Torsional Vibrational Entropy Tests ──────────────────────────────────────
 
@@ -175,6 +184,10 @@ class TestShannonThermoStack:
         expected_contrib = -298.15 * expected_S
         assert abs(result.entropyContribution - expected_contrib) < 1e-8
         assert abs(result.deltaG - (-5.0 + expected_contrib)) < 1e-8
+
+    def test_equal_energies_are_not_entropy_collapse(self):
+        result = run_shannon_thermo_stack([-10.0] * 5, base_deltaG=-5.0)
+        assert result.shannonEntropy == pytest.approx(math.log(5.0))
 
     def test_report_string(self):
         energies = [-10.0, -12.0, -8.0]

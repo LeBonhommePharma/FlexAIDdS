@@ -59,6 +59,16 @@ TEST(ShannonEntropy, IdenticalValuesReturnZero) {
     EXPECT_DOUBLE_EQ(compute_shannon_entropy(same), 0.0);
 }
 
+TEST(ShannonEntropy, ProbabilityVectorEntropyUsesNats) {
+    std::vector<double> uniform = {0.25, 0.25, 0.25, 0.25};
+    EXPECT_NEAR(compute_shannon_entropy_probabilities(uniform),
+                std::log(4.0), 1e-12);
+
+    std::vector<double> unnormalized = {2.0, 2.0};
+    EXPECT_NEAR(compute_shannon_entropy_probabilities(unnormalized),
+                std::log(2.0), 1e-12);
+}
+
 TEST(ShannonEntropy, NonNegative) {
     // Shannon entropy is always >= 0
     std::mt19937 rng(42);
@@ -846,11 +856,11 @@ TEST(EntropyPlateau, NearThreshold) {
 }
 
 // ===========================================================================
-// CORRECTED SCALING FORMULA (Improvement 2)
+// APPLIED ENTROPY FORMULA
 // ===========================================================================
 
 TEST(ScalingFormula, AdditiveDecomposition) {
-    // Verify total_S = S_conf + S_vib (no quadratic term)
+    // Verify applied entropy uses S_conf only while heuristic S_vib is excluded.
     statmech::StatMechEngine eng(298.15);
     // Add samples with varied energies to get non-trivial Shannon entropy
     for (int i = 0; i < 100; ++i)

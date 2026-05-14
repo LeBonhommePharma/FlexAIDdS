@@ -104,9 +104,9 @@ TEST(ShannonThermodynamicGA, CollapseThermodynamics_BoltzmannWeights) {
 }
 
 TEST(ShannonThermodynamicGA, CollapseThermodynamics_ShannonEntropy) {
-    // Uniform-ish energies → higher Shannon entropy
-    std::vector<double> uniform = {-5.0, -5.1, -4.9, -5.2, -4.8,
-                                    -5.05, -4.95, -5.15, -4.85, -5.0};
+    // Equal energies imply uniform Boltzmann weights and maximum entropy.
+    std::vector<double> uniform = {-10.0, -10.0, -10.0, -10.0, -10.0,
+                                    -10.0, -10.0, -10.0, -10.0, -10.0};
     TestPopulation pop_uniform(10, 2, uniform);
 
     ShannonThermodynamicGA ga1(10, 0.01);
@@ -114,9 +114,9 @@ TEST(ShannonThermodynamicGA, CollapseThermodynamics_ShannonEntropy) {
     auto snap1 = ga1.collapse_thermodynamics(pop_uniform.data(),
                                               pop_uniform.size(), 1);
 
-    // Collapsed energies → lower Shannon entropy
-    std::vector<double> collapsed = {-10.0, -10.0, -10.0, -10.0, -10.0,
-                                      -10.0, -10.0, -10.0, -10.0, -10.0};
+    // A single deep basin dominates the Boltzmann distribution and collapses H.
+    std::vector<double> collapsed = {-30.0, 0.0, 0.0, 0.0, 0.0,
+                                      0.0, 0.0, 0.0, 0.0, 0.0};
     TestPopulation pop_collapsed(10, 2, collapsed);
 
     ShannonThermodynamicGA ga2(10, 0.01);
@@ -124,7 +124,7 @@ TEST(ShannonThermodynamicGA, CollapseThermodynamics_ShannonEntropy) {
     auto snap2 = ga2.collapse_thermodynamics(pop_collapsed.data(),
                                               pop_collapsed.size(), 1);
 
-    // Uniform population should have higher Shannon entropy than collapsed
+    EXPECT_NEAR(snap1.shannon_H, std::log(10.0), 1e-12);
     EXPECT_GT(snap1.shannon_H, snap2.shannon_H);
 }
 
@@ -136,12 +136,24 @@ TEST(ShannonThermodynamicGA, ShannonEnergyCollapseThresholdsAreNats) {
                 std::log(2.0),
                 1e-12);
 
-    std::vector<double> collapsed = {-10.0, -10.0, -10.0, -10.0, -10.0};
-    TestPopulation pop(5, 2, collapsed);
+    std::vector<double> equal_energy = {-10.0, -10.0, -10.0, -10.0, -10.0};
+    TestPopulation equal_pop(5, 2, equal_energy);
 
-    ShannonThermodynamicGA ga(5, 0.01);
-    ga.evaluate_enthalpy_batch(pop.data(), pop.size());
-    auto snap = ga.collapse_thermodynamics(pop.data(), pop.size(), 1);
+    ShannonThermodynamicGA equal_ga(5, 0.01);
+    equal_ga.evaluate_enthalpy_batch(equal_pop.data(), equal_pop.size());
+    auto equal_snap = equal_ga.collapse_thermodynamics(
+        equal_pop.data(), equal_pop.size(), 1);
+
+    EXPECT_NEAR(equal_snap.shannon_H, std::log(5.0), 1e-12);
+    EXPECT_GT(equal_snap.shannon_H, shannon_thermo::kHSC_soft_nats);
+
+    std::vector<double> dominant = {-30.0, 0.0, 0.0, 0.0, 0.0};
+    TestPopulation dominant_pop(5, 2, dominant);
+
+    ShannonThermodynamicGA dominant_ga(5, 0.01);
+    dominant_ga.evaluate_enthalpy_batch(dominant_pop.data(), dominant_pop.size());
+    auto snap = dominant_ga.collapse_thermodynamics(
+        dominant_pop.data(), dominant_pop.size(), 1);
 
     EXPECT_LT(snap.shannon_H, shannon_thermo::kHSC_soft_nats);
 }

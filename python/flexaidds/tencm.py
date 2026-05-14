@@ -300,6 +300,34 @@ def compute_shannon_entropy(
     return -float(np.sum(probs * np.log(probs)))
 
 
+def compute_boltzmann_shannon_entropy(
+    energies: List[float],
+    temperature_K: float = 298.15,
+) -> float:
+    """Compute H = -Σ p_i ln(p_i) from Boltzmann weights over energies."""
+    if not energies:
+        return 0.0
+    if temperature_K <= 0.0 or not math.isfinite(temperature_K):
+        raise ValueError("temperature_K must be finite and positive")
+
+    arr = np.asarray(energies, dtype=np.float64)
+    arr = arr[np.isfinite(arr)]
+    if arr.size == 0:
+        return 0.0
+
+    beta = 1.0 / (kB_kcal * temperature_K)
+    log_weights = -beta * arr
+    max_log_weight = float(np.max(log_weights))
+    weights = np.exp(log_weights - max_log_weight)
+    norm = float(np.sum(weights))
+    if norm <= 0.0 or not math.isfinite(norm):
+        return 0.0
+
+    probs = weights / norm
+    probs = probs[probs > 0.0]
+    return float(-np.sum(probs * np.log(probs)))
+
+
 def compute_torsional_vibrational_entropy(
     modes: List[TorsionalNormalMode],
     temperature_K: float = 298.15,
@@ -367,9 +395,12 @@ def run_shannon_thermo_stack(
     torsional vibrational entropy from the ENCoM backbone model.
 
     Formula:
-        S_conf = k_B * H_nats           (nats → physical units)
-        S_total = S_conf + S_vib         (additive for independent DOFs)
-        ΔG = base_ΔG - T * S_total
+        H_nats = -Σ_i p_i ln(p_i), with p_i from Boltzmann weights over poses
+        S_conf = k_B * H_nats
+        ΔG = base_ΔG - T * S_conf
+
+    S_vib is reported as a model-scale diagnostic, but excluded from ΔG until
+    a calibrated frequency path is supplied.
 
     Args:
         energies:          List of pose energies from the GA ensemble.
@@ -392,8 +423,8 @@ def run_shannon_thermo_stack(
         sc_info = f"  SuperCluster pre-filter   = {sc.n_selected}/{sc.n_total} poses\n"
         energies = filtered
 
-    # Shannon entropy
-    H_shannon = compute_shannon_entropy(energies) if energies else 0.0
+    # Shannon entropy of the Boltzmann pose distribution.
+    H_shannon = compute_boltzmann_shannon_entropy(energies, temperature_K)
     S_conf_phys = H_shannon * kB_kcal
 
     # Torsional vibrational entropy

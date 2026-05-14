@@ -96,6 +96,10 @@ private:
 double compute_shannon_entropy(const std::vector<double>& values,
                                int num_bins = DEFAULT_HIST_BINS);
 
+// Computes H = -Σ p_i ln(p_i) directly from a probability vector.
+// Inputs are normalized defensively; non-finite and non-positive entries are ignored.
+double compute_shannon_entropy_probabilities(const std::vector<double>& probabilities);
+
 // Same for integer state labels (discrete)
 double compute_shannon_entropy_discrete(const std::vector<int>& states);
 

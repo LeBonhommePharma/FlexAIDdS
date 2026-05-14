@@ -30,7 +30,7 @@ struct GenerationThermo {
     double mean_energy;       // <E>
     double entropy;           // S = (<E> - F) / T
     double heat_capacity;     // C_v
-    double shannon_H;         // Shannon entropy of energy distribution (nats)
+    double shannon_H;         // Boltzmann probability entropy, -sum p ln p (nats)
     bool   plateau_detected;  // true if entropy plateau triggered
 };
 

@@ -148,6 +148,24 @@ static double entropy_from_counts(const int* counts, int num_bins, int total) {
     return -(prob * lp).sum();
 }
 
+double compute_shannon_entropy_probabilities(const std::vector<double>& probabilities) {
+    double norm = 0.0;
+    for (double p : probabilities) {
+        if (std::isfinite(p) && p > 0.0)
+            norm += p;
+    }
+    if (norm <= 0.0) return 0.0;
+
+    double H = 0.0;
+    for (double p : probabilities) {
+        if (!std::isfinite(p) || p <= 0.0)
+            continue;
+        const double q = p / norm;
+        H -= q * std::log(q);
+    }
+    return H;
+}
+
 // ─── AVX-512 private histogram ────────────────────────────────────────────────
 #ifdef __AVX512F__
 static void histogram_avx512(const double* values, int n,
@@ -345,9 +363,7 @@ FullThermoResult run_shannon_thermo_stack(
     // of the underlying Boltzmann distribution. The two differ by an
     // arbitrary binning factor and have no thermodynamic interpretation.
     auto weights = stat_engine.boltzmann_weights();
-    double S_conf_nats = 0.0;
-    for (double w : weights)
-        if (w > 0.0) S_conf_nats -= w * std::log(w);
+    double S_conf_nats = compute_shannon_entropy_probabilities(weights);
 
     double S_vib        = tencm_model.is_built()
                           ? compute_torsional_vibrational_entropy(tencm_model.modes(), temperature_K)

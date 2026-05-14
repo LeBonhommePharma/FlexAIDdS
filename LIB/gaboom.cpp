@@ -516,12 +516,15 @@ int GA(FA_Global* FA, GB_Global* GB,VC_Global* VC,chromosome** chrom,chromosome*
 		// Entropy convergence check (opt-in via ENTRCNVG config keyword)
 		if (GB->entropy_convergence &&
 		    ((i + 1) % GB->entropy_check_interval == 0)) {
-			std::vector<double> pop_energies(GB->num_chrom);
+			const double entropy_T_K = (FA->temperature > 0)
+			                         ? static_cast<double>(FA->temperature)
+			                         : GA_DEFAULT_TEMPERATURE_K;
+			statmech::StatMechEngine hsc_engine(entropy_T_K);
 			for (int c = 0; c < GB->num_chrom; ++c) {
-				pop_energies[c] = (*chrom)[c].evalue;
+				hsc_engine.add_sample((*chrom)[c].evalue);
 			}
-			double H = shannon_thermo::compute_shannon_entropy(
-				pop_energies, shannon_thermo::DEFAULT_HIST_BINS);
+			double H = shannon_thermo::compute_shannon_entropy_probabilities(
+				hsc_engine.boltzmann_weights());
 			entropy_history.push_back(H);
 
 			if (H <= shannon_thermo::kHSC_soft_nats) {

@@ -7,7 +7,8 @@ from .docking import Docking, BindingMode, BindingPopulation, Pose
 from .encom import ENCoMEngine, FrequencyCalibration, NormalMode, VibrationalEntropy
 from .tencm import (
     TorsionalENM, TorsionalNormalMode, Conformer, FullThermoResult,
-    compute_shannon_entropy, compute_torsional_vibrational_entropy,
+    compute_boltzmann_shannon_entropy, compute_shannon_entropy,
+    compute_torsional_vibrational_entropy,
     run_shannon_thermo_stack,
 )
 from .__version__ import __version__ as __version__
@@ -205,6 +206,7 @@ __all__ = [
     "TorsionalNormalMode",
     "Conformer",
     "FullThermoResult",
+    "compute_boltzmann_shannon_entropy",
     "compute_shannon_entropy",
     "compute_torsional_vibrational_entropy",
     "run_shannon_thermo_stack",
