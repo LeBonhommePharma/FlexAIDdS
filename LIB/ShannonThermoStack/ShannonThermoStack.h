@@ -30,10 +30,10 @@ inline constexpr int   GPU_DISPATCH_THRESHOLD = 500000; // only use GPU for N > 
 
 // ─── result struct ───────────────────────────────────────────────────────────
 struct FullThermoResult {
-    double deltaG;              // total free energy (kcal/mol)
+    double deltaG;              // base ΔG plus calibrated entropy terms (kcal/mol)
     double shannonEntropy;      // dimensionless nats (conformational, natural log)
-    double torsionalVibEntropy; // kcal/mol·K (from ENCoM modes)
-    double entropyContribution; // -T*S term (kcal/mol)
+    double torsionalVibEntropy; // kcal/mol·K; heuristic unless calibrated elsewhere
+    double entropyContribution; // applied -T*S term (kcal/mol), excludes heuristics
     std::string report;
 };
 

@@ -153,10 +153,14 @@ class TestShannonThermoStack:
             result = run_shannon_thermo_stack(
                 energies, tencm_model=tenm, base_deltaG=-10.0)
 
-            # With vibrational modes, entropy contribution should be nonzero
+            # Heuristic S_vib is reported but not folded into kcal/mol dG.
             assert result.torsionalVibEntropy != 0.0
             assert result.entropyContribution != 0.0
             assert math.isfinite(result.deltaG)
+            expected_contrib = -298.15 * result.shannonEntropy * 0.001987206
+            assert result.entropyContribution == pytest.approx(expected_contrib)
+            assert result.deltaG == pytest.approx(-10.0 + expected_contrib)
+            assert "excluded from dG" in result.report
         finally:
             os.unlink(path)
 
@@ -177,6 +181,8 @@ class TestShannonThermoStack:
         result = run_shannon_thermo_stack(energies, base_deltaG=-10.0)
         assert "ShannonThermoStack" in result.report
         assert "Shannon" in result.report
+        assert "nats" in result.report
+        assert "bits" not in result.report
 
     def test_repr(self):
         result = FullThermoResult(deltaG=-10.0, shannonEntropy=2.5)

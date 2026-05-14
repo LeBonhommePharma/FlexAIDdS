@@ -13,6 +13,7 @@
 #include <numeric>
 #include <random>
 #include <string>
+#include <array>
 
 using namespace shannon_thermo;
 
@@ -21,6 +22,21 @@ using namespace shannon_thermo;
 // ===========================================================================
 
 static constexpr double EPSILON = 1e-6;
+
+static tencm::TorsionalENM make_built_tencm_model(int n_residues = 30) {
+    std::vector<std::array<float, 3>> ca;
+    ca.reserve(n_residues);
+    for (int i = 0; i < n_residues; ++i) {
+        ca.push_back({
+            2.3f * std::cos(static_cast<float>(i) * 1.74532925f),
+            2.3f * std::sin(static_cast<float>(i) * 1.74532925f),
+            1.5f * static_cast<float>(i)
+        });
+    }
+    tencm::TorsionalENM model;
+    model.build_from_ca(ca);
+    return model;
+}
 
 // ===========================================================================
 // SHANNON ENTROPY — BASIC PROPERTIES
@@ -348,6 +364,23 @@ TEST_F(ShannonThermoStackTest, DeltaGIncorporatesEntropy) {
 
     // deltaG = base_dG + entropy_contribution
     EXPECT_NEAR(result.deltaG, base_dG + result.entropyContribution, EPSILON);
+}
+
+TEST_F(ShannonThermoStackTest, HeuristicTorsionalEntropyIsExcludedFromDeltaG) {
+    double base_dG = -10.0;
+    tencm::TorsionalENM built_model = make_built_tencm_model();
+    ASSERT_TRUE(built_model.is_built());
+
+    auto no_tencm = run_shannon_thermo_stack(engine, tencm_model, base_dG);
+    auto with_tencm = run_shannon_thermo_stack(engine, built_model, base_dG);
+
+    EXPECT_GT(with_tencm.torsionalVibEntropy, 0.0);
+    EXPECT_NEAR(with_tencm.entropyContribution,
+                no_tencm.entropyContribution,
+                EPSILON);
+    EXPECT_NEAR(with_tencm.deltaG, no_tencm.deltaG, EPSILON);
+    EXPECT_NE(with_tencm.report.find("excluded from dG"), std::string::npos)
+        << with_tencm.report;
 }
 
 TEST_F(ShannonThermoStackTest, ReportContainsBackendName) {

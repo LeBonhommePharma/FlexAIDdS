@@ -58,10 +58,10 @@ class FullThermoResult:
     """Result from the ShannonThermoStack pipeline.
 
     Attributes:
-        deltaG:                Total free energy (kcal/mol).
+        deltaG:                Base ΔG plus calibrated entropy terms (kcal/mol).
         shannonEntropy:        Shannon configurational entropy (nats).
-        torsionalVibEntropy:   Torsional vibrational entropy (kcal/mol·K).
-        entropyContribution:   −T·S entropy term (kcal/mol).
+        torsionalVibEntropy:   Torsional entropy; heuristic unless calibrated.
+        entropyContribution:   Applied −T·S term; excludes heuristic S_vib.
         report:                Human-readable summary.
     """
     deltaG: float = 0.0
@@ -74,7 +74,7 @@ class FullThermoResult:
         return (
             f"<FullThermoResult ΔG={self.deltaG:.4f} "
             f"H_shannon={self.shannonEntropy:.4f} nats "
-            f"S_vib={self.torsionalVibEntropy:.6f} kcal/(mol·K)>"
+            f"S_vib_heuristic={self.torsionalVibEntropy:.6f} kcal/(mol·K)>"
         )
 
 
@@ -402,20 +402,21 @@ def run_shannon_thermo_stack(
         S_vib = compute_torsional_vibrational_entropy(
             tencm_model.modes, temperature_K)
 
-    # Additive decomposition: S_total = S_conf + S_vib
-    # Valid for independent conformational and vibrational DOFs.
-    total_S = S_conf_phys + S_vib
+    # The torsional ENCoM path is model-scale only unless a calibrated frequency
+    # path is supplied. Keep S_vib as a relative diagnostic, but exclude it from
+    # kcal/mol free-energy arithmetic in this stack.
+    total_S = S_conf_phys
     entropy_contribution = -temperature_K * total_S
     deltaG = base_deltaG + entropy_contribution
 
     report = (
         f"ShannonThermoStack (T={temperature_K:.1f} K)\n"
         f"{sc_info}"
-        f"  Shannon conf entropy    = {H_shannon:.4f} bits\n"
+        f"  Shannon conf entropy    = {H_shannon:.4f} nats\n"
         f"  Torsional vib entropy   = {S_vib:.6f} kcal/(mol·K) "
-        f"(model-scale heuristic)\n"
+        f"(model-scale heuristic; excluded from dG)\n"
         f"  Entropy contribution    = {entropy_contribution:.4f} kcal/mol (-TΔS)\n"
-        f"  Total ΔG (F + vib corr) = {deltaG:.4f} kcal/mol\n"
+        f"  Total ΔG (F + applied entropy) = {deltaG:.4f} kcal/mol\n"
     )
 
     return FullThermoResult(
