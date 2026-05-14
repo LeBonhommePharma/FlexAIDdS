@@ -22,7 +22,8 @@ namespace ShannonMetalBridge {
 
 /// Compute Shannon entropy of `energies` using a Metal GPU histogram kernel.
 /// Falls back to CPU if no Metal device is available.
-/// Returns entropy in bits (base-2 logarithm).
+/// Returns entropy in nats (natural logarithm, base-e).
+/// Use H_bits = H_nats / ln(2) only at reporting/convergence boundaries.
 double compute_shannon_entropy_metal(const std::vector<double>& energies,
                                      int num_bins = 20);
 
