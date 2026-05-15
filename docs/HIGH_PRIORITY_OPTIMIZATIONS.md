@@ -60,10 +60,13 @@ inline std::vector<double> stable_softmax(const std::vector<double>& energies, d
     for (size_t i = 0; i < energies.size(); ++i) {
         shifted[i] = -beta * (energies[i] - max_e);
     }
-    double logZ = log_sum_exp(shifted);
+    // NOTE: log_sum_exp_shifted = beta*max_e + log(Z), NOT log(Z).
+    // Renaming is intentional: do NOT exponentiate this value expecting Z.
+    // The subtraction shifted[i] - log_sum_exp_shifted cancels max_e correctly.
+    double log_sum_exp_shifted = log_sum_exp(shifted);
     std::vector<double> probs(energies.size());
     for (size_t i = 0; i < energies.size(); ++i) {
-        probs[i] = std::exp(shifted[i] - logZ);
+        probs[i] = std::exp(shifted[i] - log_sum_exp_shifted);
     }
     return probs;
 }
@@ -117,11 +120,27 @@ struct PoseSoA {
 };
 
 // In entropy reduction kernel:
+/**
+ * @brief Shannon entropy of the Boltzmann-weighted pose ensemble.
+ *
+ * @param ensemble  Pose collection; ensemble.energies must be in kcal/mol.
+ * @param T         Temperature in Kelvin.
+ * @return S in **nats** (dimensionless). Multiply by kB_kcal to get kcal/(mol·K).
+ *         DO NOT pass this value directly into ΔG = ΔH − T·S without
+ *         first converting: S_phys = kB_kcal * compute_shannon_entropy_soa(...).
+ *
+ * FIX (2026-05-15): kB_kcal replaces bare kB.
+ *   Wrong: 1.0 / (kB * T)     — if kB resolves to kB_SI (1.38e-23 J/K),
+ *          β is ~2.4e20, all Boltzmann weights except the global minimum
+ *          underflow to zero, entropy collapses to 0 nats silently.
+ *   Correct: 1.0 / (kB_kcal * T) because energies are in kcal/mol.
+ */
 double compute_shannon_entropy_soa(const PoseSoA& ensemble, double T) {
-    auto probs = utils::stable_softmax(ensemble.energies, 1.0 / (kB * T));
+    // kB_kcal = 0.001987206 kcal/(mol·K)  — energies are in kcal/mol
+    auto probs = utils::stable_softmax(ensemble.energies, 1.0 / (kB_kcal * T));
     double S = 0.0;
     for (double p : probs) if (p > 1e-300) S -= p * std::log(p);
-    return S;
+    return S;  // nats — convert to kcal/(mol·K) via: S_phys = kB_kcal * S
 }
 ```
 
