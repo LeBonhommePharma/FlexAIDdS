@@ -107,10 +107,9 @@ VibrationalEntropy ENCoMEngine::compute_vibrational_entropy(
     // Compute geometric mean of eigenvalues
     double geom_mean_eigenvalue = geometric_mean(nonzero_eigenvalues);
     
-    // Convert to effective frequency (rad/s)
-    // Note: ENCoM eigenvalues are in arbitrary units. For real calculations,
-    // need proper force constant → frequency conversion with mass weighting.
-    // Here we assume eigenvalues are already in frequency² units (rad/s)².
+    // Convert to an effective model frequency. ENCoM eigenvalues are not SI
+    // frequencies without an external calibration scale, so absolute S_vib
+    // magnitudes should be treated as heuristic unless calibrated.
     result.omega_eff = std::sqrt(geom_mean_eigenvalue);
 
     if (result.omega_eff <= 0.0) {

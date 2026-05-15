@@ -485,7 +485,7 @@ void BindingMode::output_BindingMode(int num_result, char* end_strfile, char* tm
 	{
 		double vib_corr = this->compute_vibrational_correction();
 		if (std::abs(vib_corr) > 1e-12) {
-			snprintf(tmpremark, MAX_REMARK, "REMARK Vibrational correction (ENCoM): %10.4f kcal/mol\n", vib_corr);
+			snprintf(tmpremark, MAX_REMARK, "REMARK Vibrational correction (ENCoM heuristic): %10.4f kcal/mol\n", vib_corr);
 			safe_remark_cat(remark, tmpremark, &remark_len);
 		}
 	}

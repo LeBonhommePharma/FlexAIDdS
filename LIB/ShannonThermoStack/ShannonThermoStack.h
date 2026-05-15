@@ -2,7 +2,8 @@
 //
 // Combines:
 //   – Shannon configurational entropy over GA ensemble (binned into 256 mega-clusters)
-//   – Torsional ENCoM vibrational entropy from NormalMode fluctuations (protein + nucleotide backbones)
+//   – Torsional ENCoM vibrational entropy heuristic from NormalMode fluctuations
+//     (protein + nucleotide backbones; absolute magnitudes require calibration)
 //   – Hardware-accelerated histogram computation (Metal on Apple Silicon, OpenMP/Eigen on other platforms)
 //
 // Reuses StatMechEngine (statmech.h) and TorsionalENM (tencm.h) without modification.
@@ -30,7 +31,7 @@ inline constexpr int   GPU_DISPATCH_THRESHOLD = 500000; // only use GPU for N > 
 struct FullThermoResult {
     double deltaG;              // total free energy (kcal/mol)
     double shannonEntropy;      // dimensionless nats (conformational, natural log)
-    double torsionalVibEntropy; // kcal/mol·K (from ENCoM modes)
+    double torsionalVibEntropy; // kcal/mol·K heuristic unless ENCoM scale calibrated
     double entropyContribution; // -T*S term (kcal/mol)
     std::string report;
 };
@@ -81,6 +82,8 @@ double compute_shannon_entropy(const std::vector<double>& values,
 double compute_shannon_entropy_discrete(const std::vector<int>& states);
 
 // ─── torsional vibrational entropy from ENCoM modes ─────────────────────────
+// Current status: relative heuristic unless eigenvalue scale calibration is
+// supplied by the benchmark protocol.
 // Sums harmonic oscillator entropy contribution for each normal mode:
 //   S_vib = kB * [ hν/kBT / (exp(hν/kBT)-1) - ln(1-exp(-hν/kBT)) ]
 // For low-frequency torsional modes approximated as: S ≈ kB * ln(kBT/hν)

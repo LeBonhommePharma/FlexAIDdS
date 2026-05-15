@@ -68,6 +68,10 @@ Inputs are auto-detected from file content — argument order doesn't matter. Ac
 tENCoM <reference.pdb> <target1.pdb> [target2.pdb ...] [options]
 ```
 
+Use tENCoM entropy differentials as relative values under one fixed protocol.
+Absolute `S_vib` and `-T*S_vib` values are heuristic until a calibration bundle
+is supplied.
+
 | Flag | Description |
 |:-----|:------------|
 | `-T <temp>` | Temperature in Kelvin (default: 300) |

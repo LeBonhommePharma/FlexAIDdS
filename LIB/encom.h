@@ -5,13 +5,19 @@
 //   – Calculate quasi-harmonic vibrational entropy S_vib
 //   – Combine with configurational entropy S_conf for total entropy
 //
+// Calibration status:
+//   ENCoM eigenvalues are model-scale quantities, not SI frequencies by
+//   default. Absolute S_vib and -T*S_vib values are therefore heuristic unless
+//   the eigenvalue-to-frequency scale is calibrated for the benchmark system.
+//   Differential comparisons under one fixed protocol are the supported use.
+//
 // Reference:
 //   Frappier et al. (2015). *Proteins* 83(11):2073-82.
 //   DOI: 10.1002/prot.24922
 //
 // Mathematical framework:
-//   S_vib = (3N - 6) × k_B × [1 + ln(2πkT/ħω_eff)]
-//   ω_eff = geometric mean of non-zero eigenvalues
+//   S_vib = (3N - 6) × k_B × [1 + ln(kT/ħω_eff)]
+//   ω_eff = calibrated geometric mean frequency from non-zero eigenvalues
 
 #pragma once
 
@@ -43,14 +49,14 @@ inline constexpr double amu_to_kg  = 1.66053906660e-27;// kg
 struct NormalMode {
     int     index;               // Mode number (1-based)
     double  eigenvalue;          // λ_i (arbitrary units from ENCoM)
-    double  frequency;           // ω_i = sqrt(λ_i) (rad/s when converted to SI)
+    double  frequency;           // ω_i = sqrt(λ_i) before any calibration scale
     std::vector<double> eigenvector; // Displacement vector (3N components)
 };
 
 struct VibrationalEntropy {
-    double S_vib_kcal_mol_K;     // Vibrational entropy (kcal mol⁻¹ K⁻¹)
-    double S_vib_J_mol_K;        // Vibrational entropy (J mol⁻¹ K⁻¹)
-    double omega_eff;            // Effective frequency (rad/s)
+    double S_vib_kcal_mol_K;     // Heuristic vibrational entropy unless calibrated
+    double S_vib_J_mol_K;        // Same value in J mol⁻¹ K⁻¹
+    double omega_eff;            // Effective model frequency
     int    n_modes;              // Number of non-zero modes (3N - 6)
     double temperature;          // K
 };
@@ -68,8 +74,9 @@ public:
         const std::string& eigenvector_file
     );
     
-    /// Compute quasi-harmonic vibrational entropy from normal modes
-    /// Uses Schlitter formula: S_vib = k_B (3N-6) [1 + ln(2πkT/ħω_eff)]
+    /// Compute quasi-harmonic vibrational entropy from normal modes.
+    /// Absolute magnitudes require a calibrated eigenvalue-to-frequency scale.
+    /// Without calibration, use only as a relative heuristic.
     static VibrationalEntropy compute_vibrational_entropy(
         const std::vector<NormalMode>& modes,
         double temperature_K = 300.0,

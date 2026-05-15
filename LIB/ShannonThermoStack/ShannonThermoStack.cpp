@@ -334,9 +334,9 @@ FullThermoResult run_shannon_thermo_stack(
     //     S_conf [kcal/(mol·K)] = k_B · H [nats]
     double S_conf_phys  = S_conf_nats * kB_kcal;
 
-    // Additive decomposition: S_total = S_conf + S_vib
-    // Valid for independent conformational and vibrational DOFs
-    // (standard assumption in rigid-body docking + normal-mode analysis).
+    // Additive decomposition: S_total = S_conf + S_vib.
+    // S_vib is a relative tENCoM heuristic unless the eigenvalue scale has
+    // been calibrated for the benchmark protocol.
     double total_S      = S_conf_phys + S_vib;
     double S_contrib    = -temperature_K * total_S;
     double final_dG     = base_deltaG + S_contrib;
@@ -358,8 +358,9 @@ FullThermoResult run_shannon_thermo_stack(
         std::string("ShannonThermoStack[") + hw +
         "+Eigen"
         "]: S_conf=" + std::to_string(S_conf_nats) +
-        " nats, S_vib=" + std::to_string(S_vib) +
-        " kcal/mol/K, ΔG=" + std::to_string(final_dG) + " kcal/mol";
+        " nats, S_vib_heuristic=" + std::to_string(S_vib) +
+        " kcal/mol/K, ΔG=" + std::to_string(final_dG) +
+        " kcal/mol (vib requires calibration for absolute claims)";
 
     return { final_dG, S_conf_nats, S_vib, S_contrib, report };
 }
