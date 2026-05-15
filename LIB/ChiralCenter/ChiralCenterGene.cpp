@@ -4,6 +4,7 @@
 #include "ChiralCenterGene.h"
 
 #include "../flexaid.h"
+#include "../RngSeed.h"
 
 #include <Eigen/Dense>
 #include <Eigen/Geometry>
@@ -18,7 +19,7 @@
 namespace chiral {
 
 static std::mt19937& rng() {
-    thread_local std::mt19937 gen(std::random_device{}());
+    thread_local std::mt19937 gen = flexaids_rng::make_thread_rng(0xC417A1ULL);
     return gen;
 }
 

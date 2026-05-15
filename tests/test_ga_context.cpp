@@ -9,6 +9,25 @@
 #include <gtest/gtest.h>
 #include "GAContext.h"
 #include "GPUContextPool.h"
+#include "RngSeed.h"
+
+#include <cstdlib>
+
+static void set_test_env(const char* key, const char* value) {
+#ifdef _WIN32
+    _putenv_s(key, value);
+#else
+    setenv(key, value, 1);
+#endif
+}
+
+static void unset_test_env(const char* key) {
+#ifdef _WIN32
+    _putenv_s(key, "");
+#else
+    unsetenv(key);
+#endif
+}
 
 TEST(GAContextTest, DefaultConstruction) {
     GAContext ctx;
@@ -56,6 +75,17 @@ TEST(GAContextTest, NotCopyable) {
 TEST(GAContextTest, IsMovable) {
     EXPECT_TRUE(std::is_move_constructible_v<GAContext>);
     EXPECT_TRUE(std::is_move_assignable_v<GAContext>);
+}
+
+TEST(RngSeedTest, FlexaidSeedMakesStreamSeedsRepeatable) {
+    set_test_env("FLEXAID_SEED", "42");
+    auto s1 = flexaids_rng::seed_from_env_or_random(123);
+    auto s2 = flexaids_rng::seed_from_env_or_random(123);
+    auto s3 = flexaids_rng::seed_from_env_or_random(124);
+    unset_test_env("FLEXAID_SEED");
+
+    EXPECT_EQ(s1, s2);
+    EXPECT_NE(s1, s3);
 }
 
 #ifdef FLEXAIDS_USE_CUDA

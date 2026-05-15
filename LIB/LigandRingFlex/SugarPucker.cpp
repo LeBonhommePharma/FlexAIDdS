@@ -5,6 +5,7 @@
 #include <cmath>
 
 #include "SugarPucker.h"
+#include "../RngSeed.h"
 
 #include <Eigen/Dense>
 #ifdef __AVX512F__
@@ -113,7 +114,7 @@ void apply_sugar_puckers(
 
 // ─── mutate_phase ────────────────────────────────────────────────────────────
 float mutate_phase(float current_phase_deg, float sigma_deg) {
-    thread_local std::mt19937 rng(std::random_device{}());
+    thread_local std::mt19937 rng = flexaids_rng::make_thread_rng(0x5A6A9ULL);
     std::normal_distribution<float> dist(0.0f, sigma_deg);
     float new_phase = current_phase_deg + dist(rng);
     // Wrap to [0, 360)

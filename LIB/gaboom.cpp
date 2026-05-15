@@ -6,6 +6,7 @@
 #include "UnifiedHardwareDispatch.h"
 #include "MIFGrid.h"
 #include "CavityDetect/SpatialGrid.h"
+#include "RngSeed.h"
 
 #include <random>
 #include <functional>
@@ -3060,7 +3061,7 @@ double RandomDouble(int32_t gene){
 
 double RandomDouble(){
 	// Thread-safe RNG (replaces non-reentrant rand())
-	thread_local std::mt19937 tl_rng(std::random_device{}());
+	thread_local std::mt19937 tl_rng = flexaids_rng::make_thread_rng(0x9A800DULL);
 	std::uniform_real_distribution<double> dist(0.0, 1.0);
 	return dist(tl_rng);
 }

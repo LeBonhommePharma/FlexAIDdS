@@ -1,5 +1,6 @@
 #include "FOPTICS.h"
 #include "gaboom.h"
+#include "RngSeed.h"
 
 #include <random>
 #include <algorithm>
@@ -8,14 +9,17 @@
 #include "MetalRMSDBridge.h"
 #endif
 
-std::random_device rd;
-std::mt19937 gen(rd());
+static std::mt19937& foptics_rng()
+{
+    thread_local std::mt19937 gen = flexaids_rng::make_thread_rng(0xF0701C5ULL);
+    return gen;
+}
 
 struct RNG
 {
     int operator() (int n) {
         std::uniform_int_distribution<int> dist(0, n - 1);
-        return dist(gen);
+        return dist(foptics_rng());
     }
 };
 
@@ -763,7 +767,7 @@ void RandomProjectedNeighborsAndDensities::computeSetBounds(std::vector< int > &
 //			tempProj.push_back(this->projectedPoints[i]);
             tempProj[i] = this->projectedPoints[i];
         }
-        std::shuffle(projInd.begin(), projInd.end(), gen);
+        std::shuffle(projInd.begin(), projInd.end(), foptics_rng());
 
 		int i = 0;
         for(std::vector<int>::iterator it = projInd.begin(); it != projInd.end(); ++it, i++)
@@ -1222,7 +1226,7 @@ void RandomProjectedNeighborsAndDensities::output_projected_distance(char* end_s
 int roll_die()
 {
     std::uniform_int_distribution<> dist(0, MAX_RANDOM_VALUE);
-    return dist(gen);
+    return dist(foptics_rng());
 }
 int roll_rand_die()
 {

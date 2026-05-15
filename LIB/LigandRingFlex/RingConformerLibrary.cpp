@@ -1,5 +1,6 @@
 // RingConformerLibrary.cpp — ring conformer tables and detection
 #include "RingConformerLibrary.h"
+#include "../RngSeed.h"
 #include "../flexaid.h"   // atom_struct (bond graph), MBNDS
 #include <cstdlib>
 #include <cstring>
@@ -65,12 +66,12 @@ void RingConformerLibrary::build_five_conformers() {
 }
 
 int RingConformerLibrary::random_six_index() const {
-    thread_local std::mt19937 rng(std::random_device{}());
+    thread_local std::mt19937 rng = flexaids_rng::make_thread_rng(0x516ULL);
     return std::uniform_int_distribution<int>(0, n_six() - 1)(rng);
 }
 
 int RingConformerLibrary::random_five_index() const {
-    thread_local std::mt19937 rng(std::random_device{}());
+    thread_local std::mt19937 rng = flexaids_rng::make_thread_rng(0x515ULL);
     return std::uniform_int_distribution<int>(0, n_five() - 1)(rng);
 }
 

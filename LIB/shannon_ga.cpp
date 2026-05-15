@@ -4,6 +4,7 @@
  * @author Le Bonhomme Pharma / FlexAIDdS
  */
 #include "shannon_ga.h"
+#include "RngSeed.h"
 
 #include <cmath>
 #include <algorithm>
@@ -28,7 +29,7 @@ ShannonThermodynamicGA::ShannonThermodynamicGA(size_t pop_size,
     , current_log_Z_(0.0)
     , engine_(temperature_K)
     , last_thermo_{}
-    , rng_(std::random_device{}())
+    , rng_(flexaids_rng::seed_from_env_or_random(0x534841ULL))
 {
     (void)pop_size_;  // reserved for future population-level heuristics
 }

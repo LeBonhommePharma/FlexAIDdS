@@ -35,6 +35,10 @@ export FLEXAID_SIMD=NEON         # disable AVX512 (not on M3), enable NEON
 export FLEXAID_SEED=42
 ```
 
+`FLEXAID_SEED` is the run-level stochastic provenance handle. Benchmark logs
+must record it with the git SHA, compiler, backend selection, and thread count.
+Unset seeds are exploratory only.
+
 ### ulimits
 ```bash
 ulimit -n 65536   # file descriptors (85 complexes × multiple outputs)
