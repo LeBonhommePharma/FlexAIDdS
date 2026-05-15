@@ -4,6 +4,10 @@
 **Scope:** Full codebase — C++, CUDA, Metal, Objective-C++, Python bindings
 **Auditor:** Automated static analysis
 
+> Status note, May 2026: this document is a historical audit input, not a live
+> closure report. Some findings have since been fixed or partially bounded.
+> Current status belongs in `docs/KNOWN_LIMITATIONS.md` and source-level tests.
+
 ---
 
 ## Executive Summary
