@@ -47,6 +47,11 @@ static cfstr stub_cf(FA_Global* FA, VC_Global* /*VC*/,
     return cf;
 }
 
+double get_apparent_cf_evalue(cfstr* cf)
+{
+    return cf ? cf->com + cf->wal + cf->sas + cf->elec : 0.0;
+}
+
 int main(int argc, char* argv[])
 {
     const int pop_size = (argc > 1) ? std::atoi(argv[1]) : 200;

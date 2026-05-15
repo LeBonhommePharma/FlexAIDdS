@@ -294,14 +294,16 @@ class TestLoadResultsErrors:
         with pytest.raises(NotADirectoryError, match="directory"):
             load_results(f)
 
-    def test_empty_directory_raises_file_not_found(self, tmp_path):
-        with pytest.raises(FileNotFoundError, match="No PDB"):
-            load_results(tmp_path)
+    def test_empty_directory_returns_empty_result(self, tmp_path):
+        result = load_results(tmp_path)
+        assert result.n_modes == 0
+        assert result.metadata["n_pose_files"] == 0
 
-    def test_directory_with_no_pdb_files_raises(self, tmp_path):
+    def test_directory_with_no_pdb_files_returns_empty_result(self, tmp_path):
         (tmp_path / "data.txt").write_text("hello\n")
-        with pytest.raises(FileNotFoundError, match="No PDB"):
-            load_results(tmp_path)
+        result = load_results(tmp_path)
+        assert result.n_modes == 0
+        assert result.metadata["n_pose_files"] == 0
 
 
 # ===========================================================================

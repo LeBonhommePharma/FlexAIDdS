@@ -14,7 +14,7 @@ import os
 import re
 import tempfile
 import time
-from concurrent.futures import ProcessPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple, Union
@@ -1095,7 +1095,7 @@ def _load_checkpoint(
 
 
 # ---------------------------------------------------------------------------
-# Parallel worker function (must be top-level for pickling)
+# Parallel worker function
 # ---------------------------------------------------------------------------
 
 
@@ -1108,8 +1108,10 @@ def _run_single_system(
 ) -> SystemBenchmarkResult:
     """Execute all requested methods for one benchmark system.
 
-    This function is the unit of work submitted to ``ProcessPoolExecutor``.
-    It must remain a module-level function so that it is picklable.
+    This function is the unit of work submitted to ``ThreadPoolExecutor``.
+    The benchmark work is dominated by external docking subprocesses and
+    network-bound Boltz-2 calls, so threads avoid multiprocessing pickling
+    while still allowing concurrent system orchestration.
     """
     fa_result = None
     b2_result = None
@@ -1211,7 +1213,7 @@ def run_benchmark(
             if idx not in results_by_idx
         }
 
-        with ProcessPoolExecutor(max_workers=effective_workers) as executor:
+        with ThreadPoolExecutor(max_workers=effective_workers) as executor:
             futures = {
                 executor.submit(
                     _run_single_system,
