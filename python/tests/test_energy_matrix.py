@@ -9,6 +9,8 @@ import numpy as np
 import pytest
 
 from flexaidds.energy_matrix import (
+    ATOM256_SCHEMA_ID,
+    LEGACY_40_SCHEMA_ID,
     MATRIX_256_SIZE,
     SHNN_MAGIC,
     SHNN_VERSION,
@@ -327,6 +329,31 @@ class TestProjection:
         proj = em.project_to_40()
         # SYBYL type 1 (C.1) = base_to_sybyl(0) = 1, 0-indexed = 0
         assert proj.matrix[0, 0] == pytest.approx(5.0, abs=1e-6)
+
+    def test_expand_40_to_256_roundtrips_to_40(self):
+        legacy = np.arange(40 * 40, dtype=np.float64).reshape(40, 40)
+        legacy = (legacy + legacy.T) / 2.0
+        em40 = EnergyMatrix(40, legacy)
+        em256 = EnergyMatrix.expand_40_to_256(em40)
+        projected = em256.project_to_40()
+
+        assert em40.schema_id == LEGACY_40_SCHEMA_ID
+        assert em256.schema_id == ATOM256_SCHEMA_ID
+        np.testing.assert_allclose(projected.matrix, legacy, atol=1e-12)
+
+    def test_project_to_superclusters_averages_contact_blocks(self):
+        mat = np.zeros((256, 256), dtype=np.float64)
+        mat[0, 2] = 1.0
+        mat[0, 3] = 3.0
+        mat[1, 2] = 5.0
+        mat[1, 3] = 7.0
+        labels = [-1] * 256
+        labels[0] = labels[1] = 0
+        labels[2] = labels[3] = 1
+
+        reduced = EnergyMatrix(256, mat).project_to_superclusters(labels)
+        assert reduced.ntypes >= 2
+        assert reduced.matrix[0, 1] == pytest.approx(4.0, abs=1e-12)
 
 
 # ── lookup / evaluate tests ─────────────────────────────────────────────────

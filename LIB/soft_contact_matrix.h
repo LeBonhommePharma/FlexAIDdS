@@ -13,6 +13,7 @@
 #pragma once
 
 #include "atom_typing_256.h"
+#include "nrgrank_matrix.h"
 #include <vector>
 #include <array>
 #include <cmath>
@@ -44,6 +45,12 @@ namespace scm {
 inline constexpr int    MATRIX_DIM   = 256;
 inline constexpr int    MATRIX_SIZE  = MATRIX_DIM * MATRIX_DIM;  // 65536
 inline constexpr size_t MATRIX_BYTES = MATRIX_SIZE * sizeof(float); // 256 KB
+inline constexpr int    LEGACY_SYBYL_DIM = 40;
+
+inline constexpr const char* ATOM256_SCHEMA_ID =
+    "flexaidds.atom256.v1.base64.charge2.hbond1";
+inline constexpr const char* LEGACY_40_FALLBACK_SCHEMA_ID =
+    "flexaidds.nrgrank.v1.sybyl40";
 
 // SHNN binary blob magic
 inline constexpr uint32_t SHNN_MAGIC   = 0x4E4E4853; // "SHNN" little-endian
@@ -82,6 +89,41 @@ struct alignas(64) SoftContactMatrix {
                 data[i * MATRIX_DIM + j] = avg;
                 data[j * MATRIX_DIM + i] = avg;
             }
+    }
+
+    static SoftContactMatrix from_nrgrank40_fallback() noexcept {
+        SoftContactMatrix mat;
+        mat.zero();
+        for (int ci = 0; ci < MATRIX_DIM; ++ci) {
+            const int si =
+                atom256::base_to_sybyl_parent(atom256::get_base(ci));
+            for (int cj = 0; cj < MATRIX_DIM; ++cj) {
+                const int sj =
+                    atom256::base_to_sybyl_parent(atom256::get_base(cj));
+                if (si >= 1 && si <= LEGACY_SYBYL_DIM &&
+                    sj >= 1 && sj <= LEGACY_SYBYL_DIM) {
+                    mat.set(ci, cj, static_cast<float>(
+                        nrgrank::kEnergyMatrix[si][sj]));
+                }
+            }
+        }
+        return mat;
+    }
+
+    bool load_or_nrgrank40_fallback(const char* path,
+                                    bool* used_fallback = nullptr,
+                                    bool fallback_on_load_error = false) noexcept {
+        if (path != nullptr && path[0] != '\0' && load(path)) {
+            if (used_fallback) *used_fallback = false;
+            return true;
+        }
+        if (path != nullptr && path[0] != '\0' && !fallback_on_load_error) {
+            if (used_fallback) *used_fallback = false;
+            return false;
+        }
+        *this = from_nrgrank40_fallback();
+        if (used_fallback) *used_fallback = true;
+        return true;
     }
 
     // ── AVX2 batch scoring ──────────────────────────────────────────────
@@ -299,6 +341,91 @@ struct FOPTICSResult {
     std::vector<int>   cluster_labels; // cluster assignment (-1 = noise)
     int                n_clusters;
 };
+
+// A reduced matrix over atom-contact superclusters. Each cluster groups 256-type
+// rows with similar interaction profiles; lookup_type() maps a concrete 256
+// type pair to its cluster-pair mean. Noise rows are isolated by default so
+// projection never creates artificial equivalence classes.
+struct ContactSuperclusterMatrix {
+    int n_clusters = 0;
+    std::vector<int> type_to_cluster;
+    std::vector<int> cluster_sizes;
+    std::vector<float> data;
+
+    float lookup_cluster(int ci, int cj) const noexcept {
+        return data[static_cast<size_t>(ci) * n_clusters + cj];
+    }
+
+    float lookup_type(uint8_t type_i, uint8_t type_j) const noexcept {
+        return lookup_cluster(type_to_cluster[type_i], type_to_cluster[type_j]);
+    }
+
+    double compression_ratio() const noexcept {
+        if (n_clusters <= 0) return 0.0;
+        return static_cast<double>(MATRIX_DIM) /
+               static_cast<double>(n_clusters);
+    }
+};
+
+inline ContactSuperclusterMatrix project_to_contact_superclusters(
+        const SoftContactMatrix& mat,
+        const FOPTICSResult& clusters,
+        bool isolate_noise = true) {
+    ContactSuperclusterMatrix out;
+    out.type_to_cluster.assign(MATRIX_DIM, -1);
+
+    int max_label = -1;
+    for (int label : clusters.cluster_labels)
+        if (label > max_label) max_label = label;
+    std::vector<int> label_to_cluster(static_cast<size_t>(max_label + 1), -1);
+
+    auto cluster_for_label = [&](int label) -> int {
+        if (label < 0) {
+            if (isolate_noise) return out.n_clusters++;
+            return 0;
+        }
+        int& mapped = label_to_cluster[static_cast<size_t>(label)];
+        if (mapped < 0) mapped = out.n_clusters++;
+        return mapped;
+    };
+
+    for (int t = 0; t < MATRIX_DIM; ++t) {
+        const int label = (t < static_cast<int>(clusters.cluster_labels.size()))
+            ? clusters.cluster_labels[static_cast<size_t>(t)]
+            : -1;
+        out.type_to_cluster[static_cast<size_t>(t)] = cluster_for_label(label);
+    }
+
+    if (out.n_clusters == 0) {
+        out.n_clusters = 1;
+        std::fill(out.type_to_cluster.begin(), out.type_to_cluster.end(), 0);
+    }
+
+    out.cluster_sizes.assign(static_cast<size_t>(out.n_clusters), 0);
+    for (int cid : out.type_to_cluster)
+        out.cluster_sizes[static_cast<size_t>(cid)]++;
+
+    const size_t reduced_size =
+        static_cast<size_t>(out.n_clusters) * out.n_clusters;
+    out.data.assign(reduced_size, 0.0f);
+    std::vector<int> counts(reduced_size, 0);
+
+    for (int ti = 0; ti < MATRIX_DIM; ++ti) {
+        const int ci = out.type_to_cluster[static_cast<size_t>(ti)];
+        for (int tj = 0; tj < MATRIX_DIM; ++tj) {
+            const int cj = out.type_to_cluster[static_cast<size_t>(tj)];
+            const size_t idx = static_cast<size_t>(ci) * out.n_clusters + cj;
+            out.data[idx] += mat.lookup(ti, tj);
+            counts[idx]++;
+        }
+    }
+
+    for (size_t idx = 0; idx < reduced_size; ++idx)
+        if (counts[idx] > 0)
+            out.data[idx] /= static_cast<float>(counts[idx]);
+
+    return out;
+}
 
 namespace detail {
 

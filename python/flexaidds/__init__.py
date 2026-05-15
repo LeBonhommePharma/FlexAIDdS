@@ -89,8 +89,11 @@ except ImportError:
 from .supercluster import SuperCluster
 from .tencom_results import FlexModeResult, FlexPopulationResult, parse_tencom_pdb, parse_tencom_json
 from .energy_matrix import (
+    ATOM256_SCHEMA_ID,
     EnergyMatrix,
+    LEGACY_40_SCHEMA_ID,
     MatrixEntry,
+    SUPERCLUSTER_SCHEMA_ID,
     DensityPoint,
     encode_256_type,
     decode_256_type,
@@ -253,8 +256,11 @@ __all__ = [
     "parse_tencom_pdb",
     "parse_tencom_json",
     # Energy matrix I/O and 256-type encoding (always available — pure Python)
+    "ATOM256_SCHEMA_ID",
     "EnergyMatrix",
+    "LEGACY_40_SCHEMA_ID",
     "MatrixEntry",
+    "SUPERCLUSTER_SCHEMA_ID",
     "DensityPoint",
     "encode_256_type",
     "decode_256_type",

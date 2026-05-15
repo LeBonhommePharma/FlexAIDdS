@@ -16,9 +16,11 @@
 //   I→21
 //   H→22
 //   Fe→30
+//   Zn→31   Ca→32   Mg→33   Se→34   Cu→35   Ni→36
 //
-// After SYBYL type assignment, the 256-type encoding from atom_typing_256.h
-// is applied via encode_from_sybyl().
+// After SYBYL type assignment, local legacy IDs are translated to the canonical
+// 40-type NRGRank/FlexAID IDs before applying atom_typing_256.h. This keeps the
+// 256×256 matrix and the legacy 40-type fallback matrix chemically aligned.
 //
 // Also assigns H-bond donor/acceptor flags used in the 256-type encoding.
 
@@ -47,7 +49,8 @@ bool is_hbond_donor(const BonMol& mol, int atom_idx);
 bool is_hbond_acceptor(const BonMol& mol, int atom_idx);
 
 /// Encode FlexAID SYBYL type + partial charge + H-bond flag into 8-bit type.
-/// Replicates atom_typing_256.h encode_from_sybyl() for inline use.
+/// Routes through atom_typing_256.h after translating ProcessLigand's legacy
+/// local SYBYL IDs to canonical 40-type IDs.
 uint8_t encode_256(int sybyl_type, float partial_charge, bool is_hbond);
 
 } // namespace sybyl

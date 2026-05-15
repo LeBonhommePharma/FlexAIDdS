@@ -7,6 +7,7 @@
 // 256-type encoding mirrors atom_typing_256.h encode_from_sybyl().
 
 #include "SybylTyper.h"
+#include "../atom_typing_256.h"
 
 #include <cmath>
 #include <algorithm>
@@ -44,6 +45,12 @@ const char* sybyl_type_name(int sybyl_type) {
         case 21: return "I";
         case 22: return "H";
         case 30: return "Fe";
+        case 31: return "Zn";
+        case 32: return "Ca";
+        case 33: return "Mg";
+        case 34: return "Se";
+        case 35: return "Cu";
+        case 36: return "Ni";
         default: return "X";
     }
 }
@@ -144,49 +151,52 @@ bool is_hbond_acceptor(const BonMol& mol, int atom_idx) {
 // Bit    7: H-bond donor/acceptor flag
 // ---------------------------------------------------------------------------
 
-// Internal: SYBYL type → base type (6-bit, 0-63)
-static uint8_t sybyl_to_base(int sybyl_type) {
-    // Mapping mirrors atom_typing_256.h sybyl_to_base()
+// ProcessLigand stores FlexAID's legacy local SYBYL IDs, while atom_typing_256.h
+// uses the canonical 1-indexed NRGRank/FlexAID 40-type IDs. Keep this bridge
+// explicit so a 40-type fallback matrix and a trained 256-type matrix address
+// the same chemistry.
+static int legacy_sybyl_to_canonical_sybyl(int sybyl_type) noexcept {
     switch (sybyl_type) {
-        case  1: return 1;  // C.3
-        case  2: return 2;  // C.2
-        case  3: return 3;  // C.ar
-        case  0: return 4;  // C.1
-        case  4: return 5;  // N.3
-        case  5: return 6;  // N.2
-        case  6: return 7;  // N.ar
-        case  7: return 8;  // N.am
-        case  8: return 9;  // N.pl3
-        case  9: return 10; // N.4
-        case 10: return 11; // O.3
-        case 11: return 12; // O.2
-        case 12: return 13; // O.co2
-        case 13: return 14; // F
-        case 14: return 15; // Cl
-        case 15: return 16; // Br
-        case 16: return 17; // S.3
-        case 17: return 18; // S.2
+        case  0: return  1; // C.1
+        case  1: return  3; // C.3
+        case  2: return  2; // C.2
+        case  3: return  4; // C.AR
+        case  4: return  8; // N.3
+        case  5: return  7; // N.2
+        case  6: return 10; // N.AR
+        case  7: return 11; // N.AM
+        case  8: return 12; // N.PL3
+        case  9: return  9; // N.4
+        case 10: return 14; // O.3
+        case 11: return 13; // O.2
+        case 12: return 15; // O.CO2
+        case 13: return 23; // F
+        case 14: return 24; // CL
+        case 15: return 25; // BR
+        case 16: return 18; // S.3
+        case 17: return 17; // S.2
         case 18: return 19; // S.O
         case 19: return 20; // S.O2
-        case 20: return 21; // P.3
-        case 21: return 22; // I
-        case 22: return 23; // H
-        case 30: return 30; // Fe
-        default: return 41; // Dummy (was 0/Solvent)
+        case 20: return 22; // P.3
+        case 21: return 26; // I
+        case 22: return 39; // H has no atom256 parent; use DUMMY, not a halogen.
+        case 30: return 37; // Fe
+        case 31: return 35; // Zn
+        case 32: return 36; // Ca
+        case 33: return 28; // Mg
+        case 34: return 27; // Se
+        case 35: return 30; // Cu
+        case 36: return 34; // Ni
+        default: return 39; // DUMMY
     }
 }
 
 uint8_t encode_256(int sybyl_type, float partial_charge, bool is_hbond) {
-    uint8_t base = sybyl_to_base(sybyl_type) & 0x3F; // bits 0-5
-
-    // Charge polarity (bit 6)
-    uint8_t charge_bin = (partial_charge < 0.0f) ? 0u : 1u;
-
-    uint8_t hbond_bit = is_hbond ? 1u : 0u;
-
-    return static_cast<uint8_t>(
-        base | (charge_bin << 6) | (hbond_bit << 7)
-    );
+    const int canonical_sybyl = legacy_sybyl_to_canonical_sybyl(sybyl_type);
+    const uint8_t base = atom256::sybyl_to_base(canonical_sybyl);
+    const uint8_t charge_bin =
+        static_cast<uint8_t>(atom256::quantise_charge(partial_charge));
+    return atom256::encode(base, charge_bin, is_hbond);
 }
 
 // ---------------------------------------------------------------------------
@@ -205,6 +215,14 @@ int assign_sybyl_type_single(const BonMol& mol, int atom_idx) {
         // ---- Iron ----
         case Element::Fe:
             return 30;
+
+        // ---- Metals with legacy local IDs used by Mol2Reader.cpp ----
+        case Element::Zn: return 31;
+        case Element::Ca: return 32;
+        case Element::Mg: return 33;
+        case Element::Se: return 34;
+        case Element::Cu: return 35;
+        case Element::Ni: return 36;
 
         // ---- Halogens ----
         case Element::F:  return 13;

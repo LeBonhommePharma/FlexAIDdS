@@ -17,6 +17,7 @@
 #include <cstdio>
 #include <cstring>
 #include <numeric>
+#include <string>
 #include <vector>
 #include <algorithm>
 
@@ -64,18 +65,7 @@ double pearson_r(const std::vector<double>& a, const std::vector<double>& b) {
 // For each pair (ci, cj) of 256-type codes, look up their SYBYL parents
 // and assign the NRGRank energy value.
 scm::SoftContactMatrix build_256_from_nrgrank() {
-    scm::SoftContactMatrix mat;
-    mat.zero();
-    for (int ci = 0; ci < 256; ++ci) {
-        int si = atom256::base_to_sybyl_parent(atom256::get_base(ci));
-        for (int cj = 0; cj < 256; ++cj) {
-            int sj = atom256::base_to_sybyl_parent(atom256::get_base(cj));
-            if (si >= 0 && si <= 40 && sj >= 0 && sj <= 40)
-                mat.set(ci, cj, static_cast<float>(
-                    nrgrank::kEnergyMatrix[si][sj]));
-        }
-    }
-    return mat;
+    return scm::SoftContactMatrix::from_nrgrank40_fallback();
 }
 
 } // namespace
@@ -234,6 +224,39 @@ TEST(CompareEnergyMatrices, RoundTripProjectionFidelity) {
         << "No cell should deviate after uniform expansion + projection";
     EXPECT_EQ(n_matching_sign, n_both_nonzero)
         << "No sign flips in round-trip projection";
+}
+
+TEST(CompareEnergyMatrices, FailsafeFallbackUsesNRGRank40Schema) {
+    bool used_fallback = false;
+    scm::SoftContactMatrix mat;
+    ASSERT_TRUE(mat.load_or_nrgrank40_fallback("", &used_fallback));
+    EXPECT_TRUE(used_fallback);
+
+    auto proj = mat.project_to_40x40();
+    double max_abs_diff = 0.0;
+    for (int i = 0; i < 40; ++i) {
+        for (int j = 0; j < 40; ++j) {
+            const double expected = nrgrank::kEnergyMatrix[i + 1][j + 1];
+            const double observed = proj[i * 40 + j];
+            max_abs_diff = std::max(max_abs_diff,
+                                    std::fabs(observed - expected));
+        }
+    }
+
+    EXPECT_NE(std::string(scm::ATOM256_SCHEMA_ID).find("base64"),
+              std::string::npos);
+    EXPECT_STREQ(scm::LEGACY_40_FALLBACK_SCHEMA_ID,
+                 "flexaidds.nrgrank.v1.sybyl40");
+    EXPECT_NEAR(max_abs_diff, 0.0, 1e-3)
+        << "Fallback 40→256→40 projection must preserve NRGRank exactly";
+}
+
+TEST(CompareEnergyMatrices, FallbackDoesNotMaskBadConfiguredMatrix) {
+    bool used_fallback = true;
+    scm::SoftContactMatrix mat;
+    EXPECT_FALSE(mat.load_or_nrgrank40_fallback(
+        "/tmp/flexaidds_missing_soft_contact_matrix.shnn", &used_fallback));
+    EXPECT_FALSE(used_fallback);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════

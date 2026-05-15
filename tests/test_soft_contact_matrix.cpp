@@ -270,6 +270,35 @@ TEST(FastOPTICS, ReachabilityNonNegative) {
     }
 }
 
+TEST(ContactSuperclusters, ProjectToClusterPairMeans) {
+    scm::SoftContactMatrix mat;
+    mat.zero();
+
+    // Two atom-type superclusters: {0,1} and {2,3}. The reduced cell (0,1)
+    // should be the mean over all four concrete contact-type pairs.
+    mat.set(0, 2, 1.0f);
+    mat.set(0, 3, 3.0f);
+    mat.set(1, 2, 5.0f);
+    mat.set(1, 3, 7.0f);
+
+    scm::FOPTICSResult clusters;
+    clusters.cluster_labels.assign(256, -1);
+    clusters.cluster_labels[0] = 0;
+    clusters.cluster_labels[1] = 0;
+    clusters.cluster_labels[2] = 1;
+    clusters.cluster_labels[3] = 1;
+    clusters.n_clusters = 2;
+
+    auto reduced = scm::project_to_contact_superclusters(mat, clusters);
+    ASSERT_GE(reduced.n_clusters, 2);
+    EXPECT_EQ(reduced.type_to_cluster[0], reduced.type_to_cluster[1]);
+    EXPECT_EQ(reduced.type_to_cluster[2], reduced.type_to_cluster[3]);
+    EXPECT_NE(reduced.type_to_cluster[0], reduced.type_to_cluster[2]);
+    EXPECT_EQ(reduced.cluster_sizes[reduced.type_to_cluster[0]], 2);
+    EXPECT_EQ(reduced.cluster_sizes[reduced.type_to_cluster[2]], 2);
+    EXPECT_FLOAT_EQ(reduced.lookup_type(0, 2), 4.0f);
+}
+
 // ─── ShannonMatrixScorer tests ──────────────────────────────────────────────
 
 TEST(ShannonMatrixScorer, SinglePoseScoring) {

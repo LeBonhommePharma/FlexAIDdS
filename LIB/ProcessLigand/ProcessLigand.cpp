@@ -230,6 +230,9 @@ BonMol ProcessLigand::load_mol2(const std::string& filepath) {
                 if (t == "S.O")   return 18; if (t == "S.O2")  return 19;
                 if (t == "P.3")   return 20; if (t == "I")     return 21;
                 if (t == "H")     return 22; if (t == "Fe")    return 30;
+                if (t == "Zn")    return 31; if (t == "Ca")    return 32;
+                if (t == "Mg")    return 33; if (t == "Se")    return 34;
+                if (t == "Cu")    return 35; if (t == "Ni")    return 36;
                 return 1; // fallback
             };
             mol.atoms[idx].sybyl_type = sybyl_map(atype);

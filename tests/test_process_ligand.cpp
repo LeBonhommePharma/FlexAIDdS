@@ -13,6 +13,7 @@
 #include "../LIB/ProcessLigand/ValenceChecker.h"
 #include "../LIB/ProcessLigand/SybylTyper.h"
 #include "../LIB/ProcessLigand/ProcessLigand.h"
+#include "../LIB/atom_typing_256.h"
 
 #include <cmath>
 #include <algorithm>
@@ -447,6 +448,52 @@ TEST(SybylTyper, Encode256Deterministic) {
     uint8_t enc1 = sybyl::encode_256(3, 0.0f, false);
     uint8_t enc2 = sybyl::encode_256(3, 0.0f, false);
     EXPECT_EQ(enc1, enc2);
+}
+
+TEST(SybylTyper, Encode256MatchesCanonicalAtomTyping) {
+    struct Case {
+        int legacy_sybyl;
+        uint8_t canonical_base;
+        float charge;
+        bool hbond;
+    };
+
+    const Case cases[] = {
+        {0,  atom256::C_sp,     0.0f,  false}, // C.1
+        {1,  atom256::C_sp3,    0.0f,  false}, // C.3
+        {2,  atom256::C_sp2,    0.0f,  false}, // C.2
+        {3,  atom256::C_ar,     0.0f,  false}, // C.ar
+        {4,  atom256::N_sp3,    0.2f,  true},  // N.3
+        {5,  atom256::N_sp2,   -0.2f,  true},  // N.2
+        {10, atom256::O_sp3,   -0.3f,  true},  // O.3
+        {11, atom256::O_sp2,   -0.3f,  true},  // O.2
+        {12, atom256::O_co2,   -0.3f,  true},  // O.co2
+        {13, atom256::HAL_F,   -0.1f,  true},  // F
+        {20, atom256::P_sp3,    0.1f,  false}, // P.3
+        {21, atom256::HAL_I,    0.0f,  false}, // I
+        {30, atom256::Metal_Fe, 0.4f,  false}, // Fe
+        {31, atom256::Metal_Zn, 0.4f,  false}, // Zn
+        {32, atom256::Metal_Ca, 0.4f,  false}, // Ca
+        {33, atom256::Metal_Mg, 0.4f,  false}, // Mg
+        {34, atom256::HAL_Se,   0.0f,  false}, // Se
+        {35, atom256::Metal_Cu, 0.4f,  false}, // Cu
+        {36, atom256::Metal_Ni, 0.4f,  false}, // Ni
+    };
+
+    for (const auto& tc : cases) {
+        const uint8_t code =
+            sybyl::encode_256(tc.legacy_sybyl, tc.charge, tc.hbond);
+        EXPECT_EQ(atom256::get_base(code), tc.canonical_base)
+            << "legacy SYBYL " << tc.legacy_sybyl;
+        EXPECT_EQ(atom256::get_charge_bin(code),
+                  atom256::quantise_charge(tc.charge));
+        EXPECT_EQ(atom256::get_hbond(code), tc.hbond);
+    }
+}
+
+TEST(SybylTyper, Encode256HydrogenFallsBackToDummy) {
+    const uint8_t code = sybyl::encode_256(22, 0.1f, false);
+    EXPECT_EQ(atom256::get_base(code), atom256::Dummy);
 }
 
 TEST(SybylTyper, AssignAllTypesDoesNotCrash) {

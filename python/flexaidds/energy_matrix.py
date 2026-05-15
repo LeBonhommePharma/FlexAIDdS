@@ -24,7 +24,7 @@ import math
 import struct
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple, Union
+from typing import Dict, List, Optional, Sequence, Tuple, Union
 
 try:
     import numpy as np
@@ -37,6 +37,9 @@ except ImportError:  # pragma: no cover
 SHNN_MAGIC = b"SHNN"  # binary blob magic header
 SHNN_VERSION = 1
 MATRIX_256_SIZE = 256
+ATOM256_SCHEMA_ID = "flexaidds.atom256.v1.base64.charge2.hbond1"
+LEGACY_40_SCHEMA_ID = "flexaidds.nrgrank.v1.sybyl40"
+SUPERCLUSTER_SCHEMA_ID = "flexaidds.atom256.supercluster.v1"
 
 # SYBYL atom type names (1-indexed in C++, 0-indexed here)
 SYBYL_TYPE_NAMES: List[str] = [
@@ -73,9 +76,9 @@ def encode_256_type(base_type: int, charge_bin: int = 0,
     """Encode a 256-type atom index from components.
 
     Args:
-        base_type:  Base type index (0–31).  Types 0–31 extend SYBYL's 40
-                    classes into 32 canonical base types.
-        charge_bin: AM1-BCC partial charge quantile (0–3).
+        base_type:  Base type index (0–63).  Types 0–41 currently cover the
+                    canonical FlexAID∆S atom256 schema; 42–63 are reserved.
+        charge_bin: Partial charge polarity bit (0=negative, 1=positive).
         hbond_flag: True if atom is an H-bond donor or acceptor.
 
     Returns:
@@ -351,7 +354,9 @@ class EnergyMatrix:
 
     def __init__(self, ntypes: int,
                  matrix: "np.ndarray" = None,
-                 entries: Optional[Dict[Tuple[int, int], MatrixEntry]] = None):
+                 entries: Optional[Dict[Tuple[int, int], MatrixEntry]] = None,
+                 schema_id: Optional[str] = None,
+                 source: str = ""):
         if np is None:
             raise RuntimeError("NumPy is required for EnergyMatrix")
         self.ntypes = int(ntypes)
@@ -360,6 +365,15 @@ class EnergyMatrix:
         else:
             self.matrix = np.asarray(matrix, dtype=np.float64)
         self.entries = entries or {}
+        if schema_id is None:
+            if self.ntypes == MATRIX_256_SIZE:
+                schema_id = ATOM256_SCHEMA_ID
+            elif self.ntypes == 40:
+                schema_id = LEGACY_40_SCHEMA_ID
+            else:
+                schema_id = f"flexaidds.matrix.ntypes{self.ntypes}"
+        self.schema_id = schema_id
+        self.source = source
 
     # ── legacy .dat I/O ──────────────────────────────────────────────────
 
@@ -449,7 +463,7 @@ class EnergyMatrix:
                         density_points=entry.density_points,
                     )
 
-        return cls(ntypes, matrix, entries)
+        return cls(ntypes, matrix, entries, source=path)
 
     def to_dat_file(self, path: str, labels: Optional[List[str]] = None) -> None:
         """Write legacy ``.dat`` format consumable by C++ ``read_emat.cpp``.
@@ -513,7 +527,7 @@ class EnergyMatrix:
 
         flat = np.frombuffer(data, dtype=np.float32).astype(np.float64)
         matrix = flat.reshape((dim, dim))
-        return cls(dim, matrix)
+        return cls(dim, matrix, schema_id=ATOM256_SCHEMA_ID, source=path)
 
     def to_binary(self, path: str) -> None:
         """Write 256×256 binary blob with SHNN magic header."""
@@ -559,7 +573,102 @@ class EnergyMatrix:
         mask = counts > 0
         out[mask] /= counts[mask]
 
-        return EnergyMatrix(40, out)
+        return EnergyMatrix(40, out, schema_id=LEGACY_40_SCHEMA_ID,
+                            source=f"projected:{self.source or self.schema_id}")
+
+    @classmethod
+    def expand_40_to_256(cls, legacy_matrix: "EnergyMatrix") -> "EnergyMatrix":
+        """Expand a 40×40 SYBYL matrix into the canonical atom256 address space.
+
+        This is the reproducibility fallback: every 256 code inherits the
+        interaction of its 40-type SYBYL parent, so projecting back to 40×40 is
+        lossless up to floating-point precision.
+        """
+        if legacy_matrix.ntypes != 40:
+            raise ValueError("expand_40_to_256 requires a 40×40 matrix")
+
+        sybyl_parent = np.zeros(MATRIX_256_SIZE, dtype=np.int16)
+        for code in range(MATRIX_256_SIZE):
+            base, _, _ = decode_256_type(code)
+            sybyl_parent[code] = base_to_sybyl(base) - 1
+
+        out = np.zeros((MATRIX_256_SIZE, MATRIX_256_SIZE), dtype=np.float64)
+        for code_i in range(MATRIX_256_SIZE):
+            si = int(sybyl_parent[code_i])
+            for code_j in range(MATRIX_256_SIZE):
+                sj = int(sybyl_parent[code_j])
+                out[code_i, code_j] = legacy_matrix.matrix[si, sj]
+
+        return cls(
+            MATRIX_256_SIZE,
+            out,
+            schema_id=ATOM256_SCHEMA_ID,
+            source=f"expanded40:{legacy_matrix.source or legacy_matrix.schema_id}",
+        )
+
+    @classmethod
+    def from_40_type_fallback(cls, path: str) -> "EnergyMatrix":
+        """Load a legacy 40-type ``.dat`` matrix and expand it to atom256."""
+        return cls.expand_40_to_256(cls.from_dat_file(path))
+
+    def project_to_superclusters(
+        self,
+        labels: Sequence[int],
+        isolate_noise: bool = True,
+    ) -> "EnergyMatrix":
+        """Project a 256×256 matrix to cluster-pair means.
+
+        Args:
+            labels: One integer cluster label per 256 atom type. Negative labels
+                are treated as noise.
+            isolate_noise: If true, each noise atom type gets its own cluster so
+                projection cannot invent false equivalence classes.
+        """
+        if self.ntypes != MATRIX_256_SIZE:
+            raise ValueError("project_to_superclusters requires a 256×256 matrix")
+        if len(labels) != MATRIX_256_SIZE:
+            raise ValueError("labels must contain exactly 256 entries")
+
+        type_to_cluster = np.full(MATRIX_256_SIZE, -1, dtype=np.int32)
+        label_to_cluster: Dict[int, int] = {}
+        n_clusters = 0
+
+        for atom_type, raw_label in enumerate(labels):
+            label = int(raw_label)
+            if label < 0:
+                if isolate_noise:
+                    type_to_cluster[atom_type] = n_clusters
+                    n_clusters += 1
+                else:
+                    type_to_cluster[atom_type] = 0
+                    n_clusters = max(n_clusters, 1)
+                continue
+            if label not in label_to_cluster:
+                label_to_cluster[label] = n_clusters
+                n_clusters += 1
+            type_to_cluster[atom_type] = label_to_cluster[label]
+
+        if n_clusters == 0:
+            n_clusters = 1
+            type_to_cluster.fill(0)
+
+        out = np.zeros((n_clusters, n_clusters), dtype=np.float64)
+        counts = np.zeros((n_clusters, n_clusters), dtype=np.float64)
+        for type_i in range(MATRIX_256_SIZE):
+            ci = type_to_cluster[type_i]
+            for type_j in range(MATRIX_256_SIZE):
+                cj = type_to_cluster[type_j]
+                out[ci, cj] += self.matrix[type_i, type_j]
+                counts[ci, cj] += 1.0
+
+        mask = counts > 0
+        out[mask] /= counts[mask]
+        return EnergyMatrix(
+            n_clusters,
+            out,
+            schema_id=SUPERCLUSTER_SCHEMA_ID,
+            source=f"supercluster:{self.source or self.schema_id}",
+        )
 
     # ── lookup ───────────────────────────────────────────────────────────
 
@@ -600,7 +709,7 @@ class EnergyMatrix:
 
     def __repr__(self) -> str:
         sym = "symmetric" if self.is_symmetric else "asymmetric"
-        return f"<EnergyMatrix ntypes={self.ntypes} {sym}>"
+        return f"<EnergyMatrix ntypes={self.ntypes} {sym} schema={self.schema_id}>"
 
 
 # ── convenience functions ────────────────────────────────────────────────────
