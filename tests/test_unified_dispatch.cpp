@@ -156,7 +156,7 @@ TEST_F(ShannonDispatchTest, IdenticalValuesReturnZero) {
 TEST_F(ShannonDispatchTest, UpperBound) {
     int bins = 20;
     double H = d.compute_shannon_entropy(data, bins);
-    EXPECT_LE(H, std::log2(static_cast<double>(bins)) + EPSILON);
+    EXPECT_LE(H, std::log(static_cast<double>(bins)) + EPSILON);
 }
 
 // ===========================================================================

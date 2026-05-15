@@ -410,7 +410,7 @@ PYBIND11_MODULE(_core, m) {
     m.def("compute_shannon_entropy",
         &shannon_thermo::compute_shannon_entropy,
         py::arg("values"), py::arg("num_bins") = 20,
-        "Compute Shannon entropy of continuous values (bits)",
+        "Compute Shannon entropy of continuous values (nats)",
         py::call_guard<py::gil_scoped_release>());
 
     m.def("compute_torsional_vibrational_entropy",

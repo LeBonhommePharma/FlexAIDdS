@@ -316,7 +316,6 @@ static DispatchTelemetry make_telemetry(
 
 static double entropy_from_hist(const int* counts, int num_bins, int total) {
     if (total == 0) return 0.0;
-    const double l2inv = 1.0 / std::log(2.0);
 
     Eigen::ArrayXd prob(num_bins);
     for (int b = 0; b < num_bins; ++b)
@@ -324,7 +323,7 @@ static double entropy_from_hist(const int* counts, int num_bins, int total) {
     prob /= static_cast<double>(total);
     Eigen::ArrayXd safe_p = (prob > 1e-15).select(prob, Eigen::ArrayXd::Constant(num_bins, 1.0));
     Eigen::ArrayXd lp     = (prob > 1e-15).select(safe_p.log(), Eigen::ArrayXd::Zero(num_bins));
-    return -(prob * lp).sum() * l2inv;
+    return -(prob * lp).sum();
 }
 
 double UnifiedHardwareDispatch::shannon_scalar(const std::vector<double>& values, int num_bins) {

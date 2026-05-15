@@ -399,7 +399,7 @@ def run_shannon_thermo_stack(
     report = (
         f"ShannonThermoStack (T={temperature_K:.1f} K)\n"
         f"{sc_info}"
-        f"  Shannon conf entropy    = {H_shannon:.4f} bits\n"
+        f"  Shannon conf entropy    = {H_shannon:.4f} nats\n"
         f"  Torsional vib entropy   = {S_vib:.6f} kcal/(mol·K)\n"
         f"  Entropy contribution    = {entropy_contribution:.4f} kcal/mol (-TΔS)\n"
         f"  Total ΔG (F + vib corr) = {deltaG:.4f} kcal/mol\n"

@@ -4,6 +4,9 @@
 > **Status:** Ready to execute on iCloud+ 2TB renewal
 > **Branch:** `master` (post PR #190 — all C-1–C-5 thermodynamic fixes merged)
 > **Primary convergence metric:** Shannon Energy Collapse H(X) < 2 bits
+>
+> Core thermodynamic APIs report Shannon entropy in **nats**. Convert only at
+> reporting or convergence-boundary code with `H_bits = H_nats / ln(2)`.
 > **Thermodynamic engine:** Grand Canonical Ensemble (log Ξ, F_bound, binding selectivity)
 
 ---
@@ -84,11 +87,15 @@ ulimit -s unlimited   # stack (tENCoM deep recursion)
 
 ### 3.1 Convergence Definition (Rigorous)
 
-```
-H(X_t) = −Σᵢ p(xᵢ,t) · log₂ p(xᵢ,t)    [bits]
+```text
+H(X_t)      = -sum_i p(x_i,t) * log2(p(x_i,t))    [bits]
+H_nats(X_t) = -sum_i p(x_i,t) * ln(p(x_i,t))      [nats]
+H_bits      = H_nats / ln(2)
 ```
 
 where `p(xᵢ,t)` is the Boltzmann-weighted probability of pose cluster *i* at step *t*.
+Core scoring and thermodynamic code should keep the natural-log form and convert
+to bits only at convergence/reporting boundaries.
 
 - **Convergence threshold:** H(X) < **2.0 bits** — >75% Boltzmann weight in ≤ 2 clusters
 - **Hard convergence (thesis-quality):** H(X) < **1.0 bit** — >50% weight in single dominant pose
