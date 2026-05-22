@@ -69,7 +69,7 @@ elseif(MSVC)
         "MSVC ${MSVC_VERSION}: /std:c++26 is not yet available — "
         "building with C++20. Only the _core Python extension will build "
         "correctly; the full FlexAID engine requires GCC ≥ 14 or Clang ≥ 18.")
-    set(CMAKE_CXX_STANDARD 20 CACHE STRING "C++ standard" FORCE)
+    set(CMAKE_CXX_STANDARD 20)   # override normal variable — CACHE form leaves it shadowed at 26
 endif()
 
 if(POLICY CMP0167)
@@ -252,19 +252,18 @@ endif()
 # ─── pybind11 (for Python bindings) ────────────────────────────────────────
 if(BUILD_PYTHON_BINDINGS)
     # pybind11's LTO probe (try_compile) inherits CMAKE_CXX_STANDARD from the
-    # CMake cache.  MSVC 19.4x does not yet accept /std:c++26 in a try_compile
-    # context, so the probe fails with "CXX26 not supported".  Temporarily
-    # clear CMAKE_CXX_STANDARD (both normal and cache scope) so the probe runs
-    # without a language-standard requirement, then restore it afterwards.
+    # normal-variable scope.  On MSVC, CMAKE_CXX_STANDARD is already capped to
+    # 20 above, but the probe can still fail if try_compile picks up a stale
+    # cached value.  Temporarily unset the normal variable so the probe runs
+    # against the compiler's default standard, then restore to 20.
     if(MSVC)
-        set(_pybind11_saved_cxx_std "${CMAKE_CXX_STANDARD}")
-        unset(CMAKE_CXX_STANDARD)
-        unset(CMAKE_CXX_STANDARD CACHE)
+        set(_pybind11_saved_cxx_std "${CMAKE_CXX_STANDARD}")  # "20" after MSVC cap
+        unset(CMAKE_CXX_STANDARD)   # remove normal variable only; line 35 set no cache entry
     endif()
     find_package(pybind11 CONFIG QUIET)
-    if(MSVC AND _pybind11_saved_cxx_std)
-        set(CMAKE_CXX_STANDARD "${_pybind11_saved_cxx_std}" CACHE STRING "C++ standard" FORCE)
-        set(CMAKE_CXX_STANDARD_REQUIRED ON CACHE BOOL "" FORCE)
+    if(MSVC AND DEFINED _pybind11_saved_cxx_std)
+        set(CMAKE_CXX_STANDARD "${_pybind11_saved_cxx_std}")   # restore as normal variable
+        set(CMAKE_CXX_STANDARD_REQUIRED ON)
     endif()
     if(NOT pybind11_FOUND)
         message(WARNING "pybind11 not found. Install with: pip install pybind11[global]")
