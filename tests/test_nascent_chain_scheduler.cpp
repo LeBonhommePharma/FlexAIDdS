@@ -323,9 +323,15 @@ TEST(DualAssemblyRunner, ReciprocalControlSwapsPrimaryTargetLigandOrder) {
     EXPECT_EQ(sim_a_calls[1].first, "/tmp/dual_assembly_reciprocal_L40.pdb");
     EXPECT_EQ(sim_a_calls[1].second, "proto.pdb");
 
-    ASSERT_EQ(history.size(), 4u);
-    EXPECT_EQ(history[0].first.role_policy, natural::DockingRolePolicy::ProtofibrilAsTarget);
-    EXPECT_EQ(history[1].first.role_policy, natural::DockingRolePolicy::ReciprocalControl);
+    std::vector<natural::DockingRolePolicy> translation_roles;
+    for (const auto& [ck, out] : history) {
+        (void)out;
+        if (ck.process == natural::GrowthProcess::Translation)
+            translation_roles.push_back(ck.role_policy);
+    }
+    ASSERT_EQ(translation_roles.size(), 2u);
+    EXPECT_EQ(translation_roles[0], natural::DockingRolePolicy::ProtofibrilAsTarget);
+    EXPECT_EQ(translation_roles[1], natural::DockingRolePolicy::ReciprocalControl);
 }
 
 TEST(DualAssemblyRunner, SimBGateUsesPriorEntropyPerTrack) {

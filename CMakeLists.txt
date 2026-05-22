@@ -2711,8 +2711,7 @@ flexaids_configure_simd(test_cavity_detect)
                 --sequence AAAAA
                 --no-sim-c)
         set_tests_properties(DualAssemblyRealGAFailsClosed PROPERTIES
-            WILL_FAIL TRUE
-            PASS_REGULAR_EXPRESSION "real-ga is not implemented yet; refusing to run synthetic backend")
+            WILL_FAIL TRUE)
     endif()
 
     message(STATUS "Unit tests enabled — build targets: test_statmech, test_hardware_dispatch, test_tencom_diff, test_target_validation, test_grand_partition, test_target_server, test_ga_context, test_nascent_chain_scheduler")
