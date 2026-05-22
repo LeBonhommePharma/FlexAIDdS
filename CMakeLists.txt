@@ -242,6 +242,12 @@ endif()
 
 # ─── pybind11 (for Python bindings) ────────────────────────────────────────
 if(BUILD_PYTHON_BINDINGS)
+    # pybind11's LTO probe (try_compile) inherits CMAKE_CXX_STANDARD=26, which
+    # MSVC does not yet support.  Disable LTO generation on MSVC to avoid the
+    # configure error; MSVC LTO (/GL) is applied manually on the _core target.
+    if(MSVC)
+        set(PYBIND11_NOLTO ON)
+    endif()
     find_package(pybind11 CONFIG QUIET)
     if(NOT pybind11_FOUND)
         message(WARNING "pybind11 not found. Install with: pip install pybind11[global]")
