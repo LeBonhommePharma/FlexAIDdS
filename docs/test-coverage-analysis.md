@@ -96,7 +96,7 @@ PyMOL integration module has zero test coverage. No validation of graceful degra
 | Area | Issue |
 |------|-------|
 | **tENCoM Hessian construction** (`tencm.cpp`) | Hessian matrix building and Jacobi eigendecomposition untested (~65% coverage) |
-| **NATURaL module** (`NATURaL/`, 600+ lines) | Co-translational assembly entirely untested |
+| **NATURaL module** (`NATURaL/`, 600+ lines) | Core planning, scheduler, DualAssembly synthetic backend, Sim C gating, and fail-closed `--real-ga` paths covered by C++ tests; real GA backend wiring and calibration remain unvalidated |
 | **OpenMP concurrency** | Race conditions and thread-safety of global RNG state not tested |
 | **GPU fallback paths** | CUDA/Metal unavailable → scalar fallback not validated |
 | **CLI --csv and --top flags** | Python CLI output formats partially untested |
@@ -125,7 +125,7 @@ PyMOL integration module has zero test coverage. No validation of graceful degra
 | `CavityDetect/` | ~200 | Cavity detection (Metal GPU) |
 | `ChiralCenter/` | ~150 | Stereocenter discrimination |
 | `LigandRingFlex/` | ~400 | Ring conformation sampling |
-| `NATURaL/` | ~600 | Co-translational assembly |
+| `NATURaL/` | ~600 | Co-translational assembly; DualAssembly C++ coverage now exists, real GA backend still uncovered |
 | `Mol2Reader.cpp` | ~150 | MOL2 file parsing |
 | `SdfReader.cpp` | ~150 | SDF file parsing |
 | `fileio.cpp` | ~200 | File I/O operations |

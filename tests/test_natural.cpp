@@ -18,6 +18,8 @@
 #include <vector>
 #include <algorithm>
 #include <numeric>
+#include <stdexcept>
+#include <limits>
 
 using namespace ribosome;
 using namespace translocon;
@@ -125,10 +127,11 @@ TEST_F(RibosomeElongationTest, MeanArrivalTimeMonotonicIncreasing) {
 
 TEST_F(RibosomeElongationTest, MeanTotalTimeEqualsAnalyticSum) {
     auto eng = make_engine();
-    // Analytic: T = 1/k_ini + Σ 1/k_n
+    // Analytic: T = 1/k_ini + Σ 1/k_n + 1/k_ter
     double analytic = 1.0 / K_INI_DEFAULT;
     for (double k : eng.elongation_rates())
         analytic += 1.0 / k;
+    analytic += 1.0 / K_TERM_DEFAULT;
 
     EXPECT_NEAR(eng.mean_total_time(), analytic, 1e-6);
 }
@@ -179,6 +182,44 @@ TEST_F(RibosomeElongationTest, PauseSitesRatesBelowThreshold) {
         EXPECT_LT(eng.elongation_rates()[idx],
                   mean_r * RIBOSOME_PAUSE_THRESHOLD * 1.01); // 1% tolerance
     }
+}
+
+TEST(NATURaLGrowthEntropy, ReturnsNatsNotBits) {
+    const double h2 = growth_entropy_nats({0.0, 1.0});
+    const double h4 = growth_entropy_nats({0.0, 1.0, 2.0, 3.0});
+
+    EXPECT_NEAR(h2, std::log(2.0), 1e-9);
+    EXPECT_NEAR(h4, std::log(4.0), 1e-9);
+}
+
+TEST(NATURaLGrowthEntropy, RepeatedEqualOccupancyBinsReturnAnalyticNats) {
+    const std::vector<double> two_bins = {
+        -1.0, -1.0, -1.0, -1.0,
+         1.0,  1.0,  1.0,  1.0
+    };
+    const std::vector<double> four_bins = {
+        0.0, 0.0,
+        1.0, 1.0,
+        2.0, 2.0,
+        3.0, 3.0
+    };
+
+    EXPECT_NEAR(growth_entropy_nats(two_bins), std::log(2.0), 1e-9);
+    EXPECT_NEAR(growth_entropy_nats(four_bins), std::log(4.0), 1e-9);
+}
+
+TEST(NATURaLGrowthEntropy, BinBoundaryAtMaximumDoesNotCreateExtraEntropy) {
+    const std::vector<double> samples = {
+        0.0, 0.0, 0.0,
+        31.0, 31.0, 31.0
+    };
+
+    EXPECT_NEAR(growth_entropy_nats(samples), std::log(2.0), 1e-9);
+}
+
+TEST(NATURaLGrowthEntropy, DegenerateTrajectoryHasZeroEntropy) {
+    EXPECT_DOUBLE_EQ(growth_entropy_nats({}), 0.0);
+    EXPECT_DOUBLE_EQ(growth_entropy_nats({-3.0, -3.0, -3.0}), 0.0);
 }
 
 // ===========================================================================
@@ -373,6 +414,136 @@ TEST(NATURaLConfig, IsNucleotideLigandReturnsFalseForEmpty) {
 
 TEST(NATURaLConfig, IsNucleicAcidReceptorReturnsFalseForEmpty) {
     EXPECT_FALSE(is_nucleic_acid_receptor(nullptr, 0));
+}
+
+// ===========================================================================
+// Human protofibril DualAssembly planning
+// ===========================================================================
+
+TEST(ProtofibrilDualAssemblyPlan, BuildsCanonicalAndReciprocalTracks) {
+    auto tracks = make_human_protofibril_tracks(90, 45, true);
+    ASSERT_EQ(tracks.size(), 4u);
+
+    int canonical = 0;
+    int reciprocal = 0;
+    int transcription = 0;
+    int translation = 0;
+
+    for (const auto& tr : tracks) {
+        if (tr.role_policy == DockingRolePolicy::ProtofibrilAsTarget) {
+            ++canonical;
+            EXPECT_TRUE(tr.protofibril_is_target);
+        } else {
+            ++reciprocal;
+            EXPECT_FALSE(tr.protofibril_is_target);
+        }
+
+        if (tr.process == GrowthProcess::Transcription) ++transcription;
+        if (tr.process == GrowthProcess::Translation)   ++translation;
+    }
+
+    EXPECT_EQ(canonical, 2);
+    EXPECT_EQ(reciprocal, 2);
+    EXPECT_EQ(transcription, 2);
+    EXPECT_EQ(translation, 2);
+}
+
+TEST(ProtofibrilDualAssemblyPlan, UsesHumanCellGrowthClocks) {
+    auto tracks = make_human_protofibril_tracks(100, 50, false);
+    ASSERT_EQ(tracks.size(), 2u);
+
+    const auto& tx = tracks[0];
+    const auto& tl = tracks[1];
+
+    ASSERT_EQ(tx.process, GrowthProcess::Transcription);
+    ASSERT_EQ(tl.process, GrowthProcess::Translation);
+
+    EXPECT_DOUBLE_EQ(tx.mean_elongation_rate, MEAN_NT_RATE_HUMAN);
+    EXPECT_DOUBLE_EQ(tl.mean_elongation_rate, MEAN_EL_RATE_HUMAN);
+    EXPECT_DOUBLE_EQ(tx.tunnel_length, RNAP_TUNNEL_NT);
+    EXPECT_DOUBLE_EQ(tl.tunnel_length, TUNNEL_LENGTH_AA);
+
+    // Human transcription is nuclear; keep it in the synchronized clock but do
+    // not silently claim direct protofibril encounter in the default protocol.
+    EXPECT_FALSE(tx.direct_encounter_allowed);
+    EXPECT_TRUE(tl.direct_encounter_allowed);
+}
+
+TEST(ProtofibrilDualAssemblyPlan, CompletionTimesIncludeInitiationAndDwellTime) {
+    auto tracks = make_human_protofibril_tracks(100, 50, false);
+    ASSERT_EQ(tracks.size(), 2u);
+
+    const auto& tx = tracks[0];
+    const auto& tl = tracks[1];
+
+    EXPECT_NEAR(tx.dwell_time_s(), 1.0 / MEAN_NT_RATE_HUMAN, 1e-12);
+    EXPECT_NEAR(tl.dwell_time_s(), 1.0 / MEAN_EL_RATE_HUMAN, 1e-12);
+
+    EXPECT_NEAR(tx.completion_time_s(),
+                1.0 / K_RNAP_INI_DEFAULT + 100.0 / MEAN_NT_RATE_HUMAN,
+                1e-12);
+    EXPECT_NEAR(tl.completion_time_s(),
+                1.0 / K_INI_DEFAULT + 50.0 / MEAN_EL_RATE_HUMAN,
+                1e-12);
+
+    EXPECT_NEAR(tx.first_exposed_time_s(),
+                1.0 / K_RNAP_INI_DEFAULT
+                    + (std::floor(RNAP_TUNNEL_NT) + 1.0) / MEAN_NT_RATE_HUMAN,
+                1e-12);
+    EXPECT_NEAR(tl.first_exposed_time_s(),
+                1.0 / K_INI_DEFAULT
+                    + (std::floor(TUNNEL_LENGTH_AA) + 1.0) / MEAN_EL_RATE_HUMAN,
+                1e-12);
+}
+
+TEST(ProtofibrilDualAssemblyPlan, ParallelScheduleIsTimeSortedAndTracksExposure) {
+    auto tracks = make_human_protofibril_tracks(12, 36, false);
+    auto events = build_parallel_growth_schedule(tracks);
+    ASSERT_EQ(events.size(), 48u);
+
+    for (size_t i = 1; i < events.size(); ++i)
+        EXPECT_LE(events[i - 1].t_arrival, events[i].t_arrival);
+
+    auto tx_first_exposed = std::find_if(events.begin(), events.end(),
+        [](const ParallelGrowthEvent& e) {
+            return e.process == GrowthProcess::Transcription && e.exposed_units > 0;
+        });
+    ASSERT_NE(tx_first_exposed, events.end());
+    EXPECT_EQ(tx_first_exposed->unit_index, static_cast<int>(RNAP_TUNNEL_NT) + 1);
+
+    auto tl_first_exposed = std::find_if(events.begin(), events.end(),
+        [](const ParallelGrowthEvent& e) {
+            return e.process == GrowthProcess::Translation && e.exposed_units > 0;
+        });
+    ASSERT_NE(tl_first_exposed, events.end());
+    EXPECT_EQ(tl_first_exposed->unit_index, static_cast<int>(TUNNEL_LENGTH_AA) + 1);
+}
+
+TEST(ProtofibrilDualAssemblyPlan, RejectsNegativeChainLengths) {
+    EXPECT_THROW(make_human_protofibril_tracks(-1, 10), std::invalid_argument);
+    EXPECT_THROW(make_human_protofibril_tracks(10, -1), std::invalid_argument);
+}
+
+TEST(ProtofibrilDualAssemblyPlan, ZeroLengthInputsProduceNoTracksOrEvents) {
+    auto tracks = make_human_protofibril_tracks(0, 0, true);
+    EXPECT_TRUE(tracks.empty());
+
+    auto events = build_parallel_growth_schedule(tracks);
+    EXPECT_TRUE(events.empty());
+}
+
+TEST(ProtofibrilDualAssemblyPlan, RejectsNonPositiveOrNonFiniteElongationRates) {
+    InVivoAssemblyTrack bad_rate;
+    bad_rate.chain_length = 5;
+    bad_rate.mean_elongation_rate = 0.0;
+
+    EXPECT_THROW(build_parallel_growth_schedule({bad_rate}), std::invalid_argument);
+
+    bad_rate.mean_elongation_rate = -1.0;
+    EXPECT_THROW(build_parallel_growth_schedule({bad_rate}), std::invalid_argument);
+
+    bad_rate.mean_elongation_rate = std::numeric_limits<double>::infinity();
+    EXPECT_THROW(build_parallel_growth_schedule({bad_rate}), std::invalid_argument);
 }
 
 // ===========================================================================

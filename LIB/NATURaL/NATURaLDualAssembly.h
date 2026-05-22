@@ -89,6 +89,60 @@ NATURaLConfig auto_configure(const atom*  atoms,
                               const resid* residues,
                               int          n_residues);
 
+// ─── Human in-vivo protofibril protocol planning ────────────────────────────
+//
+// A protofibril is best treated as the fixed docking scaffold when the nascent
+// chain is the growing, high-entropy object. Reciprocal role swaps are still
+// useful controls because FlexAID target/ligand machinery is not perfectly
+// symmetric.
+enum class GrowthProcess {
+    Transcription,  // RNAP II, nucleotide-by-nucleotide
+    Translation     // 80S ribosome, amino-acid-by-amino-acid
+};
+
+enum class DockingRolePolicy {
+    ProtofibrilAsTarget,
+    ReciprocalControl
+};
+
+struct InVivoAssemblyTrack {
+    std::string       name;
+    GrowthProcess     process = GrowthProcess::Translation;
+    DockingRolePolicy role_policy = DockingRolePolicy::ProtofibrilAsTarget;
+    int               chain_length = 0;       // nt for transcription, aa for translation
+    double            mean_elongation_rate = 0.0; // nt/s or aa/s
+    double            initiation_rate = 0.0;  // s^-1
+    double            tunnel_length = 0.0;    // RNAP hybrid nt or ribosome tunnel aa
+    bool              protofibril_is_target = true;
+    bool              direct_encounter_allowed = true;
+    std::string       compartment;
+
+    double dwell_time_s() const noexcept;
+    double completion_time_s() const noexcept;
+    double first_exposed_time_s() const noexcept;
+};
+
+struct ParallelGrowthEvent {
+    int           track_index = -1;
+    int           unit_index = 0;       // 1-based nt/aa index
+    double        t_arrival = 0.0;      // seconds since initiation gate
+    int           exposed_units = 0;    // units outside polymerase/ribosome tunnel
+    GrowthProcess process = GrowthProcess::Translation;
+    DockingRolePolicy role_policy = DockingRolePolicy::ProtofibrilAsTarget;
+};
+
+std::vector<InVivoAssemblyTrack> make_human_protofibril_tracks(
+    int  transcript_nt,
+    int  peptide_aa,
+    bool include_reciprocal_controls = true);
+
+std::vector<ParallelGrowthEvent> build_parallel_growth_schedule(
+    const std::vector<InVivoAssemblyTrack>& tracks);
+
+// Shannon entropy of the Contact Function growth trajectory, returned in nats.
+// This is intentionally testable because it feeds kT*H free-energy arithmetic.
+double growth_entropy_nats(const std::vector<double>& cf_trajectory);
+
 // ─── DualAssembly engine ─────────────────────────────────────────────────────
 class DualAssemblyEngine {
 public:
@@ -108,9 +162,9 @@ public:
         bool   is_pause_site;     // rate < RIBOSOME_PAUSE_THRESHOLD of mean → folding window
         bool   in_tunnel;         // residue still inside ribosomal exit tunnel
         double cf_score;          // Contact Function (kcal/mol)
-        double shannon_entropy;   // bits
+        double shannon_entropy;   // dimensionless nats
         double p_cotrans_folded;  // k_fold/(k_fold+k_el) co-translational folding prob
-        double cumulative_deltaG; // kcal/mol (time-weighted)
+        double cumulative_deltaG; // kcal/mol (time-weighted mean)
         bool   tm_inserted;       // true if TM helix has been laterally gated
         double tm_insertion_dG;   // ΔG of translocon-mediated insertion (kcal/mol)
 
@@ -144,7 +198,7 @@ private:
     // Compute a lightweight CF score for the current partial complex
     double compute_partial_cf(int n_grown_residues) const;
 
-    // Compute Shannon entropy over accumulated growth ensemble
+    // Compute Shannon entropy over accumulated growth ensemble, returned in nats.
     double compute_growth_entropy(const std::vector<double>& cf_trajectory) const;
 
     // Hill equation: k_eff = k_max × [Mg]ⁿ / (K_d ⁿ + [Mg]ⁿ)

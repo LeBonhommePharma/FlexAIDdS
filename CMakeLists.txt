@@ -449,6 +449,9 @@ target_sources(FlexAID PRIVATE
         LIB/NATURaL/RibosomeElongation.cpp
         LIB/NATURaL/TransloconInsertion.cpp
         LIB/NATURaL/NucleationDetector.cpp
+        LIB/NATURaL/NascentChainScheduler.cpp
+        LIB/NATURaL/FibrilGrowthOracle.cpp
+        LIB/NATURaL/DualAssemblyRunner.cpp
         LIB/ChiralCenter/ChiralCenterGene.cpp
         # ── CleftDetector + Mol2Reader + SdfReader ──
         LIB/CleftDetector.cpp
@@ -1066,6 +1069,55 @@ if(ENABLE_NATURAL_HAMMERHEAD)
     message(STATUS "NATURaL HHRz simulation enabled — build target: natural_hammerhead")
 endif()
 
+# ─── DualAssembly cotranslational docking CLI ────────────────────────────────
+# Standalone driver for protofibril × nascent-chain cotranslational docking with the
+# Shannon-driven Target/Ligand discriminator. See docs/DUAL_ASSEMBLY_COTRANSLATIONAL.md.
+# MVP ships a built-in synthetic GA backend so the full pipeline can be exercised on
+# any platform without the heavyweight FlexAID engine.
+option(ENABLE_DUAL_ASSEMBLY_TOOL "Build the DualAssembly cotranslational docking CLI" ON)
+if(ENABLE_DUAL_ASSEMBLY_TOOL)
+    add_executable(dual_assembly
+        LIB/NATURaL/dual_assembly_main.cpp
+        LIB/NATURaL/DualAssemblyRunner.cpp
+        LIB/NATURaL/FibrilGrowthOracle.cpp
+        LIB/NATURaL/NascentChainScheduler.cpp
+        LIB/NATURaL/NATURaLDualAssembly.cpp
+        LIB/NATURaL/RibosomeElongation.cpp
+        LIB/NATURaL/TransloconInsertion.cpp
+        LIB/NATURaL/NucleationDetector.cpp
+        LIB/ShannonThermoStack/ShannonThermoStack.cpp
+        LIB/GrandPartitionFunction.cpp
+        LIB/statmech.cpp
+        LIB/TurboQuant.cpp
+        LIB/UnifiedHardwareDispatch.cpp
+        LIB/hardware_detect.cpp
+        LIB/tENCoM/tencm.cpp
+        LIB/encom.cpp
+    )
+    target_include_directories(dual_assembly PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/LIB
+        ${CMAKE_CURRENT_SOURCE_DIR}/LIB/NATURaL
+        ${CMAKE_CURRENT_SOURCE_DIR}/LIB/ShannonThermoStack
+        ${CMAKE_CURRENT_SOURCE_DIR}/LIB/tENCoM
+    )
+    if(MSVC)
+        target_compile_options(dual_assembly PRIVATE /O2 /fp:fast)
+        target_compile_definitions(dual_assembly PRIVATE
+            _CRT_SECURE_NO_WARNINGS _USE_MATH_DEFINES NOMINMAX)
+    else()
+        target_compile_options(dual_assembly PRIVATE -O3 -ffast-math -fno-finite-math-only)
+    endif()
+    flexaids_configure_simd(dual_assembly)
+    if(FLEXAIDS_USE_OPENMP AND OpenMP_CXX_FOUND)
+        target_link_libraries(dual_assembly PRIVATE OpenMP::OpenMP_CXX)
+    endif()
+    target_link_libraries(dual_assembly PRIVATE Eigen3::Eigen)
+    target_compile_definitions(dual_assembly PRIVATE
+        FLEXAIDS_HAS_EIGEN
+        FLEXAIDS_OMIT_DUAL_ASSEMBLY_ENGINE)
+    message(STATUS "DualAssembly CLI enabled — build target: dual_assembly")
+endif()
+
 # ─── Dispatch Benchmark (optional standalone binary) ─────────────────────────
 option(ENABLE_DISPATCH_BENCHMARK "Build the hardware dispatch benchmark binary" OFF)
 if(ENABLE_DISPATCH_BENCHMARK)
@@ -1380,6 +1432,9 @@ if(BUILD_TESTING)
         LIB/NATURaL/RibosomeElongation.cpp
         LIB/NATURaL/TransloconInsertion.cpp
         LIB/NATURaL/NucleationDetector.cpp
+        LIB/NATURaL/NascentChainScheduler.cpp
+        LIB/NATURaL/FibrilGrowthOracle.cpp
+        LIB/NATURaL/DualAssemblyRunner.cpp
         LIB/UnifiedHardwareDispatch.cpp
         LIB/hardware_detect.cpp
     )
@@ -1427,6 +1482,9 @@ if(BUILD_TESTING)
         LIB/NATURaL/RibosomeElongation.cpp
         LIB/NATURaL/TransloconInsertion.cpp
         LIB/NATURaL/NucleationDetector.cpp
+        LIB/NATURaL/NascentChainScheduler.cpp
+        LIB/NATURaL/FibrilGrowthOracle.cpp
+        LIB/NATURaL/DualAssemblyRunner.cpp
         LIB/UnifiedHardwareDispatch.cpp
         LIB/hardware_detect.cpp
     )
@@ -1696,6 +1754,9 @@ flexaids_configure_simd(test_cavity_detect)
         LIB/NATURaL/RibosomeElongation.cpp
         LIB/NATURaL/TransloconInsertion.cpp
         LIB/NATURaL/NucleationDetector.cpp
+        LIB/NATURaL/NascentChainScheduler.cpp
+        LIB/NATURaL/FibrilGrowthOracle.cpp
+        LIB/NATURaL/DualAssemblyRunner.cpp
         LIB/UnifiedHardwareDispatch.cpp
         LIB/hardware_detect.cpp
     )
@@ -1742,6 +1803,9 @@ flexaids_configure_simd(test_cavity_detect)
         LIB/NATURaL/RibosomeElongation.cpp
         LIB/NATURaL/TransloconInsertion.cpp
         LIB/NATURaL/NucleationDetector.cpp
+        LIB/NATURaL/NascentChainScheduler.cpp
+        LIB/NATURaL/FibrilGrowthOracle.cpp
+        LIB/NATURaL/DualAssemblyRunner.cpp
         LIB/UnifiedHardwareDispatch.cpp
         LIB/hardware_detect.cpp
     )
@@ -1788,6 +1852,9 @@ flexaids_configure_simd(test_cavity_detect)
         LIB/NATURaL/RibosomeElongation.cpp
         LIB/NATURaL/TransloconInsertion.cpp
         LIB/NATURaL/NucleationDetector.cpp
+        LIB/NATURaL/NascentChainScheduler.cpp
+        LIB/NATURaL/FibrilGrowthOracle.cpp
+        LIB/NATURaL/DualAssemblyRunner.cpp
         LIB/UnifiedHardwareDispatch.cpp
         LIB/hardware_detect.cpp
     )
@@ -1833,6 +1900,9 @@ flexaids_configure_simd(test_cavity_detect)
         LIB/NATURaL/RibosomeElongation.cpp
         LIB/NATURaL/TransloconInsertion.cpp
         LIB/NATURaL/NucleationDetector.cpp
+        LIB/NATURaL/NascentChainScheduler.cpp
+        LIB/NATURaL/FibrilGrowthOracle.cpp
+        LIB/NATURaL/DualAssemblyRunner.cpp
         LIB/UnifiedHardwareDispatch.cpp
         LIB/hardware_detect.cpp
         LIB/InStreamClustering.cpp
@@ -1879,6 +1949,9 @@ flexaids_configure_simd(test_cavity_detect)
         LIB/NATURaL/RibosomeElongation.cpp
         LIB/NATURaL/TransloconInsertion.cpp
         LIB/NATURaL/NucleationDetector.cpp
+        LIB/NATURaL/NascentChainScheduler.cpp
+        LIB/NATURaL/FibrilGrowthOracle.cpp
+        LIB/NATURaL/DualAssemblyRunner.cpp
         LIB/UnifiedHardwareDispatch.cpp
         LIB/hardware_detect.cpp
         LIB/InStreamClustering.cpp
@@ -1926,6 +1999,9 @@ flexaids_configure_simd(test_cavity_detect)
         LIB/NATURaL/RibosomeElongation.cpp
         LIB/NATURaL/TransloconInsertion.cpp
         LIB/NATURaL/NucleationDetector.cpp
+        LIB/NATURaL/NascentChainScheduler.cpp
+        LIB/NATURaL/FibrilGrowthOracle.cpp
+        LIB/NATURaL/DualAssemblyRunner.cpp
         LIB/UnifiedHardwareDispatch.cpp
         LIB/hardware_detect.cpp
         LIB/InStreamClustering.cpp
@@ -1971,6 +2047,9 @@ flexaids_configure_simd(test_cavity_detect)
         LIB/NATURaL/RibosomeElongation.cpp
         LIB/NATURaL/TransloconInsertion.cpp
         LIB/NATURaL/NucleationDetector.cpp
+        LIB/NATURaL/NascentChainScheduler.cpp
+        LIB/NATURaL/FibrilGrowthOracle.cpp
+        LIB/NATURaL/DualAssemblyRunner.cpp
         LIB/UnifiedHardwareDispatch.cpp
         LIB/hardware_detect.cpp
         LIB/InStreamClustering.cpp
@@ -2092,6 +2171,9 @@ flexaids_configure_simd(test_cavity_detect)
         LIB/NATURaL/RibosomeElongation.cpp
         LIB/NATURaL/TransloconInsertion.cpp
         LIB/NATURaL/NucleationDetector.cpp
+        LIB/NATURaL/NascentChainScheduler.cpp
+        LIB/NATURaL/FibrilGrowthOracle.cpp
+        LIB/NATURaL/DualAssemblyRunner.cpp
         LIB/UnifiedHardwareDispatch.cpp
         LIB/hardware_detect.cpp
     )
@@ -2247,6 +2329,9 @@ flexaids_configure_simd(test_cavity_detect)
         LIB/NATURaL/RibosomeElongation.cpp
         LIB/NATURaL/TransloconInsertion.cpp
         LIB/NATURaL/NucleationDetector.cpp
+        LIB/NATURaL/NascentChainScheduler.cpp
+        LIB/NATURaL/FibrilGrowthOracle.cpp
+        LIB/NATURaL/DualAssemblyRunner.cpp
         LIB/UnifiedHardwareDispatch.cpp
         LIB/hardware_detect.cpp
     )
@@ -2537,7 +2622,100 @@ flexaids_configure_simd(test_cavity_detect)
     flexaids_configure_msvc_test(test_ga_context)
     add_test(NAME GAContextTests COMMAND test_ga_context)
 
-    message(STATUS "Unit tests enabled — build targets: test_statmech, test_hardware_dispatch, test_tencom_diff, test_target_validation, test_grand_partition, test_target_server, test_ga_context")
+    if(NOT TARGET test_natural)
+        add_executable(test_natural
+            tests/test_natural.cpp
+            tests/stubs.cpp
+            LIB/NATURaL/RibosomeElongation.cpp
+            LIB/NATURaL/TransloconInsertion.cpp
+            LIB/NATURaL/NucleationDetector.cpp
+            LIB/NATURaL/NATURaLDualAssembly.cpp
+            LIB/statmech.cpp
+            LIB/TurboQuant.cpp
+            LIB/UnifiedHardwareDispatch.cpp
+            LIB/hardware_detect.cpp
+            LIB/Vcontacts.cpp
+            LIB/geometry.cpp
+        )
+        target_include_directories(test_natural PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/LIB
+            ${CMAKE_CURRENT_SOURCE_DIR}/LIB/NATURaL
+        )
+        target_link_libraries(test_natural PRIVATE GTest::gtest GTest::gtest_main)
+        if(MSVC)
+            target_compile_options(test_natural PRIVATE /O2)
+            target_compile_definitions(test_natural PRIVATE
+                _CRT_SECURE_NO_WARNINGS _USE_MATH_DEFINES NOMINMAX)
+        else()
+            target_compile_options(test_natural PRIVATE -O2)
+        endif()
+        if(FLEXAIDS_USE_OPENMP AND OpenMP_CXX_FOUND)
+            target_link_libraries(test_natural PRIVATE OpenMP::OpenMP_CXX)
+        endif()
+        target_link_libraries(test_natural PRIVATE Eigen3::Eigen)
+        target_compile_definitions(test_natural PRIVATE FLEXAIDS_HAS_EIGEN)
+        flexaids_configure_simd(test_natural)
+        flexaids_configure_msvc_test(test_natural)
+        add_test(NAME NATURaLTests COMMAND test_natural)
+    endif()
+
+    # test_nascent_chain_scheduler — cotranslational DualAssembly suite
+    add_executable(test_nascent_chain_scheduler
+        tests/test_nascent_chain_scheduler.cpp
+        LIB/NATURaL/NascentChainScheduler.cpp
+        LIB/NATURaL/FibrilGrowthOracle.cpp
+        LIB/NATURaL/DualAssemblyRunner.cpp
+        LIB/NATURaL/NATURaLDualAssembly.cpp
+        LIB/NATURaL/RibosomeElongation.cpp
+        LIB/NATURaL/TransloconInsertion.cpp
+        LIB/NATURaL/NucleationDetector.cpp
+        LIB/ShannonThermoStack/ShannonThermoStack.cpp
+        LIB/GrandPartitionFunction.cpp
+        LIB/statmech.cpp
+        LIB/TurboQuant.cpp
+        LIB/UnifiedHardwareDispatch.cpp
+        LIB/hardware_detect.cpp
+        LIB/tENCoM/tencm.cpp
+        LIB/encom.cpp
+    )
+    target_include_directories(test_nascent_chain_scheduler PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/LIB
+        ${CMAKE_CURRENT_SOURCE_DIR}/LIB/NATURaL
+        ${CMAKE_CURRENT_SOURCE_DIR}/LIB/ShannonThermoStack
+        ${CMAKE_CURRENT_SOURCE_DIR}/LIB/tENCoM
+    )
+    target_link_libraries(test_nascent_chain_scheduler PRIVATE GTest::gtest GTest::gtest_main)
+    if(MSVC)
+        target_compile_options(test_nascent_chain_scheduler PRIVATE /O2)
+        target_compile_definitions(test_nascent_chain_scheduler PRIVATE
+            _CRT_SECURE_NO_WARNINGS _USE_MATH_DEFINES NOMINMAX)
+    else()
+        target_compile_options(test_nascent_chain_scheduler PRIVATE -O2)
+    endif()
+    if(FLEXAIDS_USE_OPENMP AND OpenMP_CXX_FOUND)
+        target_link_libraries(test_nascent_chain_scheduler PRIVATE OpenMP::OpenMP_CXX)
+    endif()
+    target_link_libraries(test_nascent_chain_scheduler PRIVATE Eigen3::Eigen)
+    target_compile_definitions(test_nascent_chain_scheduler PRIVATE
+        FLEXAIDS_HAS_EIGEN
+        FLEXAIDS_OMIT_DUAL_ASSEMBLY_ENGINE)
+    flexaids_configure_simd(test_nascent_chain_scheduler)
+    flexaids_configure_msvc_test(test_nascent_chain_scheduler)
+    add_test(NAME NascentChainSchedulerTests COMMAND test_nascent_chain_scheduler)
+
+    if(TARGET dual_assembly)
+        add_test(NAME DualAssemblyRealGAFailsClosed
+            COMMAND dual_assembly
+                --real-ga
+                --target-pdb fake_protofibril.pdb
+                --sequence AAAAA
+                --no-sim-c)
+        set_tests_properties(DualAssemblyRealGAFailsClosed PROPERTIES
+            WILL_FAIL TRUE
+            PASS_REGULAR_EXPRESSION "real-ga is not implemented yet; refusing to run synthetic backend")
+    endif()
+
+    message(STATUS "Unit tests enabled — build targets: test_statmech, test_hardware_dispatch, test_tencom_diff, test_target_validation, test_grand_partition, test_target_server, test_ga_context, test_nascent_chain_scheduler")
 endif()
 
 # ─── Swift Bridge (macOS only) ────────────────────────────────────────────
@@ -2742,6 +2920,9 @@ if(BUILD_SWIFT_BRIDGE)
         LIB/NATURaL/RibosomeElongation.cpp
         LIB/NATURaL/TransloconInsertion.cpp
         LIB/NATURaL/NucleationDetector.cpp
+        LIB/NATURaL/NascentChainScheduler.cpp
+        LIB/NATURaL/FibrilGrowthOracle.cpp
+        LIB/NATURaL/DualAssemblyRunner.cpp
         LIB/UnifiedHardwareDispatch.cpp
         LIB/hardware_detect.cpp
     )

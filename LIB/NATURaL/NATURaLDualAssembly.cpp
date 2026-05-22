@@ -36,6 +36,7 @@
 #include <numeric>
 #include <iostream>
 #include <sstream>
+#include <stdexcept>
 #include <vector>
 
 #include <Eigen/Dense>
@@ -117,6 +118,224 @@ NATURaLConfig auto_configure(const atom*  atoms,
                   << "]\n";
     }
     return cfg;
+}
+
+// ─── human protofibril parallel protocol helpers ────────────────────────────
+
+double InVivoAssemblyTrack::dwell_time_s() const noexcept {
+    return (std::isfinite(mean_elongation_rate) && mean_elongation_rate > 1e-12)
+        ? 1.0 / mean_elongation_rate
+        : 0.0;
+}
+
+double InVivoAssemblyTrack::completion_time_s() const noexcept {
+    if (chain_length <= 0) return 0.0;
+    double init_wait = (std::isfinite(initiation_rate) && initiation_rate > 1e-12)
+        ? 1.0 / initiation_rate
+        : 0.0;
+    return init_wait + chain_length * dwell_time_s();
+}
+
+double InVivoAssemblyTrack::first_exposed_time_s() const noexcept {
+    if (chain_length <= 0) return 0.0;
+    double init_wait = (std::isfinite(initiation_rate) && initiation_rate > 1e-12)
+        ? 1.0 / initiation_rate
+        : 0.0;
+    int first_exposed_unit = static_cast<int>(std::floor(tunnel_length)) + 1;
+    first_exposed_unit = std::clamp(first_exposed_unit, 1, chain_length);
+    return init_wait + first_exposed_unit * dwell_time_s();
+}
+
+std::vector<InVivoAssemblyTrack> make_human_protofibril_tracks(
+    int transcript_nt,
+    int peptide_aa,
+    bool include_reciprocal_controls)
+{
+    if (transcript_nt < 0 || peptide_aa < 0)
+        throw std::invalid_argument("NATURaL protofibril tracks require non-negative chain lengths");
+
+    std::vector<InVivoAssemblyTrack> tracks;
+    tracks.reserve(include_reciprocal_controls ? 4 : 2);
+
+    auto add_track = [&](std::string name,
+                         GrowthProcess process,
+                         DockingRolePolicy role,
+                         int chain_length) {
+        if (chain_length <= 0) return;
+
+        const bool is_tx = (process == GrowthProcess::Transcription);
+        InVivoAssemblyTrack tr;
+        tr.name = std::move(name);
+        tr.process = process;
+        tr.role_policy = role;
+        tr.chain_length = chain_length;
+        tr.mean_elongation_rate = is_tx
+            ? ribosome::MEAN_NT_RATE_HUMAN
+            : ribosome::MEAN_EL_RATE_HUMAN;
+        tr.initiation_rate = is_tx
+            ? ribosome::K_RNAP_INI_DEFAULT
+            : ribosome::K_INI_DEFAULT;
+        tr.tunnel_length = is_tx
+            ? ribosome::RNAP_TUNNEL_NT
+            : ribosome::TUNNEL_LENGTH_AA;
+        tr.protofibril_is_target = (role == DockingRolePolicy::ProtofibrilAsTarget);
+        tr.compartment = is_tx ? "nucleus" : "cytosol/ER";
+
+        // Eukaryotic transcription and translation are not bacterial-style
+        // coupled. Keep the RNAP clock in the parallel schedule, but do not
+        // claim direct physical protofibril encounter during nuclear transcript
+        // synthesis unless a caller explicitly overrides this field.
+        tr.direct_encounter_allowed = !is_tx;
+        tracks.push_back(std::move(tr));
+    };
+
+    add_track("protofibril_target__nascent_rna_ligand",
+              GrowthProcess::Transcription,
+              DockingRolePolicy::ProtofibrilAsTarget,
+              transcript_nt);
+    add_track("protofibril_target__nascent_peptide_ligand",
+              GrowthProcess::Translation,
+              DockingRolePolicy::ProtofibrilAsTarget,
+              peptide_aa);
+
+    if (include_reciprocal_controls) {
+        add_track("reciprocal_control__rna_target__protofibril_ligand",
+                  GrowthProcess::Transcription,
+                  DockingRolePolicy::ReciprocalControl,
+                  transcript_nt);
+        add_track("reciprocal_control__peptide_target__protofibril_ligand",
+                  GrowthProcess::Translation,
+                  DockingRolePolicy::ReciprocalControl,
+                  peptide_aa);
+    }
+
+    return tracks;
+}
+
+std::vector<ParallelGrowthEvent> build_parallel_growth_schedule(
+    const std::vector<InVivoAssemblyTrack>& tracks)
+{
+    std::vector<ParallelGrowthEvent> events;
+    int total_units = 0;
+    for (const auto& tr : tracks) {
+        if (tr.chain_length < 0)
+            throw std::invalid_argument("NATURaL parallel schedule received a negative chain length");
+        total_units += tr.chain_length;
+    }
+    events.reserve(total_units);
+
+    for (int ti = 0; ti < static_cast<int>(tracks.size()); ++ti) {
+        const auto& tr = tracks[ti];
+        if (tr.chain_length <= 0) continue;
+        if (!std::isfinite(tr.mean_elongation_rate) || tr.mean_elongation_rate <= 0.0)
+            throw std::invalid_argument("NATURaL parallel schedule requires positive elongation rates");
+
+        double init_wait = (std::isfinite(tr.initiation_rate) && tr.initiation_rate > 1e-12)
+            ? 1.0 / tr.initiation_rate
+            : 0.0;
+        double dwell = 1.0 / tr.mean_elongation_rate;
+        int hidden_units = static_cast<int>(std::floor(std::max(0.0, tr.tunnel_length)));
+
+        for (int unit = 1; unit <= tr.chain_length; ++unit) {
+            int exposed = std::max(0, unit - hidden_units);
+            events.push_back({
+                ti,
+                unit,
+                init_wait + unit * dwell,
+                exposed,
+                tr.process,
+                tr.role_policy
+            });
+        }
+    }
+
+    std::stable_sort(events.begin(), events.end(),
+        [](const ParallelGrowthEvent& a, const ParallelGrowthEvent& b) {
+            if (a.t_arrival != b.t_arrival) return a.t_arrival < b.t_arrival;
+            if (a.track_index != b.track_index) return a.track_index < b.track_index;
+            return a.unit_index < b.unit_index;
+        });
+
+    return events;
+}
+
+// ─── growth_entropy_nats ─────────────────────────────────────────────────────
+// Shannon entropy of the CF distribution accumulated along the growth trajectory.
+// Returns dimensionless nats. Convert to bits only at reporting boundaries.
+// Dispatches to AVX-512 → AVX2 → Eigen → scalar for the histogram fill.
+double growth_entropy_nats(const std::vector<double>& cf_trajectory)
+{
+    if (cf_trajectory.empty()) return 0.0;
+
+    double min_cf = *std::min_element(cf_trajectory.begin(), cf_trajectory.end());
+    double max_cf = *std::max_element(cf_trajectory.begin(), cf_trajectory.end());
+    if (max_cf - min_cf < 1e-8) return 0.0;
+
+    constexpr int BINS = 32;
+    double bw  = (max_cf - min_cf) / BINS + 1e-10;
+    double inv_bw = 1.0 / bw;
+
+    std::array<int, BINS> counts{};
+    int total = static_cast<int>(cf_trajectory.size());
+
+#if defined(FLEXAIDS_USE_AVX512) && defined(__AVX512F__)
+    {
+        __m512d v_min  = _mm512_set1_pd(min_cf);
+        __m512d v_ibw  = _mm512_set1_pd(inv_bw);
+        __m512d v_bmax = _mm512_set1_pd(static_cast<double>(BINS - 1));
+        int i = 0, n = total;
+        for (; i + 8 <= n; i += 8) {
+            __m512d v    = _mm512_loadu_pd(cf_trajectory.data() + i);
+            __m512d off  = _mm512_sub_pd(v, v_min);
+            __m512d bins = _mm512_mul_pd(off, v_ibw);
+            bins = _mm512_max_pd(_mm512_setzero_pd(),
+                                 _mm512_min_pd(bins, v_bmax));
+            __m256i bi = _mm512_cvttpd_epi32(bins);
+            alignas(32) int bvals[8];
+            _mm256_store_si256(reinterpret_cast<__m256i*>(bvals), bi);
+            for (int j = 0; j < 8; ++j) counts[bvals[j]]++;
+        }
+        for (; i < n; ++i) {
+            int b = static_cast<int>((cf_trajectory[i] - min_cf) * inv_bw);
+            b = std::clamp(b, 0, BINS - 1);
+            counts[b]++;
+        }
+    }
+#elif defined(__AVX2__)
+    {
+        __m256d v_min  = _mm256_set1_pd(min_cf);
+        __m256d v_ibw  = _mm256_set1_pd(inv_bw);
+        int i = 0, n = total;
+        for (; i + 4 <= n; i += 4) {
+            __m256d v   = _mm256_loadu_pd(cf_trajectory.data() + i);
+            __m256d off = _mm256_sub_pd(v, v_min);
+            __m256d bv  = _mm256_mul_pd(off, v_ibw);
+            alignas(32) double bvals[4];
+            _mm256_store_pd(bvals, bv);
+            for (int j = 0; j < 4; ++j) {
+                int b = static_cast<int>(bvals[j]);
+                counts[std::clamp(b, 0, BINS - 1)]++;
+            }
+        }
+        for (; i < n; ++i) {
+            int b = static_cast<int>((cf_trajectory[i] - min_cf) * inv_bw);
+            counts[std::clamp(b, 0, BINS - 1)]++;
+        }
+    }
+#else
+    {
+        Eigen::Map<const Eigen::ArrayXd> vals(cf_trajectory.data(), total);
+        Eigen::ArrayXd bins = ((vals - min_cf) * inv_bw).floor().cwiseMax(0).cwiseMin(BINS - 1);
+        for (int i = 0; i < total; ++i)
+            counts[static_cast<int>(bins(i))]++;
+    }
+#endif
+
+    Eigen::ArrayXd prob(BINS);
+    for (int i = 0; i < BINS; ++i) prob(i) = (double)counts[i] / total;
+    Eigen::ArrayXd safe_p   = (prob > 1e-15).select(prob, Eigen::ArrayXd::Ones(BINS));
+    Eigen::ArrayXd log_p    = (prob > 1e-15).select(safe_p.log(), Eigen::ArrayXd::Zero(BINS));
+    return -(prob * log_p).sum();
 }
 
 // ─── build elongation model from config ──────────────────────────────────────
@@ -287,6 +506,14 @@ static std::vector<ribosome::BurstUnit> detect_burst_units(
 }
 
 // ─── DualAssemblyEngine ──────────────────────────────────────────────────────
+//
+// The full DualAssemblyEngine implementation depends on the FlexAID Vcontacts/
+// vcfunction scoring stack. The standalone `dual_assembly` CLI does NOT use the
+// in-process engine (it injects synthetic or external GA callbacks instead) and
+// therefore defines FLEXAIDS_OMIT_DUAL_ASSEMBLY_ENGINE to skip the heavy
+// dependency graph. Other targets (FlexAID, test_natural) leave the macro
+// undefined and link the full engine.
+#ifndef FLEXAIDS_OMIT_DUAL_ASSEMBLY_ENGINE
 
 DualAssemblyEngine::DualAssemblyEngine(const NATURaLConfig& cfg,
                                          FA_Global* FA, VC_Global* VC,
@@ -473,6 +700,8 @@ std::vector<DualAssemblyEngine::GrowthStep> DualAssemblyEngine::run() {
     std::vector<double> cf_trajectory;
     cf_trajectory.reserve(max_steps);
     double cumulative_dG = 0.0;
+    double weighted_dG_sum = 0.0;
+    double dwell_sum = 0.0;
 
     for (int step = 0; step < max_steps; ++step) {
         // Elongation kinetics at this residue
@@ -517,15 +746,13 @@ std::vector<DualAssemblyEngine::GrowthStep> DualAssemblyEngine::run() {
         double cf = compute_partial_cf(step + 1);
         cf_trajectory.push_back(cf);
 
-        // Shannon entropy over the growing CF ensemble
+        // Shannon entropy over the growing CF ensemble, dimensionless nats.
         double S_growth = compute_growth_entropy(cf_trajectory);
 
-        // Incremental ΔG: ΔH from CF + (−T·ΔS) entropy term, time-weighted
-        const double kT = 0.001987206 * config_.temperature_K;
-        double delta_dG = cf - kT * S_growth;
-        // Weight by dwell time: intermediates sampled longer contribute more
-        delta_dG *= dwell_time;
-        cumulative_dG += delta_dG;
+        // Instantaneous ΔG estimate: ΔH from CF + (−T·ΔS) entropy term.
+        // kT [kcal/mol] × H [nats] stays in kcal/mol.
+        const double kT = statmech::kB_kcal * config_.temperature_K;
+        double step_dG = cf - kT * S_growth;
 
         // ── TM translocon insertion check ─────────────────────────────────────
         bool   tm_inserted   = false;
@@ -537,10 +764,16 @@ std::vector<DualAssemblyEngine::GrowthStep> DualAssemblyEngine::run() {
             tm_inserted  = win.is_inserted;
             tm_insert_dG = win.deltaG_insert;
             if (tm_inserted) {
-                // Include translocon ΔG contribution (time-weighted)
-                cumulative_dG += tm_insert_dG * dwell_time;
+                // Include translocon ΔG in the instantaneous kcal/mol score.
+                step_dG += tm_insert_dG;
             }
         }
+
+        // Time-weighted mean over growth intermediates. The accumulator is
+        // kcal·s/mol internally, but the reported correction remains kcal/mol.
+        weighted_dG_sum += step_dG * dwell_time;
+        dwell_sum += dwell_time;
+        cumulative_dG = (dwell_sum > 0.0) ? (weighted_dG_sum / dwell_sum) : step_dG;
 
         trajectory.push_back({
             step,
@@ -614,90 +847,14 @@ double DualAssemblyEngine::compute_partial_cf(int n_grown_residues) const {
 
 // ─── compute_growth_entropy ───────────────────────────────────────────────────
 // Shannon entropy of the CF distribution accumulated along the growth trajectory.
+// Returns dimensionless nats. Convert to bits only at reporting boundaries.
 // Dispatches to AVX-512 → AVX2 → Eigen → scalar for the histogram fill.
 double DualAssemblyEngine::compute_growth_entropy(
     const std::vector<double>& cf_trajectory) const
 {
-    if (cf_trajectory.empty()) return 0.0;
-
-    double min_cf = *std::min_element(cf_trajectory.begin(), cf_trajectory.end());
-    double max_cf = *std::max_element(cf_trajectory.begin(), cf_trajectory.end());
-    if (max_cf - min_cf < 1e-8) return 0.0;
-
-    constexpr int BINS = 32;
-    double bw  = (max_cf - min_cf) / BINS + 1e-10;
-    double inv_bw = 1.0 / bw;
-
-    std::array<int, BINS> counts{};
-    int total = static_cast<int>(cf_trajectory.size());
-
-#if defined(FLEXAIDS_USE_AVX512) && defined(__AVX512F__)
-    // AVX-512: process 8 doubles per cycle
-    {
-        __m512d v_min  = _mm512_set1_pd(min_cf);
-        __m512d v_ibw  = _mm512_set1_pd(inv_bw);
-        __m512d v_bmax = _mm512_set1_pd(static_cast<double>(BINS - 1));
-        int i = 0, n = total;
-        for (; i + 8 <= n; i += 8) {
-            __m512d v    = _mm512_loadu_pd(cf_trajectory.data() + i);
-            __m512d off  = _mm512_sub_pd(v, v_min);
-            __m512d bins = _mm512_mul_pd(off, v_ibw);
-            bins = _mm512_max_pd(_mm512_setzero_pd(),
-                                 _mm512_min_pd(bins, v_bmax));
-            __m256i bi = _mm512_cvttpd_epi32(bins);
-            alignas(32) int bvals[8];
-            _mm256_store_si256(reinterpret_cast<__m256i*>(bvals), bi);
-            for (int j = 0; j < 8; ++j) counts[bvals[j]]++;
-        }
-        for (; i < n; ++i) {
-            int b = static_cast<int>((cf_trajectory[i] - min_cf) * inv_bw);
-            b = std::clamp(b, 0, BINS - 1);
-            counts[b]++;
-        }
-    }
-#elif defined(__AVX2__)
-    // AVX2: process 4 doubles per cycle
-    {
-        __m256d v_min  = _mm256_set1_pd(min_cf);
-        __m256d v_ibw  = _mm256_set1_pd(inv_bw);
-        int i = 0, n = total;
-        for (; i + 4 <= n; i += 4) {
-            __m256d v   = _mm256_loadu_pd(cf_trajectory.data() + i);
-            __m256d off = _mm256_sub_pd(v, v_min);
-            __m256d bv  = _mm256_mul_pd(off, v_ibw);
-            alignas(32) double bvals[4];
-            _mm256_store_pd(bvals, bv);
-            for (int j = 0; j < 4; ++j) {
-                int b = static_cast<int>(bvals[j]);
-                counts[std::clamp(b, 0, BINS - 1)]++;
-            }
-        }
-        for (; i < n; ++i) {
-            int b = static_cast<int>((cf_trajectory[i] - min_cf) * inv_bw);
-            counts[std::clamp(b, 0, BINS - 1)]++;
-        }
-    }
-#else
-    // Eigen: vectorised offset and scale; scalar bin accumulation
-    {
-        Eigen::Map<const Eigen::ArrayXd> vals(cf_trajectory.data(), total);
-        Eigen::ArrayXd bins = ((vals - min_cf) * inv_bw).floor().cwiseMax(0).cwiseMin(BINS - 1);
-        for (int i = 0; i < total; ++i)
-            counts[static_cast<int>(bins(i))]++;
-    }
-#endif
-
-    // Shannon entropy: H = -Σ p_i log2(p_i)
-    double H = 0.0;
-    const double log2_inv = 1.0 / std::log(2.0);
-
-    Eigen::ArrayXd prob(BINS);
-    for (int i = 0; i < BINS; ++i) prob(i) = (double)counts[i] / total;
-    Eigen::ArrayXd safe_p   = (prob > 1e-15).select(prob, Eigen::ArrayXd::Ones(BINS));
-    Eigen::ArrayXd log_p    = (prob > 1e-15).select(safe_p.log(), Eigen::ArrayXd::Zero(BINS));
-    H = -(prob * log_p).sum() * log2_inv;
-
-    return H;
+    return growth_entropy_nats(cf_trajectory);
 }
+
+#endif // FLEXAIDS_OMIT_DUAL_ASSEMBLY_ENGINE
 
 } // namespace natural

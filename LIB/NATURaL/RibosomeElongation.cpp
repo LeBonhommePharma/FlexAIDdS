@@ -407,9 +407,8 @@ double RibosomeElongation::mean_total_time() const {
 //   dP_n/dt = k_el[n-1] · P_{n-1} − k_el[n] · P_n   (1 ≤ n < N)
 //   dP_N/dt = k_el[N-1] · P_{N-1} − k_ter · P_N
 //
-// For mean first-passage time we use the absorbing boundary formulation:
-// integrate until the cumulative probability at the last state reaches 0.5
-// (median arrival time ≈ mean arrival time for near-Poisson kinetics).
+// Uses an absorbing post-termination state so probability is conserved across
+// initiation, elongation, termination, and completion.
 MasterEqState RibosomeElongation::integrate(double t_max, double dt, bool adaptive) const {
     int N = static_cast<int>(k_el_.size());
     MasterEqState state;
@@ -418,13 +417,15 @@ MasterEqState RibosomeElongation::integrate(double t_max, double dt, bool adapti
     state.k_el       = k_el_;
     state.k_ini      = k_ini_;
     state.k_ter      = k_ter_;
-    state.P.assign(N + 1, 0.0); // P[0..N-1] = growing chain; P[N] = completed
+    // P[0] = pre-initiation, P[1..N] = elongation stages,
+    // P[N+1] = termination stage, P[N+2] = absorbing completed chain.
+    state.P.assign(N + 3, 0.0);
     state.t_arrival.resize(N + 1, -1.0);
 
     // Inject probability at position 0 at t=0 (initiation)
     // Model: ribosome starts outside; rate k_ini brings it to position 1
     // Here we use the discrete-chain formulation with P[0] = pre-initiation
-    std::vector<double> P_init(N + 1, 0.0);
+    std::vector<double> P_init(N + 3, 0.0);
     P_init[0] = 1.0; // all ribosomes at initiation complex
     state.P = P_init;
 
@@ -434,25 +435,24 @@ MasterEqState RibosomeElongation::integrate(double t_max, double dt, bool adapti
     if (adaptive) dt = std::min(dt, 0.5 / k_max);
 
     double t = 0.0;
-    std::vector<double> dP(N + 1, 0.0);
+    std::vector<double> dP(N + 3, 0.0);
 
     // Use Eigen for the tridiagonal ODE vector update
-    Eigen::VectorXd P_vec(N + 1), dP_vec(N + 1);
-    for (int i = 0; i <= N; ++i) P_vec(i) = P_init[i];
-
-    Eigen::VectorXd k_vec(N + 1);
-    k_vec(0) = k_ini_;
-    for (int i = 1; i < N; ++i) k_vec(i) = k_el_[i];
-    k_vec(N) = k_ter_;
+    Eigen::VectorXd P_vec(N + 3), dP_vec(N + 3);
+    for (int i = 0; i <= N + 2; ++i) P_vec(i) = P_init[i];
 
     while (t < t_max) {
         // dP[0] = -k_ini * P[0]
         dP_vec(0) = -k_ini_ * P_vec(0);
-        // dP[n] = k[n-1]*P[n-1] - k[n]*P[n]  (n = 1..N-1)
-        for (int n = 1; n < N; ++n)
-            dP_vec(n) = k_el_[n - 1] * P_vec(n - 1) - k_el_[n] * P_vec(n);
-        // dP[N] = k[N-1]*P[N-1] - k_ter*P[N]
-        dP_vec(N) = k_el_[N - 1] * P_vec(N - 1) - k_ter_ * P_vec(N);
+        // dP[1] = k_ini*P[0] - k_el[0]*P[1]
+        dP_vec(1) = k_ini_ * P_vec(0) - k_el_[0] * P_vec(1);
+        // dP[n] = k_el[n-2]*P[n-1] - k_el[n-1]*P[n]  (n = 2..N)
+        for (int n = 2; n <= N; ++n)
+            dP_vec(n) = k_el_[n - 2] * P_vec(n - 1) - k_el_[n - 1] * P_vec(n);
+        // dP[N+1] = k_el[N-1]*P[N] - k_ter*P[N+1]
+        dP_vec(N + 1) = k_el_[N - 1] * P_vec(N) - k_ter_ * P_vec(N + 1);
+        // dP[N+2] = k_ter*P[N+1]  (absorbing completed chain)
+        dP_vec(N + 2) = k_ter_ * P_vec(N + 1);
 
         P_vec += dt * dP_vec;
         // Clamp non-negative
@@ -463,11 +463,11 @@ MasterEqState RibosomeElongation::integrate(double t_max, double dt, bool adapti
         for (int n = 0; n < N; ++n)
             if (state.t_arrival[n] < 0 && P_vec(n) > 1e-3)
                 state.t_arrival[n] = t;
-        // Terminal state: record median — P[N] is absorbing/monotone; 0.5 ≈ mean
-        if (state.t_median_terminal < 0 && P_vec(N) >= 0.5)
+        // Terminal absorbing state: record the median completion time.
+        if (state.t_median_terminal < 0 && P_vec(N + 2) >= 0.5)
             state.t_median_terminal = t;
     }
-    for (int i = 0; i <= N; ++i) state.P[i] = P_vec(i);
+    for (int i = 0; i <= N + 2; ++i) state.P[i] = P_vec(i);
 
     state.t_current = t;
 
@@ -483,7 +483,7 @@ double MasterEqState::fraction_reached(int n) const {
     if (n < 0 || n > n_residues) return 0.0;
     // Sum of P[n..N] = probability that ribosome has passed position n
     double sum = 0.0;
-    for (int i = n; i <= n_residues; ++i) sum += P[i];
+    for (int i = n; i < static_cast<int>(P.size()); ++i) sum += P[i];
     return std::min(sum, 1.0);
 }
 
@@ -526,22 +526,23 @@ RibosomeElongation::folding_windows(double k_fold_base) const
 }
 
 // ─── Time-weighted thermodynamic score ───────────────────────────────────────
-// Integrates S(n) * (1/k_n) / T_total — each intermediate weighted by its
-// dwell time relative to total translation time (Zhao 2011 Eq. 12).
+// Integrates S(n) over elongating intermediates, weighted by dwell time 1/k_n.
+// Initiation/termination are excluded because score_fn is defined only on chain
+// intermediates; a constant score must remain constant after normalization.
 double RibosomeElongation::time_weighted_score(
     const std::function<double(int)>& score_fn) const
 {
-    double T_total = mean_total_time();
-    if (T_total < 1e-12) return 0.0;
-
     double weighted_sum = 0.0;
+    double dwell_sum = 0.0;
     int N = static_cast<int>(k_el_.size());
     for (int n = 0; n < N; ++n) {
         double ki = k_el_[n];
         double dwell = (std::isfinite(ki) && ki > 1e-9) ? 1.0 / ki : 1.0 / mean_rate_;
         weighted_sum += score_fn(n) * dwell;
+        dwell_sum += dwell;
     }
-    return weighted_sum / T_total; // dimensionless time-weighted average
+    if (dwell_sum < 1e-12) return 0.0;
+    return weighted_sum / dwell_sum; // time-weighted average over scored intermediates
 }
 
 // ─── Validation (Zhao 2011 internal consistency check) ───────────────────────
@@ -560,19 +561,37 @@ ValidationResult validate_master_equation(int n_residues, Organism org)
 
     double T_analytic = model.mean_total_time();
 
-    // ODE integration: run until P[N] (completed chain) reaches 0.5
-    // For uniform rates: T_ode ≈ T_analytic (should match within 5%)
-    double t_max = T_analytic * 4.0;
-    double dt    = 1.0 / (k_mean * 50.0); // 50 steps per mean dwell
-    auto state = model.integrate(t_max, dt, true);
+    // Numerical mean first-passage time from the same master equation:
+    // E[T_abs] = integral_0^inf P(not completed at t) dt.
+    // This validates the kinetic ODE against the analytic sum without confusing
+    // the median terminal occupancy with the mean of an initiation-dominated
+    // sequential process.
+    const double t_max = T_analytic * 12.0;
+    double dt = 1.0 / (k_mean * 100.0);
+    double k_max = std::max({k_mean, K_INI_DEFAULT, K_TERM_DEFAULT});
+    dt = std::min(dt, 0.25 / k_max);
 
-    // Median first-passage time: when P[N] (absorbing/terminal state) ≥ 0.5
-    // This matches T_analytic which is also the mean (≈ median for Erlang-N).
-    // Previously used t_arrival.back() which recorded the leading edge (P > 1e-3),
-    // causing a systematic 5–6× underestimate → 83% relative error.
-    double T_ode = (state.t_median_terminal > 0)
-                   ? state.t_median_terminal
-                   : model.mean_arrival_time(n_residues); // analytic fallback
+    const int N = n_residues;
+    Eigen::VectorXd P = Eigen::VectorXd::Zero(N + 3);
+    Eigen::VectorXd dP = Eigen::VectorXd::Zero(N + 3);
+    P(0) = 1.0;
+
+    double T_ode = 0.0;
+    for (double t = 0.0; t < t_max; t += dt) {
+        double survival = std::max(0.0, 1.0 - P(N + 2));
+        T_ode += survival * dt;
+
+        dP.setZero();
+        dP(0) = -K_INI_DEFAULT * P(0);
+        dP(1) = K_INI_DEFAULT * P(0) - k_mean * P(1);
+        for (int n = 2; n <= N; ++n)
+            dP(n) = k_mean * P(n - 1) - k_mean * P(n);
+        dP(N + 1) = k_mean * P(N) - K_TERM_DEFAULT * P(N + 1);
+        dP(N + 2) = K_TERM_DEFAULT * P(N + 1);
+
+        P += dt * dP;
+        P = P.cwiseMax(0.0);
+    }
 
     double rel_err = std::abs(T_ode - T_analytic) / T_analytic;
     bool passed   = rel_err < 0.05; // 5% tolerance
