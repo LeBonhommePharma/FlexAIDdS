@@ -242,13 +242,21 @@ endif()
 
 # ─── pybind11 (for Python bindings) ────────────────────────────────────────
 if(BUILD_PYTHON_BINDINGS)
-    # pybind11's LTO probe (try_compile) inherits CMAKE_CXX_STANDARD=26, which
-    # MSVC does not yet support.  Disable LTO generation on MSVC to avoid the
-    # configure error; MSVC LTO (/GL) is applied manually on the _core target.
+    # pybind11's LTO probe (try_compile) inherits CMAKE_CXX_STANDARD from the
+    # CMake cache.  MSVC 19.4x does not yet accept /std:c++26 in a try_compile
+    # context, so the probe fails with "CXX26 not supported".  Temporarily
+    # clear CMAKE_CXX_STANDARD (both normal and cache scope) so the probe runs
+    # without a language-standard requirement, then restore it afterwards.
     if(MSVC)
-        set(PYBIND11_NOLTO ON)
+        set(_pybind11_saved_cxx_std "${CMAKE_CXX_STANDARD}")
+        unset(CMAKE_CXX_STANDARD)
+        unset(CMAKE_CXX_STANDARD CACHE)
     endif()
     find_package(pybind11 CONFIG QUIET)
+    if(MSVC AND _pybind11_saved_cxx_std)
+        set(CMAKE_CXX_STANDARD "${_pybind11_saved_cxx_std}" CACHE STRING "C++ standard" FORCE)
+        set(CMAKE_CXX_STANDARD_REQUIRED ON CACHE BOOL "" FORCE)
+    endif()
     if(NOT pybind11_FOUND)
         message(WARNING "pybind11 not found. Install with: pip install pybind11[global]")
         set(BUILD_PYTHON_BINDINGS OFF)
