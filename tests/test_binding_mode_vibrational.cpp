@@ -379,7 +379,7 @@ TEST_F(BindingModeVibrationalTest, ManyPosesVibrationalCorrectionFinite) {
 
     TestableBindingMode mode(test_population);
     for (int i = 0; i < 8; ++i) {
-        Pose p = create_mock_pose(-10.0 - i * 1.5, i % 16);
+        Pose p = create_mock_pose(-10.0 - i * 1.5, i % 5);  // mock_chroms has 5 slots
         mode.add_Pose(p);
     }
 

@@ -72,7 +72,7 @@ def _analytical(temperature: float, energies: list[float]) -> dict:
     mean_E2 = sum(w * e * e for w, e in zip(weights, energies))
     free_energy = -KB * temperature * log_Z
     entropy = (mean_E - free_energy) / temperature
-    heat_cap = (mean_E2 - mean_E ** 2) / (KB * temperature) ** 2
+    heat_cap = (mean_E2 - mean_E ** 2) / (KB * temperature ** 2)
     std_energy = math.sqrt(max(0.0, mean_E2 - mean_E ** 2))
 
     return {

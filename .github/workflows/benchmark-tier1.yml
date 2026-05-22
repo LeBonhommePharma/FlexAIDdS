@@ -31,6 +31,9 @@ jobs:
     name: Tier-1 Benchmark (${{ inputs.dataset || 'casf2016' }})
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    permissions:
+      contents: read
+      pull-requests: write   # required by marocchino/sticky-pull-request-comment
 
     env:
       DATASET: ${{ inputs.dataset || 'casf2016' }}
@@ -61,7 +64,7 @@ jobs:
 
       - name: Cache build
         id: cache-build
-        uses: actions/cache@27dce7f107fe9357f9df03efb73ab90386fccae # v5
+        uses: actions/cache@v4
         with:
           path: build
           key: tier1-build-${{ runner.os }}-${{ hashFiles('CMakeLists.txt', 'LIB/**/*.cpp', 'LIB/**/*.h') }}
@@ -89,7 +92,7 @@ jobs:
           fi
 
       - name: Cache benchmark datasets
-        uses: actions/cache@27dce7f107fe9357f9df03efb73ab90386fccae # v5
+        uses: actions/cache@v4
         with:
           path: benchmark_data/${{ env.DATASET }}
           key: bench-data-${{ env.DATASET }}-v1
@@ -142,6 +145,7 @@ jobs:
 
       - name: Comment benchmark results on PR
         if: github.event_name == 'pull_request'
+        continue-on-error: true   # posting comment is informational; never block the gate
         uses: marocchino/sticky-pull-request-comment@0ea0beb66eb9baf113663a64ec522f60e49231c0 # v3.0.4
         with:
           header: benchmark-tier1

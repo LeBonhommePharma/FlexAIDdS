@@ -61,6 +61,15 @@ elseif(MSVC)
             "FlexAIDdS requires MSVC ≥ 19.40 (Visual Studio 2022 17.10+) for C++26 — "
             "found MSVC ${MSVC_VERSION}.")
     endif()
+    # MSVC does not yet implement /std:c++26 even in VS 2022 17.14 (19.44).
+    # Cap to C++20 so the Python-bindings smoke test can configure and build on
+    # Windows CI.  The full FlexAID engine is intentionally excluded from the
+    # Windows CI matrix (see ci.yml) due to deep C++26 gaps in MSVC.
+    message(WARNING
+        "MSVC ${MSVC_VERSION}: /std:c++26 is not yet available — "
+        "building with C++20. Only the _core Python extension will build "
+        "correctly; the full FlexAID engine requires GCC ≥ 14 or Clang ≥ 18.")
+    set(CMAKE_CXX_STANDARD 20 CACHE STRING "C++ standard" FORCE)
 endif()
 
 if(POLICY CMP0167)
@@ -242,7 +251,21 @@ endif()
 
 # ─── pybind11 (for Python bindings) ────────────────────────────────────────
 if(BUILD_PYTHON_BINDINGS)
+    # pybind11's LTO probe (try_compile) inherits CMAKE_CXX_STANDARD from the
+    # CMake cache.  MSVC 19.4x does not yet accept /std:c++26 in a try_compile
+    # context, so the probe fails with "CXX26 not supported".  Temporarily
+    # clear CMAKE_CXX_STANDARD (both normal and cache scope) so the probe runs
+    # without a language-standard requirement, then restore it afterwards.
+    if(MSVC)
+        set(_pybind11_saved_cxx_std "${CMAKE_CXX_STANDARD}")
+        unset(CMAKE_CXX_STANDARD)
+        unset(CMAKE_CXX_STANDARD CACHE)
+    endif()
     find_package(pybind11 CONFIG QUIET)
+    if(MSVC AND _pybind11_saved_cxx_std)
+        set(CMAKE_CXX_STANDARD "${_pybind11_saved_cxx_std}" CACHE STRING "C++ standard" FORCE)
+        set(CMAKE_CXX_STANDARD_REQUIRED ON CACHE BOOL "" FORCE)
+    endif()
     if(NOT pybind11_FOUND)
         message(WARNING "pybind11 not found. Install with: pip install pybind11[global]")
         set(BUILD_PYTHON_BINDINGS OFF)
@@ -298,6 +321,13 @@ else()
     if(APPLE)
         message(STATUS "Metal acceleration available but disabled (use -DFLEXAIDS_USE_METAL=ON)")
     endif()
+endif()
+
+# ─── MPI detection (must precede add_subdirectory(LIB) so MPI::MPI_CXX
+#     is defined when LIB/CMakeLists.txt calls target_link_libraries) ────
+if(FLEXAIDS_USE_MPI)
+    find_package(MPI REQUIRED)
+    message(STATUS "MPI enabled — distributed parallel docking active")
 endif()
 
 # ─── Core library (LIB/) ────────────────────────────────────────────────
@@ -486,12 +516,6 @@ endif()
 # ─── OpenMP link ────────────────────────────────────────────────────────
 if(FLEXAIDS_USE_OPENMP AND OpenMP_CXX_FOUND)
     target_link_libraries(FlexAID PRIVATE OpenMP::OpenMP_CXX)
-endif()
-
-# ─── MPI (optional, for distributed parallel docking) ──────────────────
-if(FLEXAIDS_USE_MPI)
-    find_package(MPI REQUIRED)
-    message(STATUS "MPI enabled — distributed parallel docking active")
 endif()
 
 # ─── CUDA sources ───────────────────────────────────────────────────────
@@ -2542,7 +2566,7 @@ if(BUILD_SWIFT_BRIDGE)
         LIB
     )
     set_target_properties(FlexAIDCore PROPERTIES
-        CXX_STANDARD 26
+        CXX_STANDARD ${CMAKE_CXX_STANDARD}   # follows global (capped to 20 on MSVC)
         CXX_STANDARD_REQUIRED ON
         POSITION_INDEPENDENT_CODE ON
     )

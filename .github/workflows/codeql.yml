@@ -41,8 +41,13 @@ jobs:
       - name: Build C++
         if: matrix.language == 'cpp'
         run: |
-          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
-          cmake --build build --parallel
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release \
+            -DENABLE_TENCOM_TOOL=OFF \
+            -DENABLE_TENCOM_BENCHMARK=OFF \
+            -DENABLE_VCFBATCH_BENCHMARK=OFF \
+            -DBUILD_TESTING=OFF \
+            -DBUILD_PYTHON_BINDINGS=OFF
+          cmake --build build --parallel 2 --target FlexAID
 
       - name: Autobuild
         if: matrix.language != 'cpp'

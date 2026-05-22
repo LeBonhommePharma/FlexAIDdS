@@ -381,7 +381,7 @@ FullThermoResult run_shannon_thermo_stack(
         std::string("ShannonThermoStack[") + hw +
         "+Eigen"
         "]: S_conf=" + std::to_string(S_conf_nats) +
-        " nats, S_vib=" + std::to_string(S_vib) +
+        " nats, S_vib_heuristic=" + std::to_string(S_vib) +
         " kcal/mol/K (model-scale heuristic; excluded from dG), ΔG=" +
         std::to_string(final_dG) + " kcal/mol";
 

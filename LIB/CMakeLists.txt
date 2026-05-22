@@ -127,8 +127,6 @@ add_library(flexaid_core OBJECT
     PTMAttachment/PTMAttachment.cpp
     # ── JSON config parser ──
     config_parser.cpp
-    # ── Unified runtime hardware dispatch ──
-    UnifiedHardwareDispatch.cpp
     # ── Parallel grid-decomposed docking ──
     GridDecomposer.cpp
     SharedPosePool.cpp
@@ -160,7 +158,7 @@ target_include_directories(flexaid_core PUBLIC
 )
 
 set_target_properties(flexaid_core PROPERTIES
-    CXX_STANDARD 26
+    CXX_STANDARD ${CMAKE_CXX_STANDARD}   # follows global (capped to 20 on MSVC)
     CXX_STANDARD_REQUIRED ON
     POSITION_INDEPENDENT_CODE ON
 )
