@@ -2566,7 +2566,7 @@ if(BUILD_SWIFT_BRIDGE)
         LIB
     )
     set_target_properties(FlexAIDCore PROPERTIES
-        CXX_STANDARD 26
+        CXX_STANDARD ${CMAKE_CXX_STANDARD}   # follows global (capped to 20 on MSVC)
         CXX_STANDARD_REQUIRED ON
         POSITION_INDEPENDENT_CODE ON
     )
