@@ -300,6 +300,13 @@ else()
     endif()
 endif()
 
+# ─── MPI detection (must precede add_subdirectory(LIB) so MPI::MPI_CXX
+#     is defined when LIB/CMakeLists.txt calls target_link_libraries) ────
+if(FLEXAIDS_USE_MPI)
+    find_package(MPI REQUIRED)
+    message(STATUS "MPI enabled — distributed parallel docking active")
+endif()
+
 # ─── Core library (LIB/) ────────────────────────────────────────────────
 add_subdirectory(LIB)
 
@@ -486,12 +493,6 @@ endif()
 # ─── OpenMP link ────────────────────────────────────────────────────────
 if(FLEXAIDS_USE_OPENMP AND OpenMP_CXX_FOUND)
     target_link_libraries(FlexAID PRIVATE OpenMP::OpenMP_CXX)
-endif()
-
-# ─── MPI (optional, for distributed parallel docking) ──────────────────
-if(FLEXAIDS_USE_MPI)
-    find_package(MPI REQUIRED)
-    message(STATUS "MPI enabled — distributed parallel docking active")
 endif()
 
 # ─── CUDA sources ───────────────────────────────────────────────────────

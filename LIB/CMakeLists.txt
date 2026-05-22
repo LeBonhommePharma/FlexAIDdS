@@ -127,8 +127,6 @@ add_library(flexaid_core OBJECT
     PTMAttachment/PTMAttachment.cpp
     # ── JSON config parser ──
     config_parser.cpp
-    # ── Unified runtime hardware dispatch ──
-    UnifiedHardwareDispatch.cpp
     # ── Parallel grid-decomposed docking ──
     GridDecomposer.cpp
     SharedPosePool.cpp
