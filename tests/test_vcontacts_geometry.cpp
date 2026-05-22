@@ -343,11 +343,16 @@ TEST(GetFirstvert, UsesSeedWhenAvailable) {
 
 TEST(GetFirstvert, NoSeedFallsBackToClosestPlane) {
     // No seed → fallback picks plane closest to origin (smallest cont[].dist)
-    plane cont[4] = {
+    // Production code always allocates NC+4 planes (4 bounding-box planes follow
+    // the NC contact planes).  get_firstvert's inner loop iterates cai<NC+4, so
+    // the array must have NC+4 = 8 elements to avoid stack-buffer-overflow.
+    plane cont[8] = {
         make_plane(0,0,0,0, 0, 5.0),
         make_plane(0,0,0,0, 1, 2.0),
         make_plane(0,0,0,0, 2, 8.0),
         make_plane(0,0,0,0, 3, 1.0),  // closest to origin
+        // [4..7]: bounding-box placeholder slots (zero-init → degenerate planes,
+        //          solve_3x3 returns -1, so they are safely skipped)
     };
     int seed[12];
     std::fill_n(seed, 12, -1);
@@ -364,9 +369,11 @@ TEST(GetFirstvert, NoSeedFallsBackToClosestPlane) {
 
 TEST(GetFirstvert, SeedNotFoundInCont) {
     // seed points to index values that don't exist in cont[].index
-    plane cont[2] = {
+    // NC=2 → loop goes to NC+4=6; allocate 6 elements (last 4 zero-init).
+    plane cont[6] = {
         make_plane(0,0,0,0, 10),
         make_plane(0,0,0,0, 20),
+        // [2..5]: bounding-box placeholder slots
     };
     int seed[12];
     std::fill_n(seed, 12, -1);
