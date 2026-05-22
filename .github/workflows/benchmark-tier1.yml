@@ -31,6 +31,9 @@ jobs:
     name: Tier-1 Benchmark (${{ inputs.dataset || 'casf2016' }})
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    permissions:
+      contents: read
+      pull-requests: write   # required by marocchino/sticky-pull-request-comment
 
     env:
       DATASET: ${{ inputs.dataset || 'casf2016' }}
@@ -142,6 +145,7 @@ jobs:
 
       - name: Comment benchmark results on PR
         if: github.event_name == 'pull_request'
+        continue-on-error: true   # posting comment is informational; never block the gate
         uses: marocchino/sticky-pull-request-comment@0ea0beb66eb9baf113663a64ec522f60e49231c0 # v3.0.4
         with:
           header: benchmark-tier1
