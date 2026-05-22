@@ -567,7 +567,15 @@ void get_firstvert(const int* seed,const plane* cont, int *planeA, int *planeB, 
 				}
 			}
 		}
-        
+
+		// Guard: if no valid second plane was found (all contacts degenerate or
+		// NC too small), return with planeB==-1.  The caller can detect the
+		// failure by checking *planeB on return.  Accessing cont[-1] would be
+		// undefined behaviour (caught by ASan as stack-use-after-return).
+		if(*planeB == -1) {
+			return;
+		}
+
 		// recalc vector normal to planes A and B
 		vectA[0] = cont[*planeA].Ai[1]*cont[*planeB].Ai[2] - cont[*planeA].Ai[2]*cont[*planeB].Ai[1];
 		vectA[1] = cont[*planeA].Ai[2]*cont[*planeB].Ai[0] - cont[*planeA].Ai[0]*cont[*planeB].Ai[2];
