@@ -61,6 +61,15 @@ elseif(MSVC)
             "FlexAIDdS requires MSVC ≥ 19.40 (Visual Studio 2022 17.10+) for C++26 — "
             "found MSVC ${MSVC_VERSION}.")
     endif()
+    # MSVC does not yet implement /std:c++26 even in VS 2022 17.14 (19.44).
+    # Cap to C++20 so the Python-bindings smoke test can configure and build on
+    # Windows CI.  The full FlexAID engine is intentionally excluded from the
+    # Windows CI matrix (see ci.yml) due to deep C++26 gaps in MSVC.
+    message(WARNING
+        "MSVC ${MSVC_VERSION}: /std:c++26 is not yet available — "
+        "building with C++20. Only the _core Python extension will build "
+        "correctly; the full FlexAID engine requires GCC ≥ 14 or Clang ≥ 18.")
+    set(CMAKE_CXX_STANDARD 20 CACHE STRING "C++ standard" FORCE)
 endif()
 
 if(POLICY CMP0167)
