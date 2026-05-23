@@ -116,6 +116,9 @@ add_library(flexaid_core OBJECT
     NATURaL/RibosomeElongation.cpp
     NATURaL/TransloconInsertion.cpp
     NATURaL/NucleationDetector.cpp
+    NATURaL/NascentChainScheduler.cpp
+    NATURaL/FibrilGrowthOracle.cpp
+    NATURaL/DualAssemblyRunner.cpp
     ChiralCenter/ChiralCenterGene.cpp
     # ── CleftDetector + Mol2Reader + SdfReader ──
     CleftDetector.cpp

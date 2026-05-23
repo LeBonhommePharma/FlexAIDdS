@@ -95,7 +95,7 @@ public:
     // \param R_flat_   Flattened 3×3 row-major rotation matrix for chain
     //                  orientation at this step.  Passed FIRST so callers
     //                  cannot accidentally omit the orientation argument.
-    // \param entropy   Shannon entropy of the current growth ensemble (bits).
+    // \param entropy   Shannon entropy of the current growth ensemble (nats).
     // \param cf_score  Contact Function score (kcal/mol).
     // \returns         Composite funnel score (kcal/mol).
     //                  More negative = deeper funnel (orthosteric character).
@@ -137,7 +137,7 @@ public:
         : funnel_(params) {}
 
     // ── Per-step scoring ─────────────────────────────────────────────────────
-    // \param entropy       Shannon entropy at this growth step (bits).
+    // \param entropy       Shannon entropy at this growth step (nats).
     // \param cf_score      Contact Function score (kcal/mol).
     // \param chain_R_flat  Orientation of the emerging chain segment.
     // \returns             Funnel score (kcal/mol).
