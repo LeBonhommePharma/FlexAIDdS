@@ -20,6 +20,7 @@
 #include "encom.h"
 #include "tENCoM/tencm.h"
 #include "ShannonThermoStack/ShannonThermoStack.h"
+#include "../bindings/dift_bindings.h"
 
 namespace py = pybind11;
 using namespace statmech;
@@ -476,4 +477,9 @@ PYBIND11_MODULE(_core, m) {
         py::arg("base_deltaG"), py::arg("temperature_K") = 298.15,
         "Run full ShannonThermoStack pipeline",
         py::call_guard<py::gil_scoped_release>());
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // DiFT: Discrete Fourier Transform torsional parametrization
+    // ═══════════════════════════════════════════════════════════════════════
+    register_dift_bindings(m);
 }

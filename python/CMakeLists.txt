@@ -16,6 +16,7 @@ pybind11_add_module(_core
     ${CMAKE_SOURCE_DIR}/LIB/encom.cpp
     ${CMAKE_SOURCE_DIR}/LIB/ShannonThermoStack/ShannonThermoStack.cpp
     ${CMAKE_SOURCE_DIR}/LIB/tENCoM/tencm.cpp
+    ${CMAKE_SOURCE_DIR}/LIB/DiFT/DiFT.cpp
     ${CMAKE_SOURCE_DIR}/LIB/fast_optics.cpp
 )
 
