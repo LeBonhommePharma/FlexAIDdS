@@ -102,6 +102,10 @@ DiFTEngine::transform(std::span<const double> profile, double& mean_out) const {
     const std::size_t M = profile.size();
     if (M < 2)
         throw std::invalid_argument("DiFT::transform: profile needs ≥ 2 samples");
+    for (double v : profile) {
+        if (!std::isfinite(v))
+            throw std::invalid_argument("DiFT::transform: profile contains non-finite values");
+    }
 
     // Forward transform → full complex spectrum X_0 … X_{M−1}.
     std::vector<std::complex<double>> X;
@@ -253,6 +257,8 @@ DiFTEngine::boltzmann_invert(std::span<const double> histogram) const {
 
     double total = 0.0;
     for (double c : histogram) {
+        if (!std::isfinite(c))
+            throw std::invalid_argument("DiFT::boltzmann_invert: non-finite count");
         if (c < 0.0)
             throw std::invalid_argument("DiFT::boltzmann_invert: negative count");
         total += c;

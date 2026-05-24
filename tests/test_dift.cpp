@@ -14,6 +14,7 @@
 
 #include <cmath>
 #include <numeric>
+#include <limits>
 #include <vector>
 
 using namespace dift;
@@ -102,6 +103,13 @@ TEST(DiFTTransform, RejectsShortProfile) {
     std::vector<double> tiny{1.0};
     double mean = 0.0;
     EXPECT_THROW(engine.transform(tiny, mean), std::invalid_argument);
+}
+
+TEST(DiFTTransform, RejectsNonFiniteProfile) {
+    DiFTEngine engine;
+    std::vector<double> profile{0.0, 1.0, std::nan(""), 2.0};
+    double mean = 0.0;
+    EXPECT_THROW(engine.transform(profile, mean), std::invalid_argument);
 }
 
 // ─── spectral Shannon entropy ────────────────────────────────────────────────
@@ -238,6 +246,12 @@ TEST(DiFTBoltzmannInvert, RejectsEmptyHistogram) {
     DiFTEngine engine;
     std::vector<double> empty(20, 0.0);
     EXPECT_THROW(engine.boltzmann_invert(empty), std::invalid_argument);
+}
+
+TEST(DiFTBoltzmannInvert, RejectsNonFiniteHistogram) {
+    DiFTEngine engine;
+    std::vector<double> hist{1.0, std::numeric_limits<double>::infinity(), 2.0};
+    EXPECT_THROW(engine.boltzmann_invert(hist), std::invalid_argument);
 }
 
 // ─── circular mean of phase offsets ──────────────────────────────────────────

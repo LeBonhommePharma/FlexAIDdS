@@ -188,6 +188,8 @@ class DiFTEngine:
         m = x.size
         if m < 2:
             raise ValueError("DiFT.transform: profile needs ≥ 2 samples")
+        if not np.all(np.isfinite(x)):
+            raise ValueError("DiFT.transform: profile contains non-finite values")
 
         # rfft → X_0 … X_{M//2}; sign convention X_n = Σ x_k exp(−i2πnk/M).
         x_full = np.fft.rfft(x)
@@ -278,6 +280,8 @@ class DiFTEngine:
         h = np.asarray(histogram, dtype=float)
         if h.size < 2:
             raise ValueError("DiFT.boltzmann_invert: need ≥ 2 bins")
+        if not np.all(np.isfinite(h)):
+            raise ValueError("DiFT.boltzmann_invert: non-finite count")
         if np.any(h < 0.0):
             raise ValueError("DiFT.boltzmann_invert: negative count")
         total = float(h.sum())

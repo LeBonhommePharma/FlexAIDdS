@@ -841,8 +841,9 @@ if(ENABLE_DIFT_TOOL)
         target_compile_definitions(dift_torsion_fit PRIVATE
             _CRT_SECURE_NO_WARNINGS _USE_MATH_DEFINES NOMINMAX)
     else()
-        target_compile_options(dift_torsion_fit PRIVATE -O2)
+        target_compile_options(dift_torsion_fit PRIVATE -O3)
     endif()
+    flexaids_configure_simd(dift_torsion_fit)
     message(STATUS "DiFT torsion fit tool enabled — build target: dift_torsion_fit")
 endif()
 
@@ -1453,6 +1454,7 @@ if(BUILD_TESTING)
         LIB/NATURaL/NucleationDetector.cpp
         LIB/NATURaL/NascentChainScheduler.cpp
         LIB/NATURaL/FibrilGrowthOracle.cpp
+        LIB/GrandPartitionFunction.cpp
         LIB/NATURaL/DualAssemblyRunner.cpp
         LIB/UnifiedHardwareDispatch.cpp
         LIB/hardware_detect.cpp
@@ -1503,6 +1505,7 @@ if(BUILD_TESTING)
         LIB/NATURaL/NucleationDetector.cpp
         LIB/NATURaL/NascentChainScheduler.cpp
         LIB/NATURaL/FibrilGrowthOracle.cpp
+        LIB/GrandPartitionFunction.cpp
         LIB/NATURaL/DualAssemblyRunner.cpp
         LIB/UnifiedHardwareDispatch.cpp
         LIB/hardware_detect.cpp
@@ -1775,6 +1778,7 @@ flexaids_configure_simd(test_cavity_detect)
         LIB/NATURaL/NucleationDetector.cpp
         LIB/NATURaL/NascentChainScheduler.cpp
         LIB/NATURaL/FibrilGrowthOracle.cpp
+        LIB/GrandPartitionFunction.cpp
         LIB/NATURaL/DualAssemblyRunner.cpp
         LIB/UnifiedHardwareDispatch.cpp
         LIB/hardware_detect.cpp
@@ -1824,6 +1828,7 @@ flexaids_configure_simd(test_cavity_detect)
         LIB/NATURaL/NucleationDetector.cpp
         LIB/NATURaL/NascentChainScheduler.cpp
         LIB/NATURaL/FibrilGrowthOracle.cpp
+        LIB/GrandPartitionFunction.cpp
         LIB/NATURaL/DualAssemblyRunner.cpp
         LIB/UnifiedHardwareDispatch.cpp
         LIB/hardware_detect.cpp
@@ -1873,6 +1878,7 @@ flexaids_configure_simd(test_cavity_detect)
         LIB/NATURaL/NucleationDetector.cpp
         LIB/NATURaL/NascentChainScheduler.cpp
         LIB/NATURaL/FibrilGrowthOracle.cpp
+        LIB/GrandPartitionFunction.cpp
         LIB/NATURaL/DualAssemblyRunner.cpp
         LIB/UnifiedHardwareDispatch.cpp
         LIB/hardware_detect.cpp
@@ -1921,6 +1927,7 @@ flexaids_configure_simd(test_cavity_detect)
         LIB/NATURaL/NucleationDetector.cpp
         LIB/NATURaL/NascentChainScheduler.cpp
         LIB/NATURaL/FibrilGrowthOracle.cpp
+        LIB/GrandPartitionFunction.cpp
         LIB/NATURaL/DualAssemblyRunner.cpp
         LIB/UnifiedHardwareDispatch.cpp
         LIB/hardware_detect.cpp
@@ -1970,6 +1977,7 @@ flexaids_configure_simd(test_cavity_detect)
         LIB/NATURaL/NucleationDetector.cpp
         LIB/NATURaL/NascentChainScheduler.cpp
         LIB/NATURaL/FibrilGrowthOracle.cpp
+        LIB/GrandPartitionFunction.cpp
         LIB/NATURaL/DualAssemblyRunner.cpp
         LIB/UnifiedHardwareDispatch.cpp
         LIB/hardware_detect.cpp
@@ -2020,6 +2028,7 @@ flexaids_configure_simd(test_cavity_detect)
         LIB/NATURaL/NucleationDetector.cpp
         LIB/NATURaL/NascentChainScheduler.cpp
         LIB/NATURaL/FibrilGrowthOracle.cpp
+        LIB/GrandPartitionFunction.cpp
         LIB/NATURaL/DualAssemblyRunner.cpp
         LIB/UnifiedHardwareDispatch.cpp
         LIB/hardware_detect.cpp
@@ -2068,6 +2077,7 @@ flexaids_configure_simd(test_cavity_detect)
         LIB/NATURaL/NucleationDetector.cpp
         LIB/NATURaL/NascentChainScheduler.cpp
         LIB/NATURaL/FibrilGrowthOracle.cpp
+        LIB/GrandPartitionFunction.cpp
         LIB/NATURaL/DualAssemblyRunner.cpp
         LIB/UnifiedHardwareDispatch.cpp
         LIB/hardware_detect.cpp
@@ -2192,6 +2202,7 @@ flexaids_configure_simd(test_cavity_detect)
         LIB/NATURaL/NucleationDetector.cpp
         LIB/NATURaL/NascentChainScheduler.cpp
         LIB/NATURaL/FibrilGrowthOracle.cpp
+        LIB/GrandPartitionFunction.cpp
         LIB/NATURaL/DualAssemblyRunner.cpp
         LIB/UnifiedHardwareDispatch.cpp
         LIB/hardware_detect.cpp
@@ -2350,6 +2361,7 @@ flexaids_configure_simd(test_cavity_detect)
         LIB/NATURaL/NucleationDetector.cpp
         LIB/NATURaL/NascentChainScheduler.cpp
         LIB/NATURaL/FibrilGrowthOracle.cpp
+        LIB/GrandPartitionFunction.cpp
         LIB/NATURaL/DualAssemblyRunner.cpp
         LIB/UnifiedHardwareDispatch.cpp
         LIB/hardware_detect.cpp
@@ -2958,6 +2970,7 @@ if(BUILD_SWIFT_BRIDGE)
         LIB/NATURaL/NucleationDetector.cpp
         LIB/NATURaL/NascentChainScheduler.cpp
         LIB/NATURaL/FibrilGrowthOracle.cpp
+        LIB/GrandPartitionFunction.cpp
         LIB/NATURaL/DualAssemblyRunner.cpp
         LIB/UnifiedHardwareDispatch.cpp
         LIB/hardware_detect.cpp

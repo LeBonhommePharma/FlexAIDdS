@@ -85,6 +85,12 @@ def test_transform_rejects_short_profile():
         engine.transform([1.0])
 
 
+def test_transform_rejects_nonfinite_profile():
+    engine = DiFTEngine()
+    with pytest.raises(ValueError):
+        engine.transform([0.0, 1.0, math.nan, 2.0])
+
+
 # ── spectral Shannon entropy ─────────────────────────────────────────────────
 
 def test_spectral_entropy_single_mode_collapses():
@@ -192,6 +198,12 @@ def test_boltzmann_invert_rejects_empty():
     engine = DiFTEngine()
     with pytest.raises(ValueError):
         engine.boltzmann_invert([0.0] * 20)
+
+
+def test_boltzmann_invert_rejects_nonfinite():
+    engine = DiFTEngine()
+    with pytest.raises(ValueError):
+        engine.boltzmann_invert([1.0, math.inf, 2.0])
 
 
 # ── circular mean ────────────────────────────────────────────────────────────
