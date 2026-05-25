@@ -13,6 +13,23 @@ except ImportError as exc:
         "Install it with `pip install pybind11` and retry."
     ) from exc
 
+# --- P0: Wire source validator guard (python path) ---
+# Runs early so developers doing `pip install -e .` (or equivalent) get
+# immediate feedback if they added sources without wiring them.
+try:
+    import sys
+    repo_root = Path(__file__).resolve().parent.parent
+    sys.path.insert(0, str(repo_root))
+    from scripts.validate_sources import validate_sources
+
+    # Respect env var for CI / strict local runs. Default is lenient for
+    # normal developer `pip install -e` usage.
+    strict = os.environ.get("FLEXAIDS_STRICT_SOURCE_VALIDATION", "0").lower() not in ("0", "false", "")
+    validate_sources(root=str(repo_root), strict=strict)
+except Exception as exc:
+    # Never break the build due to the guard during normal development.
+    print(f"[source-guard] Warning: validator skipped ({exc})", file=sys.stderr)
+
 ROOT = Path(__file__).resolve().parent
 LIB_DIR = ROOT.parent / "LIB"
 
