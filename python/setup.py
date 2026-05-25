@@ -32,6 +32,7 @@ _core_sources = [
     f"{_rel_lib}/encom.cpp",
     f"{_rel_lib}/tENCoM/tencm.cpp",
     f"{_rel_lib}/ShannonThermoStack/ShannonThermoStack.cpp",
+    f"{_rel_lib}/DiFT/DiFT.cpp",
 ]
 _core_defs = []
 

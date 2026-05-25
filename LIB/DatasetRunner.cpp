@@ -1514,13 +1514,10 @@ std::vector<DatasetEntry> DatasetRunner::fetch_sampl6() {
     std::string sampl_dir = cache_dir_ + "/sampl6";
     ensure_dir(sampl_dir);
 
-    // Clone the SAMPL6 repo
+    // Keep preparation offline and deterministic. If a local SAMPL6 checkout is
+    // already cached, use it to populate ligand paths; otherwise still return
+    // the hardcoded experimental thermodynamic table.
     std::string repo_dir = sampl_dir + "/SAMPL6";
-    if (!fs::exists(repo_dir)) {
-        std::string cmd = "git clone --depth 1 https://github.com/samplchallenges/SAMPL6.git \""
-                          + repo_dir + "\" 2>&1";
-        exec_cmd(cmd);
-    }
 
     std::vector<DatasetEntry> entries;
 
@@ -1609,13 +1606,9 @@ std::vector<DatasetEntry> DatasetRunner::fetch_sampl7() {
     std::string sampl_dir = cache_dir_ + "/sampl7";
     ensure_dir(sampl_dir);
 
-    // Clone the SAMPL7 repo
-    std::string repo_dir = sampl_dir + "/SAMPL7";
-    if (!fs::exists(repo_dir)) {
-        std::string cmd = "git clone --depth 1 https://github.com/samplchallenges/SAMPL7.git \""
-                          + repo_dir + "\" 2>&1";
-        exec_cmd(cmd);
-    }
+    // Keep preparation offline and deterministic. SAMPL7 experimental values
+    // are embedded below; structure acquisition belongs in an explicit fetch
+    // workflow, not in unit-testable metadata preparation.
 
     // SAMPL7 host-guest experimental data
     // Reference: Rizzi et al. (2020) overview paper

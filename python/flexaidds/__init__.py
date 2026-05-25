@@ -10,6 +10,11 @@ from .tencm import (
     compute_shannon_entropy, compute_torsional_vibrational_entropy,
     run_shannon_thermo_stack,
 )
+from .dift import (
+    DiFTEngine, FourierTerm, TorsionalPotential, TorsionalThermo,
+    RotatableBondTorsion, TorsionalScore, score_torsional, make_bond_torsion,
+    spectral_entropy,
+)
 from .__version__ import __version__ as __version__
 from .updater import check_for_updates, UpdateInfo
 from .boltz2 import (

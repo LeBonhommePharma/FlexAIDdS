@@ -415,6 +415,7 @@ target_sources(FlexAID PRIVATE
         LIB/tENCoM/tencm.cpp
         LIB/statmech.cpp
         LIB/encom.cpp             # ← NEW: ENCoM vibrational entropy
+        LIB/DiFT/DiFT.cpp
         # ── GIST water displacement + directional H-bond scoring ──
         LIB/GISTEvaluator.cpp
         LIB/HBondEvaluator.cpp
@@ -827,6 +828,25 @@ endif()
 # ─── VoronoiCFBatch benchmark (Task 2.3) ───────────────────────────────────────
 # VoronoiCFBatch.h is header-only; the benchmark binary exercises the std::span
 # batch interface and prints a serial-vs-OpenMP speedup table.
+option(ENABLE_DIFT_TOOL "Build the DiFT torsional parametrization CLI" ON)
+if(ENABLE_DIFT_TOOL)
+    add_executable(dift_torsion_fit
+        LIB/DiFT/dift_cli.cpp
+        LIB/DiFT/DiFT.cpp
+    )
+    target_include_directories(dift_torsion_fit PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/LIB)
+    if(MSVC)
+        target_compile_options(dift_torsion_fit PRIVATE /O2)
+        target_compile_definitions(dift_torsion_fit PRIVATE
+            _CRT_SECURE_NO_WARNINGS _USE_MATH_DEFINES NOMINMAX)
+    else()
+        target_compile_options(dift_torsion_fit PRIVATE -O3)
+    endif()
+    flexaids_configure_simd(dift_torsion_fit)
+    message(STATUS "DiFT torsion fit tool enabled — build target: dift_torsion_fit")
+endif()
+
 option(ENABLE_VCFBATCH_BENCHMARK "Build the VoronoiCFBatch benchmark binary" OFF)
 if(ENABLE_VCFBATCH_BENCHMARK)
     add_executable(benchmark_vcfbatch LIB/benchmark_vcfbatch.cpp)
@@ -1434,6 +1454,7 @@ if(BUILD_TESTING)
         LIB/NATURaL/NucleationDetector.cpp
         LIB/NATURaL/NascentChainScheduler.cpp
         LIB/NATURaL/FibrilGrowthOracle.cpp
+        LIB/GrandPartitionFunction.cpp
         LIB/NATURaL/DualAssemblyRunner.cpp
         LIB/UnifiedHardwareDispatch.cpp
         LIB/hardware_detect.cpp
@@ -1484,6 +1505,7 @@ if(BUILD_TESTING)
         LIB/NATURaL/NucleationDetector.cpp
         LIB/NATURaL/NascentChainScheduler.cpp
         LIB/NATURaL/FibrilGrowthOracle.cpp
+        LIB/GrandPartitionFunction.cpp
         LIB/NATURaL/DualAssemblyRunner.cpp
         LIB/UnifiedHardwareDispatch.cpp
         LIB/hardware_detect.cpp
@@ -1756,6 +1778,7 @@ flexaids_configure_simd(test_cavity_detect)
         LIB/NATURaL/NucleationDetector.cpp
         LIB/NATURaL/NascentChainScheduler.cpp
         LIB/NATURaL/FibrilGrowthOracle.cpp
+        LIB/GrandPartitionFunction.cpp
         LIB/NATURaL/DualAssemblyRunner.cpp
         LIB/UnifiedHardwareDispatch.cpp
         LIB/hardware_detect.cpp
@@ -1805,6 +1828,7 @@ flexaids_configure_simd(test_cavity_detect)
         LIB/NATURaL/NucleationDetector.cpp
         LIB/NATURaL/NascentChainScheduler.cpp
         LIB/NATURaL/FibrilGrowthOracle.cpp
+        LIB/GrandPartitionFunction.cpp
         LIB/NATURaL/DualAssemblyRunner.cpp
         LIB/UnifiedHardwareDispatch.cpp
         LIB/hardware_detect.cpp
@@ -1854,6 +1878,7 @@ flexaids_configure_simd(test_cavity_detect)
         LIB/NATURaL/NucleationDetector.cpp
         LIB/NATURaL/NascentChainScheduler.cpp
         LIB/NATURaL/FibrilGrowthOracle.cpp
+        LIB/GrandPartitionFunction.cpp
         LIB/NATURaL/DualAssemblyRunner.cpp
         LIB/UnifiedHardwareDispatch.cpp
         LIB/hardware_detect.cpp
@@ -1902,6 +1927,7 @@ flexaids_configure_simd(test_cavity_detect)
         LIB/NATURaL/NucleationDetector.cpp
         LIB/NATURaL/NascentChainScheduler.cpp
         LIB/NATURaL/FibrilGrowthOracle.cpp
+        LIB/GrandPartitionFunction.cpp
         LIB/NATURaL/DualAssemblyRunner.cpp
         LIB/UnifiedHardwareDispatch.cpp
         LIB/hardware_detect.cpp
@@ -1951,6 +1977,7 @@ flexaids_configure_simd(test_cavity_detect)
         LIB/NATURaL/NucleationDetector.cpp
         LIB/NATURaL/NascentChainScheduler.cpp
         LIB/NATURaL/FibrilGrowthOracle.cpp
+        LIB/GrandPartitionFunction.cpp
         LIB/NATURaL/DualAssemblyRunner.cpp
         LIB/UnifiedHardwareDispatch.cpp
         LIB/hardware_detect.cpp
@@ -2001,6 +2028,7 @@ flexaids_configure_simd(test_cavity_detect)
         LIB/NATURaL/NucleationDetector.cpp
         LIB/NATURaL/NascentChainScheduler.cpp
         LIB/NATURaL/FibrilGrowthOracle.cpp
+        LIB/GrandPartitionFunction.cpp
         LIB/NATURaL/DualAssemblyRunner.cpp
         LIB/UnifiedHardwareDispatch.cpp
         LIB/hardware_detect.cpp
@@ -2049,6 +2077,7 @@ flexaids_configure_simd(test_cavity_detect)
         LIB/NATURaL/NucleationDetector.cpp
         LIB/NATURaL/NascentChainScheduler.cpp
         LIB/NATURaL/FibrilGrowthOracle.cpp
+        LIB/GrandPartitionFunction.cpp
         LIB/NATURaL/DualAssemblyRunner.cpp
         LIB/UnifiedHardwareDispatch.cpp
         LIB/hardware_detect.cpp
@@ -2173,6 +2202,7 @@ flexaids_configure_simd(test_cavity_detect)
         LIB/NATURaL/NucleationDetector.cpp
         LIB/NATURaL/NascentChainScheduler.cpp
         LIB/NATURaL/FibrilGrowthOracle.cpp
+        LIB/GrandPartitionFunction.cpp
         LIB/NATURaL/DualAssemblyRunner.cpp
         LIB/UnifiedHardwareDispatch.cpp
         LIB/hardware_detect.cpp
@@ -2331,6 +2361,7 @@ flexaids_configure_simd(test_cavity_detect)
         LIB/NATURaL/NucleationDetector.cpp
         LIB/NATURaL/NascentChainScheduler.cpp
         LIB/NATURaL/FibrilGrowthOracle.cpp
+        LIB/GrandPartitionFunction.cpp
         LIB/NATURaL/DualAssemblyRunner.cpp
         LIB/UnifiedHardwareDispatch.cpp
         LIB/hardware_detect.cpp
@@ -2586,6 +2617,24 @@ flexaids_configure_simd(test_cavity_detect)
     flexaids_configure_simd(test_soa_conversion)
     flexaids_configure_msvc_test(test_soa_conversion)
     add_test(NAME SoAConversionTests COMMAND test_soa_conversion)
+
+    # test_dift — Discrete Fourier Transform torsional parametrization
+    add_executable(test_dift
+        tests/test_dift.cpp
+        LIB/DiFT/DiFT.cpp
+    )
+    target_include_directories(test_dift PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/LIB
+        ${CMAKE_CURRENT_SOURCE_DIR}/LIB/DiFT
+    )
+    target_link_libraries(test_dift PRIVATE GTest::gtest GTest::gtest_main)
+    if(MSVC)
+        target_compile_options(test_dift PRIVATE /Od /Zi)
+    else()
+        target_compile_options(test_dift PRIVATE -O0 -g3)
+    endif()
+    flexaids_configure_msvc_test(test_dift)
+    add_test(NAME DiFTTests COMMAND test_dift)
 
     # test_distributed_backend — Distributed backend abstraction unit tests
     add_executable(test_distributed_backend
@@ -2921,6 +2970,7 @@ if(BUILD_SWIFT_BRIDGE)
         LIB/NATURaL/NucleationDetector.cpp
         LIB/NATURaL/NascentChainScheduler.cpp
         LIB/NATURaL/FibrilGrowthOracle.cpp
+        LIB/GrandPartitionFunction.cpp
         LIB/NATURaL/DualAssemblyRunner.cpp
         LIB/UnifiedHardwareDispatch.cpp
         LIB/hardware_detect.cpp

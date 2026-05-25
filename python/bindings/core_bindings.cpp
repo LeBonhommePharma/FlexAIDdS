@@ -18,6 +18,7 @@
 #include "../../LIB/fast_optics.hpp"
 #include "../../LIB/Spectrophore.h"
 #include "../../LIB/BindingResidues.h"
+#include "dift_bindings.h"
 
 namespace py = pybind11;
 using namespace statmech;
@@ -524,4 +525,9 @@ PYBIND11_MODULE(_core, m) {
                    ":" + r.chain + " (MIF=" +
                    std::to_string(r.mif_score) + ")";
         });
+
+    // ──────────────────────────────────────────────────────────────────────
+    // DiFT — Discrete Fourier Transform torsional parametrization
+    // ──────────────────────────────────────────────────────────────────────
+    register_dift_bindings(m);
 }
