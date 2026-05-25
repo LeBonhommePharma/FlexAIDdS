@@ -1,0 +1,22 @@
+# build_sources.ignore
+#
+# FlexAIDdS source guard ignore list.
+# One glob pattern per line. Lines starting with # are comments.
+#
+# Use this file to temporarily (or permanently) allow source files that
+# legitimately exist but are not (yet) part of any build target.
+#
+# Examples:
+#   LIB/legacy/**                  # whole legacy subtree
+#   LIB/experimental/Foo.cpp       # single file
+#   **/deprecated_*.cpp
+#
+# After a file is properly wired into the build, remove its line here.
+
+# === Current migration / known exceptions (examples) ===
+# Add entries here when the validator complains during transition to the
+# new per-module CMakeLists.txt style.
+
+# Historical / intentionally excluded
+LIB/wif083.cpp
+LIB/python_bindings.cpp
