@@ -3002,3 +3002,21 @@ if(BUILD_SWIFT_BRIDGE)
     set_tests_properties(DockingPipelineTests PROPERTIES LABELS "integration")
 
 endif()
+
+# =============================================================================
+# FlexAID source validator guard (MUST be the last thing in this file)
+# =============================================================================
+#
+# This runs after every add_subdirectory / target_sources / add_test etc.
+# so it sees the complete declared source set.
+#
+# P0 integration: Supports FLEXAIDS_STRICT_SOURCE_VALIDATION for CI.
+# Developers get the safe WARN_ONLY default.
+# =============================================================================
+include(cmake/ValidateSources.cmake)
+
+if(FLEXAIDS_STRICT_SOURCE_VALIDATION)
+    flexaids_validate_sources(STRICT)
+else()
+    flexaids_validate_sources(WARN_ONLY)
+endif()
