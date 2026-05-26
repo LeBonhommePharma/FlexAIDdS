@@ -278,24 +278,37 @@ def format_report(result: ValidationResult, root: Path, strict: bool, cmake_mode
     lines.append("Orphaned files (these exist on disk but are not referenced in any build file):")
     lines.append("")
 
-    for orphan in sorted(result.orphans):
-        try:
-            rel = orphan.relative_to(root)
-        except ValueError:
-            rel = orphan
+    # P0 tightening: Separate compilable units from headers for clearer output
+    compilable = [o for o in result.orphans if o.suffix.lower() not in {".h", ".hpp", ".hxx", ".cuh", ".inl"}]
+    headers = [o for o in result.orphans if o.suffix.lower() in {".h", ".hpp", ".hxx", ".cuh", ".inl"}]
 
-        lines.append(f"  • {rel}")
+    if compilable:
+        lines.append("  Compilable units (highest priority):")
+        for orphan in sorted(compilable):
+            try:
+                rel = orphan.relative_to(root)
+            except ValueError:
+                rel = orphan
+            lines.append(f"    • {rel}")
+            parent = rel.parent
+            if "LIB" in str(parent):
+                suggested = f"LIB/{parent.name}/CMakeLists.txt" if parent.name else "LIB/CMakeLists.txt (or create a new module dir)"
+            else:
+                suggested = "the appropriate CMakeLists.txt or setup.py"
+            lines.append(f"      Suggested fix: Add '{rel.name}' to {suggested}")
+        lines.append("")
 
-        # Give a helpful hint
-        parent = rel.parent
-        if rel.suffix in {".h", ".hpp", ".hxx", ".cuh"}:
-            # Headers are often included transitively; suggest the module dir
-            suggested = f"LIB/{parent.name}/CMakeLists.txt (if this header belongs to that module)" if parent.name else "the module's CMakeLists.txt"
-        elif "LIB" in str(parent):
-            suggested = f"LIB/{parent.name}/CMakeLists.txt" if parent.name else "LIB/CMakeLists.txt (or create a new module dir)"
-        else:
-            suggested = "the appropriate CMakeLists.txt or setup.py"
-        lines.append(f"    Suggested fix: Add '{rel.name}' to {suggested}")
+    if headers:
+        lines.append("  Headers (often transitively included — lower priority):")
+        for orphan in sorted(headers)[:20]:  # cap noise
+            try:
+                rel = orphan.relative_to(root)
+            except ValueError:
+                rel = orphan
+            lines.append(f"    • {rel}")
+        if len(headers) > 20:
+            lines.append(f"    ... and {len(headers) - 20} more headers")
+        lines.append("      (Consider adding the corresponding .cpp/.cu to the module's CMakeLists.txt first)")
         lines.append("")
 
     lines.append("How to fix:")

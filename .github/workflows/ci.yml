@@ -129,6 +129,7 @@ jobs:
             -DFLEXAIDS_USE_METAL=OFF
             -DBUILD_PYTHON_BINDINGS=OFF
             -DBUILD_TESTING=ON
+            -DFLEXAIDS_STRICT_SOURCE_VALIDATION=ON
             ${{ matrix.cmake_extra }}
           )
           # Homebrew on Apple Silicon installs to /opt/homebrew
