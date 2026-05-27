@@ -173,6 +173,38 @@ Thermodynamics StatMechEngine::compute() const {
     return th;
 }
 
+ThermodynamicBreakdown StatMechEngine::compute_breakdown(
+    double G_vib_kcal_mol,
+    double G_natural_kcal_mol,
+    double G_other_kcal_mol,
+    bool has_vib,
+    bool has_natural,
+    bool has_other) const
+{
+    const Thermodynamics th = compute();
+
+    ThermodynamicBreakdown b;
+    b.temperature_K = th.temperature;
+    b.logZ_config = th.log_Z;
+    b.G_config_kcal_mol = th.free_energy;
+    b.H_eff_kcal_mol = th.mean_energy;
+    b.S_config_kcal_mol_K = th.entropy;
+    b.minus_T_S_config_kcal_mol = th.free_energy - th.mean_energy;
+    b.Cv_kcal_mol_K = th.heat_capacity;
+    b.sigma_E_kcal_mol = th.std_energy;
+    b.G_vib_kcal_mol = G_vib_kcal_mol;
+    b.G_natural_kcal_mol = G_natural_kcal_mol;
+    b.G_other_kcal_mol = G_other_kcal_mol;
+    b.G_total_kcal_mol = b.G_config_kcal_mol
+                       + b.G_vib_kcal_mol
+                       + b.G_natural_kcal_mol
+                       + b.G_other_kcal_mol;
+    b.has_vib = has_vib;
+    b.has_natural = has_natural;
+    b.has_other = has_other;
+    return b;
+}
+
 // ─── boltzmann_weights ───────────────────────────────────────────────────────
 
 std::vector<double> StatMechEngine::boltzmann_weights() const {

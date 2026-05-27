@@ -44,6 +44,27 @@ struct Thermodynamics {
     double std_energy;        // σ_E = sqrt(C_v kT²)
 };
 
+struct ThermodynamicBreakdown {
+    double temperature_K = 300.0;
+
+    double logZ_config = 0.0;
+    double G_config_kcal_mol = 0.0;
+    double H_eff_kcal_mol = 0.0;
+    double S_config_kcal_mol_K = 0.0;
+    double minus_T_S_config_kcal_mol = 0.0;
+    double Cv_kcal_mol_K = 0.0;
+    double sigma_E_kcal_mol = 0.0;
+
+    double G_vib_kcal_mol = 0.0;
+    double G_natural_kcal_mol = 0.0;
+    double G_other_kcal_mol = 0.0;
+    double G_total_kcal_mol = 0.0;
+
+    bool has_vib = false;
+    bool has_natural = false;
+    bool has_other = false;
+};
+
 struct Replica {
     int    id;
     double temperature;
@@ -75,6 +96,15 @@ public:
 
     // Compute full thermodynamics over the current ensemble
     Thermodynamics compute() const;
+
+    // Compute an auditable thermodynamic ledger without changing legacy fields.
+    ThermodynamicBreakdown compute_breakdown(
+        double G_vib_kcal_mol = 0.0,
+        double G_natural_kcal_mol = 0.0,
+        double G_other_kcal_mol = 0.0,
+        bool has_vib = false,
+        bool has_natural = false,
+        bool has_other = false) const;
 
     // Boltzmann weight vector (same order as insertion)
     std::vector<double> boltzmann_weights() const;

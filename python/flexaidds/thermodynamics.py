@@ -117,6 +117,72 @@ class Thermodynamics:
         )
 
 
+@dataclass
+class ThermodynamicBreakdown:
+    """Auditable thermodynamic ledger with explicit units and corrections.
+
+    ``G_config_kcal_mol`` is the canonical configurational free energy from
+    the sampled scoring-energy ensemble.  ``G_total_kcal_mol`` is the sum of
+    that configurational term plus explicitly flagged correction terms.  These
+    fields are not calibrated affinity estimates.
+    """
+
+    temperature_K: float = 300.0
+    logZ_config: float = 0.0
+    G_config_kcal_mol: float = 0.0
+    H_eff_kcal_mol: float = 0.0
+    S_config_kcal_mol_K: float = 0.0
+    minus_T_S_config_kcal_mol: float = 0.0
+    Cv_kcal_mol_K: float = 0.0
+    sigma_E_kcal_mol: float = 0.0
+    G_vib_kcal_mol: float = 0.0
+    G_natural_kcal_mol: float = 0.0
+    G_other_kcal_mol: float = 0.0
+    G_total_kcal_mol: float = 0.0
+    has_vib: bool = False
+    has_natural: bool = False
+    has_other: bool = False
+
+    def to_dict(self) -> dict:
+        return {
+            "temperature_K": self.temperature_K,
+            "logZ_config": self.logZ_config,
+            "G_config_kcal_mol": self.G_config_kcal_mol,
+            "H_eff_kcal_mol": self.H_eff_kcal_mol,
+            "S_config_kcal_mol_K": self.S_config_kcal_mol_K,
+            "minus_T_S_config_kcal_mol": self.minus_T_S_config_kcal_mol,
+            "Cv_kcal_mol_K": self.Cv_kcal_mol_K,
+            "sigma_E_kcal_mol": self.sigma_E_kcal_mol,
+            "G_vib_kcal_mol": self.G_vib_kcal_mol,
+            "G_natural_kcal_mol": self.G_natural_kcal_mol,
+            "G_other_kcal_mol": self.G_other_kcal_mol,
+            "G_total_kcal_mol": self.G_total_kcal_mol,
+            "has_vib": self.has_vib,
+            "has_natural": self.has_natural,
+            "has_other": self.has_other,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "ThermodynamicBreakdown":
+        return cls(
+            temperature_K=float(data.get("temperature_K", 300.0)),
+            logZ_config=float(data.get("logZ_config", 0.0)),
+            G_config_kcal_mol=float(data.get("G_config_kcal_mol", 0.0)),
+            H_eff_kcal_mol=float(data.get("H_eff_kcal_mol", 0.0)),
+            S_config_kcal_mol_K=float(data.get("S_config_kcal_mol_K", 0.0)),
+            minus_T_S_config_kcal_mol=float(data.get("minus_T_S_config_kcal_mol", 0.0)),
+            Cv_kcal_mol_K=float(data.get("Cv_kcal_mol_K", 0.0)),
+            sigma_E_kcal_mol=float(data.get("sigma_E_kcal_mol", 0.0)),
+            G_vib_kcal_mol=float(data.get("G_vib_kcal_mol", 0.0)),
+            G_natural_kcal_mol=float(data.get("G_natural_kcal_mol", 0.0)),
+            G_other_kcal_mol=float(data.get("G_other_kcal_mol", 0.0)),
+            G_total_kcal_mol=float(data.get("G_total_kcal_mol", 0.0)),
+            has_vib=bool(data.get("has_vib", False)),
+            has_natural=bool(data.get("has_natural", False)),
+            has_other=bool(data.get("has_other", False)),
+        )
+
+
 class _PyStatMechEngine:
     """Pure-Python canonical-ensemble engine (fallback when C++ _core is absent).
 
@@ -125,23 +191,27 @@ class _PyStatMechEngine:
 
     def __init__(self, temperature_K: float) -> None:
         self._T = float(temperature_K)
+        if self._T <= 0.0:
+            raise ValueError("StatMechEngine: temperature must be > 0")
         self._beta = 1.0 / (kB_kcal * self._T)
-        self._energies: List[float] = []
+        self._states: List[Tuple[float, float]] = []
 
     # ------------------------------------------------------------------
     # sample accumulation
     # ------------------------------------------------------------------
 
-    def add_sample(self, energy: float, multiplicity: int = 1) -> None:
-        for _ in range(max(1, int(multiplicity))):
-            self._energies.append(float(energy))
+    def add_sample(self, energy: float, multiplicity: float = 1.0) -> None:
+        count = float(multiplicity)
+        if count < 0.0:
+            raise ValueError("StatMechEngine: multiplicity must be non-negative")
+        self._states.append((float(energy), count))
 
     def clear(self) -> None:
-        self._energies.clear()
+        self._states.clear()
 
     @property
     def size(self) -> int:
-        return len(self._energies)
+        return len(self._states)
 
     @property
     def temperature(self) -> float:
@@ -156,24 +226,25 @@ class _PyStatMechEngine:
     # ------------------------------------------------------------------
 
     def compute(self) -> Thermodynamics:
-        if not self._energies:
+        if not self._states:
             raise RuntimeError("No samples added to StatMechEngine before compute()")
 
-        e = self._energies
-        n = len(e)
-        e_min = min(e)
+        energies = [energy for energy, _count in self._states]
+        log_w = [
+            (math.log(count) - self._beta * energy) if count > 0.0 else -math.inf
+            for energy, count in self._states
+        ]
+        max_log_w = max(log_w)
+        if not math.isfinite(max_log_w):
+            raise RuntimeError("StatMechEngine: ensemble has zero total multiplicity")
 
-        # log Z via log-sum-exp trick
-        shifted = [-self._beta * (ei - e_min) for ei in e]
-        log_sum = math.log(sum(math.exp(s) for s in shifted))
-        log_Z = -self._beta * e_min + log_sum
+        log_Z = max_log_w + math.log(sum(math.exp(w - max_log_w) for w in log_w))
 
         # Boltzmann weights
-        log_w = [-self._beta * ei - log_Z for ei in e]
-        w = [math.exp(lw) for lw in log_w]
+        weights = [math.exp(w - log_Z) if math.isfinite(w) else 0.0 for w in log_w]
 
-        mean_e = sum(wi * ei for wi, ei in zip(w, e))
-        mean_e2 = sum(wi * ei * ei for wi, ei in zip(w, e))
+        mean_e = sum(wi * ei for wi, ei in zip(weights, energies))
+        mean_e2 = sum(wi * ei * ei for wi, ei in zip(weights, energies))
         var_e = mean_e2 - mean_e ** 2
         std_e = math.sqrt(max(0.0, var_e))
 
@@ -192,12 +263,43 @@ class _PyStatMechEngine:
             std_energy=std_e,
         )
 
+    def compute_breakdown(
+        self,
+        G_vib_kcal_mol: float = 0.0,
+        G_natural_kcal_mol: float = 0.0,
+        G_other_kcal_mol: float = 0.0,
+        has_vib: bool = False,
+        has_natural: bool = False,
+        has_other: bool = False,
+    ) -> ThermodynamicBreakdown:
+        thermo = self.compute()
+        return ThermodynamicBreakdown(
+            temperature_K=thermo.temperature,
+            logZ_config=thermo.log_Z,
+            G_config_kcal_mol=thermo.free_energy,
+            H_eff_kcal_mol=thermo.mean_energy,
+            S_config_kcal_mol_K=thermo.entropy,
+            minus_T_S_config_kcal_mol=thermo.free_energy - thermo.mean_energy,
+            Cv_kcal_mol_K=thermo.heat_capacity,
+            sigma_E_kcal_mol=thermo.std_energy,
+            G_vib_kcal_mol=G_vib_kcal_mol,
+            G_natural_kcal_mol=G_natural_kcal_mol,
+            G_other_kcal_mol=G_other_kcal_mol,
+            G_total_kcal_mol=thermo.free_energy + G_vib_kcal_mol + G_natural_kcal_mol + G_other_kcal_mol,
+            has_vib=has_vib,
+            has_natural=has_natural,
+            has_other=has_other,
+        )
+
     def boltzmann_weights(self) -> List[float]:
-        if not self._energies:
+        if not self._states:
             return []
         thermo = self.compute()
         log_Z = thermo.log_Z
-        return [math.exp(-self._beta * ei - log_Z) for ei in self._energies]
+        return [
+            count * math.exp(-self._beta * energy - log_Z) if count > 0.0 else 0.0
+            for energy, count in self._states
+        ]
 
     def delta_G(self, other: "_PyStatMechEngine") -> float:
         return self.compute().free_energy - other.compute().free_energy
@@ -264,6 +366,62 @@ class StatMechEngine:
             heat_capacity=thermo_cpp.heat_capacity,
             entropy=thermo_cpp.entropy,
             std_energy=thermo_cpp.std_energy,
+        )
+
+    def compute_breakdown(
+        self,
+        G_vib_kcal_mol: float = 0.0,
+        G_natural_kcal_mol: float = 0.0,
+        G_other_kcal_mol: float = 0.0,
+        has_vib: bool = False,
+        has_natural: bool = False,
+        has_other: bool = False,
+    ) -> ThermodynamicBreakdown:
+        """Compute the explicit thermodynamic ledger for the ensemble."""
+        if hasattr(self._engine, "compute_breakdown"):
+            result = self._engine.compute_breakdown(
+                G_vib_kcal_mol,
+                G_natural_kcal_mol,
+                G_other_kcal_mol,
+                has_vib,
+                has_natural,
+                has_other,
+            )
+            return ThermodynamicBreakdown(
+                temperature_K=result.temperature_K,
+                logZ_config=result.logZ_config,
+                G_config_kcal_mol=result.G_config_kcal_mol,
+                H_eff_kcal_mol=result.H_eff_kcal_mol,
+                S_config_kcal_mol_K=result.S_config_kcal_mol_K,
+                minus_T_S_config_kcal_mol=result.minus_T_S_config_kcal_mol,
+                Cv_kcal_mol_K=result.Cv_kcal_mol_K,
+                sigma_E_kcal_mol=result.sigma_E_kcal_mol,
+                G_vib_kcal_mol=result.G_vib_kcal_mol,
+                G_natural_kcal_mol=result.G_natural_kcal_mol,
+                G_other_kcal_mol=result.G_other_kcal_mol,
+                G_total_kcal_mol=result.G_total_kcal_mol,
+                has_vib=result.has_vib,
+                has_natural=result.has_natural,
+                has_other=result.has_other,
+            )
+
+        thermo = self.compute()
+        return ThermodynamicBreakdown(
+            temperature_K=thermo.temperature,
+            logZ_config=thermo.log_Z,
+            G_config_kcal_mol=thermo.free_energy,
+            H_eff_kcal_mol=thermo.mean_energy,
+            S_config_kcal_mol_K=thermo.entropy,
+            minus_T_S_config_kcal_mol=thermo.free_energy - thermo.mean_energy,
+            Cv_kcal_mol_K=thermo.heat_capacity,
+            sigma_E_kcal_mol=thermo.std_energy,
+            G_vib_kcal_mol=G_vib_kcal_mol,
+            G_natural_kcal_mol=G_natural_kcal_mol,
+            G_other_kcal_mol=G_other_kcal_mol,
+            G_total_kcal_mol=thermo.free_energy + G_vib_kcal_mol + G_natural_kcal_mol + G_other_kcal_mol,
+            has_vib=has_vib,
+            has_natural=has_natural,
+            has_other=has_other,
         )
     
     def boltzmann_weights(self):

@@ -40,7 +40,7 @@ from .benchmark import (
 )
 
 # Pure-Python thermodynamics (always available)
-from .thermodynamics import StatMechEngine, Thermodynamics, kB_kcal, kB_SI
+from .thermodynamics import StatMechEngine, Thermodynamics, ThermodynamicBreakdown, kB_kcal, kB_SI
 
 # C++ extension — optional: pure-Python helpers work without it
 try:
@@ -56,6 +56,7 @@ try:
     # Override with C++ StatMechEngine when available
     from ._core import StatMechEngine as _CppStatMechEngine  # noqa: F811
     from ._core import Thermodynamics as _CppThermodynamics  # noqa: F811
+    from ._core import ThermodynamicBreakdown as _CppThermodynamicBreakdown  # noqa: F811
     from ._core import ENCoMEngine as _CppENCoMEngine        # noqa: F811
     from ._core import NormalMode as _CppNormalMode           # noqa: F811
     from ._core import VibrationalEntropy as _CppVibrationalEntropy  # noqa: F811

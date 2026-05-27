@@ -86,6 +86,7 @@ class BindingMode // aggregation of poses (Cluster)
 			
 			// ═══ NEW STATMECH API ═══
 			statmech::Thermodynamics	get_thermodynamics() const;  // full thermo struct (F, S, H, Cv, σ_E)
+			statmech::ThermodynamicBreakdown get_thermodynamic_breakdown() const; // explicit config/correction ledger
 			double	 					get_free_energy() const;     // alias for compute_energy()
 			double	 					get_heat_capacity() const;   // heat capacity C_v
 			std::vector<double>	 		get_boltzmann_weights() const; // weights for all poses

@@ -326,6 +326,20 @@ statmech::Thermodynamics BindingMode::get_thermodynamics() const
 	return td;
 }
 
+statmech::ThermodynamicBreakdown BindingMode::get_thermodynamic_breakdown() const
+{
+	rebuild_engine();
+	const double vib = compute_vibrational_correction();
+	const double natural = (Population && Population->FA) ? Population->FA->natural_deltaG : 0.0;
+	return engine_.compute_breakdown(
+		vib,
+		natural,
+		0.0,
+		vib != 0.0,
+		natural != 0.0,
+		false);
+}
+
 
 double BindingMode::get_free_energy() const
 {
