@@ -187,29 +187,49 @@ def generate_temperature_scan_plot(
     title: str = "Temperature Dependence",
 ) -> Optional[str]:
     """
-    Generate a simple temperature scan plot (G, H, S vs T).
+    Generate a temperature scan plot (G, H, S, Cv vs T) from scan data.
 
-    Requires matplotlib. Returns the path to the saved figure or None if matplotlib is unavailable.
+    Requires matplotlib. Returns the path to the saved figure or None if unavailable.
     """
     try:
         import matplotlib.pyplot as plt
     except ImportError:
         return None
 
-    Ts = [p["T_K"] for p in scan_points]
+    if not scan_points:
+        return None
+
+    Ts = [p.get("T_K") for p in scan_points if p.get("T_K") is not None]
+    if not Ts:
+        return None
+
     Gs = [p.get("G_kcal_mol") for p in scan_points]
     Hs = [p.get("H_kcal_mol") for p in scan_points]
     Ss = [p.get("S_kcal_mol_K") for p in scan_points]
+    Cvs = [p.get("Cv_kcal_mol_K") for p in scan_points]
 
-    fig, ax = plt.subplots(figsize=(8, 5))
-    ax.plot(Ts, Gs, label="ΔG (kcal/mol)", marker="o")
-    ax.plot(Ts, Hs, label="ΔH (kcal/mol)", marker="s")
-    ax.plot(Ts, Ss, label="ΔS (kcal/mol/K)", marker="^")
+    fig, axes = plt.subplots(2, 2, figsize=(10, 7))
+    fig.suptitle(title)
 
-    ax.set_xlabel("Temperature (K)")
-    ax.set_title(title)
-    ax.legend()
-    ax.grid(True, alpha=0.3)
+    axes[0, 0].plot(Ts, Gs, marker="o", label="G (kcal/mol)")
+    axes[0, 0].set_ylabel("G (kcal/mol)")
+    axes[0, 0].grid(True, alpha=0.3)
+
+    axes[0, 1].plot(Ts, Hs, marker="s", label="H (kcal/mol)", color="orange")
+    axes[0, 1].set_ylabel("H (kcal/mol)")
+    axes[0, 1].grid(True, alpha=0.3)
+
+    axes[1, 0].plot(Ts, Ss, marker="^", label="S (kcal/mol/K)", color="green")
+    axes[1, 0].set_xlabel("Temperature (K)")
+    axes[1, 0].set_ylabel("S (kcal/mol/K)")
+    axes[1, 0].grid(True, alpha=0.3)
+
+    axes[1, 1].plot(Ts, Cvs, marker="d", label="Cv (kcal/mol/K)", color="red")
+    axes[1, 1].set_xlabel("Temperature (K)")
+    axes[1, 1].set_ylabel("Cv (kcal/mol/K)")
+    axes[1, 1].grid(True, alpha=0.3)
+
+    plt.tight_layout()
 
     out = Path(output_path)
     out.parent.mkdir(parents=True, exist_ok=True)
