@@ -149,6 +149,16 @@ add_library(flexaid_core OBJECT
     MPITransport.cpp
     # ── InStreamClustering: online medoid clustering during GA ──
     InStreamClustering.cpp
+    # ── P0 source validator completion: previously orphaned core units ──
+    BinarySnapshot.cpp
+    build_close.cpp
+    cffunction.cpp
+    cpu_eval.cpp
+    cpu_fast_optics.cpp
+    dee_print.cpp
+    direct_input.cpp
+    spfunction.cpp
+    tENCoM/tencm_cpu_fallback.cpp
 )
 
 target_include_directories(flexaid_core PUBLIC

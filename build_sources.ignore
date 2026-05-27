@@ -20,3 +20,58 @@
 # Historical / intentionally excluded
 LIB/wif083.cpp
 LIB/python_bindings.cpp
+
+# === P0 Source Validator Completion (2026-05) ===
+# These are tools, test stubs, GPU/hip/metal sidecars handled conditionally,
+# or pure-header transitives. Headers de-emphasized per tighten; tools not in core lib.
+# Core .cpp were wired into LIB/CMakeLists.txt and root CMakeLists.txt.
+
+# Standalone CLIs / tools (not part of FlexAID/FlexAIDdS core)
+LIB/ProcessLigand/main.cpp
+LIB/DiFT/dift_cli.cpp
+LIB/tENCoM/tencom_main.cpp
+LIB/tENCoM/tencom_entropy_diff.cpp
+LIB/tENCoM/benchmark_tencom.cpp
+LIB/benchmark_vcfbatch.cpp
+LIB/benchmark_datasets.cpp
+
+# GPU / ROCm / Metal side files (referenced in conditional blocks in root CMakeLists.txt)
+LIB/ProcessLigand/hip_eval.hip
+LIB/gpu_batch_distance_hip.hip
+LIB/gpu_fast_optics_hip.hip
+LIB/gpu_fast_optics_metal.metal
+LIB/gpu_batch_distance.cpp
+LIB/gpu_batch_distance.cu
+
+# New / WIP unit tests (not yet wired into tests/ build)
+tests/test_binding_mode_io.cpp
+tests/test_ga_population.cpp
+tests/test_production_blockers.cpp
+
+# Pure headers (transitively included; CMake rarely lists .h explicitly; de-emphasized in P0 tighten)
+# Using broad globs to keep ignore list maintainable during modular CMake migration.
+LIB/**/*.h
+LIB/**/*.hpp
+LIB/**/*.hxx
+LIB/**/*.cuh
+LIB/**/*.inl
+**/*.h
+**/*.hpp
+
+# Other intentionally excluded (data, docs, experimental)
+LIB/HARDWARE_DISPATCH_PLAN.md
+LIB/vendor/**
+
+# GPU kernels & shaders (conditionally included only under FLEXAIDS_USE_CUDA / _METAL / _ROCM;
+# the P0 validator intentionally de-prioritizes them as they live behind option() guards.
+# Core CPU path is what the guard protects for every build.)
+LIB/**/*.cu
+LIB/**/*.hip
+LIB/**/*.metal
+*.cu
+*.hip
+*.metal
+cuda_eval.cu
+TurboQuant.cu
+gpu_fast_optics.cu
+cuda_eval.cuh

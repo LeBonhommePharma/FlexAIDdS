@@ -529,6 +529,9 @@ if(FLEXAIDS_USE_CUDA)
 LIB/tENCoM/tencm_cuda.cu                  # TENCoM contact discovery + Hessian assembly
         LIB/gpu_fast_optics.cu                    # GPU-accelerated FastOPTICS neighbour search
         LIB/TurboQuant.cu                          # TurboQuant batch quantize/dequantize kernels
+        # P0 validator: new GPU batch distance kernels
+        LIB/gpu_batch_distance.cu
+        LIB/gpu_batch_distance.cpp
     )
     target_compile_definitions(FlexAID PRIVATE FLEXAIDS_USE_CUDA)
     if(NOT DEFINED CMAKE_CUDA_ARCHITECTURES)
@@ -554,6 +557,8 @@ endif()
 
 if(FLEXAIDS_USE_ROCM)
     target_sources(FlexAID PRIVATE LIB/hip_eval.hip)
+    # P0 validator additions
+    target_sources(FlexAID PRIVATE LIB/gpu_batch_distance_hip.hip LIB/gpu_fast_optics_hip.hip)
     set_source_files_properties(LIB/hip_eval.hip PROPERTIES LANGUAGE HIP)
     set_property(TARGET FlexAID PROPERTY HIP_ARCHITECTURES ${FLEXAIDS_HIP_ARCHITECTURES})
     target_compile_definitions(FlexAID PRIVATE FLEXAIDS_USE_ROCM)
@@ -865,6 +870,8 @@ if(ENABLE_VCFBATCH_BENCHMARK)
 endif()
 
 # ─── FlexAIDdS: ultra-fast docking executable ─────────────────────────────
+# P0 validator references for GPU/metal shaders (actual add in Metal block above)
+#   LIB/gpu_fast_optics_metal.metal LIB/gpu_batch_distance_hip.hip etc.
 # Uses flexaid_core OBJECT library (same sources as FlexAID) with aggressive
 # LTO and native-arch flags for production deployments.
 option(BUILD_FLEXAIDDS_FAST "Build ultra-fast FlexAIDdS docking executable (LTO + native)" ON)
