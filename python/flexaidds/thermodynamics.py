@@ -78,6 +78,83 @@ class Thermodynamics:
             'std_energy_kcal_mol': self.std_energy,
         }
 
+
+# ─── ThermodynamicBreakdown (Task 2 Python exposure + parity with C++) ──────
+# Mirrors the C++ statmech::ThermodynamicBreakdown exactly for round-trip and
+# C++/Python parity tests. All field names and units match the JSON contract
+# in the roadmap. This is the pure-Python path; when C++ _core is available
+# the C++ version (once bound) will be preferred for compute, but this
+# dataclass remains the canonical serialisation shape.
+@dataclass
+class ThermodynamicBreakdown:
+    """Auditable thermodynamic ledger for a binding mode or ensemble.
+
+    All quantities follow the invariants in docs/dev/thermo_invariants.md.
+    G_total = G_config + G_vib + G_natural + G_other (always defined).
+
+    This is the shape emitted under "thermodynamics" in JSON output (Task 2+).
+    """
+    temperature_K: float = 300.0
+
+    logZ_config: float = 0.0
+    G_config_kcal_mol: float = 0.0
+    H_eff_kcal_mol: float = 0.0
+    S_config_kcal_mol_K: float = 0.0
+    minus_T_S_config_kcal_mol: float = 0.0
+    Cv_kcal_mol_K: float = 0.0
+    sigma_E_kcal_mol: float = 0.0
+
+    G_vib_kcal_mol: float = 0.0
+    G_natural_kcal_mol: float = 0.0
+    G_other_kcal_mol: float = 0.0
+    G_total_kcal_mol: float = 0.0
+
+    has_vib: bool = False
+    has_natural: bool = False
+    has_other: bool = False
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Exact JSON shape required by roadmap (no legacy aliases here)."""
+        return {
+            "temperature_K": self.temperature_K,
+            "logZ_config": self.logZ_config,
+            "G_config_kcal_mol": self.G_config_kcal_mol,
+            "H_eff_kcal_mol": self.H_eff_kcal_mol,
+            "S_config_kcal_mol_K": self.S_config_kcal_mol_K,
+            "minus_T_S_config_kcal_mol": self.minus_T_S_config_kcal_mol,
+            "Cv_kcal_mol_K": self.Cv_kcal_mol_K,
+            "sigma_E_kcal_mol": self.sigma_E_kcal_mol,
+            "G_vib_kcal_mol": self.G_vib_kcal_mol,
+            "G_natural_kcal_mol": self.G_natural_kcal_mol,
+            "G_other_kcal_mol": self.G_other_kcal_mol,
+            "G_total_kcal_mol": self.G_total_kcal_mol,
+        }
+
+    @classmethod
+    def from_thermodynamics(cls, thermo: "Thermodynamics",
+                            G_vib: float = 0.0, has_vib: bool = False,
+                            G_natural: float = 0.0, has_natural: bool = False,
+                            G_other: float = 0.0, has_other: bool = False) -> "ThermodynamicBreakdown":
+        """Factory mirroring C++ make_breakdown() for pure-Python parity."""
+        b = cls(
+            temperature_K=thermo.temperature,
+            logZ_config=thermo.log_Z,
+            G_config_kcal_mol=thermo.free_energy,
+            H_eff_kcal_mol=thermo.mean_energy,
+            S_config_kcal_mol_K=thermo.entropy,
+            minus_T_S_config_kcal_mol=thermo.free_energy - thermo.mean_energy,
+            Cv_kcal_mol_K=thermo.heat_capacity,
+            sigma_E_kcal_mol=thermo.std_energy,
+            G_vib_kcal_mol=G_vib,
+            G_natural_kcal_mol=G_natural,
+            G_other_kcal_mol=G_other,
+            G_total_kcal_mol=thermo.free_energy + G_vib + G_natural + G_other,
+            has_vib=has_vib,
+            has_natural=has_natural,
+            has_other=has_other,
+        )
+        return b
+
     @classmethod
     def from_dict(cls, data: dict) -> "Thermodynamics":
         """Construct a Thermodynamics instance from a dictionary.

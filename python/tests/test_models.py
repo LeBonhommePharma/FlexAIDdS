@@ -261,7 +261,7 @@ class TestDockingResultToRecords:
         expected = {
             "mode_id", "rank", "n_poses", "free_energy", "enthalpy",
             "entropy", "heat_capacity", "std_energy", "best_cf",
-            "temperature", "best_pose_path",
+            "temperature", "thermodynamics", "best_pose_path",
         }
         assert expected == set(record.keys())
 
@@ -624,7 +624,7 @@ class TestDockingResultToCsv:
         expected_cols = {
             "mode_id", "rank", "n_poses", "free_energy", "enthalpy",
             "entropy", "heat_capacity", "std_energy", "best_cf",
-            "temperature", "best_pose_path",
+            "temperature", "thermodynamics", "best_pose_path",
         }
         assert expected_cols == set(reader.fieldnames)
 
