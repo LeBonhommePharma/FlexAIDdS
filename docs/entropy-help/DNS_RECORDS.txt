@@ -1,0 +1,49 @@
+# DNS Records for entropy.help
+
+## Cloudflare (Recommended) - DNS Only (Grey Cloud)
+
+### Apex (entropy.help)
+Type: A
+Name: @
+Value: 185.199.108.153
+TTL: Auto
+Proxy status: DNS only
+
+(Recommended: also add the other GitHub Pages IPs)
+185.199.109.153
+185.199.110.153
+185.199.111.153
+
+### WWW
+Type: CNAME
+Name: www
+Value: <your-github-username>.github.io
+TTL: Auto
+Proxy status: DNS only
+
+## Alternative: Pure Cloudflare Proxy (if using Cloudflare Pages instead of GitHub Pages)
+
+- Point both apex and www to your Cloudflare Pages deployment.
+- Enable "Always Use HTTPS"
+- Enable "Automatic HTTPS Rewrites"
+
+## GitHub Pages Specific
+
+Create a file named `CNAME` in the root of your published site (e.g. in `site/CNAME` if deploying from the site/ folder) with the exact content:
+
+entropy.help
+
+GitHub will automatically create a challenge file at:
+https://entropy.help/.well-known/ (handled automatically by GitHub)
+
+## Verification Commands (after DNS propagation)
+
+dig entropy.help +short
+dig www.entropy.help +short
+
+Both should resolve to GitHub Pages IPs.
+
+---
+
+Last updated: 2026-05-27
+Prepared for entropy.help launch (B1.1)
