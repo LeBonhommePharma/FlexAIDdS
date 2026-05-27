@@ -172,6 +172,69 @@ inline double compensation_score(double G_config_kcal_mol,
     return score;
 }
 
+// ─── Joint Receptor–Ligand Ensemble (Task 5 — EXPERIMENTAL) ──────────────────
+// Formalizes the joint microstate analysis over receptor conformers (r) and
+// ligand poses (i):  Z = Σ_r Σ_i exp[-β E(r,i)]
+//
+// This is marked EXPERIMENTAL until properly benchmarked.
+// If receptor_conformer_id is not available, fallback mode sets
+// S_receptor = 0 and mutual_information = 0.
+
+struct JointMicrostate {
+    int receptor_conformer_id = -1;   // -1 means unknown / single conformer
+    int ligand_pose_id = -1;
+    int binding_mode_id = -1;
+    EnergyComponents energy;          // decomposed energy for this microstate
+    double log_multiplicity = 0.0;    // log(n) for degeneracy
+};
+
+struct JointEnsembleResult {
+    double temperature_K = 300.0;
+
+    double logZ = 0.0;
+    double G_kcal_mol = 0.0;
+    double H_kcal_mol = 0.0;
+    double S_joint_kcal_mol_K = 0.0;
+    double S_receptor_kcal_mol_K = 0.0;
+    double S_ligand_kcal_mol_K = 0.0;
+    double mutual_information_dimensionless = 0.0;
+
+    std::vector<double> receptor_population;  // p(r)
+    std::vector<double> ligand_population;    // p(i)
+
+    bool experimental = true;                 // always true for now
+    bool fallback_single_receptor = false;    // true if no receptor conformer info was available
+};
+
+// ─── Standard-State Affinity Calibration (Task 6 — EXPERIMENTAL / SAFE ONLY) ─
+// This provides utilities to convert between standard-state ΔG° and Kd (in molar)
+// while strictly enforcing safety rules.
+//
+// Key invariants:
+// - Never output a real Kd unless calibrated == true.
+// - Relative free energies (ΔΔG) are allowed but must be clearly labelled "relative".
+// - All functions reject invalid inputs (T <= 0, Kd <= 0).
+// - This is **not** true experimental affinity unless a calibration benchmark exists.
+
+struct AffinityCalibration {
+    double temperature_K = 300.0;
+
+    // Bound and unbound reference free energies (if available)
+    double F_bound_kcal_mol = 0.0;
+    double F_unbound_receptor_kcal_mol = 0.0;
+    double F_unbound_ligand_kcal_mol = 0.0;
+
+    double standard_state_correction_kcal_mol = 0.0;  // RT ln(c° / 1M) etc.
+    double deltaG_standard_kcal_mol = 0.0;            // ΔG° at standard state
+    double predicted_Kd_M = 0.0;                      // Only valid if calibrated == true
+
+    bool calibrated = false;   // Must be true before using predicted_Kd_M as real affinity
+    bool experimental = true;  // Always true until a proper calibration benchmark suite exists
+};
+
+// Safe conversion utilities (Task 6)
+double deltaG_standard_to_Kd_M(double deltaG_kcal_mol, double T_K, double c0_M = 1.0);
+double Kd_M_to_deltaG_standard(double Kd_M, double T_K, double c0_M = 1.0);
 
 struct WHAMBin {
     double coord_center;
@@ -309,6 +372,11 @@ public:
         double G_vib_kcal_mol = 0.0,     bool has_vib = false,
         double G_natural_kcal_mol = 0.0, bool has_natural = false,
         double G_other_kcal_mol = 0.0,   bool has_other = false);
+
+    // ─── Joint Receptor–Ligand Ensemble (Task 5 — EXPERIMENTAL) ─────────────
+    static JointEnsembleResult compute_joint_ensemble(
+        std::span<const JointMicrostate> microstates,
+        double temperature_K = 300.0);
 
 private:
     double T_;
