@@ -94,3 +94,5 @@ build/
 build_check/
 build_opencode/
 .claude/worktrees/
+
+# Hygiene note (chain PR): restored critical ignore rules after docs-validation-boundary deletions. Do not delete this file.
