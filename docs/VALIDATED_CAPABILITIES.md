@@ -37,3 +37,15 @@ That means:
 ## Exclusions
 
 Anything not listed here should be treated as either planned, provisional, or experimental.
+
+## Thermodynamic Capabilities (post-roadmap)
+
+The following thermodynamic features have completed implementation + unit testing and are considered validated for reporting/analysis use (see `docs/thermodynamics.md` for full details):
+
+- Canonical ensemble quantities via `StatMechEngine` and `ThermodynamicBreakdown` (G_config, H_eff, S_config, Cv, σ_E)
+- Additive corrections (G_vib, G_natural) with presence flags
+- Component-wise Boltzmann averages (`EnergyComponents` + `component_means`)
+- Pure-Python parity for all core quantities
+- JSON/CSV round-tripping of thermodynamic results
+
+These are safe for use in analysis, visualization, and publication when properly labelled.

@@ -24,6 +24,8 @@
 
 FlexAID∆S extends the [FlexAID](https://doi.org/10.1021/acs.jcim.5b00078) docking engine with a full **canonical ensemble thermodynamics** layer based on Shannon information theory and statistical mechanics. Where conventional docking programs rank poses by enthalpy alone, FlexAID∆S computes the Helmholtz free energy *F* = *H* - *TS* from the partition function over the GA conformational ensemble, accounting for configurational and vibrational entropy contributions that are critical for correct binding mode identification.
 
+**Full thermodynamic documentation**: See [docs/thermodynamics.md](docs/thermodynamics.md) for the complete post-roadmap reference (G_config, H_eff, component averages, diagnostics, experimental features, and support classification).
+
 **Key capabilities:**
 - Genetic algorithm docking with Voronoi contact function scoring
 - Canonical ensemble partition function, free energy, entropy, and heat capacity
