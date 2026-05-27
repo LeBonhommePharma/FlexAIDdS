@@ -32,8 +32,10 @@ Anyone who clones the repo gets the skill automatically. No extra setup required
 
 ## Maintenance
 
-- Edit `SKILL.md` when project structure, build commands, or core rules change
-- Keep the description in the frontmatter accurate — it controls auto-invocation
-- The companion [CLAUDE.md](../../CLAUDE.md) remains the full reference; this skill is the fast, always-on version for Grok
+- Edit `SKILL.md` when project structure, build commands, or core rules change.
+- The authoritative workflow rules live in the repo root `AGENTS.md`. Keep this skill aligned with it.
+- Keep the frontmatter description accurate (it drives auto-invocation).
+- Full technical depth lives in [CLAUDE.md](../../CLAUDE.md).
 
 Created: 2026-05-27
+Updated: 2026-05-27 (added cross-tool AGENTS.md system)

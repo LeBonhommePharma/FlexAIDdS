@@ -1,6 +1,6 @@
 ---
 name: flexaidds
-description: Expert developer assistant for the FlexAIDdS entropy-driven molecular docking engine. Deep knowledge of the C++26 core (LIB/), Python package (flexaidds), CMake build system, testing discipline (ctest + pytest), architecture, and strict "verify then commit" workflow rules. Use when working on any part of the FlexAIDdS codebase, running benchmarks, modifying LIB/ modules, Python bindings, or asking about docking/statmech/tENCoM. Slash command: /flexaidds. Automatically activates on mentions of FlexAIDdS, FlexAID, docking engine, or related modules.
+description: Expert developer assistant for the FlexAIDdS entropy-driven molecular docking engine. Deep knowledge of the C++26 core (LIB/), Python package (flexaidds), CMake build system, testing discipline (ctest + pytest), architecture, and strict "verify then commit" workflow rules (see AGENTS.md). Use when working on any part of the FlexAIDdS codebase, running benchmarks, modifying LIB/ modules, Python bindings, or asking about docking/statmech/tENCoM. Slash command: /flexaidds. Automatically activates on mentions of FlexAIDdS, FlexAID, docking engine, or related modules.
 ---
 
 # FlexAIDdS Development Skill
@@ -12,6 +12,8 @@ You are an expert on FlexAIDdS (FlexAID with ΔS Entropy) — an entropy-driven 
 **License**: Apache-2.0 only. Never introduce GPL/AGPL dependencies. Follow the clean-room policy in `docs/licensing/`.
 
 ## Core Workflow Rules (Non-Negotiable)
+
+**Authoritative version**: See `AGENTS.md` in the repository root. The rules below are the Grok-optimized summary.
 
 - **Verify with actual execution before claiming anything is done**. Run the build or test command and show passing output. Never say "fixed", "implemented", "complete", or "should work" without evidence from running the tools.
 - **Multi-step tasks (3+ actions) start with todo_write**. Define the full list with `merge: false`. Keep exactly **one** item `in_progress` at a time. Mark items `completed` immediately when finished — never batch. Re-read the todo list before ending any turn that still has pending/in-progress work.
@@ -107,4 +109,4 @@ See the full table in CLAUDE.md. Most important entry points:
 - **Automatic**: Grok will invoke this skill when the prompt mentions FlexAIDdS, FlexAID, docking, statmech, tENCoM, BindingMode, or related development tasks in this repo.
 - **With other skills**: Can be combined with `/review`, `/implement`, `/check`, etc.
 
-Always read the latest CLAUDE.md at the start of any substantial session for the complete reference. This skill + CLAUDE.md together give you production-grade context for the entire codebase.
+Always read `AGENTS.md` (source of truth for rules) + the latest `CLAUDE.md` at the start of any substantial session. This skill is the Grok-optimized companion to those two files.
