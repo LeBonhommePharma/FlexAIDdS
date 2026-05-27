@@ -1,5 +1,14 @@
 # CLAUDE.md — FlexAIDdS Development Guide
 
+## Project Context
+
+This is a molecular docking / computational chemistry codebase (FlexAID/Entropy Docking). Key concepts:
+- Benchmarking datasets (Astex Diverse, etc.) defined as YAML configs
+- Campaign scripts orchestrate docking runs across datasets
+- Cross-docking vs self-docking semantics are critical — always verify which is intended
+- The project has sibling repos that may need to be considered together
+- Repository has been renamed in the past — GitHub Pages URL may need verification
+
 ## Project Overview
 
 FlexAIDdS (FlexAID with ΔS Entropy) is an entropy-driven molecular docking engine combining genetic algorithms with statistical mechanics thermodynamics. It targets real-world psychopharmacology and drug discovery applications.
@@ -7,6 +16,23 @@ FlexAIDdS (FlexAID with ΔS Entropy) is an entropy-driven molecular docking engi
 - **Languages**: C++26 (core engine), Python (bindings/analysis), Objective-C++ (Metal GPU), CUDA (optional GPU)
 - **License**: Apache-2.0 (no GPL dependencies allowed — see `THIRD_PARTY_LICENSES.md`)
 - **Lead**: Louis-Philippe Morency, PhD (Candidate), Université de Montréal, NRGlab
+
+## Workflow Rules
+- Always verify with actual test/build runs before claiming something is done. Never skip verification.
+- Don't over-explore. If the user asks to RUN something, run it — don't spend 20+ tool calls exploring first.
+- When implementing a prioritized list (P0, P1, P2...), complete ALL items before stopping. Don't skip items by claiming they're already done without checking.
+- After completing code changes, always commit and push immediately. Don't batch multiple changes without committing.
+- If a git operation hangs (commit/push), kill stale git processes (`kill $(pgrep -f git)`) and retry. Check for git fsmonitor issues with `git config core.fsmonitor`.
+- For dataset YAML configs, verify semantics (self-docking vs cross-docking) before generating entries.
+
+## Build System
+This project uses CMake. After modifying CMakeLists.txt or adding new source files, always run a fresh build and verify linking succeeds. Never assume a target builds correctly without verifying. Check for disk space issues before lengthy builds.
+
+### Common Build Pitfalls
+- OBJCXX try_compile chicken-and-egg problems: set CMAKE_OBJCXX_COMPILER explicitly
+- Duplicate symbol conflicts between stubs and real implementations
+- Symlinks accidentally committed instead of file content — always verify with `file` command
+- Missing source files in CMake targets — confirm all .cpp files are listed
 
 ## Repository Structure
 
