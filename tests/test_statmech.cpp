@@ -814,6 +814,105 @@ TEST_F(StatMechEngineTest, ComputeTwiceReturnsSameResult) {
 }
 
 // ===========================================================================
+// THERMODYNAMIC BREAKDOWN LEDGER (Task 1)
+// ===========================================================================
+// These tests verify the new auditable ThermodynamicBreakdown struct and the
+// make_breakdown() factory. All identities from docs/dev/thermo_invariants.md
+// must hold. No legacy ranking paths are exercised or modified.
+
+TEST_F(StatMechEngineTest, BreakdownSingleStateIdentity) {
+    // E = E0, n=1 → logZ = -βE0, G=E0, H=E0, S=0, Cv=0, minus_TS=0
+    StatMechEngine eng(300.0);
+    eng.add_sample(-12.5, 1.0);
+
+    auto b = StatMechEngine::make_breakdown(eng);
+    EXPECT_NEAR(b.temperature_K, 300.0, EPSILON);
+    EXPECT_NEAR(b.logZ_config, -eng.beta() * (-12.5), 1e-9);
+    EXPECT_NEAR(b.G_config_kcal_mol, -12.5, EPSILON);
+    EXPECT_NEAR(b.H_eff_kcal_mol, -12.5, EPSILON);
+    EXPECT_NEAR(b.S_config_kcal_mol_K, 0.0, EPSILON);
+    EXPECT_NEAR(b.minus_T_S_config_kcal_mol, 0.0, EPSILON);
+    EXPECT_NEAR(b.Cv_kcal_mol_K, 0.0, EPSILON);
+    EXPECT_NEAR(b.sigma_E_kcal_mol, 0.0, EPSILON);
+    EXPECT_NEAR(b.G_total_kcal_mol, b.G_config_kcal_mol, EPSILON);
+    EXPECT_FALSE(b.has_vib);
+    EXPECT_FALSE(b.has_natural);
+}
+
+TEST_F(StatMechEngineTest, BreakdownTwoEqualStates) {
+    // E1=E2=E0 → logZ = ln(2) - βE0, G = E0 - kT ln(2), H=E0, S=kB ln(2)
+    StatMechEngine eng(300.0);
+    const double E0 = -10.0;
+    eng.add_sample(E0, 1.0);
+    eng.add_sample(E0, 1.0);
+
+    auto b = StatMechEngine::make_breakdown(eng);
+    const double kT = kB_kcal * 300.0;
+    const double expected_logZ = std::log(2.0) - eng.beta() * E0;
+    const double expected_G = E0 - kT * std::log(2.0);
+    const double expected_S = kB_kcal * std::log(2.0);
+
+    EXPECT_NEAR(b.logZ_config, expected_logZ, 1e-9);
+    EXPECT_NEAR(b.G_config_kcal_mol, expected_G, 1e-9);
+    EXPECT_NEAR(b.H_eff_kcal_mol, E0, EPSILON);
+    EXPECT_NEAR(b.S_config_kcal_mol_K, expected_S, 1e-9);
+    EXPECT_NEAR(b.minus_T_S_config_kcal_mol, expected_G - E0, 1e-9);
+    EXPECT_NEAR(b.Cv_kcal_mol_K, 0.0, EPSILON);
+    EXPECT_NEAR(b.G_total_kcal_mol, b.G_config_kcal_mol, EPSILON);
+}
+
+TEST_F(StatMechEngineTest, BreakdownTwoUnequalStatesWeighted) {
+    // Hand-computed Boltzmann weights for unequal energies
+    StatMechEngine eng(300.0);
+    eng.add_sample(-12.0, 1.0);  // lower energy → higher weight
+    eng.add_sample(-10.0, 1.0);
+
+    auto b = StatMechEngine::make_breakdown(eng);
+    auto weights = eng.boltzmann_weights();
+    ASSERT_EQ(weights.size(), 2u);
+    EXPECT_GT(weights[0], weights[1]);  // E0 more probable
+
+    // Verify G = -kT logZ and S identities still hold
+    EXPECT_NEAR(b.G_config_kcal_mol, -kB_kcal * 300.0 * b.logZ_config, 1e-9);
+    EXPECT_NEAR(b.S_config_kcal_mol_K, (b.H_eff_kcal_mol - b.G_config_kcal_mol) / 300.0, 1e-9);
+    EXPECT_NEAR(b.minus_T_S_config_kcal_mol, b.G_config_kcal_mol - b.H_eff_kcal_mol, 1e-9);
+    EXPECT_GT(b.Cv_kcal_mol_K, 0.0);  // must have variance
+}
+
+TEST_F(StatMechEngineTest, BreakdownWithCorrectionsGTotal) {
+    StatMechEngine eng(300.0);
+    eng.add_sample(-8.0);
+
+    // Simulate BindingMode supplying vib + natural corrections
+    auto b = StatMechEngine::make_breakdown(eng,
+                                            /*G_vib=*/ +1.2, /*has_vib=*/true,
+                                            /*G_natural=*/ +0.3, /*has_natural=*/true,
+                                            /*G_other=*/ 0.0, /*has_other=*/false);
+
+    EXPECT_TRUE(b.has_vib);
+    EXPECT_TRUE(b.has_natural);
+    EXPECT_FALSE(b.has_other);
+    EXPECT_NEAR(b.G_vib_kcal_mol, 1.2, EPSILON);
+    EXPECT_NEAR(b.G_natural_kcal_mol, 0.3, EPSILON);
+    EXPECT_NEAR(b.G_total_kcal_mol,
+                b.G_config_kcal_mol + 1.2 + 0.3 + 0.0,
+                1e-9);
+}
+
+TEST_F(StatMechEngineTest, BreakdownSigmaEMatchesStdEnergy) {
+    StatMechEngine eng(300.0);
+    eng.add_sample(-15.0);
+    eng.add_sample(-12.0);
+    eng.add_sample(-9.0);
+
+    auto th = eng.compute();
+    auto b = StatMechEngine::make_breakdown(eng);
+
+    EXPECT_NEAR(b.sigma_E_kcal_mol, th.std_energy, 1e-9);
+    EXPECT_NEAR(b.sigma_E_kcal_mol, std::sqrt(std::max(0.0, th.mean_energy_sq - th.mean_energy * th.mean_energy)), 1e-9);
+}
+
+// ===========================================================================
 // MAIN
 // ===========================================================================
 

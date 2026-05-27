@@ -44,6 +44,43 @@ struct Thermodynamics {
     double std_energy;        // σ_E = sqrt(C_v kT²)
 };
 
+// ─── THERMODYNAMIC LEDGER (Task 1 — auditable breakdown) ─────────────────────
+// Single source of truth for all thermodynamic quantities exposed by the engine.
+// All fields carry explicit units in their names per architectural principles.
+// This struct aggregates the canonical ensemble result (G_config etc.) plus
+// optional additive corrections (vibrational, NATURaL, other) WITHOUT changing
+// any legacy ranking or public API behaviour.
+//
+// G_total = G_config + G_vib + G_natural + G_other  (always)
+// Legacy Thermodynamics (free_energy, mean_energy, entropy, ...) remain the
+// source of truth for the configurational part; this ledger is derived from it.
+//
+// DO NOT use for ranking, pose selection, or optimization in early phases.
+// All new fields are additive and optional. has_* flags indicate presence.
+struct ThermodynamicBreakdown {
+    double temperature_K = 300.0;
+
+    // Configurational ensemble (from StatMechEngine / GA poses)
+    double logZ_config = 0.0;                 // ln Z (dimensionless)
+    double G_config_kcal_mol = 0.0;           // F_config = -kB T logZ
+    double H_eff_kcal_mol = 0.0;              // ⟨E⟩ Boltzmann-weighted mean
+    double S_config_kcal_mol_K = 0.0;         // (H_eff - G_config) / T
+    double minus_T_S_config_kcal_mol = 0.0;   // G_config - H_eff
+    double Cv_kcal_mol_K = 0.0;               // variance(E) / (kB T²)
+    double sigma_E_kcal_mol = 0.0;            // sqrt(variance(E))
+
+    // Additive corrections (populated by callers: BindingMode, tENCoM, NATURaL, ...)
+    double G_vib_kcal_mol = 0.0;              // ENCoM / tENCoM vibrational free energy correction
+    double G_natural_kcal_mol = 0.0;          // NATURaL co-translational / receptor strain correction
+    double G_other_kcal_mol = 0.0;            // Future: explicit GIST, custom terms, etc.
+    double G_total_kcal_mol = 0.0;            // G_config + G_vib + G_natural + G_other
+
+    // Presence flags (true only when the corresponding correction was intentionally supplied)
+    bool has_vib = false;
+    bool has_natural = false;
+    bool has_other = false;
+};
+
 struct Replica {
     int    id;
     double temperature;
@@ -155,6 +192,18 @@ public:
 
     // Convenience: Helmholtz free energy from a raw energy vector
     static double helmholtz(std::span<const double> energies, double T);
+
+    // ─── Thermodynamic ledger factory (Task 1) ──────────────────────────────
+    // Builds a fully-audited breakdown from an existing engine result.
+    // Corrections are additive and optional. When a correction is supplied,
+    // the corresponding has_* flag must be set by the caller.
+    // This function performs no I/O, no ranking, and has no side effects on
+    // the engine or any global state.
+    static ThermodynamicBreakdown make_breakdown(
+        const StatMechEngine& engine,
+        double G_vib_kcal_mol = 0.0,     bool has_vib = false,
+        double G_natural_kcal_mol = 0.0, bool has_natural = false,
+        double G_other_kcal_mol = 0.0,   bool has_other = false);
 
 private:
     double T_;

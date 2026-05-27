@@ -446,4 +446,48 @@ std::vector<double> StatMechEngine::serialize_multiplicities() const {
     return out;
 }
 
+// ─── make_breakdown (Task 1 ledger) ──────────────────────────────────────────
+// Derives the full audited ThermodynamicBreakdown from a live engine.
+// All identities from thermo_invariants.md are enforced by construction here
+// (G_config = -kT logZ, S = (H-G)/T, minus_TS = G-H, G_total = sum of parts).
+// Corrections are passed in by the caller (BindingMode for vib/natural, etc.).
+// No ranking side-effects. Safe for use in tests and future JSON paths.
+ThermodynamicBreakdown StatMechEngine::make_breakdown(
+    const StatMechEngine& engine,
+    double G_vib_kcal_mol,     bool has_vib,
+    double G_natural_kcal_mol, bool has_natural,
+    double G_other_kcal_mol,   bool has_other)
+{
+    ThermodynamicBreakdown b;
+    if (engine.size() == 0) {
+        // Return zeroed struct with temperature; caller must not use for math
+        b.temperature_K = engine.temperature();
+        return b;
+    }
+
+    const auto th = engine.compute();   // reuse proven compute() path
+
+    b.temperature_K = th.temperature;
+
+    b.logZ_config = th.log_Z;
+    b.G_config_kcal_mol = th.free_energy;
+    b.H_eff_kcal_mol = th.mean_energy;
+    b.S_config_kcal_mol_K = th.entropy;
+    b.minus_T_S_config_kcal_mol = th.free_energy - th.mean_energy;
+    b.Cv_kcal_mol_K = th.heat_capacity;
+    b.sigma_E_kcal_mol = th.std_energy;
+
+    b.G_vib_kcal_mol = G_vib_kcal_mol;
+    b.G_natural_kcal_mol = G_natural_kcal_mol;
+    b.G_other_kcal_mol = G_other_kcal_mol;
+
+    b.G_total_kcal_mol = th.free_energy + G_vib_kcal_mol + G_natural_kcal_mol + G_other_kcal_mol;
+
+    b.has_vib = has_vib;
+    b.has_natural = has_natural;
+    b.has_other = has_other;
+
+    return b;
+}
+
 }  // namespace statmech
