@@ -42,6 +42,17 @@ from .benchmark import (
 # Pure-Python thermodynamics (always available)
 from .thermodynamics import StatMechEngine, Thermodynamics, ThermodynamicBreakdown, kB_kcal, kB_SI
 
+# entropy.help audit schema (A1.1) — pure Python, always available
+from .schemas.thermo_audit import (
+    ThermodynamicOutput,
+    ThermodynamicOutputDC,
+    TotalSampledPartitionFunction,
+    TotalSampledPartitionFunctionDC,
+    Provenance,
+    ProvenanceDC,
+    make_total_sampled_output,
+)
+
 # C++ extension — optional: pure-Python helpers work without it
 try:
     from ._core import (
