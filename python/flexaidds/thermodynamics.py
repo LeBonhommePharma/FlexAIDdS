@@ -5,7 +5,7 @@ Provides Pythonic wrappers around C++ StatMechEngine with NumPy integration.
 
 import math
 from typing import List, Optional, Tuple
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 try:
     import numpy as np
@@ -113,6 +113,11 @@ class ThermodynamicBreakdown:
     has_natural: bool = False
     has_other: bool = False
 
+    # Task 3: component-wise Boltzmann averages (when available)
+    component_means: Dict[str, float] = field(default_factory=dict)
+    component_sum_kcal_mol: float = 0.0
+    components_complete: bool = False
+
     def to_dict(self) -> Dict[str, Any]:
         """Exact JSON shape required by roadmap (no legacy aliases here)."""
         return {
@@ -128,6 +133,9 @@ class ThermodynamicBreakdown:
             "G_natural_kcal_mol": self.G_natural_kcal_mol,
             "G_other_kcal_mol": self.G_other_kcal_mol,
             "G_total_kcal_mol": self.G_total_kcal_mol,
+            "component_sum_kcal_mol": self.component_sum_kcal_mol,
+            "components_complete": self.components_complete,
+            "component_means": self.component_means,
         }
 
     @classmethod
@@ -152,6 +160,9 @@ class ThermodynamicBreakdown:
             has_vib=has_vib,
             has_natural=has_natural,
             has_other=has_other,
+            component_means={},
+            component_sum_kcal_mol=0.0,
+            components_complete=False,
         )
         return b
 

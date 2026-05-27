@@ -490,4 +490,84 @@ ThermodynamicBreakdown StatMechEngine::make_breakdown(
     return b;
 }
 
+// ─── Task 3: Component-wise weighted averages ────────────────────────────────
+
+EnergyComponents StatMechEngine::compute_weighted_components(
+    std::span<const double> weights,
+    std::span<const EnergyComponents> components)
+{
+    const size_t n = weights.size();
+    if (n == 0 || n != components.size())
+        return {};
+
+    double sum_w = 0.0;
+    EnergyComponents result{};
+
+    for (size_t i = 0; i < n; ++i) {
+        const double w = weights[i];
+        sum_w += w;
+
+        const auto& c = components[i];
+        result.cf               += w * c.cf;
+        result.receptor_strain  += w * c.receptor_strain;
+        result.ligand_internal  += w * c.ligand_internal;
+        result.hbond            += w * c.hbond;
+        result.gist             += w * c.gist;
+        result.metal            += w * c.metal;
+        result.water            += w * c.water;
+        result.other            += w * c.other;
+        result.total            += w * c.total;
+    }
+
+    if (sum_w > 1e-300) {
+        const double inv = 1.0 / sum_w;
+        result.cf              *= inv;
+        result.receptor_strain *= inv;
+        result.ligand_internal *= inv;
+        result.hbond           *= inv;
+        result.gist            *= inv;
+        result.metal           *= inv;
+        result.water           *= inv;
+        result.other           *= inv;
+        result.total           *= inv;
+    }
+
+    // component_sum is the sum of the averaged pieces (diagnostic)
+    // Note: this may legitimately differ from H_eff if not all energy was decomposed.
+    return result;
+}
+
+ThermodynamicBreakdown StatMechEngine::make_breakdown_with_components(
+    const StatMechEngine& engine,
+    std::span<const EnergyComponents> components,
+    double G_vib_kcal_mol,     bool has_vib,
+    double G_natural_kcal_mol, bool has_natural,
+    double G_other_kcal_mol,   bool has_other)
+{
+    ThermodynamicBreakdown b = make_breakdown(
+        engine, G_vib_kcal_mol, has_vib,
+        G_natural_kcal_mol, has_natural,
+        G_other_kcal_mol, has_other);
+
+    if (!components.empty() && components.size() == engine.size()) {
+        auto weights = engine.boltzmann_weights();
+        b.component_means = compute_weighted_components(weights, components);
+
+        // Compute component_sum for convenience / diagnostics
+        const auto& m = b.component_means;
+        b.component_sum_kcal_mol =
+            m.cf + m.receptor_strain + m.ligand_internal + m.hbond +
+            m.gist + m.metal + m.water + m.other;
+
+        // Heuristic completeness: if the two biggest terms (CF + strain) are
+        // marked Available, we consider the decomposition "reasonably complete".
+        b.components_complete =
+            (m.cf_status == ComponentStatus::Available) &&
+            (m.receptor_strain_status == ComponentStatus::Available ||
+             m.receptor_strain_status == ComponentStatus::NotComputed); // allow single-conformer case
+    }
+
+    return b;
+}
+
 }  // namespace statmech

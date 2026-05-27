@@ -57,6 +57,41 @@ struct Thermodynamics {
 //
 // DO NOT use for ranking, pose selection, or optimization in early phases.
 // All new fields are additive and optional. has_* flags indicate presence.
+
+// EnergyComponents must be defined before ThermodynamicBreakdown (which contains it)
+enum class ComponentStatus {
+    Available,
+    IncludedInOther,
+    NotComputed,
+    Experimental
+};
+
+struct EnergyComponents {
+    double total = 0.0;
+    double cf = 0.0;
+    double receptor_strain = 0.0;
+    double ligand_internal = 0.0;
+    double hbond = 0.0;
+    double gist = 0.0;
+    double metal = 0.0;
+    double water = 0.0;
+    double other = 0.0;
+
+    ComponentStatus cf_status = ComponentStatus::Available;
+    ComponentStatus receptor_strain_status = ComponentStatus::NotComputed;
+    ComponentStatus ligand_internal_status = ComponentStatus::NotComputed;
+    ComponentStatus hbond_status = ComponentStatus::NotComputed;
+    ComponentStatus gist_status = ComponentStatus::NotComputed;
+    ComponentStatus metal_status = ComponentStatus::NotComputed;
+    ComponentStatus water_status = ComponentStatus::NotComputed;
+    ComponentStatus other_status = ComponentStatus::Available;
+
+    bool has_meaningful_components() const {
+        return cf_status == ComponentStatus::Available ||
+               receptor_strain_status == ComponentStatus::Available;
+    }
+};
+
 struct ThermodynamicBreakdown {
     double temperature_K = 300.0;
 
@@ -79,6 +114,18 @@ struct ThermodynamicBreakdown {
     bool has_vib = false;
     bool has_natural = false;
     bool has_other = false;
+
+    // ═══ COMPONENT-WISE BOLTZMANN AVERAGES (Task 3) ═══
+    // These are ensemble averages: <X> = Σ_i p_i * X_i using the same Boltzmann weights
+    // as the rest of the ledger. They are populated when component data is available.
+    //
+    // IMPORTANT: H_eff is the weighted total energy. component_sum may differ from H_eff
+    // when not all energy terms are tracked in EnergyComponents (common case).
+    // The completeness flag tells consumers whether they can treat component_sum ≈ H_eff.
+
+    EnergyComponents component_means;   // all fields are <X> = Σ p_i X_i
+    double component_sum_kcal_mol = 0.0; // sum of the mean components (for diagnostics)
+    bool   components_complete = false;  // true only if every significant term was tracked
 };
 
 struct Replica {
@@ -201,6 +248,26 @@ public:
     // the engine or any global state.
     static ThermodynamicBreakdown make_breakdown(
         const StatMechEngine& engine,
+        double G_vib_kcal_mol = 0.0,     bool has_vib = false,
+        double G_natural_kcal_mol = 0.0, bool has_natural = false,
+        double G_other_kcal_mol = 0.0,   bool has_other = false);
+
+    // ─── Component-wise ensemble averages (Task 3) ──────────────────────────
+    // Given a vector of Boltzmann weights (from boltzmann_weights()) and a
+    // parallel vector of EnergyComponents (one per microstate), returns the
+    // properly weighted averages:  <X> = Σ (w_i * X_i) / Σ w_i
+    //
+    // This is the function that implements Σ_i p_i * CF_i etc.
+    // It does NOT modify ranking or total_energy.
+    static EnergyComponents compute_weighted_components(
+        std::span<const double> weights,
+        std::span<const EnergyComponents> components);
+
+    // Convenience overload: compute both the ledger and the component averages
+    // in one call when you have the raw data.
+    static ThermodynamicBreakdown make_breakdown_with_components(
+        const StatMechEngine& engine,
+        std::span<const EnergyComponents> components,
         double G_vib_kcal_mol = 0.0,     bool has_vib = false,
         double G_natural_kcal_mol = 0.0, bool has_natural = false,
         double G_other_kcal_mol = 0.0,   bool has_other = false);
