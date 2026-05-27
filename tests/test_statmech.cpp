@@ -1028,6 +1028,59 @@ TEST_F(StatMechEngineTest, ComponentAverages_Incomplete_MarkedCorrectly) {
 }
 
 // ===========================================================================
+// DIAGNOSTIC ENTHALPY–ENTROPY METRICS (Task 4)
+// ===========================================================================
+// These metrics are diagnostic only. Tests verify:
+// - Correct mathematical behaviour
+// - Safety on zero/near-zero denominators
+// - Clamping of compensation_score to [0, 1]
+
+TEST_F(StatMechEngineTest, DiagnosticMetrics_HighCompensation) {
+    // Strong compensation: G very small while H and -TS are large and opposite
+    ThermodynamicBreakdown b;
+    b.G_config_kcal_mol = 0.05;
+    b.H_eff_kcal_mol = -12.0;
+    b.minus_T_S_config_kcal_mol = 11.97;
+
+    EXPECT_GT(b.entropy_fraction(), 0.49);
+    EXPECT_GT(b.enthalpy_fraction(), 0.49);
+    EXPECT_GT(b.compensation_score(), 0.99);   // almost perfect compensation
+}
+
+TEST_F(StatMechEngineTest, DiagnosticMetrics_LowCompensation) {
+    // Almost pure enthalpy
+    ThermodynamicBreakdown b;
+    b.G_config_kcal_mol = -11.8;
+    b.H_eff_kcal_mol = -12.0;
+    b.minus_T_S_config_kcal_mol = 0.15;
+
+    EXPECT_LT(b.compensation_score(), 0.03);
+    EXPECT_GT(b.enthalpy_fraction(), 0.98);
+}
+
+TEST_F(StatMechEngineTest, DiagnosticMetrics_ZeroDenomSafety) {
+    ThermodynamicBreakdown b; // all zero
+    double ef = b.entropy_fraction();
+    double hf = b.enthalpy_fraction();
+    double cs = b.compensation_score();
+
+    EXPECT_TRUE(std::isfinite(ef) && ef >= 0.0 && ef <= 1.0);
+    EXPECT_TRUE(std::isfinite(hf) && hf >= 0.0 && hf <= 1.0);
+    EXPECT_TRUE(std::isfinite(cs) && cs >= 0.0 && cs <= 1.0);
+}
+
+TEST_F(StatMechEngineTest, DiagnosticMetrics_Clamping) {
+    ThermodynamicBreakdown b;
+    b.G_config_kcal_mol = 100.0;      // huge G due to numerical weirdness
+    b.H_eff_kcal_mol = 1.0;
+    b.minus_T_S_config_kcal_mol = 0.0;
+
+    double cs = b.compensation_score();
+    EXPECT_LE(cs, 1.0);
+    EXPECT_GE(cs, 0.0);
+}
+
+// ===========================================================================
 // MAIN
 // ===========================================================================
 

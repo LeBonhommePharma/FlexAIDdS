@@ -115,6 +115,11 @@ struct ThermodynamicBreakdown {
     bool has_natural = false;
     bool has_other = false;
 
+    // ═══ Task 4: Diagnostic metrics (never for ranking) ═══
+    double entropy_fraction() const;
+    double enthalpy_fraction() const;
+    double compensation_score() const;
+
     // ═══ COMPONENT-WISE BOLTZMANN AVERAGES (Task 3) ═══
     // These are ensemble averages: <X> = Σ_i p_i * X_i using the same Boltzmann weights
     // as the rest of the ledger. They are populated when component data is available.
@@ -134,6 +139,39 @@ struct Replica {
     double beta;              // 1/(kT)
     double current_energy;
 };
+
+// ─── Diagnostic Enthalpy–Entropy Metrics (Task 4) ────────────────────────────
+// These functions are **diagnostic only**.
+// They must never be used for ranking, pose selection, optimization,
+// or any affinity claim.
+//
+// compensation_score high → strong enthalpy-entropy compensation (G small relative to parts)
+// compensation_score low  → one term dominates
+//
+// All functions are safe for near-zero denominators (return well-defined values).
+
+inline constexpr double kDiagnosticEpsilon = 1e-12;
+
+inline double entropy_fraction(double H_eff_kcal_mol, double minus_T_S_config_kcal_mol) {
+    const double denom = std::abs(H_eff_kcal_mol) + std::abs(minus_T_S_config_kcal_mol) + kDiagnosticEpsilon;
+    return std::abs(minus_T_S_config_kcal_mol) / denom;
+}
+
+inline double enthalpy_fraction(double H_eff_kcal_mol, double minus_T_S_config_kcal_mol) {
+    const double denom = std::abs(H_eff_kcal_mol) + std::abs(minus_T_S_config_kcal_mol) + kDiagnosticEpsilon;
+    return std::abs(H_eff_kcal_mol) / denom;
+}
+
+inline double compensation_score(double G_config_kcal_mol,
+                                 double H_eff_kcal_mol,
+                                 double minus_T_S_config_kcal_mol) {
+    const double denom = std::abs(H_eff_kcal_mol) + std::abs(minus_T_S_config_kcal_mol) + kDiagnosticEpsilon;
+    double score = 1.0 - (std::abs(G_config_kcal_mol) / denom);
+    if (score < 0.0) score = 0.0;
+    if (score > 1.0) score = 1.0;
+    return score;
+}
+
 
 struct WHAMBin {
     double coord_center;

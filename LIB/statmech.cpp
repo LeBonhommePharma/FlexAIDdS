@@ -570,4 +570,18 @@ ThermodynamicBreakdown StatMechEngine::make_breakdown_with_components(
     return b;
 }
 
+// ─── Task 4: Diagnostic metric implementations (on the ledger) ───────────────
+
+double ThermodynamicBreakdown::entropy_fraction() const {
+    return statmech::entropy_fraction(H_eff_kcal_mol, minus_T_S_config_kcal_mol);
+}
+
+double ThermodynamicBreakdown::enthalpy_fraction() const {
+    return statmech::enthalpy_fraction(H_eff_kcal_mol, minus_T_S_config_kcal_mol);
+}
+
+double ThermodynamicBreakdown::compensation_score() const {
+    return statmech::compensation_score(G_config_kcal_mol, H_eff_kcal_mol, minus_T_S_config_kcal_mol);
+}
+
 }  // namespace statmech
