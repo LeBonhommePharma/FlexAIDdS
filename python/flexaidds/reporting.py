@@ -23,6 +23,12 @@ def _fmt(val: Optional[float], digits: int = 2) -> str:
     return f"{val:.{digits}f}"
 
 
+def _get_field(obj: Union[BindingModeResult, Dict[str, Any]], key: str, default: Any = None) -> Any:
+    if isinstance(obj, dict):
+        return obj.get(key, default)
+    return getattr(obj, key, default)
+
+
 def generate_pymol_script(
     result: Union[DockingResult, Dict[str, Any]],
     output_path: Union[str, Path],
@@ -74,23 +80,25 @@ def generate_pymol_script(
         "",
     ]
 
+    has_experimental = False
     for i, mode in enumerate(modes[:5]):  # top 5 for clarity
-        thermo = getattr(mode, "thermodynamics", None) or (mode.get("thermodynamics") if isinstance(mode, dict) else None)
+        thermo = _get_field(mode, "thermodynamics")
 
         if thermo:
-            g_total = thermo.get("G_total_kcal_mol", mode.get("free_energy"))
+            g_total = thermo.get("G_total_kcal_mol", _get_field(mode, "free_energy"))
             h_eff = thermo.get("H_eff_kcal_mol")
             mts = thermo.get("minus_T_S_config_kcal_mol")
             is_exp = thermo.get("components_complete", True) is False
         else:
-            g_total = getattr(mode, "free_energy", None)
-            h_eff = getattr(mode, "enthalpy", None)
-            mts = getattr(mode, "entropy", None)
+            g_total = _get_field(mode, "free_energy")
+            h_eff = _get_field(mode, "enthalpy")
+            mts = _get_field(mode, "entropy")
             is_exp = False
+        has_experimental = has_experimental or is_exp
 
         label = (
-            f"Mode {getattr(mode, 'rank', i+1)} | "
-            f"G={_fmt(g_total)} | "
+            f"Mode {_get_field(mode, 'rank', i+1)} | "
+            f"G_total={_fmt(g_total)} | "
             f"H={_fmt(h_eff)} | "
             f"-T*S={_fmt(mts)} kcal/mol"
         )
@@ -100,7 +108,7 @@ def generate_pymol_script(
         lines.append(f"print('{label}')")
 
     # Add experimental warning at the end
-    if show_experimental:
+    if show_experimental and has_experimental:
         lines.extend([
             "",
             "print('')",

@@ -105,6 +105,12 @@ from .energy_matrix import (
     SYBYL_TYPE_NAMES,
     SYBYL_RADII,
 )
+from .reporting import (
+    generate_pymol_script,
+    generate_markdown_report,
+    generate_temperature_scan_plot,
+    write_all_reports,
+)
 
 
 def dock(

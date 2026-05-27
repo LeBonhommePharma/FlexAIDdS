@@ -18,7 +18,7 @@ from flexaidds.models import DockingResult, BindingModeResult, PoseResult
 
 def make_sample_result():
     """Create a minimal DockingResult for testing."""
-    pose = PoseResult(path=Path("pose.pdb"), rank=1, cf=-10.0)
+    pose = PoseResult(path=Path("pose.pdb"), mode_id=1, pose_rank=1, cf=-10.0)
     mode = BindingModeResult(
         mode_id=1,
         rank=1,
