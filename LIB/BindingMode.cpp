@@ -331,13 +331,33 @@ statmech::ThermodynamicBreakdown BindingMode::get_thermodynamic_breakdown() cons
 	rebuild_engine();
 	const double vib = compute_vibrational_correction();
 	const double natural = (Population && Population->FA) ? Population->FA->natural_deltaG : 0.0;
-	return engine_.compute_breakdown(
+	statmech::ThermodynamicBreakdown breakdown = engine_.compute_breakdown(
 		vib,
 		natural,
 		0.0,
 		vib != 0.0,
 		natural != 0.0,
 		false);
+	if (!Poses.empty()) {
+		breakdown.components = get_component_averages();
+		breakdown.has_components = true;
+	}
+	return breakdown;
+}
+
+statmech::ComponentAverages BindingMode::get_component_averages() const
+{
+	rebuild_engine();
+	std::vector<statmech::EnergyComponents> components;
+	components.reserve(Poses.size());
+	for (const auto& pose : Poses) {
+		statmech::EnergyComponents c = pose.energy_components;
+		c.total = pose.total_energy();
+		c.cf = pose.CF;
+		c.receptor_strain = pose.receptor_strain;
+		components.push_back(c);
+	}
+	return engine_.component_averages(components);
 }
 
 
@@ -645,12 +665,20 @@ Pose::Pose(chromosome* chrom, int index, int iorder, float dist, uint temperatur
 	  reachDist(dist),
 	  chrom(chrom),
 	  CF(chrom->app_evalue),
+	  energy_components(),
 	  boltzmann_weight(0.0),
 	  vPose(vec),
 	  model_index(0),
 	  model_coords(nullptr),
 	  receptor_strain(0.0)
 {
+	energy_components.total = total_energy();
+	energy_components.cf = CF;
+	energy_components.hbond = chrom->cf.hbond;
+	energy_components.gist = chrom->cf.gist_desolv;
+	energy_components.metal = chrom->cf.metal_coord;
+	energy_components.water = chrom->cf.gist;
+	energy_components.complete = false;
 	this->boltzmann_weight = std::exp(-chrom->app_evalue / (statmech::kB_kcal * static_cast<double>(temperature)));
 }
 

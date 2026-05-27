@@ -44,6 +44,40 @@ struct Thermodynamics {
     double std_energy;        // σ_E = sqrt(C_v kT²)
 };
 
+enum class ComponentStatus {
+    Available,
+    IncludedInOther,
+    NotComputed,
+    Experimental
+};
+
+struct EnergyComponents {
+    double total = 0.0;
+    double cf = 0.0;
+    double receptor_strain = 0.0;
+    double ligand_internal = 0.0;
+    double hbond = 0.0;
+    double gist = 0.0;
+    double metal = 0.0;
+    double water = 0.0;
+    double other = 0.0;
+    bool complete = false;
+};
+
+struct ComponentAverages {
+    double mean_CF_kcal_mol = 0.0;
+    double mean_receptor_strain_kcal_mol = 0.0;
+    double mean_ligand_internal_kcal_mol = 0.0;
+    double mean_hbond_kcal_mol = 0.0;
+    double mean_gist_kcal_mol = 0.0;
+    double mean_metal_kcal_mol = 0.0;
+    double mean_water_kcal_mol = 0.0;
+    double mean_other_kcal_mol = 0.0;
+    double component_sum_kcal_mol = 0.0;
+    bool component_completeness_flag = false;
+    ComponentStatus component_status = ComponentStatus::NotComputed;
+};
+
 struct ThermodynamicBreakdown {
     double temperature_K = 300.0;
 
@@ -63,6 +97,9 @@ struct ThermodynamicBreakdown {
     bool has_vib = false;
     bool has_natural = false;
     bool has_other = false;
+
+    ComponentAverages components;
+    bool has_components = false;
 };
 
 struct Replica {
@@ -105,6 +142,10 @@ public:
         bool has_vib = false,
         bool has_natural = false,
         bool has_other = false) const;
+
+    // Boltzmann-weight arbitrary energy components over the current ensemble.
+    ComponentAverages component_averages(
+        std::span<const EnergyComponents> components) const;
 
     // Boltzmann weight vector (same order as insertion)
     std::vector<double> boltzmann_weights() const;

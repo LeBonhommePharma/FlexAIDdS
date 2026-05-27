@@ -205,6 +205,46 @@ ThermodynamicBreakdown StatMechEngine::compute_breakdown(
     return b;
 }
 
+ComponentAverages StatMechEngine::component_averages(
+    std::span<const EnergyComponents> components) const
+{
+    if (components.empty())
+        throw std::invalid_argument("StatMechEngine::component_averages: empty component list");
+    if (components.size() != ensemble_.size())
+        throw std::invalid_argument("StatMechEngine::component_averages: component count must match ensemble size");
+
+    const std::vector<double> weights = boltzmann_weights();
+    ComponentAverages avg;
+    avg.component_completeness_flag = true;
+
+    for (std::size_t i = 0; i < components.size(); ++i) {
+        const double p = weights[i];
+        const EnergyComponents& c = components[i];
+        avg.mean_CF_kcal_mol += p * c.cf;
+        avg.mean_receptor_strain_kcal_mol += p * c.receptor_strain;
+        avg.mean_ligand_internal_kcal_mol += p * c.ligand_internal;
+        avg.mean_hbond_kcal_mol += p * c.hbond;
+        avg.mean_gist_kcal_mol += p * c.gist;
+        avg.mean_metal_kcal_mol += p * c.metal;
+        avg.mean_water_kcal_mol += p * c.water;
+        avg.mean_other_kcal_mol += p * c.other;
+        avg.component_completeness_flag = avg.component_completeness_flag && c.complete;
+    }
+
+    avg.component_sum_kcal_mol = avg.mean_CF_kcal_mol
+        + avg.mean_receptor_strain_kcal_mol
+        + avg.mean_ligand_internal_kcal_mol
+        + avg.mean_hbond_kcal_mol
+        + avg.mean_gist_kcal_mol
+        + avg.mean_metal_kcal_mol
+        + avg.mean_water_kcal_mol
+        + avg.mean_other_kcal_mol;
+    avg.component_status = avg.component_completeness_flag
+        ? ComponentStatus::Available
+        : ComponentStatus::IncludedInOther;
+    return avg;
+}
+
 // ─── boltzmann_weights ───────────────────────────────────────────────────────
 
 std::vector<double> StatMechEngine::boltzmann_weights() const {

@@ -118,6 +118,75 @@ class Thermodynamics:
 
 
 @dataclass
+class EnergyComponents:
+    """Per-microstate energy components in kcal/mol.
+
+    ``complete`` means the listed terms partition the microstate total. When
+    false, component means are diagnostics and ``component_sum_kcal_mol`` must
+    not be interpreted as the ensemble ``H_eff``.
+    """
+
+    total: float = 0.0
+    cf: float = 0.0
+    receptor_strain: float = 0.0
+    ligand_internal: float = 0.0
+    hbond: float = 0.0
+    gist: float = 0.0
+    metal: float = 0.0
+    water: float = 0.0
+    other: float = 0.0
+    complete: bool = False
+
+
+@dataclass
+class ComponentAverages:
+    """Boltzmann-weighted energy component means in kcal/mol."""
+
+    mean_CF_kcal_mol: float = 0.0
+    mean_receptor_strain_kcal_mol: float = 0.0
+    mean_ligand_internal_kcal_mol: float = 0.0
+    mean_hbond_kcal_mol: float = 0.0
+    mean_gist_kcal_mol: float = 0.0
+    mean_metal_kcal_mol: float = 0.0
+    mean_water_kcal_mol: float = 0.0
+    mean_other_kcal_mol: float = 0.0
+    component_sum_kcal_mol: float = 0.0
+    component_completeness_flag: bool = False
+    component_status: str = "not_computed"
+
+    def to_dict(self) -> dict:
+        return {
+            "mean_CF_kcal_mol": self.mean_CF_kcal_mol,
+            "mean_receptor_strain_kcal_mol": self.mean_receptor_strain_kcal_mol,
+            "mean_ligand_internal_kcal_mol": self.mean_ligand_internal_kcal_mol,
+            "mean_hbond_kcal_mol": self.mean_hbond_kcal_mol,
+            "mean_gist_kcal_mol": self.mean_gist_kcal_mol,
+            "mean_metal_kcal_mol": self.mean_metal_kcal_mol,
+            "mean_water_kcal_mol": self.mean_water_kcal_mol,
+            "mean_other_kcal_mol": self.mean_other_kcal_mol,
+            "component_sum_kcal_mol": self.component_sum_kcal_mol,
+            "component_completeness_flag": self.component_completeness_flag,
+            "component_status": self.component_status,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "ComponentAverages":
+        return cls(
+            mean_CF_kcal_mol=float(data.get("mean_CF_kcal_mol", 0.0)),
+            mean_receptor_strain_kcal_mol=float(data.get("mean_receptor_strain_kcal_mol", 0.0)),
+            mean_ligand_internal_kcal_mol=float(data.get("mean_ligand_internal_kcal_mol", 0.0)),
+            mean_hbond_kcal_mol=float(data.get("mean_hbond_kcal_mol", 0.0)),
+            mean_gist_kcal_mol=float(data.get("mean_gist_kcal_mol", 0.0)),
+            mean_metal_kcal_mol=float(data.get("mean_metal_kcal_mol", 0.0)),
+            mean_water_kcal_mol=float(data.get("mean_water_kcal_mol", 0.0)),
+            mean_other_kcal_mol=float(data.get("mean_other_kcal_mol", 0.0)),
+            component_sum_kcal_mol=float(data.get("component_sum_kcal_mol", 0.0)),
+            component_completeness_flag=bool(data.get("component_completeness_flag", False)),
+            component_status=str(data.get("component_status", "not_computed")),
+        )
+
+
+@dataclass
 class ThermodynamicBreakdown:
     """Auditable thermodynamic ledger with explicit units and corrections.
 
@@ -142,9 +211,11 @@ class ThermodynamicBreakdown:
     has_vib: bool = False
     has_natural: bool = False
     has_other: bool = False
+    components: Optional[ComponentAverages] = None
+    has_components: bool = False
 
     def to_dict(self) -> dict:
-        return {
+        data = {
             "temperature_K": self.temperature_K,
             "logZ_config": self.logZ_config,
             "G_config_kcal_mol": self.G_config_kcal_mol,
@@ -160,10 +231,15 @@ class ThermodynamicBreakdown:
             "has_vib": self.has_vib,
             "has_natural": self.has_natural,
             "has_other": self.has_other,
+            "has_components": self.has_components,
         }
+        if self.components is not None:
+            data["components"] = self.components.to_dict()
+        return data
 
     @classmethod
     def from_dict(cls, data: dict) -> "ThermodynamicBreakdown":
+        components_data = data.get("components")
         return cls(
             temperature_K=float(data.get("temperature_K", 300.0)),
             logZ_config=float(data.get("logZ_config", 0.0)),
@@ -180,6 +256,12 @@ class ThermodynamicBreakdown:
             has_vib=bool(data.get("has_vib", False)),
             has_natural=bool(data.get("has_natural", False)),
             has_other=bool(data.get("has_other", False)),
+            components=(
+                ComponentAverages.from_dict(components_data)
+                if isinstance(components_data, dict)
+                else None
+            ),
+            has_components=bool(data.get("has_components", isinstance(components_data, dict))),
         )
 
 
@@ -290,6 +372,38 @@ class _PyStatMechEngine:
             has_natural=has_natural,
             has_other=has_other,
         )
+
+    def component_averages(self, components: List[EnergyComponents]) -> ComponentAverages:
+        if len(components) != len(self._states):
+            raise ValueError("component count must match ensemble size")
+        if not components:
+            raise ValueError("component list must not be empty")
+
+        weights = self.boltzmann_weights()
+        avg = ComponentAverages(component_completeness_flag=True)
+        for weight, comp in zip(weights, components):
+            avg.mean_CF_kcal_mol += weight * comp.cf
+            avg.mean_receptor_strain_kcal_mol += weight * comp.receptor_strain
+            avg.mean_ligand_internal_kcal_mol += weight * comp.ligand_internal
+            avg.mean_hbond_kcal_mol += weight * comp.hbond
+            avg.mean_gist_kcal_mol += weight * comp.gist
+            avg.mean_metal_kcal_mol += weight * comp.metal
+            avg.mean_water_kcal_mol += weight * comp.water
+            avg.mean_other_kcal_mol += weight * comp.other
+            avg.component_completeness_flag = avg.component_completeness_flag and comp.complete
+
+        avg.component_sum_kcal_mol = (
+            avg.mean_CF_kcal_mol
+            + avg.mean_receptor_strain_kcal_mol
+            + avg.mean_ligand_internal_kcal_mol
+            + avg.mean_hbond_kcal_mol
+            + avg.mean_gist_kcal_mol
+            + avg.mean_metal_kcal_mol
+            + avg.mean_water_kcal_mol
+            + avg.mean_other_kcal_mol
+        )
+        avg.component_status = "available" if avg.component_completeness_flag else "included_in_other"
+        return avg
 
     def boltzmann_weights(self) -> List[float]:
         if not self._states:
@@ -403,6 +517,12 @@ class StatMechEngine:
                 has_vib=result.has_vib,
                 has_natural=result.has_natural,
                 has_other=result.has_other,
+                components=(
+                    _component_averages_from_cpp(result.components)
+                    if getattr(result, "has_components", False)
+                    else None
+                ),
+                has_components=getattr(result, "has_components", False),
             )
 
         thermo = self.compute()
@@ -423,6 +543,30 @@ class StatMechEngine:
             has_natural=has_natural,
             has_other=has_other,
         )
+
+    def component_averages(self, components: List[EnergyComponents]) -> ComponentAverages:
+        """Boltzmann-weight component diagnostics over the current ensemble."""
+        if hasattr(self._engine, "component_averages"):
+            cpp_components = []
+            for comp in components:
+                cpp_comp = _core.EnergyComponents() if _core is not None else None
+                if cpp_comp is None:
+                    break
+                cpp_comp.total = comp.total
+                cpp_comp.cf = comp.cf
+                cpp_comp.receptor_strain = comp.receptor_strain
+                cpp_comp.ligand_internal = comp.ligand_internal
+                cpp_comp.hbond = comp.hbond
+                cpp_comp.gist = comp.gist
+                cpp_comp.metal = comp.metal
+                cpp_comp.water = comp.water
+                cpp_comp.other = comp.other
+                cpp_comp.complete = comp.complete
+                cpp_components.append(cpp_comp)
+            if len(cpp_components) == len(components):
+                return _component_averages_from_cpp(self._engine.component_averages(cpp_components))
+
+        return self._engine.component_averages(components)
     
     def boltzmann_weights(self):
         """Get Boltzmann weights for all samples.
