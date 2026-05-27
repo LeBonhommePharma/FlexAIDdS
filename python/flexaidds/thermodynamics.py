@@ -118,6 +118,9 @@ class ThermodynamicBreakdown:
     component_sum_kcal_mol: float = 0.0
     components_complete: bool = False
 
+    # Task 6: Standard-state affinity calibration (safe / experimental)
+    affinity: Optional[Dict[str, Any]] = None
+
     def to_dict(self) -> Dict[str, Any]:
         """Exact JSON shape required by roadmap (no legacy aliases here)."""
         return {
@@ -136,6 +139,7 @@ class ThermodynamicBreakdown:
             "component_sum_kcal_mol": self.component_sum_kcal_mol,
             "components_complete": self.components_complete,
             "component_means": self.component_means,
+            "affinity": self.affinity,
         }
 
     @classmethod
@@ -191,6 +195,28 @@ def compensation_score(G_config: float, H_eff: float, minus_T_S: float) -> float
     denom = abs(H_eff) + abs(minus_T_S) + EPS
     score = 1.0 - (abs(G_config) / denom)
     return max(0.0, min(1.0, score))  # clamp numerical noise
+
+
+# ─── Task 6: Pure-Python affinity calibration (parity with C++) ──────────────
+def deltaG_standard_to_Kd_M(deltaG_kcal_mol: float, T_K: float, c0_M: float = 1.0) -> float:
+    """Safe conversion. Raises on invalid inputs."""
+    if T_K <= 0:
+        raise ValueError("Temperature must be > 0 K")
+    if c0_M <= 0:
+        raise ValueError("c0_M must be > 0")
+    RT = kB_kcal * T_K
+    return c0_M * math.exp(deltaG_kcal_mol / RT)
+
+def Kd_M_to_deltaG_standard(Kd_M: float, T_K: float, c0_M: float = 1.0) -> float:
+    """Safe conversion. Raises on invalid inputs."""
+    if T_K <= 0:
+        raise ValueError("Temperature must be > 0 K")
+    if Kd_M <= 0:
+        raise ValueError("Kd must be > 0 M")
+    if c0_M <= 0:
+        raise ValueError("c0_M must be > 0")
+    RT = kB_kcal * T_K
+    return RT * math.log(Kd_M / c0_M)
 
 
     @classmethod
