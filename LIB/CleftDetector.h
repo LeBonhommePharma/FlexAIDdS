@@ -70,4 +70,43 @@ void write_cleft_spheres(const sphere* spheres, const char* filename);
 /*  free_sphere_list – frees the linked list returned by detect_cleft */
 void free_sphere_list(sphere* head);
 
+// ─── Task 8: Cleft Annotation & Flexible Residue Selection (PREPROCESSING) ──
+// This module turns cleft geometry + optional active-site info into
+// human-readable annotation and a recommended set of flexible residues.
+// It is strictly preprocessing — it must never change scoring behaviour.
+//
+// External annotations (Pfam, UniProt, etc.) must come from user-supplied
+// files or a separate preprocessing script. No web lookups are allowed here.
+
+struct CleftAnnotation {
+    int         cleft_id = -1;
+    std::string class_label;                    // "orthosteric", "allosteric", "unknown"
+    double      confidence = 0.0;               // 0.0 – 1.0
+    double      volume_A3 = 0.0;
+    double      distance_to_active_site_A = -1.0;
+
+    std::vector<int>         nearby_active_site_residues;
+    std::vector<int>         recommended_flexible_residues;
+    std::vector<std::string> evidence;          // free-text reasons
+};
+
+// Flexible residue selector rules (Task 8):
+// - Include residues within 'distance_shell_A' of any cleft sphere or ligand atom.
+// - Optionally include 'active_site_residues' if provided.
+// - Never include Gly/Ala unless a backbone flexibility module is active (we ignore for now).
+// - Respect 'user_fixed_residues' (these are excluded).
+// - Force-include anything in 'user_forced_flexible' (unless invalid).
+// - Deduplicate and sort deterministically (chain then residue number).
+std::vector<int> select_flexible_residues(
+    const atom* atoms,
+    const resid* residue,
+    int atm_cnt,
+    int res_cnt,
+    const std::vector<int>& cleft_sphere_residues,   // residues near detected cleft
+    double distance_shell_A,
+    const std::vector<int>& active_site_residues = {},
+    const std::vector<int>& user_fixed_residues = {},
+    const std::vector<int>& user_forced_flexible = {}
+);
+
 #endif // CLEFT_DETECTOR_H
