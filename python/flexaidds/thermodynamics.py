@@ -155,6 +155,33 @@ class ThermodynamicBreakdown:
         )
         return b
 
+
+# ─── Diagnostic-only enthalpy–entropy metrics (Task 4) ───────────────────────
+# These are NEVER to be used for ranking, pose selection, or optimization.
+# They are purely for analysis and must be labelled as diagnostics in all
+# output and documentation. compensation_score == 1 when H and -TS perfectly
+# cancel (G≈0); low when one term dominates.
+EPS = 1e-12
+
+def entropy_fraction(H_eff: float, minus_T_S: float) -> float:
+    """| -TΔS | / (|H_eff| + |-TΔS| + eps)  — diagnostic only."""
+    return abs(minus_T_S) / (abs(H_eff) + abs(minus_T_S) + EPS)
+
+def enthalpy_fraction(H_eff: float, minus_T_S: float) -> float:
+    """|H_eff| / (|H_eff| + |-TΔS| + eps) — diagnostic only."""
+    return abs(H_eff) / (abs(H_eff) + abs(minus_T_S) + EPS)
+
+def compensation_score(G_config: float, H_eff: float, minus_T_S: float) -> float:
+    """1 - |G| / (|H| + |-T S| + eps) clamped to [0,1].
+
+    High when enthalpy and entropy compensate (G small relative to parts).
+    FORBIDDEN for ranking or affinity claims.
+    """
+    denom = abs(H_eff) + abs(minus_T_S) + EPS
+    score = 1.0 - (abs(G_config) / denom)
+    return max(0.0, min(1.0, score))  # clamp numerical noise
+
+
     @classmethod
     def from_dict(cls, data: dict) -> "Thermodynamics":
         """Construct a Thermodynamics instance from a dictionary.
