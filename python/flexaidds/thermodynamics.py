@@ -455,6 +455,69 @@ class StatMechEngine:
     def __repr__(self) -> str:
         return f"<StatMechEngine T={self.temperature:.1f}K n_samples={self.n_samples}>"
 
+    # ─── Task 9 Completion: Temperature scan exposure (Python layer) ────────
+    def temperature_scan(self, temperatures: list[float]) -> list[dict]:
+        """
+        Recompute thermodynamics at multiple temperatures on the fixed ensemble.
+        Returns list of dicts matching the shape expected by reporting.py.
+        """
+        if _core is not None and hasattr(self._engine, "temperature_scan"):
+            points = self._engine.temperature_scan(temperatures)
+            return [
+                {
+                    "T_K": p.T_K,
+                    "logZ": p.logZ,
+                    "G_kcal_mol": p.G_kcal_mol,
+                    "H_kcal_mol": p.H_kcal_mol,
+                    "S_kcal_mol_K": p.S_kcal_mol_K,
+                    "Cv_kcal_mol_K": p.Cv_kcal_mol_K,
+                }
+                for p in points
+            ]
+        else:
+            # Fallback path only reached when no C++ scan method exists
+            # For now, raise a clear error so users know the full feature requires the C++ extension
+            raise NotImplementedError(
+                "temperature_scan on pure-Python fallback is not yet fully wired. "
+                "Install the C++ extension (pip install -e . with BUILD_PYTHON_BINDINGS) "
+                "or use the C++ StatMechEngine directly for temperature scans."
+            )
+
+    @staticmethod
+    def fit_delta_Cp(scan_points: list[dict], T_ref_K: float) -> dict:
+        """Thin wrapper around C++ or pure implementation (Task 7 parity)."""
+        if _core is not None and hasattr(_core, "fit_delta_Cp"):
+            # Would need struct conversion; for now delegate to a simple Python version
+            pass
+        # Minimal pure-Python linear regression (same as C++ Task 7 logic)
+        n = len(scan_points)
+        if n < 4:
+            raise ValueError("ΔCp fit requires at least 4 temperature points")
+        sum_x = sum_y = sum_xx = sum_xy = 0.0
+        for p in scan_points:
+            x = p["T_K"] - T_ref_K
+            y = p.get("H_kcal_mol", 0.0) - (scan_points[0].get("H_kcal_mol", 0.0) if scan_points else 0.0)
+            sum_x += x
+            sum_y += y
+            sum_xx += x * x
+            sum_xy += x * y
+        denom = n * sum_xx - sum_x * sum_x
+        delta_Cp = (n * sum_xy - sum_x * sum_y) / denom if abs(denom) > 1e-12 else 0.0
+        # RMSE
+        sse = 0.0
+        for p in scan_points:
+            x = p["T_K"] - T_ref_K
+            pred = (scan_points[0].get("H_kcal_mol", 0.0) if scan_points else 0.0) + delta_Cp * x
+            sse += (p.get("H_kcal_mol", 0.0) - pred) ** 2
+        rmse = (sse / n) ** 0.5
+        return {
+            "delta_Cp_kcal_mol_K": delta_Cp,
+            "T_ref_K": T_ref_K,
+            "rmse_kcal_mol": rmse,
+            "model_derived": True,
+            "experimental": True,
+        }
+
 
 class BoltzmannLUT:
     """Pre-tabulated Boltzmann factors for fast inner-loop evaluation.
