@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "last_updated": "2026-05-27T14:10:00Z",
+  "audits": [
+    {
+      "id": "AUD-2026-001",
+      "target": "μ-Opioid receptor + fentanyl",
+      "f_config_kcal_mol": -11.21,
+      "s_config_kcal_mol_K": 0.01113,
+      "verdict": "REPRODUCIBLE_WITH_CORRECTION",
+      "json_url": "AUD-2026-001_fentanyl_muOR.json",
+      "md_url": "AUD-2026-001_fentanyl_muOR.md",
+      "notes": "Classic entropy rescue case. Enthalpy-only selected decoy (RMSD 8.3 Å)."
+    },
+    {
+      "id": "AUD-2026-002",
+      "target": "Thrombin + dabigatran (negative control)",
+      "f_config_kcal_mol": -8.73,
+      "s_config_kcal_mol_K": 0.0013,
+      "verdict": "REPRODUCIBLE_NO_CORRECTION_NEEDED",
+      "json_url": "AUD-2026-002_thrombin_dabigatran.json",
+      "md_url": "AUD-2026-002_thrombin_dabigatran.md",
+      "notes": "Negative control. Rank unchanged — framework does not invent entropy."
+    }
+  ]
+}
