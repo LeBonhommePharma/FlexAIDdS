@@ -1,0 +1,63 @@
+{
+  "audit_id": "AUD-2026-001",
+  "target": "mu-opioid + fentanyl (example)",
+  "engine": "FlexAIDdS",
+  "report_version": "1.0",
+  "generated_at": "2026-05-27T13:12:00Z",
+
+  "total_sampled": {
+    "logZ_total_sampled": -45.237812,
+    "F_config_kcal_mol": -13.418,
+    "H_eff_kcal_mol": -16.812,
+    "S_config_kcal_mol_K": 0.01131
+  },
+
+  "temperature_K": 300.0,
+  "n_samples_raw": 12480,
+
+  "provenance": {
+    "git_sha": "a1b2c3d4e5f6789012345678901234567890abcd",
+    "timestamp": "2026-05-27T12:03:41Z",
+    "runner": "benchmarks/run_unified.py --dataset astex_diverse",
+    "seed": 20260427,
+    "host": "macos-15-arm64",
+    "binary_version": "FlexAIDdS 2.0.0-dev (feature/thermo-ledger)"
+  },
+
+  "gate_results": {
+    "gate5_convergence": {
+      "passed": true,
+      "delta_logZ": 4.2e-11,
+      "threshold": 1e-9,
+      "note": "Partition function stable to < 0.01 kcal/mol"
+    },
+    "gate6_crosscheck": {
+      "passed": true,
+      "max_deviation_kcal_mol": 0.0003,
+      "note": "F_config and S_config derivation consistent within floating-point tolerance"
+    }
+  },
+
+  "raw_ensemble_digest": "sha256:3f7a9c2b1e4d5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a",
+
+  "original_engine_summary": {
+    "top_pose_cf": -14.2,
+    "selected_mode_rmsd": 8.3,
+    "reported_free_energy": -14.2
+  },
+
+  "audit_summary": {
+    "verdict": "REPRODUCIBLE_WITH_CORRECTION",
+    "crystallographic_pose_recovered": true,
+    "audited_f_config": -13.418,
+    "audited_s_config_kcal_mol_K": 0.01131,
+    "entropy_contribution_kcal_mol": 3.394,
+    "notes": "Enthalpy-only scoring selected a decoy pose. Full TotalSampledPartitionFunction recovers the native binding mode (RMSD 1.2 Å) with ΔG within 0.3 kcal/mol of experiment."
+  },
+
+  "signature": {
+    "content_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "method": "manual-review + future-gpg",
+    "auditor": "entropy.help automated pipeline v0.1"
+  }
+}
