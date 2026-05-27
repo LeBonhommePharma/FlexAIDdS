@@ -67,16 +67,54 @@ class Thermodynamics:
         )
 
     def to_dict(self) -> dict:
-        """Convert to dictionary for serialization."""
+        """Convert to dictionary for serialization (includes all fields for roundtrip)."""
         return {
             'temperature_K': self.temperature,
             'log_Z': self.log_Z,
             'free_energy_kcal_mol': self.free_energy,
             'enthalpy_kcal_mol': self.mean_energy,
+            'mean_energy_sq': self.mean_energy_sq,
             'entropy_kcal_mol_K': self.entropy,
             'heat_capacity_kcal_mol_K2': self.heat_capacity,
             'std_energy_kcal_mol': self.std_energy,
         }
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "Thermodynamics":
+        """Construct a Thermodynamics instance from a dictionary.
+
+        Accepts the key format produced by :meth:`to_dict` (suffixed keys such
+        as ``temperature_K``, ``free_energy_kcal_mol``, …) as well as the raw
+        attribute names (``temperature``, ``free_energy``, …).  Suffixed keys
+        take priority when both forms are present.
+        """
+        def _get(suffixed: str, raw: str) -> float:
+            if suffixed in data:
+                return float(data[suffixed])
+            if raw in data:
+                return float(data[raw])
+            raise KeyError(
+                f"Missing required key: expected '{suffixed}' or '{raw}'"
+            )
+
+        # mean_energy_sq may be absent in legacy dicts; default safe 0.0
+        def _get_opt(suffixed: str, raw: str, default: float = 0.0) -> float:
+            if suffixed in data:
+                return float(data[suffixed])
+            if raw in data:
+                return float(data[raw])
+            return default
+
+        return cls(
+            temperature=_get("temperature_K", "temperature"),
+            log_Z=_get("log_Z", "log_Z"),
+            free_energy=_get("free_energy_kcal_mol", "free_energy"),
+            mean_energy=_get("enthalpy_kcal_mol", "mean_energy"),
+            mean_energy_sq=_get_opt("mean_energy_sq", "mean_energy_sq"),
+            heat_capacity=_get("heat_capacity_kcal_mol_K2", "heat_capacity"),
+            entropy=_get("entropy_kcal_mol_K", "entropy"),
+            std_energy=_get("std_energy_kcal_mol", "std_energy"),
+        )
 
 
 # ─── ThermodynamicBreakdown (Task 2 Python exposure + parity with C++) ──────
@@ -217,45 +255,6 @@ def Kd_M_to_deltaG_standard(Kd_M: float, T_K: float, c0_M: float = 1.0) -> float
         raise ValueError("c0_M must be > 0")
     RT = kB_kcal * T_K
     return RT * math.log(Kd_M / c0_M)
-
-
-    @classmethod
-    def from_dict(cls, data: dict) -> "Thermodynamics":
-        """Construct a Thermodynamics instance from a dictionary.
-
-        Accepts the key format produced by :meth:`to_dict` (suffixed keys such
-        as ``temperature_K``, ``free_energy_kcal_mol``, …) as well as the raw
-        attribute names (``temperature``, ``free_energy``, …).  Suffixed keys
-        take priority when both forms are present.
-
-        Args:
-            data: Dictionary with thermodynamic quantities.
-
-        Returns:
-            A new :class:`Thermodynamics` instance.
-
-        Raises:
-            KeyError: If a required field is missing under both key forms.
-        """
-        def _get(suffixed: str, raw: str) -> float:
-            if suffixed in data:
-                return float(data[suffixed])
-            if raw in data:
-                return float(data[raw])
-            raise KeyError(
-                f"Missing required key: expected '{suffixed}' or '{raw}'"
-            )
-
-        return cls(
-            temperature=_get("temperature_K", "temperature"),
-            log_Z=_get("log_Z", "log_Z"),
-            free_energy=_get("free_energy_kcal_mol", "free_energy"),
-            mean_energy=_get("enthalpy_kcal_mol", "mean_energy"),
-            mean_energy_sq=_get("mean_energy_sq", "mean_energy_sq"),
-            heat_capacity=_get("heat_capacity_kcal_mol_K2", "heat_capacity"),
-            entropy=_get("entropy_kcal_mol_K", "entropy"),
-            std_energy=_get("std_energy_kcal_mol", "std_energy"),
-        )
 
 
 class _PyStatMechEngine:
@@ -455,48 +454,47 @@ class StatMechEngine:
     def __repr__(self) -> str:
         return f"<StatMechEngine T={self.temperature:.1f}K n_samples={self.n_samples}>"
 
-    # ─── Task 9 Completion: Temperature scan exposure (Python layer) ────────
+    # Task 7/9: temperature scan + ΔCp (C++ path when bindings present; pure fallback for fit)
     def temperature_scan(self, temperatures: list[float]) -> list[dict]:
+        """Recompute G/H/S/Cv at multiple temperatures using fixed ensemble energies (C++ only).
+
+        Returns list of dicts with keys T_K, logZ, G_kcal_mol, H_kcal_mol, S_kcal_mol_K, Cv_kcal_mol_K.
+        All new thermodynamic terms carry explicit units per roadmap invariants.
         """
-        Recompute thermodynamics at multiple temperatures on the fixed ensemble.
-        Returns list of dicts matching the shape expected by reporting.py.
-        """
-        if _core is not None and hasattr(self._engine, "temperature_scan"):
-            points = self._engine.temperature_scan(temperatures)
-            return [
-                {
-                    "T_K": p.T_K,
-                    "logZ": p.logZ,
-                    "G_kcal_mol": p.G_kcal_mol,
-                    "H_kcal_mol": p.H_kcal_mol,
-                    "S_kcal_mol_K": p.S_kcal_mol_K,
-                    "Cv_kcal_mol_K": p.Cv_kcal_mol_K,
-                }
-                for p in points
-            ]
-        else:
-            # Fallback path only reached when no C++ scan method exists
-            # For now, raise a clear error so users know the full feature requires the C++ extension
+        if _core is None or not hasattr(self._engine, "temperature_scan"):
             raise NotImplementedError(
-                "temperature_scan on pure-Python fallback is not yet fully wired. "
-                "Install the C++ extension (pip install -e . with BUILD_PYTHON_BINDINGS) "
-                "or use the C++ StatMechEngine directly for temperature scans."
+                "temperature_scan requires the C++ extension. "
+                "Run `pip install -e .` with BUILD_PYTHON_BINDINGS=ON."
             )
+        points = self._engine.temperature_scan(temperatures)
+        return [
+            {
+                "T_K": p.T_K,
+                "logZ": p.logZ,
+                "G_kcal_mol": p.G_kcal_mol,
+                "H_kcal_mol": p.H_kcal_mol,
+                "S_kcal_mol_K": p.S_kcal_mol_K,
+                "Cv_kcal_mol_K": p.Cv_kcal_mol_K,
+            }
+            for p in points
+        ]
 
     @staticmethod
     def fit_delta_Cp(scan_points: list[dict], T_ref_K: float) -> dict:
-        """Thin wrapper around C++ or pure implementation (Task 7 parity)."""
-        if _core is not None and hasattr(_core, "fit_delta_Cp"):
-            # Would need struct conversion; for now delegate to a simple Python version
-            pass
-        # Minimal pure-Python linear regression (same as C++ Task 7 logic)
-        n = len(scan_points)
-        if n < 4:
+        """Linear regression ΔCp fit (requires >=4 points). Pure-Python (no C++ needed).
+
+        This is model-derived / experimental-diagnostic output (see roadmap Task 7).
+        Always labelled experimental=true, model_derived=true. Never used for ranking.
+        Units: delta_Cp_kcal_mol_K, rmse_kcal_mol, T_ref_K.
+        """
+        if len(scan_points) < 4:
             raise ValueError("ΔCp fit requires at least 4 temperature points")
+        n = len(scan_points)
         sum_x = sum_y = sum_xx = sum_xy = 0.0
+        h0 = scan_points[0].get("H_kcal_mol", 0.0)
         for p in scan_points:
             x = p["T_K"] - T_ref_K
-            y = p.get("H_kcal_mol", 0.0) - (scan_points[0].get("H_kcal_mol", 0.0) if scan_points else 0.0)
+            y = p.get("H_kcal_mol", 0.0) - h0
             sum_x += x
             sum_y += y
             sum_xx += x * x
@@ -507,7 +505,7 @@ class StatMechEngine:
         sse = 0.0
         for p in scan_points:
             x = p["T_K"] - T_ref_K
-            pred = (scan_points[0].get("H_kcal_mol", 0.0) if scan_points else 0.0) + delta_Cp * x
+            pred = h0 + delta_Cp * x
             sse += (p.get("H_kcal_mol", 0.0) - pred) ** 2
         rmse = (sse / n) ** 0.5
         return {
