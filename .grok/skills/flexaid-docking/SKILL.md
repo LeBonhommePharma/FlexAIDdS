@@ -96,11 +96,11 @@ The skill itself is packaged under:
 ├── SKILL.md
 ├── scripts/
 │   ├── validate_skill.py
-│   ├── ensure_docking_data.py                  # unified data matrix management + --source
+│   ├── ensure_docking_data.py                  # unified runtime data (matrices + *.def files) + --source
 │   └── update_skill.py                         # built-in autoupdate for the skill + all sub-components
                                                 #   (dry-run by default, --source, --yes, auto-validator)
 ├── data/
-│   └── README.md                  # Documents the required MC_*.dat files
+│   └── README.md                  # Documents MC_*.dat matrices + all AMINO*.def / NUCLEOTIDES*.def files
 ├── references/
 │   └── flexaid-docking-guidance.md
 └── assets/ (optional)
@@ -165,13 +165,18 @@ The validator enforces:
 
 ## Critical Runtime Data Management (Interaction Matrices)
 
-The FlexAIDδS binary depends on precomputed atom-type interaction matrices (`MC_*.dat` files) for the Voronoi CF/contact-function scoring proxy. These files are **not** part of the main source tree.
+The FlexAIDδS binary depends on precomputed atom-type interaction matrices (`MC_*.dat`)
+**and** definition files (`AMINO*.def`, `NUCLEOTIDES*.def`) for the Voronoi CF/contact-function
+scoring proxy and atom typing. These files are **not** part of the main source tree.
 
 This skill treats them as first-class managed assets:
 
-- The `data/` directory inside the skill ships with the required matrices, making the skill self-contained and portable.
-- `scripts/ensure_docking_data.py` is the primary, production-grade tool. It supports both automatic discovery and explicit sourcing from another installation (`--source`).
-- A convenience wrapper `copy_docking_data_from_install.py` exists for the common “I have a known-good install” workflow.
+- The `data/` directory inside the skill ships with the required matrices + all *.def files,
+  making the skill fully self-contained and portable.
+- `scripts/ensure_docking_data.py` is the primary, production-grade tool. It supports both
+  automatic discovery and explicit sourcing from another installation (`--source`).
+- A convenience wrapper `copy_docking_data_from_install.py` exists for the common
+  “I have a known-good install” workflow.
 - Running the ensure script is considered part of the standard pre-docking workflow.
 
 See `data/README.md` for the full rationale, file list, and maintenance guidance.
