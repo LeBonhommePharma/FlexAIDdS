@@ -163,23 +163,48 @@ The validator enforces:
 - No broken relative links in SKILL.md
 - All required aliases and guardrail phrases present
 
-## Critical Runtime Data Management (Interaction Matrices)
+## Critical Runtime Data Management (Interaction Matrices + Definition Files)
 
-The FlexAIDδS binary depends on precomputed atom-type interaction matrices (`MC_*.dat`)
-**and** definition files (`AMINO*.def`, `NUCLEOTIDES*.def`) for the Voronoi CF/contact-function
-scoring proxy and atom typing. These files are **not** part of the main source tree.
+The FlexAIDδS binary depends on two categories of runtime data files that are **not** part of the main source tree:
 
-This skill treats them as first-class managed assets:
+1. **Interaction matrices** (`MC_*.dat`) — used for the Voronoi contact-function (CF) scoring proxy during genetic algorithm search.
+2. **Definition files** (`*.def`) — used for atom typing, covalent connectivity, and side-chain flexibility sampling.
 
-- The `data/` directory inside the skill ships with the required matrices + all *.def files,
-  making the skill fully self-contained and portable.
-- `scripts/ensure_docking_data.py` is the primary, production-grade tool. It supports both
-  automatic discovery and explicit sourcing from another installation (`--source`).
-- A convenience wrapper `copy_docking_data_from_install.py` exists for the common
-  “I have a known-good install” workflow.
-- Running the ensure script is considered part of the standard pre-docking workflow.
+### Definition Files (`AMINO*.def` and `NUCLEOTIDES*.def`)
 
-See `data/README.md` for the full rationale, file list, and maintenance guidance.
+These files are essential for correct docking execution, configuration of flexibility, and later analysis:
+
+- **AMINO*.def** (amino acids)
+  - Defines all 20 standard amino acids.
+  - Each residue block contains:
+    - `ATMTYP` lines: atom serial, numeric type code (used for radii and scoring parameters), atom name, rigid/movable flag (`r`/`m`), and parent indices.
+    - `CONECT` lines: explicit covalent bonding.
+    - `FLEDIH` lines: which bonds are treated as rotatable dihedrals (directly controls which side-chain torsions the GA will sample).
+  - `AMINO.def` (2011.12.08 version) is the current recommended file and matches modern MC matrices.
+  - The variants (`AMINO8.def`, `AMINO12.def`, `AMINO26.def`) are older/legacy versions that use completely different atom type numbering schemes. Using the wrong variant will cause incorrect atom typing and scoring.
+
+- **NUCLEOTIDES*.def**
+  - Equivalent definitions for RNA/DNA (backbone + bases). Required when the receptor or ligand contains nucleic acids.
+
+**Practical impact on docking runs:**
+- Missing or mismatched `.def` files → immediate runtime failure or silent wrong atom typing.
+- `FLEDIH` entries determine which torsions are active during conformational search (directly affects sampling and results).
+- For protein–ligand docking you almost always want the 2011 `AMINO.def` + matching matrices.
+
+### Management in This Skill
+
+This skill treats all these files as first-class managed assets:
+
+- The `data/` directory ships with the full set of matrices + all `AMINO*.def` / `NUCLEOTIDES*.def` variants, making the skill self-contained.
+- `scripts/ensure_docking_data.py` automatically discovers and places both matrices **and** definition files next to the binary (supports `--source`, `--dry-run`, `--check`, etc.).
+- Use the ensure script **before every real docking task**.
+
+See `data/README.md` for the complete file list and deeper format details (including full FLEDIH mappings per residue).
+
+**Recommended before any docking task:**
+```bash
+python3 .grok/skills/flexaid-docking/scripts/ensure_docking_data.py
+```
 
 **Recommended before any docking task:**
 ```bash

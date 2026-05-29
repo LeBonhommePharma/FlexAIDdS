@@ -22,12 +22,29 @@ Without these files the binary will fail early with messages such as:
 - `MC_5p_norm_P10_M2_2.dat`
 
 **Definition files (*.def):**
-- `AMINO.def`, `AMINO8.def`, `AMINO12.def`, `AMINO26.def`
-- `NUCLEOTIDES.def`, `NUCLEOTIDES8.def`, `NUCLEOTIDES12.def`, `NUCLEOTIDES26.def`
 
-These files were located on the original development system (from complete WRK/
-installations) and copied into the skill to make it fully self-contained and
-portable for both matrices and definition data.
+These files provide atom typing, covalent connectivity, and side-chain flexibility
+definitions required by the FlexAIDδS binary.
+
+**AMINO*.def (amino acids — 20 standard residues)**
+- `AMINO.def` (version 2011.12.08) — Current recommended file.
+- `AMINO8.def`, `AMINO12.def`, `AMINO26.def` — Legacy/variant versions that use different
+  atom type numbering schemes or cutoff distances.
+- Each residue is defined with:
+  - `ATMTYP` lines: atom serial, numeric type code, atom name, rigid/movable flag,
+    and parent indices for building internal coordinates.
+  - `CONECT` lines: explicit covalent bonding information.
+  - `FLEDIH` lines: which bonds are treated as rotatable dihedrals (side-chain
+    flexibility sampling during the genetic algorithm).
+- Critical for protein atom typing and for determining which torsions are sampled.
+
+**NUCLEOTIDES*.def**
+- Equivalent definitions for RNA/DNA bases and backbone (supports nucleic acid
+  docking and the NATURaL module).
+
+These files (along with the MC matrices) must be present in the binary’s base
+directory at runtime. They were taken from complete WRK/ installations and are
+now bundled in the skill for full self-containment.
 
 ## How the Skill Manages These Files
 
