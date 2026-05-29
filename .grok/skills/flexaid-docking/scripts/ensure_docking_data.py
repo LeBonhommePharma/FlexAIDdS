@@ -434,6 +434,8 @@ def print_definition_file_info(def_files: List[Path], verbose: bool = False) -> 
 
     print("\nAll these files (matrices + defs + extras) must be present in the binary base path for full functionality.")
 
+    print("\nPerformance note: Rich diagnostics enabled by default. In CI or constrained environments, lightweight mode is used automatically to minimize resource usage.")
+
     if verbose:
         print("\n[verbose] Full expected list in skill data/:")
         for name in EXPECTED_MATRICES + EXPECTED_DEF_FILES + EXPECTED_EXTRA_FILES:

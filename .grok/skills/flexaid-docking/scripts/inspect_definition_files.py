@@ -178,6 +178,8 @@ def print_diagnostics(all_files: List[Path], verbose: bool = False) -> None:
     for res, count in sorted(FLEDIH_SUMMARY.items(), key=lambda x: -x[1]):
         print(f"  {res:3s}: {count} rotatable dihedral(s)")
 
+    print("\nPerformance note: Rich diagnostics enabled by default. In CI or constrained environments, lightweight mode is used automatically to minimize resource usage.")
+
     print("\nTip: Use --verbose for search paths. Also available via ensure_docking_data.py --info")
     if verbose:
         print("\nSearch roots used:")
