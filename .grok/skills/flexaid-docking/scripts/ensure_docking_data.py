@@ -366,9 +366,17 @@ def print_definition_file_info(def_files: List[Path], verbose: bool = False) -> 
     """Print useful diagnostic information about all runtime data files (matrices + defs + extras)."""
     print("\n=== FlexAIDδS Runtime Data Diagnostic ===")
 
+    # Strong deduplication by filename (we only care about unique file names in the final report)
+    seen_names = set()
+    unique_files = []
+    for f in def_files:
+        if f.name not in seen_names:
+            seen_names.add(f.name)
+            unique_files.append(f)
+
     # Definition files
-    amino_files = [f for f in def_files if f.name.startswith("AMINO")]
-    nucleotide_files = [f for f in def_files if f.name.startswith("NUCLEOTIDES")]
+    amino_files = [f for f in unique_files if f.name.startswith("AMINO")]
+    nucleotide_files = [f for f in unique_files if f.name.startswith("NUCLEOTIDES")]
 
     print(f"AMINO definition files found: {len(amino_files)}")
     for f in sorted(amino_files):
@@ -388,12 +396,12 @@ def print_definition_file_info(def_files: List[Path], verbose: bool = False) -> 
         print("\n[WARNING] Only legacy AMINO* variants found. Atom type numbers may be incompatible.")
 
     # Extra runtime files
-    extra_files = [f for f in def_files if f.name in EXPECTED_EXTRA_FILES]
+    extra_files = [f for f in unique_files if f.name in EXPECTED_EXTRA_FILES]
     print(f"\nAdditional runtime files found: {len(extra_files)}")
     for f in sorted(extra_files, key=lambda x: x.name):
         print(f"  - {f.name}")
 
-    missing_extra = [name for name in EXPECTED_EXTRA_FILES if not any(f.name == name for f in extra_files)]
+    missing_extra = [name for name in EXPECTED_EXTRA_FILES if not any(f.name == name for f in unique_files)]
     if missing_extra:
         print(f"  Missing: {', '.join(missing_extra)}")
 
@@ -445,15 +453,20 @@ def main() -> int:
     )
 
     if args.info:
-        # Re-discover for info mode even if not in ensure path
-        if not found_defs:
-            search_roots = list(DEFAULT_SEARCH_PATHS)
-            if args.binary:
-                base = get_binary_base_path(args.binary)
-                search_roots.append(base)
-                search_roots.append(base.parent)
-            found_defs = find_def_files(search_roots)
-        print_definition_file_info(found_defs, verbose=args.verbose)
+        # Build search roots prioritizing the skill's own data/
+        search_roots = list(DEFAULT_SEARCH_PATHS)
+        if args.binary:
+            base = get_binary_base_path(args.binary)
+            search_roots = [base, base.parent] + search_roots
+        if args.source:
+            search_roots = [args.source] + search_roots
+
+        all_found = find_def_files(search_roots) + find_extra_files(search_roots)
+        # Deduplicate
+        seen = set()
+        unique = [f for f in all_found if not (f in seen or seen.add(f))]
+
+        print_definition_file_info(unique, verbose=args.verbose)
 
     return 0 if success else 1
 

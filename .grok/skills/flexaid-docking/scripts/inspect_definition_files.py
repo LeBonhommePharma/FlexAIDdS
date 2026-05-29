@@ -117,9 +117,17 @@ def print_diagnostics(all_files: List[Path], verbose: bool = False) -> None:
     print("=== FlexAIDδS Runtime Data Inspector ===")
     print()
 
-    matrices = [f for f in all_files if f.name in EXPECTED_MATRICES]
-    defs = [f for f in all_files if f.name in EXPECTED_DEF_FILES]
-    extras = [f for f in all_files if f.name in EXPECTED_EXTRA_FILES]
+    # Strong deduplication by filename (clean report, no duplicate filenames)
+    seen_names = set()
+    unique_files = []
+    for f in all_files:
+        if f.name not in seen_names:
+            seen_names.add(f.name)
+            unique_files.append(f)
+
+    matrices = [f for f in unique_files if f.name in EXPECTED_MATRICES]
+    defs = [f for f in unique_files if f.name in EXPECTED_DEF_FILES]
+    extras = [f for f in unique_files if f.name in EXPECTED_EXTRA_FILES]
 
     print(f"Matrices found: {len(matrices)}")
     for f in sorted(matrices, key=lambda x: x.name):
@@ -160,21 +168,10 @@ def print_diagnostics(all_files: List[Path], verbose: bool = False) -> None:
         for r in DEFAULT_SEARCH_PATHS:
             print(f"  {r}")
 
-    print("\n--- Side-chain Flexibility (FLEDIH dihedrals) ---")
-    print("These control which torsions the GA will actually sample:")
-    for res, count in sorted(FLEDIH_SUMMARY.items(), key=lambda x: -x[1]):
-        print(f"  {res:3s}: {count} rotatable dihedral(s)")
-
-    print("\nTip: Run with --verbose for full file paths and search roots.")
-    if verbose:
-        print("\nSearch roots used:")
-        for r in DEFAULT_SEARCH_PATHS:
-            print(f"  {r}")
-
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="Inspect FlexAIDδS definition files (AMINO*.def / NUCLEOTIDES*.def) and report flexibility + compatibility info.",
+        description="Inspect all critical FlexAIDδS runtime data files (matrices + *.def + extras like Lovell_LIB, rotobs, etc.) and report on completeness + flexibility info.",
         epilog="Part of the flexaid-docking skill. Run this before important docking jobs."
     )
     parser.add_argument("--binary", "-b", type=Path, help="Path to FlexAIDδS binary (helps locate data)")
@@ -189,8 +186,7 @@ def main() -> int:
     if args.source:
         search_roots = [args.source] + search_roots
 
-    found = find_def_files(search_roots) + find_extra_files(search_roots)  # reuse similar logic
-    # Simple combined finder for the helper
+    # Single clean finder for all categories
     all_found = []
     for root in search_roots:
         if root and root.exists():
@@ -198,8 +194,19 @@ def main() -> int:
                 p = root / name
                 if p.is_file():
                     all_found.append(p)
+
+    # Deduplicate
     seen = set()
-    unique = [p for p in all_found if not (p in seen or seen.add(p))]
+    unique = []
+    for p in all_found:
+        try:
+            key = p.resolve()
+        except Exception:
+            key = p
+        if key not in seen:
+            seen.add(key)
+            unique.append(p)
+
     print_diagnostics(unique, verbose=args.verbose)
     return 0
 
