@@ -50,12 +50,7 @@ python3 .grok/skills/flexaid-docking/scripts/ensure_docking_data.py
 
 This command is **mandatory** before real docking. It ensures both the MC interaction matrices **and** the `AMINO*.def` / `NUCLEOTIDES*.def` files (which control atom typing and side-chain flexibility via FLEDIH) are present next to the binary.
 
-For a quick diagnostic of the definition files (including which residues have flexible dihedrals):
-```bash
-python3 .grok/skills/flexaid-docking/scripts/inspect_definition_files.py
-# or via the shortcut
-.grok/skills/flexaid-docking/bin/inspect-definition-files
-```
+The tools now automatically give rich diagnostics in normal use and switch to lightweight mode in CI. You can still force modes with `--info` or `--quick` if desired.
 
 ## 2. Prepare Clean Inputs
 

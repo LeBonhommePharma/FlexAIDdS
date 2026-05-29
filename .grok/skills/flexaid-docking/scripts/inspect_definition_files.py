@@ -24,6 +24,7 @@ Example usage:
 """
 
 import argparse
+import os
 import sys
 from pathlib import Path
 from typing import List, Optional
@@ -113,6 +114,21 @@ def get_binary_base_path(binary: Optional[Path]) -> Path:
     return Path.cwd()
 
 
+def should_use_light_mode(args) -> bool:
+    """Automatically decide lightweight behavior (same logic as ensure_docking_data.py)."""
+    if getattr(args, "quick", False):
+        return True
+
+    ci_env_vars = ("CI", "GITHUB_ACTIONS", "GITLAB_CI", "TRAVIS", "CIRCLECI", "JENKINS_URL")
+    if any(os.environ.get(var) for var in ci_env_vars):
+        return True
+
+    if getattr(args, "info", False):   # if the user forced rich mode
+        return False
+
+    return False
+
+
 def print_diagnostics(all_files: List[Path], verbose: bool = False) -> None:
     print("=== FlexAIDδS Runtime Data Inspector ===")
     print()
@@ -176,7 +192,7 @@ def main() -> int:
     )
     parser.add_argument("--binary", "-b", type=Path, help="Path to FlexAIDδS binary (helps locate data)")
     parser.add_argument("--source", "-s", type=Path, help="Explicit directory to search for definition files")
-    parser.add_argument("--quick", action="store_true", help="Lightweight mode: only report on the most critical files (faster, lower resource use)")
+    parser.add_argument("--quick", action="store_true", help="Force lightweight mode (normally auto-selected in CI / low-resource environments)")
     parser.add_argument("-v", "--verbose", action="store_true")
     args = parser.parse_args()
 
@@ -187,7 +203,9 @@ def main() -> int:
     if args.source:
         search_roots = [args.source] + search_roots
 
-    if args.quick:
+    use_light = should_use_light_mode(args)
+
+    if use_light:
         critical = ["MC_st0r5.2_6.dat", "AMINO.def"]
         all_found = []
         for root in search_roots:
@@ -196,9 +214,10 @@ def main() -> int:
                     p = root / name
                     if p.is_file():
                         all_found.append(p)
-        print("Quick mode: only critical files inspected.")
+        if getattr(args, "quick", False) or not getattr(args, "info", False):
+            print("Lightweight mode automatically selected (CI or low-resource environment detected).")
     else:
-        # Single clean finder for all categories
+        # Single clean finder for all categories (rich --info style by default)
         all_found = []
         for root in search_roots:
             if root and root.exists():

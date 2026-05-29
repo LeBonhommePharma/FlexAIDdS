@@ -198,7 +198,11 @@ See `data/README.md` for the complete file list and deeper format details (inclu
 python3 .grok/skills/flexaid-docking/scripts/ensure_docking_data.py
 ```
 
-Use `--quick` for a very lightweight check (only the absolute minimum critical files) when you want lower resource consumption. For full diagnostics use `--info` or the dedicated `inspect-definition-files` helper.
+The tools now automatically choose the right balance:
+- In normal interactive use → rich diagnostics (what `--info` used to require).
+- In CI or resource-constrained environments → automatic lightweight behavior.
+
+You can still force modes with `--info` or `--quick` if needed. The `inspect-definition-files` helper follows the same smart logic.
 
 ## References
 

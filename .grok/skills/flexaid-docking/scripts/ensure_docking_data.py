@@ -21,6 +21,7 @@ Supports:
 """
 
 import argparse
+import os
 import shutil
 import sys
 from pathlib import Path
@@ -175,6 +176,28 @@ def get_binary_base_path(binary: Optional[Path]) -> Path:
         if (c / "FlexAIDδS").exists():
             return c.resolve()
     return Path.cwd()
+
+
+def should_use_light_mode(args) -> bool:
+    """Automatically decide whether to use lightweight behavior.
+
+    We prefer rich --info-style diagnostics by default in interactive use,
+    but automatically fall back to quick/light behavior in CI or when
+    the user explicitly requests minimal resource usage.
+    """
+    if args.quick:
+        return True
+
+    # Detect common CI environments
+    ci_env_vars = ("CI", "GITHUB_ACTIONS", "GITLAB_CI", "TRAVIS", "CIRCLECI", "JENKINS_URL")
+    if any(os.environ.get(var) for var in ci_env_vars):
+        return True
+
+    # If user explicitly asked for info, never force light mode
+    if getattr(args, "info", False):
+        return False
+
+    return False
 
 
 def ensure_matrices(
@@ -432,8 +455,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--link", action="store_true", help="Use symlinks instead of copies when possible")
     parser.add_argument("--dry-run", "-n", action="store_true", help="Preview changes without modifying anything")
     parser.add_argument("--check", "--status", action="store_true", help="Only check, do not copy")
-    parser.add_argument("--info", action="store_true", help="Print diagnostic information about found definition files (especially AMINO.def FLEDIH and variants)")
-    parser.add_argument("--quick", action="store_true", help="Lightweight mode: only check critical files (main matrix + main AMINO.def). Faster, lower resource use.")
+    parser.add_argument("--info", action="store_true", help="Force rich diagnostic output (normally enabled by default outside CI)")
+    parser.add_argument("--quick", action="store_true", help="Force lightweight mode (normally auto-selected in CI / low-resource environments)")
     parser.add_argument("-v", "--verbose", action="store_true", help="Show more details")
     return parser
 
@@ -453,7 +476,11 @@ def main() -> int:
         check_only=args.check,
     )
 
-    if args.info:
+    if args.info or not args.check:
+        # By default we want rich diagnostics (focus on --info behavior).
+        # Only fall back to light mode automatically in CI or when --quick is forced.
+        use_light = should_use_light_mode(args)
+
         # Build search roots prioritizing the skill's own data/
         search_roots = list(DEFAULT_SEARCH_PATHS)
         if args.binary:
@@ -462,11 +489,11 @@ def main() -> int:
         if args.source:
             search_roots = [args.source] + search_roots
 
-        if args.quick:
-            # Very light mode for --info
+        if use_light:
             critical = ["MC_st0r5.2_6.dat", "AMINO.def"]
             found = [f for root in search_roots for name in critical if (f := root / name).is_file()]
-            print("Quick mode: only critical files checked.")
+            if args.quick or not args.info:
+                print("Lightweight mode automatically selected (CI or low-resource environment detected).")
             print_definition_file_info(found, verbose=args.verbose)
         else:
             all_found = find_def_files(search_roots) + find_extra_files(search_roots)
