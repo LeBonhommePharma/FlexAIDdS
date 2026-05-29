@@ -27,16 +27,26 @@ These files provide atom typing, covalent connectivity, and side-chain flexibili
 definitions required by the FlexAIDδS binary.
 
 **AMINO*.def (amino acids — 20 standard residues)**
-- `AMINO.def` (version 2011.12.08) — Current recommended file.
-- `AMINO8.def`, `AMINO12.def`, `AMINO26.def` — Legacy/variant versions that use different
-  atom type numbering schemes or cutoff distances.
-- Each residue is defined with:
-  - `ATMTYP` lines: atom serial, numeric type code, atom name, rigid/movable flag,
-    and parent indices for building internal coordinates.
-  - `CONECT` lines: explicit covalent bonding information.
-  - `FLEDIH` lines: which bonds are treated as rotatable dihedrals (side-chain
-    flexibility sampling during the genetic algorithm).
-- Critical for protein atom typing and for determining which torsions are sampled.
+- `AMINO.def` (version 2011.12.08) — Current recommended file. Matches the modern MC matrices.
+- `AMINO8.def`, `AMINO12.def`, `AMINO26.def` — Legacy variants (from ~2000) that use entirely different atom type numbering. Using the wrong variant with current matrices will cause incorrect typing/scoring.
+- File format (per-residue blocks):
+  ```
+  RESIDU XXX
+  ATMTYP  <serial> <type_code> <name> <r/m> <parent...>
+  CONECT  <atom> <bonded...>
+  FLEDIH  <bond1> <bond2> ...     # rotatable side-chain dihedrals for GA sampling
+  RESEND
+  ```
+- **ATMTYP columns** (practical interpretation):
+  - Column 2 (type_code): Internal numeric code used for radii, VdW, and scoring parameters (e.g. 11=N backbone, 3=CA, 13=O, 12=NHx, 14=OH, 5=CZ, etc.).
+  - Column 4: `r` = rigid (usually backbone), `m` = movable (side chain).
+  - Later columns: parent atom indices for building the residue tree.
+- **FLEDIH lines**: Explicitly list which bonds are treated as flexible during docking. These directly control the conformational search space sampled by the genetic algorithm. Residues with no FLEDIH (e.g. ALA, GLY, PRO) have no side-chain sampling from this file.
+- Critical for execution (correct atom typing), configuration (which torsions are active), and analysis (understanding sampled degrees of freedom).
+
+**Key residues with FLEDIH (flexible dihedrals) in the 2011 AMINO.def:**
+- ARG (4), LYS (4), GLN/GLU/MET (3), ILE/LEU/PHE/TRP/TYR/HIS/ASN/ASP (2), and several with 1 (CYS, SER, THR, VAL).
+- Full list available in the source AMINO.def or by running analysis on the file.
 
 **NUCLEOTIDES*.def**
 - Equivalent definitions for RNA/DNA bases and backbone (supports nucleic acid
