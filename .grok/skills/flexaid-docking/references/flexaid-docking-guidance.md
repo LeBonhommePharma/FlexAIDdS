@@ -40,6 +40,21 @@ This document preserves exact scientific terminology and guardrails for any agen
 - Reporting "∆G = X kcal/mol" from a 300 K single-temperature GA run without the full ledger + concentration term.
 - Editing `LIB/statmech.cpp`, `LIB/BindingMode.cpp`, `LIB/Vcontacts.cpp`, or `python/flexaidds/thermodynamics.py` without adding or updating the corresponding GoogleTest / pytest.
 - Treating the Grok share link body as authoritative when the fetch only returned the title "Grok Fixes FlexAID Skill XML" — always fall back to local files and the current prompt.
+- Using a legacy `AMINO8/12/26.def` with modern `MC_*.dat` matrices (different atom type numbering → wrong typing and scoring).
+- Forgetting that `FLEDIH` lines in `AMINO.def` are what actually enable side-chain sampling in the GA. Residues without FLEDIH entries (ALA, GLY, PRO) get no side-chain flexibility from this mechanism.
+
+## Definition Files (AMINO*.def / NUCLEOTIDES*.def) — Practical Notes
+
+These files (bundled in the skill's `data/`) are required alongside the matrices:
+
+- `AMINO.def` (2011.12.08) is the current standard. It defines the 20 amino acids with:
+  - `ATMTYP` lines (serial, type code, name, r/m flag, parents)
+  - `CONECT` (covalent bonds)
+  - `FLEDIH` (which dihedrals are rotatable for GA sampling)
+- The `AMINO8/12/26` variants are legacy and use incompatible atom type numbers.
+- `FLEDIH` entries directly determine the side-chain flexibility that will be explored. See the full per-residue counts via `inspect_definition_files.py` or the source `AMINO.def`.
+
+Always run the ensure script (and optionally the inspector) before production docking jobs.
 
 ## References Back to Source
 

@@ -43,12 +43,19 @@ source ~/.venvs/flexaidds/bin/activate
 ls /path/to/your/build/FlexAIDδS
 ```
 
-### C. Ensure the critical interaction matrices are available
+### C. Ensure the critical runtime data (matrices + definition files) are available
 ```bash
 python3 .grok/skills/flexaid-docking/scripts/ensure_docking_data.py
 ```
 
-This command is **mandatory** before real docking. It will use the matrices bundled inside the skill or copy them from a known-good installation if you provide `--source`.
+This command is **mandatory** before real docking. It ensures both the MC interaction matrices **and** the `AMINO*.def` / `NUCLEOTIDES*.def` files (which control atom typing and side-chain flexibility via FLEDIH) are present next to the binary.
+
+For a quick diagnostic of the definition files (including which residues have flexible dihedrals):
+```bash
+python3 .grok/skills/flexaid-docking/scripts/inspect_definition_files.py
+# or via the shortcut
+.grok/skills/flexaid-docking/bin/inspect-definition-files
+```
 
 ## 2. Prepare Clean Inputs
 

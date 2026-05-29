@@ -276,6 +276,49 @@ def ensure_matrices(
     return success, found + def_found
 
 
+def print_definition_file_info(def_files: List[Path], verbose: bool = False) -> None:
+    """Print useful diagnostic information about the definition files, especially AMINO.def."""
+    print("\n=== Definition Files Diagnostic ===")
+
+    amino_files = [f for f in def_files if f.name.startswith("AMINO")]
+    nucleotide_files = [f for f in def_files if f.name.startswith("NUCLEOTIDES")]
+
+    print(f"AMINO definition files found: {len(amino_files)}")
+    for f in sorted(amino_files):
+        print(f"  - {f.name}")
+
+    print(f"NUCLEOTIDES definition files found: {len(nucleotide_files)}")
+    for f in sorted(nucleotide_files):
+        print(f"  - {f.name}")
+
+    # Look for the preferred modern AMINO.def
+    modern_amino = next((f for f in amino_files if f.name == "AMINO.def"), None)
+    legacy_aminos = [f for f in amino_files if f.name != "AMINO.def"]
+
+    if modern_amino:
+        print("\n[OK] Modern AMINO.def (2011.12.08 recommended) is present.")
+        print("     This version is compatible with current MC matrices and uses the standard atom type numbering.")
+    elif legacy_aminos:
+        print("\n[WARNING] Only legacy AMINO*.def variants found (AMINO8/12/26).")
+        print("          These use older atom type numbering and may cause incorrect typing/scoring with modern matrices.")
+        print("          Strongly prefer the 2011 AMINO.def when possible.")
+
+    # Known FLEDIH flexibility summary (derived from the authoritative 2011 AMINO.def)
+    print("\nSide-chain flexibility coverage (FLEDIH dihedrals) from standard 2011 AMINO.def:")
+    print("  ARG: 4   | LYS: 4   | GLN/GLU/MET: 3 each")
+    print("  ASN/ASP/HIS/ILE/LEU/PHE/TRP/TYR: 2 each")
+    print("  CYS/SER/THR/VAL: 1 each")
+    print("  ALA/GLY/PRO: 0 (no side-chain sampling defined)")
+
+    print("\nThese FLEDIH entries directly control which torsions the genetic algorithm samples.")
+    print("Missing or wrong .def files can silently limit or break side-chain flexibility.")
+
+    if verbose:
+        print("\n[verbose] Full list of expected definition files in skill data/:")
+        for name in EXPECTED_DEF_FILES:
+            print(f"  - {name}")
+
+
 # =============================================================================
 # CLI
 # =============================================================================
@@ -291,6 +334,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--link", action="store_true", help="Use symlinks instead of copies when possible")
     parser.add_argument("--dry-run", "-n", action="store_true", help="Preview changes without modifying anything")
     parser.add_argument("--check", "--status", action="store_true", help="Only check, do not copy")
+    parser.add_argument("--info", action="store_true", help="Print diagnostic information about found definition files (especially AMINO.def FLEDIH and variants)")
     parser.add_argument("-v", "--verbose", action="store_true", help="Show more details")
     return parser
 
@@ -301,7 +345,7 @@ def main() -> int:
 
     print_skill_banner(verbose=args.verbose)
 
-    success, _ = ensure_matrices(
+    success, found_defs = ensure_matrices(
         binary=args.binary,
         source=args.source,
         dry_run=args.dry_run,
@@ -309,6 +353,18 @@ def main() -> int:
         verbose=args.verbose,
         check_only=args.check,
     )
+
+    if args.info:
+        # Re-discover for info mode even if not in ensure path
+        if not found_defs:
+            search_roots = list(DEFAULT_SEARCH_PATHS)
+            if args.binary:
+                base = get_binary_base_path(args.binary)
+                search_roots.append(base)
+                search_roots.append(base.parent)
+            found_defs = find_def_files(search_roots)
+        print_definition_file_info(found_defs, verbose=args.verbose)
+
     return 0 if success else 1
 
 
