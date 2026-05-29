@@ -176,6 +176,7 @@ def main() -> int:
     )
     parser.add_argument("--binary", "-b", type=Path, help="Path to FlexAIDδS binary (helps locate data)")
     parser.add_argument("--source", "-s", type=Path, help="Explicit directory to search for definition files")
+    parser.add_argument("--quick", action="store_true", help="Lightweight mode: only report on the most critical files (faster, lower resource use)")
     parser.add_argument("-v", "--verbose", action="store_true")
     args = parser.parse_args()
 
@@ -186,14 +187,25 @@ def main() -> int:
     if args.source:
         search_roots = [args.source] + search_roots
 
-    # Single clean finder for all categories
-    all_found = []
-    for root in search_roots:
-        if root and root.exists():
-            for name in EXPECTED_MATRICES + EXPECTED_DEF_FILES + EXPECTED_EXTRA_FILES:
-                p = root / name
-                if p.is_file():
-                    all_found.append(p)
+    if args.quick:
+        critical = ["MC_st0r5.2_6.dat", "AMINO.def"]
+        all_found = []
+        for root in search_roots:
+            if root and root.exists():
+                for name in critical:
+                    p = root / name
+                    if p.is_file():
+                        all_found.append(p)
+        print("Quick mode: only critical files inspected.")
+    else:
+        # Single clean finder for all categories
+        all_found = []
+        for root in search_roots:
+            if root and root.exists():
+                for name in EXPECTED_MATRICES + EXPECTED_DEF_FILES + EXPECTED_EXTRA_FILES:
+                    p = root / name
+                    if p.is_file():
+                        all_found.append(p)
 
     # Deduplicate
     seen = set()

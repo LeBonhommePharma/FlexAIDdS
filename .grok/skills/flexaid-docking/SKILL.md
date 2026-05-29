@@ -170,26 +170,18 @@ The FlexAIDδS binary depends on two categories of runtime data files that are *
 1. **Interaction matrices** (`MC_*.dat`) — used for the Voronoi contact-function (CF) scoring proxy during genetic algorithm search.
 2. **Definition files** (`*.def`) — used for atom typing, covalent connectivity, and side-chain flexibility sampling.
 
-### Definition Files (`AMINO*.def` and `NUCLEOTIDES*.def`)
+### Definition Files (`*.def`) and Additional Runtime Data
 
-These files are essential for correct docking execution, configuration of flexibility, and later analysis:
+The skill also bundles:
+- `AMINO*.def` + `NUCLEOTIDES*.def` (atom typing, connectivity, and side-chain flexibility via `FLEDIH` entries)
+- Supporting files (`Lovell_LIB.dat`, `rotobs.lst`, `SYBYL_emat.dat`, scoring matrices, etc.)
 
-- **AMINO*.def** (amino acids)
-  - Defines all 20 standard amino acids.
-  - Each residue block contains:
-    - `ATMTYP` lines: atom serial, numeric type code (used for radii and scoring parameters), atom name, rigid/movable flag (`r`/`m`), and parent indices.
-    - `CONECT` lines: explicit covalent bonding.
-    - `FLEDIH` lines: which bonds are treated as rotatable dihedrals (directly controls which side-chain torsions the GA will sample).
-  - `AMINO.def` (2011.12.08 version) is the current recommended file and matches modern MC matrices.
-  - The variants (`AMINO8.def`, `AMINO12.def`, `AMINO26.def`) are older/legacy versions that use completely different atom type numbering schemes. Using the wrong variant will cause incorrect atom typing and scoring.
+**Key practical points:**
+- `AMINO.def` (2011 version) is the current standard. Legacy variants (AMINO8/12/26) use different atom type numbering and should be avoided with modern matrices.
+- `FLEDIH` lines in `AMINO.def` directly control which side-chain torsions the GA will sample.
+- All these files must live next to the binary at runtime.
 
-- **NUCLEOTIDES*.def**
-  - Equivalent definitions for RNA/DNA (backbone + bases). Required when the receptor or ligand contains nucleic acids.
-
-**Practical impact on docking runs:**
-- Missing or mismatched `.def` files → immediate runtime failure or silent wrong atom typing.
-- `FLEDIH` entries determine which torsions are active during conformational search (directly affects sampling and results).
-- For protein–ligand docking you almost always want the 2011 `AMINO.def` + matching matrices.
+See `data/README.md` for the full file list, format details, and per-residue FLEDIH mapping. Use `ensure_docking_data.py --info` or `inspect-definition-files` for diagnostics.
 
 ### Management in This Skill
 
@@ -205,6 +197,8 @@ See `data/README.md` for the complete file list and deeper format details (inclu
 ```bash
 python3 .grok/skills/flexaid-docking/scripts/ensure_docking_data.py
 ```
+
+Use `--quick` for a very lightweight check (only the absolute minimum critical files) when you want lower resource consumption. For full diagnostics use `--info` or the dedicated `inspect-definition-files` helper.
 
 ## References
 

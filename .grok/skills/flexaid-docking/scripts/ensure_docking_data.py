@@ -433,6 +433,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--dry-run", "-n", action="store_true", help="Preview changes without modifying anything")
     parser.add_argument("--check", "--status", action="store_true", help="Only check, do not copy")
     parser.add_argument("--info", action="store_true", help="Print diagnostic information about found definition files (especially AMINO.def FLEDIH and variants)")
+    parser.add_argument("--quick", action="store_true", help="Lightweight mode: only check critical files (main matrix + main AMINO.def). Faster, lower resource use.")
     parser.add_argument("-v", "--verbose", action="store_true", help="Show more details")
     return parser
 
@@ -461,12 +462,17 @@ def main() -> int:
         if args.source:
             search_roots = [args.source] + search_roots
 
-        all_found = find_def_files(search_roots) + find_extra_files(search_roots)
-        # Deduplicate
-        seen = set()
-        unique = [f for f in all_found if not (f in seen or seen.add(f))]
-
-        print_definition_file_info(unique, verbose=args.verbose)
+        if args.quick:
+            # Very light mode for --info
+            critical = ["MC_st0r5.2_6.dat", "AMINO.def"]
+            found = [f for root in search_roots for name in critical if (f := root / name).is_file()]
+            print("Quick mode: only critical files checked.")
+            print_definition_file_info(found, verbose=args.verbose)
+        else:
+            all_found = find_def_files(search_roots) + find_extra_files(search_roots)
+            seen = set()
+            unique = [f for f in all_found if not (f in seen or seen.add(f))]
+            print_definition_file_info(unique, verbose=args.verbose)
 
     return 0 if success else 1
 

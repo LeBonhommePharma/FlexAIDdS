@@ -69,6 +69,8 @@ data pack (now bundled in this skill):
 The `ensure_docking_data.py --info` (or the `inspect_definition_files.py` helper)
 will report on the presence and health of the entire set.
 
+For lower resource usage, both tools support `--quick` mode (only checks the most critical files: main matrix + main AMINO.def). This is faster and uses less I/O when you only need a basic sanity check.
+
 ## How the Skill Manages These Files
 
 The recommended tool is:
