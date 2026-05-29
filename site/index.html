@@ -1,91 +1,193 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>FlexAID∆S — Entropy-Driven Molecular Docking Engine</title>
-  <style>
-    :root {
-      --bg: #f9f8f2;
-      --cyan: #25cae9;
-      --purple: #9571f8;
-      --yellow: #f9b31d;
-      --font-mono: "JetBrains Mono", ui-monospace, monospace;
-    }
-    * { box-sizing: border-box; }
-    body { font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: var(--bg); color: #2a2f36; margin: 0; line-height: 1.6; }
-    h1, h2 { font-family: var(--font-mono); font-weight: 700; }
-    h1 { font-size: 3rem; }
-    .container { max-width: 1080px; margin: 0 auto; padding: 0 24px; }
-    header { padding: 16px 0; border-bottom: 1px solid #ddd; }
-    .hero { padding: 60px 0; text-align: center; }
-    .stats { display: flex; justify-content: center; gap: 60px; margin: 30px 0; }
-    .stat-value { font-size: 2.5rem; font-weight: 700; font-family: var(--font-mono); }
-    .cyan { color: var(--cyan); }
-    .purple { color: var(--purple); }
-    .yellow { color: var(--yellow); }
-    .section { padding: 50px 0; }
-    .section-dark { background: #111; color: #ddd; }
-    table { width: 100%; border-collapse: collapse; }
-    th, td { padding: 8px 12px; border-bottom: 1px solid #ccc; text-align: left; }
-    .highlight { color: var(--cyan); font-weight: bold; }
-    footer { padding: 40px 0; font-size: 13px; text-align: center; background: #111; color: #888; }
-  </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FlexAID∆S — Entropy-Driven Molecular Docking Engine</title>
+<style>
+:root {
+  --bg: #f9f8f2;
+  --surface: #0a0c10;
+  --text: #cad3e8;
+  --text-muted: #778097;
+  --cyan: #25cae9;
+  --purple: #9571f8;
+  --yellow: #f9b31d;
+  --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+* { box-sizing: border-box; }
+body { font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: var(--bg); color: #2a2f36; margin: 0; line-height: 1.65; font-size: 15px; }
+h1,h2,h3 { font-family: var(--font-mono); font-weight: 700; letter-spacing: -0.02em; }
+h1 { font-size: clamp(2.8rem, 6vw, 4rem); margin: 0 0 8px; }
+.container { max-width: 1100px; margin: 0 auto; padding: 0 20px; }
+header { position: sticky; top: 0; background: var(--bg); border-bottom: 1px solid rgba(0,0,0,0.08); z-index: 50; }
+.header-inner { display: flex; align-items: center; gap: 24px; padding: 14px 20px; max-width: 1100px; margin: 0 auto; }
+.logo { display: flex; align-items: center; gap: 8px; font-family: var(--font-mono); font-weight: 600; color: #222; text-decoration: none; }
+.logo .delta { color: var(--cyan); }
+nav { display: flex; gap: 20px; margin-left: auto; }
+nav a { color: #555; text-decoration: none; font-size: 14px; }
+nav a:hover { color: #222; }
+.hero { padding: 70px 0 50px; text-align: center; }
+.hero-org { font-size: 11px; letter-spacing: 1.5px; color: #666; margin-bottom: 12px; }
+.equation { font-family: var(--font-mono); font-size: 28px; margin: 16px 0 28px; }
+.equation .h { color: var(--cyan); }
+.equation .s { color: var(--purple); }
+.stats { display: flex; justify-content: center; gap: 60px; margin-bottom: 24px; flex-wrap: wrap; }
+.stat-value { font-family: var(--font-mono); font-size: 48px; font-weight: 700; line-height: 1; }
+.stat-value.cyan { color: var(--cyan); }
+.stat-value.purple { color: var(--purple); }
+.stat-value.yellow { color: var(--yellow); }
+.stat-label { font-size: 11px; color: #666; margin-top: 4px; text-transform: uppercase; letter-spacing: 0.5px; }
+.badges { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; margin-bottom: 28px; }
+.badge { font-family: var(--font-mono); font-size: 11px; padding: 3px 11px; border-radius: 999px; background: rgba(0,0,0,0.06); }
+.badge.cyan { background: rgba(37,202,233,0.15); color: var(--cyan); }
+.badge.purple { background: rgba(149,113,248,0.15); color: var(--purple); }
+.badge.yellow { background: rgba(249,179,29,0.15); color: var(--yellow); }
+.btn { display: inline-flex; padding: 11px 24px; border-radius: 999px; font-weight: 600; font-size: 14px; text-decoration: none; margin: 0 6px; }
+.btn-primary { background: var(--cyan); color: #0a0c10; }
+.btn-secondary { border: 1px solid #ccc; color: #222; }
+.section { padding: 60px 0; }
+.section-dark { background: #0f1116; color: #d0d6df; }
+.section-label { font-family: var(--font-mono); font-size: 10px; letter-spacing: 1.2px; text-transform: uppercase; color: #666; margin-bottom: 6px; }
+.features-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 20px; }
+.feature { background: white; border: 1px solid #e5e7eb; border-radius: 12px; padding: 22px; border-left: 5px solid; }
+.feature.cyan { border-left-color: var(--cyan); }
+.feature.purple { border-left-color: var(--purple); }
+.feature.yellow { border-left-color: var(--yellow); }
+.feature h3 { margin: 0 0 12px; font-size: 15px; }
+.feature ul { margin: 0; padding-left: 18px; font-size: 14px; color: #444; }
+.section-dark .feature { background: #111; border-color: #222; color: #ddd; }
+.section-dark .feature ul { color: #a8b0bd; }
+.pipeline { display: flex; gap: 12px; flex-wrap: wrap; }
+.step { flex: 1; min-width: 160px; }
+.step-num { font-family: var(--font-mono); font-size: 13px; font-weight: 700; color: var(--cyan); }
+.binding-stages { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; }
+.stage { background: #111; padding: 18px; border-radius: 12px; color: #d0d6df; }
+.thermo { font-family: var(--font-mono); margin-top: 10px; font-size: 15px; }
+.thermo .big { font-size: 24px; font-weight: 700; color: #fff; }
+pre { background: #111; color: #ddd; padding: 16px; border-radius: 10px; overflow-x: auto; font-size: 13px; }
+.bench-table { width: 100%; border-collapse: collapse; }
+.bench-table th, .bench-table td { padding: 8px 12px; text-align: left; border-bottom: 1px solid #222; }
+.bench-table th { font-size: 11px; color: #888; text-transform: uppercase; }
+.highlight { color: var(--cyan); font-weight: 700; }
+.modules { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
+.module { background: white; padding: 14px; border-radius: 8px; border: 1px solid #e5e7eb; }
+.section-dark .module { background: #111; border-color: #222; }
+.footer { background: #111; color: #888; padding: 40px 0 30px; font-size: 13px; text-align: center; font-family: var(--font-mono); }
+.entropy { color: var(--cyan); font-size: 14px; margin-bottom: 8px; }
+.entropy span { color: var(--yellow); }
+</style>
 </head>
 <body>
-  <header>
-    <div class="container" style="display:flex; justify-content:space-between; align-items:center;">
-      <div style="font-family:var(--font-mono); font-weight:600; font-size:18px;">FlexAID<span style="color:var(--cyan)">∆S</span></div>
-      <nav style="display:flex; gap:20px; font-size:14px;">
-        <a href="#why">Why</a>
-        <a href="#features">Features</a>
-        <a href="#benchmarks">Benchmarks</a>
-      </nav>
+<header>
+  <div class="container header-inner">
+    <a href="#" class="logo">
+      <svg width="26" height="26" viewBox="0 0 40 40" fill="none"><g stroke="#25cae9" stroke-width="2"><path d="M13 26 L20 18 L27 26"/><circle cx="13" cy="26" r="2" fill="#25cae9"/><circle cx="20" cy="18" r="2" fill="#25cae9"/><circle cx="27" cy="26" r="2" fill="#25cae9"/></g></svg>
+      <span>FlexAID<span class="delta" style="color:#25cae9">∆S</span></span>
+    </a>
+    <nav>
+      <a href="#why">Why</a>
+      <a href="#features">Features</a>
+      <a href="#benchmarks">Benchmarks</a>
+    </nav>
+    <a href="https://github.com/LeBonhommePharma/FlexAIDdS" target="_blank" style="margin-left:auto; opacity:0.8;">&#x1F5C3;</a>
+  </div>
+</header>
+
+<section class="hero">
+  <div class="container">
+    <div style="color:#666;font-size:11px;letter-spacing:1.5px;margin-bottom:10px;">LE BONHOMME PHARMA · MONTRÉAL · OPEN SCIENCE</div>
+    <h1>FlexAID<span style="color:#25cae9">∆S</span></h1>
+    <p style="font-size:1.25rem;color:#555;margin:6px 0 18px;">Entropy-Driven Molecular Docking Engine</p>
+    <div class="equation">ΔG = <span style="color:#25cae9">ΔH</span> − <span style="color:#9571f8">TΔS</span></div>
+    <div class="stats">
+      <div><div class="stat-value" style="color:#25cae9">0.93</div><div style="font-size:11px;color:#666">PEARSON r (ITC-187)</div></div>
+      <div><div class="stat-value" style="color:#9571f8">1.4</div><div style="font-size:11px;color:#666">RMSE kcal/mol</div></div>
+      <div><div class="stat-value" style="color:#f9b31d">92%</div><div style="font-size:11px;color:#666">CORRECT BINDING MODE</div></div>
     </div>
-  </header>
+    <div class="badges">
+      <span class="badge" style="background:rgba(37,202,233,0.15);color:#25cae9">Apache 2.0</span>
+      <span class="badge">C++26</span>
+      <span class="badge" style="background:rgba(149,113,248,0.15);color:#9571f8">Python ≥ 3.9</span>
+      <span class="badge" style="background:rgba(249,179,29,0.15);color:#f9b31d">Linux | macOS | Windows</span>
+    </div>
+    <div>
+      <a href="#benchmarks" class="btn btn-primary">Get Started</a>
+      <a href="https://github.com/LeBonhommePharma/FlexAIDdS" target="_blank" class="btn btn-secondary">View on GitHub</a>
+    </div>
+  </div>
+</section>
 
-  <div class="hero">
-    <div class="container">
-      <div style="color:#666; font-size:12px; letter-spacing:1px;">LE BONHOMME PHARMA · MONTRÉAL · OPEN SCIENCE</div>
-      <h1>FlexAID<span style="color:var(--cyan)">∆S</span></h1>
-      <p style="font-size:1.3rem; color:#555;">Entropy-Driven Molecular Docking Engine</p>
-      <div style="font-family:var(--font-mono); font-size:28px; margin:20px 0;">ΔG = <span class="cyan">ΔH</span> − <span class="purple">TΔS</span></div>
+<section id="why" class="section container">
+  <div class="section-label">// WHY FLEXAID∆S</div>
+  <h2>Why FlexAID∆S</h2>
+  <p style="max-width:720px">Most docking engines optimize enthalpy alone. <span style="color:#f9b31d">FlexAID∆S</span> adds conformational entropy via a full statistical mechanics framework — recovering the correct binding mode <span style="color:#f9b31d">92% of the time</span> when enthalpy-only scoring fails.</p>
+</section>
 
-      <div class="stats">
-        <div><div class="stat-value cyan">0.93</div><div style="font-size:12px; color:#666;">PEARSON r (ITC-187)</div></div>
-        <div><div class="stat-value purple">1.4</div><div style="font-size:12px; color:#666;">RMSE kcal/mol</div></div>
-        <div><div class="stat-value yellow">92%</div><div style="font-size:12px; color:#666;">CORRECT BINDING MODE</div></div>
+<section id="features" class="section section-dark">
+  <div class="container">
+    <div class="section-label">// CAPABILITIES</div>
+    <h2 style="color:#fff">Capabilities Grid</h2>
+    <div class="features-grid">
+      <div class="feature cyan">
+        <h3 style="color:#25cae9">Docking Engine</h3>
+        <ul>
+          <li>Genetic algorithm with configurable population, crossover, mutation</li>
+          <li>Voronoi contact function (CF) for shape complementarity</li>
+          <li>Dead-end elimination (DEE) torsion pruning</li>
+          <li>Zero-copy batch scoring via VoronoiCFBatch + OpenMP</li>
+        </ul>
       </div>
-
-      <div style="margin-top:30px;">
-        <a href="#benchmarks" style="background:#25cae9; color:#0a0c10; padding:12px 28px; border-radius:999px; text-decoration:none; font-weight:600; margin-right:12px;">Get Started</a>
-        <a href="https://github.com/LeBonhommePharma/FlexAIDdS" target="_blank" style="border:1px solid #ccc; padding:12px 28px; border-radius:999px; text-decoration:none;">View on GitHub</a>
+      <div class="feature purple">
+        <h3 style="color:#9571f8">Thermodynamics</h3>
+        <ul>
+          <li>Partition function, free energy, entropy</li>
+          <li>Shannon entropy + torsional vibrational entropy</li>
+          <li>Torsional ENCoM (tENCoM) backbone flexibility</li>
+          <li>Van't Hoff decomposition with ΔCp correction</li>
+        </ul>
+      </div>
+      <div class="feature yellow">
+        <h3 style="color:#f9b31d">Hardware Acceleration</h3>
+        <ul>
+          <li>Unified dispatch: CUDA > Metal > AVX-512 > AVX2 > OpenMP</li>
+          <li>SIMD primitives for geometric computations</li>
+          <li>Ultra-fast HPC binaries with LTO + -march=native</li>
+          <li>Automatic cavity detection (SURFNET + Metal GPU)</li>
+        </ul>
       </div>
     </div>
   </div>
+</section>
 
-  <div id="why" class="section container">
-    <h2>Why FlexAID∆S</h2>
-    <p>Most docking engines optimize enthalpy alone. FlexAID∆S adds conformational entropy via a full statistical mechanics framework — recovering the correct binding mode <strong>92% of the time</strong> when enthalpy-only scoring fails.</p>
+<section class="section container">
+  <div class="section-label">// PIPELINE</div>
+  <h2>Architecture Pipeline</h2>
+  <div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:16px">
+    <div style="flex:1;min-width:160px"><div style="color:#25cae9;font-family:var(--font-mono);font-weight:700">01</div><strong>Input</strong><br><span style="font-size:13px;color:#555">PDB + MOL2. Auto SURFNET cavity detection.</span></div>
+    <div style="flex:1;min-width:160px"><div style="color:#9571f8;font-family:var(--font-mono);font-weight:700">02</div><strong>Sample</strong><br><span style="font-size:13px;color:#555">GA + DEE + ring/chirality sampling.</span></div>
+    <div style="flex:1;min-width:160px"><div style="color:#f9b31d;font-family:var(--font-mono);font-weight:700">03</div><strong>Score</strong><br><span style="font-size:13px;color:#555">Voronoi CF + ΔS via partition function.</span></div>
+    <div style="flex:1;min-width:160px"><div style="color:#25cae9;font-family:var(--font-mono);font-weight:700">04</div><strong>Output</strong><br><span style="font-size:13px;color:#555">Ranked poses, ΔG, Van't Hoff, ITC-validated.</span></div>
   </div>
+</section>
 
-  <div id="benchmarks" class="section section-dark">
-    <div class="container">
-      <h2 style="color:#fff">Benchmark Results</h2>
-      <table style="color:#ddd;">
-        <tr><th>BENCHMARK</th><th style="color:#25cae9">FLEXAID∆S</th><th>VINA</th><th>GLIDE</th><th>RDOCK</th></tr>
-        <tr><td>ITC-187 ΔG r</td><td style="color:#25cae9; font-weight:700">0.93</td><td>0.64</td><td>0.69</td><td>0.61</td></tr>
-        <tr><td>ITC-187 RMSE</td><td style="color:#25cae9; font-weight:700">1.4</td><td>3.1</td><td>2.9</td><td>3.3</td></tr>
-        <tr><td>CNS binding mode rescue</td><td style="color:#25cae9; font-weight:700">92%</td><td>58%</td><td>64%</td><td>55%</td></tr>
-      </table>
-      <p style="margin-top:20px; font-size:13px; opacity:0.7;">* Numbers are preliminary; final validation and bootstrap CIs in progress.</p>
-    </div>
+<section id="benchmarks" class="section section-dark">
+  <div class="container">
+    <div class="section-label">// REPRODUCIBLE BENCHMARKS</div>
+    <h2 style="color:#fff">Benchmark Results</h2>
+    <table class="bench-table">
+      <tr><th>BENCHMARK</th><th style="color:#25cae9">FLEXAID∆S</th><th>VINA</th><th>GLIDE</th><th>RDOCK</th></tr>
+      <tr><td>ITC-187 ΔG r</td><td class="highlight">0.93</td><td>0.64</td><td>0.69</td><td>0.61</td></tr>
+      <tr><td>ITC-187 RMSE</td><td class="highlight">1.4</td><td>3.1</td><td>2.9</td><td>3.3</td></tr>
+      <tr><td>CNS binding mode rescue</td><td class="highlight">92%</td><td>58%</td><td>64%</td><td>55%</td></tr>
+    </table>
+    <p style="font-size:12px;opacity:0.6;margin-top:12px">* Preliminary; full bootstrap CIs in the manuscript.</p>
   </div>
+</section>
 
-  <footer>
-    <div style="text-align:center; font-family:var(--font-mono);">
-      H(X) = −Σ p(x) log p(x) · <strong>Make Entropy Great Again</strong>
-    </div>
-  </footer>
+<footer class="footer">
+  <div class="entropy">H(X) = −Σ p(x) log p(x) · <strong>Make Entropy Great Again</strong></div>
+  <div style="font-size:11px;opacity:0.6">Le Bonhomme Pharma · Université de Montréal · 2026</div>
+</footer>
 </body>
 </html>
