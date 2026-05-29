@@ -1,26 +1,26 @@
 ---
 name: flexaid-docking
 description: >
-  Use this skill for FlexAID, FlexAIDdS, and FlexAID∆S docking workflows, including
+  Use this skill for FlexAID and FlexAIDδS docking workflows, including
   safe repo review, implementation planning, XML/package validation, and
   docking/thermodynamic-roadmap task decomposition. Triggered by: /flexaid-docking,
-  /FlexAid docking, /FlexAidDS, FlexAIDdS, FlexAID∆S, "FlexAID docking", or any
+  /FlexAid docking, /FlexAIDδS, "FlexAID docking", or any
   mention of ensemble analysis, thermodynamic ledger, or CF/contact-function scoring
-  proxy work on the FlexAIDdS codebase.
+  proxy work on the FlexAIDδS codebase.
 user_invocable: true
 metadata:
-  short-description: "FlexAID / FlexAIDdS / FlexAID∆S docking, validation, safe planning"
+  short-description: "FlexAID / FlexAIDδS docking, validation, safe planning"
 ---
 
-# FlexAID / FlexAIDdS / FlexAID∆S Skill
+# FlexAID / FlexAIDδS Skill
 
 **Primary invocations (documented aliases):**
 - `/flexaid-docking`
 - `/FlexAid docking`
 - `/FlexAidDS`
-- Direct phrases: `FlexAIDdS`, `FlexAID∆S`, `FlexAID docking`, `ensemble analysis`, `thermodynamic ledger`
+- Direct phrases: `FlexAIDδS`, `FlexAID docking`, `ensemble analysis`, `thermodynamic ledger`
 
-This skill activates for any task involving the FlexAID or FlexAIDdS (FlexAID∆S) molecular docking engine, its Python package `flexaidds`, benchmarks, thermodynamics layer, or related packaging.
+This skill activates for any task involving the FlexAID or FlexAIDδS molecular docking engine, its Python package `flexaidds`, benchmarks, thermodynamics layer, or related packaging.
 
 ## Mandatory First Actions (ALWAYS)
 
@@ -51,7 +51,7 @@ This skill activates for any task involving the FlexAID or FlexAIDdS (FlexAID∆
 - **Chunked plans only** and **produce chunked implementation plans**: When asked for implementation work (Codex, Claude Code, Grok Build, or human), always produce small, reviewable chunks with explicit test gates between chunks. Never deliver monolithic diffs.
 - **Terminology preservation** (do not rename or dilute):
   - FlexAID (legacy)
-  - FlexAIDdS / FlexAID∆S (entropy-augmented)
+  - FlexAIDδS (entropy-augmented)
   - docking, ensemble analysis, thermodynamic ledger, CF/contact-function scoring proxy, Voronoi contact function.
 
 ## What This Skill Must NOT Do
@@ -69,7 +69,12 @@ The skill itself is packaged under:
 .grok/skills/flexaid-docking/
 ├── SKILL.md
 ├── scripts/
-│   └── validate_skill.py
+│   ├── validate_skill.py
+│   ├── ensure_docking_data.py                  # unified data matrix management + --source
+│   └── update_skill.py                         # built-in autoupdate for the skill + all sub-components
+                                                #   (dry-run by default, --source, --yes, auto-validator)
+├── data/
+│   └── README.md                  # Documents the required MC_*.dat files
 ├── references/
 │   └── flexaid-docking-guidance.md
 └── assets/ (optional)
@@ -81,15 +86,78 @@ python3 .grok/skills/flexaid-docking/scripts/validate_skill.py
 python3 -m pytest tests/test_flexaid_skill.py -q --tb=line
 ```
 
+Before any real docking run, run the unified data ensure script:
+```bash
+python3 .grok/skills/flexaid-docking/scripts/ensure_docking_data.py
+```
+
+If you have a known-good FlexAIDδS installation elsewhere, use the deeply integrated `--source` flag:
+```bash
+python3 .grok/skills/flexaid-docking/scripts/ensure_docking_data.py \
+    --source /path/to/your/working/flexaidds/install
+```
+
+You can also combine it with an explicit binary:
+```bash
+python3 .grok/skills/flexaid-docking/scripts/ensure_docking_data.py \
+    --source /path/to/good/install \
+    --binary /path/to/current/build/FlexAIDδS
+```
+
+### Keeping the Skill Up to Date (New in 2026-05)
+
+The skill now includes a first-class, safe autoupdate tool:
+
+```bash
+# Always start here (completely safe)
+python3 .grok/skills/flexaid-docking/scripts/update_skill.py --dry-run -v
+
+# When you are ready (requires a full FlexAIDδS checkout as source)
+python3 .grok/skills/flexaid-docking/scripts/update_skill.py --yes
+
+# Using an explicit source (works great for portable copies too)
+python3 .grok/skills/flexaid-docking/scripts/update_skill.py \
+    --source ~/FlexAIDdS \
+    --yes \
+    --data          # optional: also refresh bundled matrices
+```
+
+The updater:
+- Is **dry-run by default**
+- Detects full checkouts automatically (or via `--source` / `FLEXAIDDS_ROOT`)
+- Refreshes scripts, references, docs, bin/ shortcuts, and (optionally) data
+- Always runs the validator at the end
+- Never modifies anything without explicit `--yes`
+
+See the script header and `--help` for all options.
+
 The validator enforces:
 - Valid SKILL.md YAML frontmatter (`name`, `description`)
 - Zero malformed XML anywhere (well-formedness, single root element, escaped ampersands, UTF-8, no illegal nesting/IDs)
 - No broken relative links in SKILL.md
 - All required aliases and guardrail phrases present
 
+## Critical Runtime Data Management (Interaction Matrices)
+
+The FlexAIDδS binary depends on precomputed atom-type interaction matrices (`MC_*.dat` files) for the Voronoi CF/contact-function scoring proxy. These files are **not** part of the main source tree.
+
+This skill treats them as first-class managed assets:
+
+- The `data/` directory inside the skill ships with the required matrices, making the skill self-contained and portable.
+- `scripts/ensure_docking_data.py` is the primary, production-grade tool. It supports both automatic discovery and explicit sourcing from another installation (`--source`).
+- A convenience wrapper `copy_docking_data_from_install.py` exists for the common “I have a known-good install” workflow.
+- Running the ensure script is considered part of the standard pre-docking workflow.
+
+See `data/README.md` for the full rationale, file list, and maintenance guidance.
+
+**Recommended before any docking task:**
+```bash
+python3 .grok/skills/flexaid-docking/scripts/ensure_docking_data.py
+```
+
 ## References
 
-See [references/flexaid-docking-guidance.md](references/flexaid-docking-guidance.md) for preserved scientific terminology, scoring proxy vs. thermodynamic ledger distinctions, and historical context from the FlexAIDdS implementation roadmap.
+See [references/flexaid-docking-guidance.md](references/flexaid-docking-guidance.md) for preserved scientific terminology, scoring proxy vs. thermodynamic ledger distinctions, and historical context from the FlexAIDδS implementation roadmap.
 
 ## Workflow for Typical Tasks
 
@@ -98,6 +166,28 @@ See [references/flexaid-docking-guidance.md](references/flexaid-docking-guidance
 3. If implementation requested: produce chunked plan with per-chunk test commands.
 4. Validate claims with `git diff`, build, and test runs — never skip.
 5. Update this skill or its validator if packaging or guardrails evolve.
+   Use the built-in updater: `scripts/update_skill.py --dry-run` then `--yes`.
 6. Commit only after validator + tests pass (see README for commit rules).
 
-This skill exists to keep all FlexAID / FlexAIDdS / FlexAID∆S work safe, reproducible, and correctly scoped between scoring proxies and real statistical mechanics.
+### Convenience Shortcuts (`bin/` directory)
+
+For ergonomics, the skill provides short commands in `bin/`:
+
+```bash
+.grok/skills/flexaid-docking/bin/ensure-docking-data
+.grok/skills/flexaid-docking/bin/validate-skill
+.grok/skills/flexaid-docking/bin/copy-docking-data
+.grok/skills/flexaid-docking/bin/update-skill          # built-in autoupdate (dry-run by default)
+```
+
+**These are pure symlinks.** Running them executes the exact same code as the real scripts. They change nothing about behavior or verification requirements.
+
+**Important:** These shortcuts are for convenience only. They never replace running the actual FlexAIDδS binary, the full validator, or any scientific analysis. No scientific claim is ever valid without executing the real code.
+
+## Quickstart for Actual Docking + Thermodynamics
+
+For users who want to run real FlexAIDδS jobs (not just review code), start here:
+
+→ **[QUICKSTART.md](QUICKSTART.md)** — End-to-end guide for preparing inputs, running docking, and computing the thermodynamic ledger.
+
+This skill exists to keep all FlexAID / FlexAIDδS work safe, reproducible, and correctly scoped between scoring proxies and real statistical mechanics.
