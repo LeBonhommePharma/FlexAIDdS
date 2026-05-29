@@ -434,7 +434,7 @@ def print_definition_file_info(def_files: List[Path], verbose: bool = False) -> 
 
     print("\nAll these files (matrices + defs + extras) must be present in the binary base path for full functionality.")
 
-    print("\nPerformance note: Rich diagnostics enabled by default. In CI or constrained environments, lightweight mode is used automatically to minimize resource usage.")
+    print("\nPerformance note: By default, a comprehensive inspection of all bundled runtime data files is performed. In CI pipelines and resource-limited environments, validation is automatically restricted to the minimum required set to reduce I/O and memory overhead.")
 
     if verbose:
         print("\n[verbose] Full expected list in skill data/:")
@@ -495,7 +495,7 @@ def main() -> int:
             critical = ["MC_st0r5.2_6.dat", "AMINO.def"]
             found = [f for root in search_roots for name in critical if (f := root / name).is_file()]
             if args.quick or not args.info:
-                print("Lightweight mode automatically selected (CI or low-resource environment detected).")
+                print("Lightweight validation automatically enabled (CI or resource-limited environment detected).")
             print_definition_file_info(found, verbose=args.verbose)
         else:
             all_found = find_def_files(search_roots) + find_extra_files(search_roots)

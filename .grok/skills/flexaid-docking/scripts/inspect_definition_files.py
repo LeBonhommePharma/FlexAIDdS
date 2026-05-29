@@ -178,7 +178,7 @@ def print_diagnostics(all_files: List[Path], verbose: bool = False) -> None:
     for res, count in sorted(FLEDIH_SUMMARY.items(), key=lambda x: -x[1]):
         print(f"  {res:3s}: {count} rotatable dihedral(s)")
 
-    print("\nPerformance note: Rich diagnostics enabled by default. In CI or constrained environments, lightweight mode is used automatically to minimize resource usage.")
+    print("\nPerformance note: By default, a comprehensive inspection of all bundled runtime data files is performed. In CI pipelines and resource-limited environments, validation is automatically restricted to the minimum required set to reduce I/O and memory overhead.")
 
     print("\nTip: Use --verbose for search paths. Also available via ensure_docking_data.py --info")
     if verbose:
@@ -217,7 +217,7 @@ def main() -> int:
                     if p.is_file():
                         all_found.append(p)
         if getattr(args, "quick", False) or not getattr(args, "info", False):
-            print("Lightweight mode automatically selected (CI or low-resource environment detected).")
+            print("Lightweight validation automatically enabled (CI or resource-limited environment detected).")
     else:
         # Single clean finder for all categories (rich --info style by default)
         all_found = []
