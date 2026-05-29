@@ -668,6 +668,41 @@ See [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md) for dependency licenses.
 
 ---
 
+## Grok / Codex Agent Skills (flexaid-docking)
+
+This repository packages a first-class Grok skill for all FlexAID, FlexAIDdS, and FlexAID∆S work:
+
+```
+.grok/skills/flexaid-docking/
+├── SKILL.md
+├── scripts/validate_skill.py
+└── references/flexaid-docking-guidance.md
+```
+
+**Invocation (user-facing trigger phrases + native slash):**
+- `/flexaid-docking`
+- `/FlexAid docking`
+- `/FlexAidDS`
+- Mention `FlexAIDdS`, `FlexAID∆S`, "FlexAID docking", "ensemble analysis", or "thermodynamic ledger" in any prompt.
+
+**Validation (ALWAYS run before claiming completion):**
+```bash
+python3 .grok/skills/flexaid-docking/scripts/validate_skill.py
+python3 -m pytest tests/test_flexaid_skill.py -q --tb=line
+```
+
+The skill **mandates**:
+- Start every task with `git status` + the exact mandated `find` command for skill/XML/AGENTS files.
+- Never edit scoring, ranking, or thermodynamic kernels without tests + explicit request.
+- Use precise language: "CF/contact-function scoring proxy" vs. full thermodynamic ledger.
+- Produce only chunked plans; never rewrite history or merge without confirmation.
+
+See the skill's own [SKILL.md](.grok/skills/flexaid-docking/SKILL.md) and [references/flexaid-docking-guidance.md](.grok/skills/flexaid-docking/references/flexaid-docking-guidance.md) for the full guardrails and terminology contract.
+
+**For Claude Code / Codex / other agents**: Copy or symlink the `.grok/skills/flexaid-docking/` tree into your agent's skill directory (or `.skills/flexaid-docking/`) and reference the same validation commands.
+
+---
+
 <div align="center">
 
 Louis-Philippe Morency
