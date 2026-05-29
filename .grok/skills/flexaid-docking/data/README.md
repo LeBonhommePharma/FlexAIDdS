@@ -56,6 +56,19 @@ These files (along with the MC matrices) must be present in the binary’s base
 directory at runtime. They were taken from complete WRK/ installations and are
 now bundled in the skill for full self-containment.
 
+## Additional Runtime Files
+
+The following supporting files are also commonly required in a complete runtime
+data pack (now bundled in this skill):
+
+- `Lovell_LIB.dat` — Rotamer library used for side-chain sampling.
+- `rotobs.lst` — Rotamer observation statistics (largest file).
+- `SYBYL_emat.dat` — SYBYL atom type energy matrix.
+- `M6_cons_3.dat`, `nrg_mat_BEST_*.dat`, `scr_*.dat` — Scoring, energy, and constraint support matrices.
+
+The `ensure_docking_data.py --info` (or the `inspect_definition_files.py` helper)
+will report on the presence and health of the entire set.
+
 ## How the Skill Manages These Files
 
 The recommended tool is:

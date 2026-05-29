@@ -49,6 +49,19 @@ EXPECTED_DEF_FILES = [
     "NUCLEOTIDES26.def",
 ]
 
+# Additional critical runtime files commonly found in complete WRK/ data packs
+# (rotamer libraries, scoring matrices, etc.). These are also required in the binary base path.
+EXPECTED_EXTRA_FILES = [
+    "Lovell_LIB.dat",
+    "rotobs.lst",
+    "SYBYL_emat.dat",
+    "M6_cons_3.dat",
+    "nrg_mat_BEST_011912.dat",
+    "nrg_mat_BEST_012012.dat",
+    "scr_bin.dat",
+    "scr_mat.dat",
+]
+
 DEFAULT_SEARCH_PATHS: List[Path] = [
     # Bundled inside the skill (highest priority - makes the skill self-contained)
     Path(__file__).resolve().parent.parent / "data",
@@ -114,6 +127,28 @@ def find_def_files(search_roots: List[Path]) -> List[Path]:
         if not root or not root.exists():
             continue
         for name in EXPECTED_DEF_FILES:
+            direct = root / name
+            if direct.is_file():
+                found.append(direct)
+            for candidate in root.rglob(name):
+                if candidate.is_file():
+                    found.append(candidate)
+    seen = set()
+    unique = []
+    for p in found:
+        if p not in seen:
+            seen.add(p)
+            unique.append(p)
+    return unique
+
+
+def find_extra_files(search_roots: List[Path]) -> List[Path]:
+    """Find additional runtime files (Lovell_LIB, rotobs, SYBYL_emat, scoring mats, etc.)."""
+    found = []
+    for root in search_roots:
+        if not root or not root.exists():
+            continue
+        for name in EXPECTED_EXTRA_FILES:
             direct = root / name
             if direct.is_file():
                 found.append(direct)
@@ -273,13 +308,65 @@ def ensure_matrices(
         if success and not dry_run:
             print("\n[SUCCESS] All required definition files are now in place.")
 
-    return success, found + def_found
+    # --- Also ensure extra runtime files (Lovell_LIB, rotobs, scoring mats, etc.) ---
+    extra_found = find_extra_files(search_roots)
+    extra_missing = [name for name in EXPECTED_EXTRA_FILES if not any(f.name == name for f in extra_found)]
+
+    if extra_found:
+        print(f"\nFound {len(extra_found)} additional runtime file(s):")
+        for f in extra_found:
+            print(f"  + {f}")
+
+    if extra_missing:
+        print(f"\nMissing additional runtime files: {', '.join(extra_missing)}")
+
+    if check_only:
+        overall_success = (len(missing) == 0 and len(def_missing) == 0 and len(extra_missing) == 0)
+        print(f"\n[check] {'READY' if overall_success else 'DATA MISSING'}")
+        return overall_success, found + def_found + extra_found
+
+    if extra_missing:
+        for name in extra_missing:
+            candidates = [f for f in extra_found if f.name == name]
+            if not candidates:
+                print(f"[ERROR] Cannot locate extra file: {name}")
+                success = False
+                continue
+
+            src = candidates[0]
+            dst = binary_base / name
+
+            try:
+                if dry_run:
+                    action = "symlink" if use_links else "copy"
+                    print(f"  [dry-run] Would {action}: {src} -> {dst}")
+                else:
+                    dst.parent.mkdir(parents=True, exist_ok=True)
+                    if use_links:
+                        try:
+                            dst.symlink_to(src.resolve())
+                            print(f"  Linked: {name}")
+                        except OSError:
+                            shutil.copy2(src, dst)
+                            print(f"  Copied (symlink not supported): {name}")
+                    else:
+                        shutil.copy2(src, dst)
+                        print(f"  Copied: {name}")
+            except Exception as e:
+                print(f"  [ERROR] Failed to place {name}: {e}")
+                success = False
+
+        if success and not dry_run:
+            print("\n[SUCCESS] All additional runtime files are now in place.")
+
+    return success, found + def_found + extra_found
 
 
 def print_definition_file_info(def_files: List[Path], verbose: bool = False) -> None:
-    """Print useful diagnostic information about the definition files, especially AMINO.def."""
-    print("\n=== Definition Files Diagnostic ===")
+    """Print useful diagnostic information about all runtime data files (matrices + defs + extras)."""
+    print("\n=== FlexAIDδS Runtime Data Diagnostic ===")
 
+    # Definition files
     amino_files = [f for f in def_files if f.name.startswith("AMINO")]
     nucleotide_files = [f for f in def_files if f.name.startswith("NUCLEOTIDES")]
 
@@ -297,25 +384,28 @@ def print_definition_file_info(def_files: List[Path], verbose: bool = False) -> 
 
     if modern_amino:
         print("\n[OK] Modern AMINO.def (2011.12.08 recommended) is present.")
-        print("     This version is compatible with current MC matrices and uses the standard atom type numbering.")
     elif legacy_aminos:
-        print("\n[WARNING] Only legacy AMINO*.def variants found (AMINO8/12/26).")
-        print("          These use older atom type numbering and may cause incorrect typing/scoring with modern matrices.")
-        print("          Strongly prefer the 2011 AMINO.def when possible.")
+        print("\n[WARNING] Only legacy AMINO* variants found. Atom type numbers may be incompatible.")
 
-    # Known FLEDIH flexibility summary (derived from the authoritative 2011 AMINO.def)
-    print("\nSide-chain flexibility coverage (FLEDIH dihedrals) from standard 2011 AMINO.def:")
-    print("  ARG: 4   | LYS: 4   | GLN/GLU/MET: 3 each")
-    print("  ASN/ASP/HIS/ILE/LEU/PHE/TRP/TYR: 2 each")
-    print("  CYS/SER/THR/VAL: 1 each")
-    print("  ALA/GLY/PRO: 0 (no side-chain sampling defined)")
+    # Extra runtime files
+    extra_files = [f for f in def_files if f.name in EXPECTED_EXTRA_FILES]
+    print(f"\nAdditional runtime files found: {len(extra_files)}")
+    for f in sorted(extra_files, key=lambda x: x.name):
+        print(f"  - {f.name}")
 
-    print("\nThese FLEDIH entries directly control which torsions the genetic algorithm samples.")
-    print("Missing or wrong .def files can silently limit or break side-chain flexibility.")
+    missing_extra = [name for name in EXPECTED_EXTRA_FILES if not any(f.name == name for f in extra_files)]
+    if missing_extra:
+        print(f"  Missing: {', '.join(missing_extra)}")
+
+    # FLEDIH summary
+    print("\nSide-chain flexibility (FLEDIH) summary (from 2011 AMINO.def):")
+    print("  ARG/LYS: 4 | GLN/GLU/MET: 3 | Many others: 1-2 | ALA/GLY/PRO: 0")
+
+    print("\nAll these files (matrices + defs + extras) must be present in the binary base path for full functionality.")
 
     if verbose:
-        print("\n[verbose] Full list of expected definition files in skill data/:")
-        for name in EXPECTED_DEF_FILES:
+        print("\n[verbose] Full expected list in skill data/:")
+        for name in EXPECTED_MATRICES + EXPECTED_DEF_FILES + EXPECTED_EXTRA_FILES:
             print(f"  - {name}")
 
 
@@ -325,12 +415,12 @@ def print_definition_file_info(def_files: List[Path], verbose: bool = False) -> 
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Ensure critical FlexAIDδS runtime data (MC_*.dat matrices + *.def definition files) are available.",
+        description="Ensure critical FlexAIDδS runtime data (matrices + *.def + extra files like Lovell_LIB, rotobs, etc.) are available.",
         epilog="Part of the flexaid-docking skill. Run before any real docking task.",
     )
     parser.add_argument("--binary", "-b", type=Path, help="Path to FlexAIDδS binary")
     parser.add_argument("--source", "-s", dest="source", type=Path,
-                        help="Path to a known-good installation to copy matrices from")
+                        help="Path to a known-good installation to copy all runtime data from (matrices + defs + extras)")
     parser.add_argument("--link", action="store_true", help="Use symlinks instead of copies when possible")
     parser.add_argument("--dry-run", "-n", action="store_true", help="Preview changes without modifying anything")
     parser.add_argument("--check", "--status", action="store_true", help="Only check, do not copy")

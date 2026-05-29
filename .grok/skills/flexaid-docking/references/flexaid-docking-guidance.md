@@ -41,7 +41,8 @@ This document preserves exact scientific terminology and guardrails for any agen
 - Editing `LIB/statmech.cpp`, `LIB/BindingMode.cpp`, `LIB/Vcontacts.cpp`, or `python/flexaidds/thermodynamics.py` without adding or updating the corresponding GoogleTest / pytest.
 - Treating the Grok share link body as authoritative when the fetch only returned the title "Grok Fixes FlexAID Skill XML" — always fall back to local files and the current prompt.
 - Using a legacy `AMINO8/12/26.def` with modern `MC_*.dat` matrices (different atom type numbering → wrong typing and scoring).
-- Forgetting that `FLEDIH` lines in `AMINO.def` are what actually enable side-chain sampling in the GA. Residues without FLEDIH entries (ALA, GLY, PRO) get no side-chain flexibility from this mechanism.
+- Forgetting that `FLEDIH` lines in `AMINO.def` are what actually enable side-chain sampling in the GA.
+- Missing Lovell_LIB.dat, rotobs.lst, or SYBYL_emat.dat — these are part of the complete runtime data pack required by the binary.
 
 ## Definition Files (AMINO*.def / NUCLEOTIDES*.def) — Practical Notes
 

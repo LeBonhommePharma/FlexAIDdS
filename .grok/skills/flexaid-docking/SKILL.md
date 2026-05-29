@@ -195,18 +195,13 @@ These files are essential for correct docking execution, configuration of flexib
 
 This skill treats all these files as first-class managed assets:
 
-- The `data/` directory ships with the full set of matrices + all `AMINO*.def` / `NUCLEOTIDES*.def` variants, making the skill self-contained.
+- The `data/` directory ships with the complete runtime set (matrices + all `*.def` + Lovell_LIB, rotobs.lst, SYBYL_emat, scoring support files, etc.), making the skill fully self-contained.
 - `scripts/ensure_docking_data.py` automatically discovers and places both matrices **and** definition files next to the binary (supports `--source`, `--dry-run`, `--check`, etc.).
 - Use the ensure script **before every real docking task**.
 
 See `data/README.md` for the complete file list and deeper format details (including full FLEDIH mappings per residue).
 
-**Recommended before any docking task:**
-```bash
-python3 .grok/skills/flexaid-docking/scripts/ensure_docking_data.py
-```
-
-**Recommended before any docking task:**
+**Recommended before any docking task (now covers matrices + all definition files + extra runtime data):**
 ```bash
 python3 .grok/skills/flexaid-docking/scripts/ensure_docking_data.py
 ```

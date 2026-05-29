@@ -4,14 +4,18 @@ inspect_definition_files.py
 
 Part of the flexaid-docking skill.
 
-A small standalone helper to inspect and report on the critical definition files
-(AMINO*.def and NUCLEOTIDES*.def) that the FlexAIDδS binary requires.
+A small standalone helper to inspect and report on the critical runtime data files
+that the FlexAIDδS binary requires in its base path:
+
+- Interaction matrices (MC_*.dat)
+- Definition files (AMINO*.def / NUCLEOTIDES*.def)
+- Extra files (Lovell_LIB.dat, rotobs.lst, SYBYL_emat.dat, scoring support, etc.)
 
 Useful for:
-- Verifying which version of the definition files you have
+- Verifying completeness of your runtime data pack
 - Understanding side-chain flexibility (FLEDIH) that will be sampled
-- Diagnosing atom-typing or flexibility problems before a run
-- Checking consistency between your data and the bundled skill data
+- Detecting legacy vs modern definition variants
+- Diagnosing "missing file" problems before expensive docking runs
 
 Example usage:
     python3 .grok/skills/flexaid-docking/scripts/inspect_definition_files.py
@@ -25,9 +29,16 @@ from pathlib import Path
 from typing import List, Optional
 
 # Same lists as ensure_docking_data.py for consistency
+EXPECTED_MATRICES = ["MC_st0r5.2_6.dat"]
 EXPECTED_DEF_FILES = [
     "AMINO.def", "AMINO8.def", "AMINO12.def", "AMINO26.def",
     "NUCLEOTIDES.def", "NUCLEOTIDES8.def", "NUCLEOTIDES12.def", "NUCLEOTIDES26.def",
+]
+EXPECTED_EXTRA_FILES = [
+    "Lovell_LIB.dat", "rotobs.lst", "SYBYL_emat.dat",
+    "M6_cons_3.dat",
+    "nrg_mat_BEST_011912.dat", "nrg_mat_BEST_012012.dat",
+    "scr_bin.dat", "scr_mat.dat",
 ]
 
 # Hardcoded high-value summary derived from the authoritative 2011 AMINO.def
@@ -72,6 +83,27 @@ def find_def_files(search_roots: List[Path]) -> List[Path]:
     return unique
 
 
+def find_extra_files(search_roots: List[Path]) -> List[Path]:
+    found = []
+    for root in search_roots:
+        if not root or not root.exists():
+            continue
+        for name in EXPECTED_EXTRA_FILES:
+            direct = root / name
+            if direct.is_file():
+                found.append(direct)
+            for candidate in root.rglob(name):
+                if candidate.is_file():
+                    found.append(candidate)
+    seen = set()
+    unique = []
+    for p in found:
+        if p not in seen:
+            seen.add(p)
+            unique.append(p)
+    return unique
+
+
 def get_binary_base_path(binary: Optional[Path]) -> Path:
     if binary and binary.exists():
         return binary.parent.resolve()
@@ -81,30 +113,52 @@ def get_binary_base_path(binary: Optional[Path]) -> Path:
     return Path.cwd()
 
 
-def print_diagnostics(def_files: List[Path], verbose: bool = False) -> None:
-    print("=== FlexAIDδS Definition Files Inspector ===")
+def print_diagnostics(all_files: List[Path], verbose: bool = False) -> None:
+    print("=== FlexAIDδS Runtime Data Inspector ===")
     print()
 
-    amino = sorted([f for f in def_files if f.name.startswith("AMINO")])
-    nucl = sorted([f for f in def_files if f.name.startswith("NUCLEOTIDES")])
+    matrices = [f for f in all_files if f.name in EXPECTED_MATRICES]
+    defs = [f for f in all_files if f.name in EXPECTED_DEF_FILES]
+    extras = [f for f in all_files if f.name in EXPECTED_EXTRA_FILES]
 
-    print(f"AMINO*.def files found: {len(amino)}")
+    print(f"Matrices found: {len(matrices)}")
+    for f in sorted(matrices, key=lambda x: x.name):
+        print(f"  + {f.name}")
+
+    amino = sorted([f for f in defs if f.name.startswith("AMINO")])
+    nucl = sorted([f for f in defs if f.name.startswith("NUCLEOTIDES")])
+
+    print(f"\nAMINO*.def files found: {len(amino)}")
     for f in amino:
-        print(f"  + {f}")
+        print(f"  + {f.name}")
 
-    print(f"\nNUCLEOTIDES*.def files found: {len(nucl)}")
+    print(f"NUCLEOTIDES*.def files found: {len(nucl)}")
     for f in nucl:
-        print(f"  + {f}")
+        print(f"  + {f.name}")
 
-    modern = next((f for f in amino if f.name == "AMINO.def"), None)
-    legacy = [f for f in amino if f.name != "AMINO.def"]
+    print(f"\nAdditional runtime files found: {len(extras)}")
+    for f in sorted(extras, key=lambda x: x.name):
+        print(f"  + {f.name}")
+
+    modern = next((f for f in defs if f.name == "AMINO.def"), None)
+    legacy = [f for f in defs if f.name.startswith("AMINO") and f.name != "AMINO.def"]
 
     print()
     if modern:
-        print("[GOOD] Modern AMINO.def (2011.12.08) detected — recommended for current matrices.")
+        print("[GOOD] Modern AMINO.def (2011) present.")
     elif legacy:
-        print("[WARN] Only legacy AMINO* variants present. Atom type numbers differ from modern matrices.")
-        print("       This frequently causes incorrect typing or scoring.")
+        print("[WARN] Only legacy AMINO variants — potential atom type mismatch.")
+
+    print("\n--- Side-chain Flexibility (FLEDIH) ---")
+    print("Controls which torsions the GA samples (from 2011 AMINO.def):")
+    for res, count in sorted(FLEDIH_SUMMARY.items(), key=lambda x: -x[1]):
+        print(f"  {res:3s}: {count} rotatable dihedral(s)")
+
+    print("\nTip: Use --verbose for search paths. Also available via ensure_docking_data.py --info")
+    if verbose:
+        print("\nSearch roots used:")
+        for r in DEFAULT_SEARCH_PATHS:
+            print(f"  {r}")
 
     print("\n--- Side-chain Flexibility (FLEDIH dihedrals) ---")
     print("These control which torsions the GA will actually sample:")
@@ -135,8 +189,18 @@ def main() -> int:
     if args.source:
         search_roots = [args.source] + search_roots
 
-    found = find_def_files(search_roots)
-    print_diagnostics(found, verbose=args.verbose)
+    found = find_def_files(search_roots) + find_extra_files(search_roots)  # reuse similar logic
+    # Simple combined finder for the helper
+    all_found = []
+    for root in search_roots:
+        if root and root.exists():
+            for name in EXPECTED_MATRICES + EXPECTED_DEF_FILES + EXPECTED_EXTRA_FILES:
+                p = root / name
+                if p.is_file():
+                    all_found.append(p)
+    seen = set()
+    unique = [p for p in all_found if not (p in seen or seen.add(p))]
+    print_diagnostics(unique, verbose=args.verbose)
     return 0
 
 
