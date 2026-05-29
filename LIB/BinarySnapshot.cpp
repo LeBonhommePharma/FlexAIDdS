@@ -542,9 +542,9 @@ void snapshot_to_pdb(const SnapshotReader::Snapshot& snapshot,
 // ═══════════════════════════════════════════════════════════════════
 
 void snapshot_to_pdb_from_global(const SnapshotReader::Snapshot& snapshot,
-                                 FA_Global_struct* FA,
-                                 atom_struct* atoms,
-                                 residue_struct* residue,
+                                 ::FA_Global_struct* FA,
+                                 ::atom_struct* atoms,
+                                 ::residue_struct* residue,
                                  const std::string& remark,
                                  FILE* out)
 {

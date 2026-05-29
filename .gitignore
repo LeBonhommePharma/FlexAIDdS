@@ -24,14 +24,19 @@
 # test suite
 !tests
 !tests/**
+tests/**/__pycache__
 # build system
 !CMakeLists.txt
 !CMakePresets.json
 !LICENSE
 !README.md
 !CLAUDE.md
+!AGENTS.md
 !VERSION
 !VERSION.md
+# agent skill packages
+!skills
+!skills/**
 # documentation
 !CONTRIBUTING.md
 !CODE_OF_CONDUCT.md

@@ -20,6 +20,8 @@
 # Historical / intentionally excluded
 LIB/wif083.cpp
 LIB/python_bindings.cpp
+LIB/cffunction.cpp
+LIB/spfunction.cpp
 
 # === P0 Source Validator Completion (2026-05) ===
 # These are tools, test stubs, GPU/hip/metal sidecars handled conditionally,

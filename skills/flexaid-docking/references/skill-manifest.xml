@@ -1,0 +1,91 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  FlexAID Docking Skill — XML manifest (reference form).
+
+  This file exists for hosts that consume an XML descriptor of the skill
+  (some Codex/OpenAI integrations and legacy Grok manifests do). The
+  canonical source of truth is SKILL.md; this XML mirrors that metadata.
+
+  Validity contract enforced by scripts/validate_skill.py:
+    - single root element <skill>
+    - well-formed UTF-8
+    - all ampersands escaped as &amp;
+    - no duplicate alias entries
+    - every <file path="..."/> resolves on disk relative to this manifest
+-->
+<skill
+    id="flexaid-docking"
+    version="1.0.0"
+    schema="https://flexaidds.local/skill-schema/v1">
+
+  <name>flexaid-docking</name>
+
+  <description>
+    Use this skill for FlexAID, FlexAIDdS, and FlexAID&#x2206;S docking
+    workflows, including safe repo review, implementation planning,
+    XML/package validation, and docking/thermodynamic-roadmap task
+    decomposition.
+  </description>
+
+  <project>
+    <fullName>FlexAIDdS (FlexAID with &#x2206;S Entropy)</fullName>
+    <repository>FlexAIDdS</repository>
+    <license>Apache-2.0</license>
+    <maintainer>Louis-Philippe Morency, Universit&#xE9; de Montr&#xE9;al, NRGlab</maintainer>
+  </project>
+
+  <aliases>
+    <!--
+      Trigger phrases. Not guaranteed to be registered as native slash
+      commands on every host. See SKILL.md for the policy.
+    -->
+    <alias kind="slash">/FlexAid docking</alias>
+    <alias kind="slash">/FlexAidDS</alias>
+    <alias kind="phrase">FlexAIDdS</alias>
+    <alias kind="phrase">FlexAID&#x2206;S</alias>
+    <alias kind="phrase">FlexAID delta-S</alias>
+  </aliases>
+
+  <scope>
+    <allow>repository review and planning</allow>
+    <allow>skill/package validation</allow>
+    <allow>building and running existing docking targets</allow>
+    <allow>chunked roadmap generation for Codex, Claude Code, Grok Build</allow>
+
+    <forbid reason="changes scientific behavior">
+      modifying CF scoring, ranking rules, or thermodynamic estimators
+      without explicit user instruction naming the file
+    </forbid>
+    <forbid reason="overclaims thermodynamics">
+      relabeling CF proxy scores as &quot;binding free energy&quot; or &quot;&#x2206;G&quot;
+    </forbid>
+    <forbid reason="destructive git">
+      force-push, reset --hard on dirty trees, branch deletion, history rewrites
+    </forbid>
+    <forbid reason="license policy">
+      introducing GPL or AGPL dependencies
+    </forbid>
+  </scope>
+
+  <vocabulary>
+    <term>FlexAID</term>
+    <term>FlexAIDdS</term>
+    <term>FlexAID&#x2206;S</term>
+    <term>docking</term>
+    <term>ensemble analysis</term>
+    <term>thermodynamic ledger</term>
+    <term>CF / contact-function scoring proxy</term>
+  </vocabulary>
+
+  <files>
+    <file path="../SKILL.md" role="metadata-and-contract"/>
+    <file path="./flexaid-docking-guidance.md" role="long-form-guidance"/>
+    <file path="../scripts/validate_skill.py" role="validator"/>
+  </files>
+
+  <validation>
+    <command>python3 skills/flexaid-docking/scripts/validate_skill.py</command>
+    <exitCodeOnFailure>1</exitCodeOnFailure>
+  </validation>
+
+</skill>
