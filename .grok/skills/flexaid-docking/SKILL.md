@@ -3,10 +3,21 @@ name: flexaid-docking
 description: >
   Use this skill for FlexAID and FlexAIDδS docking workflows, including
   safe repo review, implementation planning, XML/package validation, and
-  docking/thermodynamic-roadmap task decomposition. Triggered by: /flexaid-docking,
-  /FlexAid docking, /FlexAIDδS, "FlexAID docking", or any
-  mention of ensemble analysis, thermodynamic ledger, or CF/contact-function scoring
-  proxy work on the FlexAIDδS codebase.
+  docking/thermodynamic-roadmap task decomposition.
+
+  Natural language triggers include:
+  - Any mention of FlexAID, FlexAIDδS, FlexAIDdS, "molecular docking", "perform docking",
+    "run docking", "docking simulation", "redock", "redocking", "binding mode analysis",
+    "thermodynamic analysis", "ensemble docking", "pose ranking", or "vibrational entropy".
+  - Skill maintenance: "update the flexaid-docking skill", "update the docking skill",
+    "refresh flexaid skill", "pull latest flexaid-docking", "update the skill".
+  - Any request involving the FlexAIDδS binary, flexaidds Python package, tENCoM,
+    StatMechEngine, BindingMode, or thermodynamic ledger work.
+
+  When a docking-related request is detected, the skill should ask clarifying questions
+  about organism/species, biological target (protein/RNA/DNA + chains), ligand source
+  (PDB ID, MOL2, SMILES, SDF, residue name), intent (self-docking/redocking vs cross-docking
+  vs screening), thermodynamic requirements, and any special constraints before proceeding.
 user_invocable: true
 metadata:
   short-description: "FlexAID / FlexAIDδS docking, validation, safe planning"
@@ -17,10 +28,25 @@ metadata:
 **Primary invocations (documented aliases):**
 - `/flexaid-docking`
 - `/FlexAid docking`
-- `/FlexAidDS`
-- Direct phrases: `FlexAIDδS`, `FlexAID docking`, `ensemble analysis`, `thermodynamic ledger`
+- `/FlexAIDδS`, `/FlexAIDdS`
+- Natural language (strongly supported):
+  - "update the flexaid-docking skill", "update the docking skill", "refresh the flexaid skill"
+  - "dock this ligand", "perform molecular docking", "redock the co-crystallized ligand",
+    "run FlexAIDδS on this target", "analyze the thermodynamic ledger", "binding mode prediction with entropy"
 
 This skill activates for any task involving the FlexAID or FlexAIDδS molecular docking engine, its Python package `flexaidds`, benchmarks, thermodynamics layer, or related packaging.
+
+**Conversational behavior (important):**  
+When activated by any docking-related natural language request, the skill MUST ask clarifying questions before taking action. Key dimensions to establish:
+- Biological context (organism / species)
+- Target macromolecule (protein, RNA, DNA; specific chain(s); PDB ID or local file)
+- Ligand(s) (name, SMILES, MOL2/SDF/PDB residue, or "extract from the PDB co-crystal")
+- Docking intent (self-docking / redocking of known ligand vs. cross-docking vs. virtual screening)
+- Thermodynamic depth required (full ensemble free energy / partition function, tENCoM vibrational entropy, temperature, etc.)
+- Special constraints (covalent attachment, modified residues, NMR multi-model, bio-unit .pdb1 preference, user-specified receptor/ligand chains)
+- Input/output preferences (local paths vs. automatic RCSB download + splitting via redock_from_pdb.py)
+
+Never guess these details. Ask focused, numbered questions and wait for the user to provide the missing information.
 
 ## Mandatory First Actions (ALWAYS)
 
