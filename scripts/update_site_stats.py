@@ -138,7 +138,7 @@ def build_lang_legend(entries: list[tuple[str, str, float]]) -> str:
     for css_suffix, display, pct in entries:
         lines.append(
             f'          <span><i style="background:var(--lang-{css_suffix})"></i>'
-            f"{display} {pct}%</span>"
+            f"{display} {pct}%</span>'
         )
     lines.append("        </div>")
     return "\n".join(lines)
@@ -158,68 +158,46 @@ def update_html(
 
     original = content
 
-    # 1. Update commit count: data-count="NNN"
+    # 1. Update commit count in the new semantic marker (id="stat-commits") — any tag
     content = re.sub(
-        r'data-count="\d+"',
-        f'data-count="{commit_count}"',
+        r'(<[^>]*id="stat-commits"[^>]*>)\d+(</[^>]+>)',
+        rf"\g<1>{commit_count}\g<2>",
         content,
         count=1,
     )
 
-    # 2. Update language count stat card
+    # 2. Update language count in the new semantic marker (id="stat-langs") — any tag
     if lang_entries:
         n_langs = len(lang_entries)
         content = re.sub(
-            r'(<span class="stat-value">)\d+(</span>\s*<span class="stat-label">Languages</span>)',
+            r'(<[^>]*id="stat-langs"[^>]*>)\d+(</[^>]+>)',
             rf"\g<1>{n_langs}\g<2>",
             content,
             count=1,
         )
 
-    # 3. Replace lang-bar block (including all nested divs)
-    if lang_entries:
-        new_bar = build_lang_bar(lang_entries)
-        content = re.sub(
-            r' *<div class="lang-bar"[^>]*>.*?</div>\n *</div>',
-            new_bar,
-            content,
-            count=1,
-            flags=re.DOTALL,
-        )
-
-    # 4. Replace lang-legend block (including all nested spans)
-    if lang_entries:
-        new_legend = build_lang_legend(lang_entries)
-        content = re.sub(
-            r' *<div class="lang-legend">.*?</div>',
-            new_legend,
-            content,
-            count=1,
-            flags=re.DOTALL,
-        )
-
-    # 5. Update stars count (server-side default so it shows before JS loads)
+    # 3. (Optional) Stars - only if a matching span exists in future revisions
     if stars is not None:
         content = re.sub(
-            r'(<span class="stat-value" id="stat-stars">)\d+(</span>)',
+            r'(<span[^>]*id="stat-stars"[^>]*>)\d+(</span>)',
             rf"\g<1>{stars}\g<2>",
             content,
             count=1,
         )
 
-    # 6. Update "last updated" date in footer
+    # 4. Update "last updated" date if a marker span is present (future-proof)
     today = datetime.date.today().isoformat()
     content = re.sub(
-        r'(<span id="last-updated">Last updated: )\d{4}-\d{2}-\d{2}(</span>)',
+        r'(<span[^>]*id="last-updated"[^>]*>)[^<]*(</span>)',
         rf"\g<1>{today}\g<2>",
         content,
         count=1,
     )
 
-    # 7. Update latest release version if present
+    # 5. Update latest release version if a marker span is present
     if release:
         content = re.sub(
-            r'(<span id="latest-release">)[^<]*(</span>)',
+            r'(<span[^>]*id="latest-release"[^>]*>)[^<]*(</span>)',
             rf"\g<1>{release}\g<2>",
             content,
             count=1,
@@ -246,7 +224,7 @@ def main() -> int:
     try:
         commit_count = get_commit_count()
         print(f"Commit count: {commit_count}")
-    except (subprocess.CalledProcessError, FileNotFoundError) as e:
+    except (subprocess.CalledError, FileNotFoundError) as e:
         print(f"Error getting commit count: {e}", file=sys.stderr)
         return 1
 
