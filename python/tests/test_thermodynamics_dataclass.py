@@ -39,7 +39,8 @@ class TestThermodynamicsDataclass:
         d = _make().to_dict()
         expected = {
             "temperature_K", "log_Z", "free_energy_kcal_mol",
-            "enthalpy_kcal_mol", "entropy_kcal_mol_K",
+            "enthalpy_kcal_mol", "mean_energy_sq",
+            "entropy_kcal_mol_K",
             "heat_capacity_kcal_mol_K2", "std_energy_kcal_mol",
         }
         assert expected == set(d.keys())
@@ -50,6 +51,7 @@ class TestThermodynamicsDataclass:
         assert d["temperature_K"] == t.temperature
         assert d["free_energy_kcal_mol"] == t.free_energy
         assert d["enthalpy_kcal_mol"] == t.mean_energy
+        assert d["mean_energy_sq"] == t.mean_energy_sq
         assert d["entropy_kcal_mol_K"] == t.entropy
         assert d["heat_capacity_kcal_mol_K2"] == t.heat_capacity
         assert d["std_energy_kcal_mol"] == t.std_energy

@@ -43,11 +43,11 @@ static void synthesize_helix(std::vector<atom>& atoms_out,
         atom ca;
         memset(&ca, 0, sizeof(ca));
         strncpy(ca.name, "CA", sizeof(ca.name) - 1);
-        strncpy(ca.type, "C", sizeof(ca.type) - 1);
+        ca.type     = 0;   // generic / C-alpha placeholder (int in current atom_struct)
         ca.coor[0] = radius * std::cos(r * turn_per_residue);
         ca.coor[1] = radius * std::sin(r * turn_per_residue);
         ca.coor[2] = r * rise_per_residue;
-        ca.res      = r + 1;
+        ca.ofres    = r + 1;  // current field for residue membership (was .res in legacy layout)
 
         resid res;
         memset(&res, 0, sizeof(res));

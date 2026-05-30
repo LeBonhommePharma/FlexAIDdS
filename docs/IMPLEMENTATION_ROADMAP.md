@@ -574,6 +574,49 @@ option(BUILD_SWIFT_BRIDGE   "Swift bridge (macOS only)"           OFF)
 - `RingConformerLibrary.h` — Ring conformer database
 - `SugarPucker.h` — Sugar ring conformation handling
 
+### DiFT — Discrete Fourier Transform Torsional Parametrization (`LIB/DiFT/`)
+
+Automated, unbiased parametrization of dihedral (torsional) potentials.
+Method: Flores-Trujillo, Rodríguez-Segura, Amador-Bedolla & Domínguez, *J. Chem. Inf.
+Model.* **2026**, DOI [10.1021/acs.jcim.6c00123](https://doi.org/10.1021/acs.jcim.6c00123).
+
+**Why it lives in ΔS-FlexAID.** A torsional potential V(φ) and its Fourier
+spectrum {Aₙ, ωₙ} are conjugate representations of the *same* object. One FFT
+yields two payoffs:
+
+1. **Energy** — a truncated cosine series V(φ) = mean + Σ Aₙ cos(nφ − ωₙ) feeds
+   the ligand-bond term of the GA fitness as a real analytical potential.
+2. **Entropy** — the same spectrum gives the 1-D partition function z =
+   ⟨exp(−βV)⟩ in closed form, and hence a rigorous per-bond torsional entropy
+   S_tors = (⟨V⟩ − F)/T. This is the ΔS contribution an entropy-driven docking
+   engine should actually use, replacing the heuristic rotatable-bond count.
+
+**Shannon-collapse truncation.** Instead of the paper's brute-force outer loop
+on the number of terms F, the spectral Shannon entropy H_spec of the normalized
+power spectrum pₙ = Aₙ²/ΣAₘ² sets the effective mode count N_eff = exp(H_spec);
+the ⌈N_eff⌉ highest-power terms are retained. A profile dominated by one cosine
+has H_spec → 0 (N_eff → 1); a flat noisy profile has H_spec → ln(N) (all
+modes). No user threshold — the spectrum itself decides.
+
+**Files**
+
+- `LIB/DiFT/DiFT.h` / `DiFT.cpp` — C++26 engine (self-contained: only the
+  standard library; radix-2 FFT for power-of-two grids, exact direct DFT
+  otherwise). Apache-2.0, no GPL deps.
+- `LIB/DiFT/DiFTGAAdapter.h` — header-only bridge to the GA fitness:
+  `score_torsional()` returns `{energy, minus_TS, n_bonds}` per pose.
+- `python/flexaidds/dift.py` — bit-identical pure-Python (NumPy) mirror; the
+  always-available path even without `_core`.
+- `python/bindings/dift_bindings.h` — pybind11 bindings, registered into both
+  `_core.cpp` (setup.py) and `core_bindings.cpp` (CMake).
+- `tests/test_dift.cpp` — 23 GoogleTest cases (round-trip, Shannon collapse,
+  refinement convergence, free-rotor / confined-bond thermodynamics, Boltzmann
+  inversion, circular mean, GA adapter, input-validation guards).
+- `python/tests/test_dift.py` — 23 pytest cases mirroring the C++ suite + a
+  C++/Python parity check that runs whenever `_core.DiFTEngine` is available.
+
+**Status**: ✅ Complete (engine, bindings, tests, CMake/CI wiring, docs).
+
 ### PTM Attachment (`LIB/PTMAttachment/`)
 
 - `PTMAttachment.h` — Post-translational modification modeling

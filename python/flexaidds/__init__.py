@@ -40,7 +40,26 @@ from .benchmark import (
 )
 
 # Pure-Python thermodynamics (always available)
-from .thermodynamics import StatMechEngine, Thermodynamics, ThermodynamicBreakdown, kB_kcal, kB_SI
+from .thermodynamics import (
+    StatMechEngine,
+    Thermodynamics,
+    ThermodynamicBreakdown,
+    kB_kcal,
+    kB_SI,
+    deltaG_standard_to_Kd_M,
+    Kd_M_to_deltaG_standard,
+)
+
+# entropy.help audit schema (A1.1) — pure Python, always available
+from .schemas.thermo_audit import (
+    ThermodynamicOutput,
+    ThermodynamicOutputDC,
+    TotalSampledPartitionFunction,
+    TotalSampledPartitionFunctionDC,
+    Provenance,
+    ProvenanceDC,
+    make_total_sampled_output,
+)
 
 # C++ extension — optional: pure-Python helpers work without it
 try:
@@ -50,12 +69,15 @@ try:
         State,
         TIPoint,
         WHAMBin,
+        TemperatureScanPoint,
+        DeltaCpFit,
         kB_kcal,  # noqa: F811  (more precise C++ value)
         kB_SI,    # noqa: F811
     )
     # Override with C++ StatMechEngine when available
     from ._core import StatMechEngine as _CppStatMechEngine  # noqa: F811
     from ._core import Thermodynamics as _CppThermodynamics  # noqa: F811
+    from ._core import ThermodynamicBreakdown as _CppThermodynamicBreakdown  # noqa: F811
     from ._core import ENCoMEngine as _CppENCoMEngine        # noqa: F811
     from ._core import NormalMode as _CppNormalMode           # noqa: F811
     from ._core import VibrationalEntropy as _CppVibrationalEntropy  # noqa: F811
@@ -232,6 +254,11 @@ __all__ = [
     "Replica",
     "WHAMBin",
     "TIPoint",
+    "TemperatureScanPoint",
+    "DeltaCpFit",
+    # Affinity converters (Task 6/7, safe, with validation)
+    "deltaG_standard_to_Kd_M",
+    "Kd_M_to_deltaG_standard",
     # Reporting (Task 9 - JSON driven only)
     "generate_pymol_script",
     "generate_markdown_report",

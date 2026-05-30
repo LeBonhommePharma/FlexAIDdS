@@ -175,6 +175,78 @@ Thermodynamics StatMechEngine::compute() const {
     return th;
 }
 
+ThermodynamicBreakdown StatMechEngine::compute_breakdown(
+    double G_vib_kcal_mol,
+    double G_natural_kcal_mol,
+    double G_other_kcal_mol,
+    bool has_vib,
+    bool has_natural,
+    bool has_other) const
+{
+    const Thermodynamics th = compute();
+
+    ThermodynamicBreakdown b;
+    b.temperature_K = th.temperature;
+    b.logZ_config = th.log_Z;
+    b.G_config_kcal_mol = th.free_energy;
+    b.H_eff_kcal_mol = th.mean_energy;
+    b.S_config_kcal_mol_K = th.entropy;
+    b.minus_T_S_config_kcal_mol = th.free_energy - th.mean_energy;
+    b.Cv_kcal_mol_K = th.heat_capacity;
+    b.sigma_E_kcal_mol = th.std_energy;
+    b.G_vib_kcal_mol = G_vib_kcal_mol;
+    b.G_natural_kcal_mol = G_natural_kcal_mol;
+    b.G_other_kcal_mol = G_other_kcal_mol;
+    b.G_total_kcal_mol = b.G_config_kcal_mol
+                       + b.G_vib_kcal_mol
+                       + b.G_natural_kcal_mol
+                       + b.G_other_kcal_mol;
+    b.has_vib = has_vib;
+    b.has_natural = has_natural;
+    b.has_other = has_other;
+    return b;
+}
+
+ComponentAverages StatMechEngine::component_averages(
+    std::span<const EnergyComponents> components) const
+{
+    if (components.empty())
+        throw std::invalid_argument("StatMechEngine::component_averages: empty component list");
+    if (components.size() != ensemble_.size())
+        throw std::invalid_argument("StatMechEngine::component_averages: component count must match ensemble size");
+
+    const std::vector<double> weights = boltzmann_weights();
+    ComponentAverages avg;
+    avg.component_completeness_flag = true;
+
+    for (std::size_t i = 0; i < components.size(); ++i) {
+        const double p = weights[i];
+        const EnergyComponents& c = components[i];
+        avg.mean_CF_kcal_mol += p * c.cf;
+        avg.mean_receptor_strain_kcal_mol += p * c.receptor_strain;
+        avg.mean_ligand_internal_kcal_mol += p * c.ligand_internal;
+        avg.mean_hbond_kcal_mol += p * c.hbond;
+        avg.mean_gist_kcal_mol += p * c.gist;
+        avg.mean_metal_kcal_mol += p * c.metal;
+        avg.mean_water_kcal_mol += p * c.water;
+        avg.mean_other_kcal_mol += p * c.other;
+        avg.component_completeness_flag = avg.component_completeness_flag && c.complete;
+    }
+
+    avg.component_sum_kcal_mol = avg.mean_CF_kcal_mol
+        + avg.mean_receptor_strain_kcal_mol
+        + avg.mean_ligand_internal_kcal_mol
+        + avg.mean_hbond_kcal_mol
+        + avg.mean_gist_kcal_mol
+        + avg.mean_metal_kcal_mol
+        + avg.mean_water_kcal_mol
+        + avg.mean_other_kcal_mol;
+    avg.component_status = avg.component_completeness_flag
+        ? ComponentStatus::Available
+        : ComponentStatus::IncludedInOther;
+    return avg;
+}
+
 // ─── boltzmann_weights ───────────────────────────────────────────────────────
 
 std::vector<double> StatMechEngine::boltzmann_weights() const {

@@ -5,9 +5,7 @@
 #   Phase 1: C++ kernel benchmarks (dispatch, vcfbatch, tencom)
 #   Phase 2: Tier-1 dataset benchmark (CASF-2016, 5 targets, ~5 min)
 #   Phase 3: Tier-2 dataset benchmarks (all 10 datasets, sequential, hours)
-#   Phase 4: Final report consolidation + blocking mirror sync
-#
-# Each phase triggers an async rsync mirror to Google Drive.
+#   Phase 4: Final report consolidation (results already on iCloud)
 #
 # Usage:
 #   ./benchmarks/m3pro/run_benchmarks.sh                # all phases
@@ -51,7 +49,6 @@ DATA="${FLEXAIDDS_BENCHMARK_DATA:?not set}"
 BINARY="${FLEXAIDDS_BINARY:?not set}"
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-MIRROR_SCRIPT="$SCRIPT_DIR/mirror_to_gdrive.sh"
 
 # ─── Parse arguments ─────────────────────────────────────────────────────────
 
@@ -75,7 +72,11 @@ done
 # ─── Validate build ─────────────────────────────────────────────────────────
 
 if [[ ! -f "$BINARY" ]]; then
-    die "FlexAID binary not found: $BINARY — run build_m3pro.sh first"
+    if [[ "$RUN_KERNELS" == true && "$RUN_TIER1" == false && "$RUN_TIER2" == false ]]; then
+        warn "FlexAID binary not found — kernels-only will proceed with whatever benchmark_* binaries exist"
+    else
+        die "FlexAID binary not found: $BINARY — run build_m3pro.sh first (needed for tier-1/2)"
+    fi
 fi
 
 # ─── Hardware detection ──────────────────────────────────────────────────────
@@ -94,7 +95,7 @@ mkdir -p "$LOGS"
     echo "  RAM:     $(( $(sysctl -n hw.memsize) / 1073741824 )) GB"
     echo "  GPU:     $(system_profiler SPDisplaysDataType 2>/dev/null | grep 'Chipset Model' | sed 's/.*: //' || echo 'unknown')"
     echo "  OS:      $(sw_vers -productName 2>/dev/null || echo macOS) $(sw_vers -productVersion 2>/dev/null || echo '')"
-    echo "  Storage: iCloud (primary) + Google Drive (mirror)"
+    echo "  Storage: iCloud 2TB only (all results written directly here)"
     echo ""
     echo "Git SHA:   $(cd "$REPO" && git rev-parse --short HEAD 2>/dev/null || echo 'unknown')"
     echo "Branch:    $(cd "$REPO" && git branch --show-current 2>/dev/null || echo 'unknown')"
@@ -102,18 +103,6 @@ mkdir -p "$LOGS"
 } | tee "$MASTER_LOG"
 
 GLOBAL_START=$(date +%s)
-
-# ─── Helper: async mirror ───────────────────────────────────────────────────
-
-trigger_mirror() {
-    if [[ -x "$MIRROR_SCRIPT" ]]; then
-        info "Triggering async mirror to Google Drive..."
-        nohup "$MIRROR_SCRIPT" >> "$LOGS/mirror_bg_${TIMESTAMP}.log" 2>&1 &
-        disown
-    else
-        warn "Mirror script not found or not executable: $MIRROR_SCRIPT"
-    fi
-}
 
 # ─── Phase 1: C++ Kernel Benchmarks ─────────────────────────────────────────
 
@@ -163,7 +152,7 @@ if [[ "$RUN_KERNELS" == true ]]; then
     echo "Phase 1 (Kernels): COMPLETE" >> "$MASTER_LOG"
     cat "$KERNEL_REPORT" >> "$MASTER_LOG"
 
-    trigger_mirror
+    # (results already written to iCloud)
 fi
 
 # ─── Phase 2: Tier-1 Dataset Benchmark ──────────────────────────────────────
@@ -194,7 +183,7 @@ if [[ "$RUN_TIER1" == true ]]; then
     fi
 
     echo "Phase 2 (Tier-1): exit=$TIER1_EXIT" >> "$MASTER_LOG"
-    trigger_mirror
+    # (results already written to iCloud)
 fi
 
 # ─── Phase 3: Tier-2 Dataset Benchmarks ─────────────────────────────────────
@@ -240,7 +229,7 @@ if [[ "$RUN_TIER2" == true ]]; then
         echo "  $ds: exit=$DS_EXIT, duration=${DS_DURATION}s" >> "$MASTER_LOG"
 
         # Mirror after each dataset for incremental backup
-        trigger_mirror
+        # (results already written to iCloud)
     done
 
     echo "" >> "$MASTER_LOG"
@@ -266,19 +255,9 @@ GLOBAL_DURATION=$((GLOBAL_END - GLOBAL_START))
     echo ""
 } | tee -a "$MASTER_LOG"
 
-# Final sync: foreground (blocking) to guarantee both copies are complete
-info "Running final blocking mirror to Google Drive..."
-if [[ -x "$MIRROR_SCRIPT" ]]; then
-    "$MIRROR_SCRIPT" 2>&1 | tee -a "$MASTER_LOG"
-    ok "Final mirror sync complete — both iCloud and Google Drive are up to date"
-else
-    warn "Mirror script not available"
-fi
-
 echo ""
 echo "================================================================"
-echo "  All done. Results are on:"
+echo "  All done. Results are on iCloud 2TB only:"
 echo "    iCloud:       $RESULTS"
-echo "    Google Drive: ${FLEXAIDDS_GDRIVE:-unknown}/results"
 echo "    Master log:   $MASTER_LOG"
 echo "================================================================"

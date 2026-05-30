@@ -49,6 +49,7 @@ jobs:
           python/tests/test_tencm.py
           python/tests/test_tencom_results.py
           python/tests/test_visualization.py
+          python/tests/test_dift.py
 
   cxx_core_build:
     name: C++ core (${{ matrix.name }})
