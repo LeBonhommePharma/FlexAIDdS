@@ -50,6 +50,17 @@ from .thermodynamics import (
     Kd_M_to_deltaG_standard,
 )
 
+# entropy.help audit schema (A1.1) — pure Python, always available
+from .schemas.thermo_audit import (
+    ThermodynamicOutput,
+    ThermodynamicOutputDC,
+    TotalSampledPartitionFunction,
+    TotalSampledPartitionFunctionDC,
+    Provenance,
+    ProvenanceDC,
+    make_total_sampled_output,
+)
+
 # C++ extension — optional: pure-Python helpers work without it
 try:
     from ._core import (
