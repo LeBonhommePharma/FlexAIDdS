@@ -65,3 +65,12 @@ Always run the ensure script (and optionally the inspector) before production do
 - `python/flexaidds/` and `LIB/` for implementation.
 
 Keep this file in sync with any evolution of the thermodynamic boundary or skill packaging rules.
+
+## Reproducibility & Provenance Tooling (2026-05+)
+
+For any work that will be shared, published, or audited, the skill now provides a general, reusable reproducibility layer:
+
+- `dataset_runner.py --package` → full `REPRODUCIBILITY_MANIFEST.json` + professional one-pager `VALIDATION_SUMMARY.md` (includes every critical data file hash, binary SHA256, git state, rich environment capture).
+- `inspect_definition_files.py --reproducibility` → compact ready-to-paste JSON block + hash table (perfect for redock reports and lab notebooks).
+
+These tools are deliberately **not** tied to a single workflow. They work for DatasetRunner campaigns, `redock_from_pdb`, manual `dock()` calls, and future tooling. Use them consistently when precision and defensibility matter.

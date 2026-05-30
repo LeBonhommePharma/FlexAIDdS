@@ -114,3 +114,17 @@ pick them up on future runs.
 
 For the authoritative list of required matrices and how the binary locates them,
 see the FlexAIDδS source (particularly `top.cpp` and related data-loading code).
+
+## Reproducibility Tooling for These Files
+
+The inspector and DatasetRunner wrapper automatically record cryptographic hashes of *every* file listed in this document (plus the matrices and extras) for any serious run:
+
+```bash
+# Rich hash table + ready-to-paste block for your lab notebook or paper
+python3 .grok/skills/flexaid-docking/scripts/inspect_definition_files.py --reproducibility
+
+# Full campaign with professional one-pager Validation Summary + manifest
+python3 .grok/skills/flexaid-docking/scripts/dataset_runner.py --all --tier 2 --package
+```
+
+The resulting `VALIDATION_SUMMARY.md` (inside the generated zip) contains a clean table of every critical file hash together with environment capture. This is the mechanism that makes FlexAIDδS work attractive to pharma teams and reviewers who demand full computational provenance.

@@ -165,6 +165,25 @@ This experimental helper will:
 .grok/skills/flexaid-docking/bin/dataset-runner --help
 ```
 
+## Reproducibility & Audit Packages (Recommended for Publications & Sharing)
+
+The skill provides first-class, general-purpose reproducibility tooling that works for DatasetRunner campaigns, redocking jobs, and manual runs:
+
+```bash
+# Best practice for anything you plan to publish or hand to collaborators
+python3 .grok/skills/flexaid-docking/scripts/dataset_runner.py \
+    --dataset astex_diverse --tier 1 --package
+
+# For one-off redocking or manual work, capture a snapshot at inspection time
+python3 .grok/skills/flexaid-docking/scripts/inspect_definition_files.py --reproducibility
+```
+
+What you receive:
+- `REPRODUCIBILITY_MANIFEST.json` — complete machine-readable record (git SHA, binary + all 20+ critical data file hashes, rich conda/pip + system environment, exact command line)
+- `VALIDATION_SUMMARY.md` — attractive one-pager with tables, exact reproducibility instructions, precise CF-proxy vs thermodynamic-ledger language, and audit notes
+
+This is the superior general solution (not bolted onto a single report type) and is attractive to pharma, reviewers, and regulatory contexts.
+
 The `flexaid-docking` skill is designed to make the above workflows safe, reproducible, and correctly scoped between scoring proxies and real statistical mechanics.
 
 Run with confidence.

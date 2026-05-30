@@ -38,7 +38,9 @@ metadata:
 This skill activates for any task involving the FlexAID or FlexAIDδS molecular docking engine, its Python package `flexaidds`, **DatasetRunner** benchmarking campaigns, thermodynamics layer, or related packaging.
 
 **Why leading researchers and pharma teams use this skill**
-- Complete, auditable reproducibility out of the box (binary + data checksums, git SHA, full command lines, automatic validation packages).
+- **Pharma-grade reproducibility out of the box**: Every run (via DatasetRunner or manual) captures git SHA, binary SHA256, *complete* hashes of every critical runtime file (all matrices + 16 definition files + Lovell_LIB.dat + rotobs.lst + SYBYL_emat + scoring support), rich conda/pip + system environment, and produces a professional validation package on demand (`--package`).
+- Beautiful one-pager `VALIDATION_SUMMARY.md` + `REPRODUCIBILITY_MANIFEST.json` — ready for papers, internal audits, collaboration, or regulatory packages.
+- `inspect_definition_files --reproducibility` gives the same high-quality snapshot for one-off redocking and manual work.
 - Production-grade DatasetRunner for systematic benchmarking on public and proprietary sets with professional reports.
 - Self-contained critical data (no more "missing MC_*.dat or AMINO.def" surprises).
 - Strong scientific guardrails and precise terminology (never confuses CF proxy with thermodynamic ledger).
@@ -247,7 +249,23 @@ python3 -m flexaidds.dataset_runner --dataset casf2016 --tier 1 --dry-run
 - Always run `ensure_docking_data.py` first (or the inspector) — missing matrices or definition files will cause silent or noisy failures.
 - Use `--dry-run` liberally before committing large compute resources.
 - Respect the distinction between CF/contact-function scoring proxy (used during search) and the full thermodynamic ledger (computed afterward).
-- For any published benchmark results, clearly document the exact binary, data files, temperature, and configuration used.
+- For any published benchmark results, **always** pass `--package` (or run the inspector with `--reproducibility`). The resulting `VALIDATION_SUMMARY.md` + manifest gives you complete, auditable provenance (binary + every data file hash + environment).
+
+**Reproducibility & Audit Packages (new in 2026-05)**
+```bash
+# Recommended for anything you intend to share or publish
+python3 .grok/skills/flexaid-docking/scripts/dataset_runner.py \
+    --all --tier 2 --package
+
+# For manual redocking or one-off work, capture a snapshot at inspection time
+python3 .grok/skills/flexaid-docking/scripts/inspect_definition_files.py --reproducibility
+```
+The generated package contains:
+- `REPRODUCIBILITY_MANIFEST.json` (machine-readable, full hashes + conda/pip capture)
+- `VALIDATION_SUMMARY.md` (beautiful one-pager with tables, instructions, precise terminology, and regulatory notes)
+- Your results/ directory
+
+This is the general, reusable solution that works for DatasetRunner campaigns, redock_from_pdb workflows, and future tooling.
 
 See the full CLI and library interface via:
 ```bash

@@ -16,31 +16,29 @@ Useful for:
 - Understanding side-chain flexibility (FLEDIH) that will be sampled
 - Detecting legacy vs modern definition variants
 - Diagnosing "missing file" problems before expensive docking runs
+- Capturing reproducibility snapshots for papers, redock reports, or audit packages (--reproducibility)
 
 Example usage:
     python3 .grok/skills/flexaid-docking/scripts/inspect_definition_files.py
     python3 .grok/skills/flexaid-docking/scripts/inspect_definition_files.py --binary /path/to/FlexAIDdS
-    python3 .grok/skills/flexaid-docking/scripts/inspect_definition_files.py --source /path/to/good/install
+    python3 .grok/skills/flexaid-docking/scripts/inspect_definition_files.py --source /path/to/good/install --reproducibility
 """
 
 import argparse
+import hashlib
 import os
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import List, Optional
 
-# Same lists as ensure_docking_data.py for consistency
-EXPECTED_MATRICES = ["MC_st0r5.2_6.dat"]
-EXPECTED_DEF_FILES = [
-    "AMINO.def", "AMINO8.def", "AMINO12.def", "AMINO26.def",
-    "NUCLEOTIDES.def", "NUCLEOTIDES8.def", "NUCLEOTIDES12.def", "NUCLEOTIDES26.def",
-]
-EXPECTED_EXTRA_FILES = [
-    "Lovell_LIB.dat", "rotobs.lst", "SYBYL_emat.dat",
-    "M6_cons_3.dat",
-    "nrg_mat_BEST_011912.dat", "nrg_mat_BEST_012012.dat",
-    "scr_bin.dat", "scr_mat.dat",
-]
+# Single source of truth imported from ensure_docking_data (keeps lists authoritative)
+try:
+    from .ensure_docking_data import get_all_critical_file_names, EXPECTED_MATRICES, EXPECTED_DEF_FILES, EXPECTED_EXTRA_FILES
+except ImportError:
+    import sys
+    sys.path.insert(0, str(Path(__file__).parent))
+    from ensure_docking_data import get_all_critical_file_names, EXPECTED_MATRICES, EXPECTED_DEF_FILES, EXPECTED_EXTRA_FILES
 
 # Hardcoded high-value summary derived from the authoritative 2011 AMINO.def
 FLEDIH_SUMMARY = {
@@ -145,24 +143,25 @@ def print_diagnostics(all_files: List[Path], verbose: bool = False) -> None:
     defs = [f for f in unique_files if f.name in EXPECTED_DEF_FILES]
     extras = [f for f in unique_files if f.name in EXPECTED_EXTRA_FILES]
 
-    print(f"Matrices found: {len(matrices)}")
-    for f in sorted(matrices, key=lambda x: x.name):
-        print(f"  + {f.name}")
+    # Nice aligned tables (stdlib only)
+    def _print_table(title: str, files: list[Path]):
+        print(f"\n{title} ({len(files)})")
+        if not files:
+            print("  (none)")
+            return
+        name_width = max(len(f.name) for f in files) + 2
+        print(f"  {'File':<{name_width}}Path")
+        print("  " + "-" * (name_width + 40))
+        for f in sorted(files, key=lambda x: x.name):
+            print(f"  {f.name:<{name_width}}{f}")
+
+    _print_table("Matrices", matrices)
 
     amino = sorted([f for f in defs if f.name.startswith("AMINO")])
     nucl = sorted([f for f in defs if f.name.startswith("NUCLEOTIDES")])
-
-    print(f"\nAMINO*.def files found: {len(amino)}")
-    for f in amino:
-        print(f"  + {f.name}")
-
-    print(f"NUCLEOTIDES*.def files found: {len(nucl)}")
-    for f in nucl:
-        print(f"  + {f.name}")
-
-    print(f"\nAdditional runtime files found: {len(extras)}")
-    for f in sorted(extras, key=lambda x: x.name):
-        print(f"  + {f.name}")
+    _print_table("AMINO*.def files", amino)
+    _print_table("NUCLEOTIDES*.def files", nucl)
+    _print_table("Additional runtime files", extras)
 
     modern = next((f for f in defs if f.name == "AMINO.def"), None)
     legacy = [f for f in defs if f.name.startswith("AMINO") and f.name != "AMINO.def"]
@@ -187,15 +186,90 @@ def print_diagnostics(all_files: List[Path], verbose: bool = False) -> None:
             print(f"  {r}")
 
 
+def _sha256(path: Path) -> str:
+    if not path.exists():
+        return "missing"
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(8192), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def print_reproducibility_block(all_files: List[Path], verbose: bool = False) -> None:
+    """Emit a compact, professional reproducibility snapshot (5th-item polish).
+    Users doing manual redocks or one-off work get the same high-quality manifest data
+    without needing the full DatasetRunner.
+    """
+    print("\n" + "=" * 70)
+    print("FLEXAIDδS REPRODUCIBILITY SNAPSHOT (from inspect_definition_files --repro)")
+    print("=" * 70)
+    print(f"Timestamp (UTC): {datetime.now(timezone.utc).isoformat()}")
+    print(f"Inspector:       inspect_definition_files.py (flexaid-docking skill)")
+
+    # Deduped critical files present
+    seen = set()
+    unique = []
+    for p in all_files:
+        try:
+            rp = p.resolve()
+        except Exception:
+            rp = p
+        if rp not in seen:
+            seen.add(rp)
+            unique.append(p)
+
+    # Build hash table for the full authoritative set
+    critical_names = get_all_critical_file_names()
+    name_to_path = {p.name: p for p in unique}
+
+    print("\n--- Critical Runtime Data Integrity ---")
+    print(f"{'File':<28} {'SHA256 (first 16)':<20} Status")
+    print("-" * 70)
+    present = 0
+    for name in critical_names:
+        p = name_to_path.get(name)
+        if p and p.exists():
+            sha = _sha256(p)
+            short = sha[:16] + "..."
+            print(f"{name:<28} {short:<20} present")
+            present += 1
+        else:
+            print(f"{name:<28} {'(not found)':<20} MISSING")
+    print("-" * 70)
+    print(f"Data integrity: {present}/{len(critical_names)} critical files located with hashes")
+
+    print("\n--- Ready-to-paste block for papers / reports / audit logs ---")
+    print("```json")
+    block = {
+        "timestamp_utc": datetime.now(timezone.utc).isoformat(),
+        "inspector": "inspect_definition_files.py --reproducibility (flexaid-docking skill)",
+        "critical_data_hashes": {
+            name: _sha256(name_to_path[name]) if name in name_to_path else "missing"
+            for name in critical_names
+        },
+    }
+    import json
+    print(json.dumps(block, indent=2))
+    print("```")
+
+    print("\nTip: For full DatasetRunner campaigns use --package to receive an even richer")
+    print("     VALIDATION_SUMMARY.md one-pager + complete environment capture (conda/pip).")
+    print("=" * 70 + "\n")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(
         description="Inspect all critical FlexAIDδS runtime data files (matrices + *.def + extras like Lovell_LIB, rotobs, etc.) and report on completeness + flexibility info.",
-        epilog="Part of the flexaid-docking skill. Run this before important docking jobs."
+        epilog="Part of the flexaid-docking skill. Use --reproducibility for a ready-to-paste manifest block (great for publications and manual redocking)."
     )
     parser.add_argument("--binary", "-b", type=Path, help="Path to FlexAIDδS binary (helps locate data)")
     parser.add_argument("--source", "-s", type=Path, help="Explicit directory to search for definition files")
     parser.add_argument("--quick", action="store_true", help="Force lightweight mode (normally auto-selected in CI / low-resource environments)")
     parser.add_argument("-v", "--verbose", action="store_true")
+    parser.add_argument("--reproducibility", "--repro", "--manifest", dest="reproducibility",
+                        action="store_true",
+                        help="Emit a ready-to-paste reproducibility block + full critical file hash table (ideal for papers, redock reports, or manual runs)")
     args = parser.parse_args()
 
     search_roots = list(DEFAULT_SEARCH_PATHS)
@@ -241,6 +315,10 @@ def main() -> int:
             unique.append(p)
 
     print_diagnostics(unique, verbose=args.verbose)
+
+    if args.reproducibility:
+        print_reproducibility_block(unique, verbose=args.verbose)
+
     return 0
 
 

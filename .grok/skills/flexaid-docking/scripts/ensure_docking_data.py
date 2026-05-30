@@ -63,6 +63,13 @@ EXPECTED_EXTRA_FILES = [
     "scr_mat.dat",
 ]
 
+def get_all_critical_file_names() -> List[str]:
+    """Single source of truth for every runtime file required for full FlexAIDδS operation.
+    Used by reproducibility manifest generation, inspectors, and validators.
+    """
+    return EXPECTED_MATRICES + EXPECTED_DEF_FILES + EXPECTED_EXTRA_FILES
+
+
 DEFAULT_SEARCH_PATHS: List[Path] = [
     # Bundled inside the skill (highest priority - makes the skill self-contained)
     Path(__file__).resolve().parent.parent / "data",
