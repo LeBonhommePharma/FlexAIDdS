@@ -31,23 +31,25 @@ project(FlexAID VERSION 2.0.0 LANGUAGES ${_ENABLED_LANGUAGES})
 
 include(CheckCXXCompilerFlag)
 
-# ─── C++26 ────────────────────────────────────────────────────────────────
+# ─── C++ Standard ─────────────────────────────────────────────────────────
+# Default to C++26 for full features, but on AppleClang we default to C++23
+# for better SDK compatibility (Apple's libc++ in current/future macOS versions
+# can have incomplete C++26 support in some math/type_traits headers when
+# certain includes are pulled in). Users can force C++26 with
+# -DFLEXAIDS_FORCE_CXX26=ON.
 set(CMAKE_CXX_STANDARD 26)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
-set(CMAKE_CXX_EXTENSIONS OFF)   # -std=c++26 not -std=gnu++26
+set(CMAKE_CXX_EXTENSIONS OFF)
 
-# Fail fast if compiler is too old to support C++26
-if(CMAKE_CXX_COMPILER_ID STREQUAL "AppleClang")
+if(APPLE AND CMAKE_CXX_COMPILER_ID STREQUAL "AppleClang")
+    if(NOT FLEXAIDS_FORCE_CXX26)
+        set(CMAKE_CXX_STANDARD 23)
+        message(STATUS "AppleClang on macOS: defaulting to C++23 for SDK compatibility. "
+                       "Use -DFLEXAIDS_FORCE_CXX26=ON to request C++26 (may hit libc++ template issues).")
+    endif()
     if(CMAKE_CXX_COMPILER_VERSION VERSION_LESS "16.0")
         message(FATAL_ERROR
-            "FlexAIDdS requires C++26 — found AppleClang "
-            "${CMAKE_CXX_COMPILER_VERSION}. Upgrade to Apple Clang ≥ 16 (Xcode 16).")
-    endif()
-elseif(CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
-    if(CMAKE_CXX_COMPILER_VERSION VERSION_LESS "18.0")
-        message(FATAL_ERROR
-            "FlexAIDdS requires C++26 — found Clang "
-            "${CMAKE_CXX_COMPILER_VERSION}. Upgrade to Clang ≥ 18.")
+            "FlexAIDdS requires AppleClang ≥ 16 (Xcode 16) for C++23/26.")
     endif()
 elseif(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
     if(CMAKE_CXX_COMPILER_VERSION VERSION_LESS "14.0")
@@ -1151,6 +1153,7 @@ if(ENABLE_DISPATCH_BENCHMARK)
     add_executable(benchmark_dispatch
         LIB/benchmark_dispatch.cpp
         LIB/UnifiedHardwareDispatch.cpp
+        LIB/hardware_detect.cpp   # provides detect_hardware() + HardwareCapabilities
     )
     target_include_directories(benchmark_dispatch PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/LIB)
     if(MSVC)
@@ -1286,6 +1289,24 @@ if(BUILD_TESTING)
     target_compile_definitions(test_statmech PRIVATE FLEXAIDS_HAS_EIGEN)
     flexaids_configure_msvc_test(test_statmech)
     add_test(NAME StatMechTests COMMAND test_statmech)
+
+    add_executable(test_thermo_ledger tests/test_thermo_ledger.cpp LIB/statmech.cpp
+        LIB/TurboQuant.cpp
+        LIB/UnifiedHardwareDispatch.cpp LIB/hardware_detect.cpp)
+    target_include_directories(test_thermo_ledger PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/LIB)
+    target_link_libraries(test_thermo_ledger PRIVATE GTest::gtest GTest::gtest_main Eigen3::Eigen)
+    if(MSVC)
+        target_compile_options(test_thermo_ledger PRIVATE /O2)
+    else()
+        target_compile_options(test_thermo_ledger PRIVATE -O2)
+    endif()
+    flexaids_configure_simd(test_thermo_ledger)
+    if(FLEXAIDS_USE_OPENMP AND OpenMP_CXX_FOUND)
+        target_link_libraries(test_thermo_ledger PRIVATE OpenMP::OpenMP_CXX)
+    endif()
+    target_compile_definitions(test_thermo_ledger PRIVATE FLEXAIDS_HAS_EIGEN)
+    flexaids_configure_msvc_test(test_thermo_ledger)
+    add_test(NAME ThermoLedgerTests COMMAND test_thermo_ledger)
 
     # test_json_config — JSON parser & config defaults tests (zero dependencies)
     add_executable(test_json_config tests/test_json_config.cpp)

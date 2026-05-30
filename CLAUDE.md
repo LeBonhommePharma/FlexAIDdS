@@ -8,6 +8,7 @@ This is a molecular docking / computational chemistry codebase (FlexAID/Entropy 
 - Cross-docking vs self-docking semantics are critical — always verify which is intended
 - The project has sibling repos that may need to be considered together
 - Repository has been renamed in the past — GitHub Pages URL may need verification
+> **Source of truth**: The authoritative workflow rules, verification discipline, and high-level constraints live in `AGENTS.md` (repo root). This document expands on `AGENTS.md` with deeper technical detail, file maps, and Claude-specific guidance. When the two conflict, `AGENTS.md` takes precedence.
 
 ## Project Overview
 
@@ -33,6 +34,21 @@ This project uses CMake. After modifying CMakeLists.txt or adding new source fil
 - Duplicate symbol conflicts between stubs and real implementations
 - Symlinks accidentally committed instead of file content — always verify with `file` command
 - Missing source files in CMake targets — confirm all .cpp files are listed
+## Workflow Rules (Critical — Read First)
+
+The rules below are the non-negotiable operating contract for any AI agent (Claude, Grok, GPT, etc.) working in this repository. They are reproduced from the authoritative `AGENTS.md`. Follow them without exception.
+
+**See `AGENTS.md` for the current canonical version.** The most important principles:
+
+- **Verify with actual execution before claiming anything is done.** Run the build or test and show clean output. Never say “done”, “fixed”, or “implemented” without evidence.
+- **Use `todo_write` for every task with 3+ distinct steps.** Exactly one item in `in_progress` at a time. Mark completed immediately. Never batch.
+- **Commit and push immediately after any code change.** Conventional prefixes. No batching. Kill stale git processes if needed.
+- **Fresh builds after CMake or source changes.** Never assume linking still works.
+- **Zero test failures before any push.** `ctest --output-on-failure` (C++) or full pytest run after relevant changes.
+- **Complete every item on a prioritized list** before stopping.
+- **When the user says “run it”, run it** — do not over-explore first.
+
+These rules exist to protect velocity and correctness in a complex scientific codebase. Claude is expected to be the strictest enforcer of them.
 
 ## Repository Structure
 
@@ -457,3 +473,15 @@ python -m flexaidds /path/to/results/ --top 5
 - Metal code only compiles on macOS (`FLEXAIDS_USE_METAL=ON`)
 - CUDA code requires CUDA toolkit (`FLEXAIDS_USE_CUDA=ON`)
 - No `.clang-format`, `.clang-tidy`, or `.editorconfig` — follow existing code style
+
+## AI Instructions & Agent Maintenance
+
+This repository uses a deliberate three-file system for AI agents:
+
+- `AGENTS.md` — Single source of truth for workflow rules and constraints (all agents).
+- `CLAUDE.md` — This file. Rich technical depth + Claude-specific detail.
+- `.grok/skills/flexaidds/SKILL.md` — Self-contained Grok skill (project-scoped).
+
+**Maintenance rule**: When core workflow rules, build commands, or constraints change, update `AGENTS.md` first, then propagate the delta into this file and the Grok skill. The sacred “Workflow Rules” sections should stay as aligned as possible to prevent drift.
+
+Claude should treat `AGENTS.md` as the contract and this document as the detailed reference manual.

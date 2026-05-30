@@ -67,16 +67,54 @@ class Thermodynamics:
         )
 
     def to_dict(self) -> dict:
-        """Convert to dictionary for serialization."""
+        """Convert to dictionary for serialization (includes all fields for roundtrip)."""
         return {
             'temperature_K': self.temperature,
             'log_Z': self.log_Z,
             'free_energy_kcal_mol': self.free_energy,
             'enthalpy_kcal_mol': self.mean_energy,
+            'mean_energy_sq': self.mean_energy_sq,
             'entropy_kcal_mol_K': self.entropy,
             'heat_capacity_kcal_mol_K2': self.heat_capacity,
             'std_energy_kcal_mol': self.std_energy,
         }
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "Thermodynamics":
+        """Construct a Thermodynamics instance from a dictionary.
+
+        Accepts the key format produced by :meth:`to_dict` (suffixed keys such
+        as ``temperature_K``, ``free_energy_kcal_mol``, …) as well as the raw
+        attribute names (``temperature``, ``free_energy``, …).  Suffixed keys
+        take priority when both forms are present.
+        """
+        def _get(suffixed: str, raw: str) -> float:
+            if suffixed in data:
+                return float(data[suffixed])
+            if raw in data:
+                return float(data[raw])
+            raise KeyError(
+                f"Missing required key: expected '{suffixed}' or '{raw}'"
+            )
+
+        # mean_energy_sq may be absent in legacy dicts; default safe 0.0
+        def _get_opt(suffixed: str, raw: str, default: float = 0.0) -> float:
+            if suffixed in data:
+                return float(data[suffixed])
+            if raw in data:
+                return float(data[raw])
+            return default
+
+        return cls(
+            temperature=_get("temperature_K", "temperature"),
+            log_Z=_get("log_Z", "log_Z"),
+            free_energy=_get("free_energy_kcal_mol", "free_energy"),
+            mean_energy=_get("enthalpy_kcal_mol", "mean_energy"),
+            mean_energy_sq=_get_opt("mean_energy_sq", "mean_energy_sq"),
+            heat_capacity=_get("heat_capacity_kcal_mol_K2", "heat_capacity"),
+            entropy=_get("entropy_kcal_mol_K", "entropy"),
+            std_energy=_get("std_energy_kcal_mol", "std_energy"),
+        )
 
 
 # ─── ThermodynamicBreakdown (Task 2 Python exposure + parity with C++) ──────
@@ -219,45 +257,6 @@ def Kd_M_to_deltaG_standard(Kd_M: float, T_K: float, c0_M: float = 1.0) -> float
     return RT * math.log(Kd_M / c0_M)
 
 
-    @classmethod
-    def from_dict(cls, data: dict) -> "Thermodynamics":
-        """Construct a Thermodynamics instance from a dictionary.
-
-        Accepts the key format produced by :meth:`to_dict` (suffixed keys such
-        as ``temperature_K``, ``free_energy_kcal_mol``, …) as well as the raw
-        attribute names (``temperature``, ``free_energy``, …).  Suffixed keys
-        take priority when both forms are present.
-
-        Args:
-            data: Dictionary with thermodynamic quantities.
-
-        Returns:
-            A new :class:`Thermodynamics` instance.
-
-        Raises:
-            KeyError: If a required field is missing under both key forms.
-        """
-        def _get(suffixed: str, raw: str) -> float:
-            if suffixed in data:
-                return float(data[suffixed])
-            if raw in data:
-                return float(data[raw])
-            raise KeyError(
-                f"Missing required key: expected '{suffixed}' or '{raw}'"
-            )
-
-        return cls(
-            temperature=_get("temperature_K", "temperature"),
-            log_Z=_get("log_Z", "log_Z"),
-            free_energy=_get("free_energy_kcal_mol", "free_energy"),
-            mean_energy=_get("enthalpy_kcal_mol", "mean_energy"),
-            mean_energy_sq=_get("mean_energy_sq", "mean_energy_sq"),
-            heat_capacity=_get("heat_capacity_kcal_mol_K2", "heat_capacity"),
-            entropy=_get("entropy_kcal_mol_K", "entropy"),
-            std_energy=_get("std_energy_kcal_mol", "std_energy"),
-        )
-
-
 class _PyStatMechEngine:
     """Pure-Python canonical-ensemble engine (fallback when C++ _core is absent).
 
@@ -266,23 +265,27 @@ class _PyStatMechEngine:
 
     def __init__(self, temperature_K: float) -> None:
         self._T = float(temperature_K)
+        if self._T <= 0.0:
+            raise ValueError("StatMechEngine: temperature must be > 0")
         self._beta = 1.0 / (kB_kcal * self._T)
-        self._energies: List[float] = []
+        self._states: List[Tuple[float, float]] = []
 
     # ------------------------------------------------------------------
     # sample accumulation
     # ------------------------------------------------------------------
 
-    def add_sample(self, energy: float, multiplicity: int = 1) -> None:
-        for _ in range(max(1, int(multiplicity))):
-            self._energies.append(float(energy))
+    def add_sample(self, energy: float, multiplicity: float = 1.0) -> None:
+        count = float(multiplicity)
+        if count < 0.0:
+            raise ValueError("StatMechEngine: multiplicity must be non-negative")
+        self._states.append((float(energy), count))
 
     def clear(self) -> None:
-        self._energies.clear()
+        self._states.clear()
 
     @property
     def size(self) -> int:
-        return len(self._energies)
+        return len(self._states)
 
     @property
     def temperature(self) -> float:
@@ -297,24 +300,25 @@ class _PyStatMechEngine:
     # ------------------------------------------------------------------
 
     def compute(self) -> Thermodynamics:
-        if not self._energies:
+        if not self._states:
             raise RuntimeError("No samples added to StatMechEngine before compute()")
 
-        e = self._energies
-        n = len(e)
-        e_min = min(e)
+        energies = [energy for energy, _count in self._states]
+        log_w = [
+            (math.log(count) - self._beta * energy) if count > 0.0 else -math.inf
+            for energy, count in self._states
+        ]
+        max_log_w = max(log_w)
+        if not math.isfinite(max_log_w):
+            raise RuntimeError("StatMechEngine: ensemble has zero total multiplicity")
 
-        # log Z via log-sum-exp trick
-        shifted = [-self._beta * (ei - e_min) for ei in e]
-        log_sum = math.log(sum(math.exp(s) for s in shifted))
-        log_Z = -self._beta * e_min + log_sum
+        log_Z = max_log_w + math.log(sum(math.exp(w - max_log_w) for w in log_w))
 
         # Boltzmann weights
-        log_w = [-self._beta * ei - log_Z for ei in e]
-        w = [math.exp(lw) for lw in log_w]
+        weights = [math.exp(w - log_Z) if math.isfinite(w) else 0.0 for w in log_w]
 
-        mean_e = sum(wi * ei for wi, ei in zip(w, e))
-        mean_e2 = sum(wi * ei * ei for wi, ei in zip(w, e))
+        mean_e = sum(wi * ei for wi, ei in zip(weights, energies))
+        mean_e2 = sum(wi * ei * ei for wi, ei in zip(weights, energies))
         var_e = mean_e2 - mean_e ** 2
         std_e = math.sqrt(max(0.0, var_e))
 
@@ -333,12 +337,75 @@ class _PyStatMechEngine:
             std_energy=std_e,
         )
 
+    def compute_breakdown(
+        self,
+        G_vib_kcal_mol: float = 0.0,
+        G_natural_kcal_mol: float = 0.0,
+        G_other_kcal_mol: float = 0.0,
+        has_vib: bool = False,
+        has_natural: bool = False,
+        has_other: bool = False,
+    ) -> ThermodynamicBreakdown:
+        thermo = self.compute()
+        return ThermodynamicBreakdown(
+            temperature_K=thermo.temperature,
+            logZ_config=thermo.log_Z,
+            G_config_kcal_mol=thermo.free_energy,
+            H_eff_kcal_mol=thermo.mean_energy,
+            S_config_kcal_mol_K=thermo.entropy,
+            minus_T_S_config_kcal_mol=thermo.free_energy - thermo.mean_energy,
+            Cv_kcal_mol_K=thermo.heat_capacity,
+            sigma_E_kcal_mol=thermo.std_energy,
+            G_vib_kcal_mol=G_vib_kcal_mol,
+            G_natural_kcal_mol=G_natural_kcal_mol,
+            G_other_kcal_mol=G_other_kcal_mol,
+            G_total_kcal_mol=thermo.free_energy + G_vib_kcal_mol + G_natural_kcal_mol + G_other_kcal_mol,
+            has_vib=has_vib,
+            has_natural=has_natural,
+            has_other=has_other,
+        )
+
+    def component_averages(self, components: List[EnergyComponents]) -> ComponentAverages:
+        if len(components) != len(self._states):
+            raise ValueError("component count must match ensemble size")
+        if not components:
+            raise ValueError("component list must not be empty")
+
+        weights = self.boltzmann_weights()
+        avg = ComponentAverages(component_completeness_flag=True)
+        for weight, comp in zip(weights, components):
+            avg.mean_CF_kcal_mol += weight * comp.cf
+            avg.mean_receptor_strain_kcal_mol += weight * comp.receptor_strain
+            avg.mean_ligand_internal_kcal_mol += weight * comp.ligand_internal
+            avg.mean_hbond_kcal_mol += weight * comp.hbond
+            avg.mean_gist_kcal_mol += weight * comp.gist
+            avg.mean_metal_kcal_mol += weight * comp.metal
+            avg.mean_water_kcal_mol += weight * comp.water
+            avg.mean_other_kcal_mol += weight * comp.other
+            avg.component_completeness_flag = avg.component_completeness_flag and comp.complete
+
+        avg.component_sum_kcal_mol = (
+            avg.mean_CF_kcal_mol
+            + avg.mean_receptor_strain_kcal_mol
+            + avg.mean_ligand_internal_kcal_mol
+            + avg.mean_hbond_kcal_mol
+            + avg.mean_gist_kcal_mol
+            + avg.mean_metal_kcal_mol
+            + avg.mean_water_kcal_mol
+            + avg.mean_other_kcal_mol
+        )
+        avg.component_status = "available" if avg.component_completeness_flag else "included_in_other"
+        return avg
+
     def boltzmann_weights(self) -> List[float]:
-        if not self._energies:
+        if not self._states:
             return []
         thermo = self.compute()
         log_Z = thermo.log_Z
-        return [math.exp(-self._beta * ei - log_Z) for ei in self._energies]
+        return [
+            count * math.exp(-self._beta * energy - log_Z) if count > 0.0 else 0.0
+            for energy, count in self._states
+        ]
 
     def delta_G(self, other: "_PyStatMechEngine") -> float:
         return self.compute().free_energy - other.compute().free_energy
@@ -406,6 +473,92 @@ class StatMechEngine:
             entropy=thermo_cpp.entropy,
             std_energy=thermo_cpp.std_energy,
         )
+
+    def compute_breakdown(
+        self,
+        G_vib_kcal_mol: float = 0.0,
+        G_natural_kcal_mol: float = 0.0,
+        G_other_kcal_mol: float = 0.0,
+        has_vib: bool = False,
+        has_natural: bool = False,
+        has_other: bool = False,
+    ) -> ThermodynamicBreakdown:
+        """Compute the explicit thermodynamic ledger for the ensemble."""
+        if hasattr(self._engine, "compute_breakdown"):
+            result = self._engine.compute_breakdown(
+                G_vib_kcal_mol,
+                G_natural_kcal_mol,
+                G_other_kcal_mol,
+                has_vib,
+                has_natural,
+                has_other,
+            )
+            return ThermodynamicBreakdown(
+                temperature_K=result.temperature_K,
+                logZ_config=result.logZ_config,
+                G_config_kcal_mol=result.G_config_kcal_mol,
+                H_eff_kcal_mol=result.H_eff_kcal_mol,
+                S_config_kcal_mol_K=result.S_config_kcal_mol_K,
+                minus_T_S_config_kcal_mol=result.minus_T_S_config_kcal_mol,
+                Cv_kcal_mol_K=result.Cv_kcal_mol_K,
+                sigma_E_kcal_mol=result.sigma_E_kcal_mol,
+                G_vib_kcal_mol=result.G_vib_kcal_mol,
+                G_natural_kcal_mol=result.G_natural_kcal_mol,
+                G_other_kcal_mol=result.G_other_kcal_mol,
+                G_total_kcal_mol=result.G_total_kcal_mol,
+                has_vib=result.has_vib,
+                has_natural=result.has_natural,
+                has_other=result.has_other,
+                components=(
+                    _component_averages_from_cpp(result.components)
+                    if getattr(result, "has_components", False)
+                    else None
+                ),
+                has_components=getattr(result, "has_components", False),
+            )
+
+        thermo = self.compute()
+        return ThermodynamicBreakdown(
+            temperature_K=thermo.temperature,
+            logZ_config=thermo.log_Z,
+            G_config_kcal_mol=thermo.free_energy,
+            H_eff_kcal_mol=thermo.mean_energy,
+            S_config_kcal_mol_K=thermo.entropy,
+            minus_T_S_config_kcal_mol=thermo.free_energy - thermo.mean_energy,
+            Cv_kcal_mol_K=thermo.heat_capacity,
+            sigma_E_kcal_mol=thermo.std_energy,
+            G_vib_kcal_mol=G_vib_kcal_mol,
+            G_natural_kcal_mol=G_natural_kcal_mol,
+            G_other_kcal_mol=G_other_kcal_mol,
+            G_total_kcal_mol=thermo.free_energy + G_vib_kcal_mol + G_natural_kcal_mol + G_other_kcal_mol,
+            has_vib=has_vib,
+            has_natural=has_natural,
+            has_other=has_other,
+        )
+
+    def component_averages(self, components: List[EnergyComponents]) -> ComponentAverages:
+        """Boltzmann-weight component diagnostics over the current ensemble."""
+        if hasattr(self._engine, "component_averages"):
+            cpp_components = []
+            for comp in components:
+                cpp_comp = _core.EnergyComponents() if _core is not None else None
+                if cpp_comp is None:
+                    break
+                cpp_comp.total = comp.total
+                cpp_comp.cf = comp.cf
+                cpp_comp.receptor_strain = comp.receptor_strain
+                cpp_comp.ligand_internal = comp.ligand_internal
+                cpp_comp.hbond = comp.hbond
+                cpp_comp.gist = comp.gist
+                cpp_comp.metal = comp.metal
+                cpp_comp.water = comp.water
+                cpp_comp.other = comp.other
+                cpp_comp.complete = comp.complete
+                cpp_components.append(cpp_comp)
+            if len(cpp_components) == len(components):
+                return _component_averages_from_cpp(self._engine.component_averages(cpp_components))
+
+        return self._engine.component_averages(components)
     
     def boltzmann_weights(self):
         """Get Boltzmann weights for all samples.
@@ -455,48 +608,47 @@ class StatMechEngine:
     def __repr__(self) -> str:
         return f"<StatMechEngine T={self.temperature:.1f}K n_samples={self.n_samples}>"
 
-    # ─── Task 9 Completion: Temperature scan exposure (Python layer) ────────
+    # Task 7/9: temperature scan + ΔCp (C++ path when bindings present; pure fallback for fit)
     def temperature_scan(self, temperatures: list[float]) -> list[dict]:
+        """Recompute G/H/S/Cv at multiple temperatures using fixed ensemble energies (C++ only).
+
+        Returns list of dicts with keys T_K, logZ, G_kcal_mol, H_kcal_mol, S_kcal_mol_K, Cv_kcal_mol_K.
+        All new thermodynamic terms carry explicit units per roadmap invariants.
         """
-        Recompute thermodynamics at multiple temperatures on the fixed ensemble.
-        Returns list of dicts matching the shape expected by reporting.py.
-        """
-        if _core is not None and hasattr(self._engine, "temperature_scan"):
-            points = self._engine.temperature_scan(temperatures)
-            return [
-                {
-                    "T_K": p.T_K,
-                    "logZ": p.logZ,
-                    "G_kcal_mol": p.G_kcal_mol,
-                    "H_kcal_mol": p.H_kcal_mol,
-                    "S_kcal_mol_K": p.S_kcal_mol_K,
-                    "Cv_kcal_mol_K": p.Cv_kcal_mol_K,
-                }
-                for p in points
-            ]
-        else:
-            # Fallback path only reached when no C++ scan method exists
-            # For now, raise a clear error so users know the full feature requires the C++ extension
+        if _core is None or not hasattr(self._engine, "temperature_scan"):
             raise NotImplementedError(
-                "temperature_scan on pure-Python fallback is not yet fully wired. "
-                "Install the C++ extension (pip install -e . with BUILD_PYTHON_BINDINGS) "
-                "or use the C++ StatMechEngine directly for temperature scans."
+                "temperature_scan requires the C++ extension. "
+                "Run `pip install -e .` with BUILD_PYTHON_BINDINGS=ON."
             )
+        points = self._engine.temperature_scan(temperatures)
+        return [
+            {
+                "T_K": p.T_K,
+                "logZ": p.logZ,
+                "G_kcal_mol": p.G_kcal_mol,
+                "H_kcal_mol": p.H_kcal_mol,
+                "S_kcal_mol_K": p.S_kcal_mol_K,
+                "Cv_kcal_mol_K": p.Cv_kcal_mol_K,
+            }
+            for p in points
+        ]
 
     @staticmethod
     def fit_delta_Cp(scan_points: list[dict], T_ref_K: float) -> dict:
-        """Thin wrapper around C++ or pure implementation (Task 7 parity)."""
-        if _core is not None and hasattr(_core, "fit_delta_Cp"):
-            # Would need struct conversion; for now delegate to a simple Python version
-            pass
-        # Minimal pure-Python linear regression (same as C++ Task 7 logic)
-        n = len(scan_points)
-        if n < 4:
+        """Linear regression ΔCp fit (requires >=4 points). Pure-Python (no C++ needed).
+
+        This is model-derived / experimental-diagnostic output (see roadmap Task 7).
+        Always labelled experimental=true, model_derived=true. Never used for ranking.
+        Units: delta_Cp_kcal_mol_K, rmse_kcal_mol, T_ref_K.
+        """
+        if len(scan_points) < 4:
             raise ValueError("ΔCp fit requires at least 4 temperature points")
+        n = len(scan_points)
         sum_x = sum_y = sum_xx = sum_xy = 0.0
+        h0 = scan_points[0].get("H_kcal_mol", 0.0)
         for p in scan_points:
             x = p["T_K"] - T_ref_K
-            y = p.get("H_kcal_mol", 0.0) - (scan_points[0].get("H_kcal_mol", 0.0) if scan_points else 0.0)
+            y = p.get("H_kcal_mol", 0.0) - h0
             sum_x += x
             sum_y += y
             sum_xx += x * x
@@ -507,7 +659,7 @@ class StatMechEngine:
         sse = 0.0
         for p in scan_points:
             x = p["T_K"] - T_ref_K
-            pred = (scan_points[0].get("H_kcal_mol", 0.0) if scan_points else 0.0) + delta_Cp * x
+            pred = h0 + delta_Cp * x
             sse += (p.get("H_kcal_mol", 0.0) - pred) ** 2
         rmse = (sse / n) ** 0.5
         return {

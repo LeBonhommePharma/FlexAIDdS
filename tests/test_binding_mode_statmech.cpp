@@ -149,6 +149,28 @@ TEST_F(BindingModeStatMechTest, ConsistencyWithLegacy) {
     EXPECT_NEAR(legacy_entropy, thermo.entropy, EPSILON);
 }
 
+TEST_F(BindingModeStatMechTest, ThermodynamicBreakdownPreservesLegacyRankingEnergy) {
+    BindingMode mode(test_population);
+
+    std::vector<double> cf_values = {-14.0, -11.0, -9.0};
+    for (size_t i = 0; i < cf_values.size(); ++i) {
+        Pose p = create_mock_pose(cf_values[i], static_cast<int>(i));
+        mode.add_Pose(p);
+    }
+    mock_fa->natural_deltaG = 0.25;
+
+    const double legacy_energy = mode.compute_energy();
+    const auto legacy = mode.get_thermodynamics();
+    const auto ledger = mode.get_thermodynamic_breakdown();
+
+    EXPECT_NEAR(ledger.G_total_kcal_mol, legacy_energy, EPSILON);
+    EXPECT_NEAR(ledger.G_total_kcal_mol, legacy.free_energy, EPSILON);
+    EXPECT_NEAR(ledger.G_config_kcal_mol + ledger.G_natural_kcal_mol + ledger.G_vib_kcal_mol,
+                ledger.G_total_kcal_mol, EPSILON);
+    EXPECT_TRUE(ledger.has_natural);
+    EXPECT_FALSE(ledger.has_other);
+}
+
 TEST_F(BindingModeStatMechTest, BoltzmannWeightsNormalization) {
     BindingMode mode(test_population);
     
