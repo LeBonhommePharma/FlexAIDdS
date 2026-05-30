@@ -177,6 +177,27 @@ python -m flexaidds.dataset_runner --all --tier 2 --workers 4 --resume --package
 mpirun -n 4 python -m flexaidds.dataset_runner --all --tier 2 --distributed --workers 2 --resume
 ```
 
+### Small Real Benchmark Example (Single Complex – 1STP Biotin)
+
+For development, testing new features, or a minimal publishable example, use the dedicated 1STP demo:
+
+```bash
+# Safe dry-run version (recommended first)
+bash .grok/skills/flexaid-docking/examples/small_real_benchmark_1stp.sh
+
+# Real run (requires a working FlexAIDδS binary + data)
+FLEXAIDDS_BINARY=/path/to/FlexAIDδS \
+    bash .grok/skills/flexaid-docking/examples/small_real_benchmark_1stp.sh --real
+```
+
+This script:
+- Uses a tiny single-complex dataset (1STP biotin/streptavidin)
+- Demonstrates `--resume` + automatic `CostHistory` (EMA) loading
+- Always produces a full validation package (`--package`)
+- Shows the new rich cost/timing tables in the generated reports
+
+See the script itself for detailed comments and how to adapt it to your own complexes.
+
 ## Reproducibility & Audit Packages (Recommended for Publications & Sharing)
 
 The skill provides first-class, general-purpose reproducibility tooling that works for DatasetRunner campaigns, redocking jobs, and manual runs:

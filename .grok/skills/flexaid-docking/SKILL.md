@@ -257,9 +257,17 @@ The DatasetRunner now automatically saves and resumes *individual entries* (one 
 - Use `--resume` on long or expensive campaigns. It skips any target that already has a complete per-entry JSON result.
 - Results layout: `results/<slug>/tierN/<target>_<state>.json` + `_entry_manifest.json` (with full per-entry wall time + cost in CPU-seconds)
 - **Hybrid MPI**: Non-root ranks respect `--workers` locally (true MPI + threading).
-- **Cost-aware scheduling**: On resume, previous costs are auto-loaded to schedule cheaper entries first.
+- **Cost-aware scheduling**: On resume, previous costs are auto-loaded (with EMA history) to schedule cheaper entries first.
 - All of the above appears in the final Markdown reports and in the skill's reproducibility validation package.
 - The manager controls the worker pool size (`--workers`) and makes crash recovery + resource tracking first-class.
+
+**CI Validation**: A dedicated GitHub Actions job (`.github/workflows/ci.yml`) now runs on every PR/push:
+```bash
+python3 .grok/skills/flexaid-docking/scripts/dataset_runner.py --dataset astex_diverse --tier 1 --dry-run --resume --package
+```
+It verifies the full reproducibility package + per-entry artifacts are produced correctly.
+
+See `examples/small_real_benchmark_1stp.sh` for a minimal real-world-style example using a single complex.
 
 **Reproducibility & Audit Packages (new in 2026-05)**
 ```bash
