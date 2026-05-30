@@ -21,7 +21,7 @@ hardware:
   gpu: "Apple M3 Pro GPU (11 or 14-core, detect at runtime)"
   gpu_api: Metal
   metal_family: apple9    # Metal GPU Family Apple 9
-  storage: "cloud-only (iCloud 2TB primary, Google Drive 5TB mirror)"
+  storage: "cloud-only (iCloud 2TB primary; Google Drive 5TB mirror optional)"
 
 build:
   parallel_jobs: 6          # P-cores only; E-cores reserved for macOS + cloud sync
@@ -70,20 +70,21 @@ benchmarks:
       - psychopharm23       # 23 CNS drug targets (NRGlab internal)
 
 storage:
-  mode: "async-mirror"
+  mode: "primary-icloud (mirror optional)"
   primary: icloud
-  mirror: gdrive
+  mirror: "gdrive (optional; auto-disabled if not mounted)"
   icloud_base: "~/Library/Mobile Documents/com~apple~CloudDocs/FlexAIDdS"
-  gdrive_base: "~/Library/CloudStorage/GoogleDrive-*/My Drive/FlexAIDdS"
+  gdrive_base: "~/Library/CloudStorage/GoogleDrive-*/My Drive/FlexAIDdS (or empty)"
   sync_build: false         # build dir too volatile; rebuild cheaper than sync
-  sync_after_phase: true    # rsync to GDrive after each benchmark phase
-  sync_method: "rsync -avz --delete"
+  sync_after_phase: "true if GDrive present, else false (iCloud-only mode)"
+  sync_method: "rsync -avz --delete (no-op when mirror disabled)"
   directories_synced:
     - benchmark_data
     - results
     - logs
   directories_excluded:
     - build
+  note: "Fully supports pure iCloud 2TB mode when user has no Google Drive mount. setup/run scripts detect and adapt automatically."
 
 memory_budget:
   total_gb: 18

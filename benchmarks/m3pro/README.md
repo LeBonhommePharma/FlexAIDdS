@@ -1,8 +1,8 @@
-# M3 Pro Benchmark Setup — iCloud + Google Drive
+# M3 Pro Benchmark Setup — iCloud + Google Drive (optional)
 
 Benchmark environment for **MacBook Pro 14" M3 Pro 18GB** with zero local SSD
-space. All data lives on iCloud Drive (2TB, primary) and Google Drive AI Pro
-(5TB, async mirror).
+space. All data lives on iCloud Drive (2TB, primary). Google Drive (5TB) mirror
+is optional; when absent, benchmarks run in pure iCloud-only mode.
 
 ## Quick Start
 
@@ -10,6 +10,8 @@ space. All data lives on iCloud Drive (2TB, primary) and Google Drive AI Pro
 # 1. One-time cloud storage setup
 chmod +x benchmarks/m3pro/*.sh
 ./benchmarks/m3pro/setup_cloud_storage.sh
+# NOTE: If no Google Drive mount is present, setup will warn and configure
+#       iCloud-only mode (results saved to your 2TB iCloud Drive).
 
 # 2. Build FlexAID for M3 Pro (Metal ON, all benchmarks ON)
 ./benchmarks/m3pro/build_m3pro.sh
@@ -37,21 +39,28 @@ chmod +x benchmarks/m3pro/*.sh
 
 ## Storage Architecture
 
+iCloud 2TB is **always primary**. Google Drive 5TB mirror is **optional** (detected at setup time):
+
+- GDrive present → iCloud primary + async rsync mirror after phases
+- GDrive absent (your 2TB iCloud setup) → **iCloud-only mode**: everything (results, logs, data) lives exclusively on iCloud Drive. Mirror scripts become no-ops.
+
 ```
-iCloud 2TB (PRIMARY)              Google Drive 5TB (MIRROR)
-  FlexAIDdS/                        FlexAIDdS/
-  ├── build/       ← NOT synced     ├── benchmark_data/
-  ├── benchmark_data/                ├── results/
-  ├── results/                       │   ├── kernels/
-  │   ├── kernels/                   │   ├── tier1/
-  │   ├── tier1/                     │   └── tier2/
-  │   └── tier2/                     └── logs/
+iCloud 2TB (PRIMARY)              
+  FlexAIDdS/
+  ├── build/       ← NOT synced (symlink target on iCloud)
+  ├── benchmark_data/
+  ├── results/
+  │   ├── kernels/
+  │   ├── tier1/
+  │   └── tier2/
   └── logs/
 ```
 
+(When mirror active, a parallel tree is maintained on GDrive via rsync -avz --delete.)
+
 - Writes go to iCloud first (lowest latency on macOS)
-- `rsync -avz --delete` mirrors to Google Drive after each benchmark phase
 - `build/` excluded (rebuild is cheaper than syncing .o files)
+- `setup_cloud_storage.sh`, `mirror_to_gdrive.sh`, and `run_benchmarks.sh` all handle iCloud-only gracefully via FLEXAIDDS_MIRROR_ENABLED=0
 
 ## Memory Budget (18GB Unified)
 
@@ -72,6 +81,8 @@ Environment variables are stored in `~/.flexaidds_env` (auto-sourced from `.zshr
 ## Manual Mirror
 
 ```bash
-./benchmarks/m3pro/mirror_to_gdrive.sh          # foreground
+./benchmarks/m3pro/mirror_to_gdrive.sh          # foreground (no-op if iCloud-only)
 nohup ./benchmarks/m3pro/mirror_to_gdrive.sh &  # background
 ```
+
+In iCloud-only mode (no GDrive), these are safe no-ops and exit 0 immediately.
