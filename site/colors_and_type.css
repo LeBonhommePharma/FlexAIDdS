@@ -1,0 +1,216 @@
+/* ============================================================
+   FlexAID∆S Design System — Colors & Type
+   Le Bonhomme Pharma · Montréal
+   Source: thebonhomme.com (live production site)
+
+   SF Pro Display @font-face declarations omitted — font files are
+   not redistributable. IBM Plex Sans (Google Fonts) is the live
+   body font; see <link> in index.html. JetBrains Mono for all
+   headings, stats, badges, and code.
+   ============================================================ */
+
+:root {
+  /* ───────── CORE PALETTE (dark-first, scientific) ───────── */
+
+  /* Background ladder — near-black with cool blue cast */
+  --bg:           #0a0e14;
+  --bg-panel:     rgba(16, 20, 28, 0.92);
+  --bg-card:      rgba(16, 20, 28, 0.80);
+  --bg-alt:       rgba(12, 16, 22, 0.50);
+
+  /* Brand triad — the equation ΔG = ΔH − TΔS lives in these colors.
+     Each maps to a thermodynamic term and is referenced consistently
+     across UI, charts, and copy.                                     */
+  --teal:    #22D3EE;   /* primary    · ΔH (enthalpy)   · CTA, brand mark */
+  --terra:   #A78BFA;   /* alert/heat · TΔS (entropy)   · alerts, section labels */
+  --gold:    #FBBF24;   /* highlight  · ΔG (free energy)· stats, key results */
+
+  /* Text */
+  --fg:       #d4dced;
+  --fg-muted: #8a93a8;
+
+  /* ───────── ALPHA OVERLAYS ───────── */
+  --teal-06:  rgba(34,211,238,0.06);
+  --teal-08:  rgba(34,211,238,0.08);
+  --teal-10:  rgba(34,211,238,0.10);
+  --teal-15:  rgba(34,211,238,0.15);
+  --teal-20:  rgba(34,211,238,0.20);
+
+  --terra-10: rgba(167,139,250,0.10);
+  --terra-12: rgba(167,139,250,0.12);
+  --terra-25: rgba(167,139,250,0.25);
+  --terra-35: rgba(167,139,250,0.35);
+
+  --gold-06:  rgba(251,191,36,0.06);
+  --gold-10:  rgba(251,191,36,0.10);
+  --gold-12:  rgba(251,191,36,0.12);
+  --gold-35:  rgba(251,191,36,0.35);
+
+  /* ───────── SUPPORTING / KEYWORD ACCENTS ───────── */
+  --kw-entropy:  var(--terra);
+  --kw-statmech: var(--teal);
+  --kw-dg:       var(--gold);
+  --kw-ga:       #67E8F9;
+  --kw-open:     #FCD34D;
+  --kw-docking:  #5046D6;
+  --kw-rescue:   #FDE68A;
+
+  /* ───────── TYPE SCALE ───────── */
+  --font-body: 'IBM Plex Sans', -apple-system, BlinkMacSystemFont, 'Helvetica Neue', sans-serif;
+  --font-mono: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
+
+  --fs-hero:   7rem;
+  --fs-h1:     3.5rem;
+  --fs-h2:     1.75rem;
+  --fs-h3:     1.125rem;
+  --fs-body:   1rem;
+  --fs-sm:     0.875rem;
+  --fs-xs:     0.75rem;
+  --fs-tag:    0.625rem;
+  --fs-meta:   0.5rem;
+
+  --fw-300: 300;
+  --fw-400: 400;
+  --fw-500: 500;
+  --fw-600: 600;
+  --fw-700: 700;
+
+  --tracking-tight: -0.02em;
+  --tracking-flat:  0;
+  --tracking-wide:  0.08em;
+  --tracking-label: 0.15em;
+  --tracking-tag:   0.20em;
+  --tracking-meta:  0.30em;
+
+  --lh-tight: 1.05;
+  --lh-snug:  1.15;
+  --lh-body:  1.60;
+  --lh-code:  1.80;
+
+  /* ───────── SPACING (8-pt soft grid) ───────── */
+  --sp-1:  0.25rem;
+  --sp-2:  0.5rem;
+  --sp-3:  0.75rem;
+  --sp-4:  1rem;
+  --sp-5:  1.25rem;
+  --sp-6:  1.5rem;
+  --sp-8:  2rem;
+  --sp-10: 2.5rem;
+  --sp-12: 3rem;
+  --sp-16: 4rem;
+  --sp-20: 5rem;
+  --sp-24: 6rem;
+
+  /* ───────── RADIUS ───────── */
+  --r-xs:   3px;
+  --r-sm:   6px;
+  --r-md:   8px;
+  --r-lg:   12px;
+  --r-pill: 9999px;
+
+  /* ───────── SHADOWS / GLOWS ───────── */
+  --glow-teal:        0 0 18px rgba(34,211,238,0.30);
+  --glow-teal-strong: 0 0 24px rgba(34,211,238,0.50);
+  --glow-terra:       0 0 20px rgba(167,139,250,0.10);
+  --glow-gold:        0 0 20px rgba(251,191,36,0.10);
+  --glow-equation:    0 0 40px rgba(34,211,238,0.4), 0 0 60px rgba(251,191,36,0.2);
+
+  /* ───────── MOTION ───────── */
+  --ease-out:    cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in-out: ease-in-out;
+  --dur-fast:    0.18s;
+  --dur-base:    0.25s;
+  --dur-slow:    0.7s;
+  --dur-breathe: 4s;
+  --dur-spectrum: 8.5s;
+
+  /* ───────── GRID BACKGROUND ───────── */
+  --grid-line: rgba(34,211,238,0.03);
+  --grid-step: 40px;
+}
+
+html { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
+
+body {
+  font-family: var(--font-body);
+  font-size:   var(--fs-body);
+  line-height: var(--lh-body);
+  color:       var(--fg);
+  background:  var(--bg);
+  background-image:
+    linear-gradient(var(--grid-line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid-line) 1px, transparent 1px);
+  background-size: var(--grid-step) var(--grid-step);
+}
+
+h1, .h1 {
+  font-family: var(--font-mono);
+  font-size:   var(--fs-h1);
+  font-weight: var(--fw-700);
+  line-height: var(--lh-tight);
+  letter-spacing: var(--tracking-flat);
+  color: var(--fg);
+}
+
+h2, .h2 {
+  font-family: var(--font-mono);
+  font-size:   var(--fs-h2);
+  font-weight: var(--fw-700);
+  line-height: var(--lh-snug);
+  color: var(--fg);
+}
+
+h3, .h3 {
+  font-family: var(--font-mono);
+  font-size:   var(--fs-h3);
+  font-weight: var(--fw-600);
+  color: var(--fg);
+}
+
+p {
+  font-family: var(--font-body);
+  font-size:   var(--fs-body);
+  line-height: var(--lh-body);
+  color: var(--fg-muted);
+  max-width: 72ch;
+  text-wrap: pretty;
+}
+
+code, .mono, kbd, samp {
+  font-family: var(--font-mono);
+  font-size:   var(--fs-sm);
+}
+
+.section-label, .eyebrow {
+  font-family: var(--font-mono);
+  font-size:   var(--fs-tag);
+  font-weight: var(--fw-500);
+  letter-spacing: var(--tracking-tag);
+  text-transform: uppercase;
+  color: var(--terra);
+}
+
+.stat-value {
+  font-family: var(--font-mono);
+  font-size:   2.5rem;
+  font-weight: var(--fw-700);
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+.stat-label {
+  font-family: var(--font-mono);
+  font-size:   var(--fs-tag);
+  letter-spacing: var(--tracking-label);
+  color: var(--fg-muted);
+  text-transform: uppercase;
+  margin-top: var(--sp-1);
+}
+
+.brand {
+  font-family: var(--font-mono);
+  font-weight: var(--fw-700);
+  color: var(--teal);
+  letter-spacing: 0.02em;
+}
+.brand .delta { color: var(--gold); }
+.brand .terra { color: var(--terra); }

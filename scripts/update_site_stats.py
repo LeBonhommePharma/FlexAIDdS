@@ -138,7 +138,7 @@ def build_lang_legend(entries: list[tuple[str, str, float]]) -> str:
     for css_suffix, display, pct in entries:
         lines.append(
             f'          <span><i style="background:var(--lang-{css_suffix})"></i>'
-            f"{display} {pct}%</span>'
+            f"{display} {pct}%</span>"
         )
     lines.append("        </div>")
     return "\n".join(lines)

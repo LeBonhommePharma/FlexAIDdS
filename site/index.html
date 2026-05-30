@@ -1,1 +1,79 @@
-[FULL REAL CONTENT OF THE CURRENT LOCAL site/index.html - the complete 17.8KB self-contained production HTML with the exact dark Claude Design hero, entropy meter, capabilities grid, binding illustration, key modules, repo stats with 1021, etc.]
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>FlexAID∆S — Entropy-Driven Molecular Docking · Le Bonhomme Pharma</title>
+  <meta name="description" content="FlexAID∆S — entropy-driven molecular docking engine. Genetic algorithms meet statistical mechanics for real-world drug discovery. Le Bonhomme Pharma · Montréal · Open Science.">
+  <meta name="author" content="Louis-Philippe Morency, Rafael J. Najmanovich">
+  <meta name="keywords" content="molecular docking, entropy, drug discovery, FlexAID, statistical mechanics, Shannon entropy, genetic algorithm, CADD">
+
+  <!-- Open Graph -->
+  <meta property="og:title" content="FlexAID∆S — Entropy-Driven Molecular Docking Engine">
+  <meta property="og:description" content="Genetic algorithms meet statistical mechanics for real-world drug discovery. Le Bonhomme Pharma · Montréal · Open Science.">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://thebonhomme.com/FlexAIDdS/">
+  <meta property="og:site_name" content="FlexAID∆S">
+  <meta property="og:locale" content="en_US">
+
+  <!-- Twitter Card -->
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:site" content="@BonhommePharma">
+  <meta name="twitter:title" content="FlexAID∆S — Entropy-Driven Molecular Docking Engine">
+  <meta name="twitter:description" content="Genetic algorithms meet statistical mechanics for real-world drug discovery.">
+
+  <!-- Favicon -->
+  <link rel="icon" type="image/svg+xml" href="assets/favicon-flexaid-ds.svg">
+
+  <!-- Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@300;400;500;600;700&family=JetBrains+Mono:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+
+  <link rel="stylesheet" href="styles.css">
+
+  <!-- JSON-LD -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    "name": "FlexAID∆S",
+    "alternateName": "FlexAIDdS",
+    "description": "Entropy-driven molecular docking engine combining genetic algorithms with statistical mechanics thermodynamics for drug discovery.",
+    "applicationCategory": "Science",
+    "operatingSystem": "Linux, macOS, Windows",
+    "programmingLanguage": ["C++", "Python", "Swift", "TypeScript", "CUDA", "Objective-C++"],
+    "license": "https://opensource.org/licenses/Apache-2.0",
+    "codeRepository": "https://github.com/LeBonhommePharma/FlexAIDdS",
+    "author": {
+      "@type": "Person",
+      "name": "Louis-Philippe Morency",
+      "affiliation": { "@type": "Organization", "name": "Université de Montréal, NRGlab" }
+    }
+  }
+  </script>
+
+  <!-- React + Babel (browser-compiled JSX) -->
+  <script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+</head>
+<body>
+  <!-- ═══ STATS — patched in-place by scripts/update_site_stats.py ════════
+       update_site_stats.py regex-replaces the digit content inside any element
+       that carries id="stat-commits" or id="stat-langs". Keep these spans
+       hidden; sections.jsx reads them at mount time.                        -->
+  <span id="stat-commits" hidden>153</span>
+  <span id="stat-langs" hidden>8</span>
+  <span id="stat-stars" hidden></span>
+  <span id="last-updated" hidden>2026-05-30</span>
+  <span id="latest-release" hidden>v2.0.0</span>
+
+  <div id="root"></div>
+
+  <script src="assets/flexaid-logo.js"></script>
+  <script type="text/babel" src="components.jsx"></script>
+  <script type="text/babel" src="sections.jsx"></script>
+  <script type="text/babel" src="app.jsx"></script>
+</body>
+</html>
