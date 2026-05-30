@@ -247,9 +247,16 @@ void snapshot_to_pdb(const SnapshotReader::Snapshot& snapshot,
 /// Convenience overload: extract atom metadata from FA_Global/resid arrays
 /// and write PDB.  Forward-declared here; implemented in BinarySnapshot.cpp
 /// after including flexaid.h.
+//
+// NOTE: These must be the *global* structs from flexaid.h (not inside namespace flexaids)
+// so that legacy code in cffunction/spfunction/BinarySnapshot can use them without
+// incomplete-type errors.
 struct FA_Global_struct;
 struct atom_struct;
 struct residue_struct;
+
+namespace flexaids {
+
 void snapshot_to_pdb_from_global(const SnapshotReader::Snapshot& snapshot,
                                  FA_Global_struct* FA,
                                  atom_struct* atoms,

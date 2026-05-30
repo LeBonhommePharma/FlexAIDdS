@@ -21,7 +21,7 @@ hardware:
   gpu: "Apple M3 Pro GPU (11 or 14-core, detect at runtime)"
   gpu_api: Metal
   metal_family: apple9    # Metal GPU Family Apple 9
-  storage: "cloud-only (iCloud 2TB primary, Google Drive 5TB mirror)"
+  storage: "iCloud 2TB only (sole storage — no mirror)"
 
 build:
   parallel_jobs: 6          # P-cores only; E-cores reserved for macOS + cloud sync
@@ -70,20 +70,17 @@ benchmarks:
       - psychopharm23       # 23 CNS drug targets (NRGlab internal)
 
 storage:
-  mode: "async-mirror"
+  mode: "iCloud 2TB only"
   primary: icloud
-  mirror: gdrive
+  mirror: "none (Google Drive support removed)"
   icloud_base: "~/Library/Mobile Documents/com~apple~CloudDocs/FlexAIDdS"
-  gdrive_base: "~/Library/CloudStorage/GoogleDrive-*/My Drive/FlexAIDdS"
-  sync_build: false         # build dir too volatile; rebuild cheaper than sync
-  sync_after_phase: true    # rsync to GDrive after each benchmark phase
-  sync_method: "rsync -avz --delete"
-  directories_synced:
-    - benchmark_data
-    - results
-    - logs
+  sync_build: false
+  sync_after_phase: false
+  sync_method: "none"
+  directories_synced: []
   directories_excluded:
     - build
+  note: "Pure iCloud 2TB configuration. Google Drive mirror removed per request. All output written directly to iCloud."
 
 memory_budget:
   total_gb: 18

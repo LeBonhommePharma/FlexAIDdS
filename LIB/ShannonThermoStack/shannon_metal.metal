@@ -84,7 +84,8 @@ kernel void parallel_sum_reduce(
     uint                  tgid        [[threadgroup_position_in_grid]],
     uint                  tg_size     [[threads_per_threadgroup]])
 {
-    // Must match the threadgroup size dispatched by the host (256).    constexpr uint MAX_TG_SIZE = 256;
+    // Must match the threadgroup size dispatched by the host (256).
+    constexpr uint MAX_TG_SIZE = 256;
     threadgroup float shared[MAX_TG_SIZE];
 
     if (lid >= MAX_TG_SIZE) return;

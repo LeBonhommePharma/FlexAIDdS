@@ -1,48 +1,17 @@
 #!/usr/bin/env bash
-# mirror_to_gdrive.sh — Async RAID-1 mirror from iCloud to Google Drive
+# mirror_to_gdrive.sh — DEPRECATED / REMOVED
 #
-# Syncs benchmark_data/, results/, and logs/ from iCloud (primary) to
-# Google Drive (mirror). Skips build/ (too volatile, rebuild is cheaper).
+# Google Drive mirror support has been removed per user request.
+# All FlexAIDdS m3pro benchmarking now uses iCloud 2TB exclusively.
 #
-# Usage:
-#   ./benchmarks/m3pro/mirror_to_gdrive.sh          # foreground
-#   nohup ./benchmarks/m3pro/mirror_to_gdrive.sh &  # background
-#
-# Exit codes:
-#   0 — all syncs succeeded
-#   1 — partial failure (some dirs failed, logged)
-#   2 — total failure (env not set or both paths missing)
+# This script is kept as a placeholder. It is now a safe no-op.
 #
 # Apache-2.0 (c) 2026 NRGlab, Universite de Montreal
 
-set -uo pipefail
-
-# ─── Load environment ────────────────────────────────────────────────────────
-
-ENV_FILE="$HOME/.flexaidds_env"
-if [[ -f "$ENV_FILE" ]]; then
-    source "$ENV_FILE"
-else
-    echo "[ERROR] Environment file not found: $ENV_FILE" >&2
-    echo "        Run setup_cloud_storage.sh first." >&2
-    exit 2
-fi
-
-# Validate required vars
-if [[ -z "${FLEXAIDDS_ICLOUD:-}" ]] || [[ -z "${FLEXAIDDS_GDRIVE:-}" ]]; then
-    echo "[ERROR] FLEXAIDDS_ICLOUD or FLEXAIDDS_GDRIVE not set." >&2
-    exit 2
-fi
-
-if [[ ! -d "$FLEXAIDDS_ICLOUD" ]]; then
-    echo "[ERROR] iCloud path does not exist: $FLEXAIDDS_ICLOUD" >&2
-    exit 2
-fi
-
-if [[ ! -d "$FLEXAIDDS_GDRIVE" ]]; then
-    echo "[ERROR] Google Drive path does not exist: $FLEXAIDDS_GDRIVE" >&2
-    exit 2
-fi
+echo "[INFO] Google Drive mirror support has been removed."
+echo "       m3pro benchmarks use iCloud 2TB as the only storage."
+echo "       (File kept for future reference; no action taken.)"
+exit 0
 
 # ─── Logging ─────────────────────────────────────────────────────────────────
 
