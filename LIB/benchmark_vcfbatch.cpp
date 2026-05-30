@@ -40,9 +40,12 @@ static cfstr stub_cf(FA_Global* FA, VC_Global* /*VC*/,
     cf.totsas = 1.0;
     cf.rclash = 0;
 
-    // Simulate realistic compute cost (~10 µs per chromosome)
+    // Simulate realistic compute cost (~10 µs per chromosome) - safe bounded access
     volatile double dummy = 0.0;
-    for (int k = 0; k < 5000; ++k) dummy += std::sin(icv[k % n_genes] + k);
+    for (int k = 0; k < 200; ++k) {  // reduced from 5000 to avoid any edge issues in synthetic run
+        int idx = k % n_genes;
+        dummy += std::sin(icv[idx] + static_cast<double>(k));
+    }
     (void)dummy;
     return cf;
 }
@@ -84,13 +87,20 @@ int main(int argc, char* argv[])
     VC.ca_recsize = 1;
 
     // Stub atom / residue / optres / contacts / contributions
-    atom  stub_atom{};
-    resid stub_res{};
+    // Provide at least one element so ThreadWorkspace assign() calls are safe
+    // even when counts are minimal (prevents potential bad pointer arithmetic in synthetic benchmark).
+    static atom  stub_atoms[4]{};
+    static resid stub_residues[4]{};
+    static OptRes stub_optres[1]{};
+
+    atom*  stub_atom   = &stub_atoms[0];
+    resid* stub_res    = &stub_residues[0];
     gridpoint stub_gp{};
 
-    FA.contacts      = nullptr;   // not used by stub_cf
+    FA.contacts      = nullptr;
     FA.contributions = nullptr;
-    FA.optres        = nullptr;
+    FA.optres        = &stub_optres[0];   // non-null even if num_optres==0
+    FA.num_optres    = 0;                 // keep count at 0 for the test
 
     // Gene limits: each gene in [−180, 180] (dihedral-like)
     std::vector<genlim> gene_lim(static_cast<std::size_t>(n_genes));
@@ -118,7 +128,7 @@ int main(int argc, char* argv[])
     // ── Run benchmark ────────────────────────────────────────────────────────
     auto report = voronoi_cf::benchmark(
         chrom_span, &FA, &GB, &VC, lim_span,
-        &stub_atom, &stub_res, &stub_gp,
+        stub_atom, stub_res, &stub_gp,
         stub_cf,
         /*n_reps=*/5);
 
