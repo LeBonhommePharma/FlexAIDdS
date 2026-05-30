@@ -94,7 +94,11 @@ mkdir -p "$LOGS"
     echo "  RAM:     $(( $(sysctl -n hw.memsize) / 1073741824 )) GB"
     echo "  GPU:     $(system_profiler SPDisplaysDataType 2>/dev/null | grep 'Chipset Model' | sed 's/.*: //' || echo 'unknown')"
     echo "  OS:      $(sw_vers -productName 2>/dev/null || echo macOS) $(sw_vers -productVersion 2>/dev/null || echo '')"
-    echo "  Storage: iCloud (primary) + Google Drive (mirror)"
+    if [[ "${FLEXAIDDS_MIRROR_ENABLED:-0}" == "1" ]] && [[ -n "${FLEXAIDDS_GDRIVE:-}" ]]; then
+        echo "  Storage: iCloud (primary) + Google Drive (mirror)"
+    else
+        echo "  Storage: iCloud 2TB (primary only — mirroring disabled)"
+    fi
     echo ""
     echo "Git SHA:   $(cd "$REPO" && git rev-parse --short HEAD 2>/dev/null || echo 'unknown')"
     echo "Branch:    $(cd "$REPO" && git branch --show-current 2>/dev/null || echo 'unknown')"
@@ -103,9 +107,13 @@ mkdir -p "$LOGS"
 
 GLOBAL_START=$(date +%s)
 
-# ─── Helper: async mirror ───────────────────────────────────────────────────
+# ─── Helper: async mirror (no-op if iCloud-only) ────────────────────────────
 
 trigger_mirror() {
+    if [[ "${FLEXAIDDS_MIRROR_ENABLED:-0}" != "1" ]] || [[ -z "${FLEXAIDDS_GDRIVE:-}" ]]; then
+        info "Mirror skipped (iCloud-only mode — results saved to 2TB iCloud Drive)"
+        return 0
+    fi
     if [[ -x "$MIRROR_SCRIPT" ]]; then
         info "Triggering async mirror to Google Drive..."
         nohup "$MIRROR_SCRIPT" >> "$LOGS/mirror_bg_${TIMESTAMP}.log" 2>&1 &
@@ -266,19 +274,27 @@ GLOBAL_DURATION=$((GLOBAL_END - GLOBAL_START))
     echo ""
 } | tee -a "$MASTER_LOG"
 
-# Final sync: foreground (blocking) to guarantee both copies are complete
-info "Running final blocking mirror to Google Drive..."
-if [[ -x "$MIRROR_SCRIPT" ]]; then
-    "$MIRROR_SCRIPT" 2>&1 | tee -a "$MASTER_LOG"
-    ok "Final mirror sync complete — both iCloud and Google Drive are up to date"
+# Final sync: foreground (blocking) — only if mirror enabled
+if [[ "${FLEXAIDDS_MIRROR_ENABLED:-0}" == "1" ]] && [[ -n "${FLEXAIDDS_GDRIVE:-}" ]]; then
+    info "Running final blocking mirror to Google Drive..."
+    if [[ -x "$MIRROR_SCRIPT" ]]; then
+        "$MIRROR_SCRIPT" 2>&1 | tee -a "$MASTER_LOG"
+        ok "Final mirror sync complete — both iCloud and Google Drive are up to date"
+    else
+        warn "Mirror script not available"
+    fi
 else
-    warn "Mirror script not available"
+    info "Final sync skipped — iCloud-only mode (results saved exclusively to 2TB iCloud Drive)"
 fi
 
 echo ""
 echo "================================================================"
 echo "  All done. Results are on:"
 echo "    iCloud:       $RESULTS"
-echo "    Google Drive: ${FLEXAIDDS_GDRIVE:-unknown}/results"
+if [[ "${FLEXAIDDS_MIRROR_ENABLED:-0}" == "1" ]] && [[ -n "${FLEXAIDDS_GDRIVE:-}" ]]; then
+    echo "    Google Drive: ${FLEXAIDDS_GDRIVE:-unknown}/results"
+else
+    echo "    Google Drive: (disabled — iCloud 2TB only)"
+fi
 echo "    Master log:   $MASTER_LOG"
 echo "================================================================"
