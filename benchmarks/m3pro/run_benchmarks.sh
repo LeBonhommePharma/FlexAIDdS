@@ -75,7 +75,11 @@ done
 # ─── Validate build ─────────────────────────────────────────────────────────
 
 if [[ ! -f "$BINARY" ]]; then
-    die "FlexAID binary not found: $BINARY — run build_m3pro.sh first"
+    if [[ "$RUN_KERNELS" == true && "$RUN_TIER1" == false && "$RUN_TIER2" == false ]]; then
+        warn "FlexAID binary not found — kernels-only mode will skip dataset phases (dispatch may also be absent)"
+    else
+        die "FlexAID binary not found: $BINARY — run build_m3pro.sh first (needed for tier-1/2)"
+    fi
 fi
 
 # ─── Hardware detection ──────────────────────────────────────────────────────
