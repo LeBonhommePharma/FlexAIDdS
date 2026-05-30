@@ -29,14 +29,21 @@ else
 fi
 
 # Validate required vars
-if [[ -z "${FLEXAIDDS_ICLOUD:-}" ]] || [[ -z "${FLEXAIDDS_GDRIVE:-}" ]]; then
-    echo "[ERROR] FLEXAIDDS_ICLOUD or FLEXAIDDS_GDRIVE not set." >&2
+if [[ -z "${FLEXAIDDS_ICLOUD:-}" ]]; then
+    echo "[ERROR] FLEXAIDDS_ICLOUD not set." >&2
     exit 2
 fi
 
 if [[ ! -d "$FLEXAIDDS_ICLOUD" ]]; then
     echo "[ERROR] iCloud path does not exist: $FLEXAIDDS_ICLOUD" >&2
     exit 2
+fi
+
+# GDrive optional for iCloud-only mode
+if [[ -z "${FLEXAIDDS_GDRIVE:-}" ]] || [[ "${FLEXAIDDS_MIRROR_ENABLED:-0}" != "1" ]]; then
+    echo "[INFO] Google Drive mirror disabled (FLEXAIDDS_GDRIVE empty or MIRROR_ENABLED=0). iCloud-only mode active."
+    echo "       No sync performed. Results remain on iCloud 2TB."
+    exit 0
 fi
 
 if [[ ! -d "$FLEXAIDDS_GDRIVE" ]]; then
