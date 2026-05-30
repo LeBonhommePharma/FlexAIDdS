@@ -48,11 +48,14 @@ for d in "$HOME/Library/CloudStorage"/GoogleDrive-*/; do
     fi
 done
 
+GDRIVE_BASE=""
 if [[ -z "$GDRIVE_ROOT" ]]; then
-    die "Google Drive not found at ~/Library/CloudStorage/GoogleDrive-*/"
+    warn "Google Drive not found at ~/Library/CloudStorage/GoogleDrive-*/ — mirror disabled (iCloud 2TB only)"
+    warn "Results and logs will be stored exclusively on iCloud Drive"
+else
+    GDRIVE_BASE="$GDRIVE_ROOT/FlexAIDdS"
+    info "Google Drive root: $GDRIVE_ROOT"
 fi
-GDRIVE_BASE="$GDRIVE_ROOT/FlexAIDdS"
-info "Google Drive root: $GDRIVE_ROOT"
 
 # ─── Create directory hierarchy ──────────────────────────────────────────────
 
@@ -71,13 +74,17 @@ for d in "${DIRS[@]}"; do
 done
 ok "iCloud tree created at: $ICLOUD_BASE"
 
-# Google Drive mirrors everything except build/
-info "Creating Google Drive directory tree..."
-for d in "${DIRS[@]}"; do
-    [[ "$d" == "build" ]] && continue
-    mkdir -p "$GDRIVE_BASE/$d"
-done
-ok "Google Drive tree created at: $GDRIVE_BASE"
+# Google Drive mirrors everything except build/ (if GDrive configured)
+if [[ -n "$GDRIVE_BASE" ]]; then
+    info "Creating Google Drive directory tree..."
+    for d in "${DIRS[@]}"; do
+        [[ "$d" == "build" ]] && continue
+        mkdir -p "$GDRIVE_BASE/$d"
+    done
+    ok "Google Drive tree created at: $GDRIVE_BASE"
+else
+    info "Skipping Google Drive tree (mirror disabled)"
+fi
 
 # ─── Detect repo root ───────────────────────────────────────────────────────
 
@@ -123,6 +130,8 @@ export FLEXAIDDS_BINARY="$ICLOUD_BASE/build/FlexAID"
 export FLEXAIDDS_RESULTS="$ICLOUD_BASE/results"
 export FLEXAIDDS_LOGS="$ICLOUD_BASE/logs"
 export FLEXAIDDS_BUILD="$ICLOUD_BASE/build"
+# iCloud-only mode: if GDrive is empty, mirroring is disabled (results live on 2TB iCloud)
+export FLEXAIDDS_MIRROR_ENABLED="$([ -n "$GDRIVE_BASE" ] && echo 1 || echo 0)"
 ENVEOF
 
 ok "Environment file written: $ENV_FILE"
@@ -144,7 +153,6 @@ fi
 # ─── Validate writability ───────────────────────────────────────────────────
 
 ICLOUD_TEST="$ICLOUD_BASE/logs/.write_test_$$"
-GDRIVE_TEST="$GDRIVE_BASE/logs/.write_test_$$"
 
 if touch "$ICLOUD_TEST" 2>/dev/null; then
     rm -f "$ICLOUD_TEST"
@@ -153,11 +161,16 @@ else
     die "iCloud path is NOT writable: $ICLOUD_BASE"
 fi
 
-if touch "$GDRIVE_TEST" 2>/dev/null; then
-    rm -f "$GDRIVE_TEST"
-    ok "Google Drive is writable"
+if [[ -n "$GDRIVE_BASE" ]]; then
+    GDRIVE_TEST="$GDRIVE_BASE/logs/.write_test_$$"
+    if touch "$GDRIVE_TEST" 2>/dev/null; then
+        rm -f "$GDRIVE_TEST"
+        ok "Google Drive is writable"
+    else
+        die "Google Drive path is NOT writable: $GDRIVE_BASE"
+    fi
 else
-    die "Google Drive path is NOT writable: $GDRIVE_BASE"
+    info "Google Drive mirror disabled — skipping GDrive writability check (iCloud 2TB primary only)"
 fi
 
 # ─── Summary ─────────────────────────────────────────────────────────────────
@@ -168,7 +181,11 @@ echo "  FlexAIDdS Cloud Storage Setup Complete"
 echo "================================================================"
 echo ""
 echo "  iCloud (PRIMARY):  $ICLOUD_BASE"
-echo "  Google Drive (MIRROR): $GDRIVE_BASE"
+if [[ -n "$GDRIVE_BASE" ]]; then
+    echo "  Google Drive (MIRROR): $GDRIVE_BASE"
+else
+    echo "  Google Drive:      DISABLED (iCloud 2TB only — results saved to iCloud)"
+fi
 echo ""
 echo "  Environment:       $ENV_FILE"
 echo "  Repo symlinks:     build -> iCloud, results -> iCloud"
