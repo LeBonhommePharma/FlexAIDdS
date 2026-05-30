@@ -128,9 +128,8 @@ kernel void turboquant_dequantize(
     uint  tid        [[thread_index_in_threadgroup]])
 {
     const uint vec_id = tg_pos;
-    const uint j      = tid;    const uint d      = params.d;
-    const uint vec_id = gid / d;
     const uint j      = tid;
+    const uint d      = params.d;
     const uint k      = params.num_centroids;
 
     if (vec_id >= params.N || j >= d) return;
