@@ -4,7 +4,7 @@ Provides Pythonic wrappers around C++ StatMechEngine with NumPy integration.
 """
 
 import math
-from typing import List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 from dataclasses import dataclass, field
 
 try:
@@ -81,6 +81,7 @@ class Thermodynamics:
 
     @classmethod
     def from_dict(cls, data: dict) -> "Thermodynamics":
+        """Construct from either legacy raw keys or unit-suffixed JSON keys."""
         """Construct a Thermodynamics instance from a dictionary.
 
         Accepts the key format produced by :meth:`to_dict` (suffixed keys such

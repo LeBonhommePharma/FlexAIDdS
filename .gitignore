@@ -2,6 +2,9 @@
 # CI and build infrastructure
 !.github
 !.github/**
+# Grok skills (project-scoped; committed for team use with /skills and auto-discovery)
+!.grok
+!.grok/**
 !cmake
 !cmake/**
 # source files
@@ -30,6 +33,7 @@
 !LICENSE
 !README.md
 !CLAUDE.md
+!AGENTS.md
 !VERSION
 !VERSION.md
 # documentation

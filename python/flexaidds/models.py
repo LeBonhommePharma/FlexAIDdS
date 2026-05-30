@@ -365,7 +365,6 @@ class DockingResult:
                     "best_cf": mode.best_cf,
                     "temperature": mode.temperature,
                     "thermodynamics": mode.thermodynamics,
-                    "component_sum_kcal_mol": mode.thermodynamics.get("component_sum_kcal_mol") if mode.thermodynamics else None,
                     "best_pose_path": str(best_pose.path) if best_pose else None,
                 }
             )
