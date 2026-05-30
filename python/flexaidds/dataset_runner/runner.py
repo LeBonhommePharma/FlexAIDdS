@@ -335,6 +335,15 @@ class BenchmarkReport:
                 "",
             ]
 
+        # Per-entry cost/timing exposure (from EntryTaskManager artifacts)
+        manifest_rel = f"results/{dr.config.slug}/tier{dr.tier}/_entry_manifest.json"
+        lines += [
+            f"**Per-entry artifacts**: `{manifest_rel}`",
+            "Contains individual result JSONs + detailed timing/cost per (target, state) including estimated CPU-seconds.",
+            "Use this for audit, resume, and cost analysis. The manifest also includes mean/median/p90 and total cost summary.",
+            "",
+        ]
+
         return lines
 
     def save(self, prefix: Union[str, Path]) -> Tuple[Path, Path]:
@@ -479,17 +488,37 @@ class EntryTaskManager:
         mpi_rank: int = 0,
         mpi_size: int = 1,
         mpi_root: bool = True,
+        cost_hints: Optional[Dict[str, float]] = None,
     ):
         self.work_items = list(work_items)
         self.n_workers = max(1, int(n_workers))
         self.omp_threads = max(1, int(omp_threads))
         self.completed: List[Tuple[str, str, List[PoseScore], float, str]] = []
 
-        # MPI context for stronger master-worker mode (dynamic farming of individual entries)
+        # MPI context for stronger master-worker mode
         self._mpi_comm = mpi_comm
         self._mpi_rank = mpi_rank
         self._mpi_size = mpi_size
         self._mpi_root = mpi_root
+
+        # Cost-aware scheduling hints (target_state -> estimated cost, e.g. from previous manifest)
+        self.cost_hints = cost_hints or {}
+
+    @classmethod
+    def load_cost_hints_from_manifest(cls, manifest_path: Union[str, Path]) -> Dict[str, float]:
+        """Load per-entry cost hints from a previous _entry_manifest.json (timings section)."""
+        p = Path(manifest_path)
+        if not p.is_file():
+            return {}
+        try:
+            data = json.loads(p.read_text())
+            timings = data.get("timings", {}).get("per_entry_cost_cpu_seconds", {})
+            # Also fall back to wall time if cost not present
+            if not timings:
+                timings = data.get("timings", {}).get("per_entry_wall_seconds", {})
+            return {k: float(v) for k, v in timings.items()}
+        except Exception:
+            return {}
 
     def run(
         self,
@@ -500,9 +529,20 @@ class EntryTaskManager:
         When MPI context with size > 1 is provided, rank 0 acts as master and
         dynamically farms individual (target, state) entries to the other ranks
         (stronger master-worker instead of static pre-split).
+
+        If cost_hints are present, cheaper entries are scheduled first (cost-aware).
         """
         if not self.work_items:
             return []
+
+        # Apply cost-aware scheduling if hints available (cheaper first)
+        if self.cost_hints:
+            def _cost_key(item):
+                key = f"{item[0]}_{item[1]}"
+                return self.cost_hints.get(key, 999999.0)  # unknown = very expensive
+            self.work_items.sort(key=_cost_key)
+            if self._mpi_root or self._mpi_size <= 1:
+                logger.info("EntryTaskManager: cost-aware scheduling enabled (%d hints loaded)", len(self.cost_hints))
 
         # Stronger MPI master-worker path (user priority)
         if self._mpi_size > 1 and self._mpi_comm is not None:
@@ -589,15 +629,67 @@ class EntryTaskManager:
             self.completed = results
             return results
         else:
-            # Worker
-            while True:
-                comm.send(rank, dest=root, tag=TAG_REQ)
-                task = comm.recv(source=root, tag=ANY_TAG)
-                if task is None:
-                    break
-                res = processor(task)
-                comm.send(res, dest=root, tag=TAG_RES)
-            return []
+            # Worker (hybrid: respect local n_workers inside this MPI rank)
+            if self.n_workers <= 1:
+                # Serial worker (simple path)
+                while True:
+                    comm.send(rank, dest=root, tag=TAG_REQ)
+                    task = comm.recv(source=root, tag=ANY_TAG)
+                    if task is None:
+                        break
+                    res = processor(task)
+                    comm.send(res, dest=root, tag=TAG_RES)
+                return []
+
+            # True hybrid: local ThreadPool + MPI task streaming
+            from concurrent.futures import ThreadPoolExecutor, as_completed
+            local_pool = ThreadPoolExecutor(max_workers=self.n_workers)
+            futures = {}  # future -> task
+
+            def _request_more(n):
+                for _ in range(n):
+                    comm.send(rank, dest=root, tag=TAG_REQ)
+
+            try:
+                _request_more(self.n_workers)  # prime the pump
+
+                while True:
+                    # Receive any newly assigned tasks and submit locally
+                    while comm.Iprobe(source=root, tag=ANY_TAG):
+                        task = comm.recv(source=root, tag=ANY_TAG)
+                        if task is None:
+                            # Sentinel — drain remaining local work then exit
+                            for fut in as_completed(list(futures.keys())):
+                                res = fut.result()
+                                comm.send(res, dest=root, tag=TAG_RES)
+                            return []
+                        fut = local_pool.submit(processor, task)
+                        futures[fut] = task
+
+                    # Send back any completed local results and request replacements
+                    done = []
+                    for fut in list(futures.keys()):
+                        if fut.done():
+                            try:
+                                res = fut.result()
+                                comm.send(res, dest=root, tag=TAG_RES)
+                                done.append(fut)
+                                # Request one more to keep the local pool fed
+                                comm.send(rank, dest=root, tag=TAG_REQ)
+                            except Exception as exc:
+                                tid, st = futures[fut]
+                                err_res = (tid, st, [], 0.0, str(exc))
+                                comm.send(err_res, dest=root, tag=TAG_RES)
+                                done.append(fut)
+
+                    for fut in done:
+                        futures.pop(fut, None)
+
+                    # Small sleep to avoid busy spin if nothing is happening
+                    import time as _t
+                    _t.sleep(0.01)
+            finally:
+                local_pool.shutdown(wait=True)
 
 
 # ---------------------------------------------------------------------------
@@ -1000,7 +1092,16 @@ class DatasetRunner:
             self._mpi_rank, self._mpi_size, config.slug, len(work_for_manager),
         )
 
-        # Master entry manager — now with MPI context for dynamic per-entry farming
+        # Master entry manager — now with MPI context + optional cost-aware hints
+        cost_hints = {}
+        if self.resume:
+            # Auto-load previous costs for better scheduling on resume runs
+            try:
+                prev_manifest = self._entry_results_dir(config, tier) / "_entry_manifest.json"
+                cost_hints = EntryTaskManager.load_cost_hints_from_manifest(prev_manifest)
+            except Exception:
+                pass
+
         entry_manager = EntryTaskManager(
             work_items=work_for_manager,
             n_workers=self.n_workers if self._mpi_size == 1 else 1,
@@ -1009,6 +1110,7 @@ class DatasetRunner:
             mpi_rank=self._mpi_rank,
             mpi_size=self._mpi_size,
             mpi_root=self._mpi_root,
+            cost_hints=cost_hints,
         )
 
         all_poses: List[PoseScore] = []

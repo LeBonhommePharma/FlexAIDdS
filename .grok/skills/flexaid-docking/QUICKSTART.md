@@ -165,13 +165,16 @@ This experimental helper will:
 .grok/skills/flexaid-docking/bin/dataset-runner --help
 ```
 
-**New (highly recommended for real campaigns):** per-entry checkpointing + master-managed resume
+**New (highly recommended for real campaigns):** per-entry checkpointing + master-managed resume + hybrid MPI + cost tracking
 ```bash
-# First (possibly partial) run
+# First (possibly partial) run with local workers
 python -m flexaidds.dataset_runner --all --tier 2 --workers 4
 
-# Later: resume exactly where it left off (individual targets saved atomically by EntryTaskManager)
+# Later: resume (auto-loads previous costs for smart scheduling)
 python -m flexaidds.dataset_runner --all --tier 2 --workers 4 --resume --package
+
+# Distributed hybrid (MPI master farms entries; each rank uses its local --workers)
+mpirun -n 4 python -m flexaidds.dataset_runner --all --tier 2 --distributed --workers 2 --resume
 ```
 
 ## Reproducibility & Audit Packages (Recommended for Publications & Sharing)

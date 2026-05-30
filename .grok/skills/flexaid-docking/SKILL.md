@@ -255,7 +255,10 @@ python3 -m flexaidds.dataset_runner --dataset casf2016 --tier 1 --dry-run
 The DatasetRunner now automatically saves and resumes *individual entries* (one target + structural state = one work item). A `EntryTaskManager` master coordinator allocates these fine-grained tasks to workers.
 
 - Use `--resume` on long or expensive campaigns. It skips any target that already has a complete per-entry JSON result.
-- Results layout: `results/<slug>/tierN/<target>_<state>.json` + `_entry_manifest.json`
+- Results layout: `results/<slug>/tierN/<target>_<state>.json` + `_entry_manifest.json` (with full per-entry wall time + cost in CPU-seconds)
+- **Hybrid MPI**: Non-root ranks respect `--workers` locally (true MPI + threading).
+- **Cost-aware scheduling**: On resume, previous costs are auto-loaded to schedule cheaper entries first.
+- All of the above appears in the final Markdown reports and in the skill's reproducibility validation package.
 - The manager controls the worker pool size (`--workers`) and makes crash recovery + resource tracking first-class.
 
 **Reproducibility & Audit Packages (new in 2026-05)**
