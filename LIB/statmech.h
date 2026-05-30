@@ -261,6 +261,19 @@ public:
     // Compute full thermodynamics over the current ensemble
     Thermodynamics compute() const;
 
+    // Compute an auditable thermodynamic ledger without changing legacy fields.
+    ThermodynamicBreakdown compute_breakdown(
+        double G_vib_kcal_mol = 0.0,
+        double G_natural_kcal_mol = 0.0,
+        double G_other_kcal_mol = 0.0,
+        bool has_vib = false,
+        bool has_natural = false,
+        bool has_other = false) const;
+
+    // Boltzmann-weight arbitrary energy components over the current ensemble.
+    ComponentAverages component_averages(
+        std::span<const EnergyComponents> components) const;
+
     // Boltzmann weight vector (same order as insertion)
     std::vector<double> boltzmann_weights() const;
 

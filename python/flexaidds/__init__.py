@@ -66,6 +66,7 @@ try:
     # Override with C++ StatMechEngine when available
     from ._core import StatMechEngine as _CppStatMechEngine  # noqa: F811
     from ._core import Thermodynamics as _CppThermodynamics  # noqa: F811
+    from ._core import ThermodynamicBreakdown as _CppThermodynamicBreakdown  # noqa: F811
     from ._core import ENCoMEngine as _CppENCoMEngine        # noqa: F811
     from ._core import NormalMode as _CppNormalMode           # noqa: F811
     from ._core import VibrationalEntropy as _CppVibrationalEntropy  # noqa: F811

@@ -66,6 +66,25 @@ PYBIND11_MODULE(_core, m) {
             return std::string(buf);
         });
 
+    py::class_<ThermodynamicBreakdown>(m, "ThermodynamicBreakdown",
+        "Auditable thermodynamic ledger with explicit units")
+        .def(py::init<>())
+        .def_readwrite("temperature_K", &ThermodynamicBreakdown::temperature_K)
+        .def_readwrite("logZ_config", &ThermodynamicBreakdown::logZ_config)
+        .def_readwrite("G_config_kcal_mol", &ThermodynamicBreakdown::G_config_kcal_mol)
+        .def_readwrite("H_eff_kcal_mol", &ThermodynamicBreakdown::H_eff_kcal_mol)
+        .def_readwrite("S_config_kcal_mol_K", &ThermodynamicBreakdown::S_config_kcal_mol_K)
+        .def_readwrite("minus_T_S_config_kcal_mol", &ThermodynamicBreakdown::minus_T_S_config_kcal_mol)
+        .def_readwrite("Cv_kcal_mol_K", &ThermodynamicBreakdown::Cv_kcal_mol_K)
+        .def_readwrite("sigma_E_kcal_mol", &ThermodynamicBreakdown::sigma_E_kcal_mol)
+        .def_readwrite("G_vib_kcal_mol", &ThermodynamicBreakdown::G_vib_kcal_mol)
+        .def_readwrite("G_natural_kcal_mol", &ThermodynamicBreakdown::G_natural_kcal_mol)
+        .def_readwrite("G_other_kcal_mol", &ThermodynamicBreakdown::G_other_kcal_mol)
+        .def_readwrite("G_total_kcal_mol", &ThermodynamicBreakdown::G_total_kcal_mol)
+        .def_readwrite("has_vib", &ThermodynamicBreakdown::has_vib)
+        .def_readwrite("has_natural", &ThermodynamicBreakdown::has_natural)
+        .def_readwrite("has_other", &ThermodynamicBreakdown::has_other);
+
     py::class_<Replica>(m, "Replica", "Parallel tempering replica")
         .def(py::init<>())
         .def_readwrite("id",              &Replica::id)
@@ -104,6 +123,15 @@ PYBIND11_MODULE(_core, m) {
         // ─── Thermodynamic analysis ───
         .def("compute", &StatMechEngine::compute,
             "Compute full thermodynamics (F, S, H, Cv, etc.)",
+            py::call_guard<py::gil_scoped_release>())
+        .def("compute_breakdown", &StatMechEngine::compute_breakdown,
+            py::arg("G_vib_kcal_mol") = 0.0,
+            py::arg("G_natural_kcal_mol") = 0.0,
+            py::arg("G_other_kcal_mol") = 0.0,
+            py::arg("has_vib") = false,
+            py::arg("has_natural") = false,
+            py::arg("has_other") = false,
+            "Compute explicit configurational/correction thermodynamic ledger",
             py::call_guard<py::gil_scoped_release>())
         .def("boltzmann_weights", &StatMechEngine::boltzmann_weights,
             "Return Boltzmann weights for all samples (same order as insertion)",

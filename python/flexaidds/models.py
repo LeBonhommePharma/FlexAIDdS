@@ -21,6 +21,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 
+from .thermodynamics import ThermodynamicBreakdown
+
 
 @dataclass(frozen=True)
 class PoseResult:
@@ -158,6 +160,7 @@ class BindingModeResult:
     # Receptor-bound ions/cofactors in the complex that influenced this mode.
     # Format: "RESNAME:CHAIN:RESNUM" (e.g. "MG:A:101", "ZN:B:202").
     cofactors: List[str] = field(default_factory=list)
+    thermodynamics: Optional[ThermodynamicBreakdown] = None
 
     @property
     def n_poses(self) -> int:
@@ -217,6 +220,12 @@ class BindingModeResult:
             A new :class:`BindingModeResult` instance.
         """
         poses = [PoseResult.from_dict(p) for p in data.get("poses", [])]
+        thermo_data = data.get("thermodynamics")
+        thermodynamics = (
+            ThermodynamicBreakdown.from_dict(thermo_data)
+            if isinstance(thermo_data, dict)
+            else None
+        )
         return cls(
             mode_id=data.get("mode_id", 0),
             rank=data.get("rank", 0),
@@ -231,6 +240,7 @@ class BindingModeResult:
             temperature=data.get("temperature"),
             metadata=data.get("metadata", {}),
             cofactors=data.get("cofactors", []),
+            thermodynamics=thermodynamics,
         )
 
 
@@ -361,6 +371,27 @@ class DockingResult:
             )
         return records
 
+    @staticmethod
+    def _binding_mode_json_record(mode: BindingModeResult) -> Dict[str, Any]:
+        """Return a JSON record with legacy flat fields plus new nested data."""
+        best_pose = mode.best_pose()
+        record: Dict[str, Any] = {
+            "mode_id": mode.mode_id,
+            "rank": mode.rank,
+            "n_poses": mode.n_poses,
+            "free_energy": mode.free_energy,
+            "enthalpy": mode.enthalpy,
+            "entropy": mode.entropy,
+            "heat_capacity": mode.heat_capacity,
+            "std_energy": mode.std_energy,
+            "best_cf": mode.best_cf,
+            "temperature": mode.temperature,
+            "best_pose_path": str(best_pose.path) if best_pose else None,
+        }
+        if mode.thermodynamics is not None:
+            record["thermodynamics"] = mode.thermodynamics.to_dict()
+        return record
+
     def to_dataframe(self):
         """Convert binding-mode results to a :class:`pandas.DataFrame`.
 
@@ -402,7 +433,10 @@ class DockingResult:
             "temperature": self.temperature,
             "n_modes": self.n_modes,
             "metadata": self.metadata,
-            "binding_modes": self.to_records(),
+            "binding_modes": [
+                self._binding_mode_json_record(mode)
+                for mode in self.binding_modes
+            ],
         }
         kwargs.setdefault("indent", 2)
         text = json.dumps(payload, **kwargs)
@@ -450,6 +484,12 @@ class DockingResult:
         modes: List[BindingModeResult] = []
         for rec in payload.get("binding_modes", []):
             best_path = rec.get("best_pose_path")
+            thermo_data = rec.get("thermodynamics")
+            thermodynamics = (
+                ThermodynamicBreakdown.from_dict(thermo_data)
+                if isinstance(thermo_data, dict)
+                else None
+            )
             poses: List[PoseResult] = []
             if best_path is not None:
                 poses.append(

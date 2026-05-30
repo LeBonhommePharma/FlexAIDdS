@@ -270,10 +270,10 @@ class TestPyClear:
 class TestPyMultiplicity:
     T = 300.0
 
-    def test_multiplicity_two_doubles_sample_count(self):
+    def test_multiplicity_two_keeps_one_microstate(self):
         eng = _PyStatMechEngine(self.T)
         eng.add_sample(-10.0, multiplicity=2)
-        assert eng.size == 2
+        assert eng.size == 1
 
     def test_multiplicity_equivalent_to_repeated_add(self):
         """add_sample(E, 3) must produce the same result as three add_sample(E, 1) calls."""
