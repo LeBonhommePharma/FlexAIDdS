@@ -226,6 +226,11 @@ __all__ = [
     "Replica",
     "WHAMBin",
     "TIPoint",
+    # Reporting (Task 9 - JSON driven only)
+    "generate_pymol_script",
+    "generate_markdown_report",
+    "generate_temperature_scan_plot",
+    "write_all_reports",
     # Updater
     "check_for_updates",
     "UpdateInfo",
