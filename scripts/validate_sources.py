@@ -185,12 +185,16 @@ def collect_referenced_names(root: Path) -> Set[str]:
     # Remove duplicates
     search_files = list({p.resolve() for p in search_files if p.is_file()})
 
-    # Regex that matches typical source file references
+    # Regex that matches typical source file references. Extension alternatives
+    # are sorted longest-first so short prefixes like .c cannot match before
+    # .cpp (set iteration order is non-deterministic across Python hash seeds,
+    # so without sorting this validator is randomly flaky in CI).
     # Examples matched:
     #   Foo.cpp   LIB/Bar.cu   "something/Widget.mm"   MyKernel.cuh
+    _sorted_exts = sorted(SOURCE_EXTENSIONS, key=lambda ext: (-len(ext), ext))
     source_regex = re.compile(
         r'["\']?([A-Za-z0-9_./\\-]+\.(?:' +
-        "|".join(re.escape(ext.lstrip(".")) for ext in SOURCE_EXTENSIONS) +
+        "|".join(re.escape(ext.lstrip(".")) for ext in _sorted_exts) +
         r'))["\']?'
     )
 
