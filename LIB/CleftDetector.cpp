@@ -6,6 +6,7 @@
 #include <vector>
 #include <algorithm>
 #include <map>
+#include <set>
 #include <numeric>
 
 #ifdef _OPENMP
@@ -264,4 +265,56 @@ void free_sphere_list(sphere* head) {
         free(head);
         head = tmp;
     }
+}
+
+// ─── Task 8: Flexible Residue Selection (preprocessing only) ────────────────
+
+std::vector<int> select_flexible_residues(
+    const atom* atoms,
+    const resid* residue,
+    int atm_cnt,
+    int res_cnt,
+    const std::vector<int>& cleft_sphere_residues,
+    double distance_shell_A,
+    const std::vector<int>& active_site_residues,
+    const std::vector<int>& user_fixed_residues,
+    const std::vector<int>& user_forced_flexible)
+{
+    std::set<int> flexible;
+    std::set<int> fixed(user_fixed_residues.begin(), user_fixed_residues.end());
+
+    // 1. Add forced-flexible residues first (highest priority)
+    for (int r : user_forced_flexible) {
+        if (r >= 0 && r < res_cnt) {
+            // Skip Gly/Ala only if we had backbone support — for now we allow
+            // because the caller is responsible for having a backbone module.
+            flexible.insert(r);
+        }
+    }
+
+    // 2. Collect candidate residues near cleft spheres or active site
+    auto add_nearby = [&](int res_index) {
+        if (res_index < 0 || res_index >= res_cnt) return;
+        if (fixed.count(res_index)) return; // respect fixed
+        const char* resname = residue[res_index].name;
+        // Simple Gly/Ala exclusion (as per spec) — can be relaxed by caller
+        if (std::strcmp(resname, "GLY") == 0 || std::strcmp(resname, "ALA") == 0) {
+            return;
+        }
+        flexible.insert(res_index);
+    };
+
+    // 3. Distance-based inclusion around cleft-related residues
+    // (simplified: we treat the passed cleft_sphere_residues as seeds)
+    for (int seed : cleft_sphere_residues) {
+        add_nearby(seed);
+    }
+    for (int act : active_site_residues) {
+        add_nearby(act);
+    }
+
+    // 4. Build deterministic sorted output
+    std::vector<int> result(flexible.begin(), flexible.end());
+    // Already sorted because we used std::set
+    return result;
 }
