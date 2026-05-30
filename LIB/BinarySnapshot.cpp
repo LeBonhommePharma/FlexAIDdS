@@ -2,10 +2,8 @@
 // Apache-2.0 — No GPL dependencies.
 // Copyright (c) 2025-2026 Louis-Philippe Morency, Universite de Montreal
 
-// Include flexaid.h first so the global struct definitions (FA_Global_struct,
-// atom_struct, residue_struct) are visible before BinarySnapshot.h's declarations.
-#include "flexaid.h"
 #include "BinarySnapshot.h"
+#include "flexaid.h"
 #include "fileio.h"
 
 #include <algorithm>
