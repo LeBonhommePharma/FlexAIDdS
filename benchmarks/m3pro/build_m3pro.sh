@@ -132,6 +132,10 @@ info "Building with $PARALLEL_JOBS parallel jobs..."
 # we build the targets actually needed by the m3pro campaign first.
 if [[ "$ARCH" == "arm64" ]]; then
     info "Apple Silicon detected — building only m3pro-critical targets for reliability"
+    # Force a stable C++ standard on Apple to avoid libc++ template errors
+    # seen with C++23/26 on certain macOS/Xcode + SDK combinations.
+    cmake -S "$REPO" -B "$BUILD" -DCMAKE_CXX_STANDARD=20 2>&1 | tail -3 | tee -a "$LOG_FILE"
+
     TARGETS=(
         FlexAID
         benchmark_tencom
