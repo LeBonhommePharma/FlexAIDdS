@@ -40,7 +40,15 @@ from .benchmark import (
 )
 
 # Pure-Python thermodynamics (always available)
-from .thermodynamics import StatMechEngine, Thermodynamics, ThermodynamicBreakdown, kB_kcal, kB_SI
+from .thermodynamics import (
+    StatMechEngine,
+    Thermodynamics,
+    ThermodynamicBreakdown,
+    kB_kcal,
+    kB_SI,
+    deltaG_standard_to_Kd_M,
+    Kd_M_to_deltaG_standard,
+)
 
 # C++ extension — optional: pure-Python helpers work without it
 try:
@@ -50,6 +58,8 @@ try:
         State,
         TIPoint,
         WHAMBin,
+        TemperatureScanPoint,
+        DeltaCpFit,
         kB_kcal,  # noqa: F811  (more precise C++ value)
         kB_SI,    # noqa: F811
     )
@@ -227,6 +237,16 @@ __all__ = [
     "Replica",
     "WHAMBin",
     "TIPoint",
+    "TemperatureScanPoint",
+    "DeltaCpFit",
+    # Affinity converters (Task 6/7, safe, with validation)
+    "deltaG_standard_to_Kd_M",
+    "Kd_M_to_deltaG_standard",
+    # Reporting (Task 9 - JSON driven only)
+    "generate_pymol_script",
+    "generate_markdown_report",
+    "generate_temperature_scan_plot",
+    "write_all_reports",
     # Updater
     "check_for_updates",
     "UpdateInfo",

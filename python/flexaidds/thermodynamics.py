@@ -5,7 +5,7 @@ Provides Pythonic wrappers around C++ StatMechEngine with NumPy integration.
 
 import math
 from typing import List, Optional, Tuple
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 try:
     import numpy as np
@@ -67,12 +67,13 @@ class Thermodynamics:
         )
 
     def to_dict(self) -> dict:
-        """Convert to dictionary for serialization."""
+        """Convert to dictionary for serialization (includes all fields for roundtrip)."""
         return {
             'temperature_K': self.temperature,
             'log_Z': self.log_Z,
             'free_energy_kcal_mol': self.free_energy,
             'enthalpy_kcal_mol': self.mean_energy,
+            'mean_energy_sq': self.mean_energy_sq,
             'entropy_kcal_mol_K': self.entropy,
             'heat_capacity_kcal_mol_K2': self.heat_capacity,
             'std_energy_kcal_mol': self.std_energy,
@@ -86,15 +87,6 @@ class Thermodynamics:
         as ``temperature_K``, ``free_energy_kcal_mol``, …) as well as the raw
         attribute names (``temperature``, ``free_energy``, …).  Suffixed keys
         take priority when both forms are present.
-
-        Args:
-            data: Dictionary with thermodynamic quantities.
-
-        Returns:
-            A new :class:`Thermodynamics` instance.
-
-        Raises:
-            KeyError: If a required field is missing under both key forms.
         """
         def _get(suffixed: str, raw: str) -> float:
             if suffixed in data:
@@ -105,98 +97,43 @@ class Thermodynamics:
                 f"Missing required key: expected '{suffixed}' or '{raw}'"
             )
 
+        # mean_energy_sq may be absent in legacy dicts; default safe 0.0
+        def _get_opt(suffixed: str, raw: str, default: float = 0.0) -> float:
+            if suffixed in data:
+                return float(data[suffixed])
+            if raw in data:
+                return float(data[raw])
+            return default
+
         return cls(
             temperature=_get("temperature_K", "temperature"),
             log_Z=_get("log_Z", "log_Z"),
             free_energy=_get("free_energy_kcal_mol", "free_energy"),
             mean_energy=_get("enthalpy_kcal_mol", "mean_energy"),
-            mean_energy_sq=_get("mean_energy_sq", "mean_energy_sq"),
+            mean_energy_sq=_get_opt("mean_energy_sq", "mean_energy_sq"),
             heat_capacity=_get("heat_capacity_kcal_mol_K2", "heat_capacity"),
             entropy=_get("entropy_kcal_mol_K", "entropy"),
             std_energy=_get("std_energy_kcal_mol", "std_energy"),
         )
 
 
-@dataclass
-class EnergyComponents:
-    """Per-microstate energy components in kcal/mol.
-
-    ``complete`` means the listed terms partition the microstate total. When
-    false, component means are diagnostics and ``component_sum_kcal_mol`` must
-    not be interpreted as the ensemble ``H_eff``.
-    """
-
-    total: float = 0.0
-    cf: float = 0.0
-    receptor_strain: float = 0.0
-    ligand_internal: float = 0.0
-    hbond: float = 0.0
-    gist: float = 0.0
-    metal: float = 0.0
-    water: float = 0.0
-    other: float = 0.0
-    complete: bool = False
-
-
-@dataclass
-class ComponentAverages:
-    """Boltzmann-weighted energy component means in kcal/mol."""
-
-    mean_CF_kcal_mol: float = 0.0
-    mean_receptor_strain_kcal_mol: float = 0.0
-    mean_ligand_internal_kcal_mol: float = 0.0
-    mean_hbond_kcal_mol: float = 0.0
-    mean_gist_kcal_mol: float = 0.0
-    mean_metal_kcal_mol: float = 0.0
-    mean_water_kcal_mol: float = 0.0
-    mean_other_kcal_mol: float = 0.0
-    component_sum_kcal_mol: float = 0.0
-    component_completeness_flag: bool = False
-    component_status: str = "not_computed"
-
-    def to_dict(self) -> dict:
-        return {
-            "mean_CF_kcal_mol": self.mean_CF_kcal_mol,
-            "mean_receptor_strain_kcal_mol": self.mean_receptor_strain_kcal_mol,
-            "mean_ligand_internal_kcal_mol": self.mean_ligand_internal_kcal_mol,
-            "mean_hbond_kcal_mol": self.mean_hbond_kcal_mol,
-            "mean_gist_kcal_mol": self.mean_gist_kcal_mol,
-            "mean_metal_kcal_mol": self.mean_metal_kcal_mol,
-            "mean_water_kcal_mol": self.mean_water_kcal_mol,
-            "mean_other_kcal_mol": self.mean_other_kcal_mol,
-            "component_sum_kcal_mol": self.component_sum_kcal_mol,
-            "component_completeness_flag": self.component_completeness_flag,
-            "component_status": self.component_status,
-        }
-
-    @classmethod
-    def from_dict(cls, data: dict) -> "ComponentAverages":
-        return cls(
-            mean_CF_kcal_mol=float(data.get("mean_CF_kcal_mol", 0.0)),
-            mean_receptor_strain_kcal_mol=float(data.get("mean_receptor_strain_kcal_mol", 0.0)),
-            mean_ligand_internal_kcal_mol=float(data.get("mean_ligand_internal_kcal_mol", 0.0)),
-            mean_hbond_kcal_mol=float(data.get("mean_hbond_kcal_mol", 0.0)),
-            mean_gist_kcal_mol=float(data.get("mean_gist_kcal_mol", 0.0)),
-            mean_metal_kcal_mol=float(data.get("mean_metal_kcal_mol", 0.0)),
-            mean_water_kcal_mol=float(data.get("mean_water_kcal_mol", 0.0)),
-            mean_other_kcal_mol=float(data.get("mean_other_kcal_mol", 0.0)),
-            component_sum_kcal_mol=float(data.get("component_sum_kcal_mol", 0.0)),
-            component_completeness_flag=bool(data.get("component_completeness_flag", False)),
-            component_status=str(data.get("component_status", "not_computed")),
-        )
-
-
+# ─── ThermodynamicBreakdown (Task 2 Python exposure + parity with C++) ──────
+# Mirrors the C++ statmech::ThermodynamicBreakdown exactly for round-trip and
+# C++/Python parity tests. All field names and units match the JSON contract
+# in the roadmap. This is the pure-Python path; when C++ _core is available
+# the C++ version (once bound) will be preferred for compute, but this
+# dataclass remains the canonical serialisation shape.
 @dataclass
 class ThermodynamicBreakdown:
-    """Auditable thermodynamic ledger with explicit units and corrections.
+    """Auditable thermodynamic ledger for a binding mode or ensemble.
 
-    ``G_config_kcal_mol`` is the canonical configurational free energy from
-    the sampled scoring-energy ensemble.  ``G_total_kcal_mol`` is the sum of
-    that configurational term plus explicitly flagged correction terms.  These
-    fields are not calibrated affinity estimates.
+    All quantities follow the invariants in docs/dev/thermo_invariants.md.
+    G_total = G_config + G_vib + G_natural + G_other (always defined).
+
+    This is the shape emitted under "thermodynamics" in JSON output (Task 2+).
     """
-
     temperature_K: float = 300.0
+
     logZ_config: float = 0.0
     G_config_kcal_mol: float = 0.0
     H_eff_kcal_mol: float = 0.0
@@ -204,18 +141,27 @@ class ThermodynamicBreakdown:
     minus_T_S_config_kcal_mol: float = 0.0
     Cv_kcal_mol_K: float = 0.0
     sigma_E_kcal_mol: float = 0.0
+
     G_vib_kcal_mol: float = 0.0
     G_natural_kcal_mol: float = 0.0
     G_other_kcal_mol: float = 0.0
     G_total_kcal_mol: float = 0.0
+
     has_vib: bool = False
     has_natural: bool = False
     has_other: bool = False
-    components: Optional[ComponentAverages] = None
-    has_components: bool = False
 
-    def to_dict(self) -> dict:
-        data = {
+    # Task 3: component-wise Boltzmann averages (when available)
+    component_means: Dict[str, float] = field(default_factory=dict)
+    component_sum_kcal_mol: float = 0.0
+    components_complete: bool = False
+
+    # Task 6: Standard-state affinity calibration (safe / experimental)
+    affinity: Optional[Dict[str, Any]] = None
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Exact JSON shape required by roadmap (no legacy aliases here)."""
+        return {
             "temperature_K": self.temperature_K,
             "logZ_config": self.logZ_config,
             "G_config_kcal_mol": self.G_config_kcal_mol,
@@ -228,41 +174,87 @@ class ThermodynamicBreakdown:
             "G_natural_kcal_mol": self.G_natural_kcal_mol,
             "G_other_kcal_mol": self.G_other_kcal_mol,
             "G_total_kcal_mol": self.G_total_kcal_mol,
-            "has_vib": self.has_vib,
-            "has_natural": self.has_natural,
-            "has_other": self.has_other,
-            "has_components": self.has_components,
+            "component_sum_kcal_mol": self.component_sum_kcal_mol,
+            "components_complete": self.components_complete,
+            "component_means": self.component_means,
+            "affinity": self.affinity,
         }
-        if self.components is not None:
-            data["components"] = self.components.to_dict()
-        return data
 
     @classmethod
-    def from_dict(cls, data: dict) -> "ThermodynamicBreakdown":
-        components_data = data.get("components")
-        return cls(
-            temperature_K=float(data.get("temperature_K", 300.0)),
-            logZ_config=float(data.get("logZ_config", 0.0)),
-            G_config_kcal_mol=float(data.get("G_config_kcal_mol", 0.0)),
-            H_eff_kcal_mol=float(data.get("H_eff_kcal_mol", 0.0)),
-            S_config_kcal_mol_K=float(data.get("S_config_kcal_mol_K", 0.0)),
-            minus_T_S_config_kcal_mol=float(data.get("minus_T_S_config_kcal_mol", 0.0)),
-            Cv_kcal_mol_K=float(data.get("Cv_kcal_mol_K", 0.0)),
-            sigma_E_kcal_mol=float(data.get("sigma_E_kcal_mol", 0.0)),
-            G_vib_kcal_mol=float(data.get("G_vib_kcal_mol", 0.0)),
-            G_natural_kcal_mol=float(data.get("G_natural_kcal_mol", 0.0)),
-            G_other_kcal_mol=float(data.get("G_other_kcal_mol", 0.0)),
-            G_total_kcal_mol=float(data.get("G_total_kcal_mol", 0.0)),
-            has_vib=bool(data.get("has_vib", False)),
-            has_natural=bool(data.get("has_natural", False)),
-            has_other=bool(data.get("has_other", False)),
-            components=(
-                ComponentAverages.from_dict(components_data)
-                if isinstance(components_data, dict)
-                else None
-            ),
-            has_components=bool(data.get("has_components", isinstance(components_data, dict))),
+    def from_thermodynamics(cls, thermo: "Thermodynamics",
+                            G_vib: float = 0.0, has_vib: bool = False,
+                            G_natural: float = 0.0, has_natural: bool = False,
+                            G_other: float = 0.0, has_other: bool = False) -> "ThermodynamicBreakdown":
+        """Factory mirroring C++ make_breakdown() for pure-Python parity."""
+        b = cls(
+            temperature_K=thermo.temperature,
+            logZ_config=thermo.log_Z,
+            G_config_kcal_mol=thermo.free_energy,
+            H_eff_kcal_mol=thermo.mean_energy,
+            S_config_kcal_mol_K=thermo.entropy,
+            minus_T_S_config_kcal_mol=thermo.free_energy - thermo.mean_energy,
+            Cv_kcal_mol_K=thermo.heat_capacity,
+            sigma_E_kcal_mol=thermo.std_energy,
+            G_vib_kcal_mol=G_vib,
+            G_natural_kcal_mol=G_natural,
+            G_other_kcal_mol=G_other,
+            G_total_kcal_mol=thermo.free_energy + G_vib + G_natural + G_other,
+            has_vib=has_vib,
+            has_natural=has_natural,
+            has_other=has_other,
+            component_means={},
+            component_sum_kcal_mol=0.0,
+            components_complete=False,
         )
+        return b
+
+
+# ─── Diagnostic-only enthalpy–entropy metrics (Task 4) ───────────────────────
+# These are NEVER to be used for ranking, pose selection, or optimization.
+# They are purely for analysis and must be labelled as diagnostics in all
+# output and documentation. compensation_score == 1 when H and -TS perfectly
+# cancel (G≈0); low when one term dominates.
+EPS = 1e-12
+
+def entropy_fraction(H_eff: float, minus_T_S: float) -> float:
+    """| -TΔS | / (|H_eff| + |-TΔS| + eps)  — diagnostic only."""
+    return abs(minus_T_S) / (abs(H_eff) + abs(minus_T_S) + EPS)
+
+def enthalpy_fraction(H_eff: float, minus_T_S: float) -> float:
+    """|H_eff| / (|H_eff| + |-TΔS| + eps) — diagnostic only."""
+    return abs(H_eff) / (abs(H_eff) + abs(minus_T_S) + EPS)
+
+def compensation_score(G_config: float, H_eff: float, minus_T_S: float) -> float:
+    """1 - |G| / (|H| + |-T S| + eps) clamped to [0,1].
+
+    High when enthalpy and entropy compensate (G small relative to parts).
+    FORBIDDEN for ranking or affinity claims.
+    """
+    denom = abs(H_eff) + abs(minus_T_S) + EPS
+    score = 1.0 - (abs(G_config) / denom)
+    return max(0.0, min(1.0, score))  # clamp numerical noise
+
+
+# ─── Task 6: Pure-Python affinity calibration (parity with C++) ──────────────
+def deltaG_standard_to_Kd_M(deltaG_kcal_mol: float, T_K: float, c0_M: float = 1.0) -> float:
+    """Safe conversion. Raises on invalid inputs."""
+    if T_K <= 0:
+        raise ValueError("Temperature must be > 0 K")
+    if c0_M <= 0:
+        raise ValueError("c0_M must be > 0")
+    RT = kB_kcal * T_K
+    return c0_M * math.exp(deltaG_kcal_mol / RT)
+
+def Kd_M_to_deltaG_standard(Kd_M: float, T_K: float, c0_M: float = 1.0) -> float:
+    """Safe conversion. Raises on invalid inputs."""
+    if T_K <= 0:
+        raise ValueError("Temperature must be > 0 K")
+    if Kd_M <= 0:
+        raise ValueError("Kd must be > 0 M")
+    if c0_M <= 0:
+        raise ValueError("c0_M must be > 0")
+    RT = kB_kcal * T_K
+    return RT * math.log(Kd_M / c0_M)
 
 
 class _PyStatMechEngine:
@@ -615,6 +607,68 @@ class StatMechEngine:
     
     def __repr__(self) -> str:
         return f"<StatMechEngine T={self.temperature:.1f}K n_samples={self.n_samples}>"
+
+    # Task 7/9: temperature scan + ΔCp (C++ path when bindings present; pure fallback for fit)
+    def temperature_scan(self, temperatures: list[float]) -> list[dict]:
+        """Recompute G/H/S/Cv at multiple temperatures using fixed ensemble energies (C++ only).
+
+        Returns list of dicts with keys T_K, logZ, G_kcal_mol, H_kcal_mol, S_kcal_mol_K, Cv_kcal_mol_K.
+        All new thermodynamic terms carry explicit units per roadmap invariants.
+        """
+        if _core is None or not hasattr(self._engine, "temperature_scan"):
+            raise NotImplementedError(
+                "temperature_scan requires the C++ extension. "
+                "Run `pip install -e .` with BUILD_PYTHON_BINDINGS=ON."
+            )
+        points = self._engine.temperature_scan(temperatures)
+        return [
+            {
+                "T_K": p.T_K,
+                "logZ": p.logZ,
+                "G_kcal_mol": p.G_kcal_mol,
+                "H_kcal_mol": p.H_kcal_mol,
+                "S_kcal_mol_K": p.S_kcal_mol_K,
+                "Cv_kcal_mol_K": p.Cv_kcal_mol_K,
+            }
+            for p in points
+        ]
+
+    @staticmethod
+    def fit_delta_Cp(scan_points: list[dict], T_ref_K: float) -> dict:
+        """Linear regression ΔCp fit (requires >=4 points). Pure-Python (no C++ needed).
+
+        This is model-derived / experimental-diagnostic output (see roadmap Task 7).
+        Always labelled experimental=true, model_derived=true. Never used for ranking.
+        Units: delta_Cp_kcal_mol_K, rmse_kcal_mol, T_ref_K.
+        """
+        if len(scan_points) < 4:
+            raise ValueError("ΔCp fit requires at least 4 temperature points")
+        n = len(scan_points)
+        sum_x = sum_y = sum_xx = sum_xy = 0.0
+        h0 = scan_points[0].get("H_kcal_mol", 0.0)
+        for p in scan_points:
+            x = p["T_K"] - T_ref_K
+            y = p.get("H_kcal_mol", 0.0) - h0
+            sum_x += x
+            sum_y += y
+            sum_xx += x * x
+            sum_xy += x * y
+        denom = n * sum_xx - sum_x * sum_x
+        delta_Cp = (n * sum_xy - sum_x * sum_y) / denom if abs(denom) > 1e-12 else 0.0
+        # RMSE
+        sse = 0.0
+        for p in scan_points:
+            x = p["T_K"] - T_ref_K
+            pred = h0 + delta_Cp * x
+            sse += (p.get("H_kcal_mol", 0.0) - pred) ** 2
+        rmse = (sse / n) ** 0.5
+        return {
+            "delta_Cp_kcal_mol_K": delta_Cp,
+            "T_ref_K": T_ref_K,
+            "rmse_kcal_mol": rmse,
+            "model_derived": True,
+            "experimental": True,
+        }
 
 
 class BoltzmannLUT:

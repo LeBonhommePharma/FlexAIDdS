@@ -342,3 +342,52 @@ TEST(CavityDetector, WriteSpheresPDB) {
 
     free_residue(r);
 }
+
+// ===========================================================================
+// Task 8: Cleft Annotation & Flexible Residue Selection (PREPROCESSING)
+// ===========================================================================
+
+TEST(CleftAnnotationTest, ToyStructureReturnsExpectedSet) {
+    std::vector<int> cleft_seeds = {5};
+    double shell = 5.0;
+    std::vector<int> active = {10};
+    std::vector<int> fixed  = {7};
+    std::vector<int> forced = {12};
+
+    auto result = select_flexible_residues(
+        nullptr, nullptr, 0, 20,
+        cleft_seeds, shell, active, fixed, forced);
+
+    auto has = [&](int r){ return std::find(result.begin(), result.end(), r) != result.end(); };
+    EXPECT_TRUE(has(5));
+    EXPECT_TRUE(has(10));
+    EXPECT_TRUE(has(12));
+    EXPECT_FALSE(has(7));
+}
+
+TEST(CleftAnnotationTest, FixedResiduesAreExcluded) {
+    std::vector<int> seeds = {1,2,3};
+    std::vector<int> fixed = {2};
+    auto res = select_flexible_residues(nullptr, nullptr, 0, 10, seeds, 4.0, {}, fixed, {});
+    EXPECT_EQ(std::count(res.begin(), res.end(), 2), 0);
+}
+
+TEST(CleftAnnotationTest, ForcedFlexibleAreIncluded) {
+    std::vector<int> seeds = {1};
+    std::vector<int> forced = {99};
+    auto res = select_flexible_residues(nullptr, nullptr, 0, 100, seeds, 4.0, {}, {}, forced);
+    EXPECT_TRUE(std::find(res.begin(), res.end(), 99) != res.end());
+}
+
+TEST(CleftAnnotationTest, NoDuplicates) {
+    std::vector<int> seeds = {5,5,5};
+    auto res = select_flexible_residues(nullptr, nullptr, 0, 10, seeds, 4.0);
+    EXPECT_EQ(std::count(res.begin(), res.end(), 5), 1);
+}
+
+TEST(CleftAnnotationTest, DeterministicOrdering) {
+    std::vector<int> seeds = {9,1,5};
+    auto res = select_flexible_residues(nullptr, nullptr, 0, 20, seeds, 4.0);
+    std::vector<int> expected = {1,5,9};
+    EXPECT_EQ(res, expected);
+}

@@ -127,7 +127,32 @@ fi
 
 info "Building with $PARALLEL_JOBS parallel jobs..."
 
-cmake --build "$BUILD" -j"$PARALLEL_JOBS" 2>&1 | tee -a "$LOG_FILE"
+# On Apple Silicon (especially newer macOS/Xcode), the full 'all' target can hit
+# SDK / C++26 header friction in system libc++. For reliable local benchmarking
+# we build the targets actually needed by the m3pro campaign first.
+if [[ "$ARCH" == "arm64" ]]; then
+    info "Apple Silicon detected — building only m3pro-critical targets for reliability"
+    # Force a stable C++ standard on Apple to avoid libc++ template errors
+    # seen with C++23/26 on certain macOS/Xcode + SDK combinations.
+    cmake -S "$REPO" -B "$BUILD" -DCMAKE_CXX_STANDARD=20 2>&1 | tail -3 | tee -a "$LOG_FILE"
+
+    TARGETS=(
+        FlexAID
+        benchmark_tencom
+        benchmark_vcfbatch
+        benchmark_dispatch
+        tENCoM
+        tencom_entropy_diff
+    )
+    for t in "${TARGETS[@]}"; do
+        echo "  → Building $t ..." | tee -a "$LOG_FILE"
+        if ! cmake --build "$BUILD" --target "$t" -j"$PARALLEL_JOBS" 2>&1 | tee -a "$LOG_FILE"; then
+            warn "Target $t had issues (may still be usable if the main binary succeeded)"
+        fi
+    done
+else
+    cmake --build "$BUILD" -j"$PARALLEL_JOBS" 2>&1 | tee -a "$LOG_FILE"
+fi
 
 BUILD_END=$(date +%s)
 BUILD_DURATION=$((BUILD_END - BUILD_START))

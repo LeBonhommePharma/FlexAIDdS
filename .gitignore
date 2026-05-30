@@ -94,3 +94,11 @@ build/
 build_check/
 build_opencode/
 .claude/worktrees/
+
+# Grok project skills (committed so the whole team gets the flexaidds skill automatically)
+!.grok
+!.grok/**
+
+# AI agent instruction files (AGENTS.md is the source of truth; committed for all tools)
+!AGENTS.md
+!chatgpt-instructions.md

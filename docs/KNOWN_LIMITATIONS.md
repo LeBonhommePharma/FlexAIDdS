@@ -28,6 +28,15 @@ This file documents limitations that matter for installation trust, scientific i
 - Legacy C and C++ parsing surfaces require continued hardening and regression testing.
 - Presence of an audit or policy document does not itself imply closure; fixes and automation are the real closure criteria.
 
+## Thermodynamic Interpretation Limitations
+
+- Contact-function (CF) energies and H_eff are effective scoring proxies, **not** physical enthalpies unless a calibration layer exists.
+- No uncalibrated Kd, Ki, or affinity values are emitted as real experimental quantities.
+- Compensation metrics and enthalpy/entropy fractions are diagnostic only and must not be used for ranking or affinity claims.
+- Single-temperature Cv is not experimental binding heat capacity change.
+- True experimental ΔCp requires separate bound and unbound reference ensembles.
+- Joint ensemble and cleft annotation features are experimental until further benchmarked.
+
 ### Current Security Status (May 2026)
 
 The March 2026 buffer-overflow audit remains useful as a historical threat

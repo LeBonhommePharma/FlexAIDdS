@@ -1,5 +1,15 @@
 # CLAUDE.md — FlexAIDdS Development Guide
 
+## Project Context
+
+This is a molecular docking / computational chemistry codebase (FlexAID/Entropy Docking). Key concepts:
+- Benchmarking datasets (Astex Diverse, etc.) defined as YAML configs
+- Campaign scripts orchestrate docking runs across datasets
+- Cross-docking vs self-docking semantics are critical — always verify which is intended
+- The project has sibling repos that may need to be considered together
+- Repository has been renamed in the past — GitHub Pages URL may need verification
+> **Source of truth**: The authoritative workflow rules, verification discipline, and high-level constraints live in `AGENTS.md` (repo root). This document expands on `AGENTS.md` with deeper technical detail, file maps, and Claude-specific guidance. When the two conflict, `AGENTS.md` takes precedence.
+
 ## Project Overview
 
 FlexAIDdS (FlexAID with ΔS Entropy) is an entropy-driven molecular docking engine combining genetic algorithms with statistical mechanics thermodynamics. It targets real-world psychopharmacology and drug discovery applications.
@@ -7,6 +17,38 @@ FlexAIDdS (FlexAID with ΔS Entropy) is an entropy-driven molecular docking engi
 - **Languages**: C++26 (core engine), Python (bindings/analysis), Objective-C++ (Metal GPU), CUDA (optional GPU)
 - **License**: Apache-2.0 (no GPL dependencies allowed — see `THIRD_PARTY_LICENSES.md`)
 - **Lead**: Louis-Philippe Morency, PhD (Candidate), Université de Montréal, NRGlab
+
+## Workflow Rules
+- Always verify with actual test/build runs before claiming something is done. Never skip verification.
+- Don't over-explore. If the user asks to RUN something, run it — don't spend 20+ tool calls exploring first.
+- When implementing a prioritized list (P0, P1, P2...), complete ALL items before stopping. Don't skip items by claiming they're already done without checking.
+- After completing code changes, always commit and push immediately. Don't batch multiple changes without committing.
+- If a git operation hangs (commit/push), kill stale git processes (`kill $(pgrep -f git)`) and retry. Check for git fsmonitor issues with `git config core.fsmonitor`.
+- For dataset YAML configs, verify semantics (self-docking vs cross-docking) before generating entries.
+
+## Build System
+This project uses CMake. After modifying CMakeLists.txt or adding new source files, always run a fresh build and verify linking succeeds. Never assume a target builds correctly without verifying. Check for disk space issues before lengthy builds.
+
+### Common Build Pitfalls
+- OBJCXX try_compile chicken-and-egg problems: set CMAKE_OBJCXX_COMPILER explicitly
+- Duplicate symbol conflicts between stubs and real implementations
+- Symlinks accidentally committed instead of file content — always verify with `file` command
+- Missing source files in CMake targets — confirm all .cpp files are listed
+## Workflow Rules (Critical — Read First)
+
+The rules below are the non-negotiable operating contract for any AI agent (Claude, Grok, GPT, etc.) working in this repository. They are reproduced from the authoritative `AGENTS.md`. Follow them without exception.
+
+**See `AGENTS.md` for the current canonical version.** The most important principles:
+
+- **Verify with actual execution before claiming anything is done.** Run the build or test and show clean output. Never say “done”, “fixed”, or “implemented” without evidence.
+- **Use `todo_write` for every task with 3+ distinct steps.** Exactly one item in `in_progress` at a time. Mark completed immediately. Never batch.
+- **Commit and push immediately after any code change.** Conventional prefixes. No batching. Kill stale git processes if needed.
+- **Fresh builds after CMake or source changes.** Never assume linking still works.
+- **Zero test failures before any push.** `ctest --output-on-failure` (C++) or full pytest run after relevant changes.
+- **Complete every item on a prioritized list** before stopping.
+- **When the user says “run it”, run it** — do not over-explore first.
+
+These rules exist to protect velocity and correctness in a complex scientific codebase. Claude is expected to be the strictest enforcer of them.
 
 ## Repository Structure
 
@@ -198,6 +240,14 @@ pytest tests/
 - **CUDA**: Separable compilation, targets architectures 70/75/80/86/89/90
 - **Metal**: `xcrun metal` compiler for .metal shaders → .metallib; Objective-C++ for bridges
 - **GoogleTest**: Auto-downloaded via `FetchContent` when `BUILD_TESTING=ON`
+
+## Languages & Testing
+- Primary languages: Python (scripts, orchestration, benchmarking), Swift (core framework, Xcode project), C++ (computational kernels, entropy library)
+- Config formats: YAML (dataset definitions, benchmark configs), Markdown (documentation)
+- Test command: `ctest --output-on-failure` after building
+- Always confirm 0 test failures before pushing. If tests fail, fix them in the same session.
+- For Swift: use `xcodebuild test` — the project has SwiftData models and PoseKinematics.
+- For C++: ensure all new .cpp files are added to CMakeLists.txt sources list.
 
 ## Testing
 
@@ -423,3 +473,15 @@ python -m flexaidds /path/to/results/ --top 5
 - Metal code only compiles on macOS (`FLEXAIDS_USE_METAL=ON`)
 - CUDA code requires CUDA toolkit (`FLEXAIDS_USE_CUDA=ON`)
 - No `.clang-format`, `.clang-tidy`, or `.editorconfig` — follow existing code style
+
+## AI Instructions & Agent Maintenance
+
+This repository uses a deliberate three-file system for AI agents:
+
+- `AGENTS.md` — Single source of truth for workflow rules and constraints (all agents).
+- `CLAUDE.md` — This file. Rich technical depth + Claude-specific detail.
+- `.grok/skills/flexaidds/SKILL.md` — Self-contained Grok skill (project-scoped).
+
+**Maintenance rule**: When core workflow rules, build commands, or constraints change, update `AGENTS.md` first, then propagate the delta into this file and the Grok skill. The sacred “Workflow Rules” sections should stay as aligned as possible to prevent drift.
+
+Claude should treat `AGENTS.md` as the contract and this document as the detailed reference manual.

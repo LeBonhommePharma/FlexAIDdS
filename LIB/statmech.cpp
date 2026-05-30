@@ -25,6 +25,8 @@
 #include <numeric>
 #include <limits>
 #include <stdexcept>
+#include <map>
+#include <vector>
 
 #include <Eigen/Dense>
 
@@ -516,6 +518,288 @@ std::vector<double> StatMechEngine::serialize_multiplicities() const {
     for (size_t i = 0; i < ensemble_.size(); ++i)
         out[i] = ensemble_[i].count;
     return out;
+}
+
+// ─── make_breakdown (Task 1 ledger) ──────────────────────────────────────────
+// Derives the full audited ThermodynamicBreakdown from a live engine.
+// All identities from thermo_invariants.md are enforced by construction here
+// (G_config = -kT logZ, S = (H-G)/T, minus_TS = G-H, G_total = sum of parts).
+// Corrections are passed in by the caller (BindingMode for vib/natural, etc.).
+// No ranking side-effects. Safe for use in tests and future JSON paths.
+ThermodynamicBreakdown StatMechEngine::make_breakdown(
+    const StatMechEngine& engine,
+    double G_vib_kcal_mol,     bool has_vib,
+    double G_natural_kcal_mol, bool has_natural,
+    double G_other_kcal_mol,   bool has_other)
+{
+    ThermodynamicBreakdown b;
+    if (engine.size() == 0) {
+        // Return zeroed struct with temperature; caller must not use for math
+        b.temperature_K = engine.temperature();
+        return b;
+    }
+
+    const auto th = engine.compute();   // reuse proven compute() path
+
+    b.temperature_K = th.temperature;
+
+    b.logZ_config = th.log_Z;
+    b.G_config_kcal_mol = th.free_energy;
+    b.H_eff_kcal_mol = th.mean_energy;
+    b.S_config_kcal_mol_K = th.entropy;
+    b.minus_T_S_config_kcal_mol = th.free_energy - th.mean_energy;
+    b.Cv_kcal_mol_K = th.heat_capacity;
+    b.sigma_E_kcal_mol = th.std_energy;
+
+    b.G_vib_kcal_mol = G_vib_kcal_mol;
+    b.G_natural_kcal_mol = G_natural_kcal_mol;
+    b.G_other_kcal_mol = G_other_kcal_mol;
+
+    b.G_total_kcal_mol = th.free_energy + G_vib_kcal_mol + G_natural_kcal_mol + G_other_kcal_mol;
+
+    b.has_vib = has_vib;
+    b.has_natural = has_natural;
+    b.has_other = has_other;
+
+    return b;
+}
+
+// ─── Task 3: Component-wise weighted averages ────────────────────────────────
+
+EnergyComponents StatMechEngine::compute_weighted_components(
+    std::span<const double> weights,
+    std::span<const EnergyComponents> components)
+{
+    const size_t n = weights.size();
+    if (n == 0 || n != components.size())
+        return {};
+
+    double sum_w = 0.0;
+    EnergyComponents result{};
+
+    for (size_t i = 0; i < n; ++i) {
+        const double w = weights[i];
+        sum_w += w;
+
+        const auto& c = components[i];
+        result.cf               += w * c.cf;
+        result.receptor_strain  += w * c.receptor_strain;
+        result.ligand_internal  += w * c.ligand_internal;
+        result.hbond            += w * c.hbond;
+        result.gist             += w * c.gist;
+        result.metal            += w * c.metal;
+        result.water            += w * c.water;
+        result.other            += w * c.other;
+        result.total            += w * c.total;
+    }
+
+    if (sum_w > 1e-300) {
+        const double inv = 1.0 / sum_w;
+        result.cf              *= inv;
+        result.receptor_strain *= inv;
+        result.ligand_internal *= inv;
+        result.hbond           *= inv;
+        result.gist            *= inv;
+        result.metal           *= inv;
+        result.water           *= inv;
+        result.other           *= inv;
+        result.total           *= inv;
+    }
+
+    // component_sum is the sum of the averaged pieces (diagnostic)
+    // Note: this may legitimately differ from H_eff if not all energy was decomposed.
+    return result;
+}
+
+ThermodynamicBreakdown StatMechEngine::make_breakdown_with_components(
+    const StatMechEngine& engine,
+    std::span<const EnergyComponents> components,
+    double G_vib_kcal_mol,     bool has_vib,
+    double G_natural_kcal_mol, bool has_natural,
+    double G_other_kcal_mol,   bool has_other)
+{
+    ThermodynamicBreakdown b = make_breakdown(
+        engine, G_vib_kcal_mol, has_vib,
+        G_natural_kcal_mol, has_natural,
+        G_other_kcal_mol, has_other);
+
+    if (!components.empty() && components.size() == engine.size()) {
+        auto weights = engine.boltzmann_weights();
+        b.component_means = compute_weighted_components(weights, components);
+
+        // Compute component_sum for convenience / diagnostics
+        const auto& m = b.component_means;
+        b.component_sum_kcal_mol =
+            m.cf + m.receptor_strain + m.ligand_internal + m.hbond +
+            m.gist + m.metal + m.water + m.other;
+
+        // Heuristic completeness: if the two biggest terms (CF + strain) are
+        // marked Available, we consider the decomposition "reasonably complete".
+        b.components_complete =
+            (m.cf_status == ComponentStatus::Available) &&
+            (m.receptor_strain_status == ComponentStatus::Available ||
+             m.receptor_strain_status == ComponentStatus::NotComputed); // allow single-conformer case
+    }
+
+    return b;
+}
+
+// ─── Task 4: Diagnostic metric implementations (on the ledger) ───────────────
+
+double ThermodynamicBreakdown::entropy_fraction() const {
+    return statmech::entropy_fraction(H_eff_kcal_mol, minus_T_S_config_kcal_mol);
+}
+
+double ThermodynamicBreakdown::enthalpy_fraction() const {
+    return statmech::enthalpy_fraction(H_eff_kcal_mol, minus_T_S_config_kcal_mol);
+}
+
+double ThermodynamicBreakdown::compensation_score() const {
+    return statmech::compensation_score(G_config_kcal_mol, H_eff_kcal_mol, minus_T_S_config_kcal_mol);
+}
+
+// ─── Task 5: Joint Receptor–Ligand Ensemble (EXPERIMENTAL) ───────────────────
+
+namespace {
+
+double safe_entropy(double p) {
+    if (p <= 0.0) return 0.0;
+    return -p * std::log(p);
+}
+
+} // anonymous
+
+JointEnsembleResult StatMechEngine::compute_joint_ensemble(
+    std::span<const JointMicrostate> microstates,
+    double temperature_K)
+{
+    JointEnsembleResult result;
+    result.temperature_K = temperature_K;
+    result.experimental = true;
+
+    if (microstates.empty()) {
+        return result;
+    }
+
+    const double beta = 1.0 / (kB_kcal * temperature_K);
+
+    // Step 1: Compute log-weights for all microstates
+    const size_t N = microstates.size();
+    std::vector<double> log_w(N);
+    for (size_t i = 0; i < N; ++i) {
+        const auto& m = microstates[i];
+        log_w[i] = m.log_multiplicity - beta * m.energy.total;
+    }
+
+    double logZ = log_sum_exp(log_w);
+    result.logZ = logZ;
+    result.G_kcal_mol = -kB_kcal * temperature_K * logZ;
+
+    // Step 2: Compute probabilities p(r,i) and accumulate for marginals + moments
+    std::map<int, double> p_receptor;
+    std::map<int, double> p_ligand;
+    double H = 0.0;
+
+    std::vector<double> p(N);
+
+    for (size_t i = 0; i < N; ++i) {
+        p[i] = std::exp(log_w[i] - logZ);
+        const auto& m = microstates[i];
+
+        H += p[i] * m.energy.total;
+
+        p_receptor[m.receptor_conformer_id] += p[i];
+        p_ligand[m.ligand_pose_id] += p[i];
+    }
+
+    result.H_kcal_mol = H;
+
+    // Step 3: Convert maps to vectors (sorted by id for determinism)
+    std::vector<int> receptor_ids;
+    for (auto& kv : p_receptor) receptor_ids.push_back(kv.first);
+    std::sort(receptor_ids.begin(), receptor_ids.end());
+
+    std::vector<int> ligand_ids;
+    for (auto& kv : p_ligand) ligand_ids.push_back(kv.first);
+    std::sort(ligand_ids.begin(), ligand_ids.end());
+
+    result.receptor_population.resize(receptor_ids.size());
+    result.ligand_population.resize(ligand_ids.size());
+
+    for (size_t r = 0; r < receptor_ids.size(); ++r) {
+        result.receptor_population[r] = p_receptor[receptor_ids[r]];
+    }
+    for (size_t l = 0; l < ligand_ids.size(); ++l) {
+        result.ligand_population[l] = p_ligand[ligand_ids[l]];
+    }
+
+    // Step 4: Entropies (in kcal/mol/K, using kB_kcal)
+    double S_joint = 0.0;
+    for (double prob : p) {
+        S_joint += safe_entropy(prob);
+    }
+    result.S_joint_kcal_mol_K = kB_kcal * S_joint;
+
+    double S_receptor = 0.0;
+    for (double pr : result.receptor_population) {
+        S_receptor += safe_entropy(pr);
+    }
+    result.S_receptor_kcal_mol_K = kB_kcal * S_receptor;
+
+    double S_ligand = 0.0;
+    for (double pi : result.ligand_population) {
+        S_ligand += safe_entropy(pi);
+    }
+    result.S_ligand_kcal_mol_K = kB_kcal * S_ligand;
+
+    // Step 5: Mutual information I(R;L) = S_joint - S_receptor - S_ligand  (in nats, dimensionless after scaling)
+    result.mutual_information_dimensionless = S_joint - S_receptor - S_ligand;
+
+    // Fallback detection
+    bool has_real_receptor_ids = false;
+    for (const auto& m : microstates) {
+        if (m.receptor_conformer_id >= 0) { has_real_receptor_ids = true; break; }
+    }
+    if (!has_real_receptor_ids) {
+        result.fallback_single_receptor = true;
+        result.S_receptor_kcal_mol_K = 0.0;
+        result.mutual_information_dimensionless = 0.0;
+    }
+
+    return result;
+}
+
+// ─── Task 6: Standard-State Affinity Calibration (safe utilities) ────────────
+
+double deltaG_standard_to_Kd_M(double deltaG_kcal_mol, double T_K, double c0_M) {
+    if (T_K <= 0.0) {
+        throw std::invalid_argument("Temperature must be > 0 K for affinity conversion");
+    }
+    if (c0_M <= 0.0) {
+        throw std::invalid_argument("Standard state concentration c0_M must be > 0");
+    }
+
+    const double RT = kB_kcal * T_K * 1000.0; // in cal/mol for the exp, but we work in kcal
+    // ΔG° (kcal/mol) = RT ln(Kd / c0)   with R in kcal
+    // Kd (M) = c0 * exp(ΔG° / (RT in kcal))
+    const double RT_kcal = kB_kcal * T_K;
+    return c0_M * std::exp(deltaG_kcal_mol / RT_kcal);
+}
+
+double Kd_M_to_deltaG_standard(double Kd_M, double T_K, double c0_M) {
+    if (T_K <= 0.0) {
+        throw std::invalid_argument("Temperature must be > 0 K for affinity conversion");
+    }
+    if (Kd_M <= 0.0) {
+        throw std::invalid_argument("Kd must be > 0 M");
+    }
+    if (c0_M <= 0.0) {
+        throw std::invalid_argument("Standard state concentration c0_M must be > 0");
+    }
+
+    const double RT_kcal = kB_kcal * T_K;
+    // ΔG° = RT ln(Kd / c0)
+    return RT_kcal * std::log(Kd_M / c0_M);
 }
 
 }  // namespace statmech

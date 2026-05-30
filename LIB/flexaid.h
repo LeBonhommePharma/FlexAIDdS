@@ -131,6 +131,9 @@ struct cf_str{  // Complementarity Function value structure
 	double metal_coord; // metal ion coordination energy (Morse potential)
 	double totsas; // overall sas of molecule
 	int   rclash; // flag that shows whether the residue is making steric clashes
+
+	// Legacy shim (old cffunction wrote to this)
+	double nor;  // normalization / overlap term (kept for source compatibility)
 };
 typedef struct cf_str cfstr;
 
@@ -464,6 +467,14 @@ struct FA_Global_struct{
 	int   assume_folded;                 // assume receptor is fully folded — skip NATURaL co-translational/co-transcriptional chain growth
 	double natural_deltaG;              // NATURaL co-translational ΔG (kcal/mol); 0.0 if not run or assume_folded
 	int   vindex;                        // use indexed boxes and atoms in Vcontacts index_proteins
+
+	// ── Legacy compatibility shims (for cffunction / spfunction / old scoring paths) ──
+	// These members were removed during refactoring. Adding them back as shims allows
+	// the legacy scoring functions to compile while the main modern paths use energy_matrix etc.
+	// TODO: fully migrate cffunction/spfunction to the new structures.
+	void*  bondlist;                     // was array of bonded hetero-atom info
+	float* energy;                       // was 2D energy table [type][type] (now energy_matrix)
+	double nor;                          // legacy normalization / overlap term written into cfstr
 
 	//rot    rotamer[MAX_ROTLIBSIZE];       // array of rotamer library rotamers OR observed rotamer list
 	int    rotlibsize;                    // number of rotamers

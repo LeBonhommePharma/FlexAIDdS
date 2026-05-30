@@ -28,4 +28,16 @@ A capability should remain experimental until it has:
 1. documentation sufficient for external use
 2. automated validation or release validation coverage
 3. an explicit place in the support matrix
+
+## Experimental Thermodynamic Features
+
+The following are intentionally kept experimental (see `docs/thermodynamics.md` and individual task PRs):
+
+- Joint receptor–ligand ensemble analysis (`JointEnsembleResult`, mutual information)
+- Standard-state affinity calibration and Kd conversion (safe utilities only; `calibrated=false` guard)
+- Temperature scan + model-derived ΔCp fitting (explicitly labelled `model_derived` / `experimental`)
+- Cleft annotation and flexible residue selection (preprocessing only)
+- Advanced compensation / enthalpy-entropy diagnostic metrics (for analysis only)
+
+These features are fully implemented with tests and JSON exposure but require additional benchmarking or calibration data before promotion to validated status.
 4. an unambiguous ownership in the product boundary defined by `PRODUCT.md`
