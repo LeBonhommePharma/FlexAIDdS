@@ -33,8 +33,9 @@ metadata:
   - "update the flexaid-docking skill", "update the docking skill", "refresh the flexaid skill"
   - "dock this ligand", "perform molecular docking", "redock the co-crystallized ligand",
     "run FlexAIDδS on this target", "analyze the thermodynamic ledger", "binding mode prediction with entropy"
+  - "run DatasetRunner", "benchmark on Astex", "run casf2016 benchmark", "distributed docking campaign", "dataset benchmarking"
 
-This skill activates for any task involving the FlexAID or FlexAIDδS molecular docking engine, its Python package `flexaidds`, benchmarks, thermodynamics layer, or related packaging.
+This skill activates for any task involving the FlexAID or FlexAIDδS molecular docking engine, its Python package `flexaidds`, **DatasetRunner** benchmarking campaigns, thermodynamics layer, or related packaging.
 
 **Conversational behavior (important):**  
 When activated by any docking-related natural language request, the skill MUST ask clarifying questions before taking action. Key dimensions to establish:
@@ -97,6 +98,7 @@ The skill itself is packaged under:
 ├── scripts/
 │   ├── validate_skill.py
 │   ├── ensure_docking_data.py                  # unified runtime data (matrices + *.def files) + --source
+│   ├── dataset_runner.py                       # high-quality wrapper for FlexAIDδS DatasetRunner (benchmarks, distributed runs, reports)
 │   └── update_skill.py                         # built-in autoupdate for the skill + all sub-components
                                                 #   (dry-run by default, --source, --yes, auto-validator)
 ├── data/
@@ -204,6 +206,49 @@ The tools now automatically choose the right balance:
 
 You can still force modes with `--info` or `--quick` if needed. The `inspect-definition-files` helper follows the same smart logic.
 
+## DatasetRunner — Distributed Benchmarking
+
+The skill provides first-class support for the FlexAIDδS `DatasetRunner`, a powerful orchestrator for running systematic benchmarking campaigns across standard datasets.
+
+**What it does:**
+- Discovers and runs docking on curated datasets (Astex Diverse, CASF-2016, ITC-187, DUD-E subsets, psychopharmacology sets, etc.)
+- Supports tiered execution (Tier 1 = fast sanity, Tier 2 = full comprehensive)
+- Computes docking power, scoring power, and thermodynamic/entropy-related metrics
+- Produces structured JSON + beautiful Markdown reports
+- Supports local parallel, thread-pool, and MPI-distributed execution
+
+**Typical usage via the skill:**
+
+```bash
+# Ensure all runtime data is present first (critical)
+python3 .grok/skills/flexaid-docking/scripts/ensure_docking_data.py
+
+# Run a single well-known dataset (Tier 1 for speed)
+python3 -m flexaidds.dataset_runner --dataset astex_diverse --tier 1
+
+# Full campaign with reports
+python3 -m flexaidds.dataset_runner --all --tier 2 --results-dir results/benchmarks_2026
+
+# Distributed run (launch with mpirun)
+mpirun -n 8 python -m flexaidds.dataset_runner --all --tier 2 --distributed
+
+# Dry-run to validate pipeline without actual docking
+python3 -m flexaidds.dataset_runner --dataset casf2016 --tier 1 --dry-run
+```
+
+**Important guardrails when using DatasetRunner through this skill:**
+- Always run `ensure_docking_data.py` first (or the inspector) — missing matrices or definition files will cause silent or noisy failures.
+- Use `--dry-run` liberally before committing large compute resources.
+- Respect the distinction between CF/contact-function scoring proxy (used during search) and the full thermodynamic ledger (computed afterward).
+- For any published benchmark results, clearly document the exact binary, data files, temperature, and configuration used.
+
+See the full CLI and library interface via:
+```bash
+python -m flexaidds.dataset_runner --help
+```
+
+Detailed dataset configurations live in `python/flexaidds/dataset_runner/datasets/`.
+
 ## References
 
 See [references/flexaid-docking-guidance.md](references/flexaid-docking-guidance.md) for preserved scientific terminology, scoring proxy vs. thermodynamic ledger distinctions, and historical context from the FlexAIDδS implementation roadmap.
@@ -227,6 +272,7 @@ For ergonomics, the skill provides short commands in `bin/`:
 .grok/skills/flexaid-docking/bin/validate-skill
 .grok/skills/flexaid-docking/bin/copy-docking-data
 .grok/skills/flexaid-docking/bin/update-skill          # built-in autoupdate (dry-run by default)
+.grok/skills/flexaid-docking/bin/dataset-runner        # DatasetRunner campaigns with safety + diagnostics integration
 ```
 
 **These are pure symlinks.** Running them executes the exact same code as the real scripts. They change nothing about behavior or verification requirements.
