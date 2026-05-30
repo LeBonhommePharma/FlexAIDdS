@@ -504,6 +504,13 @@ class EntryTaskManager:
         # Cost-aware scheduling hints (target_state -> estimated cost, e.g. from previous manifest)
         self.cost_hints = cost_hints or {}
 
+        # Apply cost-aware ordering immediately if hints provided (cheaper first)
+        if self.cost_hints:
+            def _cost_key(item):
+                key = f"{item[0]}_{item[1]}"
+                return self.cost_hints.get(key, 999999.0)
+            self.work_items.sort(key=_cost_key)
+
     @classmethod
     def load_cost_hints_from_manifest(cls, manifest_path: Union[str, Path]) -> Dict[str, float]:
         """Load per-entry cost hints from a previous _entry_manifest.json (timings section)."""
@@ -535,14 +542,9 @@ class EntryTaskManager:
         if not self.work_items:
             return []
 
-        # Apply cost-aware scheduling if hints available (cheaper first)
-        if self.cost_hints:
-            def _cost_key(item):
-                key = f"{item[0]}_{item[1]}"
-                return self.cost_hints.get(key, 999999.0)  # unknown = very expensive
-            self.work_items.sort(key=_cost_key)
-            if self._mpi_root or self._mpi_size <= 1:
-                logger.info("EntryTaskManager: cost-aware scheduling enabled (%d hints loaded)", len(self.cost_hints))
+        # Cost-aware ordering already applied in __init__ if hints were provided
+        if self.cost_hints and (self._mpi_root or self._mpi_size <= 1):
+            logger.info("EntryTaskManager: cost-aware scheduling enabled (%d hints loaded)", len(self.cost_hints))
 
         # Stronger MPI master-worker path (user priority)
         if self._mpi_size > 1 and self._mpi_comm is not None:
