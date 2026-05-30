@@ -27,7 +27,7 @@ Usage examples:
     python3 .grok/skills/flexaid-docking/scripts/dataset_runner.py \
         --all --tier 1 --dry-run
 
-    # Long campaign with per-entry checkpointing (resume after crash or interruption)
+    # Long campaign with per-entry checkpointing + MPI dynamic master-worker + timing/cost in reproducibility package
     python3 .grok/skills/flexaid-docking/scripts/dataset_runner.py \
         --all --tier 2 --workers 8 --resume --package
 """
@@ -219,6 +219,44 @@ def _capture_rich_environment() -> Dict[str, Any]:
     return env
 
 
+def _capture_per_entry_provenance(results_dir: Path) -> Dict[str, Any]:
+    """Capture hashes and summary of per-entry benchmark artifacts produced by
+    the inner DatasetRunner + EntryTaskManager (timing/cost manifests + individual results).
+    This integrates the new per-entry automation into the skill's pharma-grade reproducibility package.
+    """
+    info: Dict[str, Any] = {
+        "entry_count": 0,
+        "entry_manifests": [],
+        "sample_entry_hashes": {},
+    }
+
+    if not results_dir.exists():
+        return info
+
+    # Look for dataset/tier directories containing _entry_manifest.json
+    for manifest in sorted(results_dir.rglob("_entry_manifest.json")):
+        try:
+            rel = str(manifest.relative_to(results_dir))
+            info["entry_manifests"].append({
+                "path": rel,
+                "sha256": _get_file_sha256(manifest),
+            })
+
+            # Count individual entry JSONs next to it
+            parent = manifest.parent
+            entry_jsons = [f for f in parent.glob("*.json") if not f.name.startswith("_")]
+            info["entry_count"] += len(entry_jsons)
+
+            # Sample up to 3 per manifest for the reproducibility package (keeps it compact)
+            for jf in sorted(entry_jsons)[:3]:
+                key = str(jf.relative_to(results_dir))
+                info["sample_entry_hashes"][key] = _get_file_sha256(jf)
+        except Exception:
+            continue
+
+    return info
+
+
 def gather_reproducibility_metadata(args: argparse.Namespace, binary_path: str | None) -> Dict[str, Any]:
     """
     Superior general reproducibility capture (better than narrow per-report checksums).
@@ -322,6 +360,17 @@ def gather_reproducibility_metadata(args: argparse.Namespace, binary_path: str |
     present = sum(1 for v in data_file_hashes.values() if v["sha256"] != "missing")
     meta["data_integrity_summary"] = f"{present}/{len(critical_names)} critical files present with hashes"
 
+    # === NEW: Per-entry provenance integration (3rd priority) ===
+    # Capture hashes of the new per-entry result artifacts produced by the inner DatasetRunner + EntryTaskManager
+    try:
+        results_dir = Path(getattr(args, "results_dir", "results/benchmarks"))
+        per_entry_info = _capture_per_entry_provenance(results_dir)
+        if per_entry_info.get("entry_manifests") or per_entry_info.get("entry_count", 0) > 0:
+            meta["per_entry_benchmark_artifacts"] = per_entry_info
+            meta["data_integrity_summary"] += f" + {per_entry_info.get('entry_count', 0)} per-entry results"
+    except Exception:
+        pass
+
     return meta
 
 
@@ -370,6 +419,20 @@ def generate_validation_summary(metadata: Dict[str, Any]) -> str:
         status = "present" if sha != "missing" else "**MISSING**"
         lines.append(f"| `{fname}` | `{short}` | {status} |")
     lines.append("")
+
+    # Per-entry benchmark artifacts (integrated from EntryTaskManager + timing/cost manifests)
+    pea = metadata.get("per_entry_benchmark_artifacts", {})
+    if pea:
+        lines.append("## 2b. Per-Entry Benchmark Artifacts (DatasetRunner + EntryTaskManager)")
+        lines.append("")
+        lines.append(f"- Entry result files located: **{pea.get('entry_count', 0)}**")
+        if pea.get("entry_manifests"):
+            lines.append("- Entry manifests captured:")
+            for m in pea["entry_manifests"][:5]:
+                lines.append(f"  - `{m['path']}` → `{m['sha256'][:16]}...`")
+        if pea.get("sample_entry_hashes"):
+            lines.append(f"- Sample per-entry result hashes included in full manifest ({len(pea['sample_entry_hashes'])} shown)")
+        lines.append("")
 
     lines.append("## 3. Environment Capture (Conda / Pip / System)")
     lines.append("")

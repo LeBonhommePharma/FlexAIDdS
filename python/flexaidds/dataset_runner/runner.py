@@ -470,11 +470,26 @@ class EntryTaskManager:
     This is the central automation the user requested for "how a master datasetrunner manager manages the allocation of resources for individual entries/workers to work together in parallel."
     """
 
-    def __init__(self, work_items: List[Tuple[str, str]], n_workers: int = 1, omp_threads: int = 4):
+    def __init__(
+        self,
+        work_items: List[Tuple[str, str]],
+        n_workers: int = 1,
+        omp_threads: int = 4,
+        mpi_comm: Any = None,
+        mpi_rank: int = 0,
+        mpi_size: int = 1,
+        mpi_root: bool = True,
+    ):
         self.work_items = list(work_items)
         self.n_workers = max(1, int(n_workers))
         self.omp_threads = max(1, int(omp_threads))
         self.completed: List[Tuple[str, str, List[PoseScore], float, str]] = []
+
+        # MPI context for stronger master-worker mode (dynamic farming of individual entries)
+        self._mpi_comm = mpi_comm
+        self._mpi_rank = mpi_rank
+        self._mpi_size = mpi_size
+        self._mpi_root = mpi_root
 
     def run(
         self,
@@ -482,10 +497,16 @@ class EntryTaskManager:
     ) -> List[Tuple[str, str, List[PoseScore], float, str]]:
         """Execute all work items using the processor function.
 
-        Returns list of (target_id, state, poses, elapsed, error) in completion order.
+        When MPI context with size > 1 is provided, rank 0 acts as master and
+        dynamically farms individual (target, state) entries to the other ranks
+        (stronger master-worker instead of static pre-split).
         """
         if not self.work_items:
             return []
+
+        # Stronger MPI master-worker path (user priority)
+        if self._mpi_size > 1 and self._mpi_comm is not None:
+            return self._run_mpi_master_worker(processor)
 
         if self.n_workers <= 1 or len(self.work_items) == 1:
             # Sequential (or single worker) — simplest resource allocation
@@ -513,6 +534,70 @@ class EntryTaskManager:
                     self.completed.append((tid, st, [], 0.0, str(exc)))
 
         return self.completed
+
+    def _run_mpi_master_worker(
+        self,
+        processor: Callable[[Tuple[str, str]], Tuple[str, str, List[PoseScore], float, str]],
+    ) -> List[Tuple[str, str, List[PoseScore], float, str]]:
+        """Dynamic master-worker using the provided MPI communicator (stronger than static split).
+
+        Master (root) keeps the full queue and hands out individual entry tasks on demand.
+        Other ranks act as workers: request → execute via processor → send result.
+        Terminates cleanly with None sentinel.
+        """
+        comm = self._mpi_comm
+        rank = self._mpi_rank
+        root = 0
+
+        try:
+            from mpi4py import MPI as _MPI
+            ANY_SRC = _MPI.ANY_SOURCE
+            ANY_TAG = _MPI.ANY_TAG
+        except Exception:
+            ANY_SRC = 0
+            ANY_TAG = 0
+
+        TAG_REQ = 11
+        TAG_TASK = 12
+        TAG_RES = 13
+
+        if rank == root:
+            # Master owns the complete list of remaining work items
+            queue = list(self.work_items)
+            results: List[Tuple[str, str, List[PoseScore], float, str]] = []
+            active_workers = self._mpi_size - 1
+
+            while queue or len(results) < len(self.work_items):
+                # Wait for a worker to request work
+                req_rank = comm.recv(source=ANY_SRC, tag=TAG_REQ)
+                if queue:
+                    task = queue.pop(0)
+                    comm.send(task, dest=req_rank, tag=TAG_TASK)
+                else:
+                    comm.send(None, dest=req_rank, tag=TAG_TASK)  # sentinel
+
+                # Opportunistically drain results
+                while comm.Iprobe(source=ANY_SRC, tag=TAG_RES):
+                    res = comm.recv(source=ANY_SRC, tag=TAG_RES)
+                    results.append(res)
+
+            # Final drain
+            while len(results) < len(self.work_items):
+                res = comm.recv(source=ANY_SRC, tag=TAG_RES)
+                results.append(res)
+
+            self.completed = results
+            return results
+        else:
+            # Worker
+            while True:
+                comm.send(rank, dest=root, tag=TAG_REQ)
+                task = comm.recv(source=root, tag=ANY_TAG)
+                if task is None:
+                    break
+                res = processor(task)
+                comm.send(res, dest=root, tag=TAG_RES)
+            return []
 
 
 # ---------------------------------------------------------------------------
@@ -903,19 +988,27 @@ class DatasetRunner:
             for st in states:
                 all_work_items.append((tid, st))
 
-        # MPI: split the *remaining* work items (better load balance than pure target split for heterogeneous states)
-        my_work_items = _split_targets(all_work_items, self._mpi_rank, self._mpi_size)  # reuse the splitter (works on any list)
+        # For stronger dynamic MPI master-worker, root sees the full remaining list.
+        # Non-roots will participate as workers when the manager detects MPI.
+        if self.use_mpi and self._mpi_size > 1:
+            work_for_manager = all_work_items if self._mpi_root else []
+        else:
+            work_for_manager = _split_targets(all_work_items, self._mpi_rank, self._mpi_size)
 
         logger.info(
-            "[rank %d/%d] Dataset %s: %d work items remaining for this rank (%d targets after resume filter)",
-            self._mpi_rank, self._mpi_size, config.slug, len(my_work_items), len(targets) - len(already_completed)
+            "[rank %d/%d] Dataset %s: preparing %d work items for EntryTaskManager (dynamic MPI master-worker when applicable)",
+            self._mpi_rank, self._mpi_size, config.slug, len(work_for_manager),
         )
 
-        # Master entry manager (the new automated coordinator for individual entries + resources)
+        # Master entry manager — now with MPI context for dynamic per-entry farming
         entry_manager = EntryTaskManager(
-            work_items=my_work_items,
+            work_items=work_for_manager,
             n_workers=self.n_workers if self._mpi_size == 1 else 1,
             omp_threads=self.omp_threads,
+            mpi_comm=self._mpi_comm,
+            mpi_rank=self._mpi_rank,
+            mpi_size=self._mpi_size,
+            mpi_root=self._mpi_root,
         )
 
         all_poses: List[PoseScore] = []
@@ -948,6 +1041,7 @@ class DatasetRunner:
             elapsed = time.monotonic() - t_start
 
             # AUTOMATIC per-entry save (the key automation requested)
+            cost_cpu = elapsed * max(1, self.omp_threads)   # simple cost model: wall time * threads
             tr = TargetResult(
                 target_id=target_id,
                 structural_state=state,
@@ -956,30 +1050,12 @@ class DatasetRunner:
                 error=error,
             )
             try:
-                saved_path = self._save_target_result(tr, config, tier)
-                logger.debug("Saved per-entry result: %s", saved_path)
+                saved_path = self._save_target_result(tr, config, tier, cost_cpu=cost_cpu)
+                logger.debug("Saved per-entry result: %s (cost~%.1fs CPU)", saved_path, cost_cpu)
             except Exception as save_exc:
                 logger.warning("Failed to save per-entry result for %s/%s: %s", target_id, state, save_exc)
 
             return target_id, state, poses, elapsed, error
-
-    def _write_entry_manifest(
-        self, config: DatasetConfig, tier: int, completed: List[str], failed: List[str]
-    ) -> None:
-        """Write a small machine-readable manifest of per-entry completion status.
-        This complements the big reproducibility manifest from the skill wrapper.
-        """
-        manifest_path = self._entry_results_dir(config, tier) / "_entry_manifest.json"
-        data = {
-            "dataset": config.slug,
-            "tier": tier,
-            "timestamp": datetime.datetime.utcnow().isoformat() + "Z",
-            "completed": completed,
-            "failed": failed,
-            "total_attempted": len(completed) + len(failed),
-        }
-        manifest_path.write_text(json.dumps(data, indent=2))
-        logger.info("Per-entry manifest written: %s", manifest_path)
 
         # Dispatch via the EntryTaskManager (local ThreadPool or sequential)
         results = entry_manager.run(_process_one_item)
@@ -994,7 +1070,7 @@ class DatasetRunner:
 
             logger.debug(
                 "Entry %s/%s: %d poses in %.1fs",
-                target_id, state, len(poses), elapsed
+                target_id, state, len(poses), elapsed,
             )
 
         completed = sorted(completed_targets)
@@ -1153,14 +1229,15 @@ class DatasetRunner:
         safe_id = target_id.replace("/", "_")
         return self._entry_results_dir(config, tier) / f"{safe_id}_{structural_state}.json"
 
-    def _save_target_result(self, tr: TargetResult, config: DatasetConfig, tier: int) -> Path:
-        """Atomic write of one TargetResult (crash-safe)."""
+    def _save_target_result(self, tr: TargetResult, config: DatasetConfig, tier: int, cost_cpu: float = 0.0) -> Path:
+        """Atomic write of one TargetResult (crash-safe). Includes simple cost tracking."""
         path = self._target_result_path(config, tier, tr.target_id, tr.structural_state)
         tmp = path.with_suffix(".json.tmp")
         payload = {
             "target_id": tr.target_id,
             "structural_state": tr.structural_state,
             "duration_seconds": tr.duration_seconds,
+            "cost_cpu_seconds": round(cost_cpu, 2),
             "error": tr.error,
             "poses": [p.to_dict() if hasattr(p, "to_dict") else p.__dict__ for p in tr.poses],
             "success": tr.success,
@@ -1213,6 +1290,78 @@ class DatasetRunner:
             if all_states_ok:
                 completed.add(target_id)
         return completed
+
+    def _write_entry_manifest(
+        self,
+        config: DatasetConfig,
+        tier: int,
+        completed: List[str],
+        failed: List[str],
+        raw_results: Optional[List[Tuple[str, str, List[PoseScore], float, str]]] = None,
+    ) -> None:
+        """Write rich per-entry manifest with timing and cost tracking.
+
+        This is the enhanced version delivering automated per-target timing/cost
+        data for manifests (audit, planning, reproducibility).
+        """
+        manifest_path = self._entry_results_dir(config, tier) / "_entry_manifest.json"
+
+        # Build timing/cost data by scanning the individual result files we just wrote.
+        # This is robust across MPI (each rank wrote its own) and resume runs.
+        entry_dir = self._entry_results_dir(config, tier)
+        per_entry: Dict[str, float] = {}
+        per_entry_cost: Dict[str, float] = {}
+        durations: List[float] = []
+
+        for jf in sorted(entry_dir.glob("*_*.json")):
+            if jf.name.startswith("_"):
+                continue
+            try:
+                data = json.loads(jf.read_text())
+                key = f"{data.get('target_id')}_{data.get('structural_state')}"
+                dur = float(data.get("duration_seconds", 0.0))
+                cost = float(data.get("cost_cpu_seconds", dur * max(1, self.omp_threads)))
+                per_entry[key] = round(dur, 2)
+                per_entry_cost[key] = round(cost, 2)
+                if dur > 0:
+                    durations.append(dur)
+            except Exception:
+                continue
+
+        # Compute summary statistics (stdlib only, no extra imports)
+        n = len(durations)
+        total_wall = sum(durations)
+        mean = total_wall / n if n > 0 else 0.0
+        median = sorted(durations)[n // 2] if n > 0 else 0.0
+        p90 = sorted(durations)[int(n * 0.9)] if n > 0 else 0.0
+        total_cost = sum(per_entry_cost.values())
+
+        data = {
+            "dataset": config.slug,
+            "tier": tier,
+            "timestamp": datetime.datetime.utcnow().isoformat() + "Z",
+            "omp_threads": self.omp_threads,
+            "n_workers_used": self.n_workers,
+            "completed": completed,
+            "failed": failed,
+            "total_attempted": len(completed) + len(failed),
+            # --- NEW: per-target timing + cost tracking (user priority #2 first) ---
+            "timings": {
+                "per_entry_wall_seconds": per_entry,
+                "per_entry_cost_cpu_seconds": per_entry_cost,
+                "summary": {
+                    "num_timed_entries": n,
+                    "total_entry_wall_seconds": round(total_wall, 2),
+                    "mean_entry_seconds": round(mean, 2),
+                    "median_entry_seconds": round(median, 2),
+                    "p90_entry_seconds": round(p90, 2),
+                    "estimated_total_cost_cpu_seconds": round(total_cost, 2),
+                    "cost_model": "wall_time * omp_threads (simple upper-bound CPU-second estimate)",
+                },
+            },
+        }
+        manifest_path.write_text(json.dumps(data, indent=2))
+        logger.info("Per-entry manifest with timing/cost written: %s", manifest_path)
 
     # ------------------------------------------------------------------
     # Public convenience helpers
