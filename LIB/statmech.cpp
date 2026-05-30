@@ -446,4 +446,142 @@ std::vector<double> StatMechEngine::serialize_multiplicities() const {
     return out;
 }
 
+// ─── make_breakdown (Task 1 ledger) ──────────────────────────────────────────
+// Derives the full audited ThermodynamicBreakdown from a live engine.
+// All identities from thermo_invariants.md are enforced by construction here
+// (G_config = -kT logZ, S = (H-G)/T, minus_TS = G-H, G_total = sum of parts).
+// Corrections are passed in by the caller (BindingMode for vib/natural, etc.).
+// No ranking side-effects. Safe for use in tests and future JSON paths.
+ThermodynamicBreakdown StatMechEngine::make_breakdown(
+    const StatMechEngine& engine,
+    double G_vib_kcal_mol,     bool has_vib,
+    double G_natural_kcal_mol, bool has_natural,
+    double G_other_kcal_mol,   bool has_other)
+{
+    ThermodynamicBreakdown b;
+    if (engine.size() == 0) {
+        // Return zeroed struct with temperature; caller must not use for math
+        b.temperature_K = engine.temperature();
+        return b;
+    }
+
+    const auto th = engine.compute();   // reuse proven compute() path
+
+    b.temperature_K = th.temperature;
+
+    b.logZ_config = th.log_Z;
+    b.G_config_kcal_mol = th.free_energy;
+    b.H_eff_kcal_mol = th.mean_energy;
+    b.S_config_kcal_mol_K = th.entropy;
+    b.minus_T_S_config_kcal_mol = th.free_energy - th.mean_energy;
+    b.Cv_kcal_mol_K = th.heat_capacity;
+    b.sigma_E_kcal_mol = th.std_energy;
+
+    b.G_vib_kcal_mol = G_vib_kcal_mol;
+    b.G_natural_kcal_mol = G_natural_kcal_mol;
+    b.G_other_kcal_mol = G_other_kcal_mol;
+
+    b.G_total_kcal_mol = th.free_energy + G_vib_kcal_mol + G_natural_kcal_mol + G_other_kcal_mol;
+
+    b.has_vib = has_vib;
+    b.has_natural = has_natural;
+    b.has_other = has_other;
+
+    return b;
+}
+
+// ─── Task 3: Component-wise weighted averages ────────────────────────────────
+
+EnergyComponents StatMechEngine::compute_weighted_components(
+    std::span<const double> weights,
+    std::span<const EnergyComponents> components)
+{
+    const size_t n = weights.size();
+    if (n == 0 || n != components.size())
+        return {};
+
+    double sum_w = 0.0;
+    EnergyComponents result{};
+
+    for (size_t i = 0; i < n; ++i) {
+        const double w = weights[i];
+        sum_w += w;
+
+        const auto& c = components[i];
+        result.cf               += w * c.cf;
+        result.receptor_strain  += w * c.receptor_strain;
+        result.ligand_internal  += w * c.ligand_internal;
+        result.hbond            += w * c.hbond;
+        result.gist             += w * c.gist;
+        result.metal            += w * c.metal;
+        result.water            += w * c.water;
+        result.other            += w * c.other;
+        result.total            += w * c.total;
+    }
+
+    if (sum_w > 1e-300) {
+        const double inv = 1.0 / sum_w;
+        result.cf              *= inv;
+        result.receptor_strain *= inv;
+        result.ligand_internal *= inv;
+        result.hbond           *= inv;
+        result.gist            *= inv;
+        result.metal           *= inv;
+        result.water           *= inv;
+        result.other           *= inv;
+        result.total           *= inv;
+    }
+
+    // component_sum is the sum of the averaged pieces (diagnostic)
+    // Note: this may legitimately differ from H_eff if not all energy was decomposed.
+    return result;
+}
+
+ThermodynamicBreakdown StatMechEngine::make_breakdown_with_components(
+    const StatMechEngine& engine,
+    std::span<const EnergyComponents> components,
+    double G_vib_kcal_mol,     bool has_vib,
+    double G_natural_kcal_mol, bool has_natural,
+    double G_other_kcal_mol,   bool has_other)
+{
+    ThermodynamicBreakdown b = make_breakdown(
+        engine, G_vib_kcal_mol, has_vib,
+        G_natural_kcal_mol, has_natural,
+        G_other_kcal_mol, has_other);
+
+    if (!components.empty() && components.size() == engine.size()) {
+        auto weights = engine.boltzmann_weights();
+        b.component_means = compute_weighted_components(weights, components);
+
+        // Compute component_sum for convenience / diagnostics
+        const auto& m = b.component_means;
+        b.component_sum_kcal_mol =
+            m.cf + m.receptor_strain + m.ligand_internal + m.hbond +
+            m.gist + m.metal + m.water + m.other;
+
+        // Heuristic completeness: if the two biggest terms (CF + strain) are
+        // marked Available, we consider the decomposition "reasonably complete".
+        b.components_complete =
+            (m.cf_status == ComponentStatus::Available) &&
+            (m.receptor_strain_status == ComponentStatus::Available ||
+             m.receptor_strain_status == ComponentStatus::NotComputed); // allow single-conformer case
+    }
+
+    return b;
+}
+
+// ─── Task 4: Diagnostic metric implementations (on the ledger) ───────────────
+
+double ThermodynamicBreakdown::entropy_fraction() const {
+    return statmech::entropy_fraction(H_eff_kcal_mol, minus_T_S_config_kcal_mol);
+}
+
+double ThermodynamicBreakdown::enthalpy_fraction() const {
+    return statmech::enthalpy_fraction(H_eff_kcal_mol, minus_T_S_config_kcal_mol);
+}
+
+double ThermodynamicBreakdown::compensation_score() const {
+    return statmech::compensation_score(G_config_kcal_mol, H_eff_kcal_mol, minus_T_S_config_kcal_mol);
+}
+
 }  // namespace statmech

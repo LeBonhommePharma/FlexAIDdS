@@ -150,6 +150,10 @@ class BindingModeResult:
     best_cf: Optional[float] = None
     frequency: Optional[int] = None
     temperature: Optional[float] = None
+    # New in Task 2: full audited ledger (when available from engine or pure fallback).
+    # Shape matches ThermodynamicBreakdown.to_dict() exactly.
+    # Legacy scalar fields above are preserved for backward compatibility.
+    thermodynamics: Optional[Dict[str, Any]] = None
     metadata: Dict[str, Any] = field(default_factory=dict)
     # Receptor-bound ions/cofactors in the complex that influenced this mode.
     # Format: "RESNAME:CHAIN:RESNUM" (e.g. "MG:A:101", "ZN:B:202").
@@ -285,6 +289,7 @@ class DockingResult:
                     std_energy=m.get("std_energy"),
                     best_cf=m.get("best_cf"),
                     temperature=m.get("temperature"),
+                    thermodynamics=m.get("thermodynamics"),
                 ))
         return cls(
             source_dir=Path(data.get("source_dir", ".")),
@@ -349,6 +354,8 @@ class DockingResult:
                     "std_energy": mode.std_energy,
                     "best_cf": mode.best_cf,
                     "temperature": mode.temperature,
+                    "thermodynamics": mode.thermodynamics,
+                    "component_sum_kcal_mol": mode.thermodynamics.get("component_sum_kcal_mol") if mode.thermodynamics else None,
                     "best_pose_path": str(best_pose.path) if best_pose else None,
                 }
             )
@@ -471,6 +478,7 @@ class DockingResult:
                     std_energy=rec.get("std_energy"),
                     best_cf=rec.get("best_cf"),
                     temperature=rec.get("temperature"),
+                    thermodynamics=rec.get("thermodynamics"),
                 )
             )
 
@@ -554,6 +562,7 @@ class DockingResult:
                 std_energy=rec.get("std_energy"),
                 best_cf=rec.get("best_cf"),
                 temperature=rec.get("temperature"),
+                thermodynamics=rec.get("thermodynamics"),
             ))
 
         return cls(

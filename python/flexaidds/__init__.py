@@ -40,7 +40,7 @@ from .benchmark import (
 )
 
 # Pure-Python thermodynamics (always available)
-from .thermodynamics import StatMechEngine, Thermodynamics, kB_kcal, kB_SI
+from .thermodynamics import StatMechEngine, Thermodynamics, ThermodynamicBreakdown, kB_kcal, kB_SI
 
 # C++ extension — optional: pure-Python helpers work without it
 try:

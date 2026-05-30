@@ -5,7 +5,7 @@ Provides Pythonic wrappers around C++ StatMechEngine with NumPy integration.
 
 import math
 from typing import List, Optional, Tuple
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 try:
     import numpy as np
@@ -77,6 +77,121 @@ class Thermodynamics:
             'heat_capacity_kcal_mol_K2': self.heat_capacity,
             'std_energy_kcal_mol': self.std_energy,
         }
+
+
+# ─── ThermodynamicBreakdown (Task 2 Python exposure + parity with C++) ──────
+# Mirrors the C++ statmech::ThermodynamicBreakdown exactly for round-trip and
+# C++/Python parity tests. All field names and units match the JSON contract
+# in the roadmap. This is the pure-Python path; when C++ _core is available
+# the C++ version (once bound) will be preferred for compute, but this
+# dataclass remains the canonical serialisation shape.
+@dataclass
+class ThermodynamicBreakdown:
+    """Auditable thermodynamic ledger for a binding mode or ensemble.
+
+    All quantities follow the invariants in docs/dev/thermo_invariants.md.
+    G_total = G_config + G_vib + G_natural + G_other (always defined).
+
+    This is the shape emitted under "thermodynamics" in JSON output (Task 2+).
+    """
+    temperature_K: float = 300.0
+
+    logZ_config: float = 0.0
+    G_config_kcal_mol: float = 0.0
+    H_eff_kcal_mol: float = 0.0
+    S_config_kcal_mol_K: float = 0.0
+    minus_T_S_config_kcal_mol: float = 0.0
+    Cv_kcal_mol_K: float = 0.0
+    sigma_E_kcal_mol: float = 0.0
+
+    G_vib_kcal_mol: float = 0.0
+    G_natural_kcal_mol: float = 0.0
+    G_other_kcal_mol: float = 0.0
+    G_total_kcal_mol: float = 0.0
+
+    has_vib: bool = False
+    has_natural: bool = False
+    has_other: bool = False
+
+    # Task 3: component-wise Boltzmann averages (when available)
+    component_means: Dict[str, float] = field(default_factory=dict)
+    component_sum_kcal_mol: float = 0.0
+    components_complete: bool = False
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Exact JSON shape required by roadmap (no legacy aliases here)."""
+        return {
+            "temperature_K": self.temperature_K,
+            "logZ_config": self.logZ_config,
+            "G_config_kcal_mol": self.G_config_kcal_mol,
+            "H_eff_kcal_mol": self.H_eff_kcal_mol,
+            "S_config_kcal_mol_K": self.S_config_kcal_mol_K,
+            "minus_T_S_config_kcal_mol": self.minus_T_S_config_kcal_mol,
+            "Cv_kcal_mol_K": self.Cv_kcal_mol_K,
+            "sigma_E_kcal_mol": self.sigma_E_kcal_mol,
+            "G_vib_kcal_mol": self.G_vib_kcal_mol,
+            "G_natural_kcal_mol": self.G_natural_kcal_mol,
+            "G_other_kcal_mol": self.G_other_kcal_mol,
+            "G_total_kcal_mol": self.G_total_kcal_mol,
+            "component_sum_kcal_mol": self.component_sum_kcal_mol,
+            "components_complete": self.components_complete,
+            "component_means": self.component_means,
+        }
+
+    @classmethod
+    def from_thermodynamics(cls, thermo: "Thermodynamics",
+                            G_vib: float = 0.0, has_vib: bool = False,
+                            G_natural: float = 0.0, has_natural: bool = False,
+                            G_other: float = 0.0, has_other: bool = False) -> "ThermodynamicBreakdown":
+        """Factory mirroring C++ make_breakdown() for pure-Python parity."""
+        b = cls(
+            temperature_K=thermo.temperature,
+            logZ_config=thermo.log_Z,
+            G_config_kcal_mol=thermo.free_energy,
+            H_eff_kcal_mol=thermo.mean_energy,
+            S_config_kcal_mol_K=thermo.entropy,
+            minus_T_S_config_kcal_mol=thermo.free_energy - thermo.mean_energy,
+            Cv_kcal_mol_K=thermo.heat_capacity,
+            sigma_E_kcal_mol=thermo.std_energy,
+            G_vib_kcal_mol=G_vib,
+            G_natural_kcal_mol=G_natural,
+            G_other_kcal_mol=G_other,
+            G_total_kcal_mol=thermo.free_energy + G_vib + G_natural + G_other,
+            has_vib=has_vib,
+            has_natural=has_natural,
+            has_other=has_other,
+            component_means={},
+            component_sum_kcal_mol=0.0,
+            components_complete=False,
+        )
+        return b
+
+
+# ─── Diagnostic-only enthalpy–entropy metrics (Task 4) ───────────────────────
+# These are NEVER to be used for ranking, pose selection, or optimization.
+# They are purely for analysis and must be labelled as diagnostics in all
+# output and documentation. compensation_score == 1 when H and -TS perfectly
+# cancel (G≈0); low when one term dominates.
+EPS = 1e-12
+
+def entropy_fraction(H_eff: float, minus_T_S: float) -> float:
+    """| -TΔS | / (|H_eff| + |-TΔS| + eps)  — diagnostic only."""
+    return abs(minus_T_S) / (abs(H_eff) + abs(minus_T_S) + EPS)
+
+def enthalpy_fraction(H_eff: float, minus_T_S: float) -> float:
+    """|H_eff| / (|H_eff| + |-TΔS| + eps) — diagnostic only."""
+    return abs(H_eff) / (abs(H_eff) + abs(minus_T_S) + EPS)
+
+def compensation_score(G_config: float, H_eff: float, minus_T_S: float) -> float:
+    """1 - |G| / (|H| + |-T S| + eps) clamped to [0,1].
+
+    High when enthalpy and entropy compensate (G small relative to parts).
+    FORBIDDEN for ranking or affinity claims.
+    """
+    denom = abs(H_eff) + abs(minus_T_S) + EPS
+    score = 1.0 - (abs(G_config) / denom)
+    return max(0.0, min(1.0, score))  # clamp numerical noise
+
 
     @classmethod
     def from_dict(cls, data: dict) -> "Thermodynamics":
