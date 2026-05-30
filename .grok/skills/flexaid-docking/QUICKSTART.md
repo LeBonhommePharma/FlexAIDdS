@@ -160,6 +160,11 @@ This experimental helper will:
 - See advanced guidance: `references/flexaid-docking-guidance.md`
 - Explore the thermodynamic models: `python/flexaidds/thermodynamics.py`
 
+**For systematic benchmarking campaigns**, see the DatasetRunner section in SKILL.md and use:
+```bash
+.grok/skills/flexaid-docking/bin/dataset-runner --help
+```
+
 The `flexaid-docking` skill is designed to make the above workflows safe, reproducible, and correctly scoped between scoring proxies and real statistical mechanics.
 
 Run with confidence.

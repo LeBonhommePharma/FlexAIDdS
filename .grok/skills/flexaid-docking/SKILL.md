@@ -37,6 +37,13 @@ metadata:
 
 This skill activates for any task involving the FlexAID or FlexAIDδS molecular docking engine, its Python package `flexaidds`, **DatasetRunner** benchmarking campaigns, thermodynamics layer, or related packaging.
 
+**Why leading researchers and pharma teams use this skill**
+- Complete, auditable reproducibility out of the box (binary + data checksums, git SHA, full command lines, automatic validation packages).
+- Production-grade DatasetRunner for systematic benchmarking on public and proprietary sets with professional reports.
+- Self-contained critical data (no more "missing MC_*.dat or AMINO.def" surprises).
+- Strong scientific guardrails and precise terminology (never confuses CF proxy with thermodynamic ledger).
+- Extremely low-friction for both quick experiments and large distributed campaigns.
+
 **Conversational behavior (important):**  
 When activated by any docking-related natural language request, the skill MUST ask clarifying questions before taking action. Key dimensions to establish:
 - Biological context (organism / species)
