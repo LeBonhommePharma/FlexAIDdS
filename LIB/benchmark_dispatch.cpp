@@ -13,7 +13,7 @@
 //
 // Apache-2.0 (c) 2026 Le Bonhomme Pharma / NRGlab
 
-#include "HardwareDispatch.h"
+#include "UnifiedHardwareDispatch.h"  // modern replacement (HardwareDispatch.h is deprecated)
 #include "simd_distance.h"
 
 #include <chrono>
@@ -96,7 +96,7 @@ static void print_row(const BenchResult& r) {
               << "\n";
 }
 
-static void bench_shannon(hw::HardwareDispatcher& disp, int n, int reps,
+static void bench_shannon(hw::UnifiedHardwareDispatch& disp, int n, int reps,
                            std::vector<BenchResult>& results) {
     auto data = random_doubles(n, -10.0, 5.0);
     int bins = 20;
@@ -133,7 +133,7 @@ static void bench_shannon(hw::HardwareDispatcher& disp, int n, int reps,
     }
 }
 
-static void bench_lse(hw::HardwareDispatcher& disp, int n, int reps,
+static void bench_lse(hw::UnifiedHardwareDispatch& disp, int n, int reps,
                        std::vector<BenchResult>& results) {
     auto data = random_doubles(n, -10.0, 5.0);
 
@@ -157,7 +157,7 @@ static void bench_lse(hw::HardwareDispatcher& disp, int n, int reps,
     }
 }
 
-static void bench_boltzmann(hw::HardwareDispatcher& disp, int n, int reps,
+static void bench_boltzmann(hw::UnifiedHardwareDispatch& disp, int n, int reps,
                              std::vector<BenchResult>& results) {
     auto data = random_doubles(n, -15.0, 5.0);
     double beta = 1.0 / (0.001987206 * 298.15);
@@ -179,11 +179,11 @@ static void bench_boltzmann(hw::HardwareDispatcher& disp, int n, int reps,
     double ms = t.elapsed_ms();
     auto best = disp.best_backend(hw::KernelType::BOLTZMANN_WEIGHTS);
     results.push_back({"BoltzmannWeights",
-                        hw::HardwareDispatcher::backend_name(best), n, ms / reps,
+                        hw::UnifiedHardwareDispatch::backend_name(best), n, ms / reps,
                         n * reps / (ms * 1e-3), scalar_ms / ms});
 }
 
-static void bench_rmsd(hw::HardwareDispatcher& disp, int n_atoms, int reps,
+static void bench_rmsd(hw::UnifiedHardwareDispatch& disp, int n_atoms, int reps,
                         std::vector<BenchResult>& results) {
     auto a = random_coords(n_atoms, 42);
     auto b = random_coords(n_atoms, 77);
@@ -228,7 +228,7 @@ static void bench_rmsd(hw::HardwareDispatcher& disp, int n_atoms, int reps,
     }
 }
 
-static void bench_distance2_batch(hw::HardwareDispatcher& disp, int n, int reps,
+static void bench_distance2_batch(hw::UnifiedHardwareDispatch& disp, int n, int reps,
                                    std::vector<BenchResult>& results) {
     std::mt19937 rng(42);
     std::uniform_real_distribution<float> dist(-50.0f, 50.0f);
@@ -259,7 +259,7 @@ static void bench_distance2_batch(hw::HardwareDispatcher& disp, int n, int reps,
     double ms = t.elapsed_ms();
     auto best = disp.best_backend(hw::KernelType::DISTANCE_BATCH);
     results.push_back({"Distance2Batch",
-                        hw::HardwareDispatcher::backend_name(best), n, ms / reps,
+                        hw::UnifiedHardwareDispatch::backend_name(best), n, ms / reps,
                         n * reps / (ms * 1e-3), scalar_ms / ms});
 }
 
@@ -281,7 +281,7 @@ int main(int argc, char** argv) {
         }
     }
 
-    auto& disp = hw::HardwareDispatcher::instance();
+    auto& disp = hw::UnifiedHardwareDispatch::instance();
     disp.detect();
 
     std::cout << disp.hardware_report() << "\n";
