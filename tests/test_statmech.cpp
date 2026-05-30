@@ -1081,6 +1081,85 @@ TEST_F(StatMechEngineTest, DiagnosticMetrics_Clamping) {
 }
 
 // ===========================================================================
+// JOINT RECEPTOR–LIGAND ENSEMBLE (Task 5 — EXPERIMENTAL)
+// ===========================================================================
+
+TEST_F(StatMechEngineTest, JointEnsemble_SingleReceptorFallback) {
+    std::vector<JointMicrostate> states(2);
+    states[0].receptor_conformer_id = -1;
+    states[0].ligand_pose_id = 0;
+    states[0].energy.total = -10.0;
+    states[0].log_multiplicity = 0.0;
+
+    states[1].receptor_conformer_id = -1;
+    states[1].ligand_pose_id = 1;
+    states[1].energy.total = -8.0;
+    states[1].log_multiplicity = 0.0;
+
+    auto res = StatMechEngine::compute_joint_ensemble(states, 300.0);
+
+    EXPECT_TRUE(res.experimental);
+    EXPECT_TRUE(res.fallback_single_receptor);
+    EXPECT_NEAR(res.S_receptor_kcal_mol_K, 0.0, 1e-12);
+    EXPECT_NEAR(res.mutual_information_dimensionless, 0.0, 1e-12);
+}
+
+TEST_F(StatMechEngineTest, JointEnsemble_ProbabilitiesSumToOne) {
+    std::vector<JointMicrostate> states(3);
+    for (int i = 0; i < 3; ++i) {
+        states[i].receptor_conformer_id = i % 2;
+        states[i].ligand_pose_id = i;
+        states[i].energy.total = -10.0 - i * 1.5;
+        states[i].log_multiplicity = 0.0;
+    }
+
+    auto res = StatMechEngine::compute_joint_ensemble(states, 300.0);
+
+    double sum_p = 0.0;
+    for (double pr : res.receptor_population) sum_p += pr;
+    EXPECT_NEAR(sum_p, 1.0, 1e-9);
+
+    sum_p = 0.0;
+    for (double pi : res.ligand_population) sum_p += pi;
+    EXPECT_NEAR(sum_p, 1.0, 1e-9);
+}
+
+// ===========================================================================
+// STANDARD-STATE AFFINITY CALIBRATION (Task 6 — SAFE / EXPERIMENTAL)
+// ===========================================================================
+
+TEST(AffinityCalibrationTest, RoundTripDeltaGToKdToDeltaG) {
+    const double T = 300.0;
+    const double dG = -8.5;  // kcal/mol
+
+    double Kd = statmech::deltaG_standard_to_Kd_M(dG, T);
+    double dG_back = statmech::Kd_M_to_deltaG_standard(Kd, T);
+
+    EXPECT_NEAR(dG_back, dG, 1e-9);
+}
+
+TEST(AffinityCalibrationTest, RejectsInvalidTemperature) {
+    EXPECT_THROW(statmech::deltaG_standard_to_Kd_M(-5.0, 0.0), std::invalid_argument);
+    EXPECT_THROW(statmech::Kd_M_to_deltaG_standard(1e-6, -10.0), std::invalid_argument);
+}
+
+TEST(AffinityCalibrationTest, RejectsInvalidKd) {
+    EXPECT_THROW(statmech::Kd_M_to_deltaG_standard(0.0, 300.0), std::invalid_argument);
+    EXPECT_THROW(statmech::Kd_M_to_deltaG_standard(-1e-9, 300.0), std::invalid_argument);
+}
+
+TEST(AffinityCalibrationTest, DoesNotClaimUncalibratedKd) {
+    statmech::AffinityCalibration cal;
+    cal.calibrated = false;
+    cal.deltaG_standard_kcal_mol = -7.2;
+    cal.temperature_K = 298.15;
+
+    // Even if we compute a Kd, the struct should indicate it is not to be trusted
+    EXPECT_FALSE(cal.calibrated);
+    EXPECT_TRUE(cal.experimental);
+}
+
+// ===========================================================================
 // MAIN
 // ===========================================================================
 

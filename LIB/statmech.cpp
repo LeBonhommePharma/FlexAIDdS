@@ -25,6 +25,8 @@
 #include <numeric>
 #include <limits>
 #include <stdexcept>
+#include <map>
+#include <vector>
 
 #include <Eigen/Dense>
 
@@ -582,6 +584,150 @@ double ThermodynamicBreakdown::enthalpy_fraction() const {
 
 double ThermodynamicBreakdown::compensation_score() const {
     return statmech::compensation_score(G_config_kcal_mol, H_eff_kcal_mol, minus_T_S_config_kcal_mol);
+}
+
+// ─── Task 5: Joint Receptor–Ligand Ensemble (EXPERIMENTAL) ───────────────────
+
+namespace {
+
+double safe_entropy(double p) {
+    if (p <= 0.0) return 0.0;
+    return -p * std::log(p);
+}
+
+} // anonymous
+
+JointEnsembleResult StatMechEngine::compute_joint_ensemble(
+    std::span<const JointMicrostate> microstates,
+    double temperature_K)
+{
+    JointEnsembleResult result;
+    result.temperature_K = temperature_K;
+    result.experimental = true;
+
+    if (microstates.empty()) {
+        return result;
+    }
+
+    const double beta = 1.0 / (kB_kcal * temperature_K);
+
+    // Step 1: Compute log-weights for all microstates
+    const size_t N = microstates.size();
+    std::vector<double> log_w(N);
+    for (size_t i = 0; i < N; ++i) {
+        const auto& m = microstates[i];
+        log_w[i] = m.log_multiplicity - beta * m.energy.total;
+    }
+
+    double logZ = log_sum_exp(log_w);
+    result.logZ = logZ;
+    result.G_kcal_mol = -kB_kcal * temperature_K * logZ;
+
+    // Step 2: Compute probabilities p(r,i) and accumulate for marginals + moments
+    std::map<int, double> p_receptor;
+    std::map<int, double> p_ligand;
+    double H = 0.0;
+
+    std::vector<double> p(N);
+
+    for (size_t i = 0; i < N; ++i) {
+        p[i] = std::exp(log_w[i] - logZ);
+        const auto& m = microstates[i];
+
+        H += p[i] * m.energy.total;
+
+        p_receptor[m.receptor_conformer_id] += p[i];
+        p_ligand[m.ligand_pose_id] += p[i];
+    }
+
+    result.H_kcal_mol = H;
+
+    // Step 3: Convert maps to vectors (sorted by id for determinism)
+    std::vector<int> receptor_ids;
+    for (auto& kv : p_receptor) receptor_ids.push_back(kv.first);
+    std::sort(receptor_ids.begin(), receptor_ids.end());
+
+    std::vector<int> ligand_ids;
+    for (auto& kv : p_ligand) ligand_ids.push_back(kv.first);
+    std::sort(ligand_ids.begin(), ligand_ids.end());
+
+    result.receptor_population.resize(receptor_ids.size());
+    result.ligand_population.resize(ligand_ids.size());
+
+    for (size_t r = 0; r < receptor_ids.size(); ++r) {
+        result.receptor_population[r] = p_receptor[receptor_ids[r]];
+    }
+    for (size_t l = 0; l < ligand_ids.size(); ++l) {
+        result.ligand_population[l] = p_ligand[ligand_ids[l]];
+    }
+
+    // Step 4: Entropies (in kcal/mol/K, using kB_kcal)
+    double S_joint = 0.0;
+    for (double prob : p) {
+        S_joint += safe_entropy(prob);
+    }
+    result.S_joint_kcal_mol_K = kB_kcal * S_joint;
+
+    double S_receptor = 0.0;
+    for (double pr : result.receptor_population) {
+        S_receptor += safe_entropy(pr);
+    }
+    result.S_receptor_kcal_mol_K = kB_kcal * S_receptor;
+
+    double S_ligand = 0.0;
+    for (double pi : result.ligand_population) {
+        S_ligand += safe_entropy(pi);
+    }
+    result.S_ligand_kcal_mol_K = kB_kcal * S_ligand;
+
+    // Step 5: Mutual information I(R;L) = S_joint - S_receptor - S_ligand  (in nats, dimensionless after scaling)
+    result.mutual_information_dimensionless = S_joint - S_receptor - S_ligand;
+
+    // Fallback detection
+    bool has_real_receptor_ids = false;
+    for (const auto& m : microstates) {
+        if (m.receptor_conformer_id >= 0) { has_real_receptor_ids = true; break; }
+    }
+    if (!has_real_receptor_ids) {
+        result.fallback_single_receptor = true;
+        result.S_receptor_kcal_mol_K = 0.0;
+        result.mutual_information_dimensionless = 0.0;
+    }
+
+    return result;
+}
+
+// ─── Task 6: Standard-State Affinity Calibration (safe utilities) ────────────
+
+double deltaG_standard_to_Kd_M(double deltaG_kcal_mol, double T_K, double c0_M) {
+    if (T_K <= 0.0) {
+        throw std::invalid_argument("Temperature must be > 0 K for affinity conversion");
+    }
+    if (c0_M <= 0.0) {
+        throw std::invalid_argument("Standard state concentration c0_M must be > 0");
+    }
+
+    const double RT = kB_kcal * T_K * 1000.0; // in cal/mol for the exp, but we work in kcal
+    // ΔG° (kcal/mol) = RT ln(Kd / c0)   with R in kcal
+    // Kd (M) = c0 * exp(ΔG° / (RT in kcal))
+    const double RT_kcal = kB_kcal * T_K;
+    return c0_M * std::exp(deltaG_kcal_mol / RT_kcal);
+}
+
+double Kd_M_to_deltaG_standard(double Kd_M, double T_K, double c0_M) {
+    if (T_K <= 0.0) {
+        throw std::invalid_argument("Temperature must be > 0 K for affinity conversion");
+    }
+    if (Kd_M <= 0.0) {
+        throw std::invalid_argument("Kd must be > 0 M");
+    }
+    if (c0_M <= 0.0) {
+        throw std::invalid_argument("Standard state concentration c0_M must be > 0");
+    }
+
+    const double RT_kcal = kB_kcal * T_K;
+    // ΔG° = RT ln(Kd / c0)
+    return RT_kcal * std::log(Kd_M / c0_M);
 }
 
 }  // namespace statmech
