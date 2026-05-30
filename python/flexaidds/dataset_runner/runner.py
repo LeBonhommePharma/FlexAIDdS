@@ -39,7 +39,7 @@ from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field, asdict
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
+from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple, Union
 
 try:
     import yaml  # PyYAML
@@ -446,9 +446,73 @@ def _mpi_context():
         return 0, 1, True, None
 
 
-def _split_targets(targets: List[str], rank: int, size: int) -> List[str]:
-    """Distribute target list across MPI ranks (round-robin)."""
+def _split_targets(targets: List[Any], rank: int, size: int) -> List[Any]:
+    """Distribute any list of work items across MPI ranks (round-robin).
+    Works for str target_ids or (target_id, state) tuples.
+    """
     return [t for i, t in enumerate(targets) if i % size == rank]
+
+
+# ---------------------------------------------------------------------------
+# EntryTaskManager — the Master coordinator for individual dataset entries
+# ---------------------------------------------------------------------------
+
+class EntryTaskManager:
+    """Master manager that automates allocation of individual dataset entries
+    (target + structural state) to workers.
+
+    Responsibilities:
+    - Owns the queue of fine-grained work items (per-entry).
+    - Dispatches to local workers (ThreadPoolExecutor today; easy to extend to ProcessPool or MPI master-worker).
+    - Tracks completion for resource accounting and resume.
+    - Provides a clean hook for future dynamic resource management (CPU pinning, memory-aware scheduling, heterogeneous target costs, etc.).
+
+    This is the central automation the user requested for "how a master datasetrunner manager manages the allocation of resources for individual entries/workers to work together in parallel."
+    """
+
+    def __init__(self, work_items: List[Tuple[str, str]], n_workers: int = 1, omp_threads: int = 4):
+        self.work_items = list(work_items)
+        self.n_workers = max(1, int(n_workers))
+        self.omp_threads = max(1, int(omp_threads))
+        self.completed: List[Tuple[str, str, List[PoseScore], float, str]] = []
+
+    def run(
+        self,
+        processor: Callable[[Tuple[str, str]], Tuple[str, str, List[PoseScore], float, str]],
+    ) -> List[Tuple[str, str, List[PoseScore], float, str]]:
+        """Execute all work items using the processor function.
+
+        Returns list of (target_id, state, poses, elapsed, error) in completion order.
+        """
+        if not self.work_items:
+            return []
+
+        if self.n_workers <= 1 or len(self.work_items) == 1:
+            # Sequential (or single worker) — simplest resource allocation
+            for item in self.work_items:
+                res = processor(item)
+                self.completed.append(res)
+            return self.completed
+
+        # Parallel local execution — the manager controls the pool size
+        logger.info(
+            "EntryTaskManager: dispatching %d individual entries across %d workers (OMP_NUM_THREADS=%d)",
+            len(self.work_items), self.n_workers, self.omp_threads,
+        )
+
+        with ThreadPoolExecutor(max_workers=self.n_workers) as pool:
+            future_to_item = {pool.submit(processor, item): item for item in self.work_items}
+            for future in as_completed(future_to_item):
+                try:
+                    res = future.result()
+                    self.completed.append(res)
+                except Exception as exc:
+                    item = future_to_item[future]
+                    tid, st = item
+                    logger.error("Worker exception on %s/%s: %s", tid, st, exc)
+                    self.completed.append((tid, st, [], 0.0, str(exc)))
+
+        return self.completed
 
 
 # ---------------------------------------------------------------------------
@@ -493,6 +557,7 @@ class DatasetRunner:
         n_bootstrap: int = 5_000,
         dry_run: bool = False,
         repo_root: Optional[Union[str, Path]] = None,
+        resume: bool = False,
     ) -> None:
         _default_datasets = Path(__file__).resolve().parent / "datasets"
         self.datasets_dir = Path(datasets_dir) if datasets_dir is not None else _default_datasets
@@ -513,6 +578,7 @@ class DatasetRunner:
         self.n_bootstrap = n_bootstrap
         self.dry_run = dry_run
         self.repo_root = Path(repo_root) if repo_root else Path.cwd()
+        self.resume = bool(resume)
 
         self.results_dir.mkdir(parents=True, exist_ok=True)
 
@@ -793,14 +859,12 @@ class DatasetRunner:
     ) -> DatasetResult:
         """Run benchmarks for one dataset.
 
-        Args:
-            config:           Dataset configuration.
-            tier:             1 = fast subset, 2 = full target list.
-            metric_subset:    Restrict metrics to this list (None = all).
-            structural_states: Override structural states from config.
+        Now uses automated per-entry (per-target) saving and processing.
+        Individual TargetResult files are written atomically as soon as each
+        (target, structural_state) finishes. This enables resume and fine-grained
+        progress / resource monitoring.
 
-        Returns:
-            :class:`DatasetResult` with computed metrics.
+        A lightweight EntryTaskManager (see below) coordinates the work items.
         """
         t0 = time.monotonic()
         targets = config.tier1_targets() if tier == 1 else config.targets
@@ -821,75 +885,122 @@ class DatasetRunner:
             dr.duration_seconds = 0.0
             return dr
 
-        # MPI distribution
-        my_targets = _split_targets(targets, self._mpi_rank, self._mpi_size)
+        # --- NEW: Per-entry resume + individual processing automation ---
+        already_completed: set[str] = set()
+        if self.resume:
+            already_completed = self._discover_completed_targets(config, tier)
+            if already_completed:
+                logger.info(
+                    "Resume mode: %d/%d targets already have complete per-entry results — skipping them",
+                    len(already_completed), len(targets)
+                )
+
+        # Build work items: (target_id, state) pairs that still need work on this rank
+        all_work_items: List[Tuple[str, str]] = []
+        for tid in targets:
+            if tid in already_completed:
+                continue
+            for st in states:
+                all_work_items.append((tid, st))
+
+        # MPI: split the *remaining* work items (better load balance than pure target split for heterogeneous states)
+        my_work_items = _split_targets(all_work_items, self._mpi_rank, self._mpi_size)  # reuse the splitter (works on any list)
+
         logger.info(
-            "[rank %d/%d] Dataset %s: running %d/%d targets",
-            self._mpi_rank, self._mpi_size,
-            config.slug, len(my_targets), len(targets),
+            "[rank %d/%d] Dataset %s: %d work items remaining for this rank (%d targets after resume filter)",
+            self._mpi_rank, self._mpi_size, config.slug, len(my_work_items), len(targets) - len(already_completed)
+        )
+
+        # Master entry manager (the new automated coordinator for individual entries + resources)
+        entry_manager = EntryTaskManager(
+            work_items=my_work_items,
+            n_workers=self.n_workers if self._mpi_size == 1 else 1,
+            omp_threads=self.omp_threads,
         )
 
         all_poses: List[PoseScore] = []
-        completed: List[str] = []
-        failed: List[str] = []
+        completed_targets: set[str] = set(already_completed)
+        failed_targets: set[str] = set()
 
-        def _run_one(target_id: str) -> Tuple[str, List[PoseScore], float]:
+        def _process_one_item(item: Tuple[str, str]) -> Tuple[str, str, List[PoseScore], float, str]:
+            """Process a single (target_id, structural_state) entry. Returns (tid, state, poses, elapsed, error)."""
+            target_id, state = item
             t_start = time.monotonic()
-            target_poses: List[PoseScore] = []
-            for state in states:
-                receptor = None
-                if config.data_dir and not self.dry_run:
-                    receptor = self._find_receptor(target_id, config.data_dir, state)
-                    if receptor is None and not self.dry_run:
-                        logger.warning("No receptor for %s/%s — skipping", target_id, state)
-                        continue
+            error = ""
 
-                ligands: List[Path] = []
-                if config.data_dir and not self.dry_run:
-                    ligands = self._find_ligands(target_id, config.data_dir)
+            receptor = None
+            ligands: List[Path] = []
+            if config.data_dir and not self.dry_run:
+                receptor = self._find_receptor(target_id, config.data_dir, state)
+                if receptor is None:
+                    error = f"No receptor for {target_id}/{state}"
+                    return target_id, state, [], time.monotonic() - t_start, error
 
-                poses = self._dock_target(
-                    target_id,
-                    receptor or Path("/dev/null"),
-                    ligands or [Path(f"{target_id}.mol2")],
-                    structural_state=state,
-                )
-                target_poses.extend(poses)
-            return target_id, target_poses, time.monotonic() - t_start
+                ligands = self._find_ligands(target_id, config.data_dir) or []
 
-        use_pool = self.n_workers > 1 and self._mpi_size == 1 and len(my_targets) > 1
-        if use_pool:
-            logger.info(
-                "Dispatching %d targets across %d workers (OMP_NUM_THREADS=%d per worker)",
-                len(my_targets), self.n_workers, self.omp_threads,
+            poses = self._dock_target(
+                target_id,
+                receptor or Path("/dev/null"),
+                ligands or [Path(f"{target_id}.mol2")],
+                structural_state=state,
             )
-            with ThreadPoolExecutor(max_workers=self.n_workers) as pool:
-                for target_id, target_poses, elapsed in pool.map(_run_one, my_targets):
-                    if target_poses:
-                        all_poses.extend(target_poses)
-                        completed.append(target_id)
-                    else:
-                        failed.append(target_id)
-                        logger.warning("No poses for target %s", target_id)
-                    logger.debug(
-                        "Target %s: %d poses in %.1fs",
-                        target_id, len(target_poses), elapsed,
-                    )
-        else:
-            for target_id in my_targets:
-                target_id, target_poses, elapsed = _run_one(target_id)
-                if target_poses:
-                    all_poses.extend(target_poses)
-                    completed.append(target_id)
-                else:
-                    failed.append(target_id)
-                    logger.warning("No poses for target %s", target_id)
-                logger.debug(
-                    "Target %s: %d poses in %.1fs",
-                    target_id, len(target_poses), elapsed,
-                )
 
-        # MPI gather poses to root
+            elapsed = time.monotonic() - t_start
+
+            # AUTOMATIC per-entry save (the key automation requested)
+            tr = TargetResult(
+                target_id=target_id,
+                structural_state=state,
+                poses=poses,
+                duration_seconds=elapsed,
+                error=error,
+            )
+            try:
+                saved_path = self._save_target_result(tr, config, tier)
+                logger.debug("Saved per-entry result: %s", saved_path)
+            except Exception as save_exc:
+                logger.warning("Failed to save per-entry result for %s/%s: %s", target_id, state, save_exc)
+
+            return target_id, state, poses, elapsed, error
+
+    def _write_entry_manifest(
+        self, config: DatasetConfig, tier: int, completed: List[str], failed: List[str]
+    ) -> None:
+        """Write a small machine-readable manifest of per-entry completion status.
+        This complements the big reproducibility manifest from the skill wrapper.
+        """
+        manifest_path = self._entry_results_dir(config, tier) / "_entry_manifest.json"
+        data = {
+            "dataset": config.slug,
+            "tier": tier,
+            "timestamp": datetime.datetime.utcnow().isoformat() + "Z",
+            "completed": completed,
+            "failed": failed,
+            "total_attempted": len(completed) + len(failed),
+        }
+        manifest_path.write_text(json.dumps(data, indent=2))
+        logger.info("Per-entry manifest written: %s", manifest_path)
+
+        # Dispatch via the EntryTaskManager (local ThreadPool or sequential)
+        results = entry_manager.run(_process_one_item)
+
+        for target_id, state, poses, elapsed, error in results:
+            all_poses.extend(poses)
+            if error:
+                failed_targets.add(target_id)
+                logger.warning("Failed %s/%s: %s", target_id, state, error)
+            else:
+                completed_targets.add(target_id)
+
+            logger.debug(
+                "Entry %s/%s: %d poses in %.1fs",
+                target_id, state, len(poses), elapsed
+            )
+
+        completed = sorted(completed_targets)
+        failed = sorted(failed_targets)
+
+        # MPI gather (still works at target granularity for final aggregation)
         if self._mpi_comm is not None:
             all_results_by_rank = self._mpi_comm.gather(
                 (all_poses, completed, failed), root=0
@@ -903,7 +1014,7 @@ class DatasetRunner:
                     completed.extend(comp_i)
                     failed.extend(fail_i)
 
-        # Only root computes metrics and writes report
+        # Root finalizes
         if self._mpi_root:
             dr.targets_completed = completed
             dr.targets_failed = failed
@@ -913,14 +1024,15 @@ class DatasetRunner:
                 dr.metrics = metrics
 
                 if self.do_bootstrap:
-                    dr.ci_95 = self._compute_bootstrap_cis(
-                        all_poses, requested_metrics
-                    )
+                    dr.ci_95 = self._compute_bootstrap_cis(all_poses, requested_metrics)
 
             if not self.dry_run:
                 dr.check_regressions()
             else:
-                logger.info("Dry-run mode — skipping regression checks against baselines")
+                logger.info("Dry-run mode — skipping regression checks")
+
+            # Also write a small per-dataset manifest of individual entry status (for audit + reproducibility)
+            self._write_entry_manifest(config, tier, completed, failed)
 
         dr.duration_seconds = time.monotonic() - t0
         return dr
@@ -1022,6 +1134,85 @@ class DatasetRunner:
         out_path = self.results_dir / f"{dr.config.slug}_tier{dr.tier}.json"
         out_path.write_text(json.dumps(dr.to_dict(), indent=2))
         logger.info("Dataset result saved: %s", out_path)
+
+    # ------------------------------------------------------------------
+    # Per-entry (per-target) persistence — the new automated model
+    # ------------------------------------------------------------------
+
+    def _entry_results_dir(self, config: DatasetConfig, tier: int) -> Path:
+        """Directory layout for individual entry results:
+        results/<slug>/tier<tier>/
+        """
+        d = self.results_dir / config.slug / f"tier{tier}"
+        d.mkdir(parents=True, exist_ok=True)
+        return d
+
+    def _target_result_path(
+        self, config: DatasetConfig, tier: int, target_id: str, structural_state: str
+    ) -> Path:
+        safe_id = target_id.replace("/", "_")
+        return self._entry_results_dir(config, tier) / f"{safe_id}_{structural_state}.json"
+
+    def _save_target_result(self, tr: TargetResult, config: DatasetConfig, tier: int) -> Path:
+        """Atomic write of one TargetResult (crash-safe)."""
+        path = self._target_result_path(config, tier, tr.target_id, tr.structural_state)
+        tmp = path.with_suffix(".json.tmp")
+        payload = {
+            "target_id": tr.target_id,
+            "structural_state": tr.structural_state,
+            "duration_seconds": tr.duration_seconds,
+            "error": tr.error,
+            "poses": [p.to_dict() if hasattr(p, "to_dict") else p.__dict__ for p in tr.poses],
+            "success": tr.success,
+            "timestamp": datetime.datetime.utcnow().isoformat() + "Z",
+        }
+        tmp.write_text(json.dumps(payload, indent=2))
+        os.replace(tmp, path)  # atomic on POSIX + Windows
+        return path
+
+    def _load_target_result(
+        self, config: DatasetConfig, tier: int, target_id: str, structural_state: str
+    ) -> Optional["TargetResult"]:
+        path = self._target_result_path(config, tier, target_id, structural_state)
+        if not path.is_file():
+            return None
+        try:
+            data = json.loads(path.read_text())
+            poses = []
+            for p in data.get("poses", []):
+                if isinstance(p, dict):
+                    # Best-effort reconstruction; fall back to storing raw dict if fields mismatch
+                    try:
+                        poses.append(PoseScore(**p))  # type: ignore[call-arg]
+                    except Exception:
+                        poses.append(p)  # type: ignore[arg-type]
+                else:
+                    poses.append(p)
+            return TargetResult(
+                target_id=data["target_id"],
+                structural_state=data["structural_state"],
+                poses=poses,
+                duration_seconds=data.get("duration_seconds", 0.0),
+                error=data.get("error", ""),
+            )
+        except Exception as e:
+            logger.warning("Corrupt target result %s — will re-run: %s", path, e)
+            return None
+
+    def _discover_completed_targets(self, config: DatasetConfig, tier: int) -> set[str]:
+        """Return set of target_ids that have at least one successful result for every requested state."""
+        states = config.structural_states
+        completed = set()
+        for target_id in config.targets:
+            all_states_ok = True
+            for st in states:
+                tr = self._load_target_result(config, tier, target_id, st)
+                if not (tr and tr.success):
+                    all_states_ok = False
+                    break
+            if all_states_ok:
+                completed.add(target_id)
+        return completed
 
     # ------------------------------------------------------------------
     # Public convenience helpers

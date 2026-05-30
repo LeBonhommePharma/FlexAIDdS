@@ -165,6 +165,15 @@ This experimental helper will:
 .grok/skills/flexaid-docking/bin/dataset-runner --help
 ```
 
+**New (highly recommended for real campaigns):** per-entry checkpointing + master-managed resume
+```bash
+# First (possibly partial) run
+python -m flexaidds.dataset_runner --all --tier 2 --workers 4
+
+# Later: resume exactly where it left off (individual targets saved atomically by EntryTaskManager)
+python -m flexaidds.dataset_runner --all --tier 2 --workers 4 --resume --package
+```
+
 ## Reproducibility & Audit Packages (Recommended for Publications & Sharing)
 
 The skill provides first-class, general-purpose reproducibility tooling that works for DatasetRunner campaigns, redocking jobs, and manual runs:

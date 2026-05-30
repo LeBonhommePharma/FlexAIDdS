@@ -26,6 +26,10 @@ Usage examples:
     # Dry run to validate everything without docking
     python3 .grok/skills/flexaid-docking/scripts/dataset_runner.py \
         --all --tier 1 --dry-run
+
+    # Long campaign with per-entry checkpointing (resume after crash or interruption)
+    python3 .grok/skills/flexaid-docking/scripts/dataset_runner.py \
+        --all --tier 2 --workers 8 --resume --package
 """
 
 import argparse
@@ -83,6 +87,9 @@ Examples:
   # Distributed run (launch via mpirun)
   mpirun -n 8 python3 .../dataset_runner.py --all --tier 2 --distributed --binary /path/to/FlexAIDδS --package
 
+  # Long-running campaign with automated per-entry saving + resume (EntryTaskManager)
+  python3 .../dataset_runner.py --all --tier 2 --workers 6 --resume --package
+
 Always run ensure_docking_data.py first (or let this script remind you).
 """,
     )
@@ -100,6 +107,8 @@ Always run ensure_docking_data.py first (or let this script remind you).
                    help="Where to write reports (default: results/benchmarks)")
     p.add_argument("--dry-run", action="store_true",
                    help="Skip actual docking; useful for pipeline validation")
+    p.add_argument("--resume", action="store_true",
+                   help="Resume from per-entry checkpoints (skip targets that already have individual result files). Strongly recommended for long campaigns.")
     p.add_argument("--verbose", "-v", action="store_true")
     p.add_argument("--ensure-data", action="store_true", default=True,
                    help="Automatically run ensure_docking_data.py first (default: True)")
@@ -508,6 +517,8 @@ def main() -> int:
         cmd += ["--results-dir", args.results_dir]
     if args.dry_run:
         cmd += ["--dry-run"]
+    if args.resume:
+        cmd += ["--resume"]
     if args.verbose:
         cmd += ["--verbose"]
 

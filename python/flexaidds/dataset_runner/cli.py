@@ -169,6 +169,11 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Skip actual docking; use synthetic scores to test the pipeline.",
     )
     p.add_argument(
+        "--resume",
+        action="store_true",
+        help="Resume a previous (or partially completed) run by skipping targets that already have per-entry result files. Enables fine-grained checkpointing and crash recovery.",
+    )
+    p.add_argument(
         "--verbose", "-v",
         action="store_true",
         help="Enable DEBUG-level logging.",
@@ -217,6 +222,7 @@ def main(argv: list[str] | None = None) -> int:
         bootstrap_ci=args.bootstrap,
         n_bootstrap=args.n_bootstrap,
         dry_run=args.dry_run,
+        resume=args.resume,
     )
     if args.datasets_dir is not None:
         runner_kwargs["datasets_dir"] = args.datasets_dir

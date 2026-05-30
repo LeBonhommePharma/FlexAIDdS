@@ -251,6 +251,13 @@ python3 -m flexaidds.dataset_runner --dataset casf2016 --tier 1 --dry-run
 - Respect the distinction between CF/contact-function scoring proxy (used during search) and the full thermodynamic ledger (computed afterward).
 - For any published benchmark results, **always** pass `--package` (or run the inspector with `--reproducibility`). The resulting `VALIDATION_SUMMARY.md` + manifest gives you complete, auditable provenance (binary + every data file hash + environment).
 
+**Per-entry processing & Master Manager (new automation)**
+The DatasetRunner now automatically saves and resumes *individual entries* (one target + structural state = one work item). A `EntryTaskManager` master coordinator allocates these fine-grained tasks to workers.
+
+- Use `--resume` on long or expensive campaigns. It skips any target that already has a complete per-entry JSON result.
+- Results layout: `results/<slug>/tierN/<target>_<state>.json` + `_entry_manifest.json`
+- The manager controls the worker pool size (`--workers`) and makes crash recovery + resource tracking first-class.
+
 **Reproducibility & Audit Packages (new in 2026-05)**
 ```bash
 # Recommended for anything you intend to share or publish
