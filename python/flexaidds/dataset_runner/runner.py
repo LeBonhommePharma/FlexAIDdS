@@ -351,7 +351,7 @@ class BenchmarkReport:
                 "",
             ]
 
-        # === Richer per-entry cost exposure (high-priority refinement) ===
+        # === Richer per-entry cost exposure ===
         manifest = BenchmarkReport._load_entry_manifest_summary(dr)
         manifest_rel = f"results/{dr.config.slug}/tier{dr.tier}/_entry_manifest.json"
 
@@ -572,8 +572,8 @@ class EntryTaskManager:
 class CostHistory:
     """Simple persistent cost model with exponential moving average (EMA).
 
-    This is a high-priority refinement for better long-term cost-aware scheduling
-    across multiple DatasetRunner campaigns.
+    Provides historical cost tracking (with EMA smoothing) so that cost-aware
+    scheduling improves automatically across repeated benchmark campaigns.
     """
 
     def __init__(self, history_path: Union[str, Path], alpha: float = 0.3):
@@ -1184,7 +1184,7 @@ class DatasetRunner:
             self._mpi_rank, self._mpi_size, config.slug, len(work_for_manager),
         )
 
-        # Master entry manager — now with MPI context + persistent cost model (high-priority refinement)
+        # Master entry manager — with MPI context + persistent CostHistory (EMA)
         cost_hints = {}
         cost_history = None
         try:
@@ -1309,7 +1309,7 @@ class DatasetRunner:
             # Also write a small per-dataset manifest of individual entry status (for audit + reproducibility)
             self._write_entry_manifest(config, tier, completed, failed)
 
-            # Update persistent cost history (high-priority refinement)
+            # Update persistent cost history (CostHistory + EMA)
             if cost_history is not None:
                 try:
                     observed_costs = {}
