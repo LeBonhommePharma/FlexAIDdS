@@ -1153,6 +1153,7 @@ if(ENABLE_DISPATCH_BENCHMARK)
     add_executable(benchmark_dispatch
         LIB/benchmark_dispatch.cpp
         LIB/UnifiedHardwareDispatch.cpp
+        LIB/hardware_detect.cpp   # provides detect_hardware() + HardwareCapabilities
     )
     target_include_directories(benchmark_dispatch PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/LIB)
     if(MSVC)
