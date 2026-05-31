@@ -76,6 +76,7 @@ struct EnergyComponents {
     double metal = 0.0;
     double water = 0.0;
     double other = 0.0;
+    bool complete = false;
 
     ComponentStatus cf_status = ComponentStatus::Available;
     ComponentStatus receptor_strain_status = ComponentStatus::NotComputed;
@@ -90,6 +91,20 @@ struct EnergyComponents {
         return cf_status == ComponentStatus::Available ||
                receptor_strain_status == ComponentStatus::Available;
     }
+};
+
+struct ComponentAverages {
+    double mean_CF_kcal_mol = 0.0;
+    double mean_receptor_strain_kcal_mol = 0.0;
+    double mean_ligand_internal_kcal_mol = 0.0;
+    double mean_hbond_kcal_mol = 0.0;
+    double mean_gist_kcal_mol = 0.0;
+    double mean_metal_kcal_mol = 0.0;
+    double mean_water_kcal_mol = 0.0;
+    double mean_other_kcal_mol = 0.0;
+    double component_sum_kcal_mol = 0.0;
+    bool component_completeness_flag = false;
+    ComponentStatus component_status = ComponentStatus::NotComputed;
 };
 
 struct ThermodynamicBreakdown {
@@ -131,6 +146,27 @@ struct ThermodynamicBreakdown {
     EnergyComponents component_means;   // all fields are <X> = Σ p_i X_i
     double component_sum_kcal_mol = 0.0; // sum of the mean components (for diagnostics)
     bool   components_complete = false;  // true only if every significant term was tracked
+    ComponentAverages components;         // legacy BindingMode component diagnostic surface
+    bool   has_components = false;
+
+    // ─── Enthalpy-Entropy Index (Williams et al. 2017, Drug Discov. Today) ────
+    // I_EE = (ΔH + T·ΔS) / ΔG
+    //
+    // Sign convention (binding context):
+    //   ΔH    = H_eff_kcal_mol           (negative = exothermic, favourable)
+    //   T·ΔS  = -minus_T_S_config_kcal_mol  (positive = entropic driving force)
+    //   ΔG    = G_total_kcal_mol         (negative = spontaneous binding)
+    //
+    // Interpretation (ΔG < 0 for all real binders):
+    //   I_EE > 1  → entropy-assisted   (TΔS adds to enthalpy to drive ΔG)
+    //   I_EE = 1  → pure enthalpy      (TΔS ≈ 0)
+    //   I_EE < 1  → entropy-opposed    (enthalpy must overcome unfavourable ΔS)
+    //   I_EE < 0  → enthalpy-opposed   (entropy-driven binding, rare)
+    //
+    // has_I_EE = false when |ΔG| < 1e-6 kcal/mol (numerically undefined).
+    // DIAGNOSTIC ONLY — never use for ranking.
+    double I_EE     = std::numeric_limits<double>::quiet_NaN();
+    bool   has_I_EE = false;
 };
 
 struct Replica {
@@ -170,6 +206,35 @@ inline double compensation_score(double G_config_kcal_mol,
     if (score < 0.0) score = 0.0;
     if (score > 1.0) score = 1.0;
     return score;
+}
+
+// ─── Enthalpy-Entropy Index (Williams et al. 2017) ───────────────────────────
+// compute_IEE(delta_H, T_delta_S, delta_G)
+//
+//   I_EE = (ΔH + T·ΔS) / ΔG
+//
+// All arguments in kcal/mol. T·ΔS is the full T×entropy product, not ΔS alone,
+// so no temperature factor is needed here.
+//
+// Returns quiet_NaN when |delta_G| < 1e-6 kcal/mol.
+//
+// DIAGNOSTIC ONLY — never use for ranking or pose selection.
+inline double compute_IEE(double delta_H,
+                          double T_delta_S,
+                          double delta_G) noexcept
+{
+    if (std::abs(delta_G) < 1e-6)
+        return std::numeric_limits<double>::quiet_NaN();
+    return (delta_H + T_delta_S) / delta_G;
+}
+
+// Convenience overload that reads directly from a ThermodynamicBreakdown ledger.
+// Mutates the passed ledger: sets bd.I_EE and bd.has_I_EE in place.
+inline void fill_IEE(ThermodynamicBreakdown& bd) noexcept
+{
+    const double T_dS = -bd.minus_T_S_config_kcal_mol; // T·ΔS (kcal/mol, positive = favourable)
+    bd.I_EE     = compute_IEE(bd.H_eff_kcal_mol, T_dS, bd.G_total_kcal_mol);
+    bd.has_I_EE = std::isfinite(bd.I_EE);
 }
 
 // ─── Joint Receptor–Ligand Ensemble (Task 5 — EXPERIMENTAL) ──────────────────
@@ -260,6 +325,11 @@ public:
 
     // Compute full thermodynamics over the current ensemble
     Thermodynamics compute() const;
+
+    // Re-evaluate the existing ensemble at a different temperature WITHOUT
+    // re-running the GA. Only β changes; the sample set is unchanged.
+    // Used for finite-difference ΔCp computation and temperature scanning.
+    Thermodynamics compute_at_temperature(double T_K) const;
 
     // Compute an auditable thermodynamic ledger without changing legacy fields.
     ThermodynamicBreakdown compute_breakdown(
@@ -399,6 +469,44 @@ private:
     // Numerically stable log(Σ exp(x_i))
     static double log_sum_exp(std::span<const double> x);
 };
+
+// ─── ΔCp of binding — finite-difference temperature derivative ───────────────
+//
+// ΔCp = (∂ΔH/∂T)p ≈ [ΔH(T+dT) − ΔH(T−dT)] / (2·dT)     (central diff)
+//
+// The same GA ensemble is re-evaluated at T±dT via compute_at_temperature().
+// No additional simulation is required. dT = 10 K is safe: truncation error
+// is O(dT²); below 1 K floating-point cancellation dominates.
+//
+// Consistency cross-check: ΔCp ≈ T_ref × (ΔS_hi − ΔS_lo)/(2·dT)
+// Both paths should agree within ~5%.
+//
+// IMPORTANT: distinct from Cv = (⟨E²⟩−⟨E⟩²)/(kBT²).
+//   Cv   = fluctuation at one temperature — what StatMechEngine::compute() gives.
+//   ΔCp  = finite diff of binding enthalpy across two temperatures — this.
+
+struct DeltaCpResult {
+    double T_ref_K = 0.0;               // central temperature (K)
+    double dT_K    = 0.0;               // step used (K)
+    double delta_H_lo = 0.0;            // ΔH at T_ref − dT  (kcal/mol)
+    double delta_H_hi = 0.0;            // ΔH at T_ref + dT  (kcal/mol)
+    double delta_S_lo = 0.0;            // ΔS at T_ref − dT  (kcal/mol·K)
+    double delta_S_hi = 0.0;            // ΔS at T_ref + dT  (kcal/mol·K)
+    double delta_Cp = 0.0;              // kcal/(mol·K) — enthalpy path
+    double delta_Cp_from_entropy = 0.0; // kcal/(mol·K) — entropy path (cross-check)
+    double consistency_check = 0.0;     // |ΔCp_H − ΔCp_S| / (|mean| + 1e-9)
+    bool   consistent = false;          // true when consistency_check < 0.05
+};
+
+// Compute ΔCp of binding via central finite difference.
+// bound:   engine for the ligand-bound GA ensemble.
+// unbound: engine for the apo / reference ensemble.
+// Both must carry populations sampled at T_ref_K.
+DeltaCpResult compute_delta_Cp(
+    const StatMechEngine& bound,
+    const StatMechEngine& unbound,
+    double T_ref_K = 298.15,
+    double dT_K    = 10.0);
 
 // ─── fast Boltzmann lookup table ─────────────────────────────────────────────
 //  Pre-tabulates exp(−β E) over [E_min, E_max] for O(1) inner-loop access.

@@ -127,6 +127,8 @@ struct DockingResult {
     float predicted_dG{0.0f};         // predicted ΔG (kcal/mol)
     float predicted_dH{0.0f};         // predicted ΔH (kcal/mol)
     float predicted_TdS{0.0f};        // predicted TΔS (kcal/mol)
+    float predicted_IEE{0.0f};        // Enthalpy-Entropy Index (Williams 2017) — diagnostic only
+    bool  has_IEE{false};             // false when |ΔG| < 1e-6 or not yet computed
     float shannon_entropy{0.0f};      // ensemble Shannon entropy
     int   num_poses{0};               // number of binding modes found
     double wall_time_s{0.0};          // docking wall time
@@ -294,9 +296,9 @@ public:
     /// Download a CIF file from RCSB
     bool download_cif(const std::string& pdb_id, const std::string& out_path);
 
-    /// Extract the largest non-water/non-ion HETATM ligand from a PDB file
+    /// Extract the largest non-water/non-ion HETATM ligand from a PDB/mmCIF file
     /// and write it as SDF
-    bool extract_ligand(const std::string& pdb_path, const std::string& out_sdf);
+    bool extract_ligand(const std::string& structure_path, const std::string& out_sdf);
 
     /// Parse PDB HETATM records into atom structures
     std::vector<PDBAtom> parse_pdb_hetatm(const std::string& pdb_path);
@@ -368,7 +370,14 @@ private:
     /// Expand ~ in paths
     std::string expand_home(const std::string& path);
 
-    /// Prepare a single PDB entry: download + extract ligand
+    /// Download the preferred RCSB coordinate format for a structure.
+    /// mmCIF is attempted first because legacy PDB files are lossy or absent
+    /// for some benchmark codes; PDB remains only a last-resort fallback.
+    bool download_structure(const std::string& pdb_id,
+                            const std::string& entry_dir,
+                            std::string& out_path);
+
+    /// Prepare a single RCSB entry: download structure + extract ligand
     DatasetEntry prepare_pdb_entry(const std::string& pdb_id,
                                    const std::string& dataset_name,
                                    float affinity = -1.0f,

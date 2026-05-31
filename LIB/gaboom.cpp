@@ -39,6 +39,7 @@
 #include "statmech.h"
 #include "tENCoM/tencm.h"
 #include "ShannonThermoStack/ShannonThermoStack.h"
+#include "ThermalExtrapolation.h"
 #include "ga_diversity.h"
 #include "TurboQuant.h"
 #include "GAContext.h"
@@ -701,6 +702,49 @@ int GA(FA_Global* FA, GB_Global* GB,VC_Global* VC,chromosome** chrom,chromosome*
 		printf("  Energy std dev        σ_E = %10.4f kcal/mol\n", td.std_energy);
 		printf("  Heat capacity         C_v = %10.4f kcal/(mol·K)\n", td.heat_capacity);
 		printf("  Entropy (conf)        S   = %10.6f kcal/(mol·K)\n", td.entropy);
+
+		// ── Enthalpy-Entropy Index (Williams et al. 2017, Drug Discov. Today) ──
+		// I_EE = (ΔH + T·ΔS) / ΔG   — diagnostic only, never for ranking
+		{
+			const statmech::ThermodynamicBreakdown bd = sme.compute_breakdown();
+			if (bd.has_I_EE) {
+				printf("  Enthalpy-Entropy Idx  I_EE= %10.4f  [Williams 2017]\n", bd.I_EE);
+				const char* regime =
+					(bd.I_EE > 1.05)  ? "entropy-assisted" :
+					(bd.I_EE < 0.95 && bd.I_EE >= 0.0) ? "entropy-opposed" :
+					(bd.I_EE < 0.0)   ? "entropy-driven (rare)" :
+					                    "pure enthalpy";
+				printf("                        (%s)\n", regime);
+			}
+		}
+
+		// ── Kirchhoff ΔG(T) extrapolation (Robertson & Murphy 1997) ────────
+		// Activated only when DSF/TSA Tm has been supplied via dsf_Tm_K.
+		// ΔG(T) = ΔHm(1 − T/Tm) − ΔCp[(Tm − T) + T·ln(T/Tm)]
+		if (FA->dsf_Tm_K > 0.0) {
+			thermal_extrap::KirchhoffInput kin;
+			kin.Tm_K     = FA->dsf_Tm_K;
+			kin.delta_Hm = (FA->dsf_delta_Hm != 0.0)
+			                 ? FA->dsf_delta_Hm
+			                 : td.mean_energy; // fallback: use computed ⟨E⟩ at Tm
+			// ΔCp: requires two-temperature runs; use Cv as provisional stand-in
+			// with a warning. Will be replaced once compute_delta_Cp() is wired
+			// to a paired apo run.
+			kin.delta_Cp = td.heat_capacity; // provisional — Cv, not ΔCp
+			const double T_target = (FA->temperature > 0)
+			                         ? static_cast<double>(FA->temperature)
+			                         : 298.15;
+			const auto kr = thermal_extrap::kirchhoff_deltaG(kin, T_target);
+			printf("--- Kirchhoff ΔG(T) [Robertson & Murphy 1997] ---\n");
+			printf("  Tm (DSF/TSA)          = %10.2f K  (%.1f °C)\n",
+			       kin.Tm_K, kin.Tm_K - 273.15);
+			printf("  ΔHm (at Tm)           = %10.4f kcal/mol\n", kin.delta_Hm);
+			printf("  ΔCp (provisional Cv)  = %10.6f kcal/(mol·K)  [⚠ use compute_delta_Cp]\n",
+			       kin.delta_Cp);
+			printf("  ΔG(%.1f K)             = %10.4f kcal/mol\n", T_target, kr.delta_G);
+			printf("  ΔH(%.1f K)             = %10.4f kcal/mol\n", T_target, kr.delta_H);
+			printf("  T·ΔS(%.1f K)           = %10.4f kcal/mol\n", T_target, kr.T_delta_S);
+		}
 
 		// ── Phase 2.5: TurboQuant ensemble compression ──────────────
 		// Quantize the conformational ensemble energy vectors using TurboQuant
@@ -1537,13 +1581,18 @@ void calculate_fitness(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* chr
 			                      ad.radius.data(), h_emat.data(), ns);
 		});
 
-		std::vector<double> h_genes = pack_genes_batch(n_genes);
-		std::vector<double> h_com(pop_size), h_wal(pop_size), h_sas(pop_size);
-		metal_eval_batch(handle.ctx, pop_size, n_genes, h_genes.data(),
-		                 h_com.data(), h_wal.data(), h_sas.data());
-		unpack_gpu_results(h_com, h_wal, h_sas);
+		if (handle.ctx) {
+			std::vector<double> h_genes = pack_genes_batch(n_genes);
+			std::vector<double> h_com(pop_size), h_wal(pop_size), h_sas(pop_size);
+			metal_eval_batch(handle.ctx, pop_size, n_genes, h_genes.data(),
+			                 h_com.data(), h_wal.data(), h_sas.data());
+			unpack_gpu_results(h_com, h_wal, h_sas);
+			gpu_handled = true;
+		} else {
+			fprintf(stderr,
+			        "[FlexAIDdS] Metal backend selected but no runtime device was available; falling back to CPU\n");
+		}
 		pool.release_metal(handle);
-		gpu_handled = true;
 	}
 #endif
 

@@ -369,8 +369,10 @@ struct FA_Global_struct{
 	bool  use_tqcm;                      // TurboQuant compressed contact matrix scoring
 	bool  use_tqens;                     // TurboQuant ensemble compression for partition function
 	bool  use_tqnn;                      // TurboQuant compressed NN for FastOPTICS
-	uint temperature;					 // temperature parameter 
+	uint temperature;					 // temperature parameter
 	double beta;						 // Metropolis ß parament == 1/T *may be worth trying 1/kT*
+	double dsf_Tm_K;                     // DSF/TSA melting temperature (K); 0.0 = not provided
+	double dsf_delta_Hm;                 // enthalpy at Tm from ITC/DSF (kcal/mol); 0.0 = not provided
 	float permeability;                  // allow permeability or not between atoms
 	float rotamer_permeability;          // rotamer acceptance vdw permeability
 	int   intramolecular;                // consider intramolecular forces (ligand only)
@@ -472,8 +474,13 @@ struct FA_Global_struct{
 	// These members were removed during refactoring. Adding them back as shims allows
 	// the legacy scoring functions to compile while the main modern paths use energy_matrix etc.
 	// TODO: fully migrate cffunction/spfunction to the new structures.
-	void*  bondlist;                     // was array of bonded hetero-atom info
-	float* energy;                       // was 2D energy table [type][type] (now energy_matrix)
+	struct legacy_bondlist_entry {
+		int num;
+		int tot;
+		int nbr[MAX_BONDED];
+	};
+	legacy_bondlist_entry* bondlist;     // was array of bonded hetero-atom info
+	float** energy;                      // was 2D energy table [type][type] (now energy_matrix)
 	double nor;                          // legacy normalization / overlap term written into cfstr
 
 	//rot    rotamer[MAX_ROTLIBSIZE];       // array of rotamer library rotamers OR observed rotamer list

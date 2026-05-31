@@ -24,15 +24,18 @@
 #include <cmath>
 #include <cstdlib>
 #include <cstring>
+#include <cctype>
 #include <filesystem>
 #include <fstream>
 #include <iomanip>
 #include <iostream>
+#include <limits>
 #include <map>
 #include <numeric>
 #include <regex>
 #include <set>
 #include <sstream>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -523,9 +526,22 @@ bool DatasetRunner::download_pdb(const std::string& pdb_id, const std::string& o
 }
 
 bool DatasetRunner::download_cif(const std::string& pdb_id, const std::string& out_path) {
-    if (fs::exists(out_path) && fs::file_size(out_path) > 100) {
+    auto valid_cached_cif = [](const std::string& path) {
+        if (!fs::exists(path) || fs::file_size(path) <= 100) return false;
+        std::ifstream check(path);
+        std::string first_line;
+        if (!std::getline(check, first_line)) return false;
+        std::string lower = first_line;
+        std::transform(lower.begin(), lower.end(), lower.begin(),
+                       [](unsigned char c) { return std::tolower(c); });
+        return lower.find("<!doctype") == std::string::npos &&
+               lower.find("<html") == std::string::npos;
+    };
+
+    if (valid_cached_cif(out_path)) {
         return true;
     }
+    if (fs::exists(out_path)) fs::remove(out_path);
 
     std::string upper_id = pdb_id;
     std::transform(upper_id.begin(), upper_id.end(), upper_id.begin(),
@@ -533,12 +549,189 @@ bool DatasetRunner::download_cif(const std::string& pdb_id, const std::string& o
 
     std::string url = "https://files.rcsb.org/download/" + upper_id + ".cif";
     std::cout << "  Downloading " << upper_id << ".cif ...\n";
-    return http_download(url, out_path);
+    if (!http_download(url, out_path)) return false;
+    if (!valid_cached_cif(out_path)) {
+        std::cerr << "  [ERROR] Got HTML or invalid mmCIF for " << pdb_id << "\n";
+        if (fs::exists(out_path)) fs::remove(out_path);
+        return false;
+    }
+    return true;
+}
+
+bool DatasetRunner::download_structure(const std::string& pdb_id,
+                                       const std::string& entry_dir,
+                                       std::string& out_path) {
+    std::string upper_id = pdb_id;
+    std::transform(upper_id.begin(), upper_id.end(), upper_id.begin(),
+                   [](unsigned char c) { return std::toupper(c); });
+
+    ensure_dir(entry_dir);
+
+    std::string cif_path = entry_dir + "/" + upper_id + ".cif";
+    if (download_cif(upper_id, cif_path)) {
+        out_path = cif_path;
+        return true;
+    }
+
+    std::cerr << "  [WARN] mmCIF unavailable for " << upper_id
+              << "; trying legacy PDB as last resort\n";
+    std::string pdb_path = entry_dir + "/" + upper_id + ".pdb";
+    if (download_pdb(upper_id, pdb_path)) {
+        out_path = pdb_path;
+        return true;
+    }
+
+    out_path.clear();
+    return false;
 }
 
 // =============================================================================
-// PDB HETATM parsing
+// PDB/mmCIF HETATM parsing
 // =============================================================================
+
+static std::string trim_copy(std::string value) {
+    while (!value.empty() && std::isspace(static_cast<unsigned char>(value.front())))
+        value.erase(value.begin());
+    while (!value.empty() && std::isspace(static_cast<unsigned char>(value.back())))
+        value.pop_back();
+    return value;
+}
+
+static std::vector<std::string> tokenize_cif_line_local(const std::string& line) {
+    std::vector<std::string> tokens;
+    size_t i = 0;
+    while (i < line.size()) {
+        while (i < line.size() && std::isspace(static_cast<unsigned char>(line[i]))) ++i;
+        if (i >= line.size()) break;
+
+        std::string token;
+        if (line[i] == '\'' || line[i] == '"') {
+            char quote = line[i++];
+            while (i < line.size() && line[i] != quote) token += line[i++];
+            if (i < line.size()) ++i;
+        } else {
+            while (i < line.size() && !std::isspace(static_cast<unsigned char>(line[i])))
+                token += line[i++];
+        }
+        tokens.push_back(std::move(token));
+    }
+    return tokens;
+}
+
+static int cif_col(const std::vector<std::string>& headers, const std::string& name) {
+    for (size_t i = 0; i < headers.size(); ++i) {
+        if (headers[i] == "_atom_site." + name) return static_cast<int>(i);
+    }
+    return -1;
+}
+
+static std::string cif_val(const std::vector<std::string>& tokens, int idx) {
+    if (idx < 0 || idx >= static_cast<int>(tokens.size())) return "?";
+    return tokens[idx];
+}
+
+static float cif_float(const std::vector<std::string>& tokens, int idx) {
+    std::string value = cif_val(tokens, idx);
+    if (value == "?" || value == ".") return 0.0f;
+    return static_cast<float>(std::atof(value.c_str()));
+}
+
+static int cif_int(const std::vector<std::string>& tokens, int idx) {
+    std::string value = cif_val(tokens, idx);
+    if (value == "?" || value == ".") return 0;
+    return std::atoi(value.c_str());
+}
+
+static std::vector<PDBAtom> parse_cif_hetatm_local(const std::string& cif_path) {
+    std::ifstream ifs(cif_path);
+    if (!ifs) return {};
+
+    std::vector<PDBAtom> atoms;
+    std::vector<std::string> headers;
+    bool reading_atom_site = false;
+    bool in_atom_data = false;
+    std::string line;
+    int generated_serial = 1;
+
+    auto process_tokens = [&](const std::vector<std::string>& tokens) {
+        if (tokens.empty()) return;
+
+        int group_col = cif_col(headers, "group_PDB");
+        int id_col = cif_col(headers, "id");
+        int elem_col = cif_col(headers, "type_symbol");
+        int atom_col = cif_col(headers, "auth_atom_id");
+        if (atom_col < 0) atom_col = cif_col(headers, "label_atom_id");
+        int alt_col = cif_col(headers, "label_alt_id");
+        int res_col = cif_col(headers, "auth_comp_id");
+        if (res_col < 0) res_col = cif_col(headers, "label_comp_id");
+        int chain_col = cif_col(headers, "auth_asym_id");
+        if (chain_col < 0) chain_col = cif_col(headers, "label_asym_id");
+        int seq_col = cif_col(headers, "auth_seq_id");
+        if (seq_col < 0) seq_col = cif_col(headers, "label_seq_id");
+        int x_col = cif_col(headers, "Cartn_x");
+        int y_col = cif_col(headers, "Cartn_y");
+        int z_col = cif_col(headers, "Cartn_z");
+        int occ_col = cif_col(headers, "occupancy");
+        int b_col = cif_col(headers, "B_iso_or_equiv");
+
+        if (cif_val(tokens, group_col) != "HETATM") return;
+        std::string alt = cif_val(tokens, alt_col);
+        if (alt != "." && alt != "?" && alt != "A") return;
+        if (x_col < 0 || y_col < 0 || z_col < 0) return;
+
+        PDBAtom atom;
+        atom.is_hetatm = true;
+        atom.serial = cif_int(tokens, id_col);
+        if (atom.serial == 0) atom.serial = generated_serial++;
+        atom.name = trim_copy(cif_val(tokens, atom_col));
+        atom.altLoc = (alt == "." || alt == "?") ? " " : alt.substr(0, 1);
+        atom.resName = trim_copy(cif_val(tokens, res_col));
+        atom.chainID = trim_copy(cif_val(tokens, chain_col));
+        atom.resSeq = cif_int(tokens, seq_col);
+        atom.x = cif_float(tokens, x_col);
+        atom.y = cif_float(tokens, y_col);
+        atom.z = cif_float(tokens, z_col);
+        atom.occupancy = (occ_col >= 0) ? cif_float(tokens, occ_col) : 1.0f;
+        atom.tempFactor = (b_col >= 0) ? cif_float(tokens, b_col) : 0.0f;
+        atom.element = trim_copy(cif_val(tokens, elem_col));
+        if (atom.resName.empty() || atom.resName == "?" || atom.resName == ".") return;
+        atoms.push_back(std::move(atom));
+    };
+
+    while (std::getline(ifs, line)) {
+        std::string stripped = trim_copy(line);
+        if (stripped.empty()) continue;
+
+        if (stripped == "loop_") {
+            headers.clear();
+            reading_atom_site = false;
+            in_atom_data = false;
+            continue;
+        }
+
+        if (stripped.rfind("_atom_site.", 0) == 0 && !in_atom_data) {
+            headers.push_back(stripped);
+            reading_atom_site = true;
+            continue;
+        }
+
+        if (reading_atom_site && !headers.empty()) {
+            if (stripped[0] == '#' || stripped.rfind("_", 0) == 0) {
+                if (in_atom_data) break;
+                continue;
+            }
+            auto tokens = tokenize_cif_line_local(stripped);
+            if (tokens.size() < headers.size()) {
+                if (in_atom_data) break;
+                continue;
+            }
+            in_atom_data = true;
+            process_tokens(tokens);
+        }
+    }
+
+    return atoms;
+}
 
 std::vector<PDBAtom> DatasetRunner::parse_pdb_hetatm(const std::string& pdb_path) {
     std::vector<PDBAtom> atoms;
@@ -617,11 +810,23 @@ std::vector<PDBAtom> DatasetRunner::parse_pdb_hetatm(const std::string& pdb_path
 // Ligand extraction: HETATM → SDF
 // =============================================================================
 
-bool DatasetRunner::extract_ligand(const std::string& pdb_path,
+bool DatasetRunner::extract_ligand(const std::string& structure_path,
                                     const std::string& out_sdf) {
-    auto hetatm_atoms = parse_pdb_hetatm(pdb_path);
+    std::string lower_path = structure_path;
+    std::transform(lower_path.begin(), lower_path.end(), lower_path.begin(),
+                   [](unsigned char c) { return std::tolower(c); });
+
+    std::vector<PDBAtom> hetatm_atoms;
+    if (lower_path.size() >= 4 &&
+        (lower_path.rfind(".cif") == lower_path.size() - 4 ||
+         (lower_path.size() >= 7 && lower_path.rfind(".mmcif") == lower_path.size() - 7))) {
+        hetatm_atoms = parse_cif_hetatm_local(structure_path);
+    } else {
+        hetatm_atoms = parse_pdb_hetatm(structure_path);
+    }
+
     if (hetatm_atoms.empty()) {
-        std::cerr << "  [WARN] No HETATM records in " << pdb_path << "\n";
+        std::cerr << "  [WARN] No HETATM records in " << structure_path << "\n";
         return false;
     }
 
@@ -651,7 +856,7 @@ bool DatasetRunner::extract_ligand(const std::string& pdb_path,
     }
 
     if (residue_groups.empty()) {
-        std::cerr << "  [WARN] No valid ligand residues in " << pdb_path << "\n";
+        std::cerr << "  [WARN] No valid ligand residues in " << structure_path << "\n";
         return false;
     }
 
@@ -687,7 +892,7 @@ bool DatasetRunner::extract_ligand(const std::string& pdb_path,
 
     // (1) CONECT records
     {
-        std::ifstream pdb_ifs(pdb_path);
+        std::ifstream pdb_ifs(structure_path);
         std::string line;
         std::set<std::pair<int,int>> seen;
         while (std::getline(pdb_ifs, line)) {
@@ -734,7 +939,7 @@ bool DatasetRunner::extract_ligand(const std::string& pdb_path,
     // Header
     ofs << best_key.resName << "\n";
     ofs << "  FlexAIDdS DatasetRunner\n";
-    ofs << "  Extracted from PDB HETATM records\n";
+    ofs << "  Extracted from structure HETATM records\n";
 
     // Counts line — write ACTUAL bond count so readers respect the block
     ofs << std::setw(3) << ligand_atoms.size()
@@ -791,8 +996,8 @@ DatasetEntry DatasetRunner::prepare_pdb_entry(const std::string& pdb_id,
     std::string entry_dir = cache_dir_ + "/" + dataset_name + "/" + upper_id;
     ensure_dir(entry_dir);
 
-    std::string receptor_path = entry_dir + "/" + upper_id + ".pdb";
-    std::string ligand_path   = entry_dir + "/" + upper_id + "_ligand.sdf";
+    std::string receptor_path;
+    std::string ligand_path = entry_dir + "/" + upper_id + "_ligand.sdf";
 
     DatasetEntry entry;
     entry.pdb_id = upper_id;
@@ -801,11 +1006,11 @@ DatasetEntry DatasetRunner::prepare_pdb_entry(const std::string& pdb_id,
     entry.experimental_dH  = dH;
     entry.experimental_TdS = dS;
 
-    // Download PDB
-    if (download_pdb(upper_id, receptor_path)) {
+    // Download structure, preferring mmCIF over legacy PDB.
+    if (download_structure(upper_id, entry_dir, receptor_path)) {
         entry.receptor_path = receptor_path;
     } else {
-        std::cerr << "  [WARN] Failed to download PDB: " << upper_id << "\n";
+        std::cerr << "  [WARN] Failed to download structure: " << upper_id << "\n";
         return entry;
     }
 
@@ -963,18 +1168,13 @@ std::vector<AstexNonNativeTarget> astex_nonnative_targets() {
 
 std::vector<DatasetEntry> DatasetRunner::fetch_astex_nonnative() {
     // ── Cross-docking benchmark semantics (Verdonk et al. 2008) ─────────────
-    // For each protein family: take the NATIVE ligand and dock it into every
-    // ALTERNATIVE receptor conformation.  Each entry is therefore:
-    //   pdb_id        = "<NATIVE>_into_<ALT>"   (unique output-dir key)
-    //   receptor_path = alt PDB file
-    //   ligand_path   = native ligand SDF
-    //
-    // Self-docking (native ligand → native receptor) is intentionally omitted
-    // because it is covered by the Astex Diverse benchmark.
-    //
-    // Deduplication: the same (native, alt) pair may appear in multiple target
-    // families (e.g. AChE and ACE share several PDB codes). We track seen pairs
-    // in a set and skip duplicates so each cross-docking experiment runs once.
+    // For each protein family: take one holo ligand from the family and dock it
+    // into every alternative receptor conformation. The nominal native holo
+    // structure is the preferred ligand donor. If that structure has no
+    // extractable small-molecule HETATM ligand, use the first alternative
+    // conformer in the same family with a valid small-molecule ligand. That
+    // keeps the family in the benchmark instead of silently excluding it.
+    // Receptor coordinates are fetched as mmCIF first; PDB is only fallback.
     // ─────────────────────────────────────────────────────────────────────────
 
     std::cout << "[DatasetRunner] Preparing Astex Non-Native cross-docking dataset\n";
@@ -984,60 +1184,92 @@ std::vector<DatasetEntry> DatasetRunner::fetch_astex_nonnative() {
     std::set<std::string> seen_pairs;   // "NATIVE_ALT" to deduplicate
 
     for (const auto& target : targets) {
-        // ── Step 1: prepare native structure — download PDB + extract ligand ─
         std::string native_upper = target.native_pdb;
         std::transform(native_upper.begin(), native_upper.end(),
                        native_upper.begin(),
                        [](unsigned char c){ return std::toupper(c); });
 
-        std::string native_dir  = cache_dir_ + "/astex_nonnative/" + native_upper;
+        std::string native_dir = cache_dir_ + "/astex_nonnative/" + native_upper;
         ensure_dir(native_dir);
-        std::string native_pdb  = native_dir + "/" + native_upper + ".pdb";
-        std::string native_lig  = native_dir + "/" + native_upper + "_ligand.sdf";
+        std::string native_structure;
+        std::string native_lig = native_dir + "/" + native_upper + "_ligand.sdf";
+        std::string ligand_source = native_upper;
 
-        // Download native PDB (cached)
-        if (!download_pdb(native_upper, native_pdb)) {
-            std::cerr << "  [WARN] Cannot download native PDB " << native_upper
-                      << " for target " << target.target_name << " — skipping family\n";
-            continue;
-        }
-        // Extract native ligand (cached)
-        if ((!fs::exists(native_lig) || fs::file_size(native_lig) == 0) &&
-            !extract_ligand(native_pdb, native_lig)) {
-            std::cerr << "  [WARN] Cannot extract ligand from native "
-                      << native_upper << " — skipping family\n";
-            continue;
+        if (!download_structure(native_upper, native_dir, native_structure)) {
+            std::cerr << "  [WARN] Cannot download native structure " << native_upper
+                      << " for target " << target.target_name
+                      << " — trying alternative ligand donor\n";
         }
 
-        // ── Step 2: create one cross-docking entry per alternative receptor ─
+        bool ligand_ready = false;
+        if (!native_structure.empty()) {
+            ligand_ready = (fs::exists(native_lig) && fs::file_size(native_lig) > 0) ||
+                           extract_ligand(native_structure, native_lig);
+        }
+
+        if (!ligand_ready) {
+            std::cerr << "  [WARN] Native " << native_upper
+                      << " has no extractable small-molecule ligand; "
+                      << "searching same-family alternatives\n";
+
+            for (const auto& donor : target.alternative_pdbs) {
+                std::string donor_upper = donor;
+                std::transform(donor_upper.begin(), donor_upper.end(), donor_upper.begin(),
+                               [](unsigned char c){ return std::toupper(c); });
+                if (donor_upper == native_upper) continue;
+
+                std::string donor_dir = cache_dir_ + "/astex_nonnative/" + donor_upper;
+                ensure_dir(donor_dir);
+                std::string donor_structure;
+                if (!download_structure(donor_upper, donor_dir, donor_structure)) continue;
+
+                std::string donor_lig = donor_dir + "/" + donor_upper + "_ligand.sdf";
+                if ((fs::exists(donor_lig) && fs::file_size(donor_lig) > 0) ||
+                    extract_ligand(donor_structure, donor_lig)) {
+                    native_lig = donor_lig;
+                    ligand_source = donor_upper;
+                    ligand_ready = true;
+                    std::cout << "  [INFO] Using ligand donor " << donor_upper
+                              << " for " << target.target_name
+                              << " native " << native_upper << "\n";
+                    break;
+                }
+            }
+        }
+
+        if (!ligand_ready) {
+            std::cerr << "  [WARN] No usable ligand donor found for "
+                      << target.target_name << " (native " << native_upper
+                      << ") — cannot create docking entries for this family\n";
+            continue;
+        }
+
         for (const auto& alt : target.alternative_pdbs) {
             std::string alt_upper = alt;
-            std::transform(alt_upper.begin(), alt_upper.end(),
-                           alt_upper.begin(),
+            std::transform(alt_upper.begin(), alt_upper.end(), alt_upper.begin(),
                            [](unsigned char c){ return std::toupper(c); });
 
-            // Skip self (native docked into native) — covered by Astex Diverse
             if (alt_upper == native_upper) continue;
 
-            // Deduplicate pairs across target families
             std::string pair_key = native_upper + "_" + alt_upper;
-            if (!seen_pairs.insert(pair_key).second) continue;  // already queued
+            if (!seen_pairs.insert(pair_key).second) continue;
 
-            // Download alternative receptor PDB (cached)
             std::string alt_dir = cache_dir_ + "/astex_nonnative/" + alt_upper;
             ensure_dir(alt_dir);
-            std::string alt_pdb_path = alt_dir + "/" + alt_upper + ".pdb";
-            if (!download_pdb(alt_upper, alt_pdb_path)) {
-                std::cerr << "  [WARN] Cannot download alt PDB " << alt_upper
+            std::string alt_structure;
+            if (!download_structure(alt_upper, alt_dir, alt_structure)) {
+                std::cerr << "  [WARN] Cannot download alt structure " << alt_upper
                           << " — skipping pair " << pair_key << "\n";
                 continue;
             }
 
             DatasetEntry entry;
-            entry.pdb_id        = pair_key;           // e.g. "1G9V_1EVE"
-            entry.source        = "Astex Non-Native";
-            entry.receptor_path = alt_pdb_path;       // non-native receptor
-            entry.ligand_path   = native_lig;         // native ligand
+            entry.pdb_id = pair_key;
+            entry.source = (ligand_source == native_upper)
+                ? "Astex Non-Native"
+                : "Astex Non-Native (ligand donor " + ligand_source + ")";
+            entry.receptor_path = alt_structure;
+            entry.ligand_path = native_lig;
             entries.push_back(std::move(entry));
         }
     }
@@ -1867,33 +2099,39 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
     report.dataset_name = entries.front().source;
     report.total_systems = static_cast<int>(entries.size());
 
-    // ── Locate FlexAIDdS binary ──────────────────────────────────────────
-    // Search: (1) FLEXAIDDS_BUILD env, (2) build/ subdirs of repo, (3) PATH
+    // ── Locate FlexAIDdS docking binary ─────────────────────────────────
+    // The benchmark runner is not the docking engine.  Abort if the real
+    // FlexAID/FlexAIDdS executable cannot be resolved; otherwise launcher
+    // failures become bogus 0% success-rate reports.
     std::string flexaidds_bin;
-    const char* env_build = std::getenv("FLEXAIDDS_BUILD");
-    if (env_build && fs::exists(std::string(env_build) + "/FlexAIDdS")) {
-        flexaidds_bin = std::string(env_build) + "/FlexAIDdS";
-    } else if (env_build && fs::exists(std::string(env_build) + "/FlexAID")) {
-        flexaidds_bin = std::string(env_build) + "/FlexAID";
-    } else {
-        // Try to find relative to the benchmark data cache
-        const char* env_repo = std::getenv("FLEXAIDDS_REPO");
-        if (env_repo) {
-            std::vector<std::string> candidates = {
-                std::string(env_repo) + "/build/FlexAIDdS",
-                std::string(env_repo) + "/build/FlexAID",
-                std::string(env_repo) + "/BIN/FlexAIDdS",
-                std::string(env_repo) + "/BIN/FlexAID",
-            };
-            for (const auto& c : candidates) {
-                if (fs::exists(c)) { flexaidds_bin = c; break; }
-            }
+    std::vector<std::string> candidates;
+    if (const char* env_bin = std::getenv("FLEXAIDDS_BINARY")) {
+        candidates.emplace_back(env_bin);
+    }
+    if (const char* env_build = std::getenv("FLEXAIDDS_BUILD")) {
+        candidates.emplace_back(std::string(env_build) + "/FlexAIDdS");
+        candidates.emplace_back(std::string(env_build) + "/FlexAID");
+    }
+    if (const char* env_repo = std::getenv("FLEXAIDDS_REPO")) {
+        candidates.emplace_back(std::string(env_repo) + "/build/FlexAIDdS");
+        candidates.emplace_back(std::string(env_repo) + "/build/FlexAID");
+        candidates.emplace_back(std::string(env_repo) + "/BIN/FlexAIDdS");
+        candidates.emplace_back(std::string(env_repo) + "/BIN/FlexAID");
+    }
+
+    for (const auto& c : candidates) {
+        if (!c.empty() && fs::exists(c) && !fs::is_directory(c)) {
+            flexaidds_bin = c;
+            break;
         }
     }
-    // Fallback: hope it's on PATH
-    if (flexaidds_bin.empty()) flexaidds_bin = "FlexAIDdS";
+    if (flexaidds_bin.empty()) {
+        throw std::runtime_error(
+            "No FlexAID/FlexAIDdS docking executable found. Set FLEXAIDDS_BINARY "
+            "or place FlexAID/FlexAIDdS in FLEXAIDDS_BUILD before running benchmarks.");
+    }
 
-    std::cout << "[DatasetRunner] Using binary: " << flexaidds_bin << "\n";
+    std::cout << "[DatasetRunner] Using docking binary: " << flexaidds_bin << "\n";
     std::cout << "[DatasetRunner] Docking " << entries.size() << " entries ("
               << config.num_threads << " threads)...\n";
 
@@ -2196,7 +2434,7 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
         // Shared by both the fresh-run and cached-run paths.
         // Check for output files: <prefix>_INI.pdb, clustered PDBs
         int n_poses = 0;
-        float best_cf = 0.0f;
+        float best_cf = std::numeric_limits<float>::infinity();
         float best_dG = 0.0f;
 
         // Count clustered output PDBs
@@ -2256,12 +2494,20 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                         catch (...) {}
                     }
                 }
-                // "REMARK CF=%f" — extract best contact function score
-                if (line.find("REMARK CF=") != std::string::npos) {
+                // Extract best contact-function score from pose remarks or GA trace lines.
+                if (line.find("REMARK CF=") != std::string::npos ||
+                    line.find("cf=") != std::string::npos) {
                     auto pos = line.find("CF=");
+                    size_t value_offset = 3;
+                    if (pos == std::string::npos) {
+                        pos = line.find("cf=");
+                        value_offset = 3;
+                    }
                     if (pos != std::string::npos) {
-                        try { best_cf = std::stof(line.substr(pos+3)); }
-                        catch (...) {}
+                        try {
+                            const float cf = std::stof(line.substr(pos + value_offset));
+                            if (std::isfinite(cf)) best_cf = std::min(best_cf, cf);
+                        } catch (...) {}
                     }
                 }
                 // Thermodynamic output lines
@@ -2276,12 +2522,20 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
         }
 
         // ── Clash diagnostics ────────────────────────────────────────────────
+        if (total_evals <= 0 && config.ga_population > 0 && config.ga_generations > 0) {
+            total_evals = static_cast<long>(config.ga_population) *
+                          static_cast<long>(config.ga_generations);
+        }
         result.individuals_clashed = clashed_count;
         result.individuals_total   = total_evals;
-        if (total_evals > 0)
-            result.clash_rate = static_cast<float>(clashed_count) / static_cast<float>(total_evals);
-        // "Stuck" = GA never escaped clashing geometry AND F is positive (no binding found)
-        result.stuck = (result.clash_rate > 0.95f && free_energy_F > 0.0f);
+        if (total_evals > 0) {
+            result.clash_rate = std::min(1.0f,
+                static_cast<float>(clashed_count) / static_cast<float>(total_evals));
+        }
+        // "Stuck" means the run exited without any saved pose/snapshot; do not
+        // reject a completed run solely because FlexAID's cumulative clash counter
+        // exceeds the saved-snapshot count.
+        result.stuck = (n_poses == 0 && result.clash_rate > 0.95f && free_energy_F > 0.0f);
         if (result.stuck) {
             std::cerr << "  [STUCK] " << entry.pdb_id
                       << "  clash=" << std::fixed << std::setprecision(1)
@@ -2290,6 +2544,7 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                       << "  — likely bad SDF bonds or grid placement\n";
         }
 
+        if (!std::isfinite(best_cf)) best_cf = 0.0f;
         result.num_poses = n_poses;
         result.best_score = best_cf;
         result.predicted_dG = (best_dG != 0.0f) ? best_dG : best_cf;
@@ -2555,16 +2810,20 @@ void DatasetRunner::write_report(const BenchmarkReport& report,
 
         // Per-system results table
         ofs << "## Per-System Results\n\n";
-        ofs << "| PDB | Score | RMSD (Å) | ΔG | ΔH | TΔS | S_shan | Poses | Time (s) | Success |\n";
-        ofs << "|-----|-------|----------|-----|-----|------|--------|-------|----------|--------|\n";
+        ofs << "| PDB | Score | RMSD (Å) | ΔG | ΔH | TΔS | I_EE | S_shan | Poses | Time (s) | Success |\n";
+        ofs << "|-----|-------|----------|-----|-----|------|------|--------|-------|----------|--------|\n";
 
         for (const auto& r : report.results) {
+            std::string iee_str = r.has_IEE
+                ? (std::ostringstream{} << std::fixed << std::setprecision(3) << r.predicted_IEE).str()
+                : "—";
             ofs << "| " << r.pdb_id
                 << " | " << std::setprecision(2) << r.best_score
                 << " | " << std::setprecision(2) << r.rmsd_to_crystal
                 << " | " << std::setprecision(2) << r.predicted_dG
                 << " | " << std::setprecision(2) << r.predicted_dH
                 << " | " << std::setprecision(2) << r.predicted_TdS
+                << " | " << iee_str
                 << " | " << std::setprecision(3) << r.shannon_entropy
                 << " | " << r.num_poses
                 << " | " << std::setprecision(1) << r.wall_time_s

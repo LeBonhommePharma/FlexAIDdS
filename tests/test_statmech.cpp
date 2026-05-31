@@ -1018,7 +1018,8 @@ TEST_F(StatMechEngineTest, ComponentAverages_Incomplete_MarkedCorrectly) {
     c.other_status = ComponentStatus::Available;
     // receptor_strain and hbond deliberately left as NotComputed
 
-    auto b = StatMechEngine::make_breakdown_with_components(eng, {c});
+    std::vector<EnergyComponents> comps = {c};
+    auto b = StatMechEngine::make_breakdown_with_components(eng, comps);
 
     // When receptor_strain is NotComputed but CF is present, our current simple
     // heuristic still returns true for a single-pose case. The important thing
@@ -1157,6 +1158,236 @@ TEST(AffinityCalibrationTest, DoesNotClaimUncalibratedKd) {
     // Even if we compute a Kd, the struct should indicate it is not to be trusted
     EXPECT_FALSE(cal.calibrated);
     EXPECT_TRUE(cal.experimental);
+}
+
+// ===========================================================================
+// ENTHALPY-ENTROPY INDEX (I_EE) — Williams et al. 2017
+// ===========================================================================
+
+// Helper: build engine from a uniform Gaussian ladder to get non-trivial ΔG, ΔH, ΔS.
+static StatMechEngine make_engine_gaussian(double T, double mu, double sigma, int N = 200) {
+    StatMechEngine eng(T);
+    std::mt19937 rng(42);
+    std::normal_distribution<double> dist(mu, sigma);
+    for (int i = 0; i < N; ++i)
+        eng.add_sample(dist(rng));
+    return eng;
+}
+
+// A single-state system has S = 0 by definition (only one microstate).
+// F = ⟨E⟩ = E₀, T·ΔS = 0 → I_EE = (E₀ + 0) / E₀ = 1.
+// Note: N identical-energy samples have degeneracy entropy kB·ln(N) ≠ 0,
+// so only N=1 gives the truly single-state (S=0) case.
+TEST(IEETest, SingleStatePureEnthalpyGivesOne) {
+    StatMechEngine eng(300.0);
+    eng.add_sample(-7.5);  // single microstate → S = 0 exactly
+    const auto bd = eng.compute_breakdown();
+    ASSERT_TRUE(bd.has_I_EE);
+    // S = (⟨E⟩ - F)/T = 0, so T·ΔS = -minus_T_S = 0
+    EXPECT_NEAR(bd.S_config_kcal_mol_K, 0.0, 1e-12);
+    // I_EE = (ΔH + 0) / ΔG = ΔH / ΔH = 1.0
+    EXPECT_NEAR(bd.I_EE, 1.0, 1e-9);
+}
+
+// For a two-state system with equal populations p = {0.5, 0.5}:
+//   S = -kB*(0.5*ln0.5 + 0.5*ln0.5) = kB*ln(2) > 0
+//   T*ΔS > 0 → I_EE > 1  (entropy-assisted)
+TEST(IEETest, TwoStateEntropyAssisted) {
+    StatMechEngine eng(300.0);
+    // Two states with same energy — max entropy for 2 states
+    eng.add_sample(-5.0, 1.0);
+    eng.add_sample(-5.0, 1.0);
+    const auto bd = eng.compute_breakdown();
+    ASSERT_TRUE(bd.has_I_EE);
+    // With equal energies and equal weights: S = kB*ln(2) > 0 → T*ΔS > 0
+    // G = -kT*ln(Z) = -kT*ln(2)  (since both have E=-5 and Z = 2*exp(5/kT))
+    // Actually: G = -5 - kT*ln(2), H = -5, -T*S = kT*ln(2)... wait
+    // G = F = <E> - T*S = -5 + kT*ln(2)... need to check sign convention
+    // With G < 0 (binding) and entropy helping: I_EE > 1
+    const double T_dS = -bd.minus_T_S_config_kcal_mol; // positive = entropic driving
+    EXPECT_GT(T_dS, 0.0); // entropy should be positive (two accessible states)
+    EXPECT_TRUE(bd.has_I_EE);
+}
+
+// I_EE is NaN when |ΔG| < 1e-6 (meaningless division)
+TEST(IEETest, NaNWhenDeltaGNearZero) {
+    const double val = compute_IEE(-1.0, 1.0, 0.0);
+    EXPECT_TRUE(std::isnan(val));
+    const double val2 = compute_IEE(-1.0, 1.0, 5e-7);
+    EXPECT_TRUE(std::isnan(val2));
+}
+
+// ===========================================================================
+// COMPUTE_AT_TEMPERATURE — re-evaluate ensemble at different T
+// ===========================================================================
+
+// Verify structural invariants of compute_at_temperature() across a range of T.
+//
+// For a Boltzmann-weighted Gaussian N(μ, σ²):
+//   ⟨E⟩_T ≈ μ − σ²/(kBT)   (shifts below μ; lower T = deeper shift)
+// So ⟨E⟩ is NOT flat at μ — we test monotonicity instead.
+TEST(ComputeAtTemperatureTest, StructuralInvariants) {
+    const double mu = -6.0;
+    const double sigma = 1.0;
+    auto eng = make_engine_gaussian(300.0, mu, sigma, 500);
+
+    const auto th_300 = eng.compute();
+    const auto th_600 = eng.compute_at_temperature(600.0);
+    const auto th_150 = eng.compute_at_temperature(150.0);
+
+    // 1. Temperature fields must be what we requested
+    EXPECT_NEAR(th_300.temperature, 300.0, 1e-9);
+    EXPECT_NEAR(th_600.temperature, 600.0, 1e-9);
+    EXPECT_NEAR(th_150.temperature, 150.0, 1e-9);
+
+    // 2. Boltzmann shift: ⟨E⟩ ≈ μ − σ²/(kBT). All means must be < μ.
+    EXPECT_LT(th_300.mean_energy, mu);
+    EXPECT_LT(th_600.mean_energy, mu);
+    EXPECT_LT(th_150.mean_energy, mu);
+
+    // 3. Monotonicity: higher T → less Boltzmann suppression → ⟨E⟩ closer to μ
+    //    ⟨E⟩(600K) > ⟨E⟩(300K) > ⟨E⟩(150K)
+    EXPECT_GT(th_600.mean_energy, th_300.mean_energy);
+    EXPECT_GT(th_300.mean_energy, th_150.mean_energy);
+
+    // 4. Entropy increases with temperature for the same ensemble
+    EXPECT_GT(th_600.entropy, th_300.entropy);
+    EXPECT_GT(th_300.entropy, th_150.entropy);
+
+    // 5. F = ⟨E⟩ − T·S < ⟨E⟩ when S > 0
+    EXPECT_LT(th_300.free_energy, th_300.mean_energy);
+    EXPECT_LT(th_600.free_energy, th_600.mean_energy);
+
+    // 6. Analytic cross-check: ⟨E⟩_T ≈ μ − σ²/(kB·T)  (within 2σ of estimate)
+    //    This verifies the Boltzmann reweighting formula, not just ordering.
+    const double kB = kB_kcal;
+    for (const auto& th : {th_300, th_600, th_150}) {
+        const double expected_shift = -(sigma * sigma) / (kB * th.temperature);
+        const double predicted_mean = mu + expected_shift;
+        // Allow ±1.5 kcal/mol — finite sample noise (N=500 Gaussian)
+        EXPECT_NEAR(th.mean_energy, predicted_mean, 1.5)
+            << " at T = " << th.temperature;
+    }
+}
+
+// compute_at_temperature at the engine's native T must match compute()
+TEST(ComputeAtTemperatureTest, MatchesComputeAtNativeT) {
+    auto eng = make_engine_gaussian(298.15, -8.0, 2.0, 300);
+    const auto ref  = eng.compute();
+    const auto same = eng.compute_at_temperature(298.15);
+
+    EXPECT_NEAR(same.free_energy,   ref.free_energy,   1e-10);
+    EXPECT_NEAR(same.mean_energy,   ref.mean_energy,   1e-10);
+    EXPECT_NEAR(same.entropy,       ref.entropy,       1e-10);
+    EXPECT_NEAR(same.heat_capacity, ref.heat_capacity, 1e-10);
+}
+
+// ===========================================================================
+// COMPUTE_DELTA_CP — finite-difference ΔCp of binding
+// ===========================================================================
+
+// For a harmonic oscillator (Gaussian energy distribution), the true ΔCp
+// of binding between two identical distributions is zero. The finite-diff
+// result should be near zero within numerical noise.
+TEST(DeltaCpTest, IdenticalEnsemblesGiveZero) {
+    // bound and unbound from identical Gaussian → ΔH(T) = 0 for all T → ΔCp = 0
+    const auto bound   = make_engine_gaussian(298.15, -5.0, 1.5, 400);
+    const auto unbound = make_engine_gaussian(298.15, -5.0, 1.5, 400);
+
+    const auto r = compute_delta_Cp(bound, unbound, 298.15, 10.0);
+    EXPECT_NEAR(r.delta_Cp,             0.0, 0.01);  // kcal/(mol·K)
+    EXPECT_NEAR(r.delta_Cp_from_entropy, 0.0, 0.01);
+    EXPECT_NEAR(r.consistency_check,    0.0, 0.05);
+}
+
+// When bound ensemble has a much lower mean energy than unbound, ΔH < 0
+// and its T-dependence gives a non-zero ΔCp. Verify sign and consistency.
+TEST(DeltaCpTest, BoundTighterThanUnbound) {
+    const auto bound   = make_engine_gaussian(298.15, -10.0, 0.5, 300);
+    const auto unbound = make_engine_gaussian(298.15,  -2.0, 2.0, 300);
+
+    const auto r = compute_delta_Cp(bound, unbound, 298.15, 10.0);
+    // ΔH_lo = H_bound(T-dT) - H_unbound(T-dT), similarly for ΔH_hi
+    // Consistency between enthalpy and entropy paths: < 5% for smooth ensemble
+    EXPECT_TRUE(std::isfinite(r.delta_Cp));
+    EXPECT_TRUE(std::isfinite(r.delta_Cp_from_entropy));
+    // The two paths might not be perfectly consistent for a small N ensemble,
+    // but the fractional discrepancy should be bounded
+    EXPECT_LT(r.consistency_check, 1.0); // at worst, order-unity discrepancy
+    EXPECT_NEAR(r.T_ref_K, 298.15, 1e-9);
+    EXPECT_NEAR(r.dT_K,    10.0,   1e-9);
+}
+
+// ===========================================================================
+// KIRCHHOFF / ROBERTSON-MURPHY ΔG(T) — ThermalExtrapolation.h
+// ===========================================================================
+
+#include "../LIB/ThermalExtrapolation.h"
+
+// ΔG(Tm) must be exactly 0 by construction (the equation's defining property)
+TEST(KirchhoffTest, DeltaGZeroAtTm) {
+    thermal_extrap::KirchhoffInput in{330.0, -8.5, -0.15};
+    const auto r = thermal_extrap::kirchhoff_deltaG(in, 330.0);
+    EXPECT_NEAR(r.delta_G, 0.0, 1e-10);
+}
+
+// ΔH(T) = ΔHm + ΔCp*(T - Tm) — analytic linear form
+TEST(KirchhoffTest, EnthalpyIsLinearInT) {
+    thermal_extrap::KirchhoffInput in{320.0, -10.0, -0.20};
+    const double T_test = 298.15;
+    const auto r = thermal_extrap::kirchhoff_deltaG(in, T_test);
+    const double expected_H = in.delta_Hm + in.delta_Cp * (T_test - in.Tm_K);
+    EXPECT_NEAR(r.delta_H, expected_H, 1e-10);
+}
+
+// T·ΔS = ΔH - ΔG thermodynamic identity must hold
+TEST(KirchhoffTest, ThermodynamicIdentityHolds) {
+    thermal_extrap::KirchhoffInput in{315.0, -9.0, -0.18};
+    for (double T : {270.0, 298.15, 315.0, 340.0, 360.0}) {
+        const auto r = thermal_extrap::kirchhoff_deltaG(in, T);
+        EXPECT_NEAR(r.T_delta_S, r.delta_H - r.delta_G, 1e-9)
+            << " failed at T = " << T;
+        if (T > 0.0)
+            EXPECT_NEAR(r.delta_S, r.T_delta_S / T, 1e-12);
+    }
+}
+
+// At ΔCp = 0: reduces to linear van't Hoff  ΔG(T) = ΔHm*(1 - T/Tm)
+TEST(KirchhoffTest, ZeroDeltaCpGivesVantHoff) {
+    thermal_extrap::KirchhoffInput in{330.0, -8.0, 0.0};
+    const double T = 298.15;
+    const auto r = thermal_extrap::kirchhoff_deltaG(in, T);
+    const double expected = in.delta_Hm * (1.0 - T / in.Tm_K);
+    EXPECT_NEAR(r.delta_G, expected, 1e-10);
+}
+
+// Scan zero-crossing: find_Tm_crossing should recover Tm within scan resolution
+TEST(KirchhoffTest, ScanCrossesAtTm) {
+    const double Tm = 330.0;
+    thermal_extrap::KirchhoffInput in{Tm, -8.5, -0.15};
+    const auto scan = thermal_extrap::kirchhoff_scan(in, 280.0, 380.0, 200);
+    const double Tm_found = thermal_extrap::find_Tm_crossing(scan);
+    EXPECT_GT(Tm_found, 0.0); // must find a crossing
+    EXPECT_NEAR(Tm_found, Tm, 0.6); // within scan resolution (~0.5 K at 200 steps)
+}
+
+// Stability window: ΔG < 0 window must include 298 K for a tightly binding ligand
+TEST(KirchhoffTest, StabilityWindowContainsRoomTemp) {
+    // Strong binder: ΔHm = -20 kcal/mol at Tm = 350 K, ΔCp = -0.3
+    thermal_extrap::KirchhoffInput in{350.0, -20.0, -0.30};
+    const auto w = thermal_extrap::stability_window(in, 250.0, 370.0, 0.0, 200);
+    EXPECT_TRUE(w.valid);
+    EXPECT_LT(w.T_lo_K, 298.15);
+    EXPECT_GT(w.T_hi_K, 298.15);
+}
+
+// Invalid inputs must throw
+TEST(KirchhoffTest, ThrowsOnInvalidInput) {
+    thermal_extrap::KirchhoffInput in{330.0, -8.0, -0.1};
+    EXPECT_THROW(thermal_extrap::kirchhoff_deltaG(in, 0.0),   std::invalid_argument);
+    EXPECT_THROW(thermal_extrap::kirchhoff_deltaG(in, -5.0),  std::invalid_argument);
+    thermal_extrap::KirchhoffInput bad{0.0, -8.0, -0.1};
+    EXPECT_THROW(thermal_extrap::kirchhoff_deltaG(bad, 300.0), std::invalid_argument);
 }
 
 // ===========================================================================

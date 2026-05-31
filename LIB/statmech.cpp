@@ -175,6 +175,63 @@ Thermodynamics StatMechEngine::compute() const {
     return th;
 }
 
+// ─── compute_at_temperature ───────────────────────────────────────────────────
+// Re-evaluate the current ensemble at T_K without touching the stored T_ / beta_.
+// Mirrors the Eigen branch of compute() exactly; only beta differs.
+
+Thermodynamics StatMechEngine::compute_at_temperature(double T_K) const
+{
+    if (ensemble_.empty())
+        throw std::runtime_error("StatMechEngine::compute_at_temperature: empty ensemble");
+    if (T_K <= 0.0)
+        throw std::invalid_argument("StatMechEngine::compute_at_temperature: T_K must be > 0");
+
+    const double beta_T = 1.0 / (kB_kcal * T_K);
+    const std::size_t N = ensemble_.size();
+
+    // log-weights at the requested temperature
+    std::vector<double> log_w(N);
+    {
+        Eigen::ArrayXd counts(static_cast<Eigen::Index>(N));
+        Eigen::ArrayXd energies(static_cast<Eigen::Index>(N));
+        for (std::size_t i = 0; i < N; ++i) {
+            counts(static_cast<Eigen::Index>(i))   = ensemble_[i].count;
+            energies(static_cast<Eigen::Index>(i)) = ensemble_[i].energy;
+        }
+        Eigen::Map<Eigen::ArrayXd>(log_w.data(), static_cast<Eigen::Index>(N)) =
+            counts.log() - beta_T * energies;
+    }
+
+    const double lnZ = log_sum_exp(log_w);
+
+    // ⟨E⟩ and ⟨E²⟩ via Eigen vectorised path
+    double E_avg = 0.0, E2_avg = 0.0;
+    {
+        Eigen::Map<const Eigen::ArrayXd> lw(log_w.data(), static_cast<Eigen::Index>(N));
+        std::vector<double> ev(N);
+        for (std::size_t i = 0; i < N; ++i) ev[i] = ensemble_[i].energy;
+        Eigen::Map<const Eigen::ArrayXd> E(ev.data(), static_cast<Eigen::Index>(N));
+
+        const Eigen::ArrayXd probs = (lw - lnZ).exp();
+        E_avg  = (probs * E).sum();
+        E2_avg = (probs * E * E).sum();
+    }
+
+    const double kT  = kB_kcal * T_K;
+    const double var = E2_avg - E_avg * E_avg;
+
+    Thermodynamics th;
+    th.temperature    = T_K;
+    th.log_Z          = lnZ;
+    th.free_energy    = -kT * lnZ;
+    th.mean_energy    = E_avg;
+    th.mean_energy_sq = E2_avg;
+    th.heat_capacity  = var / (kB_kcal * T_K * T_K);
+    th.entropy        = (E_avg - th.free_energy) / T_K;
+    th.std_energy     = std::sqrt(std::max(0.0, var));
+    return th;
+}
+
 ThermodynamicBreakdown StatMechEngine::compute_breakdown(
     double G_vib_kcal_mol,
     double G_natural_kcal_mol,
@@ -204,7 +261,61 @@ ThermodynamicBreakdown StatMechEngine::compute_breakdown(
     b.has_vib = has_vib;
     b.has_natural = has_natural;
     b.has_other = has_other;
+
+    // I_E-E index (Williams et al. 2017) — diagnostic, never for ranking
+    fill_IEE(b);
+
     return b;
+}
+
+// ─── compute_delta_Cp ────────────────────────────────────────────────────────
+// Central finite-difference ΔCp of binding:
+//   ΔCp ≈ [ΔH(T+dT) − ΔH(T−dT)] / (2·dT)
+//
+// Consistency check via entropy path:
+//   ΔCp ≈ T_ref × [ΔS(T+dT) − ΔS(T−dT)] / (2·dT)
+//
+// Both routes use the SAME GA ensemble re-evaluated at T±dT.
+// No additional sampling is required.
+
+DeltaCpResult compute_delta_Cp(
+    const StatMechEngine& bound,
+    const StatMechEngine& unbound,
+    double T_ref_K,
+    double dT_K)
+{
+    if (dT_K <= 0.0)
+        throw std::invalid_argument("compute_delta_Cp: dT_K must be > 0");
+    if (T_ref_K - dT_K <= 0.0)
+        throw std::invalid_argument("compute_delta_Cp: T_ref_K - dT_K must be > 0");
+
+    const Thermodynamics bnd_lo  = bound.compute_at_temperature(T_ref_K - dT_K);
+    const Thermodynamics bnd_hi  = bound.compute_at_temperature(T_ref_K + dT_K);
+    const Thermodynamics ref_lo  = unbound.compute_at_temperature(T_ref_K - dT_K);
+    const Thermodynamics ref_hi  = unbound.compute_at_temperature(T_ref_K + dT_K);
+
+    const double dH_lo = bnd_lo.mean_energy - ref_lo.mean_energy;
+    const double dH_hi = bnd_hi.mean_energy - ref_hi.mean_energy;
+    const double dS_lo = bnd_lo.entropy     - ref_lo.entropy;
+    const double dS_hi = bnd_hi.entropy     - ref_hi.entropy;
+
+    DeltaCpResult r;
+    r.T_ref_K              = T_ref_K;
+    r.dT_K                 = dT_K;
+    r.delta_H_lo           = dH_lo;
+    r.delta_H_hi           = dH_hi;
+    r.delta_S_lo           = dS_lo;
+    r.delta_S_hi           = dS_hi;
+    r.delta_Cp             = (dH_hi - dH_lo) / (2.0 * dT_K);
+    r.delta_Cp_from_entropy = T_ref_K * (dS_hi - dS_lo) / (2.0 * dT_K);
+
+    // Fractional consistency between the two ΔCp estimates
+    const double abs_mean = 0.5 * (std::abs(r.delta_Cp) + std::abs(r.delta_Cp_from_entropy));
+    r.consistency_check = std::abs(r.delta_Cp - r.delta_Cp_from_entropy)
+                          / (abs_mean + 1e-9);
+    r.consistent = (r.consistency_check < 0.05);
+
+    return r;
 }
 
 ComponentAverages StatMechEngine::component_averages(
