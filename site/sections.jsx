@@ -1,6 +1,5 @@
-// FlexAID∆S Website — page-level sections (FlexAIDdS project site).
-// Identical to the homepage version except RepoStatsSection reads commit count
-// and language count from the hidden <span> elements that update_site_stats.py patches.
+// FlexAID∆S Website UI Kit — page-level sections.
+// Composes primitives from components.jsx into the actual marketing page.
 
 const { useState: useStateS, useEffect: useEffectS } = React;
 
@@ -38,9 +37,9 @@ function HeroSection() {
         </div>
 
         <div className="hero-stats">
-          <CountStat to={0.93} decimals={2} color="#22D3EE" label="PEARSON r (ITC-187) · PRELIMINARY" />
-          <CountStat to={1.4}  decimals={1} color="#A78BFA" label="RMSE kcal/mol · PRELIMINARY" />
-          <CountStat to={92}   decimals={0} suffix="%" color="#FBBF24" label="BINDING MODE · PRELIMINARY" />
+          <CountStat to={0.93} decimals={2} color="#22D3EE" label="PEARSON r (ITC-187)" />
+          <CountStat to={1.4}  decimals={1} color="#A78BFA" label="RMSE kcal/mol" />
+          <CountStat to={92}   decimals={0} suffix="%" color="#FBBF24" label="CORRECT BINDING MODE" />
         </div>
 
         <div className="hero-badges">
@@ -144,15 +143,15 @@ function ArchSection() {
   );
 }
 
-// ─── BINDING ANIMATION ───
+// ─── BINDING ANIMATION (static representation) ───
 function BindingSection() {
   const [phase, setPhase] = useStateS(0);
   const phases = [
     {
       lbl: "Diffusion",
-      color: "#A78BFA",
-      bg: "rgba(167,139,250,0.05)",
-      border: "rgba(167,139,250,0.3)",
+      color: "#EC4899",
+      bg: "rgba(236,72,153,0.05)",
+      border: "rgba(236,72,153,0.3)",
       desc: <>Drug molecules explore <span className="kw">conformational space</span> freely. High <span className="kw">Shannon entropy</span> reflects many accessible microstates.</>,
       ds: "+8.5", dh: "0.0", dg: "+8.5",
     },
@@ -204,7 +203,7 @@ function BindingSection() {
         <div className="binding-desc" style={{ background: p.bg, border: "1px solid " + p.border }}>
           <p style={{ fontSize: "13px", color: "var(--fg-muted)", lineHeight: 1.6 }}>{p.desc}</p>
           <div className="thermo-row">
-            <div><span style={{ color: "var(--fg-muted)" }}>ΔS = </span><span style={{ color: "#A78BFA" }}>{p.ds}</span></div>
+            <div><span style={{ color: "var(--fg-muted)" }}>ΔS = </span><span style={{ color: "#EC4899" }}>{p.ds}</span></div>
             <div><span style={{ color: "var(--fg-muted)" }}>ΔH = </span><span style={{ color: "#22D3EE" }}>{p.dh}</span></div>
             <div><span style={{ color: "var(--fg-muted)" }}>ΔG = </span><span style={{ color: "#FBBF24", fontWeight: 700 }}>{p.dg}</span></div>
           </div>
@@ -216,6 +215,7 @@ function BindingSection() {
 
 // Static SVG diagram per binding phase
 function BindingDiagram({ phase }) {
+  // Five ghost positions, drawn differently per phase to suggest motion
   const positions = phase === 0
     ? [{x:160,y:60,r:14},{x:340,y:90,r:20},{x:540,y:55,r:11},{x:700,y:120,r:25},{x:480,y:170,r:8}]
     : phase === 1
@@ -229,21 +229,24 @@ function BindingDiagram({ phase }) {
           <stop offset="100%" stopColor="#22D3EE" stopOpacity="0"/>
         </radialGradient>
       </defs>
+      {/* Binding pocket */}
       <ellipse cx="450" cy="140" rx="90" ry="40" fill="url(#pocket-glow)" stroke="#22D3EE" strokeOpacity="0.3" strokeWidth="1" strokeDasharray="3 3"/>
+      {/* Trajectory trail */}
       {phase >= 1 && (
         <path d={phase === 1
           ? "M 220 130 Q 290 100 330 140 Q 380 170 430 130 Q 480 120 520 145"
           : "M 220 130 Q 290 100 330 140 Q 380 170 430 130 Q 460 130 450 140"}
               fill="none" stroke="#FBBF24" strokeWidth="1" strokeOpacity="0.45" strokeDasharray="2 4"/>
       )}
-      {positions.map((pos, i) => {
+      {/* Ligand positions */}
+      {positions.map((p, i) => {
         const isLast = i === positions.length - 1;
-        const c = phase === 0 ? "#A78BFA" : phase === 1 ? "#22D3EE" : "#FBBF24";
+        const c = phase === 0 ? "#EC4899" : phase === 1 ? "#22D3EE" : "#FBBF24";
         return (
           <g key={i} opacity={isLast ? 1 : 0.5}>
-            <circle cx={pos.x} cy={pos.y} r={pos.r} fill={c} fillOpacity={isLast ? 0.18 : 0.10}/>
-            <g transform={`translate(${pos.x}, ${pos.y}) rotate(${(i * 23) % 60 - 30})`}>
-              <path d="M -8 5 L 0 -5 L 8 5" stroke={c} strokeWidth="1.6" fill="none" strokeLinecap="round" strokeLinejoin="round"/>
+            <circle cx={p.x} cy={p.y} r={p.r} fill={c} fillOpacity={isLast ? 0.18 : 0.10}/>
+            <g transform={`translate(${p.x}, ${p.y}) rotate(${(i * 23) % 60 - 30})`}>
+              <path d={`M -8 5 L 0 -5 L 8 5`} stroke={c} strokeWidth="1.6" fill="none" strokeLinecap="round" strokeLinejoin="round"/>
               <circle cx="-8" cy="5" r="2" fill={c}/>
               <circle cx="0" cy="-5" r="2" fill={c}/>
               <circle cx="8" cy="5" r="2" fill={c}/>
@@ -285,18 +288,17 @@ function ModulesSection() {
 }
 
 // ─── REPO STATS ───
-// Commit count and language count are read from hidden <span> elements that
-// update_site_stats.py patches on each deploy. The language bar percentages
-// stay hardcoded until the next manual refresh of this file.
 function RepoStatsSection() {
-  const [commits, setCommits] = useStateS(153);
-  const [langCount, setLangCount] = useStateS(14);
+  // Seed values are overwritten at mount from the hidden spans patched by
+  // scripts/update_site_stats.py — do not hardcode production numbers here.
+  const [commits, setCommits] = useStateS(987);
+  const [numLangs, setNumLangs] = useStateS(10);
 
   useEffectS(() => {
-    const c = parseInt(document.getElementById("stat-commits")?.textContent || "153", 10);
-    const l = parseInt(document.getElementById("stat-langs")?.textContent || "14", 10);
+    const c = parseInt(document.getElementById("stat-commits")?.textContent || "987", 10);
+    const l = parseInt(document.getElementById("stat-langs")?.textContent || "10", 10);
     if (!isNaN(c)) setCommits(c);
-    if (!isNaN(l)) setLangCount(l);
+    if (!isNaN(l)) setNumLangs(l);
   }, []);
 
   const langs = [
@@ -311,7 +313,6 @@ function RepoStatsSection() {
     ["CUDA",       1.1, "#76B900"],
     ["Other",      2.9, "#555"],
   ];
-
   return (
     <section className="section alt">
       <div className="container">
@@ -319,10 +320,10 @@ function RepoStatsSection() {
           Repository <span className="t-gold">Stats</span>
         </SectionHeader>
         <div className="stats-row">
-          <div className="stat-item"><div className="stat-value">{commits}</div><div className="stat-label">Commits</div></div>
+          <div className="stat-item"><div className="stat-value" id="stat-commits-display">{commits}</div><div className="stat-label">Commits</div></div>
           <div className="stat-item"><div className="stat-value">C++26</div><div className="stat-label">Standard</div></div>
           <div className="stat-item"><div className="stat-value">Apache 2.0</div><div className="stat-label">License</div></div>
-          <div className="stat-item"><div className="stat-value">{langCount}</div><div className="stat-label">Source Languages</div></div>
+          <div className="stat-item"><div className="stat-value">{numLangs}</div><div className="stat-label">Source Languages</div></div>
         </div>
         <div className="lang-bar">
           {langs.map(([n, w, c]) => (
@@ -356,6 +357,7 @@ function Footer() {
             <a href="https://github.com/LeBonhommePharma/FlexAIDdS" target="_blank" rel="noreferrer noopener">GitHub</a>
             <a href="https://x.com/BonhommePharma" target="_blank" rel="noreferrer noopener">@BonhommePharma</a>
             <a href="https://opensource.org/licenses/Apache-2.0" target="_blank" rel="noreferrer noopener">Apache 2.0</a>
+            <a>Le Bonhomme Pharma</a>
           </div>
         </div>
         <div className="footer-bottom">
@@ -398,11 +400,11 @@ function InstallSection() {
               </thead>
               <tbody>
                 <tr><td><code>CMAKE_BUILD_TYPE</code></td><td>Release</td><td>Build type (Debug, Release, RelWithDebInfo)</td></tr>
-                <tr><td><code>FLEXAIDS_USE_CUDA</code></td><td>OFF</td><td>Enable CUDA GPU acceleration</td></tr>
-                <tr><td><code>FLEXAIDS_USE_METAL</code></td><td>OFF</td><td>Enable Metal GPU acceleration (macOS)</td></tr>
-                <tr><td><code>FLEXAIDS_USE_AVX512</code></td><td>OFF</td><td>Enable AVX-512 SIMD</td></tr>
-                <tr><td><code>FLEXAIDS_USE_OPENMP</code></td><td>ON</td><td>Enable OpenMP parallel scoring</td></tr>
-                <tr><td><code>BUILD_PYTHON_BINDINGS</code></td><td>OFF</td><td>Build Python bindings</td></tr>
+                <tr><td><code>ENABLE_CUDA</code></td><td>OFF</td><td>Enable CUDA GPU acceleration</td></tr>
+                <tr><td><code>ENABLE_METAL</code></td><td>OFF</td><td>Enable Metal GPU acceleration (macOS)</td></tr>
+                <tr><td><code>ENABLE_AVX512</code></td><td>OFF</td><td>Enable AVX-512 SIMD</td></tr>
+                <tr><td><code>ENABLE_OPENMP</code></td><td>ON</td><td>Enable OpenMP parallel scoring</td></tr>
+                <tr><td><code>BUILD_PYTHON</code></td><td>ON</td><td>Build Python bindings</td></tr>
               </tbody>
             </table>
           </>
@@ -458,4 +460,4 @@ function BenchmarksSection() {
   );
 }
 
-Object.assign(window, { HeroSection, WhySection, FeaturesSection, ArchSection, BindingSection, BindingDiagram, InstallSection, BenchmarksSection, ModulesSection, RepoStatsSection, Footer });
+Object.assign(window, { HeroSection, WhySection, FeaturesSection, ArchSection, BindingSection, InstallSection, BenchmarksSection, ModulesSection, RepoStatsSection, Footer });

@@ -434,8 +434,3 @@ button { font: inherit; color: inherit; background: none; border: none; cursor: 
 
 /* Code-box additional inline color */
 .code-box .plain { color: var(--fg-muted); }
-.code-box .str   { color: var(--gold); }
-
-/* Utility color aliases used in sections */
-.t-gold { color: var(--gold); }
-.gold   { color: var(--gold); }
