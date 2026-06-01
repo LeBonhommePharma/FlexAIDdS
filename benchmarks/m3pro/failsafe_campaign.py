@@ -91,9 +91,15 @@ def is_icloud_path(path: Path) -> bool:
     return "Mobile Documents" in s or "com~apple~CloudDocs" in s
 
 
-def require_local_path(name: str, path: Path) -> None:
+def require_local_path(name: str, path: Path, strict: bool = True) -> None:
     if is_icloud_path(path):
-        raise CampaignError(f"{name} must be local APFS, not iCloud: {path}")
+        msg = f"{name} is on iCloud: {path}"
+        if strict:
+            raise CampaignError(f"{name} must be local APFS, not iCloud: {path}")
+        else:
+            # On pure iCloud-only machines (M3 Pro 18GB policy), the installed build can live on iCloud
+            # as long as actual GA execution uses a fast local --local-base.
+            print(f"[failsafe] WARNING: {msg} — acceptable on iCloud-only rigs. Execution will still use local hot paths.")
 
 
 def mkdir(path: Path) -> None:
@@ -554,11 +560,11 @@ def main() -> int:
     _warn_non_portable_remote(remote_base)
 
     try:
-        require_local_path("repo", repo)
-        require_local_path("build", build)
-        require_local_path("binary", binary)
-        require_local_path("local_base", local_base)
-        require_local_path("local_cache", local_cache)
+        require_local_path("repo", repo, strict=False)
+        require_local_path("build", build, strict=False)
+        require_local_path("binary", binary, strict=False)
+        require_local_path("local_base", local_base, strict=True)
+        require_local_path("local_cache", local_cache, strict=True)
         if not binary.is_file() or not os.access(binary, os.X_OK):
             raise CampaignError(f"benchmark_datasets not executable: {binary}")
         if not docking_binary.is_file() or not os.access(docking_binary, os.X_OK):
