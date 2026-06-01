@@ -106,3 +106,6 @@ build_opencode/
 # AI agent instruction files (AGENTS.md is the source of truth; committed for all tools)
 !AGENTS.md
 !chatgpt-instructions.md
+benchmarks/m3pro/failsafe_campaign.py
+benchmarks/m3pro/monitor_campaign.sh
+scripts/launch_campaign.sh
