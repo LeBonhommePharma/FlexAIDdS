@@ -329,6 +329,20 @@ case "${1:-help}" in
     status)
         cat "$ICLOUD_LOGS/m3pro_failsafe_${RUN_ID}/campaign_status.json" 2>/dev/null || echo "No status yet for $RUN_ID"
         ;;
+
+    monitor)
+        phase "MONITOR LATEST GROK CAMPAIGN"
+        # Find the most recent grok_own run (the ones you actually care about)
+        LATEST=$(ls -1dt "$ICLOUD_LOGS"/m3pro_failsafe_grok_own* 2>/dev/null | head -1)
+        if [[ -z "$LATEST" ]]; then
+            echo "No grok_own runs found under $ICLOUD_LOGS"
+            exit 1
+        fi
+        echo "Monitoring: $LATEST"
+        echo "Press Ctrl-C to stop watching."
+        echo ""
+        tail -f "$LATEST/campaign_status.json"
+        ;;
     show|cmd|command)
         phase "EXACT FAILSAFE COMMAND THIS WOULD RUN"
         cmd=$(build_cmd)
@@ -397,18 +411,18 @@ It wraps the hardened failsafe_campaign.py with:
 All durable artifacts (results, logs, analysis, manifests) live on iCloud Drive.
 
 Subcommands:
-  doctor      Diagnose self-location vs FLEXAIDDS_REPO / binary / iCloud / tmp sanity (NEW Chunk 1)
-  preflight   Safe validation + doctor (recommended first step; now calls doctor)
-  launch      Start/resume the 10-rep campaign
-  start       The "one fucking command" — launches full pipeline inside screen/tmux using self-located paths
-              (supports SESSION_BACKEND=screen|tmux env or flag in later chunks)
-  sync        Extra rsync to iCloud (safety net)
-  analyze     Generate bootstrap success rate reports
-  full        preflight + launch + analyze + sync (one-shot)
-  status      Show live campaign_status.json
+  doctor      Diagnose self-location vs FLEXAIDDS_REPO / binary / iCloud / tmp sanity
+  preflight   Safe validation + doctor
+  launch      Start/resume the campaign
+  start       The one-command way — launches everything inside screen/tmux with safe wrapper
+  monitor     Watch the latest grok_own run live (tails campaign_status.json) — no screen needed
+  status      Show status for current $RUN_ID (rarely useful)
+  sync        Extra rsync to iCloud
+  analyze     Run bootstrap analysis
+  full        preflight + launch + analyze + sync
 
-  ./grok_master_launcher.sh doctor
-  SESSION_BACKEND=tmux ./grok_master_launcher.sh start ...
+  ./grok_master_launcher.sh monitor          # easiest way to watch a run
+  ./grok_master_launcher.sh start ...        # the main one-command launcher
 
 Environment: Must have run setup_cloud_storage.sh so ~/.flexaidds_env exists.
 
