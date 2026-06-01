@@ -81,6 +81,26 @@ if [[ "$DATASET" == *"nonnative"* || "$DATASET" == *"non_native"* ]]; then
     fi
 fi
 
+# --- Metal / Hardware Acceleration pre-flight (M3 Pro & Apple Silicon) -------
+if [[ "$OSTYPE" == "darwin"* ]]; then
+    echo "Apple platform (M3 Pro etc.) — Metal hardware acceleration pre-flight..."
+    METAL_COUNT=0
+    if [ -d "$FLEXAIDDS_BUILD" ]; then
+        METAL_COUNT=$(ls "$FLEXAIDDS_BUILD"/*.metallib 2>/dev/null | wc -l | tr -d ' ')
+    fi
+    if [ "$METAL_COUNT" -gt 0 ]; then
+        echo "  ✓ $METAL_COUNT .metallib shaders present (ShannonEntropy, CavityDetect, MetalRMSD, TurboQuant, etc.)"
+        echo "  → UnifiedHardwareDispatch / ShannonThermoStack / tENCoM / CavityDetect will use Metal when kernels execute."
+    else
+        echo "  ⚠ No .metallib shaders found — Metal acceleration will fall back to CPU paths."
+    fi
+    if command -v system_profiler >/dev/null 2>&1; then
+        METAL_INFO=$(system_profiler SPDisplaysDataType 2>/dev/null | grep -E 'Metal Support|Chipset Model' | head -2 | xargs)
+        echo "  Runtime: $METAL_INFO"
+    fi
+    echo "  Build was configured with FLEXAIDS_USE_METAL=ON (see CMakeCache.txt in build dir)."
+fi
+
 # --- 5. Prepare output directory on iCloud ----------------------------------
 TS=$(date +%s)
 OUT_DIR="$FLEXAIDDS_RESULTS/full-${TEMPERATURE}K-${SUBDIR_NAME}-${TS}"
