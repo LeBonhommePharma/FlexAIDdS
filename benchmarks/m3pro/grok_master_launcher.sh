@@ -351,9 +351,14 @@ case "${1:-help}" in
 
         SCREEN_NAME="${RUN_ID}"
 
-        # Add a simple trap in the *outer* manager for hot dir cleanup on abnormal exit
-        cleanup_hot() { rm -rf "$LOCAL_HOT_BASE" 2>/dev/null || true; }
-        trap cleanup_hot EXIT INT TERM
+        # NOTE: We deliberately do NOT set an EXIT trap here when launching detached.
+        # An EXIT trap would fire as soon as this launcher script finishes (which it does
+        # right after the screen -dmS line), deleting the hot dir + inner script while
+        # the detached screen is still trying to execute it. That is exactly why your
+        # previous runs produced zero logs/results.
+        #
+        # Cleanup of the hot dir (if desired) should be done manually or from inside
+        # the inner script after it finishes.
 
         if [[ "$SESSION_BACKEND" == "screen" ]] && command -v screen >/dev/null 2>&1; then
             screen -dmS "$SCREEN_NAME" "$INNER_SCRIPT"
