@@ -373,6 +373,60 @@ def _resolve_repo(default: Path | None) -> Path:
     return default or DEFAULT_REPO
 
 
+def _load_flexaidds_env() -> dict[str, str]:
+    """Bulletproof loader for FLEXAIDDS_* variables.
+
+    Priority:
+      1. Already-present os.environ values (user did `source ~/.flexaidds_env` before python)
+      2. Safe parse of ~/.flexaidds_env (or $FLEXAIDDS_ENV_FILE) without executing shell
+
+    Never raises. Returns only FLEXAIDDS_* keys. Handles common quoting.
+    This matches the set -a / source pattern used by the companion .sh scripts.
+    """
+    env: dict[str, str] = {}
+
+    # 1. Respect already-exported environment (highest priority)
+    for k, v in os.environ.items():
+        if k.startswith("FLEXAIDDS_"):
+            env[k] = v
+
+    if env:
+        return env  # User already sourced — use it as-is
+
+    # 2. Safe file parse (no shell, no eval)
+    env_file = os.environ.get("FLEXAIDDS_ENV_FILE")
+    if not env_file:
+        env_file = str(Path.home() / ".flexaidds_env")
+
+    p = Path(env_file)
+    if not p.exists():
+        return env
+
+    try:
+        for line in p.read_text(encoding="utf-8", errors="replace").splitlines():
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            if line.startswith("export "):
+                line = line[7:].strip()
+            if "=" not in line:
+                continue
+            k, v = line.split("=", 1)
+            k = k.strip()
+            if not k.startswith("FLEXAIDDS_"):
+                continue
+            v = v.strip()
+            # Strip common quoting
+            if (v.startswith('"') and v.endswith('"')) or (v.startswith("'") and v.endswith("'")):
+                v = v[1:-1]
+            env[k] = v
+    except Exception as exc:
+        # Production-grade: never let a bad env file kill the script
+        print(f"[failsafe] WARNING: failed to parse {env_file}: {exc}", file=sys.stderr)
+
+    return env
+
+
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(
         description=__doc__ + "\n\n"
@@ -410,6 +464,19 @@ def main() -> int:
     signal.signal(signal.SIGINT, signal_handler)
     signal.signal(signal.SIGTERM, signal_handler)
     args = parse_args()
+
+    flex_env = _load_flexaidds_env()
+
+    # Apply FLEXAIDDS_* env as high-priority fallbacks (matches .sh campaign behavior)
+    # This makes the Python script "just work" after the user has sourced ~/.flexaidds_env
+    if not args.repo and "FLEXAIDDS_REPO" in flex_env:
+        args.repo = Path(flex_env["FLEXAIDDS_REPO"])
+    if str(args.build) == str(DEFAULT_BUILD) and "FLEXAIDDS_BUILD" in flex_env:
+        args.build = Path(flex_env["FLEXAIDDS_BUILD"])
+    if str(args.icloud_base) == str(DEFAULT_ICLOUD_BASE) and "FLEXAIDDS_ICLOUD" in flex_env:
+        args.icloud_base = Path(flex_env["FLEXAIDDS_ICLOUD"])
+    if str(args.local_cache) == str(Path(tempfile.gettempdir()) / "flexaidds_benchmark_cache") and "FLEXAIDDS_BENCHMARK_DATA" in flex_env:
+        args.local_cache = Path(flex_env["FLEXAIDDS_BENCHMARK_DATA"])
 
     repo = _resolve_repo(args.repo).resolve()
     build = args.build.resolve()
