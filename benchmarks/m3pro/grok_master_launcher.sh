@@ -172,6 +172,29 @@ case "${1:-help}" in
         echo ""
         info "Copy-paste the above (with any extra flags) if you want to run the failsafe directly."
         ;;
+    start)
+        phase "START CAMPAIGN IN SCREEN (recommended for long runs)"
+        SCREEN_NAME="grok_bench_${RUN_ID}"
+        if command -v screen >/dev/null 2>&1; then
+            info "Launching inside screen session: $SCREEN_NAME"
+            screen -dmS "$SCREEN_NAME" bash -c "
+                source ~/.flexaidds_env
+                cd \"$FLEXAIDDS_REPO\"
+                $0 preflight
+                $0 launch
+                $0 analyze
+                $0 sync
+                echo 'Campaign complete. Press any key to close this screen.'
+                read -n 1
+            "
+            ok "Screen session '$SCREEN_NAME' started."
+            info "Attach with: screen -r $SCREEN_NAME"
+            info "Detach with: Ctrl-A then D"
+        else
+            warn "screen not found. Falling back to regular launch (run this in your own tmux/screen)."
+            $0 full
+        fi
+        ;;
     *)
         cat <<'EOF'
 Grok Master M3 Pro Launcher & Syncer (iCloud durability, local speed, failsafe)
