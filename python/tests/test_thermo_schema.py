@@ -38,18 +38,20 @@ def test_make_and_validate_roundtrip():
 
 
 def test_validation_rejects_bad_consistency():
-    with pytest.raises(ValueError, match="F_config inconsistency"):
-        make_total_sampled_output(
-            logZ=-42.0,
-            mean_energy=-15.5,
-            temperature_K=300.0,
-            n_samples=100,
-            git_sha="abc",
-            timestamp="2026-01-01",
-            gate_results={},
-            # Deliberately wrong F by passing a bad value via direct construction
-        )
-    # The factory itself would have caught it; test direct bad object
+    # The factory computes F = -kB*T*logZ, so it always yields a CONSISTENT object
+    # (there is no F input to mis-set). Confirm it builds and validates cleanly:
+    good = make_total_sampled_output(
+        logZ=-42.0,
+        mean_energy=-15.5,
+        temperature_K=300.0,
+        n_samples=100,
+        git_sha="abc",
+        timestamp="2026-01-01",
+        gate_results={},
+    )
+    good.validate()
+
+    # Inconsistency IS rejected by validate() on a hand-built bad object:
     bad = ThermodynamicOutputDC.from_dict(
         {
             "total_sampled": {
