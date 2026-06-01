@@ -296,6 +296,21 @@ On machines with constrained local storage (e.g. M3 Pro using 2 TB iCloud Drive 
 - Cross-worker resume (Grok Build ↔ Codex ↔ Claude Code) is supported by keeping `checkpoint.json`, per-generation results, and provenance on iCloud so any agent with access to the synced folder can resume cleanly with `--resume`.
 - Always run the skill validator + ensure_docking_data before such sessions. Produce `--package` reproducibility artifacts for any real runs that mix with the thermodynamic ledger work.
 
+**Canonical Launcher for Full Production Runs on M3 Pro (2026)**
+For any full first-run benchmark campaign on the M3 Pro (especially Astex Non-Native or at exact temperatures 298 K / 310 K), **always** use the canonical launcher provided by the skill:
+
+```bash
+bash .grok/skills/flexaid-docking/scripts/launch_full_benchmark.sh \
+    <dataset> <temperature> <results_subdir_name>
+```
+
+(or make it executable and run directly). Do **not** invoke with `python3`.
+
+This launcher enforces the full ritual, correct PATH for `benchmark_datasets`, strict pre-flight (full data for heavy datasets), early `run_status.json`, proper detached logging, and iCloud-only output. It is the only supported way to start production full runs on this machine. See `scripts/launch_full_benchmark.sh` and `benchmarks/m3pro/README.md`.
+
+**Metal hardware acceleration on M3 Pro (and other Apple Silicon):**  
+The canonical build used by the launcher (FLEXAIDDS_BUILD) is compiled with `FLEXAIDS_USE_METAL=ON`. The launcher now performs an explicit pre-flight that confirms the presence of `.metallib` shaders (ShannonEntropy, CavityDetect, MetalRMSD, etc.). On M3 Pro the `UnifiedHardwareDispatch` will automatically prefer the Metal backend for Shannon configurational entropy (ShannonThermoStack), tENCoM vibrational entropy, cavity detection, and batch RMSD/quantization kernels when those code paths are exercised during a benchmark. CPU fallback is always available. The 298 K / 310 K Astex (Diverse + Non-Native) full runs therefore benefit from Metal acceleration "when possible" without any extra flags. Dispatch choices appear in the binary.log once the relevant C++ kernels execute.
+
 See the full CLI and library interface via:
 ```bash
 python -m flexaidds.dataset_runner --help
