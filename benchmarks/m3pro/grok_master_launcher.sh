@@ -167,6 +167,7 @@ notify_user() {
 # === Chunk 2: Safe absolute inner wrapper generator (the "tard-proof" one-command fix) ===
 # Creates a complete, self-contained, chmod +x script inside the local hot base.
 # It hard-codes the absolute FAILSAFE_PY / ANALYZER_PY from *this* manager's SCRIPT_DIR,
+# explicitly forces the correct build + repo paths (to avoid stale defaults),
 # sources the env for the heavy build/binary/iCloud paths only, and runs the full pipeline.
 # Screen/tmux then execs this absolute file directly — no heredoc, no $0, no cd to wrong tree,
 # no FLEXAIDDS_REPO script pollution for scripts.
@@ -179,7 +180,7 @@ write_inner_wrapper() {
     local run_id="$2"
 
     # --- Defensive checks (fail fast with clear messages) ---
-    local required_vars=(FAILSAFE_PY ANALYZER_PY LOCAL_HOT_BASE ICLOUD_LOGS ICLOUD_RESULTS)
+    local required_vars=(FAILSAFE_PY ANALYZER_PY LOCAL_HOT_BASE ICLOUD_LOGS ICLOUD_RESULTS FLEXAIDDS_BUILD FLEXAIDDS_REPO)
     for v in "${required_vars[@]}"; do
         if [[ -z "${!v:-}" ]]; then
             die "write_inner_wrapper: required variable '$v' is empty or unset"
@@ -194,13 +195,15 @@ write_inner_wrapper() {
         printf '#!/bin/bash\n'
         printf 'set -euo pipefail\n\n'
 
-        # Inject the six critical absolute paths / values with proper single-quoting
+        # Inject the critical absolute paths / values with proper single-quoting
         printf "FAILSAFE_PY='%s'\n" "$(printf %s "$FAILSAFE_PY" | sed "s/'/'\\\\''/g")"
         printf "ANALYZER_PY='%s'\n" "$(printf %s "$ANALYZER_PY" | sed "s/'/'\\\\''/g")"
         printf "RUN_ID='%s'\n"       "$(printf %s "$run_id"       | sed "s/'/'\\\\''/g")"
         printf "LOCAL_HOT_BASE='%s'\n" "$(printf %s "$LOCAL_HOT_BASE" | sed "s/'/'\\\\''/g")"
         printf "ICLOUD_LOGS='%s'\n"   "$(printf %s "$ICLOUD_LOGS"   | sed "s/'/'\\\\''/g")"
         printf "ICLOUD_RESULTS='%s'\n" "$(printf %s "$ICLOUD_RESULTS" | sed "s/'/'\\\\''/g")"
+        printf "FLEXAIDDS_BUILD='%s'\n" "$(printf %s "$FLEXAIDDS_BUILD" | sed "s/'/'\\\\''/g")"
+        printf "FLEXAIDDS_REPO='%s'\n"  "$(printf %s "$FLEXAIDDS_REPO"  | sed "s/'/'\\\\''/g")"
         printf '\n'
 
         # The rest of the script body is appended literally (no further variable expansion at generation time)
@@ -231,6 +234,8 @@ python3 "$FAILSAFE_PY" \
     --temperature ${TEMPERATURE:-300} \
     --run-id "$RUN_ID" \
     --local-base "$LOCAL_HOT_BASE" \
+    --build "$FLEXAIDDS_BUILD" \
+    --repo "$FLEXAIDDS_REPO" \
     --resume \
     2>&1 | tee -a "$ICLOUD_LOGS/${RUN_ID}_inner.log"
 
