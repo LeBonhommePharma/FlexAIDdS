@@ -15,10 +15,33 @@ Commands
 Options
 -------
   --campaign-dir PATH    Campaign working directory (default: ./campaign)
+                         **On this M3 Pro machine, always point at iCloud**
+                         (e.g. ~/Library/Mobile\ Documents/com~apple~CloudDocs/FlexAIDdS/re-dock-campaigns/my-campaign
+                          or use paths from ~/.flexaidds_env)
+
   --t-min FLOAT          Minimum temperature in K (default: 298)
   --t-max FLOAT          Maximum temperature in K (default: 600)
   --n-replicas INT       Number of temperature replicas (default: 8)
   --fit-dcp              Include ΔCp in Van't Hoff fit
+
+Invocation on this machine (M3 Pro + iCloud-only results policy)
+----------------------------------------------------------------
+Because the directory is named re-dock/ (hyphen), standard "python -m" does not
+work directly. Use one of:
+
+  # Recommended for Codex/local resume work (all outputs must go to iCloud)
+  PYTHONPATH=. python -c '
+import sys
+sys.path.insert(0, "benchmarks/re-dock")
+from cli import main
+main()
+' --campaign-dir ~/Library/Mobile\ Documents/.../my-campaign ...
+
+Or:
+  cd benchmarks/re-dock && PYTHONPATH=../.. python cli.py --campaign-dir /iCloud/path/...
+
+All persistent outputs (checkpoints, results, visualizations) **must** land on
+the 2 TB iCloud Drive per the Storage Invariant.
 
 Le Bonhomme Pharma / Najmanovich Research Group
 """
