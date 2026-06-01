@@ -256,6 +256,8 @@ build_cmd() {
         --temperature ${TEMPERATURE:-$DEFAULT_TEMPERATURE} \
         --run-id \"$RUN_ID\" \
         --local-base \"$LOCAL_HOT_BASE\" \
+        --build \"${FLEXAIDDS_BUILD}\" \
+        --repo \"${FLEXAIDDS_REPO}\" \
         ${EXTRA_ARGS:-}"
 }
 
