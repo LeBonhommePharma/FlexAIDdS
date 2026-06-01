@@ -6,13 +6,15 @@ description: >
   docking/thermodynamic-roadmap task decomposition.
 
   Natural language triggers include:
-  - Any mention of FlexAID, FlexAIDδS, FlexAIDdS, "molecular docking", "perform docking",
+  - Any mention of FlexAID, FlexAIDδS, FlexAIDdS, FlexAIDDS, "molecular docking", "perform docking",
     "run docking", "docking simulation", "redock", "redocking", "binding mode analysis",
     "thermodynamic analysis", "ensemble docking", "pose ranking", or "vibrational entropy".
   - Skill maintenance: "update the flexaid-docking skill", "update the docking skill",
     "refresh flexaid skill", "pull latest flexaid-docking", "update the skill".
   - Any request involving the FlexAIDδS binary, flexaidds Python package, tENCoM,
     StatMechEngine, BindingMode, or thermodynamic ledger work.
+  - Codex/local benchmark workflows: "take from Codex and run benchmarks locally", "resume from iCloud",
+    "cross-worker resume", "Grok Build Codex Claude resume", "iCloud FS benchmark test".
 
   When a docking-related request is detected, the skill should ask clarifying questions
   about organism/species, biological target (protein/RNA/DNA + chains), ligand source
@@ -28,12 +30,13 @@ metadata:
 **Primary invocations (documented aliases):**
 - `/flexaid-docking`
 - `/FlexAid docking`
-- `/FlexAIDδS`, `/FlexAIDdS`
+- `/FlexAIDδS`, `/FlexAIDdS`, `/FlexAidDS`, `FlexAID∆S`
 - Natural language (strongly supported):
   - "update the flexaid-docking skill", "update the docking skill", "refresh the flexaid skill"
   - "dock this ligand", "perform molecular docking", "redock the co-crystallized ligand",
     "run FlexAIDδS on this target", "analyze the thermodynamic ledger", "binding mode prediction with entropy"
   - "run DatasetRunner", "benchmark on Astex", "run casf2016 benchmark", "distributed docking campaign", "dataset benchmarking"
+  - "take Codex results and run benchmarks locally", "resume campaign from iCloud", "cross-worker resume Grok Build Codex Claude", "iCloud benchmark resume"
 
 This skill activates for any task involving the FlexAID or FlexAIDδS molecular docking engine, its Python package `flexaidds`, **DatasetRunner** benchmarking campaigns, thermodynamics layer, or related packaging.
 
@@ -284,6 +287,14 @@ The generated package contains:
 - Your results/ directory
 
 This is the general, reusable solution that works for DatasetRunner campaigns, redock_from_pdb workflows, and future tooling.
+
+**iCloud + Codex / Cross-Worker Resume Workflows (M3 Pro discipline)**
+On machines with constrained local storage (e.g. M3 Pro using 2 TB iCloud Drive exclusively for results):
+- Always direct `--results-dir` (and campaign dirs for re-dock) to iCloud paths via `FLEXAIDDS_RESULTS` / `~/.flexaidds_env`.
+- Use `benchmarks/re-dock/icloud_fs_check.py` before/after heavy Codex ingest or resume operations to verify read/write/executable paths are reliable on the live iCloud volume (catches sync races, placeholder eviction, permission drift).
+- For Codex artifacts: prefer `redock ingest-dir` (or equivalent batch import) over manual pasting when bringing results from sandboxes into a local iCloud campaign.
+- Cross-worker resume (Grok Build ↔ Codex ↔ Claude Code) is supported by keeping `checkpoint.json`, per-generation results, and provenance on iCloud so any agent with access to the synced folder can resume cleanly with `--resume`.
+- Always run the skill validator + ensure_docking_data before such sessions. Produce `--package` reproducibility artifacts for any real runs that mix with the thermodynamic ledger work.
 
 See the full CLI and library interface via:
 ```bash
