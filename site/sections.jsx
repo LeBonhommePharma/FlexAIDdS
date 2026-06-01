@@ -460,4 +460,30 @@ function BenchmarksSection() {
   );
 }
 
-Object.assign(window, { HeroSection, WhySection, FeaturesSection, ArchSection, BindingSection, InstallSection, BenchmarksSection, ModulesSection, RepoStatsSection, Footer });
+// ─── EXPLORE / TEASER CARDS ───
+function ExploreSection() {
+  return (
+    <section className="explore-section">
+      <div className="container">
+        <SectionHeader eyebrow="open tools">
+          Explore More
+        </SectionHeader>
+        <div className="teaser-grid">
+          <a href="/flexaid" className="teaser-card">
+            <h3>FlexAID∆S</h3>
+            <p>The dedicated standalone product experience featuring a live Mol* 3D molecular viewer, benchmarks, and full technical documentation.</p>
+            <span className="teaser-label">Visit the FlexAID Landing</span>
+          </a>
+
+          <a href="/periodic" className="teaser-card">
+            <h3>Pharmacological Periodic Table</h3>
+            <p>An interactive periodic table of the elements annotated with clinical drugs, mechanisms of action, therapeutic uses, and toxicological context.</p>
+            <span className="teaser-label">Open the Periodic Table</span>
+          </a>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+Object.assign(window, { HeroSection, WhySection, FeaturesSection, ArchSection, BindingSection, InstallSection, BenchmarksSection, ModulesSection, RepoStatsSection, Footer, ExploreSection });

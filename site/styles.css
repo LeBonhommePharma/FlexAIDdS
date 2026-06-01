@@ -434,3 +434,74 @@ button { font: inherit; color: inherit; background: none; border: none; cursor: 
 
 /* Code-box additional inline color */
 .code-box .plain { color: var(--fg-muted); }
+
+/* ─── Teaser / Explore Cards (for /flexaid and /periodic) ─── */
+.explore-section {
+  padding: 3.5rem 0 4rem;
+  background: linear-gradient(180deg, rgba(16,20,28,0.4) 0%, rgba(10,14,20,0.0) 100%);
+  border-top: 1px solid var(--teal-08);
+  border-bottom: 1px solid var(--teal-08);
+}
+
+.teaser-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 1rem;
+  margin-top: 1.5rem;
+}
+@media (min-width: 720px) {
+  .teaser-grid { grid-template-columns: repeat(2, 1fr); }
+}
+
+.teaser-card {
+  display: block;
+  padding: 1.25rem 1.5rem;
+  background: var(--bg-card);
+  border: 1px solid var(--teal-10);
+  border-radius: 10px;
+  text-decoration: none;
+  color: inherit;
+  transition: transform 0.2s cubic-bezier(0.2,0,0,1), 
+              border-color 0.2s cubic-bezier(0.2,0,0,1),
+              box-shadow 0.2s cubic-bezier(0.2,0,0,1);
+}
+
+.teaser-card:hover {
+  transform: translateY(-2px);
+  border-color: var(--teal);
+  box-shadow: 0 10px 30px -10px rgba(0,0,0,0.4);
+}
+
+.teaser-card h3 {
+  font-family: var(--font-mono);
+  font-size: 15px;
+  font-weight: 600;
+  margin-bottom: 6px;
+  color: var(--fg);
+}
+
+.teaser-card p {
+  font-size: 13px;
+  color: var(--fg-muted);
+  line-height: 1.5;
+  margin-bottom: 10px;
+}
+
+.teaser-card .teaser-label {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.05em;
+  color: var(--teal);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.teaser-card .teaser-label::after {
+  content: '→';
+  transition: transform 0.2s ease;
+}
+
+.teaser-card:hover .teaser-label::after {
+  transform: translateX(2px);
+}

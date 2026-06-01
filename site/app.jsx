@@ -30,6 +30,7 @@ function App() {
       <EntropyMeter />
       <main style={{ paddingTop: "56px", position: "relative", zIndex: 1 }}>
         <HeroSection />
+        <ExploreSection />
         <div className="section-divider" />
         <WhySection />
         <div className="section-divider" />
