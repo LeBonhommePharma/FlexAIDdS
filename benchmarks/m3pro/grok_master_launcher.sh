@@ -36,6 +36,13 @@ warn() { printf "${YELLOW}[WARN]${NC} %s\n" "$*" >&2; }
 die()  { printf "${RED}[ERROR]${NC} %s\n" "$*" >&2; exit 1; }
 phase() { printf "\n${BOLD}════════════════════════════════════════════════════════${NC}\n${BOLD}  %s${NC}\n${BOLD}════════════════════════════════════════════════════════${NC}\n\n" "$*"; }
 
+# === SELF-LOCATION (Chunk 1 safety fix — never trust FLEXAIDDS_REPO for script paths) ===
+# This is the root cause fix for every "wrong tree / no such file / stale binary" screen failure.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPT_ABS="$SCRIPT_DIR/$(basename "${BASH_SOURCE[0]}")"
+FAILSAFE_PY="$SCRIPT_DIR/failsafe_campaign.py"
+ANALYZER_PY="$SCRIPT_DIR/analyze_repetitions.py"
+
 # 1. Source the official M3 Pro iCloud environment
 ENV_FILE="$HOME/.flexaidds_env"
 if [[ -f "$ENV_FILE" ]]; then
@@ -65,6 +72,7 @@ DEFAULT_GA_GENERATIONS=1000
 DEFAULT_GA_POPULATION=2000
 DEFAULT_CLUSTERING="FO"
 DEFAULT_TEMPERATURE=300
+SESSION_BACKEND="${SESSION_BACKEND:-screen}"   # Chunk 1 skeleton: screen | tmux | none (expanded Chunk 2)
 
 # 4. Unique run identity (for "your own" campaigns, cleanly separated from Codex runs)
 RUN_ID="${RUN_ID:-grok_own_m3pro_$(date +%Y%m%d_%H%M%S)}"
@@ -76,8 +84,9 @@ LOCAL_HOT_BASE="${LOCAL_HOT_BASE:-/private/tmp/grok_bench_hot_${RUN_ID}}"
 ICLOUD_RESULTS="$FLEXAIDDS_RESULTS"
 ICLOUD_LOGS="$FLEXAIDDS_LOGS"
 
-FAILSAVE_SCRIPT="$FLEXAIDDS_REPO/benchmarks/m3pro/failsafe_campaign.py"
-ANALYZER="$FLEXAIDDS_REPO/benchmarks/m3pro/analyze_repetitions.py"
+# Use self-located absolute paths (Chunk 1). FLEXAIDDS_REPO is still used for the *build/binary* only.
+FAILSAVE_SCRIPT="$FAILSAFE_PY"
+ANALYZER="$ANALYZER_PY"
 
 # Safety: basic iCloud volume sanity check (common source of "unhealthy" runs)
 check_icLOUD_health() {
@@ -104,6 +113,36 @@ if [[ ! -x "$DOCKING_BINARY" ]]; then
     die "FlexAID not executable at $DOCKING_BINARY"
 fi
 
+# === doctor() — Chunk 1: explicit diagnosis of the exact class of failure the user has been hitting ===
+doctor() {
+    phase "DOCTOR — Self-location vs Environment Sanity (M3 Pro 18GB)"
+    echo "SCRIPT_DIR (this launcher lives here):     $SCRIPT_DIR"
+    echo "SCRIPT_ABS:                                 $SCRIPT_ABS"
+    echo "FAILSAFE_PY (will be used for campaign):    $FAILSAFE_PY"
+    echo "ANALYZER_PY:                                $ANALYZER_PY"
+    echo ""
+    echo "FLEXAIDDS_REPO (from env, for BUILD only):  ${FLEXAIDDS_REPO:-<unset>}"
+    echo "FLEXAIDDS_BUILD:                            ${FLEXAIDDS_BUILD:-<unset>}"
+    echo ""
+    if [[ "$SCRIPT_DIR" != "${FLEXAIDDS_REPO:-}"* && -n "${FLEXAIDDS_REPO:-}" ]]; then
+        warn "MISMATCH DETECTED: This launcher is in a different worktree than FLEXAIDDS_REPO."
+        warn "This was the root cause of almost every 'No such file' / wrong binary path in screen sessions."
+        warn "The new self-location + absolute inner wrapper (Chunk 2) fixes it."
+    else
+        ok "SCRIPT_DIR and FLEXAIDDS_REPO are consistent (or FLEXAIDDS_REPO not overriding)."
+    fi
+    echo ""
+    echo "Binary checks:"
+    [[ -x "$BINARY" ]] && ok "benchmark_datasets: $BINARY" || warn "benchmark_datasets MISSING or not +x at $BINARY"
+    [[ -x "$DOCKING_BINARY" ]] && ok "FlexAID:          $DOCKING_BINARY" || warn "FlexAID MISSING or not +x at $DOCKING_BINARY"
+    echo ""
+    # Quick iCloud / tmp sanity (expanded in later chunks)
+    [[ -d "$ICLOUD_RESULTS" && -w "$ICLOUD_RESULTS" ]] && ok "iCloud results writable: $ICLOUD_RESULTS" || warn "iCloud results path problem: $ICLOUD_RESULTS"
+    [[ -d "/private/tmp" && -w "/private/tmp" ]] && ok "/private/tmp (hot path) writable" || warn "/private/tmp not writable — hot execution will fail"
+    echo ""
+    info "Run 'doctor' anytime to re-check. Start will call this automatically (Chunk 1+)."
+}
+
 mkdir -p "$LOCAL_HOT_BASE" "$ICLOUD_LOGS" "$ICLOUD_RESULTS/tier2" "$ICLOUD_RESULTS/analysis"
 
 build_cmd() {
@@ -121,8 +160,12 @@ build_cmd() {
 }
 
 case "${1:-help}" in
+    doctor)
+        doctor
+        ;;
     preflight)
         phase "HEALTHY PREFLIGHT (M3 Pro 18GB + iCloud durability)"
+        doctor
         info "Using local hot APFS for execution speed, iCloud for all durable storage"
         cmd=$(build_cmd)
         eval "$cmd --preflight-only --skip-smoke"
@@ -173,25 +216,40 @@ case "${1:-help}" in
         info "Copy-paste the above (with any extra flags) if you want to run the failsafe directly."
         ;;
     start)
-        phase "START CAMPAIGN IN SCREEN (recommended for long runs)"
+        phase "START CAMPAIGN (screen/tmux via self-located safe path — Chunk 1+2)"
+        info "Session backend: $SESSION_BACKEND (skeleton; full safe inner wrapper in Chunk 2)"
         SCREEN_NAME="grok_bench_${RUN_ID}"
-        if command -v screen >/dev/null 2>&1; then
-            info "Launching inside screen session: $SCREEN_NAME"
+        if [[ "$SESSION_BACKEND" == "screen" ]] && command -v screen >/dev/null 2>&1; then
+            info "Launching inside screen session: $SCREEN_NAME (will use absolute inner wrapper in Chunk 2)"
+            # NOTE: Current heredoc still has the old behavior for compatibility during Chunk 1.
+            # Chunk 2 will replace this with generation of $LOCAL_HOT_BASE/inner_*.sh + absolute launch.
             screen -dmS "$SCREEN_NAME" bash -c "
                 source ~/.flexaidds_env
                 cd \"$FLEXAIDDS_REPO\"
-                $0 preflight
-                $0 launch
-                $0 analyze
-                $0 sync
+                \"$SCRIPT_ABS\" preflight
+                \"$SCRIPT_ABS\" launch
+                \"$SCRIPT_ABS\" analyze
+                \"$SCRIPT_ABS\" sync
                 echo 'Campaign complete. Press any key to close this screen.'
                 read -n 1
             "
             ok "Screen session '$SCREEN_NAME' started."
             info "Attach with: screen -r $SCREEN_NAME"
             info "Detach with: Ctrl-A then D"
+        elif [[ "$SESSION_BACKEND" == "tmux" ]] && command -v tmux >/dev/null 2>&1; then
+            info "tmux support skeleton active (full implementation Chunk 2)"
+            tmux new-session -d -s "$SCREEN_NAME" bash -c "
+                source ~/.flexaidds_env
+                cd \"$FLEXAIDDS_REPO\"
+                \"$SCRIPT_ABS\" preflight
+                \"$SCRIPT_ABS\" launch
+                \"$SCRIPT_ABS\" analyze
+                \"$SCRIPT_ABS\" sync
+            " || warn "tmux launch failed (skeleton)"
+            ok "tmux session '$SCREEN_NAME' started (skeleton)."
+            info "Attach with: tmux attach -t $SCREEN_NAME"
         else
-            warn "screen not found. Falling back to regular launch (run this in your own tmux/screen)."
+            warn "Requested backend '$SESSION_BACKEND' not available or not yet fully wired. Falling back."
             $0 full
         fi
         ;;
@@ -213,12 +271,18 @@ It wraps the hardened failsafe_campaign.py with:
 All durable artifacts (results, logs, analysis, manifests) live on iCloud Drive.
 
 Subcommands:
-  preflight   Safe validation (recommended first step)
+  doctor      Diagnose self-location vs FLEXAIDDS_REPO / binary / iCloud / tmp sanity (NEW Chunk 1)
+  preflight   Safe validation + doctor (recommended first step; now calls doctor)
   launch      Start/resume the 10-rep campaign
+  start       The "one fucking command" — launches full pipeline inside screen/tmux using self-located paths
+              (supports SESSION_BACKEND=screen|tmux env or flag in later chunks)
   sync        Extra rsync to iCloud (safety net)
   analyze     Generate bootstrap success rate reports
   full        preflight + launch + analyze + sync (one-shot)
   status      Show live campaign_status.json
+
+  ./grok_master_launcher.sh doctor
+  SESSION_BACKEND=tmux ./grok_master_launcher.sh start ...
 
 Environment: Must have run setup_cloud_storage.sh so ~/.flexaidds_env exists.
 
