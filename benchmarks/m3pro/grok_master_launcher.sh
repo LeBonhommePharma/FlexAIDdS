@@ -143,6 +143,85 @@ doctor() {
     info "Run 'doctor' anytime to re-check. Start will call this automatically (Chunk 1+)."
 }
 
+# === Chunk 2: Safe absolute inner wrapper generator (the "tard-proof" one-command fix) ===
+# Creates a complete, self-contained, chmod +x script inside the local hot base.
+# It hard-codes the absolute FAILSAFE_PY / ANALYZER_PY from *this* manager's SCRIPT_DIR,
+# sources the env for the heavy build/binary/iCloud paths only, and runs the full pipeline.
+# Screen/tmux then execs this absolute file directly — no heredoc, no $0, no cd to wrong tree, no FLEXAIDDS_REPO pollution for scripts.
+write_inner_wrapper() {
+    local inner_path="$1"
+    local run_id="$2"
+    cat > "$inner_path" << 'INNER_EOF'
+#!/bin/bash
+set -euo pipefail
+
+# These are expanded by the *outer* manager at generation time (absolute, from the correct worktree)
+FAILSAFE_PY="__FAILSAFE_PY__"
+ANALYZER_PY="__ANALYZER_PY__"
+RUN_ID="__RUN_ID__"
+LOCAL_HOT_BASE="__LOCAL_HOT_BASE__"
+ICLOUD_LOGS="__ICLOUD_LOGS__"
+ICLOUD_RESULTS="__ICLOUD_RESULTS__"
+
+# Source the user's env for the heavy stuff (build, iCloud targets, etc.)
+ENV_FILE="$HOME/.flexaidds_env"
+if [[ -f "$ENV_FILE" ]]; then
+    set -a
+    # shellcheck disable=SC1090
+    source "$ENV_FILE"
+    set +a
+fi
+
+echo "[inner] Starting healthy pipeline for $RUN_ID using self-located scripts:"
+echo "[inner]   FAILSAFE_PY=$FAILSAFE_PY"
+echo "[inner]   ANALYZER_PY=$ANALYZER_PY"
+echo "[inner]   Status will be at: $ICLOUD_LOGS/m3pro_failsafe_${RUN_ID}/campaign_status.json"
+echo ""
+
+# The full safe pipeline (preflight already passed in outer; here we do the real work + post-steps)
+python3 "$FAILSAFE_PY" \
+    --datasets ${DATASETS:-astex astex_nonnative hap2} \
+    --runs ${RUNS:-10} \
+    --workers ${WORKERS:-4} \
+    --ga-generations ${GA_GENERATIONS:-1000} \
+    --ga-population ${GA_POPULATION:-2000} \
+    --clustering ${CLUSTERING:-FO} \
+    --temperature ${TEMPERATURE:-300} \
+    --run-id "$RUN_ID" \
+    --local-base "$LOCAL_HOT_BASE" \
+    --resume \
+    2>&1 | tee -a "$ICLOUD_LOGS/${RUN_ID}_inner.log"
+
+echo ""
+echo "[inner] Campaign body complete. Running analyze + final sync..."
+
+python3 "$ANALYZER_PY" \
+    --results-dir "$ICLOUD_RESULTS/tier2" \
+    --n-bootstrap 10000 \
+    --output-dir "$ICLOUD_RESULTS/analysis/${RUN_ID}" \
+    2>&1 | tee -a "$ICLOUD_LOGS/${RUN_ID}_inner.log" || true
+
+# Belt-and-suspenders final sync of hot results (the failsafe also does rsync when remote configured)
+if [[ -d "$LOCAL_HOT_BASE" ]]; then
+    rsync -a --delete "$LOCAL_HOT_BASE/" "$ICLOUD_RESULTS/tier2/" 2>/dev/null || true
+fi
+
+echo "[inner] All done for $RUN_ID. Artifacts on iCloud. You can detach (Ctrl-A D) or close this screen."
+INNER_EOF
+
+    # Perform the real substitutions (the heredoc above used placeholders to avoid early expansion)
+    sed -i '' \
+        -e "s|__FAILSAFE_PY__|$FAILSAFE_PY|g" \
+        -e "s|__ANALYZER_PY__|$ANALYZER_PY|g" \
+        -e "s|__RUN_ID__|$run_id|g" \
+        -e "s|__LOCAL_HOT_BASE__|$LOCAL_HOT_BASE|g" \
+        -e "s|__ICLOUD_LOGS__|$ICLOUD_LOGS|g" \
+        -e "s|__ICLOUD_RESULTS__|$ICLOUD_RESULTS|g" \
+        "$inner_path"
+
+    chmod +x "$inner_path"
+}
+
 mkdir -p "$LOCAL_HOT_BASE" "$ICLOUD_LOGS" "$ICLOUD_RESULTS/tier2" "$ICLOUD_RESULTS/analysis"
 
 build_cmd() {
@@ -216,41 +295,41 @@ case "${1:-help}" in
         info "Copy-paste the above (with any extra flags) if you want to run the failsafe directly."
         ;;
     start)
-        phase "START CAMPAIGN (screen/tmux via self-located safe path — Chunk 1+2)"
-        info "Session backend: $SESSION_BACKEND (skeleton; full safe inner wrapper in Chunk 2)"
-        SCREEN_NAME="grok_bench_${RUN_ID}"
+        phase "START CAMPAIGN (one fucking command — absolute self-located safe wrapper)"
+        doctor   # always surface the truth before committing resources
+
+        # Generate the bulletproof inner wrapper (Chunk 2 core fix)
+        INNER_SCRIPT="$LOCAL_HOT_BASE/inner_${RUN_ID}.sh"
+        mkdir -p "$LOCAL_HOT_BASE"
+        write_inner_wrapper "$INNER_SCRIPT" "$RUN_ID"
+
+        info "Generated safe absolute inner script: $INNER_SCRIPT"
+        info "This script hard-codes the correct FAILSAFE_PY/ANALYZER_PY from *this* worktree."
+        info "Screen/tmux will exec it directly. No cd, no \$0, no FLEXAIDDS_REPO script pollution."
+
+        SCREEN_NAME="grok_own_${RUN_ID}"
+
+        # Add a simple trap in the *outer* manager for hot dir cleanup on abnormal exit
+        cleanup_hot() { rm -rf "$LOCAL_HOT_BASE" 2>/dev/null || true; }
+        trap cleanup_hot EXIT INT TERM
+
         if [[ "$SESSION_BACKEND" == "screen" ]] && command -v screen >/dev/null 2>&1; then
-            info "Launching inside screen session: $SCREEN_NAME (will use absolute inner wrapper in Chunk 2)"
-            # NOTE: Current heredoc still has the old behavior for compatibility during Chunk 1.
-            # Chunk 2 will replace this with generation of $LOCAL_HOT_BASE/inner_*.sh + absolute launch.
-            screen -dmS "$SCREEN_NAME" bash -c "
-                source ~/.flexaidds_env
-                cd \"$FLEXAIDDS_REPO\"
-                \"$SCRIPT_ABS\" preflight
-                \"$SCRIPT_ABS\" launch
-                \"$SCRIPT_ABS\" analyze
-                \"$SCRIPT_ABS\" sync
-                echo 'Campaign complete. Press any key to close this screen.'
-                read -n 1
-            "
-            ok "Screen session '$SCREEN_NAME' started."
-            info "Attach with: screen -r $SCREEN_NAME"
-            info "Detach with: Ctrl-A then D"
+            screen -dmS "$SCREEN_NAME" "$INNER_SCRIPT"
+            ok "Screen session '$SCREEN_NAME' started with safe wrapper."
+            info "Attach: screen -r $SCREEN_NAME"
+            info "Monitor status: tail -f $ICLOUD_LOGS/m3pro_failsafe_${RUN_ID}/campaign_status.json"
+            info "Detach: Ctrl-A then D"
         elif [[ "$SESSION_BACKEND" == "tmux" ]] && command -v tmux >/dev/null 2>&1; then
-            info "tmux support skeleton active (full implementation Chunk 2)"
-            tmux new-session -d -s "$SCREEN_NAME" bash -c "
-                source ~/.flexaidds_env
-                cd \"$FLEXAIDDS_REPO\"
-                \"$SCRIPT_ABS\" preflight
-                \"$SCRIPT_ABS\" launch
-                \"$SCRIPT_ABS\" analyze
-                \"$SCRIPT_ABS\" sync
-            " || warn "tmux launch failed (skeleton)"
-            ok "tmux session '$SCREEN_NAME' started (skeleton)."
-            info "Attach with: tmux attach -t $SCREEN_NAME"
+            tmux new-session -d -s "$SCREEN_NAME" "$INNER_SCRIPT" || warn "tmux launch had issue"
+            ok "tmux session '$SCREEN_NAME' started with safe wrapper."
+            info "Attach: tmux attach -t $SCREEN_NAME"
         else
-            warn "Requested backend '$SESSION_BACKEND' not available or not yet fully wired. Falling back."
-            $0 full
+            warn "No screen/tmux or backend '$SESSION_BACKEND' unavailable — running the inner wrapper directly in foreground (nohup-style fallback)."
+            "$INNER_SCRIPT" &
+            INNER_PID=$!
+            info "Inner pipeline running in background (PID $INNER_PID). Check status files on iCloud."
+            wait $INNER_PID || true
+            trap - EXIT INT TERM   # already exited cleanly
         fi
         ;;
     *)
