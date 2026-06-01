@@ -1,11 +1,17 @@
 #!/usr/bin/env python3
-"""Failsafe local runner for FlexAIDdS M3 Pro benchmark repetitions.
+"""Failsafe local runner for FlexAIDdS M3 Pro (and portable) benchmark repetitions.
 
-Execution policy:
-  - execute binaries from local APFS, never iCloud;
-  - read/write benchmark hot paths from local APFS;
-  - sync every completed run, status file, logs, and final analysis to iCloud;
-  - abort on missing outputs, segfault signatures, or zero-success full runs.
+Execution policy (when remote sync is enabled):
+  - execute binaries + hot paths from fast local storage (never from slow remote);
+  - sync every completed run, status, logs, and final analysis to the configured remote
+    (iCloud on M3 Pro, or any other durable location via --remote-base).
+
+New in this version (production-grade portability):
+  - --remote-base + --no-remote-sync for general use beyond the original M3 Pro rig.
+  - Full FLEXAIDDS_* env integration (source ~/.flexaidds_env and it just works).
+  - Auto repo detection, configurable lock, $TMPDIR defaults, etc.
+
+Use --preflight-only for safe dry-runs on any machine / by Codex agents.
 """
 
 from __future__ import annotations
@@ -180,7 +186,14 @@ def run_logged(
                 pass
 
 
-def rsync_copy(src: Path, dst: Path, *, delete: bool = False) -> None:
+def rsync_copy(src: Path, dst: Path | None, *, delete: bool = False) -> None:
+    """Production-grade rsync helper.
+
+    When dst is None (--no-remote-sync or no remote configured), this is a silent no-op.
+    This makes the entire remote sync subsystem optional in a bulletproof way.
+    """
+    if dst is None:
+        return
     if not src.exists():
         return
     mkdir(dst)
@@ -195,7 +208,11 @@ def rsync_copy(src: Path, dst: Path, *, delete: bool = False) -> None:
         shutil.copytree(src, dst, dirs_exist_ok=True)
 
 
-def seed_cache(icloud_cache: Path, local_cache: Path, datasets: list[str], *, include_smoke: bool) -> None:
+def seed_cache(remote_cache: Path | None, local_cache: Path, datasets: list[str], *, include_smoke: bool) -> None:
+    """Safe cache seeder — no-op if no remote configured."""
+    if remote_cache is None:
+        mkdir(local_cache)
+        return
     mkdir(local_cache)
     wanted: set[str] = set()
     if include_smoke:
@@ -203,7 +220,7 @@ def seed_cache(icloud_cache: Path, local_cache: Path, datasets: list[str], *, in
     for dataset in datasets:
         wanted.update(CACHE_SUBDIRS.get(dataset, (dataset,)))
     for subdir in sorted(wanted):
-        src = icloud_cache / subdir
+        src = remote_cache / subdir
         dst = local_cache / subdir
         if src.exists():
             print(f"[failsafe] seeding cache subdir {subdir}")
@@ -437,7 +454,12 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--repo", type=Path, default=None,
                    help="Path to FlexAIDdS repo root (auto-detected via FLEXAIDDS_REPO, git, or cwd if omitted)")
     p.add_argument("--build", type=Path, default=DEFAULT_BUILD)
-    p.add_argument("--icloud-base", type=Path, default=DEFAULT_ICLOUD_BASE)
+    p.add_argument("--icloud-base", type=Path, default=DEFAULT_ICLOUD_BASE,
+                   help="Legacy alias for --remote-base (M3 Pro iCloud users)")
+    p.add_argument("--remote-base", type=Path, default=None,
+                   help="Remote durable storage base (generalization of iCloud). All results/logs/data are rsynced here after each step.")
+    p.add_argument("--no-remote-sync", action="store_true",
+                   help="Disable all remote (iCloud / other) synchronization. Useful for pure local or CI runs.")
     p.add_argument("--run-id", default=f"m3pro_failsafe_10rep_{local_now_tag()}")
     p.add_argument("--local-base", type=Path, default=None)
     p.add_argument("--local-cache", type=Path, default=Path(tempfile.gettempdir()) / "flexaidds_benchmark_cache")
@@ -487,11 +509,29 @@ def main() -> int:
     local_results = local_base / "results"
     local_logs = local_base / "logs"
     local_analysis = local_results / "analysis"
-    icloud_base = args.icloud_base
-    icloud_results = icloud_base / "results" / args.run_id
-    icloud_logs = icloud_base / "logs" / args.run_id
-    icloud_cache = icloud_base / "benchmark_data"
-    status_file = icloud_logs / "campaign_status.json"
+    # Remote (durable) base resolution — production-grade generalization
+    # Priority: --remote-base > --icloud-base (legacy) > FLEXAIDDS_ICLOUD env > hard default
+    remote_base = args.remote_base or args.icloud_base
+    if args.no_remote_sync:
+        remote_base = None
+
+    if remote_base:
+        remote_base = remote_base.resolve()
+        remote_results = remote_base / "results" / args.run_id
+        remote_logs = remote_base / "logs" / args.run_id
+        remote_cache = remote_base / "benchmark_data"
+    else:
+        remote_results = remote_logs = remote_cache = None
+
+    # Keep old variable names in this scope for minimal diff in the rest of the (large) function
+    # while supporting the new flags. This preserves exact behavior for existing M3 Pro callers.
+    icloud_base = remote_base or args.icloud_base   # for any legacy direct uses
+    icloud_results = remote_results
+    icloud_logs = remote_logs
+    icloud_cache = remote_cache
+
+    # status + master log are ALWAYS local-first (robust even with --no-remote-sync)
+    status_file = local_logs / "campaign_status.json"
     master_log = local_logs / "campaign.log"
     lock_dir = (args.lock_dir or Path(tempfile.gettempdir()) / "flexaidds_campaign.lock").resolve()
     run_timeout_s = int(args.run_timeout_hours * 3600) if args.run_timeout_hours > 0 else None
@@ -550,12 +590,17 @@ def main() -> int:
             "bootstrap": args.bootstrap,
         }
         write_json(local_logs / "campaign_manifest.json", manifest)
-        write_json(icloud_logs / "campaign_manifest.json", manifest)
+        if icloud_logs is not None:
+            write_json(icloud_logs / "campaign_manifest.json", manifest)
         write_status(status_file, state="preflight", run_id=args.run_id, manifest=manifest)
 
         print(f"[failsafe] run_id={args.run_id}")
         print(f"[failsafe] local_base={local_base}")
-        print(f"[failsafe] iCloud results={icloud_results}")
+        if remote_base:
+            label = "iCloud" if is_icloud_path(remote_base) else "remote"
+            print(f"[failsafe] {label} results={remote_results}")
+        else:
+            print("[failsafe] remote sync disabled (--no-remote-sync)")
         if args.seed_cache:
             print("[failsafe] seeding selected local benchmark cache from iCloud")
             seed_cache(icloud_cache, local_cache, list(args.datasets), include_smoke=not args.skip_smoke)
@@ -608,11 +653,13 @@ def main() -> int:
                 require_nonzero_success=True,
                 expected_min_systems=1,
             )
-            rsync_copy(smoke_dir, icloud_results / "preflight_smoke", delete=True)
-            rsync_copy(local_logs, icloud_logs, delete=False)
+            if icloud_results is not None:
+                rsync_copy(smoke_dir, icloud_results / "preflight_smoke", delete=True)
+                rsync_copy(local_logs, icloud_logs, delete=False)
 
         if args.preflight_only:
-            rsync_copy(local_logs, icloud_logs, delete=False)
+            if icloud_logs is not None:
+                rsync_copy(local_logs, icloud_logs, delete=False)
             write_status(status_file, state="preflight_complete", run_id=args.run_id, manifest=manifest)
             print("[failsafe] preflight complete")
             return 0
@@ -628,10 +675,10 @@ def main() -> int:
                     raise CampaignError("stop requested")
                 run_name = f"run{run_num:02d}"
                 local_run = local_results / "tier2" / dataset / run_name
-                icloud_run = icloud_results / "tier2" / dataset / run_name
+                remote_run = (icloud_results / "tier2" / dataset / run_name) if icloud_results is not None else None
 
-                if args.resume and (icloud_run / "RUN_OK.json").exists():
-                    print(f"[failsafe] {dataset} {run_name}: already validated in iCloud")
+                if args.resume and remote_run is not None and (remote_run / "RUN_OK.json").exists():
+                    print(f"[failsafe] {dataset} {run_name}: already validated in remote")
                     completed += 1
                     continue
 
