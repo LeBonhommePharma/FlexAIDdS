@@ -24,6 +24,18 @@ struct MetalEvalCtx;
 // that the current process can actually acquire a default Metal device.
 bool metal_eval_runtime_available();
 
+// Rich hardware capabilities (P2). Used by launcher for resource-aware decisions.
+struct MetalCapabilities {
+    bool   available;
+    char   device_name[128];
+    size_t unified_memory_bytes;   // 0 if unknown
+    size_t max_buffer_length;
+    int    gpu_core_estimate;      // rough (0 if unknown)
+}; 
+
+// Fills the struct. Safe to call even if Metal is not compiled in.
+void metal_eval_get_capabilities(MetalCapabilities* out);
+
 // Allocate Metal device buffers and compile the compute shader.
 //   n_atoms        – total atom count
 //   n_types        – number of atom types (energy_matrix dimension)

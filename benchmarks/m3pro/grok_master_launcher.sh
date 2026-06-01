@@ -40,16 +40,25 @@ phase() { printf "\n${BOLD}═════════════════�
 # fail_with_guidance: Replaces raw die() for most new errors.
 # Always prints a clear problem statement + exact fix command + log location.
 log_failure() {
-    # Minimal structured logging stub (P0-3). Will be expanded later.
+    # Enhanced structured logging (P0-3)
     local err_type="$1"
     local msg="$2"
     local fix="$3"
+    local extra_context="${4:-}"
+
     local ts
     ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
+    local subcommand="${LAUNCHER_SUBCOMMAND:-${1:-unknown}}"
+    local current_phase="${CURRENT_PHASE:-}"
+
     local log_file="${FLEXAIDDS_LOGS:-$HOME/.flexaidds_logs}/launcher_failures.jsonl"
     mkdir -p "$(dirname "$log_file")" 2>/dev/null || true
-    printf '{"ts":"%s","type":"%s","message":"%s","fix_command":"%s","run_id":"%s"}\n' \
-        "$ts" "$err_type" "$msg" "$fix" "${RUN_ID:-unknown}" >> "$log_file" 2>/dev/null || true
+
+    printf '{"ts":"%s","type":"%s","message":"%s","fix_command":"%s","run_id":"%s","subcommand":"%s","phase":"%s","context":"%s"}\n' \
+        "$ts" "$err_type" "$msg" "$fix" "${RUN_ID:-unknown}" \
+        "$subcommand" "$current_phase" "$extra_context" \
+        >> "$log_file" 2>/dev/null || true
 }
 
 fail_with_guidance() {
@@ -68,6 +77,54 @@ fail_with_guidance() {
 
     log_failure "$error_type" "$message" "$fix_command"
     exit 1
+}
+
+# Small helper to inspect recent failures (useful for monitor / doctor)
+show_recent_failures() {
+    local log_file="${FLEXAIDDS_LOGS:-$HOME/.flexaidds_logs}/launcher_failures.jsonl"
+    local count="${1:-5}"
+
+    if [[ ! -f "$log_file" ]]; then
+        echo "No launcher failure log found at $log_file"
+        return 0
+    fi
+
+    echo "=== Recent launcher failures (last $count) ==="
+    tail -n "$count" "$log_file" | jq -c . 2>/dev/null || tail -n "$count" "$log_file"
+}
+
+# === Step 3: Success logging (symmetric to failures) ===
+log_success() {
+    local event_type="$1"
+    local message="$2"
+    local extra_context="${3:-}"
+
+    local ts
+    ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
+    local subcommand="${LAUNCHER_SUBCOMMAND:-unknown}"
+    local log_file="${FLEXAIDDS_LOGS:-$HOME/.flexaidds_logs}/launcher_events.jsonl"
+    mkdir -p "$(dirname "$log_file")" 2>/dev/null || true
+
+    printf '{"ts":"%s","type":"success","event":"%s","message":"%s","subcommand":"%s","run_id":"%s","context":"%s"}\n' \
+        "$ts" "$event_type" "$message" "$subcommand" "${RUN_ID:-unknown}" "$extra_context" \
+        >> "$log_file" 2>/dev/null || true
+}
+
+log_success "launcher_started" "Grok master launcher invoked"
+
+# Query recent success/event logs (symmetric to failures)
+show_recent_events() {
+    local log_file="${FLEXAIDDS_LOGS:-$HOME/.flexaidds_logs}/launcher_events.jsonl"
+    local count="${1:-10}"
+
+    if [[ ! -f "$log_file" ]]; then
+        echo "No launcher event log found at $log_file"
+        return 0
+    fi
+
+    echo "=== Recent launcher events (last $count) ==="
+    tail -n "$count" "$log_file" | jq -c . 2>/dev/null || tail -n "$count" "$log_file"
 }
 
 # Keep the original die() for backward compatibility with existing calls,
@@ -182,6 +239,10 @@ DEFAULT_CLUSTERING="FO"
 DEFAULT_TEMPERATURE=300
 SESSION_BACKEND="${SESSION_BACKEND:-screen}"   # Chunk 1 skeleton: screen | tmux | none (expanded Chunk 2)
 
+# Quality Gate passthrough (P1 Periodic)
+export CHECK_QUALITY_EVERY="${CHECK_QUALITY_EVERY:-0}"
+export NO_EARLY_EXIT="${NO_EARLY_EXIT:-false}"
+
 # 4. Unique run identity (for "your own" campaigns, cleanly separated from Codex runs)
 RUN_ID="${RUN_ID:-grok_own_m3pro_$(date +%Y%m%d_%H%M%S)}"
 
@@ -246,6 +307,13 @@ doctor() {
     echo "Binary checks:"
     [[ -x "$BINARY" ]] && ok "benchmark_datasets: $BINARY" || warn "benchmark_datasets MISSING or not +x at $BINARY"
     [[ -x "$DOCKING_BINARY" ]] && ok "FlexAID:          $DOCKING_BINARY" || warn "FlexAID MISSING or not +x at $DOCKING_BINARY"
+    echo ""
+
+    # P2 (in progress): Richer MetalCapabilities are now collected at the C++ level
+    # (unified memory, max buffer, rough core estimate for M3/M3 Pro/M3 Max).
+    # They are populated in HardwareCapabilities and UnifiedHardwareDispatch.
+    # Full pretty printing will be added when we expose a hardware_snapshot.json or via python bindings.
+    info "Metal runtime probe upgraded (see LIB/metal_eval.* + hardware_detect.cpp)"
     echo ""
     # Quick iCloud / tmp sanity (expanded in later chunks)
     [[ -d "$ICLOUD_RESULTS" && -w "$ICLOUD_RESULTS" ]] && ok "iCloud results writable: $ICLOUD_RESULTS" || warn "iCloud results path problem: $ICLOUD_RESULTS"
@@ -396,7 +464,10 @@ build_cmd() {
         ${EXTRA_ARGS:-}"
 }
 
-case "${1:-help}" in
+LAUNCHER_SUBCOMMAND="${1:-help}"
+export LAUNCHER_SUBCOMMAND
+
+case "$LAUNCHER_SUBCOMMAND" in
     doctor)
         doctor
         ;;
@@ -407,6 +478,7 @@ case "${1:-help}" in
         cmd=$(build_cmd)
         eval "$cmd --preflight-only --skip-smoke"
         ok "Preflight complete. Ready for launch."
+        log_success "preflight_complete" "Preflight + doctor passed successfully"
         ;;
     launch)
         phase "LAUNCHING REPETITION CAMPAIGN (healthy + resumable)"
@@ -428,12 +500,33 @@ case "${1:-help}" in
         ok "Extra sync to iCloud complete. All durable artifacts are now safely on Drive."
         ;;
     analyze)
-        phase "BOOTSTRAP ANALYSIS"
+        phase "BOOTSTRAP ANALYSIS + QUALITY GATE"
         python3 "$ANALYZER" \
             --results-dir "$ICLOUD_RESULTS/tier2" \
             --n-bootstrap 10000 \
             --output-dir "$ICLOUD_RESULTS/analysis/${RUN_ID}"
         ok "Analysis written to $ICLOUD_RESULTS/analysis/${RUN_ID}"
+        echo ""
+        echo "Key files:"
+        echo "  - bootstrap_report.md"
+        echo "  - bootstrap_report.json"
+        echo "  - campaign_status.json   ← Quality gate (PASS / WARN / FAIL + actionable recommendation)"
+        echo ""
+        # Show a quick summary of the status if it exists
+        STATUS_FILE="$ICLOUD_RESULTS/analysis/${RUN_ID}/campaign_status.json"
+        if [[ -f "$STATUS_FILE" ]]; then
+            echo "=== Campaign Quality Gate ==="
+            python3 -c "
+import json, sys
+data = json.load(open('$STATUS_FILE'))
+print(f\"Status: {data.get('overall_status')}\")
+print(f\"Stability: {data.get('stability_percent')}% sufficient metrics\")
+if data.get('success_rate', {}).get('average'):
+    print(f\"Avg Success Rate: {data['success_rate']['average']:.3f}\")
+print('Actionable:', data.get('actionable'))
+" 2>/dev/null || cat "$STATUS_FILE"
+        fi
+        log_success "analysis_complete" "Bootstrap + quality gate finished"
         ;;
     repair-runtime-data)
         phase "REPAIR RUNTIME DATA (self-healing)"
@@ -446,6 +539,7 @@ case "${1:-help}" in
         if [[ "$reply" =~ ^[Yy]$ ]]; then
             AUTO_STAGE_RUNTIME_DATA=1 ensure_runtime_data
             ok "Repair complete (or nothing was missing)."
+            log_success "runtime_data_repaired" "Self-healing repair completed successfully"
         else
             info "Repair aborted by user."
         fi
@@ -456,9 +550,33 @@ case "${1:-help}" in
         $0 analyze
         $0 sync
         ok "Full healthy campaign pipeline complete for $RUN_ID"
+        log_success "full_pipeline_complete" "Full preflight+launch+analyze+sync finished" "run_id=$RUN_ID"
+
+        # Show final quality gate summary
+        STATUS_FILE="$ICLOUD_RESULTS/analysis/${RUN_ID}/campaign_status.json"
+        if [[ -f "$STATUS_FILE" ]]; then
+            echo ""
+            echo "=== Final Campaign Quality Gate ==="
+            python3 -c '
+import json
+data = json.load(open("'"$STATUS_FILE"'"))
+print(f"Status          : {data.get(\"overall_status\")}")
+print(f"Stability       : {data.get(\"stability_percent\")}%")
+if data.get("success_rate", {}).get("average"):
+    print(f"Avg Success Rate: {data[\"success_rate\"][\"average\"]:.3f}")
+print("Actionable      :", data.get("actionable"))
+print("Requires attention:", data.get("requires_attention"))
+' 2>/dev/null || cat "$STATUS_FILE"
+        fi
         ;;
     status)
-        cat "$ICLOUD_LOGS/m3pro_failsafe_${RUN_ID}/campaign_status.json" 2>/dev/null || echo "No status yet for $RUN_ID"
+        # Prefer the quality gate status from analysis if it exists
+        ANALYSIS_STATUS="$ICLOUD_RESULTS/analysis/${RUN_ID}/campaign_status.json"
+        if [[ -f "$ANALYSIS_STATUS" ]]; then
+            cat "$ANALYSIS_STATUS"
+        else
+            cat "$ICLOUD_LOGS/m3pro_failsafe_${RUN_ID}/campaign_status.json" 2>/dev/null || echo "No status yet for $RUN_ID"
+        fi
         ;;
 
     monitor)
@@ -470,9 +588,19 @@ case "${1:-help}" in
             exit 1
         fi
         echo "Monitoring: $LATEST"
-        echo "Press Ctrl-C to stop watching."
-        echo ""
-        tail -f "$LATEST/campaign_status.json"
+
+        # Also watch the quality gate status if analysis has run
+        ANALYSIS_STATUS="$ICLOUD_RESULTS/analysis/$(basename "$LATEST" | sed 's/m3pro_failsafe_//')/campaign_status.json"
+        if [[ -f "$ANALYSIS_STATUS" ]]; then
+            echo "Also watching quality gate: $ANALYSIS_STATUS"
+            echo "Press Ctrl-C to stop."
+            echo ""
+            tail -f "$ANALYSIS_STATUS"
+        else
+            echo "Press Ctrl-C to stop watching."
+            echo ""
+            tail -f "$LATEST/campaign_status.json"
+        fi
         ;;
     show|cmd|command)
         phase "EXACT FAILSAFE COMMAND THIS WOULD RUN"
@@ -555,6 +683,12 @@ Subcommands:
 
   ./grok_master_launcher.sh monitor          # easiest way to watch a run
   ./grok_master_launcher.sh start ...        # the main one-command launcher
+
+Quality Gate (Periodic Early Exit):
+  export CHECK_QUALITY_EVERY=5
+  ./grok_master_launcher.sh full
+  # or
+  CHECK_QUALITY_EVERY=5 ./grok_master_launcher.sh launch
 
 Environment: Must have run setup_cloud_storage.sh so ~/.flexaidds_env exists.
 

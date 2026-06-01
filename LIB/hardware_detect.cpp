@@ -119,13 +119,23 @@ static void detect_cuda(HardwareCapabilities& hw) {
 
 static void detect_metal(HardwareCapabilities& hw) {
 #ifdef FLEXAIDS_USE_METAL
-    if (!metal_eval_runtime_available()) {
+    MetalCapabilities caps{};
+    metal_eval_get_capabilities(&caps);
+
+    if (!caps.available) {
         hw.has_metal = false;
         hw.metal_gpu_name.clear();
+        hw.metal_unified_memory = 0;
+        hw.metal_max_buffer = 0;
+        hw.metal_gpu_core_estimate = 0;
         return;
     }
+
     hw.has_metal = true;
-    hw.metal_gpu_name = "Apple GPU (Metal runtime available)";
+    hw.metal_gpu_name = caps.device_name;
+    hw.metal_unified_memory = caps.unified_memory_bytes;
+    hw.metal_max_buffer = caps.max_buffer_length;
+    hw.metal_gpu_core_estimate = caps.gpu_core_estimate;
 #else
     (void)hw;
 #endif

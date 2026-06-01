@@ -273,6 +273,116 @@ def generate_json_report(all_results: list[dict], output_path: Path) -> None:
     print(f"  JSON report: {output_path}")
 
 
+def generate_campaign_status(
+    all_results: list[dict],
+    output_path: Path,
+    min_success_rate: float = 0.70,
+    max_cv_warn: float = 0.10,
+    max_cv_fail: float = 0.15,
+) -> dict:
+    """
+    Generate a hardened, machine-readable campaign status with quality gates.
+
+    Thresholds are now configurable (refined in step A of the plan).
+    """
+    overall_status = "PASS"
+    recommendations: list[str] = []
+    worst_verdict = "sufficient"
+    success_rates: list[float] = []
+    max_cv_seen = 0.0
+
+    for ds_result in all_results:
+        for metric_name, ci in ds_result.get("metrics", {}).items():
+            verdict = ci.get("verdict", "unknown")
+            cv = ci.get("cv") or 0.0
+            mean = ci.get("mean")
+
+            if cv > max_cv_seen:
+                max_cv_seen = cv
+
+            # Use configurable CV thresholds + existing verdict
+            if cv >= max_cv_fail or verdict == "need_more":
+                worst_verdict = "need_more"
+                overall_status = "FAIL"
+                recommendations.append(
+                    f"{ds_result['dataset']}/{metric_name}: FAIL (CV={cv:.3f} >= {max_cv_fail})"
+                )
+            elif cv >= max_cv_warn or verdict == "consider_more":
+                if overall_status != "FAIL":
+                    overall_status = "WARN"
+                if worst_verdict not in ("need_more",):
+                    worst_verdict = "consider_more"
+                recommendations.append(
+                    f"{ds_result['dataset']}/{metric_name}: WARN (CV={cv:.3f} >= {max_cv_warn})"
+                )
+
+            # Collect success_rate
+            if metric_name == "success_rate" and mean is not None:
+                success_rates.append(mean)
+
+    if not recommendations:
+        recommendations.append("All metrics look stable. Campaign quality is good.")
+
+    # Aggregate success rates
+    avg_success = None
+    min_success = None
+    if success_rates:
+        avg_success = float(sum(success_rates) / len(success_rates))
+        min_success = float(min(success_rates))
+
+        # Apply success_rate threshold
+        if min_success < min_success_rate and overall_status == "PASS":
+            overall_status = "WARN"
+            recommendations.append(
+                f"Minimum success_rate {min_success:.3f} below threshold {min_success_rate}"
+            )
+
+    # Stability
+    total_metrics = sum(len(ds.get("metrics", {})) for ds in all_results)
+    sufficient_metrics = sum(
+        1 for ds in all_results
+        for m in ds.get("metrics", {}).values()
+        if m.get("verdict") == "sufficient"
+    )
+    stability = round((sufficient_metrics / total_metrics) * 100, 1) if total_metrics > 0 else 0.0
+
+    # Actionable
+    if overall_status == "FAIL":
+        action = "STOP or significantly extend the campaign before trusting results."
+    elif overall_status == "WARN":
+        action = "Proceed with caution. Consider adding more repetitions for key metrics."
+    else:
+        action = "Safe to proceed. Results are statistically stable."
+
+    status = {
+        "generated_at": __import__("datetime").datetime.utcnow().isoformat() + "Z",
+        "overall_status": overall_status,
+        "datasets_analyzed": len(all_results),
+        "worst_verdict": worst_verdict,
+        "stability_percent": stability,
+        "thresholds": {
+            "min_success_rate": min_success_rate,
+            "max_cv_warn": max_cv_warn,
+            "max_cv_fail": max_cv_fail,
+        },
+        "success_rate": {
+            "average": avg_success,
+            "minimum": min_success,
+        },
+        "max_cv_observed": round(max_cv_seen, 4),
+        "recommendations": recommendations,
+        "actionable": action,
+        "requires_attention": overall_status != "PASS",
+        "details": all_results,
+    }
+
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_text(json.dumps(status, indent=2) + "\n")
+    print(f"  Campaign status: {output_path}  (status={overall_status})")
+
+    return status
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(
         description="Bootstrap analysis of FlexAIDdS benchmark repetitions"
@@ -287,7 +397,8 @@ def main() -> int:
         "--n-bootstrap",
         type=int,
         default=N_BOOTSTRAP_DEFAULT,
-        help=f"Number of bootstrap resamples (default: {N_BOOTSTRAP_DEFAULT})",
+        help=f"Number of bootstrap resamples (default: {N_BOOTSTRAP_DEFAULT}). "
+             "Use lower values (1000-2000) for fast periodic quality-gate checks with --check-quality-every.",
     )
     parser.add_argument(
         "--dataset",
@@ -300,6 +411,25 @@ def main() -> int:
         type=Path,
         default=None,
         help="Output directory for reports (default: results-dir/../analysis/)",
+    )
+    # P1 Quality Gate Thresholds (A: refined & configurable)
+    parser.add_argument(
+        "--min-success-rate",
+        type=float,
+        default=0.70,
+        help="Minimum acceptable success_rate for PASS (default: 0.70)",
+    )
+    parser.add_argument(
+        "--max-cv-warn",
+        type=float,
+        default=0.10,
+        help="CV above this triggers WARN (default: 0.10)",
+    )
+    parser.add_argument(
+        "--max-cv-fail",
+        type=float,
+        default=0.15,
+        help="CV above this triggers FAIL (default: 0.15)",
     )
 
     args = parser.parse_args()
@@ -362,6 +492,16 @@ def main() -> int:
     print("")
     generate_markdown_report(all_results, output_dir / "bootstrap_report.md", args.n_bootstrap)
     generate_json_report(all_results, output_dir / "bootstrap_report.json")
+
+    # P1-1: Quality gate / automated decision making (refined thresholds)
+    campaign_status_path = output_dir / "campaign_status.json"
+    generate_campaign_status(
+        all_results,
+        campaign_status_path,
+        min_success_rate=args.min_success_rate,
+        max_cv_warn=args.max_cv_warn,
+        max_cv_fail=args.max_cv_fail,
+    )
 
     print("")
     print("Analysis complete.")

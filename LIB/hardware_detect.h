@@ -37,8 +37,11 @@ struct HardwareCapabilities {
     int         rocm_wavefront     = 0; // typically 64
 
     // ── GPU: Metal (Apple) ──
-    bool        has_metal         = false;
+    bool        has_metal               = false;
     std::string metal_gpu_name;         // e.g. "Apple M3 Max"
+    std::size_t metal_unified_memory    = 0;   // bytes (from MetalCapabilities)
+    std::size_t metal_max_buffer        = 0;   // bytes
+    int         metal_gpu_core_estimate = 0;   // rough core count (M3/M3 Pro/etc.)
 
     // ── SIMD: x86-64 ──
     bool has_sse42   = false;

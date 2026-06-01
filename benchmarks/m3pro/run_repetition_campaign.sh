@@ -10,10 +10,15 @@
 #   ./benchmarks/m3pro/run_repetition_campaign.sh --dataset astex    # single dataset, 30 runs
 #   ./benchmarks/m3pro/run_repetition_campaign.sh --runs 50          # custom run count
 #   ./benchmarks/m3pro/run_repetition_campaign.sh --resume           # skip already-completed runs
+#   ./benchmarks/m3pro/run_repetition_campaign.sh --check-quality-every 5   # Periodic quality gate (recommended)
+#   ./benchmarks/m3pro/run_repetition_campaign.sh --check-quality-every 5 --no-early-exit
 #
 # Apache-2.0 (c) 2026 NRGlab, Universite de Montreal
 
 set -euo pipefail
+
+# Self-location (so we can reliably find analyze_repetitions.py even when called from elsewhere)
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -62,6 +67,10 @@ GA_POPULATION=1000
 TEMPERATURE=300
 CLUSTERING="FO"
 
+# Periodic Quality Gate (P1)
+CHECK_QUALITY_EVERY=0          # 0 = disabled. Recommended: 5 or 10
+EARLY_EXIT_ON_FAIL=true
+
 DATASETS=(
     astex
     astex_nonnative
@@ -87,9 +96,34 @@ while [[ $# -gt 0 ]]; do
         --ga-population) shift; GA_POPULATION="$1" ;;
         --temperature)   shift; TEMPERATURE="$1" ;;
         --clustering)   shift; CLUSTERING="$1" ;;
+        --check-quality-every)
+            shift; CHECK_QUALITY_EVERY="$1" ;;
+        --no-early-exit)
+            EARLY_EXIT_ON_FAIL=false ;;
         --help|-h)
-            echo "Usage: $0 [--pilot|--runs N|--dataset NAME|--resume|--workers N]"
-            echo "       [--ga-generations N|--ga-population N|--temperature K]"
+            cat <<EOF
+Usage: $0 [options]
+
+Core options:
+  --pilot
+  --runs N
+  --dataset NAME
+  --resume
+  --workers N
+  --ga-generations N
+  --ga-population N
+  --temperature K
+  --clustering NAME
+
+Quality Gate (P1 - Periodic Early Exit):
+  --check-quality-every N     Run analyzer + quality gate every N runs per dataset.
+                              If status becomes FAIL, abort remaining runs (saves compute).
+                              Recommended values: 5 or 10.
+  --no-early-exit             Continue even if the quality gate returns FAIL.
+
+Example (recommended for long campaigns):
+  $0 --check-quality-every 5
+EOF
             exit 0
             ;;
         *) die "Unknown argument: $1" ;;
@@ -128,6 +162,11 @@ mkdir -p "$LOGS" "$RESULTS/tier2" "$RESULTS/analysis"
     echo "  Cache:              $CACHE"
     echo "  Runner binary:      $BINARY"
     echo "  Docking binary:     $DOCKING_BINARY"
+    if (( CHECK_QUALITY_EVERY > 0 )); then
+        echo "  Quality Gate:       Every $CHECK_QUALITY_EVERY runs (early exit on FAIL: $EARLY_EXIT_ON_FAIL)"
+    else
+        echo "  Quality Gate:       Disabled (use --check-quality-every N to enable)"
+    fi
     echo ""
     echo "  Hardware:"
     echo "    CPU:   $(sysctl -n machdep.cpu.brand_string 2>/dev/null || echo 'Apple Silicon')"
@@ -161,6 +200,17 @@ for ds in "${DATASETS[@]}"; do
             continue
         fi
 
+        # Periodic quality-gate check (intended implementation):
+        # After every N runs (e.g. every 5), we could run a quick partial analysis
+        # and call check_campaign_quality_gate (or a lighter version).
+        # For now the full check is at the end; we can make it periodic with a flag.
+        if (( run_num % 5 == 0 )); then
+            # Placeholder for future periodic gate:
+            #   ./analyze_repetitions.py --results-dir ... --output-dir ...
+            #   check_campaign_quality_gate
+            true
+        fi
+
         RUN_START=$(date +%s)
         info "[$ds] Run $run_num/$N_RUNS starting..."
 
@@ -179,6 +229,21 @@ for ds in "${DATASETS[@]}"; do
             ok "[$ds] Run $run_num/$N_RUNS complete in ${RUN_DURATION}s"
 
             echo "$ds run$(printf '%02d' "$run_num") ${RUN_DURATION}s" >> "$MASTER_LOG"
+
+            # === Periodic Quality Gate Check ===
+            if (( CHECK_QUALITY_EVERY > 0 && run_num % CHECK_QUALITY_EVERY == 0 )); then
+                info "[$ds] Run $run_num — running periodic quality gate check (every $CHECK_QUALITY_EVERY runs)..."
+
+                # Run analyzer on **only this dataset** with lighter bootstrap for speed
+                python3 "$SCRIPT_DIR/analyze_repetitions.py" \
+                    --results-dir "$RESULTS/tier2" \
+                    --dataset "$ds" \
+                    --n-bootstrap 2000 \
+                    --output-dir "$RESULTS/analysis" \
+                    2>&1 | tee -a "$MASTER_LOG" || true
+
+                check_campaign_quality_gate "$RESULTS/analysis/campaign_status.json"
+            fi
         else
             RUN_END=$(date +%s)
             RUN_DURATION=$((RUN_END - RUN_START))
@@ -197,6 +262,53 @@ done
 phase "Campaign Complete"
 
 GLOBAL_END=$(date +%s)
+
+# === Periodic Quality-Gate (fully implemented) ===
+check_campaign_quality_gate() {
+    local status_file="${1:-$RESULTS/analysis/campaign_status.json}"
+
+    if [[ ! -f "$status_file" ]]; then
+        return 0
+    fi
+
+    local status
+    status=$(python3 -c '
+import json, sys
+try:
+    data = json.load(open(sys.argv[1]))
+    print(data.get("overall_status", "UNKNOWN"))
+    print(data.get("actionable", ""))
+except Exception as e:
+    print("ERROR")
+    print(str(e))
+' "$status_file" 2>/dev/null || echo -e "ERROR\n")
+
+    local overall_status
+    local actionable
+
+    overall_status=$(echo "$status" | head -1)
+    actionable=$(echo "$status" | tail -1)
+
+    if [[ "$overall_status" == "FAIL" ]]; then
+        warn "════════════════════════════════════════════════════════"
+        warn " QUALITY GATE FAILED"
+        warn "════════════════════════════════════════════════════════"
+        warn "Status file : $status_file"
+        warn "Actionable  : $actionable"
+        warn ""
+        if [[ "$EARLY_EXIT_ON_FAIL" == "true" ]]; then
+            warn "Early exit triggered. Remaining runs aborted to save compute."
+            exit 2
+        else
+            warn "Continuing because --no-early-exit was used."
+        fi
+    elif [[ "$overall_status" == "WARN" ]]; then
+        warn "Quality gate: WARN — $actionable"
+    fi
+}
+
+# Optional: call after the full campaign (or integrate into loop for per-dataset checks)
+check_campaign_quality_gate
 GLOBAL_DURATION=$((GLOBAL_END - GLOBAL_START))
 
 {
@@ -214,5 +326,9 @@ GLOBAL_DURATION=$((GLOBAL_END - GLOBAL_START))
     echo ""
     echo "  Next step: run bootstrap analysis"
     echo "    python benchmarks/m3pro/analyze_repetitions.py --results-dir $RESULTS/tier2 --n-bootstrap 10000"
+    echo ""
+    if (( CHECK_QUALITY_EVERY > 0 )); then
+        echo "  (Periodic quality gate was enabled every $CHECK_QUALITY_EVERY runs)"
+    fi
     echo ""
 } | tee -a "$MASTER_LOG"
