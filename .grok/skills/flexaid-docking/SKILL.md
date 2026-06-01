@@ -28,7 +28,9 @@ metadata:
 **Primary invocations (documented aliases):**
 - `/flexaid-docking`
 - `/FlexAid docking`
+- `/FlexAidDS`
 - `/FlexAIDδS`, `/FlexAIDdS`
+- `FlexAIDdS`, `FlexAID∆S`
 - Natural language (strongly supported):
   - "update the flexaid-docking skill", "update the docking skill", "refresh the flexaid skill"
   - "dock this ligand", "perform molecular docking", "redock the co-crystallized ligand",
