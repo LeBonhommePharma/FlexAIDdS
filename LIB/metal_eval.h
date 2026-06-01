@@ -20,6 +20,10 @@ static constexpr int METAL_EMAT_SAMPLES = 128;
 // Opaque handle to all Metal device-resident state.
 struct MetalEvalCtx;
 
+// Runtime availability probe. Compile-time Metal support does not guarantee
+// that the current process can actually acquire a default Metal device.
+bool metal_eval_runtime_available();
+
 // Allocate Metal device buffers and compile the compute shader.
 //   n_atoms        – total atom count
 //   n_types        – number of atom types (energy_matrix dimension)

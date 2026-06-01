@@ -214,6 +214,12 @@ struct MetalEvalCtx {
 
 // ─── host API ────────────────────────────────────────────────────────────────
 
+bool metal_eval_runtime_available()
+{
+    id<MTLDevice> device = MTLCreateSystemDefaultDevice();
+    return device != nil;
+}
+
 MetalEvalCtx* metal_eval_init(int   n_atoms,
                                int   n_types,
                                int   max_pop,

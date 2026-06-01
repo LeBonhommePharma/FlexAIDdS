@@ -61,6 +61,51 @@ fi
 : "${FLEXAIDDS_LOGS:?FLEXAIDDS_LOGS not set}"
 : "${FLEXAIDDS_BENCHMARK_DATA:?FLEXAIDDS_BENCHMARK_DATA not set}"
 
+# User's canonical source for runtime matrices + definition files on this exact machine.
+# This is the single source of truth so we NEVER complain about missing MC_*.dat again.
+USER_DATA_DEPS="/Users/lp.more/Projects/NRGsuite/FlexAID/deps"
+
+# Ensure critical runtime matrices and .def files are present in the build.
+# Idempotent. If missing, stage from the known-good location above.
+ensure_runtime_data() {
+    local required=(
+        MC_st0r5.2_6.dat
+        MC_10p_3.dat
+        MC_5p_norm_P10_M2_2.dat
+        AMINO.def
+        AMINO8.def
+        AMINO12.def
+        AMINO26.def
+        NUCLEOTIDES.def
+        NUCLEOTIDES8.def
+        NUCLEOTIDES12.def
+        NUCLEOTIDES26.def
+        rotobs.lst
+    )
+
+    local missing=()
+    for f in "${required[@]}"; do
+        if [[ ! -f "$FLEXAIDDS_BUILD/$f" && ! -L "$FLEXAIDDS_BUILD/$f" ]]; then
+            missing+=("$f")
+        fi
+    done
+
+    if (( ${#missing[@]} > 0 )); then
+        echo "[launcher] Missing runtime data in build: ${missing[*]}"
+        echo "[launcher] Staging from canonical source: $USER_DATA_DEPS"
+        for f in "${missing[@]}"; do
+            if [[ -f "$USER_DATA_DEPS/$f" ]]; then
+                cp -f "$USER_DATA_DEPS/$f" "$FLEXAIDDS_BUILD/" || {
+                    die "Failed to copy $f from $USER_DATA_DEPS"
+                }
+            else
+                die "Required file $f not found in source of truth $USER_DATA_DEPS"
+            fi
+        done
+        echo "[launcher] Runtime data staged successfully."
+    fi
+}
+
 BINARY="$FLEXAIDDS_BUILD/benchmark_datasets"
 DOCKING_BINARY="${FLEXAIDDS_BINARY:-$FLEXAIDDS_BUILD/FlexAID}"
 
@@ -104,6 +149,9 @@ check_icLOUD_health() {
 }
 
 check_icLOUD_health
+
+# Safety: ensure runtime data matrices + def files are present (user's canonical source)
+ensure_runtime_data
 
 # Safety: ensure we have a real binary
 if [[ ! -x "$BINARY" ]]; then

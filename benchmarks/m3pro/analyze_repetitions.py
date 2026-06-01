@@ -33,18 +33,43 @@ MIN_RUNS = 30
 
 
 def load_run_csv(csv_path: Path) -> dict[str, float]:
-    """Load a single run's results CSV into a metric→value dict."""
-    metrics: dict[str, float] = {}
+    """Load a per-target results CSV into run-level aggregate metrics.
+
+    ``benchmark_datasets`` writes one row per target. The repetition analysis
+    needs one scalar per run, so each numeric column is reduced to a run-level
+    mean and the ``success`` column is reduced to both count and rate.
+    """
     with open(csv_path, newline="") as f:
         reader = csv.DictReader(f)
-        for row in reader:
-            for key, val in row.items():
-                if key in ("pdb_id", "success"):
-                    continue
-                try:
-                    metrics[key] = float(val)
-                except (ValueError, TypeError):
-                    pass
+        rows = list(reader)
+
+    metrics: dict[str, float] = {"total_systems": float(len(rows))}
+    if not rows:
+        return metrics
+
+    numeric: dict[str, list[float]] = defaultdict(list)
+    successes: list[float] = []
+
+    for row in rows:
+        for key, val in row.items():
+            if key == "pdb_id":
+                continue
+            try:
+                fval = float(val)
+            except (ValueError, TypeError):
+                continue
+            if key == "success":
+                successes.append(fval)
+            else:
+                numeric[key].append(fval)
+
+    for key, values in numeric.items():
+        if values:
+            metrics[key] = float(np.mean(values))
+
+    if successes:
+        metrics["successful"] = float(np.sum(successes))
+        metrics["success_rate"] = float(np.mean(successes))
     return metrics
 
 
@@ -180,6 +205,7 @@ def analyze_dataset(
 def generate_markdown_report(
     all_results: list[dict],
     output_path: Path,
+    n_bootstrap: int,
 ) -> None:
     """Generate a publication-ready Markdown report."""
     lines: list[str] = []
@@ -233,7 +259,7 @@ def generate_markdown_report(
 
     lines.append("")
     lines.append("---")
-    lines.append(f"*Generated with {N_BOOTSTRAP_DEFAULT} bootstrap resamples per metric*")
+    lines.append(f"*Generated with {n_bootstrap} bootstrap resamples per metric*")
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text("\n".join(lines) + "\n")
@@ -334,7 +360,7 @@ def main() -> int:
         return 1
 
     print("")
-    generate_markdown_report(all_results, output_dir / "bootstrap_report.md")
+    generate_markdown_report(all_results, output_dir / "bootstrap_report.md", args.n_bootstrap)
     generate_json_report(all_results, output_dir / "bootstrap_report.json")
 
     print("")

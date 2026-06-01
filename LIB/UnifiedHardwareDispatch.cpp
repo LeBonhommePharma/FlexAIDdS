@@ -44,6 +44,10 @@
 #  include "ShannonThermoStack/ShannonMetalBridge.h"
 #endif
 
+#ifdef FLEXAIDS_USE_METAL
+#  include "metal_eval.h"
+#endif
+
 namespace hw {
 
 // ═════════════════════════════════════════════════════════════════════════════
@@ -123,8 +127,8 @@ void UnifiedHardwareDispatch::detect_gpu() {
 #endif
 
 #ifdef FLEXAIDS_USE_METAL
-    info_.has_metal = true;
-    info_.metal_device_name = "Metal device (compiled-in)";
+    info_.has_metal = metal_eval_runtime_available();
+    info_.metal_device_name = info_.has_metal ? "Metal runtime available" : "";
 #else
     info_.has_metal = false;
 #endif

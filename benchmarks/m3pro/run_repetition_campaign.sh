@@ -30,16 +30,27 @@ phase() { printf "\n${BOLD}═════════════════�
 
 ENV_FILE="$HOME/.flexaidds_env"
 if [[ -f "$ENV_FILE" ]]; then
+    set -a
     source "$ENV_FILE"
+    set +a
 else
     die "Environment file not found: $ENV_FILE"
 fi
 
 REPO="${FLEXAIDDS_REPO:?not set}"
-BINARY="${FLEXAIDDS_BUILD:?not set}/benchmark_datasets"
+BUILD="${FLEXAIDDS_BUILD:?not set}"
+BINARY="$BUILD/benchmark_datasets"
+DOCKING_BINARY="${FLEXAIDDS_BINARY:-$BUILD/FlexAID}"
 RESULTS="${FLEXAIDDS_RESULTS:?not set}"
 LOGS="${FLEXAIDDS_LOGS:?not set}"
 CACHE="${FLEXAIDDS_BENCHMARK_DATA:?not set}"
+
+export FLEXAIDDS_REPO="$REPO"
+export FLEXAIDDS_BUILD="$BUILD"
+export FLEXAIDDS_BINARY="$DOCKING_BINARY"
+export FLEXAIDDS_RESULTS="$RESULTS"
+export FLEXAIDDS_LOGS="$LOGS"
+export FLEXAIDDS_BENCHMARK_DATA="$CACHE"
 
 N_RUNS=30
 PILOT=false
@@ -90,8 +101,11 @@ if [[ -n "$SINGLE_DATASET" ]]; then
     DATASETS=("$SINGLE_DATASET")
 fi
 
-if [[ ! -f "$BINARY" ]]; then
-    die "benchmark_datasets binary not found: $BINARY"
+if [[ ! -x "$BINARY" ]]; then
+    die "benchmark_datasets binary not executable: $BINARY"
+fi
+if [[ ! -x "$DOCKING_BINARY" ]]; then
+    die "FlexAID docking binary not executable: $DOCKING_BINARY"
 fi
 
 TIMESTAMP="$(date +%Y%m%dT%H%M%S)"
@@ -112,6 +126,8 @@ mkdir -p "$LOGS" "$RESULTS/tier2" "$RESULTS/analysis"
     echo "  Resume:             $RESUME"
     echo "  Results:            $RESULTS"
     echo "  Cache:              $CACHE"
+    echo "  Runner binary:      $BINARY"
+    echo "  Docking binary:     $DOCKING_BINARY"
     echo ""
     echo "  Hardware:"
     echo "    CPU:   $(sysctl -n machdep.cpu.brand_string 2>/dev/null || echo 'Apple Silicon')"

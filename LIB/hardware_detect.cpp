@@ -51,6 +51,10 @@
 #  include <hip/hip_runtime.h>
 #endif
 
+#ifdef FLEXAIDS_USE_METAL
+#  include "metal_eval.h"
+#endif
+
 namespace flexaids {
 
 static void detect_x86_simd(HardwareCapabilities& hw) {
@@ -115,10 +119,13 @@ static void detect_cuda(HardwareCapabilities& hw) {
 
 static void detect_metal(HardwareCapabilities& hw) {
 #ifdef FLEXAIDS_USE_METAL
-    // Metal availability is compile-time on macOS; if we compiled with
-    // Metal support, we assume the system has a capable GPU.
+    if (!metal_eval_runtime_available()) {
+        hw.has_metal = false;
+        hw.metal_gpu_name.clear();
+        return;
+    }
     hw.has_metal = true;
-    hw.metal_gpu_name = "Apple GPU (Metal-capable)";
+    hw.metal_gpu_name = "Apple GPU (Metal runtime available)";
 #else
     (void)hw;
 #endif
