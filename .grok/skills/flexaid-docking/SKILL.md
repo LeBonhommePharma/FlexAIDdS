@@ -319,6 +319,21 @@ The canonical build used by the launcher (FLEXAIDDS_BUILD) is compiled with `FLE
 
 Dispatch choices are logged when the relevant C++ kernels run.
 
+**Post-run summary helper (new):**  
+After a campaign finishes (or at any point), run:
+```bash
+python3 .grok/skills/flexaid-docking/scripts/summarize_campaign.py \
+    /path/to/full-298K-...-fixed-... \
+    /path/to/full-310K-...-fixed-...
+```
+It produces a compact report with:
+- Metal / hardware dispatch summary (how many times Metal was observed, sample lines)
+- Temperature fidelity from run_status
+- Placeholder vs real-result signals (999 RMSD vs actual values)
+- Simple "looks valid so far" heuristic
+
+Use it on the canonical iCloud _fixed dirs for clean, auditable summaries focused on valid thermodynamic results + Metal usage.
+
 See the full CLI and library interface via:
 ```bash
 python -m flexaidds.dataset_runner --help
