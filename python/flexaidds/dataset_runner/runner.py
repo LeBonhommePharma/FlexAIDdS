@@ -568,6 +568,24 @@ class EntryTaskManager:
         except Exception:
             return {}
 
+    def run(self, fn) -> List[Tuple]:
+        """Dispatch ``fn`` over the (cost-ordered) work items via a local thread pool.
+
+        ``fn(item)`` receives a ``(target, state)`` tuple and returns a result tuple
+        ``(target, state, poses, seconds, message)``. Results are recorded in
+        ``self.completed`` (accounting / resume) and returned in work-item order.
+        Serial when ``n_workers <= 1``; ThreadPoolExecutor otherwise (the documented
+        local-dispatch path; MPI master-worker remains a future extension).
+        """
+        if self.n_workers <= 1 or len(self.work_items) <= 1:
+            results = [fn(item) for item in self.work_items]
+        else:
+            from concurrent.futures import ThreadPoolExecutor
+            with ThreadPoolExecutor(max_workers=self.n_workers) as ex:
+                results = list(ex.map(fn, self.work_items))
+        self.completed.extend(results)
+        return list(results)
+
 
 class CostHistory:
     """Simple persistent cost model with exponential moving average (EMA).
