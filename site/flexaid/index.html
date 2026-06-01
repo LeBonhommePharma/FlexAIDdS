@@ -1,0 +1,3543 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta name="author" content="Louis-Philippe Morency, Rafael J. Najmanovich">
+
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FlexAID∆S — Entropy-Driven Molecular Docking Engine</title>
+<meta name="description" content="FlexAID∆S: Genetic algorithms meet statistical mechanics for real-world drug discovery. Conformational entropy via full statistical mechanics framework.">
+<meta property="og:title" content="FlexAID∆S — Entropy-Driven Molecular Docking Engine">
+<meta property="og:description" content="Modernized FlexAID in C++26 with Python bindings. Entropy-aware molecular docking for drug discovery. SMILES-to-3D docking, grand canonical ensemble, full statistical mechanics.">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://flexaids.thebonhomme.com">
+<meta property="og:image" content="https://raw.githubusercontent.com/lmorency/FlexAIDdS/master/docs/og-card.png">
+
+<!-- Favicon -->
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='32' height='32' viewBox='0 0 32 32' fill='none'%3E%3Crect x='2' y='2' width='28' height='28' rx='6' stroke='%238b5cf6' stroke-width='1.5'/%3E%3Ccircle cx='16' cy='12' r='4' stroke='%23a78bfa' stroke-width='1.5'/%3E%3Ccircle cx='10' cy='22' r='3' stroke='%23a78bfa' stroke-width='1.5'/%3E%3Ccircle cx='22' cy='22' r='3' stroke='%23a78bfa' stroke-width='1.5'/%3E%3Cline x1='14' y1='15.5' x2='11' y2='19.5' stroke='%23a78bfa' stroke-width='1.2'/%3E%3Cline x1='18' y1='15.5' x2='21' y2='19.5' stroke='%23a78bfa' stroke-width='1.2'/%3E%3Cline x1='13' y1='22' x2='19' y2='22' stroke='%23a78bfa' stroke-width='1.2' stroke-dasharray='2 2'/%3E%3C/svg%3E">
+
+<!-- JSON-LD Structured Data -->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  "name": "FlexAID∆S",
+  "alternateName": "FlexAIDdS",
+  "description": "Entropy-driven molecular docking engine combining genetic algorithms with statistical mechanics thermodynamics for drug discovery.",
+  "applicationCategory": "Science",
+  "operatingSystem": "Linux, macOS, Windows",
+  "programmingLanguage": ["C++", "Python", "Swift", "TypeScript", "CUDA", "Objective-C++"],
+  "license": "https://opensource.org/licenses/Apache-2.0",
+  "codeRepository": "https://github.com/lmorency/FlexAIDdS",
+  "author": {
+    "@type": "Person",
+    "name": "Louis-Philippe Morency",
+    "affiliation": {
+      "@type": "Organization",
+      "name": "Universit\u00e9 de Montr\u00e9al, NRGlab"
+    }
+  },
+  "softwareVersion": "2.0",
+  "datePublished": "2024-01-01",
+  "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
+}
+</script>
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600;700&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+
+<!-- Mol* Viewer -->
+<link rel="stylesheet" type="text/css" href="https://cdn.jsdelivr.net/npm/molstar@4.5.0/build/viewer/molstar.css" />
+<script type="text/javascript" src="https://cdn.jsdelivr.net/npm/molstar@4.5.0/build/viewer/molstar.js"></script>
+
+<style>
+/* ==========================================================================
+   FlexAID∆S — Burgundy → Purple-Blue Spectrum
+   Dark-first, scientific, technical aesthetic
+   ========================================================================== */
+
+/* --- Reset & Base --- */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+html {
+  -moz-text-size-adjust: none;
+  -webkit-text-size-adjust: none;
+  text-size-adjust: none;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+  scroll-behavior: smooth;
+  scroll-padding-top: 5rem;
+}
+
+body {
+  min-height: 100dvh;
+  line-height: 1.6;
+  font-family: 'Inter', 'Helvetica Neue', sans-serif;
+  font-size: clamp(1rem, 0.95rem + 0.25vw, 1.125rem);
+  color: var(--color-text);
+  background-color: var(--color-bg);
+  transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+img, picture, video, canvas, svg { display: block; max-width: 100%; height: auto; }
+ul[role="list"], ol[role="list"] { list-style: none; }
+input, button, textarea, select { font: inherit; color: inherit; }
+h1, h2, h3, h4, h5, h6 { text-wrap: balance; line-height: 1.15; }
+p, li, figcaption { text-wrap: pretty; max-width: 72ch; }
+button { cursor: pointer; background: none; border: none; }
+table { border-collapse: collapse; width: 100%; }
+
+a, button, [role="button"], [role="link"], input, textarea, select {
+  transition: color 0.18s cubic-bezier(0.16, 1, 0.3, 1),
+              background 0.18s cubic-bezier(0.16, 1, 0.3, 1),
+              border-color 0.18s cubic-bezier(0.16, 1, 0.3, 1),
+              box-shadow 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+::selection {
+  background: oklch(from var(--color-accent) l c h / 0.3);
+  color: var(--color-text);
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 3px;
+  border-radius: 4px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+.sr-only {
+  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border-width: 0;
+}
+
+.hidden { display: none !important; }
+
+/* --- Design Tokens --- */
+:root {
+  /* Type scale */
+  --text-xs:   clamp(0.75rem,  0.7rem  + 0.25vw, 0.875rem);
+  --text-sm:   clamp(0.875rem, 0.8rem  + 0.35vw, 1rem);
+  --text-base: clamp(1rem,     0.95rem + 0.25vw, 1.125rem);
+  --text-lg:   clamp(1.125rem, 1rem    + 0.75vw, 1.5rem);
+  --text-xl:   clamp(1.5rem,   1.2rem  + 1.25vw, 2.25rem);
+  --text-2xl:  clamp(2rem,     1.2rem  + 2.5vw,  3.5rem);
+  --text-hero: clamp(3rem,     0.5rem  + 7vw,    6rem);
+
+  /* Spacing */
+  --space-1:  0.25rem;
+  --space-2:  0.5rem;
+  --space-3:  0.75rem;
+  --space-4:  1rem;
+  --space-5:  1.25rem;
+  --space-6:  1.5rem;
+  --space-8:  2rem;
+  --space-10: 2.5rem;
+  --space-12: 3rem;
+  --space-16: 4rem;
+  --space-20: 5rem;
+  --space-24: 6rem;
+  --space-32: 8rem;
+
+  /* Radius */
+  --radius-sm: 0.375rem;
+  --radius-md: 0.5rem;
+  --radius-lg: 0.75rem;
+  --radius-xl: 1rem;
+  --radius-full: 9999px;
+
+  /* Content widths */
+  --content-narrow: 640px;
+  --content-default: 960px;
+  --content-wide: 1200px;
+
+  /* Spectrum: Burgundy → Purple-Blue gradient stops */
+  --spectrum-burgundy: #8B1A4A;
+  --spectrum-wine:     #7B2D6E;
+  --spectrum-plum:     #6A3B8A;
+  --spectrum-violet:   #5C4BA0;
+  --spectrum-indigo:   #4A5AB5;
+  --spectrum-blue:     #3B6DC9;
+
+  /* Language bar colors (spectrum-matched) */
+  --lang-cpp:    #8B1A4A;
+  --lang-python: #6A3B8A;
+  --lang-swift:  #5C4BA0;
+  --lang-objcpp: #4A5AB5;
+  --lang-cmake:  #3B6DC9;
+  --lang-ts:     #3178C6;
+  --lang-cuda:   #7B2D6E;
+  --lang-html:   #E34C26;
+  --lang-c:      #555555;
+  --lang-css:    #563d7c;
+  --lang-other:  #9a8caa;
+
+  /* Font */
+  --font-body: 'Inter', 'Helvetica Neue', sans-serif;
+  --font-mono: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
+}
+
+/* --- DARK MODE (default) --- */
+:root, [data-theme="dark"] {
+  --color-bg:           #09080E;
+  --color-surface:      #13111D;
+  --color-surface-2:    #1B1829;
+  --color-surface-3:    #242036;
+  --color-border:       #3A3354;
+  --color-border-subtle: rgba(160, 130, 220, 0.15);
+  --header-bg:          #09080E;
+
+  --color-text:         #F0ECF8;
+  --color-text-muted:   #B5AEC8;
+  --color-text-faint:   #7A7294;
+
+  --color-accent:       #D4569E;
+  --color-accent-hover: #E670B4;
+  --color-accent-blue:  #7E94ED;
+  --color-accent-blue-hover: #96A8F5;
+
+  --shadow-sm: 0 1px 4px rgba(0,0,0,0.5), 0 0 0 1px rgba(160,130,220,0.06);
+  --shadow-md: 0 4px 20px rgba(0,0,0,0.6), 0 0 0 1px rgba(160,130,220,0.08);
+  --shadow-lg: 0 12px 48px rgba(0,0,0,0.7), 0 0 0 1px rgba(160,130,220,0.1);
+}
+
+/* --- LIGHT MODE --- */
+[data-theme="light"] {
+  --color-bg:           #FAF8FD;
+  --color-surface:      #F3F0F8;
+  --color-surface-2:    #EDE8F4;
+  --color-surface-3:    #E5DFF0;
+  --color-border:       #D0C8E0;
+  --color-border-subtle: rgba(100, 60, 140, 0.1);
+  --header-bg:          rgba(250, 248, 253, 0.9);
+
+  --color-text:         #1A1228;
+  --color-text-muted:   #5E5476;
+  --color-text-faint:   #9B92AE;
+
+  --color-accent:       #8B1A4A;
+  --color-accent-hover: #A02258;
+  --color-accent-blue:  #4A5AB5;
+  --color-accent-blue-hover: #3B4DA3;
+
+  --shadow-sm: 0 1px 3px rgba(80,50,100,0.08);
+  --shadow-md: 0 4px 16px rgba(80,50,100,0.1);
+  --shadow-lg: 0 12px 40px rgba(80,50,100,0.14);
+}
+
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme]) {
+    --color-bg:           #FAF8FD;
+    --color-surface:      #F3F0F8;
+    --color-surface-2:    #EDE8F4;
+    --color-surface-3:    #E5DFF0;
+    --color-border:       #D0C8E0;
+    --color-border-subtle: rgba(100, 60, 140, 0.1);
+    --header-bg:          rgba(250, 248, 253, 0.9);
+    --color-text:         #1A1228;
+    --color-text-muted:   #5E5476;
+    --color-text-faint:   #9B92AE;
+    --color-accent:       #8B1A4A;
+    --color-accent-hover: #A02258;
+    --color-accent-blue:  #4A5AB5;
+    --color-accent-blue-hover: #3B4DA3;
+    --shadow-sm: 0 1px 3px rgba(80,50,100,0.08);
+    --shadow-md: 0 4px 16px rgba(80,50,100,0.1);
+    --shadow-lg: 0 12px 40px rgba(80,50,100,0.14);
+  }
+}
+
+/* --- Layout --- */
+.container {
+  max-width: var(--content-wide);
+  margin-inline: auto;
+  padding-inline: var(--space-4);
+}
+
+/* --- Header --- */
+.site-header {
+  position: sticky;
+  top: 0;
+  z-index: 50;
+  background: var(--header-bg);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border-bottom: 1px solid var(--color-border-subtle);
+  transition: transform 0.3s cubic-bezier(0.16,1,0.3,1), box-shadow 0.3s ease;
+}
+
+.site-header.scrolled {
+  box-shadow: var(--shadow-sm);
+}
+
+.header-inner {
+  max-width: var(--content-wide);
+  margin-inline: auto;
+  padding: var(--space-3) var(--space-4);
+  display: flex;
+  align-items: center;
+  gap: var(--space-6);
+}
+
+.logo {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  text-decoration: none;
+  color: var(--color-text);
+  flex-shrink: 0;
+}
+
+.logo svg { color: var(--color-text); }
+
+.logo-text {
+  font-family: var(--font-mono);
+  font-weight: 600;
+  font-size: var(--text-sm);
+  letter-spacing: 0.02em;
+}
+
+.logo-delta {
+  background: linear-gradient(135deg, var(--spectrum-burgundy), var(--spectrum-blue));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.main-nav {
+  display: flex;
+  gap: var(--space-5);
+  margin-left: auto;
+}
+
+.main-nav a {
+  font-size: var(--text-sm);
+  font-weight: 450;
+  color: var(--color-text-muted);
+  text-decoration: none;
+  padding: var(--space-1) 0;
+  position: relative;
+}
+
+.main-nav a:hover { color: var(--color-text); }
+
+.main-nav a::after {
+  content: '';
+  position: absolute;
+  bottom: -2px;
+  left: 0;
+  width: 0;
+  height: 2px;
+  background: linear-gradient(90deg, var(--spectrum-burgundy), var(--spectrum-blue));
+  transition: width 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.main-nav a:hover::after { width: 100%; }
+
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.gh-link {
+  color: var(--color-text-muted);
+  display: flex;
+  padding: var(--space-2);
+  border-radius: var(--radius-md);
+}
+.gh-link:hover { color: var(--color-text); background: var(--color-border-subtle); }
+
+.theme-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-2);
+  border-radius: var(--radius-md);
+  color: var(--color-text-muted);
+}
+.theme-toggle:hover { color: var(--color-text); background: var(--color-border-subtle); }
+
+/* Show correct icon per theme */
+:root .icon-sun,
+[data-theme="dark"] .icon-sun { display: block; }
+:root .icon-moon,
+[data-theme="dark"] .icon-moon { display: none; }
+[data-theme="light"] .icon-sun { display: none; }
+[data-theme="light"] .icon-moon { display: block; }
+
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme]) .icon-sun { display: none; }
+  :root:not([data-theme]) .icon-moon { display: block; }
+}
+
+/* Mobile menu toggle */
+.mobile-menu-toggle {
+  display: none;
+  flex-direction: column;
+  gap: 5px;
+  padding: var(--space-2);
+  z-index: 60;
+}
+.mobile-menu-toggle span {
+  display: block;
+  width: 20px;
+  height: 2px;
+  background: var(--color-text);
+  border-radius: 2px;
+  transition: all 0.3s ease;
+}
+.mobile-menu-toggle[aria-expanded="true"] span:nth-child(1) {
+  transform: rotate(45deg) translate(5px, 5px);
+}
+.mobile-menu-toggle[aria-expanded="true"] span:nth-child(2) { opacity: 0; }
+.mobile-menu-toggle[aria-expanded="true"] span:nth-child(3) {
+  transform: rotate(-45deg) translate(5px, -5px);
+}
+
+@media (max-width: 768px) {
+  .main-nav {
+    display: none;
+    position: fixed;
+    inset: 0;
+    top: 60px;
+    background: var(--color-bg);
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: var(--space-8);
+    z-index: 55;
+  }
+  .main-nav.open { display: flex; }
+  .main-nav a { font-size: var(--text-lg); }
+  .mobile-menu-toggle { display: flex; }
+}
+
+/* --- Hero --- */
+.hero {
+  position: relative;
+  min-height: 90vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.hero-bg {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  opacity: 0.30;
+  pointer-events: none;
+}
+
+#molstar-viewer {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+/* ===== Mol* UI Suppression =====
+   Hide ALL Mol* chrome, controls, text, and error overlays.
+   Only the WebGL <canvas> should be visible.
+   The WebGL-not-available error only fires in headless/no-GPU envs;
+   on real browsers the 3D canvas renders fine. We hide the error
+   text/UI via CSS so it never shows, even momentarily.
+   ================================================================ */
+
+/* Strip borders from layout shells */
+#molstar-viewer .msp-plugin .msp-layout-expanded,
+#molstar-viewer .msp-plugin .msp-layout-standard {
+  border: none !important;
+}
+
+#molstar-viewer .msp-plugin {
+  --msp-layout-left-panel-width: 0 !important;
+}
+
+/* Nuclear: hide every direct child except the main viewport region */
+#molstar-viewer .msp-plugin > *:not(.msp-layout-region-main):not([class*="canvas"]) {
+  display: none !important;
+}
+
+/* Explicit list of Mol* UI pieces to kill */
+#molstar-viewer .msp-btn,
+#molstar-viewer .msp-viewport-controls,
+#molstar-viewer .msp-viewport-controls-buttons,
+#molstar-viewer .msp-highlight-info,
+#molstar-viewer .msp-toast-container,
+#molstar-viewer .msp-layout-left,
+#molstar-viewer .msp-layout-right,
+#molstar-viewer .msp-layout-bottom,
+#molstar-viewer .msp-layout-top,
+#molstar-viewer .msp-transform-wrapper,
+#molstar-viewer .msp-semi-transparent-background,
+#molstar-viewer .msp-log,
+#molstar-viewer a,
+#molstar-viewer .msp-plugin-init-error {
+  display: none !important;
+}
+
+/* Hide WebGL-not-available error overlay rendered before plugin mounts */
+#molstar-viewer div[style*="text-align"],
+#molstar-viewer div[style*="padding"] > a,
+#molstar-viewer > div > div:not(.msp-plugin) {
+  display: none !important;
+}
+
+/* Catch-all: suppress ANY text rendered inside the viewer container
+   (error messages, loading text, etc.) — only <canvas> should paint */
+#molstar-viewer {
+  font-size: 0 !important;
+  color: transparent !important;
+  overflow: hidden !important;
+}
+#molstar-viewer * {
+  color: transparent !important;
+  -webkit-text-fill-color: transparent !important;
+}
+#molstar-viewer canvas {
+  background: transparent !important;
+  /* Re-enable normal rendering for the canvas element */
+  color: initial !important;
+  -webkit-text-fill-color: initial !important;
+}
+
+/* Override Mol* CSS default grey (#EEECE7) on plugin containers.
+   Only target known grey-background classes — NOT a wildcard. */
+#molstar-viewer .msp-plugin,
+#molstar-viewer .msp-no-webgl,
+#molstar-viewer .msp-semi-transparent-background,
+#molstar-viewer .msp-hover-box-body,
+#molstar-viewer .msp-drag-drop-overlay {
+  background: transparent !important;
+  background-color: transparent !important;
+}
+
+/* Belt-and-suspenders: force ALL Mol* div backgrounds transparent.
+   The grey fog on Safari comes from inline styles or computed
+   backgrounds deep in Mol* layout wrappers. */
+#molstar-viewer div {
+  background: transparent !important;
+  background-color: transparent !important;
+}
+
+.hero-content {
+  position: relative;
+  z-index: 1;
+  text-align: center;
+  padding: var(--space-16) var(--space-4) var(--space-12);
+  max-width: 860px;
+}
+
+.hero-badges {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--space-2);
+  margin-bottom: var(--space-6);
+}
+
+.badge {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  font-weight: 500;
+  padding: var(--space-1) var(--space-3);
+  border-radius: var(--radius-full);
+  border: 1px solid var(--color-border);
+  color: var(--color-text-muted);
+  background: var(--color-surface);
+}
+
+.badge-accent {
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+  background: oklch(from var(--color-accent) l c h / 0.1);
+}
+
+.hero h1 {
+  font-family: var(--font-mono);
+  font-size: var(--text-hero);
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  color: var(--color-text);
+  margin-bottom: var(--space-2);
+}
+
+.hero h1 .delta {
+  background: linear-gradient(135deg, var(--spectrum-burgundy), var(--spectrum-plum), var(--spectrum-blue));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.hero-subtitle {
+  font-size: var(--text-xl);
+  font-weight: 400;
+  color: var(--color-text-muted);
+  margin-bottom: var(--space-2);
+}
+
+.hero-tagline {
+  font-size: var(--text-base);
+  color: var(--color-text-faint);
+  margin-bottom: var(--space-8);
+}
+
+.hero-stat-row {
+  display: flex;
+  justify-content: center;
+  gap: var(--space-8);
+  margin-bottom: var(--space-8);
+  flex-wrap: wrap;
+}
+
+.hero-stat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.hero-stat-value {
+  font-family: var(--font-mono);
+  font-size: var(--text-2xl);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  background: linear-gradient(135deg, var(--spectrum-burgundy), var(--spectrum-blue));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.hero-stat-label {
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+  margin-top: var(--space-1);
+}
+
+.hero-cta {
+  display: flex;
+  justify-content: center;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+}
+
+/* Buttons */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-sm);
+  font-weight: 550;
+  padding: var(--space-3) var(--space-6);
+  border-radius: var(--radius-md);
+  text-decoration: none;
+  transition: all 0.18s cubic-bezier(0.16,1,0.3,1);
+}
+
+.btn-primary {
+  background: linear-gradient(135deg, var(--spectrum-burgundy), var(--spectrum-violet));
+  color: #F0ECF8;
+}
+.btn-primary:hover {
+  box-shadow: 0 4px 20px oklch(from var(--spectrum-plum) l c h / 0.35);
+  transform: translateY(-1px);
+}
+.btn-primary:active { transform: translateY(0); }
+
+.btn-secondary {
+  background: var(--color-surface-2);
+  color: var(--color-text);
+  border: 1px solid var(--color-border);
+}
+.btn-secondary:hover {
+  border-color: var(--color-accent);
+  background: var(--color-surface-3);
+  transform: translateY(-1px);
+}
+.btn-secondary:active { transform: translateY(0); }
+
+/* --- Why Section --- */
+.why-section {
+  padding: var(--space-16) 0;
+  background: var(--color-surface);
+  border-top: 1px solid var(--color-border-subtle);
+  border-bottom: 1px solid var(--color-border-subtle);
+}
+
+.highlight-quote {
+  font-size: var(--text-lg);
+  line-height: 1.7;
+  color: var(--color-text-muted);
+  max-width: 760px;
+  margin: 0 auto;
+  padding-left: var(--space-6);
+  border-left: 3px solid transparent;
+  border-image: linear-gradient(to bottom, var(--spectrum-burgundy), var(--spectrum-blue)) 1;
+}
+
+.highlight-quote strong {
+  color: var(--color-text);
+  font-weight: 600;
+}
+
+/* --- Section Headings --- */
+h2 {
+  font-family: var(--font-mono);
+  font-size: var(--text-xl);
+  font-weight: 600;
+  margin-bottom: var(--space-3);
+  color: var(--color-text);
+  letter-spacing: -0.01em;
+}
+
+.section-subtitle {
+  font-size: var(--text-base);
+  color: var(--color-text-muted);
+  margin-bottom: var(--space-8);
+}
+
+/* --- Features --- */
+.features-section {
+  padding: clamp(var(--space-12), 8vw, var(--space-24)) 0;
+}
+
+.features-section h2 { margin-bottom: var(--space-8); }
+
+.features-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(320px, 100%), 1fr));
+  gap: var(--space-4);
+}
+
+.feature-card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-lg);
+  padding: var(--space-6);
+  transition: border-color 0.18s ease, box-shadow 0.18s ease;
+}
+
+.feature-card:hover {
+  border-color: var(--color-border);
+  box-shadow: var(--shadow-sm);
+}
+
+.feature-card-large {
+  grid-column: span 2;
+}
+
+.feature-card-wide {
+  grid-column: 1 / -1;
+}
+
+.feature-icon {
+  width: 40px;
+  height: 40px;
+  margin-bottom: var(--space-4);
+}
+
+.feature-icon svg {
+  width: 100%;
+  height: 100%;
+}
+
+.feature-card h3 {
+  font-family: var(--font-mono);
+  font-size: var(--text-base);
+  font-weight: 600;
+  margin-bottom: var(--space-3);
+  color: var(--color-text);
+}
+
+.feature-card ul {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.feature-card li {
+  font-size: var(--text-sm);
+  color: var(--color-text-muted);
+  padding-left: var(--space-4);
+  position: relative;
+}
+
+.feature-card li::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0.65em;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--spectrum-burgundy), var(--spectrum-blue));
+}
+
+.feature-list-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: var(--space-2) var(--space-8);
+}
+
+code {
+  font-family: var(--font-mono);
+  font-size: 0.9em;
+  padding: 0.15em 0.4em;
+  background: var(--color-surface-2);
+  border-radius: var(--radius-sm);
+  color: var(--color-accent);
+}
+
+/* --- Benchmarks --- */
+.benchmarks-section {
+  padding: clamp(var(--space-12), 8vw, var(--space-24)) 0;
+  background: var(--color-surface);
+  border-top: 1px solid var(--color-border-subtle);
+  border-bottom: 1px solid var(--color-border-subtle);
+}
+
+.benchmark-table-wrap {
+  overflow-x: auto;
+  margin-bottom: var(--space-4);
+  -webkit-overflow-scrolling: touch;
+}
+
+.benchmark-table {
+  min-width: 480px;
+  font-variant-numeric: tabular-nums;
+}
+
+.benchmark-table th,
+.benchmark-table td {
+  padding: var(--space-3) var(--space-4);
+  text-align: left;
+  border-bottom: 1px solid var(--color-border-subtle);
+}
+
+.benchmark-table th {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  color: var(--color-text-faint);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.benchmark-table td {
+  font-size: var(--text-sm);
+  color: var(--color-text-muted);
+}
+
+.benchmark-table td.best-value {
+  font-weight: 700;
+  color: var(--color-text);
+  position: relative;
+}
+
+.benchmark-table td.best-value::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  width: 100%;
+  height: 2px;
+  background: linear-gradient(90deg, var(--spectrum-burgundy), var(--spectrum-blue));
+}
+
+.benchmark-table tbody tr:hover {
+  background: var(--color-surface-2);
+}
+
+.benchmark-note {
+  font-size: var(--text-xs);
+  color: var(--color-text-faint);
+  font-style: italic;
+  margin-top: var(--space-4);
+  max-width: 72ch;
+}
+
+/* --- Benchmark Suite Titles --- */
+.bench-suite-title {
+  font-family: var(--font-mono);
+  font-size: var(--text-base);
+  font-weight: 600;
+  color: var(--color-text);
+  margin-top: var(--space-8);
+  margin-bottom: var(--space-3);
+  padding-bottom: var(--space-2);
+  border-bottom: 1px solid var(--color-border-subtle);
+}
+
+.bench-suite-title:first-of-type {
+  margin-top: var(--space-6);
+}
+
+.bench-n {
+  font-weight: 400;
+  font-size: var(--text-sm);
+  color: var(--color-text-muted);
+}
+
+.ci-value {
+  font-size: var(--text-xs);
+  font-family: var(--font-mono);
+  color: var(--color-text-faint);
+  white-space: nowrap;
+}
+
+/* --- CNS Stats Grid --- */
+.cns-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: var(--space-4);
+  margin-top: var(--space-4);
+  margin-bottom: var(--space-4);
+}
+
+.cns-stat-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding: var(--space-6) var(--space-4);
+  background: var(--color-surface-2);
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--color-border-subtle);
+}
+
+.cns-stat-value {
+  font-family: var(--font-mono);
+  font-size: var(--text-2xl);
+  font-weight: 700;
+  background: linear-gradient(135deg, var(--spectrum-burgundy), var(--spectrum-blue));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  line-height: 1.2;
+}
+
+.cns-stat-ci {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--color-text-faint);
+  margin-top: var(--space-1);
+}
+
+.cns-stat-label {
+  font-size: var(--text-sm);
+  color: var(--color-text-muted);
+  margin-top: var(--space-2);
+}
+
+/* --- Footer Citation --- */
+.footer-cite {
+  font-size: var(--text-xs);
+  line-height: 1.5;
+  color: var(--color-text-muted);
+  max-width: 60ch;
+}
+
+.footer-cite a {
+  color: var(--color-accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.footer-cite-secondary {
+  margin-top: var(--space-2);
+  color: var(--color-text-faint);
+}
+
+/* --- Architecture --- */
+.arch-section {
+  padding: clamp(var(--space-12), 8vw, var(--space-24)) 0;
+}
+
+.arch-pipeline {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  overflow-x: auto;
+  padding: var(--space-4) 0;
+  margin-bottom: var(--space-6);
+}
+
+.arch-step {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-lg);
+  padding: var(--space-4) var(--space-5);
+  flex-shrink: 0;
+  min-width: 160px;
+}
+
+.arch-step-num {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  font-weight: 700;
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--spectrum-burgundy), var(--spectrum-blue));
+  color: #F0ECF8;
+  flex-shrink: 0;
+}
+
+.arch-step-content h4 {
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+.arch-step-content p {
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+}
+
+.arch-arrow {
+  flex-shrink: 0;
+  color: var(--color-text-faint);
+}
+
+.arch-sub-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-4);
+}
+
+.arch-sub-card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-lg);
+  padding: var(--space-4) var(--space-5);
+}
+
+.arch-sub-card h4 {
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--color-text);
+  margin-bottom: var(--space-1);
+}
+
+.arch-sub-card p {
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+}
+
+/* --- Install --- */
+.install-section {
+  padding: clamp(var(--space-12), 8vw, var(--space-24)) 0;
+  background: var(--color-surface);
+  border-top: 1px solid var(--color-border-subtle);
+  border-bottom: 1px solid var(--color-border-subtle);
+}
+
+.install-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-4);
+  margin-bottom: var(--space-6);
+}
+
+.install-card {
+  background: var(--color-bg);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-lg);
+  padding: var(--space-6);
+}
+
+.install-card h3 {
+  font-family: var(--font-mono);
+  font-size: var(--text-base);
+  font-weight: 600;
+  margin-bottom: var(--space-4);
+  color: var(--color-text);
+}
+
+/* Code blocks */
+.code-block {
+  background: var(--color-surface-2);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+
+.code-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: var(--space-2) var(--space-3);
+  background: var(--color-surface-3);
+  border-bottom: 1px solid var(--color-border-subtle);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--color-text-faint);
+}
+
+.copy-btn {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  color: var(--color-text-faint);
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+
+.copy-btn:hover { color: var(--color-text); background: var(--color-border-subtle); }
+.copy-btn.copied { color: var(--color-accent); }
+
+.code-block pre {
+  padding: var(--space-4);
+  overflow-x: auto;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  line-height: 1.7;
+  color: var(--color-text-muted);
+  -webkit-overflow-scrolling: touch;
+}
+
+.code-block pre code {
+  background: none;
+  padding: 0;
+  font-size: inherit;
+  color: inherit;
+  border-radius: 0;
+}
+
+.code-comment { color: var(--color-text-faint); }
+.code-keyword { color: var(--color-accent); }
+.code-string  { color: var(--color-accent-blue); }
+.code-number  { color: var(--spectrum-wine); }
+
+/* Requirements */
+.req-grid {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  margin-bottom: var(--space-6);
+}
+
+.req-item {
+  display: flex;
+  gap: var(--space-3);
+  align-items: baseline;
+  font-size: var(--text-sm);
+  color: var(--color-text-muted);
+}
+
+.req-label {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  background: var(--color-accent);
+  color: #F0ECF8;
+  flex-shrink: 0;
+}
+
+.req-label-opt {
+  background: var(--color-accent-blue);
+}
+
+.mt-6 { margin-top: var(--space-6); }
+.mt-8 { margin-top: var(--space-8); }
+
+/* Binary list */
+.binary-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.binary-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  font-size: var(--text-sm);
+  color: var(--color-text-muted);
+}
+
+.binary-item code {
+  font-weight: 600;
+  min-width: 100px;
+}
+
+/* CMake details */
+.cmake-details {
+  background: var(--color-bg);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-lg);
+  margin-bottom: var(--space-6);
+}
+
+.cmake-details summary {
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  padding: var(--space-4) var(--space-6);
+  cursor: pointer;
+  color: var(--color-text);
+  user-select: none;
+}
+
+.cmake-details summary:hover { color: var(--color-accent); }
+
+.cmake-details[open] summary {
+  border-bottom: 1px solid var(--color-border-subtle);
+}
+
+.cmake-table-wrap {
+  overflow-x: auto;
+  padding: var(--space-4) var(--space-6);
+}
+
+.cmake-table th,
+.cmake-table td {
+  padding: var(--space-2) var(--space-3);
+  text-align: left;
+  border-bottom: 1px solid var(--color-border-subtle);
+  font-size: var(--text-sm);
+}
+
+.cmake-table th {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--color-text-faint);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.cmake-table td {
+  color: var(--color-text-muted);
+}
+
+/* --- Usage / Tabs --- */
+.usage-section {
+  padding: clamp(var(--space-12), 8vw, var(--space-24)) 0;
+}
+
+.usage-tabs {
+  display: flex;
+  gap: var(--space-1);
+  margin-bottom: var(--space-4);
+  border-bottom: 1px solid var(--color-border-subtle);
+}
+
+.tab-btn {
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  font-weight: 500;
+  padding: var(--space-3) var(--space-4);
+  color: var(--color-text-muted);
+  border-radius: var(--radius-md) var(--radius-md) 0 0;
+  position: relative;
+}
+
+.tab-btn:hover { color: var(--color-text); }
+
+.tab-btn.active {
+  color: var(--color-text);
+  background: var(--color-surface);
+}
+
+.tab-btn.active::after {
+  content: '';
+  position: absolute;
+  bottom: -1px;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, var(--spectrum-burgundy), var(--spectrum-blue));
+}
+
+/* --- Stats --- */
+.stats-section {
+  padding: clamp(var(--space-12), 8vw, var(--space-24)) 0;
+  background: var(--color-surface);
+  border-top: 1px solid var(--color-border-subtle);
+  border-bottom: 1px solid var(--color-border-subtle);
+}
+
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: var(--space-4);
+  margin-bottom: var(--space-8);
+}
+
+.stat-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: var(--space-6);
+  background: var(--color-bg);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-lg);
+}
+
+.stat-value {
+  font-family: var(--font-mono);
+  font-size: var(--text-xl);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-text);
+}
+
+.stat-label {
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+  margin-top: var(--space-1);
+}
+
+/* Language bar */
+.lang-bar {
+  display: flex;
+  height: 10px;
+  border-radius: var(--radius-full);
+  overflow: hidden;
+  margin-bottom: var(--space-4);
+  background: var(--color-surface-2);
+}
+
+.lang-segment {
+  height: 100%;
+  transition: opacity 0.2s ease;
+}
+
+.lang-segment:hover { opacity: 0.8; }
+
+.lang-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3) var(--space-5);
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+}
+
+.lang-legend i {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  margin-right: var(--space-1);
+  vertical-align: middle;
+}
+
+/* --- Modules --- */
+.modules-section {
+  padding: clamp(var(--space-12), 8vw, var(--space-24)) 0;
+}
+
+.modules-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(260px, 100%), 1fr));
+  gap: var(--space-4);
+}
+
+.module-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-5);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-lg);
+  transition: border-color 0.18s ease;
+}
+
+.module-card:hover { border-color: var(--color-border); }
+
+.module-card code {
+  font-weight: 600;
+  font-size: var(--text-sm);
+}
+
+.module-card span {
+  font-size: var(--text-sm);
+  color: var(--color-text-muted);
+}
+
+/* --- Footer --- */
+.site-footer {
+  padding: var(--space-12) 0 var(--space-6);
+  border-top: 1px solid var(--color-border-subtle);
+}
+
+.footer-inner {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: var(--space-8);
+  margin-bottom: var(--space-8);
+}
+
+.footer-brand .logo-text {
+  display: block;
+  margin-bottom: var(--space-2);
+}
+
+.footer-brand p {
+  font-size: var(--text-xs);
+  color: var(--color-text-faint);
+  max-width: 400px;
+}
+
+.footer-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3) var(--space-5);
+}
+
+.footer-links a {
+  font-size: var(--text-sm);
+  color: var(--color-text-muted);
+  text-decoration: none;
+  white-space: nowrap;
+}
+.footer-links a:hover { color: var(--color-text); }
+
+.footer-bottom {
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--color-border-subtle);
+  text-align: center;
+}
+
+.footer-copy {
+  font-size: var(--text-xs);
+  color: var(--color-text-faint);
+}
+
+/* --- Scroll Animations --- */
+.fade-in {
+  opacity: 1;
+}
+
+@supports (animation-timeline: scroll()) {
+  .fade-in {
+    opacity: 0;
+    animation: reveal-fade linear both;
+    animation-timeline: view();
+    animation-range: entry 0% entry 100%;
+  }
+}
+
+@keyframes reveal-fade {
+  to { opacity: 1; }
+}
+
+/* --- Responsive --- */
+@media (max-width: 768px) {
+  .hero { min-height: 80vh; padding-bottom: 2.5rem; }
+  .hero-content { padding: var(--space-12) var(--space-4) var(--space-8); }
+
+  .hero-stat-row {
+    gap: var(--space-4);
+  }
+
+  .feature-card-large,
+  .feature-card-wide {
+    grid-column: span 1;
+  }
+
+  .install-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .arch-pipeline {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    padding-bottom: var(--space-4);
+  }
+
+  .arch-sub-row {
+    grid-template-columns: 1fr;
+  }
+
+  .stats-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .footer-inner {
+    flex-direction: column;
+    gap: var(--space-4);
+  }
+}
+
+@media (max-width: 480px) {
+  .hero-stat-row {
+    flex-direction: column;
+    gap: var(--space-6);
+  }
+
+  .stats-grid {
+    grid-template-columns: 1fr 1fr;
+    gap: var(--space-3);
+  }
+
+  .stat-card { padding: var(--space-4); }
+}
+
+/* ==========================================================================
+   DARK MODE REFINEMENTS
+   Sharper cards, more vivid accents, better section contrast
+   ========================================================================== */
+
+:root:not([data-theme="light"]) .feature-card,
+[data-theme="dark"] .feature-card,
+:root:not([data-theme="light"]) .install-card,
+[data-theme="dark"] .install-card,
+:root:not([data-theme="light"]) .module-card,
+[data-theme="dark"] .module-card,
+:root:not([data-theme="light"]) .arch-step,
+[data-theme="dark"] .arch-step,
+:root:not([data-theme="light"]) .arch-sub-card,
+[data-theme="dark"] .arch-sub-card,
+:root:not([data-theme="light"]) .stat-card,
+[data-theme="dark"] .stat-card {
+  border-color: rgba(160, 130, 220, 0.18);
+  box-shadow: 0 1px 3px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.03);
+}
+
+:root:not([data-theme="light"]) .feature-card:hover,
+[data-theme="dark"] .feature-card:hover,
+:root:not([data-theme="light"]) .module-card:hover,
+[data-theme="dark"] .module-card:hover {
+  border-color: rgba(212, 86, 158, 0.35);
+  box-shadow: 0 4px 24px rgba(140, 50, 120, 0.12), 0 0 0 1px rgba(212, 86, 158, 0.15);
+}
+
+/* Stronger section alternation in dark */
+:root:not([data-theme="light"]) .why-section,
+[data-theme="dark"] .why-section,
+:root:not([data-theme="light"]) .benchmarks-section,
+[data-theme="dark"] .benchmarks-section,
+:root:not([data-theme="light"]) .install-section,
+[data-theme="dark"] .install-section,
+:root:not([data-theme="light"]) .stats-section,
+[data-theme="dark"] .stats-section {
+  background: #0F0D18;
+  border-top-color: rgba(160, 130, 220, 0.12);
+  border-bottom-color: rgba(160, 130, 220, 0.12);
+}
+
+/* Code blocks sharper in dark */
+:root:not([data-theme="light"]) .code-block,
+[data-theme="dark"] .code-block {
+  border-color: rgba(160, 130, 220, 0.18);
+  background: #110F1C;
+}
+
+:root:not([data-theme="light"]) .code-header,
+[data-theme="dark"] .code-header {
+  background: #161326;
+  border-bottom-color: rgba(160, 130, 220, 0.15);
+}
+
+:root:not([data-theme="light"]) .code-block pre,
+[data-theme="dark"] .code-block pre {
+  color: #C8C2DA;
+}
+
+/* Brighter gradient text in dark hero */
+:root:not([data-theme="light"]) .hero-stat-value,
+[data-theme="dark"] .hero-stat-value {
+  background: linear-gradient(135deg, #E06AAE, #7E94ED);
+  -webkit-background-clip: text;
+  background-clip: text;
+}
+
+:root:not([data-theme="light"]) .hero h1 .delta,
+[data-theme="dark"] .hero h1 .delta {
+  background: linear-gradient(135deg, #E06AAE, #9075D0, #7E94ED);
+  -webkit-background-clip: text;
+  background-clip: text;
+}
+
+/* Benchmark best-value more vivid */
+:root:not([data-theme="light"]) .benchmark-table td.best-value,
+[data-theme="dark"] .benchmark-table td.best-value {
+  color: #F0ECF8;
+}
+
+:root:not([data-theme="light"]) .benchmark-table td.best-value::after,
+[data-theme="dark"] .benchmark-table td.best-value::after {
+  background: linear-gradient(90deg, #E06AAE, #7E94ED);
+}
+
+/* Header in dark — fully opaque, no blur dependency */
+:root:not([data-theme="light"]) .site-header,
+[data-theme="dark"] .site-header {
+  background: #09080E;
+  border-bottom-color: rgba(160, 130, 220, 0.18);
+}
+
+:root:not([data-theme="light"]) .main-nav a,
+[data-theme="dark"] .main-nav a {
+  color: #B5AEC8;
+}
+
+:root:not([data-theme="light"]) .main-nav a:hover,
+[data-theme="dark"] .main-nav a:hover {
+  color: #F0ECF8;
+}
+
+:root:not([data-theme="light"]) .gh-link,
+[data-theme="dark"] .gh-link,
+:root:not([data-theme="light"]) .theme-toggle,
+[data-theme="dark"] .theme-toggle {
+  color: #B5AEC8;
+}
+
+:root:not([data-theme="light"]) .gh-link:hover,
+[data-theme="dark"] .gh-link:hover,
+:root:not([data-theme="light"]) .theme-toggle:hover,
+[data-theme="dark"] .theme-toggle:hover {
+  color: #F0ECF8;
+}
+
+/* CMake details in dark */
+:root:not([data-theme="light"]) .cmake-details,
+[data-theme="dark"] .cmake-details {
+  border-color: rgba(160, 130, 220, 0.15);
+}
+
+/* Tabs sharper in dark */
+:root:not([data-theme="light"]) .tab-btn.active,
+[data-theme="dark"] .tab-btn.active {
+  background: #13111D;
+}
+
+/* Pipeline arrows more visible */
+:root:not([data-theme="light"]) .arch-arrow,
+[data-theme="dark"] .arch-arrow {
+  color: #9890AC;
+}
+
+/* Highlight quote border brighter */
+:root:not([data-theme="light"]) .highlight-quote,
+[data-theme="dark"] .highlight-quote {
+  border-image: linear-gradient(to bottom, #E06AAE, #7E94ED) 1;
+}
+
+/* Badges sharper */
+:root:not([data-theme="light"]) .badge,
+[data-theme="dark"] .badge {
+  border-color: rgba(160, 130, 220, 0.22);
+  background: rgba(19, 17, 29, 0.8);
+}
+
+:root:not([data-theme="light"]) .badge-accent,
+[data-theme="dark"] .badge-accent {
+  border-color: rgba(212, 86, 158, 0.45);
+  color: #E06AAE;
+  background: rgba(212, 86, 158, 0.1);
+}
+
+/* Primary button more vivid in dark */
+:root:not([data-theme="light"]) .btn-primary,
+[data-theme="dark"] .btn-primary {
+  background: linear-gradient(135deg, #C04080, #7B5CC0);
+  color: #F8F4FF;
+}
+
+:root:not([data-theme="light"]) .btn-primary:hover,
+[data-theme="dark"] .btn-primary:hover {
+  box-shadow: 0 4px 24px rgba(192, 64, 128, 0.35);
+}
+
+/* Secondary button clearer border */
+:root:not([data-theme="light"]) .btn-secondary,
+[data-theme="dark"] .btn-secondary {
+  border-color: rgba(160, 130, 220, 0.25);
+  background: rgba(19, 17, 29, 0.6);
+}
+
+:root:not([data-theme="light"]) .btn-secondary:hover,
+[data-theme="dark"] .btn-secondary:hover {
+  border-color: rgba(212, 86, 158, 0.5);
+  background: rgba(27, 24, 41, 0.8);
+}
+
+/* Required/Optional labels in dark */
+:root:not([data-theme="light"]) .req-label,
+[data-theme="dark"] .req-label {
+  background: #D4569E;
+}
+
+:root:not([data-theme="light"]) .req-label-opt,
+[data-theme="dark"] .req-label-opt {
+  background: #7E94ED;
+}
+
+/* Bullet points brighter gradient */
+:root:not([data-theme="light"]) .feature-card li::before,
+[data-theme="dark"] .feature-card li::before {
+  background: linear-gradient(135deg, #E06AAE, #7E94ED);
+}
+
+/* Nav underline brighter */
+:root:not([data-theme="light"]) .main-nav a::after,
+[data-theme="dark"] .main-nav a::after {
+  background: linear-gradient(90deg, #E06AAE, #7E94ED);
+}
+
+/* Active tab underline brighter */
+:root:not([data-theme="light"]) .tab-btn.active::after,
+[data-theme="dark"] .tab-btn.active::after {
+  background: linear-gradient(90deg, #E06AAE, #7E94ED);
+}
+
+/* Language bar in dark — use brighter spectrum */
+:root:not([data-theme="light"]) .lang-bar,
+[data-theme="dark"] .lang-bar {
+  background: #1B1829;
+}
+
+/* Arch step numbers brighter */
+:root:not([data-theme="light"]) .arch-step-num,
+[data-theme="dark"] .arch-step-num {
+  background: linear-gradient(135deg, #D4569E, #7E94ED);
+}
+
+/* Footer dividers */
+:root:not([data-theme="light"]) .site-footer,
+[data-theme="dark"] .site-footer {
+  border-top-color: rgba(160, 130, 220, 0.12);
+}
+
+/* ==========================================================================
+   Drug of the Day — subtle hero label
+   ========================================================================== */
+
+.drug-of-day {
+  position: absolute;
+  bottom: var(--space-4, 1rem);
+  left: var(--space-6, 1.5rem);
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.4rem 0.85rem;
+  border-radius: 999px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.7rem;
+  letter-spacing: 0.02em;
+  line-height: 1.4;
+  color: var(--color-text-secondary, #666);
+  background: rgba(255,255,255,0.06);
+  border: 1px solid rgba(160, 130, 220, 0.12);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  opacity: 0.7;
+  transition: opacity 0.3s ease;
+}
+
+.drug-of-day:hover {
+  opacity: 1;
+}
+
+.drug-of-day svg {
+  flex-shrink: 0;
+  opacity: 0.6;
+}
+
+.drug-of-day-title {
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-weight: 600;
+  font-size: 0.6rem;
+  opacity: 0.65;
+}
+
+#drug-of-day-label {
+  display: inline;
+}
+
+#drug-of-day-label strong {
+  color: var(--color-accent, #D4569E);
+  font-weight: 600;
+}
+
+.drug-indication {
+  opacity: 0.6;
+  font-weight: 400;
+}
+
+/* Light mode: slightly different bg */
+[data-theme="light"] .drug-of-day {
+  background: rgba(0,0,0,0.04);
+  border-color: rgba(139, 26, 74, 0.12);
+  color: var(--color-text-secondary, #555);
+}
+
+[data-theme="light"] #drug-of-day-label strong {
+  color: var(--color-accent, #8B1A4A);
+}
+
+/* Mobile: bottom-center, no indication text */
+@media (max-width: 768px) {
+  .drug-of-day {
+    left: 50%;
+    transform: translateX(-50%);
+    bottom: 0.5rem;
+    font-size: 0.6rem;
+    max-width: calc(100% - 2rem);
+    padding: 0.3rem 0.7rem;
+    gap: 0.35rem;
+  }
+  .drug-of-day svg {
+    width: 11px;
+    height: 11px;
+  }
+  .drug-of-day-title {
+    font-size: 0.5rem;
+  }
+  .drug-indication {
+    display: none;
+  }
+}
+.reveal {
+  opacity: 0;
+  transform: translateY(24px);
+  transition: opacity 0.6s ease-out, transform 0.6s ease-out;
+}
+
+.reveal.revealed {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .reveal {
+    opacity: 1;
+    transform: none;
+    transition: none;
+  }
+}
+
+/* ==========================================================================
+   Tab Notes (for tENCoM / NATURaL tabs)
+   ========================================================================== */
+
+.tab-note {
+  margin-top: 1rem;
+  padding: 0.75rem 1rem;
+  font-size: 0.875rem;
+  color: var(--color-text-muted);
+  background: var(--color-surface-alt, var(--color-surface));
+  border-left: 3px solid var(--color-accent);
+  border-radius: 0 var(--radius) var(--radius) 0;
+  max-width: 72ch;
+}
+
+/* Usage tabs: scrollable on mobile */
+@media (max-width: 768px) {
+  .usage-tabs {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    flex-wrap: nowrap !important;
+    gap: 0.25rem !important;
+    padding-bottom: 0.25rem;
+  }
+  .tab-btn {
+    white-space: nowrap;
+    flex-shrink: 0;
+    font-size: 0.8rem !important;
+    padding: 0.4rem 0.75rem !important;
+  }
+}
+
+/* ==========================================================================
+   PyMOL Plugin Section
+   ========================================================================== */
+
+.pymol-section {
+  padding: var(--section-pad-y) 0;
+}
+
+.pymol-grid {
+  display: grid;
+  grid-template-columns: 1fr 2fr;
+  gap: 2rem;
+  margin-top: 2rem;
+}
+
+.pymol-install-card,
+.pymol-commands-card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg, 12px);
+  padding: 1.5rem;
+}
+
+.pymol-steps {
+  list-style: decimal;
+  padding-left: 1.5rem;
+  margin-top: 0.75rem;
+}
+.pymol-steps li {
+  margin-bottom: 0.5rem;
+  font-size: 0.9rem;
+}
+.pymol-steps code {
+  background: var(--color-code-bg, rgba(128,128,128,0.15));
+  padding: 0.15em 0.4em;
+  border-radius: 4px;
+  font-size: 0.85em;
+  font-family: 'JetBrains Mono', monospace;
+}
+
+.pymol-req {
+  margin-top: 1rem;
+  font-size: 0.8rem;
+  color: var(--color-text-muted);
+}
+
+.pymol-commands-card h3 {
+  margin-bottom: 0.75rem;
+}
+
+@media (max-width: 768px) {
+  .pymol-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+
+/* ==========================================================================
+   Documentation Section
+   ========================================================================== */
+
+.docs-section {
+  padding: var(--section-pad-y) 0;
+  background: var(--color-surface-alt, var(--color-bg));
+}
+
+.docs-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 1.5rem;
+  margin-top: 2rem;
+}
+
+.doc-card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg, 12px);
+  padding: 1.5rem;
+  text-decoration: none;
+  color: var(--color-text);
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  transition: border-color 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.doc-card:hover {
+  border-color: var(--color-accent);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 20px rgba(139, 26, 74, 0.1);
+}
+
+.doc-icon {
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  background: linear-gradient(135deg, rgba(139, 26, 74, 0.15), rgba(59, 109, 201, 0.15));
+  color: var(--color-accent);
+  margin-bottom: 0.25rem;
+}
+
+.doc-icon svg {
+  width: 20px;
+  height: 20px;
+}
+
+.doc-card h3 {
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.doc-card p {
+  font-size: 0.85rem;
+  color: var(--color-text-muted);
+  line-height: 1.5;
+}
+
+@media (max-width: 768px) {
+  .docs-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+@media (max-width: 480px) {
+  .docs-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ==========================================================================
+   Bonhomme Fleet / Infrastructure Section
+   ========================================================================== */
+
+.fleet-section {
+  padding: var(--section-pad-y) 0;
+}
+
+.fleet-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1.5rem;
+  margin-top: 2rem;
+}
+
+.fleet-card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg, 12px);
+  padding: 1.5rem;
+  transition: border-color 0.2s ease, transform 0.2s ease;
+}
+
+.fleet-card:hover {
+  border-color: var(--color-accent);
+  transform: translateY(-2px);
+}
+
+.fleet-icon {
+  width: 40px;
+  height: 40px;
+  margin-bottom: 1rem;
+}
+
+.fleet-card h3 {
+  font-size: 1.1rem;
+  margin-bottom: 0.5rem;
+}
+
+.fleet-card p {
+  font-size: 0.875rem;
+  color: var(--color-text-muted);
+  line-height: 1.5;
+}
+
+@media (max-width: 768px) {
+  .fleet-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ==========================================================================
+   Publications Section
+   ========================================================================== */
+
+.publications-section {
+  padding: var(--section-pad-y) 0;
+  background: var(--color-surface-alt, var(--color-bg));
+}
+
+.publications-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 1.5rem;
+  margin-top: 2rem;
+}
+
+.pub-card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg, 12px);
+  padding: 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.pub-card-primary {
+  border-color: var(--color-accent);
+  border-width: 2px;
+}
+
+.pub-card-upcoming {
+  border-style: dashed;
+}
+
+.pub-badge {
+  display: inline-block;
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 0.2em 0.6em;
+  border-radius: 4px;
+  background: var(--color-accent);
+  color: #fff;
+  width: fit-content;
+  margin-bottom: 0.25rem;
+}
+
+.pub-badge-upcoming {
+  background: var(--color-text-muted);
+}
+
+.pub-authors {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+.pub-title {
+  font-size: 0.9rem;
+  font-style: italic;
+  color: var(--color-text);
+  line-height: 1.4;
+}
+
+.pub-journal {
+  font-size: 0.8rem;
+  color: var(--color-text-muted);
+}
+
+.pub-doi {
+  font-size: 0.8rem;
+  color: var(--color-accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  margin-top: auto;
+}
+
+@media (max-width: 768px) {
+  .publications-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Publication full list */
+.pub-list-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 2.5rem 0 1rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid var(--color-border);
+}
+
+.pub-list-header h3 {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--color-text-muted);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  font-size: 0.8rem;
+}
+
+.btn-sm {
+  padding: 0.3rem 0.8rem;
+  font-size: 0.8rem;
+}
+
+.pub-list {
+  list-style: decimal;
+  padding-left: 2rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.pub-list-item {
+  font-size: 0.875rem;
+  line-height: 1.6;
+  color: var(--color-text-muted);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.25rem 0.4rem;
+}
+
+.pub-list-authors {
+  font-weight: 500;
+  color: var(--color-text);
+}
+
+.pub-list-title {
+  color: var(--color-text);
+}
+
+.pub-list-journal {
+  color: var(--color-text-muted);
+  flex-shrink: 0;
+}
+
+.pub-list-doi {
+  font-size: 0.75rem;
+  color: var(--color-accent);
+  text-decoration: none;
+  border: 1px solid currentColor;
+  padding: 0.05rem 0.4rem;
+  border-radius: 4px;
+  white-space: nowrap;
+  flex-shrink: 0;
+  opacity: 0.8;
+}
+.pub-list-doi:hover { opacity: 1; }
+
+/* ==========================================================================
+   Contributing Section
+   ========================================================================== */
+
+.contributing-section {
+  padding: var(--section-pad-y) 0;
+}
+
+.contributing-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr auto;
+  gap: 1.5rem;
+  margin-top: 2rem;
+  align-items: start;
+}
+
+.license-card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg, 12px);
+  padding: 1.5rem;
+}
+
+.license-card h3 {
+  font-size: 1rem;
+  margin-bottom: 0.75rem;
+}
+
+.license-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.license-tag {
+  display: inline-block;
+  font-size: 0.8rem;
+  font-weight: 500;
+  padding: 0.25em 0.75em;
+  border-radius: 999px;
+  font-family: 'JetBrains Mono', monospace;
+}
+
+.license-tag-ok {
+  background: oklch(0.4 0.12 145 / 0.2);
+  color: oklch(0.7 0.15 145);
+  border: 1px solid oklch(0.5 0.12 145 / 0.3);
+}
+
+.license-tag-no {
+  background: oklch(0.4 0.15 25 / 0.2);
+  color: oklch(0.7 0.18 25);
+  border: 1px solid oklch(0.5 0.15 25 / 0.3);
+}
+
+[data-theme="light"] .license-tag-ok {
+  background: oklch(0.85 0.1 145 / 0.3);
+  color: oklch(0.35 0.12 145);
+  border-color: oklch(0.6 0.1 145 / 0.4);
+}
+
+[data-theme="light"] .license-tag-no {
+  background: oklch(0.85 0.12 25 / 0.3);
+  color: oklch(0.4 0.15 25);
+  border-color: oklch(0.6 0.12 25 / 0.4);
+}
+
+.license-note {
+  margin-top: 0.75rem;
+  font-size: 0.8rem;
+  color: var(--color-text-muted);
+}
+
+.license-note a {
+  color: var(--color-accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.contributing-links {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  align-self: center;
+}
+
+@media (max-width: 768px) {
+  .contributing-grid {
+    grid-template-columns: 1fr;
+  }
+  .contributing-links {
+    flex-direction: row;
+    flex-wrap: wrap;
+  }
+}
+
+/* ==========================================================================
+   Footer Copyright (replacing Perplexity link)
+   ========================================================================== */
+
+.footer-copyright {
+  font-size: 0.75rem;
+  color: var(--color-text-muted);
+  opacity: 0.7;
+}
+
+/* ==========================================================================
+   Architecture Pipeline Mobile Fix
+   ========================================================================== */
+
+@media (max-width: 768px) {
+  .arch-pipeline {
+    flex-direction: column !important;
+    align-items: stretch !important;
+    gap: 0.5rem !important;
+  }
+  .arch-arrow {
+    display: none !important;
+  }
+  .arch-step {
+    flex-direction: row !important;
+    min-width: 0 !important;
+    padding: 0.75rem 1rem !important;
+  }
+  .arch-sub-row {
+    flex-direction: column !important;
+    gap: 0.75rem !important;
+  }
+}
+
+/* ==========================================================================
+   Code Blocks Mobile Fix
+   ========================================================================== */
+
+@media (max-width: 768px) {
+  .code-block pre {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    font-size: 0.78rem !important;
+  }
+}
+
+/* ==========================================================================
+   Nav Links - additional items fit
+   ========================================================================== */
+
+@media (max-width: 1024px) and (min-width: 769px) {
+  .main-nav {
+    gap: 0.75rem !important;
+  }
+  .main-nav a {
+    font-size: 0.82rem !important;
+  }
+}
+
+</style>
+</head>
+<body>
+  <!-- Skip link -->
+  <a href="#main" class="sr-only" style="position:absolute;top:-100px;left:0;z-index:999;background:var(--color-primary);color:#fff;padding:8px 16px;font-size:14px;" onfocus="this.style.top='0'" onblur="this.style.top='-100px'">Skip to content</a>
+
+  <!-- Header -->
+  <header class="site-header" id="site-header">
+    <div class="header-inner">
+      <a href="#" class="logo" aria-label="FlexAID∆S Home">
+        <svg width="32" height="32" viewBox="0 0 32 32" fill="none" aria-hidden="true">
+          <rect x="2" y="2" width="28" height="28" rx="6" stroke="currentColor" stroke-width="1.5"/>
+          <circle cx="16" cy="12" r="4" stroke="var(--color-accent)" stroke-width="1.5"/>
+          <circle cx="10" cy="22" r="3" stroke="var(--color-accent)" stroke-width="1.5"/>
+          <circle cx="22" cy="22" r="3" stroke="var(--color-accent)" stroke-width="1.5"/>
+          <line x1="14" y1="15.5" x2="11" y2="19.5" stroke="var(--color-accent)" stroke-width="1.2"/>
+          <line x1="18" y1="15.5" x2="21" y2="19.5" stroke="var(--color-accent)" stroke-width="1.2"/>
+          <line x1="13" y1="22" x2="19" y2="22" stroke="var(--color-accent)" stroke-width="1.2" stroke-dasharray="2 2"/>
+        </svg>
+        <span class="logo-text">FlexAID<span class="logo-delta">∆S</span></span>
+      </a>
+      <nav class="main-nav" aria-label="Main navigation">
+        <a href="#features">Features</a>
+        <a href="#benchmarks">Results</a>
+        <a href="#install">Install</a>
+        <a href="#usage">Usage</a>
+        <a href="#architecture">Architecture</a>
+        <a href="#docs">Docs</a>
+        <a href="#publications">Publications</a>
+      </nav>
+      <div class="header-actions">
+        <a href="https://github.com/lmorency/FlexAIDdS" target="_blank" rel="noopener noreferrer" class="gh-link" aria-label="View on GitHub">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/></svg>
+        </a>
+        <button data-theme-toggle aria-label="Switch to light mode" class="theme-toggle">
+          <svg class="icon-sun" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
+          <svg class="icon-moon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+        </button>
+      </div>
+      <button class="mobile-menu-toggle" aria-label="Toggle menu" aria-expanded="false">
+        <span></span><span></span><span></span>
+      </button>
+    </div>
+  </header>
+
+  <main id="main">
+    <!-- Hero -->
+    <section class="hero">
+      <div class="hero-bg" aria-hidden="true">
+        <div id="molstar-viewer"></div>
+      </div>
+      <div class="drug-of-day" aria-label="Drug of the Day">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.5 1.5H8.25A2.25 2.25 0 006 3.75v16.5a2.25 2.25 0 002.25 2.25h7.5A2.25 2.25 0 0018 20.25V3.75a2.25 2.25 0 00-2.25-2.25H13.5m-3 0V3h3V1.5m-3 0h3m-6 7.5h9m-9 4.5h9"/></svg>
+        <span class="drug-of-day-title">Drug of the Day</span>
+        <span id="drug-of-day-label"></span>
+      </div>
+      <div class="hero-content">
+        <div class="hero-badges">
+          <span class="badge">Apache 2.0</span>
+          <span class="badge">C++26</span>
+          <span class="badge badge-accent">Python &ge; 3.9</span>
+          <span class="badge">Linux | macOS | Windows</span>
+        </div>
+        <h1>FlexAID<span class="delta">∆S</span></h1>
+        <p class="hero-subtitle">Entropy-Driven Molecular Docking Engine</p>
+        <p class="hero-tagline">Genetic algorithms meet statistical mechanics for real-world drug discovery</p>
+        <div class="hero-stat-row">
+          <div class="hero-stat">
+            <span class="hero-stat-value">0.93</span>
+            <span class="hero-stat-label">Pearson r (ITC-187)</span>
+          </div>
+          <div class="hero-stat">
+            <span class="hero-stat-value">1.4</span>
+            <span class="hero-stat-label">RMSE kcal/mol</span>
+          </div>
+          <div class="hero-stat">
+            <span class="hero-stat-value">92%</span>
+            <span class="hero-stat-label">Correct binding mode</span>
+          </div>
+        </div>
+        <div class="hero-cta">
+          <a href="#install" class="btn btn-primary">Get Started</a>
+          <a href="https://github.com/lmorency/FlexAIDdS" target="_blank" rel="noopener noreferrer" class="btn btn-secondary">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/></svg>
+            View on GitHub
+          </a>
+        </div>
+      </div>
+    </section>
+
+    <!-- Why FlexAID∆S -->
+    <section class="why-section" id="why">
+      <div class="container">
+        <blockquote class="highlight-quote">
+          Most docking engines optimize enthalpy alone. FlexAID∆S integrates <strong>Shannon entropy</strong> into its scoring via a full statistical mechanics framework — recovering the correct binding mode <strong>92% of the time</strong> when enthalpy-only scoring fails.
+        </blockquote>
+      </div>
+    </section>
+
+    <!-- Features -->
+    <section class="features-section" id="features">
+      <div class="container">
+        <h2>Capabilities</h2>
+        <div class="features-grid">
+          <div class="feature-card feature-card-large">
+            <div class="feature-icon">
+              <svg viewBox="0 0 40 40" fill="none" stroke="var(--color-accent)" stroke-width="1.5"><circle cx="20" cy="14" r="6"/><circle cx="11" cy="30" r="4"/><circle cx="29" cy="30" r="4"/><line x1="16" y1="19" x2="13" y2="27" /><line x1="24" y1="19" x2="27" y2="27"/><line x1="15" y1="30" x2="25" y2="30" stroke-dasharray="3 2"/></svg>
+            </div>
+            <h3>Docking Engine</h3>
+            <ul>
+              <li>Genetic algorithm with configurable population, crossover, mutation, selection</li>
+              <li>Voronoi contact function (CF) for shape complementarity scoring</li>
+              <li>Dead-end elimination (DEE) torsion pruning</li>
+              <li>Zero-copy batch scoring via <code>VoronoiCFBatch</code> with OpenMP</li>
+              <li>Direct SMILES-to-3D docking — no RDKit dependency required</li>
+              <li>PDB, CIF/mmCIF, MOL2, SDF, and SMILES input formats</li>
+            </ul>
+          </div>
+          <div class="feature-card">
+            <div class="feature-icon">
+              <svg viewBox="0 0 40 40" fill="none" stroke="var(--color-accent)" stroke-width="1.5"><path d="M8 32 L14 12 L20 24 L26 8 L32 20"/><line x1="8" y1="34" x2="34" y2="34" stroke="var(--color-text-muted)" stroke-width="1"/></svg>
+            </div>
+            <h3>Thermodynamics</h3>
+            <ul>
+              <li>Statistical mechanics engine: partition function, free energy, heat capacity, entropy</li>
+              <li>Shannon entropy scoring + torsional vibrational entropy</li>
+              <li>Torsional ENCoM (tENCoM) backbone flexibility</li>
+              <li>Grand canonical ensemble for competitive ligand binding &amp; selectivity prediction</li>
+              <li>Log-sum-exp numerical stabilization for robust cross-energy-range computation</li>
+            </ul>
+          </div>
+          <div class="feature-card">
+            <div class="feature-icon">
+              <svg viewBox="0 0 40 40" fill="none" stroke="var(--color-accent)" stroke-width="1.5"><circle cx="20" cy="20" r="8"/><ellipse cx="20" cy="20" rx="14" ry="6" transform="rotate(30 20 20)"/><ellipse cx="20" cy="20" rx="14" ry="6" transform="rotate(-30 20 20)"/></svg>
+            </div>
+            <h3>Molecular Flexibility</h3>
+            <ul>
+              <li>Full flexibility — ligand torsions, ring conformers, chirality</li>
+              <li>Non-aromatic ring conformer sampling and sugar pucker</li>
+              <li>Explicit R/S stereocenter discrimination</li>
+              <li>MOL2, SDF/MOL V2000, and legacy INP formats</li>
+            </ul>
+          </div>
+          <div class="feature-card">
+            <div class="feature-icon">
+              <svg viewBox="0 0 40 40" fill="none" stroke="var(--color-accent)" stroke-width="1.5"><polygon points="20,4 36,14 36,28 20,38 4,28 4,14" stroke-width="1.5"/><line x1="20" y1="4" x2="20" y2="38" stroke-width="1" stroke-dasharray="2 2"/><line x1="4" y1="14" x2="36" y2="28" stroke-width="1" stroke-dasharray="2 2"/></svg>
+            </div>
+            <h3>Hardware Acceleration</h3>
+            <ul>
+              <li>Unified hardware dispatch &mdash; automatic backend selection (CUDA &gt; Metal &gt; AVX-512 &gt; AVX2 &gt; OpenMP &gt; scalar)</li>
+              <li>SIMD primitives: AVX-512 and AVX2 vectorized geometric computations</li>
+              <li>Ultra-fast HPC binaries with LTO + <code>-march=native</code></li>
+              <li>Automatic cavity detection (SURFNET with Metal GPU)</li>
+            </ul>
+          </div>
+          <div class="feature-card feature-card-wide">
+            <div class="feature-icon">
+              <svg viewBox="0 0 40 40" fill="none" stroke="var(--color-accent)" stroke-width="1.5"><rect x="4" y="8" width="10" height="10" rx="2"/><rect x="26" y="8" width="10" height="10" rx="2"/><rect x="4" y="24" width="10" height="10" rx="2"/><rect x="26" y="24" width="10" height="10" rx="2"/><line x1="14" y1="13" x2="26" y2="13" stroke-dasharray="2 2"/><line x1="14" y1="29" x2="26" y2="29" stroke-dasharray="2 2"/><line x1="20" y1="8" x2="20" y2="34" stroke-dasharray="2 2" stroke-width="1"/></svg>
+            </div>
+            <h3>Bonhomme Fleet</h3>
+            <ul class="feature-list-grid">
+              <li>Distributed docking across Apple devices via iCloud Drive</li>
+              <li>Device-aware scheduling &mdash; battery, thermal state, TFLOPS weighting</li>
+              <li>ChaChaPoly-encrypted work chunks for secure computation</li>
+              <li>Intelligence oracle &mdash; on-device AI via Apple FoundationModels</li>
+              <li>TypeScript PWA &mdash; real-time Fleet dashboard + Mol* 3D viewer</li>
+            </ul>
+          </div>
+          <div class="feature-card feature-card-wide">
+            <div class="feature-icon">
+              <svg viewBox="0 0 40 40" fill="none" stroke="var(--color-accent)" stroke-width="1.5"><rect x="6" y="6" rx="3" width="28" height="28"/><line x1="6" y1="14" x2="34" y2="14"/><circle cx="13" cy="24" r="4"/><rect x="22" y="20" width="8" height="8" rx="1"/></svg>
+            </div>
+            <h3>Analysis & Integration</h3>
+            <ul class="feature-list-grid">
+              <li>Python package <code>flexaidds</code> — API, CLI, PyMOL plugin</li>
+              <li>NATURaL co-translational &amp; co-transcriptional assembly</li>
+              <li>FastOPTICS + Density Peak clustering</li>
+              <li>Single JSON config for all parameters</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Benchmarks -->
+    <section class="benchmarks-section" id="benchmarks">
+      <div class="container">
+        <h2>Preliminary Results</h2>
+        <p class="section-subtitle">Ongoing validation &mdash; full benchmark data in the forthcoming manuscript (Morency &amp; Najmanovich, in preparation). 95% CIs from 10,000 bootstrap resamples. Benchmark bundles: CASF-2016 (285 complexes), LIT-PCBA (15 targets), cross-docking validation.</p>
+
+        <!-- ITC-187 -->
+        <h3 class="bench-suite-title">ITC-187 &mdash; Calorimetry Gold Standard <span class="bench-n">(n = 187)</span></h3>
+        <div class="benchmark-table-wrap">
+          <table class="benchmark-table">
+            <thead>
+              <tr>
+                <th>Metric</th>
+                <th>FlexAID∆S</th>
+                <th>95% CI</th>
+                <th>Vina</th>
+                <th>Glide</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>∆G Pearson r</td>
+                <td class="best-value">0.93</td>
+                <td class="ci-value">[0.91, 0.95]</td>
+                <td>0.64</td>
+                <td>0.69</td>
+              </tr>
+              <tr>
+                <td>RMSE (kcal/mol)</td>
+                <td class="best-value">1.4</td>
+                <td class="ci-value">[1.26, 1.54]</td>
+                <td>3.1</td>
+                <td>2.9</td>
+              </tr>
+              <tr>
+                <td>Ranking Power</td>
+                <td class="best-value">78%</td>
+                <td class="ci-value">[72.2%, 84.0%]</td>
+                <td>58%</td>
+                <td>64%</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- CASF-2016 -->
+        <h3 class="bench-suite-title">CASF-2016 &mdash; Diverse Drug Targets <span class="bench-n">(n = 285)</span></h3>
+        <div class="benchmark-table-wrap">
+          <table class="benchmark-table">
+            <thead>
+              <tr>
+                <th>Power</th>
+                <th>FlexAID∆S</th>
+                <th>95% CI</th>
+                <th>Vina</th>
+                <th>Glide</th>
+                <th>rDock</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>Scoring (r)</td>
+                <td class="best-value">0.88</td>
+                <td class="ci-value">[0.85, 0.90]</td>
+                <td>0.73</td>
+                <td>0.78</td>
+                <td>0.71</td>
+              </tr>
+              <tr>
+                <td>Docking (%)</td>
+                <td class="best-value">81%</td>
+                <td class="ci-value">[76.5%, 85.6%]</td>
+                <td>76%</td>
+                <td>79%</td>
+                <td>73%</td>
+              </tr>
+              <tr>
+                <td>Screening EF 1%</td>
+                <td class="best-value">15.3</td>
+                <td class="ci-value">[14.4, 16.2]</td>
+                <td>11.2</td>
+                <td>13.1</td>
+                <td>10.8</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- CNS -->
+        <h3 class="bench-suite-title">Psychopharmacology &mdash; CNS Receptors <span class="bench-n">(n = 23 targets)</span></h3>
+        <div class="cns-stats-grid">
+          <div class="cns-stat-card">
+            <span class="cns-stat-value">92%</span>
+            <span class="cns-stat-ci">95% CI [78.3%, 100%]</span>
+            <span class="cns-stat-label">Correct binding mode rescue</span>
+          </div>
+          <div class="cns-stat-card">
+            <span class="cns-stat-value">3.02</span>
+            <span class="cns-stat-ci">95% CI [2.69, 3.35] kcal/mol</span>
+            <span class="cns-stat-label">Avg Shannon entropic correction</span>
+          </div>
+          <div class="cns-stat-card">
+            <span class="cns-stat-value">23</span>
+            <span class="cns-stat-ci">GPCR, ion channels, transporters</span>
+            <span class="cns-stat-label">Neurological targets</span>
+          </div>
+        </div>
+        <p class="benchmark-note">Example: mu-opioid + fentanyl &mdash; enthalpy-only scoring placed the ligand in the wrong pocket (&minus;14.2 kcal/mol, RMSD 8.3 &Aring;); Shannon entropic correction rescued the correct pose (&minus;10.8 kcal/mol, RMSD 1.2 &Aring;, exp: &minus;11.1)</p>
+      </div>
+    </section>
+
+    <!-- Architecture -->
+    <section class="arch-section" id="architecture">
+      <div class="container">
+        <h2>Architecture</h2>
+        <div class="arch-pipeline">
+          <div class="arch-step">
+            <div class="arch-step-num">1</div>
+            <div class="arch-step-content">
+              <h4>Input</h4>
+              <p>PDB + MOL2</p>
+            </div>
+          </div>
+          <div class="arch-arrow" aria-hidden="true">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+          </div>
+          <div class="arch-step">
+            <div class="arch-step-num">2</div>
+            <div class="arch-step-content">
+              <h4>Genetic Algorithm</h4>
+              <p>gaboom engine</p>
+            </div>
+          </div>
+          <div class="arch-arrow" aria-hidden="true">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+          </div>
+          <div class="arch-step">
+            <div class="arch-step-num">3</div>
+            <div class="arch-step-content">
+              <h4>Scoring</h4>
+              <p>Voronoi CF + DEE</p>
+            </div>
+          </div>
+          <div class="arch-arrow" aria-hidden="true">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+          </div>
+          <div class="arch-step">
+            <div class="arch-step-num">4</div>
+            <div class="arch-step-content">
+              <h4>Thermodynamics</h4>
+              <p>StatMech + Entropy</p>
+            </div>
+          </div>
+        </div>
+        <div class="arch-sub-row">
+          <div class="arch-sub-card">
+            <h4>Flexibility</h4>
+            <p>Torsions, Rings, Chirality, tENCoM</p>
+          </div>
+          <div class="arch-sub-card">
+            <h4>Binding Modes</h4>
+            <p>Clustering + ∆G, ∆H, -T∆S, Cv, Boltzmann</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Install -->
+    <section class="install-section" id="install">
+      <div class="container">
+        <h2>Installation</h2>
+        <div class="install-grid">
+          <div class="install-card">
+            <h3>Quick Start</h3>
+            <div class="code-block">
+              <div class="code-header">
+                <span>bash</span>
+                <button class="copy-btn" data-copy="git clone https://github.com/lmorency/FlexAIDdS.git && cd FlexAIDdS
+mkdir build && cd build
+cmake .. -DCMAKE_BUILD_TYPE=Release && cmake --build . -j $(nproc)" aria-label="Copy to clipboard">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
+                </button>
+              </div>
+              <pre><code>git clone https://github.com/lmorency/FlexAIDdS.git && cd FlexAIDdS
+mkdir build && cd build
+cmake .. -DCMAKE_BUILD_TYPE=Release && cmake --build . -j $(nproc)</code></pre>
+            </div>
+          </div>
+          <div class="install-card">
+            <h3>Requirements</h3>
+            <div class="req-grid">
+              <div class="req-item">
+                <span class="req-label">Required</span>
+                <span>C++26 compiler (GCC &ge; 14, Clang &ge; 18, Apple Clang &ge; 16, MSVC &ge; 19.40), CMake &ge; 3.28</span>
+              </div>
+              <div class="req-item">
+                <span class="req-label req-label-opt">Optional</span>
+                <span>Eigen3, OpenMP, CUDA, Metal (macOS), pybind11</span>
+              </div>
+            </div>
+            <h3 class="mt-6">Output Binaries</h3>
+            <div class="binary-list">
+              <div class="binary-item"><code>FlexAID</code><span>Standard docking</span></div>
+              <div class="binary-item"><code>FlexAIDdS</code><span>Ultra-fast docking (LTO + native)</span></div>
+              <div class="binary-item"><code>tENCoM</code><span>Vibrational entropy tool</span></div>
+            </div>
+          </div>
+        </div>
+        <details class="cmake-details">
+          <summary>CMake Options Reference</summary>
+          <div class="cmake-table-wrap">
+            <table class="cmake-table">
+              <thead><tr><th>Option</th><th>Default</th><th>Description</th></tr></thead>
+              <tbody>
+                <tr><td><code>BUILD_FLEXAIDDS_FAST</code></td><td>ON</td><td>Ultra-fast binary (LTO + native)</td></tr>
+                <tr><td><code>FLEXAIDS_USE_CUDA</code></td><td>OFF</td><td>CUDA GPU batch evaluation</td></tr>
+                <tr><td><code>FLEXAIDS_USE_METAL</code></td><td>OFF</td><td>Metal GPU (macOS)</td></tr>
+                <tr><td><code>FLEXAIDS_USE_AVX2</code></td><td>ON</td><td>AVX2 SIMD acceleration</td></tr>
+                <tr><td><code>FLEXAIDS_USE_AVX512</code></td><td>OFF</td><td>AVX-512 SIMD</td></tr>
+                <tr><td><code>FLEXAIDS_USE_OPENMP</code></td><td>ON</td><td>OpenMP parallelism</td></tr>
+                <tr><td><code>FLEXAIDS_USE_EIGEN</code></td><td>ON</td><td>Eigen3 linear algebra</td></tr>
+                <tr><td><code>BUILD_PYTHON_BINDINGS</code></td><td>OFF</td><td>pybind11 Python extensions</td></tr>
+                <tr><td><code>BUILD_TESTING</code></td><td>OFF</td><td>GoogleTest unit tests</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </details>
+        <div class="install-card mt-8">
+          <h3>Python Package</h3>
+          <div class="code-block">
+            <div class="code-header"><span>bash</span>
+              <button class="copy-btn" data-copy="cd python && pip install -e ." aria-label="Copy to clipboard">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
+              </button>
+            </div>
+            <pre><code>cd python && pip install -e .</code></pre>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Usage -->
+    <section class="usage-section" id="usage">
+      <div class="container">
+        <h2>Usage</h2>
+        <div class="usage-tabs" role="tablist" aria-label="Usage examples">
+          <button role="tab" aria-selected="true" aria-controls="tab-cli" id="btn-cli" class="tab-btn active">CLI</button>
+          <button role="tab" aria-selected="false" aria-controls="tab-python" id="btn-python" class="tab-btn">Python API</button>
+          <button role="tab" aria-selected="false" aria-controls="tab-json" id="btn-json" class="tab-btn">JSON Config</button>
+          <button role="tab" aria-selected="false" aria-controls="tab-tencom" id="btn-tencom" class="tab-btn">tENCoM</button>
+          <button role="tab" aria-selected="false" aria-controls="tab-natural" id="btn-natural" class="tab-btn">NATURaL</button>
+        </div>
+
+        <div class="tab-panel" id="tab-cli" role="tabpanel" aria-labelledby="btn-cli">
+          <div class="code-block">
+            <div class="code-header"><span>bash</span></div>
+            <pre><code><span class="code-comment"># Full flexibility dock — entropy at 300K</span>
+./FlexAIDdS receptor.pdb ligand.mol2
+
+<span class="code-comment"># Direct SMILES input — no RDKit needed</span>
+./FlexAIDdS receptor.pdb <span class="code-string">"CC(=O)Oc1ccccc1C(=O)O"</span>
+
+<span class="code-comment"># Override parameters via JSON config</span>
+./FlexAIDdS receptor.pdb ligand.mol2 -c config.json
+
+<span class="code-comment"># Fast rigid screening</span>
+./FlexAIDdS receptor.pdb ligand.mol2 --rigid
+
+<span class="code-comment"># Custom output prefix</span>
+./FlexAIDdS receptor.pdb ligand.mol2 -o my_results</code></pre>
+          </div>
+        </div>
+
+        <div class="tab-panel hidden" id="tab-python" role="tabpanel" aria-labelledby="btn-python">
+          <div class="code-block">
+            <div class="code-header"><span>python</span></div>
+            <pre><code><span class="code-keyword">import</span> flexaidds <span class="code-keyword">as</span> fd
+
+<span class="code-comment"># High-level docking</span>
+results = fd.dock(
+    receptor=<span class="code-string">'receptor.pdb'</span>,
+    ligand=<span class="code-string">'ligand.mol2'</span>,
+    binding_site=<span class="code-string">'auto'</span>,
+    compute_entropy=<span class="code-keyword">True</span>,
+)
+
+<span class="code-comment"># Load and analyze existing results</span>
+run = fd.load_results(<span class="code-string">"path/to/output_dir"</span>)
+<span class="code-keyword">print</span>(run.binding_modes[<span class="code-number">0</span>].free_energy)
+
+<span class="code-comment"># Thermodynamic analysis</span>
+engine = fd.StatMechEngine(temperature=<span class="code-number">300.0</span>)
+engine.add_sample(<span class="code-number">-7.5</span>)
+thermo = engine.compute()
+<span class="code-keyword">print</span>(<span class="code-string">"F ="</span>, thermo.free_energy)
+<span class="code-keyword">print</span>(<span class="code-string">"S ="</span>, thermo.entropy)</code></pre>
+          </div>
+        </div>
+
+        <div class="tab-panel hidden" id="tab-json" role="tabpanel" aria-labelledby="btn-json">
+          <div class="code-block">
+            <div class="code-header"><span>json</span></div>
+            <pre><code>{
+  <span class="code-string">"thermodynamics"</span>: {
+    <span class="code-string">"temperature"</span>: <span class="code-number">310</span>,
+    <span class="code-string">"clustering_algorithm"</span>: <span class="code-string">"DP"</span>
+  },
+  <span class="code-string">"ga"</span>: {
+    <span class="code-string">"num_chromosomes"</span>: <span class="code-number">2000</span>,
+    <span class="code-string">"num_generations"</span>: <span class="code-number">1000</span>
+  },
+  <span class="code-string">"flexibility"</span>: {
+    <span class="code-string">"ligand_torsions"</span>: <span class="code-keyword">true</span>,
+    <span class="code-string">"ring_conformers"</span>: <span class="code-keyword">true</span>
+  }
+}</code></pre>
+          </div>
+        </div>
+
+        <div class="tab-panel hidden" id="tab-tencom" role="tabpanel" aria-labelledby="btn-tencom">
+          <div class="code-block">
+            <div class="code-header"><span>bash</span></div>
+            <pre><code><span class="code-comment"># Compute vibrational entropy differential between structures</span>
+tENCoM reference.pdb target1.pdb [target2.pdb ...]
+
+<span class="code-comment"># Custom temperature and cutoff</span>
+tENCoM reference.pdb mutant.pdb -T 310 -r 9.0
+
+<span class="code-comment"># Specify spring constant and output prefix</span>
+tENCoM apo.pdb holo.pdb -k 1.0 -o my_analysis
+
+<span class="code-comment"># Batch analysis of multiple conformers</span>
+tENCoM wildtype.pdb conf1.pdb conf2.pdb conf3.pdb -T 300</code></pre>
+          </div>
+          <p class="tab-note">tENCoM computes torsional normal modes via Jacobi diagonalisation of C&alpha; elastic network contacts, reporting &Delta;S<sub>vib</sub> and B-factor differentials between reference and target structures.</p>
+        </div>
+
+        <div class="tab-panel hidden" id="tab-natural" role="tabpanel" aria-labelledby="btn-natural">
+          <div class="code-block">
+            <div class="code-header"><span>bash</span></div>
+            <pre><code><span class="code-comment"># Auto-detected: nucleotide ligand triggers co-translational mode</span>
+./FlexAIDdS ribosome.pdb atp_analog.mol2
+
+<span class="code-comment"># RNA polymerase + nascent RNA — co-transcriptional mode</span>
+./FlexAIDdS rnap_complex.pdb rna_fragment.mol2
+
+<span class="code-comment"># Skip chain growth — treat receptor as fully folded</span>
+./FlexAIDdS ribosome.pdb atp_analog.mol2 --folded</code></pre>
+          </div>
+          <p class="tab-note">NATURaL activates automatically for nucleotide systems. Co-translational mode grows the protein chain residue-by-residue at ribosome speed (Zhao 2011) and models TM helix insertion via Sec61 translocon (Hessa 2007). Co-transcriptional mode uses RNA polymerase elongation rates with differentiated secondary (k&nbsp;~&nbsp;10&#x2074;&nbsp;s&#x207B;&#xB9;) vs. Mg&#xB2;&#x207A;-dependent tertiary folding kinetics. Both compute incremental CF&nbsp;+&nbsp;Shannon entropy at each growth step. Supported organisms: <em>E. coli</em> K-12 and Human HEK293.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- Repo Stats -->
+    <section class="stats-section" id="stats">
+      <div class="container">
+        <h2>Repository</h2>
+        <div class="stats-grid">
+          <div class="stat-card">
+            <span class="stat-value" data-count="804">0</span>
+            <span class="stat-label">Commits</span>
+          </div>
+          <div class="stat-card">
+            <span class="stat-value" id="stat-stars">0</span>
+            <span class="stat-label">Stars</span>
+          </div>
+          <div class="stat-card">
+            <span class="stat-value">C++20</span>
+            <span class="stat-label">Standard</span>
+          </div>
+          <div class="stat-card">
+            <span class="stat-value">Apache 2.0</span>
+            <span class="stat-label">License</span>
+          </div>
+          <div class="stat-card">
+            <span class="stat-value">14</span>
+            <span class="stat-label">Languages</span>
+          </div>
+          <div class="stat-card">
+            <span class="stat-value">48</span>
+            <span class="stat-label">C++ Unit Tests</span>
+          </div>
+          <div class="stat-card">
+            <span class="stat-value">32</span>
+            <span class="stat-label">Python pytest Files</span>
+          </div>
+        </div>
+        <div class="lang-bar" aria-label="Language breakdown">
+          <div class="lang-segment" style="width:55.6%;background:var(--lang-cpp)" title="C++ 55.6%"></div>
+          <div class="lang-segment" style="width:22.8%;background:var(--lang-python)" title="Python 22.8%"></div>
+          <div class="lang-segment" style="width:7.4%;background:var(--lang-swift)" title="Swift 7.4%"></div>
+          <div class="lang-segment" style="width:3.0%;background:var(--lang-ts)" title="TypeScript 3.0%"></div>
+          <div class="lang-segment" style="width:2.3%;background:var(--lang-html)" title="HTML 2.3%"></div>
+          <div class="lang-segment" style="width:2.1%;background:var(--lang-cmake)" title="CMake 2.1%"></div>
+          <div class="lang-segment" style="width:1.9%;background:var(--lang-objcpp)" title="Objective-C++ 1.9%"></div>
+          <div class="lang-segment" style="width:1.2%;background:var(--lang-cuda)" title="CUDA 1.2%"></div>
+          <div class="lang-segment" style="width:1.0%;background:var(--lang-css)" title="CSS 1.0%"></div>
+          <div class="lang-segment" style="width:3.7%;background:var(--lang-other)" title="Other 3.7%"></div>
+        </div>
+        <div class="lang-legend">
+          <span><i style="background:var(--lang-cpp)"></i>C++ 55.6%</span>
+          <span><i style="background:var(--lang-python)"></i>Python 22.8%</span>
+          <span><i style="background:var(--lang-swift)"></i>Swift 7.4%</span>
+          <span><i style="background:var(--lang-ts)"></i>TypeScript 3.0%</span>
+          <span><i style="background:var(--lang-html)"></i>HTML 2.3%</span>
+          <span><i style="background:var(--lang-cmake)"></i>CMake 2.1%</span>
+          <span><i style="background:var(--lang-objcpp)"></i>Obj-C++ 1.9%</span>
+          <span><i style="background:var(--lang-cuda)"></i>CUDA 1.2%</span>
+          <span><i style="background:var(--lang-other)"></i>Other 3.7%</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- Key Modules -->
+    <section class="modules-section" id="modules">
+      <div class="container">
+        <h2>Key Modules</h2>
+        <div class="modules-grid">
+          <div class="module-card">
+            <code>tENCoM</code>
+            <span>Torsional Elastic Network Contact Model</span>
+          </div>
+          <div class="module-card">
+            <code>NATURaL</code>
+            <span>Co-translational assembly</span>
+          </div>
+          <div class="module-card">
+            <code>ShannonThermoStack</code>
+            <span>Configurational + vibrational entropy</span>
+          </div>
+          <div class="module-card">
+            <code>LigandRingFlex</code>
+            <span>Ring conformer sampling</span>
+          </div>
+          <div class="module-card">
+            <code>ChiralCenter</code>
+            <span>R/S stereochemistry</span>
+          </div>
+          <div class="module-card">
+            <code>CavityDetect</code>
+            <span>SURFNET binding site detection</span>
+          </div>
+          <div class="module-card">
+            <code>BonhommeFleet</code>
+            <span>Distributed docking via iCloud Drive</span>
+          </div>
+          <div class="module-card">
+            <code>Swift Package</code>
+            <span>macOS/iOS actors (macOS 14+, iOS 17+)</span>
+          </div>
+          <div class="module-card">
+            <code>TypeScript SDK</code>
+            <span>PWA dashboard + Mol* viewer</span>
+          </div>
+          <div class="module-card">
+            <code>HardwareDispatch</code>
+            <span>Unified runtime backend selection</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- PyMOL Plugin -->
+    <section class="pymol-section" id="pymol">
+      <div class="container">
+        <h2>PyMOL Plugin</h2>
+        <p class="section-subtitle">Interactive visualization with GUI panel and registered commands</p>
+        <div class="pymol-grid">
+          <div class="pymol-install-card">
+            <h3>Installation</h3>
+            <ol class="pymol-steps">
+              <li>PyMOL &rarr; Plugin Manager &rarr; Install New Plugin</li>
+              <li>Select the <code>pymol_plugin/</code> directory</li>
+              <li>Restart PyMOL &mdash; access via Plugin &rarr; FlexAID∆S</li>
+            </ol>
+            <p class="pymol-req">Requires: <code>pip install -e python/</code></p>
+          </div>
+          <div class="pymol-commands-card">
+            <h3>Commands</h3>
+            <div class="benchmark-table-wrap">
+              <table class="cmake-table">
+                <thead><tr><th>Command</th><th>Description</th></tr></thead>
+                <tbody>
+                  <tr><td><code>flexaids_load &lt;dir&gt;</code></td><td>Load binding modes from results</td></tr>
+                  <tr><td><code>flexaids_show_ensemble &lt;mode&gt;</code></td><td>Render pose ensemble</td></tr>
+                  <tr><td><code>flexaids_color_boltzmann &lt;mode&gt;</code></td><td>Color by Boltzmann weight</td></tr>
+                  <tr><td><code>flexaids_thermo &lt;mode&gt;</code></td><td>Print thermodynamic properties</td></tr>
+                  <tr><td><code>flexaids_entropy_heatmap &lt;mode&gt;</code></td><td>Spatial entropy density heatmap</td></tr>
+                  <tr><td><code>flexaids_animate &lt;m1&gt; &lt;m2&gt;</code></td><td>Interpolated animation between modes</td></tr>
+                  <tr><td><code>flexaids_itc_plot</code></td><td>Enthalpy-entropy compensation plot</td></tr>
+                  <tr><td><code>flexaids_dock &lt;obj&gt; &lt;lig&gt;</code></td><td>Interactive docking from PyMOL</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+
+    <!-- Documentation -->
+    <section class="docs-section" id="docs">
+      <div class="container">
+        <h2>Documentation</h2>
+        <p class="section-subtitle">Everything you need to get started and go deep</p>
+        <div class="docs-grid">
+          <a href="https://github.com/lmorency/FlexAIDdS/blob/master/docs/INSTALLATION.md" target="_blank" rel="noopener noreferrer" class="doc-card">
+            <div class="doc-icon">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>
+            </div>
+            <h3>Installation Guide</h3>
+            <p>Platform-specific build instructions, prerequisites, CMake options, and troubleshooting</p>
+          </a>
+          <a href="https://github.com/lmorency/FlexAIDdS/blob/master/docs/USERGUIDE.md" target="_blank" rel="noopener noreferrer" class="doc-card">
+            <div class="doc-icon">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>
+            </div>
+            <h3>User Guide</h3>
+            <p>Full parameter reference, zero-config docking, Python API, PyMOL plugin, Fleet usage</p>
+          </a>
+          <a href="https://github.com/lmorency/FlexAIDdS/blob/master/docs/BENCHMARKS.md" target="_blank" rel="noopener noreferrer" class="doc-card">
+            <div class="doc-icon">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+            </div>
+            <h3>Benchmarks</h3>
+            <p>Accuracy (ITC-187, CASF-2016, DUD-E) and hardware acceleration performance data</p>
+          </a>
+          <a href="https://github.com/lmorency/FlexAIDdS/blob/master/CITATION.cff" target="_blank" rel="noopener noreferrer" class="doc-card">
+            <div class="doc-icon">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+            </div>
+            <h3>Citation (CFF)</h3>
+            <p>Machine-readable citation metadata for academic use and DOI references</p>
+          </a>
+        </div>
+      </div>
+    </section>
+
+    <!-- Publications -->
+    <section class="publications-section" id="publications">
+      <div class="container">
+        <h2>Publications</h2>
+        <p class="section-subtitle">Core references for FlexAID∆S and the full publication record of Louis-Philippe Morency</p>
+
+        <!-- Core citations -->
+        <div class="publications-grid">
+          <div class="pub-card pub-card-upcoming">
+            <span class="pub-badge pub-badge-upcoming">In Preparation</span>
+            <p class="pub-authors">Morency LP &amp; Najmanovich RJ</p>
+            <p class="pub-title">FlexAID∆S: Information-Theoretic Entropy Improves Molecular Docking Accuracy and Binding Mode Prediction</p>
+            <p class="pub-journal"><em>Manuscript in preparation, 2026</em></p>
+          </div>
+          <div class="pub-card pub-card-primary">
+            <span class="pub-badge">Primary Citation</span>
+            <p class="pub-authors">Gaudreault F &amp; Najmanovich RJ</p>
+            <p class="pub-title">FlexAID: Revisiting Docking on Non-Native-Complex Structures</p>
+            <p class="pub-journal"><em>J. Chem. Inf. Model.</em> 55(7):1323-36, 2015</p>
+            <a href="https://doi.org/10.1021/acs.jcim.5b00078" target="_blank" rel="noopener noreferrer" class="pub-doi">DOI: 10.1021/acs.jcim.5b00078</a>
+          </div>
+          <div class="pub-card">
+            <p class="pub-authors">Gaudreault F, Morency LP &amp; Najmanovich RJ</p>
+            <p class="pub-title">NRGsuite: A PyMOL plugin to perform docking simulations in real time</p>
+            <p class="pub-journal"><em>Bioinformatics</em> 31(23):3856-8, 2015</p>
+            <a href="https://doi.org/10.1093/bioinformatics/btv458" target="_blank" rel="noopener noreferrer" class="pub-doi">DOI: 10.1093/bioinformatics/btv458</a>
+          </div>
+          <div class="pub-card">
+            <p class="pub-authors">Frappier V, Chartier M &amp; Najmanovich RJ</p>
+            <p class="pub-title">ENCoM: Elastic Network Contact Model for Protein Dynamics</p>
+            <p class="pub-journal"><em>Proteins</em> 83(11):2073-82, 2015</p>
+            <a href="https://doi.org/10.1002/prot.24922" target="_blank" rel="noopener noreferrer" class="pub-doi">DOI: 10.1002/prot.24922</a>
+          </div>
+        </div>
+
+        <!-- Full publication list -->
+        <div class="pub-list-header">
+          <h3>Complete Publication Record</h3>
+          <a href="https://scholar.google.com/citations?user=amFCT0oAAAAJ" target="_blank" rel="noopener noreferrer" class="btn btn-secondary btn-sm">Google Scholar ↗</a>
+        </div>
+        <ol class="pub-list" reversed>
+          <li class="pub-list-item">
+            <span class="pub-list-authors">Bernier SC, Morency LP, Najmanovich R, Salesse C.</span>
+            <span class="pub-list-title">Identification of an alternative translation initiation site in the sequence of the commonly used Glutathione S-Transferase tag.</span>
+            <span class="pub-list-journal"><em>J. Biotechnol.</em> 286:14-16, 2018.</span>
+          </li>
+          <li class="pub-list-item">
+            <span class="pub-list-authors">Dion SP, Béliveau F, Morency LP, Désilets A, Najmanovich R, Leduc R.</span>
+            <span class="pub-list-title">Functional diversity of TMPRSS6 isoforms and variants expressed in hepatocellular carcinoma cell lines.</span>
+            <span class="pub-list-journal"><em>Sci. Rep.</em> 8(1):12562, 2018.</span>
+            <a href="https://doi.org/10.1038/s41598-018-30835-6" target="_blank" rel="noopener noreferrer" class="pub-list-doi">DOI</a>
+          </li>
+          <li class="pub-list-item">
+            <span class="pub-list-authors">Morency LP, Gaudreault F, Najmanovich R.</span>
+            <span class="pub-list-title">Applications of the NRGsuite and the Molecular Docking Software FlexAID in Computational Drug Discovery and Design.</span>
+            <span class="pub-list-journal"><em>Methods Mol. Biol.</em> 1762:367-388, 2018.</span>
+            <a href="https://doi.org/10.1007/978-1-4939-7756-7_18" target="_blank" rel="noopener noreferrer" class="pub-list-doi">DOI</a>
+          </li>
+          <li class="pub-list-item">
+            <span class="pub-list-authors">Najmanovich RJ.</span>
+            <span class="pub-list-title">Evolutionary studies of ligand binding sites in proteins.</span>
+            <span class="pub-list-journal"><em>Curr. Opin. Struct. Biol.</em> 45:85-90, 2017.</span>
+            <a href="https://doi.org/10.1016/j.sbi.2016.11.024" target="_blank" rel="noopener noreferrer" class="pub-list-doi">DOI</a>
+          </li>
+          <li class="pub-list-item">
+            <span class="pub-list-authors">Chartier M, Morency LP, Zylber MI, Najmanovich RJ.</span>
+            <span class="pub-list-title">Large-scale detection of drug off-targets: hypotheses for drug repurposing and understanding side-effects.</span>
+            <span class="pub-list-journal"><em>BMC Pharmacol. Toxicol.</em> 18:18, 2017.</span>
+            <a href="https://doi.org/10.1186/s40360-017-0128-7" target="_blank" rel="noopener noreferrer" class="pub-list-doi">DOI</a>
+          </li>
+          <li class="pub-list-item">
+            <span class="pub-list-authors">Frappier V, Chartier M, Najmanovich RJ.</span>
+            <span class="pub-list-title">Applications of Normal Mode Analysis Methods in Computational Protein Design.</span>
+            <span class="pub-list-journal"><em>Methods Mol. Biol.</em> 1529:203-214, 2017.</span>
+            <a href="https://doi.org/10.1007/978-1-4939-6637-0_10" target="_blank" rel="noopener noreferrer" class="pub-list-doi">DOI</a>
+          </li>
+          <li class="pub-list-item">
+            <span class="pub-list-authors">Chartier M, Adriansen E, Najmanovich R.</span>
+            <span class="pub-list-title">IsoMIF Finder: online detection of binding site molecular interaction field similarities.</span>
+            <span class="pub-list-journal"><em>Bioinformatics</em> 32:621-623, 2016.</span>
+            <a href="https://doi.org/10.1093/bioinformatics/btv616" target="_blank" rel="noopener noreferrer" class="pub-list-doi">DOI</a>
+          </li>
+          <li class="pub-list-item">
+            <span class="pub-list-authors">Frappier V, Chartier M, Najmanovich RJ.</span>
+            <span class="pub-list-title">ENCoM server: exploring protein conformational space and the effect of mutations on protein function and stability.</span>
+            <span class="pub-list-journal"><em>Nucleic Acids Res.</em> 43:W395-400, 2015.</span>
+            <a href="https://doi.org/10.1093/nar/gkv343" target="_blank" rel="noopener noreferrer" class="pub-list-doi">DOI</a>
+          </li>
+          <li class="pub-list-item">
+            <span class="pub-list-authors">Frappier V, Chartier M, Najmanovich RJ.</span>
+            <span class="pub-list-title">ENCoM: Elastic Network Contact Model for Protein Dynamics.</span>
+            <span class="pub-list-journal"><em>Proteins</em> 83(11):2073-82, 2015.</span>
+            <a href="https://doi.org/10.1002/prot.24922" target="_blank" rel="noopener noreferrer" class="pub-list-doi">DOI</a>
+          </li>
+          <li class="pub-list-item">
+            <span class="pub-list-authors">Chartier M, Najmanovich R.</span>
+            <span class="pub-list-title">Detection of Binding Site Molecular Interaction Field Similarities.</span>
+            <span class="pub-list-journal"><em>J. Chem. Inf. Model.</em> 55:1600-1615, 2015.</span>
+            <a href="https://doi.org/10.1021/acs.jcim.5b00150" target="_blank" rel="noopener noreferrer" class="pub-list-doi">DOI</a>
+          </li>
+          <li class="pub-list-item">
+            <span class="pub-list-authors">Gaudreault F, Morency LP, Najmanovich RJ.</span>
+            <span class="pub-list-title">NRGsuite: a PyMOL plugin to perform docking simulations in real time using FlexAID.</span>
+            <span class="pub-list-journal"><em>Bioinformatics</em> 31(23):3856-3858, 2015.</span>
+            <a href="https://doi.org/10.1093/bioinformatics/btv458" target="_blank" rel="noopener noreferrer" class="pub-list-doi">DOI</a>
+          </li>
+          <li class="pub-list-item">
+            <span class="pub-list-authors">Gaudreault F, Najmanovich RJ.</span>
+            <span class="pub-list-title">FlexAID: Revisiting Docking on Non-Native-Complex Structures.</span>
+            <span class="pub-list-journal"><em>J. Chem. Inf. Model.</em> 55(7):1323-1336, 2015.</span>
+            <a href="https://doi.org/10.1021/acs.jcim.5b00078" target="_blank" rel="noopener noreferrer" class="pub-list-doi">DOI</a>
+          </li>
+          <li class="pub-list-item">
+            <span class="pub-list-authors">Frappier V, Najmanovich RJ.</span>
+            <span class="pub-list-title">Vibrational entropy differences between mesophile and thermophile proteins and their use in protein engineering.</span>
+            <span class="pub-list-journal"><em>Protein Sci.</em> 24:474-483, 2015.</span>
+            <a href="https://doi.org/10.1002/pro.2592" target="_blank" rel="noopener noreferrer" class="pub-list-doi">DOI</a>
+          </li>
+          <li class="pub-list-item">
+            <span class="pub-list-authors">Duchêne D, Colombo E, Désilets A, Boudreault P-L, Leduc R, Marsault E, Najmanovich RJ.</span>
+            <span class="pub-list-title">Analysis of subpocket selectivity and identification of potent selective inhibitors for matriptase and matriptase-2.</span>
+            <span class="pub-list-journal"><em>J. Med. Chem.</em> 57:10198-10204, 2014.</span>
+            <a href="https://doi.org/10.1021/jm501382p" target="_blank" rel="noopener noreferrer" class="pub-list-doi">DOI</a>
+          </li>
+          <li class="pub-list-item">
+            <span class="pub-list-authors">Frappier V, Najmanovich RJ.</span>
+            <span class="pub-list-title">A coarse-grained elastic network atom contact model and its use in the simulation of protein dynamics and the prediction of the effect of mutations.</span>
+            <span class="pub-list-journal"><em>PLoS Comput. Biol.</em> 10:e1003569, 2014.</span>
+            <a href="https://doi.org/10.1371/journal.pcbi.1003569" target="_blank" rel="noopener noreferrer" class="pub-list-doi">DOI</a>
+          </li>
+          <li class="pub-list-item">
+            <span class="pub-list-authors">Kurbatova N, Chartier M, Zylber MI, Najmanovich RJ.</span>
+            <span class="pub-list-title">IsoCleft Finder — a web-based tool for the detection and analysis of protein binding-site geometric and chemical similarities.</span>
+            <span class="pub-list-journal"><em>F1000Research</em> 2:117, 2013.</span>
+            <a href="https://doi.org/10.12688/f1000research.2-117.v1" target="_blank" rel="noopener noreferrer" class="pub-list-doi">DOI</a>
+          </li>
+          <li class="pub-list-item">
+            <span class="pub-list-authors">Gaudreault F, Chartier M, Najmanovich RJ.</span>
+            <span class="pub-list-title">Side-chain rotamer changes upon ligand binding: common, crucial, correlate with entropy and rearrange hydrogen bonding.</span>
+            <span class="pub-list-journal"><em>Bioinformatics</em> 28:i423-i430, 2012.</span>
+            <a href="https://doi.org/10.1093/bioinformatics/bts395" target="_blank" rel="noopener noreferrer" class="pub-list-doi">DOI</a>
+          </li>
+          <li class="pub-list-item">
+            <span class="pub-list-authors">Chartier M, Gaudreault F, Najmanovich R.</span>
+            <span class="pub-list-title">Large-scale analysis of conserved rare codon clusters suggests an involvement in co-translational molecular recognition events.</span>
+            <span class="pub-list-journal"><em>Bioinformatics</em> 28:1438-1445, 2012.</span>
+            <a href="https://doi.org/10.1093/bioinformatics/bts151" target="_blank" rel="noopener noreferrer" class="pub-list-doi">DOI</a>
+          </li>
+        </ol>
+      </div>
+    </section>
+
+    <!-- Contributing -->
+    <section class="contributing-section" id="contributing">
+      <div class="container">
+        <h2>Contributing</h2>
+        <div class="contributing-grid">
+          <div class="license-card license-allowed">
+            <h3>Allowed Licenses</h3>
+            <div class="license-tags">
+              <span class="license-tag license-tag-ok">Apache-2.0</span>
+              <span class="license-tag license-tag-ok">BSD</span>
+              <span class="license-tag license-tag-ok">MIT</span>
+              <span class="license-tag license-tag-ok">MPL-2.0</span>
+            </div>
+          </div>
+          <div class="license-card license-forbidden">
+            <h3>Forbidden</h3>
+            <div class="license-tags">
+              <span class="license-tag license-tag-no">GPL</span>
+              <span class="license-tag license-tag-no">AGPL</span>
+            </div>
+            <p class="license-note">No GPL code even as inspiration &mdash; <a href="https://github.com/lmorency/FlexAIDdS/blob/master/docs/licensing/clean-room-policy.md" target="_blank" rel="noopener noreferrer">clean-room policy</a></p>
+          </div>
+          <div class="contributing-links">
+            <a href="https://github.com/lmorency/FlexAIDdS/blob/master/CONTRIBUTING.md" target="_blank" rel="noopener noreferrer" class="btn btn-secondary">Contributing Guide</a>
+          </div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- Footer -->
+  <footer class="site-footer">
+    <div class="container">
+      <div class="footer-inner">
+        <div class="footer-brand">
+          <span class="logo-text">FlexAID<span class="logo-delta">∆S</span></span>
+          <p class="footer-cite">Morency LP &amp; Najmanovich RJ (2026). &ldquo;FlexAID∆S: Information-Theoretic Entropy Improves Molecular Docking Accuracy and Binding Mode Prediction.&rdquo; <em>Manuscript in preparation.</em></p>
+          <p class="footer-cite footer-cite-secondary">Gaudreault F &amp; Najmanovich RJ (2015). <a href="https://doi.org/10.1021/acs.jcim.5b00078" target="_blank" rel="noopener noreferrer">J. Chem. Inf. Model. 55(7):1323-36</a></p>
+          <p class="footer-cite footer-cite-secondary">Gaudreault F, Morency LP &amp; Najmanovich RJ (2015). <a href="https://doi.org/10.1093/bioinformatics/btv458" target="_blank" rel="noopener noreferrer">Bioinformatics 31(23):3856-8</a></p>
+        </div>
+        <div class="footer-links">
+          <a href="https://github.com/lmorency/FlexAIDdS" target="_blank" rel="noopener noreferrer">GitHub</a>
+          <a href="https://github.com/lmorency/FlexAIDdS/blob/master/docs/INSTALLATION.md" target="_blank" rel="noopener noreferrer">Installation</a>
+          <a href="https://github.com/lmorency/FlexAIDdS/blob/master/docs/USERGUIDE.md" target="_blank" rel="noopener noreferrer">User Guide</a>
+          <a href="https://github.com/lmorency/FlexAIDdS/blob/master/docs/BENCHMARKS.md" target="_blank" rel="noopener noreferrer">Benchmarks</a>
+          <a href="https://opensource.org/licenses/Apache-2.0" target="_blank" rel="noopener noreferrer">Apache 2.0 License</a>
+        </div>
+      </div>
+      <div class="footer-bottom">
+        <span class="footer-copy">&copy; 2026 Le Bonhomme Pharma &mdash; Apache 2.0</span>
+      </div>
+    </div>
+  </footer>
+
+  <script>
+/* ==========================================================================
+   FlexAID∆S — App Logic
+   ========================================================================== */
+
+(function() {
+  'use strict';
+
+  /* --- Theme Toggle --- */
+  const toggle = document.querySelector('[data-theme-toggle]');
+  const root = document.documentElement;
+
+  let theme = matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+  root.setAttribute('data-theme', theme);
+
+  if (toggle) {
+    toggle.addEventListener('click', () => {
+      theme = theme === 'dark' ? 'light' : 'dark';
+      root.setAttribute('data-theme', theme);
+      toggle.setAttribute('aria-label', 'Switch to ' + (theme === 'dark' ? 'light' : 'dark') + ' mode');
+    });
+  }
+
+  /* --- Mobile Menu --- */
+  const menuToggle = document.querySelector('.mobile-menu-toggle');
+  const mainNav = document.querySelector('.main-nav');
+
+  if (menuToggle && mainNav) {
+    menuToggle.addEventListener('click', () => {
+      const isOpen = menuToggle.getAttribute('aria-expanded') === 'true';
+      menuToggle.setAttribute('aria-expanded', !isOpen);
+      mainNav.classList.toggle('open');
+    });
+    mainNav.querySelectorAll('a').forEach(a => {
+      a.addEventListener('click', () => {
+        menuToggle.setAttribute('aria-expanded', 'false');
+        mainNav.classList.remove('open');
+      });
+    });
+  }
+
+  /* --- Header Scroll --- */
+  const header = document.getElementById('site-header');
+  window.addEventListener('scroll', () => {
+    header.classList.toggle('scrolled', window.scrollY > 60);
+  }, { passive: true });
+
+  /* --- Tabs --- */
+  const tabs = document.querySelectorAll('.tab-btn');
+  const panels = document.querySelectorAll('.tab-panel');
+
+  tabs.forEach(tab => {
+    tab.addEventListener('click', () => {
+      tabs.forEach(t => { t.classList.remove('active'); t.setAttribute('aria-selected', 'false'); });
+      panels.forEach(p => p.classList.add('hidden'));
+      tab.classList.add('active');
+      tab.setAttribute('aria-selected', 'true');
+      const panel = document.getElementById(tab.getAttribute('aria-controls'));
+      if (panel) panel.classList.remove('hidden');
+    });
+  });
+
+  /* --- Copy Buttons --- */
+  document.querySelectorAll('.copy-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const text = btn.getAttribute('data-copy');
+      if (!text) return;
+      navigator.clipboard.writeText(text).then(() => {
+        btn.classList.add('copied');
+        const original = btn.innerHTML;
+        btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>';
+        setTimeout(() => { btn.classList.remove('copied'); btn.innerHTML = original; }, 2000);
+      }).catch(() => {});
+    });
+  });
+
+  /* --- Number Count Up --- */
+  const countEls = document.querySelectorAll('[data-count]');
+  const countObserver = new IntersectionObserver((entries) => {
+    entries.forEach(entry => {
+      if (entry.isIntersecting) {
+        const el = entry.target;
+        const target = parseInt(el.getAttribute('data-count'), 10);
+        if (isNaN(target)) return;
+        animateCount(el, 0, target, 800);
+        countObserver.unobserve(el);
+      }
+    });
+  }, { threshold: 0.3 });
+  countEls.forEach(el => countObserver.observe(el));
+
+  function animateCount(el, start, end, duration) {
+    const startTime = performance.now();
+    function step(currentTime) {
+      const elapsed = currentTime - startTime;
+      const progress = Math.min(elapsed / duration, 1);
+      const eased = 1 - Math.pow(1 - progress, 3);
+      el.textContent = Math.floor(start + (end - start) * eased);
+      if (progress < 1) requestAnimationFrame(step);
+    }
+    requestAnimationFrame(step);
+  }
+
+  /* --- Hero Background: Mol* "Drug of the Day" --- */
+
+  // Curated set of iconic drug–target complexes
+  // Each rotates daily as the hero background, showcasing a famous drug
+  const drugOfTheDay = [
+    { pdb: '1hsg', drug: 'Indinavir',      indication: 'HIV protease inhibitor' },
+    { pdb: '3ert', drug: 'Tamoxifen',       indication: 'Estrogen receptor antagonist' },
+    { pdb: '1iep', drug: 'Imatinib',        indication: 'BCR-Abl kinase inhibitor (CML)' },
+    { pdb: '1m17', drug: 'Erlotinib',       indication: 'EGFR inhibitor (lung cancer)' },
+    { pdb: '3nss', drug: 'Oseltamivir',     indication: 'Neuraminidase inhibitor (influenza)' },
+    { pdb: '6lu7', drug: 'N3 Inhibitor',    indication: 'SARS-CoV-2 main protease' },
+    { pdb: '4cox', drug: 'Celecoxib',       indication: 'COX-2 selective NSAID' },
+    { pdb: '1hwi', drug: 'Donepezil',       indication: 'Acetylcholinesterase inhibitor (Alzheimer\'s)' },
+    { pdb: '2rh1', drug: 'Carazolol',       indication: 'Beta-2 adrenergic antagonist' },
+    { pdb: '3htb', drug: 'Dabigatran',      indication: 'Thrombin inhibitor (anticoagulant)' },
+    { pdb: '2src', drug: 'Dasatinib',       indication: 'Src/Abl kinase inhibitor (CML)' },
+    { pdb: '3eml', drug: 'Crizotinib',      indication: 'ALK inhibitor (lung cancer)' },
+    { pdb: '4dkl', drug: 'Sorafenib',       indication: 'RAF kinase inhibitor (liver/kidney cancer)' },
+    { pdb: '1fin', drug: 'ATP analog',      indication: 'CDK2-Cyclin A complex' },
+    { pdb: '2f4j', drug: 'SB-203580',       indication: 'p38 MAP kinase inhibitor' },
+    { pdb: '1n8z', drug: 'Insulin mimic',   indication: 'Insulin receptor kinase activator' },
+    { pdb: '3kf4', drug: 'Ceftaroline',     indication: 'Penicillin-binding protein (MRSA)' },
+    { pdb: '4lde', drug: 'Oxamate',         indication: 'Lactate dehydrogenase inhibitor' },
+    { pdb: '1g9v', drug: 'Glutathione',     indication: 'GST conjugation substrate' },
+    { pdb: '2pgh', drug: 'Flurbiprofen',    indication: 'COX-1/2 NSAID (inflammation)' },
+    { pdb: '1cbs', drug: 'Retinoic acid',   indication: 'Cellular retinoic acid binding' },
+    { pdb: '1tup', drug: 'DNA fragment',    indication: 'p53 tumor suppressor–DNA complex' },
+    { pdb: '4hhb', drug: 'Oxygen (O₂)',     indication: 'Hemoglobin oxygen transport' },
+    { pdb: '1mbn', drug: 'Oxygen (O₂)',     indication: 'Myoglobin oxygen storage' },
+    { pdb: '1lyz', drug: 'NAG trimer',      indication: 'Lysozyme substrate binding' },
+    { pdb: '1brs', drug: 'Barstar',         indication: 'Barnase–Barstar protein interaction' },
+    { pdb: '3pth', drug: 'Phosphoramidon',  indication: 'Thermolysin metalloprotease inhibitor' },
+    { pdb: '1crn', drug: 'Crambin',         indication: 'Plant seed protein (docking benchmark)' },
+    { pdb: '1bna', drug: 'B-DNA',           indication: 'Canonical DNA dodecamer' },
+    { pdb: '1gpn', drug: 'GPN tripeptide',  indication: 'Loop conformation benchmark' },
+    { pdb: '1a2b', drug: 'Deoxy-Hb',        indication: 'T-state hemoglobin (allosteric)' },
+  ];
+
+  function getTodaysDrug() {
+    const now = new Date();
+    const dayOfYear = Math.floor((now - new Date(now.getFullYear(),0,0)) / 86400000);
+    return drugOfTheDay[dayOfYear % drugOfTheDay.length];
+  }
+
+  function initMolstar() {
+    if (typeof molstar === 'undefined') return;
+
+    const viewerEl = document.getElementById('molstar-viewer');
+    if (!viewerEl) return;
+
+    const drug = getTodaysDrug();
+
+    molstar.Viewer.create('molstar-viewer', {
+      layoutIsExpanded: false,
+      layoutShowControls: false,
+      layoutShowRemoteState: false,
+      layoutShowSequence: false,
+      layoutShowLog: false,
+      layoutShowLeftPanel: false,
+      viewportShowExpand: false,
+      viewportShowSelectionMode: false,
+      viewportShowAnimation: false,
+      viewportShowControls: false,
+      pdbProvider: 'rcsb',
+      canvas3d: {
+        transparentBackground: true,
+        renderer: { backgroundColor: 0x000000, backgroundAlpha: 0 },
+      },
+    }).then(viewer => {
+      viewer.loadPdb(drug.pdb);
+
+      // Enable auto-rotate once structure settles
+      setTimeout(() => {
+        try {
+          if (viewer.plugin.canvas3d) {
+            viewer.plugin.canvas3d.setProps({
+              trackball: { animate: { name: 'spin', params: { speed: 0.5 } } }
+            });
+          }
+        } catch(e) { /* WebGL may not be available in headless environments */ }
+      }, 2500);
+    }).catch(() => { /* Mol* init failed silently — hero stays clean */ });
+
+    // Show drug of the day label
+    const drugLabel = document.getElementById('drug-of-day-label');
+    if (drugLabel) {
+      drugLabel.innerHTML = '<strong>' + drug.drug + '</strong> <span class="drug-indication">' + drug.indication + '</span>';
+    }
+  }
+
+  if (document.readyState === 'complete') {
+    setTimeout(initMolstar, 300);
+  } else {
+    window.addEventListener('load', () => setTimeout(initMolstar, 300));
+  }
+
+  /* --- Smooth Scroll for Nav Links --- */
+  document.querySelectorAll('a[href^="#"]').forEach(link => {
+    link.addEventListener('click', (e) => {
+      const href = link.getAttribute('href');
+      if (href === '#') return;
+      const target = document.querySelector(href);
+      if (target) {
+        e.preventDefault();
+        target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+    });
+  });
+
+  /* --- GitHub Stars --- */
+  const starEl = document.getElementById('stat-stars');
+  if (starEl) {
+    fetch('https://api.github.com/repos/lmorency/FlexAIDdS')
+      .then(r => r.json())
+      .then(data => {
+        if (data.stargazers_count !== undefined) {
+          starEl.textContent = data.stargazers_count;
+        }
+      })
+      .catch(() => { starEl.textContent = '—'; });
+  }
+
+  /* --- Reveal on Scroll --- */
+  const revealSections = document.querySelectorAll('main > section');
+  if (revealSections.length && 'IntersectionObserver' in window) {
+    const io = new IntersectionObserver((entries) => {
+      entries.forEach(entry => {
+        if (entry.isIntersecting) {
+          entry.target.classList.add('revealed');
+          io.unobserve(entry.target);
+        }
+      });
+    }, { threshold: 0.08 });
+    revealSections.forEach(s => {
+      s.classList.add('reveal');
+      io.observe(s);
+    });
+  }
+
+})();
+
+</script>
+</body>
+</html>
