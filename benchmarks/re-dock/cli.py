@@ -15,10 +15,33 @@ Commands
 Options
 -------
   --campaign-dir PATH    Campaign working directory (default: ./campaign)
+                         **On this M3 Pro machine, always point at iCloud**
+                         (e.g. ~/Library/Mobile\ Documents/com~apple~CloudDocs/FlexAIDdS/re-dock-campaigns/my-campaign
+                          or use paths from ~/.flexaidds_env)
+
   --t-min FLOAT          Minimum temperature in K (default: 298)
   --t-max FLOAT          Maximum temperature in K (default: 600)
   --n-replicas INT       Number of temperature replicas (default: 8)
   --fit-dcp              Include ΔCp in Van't Hoff fit
+
+Invocation on this machine (M3 Pro + iCloud-only results policy)
+----------------------------------------------------------------
+Because the directory is named re-dock/ (hyphen), standard "python -m" does not
+work directly. Use one of:
+
+  # Recommended for Codex/local resume work (all outputs must go to iCloud)
+  PYTHONPATH=. python -c '
+import sys
+sys.path.insert(0, "benchmarks/re-dock")
+from cli import main
+main()
+' --campaign-dir ~/Library/Mobile\ Documents/.../my-campaign ...
+
+Or:
+  cd benchmarks/re-dock && PYTHONPATH=../.. python cli.py --campaign-dir /iCloud/path/...
+
+All persistent outputs (checkpoints, results, visualizations) **must** land on
+the 2 TB iCloud Drive per the Storage Invariant.
 
 Le Bonhomme Pharma / Najmanovich Research Group
 """
@@ -97,6 +120,95 @@ def cmd_ingest(args: argparse.Namespace) -> None:
         print(f"Ingested {chunk_id} | Exchanges: {accepted}/{len(exchanges)} accepted")
 
     campaign.save_checkpoint()
+
+
+def _load_and_validate_result(path: Path) -> Dict[str, Any]:
+    """Load a single Codex-style result JSON and do basic schema validation."""
+    with open(path) as f:
+        result = json.load(f)
+
+    required = ["chunk_id", "pdb_id"]
+    missing = [k for k in required if k not in result]
+    if missing:
+        raise ValueError(f"{path.name}: missing required keys {missing}")
+
+    # Optional but recommended for real work
+    if "energies_sample" not in result and "best_energy" not in result:
+        print(f"  Warning: {path.name} has no energies_sample or best_energy (may be partial)")
+
+    return result
+
+
+def cmd_ingest_dir(args: argparse.Namespace) -> None:
+    """Batch ingest all *.json files from a directory (designed for Codex artifacts)."""
+    d = Path(args.directory).expanduser().resolve()
+    if not d.is_dir():
+        print(f"Error: {d} is not a directory", file=sys.stderr)
+        sys.exit(1)
+
+    checkpoint = Path(args.campaign_dir) / "checkpoint.json"
+    if not checkpoint.exists():
+        print("Error: No campaign found. Run 'redock init' first.", file=sys.stderr)
+        sys.exit(1)
+
+    if args.fs_check:
+        print("Running iCloud FS sanity check before batch ingest (as requested)...")
+        # Import here to avoid hard dependency
+        try:
+            from . import icloud_fs_check
+            # Use the campaign dir itself for the check
+            icloud_fs_check.test_icloud_path(Path(args.campaign_dir) / ".fs-check-ingest", keep=False)
+            print("  iCloud FS check passed ✓")
+        except Exception as e:
+            print(f"  Warning: iCloud FS check failed or unavailable: {e}")
+            print("  Proceeding anyway (use --fs-check only when you want the extra gate).")
+
+    campaign = BenchmarkCampaign.load_checkpoint(str(checkpoint))
+
+    json_files = sorted(d.glob("*.json"))
+    if not json_files:
+        print(f"No *.json files found in {d}")
+        return
+
+    print(f"Found {len(json_files)} JSON files in {d}")
+    if args.dry_run:
+        print("DRY RUN — nothing will be written")
+
+    ingested = 0
+    skipped = 0
+    errors = []
+
+    for jf in json_files:
+        try:
+            result = _load_and_validate_result(jf)
+            chunk_id = result["chunk_id"]
+
+            if args.dry_run or args.validate_only:
+                print(f"  [validate] {jf.name} -> chunk {chunk_id} (pdb={result.get('pdb_id')})")
+                continue
+
+            # Real ingest
+            campaign.process_chunk_result(chunk_id, result)
+
+            pdb_id = result.get("pdb_id", "")
+            if pdb_id and pdb_id in campaign.replicas:
+                exchanges = campaign.run_exchange_round(pdb_id)
+                accepted = sum(1 for e in exchanges if e.get("accepted"))
+                print(f"  [ingested] {jf.name} -> {chunk_id} | {accepted} exchanges accepted")
+
+            ingested += 1
+        except Exception as e:
+            errors.append((jf.name, str(e)))
+            print(f"  [ERROR] {jf.name}: {e}", file=sys.stderr)
+
+    if not (args.dry_run or args.validate_only):
+        campaign.save_checkpoint()
+        print(f"\nBatch complete. Ingested: {ingested}, errors: {len(errors)}")
+        if errors:
+            print("Some files failed — check above.")
+
+    if errors:
+        sys.exit(1)
 
 
 def cmd_status(args: argparse.Namespace) -> None:
@@ -205,9 +317,16 @@ def build_parser() -> argparse.ArgumentParser:
     # dispatch
     sub.add_parser("dispatch", help="Dispatch next generation to workers")
 
-    # ingest
+    # ingest (single file)
     p_ingest = sub.add_parser("ingest", help="Ingest completed chunk results")
     p_ingest.add_argument("result", help="Path to result JSON file")
+
+    # ingest-dir (batch, for Codex artifacts on iCloud)
+    p_ingest_dir = sub.add_parser("ingest-dir", help="Ingest all *.json result files from a directory (Codex batch import)")
+    p_ingest_dir.add_argument("directory", help="Directory containing Codex-style result JSON files")
+    p_ingest_dir.add_argument("--dry-run", action="store_true", help="Show what would be ingested without modifying state")
+    p_ingest_dir.add_argument("--validate-only", action="store_true", help="Only validate JSONs, do not run exchanges or save checkpoint")
+    p_ingest_dir.add_argument("--fs-check", action="store_true", help="Run iCloud FS sanity check on the campaign dir before ingesting (recommended on M3 Pro)")
 
     # status
     sub.add_parser("status", help="Campaign progress summary")
@@ -237,6 +356,7 @@ def main() -> None:
         "init": cmd_init,
         "dispatch": cmd_dispatch,
         "ingest": cmd_ingest,
+        "ingest-dir": cmd_ingest_dir,
         "status": cmd_status,
         "analyze": cmd_analyze,
     }
