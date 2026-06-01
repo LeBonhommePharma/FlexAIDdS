@@ -349,7 +349,7 @@ case "${1:-help}" in
         info "This script hard-codes the correct FAILSAFE_PY/ANALYZER_PY from *this* worktree."
         info "Screen/tmux will exec it directly. No cd, no \$0, no FLEXAIDDS_REPO script pollution."
 
-        SCREEN_NAME="grok_own_${RUN_ID}"
+        SCREEN_NAME="${RUN_ID}"
 
         # Add a simple trap in the *outer* manager for hot dir cleanup on abnormal exit
         cleanup_hot() { rm -rf "$LOCAL_HOT_BASE" 2>/dev/null || true; }
