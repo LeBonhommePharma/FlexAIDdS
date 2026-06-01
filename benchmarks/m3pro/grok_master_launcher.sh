@@ -60,24 +60,41 @@ DOCKING_BINARY="${FLEXAIDDS_BINARY:-$FLEXAIDDS_BUILD/FlexAID}"
 # 3. Grok-tuned healthy defaults for this exact machine + your GA
 DEFAULT_DATASETS="astex astex_nonnative hap2"
 DEFAULT_RUNS=10
-DEFAULT_WORKERS=4                    # Aggressive but within 18GB profile
+DEFAULT_WORKERS=4                    # Max sensible for 18GB M3 Pro (see m3pro_profile.yaml)
 DEFAULT_GA_GENERATIONS=1000
 DEFAULT_GA_POPULATION=2000
 DEFAULT_CLUSTERING="FO"
 DEFAULT_TEMPERATURE=300
 
-# 4. Unique run identity (for "your own" campaigns)
+# 4. Unique run identity (for "your own" campaigns, cleanly separated from Codex runs)
 RUN_ID="${RUN_ID:-grok_own_m3pro_$(date +%Y%m%d_%H%M%S)}"
 
-# Local hot (fast APFS) workspace — the failsafe will use this for execution
-LOCAL_HOT_BASE="/private/tmp/grok_bench_hot_${RUN_ID}"
+# Local hot (fast APFS) workspace for execution speed — critical on iCloud-only storage
+LOCAL_HOT_BASE="${LOCAL_HOT_BASE:-/private/tmp/grok_bench_hot_${RUN_ID}}"
 
-# iCloud destination roots (durability)
+# iCloud destination roots (all durable storage lives here via the env)
 ICLOUD_RESULTS="$FLEXAIDDS_RESULTS"
 ICLOUD_LOGS="$FLEXAIDDS_LOGS"
 
 FAILSAVE_SCRIPT="$FLEXAIDDS_REPO/benchmarks/m3pro/failsafe_campaign.py"
 ANALYZER="$FLEXAIDDS_REPO/benchmarks/m3pro/analyze_repetitions.py"
+
+# Safety: basic iCloud volume sanity check (common source of "unhealthy" runs)
+check_icLOUD_health() {
+    if [[ ! -d "$ICLOUD_RESULTS" || ! -w "$ICLOUD_RESULTS" ]]; then
+        warn "iCloud results path not writable: $ICLOUD_RESULTS"
+        warn "Ensure the volume is mounted and you have write access (run setup_cloud_storage.sh if needed)."
+    fi
+    # Quick memory headroom hint for this 18GB machine
+    if command -v sysctl >/dev/null 2>&1; then
+        local mem_gb=$(( $(sysctl -n hw.memsize 2>/dev/null || echo 0) / 1024 / 1024 / 1024 ))
+        if (( mem_gb < 16 )); then
+            warn "This machine reports only ${mem_gb}GB — the recommended worker counts in m3pro_profile.yaml may be too aggressive."
+        fi
+    fi
+}
+
+check_icLOUD_health
 
 # Safety: ensure we have a real binary
 if [[ ! -x "$BINARY" ]]; then
@@ -119,10 +136,16 @@ case "${1:-help}" in
         eval "$cmd --resume" 2>&1 | tee -a "$ICLOUD_LOGS/${RUN_ID}_launcher.log"
         ;;
     sync)
-        phase "EXTRA SYNC TO ICLOUD (belt & suspenders)"
-        rsync -a --delete --info=progress2 "$LOCAL_HOT_BASE/" "$ICLOUD_RESULTS/tier2/" || true
-        rsync -a --delete "$ICLOUD_LOGS/m3pro_failsafe_${RUN_ID}/" "$ICLOUD_LOGS/" || true
-        ok "Forced sync to iCloud complete."
+        phase "EXTRA SYNC TO ICLOUD (belt & suspenders — safe & resumable)"
+        if [[ -d "$LOCAL_HOT_BASE" ]]; then
+            rsync -a --delete --info=progress2 "$LOCAL_HOT_BASE/" "$ICLOUD_RESULTS/tier2/" || warn "Partial rsync of hot results — safe to re-run later"
+        fi
+        # Also sync any logs the failsafe wrote under the iCloud logs dir
+        LATEST_LOG_DIR=$(ls -td "$ICLOUD_LOGS"/m3pro_failsafe_${RUN_ID}* 2>/dev/null | head -1 || true)
+        if [[ -n "$LATEST_LOG_DIR" ]]; then
+            rsync -a --delete "$LATEST_LOG_DIR/" "$ICLOUD_LOGS/m3pro_failsafe_${RUN_ID}/" || true
+        fi
+        ok "Extra sync to iCloud complete. All durable artifacts are now safely on Drive."
         ;;
     analyze)
         phase "BOOTSTRAP ANALYSIS"
@@ -141,6 +164,13 @@ case "${1:-help}" in
         ;;
     status)
         cat "$ICLOUD_LOGS/m3pro_failsafe_${RUN_ID}/campaign_status.json" 2>/dev/null || echo "No status yet for $RUN_ID"
+        ;;
+    show|cmd|command)
+        phase "EXACT FAILSAFE COMMAND THIS WOULD RUN"
+        cmd=$(build_cmd)
+        echo "$cmd ${EXTRA_ARGS:-}"
+        echo ""
+        info "Copy-paste the above (with any extra flags) if you want to run the failsafe directly."
         ;;
     *)
         cat <<'EOF'
@@ -169,14 +199,26 @@ Subcommands:
 
 Environment: Must have run setup_cloud_storage.sh so ~/.flexaidds_env exists.
 
-Example (recommended healthy flow):
+This script exists so you can run your own clean, healthy, reproducible
+benchmark campaigns on this exact M3 Pro 18GB + iCloud-only machine
+without fighting the storage policy or forgetting the right flags.
+
+Core idea (local speed + iCloud durability):
+  - Execution uses fast local APFS (/private/tmp hot base)
+  - All durable artifacts (results, logs, manifests, analysis) live on iCloud Drive
+
+Recommended safe flow for your own runs on the three datasets:
   ./grok_master_launcher.sh preflight
-  ./grok_master_launcher.sh launch     # run in screen/tmux
-  # ... later ...
+  ./grok_master_launcher.sh launch     # best run inside screen/tmux
+  # later...
   ./grok_master_launcher.sh analyze
   ./grok_master_launcher.sh sync
 
+Or the one-command version:
+  ./grok_master_launcher.sh full
+
 Results will appear under $FLEXAIDDS_RESULTS with your run-id.
+Use "show" to see the exact failsafe command being constructed.
 EOF
         ;;
 esac
