@@ -309,7 +309,15 @@ bash .grok/skills/flexaid-docking/scripts/launch_full_benchmark.sh \
 This launcher enforces the full ritual, correct PATH for `benchmark_datasets`, strict pre-flight (full data for heavy datasets), early `run_status.json`, proper detached logging, and iCloud-only output. It is the only supported way to start production full runs on this machine. See `scripts/launch_full_benchmark.sh` and `benchmarks/m3pro/README.md`.
 
 **Metal hardware acceleration on M3 Pro (and other Apple Silicon):**  
-The canonical build used by the launcher (FLEXAIDDS_BUILD) is compiled with `FLEXAIDS_USE_METAL=ON`. The launcher now performs an explicit pre-flight that confirms the presence of `.metallib` shaders (ShannonEntropy, CavityDetect, MetalRMSD, etc.). On M3 Pro the `UnifiedHardwareDispatch` will automatically prefer the Metal backend for Shannon configurational entropy (ShannonThermoStack), tENCoM vibrational entropy, cavity detection, and batch RMSD/quantization kernels when those code paths are exercised during a benchmark. CPU fallback is always available. The 298 K / 310 K Astex (Diverse + Non-Native) full runs therefore benefit from Metal acceleration "when possible" without any extra flags. Dispatch choices appear in the binary.log once the relevant C++ kernels execute.
+The canonical build used by the launcher (FLEXAIDDS_BUILD) is compiled with `FLEXAIDS_USE_METAL=ON`. The launcher now performs an explicit pre-flight (including otool linkage check) that confirms the presence of `.metallib` shaders (ShannonEntropy, CavityDetect, MetalRMSD, etc.) and that the binary links Metal.framework. On M3 Pro the `UnifiedHardwareDispatch` will automatically prefer the Metal backend for Shannon configurational entropy (ShannonThermoStack), tENCoM vibrational entropy, cavity detection, and batch RMSD/quantization kernels when those code paths are exercised during a benchmark. CPU fallback is always available. The 298 K / 310 K Astex (Diverse + Non-Native) full runs therefore benefit from Metal acceleration "when possible" without any extra flags.
+
+**How to verify Metal usage in a running or completed campaign:**
+- The launcher prints the pre-flight + a ready verification command at launch time.
+- In the run's `binary.log` (in the iCloud full-... dir): `grep -iE 'metal|backend|dispatch|shannon|using metal' binary.log | tail -20`
+- The skill's filtered live monitors (started for the 4 canonical _fixed runs) will stream *only* these relevant lines in real time.
+- Look for messages from UnifiedHardwareDispatch / ShannonThermoStack confirming "Metal" device selection once the thermodynamic/entropy kernels execute (typically after GA and during BindingMode/statmech phases).
+
+Dispatch choices are logged when the relevant C++ kernels run.
 
 See the full CLI and library interface via:
 ```bash
