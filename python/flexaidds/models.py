@@ -24,6 +24,17 @@ from typing import Any, Dict, List, Optional, Union
 from .thermodynamics import ThermodynamicBreakdown
 
 
+def _as_breakdown(value):
+    """Coerce a serialized thermodynamics dict into a ThermodynamicBreakdown.
+
+    Robust round-trip helper: dict -> ThermodynamicBreakdown via from_dict();
+    anything else (already a breakdown, or None) passes through unchanged.
+    """
+    if isinstance(value, dict):
+        return ThermodynamicBreakdown.from_dict(value)
+    return value
+
+
 @dataclass(frozen=True)
 class PoseResult:
     """A single docked pose read from one FlexAID∆S output PDB file.
@@ -297,7 +308,7 @@ class DockingResult:
                     std_energy=m.get("std_energy"),
                     best_cf=m.get("best_cf"),
                     temperature=m.get("temperature"),
-                    thermodynamics=m.get("thermodynamics"),
+                    thermodynamics=_as_breakdown(m.get("thermodynamics")),
                 ))
         return cls(
             source_dir=Path(data.get("source_dir", ".")),
@@ -524,7 +535,7 @@ class DockingResult:
                     std_energy=rec.get("std_energy"),
                     best_cf=rec.get("best_cf"),
                     temperature=rec.get("temperature"),
-                    thermodynamics=rec.get("thermodynamics"),
+                    thermodynamics=thermodynamics,
                 )
             )
 
@@ -608,7 +619,7 @@ class DockingResult:
                 std_energy=rec.get("std_energy"),
                 best_cf=rec.get("best_cf"),
                 temperature=rec.get("temperature"),
-                thermodynamics=rec.get("thermodynamics"),
+                thermodynamics=_as_breakdown(rec.get("thermodynamics")),
             ))
 
         return cls(

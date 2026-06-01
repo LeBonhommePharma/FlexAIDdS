@@ -55,3 +55,24 @@ class BoltzmannLUT:
         kB = 0.0019872041
         beta = 1.0 / (kB * self.temperature) if self.temperature > 0 else 0.0
         return math.exp(-beta * energy)
+
+
+@dataclass
+class TemperatureScanPoint:
+    """One point of a fixed-ensemble temperature scan (no-_core fallback)."""
+    T_K: float = 300.0
+    logZ: float = 0.0
+    G_kcal_mol: float = 0.0
+    H_kcal_mol: float = 0.0
+    S_kcal_mol_K: float = 0.0
+    Cv_kcal_mol_K: float = 0.0
+
+
+@dataclass
+class DeltaCpFit:
+    """Linear-regression ΔCp fit result (no-_core fallback)."""
+    delta_Cp_kcal_mol_K: float = 0.0
+    T_ref_K: float = 300.0
+    rmse_kcal_mol: float = 0.0
+    model_derived: bool = True
+    experimental: bool = True

@@ -158,6 +158,9 @@ class ThermodynamicBreakdown:
     component_means: Dict[str, float] = field(default_factory=dict)
     component_sum_kcal_mol: float = 0.0
     components_complete: bool = False
+    # Component-average surface populated by compute_breakdown() (C++/pure parity)
+    components: Optional["ComponentAverages"] = None
+    has_components: bool = False
 
     # Task 6: Standard-state affinity calibration (safe / experimental)
     affinity: Optional[Dict[str, Any]] = None
@@ -210,6 +213,33 @@ class ThermodynamicBreakdown:
             components_complete=False,
         )
         return b
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "ThermodynamicBreakdown":
+        """Reconstruct from to_dict() output. Tolerant: missing keys take defaults,
+        unknown keys are ignored. Mirrors the JSON shape emitted by to_dict()."""
+        g = data.get
+        return cls(
+            temperature_K=float(g("temperature_K", 300.0)),
+            logZ_config=float(g("logZ_config", 0.0)),
+            G_config_kcal_mol=float(g("G_config_kcal_mol", 0.0)),
+            H_eff_kcal_mol=float(g("H_eff_kcal_mol", 0.0)),
+            S_config_kcal_mol_K=float(g("S_config_kcal_mol_K", 0.0)),
+            minus_T_S_config_kcal_mol=float(g("minus_T_S_config_kcal_mol", 0.0)),
+            Cv_kcal_mol_K=float(g("Cv_kcal_mol_K", 0.0)),
+            sigma_E_kcal_mol=float(g("sigma_E_kcal_mol", 0.0)),
+            G_vib_kcal_mol=float(g("G_vib_kcal_mol", 0.0)),
+            G_natural_kcal_mol=float(g("G_natural_kcal_mol", 0.0)),
+            G_other_kcal_mol=float(g("G_other_kcal_mol", 0.0)),
+            G_total_kcal_mol=float(g("G_total_kcal_mol", 0.0)),
+            has_vib=bool(g("has_vib", False)),
+            has_natural=bool(g("has_natural", False)),
+            has_other=bool(g("has_other", False)),
+            component_means=dict(g("component_means", {}) or {}),
+            component_sum_kcal_mol=float(g("component_sum_kcal_mol", 0.0)),
+            components_complete=bool(g("components_complete", False)),
+            affinity=g("affinity", None),
+        )
 
 
 # ─── Diagnostic-only enthalpy–entropy metrics (Task 4) ───────────────────────
