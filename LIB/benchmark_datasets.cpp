@@ -21,6 +21,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <filesystem>
 #include <fstream>
@@ -30,6 +31,7 @@
 #include <iomanip>
 #include <ctime>
 #include <string>
+#include <thread>
 #include <vector>
 
 namespace fs = std::filesystem;
@@ -53,22 +55,33 @@ static void print_usage(const char* progname) {
     printf("  doi:<DOI>        Parse PDB codes from a DOI\n");
     printf("  pdb_list:<file>  Load PDB codes from a text file\n\n");
     printf("Options:\n");
-    printf("  --output <dir>     Output directory (default: benchmark_results/)\n");
-    printf("  --threads <N>      Number of threads (default: 1)\n");
-    printf("  --gpu <backend>    Enable GPU (cuda or metal)\n");
-    printf("  --cache <dir>      Cache directory (default: ~/.flexaidds/benchmarks/)\n");
-    printf("  --force            Re-run even if results already exist (ignore cache)\n");
-    printf("  --prepare-only     Download and prepare only (no docking)\n");
-    printf("  --list-codes       List PDB codes for a dataset and exit\n");
-    printf("  --fleet            Enable Fleet mode (JSON chunk result output)\n");
-    printf("  --chunk-id <ID>    Unique chunk identifier for Fleet mode\n");
-    printf("  --output-json <path> Write Fleet JSON result to this file\n");
-    printf("  -h, --help         Show this help\n\n");
+    printf("  --output <dir>        Output directory (default: benchmark_results/)\n");
+    printf("  --threads <N>         Concurrent FlexAIDdS workers (default: 1)\n");
+    printf("  --omp-threads <N>     OMP threads per worker (default: auto = hw_cores/workers)\n");
+    printf("                        Rule: workers × omp-threads ≤ physical P-cores\n");
+    printf("                        M3 Pro optimal: --threads 1 --omp-threads 6\n");
+    printf("  --gpu <backend>       Enable GPU (cuda or metal)\n");
+    printf("  --cache <dir>         Cache directory (default: ~/.flexaidds/benchmarks/)\n");
+    printf("  --force               Re-run even if results already exist\n");
+    printf("  --prepare-only        Download and prepare only (no docking)\n");
+    printf("  --list-codes          List PDB codes for a dataset and exit\n");
+    printf("  --ga-generations <N>  GA generations (default: 500)\n");
+    printf("  --ga-population <N>   GA population size (default: 1000)\n");
+    printf("  --job-timeout-seconds <N>  Per-complex timeout in s (default: 3600)\n");
+    printf("  --fleet               Enable Fleet mode (JSON chunk result output)\n");
+    printf("  --chunk-id <ID>       Unique chunk identifier for Fleet mode\n");
+    printf("  --output-json <path>  Write Fleet JSON result to this file\n");
+    printf("  -h, --help            Show this help\n\n");
+    printf("Thread sizing guide (M3 Pro, 6 P-cores):\n");
+    printf("  --threads 1 --omp-threads 6   → 6 min/complex, optimal throughput\n");
+    printf("  --threads 2 --omp-threads 3   → 10 min/complex, 2× dataset parallelism\n");
+    printf("  --threads 2                   → AUTO: 6/2=3 OMP threads/worker (same as above)\n");
+    printf("  --threads 2 (no --omp-threads, OMP_NUM_THREADS=6) → BUG: 12 threads on 6 cores\n\n");
     printf("Examples:\n");
-    printf("  %s --benchmark astex --output results/astex/\n", progname);
-    printf("  %s --benchmark sampl6 --prepare-only\n", progname);
-    printf("  %s --benchmark casf2016 --threads 8 --gpu cuda\n", progname);
-    printf("  %s --benchmark all --threads 16\n", progname);
+    printf("  %s --benchmark astex --threads 1 --omp-threads 6\n", progname);
+    printf("  %s --benchmark astex --prepare-only\n", progname);
+    printf("  %s --benchmark casf2016 --threads 1 --omp-threads 6\n", progname);
+    printf("  %s --benchmark all --threads 1 --omp-threads 6\n", progname);
     printf("  %s --benchmark doi:10.1021/acs.jcim.3c00817\n", progname);
     printf("  %s --benchmark astex --list-codes\n", progname);
 }
@@ -429,29 +442,48 @@ int main(int argc, char** argv) {
     dataset::DatasetRunner runner(cache_dir);
 
     dataset::DockingConfig config;
-    config.num_threads = threads;
-    config.use_gpu = use_gpu;
-    config.gpu_backend = gpu_backend;
-    config.output_dir = output_dir;
-    config.skip_completed = !force_rerun;
-    if (ga_generations > 0)    config.ga_generations = ga_generations;
-    if (ga_population > 0)     config.ga_population = ga_population;
-    if (temperature > 0.0)      config.temperature = static_cast<float>(temperature);
-    if (!clustering.empty())    config.clustering_algorithm = clustering;
+    config.num_threads            = threads;
+    config.omp_threads_per_worker = omp_threads;   // 0 → auto-detect in DatasetRunner
+    config.use_gpu                = use_gpu;
+    config.gpu_backend            = gpu_backend;
+    config.output_dir             = output_dir;
+    config.skip_completed         = !force_rerun;
+    if (ga_generations > 0)       config.ga_generations    = ga_generations;
+    if (ga_population  > 0)       config.ga_population     = ga_population;
+    if (temperature    > 0.0)     config.temperature       = static_cast<float>(temperature);
+    if (job_timeout_s  > 0)       config.per_job_timeout_s = job_timeout_s;
+    if (!clustering.empty())      config.clustering_algorithm = clustering;
+
+    // Compute effective OMP threads for display (mirrors DatasetRunner logic)
+    int effective_omp = config.omp_threads_per_worker;
+    if (effective_omp <= 0) {
+        const char* env_omp = std::getenv("OMP_NUM_THREADS");
+        int base = (env_omp && std::atoi(env_omp) > 0)
+            ? std::atoi(env_omp)
+            : static_cast<int>(std::thread::hardware_concurrency());
+        effective_omp = std::max(1, base / std::max(1, config.num_threads));
+    }
 
     std::cout << "═══════════════════════════════════════════════════════════════\n";
     std::cout << "  FlexAIDdS Benchmark Dataset Runner\n";
     std::cout << "═══════════════════════════════════════════════════════════════\n\n";
-    std::cout << "  Cache:   " << runner.cache_dir() << "\n";
-    std::cout << "  Output:  " << output_dir << "\n";
-    std::cout << "  Threads: " << threads << "\n";
-    std::cout << "  Skip existing results: " << (config.skip_completed ? "yes (use --force to override)" : "no") << "\n";
+    std::cout << "  Cache:        " << runner.cache_dir() << "\n";
+    std::cout << "  Output:       " << output_dir << "\n";
+    std::cout << "  Workers:      " << threads << " concurrent FlexAIDdS process(es)\n";
+    std::cout << "  OMP/worker:   " << effective_omp << " thread(s)"
+              << (config.omp_threads_per_worker > 0 ? " (explicit)" : " (auto)") << "\n";
+    std::cout << "  Total threads:" << (threads * effective_omp) << " across "
+              << std::thread::hardware_concurrency() << " logical cores\n";
+    std::cout << "  Skip done:    " << (config.skip_completed ? "yes (--force to override)" : "no") << "\n";
     if (use_gpu) {
-        std::cout << "  GPU:     " << gpu_backend << "\n";
+        std::cout << "  GPU:          " << gpu_backend << "\n";
     }
-    std::cout << "  GA:      pop=" << config.ga_population << " gen=" << config.ga_generations << "\n";
-    std::cout << "  Temp:    " << config.temperature << " K\n";
-    std::cout << "  Cluster: " << config.clustering_algorithm << "\n";
+    std::cout << "  GA:           pop=" << config.ga_population
+              << "  gen=" << config.ga_generations
+              << "  (" << (config.ga_population * config.ga_generations / 1000) << "k evals/complex)\n";
+    std::cout << "  Temp:         " << config.temperature << " K\n";
+    std::cout << "  Cluster:      " << config.clustering_algorithm << "\n";
+    std::cout << "  Timeout/job:  " << config.per_job_timeout_s << " s\n";
     if (fleet_mode) {
         if (chunk_id.empty()) chunk_id = benchmark_name + "_chunk";
         std::cout << "  Fleet:   enabled (chunk_id=" << chunk_id << ")\n";

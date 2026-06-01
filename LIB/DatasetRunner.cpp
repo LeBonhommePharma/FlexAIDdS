@@ -2411,8 +2411,32 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                     data_dir_arg = " --data-dir '" + fs::canonical(wrk_candidate).string() + "' ";
                 }
             }
+            // ── Per-worker OMP thread budget ──────────────────────────
+            // Each FlexAIDdS subprocess inherits the parent environment, so
+            // OMP_NUM_THREADS must be set explicitly in the command string.
+            // Without this, --threads N launches N workers each requesting
+            // OMP_NUM_THREADS threads → N×OMP_NUM_THREADS on N P-cores (thrash).
+            //
+            // Resolution order:
+            //   1. config.omp_threads_per_worker if > 0  (explicit user override)
+            //   2. floor(parent OMP_NUM_THREADS / num_workers)
+            //   3. floor(hardware_concurrency()  / num_workers)
+            //   minimum 1 in all cases.
+            int omp_per_worker = config.omp_threads_per_worker;
+            if (omp_per_worker <= 0) {
+                const char* env_omp = std::getenv("OMP_NUM_THREADS");
+                int base = (env_omp && std::atoi(env_omp) > 0)
+                    ? std::atoi(env_omp)
+                    : static_cast<int>(std::thread::hardware_concurrency());
+                omp_per_worker = std::max(1, base / std::max(1, config.num_threads));
+            }
+
             std::ostringstream cmd;
-            cmd << "'" << flexaidds_bin << "' "
+            cmd << "OMP_NUM_THREADS=" << omp_per_worker << " "
+                << "OMP_PLACES=cores "
+                << "OMP_PROC_BIND=spread "
+                << "OMP_WAIT_POLICY=passive "
+                << "'" << flexaidds_bin << "' "
                 << data_dir_arg
                 << "'" << entry.receptor_path << "' "
                 << "'" << entry.ligand_path << "' "

@@ -169,21 +169,29 @@ struct BenchmarkReport {
 // =============================================================================
 
 struct DockingConfig {
-    int    ga_generations{1000};
-    int    ga_population{300};
+    // GA parameters — canonical benchmark spec (BENCHMARKING_PLAN.md §6.1):
+    //   500 generations × 1000 chromosomes = 510,000 eval_chromosome calls/complex
+    //   Matches config_defaults.h num_generations=500, num_chromosomes=1000.
+    int    ga_generations{500};
+    int    ga_population{1000};
     float  temperature{300.0f};       // Kelvin
+    /// Concurrent FlexAIDdS worker processes (dataset-level parallelism).
+    /// Each worker is an independent OS process; they do NOT share OMP threads.
     int    num_threads{1};
+    /// OMP threads assigned to each FlexAIDdS subprocess.
+    /// 0 = auto: floor(hardware_concurrency / num_threads), minimum 1.
+    /// Explicit example: --threads 1 --omp-threads 6  (M3 Pro optimal)
+    int    omp_threads_per_worker{0};
     bool   use_gpu{false};
     std::string gpu_backend{"cuda"};  // "cuda" or "metal"
     std::string output_dir{"."};
     std::string clustering_algorithm{"CF"}; // "CF", "FO" (FastOPTICS), or "DP" (DensityPeak)
     /// When true (default), skip targets whose output directory already contains
     /// at least one clustered pose PDB and a non-empty stdout.log.
-    /// Stuck runs (0 pose PDBs) are never considered complete and are always re-run.
     bool   skip_completed{true};
     /// Per-job timeout in seconds. 0 = no timeout (block indefinitely).
-    /// Default 600s (10 min) — generous for standard benchmarks.
-    int    per_job_timeout_s{600};
+    /// Default 3600 s (1 h) — covers 8 min/complex with generous headroom.
+    int    per_job_timeout_s{3600};
 };
 
 // =============================================================================
