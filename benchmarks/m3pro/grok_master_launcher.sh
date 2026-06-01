@@ -168,22 +168,43 @@ notify_user() {
 # Creates a complete, self-contained, chmod +x script inside the local hot base.
 # It hard-codes the absolute FAILSAFE_PY / ANALYZER_PY from *this* manager's SCRIPT_DIR,
 # sources the env for the heavy build/binary/iCloud paths only, and runs the full pipeline.
-# Screen/tmux then execs this absolute file directly — no heredoc, no $0, no cd to wrong tree, no FLEXAIDDS_REPO pollution for scripts.
+# Screen/tmux then execs this absolute file directly — no heredoc, no $0, no cd to wrong tree,
+# no FLEXAIDDS_REPO script pollution for scripts.
+#
+# This version is deliberately robust against paths containing spaces (common on iCloud-only
+# setups) and other special characters. It uses printf + explicit single-quoting instead of
+# fragile sed placeholder substitution.
 write_inner_wrapper() {
     local inner_path="$1"
     local run_id="$2"
-    cat > "$inner_path" << 'INNER_EOF'
-#!/bin/bash
-set -euo pipefail
 
-# These are expanded by the *outer* manager at generation time (absolute, from the correct worktree)
-FAILSAFE_PY="__FAILSAFE_PY__"
-ANALYZER_PY="__ANALYZER_PY__"
-RUN_ID="__RUN_ID__"
-LOCAL_HOT_BASE="__LOCAL_HOT_BASE__"
-ICLOUD_LOGS="__ICLOUD_LOGS__"
-ICLOUD_RESULTS="__ICLOUD_RESULTS__"
+    # --- Defensive checks (fail fast with clear messages) ---
+    local required_vars=(FAILSAFE_PY ANALYZER_PY LOCAL_HOT_BASE ICLOUD_LOGS ICLOUD_RESULTS)
+    for v in "${required_vars[@]}"; do
+        if [[ -z "${!v:-}" ]]; then
+            die "write_inner_wrapper: required variable '$v' is empty or unset"
+        fi
+    done
 
+    local tmp_path="${inner_path}.tmp.$$"
+
+    # Safely emit the script using printf for the variable section (handles spaces, quotes, everything)
+    # We single-quote every value — this is the standard safe way to embed arbitrary strings in shell.
+    {
+        printf '#!/bin/bash\n'
+        printf 'set -euo pipefail\n\n'
+
+        # Inject the six critical absolute paths / values with proper single-quoting
+        printf "FAILSAFE_PY='%s'\n" "$(printf %s "$FAILSAFE_PY" | sed "s/'/'\\\\''/g")"
+        printf "ANALYZER_PY='%s'\n" "$(printf %s "$ANALYZER_PY" | sed "s/'/'\\\\''/g")"
+        printf "RUN_ID='%s'\n"       "$(printf %s "$run_id"       | sed "s/'/'\\\\''/g")"
+        printf "LOCAL_HOT_BASE='%s'\n" "$(printf %s "$LOCAL_HOT_BASE" | sed "s/'/'\\\\''/g")"
+        printf "ICLOUD_LOGS='%s'\n"   "$(printf %s "$ICLOUD_LOGS"   | sed "s/'/'\\\\''/g")"
+        printf "ICLOUD_RESULTS='%s'\n" "$(printf %s "$ICLOUD_RESULTS" | sed "s/'/'\\\\''/g")"
+        printf '\n'
+
+        # The rest of the script body is appended literally (no further variable expansion at generation time)
+        cat << 'INNER_BODY'
 # Source the user's env for the heavy stuff (build, iCloud targets, etc.)
 ENV_FILE="$HOME/.flexaidds_env"
 if [[ -f "$ENV_FILE" ]]; then
@@ -228,19 +249,17 @@ if [[ -d "$LOCAL_HOT_BASE" ]]; then
 fi
 
 echo "[inner] All done for $RUN_ID. Artifacts on iCloud. You can detach (Ctrl-A D) or close this screen."
-INNER_EOF
+INNER_BODY
 
-    # Perform the real substitutions (the heredoc above used placeholders to avoid early expansion)
-    sed -i '' \
-        -e "s|__FAILSAFE_PY__|$FAILSAFE_PY|g" \
-        -e "s|__ANALYZER_PY__|$ANALYZER_PY|g" \
-        -e "s|__RUN_ID__|$run_id|g" \
-        -e "s|__LOCAL_HOT_BASE__|$LOCAL_HOT_BASE|g" \
-        -e "s|__ICLOUD_LOGS__|$ICLOUD_LOGS|g" \
-        -e "s|__ICLOUD_RESULTS__|$ICLOUD_RESULTS|g" \
-        "$inner_path"
+    } > "$tmp_path"
 
-    chmod +x "$inner_path"
+    chmod +x "$tmp_path"
+    mv -f "$tmp_path" "$inner_path"
+
+    # Final verification — this is what was missing before
+    if [[ ! -x "$inner_path" ]]; then
+        die "write_inner_wrapper: failed to produce executable wrapper at $inner_path"
+    fi
 }
 
 mkdir -p "$LOCAL_HOT_BASE" "$ICLOUD_LOGS" "$ICLOUD_RESULTS/tier2" "$ICLOUD_RESULTS/analysis"
