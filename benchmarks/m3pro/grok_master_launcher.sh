@@ -139,8 +139,29 @@ doctor() {
     # Quick iCloud / tmp sanity (expanded in later chunks)
     [[ -d "$ICLOUD_RESULTS" && -w "$ICLOUD_RESULTS" ]] && ok "iCloud results writable: $ICLOUD_RESULTS" || warn "iCloud results path problem: $ICLOUD_RESULTS"
     [[ -d "/private/tmp" && -w "/private/tmp" ]] && ok "/private/tmp (hot path) writable" || warn "/private/tmp not writable — hot execution will fail"
+
+    # Minimal 18GB M3 Pro resource awareness (from m3pro_profile.yaml: 11 GB usable after OS+Metal)
+    if command -v sysctl >/dev/null 2>&1; then
+        local avail_gb=$(( 11 ))   # conservative for this machine/profile
+        local req_workers=${WORKERS:-4}
+        if (( req_workers > 4 )); then
+            warn "Requested workers=$req_workers exceeds safe max ~4 for 18GB M3 Pro (see m3pro_profile.yaml tier2:2 sequential, tier1:4). Proceeding but you were warned."
+        else
+            ok "Worker count $req_workers within 18GB M3 Pro budget (profile max 4 for aggressive tier-1 style)."
+        fi
+    fi
     echo ""
     info "Run 'doctor' anytime to re-check. Start will call this automatically (Chunk 1+)."
+}
+
+# macOS notification stub (Chunk 3) — called from inner on completion or from outer on error
+notify_user() {
+    local title="$1"
+    local msg="$2"
+    if command -v osascript >/dev/null 2>&1; then
+        osascript -e "display notification \"$msg\" with title \"$title\"" 2>/dev/null || true
+    fi
+    # Optional voice: say "$title" 2>/dev/null || true
 }
 
 # === Chunk 2: Safe absolute inner wrapper generator (the "tard-proof" one-command fix) ===
