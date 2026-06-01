@@ -1,8 +1,10 @@
 # /flexaid — Standalone FlexAID∆S Landing Page
 
-This directory serves the dedicated standalone FlexAID∆S marketing / product page at:
+This directory serves the dedicated standalone FlexAID∆S marketing / product page at the clean root path:
 
 **https://thebonhomme.com/flexaid**
+
+**Note**: This path is configured as an HTTP redirect (301) to the archive URL via Cloudflare. See the root `CLOUDFLARE_SETUP.md` for the one-time setup the domain owner performs. The HTML file here acts as a fallback.
 
 ## Source
 
