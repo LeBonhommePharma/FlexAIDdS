@@ -120,6 +120,15 @@ def compute_percentages(languages: dict[str, int]) -> list[tuple[str, str, float
     return entries
 
 
+def count_source_languages(languages: dict[str, int]) -> int:
+    """Count source languages for the stats badge.
+
+    GitHub's languages API can include generated dependency artifacts under
+    "Makefile"; keep that out of the user-facing source-language total.
+    """
+    return sum(1 for lang in languages if lang != "Makefile")
+
+
 def build_lang_bar(entries: list[tuple[str, str, float]]) -> str:
     """Build the lang-bar HTML block."""
     lines = ['        <div class="lang-bar" aria-label="Language breakdown">']
@@ -149,6 +158,7 @@ def update_html(
     commit_count: int,
     lang_entries: list[tuple[str, str, float]],
     *,
+    language_count: int | None = None,
     stars: int | None = None,
     release: str | None = None,
 ) -> bool:
@@ -167,11 +177,10 @@ def update_html(
     )
 
     # 2. Update language count in the new semantic marker (id="stat-langs") — any tag
-    if lang_entries:
-        n_langs = len(lang_entries)
+    if language_count is not None:
         content = re.sub(
             r'(<[^>]*id="stat-langs"[^>]*>)\d+(</[^>]+>)',
-            rf"\g<1>{n_langs}\g<2>",
+            rf"\g<1>{language_count}\g<2>",
             content,
             count=1,
         )
@@ -230,6 +239,7 @@ def main() -> int:
 
     # Get language breakdown
     languages = fetch_languages(args.repo)
+    language_count = count_source_languages(languages) if languages else None
     lang_entries = compute_percentages(languages) if languages else []
     if lang_entries:
         print("Language breakdown:")
@@ -257,6 +267,7 @@ def main() -> int:
         args.html,
         commit_count,
         lang_entries,
+        language_count=language_count,
         stars=stars,
         release=release,
     )

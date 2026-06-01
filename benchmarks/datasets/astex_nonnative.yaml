@@ -22,7 +22,7 @@ description: >
 
 zenodo_doi: ""
 download_url: "https://www.ccdc.cam.ac.uk/"
-data_format: pdb
+data_format: mmcif
 tier: 2
 tier1_subset_size: 3
 
@@ -66,6 +66,19 @@ expected_baselines:
   entropy_rescue_rate: 0.20
 
 baseline_tolerance: 0.05
+
+structure_recovery_policy:
+  coordinate_format: mmCIF-first
+  pdb_fallback: >
+    Legacy PDB download is attempted only after mmCIF fails. PDB is not treated
+    as authoritative for this benchmark because several legacy entries are no
+    longer reliably downloadable as .pdb.
+  ligand_donor_fallback: >
+    If the nominal native structure has no extractable small-molecule HETATM
+    ligand, keep the protein family in the benchmark by using the first
+    same-family alternative conformer with an extractable ligand as the ligand
+    donor. Entries are not curated out solely because the native HETATM ligand
+    is absent.
 
 # ── Claude Reevaluated Baselines (2026-04-19) ──────────────────────────────
 # Rationale: Cross-docking is substantially harder than self-docking.

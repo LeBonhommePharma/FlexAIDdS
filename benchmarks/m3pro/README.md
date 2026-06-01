@@ -72,6 +72,12 @@ Environment variables are stored in `~/.flexaidds_env` (auto-sourced from `.zshr
 
 The robust Python failsafe runner (`failsafe_campaign.py`) supports the same environment variables plus `--remote-base`, `--no-remote-sync`, `--lock-dir`, and auto repo detection for portable / Codex / CI use. See its `--help` and module docstring.
 
+For day-to-day use on this exact M3 Pro iCloud-only machine, use the convenience wrapper:
+```bash
+./benchmarks/m3pro/grok_master_launcher.sh full
+```
+It provides safe preflight/launch/sync/analyze modes with the recommended healthy settings for Astex + HAP2 campaigns (everything durable on iCloud, local APFS hot paths, max 18GB hardware utilization). See the script header for details.
+
 ## Mirror Script (Deprecated)
 
 `mirror_to_gdrive.sh` is kept only as a placeholder and now exits immediately with a message that Google Drive support has been removed. All data stays on your 2TB iCloud Drive.

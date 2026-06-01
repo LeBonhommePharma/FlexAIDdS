@@ -214,6 +214,42 @@ struct MetalEvalCtx {
 
 // ─── host API ────────────────────────────────────────────────────────────────
 
+bool metal_eval_runtime_available()
+{
+    id<MTLDevice> device = MTLCreateSystemDefaultDevice();
+    return device != nil;
+}
+
+void metal_eval_get_capabilities(MetalCapabilities* out)
+{
+    if (!out) return;
+
+    memset(out, 0, sizeof(*out));
+
+    id<MTLDevice> device = MTLCreateSystemDefaultDevice();
+    if (!device) {
+        out->available = false;
+        return;
+    }
+
+    out->available = true;
+    strncpy(out->device_name, device.name.UTF8String ? device.name.UTF8String : "Apple GPU", sizeof(out->device_name)-1);
+
+#if defined(__MAC_OS_X_VERSION_MIN_REQUIRED) && __MAC_OS_X_VERSION_MIN_REQUIRED >= 101500
+    if (@available(macOS 10.15, *)) {
+        out->unified_memory_bytes = device.hasUnifiedMemory ? device.maxBufferLength : 0;
+    }
+#endif
+    out->max_buffer_length = device.maxBufferLength;
+
+    // Rough core estimate for M-series (best effort)
+    NSString* name = device.name;
+    if ([name containsString:@"M3 Pro"]) out->gpu_core_estimate = 18;
+    else if ([name containsString:@"M3 Max"]) out->gpu_core_estimate = 30;
+    else if ([name containsString:@"M3"]) out->gpu_core_estimate = 10;
+    else out->gpu_core_estimate = 8; // conservative default
+}
+
 MetalEvalCtx* metal_eval_init(int   n_atoms,
                                int   n_types,
                                int   max_pop,

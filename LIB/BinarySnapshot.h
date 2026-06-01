@@ -244,6 +244,8 @@ void snapshot_to_pdb(const SnapshotReader::Snapshot& snapshot,
                      const std::string& remark,
                      FILE* out);
 
+} // namespace flexaids
+
 /// Convenience overload: extract atom metadata from FA_Global/resid arrays
 /// and write PDB.  Forward-declared here; implemented in BinarySnapshot.cpp
 /// after including flexaid.h.
