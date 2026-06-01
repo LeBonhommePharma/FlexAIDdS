@@ -1,0 +1,910 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Periodic Table of the Elements — Pharmacological Edition · thebonhomme.com</title>
+  <meta name="description" content="Interactive pharmacological periodic table. Elements annotated with clinical relevance, approved drugs, biological roles, and therapeutic/toxicological context. Le Bonhomme Pharma · Montréal.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap');
+
+    :root {
+      --bg: #0a0e14;
+      --bg-panel: #10141c;
+      --bg-card: rgba(16, 20, 28, 0.92);
+      --teal: #22D3EE;
+      --terra: #A78BFA;
+      --gold: #FBBF24;
+      --fg: #d4dced;
+      --fg-muted: #8a93a8;
+      --border: rgba(34, 211, 238, 0.15);
+    }
+
+    body {
+      font-family: 'IBM Plex Sans', system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--fg);
+    }
+
+    .font-mono {
+      font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    }
+
+    .periodic-grid {
+      display: grid;
+      grid-template-columns: repeat(18, minmax(0, 1fr));
+      gap: 3px;
+      padding: 4px;
+      background: rgba(16, 20, 28, 0.6);
+      border-radius: 12px;
+      border: 1px solid var(--border);
+    }
+
+    .element {
+      aspect-ratio: 1 / 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      border-radius: 6px;
+      font-size: 10px;
+      line-height: 1;
+      cursor: pointer;
+      transition: transform 0.12s cubic-bezier(0.2, 0.0, 0, 1), 
+                  box-shadow 0.12s cubic-bezier(0.2, 0.0, 0, 1),
+                  border-color 0.12s;
+      border: 1px solid rgba(255,255,255,0.08);
+      position: relative;
+      overflow: hidden;
+      user-select: none;
+      background: #11161f;
+    }
+
+    .element:hover {
+      transform: translateY(-1px) scale(1.04);
+      box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.3), 0 4px 6px -4px rgb(0 0 0 / 0.3);
+      z-index: 10;
+      border-color: var(--teal);
+    }
+
+    .element:active {
+      transform: scale(0.985);
+    }
+
+    .element .num {
+      font-size: 8px;
+      font-weight: 500;
+      color: #64748b;
+      align-self: flex-start;
+      padding: 2px 4px 0;
+    }
+
+    .element .sym {
+      font-size: 15px;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      line-height: 1;
+    }
+
+    .element .name {
+      font-size: 7.5px;
+      opacity: 0.75;
+      margin-top: 1px;
+      text-align: center;
+      max-width: 100%;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      padding: 0 2px;
+    }
+
+    .element.pharma-relevant {
+      box-shadow: inset 0 0 0 1.5px rgba(251, 191, 36, 0.35);
+    }
+
+    .element.pharma-relevant::after {
+      content: '';
+      position: absolute;
+      top: 2px;
+      right: 2px;
+      width: 5px;
+      height: 5px;
+      background: var(--gold);
+      border-radius: 50%;
+      box-shadow: 0 0 0 1.5px rgba(251, 191, 36, 0.3);
+    }
+
+    .cat-alkali { background: #451a03; color: #fed7aa; border-color: #f59e0b33; }
+    .cat-alkaline { background: #422006; color: #fde68a; border-color: #fbbf2433; }
+    .cat-transition { background: #0f172a; color: #67e8f9; border-color: #22d3ee33; }
+    .cat-posttrans { background: #1e1135; color: #c4b5fd; border-color: #a78bfa33; }
+    .cat-metalloid { background: #1f2937; color: #94a3b8; border-color: #64748b33; }
+    .cat-nonmetal { background: #0c4a6e; color: #bae6fd; border-color: #38bdf833; }
+    .cat-halogen { background: #431407; color: #fdba74; border-color: #fb923c33; }
+    .cat-noble { background: #1e1b4b; color: #c7d2fe; border-color: #6366f133; }
+    .cat-lanthanide { background: #134e4b; color: #99f6e4; border-color: #14b8a633; }
+    .cat-actinide { background: #4c1d95; color: #d8b4fe; border-color: #a855f733; }
+
+    .element.selected {
+      box-shadow: 0 0 0 2px var(--teal), 0 0 0 5px rgba(34, 211, 238, 0.15);
+      z-index: 20;
+    }
+
+    .detail-panel {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      backdrop-filter: blur(20px);
+    }
+
+    .section-label {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 10px;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--terra);
+    }
+
+    .pharma-badge {
+      font-size: 10px;
+      padding: 1px 7px;
+      border-radius: 999px;
+      background: rgba(251, 191, 36, 0.15);
+      color: #fde047;
+      border: 1px solid rgba(251, 191, 36, 0.3);
+      font-weight: 500;
+    }
+
+    .mono { font-family: 'JetBrains Mono', monospace; }
+
+    .pt-header {
+      font-family: 'JetBrains Mono', monospace;
+      letter-spacing: -0.025em;
+    }
+
+    .legend-dot {
+      width: 9px; height: 9px; border-radius: 999px;
+    }
+
+    .element-info {
+      font-size: 13px;
+      line-height: 1.5;
+    }
+
+    .nav {
+      background: rgba(10, 14, 20, 0.92);
+      backdrop-filter: blur(24px);
+      border-bottom: 1px solid rgba(34,211,238,0.12);
+    }
+
+    .filter-btn {
+      font-size: 12px;
+      padding: 5px 12px;
+      border-radius: 999px;
+      border: 1px solid rgba(255,255,255,0.08);
+      color: #94a3b8;
+      transition: all 0.1s;
+    }
+    .filter-btn.active {
+      background: var(--teal);
+      color: #0a0e14;
+      border-color: var(--teal);
+      font-weight: 600;
+    }
+    .filter-btn:hover:not(.active) {
+      border-color: rgba(34,211,238,0.4);
+      color: #cbd5e1;
+    }
+
+    .modal {
+      animation: modalPop 0.2s cubic-bezier(0.2, 0.0, 0, 1);
+    }
+    @keyframes modalPop {
+      from { opacity: 0; transform: scale(0.96) translateY(8px); }
+      to { opacity: 1; transform: scale(1) translateY(0); }
+    }
+
+    .periodic-container {
+      max-width: 1280px;
+      margin: 0 auto;
+    }
+
+    .f-block {
+      margin-top: 8px;
+    }
+
+    @media (max-width: 768px) {
+      .periodic-grid { gap: 2px; }
+      .element .sym { font-size: 13px; }
+      .element .name { font-size: 6px; }
+    }
+  </style>
+</head>
+<body class="bg-[#0a0e14] text-[#d4dced] min-h-screen">
+  <!-- Top nav -->
+  <nav class="nav sticky top-0 z-50 border-b border-white/10">
+    <div class="max-w-7xl mx-auto px-5 h-14 flex items-center justify-between">
+      <div class="flex items-center gap-3">
+        <div class="flex items-center gap-2">
+          <div class="w-6 h-6 rounded bg-gradient-to-br from-[#22D3EE] to-[#A78BFA] flex items-center justify-center">
+            <span class="text-[#0a0e14] text-[13px] font-bold tracking-tighter">P</span>
+          </div>
+          <div>
+            <div class="font-semibold tracking-tight text-lg leading-none pt-0.5">thebonhomme.com</div>
+            <div class="text-[10px] text-[#8a93a8] -mt-0.5 font-mono">LE BONHOMME PHARMA</div>
+          </div>
+        </div>
+        <div class="hidden sm:block text-[#64748b] text-sm pl-2">/ periodic</div>
+      </div>
+      <div class="flex items-center gap-3 text-sm">
+        <a href="https://thebonhomme.com" class="text-[#8a93a8] hover:text-[#22D3EE] transition-colors hidden sm:block">thebonhomme.com</a>
+        <a href="https://github.com/LeBonhommePharma" target="_blank" class="text-[#8a93a8] hover:text-[#22D3EE] transition-colors font-mono text-xs px-3 py-1 rounded border border-white/10 hover:border-[#22D3EE]/40">GITHUB</a>
+      </div>
+    </div>
+  </nav>
+
+  <div class="max-w-7xl mx-auto px-5 pt-8 pb-6">
+    <!-- Header -->
+    <div class="flex flex-col md:flex-row md:items-end md:justify-between gap-y-4 mb-6">
+      <div>
+        <div class="section-label mb-1.5 tracking-[3px]">CLINICAL CHEMISTRY &amp; DRUG DISCOVERY</div>
+        <h1 class="pt-header text-5xl md:text-6xl font-semibold tracking-tighter">Periodic Table of the Elements</h1>
+        <p class="mt-2 text-xl text-[#8a93a8]">Pharmacological Edition</p>
+      </div>
+      <div class="text-sm text-[#8a93a8] max-w-md">
+        118 elements • clinically relevant drugs, counterions, trace minerals, 
+        antineoplastics, and toxicological context. Data synthesized from FDA labels, PubChem, and clinical literature.
+      </div>
+    </div>
+
+    <!-- Controls -->
+    <div class="flex flex-col lg:flex-row gap-3 lg:items-center justify-between mb-4">
+      <!-- Search -->
+      <div class="relative flex-1 max-w-md">
+        <input id="search" 
+               type="text" 
+               placeholder="Search element, symbol, drug, or indication (e.g. lithium, cisplatin, iodine)"
+               class="w-full bg-[#10141c] border border-white/10 focus:border-[#22D3EE]/60 rounded-xl px-4 py-2.5 text-sm placeholder:text-[#64748b] outline-none font-light">
+        <div class="absolute right-4 top-3 text-[#64748b] text-xs font-mono pointer-events-none">⌘K</div>
+      </div>
+
+      <!-- Filters -->
+      <div class="flex flex-wrap gap-2" id="filters">
+        <button data-filter="all" class="filter-btn active">All</button>
+        <button data-filter="pharma" class="filter-btn">Clinically Used</button>
+        <button data-filter="s-block" class="filter-btn">s-block</button>
+        <button data-filter="p-block" class="filter-btn">p-block</button>
+        <button data-filter="d-block" class="filter-btn">d-block</button>
+        <button data-filter="f-block" class="filter-btn">f-block</button>
+      </div>
+    </div>
+
+    <!-- Legend -->
+    <div class="flex flex-wrap gap-x-5 gap-y-2 text-xs mb-3 px-1 text-[#8a93a8]">
+      <div class="flex items-center gap-2"><span class="legend-dot" style="background:#f59e0b"></span> Alkali</div>
+      <div class="flex items-center gap-2"><span class="legend-dot" style="background:#fbbf24"></span> Alkaline earth</div>
+      <div class="flex items-center gap-2"><span class="legend-dot" style="background:#22d3ee"></span> Transition</div>
+      <div class="flex items-center gap-2"><span class="legend-dot" style="background:#a78bfa"></span> Post-transition</div>
+      <div class="flex items-center gap-2"><span class="legend-dot" style="background:#64748b"></span> Metalloid</div>
+      <div class="flex items-center gap-2"><span class="legend-dot" style="background:#38bdf8"></span> Nonmetal</div>
+      <div class="flex items-center gap-2"><span class="legend-dot" style="background:#fb923c"></span> Halogen</div>
+      <div class="flex items-center gap-2"><span class="legend-dot" style="background:#6366f1"></span> Noble gas</div>
+      <div class="flex items-center gap-2"><span class="legend-dot" style="background:#14b8a6"></span> Lanthanide</div>
+      <div class="flex items-center gap-2"><span class="legend-dot" style="background:#a855f7"></span> Actinide</div>
+      <div class="flex items-center gap-2 ml-auto text-[#facc15]"><span class="w-1.5 h-1.5 rounded-full bg-[#facc15] inline-block"></span> Pharmacologically relevant (click for details)</div>
+    </div>
+
+    <!-- Periodic Table -->
+    <div class="periodic-container">
+      <div id="periodic-grid" class="periodic-grid"></div>
+      
+      <!-- f-block (Lanthanides + Actinides) -->
+      <div class="f-block">
+        <div class="text-[10px] font-mono text-[#64748b] px-1 mb-1 tracking-widest">LANTHANIDES &amp; ACTINIDES</div>
+        <div id="f-block-grid" class="periodic-grid" style="grid-template-columns: repeat(15, minmax(0, 1fr));"></div>
+      </div>
+    </div>
+
+    <div class="text-[10px] text-[#64748b] mt-3 px-1 font-mono flex items-center justify-between">
+      <div>Click any element for detailed pharmacological profile • 118 elements</div>
+      <div class="hidden md:block">Built for <span class="text-[#22D3EE]">thebonhomme.com/periodic</span></div>
+    </div>
+  </div>
+
+  <!-- Detail Panel / Modal -->
+  <div id="detail-backdrop" class="hidden fixed inset-0 bg-black/70 z-[60]" onclick="closeDetail()"></div>
+  <div id="detail-panel" class="hidden fixed z-[70] inset-x-0 bottom-0 md:inset-auto md:right-6 md:top-20 md:bottom-auto md:w-[420px] lg:w-[460px] detail-panel p-6 shadow-2xl max-h-[85vh] md:max-h-[calc(100vh-100px)] overflow-y-auto">
+    <div class="flex justify-between items-start mb-4">
+      <div id="detail-header" class="flex items-center gap-4"></div>
+      <button onclick="closeDetail()" class="text-[#8a93a8] hover:text-white text-3xl leading-none px-1 -mt-1">×</button>
+    </div>
+    
+    <div id="detail-body" class="space-y-5 text-sm"></div>
+
+    <div class="pt-4 mt-4 border-t border-white/10 flex gap-2">
+      <button onclick="copyElementLink()" 
+              class="flex-1 text-xs font-mono py-2 rounded-lg border border-white/15 hover:bg-white/5 active:bg-white/10 transition-colors">
+        COPY LINK TO ELEMENT
+      </button>
+      <button onclick="closeDetail()" 
+              class="flex-1 text-xs font-mono py-2 rounded-lg bg-white/5 hover:bg-white/10 active:bg-white/15 transition-colors">
+        CLOSE
+      </button>
+    </div>
+  </div>
+
+  <footer class="max-w-7xl mx-auto px-5 py-8 mt-8 text-[#64748b] text-xs border-t border-white/10 flex flex-col md:flex-row gap-y-2 justify-between">
+    <div>
+      Data compiled from FDA Orange Book, PubChem, ATC classification, clinical reviews, and USP. 
+      Not medical advice. For research &amp; educational use.
+    </div>
+    <div class="font-mono">
+      Le Bonhomme Pharma • Montréal • <a href="https://thebonhomme.com" class="hover:text-[#22D3EE]">thebonhomme.com</a>
+    </div>
+  </footer>
+
+  <script>
+    // Tailwind script configuration matching thebonhomme.com brand
+    function initTailwind() {
+      document.documentElement.style.setProperty('--accent-teal', '#22D3EE');
+    }
+
+    // Full element dataset (118 elements) with pharmacological annotations
+    // Pharma-relevant elements have rich "pharma" objects
+    const ELEMENTS = [
+      {n:1,s:"H",name:"Hydrogen",mass:1.008,cat:"nonmetal",block:"s",period:1,group:1,
+       pharma:{relevance:"Ubiquitous in drug molecules and aqueous formulations. Present in nearly all organic pharmaceuticals as C–H, O–H, N–H bonds.",drugs:["Water for injection","All small-molecule drugs"],role:"Structural backbone & solvent",notes:"Critical in prodrug design and metabolic stability (deuterium substitution now used in FDA-approved drugs)."}},
+      {n:2,s:"He",name:"Helium",mass:4.003,cat:"noble",block:"s",period:1,group:18},
+      {n:3,s:"Li",name:"Lithium",mass:6.941,cat:"alkali",block:"s",period:2,group:1,
+       pharma:{relevance:"Gold-standard mood stabilizer for bipolar disorder. Narrow therapeutic index requires serum monitoring.",drugs:["Lithium carbonate (Eskalith, Lithobid)","Lithium citrate"],role:"Mood stabilization via GSK-3β and inositol depletion",notes:"Discovered 1817; medical use since 1948–49. Also used in augmentation of antidepressants. Nephrotoxicity and thyroid effects require monitoring."}},
+      {n:4,s:"Be",name:"Beryllium",mass:9.012,cat:"alkaline",block:"s",period:2,group:2,
+       pharma:{relevance:"Highly toxic. Historical use in fluorescent lamps caused chronic beryllium disease (berylliosis).",role:"No approved therapeutic use",notes:"Extremely low atomic radius leads to high reactivity with biological phosphates."}},
+      {n:5,s:"B",name:"Boron",mass:10.81,cat:"metalloid",block:"p",period:2,group:13,
+       pharma:{relevance:"Bortezomib (Velcade) and other boronic acid proteasome inhibitors are major oncology successes.",drugs:["Bortezomib","Ixazomib","Tavaborole (antifungal)"],role:"Proteasome inhibition (boronic acid warhead)",notes:"Boron neutron capture therapy (BNCT) under active clinical investigation for glioblastoma."}},
+      {n:6,s:"C",name:"Carbon",mass:12.011,cat:"nonmetal",block:"p",period:2,group:14,
+       pharma:{relevance:"Backbone of all organic small-molecule drugs. Carbon-14 used in ADME studies.",drugs:["Every small-molecule API"],role:"Molecular scaffold",notes:"Isotope labeling (¹³C, ¹⁴C, ¹¹C for PET) is foundational to modern drug development."}},
+      {n:7,s:"N",name:"Nitrogen",mass:14.007,cat:"nonmetal",block:"p",period:2,group:15,
+       pharma:{relevance:"Present in >80% of small-molecule drugs (amines, amides, heterocycles). Key for target binding via H-bonding.",drugs:["Virtually all drug classes"],role:"Pharmacophore & basicity modulator",notes:"Nitrogen heterocycles (pyridine, imidazole, triazole, etc.) dominate medicinal chemistry."}},
+      {n:8,s:"O",name:"Oxygen",mass:15.999,cat:"nonmetal",block:"p",period:2,group:16,
+       pharma:{relevance:"Critical in carbonyls, ethers, alcohols, esters. Many prodrugs rely on ester hydrolysis.",role:"H-bond acceptor, metabolic soft spot",notes:"Oxygen is the most common heteroatom after nitrogen in approved drugs."}},
+      {n:9,s:"F",name:"Fluorine",mass:18.998,cat:"halogen",block:"p",period:2,group:17,
+       pharma:{relevance:"~25% of approved drugs contain at least one fluorine. Increases metabolic stability and lipophilicity.",drugs:["Fluoxetine (Prozac)","Atorvastatin","Ciprofloxacin","many others"],role:"Blocker of oxidative metabolism (C–F bond strength)",notes:"Strategic fluorination is one of the most important tactics in modern medicinal chemistry (e.g., CF₃, aryl-F, alkyl-F)."}},
+      {n:10,s:"Ne",name:"Neon",mass:20.180,cat:"noble",block:"p",period:2,group:18},
+      {n:11,s:"Na",name:"Sodium",mass:22.990,cat:"alkali",block:"s",period:3,group:1,
+       pharma:{relevance:"Primary extracellular cation. Sodium salts are the most common pharmaceutical counterions.",drugs:["Sodium chloride","Sodium bicarbonate","hundreds of APIs as Na salts"],role:"Electrolyte, counterion, buffering",notes:"Hyponatremia and hypernatremia are critical clinical states. Many IV formulations use NaCl or sodium acetate."}},
+      {n:12,s:"Mg",name:"Magnesium",mass:24.305,cat:"alkaline",block:"s",period:3,group:2,
+       pharma:{relevance:"Essential cofactor in >300 enzymes. Used as antacid, laxative, and in many IV admixtures.",drugs:["Magnesium sulfate (eclampsia, torsades)","Magnesium oxide/hydroxide (Milk of Magnesia)","Magnesium citrate"],role:"NMDA antagonism, smooth muscle relaxation",notes:"Magnesium deficiency common in hospitalized patients; repletion often required."}},
+      {n:13,s:"Al",name:"Aluminum",mass:26.982,cat:"posttrans",block:"p",period:3,group:13,
+       pharma:{relevance:"Historical antacid component (aluminum hydroxide). Neurotoxicity concerns in renal failure and historical vaccine adjuvant debate.",drugs:["Amphojel","various antacids"],role:"Phosphate binder / antacid",notes:"Aluminum toxicity (dialysis encephalopathy, osteomalacia) largely eliminated with modern water treatment."}},
+      {n:14,s:"Si",name:"Silicon",mass:28.085,cat:"metalloid",block:"p",period:3,group:14,
+       pharma:{relevance:"Silicone polymers in implants, catheters, and antifoaming agents (simethicone). Emerging interest in silicon-containing drugs.",drugs:["Simethicone (Gas-X)","various medical devices"],role:"Antiflatulent; biomaterial",notes:"Silicon is not considered essential for humans but is under study for bone health."}},
+      {n:15,s:"P",name:"Phosphorus",mass:30.974,cat:"nonmetal",block:"p",period:3,group:15,
+       pharma:{relevance:"Phosphate esters are ubiquitous in prodrugs (e.g., phosphate prodrugs improve solubility). Bisphosphonates are major bone therapeutics.",drugs:["Alendronate","Zoledronic acid","many nucleotide analogs (tenofovir, sofosbuvir)"],role:"Prodrug handle; bone resorption inhibition",notes:"ATP, DNA/RNA, and phospholipid biochemistry all depend on phosphorus."}},
+      {n:16,s:"S",name:"Sulfur",mass:32.065,cat:"nonmetal",block:"p",period:3,group:16,
+       pharma:{relevance:"Sulfonamides (antibiotics, diuretics, COX-2 inhibitors), thioethers, sulfones, and disulfides are common.",drugs:["Sulfamethoxazole","Furosemide","Celecoxib","many others"],role:"Warhead, H-bond acceptor, metabolic stability",notes:"Sulfur oxidation state diversity enables rich medicinal chemistry (sulfoxide, sulfone, sulfonamide, etc.)."}},
+      {n:17,s:"Cl",name:"Chlorine",mass:35.453,cat:"halogen",block:"p",period:3,group:17,
+       pharma:{relevance:"Chloride is the dominant counterion after sodium. Many drugs contain aryl-Cl or alkyl-Cl for steric/electronic effects.",drugs:["Hundreds of APIs as HCl salts","Chlorhexidine","various chlorinated anesthetics"],role:"Counterion; lipophilicity modulator",notes:"Chloride channels (CFTR, GABA-A, GlyR) are important drug targets."}},
+      {n:18,s:"Ar",name:"Argon",mass:39.948,cat:"noble",block:"p",period:3,group:18},
+      {n:19,s:"K",name:"Potassium",mass:39.098,cat:"alkali",block:"s",period:4,group:1,
+       pharma:{relevance:"Major intracellular cation. Potassium salts used for supplementation and as counterions.",drugs:["Potassium chloride","Potassium citrate","many APIs"],role:"Electrolyte repletion; membrane potential",notes:"Hypokalemia is one of the most common electrolyte disturbances in clinical medicine."}},
+      {n:20,s:"Ca",name:"Calcium",mass:40.078,cat:"alkaline",block:"s",period:4,group:2,
+       pharma:{relevance:"Essential for bone, muscle, coagulation, and signaling. Calcium salts widely used as supplements and antacids.",drugs:["Calcium carbonate","Calcium gluconate (IV)","many bisphosphonate formulations"],role:"Bone health, cardiac stabilization, antacid",notes:"Calcium channel blockers (dihydropyridines, non-DHPs) are blockbuster cardiovascular drugs."}},
+      {n:21,s:"Sc",name:"Scandium",mass:44.956,cat:"transition",block:"d",period:4,group:3},
+      {n:22,s:"Ti",name:"Titanium",mass:47.867,cat:"transition",block:"d",period:4,group:4,
+       pharma:{relevance:"Titanium dioxide is ubiquitous in tablets as opacifier/whitener. Titanium alloys dominate orthopedic and dental implants.",drugs:["TiO₂ (excipient)","titanium implants"],role:"Biocompatible structural material",notes:"Excellent osseointegration and corrosion resistance make Ti the metal of choice for permanent implants."}},
+      {n:23,s:"V",name:"Vanadium",mass:50.942,cat:"transition",block:"d",period:4,group:5,
+       pharma:{relevance:"Insulin-mimetic properties studied for decades. No approved drugs, but historical interest in diabetes.",role:"Research only (vanadyl sulfate)",notes:"Vanadium compounds can inhibit protein tyrosine phosphatases."}},
+      {n:24,s:"Cr",name:"Chromium",mass:51.996,cat:"transition",block:"d",period:4,group:6,
+       pharma:{relevance:"Trivalent chromium historically promoted for glucose metabolism (controversial). Hexavalent chromium is a known human carcinogen.",drugs:["Chromium picolinate (dietary supplement)"],role:"Controversial trace element",notes:"No convincing evidence for supplementation benefit in non-deficient individuals."}},
+      {n:25,s:"Mn",name:"Manganese",mass:54.938,cat:"transition",block:"d",period:4,group:7,
+       pharma:{relevance:"Essential trace metal cofactor for superoxide dismutase (MnSOD), pyruvate carboxylase, etc. Manganese toxicity (manganism) is a recognized occupational disease.",role:"Cofactor in metalloenzymes",notes:"Parenteral nutrition can cause manganese accumulation in basal ganglia."}},
+      {n:26,s:"Fe",name:"Iron",mass:55.845,cat:"transition",block:"d",period:4,group:8,
+       pharma:{relevance:"Most common nutritional deficiency worldwide. Iron formulations are among the most frequently prescribed drugs globally.",drugs:["Ferrous sulfate","Ferric carboxymaltose (Injectafer)","Iron sucrose","many others"],role:"Hemoglobin synthesis; oxygen transport",notes:"IV iron has transformed management of anemia in CKD, heart failure, and oncology."}},
+      {n:27,s:"Co",name:"Cobalt",mass:58.933,cat:"transition",block:"d",period:4,group:9,
+       pharma:{relevance:"Central atom of vitamin B12 (cobalamin). Cyanocobalamin and hydroxocobalamin are essential drugs.",drugs:["Vitamin B12 (cyanocobalamin)","Hydroxocobalamin (Cyanokit for cyanide poisoning)"],role:"Cofactor in methylmalonyl-CoA mutase & methionine synthase",notes:"Cobalt toxicity from metal-on-metal hip implants was a major regulatory issue (2010s)."}},
+      {n:28,s:"Ni",name:"Nickel",mass:58.693,cat:"transition",block:"d",period:4,group:10,
+       pharma:{relevance:"Common contact allergen (nickel dermatitis). No approved therapeutic uses. Nickel carbonyl is extremely toxic.",role:"Contact allergen; industrial toxin",notes:"Nickel allergy affects 10–20% of the population, especially women."}},
+      {n:29,s:"Cu",name:"Copper",mass:63.546,cat:"transition",block:"d",period:4,group:11,
+       pharma:{relevance:"Essential trace element. Copper chelators used in Wilson disease. Copper IUDs are highly effective long-acting reversible contraception.",drugs:["Trientine","Penicillamine","Copper intrauterine devices"],role:"Ceruloplasmin, cytochrome c oxidase, lysyl oxidase",notes:"Menkes and Wilson diseases are the two classic disorders of copper metabolism."}},
+      {n:30,s:"Zn",name:"Zinc",mass:65.38,cat:"transition",block:"d",period:4,group:12,
+       pharma:{relevance:"Most abundant trace metal after iron. Zinc lozenges for common cold (mixed evidence). Zinc oxide in sunscreens and diaper rash creams.",drugs:["Zinc sulfate/gluconate","Zinc oxide topical","many multivitamins"],role:"Cofactor in >300 enzymes (zinc finger proteins, alcohol dehydrogenase, etc.)",notes:"Zinc deficiency impairs wound healing and immune function. High-dose zinc can cause copper deficiency."}},
+      {n:31,s:"Ga",name:"Gallium",mass:69.723,cat:"posttrans",block:"p",period:4,group:13,
+       pharma:{relevance:"Gallium-67 citrate historically used for infection/inflammation imaging. Gallium nitrate used for hypercalcemia of malignancy (limited use today).",drugs:["Gallium nitrate (Ganite)"],role:"Bone-seeking radiotracer / calcium mimic",notes:"Ga-68 labeled PSMA ligands (Ga-68 PSMA-11) are now transformative in prostate cancer PET imaging."}},
+      {n:32,s:"Ge",name:"Germanium",mass:72.630,cat:"metalloid",block:"p",period:4,group:14,
+       pharma:{relevance:"No established medical use. Germanium supplements were popular in alternative medicine but caused nephrotoxicity and deaths.",role:"None (historical supplement toxicity)",notes:"Organic germanium compounds (spirogermanium) were investigated as anticancer agents but abandoned."}},
+      {n:33,s:"As",name:"Arsenic",mass:74.922,cat:"metalloid",block:"p",period:4,group:15,
+       pharma:{relevance:"Arsenic trioxide (Trisenox) is a highly effective targeted therapy for acute promyelocytic leukemia (APL).",drugs:["Arsenic trioxide (Trisenox)"],role:"Differentiation therapy via PML-RARα degradation",notes:"One of the most dramatic success stories of 'poison as medicine'. Historical use in syphilis (Salvarsan) and trypanosomiasis."}},
+      {n:34,s:"Se",name:"Selenium",mass:78.971,cat:"nonmetal",block:"p",period:4,group:16,
+       pharma:{relevance:"Essential trace element incorporated as selenocysteine (21st amino acid). Selenoproteins (GPx, thioredoxin reductase) are critical antioxidants.",drugs:["Selenium sulfide shampoo (Selsun)","dietary supplements"],role:"Antioxidant defense; thyroid hormone deiodination",notes:"Selenium deficiency is associated with Keshan disease (cardiomyopathy) in low-selenium regions of China."}},
+      {n:35,s:"Br",name:"Bromine",mass:79.904,cat:"halogen",block:"p",period:4,group:17,
+       pharma:{relevance:"Historical sedative (potassium bromide). Still used in some veterinary medicine. Bromide salts were the original antiepileptics.",drugs:["Potassium bromide (historical/epilepsy in dogs)"],role:"GABA-A positive allosteric modulator (historical)",notes:"Bromism was a common iatrogenic syndrome in the early 20th century."}},
+      {n:36,s:"Kr",name:"Krypton",mass:83.798,cat:"noble",block:"p",period:4,group:18},
+      {n:37,s:"Rb",name:"Rubidium",mass:85.468,cat:"alkali",block:"s",period:5,group:1},
+      {n:38,s:"Sr",name:"Strontium",mass:87.62,cat:"alkaline",block:"s",period:5,group:2,
+       pharma:{relevance:"Strontium ranelate was approved in Europe for osteoporosis (bone-seeking divalent cation).",drugs:["Strontium ranelate (Protelos)"],role:"Dual action on osteoblasts/osteoclasts",notes:"Cardiovascular safety concerns led to restricted use / market withdrawal in many jurisdictions."}},
+      {n:39,s:"Y",name:"Yttrium",mass:88.906,cat:"transition",block:"d",period:5,group:3,
+       pharma:{relevance:"Yttrium-90 microspheres (TheraSphere, SIR-Spheres) are used for radioembolization of liver tumors (SIRT).",drugs:["Y-90 ibritumomab tiuxetan (Zevalin) for lymphoma","Y-90 microspheres"],role:"Beta-emitting targeted radiotherapy",notes:"Y-90 is a pure high-energy beta emitter ideal for internal radiotherapy."}},
+      {n:40,s:"Zr",name:"Zirconium",mass:91.224,cat:"transition",block:"d",period:5,group:4,
+       pharma:{relevance:"Zirconium-89 is an emerging PET isotope for antibody labeling (immuno-PET).",role:"Radiometal for immuno-PET",notes:"Zirconium alloys are also used in dental and orthopedic implants."}},
+      {n:41,s:"Nb",name:"Niobium",mass:92.906,cat:"transition",block:"d",period:5,group:5},
+      {n:42,s:"Mo",name:"Molybdenum",mass:95.95,cat:"transition",block:"d",period:5,group:6,
+       pharma:{relevance:"Molybdenum cofactor (Moco) is essential for sulfite oxidase, xanthine oxidase, and aldehyde oxidase.",drugs:["Molybdenum cofactor replacement (fosdenopterin / Nulibry)"],role:"Cofactor in redox enzymes",notes:"Molybdenum cofactor deficiency is an ultra-rare lethal disorder now treatable with fosdenopterin."}},
+      {n:43,s:"Tc",name:"Technetium",mass:98,cat:"transition",block:"d",period:5,group:7,
+       pharma:{relevance:"Technetium-99m is the most widely used radioisotope in diagnostic nuclear medicine (millions of scans/year).",drugs:["Tc-99m sestamibi (Cardiolite)","Tc-99m MDP (bone scan)","Tc-99m pertechnetate"],role:"Gamma-emitting diagnostic radiotracer (140 keV)",notes:"Produced from Mo-99/Tc-99m generators. Ideal half-life (6 h) and imaging properties."}},
+      {n:44,s:"Ru",name:"Ruthenium",mass:101.07,cat:"transition",block:"d",period:5,group:8,
+       pharma:{relevance:"Ruthenium complexes are under active investigation as anticancer agents (NAMI-A, KP1019, BOLD-100).",role:"Investigational antineoplastic / antimetastatic",notes:"Ruthenium offers different redox and ligand exchange kinetics compared to platinum."}},
+      {n:45,s:"Rh",name:"Rhodium",mass:102.91,cat:"transition",block:"d",period:5,group:9},
+      {n:46,s:"Pd",name:"Palladium",mass:106.42,cat:"transition",block:"d",period:5,group:10,
+       pharma:{relevance:"Palladium-catalyzed cross-coupling (Suzuki, Heck, Sonogashira) revolutionized medicinal chemistry synthesis.",role:"Catalyst in API manufacturing (not in final drug)",notes:"Trace palladium in APIs is tightly controlled per ICH Q3D elemental impurities."}},
+      {n:47,s:"Ag",name:"Silver",mass:107.87,cat:"transition",block:"d",period:5,group:11,
+       pharma:{relevance:"Broad-spectrum antimicrobial. Silver sulfadiazine is standard for burn wounds. Silver nanoparticles in coatings and wound dressings.",drugs:["Silver sulfadiazine (Silvadene)","Silver nitrate","colloidal silver (alternative)"],role:"Oligodynamic antimicrobial (binds thiol groups)",notes:"Argyria (permanent blue-gray discoloration) is the classic toxicity of chronic silver ingestion."}},
+      {n:48,s:"Cd",name:"Cadmium",mass:112.41,cat:"transition",block:"d",period:5,group:12,
+       pharma:{relevance:"Highly toxic heavy metal with no therapeutic use. Cadmium toxicity (itai-itai disease) from contaminated rice in Japan is a classic environmental toxicology case.",role:"Industrial toxin; IARC Group 1 carcinogen",notes:"Smoking is a major source of cadmium exposure in the general population."}},
+      {n:49,s:"In",name:"Indium",mass:114.82,cat:"posttrans",block:"p",period:5,group:13,
+       pharma:{relevance:"Indium-111 labeled leukocytes and platelets for infection and thrombosis imaging. In-111 pentetreotide (Octreoscan) for neuroendocrine tumors.",drugs:["In-111 oxine leukocytes","In-111 pentetreotide"],role:"Gamma-emitting diagnostic radiometal",notes:"Indium-111 has 2.8 day half-life and 171/245 keV photons suitable for SPECT."}},
+      {n:50,s:"Sn",name:"Tin",mass:118.71,cat:"posttrans",block:"p",period:5,group:14,
+       pharma:{relevance:"Tin-117m is an emerging therapeutic radionuclide. Historical use of tin compounds in anthelmintics.",role:"Investigational radiopharmaceutical",notes:"Organotin compounds are potent biocides but too toxic for systemic human use."}},
+      {n:51,s:"Sb",name:"Antimony",mass:121.76,cat:"metalloid",block:"p",period:5,group:15,
+       pharma:{relevance:"Pentavalent antimonials (sodium stibogluconate, meglumine antimoniate) remain first-line for visceral leishmaniasis in many endemic regions.",drugs:["Sodium stibogluconate (Pentostam)","Meglumine antimoniate (Glucantime)"],role:"Leishmanicidal via thiol redox perturbation",notes:"Cardiotoxicity and pancreatitis are dose-limiting. Resistance is a growing problem."}},
+      {n:52,s:"Te",name:"Tellurium",mass:127.60,cat:"metalloid",block:"p",period:5,group:16},
+      {n:53,s:"I",name:"Iodine",mass:126.90,cat:"halogen",block:"p",period:5,group:17,
+       pharma:{relevance:"Essential for thyroid hormone synthesis. Iodine-131 is a cornerstone of thyroid cancer and hyperthyroidism therapy. Iodinated contrast agents are the most commonly used drugs in radiology.",drugs:["Levothyroxine","I-131 sodium iodide","Iohexol, Iopamidol (contrast)"],role:"Thyroid hormone constituent; radiotheranostic",notes:"Iodine deficiency remains the leading preventable cause of intellectual disability worldwide."}},
+      {n:54,s:"Xe",name:"Xenon",mass:131.29,cat:"noble",block:"p",period:5,group:18,
+       pharma:{relevance:"Xenon is an approved general anesthetic in Europe (rarely used due to cost). Also studied for neuroprotection and NMDA antagonism.",drugs:["Xenon gas (anesthetic in select markets)"],role:"NMDA receptor antagonist; noble gas anesthetic",notes:"Xenon-133 is used for pulmonary ventilation imaging."}},
+      {n:55,s:"Cs",name:"Cesium",mass:132.91,cat:"alkali",block:"s",period:6,group:1},
+      {n:56,s:"Ba",name:"Barium",mass:137.33,cat:"alkaline",block:"s",period:6,group:2,
+       pharma:{relevance:"Barium sulfate is the classic oral/rectal contrast for GI fluoroscopy (completely insoluble and non-absorbed).",drugs:["Barium sulfate suspension (Readi-Cat, etc.)"],role:"Radiopaque GI contrast (insoluble)",notes:"Water-soluble iodinated contrast is preferred when perforation is suspected."}},
+      {n:57,s:"La",name:"Lanthanum",mass:138.91,cat:"lanthanide",block:"f",period:6,group:3,
+       pharma:{relevance:"Lanthanum carbonate is a potent non-calcium phosphate binder used in dialysis patients.",drugs:["Lanthanum carbonate (Fosrenol)"],role:"Phosphate binder",notes:"Lanthanum is the first lanthanide with a major approved therapeutic use."}},
+      // Lanthanides (f-block)
+      {n:58,s:"Ce",name:"Cerium",mass:140.12,cat:"lanthanide",block:"f",period:6,group:null},
+      {n:59,s:"Pr",name:"Praseodymium",mass:140.91,cat:"lanthanide",block:"f",period:6,group:null},
+      {n:60,s:"Nd",name:"Neodymium",mass:144.24,cat:"lanthanide",block:"f",period:6,group:null},
+      {n:61,s:"Pm",name:"Promethium",mass:145,cat:"lanthanide",block:"f",period:6,group:null},
+      {n:62,s:"Sm",name:"Samarium",mass:150.36,cat:"lanthanide",block:"f",period:6,group:null,
+       pharma:{relevance:"Samarium-153 lexidronam (Quadramet) is approved for bone pain palliation in metastatic cancer.",drugs:["Sm-153 lexidronam"],role:"Beta-emitting bone-seeking radiopharmaceutical",notes:"Provides pain relief in osteoblastic metastases."}},
+      {n:63,s:"Eu",name:"Europium",mass:151.96,cat:"lanthanide",block:"f",period:6,group:null},
+      {n:64,s:"Gd",name:"Gadolinium",mass:157.25,cat:"lanthanide",block:"f",period:6,group:null,
+       pharma:{relevance:"Gadolinium-based contrast agents (GBCAs) revolutionized MRI. Multiple linear and macrocyclic agents approved.",drugs:["Gadopentetate (Magnevist)","Gadobutrol (Gadovist)","Gadoterate (Dotarem)"],role:"T1-shortening MRI contrast (paramagnetic)",notes:"Nephrogenic systemic fibrosis (NSF) risk with linear agents in severe renal impairment led to regulatory changes."}},
+      {n:65,s:"Tb",name:"Terbium",mass:158.93,cat:"lanthanide",block:"f",period:6,group:null},
+      {n:66,s:"Dy",name:"Dysprosium",mass:162.50,cat:"lanthanide",block:"f",period:6,group:null},
+      {n:67,s:"Ho",name:"Holmium",mass:164.93,cat:"lanthanide",block:"f",period:6,group:null},
+      {n:68,s:"Er",name:"Erbium",mass:167.26,cat:"lanthanide",block:"f",period:6,group:null},
+      {n:69,s:"Tm",name:"Thulium",mass:168.93,cat:"lanthanide",block:"f",period:6,group:null},
+      {n:70,s:"Yb",name:"Ytterbium",mass:173.05,cat:"lanthanide",block:"f",period:6,group:null},
+      {n:71,s:"Lu",name:"Lutetium",mass:174.97,cat:"lanthanide",block:"f",period:6,group:null,
+       pharma:{relevance:"Lutetium-177 vipivotide tetraxetan (Pluvicto) is a major advance in PSMA-targeted radioligand therapy for metastatic castration-resistant prostate cancer.",drugs:["Lu-177 vipivotide tetraxetan (Pluvicto)"],role:"Beta-emitting PSMA-targeted radioligand therapy",notes:"FDA approved 2022. Represents the leading edge of theranostics."}},
+      // Actinides
+      {n:89,s:"Ac",name:"Actinium",mass:227,cat:"actinide",block:"f",period:7,group:3},
+      {n:90,s:"Th",name:"Thorium",mass:232.04,cat:"actinide",block:"f",period:7,group:4},
+      {n:91,s:"Pa",name:"Protactinium",mass:231.04,cat:"actinide",block:"f",period:7,group:5},
+      {n:92,s:"U",name:"Uranium",mass:238.03,cat:"actinide",block:"f",period:7,group:6,
+       pharma:{relevance:"Depleted uranium used in munitions (toxicity concerns). No approved medical use. Uranium miners have elevated lung cancer risk.",role:"Nephrotoxin and radiological hazard",notes:"Uranium-235 enrichment is the basis of nuclear weapons and power."}},
+      {n:93,s:"Np",name:"Neptunium",mass:237,cat:"actinide",block:"f",period:7,group:7},
+      {n:94,s:"Pu",name:"Plutonium",mass:244,cat:"actinide",block:"f",period:7,group:8,
+       pharma:{relevance:"Plutonium-238 was used in radioisotope thermoelectric generators (RTGs) for pacemakers in the 1970s (now obsolete). Extremely radiotoxic.",role:"Historical cardiac pacemaker power source",notes:"Plutonium-239 is a weapons-grade fissile material."}},
+      {n:95,s:"Am",name:"Americium",mass:243,cat:"actinide",block:"f",period:7,group:9,
+       pharma:{relevance:"Americium-241 is used in smoke detectors. No human therapeutic use.",role:"Ionization smoke detector source",notes:"Am-241 alpha emission ionizes air in the detector chamber."}},
+      {n:96,s:"Cm",name:"Curium",mass:247,cat:"actinide",block:"f",period:7,group:10},
+      {n:97,s:"Bk",name:"Berkelium",mass:247,cat:"actinide",block:"f",period:7,group:11},
+      {n:98,s:"Cf",name:"Californium",mass:251,cat:"actinide",block:"f",period:7,group:12},
+      {n:99,s:"Es",name:"Einsteinium",mass:252,cat:"actinide",block:"f",period:7,group:13},
+      {n:100,s:"Fm",name:"Fermium",mass:257,cat:"actinide",block:"f",period:7,group:14},
+      {n:101,s:"Md",name:"Mendelevium",mass:258,cat:"actinide",block:"f",period:7,group:15},
+      {n:102,s:"No",name:"Nobelium",mass:259,cat:"actinide",block:"f",period:7,group:16},
+      {n:103,s:"Lr",name:"Lawrencium",mass:262,cat:"actinide",block:"f",period:7,group:17},
+      // Remaining main group (period 6)
+      {n:72,s:"Hf",name:"Hafnium",mass:178.49,cat:"transition",block:"d",period:6,group:4},
+      {n:73,s:"Ta",name:"Tantalum",mass:180.95,cat:"transition",block:"d",period:6,group:5,
+       pharma:{relevance:"Tantalum is highly biocompatible and used in surgical clips, stents, and cranial reconstruction plates.",role:"Biocompatible implant metal",notes:"Similar to titanium in corrosion resistance and osseointegration."}},
+      {n:74,s:"W",name:"Tungsten",mass:183.84,cat:"transition",block:"d",period:6,group:6},
+      {n:75,s:"Re",name:"Rhenium",mass:186.21,cat:"transition",block:"d",period:6,group:7,
+       pharma:{relevance:"Rhenium-186 and Re-188 are beta emitters investigated for radioimmunotherapy and bone pain palliation.",role:"Therapeutic radionuclide (investigational)",notes:"Rhenium has favorable chemistry for conjugation to antibodies and peptides."}},
+      {n:76,s:"Os",name:"Osmium",mass:190.23,cat:"transition",block:"d",period:6,group:8},
+      {n:77,s:"Ir",name:"Iridium",mass:192.22,cat:"transition",block:"d",period:6,group:9,
+       pharma:{relevance:"Iridium-192 is widely used in high-dose-rate (HDR) brachytherapy for cervical, prostate, and breast cancers.",drugs:["Ir-192 HDR brachytherapy sources"],role:"High specific activity gamma / beta brachytherapy",notes:"Iridium is also used in some older pacemaker leads and electrodes."}},
+      {n:78,s:"Pt",name:"Platinum",mass:195.08,cat:"transition",block:"d",period:6,group:10,
+       pharma:{relevance:"Platinum-based chemotherapy is foundational in oncology. Cisplatin, carboplatin, and oxaliplatin are among the most important anticancer drugs ever developed.",drugs:["Cisplatin","Carboplatin","Oxaliplatin","Nedaplatin (Japan)"],role:"DNA cross-linking via aquated Pt(II) species",notes:"Cisplatin (1978) transformed testicular cancer from mostly fatal to >90% curable. Ototoxicity and nephrotoxicity are dose-limiting."}},
+      {n:79,s:"Au",name:"Gold",mass:196.97,cat:"transition",block:"d",period:6,group:11,
+       pharma:{relevance:"Gold compounds were disease-modifying antirheumatic drugs (DMARDs) for rheumatoid arthritis for decades (chrysotherapy).",drugs:["Auranofin (Ridaura)","Gold sodium thiomalate (Myochrysine, historical)"],role:"Anti-inflammatory via thioredoxin reductase inhibition",notes:"Auranofin has been repurposed in research for parasitic infections, cancer, and COVID-19 (in vitro). Gold nanoparticles are in clinical trials for drug delivery."}},
+      {n:80,s:"Hg",name:"Mercury",mass:200.59,cat:"transition",block:"d",period:6,group:12,
+       pharma:{relevance:"Highly toxic. Historical use as diuretic (calomel), antisyphilitic (salvarsan era), and in dental amalgams. Thimerosal (ethylmercury) used as vaccine preservative.",drugs:["Thimerosal (preservative, multi-dose vials)"],role:"Historical / preservative (controversial)",notes:"Minamata disease is the classic environmental methylmercury poisoning epidemic. Mercury is a potent neurotoxin with no safe threshold for fetal exposure."}},
+      {n:81,s:"Tl",name:"Thallium",mass:204.38,cat:"posttrans",block:"p",period:6,group:13,
+       pharma:{relevance:"Extremely toxic (historical rodenticide). Thallium-201 is still used for myocardial perfusion SPECT imaging.",drugs:["Tl-201 chloride (Myoview alternative)"],role:"Potassium mimetic for cardiac SPECT",notes:"Thallium poisoning causes alopecia and painful peripheral neuropathy."}},
+      {n:82,s:"Pb",name:"Lead",mass:207.2,cat:"posttrans",block:"p",period:6,group:14,
+       pharma:{relevance:"No therapeutic use. Major public health toxin (neurodevelopmental effects in children, hypertension, kidney disease).",role:"Environmental toxin; IARC Group 2A",notes:"Lead chelation with EDTA or succimer is used for severe poisoning. Blood lead screening remains important in pediatrics."}},
+      {n:83,s:"Bi",name:"Bismuth",mass:208.98,cat:"posttrans",block:"p",period:6,group:15,
+       pharma:{relevance:"Bismuth subsalicylate (Pepto-Bismol) is a widely used OTC antidiarrheal and anti-ulcer agent. Bismuth quadruple therapy is a standard H. pylori eradication regimen.",drugs:["Bismuth subsalicylate (Pepto-Bismol)","Bismuth subcitrate potassium (in Pylera)"],role:"Mucosal protective; antimicrobial against H. pylori",notes:"Bismuth is one of the few heavy metals with a favorable safety profile at therapeutic doses."}},
+      {n:84,s:"Po",name:"Polonium",mass:209,cat:"posttrans",block:"p",period:6,group:16,
+       pharma:{relevance:"Polonium-210 is an extremely potent alpha emitter (assassination agent). No medical use.",role:"Radiological poison",notes:"Alexander Litvinenko was murdered with Po-210 in 2006."}},
+      {n:85,s:"At",name:"Astatine",mass:210,cat:"halogen",block:"p",period:6,group:17,
+       pharma:{relevance:"Astatine-211 is an alpha-emitting radionuclide under investigation for targeted alpha therapy (TAT) in oncology.",role:"Investigational alpha-emitting radiotherapeutic",notes:"Astatine is the rarest naturally occurring element on Earth."}},
+      {n:86,s:"Rn",name:"Radon",mass:222,cat:"noble",block:"p",period:6,group:18,
+       pharma:{relevance:"Radon-222 is a major cause of lung cancer (second only to smoking) from residential exposure. Historically used in 'radium spas' and brachytherapy.",role:"Environmental carcinogen (alpha emitter)",notes:"Radon mitigation is a public health priority in many regions with uranium-rich geology."}},
+      // Period 7 main group (incomplete, heavy)
+      {n:87,s:"Fr",name:"Francium",mass:223,cat:"alkali",block:"s",period:7,group:1},
+      {n:88,s:"Ra",name:"Radium",mass:226,cat:"alkaline",block:"s",period:7,group:2,
+       pharma:{relevance:"Radium-223 dichloride (Xofigo) is approved for bone metastases in castration-resistant prostate cancer with symptomatic bone disease.",drugs:["Radium-223 dichloride (Xofigo)"],role:"Alpha-emitting bone-seeking radiopharmaceutical",notes:"First approved alpha emitter for systemic therapy (2013). Mimics calcium."}},
+      {n:104,s:"Rf",name:"Rutherfordium",mass:267,cat:"transition",block:"d",period:7,group:4},
+      {n:105,s:"Db",name:"Dubnium",mass:268,cat:"transition",block:"d",period:7,group:5},
+      {n:106,s:"Sg",name:"Seaborgium",mass:269,cat:"transition",block:"d",period:7,group:6},
+      {n:107,s:"Bh",name:"Bohrium",mass:270,cat:"transition",block:"d",period:7,group:7},
+      {n:108,s:"Hs",name:"Hassium",mass:269,cat:"transition",block:"d",period:7,group:8},
+      {n:109,s:"Mt",name:"Meitnerium",mass:278,cat:"transition",block:"d",period:7,group:9},
+      {n:110,s:"Ds",name:"Darmstadtium",mass:281,cat:"transition",block:"d",period:7,group:10},
+      {n:111,s:"Rg",name:"Roentgenium",mass:282,cat:"transition",block:"d",period:7,group:11},
+      {n:112,s:"Cn",name:"Copernicium",mass:285,cat:"transition",block:"d",period:7,group:12},
+      {n:113,s:"Nh",name:"Nihonium",mass:286,cat:"posttrans",block:"p",period:7,group:13},
+      {n:114,s:"Fl",name:"Flerovium",mass:289,cat:"posttrans",block:"p",period:7,group:14},
+      {n:115,s:"Mc",name:"Moscovium",mass:290,cat:"posttrans",block:"p",period:7,group:15},
+      {n:116,s:"Lv",name:"Livermorium",mass:293,cat:"posttrans",block:"p",period:7,group:16},
+      {n:117,s:"Ts",name:"Tennessine",mass:294,cat:"halogen",block:"p",period:7,group:17},
+      {n:118,s:"Og",name:"Oganesson",mass:294,cat:"noble",block:"p",period:7,group:18}
+    ];
+
+    // Build lookup
+    const elementBySymbol = {};
+    ELEMENTS.forEach(el => { elementBySymbol[el.s] = el; });
+
+    function getCategoryClass(cat) {
+      const map = {
+        alkali: 'cat-alkali',
+        alkaline: 'cat-alkaline',
+        transition: 'cat-transition',
+        posttrans: 'cat-posttrans',
+        metalloid: 'cat-metalloid',
+        nonmetal: 'cat-nonmetal',
+        halogen: 'cat-halogen',
+        noble: 'cat-noble',
+        lanthanide: 'cat-lanthanide',
+        actinide: 'cat-actinide'
+      };
+      return map[cat] || 'bg-[#11161f]';
+    }
+
+    function isPharmaRelevant(el) {
+      return !!(el.pharma && (el.pharma.drugs || el.pharma.relevance));
+    }
+
+    // Render the main 18-column periodic table (periods 1–7, groups 1–18)
+    function renderPeriodicTable(filteredElements = null) {
+      const grid = document.getElementById('periodic-grid');
+      grid.innerHTML = '';
+      grid.style.gridTemplateColumns = 'repeat(18, minmax(0, 1fr))';
+
+      const elementsToRender = filteredElements || ELEMENTS;
+
+      // We need to place every element in its correct grid position
+      // Strategy: create 7 rows × 18 columns slots (some empty)
+      // For simplicity and correctness we create placeholder cells and overlay actual elements.
+
+      // Create a map of position -> element
+      const posMap = {};
+      elementsToRender.forEach(el => {
+        if (el.block === 'f') return; // handled separately
+        const row = el.period; // 1-7
+        const col = el.group || (el.period >= 6 && el.n >= 57 && el.n <= 71 ? null : 3); // rough
+        // Better: use standard group numbers where available
+        if (el.group) {
+          posMap[`${row}-${el.group}`] = el;
+        } else if (el.period === 6 && el.n >= 57 && el.n <= 71) {
+          // Lanthanides go in a dedicated row below
+        } else if (el.period === 7 && el.n >= 89 && el.n <= 103) {
+          // Actinides
+        }
+      });
+
+      // Create 7×18 grid
+      for (let r = 1; r <= 7; r++) {
+        for (let g = 1; g <= 18; g++) {
+          const cell = document.createElement('div');
+          cell.className = 'min-h-[38px] md:min-h-[42px]';
+
+          // Find element that belongs here
+          const el = ELEMENTS.find(e => 
+            e.period === r && e.group === g && e.block !== 'f'
+          );
+
+          if (el && (!filteredElements || elementsToRender.includes(el))) {
+            const div = createElementTile(el);
+            cell.appendChild(div);
+          } else {
+            // Empty cell for spacing
+            cell.style.opacity = '0.15';
+          }
+          grid.appendChild(cell);
+        }
+      }
+    }
+
+    function createElementTile(el) {
+      const div = document.createElement('div');
+      div.className = `element ${getCategoryClass(el.cat)} ${isPharmaRelevant(el) ? 'pharma-relevant' : ''}`;
+      div.dataset.symbol = el.s;
+      div.dataset.number = el.n;
+
+      div.innerHTML = `
+        <div class="num">${el.n}</div>
+        <div class="sym">${el.s}</div>
+        <div class="name">${el.name}</div>
+      `;
+
+      div.addEventListener('click', () => showDetail(el));
+      div.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          showDetail(el);
+        }
+      });
+      div.setAttribute('tabindex', '0');
+      div.setAttribute('aria-label', `${el.name} (${el.s}), atomic number ${el.n}`);
+
+      return div;
+    }
+
+    // Render f-block (lanthanides + actinides) in a compact 15-column row each
+    function renderFBlock(filtered = null) {
+      const container = document.getElementById('f-block-grid');
+      container.innerHTML = '';
+
+      const lanthanides = ELEMENTS.filter(e => e.block === 'f' && e.period === 6 && e.n >= 58 && e.n <= 71);
+      const actinides = ELEMENTS.filter(e => e.block === 'f' && e.period === 7 && e.n >= 90 && e.n <= 103);
+
+      // Header labels are outside; just render two rows
+      const rows = [lanthanides, actinides];
+      rows.forEach((rowEls, idx) => {
+        const rowDiv = document.createElement('div');
+        rowDiv.style.display = 'contents';
+
+        rowEls.forEach(el => {
+          if (filtered && !filtered.includes(el)) {
+            const spacer = document.createElement('div');
+            container.appendChild(spacer);
+            return;
+          }
+          const tile = createElementTile(el);
+          container.appendChild(tile);
+        });
+      });
+    }
+
+    let currentFilter = 'all';
+    let currentSearch = '';
+
+    function applyFilters() {
+      const searchTerm = currentSearch.toLowerCase().trim();
+      let filtered = ELEMENTS;
+
+      // Block / pharma filter
+      if (currentFilter === 'pharma') {
+        filtered = filtered.filter(isPharmaRelevant);
+      } else if (currentFilter === 's-block') {
+        filtered = filtered.filter(e => e.block === 's');
+      } else if (currentFilter === 'p-block') {
+        filtered = filtered.filter(e => e.block === 'p');
+      } else if (currentFilter === 'd-block') {
+        filtered = filtered.filter(e => e.block === 'd');
+      } else if (currentFilter === 'f-block') {
+        filtered = filtered.filter(e => e.block === 'f');
+      }
+
+      // Search
+      if (searchTerm) {
+        filtered = filtered.filter(el => {
+          const hay = [
+            el.s.toLowerCase(),
+            el.name.toLowerCase(),
+            el.n.toString(),
+            (el.pharma && el.pharma.relevance) ? el.pharma.relevance.toLowerCase() : '',
+            (el.pharma && el.pharma.drugs) ? el.pharma.drugs.join(' ').toLowerCase() : '',
+            (el.pharma && el.pharma.role) ? el.pharma.role.toLowerCase() : '',
+            (el.pharma && el.pharma.notes) ? el.pharma.notes.toLowerCase() : ''
+          ].join(' ');
+          return hay.includes(searchTerm);
+        });
+      }
+
+      // Re-render
+      renderPeriodicTable(filtered);
+      renderFBlock(filtered);
+    }
+
+    // Setup filter buttons
+    function setupFilters() {
+      const buttons = document.querySelectorAll('#filters button');
+      buttons.forEach(btn => {
+        btn.addEventListener('click', () => {
+          buttons.forEach(b => b.classList.remove('active'));
+          btn.classList.add('active');
+          currentFilter = btn.dataset.filter;
+          applyFilters();
+        });
+      });
+
+      // Search
+      const search = document.getElementById('search');
+      let searchTimeout;
+      search.addEventListener('input', (e) => {
+        clearTimeout(searchTimeout);
+        searchTimeout = setTimeout(() => {
+          currentSearch = e.target.value;
+          applyFilters();
+        }, 120);
+      });
+
+      // Keyboard shortcut
+      document.addEventListener('keydown', (e) => {
+        if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+          e.preventDefault();
+          search.focus();
+          search.select();
+        }
+        if (e.key === 'Escape') {
+          const panel = document.getElementById('detail-panel');
+          if (!panel.classList.contains('hidden')) {
+            closeDetail();
+          } else {
+            // clear search
+            search.value = '';
+            currentSearch = '';
+            applyFilters();
+          }
+        }
+      });
+    }
+
+    // Show detail panel
+    let currentElement = null;
+
+    function showDetail(el) {
+      currentElement = el;
+
+      const backdrop = document.getElementById('detail-backdrop');
+      const panel = document.getElementById('detail-panel');
+      const header = document.getElementById('detail-header');
+      const body = document.getElementById('detail-body');
+
+      header.innerHTML = `
+        <div>
+          <div class="flex items-baseline gap-3">
+            <span class="text-6xl font-semibold tracking-[-2.5px] leading-none" style="color:#e2e8f0">${el.s}</span>
+            <div>
+              <div class="text-2xl font-semibold tracking-tight">${el.name}</div>
+              <div class="text-xs font-mono text-[#64748b]">ATOMIC NUMBER ${el.n} • ${el.mass} u</div>
+            </div>
+          </div>
+          <div class="mt-1 flex gap-2">
+            <span class="px-2 py-0.5 text-[10px] rounded bg-white/5 border border-white/10 font-mono">${el.block.toUpperCase()}-BLOCK</span>
+            <span class="px-2 py-0.5 text-[10px] rounded bg-white/5 border border-white/10 font-mono">PERIOD ${el.period}</span>
+            ${el.group ? `<span class="px-2 py-0.5 text-[10px] rounded bg-white/5 border border-white/10 font-mono">GROUP ${el.group}</span>` : ''}
+          </div>
+        </div>
+      `;
+
+      let html = '';
+
+      if (el.pharma && (el.pharma.relevance || el.pharma.drugs || el.pharma.role)) {
+        html += `
+          <div>
+            <div class="section-label mb-1.5">PHARMACOLOGICAL PROFILE</div>
+            <div class="element-info leading-relaxed">${el.pharma.relevance || ''}</div>
+          </div>
+        `;
+
+        if (el.pharma.drugs && el.pharma.drugs.length) {
+          html += `
+            <div>
+              <div class="section-label mb-1.5">KEY DRUGS &amp; FORMULATIONS</div>
+              <div class="flex flex-wrap gap-1.5">
+                ${el.pharma.drugs.map(d => `<span class="pharma-badge">${d}</span>`).join('')}
+              </div>
+            </div>
+          `;
+        }
+
+        if (el.pharma.role) {
+          html += `
+            <div>
+              <div class="section-label mb-1.5">MECHANISTIC ROLE</div>
+              <div class="element-info">${el.pharma.role}</div>
+            </div>
+          `;
+        }
+
+        if (el.pharma.notes) {
+          html += `
+            <div>
+              <div class="section-label mb-1.5">CLINICAL NOTES</div>
+              <div class="element-info text-[#94a3b8]">${el.pharma.notes}</div>
+            </div>
+          `;
+        }
+      } else {
+        html += `
+          <div class="py-2">
+            <div class="section-label mb-2">NO APPROVED PHARMACOLOGICAL USE</div>
+            <div class="text-[#8a93a8] text-sm">This element has no established therapeutic or diagnostic role in modern medicine. It may appear in research contexts, toxicology, or as an environmental exposure.</div>
+          </div>
+        `;
+      }
+
+      // Basic facts
+      html += `
+        <div class="pt-3 border-t border-white/10">
+          <div class="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
+            <div><span class="text-[#64748b]">Category</span><br><span class="font-medium">${el.cat.replace('posttrans','post-transition')}</span></div>
+            <div><span class="text-[#64748b]">Standard atomic weight</span><br><span class="font-mono">${el.mass}</span></div>
+          </div>
+        </div>
+      `;
+
+      body.innerHTML = html;
+
+      backdrop.classList.remove('hidden');
+      panel.classList.remove('hidden');
+      panel.classList.add('flex', 'flex-col'); // for mobile full height feel
+    }
+
+    function closeDetail() {
+      const backdrop = document.getElementById('detail-backdrop');
+      const panel = document.getElementById('detail-panel');
+      backdrop.classList.add('hidden');
+      panel.classList.add('hidden');
+      panel.classList.remove('flex', 'flex-col');
+    }
+
+    function copyElementLink() {
+      if (!currentElement) return;
+      const url = `${location.origin}${location.pathname}?element=${currentElement.s}`;
+      navigator.clipboard.writeText(url).then(() => {
+        const orig = event.currentTarget ? event.currentTarget.textContent : '';
+        const btns = document.querySelectorAll('#detail-panel button');
+        btns.forEach(b => {
+          if (b.textContent.includes('COPY')) {
+            const old = b.textContent;
+            b.textContent = 'COPIED!';
+            setTimeout(() => { b.textContent = old; }, 1600);
+          }
+        });
+      }).catch(() => {
+        // fallback
+        prompt('Copy this URL:', url);
+      });
+    }
+
+    // Initialize everything
+    function init() {
+      initTailwind();
+
+      // Initial render
+      renderPeriodicTable();
+      renderFBlock();
+
+      setupFilters();
+
+      // Deep link support: ?element=Pt or ?element=78
+      const params = new URLSearchParams(location.search);
+      const elParam = params.get('element');
+      if (elParam) {
+        let el = elementBySymbol[elParam.toUpperCase()];
+        if (!el && /^\d+$/.test(elParam)) {
+          el = ELEMENTS.find(e => e.n === parseInt(elParam));
+        }
+        if (el) {
+          setTimeout(() => showDetail(el), 380);
+        }
+      }
+
+      // Global keyboard hint
+      console.log('%c[periodic] Pharmacological Periodic Table initialized. Press ⌘K to focus search.', 'color:#64748b');
+    }
+
+    // Boot
+    init();
+  </script>
+</body>
+</html>
