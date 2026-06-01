@@ -36,6 +36,44 @@ warn() { printf "${YELLOW}[WARN]${NC} %s\n" "$*" >&2; }
 die()  { printf "${RED}[ERROR]${NC} %s\n" "$*" >&2; exit 1; }
 phase() { printf "\n${BOLD}════════════════════════════════════════════════════════${NC}\n${BOLD}  %s${NC}\n${BOLD}════════════════════════════════════════════════════════${NC}\n\n" "$*"; }
 
+# === P0 Error Handling Improvements (hassleless + idiotproof pipeline) ===
+# fail_with_guidance: Replaces raw die() for most new errors.
+# Always prints a clear problem statement + exact fix command + log location.
+log_failure() {
+    # Minimal structured logging stub (P0-3). Will be expanded later.
+    local err_type="$1"
+    local msg="$2"
+    local fix="$3"
+    local ts
+    ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    local log_file="${FLEXAIDDS_LOGS:-$HOME/.flexaidds_logs}/launcher_failures.jsonl"
+    mkdir -p "$(dirname "$log_file")" 2>/dev/null || true
+    printf '{"ts":"%s","type":"%s","message":"%s","fix_command":"%s","run_id":"%s"}\n' \
+        "$ts" "$err_type" "$msg" "$fix" "${RUN_ID:-unknown}" >> "$log_file" 2>/dev/null || true
+}
+
+fail_with_guidance() {
+    local error_type="$1"
+    local message="$2"
+    local fix_command="$3"
+    local extra_info="${4:-}"
+
+    printf "\n${RED}❌ ERROR${NC}  %s\n\n" "$message" >&2
+    printf "   Error type : %s\n" "$error_type" >&2
+    printf "   Fix command: %s\n" "$fix_command" >&2
+    if [[ -n "$extra_info" ]]; then
+        printf "   Details    : %s\n" "$extra_info" >&2
+    fi
+    printf "   Log file   : %s/launcher_failures.jsonl\n\n" "${FLEXAIDDS_LOGS:-~/.flexaidds_logs}" >&2
+
+    log_failure "$error_type" "$message" "$fix_command"
+    exit 1
+}
+
+# Keep the original die() for backward compatibility with existing calls,
+# but new code should prefer fail_with_guidance() for user-friendly errors.
+# die()  { printf "${RED}[ERROR]${NC} %s\n" "$*" >&2; exit 1; }   # already defined above
+
 # === SELF-LOCATION (Chunk 1 safety fix — never trust FLEXAIDDS_REPO for script paths) ===
 # This is the root cause fix for every "wrong tree / no such file / stale binary" screen failure.
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -66,7 +104,8 @@ fi
 USER_DATA_DEPS="/Users/lp.more/Projects/NRGsuite/FlexAID/deps"
 
 # Ensure critical runtime matrices and .def files are present in the build.
-# Idempotent. If missing, stage from the known-good location above.
+# Idempotent. Supports fully automatic self-healing (P0-2) for hassleless cold starts.
+# Set AUTO_STAGE_RUNTIME_DATA=0 to force the old strict behavior.
 ensure_runtime_data() {
     local required=(
         MC_st0r5.2_6.dat
@@ -90,20 +129,44 @@ ensure_runtime_data() {
         fi
     done
 
-    if (( ${#missing[@]} > 0 )); then
-        echo "[launcher] Missing runtime data in build: ${missing[*]}"
-        echo "[launcher] Staging from canonical source: $USER_DATA_DEPS"
-        for f in "${missing[@]}"; do
-            if [[ -f "$USER_DATA_DEPS/$f" ]]; then
-                cp -f "$USER_DATA_DEPS/$f" "$FLEXAIDDS_BUILD/" || {
-                    die "Failed to copy $f from $USER_DATA_DEPS"
-                }
-            else
-                die "Required file $f not found in source of truth $USER_DATA_DEPS"
-            fi
-        done
-        echo "[launcher] Runtime data staged successfully."
+    if (( ${#missing[@]} == 0 )); then
+        return 0
     fi
+
+    echo "[launcher] Missing runtime data in build: ${missing[*]}"
+
+    local auto_stage="${AUTO_STAGE_RUNTIME_DATA:-1}"
+    if [[ "$auto_stage" != "1" ]]; then
+        local fix_cmd="./grok_master_launcher.sh repair-runtime-data"
+        fail_with_guidance \
+            "MISSING_RUNTIME_DATA" \
+            "Critical runtime files are missing from \$FLEXAIDDS_BUILD" \
+            "$fix_cmd" \
+            "Files: ${missing[*]}"
+    fi
+
+    # Self-healing path (the new default for a hassleless pipeline)
+    echo "[launcher] AUTO-STAGE enabled — staging from canonical source..."
+    echo "[launcher] Staging from: $USER_DATA_DEPS"
+
+    local failed=()
+    for f in "${missing[@]}"; do
+        if [[ -f "$USER_DATA_DEPS/$f" ]]; then
+            cp -f "$USER_DATA_DEPS/$f" "$FLEXAIDDS_BUILD/" || failed+=("$f")
+        else
+            failed+=("$f")
+        fi
+    done
+
+    if (( ${#failed[@]} > 0 )); then
+        fail_with_guidance \
+            "RUNTIME_DATA_COPY_FAILED" \
+            "Failed to stage some runtime files from canonical source" \
+            "Check permissions on $USER_DATA_DEPS and $FLEXAIDDS_BUILD" \
+            "Failed files: ${failed[*]}"
+    fi
+
+    echo "[launcher] Runtime data staged successfully."
 }
 
 BINARY="$FLEXAIDDS_BUILD/benchmark_datasets"
@@ -372,6 +435,21 @@ case "${1:-help}" in
             --output-dir "$ICLOUD_RESULTS/analysis/${RUN_ID}"
         ok "Analysis written to $ICLOUD_RESULTS/analysis/${RUN_ID}"
         ;;
+    repair-runtime-data)
+        phase "REPAIR RUNTIME DATA (self-healing)"
+        echo "This will copy any missing MC_*.dat and .def files from:"
+        echo "  $USER_DATA_DEPS"
+        echo "into:"
+        echo "  $FLEXAIDDS_BUILD"
+        echo ""
+        read -r -p "Proceed with repair? [y/N] " reply
+        if [[ "$reply" =~ ^[Yy]$ ]]; then
+            AUTO_STAGE_RUNTIME_DATA=1 ensure_runtime_data
+            ok "Repair complete (or nothing was missing)."
+        else
+            info "Repair aborted by user."
+        fi
+        ;;
     full)
         $0 preflight
         $0 launch
@@ -464,15 +542,16 @@ It wraps the hardened failsafe_campaign.py with:
 All durable artifacts (results, logs, analysis, manifests) live on iCloud Drive.
 
 Subcommands:
-  doctor      Diagnose self-location vs FLEXAIDDS_REPO / binary / iCloud / tmp sanity
-  preflight   Safe validation + doctor
-  launch      Start/resume the campaign
-  start       The one-command way — launches everything inside screen/tmux with safe wrapper
-  monitor     Watch the latest grok_own run live (tails campaign_status.json) — no screen needed
-  status      Show status for current $RUN_ID (rarely useful)
-  sync        Extra rsync to iCloud
-  analyze     Run bootstrap analysis
-  full        preflight + launch + analyze + sync
+  doctor               Diagnose self-location vs FLEXAIDDS_REPO / binary / iCloud / tmp sanity
+  preflight            Safe validation + doctor
+  launch               Start/resume the campaign
+  start                The one-command way — launches everything inside screen/tmux with safe wrapper
+  monitor              Watch the latest grok_own run live (tails campaign_status.json) — no screen needed
+  status               Show status for current $RUN_ID (rarely useful)
+  sync                 Extra rsync to iCloud
+  analyze              Run bootstrap analysis
+  repair-runtime-data  Self-healing repair for missing MC_*.dat / .def files (new P0)
+  full                 preflight + launch + analyze + sync
 
   ./grok_master_launcher.sh monitor          # easiest way to watch a run
   ./grok_master_launcher.sh start ...        # the main one-command launcher
