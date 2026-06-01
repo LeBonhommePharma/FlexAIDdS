@@ -480,6 +480,12 @@ function ExploreSection() {
             <p>An interactive periodic table of the elements annotated with clinical drugs, mechanisms of action, therapeutic uses, and toxicological context.</p>
             <span className="teaser-label">Open the Periodic Table</span>
           </a>
+
+          <a href="/entropy-driven" className="teaser-card">
+            <h3>Entropy-Driven Experience</h3>
+            <p>The complete standalone deep-dive into the thermodynamic and information-theoretic foundations — Shannon entropy, statistical mechanics, and the full ∆G = ∆H − T∆S framework.</p>
+            <span className="teaser-label">Explore Entropy-Driven</span>
+          </a>
         </div>
       </div>
     </section>
