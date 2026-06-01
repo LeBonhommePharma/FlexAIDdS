@@ -268,6 +268,41 @@ def compensation_score(G_config: float, H_eff: float, minus_T_S: float) -> float
     return max(0.0, min(1.0, score))  # clamp numerical noise
 
 
+# --- Kirchhoff / Robertson-Murphy dG(T) temperature extrapolation (board 1) --
+@dataclass
+class StabilityCurve:
+    """(Tm, dHm, dCp) parameters for thermal-shift / DSF dG(T) extrapolation."""
+    Tm: float            # transition midpoint (K); dG(Tm)=0
+    dHm: float           # enthalpy change at Tm (kcal/mol)
+    dCp: float = 0.0     # dCp of binding (kcal/mol/K), assumed T-independent
+
+
+def kirchhoff_dH(T_K: float, s: StabilityCurve) -> float:
+    """dH(T) = dHm + dCp (T - Tm)  (kcal/mol)."""
+    return s.dHm + s.dCp * (T_K - s.Tm)
+
+
+def kirchhoff_dS(T_K: float, s: StabilityCurve) -> float:
+    """dS(T) = dHm/Tm + dCp ln(T/Tm)  (kcal/mol/K)."""
+    if T_K <= 0.0 or s.Tm <= 0.0:
+        raise ValueError("kirchhoff_dS: T and Tm must be > 0")
+    return s.dHm / s.Tm + s.dCp * math.log(T_K / s.Tm)
+
+
+def gibbs_helmholtz_dG(T_K: float, s: StabilityCurve) -> float:
+    """dG(T) = dHm(1 - T/Tm) - dCp[(Tm - T) + T ln(T/Tm)]  (kcal/mol).
+
+    Integrated Gibbs-Helmholtz with constant dCp (Becktel-Schellman /
+    Robertson-Murphy), Tm parameterization for thermal-shift / DSF data:
+    dG(Tm)=0 by construction; reduces to the van't Hoff line dHm(1 - T/Tm)
+    when dCp=0; equals kirchhoff_dH(T) - T*kirchhoff_dS(T). Feed dCp from
+    StatMechEngine.compute_delta_Cp (C++) or an experimental value.
+    """
+    if T_K <= 0.0 or s.Tm <= 0.0:
+        raise ValueError("gibbs_helmholtz_dG: T and Tm must be > 0")
+    return s.dHm * (1.0 - T_K / s.Tm) - s.dCp * ((s.Tm - T_K) + T_K * math.log(T_K / s.Tm))
+
+
 # ─── Task 6: Pure-Python affinity calibration (parity with C++) ──────────────
 def deltaG_standard_to_Kd_M(deltaG_kcal_mol: float, T_K: float, c0_M: float = 1.0) -> float:
     """Safe conversion. Raises on invalid inputs."""

@@ -48,6 +48,10 @@ from .thermodynamics import (
     kB_SI,
     deltaG_standard_to_Kd_M,
     Kd_M_to_deltaG_standard,
+    StabilityCurve,
+    gibbs_helmholtz_dG,
+    kirchhoff_dH,
+    kirchhoff_dS,
 )
 
 # entropy.help audit schema (A1.1) — pure Python, always available
@@ -275,6 +279,10 @@ __all__ = [
     # Affinity converters (Task 6/7, safe, with validation)
     "deltaG_standard_to_Kd_M",
     "Kd_M_to_deltaG_standard",
+    "StabilityCurve",
+    "gibbs_helmholtz_dG",
+    "kirchhoff_dH",
+    "kirchhoff_dS",
     # Reporting (Task 9 - JSON driven only)
     "generate_pymol_script",
     "generate_markdown_report",
