@@ -1,0 +1,182 @@
+#!/usr/bin/env bash
+#
+# grok_master_launcher.sh
+# Master Launcher + Syncer for healthy, reproducible benchmark campaigns
+# on M3 Pro 18GB (iCloud 2TB only storage)
+#
+# Purpose:
+#   - Safe, failsafe orchestration of the enhanced failsafe_campaign.py
+#   - Specifically tuned for Astex Diverse, Astex Non-Native, HAP2
+#   - Everything durable on iCloud Drive (via ~/.flexaidds_env)
+#   - Hot execution on local APFS (/private/tmp) for speed & health
+#   - Maximally uses the 18GB hardware (workers=4)
+#   - Your exact GA settings (1000 generations, 2000 population)
+#   - Full reproducibility (manifests, git SHA, RUN_OK.json health checks)
+#
+# Usage examples:
+#   ./grok_master_launcher.sh preflight          # Safe validation
+#   ./grok_master_launcher.sh launch             # Start 10-rep campaign
+#   ./grok_master_launcher.sh full               # preflight + launch + analyze + sync
+#   ./grok_master_launcher.sh status             # Live monitoring
+#   ./grok_master_launcher.sh sync               # Extra belt-and-suspenders rsync to iCloud
+#   ./grok_master_launcher.sh analyze            # Bootstrap stats
+#
+# All results/logs go to iCloud via FLEXAIDDS_* env.
+# Run this inside screen/tmux for long campaigns.
+#
+# Apache-2.0 (c) 2026 — based on m3pro/ tools + portability improvements
+
+set -euo pipefail
+
+# Colors
+RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; CYAN='\033[0;36m'; BOLD='\033[1m'; NC='\033[0m'
+info() { printf "${CYAN}[INFO]${NC}  %s\n" "$*"; }
+ok()   { printf "${GREEN}[OK]${NC}    %s\n" "$*"; }
+warn() { printf "${YELLOW}[WARN]${NC} %s\n" "$*" >&2; }
+die()  { printf "${RED}[ERROR]${NC} %s\n" "$*" >&2; exit 1; }
+phase() { printf "\n${BOLD}════════════════════════════════════════════════════════${NC}\n${BOLD}  %s${NC}\n${BOLD}════════════════════════════════════════════════════════${NC}\n\n" "$*"; }
+
+# 1. Source the official M3 Pro iCloud environment
+ENV_FILE="$HOME/.flexaidds_env"
+if [[ -f "$ENV_FILE" ]]; then
+    set -a
+    # shellcheck disable=SC1090
+    source "$ENV_FILE"
+    set +a
+else
+    die "Required $ENV_FILE not found. Run setup_cloud_storage.sh first."
+fi
+
+# 2. Required variables from env (iCloud durability)
+: "${FLEXAIDDS_REPO:?FLEXAIDDS_REPO not set in env}"
+: "${FLEXAIDDS_BUILD:?FLEXAIDDS_BUILD not set}"
+: "${FLEXAIDDS_RESULTS:?FLEXAIDDS_RESULTS not set}"
+: "${FLEXAIDDS_LOGS:?FLEXAIDDS_LOGS not set}"
+: "${FLEXAIDDS_BENCHMARK_DATA:?FLEXAIDDS_BENCHMARK_DATA not set}"
+
+BINARY="$FLEXAIDDS_BUILD/benchmark_datasets"
+DOCKING_BINARY="${FLEXAIDDS_BINARY:-$FLEXAIDDS_BUILD/FlexAID}"
+
+# 3. Grok-tuned healthy defaults for this exact machine + your GA
+DEFAULT_DATASETS="astex astex_nonnative hap2"
+DEFAULT_RUNS=10
+DEFAULT_WORKERS=4                    # Aggressive but within 18GB profile
+DEFAULT_GA_GENERATIONS=1000
+DEFAULT_GA_POPULATION=2000
+DEFAULT_CLUSTERING="FO"
+DEFAULT_TEMPERATURE=300
+
+# 4. Unique run identity (for "your own" campaigns)
+RUN_ID="${RUN_ID:-grok_own_m3pro_$(date +%Y%m%d_%H%M%S)}"
+
+# Local hot (fast APFS) workspace — the failsafe will use this for execution
+LOCAL_HOT_BASE="/private/tmp/grok_bench_hot_${RUN_ID}"
+
+# iCloud destination roots (durability)
+ICLOUD_RESULTS="$FLEXAIDDS_RESULTS"
+ICLOUD_LOGS="$FLEXAIDDS_LOGS"
+
+FAILSAVE_SCRIPT="$FLEXAIDDS_REPO/benchmarks/m3pro/failsafe_campaign.py"
+ANALYZER="$FLEXAIDDS_REPO/benchmarks/m3pro/analyze_repetitions.py"
+
+# Safety: ensure we have a real binary
+if [[ ! -x "$BINARY" ]]; then
+    die "benchmark_datasets not executable at $BINARY"
+fi
+if [[ ! -x "$DOCKING_BINARY" ]]; then
+    die "FlexAID not executable at $DOCKING_BINARY"
+fi
+
+mkdir -p "$LOCAL_HOT_BASE" "$ICLOUD_LOGS" "$ICLOUD_RESULTS/tier2" "$ICLOUD_RESULTS/analysis"
+
+build_cmd() {
+    echo "python3 \"$FAILSAVE_SCRIPT\" \
+        --datasets ${DATASETS:-$DEFAULT_DATASETS} \
+        --runs ${RUNS:-$DEFAULT_RUNS} \
+        --workers ${WORKERS:-$DEFAULT_WORKERS} \
+        --ga-generations ${GA_GENERATIONS:-$DEFAULT_GA_GENERATIONS} \
+        --ga-population ${GA_POPULATION:-$DEFAULT_GA_POPULATION} \
+        --clustering ${CLUSTERING:-$DEFAULT_CLUSTERING} \
+        --temperature ${TEMPERATURE:-$DEFAULT_TEMPERATURE} \
+        --run-id \"$RUN_ID\" \
+        --local-base \"$LOCAL_HOT_BASE\" \
+        ${EXTRA_ARGS:-}"
+}
+
+case "${1:-help}" in
+    preflight)
+        phase "HEALTHY PREFLIGHT (M3 Pro 18GB + iCloud durability)"
+        info "Using local hot APFS for execution speed, iCloud for all durable storage"
+        cmd=$(build_cmd)
+        eval "$cmd --preflight-only --skip-smoke"
+        ok "Preflight complete. Ready for launch."
+        ;;
+    launch)
+        phase "LAUNCHING REPETITION CAMPAIGN (healthy + resumable)"
+        info "Run ID: $RUN_ID"
+        info "Results will be rsynced to iCloud: $ICLOUD_RESULTS"
+        cmd=$(build_cmd)
+        eval "$cmd --resume" 2>&1 | tee -a "$ICLOUD_LOGS/${RUN_ID}_launcher.log"
+        ;;
+    sync)
+        phase "EXTRA SYNC TO ICLOUD (belt & suspenders)"
+        rsync -a --delete --info=progress2 "$LOCAL_HOT_BASE/" "$ICLOUD_RESULTS/tier2/" || true
+        rsync -a --delete "$ICLOUD_LOGS/m3pro_failsafe_${RUN_ID}/" "$ICLOUD_LOGS/" || true
+        ok "Forced sync to iCloud complete."
+        ;;
+    analyze)
+        phase "BOOTSTRAP ANALYSIS"
+        python3 "$ANALYZER" \
+            --results-dir "$ICLOUD_RESULTS/tier2" \
+            --n-bootstrap 10000 \
+            --output-dir "$ICLOUD_RESULTS/analysis/${RUN_ID}"
+        ok "Analysis written to $ICLOUD_RESULTS/analysis/${RUN_ID}"
+        ;;
+    full)
+        $0 preflight
+        $0 launch
+        $0 analyze
+        $0 sync
+        ok "Full healthy campaign pipeline complete for $RUN_ID"
+        ;;
+    status)
+        cat "$ICLOUD_LOGS/m3pro_failsafe_${RUN_ID}/campaign_status.json" 2>/dev/null || echo "No status yet for $RUN_ID"
+        ;;
+    *)
+        cat <<'EOF'
+Grok Master M3 Pro Launcher & Syncer (iCloud durability, local speed, failsafe)
+
+This script is the safe, high-level orchestrator for running your own
+repetition benchmark campaigns on Astex Diverse / Non-Native + HAP2.
+
+It wraps the hardened failsafe_campaign.py with:
+- Automatic use of your ~/.flexaidds_env (iCloud paths)
+- Local APFS hot execution (fast) + rsync to iCloud (durable)
+- Max hardware settings for 18GB M3 Pro (workers=4)
+- Your GA parameters (1000 generations, 2000 population)
+- Distinct run-ids so your results are cleanly separated
+- Full health features (preflight, resume, RUN_OK.json, fatal detection)
+
+All durable artifacts (results, logs, analysis, manifests) live on iCloud Drive.
+
+Subcommands:
+  preflight   Safe validation (recommended first step)
+  launch      Start/resume the 10-rep campaign
+  sync        Extra rsync to iCloud (safety net)
+  analyze     Generate bootstrap success rate reports
+  full        preflight + launch + analyze + sync (one-shot)
+  status      Show live campaign_status.json
+
+Environment: Must have run setup_cloud_storage.sh so ~/.flexaidds_env exists.
+
+Example (recommended healthy flow):
+  ./grok_master_launcher.sh preflight
+  ./grok_master_launcher.sh launch     # run in screen/tmux
+  # ... later ...
+  ./grok_master_launcher.sh analyze
+  ./grok_master_launcher.sh sync
+
+Results will appear under $FLEXAIDDS_RESULTS with your run-id.
+EOF
+        ;;
+esac
