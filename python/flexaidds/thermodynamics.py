@@ -38,7 +38,7 @@ class Thermodynamics:
         free_energy: Helmholtz free energy F = -kT ln Z (kcal/mol)
         mean_energy: Boltzmann-weighted average energy ⟨E⟩ (kcal/mol)
         mean_energy_sq: ⟨E²⟩ for variance calculation
-        heat_capacity: Cv = (⟨E²⟩ - ⟨E⟩²) / (kT²) (kcal mol⁻¹ K⁻²)
+        heat_capacity: Cv = (⟨E²⟩ - ⟨E⟩²) / (kT²) (kcal mol⁻¹ K⁻¹)
         entropy: Configurational entropy S = (⟨E⟩ - F) / T (kcal mol⁻¹ K⁻¹)
         std_energy: Standard deviation of energy σ_E (kcal/mol)
     """

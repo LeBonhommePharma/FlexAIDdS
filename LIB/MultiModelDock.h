@@ -43,7 +43,7 @@ struct EnsembleThermo {
     double F;       // Helmholtz free energy (kcal/mol)
     double S;       // total configurational entropy (kcal/mol/K)
     double H;       // average enthalpy (kcal/mol)
-    double Cv;      // heat capacity (kcal/mol/K²)
+    double Cv;      // heat capacity (kcal/mol/K)
     std::vector<double> conformer_populations;  // p(r) per model
     double S_receptor;   // Shannon entropy of conformer distribution
     double S_ligand;     // marginal ligand pose entropy

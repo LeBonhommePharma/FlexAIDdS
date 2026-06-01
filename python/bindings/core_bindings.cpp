@@ -64,7 +64,7 @@ PYBIND11_MODULE(_core, m) {
         .def_readwrite("free_energy",    &Thermodynamics::free_energy,    "Helmholtz F (kcal/mol)")
         .def_readwrite("mean_energy",    &Thermodynamics::mean_energy,    "⟨E⟩ (kcal/mol)")
         .def_readwrite("mean_energy_sq", &Thermodynamics::mean_energy_sq, "⟨E²⟩")
-        .def_readwrite("heat_capacity",  &Thermodynamics::heat_capacity,  "Cv (kcal mol⁻¹ K⁻²)")
+        .def_readwrite("heat_capacity",  &Thermodynamics::heat_capacity,  "Cv (kcal mol⁻¹ K⁻¹)")
         .def_readwrite("entropy",        &Thermodynamics::entropy,        "S (kcal mol⁻¹ K⁻¹)")
         .def_readwrite("std_energy",     &Thermodynamics::std_energy,     "σ_E (kcal/mol)")
         .def("__repr__", [](const Thermodynamics& t) {
@@ -219,7 +219,7 @@ PYBIND11_MODULE(_core, m) {
         .def("get_free_energy", &BindingMode::get_free_energy,
             "Alias for compute_energy()")
         .def("get_heat_capacity", &BindingMode::get_heat_capacity,
-            "Heat capacity Cv (kcal mol⁻¹ K⁻²)")
+            "Heat capacity Cv (kcal mol⁻¹ K⁻¹)")
         .def("get_boltzmann_weights", &BindingMode::get_boltzmann_weights,
             "Boltzmann weights for all poses in this mode")
         .def("get_BindingMode_size", &BindingMode::get_BindingMode_size,

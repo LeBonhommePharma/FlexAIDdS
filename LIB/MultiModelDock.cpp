@@ -212,7 +212,7 @@ void MultiModelDock::print_report(const CCBMReport& report) {
     printf("  F (free energy):   %10.4f kcal/mol\n", report.thermo.F);
     printf("  <E> (enthalpy):    %10.4f kcal/mol\n", report.thermo.H);
     printf("  S (entropy):       %10.6f kcal/mol/K\n", report.thermo.S);
-    printf("  Cv (heat cap):     %10.6f kcal/mol/K²\n", report.thermo.Cv);
+    printf("  Cv (heat cap):     %10.6f kcal/mol/K\n", report.thermo.Cv);
     printf("\n── Entropy Decomposition ──\n");
     printf("  S_total:       %10.6f kcal/mol/K\n", report.entropy_decomp.S_total);
     printf("  S_ligand:      %10.6f kcal/mol/K\n", report.entropy_decomp.S_ligand);
