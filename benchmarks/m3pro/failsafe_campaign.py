@@ -20,6 +20,7 @@ import argparse
 import csv
 import json
 import os
+import platform
 import selectors
 import shutil
 import signal
@@ -400,6 +401,20 @@ def _load_flexaidds_env() -> dict[str, str]:
     Never raises. Returns only FLEXAIDDS_* keys. Handles common quoting.
     This matches the set -a / source pattern used by the companion .sh scripts.
     """
+
+
+def _warn_non_portable_remote(remote_base: Path | None) -> None:
+    """Gentle production warning for the M3-specific iCloud policy on other platforms."""
+    if remote_base is None:
+        return
+    if is_icloud_path(remote_base) and platform.system() != "Darwin":
+        print(
+            "[failsafe] WARNING: iCloud-style remote path detected on non-macOS. "
+            "The 'local APFS only + rsync to remote' policy and path checks are tuned for "
+            "the original M3 Pro + iCloud 2TB environment. Things may still work, but "
+            "you are in less-tested territory.",
+            file=sys.stderr,
+        )
     env: dict[str, str] = {}
 
     # 1. Respect already-exported environment (highest priority)
@@ -487,7 +502,7 @@ def main() -> int:
     signal.signal(signal.SIGTERM, signal_handler)
     args = parse_args()
 
-    flex_env = _load_flexaidds_env()
+    flex_env = _load_flexaidds_env() or {}
 
     # Apply FLEXAIDDS_* env as high-priority fallbacks (matches .sh campaign behavior)
     # This makes the Python script "just work" after the user has sourced ~/.flexaidds_env
@@ -535,6 +550,8 @@ def main() -> int:
     master_log = local_logs / "campaign.log"
     lock_dir = (args.lock_dir or Path(tempfile.gettempdir()) / "flexaidds_campaign.lock").resolve()
     run_timeout_s = int(args.run_timeout_hours * 3600) if args.run_timeout_hours > 0 else None
+
+    _warn_non_portable_remote(remote_base)
 
     try:
         require_local_path("repo", repo)

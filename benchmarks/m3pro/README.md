@@ -70,6 +70,8 @@ Tier-2 datasets run sequentially (one at a time) to prevent memory pressure.
 Hardware profile and all parameters are declared in `m3pro_profile.yaml`.
 Environment variables are stored in `~/.flexaidds_env` (auto-sourced from `.zshrc`).
 
+The robust Python failsafe runner (`failsafe_campaign.py`) supports the same environment variables plus `--remote-base`, `--no-remote-sync`, `--lock-dir`, and auto repo detection for portable / Codex / CI use. See its `--help` and module docstring.
+
 ## Mirror Script (Deprecated)
 
 `mirror_to_gdrive.sh` is kept only as a placeholder and now exits immediately with a message that Google Drive support has been removed. All data stays on your 2TB iCloud Drive.
