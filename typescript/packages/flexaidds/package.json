@@ -19,7 +19,7 @@
   },
   "devDependencies": {
     "typescript": "^5.4",
-    "vitest": "^2.0"
+    "vitest": "^4.1"
   },
   "files": [
     "dist",
