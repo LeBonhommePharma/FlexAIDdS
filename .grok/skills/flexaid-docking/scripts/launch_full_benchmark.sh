@@ -99,6 +99,19 @@ if [[ "$OSTYPE" == "darwin"* ]]; then
         echo "  Runtime: $METAL_INFO"
     fi
     echo "  Build was configured with FLEXAIDS_USE_METAL=ON (see CMakeCache.txt in build dir)."
+
+    # Binary-level linkage check (stronger confirmation)
+    if [ -x "$FLEXAIDDS_BINARY" ]; then
+        if otool -L "$FLEXAIDDS_BINARY" 2>/dev/null | grep -qi metal; then
+            echo "  ✓ $FLEXAIDDS_BINARY links against Metal.framework — Metal acceleration linked in."
+        else
+            echo "  ⚠ $FLEXAIDDS_BINARY does not appear to link Metal.framework directly."
+        fi
+    fi
+
+    # Ready-to-use verification command for this run's logs (for the user to run later)
+    echo "  To verify Metal usage in this run's logs after the C++ kernels execute:"
+    echo "    grep -iE 'metal|backend|dispatch|shannon|using metal' \"\$LOG_FILE\" | tail -20"
 fi
 
 # --- 5. Prepare output directory on iCloud ----------------------------------
