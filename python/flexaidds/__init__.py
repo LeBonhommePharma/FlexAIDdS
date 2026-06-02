@@ -134,6 +134,15 @@ from .reporting import (
     write_all_reports,
 )
 
+# Imagine / publication figure + animation generation (Grok Imagine integration, post-hoc only)
+from .figures import (
+    prepare_publication_figures,
+    build_imagine_cover_prompt,
+    build_imagine_animation_prompt,
+    check_gate6_passed,
+    extract_best_mode_summary,
+)
+
 
 def dock(
     receptor: str,

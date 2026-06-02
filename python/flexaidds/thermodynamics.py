@@ -3,6 +3,8 @@
 Provides Pythonic wrappers around C++ StatMechEngine with NumPy integration.
 """
 
+from __future__ import annotations
+
 import math
 from typing import Any, Dict, List, Optional, Tuple
 from dataclasses import dataclass, field
