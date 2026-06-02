@@ -12,6 +12,10 @@ New in this version (production-grade portability):
   - Auto repo detection, configurable lock, $TMPDIR defaults, etc.
 
 Use --preflight-only for safe dry-runs on any machine / by Codex agents.
+
+NOTE (P1.10 / canonical protocol): For the production full first runs at exact 298 K / 310 K (Astex Diverse + Non-Native) that deliver the best BindingMode with full thermo ledger, Metal accel, iCloud-only artifacts, and validity gating, ALWAYS use the flexaid-docking skill canonical launcher:
+  bash .grok/skills/flexaid-docking/scripts/launch_full_benchmark.sh <dataset> <298|310> <name>
+See .grok/skills/flexaid-docking/SKILL.md "M3 Pro iCloud Canonical Best-BindingMode Protocol" (and the 4 launched full-*-TS dirs). This failsafe script is for repetition debugging / custom OMP tests only.
 """
 
 from __future__ import annotations
