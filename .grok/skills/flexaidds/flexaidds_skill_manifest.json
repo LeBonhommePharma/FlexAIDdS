@@ -1,0 +1,99 @@
+{
+  "skill": "flexaidds",
+  "version": "1.0",
+  "description": "Expert developer assistant for the FlexAIDdS entropy-driven molecular docking engine. Includes first-class support for automated generation of publication-quality Nature Reviews Drug Discovery-style cover figures (dramatic enthalpy/entropy balance visualizations with the Entropy–Enthalpy Index I_E–E, full FlexAID∆S branding, JetBrains Mono + thebonhomme.com typography, and scientifically accurate thermodynamic call-outs).",
+  "actions": {
+    "generate_flexaids_figure": {
+      "description": "Generate a scientifically robust, NRDD-style cover figure for FlexAID∆S thermodynamic analysis (enthalpy vs entropy, E-E index). Returns either the prompt (for deferred generation) or the path to a saved image + sidecar metadata JSON for reproducibility.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "params": {
+            "type": "object",
+            "description": "Figure parameters (all optional; sensible reference-cover defaults are used).",
+            "properties": {
+              "entropy_value": {
+                "type": "number",
+                "minimum": 0,
+                "description": "Representative TΔS (or |TΔS|) value in kcal/mol scale (e.g. 0.93)."
+              },
+              "enthalpy_value": {
+                "type": "number",
+                "minimum": 0,
+                "description": "Representative ΔH (or |ΔH|) value (e.g. 1.4)."
+              },
+              "index_value": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1,
+                "description": "Entropy–Enthalpy Index (I_E–E), typically [0, 1] (e.g. 0.92)."
+              },
+              "style": {
+                "type": "string",
+                "enum": ["dramatic_faces", "molecular_gauge"],
+                "description": "Visual style matching the reference NRDD covers: 'dramatic_faces' (personified blue entropy vs fiery enthalpy faces) or 'molecular_gauge' (abstract protein structures + central E-E gauge)."
+              },
+              "title": {
+                "type": "string",
+                "description": "Main title (e.g. 'The ΔG balance')."
+              },
+              "subtitle": {
+                "type": "string",
+                "description": "Subtitle (e.g. 'Striking the right pose in drug discovery')."
+              },
+              "date": {
+                "type": "string",
+                "description": "Cover date (e.g. 'June 2025')."
+              },
+              "volume": {
+                "type": "string",
+                "description": "Volume/issue (e.g. 'Volume 24 | No. 6')."
+              }
+            },
+            "additionalProperties": false
+          },
+          "image_generator": {
+            "type": ["null", "object"],
+            "description": "Optional injectable image generator callable. Must accept a single prompt string and return a dict with at least {'path': <str>}. If omitted, the function returns the prompt for the caller (skill runtime) to generate using its native tool (Grok image_gen, DALL·E, etc.)."
+          },
+          "output_dir": {
+            "type": "string",
+            "default": "figures",
+            "description": "Directory in which to write the generated image and sidecar metadata JSON (created if necessary)."
+          },
+          "prompt_overrides": {
+            "type": ["null", "object"],
+            "description": "Optional safe overrides for a few prompt fields (title, subtitle, date, volume). Unknown keys are rejected.",
+            "additionalProperties": {
+              "type": "string"
+            }
+          }
+        },
+        "additionalProperties": false
+      },
+      "returns": {
+        "type": "object",
+        "properties": {
+          "prompt": {
+            "type": "string",
+            "description": "The fully constructed, ready-to-use image prompt (always present)."
+          },
+          "path": {
+            "type": ["string", "null"],
+            "description": "Absolute path to the saved image file (present only when an image_generator was supplied and succeeded)."
+          },
+          "metadata_path": {
+            "type": ["string", "null"],
+            "description": "Absolute path to the sidecar JSON (params + prompt + generation details) for full reproducibility (present when a file was written)."
+          },
+          "params": {
+            "type": "object",
+            "description": "The effective FigureParameters used (for audit)."
+          }
+        },
+        "required": ["prompt", "params"]
+      }
+    }
+  },
+  "notes": "This action is bulletproof: strict validation, no hard dependency on any image-generation library (injected callable), safe prompt overrides, deterministic unique filenames, and a complete metadata sidecar. It reuses the canonical prompt builder from python/flexaidds/figures for consistency with the rest of the FlexAIDdS tooling and branding (JetBrains Mono + thebonhomme.com typography, PLIP-style interaction clarity on most favourable/CF contacts, scientific guardrails, etc.). The /flexaidds skill (SKILL.md) documents how agents should invoke it and supply their platform's native image tool via the image_generator parameter."
+}

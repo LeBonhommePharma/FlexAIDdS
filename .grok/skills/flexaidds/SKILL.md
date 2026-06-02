@@ -109,6 +109,35 @@ See the full table in CLAUDE.md. Most important entry points:
 - **Automatic**: Grok will invoke this skill when the prompt mentions FlexAIDdS, FlexAID, docking, statmech, tENCoM, BindingMode, or related development tasks in this repo.
 - **With other skills**: Can be combined with `/review`, `/implement`, `/check`, etc.
 
+## Figure Generation (new first-class action)
+
+The skill now exposes automated, publication-quality NRDD-style cover figure generation via the dedicated module `.grok/skills/flexaidds/flexaidds_skill.py` and its manifest `.grok/skills/flexaidds/flexaidds_skill_manifest.json`.
+
+The primary action is `generate_flexaids_figure`. See the module docstring and the JSON manifest for the full contract (parameters, validation, returns, dependency-injection of the image generator, reproducibility sidecar).
+
+Example usage from within the skill/agent:
+```python
+from .flexaidds_skill import generate_flexaids_figure, FigureParameters
+
+params = FigureParameters(entropy_value=0.93, enthalpy_value=1.4, index_value=0.92, style="dramatic_faces")
+result = generate_flexaids_figure(
+    params=params,
+    # Supply your platform's image tool here (Grok image_gen, DALL·E wrapper, etc.)
+    image_generator=your_platform_image_callable,
+    output_dir="results/figures"
+)
+# result["prompt"] and (if generated) result["path"] + result["metadata_path"]
+```
+
+The implementation follows the five-point professional integration pattern:
+- Entry point in this skill (flexaidds_skill.py).
+- Robust handler with validation, safe overrides, logging, and dependency injection for the image generator.
+- Exposed via the companion JSON manifest.
+- No hard dependencies on any specific image library.
+- Deterministic, reproducible output (unique filenames + full metadata JSON).
+
+Always prefer calling the real Python helper (it reuses the canonical prompt builder from `python/flexaidds/figures` for branding, typography, scientific accuracy, and E-E index handling). The skill will never hand-craft prompts.
+
 Always read `AGENTS.md` (source of truth for rules) + the latest `CLAUDE.md` at the start of any substantial session. This skill is the Grok-optimized companion to those two files.
 
 ## NRDD Cover & Journal-Style Figure Generation (automated, reproducible)
