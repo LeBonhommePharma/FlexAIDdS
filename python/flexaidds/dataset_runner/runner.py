@@ -1395,8 +1395,8 @@ class DatasetRunner:
 
         if self._mpi_root:
             logger.info(
-                "DatasetRunner: %d dataset(s) · tier %d · %d MPI rank(s)",
-                len(all_configs), tier, self._mpi_size,
+                "DatasetRunner: %d dataset(s) · tier %d · %d MPI rank(s) · temperature=%s K (exact for best BindingMode thermo ledger)",
+                len(all_configs), tier, self._mpi_size, self.temperature,
             )
 
         results: List[DatasetResult] = []
