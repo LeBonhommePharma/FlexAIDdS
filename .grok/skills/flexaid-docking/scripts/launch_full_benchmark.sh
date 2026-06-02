@@ -219,22 +219,20 @@ echo "  cat \"$OUT_DIR/run_status.json\""
 echo "  grep -iE 'metal|backend|dispatch|shannon|using metal|success rate|RMSD|Binding Mode' \"$LOG_FILE\" | tail -30 || true"
 echo ""
 
-# Trap: ensure status file reflects launcher exit (non-fatal, for cases where launcher is monitored)
-trap '
-  python3 - << "PYTRAP" 2>/dev/null || true
-import json, time, os
-sf = os.environ.get("STATUS_FILE") or "'$STATUS_FILE'"
+# Trap: ensure status file reflects launcher exit (non-fatal, for cases where launcher is monitored). Robust to spaces in iCloud paths.
+trap 'python3 -c "
+import json, time, os, sys
+sf = os.environ.get(\"STATUS_FILE\") or \"'$STATUS_FILE'\"
 if sf and os.path.exists(sf):
   try:
     with open(sf) as f: data = json.load(f)
-    if data.get("status") in ("launched", "running"):
-      data["status"] = "launcher_exited"
-      data["launcher_end_time"] = time.time()
-      with open(sf, "w") as f: json.dump(data, f, indent=2)
+    if data.get(\"status\") in (\"launched\", \"running\"):
+      data[\"status\"] = \"launcher_exited\"
+      data[\"launcher_end_time\"] = time.time()
+      with open(sf, \"w\") as f: json.dump(data, f, indent=2)
   except Exception:
     pass
-PYTRAP
-' EXIT INT TERM
+" ' EXIT INT TERM
 
 # Note: full --extract-best and strict validity gate implemented in summarize (P1.2) and dedicated helper.
 
