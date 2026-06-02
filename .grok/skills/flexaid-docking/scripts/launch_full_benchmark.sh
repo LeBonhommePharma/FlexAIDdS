@@ -206,3 +206,34 @@ data["launcher_finished"] = time.time()
 with open("$STATUS_FILE", "w") as f:
     json.dump(data, f, indent=2)
 PYEOF
+
+# --- P1: Enhanced post-run guidance for "best BindingMode" exact answer + trap ---
+echo ""
+echo "=== [P1] Post-run commands for best BindingMode validity + extract (after child done): ==="
+echo "  python3 .grok/skills/flexaid-docking/scripts/summarize_campaign.py \"$OUT_DIR\" --verbose"
+echo "  # (when extended) --extract-best-mode to get top free_energy BindingMode + full thermo ledger (the exact requested answer)"
+echo "  python3 .grok/skills/flexaid-docking/scripts/validate_skill.py"
+echo "  python benchmarks/re-dock/icloud_fs_check.py --path \"$OUT_DIR\""
+echo "  cat \"$OUT_DIR/run_status.json\""
+echo "  grep -iE 'metal|backend|dispatch|shannon|using metal|success rate|RMSD|Binding Mode' \"$LOG_FILE\" | tail -30 || true"
+echo ""
+
+# Trap: ensure status file reflects launcher exit (non-fatal, for cases where launcher is monitored)
+trap '
+  python3 - << "PYTRAP" 2>/dev/null || true
+import json, time, os
+sf = os.environ.get("STATUS_FILE") or "'$STATUS_FILE'"
+if sf and os.path.exists(sf):
+  try:
+    with open(sf) as f: data = json.load(f)
+    if data.get("status") in ("launched", "running"):
+      data["status"] = "launcher_exited"
+      data["launcher_end_time"] = time.time()
+      with open(sf, "w") as f: json.dump(data, f, indent=2)
+  except Exception:
+    pass
+PYTRAP
+' EXIT INT TERM
+
+# Note: full --extract-best and strict validity gate implemented in summarize (P1.2) and dedicated helper.
+
