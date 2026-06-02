@@ -188,6 +188,7 @@ Hardware: CUDA > Metal > AVX-512 > AVX2 > OpenMP > scalar
 - **Pure-Python fallback** -- works without C++ compilation
 - **pybind11 C++ bridge** -- `StatMechEngine`, `ENCoMEngine`, `Thermodynamics`, `VibrationalEntropy`
 - **PyMOL plugin** -- binding mode visualization, entropy heatmaps, ITC comparison
+- **Grok Imagine integration** (via flexaidds.figures + skill) -- auto NRDD-quality cover figure + 6 s animation of best binding mode (Gate 6, real ledger values, branding + metadata) after successful runs with --visualize
 
 ---
 

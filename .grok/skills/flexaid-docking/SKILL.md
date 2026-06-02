@@ -3,12 +3,19 @@ name: flexaid-docking
 description: >
   Use this skill for FlexAID and FlexAIDδS docking workflows, including
   safe repo review, implementation planning, XML/package validation, and
-  docking/thermodynamic-roadmap task decomposition.
+  docking/thermodynamic-roadmap task decomposition. Includes auto-generation of
+  high-end publication figures + 6s animated cover art (Grok Imagine / imagine-tools)
+  for the best-scoring binding mode after Gate 6 success, with NRDD-quality aesthetics,
+  thermodynamic equation, FlexAID∆S branding, reproducibility metadata overlay, and
+  blue→red entropy heatmap.
 
   Natural language triggers include:
   - Any mention of FlexAID, FlexAIDδS, FlexAIDdS, "molecular docking", "perform docking",
     "run docking", "docking simulation", "redock", "redocking", "binding mode analysis",
     "thermodynamic analysis", "ensemble docking", "pose ranking", or "vibrational entropy".
+  - Figure / viz triggers: "generate figure", "cover art", "animated cover", "imagine figure",
+    "publication figure", "Nature Reviews cover", "NRDD figure", "best mode visualization",
+    "entropy heatmap figure", "promotional animation".
   - Skill maintenance: "update the flexaid-docking skill", "update the docking skill",
     "refresh flexaid skill", "pull latest flexaid-docking", "update the skill".
   - Any request involving the FlexAIDδS binary, flexaidds Python package, tENCoM,
@@ -36,6 +43,7 @@ metadata:
   - "dock this ligand", "perform molecular docking", "redock the co-crystallized ligand",
     "run FlexAIDδS on this target", "analyze the thermodynamic ledger", "binding mode prediction with entropy"
   - "run DatasetRunner", "benchmark on Astex", "run casf2016 benchmark", "distributed docking campaign", "dataset benchmarking"
+  - "generate the cover figure", "create NRDD animation for the best mode", "imagine figure after docking", "add promotional cover art + 6s animation"
 
 This skill activates for any task involving the FlexAID or FlexAIDδS molecular docking engine, its Python package `flexaidds`, **DatasetRunner** benchmarking campaigns, thermodynamics layer, or related packaging.
 
@@ -329,5 +337,58 @@ For ergonomics, the skill provides short commands in `bin/`:
 For users who want to run real FlexAIDδS jobs (not just review code), start here:
 
 → **[QUICKSTART.md](QUICKSTART.md)** — End-to-end guide for preparing inputs, running docking, and computing the thermodynamic ledger.
+
+## Publication-Quality Figure & Animation Generation (Imagine Integration + Gate 6)
+
+The skill now includes first-class support for automatically producing a **static high-end cover figure + 6-second promotional animation** focused on the **best-scoring binding mode** (top-ranked by the ensemble free energy / thermodynamic ledger) after a successful docking.
+
+**This is a deliberate post-processing / packaging feature** (purely additive; never affects scoring, ranking, poses, or any scientific computation). It is **gated on Gate 6 success** (the F/S cross-check from the thermodynamic audit / provenance.gate_results already produced by full ledger runs).
+
+### When the gate fires (skill agent execution contract)
+After any docking workflow reaches successful completion **and** Gate 6 (F/S cross-check) has passed (detected via audit JSON, reproducibility.json, or explicit user confirmation), the agent **MUST**:
+
+1. Ensure the run produced a results directory (with PDBs + REMARKs or the JSON repro).
+2. Run the preparation step (writes prompts + metadata derived from real values):
+   ```bash
+   # Preferred (via the run wrapper that the skill uses)
+   VISUALIZE=1 bash scripts/run_flexaidds.sh ... --visualize
+   # or
+   python -c '
+   from pathlib import Path
+   from flexaidds.figures import prepare_publication_figures
+   prepare_publication_figures(Path("results/my_run"), visualize=True, require_gate6=True)
+   '
+   ```
+3. **Then invoke the imagine tools** available to the host (image_gen / imagine_text_to_image for the cover, video_gen / imagine_image_to_video for the 6s animation, image_edit for refinement/overlay polish if text is soft). Use the dynamically generated `prompt_cover.txt` and `prompt_animation.txt` (they already contain the exact real ΔG/ΔH/-TΔS numbers, ligand/target, git sha, gate status, etc.).
+4. Save the materialized assets inside `<results_dir>/figures/` with canonical names:
+   - `cover_best_mode.png` (or .jpg)
+   - `animation_6s.mp4`
+5. Confirm the assets contain the required elements (the prompts are engineered to request them):
+   - Sleek bottom banner: `/flexaids-docking • FlexAID∆S`
+   - Thermodynamic equation `ΔG=ΔH−TΔS` with the actual run values calligraphed.
+   - Reproducibility metadata overlay (gate6:PASS, short git, date, run id).
+   - Cyan/teal accents + deep navy gradients matching thebonhomme.com + LeBonhommePharma/FlexAIDdS identity.
+   - Entropy heatmap (blue→red), induced-fit side chains, PyMOL-style publication base + promotional styling.
+   - "Proudly suitable for the cover of Nature Reviews Drug Discovery" + high-end X scientific post aesthetic (cinematic, clean, SwitchCraft-inspired elegant MD viz quality).
+6. The prompts are plain-text and AI-tool compatible (Grok, ChatGPT, Claude, etc.).
+
+### Quick usage example (the one requested)
+```bash
+FLEXAIDDS_SOURCE=/path/to/FlexAIDdS \
+SKIP_REBUILD=1 \
+bash run_flexaidds.sh 1stp biotin.mol2 --temperature 298.15 -o results/test_run --visualize
+```
+This produces `results/test_run/figures/` containing the prompts + metadata (and later the rendered cover + animation) alongside the usual reproducibility artifacts.
+
+### Aesthetics & prompt contract (redesigned)
+The prompts are built in `python/flexaidds/figures.py` from real docking output. They enforce the NRDD-cover + reference-video aesthetic (deep navy #0a0e14 gradients, #22D3EE teal/cyan, gold for ΔG, terra for entropy, hybrid clean scientific rendering with subtle entropy wash, exact banner/equation/footer baked in). See the module for the canonical TEMPLATE_COVER / TEMPLATE_ANIMATION.
+
+**Guardrail**: Figure generation is post-hoc promotional only. Use precise language in any sharing ("best-scoring binding mode by the ensemble-derived thermodynamic ledger", "visualization generated from run outputs").
+
+All new visualization work lives behind the existing "chunked plans + tests + validator" discipline.
+
+## References (updated)
+
+See [references/flexaid-docking-guidance.md](references/flexaid-docking-guidance.md) for preserved scientific terminology, scoring proxy vs. thermodynamic ledger distinctions, and historical context from the FlexAIDδS implementation roadmap.
 
 This skill exists to keep all FlexAID / FlexAIDδS work safe, reproducible, and correctly scoped between scoring proxies and real statistical mechanics.

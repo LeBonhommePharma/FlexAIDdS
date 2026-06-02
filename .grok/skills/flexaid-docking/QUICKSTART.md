@@ -219,4 +219,6 @@ This is the superior general solution (not bolted onto a single report type) and
 
 The `flexaid-docking` skill is designed to make the above workflows safe, reproducible, and correctly scoped between scoring proxies and real statistical mechanics.
 
+After a successful Gate-6 run you can also request the high-end publication figure + 6 s animation of the best binding mode (NRDD aesthetic, real thermodynamic values, full branding + metadata overlay) via `--visualize` on the run wrapper or the `flexaidds.figures` helpers — the skill agent will then invoke the imagine tools as the final step of the workflow.
+
 Run with confidence.
