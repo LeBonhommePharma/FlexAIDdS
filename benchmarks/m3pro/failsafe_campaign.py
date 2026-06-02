@@ -36,13 +36,13 @@ from typing import Iterable
 
 DEFAULT_DATASETS = ("astex", "astex_nonnative", "hap2")
 DEFAULT_REPO = Path("/Users/lp.more/Projects/FlexAIDdS")
-DEFAULT_BUILD = Path("/private/tmp/flexaidds-runtime-fix-build")
+DEFAULT_BUILD = Path("/private/tmp/flexaidds-benchmark-omp-build")
 DEFAULT_ICLOUD_BASE = Path.home() / "Library/Mobile Documents/com~apple~CloudDocs/FlexAIDdS"
 EXPECTED_MIN_SYSTEMS = {
     "astex": 85,
     "astex_diverse": 85,
     "astex_nonnative": 100,
-    "hap2": 1,
+    "hap2": 59,
 }
 CACHE_SUBDIRS = {
     "astex": ("astex_diverse",),
@@ -215,6 +215,51 @@ def rsync_copy(src: Path, dst: Path | None, *, delete: bool = False) -> None:
         shutil.copytree(src, dst, dirs_exist_ok=True)
 
 
+def stage_runtime_data(repo: Path, build: Path) -> dict:
+    """Stage all runtime .dat/.def/.lst files onto local APFS hot paths."""
+    source = repo / "WRK"
+    if not source.is_dir():
+        raise CampaignError(f"missing WRK runtime data directory: {source}")
+
+    files = sorted(
+        p for p in source.iterdir()
+        if p.is_file() and p.suffix.lower() in {".dat", ".def", ".lst"}
+    )
+    if not files:
+        raise CampaignError(f"no .dat/.def/.lst runtime files found in {source}")
+
+    staged_by_name = {p.name: p for p in files}
+    if "rotobs.lst" not in staged_by_name:
+        for candidate in (
+            repo / "WRK" / "build_iee" / "rotobs.lst",
+            repo / "build-ci-fix" / "rotobs.lst",
+            repo / "build-xcode" / "Release" / "rotobs.lst",
+            repo / ".grok" / "skills" / "flexaid-docking" / "data" / "rotobs.lst",
+        ):
+            if candidate.is_file():
+                staged_by_name["rotobs.lst"] = candidate
+                break
+    if "rotobs.lst" not in staged_by_name:
+        raise CampaignError("missing required runtime data file rotobs.lst")
+
+    files = [staged_by_name[name] for name in sorted(staged_by_name)]
+    destinations = []
+    for dst in (build, build / "WRK", Path("/private/tmp") / "WRK", Path(tempfile.gettempdir()) / "WRK"):
+        if dst not in destinations:
+            destinations.append(dst)
+    for dst in destinations:
+        mkdir(dst)
+        for src in files:
+            shutil.copy2(src, dst / src.name)
+
+    return {
+        "source": str(source),
+        "destinations": [str(p) for p in destinations],
+        "file_count": len(files),
+        "files": [p.name for p in files],
+    }
+
+
 def seed_cache(remote_cache: Path | None, local_cache: Path, datasets: list[str], *, include_smoke: bool) -> None:
     """Safe cache seeder — no-op if no remote configured."""
     if remote_cache is None:
@@ -377,7 +422,7 @@ def _resolve_repo(default: Path | None) -> Path:
 
     Order: explicit --repo > FLEXAIDDS_REPO env > git rev-parse --show-toplevel > cwd > original M3 default.
     """
-    if default and str(default) != "/Users/lp.more/Projects/FlexAIDdS":
+    if default:
         return default
     env = os.environ.get("FLEXAIDDS_REPO")
     if env:
@@ -486,13 +531,18 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--local-cache", type=Path, default=Path(tempfile.gettempdir()) / "flexaidds_benchmark_cache")
     p.add_argument("--datasets", nargs="+", default=list(DEFAULT_DATASETS))
     p.add_argument("--runs", type=int, default=10)
-    p.add_argument("--workers", type=int, default=2)
-    p.add_argument("--ga-generations", type=int, default=2000)
+    p.add_argument("--workers", type=int, default=1)
+    p.add_argument("--omp-threads", type=int, default=6)
+    # GA generations: benchmark plan §6.1 canonical spec = 500 gen × 1000 chrom = 510k evals.
+    # Shannon HSC early-stop (H < 1.3863 nats) terminates converged runs before 500.
+    # Use --ga-generations 2000 explicitly only for exploratory / hard-landscape runs.
+    p.add_argument("--ga-generations", type=int, default=500)
     p.add_argument("--ga-population", type=int, default=1000)
     p.add_argument("--temperature", type=float, default=300.0)
     p.add_argument("--clustering", default="FO")
     p.add_argument("--bootstrap", type=int, default=10000)
-    p.add_argument("--run-timeout-hours", type=float, default=36.0)
+    p.add_argument("--run-timeout-hours", type=float, default=168.0)
+    p.add_argument("--dock-timeout-hours", type=float, default=12.0)
     p.add_argument("--resume", action="store_true")
     p.add_argument("--skip-smoke", action="store_true")
     p.add_argument("--seed-cache", action="store_true")
@@ -525,7 +575,7 @@ def main() -> int:
     build = args.build.resolve()
     binary = build / "benchmark_datasets"
     docking_binary = build / "FlexAID"
-    local_base = (args.local_base or Path(tempfile.gettempdir()) / "flexaidds_campaigns" / args.run_id).resolve()
+    local_base = (args.local_base or Path("/private/tmp") / "flexaidds_campaigns" / args.run_id).resolve()
     local_cache = args.local_cache.resolve()
     local_results = local_base / "results"
     local_logs = local_base / "logs"
@@ -554,8 +604,9 @@ def main() -> int:
     # status + master log are ALWAYS local-first (robust even with --no-remote-sync)
     status_file = local_logs / "campaign_status.json"
     master_log = local_logs / "campaign.log"
-    lock_dir = (args.lock_dir or Path(tempfile.gettempdir()) / "flexaidds_campaign.lock").resolve()
+    lock_dir = (args.lock_dir or Path("/private/tmp") / "flexaidds_campaign.lock").resolve()
     run_timeout_s = int(args.run_timeout_hours * 3600) if args.run_timeout_hours > 0 else None
+    dock_timeout_s = int(args.dock_timeout_hours * 3600) if args.dock_timeout_hours > 0 else 0
 
     _warn_non_portable_remote(remote_base)
 
@@ -572,7 +623,10 @@ def main() -> int:
         acquire_lock(lock_dir)
 
         for p in (local_cache, local_results, local_logs, icloud_results, icloud_logs):
-            mkdir(p)
+            if p is not None:
+                mkdir(p)
+
+        runtime_data = stage_runtime_data(repo, build)
 
         env = os.environ.copy()
         env.update(
@@ -584,6 +638,10 @@ def main() -> int:
                 "FLEXAIDDS_RESULTS": str(local_results),
                 "FLEXAIDDS_LOGS": str(local_logs),
                 "HOME": str(Path("/private/tmp/flexaidds-campaign-home")),
+                "OMP_NUM_THREADS": str(args.omp_threads),
+                "OMP_PLACES": "cores",
+                "OMP_PROC_BIND": "spread",
+                "OMP_WAIT_POLICY": "passive",
             }
         )
         mkdir(Path(env["HOME"]))
@@ -606,11 +664,15 @@ def main() -> int:
             "datasets": args.datasets,
             "runs": args.runs,
             "workers": args.workers,
+            "omp_threads": args.omp_threads,
             "ga_generations": args.ga_generations,
             "ga_population": args.ga_population,
             "temperature": args.temperature,
             "clustering": args.clustering,
             "bootstrap": args.bootstrap,
+            "run_timeout_seconds": run_timeout_s,
+            "dock_timeout_seconds": dock_timeout_s,
+            "runtime_data": runtime_data,
         }
         write_json(local_logs / "campaign_manifest.json", manifest)
         if icloud_logs is not None:
@@ -658,6 +720,10 @@ def main() -> int:
                     "1",
                     "--ga-population",
                     "20",
+                    "--omp-threads",
+                    str(args.omp_threads),
+                    "--job-timeout-seconds",
+                    str(min(dock_timeout_s, 1800) if dock_timeout_s else 1800),
                     "--temperature",
                     str(args.temperature),
                     "--clustering",
@@ -707,7 +773,14 @@ def main() -> int:
 
                 if local_run.exists():
                     shutil.rmtree(local_run)
-                mkdir(local_run)
+                if args.resume and remote_run is not None and remote_run.exists():
+                    print(f"[failsafe] {dataset} {run_name}: restoring partial remote state")
+                    rsync_copy(remote_run, local_run, delete=False)
+                else:
+                    mkdir(local_run)
+                stale_failed = local_run / "RUN_FAILED.json"
+                if stale_failed.exists():
+                    stale_failed.replace(local_run / f"RUN_FAILED.interrupted_{local_now_tag()}.json")
                 write_status(
                     status_file,
                     state="running",
@@ -735,6 +808,10 @@ def main() -> int:
                         str(args.ga_generations),
                         "--ga-population",
                         str(args.ga_population),
+                        "--omp-threads",
+                        str(args.omp_threads),
+                        "--job-timeout-seconds",
+                        str(dock_timeout_s),
                         "--temperature",
                         str(args.temperature),
                         "--clustering",

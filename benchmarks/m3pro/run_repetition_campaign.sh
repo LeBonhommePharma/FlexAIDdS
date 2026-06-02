@@ -61,8 +61,13 @@ N_RUNS=30
 PILOT=false
 RESUME=false
 SINGLE_DATASET=""
-WORKERS=8
-GA_GENERATIONS=2000
+# Workers: 1 = optimal on M3 Pro (6 OMP threads undivided across 6 P-cores).
+# Do NOT raise without also halving --omp-threads (see DatasetRunner OMP fix dc5f5ab).
+WORKERS=1
+# GA spec: benchmark plan §6.1 = 500 gen × 1000 chrom = 510k evals/complex (~7 min/complex).
+# Shannon HSC early-stop (H < 1.3863 nats) terminates converged runs before gen 500.
+# Override at CLI with --ga-generations 2000 for exploratory hard-landscape runs only.
+GA_GENERATIONS=500
 GA_POPULATION=1000
 TEMPERATURE=300
 CLUSTERING="FO"
