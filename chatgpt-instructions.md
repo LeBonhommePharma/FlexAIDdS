@@ -1,8 +1,10 @@
 # ChatGPT Instructions — FlexAIDdS
 
-Use these instructions when working with ChatGPT (Custom GPT, Projects, or agent mode) on the FlexAIDdS repository.
+**Deprecated / Pointer**: The full, up-to-date, figure-generation-aware version is now at `docs/custom-instructions/chatgpt-instructions.md`.
 
-**Source of truth**: The full authoritative rules live in `AGENTS.md` (repo root). This is a condensed, GPT-optimized version of the most important constraints. When in doubt, ask the user to paste the latest `AGENTS.md`.
+Use the version in docs/custom-instructions/ (it includes the complete 5-point NRDD cover figure integration, the generate_flexaids_nrdd_cover helper, DALL·E usage, reproducibility metadata, JetBrains Mono + thebonhomme.com typography, etc.).
+
+**Source of truth (still)**: `AGENTS.md` (repo root). Always ask the user to paste the latest `AGENTS.md` + `CLAUDE.md` + the relevant file from `docs/custom-instructions/` when starting a new session.
 
 ---
 
