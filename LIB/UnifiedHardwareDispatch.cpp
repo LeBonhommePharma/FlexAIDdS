@@ -194,7 +194,11 @@ Backend UnifiedHardwareDispatch::best_backend(KernelType kernel) const {
         case KernelType::TURBO_QUANT:
             if (is_available(Backend::CUDA))   return Backend::CUDA;
             if (is_available(Backend::ROCM))   return Backend::ROCM;
-            if (is_available(Backend::METAL))  return Backend::METAL;
+            if (is_available(Backend::METAL)) {
+                // P1.6 loud dispatch log for Metal on M3 (Shannon for configurational entropy part of thermo ledger / best BindingMode)
+                fprintf(stderr, "[HW-DISPATCH] Kernel SHANNON_ENTROPY/FITNESS etc. -> using Metal on Apple (M3 Pro) for entropy/thermo (see .metallib + UnifiedHardwareDispatch)\n");
+                return Backend::METAL;
+            }
             if (is_available(Backend::AVX512)) return Backend::AVX512;
             if (is_available(Backend::OPENMP)) return Backend::OPENMP;
             return Backend::SCALAR;
