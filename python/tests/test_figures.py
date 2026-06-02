@@ -16,7 +16,10 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-import pytest
+try:
+    import pytest
+except ImportError:
+    pytest = None  # only needed when running under pytest
 
 # The module under test (must import cleanly without core bindings)
 from flexaidds.figures import (
@@ -140,6 +143,37 @@ def test_build_prompts_contain_required_elements_and_injected_numbers(tmp_path: 
     assert "PLIP" in cover or "plip" in cover.lower() or "PLIP-style" in cover
     assert "JetBrains Mono" in cover or "thebonhomme.com" in cover.lower()
     assert "CF" in cover or "favourable" in cover.lower() or "most favourable" in cover.lower()
+
+# --- NRDD / FlexAID∆S journal cover generation (the 5-point /flexaidds integration) ---
+
+def test_nrdd_cover_params_validation():
+    from flexaidds.figures import NRDDCoverParams, generate_flexaids_nrdd_cover
+    # good
+    p = NRDDCoverParams(entropy_value=0.93, enthalpy_value=1.4, index_value=0.92)
+    assert p.index_value == 0.92
+    # bad ranges (robust validation)
+    try:
+        NRDDCoverParams(index_value=3.0)
+        assert False, "should have raised"
+    except ValueError:
+        pass
+    try:
+        NRDDCoverParams(entropy_value=99)
+        assert False, "should have raised"
+    except ValueError:
+        pass
+    # generation
+    res = generate_flexaids_nrdd_cover(entropy_value=0.93, enthalpy_value=1.4, index_value=0.92, style="dramatic_faces")
+    assert "prompt" in res and "metadata" in res
+    prompt = res["prompt"]
+    assert "JetBrains Mono" in prompt or "thebonhomme.com" in prompt.lower()
+    assert "I_E–E" in prompt or "Entropy–Enthalpy Index" in prompt
+    assert "0.93" in prompt and "1.4" in prompt and "0.92" in prompt
+    assert "FlexAID∆S" in prompt or "FLEXAID∆S" in prompt
+    assert res["metadata"]["scientific_note"].startswith("Visualisation only")
+    # from results_dir (graceful)
+    res2 = generate_flexaids_nrdd_cover(results_dir=".", style="molecular_gauge")  # will use defaults or fail softly
+    assert "prompt" in res2
 
     # Animation specific
     assert "6-second" in anim or "6s" in anim or "second" in anim

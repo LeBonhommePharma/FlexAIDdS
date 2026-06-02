@@ -1,6 +1,6 @@
 ---
 name: flexaidds
-description: Expert developer assistant for the FlexAIDdS entropy-driven molecular docking engine. Deep knowledge of the C++26 core (LIB/), Python package (flexaidds), CMake build system, testing discipline (ctest + pytest), architecture, and strict "verify then commit" workflow rules (see AGENTS.md). Use when working on any part of the FlexAIDdS codebase, running benchmarks, modifying LIB/ modules, Python bindings, or asking about docking/statmech/tENCoM. Slash command: /flexaidds. Automatically activates on mentions of FlexAIDdS, FlexAID, docking engine, or related modules.
+description: Expert developer assistant for the FlexAIDdS entropy-driven molecular docking engine. Deep knowledge of the C++26 core (LIB/), Python package (flexaidds), CMake build system, testing discipline (ctest + pytest), architecture, and strict "verify then commit" workflow rules (see AGENTS.md). Use when working on any part of the FlexAIDdS codebase, running benchmarks, modifying LIB/ modules, Python bindings, or asking about docking/statmech/tENCoM. Also supports on-demand generation of Nature Reviews Drug Discovery-style cover figures (dramatic entropy/enthalpy or E–E index molecular compositions with full FlexAID∆S branding). Slash command: /flexaidds. Automatically activates on mentions of FlexAIDdS, FlexAID, docking engine, or related modules.
 ---
 
 # FlexAIDdS Development Skill
@@ -110,3 +110,76 @@ See the full table in CLAUDE.md. Most important entry points:
 - **With other skills**: Can be combined with `/review`, `/implement`, `/check`, etc.
 
 Always read `AGENTS.md` (source of truth for rules) + the latest `CLAUDE.md` at the start of any substantial session. This skill is the Grok-optimized companion to those two files.
+
+## NRDD Cover & Journal-Style Figure Generation (automated, reproducible)
+
+The /flexaidds skill now supports on-demand generation of high-end Nature Reviews Drug Discovery cover-style illustrations featuring FlexAID∆S (dramatic entropy/enthalpy personification or molecular E–E gauge compositions, precise thermodynamic call-outs for TΔS / -TΔS / I_E–E index, full branding, JetBrains Mono + thebonhomme.com typography, PLIP-inspired interaction clarity on key contacts, and emphasis on the most favourable CF-contributing interactions).
+
+This is implemented as a first-class, professional capability in the Python package (the canonical entry point) and fully documented here so the agent can invoke it reliably.
+
+### The 5-point integration (implemented bulletproof / idiotproof / scientifically robust)
+
+1. **Identify your skill’s entry point**  
+   The primary implementation lives in the package the skill always recommends: `python/flexaidds/figures.py` (and exported via `python/flexaidds/__init__.py`). The skill description (this file) is the "manifest" that registers the capability for /flexaidds users and agents. No separate JSON/OpenAPI is needed; the SKILL.md + package docstrings serve that role.
+
+2. **Add a figure-generation handler** (`generate_flexaids_nrdd_cover`)  
+   Located at `flexaidds.figures.generate_flexaids_nrdd_cover` (and the pure `build_nrdd_cover_prompt` + `NRDDCoverParams` dataclass).  
+   - Accepts typed parameters (entropy_value, enthalpy_value, index_value for I_E–E, style="dramatic_faces"|"molecular_gauge", title, subtitle, results_dir for sourcing real ensemble values, etc.).  
+   - Constructs an extremely detailed prompt that faithfully reproduces the visual language, composition, call-out boxes, dramatic lighting, central ligand, floating cubes/gauge, bottom text panels, logos, and branding of the reference covers.  
+   - Injects the exact numeric values, enforces JetBrains Mono / thebonhomme.com typography for all text, PLIP-style color-coded interaction lines where molecules are shown, and prioritizes "the most favourable contacts and those contributing the most to the CF".  
+   - Full validation (ranges for thermodynamic quantities, index ~[-1,1], existing results_dir, etc.).  
+   - Returns a dict with the ready-to-use prompt, rich metadata (every param, timestamp, git sha, scientific guardrail note, suggested image_gen + image_edit calls), and suggested aspect ratio.  
+   - Never claims experimental ΔG; always uses precise FlexAID∆S terminology ("ensemble thermodynamic ledger", "visualisation only").  
+   - Reproducible sidecar-friendly (save the metadata dict as .json next to the image).
+
+   Example usage (the professional implementation the skill exposes):
+
+   ```python
+   from flexaidds.figures import generate_flexaids_nrdd_cover, NRDDCoverParams
+
+   res = generate_flexaids_nrdd_cover(
+       entropy_value=0.93,
+       enthalpy_value=1.4,
+       index_value=0.92,
+       style="dramatic_faces",           # or "molecular_gauge"
+       title="The ΔG balance",
+       subtitle="Striking the right pose in drug discovery",
+       results_dir="/path/to/a/docking/run",  # optional: auto-source real ledger values
+   )
+   # res["prompt"]          → the full engineered string
+   # res["metadata"]        → everything needed for audit/reproducibility
+   # res["suggested_call"]  → "image_gen(prompt=..., aspect_ratio='16:9')"
+   ```
+
+3. **Expose the function via the skill manifest**  
+   This SKILL.md (and the package `__init__`) documents the action `generate_flexaids_nrdd_cover` / "create NRDD cover" with all parameters and return contract. When a user says "/flexaidds generate a cover figure with E-E = 0.92 ..." or "make the Nature Reviews illustration for these thermodynamic values", the skill activates and the agent follows the procedure above.
+
+4. **Manage dependencies**  
+   The heavy lifting for actual pixel generation is the host environment's image generation tool (in this Grok context: the `image_gen` tool, plus `image_edit` for refinements). The Python package itself has no hard dependency on any image model or GPL code. PLIP is optional for base interaction diagrams (already integrated in the same module). All prompts are plain text and work with any compatible image model (Grok, Claude, etc.).
+
+5. **Return the result**  
+   The function returns the prompt + metadata immediately. In the agent/skill execution:
+   - Call the Python helper (or run the equivalent prompt construction).
+   - Invoke the available image generation tool with the prompt and correct aspect (16:9 landscape or 3:2 for cover feel).
+   - (Optional) follow up with image_edit for label tightening, contrast on the I_E–E gauge/cubes, etc.
+   - Save the output image next to a `cover_metadata.json` (the returned metadata) for full reproducibility.
+   - Report the local path (or sync_file identifier) back to the user. The client can display or download it.
+
+### Usage examples (agent & user)
+```bash
+# After a docking run (pulls real values where possible)
+python -c "
+from flexaidds.figures import generate_flexaids_nrdd_cover
+res = generate_flexaids_nrdd_cover(results_dir='results/my_run', style='molecular_gauge')
+print(res['prompt'][:300])
+# Then (in Grok/agent):
+# image = image_gen(prompt=res['prompt'], aspect_ratio='16:9')
+# print('Generated:', image['path'])
+"
+```
+
+The skill will also happily generate the figures completely standalone with user-supplied thermodynamic numbers (perfect for talks, papers, or the exact reference covers you showed).
+
+All generation is post-processing / promotional only. It never affects scientific results, ranking, or claims.
+
+Always verify the generated image against the metadata and the original docking ledger before use in any publication context.

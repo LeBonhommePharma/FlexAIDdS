@@ -141,6 +141,10 @@ from .figures import (
     build_imagine_animation_prompt,
     check_gate6_passed,
     extract_best_mode_summary,
+    # NRDD / FlexAID∆S journal cover generation (dramatic entropy-enthalpy, E-E index, full branding)
+    NRDDCoverParams,
+    build_nrdd_cover_prompt,
+    generate_flexaids_nrdd_cover,
 )
 
 
