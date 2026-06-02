@@ -132,6 +132,10 @@ def test_build_prompts_contain_required_elements_and_injected_numbers(tmp_path: 
     assert "induced-fit" in cover.lower()
     assert "#22D3EE" in cover or "teal" in cover.lower() or "cyan" in cover.lower()
 
+    # New P3 polish: critical interactions are injected and called out
+    assert "key_interactions" in cover.lower() or "critical" in cover.lower() or "H-bond" in cover or "hydrophobic" in cover.lower()
+    assert "critical" in anim.lower() or "interaction" in anim.lower() or "H-bond" in anim or "label" in anim.lower()
+
     # Animation specific
     assert "6-second" in anim or "6s" in anim or "second" in anim
     assert "360" in anim or "orbit" in anim.lower()

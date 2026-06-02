@@ -67,6 +67,8 @@ TEMPLATE_COVER = """Create a stunning, publication-ready scientific figure suita
 
 Hybrid rendering — translucent molecular surface + cartoon ribbons for the receptor protein in deep navy tones ({bg_deep_navy}), ligand rendered in bright cyan/teal sticks/balls ({teal}) with crisp atomic detail and subtle glow, 3-5 key induced-fit side chains highlighted in matching teal with thin H-bond dashes. Subtle blue-to-red entropy heatmap wash on the receptor surface and flexible loops (blue = low configurational entropy/rigid, red = high entropy/flexible regions per the run's Shannon + tENCoM values).
 
+CRITICAL: Clearly depict, highlight with elegant dashed lines/glows, and label the most important molecular interactions that matter most: {key_interactions}. Use contrasting teal dashed lines for H-bonds and polar contacts, gold for hydrophobic/vdW packing, with crisp residue labels (e.g. "H-bond to Asn23", "salt-bridge to Asp128", "hydrophobic core with Trp79/Tyr43") placed elegantly near the contacts so they are scientifically precise and immediately readable. Prioritize the interactions that contribute most to affinity and specificity; make them visually prominent yet balanced in the composition.
+
 Prominently and elegantly overlay the thermodynamic equation in clean modern typography: ΔG = ΔH − TΔS   with actual values ΔG = {delta_g:.2f} kcal/mol , ΔH = {delta_h:.2f} , −TΔS = {minus_t_ds:.2f}  at T={temperature:.2f} K (gold for ΔG, teal for ΔH, purple for entropy term).
 
 Composition: centered binding interface at a slight 3D angle for depth, soft cinematic volumetric lighting with cyan rim lights, deep navy to near-black gradient background with extremely faint abstract molecular field lines or density, shallow depth-of-field, ultra-clean professional finish, 8K scientific illustration quality, no clutter.
@@ -77,7 +79,7 @@ Overall mood: confident, precise, beautiful, suitable for top-tier journal cover
 
 TEMPLATE_ANIMATION = """6-second seamless cinematic animation (1080p or 4K, 6s duration, loop-friendly) of the best-scoring FlexAID∆S binding mode for {ligand} in {receptor}.
 
-Smooth slow 360° orbit + gentle dolly around the docked complex (exact same pose and induced-fit geometry as the static cover). Very subtle breathing motion on the 3-5 highlighted induced-fit side chains (low amplitude, physically plausible), ligand micro-fluctuations consistent with the ensemble. Flowing faint entropy color waves (blue low-entropy ↔ red high-entropy) pulsing gently across receptor surface and loops.
+Smooth slow 360° orbit + gentle dolly around the docked complex (exact same pose and induced-fit geometry as the static cover). Very subtle breathing motion on the 3-5 highlighted induced-fit side chains (low amplitude, physically plausible), ligand micro-fluctuations consistent with the ensemble. Flowing faint entropy color waves (blue low-entropy ↔ red high-entropy) pulsing gently across receptor surface and loops. During the motion, the critical molecular interactions are dynamically highlighted: {key_interactions} — with elegant animated dashed lines (teal for H-bonds/polar, gold for hydrophobic) and fading residue labels that emphasize the interactions that matter most.
 
 Equation block and bottom banner '{banner}' fade in elegantly at t≈1.5s and persist; values and reproducibility footer '{footer}' appear cleanly without jitter. Camera motion, timing, and production quality exactly like the referenced high-end molecular dynamics visualization videos (SwitchCraft aesthetic): fluid, sophisticated lighting, clean dynamic protein representations, no clutter, premium scientific art.
 
@@ -90,6 +92,66 @@ def _safe_float(v: Any, default: float = 0.0) -> float:
             return default
         return float(v)
     except (TypeError, ValueError):
+        return default
+
+
+def _extract_key_interactions(best_pose_pdb: Optional[str]) -> str:
+    """Best-effort description of the interactions that matter most for the pose.
+
+    If a best_pose PDB is available, parses it (reusing the package PDB reader)
+    and identifies the closest ligand-receptor atom pairs. Classifies roughly
+    into H-bond/polar vs. hydrophobic/vdW and returns a short human-readable
+    phrase suitable for injection into imagine prompts. Falls back to a strong
+    generic instruction when no detailed data or parsing fails.
+    """
+    default = "the critical molecular interactions (key hydrogen bonds, salt bridges, and hydrophobic contacts) that matter most for binding affinity and specificity in this mode"
+    if not best_pose_pdb:
+        return default
+    p = Path(best_pose_pdb)
+    if not p.exists():
+        return default
+    try:
+        from .io import read_pdb, is_ion
+        struct = read_pdb(str(p))
+        lig_atoms = [a for a in struct.atoms if a.record == "HETATM" and not is_ion(a)]
+        rec_atoms = [a for a in struct.atoms if a.record == "ATOM"]
+        if not lig_atoms or not rec_atoms:
+            return default
+
+        # Group close contacts (< ~4.0 Å) by receptor residue
+        from collections import defaultdict
+        import math
+        contacts: dict[str, list] = defaultdict(list)
+        for la in lig_atoms:
+            for ra in rec_atoms:
+                dx = la.x - ra.x
+                dy = la.y - ra.y
+                dz = la.z - ra.z
+                d = math.sqrt(dx * dx + dy * dy + dz * dz)
+                if d < 4.0:
+                    key = f"{ra.resname.strip()}{ra.resseq}"
+                    contacts[key].append((ra.name.strip(), la.name.strip(), d, ra, la))
+
+        if not contacts:
+            return default
+
+        # Rank residues by number of close contacts (proxy for importance)
+        ranked = sorted(contacts.items(), key=lambda kv: len(kv[1]), reverse=True)[:5]
+
+        phrases = []
+        for res_key, pairs in ranked:
+            # Rough classification
+            has_polar = any(n[0] in ("O", "N") for n, _, _, _, _ in pairs)
+            has_hbond_geom = any(d < 3.5 and n1[0] in ("O", "N") and n2[0] in ("O", "N") for n1, n2, d, _, _ in pairs)
+            if has_hbond_geom or has_polar:
+                phrases.append(f"H-bond/polar contacts to {res_key}")
+            else:
+                phrases.append(f"hydrophobic/vdW packing with {res_key}")
+
+        if phrases:
+            return "critical interactions that matter most: " + "; ".join(phrases) + " (visualize with clear, elegant dashed lines and residue labels)"
+        return default
+    except Exception:
         return default
 
 
@@ -154,6 +216,7 @@ def extract_best_mode_summary(results_dir: Path) -> Dict[str, Any]:
         "git_sha": "unknown",
         "run_id": results_dir.name,
         "best_pose_pdb": None,
+        "key_interactions": "the critical molecular interactions (key hydrogen bonds, salt bridges, and hydrophobic contacts) that matter most for binding affinity and specificity in this mode",
     }
 
     # 1. Try structured load_results (best source)
@@ -200,6 +263,9 @@ def extract_best_mode_summary(results_dir: Path) -> Dict[str, Any]:
                 summary["receptor"] = str(md["receptor_name"])
     except Exception as exc:
         warnings.warn(f"load_results failed for figures: {exc}. Falling back to filename heuristics.", RuntimeWarning)
+
+    # Always compute (or default) the key interactions description for prompt injection
+    summary["key_interactions"] = _extract_key_interactions(summary.get("best_pose_pdb"))
 
     # 2. Fallback: scan reproducibility.json for provenance + numbers
     try:
@@ -261,6 +327,7 @@ def build_imagine_cover_prompt(summary: Dict[str, Any], *, style: str = "nrdd-co
         "temperature": _safe_float(s.get("temperature"), 298.15),
         "banner": BANNER,
         "footer": footer,
+        "key_interactions": s.get("key_interactions", "the critical molecular interactions (key hydrogen bonds, salt bridges, and hydrophobic contacts) that matter most"),
         **BRAND,
     }
     # style is reserved for future variants; current template is the NRDD one
@@ -283,6 +350,7 @@ def build_imagine_animation_prompt(summary: Dict[str, Any], duration_s: float = 
         "banner": BANNER,
         "footer": footer,
         "teal": BRAND["teal"],
+        "key_interactions": s.get("key_interactions", "the critical molecular interactions (key hydrogen bonds, salt bridges, and hydrophobic contacts) that matter most"),
     }
     base = TEMPLATE_ANIMATION.format(**vals)
     # Inject duration if the template ever uses it (kept for forward compat)
