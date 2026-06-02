@@ -316,6 +316,8 @@ static dataset::BenchmarkReport run_single_benchmark(const std::string& name,
 
     auto entries = runner.prepare(*bs);
     printf("  → %zu entries prepared\n", entries.size());
+    // P1 diagnostic (additive, non-behavior): explicit T + progress for early diagnosis of best BindingMode runs
+    printf("  [P1] Docking phase starting for best BindingMode search at temperature from config (exact 298/310 K fidelity required). Live progress + run_status sidecar will be emitted during run(entries).\n");
 
     if (prepare_only) {
         printf("  [prepare-only mode] Skipping docking.\n");
