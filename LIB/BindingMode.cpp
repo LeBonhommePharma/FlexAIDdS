@@ -105,6 +105,11 @@ void BindingPopulation::output_Population(int nResults, char* end_strfile, char*
 	// (lazy sort: previously every add_BindingMode triggered a full re-sort).
 	this->Entropize();
 
+	// P1.5 additive diagnostic: explicit log when 0 binding modes (common friction for "best BindingMode")
+	if (this->BindingModes.empty()) {
+		std::cerr << "[P1 DIAGNOSTIC] BindingPopulation::output_Population: 0 binding modes after clustering (minPoints=" << minPoints << "). No best mode will be emitted. Check GA params, data quality, FastOPTICS/OPTICS settings, or RMSD clustering thresholds. This run may produce only placeholder 999 RMSD results.\n";
+	}
+
 	// Looping through BindingModes
 	int num_result = 0;
 	if (!nResults) nResults = this->get_Population_size() - 1; // if 0 is sent to this function, output all
