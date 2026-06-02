@@ -163,6 +163,7 @@ echo "Log:         $LOG_FILE"
 nohup "$FLEXAIDDS_BINARY" \
     --benchmark "$DATASET" \
     -c "$CONFIG_FILE" \
+    --temperature "$TEMPERATURE" \
     -o "$OUT_DIR/${DATASET}_${TEMPERATURE}" \
     >> "$LOG_FILE" 2>> "$ERR_FILE" </dev/null &
 
