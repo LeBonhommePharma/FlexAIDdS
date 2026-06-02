@@ -343,6 +343,8 @@ int main(int argc, char** argv) {
     std::string output_dir = "benchmark_results";
     std::string cache_dir;
     int threads = 1;
+    int omp_threads = 0;
+    int job_timeout_s = 3600;
     bool use_gpu = false;
     std::string gpu_backend = "cuda";
     bool prepare_only = false;
@@ -380,6 +382,10 @@ int main(int argc, char** argv) {
             threads = std::atoi(argv[++i]);
             continue;
         }
+        if (arg == "--omp-threads" && i + 1 < argc) {
+            omp_threads = std::atoi(argv[++i]);
+            continue;
+        }
         if (arg == "--gpu" && i + 1 < argc) {
             use_gpu = true;
             gpu_backend = argv[++i];
@@ -411,6 +417,10 @@ int main(int argc, char** argv) {
         }
         if (arg == "--clustering" && i + 1 < argc) {
             clustering = argv[++i];
+            continue;
+        }
+        if (arg == "--job-timeout-seconds" && i + 1 < argc) {
+            job_timeout_s = std::atoi(argv[++i]);
             continue;
         }
         if (arg == "--fleet") {

@@ -573,14 +573,8 @@ bool DatasetRunner::download_structure(const std::string& pdb_id,
         return true;
     }
 
-    std::cerr << "  [WARN] mmCIF unavailable for " << upper_id
-              << "; trying legacy PDB as last resort\n";
-    std::string pdb_path = entry_dir + "/" + upper_id + ".pdb";
-    if (download_pdb(upper_id, pdb_path)) {
-        out_path = pdb_path;
-        return true;
-    }
-
+    std::cerr << "  [ERROR] mmCIF unavailable for " << upper_id
+              << "; refusing unreliable PDB receptor fallback\n";
     out_path.clear();
     return false;
 }
@@ -2336,11 +2330,17 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
         }
 
         // ── Skip-if-complete check ───────────────────────────────────────
-        // A run is complete when its output dir contains ≥1 clustered pose PDB
-        // AND a non-empty stdout.log (proves the GA actually finished).
-        // Stuck runs (clash_rate > 0.95, 0 pose PDBs) never satisfy the first
-        // condition, so they always fall through and are re-run automatically.
+        // A run is complete when its output dir contains either a successful
+        // per-complex result.csv row or >=1 clustered pose PDB with a non-empty
+        // stdout.log. The CSV path matters for resumed campaigns because some
+        // historical successful runs wrote result.csv but no *_mode_/*.pdb pose
+        // artifact matching the older predicate.
         bool skip = false;
+        bool cached_csv_success = false;
+        float cached_csv_best_score = 0.0f;
+        float cached_csv_predicted_dg = 0.0f;
+        int cached_csv_num_poses = 0;
+        double cached_csv_wall_time_s = 0.0;
         if (config.skip_completed && fs::exists(out_dir)) {
             int cached_poses = 0;
             try {
@@ -2355,12 +2355,49 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                 }
             } catch (...) {}
 
-            if (cached_poses > 0 &&
-                fs::exists(stdout_path) &&
-                fs::file_size(stdout_path) > 0) {
+            const std::string result_csv_path = out_dir + "/result.csv";
+            try {
+                if (fs::exists(result_csv_path) && fs::file_size(result_csv_path) > 0) {
+                    std::ifstream csv(result_csv_path);
+                    std::string header;
+                    std::string row;
+                    if (std::getline(csv, header) && std::getline(csv, row)) {
+                        std::vector<std::string> cells;
+                        std::stringstream ss(row);
+                        std::string cell;
+                        while (std::getline(ss, cell, ',')) {
+                            while (!cell.empty() &&
+                                   (cell.back() == '\r' || cell.back() == '\n' ||
+                                    cell.back() == ' ' || cell.back() == '\t')) {
+                                cell.pop_back();
+                            }
+                            while (!cell.empty() &&
+                                   (cell.front() == ' ' || cell.front() == '\t')) {
+                                cell.erase(cell.begin());
+                            }
+                            cells.push_back(cell);
+                        }
+                        if (cells.size() >= 10 &&
+                            (cells[9] == "1" || cells[9] == "true" || cells[9] == "True")) {
+                            cached_csv_success = true;
+                            cached_csv_best_score = std::stof(cells[1]);
+                            cached_csv_predicted_dg = std::stof(cells[3]);
+                            cached_csv_num_poses = std::stoi(cells[7]);
+                            cached_csv_wall_time_s = std::stod(cells[8]);
+                        }
+                    }
+                }
+            } catch (...) {
+                cached_csv_success = false;
+            }
+
+            const bool cached_stdout = fs::exists(stdout_path) && fs::file_size(stdout_path) > 0;
+            if (cached_csv_success || (cached_poses > 0 && cached_stdout)) {
                 skip = true;
-                std::cerr << "  [CACHED] " << entry.pdb_id
-                          << " — " << cached_poses << " pose(s) already on disk, skipping\n";
+                std::cerr << "  [CACHED] " << entry.pdb_id << " -- "
+                          << (cached_csv_success ? "successful result.csv" :
+                              std::to_string(cached_poses) + " pose(s)")
+                          << " already on disk, skipping\n";
             }
         }
 
@@ -2543,6 +2580,13 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                     }
                 }
             }
+        }
+
+        if (skip && cached_csv_success) {
+            n_poses = std::max(n_poses, cached_csv_num_poses);
+            best_cf = cached_csv_best_score;
+            best_dG = cached_csv_predicted_dg;
+            result.wall_time_s = cached_csv_wall_time_s;
         }
 
         // ── Clash diagnostics ────────────────────────────────────────────────
