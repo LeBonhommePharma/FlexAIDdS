@@ -152,10 +152,8 @@ class BindingModeResult:
     best_cf: Optional[float] = None
     frequency: Optional[int] = None
     temperature: Optional[float] = None
-    # New in Task 2: full audited ledger (when available from engine or pure fallback).
-    # Shape matches ThermodynamicBreakdown.to_dict() exactly.
-    # Legacy scalar fields above are preserved for backward compatibility.
-    thermodynamics: Optional[Dict[str, Any]] = None
+    # Full audited ledger (rich dataclass when available from engine or pure fallback).
+    # Legacy scalar fields above preserved for backward compat.
     metadata: Dict[str, Any] = field(default_factory=dict)
     # Receptor-bound ions/cofactors in the complex that influenced this mode.
     # Format: "RESNAME:CHAIN:RESNUM" (e.g. "MG:A:101", "ZN:B:202").
@@ -324,16 +322,25 @@ class DockingResult:
         """Return the binding mode with the lowest free energy.
 
         Falls back to the mode with the lowest :attr:`~BindingModeResult.rank`
-        when no free-energy values are available.
+        when no free-energy values are available. Prefers modes with n_poses>0
+        and (if known) matching temperature for the exact best BindingMode.
 
         Returns:
             Best :class:`BindingModeResult`, or ``None`` if there are no modes.
         """
         if not self.binding_modes:
             return None
-        free_modes = [m for m in self.binding_modes if m.free_energy is not None]
-        if free_modes:
-            return min(free_modes, key=lambda m: m.free_energy)
+        # Prefer sane modes (has free_energy, >0 poses, temp match if present on result)
+        def _score(m):
+            fe = m.free_energy if m.free_energy is not None else float('inf')
+            npos = m.n_poses if m.n_poses > 0 else 0
+            tmatch = 0
+            if getattr(self, 'temperature', None) and m.temperature:
+                tmatch = 1 if abs(m.temperature - self.temperature) < 0.1 else -1
+            return (fe, -npos, -tmatch, m.rank)
+        sane = [m for m in self.binding_modes if m.n_poses > 0 or m.free_energy is not None]
+        if sane:
+            return min(sane, key=_score)
         return min(self.binding_modes, key=lambda m: m.rank)
 
     def to_records(self) -> List[Dict[str, Any]]:
