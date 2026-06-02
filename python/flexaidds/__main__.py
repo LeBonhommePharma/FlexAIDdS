@@ -55,6 +55,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="Show only the top N binding modes in the summary table (default: all).",
     )
     parser.add_argument(
+        "--best-only",
+        "--best-mode",
+        action="store_true",
+        help="Print *only* the single best BindingMode (rank 1 by free_energy from full thermo ledger) + key fields/PDB pointer. Ideal for the exact 'best BindingMode' answer at precise T.",
+    )
+    parser.add_argument(
         "--check-update",
         action="store_true",
         help="Check for newer versions of FlexAID∆S on GitHub.",
@@ -136,6 +142,19 @@ def main() -> int:
         return 0
 
     result = load_results(args.results_dir)
+
+    if getattr(args, "best_only", False) or getattr(args, "best_mode", False):  # --best-only / --best-mode
+        top = result.top_mode()
+        if top is None:
+            print("No binding modes found.")
+            return 1
+        print(f"Best BindingMode (lowest free_energy / full thermo ledger at T={result.temperature} K):")
+        print(f"  mode_id={top.mode_id} rank={top.rank} n_poses={top.n_poses}")
+        print(f"  free_energy={top.free_energy} enthalpy={top.enthalpy} entropy={top.entropy}")
+        print(f"  temperature={top.temperature} best_cf={top.best_cf}")
+        # Suggest the artifact path (common layout)
+        print(f"  (Look for corresponding *_mode_{top.mode_id}_*.pdb or rank 1 pose in {result.source_dir} subdirs for full REMARK thermo + coords)")
+        return 0
 
     if args.json:
         print(result.to_json(sort_keys=True))
