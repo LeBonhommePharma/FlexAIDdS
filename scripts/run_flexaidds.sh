@@ -19,10 +19,14 @@
 #   CREATE_BUNDLE=1 SKIP_REBUILD=1 \
 #   FLEXAID_BINARY=/path/to/FlexAID \
 #   bash scripts/run_flexaidds.sh receptor.pdb ligand.mol2 \
-#        [--outdir DIR] [--temperature 298.15] [--seed 42]
+#        [--outdir DIR] [--temperature 298.15] [--seed 42] [--visualize]
 #
 #   # Or let it auto-create a timestamped results dir under $HOME/flexaidds_results
 #   CREATE_BUNDLE=1 bash scripts/run_flexaidds.sh 1stp.pdb biotin.mol2
+#
+#   # With Imagine figure + animation (best mode, Gate 6, NRDD aesthetic):
+#   FLEXAIDDS_SOURCE=/path/to/FlexAIDdS SKIP_REBUILD=1 \
+#   bash scripts/run_flexaidds.sh 1stp biotin.mol2 --temperature 298.15 -o results/test_run --visualize
 #
 # Environment variables (all optional, non-breaking defaults):
 #   CREATE_BUNDLE=1          → after success, also write run_YYYYMMDD_HHMMSS_XXXX.tar.gz
@@ -31,6 +35,7 @@
 #   FLEXAIDDS_SOURCE=...     → repo root (used by run_metadata.py for git info)
 #   RESULTS_DIR=...          → force a specific output directory (advanced)
 #   RUN_ID=...               → optional explicit short identifier for bundle name
+#   VISUALIZE=1 or --visualize → after success+Gate 6, auto-prep results/figures/ prompts for Grok Imagine (NRDD cover + 6s anim of best mode)
 #
 # Output layout (inside RESULTS_DIR):
 #   reproducibility.json     ← full record from run_metadata.create_run_record
@@ -77,13 +82,15 @@ LIGAND=""
 OUTDIR=""
 TEMPERATURE="298.15"
 SEED="42"
+VISUALIZE="${VISUALIZE:-0}"
 EXTRA_ARGS=()
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
-        --outdir)       OUTDIR="$2"; shift ;;
+        --outdir|-o)    OUTDIR="$2"; shift ;;
         --temperature)  TEMPERATURE="$2"; shift ;;
         --seed)         SEED="$2"; shift ;;
+        --visualize|-v) VISUALIZE=1 ;;
         -h|--help)
             sed -n '2,80p' "$0" | sed 's/^# \?//'
             exit 0
@@ -446,6 +453,47 @@ if [[ "${CREATE_BUNDLE:-0}" == "1" ]]; then
     else
         warn "CREATE_BUNDLE=1 was set but run did not succeed or artifacts are missing — no bundle written (non-breaking)."
     fi
+fi
+# ===============================================================================
+
+# === VISUALIZE / Imagine figure gate (P1 of grok-imagine-figure-rendering) =====
+# After success + (when requested) after the bundle gate, invoke the pure-Python
+# figures prep. This writes results/figures/{prompt_cover.txt, prompt_animation.txt,
+# figure_metadata.json} with real ΔG/ΔH/-TΔS from the ledger + Gate 6 status.
+# The skill agent (or caller) is then expected to feed the prompts to image_gen /
+# video_gen / image_edit and place the materialized assets in the same dir.
+# Only runs on SUCCESS path. Non-breaking when VISUALIZE=0 (default).
+if [[ "${SUCCESS}" == "true" && "${VISUALIZE:-0}" == "1" ]]; then
+    info "VISUALIZE=1 set — preparing publication cover + 6s animation prompts (Gate 6 aware)..."
+    # Reuse the same python that was located earlier; RESULTS_DIR is already absolute
+    "$PYTHON" -c '
+import os, sys
+from pathlib import Path
+sys.path.insert(0, os.environ.get("PYTHONPATH", "").split(":")[0] or ".")
+try:
+    from flexaidds.figures import prepare_publication_figures
+except Exception as e:
+    print("[figures] import failed:", e, file=sys.stderr)
+    sys.exit(0)  # never break the run
+
+rd = Path(os.environ.get("RESULTS_DIR", "."))
+res = prepare_publication_figures(
+    rd,
+    visualize=True,
+    require_gate6=True,
+    use_pymol_base=False,
+    force=False,
+)
+if res.get("proceeded"):
+    print("[figures] prepared:", res.get("figures_dir"))
+    print("[figures] cover prompt:", res.get("cover_prompt_path"))
+    print("[figures] animation prompt:", res.get("animation_prompt_path"))
+    print("[figures] metadata:", res.get("metadata_path"))
+    print("[figures] gate6_passed:", res.get("gate6_passed"))
+    print("Agent: now call image_gen / video_gen with the prompts above (aspect 3:2 for cover, duration=6 for anim). Save outputs inside the figures/ dir as cover_best_mode.png + animation_6s.mp4. Use image_edit for banner/equation polish if needed.")
+else:
+    print("[figures] skipped (", res.get("skipped", "unknown"), ")")
+' 2>&1 || warn "figures preparation encountered an error (non-fatal; run continues)"
 fi
 # ===============================================================================
 
