@@ -222,7 +222,7 @@ echo ""
 # Trap: ensure status file reflects launcher exit (non-fatal, for cases where launcher is monitored). Robust to spaces in iCloud paths.
 trap 'python3 -c "
 import json, time, os, sys
-sf = os.environ.get(\"STATUS_FILE\") or \"'$STATUS_FILE'\"
+sf = os.environ.get(\"STATUS_FILE\", \"\")
 if sf and os.path.exists(sf):
   try:
     with open(sf) as f: data = json.load(f)
