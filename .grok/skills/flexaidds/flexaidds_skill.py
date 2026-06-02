@@ -67,14 +67,18 @@ class FigureParameters:
 
     Mirrors (and validates) the values used in the reference covers:
     - entropy_value: representative TΔS (or |TΔS|) in kcal/mol scale.
-    - enthalpy_value: representative ΔH (or |ΔH|) .
-    - index_value: Entropy–Enthalpy Index (I_E–E), typically [0, 1] or [-1, 1].
+    - tds_value: value displayed as the prominent '-TΔS' (user preference: make -TdS great and highly visible;
+      do not show -ΔH / -dH labels prominently; prefer the Enthalpy-Entropy Index I_E-E instead).
+    - index_value: Enthalpy-Entropy Index (I_E-E / I_EE) developed within the FlexAIDdS skill (see LIB/statmech compute_IEE),
+      typically [0, 1] or [-1, 1].
     - style: "dramatic_faces" (personified blue entropy vs fiery enthalpy faces)
              or "molecular_gauge" (abstract proteins + central E-E gauge).
     Additional fields allow full control of titles, dates, etc. for reproducibility.
     """
     entropy_value: float = 0.93
-    enthalpy_value: float = 1.4
+    # Note: this value is displayed as the prominent '-TΔS' (user preference: make -TdS great and visible;
+    # avoid prominent -ΔH / -dH labels in the figure; prefer the Enthalpy-Entropy Index I_E-E instead).
+    tds_value: float = 1.4
     index_value: float = 0.92
     style: str = "dramatic_faces"
     title: str = "The ΔG balance"
@@ -83,8 +87,8 @@ class FigureParameters:
     volume: str = "Volume 24 | No. 6"
 
     def __post_init__(self):
-        if self.entropy_value < 0 or self.enthalpy_value < 0:
-            raise ValueError("entropy_value and enthalpy_value must be non-negative")
+        if self.entropy_value < 0 or self.tds_value < 0:
+            raise ValueError("entropy_value and tds_value must be non-negative")
         if not (0.0 <= self.index_value <= 1.0):
             # Allow slight tolerance but clamp/document; strict [0,1] for the index in this context
             if not (-0.1 <= self.index_value <= 1.1):
@@ -109,7 +113,7 @@ def _build_prompt(
     # reference-style prompt with E-E index, cubes/gauge, branding, etc.
     res = generate_flexaids_nrdd_cover(
         entropy_value=params.entropy_value,
-        enthalpy_value=params.enthalpy_value,
+        enthalpy_value=params.tds_value,  # passed to the slot used for prominent -TΔS in the figure (user preference)
         index_value=params.index_value,
         style=params.style,
         title=params.title,
@@ -183,8 +187,8 @@ def generate_flexaids_figure(
             raise ValueError(f"prompt_overrides may only contain keys in {allowed}, got: {bad}")
 
     logger.info(
-        "Generating FlexAID∆S NRDD figure with params: entropy=%s, enthalpy=%s, index=%s, style=%s",
-        params.entropy_value, params.enthalpy_value, params.index_value, params.style,
+        "Generating FlexAID∆S NRDD figure with params: entropy=%s, tds=%s, index=%s, style=%s",
+        params.entropy_value, params.tds_value, params.index_value, params.style,
     )
 
     prompt = _build_prompt(params, prompt_overrides)

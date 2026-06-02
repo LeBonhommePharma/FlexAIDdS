@@ -550,11 +550,16 @@ class NRDDCoverParams:
     """Validated parameters for NRDD-style FlexAID∆S cover generation.
 
     Values should be ensemble-derived thermodynamic quantities (kcal/mol scale
-    for ΔH / TΔS terms; I_E-E typically normalized -1 to +1 or 0-1).
+    for TΔS terms; I_E-E typically normalized -1 to +1 or 0-1).
+    Per user preference: prominently feature -TΔS (great visibility), use the
+    Enthalpy-Entropy Index (I_E-E) developed in the skill; do not show -ΔH / -dH
+    labels or visual elements prominently.
     """
-    entropy_value: float = 0.93          # e.g. representative |TΔS| or TΔS
-    enthalpy_value: float = 1.4          # e.g. |ΔH| or -ΔH (sign per convention)
-    index_value: float = 0.92            # Entropy–Enthalpy Index (I_E–E)
+    entropy_value: float = 0.93          # e.g. representative TΔS 
+    # tds / enthalpy_value slot: value for prominent -TΔS (user: -TdS is great and should be highly visible;
+    # do NOT feature -ΔH / -dH labels or cubes prominently; prefer the Enthalpy-Entropy Index I_E-E instead)
+    enthalpy_value: float = 1.4          # value shown as -TΔS in figures
+    index_value: float = 0.92            # Enthalpy-Entropy Index (I_E-E / I_EE) developed in the skill (statmech::compute_IEE)
     title: str = "The ΔG balance"
     subtitle: str = "Striking the right pose in drug discovery"
     date: str = "June 2025"
@@ -625,8 +630,8 @@ def build_nrdd_cover_prompt(params: NRDDCoverParams) -> str:
         f"Include FlexAID∆S logo/wordmark and 'LeBonhommePharma.github.io' . Subtle scientific icons. "
         f"Scientific note in small text: '{p.source_note}'. "
         f"Thermodynamic call-outs: cyan box 'TΔS = {p.entropy_value:.2f}', purple box '-TΔS = {p.enthalpy_value:.2f}', "
-        f"gold box 'Entropy–Enthalpy Index (I_E–E) = {p.index_value:.2f}'. "
-        f"Prominent equation 'ΔG = ΔH − TΔS' with values. Date top-right '{p.date}', volume '{p.volume}'. "
+        f"gold box 'Enthalpy-Entropy Index (I_E-E) = {p.index_value:.2f}' (developed in FlexAIDdS). "
+        f"Prominent equation 'ΔG = ΔH − TΔS' with values (focus on -TΔS term). Date top-right '{p.date}', volume '{p.volume}'. "
         f"Title large: '{p.title}'. Subtitle: '{p.subtitle}'."
     )
 
@@ -635,10 +640,9 @@ def build_nrdd_cover_prompt(params: NRDDCoverParams) -> str:
             "Dramatic split composition: left side a translucent, icy, blue-glowing human-like face representing "
             "Entropy (TΔS), formed from swirling water splashes, bubbles, and small ligand molecules, intense blue eyes, "
             "cool ethereal lighting, water droplets and molecular fragments exploding outward. Right side a fiery, molten, "
-            "lava-cracked human-like face representing Enthalpy (ΔH), emerging from detailed 3D protein surface folds with "
+            "lava-cracked human-like face representing the balancing Enthalpy contribution (no -ΔH label), emerging from detailed 3D protein surface folds with "
             "orange/red glows, embers, and heat distortion. In the center, floating a highly detailed small 3D ball-and-stick "
-            "ligand molecule (generic drug-like or specific if known). Two floating glass/ice cubes: left cyan '-TΔS', right "
-            "orange '-ΔH'. Explosive energy and water particles at the interface. Bottom three-column layout with clean "
+            "ligand molecule (generic drug-like or specific if known). Prominently featured floating glass/ice cube in cyan/purple for '-TΔS' (great visibility), and gold accent for the 'Enthalpy-Entropy Index (I_E-E)'. Explosive energy and water particles at the interface. Bottom three-column layout with clean "
             "dividers and text blocks: left 'Beyond lipophilicity / New paradigms for binding affinity', middle "
             "'Conformational thermodynamics / Hidden states, real consequences', right 'Designing the ΔG sweet spot / "
             "Balancing enthalpy and entropy for better drugs' plus small Le Bonhomme Pharma icon (top hat silhouette). "

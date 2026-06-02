@@ -30,6 +30,7 @@ python -c "
 from flexaidds.figures import generate_flexaids_nrdd_cover
 res = generate_flexaids_nrdd_cover(
     entropy_value=0.93, enthalpy_value=1.4, index_value=0.92,
+    # 'enthalpy_value' here is the value for prominent -TΔS display (user preference: -TdS great/visible, no -dH, use I_E-E from skill)
     style='dramatic_faces',  # or 'molecular_gauge'
     results_dir='results/your-docking-run'  # optional, pulls real ledger values
 )

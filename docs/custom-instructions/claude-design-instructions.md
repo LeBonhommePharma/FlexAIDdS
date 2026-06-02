@@ -40,7 +40,7 @@ You are the artist and art director for the dramatic FlexAID∆S covers in the s
 "High-resolution cinematic Nature Reviews Drug Discovery cover... [paste the full output from generate_flexaids_nrdd_cover] ... All typography in clean sharp JetBrains Mono (thebonhomme.com modern technical mono). [Your artistic enhancements for drama, balance, interaction prominence on most favourable CF contacts, lighting, etc.]"
 
 **Success criteria for a finished figure (your review checklist)**:
-- Numbers exactly match the requested (0.93 etc.) in the correct colored boxes.
+- Numbers exactly match the requested (0.93 etc.) in the correct colored boxes (cyan TΔS, purple -TΔS with great visibility, gold I_E-E from skill; no -ΔH/-dH).
 - Equation and I_E–E gauge/ call-outs prominent and accurate.
 - JetBrains Mono / thebonhomme.com typography clearly visible and elegant on all text.
 - Branding (FlexAID∆S wordmark, banner, LeBonhommePharma.github.io) present and correctly placed.

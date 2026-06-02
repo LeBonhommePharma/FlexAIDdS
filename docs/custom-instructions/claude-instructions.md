@@ -27,6 +27,7 @@ cd python && pip install -e . && pytest tests/ -q
 python -c "
 from flexaidds.figures import generate_flexaids_nrdd_cover
 res = generate_flexaids_nrdd_cover(entropy_value=0.93, enthalpy_value=1.4, index_value=0.92, style='dramatic_faces', results_dir='results/your-run-if-any')
+# Note: the 'enthalpy_value' arg is displayed as the prominent '-TΔS' (user: -TdS great & visible; do not show -dH/-ΔH; prefer I_E-E index from skill's compute_IEE).
 print('PROMPT (copy to image tool):', res['prompt'][:500], '...')
 print('METADATA for reproducibility:', res['metadata'])
 "
@@ -61,6 +62,7 @@ The package now has first-class support for generating the exact class of Nature
 python -c '
 from flexaidds.figures import generate_flexaids_nrdd_cover
 res = generate_flexaids_nrdd_cover(entropy_value=0.93, enthalpy_value=1.4, index_value=0.92, style="dramatic_faces")
+# Note: the 'enthalpy_value' arg is displayed as the prominent '-TΔS' (user: -TdS great & visible; do not show -dH/-ΔH; prefer I_E-E index from skill's compute_IEE).
 print(res["prompt"])
 import json; open("cover_metadata.json", "w").write(json.dumps(res["metadata"], indent=2))
 '

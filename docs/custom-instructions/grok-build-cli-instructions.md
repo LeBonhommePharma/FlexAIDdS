@@ -28,6 +28,7 @@ python3 .grok/skills/flexaid-docking/scripts/validate_skill.py   # or the flexai
   python -c "
   from flexaidds.figures import generate_flexaids_nrdd_cover
   res = generate_flexaids_nrdd_cover(entropy_value=0.93, enthalpy_value=1.4, index_value=0.92, style='dramatic_faces', results_dir='results/test_run' if exists)
+  # enthalpy_value arg = value shown as -TΔS (user: make -TdS great, avoid -dH, feature I_E-E index from the skill)
   print(res['prompt'])
   "
   # Then immediately:
