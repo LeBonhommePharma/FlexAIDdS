@@ -302,9 +302,115 @@ python -m flexaidds.dataset_runner --help
 
 Detailed dataset configurations live in `python/flexaidds/dataset_runner/datasets/`.
 
-## References
+## M3 Pro iCloud Canonical Best-BindingMode Protocol (exact 298 K / 310 K full runs)
 
-See [references/flexaid-docking-guidance.md](references/flexaid-docking-guidance.md) for preserved scientific terminology, scoring proxy vs. thermodynamic ledger distinctions, and historical context from the FlexAIDδS implementation roadmap.
+**This is the production, zero-friction path to the exact requested answer: the best BindingMode (lowest free_energy after full thermo ledger + entropy corrections) from FlexAIDdS for a target+ligand molecular recognition event at precise temperature.**
+
+Only this path is supported for the 4 canonical full first runs (Astex Diverse self-docking + Astex Non-Native cross-docking at 298 K and 310 K).
+
+### Mandatory ritual (every time)
+```bash
+git status
+find . -maxdepth 4 -iname '*skill*' -o -iname 'SKILL.md' -o -iname 'AGENTS.md'
+python3 .grok/skills/flexaid-docking/scripts/validate_skill.py   # must PASS
+```
+
+### 1. Close hogs + space (iCloud green-lit)
+User-confirmed: only ~325 GB occupied out of 2 TB iCloud. No aggressive cleanup in results/ needed.
+- Close/pause Codex + openclaw etc (frees CPU/GPU for GA + Metal kernels in Shannon/tENCoM etc).
+- Local tmp only: rm stale /private/tmp/flexaidds* and /tmp/flexaidds* (protect any active benchmark's omp-build/campaign dirs).
+
+### 2. Re-ensure (full, no --quick)
+```bash
+python3 .grok/skills/flexaid-docking/scripts/ensure_docking_data.py
+# Heavy Non-Native will require+verify Lovell_LIB.dat rotobs.lst SYBYL_emat.dat etc.
+```
+
+### 3. Launch the 4 canonical (exact command; iCloud-only results + Metal pre-flight enforced)
+All output exclusively under $FLEXAIDDS_RESULTS (iCloud /Mobile Documents/.../FlexAIDdS/results).
+
+```bash
+# 298 K
+bash .grok/skills/flexaid-docking/scripts/launch_full_benchmark.sh astex_diverse 298 astex_diverse_298K
+bash .grok/skills/flexaid-docking/scripts/launch_full_benchmark.sh astex_nonnative 298 astex_nonnative_298K
+
+# 310 K
+bash .grok/skills/flexaid-docking/scripts/launch_full_benchmark.sh astex_diverse 310 astex_diverse_310K
+bash .grok/skills/flexaid-docking/scripts/launch_full_benchmark.sh astex_nonnative 310 astex_nonnative_310K
+```
+
+The launcher (inside):
+- Sources ~/.flexaidds_env (iCloud BUILD + RESULTS + BINARY).
+- export PATH=... ; validate_skill + ensure (full).
+- Metal pre-flight (counts .metallib (7+), system_profiler Metal 4 on M3 Pro, otool links Metal.framework, prints the exact grep for logs).
+- Heavy dataset guard + symlinks for Non-Native.
+- Early run_status.json (status, exact temperature, pids, iCloud output_dir/binary, command).
+- nohup + disown portable detach (macOS-safe, separate stderr.log).
+- Prints the 4 OUT_DIRs (full-298K-...-TS etc on iCloud), tail cmds, post-verify cmds, and "safely log out".
+
+Example created (all iCloud):
+- full-298K-astex_diverse_298K-1780383769
+- full-310K-astex_diverse_310K-1780383775
+- full-298K-astex_nonnative_298K-1780383775
+- full-310K-astex_nonnative_310K-1780383775
+
+### 4. Analyze along the way + valid results only
+Live (monitors or):
+```bash
+# The 4 binary.logs (iCloud)
+tail -f $OUT_DIR/binary.log
+tail -f $OUT_DIR/stderr.log
+cat $OUT_DIR/run_status.json   # temperature exact, status, returncode when done
+```
+
+Use the skill helper (Metal + health + validity + extract):
+```bash
+python3 .grok/skills/flexaid-docking/scripts/summarize_campaign.py $OUT_DIR --verbose --extract-best-mode
+# Strict heuristic: real RMSD > placeholder, modes/prepared signals >0, temp==requested, returncode 0 or running, has subdir.
+# --extract-best-mode: scans for rank-1 / lowest free_energy BindingMode (thermo ledger) + prints REMARKs + pointers to the PDB/JSON.
+# (Full power: python -c 'from flexaidds.results import load_results; r=load_results(str(p)); print(r.top_mode())' — sorts by free_energy.)
+```
+
+Grep for the science (in any of the 4 logs):
+```bash
+grep -iE 'metal|backend|dispatch|shannon|using metal|success rate|RMSD|Binding Mode|Prepared|GA:|temperature|free energy|entropy' $OUT_DIR/binary.log | tail -30
+```
+
+iCloud FS green-light (no fuckup):
+```bash
+python benchmarks/re-dock/icloud_fs_check.py --path $OUT_DIR
+# All tests (json, churn, executable, nested, bit persist) must PASS.
+```
+
+Post-finish full verify (ritual + only keep valid):
+```bash
+python3 .grok/skills/flexaid-docking/scripts/validate_skill.py
+python benchmarks/re-dock/icloud_fs_check.py --path $OUT_DIR
+python3 .grok/skills/flexaid-docking/scripts/summarize_campaign.py $OUT_DIR --extract-best-mode
+# Inspect the surfaced best BindingMode: exact T, lowest F from full ledger (partition + vib + Shannon config), real RMSD <<2 where success, >0 modes/poses, Metal dispatch lines for entropy kernels, returncode 0.
+# Quarantine or discard anything with 999 placeholders, 0 modes, temp drift, high bogus energies, or no Metal when build had metallibs.
+```
+
+### 5. The "exact requested answer"
+Once a dir passes the above (✅ from summarize, fs green, best mode extract shows sane thermo at exact T), that is the best BindingMode for that target+ligand at that T from the full FlexAIDdS entropy-driven simulation.
+
+The 4 canonicals (launched 2026-06-02) are the reference full runs.
+
+Monitors (persistent filtered tails on the 4 iCloud binary.logs) stream events for metal/dispatch/success/RMSD/temp/prepared/binding/entropy as they progress.
+
+All large results, logs, status, configs, outputs live exclusively on iCloud (325 GB / 2 TB per user; fs_check + launcher + summarize enforce the paths).
+
+### Why this eliminates friction for the best BindingMode
+- Single canonical launcher (PATH, ritual, ensure, Metal preflight, temp fidelity in config+status, iCloud-only, detachable, early status).
+- Early diagnosis (run_status, monitors, summarize health).
+- Validity gate before accepting "this is the answer" (no more 999-as-success, 0-mode silent, temp 300, no Metal, premature tables).
+- Best surfaced explicitly (free_energy sort from full thermo ledger, not CF proxy).
+- Reproducible + auditable (skill validate, fs_check, manifests, git/binary/data hashes via ensure/package).
+
+See also the launched dirs' run_status.json + binary.log for live proof.
+
+(Protocol added/expanded after the 4 canonical 298/310 launches succeeded with all iCloud/Metal/T pre-flights green.)
+
 
 ## Workflow for Typical Tasks
 
