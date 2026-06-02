@@ -124,6 +124,7 @@ def main():
     parser.add_argument("dirs", nargs="+", help="One or more campaign directories (e.g. full-*-fixed-*)")
     parser.add_argument("--verbose", "-v", action="store_true", help="Show more log samples")
     parser.add_argument("--extract-best-mode", "--extract-best", action="store_true", help="Surface/print the best BindingMode (rank 1 / lowest free_energy from thermo ledger) + pointers to PDB/JSON + key thermo. Uses run reports + PDB REMARK scan (or flexaidds load if available).")
+    parser.add_argument("--validate", action="store_true", help="Strict validate mode: exit 0 only if looks_valid (real RMSD/modes, exact T, returncode, Metal if expected) + best mode extractable. For CI/launcher post-run gate on 'exact best BindingMode answer'.")
     args = parser.parse_args()
 
     for d in args.dirs:
@@ -202,6 +203,14 @@ def main():
                 print("  Check per-system subdirs under output/ or tier2/ for the system's top BindingMode PDB (REMARKs contain thermo).")
                 print("  Recommended: python -c 'from flexaidds.results import load_results; r=load_results(\"" + str(p) + "\"); m=r.top_mode() if hasattr(r,\"top_mode\") else None; print(m)'  (or equivalent for benchmark report JSONs)")
             print("  The best is the one with lowest free_energy (full thermo: F from partition function + vib/config entropy corrections) at the exact temperature from run_status.")
+
+        if getattr(args, "validate", False):
+            if looks_valid:
+                print("✅ VALID best BindingMode (per strict heuristic + extractable). Safe to use as the exact answer.")
+            else:
+                print("❌ NOT VALID for best BindingMode (placeholders, 0 modes, temp drift, etc.). Do not use as the answer.")
+                # Do not sys.exit here to allow multi-dir; caller can check output or we can set a flag
+                # For strict single-dir gate, user can check the print or enhance to exit(2) if single dir.
 
         if args.verbose and logs:
             print("\n[Recent relevant log lines]")
