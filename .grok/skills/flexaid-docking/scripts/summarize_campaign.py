@@ -127,6 +127,7 @@ def main():
     parser.add_argument("--validate", action="store_true", help="Strict validate mode: exit 0 only if looks_valid (real RMSD/modes, exact T, returncode, Metal if expected) + best mode extractable. For CI/launcher post-run gate on 'exact best BindingMode answer'.")
     args = parser.parse_args()
 
+    any_invalid = False
     for d in args.dirs:
         p = Path(d).expanduser().resolve()
         if not p.is_dir():
@@ -172,6 +173,8 @@ def main():
             (health.get('binding_mode_signals', 0) > 0 or health.get('prepared_signals', 0) > 0 or health['real_rmsd_signals'] > 0)
         )
         print(f"  Looks like valid results so far:     {'✅ YES (best BindingMode candidate ready for extract)' if looks_valid else '⚠ probably still in prep/placeholder stage or needs review'}")
+        if getattr(args, "validate", False) and not looks_valid:
+            any_invalid = True
 
         if getattr(args, "extract_best_mode", False):
             print("\n[Best BindingMode Extract (basic P1 impl)]")
@@ -220,6 +223,11 @@ def main():
                     print(f"  [{name}] {l[:110]}")
 
     print("\nDone. Use on finished _fixed dirs for clean Metal + validity summary.")
+
+    if getattr(args, "validate", False) and any_invalid:
+        # Strict gate for 'is this the exact best BindingMode answer?'
+        print("\n❌ One or more dirs failed --validate gate. Do not treat as the valid best BindingMode result.")
+        sys.exit(2)
 
 if __name__ == "__main__":
     main()
