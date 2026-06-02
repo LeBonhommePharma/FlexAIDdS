@@ -136,6 +136,11 @@ def test_build_prompts_contain_required_elements_and_injected_numbers(tmp_path: 
     assert "key_interactions" in cover.lower() or "critical" in cover.lower() or "H-bond" in cover or "hydrophobic" in cover.lower()
     assert "critical" in anim.lower() or "interaction" in anim.lower() or "H-bond" in anim or "label" in anim.lower()
 
+    # PLIP nice figs + fonts + CF priority (latest P3)
+    assert "PLIP" in cover or "plip" in cover.lower() or "PLIP-style" in cover
+    assert "JetBrains Mono" in cover or "thebonhomme.com" in cover.lower()
+    assert "CF" in cover or "favourable" in cover.lower() or "most favourable" in cover.lower()
+
     # Animation specific
     assert "6-second" in anim or "6s" in anim or "second" in anim
     assert "360" in anim or "orbit" in anim.lower()

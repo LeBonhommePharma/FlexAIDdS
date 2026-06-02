@@ -381,7 +381,11 @@ bash run_flexaidds.sh 1stp biotin.mol2 --temperature 298.15 -o results/test_run 
 This produces `results/test_run/figures/` containing the prompts + metadata (and later the rendered cover + animation) alongside the usual reproducibility artifacts.
 
 ### Aesthetics & prompt contract (redesigned)
-The prompts are built in `python/flexaidds/figures.py` from real docking output. They enforce the NRDD-cover + reference-video aesthetic (deep navy #0a0e14 gradients, #22D3EE teal/cyan, gold for ΔG, terra for entropy, hybrid clean scientific rendering with subtle entropy wash, exact banner/equation/footer baked in). See the module for the canonical TEMPLATE_COVER / TEMPLATE_ANIMATION.
+The prompts are built in `python/flexaidds/figures.py` from real docking output. They enforce the NRDD-cover + reference-video aesthetic (deep navy #0a0e14 gradients, #22D3EE teal/cyan, gold for ΔG, terra for entropy, hybrid clean scientific rendering with subtle entropy wash, exact banner/equation/footer baked in, JetBrains Mono / thebonhomme.com typography for all labels). 
+
+**PLIP integration for interactions**: Prompts emulate the clean, professional 3D interaction diagrams from PLIP (Protein-Ligand Interaction Profiler, https://github.com/pharmai/plip) — color-coded per its standard legend (blue for H-bonds, grey dashed for hydrophobics, etc.), with emphasis on the *most favourable contacts and those contributing most to the CF/Voronoi score*. If you have PLIP installed, run `plip -f <best_pose.pdb> -p -y` in the results dir before/after the skill step; the generated PNG/.pse makes an excellent base image for image_to_image or manual refinement (the prepare step will auto-detect and note a `base_plip_interactions.png` when possible). This gives pixel-accurate, publication-grade interaction viz baked into the promotional cover/anim.
+
+See the module for the canonical TEMPLATE_COVER / TEMPLATE_ANIMATION.
 
 **Guardrail**: Figure generation is post-hoc promotional only. Use precise language in any sharing ("best-scoring binding mode by the ensemble-derived thermodynamic ledger", "visualization generated from run outputs").
 

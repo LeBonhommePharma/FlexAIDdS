@@ -57,6 +57,30 @@ BRAND = {
     "fg": "#d4dced",
 }
 
+# PLIP (Protein-Ligand Interaction Profiler) style reference for nice, clean interaction figures.
+# PLIP generates professional 3D rendered diagrams (PNG via -p, or raytraced from .pse PyMOL sessions)
+# with standard color-coded viz of non-covalent interactions. See https://github.com/pharmai/plip
+# We emulate this "nice fig" clarity + precision in our imagine prompts (and can use PLIP output
+# as base image for image-to-image if user runs `plip -f <best_pose.pdb> -p`).
+# Legend (from PLIP docs): 
+#   Hydrophobic: grey50 dashed
+#   H-bond: blue solid line
+#   Salt bridge: yellow dashed
+#   pi-Stacking: green/smudge dashed
+#   pi-Cation: orange dashed
+#   Halogen: greencyan solid
+#   Water bridge: lightblue
+#   Metal: violetpurple
+# Prioritize the *most favourable contacts* (highest contribution to our Voronoi CF score for the mode)
+# + standard chem types.
+PLIP_STYLE = (
+    "in the clean, professional 3D interaction diagram style of PLIP (Protein-Ligand Interaction Profiler): "
+    "precise color-coded lines and labels per the standard PLIP legend (blue solid for H-bonds, grey dashed "
+    "for hydrophobic, yellow for salt bridges, green for pi-stacking, etc.), atom- and residue-accurate, "
+    "publication-quality, no clutter. Emphasize the most favourable contacts and those contributing most "
+    "to the docking CF/Voronoi contact function for this binding mode."
+)
+
 # Required banner and footer text (never change without coordinated doc update)
 BANNER = "/flexaids-docking • FlexAID∆S"
 FOOTER_TEMPLATE = "gate6:{gate} • git:{git} • {date} • {runid} • FlexAIDdS"
@@ -67,7 +91,9 @@ TEMPLATE_COVER = """Create a stunning, publication-ready scientific figure suita
 
 Hybrid rendering — translucent molecular surface + cartoon ribbons for the receptor protein in deep navy tones ({bg_deep_navy}), ligand rendered in bright cyan/teal sticks/balls ({teal}) with crisp atomic detail and subtle glow, 3-5 key induced-fit side chains highlighted in matching teal with thin H-bond dashes. Subtle blue-to-red entropy heatmap wash on the receptor surface and flexible loops (blue = low configurational entropy/rigid, red = high entropy/flexible regions per the run's Shannon + tENCoM values).
 
-CRITICAL: Clearly depict, highlight with elegant dashed lines/glows, and label the most important molecular interactions that matter most: {key_interactions}. Use contrasting teal dashed lines for H-bonds and polar contacts, gold for hydrophobic/vdW packing, with crisp residue labels (e.g. "H-bond to Asn23", "salt-bridge to Asp128", "hydrophobic core with Trp79/Tyr43") placed elegantly near the contacts so they are scientifically precise and immediately readable. Prioritize the interactions that contribute most to affinity and specificity; make them visually prominent yet balanced in the composition.
+All text (banners, labels, equation, footer) in clean sharp JetBrains Mono (or very similar modern technical mono font aesthetic exactly like thebonhomme.com and Le Bonhomme Pharma branding): minimalist, highly legible, professional.
+
+CRITICAL: Clearly depict, highlight with elegant dashed lines/glows, and label the most important molecular interactions that matter most: {key_interactions}. {plip_style} Use contrasting teal dashed lines for H-bonds and polar contacts, gold for hydrophobic/vdW packing, with crisp residue labels (e.g. "H-bond to Asn23", "salt-bridge to Asp128", "hydrophobic core with Trp79/Tyr43") placed elegantly near the contacts so they are scientifically precise and immediately readable. Prioritize the most favourable contacts and those contributing most to the CF. Make them visually prominent yet balanced in the composition.
 
 Prominently and elegantly overlay the thermodynamic equation in clean modern typography: ΔG = ΔH − TΔS   with actual values ΔG = {delta_g:.2f} kcal/mol , ΔH = {delta_h:.2f} , −TΔS = {minus_t_ds:.2f}  at T={temperature:.2f} K (gold for ΔG, teal for ΔH, purple for entropy term).
 
@@ -79,7 +105,7 @@ Overall mood: confident, precise, beautiful, suitable for top-tier journal cover
 
 TEMPLATE_ANIMATION = """6-second seamless cinematic animation (1080p or 4K, 6s duration, loop-friendly) of the best-scoring FlexAID∆S binding mode for {ligand} in {receptor}.
 
-Smooth slow 360° orbit + gentle dolly around the docked complex (exact same pose and induced-fit geometry as the static cover). Very subtle breathing motion on the 3-5 highlighted induced-fit side chains (low amplitude, physically plausible), ligand micro-fluctuations consistent with the ensemble. Flowing faint entropy color waves (blue low-entropy ↔ red high-entropy) pulsing gently across receptor surface and loops. During the motion, the critical molecular interactions are dynamically highlighted: {key_interactions} — with elegant animated dashed lines (teal for H-bonds/polar, gold for hydrophobic) and fading residue labels that emphasize the interactions that matter most.
+Smooth slow 360° orbit + gentle dolly around the docked complex (exact same pose and induced-fit geometry as the static cover). Very subtle breathing motion on the 3-5 highlighted induced-fit side chains (low amplitude, physically plausible), ligand micro-fluctuations consistent with the ensemble. Flowing faint entropy color waves (blue low-entropy ↔ red high-entropy) pulsing gently across receptor surface and loops. All text in JetBrains Mono / thebonhomme.com mono aesthetic. During the motion, the critical molecular interactions are dynamically highlighted: {key_interactions} — {plip_style} with elegant animated dashed lines (teal for H-bonds/polar, gold for hydrophobic) and fading residue labels that emphasize the interactions that matter most (favouring highest-CF contributors).
 
 Equation block and bottom banner '{banner}' fade in elegantly at t≈1.5s and persist; values and reproducibility footer '{footer}' appear cleanly without jitter. Camera motion, timing, and production quality exactly like the referenced high-end molecular dynamics visualization videos (SwitchCraft aesthetic): fluid, sophisticated lighting, clean dynamic protein representations, no clutter, premium scientific art.
 
@@ -328,6 +354,7 @@ def build_imagine_cover_prompt(summary: Dict[str, Any], *, style: str = "nrdd-co
         "banner": BANNER,
         "footer": footer,
         "key_interactions": s.get("key_interactions", "the critical molecular interactions (key hydrogen bonds, salt bridges, and hydrophobic contacts) that matter most"),
+        "plip_style": PLIP_STYLE,
         **BRAND,
     }
     # style is reserved for future variants; current template is the NRDD one
@@ -351,6 +378,7 @@ def build_imagine_animation_prompt(summary: Dict[str, Any], duration_s: float = 
         "footer": footer,
         "teal": BRAND["teal"],
         "key_interactions": s.get("key_interactions", "the critical molecular interactions (key hydrogen bonds, salt bridges, and hydrophobic contacts) that matter most"),
+        "plip_style": PLIP_STYLE,
     }
     base = TEMPLATE_ANIMATION.format(**vals)
     # Inject duration if the template ever uses it (kept for forward compat)
@@ -409,6 +437,7 @@ def prepare_publication_figures(
         "best_pose_pdb": summary.get("best_pose_pdb"),
         "branding": BRAND,
         "banner": BANNER,
+        "plip_style_note": "Prompts emulate PLIP clean 3D interaction diagrams (see PLIP_USAGE.txt if generated) + JetBrains Mono / thebonhomme.com typography. Prioritizes most favourable CF contacts + standard non-covalent types.",
         "required_elements": [
             "bottom banner: " + BANNER,
             "equation ΔG=ΔH−TΔS with injected values",
@@ -416,9 +445,12 @@ def prepare_publication_figures(
             "cyan/teal accents + deep navy gradients",
             "entropy blue→red heatmap description",
             "induced-fit side chains",
+            "PLIP-style critical interaction viz (dashed lines + residue labels for top H-bonds/hydrophobics/CF-favourable contacts)",
+            "typography: JetBrains Mono (thebonhomme.com style)",
         ],
         "gate6_passed": gate_ok,
         "use_pymol_base_attempted": use_pymol_base,
+        "plip_attempted": "see PLIP_USAGE.txt or run 'plip -f <best.pdb> -p' manually for best interaction base figs",
     }
     (fig_dir / "figure_metadata.json").write_text(json.dumps(meta, indent=2, sort_keys=True), encoding="utf-8")
 
@@ -453,4 +485,43 @@ def prepare_publication_figures(
         "base_image_path": base_path,
         "summary": summary,
     })
+
+    # Optional: generate a PLIP "nice fig" base interaction diagram (if plip CLI available).
+    # PLIP produces clean, publication-ready 3D interaction PNGs + .pse exactly suited for
+    # our "show critical interactions" requirement. Use as base for image_to_image or manual.
+    # Install: pip install plip (or use the official docker). Non-fatal if missing.
+    plip_base = None
+    try:
+        import shutil, subprocess
+        if shutil.which("plip"):
+            best_p = summary.get("best_pose_pdb")
+            if best_p and Path(best_p).exists():
+                # -p for rendered PNG(s), -y for PyMOL session
+                cmd = ["plip", "-f", str(best_p), "-o", str(fig_dir), "--name", "plip", "-p", "-y", "-q"]
+                proc = subprocess.run(cmd, capture_output=True, text=True, timeout=180)
+                if proc.returncode == 0:
+                    candidates = sorted(fig_dir.glob("plip*.png")) or sorted(fig_dir.glob("*.png"))
+                    if candidates:
+                        plip_base = str(candidates[0])
+                        # canonical copy for easy reference
+                        canon = fig_dir / "base_plip_interactions.png"
+                        try:
+                            import shutil as sh
+                            sh.copy2(plip_base, canon)
+                            plip_base = str(canon)
+                        except Exception:
+                            pass
+                        out["plip_base_png"] = plip_base
+                        (fig_dir / "PLIP_USAGE.txt").write_text(
+                            "This base PNG was generated by PLIP for precise interaction viz.\n"
+                            "For even better control: load the .pse in PyMOL and raytrace.\n"
+                            "Then feed the PNG as --reference to imagine image-to-image or edit.\n",
+                            encoding="utf-8"
+                        )
+    except Exception as e:
+        warnings.warn(f"Optional PLIP interaction diagram generation skipped (install plip for nice figs): {e}", RuntimeWarning)
+
+    if plip_base:
+        out["plip_base_png"] = plip_base
+
     return out
