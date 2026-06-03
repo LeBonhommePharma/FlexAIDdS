@@ -296,10 +296,12 @@ std::vector<int> select_flexible_residues(
     auto add_nearby = [&](int res_index) {
         if (res_index < 0 || res_index >= res_cnt) return;
         if (fixed.count(res_index)) return; // respect fixed
-        const char* resname = residue[res_index].name;
-        // Simple Gly/Ala exclusion (as per spec) — can be relaxed by caller
-        if (std::strcmp(resname, "GLY") == 0 || std::strcmp(resname, "ALA") == 0) {
-            return;
+        // Skip Gly/Ala only if we have structure data (residue != null)
+        if (residue) {
+            const char* resname = residue[res_index].name;
+            if (std::strcmp(resname, "GLY") == 0 || std::strcmp(resname, "ALA") == 0) {
+                return;
+            }
         }
         flexible.insert(res_index);
     };
