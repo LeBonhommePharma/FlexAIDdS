@@ -1,0 +1,102 @@
+[
+  {
+    "receptor": "1G9V",
+    "ligand_source": "2HB1",
+    "description": "Non-native cross-dock: 1G9V receptor + 2HB1 ligand"
+  },
+  {
+    "receptor": "1GM8",
+    "ligand_source": "1L7F",
+    "description": "Non-native cross-dock: 1GM8 receptor + 1L7F ligand"
+  },
+  {
+    "receptor": "1GPK",
+    "ligand_source": "1HP0",
+    "description": "Non-native cross-dock: 1GPK receptor + 1HP0 ligand"
+  },
+  {
+    "receptor": "1HNN",
+    "ligand_source": "1R1H",
+    "description": "Non-native cross-dock: 1HNN receptor + 1R1H ligand"
+  },
+  {
+    "receptor": "1HP0",
+    "ligand_source": "1PMN",
+    "description": "Non-native cross-dock: 1HP0 receptor + 1PMN ligand"
+  },
+  {
+    "receptor": "1HQ2",
+    "ligand_source": "1OWE",
+    "description": "Non-native cross-dock: 1HQ2 receptor + 1OWE ligand"
+  },
+  {
+    "receptor": "1IA1",
+    "ligand_source": "1MEH",
+    "description": "Non-native cross-dock: 1IA1 receptor + 1MEH ligand"
+  },
+  {
+    "receptor": "1IGJ",
+    "ligand_source": "1L2S",
+    "description": "Non-native cross-dock: 1IGJ receptor + 1L2S ligand"
+  },
+  {
+    "receptor": "1J3J",
+    "ligand_source": "1YVF",
+    "description": "Non-native cross-dock: 1J3J receptor + 1YVF ligand"
+  },
+  {
+    "receptor": "1JD0",
+    "ligand_source": "1KE5",
+    "description": "Non-native cross-dock: 1JD0 receptor + 1KE5 ligand"
+  },
+  {
+    "receptor": "1JJE",
+    "ligand_source": "2BYS",
+    "description": "Non-native cross-dock: 1JJE receptor + 2BYS ligand"
+  },
+  {
+    "receptor": "1K3U",
+    "ligand_source": "1UOU",
+    "description": "Non-native cross-dock: 1K3U receptor + 1UOU ligand"
+  },
+  {
+    "receptor": "1KE5",
+    "ligand_source": "1HP0",
+    "description": "Non-native cross-dock: 1KE5 receptor + 1HP0 ligand"
+  },
+  {
+    "receptor": "1KZK",
+    "ligand_source": "1HNN",
+    "description": "Non-native cross-dock: 1KZK receptor + 1HNN ligand"
+  },
+  {
+    "receptor": "1L2S",
+    "ligand_source": "1K3U",
+    "description": "Non-native cross-dock: 1L2S receptor + 1K3U ligand"
+  },
+  {
+    "receptor": "1L7F",
+    "ligand_source": "1OQ5",
+    "description": "Non-native cross-dock: 1L7F receptor + 1OQ5 ligand"
+  },
+  {
+    "receptor": "1LPZ",
+    "ligand_source": "1P2Y",
+    "description": "Non-native cross-dock: 1LPZ receptor + 1P2Y ligand"
+  },
+  {
+    "receptor": "1M2Z",
+    "ligand_source": "1Y6B",
+    "description": "Non-native cross-dock: 1M2Z receptor + 1Y6B ligand"
+  },
+  {
+    "receptor": "1MEH",
+    "ligand_source": "2CET",
+    "description": "Non-native cross-dock: 1MEH receptor + 2CET ligand"
+  },
+  {
+    "receptor": "1MQ6",
+    "ligand_source": "1HNN",
+    "description": "Non-native cross-dock: 1MQ6 receptor + 1HNN ligand"
+  }
+]
