@@ -1,0 +1,82 @@
+[
+  {
+    "receptor": "1G9V",
+    "ligand_source": "2HB1"
+  },
+  {
+    "receptor": "1GM8",
+    "ligand_source": "1L7F"
+  },
+  {
+    "receptor": "1GPK",
+    "ligand_source": "1HP0"
+  },
+  {
+    "receptor": "1HNN",
+    "ligand_source": "1R1H"
+  },
+  {
+    "receptor": "1HP0",
+    "ligand_source": "1PMN"
+  },
+  {
+    "receptor": "1HQ2",
+    "ligand_source": "1OWE"
+  },
+  {
+    "receptor": "1IA1",
+    "ligand_source": "1MEH"
+  },
+  {
+    "receptor": "1IGJ",
+    "ligand_source": "1L2S"
+  },
+  {
+    "receptor": "1J3J",
+    "ligand_source": "1YVF"
+  },
+  {
+    "receptor": "1JD0",
+    "ligand_source": "1KE5"
+  },
+  {
+    "receptor": "1JJE",
+    "ligand_source": "2BYS"
+  },
+  {
+    "receptor": "1K3U",
+    "ligand_source": "1UOU"
+  },
+  {
+    "receptor": "1KE5",
+    "ligand_source": "1HP0"
+  },
+  {
+    "receptor": "1KZK",
+    "ligand_source": "1HNN"
+  },
+  {
+    "receptor": "1L2S",
+    "ligand_source": "1K3U"
+  },
+  {
+    "receptor": "1L7F",
+    "ligand_source": "1OQ5"
+  },
+  {
+    "receptor": "1LPZ",
+    "ligand_source": "1P2Y"
+  },
+  {
+    "receptor": "1M2Z",
+    "ligand_source": "1Y6B"
+  },
+  {
+    "receptor": "1MEH",
+    "ligand_source": "2CET"
+  },
+  {
+    "receptor": "1MQ6",
+    "ligand_source": "1HNN"
+  }
+]
