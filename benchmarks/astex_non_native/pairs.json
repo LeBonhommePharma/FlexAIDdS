@@ -1,82 +1,122 @@
 [
   {
-    "receptor": "1G9V",
-    "ligand_source": "2HB1"
+    "receptor_pdb": "2GBP",
+    "ligand_pdb": "1L2S",
+    "ligand_code": "1L2S_ligand",
+    "description": "Cross-dock: 1L2S ligand into 2GBP receptor"
   },
   {
-    "receptor": "1GM8",
-    "ligand_source": "1L7F"
+    "receptor_pdb": "1HNN",
+    "ligand_pdb": "1Q4G",
+    "ligand_code": "1Q4G_ligand",
+    "description": "Cross-dock: 1Q4G ligand into 1HNN receptor"
   },
   {
-    "receptor": "1GPK",
-    "ligand_source": "1HP0"
+    "receptor_pdb": "1P62",
+    "ligand_pdb": "1OQ5",
+    "ligand_code": "1OQ5_ligand",
+    "description": "Cross-dock: 1OQ5 ligand into 1P62 receptor"
   },
   {
-    "receptor": "1HNN",
-    "ligand_source": "1R1H"
+    "receptor_pdb": "1M2Z",
+    "ligand_pdb": "1KZK",
+    "ligand_code": "1KZK_ligand",
+    "description": "Cross-dock: 1KZK ligand into 1M2Z receptor"
   },
   {
-    "receptor": "1HP0",
-    "ligand_source": "1PMN"
+    "receptor_pdb": "1YV3",
+    "ligand_pdb": "1K3U",
+    "ligand_code": "1K3U_ligand",
+    "description": "Cross-dock: 1K3U ligand into 1YV3 receptor"
   },
   {
-    "receptor": "1HQ2",
-    "ligand_source": "1OWE"
+    "receptor_pdb": "2BSM",
+    "ligand_pdb": "1UNL",
+    "ligand_code": "1UNL_ligand",
+    "description": "Cross-dock: 1UNL ligand into 2BSM receptor"
   },
   {
-    "receptor": "1IA1",
-    "ligand_source": "1MEH"
+    "receptor_pdb": "1HP0",
+    "ligand_pdb": "1HNN",
+    "ligand_code": "1HNN_ligand",
+    "description": "Cross-dock: 1HNN ligand into 1HP0 receptor"
   },
   {
-    "receptor": "1IGJ",
-    "ligand_source": "1L2S"
+    "receptor_pdb": "1K3U",
+    "ligand_pdb": "1OPK",
+    "ligand_code": "1OPK_ligand",
+    "description": "Cross-dock: 1OPK ligand into 1K3U receptor"
   },
   {
-    "receptor": "1J3J",
-    "ligand_source": "1YVF"
+    "receptor_pdb": "1OWE",
+    "ligand_pdb": "1XOZ",
+    "ligand_code": "1XOZ_ligand",
+    "description": "Cross-dock: 1XOZ ligand into 1OWE receptor"
   },
   {
-    "receptor": "1JD0",
-    "ligand_source": "1KE5"
+    "receptor_pdb": "2C3I",
+    "ligand_pdb": "1HNN",
+    "ligand_code": "1HNN_ligand",
+    "description": "Cross-dock: 1HNN ligand into 2C3I receptor"
   },
   {
-    "receptor": "1JJE",
-    "ligand_source": "2BYS"
+    "receptor_pdb": "1YWR",
+    "ligand_pdb": "1OF1",
+    "ligand_code": "1OF1_ligand",
+    "description": "Cross-dock: 1OF1 ligand into 1YWR receptor"
   },
   {
-    "receptor": "1K3U",
-    "ligand_source": "1UOU"
+    "receptor_pdb": "2HR7",
+    "ligand_pdb": "1YV3",
+    "ligand_code": "1YV3_ligand",
+    "description": "Cross-dock: 1YV3 ligand into 2HR7 receptor"
   },
   {
-    "receptor": "1KE5",
-    "ligand_source": "1HP0"
+    "receptor_pdb": "1UML",
+    "ligand_pdb": "1OQ5",
+    "ligand_code": "1OQ5_ligand",
+    "description": "Cross-dock: 1OQ5 ligand into 1UML receptor"
   },
   {
-    "receptor": "1KZK",
-    "ligand_source": "1HNN"
+    "receptor_pdb": "1V48",
+    "ligand_pdb": "2BSM",
+    "ligand_code": "2BSM_ligand",
+    "description": "Cross-dock: 2BSM ligand into 1V48 receptor"
   },
   {
-    "receptor": "1L2S",
-    "ligand_source": "1K3U"
+    "receptor_pdb": "1Q4G",
+    "ligand_pdb": "1G9V",
+    "ligand_code": "1G9V_ligand",
+    "description": "Cross-dock: 1G9V ligand into 1Q4G receptor"
   },
   {
-    "receptor": "1L7F",
-    "ligand_source": "1OQ5"
+    "receptor_pdb": "1N1M",
+    "ligand_pdb": "1UNL",
+    "ligand_code": "1UNL_ligand",
+    "description": "Cross-dock: 1UNL ligand into 1N1M receptor"
   },
   {
-    "receptor": "1LPZ",
-    "ligand_source": "1P2Y"
+    "receptor_pdb": "1SJ0",
+    "ligand_pdb": "1Q4G",
+    "ligand_code": "1Q4G_ligand",
+    "description": "Cross-dock: 1Q4G ligand into 1SJ0 receptor"
   },
   {
-    "receptor": "1M2Z",
-    "ligand_source": "1Y6B"
+    "receptor_pdb": "1MQ6",
+    "ligand_pdb": "1OPK",
+    "ligand_code": "1OPK_ligand",
+    "description": "Cross-dock: 1OPK ligand into 1MQ6 receptor"
   },
   {
-    "receptor": "1MEH",
-    "ligand_source": "2CET"
+    "receptor_pdb": "1SJ0",
+    "ligand_pdb": "1KZK",
+    "ligand_code": "1KZK_ligand",
+    "description": "Cross-dock: 1KZK ligand into 1SJ0 receptor"
   },
   {
-    "receptor": "1MQ6",
-    "ligand_source": "1HNN"
+    "receptor_pdb": "1K3U",
+    "ligand_pdb": "1TT1",
+    "ligand_code": "1TT1_ligand",
+    "description": "Cross-dock: 1TT1 ligand into 1K3U receptor"
   }
 ]
