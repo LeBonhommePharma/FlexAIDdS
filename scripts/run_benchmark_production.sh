@@ -21,6 +21,24 @@
 # =============================================================================
 
 set -euo pipefail
+
+# ─── Cleanup trap (define before use) ─────────────────────────────────────────
+
+ACTIVE_PID=""
+on_exit() {
+    local exit_code="$1"
+    if [[ -n "${ACTIVE_PID}" ]] && kill -0 "${ACTIVE_PID}" 2>/dev/null; then
+        warn "Killing active docking process PID=${ACTIVE_PID}"
+        kill -TERM "${ACTIVE_PID}" 2>/dev/null || true
+        sleep 2
+        kill -KILL "${ACTIVE_PID}" 2>/dev/null || true
+    fi
+    if [[ "${exit_code}" -ne 0 ]]; then
+        fail "Script exited with code ${exit_code}"
+        fail "Check logs in: ${LOG_DIR}"
+    fi
+}
+
 trap 'on_exit $?' EXIT
 
 # ─── Constants ────────────────────────────────────────────────────────────────
@@ -57,6 +75,9 @@ DRY_RUN=false
 PILOT_ONLY=false
 SKIP_PILOT=false
 RUN_PHASE2=false
+RESUME=false
+BENCHMARK=""
+OUTPUT_OVERRIDE=""
 SEED=42
 N_THREADS=6
 
@@ -66,6 +87,9 @@ while [[ $# -gt 0 ]]; do
         --pilot-only)   PILOT_ONLY=true ;;
         --skip-pilot)   SKIP_PILOT=true ;;
         --phase2)       RUN_PHASE2=true ;;
+        --resume)       RESUME=true ;;
+        --benchmark)    BENCHMARK="$2"; shift ;;
+        --out)          OUTPUT_OVERRIDE="$2"; shift ;;
         --seed)         SEED="$2";     shift ;;
         --threads)      N_THREADS="$2"; shift ;;
         -h|--help)
@@ -76,6 +100,14 @@ while [[ $# -gt 0 ]]; do
     shift
 done
 
+# Apply output override if provided
+if [[ -n "${OUTPUT_OVERRIDE}" ]]; then
+    RESULTS_DIR="${OUTPUT_OVERRIDE}"
+    LOG_DIR="${OUTPUT_OVERRIDE}/logs"
+    FIGURES_DIR="${RESULTS_DIR}/figures"
+    SUMMARY_CSV="${RESULTS_DIR}/summary.csv"
+fi
+
 # ─── Dry-run wrapper ──────────────────────────────────────────────────────────
 
 run() {
@@ -83,23 +115,6 @@ run() {
         printf "${YELLOW}[DRY]${NC}   %s\n" "$*"
     else
         "$@"
-    fi
-}
-
-# ─── Cleanup trap ─────────────────────────────────────────────────────────────
-
-ACTIVE_PID=""
-on_exit() {
-    local exit_code="$1"
-    if [[ -n "${ACTIVE_PID}" ]] && kill -0 "${ACTIVE_PID}" 2>/dev/null; then
-        warn "Killing active docking process PID=${ACTIVE_PID}"
-        kill -TERM "${ACTIVE_PID}" 2>/dev/null || true
-        sleep 2
-        kill -KILL "${ACTIVE_PID}" 2>/dev/null || true
-    fi
-    if [[ "${exit_code}" -ne 0 ]]; then
-        fail "Script exited with code ${exit_code}"
-        fail "Check logs in: ${LOG_DIR}"
     fi
 }
 
@@ -114,10 +129,11 @@ setup_env() {
     export FLEXAID_SIMD=NEON          # M3 Pro: Neon replaces AVX2
     export FLEXAID_SEED="${SEED}"
     export SHANNON_TRACE_LEVEL=2      # per-step CSV for Astex runs
+    export FLEXAIDS_METAL_DEVICE=default  # Enable Metal GPU acceleration
     ulimit -n 65536 2>/dev/null || warn "Could not raise file descriptor limit"
     ulimit -s unlimited 2>/dev/null || warn "Could not raise stack limit"
 
-    info "OMP_NUM_THREADS=${OMP_NUM_THREADS}  SEED=${SEED}  DRY_RUN=${DRY_RUN}"
+    info "OMP_NUM_THREADS=${OMP_NUM_THREADS}  SEED=${SEED}  DRY_RUN=${DRY_RUN}  METAL=ON"
 }
 
 # ─── Locate binary ────────────────────────────────────────────────────────────
@@ -157,8 +173,8 @@ locate_dataset_runner() {
 # Searches multiple candidate layouts produced by download.sh / prepare-only.
 find_structure_files() {
     local pdb="$1"
-    local pdb_lower="${pdb,,}"
-    local pdb_upper="${pdb^^}"
+    local pdb_lower="$(printf '%s\n' "$pdb" | tr '[:upper:]' '[:lower:]')"
+    local pdb_upper="$(printf '%s\n' "$pdb" | tr '[:lower:]' '[:upper:]')"
 
     local receptor="" ligand=""
 
@@ -248,7 +264,7 @@ preflight() {
         warn "   (Verify with: cd ${BUILD_DIR} && ctest -j${N_THREADS})"
     fi
 
-    # 4. Disk space ≥ 50 GB
+    # 4. Disk space ≥ 50 GB (or use iCloud)
     info "4. Disk space"
     local free_gb
     free_gb="$(df -BG "${REPO_ROOT}" 2>/dev/null \
@@ -259,8 +275,12 @@ preflight() {
     if [[ "${free_gb}" -ge 50 ]] 2>/dev/null; then
         ok "   ${free_gb} GB free (≥ 50 GB required)"
     else
-        warn "   Only ${free_gb} GB free — need ≥ 50 GB for Phase 1"
-        [[ "${free_gb}" -lt 10 ]] && n_fail=$((n_fail + 1))
+        if [ -d "$HOME/Library/Mobile Documents/com~apple~CloudDocs/FlexAIDdS_Benchmarks" ]; then
+            warn "   Only ${free_gb} GB free — using iCloud for output"
+        else
+            warn "   Only ${free_gb} GB free — need ≥ 50 GB for Phase 1"
+            [[ "${free_gb}" -lt 10 ]] && n_fail=$((n_fail + 1))
+        fi
     fi
 
     # 5. Astex CSV
@@ -389,12 +409,12 @@ dock_complex() {
     t_start="$(date +%s%N)"
 
     ACTIVE_PID=""
+    # Note: seed and threads are typically set via environment or config
+    # Binary uses positional args: receptor ligand [options]
     "${FLEXAIDDS_BIN}" \
-        --input   "${receptor}" \
-        --ligand  "${ligand}" \
-        --output  "${out_dir}" \
-        --seed    "${SEED}" \
-        --nthreads "${N_THREADS}" \
+        "${receptor}" \
+        "${ligand}" \
+        -o "${out_dir}" \
         >> "${log_file}" 2>&1 &
     ACTIVE_PID=$!
     wait "${ACTIVE_PID}" || {
