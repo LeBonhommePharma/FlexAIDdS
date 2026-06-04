@@ -573,6 +573,7 @@ run_full_astex() {
             --output    "${ast_out}" \
             --threads   "${N_THREADS}" \
             --cache     "${REPO_ROOT}/benchmarks/astex_diverse" \
+            --job-timeout-seconds 7200 \
             2>&1 | tee "${_astex_log}"
 
         # Extract per-complex results into summary CSV from results directory
