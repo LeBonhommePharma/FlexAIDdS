@@ -912,19 +912,13 @@ int main(int argc, char **argv){
 				int la = residue[lig_res].latm[0];
 				int n_lig = la - fa + 1;
 
-				// Ligand centroid → FA->ori
-				FA->ori[0] = FA->ori[1] = FA->ori[2] = 0.0f;
-				for (int ai = fa; ai <= la; ai++) {
-					FA->ori[0] += atoms[ai].coor[0];
-					FA->ori[1] += atoms[ai].coor[1];
-					FA->ori[2] += atoms[ai].coor[2];
-				}
-				if (n_lig > 0) {
-					FA->ori[0] /= n_lig;
-					FA->ori[1] /= n_lig;
-					FA->ori[2] /= n_lig;
-				}
-				printf("the protein center of coordinates is: %8.3f %8.3f %8.3f\n",
+				// FA->ori was set to the receptor centroid by calc_center() above.
+				// Do NOT overwrite with ligand centroid here: the cleftgrid IC
+				// (calc_cleftic) are encoded relative to this receptor-center ori,
+				// and buildcc uses ori as the GPA1/GPA2 grandparent reference.
+				// Overwriting with the ligand centroid breaks that reference frame
+				// when gene[0] translates GPA0 far from the ligand starting position.
+				printf("the receptor center of coordinates is: %8.3f %8.3f %8.3f\n",
 				       FA->ori[0], FA->ori[1], FA->ori[2]);
 
 				// Allocate gpa (3 global-positioning atoms)
