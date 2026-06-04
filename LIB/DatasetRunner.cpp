@@ -567,14 +567,32 @@ bool DatasetRunner::download_structure(const std::string& pdb_id,
 
     ensure_dir(entry_dir);
 
+    // Prefer PDB format: modify_pdb() uses fixed-column parsing that misreads
+    // mmCIF atom_site loops (coordinates land in wrong columns → 0-999 Å range
+    // → Vcontacts box dim³ = 333³ = 37M entries → ~2 GB allocation per worker).
+    // PDB format gives correct coordinate parsing with dim ≈ 20-30 → box ~tiny.
+    std::string pdb_path = entry_dir + "/" + upper_id + ".pdb";
+    if (fs::exists(pdb_path) && fs::file_size(pdb_path) > 1000) {
+        out_path = pdb_path;
+        return true;  // already cached
+    }
+    if (download_pdb(upper_id, pdb_path)) {
+        out_path = pdb_path;
+        return true;
+    }
+
+    // PDB unavailable (structure > 62,000 atoms or withdrawn) → fall back to CIF.
     std::string cif_path = entry_dir + "/" + upper_id + ".cif";
+    if (fs::exists(cif_path) && fs::file_size(cif_path) > 1000) {
+        out_path = cif_path;
+        return true;
+    }
     if (download_cif(upper_id, cif_path)) {
         out_path = cif_path;
         return true;
     }
 
-    std::cerr << "  [ERROR] mmCIF unavailable for " << upper_id
-              << "; refusing unreliable PDB receptor fallback\n";
+    std::cerr << "  [ERROR] Both PDB and mmCIF unavailable for " << upper_id << "\n";
     out_path.clear();
     return false;
 }
