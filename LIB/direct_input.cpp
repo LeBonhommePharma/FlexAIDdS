@@ -84,7 +84,7 @@ int setup_direct_input(FA_Global* FA, GB_Global* GB, VC_Global* VC,
     remove(tmpprotname);
 
     // Count real atoms per residue
-    (*residue)[FA->res_cnt].latm[0] = FA->atm_cnt;
+    (*residue)[FA->res_cnt].latm[0] = FA->atm_cnt - 1;
     for (k = 1; k <= FA->res_cnt; k++) {
         FA->atm_cnt_real += (*residue)[k].latm[0] - (*residue)[k].fatm[0] + 1;
     }

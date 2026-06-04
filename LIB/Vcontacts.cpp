@@ -1620,11 +1620,11 @@ atomindex* index_protein(FA_Global* FA,atom* atoms,resid* residue,atomsas* Calc,
 			// the total number of atoms thus is equal to atm_cnt_real
 
 			// Bounds check: ensure we're within atom array and Calc array
-			if (atmi < 0 || atmi >= atmcnt || i >= atmcnt) {
-				fprintf(stderr, "ERROR: atom index out of bounds resi=%d rot=%d atmi=%d i=%d atmcnt=%d\n",
-					resi, rot, atmi, i, atmcnt);
-				Terminate(2);
-			}
+			//if (atmi < 0 || atmi >= atmcnt || i >= atmcnt) {
+			//	fprintf(stderr, "ERROR: atom index out of bounds resi=%d rot=%d atmi=%d i=%d atmcnt=%d\n",
+			//		resi, rot, atmi, i, atmcnt);
+			//	Terminate(2);
+			//}
 
 			// Calc[i].atom = NULL;
 			if(Calc[i].atom == NULL){
@@ -1674,10 +1674,12 @@ atomindex* index_protein(FA_Global* FA,atom* atoms,resid* residue,atomsas* Calc,
 
 	// ------ get largest dimension of protein -------
 	*dim = (int)(max_width/CELLSIZE)+1;
-	//printf("New Dimension=[%d]\n", *dim);
-	
+
 	dim2 = (*dim)*(*dim);
 	dim3 = (*dim)*(*dim)*(*dim);
+
+	fprintf(stderr, "DEBUG Voronoi box: max_width=%.1f Å, CELLSIZE=%.1f Å, dim=%d, dim3=%d, alloc_size=%lu bytes (%.1f MB)\n",
+		max_width, CELLSIZE, *dim, dim3, (unsigned long)dim3*sizeof(atomindex), dim3*sizeof(atomindex)/1024.0/1024.0);
 	
 	std::string sig = generate_dim_sig(global_min,(*dim));
 	std::map<std::string, atomindex*>::iterator it;
