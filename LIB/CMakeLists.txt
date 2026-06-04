@@ -209,5 +209,14 @@ if(FLEXAIDS_USE_MPI)
     target_compile_definitions(flexaid_core PUBLIC FLEXAIDS_USE_MPI)
 endif()
 
+# ─── Metal (optional) ───────────────────────────────────────────────────
+# Propagate FLEXAIDS_USE_METAL so hardware_detect.cpp and
+# UnifiedHardwareDispatch.cpp compile in their Metal detection paths.
+# metal_eval.mm is compiled directly into FlexAIDdS (not flexaid_core) to
+# keep Obj-C++ runtime isolated; the linker resolves the symbol at link time.
+if(FLEXAIDS_USE_METAL)
+    target_compile_definitions(flexaid_core PUBLIC FLEXAIDS_USE_METAL)
+endif()
+
 # ─── SIMD configuration ─────────────────────────────────────────────────
 flexaids_configure_simd(flexaid_core)

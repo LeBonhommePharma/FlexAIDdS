@@ -110,15 +110,17 @@ public:
     };
 
     MetalHandle acquire_metal(
-        int n_atoms, int n_types,
+        int n_atoms, int n_types, int pop_size,
         std::function<MetalEvalCtx*(void)> init_fn
     ) {
         std::unique_lock<std::mutex> lock(metal_mtx_);
         metal_cv_.wait(lock, [&] {
-            return !metal_rebuilding_ || (metal_natom_ == n_atoms && metal_ntype_ == n_types);
+            return !metal_rebuilding_ || (metal_natom_ == n_atoms && metal_ntype_ == n_types
+                                          && metal_max_pop_ >= pop_size);
         });
 
-        if (!metal_ctx_ || metal_natom_ != n_atoms || metal_ntype_ != n_types) {
+        if (!metal_ctx_ || metal_natom_ != n_atoms || metal_ntype_ != n_types
+                        || metal_max_pop_ < pop_size) {
             metal_rebuilding_ = true;
             metal_cv_.wait(lock, [&] { return metal_ref_count_ == 0; });
 
@@ -138,9 +140,10 @@ public:
             }
             lock.lock();
 
-            metal_ctx_   = new_ctx;
-            metal_natom_ = n_atoms;
-            metal_ntype_ = n_types;
+            metal_ctx_     = new_ctx;
+            metal_natom_   = n_atoms;
+            metal_ntype_   = n_types;
+            metal_max_pop_ = pop_size;
             metal_rebuilding_ = false;
             metal_cv_.notify_all();
         }
@@ -298,8 +301,9 @@ private:
     std::mutex metal_mtx_;
     std::condition_variable metal_cv_;
     MetalEvalCtx* metal_ctx_ = nullptr;
-    int metal_natom_ = 0;
-    int metal_ntype_ = 0;
+    int metal_natom_   = 0;
+    int metal_ntype_   = 0;
+    int metal_max_pop_ = 0;
     int metal_ref_count_ = 0;
     bool metal_rebuilding_ = false;
 #endif

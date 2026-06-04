@@ -1571,10 +1571,10 @@ void calculate_fitness(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* chr
 		const int ns      = METAL_EMAT_SAMPLES;
 
 		auto& pool = GPUContextPool::instance();
-		auto handle = pool.acquire_metal(n_atoms, n_types, [&]() {
+		auto handle = pool.acquire_metal(n_atoms, n_types, pop_size, [&]() {
 			auto ad = prepare_gpu_atoms();
 			std::vector<float> h_emat = build_emat_sampled(n_types, ns);
-			return metal_eval_init(n_atoms, n_types, MAX_NUM_CHROM,
+			return metal_eval_init(n_atoms, n_types, pop_size,
 			                      ad.lig_first, ad.lig_last,
 			                      FA->permeability,
 			                      ad.xyz.data(), ad.type.data(),

@@ -226,30 +226,33 @@ void metal_eval_get_capabilities(MetalCapabilities* out)
 
     memset(out, 0, sizeof(*out));
 
-    id<MTLDevice> device = MTLCreateSystemDefaultDevice();
-    if (!device) {
-        fprintf(stderr, "[DEBUG] MTLCreateSystemDefaultDevice() returned NULL\n");
-        out->available = false;
-        return;
-    }
+    // @autoreleasepool required with -fno-objc-arc: MTLCreateSystemDefaultDevice()
+    // returns an autoreleased object; without a pool it leaks / undefined on
+    // non-Cocoa threads (C++ callers have no implicit pool).
+    @autoreleasepool {
+        id<MTLDevice> device = MTLCreateSystemDefaultDevice();
+        if (!device) {
+            out->available = false;
+            return;
+        }
 
-    fprintf(stderr, "[DEBUG] Metal device acquired: %s\n", device.name.UTF8String ? device.name.UTF8String : "unknown");
-    out->available = true;
-    strncpy(out->device_name, device.name.UTF8String ? device.name.UTF8String : "Apple GPU", sizeof(out->device_name)-1);
+        out->available = true;
+        const char* name_cstr = device.name.UTF8String ? device.name.UTF8String : "Apple GPU";
+        strncpy(out->device_name, name_cstr, sizeof(out->device_name) - 1);
 
 #if defined(__MAC_OS_X_VERSION_MIN_REQUIRED) && __MAC_OS_X_VERSION_MIN_REQUIRED >= 101500
-    if (@available(macOS 10.15, *)) {
-        out->unified_memory_bytes = device.hasUnifiedMemory ? device.maxBufferLength : 0;
-    }
+        if (@available(macOS 10.15, *)) {
+            out->unified_memory_bytes = device.hasUnifiedMemory ? device.maxBufferLength : 0;
+        }
 #endif
-    out->max_buffer_length = device.maxBufferLength;
+        out->max_buffer_length = device.maxBufferLength;
 
-    // Rough core estimate for M-series (best effort)
-    NSString* name = device.name;
-    if ([name containsString:@"M3 Pro"]) out->gpu_core_estimate = 18;
-    else if ([name containsString:@"M3 Max"]) out->gpu_core_estimate = 30;
-    else if ([name containsString:@"M3"]) out->gpu_core_estimate = 10;
-    else out->gpu_core_estimate = 8; // conservative default
+        NSString* name = device.name;
+        if ([name containsString:@"M3 Pro"])       out->gpu_core_estimate = 18;
+        else if ([name containsString:@"M3 Max"])  out->gpu_core_estimate = 30;
+        else if ([name containsString:@"M3"])      out->gpu_core_estimate = 10;
+        else                                        out->gpu_core_estimate = 8;
+    }
 }
 
 MetalEvalCtx* metal_eval_init(int   n_atoms,
