@@ -630,6 +630,7 @@ run_twopass_dataset() {
     # ── Pass 1: coarse run ──
     phase "TWO-PASS PASS 1: ${dataset} (${PASS1_NCHROM}×${PASS1_NGEN}, grid=${PASS1_GRID}Å)"
     run mkdir -p "${pass1_out}" "${LOG_DIR}"
+    export FLEXAIDDS_BINARY="${FLEXAIDDS_BIN}"
 
     run "${DATASET_BIN}" \
         --benchmark "${dataset}" \
@@ -1091,6 +1092,7 @@ main() {
         locate_binary
         locate_dataset_runner
         info "Running CASF-2016 benchmark (two_pass=${TWO_PASS})"
+        export FLEXAIDDS_BINARY="${FLEXAIDDS_BIN}"
         if [[ "${TWO_PASS}" == true ]]; then
             run_twopass_dataset "casf2016" "${RESULTS_DIR}"
         else
@@ -1109,6 +1111,7 @@ main() {
         locate_binary
         locate_dataset_runner
         info "Running Astex Non-Native benchmark (two_pass=${TWO_PASS})"
+        export FLEXAIDDS_BINARY="${FLEXAIDDS_BIN}"
         if [[ "${TWO_PASS}" == true ]]; then
             run_twopass_dataset "astex_nonnative" "${RESULTS_DIR}"
         else
