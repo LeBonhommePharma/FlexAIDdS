@@ -1650,7 +1650,17 @@ atomindex* index_protein(FA_Global* FA,atom* atoms,resid* residue,atomsas* Calc,
 			}
 		}
 	}
-	
+
+	// Sanity check: protein bounding box should never exceed 500 Angstroms
+	// (typical is 50-150; this catches coordinate parse bugs like CIF 999Å)
+	if (max_width > 500.0f) {
+		fprintf(stderr, "ERROR: bounding box too large (%.1f Å > 500 Å limit)\n", max_width);
+		fprintf(stderr, "  Receptor coordinates: [%.1f, %.1f] [%.1f, %.1f] [%.1f, %.1f]\n",
+			global_min[0], global_max[0], global_min[1], global_max[1], global_min[2], global_max[2]);
+		fprintf(stderr, "  Check input structure for coordinate parsing errors (CIF/PDB format issue)\n");
+		Terminate(2);
+	}
+
 	// ------ get largest dimension of protein -------
 	*dim = (int)(max_width/CELLSIZE)+1;
 	//printf("New Dimension=[%d]\n", *dim);
