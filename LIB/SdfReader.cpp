@@ -4,6 +4,7 @@
 #include <cstring>
 #include <cctype>
 #include <string>
+#include <queue>
 #include <vector>
 
 /*
@@ -290,6 +291,50 @@ int read_sdf_ligand(FA_Global* FA, atom** atoms, resid** residue,
 
         if (ao.bond[0] < 6) { ao.bond[0]++; ao.bond[ao.bond[0]] = fa2; }
         if (at.bond[0] < 6) { at.bond[0]++; at.bond[at.bond[0]] = fa1; }
+    }
+
+    // Build IC reconstruction tree via BFS (mirrors Mol2Reader.cpp).
+    // Sets recs='m' and rec[0,1,2] so buildic()/buildcc() can reconstruct
+    // 3D coordinates from internal coordinates during the GA.  Without this,
+    // all ligand atoms collapse to the centroid (FA->ori) in ic2cf.
+    {
+        int fa = (*residue)[FA->res_cnt].fatm[0];
+        int la = (*residue)[FA->res_cnt].latm[0];
+        int n  = la - fa + 1;
+
+        std::vector<int>  parent(n, -1), grandpar(n, -1), grtgpar(n, -1);
+        std::vector<bool> visited(n, false);
+        std::queue<int>   q;
+        q.push(fa);
+        visited[0] = true;
+
+        while (!q.empty()) {
+            int cur = q.front(); q.pop();
+            int ci  = cur - fa;
+            for (int k = 1; k <= (*atoms)[cur].bond[0]; k++) {
+                int nb = (*atoms)[cur].bond[k];
+                if (nb < fa || nb > la) continue;
+                int ni = nb - fa;
+                if (!visited[ni]) {
+                    visited[ni]  = true;
+                    parent[ni]   = cur;
+                    grandpar[ni] = parent[ci];
+                    grtgpar[ni]  = grandpar[ci];
+                    q.push(nb);
+                }
+            }
+        }
+
+        for (int ai = fa; ai <= la; ai++) {
+            int li = ai - fa;
+            atom& a = (*atoms)[ai];
+            a.recs   = 'm';
+            a.rec[0] = (parent[li]   >= 0) ? parent[li]   : 0;
+            a.rec[1] = (grandpar[li] >= 0) ? grandpar[li] : 0;
+            a.rec[2] = (grtgpar[li]  >= 0) ? grtgpar[li]  : 0;
+        }
+
+        buildic(FA, *atoms, *residue, FA->res_cnt);
     }
 
     // Build bonded matrix, shortest paths, and shortflex (mirrors read_lig.cpp)
