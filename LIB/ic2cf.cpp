@@ -110,15 +110,40 @@ cfstr ic2cf(FA_Global* FA,VC_Global* VC,atom* atoms,resid* residue,
 	if(normalmode > -1){
 		alter_mode(atoms,residue,FA->normal_grid[normalmode],FA->res_cnt,FA->normal_modes);
 	}
-	
+
+	// ── GPA frame tracking ───────────────────────────────────────────────────
+	// buildcc uses FA->ori as a fixed grandparent reference when rec[1,2]==0
+	// (i.e. for GPA0, GPA1, GPA2).  When gene[0] translates GPA0 far from ori,
+	// the GPA0→ori reference vector changes direction and GPA1/GPA2 land at
+	// nonsensical positions.
+	//
+	// Fix: reconstruct GPA0 alone first (using old ori, consistent with how
+	// calc_cleftic encoded the grid-point IC), measure the translation delta,
+	// then shift FA->ori by that delta.  After that, recompute GPA0's IC
+	// relative to the new ori so the full buildcc loop places GPA0 correctly
+	// AND GPA1/GPA2 see an ori that tracks GPA0.
+	for (i = 0; i < npar; i++) {
+		if (FA->map_par[i].typ == -1) {             // translational gene → GPA0
+			int gpa0 = FA->map_par[i].atm;
+			float ox = atoms[gpa0].coor[0];
+			float oy = atoms[gpa0].coor[1];
+			float oz = atoms[gpa0].coor[2];
+			// Reconstruct GPA0 with old ori (IC from cleftgrid are relative to old ori)
+			buildcc(FA, atoms, 1, &gpa0);
+			// Shift FA->ori by the same delta GPA0 moved
+			FA->ori[0] += atoms[gpa0].coor[0] - ox;
+			FA->ori[1] += atoms[gpa0].coor[1] - oy;
+			FA->ori[2] += atoms[gpa0].coor[2] - oz;
+			// Re-derive GPA0's IC relative to the new ori so the full buildcc
+			// loop (below) reconstructs it to the same position
+			buildic_point(FA, atoms[gpa0].coor,
+			              &atoms[gpa0].dis, &atoms[gpa0].ang, &atoms[gpa0].dih);
+			break;
+		}
+	}
+
 	/* rebuild cartesian coordinates of optimized residues*/
-  
-  
 	for(i=0;i<FA->nors;i++){ //number of optimized residues
-		//printf("nors=%d opt_res[%d]=%d nmov[%d]=%d\n",i,i,FA->opt_res[i],i,FA->nmov[i]);
-		//for(j=0;j<nmov[i];j++){printf("mov[%d][%d]=%d\n",i,j,FA->mov[i][j]);}
-		//PAUSE;
-    
 		buildcc(FA,atoms,FA->nmov[i],FA->mov[i]);
 	}
   
