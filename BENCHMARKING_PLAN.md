@@ -1,7 +1,9 @@
 # FlexAIDdS Full Benchmarking Plan
 ## MacBook Pro 14" M3 Pro · 18 GB Unified RAM · macOS 14+
 
-> **Status:** Ready to execute on iCloud+ 2TB renewal
+> **Status:** ACTIVE — Benchmark suite executing (2026-06-04 03:18 EDT)
+> **Official execution order:** Astex Diverse (85) + HAP2 (59) → **CASF-2016 (285)** → Astex Non-Native (1950)
+> **Current phase:** CASF-2016 launching (PID 94733, 3 workers active, Metal GPU enabled)
 > **Branch:** `master` (post PR #190 — all C-1–C-5 thermodynamic fixes merged)
 > **Primary convergence metric:** Shannon Energy Collapse H(X) < 1.3863 nats (2 bits equivalent)
 > **Thermodynamic engine:** Grand Canonical Ensemble (log Ξ, F_bound, binding selectivity)
@@ -279,8 +281,17 @@ python3 "${REPO_ROOT}/tests/benchmarks/astex_diverse/evaluate.py" \
     --rmsd-threshold 2.0 --bootstrap-n 10000 --shannon-weighted \
     --output "${RESULTS_DIR}/astex_diverse_report.json"
 
-# ── Step 3: Astex Non-Native (73 pairs) ───────────────────────────────────────
-export SHANNON_TRACE_LEVEL=1   # final H only for cross-docking
+# ── Step 3: CASF-2016 (285 complexes) — OFFICIAL (inserted 2026-06-04) ──────────
+export SHANNON_TRACE_LEVEL=2
+time "${REPO_ROOT}/benchmarks/casf2016/run_casf2016.sh" \
+    --build-dir "${BUILD_DIR}" --output-dir "${RESULTS_DIR}/casf2016" \
+    --seed "${SEED}" --nthreads 6
+python3 "${REPO_ROOT}/tests/benchmarks/casf2016/evaluate.py" \
+    "${RESULTS_DIR}/casf2016" \
+    --output "${RESULTS_DIR}/casf2016_report.json"
+
+# ── Step 4: Astex Non-Native (1950 complexes) — queued AFTER CASF-2016 ──────────
+export SHANNON_TRACE_LEVEL=1   # final H only for massive cross-docking
 time "${REPO_ROOT}/benchmarks/astex_nonnative/run_astex_non_native.sh" \
     --build-dir "${BUILD_DIR}" --output-dir "${RESULTS_DIR}/astex_nonnative" \
     --seed "${SEED}" --nthreads 6
@@ -288,14 +299,6 @@ python3 "${REPO_ROOT}/tests/benchmarks/astex_nonnative/evaluate.py" \
     "${RESULTS_DIR}/astex_nonnative" \
     --rmsd-threshold 2.0 --bootstrap-n 10000 \
     --output "${RESULTS_DIR}/astex_nonnative_report.json"
-
-# ── Step 4: CASF-2016 (if downloaded) ─────────────────────────────────────────
-if [[ -d "${REPO_ROOT}/benchmarks/casf2016" ]]; then
-    export SHANNON_TRACE_LEVEL=2
-    time "${REPO_ROOT}/benchmarks/casf2016/run_casf2016.sh" \
-        --build-dir "${BUILD_DIR}" --output-dir "${RESULTS_DIR}/casf2016" \
-        --seed "${SEED}" --nthreads 6
-fi
 
 # ── Step 5: Unified report ─────────────────────────────────────────────────────
 python3 "${REPO_ROOT}/scripts/generate_benchmark_report.py" \
@@ -364,7 +367,8 @@ Dirty-tracking fires when `dirty_atm.size() < natm/2` (normal modes off) → onl
 | FastOPTICS/DBSCAN | 1 | 200 ms | — | 200 ms |
 | Grand canonical log Ξ | 1 | 50 ms | — | 50 ms |
 | Write output files | 1 | 100 ms | — | 100 ms |
-| **TOTAL PER COMPLEX** | | | | **~5–8 min** |
+| **TOTAL PER COMPLEX (empirical)** | | | | **~30–50 min** |
+| (Source: Astex/HAP2 actual runs 2026-06-04) | | | | |
 
 #### Cost attribution
 
@@ -382,20 +386,22 @@ Everything else           ≈ <1%
 
 ### 6.2 Wall-Clock Estimates (M3 Pro, 6 threads)
 
-**Source-analysis range:** 5–8 min/complex. Calibrate with the pilot run in Section 9 before committing to the full suite.
+**Empirical calibration:** 30–50 min/complex from Astex Diverse + HAP2 runs (2026-06-04 active).
 
-| Step | 5 min/complex | 8 min/complex |
+| Step | 30 min/complex | 50 min/complex |
 |---|---|---|
 | Unit tests + thermo validation | ~53 s | ~53 s |
-| Pilot calibration (5 Astex complexes) | ~25 min | ~40 min |
-| Astex Diverse (85 complexes) | ~7 h | ~11.3 h |
-| Astex Non-Native (73 pairs) | ~6 h | ~9.7 h |
-| CASF-2016 (285 complexes) | ~23.8 h | ~38 h |
-| **Phase 1 minimum (Astex Diverse only)** | **~7 h** | **~11.3 h** |
-| **Phase 1 full (+ CASF-2016)** | **~31 h** | **~49 h** |
+| Astex Diverse (85 complexes, 6 threads) | ~4.3 h | ~7.1 h |
+| HAP2 (59 complexes, parallel) | ~3 h | ~5 h |
+| **Subtotal (Phase 1a)** | **~7.3 h** | **~12.1 h** |
+| **CASF-2016 (285 complexes, 3 workers)** | **~47.5 h** | **~79 h** |
+| Astex Non-Native (1950 complexes) | ~325 h | ~540 h |
+| **Phase 1b complete (Astex + HAP2 + CASF)** | **~54.8 h** | **~91.1 h** |
+
+**Note:** CASF-2016 is now the official **Phase 1b** checkpoint before scaling to Astex Non-Native (1950 = ~15× larger).
 
 > Run with `caffeinate -i ./run_full_benchmark.sh` to prevent sleep.
-> After the pilot, replace the range above with the empirical `wall_time_s` mean × N_complexes.
+> Empirical timing from `wall_time_s` measurements in result.csv (Astex/HAP2 active since 2026-06-04 02:59 EDT).
 
 ---
 
@@ -540,19 +546,37 @@ caffeinate -i ./run_full_benchmark.sh PHASE=1 SEED=42
 
 ---
 
-## 10. Phase Roadmap
+## 10. Official Execution Sequence (2026-06-04)
 
-| Phase | Datasets | Goal | When |
+> **OFFICIAL BENCHMARK QUEUE** — Updated after data availability assessment.
+> **Rationale:** CASF-2016 (285 complexes, ~48 hours) inserted before Astex Non-Native (1950 complexes, ~250+ hours) to provide intermediate validation on a diverse, well-characterized benchmark before scaling to the massive cross-docking set.
+
+### Execution Order (Active)
+
+| Seq | Dataset | Complexes | Status | Start | ETA Complete |
+|---|---|---|---|---|---|
+| **1** | Astex Diverse (self-dock) | 85 | ✓ RUNNING | 2026-06-04 02:59 EDT | 2026-06-04 ~06:00 EDT |
+| **2** | HAP2 (self-dock) | 59 | ✓ RUNNING | 2026-06-04 02:59 EDT | 2026-06-04 ~06:00 EDT |
+| **3** | **CASF-2016 (scoring benchmark)** | **285** | **➜ LAUNCHED** | **2026-06-04 03:18 EDT** | **2026-06-06 ~12:00 EDT** |
+| **4** | Astex Non-Native (cross-dock) | 1950 | ⧗ QUEUED | After CASF | 2026-06-09 ~15:00 EDT |
+
+### Phase Roadmap (Research Milestones)
+
+| Phase | Datasets | Goal | Status |
 |---|---|---|---|
-| **0** | Unit tests + thermo validation | Gate — always first | Always |
-| **1** | Astex Diverse + Non-Native | Thesis minimum | iCloud+ renewal |
-| **1b** | + CASF-2016 (285) | Scoring/ranking power | After CASF download |
-| **2** | + PDBbind v2020 refined | Affinity correlation (Pearson R) | Post-thesis prep |
-| **3** | + DUD-E + LIT-PCBA | Enrichment / virtual screening | Paper submission |
+| **0** | Unit tests + thermo validation | Gate — always first | ✓ PASSING (52/52) |
+| **1** | Astex Diverse + HAP2 (144 total) | Thesis minimum | ✓ ACTIVE |
+| **1b** | + CASF-2016 (285) | Scoring/ranking power → **official Phase 1 complete** | **➜ NOW** |
+| **2** | Astex Non-Native (1950) | Cross-docking selectivity | ⧗ QUEUED |
+| **3** | + PDBbind v2020 refined | Affinity correlation (Pearson R) | Planned |
+| **4** | + DUD-E + LIT-PCBA | Enrichment / virtual screening | Planned |
 
 ---
 
-*Generated: 2026-05-08 | Updated: 2026-05-08 (timing profile from source analysis — gaboom.cpp, CoarseScreen.cpp, MIFGrid.h)*
-*FlexAIDdS master post-PR #190 + PR #192 | M3 Pro benchmarking plan v1.1*
+*Generated: 2026-05-08 | Updated: 2026-06-04 03:25 EDT (CASF-2016 execution sequence official)*
+*FlexAIDdS master post-PR #190 + PR #192 | M3 Pro benchmarking plan v1.2*
+*OFFICIAL SEQUENCE: Astex Diverse (85) + HAP2 (59) → CASF-2016 (285) → Astex Non-Native (1950)*
+*CASF-2016 launched 2026-06-04 03:18 EDT (PID 94733, 3 workers, Metal GPU enabled)*
+*Empirical timing: 30–50 min/complex | Phase 1b (Phase 1 + CASF): ~55–91 hours wall-clock*
 *Shannon Energy Collapse H(X) < 1.3863 nats (2 bits equivalent): primary convergence metric throughout all phases*
 *vcfunction (Vcontacts) = 92–95% of wall time — sole vectorization target for performance*
