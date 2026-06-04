@@ -174,6 +174,7 @@ struct DockingConfig {
     //   Matches config_defaults.h num_generations=500, num_chromosomes=1000.
     int    ga_generations{500};
     int    ga_population{1000};
+    float  grid_spacing{0.375f};      // Å — 0.5 for coarse pass, 0.375 for full
     float  temperature{300.0f};       // Kelvin
     /// Concurrent FlexAIDdS worker processes (dataset-level parallelism).
     /// Each worker is an independent OS process; they do NOT share OMP threads.

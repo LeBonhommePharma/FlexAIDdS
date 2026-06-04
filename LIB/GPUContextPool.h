@@ -24,6 +24,8 @@
 #include <mutex>
 #include <condition_variable>
 #include <functional>
+#include <vector>
+#include <chrono>
 #include <cstddef>
 
 #ifdef FLEXAIDS_USE_CUDA
@@ -157,6 +159,65 @@ public:
         metal_ref_count_--;
         if (metal_ref_count_ == 0) {
             metal_cv_.notify_all();
+        }
+    }
+
+    // ── Batched multi-complex dispatch ───────────────────────────────────────
+    //
+    // Submits one entry from a concurrent worker into the shared batch queue.
+    // When the queue reaches batch_size entries (or flush_timeout_ms elapses),
+    // a single metal_eval_batch_multi() is dispatched, maximising GPU utilisation.
+    //
+    // Usage (each worker thread, every generation):
+    //   pool.submit_metal_batch_multi(ctx, pop_size, n_genes, entry, batch_size);
+    //
+    // Thread-safety: the queue is protected by metal_batch_mtx_.
+    // Ordering: results are written back to entry.h_*_out before this returns.
+    void submit_metal_batch_multi(
+        MetalEvalCtx*       ctx,
+        int                 pop_size,
+        int                 n_genes,
+        MetalMultiBatchEntry entry,
+        int                 batch_size = 8)
+    {
+        std::unique_lock<std::mutex> lock(metal_batch_mtx_);
+
+        metal_batch_queue_.push_back(entry);
+        metal_batch_n_genes_  = n_genes;
+        metal_batch_pop_size_ = pop_size;
+        metal_batch_ctx_      = ctx;
+
+        if (static_cast<int>(metal_batch_queue_.size()) >= batch_size) {
+            // This thread dispatches for everyone in the queue.
+            std::vector<MetalMultiBatchEntry> batch;
+            batch.swap(metal_batch_queue_);
+            lock.unlock();
+            metal_eval_batch_multi(metal_batch_ctx_,
+                                   static_cast<int>(batch.size()),
+                                   metal_batch_pop_size_,
+                                   metal_batch_n_genes_,
+                                   batch.data());
+            // Results are already in the entry output buffers — notify waiters.
+            metal_batch_cv_.notify_all();
+        } else {
+            // Wait until another thread dispatches (or a timeout triggers a partial flush).
+            metal_batch_cv_.wait_for(lock, std::chrono::milliseconds(50), [&] {
+                // Woken either by a full dispatch or by being processed in a flush.
+                return metal_batch_queue_.empty() ||
+                       metal_batch_queue_.back().h_com_out != entry.h_com_out;
+            });
+            // If we timed out and our entry is still pending, flush the queue ourselves.
+            if (!metal_batch_queue_.empty()) {
+                std::vector<MetalMultiBatchEntry> batch;
+                batch.swap(metal_batch_queue_);
+                lock.unlock();
+                metal_eval_batch_multi(metal_batch_ctx_,
+                                       static_cast<int>(batch.size()),
+                                       metal_batch_pop_size_,
+                                       metal_batch_n_genes_,
+                                       batch.data());
+                metal_batch_cv_.notify_all();
+            }
         }
     }
 #endif
@@ -306,6 +367,14 @@ private:
     int metal_max_pop_ = 0;
     int metal_ref_count_ = 0;
     bool metal_rebuilding_ = false;
+
+    // Batch-dispatch queue for submit_metal_batch_multi()
+    std::mutex metal_batch_mtx_;
+    std::condition_variable metal_batch_cv_;
+    std::vector<MetalMultiBatchEntry> metal_batch_queue_;
+    MetalEvalCtx* metal_batch_ctx_      = nullptr;
+    int           metal_batch_pop_size_ = 0;
+    int           metal_batch_n_genes_  = 0;
 #endif
 
 #ifdef FLEXAIDS_USE_ROCM

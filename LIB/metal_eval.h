@@ -80,4 +80,34 @@ void metal_eval_batch(MetalEvalCtx* ctx,
 // Free all Metal device resources.
 void metal_eval_shutdown(MetalEvalCtx* ctx);
 
+// ─── Multi-complex batched evaluation (GPU utilization maximization) ──────────
+//
+// Dispatches N independent chromosome populations in a single Metal command buffer.
+// Each entry i corresponds to one docking complex (worker); the GPU evaluates
+// n_complex × pop_size chromosomes in one dispatch instead of N serial calls.
+//
+// Thread mapping: thread k → complex_id = k / pop_size, chrom_id = k % pop_size
+//
+// Requirements:
+//   - All complexes must share the same n_atoms, n_types, and pop_size.
+//   - The single shared context (ctx) must have been init'd with max_pop = n_complex × pop_size.
+//   - h_genes[i]   points to the gene array for complex i  [pop_size × n_genes, double]
+//   - h_com_out[i] / h_wal_out[i] / h_sas_out[i] are per-complex output buffers [pop_size]
+//
+// All buffers are host-side; the implementation copies in, dispatches, and copies out.
+//
+// When n_complex == 1 this is identical to metal_eval_batch() (no overhead).
+struct MetalMultiBatchEntry {
+    const double* h_genes;    // [pop_size × n_genes]
+    double*       h_com_out;  // [pop_size] output
+    double*       h_wal_out;  // [pop_size] output
+    double*       h_sas_out;  // [pop_size] output
+};
+
+void metal_eval_batch_multi(MetalEvalCtx*              ctx,
+                             int                        n_complex,
+                             int                        pop_size,
+                             int                        n_genes,
+                             const MetalMultiBatchEntry* entries);
+
 #endif  // FLEXAIDS_USE_METAL

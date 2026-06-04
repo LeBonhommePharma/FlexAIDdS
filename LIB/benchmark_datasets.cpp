@@ -67,6 +67,7 @@ static void print_usage(const char* progname) {
     printf("  --list-codes          List PDB codes for a dataset and exit\n");
     printf("  --ga-generations <N>  GA generations (default: 500)\n");
     printf("  --ga-population <N>   GA population size (default: 1000)\n");
+    printf("  --grid-spacing <F>    Grid spacing in Å (default: 0.375; use 0.5 for coarse pass)\n");
     printf("  --job-timeout-seconds <N>  Per-complex timeout in s (default: 3600)\n");
     printf("  --fleet               Enable Fleet mode (JSON chunk result output)\n");
     printf("  --chunk-id <ID>       Unique chunk identifier for Fleet mode\n");
@@ -355,6 +356,7 @@ int main(int argc, char** argv) {
     int ga_generations = 0;
     int ga_population = 0;
     double temperature = 0.0;
+    double grid_spacing = 0.0;
     std::string clustering;
     // Fleet mode options
     bool fleet_mode = false;
@@ -413,6 +415,10 @@ int main(int argc, char** argv) {
             ga_population = std::atoi(argv[++i]);
             continue;
         }
+        if (arg == "--grid-spacing" && i + 1 < argc) {
+            grid_spacing = std::atof(argv[++i]);
+            continue;
+        }
         if (arg == "--temperature" && i + 1 < argc) {
             temperature = std::atof(argv[++i]);
             continue;
@@ -462,6 +468,7 @@ int main(int argc, char** argv) {
     config.skip_completed         = !force_rerun;
     if (ga_generations > 0)       config.ga_generations    = ga_generations;
     if (ga_population  > 0)       config.ga_population     = ga_population;
+    if (grid_spacing   > 0.0)     config.grid_spacing      = static_cast<float>(grid_spacing);
     if (temperature    > 0.0)     config.temperature       = static_cast<float>(temperature);
     if (job_timeout_s  > 0)       config.per_job_timeout_s = job_timeout_s;
     if (!clustering.empty())      config.clustering_algorithm = clustering;

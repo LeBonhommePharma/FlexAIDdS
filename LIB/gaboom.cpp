@@ -169,8 +169,8 @@ int GA(FA_Global* FA, GB_Global* GB,VC_Global* VC,chromosome** chrom,chromosome*
 		GB->print_int=GA_DEFAULT_PRINT_INT;
 		GB->seed = GA_DEFAULT_SEED;
 
-	// Entropy convergence defaults (opt-in)
-	GB->entropy_convergence    = 0;
+	// Entropy convergence — enabled by default; ENTRCNVG=0 in gainp to disable.
+	GB->entropy_convergence    = 1;
 	GB->entropy_check_interval = GA_DEFAULT_ENTROPY_CHECK_INTERVAL;
 	GB->entropy_window         = GA_DEFAULT_ENTROPY_WINDOW;
 	GB->entropy_rel_threshold  = GA_DEFAULT_ENTROPY_REL_THRESHOLD;
@@ -545,6 +545,29 @@ int GA(FA_Global* FA, GB_Global* GB,VC_Global* VC,chromosome** chrom,chromosome*
 				entropy_converged = true;
 				break;
 			}
+
+			// Hard-zone variance plateau: H < ln2 AND σ² < (0.005 nats)²
+			// Once in the collapsed zone, tiny variance confirms convergence.
+			if (H < shannon_thermo::kHSC_hard_nats &&
+			    static_cast<int>(entropy_history.size()) >= 20) {
+				constexpr int    kHardWindow = 20;
+				constexpr double kPlateauVarThresh = 0.005 * 0.005; // nats²
+				const size_t h_start = entropy_history.size() - kHardWindow;
+				double h_sum = 0.0, h_sum2 = 0.0;
+				for (size_t k = h_start; k < entropy_history.size(); ++k) {
+					h_sum  += entropy_history[k];
+					h_sum2 += entropy_history[k] * entropy_history[k];
+				}
+				const double h_mean = h_sum / kHardWindow;
+				const double h_var  = h_sum2 / kHardWindow - h_mean * h_mean;
+				if (h_var < kPlateauVarThresh) {
+					printf("Shannon entropy converged at generation %d "
+					       "(H=%.4f < %.4f nats, var=%.6f nats²) — early stop\n",
+					       i + 1, H, shannon_thermo::kHSC_hard_nats, h_var);
+					entropy_converged = true;
+					break;
+				}
+			}
 		}
 
 		// Diversity monitoring: detect and mitigate premature entropy collapse
@@ -630,6 +653,16 @@ int GA(FA_Global* FA, GB_Global* GB,VC_Global* VC,chromosome** chrom,chromosome*
 		printf("GA terminated early by entropy convergence\n");
 	if (ga_stagnant)
 		printf("GA terminated early by fitness stagnation\n");
+
+	// Print H_final for two-pass benchmark script parsing
+	{
+		std::vector<double> hfinal_energies(GB->num_chrom);
+		for (int c = 0; c < GB->num_chrom; ++c)
+			hfinal_energies[c] = (*chrom)[c].evalue;
+		const double H_final_val = shannon_thermo::compute_shannon_entropy(
+			hfinal_energies, shannon_thermo::DEFAULT_HIST_BINS);
+		printf("H_final = %.6f\n", H_final_val);
+	}
 
 	QuickSort((*chrom),0,GB->num_chrom-1,true);
 

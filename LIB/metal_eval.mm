@@ -422,4 +422,111 @@ void metal_eval_shutdown(MetalEvalCtx* ctx)
     delete ctx;
 }
 
+// ─── Multi-complex batched evaluation ────────────────────────────────────────
+//
+// Evaluates n_complex × pop_size chromosomes in ONE Metal dispatch, keeping
+// the GPU command queue full instead of firing N serial 1000-element batches.
+// GPU thread k → complex = k / pop_size, chrom = k % pop_size.
+//
+// Requires ctx->max_pop >= n_complex × pop_size.
+void metal_eval_batch_multi(MetalEvalCtx*              ctx,
+                             int                        n_complex,
+                             int                        pop_size,
+                             int                        n_genes,
+                             const MetalMultiBatchEntry* entries)
+{
+    if (n_complex <= 0) return;
+
+    // Fast path: single complex — delegate to single-batch function.
+    if (n_complex == 1) {
+        metal_eval_batch(ctx, pop_size, n_genes,
+                         entries[0].h_genes,
+                         entries[0].h_com_out,
+                         entries[0].h_wal_out,
+                         entries[0].h_sas_out);
+        return;
+    }
+
+    const int total_pop = n_complex * pop_size;
+    if (total_pop > ctx->max_pop) {
+        throw FlexAIDException("metal_eval_batch_multi: n_complex×pop_size " +
+            std::to_string(total_pop) + " exceeds max_pop " +
+            std::to_string(ctx->max_pop));
+    }
+    if (n_genes > ctx->max_genes) {
+        throw FlexAIDException("metal_eval_batch_multi: n_genes " +
+            std::to_string(n_genes) + " exceeds max_genes " +
+            std::to_string(ctx->max_genes));
+    }
+
+    // Interleave genes into the shared GPU buffer.
+    // Layout: genes[complex_id * pop_size * n_genes + chrom_id * n_genes + gene]
+    // This matches the kernel thread mapping: thread k → complex=k/pop_size, chrom=k%pop_size.
+    float* genes_f = (float*)[ctx->buf_genes_f contents];
+    for (int ci = 0; ci < n_complex; ++ci) {
+        const double* src = entries[ci].h_genes;
+        float*        dst = genes_f + ci * pop_size * n_genes;
+        for (int c = 0; c < pop_size; ++c)
+            for (int g = 0; g < n_genes; ++g)
+                dst[c * n_genes + g] = (float)src[c * n_genes + g];
+    }
+
+    // EvalParams — same as single-batch; n_complex is folded into grid size.
+    struct EvalParams {
+        int N, T, n_genes, lig_first, lig_last;
+        float perm;
+        int pad0, pad1;
+    };
+    EvalParams ep = { ctx->n_atoms, ctx->n_types, n_genes,
+                      ctx->lig_first, ctx->lig_last, ctx->perm, 0, 0 };
+
+    id<MTLBuffer> buf_params = [ctx->device
+        newBufferWithBytes:&ep
+                   length:sizeof(ep)
+                  options:MTLResourceStorageModeShared];
+
+    // Dispatch total_pop threads — each thread evaluates one (complex, chromosome) pair.
+    id<MTLCommandBuffer>        cb  = [ctx->queue commandBuffer];
+    id<MTLComputeCommandEncoder> enc = [cb computeCommandEncoder];
+    [enc setComputePipelineState:ctx->pipeline];
+    [enc setBuffer:ctx->buf_atom_xyz     offset:0 atIndex:0];
+    [enc setBuffer:ctx->buf_atom_type    offset:0 atIndex:1];
+    [enc setBuffer:ctx->buf_atom_radius  offset:0 atIndex:2];
+    [enc setBuffer:ctx->buf_emat_sampled offset:0 atIndex:3];
+    [enc setBuffer:ctx->buf_genes_f      offset:0 atIndex:4];
+    [enc setBuffer:ctx->buf_com_out      offset:0 atIndex:5];
+    [enc setBuffer:ctx->buf_wal_out      offset:0 atIndex:6];
+    [enc setBuffer:ctx->buf_sas_out      offset:0 atIndex:7];
+    [enc setBuffer:buf_params            offset:0 atIndex:8];
+    [enc setThreadgroupMemoryLength:256 * sizeof(float) atIndex:0];
+
+    NSUInteger threadsPerGroup = 256;
+    MTLSize    gridSize        = { (NSUInteger)total_pop, 1, 1 };
+    MTLSize    groupSize       = { threadsPerGroup, 1, 1 };
+    [enc dispatchThreadgroups:gridSize threadsPerThreadgroup:groupSize];
+    [enc endEncoding];
+
+    [cb commit];
+    [cb waitUntilCompleted];
+
+    if (cb.status == MTLCommandBufferStatusError) {
+        NSString* desc = cb.error ? cb.error.localizedDescription : @"unknown";
+        throw FlexAIDException("metal_eval_batch_multi: GPU error: " +
+            std::string([desc UTF8String]));
+    }
+
+    // Scatter results back to per-complex output buffers (float → double).
+    const float* com_f = (const float*)[ctx->buf_com_out contents];
+    const float* wal_f = (const float*)[ctx->buf_wal_out contents];
+    const float* sas_f = (const float*)[ctx->buf_sas_out contents];
+    for (int ci = 0; ci < n_complex; ++ci) {
+        const int base = ci * pop_size;
+        for (int c = 0; c < pop_size; ++c) {
+            entries[ci].h_com_out[c] = (double)com_f[base + c];
+            entries[ci].h_wal_out[c] = (double)wal_f[base + c];
+            entries[ci].h_sas_out[c] = (double)sas_f[base + c];
+        }
+    }
+}
+
 #endif  // FLEXAIDS_USE_METAL

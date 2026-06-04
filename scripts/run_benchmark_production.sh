@@ -76,10 +76,21 @@ PILOT_ONLY=false
 SKIP_PILOT=false
 RUN_PHASE2=false
 RESUME=false
+TWO_PASS=false
 BENCHMARK=""
 OUTPUT_OVERRIDE=""
 SEED=42
 N_THREADS=6
+
+# Two-pass parameters
+PASS1_NCHROM=250
+PASS1_NGEN=200
+PASS1_GRID=0.5
+PASS2_NCHROM=1000
+PASS2_NGEN=500
+PASS2_GRID=0.375
+# H_final threshold for flagging (= ln2 = kHSC_hard_nats)
+H_FINAL_FLAG_THRESHOLD=0.693
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -88,6 +99,7 @@ while [[ $# -gt 0 ]]; do
         --skip-pilot)   SKIP_PILOT=true ;;
         --phase2)       RUN_PHASE2=true ;;
         --resume)       RESUME=true ;;
+        --two-pass)     TWO_PASS=true ;;
         --benchmark)    BENCHMARK="$2"; shift ;;
         --out)          OUTPUT_OVERRIDE="$2"; shift ;;
         --seed)         SEED="$2";     shift ;;
@@ -483,6 +495,269 @@ except Exception as e:
     echo "${pdb},${wall_s},${top1_score},${rmsd},${success}"
 }
 
+# ─── Two-pass helpers ─────────────────────────────────────────────────────────
+
+# Write a minimal JSON config override for FlexAIDdS
+# Usage: write_flexaid_config <file> <nchrom> <ngen> <grid>
+write_flexaid_config() {
+    local cfg_file="$1" nchrom="$2" ngen="$3" grid="$4"
+    cat > "${cfg_file}" <<EOF
+{
+  "optimization": { "grid_spacing": ${grid} },
+  "ga": {
+    "num_chromosomes": ${nchrom},
+    "num_generations": ${ngen}
+  }
+}
+EOF
+}
+
+# Two-pass docking for a single complex.
+# Usage: dock_complex_twopass <pdb> <receptor> <ligand> <out_dir> <log_file>
+# Runs Pass 1 (coarse); flags for Pass 2 if H_final >= threshold or RMSD > 3Å.
+# Copies the final-pass binding_modes.json to out_dir for extract_result.
+dock_complex_twopass() {
+    local pdb="$1" receptor="$2" ligand="$3" out_dir="$4" log_file="$5"
+    local pass1_dir="${out_dir}/pass1"
+    local pass2_dir="${out_dir}/pass2"
+
+    run mkdir -p "${pass1_dir}"
+
+    # ── Pass 1 ──
+    local pass1_cfg pass1_exit=0
+    pass1_cfg="$(mktemp /tmp/flexaid_p1_XXXXXX.json)"
+    write_flexaid_config "${pass1_cfg}" ${PASS1_NCHROM} ${PASS1_NGEN} ${PASS1_GRID}
+
+    local t0 t1
+    t0="$(date +%s%N)"
+
+    if [[ "${DRY_RUN}" == false ]]; then
+        ACTIVE_PID=""
+        "${FLEXAIDDS_BIN}" "${receptor}" "${ligand}" \
+            -o "${pass1_dir}" -c "${pass1_cfg}" \
+            >> "${log_file}" 2>&1 &
+        ACTIVE_PID=$!
+        wait "${ACTIVE_PID}" || pass1_exit=$?
+        ACTIVE_PID=""
+    else
+        printf "${YELLOW}[DRY]${NC}   Pass 1: %s × %d chrom × %d gen, grid=%.3f\n" \
+               "${pdb}" ${PASS1_NCHROM} ${PASS1_NGEN} ${PASS1_GRID}
+    fi
+    rm -f "${pass1_cfg}"
+
+    t1="$(date +%s%N)"
+    local pass1_wall=$(( (t1 - t0) / 1000000000 ))
+    echo "${pass1_wall}" > "${pass1_dir}/wall_time_s"
+
+    # Parse H_final from the log (matches "H_final = <float>" from gaboom)
+    local H_FINAL
+    H_FINAL="$(grep -oE 'H_final[[:space:]]*=[[:space:]]*[0-9]+\.[0-9]+' \
+                   "${log_file}" 2>/dev/null | tail -1 | grep -oE '[0-9]+\.[0-9]+' || echo 999)"
+
+    # Parse RMSD from Pass 1 binding_modes.json
+    local pass1_rmsd="N/A"
+    if [[ -f "${pass1_dir}/binding_modes.json" ]]; then
+        pass1_rmsd="$(python3 -c "
+import json
+try:
+    d=json.load(open('${pass1_dir}/binding_modes.json'))
+    m=d.get('binding_modes',[])
+    print(m[0].get('best_pose_rmsd', m[0].get('rmsd_to_crystal','N/A')) if m else 'N/A')
+except: print('N/A')
+" 2>/dev/null || echo 'N/A')"
+    fi
+
+    # ── Flagging ──
+    local needs_pass2=false flag_reason=""
+    if [[ "${pass1_exit}" -ne 0 ]]; then
+        needs_pass2=true; flag_reason="pass1_exit=${pass1_exit}"
+    elif python3 -c "import sys; sys.exit(0 if float('${H_FINAL}') >= ${H_FINAL_FLAG_THRESHOLD} else 1)" 2>/dev/null; then
+        needs_pass2=true; flag_reason="H_final=${H_FINAL}"
+    elif [[ "${pass1_rmsd}" != "N/A" ]] && \
+         python3 -c "import sys; sys.exit(0 if float('${pass1_rmsd}') > 3.0 else 1)" 2>/dev/null; then
+        needs_pass2=true; flag_reason="rmsd=${pass1_rmsd}"
+    fi
+
+    local final_pass="pass1"
+    local total_wall="${pass1_wall}"
+
+    # ── Pass 2 (if flagged) ──
+    if [[ "${needs_pass2}" == true ]]; then
+        info "  ${pdb}: → Pass 2 (${flag_reason})"
+        run mkdir -p "${pass2_dir}"
+        t0="$(date +%s%N)"
+        if [[ "${DRY_RUN}" == false ]]; then
+            ACTIVE_PID=""
+            "${FLEXAIDDS_BIN}" "${receptor}" "${ligand}" \
+                -o "${pass2_dir}" \
+                >> "${log_file}" 2>&1 &
+            ACTIVE_PID=$!
+            wait "${ACTIVE_PID}" || true
+            ACTIVE_PID=""
+        else
+            printf "${YELLOW}[DRY]${NC}   Pass 2: %s × %d chrom × %d gen, grid=%.3f\n" \
+                   "${pdb}" ${PASS2_NCHROM} ${PASS2_NGEN} ${PASS2_GRID}
+        fi
+        t1="$(date +%s%N)"
+        local pass2_wall=$(( (t1 - t0) / 1000000000 ))
+        echo "${pass2_wall}" > "${pass2_dir}/wall_time_s"
+        total_wall=$(( pass1_wall + pass2_wall ))
+        final_pass="pass2"
+    fi
+
+    # Write totals and promote final binding_modes.json to out_dir
+    echo "${total_wall}" > "${out_dir}/wall_time_s"
+    echo "${final_pass}"  > "${out_dir}/final_pass"
+    local final_dir="${out_dir}/${final_pass}"
+    if [[ -f "${final_dir}/binding_modes.json" ]] && [[ "${DRY_RUN}" == false ]]; then
+        cp "${final_dir}/binding_modes.json" "${out_dir}/binding_modes.json" 2>/dev/null || true
+    fi
+}
+
+# Two-pass run using benchmark_datasets binary (CASF / Astex Non-Native / etc.)
+# Usage: run_twopass_dataset <dataset_name> <output_base_dir>
+run_twopass_dataset() {
+    local dataset="$1" out_base="$2"
+    local pass1_out="${out_base}/pass1"
+    local pass2_out="${out_base}/pass2"
+    local flagged_file="${out_base}/flagged_for_pass2.txt"
+
+    if [[ -z "${DATASET_BIN:-}" ]]; then
+        fail "benchmark_datasets binary not found — required for --benchmark ${dataset} --two-pass"
+        exit 1
+    fi
+
+    # ── Pass 1: coarse run ──
+    phase "TWO-PASS PASS 1: ${dataset} (${PASS1_NCHROM}×${PASS1_NGEN}, grid=${PASS1_GRID}Å)"
+    run mkdir -p "${pass1_out}" "${LOG_DIR}"
+
+    run "${DATASET_BIN}" \
+        --benchmark "${dataset}" \
+        --ga-population  ${PASS1_NCHROM} \
+        --ga-generations ${PASS1_NGEN} \
+        --grid-spacing   ${PASS1_GRID} \
+        --output    "${pass1_out}" \
+        --threads   "${N_THREADS}" \
+        --job-timeout-seconds 1800 \
+        2>&1 | tee "${LOG_DIR}/${dataset}_pass1.log"
+
+    # ── Flag complexes for Pass 2 ──
+    info "Analysing Pass 1 results for Pass 2 flagging..."
+    python3 - "${pass1_out}" "${flagged_file}" "${H_FINAL_FLAG_THRESHOLD}" <<'PYEOF'
+import os, sys, json, re, glob
+
+out_dir      = sys.argv[1]
+flagged_file = sys.argv[2]
+threshold    = float(sys.argv[3])
+flagged      = []
+
+for cdir in sorted(glob.glob(os.path.join(out_dir, '*/'))):
+    pdb = os.path.basename(cdir.rstrip('/'))
+    # Parse H_final from any .log in the complex dir
+    h_final = 999.0
+    for lf in glob.glob(os.path.join(cdir, '*.log')) + [os.path.join(cdir, 'stdout.log')]:
+        try:
+            for line in open(lf):
+                m = re.search(r'H_final\s*=\s*([\d.]+)', line)
+                if m:
+                    h_final = float(m.group(1))
+        except Exception:
+            pass
+    # Parse RMSD from binding_modes.json
+    rmsd = None
+    bm = os.path.join(cdir, 'binding_modes.json')
+    if os.path.exists(bm):
+        try:
+            d = json.load(open(bm))
+            modes = d.get('binding_modes', [])
+            if modes:
+                v = modes[0].get('best_pose_rmsd') or modes[0].get('rmsd_to_crystal')
+                if v is not None:
+                    rmsd = float(v)
+        except Exception:
+            pass
+    flag = (h_final >= threshold) or (rmsd is not None and rmsd > 3.0)
+    if flag:
+        flagged.append(pdb)
+
+with open(flagged_file, 'w') as f:
+    for code in flagged:
+        f.write(code + '\n')
+print(f"Flagged {len(flagged)} complexes for Pass 2 (threshold H>={threshold})")
+PYEOF
+
+    local n_flagged=0
+    [[ -f "${flagged_file}" ]] && n_flagged="$(wc -l < "${flagged_file}" | tr -d ' ')"
+    ok "Pass 1 done. ${n_flagged} complexes flagged for Pass 2."
+
+    if [[ "${n_flagged}" -gt 0 ]]; then
+        # ── Pass 2: full resolution on flagged only ──
+        phase "TWO-PASS PASS 2: ${n_flagged} flagged complexes (${PASS2_NCHROM}×${PASS2_NGEN})"
+        run mkdir -p "${pass2_out}"
+
+        run "${DATASET_BIN}" \
+            --benchmark "pdb_list:${flagged_file}" \
+            --ga-population  ${PASS2_NCHROM} \
+            --ga-generations ${PASS2_NGEN} \
+            --grid-spacing   ${PASS2_GRID} \
+            --output    "${pass2_out}" \
+            --threads   "${N_THREADS}" \
+            --job-timeout-seconds 7200 \
+            2>&1 | tee "${LOG_DIR}/${dataset}_pass2.log"
+    fi
+
+    # ── Merge: Pass 1 results + Pass 2 overrides → summary CSV ──
+    info "Merging Pass 1 + Pass 2 into summary CSV..."
+    python3 - "${pass1_out}" "${pass2_out}" "${out_base}/summary.csv" <<'PYEOF'
+import os, sys, json, glob
+
+pass1_dir  = sys.argv[1]
+pass2_dir  = sys.argv[2]
+out_csv    = sys.argv[3]
+
+def best_result(cdir):
+    wall = 0
+    try: wall = int(open(os.path.join(cdir, 'wall_time_s')).read().strip())
+    except: pass
+    score, rmsd, success = 'N/A', 'N/A', 0
+    bm = os.path.join(cdir, 'binding_modes.json')
+    if os.path.exists(bm):
+        try:
+            d = json.load(open(bm))
+            modes = d.get('binding_modes', [])
+            if modes:
+                score = modes[0].get('best_score', modes[0].get('score', 'N/A'))
+                r = modes[0].get('best_pose_rmsd') or modes[0].get('rmsd_to_crystal')
+                if r is not None:
+                    rmsd = str(r)
+                    success = 1 if float(r) < 2.0 else 0
+        except: pass
+    return wall, score, rmsd, success
+
+rows = []
+for cdir in sorted(glob.glob(os.path.join(pass1_dir, '*/'))):
+    pdb = os.path.basename(cdir.rstrip('/'))
+    p2_cdir = os.path.join(pass2_dir, pdb)
+    if os.path.isdir(p2_cdir):
+        w, s, r, ok = best_result(p2_cdir)
+        rows.append((pdb, w, s, r, ok, 'pass2'))
+    else:
+        w, s, r, ok = best_result(cdir)
+        rows.append((pdb, w, s, r, ok, 'pass1'))
+
+with open(out_csv, 'w') as f:
+    f.write('complex_id,wall_time_s,top1_score,rmsd_to_crystal,success,pass\n')
+    for pdb, w, s, r, ok, p in rows:
+        f.write(f'{pdb},{w},{s},{r},{ok},{p}\n')
+
+n_p1 = sum(1 for *_, p in rows if p == 'pass1')
+n_p2 = sum(1 for *_, p in rows if p == 'pass2')
+print(f'Summary: {len(rows)} complexes → Pass1={n_p1} ({100*n_p1//max(len(rows),1)}%), Pass2={n_p2} ({100*n_p2//max(len(rows),1)}%)')
+PYEOF
+
+    ok "Two-pass run complete for ${dataset}. Summary: ${out_base}/summary.csv"
+}
+
 # ─── Pilot calibration (5 complexes) ─────────────────────────────────────────
 
 run_pilot() {
@@ -586,7 +861,7 @@ run_full_astex() {
     [[ "${DRY_RUN}" == true ]] && _astex_log="/dev/null"
 
     # Prefer benchmark_datasets binary if available (handles download + dock atomically)
-    if [[ -n "${DATASET_BIN:-}" ]]; then
+    if [[ -n "${DATASET_BIN:-}" ]] && [[ "${TWO_PASS}" == false ]]; then
         info "Using benchmark_datasets binary for full Astex run"
         run "${DATASET_BIN}" \
             --benchmark astex \
@@ -664,7 +939,14 @@ except: print('N/A')
 
         info "[${idx}/${n_total}] Docking ${pdb} ..."
 
-        if dock_complex "${pdb}" "${receptor}" "${ligand}" "${out_dir}" "${log_file}"; then
+        local dock_ok=true
+        if [[ "${TWO_PASS}" == true ]]; then
+            dock_complex_twopass "${pdb}" "${receptor}" "${ligand}" "${out_dir}" "${log_file}" || dock_ok=false
+        else
+            dock_complex "${pdb}" "${receptor}" "${ligand}" "${out_dir}" "${log_file}" || dock_ok=false
+        fi
+
+        if [[ "${dock_ok}" == true ]]; then
             local result_line
             result_line="$(extract_result "${out_dir}" "${pdb}" "${rmsd_thr}")"
             echo "${result_line}" >> "${SUMMARY_CSV}"
@@ -674,7 +956,9 @@ except: print('N/A')
             fi
             local wall_s
             wall_s="$(cat "${out_dir}/wall_time_s" 2>/dev/null || echo 0)"
-            ok "[${idx}/${n_total}] ${pdb}: ${wall_s}s"
+            local pass_used="single"
+            [[ -f "${out_dir}/final_pass" ]] && pass_used="$(cat "${out_dir}/final_pass")"
+            ok "[${idx}/${n_total}] ${pdb}: ${wall_s}s (${pass_used})"
         else
             fail "[${idx}/${n_total}] ${pdb}: docking failed"
             echo "${pdb},0,N/A,N/A,0" >> "${SUMMARY_CSV}"
@@ -794,12 +1078,52 @@ main() {
             echo "timestamp=${TIMESTAMP}"
             echo "seed=${SEED}"
             echo "threads=${N_THREADS}"
+            echo "two_pass=${TWO_PASS}"
+            echo "benchmark=${BENCHMARK:-astex}"
             echo "git_commit=$(cd "${REPO_ROOT}" && git rev-parse HEAD 2>/dev/null || echo UNKNOWN)"
             echo "hostname=$(hostname)"
             echo "os=$(uname -srm)"
         } > "${RESULTS_DIR}/run_metadata.txt"
     fi
 
+    # ── Route benchmark-specific runs (casf, astex_non_native) ──
+    if [[ "${BENCHMARK}" == "casf" || "${BENCHMARK}" == "casf2016" ]]; then
+        locate_binary
+        locate_dataset_runner
+        info "Running CASF-2016 benchmark (two_pass=${TWO_PASS})"
+        if [[ "${TWO_PASS}" == true ]]; then
+            run_twopass_dataset "casf2016" "${RESULTS_DIR}"
+        else
+            run "${DATASET_BIN}" \
+                --benchmark casf2016 \
+                --output    "${RESULTS_DIR}" \
+                --threads   "${N_THREADS}" \
+                --job-timeout-seconds 7200 \
+                2>&1 | tee "${LOG_DIR}/casf2016.log" || true
+        fi
+        print_final_report
+        return
+    fi
+
+    if [[ "${BENCHMARK}" == "astex_non_native" || "${BENCHMARK}" == "astex_nonnative" ]]; then
+        locate_binary
+        locate_dataset_runner
+        info "Running Astex Non-Native benchmark (two_pass=${TWO_PASS})"
+        if [[ "${TWO_PASS}" == true ]]; then
+            run_twopass_dataset "astex_nonnative" "${RESULTS_DIR}"
+        else
+            run "${DATASET_BIN}" \
+                --benchmark astex_nonnative \
+                --output    "${RESULTS_DIR}" \
+                --threads   "${N_THREADS}" \
+                --job-timeout-seconds 7200 \
+                2>&1 | tee "${LOG_DIR}/astex_nonnative.log" || true
+        fi
+        print_final_report
+        return
+    fi
+
+    # ── Default: Astex Diverse ──
     preflight
 
     if [[ "${SKIP_PILOT}" == false ]]; then
