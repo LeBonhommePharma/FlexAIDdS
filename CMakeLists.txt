@@ -1204,6 +1204,45 @@ if(ENABLE_BENCHMARK_DATASETS)
     if(FLEXAIDS_USE_OPENMP AND OpenMP_CXX_FOUND)
         target_link_libraries(benchmark_datasets PRIVATE OpenMP::OpenMP_CXX)
     endif()
+    # Metal bridge sources — required when flexaid_core was compiled with Metal.
+    if(FLEXAIDS_USE_METAL)
+        target_sources(benchmark_datasets PRIVATE
+            LIB/metal_eval.mm
+            LIB/MetalRMSDBridge.mm
+            LIB/CavityDetect/CavityDetectMetalBridge.mm
+            LIB/ShannonThermoStack/ShannonMetalBridge.mm
+            LIB/gpu_fast_optics_metal.mm
+        )
+        target_compile_definitions(benchmark_datasets PRIVATE
+            FLEXAIDS_USE_METAL
+            FLEXAIDS_HAS_METAL_SHANNON
+        )
+        target_compile_options(benchmark_datasets PRIVATE -fno-objc-arc)
+        target_link_libraries(benchmark_datasets PRIVATE
+            ${METAL_LIBRARY}
+            ${FOUNDATION_LIBRARY}
+            ${METALKIT_LIBRARY}
+        )
+        set_source_files_properties(
+            LIB/metal_eval.mm
+            LIB/MetalRMSDBridge.mm
+            LIB/CavityDetect/CavityDetectMetalBridge.mm
+            LIB/ShannonThermoStack/ShannonMetalBridge.mm
+            LIB/gpu_fast_optics_metal.mm
+            PROPERTIES LANGUAGE OBJCXX COMPILE_FLAGS "-std=c++26 -fno-objc-arc"
+        )
+        add_dependencies(benchmark_datasets
+            CavityDetectMetalDS
+            ShannonEntropyMetal
+            MetalRMSDMetalDS
+        )
+        target_compile_definitions(benchmark_datasets PRIVATE
+            SHANNON_METALLIB_PATH="${SHANNON_METALLIB}"
+            METALRMSD_METALLIB_PATH="${RMSD_METALLIB_DS}"
+            CAVITY_METALLIB_PATH="${CAVITY_METALLIB_DS}"
+            TURBOQUANT_METALLIB_PATH="${TQ_METALLIB_DS}"
+        )
+    endif()
     message(STATUS "Benchmark dataset runner enabled — build target: benchmark_datasets")
 endif()
 
