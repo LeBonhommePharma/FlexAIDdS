@@ -228,10 +228,12 @@ void metal_eval_get_capabilities(MetalCapabilities* out)
 
     id<MTLDevice> device = MTLCreateSystemDefaultDevice();
     if (!device) {
+        fprintf(stderr, "[DEBUG] MTLCreateSystemDefaultDevice() returned NULL\n");
         out->available = false;
         return;
     }
 
+    fprintf(stderr, "[DEBUG] Metal device acquired: %s\n", device.name.UTF8String ? device.name.UTF8String : "unknown");
     out->available = true;
     strncpy(out->device_name, device.name.UTF8String ? device.name.UTF8String : "Apple GPU", sizeof(out->device_name)-1);
 

@@ -18,7 +18,7 @@
 
 </div>
 
-**[Installation](docs/INSTALLATION.md)** · **[User Guide](docs/USERGUIDE.md)** · **[Support Matrix](docs/SUPPORT_MATRIX.md)** · **[Reproducibility](docs/REPRODUCIBILITY.md)** · **[Benchmarks](docs/BENCHMARKS.md)** · **[Changelog](VERSION.md)** · **[Website](https://lmorency.github.io/FlexAIDdS/)** · **[Documentation Hub](#documentation)**
+**[Weekly Pulse](#weekly-pulse)** · **[Installation](docs/INSTALLATION.md)** · **[User Guide](docs/USERGUIDE.md)** · **[Support Matrix](docs/SUPPORT_MATRIX.md)** · **[Reproducibility](docs/REPRODUCIBILITY.md)** · **[Benchmarks](docs/BENCHMARKS.md)** · **[Changelog](VERSION.md)** · **[Website](https://lmorency.github.io/FlexAIDdS/)** · **[Documentation Hub](#documentation)**
 
 ---
 
@@ -100,6 +100,40 @@ results = fd.dock(
 for mode in results.rank_by_free_energy():
     print(f"Mode: dG={mode.free_energy:.2f} kcal/mol")
 ```
+
+---
+
+## Weekly Pulse
+
+<table>
+<tr>
+<td valign="top" width="25%">
+<strong>242 commits</strong><br/>
+landed on <code>master</code> from 2026-05-27 to 2026-06-03.
+</td>
+<td valign="top" width="25%">
+<strong>19 merged PRs</strong><br/>
+spanned thermodynamics, validation, benchmark ops, and web/docs work.
+</td>
+<td valign="top" width="25%">
+<strong>M3 Pro benchmark path</strong><br/>
+hardened for iCloud-only launches, Metal pre-flight, temperature fidelity, and best-mode extraction.
+</td>
+<td valign="top" width="25%">
+<strong>Astex non-native grew</strong><br/>
+from pair definitions to a 20-pair pilot and the full 85-pair cross-docking set.
+</td>
+</tr>
+</table>
+
+### This Week on `master`
+
+- **Thermodynamics** — `ThermodynamicBreakdown`, component averages, `ThermodynamicOutput`, `TotalSampledPartitionFunction`, Python temperature scans, and targeted thermo verification all landed.
+- **Reporting and preprocessing** — cleft annotation, flexible-residue selection, safe standard-state affinity calibration, and JSON-driven PyMOL / Markdown plotting landed.
+- **Benchmark operations** — the M3 Pro / iCloud launcher path gained iCloud-only support, `EntryTaskManager.run()`, explicit temperature forwarding, and stricter best-mode validation.
+- **Docs and web** — entropy.help, the documentation/validation boundary, `/flexaid`, `/periodic`, and homepage teaser/navigation work all landed this week.
+
+**Full weekly notes and PR links**: see [VERSION.md](VERSION.md).
 
 ---
 

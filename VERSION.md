@@ -8,6 +8,28 @@
 
 ---
 
+## Weekly Highlights (2026-05-27 to 2026-06-03)
+
+Selected changes that landed on `master` this week.
+
+### Highlights
+
+- **Thermodynamic reporting stack** — landed the `ThermodynamicBreakdown` ledger and component-wise averages, added `ThermodynamicOutput` / `TotalSampledPartitionFunction`, exposed `temperature_scan`, `fit_delta_Cp`, and affinity converters to Python, and closed the loop with targeted `ctest` + `pytest` verification.
+- **Structural interpretation and reporting** — added cleft annotation and flexible-residue selection, safe standard-state affinity calibration utilities, and JSON-driven PyMOL / Markdown / plotting reporting.
+- **Benchmark automation on Apple Silicon** — hardened the M3 Pro / iCloud campaign path with iCloud-only support, Metal pre-flight guidance, a master launcher + monitor flow, explicit temperature forwarding, stricter best-mode extraction / validation, and `EntryTaskManager.run()` local thread-pool dispatch.
+- **Documentation and web surface** — added the entropy.help foundation, tightened the documentation/validation boundary and source-validator determinism, and published `/flexaid` + `/periodic` with homepage teaser cards and navigation links.
+- **Validation datasets** — expanded Astex non-native cross-docking inputs from pair definitions to a 20-pair pilot and the full 85-pair set, plus a null-guard fix in `select_flexible_residues`.
+
+### Key PRs
+
+- **Thermodynamics** — [#212](https://github.com/LeBonhommePharma/FlexAIDdS/pull/212), [#222](https://github.com/LeBonhommePharma/FlexAIDdS/pull/222), [#223](https://github.com/LeBonhommePharma/FlexAIDdS/pull/223), [#224](https://github.com/LeBonhommePharma/FlexAIDdS/pull/224), [#225](https://github.com/LeBonhommePharma/FlexAIDdS/pull/225), [#228](https://github.com/LeBonhommePharma/FlexAIDdS/pull/228)
+- **Reporting and preprocessing** — [#215](https://github.com/LeBonhommePharma/FlexAIDdS/pull/215), [#217](https://github.com/LeBonhommePharma/FlexAIDdS/pull/217), [#218](https://github.com/LeBonhommePharma/FlexAIDdS/pull/218)
+- **Docs and validation** — [#220](https://github.com/LeBonhommePharma/FlexAIDdS/pull/220), [#221](https://github.com/LeBonhommePharma/FlexAIDdS/pull/221), [#229](https://github.com/LeBonhommePharma/FlexAIDdS/pull/229)
+- **Benchmark operations** — [#230](https://github.com/LeBonhommePharma/FlexAIDdS/pull/230)
+- **Tooling and site surface** — [#231](https://github.com/LeBonhommePharma/FlexAIDdS/pull/231), [#232](https://github.com/LeBonhommePharma/FlexAIDdS/pull/232), [#233](https://github.com/LeBonhommePharma/FlexAIDdS/pull/233)
+
+---
+
 ## v2.0.0 (2026-04-04) — Stable Release
 
 First stable release of FlexAID∆S, the entropy-driven molecular docking engine. This is a ground-up rewrite of FlexAID combining genetic algorithms with statistical mechanics thermodynamics for accurate binding free energy prediction. 655 commits ahead of the v1.5 legacy tag. All development phases complete.

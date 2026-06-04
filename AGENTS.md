@@ -24,6 +24,13 @@ When any of the above appear, the agent **must** load and follow `.grok/skills/f
 git status
 find . -maxdepth 4 -iname '*skill*' -o -iname 'SKILL.md' -o -iname '*.xml' -o -iname 'AGENTS.md'
 python3 .grok/skills/flexaid-docking/scripts/validate_skill.py
+python3 .grok/skills/flexaid-docking/scripts/ensure_docking_data.py --check
+```
+
+If `git status` hits an `fsmonitor--daemon.ipc` error, retry the repo check with:
+
+```bash
+git -c core.fsmonitor=false status --short
 ```
 
 ## Guardrails (Copied from Skill)
@@ -41,6 +48,7 @@ python3 .grok/skills/flexaid-docking/scripts/validate_skill.py
 ```bash
 python3 .grok/skills/flexaid-docking/scripts/validate_skill.py
 python3 -m pytest tests/test_flexaid_skill.py -q --tb=line
+python3 .grok/skills/flexaid-docking/scripts/ensure_docking_data.py --check
 ```
 
 ## What Agents Must Not Do
@@ -119,6 +127,14 @@ pytest tests/ -q
 ```bash
 cmake -B build -DBUILD_PYTHON_BINDINGS=ON -DCMAKE_BUILD_TYPE=Release
 cmake --build build -j $(nproc)
+```
+
+**Skill/runtime-data maintenance**
+```bash
+python3 .grok/skills/flexaid-docking/scripts/update_skill.py --dry-run -v
+python3 .grok/skills/flexaid-docking/scripts/update_skill.py --yes
+python3 .grok/skills/flexaid-docking/scripts/ensure_docking_data.py --check
+python3 .grok/skills/flexaid-docking/scripts/ensure_docking_data.py --info
 ```
 
 See `CLAUDE.md` → “Build System” for the full table of CMake options and targets.
