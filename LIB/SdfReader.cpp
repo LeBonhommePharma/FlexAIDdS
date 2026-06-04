@@ -234,11 +234,7 @@ int read_sdf_ligand(FA_Global* FA, atom** atoms, resid** residue,
     std::vector<int> idx_map(natoms + 1, 0); // 1-based
 
     for (int ai = 0; ai < natoms; ++ai) {
-        FA->atm_cnt++;
-        FA->atm_cnt_real++;
-        FA->num_het_atm++;
-
-        if (FA->atm_cnt >= FA->MIN_NUM_ATOM) {
+        if (FA->atm_cnt >= FA->MIN_NUM_ATOM - 1) {
             FA->MIN_NUM_ATOM += 50;
             *atoms = (atom*)realloc(*atoms, FA->MIN_NUM_ATOM * sizeof(atom));
             if (!*atoms) { fprintf(stderr, "ERROR: atom realloc\n"); return 0; }
@@ -246,6 +242,9 @@ int read_sdf_ligand(FA_Global* FA, atom** atoms, resid** residue,
         }
 
         atom& a = (*atoms)[FA->atm_cnt];
+        FA->atm_cnt++;
+        FA->atm_cnt_real++;
+        FA->num_het_atm++;
         memset(&a, 0, sizeof(atom));
 
         int pdb_num = 90001 + ai;
@@ -274,7 +273,7 @@ int read_sdf_ligand(FA_Global* FA, atom** atoms, resid** residue,
         a.eigen  = NULL;
 
         if (ai == 0) (*residue)[FA->res_cnt].fatm[0] = FA->atm_cnt;
-        (*residue)[FA->res_cnt].latm[0] = FA->atm_cnt;
+        (*residue)[FA->res_cnt].latm[0] = FA->atm_cnt - 1;
     }
 
     // Populate bonds

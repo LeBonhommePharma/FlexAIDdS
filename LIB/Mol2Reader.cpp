@@ -241,12 +241,8 @@ int read_mol2_ligand(FA_Global* FA, atom** atoms, resid** residue,
     [[maybe_unused]] int first_atm = FA->atm_cnt + 1;
 
     for (size_t ai = 0; ai < tmp_atoms.size(); ++ai) {
-        FA->atm_cnt++;
-        FA->atm_cnt_real++;
-        FA->num_het_atm++;
-
         // Grow atom array if needed
-        if (FA->atm_cnt >= FA->MIN_NUM_ATOM) {
+        if (FA->atm_cnt + 1 >= FA->MIN_NUM_ATOM) {
             FA->MIN_NUM_ATOM += 50;
             *atoms = (atom*)realloc(*atoms, FA->MIN_NUM_ATOM * sizeof(atom));
             if (!*atoms) { fprintf(stderr, "ERROR: atom realloc\n"); return 0; }
@@ -254,6 +250,9 @@ int read_mol2_ligand(FA_Global* FA, atom** atoms, resid** residue,
         }
 
         atom& a = (*atoms)[FA->atm_cnt];
+        FA->atm_cnt++;
+        FA->atm_cnt_real++;
+        FA->num_het_atm++;
         memset(&a, 0, sizeof(atom));
 
         // Assign a PDB-style number starting at 90001
@@ -291,7 +290,7 @@ int read_mol2_ligand(FA_Global* FA, atom** atoms, resid** residue,
 
         // Update residue first/last atom
         if (ai == 0) (*residue)[FA->res_cnt].fatm[0] = FA->atm_cnt;
-        (*residue)[FA->res_cnt].latm[0] = FA->atm_cnt;
+        (*residue)[FA->res_cnt].latm[0] = FA->atm_cnt - 1;
     }
 
     // Populate bond arrays from MOL2 bond table

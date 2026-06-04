@@ -1598,30 +1598,41 @@ atomindex* index_protein(FA_Global* FA,atom* atoms,resid* residue,atomsas* Calc,
 	rot=0;
 	i=0;
 	alter=0;
-    
+
 	// Do not alter default PDB min and max coordinates
 	for(j=0;j<3;++j){
 		global_min[j]=(int)FA->globalmin[j]+1.0;
 		global_max[j]=(int)FA->globalmax[j]+1.0;
 	}
-    
+
+	// DEBUG: print initial values
+	//fprintf(stderr, "DEBUG index_protein: initial global_min=[%.1f,%.1f,%.1f] global_max=[%.1f,%.1f,%.1f]\n",
+	//	global_min[0], global_min[1], global_min[2], global_max[0], global_max[1], global_max[2]);
+
 	max_width=FA->maxwidth;
 	
 	for (resi=1; resi<=FA->res_cnt; ++resi) {
 		rot = residue[resi].rot;
-		
+
 		for(atmi=residue[resi].fatm[rot];atmi<=residue[resi].latm[rot];++atmi){
 			// Copy atoms structure to the new Vcont structure
 			// only the atoms that correspond to the correct rotamer are copied
 			// the total number of atoms thus is equal to atm_cnt_real
-            
+
+			// Bounds check: ensure we're within atom array and Calc array
+			if (atmi < 0 || atmi >= atmcnt || i >= atmcnt) {
+				fprintf(stderr, "ERROR: atom index out of bounds resi=%d rot=%d atmi=%d i=%d atmcnt=%d\n",
+					resi, rot, atmi, i, atmcnt);
+				Terminate(2);
+			}
+
 			// Calc[i].atom = NULL;
 			if(Calc[i].atom == NULL){
 				Calc[i].atom = &atoms[atmi];
 				Calc[i].residue = &residue[resi];
 				Calc[i].done = 'N';
 				Calc[i].score = atoms[atmi].optres != NULL;
-				
+
 				for(j=0;j<3;++j){
 					if (atoms[atmi].coor[j] < global_min[j]){
 						global_min[j]=atoms[atmi].coor[j];
@@ -1632,7 +1643,7 @@ atomindex* index_protein(FA_Global* FA,atom* atoms,resid* residue,atomsas* Calc,
 					}
 				}
 			}
-			
+
 			++i;
 		}
 	}
@@ -1651,10 +1662,10 @@ atomindex* index_protein(FA_Global* FA,atom* atoms,resid* residue,atomsas* Calc,
 		}
 	}
 
-	// Sanity check: protein bounding box should never exceed 500 Angstroms
-	// (typical is 50-150; this catches coordinate parse bugs like CIF 999Å)
-	if (max_width > 500.0f) {
-		fprintf(stderr, "ERROR: bounding box too large (%.1f Å > 500 Å limit)\n", max_width);
+	// Sanity check: protein bounding box should never exceed ~1000 Angstroms
+	// (typical protein is 50-200Å; large complexes up to 500-700Å; this catches gross parse errors)
+	if (max_width > 1000.0f) {
+		fprintf(stderr, "ERROR: bounding box suspiciously large (%.1f Å > 1000 Å limit)\n", max_width);
 		fprintf(stderr, "  Receptor coordinates: [%.1f, %.1f] [%.1f, %.1f] [%.1f, %.1f]\n",
 			global_min[0], global_max[0], global_min[1], global_max[1], global_min[2], global_max[2]);
 		fprintf(stderr, "  Check input structure for coordinate parsing errors (CIF/PDB format issue)\n");
