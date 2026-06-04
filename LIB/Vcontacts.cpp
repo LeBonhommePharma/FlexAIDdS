@@ -1614,17 +1614,16 @@ atomindex* index_protein(FA_Global* FA,atom* atoms,resid* residue,atomsas* Calc,
 	for (resi=1; resi<=FA->res_cnt; ++resi) {
 		rot = residue[resi].rot;
 
-		for(atmi=residue[resi].fatm[rot];atmi<=residue[resi].latm[rot];++atmi){
+		int latm_clamped = residue[resi].latm[rot];
+		if (latm_clamped >= atmcnt) latm_clamped = atmcnt - 1;
+
+		for(atmi=residue[resi].fatm[rot];atmi<=latm_clamped;++atmi){
 			// Copy atoms structure to the new Vcont structure
 			// only the atoms that correspond to the correct rotamer are copied
 			// the total number of atoms thus is equal to atm_cnt_real
 
-			// Bounds check: ensure we're within atom array and Calc array
-			//if (atmi < 0 || atmi >= atmcnt || i >= atmcnt) {
-			//	fprintf(stderr, "ERROR: atom index out of bounds resi=%d rot=%d atmi=%d i=%d atmcnt=%d\n",
-			//		resi, rot, atmi, i, atmcnt);
-			//	Terminate(2);
-			//}
+			// Safety: skip if indices are invalid
+			if (atmi < 0 || atmi >= atmcnt || i >= atmcnt) continue;
 
 			// Calc[i].atom = NULL;
 			if(Calc[i].atom == NULL){
