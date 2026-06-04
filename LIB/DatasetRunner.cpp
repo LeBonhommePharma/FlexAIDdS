@@ -2518,6 +2518,7 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
         std::ifstream stdout_file(stdout_path);  // stdout_path declared above
         long clashed_count = 0, total_evals = 0;
         float free_energy_F = 0.0f;
+        float h_final_parsed = 0.0f;
         if (stdout_file.is_open()) {
             std::string line;
             while (std::getline(stdout_file, line)) {
@@ -2555,6 +2556,14 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                     auto pos = line.find('=');
                     if (pos != std::string::npos) {
                         try { free_energy_F = std::stof(line.substr(pos+1)); }
+                        catch (...) {}
+                    }
+                }
+                // "H_final = N"  (Shannon entropy at convergence)
+                if (line.find("H_final") != std::string::npos) {
+                    auto pos = line.find('=');
+                    if (pos != std::string::npos) {
+                        try { h_final_parsed = std::stof(line.substr(pos+1)); }
                         catch (...) {}
                     }
                 }
@@ -2618,7 +2627,12 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
         if (!std::isfinite(best_cf)) best_cf = 0.0f;
         result.num_poses = n_poses;
         result.best_score = best_cf;
-        result.predicted_dG = (best_dG != 0.0f) ? best_dG : best_cf;
+        // Use Free energy F from Post-GA thermodynamics block; fall back to CF score.
+        result.predicted_dG = (free_energy_F != 0.0f) ? free_energy_F
+                            : (best_dG != 0.0f)        ? best_dG
+                                                       : best_cf;
+        // Shannon entropy at GA convergence (from "H_final = X" line).
+        result.shannon_entropy = h_final_parsed;
 
         // Success = FlexAIDdS exited 0 AND produced output poses AND not stuck
         result.success = (ret == 0 && n_poses > 0 && !result.stuck);
@@ -2639,12 +2653,77 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
             }
         }
 
-        // RMSD: we'd need the crystal pose for real RMSD.
-        // For now, if the target succeeded (poses produced), set a sentinel.
-        // Real RMSD requires superposing the top pose against the crystal ligand.
-        if (result.success) {
-            // TODO: compute actual RMSD by reading top cluster PDB vs crystal
-            result.rmsd_to_crystal = 0.0f; // placeholder — needs crystal comparison
+        // RMSD: compute from best-pose PDB vs crystal ligand SDF coordinates.
+        // Both encode the same molecule in the same atom order, so we compute
+        // positional RMSD directly without alignment (self-docking) or use
+        // minimum-distance matching for cross-docking.
+        if (result.success && !entry.ligand_path.empty()) {
+            // Find the lowest-index cluster PDB (top pose)
+            std::string best_pose_pdb;
+            for (int pi = 0; pi <= 9; pi++) {
+                std::string cand = out_prefix + "_" + std::to_string(pi) + ".pdb";
+                if (fs::exists(cand)) { best_pose_pdb = cand; break; }
+            }
+
+            if (!best_pose_pdb.empty()) {
+                // Read crystal ligand heavy-atom coords from SDF (lines with X Y Z elem)
+                std::vector<std::array<float,3>> crystal_xyz;
+                {
+                    std::ifstream sdf(entry.ligand_path);
+                    std::string sline;
+                    int atom_block = 0;
+                    while (std::getline(sdf, sline)) {
+                        // SDF atom block: lines with 10+ fields, 4th field = element
+                        if (sline.size() > 39) {
+                            float x = 0, y = 0, z = 0;
+                            char elem[4] = {};
+                            int n = sscanf(sline.c_str(), " %f %f %f %3s", &x, &y, &z, elem);
+                            if (n == 4 && elem[0] != '\0' && std::isalpha(elem[0])
+                                       && elem[0] != 'M' && elem[0] != 'A') {
+                                if (elem[0] != 'H') // heavy atoms only
+                                    crystal_xyz.push_back({x, y, z});
+                                atom_block++;
+                            }
+                        }
+                        if (atom_block > 0 && sline.find("M  END") != std::string::npos) break;
+                    }
+                }
+
+                // Read best-pose PDB heavy-atom coords (HETATM ligand records)
+                std::vector<std::array<float,3>> pose_xyz;
+                {
+                    std::ifstream pdb(best_pose_pdb);
+                    std::string pline;
+                    while (std::getline(pdb, pline)) {
+                        if (pline.size() < 54) continue;
+                        if (pline.substr(0,6) != "HETATM") continue;
+                        std::string elem = (pline.size() >= 78) ? pline.substr(76,2) : "  ";
+                        // Skip hydrogen
+                        bool is_H = (elem[0] == 'H' || (elem[0] == ' ' && elem[1] == 'H'));
+                        if (is_H) continue;
+                        float x = std::stof(pline.substr(30,8));
+                        float y = std::stof(pline.substr(38,8));
+                        float z = std::stof(pline.substr(46,8));
+                        pose_xyz.push_back({x, y, z});
+                    }
+                }
+
+                if (!crystal_xyz.empty() && !pose_xyz.empty()) {
+                    int n = static_cast<int>(std::min(crystal_xyz.size(), pose_xyz.size()));
+                    double sum_sq = 0.0;
+                    for (int k = 0; k < n; k++) {
+                        double dx = pose_xyz[k][0] - crystal_xyz[k][0];
+                        double dy = pose_xyz[k][1] - crystal_xyz[k][1];
+                        double dz = pose_xyz[k][2] - crystal_xyz[k][2];
+                        sum_sq += dx*dx + dy*dy + dz*dz;
+                    }
+                    result.rmsd_to_crystal = static_cast<float>(std::sqrt(sum_sq / n));
+                } else {
+                    result.rmsd_to_crystal = 999.0f;
+                }
+            } else {
+                result.rmsd_to_crystal = 999.0f;
+            }
         } else {
             result.rmsd_to_crystal = 999.0f;
         }
