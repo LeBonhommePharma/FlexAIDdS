@@ -135,6 +135,12 @@ struct GB_Global_struct{
 	double       catastrophic_mutation_fraction;  // fraction of population to re-randomize (default: 0.2)
 	int          catastrophic_mutation_count;     // counter: how many times triggered
 
+	// ── Metal GPU multi-complex batching ──
+	// When > 1 concurrent GA workers share a process, they queue up N entries
+	// before issuing a single N×pop_size GPU kernel dispatch.
+	// 1 = single-complex fast path (default, zero overhead).
+	int          metal_batch_n;
+
 };
 typedef struct GB_Global_struct GB_Global;
 

@@ -1603,11 +1603,19 @@ void calculate_fitness(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* chr
 		const int n_genes = GB->num_genes;
 		const int ns      = METAL_EMAT_SAMPLES;
 
+		// Batch size: how many complexes to collect before one GPU dispatch.
+		// GB->metal_batch_n == 1 → instant dispatch (same as single-batch).
+		// GB->metal_batch_n == N → N concurrent GA workers share one kernel.
+		const int batch_n = (GB->metal_batch_n > 0) ? GB->metal_batch_n : 1;
+
+		// max_pop for the context must accommodate all batched chromosomes.
+		const int ctx_max_pop = pop_size * batch_n;
+
 		auto& pool = GPUContextPool::instance();
-		auto handle = pool.acquire_metal(n_atoms, n_types, pop_size, [&]() {
+		auto handle = pool.acquire_metal(n_atoms, n_types, ctx_max_pop, [&]() {
 			auto ad = prepare_gpu_atoms();
 			std::vector<float> h_emat = build_emat_sampled(n_types, ns);
-			return metal_eval_init(n_atoms, n_types, pop_size,
+			return metal_eval_init(n_atoms, n_types, ctx_max_pop,
 			                      ad.lig_first, ad.lig_last,
 			                      FA->permeability,
 			                      ad.xyz.data(), ad.type.data(),
@@ -1617,8 +1625,34 @@ void calculate_fitness(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* chr
 		if (handle.ctx) {
 			std::vector<double> h_genes = pack_genes_batch(n_genes);
 			std::vector<double> h_com(pop_size), h_wal(pop_size), h_sas(pop_size);
-			metal_eval_batch(handle.ctx, pop_size, n_genes, h_genes.data(),
-			                 h_com.data(), h_wal.data(), h_sas.data());
+
+			if (batch_n <= 1) {
+				// Single-complex fast path — no batching overhead.
+				metal_eval_batch(handle.ctx, pop_size, n_genes, h_genes.data(),
+				                 h_com.data(), h_wal.data(), h_sas.data());
+			} else {
+				// Multi-complex path: pack per-complex atom data and queue for
+				// batched dispatch.  When N concurrent workers all reach this
+				// point in the same generation, they share one GPU kernel launch
+				// (N × pop_size chromosomes per dispatch).
+				auto ad = prepare_gpu_atoms();
+				MetalMultiBatchEntry entry;
+				entry.h_genes      = h_genes.data();
+				entry.h_atom_xyz    = ad.xyz.data();
+				entry.h_atom_type   = ad.type.data();
+				entry.h_atom_radius = ad.radius.data();
+				entry.n_atoms       = n_atoms;
+				entry.lig_first     = ad.lig_first;
+				entry.lig_last      = ad.lig_last;
+				entry.n_types       = n_types;
+				entry.perm          = FA->permeability;
+				entry.h_com_out     = h_com.data();
+				entry.h_wal_out     = h_wal.data();
+				entry.h_sas_out     = h_sas.data();
+				pool.submit_metal_batch_multi(handle.ctx, pop_size, n_genes,
+				                              entry, batch_n);
+			}
+
 			unpack_gpu_results(h_com, h_wal, h_sas);
 			gpu_handled = true;
 		} else {

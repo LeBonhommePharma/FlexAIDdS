@@ -96,12 +96,26 @@ void metal_eval_shutdown(MetalEvalCtx* ctx);
 //
 // All buffers are host-side; the implementation copies in, dispatches, and copies out.
 //
-// When n_complex == 1 this is identical to metal_eval_batch() (no overhead).
+// Per-complex entry for multi-complex batch dispatch.
+// Each entry carries its own atom data so complexes with different
+// receptors/ligands can be batched into a single GPU kernel launch.
+// When n_complex == 1 the fast path delegates to metal_eval_batch().
 struct MetalMultiBatchEntry {
-    const double* h_genes;    // [pop_size × n_genes]
-    double*       h_com_out;  // [pop_size] output
-    double*       h_wal_out;  // [pop_size] output
-    double*       h_sas_out;  // [pop_size] output
+    // Gene input
+    const double* h_genes;      // [pop_size × n_genes]
+    // Per-complex atom data (different receptor+ligand each entry)
+    const float*  h_atom_xyz;   // [n_atoms × 3]
+    const int*    h_atom_type;  // [n_atoms]
+    const float*  h_atom_radius;// [n_atoms]
+    int           n_atoms;
+    int           lig_first;
+    int           lig_last;
+    int           n_types;
+    float         perm;
+    // Output
+    double*       h_com_out;    // [pop_size]
+    double*       h_wal_out;    // [pop_size]
+    double*       h_sas_out;    // [pop_size]
 };
 
 void metal_eval_batch_multi(MetalEvalCtx*              ctx,

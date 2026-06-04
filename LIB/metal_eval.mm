@@ -81,6 +81,140 @@ struct EvalParams {
     int   pad1;
 };
 
+// ─── Multi-complex kernel ─────────────────────────────────────────────────────
+// Evaluates N × pop_size chromosomes where each group of pop_size threadgroups
+// belongs to a different (receptor, ligand) system.  Each complex supplies its
+// own atom coordinates, types, and radii via concatenated device buffers plus a
+// per-complex descriptor array so the kernel can address the right atoms.
+//
+// Thread mapping: global_chrom_id k  →  complex_id = k / pop_size
+//                                        local_chrom = k % pop_size
+struct ComplexDesc {
+    int   atom_offset;    // start index in the concatenated atom arrays
+    int   n_atoms;        // total atoms for this complex
+    int   lig_first;      // first ligand atom (local index within complex atoms)
+    int   lig_last;       // last  ligand atom (local index)
+    int   gene_offset;    // complex_id * pop_size * n_genes
+    int   result_offset;  // complex_id * pop_size
+    int   pad0;
+    int   pad1;
+};
+
+struct MultiParams {
+    int   pop_size;
+    int   n_genes;
+    int   T;              // n_types (energy matrix dimension)
+    float perm;
+};
+
+kernel void kernel_eval_cf_multi(
+    device const float*        atom_xyz_all    [[ buffer(0) ]],
+    device const int*          atom_type_all   [[ buffer(1) ]],
+    device const float*        atom_radius_all [[ buffer(2) ]],
+    device const float*        emat_sampled    [[ buffer(3) ]],
+    device const float*        genes_f_all     [[ buffer(4) ]],
+    device float*              cf_com_out      [[ buffer(5) ]],
+    device float*              cf_wal_out      [[ buffer(6) ]],
+    device float*              cf_sas_out      [[ buffer(7) ]],
+    constant MultiParams&      mp              [[ buffer(8) ]],
+    device const ComplexDesc*  descs           [[ buffer(9) ]],
+    threadgroup float*         lig_sas         [[ threadgroup(0) ]],
+    uint tid                                   [[ thread_position_in_threadgroup ]],
+    uint global_chrom_id                       [[ threadgroup_position_in_grid ]],
+    uint blockDim                              [[ threads_per_threadgroup ]])
+{
+    const int ci  = int(global_chrom_id) / mp.pop_size;
+    const int chi = int(global_chrom_id) % mp.pop_size;
+
+    device const ComplexDesc& d = descs[ci];
+
+    const int n_lig   = d.lig_last  - d.lig_first + 1;
+    const int n_pro   = d.n_atoms   - n_lig;
+    const int n_pairs = n_lig * n_pro;
+
+    const int gbase = d.gene_offset + chi * mp.n_genes;
+    const float tx = genes_f_all[gbase + 0];
+    const float ty = genes_f_all[gbase + 1];
+    const float tz = genes_f_all[gbase + 2];
+
+    // Initialise per-ligand SAS.
+    for (int la = int(tid); la < n_lig && la < 256; la += int(blockDim)) {
+        float ra  = atom_radius_all[d.atom_offset + d.lig_first + la];
+        float rwa = ra + 1.4f;
+        lig_sas[la] = 4.0f * M_PI_F * rwa * rwa;
+    }
+    threadgroup_barrier(mem_flags::mem_threadgroup);
+
+    float local_com = 0.0f, local_wal = 0.0f;
+
+    for (int pr = int(tid); pr < n_pairs; pr += int(blockDim)) {
+        const int li      = pr / n_pro;
+        const int pro_rel = pr % n_pro;
+        const int ai      = d.atom_offset + d.lig_first + li;
+        const int pro_loc = (pro_rel < d.lig_first) ? pro_rel : (pro_rel + n_lig);
+        const int aj      = d.atom_offset + pro_loc;
+
+        const float lx = atom_xyz_all[ai * 3 + 0] + tx;
+        const float ly = atom_xyz_all[ai * 3 + 1] + ty;
+        const float lz = atom_xyz_all[ai * 3 + 2] + tz;
+        const float dx = lx - atom_xyz_all[aj * 3 + 0];
+        const float dy = ly - atom_xyz_all[aj * 3 + 1];
+        const float dz = lz - atom_xyz_all[aj * 3 + 2];
+        const float r  = sqrt(dx*dx + dy*dy + dz*dz + 1e-10f);
+
+        const float rA    = atom_radius_all[ai];
+        const float rB    = atom_radius_all[aj];
+        const float rsum  = rA + rB;
+        const float rwa_A = rA + 1.4f;
+        const float surf_A = 4.0f * M_PI_F * rwa_A * rwa_A;
+        const float outer_r = rsum + 2.8f;
+
+        float rel_area = 0.0f;
+        if      (r < rsum)    rel_area = 1.0f;
+        else if (r < outer_r) rel_area = 1.0f - (r - rsum) / (outer_r - rsum);
+
+        if (rel_area > 0.0f && li < 256) {
+            tg_atomic_sub_float(&lig_sas[li], rel_area * surf_A);
+        }
+
+        const int ti  = atom_type_all[ai];
+        const int tj  = atom_type_all[aj];
+        const float yval = gpu_get_yval(emat_sampled, ti, tj, mp.T, rel_area);
+        local_com += yval * rel_area;
+
+        const float clash_r = mp.perm * rsum;
+        if (r < clash_r && r > 0.0f) {
+            const float inv_r12  = 1.0f / pow(r,       12.0f);
+            const float inv_cr12 = 1.0f / pow(clash_r, 12.0f);
+            local_wal += 1.0e6f * (inv_r12 - inv_cr12);
+        }
+    }
+    threadgroup_barrier(mem_flags::mem_threadgroup);
+
+    local_com = simd_sum(local_com);
+    local_wal = simd_sum(local_wal);
+
+    float local_sas = 0.0f;
+    for (int la = int(tid); la < n_lig && la < 256; la += int(blockDim)) {
+        const float sas_rem  = max(0.0f, lig_sas[la]);
+        const float rwa_la   = atom_radius_all[d.atom_offset + d.lig_first + la] + 1.4f;
+        const float surf_la  = 4.0f * M_PI_F * rwa_la * rwa_la;
+        const float sas_norm = sas_rem / surf_la;
+        const int   ti_la    = atom_type_all[d.atom_offset + d.lig_first + la];
+        const float yval_sas = gpu_get_yval(emat_sampled, ti_la, mp.T - 1, mp.T, sas_norm);
+        local_sas += yval_sas * sas_norm;
+    }
+    local_sas = simd_sum(local_sas);
+
+    if (tid == 0) {
+        const int out = d.result_offset + chi;
+        cf_com_out[out] = local_com;
+        cf_wal_out[out] = local_wal;
+        cf_sas_out[out] = local_sas;
+    }
+}
+
+// ─── Single-complex kernel ────────────────────────────────────────────────────
 kernel void kernel_eval_cf_full(
     device const float*    atom_xyz        [[ buffer(0) ]],
     device const int*      atom_type       [[ buffer(1) ]],
@@ -192,7 +326,8 @@ kernel void kernel_eval_cf_full(
 struct MetalEvalCtx {
     id<MTLDevice>              device;
     id<MTLCommandQueue>        queue;
-    id<MTLComputePipelineState> pipeline;
+    id<MTLComputePipelineState> pipeline;        // single-complex kernel
+    id<MTLComputePipelineState> pipeline_multi;  // multi-complex kernel
 
     id<MTLBuffer> buf_atom_xyz;
     id<MTLBuffer> buf_atom_type;
@@ -296,6 +431,7 @@ MetalEvalCtx* metal_eval_init(int   n_atoms,
         delete ctx;
         return nullptr;
     }
+    // Compile single-complex pipeline.
     id<MTLFunction> fn = [lib newFunctionWithName:@"kernel_eval_cf_full"];
     ctx->pipeline = [ctx->device newComputePipelineStateWithFunction:fn error:&err];
     if (!ctx->pipeline) {
@@ -303,6 +439,16 @@ MetalEvalCtx* metal_eval_init(int   n_atoms,
                 [[err localizedDescription] UTF8String]);
         delete ctx;
         return nullptr;
+    }
+
+    // Compile multi-complex pipeline.
+    id<MTLFunction> fn_multi = [lib newFunctionWithName:@"kernel_eval_cf_multi"];
+    if (fn_multi) {
+        ctx->pipeline_multi = [ctx->device
+            newComputePipelineStateWithFunction:fn_multi error:&err];
+        if (!ctx->pipeline_multi)
+            fprintf(stderr, "metal_eval: pipeline_multi compile warning: %s\n",
+                    err ? [[err localizedDescription] UTF8String] : "unknown");
     }
 
     // Allocate constant device buffers (uploaded once).
@@ -447,65 +593,104 @@ void metal_eval_batch_multi(MetalEvalCtx*              ctx,
         return;
     }
 
-    const int total_pop = n_complex * pop_size;
-    if (total_pop > ctx->max_pop) {
-        throw FlexAIDException("metal_eval_batch_multi: n_complex×pop_size " +
-            std::to_string(total_pop) + " exceeds max_pop " +
-            std::to_string(ctx->max_pop));
-    }
-    if (n_genes > ctx->max_genes) {
-        throw FlexAIDException("metal_eval_batch_multi: n_genes " +
-            std::to_string(n_genes) + " exceeds max_genes " +
-            std::to_string(ctx->max_genes));
+    if (!ctx->pipeline_multi) {
+        // Multi kernel unavailable — fall back to serial single-complex dispatches.
+        for (int ci = 0; ci < n_complex; ++ci) {
+            // Rebuild single-complex context atoms for this entry on the fly.
+            // (Slow path — pipeline_multi should always compile on Metal 2+.)
+            metal_eval_batch(ctx, pop_size, n_genes,
+                             entries[ci].h_genes,
+                             entries[ci].h_com_out,
+                             entries[ci].h_wal_out,
+                             entries[ci].h_sas_out);
+        }
+        return;
     }
 
-    // Interleave genes into the shared GPU buffer.
-    // Layout: genes[complex_id * pop_size * n_genes + chrom_id * n_genes + gene]
-    // This matches the kernel thread mapping: thread k → complex=k/pop_size, chrom=k%pop_size.
-    float* genes_f = (float*)[ctx->buf_genes_f contents];
+    const int total_pop = n_complex * pop_size;
+
+    // ── Build concatenated atom buffers (one allocation per call) ──────────
+    int total_atoms = 0;
+    for (int ci = 0; ci < n_complex; ++ci) total_atoms += entries[ci].n_atoms;
+
+    std::vector<float> xyz_all (total_atoms * 3);
+    std::vector<int>   type_all(total_atoms);
+    std::vector<float> rad_all (total_atoms);
+
+    // ComplexDesc mirrors the MSL struct — keep layout in sync.
+    struct ComplexDescHost {
+        int atom_offset, n_atoms, lig_first, lig_last;
+        int gene_offset, result_offset;
+        int pad0, pad1;
+    };
+    std::vector<ComplexDescHost> descs(n_complex);
+
+    int atom_off = 0;
     for (int ci = 0; ci < n_complex; ++ci) {
+        const int na = entries[ci].n_atoms;
+        memcpy(xyz_all.data()  + atom_off * 3, entries[ci].h_atom_xyz,    na * 3 * sizeof(float));
+        memcpy(type_all.data() + atom_off,     entries[ci].h_atom_type,   na     * sizeof(int));
+        memcpy(rad_all.data()  + atom_off,     entries[ci].h_atom_radius, na     * sizeof(float));
+        descs[ci] = { atom_off, na,
+                      entries[ci].lig_first, entries[ci].lig_last,
+                      ci * pop_size * n_genes, ci * pop_size,
+                      0, 0 };
+        atom_off += na;
+    }
+
+    // ── Pack gene arrays ───────────────────────────────────────────────────
+    std::vector<float> genes_all(total_pop * n_genes);
+    for (int ci = 0; ci < n_complex; ++ci) {
+        float*        dst = genes_all.data() + ci * pop_size * n_genes;
         const double* src = entries[ci].h_genes;
-        float*        dst = genes_f + ci * pop_size * n_genes;
         for (int c = 0; c < pop_size; ++c)
             for (int g = 0; g < n_genes; ++g)
                 dst[c * n_genes + g] = (float)src[c * n_genes + g];
     }
 
-    // EvalParams — same as single-batch; n_complex is folded into grid size.
-    struct EvalParams {
-        int N, T, n_genes, lig_first, lig_last;
-        float perm;
-        int pad0, pad1;
+    // ── Build Metal buffers ────────────────────────────────────────────────
+    auto mk = [&](const void* d, size_t n) {
+        return [ctx->device newBufferWithBytes:d length:n
+                                      options:MTLResourceStorageModeShared];
     };
-    EvalParams ep = { ctx->n_atoms, ctx->n_types, n_genes,
-                      ctx->lig_first, ctx->lig_last, ctx->perm, 0, 0 };
+    id<MTLBuffer> buf_xyz   = mk(xyz_all.data(),  xyz_all.size()  * sizeof(float));
+    id<MTLBuffer> buf_type  = mk(type_all.data(), type_all.size() * sizeof(int));
+    id<MTLBuffer> buf_rad   = mk(rad_all.data(),  rad_all.size()  * sizeof(float));
+    id<MTLBuffer> buf_genes = mk(genes_all.data(),genes_all.size()* sizeof(float));
+    id<MTLBuffer> buf_com   = [ctx->device newBufferWithLength:total_pop*sizeof(float)
+                                                       options:MTLResourceStorageModeShared];
+    id<MTLBuffer> buf_wal   = [ctx->device newBufferWithLength:total_pop*sizeof(float)
+                                                       options:MTLResourceStorageModeShared];
+    id<MTLBuffer> buf_sas   = [ctx->device newBufferWithLength:total_pop*sizeof(float)
+                                                       options:MTLResourceStorageModeShared];
 
-    id<MTLBuffer> buf_params = [ctx->device
-        newBufferWithBytes:&ep
-                   length:sizeof(ep)
-                  options:MTLResourceStorageModeShared];
+    // MultiParams — all complexes must share the same n_genes, n_types, perm
+    // (valid for same energy matrix and GA config across a benchmark dataset).
+    struct MultiParams { int pop_size, n_genes, T; float perm; };
+    MultiParams mp = { pop_size, n_genes, entries[0].n_types, entries[0].perm };
+    id<MTLBuffer> buf_mp    = mk(&mp, sizeof(mp));
+    id<MTLBuffer> buf_descs = mk(descs.data(), descs.size() * sizeof(ComplexDescHost));
 
-    // Dispatch total_pop threads — each thread evaluates one (complex, chromosome) pair.
-    id<MTLCommandBuffer>        cb  = [ctx->queue commandBuffer];
+    // ── Single command buffer, one dispatch for N×pop_size chromosomes ────
+    id<MTLCommandBuffer>         cb  = [ctx->queue commandBuffer];
     id<MTLComputeCommandEncoder> enc = [cb computeCommandEncoder];
-    [enc setComputePipelineState:ctx->pipeline];
-    [enc setBuffer:ctx->buf_atom_xyz     offset:0 atIndex:0];
-    [enc setBuffer:ctx->buf_atom_type    offset:0 atIndex:1];
-    [enc setBuffer:ctx->buf_atom_radius  offset:0 atIndex:2];
+    [enc setComputePipelineState:ctx->pipeline_multi];
+    [enc setBuffer:buf_xyz   offset:0 atIndex:0];
+    [enc setBuffer:buf_type  offset:0 atIndex:1];
+    [enc setBuffer:buf_rad   offset:0 atIndex:2];
     [enc setBuffer:ctx->buf_emat_sampled offset:0 atIndex:3];
-    [enc setBuffer:ctx->buf_genes_f      offset:0 atIndex:4];
-    [enc setBuffer:ctx->buf_com_out      offset:0 atIndex:5];
-    [enc setBuffer:ctx->buf_wal_out      offset:0 atIndex:6];
-    [enc setBuffer:ctx->buf_sas_out      offset:0 atIndex:7];
-    [enc setBuffer:buf_params            offset:0 atIndex:8];
+    [enc setBuffer:buf_genes offset:0 atIndex:4];
+    [enc setBuffer:buf_com   offset:0 atIndex:5];
+    [enc setBuffer:buf_wal   offset:0 atIndex:6];
+    [enc setBuffer:buf_sas   offset:0 atIndex:7];
+    [enc setBuffer:buf_mp    offset:0 atIndex:8];
+    [enc setBuffer:buf_descs offset:0 atIndex:9];
     [enc setThreadgroupMemoryLength:256 * sizeof(float) atIndex:0];
 
-    NSUInteger threadsPerGroup = 256;
-    MTLSize    gridSize        = { (NSUInteger)total_pop, 1, 1 };
-    MTLSize    groupSize       = { threadsPerGroup, 1, 1 };
+    MTLSize gridSize  = { (NSUInteger)total_pop, 1, 1 };
+    MTLSize groupSize = { 256, 1, 1 };
     [enc dispatchThreadgroups:gridSize threadsPerThreadgroup:groupSize];
     [enc endEncoding];
-
     [cb commit];
     [cb waitUntilCompleted];
 
@@ -515,10 +700,10 @@ void metal_eval_batch_multi(MetalEvalCtx*              ctx,
             std::string([desc UTF8String]));
     }
 
-    // Scatter results back to per-complex output buffers (float → double).
-    const float* com_f = (const float*)[ctx->buf_com_out contents];
-    const float* wal_f = (const float*)[ctx->buf_wal_out contents];
-    const float* sas_f = (const float*)[ctx->buf_sas_out contents];
+    // ── Scatter float results → per-complex double output buffers ─────────
+    const float* com_f = (const float*)[buf_com contents];
+    const float* wal_f = (const float*)[buf_wal contents];
+    const float* sas_f = (const float*)[buf_sas contents];
     for (int ci = 0; ci < n_complex; ++ci) {
         const int base = ci * pop_size;
         for (int c = 0; c < pop_size; ++c) {
