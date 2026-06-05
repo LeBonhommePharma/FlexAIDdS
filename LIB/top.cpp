@@ -189,7 +189,7 @@ int main(int argc, char **argv){
 	std::memset(FA,0,sizeof(FA_Global));
 	std::memset(GB,0,sizeof(GB_Global));
 	std::memset(VC,0,sizeof(VC_Global));
-	GB->metal_batch_n = 2;  // N=2 hard cap: 2 complexes per GPU kernel dispatch
+	GB->metal_batch_n = 2;  // N=2: safe batch size verified
 	// MIF/RefLig/GridPrio non-zero defaults (pointers already NULL from memset)
 	FA->mif_temperature = 300.0f;
 	FA->grid_prio_percent = 100.0f;

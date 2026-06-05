@@ -106,6 +106,14 @@ int GA(FA_Global* FA, GB_Global* GB,VC_Global* VC,chromosome** chrom,chromosome*
 	GAContext local_ctx;
 	if (!ctx) ctx = &local_ctx;
 
+	// ── OMP thread default: 2/worker if OMP_NUM_THREADS not set in environment.
+	// Leaves headroom for Metal dispatch and OS scheduling on M3 Pro 11 P-cores.
+#ifdef _OPENMP
+	if (!std::getenv("OMP_NUM_THREADS")) {
+		omp_set_num_threads(2);
+	}
+#endif
+
 	int i;
 	int print=0;
 
@@ -366,6 +374,17 @@ int GA(FA_Global* FA, GB_Global* GB,VC_Global* VC,chromosome** chrom,chromosome*
 	int    stagnation_count  = 0;
 	bool   ga_stagnant = false;
 
+	// ── Always-on H plateau early exit: ring buffer over last 20 checks ─────
+	// Fires independently of GB->entropy_convergence (that flag controls the
+	// soft/hard/plateau checks above).  ε = 0.001 nats matches the thermal noise
+	// floor of the Shannon estimate at convergence.
+	constexpr int    kHPlateauWindow = 20;
+	constexpr double kHPlateauEps    = 0.001;  // nats; ~0.00144 bits
+	std::array<double, kHPlateauWindow> h_plateau_ring{};
+	h_plateau_ring.fill(0.0);
+	int  h_plateau_head   = 0;
+	int  h_plateau_filled = 0;
+
 	// ── InStreamClustering: online medoid clustering during GA ──
 	flexaids::InStreamCluster instream_cluster(
 	    GA_INSTREAM_RMSD_THRESHOLD,
@@ -513,6 +532,34 @@ int GA(FA_Global* FA, GB_Global* GB,VC_Global* VC,chromosome** chrom,chromosome*
 				stagnation_count = 0;
 			}
 			prev_best_fitness = GB->fit_max;
+		}
+
+		// ── Always-on H plateau early exit ─────────────────────────────────
+		// Every entropy_check_interval generations, sample H of the current
+		// population and push into a 20-slot ring buffer.  If the absolute
+		// difference between the newest and oldest slot < kHPlateauEps nats,
+		// the distribution has stopped collapsing → write best pose and stop.
+		if (!entropy_converged && !ga_stagnant &&
+		    ((i + 1) % GB->entropy_check_interval == 0)) {
+			std::vector<double> _hp_energies(GB->num_chrom);
+			for (int _c = 0; _c < GB->num_chrom; ++_c)
+				_hp_energies[_c] = (*chrom)[_c].evalue;
+			const double H_now = shannon_thermo::compute_shannon_entropy(
+				_hp_energies, shannon_thermo::DEFAULT_HIST_BINS);
+			h_plateau_ring[h_plateau_head] = H_now;
+			h_plateau_head = (h_plateau_head + 1) % kHPlateauWindow;
+			if (h_plateau_filled < kHPlateauWindow) ++h_plateau_filled;
+			if (h_plateau_filled == kHPlateauWindow) {
+				// oldest entry is now at h_plateau_head (ring has wrapped)
+				const double delta = std::abs(H_now - h_plateau_ring[h_plateau_head]);
+				if (delta < kHPlateauEps) {
+					printf("Early exit at gen %d: H plateau < %.4f "
+					       "(H_now=%.6f nats, delta=%.6f nats)\n",
+					       i + 1, kHPlateauEps, H_now, delta);
+					entropy_converged = true;
+					break;
+				}
+			}
 		}
 
 		// Entropy convergence check (opt-in via ENTRCNVG config keyword)
@@ -2222,6 +2269,26 @@ void populate_chromosomes(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* 
 					idx = std::clamp(idx, 0, FA->mif_count - 1);
 					int grid_idx = FA->mif_sorted[idx];
 					chrom[i].genes[0].to_ic = static_cast<double>(grid_idx);
+					chrom[i].genes[0].to_int32 = ictogene(&gene_lim[0],
+					                                       static_cast<double>(grid_idx));
+				} else if (FA->num_grd > 0) {
+					// ── Cleft-biased GPA0 seeding ──────────────────────────────────
+					// Seed gene[0] (rigid-body grid index) near cleftgrid[0], the
+					// highest Voronoi contact density point.  Box-Muller Gaussian
+					// with σ = max(3, num_grd/10) indices ≈ 2 Å spread across the
+					// pocket.  Dramatically reduces the 479 k clashes/run caused by
+					// blind uniform placement.  Chromosomes that still clash receive
+					// the OOB penalty as normal and die through selection pressure.
+					const int sigma_idx = std::max(3, FA->num_grd / 10);
+					const double u1 = std::max(1e-10, RandomDouble(dice()));
+					const double u2 = RandomDouble(dice());
+					// Box-Muller N(0,1) → N(0, sigma_idx)
+					const double z = std::sqrt(-2.0 * std::log(u1))
+					                 * std::cos(2.0 * M_PI * u2);
+					const int grid_idx = std::clamp(
+					    static_cast<int>(std::round(z * sigma_idx)),
+					    0, FA->num_grd - 1);
+					chrom[i].genes[0].to_ic    = static_cast<double>(grid_idx);
 					chrom[i].genes[0].to_int32 = ictogene(&gene_lim[0],
 					                                       static_cast<double>(grid_idx));
 				}

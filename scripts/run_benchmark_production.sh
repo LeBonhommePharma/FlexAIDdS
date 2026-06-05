@@ -2,7 +2,7 @@
 # =============================================================================
 # run_benchmark_production.sh — FlexAIDdS Production Benchmark Runner
 #
-# MacBook Pro M3 Pro 18 GB · macOS 14+ · OMP_NUM_THREADS=6
+# MacBook Pro M3 Pro 18 GB · macOS 14+ · --workers 6 --omp-threads 2
 #
 # Execution order:
 #   0. Pre-flight: build freshness, constants, ulimits, disk space
@@ -80,7 +80,8 @@ TWO_PASS=false
 BENCHMARK=""
 OUTPUT_OVERRIDE=""
 SEED=42
-N_THREADS=6
+N_THREADS=6          # concurrent FlexAIDdS workers
+OMP_PER_WORKER=2     # OMP threads per worker (6 workers × 2 = 12 threads ≤ 11 P-cores ≈ ok)
 
 # Two-pass parameters
 PASS1_NCHROM=250
@@ -104,6 +105,8 @@ while [[ $# -gt 0 ]]; do
         --out)          OUTPUT_OVERRIDE="$2"; shift ;;
         --seed)         SEED="$2";     shift ;;
         --threads)      N_THREADS="$2"; shift ;;
+        --workers)      N_THREADS="$2"; shift ;;       # alias for --threads
+        --omp-threads)  OMP_PER_WORKER="$2"; shift ;;  # override OMP threads/worker
         -h|--help)
             grep '^#' "$0" | head -30 | sed 's/^# \?//'
             exit 0 ;;
@@ -133,7 +136,7 @@ run() {
 # ─── OMP / environment ────────────────────────────────────────────────────────
 
 setup_env() {
-    export OMP_NUM_THREADS="${N_THREADS}"
+    export OMP_NUM_THREADS="${OMP_PER_WORKER}"   # 2 per worker; DatasetRunner also sets per-subprocess
     export OMP_PLACES=cores
     export OMP_PROC_BIND=spread
     export OMP_WAIT_POLICY=passive
@@ -145,7 +148,7 @@ setup_env() {
     ulimit -n 65536 2>/dev/null || warn "Could not raise file descriptor limit"
     ulimit -s unlimited 2>/dev/null || warn "Could not raise stack limit"
 
-    info "OMP_NUM_THREADS=${OMP_NUM_THREADS}  SEED=${SEED}  DRY_RUN=${DRY_RUN}  METAL=ON"
+    info "WORKERS=${N_THREADS}  OMP/worker=${OMP_NUM_THREADS}  SEED=${SEED}  DRY_RUN=${DRY_RUN}  METAL=ON"
 }
 
 # ─── Locate binary ────────────────────────────────────────────────────────────
@@ -637,8 +640,9 @@ run_twopass_dataset() {
         --ga-population  ${PASS1_NCHROM} \
         --ga-generations ${PASS1_NGEN} \
         --grid-spacing   ${PASS1_GRID} \
-        --output    "${pass1_out}" \
-        --threads   "${N_THREADS}" \
+        --output     "${pass1_out}" \
+        --threads    "${N_THREADS}" \
+        --omp-threads "${OMP_PER_WORKER}" \
         --job-timeout-seconds 1800 \
         2>&1 | tee "${LOG_DIR}/${dataset}_pass1.log"
 
@@ -701,8 +705,9 @@ PYEOF
             --ga-population  ${PASS2_NCHROM} \
             --ga-generations ${PASS2_NGEN} \
             --grid-spacing   ${PASS2_GRID} \
-            --output    "${pass2_out}" \
-            --threads   "${N_THREADS}" \
+            --output     "${pass2_out}" \
+            --threads    "${N_THREADS}" \
+            --omp-threads "${OMP_PER_WORKER}" \
             --job-timeout-seconds 7200 \
             2>&1 | tee "${LOG_DIR}/${dataset}_pass2.log"
     fi
@@ -865,10 +870,11 @@ run_full_astex() {
     if [[ -n "${DATASET_BIN:-}" ]] && [[ "${TWO_PASS}" == false ]]; then
         info "Using benchmark_datasets binary for full Astex run"
         run "${DATASET_BIN}" \
-            --benchmark astex \
-            --output    "${ast_out}" \
-            --threads   "${N_THREADS}" \
-            --cache     "${REPO_ROOT}/benchmarks/astex_diverse" \
+            --benchmark   astex \
+            --output      "${ast_out}" \
+            --threads     "${N_THREADS}" \
+            --omp-threads "${OMP_PER_WORKER}" \
+            --cache       "${REPO_ROOT}/benchmarks/astex_diverse" \
             --job-timeout-seconds 7200 \
             2>&1 | tee "${_astex_log}"
 
@@ -988,18 +994,20 @@ run_phase2() {
     if [[ -n "${DATASET_BIN:-}" ]]; then
         info "Running Astex Non-Native..."
         run "${DATASET_BIN}" \
-            --benchmark astex_nonnative \
-            --output    "${RESULTS_DIR}/astex_nonnative" \
-            --threads   "${N_THREADS}" \
+            --benchmark   astex_nonnative \
+            --output      "${RESULTS_DIR}/astex_nonnative" \
+            --threads     "${N_THREADS}" \
+            --omp-threads "${OMP_PER_WORKER}" \
             2>&1 | tee "${LOG_DIR}/astex_nonnative.log"
 
         if [[ -d "${REPO_ROOT}/benchmarks/casf2016" ]]; then
             export SHANNON_TRACE_LEVEL=2
             info "Running CASF-2016..."
             run "${DATASET_BIN}" \
-                --benchmark casf2016 \
-                --output    "${RESULTS_DIR}/casf2016" \
-                --threads   "${N_THREADS}" \
+                --benchmark   casf2016 \
+                --output      "${RESULTS_DIR}/casf2016" \
+                --threads     "${N_THREADS}" \
+                --omp-threads "${OMP_PER_WORKER}" \
                 2>&1 | tee "${LOG_DIR}/casf2016.log"
         else
             warn "CASF-2016 data not found — skipping (download to benchmarks/casf2016/)"
@@ -1097,9 +1105,10 @@ main() {
             run_twopass_dataset "casf2016" "${RESULTS_DIR}"
         else
             run "${DATASET_BIN}" \
-                --benchmark casf2016 \
-                --output    "${RESULTS_DIR}" \
-                --threads   "${N_THREADS}" \
+                --benchmark   casf2016 \
+                --output      "${RESULTS_DIR}" \
+                --threads     "${N_THREADS}" \
+                --omp-threads "${OMP_PER_WORKER}" \
                 --job-timeout-seconds 7200 \
                 2>&1 | tee "${LOG_DIR}/casf2016.log" || true
         fi
@@ -1116,9 +1125,10 @@ main() {
             run_twopass_dataset "astex_nonnative" "${RESULTS_DIR}"
         else
             run "${DATASET_BIN}" \
-                --benchmark astex_nonnative \
-                --output    "${RESULTS_DIR}" \
-                --threads   "${N_THREADS}" \
+                --benchmark   astex_nonnative \
+                --output      "${RESULTS_DIR}" \
+                --threads     "${N_THREADS}" \
+                --omp-threads "${OMP_PER_WORKER}" \
                 --job-timeout-seconds 7200 \
                 2>&1 | tee "${LOG_DIR}/astex_nonnative.log" || true
         fi
