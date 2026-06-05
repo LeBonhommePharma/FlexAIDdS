@@ -42,11 +42,11 @@ This document captures **remaining bugs, TODOs, and roadmap work** currently vis
 ## 3) Known bug/risk backlog documented in security/testing reports
 
 1. **Security hardening backlog remains substantial**.
-   - `SECURITY_AUDIT_BUFFER_OVERFLOW.md` reports:
+   - The retired `SECURITY_AUDIT_BUFFER_OVERFLOW.md` (removed from publication snapshot; see git history) reported:
      - 28 distinct vulnerability patterns (25+ files)
      - 7 high-severity findings
      - 14 medium-severity findings
-   - The report repeatedly calls out unsafe string handling patterns (`strcpy`, `strcat`, `sprintf`, unbounded `sscanf`).
+   - It repeatedly called out unsafe string handling patterns (`strcpy`, `strcat`, `sprintf`, unbounded `sscanf`).
 
 2. **Coverage gap backlog exists**.
    - `docs/test-coverage-analysis.md` highlights missing tests for:

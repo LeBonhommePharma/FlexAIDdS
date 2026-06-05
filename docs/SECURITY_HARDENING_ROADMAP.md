@@ -14,7 +14,7 @@ This document outlines the security vulnerabilities identified in FlexAIDdS and 
 **Medium-Severity Items**: 14 unsafe string handling patterns  
 **Low-Severity Items**: 7 information disclosure/minor issues  
 
-See [`SECURITY_AUDIT_BUFFER_OVERFLOW.md`](../SECURITY_AUDIT_BUFFER_OVERFLOW.md) for detailed analysis.
+See the (retired) `SECURITY_AUDIT_BUFFER_OVERFLOW.md` (removed from publication snapshot) for the original detailed analysis. Key findings are summarized in this roadmap and KNOWN_LIMITATIONS.md.
 
 ---
 
@@ -252,7 +252,7 @@ All security fixes are validated with:
 
 ## References
 
-- [SECURITY_AUDIT_BUFFER_OVERFLOW.md](../SECURITY_AUDIT_BUFFER_OVERFLOW.md) — Detailed vulnerability analysis
+- [SECURITY_AUDIT_BUFFER_OVERFLOW.md] (retired from this snapshot) — Detailed vulnerability analysis (see git history)
 - [KNOWN_LIMITATIONS.md](../KNOWN_LIMITATIONS.md) — Updated post-fix status
 - [CWE-120: Buffer Copy without Checking Size](https://cwe.mitre.org/data/definitions/120.html)
 - [CWE-676: Use of Potentially Dangerous Function](https://cwe.mitre.org/data/definitions/676.html)

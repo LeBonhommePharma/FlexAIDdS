@@ -9,7 +9,7 @@ Reads the summary CSV produced by run_benchmark_production.sh and performs:
   4. Shannon-Weighted Success Rate (SWSR calibration check)
   5. Spearman ρ(H_final, RMSD_top1) with bootstrap CI
   6. Plots: wall-clock dist, score vs RMSD scatter, Shannon H convergence curves
-  7. PASS / FAIL verdict against BENCHMARKING_PLAN.md thresholds
+  7. PASS / FAIL verdict against publication benchmark thresholds (hardcoded below)
 
 Usage:
     python3 scripts/validate_benchmark_results.py <summary.csv> [options]
@@ -31,7 +31,7 @@ import sys
 from pathlib import Path
 
 
-# ─── Constants (must match BENCHMARKING_PLAN.md / ShannonThermoStack.h) ───────
+# ─── Constants (publication benchmark spec; previously cross-checked vs BENCHMARKING_PLAN.md) ───────
 
 kB_KCAL       = 0.001987206          # kcal mol⁻¹ K⁻¹
 LN2           = 0.6931471805599453
@@ -154,7 +154,7 @@ def fisher_exact_greater(a: int, b: int, c: int, d: int) -> tuple[float, float]:
 def swsr(successes: list[int], h_finals: list[float],
          floor: float = 0.1) -> float:
     """
-    Shannon-Weighted Success Rate (Section 7.3 of BENCHMARKING_PLAN.md).
+    Shannon-Weighted Success Rate (publication spec §7.3 equivalent).
     SR_H = Σ (1/H_i · success_i) / Σ (1/H_i)
     """
     weights = [1.0 / max(h, floor) for h in h_finals]
@@ -167,7 +167,7 @@ def swsr(successes: list[int], h_finals: list[float],
 # ─── RMSD distribution ────────────────────────────────────────────────────────
 
 def rmsd_distribution(rmsds: list[float]) -> dict:
-    """Compute the full RMSD distribution per BENCHMARKING_PLAN.md §7.5."""
+    """Compute the full RMSD distribution per publication benchmark spec §7.5 equivalent."""
     n = len(rmsds)
     if n == 0:
         return {}
@@ -598,7 +598,7 @@ def main():
         print("  ████████████████████████████████████████████████")
 
     print()
-    print("  Reference: BENCHMARKING_PLAN.md §2.1 — FlexAIDdS ≥ 65%")
+    print("  Reference: publication benchmark spec — FlexAIDdS ≥ 65% (was BENCHMARKING_PLAN.md §2.1)")
     print("             Hartshorn et al. (2007) J Med Chem 50:726–741")
     print()
 

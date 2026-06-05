@@ -57,9 +57,10 @@ requires ongoing hardening and regression tests.
 - keep config files small and reviewable
 - run parser changes under ASAN/UBSAN where available
 
-See [`SECURITY_HARDENING_ROADMAP.md`](SECURITY_HARDENING_ROADMAP.md) and
-[`SECURITY_AUDIT_BUFFER_OVERFLOW.md`](../SECURITY_AUDIT_BUFFER_OVERFLOW.md) for
-historical context. Treat those documents as audit inputs, not proof of current
+See [`SECURITY_HARDENING_ROADMAP.md`](SECURITY_HARDENING_ROADMAP.md) for
+historical context (the detailed SECURITY_AUDIT_BUFFER_OVERFLOW.md was
+retired from this publication-benchmarks snapshot). Treat the roadmap as
+audit input, not proof of current
 security closure.
 
 ## Scientific interpretation limitations

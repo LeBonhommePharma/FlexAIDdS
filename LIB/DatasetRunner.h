@@ -169,9 +169,11 @@ struct BenchmarkReport {
 // =============================================================================
 
 struct DockingConfig {
-    // GA parameters — canonical benchmark spec (BENCHMARKING_PLAN.md §6.1):
+    // GA parameters — canonical benchmark spec (publication benchmarks):
     //   500 generations × 1000 chromosomes = 510,000 eval_chromosome calls/complex
     //   Matches config_defaults.h num_generations=500, num_chromosomes=1000.
+    //   (BENCHMARKING_PLAN.md retired from this slim publication tree; spec lives in
+    //    scripts/validate_benchmark_results.py thresholds + paper methods.)
     int    ga_generations{500};
     int    ga_population{1000};
     float  grid_spacing{0.375f};      // Å — 0.5 for coarse pass, 0.375 for full
