@@ -258,8 +258,8 @@ int read_mol2_ligand(FA_Global* FA, atom** atoms, resid** residue,
         // Assign a PDB-style number starting at 90001
         int pdb_num = 90001 + static_cast<int>(ai);
         a.number = pdb_num;
-        FA->num_atm[pdb_num] = FA->atm_cnt;
-        id_map[tmp_atoms[ai].id] = FA->atm_cnt;
+        FA->num_atm[pdb_num] = FA->atm_cnt - 1;
+        id_map[tmp_atoms[ai].id] = FA->atm_cnt - 1;
 
         a.coor[0] = a.coor_ori[0] = tmp_atoms[ai].x;
         a.coor[1] = a.coor_ori[1] = tmp_atoms[ai].y;
@@ -354,6 +354,25 @@ int read_mol2_ligand(FA_Global* FA, atom** atoms, resid** residue,
             a.rec[0] = (parent[li]  >= 0) ? parent[li]  : 0;
             a.rec[1] = (grandpar[li] >= 0) ? grandpar[li] : 0;
             a.rec[2] = (grtgpar[li] >= 0) ? grtgpar[li] : 0;
+        }
+
+        // Force GPA IC chain: GPA1 parent=GPA0, GPA2 parent=GPA1.
+        // The first three ligand atoms serve as GPA (global positioning) atoms
+        // for rigid-body translation and rotation genes. ic2cf reconstructs
+        // GPA0 from cleft-grid IC (relative to FA->ori), then reconstructs
+        // GPA1/GPA2 from rotation genes relative to their parent GPA atom.
+        // Without this override, BFS may assign ori-based rec[] to GPA1/GPA2
+        // (e.g. when atom 0 and atom 1 are not directly bonded), which breaks
+        // the GPA rotation reference frame when GPA0 translates.
+        if (n >= 2) {
+            (*atoms)[fa+1].rec[0] = fa;    // GPA1 parent  = GPA0
+            (*atoms)[fa+1].rec[1] = 0;     // GPA1 grandpar = ori
+            (*atoms)[fa+1].rec[2] = 0;
+        }
+        if (n >= 3) {
+            (*atoms)[fa+2].rec[0] = fa+1;  // GPA2 parent   = GPA1
+            (*atoms)[fa+2].rec[1] = fa;    // GPA2 grandpar = GPA0
+            (*atoms)[fa+2].rec[2] = 0;
         }
 
         // Compute IC for all ligand atoms using buildic() which reads rec[]

@@ -2110,7 +2110,16 @@ cfstr eval_chromosome(FA_Global* FA,GB_Global* GB,VC_Global* VC,const genlim* ge
 		icv[i] = john[i].to_ic;
 	}
 
-	return (*function)(FA,VC,atoms,residue,cleftgrid,GB->num_genes,icv);
+	// Safety net: catch any Terminate() thrown deep inside the scoring pipeline
+	// (e.g., residual Vcontacts bounding-box checks) and return maximum penalty
+	// so the chromosome survives non-competitively rather than aborting the run.
+	try {
+		return (*function)(FA,VC,atoms,residue,cleftgrid,GB->num_genes,icv);
+	} catch (const FlexAIDException&) {
+		cfstr cf_penalty{};
+		cf_penalty.com = 99999.0;
+		return cf_penalty;
+	}
 }
 
 /***********************************************************************/

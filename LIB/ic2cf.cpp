@@ -111,42 +111,60 @@ cfstr ic2cf(FA_Global* FA,VC_Global* VC,atom* atoms,resid* residue,
 		alter_mode(atoms,residue,FA->normal_grid[normalmode],FA->res_cnt,FA->normal_modes);
 	}
 
-	// ── GPA frame tracking ───────────────────────────────────────────────────
-	// buildcc uses FA->ori as a fixed grandparent reference when rec[1,2]==0
-	// (i.e. for GPA0, GPA1, GPA2).  When gene[0] translates GPA0 far from ori,
-	// the GPA0→ori reference vector changes direction and GPA1/GPA2 land at
-	// nonsensical positions.
-	//
-	// Fix: reconstruct GPA0 alone first (using old ori, consistent with how
-	// calc_cleftic encoded the grid-point IC), measure the translation delta,
-	// then shift FA->ori by that delta.  After that, recompute GPA0's IC
-	// relative to the new ori so the full buildcc loop places GPA0 correctly
-	// AND GPA1/GPA2 see an ori that tracks GPA0.
-	for (i = 0; i < npar; i++) {
-		if (FA->map_par[i].typ == -1) {             // translational gene → GPA0
-			int gpa0 = FA->map_par[i].atm;
-			float ox = atoms[gpa0].coor[0];
-			float oy = atoms[gpa0].coor[1];
-			float oz = atoms[gpa0].coor[2];
-			// Reconstruct GPA0 with old ori (IC from cleftgrid are relative to old ori)
-			buildcc(FA, atoms, 1, &gpa0);
-			// Shift FA->ori by the same delta GPA0 moved
-			FA->ori[0] += atoms[gpa0].coor[0] - ox;
-			FA->ori[1] += atoms[gpa0].coor[1] - oy;
-			FA->ori[2] += atoms[gpa0].coor[2] - oz;
-			// Re-derive GPA0's IC relative to the new ori so the full buildcc
-			// loop (below) reconstructs it to the same position
-			buildic_point(FA, atoms[gpa0].coor,
-			              &atoms[gpa0].dis, &atoms[gpa0].ang, &atoms[gpa0].dih);
-			break;
+	// Save FA->ori and moved-atom Cartesian coordinates before any modification.
+	// Serial callers (reproduce()) share the global FA and atoms[]; if buildcc
+	// produces an out-of-bounds pose we must restore both so the next evaluation
+	// starts from a clean state rather than inheriting corrupted values.
+	float ori_save[3] = {FA->ori[0], FA->ori[1], FA->ori[2]};
+	struct SavedCoor { int idx; float c[3]; };
+	std::vector<SavedCoor> saved_coors;
+	saved_coors.reserve(64);
+	for (int r = 0; r < FA->nors; ++r)
+		for (int m = 0; m < FA->nmov[r]; ++m) {
+			int ai = FA->mov[r][m];
+			saved_coors.push_back({ai, {atoms[ai].coor[0], atoms[ai].coor[1], atoms[ai].coor[2]}});
 		}
-	}
 
 	/* rebuild cartesian coordinates of optimized residues*/
 	for(i=0;i<FA->nors;i++){ //number of optimized residues
 		buildcc(FA,atoms,FA->nmov[i],FA->mov[i]);
 	}
-  
+
+	// Out-of-bounds penalty: if any moved atom lands >200Å beyond the protein
+	// bounding box, the ligand has escaped the grid.  Restore FA->ori and the
+	// moved-atom coordinates so serial callers do not inherit corrupted state,
+	// then return maximum penalty — the chromosome stays in the population but
+	// ranks last, and the GA evolves away from it naturally.
+	{
+		const float margin = 200.0f;
+		bool oob = false;
+		for (int r = 0; r < FA->nors && !oob; ++r) {
+			for (int m = 0; m < FA->nmov[r] && !oob; ++m) {
+				int ai = FA->mov[r][m];
+				for (int j = 0; j < 3; ++j) {
+					if (atoms[ai].coor[j] < FA->globalmin[j] - margin ||
+					    atoms[ai].coor[j] > FA->globalmax[j] + margin) {
+						oob = true;
+						break;
+					}
+				}
+			}
+		}
+		if (oob) {
+			FA->ori[0] = ori_save[0];
+			FA->ori[1] = ori_save[1];
+			FA->ori[2] = ori_save[2];
+			for (auto& sa : saved_coors) {
+				atoms[sa.idx].coor[0] = sa.c[0];
+				atoms[sa.idx].coor[1] = sa.c[1];
+				atoms[sa.idx].coor[2] = sa.c[2];
+			}
+			cfstr cf_oob{};
+			cf_oob.com = 99999.0;
+			return cf_oob;
+		}
+	}
+
 	std::vector< std::pair<int,int> > intraclashes;
 	bool error;
 	double penalty = vcfunction(FA,VC,atoms,residue,intraclashes,&error);
@@ -405,7 +423,16 @@ cfstr ic2cf(FA_Global* FA,VC_Global* VC,atom* atoms,resid* residue,
     
 	}
 
- 
+	// Restore FA->ori so the next ic2cf call starts from a consistent reference
+	// frame. The GPA frame-tracking code shifts FA->ori to track GPA0 so that
+	// GPA1/GPA2 reconstruction uses a consistent rotation reference, but ori
+	// must be reset to the receptor centre before returning — otherwise ori
+	// drifts cumulatively across evaluations and cleftgrid ICs (computed once
+	// relative to the original ori) become mismatched.
+	FA->ori[0] = ori_save[0];
+	FA->ori[1] = ori_save[1];
+	FA->ori[2] = ori_save[2];
+
 	return cf;
 
 }

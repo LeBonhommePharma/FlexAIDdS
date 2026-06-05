@@ -249,8 +249,8 @@ int read_sdf_ligand(FA_Global* FA, atom** atoms, resid** residue,
 
         int pdb_num = 90001 + ai;
         a.number = pdb_num;
-        FA->num_atm[pdb_num] = FA->atm_cnt;
-        idx_map[ai + 1] = FA->atm_cnt;
+        FA->num_atm[pdb_num] = FA->atm_cnt - 1;
+        idx_map[ai + 1] = FA->atm_cnt - 1;
 
         a.coor[0] = a.coor_ori[0] = satoms[ai].x;
         a.coor[1] = a.coor_ori[1] = satoms[ai].y;
@@ -331,6 +331,18 @@ int read_sdf_ligand(FA_Global* FA, atom** atoms, resid** residue,
             a.rec[0] = (parent[li]   >= 0) ? parent[li]   : 0;
             a.rec[1] = (grandpar[li] >= 0) ? grandpar[li] : 0;
             a.rec[2] = (grtgpar[li]  >= 0) ? grtgpar[li]  : 0;
+        }
+
+        // Force GPA IC chain so GPA1/GPA2 track GPA0 during rigid-body moves.
+        if (n >= 2) {
+            (*atoms)[fa+1].rec[0] = fa;    // GPA1 parent  = GPA0
+            (*atoms)[fa+1].rec[1] = 0;
+            (*atoms)[fa+1].rec[2] = 0;
+        }
+        if (n >= 3) {
+            (*atoms)[fa+2].rec[0] = fa+1;  // GPA2 parent  = GPA1
+            (*atoms)[fa+2].rec[1] = fa;    // GPA2 grandpar = GPA0
+            (*atoms)[fa+2].rec[2] = 0;
         }
 
         buildic(FA, *atoms, *residue, FA->res_cnt);
