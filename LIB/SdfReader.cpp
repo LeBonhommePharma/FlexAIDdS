@@ -272,7 +272,7 @@ int read_sdf_ligand(FA_Global* FA, atom** atoms, resid** residue,
         a.optres = NULL;
         a.eigen  = NULL;
 
-        if (ai == 0) (*residue)[FA->res_cnt].fatm[0] = FA->atm_cnt;
+        if (ai == 0) (*residue)[FA->res_cnt].fatm[0] = FA->atm_cnt - 1;
         (*residue)[FA->res_cnt].latm[0] = FA->atm_cnt - 1;
     }
 

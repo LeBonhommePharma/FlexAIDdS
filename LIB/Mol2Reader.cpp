@@ -289,7 +289,7 @@ int read_mol2_ligand(FA_Global* FA, atom** atoms, resid** residue,
         a.eigen = NULL;
 
         // Update residue first/last atom
-        if (ai == 0) (*residue)[FA->res_cnt].fatm[0] = FA->atm_cnt;
+        if (ai == 0) (*residue)[FA->res_cnt].fatm[0] = FA->atm_cnt - 1;
         (*residue)[FA->res_cnt].latm[0] = FA->atm_cnt - 1;
     }
 

@@ -107,6 +107,9 @@ int setup_direct_input(FA_Global* FA, GB_Global* GB, VC_Global* VC,
     assign_radii_types(FA, *atoms, *residue);
     printf("radii are now assigned\n");
 
+    // Recalculate global bounds to include ligand atoms
+    calc_center(FA, *atoms, *residue);
+
     // ─── 7. Auto-detect binding cleft ────────────────────────────────
     printf("AUTO binding-site detection (CleftDetector) ...\n");
 

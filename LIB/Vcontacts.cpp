@@ -1705,10 +1705,12 @@ atomindex* index_protein(FA_Global* FA,atom* atoms,resid* residue,atomsas* Calc,
 		}
 	}
 	memset(box,0,dim3*sizeof(atomindex));
-	
+
+	int calc_cnt = i;  // Use actual count of initialized atoms, not total atmcnt
+
 	//int nbox=0;
 	// count entries per box, assign box number to atom
-	for(atmi=0;atmi<atmcnt;++atmi){
+	for(atmi=0;atmi<calc_cnt;++atmi){
 		if(Calc[atmi].boxnum == -1){
 			boxi = (int)((Calc[atmi].atom->coor[0]-global_min[0])/CELLSIZE)*dim2
 				+ (int)((Calc[atmi].atom->coor[1]-global_min[1])/CELLSIZE)*(*dim)
@@ -1737,10 +1739,12 @@ atomindex* index_protein(FA_Global* FA,atom* atoms,resid* residue,atomsas* Calc,
 	}
     
 	// fill Calclist index
-	for (atmi=0; atmi<atmcnt; ++atmi) {
+	for (atmi=0; atmi<calc_cnt; ++atmi) {
 		boxi = Calc[atmi].boxnum;
-		Calclist[box[boxi].first+box[boxi].nument] = atmi;
-		++box[boxi].nument;
+		if (boxi >= 0 && boxi < dim3) {  // Bounds check
+			Calclist[box[boxi].first+box[boxi].nument] = atmi;
+			++box[boxi].nument;
+		}
 	}
 	
 	return box;
