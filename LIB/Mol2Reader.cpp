@@ -252,17 +252,19 @@ int read_mol2_ligand(FA_Global* FA, atom** atoms, resid** residue,
             memset(&(*atoms)[FA->MIN_NUM_ATOM - 50], 0, 50 * sizeof(atom));
         }
 
-        atom& a = (*atoms)[FA->atm_cnt];
+        // FlexAID uses 1-based atom indexing: atoms[0] is unused, atoms[1] is the
+        // first real atom. Increment atm_cnt BEFORE using it as the storage index.
         FA->atm_cnt++;
         FA->atm_cnt_real++;
         FA->num_het_atm++;
+        atom& a = (*atoms)[FA->atm_cnt];
         memset(&a, 0, sizeof(atom));
 
         // Assign a PDB-style number starting at 90001
         int pdb_num = 90001 + static_cast<int>(ai);
         a.number = pdb_num;
-        FA->num_atm[pdb_num] = FA->atm_cnt - 1;
-        id_map[tmp_atoms[ai].id] = FA->atm_cnt - 1;
+        FA->num_atm[pdb_num] = FA->atm_cnt;
+        id_map[tmp_atoms[ai].id] = FA->atm_cnt;
 
         a.coor[0] = a.coor_ori[0] = tmp_atoms[ai].x;
         a.coor[1] = a.coor_ori[1] = tmp_atoms[ai].y;
@@ -292,8 +294,8 @@ int read_mol2_ligand(FA_Global* FA, atom** atoms, resid** residue,
         a.eigen = NULL;
 
         // Update residue first/last atom
-        if (ai == 0) (*residue)[FA->res_cnt].fatm[0] = FA->atm_cnt - 1;
-        (*residue)[FA->res_cnt].latm[0] = FA->atm_cnt - 1;
+        if (ai == 0) (*residue)[FA->res_cnt].fatm[0] = FA->atm_cnt;
+        (*residue)[FA->res_cnt].latm[0] = FA->atm_cnt;
     }
 
     // Populate bond arrays from MOL2 bond table
