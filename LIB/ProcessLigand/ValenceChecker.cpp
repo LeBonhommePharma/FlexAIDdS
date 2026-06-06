@@ -41,7 +41,7 @@ std::vector<int> expected_valences(Element elem, int formal_charge) {
         case Element::O:
             if (formal_charge ==  1) return {3}; // oxonium
             if (formal_charge == -1) return {1}; // oxide/phenolate
-            return {2};
+            return {2, 3}; // 3 = aromatic O donation into 5-membered ring (furan, oxazole)
         case Element::F:
             return {1};
         case Element::Si:
@@ -52,7 +52,7 @@ std::vector<int> expected_valences(Element elem, int formal_charge) {
         case Element::S:
             if (formal_charge ==  1) return {3};
             if (formal_charge == -1) return {1};
-            return {2, 4, 6};
+            return {2, 3, 4, 6}; // 3 = aromatic S (thiophene, thiadiazole)
         case Element::Cl:
             if (formal_charge == -1) return {0};
             return {1, 3, 5, 7};
@@ -146,7 +146,12 @@ ValenceCheckResult check_valence(BonMol& mol) {
         bool ok = std::any_of(valid_vals.begin(), valid_vals.end(),
                               [&](int v){ return v == bos_int; });
 
-        // Allow tolerance of ±0.5 for aromatic bond order sums
+        // ±0.6 float tolerance to absorb small rounding noise in the bond-order
+        // sum. NOTE: this tolerance is NOT what handles aromatic heteroatoms.
+        // An aromatic S/O in a 5-membered ring has BOS = 2 × 1.5 = 3.0, which is
+        // a full 1.0 away from {2} — well outside ±0.6. That case is handled by
+        // listing 3 as a valid valence in expected_valences() (see Element::O/S),
+        // not here. This tolerance only catches near-integer BOS values.
         if (!ok) {
             // Try exact float check
             for (int v : valid_vals) {
