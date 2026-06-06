@@ -261,12 +261,19 @@ jobs:
           PYTHONPATH: ${{ github.workspace }}/python
         run: |
           echo "=== Validation package contents ==="
-          ls -la results/ci_datasetrunner_test/flexaidds_validation_package_*.zip || (echo "No validation package found!" && exit 1)
+          # The skill script places the package in results/ (parent of --results-dir)
+          PKG=$(find results/ -maxdepth 1 -name "flexaidds_validation_package_*.zip" | head -1)
+          if [ -z "$PKG" ]; then
+            echo "No validation package found under results/!"
+            find results/ -name "*.zip" 2>/dev/null || true
+            exit 1
+          fi
+          ls -la "$PKG"
 
           echo "=== Checking for per-entry manifest (new feature) ==="
-          unzip -l results/ci_datasetrunner_test/flexaidds_validation_package_*.zip | grep -E '(_entry_manifest|VALIDATION_SUMMARY|REPRODUCIBILITY)' || echo "Warning: expected per-entry files not found in package"
+          unzip -l "$PKG" | grep -E '(_entry_manifest|VALIDATION_SUMMARY|REPRODUCIBILITY)' || echo "Warning: expected per-entry files not found in package"
 
           echo "=== Checking generated reports ==="
-          ls -la results/ci_datasetrunner_test/report_*.md results/ci_datasetrunner_test/astex_diverse/tier1/_entry_manifest.json 2>/dev/null || echo "Per-entry artifacts present as expected"
+          find results/ -name "_entry_manifest.json" -o -name "report_*.md" 2>/dev/null | head -10 || echo "No per-entry artifacts found"
 
           echo "DatasetRunner --resume --package validation: SUCCESS"
