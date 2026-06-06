@@ -170,10 +170,13 @@ int read_mol2_ligand(FA_Global* FA, atom** atoms, resid** residue,
             char btype[8] = {};
             int nf = sscanf(buf, "%*d %d %d %7s", &b.origin, &b.target, btype);
             if (nf >= 2) {
+                // "nc" = non-connected (Tripos placeholder), "du" = dummy bond — skip both
+                if (!strcmp(btype, "nc") || !strcmp(btype, "du")) break;
                 b.type = 1; // single bond default
                 if (!strcmp(btype, "2") || !strcmp(btype, "do")) b.type = 2;
                 if (!strcmp(btype, "3") || !strcmp(btype, "tr")) b.type = 3;
                 if (!strcmp(btype, "ar"))                        b.type = 4;
+                if (!strcmp(btype, "am"))                        b.type = 1; // amide→single
                 tmp_bonds.push_back(b);
             }
             break;

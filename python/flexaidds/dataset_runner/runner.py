@@ -568,107 +568,46 @@ class EntryTaskManager:
         except Exception:
             return {}
 
-    def run(self, fn) -> List[Tuple]:
-        """Dispatch ``fn`` over the (cost-ordered) work items via a local thread pool.
-
-        ``fn(item)`` receives a ``(target, state)`` tuple and returns a result tuple
-        ``(target, state, poses, seconds, message)``. Results are recorded in
-        ``self.completed`` (accounting / resume) and returned in work-item order.
-        Serial when ``n_workers <= 1``; ThreadPoolExecutor otherwise (the documented
-        local-dispatch path; MPI master-worker remains a future extension).
-        """
-        if self.n_workers <= 1 or len(self.work_items) <= 1:
-            results = [fn(item) for item in self.work_items]
-        else:
-            from concurrent.futures import ThreadPoolExecutor
-            with ThreadPoolExecutor(max_workers=self.n_workers) as ex:
-                results = list(ex.map(fn, self.work_items))
-        self.completed.extend(results)
-        return list(results)
-
-
-class CostHistory:
-    """Simple persistent cost model with exponential moving average (EMA).
-
-    Provides historical cost tracking (with EMA smoothing) so that cost-aware
-    scheduling improves automatically across repeated benchmark campaigns.
-    """
-
-    def __init__(self, history_path: Union[str, Path], alpha: float = 0.3):
-        self.path = Path(history_path)
-        self.alpha = max(0.05, min(0.8, alpha))  # keep alpha reasonable
-        self.data: Dict[str, float] = {}
-        self._load()
-
-    def _load(self):
-        if self.path.is_file():
-            try:
-                self.data = json.loads(self.path.read_text())
-            except Exception:
-                self.data = {}
-
-    def update(self, target_costs: Dict[str, float]):
-        """Update historical costs using exponential moving average."""
-        for key, cost in target_costs.items():
-            if key in self.data and self.data[key] > 0:
-                self.data[key] = self.alpha * cost + (1 - self.alpha) * self.data[key]
-            else:
-                self.data[key] = cost
-        self._save()
-
-    def get_hints(self) -> Dict[str, float]:
-        return dict(self.data)
-
-    def _save(self):
-        try:
-            self.path.parent.mkdir(parents=True, exist_ok=True)
-            self.path.write_text(json.dumps(self.data, indent=2))
-        except Exception:
-            pass  # non-fatal
-
-    @classmethod
-    def for_dataset(cls, base_results_dir: Path, slug: str, tier: int) -> "CostHistory":
-        history_path = base_results_dir / slug / f"tier{tier}" / ".cost_history.json"
-        return cls(history_path)
-
     def run(
         self,
         processor: Callable[[Tuple[str, str]], Tuple[str, str, List[PoseScore], float, str]],
     ) -> List[Tuple[str, str, List[PoseScore], float, str]]:
         """Execute all work items using the processor function.
 
-        When MPI context with size > 1 is provided, rank 0 acts as master and
-        dynamically farms individual (target, state) entries to the other ranks
-        (stronger master-worker instead of static pre-split).
+        Dispatch strategy (in priority order):
+        1. MPI multi-rank: dynamic master-worker (root farms tasks on demand).
+        2. Local parallel: ThreadPoolExecutor with per-future exception isolation.
+        3. Serial: simple loop (n_workers=1 or single item).
 
-        If cost_hints are present, cheaper entries are scheduled first (cost-aware).
+        Cost-aware ordering is applied in __init__ when hints are provided.
         """
         if not self.work_items:
             return []
 
-        # Cost-aware ordering already applied in __init__ if hints were provided
         if self.cost_hints and (self._mpi_root or self._mpi_size <= 1):
-            logger.info("EntryTaskManager: cost-aware scheduling enabled (%d hints loaded)", len(self.cost_hints))
+            logger.info(
+                "EntryTaskManager: cost-aware scheduling enabled (%d hints loaded)",
+                len(self.cost_hints),
+            )
 
-        # Stronger MPI master-worker path (user priority)
         if self._mpi_size > 1 and self._mpi_comm is not None:
             return self._run_mpi_master_worker(processor)
 
         if self.n_workers <= 1 or len(self.work_items) == 1:
-            # Sequential (or single worker) — simplest resource allocation
             for item in self.work_items:
                 res = processor(item)
                 self.completed.append(res)
-            return self.completed
+            return list(self.completed)
 
-        # Parallel local execution — the manager controls the pool size
         logger.info(
-            "EntryTaskManager: dispatching %d individual entries across %d workers (OMP_NUM_THREADS=%d)",
+            "EntryTaskManager: dispatching %d entries across %d workers "
+            "(OMP_NUM_THREADS=%d)",
             len(self.work_items), self.n_workers, self.omp_threads,
         )
-
         with ThreadPoolExecutor(max_workers=self.n_workers) as pool:
-            future_to_item = {pool.submit(processor, item): item for item in self.work_items}
+            future_to_item = {
+                pool.submit(processor, item): item for item in self.work_items
+            }
             for future in as_completed(future_to_item):
                 try:
                     res = future.result()
@@ -679,18 +618,13 @@ class CostHistory:
                     logger.error("Worker exception on %s/%s: %s", tid, st, exc)
                     self.completed.append((tid, st, [], 0.0, str(exc)))
 
-        return self.completed
+        return list(self.completed)
 
     def _run_mpi_master_worker(
         self,
         processor: Callable[[Tuple[str, str]], Tuple[str, str, List[PoseScore], float, str]],
     ) -> List[Tuple[str, str, List[PoseScore], float, str]]:
-        """Dynamic master-worker using the provided MPI communicator (stronger than static split).
-
-        Master (root) keeps the full queue and hands out individual entry tasks on demand.
-        Other ranks act as workers: request → execute via processor → send result.
-        Terminates cleanly with None sentinel.
-        """
+        """Dynamic MPI master-worker: root queues tasks, workers pull on demand."""
         comm = self._mpi_comm
         rank = self._mpi_rank
         root = 0
@@ -708,20 +642,16 @@ class CostHistory:
         TAG_RES = 13
 
         if rank == root:
-            # Master owns the complete list of remaining work items (robustness improved)
             queue = list(self.work_items)
             results: List[Tuple[str, str, List[PoseScore], float, str]] = []
             active_tasks = 0
             total_expected = len(self.work_items)
 
             while queue or active_tasks > 0 or len(results) < total_expected:
-                # Drain any ready results first
                 while comm.Iprobe(source=ANY_SRC, tag=TAG_RES):
                     res = comm.recv(source=ANY_SRC, tag=TAG_RES)
                     results.append(res)
                     active_tasks = max(0, active_tasks - 1)
-
-                # Serve a request if we have work
                 if comm.Iprobe(source=ANY_SRC, tag=TAG_REQ):
                     req_rank = comm.recv(source=ANY_SRC, tag=TAG_REQ)
                     if queue:
@@ -731,17 +661,13 @@ class CostHistory:
                     else:
                         comm.send(None, dest=req_rank, tag=TAG_TASK)
 
-            # Final safety drain
             while len(results) < total_expected:
-                res = comm.recv(source=ANY_SRC, tag=TAG_RES)
-                results.append(res)
+                results.append(comm.recv(source=ANY_SRC, tag=TAG_RES))
 
             self.completed = results
             return results
         else:
-            # Worker (hybrid: respect local n_workers inside this MPI rank)
             if self.n_workers <= 1:
-                # Serial worker (simple path)
                 while True:
                     comm.send(rank, dest=root, tag=TAG_REQ)
                     task = comm.recv(source=root, tag=ANY_TAG)
@@ -751,55 +677,91 @@ class CostHistory:
                     comm.send(res, dest=root, tag=TAG_RES)
                 return []
 
-            # True hybrid: local ThreadPool + MPI task streaming
-            from concurrent.futures import ThreadPoolExecutor, as_completed
             local_pool = ThreadPoolExecutor(max_workers=self.n_workers)
-            futures = {}  # future -> task
+            futures: dict = {}
 
-            def _request_more(n):
+            def _request_more(n: int) -> None:
                 for _ in range(n):
                     comm.send(rank, dest=root, tag=TAG_REQ)
 
             try:
-                _request_more(self.n_workers)  # prime the pump
-
+                _request_more(self.n_workers)
                 while True:
-                    # Receive any newly assigned tasks and submit locally
                     while comm.Iprobe(source=root, tag=ANY_TAG):
                         task = comm.recv(source=root, tag=ANY_TAG)
                         if task is None:
-                            # Sentinel — drain remaining local work then exit
                             for fut in as_completed(list(futures.keys())):
-                                res = fut.result()
-                                comm.send(res, dest=root, tag=TAG_RES)
+                                try:
+                                    comm.send(fut.result(), dest=root, tag=TAG_RES)
+                                except Exception as exc:
+                                    tid, st = futures[fut]
+                                    comm.send((tid, st, [], 0.0, str(exc)),
+                                              dest=root, tag=TAG_RES)
                             return []
                         fut = local_pool.submit(processor, task)
                         futures[fut] = task
-
-                    # Send back any completed local results and request replacements
                     done = []
                     for fut in list(futures.keys()):
                         if fut.done():
                             try:
-                                res = fut.result()
-                                comm.send(res, dest=root, tag=TAG_RES)
-                                done.append(fut)
-                                # Request one more to keep the local pool fed
-                                comm.send(rank, dest=root, tag=TAG_REQ)
+                                comm.send(fut.result(), dest=root, tag=TAG_RES)
                             except Exception as exc:
                                 tid, st = futures[fut]
-                                err_res = (tid, st, [], 0.0, str(exc))
-                                comm.send(err_res, dest=root, tag=TAG_RES)
-                                done.append(fut)
-
+                                comm.send((tid, st, [], 0.0, str(exc)),
+                                          dest=root, tag=TAG_RES)
+                            done.append(fut)
+                            comm.send(rank, dest=root, tag=TAG_REQ)
                     for fut in done:
                         futures.pop(fut, None)
-
-                    # Small sleep to avoid busy spin if nothing is happening
                     import time as _t
                     _t.sleep(0.01)
             finally:
                 local_pool.shutdown(wait=True)
+
+
+class CostHistory:
+    """Persistent per-entry cost model with exponential moving average (EMA).
+
+    Tracks historical docking costs so cost-aware scheduling improves
+    automatically across repeated benchmark campaigns.
+    """
+
+    def __init__(self, history_path: Union[str, Path], alpha: float = 0.3):
+        self.path = Path(history_path)
+        self.alpha = max(0.05, min(0.8, alpha))
+        self.data: Dict[str, float] = {}
+        self._load()
+
+    def _load(self) -> None:
+        if self.path.is_file():
+            try:
+                self.data = json.loads(self.path.read_text())
+            except Exception:
+                self.data = {}
+
+    def update(self, target_costs: Dict[str, float]) -> None:
+        """Update historical costs using exponential moving average."""
+        for key, cost in target_costs.items():
+            if key in self.data and self.data[key] > 0:
+                self.data[key] = self.alpha * cost + (1 - self.alpha) * self.data[key]
+            else:
+                self.data[key] = cost
+        self._save()
+
+    def get_hints(self) -> Dict[str, float]:
+        return dict(self.data)
+
+    def _save(self) -> None:
+        try:
+            self.path.parent.mkdir(parents=True, exist_ok=True)
+            self.path.write_text(json.dumps(self.data, indent=2))
+        except Exception:
+            pass  # non-fatal
+
+    @classmethod
+    def for_dataset(cls, base_results_dir: Path, slug: str, tier: int) -> "CostHistory":
+        history_path = base_results_dir / slug / f"tier{tier}" / ".cost_history.json"
+        return cls(history_path)
 
 
 # ---------------------------------------------------------------------------
@@ -1233,46 +1195,63 @@ class DatasetRunner:
         failed_targets: set[str] = set()
 
         def _process_one_item(item: Tuple[str, str]) -> Tuple[str, str, List[PoseScore], float, str]:
-            """Process a single (target_id, structural_state) entry. Returns (tid, state, poses, elapsed, error)."""
+            """Process a single (target_id, structural_state) entry.
+
+            All exceptions are caught and returned as an error string so that one
+            bad target never kills the entire campaign (in both serial and parallel
+            dispatch modes).
+            """
             target_id, state = item
             t_start = time.monotonic()
-            error = ""
-
-            receptor = None
-            ligands: List[Path] = []
-            if config.data_dir and not self.dry_run:
-                receptor = self._find_receptor(target_id, config.data_dir, state)
-                if receptor is None:
-                    error = f"No receptor for {target_id}/{state}"
-                    return target_id, state, [], time.monotonic() - t_start, error
-
-                ligands = self._find_ligands(target_id, config.data_dir) or []
-
-            poses = self._dock_target(
-                target_id,
-                receptor or Path("/dev/null"),
-                ligands or [Path(f"{target_id}.mol2")],
-                structural_state=state,
-            )
-
-            elapsed = time.monotonic() - t_start
-
-            # AUTOMATIC per-entry save (the key automation requested)
-            cost_cpu = elapsed * max(1, self.omp_threads)   # simple cost model: wall time * threads
-            tr = TargetResult(
-                target_id=target_id,
-                structural_state=state,
-                poses=poses,
-                duration_seconds=elapsed,
-                error=error,
-            )
             try:
-                saved_path = self._save_target_result(tr, config, tier, cost_cpu=cost_cpu)
-                logger.debug("Saved per-entry result: %s (cost~%.1fs CPU)", saved_path, cost_cpu)
-            except Exception as save_exc:
-                logger.warning("Failed to save per-entry result for %s/%s: %s", target_id, state, save_exc)
+                error = ""
+                receptor = None
+                ligands: List[Path] = []
 
-            return target_id, state, poses, elapsed, error
+                if config.data_dir and not self.dry_run:
+                    receptor = self._find_receptor(target_id, config.data_dir, state)
+                    if receptor is None:
+                        error = f"No receptor found for {target_id}/{state}"
+                        return target_id, state, [], time.monotonic() - t_start, error
+                    ligands = self._find_ligands(target_id, config.data_dir) or []
+
+                poses = self._dock_target(
+                    target_id,
+                    receptor or Path("/dev/null"),
+                    ligands or [Path(f"{target_id}.mol2")],
+                    structural_state=state,
+                )
+
+                elapsed = time.monotonic() - t_start
+                cost_cpu = elapsed * max(1, self.omp_threads)
+
+                tr = TargetResult(
+                    target_id=target_id,
+                    structural_state=state,
+                    poses=poses,
+                    duration_seconds=elapsed,
+                    error=error,
+                )
+                try:
+                    saved_path = self._save_target_result(tr, config, tier, cost_cpu=cost_cpu)
+                    logger.debug(
+                        "Saved per-entry result: %s (cost~%.1fs CPU)", saved_path, cost_cpu
+                    )
+                except Exception as save_exc:
+                    logger.warning(
+                        "Failed to save per-entry result for %s/%s: %s",
+                        target_id, state, save_exc,
+                    )
+
+                return target_id, state, poses, elapsed, error
+
+            except Exception as exc:
+                elapsed = time.monotonic() - t_start
+                logger.error(
+                    "Unhandled exception for %s/%s: %s", target_id, state, exc,
+                    exc_info=True,
+                )
+                return target_id, state, [], elapsed, f"EXCEPTION: {exc}"
 
         # Dispatch via the EntryTaskManager (local ThreadPool or sequential)
         results = entry_manager.run(_process_one_item)
