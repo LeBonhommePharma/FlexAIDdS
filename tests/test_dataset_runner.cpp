@@ -458,9 +458,11 @@ TEST(ReportGeneration, WithResults) {
     report.spearman_rho = 0.82;
     report.kendall_tau = 0.70;
 
-    DockingResult r1{"1ABC", -8.5f, 0.9f, -8.5f, -6.0f, -2.5f, 3.2f, 15, 12.5, true};
-    DockingResult r2{"2DEF", -7.2f, 1.5f, -7.2f, -5.0f, -2.2f, 2.8f, 10, 15.0, true};
-    DockingResult r3{"3GHI", -5.0f, 3.5f, -5.0f, -3.0f, -2.0f, 4.1f, 5, 20.0, false};
+    // Field order: pdb_id, best_score, rmsd_to_crystal, predicted_dG, predicted_dH,
+    // predicted_TdS, predicted_IEE, has_IEE, shannon_entropy, num_poses, wall_time_s, success
+    DockingResult r1{"1ABC", -8.5f, 0.9f, -8.5f, -6.0f, -2.5f, 0.0f, false, 3.2f, 15, 12.5, true};
+    DockingResult r2{"2DEF", -7.2f, 1.5f, -7.2f, -5.0f, -2.2f, 0.0f, false, 2.8f, 10, 15.0, true};
+    DockingResult r3{"3GHI", -5.0f, 3.5f, -5.0f, -3.0f, -2.0f, 0.0f, false, 4.1f, 5, 20.0, false};
     report.results = {r1, r2, r3};
 
     std::string test_dir = "/tmp/flexaidds_test_report2";
