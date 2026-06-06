@@ -881,22 +881,40 @@ class DatasetRunner:
     # ------------------------------------------------------------------
 
     def _find_receptor(self, target_id: str, data_dir: Path, state: str) -> Optional[Path]:
-        """Locate receptor PDB for a given target and structural state."""
-        candidates = [
-            data_dir / target_id / f"{target_id}_{state}.pdb",
-            data_dir / target_id / f"{target_id}_protein.pdb",
-            data_dir / target_id / f"receptor.pdb",
-            data_dir / f"{target_id}.pdb",
-        ]
-        for p in candidates:
+        """Locate receptor PDB for a given target and structural state.
+
+        Probes multiple naming conventions:
+        - PDBbind/CASF style:  <id>/<id>_holo.pdb  or  <id>/<id>_protein.pdb
+        - Astex Diverse style: <id>/<id>.pdb        (uppercase or lowercase)
+        - Flat layout:         <id>.pdb
+        """
+        def _probes(tid: str) -> List[Path]:
+            return [
+                data_dir / tid / f"{tid}_{state}.pdb",
+                data_dir / tid / f"{tid}_protein.pdb",
+                data_dir / tid / f"{tid}.pdb",          # Astex Diverse bare-name convention
+                data_dir / tid / "receptor.pdb",
+                data_dir / f"{tid}.pdb",
+            ]
+
+        for p in _probes(target_id):
             if p.is_file():
                 return p
+        # Case-insensitive fallback: Astex Diverse stores PDB IDs as uppercase on disk
+        upper = target_id.upper()
+        if upper != target_id:
+            for p in _probes(upper):
+                if p.is_file():
+                    return p
         logger.warning("No receptor found for %s (%s) in %s", target_id, state, data_dir)
         return None
 
     def _find_ligands(self, target_id: str, data_dir: Path) -> List[Path]:
         """Locate all ligand files for a target (Mol2 or SDF)."""
         target_dir = data_dir / target_id
+        if not target_dir.is_dir():
+            # Try uppercase variant (Astex Diverse stores IDs as uppercase)
+            target_dir = data_dir / target_id.upper()
         if not target_dir.is_dir():
             target_dir = data_dir
         ligands = (
