@@ -1,10 +1,19 @@
 # Build directories (CMake / Ninja out-of-source builds)
 /build/
 /build_*/
+/build-*/
 build/
 
-# Benchmark run outputs (large, regenerated per run)
+# Benchmark / validation run outputs (large, regenerated per run)
 /benchmark_results/
+/results/
+
+# Compiled Python bindings (built from LIB/ via setup.py / CMake)
+python/flexaidds/_core*.so
+
+# Python caches
+__pycache__/
+*.pyc
 
 # Editor / OS cruft
 *.swp
