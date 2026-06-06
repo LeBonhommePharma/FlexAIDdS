@@ -423,6 +423,47 @@ const std::set<std::string>& DatasetRunner::excluded_residues() {
 }
 
 // =============================================================================
+// Cofactor blacklist — residues that must NEVER be selected as the docking
+// target during ligand extraction.
+//
+// Many crystal structures co-crystallise a ubiquitous biochemical cofactor
+// (SAH, NAD, ATP, FAD, heme, a metal ion, a cryo-buffer …) *alongside* the
+// actual cognate ligand.  The cofactor is frequently the LARGEST HETATM group
+// (e.g. 1HNN: SAH = 26 heavy atoms vs. the 28-atom SKF inhibitor — but in many
+// entries the cofactor is the bigger of the two), so naïve "largest residue /
+// largest connected component" selection grabs the wrong molecule and yields a
+// nonsense self-dock (1HNN: SAH instead of SKF → RMSD ≈ 22.5 Å).
+//
+// When the highest-priority HETATM residue is on this blacklist, extract_ligand
+// falls through to the next non-blacklisted residue and logs the fallback chain.
+//
+// This set is intentionally DISTINCT from excluded_residues() (water / simple
+// ion / buffer junk): the entries here are real, well-formed molecules — they
+// are simply never the docking target in a ligand-binding benchmark.  Note the
+// deliberate asymmetry with write_receptor_without_ligand()'s keep_catalytic
+// set: metals/heme are RETAINED in the receptor (binding-site machinery) but
+// must never be EXTRACTED as the ligand.
+// =============================================================================
+static const std::set<std::string>& cofactor_blacklist() {
+    static const std::set<std::string> bl = {
+        // ── Mandated core set (FlexAIDdS cofactor blacklist v1) ───────────────
+        "SAH", "SAM", "ATP", "ADP", "AMP", "GTP", "GDP",
+        "NAD", "NADH", "FAD", "FADH2", "FMN",
+        "HEM", "CLA", "BCL", "SF4", "FES",
+        "MG", "ZN", "CA", "MN", "FE", "CO", "NI", "CU",
+        "GOL", "SO4", "PO4", "EDO", "PEG", "MPD", "BME",
+        // ── Real wwPDB aliases / reduced & phosphorylated forms ────────────────
+        // The wwPDB encodes NAD(P)(H) and reduced flavins under distinct 3-letter
+        // codes; include them so the blacklist actually catches them in practice.
+        "NAP", "NDP", "NAI", "NHD", "NDE", "NAJ",   // NAD(P)(H) family
+        "FDA",                                        // reduced FAD (FADH2)
+        "HEC", "HEA", "HEB", "HAS",                  // heme variants
+        "F3S", "F4S",                                // iron-sulfur clusters
+    };
+    return bl;
+}
+
+// =============================================================================
 // DatasetRunner constructor
 // =============================================================================
 
@@ -1126,13 +1167,29 @@ bool DatasetRunner::extract_ligand(const std::string& structure_path,
     ligand_atoms.reserve(hetatm_atoms.size());
 
     std::map<ResidueKey, std::vector<size_t>> residue_groups;
-    const auto& excl = excluded_residues();
+    const auto& excl      = excluded_residues();
+    const auto& blacklist = cofactor_blacklist();
+
+    // Tally blacklisted cofactor residues that we skip, keyed by resName, so the
+    // fallback chain (e.g. "SAH(26) → SKF(28)") can be reported once the real
+    // docking target is resolved.  Insertion order is preserved for the log.
+    std::map<std::string, int> skipped_cofactors;       // resName -> heavy-atom count
+    std::vector<std::string>    skipped_cofactor_order;  // first-seen order
 
     for (const auto& atom : hetatm_atoms) {
-        // Skip excluded residues (water, ions, buffers)
-        if (excl.count(atom.resName)) continue;
         // Skip alternate conformers (keep only first)
         if (atom.altLoc != " " && atom.altLoc != "" && atom.altLoc != "A") continue;
+
+        // Never select a ubiquitous biochemical cofactor as the docking target.
+        // Record it for the fallback log, then fall through to the next residue.
+        if (blacklist.count(atom.resName)) {
+            if (skipped_cofactors.find(atom.resName) == skipped_cofactors.end())
+                skipped_cofactor_order.push_back(atom.resName);
+            skipped_cofactors[atom.resName]++;
+            continue;
+        }
+        // Skip excluded residues (water, ions, buffers)
+        if (excl.count(atom.resName)) continue;
 
         ResidueKey key{atom.resName, atom.chainID, atom.resSeq};
         residue_groups[key].push_back(ligand_atoms.size());
@@ -1140,6 +1197,15 @@ bool DatasetRunner::extract_ligand(const std::string& structure_path,
     }
 
     if (residue_groups.empty()) {
+        if (!skipped_cofactor_order.empty()) {
+            std::cerr << "  [WARN] Every non-water HETATM residue in " << structure_path
+                      << " is a blacklisted cofactor (";
+            for (size_t i = 0; i < skipped_cofactor_order.size(); ++i) {
+                const std::string& nm = skipped_cofactor_order[i];
+                std::cerr << (i ? ", " : "") << nm << "(" << skipped_cofactors[nm] << ")";
+            }
+            std::cerr << ") — no docking target to extract\n";
+        }
         std::cerr << "  [WARN] No valid ligand residues in " << structure_path << "\n";
         return false;
     }
@@ -1321,6 +1387,21 @@ bool DatasetRunner::extract_ligand(const std::string& structure_path,
 
     // Header
     const auto& best_atom = ligand_atoms[selected_indices.front()];
+
+    // ── Fallback-chain log ──────────────────────────────────────────────────
+    // If one or more blacklisted cofactors were skipped to reach this ligand,
+    // make the decision auditable.  A wrong pick here is the difference between
+    // a ~2 Å self-dock and a ~20 Å nonsense pose (cf. 1HNN: SAH vs SKF).
+    if (!skipped_cofactor_order.empty()) {
+        std::cerr << "  [LIGAND] " << structure_path << ": skipped blacklisted cofactor(s) ";
+        for (size_t i = 0; i < skipped_cofactor_order.size(); ++i) {
+            const std::string& nm = skipped_cofactor_order[i];
+            std::cerr << (i ? ", " : "") << nm << "(" << skipped_cofactors[nm] << ")";
+        }
+        std::cerr << " → docking target = " << best_atom.resName
+                  << "(" << selected_indices.size() << ")\n";
+    }
+
     ofs << best_atom.resName << "\n";
     ofs << "  FlexAIDdS DatasetRunner\n";
     ofs << "  Extracted from structure HETATM records | FLEXAIDDS_LIGAND_EXTRACTOR_V3\n";
