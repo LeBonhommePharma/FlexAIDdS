@@ -99,31 +99,32 @@ TEST_F(Mol2ReaderTest, ReadsSimpleMolecule) {
     EXPECT_EQ(FA.num_het_atm, 3);
     EXPECT_EQ(FA.res_cnt, 1);
 
+    // Atoms are stored 0-based (atoms[0] is the first atom; fatm/latm match).
     // Check coordinates of first atom (oxygen)
-    EXPECT_NEAR(atoms[1].coor[0], 0.0f, 0.01f);
-    EXPECT_NEAR(atoms[1].coor[1], 0.0f, 0.01f);
-    EXPECT_NEAR(atoms[1].coor[2], 0.0f, 0.01f);
+    EXPECT_NEAR(atoms[0].coor[0], 0.0f, 0.01f);
+    EXPECT_NEAR(atoms[0].coor[1], 0.0f, 0.01f);
+    EXPECT_NEAR(atoms[0].coor[2], 0.0f, 0.01f);
 
     // Check second atom coordinates (H1)
-    EXPECT_NEAR(atoms[2].coor[0], 0.957f, 0.01f);
+    EXPECT_NEAR(atoms[1].coor[0], 0.957f, 0.01f);
 
     // Check types: O.3 → type 10, H → type 22
-    EXPECT_EQ(atoms[1].type, 10);
+    EXPECT_EQ(atoms[0].type, 10);
+    EXPECT_EQ(atoms[1].type, 22);
     EXPECT_EQ(atoms[2].type, 22);
-    EXPECT_EQ(atoms[3].type, 22);
 
     // Check radii
-    EXPECT_NEAR(atoms[1].radius, 1.52f, 0.01f);  // oxygen
-    EXPECT_NEAR(atoms[2].radius, 1.20f, 0.01f);  // hydrogen
+    EXPECT_NEAR(atoms[0].radius, 1.52f, 0.01f);  // oxygen
+    EXPECT_NEAR(atoms[1].radius, 1.20f, 0.01f);  // hydrogen
 
     // Check partial charges
-    EXPECT_NEAR(atoms[1].charge, -0.834f, 0.01f);
-    EXPECT_NEAR(atoms[2].charge,  0.417f, 0.01f);
+    EXPECT_NEAR(atoms[0].charge, -0.834f, 0.01f);
+    EXPECT_NEAR(atoms[1].charge,  0.417f, 0.01f);
 
     // Check bonds: O should have 2 bonds, each H should have 1
-    EXPECT_EQ(atoms[1].bond[0], 2);
+    EXPECT_EQ(atoms[0].bond[0], 2);
+    EXPECT_EQ(atoms[1].bond[0], 1);
     EXPECT_EQ(atoms[2].bond[0], 1);
-    EXPECT_EQ(atoms[3].bond[0], 1);
 
     // Residue should be set up as ligand
     EXPECT_EQ(residue[1].type, 1);
@@ -164,14 +165,14 @@ TEST_F(Mol2ReaderTest, ReadsDrugLikeMolecule) {
     EXPECT_EQ(FA.num_het_atm, 5);
 
     // C.ar → type 3, C.2 → type 2, O.2 → type 11, O.3 → type 10, N.am → type 7
-    EXPECT_EQ(atoms[1].type, 3);
-    EXPECT_EQ(atoms[2].type, 2);
-    EXPECT_EQ(atoms[3].type, 11);
-    EXPECT_EQ(atoms[4].type, 10);
-    EXPECT_EQ(atoms[5].type, 7);
+    EXPECT_EQ(atoms[0].type, 3);
+    EXPECT_EQ(atoms[1].type, 2);
+    EXPECT_EQ(atoms[2].type, 11);
+    EXPECT_EQ(atoms[3].type, 10);
+    EXPECT_EQ(atoms[4].type, 7);
 
     // C2 should have 3 bonds (to C1, O1, O2)
-    EXPECT_EQ(atoms[2].bond[0], 3);
+    EXPECT_EQ(atoms[1].bond[0], 3);
 
     cleanup_fa(&FA, atoms, residue);
     std::remove(mol2.c_str());
@@ -236,7 +237,7 @@ TEST_F(Mol2ReaderTest, HandlesUnknownAtomType) {
     EXPECT_EQ(ok, 1);
 
     // Unknown type → dummy type 39
-    EXPECT_EQ(atoms[1].type, 39);
+    EXPECT_EQ(atoms[0].type, 39);
 
     cleanup_fa(&FA, atoms, residue);
     std::remove(mol2.c_str());
@@ -264,12 +265,12 @@ TEST_F(Mol2ReaderTest, PDBNumbersStartAt90001) {
     int ok = read_mol2_ligand(&FA, &atoms, &residue, mol2.c_str());
     EXPECT_EQ(ok, 1);
 
-    EXPECT_EQ(atoms[1].number, 90001);
-    EXPECT_EQ(atoms[2].number, 90002);
+    EXPECT_EQ(atoms[0].number, 90001);
+    EXPECT_EQ(atoms[1].number, 90002);
 
-    // Verify reverse mapping
-    EXPECT_EQ(FA.num_atm[90001], 1);
-    EXPECT_EQ(FA.num_atm[90002], 2);
+    // Verify reverse mapping (0-based internal atom indices)
+    EXPECT_EQ(FA.num_atm[90001], 0);
+    EXPECT_EQ(FA.num_atm[90002], 1);
 
     cleanup_fa(&FA, atoms, residue);
     std::remove(mol2.c_str());
@@ -326,24 +327,24 @@ TEST_F(SdfReaderTest, ReadsSimpleMolecule) {
     EXPECT_EQ(FA.num_het_atm, 5);
     EXPECT_EQ(FA.res_cnt, 1);
 
-    // Carbon at origin
-    EXPECT_NEAR(atoms[1].coor[0], 0.0f, 0.01f);
-    EXPECT_NEAR(atoms[1].coor[1], 0.0f, 0.01f);
-    EXPECT_NEAR(atoms[1].coor[2], 0.0f, 0.01f);
+    // Carbon at origin (atoms stored 0-based)
+    EXPECT_NEAR(atoms[0].coor[0], 0.0f, 0.01f);
+    EXPECT_NEAR(atoms[0].coor[1], 0.0f, 0.01f);
+    EXPECT_NEAR(atoms[0].coor[2], 0.0f, 0.01f);
 
     // Types: C → 1, H → 22
-    EXPECT_EQ(atoms[1].type, 1);
-    EXPECT_EQ(atoms[2].type, 22);
+    EXPECT_EQ(atoms[0].type, 1);
+    EXPECT_EQ(atoms[1].type, 22);
 
     // Carbon has 4 bonds
-    EXPECT_EQ(atoms[1].bond[0], 4);
+    EXPECT_EQ(atoms[0].bond[0], 4);
     // Each hydrogen has 1 bond
+    EXPECT_EQ(atoms[1].bond[0], 1);
     EXPECT_EQ(atoms[2].bond[0], 1);
-    EXPECT_EQ(atoms[3].bond[0], 1);
 
     // Radii
-    EXPECT_NEAR(atoms[1].radius, 1.70f, 0.01f);  // carbon
-    EXPECT_NEAR(atoms[2].radius, 1.20f, 0.01f);  // hydrogen
+    EXPECT_NEAR(atoms[0].radius, 1.70f, 0.01f);  // carbon
+    EXPECT_NEAR(atoms[1].radius, 1.20f, 0.01f);  // hydrogen
 
     // Residue setup
     EXPECT_EQ(residue[1].type, 1);
@@ -379,15 +380,15 @@ TEST_F(SdfReaderTest, ReadsHalogens) {
     EXPECT_EQ(ok, 1);
     EXPECT_EQ(FA.num_het_atm, 4);
 
-    // F → type 13, Cl → type 14, Br → type 15
-    EXPECT_EQ(atoms[2].type, 13);
-    EXPECT_EQ(atoms[3].type, 14);
-    EXPECT_EQ(atoms[4].type, 15);
+    // F → type 13, Cl → type 14, Br → type 15 (atoms stored 0-based)
+    EXPECT_EQ(atoms[1].type, 13);
+    EXPECT_EQ(atoms[2].type, 14);
+    EXPECT_EQ(atoms[3].type, 15);
 
     // Radii
-    EXPECT_NEAR(atoms[2].radius, 1.47f, 0.01f);  // F
-    EXPECT_NEAR(atoms[3].radius, 1.75f, 0.01f);  // Cl
-    EXPECT_NEAR(atoms[4].radius, 1.85f, 0.01f);  // Br
+    EXPECT_NEAR(atoms[1].radius, 1.47f, 0.01f);  // F
+    EXPECT_NEAR(atoms[2].radius, 1.75f, 0.01f);  // Cl
+    EXPECT_NEAR(atoms[3].radius, 1.85f, 0.01f);  // Br
 
     cleanup_fa(&FA, atoms, residue);
     std::remove(sdf.c_str());
@@ -477,9 +478,9 @@ TEST_F(SdfReaderTest, BondOutOfRangeIgnored) {
     int ok = read_sdf_ligand(&FA, &atoms, &residue, sdf.c_str());
     EXPECT_EQ(ok, 1);
 
-    // Only the valid bond (1-2) should be recorded
+    // Only the valid bond (1-2) should be recorded (atoms stored 0-based)
+    EXPECT_EQ(atoms[0].bond[0], 1);
     EXPECT_EQ(atoms[1].bond[0], 1);
-    EXPECT_EQ(atoms[2].bond[0], 1);
 
     cleanup_fa(&FA, atoms, residue);
     std::remove(sdf.c_str());
