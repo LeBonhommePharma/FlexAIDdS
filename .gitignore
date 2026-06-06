@@ -1,0 +1,11 @@
+# Build directories (CMake / Ninja out-of-source builds)
+/build/
+/build_*/
+build/
+
+# Benchmark run outputs (large, regenerated per run)
+/benchmark_results/
+
+# Editor / OS cruft
+*.swp
+.DS_Store
