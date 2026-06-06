@@ -869,6 +869,7 @@ run_full_astex() {
     # Prefer benchmark_datasets binary if available (handles download + dock atomically)
     if [[ -n "${DATASET_BIN:-}" ]] && [[ "${TWO_PASS}" == false ]]; then
         info "Using benchmark_datasets binary for full Astex run"
+        export FLEXAIDDS_BINARY="${FLEXAIDDS_BIN}"
         run "${DATASET_BIN}" \
             --benchmark   astex \
             --output      "${ast_out}" \
@@ -992,6 +993,7 @@ run_phase2() {
     export SHANNON_TRACE_LEVEL=1   # final H only for non-native cross-docking
 
     if [[ -n "${DATASET_BIN:-}" ]]; then
+        export FLEXAIDDS_BINARY="${FLEXAIDDS_BIN}"
         info "Running Astex Non-Native..."
         run "${DATASET_BIN}" \
             --benchmark   astex_nonnative \

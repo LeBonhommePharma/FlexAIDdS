@@ -20,7 +20,9 @@
 #include "ParallelDock.h"
 #include "ParallelCampaign.h"
 #include "GAContext.h"
+#include "RefLigSeed.h"
 
+#include <algorithm>
 #include <cstring>
 #include <string>
 #include <vector>
@@ -284,6 +286,9 @@ int main(int argc, char **argv){
 	FA->num_grd=0;
 	FA->exclude_het=0;
 	FA->remove_water=1;
+	FA->keep_ions=1;
+	FA->keep_structural_waters=1;
+	FA->structural_water_bfactor_max=20.0f;
 	FA->normalize_area=0;
 
 	FA->recalci=0;
@@ -648,21 +653,24 @@ int main(int argc, char **argv){
 
 		// ── 4. Read receptor PDB ──
 		{
-			// Create temporary cleaned PDB
+			// Create the cleaned receptor beside the output prefix, not beside the
+			// read-only benchmark input.  DatasetRunner uses per-target output dirs,
+			// which keeps concurrent workers isolated and avoids source-tree writes.
 			char tmpprotname[MAX_PATH__];
-			strncpy(tmpprotname, receptor_file, MAX_PATH__ - 20);
-			tmpprotname[MAX_PATH__ - 20] = '\0';
-
-			// Find filename portion and create temp name
-			char* dot = strrchr(tmpprotname, '.');
 			int random_num = static_cast<int>(std::random_device{}() % 900000 + 100000);
-			char random_str[32];
-			snprintf(random_str, sizeof(random_str), "_tmp_%d.pdb", random_num);
-			if (dot) {
-				strcpy(dot, random_str);
-			} else {
-				strcat(tmpprotname, random_str);
+			std::filesystem::path temp_dir = std::filesystem::temp_directory_path();
+			try {
+				std::filesystem::path output_parent = std::filesystem::path(output_prefix).parent_path();
+				if (!output_parent.empty()) {
+					temp_dir = output_parent;
+				}
+				std::filesystem::create_directories(temp_dir);
+			} catch (const std::exception&) {
+				temp_dir = std::filesystem::temp_directory_path();
 			}
+			std::filesystem::path tmp_path = temp_dir / ("flexaid_target_tmp_" + std::to_string(random_num) + ".pdb");
+			strncpy(tmpprotname, tmp_path.string().c_str(), MAX_PATH__ - 1);
+			tmpprotname[MAX_PATH__ - 1] = '\0';
 
 			modify_pdb(const_cast<char*>(receptor_file), tmpprotname, FA->exclude_het, FA->remove_water, FA->is_protein,
 			           FA->keep_ions, FA->keep_structural_waters, FA->structural_water_bfactor_max);
@@ -952,6 +960,58 @@ int main(int argc, char **argv){
 			cleftgrid = generate_grid(FA, spheres, atoms, residue);
 			calc_cleftic(FA, cleftgrid);
 
+			const bool explicit_reflig = FA->reflig_file[0] != '\0';
+			const bool direct_reflig_fallback =
+			    !explicit_reflig && FA->reflig_hetatm_fallback && FA->resligand;
+			if (explicit_reflig || direct_reflig_fallback) {
+				std::vector<int> nearest_grid;
+				float seed[3] = {0.0f, 0.0f, 0.0f};
+
+				if (explicit_reflig) {
+					auto data = reflig::prepare_reflig_seed(
+					    FA->reflig_file, cleftgrid, FA->num_grd, FA->reflig_k_nearest);
+					nearest_grid = data.nearest_grid;
+					seed[0] = data.centroid[0];
+					seed[1] = data.centroid[1];
+					seed[2] = data.centroid[2];
+				} else {
+					int lig_res = FA->resligand->number;
+					int anchor = (residue[lig_res].gpa != NULL)
+					           ? residue[lig_res].gpa[0]
+					           : residue[lig_res].fatm[0];
+					seed[0] = atoms[anchor].coor[0];
+					seed[1] = atoms[anchor].coor[1];
+					seed[2] = atoms[anchor].coor[2];
+
+					std::vector<std::pair<float, int>> distances;
+					distances.reserve(std::max(0, FA->num_grd - 1));
+					for (int gi = 1; gi < FA->num_grd; gi++) {
+						float dx = cleftgrid[gi].coor[0] - seed[0];
+						float dy = cleftgrid[gi].coor[1] - seed[1];
+						float dz = cleftgrid[gi].coor[2] - seed[2];
+						distances.emplace_back(dx*dx + dy*dy + dz*dz, gi);
+					}
+					std::sort(distances.begin(), distances.end(),
+					          [](const auto& a, const auto& b){ return a.first < b.first; });
+					int keep = std::min(FA->reflig_k_nearest,
+					                    static_cast<int>(distances.size()));
+					for (int ni = 0; ni < keep; ni++) {
+						nearest_grid.push_back(distances[ni].second);
+					}
+				}
+
+				free(FA->reflig_nearest_grid);
+				FA->reflig_nearest_count = static_cast<int>(nearest_grid.size());
+				FA->reflig_nearest_grid = static_cast<int*>(
+				    malloc(nearest_grid.size() * sizeof(int)));
+				if (!nearest_grid.empty() && FA->reflig_nearest_grid) {
+					std::copy_n(nearest_grid.data(), nearest_grid.size(),
+					            FA->reflig_nearest_grid);
+				}
+				printf("REFLIG: direct-mode seed (%.1f, %.1f, %.1f), %d nearest points\n",
+				       seed[0], seed[1], seed[2], FA->reflig_nearest_count);
+			}
+
 			// Free spheres linked list
 			while (spheres != NULL) {
 				sphere* prev = spheres->prev;
@@ -1018,6 +1078,11 @@ int main(int argc, char **argv){
 		// Direct mode: set up IC bounds and optimization parameters
 		// (receptor, ligand, and cleft grid were already loaded above)
 		ic_bounds(FA, FA->rngopt);
+		if (FA->reflig_nearest_count > 0) {
+			// In direct redocking, grid index 0 is the input/native ligand
+			// anchor. Reference seeding must be allowed to preserve it.
+			FA->index_min = 0.0;
+		}
 
 		int opt[2];
 		char chain = ' ';
@@ -1077,6 +1142,13 @@ int main(int argc, char **argv){
 		for(i=0;i<FA->atm_cnt_real;i++){
 			VC->Calc[i].atom = NULL;
 			VC->Calc[i].residue = NULL;
+			VC->Calc[i].boxnum = -1;
+			VC->Calc[i].score = false;
+			VC->Calc[i].ca_index = -1;
+			VC->Calc[i].SAS = 0.0;
+			VC->Calc[i].vol = 0.0;
+			VC->Calc[i].done = 'N';
+			VC->Calc[i].source = '\0';
 			VC->Calc[i].exposed = true;
 		}
 

@@ -139,6 +139,14 @@ inline json::Value flexaid_default_config() {
             {"omit_buried",                 V(false)},
         })},
 
+        // ── Reference Ligand Seeding ─────────────────────────────
+        {"reference_ligand", V(O{
+            {"file",             V("")},
+            {"seed_fraction",    V(0.25)},
+            {"k_nearest",        V(10)},
+            {"hetatm_fallback",  V(true)},
+        })},
+
         // ── Advanced ─────────────────────────────────────────────
         {"advanced", V(O{
             {"vcontacts_index",    V(false)},

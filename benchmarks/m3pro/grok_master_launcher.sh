@@ -521,8 +521,23 @@ import json, sys
 data = json.load(open('$STATUS_FILE'))
 print(f\"Status: {data.get('overall_status')}\")
 print(f\"Stability: {data.get('stability_percent')}% sufficient metrics\")
-if data.get('success_rate', {}).get('average'):
+if data.get('success_rate', {}).get('average') is not None:
     print(f\"Avg Success Rate: {data['success_rate']['average']:.3f}\")
+rates = {}
+for name, value in (data.get('dataset_success_rates') or {}).items():
+    mean = value.get('mean') if isinstance(value, dict) else value
+    if mean is not None:
+        rates[name] = mean
+if not rates:
+    for ds in data.get('details', []):
+        sr = ds.get('metrics', {}).get('success_rate', {})
+        mean = sr.get('mean')
+        if mean is not None:
+            rates[ds.get('dataset', 'unknown')] = mean
+if rates:
+    print('Per-dataset success rates:')
+    for name in sorted(rates):
+        print(f\"  {name}: {rates[name]:.3f}\")
 print('Actionable:', data.get('actionable'))
 " 2>/dev/null || cat "$STATUS_FILE"
         fi
@@ -562,8 +577,23 @@ import json
 data = json.load(open("'"$STATUS_FILE"'"))
 print(f"Status          : {data.get(\"overall_status\")}")
 print(f"Stability       : {data.get(\"stability_percent\")}%")
-if data.get("success_rate", {}).get("average"):
+if data.get("success_rate", {}).get("average") is not None:
     print(f"Avg Success Rate: {data[\"success_rate\"][\"average\"]:.3f}")
+rates = {}
+for name, value in (data.get("dataset_success_rates") or {}).items():
+    mean = value.get("mean") if isinstance(value, dict) else value
+    if mean is not None:
+        rates[name] = mean
+if not rates:
+    for ds in data.get("details", []):
+        sr = ds.get("metrics", {}).get("success_rate", {})
+        mean = sr.get("mean")
+        if mean is not None:
+            rates[ds.get("dataset", "unknown")] = mean
+if rates:
+    print("Per-dataset success rates:")
+    for name in sorted(rates):
+        print(f"  {name}: {rates[name]:.3f}")
 print("Actionable      :", data.get("actionable"))
 print("Requires attention:", data.get("requires_attention"))
 ' 2>/dev/null || cat "$STATUS_FILE"

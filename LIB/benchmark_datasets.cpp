@@ -27,6 +27,7 @@
 #include <fstream>
 #include <iostream>
 #include <numeric>
+#include <set>
 #include <sstream>
 #include <iomanip>
 #include <ctime>
@@ -65,6 +66,7 @@ static void print_usage(const char* progname) {
     printf("  --force               Re-run even if results already exist\n");
     printf("  --prepare-only        Download and prepare only (no docking)\n");
     printf("  --list-codes          List PDB codes for a dataset and exit\n");
+    printf("  --only-codes <list>   Restrict dataset run to comma/space-separated PDB codes, or a file\n");
     printf("  --ga-generations <N>  GA generations (default: 500)\n");
     printf("  --ga-population <N>   GA population size (default: 1000)\n");
     printf("  --grid-spacing <F>    Grid spacing in Å (default: 0.375; use 0.5 for coarse pass)\n");
@@ -201,6 +203,69 @@ static void list_pdb_codes(dataset::BenchmarkSet set) {
     if (col % 12 != 0) printf("\n");
 }
 
+static std::string uppercase_code(std::string code) {
+    std::transform(code.begin(), code.end(), code.begin(),
+                   [](unsigned char c) { return static_cast<char>(std::toupper(c)); });
+    return code;
+}
+
+static std::vector<std::string> parse_only_codes(const std::string& spec) {
+    std::vector<std::string> codes;
+    if (spec.empty()) return codes;
+
+    std::stringstream input;
+    if (fs::exists(spec)) {
+        std::ifstream ifs(spec);
+        if (!ifs) {
+            std::cerr << "ERROR: cannot open --only-codes file: " << spec << "\n";
+            return codes;
+        }
+        input << ifs.rdbuf();
+    } else {
+        input << spec;
+    }
+
+    std::string text = input.str();
+    for (char& ch : text) {
+        if (ch == ',' || ch == ';' || ch == '\n' || ch == '\r' || ch == '\t') ch = ' ';
+    }
+
+    std::istringstream iss(text);
+    std::string code;
+    while (iss >> code) {
+        auto hash = code.find('#');
+        if (hash == 0) {
+            std::string ignored;
+            std::getline(iss, ignored);
+            continue;
+        }
+        if (hash != std::string::npos) code.erase(hash);
+        code = uppercase_code(code);
+        if (code.size() == 4) codes.push_back(code);
+    }
+    return codes;
+}
+
+static void filter_entries_by_code(std::vector<dataset::DatasetEntry>& entries,
+                                   const std::vector<std::string>& only_codes) {
+    if (only_codes.empty()) return;
+
+    std::set<std::string> wanted;
+    for (const auto& code : only_codes) wanted.insert(uppercase_code(code));
+
+    std::vector<dataset::DatasetEntry> filtered;
+    filtered.reserve(entries.size());
+    for (auto& entry : entries) {
+        if (wanted.count(uppercase_code(entry.pdb_id))) {
+            filtered.push_back(std::move(entry));
+        }
+    }
+
+    std::cout << "  --only-codes selected " << filtered.size()
+              << " / " << wanted.size() << " requested entries\n";
+    entries = std::move(filtered);
+}
+
 /// Write Fleet-compatible JSON chunk result.
 static void write_fleet_json(const std::string& json_path,
                               const std::string& chunk_id,
@@ -278,13 +343,15 @@ static dataset::BenchmarkReport run_single_benchmark(const std::string& name,
                                   dataset::DatasetRunner& runner,
                                   const dataset::DockingConfig& config,
                                   bool prepare_only,
-                                  bool list_codes_only) {
+                                  bool list_codes_only,
+                                  const std::vector<std::string>& only_codes) {
     using BS = dataset::BenchmarkSet;
 
     // Check for special prefixes: doi: and pdb_list:
     if (name.substr(0, 4) == "doi:") {
         std::string doi = name.substr(4);
         auto entries = runner.prepare_from_doi(doi);
+        filter_entries_by_code(entries, only_codes);
         if (!prepare_only && !entries.empty()) {
             auto report = runner.run(entries, config);
             print_publication_table(report);
@@ -295,6 +362,7 @@ static dataset::BenchmarkReport run_single_benchmark(const std::string& name,
     if (name.substr(0, 9) == "pdb_list:") {
         std::string file_path = name.substr(9);
         auto entries = runner.prepare_from_pdb_list(file_path);
+        filter_entries_by_code(entries, only_codes);
         if (!prepare_only && !entries.empty()) {
             auto report = runner.run(entries, config);
             print_publication_table(report);
@@ -316,6 +384,7 @@ static dataset::BenchmarkReport run_single_benchmark(const std::string& name,
     }
 
     auto entries = runner.prepare(*bs);
+    filter_entries_by_code(entries, only_codes);
     printf("  → %zu entries prepared\n", entries.size());
     // P1 diagnostic (additive, non-behavior): explicit T + progress for early diagnosis of best BindingMode runs
     printf("  [P1] Docking phase starting for best BindingMode search at temperature from config (exact 298/310 K fidelity required). Live progress + run_status sidecar will be emitted during run(entries).\n");
@@ -358,6 +427,7 @@ int main(int argc, char** argv) {
     double temperature = 0.0;
     double grid_spacing = 0.0;
     std::string clustering;
+    std::vector<std::string> only_codes;
     // Fleet mode options
     bool fleet_mode = false;
     std::string chunk_id;
@@ -401,6 +471,10 @@ int main(int argc, char** argv) {
         }
         if (arg == "--list-codes") {
             list_codes_only = true;
+            continue;
+        }
+        if (arg == "--only-codes" && i + 1 < argc) {
+            only_codes = parse_only_codes(argv[++i]);
             continue;
         }
         if (arg == "--force") {
@@ -524,7 +598,7 @@ int main(int argc, char** argv) {
             std::cout << "  Running: " << name << "\n";
             std::cout << "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n";
 
-            run_single_benchmark(name, runner, config, prepare_only, list_codes_only);
+            run_single_benchmark(name, runner, config, prepare_only, list_codes_only, only_codes);
         }
 
         // Print combined summary
@@ -532,7 +606,7 @@ int main(int argc, char** argv) {
         std::cout << "  All benchmarks completed. Results in: " << output_dir << "\n";
         std::cout << "═══════════════════════════════════════════════════════════════\n";
     } else {
-        auto report = run_single_benchmark(benchmark_name, runner, config, prepare_only, list_codes_only);
+        auto report = run_single_benchmark(benchmark_name, runner, config, prepare_only, list_codes_only, only_codes);
 
         // Fleet mode: emit JSON chunk result
         if (fleet_mode && report.total_systems > 0) {

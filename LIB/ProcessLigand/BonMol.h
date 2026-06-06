@@ -444,35 +444,9 @@ public:
             r.error = "molecule too large (> 500 heavy atoms); possible macrocycle or peptide";
             return r;
         }
-        // Peptide backbone check: look for N-Cα-C(=O)-N pattern
-        // A simplistic heuristic: if we find 3+ amide bonds, flag as peptide.
-        int amide_count = 0;
-        for (const auto& b : bonds) {
-            if (b.order == BondOrder::SINGLE) {
-                bool ij_nc = (atoms[b.atom_i].element == Element::N &&
-                              atoms[b.atom_j].element == Element::C) ||
-                             (atoms[b.atom_j].element == Element::N &&
-                              atoms[b.atom_i].element == Element::C);
-                if (ij_nc) {
-                    // Check if the C has a =O neighbour
-                    int c_idx = (atoms[b.atom_i].element == Element::C) ? b.atom_i : b.atom_j;
-                    for (int nb : adjacency[c_idx]) {
-                        int bidx2 = find_bond(c_idx, nb);
-                        if (bidx2 >= 0 &&
-                            bonds[bidx2].order == BondOrder::DOUBLE &&
-                            atoms[nb].element == Element::O) {
-                            ++amide_count;
-                            break;
-                        }
-                    }
-                }
-            }
-        }
-        if (amide_count >= 3) {
-            r.has_peptide_backbone = true;
-            r.error = "molecule appears to be a peptide (>= 3 amide bonds)";
-            return r;
-        }
+        // Do not reject by amide count alone. Cofactors such as FAD/NAD(P)
+        // legitimately contain several C(=O)-N motifs and are benchmark
+        // ligands, not peptide backbones.
         // Macrocycle check: ring size > 12
         for (const auto& ring : rings) {
             if (ring.size > 12) {

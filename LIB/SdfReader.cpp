@@ -1,4 +1,5 @@
 #include "SdfReader.h"
+#include "ProcessLigand/ProcessLigand.h"
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -188,6 +189,29 @@ int read_sdf_ligand(FA_Global* FA, atom** atoms, resid** residue,
     int nbonds_actual = (int)sbonds.size();
     printf("read_sdf_ligand: %d atoms, %d bonds\n", natoms, nbonds_actual);
 
+    std::vector<int> perceived_types(natoms, 0);
+    {
+        bonmol::ProcessOptions opts;
+        opts.input = sdf_file;
+        opts.format = bonmol::InputFormat::SDF;
+        opts.write_inp = false;
+        opts.write_ga = false;
+
+        bonmol::ProcessLigand pl;
+        auto result = pl.run(opts);
+        if (result.success && result.mol.num_atoms() == natoms) {
+            for (int ai = 0; ai < natoms; ++ai) {
+                int t = result.mol.atoms[ai].sybyl_type;
+                if (t > 0 && t <= FA->ntypes)
+                    perceived_types[ai] = t;
+            }
+            printf("read_sdf_ligand: using ProcessLigand SYBYL typing\n");
+        } else if (!result.success) {
+            printf("read_sdf_ligand: ProcessLigand typing unavailable: %s\n",
+                   result.error.c_str());
+        }
+    }
+
     /* ── Populate FA structures (same pattern as read_lig / Mol2Reader) ── */
 
     FA->optres = (OptRes*)malloc(FA->MIN_OPTRES * sizeof(OptRes));
@@ -262,7 +286,8 @@ int read_sdf_ligand(FA_Global* FA, atom** atoms, resid** residue,
         strncpy(a.element, satoms[ai].elem, 2);
         a.element[2] = '\0';
 
-        a.type   = element_to_flexaid_type(satoms[ai].elem);
+        a.type   = perceived_types[ai] ? perceived_types[ai]
+                                       : element_to_flexaid_type(satoms[ai].elem);
         a.radius = element_radius(satoms[ai].elem);
         a.ofres  = FA->res_cnt;
         a.recs   = 'f';

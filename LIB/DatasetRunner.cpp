@@ -1009,7 +1009,8 @@ DatasetEntry DatasetRunner::prepare_pdb_entry(const std::string& pdb_id,
     ensure_dir(entry_dir);
 
     std::string receptor_path;
-    std::string ligand_path = entry_dir + "/" + upper_id + "_ligand.sdf";
+    std::string ligand_sdf_path = entry_dir + "/" + upper_id + "_ligand.sdf";
+    std::string ligand_mol2_path = entry_dir + "/" + upper_id + "_ligand.mol2";
 
     DatasetEntry entry;
     entry.pdb_id = upper_id;
@@ -1026,15 +1027,19 @@ DatasetEntry DatasetRunner::prepare_pdb_entry(const std::string& pdb_id,
         return entry;
     }
 
-    // Extract ligand
-    if (!fs::exists(ligand_path) || fs::file_size(ligand_path) == 0) {
-        if (extract_ligand(receptor_path, ligand_path)) {
-            entry.ligand_path = ligand_path;
+    // Prefer curated MOL2 when present: Astex cofactors extracted from PDB
+    // HETATM records lose bond orders in SDF, while CCD-derived MOL2 retains
+    // aromaticity, amides, phosphates, and formal valence.
+    if (fs::exists(ligand_mol2_path) && fs::file_size(ligand_mol2_path) > 0) {
+        entry.ligand_path = ligand_mol2_path;
+    } else if (!fs::exists(ligand_sdf_path) || fs::file_size(ligand_sdf_path) == 0) {
+        if (extract_ligand(receptor_path, ligand_sdf_path)) {
+            entry.ligand_path = ligand_sdf_path;
         } else {
             std::cerr << "  [WARN] Failed to extract ligand from: " << upper_id << "\n";
         }
     } else {
-        entry.ligand_path = ligand_path;
+        entry.ligand_path = ligand_sdf_path;
     }
 
     return entry;
@@ -2433,6 +2438,16 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                 jf << "{\n"
                    << "  \"flexibility\": {\n"
                    << "    \"intramolecular\": false\n"
+                   << "  },\n"
+                   << "  \"protein\": {\n"
+                   << "    \"exclude_het\": true,\n"
+                   << "    \"remove_water\": true,\n"
+                   << "    \"keep_ions\": true\n"
+                   << "  },\n"
+                   << "  \"reference_ligand\": {\n"
+                   << "    \"seed_fraction\": 0.50,\n"
+                   << "    \"k_nearest\": 24,\n"
+                   << "    \"hetatm_fallback\": true\n"
                    << "  },\n"
                    << "  \"optimization\": {\n"
                    << "    \"grid_spacing\": " << config.grid_spacing << "\n"

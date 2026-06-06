@@ -95,36 +95,22 @@ int compute_implicit_h(const BonMol& mol, int atom_idx) {
         default: break;
     }
 
-    // Current bond order sum (aromatic bonds count as 1.5)
-    [[maybe_unused]] float bos = mol.bond_order_sum(atom_idx);
+    // Use the same effective bond-order model as validation. Aromatic bonds
+    // count as 1.5, so benzene-like carbons with two aromatic bonds receive
+    // one implicit H instead of two.
+    float bos = mol.bond_order_sum(atom_idx);
 
-    // For implicit H, use integer bond order (aromatic = 1)
-    // Count aromatic bonds and adjust
-    [[maybe_unused]] int  arom_bonds = 0;
-    float adj_bos   = 0.0f;
-    for (int bidx : mol.bond_adj[atom_idx]) {
-        const Bond& b = mol.bonds[bidx];
-        if (b.is_aromatic || b.order == BondOrder::AROMATIC) {
-            adj_bos += 1.0f; // count as 1 for H estimation
-            ++arom_bonds;
-        } else {
-            adj_bos += static_cast<float>(static_cast<uint8_t>(b.order));
-        }
-    }
-
-    int bos_int = static_cast<int>(std::round(adj_bos));
-
-    // Find smallest valid valence >= bos_int
+    // Find smallest valid valence >= current bond-order sum.
     auto valences = expected_valences(a.element, a.formal_charge);
     std::sort(valences.begin(), valences.end());
 
     int target = -1;
     for (int v : valences) {
-        if (v >= bos_int) { target = v; break; }
+        if (static_cast<float>(v) + 0.05f >= bos) { target = v; break; }
     }
     if (target < 0) return 0; // over-valenced already
 
-    int h = target - bos_int;
+    int h = static_cast<int>(std::round(static_cast<float>(target) - bos));
     return std::max(0, h);
 }
 
@@ -138,6 +124,14 @@ ValenceCheckResult check_valence(BonMol& mol) {
 
     for (int i = 0; i < mol.num_atoms(); ++i) {
         Atom& a = mol.atoms[i];
+
+        // H-stripped crystallographic SDF/MOL2 inputs still carry normal
+        // heavy-atom bond orders. Infer implicit H before checking valence so
+        // neutral O/N/C centers are validated against their completed valence.
+        if (a.implicit_h_count == 0 &&
+            a.element != Element::H) {
+            a.implicit_h_count = compute_implicit_h(mol, i);
+        }
 
         // Compute bond order sum (aromatic = 1.5)
         float bos = mol.bond_order_sum(i);
@@ -206,11 +200,6 @@ ValenceCheckResult check_valence(BonMol& mol) {
             }
         }
 
-        // Update implicit H if not already set from SMILES bracket
-        if (a.implicit_h_count == 0 &&
-            a.element != Element::H) {
-            a.implicit_h_count = compute_implicit_h(mol, i);
-        }
     }
 
     return result;

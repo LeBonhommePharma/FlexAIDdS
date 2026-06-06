@@ -111,19 +111,31 @@ cfstr ic2cf(FA_Global* FA,VC_Global* VC,atom* atoms,resid* residue,
 		alter_mode(atoms,residue,FA->normal_grid[normalmode],FA->res_cnt,FA->normal_modes);
 	}
 
-	// Save FA->ori and moved-atom Cartesian coordinates before any modification.
-	// Serial callers (reproduce()) share the global FA and atoms[]; if buildcc
-	// produces an out-of-bounds pose we must restore both so the next evaluation
-	// starts from a clean state rather than inheriting corrupted values.
+	// Save FA->ori and the mutable atom/residue state before any modification.
+	// ic2cf() is called repeatedly on shared atom/residue buffers in serial
+	// paths, so every evaluation must leave the caller's baseline unchanged.
 	float ori_save[3] = {FA->ori[0], FA->ori[1], FA->ori[2]};
-	struct SavedCoor { int idx; float c[3]; };
-	std::vector<SavedCoor> saved_coors;
-	saved_coors.reserve(64);
+	struct SavedAtom { int idx; atom value; };
+	struct SavedResidueRot { int idx; int rot; };
+	std::vector<SavedAtom> saved_atoms;
+	std::vector<SavedResidueRot> saved_res_rots;
+	std::vector<char> saved_res_seen(FA->res_cnt + 1, 0);
+	saved_atoms.reserve(64);
+	saved_res_rots.reserve(16);
 	for (int r = 0; r < FA->nors; ++r)
 		for (int m = 0; m < FA->nmov[r]; ++m) {
 			int ai = FA->mov[r][m];
-			saved_coors.push_back({ai, {atoms[ai].coor[0], atoms[ai].coor[1], atoms[ai].coor[2]}});
+			saved_atoms.push_back({ai, atoms[ai]});
 		}
+	for (i = 0; i < npar; ++i) {
+		if (FA->map_par[i].typ == 4) {
+			int ri = atoms[FA->map_par[i].atm].ofres;
+			if (ri >= 0 && ri <= FA->res_cnt && !saved_res_seen[ri]) {
+				saved_res_rots.push_back({ri, residue[ri].rot});
+				saved_res_seen[ri] = 1;
+			}
+		}
+	}
 
 	/* rebuild cartesian coordinates of optimized residues*/
 	for(i=0;i<FA->nors;i++){ //number of optimized residues
@@ -154,10 +166,11 @@ cfstr ic2cf(FA_Global* FA,VC_Global* VC,atom* atoms,resid* residue,
 			FA->ori[0] = ori_save[0];
 			FA->ori[1] = ori_save[1];
 			FA->ori[2] = ori_save[2];
-			for (auto& sa : saved_coors) {
-				atoms[sa.idx].coor[0] = sa.c[0];
-				atoms[sa.idx].coor[1] = sa.c[1];
-				atoms[sa.idx].coor[2] = sa.c[2];
+			for (const auto& sa : saved_atoms) {
+				atoms[sa.idx] = sa.value;
+			}
+			for (const auto& sr : saved_res_rots) {
+				residue[sr.idx].rot = sr.rot;
 			}
 			cfstr cf_oob{};
 			cf_oob.com = 99999.0;
@@ -423,12 +436,21 @@ cfstr ic2cf(FA_Global* FA,VC_Global* VC,atom* atoms,resid* residue,
     
 	}
 
-	// Restore FA->ori so the next ic2cf call starts from a consistent reference
-	// frame. The GPA frame-tracking code shifts FA->ori to track GPA0 so that
-	// GPA1/GPA2 reconstruction uses a consistent rotation reference, but ori
-	// must be reset to the receptor centre before returning — otherwise ori
-	// drifts cumulatively across evaluations and cleftgrid ICs (computed once
-	// relative to the original ori) become mismatched.
+	// Restore FA->ori only — NOT atoms[] — on the normal scoring exit.
+	//
+	// FA->ori is global scratch that drifts cumulatively if not reset; always
+	// restore it so the next ic2cf call uses the correct receptor-centre frame.
+	//
+	// atoms[] and residue[].rot are intentionally NOT restored here.
+	// The GA parallel path works on thread-private copies that are discarded
+	// after scoring, so atom state persistence doesn't matter.
+	// The serial output path (cluster.cpp:240→302, top.cpp:1242→1287) calls
+	// ic2cf precisely to populate atoms[] with the final docked Cartesian pose,
+	// then immediately passes atoms[] to write_pdb.  Restoring atoms on normal
+	// exit would silently write the pre-call (initial) structure — every cluster
+	// output PDB would be a copy of the start conformation, not the docked pose.
+	// Atom restore belongs only on the OOB/penalty early-exit path above, where
+	// we must leave a clean baseline for the next chromosome evaluation.
 	FA->ori[0] = ori_save[0];
 	FA->ori[1] = ori_save[1];
 	FA->ori[2] = ori_save[2];
