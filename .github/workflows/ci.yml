@@ -258,10 +258,12 @@ jobs:
       - name: Verify reproducibility package and per-entry artifacts
         run: |
           echo "=== Validation package contents ==="
-          ls -la results/ci_datasetrunner_test/flexaidds_validation_package_*.zip || (echo "No validation package found!" && exit 1)
+          # The package is written next to (the parent of) --results-dir so that
+          # re-runs don't recursively archive a previous package.
+          ls -la results/flexaidds_validation_package_*.zip || (echo "No validation package found!" && exit 1)
 
           echo "=== Checking for per-entry manifest (new feature) ==="
-          unzip -l results/ci_datasetrunner_test/flexaidds_validation_package_*.zip | grep -E '(_entry_manifest|VALIDATION_SUMMARY|REPRODUCIBILITY)' || echo "Warning: expected per-entry files not found in package"
+          unzip -l results/flexaidds_validation_package_*.zip | grep -E '(_entry_manifest|VALIDATION_SUMMARY|REPRODUCIBILITY)' || echo "Warning: expected per-entry files not found in package"
 
           echo "=== Checking generated reports ==="
           ls -la results/ci_datasetrunner_test/report_*.md results/ci_datasetrunner_test/astex_diverse/tier1/_entry_manifest.json 2>/dev/null || echo "Per-entry artifacts present as expected"

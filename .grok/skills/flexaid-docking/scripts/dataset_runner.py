@@ -593,8 +593,21 @@ def main() -> int:
     binary_for_meta = args.binary
     metadata = gather_reproducibility_metadata(args, binary_for_meta)
 
+    # The real module lives in the repo's python/ package dir, which is not
+    # necessarily installed or on PYTHONPATH (e.g. CI runs this wrapper directly
+    # without `pip install -e python/`). Inject it so `-m flexaidds.dataset_runner`
+    # resolves regardless of how the wrapper is invoked.
+    sub_env = os.environ.copy()
+    repo_root = Path(__file__).resolve().parents[4]
+    python_pkg_dir = repo_root / "python"
+    if python_pkg_dir.is_dir():
+        existing_pp = sub_env.get("PYTHONPATH", "")
+        sub_env["PYTHONPATH"] = (
+            str(python_pkg_dir) + (os.pathsep + existing_pp if existing_pp else "")
+        )
+
     try:
-        result = subprocess.run(cmd, check=False)
+        result = subprocess.run(cmd, check=False, env=sub_env)
 
         if args.package and result.returncode == 0:
             results_dir = Path(args.results_dir)
