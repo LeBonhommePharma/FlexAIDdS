@@ -458,9 +458,15 @@ TEST(ReportGeneration, WithResults) {
     report.spearman_rho = 0.82;
     report.kendall_tau = 0.70;
 
-    DockingResult r1{"1ABC", -8.5f, 0.9f, -8.5f, -6.0f, -2.5f, 3.2f, 15, 12.5, true};
-    DockingResult r2{"2DEF", -7.2f, 1.5f, -7.2f, -5.0f, -2.2f, 2.8f, 10, 15.0, true};
-    DockingResult r3{"3GHI", -5.0f, 3.5f, -5.0f, -3.0f, -2.0f, 4.1f, 5, 20.0, false};
+    DockingResult r1{.pdb_id="1ABC", .best_score=-8.5f, .rmsd_to_crystal=0.9f,
+                     .predicted_dG=-8.5f, .predicted_dH=-6.0f, .predicted_TdS=-2.5f,
+                     .predicted_IEE=3.2f, .num_poses=15, .wall_time_s=12.5, .success=true};
+    DockingResult r2{.pdb_id="2DEF", .best_score=-7.2f, .rmsd_to_crystal=1.5f,
+                     .predicted_dG=-7.2f, .predicted_dH=-5.0f, .predicted_TdS=-2.2f,
+                     .predicted_IEE=2.8f, .num_poses=10, .wall_time_s=15.0, .success=true};
+    DockingResult r3{.pdb_id="3GHI", .best_score=-5.0f, .rmsd_to_crystal=3.5f,
+                     .predicted_dG=-5.0f, .predicted_dH=-3.0f, .predicted_TdS=-2.0f,
+                     .predicted_IEE=4.1f, .num_poses=5, .wall_time_s=20.0, .success=false};
     report.results = {r1, r2, r3};
 
     std::string test_dir = "/tmp/flexaidds_test_report2";

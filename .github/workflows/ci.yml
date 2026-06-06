@@ -93,14 +93,15 @@ jobs:
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
-          submodules: recursive
+          submodules: false
       - name: Install Linux dependencies
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
           # gcc-14 / clang-18 are required for C++26 support (see CMakeLists.txt compiler gate).
-          # Eigen3 is vendored in LIB/vendor/eigen — no libeigen3-dev needed.
-          PKGS="cmake ninja-build libomp-dev gcc-14 g++-14 clang-18"
+          # libeigen3-dev: vendored copy lives in LIB/vendor/eigen but submodule fetch is
+          # skipped in CI (shallow clone + broken gitlink) — system Eigen is equivalent.
+          PKGS="cmake ninja-build libomp-dev gcc-14 g++-14 clang-18 libeigen3-dev"
           if [ "${{ matrix.name }}" = "linux-gcc-mpi" ]; then
             PKGS="$PKGS libopenmpi-dev openmpi-bin"
           fi
@@ -109,14 +110,13 @@ jobs:
         if: runner.os == 'macOS'
         run: |
           # Apple Clang ≥ 16 (Xcode 16) is required for C++26.
-          # Eigen3 is vendored in LIB/vendor/eigen — no brew install eigen needed.
+          # Eigen3: system install via brew; vendored submodule skipped in CI.
           sudo xcode-select -s /Applications/Xcode_16.app || true
-          brew install cmake ninja libomp
+          brew install cmake ninja libomp eigen
       - name: Install Windows dependencies
         if: runner.os == 'Windows'
         run: |
-          # Eigen3 is vendored in LIB/vendor/eigen — no choco install eigen needed.
-          choco install ninja -y
+          choco install ninja eigen -y
         shell: cmd
       - name: Configure
         shell: bash
@@ -162,7 +162,7 @@ jobs:
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
-          submodules: recursive
+          submodules: false
       - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6
         with:
           python-version: '3.11'
@@ -171,8 +171,8 @@ jobs:
         run: |
           sudo apt-get update
           # gcc-14 is required for C++26 support (see CMakeLists.txt compiler gate).
-          # Eigen3 is vendored in LIB/vendor/eigen — no libeigen3-dev needed.
-          sudo apt-get install -y cmake ninja-build gcc-14 g++-14
+          # libeigen3-dev: system Eigen used in CI (submodule fetch skipped, see cxx_core_build).
+          sudo apt-get install -y cmake ninja-build gcc-14 g++-14 libeigen3-dev
           echo "CC=gcc-14" >> "$GITHUB_ENV"
           echo "CXX=g++-14" >> "$GITHUB_ENV"
           python -m pip install --upgrade pip
@@ -181,7 +181,6 @@ jobs:
         if: runner.os == 'Windows'
         shell: cmd
         run: |
-          # eigen: belt-and-suspenders for CI — local builds use LIB/vendor/eigen submodule.
           choco install ninja eigen -y
           python -m pip install --upgrade pip
           python -m pip install "pybind11[global]" pytest numpy
@@ -240,10 +239,11 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Install minimal dependencies for the skill
+      - name: Install flexaidds and skill dependencies
         run: |
           python -m pip install --upgrade pip
           python -m pip install pyyaml numpy
+          pip install -e python/
 
       - name: Run tiny DatasetRunner validation with new features
         run: |

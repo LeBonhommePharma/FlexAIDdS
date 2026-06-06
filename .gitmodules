@@ -1,0 +1,4 @@
+[submodule "LIB/vendor/eigen"]
+	path = LIB/vendor/eigen
+	url = https://gitlab.com/libeigen/eigen.git
+	shallow = true
