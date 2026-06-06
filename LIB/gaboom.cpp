@@ -170,6 +170,17 @@ int GA(FA_Global* FA, GB_Global* GB,VC_Global* VC,chromosome** chrom,chromosome*
 
 	printf("file in GA is <%s>\n",gainpfile);
 
+	// Entropy convergence — enabled by default; ENTRCNVG=0 in gainp to disable.
+	// These MUST be set unconditionally: the no-GA-input-file path (JSON
+	// --config benchmark runs) does not read a gainp file, so leaving
+	// entropy_check_interval at 0 caused an integer modulo-by-zero (SIGFPE)
+	// at generation 0 in the H-plateau / entropy-convergence checks below.
+	// The gainp path may still override these values via read_gainputs().
+	GB->entropy_convergence    = 1;
+	GB->entropy_check_interval = GA_DEFAULT_ENTROPY_CHECK_INTERVAL;
+	GB->entropy_window         = GA_DEFAULT_ENTROPY_WINDOW;
+	GB->entropy_rel_threshold  = GA_DEFAULT_ENTROPY_REL_THRESHOLD;
+
 	if (gainpfile[0] != '\0') {
 		//GB->rrg_skip=0;
 		GB->adaptive_ga=0;
@@ -177,17 +188,18 @@ int GA(FA_Global* FA, GB_Global* GB,VC_Global* VC,chromosome** chrom,chromosome*
 		GB->print_int=GA_DEFAULT_PRINT_INT;
 		GB->seed = GA_DEFAULT_SEED;
 
-	// Entropy convergence — enabled by default; ENTRCNVG=0 in gainp to disable.
-	GB->entropy_convergence    = 1;
-	GB->entropy_check_interval = GA_DEFAULT_ENTROPY_CHECK_INTERVAL;
-	GB->entropy_window         = GA_DEFAULT_ENTROPY_WINDOW;
-	GB->entropy_rel_threshold  = GA_DEFAULT_ENTROPY_REL_THRESHOLD;
-
-	printf("file in GA is <%s>\n",gainpfile);
+		printf("file in GA is <%s>\n",gainpfile);
 
 		read_gainputs(FA,GB,&geninterval,&popszpartition,gainpfile);
 	} else {
 		printf("No GA input file — using pre-configured parameters\n");
+	}
+
+	// Defensive clamp: a zero (or negative) check interval reaches three
+	// integer division / modulo sites in the generation loop below and would
+	// raise SIGFPE. Guarantee a sane value no matter how it was configured.
+	if (GB->entropy_check_interval <= 0) {
+		GB->entropy_check_interval = GA_DEFAULT_ENTROPY_CHECK_INTERVAL;
 	}
 	unsigned int tt;
 	if (GB->seed==0)
