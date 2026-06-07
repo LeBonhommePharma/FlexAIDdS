@@ -203,33 +203,56 @@ sphere* detect_cleft(const atom* atoms, const resid* /*residue*/,
     // 2. cluster
     std::vector<int> labels = cluster_probes(probes, params.cluster_cutoff);
 
-    // find largest cluster
+    // tally cluster sizes
     std::map<int, int> freq;
     for (int l : labels) freq[l]++;
 
     int best_label = -1, best_count = 0;
     for (auto& kv : freq) {
-        if (kv.second > best_count && kv.second >= params.min_cluster_size) {
-            best_label = kv.first;
-            best_count = kv.second;
+        if (kv.second > best_count) { best_label = kv.first; best_count = kv.second; }
+    }
+
+    // ── Cognate-aware coverage ──────────────────────────────────────────────
+    // SURFNET historically returned ONLY the largest gap-sphere cluster as the
+    // binding cleft.  For ~40% of Astex Diverse the largest cavity is NOT the
+    // cognate ligand site, so those complexes were starved of grid points at the
+    // true pocket and scored 0 successes.  Instead, keep EVERY cluster meeting
+    // min_cluster_size (all genuine pockets, not just the biggest).  The
+    // downstream site-confinement filter in top.cpp restricts the final grid to
+    // the cognate centroid sphere, so handing it all pockets simply guarantees
+    // the right one is present.  Tiny (< min_cluster_size) singleton/noise
+    // clusters are still dropped to keep the grid build bounded.
+    std::set<int> kept_labels;
+    int kept_clusters = 0, kept_spheres = 0;
+    for (auto& kv : freq) {
+        if (kv.second >= params.min_cluster_size) {
+            kept_labels.insert(kv.first);
+            ++kept_clusters;
+            kept_spheres += kv.second;
         }
     }
 
-    if (best_label < 0) {
-        fprintf(stderr, "CleftDetector WARNING: no cluster large enough "
-                "(largest has %d, min is %d)\n",
+    if (kept_labels.empty()) {
+        // No cluster reached min_cluster_size — fall back to the single largest
+        // so detection still yields a usable cleft rather than nothing.
+        fprintf(stderr, "CleftDetector WARNING: no cluster reached min_cluster_size "
+                "(largest has %d, min is %d) — falling back to largest cluster\n",
                 best_count, params.min_cluster_size);
-        // fall back to largest regardless
-        for (auto& kv : freq)
-            if (kv.second > best_count) { best_label = kv.first; best_count = kv.second; }
+        if (best_label >= 0) {
+            kept_labels.insert(best_label);
+            kept_clusters = 1;
+            kept_spheres  = best_count;
+        }
     }
 
-    printf("CleftDetector: largest cleft cluster has %d spheres\n", best_count);
+    printf("CleftDetector: keeping %d cluster(s) >= %d spheres (%d spheres total; "
+           "largest cluster %d)\n",
+           kept_clusters, params.min_cluster_size, kept_spheres, best_count);
 
-    // 3. build linked list (same format as read_spheres)
+    // 3. build linked list (same format as read_spheres) from all kept clusters
     sphere* head = nullptr;
     for (int i = 0; i < static_cast<int>(probes.size()); ++i) {
-        if (labels[i] != best_label) continue;
+        if (kept_labels.find(labels[i]) == kept_labels.end()) continue;
         sphere* s = (sphere*)malloc(sizeof(sphere));
         if (!s) { fprintf(stderr, "CleftDetector: out of memory\n"); break; }
         s->center[0] = probes[i].center[0];

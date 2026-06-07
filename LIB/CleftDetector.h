@@ -11,7 +11,10 @@
  *   2. Shrink the probe until no other protein atom penetrates it
  *      (or discard if radius falls below a minimum).
  *   3. Cluster surviving spheres by spatial proximity (single-linkage)
- *      and keep the largest cluster as the primary cleft.
+ *      and keep EVERY cluster meeting min_cluster_size (all genuine pockets,
+ *      not just the largest — the cognate site is often a smaller cavity).
+ *      Downstream site-confinement (top.cpp) trims the grid to the cognate
+ *      pocket, so handing it all pockets guarantees the right one is present.
  *   4. Return a linked list of sphere_struct* ready for generate_grid().
  *
  * The implementation is header + .cpp so it can be compiled as part of
