@@ -21,6 +21,7 @@
 #undef private
 #include <cmath>
 #include <chrono>
+#include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <numeric>
@@ -374,11 +375,11 @@ TEST(PDBParsing, ExtractLigandFromPDB) {
         ofs << "ATOM      1  N   ALA A   1       1.000   2.000   3.000  1.00 10.00           N\n";
         ofs << "ATOM      2  CA  ALA A   1       2.000   3.000   4.000  1.00 10.00           C\n";
         // Ligand with 5 atoms
-        ofs << "HETATM    3  C1  ATP B   1       5.000   6.000   7.000  1.00 20.00           C\n";
-        ofs << "HETATM    4  N1  ATP B   1       6.000   7.000   8.000  1.00 20.00           N\n";
-        ofs << "HETATM    5  O1  ATP B   1       7.000   8.000   9.000  1.00 20.00           O\n";
-        ofs << "HETATM    6  C2  ATP B   1       8.000   9.000  10.000  1.00 20.00           C\n";
-        ofs << "HETATM    7  N2  ATP B   1       9.000  10.000  11.000  1.00 20.00           N\n";
+        ofs << "HETATM    3  C1  LIG B   1       5.000   6.000   7.000  1.00 20.00           C\n";
+        ofs << "HETATM    4  N1  LIG B   1       6.000   7.000   8.000  1.00 20.00           N\n";
+        ofs << "HETATM    5  O1  LIG B   1       7.000   8.000   9.000  1.00 20.00           O\n";
+        ofs << "HETATM    6  C2  LIG B   1       8.000   9.000  10.000  1.00 20.00           C\n";
+        ofs << "HETATM    7  N2  LIG B   1       9.000  10.000  11.000  1.00 20.00           N\n";
         // Water
         ofs << "HETATM    8  O   HOH C   1      20.000  20.000  20.000  1.00  5.00           O\n";
         // Ion
@@ -396,7 +397,7 @@ TEST(PDBParsing, ExtractLigandFromPDB) {
     std::ifstream ifs(sdf_path);
     std::string line;
     std::getline(ifs, line); // molecule name
-    EXPECT_EQ(line, "ATP");  // should be the ligand residue name
+    EXPECT_EQ(line, "LIG");  // should be the ligand residue name
 
     // Cleanup
     fs::remove_all(test_dir);
@@ -518,6 +519,140 @@ TEST(PDBParsing, PrepareEntryRegeneratesStaleLigandCache) {
     std::string contents((std::istreambuf_iterator<char>(ifs)), std::istreambuf_iterator<char>());
     EXPECT_NE(contents.find("FLEXAIDDS_LIGAND_EXTRACTOR_V3"), std::string::npos);
 
+    fs::remove_all(test_dir);
+}
+
+TEST(PDBParsing, PrepareEntryUsesCompanionCifForConvertedAtomLigands) {
+    std::string test_dir = "/tmp/flexaidds_test_prepare_companion_cif";
+    std::string cache_dir = test_dir + "/cache";
+    std::string entry_dir = cache_dir + "/Demo Dataset/TEST";
+    fs::create_directories(entry_dir);
+
+    std::string pdb_path = entry_dir + "/TEST.pdb";
+    std::string cif_path = entry_dir + "/TEST.cif";
+    std::string sdf_path = entry_dir + "/TEST_ligand.sdf";
+
+    {
+        std::ofstream ofs(pdb_path);
+        ofs << "HEADER    CONVERTED ATOM CACHE\n";
+        for (int i = 0; i < 4; ++i) {
+            ofs << "REMARK    padding padding padding padding padding padding padding\n";
+        }
+        ofs << "ATOM      1  N   ALA A   1       0.000   0.000   0.000  1.00 10.00           N\n";
+        ofs << "ATOM      2  C1  SAH B   0      10.000   0.000   0.000  1.00 20.00           C\n";
+        ofs << "ATOM      3  C2  SAH B   0      11.500   0.000   0.000  1.00 20.00           C\n";
+        ofs << "ATOM      4  O1  SAH B   0      13.000   0.000   0.000  1.00 20.00           O\n";
+        ofs << "ATOM      5  C1  SKF C   0       1.000   2.000   3.000  1.00 20.00           C\n";
+        ofs << "ATOM      6  C2  SKF C   0       2.400   2.000   3.000  1.00 20.00           C\n";
+        ofs << "ATOM      7  N1  SKF C   0       3.800   2.000   3.000  1.00 20.00           N\n";
+        ofs << "ATOM      8  O1  SKF C   0       5.200   2.000   3.000  1.00 20.00           O\n";
+        ofs << "END\n";
+    }
+
+    {
+        std::ofstream ofs(cif_path);
+        ofs << "data_TEST\n";
+        ofs << "loop_\n";
+        ofs << "_atom_site.group_PDB\n";
+        ofs << "_atom_site.id\n";
+        ofs << "_atom_site.type_symbol\n";
+        ofs << "_atom_site.auth_atom_id\n";
+        ofs << "_atom_site.label_alt_id\n";
+        ofs << "_atom_site.auth_comp_id\n";
+        ofs << "_atom_site.auth_asym_id\n";
+        ofs << "_atom_site.auth_seq_id\n";
+        ofs << "_atom_site.Cartn_x\n";
+        ofs << "_atom_site.Cartn_y\n";
+        ofs << "_atom_site.Cartn_z\n";
+        ofs << "_atom_site.occupancy\n";
+        ofs << "_atom_site.B_iso_or_equiv\n";
+        ofs << "HETATM 1 C C1 . SAH B 0 10.000 0.000 0.000 1.00 20.00\n";
+        ofs << "HETATM 2 C C2 . SAH B 0 11.500 0.000 0.000 1.00 20.00\n";
+        ofs << "HETATM 3 O O1 . SAH B 0 13.000 0.000 0.000 1.00 20.00\n";
+        ofs << "HETATM 4 C C1 . SKF C 0 1.000 2.000 3.000 1.00 20.00\n";
+        ofs << "HETATM 5 C C2 . SKF C 0 2.400 2.000 3.000 1.00 20.00\n";
+        ofs << "HETATM 6 N N1 . SKF C 0 3.800 2.000 3.000 1.00 20.00\n";
+        ofs << "HETATM 7 O O1 . SKF C 0 5.200 2.000 3.000 1.00 20.00\n";
+        ofs << "#\n";
+    }
+
+    {
+        std::ofstream ofs(sdf_path);
+        ofs << "SAH\n";
+        ofs << "  stale cache\n";
+        ofs << "  Extracted from structure HETATM records | FLEXAIDDS_LIGAND_EXTRACTOR_V3\n";
+        ofs << "  3  2  0  0  0  0  0  0  0999 V2000\n";
+        ofs << "   10.0000    0.0000    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0\n";
+        ofs << "   11.5000    0.0000    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0\n";
+        ofs << "   13.0000    0.0000    0.0000 O   0  0  0  0  0  0  0  0  0  0  0  0\n";
+        ofs << "  1  2  1  0  0  0  0\n";
+        ofs << "  2  3  1  0  0  0  0\n";
+        ofs << "M  END\n$$$$\n";
+    }
+    fs::last_write_time(sdf_path, fs::last_write_time(cif_path) + std::chrono::hours(1));
+
+    DatasetRunner runner(cache_dir);
+    auto entry = runner.prepare_pdb_entry("TEST", "Demo Dataset", 0.0f, 0.0f, 0.0f);
+
+    ASSERT_EQ(entry.ligand_path, sdf_path);
+    std::ifstream ligand(sdf_path);
+    ASSERT_TRUE(ligand.good());
+    std::string title;
+    std::getline(ligand, title);
+    EXPECT_EQ(title, "SKF");
+
+    ASSERT_TRUE(fs::exists(entry.receptor_path));
+    std::ifstream apo(entry.receptor_path);
+    ASSERT_TRUE(apo.good());
+    std::string apo_contents((std::istreambuf_iterator<char>(apo)),
+                             std::istreambuf_iterator<char>());
+    EXPECT_EQ(apo_contents.find("SAH"), std::string::npos);
+    EXPECT_EQ(apo_contents.find("SKF"), std::string::npos);
+    EXPECT_NE(apo_contents.find("ALA"), std::string::npos);
+
+    fs::remove_all(test_dir);
+}
+
+TEST(PDBParsing, ReadPdbSplitsConvertedNonpolymerResidues) {
+    std::string test_dir = "/tmp/flexaidds_test_read_pdb_nag";
+    fs::create_directories(test_dir);
+    std::string pdb_path = test_dir + "/nag.pdb";
+
+    {
+        std::ofstream ofs(pdb_path);
+        ofs << "ATOM      1  C1  NAG B   0       0.000   0.000   0.000  1.00 20.00           C\n";
+        ofs << "ATOM      2  C2  NAG B   0       1.400   0.000   0.000  1.00 20.00           C\n";
+        ofs << "ATOM      3  O5  NAG B   0       0.000   1.400   0.000  1.00 20.00           O\n";
+        ofs << "ATOM      4  C1  NAG B   0       5.000   0.000   0.000  1.00 20.00           C\n";
+        ofs << "ATOM      5  C2  NAG B   0       6.400   0.000   0.000  1.00 20.00           C\n";
+        ofs << "ATOM      6  O5  NAG B   0       5.000   1.400   0.000  1.00 20.00           O\n";
+        ofs << "END\n";
+    }
+
+    FA_Global FA;
+    std::memset(static_cast<void*>(&FA), 0, sizeof(FA));
+    FA.MIN_NUM_ATOM = 32;
+    FA.MIN_NUM_RESIDUE = 16;
+    FA.ntypes = 40;
+    atom* atoms = nullptr;
+    resid* residue = nullptr;
+
+    read_pdb(&FA, &atoms, &residue, const_cast<char*>(pdb_path.c_str()));
+
+    EXPECT_EQ(FA.res_cnt, 2);
+    EXPECT_EQ(atoms[1].ofres, 1);
+    EXPECT_EQ(atoms[4].ofres, 2);
+    EXPECT_EQ(residue[1].type, 1);
+    EXPECT_EQ(residue[2].type, 1);
+
+    for (int r = 0; r <= FA.res_cnt; ++r) {
+        free(residue[r].fatm);
+        free(residue[r].latm);
+        free(residue[r].bond);
+    }
+    free(residue);
+    free(atoms);
+    free(FA.num_atm);
     fs::remove_all(test_dir);
 }
 

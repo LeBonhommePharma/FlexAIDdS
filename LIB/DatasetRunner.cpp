@@ -1960,13 +1960,19 @@ std::string DatasetRunner::write_receptor_without_ligand(
     int dropped_cofactor = 0;
     std::string line;
     while (std::getline(rec, line)) {
-        // Only HETATM lines are candidates for removal; ATOM (protein) is kept.
-        if (line.size() >= 54 && line.compare(0, 6, "HETATM") == 0) {
+        const bool coordinate_record =
+            line.size() >= 54 &&
+            (line.compare(0, 6, "HETATM") == 0 ||
+             line.compare(0, 6, "ATOM  ") == 0);
+        if (coordinate_record) {
             // resName occupies PDB columns 18-20 (0-indexed 17..19).
             std::string resName = trim3(line.substr(17, 3));
 
             // Pass 2 (cofactors): drop bulk cofactors/buffers, but never a
             // catalytic metal/heme even if its code also appears elsewhere.
+            // This intentionally applies to converted ATOM records too:
+            // OpenBabel-style caches can rewrite SAH/SKF/NAG/HUP records as
+            // ATOM while preserving the residue name and coordinates.
             if (strip_cofactors.count(resName) && !keep_catalytic.count(resName)) {
                 dropped_cofactor++;
                 continue;
@@ -1992,12 +1998,12 @@ std::string DatasetRunner::write_receptor_without_ligand(
 
     if (dropped == 0 && dropped_cofactor == 0) {
         std::cerr << "  [RECEPTOR] " << out_receptor
-                  << " — no ligand HETATM matched (docking against original)\n";
+                  << " — no ligand/cofactor coordinate records matched (docking against original)\n";
         return receptor_path;
     }
     std::cerr << "  [RECEPTOR] stripped " << dropped
               << " cognate-ligand + " << dropped_cofactor
-              << " bulk-cofactor HETATM atoms (catalytic metals/heme retained) → "
+              << " bulk-cofactor coordinate records (catalytic metals/heme retained) → "
               << out_receptor << "\n";
     return out_receptor;
 }
@@ -2035,9 +2041,11 @@ DatasetEntry DatasetRunner::prepare_pdb_entry(const std::string& pdb_id,
         return entry;
     }
 
-    // Best-effort: also ensure companion CIF is present for bond-order extraction.
-    // download_structure() prefers PDB for coordinate parsing but PDB CONECT records
-    // carry no bond-order data.  We need the CIF _chem_comp_bond loop for SING/DOUB/AROM.
+    // Best-effort: also ensure companion CIF is present for ligand identity and
+    // bond-order extraction.  download_structure() prefers PDB for receptor
+    // coordinate parsing, but converted PDB caches can demote ligands/cofactors
+    // from HETATM to ATOM.  mmCIF keeps the authoritative HETATM identity.
+    std::string ligand_source_path = receptor_path;
     {
         std::string lrp = receptor_path;
         std::transform(lrp.begin(), lrp.end(), lrp.begin(),
@@ -2047,13 +2055,16 @@ DatasetEntry DatasetRunner::prepare_pdb_entry(const std::string& pdb_id,
             if (!fs::exists(companion_cif) || fs::file_size(companion_cif) <= 100) {
                 download_cif(upper_id, companion_cif);  // best-effort, ignore failure
             }
+            if (valid_cached_cif_file(companion_cif)) {
+                ligand_source_path = companion_cif;
+            }
         }
     }
 
     // Extract ligand.  Regenerate stale caches whenever the extractor version
     // changes or the source structure is newer than the cached SDF.
-    if (!ligand_sdf_is_current(ligand_path, receptor_path)) {
-        if (extract_ligand(receptor_path, ligand_path)) {
+    if (!ligand_sdf_is_current(ligand_path, ligand_source_path)) {
+        if (extract_ligand(ligand_source_path, ligand_path)) {
             entry.ligand_path = ligand_path;
         } else {
             std::cerr << "  [WARN] Failed to extract ligand from: " << upper_id << "\n";
