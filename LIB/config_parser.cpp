@@ -197,7 +197,24 @@ void apply_config(const json::Value& config, FA_Global* FA, GB_Global* GB) {
         FA->is_protein   = jbool(config, "protein", "is_protein", true) ? 1 : 0;
         FA->exclude_het  = jbool(config, "protein", "exclude_het", false) ? 1 : 0;
         FA->remove_water = jbool(config, "protein", "remove_water", true) ? 1 : 0;
+        FA->keep_ions    = jbool(config, "protein", "keep_ions", true) ? 1 : 0;
+        FA->keep_structural_waters =
+            jbool(config, "protein", "keep_structural_waters", true) ? 1 : 0;
+        FA->structural_water_bfactor_max =
+            jflt(config, "protein", "structural_water_bfactor_max", 20.0f);
         FA->omit_buried  = jbool(config, "protein", "omit_buried", false) ? 1 : 0;
+    }
+
+    // ── Reference Ligand Seeding ──
+    {
+        auto rf = jstr(config, "reference_ligand", "file", "");
+        std::strncpy(FA->reflig_file, rf.c_str(), sizeof(FA->reflig_file) - 1);
+        FA->reflig_seed_fraction =
+            jflt(config, "reference_ligand", "seed_fraction", 0.25f);
+        FA->reflig_k_nearest =
+            jint(config, "reference_ligand", "k_nearest", 10);
+        FA->reflig_hetatm_fallback =
+            jbool(config, "reference_ligand", "hetatm_fallback", true) ? 1 : 0;
     }
 
     // ── Advanced ──

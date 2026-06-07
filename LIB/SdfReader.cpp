@@ -38,27 +38,51 @@ static void normalize_element(char* elem) {
         elem[i] = (char)tolower((unsigned char)elem[i]);
 }
 
+/*
+ * Element → canonical FlexAID VCT type number.
+ *
+ * These indices MUST match the canonical SYBYL type table in nrgrank_matrix.h
+ * (kSybylTypes) and the receptor typing produced by assign_radii_types.cpp,
+ * because atom.type is used directly as a row/column index into the VCT energy
+ * matrix (MC_st0r5.2_6.dat / kEnergyMatrix). A wrong index scores a heteroatom
+ * against the wrong element's energy row.
+ *
+ * SDF/MOL files carry no hybridization, so we fall back to the most common
+ * generic perception for each element (sp3 for C/N/O/S). When richer typing is
+ * available (MOL2 SYBYL strings), Mol2Reader::sybyl_to_flexaid_type is used.
+ *
+ * Canonical table (see nrgrank_matrix.h):
+ *   1=C.1  2=C.2  3=C.3  4=C.AR  5=C.CAT
+ *   6=N.1  7=N.2  8=N.3  9=N.4  10=N.AR 11=N.AM 12=N.PL3
+ *  13=O.2 14=O.3 15=O.CO2 16=O.AR
+ *  17=S.2 18=S.3 19=S.O  20=S.O2 21=S.AR
+ *  22=P.3 23=F   24=CL   25=BR   26=I   27=SE
+ *  28=MG 29=SR 30=CU 31=MN 32=HG 33=CD 34=NI 35=ZN 36=CA 37=FE 38=CO.OH
+ *  39=DUMMY 40=SOLVENT
+ */
 static int element_to_flexaid_type(const char* elem) {
-    if (!strcmp(elem, "C"))  return 1;
-    if (!strcmp(elem, "N"))  return 4;
-    if (!strcmp(elem, "O"))  return 10;
-    if (!strcmp(elem, "S"))  return 16;
-    if (!strcmp(elem, "P"))  return 20;
-    if (!strcmp(elem, "F"))  return 13;
-    if (!strcmp(elem, "Cl")) return 14;
-    if (!strcmp(elem, "Br")) return 15;
-    if (!strcmp(elem, "I"))  return 21;
-    if (!strcmp(elem, "H"))  return 22;
-    if (!strcmp(elem, "Fe")) return 30;
-    if (!strcmp(elem, "Zn")) return 31;
-    if (!strcmp(elem, "Ca")) return 32;
-    if (!strcmp(elem, "Mg")) return 33;
-    if (!strcmp(elem, "Na")) return 34;
-    if (!strcmp(elem, "K"))  return 35;
-    if (!strcmp(elem, "Mn")) return 36;
-    if (!strcmp(elem, "Cu")) return 37;
-    if (!strcmp(elem, "Co")) return 38;
-    return 39; // dummy
+    if (!strcmp(elem, "C"))  return 3;   // C.3 (generic sp3 carbon)
+    if (!strcmp(elem, "N"))  return 8;   // N.3 (generic sp3 nitrogen)
+    if (!strcmp(elem, "O"))  return 14;  // O.3 (generic sp3 oxygen)
+    if (!strcmp(elem, "S"))  return 18;  // S.3 (generic sp3 sulfur)
+    if (!strcmp(elem, "P"))  return 22;  // P.3
+    if (!strcmp(elem, "F"))  return 23;  // F
+    if (!strcmp(elem, "Cl")) return 24;  // CL
+    if (!strcmp(elem, "Br")) return 25;  // BR
+    if (!strcmp(elem, "I"))  return 26;  // I
+    if (!strcmp(elem, "Se")) return 27;  // SE
+    if (!strcmp(elem, "Mg")) return 28;  // MG
+    if (!strcmp(elem, "Sr")) return 29;  // SR
+    if (!strcmp(elem, "Cu")) return 30;  // CU
+    if (!strcmp(elem, "Mn")) return 31;  // MN
+    if (!strcmp(elem, "Hg")) return 32;  // HG
+    if (!strcmp(elem, "Cd")) return 33;  // CD
+    if (!strcmp(elem, "Ni")) return 34;  // NI
+    if (!strcmp(elem, "Zn")) return 35;  // ZN
+    if (!strcmp(elem, "Ca")) return 36;  // CA
+    if (!strcmp(elem, "Fe")) return 37;  // FE
+    if (!strcmp(elem, "Co")) return 38;  // CO.OH
+    return 39; // DUMMY (H and anything unknown — H is not scored)
 }
 
 static float element_radius(const char* elem) {

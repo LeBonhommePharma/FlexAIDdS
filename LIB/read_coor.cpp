@@ -1,5 +1,26 @@
 #include "flexaid.h"
 #include "fileio.h"
+
+static int standard_polymer_residue(const char rnam[4])
+{
+	static const char* aa[] = {
+		"ALA","ARG","ASN","ASP","CYS","GLN","GLU","GLY","HIS","ILE",
+		"LEU","LYS","MET","PHE","PRO","SER","THR","TRP","TYR","VAL",
+		"SEC","PYL", NULL
+	};
+	for(int i=0; aa[i]; ++i)
+		if(strncmp(rnam, aa[i], 3) == 0) return 1;
+
+	static const char* nuc[] = {
+		"  A","  C","  G","  T","  U",
+		" DA"," DC"," DG"," DT"," DU",
+		"A  ","C  ","G  ","T  ","U  ", NULL
+	};
+	for(int i=0; nuc[i]; ++i)
+		if(strncmp(rnam, nuc[i], 3) == 0) return 1;
+	return 0;
+}
+
 /***************************************************************************** 
  * SUBROUTINE read coor, gets a coordinates line from read_pdb and extracts
  * the coordinates, atom name, chain name, counts the number of ligands, 
@@ -134,8 +155,26 @@ void read_coor(FA_Global* FA,atom** atoms,resid** residue,char line[], char res_
 		for(i=0;i<=3;i++){res_num[i]=line[i+22];}
 		res_num[4]='\0';
     
+		int duplicate_nonpolymer_atom = 0;
+		if(FA->res_cnt > 0 &&
+		   strcmp(res_new,(*residue)[FA->res_cnt].name) == 0 &&
+		   strcmp(res_num,res_numold) == 0 &&
+		   line[21] == (*residue)[FA->res_cnt].chn &&
+		   line[26] == (*residue)[FA->res_cnt].ins &&
+		   !standard_polymer_residue(res_new)){
+			for(int a=(*residue)[FA->res_cnt].fatm[0]; a<FA->atm_cnt; ++a){
+				if(strcmp((*atoms)[a].name,atm_typ) == 0){
+					duplicate_nonpolymer_atom = 1;
+					break;
+				}
+			}
+		}
+
 		if(strcmp(res_new,(*residue)[FA->res_cnt].name) != 0   /* change of res name        */
 		   || strcmp(res_num,res_numold) != 0           /* change of res number      */
+		   || line[21] != (*residue)[FA->res_cnt].chn   /* change of chain           */
+		   || line[26] != (*residue)[FA->res_cnt].ins   /* change of insertion code  */
+		   || duplicate_nonpolymer_atom                 /* converted HETATM residue  */
 			){
 			FA->res_cnt++;
 
@@ -180,7 +219,8 @@ void read_coor(FA_Global* FA,atom** atoms,resid** residue,char line[], char res_
 			strcpy(res_numold,res_num);
 
 			if(strcmp(name,"ATOM  ")==0) {
-				(*residue)[FA->res_cnt].type=0;                       /* protein residue */
+				(*residue)[FA->res_cnt].type =
+					standard_polymer_residue(res_new) ? 0 : 1;
 			}else if(strcmp(name,"HETATM")==0) {
 				(*residue)[FA->res_cnt].type=1;
 			}

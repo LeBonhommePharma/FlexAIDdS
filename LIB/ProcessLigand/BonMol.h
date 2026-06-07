@@ -444,33 +444,53 @@ public:
             r.error = "molecule too large (> 500 heavy atoms); possible macrocycle or peptide";
             return r;
         }
-        // Peptide backbone check: look for N-Cα-C(=O)-N pattern
-        // A simplistic heuristic: if we find 3+ amide bonds, flag as peptide.
-        int amide_count = 0;
+        // Peptide-backbone check.
+        //
+        // A genuine peptide is a *chain* of residues linked by backbone amide
+        // bonds: ...Cα–C(=O)–N–Cα–C(=O)–N... Counting isolated amide bonds is a
+        // poor discriminant: peptidomimetic drugs (cyclic ureas, carbamates,
+        // anilides, bis-amide protease inhibitors) routinely carry 3+ isolated
+        // amides yet are legitimate small-molecule docking targets — e.g. Astex
+        // 1KZK/JE2 and 1R55/097, and HAP2 HIV-protease inhibitors. The old
+        // "amide_count >= 3" test rejected exactly those (verified).
+        //
+        // Instead count *backbone* amides: an amide C(=O)–N whose nitrogen also
+        // bonds an α-carbon that itself carries another carbonyl carbon. >=3
+        // such linked amides indicates a true poly-peptide backbone, while
+        // isolated/peptidomimetic amides score low and pass.
+        auto is_carbonyl_c = [&](int c) -> bool {
+            if (c < 0 || atoms[c].element != Element::C) return false;
+            for (int nb : adjacency[c]) {
+                int bi = find_bond(c, nb);
+                if (bi >= 0 && bonds[bi].order == BondOrder::DOUBLE &&
+                    atoms[nb].element == Element::O)
+                    return true;
+            }
+            return false;
+        };
+        int backbone_amides = 0;
         for (const auto& b : bonds) {
-            if (b.order == BondOrder::SINGLE) {
-                bool ij_nc = (atoms[b.atom_i].element == Element::N &&
-                              atoms[b.atom_j].element == Element::C) ||
-                             (atoms[b.atom_j].element == Element::N &&
-                              atoms[b.atom_i].element == Element::C);
-                if (ij_nc) {
-                    // Check if the C has a =O neighbour
-                    int c_idx = (atoms[b.atom_i].element == Element::C) ? b.atom_i : b.atom_j;
-                    for (int nb : adjacency[c_idx]) {
-                        int bidx2 = find_bond(c_idx, nb);
-                        if (bidx2 >= 0 &&
-                            bonds[bidx2].order == BondOrder::DOUBLE &&
-                            atoms[nb].element == Element::O) {
-                            ++amide_count;
-                            break;
-                        }
-                    }
+            if (b.order != BondOrder::SINGLE) continue;
+            int c_idx = -1, n_idx = -1;
+            if (atoms[b.atom_i].element == Element::C &&
+                atoms[b.atom_j].element == Element::N) { c_idx = b.atom_i; n_idx = b.atom_j; }
+            else if (atoms[b.atom_j].element == Element::C &&
+                     atoms[b.atom_i].element == Element::N) { c_idx = b.atom_j; n_idx = b.atom_i; }
+            if (c_idx < 0 || !is_carbonyl_c(c_idx)) continue;
+            // Backbone test: amide N must bond an α-carbon that bears ANOTHER
+            // carbonyl carbon (the next residue's C=O).
+            for (int alpha : adjacency[n_idx]) {
+                if (alpha == c_idx || atoms[alpha].element != Element::C) continue;
+                bool alpha_to_next_carbonyl = false;
+                for (int nb : adjacency[alpha]) {
+                    if (nb != c_idx && is_carbonyl_c(nb)) { alpha_to_next_carbonyl = true; break; }
                 }
+                if (alpha_to_next_carbonyl) { ++backbone_amides; break; }
             }
         }
-        if (amide_count >= 3) {
+        if (backbone_amides >= 3) {
             r.has_peptide_backbone = true;
-            r.error = "molecule appears to be a peptide (>= 3 amide bonds)";
+            r.error = "molecule appears to be a peptide (>= 3 backbone amide bonds)";
             return r;
         }
         // Macrocycle check: ring size > 12

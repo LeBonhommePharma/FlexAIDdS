@@ -1,6 +1,7 @@
 #include "Vcontacts.h"
 #include "RngSeed.h"
 #include "fileio.h"
+#include <algorithm>
 #include <random>
 
 // Vcontacts calculates the SAS only for the residue sent in argument
@@ -16,11 +17,12 @@ int Vcontacts(FA_Global* FA,atom* atoms,resid* residue,VC_Global* VC,
 	
 	// protein atoms to boxes in cubic grid
 	VC->box = index_protein(FA,atoms,residue,VC->Calc,VC->Calclist,
-				&VC->dim,FA->atm_cnt_real,prev_box,indexed);
+				&VC->dim,FA->atm_cnt_real,prev_box,indexed,&VC->calc_count);
 	
 	prev_box = VC->box;
 	
-	for(int i=0; i<FA->atm_cnt_real; ++i) {
+	const int calc_count = VC->calc_count > 0 ? VC->calc_count : FA->atm_cnt_real;
+	for(int i=0; i<calc_count; ++i) {
 		VC->ca_index[i] = -1;   //initialize pointer array
 		VC->seed[i*3] = -1;
 
@@ -36,9 +38,10 @@ int Vcontacts(FA_Global* FA,atom* atoms,resid* residue,VC_Global* VC,
 	
 	if(clash_value != NULL){
 		*clash_value = 0.0;
-		for(int i=0;i<FA->atm_cnt_real;++i) {
+		for(int i=0;i<calc_count;++i) {
 			// ============= atom contact calculations =============
 			int atomzero = VC->Calclist[i];
+			if(atomzero < 0 || atomzero >= calc_count){ continue; }
 		
 			if(!VC->Calc[atomzero].score){continue;}
 		
@@ -50,7 +53,7 @@ int Vcontacts(FA_Global* FA,atom* atoms,resid* residue,VC_Global* VC,
 		}
 		if(*clash_value >= CLASH_THRESHOLD){ return(-2); }
 
-		for(int i=0; i<FA->atm_cnt_real; ++i) {
+		for(int i=0; i<calc_count; ++i) {
 			VC->Calc[i].done = 'N';
 			
 			VC->ca_index[i] = -1;   //initialize pointer array
@@ -60,7 +63,7 @@ int Vcontacts(FA_Global* FA,atom* atoms,resid* residue,VC_Global* VC,
 	
 	VC->numcarec=0;
 	
-	return calc_region(FA,VC,atoms,FA->atm_cnt_real,non_scorable);
+	return calc_region(FA,VC,atoms,calc_count,non_scorable);
     
 }
 
@@ -1579,7 +1582,7 @@ double spherical_arc(const vertex* ptAo,const vertex* ptB,const vertex* ptC, flo
 
 atomindex* index_protein(FA_Global* FA,atom* atoms,resid* residue,atomsas* Calc,
 			 int* Calclist,int* dim,int atmcnt,atomindex* prev_box,
-			 std::map<std::string, atomindex*> & indexed)
+			 std::map<std::string, atomindex*> & indexed,int* calc_count_out)
 {
 	int   i,j;             // dumb counters
 	int   resi;            // residue counter
@@ -1598,6 +1601,9 @@ atomindex* index_protein(FA_Global* FA,atom* atoms,resid* residue,atomsas* Calc,
 	rot=0;
 	i=0;
 	alter=0;
+	for(atmi=0; atmi<atmcnt; ++atmi){
+		Calclist[atmi] = -1;
+	}
 
 	// Do not alter default PDB min and max coordinates
 	for(j=0;j<3;++j){
@@ -1625,21 +1631,27 @@ atomindex* index_protein(FA_Global* FA,atom* atoms,resid* residue,atomsas* Calc,
 			// Safety: skip if indices are invalid
 			if (atmi < 0 || atmi >= atmcnt || i >= atmcnt) continue;
 
-			// Calc[i].atom = NULL;
-			if(Calc[i].atom == NULL){
-				Calc[i].atom = &atoms[atmi];
-				Calc[i].residue = &residue[resi];
-				Calc[i].done = 'N';
-				Calc[i].score = atoms[atmi].optres != NULL;
+			// Rebind the per-atom view on every call. Vcontacts/GA reuse the same
+			// Calc[] workspace across many chromosomes, so stale box/done/score
+			// fields must be cleared every time the protein is indexed.
+			Calc[i].atom = &atoms[atmi];
+			Calc[i].residue = &residue[resi];
+			Calc[i].boxnum = -1;
+			Calc[i].ca_index = -1;
+			Calc[i].done = 'N';
+			Calc[i].exposed = true;
+			Calc[i].SAS = 0.0;
+			Calc[i].vol = 0.0;
+			Calc[i].source = '\0';
+			Calc[i].score = atoms[atmi].optres != NULL;
 
-				for(j=0;j<3;++j){
-					if (atoms[atmi].coor[j] < global_min[j]){
-						global_min[j]=atoms[atmi].coor[j];
-						alter=1;
-					}else if(atoms[atmi].coor[j] > global_max[j]){
-						global_max[j]=atoms[atmi].coor[j];
-						alter=1;
-					}
+			for(j=0;j<3;++j){
+				if (atoms[atmi].coor[j] < global_min[j]){
+					global_min[j]=atoms[atmi].coor[j];
+					alter=1;
+				}else if(atoms[atmi].coor[j] > global_max[j]){
+					global_max[j]=atoms[atmi].coor[j];
+					alter=1;
 				}
 			}
 
@@ -1707,14 +1719,21 @@ atomindex* index_protein(FA_Global* FA,atom* atoms,resid* residue,atomsas* Calc,
 	memset(box,0,dim3*sizeof(atomindex));
 
 	int calc_cnt = i;  // Use actual count of initialized atoms, not total atmcnt
+	if(calc_count_out != NULL){
+		*calc_count_out = calc_cnt;
+	}
 
 	//int nbox=0;
 	// count entries per box, assign box number to atom
 	for(atmi=0;atmi<calc_cnt;++atmi){
 		if(Calc[atmi].boxnum == -1){
-			boxi = (int)((Calc[atmi].atom->coor[0]-global_min[0])/CELLSIZE)*dim2
-				+ (int)((Calc[atmi].atom->coor[1]-global_min[1])/CELLSIZE)*(*dim)
-				+ (int)((Calc[atmi].atom->coor[2]-global_min[2])/CELLSIZE);
+			int ix = (int)((Calc[atmi].atom->coor[0]-global_min[0])/CELLSIZE);
+			int iy = (int)((Calc[atmi].atom->coor[1]-global_min[1])/CELLSIZE);
+			int iz = (int)((Calc[atmi].atom->coor[2]-global_min[2])/CELLSIZE);
+			ix = std::max(0, std::min(ix, (*dim)-1));
+			iy = std::max(0, std::min(iy, (*dim)-1));
+			iz = std::max(0, std::min(iz, (*dim)-1));
+			boxi = ix*dim2 + iy*(*dim) + iz;
 
 			Calc[atmi].boxnum = boxi;
 			//nbox++;
@@ -1723,7 +1742,9 @@ atomindex* index_protein(FA_Global* FA,atom* atoms,resid* residue,atomsas* Calc,
 			//	atmi,Calc[atmi].atom->number,boxi,Calc[atmi].residue->number);
 		}
        
-		++box[Calc[atmi].boxnum].nument;
+		if(Calc[atmi].boxnum >= 0 && Calc[atmi].boxnum < dim3){
+			++box[Calc[atmi].boxnum].nument;
+		}
 	}
 
 	// assign start pointers for boxes in Calclist

@@ -1843,6 +1843,10 @@ void calculate_fitness(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* chr
 			tl_vc[t].poly      = tl_poly[t].data();
 			tl_vc[t].cont      = tl_cont[t].data();
 			tl_vc[t].vedge     = tl_vedge[t].data();
+			// Keep the reference-calculation retry path enabled in GA workers.
+			// The direct native probe uses recalc=1; forcing 0 here caused the
+			// same pose to fall into the non-convergence penalty path.
+			tl_vc[t].recalc    = 1;
 			// box is shared: if vindex==1 it's pre-built read-only;
 			// if vindex==0 Vcontacts will malloc/vcfunction will free per call.
 		}
@@ -2251,15 +2255,34 @@ void populate_chromosomes(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* 
 				generate_random_individual(FA,GB,atoms,chrom[i].genes,gene_lim,dice,0,GB->num_genes);
 
 				// ── MIF-weighted or RefLig seeding override for gene 0 ──
-				if (FA->reflig_nearest_count > 0 &&
+				const bool reflig_seeded =
+				    FA->reflig_nearest_count > 0 &&
 				    i < popoffset + static_cast<int>(FA->reflig_seed_fraction *
-				        static_cast<float>(GB->num_chrom - popoffset))) {
-					// RefLig seeding: distribute K nearest grid points across seeded fraction
-					int k = std::abs(chrom[i].genes[0].to_int32) % FA->reflig_nearest_count;
-					int grid_idx = FA->reflig_nearest_grid[k];
+				        static_cast<float>(GB->num_chrom - popoffset));
+				if (reflig_seeded) {
+					// Direct-mode native fallback: grid index 0 is the input pose
+					// anchor. Keep it exactly so redocking starts from a physically
+					// valid native-like chromosome instead of a nearby clash point.
+					bool native_direct_seed =
+					    FA->reflig_file[0] == '\0' && FA->reflig_hetatm_fallback &&
+					    FA->resligand != NULL && gene_lim[0].min <= 0.0;
+					int grid_idx = 0;
+					if (!native_direct_seed) {
+						// Explicit RefLig seeding: distribute K nearest grid points.
+						int k = (i - popoffset) % FA->reflig_nearest_count;
+						grid_idx = FA->reflig_nearest_grid[k];
+					}
 					chrom[i].genes[0].to_ic = static_cast<double>(grid_idx);
 					chrom[i].genes[0].to_int32 = ictogene(&gene_lim[0],
 					                                       static_cast<double>(grid_idx));
+					for (int g = 1; g < GB->num_genes; g++) {
+						if (!FA->map_par || !FA->opt_par) break;
+						if (FA->map_par[g].typ == 1 || FA->map_par[g].typ == 2) {
+							double ref_ic = FA->opt_par[g];
+							chrom[i].genes[g].to_ic = ref_ic;
+							chrom[i].genes[g].to_int32 = ictogene(&gene_lim[g], ref_ic);
+						}
+					}
 				} else if (FA->mif_enabled && FA->mif_cdf && FA->mif_count > 0) {
 					// MIF-weighted Boltzmann sampling
 					double u = RandomDouble(dice());
@@ -2294,7 +2317,7 @@ void populate_chromosomes(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* 
 				}
 
 				sig = hash_genes(chrom[i].genes,GB->num_genes);
-				if(GB->duplicates || duplicates.find(sig) == duplicates.end()){
+				if(reflig_seeded || GB->duplicates || duplicates.find(sig) == duplicates.end()){
 					break;
 				}
 			}
