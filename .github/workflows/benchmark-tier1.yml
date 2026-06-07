@@ -36,9 +36,13 @@ jobs:
       pull-requests: write   # required by marocchino/sticky-pull-request-comment
 
     env:
-      DATASET: ${{ inputs.dataset || 'casf2016' }}
+      DATASET: ${{ inputs.dataset || 'astex_diverse' }}
       RESULTS_DIR: results/tier1
       FLEXAIDDS_BINARY: ${{ github.workspace }}/build/FlexAID
+      # Astex Diverse data lives in the repo under benchmarks/astex_diverse/.
+      # Setting FLEXAIDDS_BENCHMARK_DATA makes the runner look at
+      # benchmarks/astex_diverse/astex_diverse/<TARGET>/ for receptor + ligand files.
+      FLEXAIDDS_BENCHMARK_DATA: ${{ github.workspace }}/benchmarks/astex_diverse
 
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
@@ -91,13 +95,9 @@ jobs:
             echo "DRY_RUN=--dry-run" >> "$GITHUB_ENV"
           fi
 
-      - name: Cache benchmark datasets
-        uses: actions/cache@v4
-        with:
-          path: benchmark_data/${{ env.DATASET }}
-          key: bench-data-${{ env.DATASET }}-v1
-          restore-keys: |
-            bench-data-${{ env.DATASET }}-
+      # No dataset download step needed: Astex Diverse data lives in the repo
+      # under benchmarks/astex_diverse/astex_diverse/<UPPERCASE_ID>/.
+      # FLEXAIDDS_BENCHMARK_DATA env var above points the runner there.
 
       - name: Run tier-1 benchmark
         timeout-minutes: 9

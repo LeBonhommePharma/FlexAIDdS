@@ -31,12 +31,18 @@
 #include <cstdlib>
 #include <cstring>
 #include <cctype>
-#include <random>
+#include <cerrno>
 #include <string>
 #include <vector>
 #include <map>
 #include <sstream>
 #include <algorithm>
+#ifdef _WIN32
+#  include <io.h>
+#  define mkstemp(t) _mktemp_s(t, strlen(t)+1)
+#else
+#  include <unistd.h>
+#endif
 
 // Column indices in the _atom_site loop (set to -1 if not present)
 struct CifAtomSiteColumns {
@@ -344,11 +350,19 @@ static int parse_cif_atom_site(
         process_line(line);
     }
 
-    // Continue reading
+    // Continue reading — skip semicolon-delimited multi-line values (CIF §2.1.3.3)
+    bool in_semicolon_block = false;
     while (fgets(buf, sizeof(buf), fp)) {
         std::string line(buf);
         while (!line.empty() && std::isspace(static_cast<unsigned char>(line.back())))
             line.pop_back();
+
+        if (!line.empty() && line[0] == ';') {
+            in_semicolon_block = !in_semicolon_block;
+            continue;
+        }
+        if (in_semicolon_block) continue;
+
         if (!process_line(line)) break;
     }
 
@@ -361,16 +375,22 @@ static int parse_cif_atom_site(
 
     printf("CIF: parsed %zu atoms from %s\n", cif_atoms.size(), cif_file);
 
-    // Phase 3: Convert to PDB-style temp file and let read_pdb handle it
-    // This reuses the existing PDB reading infrastructure which handles
-    // residue connectivity, type assignment, and all the FlexAID-specific
-    // bookkeeping. Writing a temp PDB is the most robust approach.
+    // Phase 3: Convert to PDB-style temp file and let read_pdb handle it.
+    // Uses mkstemp for a race-free unique filename (no random_device dependency).
     char tmp_pdb[MAX_PATH__];
-    snprintf(tmp_pdb, MAX_PATH__, "/tmp/flexaid_cif_%d.pdb", static_cast<int>(std::random_device{}() % 900000 + 100000));
-
-    FILE* out = fopen(tmp_pdb, "w");
+    strncpy(tmp_pdb, "/tmp/flexaid_cif_XXXXXX", MAX_PATH__ - 1);
+    tmp_pdb[MAX_PATH__ - 1] = '\0';
+    int tmp_fd = mkstemp(tmp_pdb);
+    if (tmp_fd < 0) {
+        fprintf(stderr, "ERROR: Cannot create temp file for CIF conversion: %s\n",
+                strerror(errno));
+        return 0;
+    }
+    FILE* out = fdopen(tmp_fd, "w");
     if (!out) {
-        fprintf(stderr, "ERROR: Cannot create temp PDB for CIF conversion\n");
+        close(tmp_fd);
+        remove(tmp_pdb);
+        fprintf(stderr, "ERROR: fdopen failed for CIF temp file: %s\n", strerror(errno));
         return 0;
     }
 
@@ -546,10 +566,19 @@ int read_multi_model_pdb(FA_Global* FA, atom** atoms, resid** residue,
     // Phase 2: Load first model via standard read_pdb for full topology
     // Create a temp PDB with only the first model's atoms
     char tmp_pdb[MAX_PATH__];
-    snprintf(tmp_pdb, MAX_PATH__, "/tmp/flexaid_mm_%d.pdb", static_cast<int>(std::random_device{}() % 900000 + 100000));
-    FILE* out = fopen(tmp_pdb, "w");
+    strncpy(tmp_pdb, "/tmp/flexaid_mm_XXXXXX", MAX_PATH__ - 1);
+    tmp_pdb[MAX_PATH__ - 1] = '\0';
+    int mm_fd = mkstemp(tmp_pdb);
+    if (mm_fd < 0) {
+        fprintf(stderr, "ERROR: Cannot create temp file for multi-model PDB: %s\n",
+                strerror(errno));
+        return 0;
+    }
+    FILE* out = fdopen(mm_fd, "w");
     if (!out) {
-        fprintf(stderr, "ERROR: Cannot create temp PDB for multi-model\n");
+        close(mm_fd);
+        remove(tmp_pdb);
+        fprintf(stderr, "ERROR: fdopen failed for multi-model temp: %s\n", strerror(errno));
         return 0;
     }
 

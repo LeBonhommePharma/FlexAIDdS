@@ -26,27 +26,30 @@ structural_states:
   - holo
 
 # Full 85 PDB codes are hardcoded in DatasetRunner::astex_diverse_codes()
+# IMPORTANT: tier-1 CI uses the first tier1_subset_size=5 entries.
+# These 5 are confirmed to exist in benchmarks/astex_diverse/astex_diverse/ (uppercase IDs on disk).
 targets:
-  - 1a30   # Neuraminidase / oseltamivir
-  - 1a4g   # Trypsin / benzamidine
-  - 1b9v   # Alpha-thrombin
-  - 1gpk   # Carbonic anhydrase II
-  - 1hvr   # HIV-1 protease
-  - 1mq6   # Factor Xa
-  - 1n2j   # Thymidine kinase
-  - 1qbt   # CDK2
-  - 1syh   # EphB2
-  - 1t46   # PDGFR-beta
-  - 1t9b   # Androgen receptor
-  - 1w2f   # Neuraminidase
-  - 2brb   # CHK1
-  - 2cet   # Factor Xa
-  - 2gvy   # JAK3
-  - 2h4h   # FAK
-  - 2hb1   # Thrombin
-  - 2pog   # ER-alpha
-  - 2w2i   # FMS
-  - 3b5r   # DHFR
+  - 1gpk   # Carbonic anhydrase II (1GPK)
+  - 1mq6   # Factor Xa (1MQ6)
+  - 1n2j   # Thymidine kinase (1N2J)
+  - 1t46   # PDGFR-beta (1T46)
+  - 1t9b   # Androgen receptor (1T9B)
+  # --- remaining targets (not required for tier-1 CI) ---
+  - 2cet   # Factor Xa (2CET)
+  - 2hb1   # Thrombin (2HB1)
+  - 1g9v   # CDK2 (1G9V)
+  - 1gm8   # Thrombin (1GM8)
+  - 1hnn   # CDK2 (1HNN)
+  - 1hp0   # Aldose reductase (1HP0)
+  - 1hq2   # CDK2 (1HQ2)
+  - 1ia1   # FKBP12 (1IA1)
+  - 1igj   # CDK2 (1IGJ)
+  - 1j3j   # CHK1 (1J3J)
+  - 1jd0   # CDK2 (1JD0)
+  - 1jje   # Thrombin (1JJE)
+  - 1k3u   # Carbonic anhydrase II (1K3U)
+  - 1ke5   # CDK2 (1KE5)
+  - 1kzk   # CDK2 (1KZK)
   # NOTE: Full 85-target list is hardcoded in C++ (astex_diverse_codes()).
 
 metrics:
