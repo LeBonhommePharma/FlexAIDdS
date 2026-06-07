@@ -2431,6 +2431,30 @@ flexaids_configure_simd(test_cavity_detect)
     flexaids_configure_msvc_test(test_dataset_runner)
     add_test(NAME DatasetRunnerTests COMMAND test_dataset_runner)
 
+    # test_cofactor_blacklist — ligand-extraction cofactor blacklist (1HNN SAH/SKF)
+    add_executable(test_cofactor_blacklist
+        tests/test_cofactor_blacklist.cpp
+        LIB/DatasetRunner.cpp
+        LIB/AsyncPipeline.cpp
+    )
+    target_include_directories(test_cofactor_blacklist PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/LIB)
+    target_link_libraries(test_cofactor_blacklist PRIVATE flexaid_core GTest::gtest GTest::gtest_main)
+    target_compile_definitions(test_cofactor_blacklist PRIVATE
+        FLEXAIDS_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
+    if(MSVC)
+        target_compile_options(test_cofactor_blacklist PRIVATE /O2)
+        target_compile_definitions(test_cofactor_blacklist PRIVATE
+            _CRT_SECURE_NO_WARNINGS _USE_MATH_DEFINES NOMINMAX)
+    else()
+        target_compile_options(test_cofactor_blacklist PRIVATE -O2)
+    endif()
+    if(CURL_FOUND)
+        target_link_libraries(test_cofactor_blacklist PRIVATE CURL::libcurl)
+        target_compile_definitions(test_cofactor_blacklist PRIVATE FLEXAIDS_HAS_LIBCURL)
+    endif()
+    flexaids_configure_msvc_test(test_cofactor_blacklist)
+    add_test(NAME CofactorBlacklistTests COMMAND test_cofactor_blacklist)
+
     # test_binding_mode_vibrational — Phase 3 ENCoM vibrational entropy integration
     add_executable(test_binding_mode_vibrational
         tests/test_binding_mode_vibrational.cpp

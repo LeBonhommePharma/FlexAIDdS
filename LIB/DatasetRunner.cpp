@@ -32,6 +32,9 @@
 #include <limits>
 #include <map>
 #include <numeric>
+#include <random>
+#include <cstdint>
+#include <functional>
 #include <regex>
 #include <set>
 #include <sstream>
@@ -342,25 +345,334 @@ double compute_rmsd(const std::vector<float>& coords_a,
     return std::sqrt(sum_sq / static_cast<double>(n_atoms));
 }
 
+// ── Blind-placement helper (Bug #1 fix) ──────────────────────────────────
+// FlexAIDdS direct-mode GA seeding (top.cpp "REFLIG: direct-mode seed") biases
+// ~reflig_seed_fraction of the initial population toward grid points nearest
+// the LIGAND'S INPUT ANCHOR COORDINATES.  Because DatasetRunner feeds the
+// crystal-extracted ligand at its receptor-frame coordinates, that anchor IS
+// the crystal pose — so the native ORIENTATION is injected straight into the GA
+// and RMSD≈0 is achievable without any real search (1G9V/1HNN/1HQ2 false
+// positives: ligand identical across _INI/_0/_1, never moves).
+//
+// Astex Diverse is a RE-DOCKING benchmark: the binding *site* is legitimately
+// known, only the *pose* must be predicted.  The engine has no separate
+// site-center flag in direct mode — the ligand's position is the only site
+// signal — so we must NOT translate the ligand away from the site (doing so
+// strands the search in the wrong pocket, e.g. zero-centred 1G9V→34.9 Å).
+//
+// Instead we BLIND ONLY THE POSE: keep the heavy-atom centroid exactly where it
+// is (site preserved) and apply a deterministic, uniformly-random rigid
+// ROTATION about that centroid.  The starting orientation is now scrambled
+// (RMSD-to-crystal of the input is large), so a no-op GA can no longer echo the
+// answer — recovering RMSD<2 Å now requires genuinely searching orientation
+// space.  The rotation is seeded by a hash of the PDB id, so the benchmark stays
+// bit-for-bit reproducible.  The original crystal-coordinate file is kept
+// untouched for the RMSD reference.
+//
+// Supports SDF (V2000) and MOL2.  Returns true if a blinded copy was written to
+// `dst`; on any parse failure returns false (caller falls back to the un-blinded
+// original rather than crash a benchmark run).
+static bool write_blinded_ligand(const std::string& src,
+                                 const std::string& dst,
+                                 std::uint64_t seed) {
+    std::ifstream in(src);
+    if (!in.is_open()) return false;
+    std::vector<std::string> lines;
+    {
+        std::string l;
+        while (std::getline(in, l)) {
+            if (!l.empty() && l.back() == '\r') l.pop_back();
+            lines.push_back(l);
+        }
+    }
+    if (lines.size() < 5) return false;
+
+    // Deterministic uniformly-distributed rotation matrix (Shoemaker's method:
+    // a uniform random unit quaternion → SO(3)).  Seeded by the PDB-id hash so
+    // every re-run produces the identical blinded input — reproducibility is a
+    // hard requirement of this benchmark.
+    double R[3][3];
+    {
+        constexpr double kTwoPi = 6.283185307179586476925286766559;
+        std::mt19937_64 rng(seed);
+        std::uniform_real_distribution<double> u(0.0, 1.0);
+        const double u1 = u(rng), u2 = u(rng), u3 = u(rng);
+        const double q0 = std::sqrt(1.0 - u1) * std::sin(kTwoPi * u2);
+        const double q1 = std::sqrt(1.0 - u1) * std::cos(kTwoPi * u2);
+        const double q2 = std::sqrt(u1)       * std::sin(kTwoPi * u3);
+        const double q3 = std::sqrt(u1)       * std::cos(kTwoPi * u3);
+        // Quaternion (q0=w, q1=x, q2=y, q3=z) → rotation matrix.
+        R[0][0] = 1 - 2*(q2*q2 + q3*q3);
+        R[0][1] =     2*(q1*q2 - q0*q3);
+        R[0][2] =     2*(q1*q3 + q0*q2);
+        R[1][0] =     2*(q1*q2 + q0*q3);
+        R[1][1] = 1 - 2*(q1*q1 + q3*q3);
+        R[1][2] =     2*(q2*q3 - q0*q1);
+        R[2][0] =     2*(q1*q3 - q0*q2);
+        R[2][1] =     2*(q2*q3 + q0*q1);
+        R[2][2] = 1 - 2*(q1*q1 + q2*q2);
+    }
+    auto rotate_about = [&](double x, double y, double z,
+                            double cx, double cy, double cz,
+                            double& ox, double& oy, double& oz) {
+        const double dx = x - cx, dy = y - cy, dz = z - cz;
+        ox = cx + R[0][0]*dx + R[0][1]*dy + R[0][2]*dz;
+        oy = cy + R[1][0]*dx + R[1][1]*dy + R[1][2]*dz;
+        oz = cz + R[2][0]*dx + R[2][1]*dy + R[2][2]*dz;
+    };
+
+    auto lower = [](std::string s) {
+        for (char& c : s) c = static_cast<char>(std::tolower(c));
+        return s;
+    };
+    const std::string ext = lower(fs::path(src).extension().string());
+    const bool is_mol2 = (ext == ".mol2");
+
+    double cx = 0, cy = 0, cz = 0;
+    long n = 0;
+
+    if (is_mol2) {
+        // Locate @<TRIPOS>ATOM .. next @<TRIPOS> block.
+        size_t a0 = std::string::npos, a1 = lines.size();
+        for (size_t i = 0; i < lines.size(); ++i) {
+            if (lines[i].rfind("@<TRIPOS>ATOM", 0) == 0) { a0 = i + 1; break; }
+        }
+        if (a0 == std::string::npos) return false;
+        for (size_t i = a0; i < lines.size(); ++i) {
+            if (lines[i].rfind("@<TRIPOS>", 0) == 0) { a1 = i; break; }
+        }
+        // First pass: centroid (heavy atoms; skip H by SYBYL type field[5]).
+        for (size_t i = a0; i < a1; ++i) {
+            std::istringstream ss(lines[i]);
+            std::string id, name, sx, sy, sz, type;
+            if (!(ss >> id >> name >> sx >> sy >> sz >> type)) continue;
+            try {
+                double x = std::stod(sx), y = std::stod(sy), z = std::stod(sz);
+                cx += x; cy += y; cz += z; ++n;
+            } catch (...) {}
+        }
+        if (n == 0) return false;
+        cx /= n; cy /= n; cz /= n;
+        // Second pass: rewrite x/y/z columns, preserving the rest of the line.
+        for (size_t i = a0; i < a1; ++i) {
+            std::istringstream ss(lines[i]);
+            std::string id, name, sx, sy, sz;
+            std::string rest;
+            if (!(ss >> id >> name >> sx >> sy >> sz)) continue;
+            std::getline(ss, rest);  // remainder (type, subst, charge, …)
+            double x, y, z;
+            try { x = std::stod(sx); y = std::stod(sy); z = std::stod(sz); }
+            catch (...) { continue; }
+            double ox, oy, oz;
+            rotate_about(x, y, z, cx, cy, cz, ox, oy, oz);
+            std::ostringstream out;
+            out << std::setw(7) << id << " "
+                << std::left << std::setw(8) << name << std::right
+                << std::fixed << std::setprecision(4)
+                << std::setw(10) << ox
+                << std::setw(10) << oy
+                << std::setw(10) << oz
+                << rest;
+            lines[i] = out.str();
+        }
+    } else {
+        // SDF V2000: counts line is lines[3]; atom block follows for natoms.
+        int natoms = 0;
+        try { natoms = std::stoi(lines[3].substr(0, 3)); } catch (...) { return false; }
+        if (natoms <= 0 || static_cast<size_t>(4 + natoms) > lines.size()) return false;
+        for (int i = 0; i < natoms; ++i) {
+            const std::string& l = lines[4 + i];
+            if (l.size() < 30) return false;
+            try {
+                cx += std::stod(l.substr(0, 10));
+                cy += std::stod(l.substr(10, 10));
+                cz += std::stod(l.substr(20, 10));
+            } catch (...) { return false; }
+        }
+        cx /= natoms; cy /= natoms; cz /= natoms;
+        for (int i = 0; i < natoms; ++i) {
+            std::string& l = lines[4 + i];
+            double x = std::stod(l.substr(0, 10));
+            double y = std::stod(l.substr(10, 10));
+            double z = std::stod(l.substr(20, 10));
+            double ox, oy, oz;
+            rotate_about(x, y, z, cx, cy, cz, ox, oy, oz);
+            std::ostringstream out;
+            out << std::fixed << std::setprecision(4)
+                << std::setw(10) << ox << std::setw(10) << oy << std::setw(10) << oz
+                << l.substr(30);
+            l = out.str();
+        }
+    }
+
+    std::ofstream of(dst);
+    if (!of.is_open()) return false;
+    for (const auto& l : lines) of << l << "\n";
+    return true;
+}
+
 // =============================================================================
 // Excluded residues — water, common ions, buffers
 // =============================================================================
 
 const std::set<std::string>& DatasetRunner::excluded_residues() {
     static const std::set<std::string> excl = {
-        "HOH", "WAT", "H2O", "DOD", "DIS",  // water
-        "NA",  "CL",  "MG",  "CA",  "ZN",   // common ions
+        // ── Water ────────────────────────────────────────────────────────────
+        "HOH", "WAT", "H2O", "DOD", "DIS", "OHX",
+        // ── Common mono/divalent ions ─────────────────────────────────────────
+        "NA",  "CL",  "MG",  "CA",  "ZN",
         "FE",  "MN",  "CU",  "CO",  "NI",
-        "K",   "BR",  "I",   "F",
-        "SO4", "PO4", "NO3", "ACT",          // buffer components
-        "GOL", "EDO", "PEG", "DMS", "MPD",   // cryoprotectants / crystallization aids
+        "K",   "BR",  "I",   "F",   "LI",
+        "RB",  "CS",  "BA",  "SR",  "CD",
+        "HG",  "PB",  "TL",  "PT",  "AU",
+        // ── Buffer / crystallographic agents ─────────────────────────────────
+        "SO4", "PO4", "NO3", "ACT",
+        "GOL", "EDO", "PEG", "DMS", "MPD",
         "BME", "EPE", "MES", "TRS", "CIT",
         "IMD", "FMT", "ACE", "NH4", "IOD",
         "BOG", "PGE", "1PE", "P6G", "BU3",
         "PDO", "EGL", "PG4", "PE8", "MLI",
-        "DTT", "AZI", "SCN", "NO2", "OXL"
+        "DTT", "AZI", "SCN", "NO2", "OXL",
+        "EDO", "IPA", "EOH", "MOH", "ETA",
+        // ── Enzyme cofactors — MUST NOT be selected as the cognate ligand ────
+        // (Selecting a ubiquitous enzyme cofactor as the "ligand" would produce
+        //  a completely wrong docking benchmark entry.  These codes cover the
+        //  standard PDB 3-letter residue names used in the Astex Diverse 85
+        //  and broader benchmark sets.)
+        //
+        // Nicotinamide adenine dinucleotides
+        "NAD", "NAP", "NDP", "NCD", "NAI", "NHD", "NDE",
+        // Flavins
+        "FAD", "FMN", "FNS", "FMD",
+        // S-adenosyl compounds
+        "SAH", "SAM", "SEH", "ADM",
+        // Pyridoxal/PLP/PMP family
+        "PLP", "PMP", "PLR", "PLM", "LLP", "PXP",
+        // Heme and metalloporphyrins
+        "HEM", "HEC", "HEA", "HEB", "CLA", "BCL", "PCU", "SRM", "HAS",
+        "MHM", "DHE", "HDD", "HDP", "BPH",
+        // Nucleotide cofactors (ATP/ADP/GTP/GDP and mono-phosphates)
+        "ATP", "ADP", "AMP", "APS",
+        "GTP", "GDP", "GMP",
+        "UTP", "UDP", "UMP",
+        "CTP", "CDP", "CMP",
+        "IMP", "IDP", "ITP",
+        "TTP", "TDP", "TMP",
+        // Cyclic nucleotides
+        "CAM", "CGP",
+        // CoA and acyl-CoA derivatives
+        "COA", "ACO", "BCO", "SUC", "SXM", "MLC", "PLM",
+        "OAC", "PAL", "MAL", "FAL",
+        // Thiamine di/mono phosphate
+        "TPP", "TDP", "TMP",
+        // Biotin
+        "BTN", "BTB",
+        // Retinal / retinol / retinoic acid
+        "RET", "REA", "RBF",
+        // Iron-sulfur clusters
+        "FES", "SF4", "F3S", "F4S",
+        // Molybdopterin
+        "MOS", "MGD", "MOP",
+        // Cobalamin (B12)
+        "B12", "CYN", "CBY",
+        // Lipoic acid
+        "LPA", "LIP",
+        // Ubiquinone/menaquinone
+        "UQ1", "MK4",
+        // Glutathione
+        "GSH", "GSD",
+        // NADH/FADH2 reduced forms (same codes as above, PDB uses same 3-letter)
+        // (already covered above)
+        //
+        // Miscellaneous metallic cofactors / clusters
+        "MTE", "FEO", "FE2", "3FE", "4FE",
+        "MOS", "MGD",
     };
     return excl;
+}
+
+// =============================================================================
+// Cofactor blacklist — residues that must NEVER be selected as the docking
+// target during ligand extraction.
+//
+// Many crystal structures co-crystallise a ubiquitous biochemical cofactor
+// (SAH, NAD, ATP, FAD, heme, a metal ion, a cryo-buffer …) *alongside* the
+// actual cognate ligand.  The cofactor is frequently the LARGEST HETATM group
+// (e.g. 1HNN: SAH = 26 heavy atoms vs. the 28-atom SKF inhibitor — but in many
+// entries the cofactor is the bigger of the two), so naïve "largest residue /
+// largest connected component" selection grabs the wrong molecule and yields a
+// nonsense self-dock (1HNN: SAH instead of SKF → RMSD ≈ 22.5 Å).
+//
+// When the highest-priority HETATM residue is on this blacklist, extract_ligand
+// falls through to the next non-blacklisted residue and logs the fallback chain.
+//
+// This set is intentionally DISTINCT from excluded_residues() (water / simple
+// ion / buffer junk): the entries here are real, well-formed molecules — they
+// are simply never the docking target in a ligand-binding benchmark.  Note the
+// deliberate asymmetry with write_receptor_without_ligand()'s keep_catalytic
+// set: metals/heme are RETAINED in the receptor (binding-site machinery) but
+// must never be EXTRACTED as the ligand.
+// =============================================================================
+static const std::set<std::string>& cofactor_blacklist() {
+    static const std::set<std::string> bl = {
+        // ── Mandated core set (FlexAIDdS cofactor blacklist v1) ───────────────
+        "SAH", "SAM", "ATP", "ADP", "AMP", "GTP", "GDP",
+        "NAD", "NADH", "FAD", "FADH2", "FMN",
+        "HEM", "CLA", "BCL", "SF4", "FES",
+        "MG", "ZN", "CA", "MN", "FE", "CO", "NI", "CU",
+        "GOL", "SO4", "PO4", "EDO", "PEG", "MPD", "BME",
+        // ── Real wwPDB aliases / reduced & phosphorylated forms ────────────────
+        // The wwPDB encodes NAD(P)(H) and reduced flavins under distinct 3-letter
+        // codes; include them so the blacklist actually catches them in practice.
+        "NAP", "NDP", "NAI", "NHD", "NDE", "NAJ",   // NAD(P)(H) family
+        "FDA",                                        // reduced FAD (FADH2)
+        "HEC", "HEA", "HEB", "HAS",                  // heme variants
+        "F3S", "F4S",                                // iron-sulfur clusters
+        // ── Detergents / surfactants — crystallisation additives, never the ───
+        //    cognate drug (1A4Q→DPC was a detergent mis-extracted as the ligand).
+        //    NB: free fatty acids (MYR/PLM/OLA/STE) are deliberately NOT listed —
+        //    they ARE legitimate ligands for lipid-binding proteins (FABPs etc.).
+        "DPC", "LDA", "LMT", "SDS", "BNG", "HTG", "OCT", "DAO",
+        "C8E", "F09", "PX4", "9PE", "HEZ", "12P", "15P",
+    };
+    return bl;
+}
+
+// =============================================================================
+// Glycan / sugar residue set — N- and O-linked glycosylation monosaccharides.
+//
+// These are POST-TRANSLATIONAL MODIFICATIONS on the receptor (the attachment
+// chemistry is modelled in LIB/PTMAttachment + data/mods/glycan_conformers.json:
+// NMan9, ComplexBi, Hybrid N-glycans via ASN; O-GalNAc/O-Man/O-Fuc via SER/THR;
+// terminal Sialic acid), NOT the cognate small-molecule ligand.
+//
+// Unlike a cofactor (a single discrete molecule), a glycan is a COVALENTLY
+// LINKED TREE of monosaccharides.  The extractor selects the largest connected
+// component, so an N-glycan chain (e.g. 1GPK: 4×NAG bonded together = 56 atoms)
+// outranks the real drug (HUP, 18 atoms) and is mis-extracted as the ligand
+// (also 2HR7→glycan vs P33, 1L7F→NAG vs BCZ, 1N1M, 1Q4G, 1R55).
+//
+// Therefore glycans are deprioritised SOFTLY, not hard-blacklisted: they are
+// dropped ONLY when a non-sugar candidate also exists.  When a sugar is the
+// sole HETATM candidate it IS the legitimate ligand (2GBP→BGC, a glucose/
+// galactose-binding protein), so it is kept.  See extract_ligand().
+// =============================================================================
+static const std::set<std::string>& glycan_residues() {
+    static const std::set<std::string> gl = {
+        // N-acetylhexosamines (GlcNAc / GalNAc and anomers)
+        "NAG", "NDG", "NGA", "A2G", "BGN", "16G", "GCS", "PA1",
+        // Hexoses (glucose / mannose / galactose, both anomers)
+        "MAN", "BMA", "GLC", "BGC", "GAL", "GLA", "GLB", "GIV",
+        // Deoxyhexoses (fucose / rhamnose)
+        "FUC", "FUL", "FCA", "FCB", "RAM", "RHA", "G6D",
+        // Sialic acids (Neu5Ac / Neu5Gc)
+        "SIA", "NGC", "SLB", "NEU",
+        // Pentoses (xylose / arabinose / ribose sugars)
+        "XYP", "XYS", "XYL", "ARA", "ARB", "LXC",
+        // Uronic acids (glucuronic / iduronic) and other ring sugars
+        "BDP", "GCU", "IDS", "IDR", "ADA", "MAV", "FRU", "TAG", "SOR",
+    };
+    return gl;
 }
 
 // =============================================================================
@@ -463,9 +775,16 @@ bool DatasetRunner::http_download(const std::string& url, const std::string& out
     // Ensure parent directory exists
     ensure_dir(fs::path(out_path).parent_path().string());
 
+    auto download_retry_count = []() {
+        const char* env = std::getenv("FLEXAIDDS_HTTP_RETRIES");
+        if (!env || !*env) return 3;
+        int retries = std::atoi(env);
+        return retries < 0 ? 0 : retries;
+    };
+
     // Use system curl with retry logic
     std::ostringstream cmd;
-    cmd << "curl -sS -L --retry 3 --retry-delay 2 -o \""
+    cmd << "curl -sS -L --retry " << download_retry_count() << " --retry-delay 2 -o \""
         << out_path << "\" \"" << url << "\" 2>&1";
 
     int ret = exec_cmd(cmd.str());
@@ -484,15 +803,42 @@ bool DatasetRunner::http_download(const std::string& url, const std::string& out
     return true;
 }
 
+static bool file_looks_like_html_error_page(const std::string& path) {
+    if (!fs::exists(path) || fs::file_size(path) == 0) return false;
+
+    std::ifstream check(path);
+    std::string first_line;
+    if (!std::getline(check, first_line)) return false;
+
+    std::string lower = first_line;
+    std::transform(lower.begin(), lower.end(), lower.begin(),
+                   [](unsigned char c) { return std::tolower(c); });
+    return lower.find("<!doctype") != std::string::npos ||
+           lower.find("<html") != std::string::npos;
+}
+
+static bool valid_cached_pdb_file(const std::string& path) {
+    return fs::exists(path) &&
+           fs::file_size(path) > 100 &&
+           !file_looks_like_html_error_page(path);
+}
+
+static bool valid_cached_cif_file(const std::string& path) {
+    return fs::exists(path) &&
+           fs::file_size(path) > 100 &&
+           !file_looks_like_html_error_page(path);
+}
+
 // =============================================================================
 // PDB/CIF download from RCSB
 // =============================================================================
 
 bool DatasetRunner::download_pdb(const std::string& pdb_id, const std::string& out_path) {
     // Check cache first
-    if (fs::exists(out_path) && fs::file_size(out_path) > 100) {
+    if (valid_cached_pdb_file(out_path)) {
         return true;
     }
+    if (fs::exists(out_path)) fs::remove(out_path);
 
     std::string upper_id = pdb_id;
     std::transform(upper_id.begin(), upper_id.end(), upper_id.begin(),
@@ -526,19 +872,7 @@ bool DatasetRunner::download_pdb(const std::string& pdb_id, const std::string& o
 }
 
 bool DatasetRunner::download_cif(const std::string& pdb_id, const std::string& out_path) {
-    auto valid_cached_cif = [](const std::string& path) {
-        if (!fs::exists(path) || fs::file_size(path) <= 100) return false;
-        std::ifstream check(path);
-        std::string first_line;
-        if (!std::getline(check, first_line)) return false;
-        std::string lower = first_line;
-        std::transform(lower.begin(), lower.end(), lower.begin(),
-                       [](unsigned char c) { return std::tolower(c); });
-        return lower.find("<!doctype") == std::string::npos &&
-               lower.find("<html") == std::string::npos;
-    };
-
-    if (valid_cached_cif(out_path)) {
+    if (valid_cached_cif_file(out_path)) {
         return true;
     }
     if (fs::exists(out_path)) fs::remove(out_path);
@@ -550,7 +884,7 @@ bool DatasetRunner::download_cif(const std::string& pdb_id, const std::string& o
     std::string url = "https://files.rcsb.org/download/" + upper_id + ".cif";
     std::cout << "  Downloading " << upper_id << ".cif ...\n";
     if (!http_download(url, out_path)) return false;
-    if (!valid_cached_cif(out_path)) {
+    if (!valid_cached_cif_file(out_path)) {
         std::cerr << "  [ERROR] Got HTML or invalid mmCIF for " << pdb_id << "\n";
         if (fs::exists(out_path)) fs::remove(out_path);
         return false;
@@ -572,18 +906,24 @@ bool DatasetRunner::download_structure(const std::string& pdb_id,
     // → Vcontacts box dim³ = 333³ = 37M entries → ~2 GB allocation per worker).
     // PDB format gives correct coordinate parsing with dim ≈ 20-30 → box ~tiny.
     std::string pdb_path = entry_dir + "/" + upper_id + ".pdb";
-    if (fs::exists(pdb_path) && fs::file_size(pdb_path) > 1000) {
+    if (valid_cached_pdb_file(pdb_path)) {
         out_path = pdb_path;
         return true;  // already cached
     }
+    if (fs::exists(pdb_path)) fs::remove(pdb_path);
+    std::string cif_path = entry_dir + "/" + upper_id + ".cif";
+    if (valid_cached_cif_file(cif_path)) {
+        out_path = cif_path;
+        return true;  // cached CIF is good enough when PDB is unavailable
+    }
+    if (fs::exists(cif_path)) fs::remove(cif_path);
     if (download_pdb(upper_id, pdb_path)) {
         out_path = pdb_path;
         return true;
     }
 
     // PDB unavailable (structure > 62,000 atoms or withdrawn) → fall back to CIF.
-    std::string cif_path = entry_dir + "/" + upper_id + ".cif";
-    if (fs::exists(cif_path) && fs::file_size(cif_path) > 1000) {
+    if (valid_cached_cif_file(cif_path)) {
         out_path = cif_path;
         return true;
     }
@@ -609,6 +949,108 @@ static std::string trim_copy(std::string value) {
     return value;
 }
 
+static std::string upper_copy(std::string value) {
+    std::transform(value.begin(), value.end(), value.begin(),
+                   [](unsigned char c) { return std::toupper(c); });
+    return value;
+}
+
+static bool standard_polymer_residue_code(const std::string& code) {
+    static const std::set<std::string> polymer = {
+        "ALA","ARG","ASN","ASP","CYS","GLN","GLU","GLY","HIS","ILE",
+        "LEU","LYS","MET","PHE","PRO","SER","THR","TRP","TYR","VAL",
+        "SEC","PYL",
+        "A","C","G","T","U","DA","DC","DG","DT","DU"
+    };
+    return polymer.count(upper_copy(trim_copy(code))) > 0;
+}
+
+static std::string normalize_token(std::string value) {
+    return upper_copy(trim_copy(std::move(value)));
+}
+
+struct UnionFind {
+    std::vector<int> parent;
+    std::vector<int> size;
+
+    explicit UnionFind(size_t n) : parent(n), size(n, 1) {
+        std::iota(parent.begin(), parent.end(), 0);
+    }
+
+    int find(int x) {
+        if (parent[x] == x) return x;
+        parent[x] = find(parent[x]);
+        return parent[x];
+    }
+
+    void unite(int a, int b) {
+        a = find(a);
+        b = find(b);
+        if (a == b) return;
+        if (size[a] < size[b]) std::swap(a, b);
+        parent[b] = a;
+        size[a] += size[b];
+    }
+};
+
+struct CifChemBond {
+    std::string comp_id;
+    std::string atom_id_1;
+    std::string atom_id_2;
+    std::string value_order;
+    std::string aromatic_flag;
+};
+
+static int bond_order_from_cif_fields(const std::string& value_order,
+                                      const std::string& aromatic_flag) {
+    const std::string order = normalize_token(value_order);
+    const std::string aromatic = normalize_token(aromatic_flag);
+
+    if (aromatic == "Y" || aromatic == "YES" || order == "AROM" ||
+        order == "AROMATIC" || order == "AR") {
+        return 4;
+    }
+    if (order == "SING" || order == "SINGLE" || order == "1") return 1;
+    if (order == "DOUB" || order == "DOUBLE" || order == "2") return 2;
+    if (order == "TRIP" || order == "TRIPLE" || order == "3") return 3;
+    if (order == "QUAD" || order == "QUADRUPLE" || order == "4") return 4;
+    if (order == "DELO" || order == "DELOC" || order == "DELOCATED") return 4;
+    return 1;
+}
+
+// Geometry-based bond-order heuristic for inputs that carry no CCD bond table
+// (PDB receptors without a companion .cif) or for individual bonds missing from
+// the chem_comp_bond loop.  HETATM/CONECT connectivity is order-blind, so without
+// this every extracted ligand collapses to an all-single saturated cage — the
+// HUP/1GPK failure mode (lost lactam C=O, pyridone unsaturation, exocyclic C=C).
+// Thresholds are deliberate upper bounds on canonical double-bond lengths.
+static int bond_order_from_geometry(const std::string& elem_a,
+                                    const std::string& elem_b,
+                                    float dist, bool in_ring) {
+    const std::string e1 = upper_copy(elem_a);
+    const std::string e2 = upper_copy(elem_b);
+    auto pair_is = [&](const char* a, const char* b) {
+        return (e1 == a && e2 == b) || (e1 == b && e2 == a);
+    };
+
+    if (pair_is("C", "C")) {
+        if (dist < 1.34f) return 2;                 // C=C
+        if (in_ring && dist < 1.42f) return 4;      // aromatic C~C
+        return 1;
+    }
+    if (pair_is("C", "O")) {
+        return (dist < 1.28f) ? 2 : 1;              // carbonyl C=O
+    }
+    if (pair_is("C", "N")) {
+        if (dist < 1.35f) return in_ring ? 4 : 2;   // aromatic C~N / imine C=N
+        return 1;
+    }
+    if (pair_is("C", "S")) {
+        return (dist < 1.65f) ? 2 : 1;              // thiocarbonyl C=S
+    }
+    return 1;
+}
+
 static std::vector<std::string> tokenize_cif_line_local(const std::string& line) {
     std::vector<std::string> tokens;
     size_t i = 0;
@@ -631,8 +1073,13 @@ static std::vector<std::string> tokenize_cif_line_local(const std::string& line)
 }
 
 static int cif_col(const std::vector<std::string>& headers, const std::string& name) {
+    const std::string suffix = "." + name;
     for (size_t i = 0; i < headers.size(); ++i) {
-        if (headers[i] == "_atom_site." + name) return static_cast<int>(i);
+        const std::string& header = headers[i];
+        if (header.size() >= suffix.size() &&
+            header.compare(header.size() - suffix.size(), suffix.size(), suffix) == 0) {
+            return static_cast<int>(i);
+        }
     }
     return -1;
 }
@@ -745,6 +1192,76 @@ static std::vector<PDBAtom> parse_cif_hetatm_local(const std::string& cif_path) 
     return atoms;
 }
 
+static std::vector<CifChemBond> parse_cif_chem_comp_bonds_local(const std::string& cif_path) {
+    std::ifstream ifs(cif_path);
+    if (!ifs) return {};
+
+    std::vector<CifChemBond> bonds;
+    std::vector<std::string> headers;
+    bool reading_bond_loop = false;
+    bool in_bond_data = false;
+    std::string line;
+
+    auto process_tokens = [&](const std::vector<std::string>& tokens) {
+        if (tokens.empty()) return;
+
+        int comp_col = cif_col(headers, "comp_id");
+        int atom1_col = cif_col(headers, "atom_id_1");
+        int atom2_col = cif_col(headers, "atom_id_2");
+        int order_col = cif_col(headers, "value_order");
+        int arom_col = cif_col(headers, "pdbx_aromatic_flag");
+
+        CifChemBond bond;
+        bond.comp_id = trim_copy(cif_val(tokens, comp_col));
+        bond.atom_id_1 = trim_copy(cif_val(tokens, atom1_col));
+        bond.atom_id_2 = trim_copy(cif_val(tokens, atom2_col));
+        bond.value_order = trim_copy(cif_val(tokens, order_col));
+        bond.aromatic_flag = trim_copy(cif_val(tokens, arom_col));
+
+        if (bond.comp_id.empty() || bond.comp_id == "?" || bond.comp_id == "." ||
+            bond.atom_id_1.empty() || bond.atom_id_1 == "?" || bond.atom_id_1 == "." ||
+            bond.atom_id_2.empty() || bond.atom_id_2 == "?" || bond.atom_id_2 == ".") {
+            return;
+        }
+
+        bonds.push_back(std::move(bond));
+    };
+
+    while (std::getline(ifs, line)) {
+        std::string stripped = trim_copy(line);
+        if (stripped.empty()) continue;
+
+        if (stripped == "loop_") {
+            headers.clear();
+            reading_bond_loop = false;
+            in_bond_data = false;
+            continue;
+        }
+
+        if (stripped.rfind("_chem_comp_bond.", 0) == 0 && !in_bond_data) {
+            headers.push_back(stripped);
+            reading_bond_loop = true;
+            continue;
+        }
+
+        if (reading_bond_loop && !headers.empty()) {
+            if (stripped[0] == '#' || stripped.rfind("_", 0) == 0) {
+                if (in_bond_data) break;
+                continue;
+            }
+            auto tokens = tokenize_cif_line_local(stripped);
+            if (tokens.size() < headers.size()) {
+                if (in_bond_data) break;
+                continue;
+            }
+            in_bond_data = true;
+            process_tokens(tokens);
+        }
+    }
+
+    return bonds;
+}
+
 std::vector<PDBAtom> DatasetRunner::parse_pdb_hetatm(const std::string& pdb_path) {
     std::vector<PDBAtom> atoms;
     std::ifstream ifs(pdb_path);
@@ -818,6 +1335,193 @@ std::vector<PDBAtom> DatasetRunner::parse_pdb_hetatm(const std::string& pdb_path
     return atoms;
 }
 
+// Detect a degenerate "all-single-bond" cached ligand.  Some early extractions
+// wrote SDF/MOL2 files in which every bond is order 1, even for molecules that
+// clearly contain rings.  With no double-bond / aromatic information the
+// downstream typing pipeline cannot perceive aromaticity, so an aromatic ring
+// (benzene, thiophene, …) is scored as aliphatic sp3 carbon — e.g. 1GM8/SOX
+// docked at 12.17 Å instead of 1.96 Å because its benzene+thiophene carbons
+// were typed C.3 (3) rather than C.AR (4).  This is a chemistry-quality defect
+// in the cache itself, independent of the extractor version stamp, so it must
+// invalidate the cache and force a fresh re-extraction.
+//
+// Heuristic: a molecule "has rings" when its cyclomatic number
+// (nbonds - natoms + n_connected_components) >= 1.  If it has rings AND every
+// bond is order 1, the cache is degenerate.  Hydrogens are terminal and net
+// cyclomatic-neutral, so counting them is harmless.  Any parse failure returns
+// false (fail safe: do not churn a cache we cannot understand).
+static bool ligand_bonds_degenerate(const std::string& path) {
+    std::ifstream in(path);
+    if (!in.is_open()) return false;
+    std::vector<std::string> lines;
+    {
+        std::string l;
+        while (std::getline(in, l)) {
+            if (!l.empty() && l.back() == '\r') l.pop_back();
+            lines.push_back(l);
+        }
+    }
+    if (lines.size() < 5) return false;
+
+    std::string ext = fs::path(path).extension().string();
+    std::transform(ext.begin(), ext.end(), ext.begin(),
+                   [](unsigned char c) { return std::tolower(c); });
+    const bool is_mol2 = (ext == ".mol2");
+
+    int natoms = 0;
+    std::vector<std::pair<int, int>> edges;  // 1-based atom index pairs
+    bool all_single = true;
+
+    if (is_mol2) {
+        size_t a0 = std::string::npos, a1 = lines.size();
+        for (size_t i = 0; i < lines.size(); ++i)
+            if (lines[i].rfind("@<TRIPOS>ATOM", 0) == 0) { a0 = i + 1; break; }
+        if (a0 == std::string::npos) return false;
+        for (size_t i = a0; i < lines.size(); ++i)
+            if (lines[i].rfind("@<TRIPOS>", 0) == 0) { a1 = i; break; }
+        for (size_t i = a0; i < a1; ++i)
+            if (!lines[i].empty()) ++natoms;
+
+        size_t b0 = std::string::npos, b1 = lines.size();
+        for (size_t i = 0; i < lines.size(); ++i)
+            if (lines[i].rfind("@<TRIPOS>BOND", 0) == 0) { b0 = i + 1; break; }
+        if (b0 == std::string::npos) return false;
+        for (size_t i = b0; i < lines.size(); ++i)
+            if (lines[i].rfind("@<TRIPOS>", 0) == 0) { b1 = i; break; }
+        for (size_t i = b0; i < b1; ++i) {
+            std::istringstream ss(lines[i]);
+            std::string id, a, b, type;
+            if (!(ss >> id >> a >> b >> type)) continue;
+            try { edges.emplace_back(std::stoi(a), std::stoi(b)); }
+            catch (...) { continue; }
+            if (type != "1") all_single = false;  // 2,3,ar,am → has order info
+        }
+    } else {
+        // SDF V2000: counts line is lines[3] (aaabbb...), bonds follow atoms.
+        int nbonds = 0;
+        try {
+            natoms = std::stoi(lines[3].substr(0, 3));
+            nbonds = std::stoi(lines[3].substr(3, 3));
+        } catch (...) { return false; }
+        if (natoms <= 0 || nbonds < 0) return false;
+        const size_t bstart = 4 + static_cast<size_t>(natoms);
+        if (bstart + static_cast<size_t>(nbonds) > lines.size()) return false;
+        for (int i = 0; i < nbonds; ++i) {
+            const std::string& l = lines[bstart + i];
+            int a = 0, b = 0, order = 0;
+            try {
+                a = std::stoi(l.substr(0, 3));
+                b = std::stoi(l.substr(3, 3));
+                order = std::stoi(l.substr(6, 3));
+            } catch (...) { continue; }
+            edges.emplace_back(a, b);
+            if (order != 1) all_single = false;
+        }
+    }
+
+    if (natoms <= 0 || edges.empty()) return false;
+    if (!all_single) return false;  // has bond-order info → not degenerate
+
+    // Ring test via cyclomatic number: nbonds - natoms + components >= 1.
+    std::vector<int> parent(natoms + 1);
+    for (int i = 0; i <= natoms; ++i) parent[i] = i;
+    std::function<int(int)> find = [&](int x) {
+        while (parent[x] != x) { parent[x] = parent[parent[x]]; x = parent[x]; }
+        return x;
+    };
+    for (const auto& e : edges) {
+        if (e.first < 1 || e.first > natoms || e.second < 1 || e.second > natoms)
+            return false;  // malformed index → fail safe
+        parent[find(e.first)] = find(e.second);
+    }
+    int components = 0;
+    for (int i = 1; i <= natoms; ++i)
+        if (find(i) == i) ++components;
+    const int cyclomatic =
+        static_cast<int>(edges.size()) - natoms + components;
+    return cyclomatic >= 1;  // has at least one ring and all bonds order 1
+}
+
+static bool ligand_sdf_is_current(const std::string& sdf_path,
+                                  const std::string& structure_path) {
+    if (!fs::exists(sdf_path) || fs::is_directory(sdf_path)) return false;
+    std::error_code ec;
+    if (fs::file_size(sdf_path, ec) == 0 || ec) return false;
+
+    // Force a rebuild whenever the source structure is newer than the cache.
+    ec.clear();
+    auto sdf_time = fs::last_write_time(sdf_path, ec);
+    if (ec) return false;
+
+    std::error_code src_ec;
+    if (fs::exists(structure_path)) {
+        auto src_time = fs::last_write_time(structure_path, src_ec);
+        if (!src_ec && src_time > sdf_time) return false;
+    }
+
+    // Also check companion CIF freshness when structure is PDB.
+    // Bond orders come from the CIF; a newer CIF means we need to re-extract.
+    {
+        std::string lp = structure_path;
+        std::transform(lp.begin(), lp.end(), lp.begin(),
+                       [](unsigned char c) { return std::tolower(c); });
+        if (lp.size() >= 4 && lp.rfind(".pdb") == lp.size() - 4) {
+            std::string companion_cif = structure_path.substr(0, structure_path.size() - 4) + ".cif";
+            std::error_code cif_ec;
+            if (fs::exists(companion_cif, cif_ec) && !cif_ec) {
+                auto cif_time = fs::last_write_time(companion_cif, cif_ec);
+                if (!cif_ec && cif_time > sdf_time) return false;
+            }
+        }
+    }
+
+    std::ifstream ifs(sdf_path);
+    if (!ifs) return false;
+    std::string header[4];
+    int nhdr = 0;
+    bool has_stamp = false;
+    for (int i = 0; i < 4 && std::getline(ifs, header[i]); ++i) {
+        ++nhdr;
+        if (header[i].find("FLEXAIDDS_LIGAND_EXTRACTOR_V4") != std::string::npos)
+            has_stamp = true;
+    }
+    if (!has_stamp || nhdr < 1) return false;
+
+    // Stale-cofactor guard (extraction root-cause fix).  Early benchmark runs
+    // cached ligand SDFs that were extracted BEFORE the cofactor blacklist
+    // existed, so the docking target is a ubiquitous cofactor / detergent
+    // (1G9V→HEM, 1HNN→SAH, 1A4Q→DPC) instead of the cognate drug — and because
+    // those caches still carry the current V3 stamp the old check happily reused
+    // them.  The extractor writes the ligand's 3-letter residue code as the SDF
+    // title (line 1), so if that title is now blacklisted/excluded the cache is
+    // stale by definition: force a re-extraction (which will skip the cofactor
+    // and select the real ligand: RQ3, SKF, …).
+    std::string title = header[0];
+    while (!title.empty() && (title.back()==' '||title.back()=='\t'||title.back()=='\r'))
+        title.pop_back();
+    while (!title.empty() && (title.front()==' '||title.front()=='\t'))
+        title.erase(title.begin());
+    std::transform(title.begin(), title.end(), title.begin(),
+                   [](unsigned char c){ return std::toupper(c); });
+    if (!title.empty() && cofactor_blacklist().count(title)) {
+        std::cerr << "  [CACHE] stale cofactor ligand '" << title << "' in "
+                  << sdf_path << " — forcing re-extraction\n";
+        return false;
+    }
+
+    // Bond-order quality guard.  A ringed molecule whose every bond is order 1
+    // carries no aromaticity/hybridisation information, so its aromatic carbons
+    // are scored as aliphatic sp3 — the 1GM8/SOX 12.17 Å scoring regression.
+    // Such a cache is degenerate regardless of its version stamp: invalidate it.
+    if (ligand_bonds_degenerate(sdf_path)) {
+        std::cerr << "  [CACHE] degenerate all-single-bond ligand in "
+                  << sdf_path << " (ring present, no double/aromatic bonds) — "
+                  << "forcing re-extraction\n";
+        return false;
+    }
+    return true;
+}
+
 // =============================================================================
 // Ligand extraction: HETATM → SDF
 // =============================================================================
@@ -842,7 +1546,10 @@ bool DatasetRunner::extract_ligand(const std::string& structure_path,
         return false;
     }
 
-    // Group HETATM atoms by (resName, chainID, resSeq) triplet
+    // Group HETATM atoms by (resName, chainID, resSeq) triplet, but we keep the
+    // full atom pool and later select the largest connected component.  This
+    // handles ligands split across multiple HETATM records (e.g. APC + PC) and
+    // avoids the old "largest residue only" truncation bug.
     struct ResidueKey {
         std::string resName;
         std::string chainID;
@@ -854,94 +1561,310 @@ bool DatasetRunner::extract_ligand(const std::string& structure_path,
         }
     };
 
-    std::map<ResidueKey, std::vector<PDBAtom>> residue_groups;
-    const auto& excl = excluded_residues();
+    std::vector<PDBAtom> ligand_atoms;
+    ligand_atoms.reserve(hetatm_atoms.size());
+
+    std::map<ResidueKey, std::vector<size_t>> residue_groups;
+    const auto& excl      = excluded_residues();
+    const auto& blacklist = cofactor_blacklist();
+    const auto& glycans   = glycan_residues();
+
+    // Soft glycan deprioritisation (see glycan_residues()).  A glycan is the
+    // ligand ONLY when no real (non-sugar) candidate exists; otherwise the
+    // linked sugar tree would outrank the drug.  Pre-scan to learn whether any
+    // non-glycan, non-cofactor, non-buffer HETATM residue is present.
+    bool has_nonglycan_candidate = false;
+    for (const auto& atom : hetatm_atoms) {
+        if (atom.altLoc != " " && atom.altLoc != "" && atom.altLoc != "A") continue;
+        if (blacklist.count(atom.resName)) continue;
+        if (excl.count(atom.resName))      continue;
+        if (glycans.count(atom.resName))   continue;
+        has_nonglycan_candidate = true;
+        break;
+    }
+
+    // Tally blacklisted cofactor residues that we skip, keyed by resName, so the
+    // fallback chain (e.g. "SAH(26) → SKF(28)") can be reported once the real
+    // docking target is resolved.  Insertion order is preserved for the log.
+    std::map<std::string, int> skipped_cofactors;       // resName -> heavy-atom count
+    std::vector<std::string>    skipped_cofactor_order;  // first-seen order
+    std::map<std::string, int> skipped_glycans;         // resName -> heavy-atom count
+    std::vector<std::string>    skipped_glycan_order;    // first-seen order
 
     for (const auto& atom : hetatm_atoms) {
-        // Skip excluded residues (water, ions, buffers)
-        if (excl.count(atom.resName)) continue;
         // Skip alternate conformers (keep only first)
         if (atom.altLoc != " " && atom.altLoc != "" && atom.altLoc != "A") continue;
 
+        // Never select a ubiquitous biochemical cofactor as the docking target.
+        // Record it for the fallback log, then fall through to the next residue.
+        if (blacklist.count(atom.resName)) {
+            if (skipped_cofactors.find(atom.resName) == skipped_cofactors.end())
+                skipped_cofactor_order.push_back(atom.resName);
+            skipped_cofactors[atom.resName]++;
+            continue;
+        }
+        // Deprioritise glycosylation sugars when a real ligand is present.
+        if (has_nonglycan_candidate && glycans.count(atom.resName)) {
+            if (skipped_glycans.find(atom.resName) == skipped_glycans.end())
+                skipped_glycan_order.push_back(atom.resName);
+            skipped_glycans[atom.resName]++;
+            continue;
+        }
+        // Skip excluded residues (water, ions, buffers)
+        if (excl.count(atom.resName)) continue;
+
         ResidueKey key{atom.resName, atom.chainID, atom.resSeq};
-        residue_groups[key].push_back(atom);
+        residue_groups[key].push_back(ligand_atoms.size());
+        ligand_atoms.push_back(atom);
     }
 
     if (residue_groups.empty()) {
+        if (!skipped_cofactor_order.empty()) {
+            std::cerr << "  [WARN] Every non-water HETATM residue in " << structure_path
+                      << " is a blacklisted cofactor (";
+            for (size_t i = 0; i < skipped_cofactor_order.size(); ++i) {
+                const std::string& nm = skipped_cofactor_order[i];
+                std::cerr << (i ? ", " : "") << nm << "(" << skipped_cofactors[nm] << ")";
+            }
+            std::cerr << ") — no docking target to extract\n";
+        }
         std::cerr << "  [WARN] No valid ligand residues in " << structure_path << "\n";
         return false;
     }
 
-    // Find the largest residue group (most atoms = likely the ligand)
-    ResidueKey best_key;
-    size_t max_atoms = 0;
-    for (const auto& [key, atoms_vec] : residue_groups) {
-        if (atoms_vec.size() > max_atoms) {
-            max_atoms = atoms_vec.size();
-            best_key = key;
-        }
-    }
-
-    const auto& ligand_atoms = residue_groups[best_key];
     if (ligand_atoms.size() < 3) {
         std::cerr << "  [WARN] Ligand too small (" << ligand_atoms.size()
-                  << " atoms): " << best_key.resName << "\n";
+                  << " atoms) in " << structure_path << "\n";
         return false;
     }
 
-    // ── Collect bonds BEFORE writing (counts line needs the total) ──────────
-    // Priority: (1) PDB CONECT records, (2) distance-based inference.
+    // ── Collect bonds before writing (counts line needs the total) ──────────
+    // Priority:
+    //   1. Explicit connectivity from PDB CONECT records
+    //   2. mmCIF chemical component bond tables
+    //   3. Distance-based bridging for split ligands / missing bond tables
 
-    std::set<int> ligand_serials;
-    for (const auto& atom : ligand_atoms) ligand_serials.insert(atom.serial);
+    std::map<int, size_t> serial_to_idx;
+    for (size_t i = 0; i < ligand_atoms.size(); ++i) {
+        serial_to_idx[ligand_atoms[i].serial] = i;
+    }
 
-    std::map<int, int> serial_to_idx;
-    for (size_t i = 0; i < ligand_atoms.size(); ++i)
-        serial_to_idx[ligand_atoms[i].serial] = static_cast<int>(i) + 1;
+    auto add_bond = [&](size_t i, size_t j, int order,
+                        std::map<std::pair<size_t, size_t>, int>& bonds) -> bool {
+        if (i == j) return false;
+        if (i > j) std::swap(i, j);
+        auto key = std::make_pair(i, j);
+        auto it = bonds.find(key);
+        if (it == bonds.end() || order > it->second) {
+            bonds[key] = order;
+            return true;
+        }
+        return false;
+    };
 
-    // Bond list: pairs of 1-based SDF atom indices
-    std::vector<std::pair<int,int>> bonds;
+    std::map<std::pair<size_t, size_t>, int> bonds;
 
-    // (1) CONECT records
+    // Bonds whose order came straight from the CCD chem_comp_bond loop.  These
+    // are authoritative and must never be overwritten by the geometry heuristic.
+    std::set<std::pair<size_t, size_t>> cif_bonded;
+
+    // (1) PDB CONECT records
     {
         std::ifstream pdb_ifs(structure_path);
         std::string line;
-        std::set<std::pair<int,int>> seen;
         while (std::getline(pdb_ifs, line)) {
             if (line.size() < 6 || line.substr(0, 6) != "CONECT") continue;
             while (line.size() < 31) line += ' ';
             int central = 0;
             try { central = std::stoi(line.substr(6, 5)); } catch (...) { continue; }
-            if (!ligand_serials.count(central)) continue;
+            auto central_it = serial_to_idx.find(central);
+            if (central_it == serial_to_idx.end()) continue;
+
             for (int col = 11; col < 31 && col + 5 <= static_cast<int>(line.size()); col += 5) {
                 std::string s = line.substr(col, 5);
                 if (s.find_first_not_of(" ") == std::string::npos) continue;
                 int bonded = 0;
                 try { bonded = std::stoi(s); } catch (...) { continue; }
-                if (!ligand_serials.count(bonded)) continue;
-                auto it_a = serial_to_idx.find(central);
-                auto it_b = serial_to_idx.find(bonded);
-                if (it_a == serial_to_idx.end() || it_b == serial_to_idx.end()) continue;
-                int a = it_a->second, b = it_b->second;
-                if (a > b) std::swap(a, b);
-                if (seen.insert({a, b}).second) bonds.emplace_back(a, b);
+                auto bonded_it = serial_to_idx.find(bonded);
+                if (bonded_it == serial_to_idx.end()) continue;
+                add_bond(central_it->second, bonded_it->second, 1, bonds);
             }
         }
     }
 
-    // (2) Distance-based fallback when no CONECT records exist
-    if (bonds.empty()) {
-        const float max_bond_dist_sq = 2.0f * 2.0f;  // 2.0 Å cutoff
+    // (2) mmCIF chem_comp_bond tables
+    // When structure is a PDB file, check for a companion .cif in the same directory.
+    // PDB CONECT records carry no bond-order information; the CIF _chem_comp_bond loop
+    // has explicit SING/DOUB/AROM value_order fields that we need for correct VCT typing.
+    {
+        std::string cif_source;
+        if (lower_path.size() >= 4 &&
+            (lower_path.rfind(".cif") == lower_path.size() - 4 ||
+             (lower_path.size() >= 7 && lower_path.rfind(".mmcif") == lower_path.size() - 7))) {
+            cif_source = structure_path;  // structure IS already a CIF
+        } else if (lower_path.size() >= 4 && lower_path.rfind(".pdb") == lower_path.size() - 4) {
+            // PDB receptor — look for companion .cif in same directory for bond orders
+            std::string companion = structure_path.substr(0, structure_path.size() - 4) + ".cif";
+            std::error_code comp_ec;
+            if (fs::exists(companion, comp_ec) && !comp_ec &&
+                fs::file_size(companion, comp_ec) > 100 && !comp_ec) {
+                cif_source = companion;
+            }
+        }
+
+        if (!cif_source.empty()) {
+            auto cif_bonds = parse_cif_chem_comp_bonds_local(cif_source);
+            if (!cif_bonds.empty()) {
+                for (const auto& [key, indices] : residue_groups) {
+                    const std::string key_comp = normalize_token(key.resName);
+                    std::map<std::string, size_t> atom_lookup;
+                    for (size_t idx : indices) {
+                        atom_lookup.emplace(normalize_token(ligand_atoms[idx].name), idx);
+                    }
+
+                    for (const auto& bond : cif_bonds) {
+                        if (normalize_token(bond.comp_id) != key_comp) continue;
+                        auto a1_it = atom_lookup.find(normalize_token(bond.atom_id_1));
+                        auto a2_it = atom_lookup.find(normalize_token(bond.atom_id_2));
+                        if (a1_it == atom_lookup.end() || a2_it == atom_lookup.end()) continue;
+                        add_bond(a1_it->second, a2_it->second,
+                                 bond_order_from_cif_fields(bond.value_order, bond.aromatic_flag),
+                                 bonds);
+                        auto mm = std::minmax(a1_it->second, a2_it->second);
+                        cif_bonded.insert({mm.first, mm.second});
+                    }
+                }
+            }
+        }
+    }
+
+    // (3) Distance-based bridging across disconnected components.  This keeps
+    // split ligands (e.g. APC + PC) together while still allowing a plain
+    // HETATM-only structure to be reconstructed.
+    UnionFind uf(ligand_atoms.size());
+    for (const auto& [pair, order] : bonds) {
+        (void)order;
+        uf.unite(static_cast<int>(pair.first), static_cast<int>(pair.second));
+    }
+
+    const float max_bond_dist_sq = 2.0f * 2.0f;  // 2.0 Å cutoff
+    bool bridged = true;
+    while (bridged) {
+        bridged = false;
+
+        std::vector<int> roots(ligand_atoms.size());
+        for (size_t i = 0; i < ligand_atoms.size(); ++i) {
+            roots[i] = uf.find(static_cast<int>(i));
+        }
+
         for (size_t i = 0; i < ligand_atoms.size(); ++i) {
             for (size_t j = i + 1; j < ligand_atoms.size(); ++j) {
+                if (roots[i] == roots[j]) continue;
+
                 float dx = ligand_atoms[i].x - ligand_atoms[j].x;
                 float dy = ligand_atoms[i].y - ligand_atoms[j].y;
                 float dz = ligand_atoms[i].z - ligand_atoms[j].z;
                 float dist_sq = dx*dx + dy*dy + dz*dz;
-                if (dist_sq < max_bond_dist_sq && dist_sq > 0.16f)
-                    bonds.emplace_back(static_cast<int>(i)+1, static_cast<int>(j)+1);
+                if (dist_sq < max_bond_dist_sq && dist_sq > 0.16f) {
+                    if (add_bond(i, j, 1, bonds)) {
+                        uf.unite(static_cast<int>(i), static_cast<int>(j));
+                        bridged = true;
+                    }
+                }
             }
         }
+    }
+
+    // (4) Geometry-based bond-order inference for every bond whose order was not
+    // fixed by the CCD.  CONECT records and the distance bridge above establish
+    // connectivity only (order 1); without this pass a PDB receptor with no
+    // companion .cif — or any bond absent from chem_comp_bond — keeps an all-single
+    // skeleton and ProcessLigand mistypes the whole ligand as a saturated cage.
+    {
+        std::vector<std::vector<size_t>> adj(ligand_atoms.size());
+        for (const auto& [pr, ord] : bonds) {
+            (void)ord;
+            adj[pr.first].push_back(pr.second);
+            adj[pr.second].push_back(pr.first);
+        }
+
+        // A bond (a,b) lies in a ring iff a and b remain connected after the bond
+        // itself is removed (i.e. the edge is not a bridge in the graph sense).
+        auto bond_in_ring = [&](size_t a, size_t b) -> bool {
+            std::vector<char> seen(ligand_atoms.size(), 0);
+            std::vector<size_t> stack;
+            stack.push_back(a);
+            seen[a] = 1;
+            while (!stack.empty()) {
+                size_t cur = stack.back();
+                stack.pop_back();
+                for (size_t nb : adj[cur]) {
+                    if ((cur == a && nb == b) || (cur == b && nb == a)) continue;
+                    if (nb == b) return true;
+                    if (seen[nb]) continue;
+                    seen[nb] = 1;
+                    stack.push_back(nb);
+                }
+            }
+            return false;
+        };
+
+        auto elem_of = [](const PDBAtom& at) -> std::string {
+            std::string e = at.element;
+            if (e.empty()) {
+                for (char c : at.name) {
+                    if (std::isalpha(static_cast<unsigned char>(c))) {
+                        e = std::string(1, c);
+                        break;
+                    }
+                }
+            }
+            return upper_copy(trim_copy(e));
+        };
+
+        for (auto& [pr, ord] : bonds) {
+            if (cif_bonded.count(pr)) continue;  // authoritative CCD order — leave it
+            const auto& A = ligand_atoms[pr.first];
+            const auto& B = ligand_atoms[pr.second];
+            float dx = A.x - B.x, dy = A.y - B.y, dz = A.z - B.z;
+            float dist = std::sqrt(dx * dx + dy * dy + dz * dz);
+            bool ring = bond_in_ring(pr.first, pr.second);
+            ord = bond_order_from_geometry(elem_of(A), elem_of(B), dist, ring);
+        }
+    }
+
+    // Identify the largest connected component and keep only that ligand.
+    std::map<int, std::vector<size_t>> components;
+    for (size_t i = 0; i < ligand_atoms.size(); ++i) {
+        components[uf.find(static_cast<int>(i))].push_back(i);
+    }
+    if (components.empty()) {
+        std::cerr << "  [WARN] Could not build a ligand component for " << structure_path << "\n";
+        return false;
+    }
+
+    int best_root = -1;
+    size_t best_size = 0;
+    size_t best_first_idx = std::numeric_limits<size_t>::max();
+    for (const auto& [root, idxs] : components) {
+        size_t first_idx = idxs.empty() ? std::numeric_limits<size_t>::max() : idxs.front();
+        if (idxs.size() > best_size || (idxs.size() == best_size && first_idx < best_first_idx)) {
+            best_root = root;
+            best_size = idxs.size();
+            best_first_idx = first_idx;
+        }
+    }
+    if (best_root < 0 || best_size < 3) {
+        std::cerr << "  [WARN] Ligand component too small in " << structure_path << "\n";
+        return false;
+    }
+
+    auto selected_indices = components[best_root];
+    std::sort(selected_indices.begin(), selected_indices.end());
+
+    std::vector<int> old_to_new(ligand_atoms.size(), 0);
+    for (size_t i = 0; i < selected_indices.size(); ++i) {
+        old_to_new[selected_indices[i]] = static_cast<int>(i) + 1;
     }
 
     // ── Write SDF ─────────────────────────────────────────────────────────
@@ -949,17 +1872,51 @@ bool DatasetRunner::extract_ligand(const std::string& structure_path,
     if (!ofs) return false;
 
     // Header
-    ofs << best_key.resName << "\n";
+    const auto& best_atom = ligand_atoms[selected_indices.front()];
+
+    // ── Fallback-chain log ──────────────────────────────────────────────────
+    // If one or more blacklisted cofactors were skipped to reach this ligand,
+    // make the decision auditable.  A wrong pick here is the difference between
+    // a ~2 Å self-dock and a ~20 Å nonsense pose (cf. 1HNN: SAH vs SKF).
+    if (!skipped_cofactor_order.empty()) {
+        std::cerr << "  [LIGAND] " << structure_path << ": skipped blacklisted cofactor(s) ";
+        for (size_t i = 0; i < skipped_cofactor_order.size(); ++i) {
+            const std::string& nm = skipped_cofactor_order[i];
+            std::cerr << (i ? ", " : "") << nm << "(" << skipped_cofactors[nm] << ")";
+        }
+        std::cerr << " → docking target = " << best_atom.resName
+                  << "(" << selected_indices.size() << ")\n";
+    }
+    if (!skipped_glycan_order.empty()) {
+        std::cerr << "  [LIGAND] " << structure_path << ": deprioritised glycosylation sugar(s) ";
+        for (size_t i = 0; i < skipped_glycan_order.size(); ++i) {
+            const std::string& nm = skipped_glycan_order[i];
+            std::cerr << (i ? ", " : "") << nm << "(" << skipped_glycans[nm] << ")";
+        }
+        std::cerr << " → docking target = " << best_atom.resName
+                  << "(" << selected_indices.size() << ")\n";
+    }
+
+    ofs << best_atom.resName << "\n";
     ofs << "  FlexAIDdS DatasetRunner\n";
-    ofs << "  Extracted from structure HETATM records\n";
+    ofs << "  Extracted from structure HETATM records | FLEXAIDDS_LIGAND_EXTRACTOR_V4\n";
 
     // Counts line — write ACTUAL bond count so readers respect the block
-    ofs << std::setw(3) << ligand_atoms.size()
-        << std::setw(3) << bonds.size()
+    size_t selected_bond_count = 0;
+    for (const auto& [pair, order] : bonds) {
+        (void)order;
+        if (old_to_new[pair.first] > 0 && old_to_new[pair.second] > 0) {
+            selected_bond_count++;
+        }
+    }
+
+    ofs << std::setw(3) << selected_indices.size()
+        << std::setw(3) << selected_bond_count
         << "  0  0  0  0  0  0  0999 V2000\n";
 
     // Atom block
-    for (const auto& atom : ligand_atoms) {
+    for (size_t sel_idx : selected_indices) {
+        const auto& atom = ligand_atoms[sel_idx];
         std::string elem = atom.element;
         if (elem.empty()) {
             for (char c : atom.name) {
@@ -980,10 +1937,14 @@ bool DatasetRunner::extract_ligand(const std::string& structure_path,
     }
 
     // Bond block
-    for (const auto& [a, b] : bonds) {
+    for (const auto& [pair, order] : bonds) {
+        int a = old_to_new[pair.first];
+        int b = old_to_new[pair.second];
+        if (a <= 0 || b <= 0) continue;
         ofs << std::setw(3) << a
             << std::setw(3) << b
-            << "  1  0  0  0  0\n";
+            << std::setw(3) << order
+            << "  0  0  0  0\n";
     }
 
     ofs << "M  END\n";
@@ -991,6 +1952,153 @@ bool DatasetRunner::extract_ligand(const std::string& structure_path,
     ofs.close();
 
     return true;
+}
+
+// =============================================================================
+// Strip the cognate ligand from the receptor (self-docking site preparation)
+// =============================================================================
+
+std::string DatasetRunner::write_receptor_without_ligand(
+        const std::string& receptor_path,
+        const std::string& ligand_sdf,
+        const std::string& out_receptor,
+        float tol) {
+    // Read ligand heavy-atom coordinates from the extracted SDF.
+    std::vector<std::array<float,3>> lig_xyz;
+    std::string ligand_res_name;
+    {
+        std::ifstream sdf(ligand_sdf);
+        if (!sdf) return receptor_path;
+        std::string line;
+        if (std::getline(sdf, line)) {
+            ligand_res_name = upper_copy(trim_copy(line));
+            if (ligand_res_name.empty() ||
+                ligand_res_name.size() > 3 ||
+                standard_polymer_residue_code(ligand_res_name)) {
+                ligand_res_name.clear();
+            }
+        }
+        int atom_block = 0;
+        while (std::getline(sdf, line)) {
+            if (line.size() > 39) {
+                float x = 0, y = 0, z = 0; char elem[4] = {};
+                int n = sscanf(line.c_str(), " %f %f %f %3s", &x, &y, &z, elem);
+                if (n == 4 && elem[0] != '\0' && std::isalpha((unsigned char)elem[0])
+                           && elem[0] != 'M' && elem[0] != 'A') {
+                    lig_xyz.push_back({x, y, z});
+                    atom_block++;
+                }
+            }
+            if (atom_block > 0 && line.find("M  END") != std::string::npos) break;
+        }
+    }
+    if (lig_xyz.empty()) return receptor_path;  // nothing to strip → dock as-is
+
+    std::ifstream rec(receptor_path);
+    if (!rec) return receptor_path;
+    std::ofstream out(out_receptor);
+    if (!out) return receptor_path;
+
+    // ── Bulk-cofactor strip set ──────────────────────────────────────────────
+    // modify_pdb() (top.cpp) removes only waters and, by proximity, the cognate
+    // ligand — every other HETATM (a second NAD, a non-cognate SAH, FAD, ATP,
+    // crystallographic buffers …) survives into the apo receptor and pollutes
+    // the CF: those atoms add spurious complementarity/clash terms and skew the
+    // Boltzmann partition that the Shannon entropy is computed over.  Strip them.
+    //
+    // CRITICAL ASYMMETRY: catalytic metals and metalloporphyrins are part of the
+    // receptor's binding machinery in metalloenzymes (e.g. carbonic-anhydrase
+    // Zn, cytochrome heme Fe) — the ligand coordinates TO them.  They must be
+    // RETAINED.  We therefore strip only bulk organic / nucleotide / buffer
+    // cofactors and explicitly never touch the catalytic-metal keep set below.
+    static const std::set<std::string> strip_cofactors = {
+        // Nicotinamide / flavin / SAM / PLP / nucleotide / CoA / TPP cofactors
+        "NAD","NAP","NDP","NCD","NAI","NHD","NDE",
+        "FAD","FMN","FNS","FMD",
+        "SAH","SAM","SEH","ADM",
+        "PLP","PMP","PLR","LLP","PXP",
+        "ATP","ADP","AMP","APS","GTP","GDP","GMP",
+        "UTP","UDP","UMP","CTP","CDP","CMP",
+        "IMP","IDP","ITP","TTP","TDP","TMP",
+        "COA","ACO","BCO","TPP","BTN","B12",
+        "GSH","GSD","FES","SF4","F3S","F4S","MGD","MTE",
+        // Buffer / cryo / crystallographic agents
+        "SO4","PO4","NO3","ACT","GOL","EDO","PEG","DMS","MPD",
+        "BME","EPE","MES","TRS","CIT","IMD","FMT","NH4",
+        "BOG","PGE","1PE","P6G","BU3","PDO","EGL","PG4","PE8","MLI",
+        "DTT","AZI","SCN","NO2","OXL","IPA","EOH","MOH","ETA",
+        // Detergents / surfactants (kept in sync with cofactor_blacklist()).
+        "DPC","LDA","LMT","SDS","BNG","HTG","OCT","DAO",
+        "C8E","F09","PX4","9PE","HEZ","12P","15P",
+    };
+    // Catalytic metals / metalloporphyrins — NEVER stripped (binding-site atoms).
+    static const std::set<std::string> keep_catalytic = {
+        "ZN","FE","FE2","MG","MN","CU","CO","NI","CA","NA","K","CD","MO",
+        "HEM","HEC","HEA","HEB","HAS","DHE","HDD","SRM","VER",
+    };
+
+    auto trim3 = [](const std::string& s) {
+        size_t a = s.find_first_not_of(' ');
+        if (a == std::string::npos) return std::string();
+        size_t b = s.find_last_not_of(' ');
+        return s.substr(a, b - a + 1);
+    };
+
+    const float tol_sq = tol * tol;
+    int dropped = 0;
+    int dropped_cofactor = 0;
+    std::string line;
+    while (std::getline(rec, line)) {
+        const bool coordinate_record =
+            line.size() >= 54 &&
+            (line.compare(0, 6, "HETATM") == 0 ||
+             line.compare(0, 6, "ATOM  ") == 0);
+        if (coordinate_record) {
+            // resName occupies PDB columns 18-20 (0-indexed 17..19).
+            std::string resName = trim3(line.substr(17, 3));
+
+            // Pass 2 (cofactors): drop bulk cofactors/buffers, but never a
+            // catalytic metal/heme even if its code also appears elsewhere.
+            // This intentionally applies to converted ATOM records too:
+            // OpenBabel-style caches can rewrite SAH/SKF/NAG/HUP records as
+            // ATOM while preserving the residue name and coordinates.
+            if (strip_cofactors.count(resName) && !keep_catalytic.count(resName)) {
+                dropped_cofactor++;
+                continue;
+            }
+            if (!ligand_res_name.empty() && resName == ligand_res_name) {
+                dropped++;
+                continue;
+            }
+
+            float x = 0, y = 0, z = 0;
+            try {
+                x = std::stof(line.substr(30, 8));
+                y = std::stof(line.substr(38, 8));
+                z = std::stof(line.substr(46, 8));
+            } catch (...) { out << line << "\n"; continue; }
+            bool is_ligand = false;
+            for (const auto& l : lig_xyz) {
+                const float dx = x - l[0], dy = y - l[1], dz = z - l[2];
+                if (dx*dx + dy*dy + dz*dz <= tol_sq) { is_ligand = true; break; }
+            }
+            if (is_ligand) { dropped++; continue; }  // drop the cognate ligand atom
+        }
+        out << line << "\n";
+    }
+    out.close();
+    rec.close();
+
+    if (dropped == 0 && dropped_cofactor == 0) {
+        std::cerr << "  [RECEPTOR] " << out_receptor
+                  << " — no ligand/cofactor coordinate records matched (docking against original)\n";
+        return receptor_path;
+    }
+    std::cerr << "  [RECEPTOR] stripped " << dropped
+              << " cognate-ligand + " << dropped_cofactor
+              << " bulk-cofactor coordinate records (catalytic metals/heme retained) → "
+              << out_receptor << "\n";
+    return out_receptor;
 }
 
 // =============================================================================
@@ -1026,15 +2134,53 @@ DatasetEntry DatasetRunner::prepare_pdb_entry(const std::string& pdb_id,
         return entry;
     }
 
-    // Extract ligand
-    if (!fs::exists(ligand_path) || fs::file_size(ligand_path) == 0) {
-        if (extract_ligand(receptor_path, ligand_path)) {
+    // Best-effort: also ensure companion CIF is present for ligand identity and
+    // bond-order extraction.  download_structure() prefers PDB for receptor
+    // coordinate parsing, but converted PDB caches can demote ligands/cofactors
+    // from HETATM to ATOM.  mmCIF keeps the authoritative HETATM identity.
+    std::string ligand_source_path = receptor_path;
+    {
+        std::string lrp = receptor_path;
+        std::transform(lrp.begin(), lrp.end(), lrp.begin(),
+                       [](unsigned char c) { return std::tolower(c); });
+        if (lrp.size() >= 4 && lrp.rfind(".pdb") == lrp.size() - 4) {
+            std::string companion_cif = receptor_path.substr(0, receptor_path.size() - 4) + ".cif";
+            if (!fs::exists(companion_cif) || fs::file_size(companion_cif) <= 100) {
+                download_cif(upper_id, companion_cif);  // best-effort, ignore failure
+            }
+            if (valid_cached_cif_file(companion_cif)) {
+                ligand_source_path = companion_cif;
+            }
+        }
+    }
+
+    // Extract ligand.  Regenerate stale caches whenever the extractor version
+    // changes or the source structure is newer than the cached SDF.
+    if (!ligand_sdf_is_current(ligand_path, ligand_source_path)) {
+        if (extract_ligand(ligand_source_path, ligand_path)) {
             entry.ligand_path = ligand_path;
         } else {
             std::cerr << "  [WARN] Failed to extract ligand from: " << upper_id << "\n";
         }
     } else {
         entry.ligand_path = ligand_path;
+    }
+
+    // Self-docking site prep: dock against a receptor with the cognate ligand
+    // removed. The downloaded PDB still carries the crystal ligand as HETATM;
+    // without this the docked pose overlaps the embedded copy and the native
+    // site is rejected as a clash (see write_receptor_without_ligand).
+    if (!entry.ligand_path.empty()) {
+        std::string apo_receptor = entry_dir + "/" + upper_id + "_apo.pdb";
+        if (!fs::exists(apo_receptor) ||
+            fs::last_write_time(apo_receptor) < fs::last_write_time(receptor_path) ||
+            fs::last_write_time(apo_receptor) < fs::last_write_time(entry.ligand_path)) {
+            std::string cleaned = write_receptor_without_ligand(
+                receptor_path, entry.ligand_path, apo_receptor);
+            entry.receptor_path = cleaned;
+        } else {
+            entry.receptor_path = apo_receptor;
+        }
     }
 
     return entry;
@@ -2131,6 +3277,22 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
         candidates.emplace_back(std::string(env_repo) + "/BIN/FlexAID");
     }
 
+    std::error_code cwd_ec;
+    fs::path cwd = fs::current_path(cwd_ec);
+    if (!cwd_ec) {
+        candidates.emplace_back((cwd / "FlexAIDdS").string());
+        candidates.emplace_back((cwd / "FlexAID").string());
+        candidates.emplace_back((cwd / "build" / "FlexAIDdS").string());
+        candidates.emplace_back((cwd / "build" / "FlexAID").string());
+        if (cwd.has_parent_path()) {
+            fs::path parent = cwd.parent_path();
+            candidates.emplace_back((parent / "build" / "FlexAIDdS").string());
+            candidates.emplace_back((parent / "build" / "FlexAID").string());
+            candidates.emplace_back((parent / "BIN" / "FlexAIDdS").string());
+            candidates.emplace_back((parent / "BIN" / "FlexAID").string());
+        }
+    }
+
     for (const auto& c : candidates) {
         if (!c.empty() && fs::exists(c) && !fs::is_directory(c)) {
             flexaidds_bin = c;
@@ -2432,10 +3594,44 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                 std::ofstream jf(config_path);
                 jf << "{\n"
                    << "  \"flexibility\": {\n"
-                   << "    \"intramolecular\": false\n"
+                   << "    \"intramolecular\": false,\n"
+                   // permeability < 1.0 keeps native van-der-Waals contacts from
+                   // tripping the r^-12 clash filter (1.0 flags every touching pair).
+                   << "    \"permeability\": 0.9\n"
                    << "  },\n"
                    << "  \"optimization\": {\n"
                    << "    \"grid_spacing\": " << config.grid_spacing << "\n"
+                   << "  },\n"
+                   // The MC_st0r5.2_6 interaction matrix is loaded weighted (single
+                   // value per type-pair), so the complementarity term must be
+                   // normalised by atom surface area. Without this the CF scales with
+                   // raw contact area (~1e5), overflowing the Boltzmann partition
+                   // function and collapsing the Shannon entropy to ~0.
+                   << "  \"scoring\": {\n"
+                   << "    \"normalize_area\": true,\n"
+                   // Directional H-bond and metal-coordination potentials are
+                   // pure geometric terms (no external grid required).  They
+                   // default OFF in config_parser.cpp, which left cfs->hbond and
+                   // cfs->metal_coord identically zero for every pose — the CF
+                   // reduced to bare shape complementarity and the Shannon
+                   // entropy could not distinguish H-bond-satisfied poses from
+                   // sterically-equivalent decoys.  Enabling them restores the
+                   // enthalpic ΔH channel that the MEGA ΔG = ΔH − T·ΔS needs.
+                   // (GIST is intentionally NOT enabled here: it requires a
+                   //  per-target .dx desolvation grid that the Astex set lacks,
+                   //  and top.cpp silently disables it when no grid is present.)
+                   << "    \"hbond_enabled\": true,\n"
+                   << "    \"metal_coord_enabled\": true\n"
+                   << "  },\n"
+                   // MIF-weighted GA seeding: bias gene[0] toward grid points
+                   // with favourable probe-interaction energy (Boltzmann CDF at
+                   // mif_temperature).  Adds a chemical prior on top of the
+                   // reference-ligand seed and removes the dependence on the
+                   // (now fixed) uniform fallback.  grid_prio_percent is left at
+                   // its 100 default → weight only, no destructive grid pruning,
+                   // so the full cleft search space is preserved.
+                   << "  \"seeding\": {\n"
+                   << "    \"mif_enabled\": true\n"
                    << "  },\n"
                    << "  \"thermodynamics\": {\n"
                    << "    \"temperature\": " << config.temperature << ",\n"
@@ -2489,6 +3685,29 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                 omp_per_worker = std::max(1, base / std::max(1, config.num_threads));
             }
 
+            // ── Blind the initial placement (Bug #1 fix) ─────────────────
+            // Hand FlexAIDdS a pose-blinded copy of the ligand: same centroid
+            // (binding site preserved — Astex is a re-docking benchmark) but a
+            // deterministic random orientation, so the direct-mode reflig seed
+            // can no longer inject the crystal pose into the GA.  The seed is the
+            // PDB-id hash → reproducible.  entry.ligand_path (crystal frame) is
+            // preserved untouched for the RMSD reference below.  On any failure
+            // we fall back to the original file rather than abort the run.
+            std::string dock_ligand_path = entry.ligand_path;
+            {
+                std::string blinded = out_dir + "/" + entry.pdb_id + "_dockin"
+                                    + fs::path(entry.ligand_path).extension().string();
+                const std::uint64_t blind_seed =
+                    std::hash<std::string>{}(entry.pdb_id);
+                if (write_blinded_ligand(entry.ligand_path, blinded, blind_seed)) {
+                    dock_ligand_path = blinded;
+                } else {
+                    std::cerr << "  [WARN] " << entry.pdb_id
+                              << ": could not blind ligand placement (kept crystal "
+                                 "coords — RMSD may be a false positive)\n";
+                }
+            }
+
             std::ostringstream cmd;
             cmd << "OMP_NUM_THREADS=" << omp_per_worker << " "
                 << "OMP_PLACES=cores "
@@ -2497,7 +3716,7 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                 << "'" << flexaidds_bin << "' "
                 << data_dir_arg
                 << "'" << entry.receptor_path << "' "
-                << "'" << entry.ligand_path << "' "
+                << "'" << dock_ligand_path << "' "
                 << "--config '" << config_path << "' "
                 << "-o '" << out_prefix << "' "
                 << "2>'" << out_dir << "/stderr.log' "
@@ -2569,8 +3788,12 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                         } catch (...) {}
                     }
                 }
-                // "Free energy F  = N"
-                if (line.find("Free energy F") != std::string::npos) {
+                // "  Helmholtz free energy  F  = N kcal/mol"
+                // NOTE: must match the EXACT string emitted by gaboom.cpp:780
+                // ("Helmholtz free energy  F"). The previous pattern "Free energy F"
+                // never matched (case + spacing), so free_energy_F stayed 0 and the
+                // entire ΔG/ΔH/TΔS decomposition was silenced (MEGA bug, 2026-06-06).
+                if (line.find("Helmholtz free energy") != std::string::npos) {
                     auto pos = line.find('=');
                     if (pos != std::string::npos) {
                         try { free_energy_F = std::stof(line.substr(pos+1)); }
@@ -2651,6 +3874,15 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                                                        : best_cf;
         // Shannon entropy at GA convergence (from "H_final = X" line).
         result.shannon_entropy = h_final_parsed;
+        // MEGA thermodynamic decomposition (2026-06-06 LP):
+        //   ΔG  = F                     (Helmholtz free energy from StatMech)
+        //   T·ΔS = k_B·T × H_final(nats) [Shannon entropy collapse metric, >0]
+        //   ΔG  = ΔH − T·ΔS   ⇒   ΔH = ΔG + T·ΔS   [enthalpic / vdW component]
+        if (h_final_parsed > 0.0f && free_energy_F != 0.0f) {
+            const float kBT = 0.001987f * static_cast<float>(config.temperature);
+            result.predicted_TdS = kBT * h_final_parsed;
+            result.predicted_dH  = result.predicted_dG + result.predicted_TdS;
+        }
 
         // Success = FlexAIDdS exited 0 AND produced output poses AND not stuck
         result.success = (ret == 0 && n_poses > 0 && !result.stuck);
@@ -2676,11 +3908,45 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
         // positional RMSD directly without alignment (self-docking) or use
         // minimum-distance matching for cross-docking.
         if (result.success && !entry.ligand_path.empty()) {
-            // Find the lowest-index cluster PDB (top pose)
+            // Find the pose with minimum (most negative) CF score.
+            // FlexAIDdS cluster ordering is NOT by energy rank — _0.pdb is
+            // frequently the WORST cluster (highest CF / most clashed).
+            // Scan all available poses 0-19, select minimum-CF representative.
             std::string best_pose_pdb;
-            for (int pi = 0; pi <= 9; pi++) {
-                std::string cand = out_prefix + "_" + std::to_string(pi) + ".pdb";
-                if (fs::exists(cand)) { best_pose_pdb = cand; break; }
+            {
+                float best_pose_cf = std::numeric_limits<float>::max();
+                for (int pi = 0; pi <= 19; pi++) {
+                    std::string cand = out_prefix + "_" + std::to_string(pi) + ".pdb";
+                    if (!fs::exists(cand)) continue;
+                    float pose_cf = std::numeric_limits<float>::max();
+                    {
+                        std::ifstream pf(cand);
+                        std::string pl;
+                        while (std::getline(pf, pl)) {
+                            if (pl.find("REMARK CF=") != std::string::npos) {
+                                auto p2 = pl.find("CF=");
+                                if (p2 != std::string::npos) {
+                                    try {
+                                        float v = std::stof(pl.substr(p2 + 3));
+                                        if (std::isfinite(v)) pose_cf = v;
+                                    } catch (...) {}
+                                }
+                                break;
+                            }
+                        }
+                    }
+                    if (pose_cf < best_pose_cf) {
+                        best_pose_cf = pose_cf;
+                        best_pose_pdb = cand;
+                    }
+                }
+                // Fallback: no REMARK CF found — take first available pose
+                if (best_pose_pdb.empty()) {
+                    for (int pi = 0; pi <= 19; pi++) {
+                        std::string cand = out_prefix + "_" + std::to_string(pi) + ".pdb";
+                        if (fs::exists(cand)) { best_pose_pdb = cand; break; }
+                    }
+                }
             }
 
             if (!best_pose_pdb.empty()) {
@@ -2707,35 +3973,117 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                     }
                 }
 
-                // Read best-pose PDB heavy-atom coords (HETATM ligand records)
-                std::vector<std::array<float,3>> pose_xyz;
+                // Read best-pose docked-LIGAND heavy-atom coords (Bug #2 fix).
+                //
+                // The previous "HETATM && resSeq==1 && resname>=2 chars" heuristic
+                // is unreliable: the benchmark receptors are NOT truly apo — they
+                // retain cofactors and the cognate ligand as HETATM, and those
+                // retained heteroatoms ALSO land at resSeq==1 (e.g. 1A4Q keeps two
+                // NAG copies at resSeq 1).  The filter then unions the docked
+                // ligand with receptor junk, doubling the atom count vs the crystal
+                // SDF (28 vs 56) and tripping the RMSD=999 sentinel — or, worse,
+                // silently mixing receptor atoms into the RMSD.
+                //
+                // FlexAIDdS emits CONECT records for one residue only — the docked
+                // ligand (write_MODEL_pdb iterates FA->het_res).  Those serials are
+                // therefore an exact, position-independent fingerprint of the docked
+                // ligand, immune to resSeq/resname collisions.  We select atoms by
+                // CONECT membership and drop hydrogens (the writer tags H with the
+                // dummy element token "Du", so element-column matching alone misses
+                // them — we treat the trailing element token H/D/Du as hydrogen).
+                std::set<long> conect_serials;
+                {
+                    std::ifstream pf(best_pose_pdb);
+                    std::string l;
+                    while (std::getline(pf, l)) {
+                        if (l.compare(0, 6, "CONECT") != 0) continue;
+                        for (size_t c = 6; c + 1 <= l.size(); c += 5) {
+                            std::string tok = l.substr(c, std::min<size_t>(5, l.size() - c));
+                            try { conect_serials.insert(std::stol(tok)); } catch (...) {}
+                        }
+                    }
+                }
+
+                auto elem_is_hydrogen = [](const std::string& line) -> bool {
+                    // Element = trailing whitespace-delimited token of the record.
+                    size_t end = line.find_last_not_of(" \t\r\n");
+                    if (end == std::string::npos) return false;
+                    size_t start = line.find_last_of(" \t", end);
+                    std::string tok = line.substr(start == std::string::npos ? 0 : start + 1,
+                                                  end - (start == std::string::npos ? -1 : start));
+                    for (char& ch : tok) ch = static_cast<char>(std::tolower(ch));
+                    return tok == "h" || tok == "d" || tok == "du";
+                };
+
+                std::vector<std::pair<long, std::array<float,3>>> docked;
                 {
                     std::ifstream pdb(best_pose_pdb);
                     std::string pline;
                     while (std::getline(pdb, pline)) {
                         if (pline.size() < 54) continue;
-                        if (pline.substr(0,6) != "HETATM") continue;
-                        std::string elem = (pline.size() >= 78) ? pline.substr(76,2) : "  ";
-                        // Skip hydrogen
-                        bool is_H = (elem[0] == 'H' || (elem[0] == ' ' && elem[1] == 'H'));
-                        if (is_H) continue;
+                        const bool is_atom = pline.compare(0,6,"HETATM") == 0 ||
+                                             pline.compare(0,6,"ATOM  ") == 0;
+                        if (!is_atom) continue;
+                        long serial = 0;
+                        try { serial = std::stol(pline.substr(6, 5)); } catch (...) { continue; }
+                        bool selected;
+                        if (!conect_serials.empty()) {
+                            selected = conect_serials.count(serial) > 0;
+                        } else {
+                            // Fallback (no CONECT): old resSeq==1 / resname>=2 heuristic.
+                            if (pline.compare(0,6,"HETATM") != 0) { selected = false; }
+                            else {
+                                int rs = 0;
+                                try { rs = std::stoi(pline.substr(22,4)); } catch (...) {}
+                                std::string rn = pline.substr(17,3);
+                                while (!rn.empty() && rn.front()==' ') rn.erase(rn.begin());
+                                while (!rn.empty() && rn.back() ==' ') rn.pop_back();
+                                selected = (rs == 1 && rn.size() >= 2);
+                            }
+                        }
+                        if (!selected) continue;
+                        if (elem_is_hydrogen(pline)) continue;  // drop H to match crystal heavy atoms
                         float x = std::stof(pline.substr(30,8));
                         float y = std::stof(pline.substr(38,8));
                         float z = std::stof(pline.substr(46,8));
-                        pose_xyz.push_back({x, y, z});
+                        docked.push_back({serial, {x, y, z}});
                     }
                 }
+                // Restore input/load order (serial-ascending) so positional RMSD
+                // lines up with the crystal SDF atom order (same molecule, same order).
+                std::sort(docked.begin(), docked.end(),
+                          [](const auto& a, const auto& b){ return a.first < b.first; });
+                std::vector<std::array<float,3>> pose_xyz;
+                pose_xyz.reserve(docked.size());
+                for (auto& d : docked) pose_xyz.push_back(d.second);
 
                 if (!crystal_xyz.empty() && !pose_xyz.empty()) {
-                    int n = static_cast<int>(std::min(crystal_xyz.size(), pose_xyz.size()));
-                    double sum_sq = 0.0;
-                    for (int k = 0; k < n; k++) {
-                        double dx = pose_xyz[k][0] - crystal_xyz[k][0];
-                        double dy = pose_xyz[k][1] - crystal_xyz[k][1];
-                        double dz = pose_xyz[k][2] - crystal_xyz[k][2];
-                        sum_sq += dx*dx + dy*dy + dz*dz;
+                    // With CONECT-based selection + H stripping the docked ligand is
+                    // the same molecule (and atom order) as the crystal SDF, so the
+                    // heavy-atom counts must agree exactly.  A residual mismatch now
+                    // signals a genuine extraction problem (wrong reference, altered
+                    // protonation) rather than receptor contamination, so we keep a
+                    // small tolerance and flag anything larger with the 999 sentinel.
+                    const int count_delta = std::abs(
+                        static_cast<int>(crystal_xyz.size()) -
+                        static_cast<int>(pose_xyz.size()));
+                    if (count_delta > 2) {
+                        std::cerr << "  [WARN] RMSD atom count mismatch for " << entry.pdb_id
+                                  << ": crystal=" << crystal_xyz.size()
+                                  << " pose(docked-ligand)=" << pose_xyz.size()
+                                  << " — setting RMSD=999\n";
+                        result.rmsd_to_crystal = 999.0f;
+                    } else {
+                        int n = static_cast<int>(std::min(crystal_xyz.size(), pose_xyz.size()));
+                        double sum_sq = 0.0;
+                        for (int k = 0; k < n; k++) {
+                            double dx = pose_xyz[k][0] - crystal_xyz[k][0];
+                            double dy = pose_xyz[k][1] - crystal_xyz[k][1];
+                            double dz = pose_xyz[k][2] - crystal_xyz[k][2];
+                            sum_sq += dx*dx + dy*dy + dz*dz;
+                        }
+                        result.rmsd_to_crystal = static_cast<float>(std::sqrt(sum_sq / n));
                     }
-                    result.rmsd_to_crystal = static_cast<float>(std::sqrt(sum_sq / n));
                 } else {
                     result.rmsd_to_crystal = 999.0f;
                 }

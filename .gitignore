@@ -1,20 +1,51 @@
-# Build directories (CMake / Ninja out-of-source builds)
-/build/
-/build_*/
-/build-*/
-build/
-
-# Benchmark / validation run outputs (large, regenerated per run)
-/benchmark_results/
-/results/
-
-# Compiled Python bindings (built from LIB/ via setup.py / CMake)
-python/flexaidds/_core*.so
-
-# Python caches
+# Python
 __pycache__/
-*.pyc
+*.py[cod]
+*.pyo
+*.pyd
+*.egg-info/
+*.egg
+dist/
+build/
+.eggs/
+*.so
+*.dylib
 
-# Editor / OS cruft
+# C++ build artifacts
+build/
+build-*/
+*.o
+*.a
+*.out
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+install_manifest.txt
+compile_commands.json
+_deps/
+
+# IDE / editor
+.vscode/
+.idea/
 *.swp
+*.swo
+*~
 .DS_Store
+
+# Test / coverage artifacts
+.pytest_cache/
+.coverage
+htmlcov/
+*.gcov
+*.gcda
+*.gcno
+
+# Distribution / packaging
+*.tar.gz
+*.zip
+MANIFEST
+
+# Local environment
+.env
+.envrc
+*.local

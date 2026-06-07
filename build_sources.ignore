@@ -131,3 +131,6 @@ LIB/tENCoM/tencm_cuda.cuh
 LIB/tENCoM/tencm_metal.h
 LIB/tENCoM/tencom_diff.h
 LIB/tENCoM/tencom_output.h
+tests/test_binding_mode_io.cpp
+tests/test_ga_population.cpp
+tests/test_production_blockers.cpp

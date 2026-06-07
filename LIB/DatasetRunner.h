@@ -311,6 +311,18 @@ public:
     /// and write it as SDF
     bool extract_ligand(const std::string& structure_path, const std::string& out_sdf);
 
+    /// Write a docking-ready receptor PDB with the cognate ligand removed.
+    /// Self-docking requires the native binding site to be empty: the source
+    /// PDB still contains the crystal ligand as HETATM, so docking it back
+    /// overlaps the embedded copy (r->0 in the r^-12 wall term -> the native
+    /// pose is rejected as a clash and the GA is forced into decoy pockets).
+    /// Any receptor HETATM within `tol` Å of a ligand SDF atom is dropped.
+    /// Returns the cleaned receptor path, or the original on failure.
+    std::string write_receptor_without_ligand(const std::string& receptor_path,
+                                               const std::string& ligand_sdf,
+                                               const std::string& out_receptor,
+                                               float tol = 1.3f);
+
     /// Parse PDB HETATM records into atom structures
     std::vector<PDBAtom> parse_pdb_hetatm(const std::string& pdb_path);
 

@@ -99,7 +99,8 @@ TEST_F(Mol2ReaderTest, ReadsSimpleMolecule) {
     EXPECT_EQ(FA.num_het_atm, 3);
     EXPECT_EQ(FA.res_cnt, 1);
 
-    // Atoms are stored 0-based (atoms[0] is the first atom; fatm/latm match).
+    // Atoms are 0-based (atoms[0] is the first atom), matching the 0-based
+    // iteration in Vcontacts. Residues are 1-based (see below).
     // Check coordinates of first atom (oxygen)
     EXPECT_NEAR(atoms[0].coor[0], 0.0f, 0.01f);
     EXPECT_NEAR(atoms[0].coor[1], 0.0f, 0.01f);
@@ -108,10 +109,10 @@ TEST_F(Mol2ReaderTest, ReadsSimpleMolecule) {
     // Check second atom coordinates (H1)
     EXPECT_NEAR(atoms[1].coor[0], 0.957f, 0.01f);
 
-    // Check types: O.3 → type 10, H → type 22
-    EXPECT_EQ(atoms[0].type, 10);
-    EXPECT_EQ(atoms[1].type, 22);
-    EXPECT_EQ(atoms[2].type, 22);
+    // Check canonical VCT types: O.3 → 14, H → 39 (DUMMY, not scored)
+    EXPECT_EQ(atoms[0].type, 14);
+    EXPECT_EQ(atoms[1].type, 39);
+    EXPECT_EQ(atoms[2].type, 39);
 
     // Check radii
     EXPECT_NEAR(atoms[0].radius, 1.52f, 0.01f);  // oxygen

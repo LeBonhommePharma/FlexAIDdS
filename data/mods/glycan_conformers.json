@@ -43,5 +43,83 @@
     "conformers": [
       { "phi": 180.0, "psi": 180.0, "weight": 1.0 }
     ]
+  },
+  "Hybrid": {
+    "description": "Hybrid N-glycan (one complex + one mannose antenna) — N-linked via ASN ND2",
+    "attach_to": "ASN",
+    "bond_atom": "ND2",
+    "conformers": [
+      { "phi": -72.0, "psi": 145.0, "omega": 60.0, "weight": 0.50 },
+      { "phi": -85.0, "psi": 130.0, "omega": -60.0, "weight": 0.50 }
+    ]
+  },
+  "PauciMan": {
+    "description": "Paucimannose N-glycan (Man3GlcNAc2, plant/insect core) — N-linked via ASN ND2",
+    "attach_to": "ASN",
+    "bond_atom": "ND2",
+    "conformers": [
+      { "phi": -75.0, "psi": 140.0, "omega": 60.0, "weight": 0.60 },
+      { "phi": -65.0, "psi": 165.0, "omega": 180.0, "weight": 0.40 }
+    ]
+  },
+  "OMan": {
+    "description": "O-mannosylation (alpha-Man, dystroglycan-type) — O-linked via SER OG / THR OG1",
+    "attach_to": ["SER", "THR"],
+    "bond_atom": { "SER": "OG", "THR": "OG1" },
+    "conformers": [
+      { "phi": 70.0, "psi": -100.0, "weight": 0.55 },
+      { "phi": 85.0, "psi": -130.0, "weight": 0.45 }
+    ]
+  },
+  "OFuc": {
+    "description": "O-fucosylation (alpha-Fuc, EGF/TSR repeats) — O-linked via SER OG / THR OG1",
+    "attach_to": ["SER", "THR"],
+    "bond_atom": { "SER": "OG", "THR": "OG1" },
+    "conformers": [
+      { "phi": 65.0, "psi": -115.0, "weight": 0.60 },
+      { "phi": 80.0, "psi": -125.0, "weight": 0.40 }
+    ]
+  },
+  "OGlcNAc": {
+    "description": "Intracellular O-GlcNAcylation (beta-GlcNAc) — O-linked via SER OG / THR OG1",
+    "attach_to": ["SER", "THR"],
+    "bond_atom": { "SER": "OG", "THR": "OG1" },
+    "conformers": [
+      { "phi": -65.0, "psi": 125.0, "weight": 0.70 },
+      { "phi": -75.0, "psi": 140.0, "weight": 0.30 }
+    ]
+  },
+  "CMan": {
+    "description": "C-mannosylation (alpha-Man on TRP CD1, WxxW motif)",
+    "attach_to": "TRP",
+    "bond_atom": "CD1",
+    "conformers": [
+      { "phi": -60.0, "psi": 150.0, "weight": 1.0 }
+    ]
+  },
+  "Xyl": {
+    "description": "Proteoglycan O-xylosylation (beta-Xyl, GAG linker) — O-linked via SER OG",
+    "attach_to": "SER",
+    "bond_atom": { "SER": "OG" },
+    "conformers": [
+      { "phi": 60.0, "psi": -120.0, "weight": 0.50 },
+      { "phi": 75.0, "psi": -105.0, "weight": 0.50 }
+    ]
+  },
+  "Sulfate": {
+    "description": "Tyrosine O-sulfation / carbohydrate sulfation — TYR OH / SER OG / THR OG1",
+    "attach_to": ["TYR", "SER", "THR"],
+    "bond_atom": { "TYR": "OH", "SER": "OG", "THR": "OG1" },
+    "conformers": [
+      { "phi": 180.0, "psi": 180.0, "weight": 1.0 }
+    ]
+  },
+  "Acetyl": {
+    "description": "N-epsilon lysine acetylation — LYS NZ",
+    "attach_to": "LYS",
+    "bond_atom": "NZ",
+    "conformers": [
+      { "phi": 180.0, "psi": 0.0, "weight": 1.0 }
+    ]
   }
 }

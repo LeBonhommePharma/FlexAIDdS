@@ -41,7 +41,7 @@ std::vector<int> expected_valences(Element elem, int formal_charge) {
         case Element::O:
             if (formal_charge ==  1) return {3}; // oxonium
             if (formal_charge == -1) return {1}; // oxide/phenolate
-            return {2};
+            return {2, 3}; // 3 = aromatic O donation into 5-membered ring (furan, oxazole)
         case Element::F:
             return {1};
         case Element::Si:
@@ -52,7 +52,7 @@ std::vector<int> expected_valences(Element elem, int formal_charge) {
         case Element::S:
             if (formal_charge ==  1) return {3};
             if (formal_charge == -1) return {1};
-            return {2, 4, 6};
+            return {2, 3, 4, 6}; // 3 = aromatic S (thiophene, thiadiazole)
         case Element::Cl:
             if (formal_charge == -1) return {0};
             return {1, 3, 5, 7};
@@ -95,36 +95,22 @@ int compute_implicit_h(const BonMol& mol, int atom_idx) {
         default: break;
     }
 
-    // Current bond order sum (aromatic bonds count as 1.5)
-    [[maybe_unused]] float bos = mol.bond_order_sum(atom_idx);
+    // Use the same effective bond-order model as validation. Aromatic bonds
+    // count as 1.5, so benzene-like carbons with two aromatic bonds receive
+    // one implicit H instead of two.
+    float bos = mol.bond_order_sum(atom_idx);
 
-    // For implicit H, use integer bond order (aromatic = 1)
-    // Count aromatic bonds and adjust
-    [[maybe_unused]] int  arom_bonds = 0;
-    float adj_bos   = 0.0f;
-    for (int bidx : mol.bond_adj[atom_idx]) {
-        const Bond& b = mol.bonds[bidx];
-        if (b.is_aromatic || b.order == BondOrder::AROMATIC) {
-            adj_bos += 1.0f; // count as 1 for H estimation
-            ++arom_bonds;
-        } else {
-            adj_bos += static_cast<float>(static_cast<uint8_t>(b.order));
-        }
-    }
-
-    int bos_int = static_cast<int>(std::round(adj_bos));
-
-    // Find smallest valid valence >= bos_int
+    // Find smallest valid valence >= current bond-order sum.
     auto valences = expected_valences(a.element, a.formal_charge);
     std::sort(valences.begin(), valences.end());
 
     int target = -1;
     for (int v : valences) {
-        if (v >= bos_int) { target = v; break; }
+        if (static_cast<float>(v) + 0.05f >= bos) { target = v; break; }
     }
     if (target < 0) return 0; // over-valenced already
 
-    int h = target - bos_int;
+    int h = static_cast<int>(std::round(static_cast<float>(target) - bos));
     return std::max(0, h);
 }
 
@@ -139,6 +125,14 @@ ValenceCheckResult check_valence(BonMol& mol) {
     for (int i = 0; i < mol.num_atoms(); ++i) {
         Atom& a = mol.atoms[i];
 
+        // H-stripped crystallographic SDF/MOL2 inputs still carry normal
+        // heavy-atom bond orders. Infer implicit H before checking valence so
+        // neutral O/N/C centers are validated against their completed valence.
+        if (a.implicit_h_count == 0 &&
+            a.element != Element::H) {
+            a.implicit_h_count = compute_implicit_h(mol, i);
+        }
+
         // Compute bond order sum (aromatic = 1.5)
         float bos = mol.bond_order_sum(i);
 
@@ -152,7 +146,12 @@ ValenceCheckResult check_valence(BonMol& mol) {
         bool ok = std::any_of(valid_vals.begin(), valid_vals.end(),
                               [&](int v){ return v == bos_int; });
 
-        // Allow tolerance of ±0.5 for aromatic bond order sums
+        // ±0.6 float tolerance to absorb small rounding noise in the bond-order
+        // sum. NOTE: this tolerance is NOT what handles aromatic heteroatoms.
+        // An aromatic S/O in a 5-membered ring has BOS = 2 × 1.5 = 3.0, which is
+        // a full 1.0 away from {2} — well outside ±0.6. That case is handled by
+        // listing 3 as a valid valence in expected_valences() (see Element::O/S),
+        // not here. This tolerance only catches near-integer BOS values.
         if (!ok) {
             // Try exact float check
             for (int v : valid_vals) {
@@ -206,11 +205,6 @@ ValenceCheckResult check_valence(BonMol& mol) {
             }
         }
 
-        // Update implicit H if not already set from SMILES bracket
-        if (a.implicit_h_count == 0 &&
-            a.element != Element::H) {
-            a.implicit_h_count = compute_implicit_h(mol, i);
-        }
     }
 
     return result;

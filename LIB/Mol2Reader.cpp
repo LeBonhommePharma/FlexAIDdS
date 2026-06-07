@@ -12,61 +12,82 @@
 #include <set>
 
 /*
- * SYBYL atom type → FlexAID numeric type mapping.
- * FlexAID types are defined in the interaction matrix (MC_st0r5.2_6.dat).
- * This maps common SYBYL types to the closest FlexAID equivalents.
+ * SYBYL atom type → canonical FlexAID VCT type number.
+ *
+ * The returned index is used directly as a row/column index into the VCT energy
+ * matrix (MC_st0r5.2_6.dat / kEnergyMatrix in nrgrank_matrix.h). It MUST match
+ * the canonical kSybylTypes table and the receptor typing in
+ * assign_radii_types.cpp, otherwise the heteroatom is scored against the wrong
+ * element's energy row.
+ *
+ * Canonical table (see nrgrank_matrix.h):
+ *   1=C.1  2=C.2  3=C.3  4=C.AR  5=C.CAT
+ *   6=N.1  7=N.2  8=N.3  9=N.4  10=N.AR 11=N.AM 12=N.PL3
+ *  13=O.2 14=O.3 15=O.CO2 16=O.AR
+ *  17=S.2 18=S.3 19=S.O  20=S.O2 21=S.AR
+ *  22=P.3 23=F   24=CL   25=BR   26=I   27=SE
+ *  28=MG 29=SR 30=CU 31=MN 32=HG 33=CD 34=NI 35=ZN 36=CA 37=FE 38=CO.OH
+ *  39=DUMMY 40=SOLVENT
  */
 static int sybyl_to_flexaid_type(const char* sybyl_type) {
     // Carbon types
-    if (!strcmp(sybyl_type, "C.3"))   return 1;   // sp3 carbon
+    if (!strcmp(sybyl_type, "C.1"))   return 1;   // sp carbon
     if (!strcmp(sybyl_type, "C.2"))   return 2;   // sp2 carbon
-    if (!strcmp(sybyl_type, "C.1"))   return 2;   // sp carbon (treat as sp2)
-    if (!strcmp(sybyl_type, "C.ar"))  return 3;   // aromatic carbon
-    if (!strcmp(sybyl_type, "C.cat")) return 2;   // carbocation
+    if (!strcmp(sybyl_type, "C.3"))   return 3;   // sp3 carbon
+    if (!strcmp(sybyl_type, "C.ar"))  return 4;   // aromatic carbon
+    if (!strcmp(sybyl_type, "C.cat")) return 5;   // carbocation
 
     // Nitrogen types
-    if (!strcmp(sybyl_type, "N.3"))   return 4;   // sp3 nitrogen
-    if (!strcmp(sybyl_type, "N.2"))   return 5;   // sp2 nitrogen
-    if (!strcmp(sybyl_type, "N.1"))   return 5;   // sp nitrogen
-    if (!strcmp(sybyl_type, "N.ar"))  return 6;   // aromatic nitrogen
-    if (!strcmp(sybyl_type, "N.am"))  return 7;   // amide nitrogen
-    if (!strcmp(sybyl_type, "N.pl3")) return 8;   // planar nitrogen
+    if (!strcmp(sybyl_type, "N.1"))   return 6;   // sp nitrogen
+    if (!strcmp(sybyl_type, "N.2"))   return 7;   // sp2 nitrogen
+    if (!strcmp(sybyl_type, "N.3"))   return 8;   // sp3 nitrogen
     if (!strcmp(sybyl_type, "N.4"))   return 9;   // quaternary nitrogen
+    if (!strcmp(sybyl_type, "N.ar"))  return 10;  // aromatic nitrogen
+    if (!strcmp(sybyl_type, "N.am"))  return 11;  // amide nitrogen
+    if (!strcmp(sybyl_type, "N.pl3")) return 12;  // planar nitrogen
 
     // Oxygen types
-    if (!strcmp(sybyl_type, "O.3"))   return 10;  // sp3 oxygen
-    if (!strcmp(sybyl_type, "O.2"))   return 11;  // sp2 oxygen
-    if (!strcmp(sybyl_type, "O.co2")) return 12;  // carboxylate oxygen
-    if (!strcmp(sybyl_type, "O.spc")) return 10;  // water oxygen
-    if (!strcmp(sybyl_type, "O.t3p")) return 10;  // water oxygen
+    if (!strcmp(sybyl_type, "O.2"))   return 13;  // sp2 oxygen
+    if (!strcmp(sybyl_type, "O.3"))   return 14;  // sp3 oxygen
+    if (!strcmp(sybyl_type, "O.co2")) return 15;  // carboxylate oxygen
+    if (!strcmp(sybyl_type, "O.ar"))  return 16;  // aromatic oxygen
+    if (!strcmp(sybyl_type, "O.spc")) return 14;  // water oxygen → O.3
+    if (!strcmp(sybyl_type, "O.t3p")) return 14;  // water oxygen → O.3
 
-    // Sulfur types
-    if (!strcmp(sybyl_type, "S.3"))   return 16;
+    // Sulfur types (accept both upper- and lower-case sulfoxide/sulfone forms)
     if (!strcmp(sybyl_type, "S.2"))   return 17;
-    if (!strcmp(sybyl_type, "S.O"))   return 18;
-    if (!strcmp(sybyl_type, "S.O2"))  return 19;
+    if (!strcmp(sybyl_type, "S.3"))   return 18;
+    if (!strcmp(sybyl_type, "S.O") || !strcmp(sybyl_type, "S.o"))   return 19;
+    if (!strcmp(sybyl_type, "S.O2") || !strcmp(sybyl_type, "S.o2")) return 20;
+    if (!strcmp(sybyl_type, "S.ar"))  return 21;
 
     // Phosphorus
-    if (!strcmp(sybyl_type, "P.3"))   return 20;
+    if (!strcmp(sybyl_type, "P.3"))   return 22;
 
     // Halogens
-    if (!strcmp(sybyl_type, "F"))     return 13;
-    if (!strcmp(sybyl_type, "Cl"))    return 14;
-    if (!strcmp(sybyl_type, "Br"))    return 15;
-    if (!strcmp(sybyl_type, "I"))     return 21;
+    if (!strcmp(sybyl_type, "F"))     return 23;
+    if (!strcmp(sybyl_type, "Cl"))    return 24;
+    if (!strcmp(sybyl_type, "Br"))    return 25;
+    if (!strcmp(sybyl_type, "I"))     return 26;
 
-    // Hydrogen
-    if (!strcmp(sybyl_type, "H"))     return 22;
-    if (!strcmp(sybyl_type, "H.spc")) return 22;
-    if (!strcmp(sybyl_type, "H.t3p")) return 22;
+    // Selenium
+    if (!strcmp(sybyl_type, "Se"))    return 27;
 
-    // Metals / misc
-    if (!strcmp(sybyl_type, "Fe"))    return 30;
-    if (!strcmp(sybyl_type, "Zn"))    return 31;
-    if (!strcmp(sybyl_type, "Ca"))    return 32;
-    if (!strcmp(sybyl_type, "Mg"))    return 33;
+    // Metals
+    if (!strcmp(sybyl_type, "Mg"))    return 28;
+    if (!strcmp(sybyl_type, "Sr"))    return 29;
+    if (!strcmp(sybyl_type, "Cu"))    return 30;
+    if (!strcmp(sybyl_type, "Mn"))    return 31;
+    if (!strcmp(sybyl_type, "Hg"))    return 32;
+    if (!strcmp(sybyl_type, "Cd"))    return 33;
+    if (!strcmp(sybyl_type, "Ni"))    return 34;
+    if (!strcmp(sybyl_type, "Zn"))    return 35;
+    if (!strcmp(sybyl_type, "Ca"))    return 36;
+    if (!strcmp(sybyl_type, "Fe"))    return 37;
+    if (!strcmp(sybyl_type, "Co.oh") || !strcmp(sybyl_type, "Co")) return 38;
 
-    return 39; // dummy type (unknown)
+    // Hydrogen and anything unknown are not scored against the VCT matrix.
+    return 39; // DUMMY
 }
 
 static float sybyl_radius(const char* sybyl_type) {
@@ -170,10 +191,13 @@ int read_mol2_ligand(FA_Global* FA, atom** atoms, resid** residue,
             char btype[8] = {};
             int nf = sscanf(buf, "%*d %d %d %7s", &b.origin, &b.target, btype);
             if (nf >= 2) {
+                // "nc" = non-connected (Tripos placeholder), "du" = dummy bond — skip both
+                if (!strcmp(btype, "nc") || !strcmp(btype, "du")) break;
                 b.type = 1; // single bond default
                 if (!strcmp(btype, "2") || !strcmp(btype, "do")) b.type = 2;
                 if (!strcmp(btype, "3") || !strcmp(btype, "tr")) b.type = 3;
                 if (!strcmp(btype, "ar"))                        b.type = 4;
+                if (!strcmp(btype, "am"))                        b.type = 1; // amide→single
                 tmp_bonds.push_back(b);
             }
             break;
@@ -249,17 +273,19 @@ int read_mol2_ligand(FA_Global* FA, atom** atoms, resid** residue,
             memset(&(*atoms)[FA->MIN_NUM_ATOM - 50], 0, 50 * sizeof(atom));
         }
 
-        atom& a = (*atoms)[FA->atm_cnt];
+        // FlexAID uses 1-based atom indexing: atoms[0] is unused, atoms[1] is the
+        // first real atom. Increment atm_cnt BEFORE using it as the storage index.
         FA->atm_cnt++;
         FA->atm_cnt_real++;
         FA->num_het_atm++;
+        atom& a = (*atoms)[FA->atm_cnt];
         memset(&a, 0, sizeof(atom));
 
         // Assign a PDB-style number starting at 90001
         int pdb_num = 90001 + static_cast<int>(ai);
         a.number = pdb_num;
-        FA->num_atm[pdb_num] = FA->atm_cnt - 1;
-        id_map[tmp_atoms[ai].id] = FA->atm_cnt - 1;
+        FA->num_atm[pdb_num] = FA->atm_cnt;
+        id_map[tmp_atoms[ai].id] = FA->atm_cnt;
 
         a.coor[0] = a.coor_ori[0] = tmp_atoms[ai].x;
         a.coor[1] = a.coor_ori[1] = tmp_atoms[ai].y;
@@ -289,8 +315,8 @@ int read_mol2_ligand(FA_Global* FA, atom** atoms, resid** residue,
         a.eigen = NULL;
 
         // Update residue first/last atom
-        if (ai == 0) (*residue)[FA->res_cnt].fatm[0] = FA->atm_cnt - 1;
-        (*residue)[FA->res_cnt].latm[0] = FA->atm_cnt - 1;
+        if (ai == 0) (*residue)[FA->res_cnt].fatm[0] = FA->atm_cnt;
+        (*residue)[FA->res_cnt].latm[0] = FA->atm_cnt;
     }
 
     // Populate bond arrays from MOL2 bond table

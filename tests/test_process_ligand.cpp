@@ -397,6 +397,65 @@ TEST(ValenceChecker, ImplicitHComputedForCarbon) {
     EXPECT_EQ(h, 4);
 }
 
+// Aromatic heteroatom valence (regression for thiadiazole/thiophene/furan bug).
+// Aromatic S/O in a 5-membered ring has bond-order sum 2 × 1.5 = 3.0, which is
+// a full 1.0 from the textbook neutral valences {2,...}. BOS=3 must be accepted.
+TEST(ValenceChecker, ExpectedValencesOxygenAcceptsAromaticThree) {
+    auto vals = valence::expected_valences(Element::O, 0);
+    EXPECT_NE(std::find(vals.begin(), vals.end(), 2), vals.end());
+    EXPECT_NE(std::find(vals.begin(), vals.end(), 3), vals.end())
+        << "Neutral O must accept BOS=3 for aromatic donation (furan/oxazole)";
+}
+
+TEST(ValenceChecker, ExpectedValencesSulfurAcceptsAromaticThree) {
+    auto vals = valence::expected_valences(Element::S, 0);
+    EXPECT_NE(std::find(vals.begin(), vals.end(), 3), vals.end())
+        << "Neutral S must accept BOS=3 for aromatic ring (thiophene/thiadiazole)";
+    // Existing extended valences must still be present.
+    EXPECT_NE(std::find(vals.begin(), vals.end(), 2), vals.end());
+    EXPECT_NE(std::find(vals.begin(), vals.end(), 4), vals.end());
+    EXPECT_NE(std::find(vals.begin(), vals.end(), 6), vals.end());
+}
+
+// Count valence errors attributed to atoms of a given element. The fix under
+// test only concerns aromatic S/O, so we assert specifically on the heteroatom
+// rather than whole-molecule validity (aromatic-carbon implicit-H handling on
+// the SMILES path is a separate, unrelated code path).
+static int heteroatom_errors(const valence::ValenceCheckResult& res, Element elem) {
+    int n = 0;
+    for (const auto& e : res.errors)
+        if (e.element == elem) ++n;
+    return n;
+}
+
+static valence::ValenceCheckResult checked(const std::string& smiles) {
+    SmilesParser p;
+    BonMol mol = p.parse(smiles).mol;
+    ring_perception::perceive_rings(mol);
+    aromaticity::assign_aromaticity(mol);
+    return valence::check_valence(mol);
+}
+
+TEST(ValenceChecker, ThiopheneSulfurNoValenceError) {
+    // Aromatic S, bond-order sum 2 × 1.5 = 3.0 — must not be flagged.
+    auto res = checked("c1ccsc1");
+    EXPECT_EQ(heteroatom_errors(res, Element::S), 0)
+        << "Thiophene aromatic S (BOS=3) must pass valence check";
+}
+
+TEST(ValenceChecker, FuranOxygenNoValenceError) {
+    auto res = checked("c1ccoc1");
+    EXPECT_EQ(heteroatom_errors(res, Element::O), 0)
+        << "Furan aromatic O (BOS=3) must pass valence check";
+}
+
+TEST(ValenceChecker, AcetazolamideThiadiazoleSulfurNoValenceError) {
+    // AZM (1JD0, acetazolamide) — thiadiazole ring with aromatic S (BOS=3).
+    auto res = checked("c1nnsc(NS(=O)(=O)C)1");
+    EXPECT_EQ(heteroatom_errors(res, Element::S), 0)
+        << "Acetazolamide thiadiazole S (BOS=3) must pass valence check";
+}
+
 // ===========================================================================
 // SybylTyper
 // ===========================================================================
