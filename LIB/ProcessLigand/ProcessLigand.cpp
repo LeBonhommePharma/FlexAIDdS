@@ -193,7 +193,7 @@ BonMol ProcessLigand::load_mol2(const std::string& filepath) {
             in_atom = false; in_bond = false; continue;
         }
 
-        if (in_atom && !line.empty()) {
+        if (in_atom && !line.empty() && !std::isspace(line[0])) {
             std::istringstream ss(line);
             int atom_id; std::string aname, atype;
             float x, y, z;
@@ -242,7 +242,7 @@ BonMol ProcessLigand::load_mol2(const std::string& filepath) {
             std::memcpy(mol.atoms[idx].name, aname.c_str(), copy_len);
         }
 
-        if (in_bond && !line.empty()) {
+        if (in_bond && !line.empty() && !std::isspace(line[0])) {
             std::istringstream ss(line);
             int bond_id, a1, a2; std::string btype;
             if (!(ss >> bond_id >> a1 >> a2 >> btype)) continue;
