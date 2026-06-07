@@ -84,6 +84,8 @@ class DatasetConfig:
         structural_states:     Receptor states available (``holo``, ``apo``, ``af2``).
         metrics:               Names of metrics to compute (must exist in metrics.py).
         expected_baselines:    ``{metric: value}`` reference values for regression checks.
+        published_baselines:   ``{metric: value}`` published reference values for comparisons.
+        published_source:      Human-readable citation for the published baselines.
         baseline_tolerance:    Fractional tolerance for regression detection (default 0.05).
         data_dir:              Local path to dataset files (None = not yet downloaded).
         data_format:           File format: ``"pdb"`` or ``"mol2"``.
@@ -102,6 +104,8 @@ class DatasetConfig:
     structural_states: List[str] = field(default_factory=lambda: ["holo"])
     metrics: List[str] = field(default_factory=list)
     expected_baselines: Dict[str, float] = field(default_factory=dict)
+    published_baselines: Dict[str, float] = field(default_factory=dict)
+    published_source: str = ""
     baseline_tolerance: float = 0.05
     data_dir: Optional[Path] = None
     data_format: str = "pdb"
@@ -131,6 +135,8 @@ class DatasetConfig:
             structural_states=list(raw.pop("structural_states", ["holo"])),
             metrics=list(raw.pop("metrics", [])),
             expected_baselines=dict(raw.pop("expected_baselines", {})),
+            published_baselines=dict(raw.pop("published_baselines", {})),
+            published_source=str(raw.pop("published_source", "")),
             baseline_tolerance=float(raw.pop("baseline_tolerance", 0.05)),
             data_format=str(raw.pop("data_format", "pdb")),
             active_label_field=str(raw.pop("active_label_field", "is_active")),
@@ -242,6 +248,8 @@ class DatasetResult:
             "ci_95": {k: list(v) for k, v in self.ci_95.items()},
             "regression_flags": self.regression_flags,
             "expected_baselines": self.config.expected_baselines,
+            "published_baselines": self.config.published_baselines,
+            "published_source": self.config.published_source,
         }
 
 
@@ -329,19 +337,27 @@ class BenchmarkReport:
         ]
 
         if dr.metrics:
-            lines += ["| Metric | Value | 95% CI | Baseline | Regressed? |",
-                      "|--------|-------|--------|----------|------------|"]
+            lines += ["| Metric | Value | 95% CI | Baseline | Published | Regressed? |",
+                      "|--------|-------|--------|----------|-----------|------------|"]
             for metric, value in sorted(dr.metrics.items()):
                 ci = dr.ci_95.get(metric)
                 ci_str = f"[{ci[0]:.3f}, {ci[1]:.3f}]" if ci else "—"
                 baseline = dr.config.expected_baselines.get(metric)
                 baseline_str = f"{baseline:.3f}" if baseline is not None else "—"
+                published = dr.config.published_baselines.get(metric)
+                published_str = f"{published:.3f}" if published is not None else "—"
                 regressed = dr.regression_flags.get(metric, False)
                 flag = "⚠ YES" if regressed else "OK"
                 lines.append(
-                    f"| {metric} | {value:.4f} | {ci_str} | {baseline_str} | {flag} |"
+                    f"| {metric} | {value:.4f} | {ci_str} | {baseline_str} | {published_str} | {flag} |"
                 )
             lines.append("")
+
+        if dr.config.published_source:
+            lines += [
+                f"**Published comparator**: {dr.config.published_source}",
+                "",
+            ]
 
         if dr.targets_failed:
             lines += [

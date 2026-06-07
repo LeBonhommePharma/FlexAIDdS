@@ -11,6 +11,7 @@
 #include <vector>
 #include <algorithm>
 #include <random>
+#include <filesystem>
 
 /*****************************************************************************
  * compute_mif_and_reflig — MIF computation, grid prioritization, RefLig seeding
@@ -382,19 +383,9 @@ void read_input(FA_Global* FA,atom** atoms, resid** residue,rot** rotamer,gridpo
 	}
 
 	// Create the new filename with _tmp_random
-	char *extension_pos = dot;
-	char random_str[24]; // Buffer for "_tmp_XXXXXX.pdb"
-	snprintf(random_str, sizeof(random_str), "_tmp_%d.pdb", random_num);
-
-	if (extension_pos != NULL) {
-		size_t avail = MAX_PATH__ - (size_t)(extension_pos - tmpprotname);
-		strncpy(extension_pos, random_str, avail - 1);
-		tmpprotname[MAX_PATH__ - 1] = '\0';
-	} else {
-		size_t cur = strlen(tmpprotname);
-		strncpy(tmpprotname + cur, random_str, MAX_PATH__ - cur - 1);
-		tmpprotname[MAX_PATH__ - 1] = '\0';
-	}
+	const std::string tmpdir = std::filesystem::temp_directory_path().string();
+	snprintf(tmpprotname, MAX_PATH__, "%s/flexaid_receptor_%d.pdb",
+	         tmpdir.c_str(), random_num);
 
 	modify_pdb(pdb_name,tmpprotname,FA->exclude_het,FA->remove_water,FA->is_protein,
 	           FA->keep_ions,FA->keep_structural_waters,FA->structural_water_bfactor_max);

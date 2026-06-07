@@ -7,6 +7,7 @@
 #include "../LIB/SdfReader.h"
 #include <cstring>
 #include <cstdlib>
+#include <cstdio>
 #include <fstream>
 #include <filesystem>
 #include <string>
@@ -297,6 +298,21 @@ protected:
     }
 };
 
+static std::string make_single_atom_sdf(const char* molecule_name, const char* elem) {
+    char atom_line[128];
+    std::snprintf(atom_line, sizeof(atom_line),
+                  "%10.4f%10.4f%10.4f %-3s 0  0  0  0  0  0\n",
+                  0.0f, 0.0f, 0.0f, elem);
+
+    return std::string(molecule_name) + "\n"
+           "\n"
+           "\n"
+           "  1  0  0  0  0  0  0  0  0  0999 V2000\n" +
+           std::string(atom_line) +
+           "M  END\n"
+           "$$$$\n";
+}
+
 TEST_F(SdfReaderTest, ReadsSimpleMolecule) {
     // Methane: 1 carbon, 4 hydrogens
     std::string sdf = write_sdf("methane.sdf",
@@ -390,6 +406,86 @@ TEST_F(SdfReaderTest, ReadsHalogens) {
     EXPECT_NEAR(atoms[1].radius, 1.47f, 0.01f);  // F
     EXPECT_NEAR(atoms[2].radius, 1.75f, 0.01f);  // Cl
     EXPECT_NEAR(atoms[3].radius, 1.85f, 0.01f);  // Br
+
+    cleanup_fa(&FA, atoms, residue);
+    std::remove(sdf.c_str());
+}
+
+TEST_F(SdfReaderTest, MapsBareSdfElementsToCanonicalTypes) {
+    struct Case {
+        const char* elem;
+        int expected_type;
+    };
+
+    const Case cases[] = {
+        {"C", 3},
+        {"N", 11},
+        {"O", 14},
+        {"S", 18},
+        {"P", 22},
+        {"F", 23},
+        {"Cl", 24},
+        {"Br", 25},
+        {"I", 26},
+        {"Se", 27},
+        {"Mg", 28},
+        {"Sr", 29},
+        {"Cu", 30},
+        {"Mn", 31},
+        {"Hg", 32},
+        {"Cd", 33},
+        {"Ni", 34},
+        {"Zn", 35},
+        {"Ca", 36},
+        {"Fe", 37},
+        {"Co", 38},
+        {"H", 39},
+        {"Xx", 39},
+    };
+
+    for (const auto& tc : cases) {
+        std::string sdf = write_sdf(std::string("bare_") + tc.elem + ".sdf",
+                                    make_single_atom_sdf("bare", tc.elem));
+
+        FA_Global FA;
+        atom* atoms = nullptr;
+        resid* residue = nullptr;
+        init_fa_for_reader(&FA, &atoms, &residue);
+
+        int ok = read_sdf_ligand(&FA, &atoms, &residue, sdf.c_str());
+        EXPECT_EQ(ok, 1) << "failed to read element " << tc.elem;
+        EXPECT_EQ(FA.num_het_atm, 1) << "unexpected atom count for " << tc.elem;
+        EXPECT_EQ(atoms[0].type, tc.expected_type) << "element " << tc.elem;
+
+        cleanup_fa(&FA, atoms, residue);
+        std::remove(sdf.c_str());
+    }
+}
+
+TEST_F(SdfReaderTest, BareNitrogenMapsToActiveScoringType) {
+    // SDF/MOL atom blocks only carry an element symbol, not SYBYL hybridisation.
+    // FlexAIDdS therefore maps bare N to N.am (11), not N.3 (8), because type 8
+    // has no usable interactions in MC_st0r5.2_6.dat and would make the ligand
+    // nitrogen effectively invisible to scoring.
+    std::string sdf = write_sdf("nitrogen.sdf",
+        "nitrogen\n"
+        "\n"
+        "\n"
+        "  1  0  0  0  0  0  0  0  0  0999 V2000\n"
+        "    0.0000    0.0000    0.0000 N   0  0  0  0  0  0\n"
+        "M  END\n"
+    );
+
+    FA_Global FA;
+    atom* atoms = nullptr;
+    resid* residue = nullptr;
+    init_fa_for_reader(&FA, &atoms, &residue);
+
+    int ok = read_sdf_ligand(&FA, &atoms, &residue, sdf.c_str());
+    EXPECT_EQ(ok, 1);
+
+    EXPECT_EQ(atoms[0].type, 11);
+    EXPECT_NE(atoms[0].type, 8);
 
     cleanup_fa(&FA, atoms, residue);
     std::remove(sdf.c_str());

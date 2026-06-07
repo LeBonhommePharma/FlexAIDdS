@@ -183,9 +183,46 @@ ensure_runtime_data_files() {
     done
 }
 
+benchmark_manifest_path() {
+    case "${BENCHMARK:-astex}" in
+        casf|casf2016)
+            printf '%s\n' "${REPO_ROOT}/benchmarks/datasets/casf2016.yaml"
+            ;;
+        astex_non_native|astex_nonnative)
+            printf '%s\n' "${REPO_ROOT}/benchmarks/datasets/astex_nonnative.yaml"
+            ;;
+        hap2)
+            printf '%s\n' "${REPO_ROOT}/benchmarks/datasets/hap2.yaml"
+            ;;
+        *)
+            printf '%s\n' "${REPO_ROOT}/benchmarks/datasets/astex_diverse.yaml"
+            ;;
+    esac
+}
+
 # ─── Locate binary ────────────────────────────────────────────────────────────
 
 locate_binary() {
+    if [[ -n "${FLEXAIDDS_BINARY:-}" && -x "${FLEXAIDDS_BINARY}" ]]; then
+        FLEXAIDDS_BIN="${FLEXAIDDS_BINARY}"
+        BUILD_DIR="$(cd "$(dirname "${FLEXAIDDS_BIN}")" && pwd)"
+        ensure_runtime_data_files "${BUILD_DIR}" || return 1
+        ok "Binary: ${FLEXAIDDS_BIN}"
+        export FLEXAIDDS_BUILD_DIR="${BUILD_DIR}"
+        export FLEXAIDDS_BINARY="${FLEXAIDDS_BIN}"
+        export FLEXAIDDS_REPO="${REPO_ROOT}"
+        return 0
+    fi
+    if [[ -n "${FLEXAID_BINARY:-}" && -x "${FLEXAID_BINARY}" ]]; then
+        FLEXAIDDS_BIN="${FLEXAID_BINARY}"
+        BUILD_DIR="$(cd "$(dirname "${FLEXAIDDS_BIN}")" && pwd)"
+        ensure_runtime_data_files "${BUILD_DIR}" || return 1
+        ok "Binary: ${FLEXAIDDS_BIN}"
+        export FLEXAIDDS_BUILD_DIR="${BUILD_DIR}"
+        export FLEXAIDDS_BINARY="${FLEXAIDDS_BIN}"
+        export FLEXAIDDS_REPO="${REPO_ROOT}"
+        return 0
+    fi
     if [[ -n "${FLEXAIDDS_BUILD_DIR:-}" ]]; then
         local build_candidates=(
             "${BUILD_DIR}/FlexAIDdS"
@@ -705,7 +742,7 @@ run_twopass_dataset() {
     # ── Flag complexes for Pass 2 ──
     info "Analysing Pass 1 results for Pass 2 flagging..."
     python3 - "${pass1_out}" "${flagged_file}" "${H_FINAL_FLAG_THRESHOLD}" <<'PYEOF'
-import os, sys, json, re, glob
+import csv, os, sys, json, re, glob
 
 out_dir      = sys.argv[1]
 flagged_file = sys.argv[2]
@@ -724,16 +761,16 @@ for cdir in sorted(glob.glob(os.path.join(out_dir, '*/'))):
                     h_final = float(m.group(1))
         except Exception:
             pass
-    # Parse RMSD from binding_modes.json
+    # Parse RMSD from the benchmark_datasets result.csv for this complex
     rmsd = None
-    bm = os.path.join(cdir, 'binding_modes.json')
-    if os.path.exists(bm):
+    rcsv = os.path.join(cdir, 'result.csv')
+    if os.path.exists(rcsv):
         try:
-            d = json.load(open(bm))
-            modes = d.get('binding_modes', [])
-            if modes:
-                v = modes[0].get('best_pose_rmsd') or modes[0].get('rmsd_to_crystal')
-                if v is not None:
+            with open(rcsv) as fh:
+                rows = list(csv.DictReader(fh))
+            if rows:
+                v = rows[0].get('rmsd_to_crystal')
+                if v not in (None, '', 'N/A'):
                     rmsd = float(v)
         except Exception:
             pass
@@ -771,7 +808,7 @@ PYEOF
     # ── Merge: Pass 1 results + Pass 2 overrides → summary CSV ──
     info "Merging Pass 1 + Pass 2 into summary CSV..."
     python3 - "${pass1_out}" "${pass2_out}" "${out_base}/summary.csv" <<'PYEOF'
-import os, sys, json, glob
+import csv, os, sys, json, glob
 
 pass1_dir  = sys.argv[1]
 pass2_dir  = sys.argv[2]
@@ -782,15 +819,16 @@ def best_result(cdir):
     try: wall = int(open(os.path.join(cdir, 'wall_time_s')).read().strip())
     except: pass
     score, rmsd, success = 'N/A', 'N/A', 0
-    bm = os.path.join(cdir, 'binding_modes.json')
-    if os.path.exists(bm):
+    rcsv = os.path.join(cdir, 'result.csv')
+    if os.path.exists(rcsv):
         try:
-            d = json.load(open(bm))
-            modes = d.get('binding_modes', [])
-            if modes:
-                score = modes[0].get('best_score', modes[0].get('score', 'N/A'))
-                r = modes[0].get('best_pose_rmsd') or modes[0].get('rmsd_to_crystal')
-                if r is not None:
+            with open(rcsv) as fh:
+                rows = list(csv.DictReader(fh))
+            if rows:
+                row = rows[0]
+                score = row.get('best_score', 'N/A')
+                r = row.get('rmsd_to_crystal', 'N/A')
+                if r not in (None, '', 'N/A'):
                     rmsd = str(r)
                     success = 1 if float(r) < 2.0 else 0
         except: pass
@@ -925,6 +963,7 @@ run_full_astex() {
     # Prefer benchmark_datasets binary if available (handles download + dock atomically)
     if [[ -n "${DATASET_BIN:-}" ]] && [[ "${TWO_PASS}" == false ]]; then
         info "Using benchmark_datasets binary for full Astex run"
+        export FLEXAIDDS_BINARY="${FLEXAIDDS_BIN}"
         run "${DATASET_BIN}" \
             --benchmark   astex \
             --output      "${ast_out}" \
@@ -934,34 +973,16 @@ run_full_astex() {
             --job-timeout-seconds 7200 \
             2>&1 | tee "${_astex_log}"
 
-        # Extract per-complex results into summary CSV from results directory
-        if [[ "${DRY_RUN}" == false ]] && [[ -d "${ast_out}" ]]; then
-            for pdb_dir in "${ast_out}"/*/; do
-                local pdb="${pdb_dir%/}"
-                pdb="${pdb##*/}"
-                local wt top1 rmsd succ
-                wt="$(cat "${pdb_dir}/wall_time_s"    2>/dev/null || echo 0)"
-                top1="$(python3 -c "
-import json
-try:
-    d=json.load(open('${pdb_dir}/binding_modes.json'))
-    m=d.get('binding_modes',[])
-    print(m[0].get('best_score','N/A') if m else 'N/A')
-except: print('N/A')
-" 2>/dev/null || echo 'N/A')"
-                rmsd="$(python3 -c "
-import json
-try:
-    d=json.load(open('${pdb_dir}/binding_modes.json'))
-    m=d.get('binding_modes',[])
-    print(m[0].get('best_pose_rmsd','N/A') if m else 'N/A')
-except: print('N/A')
-" 2>/dev/null || echo 'N/A')"
-                succ=0
-                python3 -c "import sys; sys.exit(0 if '${rmsd}'!='N/A' and float('${rmsd}')<2.0 else 1)" \
-                    2>/dev/null && succ=1 || true
-                echo "${pdb},${wt},${top1},${rmsd},${succ}" >> "${SUMMARY_CSV}"
-            done
+        # benchmark_datasets already emits the authoritative Astex CSV.
+        # Use that file directly so validation sees the actual benchmark rows
+        # instead of a reconstructed summary with missing binding_modes.json.
+        if [[ "${DRY_RUN}" == false ]]; then
+            local dataset_results_csv="${ast_out}/astex_diverse_results.csv"
+            if [[ -f "${dataset_results_csv}" ]]; then
+                cp "${dataset_results_csv}" "${SUMMARY_CSV}"
+            else
+                warn "Expected benchmark results CSV not found: ${dataset_results_csv}"
+            fi
         fi
         return 0
     fi
@@ -1049,6 +1070,7 @@ run_phase2() {
 
     if [[ -n "${DATASET_BIN:-}" ]]; then
         info "Running Astex Non-Native..."
+        export FLEXAIDDS_BINARY="${FLEXAIDDS_BIN}"
         run "${DATASET_BIN}" \
             --benchmark   astex_nonnative \
             --output      "${RESULTS_DIR}/astex_nonnative" \
@@ -1059,6 +1081,7 @@ run_phase2() {
         if [[ -d "${REPO_ROOT}/benchmarks/casf2016" ]]; then
             export SHANNON_TRACE_LEVEL=2
             info "Running CASF-2016..."
+            export FLEXAIDDS_BINARY="${FLEXAIDDS_BIN}"
             run "${DATASET_BIN}" \
                 --benchmark   casf2016 \
                 --output      "${RESULTS_DIR}/casf2016" \
@@ -1111,17 +1134,28 @@ std_wall  = math.sqrt(var_wall)
 
 print(f"  Complexes:     {n}")
 print(f"  Success rate:  {n_success}/{n}  ({sr:.1f}%)")
-print(f"  Target:        ≥65% (Vina baseline 57.6%)")
-print(f"  Status:        {'PASS ✅' if sr >= 65.0 else 'NEEDS WORK ⚠️' if sr >= 58.0 else 'FAIL ❌'}")
+print("  Target:        see manifest validation log")
+print("  Status:        see manifest validation log")
 print(f"  Mean wall:     {mean_wall:.0f}s ± {std_wall:.0f}s/complex")
 PYEOF
+
+        manifest_path="$(benchmark_manifest_path)"
+        if [[ -f "${manifest_path}" ]]; then
+            info "Validating against manifest: ${manifest_path}"
+            python3 "${REPO_ROOT}/scripts/validate_benchmark_results.py" \
+                "${SUMMARY_CSV}" \
+                --manifest "${manifest_path}" \
+                --out-dir "${FIGURES_DIR}" \
+                2>&1 | tee "${RESULTS_DIR}/validation.log"
+        else
+            warn "Manifest not found: ${manifest_path}"
+        fi
     fi
 
     echo ""
     info "Next steps:"
-    info "  1. Run validate_benchmark_results.py for full statistical analysis"
-    info "  2. python3 scripts/validate_benchmark_results.py ${SUMMARY_CSV}"
-    info "  3. Deposit raw results to Zenodo (DOI required for thesis)"
+    info "  1. Inspect validation log: ${RESULTS_DIR}/validation.log"
+    info "  2. Deposit raw results to Zenodo (DOI required for thesis)"
     echo ""
 }
 

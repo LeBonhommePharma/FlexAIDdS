@@ -2,6 +2,8 @@
 #include "fileio.h"
 #include "ion_utils.h"
 
+#include <cerrno>
+
 #define NAA 20
 #define NNA 4
 #define NLIST 40
@@ -63,7 +65,8 @@ void modify_pdb(char* infile, char* outfile, int exclude_het, int remove_water, 
 
 	outfile_ptr = fopen(outfile,"w");
 	if(outfile_ptr == NULL){
-		fprintf(stderr, "ERROR: Could not write temporary PDB file.\n");
+		fprintf(stderr, "ERROR: Could not write temporary PDB file: %s (%s)\n",
+		        outfile, strerror(errno));
 		Terminate(20);
 	}
 	

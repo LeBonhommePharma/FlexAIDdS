@@ -1,21 +1,22 @@
 #!/usr/bin/env python3
 """
-validate_benchmark_results.py — FlexAIDdS Benchmark Statistical Validation
+validate_benchmark_results.py — FlexAIDdS benchmark statistical validation.
 
 Reads the summary CSV produced by run_benchmark_production.sh and performs:
   1. Descriptive statistics (wall-clock, success rate, RMSD distribution)
   2. Bootstrap 95% CI on success rate (n=85, 10k resamples — not normal approx)
-  3. Fisher's exact test vs. Vina baseline (58/85 = 68.2% — Hartshorn 2007)
+  3. Exact one-sided binomial test vs. the published JCIM 2015 comparator
   4. Shannon-Weighted Success Rate (SWSR calibration check)
   5. Spearman ρ(H_final, RMSD_top1) with bootstrap CI
   6. Plots: wall-clock dist, score vs RMSD scatter, Shannon H convergence curves
-  7. PASS / FAIL verdict against publication benchmark thresholds (hardcoded below)
+  7. PASS / FAIL verdict against manifest baselines when provided
 
 Usage:
     python3 scripts/validate_benchmark_results.py <summary.csv> [options]
 
     python3 scripts/validate_benchmark_results.py \\
         benchmark_results/20260517_120000/summary.csv \\
+        --manifest benchmarks/datasets/astex_diverse.yaml \\
         --shannon-log-dir benchmark_results/20260517_120000/astex_diverse/ \\
         --out-dir benchmark_results/20260517_120000/figures/
 
@@ -29,6 +30,16 @@ import math
 import os
 import sys
 from pathlib import Path
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+PYTHON_ROOT = REPO_ROOT / "python"
+if str(PYTHON_ROOT) not in sys.path:
+    sys.path.insert(0, str(PYTHON_ROOT))
+
+try:
+    from flexaidds.dataset_runner.runner import DatasetConfig
+except Exception:  # pragma: no cover - fallback only used in minimal envs
+    DatasetConfig = None  # type: ignore[assignment]
 
 
 # ─── Constants (publication benchmark spec; previously cross-checked vs BENCHMARKING_PLAN.md) ───────
@@ -44,6 +55,14 @@ TARGET_SR      = 0.65               # 65% target success rate (FlexAIDdS)
 FLOOR_SR       = 0.58               # 58% hard floor (Vina baseline)
 N_BOOT         = 10_000             # bootstrap resamples
 BOOT_CI        = 0.95               # confidence interval level
+SUCCESS_METRIC_KEYS = (
+    "docking_power_top1",
+    "crossdock_success_rate_2A",
+    "success_rate_2A",
+    "success_rate",
+)
+RMSD_MEAN_KEYS = ("mean_rmsd",)
+RMSD_MEDIAN_KEYS = ("median_rmsd",)
 
 
 # ─── Bootstrap ────────────────────────────────────────────────────────────────
@@ -88,6 +107,35 @@ def bootstrap_spearman(x: list[float], y: list[float],
     return rho, lo, hi
 
 
+def exact_binomial_tail(successes: int, trials: int, p0: float) -> float:
+    """
+    Exact one-sided binomial p-value: P(X >= successes | n=trials, p=p0).
+
+    The recurrence is stable for the small sample sizes used by the benchmark
+    and avoids a SciPy dependency.
+    """
+    if trials <= 0:
+        return float("nan")
+    if successes <= 0:
+        return 1.0
+    if successes > trials:
+        return 0.0
+    if p0 <= 0.0:
+        return 0.0 if successes > 0 else 1.0
+    if p0 >= 1.0:
+        return 1.0 if successes <= trials else 0.0
+
+    q = 1.0 - p0
+    pmf = q ** trials
+    tail = 0.0
+    for k in range(0, trials + 1):
+        if k >= successes:
+            tail += pmf
+        if k < trials:
+            pmf *= (trials - k) / (k + 1) * (p0 / q)
+    return min(max(tail, 0.0), 1.0)
+
+
 def spearman_r(x: list[float], y: list[float]) -> float:
     """Spearman rank correlation — stdlib only."""
     n = len(x)
@@ -117,6 +165,45 @@ def spearman_r(x: list[float], y: list[float]) -> float:
         sum((ry[i] - my) ** 2 for i in range(n))
     )
     return num / den if den > 0 else float('nan')
+
+
+def select_baseline(baselines: dict[str, float], preferred_keys: tuple[str, ...]) -> tuple[str | None, float | None]:
+    """Return the first baseline found in `preferred_keys`, preserving its label."""
+    for key in preferred_keys:
+        if key in baselines:
+            return key, float(baselines[key])
+    return None, None
+
+
+def load_manifest_config(manifest_path: Path):
+    """
+    Load a benchmark manifest.
+
+    Prefer the package's DatasetConfig parser so the validator and the runner
+    interpret YAML in the same way. Fall back to PyYAML only if the package
+    import is unavailable.
+    """
+    if not manifest_path.exists():
+        raise FileNotFoundError(manifest_path)
+    if DatasetConfig is not None:
+        return DatasetConfig.from_yaml(manifest_path)
+    try:  # pragma: no cover - only used if the package import is unavailable
+        import yaml
+    except ImportError as exc:  # pragma: no cover
+        raise RuntimeError(
+            "PyYAML or flexaidds.dataset_runner.runner is required to read manifests"
+        ) from exc
+    with open(manifest_path) as fh:  # pragma: no cover
+        return yaml.safe_load(fh)
+
+
+def manifest_get(manifest, key: str, default=None):
+    """Read a field from a DatasetConfig or fallback dict."""
+    if manifest is None:
+        return default
+    if isinstance(manifest, dict):
+        return manifest.get(key, default)
+    return getattr(manifest, key, default)
 
 
 def fisher_exact_greater(a: int, b: int, c: int, d: int) -> tuple[float, float]:
@@ -353,6 +440,8 @@ def main():
     parser.add_argument("--shannon-log-dir", default=None,
                         help="Directory containing per-complex result dirs "
                              "(for Shannon trace CSVs)")
+    parser.add_argument("--manifest", default=None,
+                        help="Dataset manifest YAML (for published baseline comparison)")
     parser.add_argument("--out-dir", default=None,
                         help="Output directory for figures (default: alongside CSV)")
     parser.add_argument("--n-boot", type=int, default=N_BOOT)
@@ -367,13 +456,21 @@ def main():
 
     out_dir = Path(args.out_dir) if args.out_dir else csv_path.parent / "figures"
     shannon_root = Path(args.shannon_log_dir) if args.shannon_log_dir else None
+    manifest_cfg = load_manifest_config(Path(args.manifest)) if args.manifest else None
 
     print("=" * 65)
     print("  FlexAIDdS Benchmark Statistical Validation")
     print(f"  Input:   {csv_path}")
     print(f"  Out dir: {out_dir}")
+    if args.manifest:
+        print(f"  Manifest: {Path(args.manifest)}")
     print("=" * 65)
     print()
+    if manifest_cfg is not None:
+        print(f"  Loaded manifest: {manifest_get(manifest_cfg, 'name', manifest_get(manifest_cfg, 'slug', 'unknown'))}")
+        published_source = manifest_get(manifest_cfg, "published_source", "")
+        if published_source:
+            print(f"  Published source: {published_source}")
 
     # ── Load CSV ──────────────────────────────────────────────────────────────
     rows = []
@@ -422,6 +519,31 @@ def main():
     valid_wall  = [w for w in wall_times if w is not None and w > 0]
     valid_rmsds = [r for r in rmsds if r is not None]
     valid_h     = [h for h in h_finals if h is not None]
+    expected_baselines = manifest_get(manifest_cfg, "expected_baselines", {})
+    published_baselines = manifest_get(manifest_cfg, "published_baselines", {})
+    baseline_tol = float(manifest_get(manifest_cfg, "baseline_tolerance", 0.05)) if manifest_cfg is not None else 0.0
+    expected_success_key, expected_success_baseline = select_baseline(expected_baselines, SUCCESS_METRIC_KEYS)
+    published_success_key, published_success_baseline = select_baseline(published_baselines, SUCCESS_METRIC_KEYS)
+    expected_mean_key, expected_mean_baseline = select_baseline(expected_baselines, RMSD_MEAN_KEYS)
+    expected_median_key, expected_median_baseline = select_baseline(expected_baselines, RMSD_MEDIAN_KEYS)
+    if expected_success_baseline is None:
+        expected_success_baseline = TARGET_SR
+        expected_success_key = "target_success_rate"
+    if published_success_baseline is None:
+        published_success_baseline = VINA_N_SUCCESS / VINA_N_TOTAL
+        published_success_key = "vina_top1_baseline"
+    expected_success_threshold = (
+        expected_success_baseline * (1 - baseline_tol)
+        if manifest_cfg is not None else expected_success_baseline
+    )
+    expected_mean_threshold = (
+        expected_mean_baseline * (1 + baseline_tol)
+        if expected_mean_baseline is not None else None
+    )
+    expected_median_threshold = (
+        expected_median_baseline * (1 + baseline_tol)
+        if expected_median_baseline is not None else None
+    )
 
     # ── Wall-clock statistics ─────────────────────────────────────────────────
     print("\n── Wall-clock Statistics ─────────────────────────────────────")
@@ -452,6 +574,18 @@ def main():
         print(f"  RMSD < 2.0 Å:     {dist['frac_lt_2A']*100:.1f}% (primary criterion)")
         print(f"  RMSD < 3.0 Å:     {dist['frac_lt_3A']*100:.1f}% (near-success)")
         print(f"  RMSD > 5.0 Å:     {dist['frac_gt_5A']*100:.1f}% (catastrophic failure)")
+        if expected_mean_baseline is not None:
+            print(
+                f"  Mean RMSD target ({expected_mean_key}): "
+                f"{expected_mean_baseline:.2f} Å "
+                f"(pass if ≤ {expected_mean_threshold:.2f} Å)"
+            )
+        if expected_median_baseline is not None:
+            print(
+                f"  Median RMSD target ({expected_median_key}): "
+                f"{expected_median_baseline:.2f} Å "
+                f"(pass if ≤ {expected_median_threshold:.2f} Å)"
+            )
     else:
         print("  No RMSD data available")
 
@@ -461,24 +595,27 @@ def main():
     sr_obs    = n_success / n
     print(f"  n_success / n:    {n_success} / {n}")
     print(f"  SR (observed):    {sr_obs*100:.1f}%")
+    print(
+        f"  Expected target ({expected_success_key}): "
+        f"{expected_success_baseline*100:.1f}% "
+        f"(pass if ≥ {expected_success_threshold*100:.1f}%)"
+    )
 
     sr_mean, sr_lo, sr_hi = bootstrap_sr(successes, n_boot=args.n_boot)
     print(f"  Bootstrap CI:     [{sr_lo*100:.1f}%, {sr_hi*100:.1f}%] (95%, {args.n_boot} resamples)")
-    print(f"  Vina baseline:    {VINA_N_SUCCESS}/{VINA_N_TOTAL} = {VINA_N_SUCCESS/VINA_N_TOTAL*100:.1f}%")
-    print(f"  FlexAIDdS target: ≥ {TARGET_SR*100:.0f}%  hard floor: ≥ {FLOOR_SR*100:.0f}%")
+    print(
+        f"  Published comparator ({published_success_key}): "
+        f"{published_success_baseline*100:.1f}%"
+    )
 
-    # ── Fisher's exact test vs Vina ───────────────────────────────────────────
-    print("\n── Fisher's Exact Test vs. Vina Baseline ────────────────────")
-    a = n_success
-    b = n - n_success
-    c = VINA_N_SUCCESS
-    d = VINA_N_TOTAL - VINA_N_SUCCESS
-    or_, p_val = fisher_exact_greater(a, b, c, d)
-    delta_pp = (n_success / n - VINA_N_SUCCESS / VINA_N_TOTAL) * 100
-    print(f"  FlexAIDdS: {a}/{n}   Vina: {c}/{VINA_N_TOTAL}")
-    print(f"  ΔRMSD-SR:  {delta_pp:+.1f} pp")
-    print(f"  Odds ratio: {or_:.2f}")
-    print(f"  p (one-sided): {p_val:.4f}  {'(**)' if p_val < 0.01 else '(*)' if p_val < 0.05 else ''}")
+    # ── Exact one-sided binomial test vs published comparator ────────────────
+    print("\n── Exact Binomial Test vs. Published Comparator ─────────────")
+    p_val = exact_binomial_tail(n_success, n, published_success_baseline)
+    delta_pp = (sr_obs - published_success_baseline) * 100
+    print(f"  FlexAIDdS: {n_success}/{n}")
+    print(f"  Comparator: {published_success_baseline*100:.1f}% ({published_success_key})")
+    print(f"  ΔSR:        {delta_pp:+.1f} pp")
+    print(f"  p (one-sided): {p_val:.6f}")
     print(f"  Significant (p < 0.05): {'YES ✅' if p_val < 0.05 else 'NO ❌'}")
 
     # ── Shannon-Weighted Success Rate ─────────────────────────────────────────
@@ -561,22 +698,30 @@ def main():
     all_passed = True
     checks = []
 
-    # Primary: success rate ≥ 65%
-    line, ok = pass_fail("Success rate (SR)", sr_obs, TARGET_SR, "ge")
+    # Primary: success rate ≥ expected regression target
+    line, ok = pass_fail("Success rate (SR)", sr_obs, expected_success_threshold, "ge")
     checks.append((line, ok))
     if not ok:
         all_passed = False
 
-    # Hard floor: ≥ 58%
-    line, ok = pass_fail("Hard floor (SR ≥ Vina)", sr_obs, FLOOR_SR, "ge")
-    checks.append((line, ok))
-    if not ok:
+    # Historical comparator must be beaten at p < 0.05
+    line = f"  {'✅ PASS' if p_val < 0.05 else '❌ FAIL'}  Exact binomial p < 0.05 vs published comparator"
+    checks.append((line, p_val < 0.05))
+    if p_val >= 0.05:
         all_passed = False
 
-    # Statistical significance vs Vina
-    line, ok = pass_fail("Fisher p < 0.05 vs Vina", 1 - p_val, 0.95, "ge")
-    checks.append((line, ok))
-    # (not strictly blocking — can WARN)
+    # RMSD metrics, when available, should satisfy the manifest thresholds.
+    if expected_mean_threshold is not None and dist:
+        line, ok = pass_fail("Mean RMSD", dist["mean"], expected_mean_threshold, "le")
+        checks.append((line, ok))
+        if not ok:
+            all_passed = False
+
+    if expected_median_threshold is not None and dist:
+        line, ok = pass_fail("Median RMSD", dist["median"], expected_median_threshold, "le")
+        checks.append((line, ok))
+        if not ok:
+            all_passed = False
 
     # Spearman (informational — don't block)
     if len(paired_h_rmsd) >= 5:
@@ -590,7 +735,7 @@ def main():
     print()
     if all_passed:
         print("  ██████████████████████████████████████████████")
-        print("  ██   OVERALL: PASS  — Ready for publication  ██")
+        print("  ██   OVERALL: PASS  — Comparator cleared     ██")
         print("  ██████████████████████████████████████████████")
     else:
         print("  ████████████████████████████████████████████████")
@@ -598,8 +743,11 @@ def main():
         print("  ████████████████████████████████████████████████")
 
     print()
-    print("  Reference: publication benchmark spec — FlexAIDdS ≥ 65% (was BENCHMARKING_PLAN.md §2.1)")
-    print("             Hartshorn et al. (2007) J Med Chem 50:726–741")
+    if manifest_cfg is not None and manifest_get(manifest_cfg, "published_source", ""):
+        print(f"  Reference: {manifest_get(manifest_cfg, 'published_source')}")
+    else:
+        print("  Reference: published comparator from manifest or Hartshorn et al. (2007)")
+    print("             FlexAIDdS benchmark thresholds are taken from the manifest.")
     print()
 
     sys.exit(0 if all_passed else 1)
