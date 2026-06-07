@@ -1699,8 +1699,6 @@ atomindex* index_protein(FA_Global* FA,atom* atoms,resid* residue,atomsas* Calc,
 	dim2 = (*dim)*(*dim);
 	dim3 = (*dim)*(*dim)*(*dim);
 
-	fprintf(stderr, "DEBUG Voronoi box: max_width=%.1f Å, CELLSIZE=%.1f Å, dim=%d, dim3=%d, alloc_size=%lu bytes (%.1f MB)\n",
-		max_width, CELLSIZE, *dim, dim3, (unsigned long)dim3*sizeof(atomindex), dim3*sizeof(atomindex)/1024.0/1024.0);
 	
 	std::string sig = generate_dim_sig(global_min,(*dim));
 	std::map<std::string, atomindex*>::iterator it;
