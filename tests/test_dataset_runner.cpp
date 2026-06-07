@@ -546,6 +546,10 @@ TEST(PDBParsing, PrepareEntryUsesCompanionCifForConvertedAtomLigands) {
         ofs << "ATOM      6  C2  SKF C   0       2.400   2.000   3.000  1.00 20.00           C\n";
         ofs << "ATOM      7  N1  SKF C   0       3.800   2.000   3.000  1.00 20.00           N\n";
         ofs << "ATOM      8  O1  SKF C   0       5.200   2.000   3.000  1.00 20.00           O\n";
+        ofs << "ATOM      9  C1  SKF D   0      21.000   2.000   3.000  1.00 20.00           C\n";
+        ofs << "ATOM     10  C2  SKF D   0      22.400   2.000   3.000  1.00 20.00           C\n";
+        ofs << "ATOM     11  N1  SKF D   0      23.800   2.000   3.000  1.00 20.00           N\n";
+        ofs << "ATOM     12  O1  SKF D   0      25.200   2.000   3.000  1.00 20.00           O\n";
         ofs << "END\n";
     }
 
@@ -573,6 +577,10 @@ TEST(PDBParsing, PrepareEntryUsesCompanionCifForConvertedAtomLigands) {
         ofs << "HETATM 5 C C2 . SKF C 0 2.400 2.000 3.000 1.00 20.00\n";
         ofs << "HETATM 6 N N1 . SKF C 0 3.800 2.000 3.000 1.00 20.00\n";
         ofs << "HETATM 7 O O1 . SKF C 0 5.200 2.000 3.000 1.00 20.00\n";
+        ofs << "HETATM 8 C C1 . SKF D 0 21.000 2.000 3.000 1.00 20.00\n";
+        ofs << "HETATM 9 C C2 . SKF D 0 22.400 2.000 3.000 1.00 20.00\n";
+        ofs << "HETATM 10 N N1 . SKF D 0 23.800 2.000 3.000 1.00 20.00\n";
+        ofs << "HETATM 11 O O1 . SKF D 0 25.200 2.000 3.000 1.00 20.00\n";
         ofs << "#\n";
     }
 

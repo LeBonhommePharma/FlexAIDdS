@@ -918,6 +918,16 @@ static std::string upper_copy(std::string value) {
     return value;
 }
 
+static bool standard_polymer_residue_code(const std::string& code) {
+    static const std::set<std::string> polymer = {
+        "ALA","ARG","ASN","ASP","CYS","GLN","GLU","GLY","HIS","ILE",
+        "LEU","LYS","MET","PHE","PRO","SER","THR","TRP","TYR","VAL",
+        "SEC","PYL",
+        "A","C","G","T","U","DA","DC","DG","DT","DU"
+    };
+    return polymer.count(upper_copy(trim_copy(code))) > 0;
+}
+
 static std::string normalize_token(std::string value) {
     return upper_copy(trim_copy(std::move(value)));
 }
@@ -1885,10 +1895,19 @@ std::string DatasetRunner::write_receptor_without_ligand(
         float tol) {
     // Read ligand heavy-atom coordinates from the extracted SDF.
     std::vector<std::array<float,3>> lig_xyz;
+    std::string ligand_res_name;
     {
         std::ifstream sdf(ligand_sdf);
         if (!sdf) return receptor_path;
         std::string line;
+        if (std::getline(sdf, line)) {
+            ligand_res_name = upper_copy(trim_copy(line));
+            if (ligand_res_name.empty() ||
+                ligand_res_name.size() > 3 ||
+                standard_polymer_residue_code(ligand_res_name)) {
+                ligand_res_name.clear();
+            }
+        }
         int atom_block = 0;
         while (std::getline(sdf, line)) {
             if (line.size() > 39) {
@@ -1975,6 +1994,10 @@ std::string DatasetRunner::write_receptor_without_ligand(
             // ATOM while preserving the residue name and coordinates.
             if (strip_cofactors.count(resName) && !keep_catalytic.count(resName)) {
                 dropped_cofactor++;
+                continue;
+            }
+            if (!ligand_res_name.empty() && resName == ligand_res_name) {
+                dropped++;
                 continue;
             }
 
