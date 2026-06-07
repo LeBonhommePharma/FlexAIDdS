@@ -14,13 +14,15 @@
 #include "LibrarySplitter.h"
 #include "ReferenceEntropy.h"
 #include "assign_formal_charges.h"
+#include "RefLigSeed.h"
 #include "CoarseScreen.h"
 #include "TwoStageScreen.h"
 #include "GISTEvaluator.h"
 #include "ParallelDock.h"
 #include "ParallelCampaign.h"
 #include "GAContext.h"
-#include "RefLigSeed.h"
+#include "MIFGrid.h"
+#include "CavityDetect/SpatialGrid.h"
 
 #include <algorithm>
 #include <cstring>
@@ -28,6 +30,89 @@
 #include <vector>
 #include <filesystem>
 #include <unistd.h>
+
+// ── Tier 2 typing: SYBYL name → canonical VCT matrix index ──────────────────
+// ProcessLigand (BonMol) perceives full hybridisation/aromaticity but stores
+// the result in its own internal SYBYL numbering (see SybylTyper.h). For the
+// scorer, atom.type must be a *canonical* VCT row index matching
+// nrgrank_matrix.h / assign_radii_types.cpp and Mol2Reader's canonical mapping:
+//   1=C.1  2=C.2  3=C.3  4=C.AR  5=C.CAT
+//   6=N.1  7=N.2  8=N.3  9=N.4  10=N.AR 11=N.AM 12=N.PL3
+//  13=O.2 14=O.3 15=O.CO2 16=O.AR
+//  17=S.2 18=S.3 19=S.O  20=S.O2 21=S.AR
+//  22=P.3 23=F   24=CL   25=BR   26=I   27=SE
+//  28=MG 29=SR 30=CU 31=MN 32=HG 33=CD 34=NI 35=ZN 36=CA 37=FE 38=CO.OH
+//  39=DUMMY 40=SOLVENT
+// We bridge via the canonical SYBYL string name produced by
+// bonmol::sybyl::sybyl_type_name(), keeping a single source of truth for the
+// string→canonical mapping (identical to Mol2Reader::sybyl_to_flexaid_type).
+static constexpr int FA_TYPE_DUMMY = 39;
+static int sybyl_name_to_canonical_vct(const char* s) {
+	if (!strcmp(s, "C.1"))   return 1;
+	if (!strcmp(s, "C.2"))   return 2;
+	if (!strcmp(s, "C.3"))   return 3;
+	if (!strcmp(s, "C.ar"))  return 4;
+	if (!strcmp(s, "C.cat")) return 5;
+	if (!strcmp(s, "N.1"))   return 6;
+	if (!strcmp(s, "N.2"))   return 7;
+	if (!strcmp(s, "N.3"))   return 8;
+	if (!strcmp(s, "N.4"))   return 9;
+	if (!strcmp(s, "N.ar"))  return 10;
+	if (!strcmp(s, "N.am"))  return 11;
+	if (!strcmp(s, "N.pl3")) return 12;
+	if (!strcmp(s, "O.2"))   return 13;
+	if (!strcmp(s, "O.3"))   return 14;
+	if (!strcmp(s, "O.co2")) return 15;
+	if (!strcmp(s, "O.ar"))  return 16;
+	if (!strcmp(s, "S.2"))   return 17;
+	if (!strcmp(s, "S.3"))   return 18;
+	if (!strcmp(s, "S.O") || !strcmp(s, "S.o"))   return 19;
+	if (!strcmp(s, "S.O2") || !strcmp(s, "S.o2")) return 20;
+	if (!strcmp(s, "S.ar"))  return 21;
+	if (!strcmp(s, "P.3"))   return 22;
+	if (!strcmp(s, "F"))     return 23;
+	if (!strcmp(s, "Cl"))    return 24;
+	if (!strcmp(s, "Br"))    return 25;
+	if (!strcmp(s, "I"))     return 26;
+	if (!strcmp(s, "Se"))    return 27;
+	if (!strcmp(s, "Mg"))    return 28;
+	if (!strcmp(s, "Sr"))    return 29;
+	if (!strcmp(s, "Cu"))    return 30;
+	if (!strcmp(s, "Mn"))    return 31;
+	if (!strcmp(s, "Hg"))    return 32;
+	if (!strcmp(s, "Cd"))    return 33;
+	if (!strcmp(s, "Ni"))    return 34;
+	if (!strcmp(s, "Zn"))    return 35;
+	if (!strcmp(s, "Ca"))    return 36;
+	if (!strcmp(s, "Fe"))    return 37;
+	if (!strcmp(s, "Co.oh") || !strcmp(s, "Co")) return 38;
+	return FA_TYPE_DUMMY; // H ("H") and anything unknown ("X")
+}
+
+// Resolve a fully-perceived BonMol atom to its canonical VCT index.
+// BonMol's SybylTyper follows the classic SYBYL convention of typing aromatic
+// ring heteroatoms structurally: thiophene/thiadiazole S becomes S.3 and
+// furan/oxazole O becomes O.2/O.3. The canonical VCT energy matrix, however,
+// carries dedicated aromatic-heteroatom rows (C.AR=4, N.AR=10, O.AR=16,
+// S.AR=21). When the atom sits in a perceived aromatic ring, route it to the
+// matching .ar row so the scorer sees aromatic chemistry rather than the
+// sp2/sp3 row. (Aromatic C and N already resolve to C.ar/N.ar via the SYBYL
+// name, but we override uniformly for clarity and to cover both heteroatoms.)
+// out_name (optional) receives the human-readable SYBYL name used for logging.
+static int bonmol_atom_to_canonical_vct(const bonmol::Atom& a, const char** out_name) {
+	if (a.is_aromatic) {
+		switch (a.element) {
+			case bonmol::Element::C: if (out_name) *out_name = "C.ar"; return 4;
+			case bonmol::Element::N: if (out_name) *out_name = "N.ar"; return 10;
+			case bonmol::Element::O: if (out_name) *out_name = "O.ar"; return 16;
+			case bonmol::Element::S: if (out_name) *out_name = "S.ar"; return 21;
+			default: break;
+		}
+	}
+	const char* sname = bonmol::sybyl::sybyl_type_name(a.sybyl_type);
+	if (out_name) *out_name = sname;
+	return sybyl_name_to_canonical_vct(sname);
+}
 
 // ── Idiotproof file role detection ──────────────────────────────────────────
 // Returns: "receptor", "ligand", "config", "smiles", or "unknown"
@@ -286,9 +371,6 @@ int main(int argc, char **argv){
 	FA->num_grd=0;
 	FA->exclude_het=0;
 	FA->remove_water=1;
-	FA->keep_ions=1;
-	FA->keep_structural_waters=1;
-	FA->structural_water_bfactor_max=20.0f;
 	FA->normalize_area=0;
 
 	FA->recalci=0;
@@ -653,24 +735,21 @@ int main(int argc, char **argv){
 
 		// ── 4. Read receptor PDB ──
 		{
-			// Create the cleaned receptor beside the output prefix, not beside the
-			// read-only benchmark input.  DatasetRunner uses per-target output dirs,
-			// which keeps concurrent workers isolated and avoids source-tree writes.
+			// Create temporary cleaned PDB
 			char tmpprotname[MAX_PATH__];
+			strncpy(tmpprotname, receptor_file, MAX_PATH__ - 20);
+			tmpprotname[MAX_PATH__ - 20] = '\0';
+
+			// Find filename portion and create temp name
+			char* dot = strrchr(tmpprotname, '.');
 			int random_num = static_cast<int>(std::random_device{}() % 900000 + 100000);
-			std::filesystem::path temp_dir = std::filesystem::temp_directory_path();
-			try {
-				std::filesystem::path output_parent = std::filesystem::path(output_prefix).parent_path();
-				if (!output_parent.empty()) {
-					temp_dir = output_parent;
-				}
-				std::filesystem::create_directories(temp_dir);
-			} catch (const std::exception&) {
-				temp_dir = std::filesystem::temp_directory_path();
+			char random_str[32];
+			snprintf(random_str, sizeof(random_str), "_tmp_%d.pdb", random_num);
+			if (dot) {
+				strcpy(dot, random_str);
+			} else {
+				strcat(tmpprotname, random_str);
 			}
-			std::filesystem::path tmp_path = temp_dir / ("flexaid_target_tmp_" + std::to_string(random_num) + ".pdb");
-			strncpy(tmpprotname, tmp_path.string().c_str(), MAX_PATH__ - 1);
-			tmpprotname[MAX_PATH__ - 1] = '\0';
 
 			modify_pdb(const_cast<char*>(receptor_file), tmpprotname, FA->exclude_het, FA->remove_water, FA->is_protein,
 			           FA->keep_ions, FA->keep_structural_waters, FA->structural_water_bfactor_max);
@@ -894,12 +973,87 @@ int main(int argc, char **argv){
 					fprintf(stderr, "ERROR: Failed to read ligand file: %s\n", ligand_file);
 					Terminate(2);
 				}
+
+				// ── Tier 2: enrich SDF ligand atom types with ProcessLigand ───
+				// read_sdf_ligand() above assigned element-only generic types
+				// (C.3/N.3/O.3/S.3) because SDF/MOL files carry no hybridisation
+				// or aromaticity. ProcessLigand perceives rings, aromaticity and
+				// hybridisation, so for the organic C/N/O/S atoms we replace the
+				// generic type with the perceived canonical VCT index.
+				//
+				// Scope (deliberately narrow to avoid regressions):
+				//   • SDF only. MOL2 atoms keep the file's native SYBYL types,
+				//     which read_mol2_ligand() already maps to canonical VCT
+				//     indices and which are authoritative (Tripos standard);
+				//     re-perceiving them adds risk with no benefit.
+				//   • C/N/O/S only. bonmol::SybylTyper defaults elements it does
+				//     not handle (Se, metals, …) to C.3, so overriding those
+				//     would corrupt the element-based types the reader assigns
+				//     correctly.
+				// BonMol atom order matches the reader — both parse the source
+				// file sequentially (H included) — so BonMol atom i maps to
+				// ligand atom fatm[0]+i. assign_radii_types() (called next) skips
+				// ligand residues, so these overrides persist into the GA.
+				if (is_sdf && result.success && !result.mol.atoms.empty()) {
+					int lig_res = FA->res_cnt;
+					int fa     = residue[lig_res].fatm[0];
+					int la     = residue[lig_res].latm[0];
+					int n_lig  = la - fa + 1;
+					int n_bm   = result.mol.num_atoms();
+
+					if (n_bm != n_lig) {
+						printf("[TYPING] WARNING: ProcessLigand atom count (%d) != "
+						       "reader ligand atom count (%d); cannot map by index — "
+						       "keeping fallback types from the reader.\n",
+						       n_bm, n_lig);
+					} else {
+						int upgraded = 0;
+						for (int i = 0; i < n_bm; ++i) {
+							const bonmol::Atom& bm = result.mol.atoms[i];
+							// Only organic C/N/O/S gain information from SYBYL
+							// perception; every other element is already canonical
+							// from the element-based reader (and BonMol would
+							// default unhandled elements such as Se/metals to C.3).
+							if (bm.element != bonmol::Element::C &&
+							    bm.element != bonmol::Element::N &&
+							    bm.element != bonmol::Element::O &&
+							    bm.element != bonmol::Element::S)
+								continue;
+							const char* sname = nullptr;
+							int canon  = bonmol_atom_to_canonical_vct(bm, &sname);
+							int fa_idx = fa + i;
+							int old_t  = atoms[fa_idx].type;
+							// Leave the reader's fallback in place for DUMMY (e.g. H),
+							// otherwise upgrade to the SYBYL-based canonical type.
+							if (canon != FA_TYPE_DUMMY && canon != old_t) {
+								printf("[TYPING] atom %d (%s): element-only type %d "
+								       "-> SYBYL %s -> canonical type %d\n",
+								       i, atoms[fa_idx].name, old_t, sname, canon);
+								atoms[fa_idx].type = canon;
+								++upgraded;
+							}
+						}
+						printf("ProcessLigand typing applied: %d/%d ligand atoms "
+						       "upgraded to SYBYL-based canonical VCT types\n",
+						       upgraded, n_bm);
+					}
+				} else if (!is_sdf) {
+					printf("MOL2 ligand: keeping native SYBYL types from "
+					       "read_mol2_ligand() (authoritative)\n");
+				} else {
+					printf("ProcessLigand typing not applied — using fallback "
+					       "types from the reader\n");
+				}
 			}
 		}
 
 		// ── 6. Assign radii and types ──
 		assign_radii_types(FA, atoms, residue);
 		printf("radii are now assigned\n");
+
+		// Recalculate the global frame with the ligand loaded, matching
+		// the dedicated direct-input pipeline.
+		calc_center(FA, atoms, residue);
 
 		// ── 6a. Assign formal charges to receptor atoms from PDB ──
 		// PDB files carry no charge data — this assigns AMBER ff14SB
@@ -960,56 +1114,60 @@ int main(int argc, char **argv){
 			cleftgrid = generate_grid(FA, spheres, atoms, residue);
 			calc_cleftic(FA, cleftgrid);
 
-			const bool explicit_reflig = FA->reflig_file[0] != '\0';
-			const bool direct_reflig_fallback =
-			    !explicit_reflig && FA->reflig_hetatm_fallback && FA->resligand;
-			if (explicit_reflig || direct_reflig_fallback) {
-				std::vector<int> nearest_grid;
-				float seed[3] = {0.0f, 0.0f, 0.0f};
+			// ── MIF-weighted seeding (direct mode) ──────────────────────────
+			// The legacy read_input() path computes the Molecular Interaction
+			// Field here via compute_mif_and_reflig(); the direct-mode pipeline
+			// (used by DatasetRunner and all JSON-config runs) skipped it, so
+			// FA->mif_cdf stayed NULL and the GA's MIF seeding branch never
+			// fired — gene[0] fell back to reference-ligand / uniform seeding
+			// only.  Compute it here when enabled so chemical complementarity
+			// (LJ probe energy, Boltzmann-sampled at mif_temperature) informs
+			// the initial population.  Activation matches read_input():
+			//   FA->mif_enabled || FA->grid_prio_percent < 100.
+			if (FA->mif_enabled || FA->grid_prio_percent < 100.0f) {
+				std::vector<atom> protein_atoms(atoms, atoms + FA->atm_cnt_real);
+				cavity_detect::SpatialGrid sg;
+				sg.build(protein_atoms);
 
-				if (explicit_reflig) {
-					auto data = reflig::prepare_reflig_seed(
-					    FA->reflig_file, cleftgrid, FA->num_grd, FA->reflig_k_nearest);
-					nearest_grid = data.nearest_grid;
-					seed[0] = data.centroid[0];
-					seed[1] = data.centroid[1];
-					seed[2] = data.centroid[2];
-				} else {
-					int lig_res = FA->resligand->number;
-					int anchor = (residue[lig_res].gpa != NULL)
-					           ? residue[lig_res].gpa[0]
-					           : residue[lig_res].fatm[0];
-					seed[0] = atoms[anchor].coor[0];
-					seed[1] = atoms[anchor].coor[1];
-					seed[2] = atoms[anchor].coor[2];
+				auto mif = mif::compute_mif(cleftgrid, FA->num_grd,
+				                            atoms, FA->atm_cnt_real, sg);
 
-					std::vector<std::pair<float, int>> distances;
-					distances.reserve(std::max(0, FA->num_grd - 1));
-					for (int gi = 1; gi < FA->num_grd; gi++) {
-						float dx = cleftgrid[gi].coor[0] - seed[0];
-						float dy = cleftgrid[gi].coor[1] - seed[1];
-						float dz = cleftgrid[gi].coor[2] - seed[2];
-						distances.emplace_back(dx*dx + dy*dy + dz*dz, gi);
-					}
-					std::sort(distances.begin(), distances.end(),
-					          [](const auto& a, const auto& b){ return a.first < b.first; });
-					int keep = std::min(FA->reflig_k_nearest,
-					                    static_cast<int>(distances.size()));
-					for (int ni = 0; ni < keep; ni++) {
-						nearest_grid.push_back(distances[ni].second);
+				free(FA->mif_energies); free(FA->mif_sorted); free(FA->mif_cdf);
+				FA->mif_count    = static_cast<int>(mif.sorted_indices.size());
+				FA->mif_energies = static_cast<float*>(
+				    malloc(mif.energies.size() * sizeof(float)));
+				FA->mif_sorted   = static_cast<int*>(
+				    malloc(mif.sorted_indices.size() * sizeof(int)));
+				std::copy_n(mif.energies.data(), mif.energies.size(),
+				            FA->mif_energies);
+				std::copy_n(mif.sorted_indices.data(), mif.sorted_indices.size(),
+				            FA->mif_sorted);
+
+				mif::build_sampling_cdf(mif, FA->mif_temperature);
+				FA->mif_cdf = static_cast<double*>(
+				    malloc(mif.cdf.size() * sizeof(double)));
+				std::copy_n(mif.cdf.data(), mif.cdf.size(), FA->mif_cdf);
+
+				// Optional destructive prune to the top-K% densest points.
+				if (FA->grid_prio_percent < 100.0f) {
+					auto kept = mif::prioritize_grid(mif, FA->grid_prio_percent);
+					gridpoint* new_grid = nullptr;
+					int new_count = mif::rebuild_cleftgrid(
+					    cleftgrid, FA->num_grd, kept, &new_grid);
+					if (new_grid && new_count > 0) {
+						int old_count = FA->num_grd;
+						free(cleftgrid);
+						cleftgrid = new_grid;
+						FA->num_grd = new_count;
+						calc_cleftic(FA, cleftgrid);
+						printf("GRIDPRIO: kept %d/%d grid points (top %.0f%%)\n",
+						       new_count - 1, old_count - 1,
+						       FA->grid_prio_percent);
 					}
 				}
 
-				free(FA->reflig_nearest_grid);
-				FA->reflig_nearest_count = static_cast<int>(nearest_grid.size());
-				FA->reflig_nearest_grid = static_cast<int*>(
-				    malloc(nearest_grid.size() * sizeof(int)));
-				if (!nearest_grid.empty() && FA->reflig_nearest_grid) {
-					std::copy_n(nearest_grid.data(), nearest_grid.size(),
-					            FA->reflig_nearest_grid);
-				}
-				printf("REFLIG: direct-mode seed (%.1f, %.1f, %.1f), %d nearest points\n",
-				       seed[0], seed[1], seed[2], FA->reflig_nearest_count);
+				printf("MIF: computed for %d grid points (T=%.0fK)\n",
+				       FA->mif_count, FA->mif_temperature);
 			}
 
 			// Free spheres linked list
@@ -1017,6 +1175,46 @@ int main(int argc, char **argv){
 				sphere* prev = spheres->prev;
 				free(spheres);
 				spheres = prev;
+			}
+		}
+
+		// Direct-mode GA seeding: bias the initial population toward the
+		// loaded ligand anchor in the combined receptor+ligand frame.
+		{
+			int lig_res = FA->res_cnt;
+			int fa = residue[lig_res].fatm[0];
+			int la = residue[lig_res].latm[0];
+			int n_lig = la - fa + 1;
+			int anchor = (residue[lig_res].gpa != NULL)
+			           ? residue[lig_res].gpa[0]
+			           : fa;
+
+			if (n_lig > 0 && cleftgrid && FA->num_grd > 1) {
+				float seed[3] = {
+					atoms[anchor].coor[0],
+					atoms[anchor].coor[1],
+					atoms[anchor].coor[2]
+				};
+
+				auto nearest = reflig::find_nearest_grid_points(
+				    seed, cleftgrid, FA->num_grd, FA->reflig_k_nearest);
+				free(FA->reflig_nearest_grid);
+				FA->reflig_nearest_count = static_cast<int>(nearest.size());
+				FA->reflig_nearest_grid = nullptr;
+				if (!nearest.empty()) {
+					FA->reflig_nearest_grid = static_cast<int*>(
+					    malloc(nearest.size() * sizeof(int)));
+					if (FA->reflig_nearest_grid) {
+						std::copy_n(nearest.data(), nearest.size(),
+						            FA->reflig_nearest_grid);
+						printf("REFLIG: direct-mode seed (%.1f, %.1f, %.1f), %d nearest points\n",
+						       seed[0], seed[1], seed[2],
+						       FA->reflig_nearest_count);
+					} else {
+						FA->reflig_nearest_count = 0;
+						fprintf(stderr, "WARNING: direct-mode reflig seed allocation failed.\n");
+					}
+				}
 			}
 		}
 
@@ -1079,8 +1277,7 @@ int main(int argc, char **argv){
 		// (receptor, ligand, and cleft grid were already loaded above)
 		ic_bounds(FA, FA->rngopt);
 		if (FA->reflig_nearest_count > 0) {
-			// In direct redocking, grid index 0 is the input/native ligand
-			// anchor. Reference seeding must be allowed to preserve it.
+			// In direct redocking, preserve the native ligand anchor.
 			FA->index_min = 0.0;
 		}
 
@@ -1142,13 +1339,6 @@ int main(int argc, char **argv){
 		for(i=0;i<FA->atm_cnt_real;i++){
 			VC->Calc[i].atom = NULL;
 			VC->Calc[i].residue = NULL;
-			VC->Calc[i].boxnum = -1;
-			VC->Calc[i].score = false;
-			VC->Calc[i].ca_index = -1;
-			VC->Calc[i].SAS = 0.0;
-			VC->Calc[i].vol = 0.0;
-			VC->Calc[i].done = 'N';
-			VC->Calc[i].source = '\0';
 			VC->Calc[i].exposed = true;
 		}
 

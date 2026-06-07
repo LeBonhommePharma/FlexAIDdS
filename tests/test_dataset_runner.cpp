@@ -16,11 +16,15 @@
 
 // Include gtest FIRST to avoid macro pollution from flexaid.h (e.g. #define E)
 #include <gtest/gtest.h>
+#define private public
 #include "DatasetRunner.h"
+#undef private
 #include <cmath>
+#include <chrono>
 #include <filesystem>
 #include <fstream>
 #include <numeric>
+#include <sstream>
 #include <vector>
 
 namespace fs = std::filesystem;
@@ -398,6 +402,212 @@ TEST(PDBParsing, ExtractLigandFromPDB) {
     fs::remove_all(test_dir);
 }
 
+TEST(PDBParsing, ExtractLigandFromMMCIFWithChemCompBonds) {
+    std::string test_dir = "/tmp/flexaidds_test_extract_mmcif";
+    fs::create_directories(test_dir);
+    std::string cif_path = test_dir + "/test.cif";
+    std::string sdf_path = test_dir + "/ligand.sdf";
+
+    {
+        std::ofstream ofs(cif_path);
+        ofs << "data_test\n";
+        ofs << "#\n";
+        ofs << "loop_\n";
+        ofs << "_atom_site.group_PDB\n";
+        ofs << "_atom_site.id\n";
+        ofs << "_atom_site.type_symbol\n";
+        ofs << "_atom_site.auth_atom_id\n";
+        ofs << "_atom_site.label_alt_id\n";
+        ofs << "_atom_site.auth_comp_id\n";
+        ofs << "_atom_site.auth_asym_id\n";
+        ofs << "_atom_site.auth_seq_id\n";
+        ofs << "_atom_site.Cartn_x\n";
+        ofs << "_atom_site.Cartn_y\n";
+        ofs << "_atom_site.Cartn_z\n";
+        ofs << "_atom_site.occupancy\n";
+        ofs << "_atom_site.B_iso_or_equiv\n";
+        ofs << "HETATM 1 C C1 . LIG A 1 0.000 0.000 0.000 1.00 10.00\n";
+        ofs << "HETATM 2 C C2 . LIG A 1 5.000 0.000 0.000 1.00 10.00\n";
+        ofs << "HETATM 3 C C3 . LIG A 1 10.000 0.000 0.000 1.00 10.00\n";
+        ofs << "HETATM 4 C C4 . LIG A 1 15.000 0.000 0.000 1.00 10.00\n";
+        ofs << "#\n";
+        ofs << "loop_\n";
+        ofs << "_chem_comp_bond.comp_id\n";
+        ofs << "_chem_comp_bond.atom_id_1\n";
+        ofs << "_chem_comp_bond.atom_id_2\n";
+        ofs << "_chem_comp_bond.value_order\n";
+        ofs << "_chem_comp_bond.pdbx_aromatic_flag\n";
+        ofs << "LIG C1 C2 SING N\n";
+        ofs << "LIG C2 C3 DOUB N\n";
+        ofs << "LIG C3 C4 SING N\n";
+        ofs << "#\n";
+    }
+
+    DatasetRunner runner(test_dir + "/cache");
+    bool extracted = runner.extract_ligand(cif_path, sdf_path);
+    EXPECT_TRUE(extracted);
+    EXPECT_TRUE(fs::exists(sdf_path));
+    EXPECT_GT(fs::file_size(sdf_path), 0u);
+
+    std::ifstream ifs(sdf_path);
+    ASSERT_TRUE(ifs.good());
+    std::string contents((std::istreambuf_iterator<char>(ifs)), std::istreambuf_iterator<char>());
+    EXPECT_NE(contents.find("FLEXAIDDS_LIGAND_EXTRACTOR_V3"), std::string::npos);
+
+    std::istringstream iss(contents);
+    std::string line1, line2, line3, counts;
+    std::getline(iss, line1);
+    std::getline(iss, line2);
+    std::getline(iss, line3);
+    std::getline(iss, counts);
+    EXPECT_EQ(line1, "LIG");
+
+    int atom_count = 0;
+    int bond_count = 0;
+    std::istringstream counts_stream(counts);
+    counts_stream >> atom_count >> bond_count;
+    EXPECT_EQ(atom_count, 4);
+    EXPECT_EQ(bond_count, 3);
+
+    fs::remove_all(test_dir);
+}
+
+TEST(PDBParsing, PrepareEntryRegeneratesStaleLigandCache) {
+    std::string test_dir = "/tmp/flexaidds_test_prepare_cache";
+    std::string cache_dir = test_dir + "/cache";
+    std::string entry_dir = cache_dir + "/Demo Dataset/TEST";
+    fs::create_directories(entry_dir);
+
+    std::string pdb_path = entry_dir + "/TEST.pdb";
+    std::string sdf_path = entry_dir + "/TEST_ligand.sdf";
+
+    {
+        std::ofstream ofs(pdb_path);
+        ofs << "HEADER    TEST CACHE ENTRY\n";
+        for (int i = 0; i < 40; ++i) {
+            ofs << "REMARK    CACHE PADDING LINE " << i << " ............................................................\n";
+        }
+        ofs << "HETATM    1  C1  LIG A   1       1.000   2.000   3.000  1.00 20.00           C\n";
+        ofs << "HETATM    2  C2  LIG A   1       2.000   3.000   4.000  1.00 20.00           C\n";
+        ofs << "HETATM    3  O1  LIG A   1       3.000   4.000   5.000  1.00 20.00           O\n";
+        ofs << "HETATM    4  N1  LIG A   1       4.000   5.000   6.000  1.00 20.00           N\n";
+        ofs << "END\n";
+    }
+    {
+        std::ofstream ofs(sdf_path);
+        ofs << "LIG\n";
+        ofs << "  stale cache\n";
+        ofs << "  missing extractor marker\n";
+        ofs << "  0  0  0  0  0  0  0  0  0  0  0  0 V2000\n";
+        ofs << "M  END\n";
+        ofs << "$$$$\n";
+    }
+
+    auto source_time = fs::last_write_time(pdb_path);
+    fs::last_write_time(sdf_path, source_time + std::chrono::hours(1));
+
+    DatasetRunner runner(cache_dir);
+    auto entry = runner.prepare_pdb_entry("TEST", "Demo Dataset", 0.0f, 0.0f, 0.0f);
+
+    EXPECT_EQ(entry.pdb_id, "TEST");
+    EXPECT_TRUE(fs::exists(entry.ligand_path));
+    EXPECT_EQ(entry.ligand_path, sdf_path);
+
+    std::ifstream ifs(sdf_path);
+    ASSERT_TRUE(ifs.good());
+    std::string contents((std::istreambuf_iterator<char>(ifs)), std::istreambuf_iterator<char>());
+    EXPECT_NE(contents.find("FLEXAIDDS_LIGAND_EXTRACTOR_V3"), std::string::npos);
+
+    fs::remove_all(test_dir);
+}
+
+TEST(PDBParsing, DownloadStructureUsesCachedCIFBeforeNetwork) {
+    std::string test_dir = "/tmp/flexaidds_test_download_cached_cif";
+    std::string entry_dir = test_dir + "/2HKK";
+    fs::create_directories(entry_dir);
+
+    std::string cif_path = entry_dir + "/2HKK.cif";
+    {
+        std::ofstream ofs(cif_path);
+        ofs << "data_2HKK\n";
+        ofs << "loop_\n";
+        ofs << "_atom_site.group_PDB\n";
+        ofs << "_atom_site.id\n";
+        ofs << "_atom_site.type_symbol\n";
+        ofs << "_atom_site.auth_atom_id\n";
+        ofs << "_atom_site.label_alt_id\n";
+        ofs << "_atom_site.auth_comp_id\n";
+        ofs << "_atom_site.auth_asym_id\n";
+        ofs << "_atom_site.auth_seq_id\n";
+        ofs << "_atom_site.Cartn_x\n";
+        ofs << "_atom_site.Cartn_y\n";
+        ofs << "_atom_site.Cartn_z\n";
+        ofs << "_atom_site.occupancy\n";
+        ofs << "_atom_site.B_iso_or_equiv\n";
+        for (int i = 0; i < 80; ++i) {
+            ofs << "HETATM " << (i + 1) << " C C" << (i + 1)
+                << " . LIG A 1 " << (0.5 * i) << " 0.000 0.000 1.00 10.00\n";
+        }
+        ofs << "#\n";
+    }
+
+    DatasetRunner runner(test_dir + "/cache");
+    std::string receptor_path;
+    bool ok = runner.download_structure("2HKK", entry_dir, receptor_path);
+    EXPECT_TRUE(ok);
+    EXPECT_EQ(receptor_path, cif_path);
+    EXPECT_TRUE(fs::exists(receptor_path));
+
+    fs::remove_all(test_dir);
+}
+
+TEST(PDBParsing, DownloadStructureRejectsCachedHtmlPdbAndUsesCIF) {
+    std::string test_dir = "/tmp/flexaidds_test_download_cached_html";
+    std::string entry_dir = test_dir + "/2HKK";
+    fs::create_directories(entry_dir);
+
+    std::string pdb_path = entry_dir + "/2HKK.pdb";
+    {
+        std::ofstream ofs(pdb_path);
+        ofs << "<!DOCTYPE html>\n";
+        ofs << "<html><body>404</body></html>\n";
+    }
+
+    std::string cif_path = entry_dir + "/2HKK.cif";
+    {
+        std::ofstream ofs(cif_path);
+        ofs << "data_2HKK\n";
+        ofs << "loop_\n";
+        ofs << "_atom_site.group_PDB\n";
+        ofs << "_atom_site.id\n";
+        ofs << "_atom_site.type_symbol\n";
+        ofs << "_atom_site.auth_atom_id\n";
+        ofs << "_atom_site.label_alt_id\n";
+        ofs << "_atom_site.auth_comp_id\n";
+        ofs << "_atom_site.auth_asym_id\n";
+        ofs << "_atom_site.auth_seq_id\n";
+        ofs << "_atom_site.Cartn_x\n";
+        ofs << "_atom_site.Cartn_y\n";
+        ofs << "_atom_site.Cartn_z\n";
+        ofs << "_atom_site.occupancy\n";
+        ofs << "_atom_site.B_iso_or_equiv\n";
+        for (int i = 0; i < 80; ++i) {
+            ofs << "HETATM " << (i + 1) << " C C" << (i + 1)
+                << " . LIG A 1 " << (0.5 * i) << " 0.000 0.000 1.00 10.00\n";
+        }
+        ofs << "#\n";
+    }
+
+    DatasetRunner runner(test_dir + "/cache");
+    std::string receptor_path;
+    bool ok = runner.download_structure("2HKK", entry_dir, receptor_path);
+    EXPECT_TRUE(ok);
+    EXPECT_EQ(receptor_path, cif_path);
+    EXPECT_FALSE(fs::exists(pdb_path)) << "HTML error page should be purged from cache";
+
+    fs::remove_all(test_dir);
+}
+
 // =============================================================================
 // Excluded residues tests
 // =============================================================================
@@ -458,9 +668,41 @@ TEST(ReportGeneration, WithResults) {
     report.spearman_rho = 0.82;
     report.kendall_tau = 0.70;
 
-    DockingResult r1{"1ABC", -8.5f, 0.9f, -8.5f, -6.0f, -2.5f, 3.2f, 15, 12.5, true};
-    DockingResult r2{"2DEF", -7.2f, 1.5f, -7.2f, -5.0f, -2.2f, 2.8f, 10, 15.0, true};
-    DockingResult r3{"3GHI", -5.0f, 3.5f, -5.0f, -3.0f, -2.0f, 4.1f, 5, 20.0, false};
+    DockingResult r1;
+    r1.pdb_id = "1ABC";
+    r1.best_score = -8.5f;
+    r1.rmsd_to_crystal = 0.9f;
+    r1.predicted_dG = -8.5f;
+    r1.predicted_dH = -6.0f;
+    r1.predicted_TdS = -2.5f;
+    r1.predicted_IEE = 3.2f;
+    r1.num_poses = 15;
+    r1.wall_time_s = 12.5;
+    r1.success = true;
+
+    DockingResult r2;
+    r2.pdb_id = "2DEF";
+    r2.best_score = -7.2f;
+    r2.rmsd_to_crystal = 1.5f;
+    r2.predicted_dG = -7.2f;
+    r2.predicted_dH = -5.0f;
+    r2.predicted_TdS = -2.2f;
+    r2.predicted_IEE = 2.8f;
+    r2.num_poses = 10;
+    r2.wall_time_s = 15.0;
+    r2.success = true;
+
+    DockingResult r3;
+    r3.pdb_id = "3GHI";
+    r3.best_score = -5.0f;
+    r3.rmsd_to_crystal = 3.5f;
+    r3.predicted_dG = -5.0f;
+    r3.predicted_dH = -3.0f;
+    r3.predicted_TdS = -2.0f;
+    r3.predicted_IEE = 4.1f;
+    r3.num_poses = 5;
+    r3.wall_time_s = 20.0;
+    r3.success = false;
     report.results = {r1, r2, r3};
 
     std::string test_dir = "/tmp/flexaidds_test_report2";

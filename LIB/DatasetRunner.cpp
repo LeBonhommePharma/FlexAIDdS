@@ -423,6 +423,47 @@ const std::set<std::string>& DatasetRunner::excluded_residues() {
 }
 
 // =============================================================================
+// Cofactor blacklist — residues that must NEVER be selected as the docking
+// target during ligand extraction.
+//
+// Many crystal structures co-crystallise a ubiquitous biochemical cofactor
+// (SAH, NAD, ATP, FAD, heme, a metal ion, a cryo-buffer …) *alongside* the
+// actual cognate ligand.  The cofactor is frequently the LARGEST HETATM group
+// (e.g. 1HNN: SAH = 26 heavy atoms vs. the 28-atom SKF inhibitor — but in many
+// entries the cofactor is the bigger of the two), so naïve "largest residue /
+// largest connected component" selection grabs the wrong molecule and yields a
+// nonsense self-dock (1HNN: SAH instead of SKF → RMSD ≈ 22.5 Å).
+//
+// When the highest-priority HETATM residue is on this blacklist, extract_ligand
+// falls through to the next non-blacklisted residue and logs the fallback chain.
+//
+// This set is intentionally DISTINCT from excluded_residues() (water / simple
+// ion / buffer junk): the entries here are real, well-formed molecules — they
+// are simply never the docking target in a ligand-binding benchmark.  Note the
+// deliberate asymmetry with write_receptor_without_ligand()'s keep_catalytic
+// set: metals/heme are RETAINED in the receptor (binding-site machinery) but
+// must never be EXTRACTED as the ligand.
+// =============================================================================
+static const std::set<std::string>& cofactor_blacklist() {
+    static const std::set<std::string> bl = {
+        // ── Mandated core set (FlexAIDdS cofactor blacklist v1) ───────────────
+        "SAH", "SAM", "ATP", "ADP", "AMP", "GTP", "GDP",
+        "NAD", "NADH", "FAD", "FADH2", "FMN",
+        "HEM", "CLA", "BCL", "SF4", "FES",
+        "MG", "ZN", "CA", "MN", "FE", "CO", "NI", "CU",
+        "GOL", "SO4", "PO4", "EDO", "PEG", "MPD", "BME",
+        // ── Real wwPDB aliases / reduced & phosphorylated forms ────────────────
+        // The wwPDB encodes NAD(P)(H) and reduced flavins under distinct 3-letter
+        // codes; include them so the blacklist actually catches them in practice.
+        "NAP", "NDP", "NAI", "NHD", "NDE", "NAJ",   // NAD(P)(H) family
+        "FDA",                                        // reduced FAD (FADH2)
+        "HEC", "HEA", "HEB", "HAS",                  // heme variants
+        "F3S", "F4S",                                // iron-sulfur clusters
+    };
+    return bl;
+}
+
+// =============================================================================
 // DatasetRunner constructor
 // =============================================================================
 
@@ -752,6 +793,39 @@ static int bond_order_from_cif_fields(const std::string& value_order,
     if (order == "TRIP" || order == "TRIPLE" || order == "3") return 3;
     if (order == "QUAD" || order == "QUADRUPLE" || order == "4") return 4;
     if (order == "DELO" || order == "DELOC" || order == "DELOCATED") return 4;
+    return 1;
+}
+
+// Geometry-based bond-order heuristic for inputs that carry no CCD bond table
+// (PDB receptors without a companion .cif) or for individual bonds missing from
+// the chem_comp_bond loop.  HETATM/CONECT connectivity is order-blind, so without
+// this every extracted ligand collapses to an all-single saturated cage — the
+// HUP/1GPK failure mode (lost lactam C=O, pyridone unsaturation, exocyclic C=C).
+// Thresholds are deliberate upper bounds on canonical double-bond lengths.
+static int bond_order_from_geometry(const std::string& elem_a,
+                                    const std::string& elem_b,
+                                    float dist, bool in_ring) {
+    const std::string e1 = upper_copy(elem_a);
+    const std::string e2 = upper_copy(elem_b);
+    auto pair_is = [&](const char* a, const char* b) {
+        return (e1 == a && e2 == b) || (e1 == b && e2 == a);
+    };
+
+    if (pair_is("C", "C")) {
+        if (dist < 1.34f) return 2;                 // C=C
+        if (in_ring && dist < 1.42f) return 4;      // aromatic C~C
+        return 1;
+    }
+    if (pair_is("C", "O")) {
+        return (dist < 1.28f) ? 2 : 1;              // carbonyl C=O
+    }
+    if (pair_is("C", "N")) {
+        if (dist < 1.35f) return in_ring ? 4 : 2;   // aromatic C~N / imine C=N
+        return 1;
+    }
+    if (pair_is("C", "S")) {
+        return (dist < 1.65f) ? 2 : 1;              // thiocarbonyl C=S
+    }
     return 1;
 }
 
@@ -1126,13 +1200,29 @@ bool DatasetRunner::extract_ligand(const std::string& structure_path,
     ligand_atoms.reserve(hetatm_atoms.size());
 
     std::map<ResidueKey, std::vector<size_t>> residue_groups;
-    const auto& excl = excluded_residues();
+    const auto& excl      = excluded_residues();
+    const auto& blacklist = cofactor_blacklist();
+
+    // Tally blacklisted cofactor residues that we skip, keyed by resName, so the
+    // fallback chain (e.g. "SAH(26) → SKF(28)") can be reported once the real
+    // docking target is resolved.  Insertion order is preserved for the log.
+    std::map<std::string, int> skipped_cofactors;       // resName -> heavy-atom count
+    std::vector<std::string>    skipped_cofactor_order;  // first-seen order
 
     for (const auto& atom : hetatm_atoms) {
-        // Skip excluded residues (water, ions, buffers)
-        if (excl.count(atom.resName)) continue;
         // Skip alternate conformers (keep only first)
         if (atom.altLoc != " " && atom.altLoc != "" && atom.altLoc != "A") continue;
+
+        // Never select a ubiquitous biochemical cofactor as the docking target.
+        // Record it for the fallback log, then fall through to the next residue.
+        if (blacklist.count(atom.resName)) {
+            if (skipped_cofactors.find(atom.resName) == skipped_cofactors.end())
+                skipped_cofactor_order.push_back(atom.resName);
+            skipped_cofactors[atom.resName]++;
+            continue;
+        }
+        // Skip excluded residues (water, ions, buffers)
+        if (excl.count(atom.resName)) continue;
 
         ResidueKey key{atom.resName, atom.chainID, atom.resSeq};
         residue_groups[key].push_back(ligand_atoms.size());
@@ -1140,6 +1230,15 @@ bool DatasetRunner::extract_ligand(const std::string& structure_path,
     }
 
     if (residue_groups.empty()) {
+        if (!skipped_cofactor_order.empty()) {
+            std::cerr << "  [WARN] Every non-water HETATM residue in " << structure_path
+                      << " is a blacklisted cofactor (";
+            for (size_t i = 0; i < skipped_cofactor_order.size(); ++i) {
+                const std::string& nm = skipped_cofactor_order[i];
+                std::cerr << (i ? ", " : "") << nm << "(" << skipped_cofactors[nm] << ")";
+            }
+            std::cerr << ") — no docking target to extract\n";
+        }
         std::cerr << "  [WARN] No valid ligand residues in " << structure_path << "\n";
         return false;
     }
@@ -1175,6 +1274,10 @@ bool DatasetRunner::extract_ligand(const std::string& structure_path,
     };
 
     std::map<std::pair<size_t, size_t>, int> bonds;
+
+    // Bonds whose order came straight from the CCD chem_comp_bond loop.  These
+    // are authoritative and must never be overwritten by the geometry heuristic.
+    std::set<std::pair<size_t, size_t>> cif_bonded;
 
     // (1) PDB CONECT records
     {
@@ -1238,6 +1341,8 @@ bool DatasetRunner::extract_ligand(const std::string& structure_path,
                         add_bond(a1_it->second, a2_it->second,
                                  bond_order_from_cif_fields(bond.value_order, bond.aromatic_flag),
                                  bonds);
+                        auto mm = std::minmax(a1_it->second, a2_it->second);
+                        cif_bonded.insert({mm.first, mm.second});
                     }
                 }
             }
@@ -1281,6 +1386,64 @@ bool DatasetRunner::extract_ligand(const std::string& structure_path,
         }
     }
 
+    // (4) Geometry-based bond-order inference for every bond whose order was not
+    // fixed by the CCD.  CONECT records and the distance bridge above establish
+    // connectivity only (order 1); without this pass a PDB receptor with no
+    // companion .cif — or any bond absent from chem_comp_bond — keeps an all-single
+    // skeleton and ProcessLigand mistypes the whole ligand as a saturated cage.
+    {
+        std::vector<std::vector<size_t>> adj(ligand_atoms.size());
+        for (const auto& [pr, ord] : bonds) {
+            (void)ord;
+            adj[pr.first].push_back(pr.second);
+            adj[pr.second].push_back(pr.first);
+        }
+
+        // A bond (a,b) lies in a ring iff a and b remain connected after the bond
+        // itself is removed (i.e. the edge is not a bridge in the graph sense).
+        auto bond_in_ring = [&](size_t a, size_t b) -> bool {
+            std::vector<char> seen(ligand_atoms.size(), 0);
+            std::vector<size_t> stack;
+            stack.push_back(a);
+            seen[a] = 1;
+            while (!stack.empty()) {
+                size_t cur = stack.back();
+                stack.pop_back();
+                for (size_t nb : adj[cur]) {
+                    if ((cur == a && nb == b) || (cur == b && nb == a)) continue;
+                    if (nb == b) return true;
+                    if (seen[nb]) continue;
+                    seen[nb] = 1;
+                    stack.push_back(nb);
+                }
+            }
+            return false;
+        };
+
+        auto elem_of = [](const PDBAtom& at) -> std::string {
+            std::string e = at.element;
+            if (e.empty()) {
+                for (char c : at.name) {
+                    if (std::isalpha(static_cast<unsigned char>(c))) {
+                        e = std::string(1, c);
+                        break;
+                    }
+                }
+            }
+            return upper_copy(trim_copy(e));
+        };
+
+        for (auto& [pr, ord] : bonds) {
+            if (cif_bonded.count(pr)) continue;  // authoritative CCD order — leave it
+            const auto& A = ligand_atoms[pr.first];
+            const auto& B = ligand_atoms[pr.second];
+            float dx = A.x - B.x, dy = A.y - B.y, dz = A.z - B.z;
+            float dist = std::sqrt(dx * dx + dy * dy + dz * dz);
+            bool ring = bond_in_ring(pr.first, pr.second);
+            ord = bond_order_from_geometry(elem_of(A), elem_of(B), dist, ring);
+        }
+    }
+
     // Identify the largest connected component and keep only that ligand.
     std::map<int, std::vector<size_t>> components;
     for (size_t i = 0; i < ligand_atoms.size(); ++i) {
@@ -1321,6 +1484,21 @@ bool DatasetRunner::extract_ligand(const std::string& structure_path,
 
     // Header
     const auto& best_atom = ligand_atoms[selected_indices.front()];
+
+    // ── Fallback-chain log ──────────────────────────────────────────────────
+    // If one or more blacklisted cofactors were skipped to reach this ligand,
+    // make the decision auditable.  A wrong pick here is the difference between
+    // a ~2 Å self-dock and a ~20 Å nonsense pose (cf. 1HNN: SAH vs SKF).
+    if (!skipped_cofactor_order.empty()) {
+        std::cerr << "  [LIGAND] " << structure_path << ": skipped blacklisted cofactor(s) ";
+        for (size_t i = 0; i < skipped_cofactor_order.size(); ++i) {
+            const std::string& nm = skipped_cofactor_order[i];
+            std::cerr << (i ? ", " : "") << nm << "(" << skipped_cofactors[nm] << ")";
+        }
+        std::cerr << " → docking target = " << best_atom.resName
+                  << "(" << selected_indices.size() << ")\n";
+    }
+
     ofs << best_atom.resName << "\n";
     ofs << "  FlexAIDdS DatasetRunner\n";
     ofs << "  Extracted from structure HETATM records | FLEXAIDDS_LIGAND_EXTRACTOR_V3\n";

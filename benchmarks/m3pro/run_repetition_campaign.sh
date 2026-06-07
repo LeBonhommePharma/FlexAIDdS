@@ -283,21 +283,6 @@ try:
     data = json.load(open(sys.argv[1]))
     print(data.get("overall_status", "UNKNOWN"))
     print(data.get("actionable", ""))
-    rates = {}
-    for name, value in (data.get("dataset_success_rates") or {}).items():
-        mean = value.get("mean") if isinstance(value, dict) else value
-        if mean is not None:
-            rates[name] = mean
-    if not rates:
-        for ds in data.get("details", []):
-            sr = ds.get("metrics", {}).get("success_rate", {})
-            mean = sr.get("mean")
-            if mean is not None:
-                rates[ds.get("dataset", "unknown")] = mean
-    if rates:
-        print("PER_DATASET")
-        for name in sorted(rates):
-            print(f"{name}={rates[name]:.3f}")
 except Exception as e:
     print("ERROR")
     print(str(e))
@@ -305,11 +290,9 @@ except Exception as e:
 
     local overall_status
     local actionable
-    local dataset_lines
 
     overall_status=$(echo "$status" | head -1)
-    actionable=$(echo "$status" | sed -n '2p')
-    dataset_lines=$(echo "$status" | sed -n '/^PER_DATASET$/,$p' | tail -n +2)
+    actionable=$(echo "$status" | tail -1)
 
     if [[ "$overall_status" == "FAIL" ]]; then
         warn "════════════════════════════════════════════════════════"
@@ -317,13 +300,6 @@ except Exception as e:
         warn "════════════════════════════════════════════════════════"
         warn "Status file : $status_file"
         warn "Actionable  : $actionable"
-        if [[ -n "$dataset_lines" ]]; then
-            warn "Per-dataset success rates:"
-            while IFS= read -r line; do
-                [[ -z "$line" ]] && continue
-                warn "  $line"
-            done <<< "$dataset_lines"
-        fi
         warn ""
         if [[ "$EARLY_EXIT_ON_FAIL" == "true" ]]; then
             warn "Early exit triggered. Remaining runs aborted to save compute."
@@ -333,13 +309,6 @@ except Exception as e:
         fi
     elif [[ "$overall_status" == "WARN" ]]; then
         warn "Quality gate: WARN — $actionable"
-        if [[ -n "$dataset_lines" ]]; then
-            warn "Per-dataset success rates:"
-            while IFS= read -r line; do
-                [[ -z "$line" ]] && continue
-                warn "  $line"
-            done <<< "$dataset_lines"
-        fi
     fi
 }
 

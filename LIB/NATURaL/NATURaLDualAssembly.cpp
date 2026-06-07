@@ -45,8 +45,11 @@ namespace natural {
 
 // ─── nucleic acid residue names ───────────────────────────────────────────────
 static const char* NUCLEIC_ACID_NAMES[] = {
-    // RNA
-    "A", "G", "C", "U", "ADE", "GUA", "CYT", "URA",
+    // RNA — single-letter codes "A","G","C","U" REMOVED (Bug #4 fix).
+    // strncmp prefix-match fires on ALA(A), GLY(G), CYS(C), etc. for every
+    // standard amino acid → false NA detection on all protein receptors.
+    // 3-letter codes cover RNA unambiguously; DA/DG/DC/DT cover DNA.
+    "ADE", "GUA", "CYT", "URA",
     // DNA
     "DA", "DG", "DC", "DT", "DA3", "DG3", "DC3", "DT3",
     "DA5", "DG5", "DC5", "DT5",
@@ -76,8 +79,7 @@ bool is_nucleic_acid_receptor(const resid* residues, int n_residues) {
         const char* name = residues[i].name;
         if (!name) continue;
         for (int k = 0; NUCLEIC_ACID_NAMES[k]; ++k) {
-            if (strncmp(name, NUCLEIC_ACID_NAMES[k],
-                        strlen(NUCLEIC_ACID_NAMES[k])) == 0)
+            if (strcmp(name, NUCLEIC_ACID_NAMES[k]) == 0)  // Bug #4 fix: exact match, not prefix
                 return true;
         }
     }

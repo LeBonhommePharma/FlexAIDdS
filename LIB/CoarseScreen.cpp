@@ -943,6 +943,24 @@ std::vector<ScreenLigand> CoarseScreener::load_ligands_sdf(const std::string& pa
             else if (symbol == "Cl") sybyl = "CL";
             else if (symbol == "Br") sybyl = "BR";
             else if (symbol == "I")  sybyl = "I";
+            // ── Transition-metal / metalloid cofactor atoms ──────────────────
+            // Metal-containing ligands (organometallics, metallodrugs, Se in
+            // selenoproteins/selenocysteine analogs) previously fell through to
+            // "DUMMY" and were typed as inert spheres, zeroing their pairwise
+            // interaction-matrix terms.  Map each to its dedicated SYBYL token so
+            // sybyl_type_lookup() returns the correct radius and emat row.
+            // Token spellings must match kSybylTypes[] in nrgrank_matrix.h
+            // (matched case-insensitively, spaces stripped).  Co only exists
+            // there as the "CO.OH" cobalt entry; "NI"/"FE"/"ZN"/... map 1:1.
+            else if (symbol == "Fe") sybyl = "FE";
+            else if (symbol == "Zn") sybyl = "ZN";
+            else if (symbol == "Mg") sybyl = "MG";
+            else if (symbol == "Ca") sybyl = "CA";
+            else if (symbol == "Mn") sybyl = "MN";
+            else if (symbol == "Cu") sybyl = "CU";
+            else if (symbol == "Co") sybyl = "CO.OH";
+            else if (symbol == "Ni") sybyl = "NI";
+            else if (symbol == "Se") sybyl = "SE";
             else                     sybyl = "DUMMY";
 
             la.type = sybyl_type_lookup(sybyl, dummy_rad);

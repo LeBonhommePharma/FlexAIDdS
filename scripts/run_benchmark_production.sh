@@ -45,10 +45,12 @@ trap 'on_exit $?' EXIT
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
-BUILD_DIR="${REPO_ROOT}/build"
+BUILD_DIR="${FLEXAIDDS_BUILD_DIR:-${REPO_ROOT}/build}"
 TIMESTAMP="$(date +%Y%m%d_%H%M%S)"
-LOG_DIR="${REPO_ROOT}/logs/benchmark/${TIMESTAMP}"
-RESULTS_DIR="${REPO_ROOT}/benchmark_results/${TIMESTAMP}"
+RESULTS_ROOT="${FLEXAIDDS_RESULTS_ROOT:-${HOME}/flexaidds_benchmark_results}"
+LOG_ROOT="${FLEXAIDDS_LOG_ROOT:-${HOME}/flexaidds_logs}"
+LOG_DIR="${LOG_ROOT}/benchmark/${TIMESTAMP}"
+RESULTS_DIR="${RESULTS_ROOT}/${TIMESTAMP}"
 FIGURES_DIR="${RESULTS_DIR}/figures"
 ASTEX_CSV="${REPO_ROOT}/benchmarks/astex_diverse/astex_diverse_set.csv"
 ASTEX_STRUCT="${REPO_ROOT}/benchmarks/astex_diverse/structures"
@@ -56,6 +58,7 @@ ASTEX_DATA="${REPO_ROOT}/benchmarks/astex_diverse/data"
 SUMMARY_CSV="${RESULTS_DIR}/summary.csv"
 PILOT_WALL_MIN=300   # 5 min — lower bound acceptable pilot wall clock
 PILOT_WALL_MAX=600   # 10 min — upper bound acceptable pilot wall clock
+MIN_FREE_GB="${FLEXAIDDS_MIN_FREE_GB:-5}"  # hard stop only if the machine is truly close to full
 
 # ─── Colours ─────────────────────────────────────────────────────────────────
 
@@ -145,24 +148,81 @@ setup_env() {
     export FLEXAID_SEED="${SEED}"
     export SHANNON_TRACE_LEVEL=2      # per-step CSV for Astex runs
     export FLEXAIDS_METAL_DEVICE=default  # Enable Metal GPU acceleration
+    export FLEXAIDDS_REPO="${REPO_ROOT}"
     ulimit -n 65536 2>/dev/null || warn "Could not raise file descriptor limit"
     ulimit -s unlimited 2>/dev/null || warn "Could not raise stack limit"
 
     info "WORKERS=${N_THREADS}  OMP/worker=${OMP_NUM_THREADS}  SEED=${SEED}  DRY_RUN=${DRY_RUN}  METAL=ON"
 }
 
+ensure_runtime_data_files() {
+    local dir="$1"
+    local sources=(
+        "${REPO_ROOT}/build"
+        "${REPO_ROOT}"
+        "/private/tmp/flexaidds-build-tests"
+        "/private/tmp/flexaidds-build-prod"
+    )
+
+    mkdir -p "${dir}"
+    for data_file in MC_st0r5.2_6.dat AMINO.def NUCLEOTIDES.def; do
+        if [[ -s "${dir}/${data_file}" ]]; then
+            continue
+        fi
+        for src in "${sources[@]}"; do
+            [[ "${src}" == "${dir}" ]] && continue
+            if [[ -s "${src}/${data_file}" ]]; then
+                cp -p "${src}/${data_file}" "${dir}/${data_file}"
+                break
+            fi
+        done
+    done
+
+    for data_file in MC_st0r5.2_6.dat AMINO.def NUCLEOTIDES.def; do
+        [[ -s "${dir}/${data_file}" ]] || return 1
+    done
+}
+
 # ─── Locate binary ────────────────────────────────────────────────────────────
 
 locate_binary() {
+    if [[ -n "${FLEXAIDDS_BUILD_DIR:-}" ]]; then
+        local build_candidates=(
+            "${BUILD_DIR}/FlexAIDdS"
+            "${BUILD_DIR}/FlexAID"
+        )
+        for b in "${build_candidates[@]}"; do
+            if [[ -x "${b}" ]]; then
+                FLEXAIDDS_BIN="${b}"
+                BUILD_DIR="$(cd "$(dirname "${FLEXAIDDS_BIN}")" && pwd)"
+                ensure_runtime_data_files "${BUILD_DIR}" || return 1
+                ok "Binary: ${FLEXAIDDS_BIN}"
+                export FLEXAIDDS_BINARY="${FLEXAIDDS_BIN}"
+                export FLEXAIDDS_BUILD_DIR="${BUILD_DIR}"
+                export FLEXAIDDS_REPO="${REPO_ROOT}"
+                return 0
+            fi
+        done
+    fi
+
     local candidates=(
+        "/private/tmp/flexaidds-build-prod/FlexAIDdS"
+        "/private/tmp/flexaidds-build-tests/FlexAIDdS"
         "${BUILD_DIR}/FlexAIDdS"
         "${REPO_ROOT}/WRK/FlexAID"
         "${BUILD_DIR}/FlexAID"
+        "${REPO_ROOT}/BIN/FlexAIDdS"
+        "${REPO_ROOT}/BIN/FlexAID"
     )
     for b in "${candidates[@]}"; do
         if [[ -x "${b}" ]]; then
             FLEXAIDDS_BIN="${b}"
+            BUILD_DIR="$(cd "$(dirname "${FLEXAIDDS_BIN}")" && pwd)"
+            ensure_runtime_data_files "${BUILD_DIR}" || return 1
             ok "Binary: ${FLEXAIDDS_BIN}"
+            export FLEXAIDDS_BUILD_DIR="${BUILD_DIR}"
+            export FLEXAIDDS_BINARY="${FLEXAIDDS_BIN}"
+            export FLEXAIDDS_REPO="${REPO_ROOT}"
             return 0
         fi
     done
@@ -279,7 +339,7 @@ preflight() {
         warn "   (Verify with: cd ${BUILD_DIR} && ctest -j${N_THREADS})"
     fi
 
-    # 4. Disk space ≥ 50 GB (or use iCloud)
+    # 4. Disk space
     info "4. Disk space"
     local free_gb
     free_gb="$(df -BG "${REPO_ROOT}" 2>/dev/null \
@@ -287,15 +347,11 @@ preflight() {
                || df -g "${REPO_ROOT}" 2>/dev/null \
                | awk 'NR==2{print $4}' \
                || echo 0)"
-    if [[ "${free_gb}" -ge 50 ]] 2>/dev/null; then
-        ok "   ${free_gb} GB free (≥ 50 GB required)"
+    if [[ "${free_gb}" -ge "${MIN_FREE_GB}" ]] 2>/dev/null; then
+        ok "   ${free_gb} GB free (≥ ${MIN_FREE_GB} GB minimum)"
     else
-        if [ -d "$HOME/Library/Mobile Documents/com~apple~CloudDocs/FlexAIDdS_Benchmarks" ]; then
-            warn "   Only ${free_gb} GB free — using iCloud for output"
-        else
-            warn "   Only ${free_gb} GB free — need ≥ 50 GB for Phase 1"
-            [[ "${free_gb}" -lt 10 ]] && n_fail=$((n_fail + 1))
-        fi
+        warn "   Only ${free_gb} GB free — output is configured outside the repo, but space is still tight"
+        [[ "${free_gb}" -lt "${MIN_FREE_GB}" ]] && n_fail=$((n_fail + 1))
     fi
 
     # 5. Astex CSV
@@ -869,7 +925,6 @@ run_full_astex() {
     # Prefer benchmark_datasets binary if available (handles download + dock atomically)
     if [[ -n "${DATASET_BIN:-}" ]] && [[ "${TWO_PASS}" == false ]]; then
         info "Using benchmark_datasets binary for full Astex run"
-        export FLEXAIDDS_BINARY="${FLEXAIDDS_BIN}"
         run "${DATASET_BIN}" \
             --benchmark   astex \
             --output      "${ast_out}" \
@@ -993,7 +1048,6 @@ run_phase2() {
     export SHANNON_TRACE_LEVEL=1   # final H only for non-native cross-docking
 
     if [[ -n "${DATASET_BIN:-}" ]]; then
-        export FLEXAIDDS_BINARY="${FLEXAIDDS_BIN}"
         info "Running Astex Non-Native..."
         run "${DATASET_BIN}" \
             --benchmark   astex_nonnative \
@@ -1082,6 +1136,8 @@ main() {
     setup_env
     run mkdir -p "${LOG_DIR}" "${RESULTS_DIR}" "${FIGURES_DIR}"
     run mkdir -p "${RESULTS_DIR}"
+    run xattr -w com.apple.fileprovider.ignore#P 1 "${RESULTS_DIR}" 2>/dev/null || true
+    run touch "${RESULTS_DIR}/.metadata_never_index" 2>/dev/null || true
 
     # Record run metadata
     if [[ "${DRY_RUN}" == false ]]; then
