@@ -1288,6 +1288,113 @@ std::vector<PDBAtom> DatasetRunner::parse_pdb_hetatm(const std::string& pdb_path
     return atoms;
 }
 
+// Detect a degenerate "all-single-bond" cached ligand.  Some early extractions
+// wrote SDF/MOL2 files in which every bond is order 1, even for molecules that
+// clearly contain rings.  With no double-bond / aromatic information the
+// downstream typing pipeline cannot perceive aromaticity, so an aromatic ring
+// (benzene, thiophene, …) is scored as aliphatic sp3 carbon — e.g. 1GM8/SOX
+// docked at 12.17 Å instead of 1.96 Å because its benzene+thiophene carbons
+// were typed C.3 (3) rather than C.AR (4).  This is a chemistry-quality defect
+// in the cache itself, independent of the extractor version stamp, so it must
+// invalidate the cache and force a fresh re-extraction.
+//
+// Heuristic: a molecule "has rings" when its cyclomatic number
+// (nbonds - natoms + n_connected_components) >= 1.  If it has rings AND every
+// bond is order 1, the cache is degenerate.  Hydrogens are terminal and net
+// cyclomatic-neutral, so counting them is harmless.  Any parse failure returns
+// false (fail safe: do not churn a cache we cannot understand).
+static bool ligand_bonds_degenerate(const std::string& path) {
+    std::ifstream in(path);
+    if (!in.is_open()) return false;
+    std::vector<std::string> lines;
+    {
+        std::string l;
+        while (std::getline(in, l)) {
+            if (!l.empty() && l.back() == '\r') l.pop_back();
+            lines.push_back(l);
+        }
+    }
+    if (lines.size() < 5) return false;
+
+    std::string ext = fs::path(path).extension().string();
+    std::transform(ext.begin(), ext.end(), ext.begin(),
+                   [](unsigned char c) { return std::tolower(c); });
+    const bool is_mol2 = (ext == ".mol2");
+
+    int natoms = 0;
+    std::vector<std::pair<int, int>> edges;  // 1-based atom index pairs
+    bool all_single = true;
+
+    if (is_mol2) {
+        size_t a0 = std::string::npos, a1 = lines.size();
+        for (size_t i = 0; i < lines.size(); ++i)
+            if (lines[i].rfind("@<TRIPOS>ATOM", 0) == 0) { a0 = i + 1; break; }
+        if (a0 == std::string::npos) return false;
+        for (size_t i = a0; i < lines.size(); ++i)
+            if (lines[i].rfind("@<TRIPOS>", 0) == 0) { a1 = i; break; }
+        for (size_t i = a0; i < a1; ++i)
+            if (!lines[i].empty()) ++natoms;
+
+        size_t b0 = std::string::npos, b1 = lines.size();
+        for (size_t i = 0; i < lines.size(); ++i)
+            if (lines[i].rfind("@<TRIPOS>BOND", 0) == 0) { b0 = i + 1; break; }
+        if (b0 == std::string::npos) return false;
+        for (size_t i = b0; i < lines.size(); ++i)
+            if (lines[i].rfind("@<TRIPOS>", 0) == 0) { b1 = i; break; }
+        for (size_t i = b0; i < b1; ++i) {
+            std::istringstream ss(lines[i]);
+            std::string id, a, b, type;
+            if (!(ss >> id >> a >> b >> type)) continue;
+            try { edges.emplace_back(std::stoi(a), std::stoi(b)); }
+            catch (...) { continue; }
+            if (type != "1") all_single = false;  // 2,3,ar,am → has order info
+        }
+    } else {
+        // SDF V2000: counts line is lines[3] (aaabbb...), bonds follow atoms.
+        int nbonds = 0;
+        try {
+            natoms = std::stoi(lines[3].substr(0, 3));
+            nbonds = std::stoi(lines[3].substr(3, 3));
+        } catch (...) { return false; }
+        if (natoms <= 0 || nbonds < 0) return false;
+        const size_t bstart = 4 + static_cast<size_t>(natoms);
+        if (bstart + static_cast<size_t>(nbonds) > lines.size()) return false;
+        for (int i = 0; i < nbonds; ++i) {
+            const std::string& l = lines[bstart + i];
+            int a = 0, b = 0, order = 0;
+            try {
+                a = std::stoi(l.substr(0, 3));
+                b = std::stoi(l.substr(3, 3));
+                order = std::stoi(l.substr(6, 3));
+            } catch (...) { continue; }
+            edges.emplace_back(a, b);
+            if (order != 1) all_single = false;
+        }
+    }
+
+    if (natoms <= 0 || edges.empty()) return false;
+    if (!all_single) return false;  // has bond-order info → not degenerate
+
+    // Ring test via cyclomatic number: nbonds - natoms + components >= 1.
+    std::vector<int> parent(natoms + 1);
+    for (int i = 0; i <= natoms; ++i) parent[i] = i;
+    std::function<int(int)> find = [&](int x) {
+        while (parent[x] != x) { parent[x] = parent[parent[x]]; x = parent[x]; }
+        return x;
+    };
+    for (const auto& e : edges) {
+        if (e.first < 1 || e.first > natoms || e.second < 1 || e.second > natoms)
+            return false;  // malformed index → fail safe
+        parent[find(e.first)] = find(e.second);
+    }
+    int components = 0;
+    for (int i = 1; i <= natoms; ++i)
+        if (find(i) == i) ++components;
+    const int cyclomatic =
+        static_cast<int>(edges.size()) - natoms + components;
+    return cyclomatic >= 1;  // has at least one ring and all bonds order 1
+}
+
 static bool ligand_sdf_is_current(const std::string& sdf_path,
                                   const std::string& structure_path) {
     if (!fs::exists(sdf_path) || fs::is_directory(sdf_path)) return false;
@@ -1352,6 +1459,17 @@ static bool ligand_sdf_is_current(const std::string& sdf_path,
     if (!title.empty() && cofactor_blacklist().count(title)) {
         std::cerr << "  [CACHE] stale cofactor ligand '" << title << "' in "
                   << sdf_path << " — forcing re-extraction\n";
+        return false;
+    }
+
+    // Bond-order quality guard.  A ringed molecule whose every bond is order 1
+    // carries no aromaticity/hybridisation information, so its aromatic carbons
+    // are scored as aliphatic sp3 — the 1GM8/SOX 12.17 Å scoring regression.
+    // Such a cache is degenerate regardless of its version stamp: invalidate it.
+    if (ligand_bonds_degenerate(sdf_path)) {
+        std::cerr << "  [CACHE] degenerate all-single-bond ligand in "
+                  << sdf_path << " (ring present, no double/aromatic bonds) — "
+                  << "forcing re-extraction\n";
         return false;
     }
     return true;
