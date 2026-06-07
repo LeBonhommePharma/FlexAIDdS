@@ -796,6 +796,39 @@ static int bond_order_from_cif_fields(const std::string& value_order,
     return 1;
 }
 
+// Geometry-based bond-order heuristic for inputs that carry no CCD bond table
+// (PDB receptors without a companion .cif) or for individual bonds missing from
+// the chem_comp_bond loop.  HETATM/CONECT connectivity is order-blind, so without
+// this every extracted ligand collapses to an all-single saturated cage — the
+// HUP/1GPK failure mode (lost lactam C=O, pyridone unsaturation, exocyclic C=C).
+// Thresholds are deliberate upper bounds on canonical double-bond lengths.
+static int bond_order_from_geometry(const std::string& elem_a,
+                                    const std::string& elem_b,
+                                    float dist, bool in_ring) {
+    const std::string e1 = upper_copy(elem_a);
+    const std::string e2 = upper_copy(elem_b);
+    auto pair_is = [&](const char* a, const char* b) {
+        return (e1 == a && e2 == b) || (e1 == b && e2 == a);
+    };
+
+    if (pair_is("C", "C")) {
+        if (dist < 1.34f) return 2;                 // C=C
+        if (in_ring && dist < 1.42f) return 4;      // aromatic C~C
+        return 1;
+    }
+    if (pair_is("C", "O")) {
+        return (dist < 1.28f) ? 2 : 1;              // carbonyl C=O
+    }
+    if (pair_is("C", "N")) {
+        if (dist < 1.35f) return in_ring ? 4 : 2;   // aromatic C~N / imine C=N
+        return 1;
+    }
+    if (pair_is("C", "S")) {
+        return (dist < 1.65f) ? 2 : 1;              // thiocarbonyl C=S
+    }
+    return 1;
+}
+
 static std::vector<std::string> tokenize_cif_line_local(const std::string& line) {
     std::vector<std::string> tokens;
     size_t i = 0;
@@ -1242,6 +1275,10 @@ bool DatasetRunner::extract_ligand(const std::string& structure_path,
 
     std::map<std::pair<size_t, size_t>, int> bonds;
 
+    // Bonds whose order came straight from the CCD chem_comp_bond loop.  These
+    // are authoritative and must never be overwritten by the geometry heuristic.
+    std::set<std::pair<size_t, size_t>> cif_bonded;
+
     // (1) PDB CONECT records
     {
         std::ifstream pdb_ifs(structure_path);
@@ -1304,6 +1341,8 @@ bool DatasetRunner::extract_ligand(const std::string& structure_path,
                         add_bond(a1_it->second, a2_it->second,
                                  bond_order_from_cif_fields(bond.value_order, bond.aromatic_flag),
                                  bonds);
+                        auto mm = std::minmax(a1_it->second, a2_it->second);
+                        cif_bonded.insert({mm.first, mm.second});
                     }
                 }
             }
@@ -1344,6 +1383,64 @@ bool DatasetRunner::extract_ligand(const std::string& structure_path,
                     }
                 }
             }
+        }
+    }
+
+    // (4) Geometry-based bond-order inference for every bond whose order was not
+    // fixed by the CCD.  CONECT records and the distance bridge above establish
+    // connectivity only (order 1); without this pass a PDB receptor with no
+    // companion .cif — or any bond absent from chem_comp_bond — keeps an all-single
+    // skeleton and ProcessLigand mistypes the whole ligand as a saturated cage.
+    {
+        std::vector<std::vector<size_t>> adj(ligand_atoms.size());
+        for (const auto& [pr, ord] : bonds) {
+            (void)ord;
+            adj[pr.first].push_back(pr.second);
+            adj[pr.second].push_back(pr.first);
+        }
+
+        // A bond (a,b) lies in a ring iff a and b remain connected after the bond
+        // itself is removed (i.e. the edge is not a bridge in the graph sense).
+        auto bond_in_ring = [&](size_t a, size_t b) -> bool {
+            std::vector<char> seen(ligand_atoms.size(), 0);
+            std::vector<size_t> stack;
+            stack.push_back(a);
+            seen[a] = 1;
+            while (!stack.empty()) {
+                size_t cur = stack.back();
+                stack.pop_back();
+                for (size_t nb : adj[cur]) {
+                    if ((cur == a && nb == b) || (cur == b && nb == a)) continue;
+                    if (nb == b) return true;
+                    if (seen[nb]) continue;
+                    seen[nb] = 1;
+                    stack.push_back(nb);
+                }
+            }
+            return false;
+        };
+
+        auto elem_of = [](const PDBAtom& at) -> std::string {
+            std::string e = at.element;
+            if (e.empty()) {
+                for (char c : at.name) {
+                    if (std::isalpha(static_cast<unsigned char>(c))) {
+                        e = std::string(1, c);
+                        break;
+                    }
+                }
+            }
+            return upper_copy(trim_copy(e));
+        };
+
+        for (auto& [pr, ord] : bonds) {
+            if (cif_bonded.count(pr)) continue;  // authoritative CCD order — leave it
+            const auto& A = ligand_atoms[pr.first];
+            const auto& B = ligand_atoms[pr.second];
+            float dx = A.x - B.x, dy = A.y - B.y, dz = A.z - B.z;
+            float dist = std::sqrt(dx * dx + dy * dy + dz * dz);
+            bool ring = bond_in_ring(pr.first, pr.second);
+            ord = bond_order_from_geometry(elem_of(A), elem_of(B), dist, ring);
         }
     }
 
