@@ -1157,7 +1157,26 @@ int main(int argc, char **argv){
 						if ((int)keep.size() >= MIN_SITE_GRID || rcut >= rcut_max) break;
 						rcut += rcut_step;
 					}
-					if (!keep.empty() && (int)keep.size() < FA->num_grd - 1) {
+					// Crash guard: rcut_max=8 Å may leave < MIN_SITE_GRID pts for sparse pockets.
+					// Retry up to 12 Å before falling through to full-grid fallback.
+					if ((int)keep.size() < MIN_SITE_GRID && rcut >= rcut_max) {
+						const double rcut_extended = 12.0;
+						while (rcut < rcut_extended) {
+							rcut += rcut_step;
+							keep.clear();
+							const double rcut2 = rcut * rcut;
+							for (int i = 1; i < FA->num_grd; ++i) {
+								double dx = cleftgrid[i].coor[0]-cx,
+								       dy = cleftgrid[i].coor[1]-cy,
+								       dz = cleftgrid[i].coor[2]-cz;
+								if (dx*dx+dy*dy+dz*dz <= rcut2) keep.push_back(i);
+							}
+							if ((int)keep.size() >= MIN_SITE_GRID) break;
+						}
+						printf("SITE-CONFINE: sparse-pocket retry to %.1f A -> %d pts\n",
+						       rcut, (int)keep.size());
+					}
+					if (!keep.empty() && (int)keep.size() >= MIN_SITE_GRID && (int)keep.size() < FA->num_grd - 1) {
 						gridpoint* confined = nullptr;
 						int new_count = mif::rebuild_cleftgrid(cleftgrid, FA->num_grd, keep, &confined);
 						if (confined && new_count > 0) {
