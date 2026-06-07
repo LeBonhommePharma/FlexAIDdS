@@ -1133,16 +1133,31 @@ int main(int argc, char **argv){
 						double d2 = dx*dx+dy*dy+dz*dz;
 						if (d2 > rmax2) rmax2 = d2;
 					}
-					const double rcut  = std::sqrt(rmax2) + kSiteMargin;
-					const double rcut2 = rcut*rcut;
+					// Expanding-radius confinement: always confine to the cognate
+					// site.  Start at (ligand_extent + margin) and grow rcut in 2 Å
+					// steps (up to 30 Å) until at least MIN_SITE_GRID points fall
+					// inside the sphere.  The previous behaviour kept a single static
+					// radius and, when it yielded < MIN_SITE_GRID points, silently
+					// fell back to the full ~123k-point grid — letting the GA roam the
+					// entire protein surface.
+					const int    MIN_SITE_GRID  = 500;   // floor: target site density (engine min ~250, 2x for safety)
+					const double rcut_initial   = std::sqrt(rmax2) + kSiteMargin;
+					const double rcut_max       = 30.0;  // Å — hard ceiling on expansion
+					const double rcut_step       = 2.0;  // Å — expansion increment
+					double rcut = rcut_initial;
 					std::vector<int> keep;
 					keep.reserve(FA->num_grd);
-					for (int i = 1; i < FA->num_grd; ++i) {  // i=0 = reflig ref conf
-						double dx=cleftgrid[i].coor[0]-cx, dy=cleftgrid[i].coor[1]-cy, dz=cleftgrid[i].coor[2]-cz;
-						if (dx*dx+dy*dy+dz*dz <= rcut2) keep.push_back(i);
+					for (;;) {
+						keep.clear();
+						const double rcut2 = rcut*rcut;
+						for (int i = 1; i < FA->num_grd; ++i) {  // i=0 = reflig ref conf
+							double dx=cleftgrid[i].coor[0]-cx, dy=cleftgrid[i].coor[1]-cy, dz=cleftgrid[i].coor[2]-cz;
+							if (dx*dx+dy*dy+dz*dz <= rcut2) keep.push_back(i);
+						}
+						if ((int)keep.size() >= MIN_SITE_GRID || rcut >= rcut_max) break;
+						rcut += rcut_step;
 					}
-					const int MIN_SITE_GRID = 500;   // floor: never prune below this (engine min ~250, use 2x for safety)
-					if (!keep.empty() && (int)keep.size() >= MIN_SITE_GRID && (int)keep.size() < FA->num_grd - 1) {
+					if (!keep.empty() && (int)keep.size() < FA->num_grd - 1) {
 						gridpoint* confined = nullptr;
 						int new_count = mif::rebuild_cleftgrid(cleftgrid, FA->num_grd, keep, &confined);
 						if (confined && new_count > 0) {
@@ -1151,9 +1166,16 @@ int main(int argc, char **argv){
 							cleftgrid = confined;
 							FA->num_grd = new_count;
 							calc_cleftic(FA, cleftgrid);
-							printf("SITE-CONFINE: kept %d/%d grid points within %.1f A of cognate centroid\n",
-							       new_count - 1, old_count - 1, rcut);
+							printf("SITE-CONFINE: %d pts within %.1f A of cognate centroid (expanded from %.1f A, %d->%d grid pts)\n",
+							       new_count - 1, rcut, rcut_initial, old_count - 1, new_count - 1);
+							if ((int)keep.size() < MIN_SITE_GRID) {
+								printf("SITE-CONFINE: WARNING confined to only %d pts (< MIN_SITE_GRID=%d) after expanding to %.1f A\n",
+								       new_count - 1, MIN_SITE_GRID, rcut);
+							}
 						}
+					} else {
+						printf("SITE-CONFINE: WARNING full-grid fallback after expanding to %.1f A (keep=%d, total=%d)\n",
+						       rcut, (int)keep.size(), FA->num_grd - 1);
 					}
 				}
 			}
