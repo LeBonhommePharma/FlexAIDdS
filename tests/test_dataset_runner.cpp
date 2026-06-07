@@ -453,7 +453,7 @@ TEST(PDBParsing, ExtractLigandFromMMCIFWithChemCompBonds) {
     std::ifstream ifs(sdf_path);
     ASSERT_TRUE(ifs.good());
     std::string contents((std::istreambuf_iterator<char>(ifs)), std::istreambuf_iterator<char>());
-    EXPECT_NE(contents.find("FLEXAIDDS_LIGAND_EXTRACTOR_V3"), std::string::npos);
+    EXPECT_NE(contents.find("FLEXAIDDS_LIGAND_EXTRACTOR_V4"), std::string::npos);
 
     std::istringstream iss(contents);
     std::string line1, line2, line3, counts;
@@ -469,6 +469,87 @@ TEST(PDBParsing, ExtractLigandFromMMCIFWithChemCompBonds) {
     counts_stream >> atom_count >> bond_count;
     EXPECT_EQ(atom_count, 4);
     EXPECT_EQ(bond_count, 3);
+
+    fs::remove_all(test_dir);
+}
+
+// Glycan deprioritisation: when an N-glycan (NAG/BMA…) is co-crystallised with a
+// real small-molecule ligand, the linked sugar tree is the LARGEST connected
+// component and would be mis-extracted as the docking target (1GPK: 4×NAG vs
+// HUP).  extract_ligand() must drop the sugars and select the drug — but only
+// when a non-sugar candidate exists (2GBP→BGC keeps the sugar when it is alone).
+TEST(PDBParsing, ExtractLigandDeprioritisesGlycanWhenDrugPresent) {
+    std::string test_dir = "/tmp/flexaidds_test_glycan_dedup";
+    fs::create_directories(test_dir);
+    std::string cif_path = test_dir + "/test.cif";
+    std::string sdf_path = test_dir + "/ligand.sdf";
+
+    {
+        std::ofstream ofs(cif_path);
+        ofs << "data_test\n#\nloop_\n";
+        ofs << "_atom_site.group_PDB\n_atom_site.id\n_atom_site.type_symbol\n";
+        ofs << "_atom_site.auth_atom_id\n_atom_site.label_alt_id\n_atom_site.auth_comp_id\n";
+        ofs << "_atom_site.auth_asym_id\n_atom_site.auth_seq_id\n";
+        ofs << "_atom_site.Cartn_x\n_atom_site.Cartn_y\n_atom_site.Cartn_z\n";
+        ofs << "_atom_site.occupancy\n_atom_site.B_iso_or_equiv\n";
+        // N-glycan tree: 8 NAG/BMA atoms, spatially contiguous (distance-bridged
+        // into one large component) — larger than the 4-atom drug.
+        ofs << "HETATM 1 C C1 . NAG A 1 0.000 0.000 0.000 1.00 10.00\n";
+        ofs << "HETATM 2 C C2 . NAG A 1 1.500 0.000 0.000 1.00 10.00\n";
+        ofs << "HETATM 3 C C3 . NAG A 1 3.000 0.000 0.000 1.00 10.00\n";
+        ofs << "HETATM 4 O O3 . NAG A 1 4.500 0.000 0.000 1.00 10.00\n";
+        ofs << "HETATM 5 C C1 . NAG A 2 6.000 0.000 0.000 1.00 10.00\n";
+        ofs << "HETATM 6 C C2 . NAG A 2 7.500 0.000 0.000 1.00 10.00\n";
+        ofs << "HETATM 7 C C1 . BMA A 3 9.000 0.000 0.000 1.00 10.00\n";
+        ofs << "HETATM 8 O O5 . BMA A 3 10.500 0.000 0.000 1.00 10.00\n";
+        // Real drug, far away (separate component), only 4 atoms.
+        ofs << "HETATM 9 C C1 . DRG B 1 50.000 0.000 0.000 1.00 10.00\n";
+        ofs << "HETATM 10 C C2 . DRG B 1 51.500 0.000 0.000 1.00 10.00\n";
+        ofs << "HETATM 11 N N1 . DRG B 1 53.000 0.000 0.000 1.00 10.00\n";
+        ofs << "HETATM 12 O O1 . DRG B 1 54.500 0.000 0.000 1.00 10.00\n";
+        ofs << "#\n";
+    }
+
+    DatasetRunner runner(test_dir + "/cache");
+    ASSERT_TRUE(runner.extract_ligand(cif_path, sdf_path));
+    std::ifstream ifs(sdf_path);
+    std::string title;
+    std::getline(ifs, title);
+    EXPECT_EQ(title, "DRG");   // sugar tree dropped, drug selected
+
+    fs::remove_all(test_dir);
+}
+
+// Inverse case: a sugar-binding protein where the monosaccharide IS the cognate
+// ligand (2GBP→BGC).  With no non-sugar candidate present, the sugar must be
+// kept rather than discarded.
+TEST(PDBParsing, ExtractLigandKeepsSugarWhenItIsTheOnlyCandidate) {
+    std::string test_dir = "/tmp/flexaidds_test_sugar_only";
+    fs::create_directories(test_dir);
+    std::string cif_path = test_dir + "/test.cif";
+    std::string sdf_path = test_dir + "/ligand.sdf";
+
+    {
+        std::ofstream ofs(cif_path);
+        ofs << "data_test\n#\nloop_\n";
+        ofs << "_atom_site.group_PDB\n_atom_site.id\n_atom_site.type_symbol\n";
+        ofs << "_atom_site.auth_atom_id\n_atom_site.label_alt_id\n_atom_site.auth_comp_id\n";
+        ofs << "_atom_site.auth_asym_id\n_atom_site.auth_seq_id\n";
+        ofs << "_atom_site.Cartn_x\n_atom_site.Cartn_y\n_atom_site.Cartn_z\n";
+        ofs << "_atom_site.occupancy\n_atom_site.B_iso_or_equiv\n";
+        ofs << "HETATM 1 C C1 . BGC A 1 0.000 0.000 0.000 1.00 10.00\n";
+        ofs << "HETATM 2 C C2 . BGC A 1 1.500 0.000 0.000 1.00 10.00\n";
+        ofs << "HETATM 3 C C3 . BGC A 1 3.000 0.000 0.000 1.00 10.00\n";
+        ofs << "HETATM 4 O O3 . BGC A 1 4.500 0.000 0.000 1.00 10.00\n";
+        ofs << "#\n";
+    }
+
+    DatasetRunner runner(test_dir + "/cache");
+    ASSERT_TRUE(runner.extract_ligand(cif_path, sdf_path));
+    std::ifstream ifs(sdf_path);
+    std::string title;
+    std::getline(ifs, title);
+    EXPECT_EQ(title, "BGC");   // only candidate → sugar kept
 
     fs::remove_all(test_dir);
 }
@@ -517,7 +598,7 @@ TEST(PDBParsing, PrepareEntryRegeneratesStaleLigandCache) {
     std::ifstream ifs(sdf_path);
     ASSERT_TRUE(ifs.good());
     std::string contents((std::istreambuf_iterator<char>(ifs)), std::istreambuf_iterator<char>());
-    EXPECT_NE(contents.find("FLEXAIDDS_LIGAND_EXTRACTOR_V3"), std::string::npos);
+    EXPECT_NE(contents.find("FLEXAIDDS_LIGAND_EXTRACTOR_V4"), std::string::npos);
 
     fs::remove_all(test_dir);
 }
@@ -588,7 +669,7 @@ TEST(PDBParsing, PrepareEntryUsesCompanionCifForConvertedAtomLigands) {
         std::ofstream ofs(sdf_path);
         ofs << "SAH\n";
         ofs << "  stale cache\n";
-        ofs << "  Extracted from structure HETATM records | FLEXAIDDS_LIGAND_EXTRACTOR_V3\n";
+        ofs << "  Extracted from structure HETATM records | FLEXAIDDS_LIGAND_EXTRACTOR_V4\n";
         ofs << "  3  2  0  0  0  0  0  0  0999 V2000\n";
         ofs << "   10.0000    0.0000    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0\n";
         ofs << "   11.5000    0.0000    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0\n";

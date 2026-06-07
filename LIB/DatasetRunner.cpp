@@ -639,6 +639,43 @@ static const std::set<std::string>& cofactor_blacklist() {
 }
 
 // =============================================================================
+// Glycan / sugar residue set — N- and O-linked glycosylation monosaccharides.
+//
+// These are POST-TRANSLATIONAL MODIFICATIONS on the receptor (the attachment
+// chemistry is modelled in LIB/PTMAttachment + data/mods/glycan_conformers.json:
+// NMan9, ComplexBi, Hybrid N-glycans via ASN; O-GalNAc/O-Man/O-Fuc via SER/THR;
+// terminal Sialic acid), NOT the cognate small-molecule ligand.
+//
+// Unlike a cofactor (a single discrete molecule), a glycan is a COVALENTLY
+// LINKED TREE of monosaccharides.  The extractor selects the largest connected
+// component, so an N-glycan chain (e.g. 1GPK: 4×NAG bonded together = 56 atoms)
+// outranks the real drug (HUP, 18 atoms) and is mis-extracted as the ligand
+// (also 2HR7→glycan vs P33, 1L7F→NAG vs BCZ, 1N1M, 1Q4G, 1R55).
+//
+// Therefore glycans are deprioritised SOFTLY, not hard-blacklisted: they are
+// dropped ONLY when a non-sugar candidate also exists.  When a sugar is the
+// sole HETATM candidate it IS the legitimate ligand (2GBP→BGC, a glucose/
+// galactose-binding protein), so it is kept.  See extract_ligand().
+// =============================================================================
+static const std::set<std::string>& glycan_residues() {
+    static const std::set<std::string> gl = {
+        // N-acetylhexosamines (GlcNAc / GalNAc and anomers)
+        "NAG", "NDG", "NGA", "A2G", "BGN", "16G", "GCS", "PA1",
+        // Hexoses (glucose / mannose / galactose, both anomers)
+        "MAN", "BMA", "GLC", "BGC", "GAL", "GLA", "GLB", "GIV",
+        // Deoxyhexoses (fucose / rhamnose)
+        "FUC", "FUL", "FCA", "FCB", "RAM", "RHA", "G6D",
+        // Sialic acids (Neu5Ac / Neu5Gc)
+        "SIA", "NGC", "SLB", "NEU",
+        // Pentoses (xylose / arabinose / ribose sugars)
+        "XYP", "XYS", "XYL", "ARA", "ARB", "LXC",
+        // Uronic acids (glucuronic / iduronic) and other ring sugars
+        "BDP", "GCU", "IDS", "IDR", "ADA", "MAV", "FRU", "TAG", "SOR",
+    };
+    return gl;
+}
+
+// =============================================================================
 // DatasetRunner constructor
 // =============================================================================
 
@@ -1445,7 +1482,7 @@ static bool ligand_sdf_is_current(const std::string& sdf_path,
     bool has_stamp = false;
     for (int i = 0; i < 4 && std::getline(ifs, header[i]); ++i) {
         ++nhdr;
-        if (header[i].find("FLEXAIDDS_LIGAND_EXTRACTOR_V3") != std::string::npos)
+        if (header[i].find("FLEXAIDDS_LIGAND_EXTRACTOR_V4") != std::string::npos)
             has_stamp = true;
     }
     if (!has_stamp || nhdr < 1) return false;
@@ -1530,12 +1567,29 @@ bool DatasetRunner::extract_ligand(const std::string& structure_path,
     std::map<ResidueKey, std::vector<size_t>> residue_groups;
     const auto& excl      = excluded_residues();
     const auto& blacklist = cofactor_blacklist();
+    const auto& glycans   = glycan_residues();
+
+    // Soft glycan deprioritisation (see glycan_residues()).  A glycan is the
+    // ligand ONLY when no real (non-sugar) candidate exists; otherwise the
+    // linked sugar tree would outrank the drug.  Pre-scan to learn whether any
+    // non-glycan, non-cofactor, non-buffer HETATM residue is present.
+    bool has_nonglycan_candidate = false;
+    for (const auto& atom : hetatm_atoms) {
+        if (atom.altLoc != " " && atom.altLoc != "" && atom.altLoc != "A") continue;
+        if (blacklist.count(atom.resName)) continue;
+        if (excl.count(atom.resName))      continue;
+        if (glycans.count(atom.resName))   continue;
+        has_nonglycan_candidate = true;
+        break;
+    }
 
     // Tally blacklisted cofactor residues that we skip, keyed by resName, so the
     // fallback chain (e.g. "SAH(26) → SKF(28)") can be reported once the real
     // docking target is resolved.  Insertion order is preserved for the log.
     std::map<std::string, int> skipped_cofactors;       // resName -> heavy-atom count
     std::vector<std::string>    skipped_cofactor_order;  // first-seen order
+    std::map<std::string, int> skipped_glycans;         // resName -> heavy-atom count
+    std::vector<std::string>    skipped_glycan_order;    // first-seen order
 
     for (const auto& atom : hetatm_atoms) {
         // Skip alternate conformers (keep only first)
@@ -1547,6 +1601,13 @@ bool DatasetRunner::extract_ligand(const std::string& structure_path,
             if (skipped_cofactors.find(atom.resName) == skipped_cofactors.end())
                 skipped_cofactor_order.push_back(atom.resName);
             skipped_cofactors[atom.resName]++;
+            continue;
+        }
+        // Deprioritise glycosylation sugars when a real ligand is present.
+        if (has_nonglycan_candidate && glycans.count(atom.resName)) {
+            if (skipped_glycans.find(atom.resName) == skipped_glycans.end())
+                skipped_glycan_order.push_back(atom.resName);
+            skipped_glycans[atom.resName]++;
             continue;
         }
         // Skip excluded residues (water, ions, buffers)
@@ -1826,10 +1887,19 @@ bool DatasetRunner::extract_ligand(const std::string& structure_path,
         std::cerr << " → docking target = " << best_atom.resName
                   << "(" << selected_indices.size() << ")\n";
     }
+    if (!skipped_glycan_order.empty()) {
+        std::cerr << "  [LIGAND] " << structure_path << ": deprioritised glycosylation sugar(s) ";
+        for (size_t i = 0; i < skipped_glycan_order.size(); ++i) {
+            const std::string& nm = skipped_glycan_order[i];
+            std::cerr << (i ? ", " : "") << nm << "(" << skipped_glycans[nm] << ")";
+        }
+        std::cerr << " → docking target = " << best_atom.resName
+                  << "(" << selected_indices.size() << ")\n";
+    }
 
     ofs << best_atom.resName << "\n";
     ofs << "  FlexAIDdS DatasetRunner\n";
-    ofs << "  Extracted from structure HETATM records | FLEXAIDDS_LIGAND_EXTRACTOR_V3\n";
+    ofs << "  Extracted from structure HETATM records | FLEXAIDDS_LIGAND_EXTRACTOR_V4\n";
 
     // Counts line — write ACTUAL bond count so readers respect the block
     size_t selected_bond_count = 0;
