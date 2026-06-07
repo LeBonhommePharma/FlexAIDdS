@@ -32,6 +32,9 @@
 #include <limits>
 #include <map>
 #include <numeric>
+#include <random>
+#include <cstdint>
+#include <functional>
 #include <regex>
 #include <set>
 #include <sstream>
@@ -342,6 +345,172 @@ double compute_rmsd(const std::vector<float>& coords_a,
     return std::sqrt(sum_sq / static_cast<double>(n_atoms));
 }
 
+// ── Blind-placement helper (Bug #1 fix) ──────────────────────────────────
+// FlexAIDdS direct-mode GA seeding (top.cpp "REFLIG: direct-mode seed") biases
+// ~reflig_seed_fraction of the initial population toward grid points nearest
+// the LIGAND'S INPUT ANCHOR COORDINATES.  Because DatasetRunner feeds the
+// crystal-extracted ligand at its receptor-frame coordinates, that anchor IS
+// the crystal pose — so the native ORIENTATION is injected straight into the GA
+// and RMSD≈0 is achievable without any real search (1G9V/1HNN/1HQ2 false
+// positives: ligand identical across _INI/_0/_1, never moves).
+//
+// Astex Diverse is a RE-DOCKING benchmark: the binding *site* is legitimately
+// known, only the *pose* must be predicted.  The engine has no separate
+// site-center flag in direct mode — the ligand's position is the only site
+// signal — so we must NOT translate the ligand away from the site (doing so
+// strands the search in the wrong pocket, e.g. zero-centred 1G9V→34.9 Å).
+//
+// Instead we BLIND ONLY THE POSE: keep the heavy-atom centroid exactly where it
+// is (site preserved) and apply a deterministic, uniformly-random rigid
+// ROTATION about that centroid.  The starting orientation is now scrambled
+// (RMSD-to-crystal of the input is large), so a no-op GA can no longer echo the
+// answer — recovering RMSD<2 Å now requires genuinely searching orientation
+// space.  The rotation is seeded by a hash of the PDB id, so the benchmark stays
+// bit-for-bit reproducible.  The original crystal-coordinate file is kept
+// untouched for the RMSD reference.
+//
+// Supports SDF (V2000) and MOL2.  Returns true if a blinded copy was written to
+// `dst`; on any parse failure returns false (caller falls back to the un-blinded
+// original rather than crash a benchmark run).
+static bool write_blinded_ligand(const std::string& src,
+                                 const std::string& dst,
+                                 std::uint64_t seed) {
+    std::ifstream in(src);
+    if (!in.is_open()) return false;
+    std::vector<std::string> lines;
+    {
+        std::string l;
+        while (std::getline(in, l)) {
+            if (!l.empty() && l.back() == '\r') l.pop_back();
+            lines.push_back(l);
+        }
+    }
+    if (lines.size() < 5) return false;
+
+    // Deterministic uniformly-distributed rotation matrix (Shoemaker's method:
+    // a uniform random unit quaternion → SO(3)).  Seeded by the PDB-id hash so
+    // every re-run produces the identical blinded input — reproducibility is a
+    // hard requirement of this benchmark.
+    double R[3][3];
+    {
+        constexpr double kTwoPi = 6.283185307179586476925286766559;
+        std::mt19937_64 rng(seed);
+        std::uniform_real_distribution<double> u(0.0, 1.0);
+        const double u1 = u(rng), u2 = u(rng), u3 = u(rng);
+        const double q0 = std::sqrt(1.0 - u1) * std::sin(kTwoPi * u2);
+        const double q1 = std::sqrt(1.0 - u1) * std::cos(kTwoPi * u2);
+        const double q2 = std::sqrt(u1)       * std::sin(kTwoPi * u3);
+        const double q3 = std::sqrt(u1)       * std::cos(kTwoPi * u3);
+        // Quaternion (q0=w, q1=x, q2=y, q3=z) → rotation matrix.
+        R[0][0] = 1 - 2*(q2*q2 + q3*q3);
+        R[0][1] =     2*(q1*q2 - q0*q3);
+        R[0][2] =     2*(q1*q3 + q0*q2);
+        R[1][0] =     2*(q1*q2 + q0*q3);
+        R[1][1] = 1 - 2*(q1*q1 + q3*q3);
+        R[1][2] =     2*(q2*q3 - q0*q1);
+        R[2][0] =     2*(q1*q3 - q0*q2);
+        R[2][1] =     2*(q2*q3 + q0*q1);
+        R[2][2] = 1 - 2*(q1*q1 + q2*q2);
+    }
+    auto rotate_about = [&](double x, double y, double z,
+                            double cx, double cy, double cz,
+                            double& ox, double& oy, double& oz) {
+        const double dx = x - cx, dy = y - cy, dz = z - cz;
+        ox = cx + R[0][0]*dx + R[0][1]*dy + R[0][2]*dz;
+        oy = cy + R[1][0]*dx + R[1][1]*dy + R[1][2]*dz;
+        oz = cz + R[2][0]*dx + R[2][1]*dy + R[2][2]*dz;
+    };
+
+    auto lower = [](std::string s) {
+        for (char& c : s) c = static_cast<char>(std::tolower(c));
+        return s;
+    };
+    const std::string ext = lower(fs::path(src).extension().string());
+    const bool is_mol2 = (ext == ".mol2");
+
+    double cx = 0, cy = 0, cz = 0;
+    long n = 0;
+
+    if (is_mol2) {
+        // Locate @<TRIPOS>ATOM .. next @<TRIPOS> block.
+        size_t a0 = std::string::npos, a1 = lines.size();
+        for (size_t i = 0; i < lines.size(); ++i) {
+            if (lines[i].rfind("@<TRIPOS>ATOM", 0) == 0) { a0 = i + 1; break; }
+        }
+        if (a0 == std::string::npos) return false;
+        for (size_t i = a0; i < lines.size(); ++i) {
+            if (lines[i].rfind("@<TRIPOS>", 0) == 0) { a1 = i; break; }
+        }
+        // First pass: centroid (heavy atoms; skip H by SYBYL type field[5]).
+        for (size_t i = a0; i < a1; ++i) {
+            std::istringstream ss(lines[i]);
+            std::string id, name, sx, sy, sz, type;
+            if (!(ss >> id >> name >> sx >> sy >> sz >> type)) continue;
+            try {
+                double x = std::stod(sx), y = std::stod(sy), z = std::stod(sz);
+                cx += x; cy += y; cz += z; ++n;
+            } catch (...) {}
+        }
+        if (n == 0) return false;
+        cx /= n; cy /= n; cz /= n;
+        // Second pass: rewrite x/y/z columns, preserving the rest of the line.
+        for (size_t i = a0; i < a1; ++i) {
+            std::istringstream ss(lines[i]);
+            std::string id, name, sx, sy, sz;
+            std::string rest;
+            if (!(ss >> id >> name >> sx >> sy >> sz)) continue;
+            std::getline(ss, rest);  // remainder (type, subst, charge, …)
+            double x, y, z;
+            try { x = std::stod(sx); y = std::stod(sy); z = std::stod(sz); }
+            catch (...) { continue; }
+            double ox, oy, oz;
+            rotate_about(x, y, z, cx, cy, cz, ox, oy, oz);
+            std::ostringstream out;
+            out << std::setw(7) << id << " "
+                << std::left << std::setw(8) << name << std::right
+                << std::fixed << std::setprecision(4)
+                << std::setw(10) << ox
+                << std::setw(10) << oy
+                << std::setw(10) << oz
+                << rest;
+            lines[i] = out.str();
+        }
+    } else {
+        // SDF V2000: counts line is lines[3]; atom block follows for natoms.
+        int natoms = 0;
+        try { natoms = std::stoi(lines[3].substr(0, 3)); } catch (...) { return false; }
+        if (natoms <= 0 || static_cast<size_t>(4 + natoms) > lines.size()) return false;
+        for (int i = 0; i < natoms; ++i) {
+            const std::string& l = lines[4 + i];
+            if (l.size() < 30) return false;
+            try {
+                cx += std::stod(l.substr(0, 10));
+                cy += std::stod(l.substr(10, 10));
+                cz += std::stod(l.substr(20, 10));
+            } catch (...) { return false; }
+        }
+        cx /= natoms; cy /= natoms; cz /= natoms;
+        for (int i = 0; i < natoms; ++i) {
+            std::string& l = lines[4 + i];
+            double x = std::stod(l.substr(0, 10));
+            double y = std::stod(l.substr(10, 10));
+            double z = std::stod(l.substr(20, 10));
+            double ox, oy, oz;
+            rotate_about(x, y, z, cx, cy, cz, ox, oy, oz);
+            std::ostringstream out;
+            out << std::fixed << std::setprecision(4)
+                << std::setw(10) << ox << std::setw(10) << oy << std::setw(10) << oz
+                << l.substr(30);
+            l = out.str();
+        }
+    }
+
+    std::ofstream of(dst);
+    if (!of.is_open()) return false;
+    for (const auto& l : lines) of << l << "\n";
+    return true;
+}
+
 // =============================================================================
 // Excluded residues — water, common ions, buffers
 // =============================================================================
@@ -459,6 +628,12 @@ static const std::set<std::string>& cofactor_blacklist() {
         "FDA",                                        // reduced FAD (FADH2)
         "HEC", "HEA", "HEB", "HAS",                  // heme variants
         "F3S", "F4S",                                // iron-sulfur clusters
+        // ── Detergents / surfactants — crystallisation additives, never the ───
+        //    cognate drug (1A4Q→DPC was a detergent mis-extracted as the ligand).
+        //    NB: free fatty acids (MYR/PLM/OLA/STE) are deliberately NOT listed —
+        //    they ARE legitimate ligands for lipid-binding proteins (FABPs etc.).
+        "DPC", "LDA", "LMT", "SDS", "BNG", "HTG", "OCT", "DAO",
+        "C8E", "F09", "PX4", "9PE", "HEZ", "12P", "15P",
     };
     return bl;
 }
@@ -1148,13 +1323,38 @@ static bool ligand_sdf_is_current(const std::string& sdf_path,
 
     std::ifstream ifs(sdf_path);
     if (!ifs) return false;
-    std::string line;
-    for (int i = 0; i < 4 && std::getline(ifs, line); ++i) {
-        if (line.find("FLEXAIDDS_LIGAND_EXTRACTOR_V3") != std::string::npos) {
-            return true;
-        }
+    std::string header[4];
+    int nhdr = 0;
+    bool has_stamp = false;
+    for (int i = 0; i < 4 && std::getline(ifs, header[i]); ++i) {
+        ++nhdr;
+        if (header[i].find("FLEXAIDDS_LIGAND_EXTRACTOR_V3") != std::string::npos)
+            has_stamp = true;
     }
-    return false;
+    if (!has_stamp || nhdr < 1) return false;
+
+    // Stale-cofactor guard (extraction root-cause fix).  Early benchmark runs
+    // cached ligand SDFs that were extracted BEFORE the cofactor blacklist
+    // existed, so the docking target is a ubiquitous cofactor / detergent
+    // (1G9V→HEM, 1HNN→SAH, 1A4Q→DPC) instead of the cognate drug — and because
+    // those caches still carry the current V3 stamp the old check happily reused
+    // them.  The extractor writes the ligand's 3-letter residue code as the SDF
+    // title (line 1), so if that title is now blacklisted/excluded the cache is
+    // stale by definition: force a re-extraction (which will skip the cofactor
+    // and select the real ligand: RQ3, SKF, …).
+    std::string title = header[0];
+    while (!title.empty() && (title.back()==' '||title.back()=='\t'||title.back()=='\r'))
+        title.pop_back();
+    while (!title.empty() && (title.front()==' '||title.front()=='\t'))
+        title.erase(title.begin());
+    std::transform(title.begin(), title.end(), title.begin(),
+                   [](unsigned char c){ return std::toupper(c); });
+    if (!title.empty() && cofactor_blacklist().count(title)) {
+        std::cerr << "  [CACHE] stale cofactor ligand '" << title << "' in "
+                  << sdf_path << " — forcing re-extraction\n";
+        return false;
+    }
+    return true;
 }
 
 // =============================================================================
@@ -1620,6 +1820,9 @@ std::string DatasetRunner::write_receptor_without_ligand(
         "BME","EPE","MES","TRS","CIT","IMD","FMT","NH4",
         "BOG","PGE","1PE","P6G","BU3","PDO","EGL","PG4","PE8","MLI",
         "DTT","AZI","SCN","NO2","OXL","IPA","EOH","MOH","ETA",
+        // Detergents / surfactants (kept in sync with cofactor_blacklist()).
+        "DPC","LDA","LMT","SDS","BNG","HTG","OCT","DAO",
+        "C8E","F09","PX4","9PE","HEZ","12P","15P",
     };
     // Catalytic metals / metalloporphyrins — NEVER stripped (binding-site atoms).
     static const std::set<std::string> keep_catalytic = {
@@ -3260,6 +3463,29 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                 omp_per_worker = std::max(1, base / std::max(1, config.num_threads));
             }
 
+            // ── Blind the initial placement (Bug #1 fix) ─────────────────
+            // Hand FlexAIDdS a pose-blinded copy of the ligand: same centroid
+            // (binding site preserved — Astex is a re-docking benchmark) but a
+            // deterministic random orientation, so the direct-mode reflig seed
+            // can no longer inject the crystal pose into the GA.  The seed is the
+            // PDB-id hash → reproducible.  entry.ligand_path (crystal frame) is
+            // preserved untouched for the RMSD reference below.  On any failure
+            // we fall back to the original file rather than abort the run.
+            std::string dock_ligand_path = entry.ligand_path;
+            {
+                std::string blinded = out_dir + "/" + entry.pdb_id + "_dockin"
+                                    + fs::path(entry.ligand_path).extension().string();
+                const std::uint64_t blind_seed =
+                    std::hash<std::string>{}(entry.pdb_id);
+                if (write_blinded_ligand(entry.ligand_path, blinded, blind_seed)) {
+                    dock_ligand_path = blinded;
+                } else {
+                    std::cerr << "  [WARN] " << entry.pdb_id
+                              << ": could not blind ligand placement (kept crystal "
+                                 "coords — RMSD may be a false positive)\n";
+                }
+            }
+
             std::ostringstream cmd;
             cmd << "OMP_NUM_THREADS=" << omp_per_worker << " "
                 << "OMP_PLACES=cores "
@@ -3268,7 +3494,7 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                 << "'" << flexaidds_bin << "' "
                 << data_dir_arg
                 << "'" << entry.receptor_path << "' "
-                << "'" << entry.ligand_path << "' "
+                << "'" << dock_ligand_path << "' "
                 << "--config '" << config_path << "' "
                 << "-o '" << out_prefix << "' "
                 << "2>'" << out_dir << "/stderr.log' "
@@ -3525,53 +3751,105 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                     }
                 }
 
-                // Read best-pose PDB heavy-atom coords — LIGAND ATOMS ONLY.
-                // Bug fix (2026-06-06 LP): FlexAIDdS writes ALL receptor atoms as
-                // HETATM with resSeq=0 and single-char resnames (N, C, O, S...).
-                // Ligand atoms have resSeq=1 and 3-char resnames (APC, STR, etc.).
-                // Without this filter, crystal (~25 atoms) is compared against
-                // receptor+ligand (~4000 atoms), giving systematic RMSD ~14 Å → 0% success.
-                // Filter: resSeq == 1  AND  len(resname.strip()) >= 2.
-                std::vector<std::array<float,3>> pose_xyz;
+                // Read best-pose docked-LIGAND heavy-atom coords (Bug #2 fix).
+                //
+                // The previous "HETATM && resSeq==1 && resname>=2 chars" heuristic
+                // is unreliable: the benchmark receptors are NOT truly apo — they
+                // retain cofactors and the cognate ligand as HETATM, and those
+                // retained heteroatoms ALSO land at resSeq==1 (e.g. 1A4Q keeps two
+                // NAG copies at resSeq 1).  The filter then unions the docked
+                // ligand with receptor junk, doubling the atom count vs the crystal
+                // SDF (28 vs 56) and tripping the RMSD=999 sentinel — or, worse,
+                // silently mixing receptor atoms into the RMSD.
+                //
+                // FlexAIDdS emits CONECT records for one residue only — the docked
+                // ligand (write_MODEL_pdb iterates FA->het_res).  Those serials are
+                // therefore an exact, position-independent fingerprint of the docked
+                // ligand, immune to resSeq/resname collisions.  We select atoms by
+                // CONECT membership and drop hydrogens (the writer tags H with the
+                // dummy element token "Du", so element-column matching alone misses
+                // them — we treat the trailing element token H/D/Du as hydrogen).
+                std::set<long> conect_serials;
+                {
+                    std::ifstream pf(best_pose_pdb);
+                    std::string l;
+                    while (std::getline(pf, l)) {
+                        if (l.compare(0, 6, "CONECT") != 0) continue;
+                        for (size_t c = 6; c + 1 <= l.size(); c += 5) {
+                            std::string tok = l.substr(c, std::min<size_t>(5, l.size() - c));
+                            try { conect_serials.insert(std::stol(tok)); } catch (...) {}
+                        }
+                    }
+                }
+
+                auto elem_is_hydrogen = [](const std::string& line) -> bool {
+                    // Element = trailing whitespace-delimited token of the record.
+                    size_t end = line.find_last_not_of(" \t\r\n");
+                    if (end == std::string::npos) return false;
+                    size_t start = line.find_last_of(" \t", end);
+                    std::string tok = line.substr(start == std::string::npos ? 0 : start + 1,
+                                                  end - (start == std::string::npos ? -1 : start));
+                    for (char& ch : tok) ch = static_cast<char>(std::tolower(ch));
+                    return tok == "h" || tok == "d" || tok == "du";
+                };
+
+                std::vector<std::pair<long, std::array<float,3>>> docked;
                 {
                     std::ifstream pdb(best_pose_pdb);
                     std::string pline;
                     while (std::getline(pdb, pline)) {
                         if (pline.size() < 54) continue;
-                        if (pline.substr(0,6) != "HETATM") continue;
-                        // --- LIGAND-ONLY FILTER (Bug #1 fix) ---
-                        // resSeq at PDB cols 23-26 → substr(22,4); ligand = 1, receptor = 0
-                        int resSeq_val = 0;
-                        try { resSeq_val = std::stoi(pline.substr(22, 4)); } catch (...) {}
-                        if (resSeq_val != 1) continue;
-                        // resName at PDB cols 18-20 → substr(17,3); receptor = single char
-                        std::string rn = pline.substr(17, 3);
-                        while (!rn.empty() && rn.front() == ' ') rn.erase(rn.begin());
-                        while (!rn.empty() && rn.back()  == ' ') rn.pop_back();
-                        if (rn.size() < 2) continue;  // single-char = receptor atom
-                        // ----------------------------------------
-                        std::string elem = (pline.size() >= 78) ? pline.substr(76,2) : "  ";
-                        // Skip hydrogen
-                        bool is_H = (elem[0] == 'H' || (elem[0] == ' ' && elem[1] == 'H'));
-                        if (is_H) continue;
+                        const bool is_atom = pline.compare(0,6,"HETATM") == 0 ||
+                                             pline.compare(0,6,"ATOM  ") == 0;
+                        if (!is_atom) continue;
+                        long serial = 0;
+                        try { serial = std::stol(pline.substr(6, 5)); } catch (...) { continue; }
+                        bool selected;
+                        if (!conect_serials.empty()) {
+                            selected = conect_serials.count(serial) > 0;
+                        } else {
+                            // Fallback (no CONECT): old resSeq==1 / resname>=2 heuristic.
+                            if (pline.compare(0,6,"HETATM") != 0) { selected = false; }
+                            else {
+                                int rs = 0;
+                                try { rs = std::stoi(pline.substr(22,4)); } catch (...) {}
+                                std::string rn = pline.substr(17,3);
+                                while (!rn.empty() && rn.front()==' ') rn.erase(rn.begin());
+                                while (!rn.empty() && rn.back() ==' ') rn.pop_back();
+                                selected = (rs == 1 && rn.size() >= 2);
+                            }
+                        }
+                        if (!selected) continue;
+                        if (elem_is_hydrogen(pline)) continue;  // drop H to match crystal heavy atoms
                         float x = std::stof(pline.substr(30,8));
                         float y = std::stof(pline.substr(38,8));
                         float z = std::stof(pline.substr(46,8));
-                        pose_xyz.push_back({x, y, z});
+                        docked.push_back({serial, {x, y, z}});
                     }
                 }
+                // Restore input/load order (serial-ascending) so positional RMSD
+                // lines up with the crystal SDF atom order (same molecule, same order).
+                std::sort(docked.begin(), docked.end(),
+                          [](const auto& a, const auto& b){ return a.first < b.first; });
+                std::vector<std::array<float,3>> pose_xyz;
+                pose_xyz.reserve(docked.size());
+                for (auto& d : docked) pose_xyz.push_back(d.second);
 
                 if (!crystal_xyz.empty() && !pose_xyz.empty()) {
-                    // Sanity: atom counts must agree within 5 (same molecule after H-strip).
-                    // Mismatch → still-unfiltered receptor atoms crept in; emit warning.
+                    // With CONECT-based selection + H stripping the docked ligand is
+                    // the same molecule (and atom order) as the crystal SDF, so the
+                    // heavy-atom counts must agree exactly.  A residual mismatch now
+                    // signals a genuine extraction problem (wrong reference, altered
+                    // protonation) rather than receptor contamination, so we keep a
+                    // small tolerance and flag anything larger with the 999 sentinel.
                     const int count_delta = std::abs(
                         static_cast<int>(crystal_xyz.size()) -
                         static_cast<int>(pose_xyz.size()));
-                    if (count_delta > 5) {
+                    if (count_delta > 2) {
                         std::cerr << "  [WARN] RMSD atom count mismatch for " << entry.pdb_id
                                   << ": crystal=" << crystal_xyz.size()
-                                  << " pose=" << pose_xyz.size()
-                                  << " — setting RMSD=999 (check HETATM filter)\n";
+                                  << " pose(docked-ligand)=" << pose_xyz.size()
+                                  << " — setting RMSD=999\n";
                         result.rmsd_to_crystal = 999.0f;
                     } else {
                         int n = static_cast<int>(std::min(crystal_xyz.size(), pose_xyz.size()));
