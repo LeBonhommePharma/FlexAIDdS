@@ -1141,7 +1141,8 @@ int main(int argc, char **argv){
 						double dx=cleftgrid[i].coor[0]-cx, dy=cleftgrid[i].coor[1]-cy, dz=cleftgrid[i].coor[2]-cz;
 						if (dx*dx+dy*dy+dz*dz <= rcut2) keep.push_back(i);
 					}
-					if (!keep.empty() && (int)keep.size() < FA->num_grd - 1) {
+					const int MIN_SITE_GRID = 500;   // floor: never prune below this (engine min ~250, use 2x for safety)
+					if (!keep.empty() && (int)keep.size() >= MIN_SITE_GRID && (int)keep.size() < FA->num_grd - 1) {
 						gridpoint* confined = nullptr;
 						int new_count = mif::rebuild_cleftgrid(cleftgrid, FA->num_grd, keep, &confined);
 						if (confined && new_count > 0) {
