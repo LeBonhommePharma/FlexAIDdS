@@ -29,6 +29,89 @@
 #include <filesystem>
 #include <unistd.h>
 
+// ── Tier 2 typing: SYBYL name → canonical VCT matrix index ──────────────────
+// ProcessLigand (BonMol) perceives full hybridisation/aromaticity but stores
+// the result in its own internal SYBYL numbering (see SybylTyper.h). For the
+// scorer, atom.type must be a *canonical* VCT row index matching
+// nrgrank_matrix.h / assign_radii_types.cpp and Mol2Reader's canonical mapping:
+//   1=C.1  2=C.2  3=C.3  4=C.AR  5=C.CAT
+//   6=N.1  7=N.2  8=N.3  9=N.4  10=N.AR 11=N.AM 12=N.PL3
+//  13=O.2 14=O.3 15=O.CO2 16=O.AR
+//  17=S.2 18=S.3 19=S.O  20=S.O2 21=S.AR
+//  22=P.3 23=F   24=CL   25=BR   26=I   27=SE
+//  28=MG 29=SR 30=CU 31=MN 32=HG 33=CD 34=NI 35=ZN 36=CA 37=FE 38=CO.OH
+//  39=DUMMY 40=SOLVENT
+// We bridge via the canonical SYBYL string name produced by
+// bonmol::sybyl::sybyl_type_name(), keeping a single source of truth for the
+// string→canonical mapping (identical to Mol2Reader::sybyl_to_flexaid_type).
+static constexpr int FA_TYPE_DUMMY = 39;
+static int sybyl_name_to_canonical_vct(const char* s) {
+	if (!strcmp(s, "C.1"))   return 1;
+	if (!strcmp(s, "C.2"))   return 2;
+	if (!strcmp(s, "C.3"))   return 3;
+	if (!strcmp(s, "C.ar"))  return 4;
+	if (!strcmp(s, "C.cat")) return 5;
+	if (!strcmp(s, "N.1"))   return 6;
+	if (!strcmp(s, "N.2"))   return 7;
+	if (!strcmp(s, "N.3"))   return 8;
+	if (!strcmp(s, "N.4"))   return 9;
+	if (!strcmp(s, "N.ar"))  return 10;
+	if (!strcmp(s, "N.am"))  return 11;
+	if (!strcmp(s, "N.pl3")) return 12;
+	if (!strcmp(s, "O.2"))   return 13;
+	if (!strcmp(s, "O.3"))   return 14;
+	if (!strcmp(s, "O.co2")) return 15;
+	if (!strcmp(s, "O.ar"))  return 16;
+	if (!strcmp(s, "S.2"))   return 17;
+	if (!strcmp(s, "S.3"))   return 18;
+	if (!strcmp(s, "S.O") || !strcmp(s, "S.o"))   return 19;
+	if (!strcmp(s, "S.O2") || !strcmp(s, "S.o2")) return 20;
+	if (!strcmp(s, "S.ar"))  return 21;
+	if (!strcmp(s, "P.3"))   return 22;
+	if (!strcmp(s, "F"))     return 23;
+	if (!strcmp(s, "Cl"))    return 24;
+	if (!strcmp(s, "Br"))    return 25;
+	if (!strcmp(s, "I"))     return 26;
+	if (!strcmp(s, "Se"))    return 27;
+	if (!strcmp(s, "Mg"))    return 28;
+	if (!strcmp(s, "Sr"))    return 29;
+	if (!strcmp(s, "Cu"))    return 30;
+	if (!strcmp(s, "Mn"))    return 31;
+	if (!strcmp(s, "Hg"))    return 32;
+	if (!strcmp(s, "Cd"))    return 33;
+	if (!strcmp(s, "Ni"))    return 34;
+	if (!strcmp(s, "Zn"))    return 35;
+	if (!strcmp(s, "Ca"))    return 36;
+	if (!strcmp(s, "Fe"))    return 37;
+	if (!strcmp(s, "Co.oh") || !strcmp(s, "Co")) return 38;
+	return FA_TYPE_DUMMY; // H ("H") and anything unknown ("X")
+}
+
+// Resolve a fully-perceived BonMol atom to its canonical VCT index.
+// BonMol's SybylTyper follows the classic SYBYL convention of typing aromatic
+// ring heteroatoms structurally: thiophene/thiadiazole S becomes S.3 and
+// furan/oxazole O becomes O.2/O.3. The canonical VCT energy matrix, however,
+// carries dedicated aromatic-heteroatom rows (C.AR=4, N.AR=10, O.AR=16,
+// S.AR=21). When the atom sits in a perceived aromatic ring, route it to the
+// matching .ar row so the scorer sees aromatic chemistry rather than the
+// sp2/sp3 row. (Aromatic C and N already resolve to C.ar/N.ar via the SYBYL
+// name, but we override uniformly for clarity and to cover both heteroatoms.)
+// out_name (optional) receives the human-readable SYBYL name used for logging.
+static int bonmol_atom_to_canonical_vct(const bonmol::Atom& a, const char** out_name) {
+	if (a.is_aromatic) {
+		switch (a.element) {
+			case bonmol::Element::C: if (out_name) *out_name = "C.ar"; return 4;
+			case bonmol::Element::N: if (out_name) *out_name = "N.ar"; return 10;
+			case bonmol::Element::O: if (out_name) *out_name = "O.ar"; return 16;
+			case bonmol::Element::S: if (out_name) *out_name = "S.ar"; return 21;
+			default: break;
+		}
+	}
+	const char* sname = bonmol::sybyl::sybyl_type_name(a.sybyl_type);
+	if (out_name) *out_name = sname;
+	return sybyl_name_to_canonical_vct(sname);
+}
+
 // ── Idiotproof file role detection ──────────────────────────────────────────
 // Returns: "receptor", "ligand", "config", "smiles", or "unknown"
 static std::string detect_file_role(const std::string& path) {
@@ -893,6 +976,77 @@ int main(int argc, char **argv){
 				if (!lig_ok) {
 					fprintf(stderr, "ERROR: Failed to read ligand file: %s\n", ligand_file);
 					Terminate(2);
+				}
+
+				// ── Tier 2: enrich SDF ligand atom types with ProcessLigand ───
+				// read_sdf_ligand() above assigned element-only generic types
+				// (C.3/N.3/O.3/S.3) because SDF/MOL files carry no hybridisation
+				// or aromaticity. ProcessLigand perceives rings, aromaticity and
+				// hybridisation, so for the organic C/N/O/S atoms we replace the
+				// generic type with the perceived canonical VCT index.
+				//
+				// Scope (deliberately narrow to avoid regressions):
+				//   • SDF only. MOL2 atoms keep the file's native SYBYL types,
+				//     which read_mol2_ligand() already maps to canonical VCT
+				//     indices and which are authoritative (Tripos standard);
+				//     re-perceiving them adds risk with no benefit.
+				//   • C/N/O/S only. bonmol::SybylTyper defaults elements it does
+				//     not handle (Se, metals, …) to C.3, so overriding those
+				//     would corrupt the element-based types the reader assigns
+				//     correctly.
+				// BonMol atom order matches the reader — both parse the source
+				// file sequentially (H included) — so BonMol atom i maps to
+				// ligand atom fatm[0]+i. assign_radii_types() (called next) skips
+				// ligand residues, so these overrides persist into the GA.
+				if (is_sdf && result.success && !result.mol.atoms.empty()) {
+					int lig_res = FA->res_cnt;
+					int fa     = residue[lig_res].fatm[0];
+					int la     = residue[lig_res].latm[0];
+					int n_lig  = la - fa + 1;
+					int n_bm   = result.mol.num_atoms();
+
+					if (n_bm != n_lig) {
+						printf("[TYPING] WARNING: ProcessLigand atom count (%d) != "
+						       "reader ligand atom count (%d); cannot map by index — "
+						       "keeping fallback types from the reader.\n",
+						       n_bm, n_lig);
+					} else {
+						int upgraded = 0;
+						for (int i = 0; i < n_bm; ++i) {
+							const bonmol::Atom& bm = result.mol.atoms[i];
+							// Only organic C/N/O/S gain information from SYBYL
+							// perception; every other element is already canonical
+							// from the element-based reader (and BonMol would
+							// default unhandled elements such as Se/metals to C.3).
+							if (bm.element != bonmol::Element::C &&
+							    bm.element != bonmol::Element::N &&
+							    bm.element != bonmol::Element::O &&
+							    bm.element != bonmol::Element::S)
+								continue;
+							const char* sname = nullptr;
+							int canon  = bonmol_atom_to_canonical_vct(bm, &sname);
+							int fa_idx = fa + i;
+							int old_t  = atoms[fa_idx].type;
+							// Leave the reader's fallback in place for DUMMY (e.g. H),
+							// otherwise upgrade to the SYBYL-based canonical type.
+							if (canon != FA_TYPE_DUMMY && canon != old_t) {
+								printf("[TYPING] atom %d (%s): element-only type %d "
+								       "-> SYBYL %s -> canonical type %d\n",
+								       i, atoms[fa_idx].name, old_t, sname, canon);
+								atoms[fa_idx].type = canon;
+								++upgraded;
+							}
+						}
+						printf("ProcessLigand typing applied: %d/%d ligand atoms "
+						       "upgraded to SYBYL-based canonical VCT types\n",
+						       upgraded, n_bm);
+					}
+				} else if (!is_sdf) {
+					printf("MOL2 ligand: keeping native SYBYL types from "
+					       "read_mol2_ligand() (authoritative)\n");
+				} else {
+					printf("ProcessLigand typing not applied — using fallback "
+					       "types from the reader\n");
 				}
 			}
 		}
