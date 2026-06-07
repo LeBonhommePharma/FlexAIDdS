@@ -243,11 +243,12 @@ void read_input(FA_Global* FA,atom** atoms, resid** residue,rot** rotamer,gridpo
 			sscanf(buffer, "%s %u", field, &FA->temperature);
 			if(FA->temperature > 0)
 			{
-				// β = 1 / (k_B · T) so that β·E is dimensionless when E is in
-				// kcal/mol. The legacy `1.0 / FA->temperature` was off by a
-				// factor of 1/k_B ≈ 503×, breaking every exp(−β·E) in
-				// cluster.cpp and DensityPeak_Cluster.cpp.
-				FA->beta = 1.0 / (statmech::kB_kcal * static_cast<double>(FA->temperature));
+				// β = 1 / T — in the partition function Z = Σ exp(−CF_i/T), T is an
+				// effective softmax temperature over the unitless CF landscape, NOT a
+				// physical kT in kcal/mol (Morency, 3Dsig 2017). Folding in kB_kcal
+				// made β ~503× larger, collapsing Boltzmann weights to a single-pose
+				// delta → entropy → 0 → ΔG reverts to raw CF. Keep β = 1/T.
+				FA->beta = 1.0 / static_cast<double>(FA->temperature);
 			}
 			else FA->beta = 0;
 		}

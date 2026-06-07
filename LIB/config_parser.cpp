@@ -109,13 +109,12 @@ void apply_config(const json::Value& config, FA_Global* FA, GB_Global* GB) {
     {
         FA->temperature = static_cast<unsigned int>(jint(config, "thermodynamics", "temperature", 300));
         if (FA->temperature > 0) {
-            // β = 1 / (k_B · T)  — the Boltzmann factor exp(−βE) requires β·E to be
-            // dimensionless. With E in kcal/mol, β must be in mol/kcal, hence the
-            // k_B factor (kB_kcal ≈ 1.987e-3 kcal/(mol·K)). The previous formula
-            // β = 1/T silently used 1/K and broke every exp(−β·E) downstream
-            // (cluster.cpp, DensityPeak_Cluster.cpp), flattening Boltzmann factors
-            // by a factor of 1/k_B ≈ 503×.
-            FA->beta = 1.0 / (statmech::kB_kcal * static_cast<double>(FA->temperature));
+            // β = 1 / T — in FlexAID's partition function Z = Σ exp(−CF_i/T), T is an
+            // effective softmax temperature over the (unitless) CF landscape, NOT a
+            // physical kT in kcal/mol (see Morency, 3Dsig 2017). Folding in kB_kcal
+            // made β ~503× larger, collapsing the Boltzmann weights to a single-pose
+            // delta → entropy → 0 → ΔG reverts to raw CF ranking. Keep β = 1/T.
+            FA->beta = 1.0 / static_cast<double>(FA->temperature);
         } else {
             FA->beta = 0.0;
         }
