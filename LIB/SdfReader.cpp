@@ -62,7 +62,7 @@ static void normalize_element(char* elem) {
  */
 static int element_to_flexaid_type(const char* elem) {
     if (!strcmp(elem, "C"))  return 3;   // C.3 (generic sp3 carbon)
-    if (!strcmp(elem, "N"))  return 8;   // N.3 (generic sp3 nitrogen)
+    if (!strcmp(elem, "N"))  return 11;  // N.am (N.3/type-8 has zero matrix entries — N.am is the active generic N)
     if (!strcmp(elem, "O"))  return 14;  // O.3 (generic sp3 oxygen)
     if (!strcmp(elem, "S"))  return 18;  // S.3 (generic sp3 sulfur)
     if (!strcmp(elem, "P"))  return 22;  // P.3

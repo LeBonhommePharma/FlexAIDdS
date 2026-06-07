@@ -38,9 +38,9 @@ static int sybyl_to_flexaid_type(const char* sybyl_type) {
     if (!strcmp(sybyl_type, "C.cat")) return 5;   // carbocation
 
     // Nitrogen types
-    if (!strcmp(sybyl_type, "N.1"))   return 6;   // sp nitrogen
-    if (!strcmp(sybyl_type, "N.2"))   return 7;   // sp2 nitrogen
-    if (!strcmp(sybyl_type, "N.3"))   return 8;   // sp3 nitrogen
+    if (!strcmp(sybyl_type, "N.1"))   return 11;  // N.am (N.1/type-6 dead in matrix)
+    if (!strcmp(sybyl_type, "N.2"))   return 11;  // N.am (N.2/type-7 dead in matrix)
+    if (!strcmp(sybyl_type, "N.3"))   return 11;  // N.am (N.3/type-8 dead in matrix)
     if (!strcmp(sybyl_type, "N.4"))   return 9;   // quaternary nitrogen
     if (!strcmp(sybyl_type, "N.ar"))  return 10;  // aromatic nitrogen
     if (!strcmp(sybyl_type, "N.am"))  return 11;  // amide nitrogen
