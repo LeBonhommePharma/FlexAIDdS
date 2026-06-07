@@ -1115,7 +1115,7 @@ int main(int argc, char **argv){
 			// Index 0 (reflig reference conformation) is always preserved by
 			// mif::rebuild_cleftgrid.
 			{
-				const float kSiteMargin = 4.0f;            // Å beyond ligand extent
+				const float kSiteMargin = 0.0f;            // Å beyond ligand extent (v13: oracle-tight, start at bare ligand extent)
 				int lig_res = FA->res_cnt;
 				int fa = residue[lig_res].fatm[0];
 				int la = residue[lig_res].latm[0];
@@ -1142,7 +1142,7 @@ int main(int argc, char **argv){
 					// entire protein surface.
 					const int    MIN_SITE_GRID  = 500;   // floor: target site density (engine min ~250, 2x for safety)
 					const double rcut_initial   = std::sqrt(rmax2) + kSiteMargin;
-					const double rcut_max       = 30.0;  // Å — hard ceiling on expansion
+					const double rcut_max       = 8.0;   // Å — hard ceiling on expansion (v13: oracle-style ~6 A pocket + 2 A margin)
 					const double rcut_step       = 2.0;  // Å — expansion increment
 					double rcut = rcut_initial;
 					std::vector<int> keep;
