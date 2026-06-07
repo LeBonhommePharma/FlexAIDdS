@@ -41,8 +41,12 @@ int Vcontacts(FA_Global* FA,atom* atoms,resid* residue,VC_Global* VC,
 		for(int i=0;i<calc_count;++i) {
 			// ============= atom contact calculations =============
 			int atomzero = VC->Calclist[i];
-			if(atomzero < 0 || atomzero >= calc_count){ continue; }
-		
+
+			// Calclist may have fewer valid entries than atm_cnt_real (e.g. an
+			// atom-count off-by-one leaves the tail slot unwritten). Skip any
+			// index outside the atom array rather than dereferencing garbage.
+			if(atomzero < 0 || atomzero >= FA->atm_cnt_real){continue;}
+
 			if(!VC->Calc[atomzero].score){continue;}
 		
 			float rado = VC->Calc[atomzero].atom->radius + Rw;
@@ -92,6 +96,12 @@ int calc_region(FA_Global* FA,VC_Global* VC,atom* atoms,int atmcnt,bool non_scor
 	for(i=0;i<atmcnt;++i) {
 		// ============= atom contact calculations =============
 		atomzero = VC->Calclist[i];
+
+		// Guard against unwritten/stale Calclist tail slots (see note in
+		// Vcontacts()): an out-of-range atom index here would read past the
+		// Calc array. Skip rather than dereference garbage.
+		if(atomzero < 0 || atomzero >= atmcnt){continue;}
+
 		boxi = VC->Calc[atomzero].boxnum;
 		(void)boxi;
 		(void)surfatom;
@@ -1727,13 +1737,21 @@ atomindex* index_protein(FA_Global* FA,atom* atoms,resid* residue,atomsas* Calc,
 	// count entries per box, assign box number to atom
 	for(atmi=0;atmi<calc_cnt;++atmi){
 		if(Calc[atmi].boxnum == -1){
-			int ix = (int)((Calc[atmi].atom->coor[0]-global_min[0])/CELLSIZE);
-			int iy = (int)((Calc[atmi].atom->coor[1]-global_min[1])/CELLSIZE);
-			int iz = (int)((Calc[atmi].atom->coor[2]-global_min[2])/CELLSIZE);
-			ix = std::max(0, std::min(ix, (*dim)-1));
-			iy = std::max(0, std::min(iy, (*dim)-1));
-			iz = std::max(0, std::min(iz, (*dim)-1));
-			boxi = ix*dim2 + iy*(*dim) + iz;
+			// A pose may place an atom outside the protein-sized Voronoi box,
+			// which yields an out-of-range linear box index. Clamp each axis
+			// cell into [0, dim-1] so every atom maps to a valid box. This keeps
+			// the box index in [0, dim3-1] and guarantees Calclist is fully
+			// populated (one entry per atom) for the downstream consumers that
+			// iterate atm_cnt_real entries — otherwise stale tail entries are
+			// dereferenced as atom indices (SIGSEGV). Clamping per-axis preserves
+			// edge locality; far atoms simply fold onto the boundary cell.
+			int cx = (int)((Calc[atmi].atom->coor[0]-global_min[0])/CELLSIZE);
+			int cy = (int)((Calc[atmi].atom->coor[1]-global_min[1])/CELLSIZE);
+			int cz = (int)((Calc[atmi].atom->coor[2]-global_min[2])/CELLSIZE);
+			if (cx < 0) cx = 0; else if (cx >= *dim) cx = *dim - 1;
+			if (cy < 0) cy = 0; else if (cy >= *dim) cy = *dim - 1;
+			if (cz < 0) cz = 0; else if (cz >= *dim) cz = *dim - 1;
+			boxi = cx*dim2 + cy*(*dim) + cz;
 
 			Calc[atmi].boxnum = boxi;
 			//nbox++;
@@ -1741,9 +1759,12 @@ atomindex* index_protein(FA_Global* FA,atom* atoms,resid* residue,atomsas* Calc,
 			//printf("Calc[%d]=%d Boxi=[%d] RNum=[%d]\n",
 			//	atmi,Calc[atmi].atom->number,boxi,Calc[atmi].residue->number);
 		}
-       
-		if(Calc[atmi].boxnum >= 0 && Calc[atmi].boxnum < dim3){
-			++box[Calc[atmi].boxnum].nument;
+
+		// boxnum is guaranteed in-range by the clamp above; the bounds check is
+		// retained as defence in depth (and mirrors the fill loop below).
+		const int _boxnum = Calc[atmi].boxnum;
+		if (_boxnum >= 0 && _boxnum < dim3) {
+			++box[_boxnum].nument;
 		}
 	}
 

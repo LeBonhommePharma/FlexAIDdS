@@ -513,6 +513,17 @@ else()
 endif()
 flexaids_configure_simd(FlexAID)
 
+# Stage runtime data files next to the FlexAID binary (see note on the
+# FlexAIDdS target): the engine resolves MC_st0r5.2_6.dat / AMINO.def /
+# NUCLEOTIDES.def relative to the executable's own directory.
+add_custom_command(TARGET FlexAID POST_BUILD
+    COMMENT "Staging FlexAID runtime data files next to the binary"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${CMAKE_SOURCE_DIR}/MC_st0r5.2_6.dat"
+        "${CMAKE_SOURCE_DIR}/AMINO.def"
+        "${CMAKE_SOURCE_DIR}/NUCLEOTIDES.def"
+        "$<TARGET_FILE_DIR:FlexAID>")
+
 # ─── Eigen3 link + definition ─────────────────────────────────────────────
 if(FLEXAIDS_USE_EIGEN AND Eigen3_FOUND)
     target_link_libraries(FlexAID PRIVATE Eigen3::Eigen)
@@ -907,6 +918,17 @@ if(BUILD_FLEXAIDDS_FAST)
 
     target_link_libraries(FlexAIDdS PRIVATE Eigen3::Eigen)
 
+    # Stage the runtime data files (interaction matrix + atom-type definitions)
+    # next to the binary. FlexAID/FlexAIDdS resolve these relative to the
+    # executable's own directory (base_path), so without this they are not found
+    # unless the binary happens to run from the repo root.
+    add_custom_command(TARGET FlexAIDdS POST_BUILD
+        COMMENT "Staging FlexAIDdS runtime data files next to the binary"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${CMAKE_SOURCE_DIR}/MC_st0r5.2_6.dat"
+            "${CMAKE_SOURCE_DIR}/AMINO.def"
+            "${CMAKE_SOURCE_DIR}/NUCLEOTIDES.def"
+            "$<TARGET_FILE_DIR:FlexAIDdS>")
 
     target_compile_definitions(FlexAIDdS PRIVATE FLEXAIDS_HAS_EIGEN)
 

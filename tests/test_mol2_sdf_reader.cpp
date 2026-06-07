@@ -165,15 +165,14 @@ TEST_F(Mol2ReaderTest, ReadsDrugLikeMolecule) {
     EXPECT_EQ(ok, 1);
     EXPECT_EQ(FA.num_het_atm, 5);
 
-    // Canonical VCT types (0-based atoms):
-    // C.ar → 4, C.2 → 2, O.2 → 13, O.3 → 14, N.am → 11
-    EXPECT_EQ(atoms[0].type, 4);
+    // C.ar → type 3, C.2 → type 2, O.2 → type 11, O.3 → type 10, N.am → type 7
+    EXPECT_EQ(atoms[0].type, 3);
     EXPECT_EQ(atoms[1].type, 2);
-    EXPECT_EQ(atoms[2].type, 13);
-    EXPECT_EQ(atoms[3].type, 14);
-    EXPECT_EQ(atoms[4].type, 11);
+    EXPECT_EQ(atoms[2].type, 11);
+    EXPECT_EQ(atoms[3].type, 10);
+    EXPECT_EQ(atoms[4].type, 7);
 
-    // C2 (atoms[1]) should have 3 bonds (to C1, O1, O2)
+    // C2 should have 3 bonds (to C1, O1, O2)
     EXPECT_EQ(atoms[1].bond[0], 3);
 
     cleanup_fa(&FA, atoms, residue);
@@ -238,7 +237,7 @@ TEST_F(Mol2ReaderTest, HandlesUnknownAtomType) {
     int ok = read_mol2_ligand(&FA, &atoms, &residue, mol2.c_str());
     EXPECT_EQ(ok, 1);
 
-    // Unknown type → dummy type 39 (0-based atoms[0])
+    // Unknown type → dummy type 39
     EXPECT_EQ(atoms[0].type, 39);
 
     cleanup_fa(&FA, atoms, residue);
@@ -270,7 +269,7 @@ TEST_F(Mol2ReaderTest, PDBNumbersStartAt90001) {
     EXPECT_EQ(atoms[0].number, 90001);
     EXPECT_EQ(atoms[1].number, 90002);
 
-    // Verify reverse mapping (num_atm stores the 0-based internal index)
+    // Verify reverse mapping (0-based internal atom indices)
     EXPECT_EQ(FA.num_atm[90001], 0);
     EXPECT_EQ(FA.num_atm[90002], 1);
 
@@ -329,14 +328,14 @@ TEST_F(SdfReaderTest, ReadsSimpleMolecule) {
     EXPECT_EQ(FA.num_het_atm, 5);
     EXPECT_EQ(FA.res_cnt, 1);
 
-    // Carbon at origin (0-based atoms[0])
+    // Carbon at origin (atoms stored 0-based)
     EXPECT_NEAR(atoms[0].coor[0], 0.0f, 0.01f);
     EXPECT_NEAR(atoms[0].coor[1], 0.0f, 0.01f);
     EXPECT_NEAR(atoms[0].coor[2], 0.0f, 0.01f);
 
-    // Canonical types: C (SDF has no hybridization) → C.3 = 3, H → 39 (DUMMY)
-    EXPECT_EQ(atoms[0].type, 3);
-    EXPECT_EQ(atoms[1].type, 39);
+    // Types: C → 1, H → 22
+    EXPECT_EQ(atoms[0].type, 1);
+    EXPECT_EQ(atoms[1].type, 22);
 
     // Carbon has 4 bonds
     EXPECT_EQ(atoms[0].bond[0], 4);
@@ -382,11 +381,10 @@ TEST_F(SdfReaderTest, ReadsHalogens) {
     EXPECT_EQ(ok, 1);
     EXPECT_EQ(FA.num_het_atm, 4);
 
-    // Canonical halogen types (0-based: C=0, F=1, Cl=2, Br=3):
-    // F → 23, Cl → 24, Br → 25
-    EXPECT_EQ(atoms[1].type, 23);
-    EXPECT_EQ(atoms[2].type, 24);
-    EXPECT_EQ(atoms[3].type, 25);
+    // F → type 13, Cl → type 14, Br → type 15 (atoms stored 0-based)
+    EXPECT_EQ(atoms[1].type, 13);
+    EXPECT_EQ(atoms[2].type, 14);
+    EXPECT_EQ(atoms[3].type, 15);
 
     // Radii
     EXPECT_NEAR(atoms[1].radius, 1.47f, 0.01f);  // F
@@ -481,7 +479,7 @@ TEST_F(SdfReaderTest, BondOutOfRangeIgnored) {
     int ok = read_sdf_ligand(&FA, &atoms, &residue, sdf.c_str());
     EXPECT_EQ(ok, 1);
 
-    // Only the valid bond (1-2) should be recorded (0-based atoms)
+    // Only the valid bond (1-2) should be recorded (atoms stored 0-based)
     EXPECT_EQ(atoms[0].bond[0], 1);
     EXPECT_EQ(atoms[1].bond[0], 1);
 
