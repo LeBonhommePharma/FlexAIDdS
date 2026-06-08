@@ -2289,13 +2289,37 @@ std::vector<DatasetEntry> DatasetRunner::fetch_astex() {
     std::vector<DatasetEntry> entries;
     entries.reserve(codes.size());
 
+    // Fallback oracle site directory from env var (used when cache != source tree)
+    const char* oracle_site_dir_env = std::getenv("FLEXAIDDS_ORACLE_SITE_DIR");
+
+    int oracle_count = 0;
     for (const auto& pdb : codes) {
         auto entry = prepare_pdb_entry(pdb, "astex_diverse");
+
+        // Locate oracle binding site PDB for LOCCLF mode.
+        // Primary: adjacent to the receptor in the cache entry directory.
+        // Fallback: FLEXAIDDS_ORACLE_SITE_DIR/<PDB>/<PDB>_binding_site.pdb.
+        if (!entry.receptor_path.empty()) {
+            std::string upper_pdb = entry.pdb_id;
+            fs::path entry_dir = fs::path(entry.receptor_path).parent_path();
+            fs::path site_candidate = entry_dir / (upper_pdb + "_binding_site.pdb");
+            if (fs::exists(site_candidate)) {
+                entry.binding_site_path = site_candidate.string();
+                ++oracle_count;
+            } else if (oracle_site_dir_env) {
+                fs::path fallback = fs::path(oracle_site_dir_env) / upper_pdb / (upper_pdb + "_binding_site.pdb");
+                if (fs::exists(fallback)) {
+                    entry.binding_site_path = fallback.string();
+                    ++oracle_count;
+                }
+            }
+        }
+
         entries.push_back(std::move(entry));
     }
 
     std::cout << "  Prepared " << entries.size() << " / " << codes.size()
-              << " entries\n";
+              << " entries (" << oracle_count << " with oracle binding site)\n";
     return entries;
 }
 
@@ -3793,6 +3817,13 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
             }
 
             std::ostringstream cmd;
+            // Oracle LOCCLF: pass binding site PDB via env var so top.cpp
+            // can skip SURFNET auto-detection and load the oracle spheres.
+            if (!entry.binding_site_path.empty() && fs::exists(entry.binding_site_path)) {
+                cmd << "FLEXAIDDS_ORACLE_SITE='" << entry.binding_site_path << "' ";
+                std::cerr << "  [ORACLE] " << entry.pdb_id
+                          << " using binding site: " << entry.binding_site_path << "\n";
+            }
             cmd << "OMP_NUM_THREADS=" << omp_per_worker << " "
                 << "OMP_PLACES=cores "
                 << "OMP_PROC_BIND=spread "

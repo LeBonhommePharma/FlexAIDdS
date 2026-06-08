@@ -109,6 +109,7 @@ struct DatasetEntry {
     std::string pdb_id;              // PDB code (uppercase)
     std::string receptor_path;       // path to downloaded PDB/CIF
     std::string ligand_path;         // path to extracted ligand SDF
+    std::string binding_site_path;   // oracle binding site PDB (optional; enables LOCCLF mode)
     float experimental_affinity{-1.0f};  // pKd/pKi if available
     float experimental_dH{0.0f};     // ΔH in kcal/mol (ITC)
     float experimental_TdS{0.0f};    // TΔS in kcal/mol (ITC)
@@ -117,6 +118,7 @@ struct DatasetEntry {
     bool has_affinity()    const { return experimental_affinity >= 0.0f; }
     bool has_enthalpy()    const { return experimental_dH != 0.0f; }
     bool has_entropy()     const { return experimental_TdS != 0.0f; }
+    bool has_oracle_site() const { return !binding_site_path.empty(); }
 };
 
 /// Result of docking a single entry

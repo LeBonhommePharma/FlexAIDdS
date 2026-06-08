@@ -185,6 +185,32 @@ static std::string detect_file_role(const std::string& path) {
 	return "unknown";
 }
 
+// Load oracle binding site PDB as a LOCCLF sphere linked list.
+// Each ATOM/HETATM record becomes a sphere centered at the atom position with
+// the given probe radius. Returns NULL if the file is missing or unparseable.
+static sphere* load_oracle_site_as_spheres(const char* pdb_path, float probe_radius) {
+	FILE* fp = fopen(pdb_path, "r");
+	if (!fp) return NULL;
+	sphere* head = NULL;
+	char buf[256];
+	while (fgets(buf, (int)sizeof(buf), fp)) {
+		if (strncmp(buf, "ATOM  ", 6) != 0 && strncmp(buf, "HETATM", 6) != 0) continue;
+		if ((int)strlen(buf) < 54) continue;
+		float x, y, z;
+		if (sscanf(buf + 30, "%8f%8f%8f", &x, &y, &z) != 3) continue;
+		sphere* s = (sphere*)malloc(sizeof(sphere));
+		if (!s) break;
+		s->center[0] = x;
+		s->center[1] = y;
+		s->center[2] = z;
+		s->radius     = probe_radius;
+		s->prev       = head;
+		head          = s;
+	}
+	fclose(fp);
+	return head;
+}
+
 static void print_usage(const char* progname) {
 	printf("FlexAIDdS — Entropy-driven molecular docking\n\n");
 	printf("Usage:\n");
@@ -1093,28 +1119,54 @@ int main(int argc, char **argv){
 			}
 		}
 
-		// ── 7. Automatic binding site detection ──
+		// ── 7. Binding site detection (oracle LOCCLF or SURFNET AUTO) ──
 		{
-			printf("AUTO binding-site detection (CleftDetector) ...\n");
 			strcpy(FA->rngopt, "locclf");
 
-			sphere* spheres = detect_cleft(atoms, residue, FA->atm_cnt_real, FA->res_cnt);
-			if (spheres == NULL) {
-				fprintf(stderr, "ERROR: AUTO cleft detection found no cavities.\n");
-				Terminate(2);
+			// Oracle mode: FLEXAIDDS_ORACLE_SITE env var points to a binding
+			// site PDB whose residue atoms define the exact search space.
+			// Each atom becomes a probe sphere (radius 1.5 Å). Site-confinement
+			// is skipped — the oracle already provides a precise grid.
+			const char* oracle_site_env = std::getenv("FLEXAIDDS_ORACLE_SITE");
+			bool using_oracle = false;
+			sphere* spheres = NULL;
+
+			if (oracle_site_env && oracle_site_env[0] != '\0' &&
+			    std::filesystem::exists(oracle_site_env)) {
+				printf("ORACLE binding-site: loading from %s\n", oracle_site_env);
+				spheres = load_oracle_site_as_spheres(oracle_site_env, 1.5f);
+				if (spheres) {
+					using_oracle = true;
+				} else {
+					fprintf(stderr, "[WARN] Oracle site load failed, falling back to AUTO\n");
+				}
+			}
+
+			if (!spheres) {
+				printf("AUTO binding-site detection (CleftDetector) ...\n");
+				spheres = detect_cleft(atoms, residue, FA->atm_cnt_real, FA->res_cnt);
+				if (spheres == NULL) {
+					fprintf(stderr, "ERROR: AUTO cleft detection found no cavities.\n");
+					Terminate(2);
+				}
 			}
 
 			cleftgrid = generate_grid(FA, spheres, atoms, residue);
 			calc_cleftic(FA, cleftgrid);
 
+			// Free sphere linked list (oracle or SURFNET)
+			while (spheres) { sphere* p = spheres->prev; free(spheres); spheres = p; }
+
 			// ── Confine search to the cognate (reference-ligand) site ──────
+			// Skipped in oracle mode — the binding site PDB already defines
+			// the precise search space without further confinement needed.
 			// Re-docking benchmark: the binding site is known.  Restrict the
 			// auto-detected cleftgrid to grid points within (ligand_radius +
 			// margin) of the cognate centroid; otherwise the GA can settle in a
 			// wrong cavity (1IGJ 74 Å, 1GM8 32 Å, 1GPK 6.8 Å off-centre).
 			// Index 0 (reflig reference conformation) is always preserved by
 			// mif::rebuild_cleftgrid.
-			{
+			if (!using_oracle) {
 				const float kSiteMargin = 0.0f;            // Å beyond ligand extent (v13: oracle-tight, start at bare ligand extent)
 				int lig_res = FA->res_cnt;
 				int fa = residue[lig_res].fatm[0];
