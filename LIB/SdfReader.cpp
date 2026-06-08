@@ -21,6 +21,7 @@
 #include <string>
 #include <queue>
 #include <vector>
+#include <utility>
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -407,6 +408,46 @@ int read_sdf_ligand(FA_Global* FA, atom** atoms, resid** residue,
     printf("read_sdf_ligand: %d atoms, %d bonds (mol=%s)\n",
            natoms, nbonds_actual, mol_name);
 
+    // ── Perceive hybridization from bond topology (C.ar / N.ar / O.co2) ───────
+    // SDF/MOL files DO carry bond orders (MDL bond type 4 = aromatic). Pure
+    // element typing never emits C.ar/N.ar/O.co2 — the only three VCT types that
+    // actually differ from the degenerate sp2/sp3 rows in MC_st0r5.2_6.dat
+    // (C.2↔C.3 and O.2↔O.3 are byte-identical). Derive these three from the
+    // connection table so SDF scoring matches the obabel-converted MOL2 typing.
+    std::vector<bool> is_aromatic(natoms, false);
+    std::vector<bool> is_carboxylate_O(natoms, false);
+
+    // Per-atom neighbour lists with bond order, 0-based (sbonds are 1-based).
+    std::vector<std::vector<std::pair<int,int>>> nbr(natoms); // (neighbour, btype)
+    for (const auto& sb : sbonds) {
+        int i = sb.a1 - 1, j = sb.a2 - 1;
+        if (i < 0 || i >= natoms || j < 0 || j >= natoms) continue;
+        nbr[i].push_back({j, sb.type});
+        nbr[j].push_back({i, sb.type});
+        if (sb.type == 4) { is_aromatic[i] = true; is_aromatic[j] = true; }
+    }
+
+    // Carboxylate oxygens: O bonded to a C that has exactly two O neighbours,
+    // one via a single bond and one via a double bond (COO⁻ / COOH pattern).
+    for (int i = 0; i < natoms; ++i) {
+        if (strcmp(satoms[i].elem, "O") != 0) continue;
+        for (const auto& [cj, bt] : nbr[i]) {
+            (void)bt;
+            if (strcmp(satoms[cj].elem, "C") != 0) continue;
+            int n_oxy = 0, n_single = 0, n_double = 0;
+            for (const auto& [ok, obt] : nbr[cj]) {
+                if (strcmp(satoms[ok].elem, "O") != 0) continue;
+                ++n_oxy;
+                if      (obt == 1) ++n_single;
+                else if (obt == 2) ++n_double;
+            }
+            if (n_oxy == 2 && n_single == 1 && n_double == 1) {
+                is_carboxylate_O[i] = true;
+                break;
+            }
+        }
+    }
+
     // ── Populate FA structures (same pattern as read_lig / Mol2Reader) ────────
 
     FA->optres = (OptRes*)malloc(FA->MIN_OPTRES * sizeof(OptRes));
@@ -481,16 +522,25 @@ int read_sdf_ligand(FA_Global* FA, atom** atoms, resid** residue,
         strncpy(a.element, satoms[ai].elem, 2);
         a.element[2] = '\0';
 
-        a.type   = element_to_flexaid_type(satoms[ai].elem);
+        // Element-only base type, then override with topology-perceived
+        // hybridization for the three VCT types that matter (C.ar/N.ar/O.co2).
+        int vct = element_to_flexaid_type(satoms[ai].elem);
+        const char* el = satoms[ai].elem;
+        const char* perceived = el;  // for diagnostics
+        if      (!strcmp(el, "C") && is_aromatic[ai])       { vct = 4;  perceived = "C.ar"; }
+        else if (!strcmp(el, "N") && is_aromatic[ai])       { vct = 10; perceived = "N.ar"; }
+        else if (!strcmp(el, "O") && is_carboxylate_O[ai])  { vct = 15; perceived = "O.co2"; }
+
+        a.type   = vct;
         a.radius = element_radius(satoms[ai].elem);
         a.charge = satoms[ai].charge;
 
         // [ATOM_TYPE] diagnostic — dump element→VCT integer mapping for each
-        // ligand atom. SDF carries no SYBYL hybridization, so sybyl == normalized
-        // element here (generic perception applied in element_to_flexaid_type).
+        // ligand atom. SDF carries bond orders, so hybridization for the three
+        // discriminating types (C.ar/N.ar/O.co2) is perceived from topology.
         if (getenv("FLEXAIDDS_DEBUG_TYPES")) {
             fprintf(stderr, "[ATOM_TYPE] idx=%d name=%s sybyl=%s vct=%d (SDF)\n",
-                    ai, a.name, satoms[ai].elem, a.type);
+                    ai, a.name, perceived, a.type);
         }
         a.ofres  = FA->res_cnt;
         a.recs   = 'f';

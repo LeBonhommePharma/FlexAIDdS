@@ -1043,14 +1043,35 @@ int main(int argc, char **argv){
 							int canon  = bonmol_atom_to_canonical_vct(bm, &sname);
 							int fa_idx = fa + i;
 							int old_t  = atoms[fa_idx].type;
+							// read_sdf_ligand() now perceives C.ar/N.ar/O.co2
+							// directly from the SDF connection table (MDL bond
+							// type 4 = aromatic; COO single+double pattern). Those
+							// three come from explicit bond orders and are more
+							// reliable than BonMol's ring perception, which can
+							// miss aromaticity (reports "0 aromatic") and would
+							// otherwise silently downgrade C.ar->C.3 / N.ar->N.am
+							// / O.co2->O.3. Preserve the reader's topology type
+							// in that case instead of letting BonMol overwrite it.
+							const bool reader_perceived_hybrid =
+							    (old_t == 4  /*C.ar */ ||
+							     old_t == 10 /*N.ar */ ||
+							     old_t == 15 /*O.co2*/);
 							// Leave the reader's fallback in place for DUMMY (e.g. H),
 							// otherwise upgrade to the SYBYL-based canonical type.
-							if (canon != FA_TYPE_DUMMY && canon != old_t) {
+							if (canon != FA_TYPE_DUMMY && canon != old_t &&
+							    !reader_perceived_hybrid) {
 								printf("[TYPING] atom %d (%s): element-only type %d "
 								       "-> SYBYL %s -> canonical type %d\n",
 								       i, atoms[fa_idx].name, old_t, sname, canon);
 								atoms[fa_idx].type = canon;
 								++upgraded;
+							} else if (reader_perceived_hybrid && canon != old_t &&
+							           canon != FA_TYPE_DUMMY) {
+								printf("[TYPING] atom %d (%s): keeping reader "
+								       "topology type %d over BonMol %s (canonical "
+								       "%d) — SDF bond orders are authoritative for "
+								       "aromatic/carboxylate perception\n",
+								       i, atoms[fa_idx].name, old_t, sname, canon);
 							}
 						}
 						printf("ProcessLigand typing applied: %d/%d ligand atoms "
