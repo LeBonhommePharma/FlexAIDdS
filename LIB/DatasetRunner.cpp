@@ -228,6 +228,83 @@ size_t SubprocessGuard::active_count() const {
 }
 
 // =============================================================================
+// RMSD helpers — serial and symmetry-corrected (Hungarian) variants
+// =============================================================================
+
+// Munkres O(n³) optimal assignment via the potential method.
+// Returns assignment[i] = j (row i → column j), minimizing Σ cost[i][assignment[i]].
+static std::vector<int> munkres_solve(std::vector<std::vector<double>> a) {
+    int n = (int)a.size();
+    if (n == 0) return {};
+    std::vector<double> u(n+1, 0.0), v(n+1, 0.0);
+    std::vector<int> p(n+1, 0), way(n+1, 0);
+    for (int i = 1; i <= n; ++i) {
+        p[0] = i;
+        int j0 = 0;
+        std::vector<double> minv(n+1, std::numeric_limits<double>::infinity());
+        std::vector<bool> used(n+1, false);
+        do {
+            used[j0] = true;
+            int i0 = p[j0], j1 = -1;
+            double delta = std::numeric_limits<double>::infinity();
+            for (int j = 1; j <= n; ++j) {
+                if (!used[j]) {
+                    double cur = a[i0-1][j-1] - u[i0] - v[j];
+                    if (cur < minv[j]) { minv[j] = cur; way[j] = j0; }
+                    if (minv[j] < delta) { delta = minv[j]; j1 = j; }
+                }
+            }
+            for (int j = 0; j <= n; ++j) {
+                if (used[j]) { u[p[j]] += delta; v[j] -= delta; }
+                else { minv[j] -= delta; }
+            }
+            j0 = j1;
+        } while (p[j0] != 0);
+        do { int j1 = way[j0]; p[j0] = p[j1]; j0 = j1; } while (j0);
+    }
+    std::vector<int> ans(n, -1);
+    for (int j = 1; j <= n; ++j) if (p[j]) ans[p[j]-1] = j-1;
+    return ans;
+}
+
+// Symmetry-corrected RMSD: find optimal element-type-grouped bijection between
+// the docked pose and the crystal reference, then compute RMSD over that assignment.
+// crystal / docked: element-labelled heavy-atom XYZ vectors.
+static float hungarian_rmsd(
+    const std::vector<std::pair<std::string,std::array<float,3>>>& crystal,
+    const std::vector<std::pair<std::string,std::array<float,3>>>& docked)
+{
+    if (crystal.empty() || docked.empty()) return 999.0f;
+    std::set<std::string> elems;
+    for (const auto& a : crystal) elems.insert(a.first);
+    double total_sq = 0.0;
+    int total_n = 0;
+    for (const auto& el : elems) {
+        std::vector<int> ci, di;
+        for (int i = 0; i < (int)crystal.size(); ++i)
+            if (crystal[i].first == el) ci.push_back(i);
+        for (int i = 0; i < (int)docked.size(); ++i)
+            if (docked[i].first == el) di.push_back(i);
+        int n = (int)std::min(ci.size(), di.size());
+        if (n == 0) continue;
+        std::vector<std::vector<double>> cost(n, std::vector<double>(n));
+        for (int i = 0; i < n; ++i) {
+            const auto& dp = docked[di[i]].second;
+            for (int j = 0; j < n; ++j) {
+                const auto& cp = crystal[ci[j]].second;
+                double dx = dp[0]-cp[0], dy = dp[1]-cp[1], dz = dp[2]-cp[2];
+                cost[i][j] = dx*dx + dy*dy + dz*dz;
+            }
+        }
+        auto asgn = munkres_solve(cost);
+        for (int i = 0; i < n; ++i)
+            if (asgn[i] >= 0) total_sq += cost[i][asgn[i]];
+        total_n += n;
+    }
+    return (total_n > 0) ? static_cast<float>(std::sqrt(total_sq / total_n)) : 999.0f;
+}
+
+// =============================================================================
 // Statistical functions — implemented from scratch, no external stats library
 // =============================================================================
 
@@ -3960,6 +4037,7 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
             if (!best_pose_pdb.empty()) {
                 // Read crystal ligand heavy-atom coords from SDF (lines with X Y Z elem)
                 std::vector<std::array<float,3>> crystal_xyz;
+                std::vector<std::string> crystal_elem;  // parallel element labels
                 {
                     std::ifstream sdf(entry.ligand_path);
                     std::string sline;
@@ -3972,8 +4050,17 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                             int n = sscanf(sline.c_str(), " %f %f %f %3s", &x, &y, &z, elem);
                             if (n == 4 && elem[0] != '\0' && std::isalpha(elem[0])
                                        && elem[0] != 'M' && elem[0] != 'A') {
-                                if (elem[0] != 'H') // heavy atoms only
+                                if (elem[0] != 'H') { // heavy atoms only
                                     crystal_xyz.push_back({x, y, z});
+                                    // Normalise element: upper-first, rest lower (e.g. "Cl", "Br")
+                                    std::string el(elem);
+                                    el[0] = static_cast<char>(std::toupper(
+                                                static_cast<unsigned char>(el[0])));
+                                    for (size_t k = 1; k < el.size(); ++k)
+                                        el[k] = static_cast<char>(std::tolower(
+                                                    static_cast<unsigned char>(el[k])));
+                                    crystal_elem.push_back(std::move(el));
+                                }
                                 atom_block++;
                             }
                         }
@@ -4012,18 +4099,34 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                     }
                 }
 
-                auto elem_is_hydrogen = [](const std::string& line) -> bool {
-                    // Element = trailing whitespace-delimited token of the record.
+                // Extract trailing element token from a PDB ATOM/HETATM line.
+                // Normalises to upper-first, rest lower (e.g. "C", "N", "Cl").
+                auto get_elem_token = [](const std::string& line) -> std::string {
                     size_t end = line.find_last_not_of(" \t\r\n");
-                    if (end == std::string::npos) return false;
+                    if (end == std::string::npos) return "X";
                     size_t start = line.find_last_of(" \t", end);
                     std::string tok = line.substr(start == std::string::npos ? 0 : start + 1,
-                                                  end - (start == std::string::npos ? -1 : start));
-                    for (char& ch : tok) ch = static_cast<char>(std::tolower(ch));
+                                                  end - (start == std::string::npos
+                                                         ? static_cast<size_t>(-1) : start));
+                    if (tok.empty()) return "X";
+                    tok[0] = static_cast<char>(
+                        std::toupper(static_cast<unsigned char>(tok[0])));
+                    for (size_t kk = 1; kk < tok.size(); ++kk)
+                        tok[kk] = static_cast<char>(
+                            std::tolower(static_cast<unsigned char>(tok[kk])));
+                    return tok;
+                };
+
+                auto elem_is_hydrogen = [&get_elem_token](const std::string& line) -> bool {
+                    std::string tok = get_elem_token(line);
+                    // Lowercase for comparison
+                    for (char& ch : tok) ch = static_cast<char>(std::tolower(
+                                                    static_cast<unsigned char>(ch)));
                     return tok == "h" || tok == "d" || tok == "du";
                 };
 
-                std::vector<std::pair<long, std::array<float,3>>> docked;
+                // docked: (serial, xyz, element)
+                std::vector<std::tuple<long, std::array<float,3>, std::string>> docked;
                 {
                     std::ifstream pdb(best_pose_pdb);
                     std::string pline;
@@ -4054,16 +4157,22 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                         float x = std::stof(pline.substr(30,8));
                         float y = std::stof(pline.substr(38,8));
                         float z = std::stof(pline.substr(46,8));
-                        docked.push_back({serial, {x, y, z}});
+                        docked.push_back({serial, {x, y, z}, get_elem_token(pline)});
                     }
                 }
                 // Restore input/load order (serial-ascending) so positional RMSD
                 // lines up with the crystal SDF atom order (same molecule, same order).
                 std::sort(docked.begin(), docked.end(),
-                          [](const auto& a, const auto& b){ return a.first < b.first; });
+                          [](const auto& a, const auto& b){
+                              return std::get<0>(a) < std::get<0>(b); });
                 std::vector<std::array<float,3>> pose_xyz;
+                std::vector<std::string> pose_elem;
                 pose_xyz.reserve(docked.size());
-                for (auto& d : docked) pose_xyz.push_back(d.second);
+                pose_elem.reserve(docked.size());
+                for (auto& d : docked) {
+                    pose_xyz.push_back(std::get<1>(d));
+                    pose_elem.push_back(std::get<2>(d));
+                }
 
                 if (!crystal_xyz.empty() && !pose_xyz.empty()) {
                     // With CONECT-based selection + H stripping the docked ligand is
@@ -4081,6 +4190,7 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                                   << " pose(docked-ligand)=" << pose_xyz.size()
                                   << " — setting RMSD=999\n";
                         result.rmsd_to_crystal = 999.0f;
+                        // rmsd_hungarian stays at 999 (default)
                     } else {
                         int n = static_cast<int>(std::min(crystal_xyz.size(), pose_xyz.size()));
                         double sum_sq = 0.0;
@@ -4091,6 +4201,19 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                             sum_sq += dx*dx + dy*dy + dz*dz;
                         }
                         result.rmsd_to_crystal = static_cast<float>(std::sqrt(sum_sq / n));
+
+                        // Symmetry-corrected RMSD: element-grouped Hungarian assignment
+                        if (crystal_elem.size() == crystal_xyz.size() &&
+                            pose_elem.size() == pose_xyz.size()) {
+                            std::vector<std::pair<std::string,std::array<float,3>>> catoms, datoms;
+                            catoms.reserve(crystal_xyz.size());
+                            datoms.reserve(pose_xyz.size());
+                            for (size_t k = 0; k < crystal_xyz.size(); ++k)
+                                catoms.push_back({crystal_elem[k], crystal_xyz[k]});
+                            for (size_t k = 0; k < pose_xyz.size(); ++k)
+                                datoms.push_back({pose_elem[k], pose_xyz[k]});
+                            result.rmsd_hungarian = hungarian_rmsd(catoms, datoms);
+                        }
                     }
                 } else {
                     result.rmsd_to_crystal = 999.0f;
@@ -4146,12 +4269,14 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                 std::string csv_path = out_dir + "/result.csv";
                 std::ofstream ofs(csv_path);
                 if (ofs.is_open()) {
-                    ofs << "pdb_id,best_score,rmsd_to_crystal,predicted_dG,predicted_dH,"
-                           "predicted_TdS,shannon_entropy,num_poses,wall_time_s,success\n";
+                    ofs << "pdb_id,best_score,rmsd_to_crystal,rmsd_hungarian,predicted_dG,"
+                           "predicted_dH,predicted_TdS,shannon_entropy,num_poses,"
+                           "wall_time_s,success\n";
                     ofs << std::fixed << std::setprecision(4)
                         << result.pdb_id << ","
                         << result.best_score << ","
                         << result.rmsd_to_crystal << ","
+                        << result.rmsd_hungarian << ","
                         << result.predicted_dG << ","
                         << result.predicted_dH << ","
                         << result.predicted_TdS << ","
@@ -4335,8 +4460,8 @@ void DatasetRunner::write_report(const BenchmarkReport& report,
 
         // Per-system results table
         ofs << "## Per-System Results\n\n";
-        ofs << "| PDB | Score | RMSD (Å) | ΔG | ΔH | TΔS | I_EE | S_shan | Poses | Time (s) | Success |\n";
-        ofs << "|-----|-------|----------|-----|-----|------|------|--------|-------|----------|--------|\n";
+        ofs << "| PDB | Score | RMSD (Å) | RMSD_H (Å) | ΔG | ΔH | TΔS | I_EE | S_shan | Poses | Time (s) | Success |\n";
+        ofs << "|-----|-------|----------|------------|-----|-----|------|------|--------|-------|----------|--------|\n";
 
         for (const auto& r : report.results) {
             std::string iee_str = r.has_IEE
@@ -4345,6 +4470,7 @@ void DatasetRunner::write_report(const BenchmarkReport& report,
             ofs << "| " << r.pdb_id
                 << " | " << std::setprecision(2) << r.best_score
                 << " | " << std::setprecision(2) << r.rmsd_to_crystal
+                << " | " << std::setprecision(2) << r.rmsd_hungarian
                 << " | " << std::setprecision(2) << r.predicted_dG
                 << " | " << std::setprecision(2) << r.predicted_dH
                 << " | " << std::setprecision(2) << r.predicted_TdS
@@ -4416,14 +4542,15 @@ void DatasetRunner::write_report(const BenchmarkReport& report,
         std::string csv_path = output_dir + "/" + safe_name + "_results.csv";
         std::ofstream ofs(csv_path);
 
-        ofs << "pdb_id,best_score,rmsd_to_crystal,predicted_dG,predicted_dH,"
-               "predicted_TdS,shannon_entropy,num_poses,wall_time_s,success\n";
+        ofs << "pdb_id,best_score,rmsd_to_crystal,rmsd_hungarian,predicted_dG,"
+               "predicted_dH,predicted_TdS,shannon_entropy,num_poses,wall_time_s,success\n";
 
         for (const auto& r : report.results) {
             ofs << std::fixed << std::setprecision(4)
                 << r.pdb_id << ","
                 << r.best_score << ","
                 << r.rmsd_to_crystal << ","
+                << r.rmsd_hungarian << ","
                 << r.predicted_dG << ","
                 << r.predicted_dH << ","
                 << r.predicted_TdS << ","

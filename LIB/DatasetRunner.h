@@ -123,7 +123,8 @@ struct DatasetEntry {
 struct DockingResult {
     std::string pdb_id;
     float best_score{0.0f};           // FlexAIDdS free energy (kcal/mol)
-    float rmsd_to_crystal{999.0f};    // RMSD of top pose to crystal ligand (Å)
+    float rmsd_to_crystal{999.0f};    // serial-order RMSD to crystal ligand (Å)
+    float rmsd_hungarian{999.0f};     // symmetry-corrected (Hungarian) RMSD (Å)
     float predicted_dG{0.0f};         // predicted ΔG (kcal/mol)
     float predicted_dH{0.0f};         // predicted ΔH (kcal/mol)
     float predicted_TdS{0.0f};        // predicted TΔS (kcal/mol)
