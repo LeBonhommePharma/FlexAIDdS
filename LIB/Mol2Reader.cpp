@@ -306,6 +306,14 @@ int read_mol2_ligand(FA_Global* FA, atom** atoms, resid** residue,
         a.type = sybyl_to_flexaid_type(tmp_atoms[ai].sybyl);
         a.radius = sybyl_radius(tmp_atoms[ai].sybyl);
         a.charge = tmp_atoms[ai].charge; // propagate MOL2 partial charge
+
+        // [ATOM_TYPE] diagnostic — dump SYBYL→VCT integer mapping for each
+        // ligand atom so silent mis-typing (heteroatom → repulsive matrix row)
+        // can be diagnosed against the native-pose CF breakdown.
+        if (getenv("FLEXAIDDS_DEBUG_TYPES")) {
+            fprintf(stderr, "[ATOM_TYPE] idx=%zu name=%s sybyl=%s vct=%d (MOL2)\n",
+                    ai, a.name, tmp_atoms[ai].sybyl, a.type);
+        }
         a.ofres = FA->res_cnt;
         a.recs = 'f'; // flexible by default
         a.bond[0] = 0;

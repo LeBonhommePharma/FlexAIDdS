@@ -484,6 +484,14 @@ int read_sdf_ligand(FA_Global* FA, atom** atoms, resid** residue,
         a.type   = element_to_flexaid_type(satoms[ai].elem);
         a.radius = element_radius(satoms[ai].elem);
         a.charge = satoms[ai].charge;
+
+        // [ATOM_TYPE] diagnostic — dump element→VCT integer mapping for each
+        // ligand atom. SDF carries no SYBYL hybridization, so sybyl == normalized
+        // element here (generic perception applied in element_to_flexaid_type).
+        if (getenv("FLEXAIDDS_DEBUG_TYPES")) {
+            fprintf(stderr, "[ATOM_TYPE] idx=%d name=%s sybyl=%s vct=%d (SDF)\n",
+                    ai, a.name, satoms[ai].elem, a.type);
+        }
         a.ofres  = FA->res_cnt;
         a.recs   = 'f';
         a.bond[0] = 0;
