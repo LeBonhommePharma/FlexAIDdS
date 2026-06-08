@@ -1124,31 +1124,46 @@ int main(int argc, char **argv){
 			strcpy(FA->rngopt, "locclf");
 
 			// Oracle mode: FLEXAIDDS_ORACLE_SITE env var points to a binding
-			// site PDB whose residue atoms define the exact search space.
-			// Each atom becomes a probe sphere (radius 1.5 Å). Site-confinement
-			// is skipped — the oracle already provides a precise grid.
+			// site PDB.  Parse for centroid only — SURFNET void-space detection
+			// always runs (probes placed in void between atoms, not on atoms).
+			// Oracle centroid guides cleft selection and site-confinement.
 			const char* oracle_site_env = std::getenv("FLEXAIDDS_ORACLE_SITE");
 			bool using_oracle = false;
+			float oracle_cx = 0.0f, oracle_cy = 0.0f, oracle_cz = 0.0f;
 			sphere* spheres = NULL;
 
 			if (oracle_site_env && oracle_site_env[0] != '\0' &&
 			    std::filesystem::exists(oracle_site_env)) {
-				printf("ORACLE binding-site: loading from %s\n", oracle_site_env);
-				spheres = load_oracle_site_as_spheres(oracle_site_env, 1.5f);
-				if (spheres) {
+				int n = 0;
+				FILE* fp_oracle = fopen(oracle_site_env, "r");
+				if (fp_oracle) {
+					char line[256];
+					while (fgets(line, sizeof(line), fp_oracle)) {
+						if (strncmp(line, "ATOM", 4) != 0 && strncmp(line, "HETATM", 6) != 0) continue;
+						if ((int)strlen(line) < 54) continue;
+						float x, y, z;
+						if (sscanf(line + 30, "%8f%8f%8f", &x, &y, &z) != 3) continue;
+						oracle_cx += x; oracle_cy += y; oracle_cz += z; ++n;
+					}
+					fclose(fp_oracle);
+				}
+				if (n > 0) {
+					oracle_cx /= n; oracle_cy /= n; oracle_cz /= n;
 					using_oracle = true;
+					fprintf(stderr, "[ORACLE] centroid: %.2f %.2f %.2f (%d atoms)\n",
+					        oracle_cx, oracle_cy, oracle_cz, n);
+					fprintf(stderr, "[ORACLE] using SURFNET void-space + oracle centroid guidance\n");
 				} else {
 					fprintf(stderr, "[WARN] Oracle site load failed, falling back to AUTO\n");
 				}
 			}
 
-			if (!spheres) {
-				printf("AUTO binding-site detection (CleftDetector) ...\n");
-				spheres = detect_cleft(atoms, residue, FA->atm_cnt_real, FA->res_cnt);
-				if (spheres == NULL) {
-					fprintf(stderr, "ERROR: AUTO cleft detection found no cavities.\n");
-					Terminate(2);
-				}
+			// Always run SURFNET void-space detection (probes placed in void between atoms)
+			printf("SURFNET binding-site detection (CleftDetector) ...\n");
+			spheres = detect_cleft(atoms, residue, FA->atm_cnt_real, FA->res_cnt);
+			if (spheres == NULL) {
+				fprintf(stderr, "ERROR: cleft detection found no cavities.\n");
+				Terminate(2);
 			}
 
 			cleftgrid = generate_grid(FA, spheres, atoms, residue);
@@ -1166,8 +1181,8 @@ int main(int argc, char **argv){
 			// wrong cavity (1IGJ 74 Å, 1GM8 32 Å, 1GPK 6.8 Å off-centre).
 			// Index 0 (reflig reference conformation) is always preserved by
 			// mif::rebuild_cleftgrid.
-			if (!using_oracle) {
-				const float kSiteMargin = 0.0f;            // Å beyond ligand extent (v13: oracle-tight, start at bare ligand extent)
+			{
+				const float kSiteMargin = 0.0f;            // Å beyond ligand extent
 				int lig_res = FA->res_cnt;
 				int fa = residue[lig_res].fatm[0];
 				int la = residue[lig_res].latm[0];
@@ -1179,6 +1194,12 @@ int main(int argc, char **argv){
 						cz += atoms[a].coor[2]; ++nn;
 					}
 					cx/=nn; cy/=nn; cz/=nn;
+					// Oracle mode: override centroid with oracle-derived position
+					// (rmax2 still computed from ligand extent for a sensible rcut_initial)
+					if (using_oracle) {
+						cx = oracle_cx; cy = oracle_cy; cz = oracle_cz;
+						printf("SITE-CONFINE: oracle centroid override %.2f %.2f %.2f\n", cx, cy, cz);
+					}
 					double rmax2 = 0.0;
 					for (int a = fa; a <= la; ++a) {
 						double dx=atoms[a].coor[0]-cx, dy=atoms[a].coor[1]-cy, dz=atoms[a].coor[2]-cz;
