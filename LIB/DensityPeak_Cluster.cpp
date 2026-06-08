@@ -14,7 +14,12 @@
 #define NEIGHBORRATELOW 0.01
 #define NEIGHBORRATEHIGH 0.02
 #define EXCLUDE_HALO false
-#define OUTPUT_CLUSTER_CENTER false
+// Output the density-peak (highest-density) member as the cluster
+// representative, not the lowest-CF member. Hardcoded true: the whole point of
+// Density Peak clustering is to elect the density center; with this false the
+// peak was computed and discarded, making the output identical to the CF
+// algorithm. (Runtime wiring would belong in config_parser, which is off-limits.)
+#define OUTPUT_CLUSTER_CENTER true
 
 void DensityPeak_cluster(FA_Global* FA, GB_Global* GB, VC_Global* VC, chromosome* chrom, genlim* gene_lim, atom* atoms, resid* residue, gridpoint* cleftgrid, int num_chrom, char* end_strfile, char* tmp_end_strfile, char* dockinp, char* gainp)
 {
@@ -544,7 +549,7 @@ void DensityPeak_cluster(FA_Global* FA, GB_Global* GB, VC_Global* VC, chromosome
 		size_t remark_len = 0;
 		remark[0] = '\0';
 		safe_remark_cat(remark, "REMARK optimized structure\n", &remark_len);
-		snprintf(tmpremark,MAX_REMARK,"REMARK Density Peak clustering algorithm used to output %s as cluster representatives\n", (OUTPUT_CLUSTER_CENTER == true ? "the lowest CF" : "the center of highest density"));
+		snprintf(tmpremark,MAX_REMARK,"REMARK Density Peak clustering algorithm used to output %s as cluster representatives\n", (OUTPUT_CLUSTER_CENTER == true ? "the center of highest density" : "the lowest CF"));
 		safe_remark_cat(remark,tmpremark,&remark_len);
 
 		snprintf(tmpremark,MAX_REMARK,"REMARK CF=%8.5f\n",get_cf_evalue(&CF));

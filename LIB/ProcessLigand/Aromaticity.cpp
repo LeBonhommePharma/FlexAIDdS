@@ -100,6 +100,25 @@ int pi_electron_count(const BonMol& mol, int atom_idx, const Ring& ring) {
 }
 
 // ---------------------------------------------------------------------------
+// Explicit aromatic-bond test: are ALL bonds around the ring flagged aromatic
+// by the input connection table (MDL SDF bond type 4 / MOL2 "ar")?
+// ---------------------------------------------------------------------------
+
+static bool ring_bonds_all_aromatic(const BonMol& mol, const Ring& ring) {
+    if (ring.size < 4) return false;
+    for (int i = 0; i < ring.size; ++i) {
+        int a = ring.atom_indices[i];
+        int b = ring.atom_indices[(i + 1) % ring.size];
+        int bidx = mol.find_bond(a, b);
+        if (bidx < 0) return false;
+        const Bond& bond = mol.bonds[bidx];
+        if (!bond.is_aromatic && bond.order != BondOrder::AROMATIC)
+            return false;
+    }
+    return true;
+}
+
+// ---------------------------------------------------------------------------
 // Hückel 4n+2 check for a single ring
 // ---------------------------------------------------------------------------
 
@@ -191,6 +210,27 @@ bool kekulize_ring(BonMol& mol, const Ring& ring) {
 AromaticityResult assign_aromaticity(BonMol& mol) {
     AromaticityResult result{};
 
+    // -----------------------------------------------------------------------
+    // Honor EXPLICIT aromatic bonds from the input connection table.
+    //
+    // MDL SDF bond type 4 and MOL2 "ar" bonds set Bond::is_aromatic /
+    // BondOrder::AROMATIC at parse time. These flags are authoritative — the
+    // source file is telling us the bond is aromatic — and must not be
+    // discarded in favour of Hückel ring perception alone, which can miss
+    // aromaticity (fused/charged systems, exocyclic substitution) and report
+    // "0 aromatic", silently downgrading C.ar->C.3 / N.ar->N.am / O.co2->O.3
+    // in the SYBYL typer downstream.
+    //
+    // Propagate the explicit flag to the endpoint atoms BEFORE hybridisation
+    // so they are perceived sp2, and below we also accept any ring whose bonds
+    // are all explicitly aromatic regardless of the Hückel count.
+    for (const Bond& b : mol.bonds) {
+        if (b.is_aromatic || b.order == BondOrder::AROMATIC) {
+            mol.atoms[b.atom_i].is_aromatic = true;
+            mol.atoms[b.atom_j].is_aromatic = true;
+        }
+    }
+
     // Ensure hybridisation is assigned for all atoms
     assign_hybridisation(mol);
 
@@ -204,7 +244,7 @@ AromaticityResult assign_aromaticity(BonMol& mol) {
             continue;
         }
 
-        if (is_huckel_aromatic(mol, ring)) {
+        if (is_huckel_aromatic(mol, ring) || ring_bonds_all_aromatic(mol, ring)) {
             ring.is_aromatic = true;
             ++result.num_aromatic_rings;
 

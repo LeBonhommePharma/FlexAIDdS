@@ -478,7 +478,16 @@ void BindingMode::output_BindingMode(int num_result, char* end_strfile, char* tm
 	std::vector<Pose>::const_iterator Rep_lowCF = this->elect_Representative(false);
 	std::vector<Pose>::const_iterator Rep_lowOPTICS = this->elect_Representative(true);
 
-	for (int k = 0; k < this->Population->GB->num_genes; ++k) this->Population->FA->opt_par[k] = Rep_lowCF->chrom->genes[k].to_ic;
+	// Elect the OPTICS density-center pose (lowest reachability distance) as the
+	// Binding Mode representative, not the lowest-CF member. The center is the
+	// most representative of the cluster's density; emitting the lowest-CF pose
+	// instead made Fast OPTICS output indistinguishable from the CF algorithm.
+	// Fall back to the lowest-CF pose only if no valid OPTICS center exists
+	// (e.g. a singleton mode where every reachDist is undefined).
+	std::vector<Pose>::const_iterator Rep = Rep_lowOPTICS;
+	if (Rep == this->Poses.end() || isUndefinedDist(Rep->reachDist)) Rep = Rep_lowCF;
+
+	for (int k = 0; k < this->Population->GB->num_genes; ++k) this->Population->FA->opt_par[k] = Rep->chrom->genes[k].to_ic;
 
 	CF = ic2cf(this->Population->FA, this->Population->VC, this->Population->atoms, this->Population->residue, this->Population->cleftgrid, this->Population->GB->num_genes, this->Population->FA->opt_par);
 
@@ -486,7 +495,7 @@ void BindingMode::output_BindingMode(int num_result, char* end_strfile, char* tm
 	remark[0] = '\0';
 	safe_remark_cat(remark, "REMARK optimized structure\n", &remark_len);
 
-	snprintf(tmpremark, MAX_REMARK, "REMARK Fast OPTICS clustering algorithm used to output the lowest CF as Binding Mode representative\n");
+	snprintf(tmpremark, MAX_REMARK, "REMARK Fast OPTICS clustering algorithm used to output the OPTICS density center as Binding Mode representative\n");
 	safe_remark_cat(remark, tmpremark, &remark_len);
 
 	snprintf(tmpremark, MAX_REMARK, "REMARK CF=%8.5f\n", get_cf_evalue(&CF));
