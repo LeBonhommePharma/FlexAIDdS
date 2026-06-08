@@ -23,6 +23,7 @@
 #include "GAContext.h"
 #include "MIFGrid.h"
 #include "CavityDetect/SpatialGrid.h"
+#include "native_score.h"
 
 #include <algorithm>
 #include <cmath>
@@ -1575,12 +1576,25 @@ int main(int argc, char **argv){
 	
 	//printf("Create rebuild list...\n");
 	create_rebuild_list(FA,atoms,residue);
-  
+
 	//printf("atm_cnt=%d\tres_cnt=%d\n",FA->atm_cnt,FA->res_cnt);
 	//printf("npar=%d\n",FA->npar);
 	//cf=ic2cf(FA,VC,atoms,residue,cleftgrid,FA->npar,FA->opt_par);
 	//for(i=0;i<FA->npar;i++){printf("[%8.3f]",FA->opt_par[i]);}
 	//printf("=%8.5f\n",cf);
+
+	// ── Native-pose CF diagnostic (FLEXAIDDS_SCORE_NATIVE=1) ─────────────────
+	// Score the crystal/reference pose with the CF before the GA runs.
+	// Answers: "Is the scorer broken for this ligand?" (cf<<0 means scorer works).
+	// DatasetRunner sets FLEXAIDDS_SCORE_NATIVE=1 + FLEXAIDDS_RMSDST=<crystal.sdf>
+	// per entry; parses [NATIVE_CF] from stderr.log alongside the GA results.
+	// Prints one line to stderr, then returns — the GA continues normally.
+	{
+		const char* _native_env = std::getenv("FLEXAIDDS_SCORE_NATIVE");
+		if (_native_env && _native_env[0] != '\0' && std::strcmp(_native_env, "0") != 0) {
+			score_native_pose(FA, VC, atoms, residue, cleftgrid);
+		}
+	}
 
 	//-----------------------------------------------------------------------------------
 	snprintf(tmp_end_strfile, MAX_PATH__, "%s_INI.pdb", end_strfile);

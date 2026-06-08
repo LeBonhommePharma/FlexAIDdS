@@ -3824,6 +3824,13 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                 std::cerr << "  [ORACLE] " << entry.pdb_id
                           << " using binding site: " << entry.binding_site_path << "\n";
             }
+            // Native-pose CF diagnostic: score crystal pose before GA, append
+            // [NATIVE_CF] to stderr.log.  Pass the unblinded crystal SDF so the
+            // scorer sees the correct reference pose, not the blinded input.
+            if (!entry.ligand_path.empty() && fs::exists(entry.ligand_path)) {
+                cmd << "FLEXAIDDS_SCORE_NATIVE=1 "
+                    << "FLEXAIDDS_RMSDST='" << entry.ligand_path << "' ";
+            }
             cmd << "OMP_NUM_THREADS=" << omp_per_worker << " "
                 << "OMP_PLACES=cores "
                 << "OMP_PROC_BIND=spread "
@@ -3945,6 +3952,29 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                     if (pos != std::string::npos) {
                         try { best_dG = std::stof(line.substr(pos+1)); }
                         catch (...) {}
+                    }
+                }
+            }
+        }
+
+        // ── Parse [NATIVE_CF] from stderr.log ────────────────────────────────
+        // Line format (emitted by native_score.cpp):
+        //   [NATIVE_CF] cf=<total> breakdown=com:<v>,wal:<v>,sas:<v>,con:<v>
+        {
+            std::string stderr_path = out_dir + "/stderr.log";
+            std::ifstream nf(stderr_path);
+            if (nf.is_open()) {
+                std::string nline;
+                while (std::getline(nf, nline)) {
+                    if (nline.find("[NATIVE_CF]") != std::string::npos) {
+                        auto pos = nline.find("cf=");
+                        if (pos != std::string::npos) {
+                            try {
+                                // stof stops at first non-numeric char (space)
+                                result.cf_native = std::stof(nline.substr(pos + 3));
+                            } catch (...) {}
+                        }
+                        break;  // only one [NATIVE_CF] line expected
                     }
                 }
             }
@@ -4302,7 +4332,7 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                 if (ofs.is_open()) {
                     ofs << "pdb_id,best_score,rmsd_to_crystal,rmsd_hungarian,predicted_dG,"
                            "predicted_dH,predicted_TdS,shannon_entropy,num_poses,"
-                           "wall_time_s,success\n";
+                           "wall_time_s,success,cf_native\n";
                     ofs << std::fixed << std::setprecision(4)
                         << result.pdb_id << ","
                         << result.best_score << ","
@@ -4314,7 +4344,8 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                         << result.shannon_entropy << ","
                         << result.num_poses << ","
                         << result.wall_time_s << ","
-                        << (result.success ? 1 : 0) << "\n";
+                        << (result.success ? 1 : 0) << ","
+                        << result.cf_native << "\n";
                 }
             } catch (...) {
                 // Per-complex CSV is best-effort; failures are non-fatal.
@@ -4574,7 +4605,8 @@ void DatasetRunner::write_report(const BenchmarkReport& report,
         std::ofstream ofs(csv_path);
 
         ofs << "pdb_id,best_score,rmsd_to_crystal,rmsd_hungarian,predicted_dG,"
-               "predicted_dH,predicted_TdS,shannon_entropy,num_poses,wall_time_s,success\n";
+               "predicted_dH,predicted_TdS,shannon_entropy,num_poses,wall_time_s,success,"
+               "cf_native\n";
 
         for (const auto& r : report.results) {
             ofs << std::fixed << std::setprecision(4)
@@ -4588,7 +4620,8 @@ void DatasetRunner::write_report(const BenchmarkReport& report,
                 << r.shannon_entropy << ","
                 << r.num_poses << ","
                 << r.wall_time_s << ","
-                << (r.success ? 1 : 0) << "\n";
+                << (r.success ? 1 : 0) << ","
+                << r.cf_native << "\n";
         }
 
         ofs.close();

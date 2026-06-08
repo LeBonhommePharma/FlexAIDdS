@@ -343,6 +343,7 @@ if(FLEXAIDS_BUILD_CORE)
 add_executable(FlexAID "")
 target_sources(FlexAID PRIVATE
         LIB/top.cpp
+        LIB/native_score.cpp
         LIB/fileio.cpp
         LIB/assign_shift.cpp
         LIB/buildic.cpp

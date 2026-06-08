@@ -141,6 +141,8 @@ struct DockingResult {
     long  individuals_total{0};       // total evaluations (across all generations)
     float clash_rate{0.0f};           // clashed / total — high (>0.95) = stuck GA
     bool  stuck{false};               // true when clash_rate > 0.95 and F > 0
+    // Native-pose CF diagnostic (scored before the GA via FLEXAIDDS_SCORE_NATIVE)
+    float cf_native{0.0f};            // CF at crystal pose; 0.0 when not run
 };
 
 /// Aggregate benchmark report
