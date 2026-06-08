@@ -125,8 +125,8 @@ void cluster(FA_Global* FA, GB_Global* GB, VC_Global* VC, chromosome* chrom, gen
 		if(FA->temperature > 0)
 		{
 			double Pj = exp((-1.0) * FA->beta * chrom[j].app_evalue) / partition_function;
-			Clus_ACF[num_of_clusters] = (double)( ( Pj * chrom[j].app_evalue) - (FA->temperature * Pj * log(Pj)) );
-			Clus_TCF[num_of_clusters] = (double)( ( Pj * chrom[j].app_evalue) - (FA->temperature * Pj * log(Pj)) );
+			Clus_ACF[num_of_clusters] = (double)( ( Pj * chrom[j].app_evalue) + (FA->temperature * Pj * log(Pj)) );
+			Clus_TCF[num_of_clusters] = (double)( ( Pj * chrom[j].app_evalue) + (FA->temperature * Pj * log(Pj)) );
 		}
 		else
 		{
