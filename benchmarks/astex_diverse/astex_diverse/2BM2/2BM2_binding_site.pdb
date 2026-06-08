@@ -1,0 +1,5 @@
+#REMARK  PARENTFILE  /var/folders/8b/tgtvwb_j6zd_g03vl1w4ykfw0000gn/T/gc_2BM2_ogeaqvik/2BM2.pdb
+ATOM   1687  CG  GLU A 217      27.936  73.628  79.367  1.00 17.65           C  
+ATOM   4513  CE2 TYR C  95      29.143  68.649  82.508  1.00 28.58           C  
+ATOM   4514  CZ  TYR C  95      29.186  69.136  81.213  1.00 26.47           C  
+ATOM   4515  OH  TYR C  95      28.344  70.154  80.859  1.00 31.15           O  
