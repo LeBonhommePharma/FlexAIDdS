@@ -159,6 +159,8 @@ add_library(flexaid_core OBJECT
     direct_input.cpp
     spfunction.cpp
     tENCoM/tencm_cpu_fallback.cpp
+    # ── Native-pose CF scoring diagnostic (DatasetRunner IdealPopulation) ──
+    native_score.cpp
 )
 
 target_include_directories(flexaid_core PUBLIC
