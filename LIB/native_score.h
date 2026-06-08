@@ -8,10 +8,11 @@
 //
 // Trigger:  set env var  FLEXAIDDS_SCORE_NATIVE=1  before launching FlexAIDdS.
 //
-// Optional: set  FLEXAIDDS_RMSDST=<path>  to load reference coordinates from a
-//   separate file (SDF or PDB format).  If unset, FlexAIDdS uses the
-//   coordinates already loaded from the input ligand file (ideal when the input
-//   IS the crystal SDF, as in DatasetRunner benchmark runs).
+// Coordinates: always uses atoms[].coor[] — the crystal ligand coordinates in
+//   the PROCESSED internal frame (same frame as the cleft grid).  FLEXAIDDS_RMSDST
+//   is intentionally ignored for coordinate input: that file holds raw
+//   crystallographic coordinates which are in the wrong frame and cause +500M
+//   steric-clash explosions.
 //
 // Output:  one line on stderr  (DatasetRunner parses the cf= field):
 //   [NATIVE_CF] cf=<total> breakdown=com:<v>,wal:<v>,sas:<v>,con:<v>

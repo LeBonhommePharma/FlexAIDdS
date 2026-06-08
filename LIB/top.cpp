@@ -1589,10 +1589,19 @@ int main(int argc, char **argv){
 	// DatasetRunner sets FLEXAIDDS_SCORE_NATIVE=1 + FLEXAIDDS_RMSDST=<crystal.sdf>
 	// per entry; parses [NATIVE_CF] from stderr.log alongside the GA results.
 	// Prints one line to stderr, then returns — the GA continues normally.
+	// FLEXAIDDS_NATIVE_ONLY=1: exit immediately after [NATIVE_CF] (smoke-test / CI).
+	// DatasetRunner uses FLEXAIDDS_SCORE_NATIVE=1 alone so the GA still runs and
+	// produces pose files that DatasetRunner parses alongside [NATIVE_CF].
 	{
-		const char* _native_env = std::getenv("FLEXAIDDS_SCORE_NATIVE");
-		if (_native_env && _native_env[0] != '\0' && std::strcmp(_native_env, "0") != 0) {
+		const char* _native_env  = std::getenv("FLEXAIDDS_SCORE_NATIVE");
+		const char* _native_only = std::getenv("FLEXAIDDS_NATIVE_ONLY");
+		const bool  do_native    = (_native_env  && _native_env[0]  != '\0' && std::strcmp(_native_env,  "0") != 0)
+		                        || (_native_only && _native_only[0] != '\0' && std::strcmp(_native_only, "0") != 0);
+		if (do_native) {
 			score_native_pose(FA, VC, atoms, residue, cleftgrid);
+			if (_native_only && _native_only[0] != '\0' && std::strcmp(_native_only, "0") != 0) {
+				std::exit(0);  // native-only mode: bail before GA (does not write pose files)
+			}
 		}
 	}
 
