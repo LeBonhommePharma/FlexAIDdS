@@ -4036,8 +4036,17 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                    << "    \"num_generations\": " << n_gen_scaled << ",\n"
                    << "    \"crossover_rate\": 0.8,\n"
                    << "    \"mutation_rate\": 0.03,\n"
-                   << "    \"fitness_model\": \"SMFREE\"\n"
-                   << "  }";
+                   // Shannon configurational entropy in the GA fitness is OFF by
+                   // default (config_parser ga.use_shannon=false). Setting the
+                   // env var FLEXAIDDS_USE_SHANNON=1 emits use_shannon:true so the
+                   // Shannon-ON vs default A/B is a single-flag toggle on the same
+                   // binary — no source fork. The flag is echoed into the per-case
+                   // dock_config.json so the experiment arm is greppable on disk.
+                   << "    \"fitness_model\": \"SMFREE\"";
+                if (std::getenv("FLEXAIDDS_USE_SHANNON")) {
+                    jf << ",\n    \"use_shannon\": true";
+                }
+                jf << "\n  }";
                 // If a grid file from a prior same-receptor run exists, tell
                 // FlexAIDdS to reuse it instead of regenerating from scratch.
                 if (!reusable_grid_path.empty()) {
@@ -4086,8 +4095,50 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
             // PDB-id hash → reproducible.  entry.ligand_path (crystal frame) is
             // preserved untouched for the RMSD reference below.  On any failure
             // we fall back to the original file rather than abort the run.
+            //
+            // ── v20 oracle-mode native-seed fix ──────────────────────────
+            // FlexAIDdS builds its internal-coordinate (IC) frame relative to the
+            // *input* ligand orientation.  The reference-ligand "direct seed"
+            // (seed_fraction 0.90 below) seeds the population's opt_par with the IC
+            // zero-rotation state — which decodes to whatever orientation the input
+            // ligand has.  When we blind (rotate) the input, those native seeds
+            // start at the BLINDED orientation, not the crystal pose, so the
+            // ~90% native-seeded chromosomes begin at the right translation but the
+            // wrong orientation (v19: 0/71 sub-2 Å).
+            //
+            // Oracle mode explicitly provides the crystal binding site (via the
+            // FLEXAIDDS_ORACLE_SITE env passed below, line ~4116) — there is no
+            // blind-validation cheating concern.  So in oracle direct mode we DO
+            // NOT blind: pass the crystal SDF directly, anchoring the IC frame to
+            // the crystal orientation so the native seeds start at the true crystal
+            // pose.  The random ~10% of the population still draw genes 1–3
+            // uniformly over [−180°,180°] regardless of the IC zero-point, so this
+            // does NOT preferentially start the random search at the answer — it
+            // only fixes the native-seeded fraction.
+            //
+            // Gate on the per-entry binding-site path actually being present (the
+            // exact condition under which FLEXAIDDS_ORACLE_SITE is handed to the
+            // engine), NOT merely on FLEXAIDDS_ORACLE_SITE_DIR being exported: the
+            // oracle site can resolve via the primary path (a *_binding_site.pdb
+            // adjacent to the receptor) with no env var set, and conversely the env
+            // var can be set while a particular entry has no site file.  Tying the
+            // skip to entry.binding_site_path keeps the IC-anchoring exactly aligned
+            // with whether the engine is search-confined to the crystal pocket.
+            // Native-seed flexibility (reference_ligand.seed_fraction 0.90 below) is
+            // suppressed only under the force_rigid ablation, so require !force_rigid.
+            const bool entry_has_oracle_site =
+                !entry.binding_site_path.empty() &&
+                fs::exists(entry.binding_site_path);
+            const bool oracle_direct_active =
+                entry_has_oracle_site && !config.force_rigid;
             std::string dock_ligand_path = entry.ligand_path;
-            {
+            if (oracle_direct_active) {
+                std::cerr << "  [ORACLE-SEED] " << entry.pdb_id
+                          << ": skipping pose-blinding (oracle direct mode) — "
+                             "IC frame anchored to crystal so native seeds start "
+                             "at the true crystal pose\n";
+                // dock_ligand_path stays = entry.ligand_path (crystal SDF).
+            } else {
                 std::string blinded = out_dir + "/" + entry.pdb_id + "_dockin"
                                     + fs::path(entry.ligand_path).extension().string();
                 const std::uint64_t blind_seed =
