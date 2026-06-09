@@ -4258,8 +4258,9 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                                 // stof stops at first non-numeric char (space)
                                 result.cf_native = std::stof(nline.substr(pos + 3));
                             } catch (...) {}
+                            break;  // got the value line; stop scanning
                         }
-                        break;  // only one [NATIVE_CF] line expected
+                        // WARN line (no cf=) — keep scanning for the value line
                     }
                 }
             }
