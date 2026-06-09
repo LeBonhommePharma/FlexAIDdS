@@ -31,7 +31,7 @@ void DensityPeak_cluster(FA_Global* FA, GB_Global* GB, VC_Global* VC, chromosome
 	float DC = 0.0f;
 	const int nAtoms = residue[atoms[FA->map_par[0].atm].ofres].latm[0] - residue[atoms[FA->map_par[0].atm].ofres].fatm[0] + 1;
 	uint maxDensity;
-	[[maybe_unused]] int mean, stddev;	int nResults;
+	[[maybe_unused]] float mean; float stddev;	int nResults;
 	int nClusters = 0;
 	float maxDist, minDist;
 	float* RMSD;
@@ -200,7 +200,7 @@ void DensityPeak_cluster(FA_Global* FA, GB_Global* GB, VC_Global* VC, chromosome
 	// Each chromosome's density is the count of neighbours within DC.
 	// Read-only access to RMSD matrix; each thread writes distinct Chrom[i].Density.
 	#ifdef _OPENMP
-	#pragma omp parallel for schedule(static)
+	#pragma omp parallel for schedule(static) private(j)
 	#endif
 	for(i = 0; i < num_chrom; ++i)
 	{
@@ -218,7 +218,7 @@ void DensityPeak_cluster(FA_Global* FA, GB_Global* GB, VC_Global* VC, chromosome
 	// (4) Fill out DP and Distance in Chrom — OpenMP parallelised
 	// Each chromosome independently finds its nearest higher-density neighbour.
 	#ifdef _OPENMP
-	#pragma omp parallel for schedule(dynamic)
+	#pragma omp parallel for schedule(dynamic) private(j)
 	#endif
 	for(i = 0; i < num_chrom; ++i)
 	{
@@ -316,9 +316,9 @@ void DensityPeak_cluster(FA_Global* FA, GB_Global* GB, VC_Global* VC, chromosome
 	// (6) Identify Cluster Centers
 	pChrom = NULL;
 	nClusters = 0;
+	mean   = calculate_mean(Chrom, num_chrom);
 	stddev = calculate_stddev(Chrom, num_chrom);
 	for(i = 1; i < num_chrom; ++i)
-	mean = calculate_mean(Chrom, num_chrom);
 	{
 		iChrom = &Chrom[i];
 		iiChrom = &Chrom[i-1];
