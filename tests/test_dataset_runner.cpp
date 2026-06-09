@@ -403,6 +403,91 @@ TEST(PDBParsing, ExtractLigandFromPDB) {
     fs::remove_all(test_dir);
 }
 
+// 1TW6 regression: the cognate ligand is the Smac AVPI tetrapeptide stored as
+// ATOM records in a short chain; the only HETATM are blacklisted buffers/ions
+// (BTB, EDO, ZN, LI).  HETATM-only extraction reports "only blacklisted
+// cofactors" and skips the entry.  The peptide fallback must rescue it by
+// harvesting the short standard-amino-acid chain and writing a multi-atom SDF.
+TEST(PDBParsing, ExtractPeptideLigandFallback) {
+    std::string test_dir = "/tmp/flexaidds_test_peptide";
+    fs::create_directories(test_dir);
+    std::string pdb_path = test_dir + "/test.pdb";
+    std::string sdf_path = test_dir + "/ligand.sdf";
+
+    {
+        std::ofstream ofs(pdb_path);
+        ofs << "HEADER    TEST PEPTIDE LIGAND\n";
+        // Receptor chain A: 60 standard residues so a clear receptor exists
+        // (kMinRecRes = 50).  Coordinates are far from the peptide so they never
+        // bridge into the ligand component.
+        int serial = 1;
+        for (int r = 1; r <= 60; ++r) {
+            float bx = 200.0f + static_cast<float>(r);
+            char buf[128];
+            std::snprintf(buf, sizeof(buf),
+                "ATOM  %5d  CA  ALA A%4d    %8.3f%8.3f%8.3f  1.00 10.00           C\n",
+                serial++, r, bx, 0.0f, 0.0f);
+            ofs << buf;
+        }
+        // Ligand chain C: AVPI tetrapeptide (real 1TW6 chain C coordinates).
+        const char* avpi =
+            "ATOM   1495  N   ALA C   1      86.680  60.766  15.403  1.00  5.51           N\n"
+            "ATOM   1496  CA  ALA C   1      85.268  60.974  15.829  1.00  8.36           C\n"
+            "ATOM   1497  C   ALA C   1      84.459  61.499  14.652  1.00  9.27           C\n"
+            "ATOM   1498  O   ALA C   1      85.021  61.916  13.640  1.00  8.72           O\n"
+            "ATOM   1499  CB  ALA C   1      85.198  61.933  17.006  1.00 10.14           C\n"
+            "ATOM   1500  N   VAL C   2      83.140  61.448  14.785  1.00 10.44           N\n"
+            "ATOM   1501  CA  VAL C   2      82.223  61.934  13.754  1.00  9.18           C\n"
+            "ATOM   1502  C   VAL C   2      81.061  62.685  14.398  1.00  9.13           C\n"
+            "ATOM   1503  O   VAL C   2      80.740  62.439  15.558  1.00  8.39           O\n"
+            "ATOM   1504  CB  VAL C   2      81.663  60.772  12.895  1.00  9.29           C\n"
+            "ATOM   1505  CG1 VAL C   2      82.786  60.057  12.156  1.00 10.46           C\n"
+            "ATOM   1506  CG2 VAL C   2      80.853  59.787  13.748  1.00 10.38           C\n"
+            "ATOM   1507  N   PRO C   3      80.418  63.597  13.669  1.00  8.40           N\n"
+            "ATOM   1508  CA  PRO C   3      79.250  64.295  14.224  1.00  9.15           C\n"
+            "ATOM   1509  C   PRO C   3      78.101  63.346  14.595  1.00  9.70           C\n"
+            "ATOM   1510  O   PRO C   3      77.916  62.319  13.946  1.00  8.21           O\n"
+            "ATOM   1511  CB  PRO C   3      78.840  65.251  13.101  1.00 10.26           C\n"
+            "ATOM   1512  CG  PRO C   3      80.065  65.406  12.271  1.00 11.14           C\n"
+            "ATOM   1513  CD  PRO C   3      80.741  64.070  12.312  1.00 11.16           C\n"
+            "ATOM   1514  N   ILE C   4      77.342  63.698  15.628  1.00 10.20           N\n"
+            "ATOM   1515  CA  ILE C   4      76.248  62.854  16.112  1.00 11.44           C\n"
+            "ATOM   1516  C   ILE C   4      75.122  62.775  15.082  1.00 10.89           C\n"
+            "ATOM   1517  O   ILE C   4      74.908  63.716  14.327  1.00  9.55           O\n"
+            "ATOM   1518  CB  ILE C   4      75.716  63.384  17.468  1.00 10.54           C\n"
+            "ATOM   1519  CG1 ILE C   4      76.766  63.159  18.562  1.00  9.08           C\n"
+            "ATOM   1520  CG2 ILE C   4      74.383  62.711  17.841  1.00 11.57           C\n"
+            "ATOM   1521  CD1 ILE C   4      76.443  63.841  19.889  1.00  9.00           C\n";
+        ofs << avpi;
+        // Blacklisted HETATM only: buffer + metal ions.
+        ofs << "HETATM 1566  C1  BTB B 331      69.509  48.419  59.696  1.00 33.71           C\n";
+        ofs << "HETATM 9001 ZN    ZN B 401      70.000  50.000  60.000  1.00  5.00          ZN\n";
+        ofs << "HETATM 9002  O   HOH B 500      30.000  30.000  30.000  1.00  5.00           O\n";
+        ofs << "END\n";
+    }
+
+    DatasetRunner runner(test_dir + "/cache");
+    bool extracted = runner.extract_ligand(pdb_path, sdf_path);
+    EXPECT_TRUE(extracted);
+    ASSERT_TRUE(fs::exists(sdf_path));
+    EXPECT_GT(fs::file_size(sdf_path), 0u);
+
+    // Title is the N-terminal residue name; counts line must report all 27
+    // heavy atoms of the AVPI tetrapeptide.
+    std::ifstream ifs(sdf_path);
+    std::string l0, l1, l2, counts;
+    std::getline(ifs, l0);      // title (N-term residue, e.g. ALA)
+    std::getline(ifs, l1);
+    std::getline(ifs, l2);
+    std::getline(ifs, counts);  // V2000 counts line
+    int natoms = std::stoi(counts.substr(0, 3));
+    int nbonds = std::stoi(counts.substr(3, 3));
+    EXPECT_EQ(natoms, 27);          // AVPI heavy-atom count
+    EXPECT_GE(nbonds, 26);          // connected peptide (tree has natoms-1 bonds; PRO ring adds one)
+
+    fs::remove_all(test_dir);
+}
+
 TEST(PDBParsing, ExtractLigandFromMMCIFWithChemCompBonds) {
     std::string test_dir = "/tmp/flexaidds_test_extract_mmcif";
     fs::create_directories(test_dir);
@@ -469,6 +554,80 @@ TEST(PDBParsing, ExtractLigandFromMMCIFWithChemCompBonds) {
     counts_stream >> atom_count >> bond_count;
     EXPECT_EQ(atom_count, 4);
     EXPECT_EQ(bond_count, 3);
+
+    fs::remove_all(test_dir);
+}
+
+// 1TW6 regression, mmCIF path: the peptide fallback must also fire when the
+// structure is an mmCIF (the benchmark prefers the companion CIF for ligand
+// identity).  Exercises parse_cif_hetatm_local(..., "ATOM").
+TEST(PDBParsing, ExtractPeptideLigandFallbackMMCIF) {
+    std::string test_dir = "/tmp/flexaidds_test_peptide_cif";
+    fs::create_directories(test_dir);
+    std::string cif_path = test_dir + "/test.cif";
+    std::string sdf_path = test_dir + "/ligand.sdf";
+
+    {
+        std::ofstream ofs(cif_path);
+        ofs << "data_test\n#\nloop_\n";
+        ofs << "_atom_site.group_PDB\n_atom_site.id\n_atom_site.type_symbol\n";
+        ofs << "_atom_site.auth_atom_id\n_atom_site.label_alt_id\n_atom_site.auth_comp_id\n";
+        ofs << "_atom_site.auth_asym_id\n_atom_site.auth_seq_id\n";
+        ofs << "_atom_site.Cartn_x\n_atom_site.Cartn_y\n_atom_site.Cartn_z\n";
+        ofs << "_atom_site.occupancy\n_atom_site.B_iso_or_equiv\n";
+        // Receptor chain A: 55 residues (> kMinRecRes) far from the peptide.
+        int id = 1;
+        for (int r = 1; r <= 55; ++r) {
+            char buf[160];
+            std::snprintf(buf, sizeof(buf),
+                "ATOM %d C CA . ALA A %d %.3f 0.000 0.000 1.00 10.00\n",
+                id++, r, 200.0 + r);
+            ofs << buf;
+        }
+        // Ligand chain C: AVPI tetrapeptide (real 1TW6 chain C coordinates).
+        struct A { const char* el; const char* nm; const char* res; int seq; double x, y, z; };
+        const A avpi[] = {
+            {"N","N","ALA",1,86.680,60.766,15.403},{"C","CA","ALA",1,85.268,60.974,15.829},
+            {"C","C","ALA",1,84.459,61.499,14.652},{"O","O","ALA",1,85.021,61.916,13.640},
+            {"C","CB","ALA",1,85.198,61.933,17.006},{"N","N","VAL",2,83.140,61.448,14.785},
+            {"C","CA","VAL",2,82.223,61.934,13.754},{"C","C","VAL",2,81.061,62.685,14.398},
+            {"O","O","VAL",2,80.740,62.439,15.558},{"C","CB","VAL",2,81.663,60.772,12.895},
+            {"C","CG1","VAL",2,82.786,60.057,12.156},{"C","CG2","VAL",2,80.853,59.787,13.748},
+            {"N","N","PRO",3,80.418,63.597,13.669},{"C","CA","PRO",3,79.250,64.295,14.224},
+            {"C","C","PRO",3,78.101,63.346,14.595},{"O","O","PRO",3,77.916,62.319,13.946},
+            {"C","CB","PRO",3,78.840,65.251,13.101},{"C","CG","PRO",3,80.065,65.406,12.271},
+            {"C","CD","PRO",3,80.741,64.070,12.312},{"N","N","ILE",4,77.342,63.698,15.628},
+            {"C","CA","ILE",4,76.248,62.854,16.112},{"C","C","ILE",4,75.122,62.775,15.082},
+            {"O","O","ILE",4,74.908,63.716,14.327},{"C","CB","ILE",4,75.716,63.384,17.468},
+            {"C","CG1","ILE",4,76.766,63.159,18.562},{"C","CG2","ILE",4,74.383,62.711,17.841},
+            {"C","CD1","ILE",4,76.443,63.841,19.889},
+        };
+        for (const auto& a : avpi) {
+            char buf[200];
+            std::snprintf(buf, sizeof(buf),
+                "ATOM %d %s %s . %s C %d %.3f %.3f %.3f 1.00 10.00\n",
+                id++, a.el, a.nm, a.res, a.seq, a.x, a.y, a.z);
+            ofs << buf;
+        }
+        // Blacklisted HETATM only.
+        ofs << "HETATM " << id++ << " C C1 . BTB B 331 69.509 48.419 59.696 1.00 33.71\n";
+        ofs << "HETATM " << id++ << " ZN ZN . ZN B 401 70.000 50.000 60.000 1.00 5.00\n";
+        ofs << "#\n";
+    }
+
+    DatasetRunner runner(test_dir + "/cache");
+    bool extracted = runner.extract_ligand(cif_path, sdf_path);
+    EXPECT_TRUE(extracted);
+    ASSERT_TRUE(fs::exists(sdf_path));
+
+    std::ifstream ifs(sdf_path);
+    std::string l0, l1, l2, counts;
+    std::getline(ifs, l0);
+    std::getline(ifs, l1);
+    std::getline(ifs, l2);
+    std::getline(ifs, counts);
+    int natoms = std::stoi(counts.substr(0, 3));
+    EXPECT_EQ(natoms, 27);   // AVPI heavy atoms, harvested from the CIF ATOM block
 
     fs::remove_all(test_dir);
 }

@@ -75,7 +75,12 @@ LIGAND_RESNAME: dict[str, str] = {
     "1T46": "STI",
     "1T9B": "FAD",
     "1TT1": "KAI",
-    "1TW6": "BTB",
+    # 1TW6 omitted from the HETATM map: its only HETATM are buffer/ion species
+    # (BTB Bis-Tris, EDO, ZN, LI) — all blacklisted cofactors.  The cognate
+    # ligand is the Smac-derived AVPI tetrapeptide bound in the IAP (IBM) groove,
+    # stored as ATOM records (chain C).  See PEPTIDE_LIGAND below.  Anchoring the
+    # cleft on BTB (the previous mapping) placed the oracle site ~39 Å away in a
+    # crystallographic buffer pocket on the other BIR copy.
     "1TZ8": "DES",
     "1U1C": "BAU",
     "1U4D": "DBQ",
@@ -111,6 +116,14 @@ LIGAND_RESNAME: dict[str, str] = {
     "2HB1": "512",
     "2HR7": "P33",
     "2J62": "GSZ",
+}
+
+# Peptide ligands stored as ATOM records rather than HETATM small molecules.
+# Maps PDB ID → (resname, resnum, chain) of an anchor residue inside the peptide
+# (a residue buried in the binding groove works best as the Get_Cleft anchor).
+# 1TW6: Smac AVPI tetrapeptide in chain C — anchor on Pro3, central to the motif.
+PEPTIDE_LIGAND: dict[str, tuple[str, int, str]] = {
+    "1TW6": ("PRO", 3, "C"),
 }
 
 RCSB_URL = "https://files.rcsb.org/download/{pdb}.pdb"
@@ -198,9 +211,28 @@ def run_get_cleft(get_cleft: Path, pdb_path: Path, anchor: str, work_dir: Path) 
     return clf_out
 
 
+def find_peptide_anchor(pdb_path: Path, resname: str, resnum: int, chain: str
+                        ) -> tuple[int, str] | None:
+    """
+    Confirm an ATOM-record peptide anchor residue exists.  Peptide ligands (e.g.
+    1TW6 Smac AVPI) are stored as ATOM, not HETATM, so the HETATM scanner misses
+    them.  Returns (resnum, chain) if the residue is present, else None.
+    """
+    with open(pdb_path) as f:
+        for line in f:
+            if not line.startswith("ATOM"):
+                continue
+            if (line[17:20].strip() == resname
+                    and line[21].strip() == chain.strip()
+                    and line[22:26].strip() == str(resnum)):
+                return resnum, chain
+    return None
+
+
 def process_one(pdb: str, get_cleft: Path, dry_run: bool) -> bool:
     """Process a single Astex complex. Returns True on success."""
-    resname = LIGAND_RESNAME.get(pdb)
+    peptide = PEPTIDE_LIGAND.get(pdb)
+    resname = peptide[0] if peptide else LIGAND_RESNAME.get(pdb)
     if resname is None:
         print(f"[{pdb}] SKIP — no ligand resname mapping")
         return False
@@ -224,11 +256,19 @@ def process_one(pdb: str, get_cleft: Path, dry_run: bool) -> bool:
             print(f"  ERROR: download failed: {e}")
             return False
 
-        # 2. Find ligand anchor (resnum + chain)
-        anchor_info = find_ligand_anchor(pdb_path, resname)
-        if anchor_info is None:
-            print(f"  ERROR: no HETATM {resname!r} found in downloaded PDB")
-            return False
+        # 2. Find ligand anchor (resnum + chain).  Peptide ligands are stored as
+        #    ATOM records; small-molecule ligands as HETATM.
+        if peptide:
+            _, p_resnum, p_chain = peptide
+            anchor_info = find_peptide_anchor(pdb_path, resname, p_resnum, p_chain)
+            if anchor_info is None:
+                print(f"  ERROR: no ATOM peptide anchor {resname}{p_resnum}{p_chain} in PDB")
+                return False
+        else:
+            anchor_info = find_ligand_anchor(pdb_path, resname)
+            if anchor_info is None:
+                print(f"  ERROR: no HETATM {resname!r} found in downloaded PDB")
+                return False
         resnum, chain = anchor_info
         anchor = build_anchor_string(resname, resnum, chain)
         print(f"  Anchor: {resname} resnum={resnum} chain={chain!r} → -a {anchor}")
@@ -266,8 +306,9 @@ def main() -> int:
         print(f"ERROR: Get_Cleft binary not found: {args.get_cleft}", file=sys.stderr)
         return 1
 
-    targets = [t.upper() for t in args.targets] if args.targets else sorted(LIGAND_RESNAME)
-    unknown = [t for t in targets if t not in LIGAND_RESNAME]
+    known = set(LIGAND_RESNAME) | set(PEPTIDE_LIGAND)
+    targets = [t.upper() for t in args.targets] if args.targets else sorted(known)
+    unknown = [t for t in targets if t not in known]
     if unknown:
         print(f"ERROR: unknown PDB IDs: {unknown}", file=sys.stderr)
         return 1

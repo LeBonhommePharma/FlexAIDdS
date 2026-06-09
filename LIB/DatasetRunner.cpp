@@ -1178,7 +1178,12 @@ static int cif_int(const std::vector<std::string>& tokens, int idx) {
     return std::atoi(value.c_str());
 }
 
-static std::vector<PDBAtom> parse_cif_hetatm_local(const std::string& cif_path) {
+// Parse _atom_site records of a given group ("HETATM" by default; pass "ATOM"
+// to harvest polymer/peptide coordinates).  Kept name for call-site stability;
+// the want_group parameter generalises it to the ATOM block used by the
+// peptide-ligand fallback in extract_ligand().
+static std::vector<PDBAtom> parse_cif_hetatm_local(const std::string& cif_path,
+                                                   const std::string& want_group = "HETATM") {
     std::ifstream ifs(cif_path);
     if (!ifs) return {};
 
@@ -1210,13 +1215,13 @@ static std::vector<PDBAtom> parse_cif_hetatm_local(const std::string& cif_path) 
         int occ_col = cif_col(headers, "occupancy");
         int b_col = cif_col(headers, "B_iso_or_equiv");
 
-        if (cif_val(tokens, group_col) != "HETATM") return;
+        if (cif_val(tokens, group_col) != want_group) return;
         std::string alt = cif_val(tokens, alt_col);
         if (alt != "." && alt != "?" && alt != "A") return;
         if (x_col < 0 || y_col < 0 || z_col < 0) return;
 
         PDBAtom atom;
-        atom.is_hetatm = true;
+        atom.is_hetatm = (want_group == "HETATM");
         atom.serial = cif_int(tokens, id_col);
         if (atom.serial == 0) atom.serial = generated_serial++;
         atom.name = trim_copy(cif_val(tokens, atom_col));
@@ -1410,6 +1415,125 @@ std::vector<PDBAtom> DatasetRunner::parse_pdb_hetatm(const std::string& pdb_path
     }
 
     return atoms;
+}
+
+// Parse ATOM (polymer) records from a legacy PDB file.  Mirrors the column
+// extraction of parse_pdb_hetatm but harvests the ATOM block, used by the
+// peptide-ligand fallback when a structure carries its cognate ligand as a
+// short polypeptide chain (e.g. 1TW6: the Smac AVPI motif in chain C) rather
+// than as a HETATM small molecule.
+static std::vector<PDBAtom> parse_pdb_atom_records_local(const std::string& pdb_path) {
+    std::vector<PDBAtom> atoms;
+    std::ifstream ifs(pdb_path);
+    if (!ifs) return atoms;
+
+    std::string line;
+    while (std::getline(ifs, line)) {
+        while (line.size() < 80) line += ' ';
+        if (line.compare(0, 6, "ATOM  ") != 0) continue;
+
+        PDBAtom atom;
+        atom.is_hetatm = false;
+        try { atom.serial = std::stoi(line.substr(6, 5)); } catch (...) { atom.serial = 0; }
+        atom.name    = line.substr(12, 4);
+        atom.altLoc  = line.substr(16, 1);
+        atom.resName = line.substr(17, 3);
+        atom.chainID = line.substr(21, 1);
+        try { atom.resSeq = std::stoi(line.substr(22, 4)); } catch (...) { atom.resSeq = 0; }
+        try {
+            atom.x = std::stof(line.substr(30, 8));
+            atom.y = std::stof(line.substr(38, 8));
+            atom.z = std::stof(line.substr(46, 8));
+        } catch (...) { continue; }
+        try { atom.occupancy  = std::stof(line.substr(54, 6)); } catch (...) { atom.occupancy = 1.0f; }
+        try { atom.tempFactor = std::stof(line.substr(60, 6)); } catch (...) { atom.tempFactor = 0.0f; }
+        if (line.size() >= 78) {
+            atom.element = line.substr(76, 2);
+            while (!atom.element.empty() && atom.element.front() == ' ')
+                atom.element.erase(atom.element.begin());
+            while (!atom.element.empty() && atom.element.back() == ' ')
+                atom.element.pop_back();
+        }
+        atom.resName = trim_copy(atom.resName);
+        atom.name    = trim_copy(atom.name);
+        atom.chainID = trim_copy(atom.chainID);
+        atoms.push_back(std::move(atom));
+    }
+    return atoms;
+}
+
+// Peptide-ligand fallback selector.
+//
+// A handful of benchmark complexes co-crystallise their cognate ligand as a
+// short polypeptide rather than a HETATM small molecule.  The canonical case is
+// 1TW6 (ML-IAP/XIAP BIR domain): the only HETATM groups are buffer/ion species
+// (BTB, EDO, ZN, LI) — all correctly blacklisted — while the actual ligand is
+// the Smac-derived AVPI tetrapeptide sitting in the IAP-binding (IBM) groove,
+// stored as ATOM records in a dedicated short chain.  HETATM-only extraction
+// therefore reports "only blacklisted cofactors" and the entry is skipped.
+//
+// This selector scans the ATOM polymer chains and returns the atoms of the most
+// ligand-like short peptide: an all-standard-amino-acid chain of 2..kMaxPepRes
+// residues, present alongside a clearly larger receptor chain (>= kMinRecRes
+// residues) so we never mistake a small stand-alone protein for a ligand.  When
+// several qualify (1TW6 has two symmetry copies, chains C=AVPI and D=AVPIAQ) the
+// shortest is chosen — the minimal, cleanest motif — with chain ID as a stable
+// tie-break.  Returns an empty vector when no peptide ligand is identifiable, in
+// which case extract_ligand keeps its original failure behaviour.
+static std::vector<PDBAtom> collect_peptide_ligand_atoms(const std::string& structure_path) {
+    constexpr size_t kMaxPepRes = 30;   // upper bound on a "ligand" peptide length
+    constexpr size_t kMinRecRes = 50;   // a real receptor chain must be at least this long
+
+    std::string lower = structure_path;
+    std::transform(lower.begin(), lower.end(), lower.begin(),
+                   [](unsigned char c) { return std::tolower(c); });
+    const bool is_cif =
+        (lower.size() >= 4 && lower.rfind(".cif") == lower.size() - 4) ||
+        (lower.size() >= 6 && lower.rfind(".mmcif") == lower.size() - 6);
+
+    std::vector<PDBAtom> atoms = is_cif
+        ? parse_cif_hetatm_local(structure_path, "ATOM")
+        : parse_pdb_atom_records_local(structure_path);
+    if (atoms.empty()) return {};
+
+    struct ChainInfo {
+        std::set<int>       residues;
+        std::vector<size_t> atom_idx;
+        bool                all_standard = true;
+    };
+    std::map<std::string, ChainInfo> chains;
+    for (size_t i = 0; i < atoms.size(); ++i) {
+        const auto& a = atoms[i];
+        // Keep only the primary alternate conformer.
+        if (a.altLoc != " " && a.altLoc != "" && a.altLoc != "A") continue;
+        ChainInfo& ci = chains[a.chainID];
+        ci.residues.insert(a.resSeq);
+        ci.atom_idx.push_back(i);
+        if (!standard_polymer_residue_code(a.resName)) ci.all_standard = false;
+    }
+    if (chains.empty()) return {};
+
+    size_t max_res = 0;
+    for (const auto& [cid, ci] : chains) max_res = std::max(max_res, ci.residues.size());
+    if (max_res < kMinRecRes) return {};   // no clear receptor → do not guess a ligand
+
+    const std::string* best = nullptr;
+    size_t best_res = std::numeric_limits<size_t>::max();
+    for (const auto& [cid, ci] : chains) {
+        const size_t nres = ci.residues.size();
+        if (nres < 2 || nres > kMaxPepRes) continue;   // too short / too long to be a peptide ligand
+        if (!ci.all_standard)              continue;   // contains non-standard residue → not a clean peptide
+        if (nres < best_res || (nres == best_res && best && cid < *best)) {
+            best_res = nres;
+            best = &cid;
+        }
+    }
+    if (!best) return {};
+
+    std::vector<PDBAtom> out;
+    out.reserve(chains[*best].atom_idx.size());
+    for (size_t i : chains[*best].atom_idx) out.push_back(atoms[i]);
+    return out;
 }
 
 // Detect a degenerate "all-single-bond" cached ligand.  Some early extractions
@@ -1695,6 +1819,39 @@ bool DatasetRunner::extract_ligand(const std::string& structure_path,
         ligand_atoms.push_back(atom);
     }
 
+    // Peptide-ligand fallback.  When no HETATM small molecule survives the
+    // cofactor/buffer/glycan filters, the cognate ligand may be a short
+    // polypeptide stored as ATOM records (e.g. 1TW6: Smac AVPI tetrapeptide in
+    // the IBM groove; the only HETATM are BTB/EDO/ZN/LI buffers).  Harvest that
+    // peptide chain and feed it through the identical bond-perception + SDF
+    // pipeline below.
+    if (residue_groups.empty()) {
+        std::vector<PDBAtom> peptide = collect_peptide_ligand_atoms(structure_path);
+        if (peptide.size() >= 3) {
+            const std::string pep_chain = peptide.front().chainID;
+            std::cerr << "  [LIGAND] " << structure_path
+                      << ": no non-cofactor HETATM ligand";
+            if (!skipped_cofactor_order.empty()) {
+                std::cerr << " (skipped buffer/cofactor ";
+                for (size_t i = 0; i < skipped_cofactor_order.size(); ++i)
+                    std::cerr << (i ? ", " : "") << skipped_cofactor_order[i]
+                              << "(" << skipped_cofactors[skipped_cofactor_order[i]] << ")";
+                std::cerr << ")";
+            }
+            std::cerr << " — falling back to peptide chain " << pep_chain
+                      << " (" << peptide.size() << " atoms, N-term "
+                      << trim_copy(peptide.front().resName) << ")\n";
+
+            ligand_atoms = std::move(peptide);
+            residue_groups.clear();
+            for (size_t i = 0; i < ligand_atoms.size(); ++i) {
+                ResidueKey key{ligand_atoms[i].resName, ligand_atoms[i].chainID,
+                               ligand_atoms[i].resSeq};
+                residue_groups[key].push_back(i);
+            }
+        }
+    }
+
     if (residue_groups.empty()) {
         if (!skipped_cofactor_order.empty()) {
             std::cerr << "  [WARN] Every non-water HETATM residue in " << structure_path
@@ -1976,7 +2133,7 @@ bool DatasetRunner::extract_ligand(const std::string& structure_path,
 
     ofs << best_atom.resName << "\n";
     ofs << "  FlexAIDdS DatasetRunner\n";
-    ofs << "  Extracted from structure HETATM records | FLEXAIDDS_LIGAND_EXTRACTOR_V4\n";
+    ofs << "  Extracted from structure HETATM/peptide records | FLEXAIDDS_LIGAND_EXTRACTOR_V4\n";
 
     // Counts line — write ACTUAL bond count so readers respect the block
     size_t selected_bond_count = 0;
