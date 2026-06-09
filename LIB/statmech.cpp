@@ -51,6 +51,7 @@ namespace statmech {
 StatMechEngine::StatMechEngine(double temperature_K)
     : T_(temperature_K)
     , beta_(1.0 / (kB_kcal * temperature_K))
+    , beta_selection_(1.0 / temperature_K)   // 1/T convention for GA/cluster selection (P1)
 {
     if (temperature_K <= 0.0)
         throw std::invalid_argument("StatMechEngine: temperature must be > 0");
@@ -373,6 +374,33 @@ std::vector<double> StatMechEngine::boltzmann_weights() const {
     auto result = flexaids::compute_boltzmann_batch(energies, beta_);
 
     // Normalise weights accounting for multiplicities.
+    std::vector<double> w(N);
+    double Z_with_mult = 0.0;
+    for (std::size_t i = 0; i < N; ++i)
+        Z_with_mult += ensemble_[i].count * result.weights[i];
+
+    if (Z_with_mult > 0.0) {
+        for (std::size_t i = 0; i < N; ++i)
+            w[i] = ensemble_[i].count * result.weights[i] / Z_with_mult;
+    }
+    return w;
+}
+
+// ─── selection_weights ───────────────────────────────────────────────────────
+// Identical to boltzmann_weights() but uses β_sel = 1/T (NOT the kB-folded
+// physical β). For GA/cluster selection only — see header for the rationale.
+
+std::vector<double> StatMechEngine::selection_weights() const {
+    if (ensemble_.empty()) return {};
+
+    const std::size_t N = ensemble_.size();
+
+    std::vector<double> energies(N);
+    for (std::size_t i = 0; i < N; ++i)
+        energies[i] = ensemble_[i].energy;
+
+    auto result = flexaids::compute_boltzmann_batch(energies, beta_selection_);
+
     std::vector<double> w(N);
     double Z_with_mult = 0.0;
     for (std::size_t i = 0; i < N; ++i)

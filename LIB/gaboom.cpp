@@ -1995,9 +1995,13 @@ void calculate_fitness(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* chr
 				engine.add_sample(chrom[si].evalue);
 			}
 
-			// Compute ensemble thermodynamics and Boltzmann weights.
+			// Compute ensemble thermodynamics (physical β = 1/kBT) and
+			// SELECTION weights (β_sel = 1/T, matching the clustering
+			// convention FA->beta). Using the physical β here would collapse
+			// selection to a zero-temperature argmax (e^{βΔCF} with β≈1.68),
+			// killing the thermal diversity SMFREE is meant to inject. See P1.
 			auto thermo = engine.compute();
-			auto bweights = engine.boltzmann_weights();
+			auto bweights = engine.selection_weights();
 
 			// Store Boltzmann weights and free energy on each chromosome.
 			for (int si = 0; si < GB->num_chrom; si++) {

@@ -344,8 +344,33 @@ public:
     ComponentAverages component_averages(
         std::span<const EnergyComponents> components) const;
 
-    // Boltzmann weight vector (same order as insertion)
+    // Boltzmann weight vector (same order as insertion).
+    // Uses the PHYSICAL β = 1/(kB·T). This is the thermodynamically correct
+    // weighting and the public-API contract exercised by the Python tests —
+    // do NOT change its β convention.
     std::vector<double> boltzmann_weights() const;
+
+    // Selection-temperature weights for GA/cluster *selection* (NOT physics).
+    // Uses β_sel = 1/T — the SAME convention as FA->beta in the clustering
+    // code (read_input.cpp:251) — instead of the kB-folded β = 1/(kB·T).
+    //
+    // Rationale: CF "energies" are in arbitrary CF units, not kcal/mol, so
+    // folding the kcal-specific kB (≈0.001987) into the selection softmax
+    // inflates β to ≈1.68 at T=300. A CF spread of ~100 units then yields a
+    // Boltzmann ratio of e^{168} → effectively a zero-temperature argmax,
+    // collapsing the thermal diversity SMFREE is meant to inject. Using
+    // β_sel = 1/T matches the clustering convention (β≈0.0033) so selection
+    // and clustering weight poses consistently. compute()/boltzmann_weights()
+    // physics are left untouched. See P1 fix.
+    std::vector<double> selection_weights() const;
+
+    double beta_selection() const noexcept { return beta_selection_; }
+    void   set_selection_beta(double b) noexcept { beta_selection_ = b; }
+    void   set_selection_temperature(double T_sel) {
+        if (T_sel <= 0.0)
+            throw std::invalid_argument("StatMechEngine::set_selection_temperature: T must be > 0");
+        beta_selection_ = 1.0 / T_sel;
+    }
 
     // ΔG relative to another engine's ensemble
     double delta_G(const StatMechEngine& reference) const;
@@ -463,7 +488,8 @@ public:
 
 private:
     double T_;
-    double beta_;
+    double beta_;            // physical β = 1/(kB·T) — thermodynamics
+    double beta_selection_;  // selection β = 1/T — GA/cluster softmax (P1)
     std::vector<State> ensemble_;
 
     // Numerically stable log(Σ exp(x_i))
