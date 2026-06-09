@@ -3271,12 +3271,14 @@ int ictogene(const genlim* gene_lim, double ic){
 
 	int i = (int)((ic - gene_lim->min) / gene_lim->del);
 
-	double tot = 1.0;
-
-	while(i > 0){
-		tot -= gene_lim->bin;
-		i--;
-	}
+	// genetoic() decodes a gene by counting bins UP from `bin` and returns
+	// index i_dec = ceil(frac/bin) - 1.  The previous encoding here used a
+	// DECREASING index (tot = 1 - i*bin), which made genetoic(ictogene(ic))
+	// reflect to i_dec = nbin - i instead of round-tripping.  Encode the
+	// fractional position at the CENTER of bin i so the decoder recovers the
+	// same index: frac = (i + 0.5)*bin  =>  i_dec == i.  Same gene range and
+	// bin count — only the encode/decode correspondence is fixed.
+	double tot = ((double)i + 0.5) * gene_lim->bin;
 
 	int gene = RandomInt(tot);
 
