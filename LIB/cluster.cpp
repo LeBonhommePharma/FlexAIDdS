@@ -189,6 +189,30 @@ void cluster(FA_Global* FA, GB_Global* GB, VC_Global* VC, chromosome* chrom, gen
 		QuickSort_Clusters(Clus_TOP, Clus_FRE, Clus_TCF, Clus_ACF, Clus_GAPOP, 0, num_of_results-1);
 	}
 
+	// ── Emit rank-0 = lowest-CF representative ───────────────────────────────
+	// The ACF ordering above is the entropy-augmented cluster free energy, which
+	// can rank a densely-populated cluster at WORSE representative CF ahead of a
+	// sparse cluster at BETTER CF (e.g. 1KZK: emitted _0.pdb = -390.45 while a
+	// -420.62 representative existed in another cluster). DatasetRunner measures
+	// both the RMSD and best_score on the lowest "REMARK CF=" pose, and that
+	// REMARK is chrom[Clus_TOP[j]].evalue (see emission below). Re-sort the
+	// clusters by representative evalue ascending (most negative first) so the
+	// emitted _0.pdb is always the lowest-CF cluster representative the GA found.
+	// Selection sort over num_of_results (≤ max_results, small) reusing
+	// swap_clusters to keep all five parallel arrays consistent.
+	for(int a=0; a<num_of_results-1; ++a)
+	{
+		int best_idx = a;
+		for(int b=a+1; b<num_of_results; ++b)
+		{
+			if(chrom[Clus_TOP[b]].evalue < chrom[Clus_TOP[best_idx]].evalue)
+				best_idx = b;
+		}
+		if(best_idx != a)
+			swap_clusters(&Clus_TOP[a], &Clus_FRE[a], &Clus_TCF[a], &Clus_ACF[a], &Clus_GAPOP[a],
+			              &Clus_TOP[best_idx], &Clus_FRE[best_idx], &Clus_TCF[best_idx], &Clus_ACF[best_idx], &Clus_GAPOP[best_idx]);
+	}
+
 	// print cluster information
 	snprintf(tmp_end_strfile, MAX_PATH__, "%s.cad", end_strfile);
 	if (FA->htpmode == false)
