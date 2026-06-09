@@ -4347,6 +4347,40 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                       << "  — likely bad SDF bonds or grid placement\n";
         }
 
+        // ── best_score: report the EMITTED pose CF, not the stdout-trace min ──
+        // The stdout GA trace ("... cf=...") includes the gen-0 seeded population.
+        // With seed_fraction≈0.90 those seeded chromosomes start AT the crystal
+        // pose, so min(cf= over stdout) collapses onto cf_native — best_score
+        // ends up echoing the crystal score rather than the GA's emitted result
+        // (see project_pose_emission_blowup / project_vct_degeneracy_is_conflation).
+        // After the P0 emission fix (920609d) each emitted rank pose carries a
+        // valid "REMARK CF=" (its app_evalue). Parse the emitted poses and report
+        // the minimum-CF representative — the SAME pose the RMSD is measured on.
+        // Fall back to the stdout-trace min only if no emitted REMARK CF is found.
+        {
+            float emitted_best_cf = std::numeric_limits<float>::infinity();
+            for (int pi = 0; pi <= 19; pi++) {
+                std::string cand = out_prefix + "_" + std::to_string(pi) + ".pdb";
+                if (!fs::exists(cand)) continue;
+                std::ifstream pf(cand);
+                std::string pl;
+                while (std::getline(pf, pl)) {
+                    if (pl.find("REMARK CF=") != std::string::npos) {
+                        auto p2 = pl.find("CF=");
+                        if (p2 != std::string::npos) {
+                            try {
+                                float v = std::stof(pl.substr(p2 + 3));
+                                if (std::isfinite(v))
+                                    emitted_best_cf = std::min(emitted_best_cf, v);
+                            } catch (...) {}
+                        }
+                        break;  // one REMARK CF per pose file
+                    }
+                }
+            }
+            if (std::isfinite(emitted_best_cf)) best_cf = emitted_best_cf;
+        }
+
         if (!std::isfinite(best_cf)) best_cf = 0.0f;
         result.num_poses = n_poses;
         result.best_score = best_cf;
