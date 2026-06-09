@@ -489,6 +489,11 @@ void BindingMode::output_BindingMode(int num_result, char* end_strfile, char* tm
 
 	for (int k = 0; k < this->Population->GB->num_genes; ++k) this->Population->FA->opt_par[k] = Rep->chrom->genes[k].to_ic;
 
+	// Rebuild coordinates for output + populate per-optres CF breakdown.
+	// Returned re-score is discarded for the REMARK CF line: at emission
+	// Vcontacts can early-return a raw uncapped clash penalty that bypasses
+	// the per-contact wall cap and blows up the reported CF. Report the stored
+	// chromosome evalue — what the GA actually optimized.
 	CF = ic2cf(this->Population->FA, this->Population->VC, this->Population->atoms, this->Population->residue, this->Population->cleftgrid, this->Population->GB->num_genes, this->Population->FA->opt_par);
 
 	size_t remark_len = 0;
@@ -498,9 +503,9 @@ void BindingMode::output_BindingMode(int num_result, char* end_strfile, char* tm
 	snprintf(tmpremark, MAX_REMARK, "REMARK Fast OPTICS clustering algorithm used to output the OPTICS density center as Binding Mode representative\n");
 	safe_remark_cat(remark, tmpremark, &remark_len);
 
-	snprintf(tmpremark, MAX_REMARK, "REMARK CF=%8.5f\n", get_cf_evalue(&CF));
+	snprintf(tmpremark, MAX_REMARK, "REMARK CF=%8.5f\n", Rep->chrom->evalue);
 	safe_remark_cat(remark, tmpremark, &remark_len);
-	snprintf(tmpremark, MAX_REMARK, "REMARK CF.app=%8.5f\n", get_apparent_cf_evalue(&CF));
+	snprintf(tmpremark, MAX_REMARK, "REMARK CF.app=%8.5f\n", Rep->chrom->app_evalue);
 	safe_remark_cat(remark, tmpremark, &remark_len);
 
 	for (int j = 0; j < this->Population->FA->num_optres; ++j)
@@ -576,6 +581,9 @@ void BindingMode::output_dynamic_BindingMode(int num_result, char* end_strfile, 
 	{
 		for (int k = 0; k < this->Population->GB->num_genes; ++k) this->Population->FA->opt_par[k] = Pose->chrom->genes[k].to_ic;
 
+		// Re-score is discarded for the REMARK CF line (emission clash
+		// early-return blows up the raw penalty); report the stored chromosome
+		// evalue — what the GA optimized.
 		CF = ic2cf(this->Population->FA, this->Population->VC, this->Population->atoms, this->Population->residue, this->Population->cleftgrid, this->Population->GB->num_genes, this->Population->FA->opt_par);
 
 		size_t remark_len = 0;
@@ -584,9 +592,9 @@ void BindingMode::output_dynamic_BindingMode(int num_result, char* end_strfile, 
 		snprintf(tmpremark, MAX_REMARK, "REMARK Fast OPTICS clustering algorithm used to output the lowest OPTICS ordering as Binding Mode representative\n");
 		safe_remark_cat(remark, tmpremark, &remark_len);
 
-		snprintf(tmpremark, MAX_REMARK, "REMARK CF=%8.5f\n", get_cf_evalue(&CF));
+		snprintf(tmpremark, MAX_REMARK, "REMARK CF=%8.5f\n", Pose->chrom->evalue);
 		safe_remark_cat(remark, tmpremark, &remark_len);
-		snprintf(tmpremark, MAX_REMARK, "REMARK CF.app=%8.5f\n", get_apparent_cf_evalue(&CF));
+		snprintf(tmpremark, MAX_REMARK, "REMARK CF.app=%8.5f\n", Pose->chrom->app_evalue);
 		safe_remark_cat(remark, tmpremark, &remark_len);
 
 		for (int j = 0; j < this->Population->FA->num_optres; ++j)

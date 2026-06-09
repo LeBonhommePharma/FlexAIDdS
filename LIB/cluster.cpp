@@ -178,12 +178,17 @@ void cluster(FA_Global* FA, GB_Global* GB, VC_Global* VC, chromosome* chrom, gen
 		if(num_of_clusters == num_of_results){break;}
 	}
 
+	// Cap num_of_results to actual cluster count before sorting — arrays are
+	// malloc'd to num_chrom elements; sorting past num_of_clusters overflows
+	// when num_chrom < FA->max_results (e.g. entropy-collapsed run with 2 poses).
+	if(num_of_clusters < num_of_results){num_of_results=num_of_clusters;}
+
 	if(FA->temperature)
 	{
 		// Reordering the clusters properly by lowest ACF values first (after considering cluster's entropy !)
 		QuickSort_Clusters(Clus_TOP, Clus_FRE, Clus_TCF, Clus_ACF, Clus_GAPOP, 0, num_of_results-1);
 	}
-      
+
 	// print cluster information
 	snprintf(tmp_end_strfile, MAX_PATH__, "%s.cad", end_strfile);
 	if (FA->htpmode == false)
@@ -215,9 +220,6 @@ void cluster(FA_Global* FA, GB_Global* GB, VC_Global* VC, chromosome* chrom, gen
 		}
 		CloseFile_B(&outfile_ptr,"w");
 	}
-	
-
-	if(num_of_clusters < num_of_results){num_of_results=num_of_clusters;}
         //num_of_results=1;
       
 	printf("num_of_clusters=%d num_of_results=%d\n",num_of_clusters,num_of_results);
@@ -237,15 +239,21 @@ void cluster(FA_Global* FA, GB_Global* GB, VC_Global* VC, chromosome* chrom, gen
 			FA->opt_par[k] = chrom[Clus_TOP[j]].genes[k].to_ic;
 		}
 
+		// Rebuild atom coordinates for PDB output and populate the per-optres
+		// CF breakdown as a side effect. The returned re-score is NOT used for
+		// the REMARK CF line: at emission Vcontacts can early-return a raw
+		// uncapped clash penalty (up to ~1e15) that bypasses the per-contact
+		// wall cap and blows up the reported CF. Report the stored chromosome
+		// evalue instead — that is exactly what the GA optimized.
 		cf=ic2cf(FA,VC,atoms,residue,cleftgrid,GB->num_genes,FA->opt_par);
 
 		size_t remark_len = 0;
 		remark[0] = '\0';
 		safe_remark_cat(remark, "REMARK optimized structure\n", &remark_len);
 
-		snprintf(tmpremark, MAX_REMARK, "REMARK CF=%8.5f\n",get_cf_evalue(&cf));
+		snprintf(tmpremark, MAX_REMARK, "REMARK CF=%8.5f\n",chrom[Clus_TOP[j]].evalue);
 		safe_remark_cat(remark, tmpremark, &remark_len);
-		snprintf(tmpremark, MAX_REMARK, "REMARK CF.app=%8.5f\n",get_apparent_cf_evalue(&cf));
+		snprintf(tmpremark, MAX_REMARK, "REMARK CF.app=%8.5f\n",chrom[Clus_TOP[j]].app_evalue);
 		safe_remark_cat(remark, tmpremark, &remark_len);
 
 		for(i=0;i<FA->num_optres;++i)

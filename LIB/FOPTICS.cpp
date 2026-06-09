@@ -362,15 +362,18 @@ void FastOPTICS::output_3d_OPTICS_ordering(char* end_strfile, char* tmp_end_strf
 		for(std::vector<Pose>::iterator Pose = this->OPTICS.begin(); Pose != this->OPTICS.end(); ++Pose, ++nModel)
 		{
 			for(int k = 0; k < this->GB->num_genes; ++k) this->FA->opt_par[k] = Pose->chrom->genes[k].to_ic;
+			// Re-score is discarded for the REMARK CF line (emission clash
+			// early-return blows up the raw penalty); report the stored
+			// chromosome evalue — what the GA optimized.
 			CF = ic2cf(this->FA, this->VC, this->atoms, this->residue, this->cleftgrid, this->GB->num_genes, this->FA->opt_par);
 			size_t remark_len = 0;
 			remark[0] = '\0';
 			safe_remark_cat(remark, "REMARK optimized structure\n", &remark_len);
 			snprintf(tmpremark, MAX_REMARK, "REMARK Fast OPTICS clustering algorithm used to order Poses in OPTICS\n");
 			safe_remark_cat(remark, tmpremark, &remark_len);
-			snprintf(tmpremark, MAX_REMARK, "REMARK CF=%8.5f\n",get_cf_evalue(&CF));
+			snprintf(tmpremark, MAX_REMARK, "REMARK CF=%8.5f\n",Pose->chrom->evalue);
 			safe_remark_cat(remark, tmpremark, &remark_len);
-			snprintf(tmpremark, MAX_REMARK, "REMARK CF.app=%8.5f\n",get_apparent_cf_evalue(&CF));
+			snprintf(tmpremark, MAX_REMARK, "REMARK CF.app=%8.5f\n",Pose->chrom->app_evalue);
 			safe_remark_cat(remark, tmpremark, &remark_len);
 
 			for(int j = 0; j < this->FA->num_optres; ++j)

@@ -544,17 +544,22 @@ void DensityPeak_cluster(FA_Global* FA, GB_Global* GB, VC_Global* VC, chromosome
 		// outputting cluster center
 		for(k=0; k<GB->num_genes ; ++k) FA->opt_par[k] = pChrom->Chromosome->genes[k].to_ic;
 		
+		// Rebuild coordinates for output + populate per-optres CF breakdown.
+		// Returned re-score is discarded for the REMARK CF line: at emission
+		// Vcontacts can early-return a raw uncapped clash penalty that bypasses
+		// the per-contact wall cap and blows up the reported CF. Report the
+		// stored chromosome evalue — what the GA actually optimized.
 		CF = ic2cf(FA, VC, atoms, residue, cleftgrid, GB->num_genes, FA->opt_par);
-		
+
 		size_t remark_len = 0;
 		remark[0] = '\0';
 		safe_remark_cat(remark, "REMARK optimized structure\n", &remark_len);
 		snprintf(tmpremark,MAX_REMARK,"REMARK Density Peak clustering algorithm used to output %s as cluster representatives\n", (OUTPUT_CLUSTER_CENTER == true ? "the center of highest density" : "the lowest CF"));
 		safe_remark_cat(remark,tmpremark,&remark_len);
 
-		snprintf(tmpremark,MAX_REMARK,"REMARK CF=%8.5f\n",get_cf_evalue(&CF));
+		snprintf(tmpremark,MAX_REMARK,"REMARK CF=%8.5f\n",pChrom->Chromosome->evalue);
 		safe_remark_cat(remark,tmpremark,&remark_len);
-		snprintf(tmpremark,MAX_REMARK,"REMARK CF.app=%8.5f\n",get_apparent_cf_evalue(&CF));
+		snprintf(tmpremark,MAX_REMARK,"REMARK CF.app=%8.5f\n",pChrom->Chromosome->app_evalue);
 		safe_remark_cat(remark,tmpremark,&remark_len);
 		for(j = 0; j < FA->num_optres; ++j)
 		{
