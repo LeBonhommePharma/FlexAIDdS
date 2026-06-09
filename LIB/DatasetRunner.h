@@ -200,6 +200,11 @@ struct DockingConfig {
     /// Per-job timeout in seconds. 0 = no timeout (block indefinitely).
     /// Default 3600 s (1 h) — covers 8 min/complex with generous headroom.
     int    per_job_timeout_s{3600};
+    /// Ablation switch. When true, every generated dock config is written with
+    /// flexibility.intramolecular=false, forcing legacy rigid-body docking
+    /// (4 genes: translation + 3 rotations, zero torsional DoF). Default false:
+    /// ligands dock flexibly (one dihedral gene per perceived rotatable bond).
+    bool   force_rigid{false};
 };
 
 // =============================================================================

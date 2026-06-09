@@ -627,6 +627,69 @@ int read_sdf_ligand(FA_Global* FA, atom** atoms, resid** residue,
         }
 
         buildic(FA, *atoms, *residue, FA->res_cnt);
+
+        // ── Perceive rotatable bonds → ligand torsional degrees of freedom ────
+        // A bond is rotatable when it is (1) a single bond, (2) acyclic — a
+        // bridge whose removal splits the molecule (ring & aromatic bonds are
+        // rigid), and (3) flanked by two non-terminal heavy atoms (excludes
+        // X–H and methyl/–OH/–NH2 rotations that move no heavy atom). The BFS
+        // spanning tree already orients every bond parent→child, so each
+        // rotatable bond is recorded once via its child atom, whose IC dihedral
+        // (atoms[child].dih) the GA optimises (add2_optimiz_vec, val[1] > 0).
+        // Without this, direct-mode SDF ligands carried fdih==0 and docked as
+        // rigid bodies (npar = 4) — unable to reach their bound conformer.
+        auto heavy_deg = [&](int li){
+            int d = 0;
+            for (const auto& nb : nbr[li])
+                if (strcmp(satoms[nb.first].elem, "H") != 0 &&
+                    strcmp(satoms[nb.first].elem, "D") != 0) ++d;
+            return d;
+        };
+        auto is_bridge = [&](int u, int v){
+            // BFS from u over all bonds except the (u,v) edge; if v stays
+            // unreachable the bond is a bridge (acyclic, hence rotatable).
+            std::vector<bool> seen(natoms, false);
+            std::queue<int> bq; bq.push(u); seen[u] = true;
+            while (!bq.empty()) {
+                int x = bq.front(); bq.pop();
+                for (const auto& nb : nbr[x]) {
+                    int y = nb.first;
+                    if ((x == u && y == v) || (x == v && y == u)) continue;
+                    if (y >= 0 && y < natoms && !seen[y]) { seen[y] = true; bq.push(y); }
+                }
+            }
+            return !seen[v];
+        };
+
+        // Grow the flexible-bond array if the molecule could exceed the default
+        // capacity (MIN_FLEX_BONDS = 5 holds only bond[1..4]).
+        if (FA->MIN_FLEX_BONDS < n + 1) {
+            FA->MIN_FLEX_BONDS = n + 1;
+            (*residue)[FA->res_cnt].bond = (int*)realloc(
+                (*residue)[FA->res_cnt].bond, FA->MIN_FLEX_BONDS * sizeof(int));
+            if (!(*residue)[FA->res_cnt].bond) {
+                fprintf(stderr, "ERROR [SDF]: flexible-bond realloc failed\n"); return 0;
+            }
+        }
+        memset((*residue)[FA->res_cnt].bond, 0,
+               FA->MIN_FLEX_BONDS * sizeof(int));
+
+        int& fdih = (*residue)[FA->res_cnt].fdih;
+        fdih = 0;
+        for (int li = 3; li < n; ++li) {           // skip GPA atoms (li 0,1,2)
+            if (!visited[li]) continue;            // disconnected fragment
+            int p_abs = parent[li];                // BFS parent (absolute atom idx)
+            if (p_abs < fa) continue;              // root / no parent
+            int lp = p_abs - fa;                   // parent, 0-based
+            int order = 0;                         // bond order parent↔child
+            for (const auto& nb : nbr[li]) if (nb.first == lp) { order = nb.second; break; }
+            if (order != 1) continue;              // double/triple/aromatic ⇒ rigid
+            if (heavy_deg(li) < 2 || heavy_deg(lp) < 2) continue; // terminal group
+            if (!is_bridge(lp, li)) continue;      // ring bond ⇒ rigid
+            (*residue)[FA->res_cnt].bond[++fdih] = fa + li; // 1-indexed; absolute child
+        }
+        if (getenv("FLEXAIDDS_DEBUG_TYPES"))
+            fprintf(stderr, "[FLEX] perceived %d rotatable bond(s) for ligand\n", fdih);
     }
 
     // ── Build bonded matrix, shortest paths, shortflex ────────────────────────

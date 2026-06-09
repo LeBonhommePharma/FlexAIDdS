@@ -1473,6 +1473,25 @@ int main(int argc, char **argv){
 		opt[1] = 0;
 		add2_optimiz_vec(FA, atoms, residue, opt, chain, "");
 
+		// Ligand torsional flexibility: one dihedral gene per perceived
+		// rotatable bond (resligand->fdih, populated by the SDF/MOL2 reader
+		// after ring/terminal-bond perception). Legacy mode enumerates these
+		// from explicit OPTIMIZ config lines; direct mode previously skipped
+		// them entirely, so every ligand docked as a rigid body (npar=4) and
+		// could not reach its bound conformer. Gated on FA->intramolecular so
+		// the torsional DoF and the internal-clash scoring it requires are
+		// always switched on together — a flexible chromosome without
+		// intramolecular scoring lets the ligand fold through itself. A
+		// genuinely rigid ligand (fdih==0) makes this loop a no-op, preserving
+		// the 4-gene rigid search; force_rigid (config intramolecular=false)
+		// pins that behaviour for ablation regardless of fdih.
+		if (FA->intramolecular && FA->resligand != NULL) {
+			for (int b = 1; b <= FA->resligand->fdih; ++b) {
+				opt[1] = b;
+				add2_optimiz_vec(FA, atoms, residue, opt, chain, "");
+			}
+		}
+
 		// Side-chain and normal-mode extensions
 		add2_optimiz_vec(FA, atoms, residue, opt, chain, "SC");
 		add2_optimiz_vec(FA, atoms, residue, opt, chain, "NM");

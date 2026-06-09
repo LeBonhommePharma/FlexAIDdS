@@ -3695,7 +3695,19 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                 std::ofstream jf(config_path);
                 jf << "{\n"
                    << "  \"flexibility\": {\n"
-                   << "    \"intramolecular\": false,\n"
+                   // Ligand torsional flexibility. intramolecular=true switches
+                   // on BOTH internal-clash scoring AND torsional DoF: the engine
+                   // adds one dihedral gene per perceived rotatable bond to the GA
+                   // chromosome (top.cpp direct-mode opt-vector setup, gated on
+                   // FA->intramolecular). The previous hard-coded `false` made
+                   // every ligand dock as a rigid body (num_genes=4), so ligands
+                   // with rotatable bonds could not reach their bound conformer or
+                   // relieve clashes by rotation. Rigid molecules cost nothing
+                   // extra here: the engine's resligand->fdih==0 makes the
+                   // dihedral loop a no-op even with the flag on. The force_rigid
+                   // config field re-pins the legacy rigid behaviour for ablation.
+                   << "    \"intramolecular\": "
+                   << (config.force_rigid ? "false" : "true") << ",\n"
                    // permeability < 1.0 keeps native van-der-Waals contacts from
                    // tripping the r^-12 clash filter (1.0 flags every touching pair).
                    << "    \"permeability\": 0.9\n"
