@@ -46,7 +46,7 @@ LIGAND_RESNAME: dict[str, str] = {
     "1M2Z": "DEX",
     "1MEH": "IMP",
     "1MQ6": "XLD",
-    "1N1M": "NAG",
+    "1N1M": "A3M",  # NAG is a glycan PTM on this structure; A3M is the drug-like cognate ligand
     "1N2J": "PAF",
     "1N2V": "BDI",
     "1N46": "PFA",
