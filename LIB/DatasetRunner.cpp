@@ -1643,6 +1643,86 @@ static bool ligand_bonds_degenerate(const std::string& path) {
     return cyclomatic >= 1;  // has at least one ring and all bonds order 1
 }
 
+// Count rotatable bonds in an SDF (V2000) file for eval-budget scaling.
+// A bond counts when: (1) bond order == 1, (2) it is a bridge (acyclic —
+// its removal disconnects the molecule), and (3) both endpoints have graph
+// degree ≥ 2 (non-terminal).  Benchmark SDFs are extracted from HETATM
+// records without explicit H, so graph degree == heavy-atom degree.
+// Returns 0 on parse failure or for genuinely rigid molecules.
+static int count_rotatable_bonds_sdf(const std::string& path) {
+    std::string ext = fs::path(path).extension().string();
+    std::transform(ext.begin(), ext.end(), ext.begin(),
+                   [](unsigned char c){ return std::tolower(c); });
+    if (ext != ".sdf" && ext != ".mol") return 0;
+
+    std::ifstream in(path);
+    if (!in.is_open()) return 0;
+    std::vector<std::string> lines;
+    {
+        std::string l;
+        while (std::getline(in, l)) {
+            if (!l.empty() && l.back() == '\r') l.pop_back();
+            lines.push_back(l);
+        }
+    }
+    if (lines.size() < 5) return 0;
+
+    int natoms = 0, nbonds_count = 0;
+    try {
+        natoms       = std::stoi(lines[3].substr(0, 3));
+        nbonds_count = std::stoi(lines[3].substr(3, 3));
+    } catch (...) { return 0; }
+    if (natoms <= 0 || nbonds_count <= 0) return 0;
+    const size_t bstart = 4 + static_cast<size_t>(natoms);
+    if (bstart + static_cast<size_t>(nbonds_count) > lines.size()) return 0;
+
+    // Build adjacency list: adj[i] = {(neighbour, bond_order), ...}
+    std::vector<std::vector<std::pair<int,int>>> adj(natoms);
+    for (int i = 0; i < nbonds_count; ++i) {
+        const std::string& bl = lines[bstart + i];
+        if (bl.size() < 9) continue;
+        int a = 0, b = 0, order = 0;
+        try {
+            a     = std::stoi(bl.substr(0, 3)) - 1;  // 0-based
+            b     = std::stoi(bl.substr(3, 3)) - 1;
+            order = std::stoi(bl.substr(6, 3));
+        } catch (...) { continue; }
+        if (a < 0 || b < 0 || a >= natoms || b >= natoms || a == b) continue;
+        adj[a].emplace_back(b, order);
+        adj[b].emplace_back(a, order);
+    }
+
+    // Bridge test via BFS: removing edge (u,v) disconnects v from u.
+    auto is_bridge = [&](int u, int v) -> bool {
+        std::vector<bool> seen(natoms, false);
+        std::vector<int> bfs;
+        bfs.reserve(static_cast<size_t>(natoms));
+        bfs.push_back(u);
+        seen[u] = true;
+        for (size_t qi = 0; qi < bfs.size(); ++qi) {
+            int x = bfs[qi];
+            for (const auto& nb : adj[x]) {
+                int y = nb.first;
+                if ((x == u && y == v) || (x == v && y == u)) continue;
+                if (!seen[y]) { seen[y] = true; bfs.push_back(y); }
+            }
+        }
+        return !seen[v];
+    };
+
+    int fdih = 0;
+    for (int u = 0; u < natoms; ++u) {
+        for (const auto& nb : adj[u]) {
+            int v = nb.first, order = nb.second;
+            if (v <= u) continue;           // count each edge once
+            if (order != 1) continue;       // only single bonds are rotatable
+            if ((int)adj[u].size() < 2 || (int)adj[v].size() < 2) continue;  // terminal
+            if (is_bridge(u, v)) ++fdih;
+        }
+    }
+    return fdih;
+}
+
 static bool ligand_sdf_is_current(const std::string& sdf_path,
                                   const std::string& structure_path) {
     if (!fs::exists(sdf_path) || fs::is_directory(sdf_path)) return false;
@@ -3515,6 +3595,18 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
     report.dataset_name = entries.front().source;
     report.total_systems = static_cast<int>(entries.size());
 
+    // ── Clustering algorithm override ─────────────────────────────────────
+    // FLEXAIDDS_USE_DP=1  → use Density Peak (DP) clustering instead of the
+    // default CF.  DP elects the highest-density region as cluster head
+    // (OUTPUT_CLUSTER_CENTER=true in DensityPeak_Cluster.cpp) which is more
+    // representative of the fitness landscape than the lowest-CF outlier.
+    const char* use_dp_env = std::getenv("FLEXAIDDS_USE_DP");
+    const std::string effective_clustering_algo =
+        (use_dp_env && std::strcmp(use_dp_env, "1") == 0) ? "DP" : config.clustering_algorithm;
+    if (effective_clustering_algo != config.clustering_algorithm) {
+        std::cout << "[DatasetRunner] FLEXAIDDS_USE_DP=1 → clustering_algorithm overridden to DP\n";
+    }
+
     // ── Locate FlexAIDdS docking binary ─────────────────────────────────
     // The benchmark runner is not the docking engine.  Abort if the real
     // FlexAID/FlexAIDdS executable cannot be resolved; otherwise launcher
@@ -3846,6 +3938,24 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
         if (!skip) {
             ensure_dir(out_dir);
 
+            // ── Eval-budget scaling ──────────────────────────────────────────────
+            // GA search space grows by one dimension per rotatable bond.  The
+            // engine's parameter vector is 4 (rigid body: 3 trans + 1 rotation)
+            // + fdih (one gene per perceived rotatable bond).  Keeping n_gen fixed
+            // at 500 for a 14-gene ligand (fdih=10) gives 2.5× fewer evals per
+            // dimension than for a rigid 4-gene ligand — which is exactly what the
+            // v18 rigid-vs-flex oracle gap (2.4% vs 1.2%) measured empirically.
+            // Scale: n_gen = ga_generations * ceil(n_genes / 4).
+            // force_rigid suppresses dihedral DoF → use fdih=0.
+            const int fdih_est = config.force_rigid
+                                 ? 0
+                                 : count_rotatable_bonds_sdf(entry.ligand_path);
+            const int n_genes  = 4 + fdih_est;
+            const int n_gen_scaled = config.ga_generations *
+                                     ((n_genes + 3) / 4);  // ceil(n_genes/4)
+            fprintf(stderr, "[EVAL-BUDGET] %s: fdih=%d n_genes=%d n_gen=%d\n",
+                    entry.pdb_id.c_str(), fdih_est, n_genes, n_gen_scaled);
+
             // Generate per-target JSON config for FlexAIDdS
             std::string config_path = out_dir + "/dock_config.json";
             {
@@ -3863,6 +3973,12 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                    // extra here: the engine's resligand->fdih==0 makes the
                    // dihedral loop a no-op even with the flag on. The force_rigid
                    // config field re-pins the legacy rigid behaviour for ablation.
+                   // Echo the ablation flag itself (engine ignores unknown
+                   // keys — config_parser reads only flexibility.intramolecular)
+                   // so the per-case dock_config.json is self-documenting and
+                   // greppable for verification.
+                   << "    \"force_rigid\": "
+                   << (config.force_rigid ? "true" : "false") << ",\n"
                    << "    \"intramolecular\": "
                    << (config.force_rigid ? "false" : "true") << ",\n"
                    // permeability < 1.0 keeps native van-der-Waals contacts from
@@ -3912,12 +4028,12 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                    << "  },\n"
                    << "  \"thermodynamics\": {\n"
                    << "    \"temperature\": " << config.temperature << ",\n"
-                   << "    \"clustering_algorithm\": \"" << config.clustering_algorithm << "\",\n"
+                   << "    \"clustering_algorithm\": \"" << effective_clustering_algo << "\",\n"
                    << "    \"cluster_rmsd\": 2.0\n"
                    << "  },\n"
                    << "  \"ga\": {\n"
                    << "    \"num_chromosomes\": " << config.ga_population << ",\n"
-                   << "    \"num_generations\": " << config.ga_generations << ",\n"
+                   << "    \"num_generations\": " << n_gen_scaled << ",\n"
                    << "    \"crossover_rate\": 0.8,\n"
                    << "    \"mutation_rate\": 0.03,\n"
                    << "    \"fitness_model\": \"SMFREE\"\n"
