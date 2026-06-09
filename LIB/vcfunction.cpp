@@ -322,8 +322,23 @@ double vcfunction(FA_Global* FA,VC_Global* VC,atom* atoms,resid* residue, std::v
 			double cr2 = cr * cr; double cr4 = cr2 * cr2; double cr6 = cr4 * cr2;
 			double inv_cr12 = 1.0 / (cr6 * cr6);
 			double Ewall = KWALL * (inv_d12 - inv_cr12);
-				
-				cfs->wal += Ewall;
+
+			// ── Per-contact wall ceiling (root-cause fix #2) ──────────────────
+			// The raw r^-12 wall energy is unbounded as d->0. A single near-clash
+			// can fire +586 (1TT1) or +2578 (1M2Z), dwarfing the complementarity
+			// term (com ~ -180..-316) and saturating fitness across the entire GA
+			// population -> selection gradient collapses -> clone population ->
+			// 0 clustering modes. Bounding each contact's contribution to the
+			// fitness keeps the penalty differentiable (one bad contact can at
+			// most cancel one favorable com pair) so com-driven selection survives.
+			// The wall still penalizes clashes by count; it just no longer explodes.
+			// NOTE: the *raw* Ewall (not the capped value) is deliberately used for
+			// the DEE-elimination threshold below, so intramolecular-clash pruning
+			// is unaffected by the cap.
+			constexpr double WAL_CONTACT_CAP = 50.0;
+			double Ewall_fitness = (Ewall > WAL_CONTACT_CAP) ? WAL_CONTACT_CAP : Ewall;
+
+			cfs->wal += Ewall_fitness;
 
 #if DEBUG_LEVEL > 0
 				Ewall_atm += Ewall;
