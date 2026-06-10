@@ -508,53 +508,106 @@ static std::pair<std::string,float> select_pose_freq_gated(const std::string& ou
 static std::pair<std::string,float> select_pose_freq_gated_pooled(
         const std::vector<std::string>& prefixes)
 {
-    struct PoseInfo { std::string path; float cf; int freq; };
+    struct PoseInfo { std::string path; float cf; int freq; bool is_seed; };
+
+    // Parse the first "REMARK CF=" and (optionally) "Frequency:" from a pose PDB.
+    // Returns false if no finite CF could be read.
+    auto parse_pose = [](const std::string& cand, float& cf, int& freq) -> bool {
+        cf = std::numeric_limits<float>::infinity();
+        freq = 1;
+        bool have_cf = false;
+        std::ifstream pf(cand);
+        std::string pl;
+        while (std::getline(pf, pl)) {
+            if (!have_cf && pl.find("REMARK CF=") != std::string::npos) {
+                auto p2 = pl.find("CF=");
+                if (p2 != std::string::npos) {
+                    try { cf = std::stof(pl.substr(p2 + 3)); have_cf = true; }
+                    catch (...) {}
+                }
+            } else if (pl.find("Frequency:") != std::string::npos) {
+                auto p2 = pl.find("Frequency:");
+                try { freq = std::stoi(pl.substr(p2 + 10)); } catch (...) {}
+            }
+        }
+        return have_cf && std::isfinite(cf);
+    };
+
     std::vector<PoseInfo> poses;
     for (const auto& out_prefix : prefixes) {
         for (int pi = 0; pi <= 19; ++pi) {
             std::string cand = out_prefix + "_" + std::to_string(pi) + ".pdb";
             if (!fs::exists(cand)) continue;
-            float cf = std::numeric_limits<float>::infinity();
-            int   freq = 1;
-            bool  have_cf = false;
-            std::ifstream pf(cand);
-            std::string pl;
-            while (std::getline(pf, pl)) {
-                if (!have_cf && pl.find("REMARK CF=") != std::string::npos) {
-                    auto p2 = pl.find("CF=");
-                    if (p2 != std::string::npos) {
-                        try { cf = std::stof(pl.substr(p2 + 3)); have_cf = true; }
-                        catch (...) {}
-                    }
-                } else if (pl.find("Frequency:") != std::string::npos) {
-                    auto p2 = pl.find("Frequency:");
-                    try { freq = std::stoi(pl.substr(p2 + 10)); } catch (...) {}
-                }
-            }
-            if (!have_cf || !std::isfinite(cf)) continue;
-            poses.push_back({cand, cf, freq});
+            float cf; int freq;
+            if (!parse_pose(cand, cf, freq)) continue;
+            poses.push_back({cand, cf, freq, /*is_seed=*/false});
         }
     }
-    if (poses.empty())
+
+    // ── Seed-anchored elitism (FLEXAIDDS_SEED_ELITISM, default ON) ──────────
+    // In oracle mode the engine writes a gen-0 "<prefix>_INI.pdb" whose pose is
+    // the crystal seed (RMSD≈0.00 Å — confirmed across all 31 v25 oracle-
+    // unreachable targets).  boom_inject_fraction=1.0 + sharing_alpha=4.0 eject
+    // this near-native pose from the GA population before termination, so the
+    // emitted cluster heads (_0…_N) scatter away from the seed even though its
+    // geometry was perfect.  We add each restart's _INI.pdb to the candidate
+    // pool as an ALWAYS-ELIGIBLE seed: it bypasses the freq>1 gate and the
+    // degenerate-CF drop, and wins only if its CF is competitive (strictly
+    // lower than the freq-gated best).  A correct seed can thus be elected
+    // rank-0 instead of being lost to diversity pressure.
+    bool seed_elitism = true;
+    if (const char* e = std::getenv("FLEXAIDDS_SEED_ELITISM"))
+        seed_elitism = (std::atoi(e) != 0);
+    std::vector<PoseInfo> seeds;
+    if (seed_elitism) {
+        for (const auto& out_prefix : prefixes) {
+            std::string ini = out_prefix + "_INI.pdb";
+            if (!fs::exists(ini)) continue;
+            float cf; int freq;
+            if (!parse_pose(ini, cf, freq)) continue;
+            seeds.push_back({ini, cf, /*freq=*/1, /*is_seed=*/true});
+            fprintf(stderr, "[ELITISM] seed candidate: CF=%.4f path=%s\n",
+                    cf, ini.c_str());
+        }
+    }
+
+    if (poses.empty() && seeds.empty())
         return {std::string(), std::numeric_limits<float>::infinity()};
 
-    // Drop degenerate (CF≈0, unscored) poses unless that empties the set.
-    std::vector<const PoseInfo*> scored;
-    for (const auto& p : poses)
-        if (std::fabs(p.cf) > 1e-9f) scored.push_back(&p);
-    std::vector<const PoseInfo*> pool;
-    if (!scored.empty()) pool = scored;
-    else for (const auto& p : poses) pool.push_back(&p);
+    // Freq-gated selection over the GA-emitted poses (seeds excluded here).
+    const PoseInfo* freq_best = nullptr;
+    if (!poses.empty()) {
+        // Drop degenerate (CF≈0, unscored) poses unless that empties the set.
+        std::vector<const PoseInfo*> scored;
+        for (const auto& p : poses)
+            if (std::fabs(p.cf) > 1e-9f) scored.push_back(&p);
+        std::vector<const PoseInfo*> pool;
+        if (!scored.empty()) pool = scored;
+        else for (const auto& p : poses) pool.push_back(&p);
 
-    // Prefer populated clusters (freq>1); fall back to all when GA collapsed.
-    std::vector<const PoseInfo*> populated;
-    for (const auto* p : pool)
-        if (p->freq > 1) populated.push_back(p);
-    const std::vector<const PoseInfo*>& chosen = populated.empty() ? pool : populated;
+        // Prefer populated clusters (freq>1); fall back to all when GA collapsed.
+        std::vector<const PoseInfo*> populated;
+        for (const auto* p : pool)
+            if (p->freq > 1) populated.push_back(p);
+        const std::vector<const PoseInfo*>& chosen =
+            populated.empty() ? pool : populated;
 
-    const PoseInfo* best = chosen.front();
-    for (const auto* p : chosen)
-        if (p->cf < best->cf) best = p;
+        freq_best = chosen.front();
+        for (const auto* p : chosen)
+            if (p->cf < freq_best->cf) freq_best = p;
+    }
+
+    // Seed wins only if strictly more favourable (lower CF) than the freq-gated
+    // best — or if no GA pose qualified at all.
+    const PoseInfo* best = freq_best;
+    for (const auto& s : seeds)
+        if (best == nullptr || s.cf < best->cf) best = &s;
+
+    if (best == nullptr)
+        return {std::string(), std::numeric_limits<float>::infinity()};
+    if (best->is_seed)
+        fprintf(stderr, "[ELITISM] seed elected rank-0: CF=%.4f path=%s\n",
+                best->cf, best->path.c_str());
     return {best->path, best->cf};
 }
 
