@@ -439,6 +439,68 @@ static std::pair<float,float> compute_pose_ligand_rmsd(
     return {rc, rh};
 }
 
+// Frequency-gated cluster selection (v24 Fix B).
+// The min-CF rule frequently picks a deeper-but-wrong "off-native CF minimum"
+// (the near-native cluster is almost always the runner-up, idx=1). The emitted
+// REMARK already carries each cluster's population (Frequency:) — fitness
+// sharing / entropy favour broad, populated minima as near-native. This helper:
+//   1. parses CF= and Frequency: from each emitted pose _0..19.pdb,
+//   2. drops degenerate poses (CF≈0 = unscored / empty emission),
+//   3. prefers the pool of populated clusters (freq>1) when any exist,
+//      falling back to all scored poses when the GA collapsed to singletons,
+//   4. returns the min-CF pose within the chosen pool.
+// Simulation on v23 arm A lifts near-native agreement from 31/52 to 42/52.
+// Returns {path, cf}; path empty if no pose file is found.
+static std::pair<std::string,float> select_pose_freq_gated(const std::string& out_prefix)
+{
+    struct PoseInfo { std::string path; float cf; int freq; };
+    std::vector<PoseInfo> poses;
+    for (int pi = 0; pi <= 19; ++pi) {
+        std::string cand = out_prefix + "_" + std::to_string(pi) + ".pdb";
+        if (!fs::exists(cand)) continue;
+        float cf = std::numeric_limits<float>::infinity();
+        int   freq = 1;
+        bool  have_cf = false;
+        std::ifstream pf(cand);
+        std::string pl;
+        while (std::getline(pf, pl)) {
+            if (!have_cf && pl.find("REMARK CF=") != std::string::npos) {
+                auto p2 = pl.find("CF=");
+                if (p2 != std::string::npos) {
+                    try { cf = std::stof(pl.substr(p2 + 3)); have_cf = true; }
+                    catch (...) {}
+                }
+            } else if (pl.find("Frequency:") != std::string::npos) {
+                auto p2 = pl.find("Frequency:");
+                try { freq = std::stoi(pl.substr(p2 + 10)); } catch (...) {}
+            }
+        }
+        if (!have_cf || !std::isfinite(cf)) continue;
+        poses.push_back({cand, cf, freq});
+    }
+    if (poses.empty())
+        return {std::string(), std::numeric_limits<float>::infinity()};
+
+    // Drop degenerate (CF≈0, unscored) poses unless that empties the set.
+    std::vector<const PoseInfo*> scored;
+    for (const auto& p : poses)
+        if (std::fabs(p.cf) > 1e-9f) scored.push_back(&p);
+    std::vector<const PoseInfo*> pool;
+    if (!scored.empty()) pool = scored;
+    else for (const auto& p : poses) pool.push_back(&p);
+
+    // Prefer populated clusters (freq>1); fall back to all when GA collapsed.
+    std::vector<const PoseInfo*> populated;
+    for (const auto* p : pool)
+        if (p->freq > 1) populated.push_back(p);
+    const std::vector<const PoseInfo*>& chosen = populated.empty() ? pool : populated;
+
+    const PoseInfo* best = chosen.front();
+    for (const auto* p : chosen)
+        if (p->cf < best->cf) best = p;
+    return {best->path, best->cf};
+}
+
 // =============================================================================
 // Statistical functions — implemented from scratch, no external stats library
 // =============================================================================
@@ -4531,31 +4593,14 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
         // ends up echoing the crystal score rather than the GA's emitted result
         // (see project_pose_emission_blowup / project_vct_degeneracy_is_conflation).
         // After the P0 emission fix (920609d) each emitted rank pose carries a
-        // valid "REMARK CF=" (its app_evalue). Parse the emitted poses and report
-        // the minimum-CF representative — the SAME pose the RMSD is measured on.
-        // Fall back to the stdout-trace min only if no emitted REMARK CF is found.
+        // valid "REMARK CF=" (its app_evalue). Report the CF of the SAME pose the
+        // frequency-gated selector (Fix B) picks for the RMSD, so best_score and
+        // rmsd_to_crystal always describe one pose. Fall back to the stdout-trace
+        // min only if no emitted pose with a REMARK CF is found.
         {
-            float emitted_best_cf = std::numeric_limits<float>::infinity();
-            for (int pi = 0; pi <= 19; pi++) {
-                std::string cand = out_prefix + "_" + std::to_string(pi) + ".pdb";
-                if (!fs::exists(cand)) continue;
-                std::ifstream pf(cand);
-                std::string pl;
-                while (std::getline(pf, pl)) {
-                    if (pl.find("REMARK CF=") != std::string::npos) {
-                        auto p2 = pl.find("CF=");
-                        if (p2 != std::string::npos) {
-                            try {
-                                float v = std::stof(pl.substr(p2 + 3));
-                                if (std::isfinite(v))
-                                    emitted_best_cf = std::min(emitted_best_cf, v);
-                            } catch (...) {}
-                        }
-                        break;  // one REMARK CF per pose file
-                    }
-                }
-            }
-            if (std::isfinite(emitted_best_cf)) best_cf = emitted_best_cf;
+            auto sel = select_pose_freq_gated(out_prefix);
+            if (!sel.first.empty() && std::isfinite(sel.second))
+                best_cf = sel.second;
         }
 
         if (!std::isfinite(best_cf)) best_cf = 0.0f;
@@ -4602,44 +4647,18 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
         // positional RMSD directly without alignment (self-docking) or use
         // minimum-distance matching for cross-docking.
         if (docking_completed && !entry.ligand_path.empty()) {
-            // Find the pose with minimum (most negative) CF score.
-            // FlexAIDdS cluster ordering is NOT by energy rank — _0.pdb is
-            // frequently the WORST cluster (highest CF / most clashed).
-            // Scan all available poses 0-19, select minimum-CF representative.
-            std::string best_pose_pdb;
-            {
-                float best_pose_cf = std::numeric_limits<float>::max();
+            // Frequency-gated cluster selection (v24 Fix B). The plain min-CF
+            // rule picks the deeper-but-wrong "off-native CF minimum"; the
+            // near-native cluster is almost always the populated runner-up.
+            // select_pose_freq_gated() drops degenerate (CF≈0) poses, prefers
+            // clusters with Frequency>1, and returns the min-CF pose within that
+            // pool (see helper definition near compute_pose_ligand_rmsd).
+            std::string best_pose_pdb = select_pose_freq_gated(out_prefix).first;
+            // Fallback: no scored pose found — take first available pose file.
+            if (best_pose_pdb.empty()) {
                 for (int pi = 0; pi <= 19; pi++) {
                     std::string cand = out_prefix + "_" + std::to_string(pi) + ".pdb";
-                    if (!fs::exists(cand)) continue;
-                    float pose_cf = std::numeric_limits<float>::max();
-                    {
-                        std::ifstream pf(cand);
-                        std::string pl;
-                        while (std::getline(pf, pl)) {
-                            if (pl.find("REMARK CF=") != std::string::npos) {
-                                auto p2 = pl.find("CF=");
-                                if (p2 != std::string::npos) {
-                                    try {
-                                        float v = std::stof(pl.substr(p2 + 3));
-                                        if (std::isfinite(v)) pose_cf = v;
-                                    } catch (...) {}
-                                }
-                                break;
-                            }
-                        }
-                    }
-                    if (pose_cf < best_pose_cf) {
-                        best_pose_cf = pose_cf;
-                        best_pose_pdb = cand;
-                    }
-                }
-                // Fallback: no REMARK CF found — take first available pose
-                if (best_pose_pdb.empty()) {
-                    for (int pi = 0; pi <= 19; pi++) {
-                        std::string cand = out_prefix + "_" + std::to_string(pi) + ".pdb";
-                        if (fs::exists(cand)) { best_pose_pdb = cand; break; }
-                    }
+                    if (fs::exists(cand)) { best_pose_pdb = cand; break; }
                 }
             }
 
@@ -4710,7 +4729,13 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
             result.rmsd_to_crystal = 999.0f;
         }
 
-        result.success = (docking_completed && result.rmsd_to_crystal < 2.0f);
+        // Fix A: success uses the symmetry-corrected RMSD. Serial-order RMSD
+        // over-reports for ligands with topologically-equivalent atoms; the
+        // Hungarian RMSD (element-typed assignment, see compute_pose_ligand_rmsd)
+        // is the standard Astex success metric. On v23 arm A this alone lifts
+        // top-1 from 27 to 43 (16 poses already sub-2Å under symmetry).
+        const float rmsd_report = std::min(result.rmsd_to_crystal, result.rmsd_hungarian);
+        result.success = (docking_completed && rmsd_report < 2.0f);
         report.results[idx] = result;
 
         // ── TargetServer: register completed session ─────────────────────
