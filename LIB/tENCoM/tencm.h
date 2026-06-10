@@ -116,6 +116,25 @@ public:
                        float cutoff = DEFAULT_RC,
                        float k0     = DEFAULT_K0);
 
+    // Build a Cartesian 3N×3N Anisotropic Network Model (ANM) Hessian over the
+    // ligand HEAVY atoms in the half-open index range [lig_start, lig_end) of
+    // atoms[].  Unlike build()/build_from_ca() (which assemble a *torsional*
+    // pseudo-bond Hessian over Cα backbone DOFs), this assembles the classic
+    // Cartesian ANM super-element Hessian and diagonalises it directly into
+    // modes_.  Eigenvalues (model-scale stiffness, λ ≥ 0; ~6 rigid-body modes
+    // near zero) are exposed via .modes(); eigenvectors are left empty since the
+    // Level-3 H(ω) diagnostic consumes eigenvalues only.
+    //
+    // Contact potential matches build_from_ca: step-function within `cutoff`
+    // with spring k_ij = k0 * (cutoff / r0)^6.  Hydrogens (element "H") are
+    // excluded; if fewer than 3 heavy atoms are found the model is not built
+    // (is_built() == false) and modes() is empty.
+    void build_from_ligand(const atom* atoms,
+                           int   lig_start,
+                           int   lig_end,
+                           float cutoff = 7.0f,
+                           float k0     = DEFAULT_K0);
+
     // Getters
     int n_residues()    const noexcept { return static_cast<int>(ca_.size()); }
     int n_protein_ca()  const noexcept { return n_protein_ca_; }

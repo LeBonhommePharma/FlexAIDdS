@@ -47,6 +47,7 @@
 #include "fast_optics.hpp"
 #include "NATURaL/NATURaLDualAssembly.h"
 #include "InStreamClustering.h"
+#include "VibEntropy.h"
 
 // in milliseconds
 # define SLEEP GA_SLEEP_MS
@@ -116,6 +117,20 @@ int GA(FA_Global* FA, GB_Global* GB,VC_Global* VC,chromosome** chrom,chromosome*
 
 	int i;
 	int print=0;
+
+	// ── Level-3 H(ω) diagnostic env override ──────────────────────────────────
+	// FLEXAIDDS_USE_SHANNON=1 enables the ligand vibrational-mode Shannon-entropy
+	// monitor (per-generation [HVIB] lines) even on the bare binary, mirroring the
+	// DatasetRunner config toggle.  Engine-side env wins, matching FLEXAIDDS_N_ELITE.
+	// Purely diagnostic — does NOT enter CF or fitness.  Default stays OFF.
+	if (const char* _hv = std::getenv("FLEXAIDDS_USE_SHANNON")) {
+		if (_hv[0] != '\0' && _hv[0] != '0') {
+			if (!GB->use_shannon)
+				fprintf(stderr, "[HVIB] FLEXAIDDS_USE_SHANNON set: enabling ligand "
+				        "vibrational-entropy H(ω) monitor (diagnostic only)\n");
+			GB->use_shannon = 1;
+		}
+	}
 
 	//char tmp_rrgfile[MAX_PATH__];
 	//int rrg_flag;
@@ -426,6 +441,21 @@ int GA(FA_Global* FA, GB_Global* GB,VC_Global* VC,chromosome** chrom,chromosome*
 	    GA_INSTREAM_RMSD_THRESHOLD,
 	    GA_INSTREAM_MAX_MEDOIDS,
 	    GB->num_genes);
+
+	// Merge/H(ω) cadence: defaults to GA_INSTREAM_INTERVAL.  FLEXAIDDS_INSTREAM_INTERVAL
+	// overrides it (clamped >= 1) so short diagnostic runs can populate the medoid
+	// set — and emit the Level-3 [HVIB] monitor — before the GA's entropy-collapse
+	// early exit (which can trigger well before generation 100).  Default behaviour
+	// for production benchmarks is unchanged.
+	int instream_interval = GA_INSTREAM_INTERVAL;
+	if (const char* _ii = std::getenv("FLEXAIDDS_INSTREAM_INTERVAL")) {
+		int v = std::atoi(_ii);
+		if (v >= 1) {
+			instream_interval = v;
+			fprintf(stderr, "[INSTREAM] merge/H(ω) cadence overridden to every %d "
+			        "generation(s) via FLEXAIDDS_INSTREAM_INTERVAL\n", instream_interval);
+		}
+	}
 
 	////// Genetic Algorithm ///////
 	////////////////////////////////
@@ -781,7 +811,7 @@ int GA(FA_Global* FA, GB_Global* GB,VC_Global* VC,chromosome** chrom,chromosome*
 
 
 		// ── InStreamClustering: merge top-K elites every N generations ──
-		if (((i + 1) % GA_INSTREAM_INTERVAL == 0) && save_num_chrom > 0) {
+		if (((i + 1) % instream_interval == 0) && save_num_chrom > 0) {
 			const int top_k = std::min(GA_INSTREAM_TOP_K, save_num_chrom);
 			std::vector<float> elite_genes(static_cast<size_t>(top_k) * GB->num_genes);
 			std::vector<double> elite_scores(top_k);
@@ -795,6 +825,58 @@ int GA(FA_Global* FA, GB_Global* GB,VC_Global* VC,chromosome** chrom,chromosome*
 			instream_cluster.merge_elites(
 				elite_genes.data(), elite_scores.data(),
 				top_k, i + 1, GB->num_genes);
+
+			// ── Level-3 H(ω): ligand vibrational-mode Shannon entropy ──────────
+			// For each current cluster representative, materialise its ligand
+			// conformation (eval_chromosome → ic2cf writes Cartesian coords into
+			// the shared atoms[] buffer), build a Cartesian ANM over the ligand
+			// heavy atoms, and harvest the mode eigenvalues.  Each rep has a
+			// different ligand conformation → different stiffness matrix →
+			// different spectrum, so the pooled distribution measures vibrational
+			// (ω-space) collapse across the GA population.  Purely diagnostic —
+			// eigenvalues never enter CF or fitness.  Gated on use_shannon, which
+			// defaults OFF so existing benchmarks are unaffected.
+			if (GB->use_shannon) {
+				const int lig_start = (FA->resligand && FA->resligand->fatm)
+				                      ? FA->resligand->fatm[0] : -1;
+				const int lig_end_incl = (FA->resligand && FA->resligand->latm)
+				                      ? FA->resligand->latm[0] : -1;
+				if (lig_start >= 0 && lig_end_incl >= lig_start) {
+					const auto& reps = instream_cluster.snapshot();
+					std::vector<std::vector<double>> rep_eigs;
+					rep_eigs.reserve(reps.size());
+					std::vector<gene>     tmp_genes(GB->num_genes);
+					tencm::TorsionalENM   lig_enm;
+					for (const auto& med : reps) {
+						if (static_cast<int>(med.genes_ic.size()) < GB->num_genes)
+							continue;
+						for (int g = 0; g < GB->num_genes; ++g)
+							tmp_genes[g].to_ic = med.genes_ic[g];
+						// Materialise coords into shared atoms[] (intentionally
+						// overwrites it — the GA carries genes, not coords, so the
+						// next generation re-materialises from genes anyway).
+						eval_chromosome(FA, GB, VC, *gene_lim, atoms, residue,
+						                *cleftgrid, tmp_genes.data(), target);
+						// Half-open [lig_start, lig_end); latm[0] is inclusive.
+						lig_enm.build_from_ligand(atoms, lig_start, lig_end_incl + 1);
+						if (!lig_enm.is_built()) continue;
+						std::vector<double> eigs;
+						eigs.reserve(lig_enm.modes().size());
+						for (const auto& nm : lig_enm.modes())
+							eigs.push_back(nm.eigenvalue);
+						rep_eigs.push_back(std::move(eigs));
+					}
+					if (!rep_eigs.empty()) {
+						vibentropy::VibEntropyResult vr =
+							vibentropy::compute_vib_entropy_collapse(rep_eigs);
+						fprintf(stderr,
+						        "[HVIB] gen=%d H_pop=%.6f H_rep_mean=%.6f "
+						        "D_vib=%.6f n_reps=%d\n",
+						        i + 1, vr.H_pop, vr.H_rep_mean, vr.D_vib,
+						        vr.n_reps);
+					}
+				}
+			}
 		}
 
 		if(strcmp(GB->fitness_model,"PSHARE")==0){

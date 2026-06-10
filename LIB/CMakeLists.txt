@@ -82,6 +82,8 @@ add_library(flexaid_core OBJECT
     tENCoM/tencm.cpp
     statmech.cpp
     encom.cpp
+    # ── Level-3 H(ω) ligand vibrational-mode Shannon entropy (diagnostic) ──
+    VibEntropy.cpp
     # ── DiFT torsional Fourier parametrization ──
     DiFT/DiFT.cpp
     # ── GIST water displacement + directional H-bond scoring ──

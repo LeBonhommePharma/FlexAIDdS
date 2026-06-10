@@ -83,6 +83,14 @@ public:
     /// Current number of clusters (medoids).
     int cluster_count() const;
 
+    /// Non-destructive view of the current medoid set.
+    /// Unlike finalize(), this performs NO last-pass merge and does not mutate
+    /// state — it is a read-only window for diagnostics (e.g. the Level-3 H(ω)
+    /// vibrational-entropy monitor) that runs between GA generations on the
+    /// calling thread.  Not synchronised; call only when no concurrent
+    /// merge_elites() is in flight.
+    const std::vector<ClusterMedoid>& snapshot() const { return medoids_; }
+
     /// Total number of individuals merged across all calls.
     int64_t total_merged() const { return total_merged_; }
 

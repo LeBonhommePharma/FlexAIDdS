@@ -122,6 +122,106 @@ void TorsionalENM::build_from_ca(const std::vector<std::array<float,3>>& ca_coor
     built_ = true;
 }
 
+// ─── build_from_ligand (Cartesian ANM over ligand heavy atoms) ──────────────
+//
+// Assembles the classic Anisotropic Network Model (ANM) Hessian in CARTESIAN
+// 3N space (Atilgan et al., Biophys J. 2001), distinct from the torsional
+// pseudo-bond Hessian built by build()/build_from_ca().  For every heavy-atom
+// pair (a,b) within `cutoff`, the 3×3 super-element block is
+//     H_ab = -(k_ab / r²) (d dᵀ),   d = r_b - r_a,
+// accumulated off-diagonal with sign-flipped diagonal blocks so the full
+// Hessian is symmetric PSD.  k_ab = k0*(cutoff/r0)^6 reproduces the same
+// step-function distance weighting used in build_from_ca().  The 3N eigenvalues
+// (6 near-zero rigid-body modes + internal stiffnesses) are stored in modes_;
+// the Level-3 H(ω) diagnostic consumes eigenvalues only, so eigenvectors are
+// deliberately left empty to save memory.
+void TorsionalENM::build_from_ligand(const atom* atoms,
+                                     int   lig_start,
+                                     int   lig_end,
+                                     float cutoff,
+                                     float k0)
+{
+    cutoff_ = cutoff;
+    k0_     = k0;
+    built_  = false;
+    modes_.clear();
+
+    if (atoms == nullptr || lig_end <= lig_start) return;
+
+    auto is_hydrogen = [](const atom& a) noexcept {
+        const char* e = a.element;
+        while (*e == ' ') ++e;              // skip leading pad
+        return e[0] == 'H' && (e[1] == '\0' || e[1] == ' ');
+    };
+
+    // Collect heavy-atom coordinates.  If the element field is unpopulated and
+    // yields < 3 heavy atoms, fall back to including all atoms in the range so
+    // the diagnostic still produces a spectrum.
+    std::vector<std::array<float,3>> xyz;
+    for (int pass = 0; pass < 2 && static_cast<int>(xyz.size()) < 3; ++pass) {
+        xyz.clear();
+        for (int ai = lig_start; ai < lig_end; ++ai) {
+            if (pass == 0 && is_hydrogen(atoms[ai])) continue;
+            xyz.push_back({ atoms[ai].coor[0], atoms[ai].coor[1], atoms[ai].coor[2] });
+        }
+    }
+
+    const int Na = static_cast<int>(xyz.size());
+    if (Na < 3) return;                     // not enough atoms for an ANM
+
+    const int    dim = 3 * Na;
+    const double rc2 = static_cast<double>(cutoff_) * cutoff_;
+
+    Eigen::MatrixXd H = Eigen::MatrixXd::Zero(dim, dim);
+
+    for (int a = 0; a < Na; ++a) {
+        for (int b = a + 1; b < Na; ++b) {
+            const double dx = xyz[b][0] - xyz[a][0];
+            const double dy = xyz[b][1] - xyz[a][1];
+            const double dz = xyz[b][2] - xyz[a][2];
+            const double r2 = dx*dx + dy*dy + dz*dz;
+            if (r2 > rc2 || r2 < 1e-6) continue;
+
+            const double r0    = std::sqrt(r2);
+            const double ratio = static_cast<double>(cutoff_) / r0;
+            const double r3    = ratio * ratio * ratio;
+            const double kij   = static_cast<double>(k0_) * (r3 * r3);
+
+            const double d[3]  = { dx, dy, dz };
+            const double inv_r2 = 1.0 / r2;
+            for (int p = 0; p < 3; ++p) {
+                for (int q = 0; q < 3; ++q) {
+                    const double hpq = kij * d[p] * d[q] * inv_r2;
+                    const int Ia = 3*a + p, Ja = 3*a + q;
+                    const int Ib = 3*b + p, Jb = 3*b + q;
+                    H(Ia, Jb) -= hpq;       // off-diagonal block (a,b)
+                    H(Ib, Ja) -= hpq;       // off-diagonal block (b,a) — symmetric
+                    H(Ia, Ja) += hpq;       // diagonal block (a,a)
+                    H(Ib, Jb) += hpq;       // diagonal block (b,b)
+                }
+            }
+        }
+    }
+
+    Eigen::SelfAdjointEigenSolver<Eigen::MatrixXd> solver(H);
+    if (solver.info() != Eigen::Success) {
+        std::cerr << "TENCM: ligand ANM diagonalisation failed; skipping.\n";
+        return;
+    }
+
+    const Eigen::VectorXd& vals = solver.eigenvalues();  // ascending
+    modes_.clear();
+    modes_.reserve(static_cast<std::size_t>(dim));
+    for (int m = 0; m < dim; ++m) {
+        NormalMode nm;
+        nm.eigenvalue = vals(m);
+        // eigenvector intentionally left empty (H(ω) needs eigenvalues only)
+        modes_.push_back(std::move(nm));
+    }
+
+    built_ = true;
+}
+
 // ─── extract_ca ──────────────────────────────────────────────────────────────
 //
 // Phase 1: collect protein Cα atoms (residue.type == 0).
