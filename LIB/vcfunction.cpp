@@ -5,6 +5,7 @@
 #include "metal_coordination.h"
 #include "GISTGrid.h"
 #include <cmath>
+#include <cstdlib>
 #include <vector>
 
 #define DEBUG_LEVEL 0
@@ -329,6 +330,37 @@ double vcfunction(FA_Global* FA,VC_Global* VC,atom* atoms,resid* residue, std::v
 			double inv_cr12 = 1.0 / (cr6 * cr6);
 			double Ewall = KWALL * (inv_d12 - inv_cr12);
 
+			// ── Softcore WAL (FLEXAIDDS_SOFTCORE_WAL, default OFF) ─────────────
+			// The bare r^-12 wall spikes too steeply just inside the contact
+			// radius cr = permea*rAB (= r_min, where Ewall=0). A near-native pose
+			// with 0.2-0.4 Å crystal coordinate error can then score WORSE than a
+			// decoy: the spike dominates the complementarity term. When enabled,
+			// for r < r_softcrit = 0.7*cr we replace r^-12 with a C1-continuous
+			// downward-opening parabola that matches BOTH the value V(r_softcrit)
+			// and the slope V'(r_softcrit) of the r^-12 form at the transition
+			// (no value jump, no kink) and levels off to a finite plateau as
+			// r->0 (parabola maximum sits at r=0). This is in ADDITION to the
+			// WAL_CONTACT_CAP overflow guard below, which still clamps fitness.
+			// Read once (magic static, thread-safe) — no getenv in the hot loop.
+			static const bool softcore_wal =
+				(std::getenv("FLEXAIDDS_SOFTCORE_WAL") != nullptr);
+			if(softcore_wal){
+				const double r_softcrit = 0.7 * cr;
+				if(d < r_softcrit){
+					// V(r_softcrit) = KWALL*(r_softcrit^-12 - cr^-12)
+					double rsc2 = r_softcrit * r_softcrit;
+					double rsc4 = rsc2 * rsc2; double rsc6 = rsc4 * rsc2;
+					double inv_rsc12 = 1.0 / (rsc6 * rsc6);
+					double V_sc = KWALL * (inv_rsc12 - inv_cr12);
+					// |V'(r_softcrit)| = 12*KWALL/r_softcrit^13  (>0; V' itself <0)
+					double absVp = 12.0 * KWALL * (inv_rsc12 / r_softcrit);
+					double u = r_softcrit - d;             // >= 0 inside softcore
+					// V_soft = V_sc + |V'|*u - (|V'|/(2*r_softcrit))*u^2
+					Ewall = V_sc + absVp * u
+					        - (absVp / (2.0 * r_softcrit)) * u * u;
+				}
+			}
+
 			// ── Per-contact wall ceiling (root-cause fix #2) ──────────────────
 			// The raw r^-12 wall energy is unbounded as d->0. A single near-clash
 			// can fire +586 (1TT1) or +2578 (1M2Z), dwarfing the complementarity
@@ -580,9 +612,20 @@ double vcfunction(FA_Global* FA,VC_Global* VC,atom* atoms,resid* residue, std::v
 		if(FA->useacs){
 			contribution = contribution * atoms[atomzero].acs/surfA * FA->acsweight;
 		}
-		
+
+		// ── Entropy-ablation hook: FLEXAIDDS_NO_SAS ──────────────────────────
+		// The SAS channel (residual solvent-accessible surface scored against the
+		// solvent pseudo-type via the MC_st0r5.2_6 density function) is the
+		// engine's implicit-desolvation / hydration-shell proxy: burying surface
+		// on binding pays a per-atom desolvation cost. Setting FLEXAIDDS_NO_SAS
+		// zeroes cfs->sas for every atom, ablating the solvation channel so its
+		// contribution to pose ranking can be isolated. Read once (magic static,
+		// thread-safe) to avoid a getenv() in the inner per-contact loop.
+		static const bool no_sas = (std::getenv("FLEXAIDDS_NO_SAS") != nullptr);
+		if(no_sas){ contribution = 0.0; }
+
 		cfs->sas += contribution;
-		
+
 		FA->contributions[(VC->Calc[i].atom->type-1)*FA->ntypes + (FA->ntypes-1)] += contribution;
 		FA->contributions[(FA->ntypes-1)*FA->ntypes + (VC->Calc[i].atom->type-1)] += contribution;
 		
