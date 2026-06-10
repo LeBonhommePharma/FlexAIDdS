@@ -501,6 +501,63 @@ static std::pair<std::string,float> select_pose_freq_gated(const std::string& ou
     return {best->path, best->cf};
 }
 
+// Multi-restart pooled Fix B: same frequency-gate + min-CF logic applied across
+// ALL restart prefixes simultaneously.  Each restart contributes poses _0…_19.pdb
+// under its own prefix; the combined pool is treated as a single ensemble — a
+// larger, more diverse set for Fix B to select from (v25 multi-restart pooling).
+static std::pair<std::string,float> select_pose_freq_gated_pooled(
+        const std::vector<std::string>& prefixes)
+{
+    struct PoseInfo { std::string path; float cf; int freq; };
+    std::vector<PoseInfo> poses;
+    for (const auto& out_prefix : prefixes) {
+        for (int pi = 0; pi <= 19; ++pi) {
+            std::string cand = out_prefix + "_" + std::to_string(pi) + ".pdb";
+            if (!fs::exists(cand)) continue;
+            float cf = std::numeric_limits<float>::infinity();
+            int   freq = 1;
+            bool  have_cf = false;
+            std::ifstream pf(cand);
+            std::string pl;
+            while (std::getline(pf, pl)) {
+                if (!have_cf && pl.find("REMARK CF=") != std::string::npos) {
+                    auto p2 = pl.find("CF=");
+                    if (p2 != std::string::npos) {
+                        try { cf = std::stof(pl.substr(p2 + 3)); have_cf = true; }
+                        catch (...) {}
+                    }
+                } else if (pl.find("Frequency:") != std::string::npos) {
+                    auto p2 = pl.find("Frequency:");
+                    try { freq = std::stoi(pl.substr(p2 + 10)); } catch (...) {}
+                }
+            }
+            if (!have_cf || !std::isfinite(cf)) continue;
+            poses.push_back({cand, cf, freq});
+        }
+    }
+    if (poses.empty())
+        return {std::string(), std::numeric_limits<float>::infinity()};
+
+    // Drop degenerate (CF≈0, unscored) poses unless that empties the set.
+    std::vector<const PoseInfo*> scored;
+    for (const auto& p : poses)
+        if (std::fabs(p.cf) > 1e-9f) scored.push_back(&p);
+    std::vector<const PoseInfo*> pool;
+    if (!scored.empty()) pool = scored;
+    else for (const auto& p : poses) pool.push_back(&p);
+
+    // Prefer populated clusters (freq>1); fall back to all when GA collapsed.
+    std::vector<const PoseInfo*> populated;
+    for (const auto* p : pool)
+        if (p->freq > 1) populated.push_back(p);
+    const std::vector<const PoseInfo*>& chosen = populated.empty() ? pool : populated;
+
+    const PoseInfo* best = chosen.front();
+    for (const auto* p : chosen)
+        if (p->cf < best->cf) best = p;
+    return {best->path, best->cf};
+}
+
 // =============================================================================
 // Statistical functions — implemented from scratch, no external stats library
 // =============================================================================
@@ -4028,6 +4085,17 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
         std::string out_prefix = out_dir + "/" + entry.pdb_id;
         std::string stdout_path = out_dir + "/stdout.log";
 
+        // ── Multi-restart pooling (FLEXAIDDS_RESTARTS=N) ─────────────────────
+        // Run the GA N independent times per target using different random seeds.
+        // All emitted pose PDBs are pooled before Fix B cluster selection, directly
+        // expanding the oracle ceiling by exploiting run-to-run variance without
+        // any changes to GA internals.  Restart 0 always uses the canonical out_dir
+        // / out_prefix for backward compatibility with cached single-run results.
+        int n_restarts = 1;
+        if (const char* env_r = std::getenv("FLEXAIDDS_RESTARTS"))
+            n_restarts = std::max(1, std::atoi(env_r));
+        std::vector<std::string> all_prefixes;  // populated by exec_dock loop below
+
         // ── Grid reuse: check if a prior same-receptor run left a grid file ──
         // Look up the completed prefix for this receptor.  If found, check for
         // a .rrg (grid) file in that output directory.  When present, the JSON
@@ -4153,8 +4221,19 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
             fprintf(stderr, "[EVAL-BUDGET] %s: fdih=%d n_genes=%d n_gen=%d\n",
                     entry.pdb_id.c_str(), fdih_est, n_genes, n_gen_scaled);
 
+            // ── Multi-restart loop ──────────────────────────────────────────
+            // Restart 0 uses the canonical out_dir/out_prefix.  Restarts 1+
+            // write to out_dir/r<ri>/ subdirs with per-restart seeds so each GA
+            // run explores a different region of conformational space.
+            for (int ri = 0; ri < n_restarts; ri++) {
+                const std::string ri_dir    = (ri == 0) ? out_dir
+                    : (out_dir + "/r" + std::to_string(ri));
+                const std::string ri_prefix = (ri == 0) ? out_prefix
+                    : (ri_dir + "/" + entry.pdb_id);
+                if (ri > 0) ensure_dir(ri_dir);
+
             // Generate per-target JSON config for FlexAIDdS
-            std::string config_path = out_dir + "/dock_config.json";
+            std::string config_path = ri_dir + "/dock_config.json";
             // P7: opt-in fine sampling grid (FLEXAIDDS_FINE_GRID=1) — halve the
             // rotation step (5->2.5 deg) and tighten torsion/side-chain steps.
             // Emitted into the optimization block below so the arm is greppable.
@@ -4292,6 +4371,12 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                    << "    \"fitness_model\": \"SMFREE\"";
                 if (std::getenv("FLEXAIDDS_USE_SHANNON")) {
                     jf << ",\n    \"use_shannon\": true";
+                }
+                // Per-restart seed: restart 0 uses 0 (→ clock time at engine init,
+                // preserving original behaviour); restarts 1+ use deterministic primes
+                // so each run diverges even when launched in the same second.
+                if (ri > 0) {
+                    jf << ",\n    \"seed\": " << (ri * 7919);
                 }
                 jf << "\n  }";
                 // If a grid file from a prior same-receptor run exists, tell
@@ -4434,17 +4519,52 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                 << "'" << entry.receptor_path << "' "
                 << "'" << dock_ligand_path << "' "
                 << "--config '" << config_path << "' "
-                << "-o '" << out_prefix << "' "
-                << "2>'" << out_dir << "/stderr.log' "
-                << ">'" << stdout_path << "'";
+                << "-o '" << ri_prefix << "' "
+                << "2>'" << ri_dir << "/stderr.log' "
+                << ">'" << ri_dir << "/stdout.log'";
 
             bench::Timer dock_timer;
             dock_timer.start();
 
-            ret = exec_dock(cmd.str(), config.per_job_timeout_s);
+            int ri_ret = exec_dock(cmd.str(), config.per_job_timeout_s);
 
             dock_timer.stop();
-            result.wall_time_s = dock_timer.elapsed_s();
+            if (ri == 0) {
+                ret = ri_ret;
+                result.wall_time_s = dock_timer.elapsed_s();
+            } else {
+                if (ri_ret != 0) ret = ri_ret;  // propagate any failure
+                result.wall_time_s += dock_timer.elapsed_s();
+            }
+            all_prefixes.push_back(ri_prefix);
+
+            }  // end multi-restart loop (ri)
+        }  // end if (!skip)
+
+        // ── Build pooled prefix list for Fix B selection ─────────────────────
+        // For fresh runs, all_prefixes was populated by the restart loop above.
+        // For cached (skip=true) runs we reconstruct from whatever restart subdirs
+        // are already on disk.  This ensures re-scored runs automatically gain
+        // benefit from any previously-completed restarts.
+        if (all_prefixes.empty()) {
+            for (int ri = 0; ri < n_restarts; ri++) {
+                std::string ri_dir2    = (ri == 0) ? out_dir
+                    : (out_dir + "/r" + std::to_string(ri));
+                std::string ri_prefix2 = (ri == 0) ? out_prefix
+                    : (ri_dir2 + "/" + entry.pdb_id);
+                bool has_poses = false;
+                for (int pi = 0; pi <= 19 && !has_poses; pi++) {
+                    if (fs::exists(ri_prefix2 + "_" + std::to_string(pi) + ".pdb"))
+                        has_poses = true;
+                }
+                if (has_poses) all_prefixes.push_back(ri_prefix2);
+            }
+            if (all_prefixes.empty()) all_prefixes.push_back(out_prefix);
+        }
+        if (n_restarts > 1) {
+            std::cerr << "  [POOL] " << entry.pdb_id
+                      << " pooling " << all_prefixes.size()
+                      << "/" << n_restarts << " restart(s) for Fix B selection\n";
         }
 
         // ── Parse results ────────────────────────────────────────────────
@@ -4617,7 +4737,7 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
         // rmsd_to_crystal always describe one pose. Fall back to the stdout-trace
         // min only if no emitted pose with a REMARK CF is found.
         {
-            auto sel = select_pose_freq_gated(out_prefix);
+            auto sel = select_pose_freq_gated_pooled(all_prefixes);
             if (!sel.first.empty() && std::isfinite(sel.second))
                 best_cf = sel.second;
         }
@@ -4672,12 +4792,15 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
             // select_pose_freq_gated() drops degenerate (CF≈0) poses, prefers
             // clusters with Frequency>1, and returns the min-CF pose within that
             // pool (see helper definition near compute_pose_ligand_rmsd).
-            std::string best_pose_pdb = select_pose_freq_gated(out_prefix).first;
-            // Fallback: no scored pose found — take first available pose file.
+            std::string best_pose_pdb = select_pose_freq_gated_pooled(all_prefixes).first;
+            // Fallback: no scored pose found — take first available pose file from any restart.
             if (best_pose_pdb.empty()) {
-                for (int pi = 0; pi <= 19; pi++) {
-                    std::string cand = out_prefix + "_" + std::to_string(pi) + ".pdb";
-                    if (fs::exists(cand)) { best_pose_pdb = cand; break; }
+                for (const auto& pfx : all_prefixes) {
+                    for (int pi = 0; pi <= 19; pi++) {
+                        std::string cand = pfx + "_" + std::to_string(pi) + ".pdb";
+                        if (fs::exists(cand)) { best_pose_pdb = cand; break; }
+                    }
+                    if (!best_pose_pdb.empty()) break;
                 }
             }
 
