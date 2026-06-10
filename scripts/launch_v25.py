@@ -45,7 +45,7 @@ STDERR_LOG = f"{OUTPUT}/v25_stderr.log"
 # v25: runner SHA is intentionally NOT pinned here — benchmark_datasets was just
 # rebuilt with multi-restart pooling code.  The SHA is printed for provenance.
 # Pin it once the first build is verified by checking v25_benchmark.log.
-EXP_ENGINE = "c1281359e43d5a6455d773d216784acb1c2a709debef8c212ec492926acbfb9f"  # unchanged from v24
+EXP_ENGINE = "d748ccb5406c1cf3d4a2c446840cbc5e514d83423ee7f38390e585b3f08370b9"  # cf_native diagnostic rebuild (native_score.cpp); GA search unchanged
 
 def sha256(p):
     h = hashlib.sha256()
