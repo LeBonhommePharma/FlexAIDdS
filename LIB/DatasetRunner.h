@@ -143,6 +143,9 @@ struct DockingResult {
     bool  stuck{false};               // true when clash_rate > 0.95 and F > 0
     // Native-pose CF diagnostic (scored before the GA via FLEXAIDDS_SCORE_NATIVE)
     float cf_native{0.0f};            // CF at crystal pose; 0.0 when not run
+    // P4: oracle best-of-N over emitted cluster poses (best achievable by selection)
+    float best_cluster_rmsd{999.0f};  // min Hungarian RMSD across all emitted poses (Å)
+    int   best_cluster_idx{-1};       // pose index (0-19) achieving best_cluster_rmsd
 };
 
 /// Aggregate benchmark report

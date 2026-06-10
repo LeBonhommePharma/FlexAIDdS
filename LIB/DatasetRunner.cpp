@@ -304,6 +304,141 @@ static float hungarian_rmsd(
     return (total_n > 0) ? static_cast<float>(std::sqrt(total_sq / total_n)) : 999.0f;
 }
 
+// Compute {serial-order RMSD, Hungarian RMSD} of the docked ligand in an emitted
+// pose PDB against the crystal ligand heavy-atom coordinates.  The docked ligand
+// is selected by CONECT membership (a position-independent fingerprint, immune to
+// resSeq/resname collisions with retained cofactors); hydrogens (element token
+// H/D/Du) are dropped to match the crystal heavy atoms.  Returns {999,999} on any
+// failure or atom-count mismatch.  Shared by the rank-0 RMSD report and the P4
+// best-of-N oracle-ceiling scan over all emitted cluster poses.
+static std::pair<float,float> compute_pose_ligand_rmsd(
+    const std::string& pose_pdb,
+    const std::vector<std::array<float,3>>& crystal_xyz,
+    const std::vector<std::string>& crystal_elem,
+    const std::string& pdb_id,
+    bool warn)
+{
+    if (crystal_xyz.empty()) return {999.0f, 999.0f};
+
+    // Trailing element token (upper-first, rest lower: "C", "N", "Cl").
+    auto get_elem_token = [](const std::string& line) -> std::string {
+        size_t end = line.find_last_not_of(" \t\r\n");
+        if (end == std::string::npos) return "X";
+        size_t start = line.find_last_of(" \t", end);
+        std::string tok = line.substr(start == std::string::npos ? 0 : start + 1,
+                                      end - (start == std::string::npos
+                                             ? static_cast<size_t>(-1) : start));
+        if (tok.empty()) return "X";
+        tok[0] = static_cast<char>(std::toupper(static_cast<unsigned char>(tok[0])));
+        for (size_t kk = 1; kk < tok.size(); ++kk)
+            tok[kk] = static_cast<char>(std::tolower(static_cast<unsigned char>(tok[kk])));
+        return tok;
+    };
+    auto elem_is_hydrogen = [&get_elem_token](const std::string& line) -> bool {
+        std::string tok = get_elem_token(line);
+        for (char& ch : tok) ch = static_cast<char>(std::tolower(
+                                       static_cast<unsigned char>(ch)));
+        return tok == "h" || tok == "d" || tok == "du";
+    };
+
+    // CONECT serials = docked-ligand fingerprint.
+    std::set<long> conect_serials;
+    {
+        std::ifstream pf(pose_pdb);
+        std::string l;
+        while (std::getline(pf, l)) {
+            if (l.compare(0, 6, "CONECT") != 0) continue;
+            for (size_t c = 6; c + 1 <= l.size(); c += 5) {
+                std::string tok = l.substr(c, std::min<size_t>(5, l.size() - c));
+                try { conect_serials.insert(std::stol(tok)); } catch (...) {}
+            }
+        }
+    }
+
+    // docked: (serial, xyz, element)
+    std::vector<std::tuple<long, std::array<float,3>, std::string>> docked;
+    {
+        std::ifstream pdb(pose_pdb);
+        std::string pline;
+        while (std::getline(pdb, pline)) {
+            if (pline.size() < 54) continue;
+            const bool is_atom = pline.compare(0,6,"HETATM") == 0 ||
+                                 pline.compare(0,6,"ATOM  ") == 0;
+            if (!is_atom) continue;
+            long serial = 0;
+            try { serial = std::stol(pline.substr(6, 5)); } catch (...) { continue; }
+            bool selected;
+            if (!conect_serials.empty()) {
+                selected = conect_serials.count(serial) > 0;
+            } else {
+                if (pline.compare(0,6,"HETATM") != 0) { selected = false; }
+                else {
+                    int rs = 0;
+                    try { rs = std::stoi(pline.substr(22,4)); } catch (...) {}
+                    std::string rn = pline.substr(17,3);
+                    while (!rn.empty() && rn.front()==' ') rn.erase(rn.begin());
+                    while (!rn.empty() && rn.back() ==' ') rn.pop_back();
+                    selected = (rs == 1 && rn.size() >= 2);
+                }
+            }
+            if (!selected) continue;
+            if (elem_is_hydrogen(pline)) continue;
+            float x = std::stof(pline.substr(30,8));
+            float y = std::stof(pline.substr(38,8));
+            float z = std::stof(pline.substr(46,8));
+            docked.push_back({serial, {x, y, z}, get_elem_token(pline)});
+        }
+    }
+    std::sort(docked.begin(), docked.end(),
+              [](const auto& a, const auto& b){ return std::get<0>(a) < std::get<0>(b); });
+
+    std::vector<std::array<float,3>> pose_xyz;
+    std::vector<std::string> pose_elem;
+    pose_xyz.reserve(docked.size());
+    pose_elem.reserve(docked.size());
+    for (auto& d : docked) {
+        pose_xyz.push_back(std::get<1>(d));
+        pose_elem.push_back(std::get<2>(d));
+    }
+    if (pose_xyz.empty()) return {999.0f, 999.0f};
+
+    const int count_delta = std::abs(static_cast<int>(crystal_xyz.size()) -
+                                     static_cast<int>(pose_xyz.size()));
+    if (count_delta > 2) {
+        if (warn) {
+            std::cerr << "  [WARN] RMSD atom count mismatch for " << pdb_id
+                      << ": crystal=" << crystal_xyz.size()
+                      << " pose(docked-ligand)=" << pose_xyz.size()
+                      << " — setting RMSD=999\n";
+        }
+        return {999.0f, 999.0f};
+    }
+
+    int n = static_cast<int>(std::min(crystal_xyz.size(), pose_xyz.size()));
+    double sum_sq = 0.0;
+    for (int k = 0; k < n; k++) {
+        double dx = pose_xyz[k][0] - crystal_xyz[k][0];
+        double dy = pose_xyz[k][1] - crystal_xyz[k][1];
+        double dz = pose_xyz[k][2] - crystal_xyz[k][2];
+        sum_sq += dx*dx + dy*dy + dz*dz;
+    }
+    float rc = static_cast<float>(std::sqrt(sum_sq / n));
+
+    float rh = 999.0f;
+    if (crystal_elem.size() == crystal_xyz.size() &&
+        pose_elem.size() == pose_xyz.size()) {
+        std::vector<std::pair<std::string,std::array<float,3>>> catoms, datoms;
+        catoms.reserve(crystal_xyz.size());
+        datoms.reserve(pose_xyz.size());
+        for (size_t k = 0; k < crystal_xyz.size(); ++k)
+            catoms.push_back({crystal_elem[k], crystal_xyz[k]});
+        for (size_t k = 0; k < pose_xyz.size(); ++k)
+            datoms.push_back({pose_elem[k], pose_xyz[k]});
+        rh = hungarian_rmsd(catoms, datoms);
+    }
+    return {rc, rh};
+}
+
 // =============================================================================
 // Statistical functions — implemented from scratch, no external stats library
 // =============================================================================
@@ -4500,155 +4635,31 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                     }
                 }
 
-                // Read best-pose docked-LIGAND heavy-atom coords (Bug #2 fix).
-                //
-                // The previous "HETATM && resSeq==1 && resname>=2 chars" heuristic
-                // is unreliable: the benchmark receptors are NOT truly apo — they
-                // retain cofactors and the cognate ligand as HETATM, and those
-                // retained heteroatoms ALSO land at resSeq==1 (e.g. 1A4Q keeps two
-                // NAG copies at resSeq 1).  The filter then unions the docked
-                // ligand with receptor junk, doubling the atom count vs the crystal
-                // SDF (28 vs 56) and tripping the RMSD=999 sentinel — or, worse,
-                // silently mixing receptor atoms into the RMSD.
-                //
-                // FlexAIDdS emits CONECT records for one residue only — the docked
-                // ligand (write_MODEL_pdb iterates FA->het_res).  Those serials are
-                // therefore an exact, position-independent fingerprint of the docked
-                // ligand, immune to resSeq/resname collisions.  We select atoms by
-                // CONECT membership and drop hydrogens (the writer tags H with the
-                // dummy element token "Du", so element-column matching alone misses
-                // them — we treat the trailing element token H/D/Du as hydrogen).
-                std::set<long> conect_serials;
+                // Rank-0 (reported) pose RMSD via the shared helper.  The docked
+                // ligand is selected by CONECT membership (a position-independent
+                // fingerprint immune to resSeq/resname collisions with retained
+                // cofactors) with hydrogens dropped; see compute_pose_ligand_rmsd.
                 {
-                    std::ifstream pf(best_pose_pdb);
-                    std::string l;
-                    while (std::getline(pf, l)) {
-                        if (l.compare(0, 6, "CONECT") != 0) continue;
-                        for (size_t c = 6; c + 1 <= l.size(); c += 5) {
-                            std::string tok = l.substr(c, std::min<size_t>(5, l.size() - c));
-                            try { conect_serials.insert(std::stol(tok)); } catch (...) {}
+                    auto r0 = compute_pose_ligand_rmsd(
+                        best_pose_pdb, crystal_xyz, crystal_elem, entry.pdb_id, true);
+                    result.rmsd_to_crystal = r0.first;
+                    result.rmsd_hungarian  = r0.second;
+
+                    // P4: oracle best-of-N ceiling — scan every emitted cluster pose
+                    // (0-19) and record the minimum Hungarian RMSD and which pose
+                    // index achieved it.  This is the best a perfect cluster-selector
+                    // could have reached given the poses the GA actually emitted;
+                    // the gap to rank-0 measures selection (not search) headroom.
+                    for (int pi = 0; pi <= 19; ++pi) {
+                        std::string cand = out_prefix + "_" + std::to_string(pi) + ".pdb";
+                        if (!fs::exists(cand)) continue;
+                        auto rp = compute_pose_ligand_rmsd(
+                            cand, crystal_xyz, crystal_elem, entry.pdb_id, false);
+                        if (rp.second < result.best_cluster_rmsd) {
+                            result.best_cluster_rmsd = rp.second;
+                            result.best_cluster_idx = pi;
                         }
                     }
-                }
-
-                // Extract trailing element token from a PDB ATOM/HETATM line.
-                // Normalises to upper-first, rest lower (e.g. "C", "N", "Cl").
-                auto get_elem_token = [](const std::string& line) -> std::string {
-                    size_t end = line.find_last_not_of(" \t\r\n");
-                    if (end == std::string::npos) return "X";
-                    size_t start = line.find_last_of(" \t", end);
-                    std::string tok = line.substr(start == std::string::npos ? 0 : start + 1,
-                                                  end - (start == std::string::npos
-                                                         ? static_cast<size_t>(-1) : start));
-                    if (tok.empty()) return "X";
-                    tok[0] = static_cast<char>(
-                        std::toupper(static_cast<unsigned char>(tok[0])));
-                    for (size_t kk = 1; kk < tok.size(); ++kk)
-                        tok[kk] = static_cast<char>(
-                            std::tolower(static_cast<unsigned char>(tok[kk])));
-                    return tok;
-                };
-
-                auto elem_is_hydrogen = [&get_elem_token](const std::string& line) -> bool {
-                    std::string tok = get_elem_token(line);
-                    // Lowercase for comparison
-                    for (char& ch : tok) ch = static_cast<char>(std::tolower(
-                                                    static_cast<unsigned char>(ch)));
-                    return tok == "h" || tok == "d" || tok == "du";
-                };
-
-                // docked: (serial, xyz, element)
-                std::vector<std::tuple<long, std::array<float,3>, std::string>> docked;
-                {
-                    std::ifstream pdb(best_pose_pdb);
-                    std::string pline;
-                    while (std::getline(pdb, pline)) {
-                        if (pline.size() < 54) continue;
-                        const bool is_atom = pline.compare(0,6,"HETATM") == 0 ||
-                                             pline.compare(0,6,"ATOM  ") == 0;
-                        if (!is_atom) continue;
-                        long serial = 0;
-                        try { serial = std::stol(pline.substr(6, 5)); } catch (...) { continue; }
-                        bool selected;
-                        if (!conect_serials.empty()) {
-                            selected = conect_serials.count(serial) > 0;
-                        } else {
-                            // Fallback (no CONECT): old resSeq==1 / resname>=2 heuristic.
-                            if (pline.compare(0,6,"HETATM") != 0) { selected = false; }
-                            else {
-                                int rs = 0;
-                                try { rs = std::stoi(pline.substr(22,4)); } catch (...) {}
-                                std::string rn = pline.substr(17,3);
-                                while (!rn.empty() && rn.front()==' ') rn.erase(rn.begin());
-                                while (!rn.empty() && rn.back() ==' ') rn.pop_back();
-                                selected = (rs == 1 && rn.size() >= 2);
-                            }
-                        }
-                        if (!selected) continue;
-                        if (elem_is_hydrogen(pline)) continue;  // drop H to match crystal heavy atoms
-                        float x = std::stof(pline.substr(30,8));
-                        float y = std::stof(pline.substr(38,8));
-                        float z = std::stof(pline.substr(46,8));
-                        docked.push_back({serial, {x, y, z}, get_elem_token(pline)});
-                    }
-                }
-                // Restore input/load order (serial-ascending) so positional RMSD
-                // lines up with the crystal SDF atom order (same molecule, same order).
-                std::sort(docked.begin(), docked.end(),
-                          [](const auto& a, const auto& b){
-                              return std::get<0>(a) < std::get<0>(b); });
-                std::vector<std::array<float,3>> pose_xyz;
-                std::vector<std::string> pose_elem;
-                pose_xyz.reserve(docked.size());
-                pose_elem.reserve(docked.size());
-                for (auto& d : docked) {
-                    pose_xyz.push_back(std::get<1>(d));
-                    pose_elem.push_back(std::get<2>(d));
-                }
-
-                if (!crystal_xyz.empty() && !pose_xyz.empty()) {
-                    // With CONECT-based selection + H stripping the docked ligand is
-                    // the same molecule (and atom order) as the crystal SDF, so the
-                    // heavy-atom counts must agree exactly.  A residual mismatch now
-                    // signals a genuine extraction problem (wrong reference, altered
-                    // protonation) rather than receptor contamination, so we keep a
-                    // small tolerance and flag anything larger with the 999 sentinel.
-                    const int count_delta = std::abs(
-                        static_cast<int>(crystal_xyz.size()) -
-                        static_cast<int>(pose_xyz.size()));
-                    if (count_delta > 2) {
-                        std::cerr << "  [WARN] RMSD atom count mismatch for " << entry.pdb_id
-                                  << ": crystal=" << crystal_xyz.size()
-                                  << " pose(docked-ligand)=" << pose_xyz.size()
-                                  << " — setting RMSD=999\n";
-                        result.rmsd_to_crystal = 999.0f;
-                        // rmsd_hungarian stays at 999 (default)
-                    } else {
-                        int n = static_cast<int>(std::min(crystal_xyz.size(), pose_xyz.size()));
-                        double sum_sq = 0.0;
-                        for (int k = 0; k < n; k++) {
-                            double dx = pose_xyz[k][0] - crystal_xyz[k][0];
-                            double dy = pose_xyz[k][1] - crystal_xyz[k][1];
-                            double dz = pose_xyz[k][2] - crystal_xyz[k][2];
-                            sum_sq += dx*dx + dy*dy + dz*dz;
-                        }
-                        result.rmsd_to_crystal = static_cast<float>(std::sqrt(sum_sq / n));
-
-                        // Symmetry-corrected RMSD: element-grouped Hungarian assignment
-                        if (crystal_elem.size() == crystal_xyz.size() &&
-                            pose_elem.size() == pose_xyz.size()) {
-                            std::vector<std::pair<std::string,std::array<float,3>>> catoms, datoms;
-                            catoms.reserve(crystal_xyz.size());
-                            datoms.reserve(pose_xyz.size());
-                            for (size_t k = 0; k < crystal_xyz.size(); ++k)
-                                catoms.push_back({crystal_elem[k], crystal_xyz[k]});
-                            for (size_t k = 0; k < pose_xyz.size(); ++k)
-                                datoms.push_back({pose_elem[k], pose_xyz[k]});
-                            result.rmsd_hungarian = hungarian_rmsd(catoms, datoms);
-                        }
-                    }
-                } else {
-                    result.rmsd_to_crystal = 999.0f;
                 }
             } else {
                 result.rmsd_to_crystal = 999.0f;
@@ -4703,7 +4714,7 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                 if (ofs.is_open()) {
                     ofs << "pdb_id,best_score,rmsd_to_crystal,rmsd_hungarian,predicted_dG,"
                            "predicted_dH,predicted_TdS,shannon_entropy,num_poses,"
-                           "wall_time_s,success,cf_native\n";
+                           "wall_time_s,success,cf_native,best_cluster_rmsd,best_cluster_idx\n";
                     ofs << std::fixed << std::setprecision(4)
                         << result.pdb_id << ","
                         << result.best_score << ","
@@ -4716,7 +4727,9 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                         << result.num_poses << ","
                         << result.wall_time_s << ","
                         << (result.success ? 1 : 0) << ","
-                        << result.cf_native << "\n";
+                        << result.cf_native << ","
+                        << result.best_cluster_rmsd << ","
+                        << result.best_cluster_idx << "\n";
                 }
             } catch (...) {
                 // Per-complex CSV is best-effort; failures are non-fatal.
@@ -4977,7 +4990,7 @@ void DatasetRunner::write_report(const BenchmarkReport& report,
 
         ofs << "pdb_id,best_score,rmsd_to_crystal,rmsd_hungarian,predicted_dG,"
                "predicted_dH,predicted_TdS,shannon_entropy,num_poses,wall_time_s,success,"
-               "cf_native\n";
+               "cf_native,best_cluster_rmsd,best_cluster_idx\n";
 
         for (const auto& r : report.results) {
             ofs << std::fixed << std::setprecision(4)
@@ -4992,7 +5005,9 @@ void DatasetRunner::write_report(const BenchmarkReport& report,
                 << r.num_poses << ","
                 << r.wall_time_s << ","
                 << (r.success ? 1 : 0) << ","
-                << r.cf_native << "\n";
+                << r.cf_native << ","
+                << r.best_cluster_rmsd << ","
+                << r.best_cluster_idx << "\n";
         }
 
         ofs.close();
