@@ -4269,10 +4269,26 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                                  ? 0
                                  : count_rotatable_bonds_sdf(entry.ligand_path);
             const int n_genes  = 4 + fdih_est;
-            const int n_gen_scaled = config.ga_generations *
+            int n_gen_scaled = config.ga_generations *
                                      ((n_genes + 3) / 4);  // ceil(n_genes/4)
-            fprintf(stderr, "[EVAL-BUDGET] %s: fdih=%d n_genes=%d n_gen=%d\n",
-                    entry.pdb_id.c_str(), fdih_est, n_genes, n_gen_scaled);
+
+            // ── v27 high-DoF budget scaling (FLEXAIDDS_BUDGET_SCALE) ──
+            // High-DoF ligands (n_genes >= 14, i.e. >=10 rotatable bonds) need a
+            // wider GA eval budget for seed-anchored elitism to converge the extra
+            // torsional dimensions.  When enabled, multiply n_gen by
+            // max(1.0, n_genes/7.0).  Gated by FLEXAIDDS_BUDGET_SCALE (default 1 =
+            // ON; set 0 to disable).  Echoed for greppability on disk.
+            const char* bscale_env = std::getenv("FLEXAIDDS_BUDGET_SCALE");
+            const int   budget_scale_on = bscale_env ? std::atoi(bscale_env) : 1;
+            double budget_scale_factor = 1.0;
+            if (budget_scale_on && n_genes >= 14) {
+                budget_scale_factor = std::max(1.0,
+                                               static_cast<double>(n_genes) / 7.0);
+                n_gen_scaled = static_cast<int>(
+                    std::lround(static_cast<double>(n_gen_scaled) * budget_scale_factor));
+            }
+            fprintf(stderr, "[EVAL-BUDGET] %s: fdih=%d n_genes=%d budget_scale=%.3f n_gen=%d\n",
+                    entry.pdb_id.c_str(), fdih_est, n_genes, budget_scale_factor, n_gen_scaled);
 
             // ── Multi-restart loop ──────────────────────────────────────────
             // Restart 0 uses the canonical out_dir/out_prefix.  Restarts 1+
@@ -4412,9 +4428,22 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                    // BOOM random injection (every 100 gens, re-randomize the worst
                    // half) to hold multiple binding-mode hypotheses against the
                    // deepest VCT minimum.  sharing already active via SMFREE fitness.
-                   << "    \"sharing_alpha\": 4.0,\n"
+                   << "    \"sharing_alpha\": "
+                   << (std::getenv("FLEXAIDDS_SHARING_ALPHA")
+                         ? std::atof(std::getenv("FLEXAIDDS_SHARING_ALPHA")) : 4.0)
+                   << ",\n"
                    << "    \"boom_inject_interval\": 100,\n"
-                   << "    \"boom_inject_fraction\": 1.0,\n"
+                   << "    \"boom_inject_fraction\": "
+                   << (std::getenv("FLEXAIDDS_BOOM_FRAC")
+                         ? std::atof(std::getenv("FLEXAIDDS_BOOM_FRAC")) : 1.0)
+                   << ",\n"
+                   // v27: true GA elitism — protect n_elite lowest-CF individuals
+                   // from boom injection + niche-sharing (engine-side env override
+                   // FLEXAIDDS_N_ELITE still wins, but echo it for auditability).
+                   << "    \"n_elite\": "
+                   << (std::getenv("FLEXAIDDS_N_ELITE")
+                         ? std::atoi(std::getenv("FLEXAIDDS_N_ELITE")) : 1)
+                   << ",\n"
                    // Shannon configurational entropy in the GA fitness is OFF by
                    // default (config_parser ga.use_shannon=false). Setting the
                    // env var FLEXAIDDS_USE_SHANNON=1 emits use_shannon:true so the
