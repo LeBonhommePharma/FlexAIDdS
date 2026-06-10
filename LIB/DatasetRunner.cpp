@@ -4093,6 +4093,15 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
 
             // Generate per-target JSON config for FlexAIDdS
             std::string config_path = out_dir + "/dock_config.json";
+            // P7: opt-in fine sampling grid (FLEXAIDDS_FINE_GRID=1) — halve the
+            // rotation step (5->2.5 deg) and tighten torsion/side-chain steps.
+            // Emitted into the optimization block below so the arm is greppable.
+            std::string opt_extra;
+            if (std::getenv("FLEXAIDDS_FINE_GRID")) {
+                opt_extra = ",\n    \"angle_step\": 2.5,"
+                            "\n    \"dihedral_step\": 5.0,"
+                            "\n    \"flexible_step\": 5.0";
+            }
             {
                 std::ofstream jf(config_path);
                 jf << "{\n"
@@ -4121,7 +4130,7 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                    << "    \"permeability\": 0.9\n"
                    << "  },\n"
                    << "  \"optimization\": {\n"
-                   << "    \"grid_spacing\": " << config.grid_spacing << "\n"
+                   << "    \"grid_spacing\": " << config.grid_spacing << opt_extra << "\n"
                    << "  },\n"
                    // The MC_st0r5.2_6 interaction matrix is loaded weighted (single
                    // value per type-pair), so the complementarity term must be
@@ -4216,12 +4225,23 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
             // Detect WRK data directory (same location as in top.cpp auto-detect)
             std::string data_dir_arg;
             {
-                std::string bin_dir = flexaidds_bin;
-                auto slash = bin_dir.rfind('/');
-                if (slash != std::string::npos) bin_dir = bin_dir.substr(0, slash);
-                std::string wrk_candidate = bin_dir + "/../WRK";
-                if (fs::exists(wrk_candidate + "/MC_st0r5.2_6.dat")) {
-                    data_dir_arg = " --data-dir '" + fs::canonical(wrk_candidate).string() + "' ";
+                // P10: matrix-swap diagnostic. FLEXAIDDS_DATA_DIR overrides the
+                // auto-detected WRK data dir, letting an alternative interaction
+                // matrix (staged as MC_st0r5.2_6.dat in that dir) replace the
+                // default MC_st0r5.2_6.dat without rebuilding — isolate the scoring
+                // matrix as the single variable in a targeted re-dock.
+                const char* dd_override = std::getenv("FLEXAIDDS_DATA_DIR");
+                if (dd_override && fs::exists(std::string(dd_override) + "/MC_st0r5.2_6.dat")) {
+                    data_dir_arg = " --data-dir '" +
+                                   fs::canonical(dd_override).string() + "' ";
+                } else {
+                    std::string bin_dir = flexaidds_bin;
+                    auto slash = bin_dir.rfind('/');
+                    if (slash != std::string::npos) bin_dir = bin_dir.substr(0, slash);
+                    std::string wrk_candidate = bin_dir + "/../WRK";
+                    if (fs::exists(wrk_candidate + "/MC_st0r5.2_6.dat")) {
+                        data_dir_arg = " --data-dir '" + fs::canonical(wrk_candidate).string() + "' ";
+                    }
                 }
             }
             // ── Per-worker OMP thread budget ──────────────────────────
