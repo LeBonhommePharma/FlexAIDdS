@@ -103,7 +103,10 @@ inline json::Value flexaid_default_config() {
             {"entropy_interval",     V(0)},     // log ensemble thermo every N gens (0=auto)
             {"use_shannon",          V(false)},  // include Shannon configurational entropy
             // Diversity monitoring (entropy collapse mitigation)
-            {"diversity_monitoring",             V(false)},
+            // P8: ON by default — drives both catastrophic-mutation rescue and the
+            // dual SEC termination gate (energy SEC only terminates when gene-space
+            // allele entropy has also collapsed; see gaboom.cpp sec_may_terminate).
+            {"diversity_monitoring",             V(true)},
             {"diversity_check_interval",         V(10)},
             {"diversity_collapse_threshold",     V(0.3)},
             {"catastrophic_mutation_fraction",   V(0.2)},

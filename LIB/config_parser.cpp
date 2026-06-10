@@ -171,7 +171,7 @@ void apply_config(const json::Value& config, FA_Global* FA, GB_Global* GB) {
         GB->use_shannon      = jbool(config, "ga", "use_shannon", false) ? 1 : 0;
 
         // Diversity monitoring (entropy collapse mitigation)
-        GB->diversity_monitoring          = jbool(config, "ga", "diversity_monitoring", false) ? 1 : 0;
+        GB->diversity_monitoring          = jbool(config, "ga", "diversity_monitoring", true) ? 1 : 0;  // P8: default ON (dual SEC gate)
         GB->diversity_check_interval      = jint(config, "ga", "diversity_check_interval", 10);
         GB->diversity_collapse_threshold  = jdbl(config, "ga", "diversity_collapse_threshold", 0.3);
         GB->catastrophic_mutation_fraction = jdbl(config, "ga", "catastrophic_mutation_fraction", 0.2);

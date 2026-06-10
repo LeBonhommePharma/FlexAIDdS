@@ -397,6 +397,30 @@ int GA(FA_Global* FA, GB_Global* GB,VC_Global* VC,chromosome** chrom,chromosome*
 	int  h_plateau_head   = 0;
 	int  h_plateau_filled = 0;
 
+	// ── P8: dual SEC termination gate (energy + gene-space joint convergence) ──
+	// The Shannon-Entropy-Collapse (SEC) checks below detect collapse of the
+	// *energy* histogram.  But an energy plateau can coexist with a population
+	// that is still spread across multiple distinct binding-mode hypotheses in
+	// *gene* space — terminating then throws away diversity that better cluster
+	// selection (or further search) could still exploit.  When diversity
+	// monitoring is enabled we therefore require JOINT collapse: an energy SEC
+	// trigger only terminates if gene-space allele entropy has *also* collapsed
+	// below diversity_collapse_threshold.  With monitoring off, behaviour is
+	// unchanged (energy SEC alone terminates).
+	auto sec_may_terminate = [&](int gen) -> bool {
+		if (!GB->diversity_monitoring) return true;  // gate disabled → legacy behaviour
+		auto dm = ga_diversity::compute_diversity(
+			*chrom, GB->num_chrom, GB->num_genes, *gene_lim,
+			GB->diversity_collapse_threshold);
+		if (!dm.collapse_detected) {
+			printf("SEC fired at gen %d but gene-space still diverse "
+			       "(allele_H=%.3f >= %.3f, min_gene_H=%.3f) — deferring termination\n",
+			       gen, dm.allele_entropy, GB->diversity_collapse_threshold,
+			       dm.min_gene_entropy);
+		}
+		return dm.collapse_detected;
+	};
+
 	// ── InStreamClustering: online medoid clustering during GA ──
 	flexaids::InStreamCluster instream_cluster(
 	    GA_INSTREAM_RMSD_THRESHOLD,
@@ -564,7 +588,7 @@ int GA(FA_Global* FA, GB_Global* GB,VC_Global* VC,chromosome** chrom,chromosome*
 			if (h_plateau_filled == kHPlateauWindow) {
 				// oldest entry is now at h_plateau_head (ring has wrapped)
 				const double delta = std::abs(H_now - h_plateau_ring[h_plateau_head]);
-				if (delta < kHPlateauEps) {
+				if (delta < kHPlateauEps && sec_may_terminate(i + 1)) {
 					printf("Early exit at gen %d: H plateau < %.4f "
 					       "(H_now=%.6f nats, delta=%.6f nats)\n",
 					       i + 1, kHPlateauEps, H_now, delta);
@@ -585,7 +609,7 @@ int GA(FA_Global* FA, GB_Global* GB,VC_Global* VC,chromosome** chrom,chromosome*
 				pop_energies, shannon_thermo::DEFAULT_HIST_BINS);
 			entropy_history.push_back(H);
 
-			if (H <= shannon_thermo::kHSC_soft_nats) {
+			if (H <= shannon_thermo::kHSC_soft_nats && sec_may_terminate(i + 1)) {
 				printf("Entropy collapse convergence at generation %d "
 				       "(H=%.4f nats <= %.4f nats / %.1f bits)\n",
 				       i + 1, H,
@@ -597,7 +621,7 @@ int GA(FA_Global* FA, GB_Global* GB,VC_Global* VC,chromosome** chrom,chromosome*
 
 			if (shannon_thermo::detect_entropy_plateau(
 			        entropy_history, GB->entropy_window,
-			        GB->entropy_rel_threshold)) {
+			        GB->entropy_rel_threshold) && sec_may_terminate(i + 1)) {
 				printf("Entropy convergence at generation %d "
 				       "(H=%.4f nats, stable for %d checks)\n",
 				       i + 1, H, GB->entropy_window);
@@ -619,7 +643,7 @@ int GA(FA_Global* FA, GB_Global* GB,VC_Global* VC,chromosome** chrom,chromosome*
 				}
 				const double h_mean = h_sum / kHardWindow;
 				const double h_var  = h_sum2 / kHardWindow - h_mean * h_mean;
-				if (h_var < kPlateauVarThresh) {
+				if (h_var < kPlateauVarThresh && sec_may_terminate(i + 1)) {
 					printf("Shannon entropy converged at generation %d "
 					       "(H=%.4f < %.4f nats, var=%.6f nats²) — early stop\n",
 					       i + 1, H, shannon_thermo::kHSC_hard_nats, h_var);

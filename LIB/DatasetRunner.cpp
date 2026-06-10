@@ -4171,6 +4171,10 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                    << "    \"num_generations\": " << n_gen_scaled << ",\n"
                    << "    \"crossover_rate\": 0.8,\n"
                    << "    \"mutation_rate\": 0.03,\n"
+                   // P8: gene-space diversity monitor ON — gates SEC termination on
+                   // JOINT (energy + gene-space) collapse and drives catastrophic
+                   // mutation rescue.  Echoed so the experiment arm is greppable.
+                   << "    \"diversity_monitoring\": true,\n"
                    // Shannon configurational entropy in the GA fitness is OFF by
                    // default (config_parser ga.use_shannon=false). Setting the
                    // env var FLEXAIDDS_USE_SHANNON=1 emits use_shannon:true so the
