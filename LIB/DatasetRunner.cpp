@@ -4181,6 +4181,13 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                    // k4=0.05 below-avg mutation.  Replaces the fixed 0.8/0.03.
                    << "    \"adaptive\": true,\n"
                    << "    \"adaptive_k\": [0.95, 0.10, 1.0, 0.05],\n"
+                   // P5: PSHARE niche sharing (alpha=4, original FlexAID) + periodic
+                   // BOOM random injection (every 100 gens, re-randomize the worst
+                   // half) to hold multiple binding-mode hypotheses against the
+                   // deepest VCT minimum.  sharing already active via SMFREE fitness.
+                   << "    \"sharing_alpha\": 4.0,\n"
+                   << "    \"boom_inject_interval\": 100,\n"
+                   << "    \"boom_inject_fraction\": 1.0,\n"
                    // Shannon configurational entropy in the GA fitness is OFF by
                    // default (config_parser ga.use_shannon=false). Setting the
                    // env var FLEXAIDDS_USE_SHANNON=1 emits use_shannon:true so the

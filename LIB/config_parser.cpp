@@ -166,7 +166,7 @@ void apply_config(const json::Value& config, FA_Global* FA, GB_Global* GB) {
             GB->k4 = 0.05;
         }
 
-        GB->alpha       = jdbl(config, "ga", "sharing_alpha", 1.0);
+        GB->alpha       = jdbl(config, "ga", "sharing_alpha", 4.0);  // P5: niche-sharing exponent (was 1.0)
         GB->peaks       = jdbl(config, "ga", "sharing_peaks", 5.0);
         GB->scale       = jdbl(config, "ga", "sharing_scale", 10.0);
         GB->intragenes  = jbool(config, "ga", "intragenes", false) ? 1 : 0;
@@ -184,6 +184,11 @@ void apply_config(const json::Value& config, FA_Global* FA, GB_Global* GB) {
         GB->diversity_collapse_threshold  = jdbl(config, "ga", "diversity_collapse_threshold", 0.3);
         GB->catastrophic_mutation_fraction = jdbl(config, "ga", "catastrophic_mutation_fraction", 0.2);
         GB->catastrophic_mutation_count   = 0;
+
+        // P5: periodic BOOM random injection (diversity insurance)
+        GB->boom_inject_interval          = jint(config, "ga", "boom_inject_interval", 100);
+        GB->boom_inject_fraction          = jdbl(config, "ga", "boom_inject_fraction", 1.0);
+        GB->boom_inject_count             = 0;
     }
 
     // ── Output ──

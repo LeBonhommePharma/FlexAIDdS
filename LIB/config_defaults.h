@@ -93,7 +93,7 @@ inline json::Value flexaid_default_config() {
             // k1=max crossover (0.95 at avg fitness, →0 at max), k2=max mutation,
             // k3=below-avg crossover (full disruption), k4=below-avg mutation.
             {"adaptive_k",           V(A{V(0.95), V(0.10), V(1.0), V(0.05)})},
-            {"sharing_alpha",        V(1.0)},
+            {"sharing_alpha",        V(4.0)},   // P5: niche-sharing exponent (was 1.0; 4 = original FlexAID)
             {"sharing_peaks",        V(5.0)},
             {"sharing_scale",        V(10.0)},
             {"intragenes",           V(false)},
@@ -112,6 +112,9 @@ inline json::Value flexaid_default_config() {
             {"diversity_check_interval",         V(10)},
             {"diversity_collapse_threshold",     V(0.3)},
             {"catastrophic_mutation_fraction",   V(0.2)},
+            // P5: periodic BOOM random injection (diversity insurance)
+            {"boom_inject_interval",             V(100)},
+            {"boom_inject_fraction",             V(1.0)},
         })},
 
         // ── Distributed Computing ───────────────────────────────

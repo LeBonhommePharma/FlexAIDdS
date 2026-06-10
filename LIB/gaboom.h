@@ -135,6 +135,17 @@ struct GB_Global_struct{
 	double       catastrophic_mutation_fraction;  // fraction of population to re-randomize (default: 0.2)
 	int          catastrophic_mutation_count;     // counter: how many times triggered
 
+	// ── P5: periodic BOOM random injection (diversity insurance) ──
+	// Every boom_inject_interval generations, replace the worst
+	// (boom_inject_fraction × num_chrom/2) chromosomes with fresh random
+	// individuals (not seeds), preserving the better half. Distinct from the
+	// BOOM *reproduction* model and from collapse-triggered catastrophic mutation:
+	// this fires unconditionally on a fixed cadence to keep multiple binding-mode
+	// hypotheses alive against the deepest (often false) VCT minimum. 0 = off.
+	int          boom_inject_interval;            // generations between injections (default: 100)
+	double       boom_inject_fraction;            // fraction of the worst half to replace (default: 1.0)
+	int          boom_inject_count;               // counter: how many times triggered
+
 	// ── Metal GPU multi-complex batching ──
 	// When > 1 concurrent GA workers share a process, they queue up N entries
 	// before issuing a single N×pop_size GPU kernel dispatch.

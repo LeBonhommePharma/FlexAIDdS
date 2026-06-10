@@ -672,6 +672,48 @@ int GA(FA_Global* FA, GB_Global* GB,VC_Global* VC,chromosome** chrom,chromosome*
 			}
 		}
 
+		// ── P5: periodic BOOM random injection (diversity insurance) ──
+		// Every boom_inject_interval generations, replace the worst
+		// (boom_inject_fraction × num_chrom/2) chromosomes with FRESH random
+		// individuals (not seeds), always preserving the better half.  Unlike the
+		// collapse-triggered catastrophic mutation above (which mutates existing
+		// genes only in the first half of the run), this fires unconditionally on
+		// a fixed cadence and resets genes to pure random — forcing the population
+		// to keep exploring alternative binding-mode basins instead of all
+		// converging onto the single deepest (often false) VCT minimum.  The base
+		// population [0,num_chrom) already carries valid CF/evalue from the prior
+		// generation, so "worst" is well-defined; fresh randoms are scored here so
+		// the upcoming reproduce()/fitness pass sees correct energies.
+		if (GB->boom_inject_interval > 0 && GB->boom_inject_fraction > 0.0 &&
+		    ((i + 1) % GB->boom_inject_interval == 0) && (i + 1) < GB->max_generations) {
+			const int half = GB->num_chrom / 2;
+			int n_inject = (int)(GB->boom_inject_fraction * (double)half);
+			if (n_inject > half) n_inject = half;
+			if (n_inject > 0) {
+				// Worst n_inject chromosomes by evalue (higher evalue = worse pose).
+				std::vector<int> bidx(GB->num_chrom);
+				for (int q = 0; q < GB->num_chrom; ++q) bidx[q] = q;
+				std::partial_sort(bidx.begin(), bidx.begin() + n_inject, bidx.end(),
+					[&](int a, int b){ return (*chrom)[a].evalue > (*chrom)[b].evalue; });
+				for (int q = 0; q < n_inject; ++q) {
+					int ci = bidx[q];
+					generate_random_individual(FA, GB, atoms, (*chrom)[ci].genes,
+					                           *gene_lim, dice, 0, GB->num_genes);
+					(*chrom)[ci].cf = eval_chromosome(FA, GB, VC, *gene_lim, atoms,
+					                                  residue, *cleftgrid,
+					                                  (*chrom)[ci].genes, target);
+					(*chrom)[ci].evalue     = get_cf_evalue(&(*chrom)[ci].cf);
+					(*chrom)[ci].app_evalue = get_apparent_cf_evalue(&(*chrom)[ci].cf);
+					ccbm_inject_strain(FA, (*chrom)[ci], *gene_lim);
+					(*chrom)[ci].status = 'n';
+				}
+				GB->boom_inject_count++;
+				fprintf(stderr, "[BOOM] injection #%d at gen %d: re-randomized worst "
+				        "%d/%d chromosomes (fresh random, better half preserved)\n",
+				        GB->boom_inject_count, i + 1, n_inject, GB->num_chrom);
+			}
+		}
+
 		nrejected = reproduce(FA,GB,VC,(*chrom),(*gene_lim),atoms,residue,(*cleftgrid),
 				      GB->rep_model,GB->mut_rate,GB->cross_rate,print,dice,duplicates,target,*ctx);
 
