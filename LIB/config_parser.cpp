@@ -56,6 +56,9 @@ void apply_config(const json::Value& config, FA_Global* FA, GB_Global* GB) {
         FA->vcontacts_planedef = pd.empty() ? 'X' : pd[0];
 
         FA->normalize_area = jbool(config, "scoring", "normalize_area", false) ? 1 : 0;
+        // P9: VCT distance-weighted contacts — exp(-r/r0) per-contact decay.
+        // Default 4.0 Å (ON); set <= 0 to restore legacy equal-weight contacts.
+        FA->vct_dist_weight_r0 = jdbl(config, "scoring", "vct_dist_weight_r0", 4.0);
         FA->useacs          = jbool(config, "scoring", "accessible_surface", false) ? 1 : 0;
         FA->acsweight       = jflt(config, "scoring", "acs_weight", 1.0f);
         FA->solventterm     = jflt(config, "scoring", "solvent_penalty", 0.0f);

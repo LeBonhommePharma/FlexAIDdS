@@ -378,6 +378,19 @@ double vcfunction(FA_Global* FA,VC_Global* VC,atom* atoms,resid* residue, std::v
 						//printf("after contribution=%.3f\n", contribution);
 					}
 
+					// P9: VCT distance-weighted contacts. Multiply the matrix
+					// complementarity by exp(-r/r0) so distal contacts contribute
+					// far less than proximal ones — breaking the VCT degeneracy
+					// where an off-native pose's distal-arm contacts tie the
+					// crystal pose's tight ones. Applied here (before the H-bond /
+					// per-type bookkeeping) so every downstream use of contribution
+					// sees the weighted value. r0 <= 0 disables (legacy behaviour).
+					if(FA->vct_dist_weight_r0 > 0.0){
+						double w_r = exp(-VC->ca_rec[currindex].dist /
+						                 FA->vct_dist_weight_r0);
+						contribution *= w_r;
+					}
+
 					// Directional H-bond angular correction:
 					// Scale complementarity by angular multiplier for H-bond pairs
 					if(FA->use_hbond){

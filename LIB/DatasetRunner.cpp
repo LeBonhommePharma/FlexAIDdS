@@ -4130,6 +4130,11 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                    // function and collapsing the Shannon entropy to ~0.
                    << "  \"scoring\": {\n"
                    << "    \"normalize_area\": true,\n"
+                   // P9: VCT distance-weighted contacts — each contact's matrix
+                   // complementarity scaled by exp(-r/r0), r0=4.0 Å.  Down-weights
+                   // distal contacts (e.g. a halogen arm at ~12 Å → ~0.05) vs
+                   // proximal ones (~3.5 Å → ~0.42), breaking VCT degeneracy.
+                   << "    \"vct_dist_weight_r0\": 4.0,\n"
                    // Directional H-bond and metal-coordination potentials are
                    // pure geometric terms (no external grid required).  They
                    // default OFF in config_parser.cpp, which left cfs->hbond and

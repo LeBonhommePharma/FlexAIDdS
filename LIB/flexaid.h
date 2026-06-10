@@ -382,6 +382,13 @@ struct FA_Global_struct{
 	int   use_elec;                      // enable Coulomb electrostatic scoring
 	float dielectric;                    // distance-dependent dielectric constant (default 4.0)
 
+	// P9: VCT distance-weighted contacts. Each contact's matrix complementarity
+	// score is multiplied by exp(-r/r0) before accumulation, so distal contacts
+	// (e.g. a halogen arm at ~12 Å) contribute far less than proximal ones (~3.5
+	// Å), breaking the VCT degeneracy that lets off-native poses tie the crystal.
+	// r0 in Å; <= 0 disables the weighting (legacy equal-weight behaviour).
+	double vct_dist_weight_r0;           // distance-decay length scale (default 4.0)
+
 	int   use_gist;                      // enable GIST water displacement scoring
 	char  gist_dg_file[MAX_PATH__];      // path to GIST free-energy .dx file
 	char  gist_dens_file[MAX_PATH__];    // path to GIST density .dx file
