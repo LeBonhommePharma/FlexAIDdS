@@ -5,6 +5,7 @@
 #include "metal_coordination.h"
 #include "GISTGrid.h"
 #include <cmath>
+#include <vector>
 
 #define DEBUG_LEVEL 0
 
@@ -37,6 +38,11 @@ double vcfunction(FA_Global* FA,VC_Global* VC,atom* atoms,resid* residue, std::v
 	
 	double permea = (double)FA->permeability;
 	double dee_clash = (double)FA->dee_clash;
+
+	// Lever 2: per-optres VCT contact tally for intensive CF.com normalization.
+	// Only allocated/used when the flag is set so the default path is unchanged.
+	std::vector<long> vct_ncon;
+	if(FA->vct_normalize_contacts){ vct_ncon.assign(FA->num_optres, 0); }
 	
 	// allocate
 	//float  matrix[FA->ntypes*FA->ntypes];
@@ -405,6 +411,13 @@ double vcfunction(FA_Global* FA,VC_Global* VC,atom* atoms,resid* residue, std::v
 
 					cfs->com += contribution;
 
+					// Lever 2: count this com-contributing contact for the
+					// current optimizable residue (intensive normalization below).
+					if(FA->vct_normalize_contacts){
+						long oi = (long)(atoms[atomzero].optres - FA->optres);
+						if(oi >= 0 && oi < (long)FA->num_optres){ vct_ncon[oi]++; }
+					}
+
 					// Coulomb electrostatic term (distance-dependent dielectric)
 					// Uses RESP charges when available, otherwise standard partial charges.
 					{
@@ -595,8 +608,24 @@ double vcfunction(FA_Global* FA,VC_Global* VC,atom* atoms,resid* residue, std::v
 	}
 
 
+	// Lever 2: convert CF.com from an extensive (sum-of-contacts) score to an
+	// intensive one. The raw com rewards sheer contact count, so a ligand jammed
+	// into a tight groove can out-score the native H-bond-driven pose purely by
+	// burying more surface. Dividing by the contact count scores the *mean*
+	// per-contact complementarity instead; the VCT_NREF rescale keeps the term's
+	// magnitude comparable to the SAS/wall channels (a bare 1/N collapses com
+	// into the noise floor and lets the orientation-independent SAS baseline win).
+	if(FA->vct_normalize_contacts){
+		constexpr double VCT_NREF = 100.0;
+		for(int j=0; j<FA->num_optres; ++j){
+			if(vct_ncon[j] > 0){
+				FA->optres[j].cf.com *= VCT_NREF / (double)vct_ncon[j];
+			}
+		}
+	}
+
 	// Penalize Freesurf.
-  
+
 	//printf("FREESURF(SAS)=[%8.2f]\n",SAStot);
 	//printf("FINAL SUM COM=[%8.2f]\tWAL=[%8.2f]\n",com,Ewall);
   

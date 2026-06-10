@@ -388,6 +388,7 @@ struct FA_Global_struct{
 	// Å), breaking the VCT degeneracy that lets off-native poses tie the crystal.
 	// r0 in Å; <= 0 disables the weighting (legacy equal-weight behaviour).
 	double vct_dist_weight_r0;           // distance-decay length scale (default 4.0)
+	int    vct_normalize_contacts;       // 1 = divide CF.com by contact count (intensive score); 0 = extensive (default)
 
 	int   use_gist;                      // enable GIST water displacement scoring
 	char  gist_dg_file[MAX_PATH__];      // path to GIST free-energy .dx file

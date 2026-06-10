@@ -25,6 +25,7 @@ inline json::Value flexaid_default_config() {
             {"plane_definition", V("X")},        // plane definition mode
             {"normalize_area",   V(false)},
             {"vct_dist_weight_r0", V(4.0)},      // P9: per-contact exp(-r/r0) decay length (Å); <=0 disables
+            {"vct_normalize_contacts", V(false)},// Lever 2: divide CF.com by contact count (intensive); default extensive
             {"accessible_surface", V(false)},    // ACS weighting
             {"acs_weight",       V(1.0)},
             {"solvent_penalty",  V(0.0)},

@@ -4164,6 +4164,23 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                             "\n    \"dihedral_step\": 5.0,"
                             "\n    \"flexible_step\": 5.0";
             }
+            // Lever 2 (v25b): VCT scoring-fix knobs, runner-tunable so the
+            // r0-decay sweep and contact-count normalization A/B reuse the same
+            // engine binary (the engine reads both keys from dock_config.json).
+            //   FLEXAIDDS_VCT_R0=<float>  override the exp(-r/r0) decay length.
+            //     P9 set this to 4.0 which crushed CF.com to the noise floor
+            //     (1LPZ com -1.3, total CF -3.8) — the orientation-independent
+            //     SAS baseline (~-104) then dominates and the GA landscape goes
+            //     flat (population collapses to the seed clone). A gentler decay
+            //     (7.0) restores the com gradient relative to the SAS floor.
+            //   FLEXAIDDS_VCT_NORM=1      emit vct_normalize_contacts:true →
+            //     engine divides CF.com by the contact count (intensive score),
+            //     targeting the deep-com-on-wrong-pose (over-burial) subtype.
+            double vct_r0 = 4.0;
+            if (const char* r0env = std::getenv("FLEXAIDDS_VCT_R0")) {
+                try { vct_r0 = std::stod(r0env); } catch (...) { vct_r0 = 4.0; }
+            }
+            const bool vct_norm = (std::getenv("FLEXAIDDS_VCT_NORM") != nullptr);
             {
                 std::ofstream jf(config_path);
                 jf << "{\n"
@@ -4205,7 +4222,9 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                    // complementarity scaled by exp(-r/r0), r0=4.0 Å.  Down-weights
                    // distal contacts (e.g. a halogen arm at ~12 Å → ~0.05) vs
                    // proximal ones (~3.5 Å → ~0.42), breaking VCT degeneracy.
-                   << "    \"vct_dist_weight_r0\": 4.0,\n"
+                   << "    \"vct_dist_weight_r0\": " << vct_r0 << ",\n"
+                   << "    \"vct_normalize_contacts\": "
+                   << (vct_norm ? "true" : "false") << ",\n"
                    // Directional H-bond and metal-coordination potentials are
                    // pure geometric terms (no external grid required).  They
                    // default OFF in config_parser.cpp, which left cfs->hbond and
