@@ -146,6 +146,14 @@ struct GB_Global_struct{
 	double       boom_inject_fraction;            // fraction of the worst half to replace (default: 1.0)
 	int          boom_inject_count;               // counter: how many times triggered
 
+	// ── True GA elitism (v27) ──
+	// Number of lowest-CF individuals snapshotted before boom injection and
+	// niche-sharing, then restored over the worst of the reproduced population
+	// so the global best is never lost to diversity pressure.  Elites are also
+	// exempt from the PSHARE/SMFREE sharing fitness reduction.  0 = disabled,
+	// default 1 (single-elite). Configurable via FLEXAIDDS_N_ELITE.
+	int          n_elite;
+
 	// ── Metal GPU multi-complex batching ──
 	// When > 1 concurrent GA workers share a process, they queue up N entries
 	// before issuing a single N×pop_size GPU kernel dispatch.

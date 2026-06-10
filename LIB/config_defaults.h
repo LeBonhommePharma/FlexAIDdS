@@ -117,6 +117,8 @@ inline json::Value flexaid_default_config() {
             // P5: periodic BOOM random injection (diversity insurance)
             {"boom_inject_interval",             V(100)},
             {"boom_inject_fraction",             V(1.0)},
+            // v27: true GA elitism — protect n_elite lowest-CF individuals
+            {"n_elite",                          V(1)},
         })},
 
         // ── Distributed Computing ───────────────────────────────

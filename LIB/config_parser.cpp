@@ -10,6 +10,7 @@
 #include "statmech.h"
 
 #include <cstring>
+#include <cstdlib>
 #include <stdexcept>
 
 // ─── Helper: safely get a value from section.key with fallback ───────────
@@ -195,6 +196,22 @@ void apply_config(const json::Value& config, FA_Global* FA, GB_Global* GB) {
         GB->boom_inject_interval          = jint(config, "ga", "boom_inject_interval", 100);
         GB->boom_inject_fraction          = jdbl(config, "ga", "boom_inject_fraction", 1.0);
         GB->boom_inject_count             = 0;
+
+        // ── True GA elitism (v27) ──
+        GB->n_elite                       = jint(config, "ga", "n_elite", 1);
+
+        // Env-var overrides for the three v27 GA-internal elitism knobs.  These
+        // win over the JSON config so a single benchmark binary can sweep them
+        // without re-emitting dock_config.json:
+        //   FLEXAIDDS_N_ELITE       — number of protected elites (GB->n_elite)
+        //   FLEXAIDDS_SHARING_ALPHA — niche-sharing exponent     (GB->alpha)
+        //   FLEXAIDDS_BOOM_FRAC     — boom-injection fraction     (GB->boom_inject_fraction)
+        if (const char* e = std::getenv("FLEXAIDDS_N_ELITE"))
+            GB->n_elite = std::atoi(e);
+        if (const char* e = std::getenv("FLEXAIDDS_SHARING_ALPHA"))
+            GB->alpha = std::atof(e);
+        if (const char* e = std::getenv("FLEXAIDDS_BOOM_FRAC"))
+            GB->boom_inject_fraction = std::atof(e);
     }
 
     // ── Output ──

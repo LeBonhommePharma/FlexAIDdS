@@ -429,6 +429,21 @@ int GA(FA_Global* FA, GB_Global* GB,VC_Global* VC,chromosome** chrom,chromosome*
 
 	////// Genetic Algorithm ///////
 	////////////////////////////////
+	// ── True GA elitism (v27) snapshot buffers ──
+	// The n_elite lowest-CF individuals are deep-copied each generation BEFORE
+	// boom injection / reproduce()/sharing, then restored over the worst of the
+	// freshly reproduced population so the running best can never be ejected by
+	// diversity pressure (boom injection or niche-sharing fitness reduction).
+	const int n_elite = (GB->n_elite > 0)
+	                    ? std::min(GB->n_elite, GB->num_chrom)
+	                    : 0;
+	std::vector<gene>   elite_genes_buf(static_cast<size_t>(n_elite) * GB->num_genes);
+	std::vector<cfstr>  elite_cf_buf(n_elite);
+	std::vector<double> elite_eval_buf(n_elite), elite_app_buf(n_elite);
+	if (n_elite > 0)
+		fprintf(stderr, "[ELITE] GA-internal elitism active: protecting %d "
+		        "lowest-CF individual(s) per generation\n", n_elite);
+
 	// ── Per-generation timing (bench) ──
 	double _sum_gen_ms = 0.0;
 	int    _n_gen_timed = 0;
@@ -672,6 +687,26 @@ int GA(FA_Global* FA, GB_Global* GB,VC_Global* VC,chromosome** chrom,chromosome*
 			}
 		}
 
+		// ── True GA elitism (v27): snapshot the n_elite lowest-CF individuals ──
+		// Taken every generation BEFORE boom injection and reproduce()/sharing so
+		// the global best survives both.  Restored over the worst of the new
+		// population right after reproduce() below.  evalue is the (non-apparent)
+		// CF; lower = better pose.
+		if (n_elite > 0) {
+			std::vector<int> eidx(GB->num_chrom);
+			for (int q = 0; q < GB->num_chrom; ++q) eidx[q] = q;
+			std::partial_sort(eidx.begin(), eidx.begin() + n_elite, eidx.end(),
+				[&](int a, int b){ return (*chrom)[a].evalue < (*chrom)[b].evalue; });
+			for (int e = 0; e < n_elite; ++e) {
+				const chromosome& src = (*chrom)[eidx[e]];
+				elite_cf_buf[e]   = src.cf;
+				elite_eval_buf[e] = src.evalue;
+				elite_app_buf[e]  = src.app_evalue;
+				for (int g = 0; g < GB->num_genes; ++g)
+					elite_genes_buf[static_cast<size_t>(e) * GB->num_genes + g] = src.genes[g];
+			}
+		}
+
 		// ── P5: periodic BOOM random injection (diversity insurance) ──
 		// Every boom_inject_interval generations, replace the worst
 		// (boom_inject_fraction × num_chrom/2) chromosomes with FRESH random
@@ -716,6 +751,30 @@ int GA(FA_Global* FA, GB_Global* GB,VC_Global* VC,chromosome** chrom,chromosome*
 
 		nrejected = reproduce(FA,GB,VC,(*chrom),(*gene_lim),atoms,residue,(*cleftgrid),
 				      GB->rep_model,GB->mut_rate,GB->cross_rate,print,dice,duplicates,target,*ctx);
+
+		// ── True GA elitism (v27): restore snapshotted elites ──
+		// reproduce() has rebuilt the population (selection/crossover/mutation
+		// over sharing-reduced fitness).  Overwrite the n_elite WORST individuals
+		// (highest evalue) of the new generation with the elites captured before
+		// boom/sharing, guaranteeing the running best is carried forward intact.
+		if (n_elite > 0) {
+			std::vector<int> widx(GB->num_chrom);
+			for (int q = 0; q < GB->num_chrom; ++q) widx[q] = q;
+			std::partial_sort(widx.begin(), widx.begin() + n_elite, widx.end(),
+				[&](int a, int b){ return (*chrom)[a].evalue > (*chrom)[b].evalue; });
+			for (int e = 0; e < n_elite; ++e) {
+				chromosome& dst = (*chrom)[widx[e]];
+				dst.cf              = elite_cf_buf[e];
+				dst.evalue          = elite_eval_buf[e];
+				dst.app_evalue      = elite_app_buf[e];
+				dst.fitnes          = 0.0;   // recomputed next reproduce()
+				dst.boltzmann_weight = 0.0;
+				dst.free_energy     = 0.0;
+				dst.status          = 'n';   // CF is valid (deep-copied) — no re-eval
+				for (int g = 0; g < GB->num_genes; ++g)
+					dst.genes[g] = elite_genes_buf[static_cast<size_t>(e) * GB->num_genes + g];
+			}
+		}
 
 		save_snapshot(&(*chrom_snapshot)[i*GB->num_chrom],(*chrom),save_num_chrom,GB->num_genes);
 		n_chrom_snapshot += save_num_chrom;
@@ -2038,7 +2097,13 @@ void calculate_fitness(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* chr
 				}
 			}
 			// Assign fitness AFTER accumulating the full niche count.
-			chrom[pi].fitnes = (double)(GB->num_chrom - pi) / pshare;
+			// v27 elitism: the top n_elite (lowest evalue → smallest pi after the
+			// ascending QuickSort above) are exempt from the sharing reduction so
+			// niching can never demote the running best out of the selection pool.
+			if (pi < GB->n_elite)
+				chrom[pi].fitnes = (double)(GB->num_chrom - pi);
+			else
+				chrom[pi].fitnes = (double)(GB->num_chrom - pi) / pshare;
 		}
 	}
 
@@ -2109,8 +2174,13 @@ void calculate_fitness(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* chr
 				double boltz_component = chrom[pi].boltzmann_weight / max_bw;
 
 				// Blended fitness divided by niche count.
+				// v27 elitism: top n_elite (lowest evalue → smallest pi after the
+				// ascending QuickSort) are exempt from the sharing reduction.
 				double blended = (1.0 - w) * rank_component + w * boltz_component;
-				chrom[pi].fitnes = blended * static_cast<double>(GB->num_chrom) / pshare;
+				if (pi < GB->n_elite)
+					chrom[pi].fitnes = blended * static_cast<double>(GB->num_chrom);
+				else
+					chrom[pi].fitnes = blended * static_cast<double>(GB->num_chrom) / pshare;
 			}
 
 			// Log ensemble thermodynamics periodically.
