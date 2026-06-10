@@ -131,7 +131,7 @@ void apply_config(const json::Value& config, FA_Global* FA, GB_Global* GB) {
     // ── GA ──
     {
         GB->num_chrom        = jint(config, "ga", "num_chromosomes", 1000);
-        GB->max_generations  = jint(config, "ga", "num_generations", 500);
+        GB->max_generations  = jint(config, "ga", "num_generations", 2000);  // P6: 500→2000 base budget
         GB->cross_rate       = jdbl(config, "ga", "crossover_rate", 0.8);
         GB->mut_rate         = jdbl(config, "ga", "mutation_rate", 0.03);
 
@@ -147,15 +147,23 @@ void apply_config(const json::Value& config, FA_Global* FA, GB_Global* GB) {
         std::strncpy(GB->pop_init_method, pi.c_str(), sizeof(GB->pop_init_method) - 1);
 
         GB->seed        = jint(config, "ga", "seed", 0);
-        GB->adaptive_ga = jbool(config, "ga", "adaptive", false) ? 1 : 0;
+        GB->adaptive_ga = jbool(config, "ga", "adaptive", true) ? 1 : 0;  // P6: ADAPTVGA default ON
 
-        // adaptive_k array
+        // adaptive_k array (P6 ADAPTVGA defaults: crossover 0.95 max, mutation 0.10
+        // max, full crossover for below-avg individuals, 0.05 below-avg mutation).
+        // Fall through to these when the config omits the array so adaptive Pc/Pm
+        // never run with zero-initialised k1..k4 (which would disable crossover).
         const auto& ak = config["ga"]["adaptive_k"];
         if (ak.is_array() && ak.size() >= 4) {
-            GB->k1 = ak[static_cast<size_t>(0)].as_double(1.0);
-            GB->k2 = ak[static_cast<size_t>(1)].as_double(0.5);
+            GB->k1 = ak[static_cast<size_t>(0)].as_double(0.95);
+            GB->k2 = ak[static_cast<size_t>(1)].as_double(0.10);
             GB->k3 = ak[static_cast<size_t>(2)].as_double(1.0);
-            GB->k4 = ak[static_cast<size_t>(3)].as_double(0.5);
+            GB->k4 = ak[static_cast<size_t>(3)].as_double(0.05);
+        } else {
+            GB->k1 = 0.95;
+            GB->k2 = 0.10;
+            GB->k3 = 1.0;
+            GB->k4 = 0.05;
         }
 
         GB->alpha       = jdbl(config, "ga", "sharing_alpha", 1.0);

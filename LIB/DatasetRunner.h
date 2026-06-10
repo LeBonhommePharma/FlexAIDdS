@@ -178,11 +178,14 @@ struct BenchmarkReport {
 
 struct DockingConfig {
     // GA parameters — canonical benchmark spec (publication benchmarks):
-    //   500 generations × 1000 chromosomes = 510,000 eval_chromosome calls/complex
-    //   Matches config_defaults.h num_generations=500, num_chromosomes=1000.
+    //   P6: base 2000 generations × 1000 chromosomes, scaled per-target by
+    //   ceil(n_genes/4) in DatasetRunner (so a rigid 4-gene ligand gets 2000 gens
+    //   and a 12-gene flexible ligand gets 6000) → search budget tracks DoF.
+    //   Was 500 (v22) — quadrupled to give the false-minimum-prone targets enough
+    //   generations to escape the deepest VCT well via the diversity machinery.
     //   (BENCHMARKING_PLAN.md retired from this slim publication tree; spec lives in
     //    scripts/validate_benchmark_results.py thresholds + paper methods.)
-    int    ga_generations{500};
+    int    ga_generations{2000};
     int    ga_population{1000};
     float  grid_spacing{0.375f};      // Å — 0.5 for coarse pass, 0.375 for full
     float  temperature{300.0f};       // Kelvin

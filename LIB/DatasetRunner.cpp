@@ -4175,6 +4175,12 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                    // JOINT (energy + gene-space) collapse and drives catastrophic
                    // mutation rescue.  Echoed so the experiment arm is greppable.
                    << "    \"diversity_monitoring\": true,\n"
+                   // P6: ADAPTVGA — Srinivas-Patnaik adaptive crossover/mutation.
+                   // k1=0.95 max crossover (avg-fitness pairs, decays to 0 at the
+                   // best), k2=0.10 max mutation, k3=1.0 below-avg crossover,
+                   // k4=0.05 below-avg mutation.  Replaces the fixed 0.8/0.03.
+                   << "    \"adaptive\": true,\n"
+                   << "    \"adaptive_k\": [0.95, 0.10, 1.0, 0.05],\n"
                    // Shannon configurational entropy in the GA fitness is OFF by
                    // default (config_parser ga.use_shannon=false). Setting the
                    // env var FLEXAIDDS_USE_SHANNON=1 emits use_shannon:true so the

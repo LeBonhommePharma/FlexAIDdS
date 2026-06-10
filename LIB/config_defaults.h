@@ -81,7 +81,7 @@ inline json::Value flexaid_default_config() {
         // ── Genetic Algorithm ────────────────────────────────────
         {"ga", V(O{
             {"num_chromosomes",      V(1000)},
-            {"num_generations",      V(500)},
+            {"num_generations",      V(2000)},  // P6: 500→2000 base budget (scaled by ceil(n_genes/4) in benchmark)
             {"crossover_rate",       V(0.8)},
             {"mutation_rate",        V(0.03)},
             {"fitness_model",        V("SMFREE")},  // SMFREE = entropy-aware (StatMech Free energy + sharing)
@@ -89,8 +89,10 @@ inline json::Value flexaid_default_config() {
             {"boom_fraction",        V(1.0)},
             {"population_init",      V("RANDOM")},
             {"seed",                 V(0)},          // 0 = time-based
-            {"adaptive",             V(false)},
-            {"adaptive_k",           V(A{V(1.0), V(0.5), V(1.0), V(0.5)})},
+            {"adaptive",             V(true)},   // P6: ADAPTVGA on (Srinivas-Patnaik adaptive Pc/Pm)
+            // k1=max crossover (0.95 at avg fitness, →0 at max), k2=max mutation,
+            // k3=below-avg crossover (full disruption), k4=below-avg mutation.
+            {"adaptive_k",           V(A{V(0.95), V(0.10), V(1.0), V(0.05)})},
             {"sharing_alpha",        V(1.0)},
             {"sharing_peaks",        V(5.0)},
             {"sharing_scale",        V(10.0)},
