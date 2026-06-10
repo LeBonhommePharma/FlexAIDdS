@@ -48,13 +48,16 @@ if [ "${need_install}" -eq 1 ]; then
 
  So on this macOS arm64 host there are two real paths:
 
- (A) Native source build (no Docker needed) — RECOMMENDED here:
-       brew install gsl cppunit popt          # popt already present
+ (A) Native source build (no Docker needed) — VERIFIED on this machine:
+       # Full step-by-step (incl. 3 required libc++ source patches) is in
+       #   scripts/RDOCK_SETUP.md
+       brew install gsl cppunit popt
        git clone https://github.com/CBDD/rDock.git ~/Software/rDock
-       cd ~/Software/rDock
-       # Follow the repo's build instructions (modern rDock builds with
-       # meson/cmake; the legacy SourceForge Makefile targets are Linux-only
-       # and need editing for arm64/clang). cmake 4.x is already installed.
+       # ...apply the 3 patches from RDOCK_SETUP.md, then:
+       cd ~/Software/rDock && make build -j4 CXX=clang++ \
+         CXX_EXTRA_FLAGS="-D_LIBCPP_ENABLE_CXX17_REMOVED_FEATURES \
+           -D_LIBCPP_ENABLE_CXX17_REMOVED_UNARY_BINARY_FUNCTION \
+           -D_LIBCPP_ENABLE_CXX17_REMOVED_BINDERS"
        export RBT_ROOT=~/Software/rDock
        export PATH="$RBT_ROOT/bin:$PATH"
        export DYLD_LIBRARY_PATH="$RBT_ROOT/lib:$DYLD_LIBRARY_PATH"
@@ -160,7 +163,9 @@ END_SECTION
 EOF
 
     # 4) Carve cavity (.as). Run from work dir so relative paths in .prm resolve.
-    ( cd "${work}" && rbcavity -was -d -r "system.prm" \
+    #    NB: this rDock revision uses the cxxopts CLI — write=-W, dump=-d
+    #    (the legacy single-dash `-was` is rejected by the new parser).
+    ( cd "${work}" && rbcavity -r "system.prm" -W -d \
         >"${work}/rbcavity.log" 2>&1 ) || {
         echo "[${code}] FAIL — rbcavity"; failed=$((failed+1)); continue; }
 
