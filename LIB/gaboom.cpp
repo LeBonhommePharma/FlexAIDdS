@@ -504,15 +504,8 @@ int GA(FA_Global* FA, GB_Global* GB,VC_Global* VC,chromosome** chrom,chromosome*
 	// below diversity_collapse_threshold.  With monitoring off, behaviour is
 	// unchanged (energy SEC alone terminates).
 	auto sec_may_terminate = [&](int gen) -> bool {
-		// ── SEC minimum-generation guard ──
-		// All four SEC early-exit paths (H plateau, soft collapse, plateau
-		// detection, hard-zone variance) funnel through this gate with gen=i+1.
-		// On oracle/direct runs the energy histogram can collapse as early as
-		// gen ~10, terminating the GA before periodic BOOM injection (gen 100)
-		// ever fires — killing the diversity insurance that rescues seed-pinned
-		// minima. Defer any SEC-driven termination until generation 50 so search
-		// and BOOM get a chance to act. This changes NO Shannon threshold value.
-		if (gen < 50) return false;
+		// SEC min-gen guard reverted (v29 ablation: early SEC collapse in oracle mode
+		// is correct convergence behaviour, not premature death — gate was net harmful).
 		if (!GB->diversity_monitoring) return true;  // gate disabled → legacy behaviour
 		auto dm = ga_diversity::compute_diversity(
 			*chrom, GB->num_chrom, GB->num_genes, *gene_lim,
