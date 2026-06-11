@@ -137,7 +137,7 @@ struct GB_Global_struct{
 	// ── Entropy-driven fitness parameters ──
 	double       entropy_weight;      // blending: 0.0 = pure rank, 1.0 = full Boltzmann (default 0.5)
 	int          entropy_interval;    // compute ensemble thermo every N generations (0 = off)
-	int          use_shannon;         // include Shannon configurational entropy in fitness
+	int          use_shannon;         // Level-3 H(ω) ligand vibrational-entropy monitor (diagnostic only; FLEXAIDDS_USE_SHANNON). 0=off (default)
 
 	// ── Diversity monitoring (entropy collapse mitigation) ──
 	int          diversity_monitoring;            // 0=off (default), 1=on
