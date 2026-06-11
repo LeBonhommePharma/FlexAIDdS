@@ -504,6 +504,15 @@ int GA(FA_Global* FA, GB_Global* GB,VC_Global* VC,chromosome** chrom,chromosome*
 	// below diversity_collapse_threshold.  With monitoring off, behaviour is
 	// unchanged (energy SEC alone terminates).
 	auto sec_may_terminate = [&](int gen) -> bool {
+		// ── SEC minimum-generation guard ──
+		// All four SEC early-exit paths (H plateau, soft collapse, plateau
+		// detection, hard-zone variance) funnel through this gate with gen=i+1.
+		// On oracle/direct runs the energy histogram can collapse as early as
+		// gen ~10, terminating the GA before periodic BOOM injection (gen 100)
+		// ever fires — killing the diversity insurance that rescues seed-pinned
+		// minima. Defer any SEC-driven termination until generation 50 so search
+		// and BOOM get a chance to act. This changes NO Shannon threshold value.
+		if (gen < 50) return false;
 		if (!GB->diversity_monitoring) return true;  // gate disabled → legacy behaviour
 		auto dm = ga_diversity::compute_diversity(
 			*chrom, GB->num_chrom, GB->num_genes, *gene_lim,
@@ -804,10 +813,45 @@ int GA(FA_Global* FA, GB_Global* GB,VC_Global* VC,chromosome** chrom,chromosome*
 		// population right after reproduce() below.  evalue is the (non-apparent)
 		// CF; lower = better pose.
 		if (n_elite > 0) {
+			// ── Group A ε-tiebreaker (ε = 2.0 CF units) ──
+			// When two candidates' CF (evalue) gap is within ε, prefer the more
+			// native-like pose — lower IC-space distance to the reference/oracle
+			// seed (FA->opt_par, the values native seeding writes into genes).  No
+			// Hungarian RMSD reference chromosome is retained in this scope, so per
+			// the task's allowed fallback we use IC-space distance to the seed gene
+			// over the same genes the seeding path sets (map_par[g].typ 1|2), with
+			// angular wrapping.  Group A CF gaps are ≤0.5 → fall in one ε-bucket →
+			// tiebreaker fires; Group B gaps are ≥6 → ≥3 buckets apart → never
+			// fires on genuine false minima.  Bucketing keeps a valid strict weak
+			// ordering (a raw fabs(a-b)<ε predicate is intransitive → UB in sort).
+			constexpr double kEliteCfEps = 2.0;  // CF units
+			auto ic_dist_to_seed = [&](int idx) -> double {
+				if (!FA->map_par || !FA->opt_par) return 0.0;  // no reference → no-op
+				const chromosome& c = (*chrom)[idx];
+				double d2 = 0.0;
+				for (int g = 1; g < GB->num_genes; ++g) {
+					if (FA->map_par[g].typ != 1 && FA->map_par[g].typ != 2) continue;
+					double diff = c.genes[g].to_ic - FA->opt_par[g];
+					// Wrap angular IC differences into [-180,180] (genes 1..N here
+					// are rotational/dihedral DOF in degrees).
+					while (diff >  180.0) diff -= 360.0;
+					while (diff < -180.0) diff += 360.0;
+					d2 += diff * diff;
+				}
+				return d2;
+			};
 			std::vector<int> eidx(GB->num_chrom);
 			for (int q = 0; q < GB->num_chrom; ++q) eidx[q] = q;
 			std::partial_sort(eidx.begin(), eidx.begin() + n_elite, eidx.end(),
-				[&](int a, int b){ return (*chrom)[a].evalue < (*chrom)[b].evalue; });
+				[&](int a, int b){
+					// ε-bucket the CF: candidates in the same bucket are treated as
+					// CF-tied and broken by native-likeness; different buckets sort
+					// by CF as before.
+					const double ba = std::round((*chrom)[a].evalue / kEliteCfEps);
+					const double bb = std::round((*chrom)[b].evalue / kEliteCfEps);
+					if (ba != bb) return (*chrom)[a].evalue < (*chrom)[b].evalue;
+					return ic_dist_to_seed(a) < ic_dist_to_seed(b);
+				});
 			for (int e = 0; e < n_elite; ++e) {
 				const chromosome& src = (*chrom)[eidx[e]];
 				elite_cf_buf[e]   = src.cf;
