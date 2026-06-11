@@ -416,14 +416,36 @@ double vcfunction(FA_Global* FA,VC_Global* VC,atom* atoms,resid* residue, std::v
 						//printf("after contribution=%.3f\n", contribution);
 					}
 
-					// P9: VCT distance-weighted contacts. Multiply the matrix
+					// VCT distance-weighted contacts. Multiply the matrix
 					// complementarity by exp(-r/r0) so distal contacts contribute
 					// far less than proximal ones — breaking the VCT degeneracy
 					// where an off-native pose's distal-arm contacts tie the
 					// crystal pose's tight ones. Applied here (before the H-bond /
 					// per-type bookkeeping) so every downstream use of contribution
-					// sees the weighted value. r0 <= 0 disables (legacy behaviour).
-					if(FA->vct_dist_weight_r0 > 0.0){
+					// sees the weighted value. r_onset = 0 so w(0) = 1.0.
+					//
+					// Two independent activation paths, both default OFF as a pair
+					// and never meant to compound:
+					//   (a) env gate FLEXAIDDS_DIST_WEIGHT_CON — r0 from
+					//       FLEXAIDDS_CON_R0 (float Å, default 3.5), expf decay.
+					//       Same magic-static pattern as the softcore-WAL gate
+					//       above (read once, thread-safe, no getenv in the loop).
+					//   (b) P9 runner knob FA->vct_dist_weight_r0 > 0 — exp decay
+					//       (legacy; config default 4.0 Å).
+					// When the env gate is set it takes precedence over (b) so the
+					// matrix complementarity is decayed exactly once. r0 <= 0 on
+					// the runner knob disables that path (legacy behaviour).
+					static const bool dist_weight_con =
+						(std::getenv("FLEXAIDDS_DIST_WEIGHT_CON") != nullptr);
+					static const float con_r0 = []() {
+						const char* s = std::getenv("FLEXAIDDS_CON_R0");
+						float v = 3.5f;
+						if(s){ float p = strtof(s, nullptr); if(p > 0.0f){ v = p; } }
+						return v;
+					}();
+					if(dist_weight_con){
+						contribution *= expf(-(float)VC->ca_rec[currindex].dist / con_r0);
+					}else if(FA->vct_dist_weight_r0 > 0.0){
 						double w_r = exp(-VC->ca_rec[currindex].dist /
 						                 FA->vct_dist_weight_r0);
 						contribution *= w_r;
