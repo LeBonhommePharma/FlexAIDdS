@@ -48,6 +48,7 @@
 #include "NATURaL/NATURaLDualAssembly.h"
 #include "InStreamClustering.h"
 #include "VibEntropy.h"
+#include "LigandRingFlex/LigandRingFlex.h"   // Phase 2: ring pucker GA genes
 
 // in milliseconds
 # define SLEEP GA_SLEEP_MS
@@ -77,6 +78,79 @@ static inline void ccbm_inject_strain(FA_Global* FA, chromosome& chrom, const ge
     double strain = FA->model_strain[model_idx];
     chrom.evalue += strain;
     chrom.app_evalue += strain;
+}
+
+// ═══ Ring pucker side-channel GA operators (LigandRingFlex Phase 2) ═══════════
+// These operate directly on the chromosome's POD ring arrays (ring_phases /
+// ring_six / ring_five). Counts come from FA->ring_flex_template (per-complex,
+// detected at read time). All are no-ops when ring flex is inactive, so the
+// default-OFF path and ring-free ligands are untouched. Conformer-index genes
+// (six/five) are carried for completeness; the module's apply() currently
+// deforms only furanose sugar rings (6-ring conformer apply is a documented
+// no-op in LigandRingFlex.cpp), so only ring_phases changes Cartesian coords.
+static inline void ring_randomise_chrom(const FA_Global* FA, chromosome* c) {
+    if (!FA->ring_flex_active || !FA->ring_flex_template) return;
+    const ligand_ring_flex::RingFlexGenes& t = *FA->ring_flex_template;
+    auto& lib = ring_flex::RingConformerLibrary::instance();
+    const int n6 = static_cast<int>(t.conformer_indices.size());
+    const int n5 = static_cast<int>(t.five_conformer_indices.size());
+    const int ns = FA->ring_n_sugars;
+    for (int i = 0; i < ns && i < MAX_RING_FLEX; ++i)
+        c->ring_phases[i] = static_cast<float>(RandomDouble() * 360.0);
+    for (int i = 0; i < n6 && i < MAX_RING_FLEX; ++i)
+        c->ring_six[i] = static_cast<uint8_t>(RandomDouble() * lib.n_six());
+    for (int i = 0; i < n5 && i < MAX_RING_FLEX; ++i)
+        c->ring_five[i] = static_cast<uint8_t>(RandomDouble() * lib.n_five());
+}
+
+static inline void ring_mutate_chrom(const FA_Global* FA, chromosome* c,
+                                     double ring_mut_prob = 0.05,
+                                     double pucker_mut_prob = 0.12) {
+    if (!FA->ring_flex_active || !FA->ring_flex_template) return;
+    const ligand_ring_flex::RingFlexGenes& t = *FA->ring_flex_template;
+    auto& lib = ring_flex::RingConformerLibrary::instance();
+    const int n6 = static_cast<int>(t.conformer_indices.size());
+    const int n5 = static_cast<int>(t.five_conformer_indices.size());
+    const int ns = FA->ring_n_sugars;
+    for (int i = 0; i < ns && i < MAX_RING_FLEX; ++i)
+        if (RandomDouble() < pucker_mut_prob)
+            c->ring_phases[i] = sugar_pucker::mutate_phase(c->ring_phases[i]);
+    for (int i = 0; i < n6 && i < MAX_RING_FLEX; ++i)
+        if (RandomDouble() < ring_mut_prob)
+            c->ring_six[i] = static_cast<uint8_t>(RandomDouble() * lib.n_six());
+    for (int i = 0; i < n5 && i < MAX_RING_FLEX; ++i)
+        if (RandomDouble() < ring_mut_prob)
+            c->ring_five[i] = static_cast<uint8_t>(RandomDouble() * lib.n_five());
+}
+
+// Single-point crossover swapping the tail of each ring-gene array between two
+// children (mirrors the standard gene crossover that produced them).
+static inline void ring_crossover_chrom(const FA_Global* FA,
+                                        chromosome* a, chromosome* b) {
+    if (!FA->ring_flex_active || !FA->ring_flex_template) return;
+    const ligand_ring_flex::RingFlexGenes& t = *FA->ring_flex_template;
+    const int n6 = static_cast<int>(t.conformer_indices.size());
+    const int ns = FA->ring_n_sugars;
+    if (ns > 1) {
+        int pt = 1 + static_cast<int>(RandomDouble() * (ns - 1));
+        for (int i = pt; i < ns && i < MAX_RING_FLEX; ++i)
+            std::swap(a->ring_phases[i], b->ring_phases[i]);
+    }
+    if (n6 > 1) {
+        int pt = 1 + static_cast<int>(RandomDouble() * (n6 - 1));
+        for (int i = pt; i < n6 && i < MAX_RING_FLEX; ++i)
+            std::swap(a->ring_six[i], b->ring_six[i]);
+    }
+}
+
+// Copy a chromosome's furanose pucker phases into FA->ring_cur_phases so the
+// next ic2cf() reconstructs that chromosome's puckered ring. Must be called on
+// the FA instance ic2cf will see (the per-thread FA copy in the GA eval loops).
+static inline void ring_load_chrom_to_fa(FA_Global* FA, const chromosome* c) {
+    if (!FA->ring_flex_active) return;
+    const int ns = FA->ring_n_sugars;
+    for (int i = 0; i < ns && i < MAX_RING_FLEX; ++i)
+        FA->ring_cur_phases[i] = c->ring_phases[i];
 }
 
 // Forward declarations for functions defined later in this file
@@ -310,6 +384,10 @@ int GA(FA_Global* FA, GB_Global* GB,VC_Global* VC,chromosome** chrom,chromosome*
 		(*chrom)[i].boltzmann_weight = 0.0;
 		(*chrom)[i].free_energy = 0.0;
 		(*chrom)[i].status = ' ';
+		// Zero ring pucker side-channel (POD; malloc leaves it indeterminate).
+		memset((*chrom)[i].ring_phases, 0, sizeof((*chrom)[i].ring_phases));
+		memset((*chrom)[i].ring_six,    0, sizeof((*chrom)[i].ring_six));
+		memset((*chrom)[i].ring_five,   0, sizeof((*chrom)[i].ring_five));
 	}
 
 	// *** chrom_snapshot
@@ -347,6 +425,9 @@ int GA(FA_Global* FA, GB_Global* GB,VC_Global* VC,chromosome** chrom,chromosome*
 		(*chrom_snapshot)[snap_i].boltzmann_weight = 0.0;
 		(*chrom_snapshot)[snap_i].free_energy = 0.0;
 		(*chrom_snapshot)[snap_i].status = ' ';
+		memset((*chrom_snapshot)[snap_i].ring_phases, 0, sizeof((*chrom_snapshot)[snap_i].ring_phases));
+		memset((*chrom_snapshot)[snap_i].ring_six,    0, sizeof((*chrom_snapshot)[snap_i].ring_six));
+		memset((*chrom_snapshot)[snap_i].ring_five,   0, sizeof((*chrom_snapshot)[snap_i].ring_five));
 	}
 
 	printf("alpha %lf peaks %lf scale %lf\n",GB->alpha,GB->peaks,GB->scale);
@@ -764,6 +845,8 @@ int GA(FA_Global* FA, GB_Global* GB,VC_Global* VC,chromosome** chrom,chromosome*
 					int ci = bidx[q];
 					generate_random_individual(FA, GB, atoms, (*chrom)[ci].genes,
 					                           *gene_lim, dice, 0, GB->num_genes);
+					ring_randomise_chrom(FA, &(*chrom)[ci]);
+					ring_load_chrom_to_fa(FA, &(*chrom)[ci]);
 					(*chrom)[ci].cf = eval_chromosome(FA, GB, VC, *gene_lim, atoms,
 					                                  residue, *cleftgrid,
 					                                  (*chrom)[ci].genes, target);
@@ -1229,6 +1312,12 @@ void copy_chrom(chromosome* dest, const chromosome* src, int num_genes){
 	        dest->genes[j].to_ic = src->genes[j].to_ic;
 		dest->genes[j].to_int32 = src->genes[j].to_int32;
 	}
+
+	// Ring pucker side-channel travels with the chromosome (POD copy) so
+	// snapshots and dedup-compaction keep ring genes synced with standard genes.
+	memcpy(dest->ring_phases, src->ring_phases, sizeof(dest->ring_phases));
+	memcpy(dest->ring_six,    src->ring_six,    sizeof(dest->ring_six));
+	memcpy(dest->ring_five,   src->ring_five,   sizeof(dest->ring_five));
 }
 
 /***********************************************************************/
@@ -1409,7 +1498,8 @@ int reproduce(FA_Global* FA,GB_Global* GB,VC_Global* VC, chromosome* chrom, cons
 		memcpy(chrop1_gen,chrom[p1].genes,GB->num_genes*sizeof(gene));
 		memcpy(chrop2_gen,chrom[p2].genes,GB->num_genes*sizeof(gene));
 
-		if(RandomDouble() < crossprob){
+		const bool did_cross = RandomDouble() < crossprob;
+		if(did_cross){
 			crossover(chrop1_gen,chrop2_gen,GB->num_genes,GB->intragenes);
 		}
 
@@ -1445,6 +1535,23 @@ int reproduce(FA_Global* FA,GB_Global* GB,VC_Global* VC, chromosome* chrom, cons
 			chrop2_gen[j].to_ic = genetoic(&gene_lim[j],chrop2_gen[j].to_int32);
 		}
 
+		// ── Ring pucker crossover + mutation (mirrors the standard-gene flow) ──
+		// Derive each child's ring genes from its parent, cross the two children
+		// when the standard genes were crossed, then mutate. rc1/rc2 are scratch
+		// chromosomes (only ring_* fields used; genes pointer stays null/unused).
+		chromosome rc1{}, rc2{};
+		if (FA->ring_flex_active) {
+			memcpy(rc1.ring_phases, chrom[p1].ring_phases, sizeof(rc1.ring_phases));
+			memcpy(rc1.ring_six,    chrom[p1].ring_six,    sizeof(rc1.ring_six));
+			memcpy(rc1.ring_five,   chrom[p1].ring_five,   sizeof(rc1.ring_five));
+			memcpy(rc2.ring_phases, chrom[p2].ring_phases, sizeof(rc2.ring_phases));
+			memcpy(rc2.ring_six,    chrom[p2].ring_six,    sizeof(rc2.ring_six));
+			memcpy(rc2.ring_five,   chrom[p2].ring_five,   sizeof(rc2.ring_five));
+			if (did_cross) ring_crossover_chrom(FA, &rc1, &rc2);
+			ring_mutate_chrom(FA, &rc1);
+			ring_mutate_chrom(FA, &rc2);
+		}
+
 		size_t sig1 = hash_genes(chrop1_gen,GB->num_genes);
 		size_t sig2 = hash_genes(chrop2_gen,GB->num_genes);
 
@@ -1461,6 +1568,13 @@ int reproduce(FA_Global* FA,GB_Global* GB,VC_Global* VC, chromosome* chrom, cons
 
 			//nrejected += filter_deelig(FA,GB,chrom,chrop1_gen,GB->num_chrom+i,atoms,gene_lim,dice);
 			memcpy(chrom[GB->num_chrom+i].genes,chrop1_gen,GB->num_genes*sizeof(gene));
+
+			if (FA->ring_flex_active) {
+				memcpy(chrom[GB->num_chrom+i].ring_phases, rc1.ring_phases, sizeof(rc1.ring_phases));
+				memcpy(chrom[GB->num_chrom+i].ring_six,    rc1.ring_six,    sizeof(rc1.ring_six));
+				memcpy(chrom[GB->num_chrom+i].ring_five,   rc1.ring_five,   sizeof(rc1.ring_five));
+				ring_load_chrom_to_fa(FA, &chrom[GB->num_chrom+i]);
+			}
 
 			chrom[GB->num_chrom+i].cf=eval_chromosome(FA,GB,VC,gene_lim,atoms,residue,cleftgrid,
 								  chrom[GB->num_chrom+i].genes,target);
@@ -1484,6 +1598,13 @@ int reproduce(FA_Global* FA,GB_Global* GB,VC_Global* VC, chromosome* chrom, cons
 			*/
 			//nrejected += filter_deelig(FA,GB,chrom,chrop2_gen,GB->num_chrom+i,atoms,gene_lim,dice);
 			memcpy(chrom[GB->num_chrom+i].genes,chrop2_gen,GB->num_genes*sizeof(gene));
+
+			if (FA->ring_flex_active) {
+				memcpy(chrom[GB->num_chrom+i].ring_phases, rc2.ring_phases, sizeof(rc2.ring_phases));
+				memcpy(chrom[GB->num_chrom+i].ring_six,    rc2.ring_six,    sizeof(rc2.ring_six));
+				memcpy(chrom[GB->num_chrom+i].ring_five,   rc2.ring_five,   sizeof(rc2.ring_five));
+				ring_load_chrom_to_fa(FA, &chrom[GB->num_chrom+i]);
+			}
 
 			chrom[GB->num_chrom+i].cf=eval_chromosome(FA,GB,VC,gene_lim,atoms,residue,cleftgrid,
 								  chrom[GB->num_chrom+i].genes,target);
@@ -2126,6 +2247,10 @@ void calculate_fitness(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* chr
 			}
 			tl_vc[tid].numcarec = 0;
 
+			// Load this chromosome's ring pucker phases into the per-thread FA
+			// so ic2cf reconstructs its puckered ring (no-op when inactive).
+			ring_load_chrom_to_fa(&tl_fa[tid], &chrom[ii]);
+
 			chrom[ii].cf = eval_chromosome(
 			    &tl_fa[tid], GB, &tl_vc[tid], gene_lim,
 			    tl_atoms[tid].data(), tl_res[tid].data(),
@@ -2556,6 +2681,9 @@ void populate_chromosomes(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* 
 				}
 			}
 
+			// Gen-0 ring pucker randomisation (no-op unless ring flex is active).
+			ring_randomise_chrom(FA, &chrom[i]);
+
 			gener++;
 			i++;
 			duplicates[sig] = 1;
@@ -2747,6 +2875,8 @@ void populate_chromosomes(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* 
 				p_optres[tid][o].cf.rclash = 0;
 			}
 			p_vc[tid].numcarec = 0;
+
+			ring_load_chrom_to_fa(&p_fa[tid], &chrom[i]);
 
 			chrom[i].cf = eval_chromosome(
 			    &p_fa[tid], GB, &p_vc[tid], gene_lim,

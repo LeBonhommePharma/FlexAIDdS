@@ -13,6 +13,7 @@
 // Copyright 2026 Le Bonhomme Pharma. Apache-2.0.
 
 #include "SdfReader.h"
+#include "LigandRingFlex/LigandRingFlex.h"   // Phase 2: ring pucker detection
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -690,6 +691,109 @@ int read_sdf_ligand(FA_Global* FA, atom** atoms, resid** residue,
         }
         if (getenv("FLEXAIDDS_DEBUG_TYPES"))
             fprintf(stderr, "[FLEX] perceived %d rotatable bond(s) for ligand\n", fdih);
+
+        // ── Ring pucker detection (LigandRingFlex Phase 2) ────────────────────
+        // Ring bonds are excluded from the rotatable-bond set above (is_bridge
+        // test). Instead, non-aromatic 6-rings, non-sugar 5-rings, and furanose
+        // sugars become a side-channel GA gene (FLEXAIDDS_RING_FLEX). The atom
+        // bond[] adjacency used by detection is already populated (lines ~547).
+        // Gated OFF by default so running benchmark arms are unaffected.
+        {
+            const char* rf_env = getenv("FLEXAIDDS_RING_FLEX");
+            const bool  rf_on  = rf_env && atoi(rf_env) != 0;
+
+            // Bond-order-aware ring detection. The module's detect_rings() relies
+            // on a degree heuristic (is_likely_aromatic) that misclassifies
+            // H-suppressed saturated sugar rings — whose carbons have only 3
+            // heavy-atom bonds — as aromatic, dropping every furanose/pyranose in
+            // a HETATM-extracted benchmark ligand. SDFs carry true bond orders
+            // (MDL type 4 = aromatic), already captured in is_aromatic[] above, so
+            // we find rings on the order-annotated nbr[] graph and use the real
+            // aromatic flag instead. We still drive apply/randomise/mutate/
+            // crossover through the LigandRingFlex module API below.
+            auto genes = new ligand_ring_flex::RingFlexGenes();
+
+            // Enumerate unique 5- and 6-membered rings via bounded DFS on nbr[].
+            std::vector<std::vector<int>> rings;  // each: local (0-based) indices
+            for (int s = 0; s < natoms; ++s) {
+                for (const auto& nb0 : nbr[s]) {
+                    struct Frame { int node, parent; std::vector<int> path; };
+                    std::vector<Frame> stk;
+                    stk.push_back({nb0.first, s, {s, nb0.first}});
+                    while (!stk.empty()) {
+                        Frame f = std::move(stk.back()); stk.pop_back();
+                        if ((int)f.path.size() > 6) continue;
+                        for (const auto& nb : nbr[f.node]) {
+                            int nx = nb.first;
+                            if (nx == f.parent && (int)f.path.size() < 4) continue;
+                            if (nx == s && (int)f.path.size() >= 5) {
+                                std::vector<int> r = f.path;
+                                auto it = std::min_element(r.begin(), r.end());
+                                std::rotate(r.begin(), it, r.end());
+                                if (r.size() > 2 && r[1] > r.back())
+                                    std::reverse(r.begin() + 1, r.end());
+                                bool dup = false;
+                                for (const auto& e : rings) if (e == r) { dup = true; break; }
+                                if (!dup) rings.push_back(std::move(r));
+                                continue;
+                            }
+                            bool in_path = false;
+                            for (int p : f.path) if (p == nx) { in_path = true; break; }
+                            if (in_path) continue;
+                            if ((int)f.path.size() < 6) {
+                                std::vector<int> np = f.path; np.push_back(nx);
+                                stk.push_back({nx, f.node, std::move(np)});
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Classify each non-aromatic ring (bond-order aromatic flag).
+            for (auto& r : rings) {
+                const int sz = (int)r.size();
+                if (sz != 5 && sz != 6) continue;
+                bool aromatic = false;
+                for (int li : r) if (is_aromatic[li]) { aromatic = true; break; }
+                if (aromatic) continue;                 // aromatic ring ⇒ rigid
+
+                bool has_O = false;
+                for (int li : r) if (satoms[li].elem[0] == 'O') { has_O = true; break; }
+
+                if (sz == 6) {
+                    genes->conformer_indices.push_back(0);     // default 4C1 chair
+                } else if (has_O) {                            // furanose sugar
+                    std::vector<int> ring_global(sz);
+                    for (int k = 0; k < sz; ++k) ring_global[k] = fa + r[k];
+                    sugar_pucker::SugarType st =
+                        sugar_pucker::detect_sugar_type(*atoms, ring_global.data(), sz);
+                    genes->sugar_phases.push_back(0.0f);
+                    genes->sugar_types.push_back(st);
+                    genes->sugar_ring_indices.push_back(ring_global);
+                } else {
+                    genes->five_conformer_indices.push_back(0); // non-sugar 5-ring
+                }
+            }
+
+            if (FA->ring_flex_template) {
+                delete FA->ring_flex_template;     // re-read safety (stale cache)
+                FA->ring_flex_template = nullptr;
+            }
+            FA->ring_flex_template = genes;
+            FA->ring_n_sugars =
+                static_cast<int>(FA->ring_flex_template->sugar_phases.size());
+            FA->ring_flex_active =
+                (rf_on && FA->ring_flex_template->has_rings()) ? 1 : 0;
+
+            if (rf_on || getenv("FLEXAIDDS_DEBUG_TYPES")) {
+                fprintf(stderr,
+                    "[RING-FLEX] %s: 6-ring=%zu 5-ring=%zu furanose=%d active=%d\n",
+                    rf_on ? "ON" : "off",
+                    FA->ring_flex_template->conformer_indices.size(),
+                    FA->ring_flex_template->five_conformer_indices.size(),
+                    FA->ring_n_sugars, FA->ring_flex_active);
+            }
+        }
     }
 
     // ── Build bonded matrix, shortest paths, shortflex ────────────────────────

@@ -2030,6 +2030,90 @@ static int count_rotatable_bonds_sdf(const std::string& path) {
     return fdih;
 }
 
+// Count ring-pucker degrees of freedom in an SDF (V2000) for eval-budget
+// scaling when ring flex is enabled. Ring pucker is a side-channel gene that
+// does NOT pass through FA->npar/map_par, so the standard n_genes = 4 + fdih
+// count misses it. Proxy: each ring oxygen (an O with heavy-degree 2 whose
+// both bonds are ring bonds, i.e. non-bridges) marks one sugar/ether ring that
+// contributes a pucker phase. Counts furanose and pyranose ring oxygens alike;
+// over-counting pyranose (whose apply is currently a no-op) only grows the
+// budget slightly, which is harmless. Returns 0 on parse failure.
+static int count_ring_pucker_dof_sdf(const std::string& path) {
+    std::string ext = fs::path(path).extension().string();
+    std::transform(ext.begin(), ext.end(), ext.begin(),
+                   [](unsigned char c){ return std::tolower(c); });
+    if (ext != ".sdf" && ext != ".mol") return 0;
+
+    std::ifstream in(path);
+    if (!in.is_open()) return 0;
+    std::vector<std::string> lines;
+    {
+        std::string l;
+        while (std::getline(in, l)) {
+            if (!l.empty() && l.back() == '\r') l.pop_back();
+            lines.push_back(l);
+        }
+    }
+    if (lines.size() < 5) return 0;
+
+    int natoms = 0, nbonds_count = 0;
+    try {
+        natoms       = std::stoi(lines[3].substr(0, 3));
+        nbonds_count = std::stoi(lines[3].substr(3, 3));
+    } catch (...) { return 0; }
+    if (natoms <= 0 || nbonds_count <= 0) return 0;
+    const size_t bstart = 4 + static_cast<size_t>(natoms);
+    if (bstart + static_cast<size_t>(nbonds_count) > lines.size()) return 0;
+
+    // Element symbols from the atom block (cols 31-33, 0-based 31).
+    std::vector<std::string> elem(natoms);
+    for (int i = 0; i < natoms; ++i) {
+        const std::string& al = lines[4 + i];
+        std::string e = (al.size() >= 34) ? al.substr(31, 3) : "";
+        // trim
+        size_t s = e.find_first_not_of(" \t");
+        size_t f = e.find_last_not_of(" \t");
+        elem[i] = (s == std::string::npos) ? "" : e.substr(s, f - s + 1);
+    }
+
+    std::vector<std::vector<int>> adj(natoms);
+    for (int i = 0; i < nbonds_count; ++i) {
+        const std::string& bl = lines[bstart + i];
+        if (bl.size() < 9) continue;
+        int a = 0, b = 0;
+        try {
+            a = std::stoi(bl.substr(0, 3)) - 1;
+            b = std::stoi(bl.substr(3, 3)) - 1;
+        } catch (...) { continue; }
+        if (a < 0 || b < 0 || a >= natoms || b >= natoms || a == b) continue;
+        adj[a].push_back(b);
+        adj[b].push_back(a);
+    }
+
+    auto is_bridge = [&](int u, int v) -> bool {
+        std::vector<bool> seen(natoms, false);
+        std::vector<int> bfs; bfs.reserve(natoms);
+        bfs.push_back(u); seen[u] = true;
+        for (size_t qi = 0; qi < bfs.size(); ++qi) {
+            int x = bfs[qi];
+            for (int y : adj[x]) {
+                if ((x == u && y == v) || (x == v && y == u)) continue;
+                if (!seen[y]) { seen[y] = true; bfs.push_back(y); }
+            }
+        }
+        return !seen[v];
+    };
+
+    int ring_o = 0;
+    for (int u = 0; u < natoms; ++u) {
+        if (elem[u] != "O" || adj[u].size() != 2) continue;
+        bool both_ring = true;
+        for (int v : adj[u]) if (is_bridge(u, v)) { both_ring = false; break; }
+        if (both_ring) ++ring_o;
+    }
+    return ring_o;
+}
+
 static bool ligand_sdf_is_current(const std::string& sdf_path,
                                   const std::string& structure_path) {
     if (!fs::exists(sdf_path) || fs::is_directory(sdf_path)) return false;
@@ -4268,7 +4352,14 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
             const int fdih_est = config.force_rigid
                                  ? 0
                                  : count_rotatable_bonds_sdf(entry.ligand_path);
-            const int n_genes  = 4 + fdih_est;
+            // Ring pucker (LigandRingFlex Phase 2) adds DoF via a side-channel
+            // gene that does NOT pass through FA->npar — so fold its DoF into the
+            // budget scaling input here, but only when ring flex is enabled.
+            const char* ring_flex_env = std::getenv("FLEXAIDDS_RING_FLEX");
+            const int   ring_dof_est =
+                (ring_flex_env && std::atoi(ring_flex_env) != 0)
+                ? count_ring_pucker_dof_sdf(entry.ligand_path) : 0;
+            const int n_genes  = 4 + fdih_est + ring_dof_est;
             int n_gen_scaled = config.ga_generations *
                                      ((n_genes + 3) / 4);  // ceil(n_genes/4)
 
@@ -4287,8 +4378,8 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                 n_gen_scaled = static_cast<int>(
                     std::lround(static_cast<double>(n_gen_scaled) * budget_scale_factor));
             }
-            fprintf(stderr, "[EVAL-BUDGET] %s: fdih=%d n_genes=%d budget_scale=%.3f n_gen=%d\n",
-                    entry.pdb_id.c_str(), fdih_est, n_genes, budget_scale_factor, n_gen_scaled);
+            fprintf(stderr, "[EVAL-BUDGET] %s: fdih=%d ring_dof=%d n_genes=%d budget_scale=%.3f n_gen=%d\n",
+                    entry.pdb_id.c_str(), fdih_est, ring_dof_est, n_genes, budget_scale_factor, n_gen_scaled);
 
             // ── Multi-restart loop ──────────────────────────────────────────
             // Restart 0 uses the canonical out_dir/out_prefix.  Restarts 1+

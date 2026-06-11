@@ -1,5 +1,6 @@
 #include "gaboom.h"
 #include "fileio.h"
+#include "LigandRingFlex/LigandRingFlex.h"   // Phase 2: ring pucker apply
 
 #ifdef _OPENMP
 #  include <omp.h>
@@ -135,6 +136,22 @@ cfstr ic2cf(FA_Global* FA,VC_Global* VC,atom* atoms,resid* residue,
 				saved_res_seen[ri] = 1;
 			}
 		}
+	}
+
+	// ── Ring pucker apply (LigandRingFlex Phase 2) ───────────────────────────
+	// Snap each furanose ring's internal dihedrals (.dih) to the Cremer-Pople
+	// pucker phase carried by the current chromosome (loaded into
+	// FA->ring_cur_phases before this call). Must run AFTER the icv→.dih copy
+	// loop above and BEFORE buildcc(), so the reconstructed Cartesian coords
+	// reflect the pucker. Gated OFF by default; ring bonds are excluded from
+	// map_par, so this never perturbs the standard torsional genes.
+	if (FA->ring_flex_active && FA->ring_flex_template &&
+	    FA->ring_flex_template->has_rings() && FA->ring_n_sugars > 0) {
+		const ligand_ring_flex::RingFlexGenes& tmpl = *FA->ring_flex_template;
+		std::vector<float> phases(FA->ring_cur_phases,
+		                          FA->ring_cur_phases + FA->ring_n_sugars);
+		sugar_pucker::apply_sugar_puckers(
+			atoms, tmpl.sugar_ring_indices, phases, tmpl.sugar_types);
 	}
 
 	/* rebuild cartesian coordinates of optimized residues*/

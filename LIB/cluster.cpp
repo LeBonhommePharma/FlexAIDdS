@@ -263,6 +263,14 @@ void cluster(FA_Global* FA, GB_Global* GB, VC_Global* VC, chromosome* chrom, gen
 			FA->opt_par[k] = chrom[Clus_TOP[j]].genes[k].to_ic;
 		}
 
+		// Ring pucker (LigandRingFlex Phase 2): load the winning chromosome's
+		// furanose phases so the emitted pose's Cartesian coords match the
+		// puckered conformation the GA scored. No-op unless ring flex is active.
+		if (FA->ring_flex_active) {
+			for (int s = 0; s < FA->ring_n_sugars && s < MAX_RING_FLEX; ++s)
+				FA->ring_cur_phases[s] = chrom[Clus_TOP[j]].ring_phases[s];
+		}
+
 		// Rebuild atom coordinates for PDB output and populate the per-optres
 		// CF breakdown as a side effect. The returned re-score is NOT used for
 		// the REMARK CF line: at emission Vcontacts can early-return a raw

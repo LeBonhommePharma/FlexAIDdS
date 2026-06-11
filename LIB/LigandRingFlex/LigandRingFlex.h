@@ -29,6 +29,14 @@ struct RingFlexGenes {
     std::vector<float>                       sugar_phases;
     std::vector<sugar_pucker::SugarType>     sugar_types;
     std::vector<std::vector<int>>            sugar_ring_indices; // atom idx lists
+
+    // True when at least one flexible ring (6-ring, non-sugar 5-ring, or
+    // furanose sugar) was detected — i.e. ring-flex genes are present.
+    bool has_rings() const {
+        return !conformer_indices.empty() ||
+               !five_conformer_indices.empty() ||
+               !sugar_phases.empty();
+    }
 };
 
 // ─── ring detection at startup ────────────────────────────────────────────────

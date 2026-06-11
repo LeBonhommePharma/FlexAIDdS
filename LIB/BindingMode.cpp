@@ -489,6 +489,13 @@ void BindingMode::output_BindingMode(int num_result, char* end_strfile, char* tm
 
 	for (int k = 0; k < this->Population->GB->num_genes; ++k) this->Population->FA->opt_par[k] = Rep->chrom->genes[k].to_ic;
 
+	// Ring pucker (LigandRingFlex Phase 2): emit the representative pose's
+	// furanose conformation alongside its standard genes. No-op when inactive.
+	if (this->Population->FA->ring_flex_active) {
+		for (int s = 0; s < this->Population->FA->ring_n_sugars && s < MAX_RING_FLEX; ++s)
+			this->Population->FA->ring_cur_phases[s] = Rep->chrom->ring_phases[s];
+	}
+
 	// Rebuild coordinates for output + populate per-optres CF breakdown.
 	// Returned re-score is discarded for the REMARK CF line: at emission
 	// Vcontacts can early-return a raw uncapped clash penalty that bypasses
@@ -580,6 +587,13 @@ void BindingMode::output_dynamic_BindingMode(int num_result, char* end_strfile, 
 	for (std::vector<Pose>::iterator Pose = this->Poses.begin(); Pose != this->Poses.end(); ++Pose, ++nModel)
 	{
 		for (int k = 0; k < this->Population->GB->num_genes; ++k) this->Population->FA->opt_par[k] = Pose->chrom->genes[k].to_ic;
+
+		// Ring pucker (LigandRingFlex Phase 2): emit each pose's furanose
+		// conformation alongside its standard genes. No-op when inactive.
+		if (this->Population->FA->ring_flex_active) {
+			for (int s = 0; s < this->Population->FA->ring_n_sugars && s < MAX_RING_FLEX; ++s)
+				this->Population->FA->ring_cur_phases[s] = Pose->chrom->ring_phases[s];
+		}
 
 		// Re-score is discarded for the REMARK CF line (emission clash
 		// early-return blows up the raw penalty); report the stored chromosome

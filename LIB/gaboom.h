@@ -72,6 +72,17 @@ struct chromosome_struct{
 	char   status;   /* status, n -> eval is correct
 			    o -> need to recalculate eval
 			 */
+
+	// ── Ring pucker side-channel (LigandRingFlex Phase 2) ──
+	// Plain-old-data arrays so the chromosome stays trivially copyable: it is
+	// allocated with malloc(), bulk-swapped by swap_chrom (struct copy), and
+	// shallow-assigned in the STEADY replacement path — none of which would be
+	// safe for a heap-owning std::vector member. Ring topology (atom indices,
+	// sugar types, counts) is shared per-complex on FA->ring_flex_template; only
+	// the variable conformer choice travels with each chromosome here.
+	float   ring_phases[MAX_RING_FLEX]; // furanose sugar pucker phases (deg)
+	uint8_t ring_six[MAX_RING_FLEX];    // 6-membered ring conformer indices
+	uint8_t ring_five[MAX_RING_FLEX];   // 5-membered (non-sugar) conformer indices
 };
 typedef struct chromosome_struct chromosome;
 

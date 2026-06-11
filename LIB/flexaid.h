@@ -59,7 +59,8 @@ static inline void safe_remark_cat(char* remark, const char* src, size_t* cur_le
 #define MAX_NUM_RES 250             // max number of residues allowed 
 #define MAX_NUM_MODES 5             // max number of normal modes
 #define MAX_NUM_ATM 10000           // max number of atoms allowed 
-#define MAX_ATM_HET 200             // max number of atoms in het groups allowed 
+#define MAX_ATM_HET 200             // max number of atoms in het groups allowed
+#define MAX_RING_FLEX 16            // max non-aromatic/sugar rings per ligand (LigandRingFlex Phase 2)
 //#define MAX_FLEX_BONDS 20           // max number of flexible bonds for het groups
 #define MAX_ATOM_NUMBER 100000      // Max PDB atom number for contacts/num_atm arrays
 #define MAX_GRID_POINTS 1000        // Total number of points to anchor ligand
@@ -325,6 +326,11 @@ struct FlexDEE_Node_struct {
 	psFlexDEE_Node prev;
 };
 
+
+// Forward declaration for the ring-pucker side-channel (LigandRingFlex Phase 2).
+// Stored by pointer in FA_Global to avoid a circular include (LigandRingFlex.h
+// pulls in flexaid.h) and to keep FA_Global trivially memset-zeroable.
+namespace ligand_ring_flex { struct RingFlexGenes; }
 
 struct FA_Global_struct{
 	optmap* map_par;                 // array of structure of mapping of optimization parameters
@@ -596,6 +602,16 @@ struct FA_Global_struct{
 	std::vector<double>             model_strain;  // strain energy per model (kcal/mol)
 
 	// (GIST evaluator and H-bond fields are declared above, near use_gist/use_hbond)
+
+	// ── Ring pucker flexibility (LigandRingFlex Phase 2; FLEXAIDDS_RING_FLEX) ──
+	// Side-channel GA genes for non-aromatic ring conformers and furanose sugar
+	// pucker. These do NOT pass through map_par/opt_par (npar is unchanged); the
+	// variable per-chromosome state lives as POD arrays on chromosome_struct and
+	// is loaded into ring_cur_phases[] right before each ic2cf evaluation.
+	int    ring_flex_active;             // 0 = off (default); set when env on AND rings exist
+	ligand_ring_flex::RingFlexGenes* ring_flex_template; // detected ring topology (heap; one per complex)
+	int    ring_n_sugars;                // cached furanose pucker-gene count (== template->sugar_phases.size())
+	float  ring_cur_phases[MAX_RING_FLEX]; // current chromosome's sugar pucker phases (deg), read by ic2cf
 };
 typedef struct FA_Global_struct FA_Global;
 
