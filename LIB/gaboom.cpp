@@ -557,6 +557,28 @@ int GA(FA_Global* FA, GB_Global* GB,VC_Global* VC,chromosome** chrom,chromosome*
 		fprintf(stderr, "[ELITE] GA-internal elitism active: protecting %d "
 		        "lowest-CF individual(s) per generation\n", n_elite);
 
+	// ── Temperature annealing (FLEXAIDDS_T_HOT) ──────────────────────────────
+	// Exponential decay T_hot → 298 K: T(α) = T_hot·exp(−5α) + 298·(1−exp(−5α))
+	// where α = gen/(max_gen−1) ∈ [0,1].  Affects SMFREE Boltzmann-weight
+	// selection only; post-GA thermodynamics use the final temperature (≈298 K).
+	// arm3b ablation (5000K constant, Fable 5) was net-neutral in oracle mode
+	// → native basin gravitationally dominant.  Annealing targets near-miss
+	// false-minimum escape early in the run while native seeds lock in.
+	// Useful calibration range: 500–2000 K.
+	const double t_hot_anneal = []() -> double {
+		const char* env = std::getenv("FLEXAIDDS_T_HOT");
+		return (env && env[0] != '\0') ? std::atof(env) : 0.0;
+	}();
+	const bool do_anneal = (t_hot_anneal > 298.0) && (FA->temperature > 0);
+	if (do_anneal) {
+		fprintf(stderr, "[ANNEAL] Temperature annealing enabled: "
+		        "T_hot=%.0f K → 298 K over %d generations (exp-5 schedule)\n",
+		        t_hot_anneal, GB->max_generations);
+		// Prime initial temperature so gen-0 SMFREE sees T_hot
+		FA->temperature = static_cast<unsigned int>(std::round(t_hot_anneal));
+		FA->beta        = 1.0 / t_hot_anneal;
+	}
+
 	// ── Per-generation timing (bench) ──
 	double _sum_gen_ms = 0.0;
 	int    _n_gen_timed = 0;
@@ -868,6 +890,22 @@ int GA(FA_Global* FA, GB_Global* GB,VC_Global* VC,chromosome** chrom,chromosome*
 				fprintf(stderr, "[BOOM] injection #%d at gen %d: re-randomized worst "
 				        "%d/%d chromosomes (fresh random, better half preserved)\n",
 				        GB->boom_inject_count, i + 1, n_inject, GB->num_chrom);
+			}
+		}
+
+		// ── Per-generation temperature update for SMFREE annealing ───────────
+		// Must fire before reproduce() so the SMFREE Boltzmann-weight selection
+		// inside reproduce() sees the correct annealed temperature.
+		if (do_anneal && GB->max_generations > 1) {
+			const double alpha = static_cast<double>(i) /
+			                     static_cast<double>(GB->max_generations - 1);
+			const double T_now = t_hot_anneal * std::exp(-5.0 * alpha)
+			                   + 298.0 * (1.0 - std::exp(-5.0 * alpha));
+			FA->temperature = static_cast<unsigned int>(std::round(T_now));
+			FA->beta        = 1.0 / T_now;
+			if (i % 200 == 0) {
+				fprintf(stderr, "[ANNEAL] gen=%4d  T=%7.1f K  α=%.4f\n",
+				        i + 1, T_now, alpha);
 			}
 		}
 
