@@ -817,7 +817,6 @@ int GA(FA_Global* FA, GB_Global* GB,VC_Global* VC,chromosome** chrom,chromosome*
 				[&](int a, int b){
 					return (*chrom)[a].evalue < (*chrom)[b].evalue;
 				});
-				});
 			for (int e = 0; e < n_elite; ++e) {
 				const chromosome& src = (*chrom)[eidx[e]];
 				elite_cf_buf[e]   = src.cf;
