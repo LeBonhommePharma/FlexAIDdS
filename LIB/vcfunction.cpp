@@ -346,18 +346,32 @@ double vcfunction(FA_Global* FA,VC_Global* VC,atom* atoms,resid* residue, std::v
 				(std::getenv("FLEXAIDDS_SOFTCORE_WAL") != nullptr);
 			if(softcore_wal){
 				const double r_softcrit = 0.7 * cr;
+				// ── Hard-floor gate (FLEXAIDDS_SOFTCORE_FLOOR, default 0.5) ────────
+				// The parabola plateau can sit below WAL_CONTACT_CAP=50 for deeply
+				// buried large-atom pairs, letting catastrophically buried poses score
+				// nearly free.  For d < r_hardfloor we revert to the raw r^-12 wall
+				// so the existing per-contact cap of 50 applies.  The parabola only
+				// operates in the moderate-penetration band [r_hardfloor, r_softcrit).
+				static const double softcore_floor_frac = [](){
+					const char* s = std::getenv("FLEXAIDDS_SOFTCORE_FLOOR");
+					double v = 0.5;   // default: hard wall below 50 % of contact radius
+					if(s){ double p = strtod(s, nullptr); if(p > 0.0 && p < 0.7) v = p; }
+					return v;
+				}();
+				const double r_hardfloor = softcore_floor_frac * cr;
 				if(d < r_softcrit){
-					// V(r_softcrit) = KWALL*(r_softcrit^-12 - cr^-12)
-					double rsc2 = r_softcrit * r_softcrit;
-					double rsc4 = rsc2 * rsc2; double rsc6 = rsc4 * rsc2;
-					double inv_rsc12 = 1.0 / (rsc6 * rsc6);
-					double V_sc = KWALL * (inv_rsc12 - inv_cr12);
-					// |V'(r_softcrit)| = 12*KWALL/r_softcrit^13  (>0; V' itself <0)
-					double absVp = 12.0 * KWALL * (inv_rsc12 / r_softcrit);
-					double u = r_softcrit - d;             // >= 0 inside softcore
-					// V_soft = V_sc + |V'|*u - (|V'|/(2*r_softcrit))*u^2
-					Ewall = V_sc + absVp * u
-					        - (absVp / (2.0 * r_softcrit)) * u * u;
+					if(d >= r_hardfloor){
+						// Moderate penetration: C1-continuous parabola (existing logic)
+						double rsc2 = r_softcrit * r_softcrit;
+						double rsc4 = rsc2 * rsc2; double rsc6 = rsc4 * rsc2;
+						double inv_rsc12 = 1.0 / (rsc6 * rsc6);
+						double V_sc = KWALL * (inv_rsc12 - inv_cr12);
+						double absVp = 12.0 * KWALL * (inv_rsc12 / r_softcrit);
+						double u = r_softcrit - d;             // >= 0 inside softcore
+						Ewall = V_sc + absVp * u
+						        - (absVp / (2.0 * r_softcrit)) * u * u;
+					}
+					// else: d < r_hardfloor — leave Ewall as hard r^-12; WAL_CONTACT_CAP=50 applies below
 				}
 			}
 
