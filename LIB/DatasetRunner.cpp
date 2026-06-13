@@ -4618,6 +4618,30 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
             // Restart 0 uses the canonical out_dir/out_prefix.  Restarts 1+
             // write to out_dir/r<ri>/ subdirs with per-restart seeds so each GA
             // run explores a different region of conformational space.
+            //
+            // ── Parallel restarts (FLEXAIDDS_PARALLEL_RESTARTS, default ON) ──
+            // When n_restarts > 1 and FLEXAIDDS_PARALLEL_RESTARTS != 0, all
+            // restart configs are written sequentially (fast, disk-bound), then
+            // all GA processes are forked simultaneously.  They run in parallel
+            // sharing the per-target CPU budget already divided among workers
+            // (omp_per_worker above).  Wall-clock time collapses from
+            //   n_restarts x T_dock  ->  max(T_dock_r0, T_dock_r1, ...)
+            // which is ~3x speedup for the default FLEXAIDDS_RESTARTS=3.
+            // Set FLEXAIDDS_PARALLEL_RESTARTS=0 to revert to sequential mode.
+            bool parallel_restarts = (n_restarts > 1);
+            if (const char* e = std::getenv("FLEXAIDDS_PARALLEL_RESTARTS"))
+                parallel_restarts = (std::atoi(e) != 0) && (n_restarts > 1);
+            // Fall back to sequential if proc_guard_ unavailable (no PID tracking).
+            if (!proc_guard_) parallel_restarts = false;
+
+            struct RestartPid {
+                pid_t pid;
+                int   ri;
+                std::chrono::steady_clock::time_point launch_t;
+            };
+            std::vector<RestartPid> par_pids;
+            auto par_wall_start = std::chrono::steady_clock::now();
+
             for (int ri = 0; ri < n_restarts; ri++) {
                 const std::string ri_dir    = (ri == 0) ? out_dir
                     : (out_dir + "/r" + std::to_string(ri));
@@ -4983,22 +5007,63 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                 << "2>'" << ri_dir << "/stderr.log' "
                 << ">'" << ri_dir << "/stdout.log'";
 
-            bench::Timer dock_timer;
-            dock_timer.start();
-
-            int ri_ret = exec_dock(cmd.str(), config.per_job_timeout_s);
-
-            dock_timer.stop();
-            if (ri == 0) {
-                ret = ri_ret;
-                result.wall_time_s = dock_timer.elapsed_s();
+            if (parallel_restarts) {
+                // ── Parallel mode: fork now, wait after all restarts launched ──
+                // The config/cmd is fully built above; just fork and move on.
+                pid_t rp = proc_guard_->fork_exec(cmd.str());
+                par_pids.push_back({rp, ri, std::chrono::steady_clock::now()});
+                if (rp < 0) {
+                    std::cerr << "[PARALLEL-RESTART] " << entry.pdb_id
+                              << " ri=" << ri << " fork_exec failed\n";
+                }
             } else {
-                if (ri_ret != 0) ret = ri_ret;  // propagate any failure
-                result.wall_time_s += dock_timer.elapsed_s();
+                // ── Sequential mode (original behaviour) ─────────────────────
+                bench::Timer dock_timer;
+                dock_timer.start();
+
+                int ri_ret = exec_dock(cmd.str(), config.per_job_timeout_s);
+
+                dock_timer.stop();
+                if (ri == 0) {
+                    ret = ri_ret;
+                    result.wall_time_s = dock_timer.elapsed_s();
+                } else {
+                    if (ri_ret != 0) ret = ri_ret;  // propagate any failure
+                    result.wall_time_s += dock_timer.elapsed_s();
+                }
             }
             all_prefixes.push_back(ri_prefix);
 
             }  // end multi-restart loop (ri)
+
+            // ── Drain parallel restarts (all forked above, now wait for each) ─
+            // Children have been running concurrently since their respective
+            // fork_exec() calls.  Waiting sequentially here is correct: by the
+            // time wait_with_timeout(r0) returns, r1 and r2 are likely already
+            // done (same T_dock budget), so their waits return immediately.
+            // Remaining timeout = per_job_timeout - elapsed since that restart's
+            // fork, ensuring no restart silently outlives the budget.
+            if (parallel_restarts && !par_pids.empty()) {
+                for (auto& rp : par_pids) {
+                    int ri_ret = -1;
+                    if (rp.pid > 0) {
+                        auto elapsed_s = static_cast<int>(
+                            std::chrono::duration_cast<std::chrono::seconds>(
+                                std::chrono::steady_clock::now() - rp.launch_t).count());
+                        int remaining = std::max(1,
+                            config.per_job_timeout_s - elapsed_s);
+                        ri_ret = proc_guard_->wait_with_timeout(rp.pid, remaining);
+                    }
+                    if (rp.ri == 0) ret = ri_ret;
+                    else if (ri_ret != 0) ret = ri_ret;
+                }
+                // Wall time = elapsed from first fork to last finish.
+                result.wall_time_s = std::chrono::duration<double>(
+                    std::chrono::steady_clock::now() - par_wall_start).count();
+                fprintf(stderr,
+                    "[PARALLEL-RESTART] %s: %d restarts completed in %.1fs wall\n",
+                    entry.pdb_id.c_str(), n_restarts, result.wall_time_s);
+            }
         }  // end if (!skip)
 
         // ── Build pooled prefix list for Fix B selection ─────────────────────
