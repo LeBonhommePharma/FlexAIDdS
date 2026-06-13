@@ -589,7 +589,7 @@ static std::pair<std::string,float> select_pose_freq_gated_pooled(
             double pi = std::exp(-static_cast<double>(cf_i) / kT_kcalmol) / Z;
             if (pi > 1e-300) H -= pi * std::log(pi);
         }
-        return Z * std::exp(alpha_shannon * H);
+        return Z * std::exp(-alpha_shannon * H);
     };
 
     std::vector<PoseInfo> poses;
