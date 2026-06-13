@@ -571,26 +571,42 @@ static std::pair<std::string,float> select_pose_freq_gated_pooled(
         return true;
     };
 
-    // ── Boltzmann Z+H composite score ────────────────────────────────────────
-    // Returns composite = Z * exp(alpha * H).
-    // Falls back to exp(-CF/kT) when no .mcf sidecar was loaded.
+    // ── Boltzmann Z+H composite score with counting-entropy population bonus ──
+    // Returns composite = Z * exp(-alpha * H) * log1p(N).
+    //
+    // Motivation: at kT=0.592 kcal/mol every intra-cluster Boltzmann
+    // distribution is thermally degenerate (all CF gaps >> kT), so H≈0 for
+    // all clusters and the formula collapses to pure Z = exp(-CF_best/kT).
+    // The log1p(N) population bonus adds a counting-entropy tiebreaker that
+    // rewards convergence reproducibility: a basin attracting N independent GA
+    // trajectories contributes log(N+1) nats of counting entropy to the
+    // effective free energy, breaking near-CF ties in favour of more
+    // robustly-reproducible attractors without distorting well-separated cases.
+    //
+    // Falls back to exp(-CF/kT)*log1p(freq) when no .mcf sidecar was loaded.
     auto boltzmann_composite = [&](const PoseInfo& p) -> double {
+        // N = cluster member count (MCF entries when available, else freq).
+        const size_t n_members = p.member_cfs.empty()
+            ? static_cast<size_t>(std::max(1, p.freq))
+            : p.member_cfs.size();
+        const double pop_weight = std::log1p(static_cast<double>(n_members));
+
         if (p.member_cfs.empty()) {
             // No sidecar: treat as single member
-            return std::exp(-static_cast<double>(p.cf) / kT_kcalmol);
+            return std::exp(-static_cast<double>(p.cf) / kT_kcalmol) * pop_weight;
         }
         // Z = sum_i exp(-CF_i / kT)
         double Z = 0.0;
         for (float cf_i : p.member_cfs)
             Z += std::exp(-static_cast<double>(cf_i) / kT_kcalmol);
-        if (Z <= 0.0) return std::exp(-static_cast<double>(p.cf) / kT_kcalmol);
+        if (Z <= 0.0) return std::exp(-static_cast<double>(p.cf) / kT_kcalmol) * pop_weight;
         // H = -sum_i p_i * log(p_i)
         double H = 0.0;
         for (float cf_i : p.member_cfs) {
             double pi = std::exp(-static_cast<double>(cf_i) / kT_kcalmol) / Z;
             if (pi > 1e-300) H -= pi * std::log(pi);
         }
-        return Z * std::exp(-alpha_shannon * H);
+        return Z * std::exp(-alpha_shannon * H) * pop_weight;
     };
 
     std::vector<PoseInfo> poses;
@@ -4270,15 +4286,17 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
         if (g_active_shutdown) {
             g_active_shutdown->store(true, std::memory_order_relaxed);
         }
-        if (g_active_guard) {
-            g_active_guard->kill_all();
-        }
+        // Fix C: do NOT call kill_all() from the signal handler.
+        // Workers finish their current dock_one(), check shutdown_requested_,
+        // exit the loop, and thread_pool.join() triggers ~SubprocessGuard()
+        // which calls kill_all() to reap any orphaned children.
     };
     sigemptyset(&sa.sa_mask);
     sa.sa_flags = 0;
-    struct sigaction old_int, old_term;
-    ::sigaction(SIGINT, &sa, &old_int);
+    struct sigaction old_int, old_term, old_hup;
+    ::sigaction(SIGINT,  &sa, &old_int);
     ::sigaction(SIGTERM, &sa, &old_term);
+    ::sigaction(SIGHUP,  &sa, &old_hup);   // Fix A: catch terminal disconnect
 #endif
 
     target_servers_.clear();
@@ -5528,14 +5546,16 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
         report.kendall_tau  = compute_kendall_tau(pred_affinities, exp_affinities);
     }
 
-    // ── Restore default signal handlers ────────────────────────────────────
+    // ── Restore signal handlers ─────────────────────────────────────────────
     // Clear the global pointers first so stale signals can't dereference them,
-    // then restore SIGINT/SIGTERM to their defaults.
+    // then restore SIGINT/SIGTERM/SIGHUP to their previous handlers.
+    // (Fix A: SIGHUP restored here too; Fix C: kill_all() via destructor only.)
 #ifndef _MSC_VER
     g_active_guard    = nullptr;
     g_active_shutdown = nullptr;
-    ::signal(SIGINT,  SIG_DFL);
-    ::signal(SIGTERM, SIG_DFL);
+    ::sigaction(SIGINT,  &old_int,  nullptr);
+    ::sigaction(SIGTERM, &old_term, nullptr);
+    ::sigaction(SIGHUP,  &old_hup,  nullptr);
 #endif
 
     return report;

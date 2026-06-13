@@ -53,8 +53,9 @@ static void print_usage(const char* progname) {
     printf("  sampl7           SAMPL7 host-guest ~30 (ITC: dG, dH, TdS)\n");
     printf("  pdbbind          PDBbind Refined 5316 (v2020)\n");
     printf("  all              Run all standard benchmarks\n");
-    printf("  doi:<DOI>        Parse PDB codes from a DOI\n");
-    printf("  pdb_list:<file>  Load PDB codes from a text file\n\n");
+    printf("  doi:<DOI>              Parse PDB codes from a DOI\n");
+    printf("  pdb_list:<file>        Load PDB codes from a text file\n");
+    printf("  crossdock_json:<file>  Cross-docking pairs from a JSON spec file\n\n");
     printf("Options:\n");
     printf("  --output <dir>        Output directory (default: benchmark_results/)\n");
     printf("  --threads <N>         Concurrent FlexAIDdS workers (default: 1)\n");
@@ -370,6 +371,74 @@ static dataset::BenchmarkReport run_single_benchmark(const std::string& name,
         }
         return {};
     }
+    if (name.substr(0, 15) == "crossdock_json:") {
+        // Cross-docking from a JSON pairs file.
+        // JSON format (benchmark_crossdock_85.json):
+        //   { "pairs": [ { "receptor_id": "1G9V", "ligand_id": "1GM8",
+        //                   "receptor_pdb": "/abs/path/1G9V_apo.pdb",
+        //                   "ligand_sdf":   "/abs/path/1GM8_ligand.sdf",
+        //                   "oracle_site_pdb": "/abs/path/1G9V_binding_site.pdb" }, ... ] }
+        std::string json_file = name.substr(15);
+        // Expand leading ~
+        if (!json_file.empty() && json_file[0] == '~') {
+            if (const char* home = std::getenv("HOME"))
+                json_file = std::string(home) + json_file.substr(1);
+        }
+        std::ifstream ifs(json_file);
+        if (!ifs) {
+            fprintf(stderr, "ERROR: cannot open crossdock_json file: %s\n", json_file.c_str());
+            return {};
+        }
+        std::string content((std::istreambuf_iterator<char>(ifs)),
+                             std::istreambuf_iterator<char>());
+
+        // Minimal JSON string-field extractor (no external JSON lib needed).
+        auto extract_str = [&](const std::string& obj, const std::string& key) -> std::string {
+            std::string needle = "\"" + key + "\": \"";
+            auto pos = obj.find(needle);
+            if (pos == std::string::npos) return "";
+            pos += needle.size();
+            auto end = obj.find('"', pos);
+            return (end != std::string::npos) ? obj.substr(pos, end - pos) : "";
+        };
+
+        // Walk JSON locating each pair object by scanning for "receptor_id" keys.
+        std::vector<dataset::DatasetEntry> entries;
+        std::size_t scan = 0;
+        while (true) {
+            auto kpos = content.find("\"receptor_id\"", scan);
+            if (kpos == std::string::npos) break;
+            auto obj_start = content.rfind('{', kpos);
+            auto obj_end   = content.find('}', kpos);
+            if (obj_start == std::string::npos || obj_end == std::string::npos) break;
+            std::string obj = content.substr(obj_start, obj_end - obj_start + 1);
+
+            dataset::DatasetEntry entry;
+            entry.pdb_id            = extract_str(obj, "receptor_id");
+            entry.receptor_path     = extract_str(obj, "receptor_pdb");
+            entry.ligand_path       = extract_str(obj, "ligand_sdf");
+            entry.binding_site_path = extract_str(obj, "oracle_site_pdb");
+            entry.source            = "astex_crossdock_85";
+
+            if (!entry.pdb_id.empty() &&
+                !entry.receptor_path.empty() &&
+                !entry.ligand_path.empty()) {
+                entries.push_back(std::move(entry));
+            }
+            scan = obj_end + 1;
+        }
+
+        printf("  crossdock_json: %s — loaded %zu pairs\n",
+               json_file.c_str(), entries.size());
+        filter_entries_by_code(entries, only_codes);
+        if (!prepare_only && !entries.empty()) {
+            auto report = runner.run(entries, config);
+            print_publication_table(report);
+            runner.write_report(report, config.output_dir);
+            return report;
+        }
+        return {};
+    }
 
     auto bs = dataset::parse_benchmark_set(name);
     if (!bs.has_value()) {
@@ -546,6 +615,18 @@ int main(int argc, char** argv) {
     if (temperature    > 0.0)     config.temperature       = static_cast<float>(temperature);
     if (job_timeout_s  > 0)       config.per_job_timeout_s = job_timeout_s;
     if (!clustering.empty())      config.clustering_algorithm = clustering;
+
+    // Ablation hook: FLEXAIDDS_FORCE_RIGID re-pins legacy rigid-body docking
+    // (DatasetRunner writes flexibility.intramolecular=false → engine builds a
+    // 4-gene chromosome: translation + rotation only, no ligand torsional DoF).
+    // Isolates whether a flexible-docking regression is eval-budget dilution
+    // (more genes, same generations) vs the oracle-confinement changes.
+    if (const char* fr = std::getenv("FLEXAIDDS_FORCE_RIGID")) {
+        if (fr[0] && fr[0] != '0') {
+            config.force_rigid = true;
+            std::cout << "  FORCE_RIGID:  ON (intramolecular=false, num_genes=4)\n";
+        }
+    }
 
     // Compute effective OMP threads for display (mirrors DatasetRunner logic)
     int effective_omp = config.omp_threads_per_worker;
