@@ -4668,7 +4668,13 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                    // decoys.  0.40 Å targets the apo-to-holo induced-fit regime
                    // without softening genuine clashes (o > 0.40 Å → quadratic).
                    // Set to 0.0 to recover v42 hard-wall (legacy) behaviour.
-                   << "    \"soft_wall_cutoff\": 0.40\n"
+                   << "    \"soft_wall_cutoff\": 0.40,\n"
+                   // v44: receptor rotamer pre-relaxation enabled by default.
+                   // Greedy Dunbrack search on pocket sidechains before GA launch.
+                   // Documented here for provenance; actual flag read from
+                   // BenchmarkConfig::receptor_rotamer_prep (DatasetRunner.h).
+                   << "    \"receptor_rotamer_prep\": "
+                   << (config.receptor_rotamer_prep ? "true" : "false") << "\n"
                    << "  },\n"
                    << "  \"optimization\": {\n"
                    << "    \"grid_spacing\": " << config.grid_spacing << opt_extra << "\n"

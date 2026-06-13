@@ -219,9 +219,9 @@ struct DockingConfig {
     bool   force_rigid{false};
     /// Binding-site rotamer pre-relaxation (Option 3 — apo-strain fix).
     /// Greedy Dunbrack rotamer search on pocket sidechains before docking.
-    /// Default false: behaviour unchanged from current baseline.
-    /// Enable in v43+ DatasetRunner injection for CF_false_minimum targets.
-    bool   receptor_rotamer_prep{false};  // Option 3 apo-strain fix
+    /// Default true (v44+): enabled by default for all benchmark runs.
+    /// Set false only for ablation / legacy-baseline comparison.
+    bool   receptor_rotamer_prep{true};   // Option 3 apo-strain fix (v44 default)
 };
 
 // =============================================================================
