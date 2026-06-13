@@ -4318,6 +4318,39 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                          return entries[a].receptor_path < entries[b].receptor_path;
                      });
 
+    // ── Priority target queue: FLEXAIDDS_PRIORITY_TARGETS ─────────────────
+    // Comma-separated PDB IDs moved to the front of the dispatch schedule via
+    // stable_partition so they complete first.  Relative order within the
+    // priority group and the remainder group is both preserved from the
+    // receptor-grouped stable_sort above.
+    // Example: FLEXAIDDS_PRIORITY_TARGETS=1HP0,1Q4G,1Q41
+    {
+        const char* prio_env = std::getenv("FLEXAIDDS_PRIORITY_TARGETS");
+        if (prio_env && *prio_env) {
+            std::set<std::string> prio_set;
+            std::istringstream prio_ss(prio_env);
+            std::string prio_tok;
+            while (std::getline(prio_ss, prio_tok, ',')) {
+                // trim whitespace
+                prio_tok.erase(0, prio_tok.find_first_not_of(" \t"));
+                auto prio_last = prio_tok.find_last_not_of(" \t");
+                if (prio_last != std::string::npos) prio_tok.erase(prio_last + 1);
+                // normalise to uppercase to match DatasetEntry::pdb_id convention
+                for (char& c : prio_tok)
+                    c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+                if (!prio_tok.empty()) prio_set.insert(prio_tok);
+            }
+            if (!prio_set.empty()) {
+                std::stable_partition(schedule.begin(), schedule.end(),
+                    [&](size_t entry_idx) {
+                        return prio_set.count(entries[entry_idx].pdb_id) > 0;
+                    });
+                fprintf(stderr, "[PRIORITY] %zu priority target(s) moved to front: %s\n",
+                        prio_set.size(), prio_env);
+            }
+        }
+    }
+
     // Track completed receptors and their output prefix for grid reuse.
     // Key: receptor_path, Value: output prefix of the first completed run for that receptor.
     // Protected by grid_reuse_mtx because multiple workers may finish concurrently.
