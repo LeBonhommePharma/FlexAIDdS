@@ -2948,6 +2948,18 @@ std::vector<DatasetEntry> DatasetRunner::fetch_astex() {
 
     std::cout << "  Prepared " << entries.size() << " / " << codes.size()
               << " entries (" << oracle_count << " with oracle binding site)\n";
+
+    // ── Fix 1: hard abort on a 0-oracle Astex run ─────────────────────────
+    // v35–v39 all silently ran with 0 oracle binding sites because
+    // FLEXAIDDS_ORACLE_SITE_DIR was unset; DatasetRunner then pose-blinded
+    // every target, producing <5% success that was misread as a code/matrix
+    // regression. A 0-oracle Astex run is never intentional, so fail loudly.
+    if (oracle_count == 0) {
+        fprintf(stderr, "[FATAL] Astex benchmark launched with 0 oracle binding sites. "
+                        "Set FLEXAIDDS_ORACLE_SITE_DIR. Aborting.\n");
+        exit(1);
+    }
+
     return entries;
 }
 
@@ -4047,6 +4059,99 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
     }
 
     std::cout << "[DatasetRunner] Using docking binary: " << flexaidds_bin << "\n";
+
+    // ── Fix 4: per-run provenance.json ────────────────────────────────────
+    // Record the exact scoring matrix, binary, and source revision used for
+    // this run so results are reproducible without relying on /tmp staging or
+    // file timestamps (which do not survive a reboot). Best-effort: any
+    // failure here is non-fatal and must not block docking.
+    {
+        // First non-empty whitespace token of a shell command's stdout, or "".
+        auto cmd_token = [](const std::string& cmd) -> std::string {
+            std::string out;
+            FILE* p = popen(cmd.c_str(), "r");
+            if (!p) return out;
+            char buf[512];
+            while (fgets(buf, sizeof(buf), p)) out += buf;
+            pclose(p);
+            std::string tok;
+            for (char c : out) {
+                if (std::isspace(static_cast<unsigned char>(c))) { if (!tok.empty()) break; }
+                else tok += c;
+            }
+            return tok;
+        };
+        auto shell_quote = [](const std::string& s) {
+            std::string q = "'";
+            for (char c : s) { if (c == '\'') q += "'\\''"; else q += c; }
+            q += "'";
+            return q;
+        };
+        auto md5_of = [&](const std::string& path) -> std::string {
+            if (path.empty() || !fs::exists(path)) return "";
+            std::string t = cmd_token("md5 -q " + shell_quote(path) + " 2>/dev/null");
+            if (t.empty()) t = cmd_token("md5sum " + shell_quote(path) + " 2>/dev/null");
+            return t;
+        };
+        auto sha256_of = [&](const std::string& path) -> std::string {
+            if (path.empty() || !fs::exists(path)) return "";
+            std::string t = cmd_token("shasum -a 256 " + shell_quote(path) + " 2>/dev/null");
+            if (t.empty()) t = cmd_token("sha256sum " + shell_quote(path) + " 2>/dev/null");
+            return t;
+        };
+
+        // Resolve the scoring matrix path with the SAME precedence the per-job
+        // command uses (FLEXAIDDS_DATA_DIR override, else <bin>/../WRK).
+        std::string matrix_path;
+        if (const char* dd = std::getenv("FLEXAIDDS_DATA_DIR")) {
+            std::string cand = std::string(dd) + "/MC_st0r5.2_6.dat";
+            if (fs::exists(cand)) matrix_path = cand;
+        }
+        if (matrix_path.empty()) {
+            std::string bin_dir = flexaidds_bin;
+            auto slash = bin_dir.rfind('/');
+            if (slash != std::string::npos) bin_dir = bin_dir.substr(0, slash);
+            std::string cand = bin_dir + "/../WRK/MC_st0r5.2_6.dat";
+            if (fs::exists(cand)) matrix_path = cand;
+        }
+
+        const char* oracle_env = std::getenv("FLEXAIDDS_ORACLE_SITE_DIR");
+        std::string git_commit = cmd_token(
+            "git rev-parse HEAD 2>/dev/null");
+
+        auto json_esc = [](const std::string& s) {
+            std::string r;
+            for (char c : s) {
+                if (c == '\\' || c == '"') { r += '\\'; r += c; }
+                else if (c == '\n') r += "\\n";
+                else r += c;
+            }
+            return r;
+        };
+
+        std::error_code mk_ec;
+        fs::create_directories(config.output_dir, mk_ec);
+        std::string prov_path = config.output_dir + "/provenance.json";
+        std::ofstream pj(prov_path);
+        if (pj.is_open()) {
+            pj << "{\n"
+               << "  \"dataset\": \""        << json_esc(report.dataset_name)   << "\",\n"
+               << "  \"matrix_path\": \""    << json_esc(matrix_path)           << "\",\n"
+               << "  \"matrix_md5\": \""     << json_esc(md5_of(matrix_path))   << "\",\n"
+               << "  \"binary_path\": \""    << json_esc(flexaidds_bin)         << "\",\n"
+               << "  \"binary_sha256\": \""  << json_esc(sha256_of(flexaidds_bin)) << "\",\n"
+               << "  \"git_commit\": \""     << json_esc(git_commit)            << "\",\n"
+               << "  \"oracle_site_dir\": \""<< json_esc(oracle_env ? oracle_env : "") << "\",\n"
+               << "  \"oracle_site_dir_set\": " << (oracle_env && oracle_env[0] ? "true" : "false") << "\n"
+               << "}\n";
+            pj.close();
+            std::cout << "[DatasetRunner] Wrote provenance: " << prov_path << "\n";
+        } else {
+            std::cerr << "[WARN] Could not write provenance.json to "
+                      << prov_path << "\n";
+        }
+    }
+
     std::cout << "[DatasetRunner] Docking " << entries.size() << " entries ("
               << config.num_threads << " threads)...\n";
 
@@ -4918,6 +5023,16 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
         if (!std::isfinite(best_cf)) best_cf = 0.0f;
         result.num_poses = n_poses;
         result.best_score = best_cf;
+
+        // ── Fix 2: seed-echo detection ───────────────────────────────────
+        // If the elected pose's CF equals cf_native within a tight tolerance,
+        // the selector returned the seeded crystal pose itself (protected by
+        // seed_fraction=0.90 + N_ELITE=1) rather than a genuine docked pose.
+        // Flag it so the trivially-zero rmsd_hungarian is distinguishable from
+        // a real sub-2 Å prediction. Does NOT change result.success.
+        result.seed_echo = (result.cf_native != 0.0f) &&
+                           std::isfinite(best_cf) &&
+                           (std::fabs(best_cf - result.cf_native) <= 0.01f);
         // Use Free energy F from Post-GA thermodynamics block; fall back to CF score.
         result.predicted_dG = (free_energy_F != 0.0f) ? free_energy_F
                             : (best_dG != 0.0f)        ? best_dG
@@ -5026,14 +5141,26 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                     // index achieved it.  This is the best a perfect cluster-selector
                     // could have reached given the poses the GA actually emitted;
                     // the gap to rank-0 measures selection (not search) headroom.
-                    for (int pi = 0; pi <= 19; ++pi) {
-                        std::string cand = out_prefix + "_" + std::to_string(pi) + ".pdb";
-                        if (!fs::exists(cand)) continue;
-                        auto rp = compute_pose_ligand_rmsd(
-                            cand, crystal_xyz, crystal_elem, entry.pdb_id, false);
-                        if (rp.second < result.best_cluster_rmsd) {
-                            result.best_cluster_rmsd = rp.second;
-                            result.best_cluster_idx = pi;
+                    //
+                    // Fix 3: scan the SAME pooled prefix set (all_prefixes) that the
+                    // freq-gated selector draws rmsd_hungarian from — not just this
+                    // one restart's out_prefix. Previously best_cluster_rmsd scanned
+                    // a single restart while rmsd_hungarian pooled across restarts,
+                    // so the two columns measured different candidate sets (hence
+                    // rmsd_hungarian=0.0 next to best_cluster_rmsd=5.97). Now
+                    // best_cluster_rmsd is a true oracle-best ceiling over the same
+                    // pool. best_cluster_idx is the 0-19 pose index within whichever
+                    // pooled restart achieved the minimum.
+                    for (const auto& pfx : all_prefixes) {
+                        for (int pi = 0; pi <= 19; ++pi) {
+                            std::string cand = pfx + "_" + std::to_string(pi) + ".pdb";
+                            if (!fs::exists(cand)) continue;
+                            auto rp = compute_pose_ligand_rmsd(
+                                cand, crystal_xyz, crystal_elem, entry.pdb_id, false);
+                            if (rp.second < result.best_cluster_rmsd) {
+                                result.best_cluster_rmsd = rp.second;
+                                result.best_cluster_idx = pi;
+                            }
                         }
                     }
                 }
@@ -5096,7 +5223,8 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                 if (ofs.is_open()) {
                     ofs << "pdb_id,best_score,rmsd_to_crystal,rmsd_hungarian,predicted_dG,"
                            "predicted_dH,predicted_TdS,shannon_entropy,num_poses,"
-                           "wall_time_s,success,cf_native,best_cluster_rmsd,best_cluster_idx\n";
+                           "wall_time_s,success,cf_native,best_cluster_rmsd,best_cluster_idx,"
+                           "seed_echo\n";
                     ofs << std::fixed << std::setprecision(4)
                         << result.pdb_id << ","
                         << result.best_score << ","
@@ -5111,7 +5239,8 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                         << (result.success ? 1 : 0) << ","
                         << result.cf_native << ","
                         << result.best_cluster_rmsd << ","
-                        << result.best_cluster_idx << "\n";
+                        << result.best_cluster_idx << ","
+                        << (result.seed_echo ? 1 : 0) << "\n";
                 }
             } catch (...) {
                 // Per-complex CSV is best-effort; failures are non-fatal.
@@ -5372,7 +5501,7 @@ void DatasetRunner::write_report(const BenchmarkReport& report,
 
         ofs << "pdb_id,best_score,rmsd_to_crystal,rmsd_hungarian,predicted_dG,"
                "predicted_dH,predicted_TdS,shannon_entropy,num_poses,wall_time_s,success,"
-               "cf_native,best_cluster_rmsd,best_cluster_idx\n";
+               "cf_native,best_cluster_rmsd,best_cluster_idx,seed_echo\n";
 
         for (const auto& r : report.results) {
             ofs << std::fixed << std::setprecision(4)
@@ -5389,7 +5518,8 @@ void DatasetRunner::write_report(const BenchmarkReport& report,
                 << (r.success ? 1 : 0) << ","
                 << r.cf_native << ","
                 << r.best_cluster_rmsd << ","
-                << r.best_cluster_idx << "\n";
+                << r.best_cluster_idx << ","
+                << (r.seed_echo ? 1 : 0) << "\n";
         }
 
         ofs.close();

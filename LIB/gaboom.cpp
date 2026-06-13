@@ -936,7 +936,19 @@ int GA(FA_Global* FA, GB_Global* GB,VC_Global* VC,chromosome** chrom,chromosome*
 			}
 		}
 
-		save_snapshot(&(*chrom_snapshot)[i*GB->num_chrom],(*chrom),save_num_chrom,GB->num_genes);
+		// Fix 6: write snapshots COMPACTLY (stride = save_num_chrom), so the
+		// writer's layout matches what the post-GA thermo reader consumes.
+		// Previously the writer strided by GB->num_chrom while n_chrom_snapshot
+		// (and every downstream reader: QuickSort, StatMechEngine, FastOPTICS,
+		// TQENS) advanced by save_num_chrom and read the compact prefix
+		// [0, n_chrom_snapshot). With save_num_chrom = 5% of num_chrom, only
+		// generation 0's records landed in that prefix; every later generation
+		// was written far past it, leaving the prefix filled with zero-init
+		// chromosomes → predicted_dH = predicted_TdS = 0 in every run. Compact
+		// stride packs gen i at [i*save_num_chrom, (i+1)*save_num_chrom), exactly
+		// the range the reader scans. The allocation (num_chrom*max_generations)
+		// already dwarfs the compact extent (save_num_chrom*max_generations).
+		save_snapshot(&(*chrom_snapshot)[i*save_num_chrom],(*chrom),save_num_chrom,GB->num_genes);
 		n_chrom_snapshot += save_num_chrom;
 
 

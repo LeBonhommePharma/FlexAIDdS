@@ -146,6 +146,12 @@ struct DockingResult {
     // P4: oracle best-of-N over emitted cluster poses (best achievable by selection)
     float best_cluster_rmsd{999.0f};  // min Hungarian RMSD across all emitted poses (Å)
     int   best_cluster_idx{-1};       // pose index (0-19) achieving best_cluster_rmsd
+    // Fix 2: seed-echo flag. true when the elected pose's CF matches cf_native to
+    // ±0.01 — i.e. the selector returned the seeded crystal pose (seed_fraction
+    // 0.90 + N_ELITE=1 protect it through the run), making rmsd_hungarian≈0 a
+    // trivial echo rather than a genuine docking prediction. Reported, not yet
+    // subtracted from the success metric (LP decides whether to exclude).
+    bool  seed_echo{false};
 };
 
 /// Aggregate benchmark report
