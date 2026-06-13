@@ -628,6 +628,18 @@ int main(int argc, char** argv) {
         }
     }
 
+    // Override receptor rotamer prep gate (default true since v44).
+    // Set FLEXAIDDS_RECEPTOR_ROTAMER_PREP=0 to disable for cross-docking
+    // benchmarks where the native ligand is absent and sidechain prep against
+    // a ghost occupancy makes no physical sense.
+    if (const char* rrp = std::getenv("FLEXAIDDS_RECEPTOR_ROTAMER_PREP")) {
+        bool enable = (rrp[0] && rrp[0] != '0' &&
+                       std::string(rrp) != "false" && std::string(rrp) != "off");
+        config.receptor_rotamer_prep = enable;
+        std::cout << "  RECEPTOR_ROTAMER_PREP: " << (enable ? "ON" : "OFF")
+                  << " (override via env)\n";
+    }
+
     // Compute effective OMP threads for display (mirrors DatasetRunner logic)
     int effective_omp = config.omp_threads_per_worker;
     if (effective_omp <= 0) {
