@@ -86,6 +86,73 @@ bool is_nucleic_acid_receptor(const resid* residues, int n_residues) {
     return false;
 }
 
+// ─── has_membrane_topology ────────────────────────────────────────────────────
+// Gate: returns true only when the receptor sequence contains ≥2 non-overlapping
+// 19-residue windows with ΔG_insert < -1.5 kcal/mol (Hessa 2007) separated by
+// ≥15 residues — the minimum topological signature of a bitopic membrane protein.
+//
+// Physical basis:
+//   Real TM helices in validated polytopic membrane proteins (GPCR, ion channels)
+//   score ΔG_insert < -2.5 kcal/mol on the Hessa 2007 empirical scale.
+//   Soluble protein helices — including the kinase N-lobe and β-sheets with
+//   hydrophobic cores — score typically -1.0 to +2.0 kcal/mol when taken out of
+//   their folded context. The -1.5 kcal/mol threshold sits in the gap between these
+//   two regimes (see Hessa 2007 Fig. 4 and supplement).
+//
+//   Two spans separated by ≥15 residues enforces bilayer-traversal topology: a
+//   helical hairpin inside a single TM pass cannot produce two independently-spaced
+//   strongly-favorable windows.
+//
+// Effect on scores: model_tm_insertion=false leaves DualAssemblyEngine running
+// (elongation kinetics, nucleation seeds, burst units all still apply), but
+// suppresses the TransloconInsertion ΔG contribution from being added to step_dG,
+// which otherwise contaminates FA->natural_deltaG and propagates into the
+// BindingMode free energy via BindingMode::get_thermodynamics().
+static constexpr double TM_STRONG_DG   = -1.5;  // kcal/mol; real TM helices: -2.5 to -5.0
+static constexpr int    TM_MIN_SEP     = 15;     // residues between independent TM spans
+static constexpr int    TM_MIN_SPANS   = 2;      // bitopic minimum
+
+static bool has_membrane_topology(const resid* residues, int n_residues)
+{
+    if (n_residues < translocon::TM_WINDOW_LEN) return false;
+
+    // Build 1-letter sequence (identical conversion table used throughout this file)
+    static constexpr std::pair<const char*, char> aa_tbl[] = {
+        {"ALA",'A'},{"ARG",'R'},{"ASN",'N'},{"ASP",'D'},{"CYS",'C'},
+        {"GLN",'Q'},{"GLU",'E'},{"GLY",'G'},{"HIS",'H'},{"ILE",'I'},
+        {"LEU",'L'},{"LYS",'K'},{"MET",'M'},{"PHE",'F'},{"PRO",'P'},
+        {"SER",'S'},{"THR",'T'},{"TRP",'W'},{"TYR",'Y'},{"VAL",'V'},
+        {"HSD",'H'},{"HSE",'H'},{"HSP",'H'},{"HIE",'H'},{"HID",'H'},
+        {"HIP",'H'},{"CYX",'C'},{"ASH",'D'},{"GLH",'E'},{nullptr,'X'}
+    };
+    std::string seq;
+    seq.reserve(n_residues);
+    for (int r = 0; r < n_residues; ++r) {
+        char aa = 'X';
+        const char* rname = residues[r].name;
+        if (rname) {
+            for (int k = 0; aa_tbl[k].first; ++k)
+                if (strncmp(rname, aa_tbl[k].first, 3) == 0) { aa = aa_tbl[k].second; break; }
+        }
+        seq += aa;
+    }
+
+    // Scan with strict threshold: count non-overlapping strongly-favorable windows.
+    // TransloconInsertion::scan() returns every 19-residue window with its deltaG_insert;
+    // we examine deltaG directly rather than p_insert so the constructor threshold is moot.
+    static const translocon::TransloconInsertion tm_gate(310.0, 0.5,
+                                                          static_cast<int>(ribosome::TUNNEL_LENGTH_AA));
+    const auto windows = tm_gate.scan(seq);
+    int n_strong = 0, last_pos = -TM_MIN_SEP;
+    for (const auto& w : windows) {
+        if (w.deltaG_insert < TM_STRONG_DG && w.start_residue - last_pos >= TM_MIN_SEP) {
+            ++n_strong;
+            last_pos = w.start_residue;
+        }
+    }
+    return n_strong >= TM_MIN_SPANS;
+}
+
 // ─── auto_configure ──────────────────────────────────────────────────────────
 NATURaLConfig auto_configure(const atom*  atoms,
                               int          n_lig_atoms,
@@ -109,6 +176,10 @@ NATURaLConfig auto_configure(const atom*  atoms,
         cfg.use_ribosome_speed    = !(nucl_rec && !nucl_lig);
         // Mg²⁺ Hill equation only applies to RNA tertiary folding
         cfg.ion_dependent_folding = nucl_rec;
+        // TM insertion modeling: only for membrane proteins with ≥2 strongly
+        // insertable spans (ΔG < -1.5 kcal/mol, separated by ≥15 residues).
+        // Nucleic acid receptors never use the translocon model.
+        cfg.model_tm_insertion = !nucl_rec && has_membrane_topology(residues, n_residues);
 
         std::cout << "[NATURaL] "
                   << (nucl_rec ? "Nucleic acid" : "Protein")
