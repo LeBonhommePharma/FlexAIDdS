@@ -388,7 +388,47 @@ double vcfunction(FA_Global* FA,VC_Global* VC,atom* atoms,resid* residue, std::v
 			// the DEE-elimination threshold below, so intramolecular-clash pruning
 			// is unaffected by the cap.
 			constexpr double WAL_CONTACT_CAP = 50.0;
-			double Ewall_fitness = (Ewall > WAL_CONTACT_CAP) ? WAL_CONTACT_CAP : Ewall;
+
+			// ── Overlap-based soft-core wall (v43, soft_wall_cutoff) ──────────
+			// Motivation: 1Q4G near-native (0.77 Å RMSD) generates CF.wal=+16.12
+			// from apo-induced micro-overlaps; a 3.71 Å decoy at the pocket
+			// periphery scores only +8.90 — decoy wins on WAL alone despite worse
+			// VCT contacts (-119.9 vs -122.4 near-native). Root cause: r^-12
+			// over-penalises overlaps of 0.2–0.4 Å that are indistinguishable from
+			// crystal-coordinate error / apo-to-holo induced fit.
+			//
+			// Fix: for overlap o = cr−d < soft_wall_cutoff (Å), apply a C1-
+			// continuous Hermite cubic ramp instead of the full r^-12. For
+			// o ≥ soft_wall_cutoff the form is a plain quadratic k_wal·o^2
+			// (C0/C1-continuous at the transition, degrades to the cap ceiling
+			// at o ≈ 1 Å).
+			//   o ≤ o_soft: Ewall_sc = k_wal·o_soft²·t²·(3−2t),  t = o/o_soft
+			//   o >  o_soft: Ewall_sc = k_wal·o²  [= base + k_wal·(2·o_soft·Δ+Δ²)]
+			// k_wal ≡ WAL_CONTACT_CAP (50 kcal/mol/Å²): ceiling self-consistent
+			// at o = 1 Å. DEE/intramolecular checks use the raw r^-12 Ewall.
+			// soft_wall_cutoff = 0.0 (config default when field absent) recovers
+			// legacy hard-wall behaviour exactly.
+			double Ewall_fitness;
+			if (FA->soft_wall_cutoff > 0.0f) {
+				const double o      = cr - d;         // overlap in Å (positive: d < cr)
+				const double o_soft = static_cast<double>(FA->soft_wall_cutoff);
+				constexpr double k_wal = WAL_CONTACT_CAP;  // 50 kcal/mol/Å²
+				double Ewall_sc;
+				if (o <= o_soft) {
+					const double t = o / o_soft;
+					Ewall_sc = k_wal * o_soft * o_soft * t * t * (3.0 - 2.0 * t);
+				} else {
+					const double base  = k_wal * o_soft * o_soft;
+					const double delta = o - o_soft;
+					Ewall_sc = base + k_wal * (2.0 * o_soft * delta + delta * delta);
+				}
+				// Safety ceiling: catastrophically buried poses (o >> 1 Å) still
+				// get capped so the partition function doesn't blow up.
+				Ewall_fitness = (Ewall_sc > WAL_CONTACT_CAP) ? WAL_CONTACT_CAP : Ewall_sc;
+			} else {
+				// Legacy path: r^-12 capped per-contact (commit 1166854).
+				Ewall_fitness = (Ewall > WAL_CONTACT_CAP) ? WAL_CONTACT_CAP : Ewall;
+			}
 
 			cfs->wal += Ewall_fitness;
 

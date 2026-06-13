@@ -106,6 +106,7 @@ void apply_config(const json::Value& config, FA_Global* FA, GB_Global* GB) {
         FA->intrafraction        = jflt(config, "flexibility", "intramolecular_fraction", 1.0f);
         FA->permeability         = jflt(config, "flexibility", "permeability", 1.0f);
         FA->rotamer_permeability = jflt(config, "flexibility", "rotamer_permeability", 0.8f);
+        FA->soft_wall_cutoff     = jflt(config, "flexibility", "soft_wall_cutoff", 0.0f);
         FA->pbloops              = jint(config, "flexibility", "binding_site_conformations", 1);
         FA->bloops               = jint(config, "flexibility", "bonded_loops", 2);
         FA->useflexdee           = jbool(config, "flexibility", "use_flexdee", false) ? 1 : 0;
@@ -212,6 +213,21 @@ void apply_config(const json::Value& config, FA_Global* FA, GB_Global* GB) {
             GB->alpha = std::atof(e);
         if (const char* e = std::getenv("FLEXAIDDS_BOOM_FRAC"))
             GB->boom_inject_fraction = std::atof(e);
+
+        // ── Entropy-ablation hooks (default-off: unset → byte-identical run) ──
+        // FLEXAIDDS_ENTROPY_WEIGHT — SMFREE Boltzmann/rank blend w∈[0,1]
+        //   (gaboom.cpp:2151). w=0 collapses SMFREE fitness to pure rank
+        //   selection (no thermodynamic free-energy bias) — ablates the
+        //   StatMech selection-entropy channel without changing β/T.
+        if (const char* e = std::getenv("FLEXAIDDS_ENTROPY_WEIGHT"))
+            GB->entropy_weight = std::atof(e);
+        // FLEXAIDDS_DIVERSITY_MONITORING — 0 disables the gene-space Shannon
+        //   diversity machinery: SEC termination reverts to energy-histogram
+        //   only (sec_may_terminate→true, gaboom.cpp:411) AND the
+        //   catastrophic-mutation rescue is switched off (gaboom.cpp:672).
+        //   Isolates the configurational-diversity (allele-entropy) channel.
+        if (const char* e = std::getenv("FLEXAIDDS_DIVERSITY_MONITORING"))
+            GB->diversity_monitoring = (std::atoi(e) != 0) ? 1 : 0;
     }
 
     // ── Output ──

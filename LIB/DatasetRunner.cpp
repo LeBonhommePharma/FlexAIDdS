@@ -4659,7 +4659,15 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                    << (config.force_rigid ? "false" : "true") << ",\n"
                    // permeability < 1.0 keeps native van-der-Waals contacts from
                    // tripping the r^-12 clash filter (1.0 flags every touching pair).
-                   << "    \"permeability\": 0.9\n"
+                   << "    \"permeability\": 0.9,\n"
+                   // v43 soft-core wall: overlap o = cr−d < soft_wall_cutoff (Å)
+                   // gets a Hermite cubic ramp instead of the full r^-12 spike.
+                   // Fixes 1Q4G class: apo-induced micro-overlaps (~0.2-0.4 Å)
+                   // no longer over-penalise near-native poses vs pocket-periphery
+                   // decoys.  0.40 Å targets the apo-to-holo induced-fit regime
+                   // without softening genuine clashes (o > 0.40 Å → quadratic).
+                   // Set to 0.0 to recover v42 hard-wall (legacy) behaviour.
+                   << "    \"soft_wall_cutoff\": 0.40\n"
                    << "  },\n"
                    << "  \"optimization\": {\n"
                    << "    \"grid_spacing\": " << config.grid_spacing << opt_extra << "\n"

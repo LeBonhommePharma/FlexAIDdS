@@ -381,6 +381,7 @@ struct FA_Global_struct{
 	double dsf_delta_Hm;                 // enthalpy at Tm from ITC/DSF (kcal/mol); 0.0 = not provided
 	float permeability;                  // allow permeability or not between atoms
 	float rotamer_permeability;          // rotamer acceptance vdw permeability
+	float soft_wall_cutoff;              // overlap soft-core radius (Å); 0.0 = legacy hard r^-12 wall
 	int   intramolecular;                // consider intramolecular forces (ligand only)
 	float solventterm;                   // solvent penalty term
 	float intrafraction;                 // intramolecular fraction interaction
