@@ -508,11 +508,30 @@ static std::pair<std::string,float> select_pose_freq_gated(const std::string& ou
 static std::pair<std::string,float> select_pose_freq_gated_pooled(
         const std::vector<std::string>& prefixes)
 {
-    struct PoseInfo { std::string path; float cf; int freq; bool is_seed; };
+    // ── Boltzmann Z+H composite cluster selection (Options B+C) ─────────────
+    // Instead of pure CF-rank-0, score each cluster by:
+    //   Z_cluster  = sum_{i in members} exp(-CF_i / kT)        [partition fn]
+    //   H_cluster  = -sum_i p_i * log(p_i),  p_i = exp(-CF_i/kT) / Z
+    //   composite  = Z * exp(alpha * H)
+    // Favors thermodynamically broad basins over narrow false minima.
+    // Member CFs are read from a .mcf sidecar written by cluster.cpp.
+    // Falls back gracefully to single-member (H=0) when sidecar is absent.
+    constexpr double kT_kcalmol   = 0.592;   // T=298 K, tuneable
+    constexpr double alpha_shannon = 1.0;    // Shannon weight, tuneable
 
-    // Parse the first "REMARK CF=" and (optionally) "Frequency:" from a pose PDB.
+    struct PoseInfo {
+        std::string path;
+        float cf;
+        int   freq;
+        std::vector<float> member_cfs;   // app_evalue for each cluster member
+        bool  is_seed;
+    };
+
+    // Parse "REMARK CF=" and "Frequency:" from a pose PDB.
+    // Also reads the .mcf sidecar (one app_evalue per line) if present.
     // Returns false if no finite CF could be read.
-    auto parse_pose = [](const std::string& cand, float& cf, int& freq) -> bool {
+    auto parse_pose = [](const std::string& cand, float& cf, int& freq,
+                         std::vector<float>& member_cfs) -> bool {
         cf = std::numeric_limits<float>::infinity();
         freq = 1;
         bool have_cf = false;
@@ -530,7 +549,47 @@ static std::pair<std::string,float> select_pose_freq_gated_pooled(
                 try { freq = std::stoi(pl.substr(p2 + 10)); } catch (...) {}
             }
         }
-        return have_cf && std::isfinite(cf);
+        if (!have_cf || !std::isfinite(cf)) return false;
+        // Read .mcf sidecar: one app_evalue per line (head first, then members).
+        // Written by cluster.cpp immediately after write_pdb().
+        {
+            std::string mcf = cand;
+            if (mcf.size() > 4 && mcf.substr(mcf.size() - 4) == ".pdb")
+                mcf = mcf.substr(0, mcf.size() - 4) + ".mcf";
+            std::ifstream mf(mcf);
+            if (mf.is_open()) {
+                std::string ml;
+                while (std::getline(mf, ml)) {
+                    try {
+                        float v = std::stof(ml);
+                        if (std::isfinite(v)) member_cfs.push_back(v);
+                    } catch (...) {}
+                }
+            }
+        }
+        return true;
+    };
+
+    // ── Boltzmann Z+H composite score ────────────────────────────────────────
+    // Returns composite = Z * exp(alpha * H).
+    // Falls back to exp(-CF/kT) when no .mcf sidecar was loaded.
+    auto boltzmann_composite = [&](const PoseInfo& p) -> double {
+        if (p.member_cfs.empty()) {
+            // No sidecar: treat as single member
+            return std::exp(-static_cast<double>(p.cf) / kT_kcalmol);
+        }
+        // Z = sum_i exp(-CF_i / kT)
+        double Z = 0.0;
+        for (float cf_i : p.member_cfs)
+            Z += std::exp(-static_cast<double>(cf_i) / kT_kcalmol);
+        if (Z <= 0.0) return std::exp(-static_cast<double>(p.cf) / kT_kcalmol);
+        // H = -sum_i p_i * log(p_i)
+        double H = 0.0;
+        for (float cf_i : p.member_cfs) {
+            double pi = std::exp(-static_cast<double>(cf_i) / kT_kcalmol) / Z;
+            if (pi > 1e-300) H -= pi * std::log(pi);
+        }
+        return Z * std::exp(alpha_shannon * H);
     };
 
     std::vector<PoseInfo> poses;
@@ -538,9 +597,9 @@ static std::pair<std::string,float> select_pose_freq_gated_pooled(
         for (int pi = 0; pi <= 19; ++pi) {
             std::string cand = out_prefix + "_" + std::to_string(pi) + ".pdb";
             if (!fs::exists(cand)) continue;
-            float cf; int freq;
-            if (!parse_pose(cand, cf, freq)) continue;
-            poses.push_back({cand, cf, freq, /*is_seed=*/false});
+            float cf; int freq; std::vector<float> mcfs;
+            if (!parse_pose(cand, cf, freq, mcfs)) continue;
+            poses.push_back({cand, cf, freq, std::move(mcfs), /*is_seed=*/false});
         }
     }
 
@@ -563,9 +622,9 @@ static std::pair<std::string,float> select_pose_freq_gated_pooled(
         for (const auto& out_prefix : prefixes) {
             std::string ini = out_prefix + "_INI.pdb";
             if (!fs::exists(ini)) continue;
-            float cf; int freq;
-            if (!parse_pose(ini, cf, freq)) continue;
-            seeds.push_back({ini, cf, /*freq=*/1, /*is_seed=*/true});
+            float cf; int freq; std::vector<float> mcfs;
+            if (!parse_pose(ini, cf, freq, mcfs)) continue;
+            seeds.push_back({ini, cf, /*freq=*/1, {}, /*is_seed=*/true});
             fprintf(stderr, "[ELITISM] seed candidate: CF=%.4f path=%s\n",
                     cf, ini.c_str());
         }
@@ -574,7 +633,7 @@ static std::pair<std::string,float> select_pose_freq_gated_pooled(
     if (poses.empty() && seeds.empty())
         return {std::string(), std::numeric_limits<float>::infinity()};
 
-    // Freq-gated selection over the GA-emitted poses (seeds excluded here).
+    // ── Freq-gated Z+H composite selection over GA-emitted poses ────────────
     const PoseInfo* freq_best = nullptr;
     if (!poses.empty()) {
         // Drop degenerate (CF≈0, unscored) poses unless that empties the set.
@@ -592,13 +651,30 @@ static std::pair<std::string,float> select_pose_freq_gated_pooled(
         const std::vector<const PoseInfo*>& chosen =
             populated.empty() ? pool : populated;
 
-        freq_best = chosen.front();
+        // ── Log top-3 Z+H scores to stderr ───────────────────────────────────
+        // Precompute composite scores once so each pose is evaluated once.
+        std::vector<std::pair<double, const PoseInfo*>> scored_chosen;
+        scored_chosen.reserve(chosen.size());
         for (const auto* p : chosen)
-            if (p->cf < freq_best->cf) freq_best = p;
+            scored_chosen.push_back({boltzmann_composite(*p), p});
+        std::sort(scored_chosen.begin(), scored_chosen.end(),
+                  [](const auto& a, const auto& b){ return a.first > b.first; });
+        int log_n = std::min(3, static_cast<int>(scored_chosen.size()));
+        for (int si = 0; si < log_n; ++si) {
+            const auto* p = scored_chosen[si].second;
+            fprintf(stderr,
+                "[Z+H] rank=%d cf=%.4f freq=%d nmembers=%zu Z*expH=%.4e path=%s\n",
+                si, p->cf, p->freq, p->member_cfs.size(),
+                scored_chosen[si].first, p->path.c_str());
+        }
+
+        // Winner = highest composite score (broadest thermodynamic basin).
+        freq_best = scored_chosen.front().second;
     }
 
-    // Seed wins only if strictly more favourable (lower CF) than the freq-gated
-    // best — or if no GA pose qualified at all.
+    // Seed wins only if strictly more favourable (lower CF) than the Z+H winner
+    // — or if no GA pose qualified at all. Seed elitism is CF-based (not Z+H)
+    // because the INI seed is a single pose with no cluster members.
     const PoseInfo* best = freq_best;
     for (const auto& s : seeds)
         if (best == nullptr || s.cf < best->cf) best = &s;

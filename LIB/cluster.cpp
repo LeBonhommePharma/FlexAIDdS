@@ -340,6 +340,29 @@ void cluster(FA_Global* FA, GB_Global* GB, VC_Global* VC, chromosome* chrom, gen
 		//printf("filename=<%s>\n",tmp_end_strfile);
 		//PAUSE;
 		write_pdb(FA,atoms,residue,tmp_end_strfile,remark);
+
+		// ── Write member-CF sidecar (.mcf) for Boltzmann Z+H cluster selection ──
+		// DatasetRunner reads these to compute Z_cluster = sum exp(-CF_i/kT)
+		// and Shannon entropy H = -sum p_i*log(p_i) for composite cluster scoring.
+		// Format: one app_evalue per line; head chromosome first, then members.
+		// Uses Clus_GAPOP[k] == Clus_TOP[j] to reconstruct all cluster members.
+		{
+			std::string mcf_path(tmp_end_strfile);
+			if (mcf_path.size() > 4 &&
+			    mcf_path.substr(mcf_path.size() - 4) == ".pdb")
+				mcf_path = mcf_path.substr(0, mcf_path.size() - 4) + ".mcf";
+			FILE* mf = fopen(mcf_path.c_str(), "w");
+			if (mf) {
+				// Head chromosome (guaranteed first so member_cfs[0] == head CF)
+				fprintf(mf, "%.6f\n", chrom[Clus_TOP[j]].app_evalue);
+				// Members: scan all chromosomes assigned to this cluster head
+				for (int k = 0; k < num_chrom; ++k) {
+					if (k != Clus_TOP[j] && Clus_GAPOP[k] == Clus_TOP[j])
+						fprintf(mf, "%.6f\n", chrom[k].app_evalue);
+				}
+				fclose(mf);
+			}
+		}
 	}
       
         // print the RMSD between each chrom. and the reference structure if there is one.
