@@ -17,6 +17,7 @@
 #include "AsyncPipeline.h"
 #include "BenchmarkRunner.h"
 #include "statmech.h"
+#include "receptor_prep.h"
 
 #include <algorithm>
 #include <array>
@@ -4890,6 +4891,46 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                 }
             }
 
+            // ── Rotamer pre-relaxation (Option 3: apo-strain fix) ──────────
+            // Pre-relax binding-site sidechains before docking to reduce
+            // CF.wal false penalties on near-native poses in apo structures.
+            // Gated on config.receptor_rotamer_prep (default false).
+            std::string effective_receptor = entry.receptor_path;
+            if (config.receptor_rotamer_prep &&
+                !entry.binding_site_path.empty() &&
+                fs::exists(entry.binding_site_path))
+            {
+                std::string prepped = out_dir + "/" + entry.pdb_id + "_prepped.pdb";
+                bool need_prep =
+                    !fs::exists(prepped) ||
+                    fs::last_write_time(prepped) <
+                        fs::last_write_time(entry.receptor_path) ||
+                    fs::last_write_time(prepped) <
+                        fs::last_write_time(entry.binding_site_path);
+
+                if (need_prep) {
+                    int n_mod = receptor_prep::prep_receptor_rotamers(
+                        entry.receptor_path,
+                        entry.binding_site_path,
+                        prepped);
+                    if (n_mod >= 0) {
+                        effective_receptor = prepped;
+                        std::cerr << "  [PREP] " << entry.pdb_id
+                                  << ": rotamer-prepped " << n_mod
+                                  << " pocket residues → " << prepped << "\n";
+                    } else {
+                        std::cerr << "  [PREP-WARN] " << entry.pdb_id
+                                  << ": prep_receptor_rotamers() failed, "
+                                     "using unmodified apo receptor\n";
+                    }
+                } else {
+                    effective_receptor = prepped;
+                    std::cerr << "  [PREP] " << entry.pdb_id
+                              << ": using cached rotamer-prepped receptor\n";
+                }
+            }
+            // ── end rotamer pre-relaxation ──────────────────────────────────
+
             std::ostringstream cmd;
             // Oracle LOCCLF: pass binding site PDB via env var so top.cpp
             // can skip SURFNET auto-detection and load the oracle spheres.
@@ -4911,7 +4952,7 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                 << "OMP_WAIT_POLICY=passive "
                 << "'" << flexaidds_bin << "' "
                 << data_dir_arg
-                << "'" << entry.receptor_path << "' "
+                << "'" << effective_receptor << "' "
                 << "'" << dock_ligand_path << "' "
                 << "--config '" << config_path << "' "
                 << "-o '" << ri_prefix << "' "

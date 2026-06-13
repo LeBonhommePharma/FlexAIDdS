@@ -217,6 +217,11 @@ struct DockingConfig {
     /// (4 genes: translation + 3 rotations, zero torsional DoF). Default false:
     /// ligands dock flexibly (one dihedral gene per perceived rotatable bond).
     bool   force_rigid{false};
+    /// Binding-site rotamer pre-relaxation (Option 3 — apo-strain fix).
+    /// Greedy Dunbrack rotamer search on pocket sidechains before docking.
+    /// Default false: behaviour unchanged from current baseline.
+    /// Enable in v43+ DatasetRunner injection for CF_false_minimum targets.
+    bool   receptor_rotamer_prep{false};  // Option 3 apo-strain fix
 };
 
 // =============================================================================

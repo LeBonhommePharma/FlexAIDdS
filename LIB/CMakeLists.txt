@@ -55,6 +55,7 @@ add_library(flexaid_core OBJECT
     read_rotobs.cpp
     set_intprob.cpp
     build_rotamers.cpp
+    receptor_prep.cpp
     check_clash.cpp
     read_normalgrid.cpp
     read_eigen.cpp

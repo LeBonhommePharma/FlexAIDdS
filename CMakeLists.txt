@@ -377,6 +377,7 @@ target_sources(FlexAID PRIVATE
         LIB/calc_cleftic.cpp
         LIB/write_pdb.cpp
         LIB/gaboom.cpp
+        LIB/VibEntropy.cpp
         LIB/GAContext.cpp
         LIB/calc_center.cpp
         LIB/ic_bounds.cpp
@@ -395,6 +396,7 @@ target_sources(FlexAID PRIVATE
         LIB/read_rotobs.cpp
         LIB/set_intprob.cpp
         LIB/build_rotamers.cpp
+        LIB/receptor_prep.cpp
         LIB/check_clash.cpp
         LIB/read_normalgrid.cpp
         LIB/read_eigen.cpp
@@ -1529,6 +1531,7 @@ if(BUILD_TESTING)
         tests/test_gaboom.cpp
         tests/stubs.cpp
         LIB/gaboom.cpp
+        LIB/VibEntropy.cpp
         LIB/InStreamClustering.cpp
         LIB/GAContext.cpp
         LIB/Vcontacts.cpp
@@ -1581,6 +1584,7 @@ if(BUILD_TESTING)
         tests/stubs.cpp
         LIB/shannon_ga.cpp
         LIB/gaboom.cpp
+        LIB/VibEntropy.cpp
         LIB/InStreamClustering.cpp
         LIB/GAContext.cpp
         LIB/Vcontacts.cpp
@@ -1854,6 +1858,7 @@ flexaids_configure_simd(test_cavity_detect)
         tests/test_binding_mode_statmech.cpp
         tests/stubs.cpp
         LIB/gaboom.cpp
+        LIB/VibEntropy.cpp
         LIB/InStreamClustering.cpp
         LIB/GAContext.cpp
         LIB/Vcontacts.cpp
@@ -1904,6 +1909,7 @@ flexaids_configure_simd(test_cavity_detect)
         tests/test_ccbm.cpp
         tests/stubs.cpp
         LIB/gaboom.cpp
+        LIB/VibEntropy.cpp
         LIB/InStreamClustering.cpp
         LIB/GAContext.cpp
         LIB/Vcontacts.cpp
@@ -1954,6 +1960,7 @@ flexaids_configure_simd(test_cavity_detect)
         tests/test_binding_mode_advanced.cpp
         tests/stubs.cpp
         LIB/gaboom.cpp
+        LIB/VibEntropy.cpp
         LIB/InStreamClustering.cpp
         LIB/GAContext.cpp
         LIB/Vcontacts.cpp
@@ -2004,6 +2011,7 @@ flexaids_configure_simd(test_cavity_detect)
         tests/test_ga_core.cpp
         tests/stubs.cpp
         LIB/gaboom.cpp
+        LIB/VibEntropy.cpp
         LIB/GAContext.cpp
         LIB/Vcontacts.cpp
         LIB/statmech.cpp
@@ -2054,6 +2062,7 @@ flexaids_configure_simd(test_cavity_detect)
         tests/test_ga_validation.cpp
         tests/stubs.cpp
         LIB/gaboom.cpp
+        LIB/VibEntropy.cpp
         LIB/GAContext.cpp
         LIB/Vcontacts.cpp
         LIB/statmech.cpp
@@ -2104,6 +2113,7 @@ flexaids_configure_simd(test_cavity_detect)
         tests/test_ga_operators.cpp
         tests/stubs.cpp
         LIB/gaboom.cpp
+        LIB/VibEntropy.cpp
         LIB/calc_rmsp.cpp
         LIB/GAContext.cpp
         LIB/Vcontacts.cpp
@@ -2153,6 +2163,7 @@ flexaids_configure_simd(test_cavity_detect)
         tests/test_binding_mode_comparison.cpp
         tests/stubs.cpp
         LIB/gaboom.cpp
+        LIB/VibEntropy.cpp
         LIB/calc_rmsp.cpp
         LIB/GAContext.cpp
         LIB/Vcontacts.cpp
@@ -2278,6 +2289,7 @@ flexaids_configure_simd(test_cavity_detect)
         tests/test_entropy_ga.cpp
         tests/stubs.cpp
         LIB/gaboom.cpp
+        LIB/VibEntropy.cpp
         LIB/InStreamClustering.cpp
         LIB/GAContext.cpp
         LIB/Vcontacts.cpp
@@ -2461,6 +2473,7 @@ flexaids_configure_simd(test_cavity_detect)
         tests/test_binding_mode_vibrational.cpp
         tests/stubs.cpp
         LIB/gaboom.cpp
+        LIB/VibEntropy.cpp
         LIB/InStreamClustering.cpp
         LIB/GAContext.cpp
         LIB/Vcontacts.cpp
@@ -3072,6 +3085,7 @@ if(BUILD_SWIFT_BRIDGE)
         LIB/statmech.cpp
         LIB/TurboQuant.cpp
         LIB/gaboom.cpp
+        LIB/VibEntropy.cpp
         LIB/InStreamClustering.cpp
         LIB/GAContext.cpp
         LIB/Vcontacts.cpp
