@@ -53,6 +53,17 @@ JSON_PAIRS  = f"{REPO}/benchmarks/datasets/benchmark_astex_native_85.json"
 OUTPUT      = os.path.expanduser("~/flexaidds_results/v50b_20260614_consensus5r")
 PROV_FILE   = f"{OUTPUT}/launch_provenance.json"
 
+# ── Concurrency knobs (env-overridable; defaults preserve safe single-instance) ─
+# FLEXAIDDS_BENCH_THREADS  : concurrent FlexAIDdS workers (default 10).
+# FLEXAIDDS_BENCH_CACHE    : isolated cache dir ("" → runner default, shared).
+# FLEXAIDDS_ALLOW_CONCURRENT=1 : skip the single-instance pgrep guard so this run
+#   may share the machine with another benchmark_datasets process.  Only safe
+#   when paired with a DISTINCT --cache + --output (else the shared cache is
+#   corrupted — see project_benchmark_harness_singleinstance).
+BENCH_THREADS    = os.environ.get("FLEXAIDDS_BENCH_THREADS", "10")
+BENCH_CACHE      = os.environ.get("FLEXAIDDS_BENCH_CACHE", "")
+ALLOW_CONCURRENT = os.environ.get("FLEXAIDDS_ALLOW_CONCURRENT") == "1"
+
 # ── Provenance anchors ────────────────────────────────────────────────────────
 EXP_ENGINE_SHA  = "dbfaca09bfaf9ad8c6c154512f8e7906a6123ce2055a0350d3eec5961b925d0b"
 EXP_RUNNER_SHA  = "53fa471cfe3a55b2b071bf87e2181caba889ee92124553199df436275d714781"
@@ -100,10 +111,21 @@ ps = subprocess.run(
     ["pgrep", "-x", "benchmark_datasets"],
     capture_output=True, text=True,
 )
-if ps.stdout.strip():
+if ps.stdout.strip() and not ALLOW_CONCURRENT:
     sys.exit(
         f"ERROR: benchmark_datasets already running "
         f"(pids {ps.stdout.split()}) — abort to avoid collision"
+    )
+if ps.stdout.strip() and ALLOW_CONCURRENT:
+    if not BENCH_CACHE:
+        sys.exit(
+            "ERROR: FLEXAIDDS_ALLOW_CONCURRENT=1 requires FLEXAIDDS_BENCH_CACHE "
+            "(a distinct cache dir) to avoid corrupting the shared cache of the "
+            f"already-running run (pids {ps.stdout.split()})"
+        )
+    print(
+        f"NOTE: concurrent run permitted (other pids {ps.stdout.split()}); "
+        f"isolated cache={BENCH_CACHE}, threads={BENCH_THREADS}"
     )
 
 # Verify native self-docking JSON (receptor == ligand for every pair).
@@ -157,10 +179,12 @@ cmd = [
     RUNNER,
     "--benchmark",            f"crossdock_json:{JSON_PAIRS}",
     "--output",               OUTPUT,
-    "--threads",              "10",
+    "--threads",              BENCH_THREADS,
     "--temperature",          "298",
     "--job-timeout-seconds",  "5400",
 ]
+if BENCH_CACHE:
+    cmd += ["--cache", BENCH_CACHE]
 
 # ── Launch ────────────────────────────────────────────────────────────────────
 if __name__ == "__main__":
