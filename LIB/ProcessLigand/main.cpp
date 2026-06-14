@@ -227,19 +227,19 @@ static void print_type256(const BonMol& mol) {
     std::cout << "\n256-type atom encoding (" << mol.num_atoms() << " atoms):\n";
     std::cout << std::setw(6) << "Idx" << " "
               << std::setw(8) << "Type256" << " "
-              << "  [Base|ChargeBin|HB]\n";
+              << "  [Base|Donor|Acceptor]\n";
     std::cout << std::string(40, '-') << "\n";
     for (int i = 0; i < mol.num_atoms(); ++i) {
         const Atom& a = mol.atoms[i];
         uint8_t t    = a.type_256;
         uint8_t base = t & 0x3Fu;
-        uint8_t cbin = (t >> 6) & 0x01u;
-        uint8_t hb   = (t >> 7) & 0x01u;
+        uint8_t donor = (t >> 7) & 0x01u;
+        uint8_t acc   = (t >> 6) & 0x01u;
         std::cout << std::setw(6) << (i + 1) << " "
                   << std::setw(8) << static_cast<int>(t)
                   << "  [" << static_cast<int>(base)
-                  << "|" << static_cast<int>(cbin)
-                  << "|" << static_cast<int>(hb) << "]\n";
+                  << "|" << static_cast<int>(donor)
+                  << "|" << static_cast<int>(acc) << "]\n";
     }
 }
 

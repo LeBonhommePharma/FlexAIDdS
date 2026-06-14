@@ -2,7 +2,7 @@
 //
 // PDB files do not carry partial charges. Without charges:
 //   - Coulomb electrostatics is dead (vcfunction.cpp guard: qA != 0 && qB != 0)
-//   - Salt bridge detection is broken (type256 charge bit always Q_POSITIVE)
+//   - Salt bridge detection uses atom.charge in hbond_potential.h (v56+)
 //   - Metal coordination has no electrostatic context
 //
 // This module assigns AMBER-ff14SB-derived partial charges to standard amino

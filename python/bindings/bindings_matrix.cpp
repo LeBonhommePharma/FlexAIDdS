@@ -26,15 +26,17 @@ void register_matrix_bindings(py::module_& m) {
     auto m_at = m.def_submodule("atom256", "256-type atom encoding");
 
     m_at.def("encode", &atom256::encode,
-        py::arg("base_type"), py::arg("charge_bin"), py::arg("hbond"),
-        "Encode 8-bit atom type from (base_type, charge_bin, hbond_flag)");
+        py::arg("base_type"), py::arg("donor"), py::arg("acceptor"),
+        "Encode 8-bit atom type from (base_type, donor, acceptor)");
 
     m_at.def("get_base", &atom256::get_base,
         py::arg("code"), "Extract base type (bits 0-5)");
-    m_at.def("get_charge_bin", &atom256::get_charge_bin,
-        py::arg("code"), "Extract charge polarity (bit 6)");
+    m_at.def("get_donor", &atom256::get_donor,
+        py::arg("code"), "Extract H-bond donor flag (bit 7)");
+    m_at.def("get_acceptor", &atom256::get_acceptor,
+        py::arg("code"), "Extract H-bond acceptor flag (bit 6)");
     m_at.def("get_hbond", &atom256::get_hbond,
-        py::arg("code"), "Extract H-bond flag (bit 7)");
+        py::arg("code"), "True if donor or acceptor (bits 6-7)");
 
     m_at.def("sybyl_to_base", &atom256::sybyl_to_base,
         py::arg("sybyl_type"),
@@ -44,18 +46,12 @@ void register_matrix_bindings(py::module_& m) {
         "Map base type (0-63) to SYBYL parent (1-40)");
     m_at.def("base_type_name", &atom256::base_type_name,
         py::arg("base"), "Human-readable name for base type");
-    m_at.def("charge_bin_name", &atom256::charge_bin_name,
-        py::arg("qbin"), "Human-readable name for charge bin");
-
     m_at.def("encode_from_sybyl", &atom256::encode_from_sybyl,
         py::arg("sybyl_type"), py::arg("partial_charge"),
         py::arg("n_hydrogens"),
         py::arg("has_heteroatom_neighbor") = false,
         py::arg("is_bridgehead") = false,
         "Full encoding from SYBYL type + charge + structural context");
-
-    m_at.def("quantise_charge", &atom256::quantise_charge,
-        py::arg("partial_charge"), "Quantise charge to 1-bit polarity");
 
     m_at.attr("BASE_TYPE_COUNT") = atom256::BASE_TYPE_COUNT;
 

@@ -430,10 +430,10 @@ TEST(CompareEnergyMatrices, CapacityComparison) {
         uint8_t base = atom256::get_base(c);
         if (base == atom256::C_ar || base == atom256::C_ar_hetadj ||
             base == atom256::C_pi_bridge) {
-            printf("    code=%3d  base=%-10s  charge=%-6s  hbond=%s\n",
+            printf("    code=%3d  base=%-10s  donor=%s  acceptor=%s\n",
                    c, atom256::base_type_name(base),
-                   atom256::charge_bin_name(atom256::get_charge_bin(c)),
-                   atom256::get_hbond(c) ? "yes" : "no");
+                   atom256::get_donor(c) ? "yes" : "no",
+                   atom256::get_acceptor(c) ? "yes" : "no");
             ++c_ar_codes;
         }
     }

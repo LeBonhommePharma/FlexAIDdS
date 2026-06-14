@@ -1353,19 +1353,11 @@ int main(int argc, char **argv){
 		// detection. Skips atoms that already have charges (MOL2/PTM).
 		formal_charges::assign_formal_charges(FA, atoms, residue);
 
-		// ── 6c. Populate type256 for ALL atoms (v55: H-bond gate fix) ────────
-		// Before this call type256 = 0 for every atom because atom256::encode()
-		// was never wired into the main docking binary (it only existed in the
-		// standalone ProcessLigand prep tool).  With type256 = 0:
-		//   • atom256::get_hbond(0)   → false  (bit 7 = 0)
-		//   • atom256::get_charge_bin(0) → Q_NEGATIVE (bit 6 = 0)
-		// Result: hbond_potential.h early-returns 0.0 for every pair →
-		//   E_hb = 0 in every pose → cf.hbond = 0 in every PDB output.
-		// Fix: encode_from_sybyl() maps the SYBYL type (1–40), partial charge
-		// (atoms[i].charge, now populated by assign_formal_charges above), and
-		// n_hydrogens (0 = conservative; S H-bond only via |charge|>0.3) into
-		// the 8-bit layout [H:1][Q:1][base:6] that hbond_potential.h reads.
-		// Called after assign_formal_charges() so receptor charges are final.
+		// ── 6c. Populate type256 for ALL atoms (v56: donor/acceptor roles) ───
+		// encode_from_sybyl() maps SYBYL type (1–40) into the v56 layout
+		// [D:1][A:1][base:6].  hbond_potential.h requires one DONOR and one
+		// ACCEPTOR per pair (kills spurious A-A contacts from v55).
+		// n_hydrogens stays 0 until v57 implicit-H counting is wired.
 		{
 			for (int k = 1; k <= FA->res_cnt; k++) {
 				for (int i = residue[k].fatm[0]; i <= residue[k].latm[0]; i++) {
@@ -1378,7 +1370,7 @@ int main(int argc, char **argv){
 					}
 				}
 			}
-			printf("[v55] type256 populated for all atoms — H-bond gate enabled\n");
+			printf("[v56] type256 populated for all atoms — H-bond role gate enabled\n");
 		}
 
 		// ── 6b. Set up GPA and IC origin for MOL2/SDF ligand ──
