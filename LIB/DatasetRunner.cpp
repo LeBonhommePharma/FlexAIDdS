@@ -440,6 +440,126 @@ static std::pair<float,float> compute_pose_ligand_rmsd(
     return {rc, rh};
 }
 
+// ── v50 Lever 3 support: load a docked pose's ligand heavy-atom coordinates ──
+// Extracts the docked ligand from an emitted pose PDB using the SAME
+// CONECT-fingerprint selection and hydrogen-dropping rules as
+// compute_pose_ligand_rmsd, but returns the coordinates/elements directly so two
+// docked poses can be compared to each other (no crystal reference).  Atoms are
+// sorted by serial for a deterministic order.  Returns true if ≥1 heavy atom was
+// loaded.
+static bool load_pose_ligand_coords(
+    const std::string& pose_pdb,
+    std::vector<std::array<float,3>>& out_xyz,
+    std::vector<std::string>& out_elem)
+{
+    out_xyz.clear();
+    out_elem.clear();
+
+    auto get_elem_token = [](const std::string& line) -> std::string {
+        size_t end = line.find_last_not_of(" \t\r\n");
+        if (end == std::string::npos) return "X";
+        size_t start = line.find_last_of(" \t", end);
+        std::string tok = line.substr(start == std::string::npos ? 0 : start + 1,
+                                      end - (start == std::string::npos
+                                             ? static_cast<size_t>(-1) : start));
+        if (tok.empty()) return "X";
+        tok[0] = static_cast<char>(std::toupper(static_cast<unsigned char>(tok[0])));
+        for (size_t kk = 1; kk < tok.size(); ++kk)
+            tok[kk] = static_cast<char>(std::tolower(static_cast<unsigned char>(tok[kk])));
+        return tok;
+    };
+    auto elem_is_hydrogen = [&get_elem_token](const std::string& line) -> bool {
+        std::string tok = get_elem_token(line);
+        for (char& ch : tok) ch = static_cast<char>(std::tolower(
+                                       static_cast<unsigned char>(ch)));
+        return tok == "h" || tok == "d" || tok == "du";
+    };
+
+    std::set<long> conect_serials;
+    {
+        std::ifstream pf(pose_pdb);
+        std::string l;
+        while (std::getline(pf, l)) {
+            if (l.compare(0, 6, "CONECT") != 0) continue;
+            for (size_t c = 6; c + 1 <= l.size(); c += 5) {
+                std::string tok = l.substr(c, std::min<size_t>(5, l.size() - c));
+                try { conect_serials.insert(std::stol(tok)); } catch (...) {}
+            }
+        }
+    }
+
+    std::vector<std::tuple<long, std::array<float,3>, std::string>> docked;
+    {
+        std::ifstream pdb(pose_pdb);
+        std::string pline;
+        while (std::getline(pdb, pline)) {
+            if (pline.size() < 54) continue;
+            const bool is_atom = pline.compare(0,6,"HETATM") == 0 ||
+                                 pline.compare(0,6,"ATOM  ") == 0;
+            if (!is_atom) continue;
+            long serial = 0;
+            try { serial = std::stol(pline.substr(6, 5)); } catch (...) { continue; }
+            bool selected;
+            if (!conect_serials.empty()) {
+                selected = conect_serials.count(serial) > 0;
+            } else {
+                if (pline.compare(0,6,"HETATM") != 0) { selected = false; }
+                else {
+                    int rs = 0;
+                    try { rs = std::stoi(pline.substr(22,4)); } catch (...) {}
+                    std::string rn = pline.substr(17,3);
+                    while (!rn.empty() && rn.front()==' ') rn.erase(rn.begin());
+                    while (!rn.empty() && rn.back() ==' ') rn.pop_back();
+                    selected = (rs == 1 && rn.size() >= 2);
+                }
+            }
+            if (!selected) continue;
+            if (elem_is_hydrogen(pline)) continue;
+            float x, y, z;
+            try {
+                x = std::stof(pline.substr(30,8));
+                y = std::stof(pline.substr(38,8));
+                z = std::stof(pline.substr(46,8));
+            } catch (...) { continue; }
+            docked.push_back({serial, {x, y, z}, get_elem_token(pline)});
+        }
+    }
+    std::sort(docked.begin(), docked.end(),
+              [](const auto& a, const auto& b){ return std::get<0>(a) < std::get<0>(b); });
+
+    out_xyz.reserve(docked.size());
+    out_elem.reserve(docked.size());
+    for (auto& d : docked) {
+        out_xyz.push_back(std::get<1>(d));
+        out_elem.push_back(std::get<2>(d));
+    }
+    return !out_xyz.empty();
+}
+
+// Hungarian heavy-atom RMSD between two DOCKED poses (both in the same element
+// alphabet).  Mirrors the symmetry-corrected path of compute_pose_ligand_rmsd
+// but operates on two in-memory coordinate sets, so the v50 consensus scorer can
+// compare cluster representatives across restarts without re-reading files or
+// touching crystal coordinates.  Returns 999 on empty input or an atom-count
+// mismatch greater than 2.
+static float pose_pose_rmsd(
+    const std::vector<std::array<float,3>>& xyz_a,
+    const std::vector<std::string>& elem_a,
+    const std::vector<std::array<float,3>>& xyz_b,
+    const std::vector<std::string>& elem_b)
+{
+    if (xyz_a.empty() || xyz_b.empty()) return 999.0f;
+    if (elem_a.size() != xyz_a.size() || elem_b.size() != xyz_b.size()) return 999.0f;
+    if (std::abs(static_cast<int>(xyz_a.size()) -
+                 static_cast<int>(xyz_b.size())) > 2) return 999.0f;
+    std::vector<std::pair<std::string,std::array<float,3>>> a, b;
+    a.reserve(xyz_a.size());
+    b.reserve(xyz_b.size());
+    for (size_t k = 0; k < xyz_a.size(); ++k) a.push_back({elem_a[k], xyz_a[k]});
+    for (size_t k = 0; k < xyz_b.size(); ++k) b.push_back({elem_b[k], xyz_b[k]});
+    return hungarian_rmsd(a, b);
+}
+
 // Frequency-gated cluster selection (v24 Fix B).
 // The min-CF rule frequently picks a deeper-but-wrong "off-native CF minimum"
 // (the near-native cluster is almost always the runner-up, idx=1). The emitted
@@ -5361,6 +5481,103 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                         if (fs::exists(cand)) { best_pose_pdb = cand; break; }
                     }
                     if (!best_pose_pdb.empty()) break;
+                }
+            }
+
+            // ── v50 Lever 3: cross-restart cluster consensus re-ranking ──────
+            // Blind signal (no crystal coords, no oracle): reward a pose whose
+            // basin is independently rediscovered by multiple restarts.  If N
+            // independent thermodynamic trajectories converge to the same
+            // geometry, that basin is more likely the true free-energy minimum
+            // than one only a single restart finds.  Pool = every emitted cluster
+            // pose across all restart prefixes.  For each candidate, consensus =
+            // number of OTHER restart prefixes that have ≥1 pose within δ=1.5 Å
+            // (Hungarian heavy-atom RMSD, via pose_pose_rmsd).  Re-rank by
+            // PRIMARY consensus (desc), SECONDARY CF (asc); the winner becomes the
+            // reported pose.  Gated by FLEXAIDDS_CONSENSUS_SCORER (default 1; set
+            // 0 to keep the freq-gated selector's pose).  Needs ≥2 restart
+            // prefixes to carry any cross-restart signal.
+            {
+                const char* consensus_env = std::getenv("FLEXAIDDS_CONSENSUS_SCORER");
+                const int   consensus_on  = consensus_env ? std::atoi(consensus_env) : 1;
+                if (consensus_on && all_prefixes.size() >= 2 && !best_pose_pdb.empty()) {
+                    constexpr float kConsensusDelta = 1.5f;
+                    struct Cand {
+                        std::string path;
+                        int         pfx_id = 0;
+                        float       cf = std::numeric_limits<float>::infinity();
+                        std::vector<std::array<float,3>> xyz;
+                        std::vector<std::string>         elem;
+                    };
+                    std::vector<Cand> pool;
+                    for (size_t ip = 0; ip < all_prefixes.size(); ++ip) {
+                        const std::string& pfx = all_prefixes[ip];
+                        for (int pi = 0; pi <= 19; ++pi) {
+                            std::string cand = pfx + "_" + std::to_string(pi) + ".pdb";
+                            if (!fs::exists(cand)) continue;
+                            Cand c;
+                            c.path   = cand;
+                            c.pfx_id = static_cast<int>(ip);
+                            if (!load_pose_ligand_coords(cand, c.xyz, c.elem)) continue;
+                            std::ifstream pf(cand);
+                            std::string   pl;
+                            while (std::getline(pf, pl)) {
+                                auto pos = pl.find("REMARK CF=");
+                                if (pos != std::string::npos) {
+                                    try { c.cf = std::stof(pl.substr(pos + 10)); }
+                                    catch (...) {}
+                                    break;
+                                }
+                            }
+                            pool.push_back(std::move(c));
+                        }
+                    }
+                    if (pool.size() >= 2) {
+                        std::vector<int> consensus(pool.size(), 0);
+                        for (size_t i = 0; i < pool.size(); ++i) {
+                            std::set<int> agreeing;   // distinct OTHER prefixes
+                            for (size_t j = 0; j < pool.size(); ++j) {
+                                if (pool[j].pfx_id == pool[i].pfx_id) continue;
+                                float r = pose_pose_rmsd(pool[i].xyz, pool[i].elem,
+                                                         pool[j].xyz, pool[j].elem);
+                                if (r <= kConsensusDelta) agreeing.insert(pool[j].pfx_id);
+                            }
+                            consensus[i] = static_cast<int>(agreeing.size());
+                        }
+                        // Re-rank: consensus desc, then CF asc.
+                        int best_i = -1;
+                        for (size_t i = 0; i < pool.size(); ++i) {
+                            if (best_i < 0 ||
+                                consensus[i] > consensus[best_i] ||
+                                (consensus[i] == consensus[best_i] &&
+                                 pool[i].cf < pool[best_i].cf)) {
+                                best_i = static_cast<int>(i);
+                            }
+                        }
+                        int sel_i = -1;
+                        for (size_t i = 0; i < pool.size(); ++i)
+                            if (pool[i].path == best_pose_pdb) { sel_i = static_cast<int>(i); break; }
+                        auto base = [](const std::string& p) {
+                            auto s = p.find_last_of('/');
+                            return s == std::string::npos ? p : p.substr(s + 1);
+                        };
+                        std::cerr << "  [CONSENSUS] " << entry.pdb_id
+                                  << ": sel_pose=" << base(best_pose_pdb)
+                                  << " consensus=" << (best_i >= 0 ? consensus[best_i] : 0)
+                                  << " best_consensus_pose="
+                                  << (best_i >= 0 ? base(pool[best_i].path)
+                                                  : std::string("none"))
+                                  << " CF_B=" << std::fixed << std::setprecision(3)
+                                  << (best_i >= 0 ? pool[best_i].cf : 0.0f)
+                                  << " (sel_consensus="
+                                  << (sel_i >= 0 ? consensus[sel_i] : -1) << ")\n";
+                        if (best_i >= 0) {
+                            best_pose_pdb = pool[best_i].path;
+                            // Keep best_score describing the SAME pose now reported.
+                            if (std::isfinite(pool[best_i].cf))
+                                result.best_score = pool[best_i].cf;
+                        }
+                    }
                 }
             }
 
