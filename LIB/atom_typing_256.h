@@ -2,8 +2,8 @@
 //
 // Extends FlexAID's 40-type SYBYL system to 256 types:
 //   Bits 0–5: base type (64 classes, superset of SYBYL — no rare type collapse)
-//   Bit    6: charge polarity (0 = negative/neutral, 1 = positive)
-//   Bit    7: H-bond donor/acceptor flag
+//   Bit    6: H-bond acceptor role
+//   Bit    7: H-bond donor role
 //
 // All 40 SYBYL atom types map to distinct base types — no Solvent fallback.
 // Includes sybyl_to_base() bridge from FlexAID's 40-type world, context-aware
@@ -67,56 +67,89 @@ enum BaseType : uint8_t {
     BASE_TYPE_COUNT = 64
 };
 
-// ─── charge polarity (bit 6, 2 levels) ─────────────────────────────────────
-enum ChargeBin : uint8_t {
-    Q_NEGATIVE = 0,   // charge < 0.0  (negative or neutral)
-    Q_POSITIVE = 1,   // charge >= 0.0 (positive or neutral)
-};
-
 // ─── encoding / decoding ────────────────────────────────────────────────────
-// Layout: [H:1][Q:1][B:6] = 2 × 2 × 64 = 256 codes
+// Layout: [D:1][A:1][B:6] = donor × acceptor × 64 base classes.
 
-inline constexpr uint8_t encode(uint8_t base_type, uint8_t charge_bin,
-                                 bool hbond) noexcept {
-    return (static_cast<uint8_t>(hbond) << 7) |
-           ((charge_bin & 0x01) << 6) |
+inline constexpr uint8_t encode_roles(uint8_t base_type, bool donor,
+                                      bool acceptor) noexcept {
+    return (static_cast<uint8_t>(donor) << 7) |
+           (static_cast<uint8_t>(acceptor) << 6) |
            (base_type & 0x3F);
 }
 
-inline constexpr uint8_t get_base(uint8_t code) noexcept { return code & 0x3F; }
-inline constexpr uint8_t get_charge_bin(uint8_t code) noexcept { return (code >> 6) & 0x01; }
-inline constexpr bool    get_hbond(uint8_t code) noexcept { return (code >> 7) & 0x01; }
-
-// ─── charge quantisation ────────────────────────────────────────────────────
-
-inline ChargeBin quantise_charge(float partial_charge) noexcept {
-    return partial_charge < 0.0f ? Q_NEGATIVE : Q_POSITIVE;
+inline constexpr uint8_t encode(uint8_t base_type, bool donor,
+                                bool acceptor) noexcept {
+    return encode_roles(base_type, donor, acceptor);
 }
 
-// ─── H-bond classification ──────────────────────────────────────────────────
-// Donor: N-H, O-H, S-H bonds present
-// Acceptor: N (lone pair), O (lone pair), F
-// We mark both donors and acceptors with the same flag.
+// Catch stale v55 call sites that still try to encode [charge][H-bond].
+inline constexpr uint8_t encode(uint8_t, uint8_t, bool) noexcept = delete;
+inline constexpr uint8_t encode(uint8_t, int, bool) noexcept = delete;
 
-inline bool is_hbond_capable(uint8_t base_type, float partial_charge,
-                              int n_hydrogens) noexcept {
+inline constexpr uint8_t get_base(uint8_t code) noexcept { return code & 0x3F; }
+inline constexpr bool    get_hbond_acceptor(uint8_t code) noexcept { return (code >> 6) & 0x01; }
+inline constexpr bool    get_hbond_donor(uint8_t code) noexcept { return (code >> 7) & 0x01; }
+inline constexpr bool    get_hbond(uint8_t code) noexcept {
+    return get_hbond_donor(code) || get_hbond_acceptor(code);
+}
+
+// ─── H-bond role classification ─────────────────────────────────────────────
+// Runtime receptor/ligand atoms are mostly heavy-atom records, so n_hydrogens
+// is currently advisory. The conservative v56 split avoids the v55 pathology
+// where acceptor-acceptor and donor-donor contacts both passed a single
+// "H-bond capable" gate.
+
+inline bool classify_hbond_donor(uint8_t base_type, float partial_charge,
+                                 int n_hydrogens) noexcept {
     switch (base_type) {
-        // Nitrogen types with H → donor; all N → acceptor
-        case N_sp: case N_sp2: case N_sp3: case N_quat:
-        case N_ar: case N_am: case N_pl3:
+        case N_sp3:
+        case N_quat:
+        case N_am:
+        case N_pl3:
             return true;
-        // Oxygen types — always H-bond capable
-        case O_sp2: case O_sp3: case O_co2: case O_ar:
+        case O_sp3:
             return true;
-        // Sulfur — only with H attached or strong charge
-        case S_sp2: case S_sp3: case S_oxide: case S_ar:
-            return n_hydrogens > 0 || std::fabs(partial_charge) > 0.3f;
-        // Fluorine — acceptor only
+        case S_sp3:
+            return n_hydrogens > 0 || partial_charge > 0.3f;
+        default:
+            return false;
+    }
+}
+
+inline bool classify_hbond_acceptor(uint8_t base_type, float partial_charge,
+                                    int n_hydrogens) noexcept {
+    (void)n_hydrogens;
+    switch (base_type) {
+        case N_sp:
+        case N_sp2:
+        case N_sp3:
+        case N_ar:
+        case N_am:   // amide N — lone pair exists (carbonyl resonance weakens but LP real)
+        case N_pl3:
+            return true;
+        case O_sp2:
+        case O_sp3:
+        case O_co2:
+        case O_ar:
+            return true;
+        case S_oxide:
+        case S_dioxide:
+            return true;
+        case S_sp2:
+        case S_sp3:
+        case S_ar:
+            return partial_charge < -0.3f;
         case HAL_F:
             return true;
         default:
             return false;
     }
+}
+
+inline bool is_hbond_capable(uint8_t base_type, float partial_charge,
+                              int n_hydrogens) noexcept {
+    return classify_hbond_donor(base_type, partial_charge, n_hydrogens) ||
+           classify_hbond_acceptor(base_type, partial_charge, n_hydrogens);
 }
 
 // ─── SYBYL (1–40) ↔ base type (0–63) mapping ───────────────────────────────
@@ -235,9 +268,9 @@ inline uint8_t encode_from_sybyl(int sybyl_type, float partial_charge,
     bool aromatic_c = (sybyl_type == 4);  // C.AR
     base = refine_base_type(base, aromatic_c, has_heteroatom_neighbor,
                             is_bridgehead);
-    ChargeBin qbin = quantise_charge(partial_charge);
-    bool hb = is_hbond_capable(base, partial_charge, n_hydrogens);
-    return encode(base, qbin, hb);
+    const bool donor = classify_hbond_donor(base, partial_charge, n_hydrogens);
+    const bool acceptor = classify_hbond_acceptor(base, partial_charge, n_hydrogens);
+    return encode_roles(base, donor, acceptor);
 }
 
 // ─── name table for debugging ───────────────────────────────────────────────
@@ -261,11 +294,6 @@ inline const char* base_type_name(uint8_t base) noexcept {
         "?58", "?59", "?60", "?61", "?62", "?63"
     };
     return (base < BASE_TYPE_COUNT) ? names[base] : "???";
-}
-
-inline const char* charge_bin_name(uint8_t qbin) noexcept {
-    static const char* names[2] = {"neg", "pos"};
-    return (qbin < 2) ? names[qbin] : "???";
 }
 
 } // namespace atom256
