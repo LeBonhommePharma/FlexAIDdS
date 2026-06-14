@@ -137,6 +137,23 @@ python3 .grok/skills/flexaid-docking/scripts/ensure_docking_data.py --check
 python3 .grok/skills/flexaid-docking/scripts/ensure_docking_data.py --info
 ```
 
+**Benchmark workflows**
+```bash
+python3 .grok/skills/flexaid-docking/scripts/dataset_runner.py --dataset astex_diverse --tier 1 --dry-run --resume --package
+bash .grok/skills/flexaid-docking/scripts/launch_full_benchmark.sh astex_diverse 298 astex_diverse_298K
+bash scripts/run_benchmark_production.sh --dry-run
+python3 scripts/validate_benchmark_results.py <results-dir>/summary.csv --manifest benchmarks/datasets/astex_diverse.yaml --shannon-log-dir <results-dir>/astex_diverse --out-dir <results-dir>/figures
+```
+
+**macOS M3 Pro / iCloud benchmark workflow**
+```bash
+chmod +x benchmarks/m3pro/*.sh
+./benchmarks/m3pro/setup_cloud_storage.sh
+./benchmarks/m3pro/build_m3pro.sh
+./benchmarks/m3pro/run_benchmarks.sh --tier1-only
+bash benchmarks/m3pro/monitor_campaign.sh [RUN_ID]
+```
+
 See `CLAUDE.md` → “Build System” for the full table of CMake options and targets.
 
 ---

@@ -14,6 +14,7 @@
 #include "LibrarySplitter.h"
 #include "ReferenceEntropy.h"
 #include "assign_formal_charges.h"
+#include "atom_typing_256.h"
 #include "RefLigSeed.h"
 #include "CoarseScreen.h"
 #include "TwoStageScreen.h"
@@ -1351,6 +1352,34 @@ int main(int argc, char **argv){
 		// to metal ions, enabling Coulomb electrostatics and salt bridge
 		// detection. Skips atoms that already have charges (MOL2/PTM).
 		formal_charges::assign_formal_charges(FA, atoms, residue);
+
+		// ── 6c. Populate type256 for ALL atoms (v55: H-bond gate fix) ────────
+		// Before this call type256 = 0 for every atom because atom256::encode()
+		// was never wired into the main docking binary (it only existed in the
+		// standalone ProcessLigand prep tool).  With type256 = 0:
+		//   • atom256::get_hbond(0)   → false  (bit 7 = 0)
+		//   • atom256::get_charge_bin(0) → Q_NEGATIVE (bit 6 = 0)
+		// Result: hbond_potential.h early-returns 0.0 for every pair →
+		//   E_hb = 0 in every pose → cf.hbond = 0 in every PDB output.
+		// Fix: encode_from_sybyl() maps the SYBYL type (1–40), partial charge
+		// (atoms[i].charge, now populated by assign_formal_charges above), and
+		// n_hydrogens (0 = conservative; S H-bond only via |charge|>0.3) into
+		// the 8-bit layout [H:1][Q:1][base:6] that hbond_potential.h reads.
+		// Called after assign_formal_charges() so receptor charges are final.
+		{
+			for (int k = 1; k <= FA->res_cnt; k++) {
+				for (int i = residue[k].fatm[0]; i <= residue[k].latm[0]; i++) {
+					if (atoms[i].type > 0) {
+						atoms[i].type256 = atom256::encode_from_sybyl(
+							atoms[i].type,   // SYBYL type 1–40
+							atoms[i].charge, // partial charge (MOL2 or AMBER ff14SB)
+							0                // n_hydrogens: conservative; refine post-v55
+						);
+					}
+				}
+			}
+			printf("[v55] type256 populated for all atoms — H-bond gate enabled\n");
+		}
 
 		// ── 6b. Set up GPA and IC origin for MOL2/SDF ligand ──
 		// generate_grid() requires residue[last].gpa to be non-NULL and
