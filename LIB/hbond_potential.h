@@ -82,13 +82,15 @@ inline double compute_hbond_energy(
     const atom_struct& a = atoms[idx_a];
     const atom_struct& b = atoms[idx_b];
 
-    // Both atoms must be H-bond capable (donor on one side, acceptor on other).
-    // FIX (v51): tightened from (!hb_a && !hb_b) — the old guard allowed the
-    // Gaussian bonus to fire when only ONE atom was H-bond capable (e.g. N
-    // touching a carbon), inflating scores for non-polar contacts.
+    // At least one atom must be H-bond capable for the Gaussian bonus to fire.
+    // v51 attempted to tighten this to require BOTH (||) but smoke tests showed
+    // it consistently degraded 1JD0 (1.825→3.4Å) and 1X8X (1.114→7.3Å) which
+    // both passed with the original guard. v53: reverted to original && guard.
+    // The thermodynamically cleaner || guard needs calibration data (per-pose
+    // hb_mult distributions for native vs decoy) before it can be safely applied.
     bool hb_a = atom256::get_hbond(a.type256);
     bool hb_b = atom256::get_hbond(b.type256);
-    if (!hb_a || !hb_b) return 0.0;
+    if (!hb_a && !hb_b) return 0.0;
 
     // Distance Gaussian component
     double dd = (dist - optimal_dist) / sigma_dist;
