@@ -28,10 +28,19 @@
 #include <algorithm>
 #include <cmath>
 #include <cstring>
+#include <cstdint>
+#include <cstdio>
+#include <cstdlib>
+#include <cctype>
+#include <cerrno>
 #include <string>
 #include <vector>
 #include <filesystem>
+#include <system_error>
 #include <unistd.h>
+#ifndef _WIN32
+#include <sys/wait.h>
+#endif
 
 // ── Tier 2 typing: SYBYL name → canonical VCT matrix index ──────────────────
 // ProcessLigand (BonMol) perceives full hybridisation/aromaticity but stores
@@ -90,6 +99,156 @@ static int sybyl_name_to_canonical_vct(const char* s) {
 	if (!strcmp(s, "Co.oh") || !strcmp(s, "Co")) return 38;
 	return FA_TYPE_DUMMY; // H ("H") and anything unknown ("X")
 }
+
+// ════════════════════════════════════════════════════════════════════════════
+//  Strategy A — on-disk VCT grid cache  (env: FLEXAIDDS_GRID_CACHE_DIR)
+// ════════════════════════════════════════════════════════════════════════════
+// For non-native cross-docking the same receptor is paired with dozens of
+// ligands; the receptor cleft grid (detect_cleft → generate_grid → calc_cleftic
+// → SITE-CONFINE) is purely receptor-determined yet currently rebuilt from
+// scratch for every pair.  When FLEXAIDDS_GRID_CACHE_DIR is set we key a binary
+// snapshot of the finalized (site-confined) grid on the receptor + site PDB
+// content and the grid spacing/permeability, so the first ligand of a receptor
+// builds-and-writes the grid and every subsequent ligand loads it from disk.
+//
+// The key is an inline FNV-1a 64-bit hash — no external crypto dependency, and
+// collision risk is negligible for the ~85 receptors in a benchmark run.  The
+// feature is gated entirely on the env var: when it is absent the helpers below
+// are never invoked and behaviour is bit-for-bit identical to before.
+namespace gridcache {
+
+static constexpr uint32_t kMagic   = 0x56435400u; // "VCT\0"
+static constexpr uint32_t kVersion = 1u;
+
+// FNV-1a (64-bit) — fold a byte buffer into a running hash.
+static inline uint64_t fnv1a_update(uint64_t h, const void* data, size_t n) {
+	const unsigned char* p = static_cast<const unsigned char*>(data);
+	for (size_t i = 0; i < n; ++i) {
+		h ^= static_cast<uint64_t>(p[i]);
+		h *= 0x100000001b3ull;
+	}
+	return h;
+}
+
+// Fold an entire file's content into the running hash.  Returns false when the
+// file cannot be opened.
+static bool fnv1a_file(uint64_t& h, const char* path) {
+	FILE* fp = fopen(path, "rb");
+	if (!fp) return false;
+	unsigned char buf[65536];
+	size_t got;
+	while ((got = fread(buf, 1, sizeof(buf), fp)) > 0)
+		h = fnv1a_update(h, buf, got);
+	fclose(fp);
+	return true;
+}
+
+// Resolve the cache file path for this (receptor, site, spacer, permea) tuple,
+// or an empty string when caching is disabled or the receptor is unreadable.
+static std::string cache_path(const char* receptor_file,
+                              const char* site_file,
+                              float spacer, float permea) {
+	const char* dir = std::getenv("FLEXAIDDS_GRID_CACHE_DIR");
+	if (!dir || dir[0] == '\0') return std::string();
+	if (!receptor_file || receptor_file[0] == '\0') return std::string();
+
+	uint64_t h = 0xcbf29ce484222325ull; // FNV-1a offset basis
+	if (!fnv1a_file(h, receptor_file)) return std::string(); // no receptor → no key
+	// Site PDB is optional (AUTO mode has none); fold it only when present so
+	// AUTO and oracle runs of the same receptor never share a key.
+	if (site_file && site_file[0] != '\0')
+		fnv1a_file(h, site_file); // absent/unreadable site contributes nothing
+	h = fnv1a_update(h, &spacer, sizeof(spacer));
+	h = fnv1a_update(h, &permea, sizeof(permea));
+
+	char name[32];
+	snprintf(name, sizeof(name), "%016llx.vct", static_cast<unsigned long long>(h));
+	return std::string(dir) + "/" + name;
+}
+
+// Load num_grd + gridpoint[] from a cache file.  On a validated hit *out_grid is
+// malloc'd (caller owns / frees with free()) and *out_num is set.  gridpoint is
+// a fixed-layout POD (ints + floats), so the raw struct array is portable across
+// runs of the same binary.
+static bool load(const std::string& path, gridpoint** out_grid, int* out_num) {
+	FILE* fp = fopen(path.c_str(), "rb");
+	if (!fp) return false;
+	uint32_t magic = 0, version = 0;
+	int32_t  num = 0;
+	bool ok = (fread(&magic,   sizeof(magic),   1, fp) == 1) &&
+	          (fread(&version, sizeof(version), 1, fp) == 1) &&
+	          (fread(&num,     sizeof(num),     1, fp) == 1) &&
+	          magic == kMagic && version == kVersion &&
+	          num > 0 && num < (1 << 24);
+	gridpoint* grid = nullptr;
+	if (ok) {
+		grid = static_cast<gridpoint*>(malloc(static_cast<size_t>(num) * sizeof(gridpoint)));
+		ok = grid && (fread(grid, sizeof(gridpoint), static_cast<size_t>(num), fp)
+		              == static_cast<size_t>(num));
+	}
+	fclose(fp);
+	if (!ok) { if (grid) free(grid); return false; }
+	*out_grid = grid;
+	*out_num  = num;
+	return true;
+}
+
+// Atomically persist num_grd + gridpoint[] (temp file + rename) so concurrent
+// workers building the same receptor never observe a half-written cache file.
+static void save(const std::string& path, const gridpoint* grid, int num) {
+	if (num <= 0 || grid == nullptr) return;
+	std::string tmp = path + ".tmp";
+	FILE* fp = fopen(tmp.c_str(), "wb");
+	if (!fp) return;
+	uint32_t magic = kMagic, version = kVersion;
+	int32_t  n = num;
+	bool ok = (fwrite(&magic,   sizeof(magic),   1, fp) == 1) &&
+	          (fwrite(&version, sizeof(version), 1, fp) == 1) &&
+	          (fwrite(&n,       sizeof(n),       1, fp) == 1) &&
+	          (fwrite(grid, sizeof(gridpoint), static_cast<size_t>(num), fp)
+	           == static_cast<size_t>(num));
+	fclose(fp);
+	std::error_code ec;
+	if (ok) {
+		std::filesystem::rename(tmp, path, ec);
+		if (ec) std::filesystem::remove(tmp, ec);
+	} else {
+		std::filesystem::remove(tmp, ec);
+	}
+}
+
+} // namespace gridcache
+
+// ════════════════════════════════════════════════════════════════════════════
+//  Strategy B — multi-ligand batch dispatch  (env: FLEXAIDDS_LIGAND_BATCH)
+// ════════════════════════════════════════════════════════════════════════════
+// Re-exec this same executable once per ligand in a fresh process.  A clean
+// process per ligand deliberately avoids resetting the deeply-shared atom /
+// residue / FA / VC / chromosome state that main() allocates once and frees only
+// at exit — an in-process loop would have to unwind all of it correctly between
+// ligands.  The receptor VCT grid is still built only once per receptor because
+// each child consults the Strategy A on-disk cache (FLEXAIDDS_GRID_CACHE_DIR):
+// the first ligand writes the grid, the rest load it.  FLEXAIDDS_LIGAND_BATCH is
+// cleared in the child to prevent infinite recursion.
+#ifndef _WIN32
+static int batch_exec_child(const char* exe, const std::vector<std::string>& args) {
+	pid_t pid = fork();
+	if (pid < 0) return -1;
+	if (pid == 0) {
+		unsetenv("FLEXAIDDS_LIGAND_BATCH"); // child docks a single ligand
+		std::vector<char*> cargv;
+		cargv.reserve(args.size() + 1);
+		for (const auto& a : args) cargv.push_back(const_cast<char*>(a.c_str()));
+		cargv.push_back(nullptr);
+		execvp(exe, cargv.data()); // PATH-search if exe has no '/', else literal path
+		_exit(127);                // exec failed
+	}
+	int status = 0;
+	while (waitpid(pid, &status, 0) < 0 && errno == EINTR) { /* retry */ }
+	if (WIFEXITED(status)) return WEXITSTATUS(status);
+	return -1;
+}
+#endif
 
 // Resolve a fully-perceived BonMol atom to its canonical VCT index.
 // BonMol's SybylTyper follows the classic SYBYL convention of typing aromatic
@@ -512,6 +671,7 @@ int main(int argc, char **argv){
 	bool use_campaign = false;
 	std::string config_path;
 	std::string output_prefix = "flexaid_out";
+	std::string cached_grid_path;  // Strategy A: .rrg grid cache path from "grid_file" JSON key
 
 	if (argc < 2) {
 		print_usage(argv[0]);
@@ -693,6 +853,13 @@ int main(int argc, char **argv){
 			}
 			apply_config(config, FA, GB);
 
+			// ── Strategy A: extract grid cache path from JSON "grid_file" key ──────
+			if (config.contains("grid_file")) {
+				cached_grid_path = config["grid_file"].as_string("");
+				if (!cached_grid_path.empty())
+					fprintf(stderr, "[GRID-CACHE] grid_file=%s\n", cached_grid_path.c_str());
+			}
+
 			printf("FlexAIDdS config: T=%uK, ligand_flex=%s, intramolecular=%s, scoring=%s\n",
 				FA->temperature,
 				FA->deelig_flex ? "ON" : "OFF",
@@ -709,6 +876,88 @@ int main(int argc, char **argv){
 		// GA input not used in direct mode
 		dockinp[0] = '\0';
 		gainp[0] = '\0';
+
+		// ── Strategy B — multi-ligand batch dispatch ──────────────────────────
+		// When FLEXAIDDS_LIGAND_BATCH=<dir> is set, dock every *.sdf in that
+		// directory against this receptor by re-exec'ing this binary once per
+		// ligand (see batch_exec_child above for the rationale).  The single
+		// ligand argument parsed above is ignored — the batch directory is the
+		// ligand source.  Each child writes to <output_dir>/<sdf-stem>* and
+		// reuses the receptor grid through the Strategy A cache.  Absent env var
+		// → this block is skipped and the normal single-ligand path runs.
+#ifndef _WIN32
+		{
+			const char* batch_env = std::getenv("FLEXAIDDS_LIGAND_BATCH");
+			if (batch_env && batch_env[0] != '\0' &&
+			    std::filesystem::is_directory(batch_env)) {
+
+				// Enumerate *.sdf, sorted lexicographically for determinism.
+				std::vector<std::string> sdfs;
+				for (const auto& de : std::filesystem::directory_iterator(batch_env)) {
+					if (!de.is_regular_file()) continue;
+					std::string ext = de.path().extension().string();
+					for (char& c : ext)
+						c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+					if (ext == ".sdf") sdfs.push_back(de.path().string());
+				}
+				std::sort(sdfs.begin(), sdfs.end());
+
+				if (sdfs.empty()) {
+					fprintf(stderr, "[BATCH] no .sdf files in %s — nothing to dock\n",
+					        batch_env);
+					Terminate(0);
+				}
+
+				// Output directory derived from the existing -o prefix.
+				std::filesystem::path out_base(output_prefix);
+				const std::string out_dir = out_base.has_parent_path()
+				                          ? out_base.parent_path().string()
+				                          : std::string(".");
+
+				const int M = static_cast<int>(sdfs.size());
+				fprintf(stderr,
+				        "[BATCH] %d ligand(s) vs receptor %s "
+				        "(grid built once, shared via FLEXAIDDS_GRID_CACHE_DIR)\n",
+				        M, receptor_path.c_str());
+
+				int n_ok = 0;
+				for (int li = 0; li < M; ++li) {
+					const std::string stem =
+					    std::filesystem::path(sdfs[li]).stem().string();
+					const std::string child_prefix = out_dir + "/" + stem;
+					fprintf(stderr, "[BATCH] ligand %d/%d: %s\n",
+					        li + 1, M, stem.c_str());
+
+					std::vector<std::string> cargs;
+					cargs.push_back(argv[0]);
+					cargs.push_back(receptor_path);
+					cargs.push_back(sdfs[li]);
+					cargs.push_back("-o");
+					cargs.push_back(child_prefix);
+					if (!config_path.empty()) {
+						cargs.push_back("-c");
+						cargs.push_back(config_path);
+					}
+					if (FA->dependencies_path[0] != '\0') {
+						cargs.push_back("--data-dir");
+						cargs.push_back(FA->dependencies_path);
+					}
+
+					const int rc = batch_exec_child(argv[0], cargs);
+					if (rc == 0) {
+						++n_ok;
+					} else {
+						fprintf(stderr,
+						        "[BATCH] ligand %s exited with code %d\n",
+						        stem.c_str(), rc);
+					}
+				}
+				fprintf(stderr, "[BATCH] complete: %d/%d ligand(s) succeeded\n",
+				        n_ok, M);
+				Terminate(0);
+			}
+		}
+#endif // _WIN32
 
 		// Direct loading pipeline — use auto-detected paths
 		const char* receptor_file = receptor_path.c_str();
@@ -1145,6 +1394,73 @@ int main(int argc, char **argv){
 		{
 			strcpy(FA->rngopt, "locclf");
 
+			// ── Strategy A: lazy grid cache load ──────────────────────────────────
+			// When DatasetRunner passes "grid_file" in the JSON config (pointing to
+			// <out_prefix>.rrg from a prior same-receptor run), load the fully
+			// pruned + IC-transformed cleftgrid directly, bypassing SURFNET +
+			// generate_grid + site-confine + MIF.  The gridpoint struct stores
+			// pre-computed IC values (dis/ang/dih) relative to FA->ori, which is
+			// set during receptor loading (before this block) and is identical for
+			// the same receptor PDB.  No calc_cleftic() call needed after load.
+			bool grid_loaded_from_cache = false;
+			static constexpr uint32_t RRG_MAGIC   = 0x56435400U;
+			static constexpr uint32_t RRG_VERSION = 1U;
+
+			// ── Probe FLEXAIDDS_GRID_CACHE_DIR (content-hash keyed) ─────────────
+			// Used by Strategy B batch children: the first child builds and saves;
+			// subsequent children of the same receptor load and skip the grid build.
+			const std::string gc_vct_path = gridcache::cache_path(
+			    receptor_file, std::getenv("FLEXAIDDS_ORACLE_SITE"),
+			    FA->spacer_length, FA->permeability);
+			if (!gc_vct_path.empty()) {
+				if (gridcache::load(gc_vct_path, &cleftgrid, &FA->num_grd)) {
+					grid_loaded_from_cache = true;
+					fprintf(stderr,
+					        "[GRID-CACHE] Loaded %d pts from GRID_CACHE_DIR cache: %s\n",
+					        FA->num_grd, gc_vct_path.c_str());
+				}
+			}
+
+			if (!cached_grid_path.empty() && std::filesystem::exists(cached_grid_path)) {
+				FILE* gf = fopen(cached_grid_path.c_str(), "rb");
+				if (gf) {
+					uint32_t magic = 0, version = 0;
+					int32_t  ng    = 0;
+					if (fread(&magic,   sizeof magic,   1, gf) == 1 &&
+					    fread(&version, sizeof version, 1, gf) == 1 &&
+					    fread(&ng,      sizeof ng,      1, gf) == 1 &&
+					    magic == RRG_MAGIC && version == RRG_VERSION && ng > 0) {
+						gridpoint* cached_gp = static_cast<gridpoint*>(
+						    malloc(static_cast<size_t>(ng) * sizeof(gridpoint)));
+						if (cached_gp &&
+						    static_cast<int32_t>(
+						        fread(cached_gp, sizeof(gridpoint), static_cast<size_t>(ng), gf))
+						        == ng) {
+							cleftgrid           = cached_gp;
+							FA->num_grd         = static_cast<int>(ng);
+							grid_loaded_from_cache = true;
+							fprintf(stderr, "[GRID-CACHE] Loaded %d grid points from: %s\n",
+							        ng, cached_grid_path.c_str());
+						} else {
+							free(cached_gp);
+							fprintf(stderr,
+							        "[GRID-CACHE] WARN: incomplete read from %s — regenerating\n",
+							        cached_grid_path.c_str());
+						}
+					} else {
+						fprintf(stderr,
+						        "[GRID-CACHE] WARN: bad header in %s (magic=%08X ver=%u) — regenerating\n",
+						        cached_grid_path.c_str(), magic, version);
+					}
+					fclose(gf);
+				} else {
+					fprintf(stderr,
+					        "[GRID-CACHE] WARN: cannot open %s — regenerating\n",
+					        cached_grid_path.c_str());
+				}
+			}
+
+			if (!grid_loaded_from_cache) {
 			// Oracle mode: FLEXAIDDS_ORACLE_SITE env var points to a binding
 			// site PDB.  Parse for centroid only — SURFNET void-space detection
 			// always runs (probes placed in void between atoms, not on atoms).
@@ -1356,6 +1672,40 @@ int main(int argc, char **argv){
 				free(spheres);
 				spheres = prev;
 			}
+
+			// ── Strategy A: save newly generated grid ────────────────────────────
+			// 1. To FLEXAIDDS_GRID_CACHE_DIR/<hash>.vct (atomic temp+rename)
+			//    so Strategy B batch children of the same receptor find it.
+			// 2. To <output_prefix>.rrg so DatasetRunner's "grid_file" mechanism
+			//    can pass it to subsequent same-receptor entries.
+			if (!gc_vct_path.empty())
+				gridcache::save(gc_vct_path, cleftgrid, FA->num_grd);
+
+			if (cleftgrid && FA->num_grd > 0 && !output_prefix.empty()) {
+				std::string rrg_path = output_prefix + ".rrg";
+				FILE* gf_save = fopen(rrg_path.c_str(), "wb");
+				if (gf_save) {
+					int32_t ng_save = static_cast<int32_t>(FA->num_grd);
+					fwrite(&RRG_MAGIC,   sizeof RRG_MAGIC,   1, gf_save);
+					fwrite(&RRG_VERSION, sizeof RRG_VERSION, 1, gf_save);
+					fwrite(&ng_save,     sizeof ng_save,     1, gf_save);
+					size_t written = fwrite(cleftgrid, sizeof(gridpoint),
+					                        static_cast<size_t>(ng_save), gf_save);
+					fclose(gf_save);
+					if (static_cast<int32_t>(written) == ng_save) {
+						fprintf(stderr, "[GRID-CACHE] Saved %d grid points → %s\n",
+						        ng_save, rrg_path.c_str());
+					} else {
+						fprintf(stderr,
+						        "[GRID-CACHE] WARN: partial write (%zu/%d pts) — removing %s\n",
+						        written, ng_save, rrg_path.c_str());
+						std::filesystem::remove(rrg_path);
+					}
+				} else {
+					fprintf(stderr, "[GRID-CACHE] WARN: cannot write %s\n", rrg_path.c_str());
+				}
+			}
+			} // end if (!grid_loaded_from_cache)
 		}
 
 		// Direct-mode GA seeding: bias the initial population toward the
