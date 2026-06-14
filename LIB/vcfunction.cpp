@@ -506,14 +506,21 @@ double vcfunction(FA_Global* FA,VC_Global* VC,atom* atoms,resid* residue, std::v
 					}
 
 					// Directional H-bond angular correction:
-					// Scale complementarity by angular multiplier for H-bond pairs
+					// Scale complementarity by angular multiplier for H-bond pairs.
+					// FIX (v51): sign error — previous formula yielded a BONUS for bad
+					// geometry (contribution<0) * (hb_mult-1)<0) * weight<0) = negative,
+					// which was added to cfs->hbond making the CF *more* favorable.
+					// Correct: bad polar geometry pays back a fraction of the lost
+					// attraction as a frustration penalty (positive CF increment).
 					if(FA->use_hbond){
 						double hb_mult = hbond::evaluate_contact(
 							&atoms[atomzero], &atoms[atomcont],
 							atoms, VC->ca_rec[currindex].dist);
-						if(hb_mult < 1.0){
-							double hb_correction = contribution * (hb_mult - 1.0) * FA->hbond_weight;
-							cfs->hbond += hb_correction;
+						if(hb_mult < 1.0 && contribution < 0.0){
+							// lost_attraction > 0: the attractive complementarity
+							// that geometry prevents from being realised.
+							double lost_attraction = contribution * (hb_mult - 1.0);
+							cfs->hbond += 0.75 * lost_attraction; // frustration penalty
 						}
 					}
 

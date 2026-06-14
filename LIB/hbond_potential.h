@@ -82,10 +82,13 @@ inline double compute_hbond_energy(
     const atom_struct& a = atoms[idx_a];
     const atom_struct& b = atoms[idx_b];
 
-    // Both atoms must be H-bond capable
+    // Both atoms must be H-bond capable (donor on one side, acceptor on other).
+    // FIX (v51): tightened from (!hb_a && !hb_b) — the old guard allowed the
+    // Gaussian bonus to fire when only ONE atom was H-bond capable (e.g. N
+    // touching a carbon), inflating scores for non-polar contacts.
     bool hb_a = atom256::get_hbond(a.type256);
     bool hb_b = atom256::get_hbond(b.type256);
-    if (!hb_a && !hb_b) return 0.0;
+    if (!hb_a || !hb_b) return 0.0;
 
     // Distance Gaussian component
     double dd = (dist - optimal_dist) / sigma_dist;
