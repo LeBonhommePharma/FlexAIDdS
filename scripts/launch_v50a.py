@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 # launch_v50a.py — daemonized launcher for the v50a consensus benchmark.
 #
-# v50 = CLEAN AUTONOMOUS validation run on Astex cross-docking 85.
+# v50 = CLEAN AUTONOMOUS validation run on Astex re-docking 85 (self-docking / FLRP,
+#       benchmark_astex_native_85.json — same dataset as v43..v49).
 #
 # Three levers (all committed in DatasetRunner.cpp, commit efc4f5d):
 #   Change 1 — BCR gate is now DIAGNOSTIC-ONLY (permanent, no env toggle):
@@ -48,7 +49,7 @@ BINARY      = f"{BUILD}/FlexAIDdS"
 RUNNER      = f"{BUILD}/benchmark_datasets"
 DATA_DIR    = BUILD
 ORACLE_DIR  = f"{REPO}/benchmarks/astex_diverse/astex_diverse"
-JSON_PAIRS  = f"{REPO}/benchmarks/datasets/benchmark_crossdock_85.json"
+JSON_PAIRS  = f"{REPO}/benchmarks/datasets/benchmark_astex_native_85.json"
 OUTPUT      = os.path.expanduser("~/flexaidds_results/v50a_20260614_consensus")
 PROV_FILE   = f"{OUTPUT}/launch_provenance.json"
 
@@ -105,12 +106,13 @@ if ps.stdout.strip():
         f"(pids {ps.stdout.split()}) — abort to avoid collision"
     )
 
-# Verify cross-docking JSON (receptor != ligand for every pair).
-cross = json.load(open(JSON_PAIRS))
-assert len(cross["pairs"]) == 85, "Expected 85 pairs in crossdock JSON"
-nonself = sum(1 for x in cross["pairs"] if x["receptor_id"] != x["ligand_id"])
-assert nonself == 85, f"Expected 85 cross-docking pairs, got {nonself} non-self"
-print(f"Cross-dock JSON verified: 85 cross-docking pairs ✓")
+# Verify native self-docking JSON (receptor == ligand for every pair).
+native = json.load(open(JSON_PAIRS))
+assert len(native["pairs"]) == 85, "Expected 85 pairs in native JSON"
+for pair in native["pairs"]:
+    assert pair["receptor_id"] == pair["ligand_id"], \
+        f"Non-native pair found: {pair['receptor_id']} != {pair['ligand_id']}"
+print(f"Native JSON verified: 85 self-docking pairs ✓")
 
 # ── Environment ───────────────────────────────────────────────────────────────
 env = dict(os.environ)
@@ -165,7 +167,7 @@ if __name__ == "__main__":
     os.makedirs(OUTPUT, exist_ok=True)
 
     print(f"\nLaunching v50a clean-autonomous consensus benchmark ...")
-    print(f"  crossdock JSON: {JSON_PAIRS}")
+    print(f"  native JSON:    {JSON_PAIRS}")
     print(f"  oracle dir:     {ORACLE_DIR}")
     print(f"  output:         {OUTPUT}")
     print(f"  levers:         BCR=diagnostic-only | EVAL_SCALE_DIHEDRAL=1 | CONSENSUS_SCORER=1")
@@ -178,7 +180,7 @@ if __name__ == "__main__":
         "launched_at":   datetime.datetime.utcnow().isoformat() + "Z",
         "git_commit":    GIT_COMMIT,
         "description":   (
-            "Clean autonomous Astex cross-docking 85 validation. BCR gate is "
+            "Clean autonomous Astex re-docking 85 (self-docking / FLRP) validation. BCR gate is "
             "diagnostic-only (no oracle substitution of the reported result). "
             "Lever 1 (FLEXAIDDS_EVAL_SCALE_DIHEDRAL=1): n_gen scaled by "
             "max(1.0, n_flex_bonds/4.0). Lever 3 (FLEXAIDDS_CONSENSUS_SCORER=1): "
