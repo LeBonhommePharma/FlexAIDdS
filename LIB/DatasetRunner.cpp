@@ -4593,8 +4593,33 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                 (ring_flex_env && std::atoi(ring_flex_env) != 0)
                 ? count_ring_pucker_dof_sdf(entry.ligand_path) : 0;
             const int n_genes  = 4 + fdih_est + ring_dof_est;
-            int n_gen_scaled = config.ga_generations *
-                                     ((n_genes + 3) / 4);  // ceil(n_genes/4)
+
+            // ── Lever 1 (v50): dihedral eval-budget scaling ──────────────────
+            // v18 ablation: going from 4 → 11 dihedral genes needs ≥2.75× more
+            // evaluations to converge.  Scale n_gen proportionally to the
+            // ligand's flexible-bond count so high-DoF ligands receive a budget
+            // matched to their search-space dimensionality instead of a fixed
+            // one (which caused stochastic search failure for flexible ligands).
+            //   n_flex_bonds   = perceived rotatable bonds = dihedral genes (fdih)
+            //   n_gen_effective = n_gen_base × max(1.0, n_flex_bonds / 4.0)
+            // Gated by FLEXAIDDS_EVAL_SCALE_DIHEDRAL (default 1 = ON; set 0 to
+            // fall back to the legacy ceil(n_genes/4) scaling without recompile).
+            const char* eval_scale_env = std::getenv("FLEXAIDDS_EVAL_SCALE_DIHEDRAL");
+            const int   eval_scale_on  = eval_scale_env ? std::atoi(eval_scale_env) : 1;
+            const int   n_flex_bonds   = fdih_est;
+            const int   n_gen_base     = config.ga_generations;
+            int n_gen_scaled;
+            if (eval_scale_on) {
+                const float dihedral_scale =
+                    std::max(1.0f, static_cast<float>(n_flex_bonds) / 4.0f);
+                n_gen_scaled = static_cast<int>(
+                    std::lround(static_cast<double>(n_gen_base) * dihedral_scale));
+                fprintf(stderr,
+                        "[EVAL-SCALE] %s: n_flex_bonds=%d n_gen_base=%d n_gen_effective=%d\n",
+                        entry.pdb_id.c_str(), n_flex_bonds, n_gen_base, n_gen_scaled);
+            } else {
+                n_gen_scaled = n_gen_base * ((n_genes + 3) / 4);  // legacy ceil(n_genes/4)
+            }
 
             // ── v27 high-DoF budget scaling (FLEXAIDDS_BUDGET_SCALE) ──
             // High-DoF ligands (n_genes >= 14, i.e. >=10 rotatable bonds) need a
@@ -5416,55 +5441,30 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                     }
                 }
 
-                // ── BCR-gate: selector override (v49 fix) ────────────────────────
-                // When the oracle scan found a near-native cluster (best_cluster_rmsd
-                // < 2.0 A) but the freq-gated selector reported a >= 2.0 A pose,
-                // substitute the actual bcr cluster as the reported result.
-                // Root cause: CF false minimum absorbs population; near-native cluster
-                // is under-populated so freq-gated selector prefers the wrong cluster.
-                // v48 bug: hardcoded _0.pdb (lowest CF) ≠ bcr cluster (lowest RMSD).
-                // v49 fix: track best_cluster_pfx during oracle scan; use pfx+_N.pdb
-                // where N = best_cluster_idx is the index that achieved best_cluster_rmsd.
-                // Benchmark/oracle mode only (requires crystal ligand for bcr scan).
+                // ── BCR-gate: DIAGNOSTIC ONLY (v50) ──────────────────────────────
+                // v49 SUBSTITUTED the oracle-best cluster as the reported result
+                // whenever the oracle scan found a near-native cluster (best_cluster
+                // _rmsd < 2.0 A) that the freq-gated selector missed (>= 2.0 A).
+                // That made the headline number oracle-assisted (it requires the
+                // crystal ligand to identify the bcr cluster), so v50 DEMOTES the
+                // gate to a pure observer: it still computes best_cluster_rmsd and
+                // logs when it WOULD have fired, but it no longer overwrites
+                // result.rmsd_to_crystal / rmsd_hungarian / best_score.  The
+                // reported result is now a true autonomous docking result with no
+                // oracle substitution.  best_cluster_rmsd is still emitted to the
+                // CSV as a diagnostic column.  (best_cluster_pfx is retained only
+                // for this diagnostic gate's bookkeeping.)
+                (void)best_cluster_pfx;
                 if (result.best_cluster_rmsd < 2.0f &&
                     std::min(result.rmsd_to_crystal, result.rmsd_hungarian) >= 2.0f) {
-                    // Directly use the pfx+index that achieved best_cluster_rmsd.
-                    if (!best_cluster_pfx.empty()) {
-                        std::string override_pdb = best_cluster_pfx + "_" +
-                            std::to_string(result.best_cluster_idx) + ".pdb";
-                        if (fs::exists(override_pdb)) {
-                            const float old_rmsd = std::min(result.rmsd_to_crystal,
-                                                            result.rmsd_hungarian);
-                            auto rov = compute_pose_ligand_rmsd(
-                                override_pdb, crystal_xyz, crystal_elem,
-                                entry.pdb_id, true);
-                            result.rmsd_to_crystal = rov.first;
-                            result.rmsd_hungarian  = rov.second;
-                            float override_cf = std::numeric_limits<float>::infinity();
-                            {
-                                std::ifstream pf(override_pdb);
-                                std::string   pl;
-                                while (std::getline(pf, pl)) {
-                                    if (pl.find("REMARK CF=") != std::string::npos) {
-                                        auto pos = pl.find("CF=");
-                                        if (pos != std::string::npos) {
-                                            try { override_cf = std::stof(pl.substr(pos + 3)); }
-                                            catch (...) {}
-                                        }
-                                        break;
-                                    }
-                                }
-                            }
-                            if (std::isfinite(override_cf)) result.best_score = override_cf;
-                            std::cerr << "  [BCR-GATE] " << entry.pdb_id
-                                      << ": bcr=" << std::fixed << std::setprecision(3)
-                                      << result.best_cluster_rmsd
-                                      << "A sel_old=" << old_rmsd
-                                      << "A -> bcr_cluster rmsd="
-                                      << std::min(rov.first, rov.second) << "A"
-                                      << " (idx=" << result.best_cluster_idx << ")\n";
-                        }
-                    }
+                    const float kept = std::min(result.rmsd_to_crystal,
+                                                result.rmsd_hungarian);
+                    std::cerr << "  [BCR-DIAGNOSTIC] " << entry.pdb_id
+                              << ": bcr=" << std::fixed << std::setprecision(2)
+                              << result.best_cluster_rmsd
+                              << "A (gate DISABLED — autonomous result kept: "
+                              << kept << "A)"
+                              << " (idx=" << result.best_cluster_idx << ")\n";
                 }
             } else {
                 result.rmsd_to_crystal = 999.0f;
