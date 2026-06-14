@@ -18,6 +18,8 @@
 #include "BenchmarkRunner.h"
 #include "statmech.h"
 #include "receptor_prep.h"
+#include "tENCoM/tencm.h"   // tencm::TorsionalENM — ligand Cartesian ANM for H(ω)
+#include "VibEntropy.h"     // vibentropy::compute_vib_entropy_collapse — Level-3 H(ω)
 
 #include <algorithm>
 #include <array>
@@ -558,6 +560,106 @@ static float pose_pose_rmsd(
     for (size_t k = 0; k < xyz_a.size(); ++k) a.push_back({elem_a[k], xyz_a[k]});
     for (size_t k = 0; k < xyz_b.size(); ++k) b.push_back({elem_b[k], xyz_b[k]});
     return hungarian_rmsd(a, b);
+}
+
+// ── Level-3 H(ω) vibrational-entropy diagnostic over emitted cluster poses ──
+// Gated by FLEXAIDDS_HVIB=1 (default OFF).  Mirrors the per-generation [HVIB]
+// monitor in gaboom.cpp, but runs POST-GA: DatasetRunner drives the docking
+// binary as a subprocess and has no in-process FA atoms[] array, so each cluster
+// representative's ligand conformation is read back from its emitted pose PDB
+// (via load_pose_ligand_coords) instead of re-materialised from a chromosome.
+//
+// For the top-N emitted reps (ranked by REMARK CF ascending; rank 0 = best CF)
+// it builds a Cartesian ANM over the ligand heavy atoms (tencm::build_from_ligand
+// reads only coor[] + element), harvests the positive eigenvalues, and pools them
+// into the population vibrational-entropy collapse metrics.  Eigenvalues never
+// enter CF or selection — purely diagnostic.
+struct HvibColumns {
+    float H_rep_rank0 = 0.0f;  // H(ω) of rank-0 (best-CF) rep, computed individually
+    float H_pop       = 0.0f;  // pooled population vibrational entropy H(ω)
+    float H_rep_mean  = 0.0f;  // mean per-rep vibrational entropy
+    float D_vib       = 0.0f;  // inter-rep vibrational divergence
+    int   n_reps      = 0;     // contributing reps
+};
+
+static HvibColumns compute_target_hvib(const std::vector<std::string>& all_prefixes,
+                                       int top_n = 10)
+{
+    HvibColumns out;
+
+    // Pool every emitted cluster pose across all restart prefixes, tagged with its
+    // REMARK CF so we can rank by CF ascending (rank 0 = best CF).
+    struct PosePath { std::string path; float cf; };
+    std::vector<PosePath> pool;
+    for (const auto& pfx : all_prefixes) {
+        for (int pi = 0; pi <= 19; ++pi) {
+            std::string cand = pfx + "_" + std::to_string(pi) + ".pdb";
+            if (!fs::exists(cand)) continue;
+            float cf = std::numeric_limits<float>::infinity();
+            std::ifstream pf(cand);
+            std::string   pl;
+            while (std::getline(pf, pl)) {
+                auto pos = pl.find("REMARK CF=");
+                if (pos != std::string::npos) {
+                    try { cf = std::stof(pl.substr(pos + 10)); } catch (...) {}
+                    break;
+                }
+            }
+            pool.push_back({cand, cf});
+        }
+    }
+    if (pool.empty()) return out;
+
+    std::sort(pool.begin(), pool.end(),
+              [](const PosePath& a, const PosePath& b){ return a.cf < b.cf; });
+    if (static_cast<int>(pool.size()) > top_n) pool.resize(top_n);
+
+    // Build the per-rep eigenvalue arrays (positive eigenvalues only).
+    std::vector<std::vector<double>> rep_eigs;
+    rep_eigs.reserve(pool.size());
+    for (const auto& pp : pool) {
+        std::vector<std::array<float,3>> xyz;
+        std::vector<std::string>         elem;
+        if (!load_pose_ligand_coords(pp.path, xyz, elem)) continue;
+        if (xyz.size() < 3) continue;  // ANM needs >= 3 heavy atoms
+        // Minimal FA atom array — build_from_ligand only reads coor[] + element.
+        // atom{} value-initialises pointer/scalar members to zero.
+        std::vector<atom> latoms(xyz.size());
+        for (size_t k = 0; k < xyz.size(); ++k) {
+            latoms[k] = atom{};
+            latoms[k].coor[0] = xyz[k][0];
+            latoms[k].coor[1] = xyz[k][1];
+            latoms[k].coor[2] = xyz[k][2];
+            // element[3]; zero-init guarantees null-termination for 1-2 char symbols.
+            std::strncpy(latoms[k].element, elem[k].c_str(),
+                         sizeof(latoms[k].element) - 1);
+        }
+        tencm::TorsionalENM lig_enm;
+        lig_enm.build_from_ligand(latoms.data(), 0,
+                                  static_cast<int>(latoms.size()));
+        if (!lig_enm.is_built()) continue;
+        std::vector<double> eigs;
+        eigs.reserve(lig_enm.modes().size());
+        for (const auto& nm : lig_enm.modes())
+            if (nm.eigenvalue > 0.0) eigs.push_back(nm.eigenvalue);
+        if (!eigs.empty()) rep_eigs.push_back(std::move(eigs));
+    }
+    if (rep_eigs.empty()) return out;
+
+    // H_rep_rank0: H(ω) of the best-CF rep alone (single-rep pooled distribution).
+    {
+        std::vector<std::vector<double>> single = { rep_eigs.front() };
+        vibentropy::VibEntropyResult r0 =
+            vibentropy::compute_vib_entropy_collapse(single);
+        out.H_rep_rank0 = static_cast<float>(r0.H_pop);
+    }
+    vibentropy::VibEntropyResult hvib =
+        vibentropy::compute_vib_entropy_collapse(rep_eigs);
+    out.H_pop      = static_cast<float>(hvib.H_pop);
+    out.H_rep_mean = static_cast<float>(hvib.H_rep_mean);
+    out.D_vib      = static_cast<float>(hvib.D_vib);
+    out.n_reps     = hvib.n_reps;
+    return out;
 }
 
 // Frequency-gated cluster selection (v24 Fix B).
@@ -5697,6 +5799,29 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
         // top-1 from 27 to 43 (16 poses already sub-2Å under symmetry).
         const float rmsd_report = std::min(result.rmsd_to_crystal, result.rmsd_hungarian);
         result.success = (docking_completed && rmsd_report < 2.0f);
+
+        // ── Level-3 H(ω) vibrational-entropy diagnostic (FLEXAIDDS_HVIB=1) ──
+        // Post-GA pass over the emitted cluster reps; gated OFF by default so
+        // existing benchmarks are bit-for-bit unaffected.  Purely diagnostic —
+        // does NOT touch result.success, best_score, or pose selection.
+        {
+            const char* hvib_env = std::getenv("FLEXAIDDS_HVIB");
+            if (hvib_env && std::strcmp(hvib_env, "1") == 0) {
+                HvibColumns hv = compute_target_hvib(all_prefixes);
+                result.H_rep_rank0 = hv.H_rep_rank0;
+                result.H_pop       = hv.H_pop;
+                result.H_rep_mean  = hv.H_rep_mean;
+                result.D_vib       = hv.D_vib;
+                std::cerr << "  [HVIB] " << entry.pdb_id
+                          << ": H_rep0=" << std::fixed << std::setprecision(4)
+                          << hv.H_rep_rank0
+                          << " H_pop=" << hv.H_pop
+                          << " H_rep_mean=" << hv.H_rep_mean
+                          << " D_vib=" << hv.D_vib
+                          << " n_reps=" << hv.n_reps << "\n";
+            }
+        }
+
         report.results[idx] = result;
 
         // ── TargetServer: register completed session ─────────────────────
@@ -5743,7 +5868,7 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                     ofs << "pdb_id,best_score,rmsd_to_crystal,rmsd_hungarian,predicted_dG,"
                            "predicted_dH,predicted_TdS,shannon_entropy,num_poses,"
                            "wall_time_s,success,cf_native,best_cluster_rmsd,best_cluster_idx,"
-                           "seed_echo\n";
+                           "seed_echo,H_rep_rank0,H_pop,H_rep_mean,D_vib\n";
                     ofs << std::fixed << std::setprecision(4)
                         << result.pdb_id << ","
                         << result.best_score << ","
@@ -5759,7 +5884,11 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                         << result.cf_native << ","
                         << result.best_cluster_rmsd << ","
                         << result.best_cluster_idx << ","
-                        << (result.seed_echo ? 1 : 0) << "\n";
+                        << (result.seed_echo ? 1 : 0) << ","
+                        << result.H_rep_rank0 << ","
+                        << result.H_pop << ","
+                        << result.H_rep_mean << ","
+                        << result.D_vib << "\n";
                 }
             } catch (...) {
                 // Per-complex CSV is best-effort; failures are non-fatal.
@@ -6022,7 +6151,8 @@ void DatasetRunner::write_report(const BenchmarkReport& report,
 
         ofs << "pdb_id,best_score,rmsd_to_crystal,rmsd_hungarian,predicted_dG,"
                "predicted_dH,predicted_TdS,shannon_entropy,num_poses,wall_time_s,success,"
-               "cf_native,best_cluster_rmsd,best_cluster_idx,seed_echo\n";
+               "cf_native,best_cluster_rmsd,best_cluster_idx,seed_echo,"
+               "H_rep_rank0,H_pop,H_rep_mean,D_vib\n";
 
         for (const auto& r : report.results) {
             ofs << std::fixed << std::setprecision(4)
@@ -6040,7 +6170,11 @@ void DatasetRunner::write_report(const BenchmarkReport& report,
                 << r.cf_native << ","
                 << r.best_cluster_rmsd << ","
                 << r.best_cluster_idx << ","
-                << (r.seed_echo ? 1 : 0) << "\n";
+                << (r.seed_echo ? 1 : 0) << ","
+                << r.H_rep_rank0 << ","
+                << r.H_pop << ","
+                << r.H_rep_mean << ","
+                << r.D_vib << "\n";
         }
 
         ofs.close();

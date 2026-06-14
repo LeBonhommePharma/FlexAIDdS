@@ -152,6 +152,14 @@ struct DockingResult {
     // trivial echo rather than a genuine docking prediction. Reported, not yet
     // subtracted from the success metric (LP decides whether to exclude).
     bool  seed_echo{false};
+    // Level-3 H(ω) vibrational-entropy diagnostic. Populated only when
+    // FLEXAIDDS_HVIB=1; left at 0.0 otherwise (default-OFF, benchmarks
+    // unaffected). Shannon entropy over ligand ANM eigenvalue spectra of the
+    // top-10 emitted cluster reps. See compute_target_hvib() in DatasetRunner.cpp.
+    float H_rep_rank0{0.0f};  // H(ω) of rank-0 (best-CF) cluster rep, computed individually
+    float H_pop{0.0f};        // pooled population vibrational entropy H(ω)
+    float H_rep_mean{0.0f};   // mean per-rep vibrational entropy
+    float D_vib{0.0f};        // inter-rep vibrational divergence
 };
 
 /// Aggregate benchmark report
