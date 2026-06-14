@@ -505,24 +505,16 @@ double vcfunction(FA_Global* FA,VC_Global* VC,atom* atoms,resid* residue, std::v
 						contribution *= w_r;
 					}
 
-					// Directional H-bond angular correction:
-					// Scale complementarity by angular multiplier for H-bond pairs.
-					// FIX (v51): sign error — previous formula yielded a BONUS for bad
-					// geometry (contribution<0) * (hb_mult-1)<0) * weight<0) = negative,
-					// which was added to cfs->hbond making the CF *more* favorable.
-					// Correct: bad polar geometry pays back a fraction of the lost
-					// attraction as a frustration penalty (positive CF increment).
-					if(FA->use_hbond){
-						double hb_mult = hbond::evaluate_contact(
-							&atoms[atomzero], &atoms[atomcont],
-							atoms, VC->ca_rec[currindex].dist);
-						if(hb_mult < 1.0 && contribution < 0.0){
-							// lost_attraction > 0: the attractive complementarity
-							// that geometry prevents from being realised.
-							double lost_attraction = contribution * (hb_mult - 1.0);
-							cfs->hbond += 0.75 * lost_attraction; // frustration penalty
-						}
-					}
+					// Directional H-bond angular correction (v52: REMOVED).
+					// v51 attempted to convert the old sign-error BONUS (contribution<0
+					// *(hb_mult-1)<0 * hbond_weight<0 = negative = more attractive for
+					// bad geometry) into an explicit frustration penalty via
+					// 0.75*lost_attraction. This over-corrected: the VCT grid (0.375Å)
+					// means all crystal-pose H-bonds have some angular imperfection, so
+					// the penalty accumulated across 20-40 contacts and wiped out the
+					// native CF entirely (cf_native(1JD0) collapsed from ~-50 to +0.5).
+					// The Gaussian H-bond bonus in compute_hbond_energy() (below) handles
+					// directionality correctly and is left intact. This block is a no-op.
 
 					cfs->com += contribution;
 
