@@ -316,6 +316,7 @@ cfstr ic2cf(FA_Global* FA,VC_Global* VC,atom* atoms,resid* residue,
 		cf.sas += FA->optres[i].cf.sas;
 		cf.con += FA->optres[i].cf.con;
 		cf.metal_coord += FA->optres[i].cf.metal_coord;
+		cf.hbond += FA->optres[i].cf.hbond;
 
 	}
 
