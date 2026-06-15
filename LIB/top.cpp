@@ -1440,6 +1440,47 @@ int main(int argc, char **argv){
 				}
 			}
 			printf("[vH] type256 + virtual-H populated (N.am=VHG_AMIDE, N.3=SP3, O.3/S.3=HYDROXYL)\n");
+
+			// ── vH assignment diagnostics ─────────────────────────────────────
+			// Activated by env FLEXAIDS_VH_DEBUG=1. Dumps per-atom vH recipe and
+			// bond[] population. Confirms whether receptor atoms (PDB, bond[]=0)
+			// are getting VHG_NONE instead of VHG_AMIDE — the suspected root cause
+			// of cf_native(1JD0)=-1.23 (should be ~-23 from backbone amide H-bonds).
+			if (std::getenv("FLEXAIDS_VH_DEBUG")) {
+				const char* kind_names[] = {"NONE","AMIDE","SP2_1NBR","SP2_2NBR",
+				                            "SP3_2NBR","SP3_1NBR","HYDROXYL"};
+				int n_am_amide=0, n_am_none=0, n_active=0, n_none_donor=0;
+				for (int k=1; k<=FA->res_cnt; k++) {
+					for (int i=residue[k].fatm[0]; i<=residue[k].latm[0]; i++) {
+						if (atoms[i].type <= 0) continue;
+						const bool is_donor = atom256::get_hbond_donor(atoms[i].type256);
+						const int bond_cnt = atoms[i].bond[0];
+						const uint8_t kind  = atoms[i].vH_kind;
+						// Classify N.am specifically
+						if (atoms[i].type == 11) {
+							if (kind == hbond::VHG_AMIDE) ++n_am_amide; else ++n_am_none;
+						}
+						if (is_donor) {
+							if (kind != hbond::VHG_NONE) ++n_active; else ++n_none_donor;
+						}
+						// Print every donor atom's assignment
+						if (is_donor) {
+							printf("[vHdbg] atom[%4d] res%-4d %-5s type=%-2d bond_cnt=%-2d "
+							       "vH_kind=%-10s vH_n=%d nbr=[%d,%d]%s\n",
+							       i, k, atoms[i].name, atoms[i].type, bond_cnt,
+							       (kind<7?kind_names[kind]:"?"), atoms[i].vH_n,
+							       atoms[i].vH_nbr[0], atoms[i].vH_nbr[1],
+							       (bond_cnt==0 && atoms[i].type==11)
+							           ? "  <-- N.am NO BONDS (PDB receptor?)" : "");
+						}
+					}
+				}
+				printf("[vHdbg] ── Summary ──────────────────────────────────────────\n");
+				printf("[vHdbg]   N.am with VHG_AMIDE : %d\n", n_am_amide);
+				printf("[vHdbg]   N.am with VHG_NONE  : %d  (<-- if >0, receptor bond[] empty)\n", n_am_none);
+				printf("[vHdbg]   Donors with active vH: %d\n", n_active);
+				printf("[vHdbg]   Donors with VHG_NONE : %d  (use 0.3 fallback)\n", n_none_donor);
+			}
 		}
 
 		// ── 6b. Set up GPA and IC origin for MOL2/SDF ligand ──

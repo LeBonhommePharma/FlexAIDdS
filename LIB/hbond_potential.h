@@ -370,7 +370,30 @@ inline double compute_hbond_energy(
     double w = salt_bridge ? salt_bridge_weight : weight;
     double energy = w * E_dist * best_angle_term;
     constexpr double HBOND_PAIR_MIN = -2.0;
-    if (energy < HBOND_PAIR_MIN) return HBOND_PAIR_MIN;
+    if (energy < HBOND_PAIR_MIN) energy = HBOND_PAIR_MIN;
+
+    // Per-pair H-bond debug: activated by FLEXAIDS_VH_DEBUG=1.
+    // Prints every non-zero H-bond pair with angle term, distance term, and
+    // whether the angle came from explicit-H, virtual-H, or 0.3 fallback.
+    // Used to diagnose cf_native collapse (e.g. 1JD0: expected ~-23, got -1.23).
+    static const bool s_vh_debug = (std::getenv("FLEXAIDS_VH_DEBUG") != nullptr);
+    if (s_vh_debug && energy != 0.0) {
+        const char* angle_src = "fallback(0.3)";
+        if (a_to_b || b_to_a) {
+            // Re-determine source for logging (lightweight, debug-only path)
+            const atom_struct& donor_atom = a_to_b ? a : b;
+            int h_idx = find_bonded_hydrogen(atoms, donor_atom);
+            float vH[2][3]; int nv = build_virtual_H(atoms, donor_atom, vH);
+            if      (h_idx >= 0) angle_src = "explicit-H";
+            else if (nv > 0)     angle_src = "virtual-H";
+        }
+        printf("[hbdbg] %5s[%d]->%5s[%d] dist=%.3f E_dist=%.4f "
+               "angle_term=%.4f src=%-14s E=%.4f%s\n",
+               a.name, idx_a, b.name, idx_b,
+               dist, E_dist, best_angle_term, angle_src, energy,
+               salt_bridge ? " [salt]" : "");
+    }
+
     return energy;
 }
 
