@@ -28,10 +28,25 @@
 #  define FLEXAIDS_HAS_AVX512 0
 #  define FLEXAIDS_HAS_AVX2   0
 #  define FLEXAIDS_HAS_SSE42  1
+#  define FLEXAIDS_HAS_NEON   0
+#elif defined(__ARM_NEON) || defined(__ARM_NEON__) || defined(__aarch64__)
+#  include <arm_neon.h>
+#  define FLEXAIDS_HAS_AVX512 0
+#  define FLEXAIDS_HAS_AVX2   0
+#  define FLEXAIDS_HAS_SSE42  0
+#  define FLEXAIDS_HAS_NEON   1
+#  ifndef FLEXAIDS_USE_NEON
+#    define FLEXAIDS_USE_NEON 1
+#  endif
 #else
 #  define FLEXAIDS_HAS_AVX512 0
 #  define FLEXAIDS_HAS_AVX2   0
 #  define FLEXAIDS_HAS_SSE42  0
+#  define FLEXAIDS_HAS_NEON   0
+#endif
+
+#ifndef FLEXAIDS_HAS_NEON
+#  define FLEXAIDS_HAS_NEON 0
 #endif
 
 namespace simd {
@@ -611,9 +626,172 @@ inline void dot3_batch(const float* FLEXAIDS_RESTRICT a,
         out[i] = a[i*3]*b[i*3] + a[i*3+1]*b[i*3+1] + a[i*3+2]*b[i*3+2];
 }
 
+// ─── ARM NEON versions (4-wide float32) ─────────────────────────────────────
+
+#elif FLEXAIDS_HAS_NEON
+
+// Horizontal sum of a float32x4_t register (4 floats → 1 float)
+inline float hsum128_ps(float32x4_t v) noexcept {
+#if defined(__aarch64__)
+    return vaddvq_f32(v);
+#else
+    float32x2_t s = vadd_f32(vget_low_f32(v), vget_high_f32(v));
+    return vget_lane_f32(vpadd_f32(s, s), 0);
+#endif
+}
+
+// Squared distances between one point B and 4 points A (SOA layout).
+//   ax[4], ay[4], az[4] – x/y/z of 4 A atoms
+//   bx, by, bz          – coordinates of atom B
+//   out[4]              – results
+// NEON: 4 receptor atoms vs 1 ligand atom → out[4] squared distances.
+inline void distance2_1x4(const float* FLEXAIDS_RESTRICT ax,
+                           const float* FLEXAIDS_RESTRICT ay,
+                           const float* FLEXAIDS_RESTRICT az,
+                           float bx, float by, float bz,
+                           float* FLEXAIDS_RESTRICT out) noexcept {
+    float32x4_t vbx = vdupq_n_f32(bx);
+    float32x4_t vby = vdupq_n_f32(by);
+    float32x4_t vbz = vdupq_n_f32(bz);
+    float32x4_t dx  = vsubq_f32(vld1q_f32(ax), vbx);
+    float32x4_t dy  = vsubq_f32(vld1q_f32(ay), vby);
+    float32x4_t dz  = vsubq_f32(vld1q_f32(az), vbz);
+    float32x4_t r2  = vmulq_f32(dx, dx);
+    r2 = vfmaq_f32(r2, dy, dy);   // r2 += dy*dy
+    r2 = vfmaq_f32(r2, dz, dz);   // r2 += dz*dz
+    vst1q_f32(out, r2);
+}
+
+// Provide distance2_1x4_neon as an explicit alias for call sites that
+// want to name the NEON kernel directly (e.g. the SoA Voronoi path).
+inline void distance2_1x4_neon(const float* FLEXAIDS_RESTRICT ax,
+                                const float* FLEXAIDS_RESTRICT ay,
+                                const float* FLEXAIDS_RESTRICT az,
+                                float bx, float by, float bz,
+                                float* FLEXAIDS_RESTRICT out) noexcept {
+    distance2_1x4(ax, ay, az, bx, by, bz, out);
+}
+
+// 16-wide and 8-wide wrappers use 4-wide in a loop
+inline void distance2_1x16(const float* FLEXAIDS_RESTRICT ax,
+                            const float* FLEXAIDS_RESTRICT ay,
+                            const float* FLEXAIDS_RESTRICT az,
+                            float bx, float by, float bz,
+                            float* FLEXAIDS_RESTRICT out) noexcept {
+    for (int i = 0; i < 16; i += 4)
+        distance2_1x4(ax + i, ay + i, az + i, bx, by, bz, out + i);
+}
+
+inline void distance2_1x8(const float* FLEXAIDS_RESTRICT ax,
+                           const float* FLEXAIDS_RESTRICT ay,
+                           const float* FLEXAIDS_RESTRICT az,
+                           float bx, float by, float bz,
+                           float* FLEXAIDS_RESTRICT out) noexcept {
+    distance2_1x4(ax,     ay,     az,     bx, by, bz, out);
+    distance2_1x4(ax + 4, ay + 4, az + 4, bx, by, bz, out + 4);
+}
+
+// Sum of squared distances over N atoms (AOS interleaved xyz), 4-wide.
+inline float sum_sq_distances(const float* FLEXAIDS_RESTRICT a_xyz,
+                               const float* FLEXAIDS_RESTRICT b_xyz,
+                               int N) noexcept {
+    float32x4_t acc = vdupq_n_f32(0.0f);
+    int i = 0;
+    for (; i <= N - 4; i += 4) {
+        for (int c = 0; c < 3; ++c) {
+            float a4[4], b4[4];
+            for (int k = 0; k < 4; ++k) {
+                a4[k] = a_xyz[(i+k)*3 + c];
+                b4[k] = b_xyz[(i+k)*3 + c];
+            }
+            float32x4_t da = vsubq_f32(vld1q_f32(a4), vld1q_f32(b4));
+            acc = vfmaq_f32(acc, da, da);
+        }
+    }
+    float sum = hsum128_ps(acc);
+    for (; i < N; ++i)
+        for (int c = 0; c < 3; ++c)
+            sum += sq(a_xyz[i*3+c] - b_xyz[i*3+c]);
+    return sum;
+}
+
+// Lennard-Jones r^-12 wall energy for 4 distances (NEON).
+// Mirrors the AVX512/SSE4.2 lj_wall kernels: e = k_wall*(inv_r12 - inv_rAB12).
+inline void lj_wall_4x(const float* FLEXAIDS_RESTRICT r2,
+                        float inv_rAB12,
+                        float k_wall,
+                        float* FLEXAIDS_RESTRICT Ewall) noexcept {
+    float32x4_t vr2    = vld1q_f32(r2);
+    // reciprocal estimate + 2 Newton-Raphson refinement steps
+    float32x4_t inv_r2 = vrecpeq_f32(vr2);
+    inv_r2 = vmulq_f32(inv_r2, vrecpsq_f32(vr2, inv_r2));
+    inv_r2 = vmulq_f32(inv_r2, vrecpsq_f32(vr2, inv_r2));
+    float32x4_t inv_r4  = vmulq_f32(inv_r2, inv_r2);
+    float32x4_t inv_r6  = vmulq_f32(inv_r4, inv_r2);
+    float32x4_t inv_r12 = vmulq_f32(inv_r6, inv_r6);
+    float32x4_t e = vmulq_f32(vdupq_n_f32(k_wall),
+                              vsubq_f32(inv_r12, vdupq_n_f32(inv_rAB12)));
+    vst1q_f32(Ewall, e);
+}
+
+// Clamp 4 squared distances into [lo, hi] (NEON vmaxq/vminq demo for wall path).
+inline void clamp_4x(const float* FLEXAIDS_RESTRICT in,
+                     float lo, float hi,
+                     float* FLEXAIDS_RESTRICT out) noexcept {
+    float32x4_t v = vld1q_f32(in);
+    v = vmaxq_f32(v, vdupq_n_f32(lo));
+    v = vminq_f32(v, vdupq_n_f32(hi));
+    vst1q_f32(out, v);
+}
+
+// 16-wide and 8-wide LJ wall wrappers
+inline void lj_wall_16x(const float* FLEXAIDS_RESTRICT r2,
+                         float inv_rAB12,
+                         float k_wall,
+                         float* FLEXAIDS_RESTRICT Ewall) noexcept {
+    for (int i = 0; i < 16; i += 4)
+        lj_wall_4x(r2 + i, inv_rAB12, k_wall, Ewall + i);
+}
+
+inline void lj_wall_8x(const float* FLEXAIDS_RESTRICT r2,
+                        float inv_rAB12,
+                        float k_wall,
+                        float* FLEXAIDS_RESTRICT Ewall) noexcept {
+    lj_wall_4x(r2,     inv_rAB12, k_wall, Ewall);
+    lj_wall_4x(r2 + 4, inv_rAB12, k_wall, Ewall + 4);
+}
+
+// Batched dot products: result[i] = dot(a[i], b[i]), 4-wide
+inline void dot3_batch(const float* FLEXAIDS_RESTRICT a,
+                       const float* FLEXAIDS_RESTRICT b,
+                       float* FLEXAIDS_RESTRICT out, int N) noexcept {
+    int i = 0;
+    for (; i <= N - 4; i += 4) {
+        float32x4_t s = vdupq_n_f32(0.0f);
+        for (int c = 0; c < 3; ++c) {
+            float a4[4], b4[4];
+            for (int k = 0; k < 4; ++k) {
+                a4[k] = a[(i+k)*3+c];
+                b4[k] = b[(i+k)*3+c];
+            }
+            s = vfmaq_f32(s, vld1q_f32(a4), vld1q_f32(b4));
+        }
+        vst1q_f32(out + i, s);
+    }
+    for (; i < N; ++i)
+        out[i] = a[i*3]*b[i*3] + a[i*3+1]*b[i*3+1] + a[i*3+2]*b[i*3+2];
+}
+
 // ─── scalar fallback versions (no SIMD at all) ──────────────────────────────
 
 #else
+
+inline void distance2_1x4(const float* ax, const float* ay, const float* az,
+                          float bx, float by, float bz,
+                          float* out) noexcept {
+    for (int k = 0; k < 4; ++k)
+        out[k] = sq(ax[k]-bx) + sq(ay[k]-by) + sq(az[k]-bz);
+}
 
 inline void distance2_1x16(const float* ax, const float* ay, const float* az,
                             float bx, float by, float bz,
@@ -635,6 +813,15 @@ inline float sum_sq_distances(const float* a, const float* b, int N) noexcept {
         for (int c = 0; c < 3; ++c)
             s += sq(a[i*3+c] - b[i*3+c]);
     return s;
+}
+
+inline void lj_wall_4x(const float* r2, float inv_rAB12, float k_wall,
+                       float* Ewall) noexcept {
+    for (int k = 0; k < 4; ++k) {
+        float inv_r6 = 1.0f / (r2[k]*r2[k]*r2[k]);
+        float inv_r12 = inv_r6 * inv_r6;
+        Ewall[k] = k_wall * (inv_r12 - inv_rAB12);
+    }
 }
 
 inline void lj_wall_16x(const float* r2, float inv_rAB12, float k_wall,
