@@ -917,18 +917,30 @@ static std::pair<std::string,float> select_pose_freq_gated_pooled(
         freq_best = scored_chosen.front().second;
     }
 
-    // Seed wins only if strictly more favourable (lower CF) than the Z+H winner
-    // — or if no GA pose qualified at all. Seed elitism is CF-based (not Z+H)
-    // because the INI seed is a single pose with no cluster members.
+    // Seed wins only if it beats the Z+H winner by at least DELTA_CF — or if
+    // no GA pose qualified at all.  The threshold prevents IC-round-trip error
+    // from overriding geometrically superior GA poses when the CF gap is small
+    // (e.g. 1XM6: crystal IC 2.60 Å vs GA 0.96 Å with ΔCF ≈ 5).
+    // Env: FLEXAIDDS_SEED_ELITISM_DELTA_CF (float, default 10.0).
+    static const double DELTA_CF = [](){
+        if (const char* e = std::getenv("FLEXAIDDS_SEED_ELITISM_DELTA_CF"))
+            try { return std::stod(e); } catch (...) {}
+        return 10.0;
+    }();
     const PoseInfo* best = freq_best;
     for (const auto& s : seeds)
-        if (best == nullptr || s.cf < best->cf) best = &s;
+        if (best == nullptr || s.cf < best->cf - DELTA_CF) best = &s;
 
     if (best == nullptr)
         return {std::string(), std::numeric_limits<float>::infinity()};
     if (best->is_seed)
-        fprintf(stderr, "[ELITISM] seed elected rank-0: CF=%.4f path=%s\n",
-                best->cf, best->path.c_str());
+        fprintf(stderr, "[ELITISM] seed elected rank-0: CF=%.4f delta_cf=%.4f threshold=%.1f path=%s\n",
+                best->cf, (freq_best ? freq_best->cf - best->cf : 0.0),
+                DELTA_CF, best->path.c_str());
+    else if (freq_best && !seeds.empty())
+        fprintf(stderr, "[ELITISM] GA retained (seed CF=%.4f GA CF=%.4f delta=%.4f < threshold=%.1f)\n",
+                seeds.front().cf, freq_best->cf,
+                freq_best->cf - seeds.front().cf, DELTA_CF);
     return {best->path, best->cf};
 }
 
@@ -3208,12 +3220,19 @@ std::string DatasetRunner::write_receptor_without_ligand(
             // resName occupies PDB columns 18-20 (0-indexed 17..19).
             std::string resName = trim3(line.substr(17, 3));
 
-            // Pass 2 (cofactors): drop bulk cofactors/buffers, but never a
-            // catalytic metal/heme even if its code also appears elsewhere.
-            // This intentionally applies to converted ATOM records too:
-            // OpenBabel-style caches can rewrite SAH/SKF/NAG/HUP records as
-            // ATOM while preserving the residue name and coordinates.
-            if (strip_cofactors.count(resName) && !keep_catalytic.count(resName)) {
+            // Pass 2 (HETATM strip): drop ALL non-water HETATM except
+            // catalytic metals/heme.  The explicit strip_cofactors list is
+            // retained for ATOM records (OpenBabel-rewritten cofactors) but
+            // for actual HETATM records we no longer require the residue to
+            // be on the list — unknown HETATMs (lipids, substrates, buffer
+            // species not yet catalogued) were leaking through and creating
+            // spurious VCT false minima (e.g. 1HNN HEM-site).
+            const bool is_hetatm_record = (line.compare(0, 6, "HETATM") == 0);
+            if (is_hetatm_record) {
+                if (keep_catalytic.count(resName)) { /* retain */ }
+                else if (resName == "HOH" || resName == "WAT") { /* retain waters */ }
+                else { dropped_cofactor++; continue; }
+            } else if (strip_cofactors.count(resName) && !keep_catalytic.count(resName)) {
                 dropped_cofactor++;
                 continue;
             }
@@ -5083,9 +5102,9 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
             //   FLEXAIDDS_VCT_NORM=1      emit vct_normalize_contacts:true →
             //     engine divides CF.com by the contact count (intensive score),
             //     targeting the deep-com-on-wrong-pose (over-burial) subtype.
-            double vct_r0 = 4.0;
+            double vct_r0 = 7.0;
             if (const char* r0env = std::getenv("FLEXAIDDS_VCT_R0")) {
-                try { vct_r0 = std::stod(r0env); } catch (...) { vct_r0 = 4.0; }
+                try { vct_r0 = std::stod(r0env); } catch (...) { vct_r0 = 7.0; }
             }
             const bool vct_norm = (std::getenv("FLEXAIDDS_VCT_NORM") != nullptr);
             {
