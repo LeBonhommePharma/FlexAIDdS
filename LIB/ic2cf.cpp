@@ -6,6 +6,21 @@
 #  include <omp.h>
 #endif
 
+// A3 perf: file-scope struct definitions so thread_local scratch can hold them.
+struct IC2CFSavedAtom      { int idx; atom value; };
+struct IC2CFSavedResRot    { int idx; int  rot;   };
+
+// Per-thread reusable buffers — eliminates per-eval heap allocs under OMP.
+struct IC2CFScratch {
+	std::vector<IC2CFSavedAtom>           saved_atoms;      // reserve 64
+	std::vector<IC2CFSavedResRot>         saved_res_rots;   // reserve 16
+	std::vector<char>                     saved_res_seen;   // sized to res_cnt+1
+	std::vector<std::pair<int,int>>       intraclashes;
+};
+// One IC2CFScratch per OMP thread (no synchronisation needed — each thread
+// has exclusive access to its own scratch throughout ic2cf execution).
+static thread_local IC2CFScratch tl_ic2cf_scratch;
+
 /******************************************************************************
  * SUBROUTINE ic2cf gets a vector with internal coordinates rebuilds the 
  * cartesian coordinates and calculates the complementarity function. Its 
@@ -116,23 +131,31 @@ cfstr ic2cf(FA_Global* FA,VC_Global* VC,atom* atoms,resid* residue,
 	// ic2cf() is called repeatedly on shared atom/residue buffers in serial
 	// paths, so every evaluation must leave the caller's baseline unchanged.
 	float ori_save[3] = {FA->ori[0], FA->ori[1], FA->ori[2]};
-	struct SavedAtom { int idx; atom value; };
-	struct SavedResidueRot { int idx; int rot; };
-	std::vector<SavedAtom> saved_atoms;
-	std::vector<SavedResidueRot> saved_res_rots;
-	std::vector<char> saved_res_seen(FA->res_cnt + 1, 0);
-	saved_atoms.reserve(64);
-	saved_res_rots.reserve(16);
+	// A3: use thread-local pre-allocated scratch (no heap alloc per eval)
+	IC2CFScratch& scr = tl_ic2cf_scratch;
+	scr.saved_atoms.clear();
+	scr.saved_res_rots.clear();
+	if(scr.saved_atoms.capacity() < 64)    scr.saved_atoms.reserve(64);
+	if(scr.saved_res_rots.capacity() < 16) scr.saved_res_rots.reserve(16);
+	// ensure saved_res_seen is large enough and zeroed for this call
+	const int res_cnt_p1 = FA->res_cnt + 1;
+	if((int)scr.saved_res_seen.size() < res_cnt_p1)
+		scr.saved_res_seen.assign(res_cnt_p1, 0);
+	else
+		std::fill(scr.saved_res_seen.begin(), scr.saved_res_seen.begin() + res_cnt_p1, 0);
+	std::vector<IC2CFSavedAtom>&   saved_atoms    = scr.saved_atoms;
+	std::vector<IC2CFSavedResRot>& saved_res_rots = scr.saved_res_rots;
+	std::vector<char>&             saved_res_seen  = scr.saved_res_seen;
 	for (int r = 0; r < FA->nors; ++r)
 		for (int m = 0; m < FA->nmov[r]; ++m) {
 			int ai = FA->mov[r][m];
-			saved_atoms.push_back({ai, atoms[ai]});
+			saved_atoms.push_back(IC2CFSavedAtom{ai, atoms[ai]});
 		}
 	for (i = 0; i < npar; ++i) {
 		if (FA->map_par[i].typ == 4) {
 			int ri = atoms[FA->map_par[i].atm].ofres;
 			if (ri >= 0 && ri <= FA->res_cnt && !saved_res_seen[ri]) {
-				saved_res_rots.push_back({ri, residue[ri].rot});
+				saved_res_rots.push_back(IC2CFSavedResRot{ri, residue[ri].rot});
 				saved_res_seen[ri] = 1;
 			}
 		}
@@ -195,7 +218,9 @@ cfstr ic2cf(FA_Global* FA,VC_Global* VC,atom* atoms,resid* residue,
 		}
 	}
 
-	std::vector< std::pair<int,int> > intraclashes;
+	// A3: reuse thread-local intraclashes buffer
+	scr.intraclashes.clear();
+	std::vector<std::pair<int,int>>& intraclashes = scr.intraclashes;
 	bool error;
 	double penalty = vcfunction(FA,VC,atoms,residue,intraclashes,&error);
 	if(error){

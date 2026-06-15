@@ -3167,6 +3167,24 @@ if(BUILD_SWIFT_BRIDGE)
 endif()
 
 # =============================================================================
+# ── D2: Profile-Guided Optimization (PGO) ────────────────────────────────────
+# Two-stage workflow:
+#   Stage 1: cmake -DFLEXAIDS_PGO_GENERATE=ON ... && cmake --build && <training run>
+#   Stage 2: cmake -DFLEXAIDS_PGO_USE=/path/to/default.profdata ... && cmake --build
+# Clang only (Apple Silicon default). GCC uses -fprofile-arcs/-fprofile-use.
+# =============================================================================
+option(FLEXAIDS_PGO_GENERATE "Stage 1: instrument binary for PGO profiling" OFF)
+set(FLEXAIDS_PGO_USE "" CACHE STRING "Stage 2: path to .profdata (clang) or dir (gcc) for PGO use")
+if(FLEXAIDS_PGO_GENERATE)
+    message(STATUS "[PGO] Stage 1: building instrumented binary (FLEXAIDS_PGO_GENERATE=ON)")
+    target_compile_options(FlexAIDdS PRIVATE -fprofile-generate)
+    target_link_options(FlexAIDdS PRIVATE -fprofile-generate)
+elseif(FLEXAIDS_PGO_USE)
+    message(STATUS "[PGO] Stage 2: building with profile data: ${FLEXAIDS_PGO_USE}")
+    target_compile_options(FlexAIDdS PRIVATE -fprofile-use=${FLEXAIDS_PGO_USE} -fprofile-correction)
+    target_link_options(FlexAIDdS PRIVATE -fprofile-use=${FLEXAIDS_PGO_USE})
+endif()
+
 # FlexAID source validator guard (MUST be the last thing in this file)
 # =============================================================================
 #

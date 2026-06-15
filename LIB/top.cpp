@@ -2466,9 +2466,10 @@ int main(int argc, char **argv){
   
 	free(FA->num_atm);
 	
-	// loop through energy_matrix to de-allocate energy_values
+	// de-allocate flat arrays (A2) and energy_matrix
+	for(int _k = 0; _k < FA->ntypes * FA->ntypes; ++_k)
+		if(FA->energy_matrix[_k].flat_x) free(FA->energy_matrix[_k].flat_x);
 	free(FA->energy_matrix);
-	// de-allocate energy_values <HERE>
 
 	// Constraints
 	if(FA->constraints != NULL) free(FA->constraints);

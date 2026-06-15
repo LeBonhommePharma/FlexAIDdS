@@ -799,50 +799,27 @@ double vcfunction(FA_Global* FA,VC_Global* VC,atom* atoms,resid* residue, std::v
   
 }
 
-double get_yval(struct energy_matrix* energy_matrix, double relative_area)
+/* A2 perf: flat-array piecewise-linear interpolation replaces linked-list walk.
+   Boundary logic matches the original:
+     ra < fx[0]            → 0 (no left-bound data)
+     ra in [fx[i], fx[i+1]) → linear interpolation using precomputed slope
+     ra >= fx[n-1]         → fy[n-1] (no right-bound data; clamp to last y)
+   Linear scan over n (typically 5–15 breakpoints) is cache-friendlier than
+   branching binary search at this scale. */
+double get_yval(struct energy_matrix* em, double relative_area)
 {
-	double yval = 0.0;
-	if(energy_matrix->energy_values == NULL) return 0.0;
-	
-	// a single value in matrix (weighted by area)
-	if(energy_matrix->weight)
-		yval = energy_matrix->energy_values->y;
-	else { // density function
-		struct energy_values* xyval = energy_matrix->energy_values;
-
-		while(xyval->next_value != NULL && relative_area > xyval->next_value->x){
-			/*
-			  printf("x=%.3f next_value.x=%.3f next_value.y=%.3f\n",
-			  xyval->x, xyval->next_value->x, xyval->next_value->y);
-			*/
-			xyval = xyval->next_value;
-		}
-		
-		if(xyval->x > relative_area){
-			// no left bound data
-			yval = 0.0;
-		}else if(xyval->next_value == NULL){
-			// no right bound data
-			yval = xyval->y;
-		}else{
-			yval = xyval->y + 
-				( relative_area - xyval->x ) / (xyval->next_value->x - xyval->x ) *
-				( xyval->next_value->y - xyval->y );
-		}
-		
-		/*
-		  if(energy_matrix->type2 == 40){
-		  printf("stopped at x=%.3f with y=%.3f\n", xyval->x, xyval->y);
-		  if(xyval->next_value != NULL){
-		  printf("next is x=%.3f with y=%.3f\n", xyval->next_value->x, xyval->next_value->y);
-		  }
-		  printf("prob func. yval=%.3f for relative_area %.3f for [%d][%d]\n", yval, relative_area,
-		  energy_matrix->type1, energy_matrix->type2);
-		  printf("calculated y=%.3f\n", yval);
-		  getchar();
-		  }
-		*/
-	}
-
-	return yval;
+	if(!em->energy_values) return 0.0;
+	// single-scalar weight case (no linked-list walk needed either way)
+	if(em->weight) return (double)em->energy_values->y;
+	// flat-array path
+	const int n = em->flat_n;
+	if(n == 0) return 0.0;
+	const float ra = (float)relative_area;
+	const float* fx = em->flat_x;
+	const float* fy = em->flat_y;
+	if(ra < fx[0]) return 0.0;                   // below first breakpoint
+	if(ra >= fx[n-1]) return (double)fy[n-1];    // at or beyond last breakpoint
+	int i = 0;
+	while(i < n-2 && ra >= fx[i+1]) ++i;         // find segment (n small → linear scan)
+	return (double)(fy[i] + em->flat_slope[i] * (ra - fx[i]));
 }

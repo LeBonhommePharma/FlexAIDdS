@@ -167,6 +167,16 @@ struct energy_matrix {
 	int type2;
 	int weight;        // weights surface in contact vs. probability functions
 	struct energy_values* energy_values;
+	/* A2 perf: pre-flattened piecewise-linear curve (weight==0 only).
+	   flat_x[0..flat_n-1]: x breakpoints sorted ascending.
+	   flat_y[0..flat_n-1]: y values at each breakpoint.
+	   flat_slope[0..flat_n-2]: precomputed (y[i+1]-y[i])/(x[i+1]-x[i]).
+	   flat_x, flat_y, flat_slope share one contiguous malloc (flat_x base).
+	   NULL when weight==1 (single-scalar; energy_values->y used directly). */
+	int    flat_n;
+	float* flat_x;
+	float* flat_y;
+	float* flat_slope;
 };
 
 struct constraint_str{

@@ -1,6 +1,7 @@
 #include <sstream>
 #include <string>
 #include <vector>
+#include <cstring>  // memcpy
 
 #include "flexaid.h"
 #include "fileio.h"
@@ -82,6 +83,15 @@ void read_emat(FA_Global* FA, char* emat_file)
             FA->energy_matrix[i*FA->ntypes+j].type2 = j+1;
             FA->energy_matrix[j*FA->ntypes+i].type1 = j+1;
             FA->energy_matrix[j*FA->ntypes+i].type2 = i+1;
+            // A2: zero-init flat arrays for all cases; populated below for weight=0
+            FA->energy_matrix[i*FA->ntypes+j].flat_n = 0;
+            FA->energy_matrix[i*FA->ntypes+j].flat_x = NULL;
+            FA->energy_matrix[i*FA->ntypes+j].flat_y = NULL;
+            FA->energy_matrix[i*FA->ntypes+j].flat_slope = NULL;
+            FA->energy_matrix[j*FA->ntypes+i].flat_n = 0;
+            FA->energy_matrix[j*FA->ntypes+i].flat_x = NULL;
+            FA->energy_matrix[j*FA->ntypes+i].flat_y = NULL;
+            FA->energy_matrix[j*FA->ntypes+i].flat_slope = NULL;
 
             if(values.size() == 1){
                 FA->energy_matrix[i*FA->ntypes+j].weight = 1;
@@ -137,6 +147,39 @@ void read_emat(FA_Global* FA, char* emat_file)
                     }
 
                     xyval_prev = xyval;
+                }
+
+                // A2: build flat arrays for fast get_yval (no linked-list walk per eval)
+                {
+                    int fn = (int)(values.size() / 2);
+                    // layout: [flat_x | flat_y | flat_slope], one contiguous malloc
+                    float* buf_ij = (float*)malloc(3 * fn * sizeof(float));
+                    if(buf_ij) {
+                        float* fx = buf_ij;
+                        float* fy = buf_ij + fn;
+                        float* fs = buf_ij + 2*fn;
+                        int k = 0;
+                        for(struct energy_values* ev = FA->energy_matrix[i*FA->ntypes+j].energy_values;
+                            ev; ev = ev->next_value, ++k) {
+                            fx[k] = ev->x;  fy[k] = ev->y;
+                        }
+                        for(int s = 0; s < fn-1; ++s)
+                            fs[s] = (fy[s+1] - fy[s]) / (fx[s+1] - fx[s]);
+                        fs[fn-1] = 0.0f;  // unused (last segment has no right neighbor)
+                        FA->energy_matrix[i*FA->ntypes+j].flat_n = fn;
+                        FA->energy_matrix[i*FA->ntypes+j].flat_x = fx;
+                        FA->energy_matrix[i*FA->ntypes+j].flat_y = fy;
+                        FA->energy_matrix[i*FA->ntypes+j].flat_slope = fs;
+                        // symmetric entry gets its own copy
+                        float* buf_ji = (float*)malloc(3 * fn * sizeof(float));
+                        if(buf_ji) {
+                            memcpy(buf_ji, buf_ij, 3 * fn * sizeof(float));
+                            FA->energy_matrix[j*FA->ntypes+i].flat_n = fn;
+                            FA->energy_matrix[j*FA->ntypes+i].flat_x = buf_ji;
+                            FA->energy_matrix[j*FA->ntypes+i].flat_y = buf_ji + fn;
+                            FA->energy_matrix[j*FA->ntypes+i].flat_slope = buf_ji + 2*fn;
+                        }
+                    }
                 }
             }else{
                 fprintf(stderr,"ERROR: invalid number of xy-values for atom pairwise %d-%d\n", i, j);

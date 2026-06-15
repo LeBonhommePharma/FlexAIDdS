@@ -2251,13 +2251,25 @@ void calculate_fitness(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* chr
 			// if vindex==0 Vcontacts will malloc/vcfunction will free per call.
 		}
 
+		// A4a: precompute list of atoms that have optres pointers so the
+		// per-chromosome redirect loop skips the >90% of atoms with optres==NULL.
+		struct OptresAtomEntry { int ai; ptrdiff_t oidx; };
+		std::vector<OptresAtomEntry> optres_atom_list;
+		optres_atom_list.reserve(nopt * 4);
+		for(int ai = 1; ai <= natm; ++ai) {
+			if(atoms[ai].optres)
+				optres_atom_list.push_back({ai, atoms[ai].optres - FA->optres});
+		}
+		const int n_optres_atoms = (int)optres_atom_list.size();
+
 #ifdef _OPENMP
 #pragma omp parallel for schedule(dynamic) default(none) \
 	shared(chrom, pop_size, GB, gene_lim, cleftgrid, target, \
 	       atoms, residue, FA, VC, \
 	       tl_atoms, tl_res, tl_fa, tl_optres, tl_vc, \
 	       natm, nres, nopt, \
-	       use_selective, dirty_atm, dirty_res_idx, n_dirty_atm, n_dirty_res)
+	       use_selective, dirty_atm, dirty_res_idx, n_dirty_atm, n_dirty_res, \
+	       optres_atom_list, n_optres_atoms)
 #endif
 		for (int ii = 0; ii < pop_size; ++ii) {
 			if (chrom[ii].status == 'n') continue;
@@ -2282,15 +2294,11 @@ void calculate_fitness(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* chr
 				std::copy(atoms,   atoms + natm + 1,   tl_atoms[tid].begin());
 				std::copy(residue, residue + nres + 1, tl_res[tid].begin());
 			}
-			// Redirect per-thread atom optres pointers to per-thread optres array.
-			// atoms[j].optres points to FA->optres (original); redirect to tl_optres[tid]
-			// so vcfunction scoring writes to (and ic2cf reads from) the same buffer.
-			for (int ai = 1; ai <= natm; ++ai) {
-				atom& a = tl_atoms[tid][ai];
-				if (a.optres) {
-					ptrdiff_t oidx = a.optres - FA->optres;
-					a.optres = &tl_optres[tid][oidx];
-				}
+			// A4a: redirect optres pointers using precomputed index list
+			// (skips atoms with optres==NULL — typically >90% of atoms).
+			for (int oa = 0; oa < n_optres_atoms; ++oa) {
+				const auto& e = optres_atom_list[oa];
+				tl_atoms[tid][e.ai].optres = &tl_optres[tid][e.oidx];
 			}
 			// optres cf fields are cleared by vcfunction itself; pre-clear for safety.
 			for (int o = 0; o < nopt; ++o) {
@@ -2358,7 +2366,8 @@ void calculate_fitness(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* chr
 			for(int pj=0; pj<GB->num_chrom; pj++){
 				double prmsp = calc_rmsp(GB->num_genes,
 				                         chrom[pi].genes, chrom[pj].genes,
-				                         FA->map_par, cleftgrid);
+				                         FA->map_par, cleftgrid,
+				                         GB->sig_share * GB->sig_share);  // A4b early exit
 				if(prmsp <= GB->sig_share){
 					pshare += (1.0 - pow((prmsp/GB->sig_share), GB->alpha));
 				}
@@ -2427,7 +2436,8 @@ void calculate_fitness(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* chr
 				for (int pj = 0; pj < GB->num_chrom; pj++) {
 					double prmsp = calc_rmsp(GB->num_genes,
 					                         chrom[pi].genes, chrom[pj].genes,
-					                         FA->map_par, cleftgrid);
+					                         FA->map_par, cleftgrid,
+					                         GB->sig_share * GB->sig_share);  // A4b early exit
 					if (prmsp <= GB->sig_share) {
 						pshare += (1.0 - pow((prmsp / GB->sig_share), GB->alpha));
 					}
@@ -3669,13 +3679,22 @@ void print_chrom(const gene* genes, int num_genes, int real_flag){
  * residue[opt_res[0]] after reconstructing the coordinates using opt_par       *
  ********************************************************************************/
 
-double calc_rmsp(int npar, const gene* g1, const gene* g2, const optmap* map_par, gridpoint* cleftgrid){
-	// Vectorised RMSP using Eigen strided Map over the to_ic field.
-	// gene_struct lays out {int32_t to_int32; double to_ic}, so stride = sizeof(gene).
-		// EMap typedef removed (unused) — plain gather loop used below
-	Eigen::VectorXd diff(npar);
-	for (int ii = 0; ii < npar; ++ii) diff[ii] = g1[ii].to_ic - g2[ii].to_ic;
-	return std::sqrt(diff.squaredNorm() / (double)npar);
+/* A4b: early-exit RMSP — pass early_exit_sq > 0 to short-circuit once the
+   partial sum of squared differences exceeds early_exit_sq * npar
+   (i.e., partial RMSP already exceeds the threshold).
+   Default 0.0 = no early exit (full computation, same as before). */
+double calc_rmsp(int npar, const gene* g1, const gene* g2, const optmap* map_par,
+                 gridpoint* cleftgrid, double early_exit_sq)
+{
+	double sum_sq = 0.0;
+	const double threshold = early_exit_sq * (double)npar;  // 0 → no early exit
+	for (int ii = 0; ii < npar; ++ii) {
+		const double d = g1[ii].to_ic - g2[ii].to_ic;
+		sum_sq += d * d;
+		if (threshold > 0.0 && sum_sq > threshold)
+			return std::sqrt(sum_sq / (double)npar);  // guaranteed > early_exit_sq
+	}
+	return std::sqrt(sum_sq / (double)npar);
 }
 
 double genetoic(const genlim* gene_lim, int32_t gene){
