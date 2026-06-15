@@ -194,6 +194,17 @@ struct BenchmarkReport {
 // Lightweight docking config for benchmarks
 // =============================================================================
 
+/// Layer 1: Explicit benchmark protocol mode.
+/// Controls both seed_elitism and pose-blinding behavior in DatasetRunner::run().
+/// UNSET          → legacy env-var behavior (FLEXAIDDS_SEED_ELITISM, backward-compat).
+/// ORACLE_CEILING → seed_elitism ON, blinding OFF; ceiling measurement with crystal IC.
+/// AUTONOMOUS     → seed_elitism OFF, blinding ON; thesis/publication number.
+enum class BenchmarkMode {
+    UNSET,            ///< legacy env-var behavior (backward compatible)
+    ORACLE_CEILING,   ///< seed_elitism=ON, blinding=OFF (crystal IC anchor)
+    AUTONOMOUS,       ///< seed_elitism=OFF, blinding=ON (thesis number)
+};
+
 struct DockingConfig {
     // GA parameters — canonical benchmark spec (publication benchmarks):
     //   P6: base 2000 generations × 1000 chromosomes, scaled per-target by
@@ -234,6 +245,11 @@ struct DockingConfig {
     /// Default true (v44+): enabled by default for all benchmark runs.
     /// Set false only for ablation / legacy-baseline comparison.
     bool   receptor_rotamer_prep{true};   // Option 3 apo-strain fix (v44 default)
+    /// Layer 1 benchmark protocol selector.
+    /// ORACLE_CEILING: seed_elitism=ON, blinding=OFF (ceiling measurement).
+    /// AUTONOMOUS:     seed_elitism=OFF, blinding=ON (publication/thesis number).
+    /// UNSET (default): preserves legacy env-var-based behavior.
+    BenchmarkMode mode{BenchmarkMode::UNSET};
 };
 
 // =============================================================================

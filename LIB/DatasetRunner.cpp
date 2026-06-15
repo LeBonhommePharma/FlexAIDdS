@@ -729,7 +729,8 @@ static std::pair<std::string,float> select_pose_freq_gated(const std::string& ou
 // under its own prefix; the combined pool is treated as a single ensemble — a
 // larger, more diverse set for Fix B to select from (v25 multi-restart pooling).
 static std::pair<std::string,float> select_pose_freq_gated_pooled(
-        const std::vector<std::string>& prefixes)
+        const std::vector<std::string>& prefixes,
+        int seed_elitism_override = -1)  // -1=read env var, 0=force off, 1=force on
 {
     // ── Boltzmann Z+H composite cluster selection (Options B+C) ─────────────
     // Instead of pure CF-rank-0, score each cluster by:
@@ -853,9 +854,14 @@ static std::pair<std::string,float> select_pose_freq_gated_pooled(
     // degenerate-CF drop, and wins only if its CF is competitive (strictly
     // lower than the freq-gated best).  A correct seed can thus be elected
     // rank-0 instead of being lost to diversity pressure.
-    bool seed_elitism = true;
-    if (const char* e = std::getenv("FLEXAIDDS_SEED_ELITISM"))
-        seed_elitism = (std::atoi(e) != 0);
+    bool seed_elitism;
+    if (seed_elitism_override >= 0) {
+        seed_elitism = (seed_elitism_override != 0);
+    } else {
+        seed_elitism = true;
+        if (const char* e = std::getenv("FLEXAIDDS_SEED_ELITISM"))
+            seed_elitism = (std::atoi(e) != 0);
+    }
     std::vector<PoseInfo> seeds;
     if (seed_elitism) {
         for (const auto& out_prefix : prefixes) {
@@ -4374,6 +4380,14 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
     }
 
     std::cout << "[DatasetRunner] Using docking binary: " << flexaidds_bin << "\n";
+    // Layer 1: log BenchmarkMode for provenance
+    {
+        const char* mode_label =
+            (config.mode == BenchmarkMode::ORACLE_CEILING) ? "oracle-ceiling" :
+            (config.mode == BenchmarkMode::AUTONOMOUS)     ? "autonomous" :
+                                                             "unset (env-var)";
+        std::cout << "[DatasetRunner] BenchmarkMode:    " << mode_label << "\n";
+    }
 
     // ── Fix 4: per-run provenance.json ────────────────────────────────────
     // Record the exact scoring matrix, binary, and source revision used for
@@ -5168,8 +5182,18 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
             const bool entry_has_oracle_site =
                 !entry.binding_site_path.empty() &&
                 fs::exists(entry.binding_site_path);
-            const bool oracle_direct_active =
-                entry_has_oracle_site && !config.force_rigid;
+            // Layer 1: BenchmarkMode controls blinding independently of oracle-site
+            // presence. AUTONOMOUS always blinds (thesis number — no crystal pose
+            // leakage). ORACLE_CEILING skips blinding (ceiling — IC anchored).
+            // UNSET: legacy behavior (blind iff no oracle site present).
+            bool oracle_direct_active;
+            if (config.mode == BenchmarkMode::ORACLE_CEILING) {
+                oracle_direct_active = entry_has_oracle_site && !config.force_rigid;
+            } else if (config.mode == BenchmarkMode::AUTONOMOUS) {
+                oracle_direct_active = false;  // always blind in autonomous mode
+            } else {
+                oracle_direct_active = entry_has_oracle_site && !config.force_rigid;
+            }
             std::string dock_ligand_path = entry.ligand_path;
             if (oracle_direct_active) {
                 std::cerr << "  [ORACLE-SEED] " << entry.pdb_id
@@ -5502,6 +5526,12 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                       << "  — likely bad SDF bonds or grid placement\n";
         }
 
+        // Layer 1: pre-compute seed_elitism_override for both pose-selection calls.
+        // Matches oracle_direct_active logic above; keeps the two controls in sync.
+        const int sel_elitism_ovr =
+            (config.mode == BenchmarkMode::ORACLE_CEILING) ? 1 :
+            (config.mode == BenchmarkMode::AUTONOMOUS)     ? 0 : -1;
+
         // ── best_score: report the EMITTED pose CF, not the stdout-trace min ──
         // The stdout GA trace ("... cf=...") includes the gen-0 seeded population.
         // With seed_fraction≈0.90 those seeded chromosomes start AT the crystal
@@ -5514,7 +5544,7 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
         // rmsd_to_crystal always describe one pose. Fall back to the stdout-trace
         // min only if no emitted pose with a REMARK CF is found.
         {
-            auto sel = select_pose_freq_gated_pooled(all_prefixes);
+            auto sel = select_pose_freq_gated_pooled(all_prefixes, sel_elitism_ovr);
             if (!sel.first.empty() && std::isfinite(sel.second))
                 best_cf = sel.second;
         }
@@ -5576,7 +5606,7 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
             // select_pose_freq_gated() drops degenerate (CF≈0) poses, prefers
             // clusters with Frequency>1, and returns the min-CF pose within that
             // pool (see helper definition near compute_pose_ligand_rmsd).
-            std::string best_pose_pdb = select_pose_freq_gated_pooled(all_prefixes).first;
+            std::string best_pose_pdb = select_pose_freq_gated_pooled(all_prefixes, sel_elitism_ovr).first;
             // Fallback: no scored pose found — take first available pose file from any restart.
             if (best_pose_pdb.empty()) {
                 for (const auto& pfx : all_prefixes) {

@@ -75,6 +75,10 @@ static void print_usage(const char* progname) {
     printf("  --fleet               Enable Fleet mode (JSON chunk result output)\n");
     printf("  --chunk-id <ID>       Unique chunk identifier for Fleet mode\n");
     printf("  --output-json <path>  Write Fleet JSON result to this file\n");
+    printf("  --mode <mode>         Benchmark protocol (Layer 1):\n");
+    printf("                        oracle-ceiling  seed_elitism=ON,  blinding=OFF (ceiling)\n");
+    printf("                        autonomous      seed_elitism=OFF, blinding=ON  (thesis number)\n");
+    printf("                        (default: unset — reads FLEXAIDDS_SEED_ELITISM env var)\n");
     printf("  -h, --help            Show this help\n\n");
     printf("Thread sizing guide (M3 Pro, 6 P-cores):\n");
     printf("  --threads 1 --omp-threads 6   → 6 min/complex, optimal throughput\n");
@@ -501,6 +505,8 @@ int main(int argc, char** argv) {
     bool fleet_mode = false;
     std::string chunk_id;
     std::string output_json;
+    // Layer 1: benchmark protocol mode
+    std::string mode_str;
 
     for (int i = 1; i < argc; ++i) {
         std::string arg(argv[i]);
@@ -586,6 +592,10 @@ int main(int argc, char** argv) {
             output_json = argv[++i];
             continue;
         }
+        if (arg == "--mode" && i + 1 < argc) {
+            mode_str = argv[++i];
+            continue;
+        }
 
         // Fallback: if first positional arg, treat as benchmark name
         if (benchmark_name.empty()) {
@@ -615,6 +625,17 @@ int main(int argc, char** argv) {
     if (temperature    > 0.0)     config.temperature       = static_cast<float>(temperature);
     if (job_timeout_s  > 0)       config.per_job_timeout_s = job_timeout_s;
     if (!clustering.empty())      config.clustering_algorithm = clustering;
+
+    // Layer 1: explicit benchmark protocol mode
+    if (mode_str == "oracle-ceiling") {
+        config.mode = dataset::BenchmarkMode::ORACLE_CEILING;
+    } else if (mode_str == "autonomous") {
+        config.mode = dataset::BenchmarkMode::AUTONOMOUS;
+    } else if (!mode_str.empty()) {
+        fprintf(stderr, "ERROR: Unknown --mode '%s'. Use 'oracle-ceiling' or 'autonomous'\n",
+                mode_str.c_str());
+        return 1;
+    }
 
     // Ablation hook: FLEXAIDDS_FORCE_RIGID re-pins legacy rigid-body docking
     // (DatasetRunner writes flexibility.intramolecular=false → engine builds a
@@ -670,6 +691,14 @@ int main(int argc, char** argv) {
     std::cout << "  Temp:         " << config.temperature << " K\n";
     std::cout << "  Cluster:      " << config.clustering_algorithm << "\n";
     std::cout << "  Timeout/job:  " << config.per_job_timeout_s << " s\n";
+    // Layer 1: mode
+    {
+        const char* mode_label =
+            (config.mode == dataset::BenchmarkMode::ORACLE_CEILING) ? "oracle-ceiling" :
+            (config.mode == dataset::BenchmarkMode::AUTONOMOUS)     ? "autonomous" :
+                                                                      "unset (env-var)";
+        std::cout << "  Mode:         " << mode_label << "\n";
+    }
     if (fleet_mode) {
         if (chunk_id.empty()) chunk_id = benchmark_name + "_chunk";
         std::cout << "  Fleet:   enabled (chunk_id=" << chunk_id << ")\n";
