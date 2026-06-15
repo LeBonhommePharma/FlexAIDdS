@@ -82,7 +82,7 @@ env.update({
     "FLEXAIDDS_BUILD":                 BUILD,
     "FLEXAIDDS_REPO":                  REPO,
     "FLEXAIDDS_ORACLE_SITE_DIR":       ORACLE_DIR,
-    "FLEXAIDDS_RESTARTS":              "3",
+    "FLEXAIDDS_RESTARTS":              "5",
     "FLEXAIDDS_PARALLEL_RESTARTS":     "1",
     "FLEXAIDDS_EVAL_SCALE_DIHEDRAL":   "1",
     "FLEXAIDDS_CONSENSUS_SCORER":      "1",
@@ -124,7 +124,7 @@ cmd = [
 if __name__ == "__main__":
     os.makedirs(OUTPUT, exist_ok=True)
 
-    print(f"\nLaunching vH guard benchmark (9 targets, 3 restarts) ...")
+    print(f"\nLaunching vH guard benchmark (9 targets, 5 restarts) ...")
     print(f"  N.am donor:   VHG_AMIDE (planar external bisector, tracks GA moves)")
     print(f"  N.3 donor:    VHG_SP3_2NBR / VHG_SP3_1NBR (tetrahedral)")
     print(f"  O.3/S.3:      VHG_HYDROXYL (canonical 104.5° bend)")
@@ -142,7 +142,7 @@ if __name__ == "__main__":
             "live heavy-neighbor coords at scoring time (tracks GA moves). N.am uses "
             "VHG_AMIDE (planar external bisector), N.3 uses SP3 tetrahedral, O.3/S.3 "
             "uses HYDROXYL canonical bend. angular discrimination replaces v57e blanket "
-            "suppression. 3-restart consensus. Binary: FlexAIDdS_vH."
+            "suppression. 5-restart consensus. Binary: FlexAIDdS_vH."
         ),
         "binary":        BINARY,
         "binary_sha256": engine_sha,
