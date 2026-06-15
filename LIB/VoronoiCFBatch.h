@@ -148,17 +148,17 @@ struct ThreadWorkspace {
         std::copy(ref_atoms,   ref_atoms   + FA->atm_cnt, atoms  .begin());
         std::copy(ref_residue, ref_residue + FA->res_cnt, residue.begin());
         for (int o = 0; o < nopt; ++o) {
-            optres[o].cf.com    = 0.0;
-            optres[o].cf.wal    = 0.0;
-            optres[o].cf.sas    = 0.0;
-            optres[o].cf.totsas = 0.0;
-            optres[o].cf.con    = 0.0;
-            optres[o].cf.gist   = 0.0;
-            optres[o].cf.hbond  = 0.0;
-            optres[o].cf.elec   = 0.0;
-            optres[o].cf.hbond  = 0.0;
+            optres[o].cf.com         = 0.0;
+            optres[o].cf.wal         = 0.0;
+            optres[o].cf.sas         = 0.0;
+            optres[o].cf.totsas      = 0.0;
+            optres[o].cf.con         = 0.0;
+            optres[o].cf.gist        = 0.0;
+            optres[o].cf.hbond       = 0.0;
+            optres[o].cf.elec        = 0.0;
+            optres[o].cf.metal_coord = 0.0;
             optres[o].cf.gist_desolv = 0.0;
-            optres[o].cf.rclash = 0;
+            optres[o].cf.rclash      = 0;
         }
         vc.numcarec = 0;
     }

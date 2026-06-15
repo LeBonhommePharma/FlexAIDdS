@@ -2302,16 +2302,17 @@ void calculate_fitness(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* chr
 			}
 			// optres cf fields are cleared by vcfunction itself; pre-clear for safety.
 			for (int o = 0; o < nopt; ++o) {
-				tl_optres[tid][o].cf.com    = 0.0;
-				tl_optres[tid][o].cf.wal    = 0.0;
-				tl_optres[tid][o].cf.sas    = 0.0;
-				tl_optres[tid][o].cf.totsas = 0.0;
-				tl_optres[tid][o].cf.con    = 0.0;
-				tl_optres[tid][o].cf.gist   = 0.0;
-				tl_optres[tid][o].cf.elec   = 0.0;
-				tl_optres[tid][o].cf.hbond  = 0.0;
+				tl_optres[tid][o].cf.com         = 0.0;
+				tl_optres[tid][o].cf.wal         = 0.0;
+				tl_optres[tid][o].cf.sas         = 0.0;
+				tl_optres[tid][o].cf.totsas      = 0.0;
+				tl_optres[tid][o].cf.con         = 0.0;
+				tl_optres[tid][o].cf.gist        = 0.0;
+				tl_optres[tid][o].cf.elec        = 0.0;
+				tl_optres[tid][o].cf.hbond       = 0.0;
+				tl_optres[tid][o].cf.metal_coord = 0.0;
 				tl_optres[tid][o].cf.gist_desolv = 0.0;
-				tl_optres[tid][o].cf.rclash = 0;
+				tl_optres[tid][o].cf.rclash      = 0;
 			}
 			tl_vc[tid].numcarec = 0;
 

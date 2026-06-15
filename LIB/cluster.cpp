@@ -321,6 +321,10 @@ void cluster(FA_Global* FA, GB_Global* GB, VC_Global* VC, chromosome* chrom, gen
 			safe_remark_cat(remark, tmpremark, &remark_len);
 			snprintf(tmpremark, MAX_REMARK, "REMARK CF.hbond=%8.5f\n",cf_ptr->hbond);
 			safe_remark_cat(remark, tmpremark, &remark_len);
+			snprintf(tmpremark, MAX_REMARK, "REMARK CF.metal=%8.5f\n",cf_ptr->metal_coord);
+			safe_remark_cat(remark, tmpremark, &remark_len);
+			snprintf(tmpremark, MAX_REMARK, "REMARK CF.elec=%8.5f\n",cf_ptr->elec);
+			safe_remark_cat(remark, tmpremark, &remark_len);
 			snprintf(tmpremark, MAX_REMARK, "REMARK Residue has an overall SAS of %.3f\n",cf_ptr->totsas);
 			safe_remark_cat(remark, tmpremark, &remark_len);
 		}

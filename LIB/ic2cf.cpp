@@ -224,8 +224,12 @@ cfstr ic2cf(FA_Global* FA,VC_Global* VC,atom* atoms,resid* residue,
 	bool error;
 	double penalty = vcfunction(FA,VC,atoms,residue,intraclashes,&error);
 	if(error){
-		cfstr cf_clash = { 0.0, 0.0, penalty, 0.0, 0.0, 0.0, 0.0, 0.0, 1 };
-		return(cf_clash);
+		// Fix: named-field init — aggregate order was wrong (metal_coord=1, rclash=0).
+		// wal=penalty is the only nonzero energy field; rclash=1 marks it as a clash.
+		cfstr cf_clash{};
+		cf_clash.wal    = penalty;
+		cf_clash.rclash = 1;
+		return cf_clash;
 	}
 	
 	cf.com = 0.0;

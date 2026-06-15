@@ -2339,13 +2339,24 @@ int main(int argc, char **argv){
 					eval_chromosome(FA, GB, VC, gene_lim, atoms, residue, cleftgrid,
 					    chrom_snapshot[si].genes, ic2cf);  // prime 2: GPA1 correct
 					FA->hbond_rank_rescore = 1;
-					chrom_snapshot[si].cf = eval_chromosome(
+					cfstr rescore_cf = eval_chromosome(
 					    FA, GB, VC, gene_lim, atoms, residue, cleftgrid,
 					    chrom_snapshot[si].genes, ic2cf);  // real: GPA0 correct, hbond active
-					chrom_snapshot[si].evalue =
-					    get_cf_evalue(&chrom_snapshot[si].cf);
-					chrom_snapshot[si].app_evalue =
-					    get_apparent_cf_evalue(&chrom_snapshot[si].cf);
+					FA->hbond_rank_rescore = 0;
+					// Clash guard: if the H-bond re-score call hits a Vcontacts clash
+					// (rv==-2 → cf_clash.wal = penalty ~73M), keep the pre-rescore CF
+					// rather than poisoning app_evalue and the cluster/PF-NULL path.
+					static constexpr double HBOND_RESCORE_CLASH_GUARD = 1e5;
+					double rescore_app = get_apparent_cf_evalue(&rescore_cf);
+					if (std::abs(rescore_app) < HBOND_RESCORE_CLASH_GUARD) {
+						chrom_snapshot[si].cf        = rescore_cf;
+						chrom_snapshot[si].evalue    = get_cf_evalue(&chrom_snapshot[si].cf);
+						chrom_snapshot[si].app_evalue = rescore_app;
+					} else {
+						printf("WARNING: H-bond re-score snapshot %d app_evalue=%.1f > guard (%.0f); "
+						       "retaining pre-rescore values.\n",
+						       si, rescore_app, HBOND_RESCORE_CLASH_GUARD);
+					}
 				}
 				FA->hbond_rank_rescore = 0;
 				QuickSort(chrom_snapshot, 0, n_chrom_snapshot - 1, true);
