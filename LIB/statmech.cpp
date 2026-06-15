@@ -918,9 +918,7 @@ double deltaG_standard_to_Kd_M(double deltaG_kcal_mol, double T_K, double c0_M) 
         throw std::invalid_argument("Standard state concentration c0_M must be > 0");
     }
 
-    const double RT = kB_kcal * T_K * 1000.0; // in cal/mol for the exp, but we work in kcal
-    // ΔG° (kcal/mol) = RT ln(Kd / c0)   with R in kcal
-    // Kd (M) = c0 * exp(ΔG° / (RT in kcal))
+    // ΔG° (kcal/mol) = RT ln(Kd / c0)   →   Kd (M) = c0 * exp(ΔG° / RT_kcal)
     const double RT_kcal = kB_kcal * T_K;
     return c0_M * std::exp(deltaG_kcal_mol / RT_kcal);
 }

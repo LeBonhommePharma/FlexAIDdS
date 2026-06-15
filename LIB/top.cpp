@@ -347,32 +347,6 @@ static std::string detect_file_role(const std::string& path) {
 	return "unknown";
 }
 
-// Load oracle binding site PDB as a LOCCLF sphere linked list.
-// Each ATOM/HETATM record becomes a sphere centered at the atom position with
-// the given probe radius. Returns NULL if the file is missing or unparseable.
-static sphere* load_oracle_site_as_spheres(const char* pdb_path, float probe_radius) {
-	FILE* fp = fopen(pdb_path, "r");
-	if (!fp) return NULL;
-	sphere* head = NULL;
-	char buf[256];
-	while (fgets(buf, (int)sizeof(buf), fp)) {
-		if (strncmp(buf, "ATOM  ", 6) != 0 && strncmp(buf, "HETATM", 6) != 0) continue;
-		if ((int)strlen(buf) < 54) continue;
-		float x, y, z;
-		if (sscanf(buf + 30, "%8f%8f%8f", &x, &y, &z) != 3) continue;
-		sphere* s = (sphere*)malloc(sizeof(sphere));
-		if (!s) break;
-		s->center[0] = x;
-		s->center[1] = y;
-		s->center[2] = z;
-		s->radius     = probe_radius;
-		s->prev       = head;
-		head          = s;
-	}
-	fclose(fp);
-	return head;
-}
-
 static void print_usage(const char* progname) {
 	printf("FlexAIDdS — Entropy-driven molecular docking\n\n");
 	printf("Usage:\n");
@@ -453,20 +427,16 @@ int main(int argc, char **argv){
 	GB_Global* GB = NULL;
 	VC_Global* VC = NULL;
 
-	FA = (FA_Global*)malloc(sizeof(FA_Global));
-	GB = (GB_Global*)malloc(sizeof(GB_Global));
-	VC = (VC_Global*)malloc(sizeof(VC_Global));
-
-	if(!FA || !GB || !VC){
+	try {
+		FA = new FA_Global{};
+		GB = new GB_Global{};
+		VC = new VC_Global{};
+	} catch (const std::bad_alloc&) {
 		fprintf(stderr,"ERROR: Could not allocate memory for FA || GB || VC\n");
 		Terminate(2);
 	}
-
-	std::memset(FA,0,sizeof(FA_Global));
-	std::memset(GB,0,sizeof(GB_Global));
-	std::memset(VC,0,sizeof(VC_Global));
 	GB->metal_batch_n = 2;  // N=2: safe batch size verified
-	// MIF/RefLig/GridPrio non-zero defaults (pointers already NULL from memset)
+	// MIF/RefLig/GridPrio non-zero defaults (pointers already NULL via value-init)
 	FA->mif_temperature = 300.0f;
 	FA->grid_prio_percent = 100.0f;
 	FA->reflig_seed_fraction = 0.25f;
@@ -2573,10 +2543,10 @@ int main(int argc, char **argv){
 		free(VC->cont);
 		free(VC->vedge);
 		free(VC->ca_rec);
-		free(VC);
+		delete VC;
 	}
 
-	if(GB != NULL) { free(GB); }
+	if(GB != NULL) { delete GB; }
 
 	if(FA != NULL) {
 		free(FA->contacts);
@@ -2584,7 +2554,7 @@ int main(int argc, char **argv){
 		free(FA->mif_sorted);
 		free(FA->mif_cdf);
 		free(FA->reflig_nearest_grid);
-		free(FA);
+		delete FA;
 	}
 
 
