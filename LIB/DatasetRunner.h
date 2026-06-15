@@ -110,6 +110,7 @@ struct DatasetEntry {
     std::string receptor_path;       // path to downloaded PDB/CIF
     std::string ligand_path;         // path to extracted ligand SDF
     std::string binding_site_path;   // oracle binding site PDB (optional; enables LOCCLF mode)
+    std::string cofactor_void_path;  // v69: stripped-cofactor coords for void exclusion (optional)
     float experimental_affinity{-1.0f};  // pKd/pKi if available
     float experimental_dH{0.0f};     // ΔH in kcal/mol (ITC)
     float experimental_TdS{0.0f};    // TΔS in kcal/mol (ITC)
@@ -373,10 +374,14 @@ public:
     /// pose is rejected as a clash and the GA is forced into decoy pockets).
     /// Any receptor HETATM within `tol` Å of a ligand SDF atom is dropped.
     /// Returns the cleaned receptor path, or the original on failure.
+    /// v69: when `void_out` is non-null, the heavy-atom coordinates of every
+    /// stripped bulk cofactor are written to a sibling `*_cofactor_void.dat`
+    /// file and its path is returned through `void_out` (empty if none stripped).
     std::string write_receptor_without_ligand(const std::string& receptor_path,
                                                const std::string& ligand_sdf,
                                                const std::string& out_receptor,
-                                               float tol = 1.3f);
+                                               float tol = 1.3f,
+                                               std::string* void_out = nullptr);
 
     /// Parse PDB HETATM records into atom structures
     std::vector<PDBAtom> parse_pdb_hetatm(const std::string& pdb_path);

@@ -59,10 +59,22 @@ void apply_config(const json::Value& config, FA_Global* FA, GB_Global* GB) {
         FA->normalize_area = jbool(config, "scoring", "normalize_area", false) ? 1 : 0;
         // P9: VCT distance-weighted contacts — exp(-r/r0) per-contact decay.
         // Default 4.0 Å (ON); set <= 0 to restore legacy equal-weight contacts.
-        FA->vct_dist_weight_r0 = jdbl(config, "scoring", "vct_dist_weight_r0", 7.0);
+        FA->vct_dist_weight_r0 = jdbl(config, "scoring", "vct_dist_weight_r0", 4.0);
         // Lever 2: intensive CF.com (divide by contact count). Default OFF
         // keeps the extensive score so existing arms stay byte-for-byte stable.
         FA->vct_normalize_contacts = jbool(config, "scoring", "vct_normalize_contacts", false) ? 1 : 0;
+        // v69: cofactor-void exclusion. The path + radius/penalty are read here;
+        // the actual coordinate file is loaded by the caller after apply_config()
+        // (mirrors the GIST grid pattern) which sets FA->use_cofactor_void on
+        // success.  Default radius 3.5 Å / penalty +100 CF.
+        {
+            auto void_file = jstr(config, "scoring", "cofactor_void_file", "");
+            std::strncpy(FA->cofactor_void_file, void_file.c_str(),
+                         sizeof(FA->cofactor_void_file) - 1);
+            FA->cofactor_void_file[sizeof(FA->cofactor_void_file) - 1] = '\0';
+            FA->cofactor_void_radius  = jdbl(config, "scoring", "cofactor_void_exclusion_radius", 3.5);
+            FA->cofactor_void_penalty = jdbl(config, "scoring", "cofactor_void_penalty", 100.0);
+        }
         FA->useacs          = jbool(config, "scoring", "accessible_surface", false) ? 1 : 0;
         FA->acsweight       = jflt(config, "scoring", "acs_weight", 1.0f);
         FA->solventterm     = jflt(config, "scoring", "solvent_penalty", 0.0f);
