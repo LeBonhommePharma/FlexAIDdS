@@ -13,6 +13,27 @@
 // Coulomb constant: 332.0637 kcal·Å/(mol·e²)
 #define KCOULOMB 332.0637
 
+// ── File-scope magic-static env flags (hoisted from vcfunction body) ─────────
+// Each reads the environment exactly once (thread-safe C++11 static init) so
+// std::getenv() is never called inside the hot per-contact loop.
+static const bool softcore_wal =
+    (std::getenv("FLEXAIDDS_SOFTCORE_WAL") != nullptr);
+static const double softcore_floor_frac = [](){
+    const char* s = std::getenv("FLEXAIDDS_SOFTCORE_FLOOR");
+    double v = 0.5;   // default: hard wall below 50 % of contact radius
+    if(s){ double p = strtod(s, nullptr); if(p > 0.0 && p < 0.7) v = p; }
+    return v;
+}();
+static const bool dist_weight_con =
+    (std::getenv("FLEXAIDDS_DIST_WEIGHT_CON") != nullptr);
+static const float con_r0 = []() {
+    const char* s = std::getenv("FLEXAIDDS_CON_R0");
+    float v = 3.5f;
+    if(s){ float p = strtof(s, nullptr); if(p > 0.0f){ v = p; } }
+    return v;
+}();
+static const bool no_sas = (std::getenv("FLEXAIDDS_NO_SAS") != nullptr);
+
 double vcfunction(FA_Global* FA,VC_Global* VC,atom* atoms,resid* residue, std::vector<std::pair<int,int> > & intraclashes, bool* error)
 {
 	int    rnum=0;
@@ -341,9 +362,7 @@ double vcfunction(FA_Global* FA,VC_Global* VC,atom* atoms,resid* residue, std::v
 			// (no value jump, no kink) and levels off to a finite plateau as
 			// r->0 (parabola maximum sits at r=0). This is in ADDITION to the
 			// WAL_CONTACT_CAP overflow guard below, which still clamps fitness.
-			// Read once (magic static, thread-safe) — no getenv in the hot loop.
-			static const bool softcore_wal =
-				(std::getenv("FLEXAIDDS_SOFTCORE_WAL") != nullptr);
+			// softcore_wal / softcore_floor_frac are file-scope statics (hoisted).
 			if(softcore_wal){
 				const double r_softcrit = 0.7 * cr;
 				// ── Hard-floor gate (FLEXAIDDS_SOFTCORE_FLOOR, default 0.5) ────────
@@ -352,12 +371,7 @@ double vcfunction(FA_Global* FA,VC_Global* VC,atom* atoms,resid* residue, std::v
 				// nearly free.  For d < r_hardfloor we revert to the raw r^-12 wall
 				// so the existing per-contact cap of 50 applies.  The parabola only
 				// operates in the moderate-penetration band [r_hardfloor, r_softcrit).
-				static const double softcore_floor_frac = [](){
-					const char* s = std::getenv("FLEXAIDDS_SOFTCORE_FLOOR");
-					double v = 0.5;   // default: hard wall below 50 % of contact radius
-					if(s){ double p = strtod(s, nullptr); if(p > 0.0 && p < 0.7) v = p; }
-					return v;
-				}();
+				// softcore_floor_frac is a file-scope static (hoisted).
 				const double r_hardfloor = softcore_floor_frac * cr;
 				if(d < r_softcrit){
 					if(d >= r_hardfloor){
@@ -489,14 +503,7 @@ double vcfunction(FA_Global* FA,VC_Global* VC,atom* atoms,resid* residue, std::v
 					// When the env gate is set it takes precedence over (b) so the
 					// matrix complementarity is decayed exactly once. r0 <= 0 on
 					// the runner knob disables that path (legacy behaviour).
-					static const bool dist_weight_con =
-						(std::getenv("FLEXAIDDS_DIST_WEIGHT_CON") != nullptr);
-					static const float con_r0 = []() {
-						const char* s = std::getenv("FLEXAIDDS_CON_R0");
-						float v = 3.5f;
-						if(s){ float p = strtof(s, nullptr); if(p > 0.0f){ v = p; } }
-						return v;
-					}();
+					// dist_weight_con / con_r0 are file-scope statics (hoisted).
 					if(dist_weight_con){
 						contribution *= expf(-(float)VC->ca_rec[currindex].dist / con_r0);
 					}else if(FA->vct_dist_weight_r0 > 0.0){
@@ -696,7 +703,7 @@ double vcfunction(FA_Global* FA,VC_Global* VC,atom* atoms,resid* residue, std::v
 		// zeroes cfs->sas for every atom, ablating the solvation channel so its
 		// contribution to pose ranking can be isolated. Read once (magic static,
 		// thread-safe) to avoid a getenv() in the inner per-contact loop.
-		static const bool no_sas = (std::getenv("FLEXAIDDS_NO_SAS") != nullptr);
+		// no_sas is a file-scope static (hoisted).
 		if(no_sas){ contribution = 0.0; }
 
 		cfs->sas += contribution;

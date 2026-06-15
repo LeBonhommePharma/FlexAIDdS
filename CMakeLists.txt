@@ -908,13 +908,25 @@ if(BUILD_FLEXAIDDS_FAST)
         target_compile_definitions(FlexAIDdS PRIVATE
             _CRT_SECURE_NO_WARNINGS _USE_MATH_DEFINES NOMINMAX)
     else()
-        target_compile_options(FlexAIDdS PRIVATE -O3 -ffast-math -fno-finite-math-only -flto -DNDEBUG)
+        target_compile_options(FlexAIDdS PRIVATE -O3 -ffast-math -fno-finite-math-only -flto -DNDEBUG
+            $<$<AND:$<CXX_COMPILER_ID:AppleClang,Clang>,$<STREQUAL:${CMAKE_SYSTEM_PROCESSOR},arm64>>:-mcpu=native>
+        )
         if(NOT APPLE)
             target_compile_options(FlexAIDdS PRIVATE -march=native)
             target_link_options(FlexAIDdS PRIVATE -flto -s)
         else()
             target_link_options(FlexAIDdS PRIVATE -flto)
         endif()
+    endif()
+
+    # ─── IPO / LTO via CMake property (supplements the -flto flag above) ────
+    include(CheckIPOSupported)
+    check_ipo_supported(RESULT ipo_ok OUTPUT ipo_err)
+    if(ipo_ok)
+        set_property(TARGET FlexAIDdS PROPERTY INTERPROCEDURAL_OPTIMIZATION ON)
+        set_property(TARGET flexaid_core PROPERTY INTERPROCEDURAL_OPTIMIZATION ON)
+    else()
+        message(WARNING "IPO not supported: ${ipo_err}")
     endif()
 
     flexaids_configure_simd(FlexAIDdS)

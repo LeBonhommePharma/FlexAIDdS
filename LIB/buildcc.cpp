@@ -1,4 +1,5 @@
 #include "flexaid.h"
+#include <math.h>
 /******************************************************************************
  * SUBROUTINE buildcc builds the cartesian coordinates of the tot atoms present
  * in array list according to the reconstruction data.
@@ -85,8 +86,7 @@ void buildcc(FA_Global* FA,atom* atoms,int tot,int list[]){
 
     //printf("ang=%f\n",atoms[list[an]].ang);
     angPI = (float)(atoms[list[an]].ang*PI/180.0f);
-    ct=cos(angPI);
-    st=-sin(angPI);
+    { float _s, _c; sincosf(angPI, &_s, &_c); ct=_c; st=-_s; }
 
     op=1.0f-ct;
 
@@ -103,8 +103,7 @@ void buildcc(FA_Global* FA,atom* atoms,int tot,int list[]){
     //printf("dih=%f\n",atoms[list[an]].dih);
     
     dihPI = (float)(atoms[list[an]].dih*PI/180.0f);
-    ct=cos(dihPI);
-    st=sin(dihPI);
+    { float _s, _c; sincosf(dihPI, &_s, &_c); ct=_c; st=_s; }
 
     op=1.0f-ct;
 

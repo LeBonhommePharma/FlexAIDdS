@@ -39,6 +39,7 @@ PROV_FILE  = f"{OUTPUT}/provenance.json"
 
 # 9-target guard set — validated regression gate
 GUARD_CODES = "1JD0,1MEH,1R55,1S3V,1SJ0,1X8X,1XM6,1XOZ,2D3U"
+SIGMA_ANGLE_DEG = 45  # mirrors FA_Global default hbond_sigma_angle
 
 def sha256(p):
     h = hashlib.sha256()
@@ -128,13 +129,13 @@ if __name__ == "__main__":
     print(f"  N.3 donor:    VHG_SP3_2NBR / VHG_SP3_1NBR (tetrahedral)")
     print(f"  O.3/S.3:      VHG_HYDROXYL (canonical 104.5° bend)")
     print(f"  H-bond cap:   -2.0 per pair")
-    print(f"  sigma_angle:  30° (tuning knob; may need widening to 40-50°)")
+    print(f"  sigma_angle:  {SIGMA_ANGLE_DEG}° (tuning knob; may need widening to 40-50°)")
 
     child_pid = launch_session_isolated(cmd, env, OUTPUT, cwd=REPO)
 
     prov = {
         "version":      "vH_guard",
-        "launched_at":  datetime.datetime.utcnow().isoformat() + "Z",
+        "launched_at":  datetime.datetime.now(datetime.timezone.utc).isoformat(),
         "git_commit":   git_commit,
         "description": (
             "Virtual-H architecture: DonorGeom recipe per atom, reconstructed from "
@@ -150,7 +151,7 @@ if __name__ == "__main__":
         "oracle_site_dir": ORACLE_DIR,
         "output_dir":    OUTPUT,
         "pid":           child_pid,
-        "sigma_angle_note": "sigma=30 from FA_Global default; if 1JD0/1S3V still fail consider 40-50",
+        "sigma_angle_note": f"sigma={SIGMA_ANGLE_DEG} from FA_Global default; if 1JD0/1S3V still fail consider 40-50",
     }
     with open(PROV_FILE, "w") as f:
         json.dump(prov, f, indent=2)
