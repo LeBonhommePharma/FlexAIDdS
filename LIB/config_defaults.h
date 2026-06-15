@@ -34,7 +34,7 @@ inline json::Value flexaid_default_config() {
             {"hbond_optimal_distance",  V(2.8)},
             {"hbond_optimal_angle",     V(180.0)},
             {"hbond_sigma_distance",    V(0.4)},
-            {"hbond_sigma_angle",       V(30.0)},
+            {"hbond_sigma_angle",       V(45.0)},
             {"hbond_weight",            V(-2.5)},
             {"hbond_salt_bridge_weight",V(-5.0)},
             // Metal ion coordination potential
