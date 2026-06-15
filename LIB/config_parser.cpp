@@ -68,7 +68,12 @@ void apply_config(const json::Value& config, FA_Global* FA, GB_Global* GB) {
         FA->solventterm     = jflt(config, "scoring", "solvent_penalty", 0.0f);
 
         // Angular-dependent hydrogen bond potential
-        FA->use_hbond              = jbool(config, "scoring", "hbond_enabled", false) ? 1 : 0;
+        const bool hbond_on = jbool(config, "scoring", "hbond_enabled", false);
+        FA->use_hbond              = hbond_on ? 1 : 0;
+        // v58 split: search (GA fitness) vs rank (post-GA re-score).  When the
+        // split keys are absent, both follow hbond_enabled for legacy configs.
+        FA->use_hbond_search       = jbool(config, "scoring", "hbond_search_enabled", hbond_on) ? 1 : 0;
+        FA->use_hbond_rank         = jbool(config, "scoring", "hbond_rank_enabled", hbond_on) ? 1 : 0;
         FA->hbond_optimal_dist     = jdbl(config, "scoring", "hbond_optimal_distance", 2.8);
         FA->hbond_optimal_angle    = jdbl(config, "scoring", "hbond_optimal_angle", 180.0);
         FA->hbond_sigma_dist       = jdbl(config, "scoring", "hbond_sigma_distance", 0.4);

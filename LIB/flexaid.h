@@ -407,6 +407,9 @@ struct FA_Global_struct{
 	void* gist_evaluator;               // GISTEvaluator* (cast in vcfunction.cpp)
 
 	int    use_hbond;                    // enable directional H-bond scoring
+	int    use_hbond_search;             // include H-bond in GA fitness evaluation
+	int    use_hbond_rank;               // include H-bond in post-GA rank re-score
+	int    hbond_rank_rescore;           // transient: set during rank re-score pass
 	double hbond_weight;                 // energy weight (kcal/mol), default -2.5
 	double hbond_optimal_dist;           // D-A distance (Å), default 2.8
 	double hbond_optimal_angle;          // D-H...A angle (°), default 180

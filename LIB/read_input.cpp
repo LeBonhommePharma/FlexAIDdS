@@ -217,7 +217,11 @@ void read_input(FA_Global* FA,atom** atoms, resid** residue,rot** rotamer,gridpo
 		if(strcmp(field,"GISTGC") == 0){sscanf(buffer,"%s %f",field,&FA->gist_dg_cutoff);}
 		if(strcmp(field,"GISTRC") == 0){sscanf(buffer,"%s %f",field,&FA->gist_rho_cutoff);}
 		if(strcmp(field,"GISTDV") == 0){sscanf(buffer,"%s %f",field,&FA->gist_divisor);}
-		if(strcmp(field,"USEHBD") == 0){FA->use_hbond=1;}
+		if(strcmp(field,"USEHBD") == 0){
+			FA->use_hbond=1;
+			FA->use_hbond_search=1;
+			FA->use_hbond_rank=1;
+		}
 		if(strcmp(field,"HBONDW") == 0){sscanf(buffer,"%s %lf",field,&FA->hbond_weight);}
 		if(strcmp(field,"USEMTL") == 0){FA->use_metal_coord=1;}
 		if(strcmp(field,"MTLWGT") == 0){sscanf(buffer,"%s %lf",field,&FA->metal_coord_weight);}

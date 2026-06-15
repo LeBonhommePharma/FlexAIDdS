@@ -546,7 +546,11 @@ double vcfunction(FA_Global* FA,VC_Global* VC,atom* atoms,resid* residue, std::v
 					}
 
 					// Angular-dependent hydrogen bond potential (Gaussian bell)
-					if (FA->use_hbond) {
+					// v58: search off / rank on — GA skips hbond unless use_hbond_search;
+					// post-GA rank re-score sets hbond_rank_rescore with use_hbond_rank.
+					if (FA->use_hbond &&
+					    ((FA->use_hbond_search && !FA->hbond_rank_rescore) ||
+					     (FA->use_hbond_rank && FA->hbond_rank_rescore))) {
 						double dist = VC->ca_rec[currindex].dist;
 						double E_hb = hbond::compute_hbond_energy(
 							atoms, atomzero, atomcont, dist,

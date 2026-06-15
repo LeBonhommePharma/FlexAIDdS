@@ -20,6 +20,7 @@
 #include <unordered_set>
 #include <unordered_map>
 #include <chrono>
+#include <cstdlib>
 
 #ifdef _OPENMP
 #include <omp.h>
@@ -2720,18 +2721,42 @@ void populate_chromosomes(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* 
 					// pocket.  Dramatically reduces the 479 k clashes/run caused by
 					// blind uniform placement.  Chromosomes that still clash receive
 					// the OOB penalty as normal and die through selection pressure.
-					const int sigma_idx = std::max(3, FA->num_grd / 10);
-					const double u1 = std::max(1e-10, RandomDouble(dice()));
-					const double u2 = RandomDouble(dice());
-					// Box-Muller N(0,1) → N(0, sigma_idx)
-					const double z = std::sqrt(-2.0 * std::log(u1))
-					                 * std::cos(2.0 * M_PI * u2);
-					const int grid_idx = std::clamp(
-					    static_cast<int>(std::round(z * sigma_idx)),
-					    0, FA->num_grd - 1);
+					//
+					// v58 rigid multi-seed: low-DoF ligands (num_genes≤7) collapse to
+					// a single placement without diverse gene[0] seeds.  Dedicate the
+					// first N chromosomes to evenly spaced cleft grid indices with
+					// small jitter so rigid targets explore multiple pocket poses.
+					const int pop_idx   = i - popoffset;
+					const int pop_span  = GB->num_chrom - popoffset;
+					const bool rigid_lig = (GB->num_genes <= 7);
+					int rigid_n_seeds = 8;
+					if (const char* env_rs = std::getenv("FLEXAIDDS_RIGID_MULTI_SEED"))
+						rigid_n_seeds = std::max(1, std::atoi(env_rs));
+					rigid_n_seeds = std::min({rigid_n_seeds, FA->num_grd, pop_span});
+
+					int grid_idx = 0;
+					if (rigid_lig && rigid_n_seeds > 1 && pop_idx < rigid_n_seeds) {
+						const int base = (pop_idx * FA->num_grd) / rigid_n_seeds;
+						const int jitter = static_cast<int>(dice() % 5) - 2;
+						grid_idx = std::clamp(base + jitter, 0, FA->num_grd - 1);
+					} else {
+						const int sigma_idx = std::max(3, FA->num_grd / 10);
+						const double u1 = std::max(1e-10, RandomDouble(dice()));
+						const double u2 = RandomDouble(dice());
+						// Box-Muller N(0,1) → N(0, sigma_idx)
+						const double z = std::sqrt(-2.0 * std::log(u1))
+						                 * std::cos(2.0 * M_PI * u2);
+						grid_idx = std::clamp(
+						    static_cast<int>(std::round(z * sigma_idx)),
+						    0, FA->num_grd - 1);
+					}
 					chrom[i].genes[0].to_ic    = static_cast<double>(grid_idx);
 					chrom[i].genes[0].to_int32 = ictogene(&gene_lim[0],
 					                                       static_cast<double>(grid_idx));
+					if (rigid_lig && pop_idx == 0 && rigid_n_seeds > 1) {
+						printf("v58 rigid multi-seed: num_genes=%d, N=%d placements\n",
+						       GB->num_genes, rigid_n_seeds);
+					}
 				}
 
 				sig = hash_genes(chrom[i].genes,GB->num_genes);

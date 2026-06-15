@@ -4683,7 +4683,8 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
         // expanding the oracle ceiling by exploiting run-to-run variance without
         // any changes to GA internals.  Restart 0 always uses the canonical out_dir
         // / out_prefix for backward compatibility with cached single-run results.
-        int n_restarts = 1;
+        // v58 default: consensus-5r (v50b proved +2% vs single-run v55).
+        int n_restarts = 5;
         if (const char* env_r = std::getenv("FLEXAIDDS_RESTARTS"))
             n_restarts = std::max(1, std::atoi(env_r));
         std::vector<std::string> all_prefixes;  // populated by exec_dock loop below
@@ -4993,7 +4994,11 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                    // (GIST is intentionally NOT enabled here: it requires a
                    //  per-target .dx desolvation grid that the Astex set lacks,
                    //  and top.cpp silently disables it when no grid is present.)
+                   // v58: H-bond rank-only — steer GA with shape complementarity,
+                   // apply directional hbond when ranking emitted cluster poses.
                    << "    \"hbond_enabled\": true,\n"
+                   << "    \"hbond_search_enabled\": false,\n"
+                   << "    \"hbond_rank_enabled\": true,\n"
                    << "    \"metal_coord_enabled\": true\n"
                    << "  },\n"
                    // MIF-weighted GA seeding: bias gene[0] toward grid points

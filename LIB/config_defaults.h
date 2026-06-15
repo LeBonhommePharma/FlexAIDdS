@@ -31,6 +31,8 @@ inline json::Value flexaid_default_config() {
             {"solvent_penalty",  V(0.0)},
             // Angular-dependent hydrogen bond potential
             {"hbond_enabled",           V(false)},
+            {"hbond_search_enabled",    V(false)},
+            {"hbond_rank_enabled",      V(false)},
             {"hbond_optimal_distance",  V(2.8)},
             {"hbond_optimal_angle",     V(180.0)},
             {"hbond_sigma_distance",    V(0.4)},

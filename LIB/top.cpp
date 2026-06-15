@@ -591,6 +591,9 @@ int main(int argc, char **argv){
 	FA->gist_evaluator=NULL;
 
 	FA->use_hbond=0;
+	FA->use_hbond_search=0;
+	FA->use_hbond_rank=0;
+	FA->hbond_rank_rescore=0;
 	FA->hbond_weight=-2.5;
 	FA->hbond_optimal_dist=2.8;
 	FA->hbond_optimal_angle=180.0;
@@ -1973,7 +1976,10 @@ int main(int argc, char **argv){
 	}
 
 	if(FA->use_hbond){
-		printf("Directional H-bond scoring enabled (weight=%.2f)\n", FA->hbond_weight);
+		printf("Directional H-bond scoring enabled (weight=%.2f, search=%s, rank=%s)\n",
+		       FA->hbond_weight,
+		       FA->use_hbond_search ? "on" : "off",
+		       FA->use_hbond_rank ? "on" : "off");
 	}
 
 	FA->deelig_root_node = new struct deelig_node_struct;
@@ -2222,6 +2228,26 @@ int main(int argc, char **argv){
 				printf("  Std energy     = %10.4f kcal/mol\n", post_thermo.std_energy);
 				printf("  Ensemble size  = %d\n", n_chrom_snapshot);
 				printf("========================================================\n\n");
+			}
+
+			// v58: H-bond rank-only — re-score snapshot chromosomes with the
+			// hbond term before cluster emission so REMARK CF reflects rank CF.
+			if (FA->use_hbond && FA->use_hbond_rank && !FA->use_hbond_search &&
+			    n_chrom_snapshot > 0) {
+				printf("Re-scoring %d snapshot chromosomes with H-bond rank term...\n",
+				       n_chrom_snapshot);
+				FA->hbond_rank_rescore = 1;
+				for (int si = 0; si < n_chrom_snapshot; ++si) {
+					chrom_snapshot[si].cf = eval_chromosome(
+					    FA, GB, VC, gene_lim, atoms, residue, cleftgrid,
+					    chrom_snapshot[si].genes, ic2cf);
+					chrom_snapshot[si].evalue =
+					    get_cf_evalue(&chrom_snapshot[si].cf);
+					chrom_snapshot[si].app_evalue =
+					    get_apparent_cf_evalue(&chrom_snapshot[si].cf);
+				}
+				FA->hbond_rank_rescore = 0;
+				QuickSort(chrom_snapshot, 0, n_chrom_snapshot - 1, true);
 			}
 
 			printf("clustering all individuals in GA...");
