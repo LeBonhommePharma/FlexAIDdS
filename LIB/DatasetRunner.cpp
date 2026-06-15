@@ -932,7 +932,14 @@ static std::pair<std::string,float> select_pose_freq_gated_pooled(
         // alpha defaults to 12 kcal/mol/restart so a mode supported by >=2
         // restarts dominates a single-restart cluster up to 12 kcal/mol lower in
         // CF (spec: must beat a 10 kcal/mol-lower single-restart cluster).
-        bool freqsel = true;
+        //
+        // DEFAULT OFF (v70 full oracle): freq weighting was a net regression
+        // (78/85 vs v68's 82/85). The false minimum IS the reproducible multi-
+        // restart consensus, so this lever picks the decoy, not the rare true
+        // pose — it broke 1J3J/1SG0 and never flipped 1Q4G/1MEH. The real lever
+        // is the CF scoring false minimum, not pose selection. Kept env-gated
+        // (FLEXAIDDS_FREQSEL=1) for experimentation only.
+        bool freqsel = false;
         if (const char* e = std::getenv("FLEXAIDDS_FREQSEL"))
             freqsel = (std::atoi(e) != 0);
         double freqsel_alpha = 12.0;
