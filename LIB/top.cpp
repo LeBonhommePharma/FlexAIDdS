@@ -25,6 +25,7 @@
 #include "MIFGrid.h"
 #include "CavityDetect/SpatialGrid.h"
 #include "native_score.h"
+#include "hbond_potential.h"
 
 #include <algorithm>
 #include <cmath>
@@ -1353,32 +1354,89 @@ int main(int argc, char **argv){
 		// detection. Skips atoms that already have charges (MOL2/PTM).
 		formal_charges::assign_formal_charges(FA, atoms, residue);
 
-		// ── 6c. Populate type256 for ALL atoms (v55: H-bond gate fix) ────────
+		// ── 6c. Populate type256 for ALL atoms (v57: donor/acceptor roles) ───
 		// Before this call type256 = 0 for every atom because atom256::encode()
 		// was never wired into the main docking binary (it only existed in the
 		// standalone ProcessLigand prep tool).  With type256 = 0:
-		//   • atom256::get_hbond(0)   → false  (bit 7 = 0)
-		//   • atom256::get_charge_bin(0) → Q_NEGATIVE (bit 6 = 0)
+		//   • atom256::get_hbond_donor(0)    → false  (bit 7 = 0)
+		//   • atom256::get_hbond_acceptor(0) → false  (bit 6 = 0)
 		// Result: hbond_potential.h early-returns 0.0 for every pair →
 		//   E_hb = 0 in every pose → cf.hbond = 0 in every PDB output.
 		// Fix: encode_from_sybyl() maps the SYBYL type (1–40), partial charge
 		// (atoms[i].charge, now populated by assign_formal_charges above), and
-		// n_hydrogens (0 = conservative; S H-bond only via |charge|>0.3) into
-		// the 8-bit layout [H:1][Q:1][base:6] that hbond_potential.h reads.
+		// effective H count into the 8-bit layout [D:1][A:1][base:6] that
+		// hbond_potential.h reads. Most benchmark structures are heavy-atom
+		// only, so donor roles use explicit bonded H when present and a
+		// conservative implicit-H estimate otherwise.
 		// Called after assign_formal_charges() so receptor charges are final.
 		{
+			auto is_hydrogen_atom = [](const atom& a) {
+				return a.element[0] == 'H' ||
+				       (a.element[0] == ' ' && a.element[1] == 'H') ||
+				       a.name[0] == 'H';
+			};
+			auto bonded_hydrogen_count = [&](int atom_idx) {
+				int n_h = 0;
+				for (int b = 1; b <= atoms[atom_idx].bond[0] && b <= 6; ++b) {
+					int nb = atoms[atom_idx].bond[b];
+					if (nb >= 0 && is_hydrogen_atom(atoms[nb])) ++n_h;
+				}
+				return n_h;
+			};
+			auto heavy_neighbor_count = [&](int atom_idx) {
+				int n_heavy = 0;
+				for (int b = 1; b <= atoms[atom_idx].bond[0] && b <= 6; ++b) {
+					int nb = atoms[atom_idx].bond[b];
+					if (nb >= 0 && !is_hydrogen_atom(atoms[nb])) ++n_heavy;
+				}
+				return n_heavy;
+			};
+			auto conservative_implicit_h_count = [&](int atom_idx, int explicit_h) {
+				if (explicit_h > 0) return 0;
+				const atom& a = atoms[atom_idx];
+				const int heavy_bonds = heavy_neighbor_count(atom_idx);
+				switch (a.type) {
+					case 7:  // N.2
+						return heavy_bonds <= 1 ? 1 : 0;
+					case 8: { // N.3
+						const int valence = (a.charge >= 0.3f) ? 4 : 3;
+						const int h = valence - heavy_bonds;
+						return h > 0 ? h : 0;
+					}
+								case 11: // N.am — restored: virtual-H (VHG_AMIDE) provides
+					         // planar angular discrimination; no longer suppressed.
+					    return heavy_bonds <= 2 ? 1 : 0;
+					case 12: { // N.pl3
+						const int h = 3 - heavy_bonds;
+						return h > 0 ? h : 0;
+					}
+					case 14: // O.3
+						return heavy_bonds <= 1 ? 1 : 0;
+					case 18: // S.3
+						return heavy_bonds <= 1 ? 1 : 0;
+					default:
+						return 0;
+				}
+			};
 			for (int k = 1; k <= FA->res_cnt; k++) {
 				for (int i = residue[k].fatm[0]; i <= residue[k].latm[0]; i++) {
 					if (atoms[i].type > 0) {
+						const int explicit_h = bonded_hydrogen_count(i);
+						const int n_hydrogens = explicit_h +
+							conservative_implicit_h_count(i, explicit_h);
 						atoms[i].type256 = atom256::encode_from_sybyl(
 							atoms[i].type,   // SYBYL type 1–40
 							atoms[i].charge, // partial charge (MOL2 or AMBER ff14SB)
-							0                // n_hydrogens: conservative; refine post-v55
+							n_hydrogens      // explicit + conservative implicit H
 						);
+						// Virtual-H geometry recipe: stores heavy-neighbor indices so
+						// hbond_potential.h reconstructs H direction from live coords
+						// at every scoring call. N.am uses VHG_AMIDE (planar bisector).
+						hbond::assign_virtual_h_geometry(atoms, i, explicit_h, heavy_neighbor_count(i));
 					}
 				}
 			}
-			printf("[v55] type256 populated for all atoms — H-bond gate enabled\n");
+			printf("[vH] type256 + virtual-H populated (N.am=VHG_AMIDE, N.3=SP3, O.3/S.3=HYDROXYL)\n");
 		}
 
 		// ── 6b. Set up GPA and IC origin for MOL2/SDF ligand ──
