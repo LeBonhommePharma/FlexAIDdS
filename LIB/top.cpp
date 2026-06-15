@@ -1389,10 +1389,54 @@ int main(int argc, char **argv){
 						return heavy_bonds <= 1 ? 1 : 0;
 					case 18: // S.3
 						return heavy_bonds <= 1 ? 1 : 0;
-					case 10:  // N.ar — pyrrole-type (5-membered ring N, heavy_bonds==2) carries NH
-					    // Discriminate pyrrole (donor, a.charge > -0.1) from pyridine-like N.ar
-					    // (no NH, negative partial charge from lone pair exocyclic).
-					    return (heavy_bonds == 2 && a.charge > -0.1f) ? 1 : 0;
+					case 10: {  // N.ar: topology-based pyrrole-donor vs pyridine-acceptor discrimination.
+						// 2-hop BFS from the two heavy neighbors detects a closing X–Y bond that
+						// completes atom_idx–nbA–X–Y–nbB–atom_idx (5-membered ring).
+						// 5-ring → pyrrole/indole/benzimidazole NH (donor, return 1).
+						// No 5-ring → 6-ring or larger → pyridine-like (acceptor, return 0).
+						// For diazoles: explicit-H on partner (R1) or partner with ≥3 heavy bonds
+						// (R2, covers purine N7/N9) disambiguates; charge fallback for MOL2 Gasteiger.
+						if (heavy_bonds >= 3) return 0;  // bridgehead/tertiary: no NH
+						if (heavy_bonds != 2) return 0;  // degenerate edge case
+						int nbA = -1, nbB = -1;
+						for (int b = 1; b <= atoms[atom_idx].bond[0] && b <= 6; ++b) {
+							int nb = atoms[atom_idx].bond[b];
+							if (nb < 0 || is_hydrogen_atom(atoms[nb])) continue;
+							if (nbA < 0) nbA = nb; else { nbB = nb; break; }
+						}
+						if (nbA < 0 || nbB < 0) return (a.charge > -0.15f) ? 1 : 0; // topology unavailable
+						// 2-hop BFS: for each X (heavy nbr of nbA) and Y (heavy nbr of nbB),
+						// if X bonds Y → closes 5-ring: atom_idx–nbA–X–Y–nbB–atom_idx.
+						for (int bA = 1; bA <= atoms[nbA].bond[0] && bA <= 6; ++bA) {
+							int X = atoms[nbA].bond[bA];
+							if (X < 0 || X == atom_idx || is_hydrogen_atom(atoms[X])) continue;
+							for (int bB = 1; bB <= atoms[nbB].bond[0] && bB <= 6; ++bB) {
+								int Y = atoms[nbB].bond[bB];
+								if (Y < 0 || Y == atom_idx || is_hydrogen_atom(atoms[Y])) continue;
+								for (int bXY = 1; bXY <= atoms[X].bond[0] && bXY <= 6; ++bXY) {
+									if (atoms[X].bond[bXY] != Y) continue;
+									// 5-ring confirmed: atom_idx–nbA–X–Y–nbB–atom_idx.
+									// Scan ring atoms {nbA,X,Y,nbB} for another N.ar (diazole check).
+									const int ring5[4] = {nbA, X, Y, nbB};
+									int other_nar = -1;
+									for (int ri = 0; ri < 4; ++ri)
+									    if (atoms[ring5[ri]].type == 10) { other_nar = ring5[ri]; break; }
+									if (other_nar < 0) return 1;  // sole N.ar in 5-ring → pyrrole-type donor
+									// Diazole: 2 N.ar in same 5-ring (imidazole/pyrazole/purine half).
+									// R1: partner has explicit H → it IS the pyrrole-NH → we are acceptor.
+									if (bonded_hydrogen_count(other_nar) > 0) return 0;
+									// R2: partner has ≥3 heavy bonds (e.g. purine N9 with glycosidic bond)
+									//     → it occupies the substituted bridgehead → we are also not pyrrole-NH.
+									if (heavy_neighbor_count(other_nar) >= 3) return 0;
+									// Charge fallback: pyrrole-NH ≈ 0 to −0.10; pyridine-like ≈ −0.20 to −0.45.
+									// −0.15 threshold cleanly separates MOL2/Gasteiger. For SDF (charge=0)
+									// R1 (partner explicit-H) should have fired; this handles MOL2.
+									return (a.charge > -0.15f) ? 1 : 0;
+								}
+							}
+						}
+						return 0;  // no 5-ring found → 6-ring or larger → pyridine-like → no NH
+					}
 					default:
 						return 0;
 				}

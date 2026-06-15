@@ -242,9 +242,13 @@ inline void assign_virtual_h_geometry(atom_struct* atoms, int i,
         }
         break;
     }
-    case 10: // N.ar — pyrrole-type (sp2, 5-membered ring N, 2 heavy bonds + NH)
-        // External bisector of the 2 ring bonds gives the NH direction (VHG_SP2_2NBR).
-        // Gate: heavy_bonds==2 (pyrrole N, donor); heavy_bonds==1 is degenerate edge case.
+    case 10: // N.ar: VHG only when type256 confirms N-H (pyrrole/indole/benzimidazole-NH).
+        // Pyridine-like N.ar (acceptor-only, n_hydrogens=0) must stay VHG_NONE —
+        // type256 donor bit is the single source of truth from conservative_implicit_h_count.
+        // Without this guard, pyridine N.ar would get ghost VHG_SP2_2NBR, which the
+        // D/A gate in compute_hbond_energy blocks, but it wastes vH reconstruction work
+        // and obscures type256 intent.
+        if (!atom256::get_hbond_donor(a.type256)) break;
         if (heavy_bonds == 2 && nheavy >= 2) {
             a.vH_kind=VHG_SP2_2NBR; a.vH_n=1;
             a.vH_nbr[0]=hidx[0]; a.vH_nbr[1]=hidx[1];
