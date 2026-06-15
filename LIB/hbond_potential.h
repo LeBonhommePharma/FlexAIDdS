@@ -247,7 +247,9 @@ inline void assign_virtual_h_geometry(atom_struct* atoms, int i,
         if (is_pro) break;
         // External bisector of C-N-Cα gives correct in-plane H direction.
         // Angular discrimination (not blanket suppression) prevents false minima.
-        if (heavy_bonds>=2 && nheavy>=2) {
+        // Restrict VHG_AMIDE to primary/secondary amide (heavy_bonds==2);
+        // tertiary N.am (ring junction, N-methyl amide) has no labile H.
+        if (heavy_bonds==2 && nheavy>=2) {
             a.vH_kind=VHG_AMIDE; a.vH_n=1;
             a.vH_nbr[0]=hidx[0]; a.vH_nbr[1]=hidx[1];
         } else if (heavy_bonds==1 && nheavy>=1) {

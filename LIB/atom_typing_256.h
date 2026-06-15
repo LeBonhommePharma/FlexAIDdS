@@ -94,23 +94,41 @@ inline constexpr bool    get_hbond(uint8_t code) noexcept {
 }
 
 // ─── H-bond role classification ─────────────────────────────────────────────
-// Runtime receptor/ligand atoms are mostly heavy-atom records, so n_hydrogens
-// is currently advisory. The conservative v56 split avoids the v55 pathology
-// where acceptor-acceptor and donor-donor contacts both passed a single
-// "H-bond capable" gate.
+// Donor roles require attached H evidence. Runtime heavy-atom inputs provide
+// this through explicit bonded H counts plus conservative implicit-H estimates
+// computed before encode_from_sybyl(). This keeps the v57 donor/acceptor split
+// without turning every polar heavy atom into a directional donor.
+
+struct HbondRoles {
+    bool donor;
+    bool acceptor;
+};
 
 inline bool classify_hbond_donor(uint8_t base_type, float partial_charge,
                                  int n_hydrogens) noexcept {
+    (void)partial_charge;
     switch (base_type) {
-        case N_sp3:
-        case N_quat:
         case N_am:
-        case N_pl3:
-            return true;
+            // Primary/secondary amide N (N-H present) is a good donor; tertiary
+            // N.am (piperidine junction, N-methyl amide, ring-junction N) has no
+            // labile H and must NOT be marked donor.
+            return n_hydrogens > 0;
+        case N_sp3:
+            // Covers 1°/2°/3° amine. Tertiary amine (no N-H) dominates drug
+            // scaffolds and n_hydrogens cannot distinguish it → conservative
+            // acceptor-only default (no donor role).
+            return false;
         case O_sp3:
-            return true;
+            // Covers ether (no O-H) and hydroxyl. Ether dominates drug
+            // scaffolds and n_hydrogens cannot distinguish it → conservative
+            // acceptor-only default (no donor role).
+            return false;
+        case N_sp2:
+        case N_ar:
+        case N_pl3:
+            return n_hydrogens > 0;
         case S_sp3:
-            return n_hydrogens > 0 || partial_charge > 0.3f;
+            return n_hydrogens > 0;
         default:
             return false;
     }
@@ -118,15 +136,18 @@ inline bool classify_hbond_donor(uint8_t base_type, float partial_charge,
 
 inline bool classify_hbond_acceptor(uint8_t base_type, float partial_charge,
                                     int n_hydrogens) noexcept {
-    (void)n_hydrogens;
     switch (base_type) {
         case N_sp:
         case N_sp2:
         case N_sp3:
-        case N_ar:
-        case N_am:   // amide N — lone pair exists (carbonyl resonance weakens but LP real)
         case N_pl3:
-            return true;
+            return partial_charge < 0.3f;
+        case N_ar:
+            // Heavy-atom-only aromatic N is treated as pyridine-like. Explicit
+            // N-H evidence marks pyrrole-like donor and suppresses acceptance.
+            return n_hydrogens == 0 && partial_charge < 0.3f;
+        case N_am:
+            return false;
         case O_sp2:
         case O_sp3:
         case O_co2:
@@ -150,6 +171,14 @@ inline bool is_hbond_capable(uint8_t base_type, float partial_charge,
                               int n_hydrogens) noexcept {
     return classify_hbond_donor(base_type, partial_charge, n_hydrogens) ||
            classify_hbond_acceptor(base_type, partial_charge, n_hydrogens);
+}
+
+inline HbondRoles infer_hbond_roles(uint8_t base_type, float partial_charge,
+                                    int n_hydrogens) noexcept {
+    return {
+        classify_hbond_donor(base_type, partial_charge, n_hydrogens),
+        classify_hbond_acceptor(base_type, partial_charge, n_hydrogens),
+    };
 }
 
 // ─── SYBYL (1–40) ↔ base type (0–63) mapping ───────────────────────────────
@@ -268,9 +297,8 @@ inline uint8_t encode_from_sybyl(int sybyl_type, float partial_charge,
     bool aromatic_c = (sybyl_type == 4);  // C.AR
     base = refine_base_type(base, aromatic_c, has_heteroatom_neighbor,
                             is_bridgehead);
-    const bool donor = classify_hbond_donor(base, partial_charge, n_hydrogens);
-    const bool acceptor = classify_hbond_acceptor(base, partial_charge, n_hydrogens);
-    return encode_roles(base, donor, acceptor);
+    const HbondRoles roles = infer_hbond_roles(base, partial_charge, n_hydrogens);
+    return encode_roles(base, roles.donor, roles.acceptor);
 }
 
 // ─── name table for debugging ───────────────────────────────────────────────

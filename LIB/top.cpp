@@ -1389,6 +1389,10 @@ int main(int argc, char **argv){
 						return heavy_bonds <= 1 ? 1 : 0;
 					case 18: // S.3
 						return heavy_bonds <= 1 ? 1 : 0;
+					case 10:  // N.ar — pyrrole-type (5-membered ring N, heavy_bonds==2) carries NH
+					    // Discriminate pyrrole (donor, a.charge > -0.1) from pyridine-like N.ar
+					    // (no NH, negative partial charge from lone pair exocyclic).
+					    return (heavy_bonds == 2 && a.charge > -0.1f) ? 1 : 0;
 					default:
 						return 0;
 				}
