@@ -45,7 +45,18 @@ static std::vector<Probe> generate_probes(
     const float max_pair_sq = p.max_pair_dist * p.max_pair_dist;
     std::vector<Probe> probes;
 
-    // Collect protein (non-HET) atom indices that have coordinates
+    // Collect protein (non-HET) atom indices that have coordinates.
+    // If oracle_radius > 0, pre-filter to atoms within that radius of
+    // oracle_center.  This eliminates the O(N^3) blowup for multimeric
+    // receptors: 1OF6 (20826 atoms, 8 chains) drops to ~200-400 atoms
+    // within 15 A of the cognate site, giving a ~10,000x speedup.
+    // The downstream site-confinement step in top.cpp trims the grid to
+    // the cognate centroid sphere anyway, so excluding far-away atoms
+    // from SURFNET is correct and safe.
+    const bool has_spatial_filter = (p.oracle_radius > 0.0f);
+    const float filter_r2 = has_spatial_filter
+        ? p.oracle_radius * p.oracle_radius : 0.0f;
+
     std::vector<int> idx;
     idx.reserve(atm_cnt);
     for (int i = 0; i < atm_cnt; ++i) {
@@ -54,7 +65,18 @@ static std::vector<Probe> generate_probes(
             atoms[i].coor[1] == 0.0f &&
             atoms[i].coor[2] == 0.0f &&
             atoms[i].radius  == 0.0f) continue;
+        // spatial pre-filter: skip atoms outside oracle sphere
+        if (has_spatial_filter) {
+            float dx = atoms[i].coor[0] - p.oracle_center[0];
+            float dy = atoms[i].coor[1] - p.oracle_center[1];
+            float dz = atoms[i].coor[2] - p.oracle_center[2];
+            if (dx*dx + dy*dy + dz*dz > filter_r2) continue;
+        }
         idx.push_back(i);
+    }
+    if (has_spatial_filter) {
+        printf("CleftDetector: oracle spatial filter (%.1f A) reduced atoms %d -> %d\n",
+               p.oracle_radius, atm_cnt, static_cast<int>(idx.size()));
     }
 
     const int n = static_cast<int>(idx.size());

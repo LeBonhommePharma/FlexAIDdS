@@ -1648,9 +1648,23 @@ int main(int argc, char **argv){
 				}
 			}
 
-			// Always run SURFNET void-space detection (probes placed in void between atoms)
+			// Always run SURFNET void-space detection (probes placed in void between atoms).
+			// In oracle mode, spatially pre-filter atoms to the oracle centroid sphere so
+			// that multimeric receptors (e.g. 1OF6 octamer: 20826 atoms, 8 chains) do not
+			// cause O(N^3) blowup.  15 A covers the binding pocket + one shell of framework
+			// atoms needed to correctly cap probe spheres at the cavity boundary.
 			printf("SURFNET binding-site detection (CleftDetector) ...\n");
-			spheres = detect_cleft(atoms, residue, FA->atm_cnt_real, FA->res_cnt);
+			{
+				CleftDetectorParams cleft_params = default_cleft_params();
+				if (using_oracle) {
+					cleft_params.oracle_center[0] = oracle_cx;
+					cleft_params.oracle_center[1] = oracle_cy;
+					cleft_params.oracle_center[2] = oracle_cz;
+					cleft_params.oracle_radius     = 15.0f;  // Å — covers pocket + 1 shell
+				}
+				spheres = detect_cleft(atoms, residue, FA->atm_cnt_real, FA->res_cnt,
+				                       cleft_params);
+			}
 			if (spheres == NULL) {
 				fprintf(stderr, "ERROR: cleft detection found no cavities.\n");
 				Terminate(2);
