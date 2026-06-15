@@ -120,6 +120,15 @@ void DensityPeak_cluster(FA_Global* FA, GB_Global* GB, VC_Global* VC, chromosome
 		Terminate(2);
 	}
 	
+	// Guard: DP algorithm degenerates and PF underflows for n≤1.
+	// Delegate to the CF fallback which handles the single-pose case correctly.
+	if (num_chrom <= 1) {
+		free(Chrom);
+		cluster(FA, GB, VC, chrom, gene_lim, atoms, residue, cleftgrid,
+		        num_chrom, end_strfile, tmp_end_strfile, dockinp, gainp);
+		return;
+	}
+
 	// variables initialization
 	for(i = 0, partition_function = 0.0; i < num_chrom; ++i)
 	{

@@ -84,9 +84,20 @@ void cluster(FA_Global* FA, GB_Global* GB, VC_Global* VC, chromosome* chrom, gen
     //printf("n_unclus=%d\n",n_unclus);
     //PAUSE;
 	
-	// Verify that partition_function != NULL
-	if(FA->temperature && partition_function == 0.0)
-	{
+	// Guard: single-pose fast path — PF is undefined (or underflows to 0) for
+	// n≤1.  When the GA collapses to 1 chromosome, skip Boltzmann-weighted
+	// clustering entirely: there is exactly one cluster of size 1, P=1, and
+	// the entropy term T·p·log(p) = 0.  Pre-populate arrays and set n_unclus=0
+	// so the while-loop below is skipped; the emit loop runs once for chrom[0].
+	if (num_chrom <= 1) {
+		n_unclus        = 0;
+		num_of_clusters = num_of_results = (num_chrom == 1) ? 1 : 0;
+		if (num_chrom == 1) {
+			Clus_GAPOP[0]=0; Clus_RMSDT[0]=0.0f;
+			Clus_ACF[0]=Clus_TCF[0]=chrom[0].app_evalue;
+			Clus_TOP[0]=0;   Clus_FRE[0]=1;
+		}
+	} else if (FA->temperature && partition_function == 0.0) {
 		fprintf(stderr,"ERROR: The Partition Function is NULL in the clustering step.\n");
 		Terminate(2);
 	}
