@@ -146,12 +146,16 @@ struct DockingResult {
     // P4: oracle best-of-N over emitted cluster poses (best achievable by selection)
     float best_cluster_rmsd{999.0f};  // min Hungarian RMSD across all emitted poses (Å)
     int   best_cluster_idx{-1};       // pose index (0-19) achieving best_cluster_rmsd
-    // Fix 2: seed-echo flag. true when the elected pose's CF matches cf_native to
-    // ±0.01 — i.e. the selector returned the seeded crystal pose (seed_fraction
-    // 0.90 + N_ELITE=1 protect it through the run), making rmsd_hungarian≈0 a
-    // trivial echo rather than a genuine docking prediction. Reported, not yet
-    // subtracted from the success metric (LP decides whether to exclude).
+    // Fix 2 (revised): seed-echo flag. true when the elected pose path ends in
+    // "_INI.pdb" — i.e. the crystal-seeded chromosome protected by seed_elitism
+    // was returned as rank-0 rather than a genuine GA-cluster pose.  Path-based
+    // detection is immune to CF drift (old ±0.01 tolerance missed 1SJ0: diff=0.17).
+    // Reported; does NOT change result.success — LP decides whether to exclude.
     bool  seed_echo{false};
+    // Pose provenance: "ini_elitism" when the elected path ends in _INI.pdb
+    // (seed_elitism crystal-pose shortcut); "ga_cluster" for a genuine GA pose;
+    // "" when docking did not complete or produced no poses.
+    std::string pose_source{""};
     // Level-3 H(ω) vibrational-entropy diagnostic. Populated only when
     // FLEXAIDDS_HVIB=1; left at 0.0 otherwise (default-OFF, benchmarks
     // unaffected). Shannon entropy over ligand ANM eigenvalue spectra of the

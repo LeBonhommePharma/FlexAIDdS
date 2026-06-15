@@ -5523,15 +5523,12 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
         result.num_poses = n_poses;
         result.best_score = best_cf;
 
-        // ── Fix 2: seed-echo detection ───────────────────────────────────
-        // If the elected pose's CF equals cf_native within a tight tolerance,
-        // the selector returned the seeded crystal pose itself (protected by
-        // seed_fraction=0.90 + N_ELITE=1) rather than a genuine docked pose.
-        // Flag it so the trivially-zero rmsd_hungarian is distinguishable from
-        // a real sub-2 Å prediction. Does NOT change result.success.
-        result.seed_echo = (result.cf_native != 0.0f) &&
-                           std::isfinite(best_cf) &&
-                           (std::fabs(best_cf - result.cf_native) <= 0.01f);
+        // ── Fix 2 (revised): seed-echo detection ────────────────────────
+        // Moved to the pose-election site below (after best_pose_pdb is
+        // finalised including consensus re-ranking).  Path-based: elected
+        // path ending in "_INI.pdb" → ini_elitism; anything else → ga_cluster.
+        // The old CF-tolerance ±0.01 missed cases like 1SJ0 (diff=0.17).
+        result.seed_echo = false;   // overwritten below once best_pose_pdb is known
         // Use Free energy F from Post-GA thermodynamics block; fall back to CF score.
         result.predicted_dG = (free_energy_F != 0.0f) ? free_energy_F
                             : (best_dG != 0.0f)        ? best_dG
@@ -5689,6 +5686,19 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
             }
 
             if (!best_pose_pdb.empty()) {
+                // ── Fix 2 (revised): path-based seed-echo + pose_source ──────
+                // "_INI.pdb" suffix → crystal-seeded chromosome elected by
+                // seed_elitism; any other path → genuine GA-cluster pose.
+                // This is unambiguous and immune to CF drift / tolerance choices.
+                {
+                    const std::string ini_suffix = "_INI.pdb";
+                    bool is_ini = (best_pose_pdb.size() >= ini_suffix.size() &&
+                                   best_pose_pdb.compare(best_pose_pdb.size() -
+                                       ini_suffix.size(), ini_suffix.size(),
+                                       ini_suffix) == 0);
+                    result.seed_echo   = is_ini;
+                    result.pose_source = is_ini ? "ini_elitism" : "ga_cluster";
+                }
                 // Read crystal ligand heavy-atom coords from SDF (lines with X Y Z elem)
                 std::vector<std::array<float,3>> crystal_xyz;
                 std::vector<std::string> crystal_elem;  // parallel element labels
@@ -5873,7 +5883,7 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                     ofs << "pdb_id,best_score,rmsd_to_crystal,rmsd_hungarian,predicted_dG,"
                            "predicted_dH,predicted_TdS,shannon_entropy,num_poses,"
                            "wall_time_s,success,cf_native,best_cluster_rmsd,best_cluster_idx,"
-                           "seed_echo,H_rep_rank0,H_pop,H_rep_mean,D_vib\n";
+                           "seed_echo,pose_source,H_rep_rank0,H_pop,H_rep_mean,D_vib\n";
                     ofs << std::fixed << std::setprecision(4)
                         << result.pdb_id << ","
                         << result.best_score << ","
@@ -5890,6 +5900,7 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                         << result.best_cluster_rmsd << ","
                         << result.best_cluster_idx << ","
                         << (result.seed_echo ? 1 : 0) << ","
+                        << result.pose_source << ","
                         << result.H_rep_rank0 << ","
                         << result.H_pop << ","
                         << result.H_rep_mean << ","
@@ -6156,7 +6167,7 @@ void DatasetRunner::write_report(const BenchmarkReport& report,
 
         ofs << "pdb_id,best_score,rmsd_to_crystal,rmsd_hungarian,predicted_dG,"
                "predicted_dH,predicted_TdS,shannon_entropy,num_poses,wall_time_s,success,"
-               "cf_native,best_cluster_rmsd,best_cluster_idx,seed_echo,"
+               "cf_native,best_cluster_rmsd,best_cluster_idx,seed_echo,pose_source,"
                "H_rep_rank0,H_pop,H_rep_mean,D_vib\n";
 
         for (const auto& r : report.results) {
@@ -6176,6 +6187,7 @@ void DatasetRunner::write_report(const BenchmarkReport& report,
                 << r.best_cluster_rmsd << ","
                 << r.best_cluster_idx << ","
                 << (r.seed_echo ? 1 : 0) << ","
+                << r.pose_source << ","
                 << r.H_rep_rank0 << ","
                 << r.H_pop << ","
                 << r.H_rep_mean << ","
