@@ -66,6 +66,7 @@ void apply_config(const json::Value& config, FA_Global* FA, GB_Global* GB) {
         FA->useacs          = jbool(config, "scoring", "accessible_surface", false) ? 1 : 0;
         FA->acsweight       = jflt(config, "scoring", "acs_weight", 1.0f);
         FA->solventterm     = jflt(config, "scoring", "solvent_penalty", 0.0f);
+        FA->sas_weight      = jdbl(config, "scoring", "sas_weight", 1.0);
 
         // Angular-dependent hydrogen bond potential
         const bool hbond_on = jbool(config, "scoring", "hbond_enabled", false);
@@ -267,6 +268,8 @@ void apply_config(const json::Value& config, FA_Global* FA, GB_Global* GB) {
         std::strncpy(FA->reflig_file, rf.c_str(), sizeof(FA->reflig_file) - 1);
         FA->reflig_seed_fraction =
             jflt(config, "reference_ligand", "seed_fraction", 0.25f);
+        FA->reflig_pose_seed_enabled =
+            jbool(config, "reference_ligand", "pose_seed_enabled", true) ? 1 : 0;
         FA->reflig_k_nearest =
             jint(config, "reference_ligand", "k_nearest", 10);
         FA->reflig_hetatm_fallback =

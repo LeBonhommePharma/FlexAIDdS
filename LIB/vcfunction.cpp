@@ -710,7 +710,7 @@ double vcfunction(FA_Global* FA,VC_Global* VC,atom* atoms,resid* residue, std::v
 		// no_sas is a file-scope static (hoisted).
 		if(no_sas){ contribution = 0.0; }
 
-		cfs->sas += contribution;
+		cfs->sas += FA->sas_weight * contribution;
 
 		FA->contributions[(VC->Calc[i].atom->type-1)*FA->ntypes + (FA->ntypes-1)] += contribution;
 		FA->contributions[(FA->ntypes-1)*FA->ntypes + (VC->Calc[i].atom->type-1)] += contribution;

@@ -5162,7 +5162,8 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                    << "    \"hbond_enabled\": true,\n"
                    << "    \"hbond_search_enabled\": false,\n"
                    << "    \"hbond_rank_enabled\": true,\n"
-                   << "    \"metal_coord_enabled\": true\n"
+                   << "    \"metal_coord_enabled\": true,\n"
+                   << "    \"sas_weight\": 0.40\n"
                    << "  },\n"
                    // MIF-weighted GA seeding: bias gene[0] toward grid points
                    // with favourable probe-interaction energy (Boltzmann CDF at

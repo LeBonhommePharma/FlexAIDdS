@@ -403,6 +403,7 @@ struct FA_Global_struct{
 	float soft_wall_cutoff;              // overlap soft-core radius (Å); 0.0 = legacy hard r^-12 wall
 	int   intramolecular;                // consider intramolecular forces (ligand only)
 	float solventterm;                   // solvent penalty term
+	double sas_weight;                   // SAS desolvation penalty multiplier (default 1.0)
 	float intrafraction;                 // intramolecular fraction interaction
 
 	int   use_elec;                      // enable Coulomb electrostatic scoring
@@ -608,6 +609,7 @@ struct FA_Global_struct{
 	// ── Reference Ligand Seeding ──
 	char    reflig_file[MAX_PATH__]; // path to reference ligand PDB/MOL2
 	float   reflig_seed_fraction;    // fraction of population to seed (default 0.25)
+	int     reflig_pose_seed_enabled; // 1 = also copy reference orientation/torsions
 	int     reflig_k_nearest;        // K nearest grid points (default 10)
 	int*    reflig_nearest_grid;     // K nearest grid point indices (1-based)
 	int     reflig_nearest_count;    // actual count found
