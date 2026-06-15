@@ -242,6 +242,16 @@ inline void assign_virtual_h_geometry(atom_struct* atoms, int i,
         }
         break;
     }
+    case 10: // N.ar — pyrrole-type (sp2, 5-membered ring N, 2 heavy bonds + NH)
+        // External bisector of the 2 ring bonds gives the NH direction (VHG_SP2_2NBR).
+        // Gate: heavy_bonds==2 (pyrrole N, donor); heavy_bonds==1 is degenerate edge case.
+        if (heavy_bonds == 2 && nheavy >= 2) {
+            a.vH_kind=VHG_SP2_2NBR; a.vH_n=1;
+            a.vH_nbr[0]=hidx[0]; a.vH_nbr[1]=hidx[1];
+        } else if (heavy_bonds == 1 && nheavy >= 1) {
+            a.vH_kind=VHG_SP2_1NBR; a.vH_n=1; a.vH_nbr[0]=hidx[0];
+        }
+        break;
     case 11: // N.am — amide N; donor with planar VHG_AMIDE geometry
         // PRO backbone N is tertiary (no labile H): skip all donor assignment.
         if (is_pro) break;
