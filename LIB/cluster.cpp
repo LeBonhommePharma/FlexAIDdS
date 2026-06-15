@@ -85,7 +85,7 @@ void cluster(FA_Global* FA, GB_Global* GB, VC_Global* VC, chromosome* chrom, gen
     //PAUSE;
 	
 	// Verify that partition_function != NULL
-	if(FA->temperature && partition_function == 0.0) 
+	if(FA->temperature && partition_function == 0.0)
 	{
 		fprintf(stderr,"ERROR: The Partition Function is NULL in the clustering step.\n");
 		Terminate(2);

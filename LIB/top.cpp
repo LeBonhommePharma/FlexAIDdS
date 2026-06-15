@@ -2320,11 +2320,28 @@ int main(int argc, char **argv){
 			    n_chrom_snapshot > 0) {
 				printf("Re-scoring %d snapshot chromosomes with H-bond rank term...\n",
 				       n_chrom_snapshot);
-				FA->hbond_rank_rescore = 1;
+				// buildcc processes the GPA triplet in order [GPA0, GPA1, GPA2]
+				// (the order buildlist emits them for bnum==0).  GPA2 uses only
+				// FA->ori (always correct), but GPA1 depends on the *previous
+				// call's* GPA2 coor, and GPA0 depends on the previous call's
+				// GPA1 and GPA2 coor.  After the GA the shared atoms[] carry
+				// state from a chromosome that is not the snapshot — convergence
+				// requires three sequential calls on the same genes:
+				//   call 1 (prime 1): GPA2 correctly placed
+				//   call 2 (prime 2): GPA1 correctly placed (using prime-1 GPA2)
+				//   call 3 (rescore): GPA0 correctly placed (using prime-2 GPA1/GPA2)
+				// We interleave per-snapshot to prevent cross-contamination between
+				// different snapshot geometries.
 				for (int si = 0; si < n_chrom_snapshot; ++si) {
+					FA->hbond_rank_rescore = 0;
+					eval_chromosome(FA, GB, VC, gene_lim, atoms, residue, cleftgrid,
+					    chrom_snapshot[si].genes, ic2cf);  // prime 1: GPA2 correct
+					eval_chromosome(FA, GB, VC, gene_lim, atoms, residue, cleftgrid,
+					    chrom_snapshot[si].genes, ic2cf);  // prime 2: GPA1 correct
+					FA->hbond_rank_rescore = 1;
 					chrom_snapshot[si].cf = eval_chromosome(
 					    FA, GB, VC, gene_lim, atoms, residue, cleftgrid,
-					    chrom_snapshot[si].genes, ic2cf);
+					    chrom_snapshot[si].genes, ic2cf);  // real: GPA0 correct, hbond active
 					chrom_snapshot[si].evalue =
 					    get_cf_evalue(&chrom_snapshot[si].cf);
 					chrom_snapshot[si].app_evalue =
