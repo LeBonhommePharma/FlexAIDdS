@@ -440,7 +440,6 @@ int main(int argc, char **argv){
 	FA->mif_temperature = 300.0f;
 	FA->grid_prio_percent = 100.0f;
 	FA->reflig_seed_fraction = 0.25f;
-	FA->reflig_pose_seed_enabled = 1;
 	FA->reflig_k_nearest = 10;
 	FA->reflig_hetatm_fallback = 1;
 	FA->autoflex_enabled = 1;  // auto-flex key binding residues by default
@@ -561,14 +560,6 @@ int main(int argc, char **argv){
 	FA->gist_rho_cutoff=4.8f;
 	FA->gist_divisor=2.0f;
 	FA->gist_evaluator=NULL;
-
-	// v69: cofactor-void exclusion (off until a coords file is supplied/loaded)
-	FA->use_cofactor_void=0;
-	FA->cofactor_void_radius=3.5;
-	FA->cofactor_void_penalty=100.0;
-	FA->cofactor_void_file[0]='\0';
-	FA->cofactor_void_xyz=NULL;
-	FA->cofactor_void_n=0;
 
 	FA->use_hbond=0;
 	FA->use_hbond_search=0;
@@ -2131,44 +2122,6 @@ int main(int argc, char **argv){
 		       FA->hbond_weight,
 		       FA->use_hbond_search ? "on" : "off",
 		       FA->use_hbond_rank ? "on" : "off");
-	}
-
-	// ── v69: cofactor-void exclusion initialization ──
-	// Load the stripped-cofactor heavy-atom coordinates emitted by DatasetRunner
-	// (write_receptor_without_ligand). Each line: "ATOM_NAME X Y Z". Poses whose
-	// ligand centroid falls within cofactor_void_radius of any of these atoms get
-	// the +cofactor_void_penalty CF.wal term applied in vcfunction().
-	if(FA->cofactor_void_file[0] != '\0'){
-		FILE* vf = fopen(FA->cofactor_void_file, "r");
-		if(vf){
-			std::vector<double> coords;
-			char  vname[64];
-			double vx, vy, vz;
-			char  vline[256];
-			while(fgets(vline, sizeof(vline), vf)){
-				if(sscanf(vline, "%63s %lf %lf %lf", vname, &vx, &vy, &vz) == 4){
-					coords.push_back(vx);
-					coords.push_back(vy);
-					coords.push_back(vz);
-				}
-			}
-			fclose(vf);
-			int nvoid = (int)(coords.size() / 3);
-			if(nvoid > 0){
-				FA->cofactor_void_xyz = (double*)malloc(coords.size()*sizeof(double));
-				if(FA->cofactor_void_xyz){
-					std::copy(coords.begin(), coords.end(), FA->cofactor_void_xyz);
-					FA->cofactor_void_n   = nvoid;
-					FA->use_cofactor_void = 1;
-					printf("Cofactor-void exclusion enabled: %d stripped-cofactor atoms, "
-					       "radius=%.2f A, penalty=+%.1f CF\n",
-					       nvoid, FA->cofactor_void_radius, FA->cofactor_void_penalty);
-				}
-			}
-		}else{
-			fprintf(stderr,"WARNING: cofactor_void_file '%s' not readable, "
-			        "void exclusion disabled\n", FA->cofactor_void_file);
-		}
 	}
 
 	FA->deelig_root_node = new struct deelig_node_struct;

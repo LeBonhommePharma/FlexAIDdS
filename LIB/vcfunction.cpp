@@ -787,47 +787,6 @@ double vcfunction(FA_Global* FA,VC_Global* VC,atom* atoms,resid* residue, std::v
 		}
 	}
 
-	// ── v69: cofactor-void exclusion penalty ─────────────────────────────────
-	// When bulk HETATM cofactors are stripped from the receptor (self-docking apo
-	// prep), the vacated volume is shape-favourable to the enthalpy-only VCT CF.
-	// Poses whose ligand centroid lands inside that ghost space are penalized so
-	// the GA never selects them (root cause of the 1HNN miss). The check is
-	// centroid-vs-void-atom (cheap: one centroid pass + n_void distance tests),
-	// and the penalty is folded into the ligand optres CF.wal so it propagates
-	// through get_cf_evalue / get_apparent_cf_evalue without touching ic2cf.
-	if(FA->use_cofactor_void && FA->cofactor_void_xyz != NULL &&
-	   FA->cofactor_void_n > 0 && FA->resligand != NULL &&
-	   FA->resligand->fatm != NULL && FA->resligand->latm != NULL){
-		const int lig_start = FA->resligand->fatm[0];
-		const int lig_end   = FA->resligand->latm[0];
-		const int n_lig     = lig_end - lig_start + 1;
-		if(n_lig > 0){
-			double cx = 0.0, cy = 0.0, cz = 0.0;
-			for(int a = lig_start; a <= lig_end; ++a){
-				cx += atoms[a].coor[0];
-				cy += atoms[a].coor[1];
-				cz += atoms[a].coor[2];
-			}
-			cx /= n_lig; cy /= n_lig; cz /= n_lig;
-			const double r2 = FA->cofactor_void_radius * FA->cofactor_void_radius;
-			bool in_void = false;
-			for(int v = 0; v < FA->cofactor_void_n; ++v){
-				const double dx = cx - FA->cofactor_void_xyz[3*v+0];
-				const double dy = cy - FA->cofactor_void_xyz[3*v+1];
-				const double dz = cz - FA->cofactor_void_xyz[3*v+2];
-				if(dx*dx + dy*dy + dz*dz <= r2){ in_void = true; break; }
-			}
-			if(in_void){
-				// Apply to the first ligand optres (type==1); fall back to optres[0].
-				int target_optres = 0;
-				for(int j=0; j<FA->num_optres; ++j){
-					if(FA->optres[j].type == 1){ target_optres = j; break; }
-				}
-				FA->optres[target_optres].cf.wal += FA->cofactor_void_penalty;
-			}
-		}
-	}
-
 	for(int i=0;i<FA->atm_cnt_real;i++){
 		if(VC->Calc[i].score){
 			VC->Calc[i].atom = NULL;
@@ -835,9 +794,9 @@ double vcfunction(FA_Global* FA,VC_Global* VC,atom* atoms,resid* residue, std::v
 	}
 
 	if(!FA->vindex){ free(VC->box); }
-
+	
 	return(0.0);
-
+  
 }
 
 /* A2 perf: flat-array piecewise-linear interpolation replaces linked-list walk.

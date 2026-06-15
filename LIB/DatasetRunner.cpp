@@ -3125,13 +3125,7 @@ std::string DatasetRunner::write_receptor_without_ligand(
         const std::string& receptor_path,
         const std::string& ligand_sdf,
         const std::string& out_receptor,
-        float tol,
-        std::string* void_out) {
-    if (void_out) void_out->clear();
-    // v69: accumulate stripped bulk-cofactor heavy-atom coords ("NAME X Y Z")
-    // for the cofactor-void exclusion penalty (see vcfunction.cpp).
-    std::vector<std::array<double,4>> void_atoms;  // {x,y,z, hash-unused}
-    std::vector<std::string>          void_names;
+        float tol) {
     // Read ligand heavy-atom coordinates from the extracted SDF.
     std::vector<std::array<float,3>> lig_xyz;
     std::string ligand_res_name;
@@ -3233,44 +3227,12 @@ std::string DatasetRunner::write_receptor_without_ligand(
             // be on the list — unknown HETATMs (lipids, substrates, buffer
             // species not yet catalogued) were leaking through and creating
             // spurious VCT false minima (e.g. 1HNN HEM-site).
-            // v69: record a stripped bulk-cofactor heavy atom's coords for the
-            // void-exclusion penalty. Skip hydrogens (col 77-78 element == H).
-            //
-            // CRITICAL: only atoms spatially DISTINCT from the cognate ligand site
-            // count as "ghost space". Cofactors that share/abut the binding pocket
-            // (e.g. 1HNN SAH next to SKF, 1N2V's cofactor) sit within a few Å of the
-            // ligand; recording them would make the centroid-proximity penalty fire
-            // on the NATIVE pose itself (observed: cf_native −55→+71 for 1HNN). We
-            // therefore drop any stripped atom within VOID_LIG_EXCL Å of any ligand
-            // heavy atom, so the penalty repels only poses that drift to genuinely
-            // separate vacated pockets — never the true site.
-            constexpr float VOID_LIG_EXCL    = 5.0f;
-            const     float void_lig_excl_sq = VOID_LIG_EXCL * VOID_LIG_EXCL;
-            auto record_void_atom = [&]() {
-                std::string elem = line.size() >= 78 ? trim3(line.substr(76, 2)) : "";
-                if (elem == "H" || elem == "D") return;   // skip explicit hydrogens
-                try {
-                    double vx = std::stod(line.substr(30, 8));
-                    double vy = std::stod(line.substr(38, 8));
-                    double vz = std::stod(line.substr(46, 8));
-                    for (const auto& l : lig_xyz) {
-                        const float dx = (float)vx - l[0];
-                        const float dy = (float)vy - l[1];
-                        const float dz = (float)vz - l[2];
-                        if (dx*dx + dy*dy + dz*dz <= void_lig_excl_sq) return;  // abuts ligand site
-                    }
-                    void_atoms.push_back({vx, vy, vz, 0.0});
-                    void_names.push_back(trim3(line.substr(12, 4)));
-                } catch (...) {}
-            };
-
             const bool is_hetatm_record = (line.compare(0, 6, "HETATM") == 0);
             if (is_hetatm_record) {
                 if (keep_catalytic.count(resName)) { /* retain */ }
                 else if (resName == "HOH" || resName == "WAT") { /* retain waters */ }
-                else { record_void_atom(); dropped_cofactor++; continue; }
+                else { dropped_cofactor++; continue; }
             } else if (strip_cofactors.count(resName) && !keep_catalytic.count(resName)) {
-                record_void_atom();
                 dropped_cofactor++;
                 continue;
             }
@@ -3306,29 +3268,6 @@ std::string DatasetRunner::write_receptor_without_ligand(
               << " cognate-ligand + " << dropped_cofactor
               << " bulk-cofactor coordinate records (catalytic metals/heme retained) → "
               << out_receptor << "\n";
-
-    // v69: emit the stripped-cofactor heavy-atom coords for void exclusion.
-    // The file is ALWAYS written when void_out is requested (empty if nothing was
-    // stripped) so its presence acts as the "v69 prep done" sentinel — this stops
-    // the caller from re-running prep every pass for cofactor-free targets.
-    if (void_out) {
-        fs::path apo_path(out_receptor);
-        fs::path void_path = apo_path.parent_path() /
-            (apo_path.stem().string() + "_cofactor_void.dat");
-        std::ofstream vf(void_path.string());
-        if (vf) {
-            for (size_t i = 0; i < void_atoms.size(); ++i) {
-                vf << (void_names[i].empty() ? "X" : void_names[i]) << ' '
-                   << void_atoms[i][0] << ' '
-                   << void_atoms[i][1] << ' '
-                   << void_atoms[i][2] << '\n';
-            }
-            vf.close();
-            *void_out = void_path.string();
-            std::cerr << "  [RECEPTOR] wrote " << void_atoms.size()
-                      << " stripped-cofactor void atoms → " << void_path.string() << "\n";
-        }
-    }
     return out_receptor;
 }
 
@@ -3403,25 +3342,14 @@ DatasetEntry DatasetRunner::prepare_pdb_entry(const std::string& pdb_id,
     // site is rejected as a clash (see write_receptor_without_ligand).
     if (!entry.ligand_path.empty()) {
         std::string apo_receptor = entry_dir + "/" + upper_id + "_apo.pdb";
-        // v69: deterministic void-coords path sibling to the apo receptor.
-        std::string void_path = entry_dir + "/" + upper_id + "_apo_cofactor_void.dat";
-        // v69: also force regeneration when the apo receptor was cached by an
-        // older binary that predates the void-coords emission (no .dat sibling),
-        // so the cofactor-void file is materialized on the first v69 prep pass.
-        bool need_void_regen = !fs::exists(void_path);
         if (!fs::exists(apo_receptor) ||
             fs::last_write_time(apo_receptor) < fs::last_write_time(receptor_path) ||
-            fs::last_write_time(apo_receptor) < fs::last_write_time(entry.ligand_path) ||
-            need_void_regen) {
-            std::string emitted_void;
+            fs::last_write_time(apo_receptor) < fs::last_write_time(entry.ligand_path)) {
             std::string cleaned = write_receptor_without_ligand(
-                receptor_path, entry.ligand_path, apo_receptor, 1.3f, &emitted_void);
+                receptor_path, entry.ligand_path, apo_receptor);
             entry.receptor_path = cleaned;
-            entry.cofactor_void_path = emitted_void;
         } else {
             entry.receptor_path = apo_receptor;
-            // Reuse the cached void file when present (skip-prep fast path).
-            if (fs::exists(void_path)) entry.cofactor_void_path = void_path;
         }
     }
 
@@ -5182,18 +5110,6 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                 try { vct_r0 = std::stod(r0env); } catch (...) { vct_r0 = 4.0; }
             }
             const bool vct_norm = (std::getenv("FLEXAIDDS_VCT_NORM") != nullptr);
-            // v69: cofactor-void exclusion. Emit the stripped-cofactor coords file
-            // + radius/penalty into the scoring block so the engine penalizes poses
-            // that drift into the ghost space left by HETATM cofactor removal.
-            std::string cofactor_void_json;
-            if (!entry.cofactor_void_path.empty() &&
-                fs::exists(entry.cofactor_void_path) &&
-                fs::file_size(entry.cofactor_void_path) > 0) {
-                cofactor_void_json =
-                    ",\n    \"cofactor_void_file\": \"" + entry.cofactor_void_path + "\""
-                    ",\n    \"cofactor_void_exclusion_radius\": 3.5"
-                    ",\n    \"cofactor_void_penalty\": 100.0";
-            }
             {
                 std::ofstream jf(config_path);
                 jf << "{\n"
@@ -5269,8 +5185,7 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                    << "    \"hbond_search_enabled\": false,\n"
                    << "    \"hbond_rank_enabled\": true,\n"
                    << "    \"metal_coord_enabled\": true,\n"
-                   << "    \"sas_weight\": 0.40"
-                   << cofactor_void_json << "\n"
+                   << "    \"sas_weight\": 0.40\n"
                    << "  },\n"
                    // MIF-weighted GA seeding: bias gene[0] toward grid points
                    // with favourable probe-interaction energy (Boltzmann CDF at

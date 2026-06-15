@@ -417,19 +417,6 @@ struct FA_Global_struct{
 	double vct_dist_weight_r0;           // distance-decay length scale (default 4.0)
 	int    vct_normalize_contacts;       // 1 = divide CF.com by contact count (intensive score); 0 = extensive (default)
 
-	// v69: cofactor-void exclusion. When bulk HETATM cofactors are stripped from
-	// the receptor during self-docking apo prep, the vacated volume is shape-
-	// favourable to the (enthalpy-only) VCT CF, luring the GA into docking the
-	// ligand into that ghost space (root cause of the 1HNN 3.13 Å miss). Penalize
-	// any pose whose ligand centroid lands within cofactor_void_radius (Å) of a
-	// stripped cofactor heavy atom by adding cofactor_void_penalty to CF.wal.
-	int     use_cofactor_void;           // 1 = void-exclusion active (coords loaded)
-	double  cofactor_void_radius;        // exclusion radius (Å), default 3.5
-	double  cofactor_void_penalty;       // additive CF penalty when inside void, default 100.0
-	char    cofactor_void_file[MAX_PATH__]; // path to stripped_cofactor_coords.dat
-	double* cofactor_void_xyz;           // heap [3*n] stripped cofactor heavy-atom coords
-	int     cofactor_void_n;             // number of loaded void atoms
-
 	int   use_gist;                      // enable GIST water displacement scoring
 	char  gist_dg_file[MAX_PATH__];      // path to GIST free-energy .dx file
 	char  gist_dens_file[MAX_PATH__];    // path to GIST density .dx file
