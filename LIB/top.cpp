@@ -599,7 +599,7 @@ int main(int argc, char **argv){
 	FA->hbond_optimal_dist=2.8;
 	FA->hbond_optimal_angle=180.0;
 	FA->hbond_sigma_dist=0.4;
-	FA->hbond_sigma_angle=45.0;
+	FA->hbond_sigma_angle=30.0;
 	FA->hbond_salt_bridge_weight=-5.0;
 
 	FA->use_metal_coord=0;

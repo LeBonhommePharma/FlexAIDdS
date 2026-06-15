@@ -39,7 +39,7 @@ PROV_FILE  = f"{OUTPUT}/provenance.json"
 
 # 9-target guard set — validated regression gate
 GUARD_CODES = "1JD0,1MEH,1R55,1S3V,1SJ0,1X8X,1XM6,1XOZ,2D3U"
-SIGMA_ANGLE_DEG = 45  # mirrors FA_Global default hbond_sigma_angle
+SIGMA_ANGLE_DEG = 30  # mirrors FA_Global default hbond_sigma_angle
 
 def sha256(p):
     h = hashlib.sha256()
