@@ -202,7 +202,8 @@ inline int find_bonded_hydrogen(const atom_struct* atoms, const atom_struct& don
 // and bond topology are final. explicit_h and heavy_bonds are pre-computed at
 // the call site — pass them directly to avoid redundant bond iteration.
 inline void assign_virtual_h_geometry(atom_struct* atoms, int i,
-                                      int explicit_h, int heavy_bonds)
+                                      int explicit_h, int heavy_bonds,
+                                      bool is_pro = false)
 {
     atom_struct& a = atoms[i];
     a.vH_kind   = VHG_NONE;
@@ -242,6 +243,8 @@ inline void assign_virtual_h_geometry(atom_struct* atoms, int i,
         break;
     }
     case 11: // N.am — amide N; donor with planar VHG_AMIDE geometry
+        // PRO backbone N is tertiary (no labile H): skip all donor assignment.
+        if (is_pro) break;
         // External bisector of C-N-Cα gives correct in-plane H direction.
         // Angular discrimination (not blanket suppression) prevents false minima.
         if (heavy_bonds>=2 && nheavy>=2) {

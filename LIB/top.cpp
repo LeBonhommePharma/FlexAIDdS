@@ -1394,7 +1394,7 @@ int main(int argc, char **argv){
 				}
 				return n_heavy;
 			};
-			auto conservative_implicit_h_count = [&](int atom_idx, int explicit_h) {
+			auto conservative_implicit_h_count = [&](int atom_idx, int explicit_h, int res_k) {
 				if (explicit_h > 0) return 0;
 				const atom& a = atoms[atom_idx];
 				const int heavy_bonds = heavy_neighbor_count(atom_idx);
@@ -1408,6 +1408,8 @@ int main(int argc, char **argv){
 					}
 								case 11: // N.am — restored: virtual-H (VHG_AMIDE) provides
 					         // planar angular discrimination; no longer suppressed.
+					         // PRO N is tertiary (no labile H): return 0.
+					    if (strcmp(residue[res_k].name, "PRO") == 0) return 0;
 					    return heavy_bonds <= 2 ? 1 : 0;
 					case 12: { // N.pl3
 						const int h = 3 - heavy_bonds;
@@ -1426,7 +1428,7 @@ int main(int argc, char **argv){
 					if (atoms[i].type > 0) {
 						const int explicit_h = bonded_hydrogen_count(i);
 						const int n_hydrogens = explicit_h +
-							conservative_implicit_h_count(i, explicit_h);
+							conservative_implicit_h_count(i, explicit_h, k);
 						atoms[i].type256 = atom256::encode_from_sybyl(
 							atoms[i].type,   // SYBYL type 1–40
 							atoms[i].charge, // partial charge (MOL2 or AMBER ff14SB)
@@ -1435,7 +1437,8 @@ int main(int argc, char **argv){
 						// Virtual-H geometry recipe: stores heavy-neighbor indices so
 						// hbond_potential.h reconstructs H direction from live coords
 						// at every scoring call. N.am uses VHG_AMIDE (planar bisector).
-						hbond::assign_virtual_h_geometry(atoms, i, explicit_h, heavy_neighbor_count(i));
+						hbond::assign_virtual_h_geometry(atoms, i, explicit_h, heavy_neighbor_count(i),
+							strcmp(residue[k].name, "PRO") == 0);
 					}
 				}
 			}

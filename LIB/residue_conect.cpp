@@ -122,7 +122,7 @@ void residue_conect(FA_Global* FA,atom* atoms,resid* residue,char aminofile[]){
 						}
 
 						if(i != 1){
-							if(residue[i-1].type == 0){
+							if(residue[i-1].type == 0 && residue[i-1].chn == residue[i].chn){
 								j=residue[i-1].fatm[0];
 								while(j<=residue[i-1].latm[0]){
 									if(strcmp(atoms[j].name," C  ") == 0){
@@ -135,7 +135,7 @@ void residue_conect(FA_Global* FA,atom* atoms,resid* residue,char aminofile[]){
 							}
 						}
 						if(i != FA->res_cnt) {
-							if(residue[i+1].type == 0){
+							if(residue[i+1].type == 0 && residue[i].chn == residue[i+1].chn){
 								j=residue[i+1].fatm[0];
 								while(j<=residue[i+1].latm[0]){
 									if(strcmp(atoms[j].name," N  ") == 0){
