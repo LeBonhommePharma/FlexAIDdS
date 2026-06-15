@@ -3,6 +3,11 @@
 #include "fileio.h"
 #include <algorithm>
 #include <random>
+#ifdef FLEXAIDS_USE_SOA_DISTANCES
+#include "simd_distance.h"
+#include <cstdlib>   // getenv
+#include <cmath>     // fabs
+#endif
 
 // Vcontacts calculates the SAS only for the residue sent in argument
 int Vcontacts(FA_Global* FA,atom* atoms,resid* residue,VC_Global* VC,
@@ -1840,6 +1845,119 @@ int get_contlist4(atom* atoms,int atomzero, contactlist contlist[],
 	// get pdb atom contacts from current and adjacent boxes
 	boxzero = Calc[atomzero].boxnum;
 	//printf("boxzero=%d\n",boxzero);
+
+	// Shared per-candidate bookkeeping. Given a candidate atomj and its
+	// already-computed squared distance, applies the original contact /
+	// clash accounting. Identical logic for the scalar and SoA paths.
+	auto process_candidate = [&](int cand_atomj, double cand_sqrdist) {
+		double rAB = Calc[atomzero].atom->radius + Calc[cand_atomj].atom->radius;
+		double cand_neardist  = rado + Calc[cand_atomj].atom->radius + Rw;
+		double cand_clashdist = permea*rAB;
+
+		if((cand_sqrdist < cand_neardist*cand_neardist) && (cand_sqrdist != 0.0)) {
+			contlist[NC].index = cand_atomj;
+			contlist[NC].dist = sqrt(cand_sqrdist);
+
+			bool intramolecular = Calc[atomzero].atom->ofres == Calc[cand_atomj].atom->ofres;
+			if(clash_value != NULL){
+				if(contlist[NC].dist < cand_clashdist){
+					int fatm = residue[Calc[atomzero].atom->ofres].fatm[0];
+					int** rb = residue[Calc[atomzero].atom->ofres].bonded;
+					if(!intramolecular || rb == NULL ||
+					   rb[num_atm[Calc[atomzero].atom->number]-fatm][num_atm[Calc[cand_atomj].atom->number]-fatm] < 0){
+						*clash_value += KWALL*(pow(contlist[NC].dist,-12.0)-pow(cand_clashdist,-12.0));
+					}
+				}
+				Calc[atomzero].done = 'Y';
+			}
+			++NC;
+		}
+	};
+
+#ifdef FLEXAIDS_USE_SOA_DISTANCES
+	// ── C1: SoA distance routing in the Voronoi hot path ───────────────────
+	// Gather surviving candidate atoms per box, then compute their squared
+	// distances to atomzero through contiguous float SoA arrays (4 lanes at a
+	// time via simd::distance2_1x4 — the NEON kernel when FLEXAIDS_USE_NEON is
+	// defined, scalar otherwise). Per-candidate bookkeeping is unchanged.
+	//
+	// Numerical note: the scalar reference path computes sqrdist in double;
+	// this path accumulates the squared distance in float32. Results match the
+	// scalar path only within float32 rounding. Set FLEXAIDS_SOA_ASSERT=1 in
+	// the environment (debug builds) to flag any divergence beyond tolerance.
+	(void)sqrdist; (void)neardist; (void)clashdist;
+	const float bx = Calc[atomzero].atom->coor[0];
+	const float by = Calc[atomzero].atom->coor[1];
+	const float bz = Calc[atomzero].atom->coor[2];
+
+	// scratch buffers sized to the largest box; grown lazily
+	static thread_local std::vector<int>   cand_idx;
+	static thread_local std::vector<float> cand_x, cand_y, cand_z;
+
+#ifndef NDEBUG
+	static const bool soa_assert = [](){
+		const char* e = getenv("FLEXAIDS_SOA_ASSERT");
+		return e && e[0] && e[0] != '0';
+	}();
+#endif
+
+	for(i=0; i<27; ++i) {
+		boxi = boxzero +dim2*((i/9)-1) + dim*(((i/3)%3)-1) +(i%3)-1;
+		if((boxi < 0) || (boxi >= dim3)) continue;
+
+		const int nent = box[boxi].nument;
+		cand_idx.clear(); cand_x.clear(); cand_y.clear(); cand_z.clear();
+		if((int)cand_idx.capacity() < nent) {
+			cand_idx.reserve(nent); cand_x.reserve(nent);
+			cand_y.reserve(nent);   cand_z.reserve(nent);
+		}
+
+		// gather phase — same early-outs as the scalar path
+		for(bai=0; bai<nent; ++bai) {
+			atomj = Calclist[box[boxi].first+bai];
+			if(Calc[atomj].atom == NULL) continue;
+			if(!Calc[atomj].exposed || Calc[atomj].done == 'Y') continue;
+			cand_idx.push_back(atomj);
+			cand_x.push_back(Calc[atomj].atom->coor[0]);
+			cand_y.push_back(Calc[atomj].atom->coor[1]);
+			cand_z.push_back(Calc[atomj].atom->coor[2]);
+		}
+
+		const int ncand = (int)cand_idx.size();
+		// pad SoA tail to a multiple of 4 so distance2_1x4 reads valid memory
+		while((int)cand_x.size() % 4 != 0) {
+			cand_x.push_back(bx); cand_y.push_back(by); cand_z.push_back(bz);
+		}
+
+		float d2[4];
+		int k = 0;
+		for(; k + 4 <= ncand; k += 4) {
+			simd::distance2_1x4(&cand_x[k], &cand_y[k], &cand_z[k],
+			                    bx, by, bz, d2);
+			for(int l = 0; l < 4; ++l) {
+#ifndef NDEBUG
+				if(soa_assert) {
+					double dx = (double)Calc[cand_idx[k+l]].atom->coor[0]-bx;
+					double dy = (double)Calc[cand_idx[k+l]].atom->coor[1]-by;
+					double dz = (double)Calc[cand_idx[k+l]].atom->coor[2]-bz;
+					double ref = dx*dx+dy*dy+dz*dz;
+					double tol = 1e-3*(ref+1.0);
+					if(fabs((double)d2[l]-ref) > tol)
+						fprintf(stderr,"[FLEXAIDS_SOA_ASSERT] sqrdist mismatch atomj=%d soa=%.6f ref=%.6f\n",
+						        cand_idx[k+l],(double)d2[l],ref);
+				}
+#endif
+				process_candidate(cand_idx[k+l], (double)d2[l]);
+			}
+		}
+		// scalar tail (remaining 0..3 real candidates)
+		for(; k < ncand; ++k) {
+			float dx = cand_x[k]-bx, dy = cand_y[k]-by, dz = cand_z[k]-bz;
+			process_candidate(cand_idx[k], (double)(dx*dx+dy*dy+dz*dz));
+		}
+	}
+#else
+	// ── original scalar / double-precision path (unchanged) ────────────────
 	for(i=0; i<27; ++i) {
 		// get up to 27 boxes surrounding current box
 		boxi = boxzero +dim2*((i/9)-1) + dim*(((i/3)%3)-1) +(i%3)-1;
@@ -1904,6 +2022,8 @@ int get_contlist4(atom* atoms,int atomzero, contactlist contlist[],
 			++bai;
 		}
 	}
+#endif // FLEXAIDS_USE_SOA_DISTANCES
+	(void)process_candidate;
 	
 	// reset atoms to 'done'
 	currindex = ca_index[atomzero];

@@ -100,6 +100,7 @@ else()
 endif()
 option(FLEXAIDS_USE_AVX2    "Enable AVX2 SIMD acceleration"       ON)
 option(FLEXAIDS_USE_AVX512  "Enable AVX-512 SIMD acceleration"    OFF)
+option(FLEXAIDS_USE_SOA_DISTANCES "Route Voronoi hot-path distances through AtomSoA float SoA arrays (C1)" OFF)
 option(FLEXAIDS_USE_OPENMP  "Enable OpenMP thread parallelism"    ON)
 # Eigen3 is a hard requirement — no option to disable
 set(FLEXAIDS_USE_EIGEN ON)
@@ -147,7 +148,20 @@ function(flexaids_configure_simd target_name)
     endif()
 
     if(NOT FLEXAIDS_IS_X86)
-        message(STATUS "${target_name}: non-x86 target detected (${CMAKE_SYSTEM_PROCESSOR}) — building without x86 SIMD flags")
+        if(FLEXAIDS_IS_ARM)
+            # ARM64 (Apple Silicon / aarch64): NEON is part of the baseline ISA,
+            # no special -m flag required. Advertise the NEON capability so the
+            # SoA distance hot path (C1) can select distance2_1x4_neon (B1).
+            target_compile_definitions(${target_name} PRIVATE
+                FLEXAIDS_USE_NEON FLEXAIDS_SIMD_NEON)
+            message(STATUS "${target_name}: ARM NEON enabled (baseline aarch64 ISA)")
+        else()
+            message(STATUS "${target_name}: non-x86 target detected (${CMAKE_SYSTEM_PROCESSOR}) — building without SIMD flags")
+        endif()
+        if(FLEXAIDS_USE_SOA_DISTANCES)
+            target_compile_definitions(${target_name} PRIVATE FLEXAIDS_USE_SOA_DISTANCES)
+            message(STATUS "${target_name}: SoA distance routing enabled (FLEXAIDS_USE_SOA_DISTANCES)")
+        endif()
         return()
     endif()
 
@@ -178,6 +192,11 @@ function(flexaids_configure_simd target_name)
         else()
             message(WARNING "${target_name}: AVX2 requested but compiler/target does not support -mavx2/-mfma; building without x86 SIMD")
         endif()
+    endif()
+
+    if(FLEXAIDS_USE_SOA_DISTANCES)
+        target_compile_definitions(${target_name} PRIVATE FLEXAIDS_USE_SOA_DISTANCES)
+        message(STATUS "${target_name}: SoA distance routing enabled (FLEXAIDS_USE_SOA_DISTANCES)")
     endif()
 endfunction()
 
