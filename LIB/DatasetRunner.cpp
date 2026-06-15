@@ -749,6 +749,7 @@ static std::pair<std::string,float> select_pose_freq_gated_pooled(
         int   freq;
         std::vector<float> member_cfs;   // app_evalue for each cluster member
         bool  is_seed;
+        int   restart;                   // restart index that emitted this pose (-1 = seed)
     };
 
     // Parse "REMARK CF=" and "Frequency:" from a pose PDB.
@@ -833,13 +834,15 @@ static std::pair<std::string,float> select_pose_freq_gated_pooled(
     };
 
     std::vector<PoseInfo> poses;
-    for (const auto& out_prefix : prefixes) {
+    for (size_t ri = 0; ri < prefixes.size(); ++ri) {
+        const auto& out_prefix = prefixes[ri];
         for (int pi = 0; pi <= 19; ++pi) {
             std::string cand = out_prefix + "_" + std::to_string(pi) + ".pdb";
             if (!fs::exists(cand)) continue;
             float cf; int freq; std::vector<float> mcfs;
             if (!parse_pose(cand, cf, freq, mcfs)) continue;
-            poses.push_back({cand, cf, freq, std::move(mcfs), /*is_seed=*/false});
+            poses.push_back({cand, cf, freq, std::move(mcfs), /*is_seed=*/false,
+                             /*restart=*/static_cast<int>(ri)});
         }
     }
 
@@ -869,7 +872,7 @@ static std::pair<std::string,float> select_pose_freq_gated_pooled(
             if (!fs::exists(ini)) continue;
             float cf; int freq; std::vector<float> mcfs;
             if (!parse_pose(ini, cf, freq, mcfs)) continue;
-            seeds.push_back({ini, cf, /*freq=*/1, {}, /*is_seed=*/true});
+            seeds.push_back({ini, cf, /*freq=*/1, {}, /*is_seed=*/true, /*restart=*/-1});
             fprintf(stderr, "[ELITISM] seed candidate: CF=%.4f path=%s\n",
                     cf, ini.c_str());
         }
@@ -913,8 +916,92 @@ static std::pair<std::string,float> select_pose_freq_gated_pooled(
                 scored_chosen[si].first, p->path.c_str());
         }
 
-        // Winner = highest composite score (broadest thermodynamic basin).
+        // Winner (fallback) = highest composite score (broadest basin).
         freq_best = scored_chosen.front().second;
+
+        // ── v70: frequency-weighted macro-cluster selection ─────────────────
+        // The Z+H composite collapses to pure CF-rank-0 at kT=0.592 (all intra-
+        // cluster CF gaps >> kT), so a false minimum that scores a lower CF than
+        // the true binding mode in a single restart is elected as the winner —
+        // the exact failure on 1MEH/1Q4G/1X8X (near-native cluster EXISTS at
+        // 0.28–0.73 Å but a lower-CF false min is picked).  The true mode is the
+        // one that RE-CONVERGES: independent GA restarts rediscover it.  We group
+        // the candidate poses into macro-clusters by pose–pose Hungarian RMSD
+        // (single linkage, <= rmsd_thr) and score each macro-cluster by
+        //     effective_CF = CF_min - alpha * (N_restarts_supporting - 1)
+        // alpha defaults to 12 kcal/mol/restart so a mode supported by >=2
+        // restarts dominates a single-restart cluster up to 12 kcal/mol lower in
+        // CF (spec: must beat a 10 kcal/mol-lower single-restart cluster).
+        bool freqsel = true;
+        if (const char* e = std::getenv("FLEXAIDDS_FREQSEL"))
+            freqsel = (std::atoi(e) != 0);
+        double freqsel_alpha = 12.0;
+        if (const char* e = std::getenv("FLEXAIDDS_FREQSEL_ALPHA"))
+            try { freqsel_alpha = std::stod(e); } catch (...) {}
+        float freqsel_rmsd = 1.5f;
+        if (const char* e = std::getenv("FLEXAIDDS_FREQSEL_RMSD"))
+            try { freqsel_rmsd = std::stof(e); } catch (...) {}
+
+        if (freqsel && chosen.size() > 1) {
+            const int n = static_cast<int>(chosen.size());
+            std::vector<std::vector<std::array<float,3>>> xyz(n);
+            std::vector<std::vector<std::string>>          elem(n);
+            for (int i = 0; i < n; ++i)
+                load_pose_ligand_coords(chosen[i]->path, xyz[i], elem[i]);
+
+            // Single-linkage union-find on pose-pose RMSD <= threshold.
+            std::vector<int> comp(n);
+            for (int i = 0; i < n; ++i) comp[i] = i;
+            auto find = [&comp](int a){
+                while (comp[a] != a) { comp[a] = comp[comp[a]]; a = comp[a]; }
+                return a;
+            };
+            for (int i = 0; i < n; ++i)
+                for (int j = i + 1; j < n; ++j) {
+                    if (xyz[i].empty() || xyz[j].empty()) continue;
+                    float r = pose_pose_rmsd(xyz[i], elem[i], xyz[j], elem[j]);
+                    if (r <= freqsel_rmsd) comp[find(i)] = find(j);
+                }
+
+            // Aggregate per macro-cluster: distinct supporting restarts and the
+            // lowest-CF member (the representative we would emit).
+            std::map<int, std::set<int>> supporters;   // root -> restart indices
+            std::map<int, int>           best_member;   // root -> chosen[] index
+            for (int i = 0; i < n; ++i) {
+                int r = find(i);
+                supporters[r].insert(chosen[i]->restart);
+                auto it = best_member.find(r);
+                if (it == best_member.end() ||
+                    chosen[i]->cf < chosen[it->second]->cf)
+                    best_member[r] = i;
+            }
+
+            const PoseInfo* macro_best = nullptr;
+            double best_eff  = std::numeric_limits<double>::infinity();
+            int    best_nsup = 0;
+            for (const auto& kv : best_member) {
+                int member = kv.second;
+                int nsup   = static_cast<int>(supporters[kv.first].size());
+                double eff = static_cast<double>(chosen[member]->cf)
+                           - freqsel_alpha * (nsup - 1);
+                if (eff < best_eff) {
+                    best_eff = eff; best_nsup = nsup; macro_best = chosen[member];
+                }
+            }
+            if (macro_best) {
+                if (macro_best != freq_best)
+                    fprintf(stderr, "[FREQSEL] macro-cluster override: nsup=%d "
+                            "CF=%.4f eff_CF=%.4f path=%s (CF rank-0 was CF=%.4f path=%s)\n",
+                            best_nsup, macro_best->cf, best_eff,
+                            macro_best->path.c_str(), freq_best->cf,
+                            freq_best->path.c_str());
+                else
+                    fprintf(stderr, "[FREQSEL] consensus agrees with CF rank-0: "
+                            "nsup=%d CF=%.4f path=%s\n",
+                            best_nsup, macro_best->cf, macro_best->path.c_str());
+                freq_best = macro_best;
+            }
+        }
     }
 
     // Seed wins only if it beats the Z+H winner by at least DELTA_CF — or if
@@ -5102,12 +5189,12 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
             //   FLEXAIDDS_VCT_NORM=1      emit vct_normalize_contacts:true →
             //     engine divides CF.com by the contact count (intensive score),
             //     targeting the deep-com-on-wrong-pose (over-burial) subtype.
-            // v69: reverted P9 default 7.0 → 4.0.  r0=7.0 amplified bulk burial
-            // over contact quality and regressed 1Q4G and 1N2V; 4.0 restores the
-            // proximal-contact emphasis (env FLEXAIDDS_VCT_R0 still overrides).
-            double vct_r0 = 4.0;
+            // v70: restored P9 default 4.0 → 7.0.  The v69 r0=4.0 revert was a net
+            // regression (79/85 vs v68's 82/85); r0=7.0 was better for the full
+            // set, so we keep it (env FLEXAIDDS_VCT_R0 still overrides).
+            double vct_r0 = 7.0;
             if (const char* r0env = std::getenv("FLEXAIDDS_VCT_R0")) {
-                try { vct_r0 = std::stod(r0env); } catch (...) { vct_r0 = 4.0; }
+                try { vct_r0 = std::stod(r0env); } catch (...) { vct_r0 = 7.0; }
             }
             const bool vct_norm = (std::getenv("FLEXAIDDS_VCT_NORM") != nullptr);
             {
