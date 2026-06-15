@@ -236,6 +236,15 @@ struct atom_struct{  // atom structure
 	int    has_resp;       // flag: 1 if resp_charge was explicitly set, 0 otherwise
 	int    is_ptm;         // flag: 1 if this atom was added by PTM attachment
 	int    ptm_parent;     // atom number of the attachment point (valid when is_ptm=1)
+
+	// ── Virtual-H donor geometry (recipe for directional H-bond angle term) ──
+	// Set once per complex in top.cpp after type256 population. Reconstruction
+	// reads live neighbor coords at scoring time, so the vH tracks GA moves of
+	// flexible donors (side chains, ligand) without desync. See DonorGeom enum
+	// and build_virtual_H() in hbond_potential.h.
+	uint8_t vH_kind;      // DonorGeom: 0=VHG_NONE (no recipe / explicit H present)
+	uint8_t vH_n;         // number of virtual H this donor carries (1 or 2)
+	int     vH_nbr[2];    // heavy-neighbor atom indices for reconstruction (-1=unused)
 };
 typedef struct atom_struct atom;
 
