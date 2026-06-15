@@ -1050,6 +1050,131 @@ double compute_rmsd(const std::vector<float>& coords_a,
     return std::sqrt(sum_sq / static_cast<double>(n_atoms));
 }
 
+static bool sdf_centroid(const std::string& sdf_path, std::array<double,3>& centroid) {
+    std::ifstream in(sdf_path);
+    if (!in) return false;
+    std::vector<std::string> lines;
+    std::string line;
+    while (std::getline(in, line)) lines.push_back(line);
+    if (lines.size() < 5 || lines[3].size() < 3) return false;
+    int natoms = 0;
+    try { natoms = std::stoi(lines[3].substr(0, 3)); }
+    catch (...) { return false; }
+    if (natoms <= 0 || static_cast<size_t>(4 + natoms) > lines.size()) return false;
+    centroid = {0.0, 0.0, 0.0};
+    int n = 0;
+    for (int i = 0; i < natoms; ++i) {
+        const std::string& l = lines[4 + i];
+        if (l.size() < 30) return false;
+        try {
+            centroid[0] += std::stod(l.substr(0, 10));
+            centroid[1] += std::stod(l.substr(10, 10));
+            centroid[2] += std::stod(l.substr(20, 10));
+            ++n;
+        } catch (...) {
+            return false;
+        }
+    }
+    if (n == 0) return false;
+    centroid[0] /= n; centroid[1] /= n; centroid[2] /= n;
+    return true;
+}
+
+static bool pdb_centroid(const std::string& pdb_path, std::array<double,3>& centroid) {
+    std::ifstream in(pdb_path);
+    if (!in) return false;
+    centroid = {0.0, 0.0, 0.0};
+    int n = 0;
+    std::string line;
+    while (std::getline(in, line)) {
+        if (line.size() < 54 ||
+            (line.compare(0, 6, "ATOM  ") != 0 &&
+             line.compare(0, 6, "HETATM") != 0)) {
+            continue;
+        }
+        try {
+            centroid[0] += std::stod(line.substr(30, 8));
+            centroid[1] += std::stod(line.substr(38, 8));
+            centroid[2] += std::stod(line.substr(46, 8));
+            ++n;
+        } catch (...) {}
+    }
+    if (n == 0) return false;
+    centroid[0] /= n; centroid[1] /= n; centroid[2] /= n;
+    return true;
+}
+
+static double dist3(const std::array<double,3>& a, const std::array<double,3>& b) {
+    const double dx = a[0] - b[0], dy = a[1] - b[1], dz = a[2] - b[2];
+    return std::sqrt(dx*dx + dy*dy + dz*dz);
+}
+
+static bool read_sdf_xyz(const std::string& sdf_path,
+                         std::vector<std::array<double,3>>& xyz) {
+    std::ifstream in(sdf_path);
+    if (!in) return false;
+    std::vector<std::string> lines;
+    std::string line;
+    while (std::getline(in, line)) lines.push_back(line);
+    if (lines.size() < 5 || lines[3].size() < 3) return false;
+    int natoms = 0;
+    try { natoms = std::stoi(lines[3].substr(0, 3)); }
+    catch (...) { return false; }
+    if (natoms <= 0 || static_cast<size_t>(4 + natoms) > lines.size()) return false;
+    xyz.clear();
+    xyz.reserve(static_cast<size_t>(natoms));
+    for (int i = 0; i < natoms; ++i) {
+        const std::string& l = lines[4 + i];
+        if (l.size() < 30) return false;
+        try {
+            xyz.push_back({std::stod(l.substr(0, 10)),
+                           std::stod(l.substr(10, 10)),
+                           std::stod(l.substr(20, 10))});
+        } catch (...) {
+            return false;
+        }
+    }
+    return !xyz.empty();
+}
+
+static bool write_ligand_centered_site(const std::string& receptor_path,
+                                       const std::string& ligand_sdf,
+                                       const std::string& out_site,
+                                       double radius = 6.0) {
+    std::vector<std::array<double,3>> lig_xyz;
+    if (!read_sdf_xyz(ligand_sdf, lig_xyz)) return false;
+    std::ifstream rec(receptor_path);
+    if (!rec) return false;
+    std::ofstream out(out_site);
+    if (!out) return false;
+    const double r2 = radius * radius;
+    int kept = 0;
+    std::string line;
+    while (std::getline(rec, line)) {
+        if (line.size() < 54 ||
+            (line.compare(0, 6, "ATOM  ") != 0 &&
+             line.compare(0, 6, "HETATM") != 0)) {
+            continue;
+        }
+        double x, y, z;
+        try {
+            x = std::stod(line.substr(30, 8));
+            y = std::stod(line.substr(38, 8));
+            z = std::stod(line.substr(46, 8));
+        } catch (...) { continue; }
+        for (const auto& l : lig_xyz) {
+            const double dx = x - l[0], dy = y - l[1], dz = z - l[2];
+            if (dx*dx + dy*dy + dz*dz <= r2) {
+                out << line << "\n";
+                ++kept;
+                break;
+            }
+        }
+    }
+    out.close();
+    return kept >= 10;
+}
+
 // ── Blind-placement helper (Bug #1 fix) ──────────────────────────────────
 // FlexAIDdS direct-mode GA seeding (top.cpp "REFLIG: direct-mode seed") biases
 // ~reflig_seed_fraction of the initial population toward grid points nearest
@@ -3262,6 +3387,30 @@ std::vector<DatasetEntry> DatasetRunner::fetch_astex() {
                     ++oracle_count;
                 }
             }
+            if (!entry.binding_site_path.empty() && !entry.ligand_path.empty()) {
+                std::array<double,3> lig_c{}, site_c{};
+                if (sdf_centroid(entry.ligand_path, lig_c) &&
+                    pdb_centroid(entry.binding_site_path, site_c)) {
+                    const double delta = dist3(lig_c, site_c);
+                    if (delta > 8.0) {
+                        fs::path repaired = entry_dir / (upper_pdb + "_ligand_centered_site.pdb");
+                        if (write_ligand_centered_site(entry.receptor_path,
+                                                       entry.ligand_path,
+                                                       repaired.string())) {
+                            std::cerr << "  [ORACLE-SITE] " << upper_pdb
+                                      << ": site centroid " << std::fixed << std::setprecision(2)
+                                      << delta << " A from ligand; using ligand-centered site "
+                                      << repaired << "\n";
+                            entry.binding_site_path = repaired.string();
+                        } else {
+                            std::cerr << "  [WARN] " << upper_pdb
+                                      << ": oracle site centroid is " << std::fixed
+                                      << std::setprecision(2) << delta
+                                      << " A from ligand and repair failed; keeping original site\n";
+                        }
+                    }
+                }
+            }
         }
 
         entries.push_back(std::move(entry));
@@ -5028,8 +5177,14 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                    // Self-docking re-docking: the cognate site is known, so bias
                    // the bulk of the initial population to grid points nearest the
                    // reference-ligand anchor (config_parser default is only 0.25).
+                   // In AUTONOMOUS mode the input ligand is pose-blinded, so copying
+                   // orientation/torsion genes from that frame would seed the wrong
+                   // pose. Keep the pocket anchor, but randomize genes 1..N.
                    << "  \"reference_ligand\": {\n"
                    << "    \"seed_fraction\": 0.90,\n"
+                   << "    \"pose_seed_enabled\": "
+                   << (config.mode == BenchmarkMode::AUTONOMOUS ? "false" : "true")
+                   << ",\n"
                    << "    \"k_nearest\": 10\n"
                    << "  },\n"
                    << "  \"thermodynamics\": {\n"
@@ -5062,8 +5217,19 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                    << ",\n"
                    << "    \"boom_inject_interval\": 100,\n"
                    << "    \"boom_inject_fraction\": "
-                   << (std::getenv("FLEXAIDDS_BOOM_FRAC")
-                         ? std::atof(std::getenv("FLEXAIDDS_BOOM_FRAC")) : 1.0)
+                   // AUTONOMOUS mode = true blind search (no crystal IC seed).
+                   // boom_inject_fraction=1.0 fires every 100 gens and replaces the
+                   // entire population with fresh randoms, destroying any convergence
+                   // progress before it can accumulate.  In oracle mode this never
+                   // matters: entropy collapse terminates the GA at gen ~10, before
+                   // the first injection.  In blind mode it is catastrophic — the GA
+                   // terminates at gen 300 by fitness stagnation with CF≈0 (no
+                   // contacts found) because every 100-gen run gets reset.
+                   // Fix: disable boom injection in AUTONOMOUS mode entirely.
+                   << (config.mode == BenchmarkMode::AUTONOMOUS
+                         ? 0.0
+                         : (std::getenv("FLEXAIDDS_BOOM_FRAC")
+                               ? std::atof(std::getenv("FLEXAIDDS_BOOM_FRAC")) : 1.0))
                    << ",\n"
                    // v27: true GA elitism — protect n_elite lowest-CF individuals
                    // from boom injection + niche-sharing (engine-side env override
