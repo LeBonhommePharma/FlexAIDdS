@@ -20,6 +20,7 @@
 #include <iomanip>
 #include <iostream>
 #include <map>
+#include <limits>
 #include <numeric>
 #include <optional>
 #include <regex>
@@ -128,11 +129,12 @@ struct DockingResult {
     float rmsd_to_crystal{999.0f};    // serial-order RMSD to crystal ligand (Å)
     float rmsd_hungarian{999.0f};     // symmetry-corrected (Hungarian) RMSD (Å)
     float predicted_dG{0.0f};         // predicted ΔG (kcal/mol)
-    float predicted_dH{0.0f};         // predicted ΔH (kcal/mol)
-    float predicted_TdS{0.0f};        // predicted TΔS (kcal/mol)
+    float predicted_dH{0.0f};         // predicted configurational ΔH ≈ <E> (kcal/mol)
+    float predicted_TdS{0.0f};        // predicted configurational TΔS (kcal/mol)
     float predicted_IEE{0.0f};        // Enthalpy-Entropy Index (Williams 2017) — diagnostic only
     bool  has_IEE{false};             // false when |ΔG| < 1e-6 or not yet computed
-    float shannon_entropy{0.0f};      // ensemble Shannon entropy
+    float shannon_entropy{0.0f};      // conformational Shannon entropy -Σ p_i ln p_i (nats)
+    float search_entropy_proxy{0.0f}; // legacy H_final collapse proxy from GA energy histogram (nats)
     int   num_poses{0};               // number of binding modes found
     double wall_time_s{0.0};          // docking wall time
     bool  success{false};             // RMSD < 2.0 Å
@@ -174,9 +176,10 @@ struct BenchmarkReport {
     double success_rate{0.0};        // fraction
     double mean_rmsd{0.0};
     double median_rmsd{0.0};
-    double pearson_r{0.0};           // predicted vs experimental affinity
-    double spearman_rho{0.0};
-    double kendall_tau{0.0};
+    int affinity_pairs{0};           // entries with both exp affinity and predicted dG
+    double pearson_r{std::numeric_limits<double>::quiet_NaN()};   // predicted vs experimental affinity
+    double spearman_rho{std::numeric_limits<double>::quiet_NaN()};
+    double kendall_tau{std::numeric_limits<double>::quiet_NaN()};
     std::vector<DockingResult> results;
 
     // ── Cross-ligand competitive binding analysis (per receptor) ─────────

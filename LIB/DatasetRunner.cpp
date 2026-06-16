@@ -5456,6 +5456,19 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                    << ",\n"
                    << "    \"k_nearest\": 10\n"
                    << "  },\n"
+                   // Coarse pocket scan: pre-screen a grid over the binding cleft
+                   // with random orientations before the GA loop so gen-0 starts with
+                   // VCT-scored contact-forming placements instead of blind randoms.
+                   // Enabled in AUTONOMOUS mode where no crystal IC seeds are injected
+                   // and the raw RANDOM gen-0 collapses to CF≈0 (floating ligand).
+                   << "  \"coarse_init\": {\n"
+                   << "    \"enabled\": "
+                   << (config.mode == BenchmarkMode::AUTONOMOUS ? "true" : "false")
+                   << ",\n"
+                   << "    \"grid_step\": 3.0,\n"
+                   << "    \"n_seeds\": 25,\n"
+                   << "    \"n_orientations\": 16\n"
+                   << "  },\n"
                    << "  \"thermodynamics\": {\n"
                    << "    \"temperature\": " << config.temperature << ",\n"
                    << "    \"clustering_algorithm\": \"" << effective_clustering_algo << "\",\n"
@@ -5848,7 +5861,15 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
         std::ifstream stdout_file(stdout_path);  // stdout_path declared above
         long clashed_count = 0, total_evals = 0;
         float free_energy_F = 0.0f;
+        bool have_free_energy = false;
+        float mean_energy_E = 0.0f;
+        bool have_mean_energy = false;
+        float entropy_conf_S = 0.0f;
+        bool have_entropy_conf = false;
+        float shannon_conf_nats = 0.0f;
+        bool have_shannon_conf_nats = false;
         float h_final_parsed = 0.0f;
+        bool have_h_final = false;
         if (stdout_file.is_open()) {
             std::string line;
             while (std::getline(stdout_file, line)) {
@@ -5889,16 +5910,52 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                 if (line.find("Helmholtz free energy") != std::string::npos) {
                     auto pos = line.find('=');
                     if (pos != std::string::npos) {
-                        try { free_energy_F = std::stof(line.substr(pos+1)); }
+                        try {
+                            free_energy_F = std::stof(line.substr(pos+1));
+                            have_free_energy = true;
+                        }
                         catch (...) {}
+                    }
+                }
+                // "  Mean energy          <E>  = N kcal/mol"
+                if (line.find("Mean energy") != std::string::npos) {
+                    auto pos = line.find('=');
+                    if (pos != std::string::npos) {
+                        try {
+                            mean_energy_E = std::stof(line.substr(pos+1));
+                            have_mean_energy = true;
+                        } catch (...) {}
+                    }
+                }
+                // "  Entropy (conf)        S   = N kcal/(mol·K)"
+                if (line.find("Entropy (conf)") != std::string::npos) {
+                    auto pos = line.find('=');
+                    if (pos != std::string::npos) {
+                        try {
+                            entropy_conf_S = std::stof(line.substr(pos+1));
+                            have_entropy_conf = true;
+                        } catch (...) {}
                     }
                 }
                 // "H_final = N"  (Shannon entropy at convergence)
                 if (line.find("H_final") != std::string::npos) {
                     auto pos = line.find('=');
                     if (pos != std::string::npos) {
-                        try { h_final_parsed = std::stof(line.substr(pos+1)); }
+                        try {
+                            h_final_parsed = std::stof(line.substr(pos+1));
+                            have_h_final = true;
+                        }
                         catch (...) {}
+                    }
+                }
+                // "  Shannon conf entropy    = N nats"
+                if (line.find("Shannon conf entropy") != std::string::npos) {
+                    auto pos = line.find('=');
+                    if (pos != std::string::npos) {
+                        try {
+                            shannon_conf_nats = std::stof(line.substr(pos+1));
+                            have_shannon_conf_nats = true;
+                        } catch (...) {}
                     }
                 }
                 // Extract best contact-function score from pose remarks or GA trace lines.
@@ -5973,7 +6030,7 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
         // "Stuck" means the run exited without any saved pose/snapshot; do not
         // reject a completed run solely because FlexAID's cumulative clash counter
         // exceeds the saved-snapshot count.
-        result.stuck = (n_poses == 0 && result.clash_rate > 0.95f && free_energy_F > 0.0f);
+        result.stuck = (n_poses == 0 && result.clash_rate > 0.95f && have_free_energy && free_energy_F > 0.0f);
         if (result.stuck) {
             std::cerr << "  [STUCK] " << entry.pdb_id
                       << "  clash=" << std::fixed << std::setprecision(1)
@@ -6016,17 +6073,42 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
         // The old CF-tolerance ±0.01 missed cases like 1SJ0 (diff=0.17).
         result.seed_echo = false;   // overwritten below once best_pose_pdb is known
         // Use Free energy F from Post-GA thermodynamics block; fall back to CF score.
-        result.predicted_dG = (free_energy_F != 0.0f) ? free_energy_F
-                            : (best_dG != 0.0f)        ? best_dG
-                                                       : best_cf;
-        // Shannon entropy at GA convergence (from "H_final = X" line).
-        result.shannon_entropy = h_final_parsed;
-        // MEGA thermodynamic decomposition (2026-06-06 LP):
-        //   ΔG  = F                     (Helmholtz free energy from StatMech)
-        //   T·ΔS = k_B·T × H_final(nats) [Shannon entropy collapse metric, >0]
-        //   ΔG  = ΔH − T·ΔS   ⇒   ΔH = ΔG + T·ΔS   [enthalpic / vdW component]
-        if (h_final_parsed > 0.0f && free_energy_F != 0.0f) {
-            const float kBT = 0.001987f * static_cast<float>(config.temperature);
+        result.predicted_dG = have_free_energy ? free_energy_F
+                            : (best_dG != 0.0f) ? best_dG
+                                                : best_cf;
+        // Keep the GA collapse diagnostic alive under its own name.
+        result.search_entropy_proxy = have_h_final ? h_final_parsed : 0.0f;
+
+        // Thermodynamic Shannon entropy is the conformational -Σ p_i ln p_i over
+        // the Boltzmann ensemble. Prefer the explicit ShannonThermoStack line; if
+        // absent, reconstruct it from S_conf = kB * H. Legacy runs that only
+        // emitted H_final fall back to that proxy so old CSVs stay usable.
+        if (have_shannon_conf_nats) {
+            result.shannon_entropy = shannon_conf_nats;
+        } else if (have_entropy_conf) {
+            result.shannon_entropy =
+                entropy_conf_S / static_cast<float>(statmech::kB_kcal);
+        } else if (have_h_final) {
+            result.shannon_entropy = h_final_parsed;
+        }
+
+        // Configurational thermodynamic decomposition:
+        //   ΔG = F
+        //   ΔH ≈ <E>
+        //   TΔS = <E> - F = T * S_conf = kBT * H_conf
+        const float temperature_K = static_cast<float>(config.temperature);
+        const float kBT = static_cast<float>(statmech::kB_kcal) * temperature_K;
+        if (have_free_energy && have_mean_energy) {
+            result.predicted_dH  = mean_energy_E;
+            result.predicted_TdS = mean_energy_E - free_energy_F;
+        } else if (have_free_energy && have_entropy_conf) {
+            result.predicted_TdS = temperature_K * entropy_conf_S;
+            result.predicted_dH  = result.predicted_dG + result.predicted_TdS;
+        } else if (have_free_energy && have_shannon_conf_nats) {
+            result.predicted_TdS = kBT * shannon_conf_nats;
+            result.predicted_dH  = result.predicted_dG + result.predicted_TdS;
+        } else if (have_free_energy && have_h_final) {
+            // Legacy fallback for pre-ShannonThermoStack logs.
             result.predicted_TdS = kBT * h_final_parsed;
             result.predicted_dH  = result.predicted_dG + result.predicted_TdS;
         }
@@ -6367,7 +6449,7 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                 std::ofstream ofs(csv_path);
                 if (ofs.is_open()) {
                     ofs << "pdb_id,best_score,rmsd_to_crystal,rmsd_hungarian,predicted_dG,"
-                           "predicted_dH,predicted_TdS,shannon_entropy,num_poses,"
+                           "predicted_dH,predicted_TdS,shannon_entropy,search_entropy_proxy,num_poses,"
                            "wall_time_s,success,cf_native,best_cluster_rmsd,best_cluster_idx,"
                            "seed_echo,pose_source,H_rep_rank0,H_pop,H_rep_mean,D_vib\n";
                     ofs << std::fixed << std::setprecision(4)
@@ -6379,6 +6461,7 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                         << result.predicted_dH << ","
                         << result.predicted_TdS << ","
                         << result.shannon_entropy << ","
+                        << result.search_entropy_proxy << ","
                         << result.num_poses << ","
                         << result.wall_time_s << ","
                         << (result.success ? 1 : 0) << ","
@@ -6487,6 +6570,7 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
     }
 
     report.successful = success_count;
+    report.affinity_pairs = static_cast<int>(pred_affinities.size());
     report.success_rate = (report.total_systems > 0)
         ? static_cast<double>(success_count) / report.total_systems : 0.0;
 
@@ -6561,16 +6645,26 @@ void DatasetRunner::write_report(const BenchmarkReport& report,
         ofs << std::setprecision(2);
         ofs << "| Mean RMSD (Å) | " << report.mean_rmsd << " |\n";
         ofs << "| Median RMSD (Å) | " << report.median_rmsd << " |\n";
-        ofs << std::setprecision(3);
-        ofs << "| Pearson r | " << report.pearson_r << " |\n";
-        ofs << "| Spearman ρ | " << report.spearman_rho << " |\n";
-        ofs << "| Kendall τ | " << report.kendall_tau << " |\n";
+        ofs << "| Affinity pairs | " << report.affinity_pairs << " |\n";
+        if (report.affinity_pairs >= 3 &&
+            std::isfinite(report.pearson_r) &&
+            std::isfinite(report.spearman_rho) &&
+            std::isfinite(report.kendall_tau)) {
+            ofs << std::setprecision(3);
+            ofs << "| Pearson r | " << report.pearson_r << " |\n";
+            ofs << "| Spearman ρ | " << report.spearman_rho << " |\n";
+            ofs << "| Kendall τ | " << report.kendall_tau << " |\n";
+        } else {
+            ofs << "| Pearson r | NA |\n";
+            ofs << "| Spearman ρ | NA |\n";
+            ofs << "| Kendall τ | NA |\n";
+        }
         ofs << "\n";
 
         // Per-system results table
         ofs << "## Per-System Results\n\n";
-        ofs << "| PDB | Score | RMSD (Å) | RMSD_H (Å) | ΔG | ΔH | TΔS | I_EE | S_shan | Poses | Time (s) | Success |\n";
-        ofs << "|-----|-------|----------|------------|-----|-----|------|------|--------|-------|----------|--------|\n";
+        ofs << "| PDB | Score | RMSD (Å) | RMSD_H (Å) | ΔG | ΔH | TΔS | I_EE | H_conf | H_search | Poses | Time (s) | Success |\n";
+        ofs << "|-----|-------|----------|------------|-----|-----|------|------|--------|----------|-------|----------|--------|\n";
 
         for (const auto& r : report.results) {
             std::string iee_str = r.has_IEE
@@ -6585,6 +6679,7 @@ void DatasetRunner::write_report(const BenchmarkReport& report,
                 << " | " << std::setprecision(2) << r.predicted_TdS
                 << " | " << iee_str
                 << " | " << std::setprecision(3) << r.shannon_entropy
+                << " | " << std::setprecision(3) << r.search_entropy_proxy
                 << " | " << r.num_poses
                 << " | " << std::setprecision(1) << r.wall_time_s
                 << " | " << (r.success ? "✓" : "✗")
@@ -6652,7 +6747,7 @@ void DatasetRunner::write_report(const BenchmarkReport& report,
         std::ofstream ofs(csv_path);
 
         ofs << "pdb_id,best_score,rmsd_to_crystal,rmsd_hungarian,predicted_dG,"
-               "predicted_dH,predicted_TdS,shannon_entropy,num_poses,wall_time_s,success,"
+               "predicted_dH,predicted_TdS,shannon_entropy,search_entropy_proxy,num_poses,wall_time_s,success,"
                "cf_native,best_cluster_rmsd,best_cluster_idx,seed_echo,pose_source,"
                "H_rep_rank0,H_pop,H_rep_mean,D_vib\n";
 
@@ -6666,6 +6761,7 @@ void DatasetRunner::write_report(const BenchmarkReport& report,
                 << r.predicted_dH << ","
                 << r.predicted_TdS << ","
                 << r.shannon_entropy << ","
+                << r.search_entropy_proxy << ","
                 << r.num_poses << ","
                 << r.wall_time_s << ","
                 << (r.success ? 1 : 0) << ","

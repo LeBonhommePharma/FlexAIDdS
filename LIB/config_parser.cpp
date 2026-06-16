@@ -285,6 +285,18 @@ void apply_config(const json::Value& config, FA_Global* FA, GB_Global* GB) {
         FA->assume_folded      = jbool(config, "advanced", "assume_folded", false) ? 1 : 0;
     }
 
+    // ── Coarse-init pocket scan ──
+    {
+        FA->coarse_init_enabled   = jbool(config, "coarse_init", "enabled",       false);
+        FA->coarse_init_grid_step = jflt (config, "coarse_init", "grid_step",     3.0f);
+        FA->coarse_init_n_seeds   = jint (config, "coarse_init", "n_seeds",       25);
+        FA->coarse_init_n_orient  = jint (config, "coarse_init", "n_orientations",16);
+        // coarse_seeds_* arrays are populated at runtime by run_coarse_pocket_scan()
+        FA->coarse_seeds_grid     = nullptr;
+        FA->coarse_seeds_genes    = nullptr;
+        FA->coarse_seeds_count    = 0;
+    }
+
     // Always GA
     std::strcpy(FA->metopt, "GA");
 }

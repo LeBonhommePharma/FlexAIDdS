@@ -628,6 +628,18 @@ struct FA_Global_struct{
 
 	// (GIST evaluator and H-bond fields are declared above, near use_gist/use_hbond)
 
+	// ── Coarse-init pocket scan (autonomous / blinded mode) ──────────────────
+	// Pre-screens a coarse grid over the binding cleft at gen-0 to provide
+	// physics-grounded (VCT-scored) seed chromosomes instead of pure randoms.
+	// Results are stored here so gaboom.cpp can inject them before the RANDOM loop.
+	bool    coarse_init_enabled;
+	float   coarse_init_grid_step;   // neighbourhood radius to expand candidates (Å), default 3.0
+	int     coarse_init_n_seeds;     // top-N seeds to keep and inject, default 25
+	int     coarse_init_n_orient;    // random orientations evaluated per grid point, default 16
+	int*    coarse_seeds_grid;       // [coarse_seeds_count] pre-screened grid indices
+	float*  coarse_seeds_genes;      // [coarse_seeds_count * (num_genes-1)] IC values for genes 1..N-1
+	int     coarse_seeds_count;      // actual filled count after scan (0 before scan runs)
+
 	// ── Ring pucker flexibility (LigandRingFlex Phase 2; FLEXAIDDS_RING_FLEX) ──
 	// Side-channel GA genes for non-aromatic ring conformers and furanose sugar
 	// pucker. These do NOT pass through map_par/opt_par (npar is unchanged); the
