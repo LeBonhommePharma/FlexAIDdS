@@ -1177,18 +1177,39 @@ int GA(FA_Global* FA, GB_Global* GB,VC_Global* VC,chromosome** chrom,chromosome*
 		}
 
 		// (c) Bound complex H(ω) — materialise rank-0 chromosome, compute ligand ANM
+		int thermo_n_heavy = 0;
 		{
+			const int lig_start    = (FA->resligand && FA->resligand->fatm)
+			                         ? FA->resligand->fatm[0] : -1;
+			const int lig_end_incl = (FA->resligand && FA->resligand->latm)
+			                         ? FA->resligand->latm[0] : -1;
+
+			// Materialise rank-0 Cartesian coordinates into atoms[].coor[].
+			// eval_chromosome → ic2cf → buildcc writes the docked pose.
 			std::vector<gene> rank0_genes(GB->num_genes);
 			for (int g = 0; g < GB->num_genes; ++g)
 				rank0_genes[g] = (*chrom)[0].genes[g];
 			eval_chromosome(FA, GB, VC, *gene_lim, atoms, residue,
 			                *cleftgrid, rank0_genes.data(), target);
 
-			const int lig_start    = (FA->resligand && FA->resligand->fatm)
-			                         ? FA->resligand->fatm[0] : -1;
-			const int lig_end_incl = (FA->resligand && FA->resligand->latm)
-			                         ? FA->resligand->latm[0] : -1;
 			if (lig_start >= 0 && lig_end_incl >= lig_start) {
+				// Count heavy atoms (not H) for per-heavy-atom H_vct normalisation.
+				auto is_h = [](const atom& a) noexcept {
+					const char* e = a.element;
+					while (*e == ' ') ++e;
+					return e[0] == 'H' && (e[1] == '\0' || e[1] == ' ');
+				};
+				for (int ai = lig_start; ai <= lig_end_incl; ++ai)
+					if (!is_h(atoms[ai])) ++thermo_n_heavy;
+
+				fprintf(stderr,
+				        "[THERMO-DBG] lig_start=%d lig_end=%d n_heavy=%d "
+				        "coor0=(%.3f,%.3f,%.3f)\n",
+				        lig_start, lig_end_incl, thermo_n_heavy,
+				        atoms[lig_start].coor[0],
+				        atoms[lig_start].coor[1],
+				        atoms[lig_start].coor[2]);
+
 				tencm::TorsionalENM lig_enm_bound;
 				lig_enm_bound.build_from_ligand(atoms, lig_start, lig_end_incl + 1);
 				if (lig_enm_bound.is_built()) {
@@ -1202,17 +1223,26 @@ int GA(FA_Global* FA, GB_Global* GB,VC_Global* VC,chromosome** chrom,chromosome*
 							vibentropy::compute_vib_entropy_collapse(single).H_pop);
 					}
 				}
+				fprintf(stderr,
+				        "[THERMO-DBG] is_built=%d H_rep_bound=%.6f H_rep_ref=%.6f\n",
+				        (int)lig_enm_bound.is_built(),
+				        FA->H_rep_bound_complex,
+				        FA->H_rep_receptor_ref + FA->H_rep_ligand_ref);
 			}
 		}
 
 		FA->thermo_result = FA->thermo_engine->compute(
-			gene_pop, cf_pop, FA->H_rep_bound_complex);
+			gene_pop, cf_pop, FA->H_rep_bound_complex, thermo_n_heavy);
 
-		printf("[THERMO] G_bind=%.6f H_vct=%.6f TdS_shannon=%.6f TdS_vib=%.6f compensation=%.6f\n",
+		printf("[THERMO] G_bind=%.6f H_vct=%.6f H_vct_raw=%.6f n_heavy=%d "
+		       "TdS_shannon=%.6f TdS_vib=%.6f D_vib=%.6f compensation=%.6f\n",
 		       FA->thermo_result.G_bind,
 		       FA->thermo_result.H_vct,
+		       FA->thermo_result.H_vct_raw,
+		       FA->thermo_result.n_heavy_atoms,
 		       FA->thermo_result.TdS_shannon,
 		       FA->thermo_result.TdS_vib,
+		       FA->H_rep_bound_complex,
 		       FA->thermo_result.compensation);
 	}
 

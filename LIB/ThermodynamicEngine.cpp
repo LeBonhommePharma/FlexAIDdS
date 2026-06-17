@@ -40,14 +40,18 @@ float ThermodynamicEngine::ensemble_mean(const std::vector<float>& cf) {
 ThermoResult ThermodynamicEngine::compute(
         const std::vector<std::vector<float>>& final_pop,
         const std::vector<float>& cf_values,
-        float H_rep_bound) const {
+        float H_rep_bound,
+        int n_heavy_atoms) const {
 
     ThermoResult r{};
-    r.H_vct       = ensemble_mean(cf_values);
-    r.TdS_shannon = T_eff_ * shannon_entropy(final_pop);
-    r.TdS_vib     = tencom_scale_ * (H_rep_bound - H_rep_ref_);
-    r.G_bind      = T_eff_ * r.H_vct - r.TdS_shannon + r.TdS_vib;
-    float denom   = r.TdS_shannon + r.TdS_vib;
-    r.compensation = (denom > 1e-6f) ? r.H_vct / denom : 0.0f;
+    float n_heavy    = (n_heavy_atoms > 0) ? static_cast<float>(n_heavy_atoms) : 1.0f;
+    r.H_vct_raw      = ensemble_mean(cf_values);
+    r.H_vct          = r.H_vct_raw / n_heavy;   // intensive (ITC-comparable, kcal/mol per heavy atom)
+    r.n_heavy_atoms  = n_heavy_atoms;
+    r.TdS_shannon    = T_eff_ * shannon_entropy(final_pop);
+    r.TdS_vib        = tencom_scale_ * (H_rep_bound - H_rep_ref_);
+    r.G_bind         = r.H_vct - r.TdS_shannon + r.TdS_vib;  // no T_eff on H_vct (matrix already kT-scaled)
+    float denom      = r.TdS_shannon + r.TdS_vib;
+    r.compensation   = (std::abs(denom) > 1e-6f) ? r.H_vct / denom : 0.0f;
     return r;
 }

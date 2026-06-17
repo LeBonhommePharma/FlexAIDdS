@@ -168,9 +168,12 @@ struct DockingResult {
     float D_vib{0.0f};        // inter-rep vibrational divergence
     // ThermodynamicEngine decomposition (populated when thermo_engine enabled in config)
     float thermo_G_bind{0.0f};
-    float thermo_H_vct{0.0f};
+    float thermo_H_vct{0.0f};        // per-heavy-atom (intensive)
+    float thermo_H_vct_raw{0.0f};    // unnormalized ensemble mean CF
+    int   thermo_n_heavy{0};         // heavy-atom count used for normalization
     float thermo_TdS_shannon{0.0f};
     float thermo_TdS_vib{0.0f};
+    float thermo_D_vib{0.0f};        // H_rep_bound (raw bound-complex tENCoM entropy)
     float thermo_compensation{0.0f};
     bool  has_thermo{false};
     // Mid-run H_shannon snapshots at fixed generations (causality test).

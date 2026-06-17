@@ -3,11 +3,13 @@
 #include <array>
 
 struct ThermoResult {
-    float G_bind;       // total free energy estimate
-    float H_vct;        // <CF_vct> ensemble mean — enthalpic term
-    float TdS_shannon;  // T_eff * H_shannon — configurational entropy
-    float TdS_vib;      // T_eff * dH_rep_tencom — vibrational entropy
-    float compensation; // H_vct / (TdS_shannon + TdS_vib) — should ~1.0 at calibration
+    float G_bind;        // total free energy estimate  (kcal/mol)
+    float H_vct;         // <CF_vct>/n_heavy — intensive enthalpic term (kcal/mol per heavy atom)
+    float H_vct_raw;     // <CF_vct> ensemble mean — unnormalized (for diagnostics)
+    int   n_heavy_atoms; // heavy-atom count used for normalization
+    float TdS_shannon;   // T_eff * H_shannon — configurational entropy
+    float TdS_vib;       // tencom_scale * (H_rep_bound - H_rep_ref) — vibrational entropy
+    float compensation;  // H_vct / (TdS_shannon + TdS_vib)
 };
 
 class ThermodynamicEngine {
@@ -21,7 +23,8 @@ public:
     ThermoResult compute(
         const std::vector<std::vector<float>>& final_gene_pop,  // [n_chrom][n_genes], values in [0,1]
         const std::vector<float>& cf_values,                     // CF per chromosome
-        float H_rep_bound_complex                                // tENCoM of bound pose
+        float H_rep_bound_complex,                               // tENCoM of bound pose
+        int n_heavy_atoms = 0                                    // 0 = no normalization
     ) const;
 
 private:
