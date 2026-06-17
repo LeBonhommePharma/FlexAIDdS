@@ -135,6 +135,8 @@ add_library(flexaid_core OBJECT
     PTMAttachment/PTMAttachment.cpp
     # ── JSON config parser ──
     config_parser.cpp
+    # ── ThermodynamicEngine: G_bind decomposition (disabled by default) ──
+    ThermodynamicEngine.cpp
     # ── Coarse pocket-scan gen-0 seeding ──
     coarse_init.cpp
     # ── Parallel grid-decomposed docking ──

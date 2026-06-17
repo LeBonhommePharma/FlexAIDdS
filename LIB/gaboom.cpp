@@ -1,6 +1,7 @@
 #include "gaboom.h"
 #include "Vcontacts.h"
 #include "fileio.h"
+#include "coarse_init.h"
 #include "flexaid_exception.h"
 #include "ga_constants.h"
 #include "UnifiedHardwareDispatch.h"
@@ -882,7 +883,7 @@ int GA(FA_Global* FA, GB_Global* GB,VC_Global* VC,chromosome** chrom,chromosome*
 					(*chrom)[ci].cf = eval_chromosome(FA, GB, VC, *gene_lim, atoms,
 					                                  residue, *cleftgrid,
 					                                  (*chrom)[ci].genes, target);
-					(*chrom)[ci].evalue     = get_cf_evalue(&(*chrom)[ci].cf);
+					(*chrom)[ci].evalue     = get_cf_evalue(&(*chrom)[ci].cf, FA);
 					(*chrom)[ci].app_evalue = get_apparent_cf_evalue(&(*chrom)[ci].cf);
 					ccbm_inject_strain(FA, (*chrom)[ci], *gene_lim);
 					(*chrom)[ci].status = 'n';
@@ -1074,6 +1075,30 @@ int GA(FA_Global* FA, GB_Global* GB,VC_Global* VC,chromosome** chrom,chromosome*
 	}
 
 	QuickSort((*chrom),0,GB->num_chrom-1,true);
+
+	// ── ThermodynamicEngine: G_bind = <CF> - T_eff*H_shannon + T_eff*dH_rep_tencom ──
+	if (FA->thermo_engine_enabled && FA->thermo_engine != nullptr) {
+		std::vector<std::vector<float>> gene_pop(GB->num_chrom,
+			std::vector<float>(GB->num_genes));
+		std::vector<float> cf_pop(GB->num_chrom);
+
+		for (int c = 0; c < GB->num_chrom; ++c) {
+			cf_pop[c] = static_cast<float>((*chrom)[c].evalue);
+			for (int g = 0; g < GB->num_genes; ++g)
+				gene_pop[c][g] = static_cast<float>((*chrom)[c].genes[g].to_int32)
+				                 / static_cast<float>(MAX_RANDOM_VALUE);
+		}
+
+		FA->thermo_result = FA->thermo_engine->compute(
+			gene_pop, cf_pop, FA->H_rep_bound_complex);
+
+		printf("[THERMO] G_bind=%.6f H_vct=%.6f TdS_shannon=%.6f TdS_vib=%.6f compensation=%.6f\n",
+		       FA->thermo_result.G_bind,
+		       FA->thermo_result.H_vct,
+		       FA->thermo_result.TdS_shannon,
+		       FA->thermo_result.TdS_vib,
+		       FA->thermo_result.compensation);
+	}
 
 	snprintf(outfile,MAX_PATH__,"%s_par.res",FA->rrgfile);
 	if (FA->htpmode == false) {write_par((*chrom),(*gene_lim),i+1,outfile,GB->num_chrom,GB->num_genes);}
@@ -1638,7 +1663,7 @@ int reproduce(FA_Global* FA,GB_Global* GB,VC_Global* VC, chromosome* chrom, cons
 
 			chrom[GB->num_chrom+i].cf=eval_chromosome(FA,GB,VC,gene_lim,atoms,residue,cleftgrid,
 								  chrom[GB->num_chrom+i].genes,target);
-			chrom[GB->num_chrom+i].evalue=get_cf_evalue(&chrom[GB->num_chrom+i].cf);
+			chrom[GB->num_chrom+i].evalue=get_cf_evalue(&chrom[GB->num_chrom+i].cf, FA);
 			chrom[GB->num_chrom+i].app_evalue=get_apparent_cf_evalue(&chrom[GB->num_chrom+i].cf);
 			ccbm_inject_strain(FA, chrom[GB->num_chrom+i], gene_lim);  // CCBM strain
 			chrom[GB->num_chrom+i].status='n';
@@ -1668,7 +1693,7 @@ int reproduce(FA_Global* FA,GB_Global* GB,VC_Global* VC, chromosome* chrom, cons
 
 			chrom[GB->num_chrom+i].cf=eval_chromosome(FA,GB,VC,gene_lim,atoms,residue,cleftgrid,
 								  chrom[GB->num_chrom+i].genes,target);
-			chrom[GB->num_chrom+i].evalue=get_cf_evalue(&chrom[GB->num_chrom+i].cf);
+			chrom[GB->num_chrom+i].evalue=get_cf_evalue(&chrom[GB->num_chrom+i].cf, FA);
 			chrom[GB->num_chrom+i].app_evalue=get_apparent_cf_evalue(&chrom[GB->num_chrom+i].cf);
 			ccbm_inject_strain(FA, chrom[GB->num_chrom+i], gene_lim);  // CCBM strain
 			chrom[GB->num_chrom+i].status='n';
@@ -1965,7 +1990,7 @@ void calculate_fitness(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* chr
 				chrom[c].cf.hbond  = 0.0;
 				chrom[c].cf.totsas = 0.0;
 				chrom[c].cf.rclash = (h_wal[c] > CLASH_THRESHOLD) ? 1 : 0;
-				chrom[c].evalue     = get_cf_evalue(&chrom[c].cf);
+				chrom[c].evalue     = get_cf_evalue(&chrom[c].cf, FA);
 				chrom[c].app_evalue = get_apparent_cf_evalue(&chrom[c].cf);
 				ccbm_inject_strain(FA, chrom[c], gene_lim);  // CCBM strain
 				chrom[c].status    = 'n';
@@ -2324,7 +2349,7 @@ void calculate_fitness(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* chr
 			    &tl_fa[tid], GB, &tl_vc[tid], gene_lim,
 			    tl_atoms[tid].data(), tl_res[tid].data(),
 			    cleftgrid, chrom[ii].genes, target);
-			chrom[ii].evalue     = get_cf_evalue(&chrom[ii].cf);
+			chrom[ii].evalue     = get_cf_evalue(&chrom[ii].cf, FA);
 			chrom[ii].app_evalue = get_apparent_cf_evalue(&chrom[ii].cf);
 			ccbm_inject_strain(FA, chrom[ii], gene_lim);  // CCBM strain
 			chrom[ii].status     = 'n';
@@ -2679,7 +2704,40 @@ void populate_chromosomes(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* 
 		int gener=0;
 		size_t sig = 0;
 
-		i=popoffset;
+		// ── Coarse-init pocket scan (autonomous / blinded mode) ───────────
+		// Run once per populate_chromosomes() call (coarse_seeds_count==0 guard
+		// prevents re-runs on boom/SEC repopulations after the first gen).
+		if (FA->coarse_init_enabled && FA->coarse_seeds_count == 0 &&
+		    FA->num_grd > 0 && cleftgrid != nullptr) {
+			run_coarse_pocket_scan(FA, VC, GB, atoms, residue, cleftgrid,
+			                       gene_lim, dice);
+		}
+		// Inject pre-screened coarse seeds at the front of the population.
+		int coarse_offset = 0;
+		if (FA->coarse_init_enabled && FA->coarse_seeds_count > 0) {
+			coarse_offset = std::min(FA->coarse_seeds_count,
+			                         GB->num_chrom - popoffset);
+			for (int si = 0; si < coarse_offset; si++) {
+				const int ci = popoffset + si;
+				const double grid_ic = static_cast<double>(FA->coarse_seeds_grid[si]);
+				chrom[ci].genes[0].to_ic    = grid_ic;
+				chrom[ci].genes[0].to_int32 = ictogene(&gene_lim[0], grid_ic);
+				for (int g = 1; g < GB->num_genes; g++) {
+					double ic = static_cast<double>(
+					    FA->coarse_seeds_genes[si * (GB->num_genes - 1) + (g - 1)]);
+					chrom[ci].genes[g].to_ic    = ic;
+					chrom[ci].genes[g].to_int32 = ictogene(&gene_lim[g], ic);
+				}
+				ring_randomise_chrom(FA, &chrom[ci]);
+				const size_t csig = hash_genes(chrom[ci].genes, GB->num_genes);
+				duplicates[csig] = 1;
+			}
+			printf("[COARSE-INIT] Injected %d pre-screened seeds into gen-0\n",
+			       coarse_offset);
+		}
+		// ── End coarse-init injection ─────────────────────────────────────
+
+		i = popoffset + coarse_offset;
 		while(i<GB->num_chrom){
 			while(1){
 				generate_random_individual(FA,GB,atoms,chrom[i].genes,gene_lim,dice,0,GB->num_genes);
@@ -2705,7 +2763,7 @@ void populate_chromosomes(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* 
 					chrom[i].genes[0].to_ic = static_cast<double>(grid_idx);
 					chrom[i].genes[0].to_int32 = ictogene(&gene_lim[0],
 					                                       static_cast<double>(grid_idx));
-					for (int g = 1; g < GB->num_genes; g++) {
+					for (int g = 1; FA->reflig_pose_seed_enabled && g < GB->num_genes; g++) {
 						if (!FA->map_par || !FA->opt_par) break;
 						if (FA->map_par[g].typ == 1 || FA->map_par[g].typ == 2) {
 							double ref_ic = FA->opt_par[g];
@@ -2977,7 +3035,7 @@ void populate_chromosomes(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* 
 			    &p_fa[tid], GB, &p_vc[tid], gene_lim,
 			    p_atoms[tid].data(), p_res[tid].data(),
 			    cleftgrid, chrom[i].genes, target);
-			chrom[i].evalue     = get_cf_evalue(&chrom[i].cf);
+			chrom[i].evalue     = get_cf_evalue(&chrom[i].cf, FA);
 			chrom[i].app_evalue = get_apparent_cf_evalue(&chrom[i].cf);
 			chrom[i].status     = 'n';
 			ccbm_inject_strain(FA, chrom[i], gene_lim);  // CCBM strain

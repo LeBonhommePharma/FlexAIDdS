@@ -166,6 +166,13 @@ struct DockingResult {
     float H_pop{0.0f};        // pooled population vibrational entropy H(ω)
     float H_rep_mean{0.0f};   // mean per-rep vibrational entropy
     float D_vib{0.0f};        // inter-rep vibrational divergence
+    // ThermodynamicEngine decomposition (populated when thermo_engine enabled in config)
+    float thermo_G_bind{0.0f};
+    float thermo_H_vct{0.0f};
+    float thermo_TdS_shannon{0.0f};
+    float thermo_TdS_vib{0.0f};
+    float thermo_compensation{0.0f};
+    bool  has_thermo{false};
 };
 
 /// Aggregate benchmark report

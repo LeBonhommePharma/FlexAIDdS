@@ -492,6 +492,8 @@ target_sources(FlexAID PRIVATE
         LIB/PTMAttachment/PTMAttachment.cpp
         # ── JSON config parser (zero external dependencies) ──
         LIB/config_parser.cpp
+        # ── ThermodynamicEngine: G_bind decomposition (disabled by default) ──
+        LIB/ThermodynamicEngine.cpp
         # ── Unified runtime hardware dispatch ──
         LIB/UnifiedHardwareDispatch.cpp
         # ── Parallel grid-decomposed docking ──

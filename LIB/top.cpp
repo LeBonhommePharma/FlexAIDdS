@@ -576,6 +576,7 @@ int main(int argc, char **argv){
 	FA->metal_coord_weight=1.0;
 	FA->metal_coord_sigma=0.45;
 	FA->metal_coord_cn_weight=0.5;
+	FA->tencom_weight=0.0f;
 
 	FA->useflexdee=0;
 	FA->num_constraints=0;
@@ -2173,10 +2174,10 @@ int main(int argc, char **argv){
 	VC->recalc = 0;
 
 	for(i=0;i<FA->npar;i++){printf("[%8.3f]",FA->opt_par[i]);}
-	printf("=%8.5f\n", get_cf_evalue(&cf));
+	printf("=%8.5f\n", get_cf_evalue(&cf, FA));
 	//getchar();
   
-	snprintf(tmpremark,MAX_REMARK,"REMARK CF=%8.5f\n", get_cf_evalue(&cf));
+	snprintf(tmpremark,MAX_REMARK,"REMARK CF=%8.5f\n", get_cf_evalue(&cf, FA));
 	safe_remark_cat(remark,tmpremark,&remark_len);
 	snprintf(tmpremark,MAX_REMARK,"REMARK CF.app=%8.5f\n", get_apparent_cf_evalue(&cf));
 	safe_remark_cat(remark,tmpremark,&remark_len);
@@ -2408,7 +2409,7 @@ int main(int argc, char **argv){
 					double rescore_app = get_apparent_cf_evalue(&rescore_cf);
 					if (std::abs(rescore_app) < HBOND_RESCORE_CLASH_GUARD) {
 						chrom_snapshot[si].cf        = rescore_cf;
-						chrom_snapshot[si].evalue    = get_cf_evalue(&chrom_snapshot[si].cf);
+						chrom_snapshot[si].evalue    = get_cf_evalue(&chrom_snapshot[si].cf, FA);
 						chrom_snapshot[si].app_evalue = rescore_app;
 					} else {
 						printf("WARNING: H-bond re-score snapshot %d app_evalue=%.1f > guard (%.0f); "
@@ -2644,6 +2645,10 @@ int main(int argc, char **argv){
 		free(FA->mif_sorted);
 		free(FA->mif_cdf);
 		free(FA->reflig_nearest_grid);
+		free(FA->coarse_seeds_grid);
+		free(FA->coarse_seeds_genes);
+		delete FA->thermo_engine;
+		FA->thermo_engine = nullptr;
 		delete FA;
 	}
 

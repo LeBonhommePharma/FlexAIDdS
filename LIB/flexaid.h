@@ -31,6 +31,7 @@
 #include <iterator>
 #include <algorithm>
 #include <utility>
+#include "ThermodynamicEngine.h"
 #include <map>
 #include <cstdint>
 
@@ -130,6 +131,7 @@ struct cf_str{  // Complementarity Function value structure
 	double hbond;  // angular-dependent hydrogen bond energy
 	double gist_desolv; // GIST grid-based desolvation energy
 	double metal_coord; // metal ion coordination energy (Morse potential)
+	double h_rep;  // tENCoM vibrational-mode Shannon entropy H(ω) (nats; diagnostic + CF when tencom_weight > 0)
 	double totsas; // overall sas of molecule
 	int   rclash; // flag that shows whether the residue is making steric clashes
 
@@ -442,6 +444,8 @@ struct FA_Global_struct{
 	double metal_coord_sigma;            // Gaussian width parameter (default 0.45 A)
 	double metal_coord_cn_weight;        // CN deviation penalty weight (default 0.5 kcal/mol per CN^2)
 
+	float tencom_weight;                 // tENCoM H_rep CF penalty weight (0.0–2.0; default 0.0 = off)
+
 	constraint* constraints;             // list of constraints
 	int num_constraints;                 // constraints counter
 	float interaction_factor;            // interaction constraint factor
@@ -649,6 +653,16 @@ struct FA_Global_struct{
 	ligand_ring_flex::RingFlexGenes* ring_flex_template; // detected ring topology (heap; one per complex)
 	int    ring_n_sugars;                // cached furanose pucker-gene count (== template->sugar_phases.size())
 	float  ring_cur_phases[MAX_RING_FLEX]; // current chromosome's sugar pucker phases (deg), read by ic2cf
+
+	// ── ThermodynamicEngine: G_bind = <CF> - T_eff*H_shannon + T_eff*dH_rep_tencom ──
+	bool              thermo_engine_enabled;  // default false; zero cost when off
+	float             thermo_T_eff;           // calibration constant (default 1.0)
+	float             thermo_tencom_scale;    // tENCoM term scale (default 1.0)
+	float             H_rep_bound_complex;    // tENCoM of bound complex (written per pose)
+	float             H_rep_receptor_ref;     // receptor-only tENCoM reference
+	float             H_rep_ligand_ref;       // ligand-free tENCoM reference
+	ThermoResult      thermo_result;          // populated after GA when enabled
+	ThermodynamicEngine* thermo_engine;       // nullptr when disabled
 };
 typedef struct FA_Global_struct FA_Global;
 
@@ -753,7 +767,7 @@ void dee_print(psFlexDEE_Node psFlexDEENode, int num_rot);           // prints D
 int  cmp_FlexDEE_Nodes(psFlexDEE_Node Node1, psFlexDEE_Node Node2, int num_rot); // compares the DEE list between items
 
 double get_apparent_cf_evalue(cfstr* cf);
-double get_cf_evalue(cfstr* cf);
+double get_cf_evalue(cfstr* cf, FA_Global* FA = nullptr);
 
 double GetValueFromGaussian(double x,double max,double zero);
 

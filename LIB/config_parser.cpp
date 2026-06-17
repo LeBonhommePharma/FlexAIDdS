@@ -88,6 +88,13 @@ void apply_config(const json::Value& config, FA_Global* FA, GB_Global* GB) {
         FA->metal_coord_sigma    = jdbl(config, "scoring", "metal_coord_sigma", 0.45);
         FA->metal_coord_cn_weight = jdbl(config, "scoring", "metal_coord_cn_weight", 0.5);
 
+        {
+            double tw = jdbl(config, "scoring", "tencom_weight", 0.0);
+            if (tw < 0.0) tw = 0.0;
+            if (tw > 2.0) tw = 2.0;
+            FA->tencom_weight = static_cast<float>(tw);
+        }
+
         // GIST desolvation grid
         FA->use_gist    = jbool(config, "scoring", "gist_enabled", false) ? 1 : 0;
         FA->gist_weight = jdbl(config, "scoring", "gist_weight", 1.0);
@@ -295,6 +302,23 @@ void apply_config(const json::Value& config, FA_Global* FA, GB_Global* GB) {
         FA->coarse_seeds_grid     = nullptr;
         FA->coarse_seeds_genes    = nullptr;
         FA->coarse_seeds_count    = 0;
+    }
+
+    // ── ThermodynamicEngine ──
+    {
+        FA->thermo_engine_enabled = jbool(config, "thermo_engine", "enabled",      false);
+        FA->thermo_T_eff          = jflt (config, "thermo_engine", "T_eff",        1.0f);
+        FA->thermo_tencom_scale   = jflt (config, "thermo_engine", "tencom_scale", 1.0f);
+        FA->H_rep_bound_complex   = 0.0f;
+        FA->H_rep_receptor_ref    = 0.0f;
+        FA->H_rep_ligand_ref      = 0.0f;
+        FA->thermo_result         = {};
+        FA->thermo_engine         = nullptr;
+
+        if (FA->thermo_engine_enabled) {
+            FA->thermo_engine = new ThermodynamicEngine(FA->thermo_T_eff, FA->thermo_tencom_scale);
+            FA->thermo_engine->set_unbound_reference(FA->H_rep_receptor_ref, FA->H_rep_ligand_ref);
+        }
     }
 
     // Always GA

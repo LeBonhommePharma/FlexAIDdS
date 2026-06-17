@@ -1,0 +1,53 @@
+#include "ThermodynamicEngine.h"
+#include <cmath>
+#include <numeric>
+#include <algorithm>
+
+ThermodynamicEngine::ThermodynamicEngine(float T_eff, float tencom_scale)
+    : T_eff_(T_eff), tencom_scale_(tencom_scale), H_rep_ref_(0.0f) {}
+
+void ThermodynamicEngine::set_unbound_reference(float H_rep_receptor, float H_rep_ligand) {
+    H_rep_ref_ = H_rep_receptor + H_rep_ligand;
+}
+
+float ThermodynamicEngine::shannon_entropy(const std::vector<std::vector<float>>& pop) {
+    if (pop.empty()) return 0.0f;
+    const int n_chrom = static_cast<int>(pop.size());
+    const int n_genes = static_cast<int>(pop[0].size());
+
+    float H_total = 0.0f;
+    for (int g = 0; g < n_genes; ++g) {
+        std::array<int, 256> hist{};
+        for (const auto& chrom : pop) {
+            int bin = std::clamp(static_cast<int>(chrom[g] * 255.0f), 0, 255);
+            ++hist[bin];
+        }
+        for (int b = 0; b < 256; ++b) {
+            if (hist[b] > 0) {
+                float p = static_cast<float>(hist[b]) / n_chrom;
+                H_total -= p * std::log2(p);
+            }
+        }
+    }
+    return H_total;
+}
+
+float ThermodynamicEngine::ensemble_mean(const std::vector<float>& cf) {
+    if (cf.empty()) return 0.0f;
+    return std::accumulate(cf.begin(), cf.end(), 0.0f) / static_cast<float>(cf.size());
+}
+
+ThermoResult ThermodynamicEngine::compute(
+        const std::vector<std::vector<float>>& final_pop,
+        const std::vector<float>& cf_values,
+        float H_rep_bound) const {
+
+    ThermoResult r{};
+    r.H_vct       = ensemble_mean(cf_values);
+    r.TdS_shannon = T_eff_ * shannon_entropy(final_pop);
+    r.TdS_vib     = tencom_scale_ * (H_rep_bound - H_rep_ref_);
+    r.G_bind      = r.H_vct - r.TdS_shannon + r.TdS_vib;
+    float denom   = r.TdS_shannon + r.TdS_vib;
+    r.compensation = (denom > 1e-6f) ? r.H_vct / denom : 0.0f;
+    return r;
+}
