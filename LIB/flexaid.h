@@ -656,7 +656,7 @@ struct FA_Global_struct{
 
 	// ── ThermodynamicEngine: G_bind = <CF> - T_eff*H_shannon + T_eff*dH_rep_tencom ──
 	bool              thermo_engine_enabled;  // default false; zero cost when off
-	float             thermo_T_eff;           // calibration constant (default 1.0)
+	float             thermo_T_eff;           // kT at 298K = 0.596 kcal/mol (Sippl inverse-Boltzmann reference)
 	float             thermo_tencom_scale;    // tENCoM term scale (default 1.0)
 	float             H_rep_bound_complex;    // tENCoM of bound complex (written per pose)
 	float             H_rep_receptor_ref;     // receptor-only tENCoM reference

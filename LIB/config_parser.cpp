@@ -307,7 +307,7 @@ void apply_config(const json::Value& config, FA_Global* FA, GB_Global* GB) {
     // ── ThermodynamicEngine ──
     {
         FA->thermo_engine_enabled = jbool(config, "thermo_engine", "enabled",      false);
-        FA->thermo_T_eff          = jflt (config, "thermo_engine", "T_eff",        1.0f);
+        FA->thermo_T_eff          = jflt (config, "thermo_engine", "T_eff",        0.596f);
         FA->thermo_tencom_scale   = jflt (config, "thermo_engine", "tencom_scale", 1.0f);
         FA->H_rep_bound_complex   = 0.0f;
         FA->H_rep_receptor_ref    = 0.0f;

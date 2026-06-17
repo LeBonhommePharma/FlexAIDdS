@@ -46,7 +46,7 @@ ThermoResult ThermodynamicEngine::compute(
     r.H_vct       = ensemble_mean(cf_values);
     r.TdS_shannon = T_eff_ * shannon_entropy(final_pop);
     r.TdS_vib     = tencom_scale_ * (H_rep_bound - H_rep_ref_);
-    r.G_bind      = r.H_vct - r.TdS_shannon + r.TdS_vib;
+    r.G_bind      = T_eff_ * r.H_vct - r.TdS_shannon + r.TdS_vib;
     float denom   = r.TdS_shannon + r.TdS_vib;
     r.compensation = (denom > 1e-6f) ? r.H_vct / denom : 0.0f;
     return r;
