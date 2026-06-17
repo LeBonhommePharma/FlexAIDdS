@@ -22,7 +22,7 @@ full_dataset_config: benchmarks/datasets/astex_diverse.yaml
 
 artifacts:
   - PDB structures downloaded from RCSB (receptor + co-crystal)
-  - Ligand extracted from HETATM records (benchmark_datasets --prepare-only)
+  - Apo receptor + ligand SDF extracted from HETATM records (benchmark_datasets --prepare-only)
   - FlexAIDdS docking output per target
   - Aggregated metrics report
 

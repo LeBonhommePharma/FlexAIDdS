@@ -26,7 +26,7 @@ Original set: Nissink JWM, Murray C, Hartshorn M, et al. (2002)
 | `astex_diverse_set.csv` | 85 complexes: PDB ID, ligand ID, resolution, RMSD threshold, citation |
 | `manifest.yaml` | Tier-1 bundle spec (5 targets, baselines, entrypoint) |
 | `run.sh` | Download + dock + report script |
-| `download.sh` | Fetch PDB files from RCSB; extract ligands via `benchmark_datasets` |
+| `download.sh` | Fetch PDB files from RCSB; extract apo receptors + ligands via `benchmark_datasets` |
 | `environment.txt` | Hardware/software record for reproducibility |
 | `expected/` | Reference outputs after first validated run |
 
@@ -97,7 +97,7 @@ cmake --build build --target flexaid_bench_astex_diverse
 ## Notes
 
 - Structures are fetched directly from RCSB; no registration required.
-- Ligand MOL2 extraction is automated via `benchmark_datasets --prepare-only`.
+- Ligand SDF extraction is automated via `benchmark_datasets --prepare-only`.
 - The `astex_diverse_set.csv` lists all 85 entries with resolution and ligand ID.
 - Entropy rescue is the fraction of complexes where ΔS correction moves a
   sub-2Å pose from rank > 1 to rank 1 (FlexAIDdS-specific metric).

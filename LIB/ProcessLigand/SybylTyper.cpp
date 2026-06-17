@@ -7,6 +7,7 @@
 // 256-type encoding mirrors atom_typing_256.h encode_from_sybyl().
 
 #include "SybylTyper.h"
+#include "../atom_typing_256.h"
 
 #include <cmath>
 #include <algorithm>
@@ -126,11 +127,21 @@ bool is_hbond_donor(const BonMol& mol, int atom_idx) {
 
 bool is_hbond_acceptor(const BonMol& mol, int atom_idx) {
     const Atom& a = mol.atoms[atom_idx];
-    // N or O with lone pair (not quaternary N)
+    // N or O with available lone pair. Donor-only amide/pyrrole-like N and
+    // quaternary N are excluded from acceptor roles.
     if (a.element == Element::O) return true;
     if (a.element == Element::N) {
-        // Quaternary N has no lone pair available
+        bool has_h = a.implicit_h_count > 0;
+        for (int nb : mol.adjacency[atom_idx]) {
+            if (mol.atoms[nb].element == Element::H) {
+                has_h = true;
+                break;
+            }
+        }
         if (a.sybyl_type == 9) return false; // N.4
+        if (a.sybyl_type == 7) return false; // N.am
+        if (a.sybyl_type == 6 && has_h) return false; // pyrrole-like N.ar
+        if (a.partial_charge >= 0.3f) return false;
         return true;
     }
     if (a.element == Element::F) return true;
@@ -140,53 +151,47 @@ bool is_hbond_acceptor(const BonMol& mol, int atom_idx) {
 // ---------------------------------------------------------------------------
 // 256-type encoding (mirrors atom_typing_256.h encode_from_sybyl)
 // Bits 0-5: base type (6 bits, 64 classes — no Solvent fallback)
-// Bit    6: charge polarity (0 = negative, 1 = positive)
-// Bit    7: H-bond donor/acceptor flag
+// Bit    6: H-bond acceptor role
+// Bit    7: H-bond donor role
 // ---------------------------------------------------------------------------
 
 // Internal: SYBYL type → base type (6-bit, 0-63)
 static uint8_t sybyl_to_base(int sybyl_type) {
-    // Mapping mirrors atom_typing_256.h sybyl_to_base()
+    // ProcessLigand uses the Mol2Reader-era numeric SYBYL IDs shown in
+    // sybyl_type_name(); map them onto atom_typing_256.h base classes.
     switch (sybyl_type) {
-        case  1: return 1;  // C.3
-        case  2: return 2;  // C.2
-        case  3: return 3;  // C.ar
-        case  0: return 4;  // C.1
-        case  4: return 5;  // N.3
-        case  5: return 6;  // N.2
-        case  6: return 7;  // N.ar
-        case  7: return 8;  // N.am
-        case  8: return 9;  // N.pl3
-        case  9: return 10; // N.4
-        case 10: return 11; // O.3
-        case 11: return 12; // O.2
-        case 12: return 13; // O.co2
-        case 13: return 14; // F
-        case 14: return 15; // Cl
-        case 15: return 16; // Br
-        case 16: return 17; // S.3
-        case 17: return 18; // S.2
-        case 18: return 19; // S.O
-        case 19: return 20; // S.O2
-        case 20: return 21; // P.3
-        case 21: return 22; // I
-        case 22: return 23; // H
-        case 30: return 30; // Fe
-        default: return 41; // Dummy (was 0/Solvent)
+        case  0: return atom256::C_sp;       // C.1
+        case  1: return atom256::C_sp3;      // C.3
+        case  2: return atom256::C_sp2;      // C.2
+        case  3: return atom256::C_ar;       // C.ar
+        case  4: return atom256::N_sp3;      // N.3
+        case  5: return atom256::N_sp2;      // N.2
+        case  6: return atom256::N_ar;       // N.ar
+        case  7: return atom256::N_am;       // N.am
+        case  8: return atom256::N_pl3;      // N.pl3
+        case  9: return atom256::N_quat;     // N.4
+        case 10: return atom256::O_sp3;      // O.3
+        case 11: return atom256::O_sp2;      // O.2
+        case 12: return atom256::O_co2;      // O.co2
+        case 13: return atom256::HAL_F;      // F
+        case 14: return atom256::HAL_Cl;     // Cl
+        case 15: return atom256::HAL_Br;     // Br
+        case 16: return atom256::S_sp3;      // S.3
+        case 17: return atom256::S_sp2;      // S.2
+        case 18: return atom256::S_oxide;    // S.O
+        case 19: return atom256::S_dioxide;  // S.O2
+        case 20: return atom256::P_sp3;      // P.3
+        case 21: return atom256::HAL_I;      // I
+        case 30: return atom256::Metal_Fe;   // Fe
+        default: return atom256::Dummy;
     }
 }
 
-uint8_t encode_256(int sybyl_type, float partial_charge, bool is_hbond) {
+uint8_t encode_256(int sybyl_type, float partial_charge, bool is_donor,
+                   bool is_acceptor) {
+    (void)partial_charge;
     uint8_t base = sybyl_to_base(sybyl_type) & 0x3F; // bits 0-5
-
-    // Charge polarity (bit 6)
-    uint8_t charge_bin = (partial_charge < 0.0f) ? 0u : 1u;
-
-    uint8_t hbond_bit = is_hbond ? 1u : 0u;
-
-    return static_cast<uint8_t>(
-        base | (charge_bin << 6) | (hbond_bit << 7)
-    );
+    return atom256::encode_roles(base, is_donor, is_acceptor);
 }
 
 // ---------------------------------------------------------------------------
@@ -301,10 +306,9 @@ void assign_sybyl_types(BonMol& mol) {
         a.is_hbond_donor    = is_hbond_donor(mol, i);
         a.is_hbond_acceptor = is_hbond_acceptor(mol, i);
 
-        bool hbond = a.is_hbond_donor || a.is_hbond_acceptor;
-
         // Encode 256-type
-        a.type_256 = encode_256(a.sybyl_type, a.partial_charge, hbond);
+        a.type_256 = encode_256(a.sybyl_type, a.partial_charge,
+                                a.is_hbond_donor, a.is_hbond_acceptor);
     }
 }
 

@@ -1,0 +1,52 @@
+═══════════════════════════════════════════════════════════════
+  FlexAIDdS Benchmark Dataset Runner
+═══════════════════════════════════════════════════════════════
+
+  Cache:        /Users/lp.more/.flexaidds/benchmarks
+  Output:       /Users/lp.more/Library/Mobile Documents/com~apple~CloudDocs/FlexAIDdS_benchmarks/astex_v8
+  Workers:      5 concurrent FlexAIDdS process(es)
+  OMP/worker:   2 thread(s) (explicit)
+  Total threads:10 across 11 logical cores
+  Skip done:    yes (--force to override)
+  GA:           pop=1000  gen=500  (500k evals/complex)
+  Temp:         300 K
+  Cluster:      CF
+  Timeout/job:  600 s
+
+[DatasetRunner] Preparing Astex Diverse 85 dataset
+  [WARN] Every non-water HETATM residue in /Users/lp.more/.flexaidds/benchmarks/astex_diverse/1TW6/1TW6.cif is a blacklisted cofactor (ZN(2), EDO(8)) — no docking target to extract
+  [WARN] No valid ligand residues in /Users/lp.more/.flexaidds/benchmarks/astex_diverse/1TW6/1TW6.cif
+  [WARN] Failed to extract ligand from: 1TW6
+  [CACHE] degenerate all-single-bond ligand in /Users/lp.more/.flexaidds/benchmarks/astex_diverse/2GBP/2GBP_ligand.sdf (ring present, no double/aromatic bonds) — forcing re-extraction
+  [LIGAND] /Users/lp.more/.flexaidds/benchmarks/astex_diverse/2GBP/2GBP.cif: skipped blacklisted cofactor(s) CA(1) → docking target = BGC(12)
+  [RECEPTOR] stripped 12 cognate-ligand + 0 bulk-cofactor coordinate records (catalytic metals/heme retained) → /Users/lp.more/.flexaidds/benchmarks/astex_diverse/2GBP/2GBP_apo.pdb
+  Prepared 85 / 85 entries
+  → 85 entries prepared
+  [P1] Docking phase starting for best BindingMode search at temperature from config (exact 298/310 K fidelity required). Live progress + run_status sidecar will be emitted during run(entries).
+[DatasetRunner] Using docking binary: /Users/lp.more/Projects/FlexAIDdS/build/FlexAIDdS
+[DatasetRunner] Docking 85 entries (5 threads)...
+[DatasetRunner] TargetServer: 85 unique receptor(s), 85 ligand(s)
+[SubprocessGuard] Killing 5 remaining child process(es)
+
+═══════════════════════════════════════════════════════════════════
+  FlexAIDdS Benchmark: astex_diverse
+═══════════════════════════════════════════════════════════════════
+
+  ┌─────────────────────────────┬────────────────────┐
+  │ Metric                      │ Value              │
+  ├─────────────────────────────┼────────────────────┤
+  │ Total systems               │                 85 │
+  │ Successful (RMSD < 2.0 Å)   │                  3 │
+  │ Success rate                │               3.5% │
+  │ Mean RMSD (Å)               │              16.72 │
+  │ Median RMSD (Å)             │              13.67 │
+  │ Pearson r                   │              0.000 │
+  │ Spearman ρ                  │              0.000 │
+  │ Kendall τ                   │              0.000 │
+  └─────────────────────────────┴────────────────────┘
+
+  Markdown report: /Users/lp.more/Library/Mobile Documents/com~apple~CloudDocs/FlexAIDdS_benchmarks/astex_v8/astex_diverse_report.md
+  Cross-ligand report: /Users/lp.more/Library/Mobile Documents/com~apple~CloudDocs/FlexAIDdS_benchmarks/astex_v8/astex_diverse_cross_ligand.md
+  Cross-ligand CSV: /Users/lp.more/Library/Mobile Documents/com~apple~CloudDocs/FlexAIDdS_benchmarks/astex_v8/astex_diverse_cross_ligand.csv
+  CSV results: /Users/lp.more/Library/Mobile Documents/com~apple~CloudDocs/FlexAIDdS_benchmarks/astex_v8/astex_diverse_results.csv
+  Summary CSV: /Users/lp.more/Library/Mobile Documents/com~apple~CloudDocs/FlexAIDdS_benchmarks/astex_v8/astex_diverse_summary.csv

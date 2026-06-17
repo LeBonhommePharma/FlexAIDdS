@@ -1,6 +1,8 @@
 #include "gaboom.h"
 #include "fileio.h"
 #include "LigandRingFlex/LigandRingFlex.h"   // Phase 2: ring pucker apply
+#include "VibEntropy.h"
+#include "tENCoM/tencm.h"
 
 #ifdef _OPENMP
 #  include <omp.h>
@@ -20,6 +22,31 @@ struct IC2CFScratch {
 // One IC2CFScratch per OMP thread (no synchronisation needed — each thread
 // has exclusive access to its own scratch throughout ic2cf execution).
 static thread_local IC2CFScratch tl_ic2cf_scratch;
+
+// Per-pose tENCoM vibrational Shannon entropy H(ω) in nats (single-rep H_pop).
+// Skipped when tencom_weight == 0 so existing benchmarks pay no ANM cost.
+static double compute_ligand_h_rep(const FA_Global* FA, const atom* atoms) {
+	if (!FA || FA->tencom_weight <= 0.0f) return 0.0;
+	const int lig_start = (FA->resligand && FA->resligand->fatm)
+	                      ? FA->resligand->fatm[0] : -1;
+	const int lig_end_incl = (FA->resligand && FA->resligand->latm)
+	                      ? FA->resligand->latm[0] : -1;
+	if (lig_start < 0 || lig_end_incl < lig_start) return 0.0;
+
+	tencm::TorsionalENM lig_enm;
+	lig_enm.build_from_ligand(atoms, lig_start, lig_end_incl + 1);
+	if (!lig_enm.is_built()) return 0.0;
+
+	std::vector<double> eigs;
+	eigs.reserve(lig_enm.modes().size());
+	for (const auto& nm : lig_enm.modes()) {
+		if (nm.eigenvalue > 0.0) eigs.push_back(nm.eigenvalue);
+	}
+	if (eigs.empty()) return 0.0;
+
+	const std::vector<std::vector<double>> single = { eigs };
+	return vibentropy::compute_vib_entropy_collapse(single).H_pop;
+}
 
 /******************************************************************************
  * SUBROUTINE ic2cf gets a vector with internal coordinates rebuilds the 
@@ -240,6 +267,7 @@ cfstr ic2cf(FA_Global* FA,VC_Global* VC,atom* atoms,resid* residue,
 	cf.hbond = 0.0;
 	cf.gist_desolv = 0.0;
 	cf.metal_coord = 0.0;
+	cf.h_rep = 0.0;
 	cf.rclash = 0;
     
 	for(i=0;i<FA->num_optres;i++){
@@ -502,6 +530,8 @@ cfstr ic2cf(FA_Global* FA,VC_Global* VC,atom* atoms,resid* residue,
 	FA->ori[1] = ori_save[1];
 	FA->ori[2] = ori_save[2];
 
+	cf.h_rep = compute_ligand_h_rep(FA, atoms);
+
 	return cf;
 
 }
@@ -515,9 +545,14 @@ double get_apparent_cf_evalue(cfstr* cf) {
 	}
 
 #ifdef _WIN32
-	double get_cf_evalue(cfstr* cf) {
+	double get_cf_evalue(cfstr* cf, FA_Global* FA) {
 #else
-		double get_cf_evalue(cfstr* cf) {
+		double get_cf_evalue(cfstr* cf, FA_Global* FA) {
 #endif
-			return cf->com + cf->wal + cf->sas + cf->con + cf->elec + cf->hbond + cf->gist_desolv + cf->metal_coord;
+			double total = cf->com + cf->wal + cf->sas + cf->con + cf->elec
+			             + cf->hbond + cf->gist_desolv + cf->metal_coord;
+			if (FA && FA->tencom_weight > 0.0f) {
+				total += static_cast<double>(FA->tencom_weight) * cf->h_rep;
+			}
+			return total;
 		}

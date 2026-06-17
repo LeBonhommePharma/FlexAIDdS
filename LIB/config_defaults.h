@@ -44,6 +44,7 @@ inline json::Value flexaid_default_config() {
             {"metal_coord_weight",      V(1.0)},
             {"metal_coord_sigma",       V(0.45)},
             {"metal_coord_cn_weight",   V(0.5)},
+            {"tencom_weight",           V(0.0)},   // tENCoM H_rep CF penalty (0=off; range 0–2)
             // GIST desolvation grid
             {"gist_enabled",  V(false)},
             {"gist_dx_file",  V("")},

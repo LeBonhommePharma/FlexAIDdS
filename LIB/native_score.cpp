@@ -86,7 +86,7 @@ static bool load_crystal_coor_from_sdf(const char* sdf_path, int n_atoms,
 // ─────────────────────────────────────────────────────────────────────────────
 
 void score_native_pose(FA_Global* FA, VC_Global* VC, atom* atoms,
-                       resid* residue, gridpoint* /*cleftgrid*/)
+                       resid* residue, gridpoint* cleftgrid)
 {
     const int lig_res = FA->res_cnt;
     const int fa      = residue[lig_res].fatm[0];
@@ -97,6 +97,79 @@ void score_native_pose(FA_Global* FA, VC_Global* VC, atom* atoms,
         fprintf(stderr, "[NATIVE_CF] SKIP: no ligand atoms (n_lig=%d npar=%d)\n",
                 n_lig, FA->npar);
         return;
+    }
+
+    // ── 0. [NATIVE-SEED-RMSD] diagnostic ──────────────────────────────────────
+    //   Reconstructs the gen-0 native-seed pose via the SAME IC→Cartesian path
+    //   the GA uses: ic2cf(FA->opt_par).  FA->opt_par holds the reference IC
+    //   (orientation/dihedral genes = input-ligand atoms[].ang/.dih, grid gene
+    //   = 0 ⇒ GPA0 snapped to cleftgrid[0]) — identical to what native_direct_seed
+    //   writes into chrom[0].genes[].to_ic.  RMSD vs the crystal SDF therefore
+    //   measures the pure IC-reconstruction floor of the native seed, with NO
+    //   5° int32 quantization (the seed evaluates to_ic directly, not via
+    //   genetoic).  Answers: is a residual native RMSD a reconstruction-frame
+    //   floor (quantization-class) or GA displacement to a false CF minimum?
+    {
+        const char* rmsdst = getenv("FLEXAIDDS_RMSDST");
+        if (rmsdst && rmsdst[0] != '\0') {
+            std::vector<float> save(static_cast<size_t>(n_lig) * 3);
+            for (int i = fa; i <= la; ++i) {
+                const int k = (i - fa) * 3;
+                save[static_cast<size_t>(k+0)] = atoms[i].coor[0];
+                save[static_cast<size_t>(k+1)] = atoms[i].coor[1];
+                save[static_cast<size_t>(k+2)] = atoms[i].coor[2];
+            }
+            const float ori0[3] = {FA->ori[0], FA->ori[1], FA->ori[2]};
+
+            // Reconstruct native seed via the GA's IC→Cartesian path.
+            ic2cf(FA, VC, atoms, residue, cleftgrid, FA->npar, FA->opt_par);
+
+            std::vector<float> cry(static_cast<size_t>(n_lig) * 3);
+            if (load_crystal_coor_from_sdf(rmsdst, n_lig, cry.data())) {
+                double ss = 0.0;
+                for (int i = fa; i <= la; ++i) {
+                    const int k = (i - fa) * 3;
+                    const double dx = atoms[i].coor[0] - cry[static_cast<size_t>(k+0)];
+                    const double dy = atoms[i].coor[1] - cry[static_cast<size_t>(k+1)];
+                    const double dz = atoms[i].coor[2] - cry[static_cast<size_t>(k+2)];
+                    ss += dx*dx + dy*dy + dz*dz;
+                }
+                const double rmsd = std::sqrt(ss / static_cast<double>(n_lig));
+                fprintf(stderr,
+                    "[NATIVE-SEED-RMSD] %s round-trip RMSD = %.2f A "
+                    "(%d genes, %d atoms, gene0=%.3f)\n",
+                    rmsdst, rmsd, FA->npar, n_lig,
+                    FA->npar > 0 ? FA->opt_par[0] : 0.0);
+
+                // ── Fix 5: preflight gate (loud, non-aborting) ─────────────
+                // A native-seed IC round-trip worse than 1.0 A means the oracle
+                // seed cannot faithfully encode the crystal pose, so the whole
+                // run's oracle mode is suspect. Make it impossible to miss in the
+                // logs; LP decides whether to promote this to a hard abort.
+                if (rmsd > 1.0) {
+                    fprintf(stderr,
+                        "[WARN] NATIVE-SEED-RMSD = %.2f A exceeds 1.0 A threshold.\n"
+                        "       IC round-trip fidelity is poor — oracle seed may not "
+                        "faithfully encode crystal pose.\n"
+                        "       Check grid resolution, cleft centroid, and IC "
+                        "parameter bounds before trusting this run.\n",
+                        rmsd);
+                }
+            } else {
+                fprintf(stderr,
+                    "[NATIVE-SEED-RMSD] SKIP: could not load crystal SDF %s "
+                    "(atom-count mismatch?)\n", rmsdst);
+            }
+
+            // Restore blinded coor[] and FA->ori for the CF scoring below.
+            FA->ori[0] = ori0[0]; FA->ori[1] = ori0[1]; FA->ori[2] = ori0[2];
+            for (int i = fa; i <= la; ++i) {
+                const int k = (i - fa) * 3;
+                atoms[i].coor[0] = save[static_cast<size_t>(k+0)];
+                atoms[i].coor[1] = save[static_cast<size_t>(k+1)];
+                atoms[i].coor[2] = save[static_cast<size_t>(k+2)];
+            }
+        }
     }
 
     // ── 1. Save ligand coor[] and FA->ori ─────────────────────────────────────
@@ -225,6 +298,7 @@ void score_native_pose(FA_Global* FA, VC_Global* VC, atom* atoms,
             cf.wal += FA->optres[i].cf.wal;
             cf.sas += FA->optres[i].cf.sas;
             cf.con += FA->optres[i].cf.con;
+            cf.hbond += FA->optres[i].cf.hbond;
         }
     }
 
@@ -242,10 +316,11 @@ void score_native_pose(FA_Global* FA, VC_Global* VC, atom* atoms,
     // ── 5. Emit [NATIVE_CF] line for DatasetRunner parsing ───────────────────
     const double cf_total = get_cf_evalue(&cf);
     fprintf(stderr,
-        "[NATIVE_CF] cf=%.6f breakdown=com:%.4f,wal:%.4f,sas:%.4f,con:%.4f\n",
+        "[NATIVE_CF] cf=%.6f breakdown=com:%.4f,wal:%.4f,sas:%.4f,con:%.4f,hbond:%.4f\n",
         cf_total,
         static_cast<double>(cf.com),
         static_cast<double>(cf.wal),
         static_cast<double>(cf.sas),
-        static_cast<double>(cf.con));
+        static_cast<double>(cf.con),
+        static_cast<double>(cf.hbond));
 }

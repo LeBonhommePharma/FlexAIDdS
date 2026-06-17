@@ -8,8 +8,44 @@ DATA_DIR="${SCRIPT_DIR}/data"
 RESULTS_DIR="${SCRIPT_DIR}/results"
 BUILD_DIR="${ROOT_DIR}/build"
 MANIFEST="${SCRIPT_DIR}/manifest.yaml"
+SEED="${FLEXAID_SEED:-42}"
 
 TARGETS=(1sq5 2hb1 1r1h 1t46 2c69)
+
+compute_sha256() {
+    local file="$1"
+    if [[ ! -f "${file}" ]]; then
+        return 1
+    fi
+    if command -v shasum >/dev/null 2>&1; then
+        shasum -a 256 "${file}" | awk '{print $1}'
+    elif command -v sha256sum >/dev/null 2>&1; then
+        sha256sum "${file}" | awk '{print $1}'
+    else
+        python3 - "${file}" <<'PY'
+import hashlib
+import sys
+from pathlib import Path
+print(hashlib.sha256(Path(sys.argv[1]).read_bytes()).hexdigest())
+PY
+    fi
+}
+
+resolve_binary() {
+    if [[ -n "${FLEXAIDDS_BINARY:-}" && -x "${FLEXAIDDS_BINARY}" ]]; then
+        printf '%s\n' "${FLEXAIDDS_BINARY}"
+        return 0
+    fi
+    if [[ -n "${FLEXAID_BINARY:-}" && -x "${FLEXAID_BINARY}" ]]; then
+        printf '%s\n' "${FLEXAID_BINARY}"
+        return 0
+    fi
+    if [[ -x "${BUILD_DIR}/FlexAIDdS" ]]; then
+        printf '%s\n' "${BUILD_DIR}/FlexAIDdS"
+        return 0
+    fi
+    return 1
+}
 
 parse_baseline() {
     local key="$1"
@@ -26,16 +62,25 @@ echo "=== Astex Diverse Set Tier-1 Benchmark ==="
 echo "Targets: ${TARGETS[*]}"
 echo "Baselines: top1=${DOCK_TOP1}, top3=${DOCK_TOP3}, mean_RMSD=${MEAN_RMSD}, entropy_rescue=${ENTROPY_RESCUE}"
 echo "Tolerance: ±${TOL}"
+echo "Seed: ${SEED}"
 echo ""
 
-# --- Build FlexAIDdS if needed ---
-if [[ ! -x "${BUILD_DIR}/FlexAIDdS" ]]; then
+# --- Resolve / build FlexAIDdS if needed ---
+FLEXAIDDS="$(resolve_binary || true)"
+if [[ -z "${FLEXAIDDS}" ]]; then
     echo "[..] Building FlexAIDdS..."
     cmake -S "${ROOT_DIR}" -B "${BUILD_DIR}" -DCMAKE_BUILD_TYPE=Release
     cmake --build "${BUILD_DIR}" --parallel
+    FLEXAIDDS="${BUILD_DIR}/FlexAIDdS"
 fi
 
-FLEXAIDDS="${BUILD_DIR}/FlexAIDdS"
+if [[ ! -x "${FLEXAIDDS}" ]]; then
+    echo "[FAIL] FlexAIDdS binary not found after build/override resolution" >&2
+    exit 1
+fi
+
+export FLEXAIDDS_BINARY="${FLEXAIDDS}"
+export FLEXAID_SEED="${SEED}"
 
 # --- Download data if needed ---
 if [[ ! -d "${DATA_DIR}" ]] || [[ ! -f "${DATA_DIR}/1sq5.pdb" ]]; then
@@ -51,8 +96,25 @@ SKIP=0
 RMSDS=()
 
 for pdb in "${TARGETS[@]}"; do
-    receptor="${DATA_DIR}/${pdb}.pdb"
-    ligand="${DATA_DIR}/${pdb}_ligand.mol2"
+    pdb_up="$(printf '%s' "${pdb}" | tr '[:lower:]' '[:upper:]')"
+    prepared_dir="${DATA_DIR}/astex_diverse/${pdb_up}"
+
+    receptor="${prepared_dir}/${pdb_up}_apo.pdb"
+    if [[ ! -f "${receptor}" ]]; then
+        receptor="${DATA_DIR}/${pdb}_apo.pdb"
+    fi
+    if [[ ! -f "${receptor}" ]]; then
+        receptor="${DATA_DIR}/${pdb}.pdb"
+    fi
+
+    ligand="${prepared_dir}/${pdb_up}_ligand.sdf"
+    if [[ ! -f "${ligand}" ]]; then
+        ligand="${DATA_DIR}/${pdb}_ligand.sdf"
+    fi
+    if [[ ! -f "${ligand}" ]]; then
+        ligand="${DATA_DIR}/${pdb}_ligand.mol2"
+    fi
+
     out_dir="${RESULTS_DIR}/${pdb}"
 
     if [[ ! -f "${receptor}" ]]; then
@@ -62,7 +124,7 @@ for pdb in "${TARGETS[@]}"; do
     fi
 
     if [[ ! -f "${ligand}" ]]; then
-        echo "[SKIP] ${pdb}: ligand MOL2 missing (extracted by download.sh via benchmark_datasets)"
+        echo "[SKIP] ${pdb}: ligand SDF/MOL2 missing (extracted by download.sh via benchmark_datasets)"
         SKIP=$((SKIP + 1))
         continue
     fi
@@ -94,6 +156,49 @@ echo ""
 echo "=== Results Summary ==="
 echo "Passed: ${PASS}, Failed: ${FAIL}, Skipped: ${SKIP}"
 
+PROVENANCE_TARGETS="$(IFS=,; echo "${TARGETS[*]}")"
+export PROVENANCE_TARGETS
+export PROVENANCE_BINARY="${FLEXAIDDS}"
+export PROVENANCE_MANIFEST="${MANIFEST}"
+export PROVENANCE_DATA_DIR="${DATA_DIR}"
+export PASS_COUNT="${PASS}"
+export FAIL_COUNT="${FAIL}"
+export SKIP_COUNT="${SKIP}"
+python3 - <<'PY' > "${RESULTS_DIR}/provenance.json"
+import hashlib
+import json
+import os
+import time
+from pathlib import Path
+
+def sha256(path):
+    if not path:
+        return None
+    p = Path(path)
+    if not p.is_file():
+        return None
+    return hashlib.sha256(p.read_bytes()).hexdigest()
+
+record = {
+    "benchmark": "astex_diverse_tier1",
+    "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+    "seed": int(os.environ.get("FLEXAID_SEED", "42") or 42),
+    "targets": [t for t in os.environ.get("PROVENANCE_TARGETS", "").split(",") if t],
+    "data_dir": os.environ.get("PROVENANCE_DATA_DIR"),
+    "manifest": os.environ.get("PROVENANCE_MANIFEST"),
+    "binary": {
+        "path": os.environ.get("PROVENANCE_BINARY"),
+        "sha256": sha256(os.environ.get("PROVENANCE_BINARY")),
+    },
+    "counts": {
+        "passed": int(os.environ.get("PASS_COUNT", "0") or 0),
+        "failed": int(os.environ.get("FAIL_COUNT", "0") or 0),
+        "skipped": int(os.environ.get("SKIP_COUNT", "0") or 0),
+    },
+}
+print(json.dumps(record, indent=2, sort_keys=False))
+PY
+
 # --- Generate metrics report ---
 REPORT="${RESULTS_DIR}/report.md"
 cat > "${REPORT}" <<HEREDOC
@@ -102,9 +207,13 @@ cat > "${REPORT}" <<HEREDOC
 ## Execution
 - Date: $(date -u +%Y-%m-%dT%H:%M:%SZ)
 - Targets: ${TARGETS[*]}
+- Seed: ${SEED}
+- Binary: ${FLEXAIDDS}
+- Binary SHA256: $(compute_sha256 "${FLEXAIDDS}")
+- Manifest: ${MANIFEST}
 - Passed: ${PASS}, Failed: ${FAIL}, Skipped: ${SKIP}
 
-## Baselines (Hartshorn et al. 2007 J Med Chem 50:726-741)
+## Baselines (manifest + published JCIM comparator)
 
 | Metric | Baseline | Tolerance | Measured | Status |
 |:-------|:--------:|:---------:|:--------:|:------:|

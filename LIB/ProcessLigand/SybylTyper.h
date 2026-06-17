@@ -46,9 +46,10 @@ bool is_hbond_donor(const BonMol& mol, int atom_idx);
 /// Determine if an atom is an H-bond acceptor (N/O with lone pair).
 bool is_hbond_acceptor(const BonMol& mol, int atom_idx);
 
-/// Encode FlexAID SYBYL type + partial charge + H-bond flag into 8-bit type.
+/// Encode FlexAID SYBYL type + H-bond roles into 8-bit type.
 /// Replicates atom_typing_256.h encode_from_sybyl() for inline use.
-uint8_t encode_256(int sybyl_type, float partial_charge, bool is_hbond);
+uint8_t encode_256(int sybyl_type, float partial_charge, bool is_donor,
+                   bool is_acceptor);
 
 } // namespace sybyl
 } // namespace bonmol

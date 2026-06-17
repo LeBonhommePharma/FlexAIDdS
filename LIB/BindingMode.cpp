@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <cfloat>
 #include <cmath>
+#include <cstdlib>
 #include <cstring>
 #include <limits>
 #include <map>
@@ -132,37 +133,17 @@ statmech::StatMechEngine BindingPopulation::get_global_ensemble() const
 {
 	statmech::StatMechEngine global_engine(static_cast<double>(this->Temperature));
 
-	// Phase 1: count total samples for pre-allocation
-	std::size_t total_poses = 0;
-	for (const auto& mode : this->BindingModes)
-		total_poses += mode.Poses.size();
-
-	// Phase 2: collect energy/weight pairs
-	// Pre-collect to enable potential future parallelisation without
-	// thread-safety issues on add_sample().
-	std::vector<double> all_energies;
-	std::vector<double> all_weights;
-	all_energies.reserve(total_poses);
-	all_weights.reserve(total_poses);
-
+	// Build the population-level ensemble from raw microstates exactly once.
+	// Do not feed per-mode Boltzmann probabilities back as multiplicities here:
+	// that would reweight each pose by exp(-beta E) twice and distort the global
+	// partition function, entropy, and any downstream thermodynamic diagnostic.
 	for (const auto& mode : this->BindingModes)
 	{
-		const std::vector<double> weights = mode.get_boltzmann_weights();
-		const std::vector<Pose>& poses = mode.Poses;
-
-		if (weights.size() != poses.size())
-			continue;
-
-		for (std::size_t i = 0; i < poses.size(); ++i)
+		for (const auto& pose : mode.Poses)
 		{
-			all_energies.push_back(poses[i].CF);
-			all_weights.push_back(weights[i]);
+			global_engine.add_sample(pose.total_energy(), 1.0);
 		}
 	}
-
-	// Phase 3: batch add to engine (sequential, but faster due to contiguous access)
-	for (std::size_t i = 0; i < all_energies.size(); ++i)
-		global_engine.add_sample(all_energies[i], all_weights[i]);
 
 	return global_engine;
 }
@@ -207,25 +188,20 @@ double BindingPopulation::get_shannon_entropy() const
 		return shannonS_population_;
 	}
 
-	// Collect all pose energies across all binding modes
-	std::vector<double> all_energies;
-	for (const auto& mode : this->BindingModes)
-	{
-		for (const auto& pose : mode.Poses)
-		{
-			all_energies.push_back(pose.CF);
-		}
-	}
-
-	if (all_energies.empty())
+	auto global_engine = get_global_ensemble();
+	if (global_engine.size() == 0)
 	{
 		shannonS_population_ = 0.0;
 		shannon_cache_valid_ = true;
 		return 0.0;
 	}
 
-	// Histogram entropy over CF energies, returned in nats.
-	double shannon_nats = shannon_thermo::compute_shannon_entropy(all_energies);
+	const std::vector<double> weights = global_engine.boltzmann_weights();
+	double shannon_nats = 0.0;
+	for (double w : weights)
+	{
+		if (w > 0.0) shannon_nats -= w * std::log(w);
+	}
 
 	// Convert from dimensionless nats to thermodynamic units: S = kB * H
 	shannonS_population_ = statmech::kB_kcal * shannon_nats;
@@ -955,6 +931,18 @@ BindingMode::EntropyDecomposition BindingMode::decompose_entropy() const
 
 double BindingMode::compute_vibrational_correction() const
 {
+	// ── Entropy-ablation hook: FLEXAIDDS_NO_TENCOM ───────────────────────────
+	// Zeroes the tENCoM/ENCoM vibrational free-energy correction (-T·S_vib).
+	// NOTE: this correction is derived from the *receptor* elastic-network
+	// normal modes (atoms[0].eigen) and is cached pose-independently, so it is
+	// an identical additive constant across every binding mode of a given
+	// receptor — it cannot change intra-receptor pose ranking and is therefore a
+	// structural NULL on RMSD success by construction. This arm exists to
+	// confirm that null empirically (it can only shift the reported predicted_dG
+	// column, not which pose is emitted).
+	static const bool no_tencom = (std::getenv("FLEXAIDDS_NO_TENCOM") != nullptr);
+	if (no_tencom) return 0.0;
+
 	if (!this->Population->FA->normal_modes) return 0.0;
 
 	// Return cached value if still valid

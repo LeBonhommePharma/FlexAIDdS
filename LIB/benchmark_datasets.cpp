@@ -109,9 +109,19 @@ static void print_publication_table(const dataset::BenchmarkReport& report) {
     printf("  │ Success rate                │ %17.1f%% │\n", report.success_rate * 100.0);
     printf("  │ Mean RMSD (Å)               │ %18.2f │\n", report.mean_rmsd);
     printf("  │ Median RMSD (Å)             │ %18.2f │\n", report.median_rmsd);
-    printf("  │ Pearson r                   │ %18.3f │\n", report.pearson_r);
-    printf("  │ Spearman ρ                  │ %18.3f │\n", report.spearman_rho);
-    printf("  │ Kendall τ                   │ %18.3f │\n", report.kendall_tau);
+    printf("  │ Affinity pairs              │ %18d │\n", report.affinity_pairs);
+    if (report.affinity_pairs >= 3 &&
+        std::isfinite(report.pearson_r) &&
+        std::isfinite(report.spearman_rho) &&
+        std::isfinite(report.kendall_tau)) {
+        printf("  │ Pearson r                   │ %18.3f │\n", report.pearson_r);
+        printf("  │ Spearman ρ                  │ %18.3f │\n", report.spearman_rho);
+        printf("  │ Kendall τ                   │ %18.3f │\n", report.kendall_tau);
+    } else {
+        printf("  │ Pearson r                   │ %18s │\n", "NA");
+        printf("  │ Spearman ρ                  │ %18s │\n", "NA");
+        printf("  │ Kendall τ                   │ %18s │\n", "NA");
+    }
     printf("  └─────────────────────────────┴────────────────────┘\n");
     printf("\n");
 }

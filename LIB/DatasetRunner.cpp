@@ -5625,7 +5625,11 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                 jf << "\n  }";
                 // ThermodynamicEngine — disabled by default; enable via FLEXAIDDS_THERMO=1
                 if (std::getenv("FLEXAIDDS_THERMO")) {
-                    jf << ",\n  \"thermo_engine\": {\"enabled\": true, \"T_eff\": 1.0, \"tencom_scale\": 1.0}";
+                    const char* t_eff_env = std::getenv("FLEXAIDDS_T_EFF");
+                    float t_eff_val = t_eff_env ? std::stof(t_eff_env) : 0.596f;
+                    const char* ts_env = std::getenv("FLEXAIDDS_TENCOM_SCALE");
+                    float ts_val = ts_env ? std::stof(ts_env) : 1.0f;
+                    jf << ",\n  \"thermo_engine\": {\"enabled\": true, \"T_eff\": " << t_eff_val << ", \"tencom_scale\": " << ts_val << "}";
                 }
                 // If a grid file from a prior same-receptor run exists, tell
                 // FlexAIDdS to reuse it instead of regenerating from scratch.

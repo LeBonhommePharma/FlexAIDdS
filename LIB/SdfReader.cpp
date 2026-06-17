@@ -531,6 +531,13 @@ int read_sdf_ligand(FA_Global* FA, atom** atoms, resid** residue,
         if      (!strcmp(el, "C") && is_aromatic[ai])       { vct = 4;  perceived = "C.ar"; }
         else if (!strcmp(el, "N") && is_aromatic[ai])       { vct = 10; perceived = "N.ar"; }
         else if (!strcmp(el, "O") && is_carboxylate_O[ai])  { vct = 15; perceived = "O.co2"; }
+        else if (!strcmp(el, "C") && !is_aromatic[ai]) {
+            // Non-aromatic sp2 carbon (carbonyl, alkene, amide): any double bond → C.2
+            for (const auto& [nj, bo] : nbr[ai]) {
+                (void)nj;
+                if (bo == 2) { vct = 2; perceived = "C.2"; break; }
+            }
+        }
 
         a.type   = vct;
         a.radius = element_radius(satoms[ai].elem);

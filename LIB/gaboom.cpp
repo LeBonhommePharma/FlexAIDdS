@@ -581,6 +581,49 @@ int GA(FA_Global* FA, GB_Global* GB,VC_Global* VC,chromosome** chrom,chromosome*
 		FA->beta        = 1.0 / t_hot_anneal;
 	}
 
+	// ── ThermodynamicEngine: unbound reference H(ω) (before GA, atoms[] = initial state) ──
+	if (FA->thermo_engine_enabled && FA->thermo_engine != nullptr) {
+		// (a) Receptor backbone torsional H(ω) — CA positions are fixed throughout docking
+		if (FA->is_protein && FA->res_cnt > GA_TENCM_MIN_RESIDUES) {
+			tencm::TorsionalENM rec_enm;
+			rec_enm.build(atoms, residue, FA->res_cnt);
+			if (rec_enm.is_built()) {
+				std::vector<double> rec_eigs;
+				rec_eigs.reserve(rec_enm.modes().size());
+				for (const auto& nm : rec_enm.modes())
+					if (nm.eigenvalue > 0.0) rec_eigs.push_back(nm.eigenvalue);
+				if (!rec_eigs.empty()) {
+					const std::vector<std::vector<double>> single = { rec_eigs };
+					FA->H_rep_receptor_ref = static_cast<float>(
+						vibentropy::compute_vib_entropy_collapse(single).H_pop);
+				}
+			}
+		}
+		// (b) Free-ligand H(ω) — initial (unbound) conformation, before GA modifies atoms[]
+		{
+			const int lig_start     = (FA->resligand && FA->resligand->fatm)
+			                          ? FA->resligand->fatm[0] : -1;
+			const int lig_end_incl  = (FA->resligand && FA->resligand->latm)
+			                          ? FA->resligand->latm[0] : -1;
+			if (lig_start >= 0 && lig_end_incl >= lig_start) {
+				tencm::TorsionalENM lig_enm_free;
+				lig_enm_free.build_from_ligand(atoms, lig_start, lig_end_incl + 1);
+				if (lig_enm_free.is_built()) {
+					std::vector<double> eigs;
+					eigs.reserve(lig_enm_free.modes().size());
+					for (const auto& nm : lig_enm_free.modes())
+						if (nm.eigenvalue > 0.0) eigs.push_back(nm.eigenvalue);
+					if (!eigs.empty()) {
+						const std::vector<std::vector<double>> single = { eigs };
+						FA->H_rep_ligand_ref = static_cast<float>(
+							vibentropy::compute_vib_entropy_collapse(single).H_pop);
+					}
+				}
+			}
+		}
+		FA->thermo_engine->set_unbound_reference(FA->H_rep_receptor_ref, FA->H_rep_ligand_ref);
+	}
+
 	// ── Per-generation timing (bench) ──
 	double _sum_gen_ms = 0.0;
 	int    _n_gen_timed = 0;
@@ -1087,6 +1130,35 @@ int GA(FA_Global* FA, GB_Global* GB,VC_Global* VC,chromosome** chrom,chromosome*
 			for (int g = 0; g < GB->num_genes; ++g)
 				gene_pop[c][g] = static_cast<float>((*chrom)[c].genes[g].to_int32)
 				                 / static_cast<float>(MAX_RANDOM_VALUE);
+		}
+
+		// (c) Bound complex H(ω) — materialise rank-0 chromosome, compute ligand ANM
+		{
+			std::vector<gene> rank0_genes(GB->num_genes);
+			for (int g = 0; g < GB->num_genes; ++g)
+				rank0_genes[g] = (*chrom)[0].genes[g];
+			eval_chromosome(FA, GB, VC, *gene_lim, atoms, residue,
+			                *cleftgrid, rank0_genes.data(), target);
+
+			const int lig_start    = (FA->resligand && FA->resligand->fatm)
+			                         ? FA->resligand->fatm[0] : -1;
+			const int lig_end_incl = (FA->resligand && FA->resligand->latm)
+			                         ? FA->resligand->latm[0] : -1;
+			if (lig_start >= 0 && lig_end_incl >= lig_start) {
+				tencm::TorsionalENM lig_enm_bound;
+				lig_enm_bound.build_from_ligand(atoms, lig_start, lig_end_incl + 1);
+				if (lig_enm_bound.is_built()) {
+					std::vector<double> eigs;
+					eigs.reserve(lig_enm_bound.modes().size());
+					for (const auto& nm : lig_enm_bound.modes())
+						if (nm.eigenvalue > 0.0) eigs.push_back(nm.eigenvalue);
+					if (!eigs.empty()) {
+						const std::vector<std::vector<double>> single = { eigs };
+						FA->H_rep_bound_complex = static_cast<float>(
+							vibentropy::compute_vib_entropy_collapse(single).H_pop);
+					}
+				}
+			}
 		}
 
 		FA->thermo_result = FA->thermo_engine->compute(
