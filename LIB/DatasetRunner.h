@@ -173,6 +173,11 @@ struct DockingResult {
     float thermo_TdS_vib{0.0f};
     float thermo_compensation{0.0f};
     bool  has_thermo{false};
+    // Mid-run H_shannon snapshots at fixed generations (causality test).
+    // Populated when FLEXAIDDS_THERMO=1. NaN when that generation was not
+    // reached (early exit) or when thermo is disabled.
+    float thermo_TdS_shannon_gen500{std::numeric_limits<float>::quiet_NaN()};
+    float thermo_TdS_shannon_gen1000{std::numeric_limits<float>::quiet_NaN()};
 };
 
 /// Aggregate benchmark report

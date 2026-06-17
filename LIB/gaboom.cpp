@@ -544,6 +544,16 @@ int GA(FA_Global* FA, GB_Global* GB,VC_Global* VC,chromosome** chrom,chromosome*
 
 	////// Genetic Algorithm ///////
 	////////////////////////////////
+
+	// FLEXAIDDS_NO_SEC=1 disables ALL entropy-convergence early-exit paths
+	// (SEC soft/hard/plateau + H-plateau ring buffer) for diagnostic runs.
+	// Docking quality is unchanged; the GA simply runs to max_generations.
+	// Never set this for production benchmarks.
+	const bool no_sec = (std::getenv("FLEXAIDDS_NO_SEC") != nullptr);
+	if (no_sec)
+		fprintf(stderr, "[SEC] All entropy-convergence early exits DISABLED "
+		        "(FLEXAIDDS_NO_SEC=1) — GA will run to max_generations.\n");
+
 	// ── True GA elitism (v27) snapshot buffers ──
 	// The n_elite lowest-CF individuals are deep-copied each generation BEFORE
 	// boom injection / reproduce()/sharing, then restored over the worst of the
@@ -751,7 +761,7 @@ int GA(FA_Global* FA, GB_Global* GB,VC_Global* VC,chromosome** chrom,chromosome*
         //getchar();
 
 		// Stagnation detection: check if best fitness has plateaued
-		if ((i + 1) % STAGNATION_WINDOW == 0 && i > 0) {
+		if (!no_sec && (i + 1) % STAGNATION_WINDOW == 0 && i > 0) {
 			if (std::abs(GB->fit_max - prev_best_fitness) < 1e-6) {
 				stagnation_count += STAGNATION_WINDOW;
 				if (stagnation_count >= STAGNATION_LIMIT) {
@@ -770,7 +780,7 @@ int GA(FA_Global* FA, GB_Global* GB,VC_Global* VC,chromosome** chrom,chromosome*
 		// population and push into a 20-slot ring buffer.  If the absolute
 		// difference between the newest and oldest slot < kHPlateauEps nats,
 		// the distribution has stopped collapsing → write best pose and stop.
-		if (!entropy_converged && !ga_stagnant &&
+		if (!no_sec && !entropy_converged && !ga_stagnant &&
 		    ((i + 1) % GB->entropy_check_interval == 0)) {
 			std::vector<double> _hp_energies(GB->num_chrom);
 			for (int _c = 0; _c < GB->num_chrom; ++_c)
@@ -794,7 +804,7 @@ int GA(FA_Global* FA, GB_Global* GB,VC_Global* VC,chromosome** chrom,chromosome*
 		}
 
 		// Entropy convergence check (opt-in via ENTRCNVG config keyword)
-		if (GB->entropy_convergence &&
+		if (!no_sec && GB->entropy_convergence &&
 		    ((i + 1) % GB->entropy_check_interval == 0)) {
 			std::vector<double> pop_energies(GB->num_chrom);
 			for (int c = 0; c < GB->num_chrom; ++c) {
@@ -1072,6 +1082,40 @@ int GA(FA_Global* FA, GB_Global* GB,VC_Global* VC,chromosome** chrom,chromosome*
 			if(print){
 				printf("best by fitnes\n");
 				print_par((*chrom),(*gene_lim),GB->num_print,GB->num_genes, stdout);
+			}
+		}
+
+		// ── Mid-run H_shannon snapshots for entropy-collapse causality test ──
+		// Fires at gen 500 and gen 1000 (if reached) when thermo is enabled.
+		// Uses the same 256-bin gene-space histogram as the post-GA
+		// ThermodynamicEngine::shannon_entropy() call: normalize each gene via
+		// to_int32 / MAX_RANDOM_VALUE → [0,1], bin to [0,255], compute Shannon H,
+		// then scale by T_eff to match the TdS_shannon units in [THERMO].
+		if (FA->thermo_engine_enabled && FA->thermo_engine != nullptr) {
+			const int cur_gen = i + 1;
+			if (cur_gen == 500 || cur_gen == 1000) {
+				float H_snap = 0.0f;
+				std::array<int, 256> hist{};
+				for (int g = 0; g < GB->num_genes; ++g) {
+					hist.fill(0);
+					for (int c = 0; c < GB->num_chrom; ++c) {
+						const int bin = std::clamp(
+							static_cast<int>(
+								static_cast<float>((*chrom)[c].genes[g].to_int32)
+								/ static_cast<float>(MAX_RANDOM_VALUE) * 255.0f),
+							0, 255);
+						++hist[bin];
+					}
+					const float n_inv = 1.0f / static_cast<float>(GB->num_chrom);
+					for (int b = 0; b < 256; ++b) {
+						if (hist[b] > 0) {
+							const float p = static_cast<float>(hist[b]) * n_inv;
+							H_snap -= p * std::log2(p);
+						}
+					}
+				}
+				const float TdS_snap = FA->thermo_T_eff * H_snap;
+				printf("[THERMO_SNAP gen=%d] TdS_shannon=%.6f\n", cur_gen, TdS_snap);
 			}
 		}
 

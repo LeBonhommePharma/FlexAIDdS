@@ -6057,6 +6057,20 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                     result.thermo_compensation  = parse_tag("compensation=");
                     result.has_thermo           = true;
                 }
+                // "[THERMO_SNAP gen=N] TdS_shannon=V"
+                if (line.find("[THERMO_SNAP") != std::string::npos) {
+                    auto parse_snap_val = [&]() -> float {
+                        auto pos = line.find("TdS_shannon=");
+                        if (pos == std::string::npos) return std::numeric_limits<float>::quiet_NaN();
+                        pos += std::strlen("TdS_shannon=");
+                        try { return std::stof(line.substr(pos)); }
+                        catch (...) { return std::numeric_limits<float>::quiet_NaN(); }
+                    };
+                    if (line.find("gen=500") != std::string::npos)
+                        result.thermo_TdS_shannon_gen500  = parse_snap_val();
+                    else if (line.find("gen=1000") != std::string::npos)
+                        result.thermo_TdS_shannon_gen1000 = parse_snap_val();
+                }
                 // "  Shannon conf entropy    = N nats"
                 if (line.find("Shannon conf entropy") != std::string::npos) {
                     auto pos = line.find('=');
@@ -6619,7 +6633,8 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                            "predicted_dH,predicted_TdS,shannon_entropy,search_entropy_proxy,num_poses,"
                            "wall_time_s,success,cf_native,best_cluster_rmsd,best_cluster_idx,"
                            "seed_echo,pose_source,H_rep_rank0,H_pop,H_rep_mean,D_vib,"
-                           "G_bind,H_vct,TdS_shannon,TdS_vib,compensation_ratio\n";
+                           "G_bind,H_vct,TdS_shannon,TdS_vib,compensation_ratio,"
+                           "TdS_shannon_gen500,TdS_shannon_gen1000\n";
                     ofs << std::fixed << std::setprecision(4)
                         << result.pdb_id << ","
                         << result.best_score << ","
@@ -6646,7 +6661,9 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                         << result.thermo_H_vct << ","
                         << result.thermo_TdS_shannon << ","
                         << result.thermo_TdS_vib << ","
-                        << result.thermo_compensation << "\n";
+                        << result.thermo_compensation << ","
+                        << (std::isnan(result.thermo_TdS_shannon_gen500)  ? "NA" : std::to_string(result.thermo_TdS_shannon_gen500))  << ","
+                        << (std::isnan(result.thermo_TdS_shannon_gen1000) ? "NA" : std::to_string(result.thermo_TdS_shannon_gen1000)) << "\n";
                 }
             } catch (...) {
                 // Per-complex CSV is best-effort; failures are non-fatal.
