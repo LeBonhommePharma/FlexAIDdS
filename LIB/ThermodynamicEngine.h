@@ -3,7 +3,7 @@
 #include <array>
 
 struct ThermoResult {
-    float G_bind;        // total free energy estimate  (kcal/mol)
+    float G_bind;        // ΔG_bind = H_vct + TdS_shannon − TdS_vib  (kcal/mol); entropy costs binding (+), vib gain reduces G (−)
     float H_vct;         // <CF_vct>/n_heavy — intensive enthalpic term (kcal/mol per heavy atom)
     float H_vct_raw;     // <CF_vct> ensemble mean — unnormalized (for diagnostics)
     int   n_heavy_atoms; // heavy-atom count used for normalization

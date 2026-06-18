@@ -1163,7 +1163,7 @@ int GA(FA_Global* FA, GB_Global* GB,VC_Global* VC,chromosome** chrom,chromosome*
 
 	QuickSort((*chrom),0,GB->num_chrom-1,true);
 
-	// ── ThermodynamicEngine: G_bind = <CF> - T_eff*H_shannon + T_eff*dH_rep_tencom ──
+	// ── ThermodynamicEngine: G_bind = H_vct + TdS_shannon − TdS_vib ──
 	if (FA->thermo_engine_enabled && FA->thermo_engine != nullptr) {
 		std::vector<std::vector<float>> gene_pop(GB->num_chrom,
 			std::vector<float>(GB->num_genes));
