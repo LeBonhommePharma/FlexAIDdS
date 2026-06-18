@@ -654,7 +654,7 @@ struct FA_Global_struct{
 	int    ring_n_sugars;                // cached furanose pucker-gene count (== template->sugar_phases.size())
 	float  ring_cur_phases[MAX_RING_FLEX]; // current chromosome's sugar pucker phases (deg), read by ic2cf
 
-	// ── ThermodynamicEngine: G_bind = <CF> - T_eff*H_shannon + T_eff*dH_rep_tencom ──
+	// ── ThermodynamicEngine: G_bind = H_vct + TdS_shannon − TdS_vib ──
 	bool              thermo_engine_enabled;  // default false; zero cost when off
 	float             thermo_T_eff;           // kT at 298K = 0.596 kcal/mol (Sippl inverse-Boltzmann reference)
 	float             thermo_tencom_scale;    // tENCoM term scale (default 1.0)

@@ -50,7 +50,7 @@ ThermoResult ThermodynamicEngine::compute(
     r.n_heavy_atoms  = n_heavy_atoms;
     r.TdS_shannon    = T_eff_ * shannon_entropy(final_pop);
     r.TdS_vib        = tencom_scale_ * (H_rep_bound - H_rep_ref_);
-    r.G_bind         = r.H_vct - r.TdS_shannon + r.TdS_vib;  // no T_eff on H_vct (matrix already kT-scaled)
+    r.G_bind         = r.H_vct + r.TdS_shannon - r.TdS_vib;  // ΔG = ΔH + TΔS_conf − TΔS_vib: entropy costs (+), vib gain reduces G (−)
     float denom      = r.TdS_shannon + r.TdS_vib;
     r.compensation   = (std::abs(denom) > 1e-6f) ? r.H_vct / denom : 0.0f;
     return r;
