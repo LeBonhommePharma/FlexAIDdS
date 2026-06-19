@@ -29,6 +29,27 @@ endif()
 
 project(FlexAID VERSION 2.0.0 LANGUAGES ${_ENABLED_LANGUAGES})
 
+# ── Embed git provenance in binary ────────────────────────────────────────
+execute_process(
+    COMMAND git -C "${CMAKE_SOURCE_DIR}" status --porcelain
+    OUTPUT_VARIABLE _GIT_STATUS OUTPUT_STRIP_TRAILING_WHITESPACE
+    ERROR_QUIET)
+if(_GIT_STATUS STREQUAL "")
+    set(FLEXAIDS_GIT_DIRTY "0")
+else()
+    set(FLEXAIDS_GIT_DIRTY "1")
+    message(WARNING "Building from a DIRTY working tree — reproducibility metadata will be flagged.")
+endif()
+
+execute_process(
+    COMMAND git -C "${CMAKE_SOURCE_DIR}" rev-parse --short HEAD
+    OUTPUT_VARIABLE FLEXAIDS_GIT_COMMIT OUTPUT_STRIP_TRAILING_WHITESPACE
+    ERROR_QUIET)
+
+add_compile_definitions(
+    FLEXAIDS_GIT_DIRTY=${FLEXAIDS_GIT_DIRTY}
+    FLEXAIDS_GIT_COMMIT="${FLEXAIDS_GIT_COMMIT}")
+
 include(CheckCXXCompilerFlag)
 
 # ─── C++ Standard ─────────────────────────────────────────────────────────

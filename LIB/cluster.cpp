@@ -1,6 +1,8 @@
 #include "gaboom.h"
 #include "fileio.h"
 #include "simd_distance.h"
+#include <cmath>
+#include <limits>
 #include <vector>
 #ifdef _OPENMP
 #include <omp.h>
@@ -18,6 +20,8 @@ void cluster(FA_Global* FA, GB_Global* GB, VC_Global* VC, chromosome* chrom, gen
 
 	// will 
 	double partition_function = 0.0;
+	double boltzmann_origin = 0.0;
+	bool boltzmann_has_origin = false;
 
 	float rmsd = 0.0f;
 	int num_of_results = FA->max_results;
@@ -69,6 +73,16 @@ void cluster(FA_Global* FA, GB_Global* GB, VC_Global* VC, chromosome* chrom, gen
 	n_unclus=num_chrom;
 	num_of_clusters=0;
 	
+	if (FA->temperature) {
+		for(j=0;j<num_chrom;++j) {
+			if (std::isfinite(chrom[j].app_evalue) &&
+			    (!boltzmann_has_origin || chrom[j].app_evalue < boltzmann_origin)) {
+				boltzmann_origin = chrom[j].app_evalue;
+				boltzmann_has_origin = true;
+			}
+		}
+	}
+
 	// CLustering Variable Initialization and partition_function calculation
 	for(j=0;j<num_chrom;++j)
 	{
@@ -77,8 +91,8 @@ void cluster(FA_Global* FA, GB_Global* GB, VC_Global* VC, chromosome* chrom, gen
 		Clus_TCF[j]=0.0;
 		Clus_TOP[j]=0;
 		Clus_FRE[j]=0;
-		if(FA->temperature){
-			partition_function += exp((-1.0) * FA->beta * chrom[j].app_evalue);
+		if(FA->temperature && boltzmann_has_origin && std::isfinite(chrom[j].app_evalue)){
+			partition_function += exp((-1.0) * FA->beta * (chrom[j].app_evalue - boltzmann_origin));
 		}
 	}
     //printf("n_unclus=%d\n",n_unclus);
@@ -98,7 +112,7 @@ void cluster(FA_Global* FA, GB_Global* GB, VC_Global* VC, chromosome* chrom, gen
 			Clus_TOP[0]=0;   Clus_FRE[0]=1;
 		}
 	} else if (FA->temperature && partition_function == 0.0) {
-		fprintf(stderr,"ERROR: The Partition Function is NULL in the clustering step.\n");
+		fprintf(stderr,"ERROR: The Partition Function is NULL in the clustering step after shifted Boltzmann normalization.\n");
 		Terminate(2);
 	}
 	
@@ -135,9 +149,10 @@ void cluster(FA_Global* FA, GB_Global* GB, VC_Global* VC, chromosome* chrom, gen
 		n_unclus--;
 		if(FA->temperature > 0)
 		{
-			double Pj = exp((-1.0) * FA->beta * chrom[j].app_evalue) / partition_function;
-			Clus_ACF[num_of_clusters] = (double)( ( Pj * chrom[j].app_evalue) + (FA->temperature * Pj * log(Pj)) );
-			Clus_TCF[num_of_clusters] = (double)( ( Pj * chrom[j].app_evalue) + (FA->temperature * Pj * log(Pj)) );
+			double Pj = exp((-1.0) * FA->beta * (chrom[j].app_evalue - boltzmann_origin)) / partition_function;
+			double H_j = (Pj > 0.0) ? (FA->temperature * Pj * log(Pj)) : 0.0;  // 0*log(0)=0 by Shannon convention
+			Clus_ACF[num_of_clusters] = (double)( Pj * chrom[j].app_evalue ) + H_j;
+			Clus_TCF[num_of_clusters] = (double)( Pj * chrom[j].app_evalue ) + H_j;
 		}
 		else
 		{
@@ -173,8 +188,9 @@ void cluster(FA_Global* FA, GB_Global* GB, VC_Global* VC, chromosome* chrom, gen
 						Clus_RMSDT[i]=loc_rmsd;
 						n_unclus--;
 						if(FA->temperature){
-							double Pi = exp((-1.0) * FA->beta * chrom[i].app_evalue) / partition_function;
-							Clus_ACF[num_of_clusters] += (double)( (Pi * chrom[i].app_evalue) + (FA->temperature * Pi * log(Pi)) );
+							double Pi = exp((-1.0) * FA->beta * (chrom[i].app_evalue - boltzmann_origin)) / partition_function;
+							Clus_ACF[num_of_clusters] += (double)( Pi * chrom[i].app_evalue )
+							                              + ((Pi > 0.0) ? (FA->temperature * Pi * log(Pi)) : 0.0);
 						}else{
 							Clus_ACF[num_of_clusters] += chrom[i].app_evalue;
 						}
