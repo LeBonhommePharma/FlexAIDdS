@@ -56,7 +56,22 @@ ThermoResult ThermodynamicEngine::compute(
         r.TdS_shannon = T_eff_ * shannon_entropy(final_pop)
                       / static_cast<float>(n_genes > 0 ? n_genes : 1);
     }
-    r.TdS_vib        = tencom_scale_ * (H_rep_bound - H_rep_ref_);
+    // Guard: when H_rep_bound ≈ 0, the bound-state vibrational entropy is
+    // undefined — the ligand ENM failed to converge (rigid/tiny ligand) or the
+    // ligand is displaced outside the pocket (PoseX). In both cases the receptor
+    // flexibility change upon binding is physically undefined; TdS_vib = 0 is
+    // the only mechanistically correct choice.
+    // Without this guard: TdS_vib = scale*(0 − H_rep_ref) → large negative,
+    // and G_bind = H_vct + TdS_shannon − TdS_vib explodes to +17k kcal/mol.
+    {
+        float raw_vib = (std::abs(H_rep_bound) < 1e-6f)
+                        ? 0.0f
+                        : tencom_scale_ * (H_rep_bound - H_rep_ref_);
+        // Secondary safety clamp: |TdS_vib| > 5 nats is unphysical for any
+        // real docking scenario. Catches residual explosion when a displaced
+        // ligand ENM does build but H_rep_bound << H_rep_ref_.
+        r.TdS_vib = std::max(-5.0f, std::min(5.0f, raw_vib));
+    }
     r.G_bind         = r.H_vct + r.TdS_shannon - r.TdS_vib;  // ΔG = ΔH + TΔS_conf − TΔS_vib: entropy costs (+), vib gain reduces G (−)
     float denom      = r.TdS_shannon + r.TdS_vib;
     r.compensation   = (std::abs(denom) > 1e-6f) ? r.H_vct / denom : 0.0f;
