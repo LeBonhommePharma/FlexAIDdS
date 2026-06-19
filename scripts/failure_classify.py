@@ -25,7 +25,7 @@ Outputs:
 3. CF_false_minimum — best_score << cf_native by > cf_delta_threshold units AND
                      RMSD >= lo_rmsd.  GA converged to a false minimum that outscores
                      the native pose geometrically.
-4. timeout         — wall_time_s >= 900 s, or RMSD sentinel == 999.
+4. timeout         — wall_time_s >= 900 s, or RMSD sentinel < 0 (−1.0 = not computed/failed).
 5. search_failure  — everything else; sub-tagged by DoF:
                        :rigid    num_genes ≤ 4   (rigid-body only — scoring suspect)
                        :flexible num_genes ≥ 8   (high-flex — search space explosion)
@@ -187,14 +187,14 @@ def classify_one(pdb_id, row, target_dir, lo_rmsd, cf_delta):
     # Oracle   RMSD: best_cluster_rmsd = best possible across all poses.
     # See module docstring for column-semantics correction vs. spec.
     # ------------------------------------------------------------------
-    rmsd   = _float(row, ["rmsd_hungarian", "best_cluster_rmsd"], default=999.0)
-    oracle = _float(row, ["best_cluster_rmsd", "rmsd_hungarian"],  default=999.0)
+    rmsd   = _float(row, ["rmsd_hungarian", "best_cluster_rmsd"], default=-1.0)
+    oracle = _float(row, ["best_cluster_rmsd", "rmsd_hungarian"],  default=-1.0)
 
     # If both columns are equal (e.g. older CSVs where oracle wasn't tracked
     # separately), oracle_rmsd == rmsd — selection_miss cannot be detected.
     # We still try, but note it in missing_cols later.
 
-    success = rmsd < lo_rmsd
+    success = (rmsd >= 0.0) and (rmsd < lo_rmsd)
 
     out = {
         "rmsd":           round(rmsd,   4),
@@ -216,7 +216,7 @@ def classify_one(pdb_id, row, target_dir, lo_rmsd, cf_delta):
     # ── 2. selection_miss ───────────────────────────────────────────────
     # Oracle found a near-native pose BUT the selector chose the wrong one.
     # Condition: best_cluster_rmsd < lo_rmsd  AND  rmsd_hungarian >= lo_rmsd
-    if oracle < lo_rmsd and rmsd >= lo_rmsd:
+    if oracle >= 0.0 and oracle < lo_rmsd and rmsd >= lo_rmsd:
         out["failure_mode"]     = "selection_miss"
         out["rmsd_in_ensemble"] = round(oracle, 4)
         return out
@@ -235,7 +235,7 @@ def classify_one(pdb_id, row, target_dir, lo_rmsd, cf_delta):
     # ── 4. timeout ──────────────────────────────────────────────────────
     wall = _float(row, ["wall_time_s", "wall_time"], default=0.0)
     status_str = (row.get("status") or row.get("success") or "")
-    if wall >= TIMEOUT_WALL_S or rmsd >= 998.0 or "timeout" in str(status_str).lower():
+    if wall >= TIMEOUT_WALL_S or rmsd >= 998.0 or rmsd < 0.0 or "timeout" in str(status_str).lower():
         out["failure_mode"] = "timeout"
         out["wall_time_s"]  = round(wall, 1)
         return out
