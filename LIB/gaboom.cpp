@@ -155,6 +155,20 @@ static inline void ring_load_chrom_to_fa(FA_Global* FA, const chromosome* c) {
         FA->ring_cur_phases[i] = c->ring_phases[i];
 }
 
+// ── count_receptor_chains ──────────────────────────────────────────────────
+// Count distinct chain IDs among receptor residues (type==0).
+// Returns at least 1. Used to normalise VCT evalue for symmetric assemblies
+// (homodimers, homotetramers, etc.) where all chains are scored simultaneously,
+// which inflates the CF landscape N-fold at symmetry axes and collapses the GA.
+static int count_receptor_chains(FA_Global* FA, const resid* residue) {
+    std::unordered_set<char> seen;
+    for (int r = 0; r < FA->res_cnt; ++r) {
+        if (residue[r].type == 0)
+            seen.insert(residue[r].chn);
+    }
+    return seen.empty() ? 1 : static_cast<int>(seen.size());
+}
+
 // Forward declarations for functions defined later in this file
 int reproduce(FA_Global* FA,GB_Global* GB,VC_Global* VC, chromosome* chrom, const genlim* gene_lim,
                atom* atoms,resid* residue,gridpoint* cleftgrid,char* repmodel,
@@ -193,6 +207,17 @@ int GA(FA_Global* FA, GB_Global* GB,VC_Global* VC,chromosome** chrom,chromosome*
 
 	int i;
 	int print=0;
+
+	// ── Multi-chain VCT normalisation ─────────────────────────────────────────
+	// For symmetric assemblies (homodimers, homotetramers, …) vcfunction.cpp
+	// scores contacts against ALL receptor chains simultaneously, making the CF
+	// landscape N_chains× steeper at symmetry axes → false minima → GA collapse.
+	// Divide every evalue/app_evalue by the number of unique receptor chains so
+	// single-chain receptors are unaffected (n_receptor_chains == 1).
+	const int n_receptor_chains = count_receptor_chains(FA, residue);
+	if (n_receptor_chains > 1)
+		fprintf(stderr, "[CHAIN] %d receptor chains detected — "
+		        "normalising VCT evalue by chain count\n", n_receptor_chains);
 
 	// ── Level-3 H(ω) diagnostic env override ──────────────────────────────────
 	// FLEXAIDDS_USE_SHANNON=1 enables the ligand vibrational-mode Shannon-entropy
@@ -553,6 +578,7 @@ int GA(FA_Global* FA, GB_Global* GB,VC_Global* VC,chromosome** chrom,chromosome*
 	if (no_sec)
 		fprintf(stderr, "[SEC] All entropy-convergence early exits DISABLED "
 		        "(FLEXAIDDS_NO_SEC=1) — GA will run to max_generations.\n");
+	const unsigned int target_temperature_K = FA->temperature;
 
 	// ── True GA elitism (v27) snapshot buffers ──
 	// The n_elite lowest-CF individuals are deep-copied each generation BEFORE
@@ -570,9 +596,10 @@ int GA(FA_Global* FA, GB_Global* GB,VC_Global* VC,chromosome** chrom,chromosome*
 		        "lowest-CF individual(s) per generation\n", n_elite);
 
 	// ── Temperature annealing (FLEXAIDDS_T_HOT) ──────────────────────────────
-	// Exponential decay T_hot → 298 K: T(α) = T_hot·exp(−5α) + 298·(1−exp(−5α))
-	// where α = gen/(max_gen−1) ∈ [0,1].  Affects SMFREE Boltzmann-weight
-	// selection only; post-GA thermodynamics use the final temperature (≈298 K).
+	// Exponential decay T_hot -> target K:
+	//   T(alpha) = T_hot*exp(-5alpha) + T_target*(1-exp(-5alpha)).
+	// Affects SMFREE Boltzmann-weight selection only; post-GA thermodynamics
+	// use the configured target temperature even when the GA stops early.
 	// arm3b ablation (5000K constant, Fable 5) was net-neutral in oracle mode
 	// → native basin gravitationally dominant.  Annealing targets near-miss
 	// false-minimum escape early in the run while native seeds lock in.
@@ -581,11 +608,13 @@ int GA(FA_Global* FA, GB_Global* GB,VC_Global* VC,chromosome** chrom,chromosome*
 		const char* env = std::getenv("FLEXAIDDS_T_HOT");
 		return (env && env[0] != '\0') ? std::atof(env) : 0.0;
 	}();
-	const bool do_anneal = (t_hot_anneal > 298.0) && (FA->temperature > 0);
+	const double target_temperature_d = static_cast<double>(target_temperature_K);
+	const bool do_anneal = (target_temperature_K > 0) &&
+	                        (t_hot_anneal > target_temperature_d);
 	if (do_anneal) {
 		fprintf(stderr, "[ANNEAL] Temperature annealing enabled: "
-		        "T_hot=%.0f K → 298 K over %d generations (exp-5 schedule)\n",
-		        t_hot_anneal, GB->max_generations);
+		        "T_hot=%.0f K -> %.0f K over %d generations (exp-5 schedule)\n",
+		        t_hot_anneal, target_temperature_d, GB->max_generations);
 		// Prime initial temperature so gen-0 SMFREE sees T_hot
 		FA->temperature = static_cast<unsigned int>(std::round(t_hot_anneal));
 		FA->beta        = 1.0 / t_hot_anneal;
@@ -936,8 +965,8 @@ int GA(FA_Global* FA, GB_Global* GB,VC_Global* VC,chromosome** chrom,chromosome*
 					(*chrom)[ci].cf = eval_chromosome(FA, GB, VC, *gene_lim, atoms,
 					                                  residue, *cleftgrid,
 					                                  (*chrom)[ci].genes, target);
-					(*chrom)[ci].evalue     = get_cf_evalue(&(*chrom)[ci].cf, FA);
-					(*chrom)[ci].app_evalue = get_apparent_cf_evalue(&(*chrom)[ci].cf);
+					(*chrom)[ci].evalue     = get_cf_evalue(&(*chrom)[ci].cf, FA) / n_receptor_chains;
+					(*chrom)[ci].app_evalue = get_apparent_cf_evalue(&(*chrom)[ci].cf) / n_receptor_chains;
 					ccbm_inject_strain(FA, (*chrom)[ci], *gene_lim);
 					(*chrom)[ci].status = 'n';
 				}
@@ -955,7 +984,7 @@ int GA(FA_Global* FA, GB_Global* GB,VC_Global* VC,chromosome** chrom,chromosome*
 			const double alpha = static_cast<double>(i) /
 			                     static_cast<double>(GB->max_generations - 1);
 			const double T_now = t_hot_anneal * std::exp(-5.0 * alpha)
-			                   + 298.0 * (1.0 - std::exp(-5.0 * alpha));
+			                   + target_temperature_d * (1.0 - std::exp(-5.0 * alpha));
 			FA->temperature = static_cast<unsigned int>(std::round(T_now));
 			FA->beta        = 1.0 / T_now;
 			if (i % 200 == 0) {
@@ -1129,7 +1158,14 @@ int GA(FA_Global* FA, GB_Global* GB,VC_Global* VC,chromosome** chrom,chromosome*
 				fprintf(stderr, "TIMING GEN %4d: %.2f ms  (~%.3f us/eval, %d chrom)\n",
 				        i+1, _ms, _ms*1000.0/(2.0*GB->num_chrom), GB->num_chrom);
 		}
+	}
 
+	if (do_anneal) {
+		FA->temperature = target_temperature_K;
+		FA->beta        = 1.0 / target_temperature_d;
+		fprintf(stderr,
+		        "[ANNEAL] restored target temperature %.0f K for post-GA thermodynamics\n",
+		        target_temperature_d);
 	}
 
 	// ── Timing summary ──
@@ -1691,6 +1727,9 @@ int reproduce(FA_Global* FA,GB_Global* GB,VC_Global* VC, chromosome* chrom, cons
 	int& nrejected = ctx.nrejected;
 
 	int i,j,k;
+
+	// Multi-chain VCT normalisation (see GA() comment for rationale)
+	const int n_receptor_chains = count_receptor_chains(FA, residue);
 	int nnew,p1,p2;
 
 	gene chrop1_gen[MAX_NUM_GENES];
@@ -1809,8 +1848,8 @@ int reproduce(FA_Global* FA,GB_Global* GB,VC_Global* VC, chromosome* chrom, cons
 
 			chrom[GB->num_chrom+i].cf=eval_chromosome(FA,GB,VC,gene_lim,atoms,residue,cleftgrid,
 								  chrom[GB->num_chrom+i].genes,target);
-			chrom[GB->num_chrom+i].evalue=get_cf_evalue(&chrom[GB->num_chrom+i].cf, FA);
-			chrom[GB->num_chrom+i].app_evalue=get_apparent_cf_evalue(&chrom[GB->num_chrom+i].cf);
+			chrom[GB->num_chrom+i].evalue=get_cf_evalue(&chrom[GB->num_chrom+i].cf, FA) / n_receptor_chains;
+			chrom[GB->num_chrom+i].app_evalue=get_apparent_cf_evalue(&chrom[GB->num_chrom+i].cf) / n_receptor_chains;
 			ccbm_inject_strain(FA, chrom[GB->num_chrom+i], gene_lim);  // CCBM strain
 			chrom[GB->num_chrom+i].status='n';
 
@@ -1839,8 +1878,8 @@ int reproduce(FA_Global* FA,GB_Global* GB,VC_Global* VC, chromosome* chrom, cons
 
 			chrom[GB->num_chrom+i].cf=eval_chromosome(FA,GB,VC,gene_lim,atoms,residue,cleftgrid,
 								  chrom[GB->num_chrom+i].genes,target);
-			chrom[GB->num_chrom+i].evalue=get_cf_evalue(&chrom[GB->num_chrom+i].cf, FA);
-			chrom[GB->num_chrom+i].app_evalue=get_apparent_cf_evalue(&chrom[GB->num_chrom+i].cf);
+			chrom[GB->num_chrom+i].evalue=get_cf_evalue(&chrom[GB->num_chrom+i].cf, FA) / n_receptor_chains;
+			chrom[GB->num_chrom+i].app_evalue=get_apparent_cf_evalue(&chrom[GB->num_chrom+i].cf) / n_receptor_chains;
 			ccbm_inject_strain(FA, chrom[GB->num_chrom+i], gene_lim);  // CCBM strain
 			chrom[GB->num_chrom+i].status='n';
 
@@ -2022,6 +2061,9 @@ void calculate_fitness(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* chr
 	int& gen_id = ctx.gen_id;
 	int i;
 
+	// Multi-chain VCT normalisation (see GA() comment for rationale)
+	const int n_receptor_chains = count_receptor_chains(FA, residue);
+
 	// ── TurboQuant QuantizedContactMatrix (TQCM) ─────────────────────────
 	// When TQCM is enabled, build a compressed representation of the
 	// energy interaction matrix FA->energy_matrix at first call.  The QCM
@@ -2136,8 +2178,8 @@ void calculate_fitness(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* chr
 				chrom[c].cf.hbond  = 0.0;
 				chrom[c].cf.totsas = 0.0;
 				chrom[c].cf.rclash = (h_wal[c] > CLASH_THRESHOLD) ? 1 : 0;
-				chrom[c].evalue     = get_cf_evalue(&chrom[c].cf, FA);
-				chrom[c].app_evalue = get_apparent_cf_evalue(&chrom[c].cf);
+				chrom[c].evalue     = get_cf_evalue(&chrom[c].cf, FA) / n_receptor_chains;
+				chrom[c].app_evalue = get_apparent_cf_evalue(&chrom[c].cf) / n_receptor_chains;
 				ccbm_inject_strain(FA, chrom[c], gene_lim);  // CCBM strain
 				chrom[c].status    = 'n';
 			}
@@ -2495,8 +2537,8 @@ void calculate_fitness(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* chr
 			    &tl_fa[tid], GB, &tl_vc[tid], gene_lim,
 			    tl_atoms[tid].data(), tl_res[tid].data(),
 			    cleftgrid, chrom[ii].genes, target);
-			chrom[ii].evalue     = get_cf_evalue(&chrom[ii].cf, FA);
-			chrom[ii].app_evalue = get_apparent_cf_evalue(&chrom[ii].cf);
+			chrom[ii].evalue     = get_cf_evalue(&chrom[ii].cf, FA) / n_receptor_chains;
+			chrom[ii].app_evalue = get_apparent_cf_evalue(&chrom[ii].cf) / n_receptor_chains;
 			ccbm_inject_strain(FA, chrom[ii], gene_lim);  // CCBM strain
 			chrom[ii].status     = 'n';
 		}
@@ -2824,6 +2866,9 @@ void populate_chromosomes(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* 
                           std::unordered_map<size_t, int> & duplicates){
 
 	int i,j;
+
+	// Multi-chain VCT normalisation (see GA() comment for rationale)
+	const int n_receptor_chains = count_receptor_chains(FA, residue);
 
 	/*
 	  std::mt19937 rng;
@@ -3181,8 +3226,8 @@ void populate_chromosomes(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* 
 			    &p_fa[tid], GB, &p_vc[tid], gene_lim,
 			    p_atoms[tid].data(), p_res[tid].data(),
 			    cleftgrid, chrom[i].genes, target);
-			chrom[i].evalue     = get_cf_evalue(&chrom[i].cf, FA);
-			chrom[i].app_evalue = get_apparent_cf_evalue(&chrom[i].cf);
+			chrom[i].evalue     = get_cf_evalue(&chrom[i].cf, FA) / n_receptor_chains;
+			chrom[i].app_evalue = get_apparent_cf_evalue(&chrom[i].cf) / n_receptor_chains;
 			chrom[i].status     = 'n';
 			ccbm_inject_strain(FA, chrom[i], gene_lim);  // CCBM strain
 		}
