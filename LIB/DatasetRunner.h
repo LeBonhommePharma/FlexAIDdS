@@ -110,6 +110,7 @@ struct DatasetEntry {
     std::string pdb_id;              // PDB code (uppercase)
     std::string receptor_path;       // path to downloaded PDB/CIF
     std::string ligand_path;         // path to extracted ligand SDF
+    std::string rmsd_reference_path; // optional crystal/reference SDF for RMSD/native CF
     std::string binding_site_path;   // oracle binding site PDB (optional; enables LOCCLF mode)
     float experimental_affinity{-1.0f};  // pKd/pKi if available
     float experimental_dH{0.0f};     // ΔH in kcal/mol (ITC)
@@ -126,8 +127,8 @@ struct DatasetEntry {
 struct DockingResult {
     std::string pdb_id;
     float best_score{0.0f};           // FlexAIDdS free energy (kcal/mol)
-    float rmsd_to_crystal{999.0f};    // serial-order RMSD to crystal ligand (Å)
-    float rmsd_hungarian{999.0f};     // symmetry-corrected (Hungarian) RMSD (Å)
+    float rmsd_to_crystal{-1.0f};     // serial-order RMSD to crystal ligand (Å); -1 = not computed/failed
+    float rmsd_hungarian{-1.0f};      // symmetry-corrected (Hungarian) RMSD (Å); -1 = not computed/failed
     float predicted_dG{0.0f};         // predicted ΔG (kcal/mol)
     float predicted_dH{0.0f};         // predicted configurational ΔH ≈ <E> (kcal/mol)
     float predicted_TdS{0.0f};        // predicted configurational TΔS (kcal/mol)
@@ -146,7 +147,7 @@ struct DockingResult {
     // Native-pose CF diagnostic (scored before the GA via FLEXAIDDS_SCORE_NATIVE)
     float cf_native{0.0f};            // CF at crystal pose; 0.0 when not run
     // P4: oracle best-of-N over emitted cluster poses (best achievable by selection)
-    float best_cluster_rmsd{999.0f};  // min Hungarian RMSD across all emitted poses (Å)
+    float best_cluster_rmsd{-1.0f};   // min Hungarian RMSD across all emitted poses (Å); -1 = not computed/failed
     int   best_cluster_idx{-1};       // pose index (0-19) achieving best_cluster_rmsd
     // Fix 2 (revised): seed-echo flag. true when the elected pose path ends in
     // "_INI.pdb" — i.e. the crystal-seeded chromosome protected by seed_elitism

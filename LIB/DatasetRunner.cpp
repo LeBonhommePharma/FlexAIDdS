@@ -277,7 +277,7 @@ static float hungarian_rmsd(
     const std::vector<std::pair<std::string,std::array<float,3>>>& crystal,
     const std::vector<std::pair<std::string,std::array<float,3>>>& docked)
 {
-    if (crystal.empty() || docked.empty()) return 999.0f;
+    if (crystal.empty() || docked.empty()) return -1.0f;
     std::set<std::string> elems;
     for (const auto& a : crystal) elems.insert(a.first);
     double total_sq = 0.0;
@@ -304,7 +304,33 @@ static float hungarian_rmsd(
             if (asgn[i] >= 0) total_sq += cost[i][asgn[i]];
         total_n += n;
     }
-    return (total_n > 0) ? static_cast<float>(std::sqrt(total_sq / total_n)) : 999.0f;
+    return (total_n > 0) ? static_cast<float>(std::sqrt(total_sq / total_n)) : -1.0f;
+}
+
+// FlexAID pose PDBs can contain compact negative coordinates such as
+// " -0.635 -80.275-146.614" in the fixed 24-character XYZ span.  A strict
+// fixed-column parse then loses the z sign.  Extract signed floats from the XYZ
+// span instead; this remains valid for normal fixed-width PDB coordinates.
+static bool parse_pdb_xyz_span(const std::string& line, std::array<float,3>& xyz)
+{
+    if (line.size() < 54) return false;
+    const std::string span = line.substr(30, 24);
+    static const std::regex number_re(
+        R"([+-]?(?:(?:\d+\.\d*)|(?:\.\d+)|(?:\d+))(?:[eE][+-]?\d+)?)");
+    std::sregex_iterator it(span.begin(), span.end(), number_re);
+    std::sregex_iterator end;
+    float vals[3] = {0.0f, 0.0f, 0.0f};
+    int n = 0;
+    for (; it != end && n < 3; ++it, ++n) {
+        try {
+            vals[n] = std::stof(it->str());
+        } catch (...) {
+            return false;
+        }
+    }
+    if (n != 3) return false;
+    xyz = {vals[0], vals[1], vals[2]};
+    return true;
 }
 
 // Compute {serial-order RMSD, Hungarian RMSD} of the docked ligand in an emitted
@@ -321,7 +347,7 @@ static std::pair<float,float> compute_pose_ligand_rmsd(
     const std::string& pdb_id,
     bool warn)
 {
-    if (crystal_xyz.empty()) return {999.0f, 999.0f};
+    if (crystal_xyz.empty()) return {-1.0f, -1.0f};
 
     // Trailing element token (upper-first, rest lower: "C", "N", "Cl").
     auto get_elem_token = [](const std::string& line) -> std::string {
@@ -386,10 +412,9 @@ static std::pair<float,float> compute_pose_ligand_rmsd(
             }
             if (!selected) continue;
             if (elem_is_hydrogen(pline)) continue;
-            float x = std::stof(pline.substr(30,8));
-            float y = std::stof(pline.substr(38,8));
-            float z = std::stof(pline.substr(46,8));
-            docked.push_back({serial, {x, y, z}, get_elem_token(pline)});
+            std::array<float,3> xyz{};
+            if (!parse_pdb_xyz_span(pline, xyz)) continue;
+            docked.push_back({serial, xyz, get_elem_token(pline)});
         }
     }
     std::sort(docked.begin(), docked.end(),
@@ -403,7 +428,7 @@ static std::pair<float,float> compute_pose_ligand_rmsd(
         pose_xyz.push_back(std::get<1>(d));
         pose_elem.push_back(std::get<2>(d));
     }
-    if (pose_xyz.empty()) return {999.0f, 999.0f};
+    if (pose_xyz.empty()) return {-1.0f, -1.0f};
 
     const int count_delta = std::abs(static_cast<int>(crystal_xyz.size()) -
                                      static_cast<int>(pose_xyz.size()));
@@ -412,9 +437,9 @@ static std::pair<float,float> compute_pose_ligand_rmsd(
             std::cerr << "  [WARN] RMSD atom count mismatch for " << pdb_id
                       << ": crystal=" << crystal_xyz.size()
                       << " pose(docked-ligand)=" << pose_xyz.size()
-                      << " — setting RMSD=999\n";
+                      << " — setting RMSD=-1\n";
         }
-        return {999.0f, 999.0f};
+        return {-1.0f, -1.0f};
     }
 
     int n = static_cast<int>(std::min(crystal_xyz.size(), pose_xyz.size()));
@@ -427,7 +452,7 @@ static std::pair<float,float> compute_pose_ligand_rmsd(
     }
     float rc = static_cast<float>(std::sqrt(sum_sq / n));
 
-    float rh = 999.0f;
+    float rh = -1.0f;
     if (crystal_elem.size() == crystal_xyz.size() &&
         pose_elem.size() == pose_xyz.size()) {
         std::vector<std::pair<std::string,std::array<float,3>>> catoms, datoms;
@@ -517,13 +542,9 @@ static bool load_pose_ligand_coords(
             }
             if (!selected) continue;
             if (elem_is_hydrogen(pline)) continue;
-            float x, y, z;
-            try {
-                x = std::stof(pline.substr(30,8));
-                y = std::stof(pline.substr(38,8));
-                z = std::stof(pline.substr(46,8));
-            } catch (...) { continue; }
-            docked.push_back({serial, {x, y, z}, get_elem_token(pline)});
+            std::array<float,3> xyz{};
+            if (!parse_pdb_xyz_span(pline, xyz)) continue;
+            docked.push_back({serial, xyz, get_elem_token(pline)});
         }
     }
     std::sort(docked.begin(), docked.end(),
@@ -542,7 +563,7 @@ static bool load_pose_ligand_coords(
 // alphabet).  Mirrors the symmetry-corrected path of compute_pose_ligand_rmsd
 // but operates on two in-memory coordinate sets, so the v50 consensus scorer can
 // compare cluster representatives across restarts without re-reading files or
-// touching crystal coordinates.  Returns 999 on empty input or an atom-count
+// touching crystal coordinates.  Returns -1 on empty input or an atom-count
 // mismatch greater than 2.
 static float pose_pose_rmsd(
     const std::vector<std::array<float,3>>& xyz_a,
@@ -550,10 +571,10 @@ static float pose_pose_rmsd(
     const std::vector<std::array<float,3>>& xyz_b,
     const std::vector<std::string>& elem_b)
 {
-    if (xyz_a.empty() || xyz_b.empty()) return 999.0f;
-    if (elem_a.size() != xyz_a.size() || elem_b.size() != xyz_b.size()) return 999.0f;
+    if (xyz_a.empty() || xyz_b.empty()) return -1.0f;
+    if (elem_a.size() != xyz_a.size() || elem_b.size() != xyz_b.size()) return -1.0f;
     if (std::abs(static_cast<int>(xyz_a.size()) -
-                 static_cast<int>(xyz_b.size())) > 2) return 999.0f;
+                 static_cast<int>(xyz_b.size())) > 2) return -1.0f;
     std::vector<std::pair<std::string,std::array<float,3>>> a, b;
     a.reserve(xyz_a.size());
     b.reserve(xyz_b.size());
@@ -1144,8 +1165,8 @@ double compute_kendall_tau(const std::vector<double>& x, const std::vector<doubl
 
 double compute_rmsd(const std::vector<float>& coords_a,
                     const std::vector<float>& coords_b) {
-    if (coords_a.size() != coords_b.size() || coords_a.empty()) return 999.0;
-    if (coords_a.size() % 3 != 0) return 999.0;
+    if (coords_a.size() != coords_b.size() || coords_a.empty()) return -1.0;
+    if (coords_a.size() % 3 != 0) return -1.0;
 
     const size_t n_atoms = coords_a.size() / 3;
     double sum_sq = 0.0;
@@ -5169,7 +5190,7 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
 
         if (entry.receptor_path.empty() || entry.ligand_path.empty()) {
             result.success = false;
-            result.rmsd_to_crystal = 999.0f;
+            result.rmsd_to_crystal = -1.0f;
             report.results[idx] = result;
             return;
         }
@@ -5179,10 +5200,15 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                       << ": rec=" << entry.receptor_path
                       << " lig=" << entry.ligand_path << "\n";
             result.success = false;
-            result.rmsd_to_crystal = 999.0f;
+            result.rmsd_to_crystal = -1.0f;
             report.results[idx] = result;
             return;
         }
+
+        const std::string rmsd_reference_path =
+            !entry.rmsd_reference_path.empty()
+                ? entry.rmsd_reference_path
+                : entry.ligand_path;
 
         // Per-target output directory (resolved before the skip check so both
         // paths — cached and fresh — share the same variable definitions)
@@ -5278,14 +5304,51 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                             }
                             cells.push_back(cell);
                         }
-                        if (cells.size() >= 10 &&
-                            (cells[9] == "1" || cells[9] == "true" || cells[9] == "True")) {
-                            cached_csv_success = true;
-                            cached_csv_best_score = std::stof(cells[1]);
-                            cached_csv_predicted_dg = std::stof(cells[3]);
-                            cached_csv_num_poses = std::stoi(cells[7]);
-                            cached_csv_wall_time_s = std::stod(cells[8]);
+                        std::vector<std::string> headers;
+                        {
+                            std::stringstream hs(header);
+                            std::string hcell;
+                            while (std::getline(hs, hcell, ',')) {
+                                while (!hcell.empty() &&
+                                       (hcell.back() == '\r' || hcell.back() == '\n' ||
+                                        hcell.back() == ' ' || hcell.back() == '\t')) {
+                                    hcell.pop_back();
+                                }
+                                while (!hcell.empty() &&
+                                       (hcell.front() == ' ' || hcell.front() == '\t')) {
+                                    hcell.erase(hcell.begin());
+                                }
+                                headers.push_back(hcell);
+                            }
                         }
+                        auto cell_for = [&](const std::string& name) -> std::string {
+                            for (size_t i = 0; i < headers.size() && i < cells.size(); ++i) {
+                                if (headers[i] == name) return cells[i];
+                            }
+                            return std::string();
+                        };
+                        auto parse_int_cell = [&](const std::string& name, int fallback) -> int {
+                            const std::string v = cell_for(name);
+                            if (v.empty() || v == "NA") return fallback;
+                            try { return std::stoi(v); } catch (...) { return fallback; }
+                        };
+                        auto parse_float_cell = [&](const std::string& name, float fallback) -> float {
+                            const std::string v = cell_for(name);
+                            if (v.empty() || v == "NA") return fallback;
+                            try { return std::stof(v); } catch (...) { return fallback; }
+                        };
+                        auto parse_double_cell = [&](const std::string& name, double fallback) -> double {
+                            const std::string v = cell_for(name);
+                            if (v.empty() || v == "NA") return fallback;
+                            try { return std::stod(v); } catch (...) { return fallback; }
+                        };
+                        const std::string success_cell = cell_for("success");
+                        cached_csv_success =
+                            success_cell == "1" || success_cell == "true" || success_cell == "True";
+                        cached_csv_best_score = parse_float_cell("best_score", 0.0f);
+                        cached_csv_predicted_dg = parse_float_cell("predicted_dG", 0.0f);
+                        cached_csv_num_poses = parse_int_cell("num_poses", 0);
+                        cached_csv_wall_time_s = parse_double_cell("wall_time_s", 0.0);
                     }
                 }
             } catch (...) {
@@ -5293,11 +5356,13 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
             }
 
             const bool cached_stdout = fs::exists(stdout_path) && fs::file_size(stdout_path) > 0;
-            if (cached_csv_success || (cached_poses > 0 && cached_stdout)) {
+            const bool cached_csv_complete = (cached_csv_num_poses > 0) || cached_csv_success;
+            if (cached_csv_complete || (cached_poses > 0 && cached_stdout)) {
                 skip = true;
                 std::cerr << "  [CACHED] " << entry.pdb_id << " -- "
-                          << (cached_csv_success ? "successful result.csv" :
-                              std::to_string(cached_poses) + " pose(s)")
+                          << (cached_csv_complete ?
+                              "result.csv with " + std::to_string(cached_csv_num_poses) + " pose(s)" :
+                              std::to_string(cached_poses) + " pose artifact(s)")
                           << " already on disk, skipping\n";
             }
         }
@@ -5529,14 +5594,20 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                    << "  \"seeding\": {\n"
                    << "    \"mif_enabled\": true\n"
                    << "  },\n"
-                   // Self-docking re-docking: the cognate site is known, so bias
-                   // the bulk of the initial population to grid points nearest the
-                   // reference-ligand anchor (config_parser default is only 0.25).
-                   // In AUTONOMOUS mode the input ligand is pose-blinded, so copying
-                   // orientation/torsion genes from that frame would seed the wrong
-                   // pose. Keep the pocket anchor, but randomize genes 1..N.
+                   // Self-docking re-docking: in oracle-ceiling mode the cognate
+                   // site is known, so bias the initial population to grid points
+                   // nearest the reference-ligand anchor. In AUTONOMOUS mode,
+                   // disable reference-ligand seeding entirely; the blind smoke/
+                   // thesis number must come from coarse/MIF/site initialization,
+                   // not from the crystal/reference ligand frame.
                    << "  \"reference_ligand\": {\n"
-                   << "    \"seed_fraction\": 0.90,\n"
+                   << "    \"file\": \""
+                   << (!rmsd_reference_path.empty() && fs::exists(rmsd_reference_path)
+                         ? rmsd_reference_path : std::string())
+                   << "\",\n"
+                   << "    \"seed_fraction\": "
+                   << (config.mode == BenchmarkMode::AUTONOMOUS ? 0.0 : 0.90)
+                   << ",\n"
                    << "    \"pose_seed_enabled\": "
                    << (config.mode == BenchmarkMode::AUTONOMOUS ? "false" : "true")
                    << ",\n"
@@ -5687,9 +5758,10 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
             // (binding site preserved — Astex is a re-docking benchmark) but a
             // deterministic random orientation, so the direct-mode reflig seed
             // can no longer inject the crystal pose into the GA.  The seed is the
-            // PDB-id hash → reproducible.  entry.ligand_path (crystal frame) is
-            // preserved untouched for the RMSD reference below.  On any failure
-            // we fall back to the original file rather than abort the run.
+            // PDB-id hash -> reproducible.  The RMSD/native reference is kept
+            // separate from the ligand input path; cross-docking manifests can
+            // provide a start conformer for docking and a crystal SDF for scoring.
+            // On any failure we fall back to the original file rather than abort.
             //
             // ── v20 oracle-mode native-seed fix ──────────────────────────
             // FlexAIDdS builds its internal-coordinate (IC) frame relative to the
@@ -5724,6 +5796,8 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
             const bool entry_has_oracle_site =
                 !entry.binding_site_path.empty() &&
                 fs::exists(entry.binding_site_path);
+            const bool use_oracle_geometry =
+                config.mode != BenchmarkMode::AUTONOMOUS && entry_has_oracle_site;
             // Layer 1: BenchmarkMode controls blinding independently of oracle-site
             // presence. AUTONOMOUS always blinds (thesis number — no crystal pose
             // leakage). ORACLE_CEILING skips blinding (ceiling — IC anchored).
@@ -5770,7 +5844,7 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
             // site centroid before passing the receptor to FlexAIDdS.
             // This is a receptor topology fix, not a scoring change: SURFNET,
             // MIF, and VCT all operate on the trimmed pocket-relevant chains.
-            {
+            if (use_oracle_geometry) {
                 std::string pruned = out_dir + "/" + entry.pdb_id + "_pruned.pdb";
                 std::string pruned_rec = prune_receptor_to_site_chains(
                     effective_receptor,
@@ -5784,8 +5858,7 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
             // ── end chain pruning ─────────────────────────────────────────────
 
             if (config.receptor_rotamer_prep &&
-                !entry.binding_site_path.empty() &&
-                fs::exists(entry.binding_site_path))
+                use_oracle_geometry)
             {
                 std::string prepped = out_dir + "/" + entry.pdb_id + "_prepped.pdb";
                 bool need_prep =
@@ -5821,7 +5894,10 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
             std::ostringstream cmd;
             // Oracle LOCCLF: pass binding site PDB via env var so top.cpp
             // can skip SURFNET auto-detection and load the oracle spheres.
-            if (!entry.binding_site_path.empty() && fs::exists(entry.binding_site_path)) {
+            // AUTONOMOUS mode must not inject this env var; otherwise a blind
+            // run still uses the answer-derived site.
+            if (config.mode != BenchmarkMode::AUTONOMOUS &&
+                !entry.binding_site_path.empty() && fs::exists(entry.binding_site_path)) {
                 cmd << "FLEXAIDDS_ORACLE_SITE='" << entry.binding_site_path << "' ";
                 std::cerr << "  [ORACLE] " << entry.pdb_id
                           << " using binding site: " << entry.binding_site_path << "\n";
@@ -5829,9 +5905,12 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
             // Native-pose CF diagnostic: score crystal pose before GA, append
             // [NATIVE_CF] to stderr.log.  Pass the unblinded crystal SDF so the
             // scorer sees the correct reference pose, not the blinded input.
-            if (!entry.ligand_path.empty() && fs::exists(entry.ligand_path)) {
+            // Skip in AUTONOMOUS mode so blind runs have no native/reference
+            // scoring channel in the child process environment.
+            if (config.mode != BenchmarkMode::AUTONOMOUS &&
+                !rmsd_reference_path.empty() && fs::exists(rmsd_reference_path)) {
                 cmd << "FLEXAIDDS_SCORE_NATIVE=1 "
-                    << "FLEXAIDDS_RMSDST='" << entry.ligand_path << "' ";
+                    << "FLEXAIDDS_RMSDST='" << rmsd_reference_path << "' ";
             }
             cmd << "OMP_NUM_THREADS=" << omp_per_worker << " "
                 << "OMP_PLACES=cores "
@@ -6269,7 +6348,9 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
         // Both encode the same molecule in the same atom order, so we compute
         // positional RMSD directly without alignment (self-docking) or use
         // minimum-distance matching for cross-docking.
-        if (docking_completed && !entry.ligand_path.empty()) {
+        if (docking_completed &&
+            !rmsd_reference_path.empty() &&
+            fs::exists(rmsd_reference_path)) {
             // Frequency-gated cluster selection (v24 Fix B). The plain min-CF
             // rule picks the deeper-but-wrong "off-native CF minimum"; the
             // near-native cluster is almost always the populated runner-up.
@@ -6461,7 +6542,7 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                 std::vector<std::array<float,3>> crystal_xyz;
                 std::vector<std::string> crystal_elem;  // parallel element labels
                 {
-                    std::ifstream sdf(entry.ligand_path);
+                    std::ifstream sdf(rmsd_reference_path);
                     std::string sline;
                     int atom_block = 0;
                     while (std::getline(sdf, sline)) {
@@ -6547,7 +6628,12 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                 // CSV as a diagnostic column.  (best_cluster_pfx is retained only
                 // for this diagnostic gate's bookkeeping.)
                 (void)best_cluster_pfx;
-                if (result.best_cluster_rmsd < 2.0f &&
+                // BCR diagnostic: only fire when BCR is a real measurement (>= 0)
+                // and the top-1 result genuinely missed (>= 2 Å). With sentinel
+                // -1.0f, bcr < 2.0 is true for uncomputed BCR — guard prevents
+                // spurious diagnostic on fully-failed runs.
+                if (result.best_cluster_rmsd >= 0.0f &&
+                    result.best_cluster_rmsd < 2.0f &&
                     std::min(result.rmsd_to_crystal, result.rmsd_hungarian) >= 2.0f) {
                     const float kept = std::min(result.rmsd_to_crystal,
                                                 result.rmsd_hungarian);
@@ -6559,10 +6645,10 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                               << " (idx=" << result.best_cluster_idx << ")\n";
                 }
             } else {
-                result.rmsd_to_crystal = 999.0f;
+                result.rmsd_to_crystal = -1.0f;
             }
         } else {
-            result.rmsd_to_crystal = 999.0f;
+            result.rmsd_to_crystal = -1.0f;
         }
 
         // Fix A: success uses the symmetry-corrected RMSD. Serial-order RMSD
@@ -6570,8 +6656,10 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
         // Hungarian RMSD (element-typed assignment, see compute_pose_ligand_rmsd)
         // is the standard Astex success metric. On v23 arm A this alone lifts
         // top-1 from 27 to 43 (16 poses already sub-2Å under symmetry).
+        // Guard: rmsd_report >= 0.0f excludes the -1.0f sentinel so failed runs
+        // (no crystal reference or empty pose) are never counted as successful.
         const float rmsd_report = std::min(result.rmsd_to_crystal, result.rmsd_hungarian);
-        result.success = (docking_completed && rmsd_report < 2.0f);
+        result.success = (docking_completed && rmsd_report >= 0.0f && rmsd_report < 2.0f);
 
         // ── Level-3 H(ω) vibrational-entropy diagnostic (FLEXAIDDS_HVIB=1) ──
         // Post-GA pass over the emitted cluster reps; gated OFF by default so
@@ -6762,7 +6850,7 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
     for (size_t i = 0; i < report.results.size(); ++i) {
         const auto& r = report.results[i];
         if (r.success) success_count++;
-        if (r.rmsd_to_crystal < 900.0f) {
+        if (r.rmsd_to_crystal >= 0.0f) {
             rmsds.push_back(r.rmsd_to_crystal);
         }
         if (entries[i].has_affinity() && r.predicted_dG != 0.0f) {
