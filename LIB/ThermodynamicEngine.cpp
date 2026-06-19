@@ -48,7 +48,14 @@ ThermoResult ThermodynamicEngine::compute(
     r.H_vct_raw      = ensemble_mean(cf_values);
     r.H_vct          = r.H_vct_raw / n_heavy;   // intensive (ITC-comparable, kcal/mol per heavy atom)
     r.n_heavy_atoms  = n_heavy_atoms;
-    r.TdS_shannon    = T_eff_ * shannon_entropy(final_pop);
+    // per-gene mean Shannon entropy × T_eff: dividing by n_genes prevents
+    // large ligands (many torsion genes) from inflating TdS_shannon linearly.
+    {
+        const int n_genes = final_pop.empty() ? 1
+                          : static_cast<int>(final_pop[0].size());
+        r.TdS_shannon = T_eff_ * shannon_entropy(final_pop)
+                      / static_cast<float>(n_genes > 0 ? n_genes : 1);
+    }
     r.TdS_vib        = tencom_scale_ * (H_rep_bound - H_rep_ref_);
     r.G_bind         = r.H_vct + r.TdS_shannon - r.TdS_vib;  // ΔG = ΔH + TΔS_conf − TΔS_vib: entropy costs (+), vib gain reduces G (−)
     float denom      = r.TdS_shannon + r.TdS_vib;
