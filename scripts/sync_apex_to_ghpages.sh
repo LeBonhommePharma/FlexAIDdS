@@ -1,29 +1,14 @@
 #!/usr/bin/env bash
-# Sync apex homepage assets from site/ to the gh-pages branch root.
-# GitHub Pages project sites serve workflow artifacts under /FlexAIDdS/ while
-# thebonhomme.com/ is still backed by the legacy gh-pages branch — keep both in sync.
+# Publish the full site/ tree to the gh-pages branch.
+# GitHub Pages project workflow artifacts only update /FlexAIDdS/ on the custom
+# domain, leaving stale orphan files at thebonhomme.com/. Serving from gh-pages
+# keeps apex (/) and /FlexAIDdS/ paths in sync.
 
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 SITE="$ROOT/site"
 WORKTREE="/tmp/gh-pages-sync"
-
-APEX_FILES=(
-  index.html
-  app.js
-  style.css
-  theme.css
-  theme.js
-)
-
-STALE_ROOT_FILES=(
-  app.jsx
-  components.jsx
-  sections.jsx
-  styles.css
-  colors_and_type.css
-)
 
 git -C "$ROOT" fetch origin gh-pages
 
@@ -33,28 +18,21 @@ fi
 
 git -C "$ROOT" worktree add "$WORKTREE" origin/gh-pages
 
-for file in "${STALE_ROOT_FILES[@]}"; do
-  rm -f "$WORKTREE/$file"
-done
-
-for file in "${APEX_FILES[@]}"; do
-  cp "$SITE/$file" "$WORKTREE/$file"
-done
-
-mkdir -p "$WORKTREE/assets"
-rsync -a --delete "$SITE/assets/" "$WORKTREE/assets/"
+# Replace published tree with the current site/ contents.
+find "$WORKTREE" -mindepth 1 -maxdepth 1 ! -name '.git' -exec rm -rf {} +
+rsync -a --delete "$SITE/" "$WORKTREE/"
 
 cd "$WORKTREE"
 git add -A
 
 if git diff --staged --quiet; then
-  echo "gh-pages apex sync: no changes"
+  echo "gh-pages publish: no changes"
 else
   git -c user.name="github-actions[bot]" \
       -c user.email="github-actions[bot]@users.noreply.github.com" \
-      commit -m "Sync apex homepage from site/ (Mol* viewer)"
+      commit -m "Publish site/ to gh-pages (Mol* viewer + apex sync)"
   git push origin HEAD:gh-pages
-  echo "gh-pages apex sync: pushed"
+  echo "gh-pages publish: pushed"
 fi
 
 git -C "$ROOT" worktree remove --force "$WORKTREE"
