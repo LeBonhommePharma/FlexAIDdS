@@ -41,6 +41,10 @@ LANG_MAP = {
 MIN_PERCENT = 1.0  # Languages below this are grouped into "Other"
 OTHER_COLOR = "#555555"
 
+# Primary source languages shown on the site (everything else rolls into Other).
+PRIMARY_LANGS = ("C++", "Python", "Swift", "Objective-C++", "CMake")
+PRIMARY_LANG_COUNT = len(PRIMARY_LANGS)
+
 # All HTML files that receive the same semantic stat markers.
 HTML_TARGETS = [
     "site/index.html",
@@ -50,15 +54,48 @@ HTML_TARGETS = [
 STATS_JSON_PATH = "site/assets/repo-stats.json"
 
 
-def get_commit_count() -> int:
-    """Return total commit count on the current branch."""
-    result = subprocess.run(
-        ["git", "rev-list", "--count", "HEAD"],
-        capture_output=True,
-        text=True,
-        check=True,
-    )
-    return int(result.stdout.strip())
+def fetch_commit_count(repo: str) -> int | None:
+    """Return total commit count from GitHub pagination headers."""
+    url = f"https://api.github.com/repos/{repo}/commits?per_page=1"
+    req = urllib.request.Request(url)
+    req.add_header("Accept", "application/vnd.github+json")
+    req.add_header("User-Agent", "FlexAIDdS-site-updater")
+
+    token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
+    if token:
+        req.add_header("Authorization", f"Bearer {token}")
+
+    try:
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            link = resp.headers.get("Link", "")
+            match = re.search(r'page=(\d+)>;\s*rel="last"', link)
+            if match:
+                return int(match.group(1))
+            data = json.loads(resp.read().decode())
+            if isinstance(data, list):
+                return len(data)
+    except (urllib.error.URLError, urllib.error.HTTPError) as e:
+        print(f"Warning: GitHub commit count request failed: {e}", file=sys.stderr)
+
+    return None
+
+
+def get_commit_count(repo: str) -> int:
+    """Return total commit count from GitHub, falling back to local git."""
+    remote_count = fetch_commit_count(repo)
+    if remote_count is not None and remote_count > 0:
+        return remote_count
+
+    try:
+        result = subprocess.run(
+            ["git", "rev-list", "--count", "HEAD"],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        return int(result.stdout.strip())
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        return 0
 
 
 def _github_api_get(path: str) -> dict | list | None:
@@ -105,7 +142,7 @@ def fetch_latest_release(repo: str) -> str | None:
 def compute_percentages(
     languages: dict[str, int],
 ) -> list[tuple[str, str, str, float]]:
-    """Compute (css_suffix, display_name, color, percentage) sorted desc."""
+    """Compute primary-language bar entries; bucket all others into Other."""
     total = sum(languages.values())
     if total == 0:
         return []
@@ -113,16 +150,15 @@ def compute_percentages(
     entries: list[tuple[str, str, str, float]] = []
     other_pct = 0.0
 
-    for lang, bytes_count in sorted(languages.items(), key=lambda x: -x[1]):
+    for lang, bytes_count in languages.items():
         pct = round(bytes_count / total * 100, 1)
-        if lang in LANG_MAP:
+        if lang in PRIMARY_LANGS and lang in LANG_MAP:
             css_suffix, display, color = LANG_MAP[lang]
-            if pct < MIN_PERCENT:
-                other_pct += pct
-            else:
-                entries.append((css_suffix, display, color, pct))
+            entries.append((css_suffix, display, color, pct))
         else:
             other_pct += pct
+
+    entries.sort(key=lambda item: -item[3])
 
     if other_pct > 0:
         entries.append(("other", "Other", OTHER_COLOR, round(other_pct, 1)))
@@ -131,8 +167,11 @@ def compute_percentages(
 
 
 def count_source_languages(languages: dict[str, int]) -> int:
-    """Count source languages for the stats badge."""
-    return sum(1 for lang in languages if lang != "Makefile")
+    """Count primary source languages for the stats badge."""
+    if not languages:
+        return PRIMARY_LANG_COUNT
+    present = sum(1 for lang in PRIMARY_LANGS if languages.get(lang, 0) > 0)
+    return present or PRIMARY_LANG_COUNT
 
 
 def build_lang_bar(entries: list[tuple[str, str, str, float]]) -> str:
@@ -220,7 +259,7 @@ def patch_apex_stats(
     content = patch_html_markers(content, commit_count, language_count)
 
     content = re.sub(
-        r'(<span class="stat-value" data-count=")\d+(">)',
+        r'(<span class="stat-value[^"]*" data-count=")\d+(">)',
         rf"\g<1>{commit_count}\g<2>",
         content,
         count=1,
@@ -235,17 +274,10 @@ def patch_apex_stats(
 
     if lang_entries:
         bar = build_lang_bar(lang_entries)
+        bar_legend = bar + "\n" + build_lang_legend(lang_entries)
         content = re.sub(
-            r'        <div class="lang-bar" aria-label="Language breakdown">.*?</div>',
-            bar,
-            content,
-            count=1,
-            flags=re.DOTALL,
-        )
-        legend = build_lang_legend(lang_entries)
-        content = re.sub(
-            r'        <div class="lang-legend">.*?</div>',
-            legend,
+            r'        <div class="lang-bar" aria-label="Language breakdown">.*?        </div>\n        <div class="lang-legend">.*?</div>',
+            bar_legend,
             content,
             count=1,
             flags=re.DOTALL,
@@ -360,12 +392,11 @@ def main() -> int:
     )
     args = parser.parse_args()
 
-    try:
-        commit_count = get_commit_count()
-        print(f"Commit count: {commit_count}")
-    except (subprocess.CalledProcessError, FileNotFoundError) as e:
-        print(f"Error getting commit count: {e}", file=sys.stderr)
+    commit_count = get_commit_count(args.repo)
+    if commit_count <= 0:
+        print("Error getting commit count", file=sys.stderr)
         return 1
+    print(f"Commit count: {commit_count}")
 
     languages = fetch_languages(args.repo)
     language_count = count_source_languages(languages) if languages else None
