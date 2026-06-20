@@ -751,7 +751,8 @@ static std::pair<std::string,float> select_pose_freq_gated(const std::string& ou
 // larger, more diverse set for Fix B to select from (v25 multi-restart pooling).
 static std::pair<std::string,float> select_pose_freq_gated_pooled(
         const std::vector<std::string>& prefixes,
-        int seed_elitism_override = -1)  // -1=read env var, 0=force off, 1=force on
+        int seed_elitism_override = -1,  // -1=read env var, 0=force off, 1=force on
+        bool cf_window_selector = false) // Fix A: CF-window gate (see header member)
 {
     // ── Boltzmann Z+H composite cluster selection (Options B+C) ─────────────
     // Instead of pure CF-rank-0, score each cluster by:
@@ -914,9 +915,16 @@ static std::pair<std::string,float> select_pose_freq_gated_pooled(
         else for (const auto& p : poses) pool.push_back(&p);
 
         // Prefer populated clusters (freq>1); fall back to all when GA collapsed.
+        // CF-window gate: include singletons within 30 CF units of rank-0 (Fix A)
+        float cf_min = std::numeric_limits<float>::max();
+        if (cf_window_selector)
+            for (const auto* p : pool)
+                cf_min = std::min(cf_min, p->cf);
         std::vector<const PoseInfo*> populated;
         for (const auto* p : pool)
-            if (p->freq > 1) populated.push_back(p);
+            if (p->freq > 1 ||
+                (cf_window_selector && p->cf <= cf_min + 30.0f))
+                populated.push_back(p);
         const std::vector<const PoseInfo*>& chosen =
             populated.empty() ? pool : populated;
 
@@ -1795,6 +1803,10 @@ DatasetRunner::DatasetRunner(const std::string& cache_dir) {
         cache_dir_ = expand_home(cache_dir);
     }
     ensure_dir(cache_dir_);
+
+    // Fix A: CF-window pose selector gate (default off for safety).
+    if (const char* e = std::getenv("FLEXAIDDS_CF_WINDOW_SELECTOR"))
+        cf_window_selector_ = (std::atoi(e) != 0);
 }
 
 // =============================================================================
@@ -6268,7 +6280,8 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
         // rmsd_to_crystal always describe one pose. Fall back to the stdout-trace
         // min only if no emitted pose with a REMARK CF is found.
         {
-            auto sel = select_pose_freq_gated_pooled(all_prefixes, sel_elitism_ovr);
+            auto sel = select_pose_freq_gated_pooled(all_prefixes, sel_elitism_ovr,
+                                                     cf_window_selector_);
             if (!sel.first.empty() && std::isfinite(sel.second))
                 best_cf = sel.second;
         }
@@ -6357,7 +6370,7 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
             // select_pose_freq_gated() drops degenerate (CF≈0) poses, prefers
             // clusters with Frequency>1, and returns the min-CF pose within that
             // pool (see helper definition near compute_pose_ligand_rmsd).
-            std::string best_pose_pdb = select_pose_freq_gated_pooled(all_prefixes, sel_elitism_ovr).first;
+            std::string best_pose_pdb = select_pose_freq_gated_pooled(all_prefixes, sel_elitism_ovr, cf_window_selector_).first;
             // Fallback: no scored pose found — take first available pose file from any restart.
             if (best_pose_pdb.empty()) {
                 for (const auto& pfx : all_prefixes) {

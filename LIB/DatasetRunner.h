@@ -415,6 +415,13 @@ public:
 private:
     std::string cache_dir_;
 
+    // ── Pose selector tuning ─────────────────────────────────────────
+    /// CF-window gate (Fix A): when true the freq>1 gate in
+    /// select_pose_freq_gated_pooled() also admits singleton clusters whose
+    /// CF is within 30 units of the pool minimum. Read once from
+    /// FLEXAIDDS_CF_WINDOW_SELECTOR in the constructor (default off).
+    bool cf_window_selector_ = false;
+
     // ── Subprocess lifecycle ─────────────────────────────────────────
     /// RAII guard that tracks all spawned children and kills on destruction.
     /// Shared across all worker threads in run().
