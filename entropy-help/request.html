@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Request an Entropy Audit — entropy.help</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>body { font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }</style>
+</head>
+<body class="bg-slate-50 text-slate-900">
+  <div class="max-w-3xl mx-auto px-6 py-12">
+    <div class="mb-8">
+      <a href="index.html" class="text-sm text-blue-600 hover:underline">← Back to landing</a>
+      <h1 class="text-4xl font-semibold tracking-tight mt-4">Request an Entropy Audit</h1>
+      <p class="text-slate-600 mt-2">Submit your docking results for independent validation using the TotalSampledPartitionFunction.</p>
+      <p class="text-emerald-600 text-sm mt-1">Canonical site will be https://entropy.help once domain registration completes.</p>
+    </div>
+
+    <form id="intake-form" class="bg-white border border-slate-200 rounded-2xl p-8 space-y-6">
+      <div>
+        <label class="block text-sm font-medium mb-1">Target / Complex Name</label>
+        <input type="text" id="target" required class="w-full border border-slate-300 rounded-lg px-4 py-2" placeholder="e.g. μ-Opioid receptor + fentanyl">
+      </div>
+
+      <div>
+        <label class="block text-sm font-medium mb-1">Results Directory or Link</label>
+        <input type="text" id="results" required class="w-full border border-slate-300 rounded-lg px-4 py-2" placeholder="Path to docking output or GitHub link / Zenodo DOI">
+        <p class="text-xs text-slate-500 mt-1">We accept full results directories, individual pose sets, or public links.</p>
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div>
+          <label class="block text-sm font-medium mb-1">Your Name / Team</label>
+          <input type="text" id="name" class="w-full border border-slate-300 rounded-lg px-4 py-2" placeholder="Optional">
+        </div>
+        <div>
+          <label class="block text-sm font-medium mb-1">Email (for follow-up)</label>
+          <input type="email" id="email" class="w-full border border-slate-300 rounded-lg px-4 py-2" placeholder="Optional">
+        </div>
+      </div>
+
+      <div>
+        <label class="block text-sm font-medium mb-1">Additional Notes</label>
+        <textarea id="notes" rows="4" class="w-full border border-slate-300 rounded-lg px-4 py-2" placeholder="Any special context, expected entropy contribution, comparison to previous results, etc."></textarea>
+      </div>
+
+      <button type="submit" 
+              class="w-full bg-slate-900 hover:bg-black text-white font-medium py-3 rounded-xl transition-colors">
+        Generate GitHub Issue
+      </button>
+
+      <p class="text-xs text-center text-slate-500">This will open a pre-filled issue on our public coordination tracker (#219). Early audits are currently free.</p>
+    </form>
+
+    <div class="mt-8 text-xs text-slate-500">
+      After submitting the issue, we will run the audit using our integrated pipeline and publish the full report (JSON + summary) in the public ledger.
+    </div>
+  </div>
+
+  <script>
+    document.getElementById('intake-form').addEventListener('submit', function(e) {
+      e.preventDefault();
+
+      const target = document.getElementById('target').value.trim();
+      const results = document.getElementById('results').value.trim();
+      const name = document.getElementById('name').value.trim();
+      const email = document.getElementById('email').value.trim();
+      const notes = document.getElementById('notes').value.trim();
+
+      const title = encodeURIComponent(`[Audit Request] ${target}`);
+      let body = `**Target / Complex**: ${target}\n\n`;
+      body += `**Results location**: ${results}\n\n`;
+      if (name) body += `**Submitted by**: ${name}\n`;
+      if (email) body += `**Contact**: ${email}\n\n`;
+      if (notes) body += `**Notes**:\n${notes}\n\n`;
+      body += `---\nRequested via entropy.help intake form.`;
+
+      const issueUrl = `https://github.com/LeBonhommePharma/FlexAIDdS/issues/new?title=${title}&body=${encodeURIComponent(body)}&labels=entropy.help,audit-request`;
+
+      window.open(issueUrl, '_blank');
+    });
+  </script>
+</body>
+</html>

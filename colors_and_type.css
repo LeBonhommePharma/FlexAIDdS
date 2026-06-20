@@ -1,0 +1,277 @@
+/* ============================================================
+   FlexAID∆S Design System — Colors & Type
+   Le Bonhomme Pharma · Montréal
+   Source: thebonhomme.com (live production site)
+   ============================================================ */
+
+/* --- FONTS -----------------------------------------------------
+   The brand uses two Google Fonts. No local TTFs are bundled —
+   import via the standard Google Fonts stylesheet.
+
+   <link rel="preconnect" href="https://fonts.googleapis.com">
+   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@300;400;500;600;700&family=JetBrains+Mono:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+   ------------------------------------------------------------ */
+
+/* ───────── SELF-HOSTED BRAND FONT ─────────
+   SF Pro Display (Apple) — committed body & display sans.
+   Self-hosted from /fonts; replaces IBM Plex Sans as --font-body. */
+@font-face { font-family: 'SF Pro Display'; font-weight: 100; font-style: normal; font-display: swap; src: url('../fonts/SF-Pro-Display-Ultralight.otf') format('opentype'); }
+@font-face { font-family: 'SF Pro Display'; font-weight: 200; font-style: normal; font-display: swap; src: url('../fonts/SF-Pro-Display-Thin.otf') format('opentype'); }
+@font-face { font-family: 'SF Pro Display'; font-weight: 300; font-style: normal; font-display: swap; src: url('../fonts/SF-Pro-Display-Light.otf') format('opentype'); }
+@font-face { font-family: 'SF Pro Display'; font-weight: 400; font-style: normal; font-display: swap; src: url('../fonts/SF-Pro-Display-Regular.otf') format('opentype'); }
+@font-face { font-family: 'SF Pro Display'; font-weight: 500; font-style: normal; font-display: swap; src: url('../fonts/SF-Pro-Display-Medium.otf') format('opentype'); }
+@font-face { font-family: 'SF Pro Display'; font-weight: 600; font-style: normal; font-display: swap; src: url('../fonts/SF-Pro-Display-Semibold.otf') format('opentype'); }
+@font-face { font-family: 'SF Pro Display'; font-weight: 700; font-style: normal; font-display: swap; src: url('../fonts/SF-Pro-Display-Bold.otf') format('opentype'); }
+@font-face { font-family: 'SF Pro Display'; font-weight: 800; font-style: normal; font-display: swap; src: url('../fonts/SF-Pro-Display-Heavy.otf') format('opentype'); }
+@font-face { font-family: 'SF Pro Display'; font-weight: 900; font-style: normal; font-display: swap; src: url('../fonts/SF-Pro-Display-Black.otf') format('opentype'); }
+
+:root {
+  /* ───────── CORE PALETTE (dark-first, scientific) ───────── */
+
+  /* Background ladder — near-black with cool blue cast */
+  --bg:           #0a0e14;        /* page bg                       */
+  --bg-panel:     rgba(16, 20, 28, 0.92);   /* nav / fixed panels */
+  --bg-card:      rgba(16, 20, 28, 0.80);   /* feature cards      */
+  --bg-alt:       rgba(12, 16, 22, 0.50);   /* alternating bands  */
+
+  /* Brand triad — the equation ΔG = ΔH − TΔS lives in these
+     colors. Each maps to a thermodynamic term and is referenced
+     consistently across UI, charts, and copy.                   */
+  --teal:    #22D3EE;   /* primary    · ΔH (enthalpy)   · CTA, brand mark */
+  --terra:   #A78BFA;   /* alert/heat · TΔS (entropy)   · alerts, section labels */
+  --gold:    #FBBF24;   /* highlight  · ΔG (free energy)· stats, key results */
+
+  /* Text */
+  --fg:       #d4dced;   /* primary text       */
+  --fg-muted: #8a93a8;   /* secondary, labels  */
+
+  /* ───────── ALPHA OVERLAYS ─────────
+     The brand layers translucent washes of the triad on the
+     dark bg instead of mixing solid mid-tones. Use these for
+     borders, hover backgrounds, and chip fills.                 */
+  --teal-06:  rgba(34,211,238,0.06);
+  --teal-08:  rgba(34,211,238,0.08);
+  --teal-10:  rgba(34,211,238,0.10);
+  --teal-15:  rgba(34,211,238,0.15);
+  --teal-20:  rgba(34,211,238,0.20);
+
+  --terra-10: rgba(167,139,250,0.10);
+  --terra-12: rgba(167,139,250,0.12);
+  --terra-25: rgba(167,139,250,0.25);
+  --terra-35: rgba(167,139,250,0.35);
+
+  --gold-06:  rgba(251,191,36,0.06);
+  --gold-10:  rgba(251,191,36,0.10);
+  --gold-12:  rgba(251,191,36,0.12);
+  --gold-35:  rgba(251,191,36,0.35);
+
+  /* ───────── SUPPORTING / KEYWORD ACCENTS ─────────
+     Spectrum keywords cycle these on a slow gradient flow.     */
+  --kw-entropy:  var(--terra);
+  --kw-statmech: var(--teal);
+  --kw-dg:       var(--gold);
+  --kw-ga:       #67E8F9;   /* lighter teal — genetic algorithm  */
+  --kw-open:     #FCD34D;   /* warm gold — open science          */
+  --kw-docking:  #5046D6;   /* lighter terra — docking           */
+  --kw-rescue:   #FDE68A;   /* light gold — binding mode rescue  */
+
+  /* ───────── TYPE SCALE ─────────
+     Body is the brand sans-serif (IBM Plex Sans by default — see Font families
+     card for live candidate options). Everything else (headings, badges, code,
+     stats) is JetBrains Mono. This is unusual but deliberate —
+     the brand reads as "lab notebook with prose between
+     equations".                                                */
+
+  --font-body: 'SF Pro Display', 'IBM Plex Sans', -apple-system, BlinkMacSystemFont, 'Helvetica Neue', sans-serif;
+  --font-mono: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
+
+  /* Sizes */
+  --fs-hero:   7rem;     /* clamp down at small viewports        */
+  --fs-h1:     3.5rem;
+  --fs-h2:     1.75rem;
+  --fs-h3:     1.125rem;
+  --fs-body:   1rem;
+  --fs-sm:     0.875rem;
+  --fs-xs:     0.75rem;
+  --fs-tag:    0.625rem;  /* 10px — section labels, badges      */
+  --fs-meta:   0.5rem;    /* 8px  — entropy meter labels        */
+
+  /* Weights — body never bolder than 600; mono goes to 700 */
+  --fw-300: 300;
+  --fw-400: 400;
+  --fw-500: 500;
+  --fw-600: 600;
+  --fw-700: 700;
+
+  /* Tracking */
+  --tracking-tight: -0.02em;
+  --tracking-flat:  0;
+  --tracking-wide:  0.08em;
+  --tracking-label: 0.15em;
+  --tracking-tag:   0.20em;
+  --tracking-meta:  0.30em;
+
+  /* Line heights */
+  --lh-tight: 1.05;     /* hero                                  */
+  --lh-snug:  1.15;     /* headings                              */
+  --lh-body:  1.60;     /* paragraphs                            */
+  --lh-code:  1.80;     /* code blocks                           */
+
+  /* ───────── SPACING ───────── (8-pt soft grid) */
+  --sp-1:  0.25rem;
+  --sp-2:  0.5rem;
+  --sp-3:  0.75rem;
+  --sp-4:  1rem;
+  --sp-5:  1.25rem;
+  --sp-6:  1.5rem;
+  --sp-8:  2rem;
+  --sp-10: 2.5rem;
+  --sp-12: 3rem;
+  --sp-16: 4rem;
+  --sp-20: 5rem;
+  --sp-24: 6rem;
+
+  /* ───────── RADIUS ───────── conservative; cards 8px, pills 9999 */
+  --r-xs:   3px;        /* badges, chips                          */
+  --r-sm:   6px;        /* small buttons                          */
+  --r-md:   8px;        /* cards, default                         */
+  --r-lg:   12px;       /* hero panels                            */
+  --r-pill: 9999px;     /* entropy meter bar                      */
+
+  /* ───────── SHADOWS / GLOWS ─────────
+     The brand prefers colored glow over neutral drop-shadow.    */
+  --glow-teal:  0 0 18px rgba(34,211,238,0.30);
+  --glow-teal-strong: 0 0 24px rgba(34,211,238,0.50);
+  --glow-terra: 0 0 20px rgba(167,139,250,0.10);
+  --glow-gold:  0 0 20px rgba(251,191,36,0.10);
+  --glow-equation: 0 0 40px rgba(34,211,238,0.4), 0 0 60px rgba(251,191,36,0.2);
+
+  /* ───────── MOTION ─────────
+     Easings used across hover, fade-in, and the keyword
+     spectrum animation.                                         */
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in-out: ease-in-out;
+  --dur-fast: 0.18s;
+  --dur-base: 0.25s;
+  --dur-slow: 0.7s;
+  --dur-breathe: 4s;     /* equation breathe                     */
+  --dur-spectrum: 8.5s;  /* keyword color flow                   */
+
+  /* ───────── GRID BACKGROUND ─────────
+     Fine teal grid at 40px, always-on under content.            */
+  --grid-line: rgba(34,211,238,0.03);
+  --grid-step: 40px;
+}
+
+/* ───────── LIGHT THEME (canonical via theme.js) ───────── */
+[data-theme="light"] {
+  --bg:           #f4f6fb;
+  --bg-panel:     rgba(255, 255, 255, 0.88);
+  --bg-card:      #ffffff;
+  --bg-alt:       #eef2f8;
+  --fg:           #1e293b;
+  --fg-muted:     #5a6478;
+  --grid-line:    rgba(34, 211, 238, 0.06);
+  --teal-06:      rgba(34, 211, 238, 0.08);
+  --teal-08:      rgba(34, 211, 238, 0.10);
+  --teal-10:      rgba(34, 211, 238, 0.14);
+  --teal-12:      rgba(34, 211, 238, 0.18);
+  --teal-15:      rgba(34, 211, 238, 0.22);
+  --teal-20:      rgba(34, 211, 238, 0.28);
+}
+
+/* ───────── SEMANTIC ELEMENT STYLES ─────────
+   Apply these to bare HTML in design output. They reproduce the
+   live thebonhomme.com look without per-element overrides.    */
+
+html { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
+
+body {
+  font-family: var(--font-body);
+  font-size:   var(--fs-body);
+  line-height: var(--lh-body);
+  color:       var(--fg);
+  background:  var(--bg);
+  /* The signature subtle grid */
+  background-image:
+    linear-gradient(var(--grid-line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid-line) 1px, transparent 1px);
+  background-size: var(--grid-step) var(--grid-step);
+}
+
+h1, .h1 {
+  font-family: var(--font-mono);
+  font-size:   var(--fs-h1);
+  font-weight: var(--fw-700);
+  line-height: var(--lh-tight);
+  letter-spacing: var(--tracking-flat);
+  color: var(--fg);
+}
+
+h2, .h2 {
+  font-family: var(--font-mono);
+  font-size:   var(--fs-h2);
+  font-weight: var(--fw-700);
+  line-height: var(--lh-snug);
+  color: var(--fg);
+}
+
+h3, .h3 {
+  font-family: var(--font-mono);
+  font-size:   var(--fs-h3);
+  font-weight: var(--fw-600);
+  color: var(--fg);
+}
+
+p {
+  font-family: var(--font-body);
+  font-size:   var(--fs-body);
+  line-height: var(--lh-body);
+  color: var(--fg-muted);
+  max-width: 72ch;
+  text-wrap: pretty;
+}
+
+/* Mono runs — code, badges, section labels, stats */
+code, .mono, kbd, samp {
+  font-family: var(--font-mono);
+  font-size:   var(--fs-sm);
+}
+
+/* Section eyebrow — terra, uppercase, wide tracking */
+.section-label, .eyebrow {
+  font-family: var(--font-mono);
+  font-size:   var(--fs-tag);
+  font-weight: var(--fw-500);
+  letter-spacing: var(--tracking-tag);
+  text-transform: uppercase;
+  color: var(--terra);
+}
+
+/* Stat block — big mono number + tiny tracked label */
+.stat-value {
+  font-family: var(--font-mono);
+  font-size:   2.5rem;
+  font-weight: var(--fw-700);
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+.stat-label {
+  font-family: var(--font-mono);
+  font-size:   var(--fs-tag);
+  letter-spacing: var(--tracking-label);
+  color: var(--fg-muted);
+  text-transform: uppercase;
+  margin-top: var(--sp-1);
+}
+
+/* Brand wordmark — the ∆S is always gold */
+.brand {
+  font-family: var(--font-mono);
+  font-weight: var(--fw-700);
+  color: var(--teal);
+  letter-spacing: 0.02em;
+}
+.brand .delta { color: var(--gold); }
+.brand .terra { color: var(--terra); }
