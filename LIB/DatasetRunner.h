@@ -422,6 +422,25 @@ private:
     /// FLEXAIDDS_CF_WINDOW_SELECTOR in the constructor (default off).
     bool cf_window_selector_ = false;
 
+    /// Cluster member emission (Fix B): when true, the oracle BCR scan also
+    /// folds in cluster *member* poses — not just the cluster representative
+    /// (`_N.pdb`) — for "near-miss" clusters whose representative Hungarian
+    /// RMSD falls in [2.0, 4.0] Å. A near-native sub-Å member can hide inside
+    /// a clash-attractor cluster whose centroid is displaced far from native
+    /// (e.g. 1OF6: cluster-0 centroid 14.2 Å, member 2.30 Å); emitting and
+    /// scoring members recovers that pose for BCR. Read once from
+    /// FLEXAIDDS_CLUSTER_MEMBER_EMIT in the constructor (default off).
+    ///
+    /// NOTE on coordinate availability: DatasetRunner drives FlexAIDdS as a
+    /// subprocess and has no in-process FA atoms[] array. Member Cartesian
+    /// coordinates are therefore NOT held in any cluster struct here — the
+    /// engine writes only the cluster representative PDB plus a `.mcf` sidecar
+    /// of member CF values. Reconstructing member Cartesians from chromosome
+    /// IC coordinates is intentionally out of scope (too fragile). This path
+    /// consequently recovers members only when member pose PDBs following the
+    /// `<prefix>_<N>_member<M>.pdb` convention are present on disk.
+    bool cluster_member_emit_ = false;
+
     // ── Subprocess lifecycle ─────────────────────────────────────────
     /// RAII guard that tracks all spawned children and kills on destruction.
     /// Shared across all worker threads in run().

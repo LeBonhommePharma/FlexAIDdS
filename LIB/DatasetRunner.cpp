@@ -1807,6 +1807,10 @@ DatasetRunner::DatasetRunner(const std::string& cache_dir) {
     // Fix A: CF-window pose selector gate (default off for safety).
     if (const char* e = std::getenv("FLEXAIDDS_CF_WINDOW_SELECTOR"))
         cf_window_selector_ = (std::atoi(e) != 0);
+
+    // Fix B: cluster member emission for near-miss BCR recovery (default off).
+    if (const char* e = std::getenv("FLEXAIDDS_CLUSTER_MEMBER_EMIT"))
+        cluster_member_emit_ = (std::atoi(e) != 0);
 }
 
 // =============================================================================
@@ -6622,6 +6626,65 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                                 result.best_cluster_rmsd = rp.second;
                                 result.best_cluster_idx = pi;
                                 best_cluster_pfx = pfx;
+                            }
+
+                            // ── Fix B: cluster member recovery for near-miss clusters ──
+                            // A near-native sub-Å pose can be swallowed into a clash-
+                            // attractor cluster whose representative (centroid) is
+                            // displaced far from native, so the cluster head scanned
+                            // above misses it (1OF6: head 14.2 Å, member 2.30 Å). For
+                            // any cluster whose representative Hungarian RMSD falls in
+                            // the near-miss window [2.0, 4.0] Å, also scan its member
+                            // poses, fold the minimum member RMSD into the oracle BCR,
+                            // and emit each member as a renamed PDB for inspection.
+                            //
+                            // Member poses use the same compute_pose_ligand_rmsd()
+                            // (Hungarian) employed for the representatives — no new
+                            // RMSD path is introduced.
+                            //
+                            // Coordinate availability: DatasetRunner runs FlexAIDdS as
+                            // a subprocess and holds no cluster struct with member
+                            // coordinates; the engine writes the representative PDB and
+                            // a `.mcf` sidecar of member CF values only. Reconstructing
+                            // member Cartesians from chromosome IC is intentionally out
+                            // of scope (too fragile), so this recovery activates only
+                            // when member pose PDBs following the
+                            // `<prefix>_<N>_member<M>.pdb` convention are present on
+                            // disk; otherwise it is a no-op (member loop finds nothing).
+                            if (cluster_member_emit_ &&
+                                rp.second >= 2.0f && rp.second <= 4.0f) {
+                                for (int mi = 0; mi < 64; ++mi) {
+                                    std::string mcand = pfx + "_" + std::to_string(pi) +
+                                                        "_member" + std::to_string(mi) + ".pdb";
+                                    if (!fs::exists(mcand)) {
+                                        // Members are written contiguously from 0; the
+                                        // first gap ends this cluster's member list.
+                                        if (mi == 0) break;
+                                        continue;
+                                    }
+                                    auto mr = compute_pose_ligand_rmsd(
+                                        mcand, crystal_xyz, crystal_elem, entry.pdb_id, false);
+                                    if (result.best_cluster_rmsd < 0.0f ||
+                                        mr.second < result.best_cluster_rmsd) {
+                                        result.best_cluster_rmsd = mr.second;
+                                        result.best_cluster_idx  = pi;
+                                        best_cluster_pfx = pfx;
+                                    }
+                                    // Emit the member pose under a self-describing name
+                                    // alongside the representative for inspection.
+                                    try {
+                                        char rbuf[16];
+                                        std::snprintf(rbuf, sizeof(rbuf), "%.2f", mr.second);
+                                        fs::path dst = fs::path(mcand).parent_path() /
+                                            (entry.pdb_id + "_cluster" + std::to_string(pi) +
+                                             "_member" + std::to_string(mi) +
+                                             "_rmsd" + rbuf + ".pdb");
+                                        fs::copy_file(mcand, dst,
+                                            fs::copy_options::overwrite_existing);
+                                    } catch (const std::exception&) {
+                                        // Non-fatal: emission is diagnostic only.
+                                    }
+                                }
                             }
                         }
                     }
