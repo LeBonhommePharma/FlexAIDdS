@@ -40,24 +40,30 @@ float ThermodynamicEngine::shannon_entropy(const std::vector<std::vector<float>>
 float ThermodynamicEngine::ensemble_mean(const std::vector<float>& cf) {
     if (cf.empty()) return std::numeric_limits<float>::quiet_NaN();
 
-    double sum = 0.0;
-    int finite_count = 0;
-    int valid_count = 0;
+    double valid_sum  = 0.0;   // non-clash finite values
+    double finite_sum = 0.0;   // all finite values
+    int finite_count  = 0;
+    int valid_count   = 0;
     for (float x : cf) {
         if (!std::isfinite(x)) continue;
         ++finite_count;
+        finite_sum += static_cast<double>(x);
         if (std::abs(x) >= kThermoVctClashGuard) continue;
-        sum += static_cast<double>(x);
+        valid_sum += static_cast<double>(x);
         ++valid_count;
     }
 
-    // Raw clash penalties are not binding enthalpy. If the converged population
-    // is dominated by catastrophic clash scores, the thermodynamic H_vct is
-    // undefined and should be excluded from aggregate ΔG/ΔH analysis.
-    if (valid_count == 0 || valid_count * 2 < finite_count)
+    if (finite_count == 0)
         return std::numeric_limits<float>::quiet_NaN();
 
-    return static_cast<float>(sum / static_cast<double>(valid_count));
+    // Raw clash penalties are not binding enthalpy. Prefer the mean of the
+    // non-clash subset. If the converged population is dominated by — or made
+    // entirely of — catastrophic clash scores, fall back to the overall finite
+    // mean rather than returning NaN, which would poison every downstream ΔG/ΔH
+    // and silently drop the target from selection.
+    if (valid_count > 0)
+        return static_cast<float>(valid_sum / static_cast<double>(valid_count));
+    return static_cast<float>(finite_sum / static_cast<double>(finite_count));
 }
 
 ThermoResult ThermodynamicEngine::compute(
@@ -84,8 +90,7 @@ ThermoResult ThermodynamicEngine::compute(
     // ligand is displaced outside the pocket (PoseX). In both cases the receptor
     // flexibility change upon binding is physically undefined; TdS_vib = 0 is
     // the only mechanistically correct choice.
-    // Without this guard: TdS_vib = scale*(0 − H_rep_ref) → large negative,
-    // and G_bind = H_vct + TdS_shannon − TdS_vib explodes to +17k kcal/mol.
+    // Without this guard: TdS_vib = scale*(0 − H_rep_ref) → large negative.
     {
         float raw_vib = (std::abs(H_rep_bound) < 1e-6f)
                         ? 0.0f
@@ -95,7 +100,18 @@ ThermoResult ThermodynamicEngine::compute(
         // ligand ENM does build but H_rep_bound << H_rep_ref_.
         r.TdS_vib = std::max(-5.0f, std::min(5.0f, raw_vib));
     }
-    r.G_bind         = r.H_vct + r.TdS_shannon - r.TdS_vib;  // ΔG = ΔH + TΔS_conf − TΔS_vib: entropy costs (+), vib gain reduces G (−)
+    // ── G_bind: v100-regression fix (restores v88 effective signal weighting) ──
+    //   v88 (working, 91.7% BCD):   G = T_eff * H_vct_raw  − TdS_shannon  + TdS_vib
+    //   v100 (broken,  9.4% BCD):   G = H_vct_raw/n_heavy  + TdS_shannon  − TdS_vib
+    // Three v100 changes annihilated the native-vs-decoy gap: (1) /n_heavy
+    // attenuated the VCT signal ~12×, (2) the TdS_shannon sign flipped (− → +),
+    // (3) the TdS_vib sign flipped (+ → −). We restore T_eff weighting on the
+    // RAW (extensive) VCT enthalpy and both correct signs, while KEEPING the two
+    // v100 structural improvements that are not regressions: per-gene Shannon
+    // normalization (baked into r.TdS_shannon) and the ±5-nat TdS_vib clamp.
+    // r.H_vct (intensive, per-heavy-atom) is retained as an ITC-comparable
+    // diagnostic only; it no longer enters G_bind.
+    r.G_bind         = T_eff_ * r.H_vct_raw - r.TdS_shannon + r.TdS_vib;  // ΔG = T·ΔH_vct − TΔS_conf + TΔS_vib: entropy costs (+TdS), vib gain stabilizes (−)
     float denom      = r.TdS_shannon + r.TdS_vib;
     r.compensation   = (std::abs(denom) > 1e-6f) ? r.H_vct / denom : 0.0f;
     return r;
