@@ -108,23 +108,11 @@
     document.querySelectorAll('[data-count]').forEach(animateCount);
   }
 
-  // ── Drug of the day (rotation by UTC date) ─────────────────
+  // ── Drug of the Day (published series #001–#003, rotates by UTC date) ──
   var drugComplexes = [
-    { pdb: '1hsg', drug: 'Indinavir',     target: 'HIV-1 protease' },
-    { pdb: '3ert', drug: 'Tamoxifen',     target: 'estrogen receptor alpha' },
-    { pdb: '1iep', drug: 'Imatinib',      target: 'Abl kinase' },
-    { pdb: '1m17', drug: 'Erlotinib',     target: 'EGFR kinase' },
-    { pdb: '3nss', drug: 'Oseltamivir',   target: 'influenza neuraminidase' },
-    { pdb: '6lu7', drug: 'N3 inhibitor',  target: 'SARS-CoV-2 main protease' },
-    { pdb: '4cox', drug: 'Celecoxib',     target: 'cyclooxygenase-2' },
-    { pdb: '1hwi', drug: 'Donepezil',     target: 'acetylcholinesterase' },
-    { pdb: '2rh1', drug: 'Carazolol',     target: 'beta-2 adrenergic receptor' },
-    { pdb: '3htb', drug: 'Dabigatran',    target: 'thrombin' },
-    { pdb: '2src', drug: 'Dasatinib',     target: 'Src/Abl kinase' },
-    { pdb: '3eml', drug: 'Crizotinib',    target: 'ALK kinase' },
-    { pdb: '4dkl', drug: 'Sorafenib',     target: 'RAF kinase' },
-    { pdb: '2pgh', drug: 'Flurbiprofen',  target: 'cyclooxygenase' },
-    { pdb: '1cbs', drug: 'Retinoic acid', target: 'cellular retinoic acid-binding protein' },
+    { pdb: '4xp4', drug: 'Cocaine HCl', target: 'dopamine transporter (DAT)', series: '001', href: '/drug-of-the-day/cocaine/' },
+    { pdb: '6dzv', drug: 'MDMA',        target: 'serotonin transporter (SERT)', series: '002', href: '/drug-of-the-day/mdma/' },
+    { pdb: '6wha', drug: 'DMT',         target: '5-HT\u2082A receptor', series: '003', href: '/drug-of-the-day/dmt/' },
   ];
   var dayIdx = Math.floor(Date.now() / 86400000) % drugComplexes.length;
   var todaysComplex = drugComplexes[dayIdx];
@@ -132,10 +120,13 @@
   var label = document.getElementById('drug-of-day-label');
   if (label) {
     label.innerHTML =
+      '<span class="drug-series">#' + todaysComplex.series + '</span> ' +
       '<strong>' + todaysComplex.drug + '</strong> · ' +
       '<span class="drug-target">' + todaysComplex.target + '</span> ' +
       '<span class="drug-pdb">PDB ' + todaysComplex.pdb.toUpperCase() + '</span>';
   }
+  var drugLink = document.querySelector('.drug-of-day');
+  if (drugLink && todaysComplex.href) drugLink.setAttribute('href', todaysComplex.href);
 
   // ── Mobile menu toggle ─────────────────────────────────────
   var mobileToggle = document.querySelector('.mobile-menu-toggle');

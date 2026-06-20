@@ -181,6 +181,12 @@ ul { list-style: none; }
   border-radius: 20px; padding: 4px 12px 4px 8px; z-index: 2;
 }
 .drug-of-day-title { color: var(--color-accent); font-weight: 600; }
+.drug-of-day .drug-series {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--color-gold);
+  letter-spacing: 0.06em;
+}
 .drug-of-day strong { color: var(--color-text); font-weight: 700; }
 .drug-target { color: var(--color-text-muted); }
 .drug-pdb {
