@@ -126,6 +126,10 @@ button { font: inherit; color: inherit; background: none; border: none; cursor: 
 .badge.terra { border-color: rgba(167,139,250,0.46); background: var(--terra-10); color: var(--terra); }
 .badge.gold  { border-color: rgba(251,191,36,0.46); background: var(--gold-10); color: var(--gold); }
 .badge.ga    { border-color: rgba(58,166,179,0.46); background: rgba(58,166,179,0.10); color: #67E8F9; }
+.badge.cuda  { border-color: rgba(118,185,0,0.46);  background: rgba(118,185,0,0.10);  color: #9AE635; }
+.badge.metal { border-color: rgba(90,200,250,0.46); background: rgba(90,200,250,0.10); color: #7DD3FC; }
+.badge.rocm  { border-color: rgba(237,28,36,0.46);  background: rgba(237,28,36,0.10);  color: #F87171; }
+.badge.avx   { border-color: rgba(34,211,238,0.46); background: rgba(34,211,238,0.10); color: #22D3EE; }
 
 /* CTAs */
 .hero-ctas { display: flex; flex-wrap: wrap; gap: 12px; justify-content: center; margin-top: 2rem; }
