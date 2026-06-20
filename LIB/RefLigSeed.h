@@ -83,6 +83,42 @@ inline std::vector<RefLigAtom> parse_mol2_coords(const std::string& path) {
     return atoms;
 }
 
+// ── Parse SDF/MOL atom coordinates ─────────────────────────────────────────
+inline std::vector<RefLigAtom> parse_sdf_coords(const std::string& path) {
+    std::vector<RefLigAtom> atoms;
+    FILE* f = fopen(path.c_str(), "r");
+    if (!f) return atoms;
+
+    char line[256];
+    int line_no = 0;
+    int atom_count = -1;
+    while (fgets(line, sizeof(line), f)) {
+        ++line_no;
+        if (line_no == 4) {
+            if (std::strlen(line) >= 3) {
+                atom_count = std::atoi(std::string(line, 3).c_str());
+            }
+            if (atom_count <= 0) break;
+            for (int i = 0; i < atom_count && fgets(line, sizeof(line), f); ++i) {
+                if (std::strlen(line) < 34) continue;
+                char elem_buf[4] = {0, 0, 0, 0};
+                std::strncpy(elem_buf, line + 31, 3);
+                std::string elem(elem_buf);
+                elem.erase(std::remove_if(elem.begin(), elem.end(), ::isspace), elem.end());
+                if (elem == "H" || elem == "D" || elem == "Du") continue;
+                RefLigAtom a;
+                a.x = static_cast<float>(std::atof(std::string(line, 0, 10).c_str()));
+                a.y = static_cast<float>(std::atof(std::string(line, 10, 10).c_str()));
+                a.z = static_cast<float>(std::atof(std::string(line, 20, 10).c_str()));
+                atoms.push_back(a);
+            }
+            break;
+        }
+    }
+    fclose(f);
+    return atoms;
+}
+
 // ── Auto-detect file type and parse ─────────────────────────────────────────
 inline std::vector<RefLigAtom> parse_reflig(const std::string& path) {
     // Check extension
@@ -95,9 +131,14 @@ inline std::vector<RefLigAtom> parse_reflig(const std::string& path) {
     if (lower_path.size() >= 5 && lower_path.substr(lower_path.size() - 5) == ".mol2") {
         return parse_mol2_coords(path);
     }
-    // Try PDB first, then MOL2
+    if ((lower_path.size() >= 4 && lower_path.substr(lower_path.size() - 4) == ".sdf") ||
+        (lower_path.size() >= 4 && lower_path.substr(lower_path.size() - 4) == ".mol")) {
+        return parse_sdf_coords(path);
+    }
+    // Try PDB first, then MOL2, then SDF/MOL.
     auto atoms = parse_pdb_coords(path);
     if (atoms.empty()) atoms = parse_mol2_coords(path);
+    if (atoms.empty()) atoms = parse_sdf_coords(path);
     return atoms;
 }
 

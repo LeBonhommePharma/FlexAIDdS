@@ -2,6 +2,11 @@
 #include <cmath>
 #include <numeric>
 #include <algorithm>
+#include <limits>
+
+namespace {
+constexpr float kThermoVctClashGuard = 1.0e5f;
+}
 
 ThermodynamicEngine::ThermodynamicEngine(float T_eff, float tencom_scale)
     : T_eff_(T_eff), tencom_scale_(tencom_scale), H_rep_ref_(0.0f) {}
@@ -33,8 +38,26 @@ float ThermodynamicEngine::shannon_entropy(const std::vector<std::vector<float>>
 }
 
 float ThermodynamicEngine::ensemble_mean(const std::vector<float>& cf) {
-    if (cf.empty()) return 0.0f;
-    return std::accumulate(cf.begin(), cf.end(), 0.0f) / static_cast<float>(cf.size());
+    if (cf.empty()) return std::numeric_limits<float>::quiet_NaN();
+
+    double sum = 0.0;
+    int finite_count = 0;
+    int valid_count = 0;
+    for (float x : cf) {
+        if (!std::isfinite(x)) continue;
+        ++finite_count;
+        if (std::abs(x) >= kThermoVctClashGuard) continue;
+        sum += static_cast<double>(x);
+        ++valid_count;
+    }
+
+    // Raw clash penalties are not binding enthalpy. If the converged population
+    // is dominated by catastrophic clash scores, the thermodynamic H_vct is
+    // undefined and should be excluded from aggregate ΔG/ΔH analysis.
+    if (valid_count == 0 || valid_count * 2 < finite_count)
+        return std::numeric_limits<float>::quiet_NaN();
+
+    return static_cast<float>(sum / static_cast<double>(valid_count));
 }
 
 ThermoResult ThermodynamicEngine::compute(

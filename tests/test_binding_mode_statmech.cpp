@@ -404,6 +404,65 @@ TEST_F(BindingModeStatMechTest, ShannonEntropyPopulation) {
     EXPECT_GT(shannon_S, 0.0);
 }
 
+TEST_F(BindingModeStatMechTest, GlobalEnsembleUsesRawMicrostates) {
+    BindingMode mode1(test_population);
+    {
+        Pose p0 = create_mock_pose(-1.0, 0);
+        Pose p1 = create_mock_pose(0.0, 1);
+        mode1.add_Pose(p0);
+        mode1.add_Pose(p1);
+    }
+
+    BindingMode mode2(test_population);
+    {
+        Pose p0 = create_mock_pose(0.0, 2);
+        Pose p1 = create_mock_pose(1.0, 3);
+        mode2.add_Pose(p0);
+        mode2.add_Pose(p1);
+    }
+
+    test_population->add_BindingMode(mode1);
+    test_population->add_BindingMode(mode2);
+
+    auto global = test_population->get_global_ensemble();
+    const auto weights = global.boltzmann_weights();
+
+    ASSERT_EQ(weights.size(), 4u);
+
+    const double beta = 1.0 / (statmech::kB_kcal * TEST_TEMPERATURE);
+    const std::vector<double> energies = {-1.0, 0.0, 0.0, 1.0};
+    double Z = 0.0;
+    for (double E : energies) Z += std::exp(-beta * E);
+
+    for (std::size_t i = 0; i < energies.size(); ++i) {
+        const double expected = std::exp(-beta * energies[i]) / Z;
+        EXPECT_NEAR(weights[i], expected, 1e-9);
+    }
+}
+
+TEST_F(BindingModeStatMechTest, ShannonEntropyMatchesGlobalEnsembleEntropy) {
+    BindingMode mode1(test_population);
+    for (int i = 0; i < 3; ++i) {
+        Pose p = create_mock_pose(-15.0 - i, i);
+        mode1.add_Pose(p);
+    }
+
+    BindingMode mode2(test_population);
+    for (int i = 0; i < 2; ++i) {
+        Pose p = create_mock_pose(-10.0 - i, i + 3);
+        mode2.add_Pose(p);
+    }
+
+    test_population->add_BindingMode(mode1);
+    test_population->add_BindingMode(mode2);
+
+    const double shannon_S = test_population->get_shannon_entropy();
+    const auto global = test_population->get_global_ensemble();
+    const auto thermo = global.compute();
+
+    EXPECT_NEAR(shannon_S, thermo.entropy, 1e-12);
+}
+
 TEST_F(BindingModeStatMechTest, ShannonEntropyEmptyPopulation) {
     // Empty population should have zero Shannon entropy
     double shannon_S = test_population->get_shannon_entropy();

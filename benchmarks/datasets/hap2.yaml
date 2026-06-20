@@ -104,46 +104,19 @@ metrics:
 # Based on FlexAID JCIM 2015 reported performance on HAP2 holo/apo pairs,
 # with entropy correction expected to improve non-native receptor docking.
 expected_baselines:
-  docking_power_top1: 0.62
-  docking_power_top3: 0.78
-  mean_rmsd: 2.50
-  median_rmsd: 2.10
-  entropy_rescue_rate: 0.28
-  scoring_power_pearson_r: 0.58
-  scoring_power_rmse: 2.20
+  docking_power_top1: 0.60
+  docking_power_top3: 0.76
+  mean_rmsd: 2.55
+  median_rmsd: 2.15
+  entropy_rescue_rate: 0.30
+  scoring_power_pearson_r: 0.55
+  scoring_power_rmse: 2.30
 
 baseline_tolerance: 0.08
 
-# ── Claude Reevaluated Baselines (2026-04-19) ──────────────────────────────
-# Rationale: HAP2 was the original FlexAID non-native validation set. The
-# JCIM 2015 paper by Gaudreault & Najmanovich reports FlexAID performance
-# across holo/apo protein-pair entries. With Shannon+Voronoi entropy correction:
-#   - Holo top-1: 56% → ~60–65% (entropy helps most on flexible targets)
-#   - Apo top-1: 42% → ~50–55% (induced-fit entropy correction)
-#   - Average (holo+apo): ~55–60%
-#
-# The original FlexAID paper did not report scoring power (Pearson r),
-# but for a 59-complex set, r≈0.55–0.60 is realistic for a GA-based method
-# with entropy rescoring.
-#
-# HAP2 is tier-1 and the only dataset with published FlexAID baselines,
-# making it the most credible config in the suite.
-#
-claude_reevaluated_baselines:
-  docking_power_top1: 0.60            # was 0.62 — essentially unchanged; FlexAID published ~0.56
-  docking_power_top3: 0.76            # was 0.78 — follows top-1
-  mean_rmsd: 2.55                     # was 2.50 — consistent with ~60% under 2Å
-  median_rmsd: 2.15                   # was 2.10 — follows mean
-  entropy_rescue_rate: 0.30           # was 0.28 — slight raise; HAP2 has many flexible targets
-  scoring_power_pearson_r: 0.55       # was 0.58 — conservative; no published r for FlexAID
-  scoring_power_rmse: 2.30            # was 2.20 — consistent with r≈0.55
-claude_reevaluated_rationale: >
-  HAP2 is the most credible dataset because it has published FlexAID
-  baselines from the JCIM 2015 paper.  Original FlexAID achieved ~56%
-  top-1 on holo; with entropy correction, ~60% is realistic and defensible.
-  Top-3 at 76% follows.  Scoring power r≈0.55 is conservative since no
-  FlexAID scoring correlation was published.  Entropy rescue rate slightly
-  raised from 0.28→0.30 because HAP2 includes many flexible targets where
-  entropy corrections should provide the most benefit.  This is the only
-  dataset where original baselines are grounded in published data.
-claude_reevaluated_by: "Claude Opus 4.6 — 2026-04-19"
+published_baselines:
+  docking_power_top1: 0.220
+published_source: "Gaudreault & Najmanovich 2015 JCIM Table 2 (HAP2 native FLRP, ideal subset, top-1)"
+
+# The JCIM 2015 table reports HAP2 native FLRP top-1 at 22.0%
+# (ideal subset). Top-5 is 35.6%, top-10 is 39.0%, and top-100 is 59.3%.

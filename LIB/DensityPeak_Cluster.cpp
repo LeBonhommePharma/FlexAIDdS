@@ -1,6 +1,8 @@
 #include "gaboom.h"
 #include "fileio.h"
 #include "MinibatchSampler.h"
+#include <cmath>
+#include <limits>
 #ifdef _OPENMP
 #include <omp.h>
 #endif
@@ -36,6 +38,8 @@ void DensityPeak_cluster(FA_Global* FA, GB_Global* GB, VC_Global* VC, chromosome
 	float maxDist, minDist;
 	float* RMSD;
 	[[maybe_unused]] double Pi;	double partition_function;
+	double boltzmann_origin = 0.0;
+	bool boltzmann_has_origin = false;
 	ClusterChrom* Chrom;
 	ClusterChrom *pChrom, *iChrom, *iiChrom, *jChrom;
 	DPcluster* Clust;
@@ -129,6 +133,16 @@ void DensityPeak_cluster(FA_Global* FA, GB_Global* GB, VC_Global* VC, chromosome
 		return;
 	}
 
+	if (Entropic) {
+		for(i = 0; i < num_chrom; ++i) {
+			if (std::isfinite(chrom[i].app_evalue) &&
+			    (!boltzmann_has_origin || chrom[i].app_evalue < boltzmann_origin)) {
+				boltzmann_origin = chrom[i].app_evalue;
+				boltzmann_has_origin = true;
+			}
+		}
+	}
+
 	// variables initialization
 	for(i = 0, partition_function = 0.0; i < num_chrom; ++i)
 	{
@@ -147,7 +161,10 @@ void DensityPeak_cluster(FA_Global* FA, GB_Global* GB, VC_Global* VC, chromosome
 			pChrom->DP = NULL;
 			pChrom->Distance = 0.0;
 			memset(pChrom->Coord, 0, 3*MAX_ATM_HET);
-			if(Entropic) { partition_function += exp((-1.0) * FA->beta * pChrom->Chromosome->app_evalue); }
+			if(Entropic && boltzmann_has_origin && std::isfinite(pChrom->Chromosome->app_evalue)) {
+				partition_function += exp((-1.0) * FA->beta *
+				                          (pChrom->Chromosome->app_evalue - boltzmann_origin));
+			}
 		}
 	}
 
@@ -155,7 +172,7 @@ void DensityPeak_cluster(FA_Global* FA, GB_Global* GB, VC_Global* VC, chromosome
 	// Verify that partition_function != NULL
 	if( Entropic && partition_function == 0 ) 
 	{
-		fprintf(stderr,"ERROR: The Partition Function is NULL during the clustering step.\n");
+		fprintf(stderr,"ERROR: The Partition Function is NULL during the clustering step after shifted Boltzmann normalization.\n");
 		Terminate(2);
 	}
 
@@ -186,7 +203,8 @@ void DensityPeak_cluster(FA_Global* FA, GB_Global* GB, VC_Global* VC, chromosome
 		ClusterChrom* loc_iChrom = &Chrom[i];
 		if(Entropic)
 		{
-			double loc_Pi = exp((-1.0) * (1/FA->temperature) * loc_iChrom->Chromosome->app_evalue) / partition_function;
+			double loc_Pi = exp((-1.0) * FA->beta *
+			                    (loc_iChrom->Chromosome->app_evalue - boltzmann_origin)) / partition_function;
 			loc_iChrom->CF = (double) ( loc_Pi * loc_iChrom->Chromosome->app_evalue) + (FA->temperature * loc_Pi * log(loc_Pi));
 		}
 		else loc_iChrom->CF = loc_iChrom->Chromosome->app_evalue;

@@ -35,7 +35,9 @@ double vcfunction(FA_Global*, VC_Global*, atom*, resid*,
 int write_pdb(FA_Global*, atom*, resid*, char[], char[]) { return 0; }
 int write_MODEL_pdb(bool, bool, int, FA_Global*, atom*, resid*, char[], char[]) { return 0; }
 float calc_rmsd(FA_Global*, atom*, resid*, gridpoint*, int, const double*, bool) { return 0.0f; }
-double get_cf_evalue(cfstr* cf) { return cf ? cf->com + cf->wal + cf->sas + cf->con + cf->elec : 0.0; }
+double get_cf_evalue(cfstr* cf, FA_Global* /*FA*/) {
+    return cf ? cf->com + cf->wal + cf->sas + cf->con + cf->elec : 0.0;
+}
 double get_apparent_cf_evalue(cfstr* cf) { return cf ? cf->com + cf->wal + cf->sas + cf->elec : 0.0; }
 void write_contributions(FA_Global*, FILE*, bool) {}
 

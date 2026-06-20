@@ -82,39 +82,40 @@ def sample_256_matrix():
 
 class TestEncode256Type:
     def test_basic_encoding(self):
-        code = encode_256_type(base_type=3, charge_bin=1, hbond_flag=True)
-        base, charge, hbond = decode_256_type(code)
+        code = encode_256_type(base_type=3, donor=True, acceptor=True)
+        base, donor, acceptor = decode_256_type(code)
         assert base == 3
-        assert charge == 1
-        assert hbond is True
+        assert donor is True
+        assert acceptor is True
 
     def test_zero_encoding(self):
-        code = encode_256_type(0, 0, False)
+        code = encode_256_type(0, donor=False, acceptor=False)
         assert code == 0
-        base, charge, hbond = decode_256_type(code)
+        base, donor, acceptor = decode_256_type(code)
         assert base == 0
-        assert charge == 0
-        assert hbond is False
+        assert donor is False
+        assert acceptor is False
 
     def test_max_encoding(self):
-        code = encode_256_type(63, 1, True)
+        code = encode_256_type(63, donor=True, acceptor=True)
         assert code == 255
-        base, charge, hbond = decode_256_type(code)
+        base, donor, acceptor = decode_256_type(code)
         assert base == 63
-        assert charge == 1
-        assert hbond is True
+        assert donor is True
+        assert acceptor is True
 
     def test_all_256_codes_roundtrip(self):
         for code in range(256):
-            base, charge, hbond = decode_256_type(code)
-            reconstructed = encode_256_type(base, charge, hbond)
+            base, donor, acceptor = decode_256_type(code)
+            reconstructed = encode_256_type(base, donor, acceptor)
             assert reconstructed == code
 
     def test_clamping(self):
-        code = encode_256_type(100, 10, True)  # out of range
-        base, charge, hbond = decode_256_type(code)
+        code = encode_256_type(100, donor=10, acceptor=True)  # out of range
+        base, donor, acceptor = decode_256_type(code)
         assert 0 <= base <= 63
-        assert 0 <= charge <= 1
+        assert donor is True
+        assert acceptor is True
 
 
 # ── SYBYL projection tests ──────────────────────────────────────────────────

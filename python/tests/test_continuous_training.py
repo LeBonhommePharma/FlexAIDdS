@@ -49,7 +49,7 @@ from flexaidds.energy_matrix import EnergyMatrix, encode_256_type
 def _make_atom(idx: int, element: str, x: float, y: float, z: float,
                base_type: int = 2, charge: float = 0.0) -> Atom:
     """Create a synthetic atom."""
-    t256 = encode_256_type(base_type, 2, False)
+    t256 = encode_256_type(base_type, False, False)
     return Atom(idx, f"{element}{idx}", element, x, y, z, charge, base_type, t256)
 
 

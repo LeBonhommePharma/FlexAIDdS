@@ -1699,6 +1699,25 @@ int main(int argc, char **argv){
 						cz += atoms[a].coor[2]; ++nn;
 					}
 					cx/=nn; cy/=nn; cz/=nn;
+					bool using_explicit_reflig_site = false;
+					std::vector<reflig::RefLigAtom> site_atoms;
+					if (!using_oracle && FA->reflig_file[0] != '\0' &&
+					    std::filesystem::exists(FA->reflig_file)) {
+						site_atoms = reflig::parse_reflig(FA->reflig_file);
+						if (!site_atoms.empty()) {
+							float site_centroid[3];
+							reflig::compute_centroid(site_atoms, site_centroid);
+							cx = site_centroid[0];
+							cy = site_centroid[1];
+							cz = site_centroid[2];
+							using_explicit_reflig_site = true;
+							printf("SITE-CONFINE: reference ligand centroid override %.2f %.2f %.2f from %s\n",
+							       cx, cy, cz, FA->reflig_file);
+						} else {
+							printf("SITE-CONFINE: WARNING reference ligand file had no atoms: %s\n",
+							       FA->reflig_file);
+						}
+					}
 					// Oracle mode: override centroid with oracle-derived position
 					// (rmax2 still computed from ligand extent for a sensible rcut_initial)
 					if (using_oracle) {
@@ -1706,10 +1725,18 @@ int main(int argc, char **argv){
 						printf("SITE-CONFINE: oracle centroid override %.2f %.2f %.2f\n", cx, cy, cz);
 					}
 					double rmax2 = 0.0;
-					for (int a = fa; a <= la; ++a) {
-						double dx=atoms[a].coor[0]-cx, dy=atoms[a].coor[1]-cy, dz=atoms[a].coor[2]-cz;
-						double d2 = dx*dx+dy*dy+dz*dz;
-						if (d2 > rmax2) rmax2 = d2;
+					if (using_explicit_reflig_site) {
+						for (const auto& ra : site_atoms) {
+							double dx=ra.x-cx, dy=ra.y-cy, dz=ra.z-cz;
+							double d2 = dx*dx+dy*dy+dz*dz;
+							if (d2 > rmax2) rmax2 = d2;
+						}
+					} else {
+						for (int a = fa; a <= la; ++a) {
+							double dx=atoms[a].coor[0]-cx, dy=atoms[a].coor[1]-cy, dz=atoms[a].coor[2]-cz;
+							double d2 = dx*dx+dy*dy+dz*dz;
+							if (d2 > rmax2) rmax2 = d2;
+						}
 					}
 					// Expanding-radius confinement: always confine to the cognate
 					// site.  Start at (ligand_extent + margin) and grow rcut in 2 Å
@@ -1892,6 +1919,15 @@ int main(int argc, char **argv){
 					atoms[anchor].coor[1],
 					atoms[anchor].coor[2]
 				};
+				bool seed_from_explicit_reflig = false;
+				if (FA->reflig_file[0] != '\0' &&
+				    std::filesystem::exists(FA->reflig_file)) {
+					auto reflig_atoms = reflig::parse_reflig(FA->reflig_file);
+					if (!reflig_atoms.empty()) {
+						reflig::compute_centroid(reflig_atoms, seed);
+						seed_from_explicit_reflig = true;
+					}
+				}
 
 				auto nearest = reflig::find_nearest_grid_points(
 				    seed, cleftgrid, FA->num_grd, FA->reflig_k_nearest);
@@ -1904,7 +1940,8 @@ int main(int argc, char **argv){
 					if (FA->reflig_nearest_grid) {
 						std::copy_n(nearest.data(), nearest.size(),
 						            FA->reflig_nearest_grid);
-						printf("REFLIG: direct-mode seed (%.1f, %.1f, %.1f), %d nearest points\n",
+						printf("REFLIG: direct-mode %s seed (%.1f, %.1f, %.1f), %d nearest points\n",
+						       seed_from_explicit_reflig ? "reference" : "loaded-ligand",
 						       seed[0], seed[1], seed[2],
 						       FA->reflig_nearest_count);
 					} else {

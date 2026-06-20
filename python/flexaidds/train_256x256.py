@@ -142,7 +142,9 @@ def parse_pdb_atoms(pdb_path: str) -> List[Atom]:
 
             base = _PDB_ELEMENT_MAP.get(element.upper(), 31)
             charge = 0.0
-            t256 = encode_256_type(base, 1, base in {5,6,7,8,9,10,11,12,13,14})
+            donor = _is_hbond_donor_base(base, charge)
+            acceptor = _is_hbond_acceptor_base(base, charge)
+            t256 = encode_256_type(base, donor, acceptor)
             atoms.append(Atom(idx, name, element, x, y, z, charge, base, t256))
     return atoms
 
@@ -175,17 +177,26 @@ def parse_mol2_atoms(mol2_path: str) -> List[Atom]:
                 continue
 
             base = _MOL2_TYPE_MAP.get(sybyl_type, 31)
-            charge_bin = _quantise_charge(charge)
-            hbond = base in {5,6,7,8,9,10,11,12,13,14,22}
-            t256 = encode_256_type(base, charge_bin, hbond)
+            donor = _is_hbond_donor_base(base, charge)
+            acceptor = _is_hbond_acceptor_base(base, charge)
+            t256 = encode_256_type(base, donor, acceptor)
             element = sybyl_type.split(".")[0] if "." in sybyl_type else sybyl_type
             atoms.append(Atom(idx, name, element, x, y, z, charge, base, t256))
     return atoms
 
 
-def _quantise_charge(charge: float) -> int:
-    """Map partial charge to 1-bit polarity (0 = negative, 1 = positive)."""
-    return 0 if charge < 0.0 else 1
+def _is_hbond_donor_base(base: int, charge: float) -> bool:
+    """Mirror the v56 C++ heavy-atom donor role classifier."""
+    return base in {7, 8, 10, 11, 13} or (base == 17 and charge > 0.3)
+
+
+def _is_hbond_acceptor_base(base: int, charge: float) -> bool:
+    """Mirror the v56 C++ heavy-atom acceptor role classifier."""
+    if base in {5, 6, 7, 9, 11, 12, 13, 14, 15, 18, 19, 22}:
+        return True
+    if base in {16, 17, 20}:
+        return charge < -0.3
+    return False
 
 
 def parse_pdbbind_index(index_path: str) -> Dict[str, float]:

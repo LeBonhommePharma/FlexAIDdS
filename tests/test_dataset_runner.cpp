@@ -485,6 +485,28 @@ TEST(PDBParsing, ExtractPeptideLigandFallback) {
     EXPECT_EQ(natoms, 27);          // AVPI heavy-atom count
     EXPECT_GE(nbonds, 26);          // connected peptide (tree has natoms-1 bonds; PRO ring adds one)
 
+    // Receptor cleanup must remove the peptide chain from the apo receptor too.
+    std::string apo_path = test_dir + "/apo.pdb";
+    std::string cleaned = runner.write_receptor_without_ligand(pdb_path, sdf_path, apo_path);
+    EXPECT_EQ(cleaned, apo_path);
+
+    std::ifstream apo(apo_path);
+    ASSERT_TRUE(apo.good());
+    std::string rec_line;
+    bool has_chain_a = false;
+    bool has_chain_c = false;
+    while (std::getline(apo, rec_line)) {
+        if (rec_line.size() < 22) continue;
+        if (rec_line.compare(0, 6, "ATOM  ") != 0 &&
+            rec_line.compare(0, 6, "HETATM") != 0) {
+            continue;
+        }
+        if (rec_line[21] == 'A') has_chain_a = true;
+        if (rec_line[21] == 'C') has_chain_c = true;
+    }
+    EXPECT_TRUE(has_chain_a);
+    EXPECT_FALSE(has_chain_c);
+
     fs::remove_all(test_dir);
 }
 
@@ -1115,6 +1137,49 @@ TEST(ReportGeneration, WithResults) {
     std::string summary_header;
     std::getline(summary, summary_header);
     EXPECT_TRUE(summary_header.find("pearson_r") != std::string::npos);
+
+    fs::remove_all(test_dir);
+}
+
+TEST(ReportGeneration, MissingAffinityCorrelationShowsNA) {
+    BenchmarkReport report;
+    report.dataset_name = "Astex Diverse";
+    report.total_systems = 2;
+    report.successful = 1;
+    report.success_rate = 0.5;
+    report.mean_rmsd = 1.5;
+    report.median_rmsd = 1.5;
+
+    DockingResult r1;
+    r1.pdb_id = "1ABC";
+    r1.best_score = -8.5f;
+    r1.rmsd_to_crystal = 0.9f;
+    r1.predicted_dG = -8.5f;
+    r1.success = true;
+
+    DockingResult r2;
+    r2.pdb_id = "2DEF";
+    r2.best_score = -5.0f;
+    r2.rmsd_to_crystal = 2.1f;
+    r2.predicted_dG = -5.0f;
+    r2.success = false;
+
+    report.results = {r1, r2};
+
+    std::string test_dir = "/tmp/flexaidds_test_report3";
+    fs::create_directories(test_dir);
+
+    DatasetRunner runner(test_dir + "/cache");
+    runner.write_report(report, test_dir);
+
+    std::ifstream md(test_dir + "/astex_diverse_report.md");
+    ASSERT_TRUE(md.good());
+    std::string markdown((std::istreambuf_iterator<char>(md)),
+                         std::istreambuf_iterator<char>());
+    EXPECT_TRUE(markdown.find("| Affinity pairs | 0 |") != std::string::npos);
+    EXPECT_TRUE(markdown.find("| Pearson r | NA |") != std::string::npos);
+    EXPECT_TRUE(markdown.find("| Spearman ρ | NA |") != std::string::npos);
+    EXPECT_TRUE(markdown.find("| Kendall τ | NA |") != std::string::npos);
 
     fs::remove_all(test_dir);
 }
