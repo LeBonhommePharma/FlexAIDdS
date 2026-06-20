@@ -9,6 +9,7 @@ on:
       - 'site/**'
       - 'scripts/update_site_stats.py'
       - 'scripts/sync_apex_to_ghpages.sh'
+      - '.github/workflows/update-site.yml'
   schedule:
     - cron: '0 6 * * *'    # Daily 06:00 UTC
   workflow_dispatch:

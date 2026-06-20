@@ -63,6 +63,33 @@ The domain verification should already be complete from previous deploys.
 ### 5. Create the URL Rewrite Transform Rules
 Go to **Rules → Overview → Create rule → URL Rewrite Rule**.
 
+**Rule 0 (required): Apex homepage + static assets**
+
+GitHub Pages project deploys under `/FlexAIDdS/`, but `https://thebonhomme.com/` can keep stale orphan
+files (`/index.html`, `/app.js`, etc.) that hide the Mol* hero viewer. Rewrite apex requests to the
+live `/FlexAIDdS/` tree:
+
+- Rule name: `Rewrite apex homepage to /FlexAIDdS`
+- Filter:
+  ```
+  http.host eq "thebonhomme.com" and (
+    http.request.uri.path eq "/" or
+    http.request.uri.path eq "/index.html" or
+    http.request.uri.path eq "/app.js" or
+    starts_with(http.request.uri.path, "/app.js") or
+    http.request.uri.path eq "/style.css" or
+    http.request.uri.path eq "/theme.css" or
+    http.request.uri.path eq "/theme.js" or
+    starts_with(http.request.uri.path, "/assets/")
+  )
+  ```
+- Rewrite to → **Dynamic**
+- Path expression:
+  ```
+  http.request.uri.path eq "/" ? "/FlexAIDdS/index.html" : concat("/FlexAIDdS", http.request.uri.path)
+  ```
+- Query: Preserve query string (checked)
+
 **Rule 1: /periodic**
 - Rule name: `Rewrite /periodic to /FlexAIDdS/periodic`
 - If incoming requests match: **Custom filter expression**
