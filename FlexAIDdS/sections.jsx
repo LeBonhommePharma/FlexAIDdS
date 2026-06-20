@@ -335,7 +335,11 @@ function RepoStatsSection() {
           Repository <span className="t-gold">Stats</span>
         </SectionHeader>
         <div className="stats-row">
-          <div className="stat-item"><div className="stat-value" id="stat-commits-display">{commits}</div><div className="stat-label">Commits</div></div>
+          <div className={"stat-item" + (commits >= 1500 ? " stat-item--milestone" : "")}>
+            {commits >= 1500 && <span className="stat-milestone-badge">1,500th commit</span>}
+            <div className={"stat-value" + (commits >= 1500 ? " stat-value--milestone" : "")} id="stat-commits-display">{commits}</div>
+            <div className="stat-label">Commits</div>
+          </div>
           <div className="stat-item"><div className="stat-value">C++26</div><div className="stat-label">Standard</div></div>
           <div className="stat-item"><div className="stat-value">Apache 2.0</div><div className="stat-label">License</div></div>
           <div className="stat-item"><div className="stat-value">{numLangs}</div><div className="stat-label">Source Languages</div></div>

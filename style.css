@@ -130,6 +130,7 @@ ul { list-style: none; }
   width: 100%;
   height: 100%;
   min-height: 320px;
+  background: #0a0e14;
   opacity: 0.62;
   filter: saturate(1.08) contrast(1.08);
   -webkit-transform: translateZ(0);
@@ -148,6 +149,7 @@ ul { list-style: none; }
   user-select: none;
 }
 [data-theme="light"] #molstar-viewer {
+  background: #ffffff;
   opacity: 0.46;
   filter: saturate(0.98) contrast(1.04);
 }
@@ -367,7 +369,31 @@ h2 {
 /* Stats */
 .stats-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem; margin-bottom: 1.5rem; }
 .stat-card { text-align: center; background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--r-md); padding: 1.25rem; }
+.stat-card--milestone {
+  border-color: rgba(251,191,36,0.45);
+  background: linear-gradient(135deg, rgba(251,191,36,0.10) 0%, rgba(34,211,238,0.06) 100%);
+  box-shadow: 0 0 28px rgba(251,191,36,0.14);
+}
+.stat-milestone-badge {
+  display: inline-block;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--color-gold);
+  background: rgba(251,191,36,0.14);
+  border: 1px solid rgba(251,191,36,0.38);
+  border-radius: 10px;
+  padding: 2px 8px;
+  margin-bottom: 6px;
+}
 .stat-value { display: block; font-family: var(--font-mono); font-size: 1.75rem; font-weight: 700; color: var(--color-accent); margin-bottom: 4px; }
+.stat-value--milestone {
+  background: linear-gradient(135deg, #FBBF24 0%, #22D3EE 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
 .stat-label { font-family: var(--font-mono); font-size: 11px; color: var(--color-text-muted); letter-spacing: 0.1em; text-transform: uppercase; }
 .lang-bar { display: flex; height: 8px; border-radius: 4px; overflow: hidden; margin-bottom: 0.75rem; }
 .lang-segment { height: 100%; }
