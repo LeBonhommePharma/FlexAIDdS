@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
-"""Update hardcoded repository stats in site/index.html.
+"""Update hardcoded repository stats across all site pages simultaneously.
 
-Reads commit count from git and language breakdown from GitHub API,
-then patches site/index.html in-place. Uses only the standard library.
+Patches the apex homepage (site/index.html) and the React full site
+(site/FlexAIDdS/index.html), and writes a shared JSON snapshot at
+site/assets/repo-stats.json consumed by both pages at runtime.
 
 Usage:
-    python scripts/update_site_stats.py [--repo OWNER/REPO] [--html PATH]
+    python scripts/update_site_stats.py [--repo OWNER/REPO]
 """
 
 from __future__ import annotations
@@ -20,23 +21,33 @@ import sys
 import urllib.error
 import urllib.request
 
-# GitHub language name → (CSS variable suffix, short display name)
+# GitHub language name → (CSS variable suffix, short display name, bar color)
 LANG_MAP = {
-    "C++": ("cpp", "C++"),
-    "Python": ("python", "Python"),
-    "Swift": ("swift", "Swift"),
-    "Objective-C++": ("objcpp", "Obj-C++"),
-    "CMake": ("cmake", "CMake"),
-    "TypeScript": ("ts", "TypeScript"),
-    "Cuda": ("cuda", "CUDA"),
-    "CUDA": ("cuda", "CUDA"),
-    "C": ("c", "C"),
-    "Shell": ("other", "Shell"),
-    "Metal": ("other", "Metal"),
-    "JavaScript": ("other", "JavaScript"),
+    "C++": ("cpp", "C++", "#f34b7d"),
+    "Python": ("python", "Python", "#3572A5"),
+    "Swift": ("swift", "Swift", "#F05138"),
+    "Objective-C++": ("objcpp", "Obj-C++", "#438eff"),
+    "CMake": ("cmake", "CMake", "#8b949e"),
+    "TypeScript": ("ts", "TypeScript", "#3178c6"),
+    "Cuda": ("cuda", "CUDA", "#76B900"),
+    "CUDA": ("cuda", "CUDA", "#76B900"),
+    "C": ("c", "C", "#555555"),
+    "Shell": ("other", "Shell", "#89e051"),
+    "Metal": ("other", "Metal", "#c4c4c4"),
+    "JavaScript": ("other", "JavaScript", "#f1e05a"),
+    "HTML": ("other", "HTML", "#e34c26"),
 }
 
 MIN_PERCENT = 1.0  # Languages below this are grouped into "Other"
+OTHER_COLOR = "#555555"
+
+# All HTML files that receive the same semantic stat markers.
+HTML_TARGETS = [
+    "site/index.html",
+    "site/FlexAIDdS/index.html",
+]
+
+STATS_JSON_PATH = "site/assets/repo-stats.json"
 
 
 def get_commit_count() -> int:
@@ -48,12 +59,6 @@ def get_commit_count() -> int:
         check=True,
     )
     return int(result.stdout.strip())
-
-
-def fetch_languages(repo: str) -> dict[str, int]:
-    """Fetch language byte counts from GitHub API."""
-    data = _github_api_get(f"/repos/{repo}/languages")
-    return data if isinstance(data, dict) else {}
 
 
 def _github_api_get(path: str) -> dict | list | None:
@@ -75,6 +80,12 @@ def _github_api_get(path: str) -> dict | list | None:
         return None
 
 
+def fetch_languages(repo: str) -> dict[str, int]:
+    """Fetch language byte counts from GitHub API."""
+    data = _github_api_get(f"/repos/{repo}/languages")
+    return data if isinstance(data, dict) else {}
+
+
 def fetch_stars(repo: str) -> int | None:
     """Fetch the current stargazers count."""
     data = _github_api_get(f"/repos/{repo}")
@@ -91,48 +102,43 @@ def fetch_latest_release(repo: str) -> str | None:
     return None
 
 
-def compute_percentages(languages: dict[str, int]) -> list[tuple[str, str, float]]:
-    """Compute (css_var_suffix, display_name, percentage) sorted by percentage desc.
-
-    Languages below MIN_PERCENT are grouped into 'Other'.
-    """
+def compute_percentages(
+    languages: dict[str, int],
+) -> list[tuple[str, str, str, float]]:
+    """Compute (css_suffix, display_name, color, percentage) sorted desc."""
     total = sum(languages.values())
     if total == 0:
         return []
 
-    entries: list[tuple[str, str, float]] = []
+    entries: list[tuple[str, str, str, float]] = []
     other_pct = 0.0
 
     for lang, bytes_count in sorted(languages.items(), key=lambda x: -x[1]):
         pct = round(bytes_count / total * 100, 1)
         if lang in LANG_MAP:
-            css_suffix, display = LANG_MAP[lang]
+            css_suffix, display, color = LANG_MAP[lang]
             if pct < MIN_PERCENT:
                 other_pct += pct
             else:
-                entries.append((css_suffix, display, pct))
+                entries.append((css_suffix, display, color, pct))
         else:
             other_pct += pct
 
     if other_pct > 0:
-        entries.append(("other", "Other", round(other_pct, 1)))
+        entries.append(("other", "Other", OTHER_COLOR, round(other_pct, 1)))
 
     return entries
 
 
 def count_source_languages(languages: dict[str, int]) -> int:
-    """Count source languages for the stats badge.
-
-    GitHub's languages API can include generated dependency artifacts under
-    "Makefile"; keep that out of the user-facing source-language total.
-    """
+    """Count source languages for the stats badge."""
     return sum(1 for lang in languages if lang != "Makefile")
 
 
-def build_lang_bar(entries: list[tuple[str, str, float]]) -> str:
-    """Build the lang-bar HTML block."""
+def build_lang_bar(entries: list[tuple[str, str, str, float]]) -> str:
+    """Build the lang-bar HTML block for the apex homepage."""
     lines = ['        <div class="lang-bar" aria-label="Language breakdown">']
-    for css_suffix, display, pct in entries:
+    for css_suffix, display, _color, pct in entries:
         lines.append(
             f'          <div class="lang-segment" style="width:{pct}%;'
             f'background:var(--lang-{css_suffix})" title="{display} {pct}%"></div>'
@@ -141,10 +147,10 @@ def build_lang_bar(entries: list[tuple[str, str, float]]) -> str:
     return "\n".join(lines)
 
 
-def build_lang_legend(entries: list[tuple[str, str, float]]) -> str:
-    """Build the lang-legend HTML block."""
+def build_lang_legend(entries: list[tuple[str, str, str, float]]) -> str:
+    """Build the lang-legend HTML block for the apex homepage."""
     lines = ['        <div class="lang-legend">']
-    for css_suffix, display, pct in entries:
+    for css_suffix, display, _color, pct in entries:
         lines.append(
             f'          <span><i style="background:var(--lang-{css_suffix})"></i>'
             f"{display} {pct}%</span>"
@@ -153,22 +159,15 @@ def build_lang_legend(entries: list[tuple[str, str, float]]) -> str:
     return "\n".join(lines)
 
 
-def update_html(
-    html_path: str,
+def patch_html_markers(
+    content: str,
     commit_count: int,
-    lang_entries: list[tuple[str, str, float]],
+    language_count: int | None,
     *,
-    language_count: int | None = None,
     stars: int | None = None,
     release: str | None = None,
-) -> bool:
-    """Patch the HTML file in-place. Returns True if changes were made."""
-    with open(html_path, "r", encoding="utf-8") as f:
-        content = f.read()
-
-    original = content
-
-    # 1. Update commit count in the new semantic marker (id="stat-commits") — any tag
+) -> str:
+    """Patch shared semantic stat markers in an HTML file."""
     content = re.sub(
         r'(<[^>]*id="stat-commits"[^>]*>)\d+(</[^>]+>)',
         rf"\g<1>{commit_count}\g<2>",
@@ -176,7 +175,6 @@ def update_html(
         count=1,
     )
 
-    # 2. Update language count in the new semantic marker (id="stat-langs") — any tag
     if language_count is not None:
         content = re.sub(
             r'(<[^>]*id="stat-langs"[^>]*>)\d+(</[^>]+>)',
@@ -185,16 +183,14 @@ def update_html(
             count=1,
         )
 
-    # 3. (Optional) Stars - only if a matching span exists in future revisions
     if stars is not None:
         content = re.sub(
-            r'(<span[^>]*id="stat-stars"[^>]*>)\d+(</span>)',
+            r'(<span[^>]*id="stat-stars"[^>]*>)\d*(</span>)',
             rf"\g<1>{stars}\g<2>",
             content,
             count=1,
         )
 
-    # 4. Update "last updated" date if a marker span is present (future-proof)
     today = datetime.date.today().isoformat()
     content = re.sub(
         r'(<span[^>]*id="last-updated"[^>]*>)[^<]*(</span>)',
@@ -203,7 +199,6 @@ def update_html(
         count=1,
     )
 
-    # 5. Update latest release version if a marker span is present
     if release:
         content = re.sub(
             r'(<span[^>]*id="latest-release"[^>]*>)[^<]*(</span>)',
@@ -212,67 +207,196 @@ def update_html(
             count=1,
         )
 
-    changed = content != original
+    return content
 
-    if changed:
-        with open(html_path, "w", encoding="utf-8") as f:
-            f.write(content)
+
+def patch_apex_stats(
+    content: str,
+    commit_count: int,
+    language_count: int,
+    lang_entries: list[tuple[str, str, str, float]],
+) -> str:
+    """Patch apex-only visible stats (data-count, lang bar/legend)."""
+    content = patch_html_markers(content, commit_count, language_count)
+
+    content = re.sub(
+        r'(<span class="stat-value" data-count=")\d+(">)',
+        rf"\g<1>{commit_count}\g<2>",
+        content,
+        count=1,
+    )
+
+    content = re.sub(
+        r'(<span class="stat-value" id="stat-langs-display">)\d+(</span>)',
+        rf"\g<1>{language_count}\g<2>",
+        content,
+        count=1,
+    )
+
+    if lang_entries:
+        bar = build_lang_bar(lang_entries)
+        content = re.sub(
+            r'        <div class="lang-bar" aria-label="Language breakdown">.*?</div>',
+            bar,
+            content,
+            count=1,
+            flags=re.DOTALL,
+        )
+        legend = build_lang_legend(lang_entries)
+        content = re.sub(
+            r'        <div class="lang-legend">.*?</div>',
+            legend,
+            content,
+            count=1,
+            flags=re.DOTALL,
+        )
+
+    return content
+
+
+def write_stats_json(
+    path: str,
+    commit_count: int,
+    language_count: int,
+    lang_entries: list[tuple[str, str, str, float]],
+    *,
+    stars: int | None = None,
+    release: str | None = None,
+) -> None:
+    """Write the shared JSON snapshot consumed by both pages."""
+    payload = {
+        "commits": commit_count,
+        "languageCount": language_count,
+        "lastUpdated": datetime.date.today().isoformat(),
+        "languages": [
+            {
+                "id": css_suffix,
+                "name": display,
+                "percent": pct,
+                "color": color,
+            }
+            for css_suffix, display, color, pct in lang_entries
+        ],
+    }
+    if stars is not None:
+        payload["stars"] = stars
+    if release:
+        payload["latestRelease"] = release
+
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(payload, f, indent=2)
+        f.write("\n")
+
+
+def update_all(
+    html_targets: list[str],
+    commit_count: int,
+    lang_entries: list[tuple[str, str, str, float]],
+    *,
+    language_count: int | None = None,
+    stars: int | None = None,
+    release: str | None = None,
+) -> list[str]:
+    """Patch all HTML targets. Returns list of changed file paths."""
+    changed: list[str] = []
+    lang_count = language_count if language_count is not None else len(lang_entries)
+
+    for html_path in html_targets:
+        if not os.path.isfile(html_path):
+            print(f"Warning: {html_path} not found, skipping", file=sys.stderr)
+            continue
+
+        with open(html_path, "r", encoding="utf-8") as f:
+            original = f.read()
+
+        if html_path.endswith("site/index.html"):
+            updated = patch_apex_stats(
+                original, commit_count, lang_count, lang_entries
+            )
+        else:
+            updated = patch_html_markers(
+                original,
+                commit_count,
+                lang_count,
+                stars=stars,
+                release=release,
+            )
+
+        if updated != original:
+            with open(html_path, "w", encoding="utf-8") as f:
+                f.write(updated)
+            changed.append(html_path)
+
+    json_original = None
+    if os.path.isfile(STATS_JSON_PATH):
+        with open(STATS_JSON_PATH, "r", encoding="utf-8") as f:
+            json_original = f.read()
+
+    write_stats_json(
+        STATS_JSON_PATH,
+        commit_count,
+        lang_count,
+        lang_entries,
+        stars=stars,
+        release=release,
+    )
+
+    with open(STATS_JSON_PATH, "r", encoding="utf-8") as f:
+        json_updated = f.read()
+
+    if json_updated != json_original:
+        changed.append(STATS_JSON_PATH)
 
     return changed
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Update site stats in index.html")
+    parser = argparse.ArgumentParser(
+        description="Update site stats across apex + FlexAIDdS pages"
+    )
     parser.add_argument(
         "--repo", default="LeBonhommePharma/FlexAIDdS", help="GitHub repo (owner/name)"
     )
-    parser.add_argument("--html", default="site/index.html", help="Path to index.html")
     args = parser.parse_args()
 
-    # Get commit count
     try:
         commit_count = get_commit_count()
         print(f"Commit count: {commit_count}")
-    except (subprocess.CalledError, FileNotFoundError) as e:
+    except (subprocess.CalledProcessError, FileNotFoundError) as e:
         print(f"Error getting commit count: {e}", file=sys.stderr)
         return 1
 
-    # Get language breakdown
     languages = fetch_languages(args.repo)
     language_count = count_source_languages(languages) if languages else None
     lang_entries = compute_percentages(languages) if languages else []
     if lang_entries:
         print("Language breakdown:")
-        for _, display, pct in lang_entries:
+        for _, display, _color, pct in lang_entries:
             print(f"  {display}: {pct}%")
     else:
         print("Skipping language update (API unavailable)")
 
-    # Get stars
     stars = fetch_stars(args.repo)
     if stars is not None:
         print(f"Stars: {stars}")
 
-    # Get latest release
     release = fetch_latest_release(args.repo)
     if release:
         print(f"Latest release: {release}")
 
-    # Update HTML
-    if not os.path.isfile(args.html):
-        print(f"Error: {args.html} not found", file=sys.stderr)
-        return 1
-
-    changed = update_html(
-        args.html,
+    changed = update_all(
+        HTML_TARGETS,
         commit_count,
         lang_entries,
         language_count=language_count,
         stars=stars,
         release=release,
     )
+
     if changed:
-        print(f"Updated {args.html}")
+        for path in changed:
+            print(f"Updated {path}")
     else:
         print("No changes needed")
 

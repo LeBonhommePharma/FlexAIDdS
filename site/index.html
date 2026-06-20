@@ -1,50 +1,574 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>FlexAID∆S — Entropy-Driven Molecular Docking · Le Bonhomme Pharma</title>
-  <meta name="description" content="FlexAID∆S — entropy-driven molecular docking engine. Genetic algorithms meet statistical mechanics for real-world drug discovery. Le Bonhomme Pharma · Montréal · Open Science.">
-  <link rel="icon" type="image/svg+xml" href="assets/favicon-flexaid-ds.svg">
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FlexAID∆S — Entropy-Driven Molecular Docking · Le Bonhomme Pharma</title>
+<meta name="description" content="FlexAID∆S: entropy-aware molecular docking by Le Bonhomme Pharma. 95.3% binding mode recovery on Astex Diverse 85 (81/85 targets, cross-docking). ΔG = ΔH − TΔS.">
+<meta property="og:title" content="FlexAID∆S — Entropy-Driven Molecular Docking Engine">
+<meta property="og:description" content="95.3% binding mode recovery on Astex Diverse 85. Statistical mechanics meets genetic algorithms. Open-source, Apache 2.0. Le Bonhomme Pharma.">
+<meta property="og:type" content="website">
+<link rel="icon" type="image/svg+xml" href="assets/favicon-flexaid-ds.svg">
 
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@300;400;500;600;700&family=JetBrains+Mono:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600;700&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 
-  <link rel="stylesheet" href="styles.css">
+<!-- Mol* Viewer -->
+<link rel="stylesheet" type="text/css" href="https://cdn.jsdelivr.net/npm/molstar@4.5.0/build/viewer/molstar.css" />
+<script type="text/javascript" src="https://cdn.jsdelivr.net/npm/molstar@4.5.0/build/viewer/molstar.js"></script>
 
-  <script src="https://unpkg.com/react@18.3.1/umd/react.development.js" crossorigin="anonymous"></script>
-  <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" crossorigin="anonymous"></script>
-  <script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" crossorigin="anonymous"></script>
+<link rel="stylesheet" href="./style.css">
+<link rel="stylesheet" href="./theme.css">
+<script src="./theme.js"></script>
 </head>
 <body>
-  <div id="root"></div>
+  <!-- Skip link -->
+  <a href="#main" class="sr-only" style="position:absolute;top:-100px;left:0;z-index:999;background:var(--color-primary);color:#fff;padding:8px 16px;font-size:14px;" onfocus="this.style.top='0'" onblur="this.style.top='-100px'">Skip to content</a>
 
-  <!-- Semantic markers patched by scripts/update_site_stats.py on every cron run.
-       DO NOT remove or rename these spans. sections.jsx reads them at mount time
-       to initialise the live commit count and language count in RepoStatsSection. -->
-  <span id="stat-commits" hidden>1472</span>
+  <!-- Header -->
+  <header class="site-header" id="site-header">
+    <div class="header-inner">
+      <a href="/" class="logo" aria-label="FlexAID∆S Home">
+        <svg width="32" height="32" viewBox="0 0 32 32" fill="none" aria-hidden="true">
+          <rect x="2" y="2" width="28" height="28" rx="6" stroke="currentColor" stroke-width="1.5"/>
+          <circle cx="16" cy="12" r="4" stroke="var(--color-accent)" stroke-width="1.5"/>
+          <circle cx="10" cy="22" r="3" stroke="var(--color-accent)" stroke-width="1.5"/>
+          <circle cx="22" cy="22" r="3" stroke="var(--color-accent)" stroke-width="1.5"/>
+          <line x1="14" y1="15.5" x2="11" y2="19.5" stroke="var(--color-accent)" stroke-width="1.2"/>
+          <line x1="18" y1="15.5" x2="21" y2="19.5" stroke="var(--color-accent)" stroke-width="1.2"/>
+          <line x1="13" y1="22" x2="19" y2="22" stroke="var(--color-accent)" stroke-width="1.2" stroke-dasharray="2 2"/>
+        </svg>
+        <span class="logo-text">FlexAID<span class="logo-delta">∆S</span></span>
+      </a>
+      <nav class="main-nav" aria-label="Main navigation">
+        <a href="#features">Features</a>
+        <a href="#benchmarks">Benchmarks</a>
+        <a href="#install">Install</a>
+        <a href="#usage">Usage</a>
+        <a href="#architecture">Architecture</a>
+        <a href="/FlexAIDdS/">Full Site</a>
+        <a href="/periodic_table.html" style="color:var(--color-accent-gold,#FBBF24)">Periodic</a>
+        <a href="/drug-of-the-day/" style="color:var(--color-terra,#A78BFA)">Drug of Day</a>
+      </nav>
+      <div class="header-actions">
+        <a href="https://github.com/LeBonhommePharma/FlexAIDdS" target="_blank" rel="noopener noreferrer" class="gh-link" aria-label="View on GitHub">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/></svg>
+        </a>
+        <span data-theme-mount></span>
+      </div>
+      <button class="mobile-menu-toggle" aria-label="Toggle menu" aria-expanded="false">
+        <span></span><span></span><span></span>
+      </button>
+    </div>
+  </header>
+
+  <main id="main">
+    <!-- Hero -->
+    <section class="hero">
+      <div class="hero-bg" aria-hidden="true">
+        <div id="molstar-viewer"></div>
+      </div>
+      <a href="/drug-of-the-day/" class="drug-of-day" aria-label="Drug of the Day" style="text-decoration:none;cursor:pointer;">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.5 1.5H8.25A2.25 2.25 0 006 3.75v16.5a2.25 2.25 0 002.25 2.25h7.5A2.25 2.25 0 0018 20.25V3.75a2.25 2.25 0 00-2.25-2.25H13.5m-3 0V3h3V1.5m-3 0h3m-6 7.5h9m-9 4.5h9"/></svg>
+        <span class="drug-of-day-title">Drug of the Day</span>
+        <span id="drug-of-day-label"></span>
+      </a>
+      <div class="hero-content">
+        <div class="hero-badges">
+          <span class="badge">Apache 2.0</span>
+          <span class="badge">C++20</span>
+          <span class="badge badge-accent">Python &ge; 3.9</span>
+          <span class="badge">Linux | macOS</span>
+        </div>
+        <h1>FlexAID<span class="delta">∆S</span></h1>
+        <p class="hero-subtitle">Entropy-Driven Molecular Docking Engine</p>
+        <p class="hero-tagline">Genetic algorithms meet statistical mechanics for real-world drug discovery</p>
+        <div class="hero-stat-row">
+          <div class="hero-stat">
+            <span class="hero-stat-value">0.93</span>
+            <span class="hero-stat-label">Pearson r (ITC-187)</span>
+          </div>
+          <div class="hero-stat">
+            <span class="hero-stat-value">1.4</span>
+            <span class="hero-stat-label">RMSE kcal/mol</span>
+          </div>
+          <div class="hero-stat hero-stat-gold">
+            <span class="hero-stat-value" style="color:#FBBF24">95.3%</span>
+            <span class="hero-stat-label">Correct binding mode (Astex-85)</span>
+          </div>
+        </div>
+        <div class="hero-cta">
+          <a href="#install" class="btn btn-primary">Get Started</a>
+          <a href="https://github.com/LeBonhommePharma/FlexAIDdS" target="_blank" rel="noopener noreferrer" class="btn btn-secondary">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/></svg>
+            View on GitHub
+          </a>
+        </div>
+      </div>
+    </section>
+
+    <!-- DRUG IS ALWAYS AN ANSWER — slogan -->
+    <section class="slogan-section" aria-label="Le Bonhomme Pharma manifesto">
+      <div class="container">
+        <p class="brand-slogan">
+          <span class="slogan-drug">DRUG</span>
+          <span class="slogan-connector"> IS ALWAYS AN ANSWER —</span>
+          <span class="slogan-qualifier"> sometimes the only one available</span>
+        </p>
+        <p class="slogan-attribution">— Le Bonhomme Pharma · Montréal · <a href="https://github.com/LeBonhommePharma" target="_blank" rel="noopener noreferrer">LeBonhommePharma</a></p>
+      </div>
+    </section>
+
+    <!-- Why FlexAID∆S -->
+    <section class="why-section" id="why">
+      <div class="container">
+        <blockquote class="highlight-quote">
+          Most docking engines optimize enthalpy alone. FlexAID∆S adds <strong>conformational entropy</strong> via a full statistical mechanics framework — recovering the correct binding mode <strong>95.3% of the time (81/85, Astex Diverse cross-docking, v79)</strong> when enthalpy-only scoring fails.
+        </blockquote>
+      </div>
+    </section>
+
+    <!-- Features -->
+    <section class="features-section" id="features">
+      <div class="container">
+        <h2>Capabilities</h2>
+        <div class="features-grid">
+          <div class="feature-card feature-card-large">
+            <div class="feature-icon">
+              <svg viewBox="0 0 40 40" fill="none" stroke="var(--color-accent)" stroke-width="1.5"><circle cx="20" cy="14" r="6"/><circle cx="11" cy="30" r="4"/><circle cx="29" cy="30" r="4"/><line x1="16" y1="19" x2="13" y2="27" /><line x1="24" y1="19" x2="27" y2="27"/><line x1="15" y1="30" x2="25" y2="30" stroke-dasharray="3 2"/></svg>
+            </div>
+            <h3>Docking Engine</h3>
+            <ul>
+              <li>Genetic algorithm with configurable population, crossover, mutation, selection</li>
+              <li>Voronoi contact function (CF) for shape complementarity scoring</li>
+              <li>Dead-end elimination (DEE) torsion pruning</li>
+              <li>Zero-copy batch scoring via <code>VoronoiCFBatch</code> with OpenMP</li>
+            </ul>
+          </div>
+          <div class="feature-card">
+            <div class="feature-icon">
+              <svg viewBox="0 0 40 40" fill="none" stroke="var(--color-accent)" stroke-width="1.5"><path d="M8 32 L14 12 L20 24 L26 8 L32 20"/><line x1="8" y1="34" x2="34" y2="34" stroke="var(--color-text-muted)" stroke-width="1"/></svg>
+            </div>
+            <h3>Thermodynamics</h3>
+            <ul>
+              <li>Statistical mechanics engine: partition function, free energy, heat capacity, entropy</li>
+              <li>Shannon entropy + torsional vibrational entropy</li>
+              <li>Torsional ENCoM (tENCoM) backbone flexibility</li>
+            </ul>
+          </div>
+          <div class="feature-card">
+            <div class="feature-icon">
+              <svg viewBox="0 0 40 40" fill="none" stroke="var(--color-accent)" stroke-width="1.5"><circle cx="20" cy="20" r="8"/><ellipse cx="20" cy="20" rx="14" ry="6" transform="rotate(30 20 20)"/><ellipse cx="20" cy="20" rx="14" ry="6" transform="rotate(-30 20 20)"/></svg>
+            </div>
+            <h3>Molecular Flexibility</h3>
+            <ul>
+              <li>Full flexibility — ligand torsions, ring conformers, chirality</li>
+              <li>Non-aromatic ring conformer sampling and sugar pucker</li>
+              <li>Explicit R/S stereocenter discrimination</li>
+              <li>MOL2, SDF/MOL V2000, and legacy INP formats</li>
+            </ul>
+          </div>
+          <div class="feature-card">
+            <div class="feature-icon">
+              <svg viewBox="0 0 40 40" fill="none" stroke="var(--color-accent)" stroke-width="1.5"><polygon points="20,4 36,14 36,28 20,38 4,28 4,14" stroke-width="1.5"/><line x1="20" y1="4" x2="20" y2="38" stroke-width="1" stroke-dasharray="2 2"/><line x1="4" y1="14" x2="36" y2="28" stroke-width="1" stroke-dasharray="2 2"/></svg>
+            </div>
+            <h3>Performance</h3>
+            <ul>
+              <li>CUDA, Metal (macOS), AVX-512, AVX2, OpenMP, Eigen3</li>
+              <li>Ultra-fast HPC binaries with LTO + <code>-march=native</code></li>
+              <li>Automatic cavity detection (SURFNET with Metal GPU)</li>
+            </ul>
+          </div>
+          <div class="feature-card feature-card-wide">
+            <div class="feature-icon">
+              <svg viewBox="0 0 40 40" fill="none" stroke="var(--color-accent)" stroke-width="1.5"><rect x="6" y="6" rx="3" width="28" height="28"/><line x1="6" y1="14" x2="34" y2="14"/><circle cx="13" cy="24" r="4"/><rect x="22" y="20" width="8" height="8" rx="1"/></svg>
+            </div>
+            <h3>Analysis &amp; Integration</h3>
+            <ul class="feature-list-grid">
+              <li>Python package <code>flexaidds</code> — API, CLI, PyMOL plugin</li>
+              <li><a href="/NATURaL.html" style="color:var(--color-accent)">NATURaL</a> co-translational assembly</li>
+              <li>FastOPTICS + Density Peak clustering</li>
+              <li>FreeNRG integration — unified free energy</li>
+              <li>Single JSON config for all parameters</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Benchmarks -->
+    <section class="benchmarks-section" id="benchmarks">
+      <div class="container">
+        <h2>Benchmark Results</h2>
+        <p class="section-subtitle">Head-to-head comparison on standard benchmark suites</p>
+        <div class="benchmark-table-wrap">
+          <table class="benchmark-table">
+            <thead>
+              <tr>
+                <th>Benchmark</th>
+                <th>FlexAID∆S</th>
+                <th>Vina</th>
+                <th>GOLD</th>
+                <th>Glide</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr style="background:rgba(251,191,36,0.06);border-left:3px solid #FBBF24">
+                <td><strong style="color:#FBBF24">Astex Diverse 85 · cross-dock · RMSD &lt; 2 Å</strong><br><small style="color:var(--color-text-muted);font-size:11px">v79 · non-cognate · oracle binding site · 81/85 targets</small></td>
+                <td class="best-value" style="color:#FBBF24;font-weight:700;font-size:1.1em">95.3%</td>
+                <td>~58%</td>
+                <td>~74%</td>
+                <td>~70%</td>
+              </tr>
+              <tr>
+                <td>ITC-187 ∆G r</td>
+                <td class="best-value">0.93</td>
+                <td>0.64</td>
+                <td>—</td>
+                <td>0.69</td>
+              </tr>
+              <tr>
+                <td>ITC-187 RMSE</td>
+                <td class="best-value">1.4</td>
+                <td>3.1</td>
+                <td>—</td>
+                <td>2.9</td>
+              </tr>
+              <tr>
+                <td>CASF-2016 Scoring</td>
+                <td class="best-value">0.88</td>
+                <td>0.73</td>
+                <td>—</td>
+                <td>0.78</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="benchmark-note">Primary citation: Gaudreault &amp; Najmanovich (2015). J. Chem. Inf. Model. 55(7):1323-36. · Astex Diverse 85: v79 native oracle + rotamer_prep, cross-docking (non-cognate), 81/85 targets RMSD &lt; 2.0 Å.</p>
+      </div>
+    </section>
+
+    <!-- Architecture -->
+    <section class="arch-section" id="architecture">
+      <div class="container">
+        <h2>Architecture</h2>
+        <div class="arch-pipeline">
+          <div class="arch-step">
+            <div class="arch-step-num">1</div>
+            <div class="arch-step-content">
+              <h4>Input</h4>
+              <p>PDB + MOL2</p>
+            </div>
+          </div>
+          <div class="arch-arrow" aria-hidden="true">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+          </div>
+          <div class="arch-step">
+            <div class="arch-step-num">2</div>
+            <div class="arch-step-content">
+              <h4>Genetic Algorithm</h4>
+              <p>gaboom engine</p>
+            </div>
+          </div>
+          <div class="arch-arrow" aria-hidden="true">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+          </div>
+          <div class="arch-step">
+            <div class="arch-step-num">3</div>
+            <div class="arch-step-content">
+              <h4>Scoring</h4>
+              <p>Voronoi CF + DEE</p>
+            </div>
+          </div>
+          <div class="arch-arrow" aria-hidden="true">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+          </div>
+          <div class="arch-step">
+            <div class="arch-step-num">4</div>
+            <div class="arch-step-content">
+              <h4>Thermodynamics</h4>
+              <p>StatMech + Entropy</p>
+            </div>
+          </div>
+        </div>
+        <div class="arch-sub-row">
+          <div class="arch-sub-card">
+            <h4>Flexibility</h4>
+            <p>Torsions, Rings, Chirality, tENCoM</p>
+          </div>
+          <div class="arch-sub-card">
+            <h4>Binding Modes</h4>
+            <p>Clustering + ∆G, ∆H, -T∆S, Cv, Boltzmann</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Install -->
+    <section class="install-section" id="install">
+      <div class="container">
+        <h2>Installation</h2>
+        <div class="install-grid">
+          <div class="install-card">
+            <h3>Quick Start</h3>
+            <div class="code-block">
+              <div class="code-header">
+                <span>bash</span>
+                <button class="copy-btn" data-copy="git clone https://github.com/LeBonhommePharma/FlexAIDdS.git && cd FlexAIDdS
+mkdir build && cd build
+cmake .. -DCMAKE_BUILD_TYPE=Release && cmake --build . -j $(nproc)" aria-label="Copy to clipboard">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
+                </button>
+              </div>
+              <pre><code>git clone https://github.com/LeBonhommePharma/FlexAIDdS.git && cd FlexAIDdS
+mkdir build && cd build
+cmake .. -DCMAKE_BUILD_TYPE=Release && cmake --build . -j $(nproc)</code></pre>
+            </div>
+          </div>
+          <div class="install-card">
+            <h3>Requirements</h3>
+            <div class="req-grid">
+              <div class="req-item">
+                <span class="req-label">Required</span>
+                <span>C++20 compiler (GCC &ge; 10, Clang &ge; 10), CMake &ge; 3.18</span>
+              </div>
+              <div class="req-item">
+                <span class="req-label req-label-opt">Optional</span>
+                <span>Eigen3, OpenMP, CUDA, Metal (macOS), pybind11</span>
+              </div>
+            </div>
+            <h3 class="mt-6">Output Binaries</h3>
+            <div class="binary-list">
+              <div class="binary-item"><code>FlexAID</code><span>Standard docking</span></div>
+              <div class="binary-item"><code>FlexAIDdS</code><span>Ultra-fast docking (LTO + native)</span></div>
+              <div class="binary-item"><code>tENCoM</code><span>Vibrational entropy tool</span></div>
+            </div>
+          </div>
+        </div>
+        <details class="cmake-details">
+          <summary>CMake Options Reference</summary>
+          <div class="cmake-table-wrap">
+            <table class="cmake-table">
+              <thead><tr><th>Option</th><th>Default</th><th>Description</th></tr></thead>
+              <tbody>
+                <tr><td><code>BUILD_FLEXAIDDS_FAST</code></td><td>ON</td><td>Ultra-fast binary (LTO + native)</td></tr>
+                <tr><td><code>FLEXAIDS_USE_CUDA</code></td><td>OFF</td><td>CUDA GPU batch evaluation</td></tr>
+                <tr><td><code>FLEXAIDS_USE_METAL</code></td><td>OFF</td><td>Metal GPU (macOS)</td></tr>
+                <tr><td><code>FLEXAIDS_USE_AVX512</code></td><td>OFF</td><td>AVX-512 SIMD</td></tr>
+                <tr><td><code>FLEXAIDS_USE_OPENMP</code></td><td>ON</td><td>OpenMP parallelism</td></tr>
+                <tr><td><code>FLEXAIDS_USE_EIGEN</code></td><td>ON</td><td>Eigen3 linear algebra</td></tr>
+                <tr><td><code>BUILD_PYTHON_BINDINGS</code></td><td>OFF</td><td>pybind11 Python extensions</td></tr>
+                <tr><td><code>BUILD_TESTING</code></td><td>OFF</td><td>GoogleTest unit tests</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </details>
+        <div class="install-card mt-8">
+          <h3>Python Package</h3>
+          <div class="code-block">
+            <div class="code-header"><span>bash</span>
+              <button class="copy-btn" data-copy="cd python && pip install -e ." aria-label="Copy to clipboard">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
+              </button>
+            </div>
+            <pre><code>cd python && pip install -e .</code></pre>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Usage -->
+    <section class="usage-section" id="usage">
+      <div class="container">
+        <h2>Usage</h2>
+        <div class="usage-tabs" role="tablist" aria-label="Usage examples">
+          <button role="tab" aria-selected="true" aria-controls="tab-cli" id="btn-cli" class="tab-btn active">CLI</button>
+          <button role="tab" aria-selected="false" aria-controls="tab-python" id="btn-python" class="tab-btn">Python API</button>
+          <button role="tab" aria-selected="false" aria-controls="tab-json" id="btn-json" class="tab-btn">JSON Config</button>
+        </div>
+
+        <div class="tab-panel" id="tab-cli" role="tabpanel" aria-labelledby="btn-cli">
+          <div class="code-block">
+            <div class="code-header"><span>bash</span></div>
+            <pre><code><span class="code-comment"># Full flexibility dock — entropy at 300K</span>
+./FlexAIDdS receptor.pdb ligand.mol2
+
+<span class="code-comment"># Override parameters via JSON config</span>
+./FlexAIDdS receptor.pdb ligand.mol2 -c config.json
+
+<span class="code-comment"># Fast rigid screening</span>
+./FlexAIDdS receptor.pdb ligand.mol2 --rigid
+
+<span class="code-comment"># Custom output prefix</span>
+./FlexAIDdS receptor.pdb ligand.mol2 -o my_results</code></pre>
+          </div>
+        </div>
+
+        <div class="tab-panel hidden" id="tab-python" role="tabpanel" aria-labelledby="btn-python">
+          <div class="code-block">
+            <div class="code-header"><span>python</span></div>
+            <pre><code><span class="code-keyword">import</span> flexaidds <span class="code-keyword">as</span> fd
+
+<span class="code-comment"># High-level docking</span>
+results = fd.dock(
+    receptor=<span class="code-string">'receptor.pdb'</span>,
+    ligand=<span class="code-string">'ligand.mol2'</span>,
+    binding_site=<span class="code-string">'auto'</span>,
+    compute_entropy=<span class="code-keyword">True</span>,
+)
+
+<span class="code-comment"># Load and analyze existing results</span>
+run = fd.load_results(<span class="code-string">"path/to/output_dir"</span>)
+<span class="code-keyword">print</span>(run.binding_modes[<span class="code-number">0</span>].free_energy)
+
+<span class="code-comment"># Thermodynamic analysis</span>
+engine = fd.StatMechEngine(temperature=<span class="code-number">300.0</span>)
+engine.add_sample(<span class="code-number">-7.5</span>)
+thermo = engine.compute()
+<span class="code-keyword">print</span>(<span class="code-string">"F ="</span>, thermo.free_energy)
+<span class="code-keyword">print</span>(<span class="code-string">"S ="</span>, thermo.entropy)</code></pre>
+          </div>
+        </div>
+
+        <div class="tab-panel hidden" id="tab-json" role="tabpanel" aria-labelledby="btn-json">
+          <div class="code-block">
+            <div class="code-header"><span>json</span></div>
+            <pre><code>{
+  <span class="code-string">"thermodynamics"</span>: {
+    <span class="code-string">"temperature"</span>: <span class="code-number">310</span>,
+    <span class="code-string">"clustering_algorithm"</span>: <span class="code-string">"DP"</span>
+  },
+  <span class="code-string">"ga"</span>: {
+    <span class="code-string">"num_chromosomes"</span>: <span class="code-number">2000</span>,
+    <span class="code-string">"num_generations"</span>: <span class="code-number">1000</span>
+  },
+  <span class="code-string">"flexibility"</span>: {
+    <span class="code-string">"ligand_torsions"</span>: <span class="code-keyword">true</span>,
+    <span class="code-string">"ring_conformers"</span>: <span class="code-keyword">true</span>
+  }
+}</code></pre>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Repo Stats -->
+    <section class="stats-section" id="stats">
+      <div class="container">
+        <h2>Repository</h2>
+        <div class="stats-grid">
+          <div class="stat-card">
+            <span class="stat-value" data-count="505">0</span>
+            <span class="stat-label">Commits</span>
+          </div>
+          <div class="stat-card">
+            <span class="stat-value">C++20</span>
+            <span class="stat-label">Standard</span>
+          </div>
+          <div class="stat-card">
+            <span class="stat-value">Apache 2.0</span>
+            <span class="stat-label">License</span>
+          </div>
+          <div class="stat-card">
+            <span class="stat-value" id="stat-langs-display">14</span>
+            <span class="stat-label">Languages</span>
+          </div>
+        </div>
+        <div class="lang-bar" aria-label="Language breakdown">
+          <div class="lang-segment" style="width:50.2%;background:var(--lang-cpp)" title="C++ 50.2%"></div>
+          <div class="lang-segment" style="width:22.4%;background:var(--lang-python)" title="Python 22.4%"></div>
+          <div class="lang-segment" style="width:4.6%;background:var(--lang-swift)" title="Swift 4.6%"></div>
+          <div class="lang-segment" style="width:2.9%;background:var(--lang-other)" title="Shell 2.9%"></div>
+          <div class="lang-segment" style="width:2.5%;background:var(--lang-other)" title="HTML 2.5%"></div>
+          <div class="lang-segment" style="width:2.0%;background:var(--lang-cmake)" title="CMake 2.0%"></div>
+          <div class="lang-segment" style="width:1.9%;background:var(--lang-ts)" title="TypeScript 1.9%"></div>
+          <div class="lang-segment" style="width:1.5%;background:var(--lang-objcpp)" title="Obj-C++ 1.5%"></div>
+          <div class="lang-segment" style="width:12.0%;background:var(--lang-other)" title="Other 12.0%"></div>
+        </div>
+          <div class="lang-segment" style="width:18%;background:var(--lang-python)" title="Python 18%"></div>
+          <div class="lang-segment" style="width:3.8%;background:var(--lang-swift)" title="Swift 3.8%"></div>
+          <div class="lang-segment" style="width:3.4%;background:var(--lang-objcpp)" title="Objective-C++ 3.4%"></div>
+          <div class="lang-segment" style="width:2.7%;background:var(--lang-cmake)" title="CMake 2.7%"></div>
+          <div class="lang-segment" style="width:1.8%;background:var(--lang-cuda)" title="CUDA 1.8%"></div>
+          <div class="lang-segment" style="width:3.3%;background:var(--lang-other)" title="Other 3.3%"></div>
+        </div>
+        <div class="lang-legend">
+          <span><i style="background:var(--lang-cpp)"></i>C++ 50.2%</span>
+          <span><i style="background:var(--lang-python)"></i>Python 22.4%</span>
+          <span><i style="background:var(--lang-swift)"></i>Swift 4.6%</span>
+          <span><i style="background:var(--lang-other)"></i>Shell 2.9%</span>
+          <span><i style="background:var(--lang-other)"></i>HTML 2.5%</span>
+          <span><i style="background:var(--lang-cmake)"></i>CMake 2.0%</span>
+          <span><i style="background:var(--lang-ts)"></i>TypeScript 1.9%</span>
+          <span><i style="background:var(--lang-objcpp)"></i>Obj-C++ 1.5%</span>
+          <span><i style="background:var(--lang-other)"></i>Other 12.0%</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- Key Modules -->
+    <section class="modules-section" id="modules">
+      <div class="container">
+        <h2>Key Modules</h2>
+        <div class="modules-grid">
+          <div class="module-card">
+            <code>tENCoM</code>
+            <span>Torsional Elastic Network Contact Model</span>
+          </div>
+          <a href="/NATURaL.html" class="module-card" style="text-decoration:none;color:inherit;border-color:rgba(34,211,238,0.3)">
+            <code style="color:var(--color-accent)">NATURaL</code>
+            <span>Co-translational assembly</span>
+          </a>
+          <div class="module-card">
+            <code>ShannonThermoStack</code>
+            <span>Configurational + vibrational entropy</span>
+          </div>
+          <div class="module-card">
+            <code>LigandRingFlex</code>
+            <span>Ring conformer sampling</span>
+          </div>
+          <div class="module-card">
+            <code>ChiralCenter</code>
+            <span>R/S stereochemistry</span>
+          </div>
+          <div class="module-card">
+            <code>CavityDetect</code>
+            <span>SURFNET binding site detection</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- Footer -->
+  <footer class="site-footer">
+    <div class="container">
+      <div class="footer-inner">
+        <div class="footer-brand">
+          <span class="logo-text">Le Bonhomme <span class="logo-delta">Pharma</span></span>
+          <p>Gaudreault &amp; Najmanovich (2015). J. Chem. Inf. Model. 55(7):1323-36</p>
+          <p style="font-size:11px;color:var(--color-text-muted);margin-top:4px">Montréal · Open-source computational pharmacology</p>
+        </div>
+        <div class="footer-links">
+          <a href="https://github.com/LeBonhommePharma/FlexAIDdS" target="_blank" rel="noopener noreferrer">GitHub — FlexAIDdS</a>
+          <a href="https://github.com/NRGlab/FlexAID" target="_blank" rel="noopener noreferrer">FlexAID (NRGlab)</a>
+          <a href="/FlexAIDdS/">FlexAIDdS Site</a>
+          <a href="/NATURaL.html">NATURaL</a>
+          <a href="/periodic_table.html">Periodic Table</a>
+          <a href="/drug-of-the-day/">Drug of the Day</a>
+          <a href="https://opensource.org/licenses/Apache-2.0" target="_blank" rel="noopener noreferrer">Apache 2.0 License</a>
+        </div>
+      </div>
+    </div>
+  </footer>
+
+  <!-- Shared repo stats — patched by scripts/update_site_stats.py (synced with /FlexAIDdS/) -->
+  <span id="stat-commits" hidden>505</span>
   <span id="stat-langs" hidden>14</span>
-  <span id="stat-stars" hidden></span>
   <span id="last-updated" hidden>2026-06-20</span>
-  <span id="latest-release" hidden>v2.0.0</span>
 
-  <template id="__bundler_thumbnail" data-bg-color="#0a0e14">
-    <svg viewBox="0 0 1200 800" xmlns="http://www.w3.org/2000/svg">
-      <rect width="1200" height="800" fill="#0a0e14"/>
-      <g fill="none" stroke="#22D3EE" stroke-width="14" stroke-linecap="round" stroke-linejoin="round">
-        <path d="M520 520 L600 360 L680 520"/>
-      </g>
-      <g fill="#A78BFA" opacity="0.5">
-        <circle cx="600" cy="356" r="13"/><circle cx="516" cy="524" r="13"/><circle cx="684" cy="524" r="13"/>
-      </g>
-      <text x="600" y="650" font-family="ui-monospace, Menlo, monospace" font-size="74" font-weight="700" fill="#e6edf3" text-anchor="middle">FlexAID<tspan fill="#FBBF24">∆S</tspan></text>
-    </svg>
-  </template>
-
-  <script src="assets/flexaid-logo.js"></script>
-  <script type="text/babel" src="components.jsx"></script>
-  <script type="text/babel" src="sections.jsx"></script>
-  <script type="text/babel" src="app.jsx"></script>
+  <script src="./app.js" defer></script>
 </body>
 </html>

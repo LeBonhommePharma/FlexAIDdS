@@ -288,31 +288,42 @@ function ModulesSection() {
 }
 
 // ─── REPO STATS ───
+const LANG_COLORS = {
+  "C++": "#f34b7d", "Python": "#3572A5", "Swift": "#F05138",
+  "TypeScript": "#3178c6", "CMake": "#8b949e", "HTML": "#e34c26",
+  "Shell": "#89e051", "Obj-C++": "#438eff", "Objective-C++": "#438eff",
+  "CUDA": "#76B900", "Other": "#555",
+};
+
 function RepoStatsSection() {
-  // Seed values are overwritten at mount from the hidden spans patched by
-  // scripts/update_site_stats.py — do not hardcode production numbers here.
-  const [commits, setCommits] = useStateS(987);
-  const [numLangs, setNumLangs] = useStateS(10);
+  // Values synced with apex homepage via scripts/update_site_stats.py + repo-stats.json
+  const [commits, setCommits] = useStateS(0);
+  const [numLangs, setNumLangs] = useStateS(0);
+  const [langs, setLangs] = useStateS([]);
 
   useEffectS(() => {
-    const c = parseInt(document.getElementById("stat-commits")?.textContent || "987", 10);
-    const l = parseInt(document.getElementById("stat-langs")?.textContent || "10", 10);
-    if (!isNaN(c)) setCommits(c);
-    if (!isNaN(l)) setNumLangs(l);
-  }, []);
+    const apply = (data) => {
+      if (data.commits) setCommits(data.commits);
+      if (data.languageCount) setNumLangs(data.languageCount);
+      if (Array.isArray(data.languages) && data.languages.length) {
+        setLangs(data.languages.map((l) => [
+          l.name,
+          l.percent,
+          l.color || LANG_COLORS[l.name] || "#555",
+        ]));
+      }
+    };
 
-  const langs = [
-    ["C++",       57.1, "#f34b7d"],
-    ["Python",    21.8, "#3572A5"],
-    ["Swift",      6.3, "#F05138"],
-    ["TypeScript", 2.6, "#3178c6"],
-    ["CMake",      2.5, "#ccc"],
-    ["HTML",       1.9, "#e34c26"],
-    ["Shell",      1.9, "#89e051"],
-    ["Obj-C++",    1.9, "#438eff"],
-    ["CUDA",       1.1, "#76B900"],
-    ["Other",      2.9, "#555"],
-  ];
+    const c = parseInt(document.getElementById("stat-commits")?.textContent || "0", 10);
+    const l = parseInt(document.getElementById("stat-langs")?.textContent || "0", 10);
+    if (!isNaN(c) && c > 0) setCommits(c);
+    if (!isNaN(l) && l > 0) setNumLangs(l);
+
+    fetch("../assets/repo-stats.json", { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => { if (data) apply(data); })
+      .catch(() => {});
+  }, []);
   return (
     <section className="section alt">
       <div className="container">

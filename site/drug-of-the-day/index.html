@@ -1,0 +1,659 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Drug of the Day — Le Bonhomme Pharma</title>
+<meta name="description" content="Le Bonhomme Pharma's Drug of the Day series: rigorous pharmacology, no moralizing. Full receptor binding tables, 3D binding-site visualization, harm reduction, and entropy docking commentary.">
+<link rel="icon" type="image/svg+xml" href="/assets/favicon-flexaid-ds.svg">
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600;700&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg:          #0a0e14;
+  --bg-card:     rgba(16, 20, 28, 0.85);
+  --bg-alt:      rgba(12, 16, 22, 0.55);
+  --border:      rgba(34,211,238,0.10);
+  --border-h:    rgba(34,211,238,0.26);
+  --teal:        #22D3EE;
+  --gold:        #FBBF24;
+  --terra:       #A78BFA;
+  --rose:        #f43f5e;
+  --fg:          #d4dced;
+  --fg-muted:    #8a93a8;
+  --fg-dim:      rgba(138,147,168,0.5);
+  --font-mono:   'JetBrains Mono', 'Fira Code', monospace;
+  --font-body:   'Inter', system-ui, sans-serif;
+  --nav-h:       52px;
+  --r-sm:        6px;
+  --r-md:        10px;
+  --r-lg:        14px;
+  --nav-bg:      rgba(10,14,20,0.92);
+}
+
+/* ── Light theme (accents preserved) ────────────────────────── */
+[data-theme="light"] {
+  --bg:          #f4f6fb;
+  --bg-card:     #ffffff;
+  --bg-alt:      #eef2f8;
+  --border:      rgba(0,0,0,0.10);
+  --border-h:    rgba(34,211,238,0.45);
+  --fg:          #1e293b;
+  --fg-muted:    #5a6478;
+  --fg-dim:      rgba(90,100,120,0.55);
+  --nav-bg:      rgba(255,255,255,0.85);
+}
+[data-theme="light"] body {
+  background-image:
+    linear-gradient(rgba(34,211,238,0.05) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(34,211,238,0.05) 1px, transparent 1px);
+}
+
+html { scroll-behavior: smooth; }
+body {
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-body);
+  font-size: 15px;
+  line-height: 1.65;
+  -webkit-font-smoothing: antialiased;
+  background-image:
+    linear-gradient(rgba(34,211,238,0.022) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(34,211,238,0.022) 1px, transparent 1px);
+  background-size: 40px 40px;
+  min-height: 100vh;
+}
+a { color: var(--teal); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+/* ── Nav ────────────────────────────────────────────────── */
+.nav {
+  background: var(--nav-bg);
+  border-bottom: 1px solid var(--border);
+  padding: 0 1.5rem;
+  height: var(--nav-h);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+}
+.nav-back {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--teal);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  letter-spacing: 0.02em;
+  transition: opacity 0.15s;
+}
+.nav-back:hover { opacity: 0.75; text-decoration: none; }
+.nav-label {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--fg-dim);
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+}
+.nav-right {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+.nav-right a {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--fg-muted);
+  transition: color 0.15s;
+}
+.nav-right a:hover { color: var(--fg); text-decoration: none; }
+
+/* ── Hero ───────────────────────────────────────────────── */
+.hero {
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 4.5rem 1.5rem 3rem;
+  text-align: center;
+}
+.hero-eyebrow {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.28em;
+  text-transform: uppercase;
+  color: var(--fg-dim);
+  margin-bottom: 1.25rem;
+}
+.hero-title {
+  font-family: var(--font-mono);
+  font-size: clamp(2rem, 6vw, 3.8rem);
+  font-weight: 700;
+  line-height: 1.05;
+  letter-spacing: -0.03em;
+  color: var(--fg);
+  margin-bottom: 1rem;
+}
+.hero-title .accent { color: var(--teal); }
+.hero-desc {
+  font-size: 15px;
+  color: var(--fg-muted);
+  max-width: 58ch;
+  margin: 0 auto 0;
+  line-height: 1.7;
+}
+.hero-desc strong { color: var(--fg); }
+.hero-manifesto {
+  margin-top: 1.5rem;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--fg-dim);
+  line-height: 1.7;
+  max-width: 62ch;
+  margin-left: auto;
+  margin-right: auto;
+  border-top: 1px solid var(--border);
+  padding-top: 1.25rem;
+}
+.hero-manifesto em { color: var(--teal); font-style: normal; }
+
+/* ── Series Grid ────────────────────────────────────────── */
+.series-section {
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 0 1.5rem 5rem;
+}
+.series-label {
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+  color: var(--fg-dim);
+  margin-bottom: 1.5rem;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+.series-label::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--border);
+}
+
+/* ── Pills ──────────────────────────────────────────────── */
+.pill {
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  font-weight: 500;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  padding: 3px 9px;
+  border-radius: 9999px;
+  border: 1px solid;
+}
+.pill-gold    { color: var(--gold);  border-color: rgba(251,191,36,0.35); background: rgba(251,191,36,0.08); }
+.pill-teal    { color: var(--teal);  border-color: rgba(34,211,238,0.30); background: rgba(34,211,238,0.06); }
+.pill-terra   { color: var(--terra); border-color: rgba(167,139,250,0.28); background: rgba(167,139,250,0.07); }
+.pill-rose    { color: var(--rose);  border-color: rgba(244,63,94,0.28);  background: rgba(244,63,94,0.06); }
+.pill-dim     { color: var(--fg-muted); border-color: var(--border); background: var(--bg-alt); }
+.pill-flagship {
+  color: #fff;
+  border-color: rgba(251,191,36,0.45);
+  background: linear-gradient(135deg, rgba(251,191,36,0.16), rgba(232,213,183,0.10));
+  font-size: 10px;
+}
+
+/* ── Featured Card (#001) ────────────────────────────────── */
+.drug-card-featured {
+  display: block;
+  background: var(--bg-card);
+  border: 1px solid rgba(251,191,36,0.25);
+  border-radius: var(--r-lg);
+  padding: 2rem 2.25rem 2.25rem;
+  margin-bottom: 1rem;
+  transition: border-color 0.2s, box-shadow 0.2s;
+  position: relative;
+  overflow: hidden;
+  text-decoration: none;
+}
+.drug-card-featured::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(135deg, rgba(251,191,36,0.04) 0%, transparent 60%);
+  pointer-events: none;
+}
+.drug-card-featured:hover {
+  border-color: rgba(251,191,36,0.50);
+  box-shadow: 0 0 32px rgba(251,191,36,0.10);
+  text-decoration: none;
+}
+.drug-card-featured .card-eyebrow {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  margin-bottom: 1.1rem;
+  flex-wrap: wrap;
+}
+.drug-card-featured .card-name {
+  font-family: var(--font-mono);
+  font-size: clamp(1.9rem, 5vw, 3rem);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1.05;
+  color: var(--fg);
+  margin-bottom: 0.3rem;
+}
+.drug-card-featured .card-name .accent { color: var(--gold); }
+.drug-card-featured .card-tagline {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: rgba(251,191,36,0.40);
+  margin-bottom: 1.1rem;
+}
+.drug-card-featured .card-desc {
+  font-size: 13.5px;
+  color: var(--fg-muted);
+  max-width: 64ch;
+  line-height: 1.65;
+  margin-bottom: 1.5rem;
+}
+.drug-card-featured .card-desc strong { color: var(--fg); }
+
+.card-meta-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.25rem;
+  margin-bottom: 1.5rem;
+}
+.card-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.card-stat-label {
+  font-family: var(--font-mono);
+  font-size: 8.5px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--fg-dim);
+}
+.card-stat-val {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--fg);
+}
+.card-stat-val.gold  { color: var(--gold); }
+.card-stat-val.teal  { color: var(--teal); }
+.card-stat-val.terra { color: var(--terra); }
+
+.card-cta {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--gold);
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  opacity: 0.65;
+  transition: opacity 0.15s;
+}
+.drug-card-featured:hover .card-cta { opacity: 1; }
+
+/* ── Standard Drug Card ─────────────────────────────────── */
+.drug-card {
+  display: block;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  padding: 1.5rem 1.75rem;
+  margin-bottom: 1rem;
+  transition: border-color 0.2s, box-shadow 0.2s;
+  text-decoration: none;
+}
+.drug-card:hover {
+  border-color: rgba(34,211,238,0.28);
+  box-shadow: 0 0 20px rgba(34,211,238,0.06);
+  text-decoration: none;
+}
+.drug-card .card-eyebrow {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  margin-bottom: 0.8rem;
+  flex-wrap: wrap;
+}
+.drug-card .card-name {
+  font-family: var(--font-mono);
+  font-size: clamp(1.4rem, 3.5vw, 2rem);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1.1;
+  color: var(--fg);
+  margin-bottom: 0.35rem;
+}
+.drug-card .card-name .accent { color: var(--teal); }
+.drug-card .card-desc {
+  font-size: 13px;
+  color: var(--fg-muted);
+  max-width: 64ch;
+  line-height: 1.6;
+  margin-bottom: 1.1rem;
+}
+.drug-card .card-desc strong { color: var(--fg); }
+.drug-card .card-cta {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--teal);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  opacity: 0.6;
+  transition: opacity 0.15s;
+}
+.drug-card:hover .card-cta { opacity: 1; }
+
+/* ── Coming Soon Card ───────────────────────────────────── */
+.drug-card-soon {
+  background: transparent;
+  border: 1px dashed rgba(34,211,238,0.12);
+  border-radius: var(--r-lg);
+  padding: 1.1rem 1.75rem;
+  margin-bottom: 1rem;
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+.soon-number {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--fg-dim);
+  background: var(--bg-alt);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 3px 8px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.soon-text {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--fg-dim);
+}
+
+/* ── About Section ──────────────────────────────────────── */
+.about-section {
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 0 1.5rem 5rem;
+}
+.about-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 0.75rem;
+  margin-top: 1.25rem;
+}
+.about-card {
+  background: var(--bg-alt);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  padding: 1rem 1.15rem;
+}
+.about-card-icon {
+  font-size: 18px;
+  margin-bottom: 0.5rem;
+}
+.about-card h4 {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--fg);
+  margin-bottom: 0.35rem;
+}
+.about-card p {
+  font-size: 12.5px;
+  color: var(--fg-muted);
+  line-height: 1.55;
+}
+
+/* ── Footer ─────────────────────────────────────────────── */
+.site-footer {
+  border-top: 1px solid var(--border);
+  padding: 2rem 1.5rem;
+  text-align: center;
+}
+.site-footer p {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--fg-dim);
+  line-height: 1.6;
+}
+.site-footer a { font-size: 11px; }
+
+/* ── Responsive ─────────────────────────────────────────── */
+@media (max-width: 600px) {
+  .hero { padding: 3rem 1rem 2rem; }
+  .series-section, .about-section { padding-left: 1rem; padding-right: 1rem; }
+  .drug-card-featured { padding: 1.5rem 1.25rem 1.75rem; }
+  .drug-card-featured .card-name { font-size: 1.9rem; }
+}
+</style>
+<link rel="stylesheet" href="../theme.css">
+<script src="../theme.js"></script>
+</head>
+<body>
+
+<!-- ── Navigation ──────────────────────────────────────────── -->
+<nav class="nav">
+  <a href="/" class="nav-back">
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+    Le Bonhomme Pharma
+  </a>
+  <span class="nav-label">Drug of the Day · Series</span>
+  <div class="nav-right">
+    <a href="/entropy-docking/">Entropy Docking</a>
+    <a href="/FlexAIDdS/">FlexAID∆S</a>
+    <a href="/periodic_table.html">Periodic Table</a>
+    <span data-theme-mount></span>
+  </div>
+</nav>
+
+<!-- ── Hero ─────────────────────────────────────────────────── -->
+<div class="hero">
+  <div class="hero-eyebrow">Le Bonhomme Pharma · Montréal</div>
+  <h1 class="hero-title">Drug of the <span class="accent">Day</span></h1>
+  <p class="hero-desc">
+    <strong>Full pharmacology. No moralizing.</strong> Receptor binding affinities, mechanism of action at molecular resolution,
+    3D crystal structures, harm reduction — and a FlexAID∆S entropy commentary on every binding event.
+  </p>
+  <div class="hero-manifesto">
+    The people's pharmaceutical company doesn't do "just say no."
+    It does <em>K<sub>i</sub> values, IC<sub>50</sub>s, and cocaethylene transesterification kinetics</em>.
+    Science is the only honest harm reduction.
+  </div>
+</div>
+
+<!-- ── Series Listing ─────────────────────────────────────── -->
+<div class="series-section">
+  <div class="series-label">Current series</div>
+
+  <!-- #001 — Cocaine HCl (FEATURED) -->
+  <a href="/drug-of-the-day/cocaine/" class="drug-card-featured">
+    <div class="card-eyebrow">
+      <span class="pill pill-flagship">★ Flagship · #001</span>
+      <span class="pill pill-gold">Current</span>
+      <span class="pill pill-terra">Tropane Alkaloid</span>
+      <span class="pill pill-rose">Schedule II/I</span>
+    </div>
+    <div class="card-name"><span class="accent">Cocaine</span> HCl</div>
+    <div class="card-tagline">Make Crack Great Again</div>
+    <p class="card-desc">
+      Pure competitive DAT/NET/SERT reuptake inhibitor. Rigid tropane scaffold locks the outward-open transporter conformation —
+      the pharmacological opposite of MDMA. Also: the only local anesthetic with intrinsic vasoconstrictive properties,
+      still used in ENT surgery. <strong>DAT K<sub>i</sub> ≈ 250 nM. Cocaethylene K<sub>i</sub> ≈ 50–90 nM.</strong>
+      Full binding table · 3D DAT crystal structure (PDB 4XP4) · levamisole adulterant toxicology · cocaethylene pharmacology.
+    </p>
+    <div class="card-meta-row">
+      <div class="card-stat">
+        <span class="card-stat-label">Primary target</span>
+        <span class="card-stat-val gold">DAT</span>
+      </div>
+      <div class="card-stat">
+        <span class="card-stat-label">DAT K<sub style="font-size:0.7em">i</sub></span>
+        <span class="card-stat-val gold">~250 nM</span>
+      </div>
+      <div class="card-stat">
+        <span class="card-stat-label">Mechanism</span>
+        <span class="card-stat-val">Reuptake blocker</span>
+      </div>
+      <div class="card-stat">
+        <span class="card-stat-label">T<sub style="font-size:0.7em">½</sub></span>
+        <span class="card-stat-val">0.5–1.5 h</span>
+      </div>
+      <div class="card-stat">
+        <span class="card-stat-label">PDB</span>
+        <span class="card-stat-val teal">4XP4</span>
+      </div>
+    </div>
+    <div class="card-cta">
+      Full pharmacology
+      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+    </div>
+  </a>
+
+  <!-- #002 — MDMA -->
+  <a href="/drug-of-the-day/mdma/" class="drug-card">
+    <div class="card-eyebrow">
+      <span class="pill pill-teal">#002</span>
+      <span class="pill pill-terra">Entactogen</span>
+      <span class="pill pill-dim">Schedule I · FDA Breakthrough Therapy</span>
+    </div>
+    <div class="card-name"><span class="accent">MDMA</span></div>
+    <p class="card-desc">
+      Substrate-mediated SERT/NET/DAT efflux — the pharmacological inverse of cocaine. MDMA rides the transporter inward and runs it
+      in reverse, flooding the synapse with serotonin. <strong>SERT K<sub>i</sub> = 34 nM. CYP2D6 mechanism-based inhibitor.</strong>
+      FDA Breakthrough Therapy for PTSD. Full binding table · 3D SERT crystal structure (PDB 6DZV).
+    </p>
+    <div class="card-meta-row">
+      <div class="card-stat">
+        <span class="card-stat-label">Primary target</span>
+        <span class="card-stat-val teal">SERT</span>
+      </div>
+      <div class="card-stat">
+        <span class="card-stat-label">SERT K<sub style="font-size:0.7em">i</sub></span>
+        <span class="card-stat-val teal">34 nM</span>
+      </div>
+      <div class="card-stat">
+        <span class="card-stat-label">Mechanism</span>
+        <span class="card-stat-val">Substrate-releaser</span>
+      </div>
+      <div class="card-stat">
+        <span class="card-stat-label">T<sub style="font-size:0.7em">½</sub></span>
+        <span class="card-stat-val">8–9 h</span>
+      </div>
+      <div class="card-stat">
+        <span class="card-stat-label">PDB</span>
+        <span class="card-stat-val teal">6DZV</span>
+      </div>
+    </div>
+    <div class="card-cta">
+      Full pharmacology
+      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+    </div>
+  </a>
+
+  <!-- #003 — DMT -->
+  <a href="/drug-of-the-day/dmt/" class="drug-card">
+    <div class="card-eyebrow">
+      <span class="pill pill-teal">#003</span>
+      <span class="pill pill-terra">Tryptamine</span>
+      <span class="pill pill-dim">Schedule I · Endogenous trace amine</span>
+    </div>
+    <div class="card-name"><span class="accent">DMT</span></div>
+    <p class="card-desc">
+      N,N-Dimethyltryptamine — endogenous trace amine and potent 5-HT<sub>2A</sub> agonist with near-zero measurable tolerance.
+      <strong>5-HT<sub>2A</sub> K<sub>i</sub> ≈ 170 nM · σ1 K<sub>i</sub> ≈ 14 μM.</strong>
+      Smoked onset &lt;30 s; MAO-A rapidly clears oral DMT unless co-administered with harmala alkaloids.
+      Full binding table · 3D 5-HT<sub>2A</sub> crystal structure (PDB 6WHA) · harm reduction.
+    </p>
+    <div class="card-meta-row">
+      <div class="card-stat">
+        <span class="card-stat-label">Primary target</span>
+        <span class="card-stat-val teal">5-HT<sub>2A</sub></span>
+      </div>
+      <div class="card-stat">
+        <span class="card-stat-label">5-HT<sub>2A</sub> K<sub style="font-size:0.7em">i</sub></span>
+        <span class="card-stat-val teal">~170 nM</span>
+      </div>
+      <div class="card-stat">
+        <span class="card-stat-label">Mechanism</span>
+        <span class="card-stat-val">Partial agonist</span>
+      </div>
+      <div class="card-stat">
+        <span class="card-stat-label">T<sub style="font-size:0.7em">½</sub> (smoked)</span>
+        <span class="card-stat-val">~15 min</span>
+      </div>
+      <div class="card-stat">
+        <span class="card-stat-label">PDB</span>
+        <span class="card-stat-val teal">6WHA</span>
+      </div>
+    </div>
+    <div class="card-cta">
+      Full pharmacology
+      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+    </div>
+  </a>
+
+</div>
+
+<!-- ── About the Series ───────────────────────────────────── -->
+<div class="about-section">
+  <div class="series-label">What this is</div>
+  <div class="about-grid">
+    <div class="about-card">
+      <div class="about-card-icon">⚗</div>
+      <h4>Receptor Pharmacology</h4>
+      <p>Every entry: full binding affinity table with K<sub>i</sub> / EC<sub>50</sub>, mechanism badges, relative potency bars. Sources cited.</p>
+    </div>
+    <div class="about-card">
+      <div class="about-card-icon">🔬</div>
+      <h4>3D Crystal Structures</h4>
+      <p>NGL Viewer renders the actual RCSB crystal structure — drug as fat sticks at the primary receptor, interactive, in-browser.</p>
+    </div>
+    <a href="/entropy-docking/" class="about-card" style="display:block;text-decoration:none;color:inherit;border-color:rgba(34,211,238,0.22);transition:border-color 0.2s;">
+      <div class="about-card-icon" style="color:var(--teal)">△</div>
+      <h4 style="color:var(--teal)">FlexAID∆S Entropy →</h4>
+      <p>Shannon entropy collapse analysis ties each binding event to the thermodynamic framework of the FlexAID∆S docking engine.</p>
+    </a>
+    <div class="about-card">
+      <div class="about-card-icon">⊘</div>
+      <h4>No Moralizing</h4>
+      <p>Harm reduction only. Clinical tone on risk, zero "just say no." The data are the argument. Adults can read pharmacology.</p>
+    </div>
+  </div>
+</div>
+
+<!-- ── Footer ───────────────────────────────────────────────── -->
+<footer class="site-footer">
+  <p>
+    Le Bonhomme Pharma · Drug of the Day Series · Montréal ·
+    <a href="/">lebonhommepharma.github.io</a> ·
+    <a href="/entropy-docking/">Entropy Docking</a> ·
+    <a href="/FlexAIDdS/">FlexAID∆S</a> ·
+    <a href="/periodic_table.html">Periodic Table</a>
+
+  </p>
+</footer>
+
+</body>
+</html>

@@ -1,7 +1,7 @@
 /* UI-kit-specific styles. Imports tokens then adds page-level rules
    matching thebonhomme.com production. */
 
-@import url('./colors_and_type.css');
+@import url('../colors_and_type.css');
 
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -32,9 +32,13 @@ button { font: inherit; color: inherit; background: none; border: none; cursor: 
 /* ───── NAV ───── */
 .nav {
   position: fixed; top: 0; left: 0; right: 0; z-index: 50;
-  background: rgba(10,14,20,0.85);
+  background: var(--bg-panel);
   backdrop-filter: blur(24px); -webkit-backdrop-filter: blur(24px);
   border-bottom: 1px solid var(--teal-12);
+}
+[data-theme="light"] .nav {
+  background: rgba(255, 255, 255, 0.88);
+  border-bottom-color: rgba(0, 0, 0, 0.08);
 }
 .nav-inner {
   max-width: 1152px; margin: 0 auto; padding: 0 1.5rem;

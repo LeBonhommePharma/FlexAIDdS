@@ -164,6 +164,23 @@
   --grid-step: 40px;
 }
 
+/* ───────── LIGHT THEME (canonical via theme.js) ───────── */
+[data-theme="light"] {
+  --bg:           #f4f6fb;
+  --bg-panel:     rgba(255, 255, 255, 0.88);
+  --bg-card:      #ffffff;
+  --bg-alt:       #eef2f8;
+  --fg:           #1e293b;
+  --fg-muted:     #5a6478;
+  --grid-line:    rgba(34, 211, 238, 0.06);
+  --teal-06:      rgba(34, 211, 238, 0.08);
+  --teal-08:      rgba(34, 211, 238, 0.10);
+  --teal-10:      rgba(34, 211, 238, 0.14);
+  --teal-12:      rgba(34, 211, 238, 0.18);
+  --teal-15:      rgba(34, 211, 238, 0.22);
+  --teal-20:      rgba(34, 211, 238, 0.28);
+}
+
 /* ───────── SEMANTIC ELEMENT STYLES ─────────
    Apply these to bare HTML in design output. They reproduce the
    live thebonhomme.com look without per-element overrides.    */
