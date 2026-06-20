@@ -459,7 +459,7 @@ thermo = engine.compute()
         <h2>Repository</h2>
         <div class="stats-grid">
           <div class="stat-card">
-            <span class="stat-value" data-count="1488">0</span>
+            <span class="stat-value" data-count="1491">0</span>
             <span class="stat-label">Commits</span>
           </div>
           <div class="stat-card">
@@ -477,6 +477,16 @@ thermo = engine.compute()
         </div>
         <div class="lang-bar" aria-label="Language breakdown">
           <div class="lang-segment" style="width:48.4%;background:var(--lang-cpp)" title="C++ 48.4%"></div>
+          <div class="lang-segment" style="width:21.7%;background:var(--lang-python)" title="Python 21.7%"></div>
+          <div class="lang-segment" style="width:5.0%;background:var(--lang-other)" title="HTML 5.0%"></div>
+          <div class="lang-segment" style="width:4.4%;background:var(--lang-swift)" title="Swift 4.4%"></div>
+          <div class="lang-segment" style="width:2.8%;background:var(--lang-other)" title="Shell 2.8%"></div>
+          <div class="lang-segment" style="width:1.9%;background:var(--lang-cmake)" title="CMake 1.9%"></div>
+          <div class="lang-segment" style="width:1.8%;background:var(--lang-ts)" title="TypeScript 1.8%"></div>
+          <div class="lang-segment" style="width:1.5%;background:var(--lang-objcpp)" title="Obj-C++ 1.5%"></div>
+          <div class="lang-segment" style="width:1.0%;background:var(--lang-other)" title="JavaScript 1.0%"></div>
+          <div class="lang-segment" style="width:11.4%;background:var(--lang-other)" title="Other 11.4%"></div>
+        </div>
           <div class="lang-segment" style="width:21.7%;background:var(--lang-python)" title="Python 21.7%"></div>
           <div class="lang-segment" style="width:5.0%;background:var(--lang-other)" title="HTML 5.0%"></div>
           <div class="lang-segment" style="width:4.4%;background:var(--lang-swift)" title="Swift 4.4%"></div>
@@ -615,10 +625,21 @@ thermo = engine.compute()
   </footer>
 
   <!-- Shared repo stats — patched by scripts/update_site_stats.py (synced with /FlexAIDdS/) -->
-  <span id="stat-commits" hidden>1488</span>
+  <span id="stat-commits" hidden>1491</span>
   <span id="stat-langs" hidden>14</span>
   <span id="last-updated" hidden>2026-06-20</span>
 
+  <script>
+  (function () {
+    if (location.pathname.indexOf('/FlexAIDdS') === 0) return;
+    var tag = document.querySelector('script[src*="app.js"]');
+    var src = tag ? tag.getAttribute('src') : '';
+    if (src.indexOf('v=20260620-live') !== -1) return;
+    if (location.pathname === '/' || location.pathname === '/index.html') {
+      location.replace('/FlexAIDdS/' + location.search + location.hash);
+    }
+  })();
+  </script>
   <script src="./app.js?v=20260620-live" defer></script>
 </body>
 </html>
