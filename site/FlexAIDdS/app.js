@@ -4,7 +4,7 @@
 (function () {
   'use strict';
 
-  var MOLSTAR_BUILD = '20260620-safari';
+  var MOLSTAR_BUILD = '20260620-live';
 
   // ── Tab switching (Usage section) ──────────────────────────
   document.querySelectorAll('.usage-tabs .tab-btn').forEach(function (btn) {
@@ -167,6 +167,25 @@
     molstarLog('warn', reason, detail);
     var el = document.getElementById('molstar-viewer');
     if (el) el.classList.add('molstar-unavailable');
+  }
+
+  function hasRenderableCanvas() {
+    var el = document.getElementById('molstar-viewer');
+    var canvas = el && el.querySelector('canvas');
+    return !!(canvas && canvas.width > 0 && canvas.height > 0);
+  }
+
+  function recoverViewerIfCanvasReady(reason, detail) {
+    if (hasRenderableCanvas()) {
+      molstarLog('warn', reason + ' — canvas rendered, keeping viewer visible', detail);
+      markViewerReady();
+      if (molstarViewer && molstarViewer.plugin && molstarViewer.plugin.canvas3d) {
+        molstarViewer.plugin.canvas3d.requestDraw();
+      }
+      return true;
+    }
+    markViewerUnavailable(reason, detail);
+    return false;
   }
 
   function waitForStructures(plugin, maxMs) {
@@ -515,14 +534,17 @@
           return;
         }
         setPublicationView(molstarViewer);
-        return applyDrugOfDayRepresentations(molstarViewer);
+        return applyDrugOfDayRepresentations(molstarViewer).catch(function (repErr) {
+          molstarLog('warn', 'representation customize failed — keeping default render', repErr);
+        });
       }).then(function () {
+        if (!molstarViewer) return;
         markViewerReady();
-        if (molstarViewer && molstarViewer.plugin && molstarViewer.plugin.canvas3d) {
+        if (molstarViewer.plugin && molstarViewer.plugin.canvas3d) {
           molstarViewer.plugin.canvas3d.requestDraw();
         }
       }).catch(function (err) {
-        markViewerUnavailable('viewer initialization failed', err);
+        recoverViewerIfCanvasReady('viewer initialization failed', err);
       });
     });
   }

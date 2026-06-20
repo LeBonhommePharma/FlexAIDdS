@@ -8,6 +8,7 @@ on:
       - 'docs/**'
       - 'site/**'
       - 'scripts/update_site_stats.py'
+      - 'scripts/sync_apex_to_ghpages.sh'
   schedule:
     - cron: '0 6 * * *'    # Daily 06:00 UTC
   workflow_dispatch:
@@ -60,6 +61,9 @@ jobs:
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@cd2ce8fcbc39b97be8ca5fce6e763baed58fa128 # v5
+
+      - name: Sync apex homepage to gh-pages root
+        run: bash scripts/sync_apex_to_ghpages.sh
 
   check-cmake-deps:
     runs-on: ubuntu-latest
