@@ -5656,19 +5656,11 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                    << ",\n"
                    << "    \"boom_inject_interval\": 100,\n"
                    << "    \"boom_inject_fraction\": "
-                   // AUTONOMOUS mode = true blind search (no crystal IC seed).
-                   // boom_inject_fraction=1.0 fires every 100 gens and replaces the
-                   // entire population with fresh randoms, destroying any convergence
-                   // progress before it can accumulate.  In oracle mode this never
-                   // matters: entropy collapse terminates the GA at gen ~10, before
-                   // the first injection.  In blind mode it is catastrophic — the GA
-                   // terminates at gen 300 by fitness stagnation with CF≈0 (no
-                   // contacts found) because every 100-gen run gets reset.
-                   // Fix: disable boom injection in AUTONOMOUS mode entirely.
-                   << (config.mode == BenchmarkMode::AUTONOMOUS
-                         ? 0.0
-                         : (std::getenv("FLEXAIDDS_BOOM_FRAC")
-                               ? std::atof(std::getenv("FLEXAIDDS_BOOM_FRAC")) : 1.0))
+                   // Restoring default (1.0): SMFREE stagnation now uses CF energy
+                   // (f01e02e) so autonomous mode no longer stalls at gen ~300.
+                   // 19 diversity-injection events across a 2000-gen run.
+                   << (std::getenv("FLEXAIDDS_BOOM_FRAC")
+                         ? std::atof(std::getenv("FLEXAIDDS_BOOM_FRAC")) : 1.0)
                    << ",\n"
                    // v27: true GA elitism — protect n_elite lowest-CF individuals
                    // from boom injection + niche-sharing (engine-side env override
