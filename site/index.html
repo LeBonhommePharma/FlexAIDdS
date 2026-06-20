@@ -644,12 +644,12 @@ thermo = engine.compute()
     if (location.pathname.indexOf('/FlexAIDdS') === 0) return;
     var tag = document.querySelector('script[src*="app.js"]');
     var src = tag ? tag.getAttribute('src') : '';
-    if (src.indexOf('v=20260620-live') !== -1) return;
+    if (src.indexOf('v=20260620-clean') !== -1) return;
     if (location.pathname === '/' || location.pathname === '/index.html') {
       location.replace('/FlexAIDdS/' + location.search + location.hash);
     }
   })();
   </script>
-  <script src="./app.js?v=20260620-live" defer></script>
+  <script src="./app.js?v=20260620-clean" defer></script>
 </body>
 </html>
