@@ -18,9 +18,8 @@ fi
 
 git -C "$ROOT" worktree add "$WORKTREE" origin/gh-pages
 
-# Replace published tree with the current site/ contents.
-find "$WORKTREE" -mindepth 1 -maxdepth 1 ! -name '.git' -exec rm -rf {} +
-rsync -a --delete "$SITE/" "$WORKTREE/"
+# Replace published tree with the current site/ contents (keep worktree git metadata).
+rsync -a --delete --exclude '.git' "$SITE/" "$WORKTREE/"
 
 cd "$WORKTREE"
 git add -A
