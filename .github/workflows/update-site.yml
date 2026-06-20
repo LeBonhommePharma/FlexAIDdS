@@ -9,6 +9,7 @@ on:
       - 'site/**'
       - 'scripts/update_site_stats.py'
       - 'scripts/sync_apex_to_ghpages.sh'
+      - 'scripts/sync_apex_to_usersite.sh'
       - '.github/workflows/update-site.yml'
   schedule:
     - cron: '0 6 * * *'    # Daily 06:00 UTC
@@ -65,6 +66,11 @@ jobs:
 
       - name: Publish site to gh-pages branch
         run: bash scripts/sync_apex_to_ghpages.sh
+
+      - name: Sync apex homepage to user-site repo (thebonhomme.com/)
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: bash scripts/sync_apex_to_usersite.sh
 
   check-cmake-deps:
     runs-on: ubuntu-latest
