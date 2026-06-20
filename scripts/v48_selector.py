@@ -37,6 +37,8 @@ def load_global_csv(run_dir, label):
     if os.path.exists(path):
         df = pd.read_csv(path)
         df.columns = df.columns.str.strip().str.lower()
+        if "search_entropy_proxy" not in df.columns and "shannon_entropy" in df.columns:
+            df["search_entropy_proxy"] = df["shannon_entropy"]
         df["_source"] = label
         return df
     return None
@@ -52,6 +54,8 @@ def load_per_target_csvs(run_dir, label):
         try:
             df = pd.read_csv(f)
             df.columns = df.columns.str.strip().str.lower()
+            if "search_entropy_proxy" not in df.columns and "shannon_entropy" in df.columns:
+                df["search_entropy_proxy"] = df["shannon_entropy"]
             frames.append(df)
         except Exception:
             pass
@@ -310,7 +314,7 @@ def main():
             "bcr_rmsd":   f"{r43['best_cluster_rmsd']:.3f}",
             "se":         int(r43.get("seed_echo", 0)),
             "n_poses":    int(r43.get("num_poses", 0)),
-            "H":          f"{r43.get('shannon_entropy', 0):.4f}",
+            "H":          f"{r43.get('search_entropy_proxy', r43.get('shannon_entropy', 0)):.4f}",
             "dG":         f"{r43.get('predicted_dg', 0):.2f}",
             "zh0_freq":   zh0.get("freq", "—"),
             "zh0_nm":     zh0.get("nmembers", "—"),
@@ -339,7 +343,7 @@ def main():
     r_df  = v43[v43.pdb_id.isin(set(rescued_any) | set(RESCUABLE))]
     fa_df = v43[v43.pdb_id.isin(set(fail_all_pdbs) | set(FAIL_ALL))]
 
-    metrics = ["cf_delta", "best_cluster_rmsd", "bcr_gap", "shannon_entropy", "num_poses"]
+    metrics = ["cf_delta", "best_cluster_rmsd", "bcr_gap", "search_entropy_proxy", "num_poses"]
     for m in metrics:
         r_med  = r_df[m].median()
         fa_med = fa_df[m].median()

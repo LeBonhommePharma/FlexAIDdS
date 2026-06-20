@@ -6605,7 +6605,7 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                             if (!fs::exists(cand)) continue;
                             auto rp = compute_pose_ligand_rmsd(
                                 cand, crystal_xyz, crystal_elem, entry.pdb_id, false);
-                            if (rp.second < result.best_cluster_rmsd) {
+                            if (result.best_cluster_rmsd < 0.0f || rp.second < result.best_cluster_rmsd) {
                                 result.best_cluster_rmsd = rp.second;
                                 result.best_cluster_idx = pi;
                                 best_cluster_pfx = pfx;

@@ -6,8 +6,8 @@ Reads the summary CSV produced by run_benchmark_production.sh and performs:
   1. Descriptive statistics (wall-clock, success rate, RMSD distribution)
   2. Bootstrap 95% CI on success rate (n=85, 10k resamples — not normal approx)
   3. Exact one-sided binomial test vs. the published JCIM 2015 comparator
-  4. Shannon-Weighted Success Rate (SWSR calibration check)
-  5. Spearman ρ(H_final, RMSD_top1) with bootstrap CI
+  4. Shannon-Weighted Success Rate (SWSR calibration check on collapse entropy)
+  5. Spearman ρ(H_collapse, RMSD_top1) with bootstrap CI
   6. Plots: wall-clock dist, score vs RMSD scatter, Shannon H convergence curves
   7. PASS / FAIL verdict against manifest baselines when provided
 
@@ -237,6 +237,21 @@ def fisher_exact_greater(a: int, b: int, c: int, d: int) -> tuple[float, float]:
 
 
 # ─── Shannon-Weighted Success Rate ────────────────────────────────────────────
+
+def collapse_entropy_value(row: dict[str, str]) -> float | None:
+    """Best-effort collapse metric for selector/SEC diagnostics.
+
+    New CSVs expose `search_entropy_proxy` explicitly. Older CSVs used
+    `shannon_entropy` for the same H_final proxy. Keep both readable.
+    """
+    for key in ("search_entropy_proxy", "shannon_entropy", "h_final"):
+        try:
+            value = float(row.get(key, ""))
+        except (TypeError, ValueError):
+            continue
+        if math.isfinite(value):
+            return value
+    return None
 
 def swsr(successes: list[int], h_finals: list[float],
          floor: float = 0.1) -> float:
@@ -510,11 +525,7 @@ def main():
         except ValueError:
             rmsds.append(None)
 
-        try:
-            h = float(r.get("shannon_entropy", r.get("h_final", "N/A")))
-            h_finals.append(h)
-        except ValueError:
-            h_finals.append(None)
+        h_finals.append(collapse_entropy_value(r))
 
     valid_wall  = [w for w in wall_times if w is not None and w > 0]
     valid_rmsds = [r for r in rmsds if r is not None]
@@ -630,11 +641,11 @@ def main():
             print("  SR_H < SR  ⚠️  Overconfident failures — investigate scoring function")
     else:
         print(f"  Shannon entropy data: {len(valid_h)}/{n} complexes")
-        print("  SWSR requires shannon_entropy column in summary CSV")
+        print("  SWSR requires search_entropy_proxy (or legacy shannon_entropy) in summary CSV")
         print("  (Set SHANNON_TRACE_LEVEL≥1 before running benchmark)")
 
-    # ── Spearman ρ(H_final, RMSD) ─────────────────────────────────────────────
-    print("\n── Spearman ρ(H_final, RMSD) ────────────────────────────────")
+    # ── Spearman ρ(H_collapse, RMSD) ──────────────────────────────────────────
+    print("\n── Spearman ρ(H_collapse, RMSD) ─────────────────────────────")
     paired_h_rmsd = [(h, r) for h, r in zip(h_finals, rmsds)
                      if h is not None and r is not None]
     if len(paired_h_rmsd) >= 5:
@@ -644,16 +655,16 @@ def main():
         print(f"  n:          {len(paired_h_rmsd)}")
         print(f"  ρ:          {rho:.3f}")
         print(f"  Bootstrap CI: [{rho_lo:.3f}, {rho_hi:.3f}] (95%)")
-        print(f"  Expected:   ρ > 0 (higher H → worse pose)")
+        print(f"  Expected:   ρ > 0 (higher collapse entropy → worse pose)")
         if rho > 0:
-            print("  ✅  H(X) is predictive of pose quality (lower entropy → better pose)")
+            print("  ✅  H(X) is predictive of pose quality (lower collapse entropy → better pose)")
         elif abs(rho) < 0.2:
             print("  ⚠️  |ρ| < 0.2 — H(X) weakly predictive → check scoring function")
         else:
             print("  ❌  ρ < 0 — unexpected direction — investigate")
     else:
         print(f"  Insufficient paired data ({len(paired_h_rmsd)} pairs) — "
-              "need shannon_entropy in CSV")
+              "need search_entropy_proxy or legacy shannon_entropy in CSV")
 
     # ── Load Shannon traces (if available) ───────────────────────────────────
     shannon_data = {}

@@ -67,32 +67,31 @@ _ROMAN = ["I", "II", "III", "IV", "V", "VI", "VII", "VIII", "IX", "X",
 
 # ── 256-type encoding helpers ────────────────────────────────────────────────
 
-def encode_256_type(base_type: int, charge_bin: int = 0,
-                    hbond_flag: bool = False) -> int:
-    # NOTE: Layout is [H:1][Q:1][B:6] = 2 × 2 × 64 = 256 codes.
+def encode_256_type(base_type: int, donor: bool = False,
+                    acceptor: bool = False) -> int:
+    # NOTE: Layout is [D:1][A:1][B:6] = donor × acceptor × 64 base classes.
     """Encode a 256-type atom index from components.
 
     Args:
         base_type:  Base type index (0–31).  Types 0–31 extend SYBYL's 40
                     classes into 32 canonical base types.
-        charge_bin: AM1-BCC partial charge quantile (0–3).
-        hbond_flag: True if atom is an H-bond donor or acceptor.
+        donor:     True if atom can donate an H-bond.
+        acceptor:  True if atom can accept an H-bond.
 
     Returns:
         8-bit integer (0–255).
     """
     base_type = max(0, min(63, int(base_type)))
-    charge_bin = max(0, min(1, int(charge_bin)))
-    return (int(hbond_flag) << 7) | (charge_bin << 6) | base_type
+    return (int(bool(donor)) << 7) | (int(bool(acceptor)) << 6) | base_type
 
 
-def decode_256_type(code: int) -> Tuple[int, int, bool]:
-    """Decode a 256-type code into (base_type, charge_bin, hbond_flag)."""
+def decode_256_type(code: int) -> Tuple[int, bool, bool]:
+    """Decode a 256-type code into (base_type, donor, acceptor)."""
     code = int(code) & 0xFF
     base_type = code & 0x3F
-    charge_bin = (code >> 6) & 0x01
-    hbond_flag = bool((code >> 7) & 0x01)
-    return base_type, charge_bin, hbond_flag
+    acceptor = bool((code >> 6) & 0x01)
+    donor = bool((code >> 7) & 0x01)
+    return base_type, donor, acceptor
 
 
 # ── 256 → 40 SYBYL projection mapping ───────────────────────────────────────

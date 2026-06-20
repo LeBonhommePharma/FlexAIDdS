@@ -503,8 +503,8 @@ TEST(SybylTyper, HBondNonDonorCarbon) {
 }
 
 TEST(SybylTyper, Encode256Deterministic) {
-    uint8_t enc1 = sybyl::encode_256(3, 0.0f, false);
-    uint8_t enc2 = sybyl::encode_256(3, 0.0f, false);
+    uint8_t enc1 = sybyl::encode_256(3, 0.0f, false, false);
+    uint8_t enc2 = sybyl::encode_256(3, 0.0f, false, false);
     EXPECT_EQ(enc1, enc2);
 }
 

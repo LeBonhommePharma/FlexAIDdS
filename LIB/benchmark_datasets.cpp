@@ -431,6 +431,7 @@ static dataset::BenchmarkReport run_single_benchmark(const std::string& name,
             entry.pdb_id            = extract_str(obj, "receptor_id");
             entry.receptor_path     = extract_str(obj, "receptor_pdb");
             entry.ligand_path       = extract_str(obj, "ligand_sdf");
+            entry.rmsd_reference_path = extract_str(obj, "rmsd_ref_sdf");
             entry.binding_site_path = extract_str(obj, "oracle_site_pdb");
             entry.source            = "astex_crossdock_85";
 

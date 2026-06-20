@@ -44,7 +44,6 @@ from .train_256x256 import (
     kB_kcal,
     _MOL2_TYPE_MAP,
     _PDB_ELEMENT_MAP,
-    _quantise_charge,
 )
 
 logger = logging.getLogger(__name__)

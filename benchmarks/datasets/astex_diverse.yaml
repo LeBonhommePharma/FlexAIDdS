@@ -62,44 +62,21 @@ metrics:
   - entropy_rescue_rate
 
 expected_baselines:
-  docking_power_top1: 0.80
-  docking_power_top3: 0.90
-  scoring_power_pearson_r: 0.75
-  scoring_power_rmse: 1.80
-  mean_rmsd: 2.10
-  median_rmsd: 1.80
+  docking_power_top1: 0.70
+  docking_power_top3: 0.85
+  scoring_power_pearson_r: 0.65
+  scoring_power_rmse: 2.10
+  mean_rmsd: 2.30
+  median_rmsd: 1.95
   entropy_rescue_rate: 0.30
 
 baseline_tolerance: 0.05
 
-# ── Claude Reevaluated Baselines (2026-04-19) ──────────────────────────────
-# Rationale: Astex Diverse Set (85 complexes) is the standard self-docking
-# benchmark.  Published top-1 docking success (<2Å RMSD):
-#   Vina: 53–60%, Glide: 68–74%, Gold: 62–70%, DOCK6: 50–58%
-# FlexAID (original, no entropy): ~55–62% per JCIM 2015.
-# Entropy rescoring should add 5–10% on top, making 0.68–0.72 realistic.
-# The original 0.80 top-1 would place FlexAIDdS above all published methods.
-#
-# Scoring power r=0.75 on Astex is reasonable (Vina ~0.45, Glide ~0.55,
-# best ML methods ~0.65).  With entropy correction, 0.65–0.70 is realistic.
-#
-# mean_rmsd=2.10 Å is consistent with ~70% success rate under 2Å.
-# entropy_rescue_rate=0.30 is conservative and appropriate.
-#
-claude_reevaluated_baselines:
-  docking_power_top1: 0.70            # was 0.80 — above all published; 0.70 is still SOTA-tier
-  docking_power_top3: 0.85            # was 0.90 — follows top-1 adjustment
-  scoring_power_pearson_r: 0.65       # was 0.75 — no method exceeds r≈0.68 on Astex scoring
-  scoring_power_rmse: 2.10            # was 1.80 — consistent with r≈0.65
-  mean_rmsd: 2.30                     # was 2.10 — slight increase for realism
-  median_rmsd: 1.95                   # was 1.80 — follows mean adjustment
-  entropy_rescue_rate: 0.30           # was 0.30 — unchanged; conservative and defensible
-claude_reevaluated_rationale: >
-  Docking power 0.80→0.70: no published method exceeds 74% top-1 on Astex
-  Diverse (Glide SP).  FlexAIDdS with entropy correction at 70% would be
-  competitive with Glide XP and above Vina.  Scoring power 0.75→0.65:
-  Astex scoring is harder than CASF because complexes are diverse without
-  clustering; r≈0.65 with entropy correction is very good.  RMSE and RMSD
-  adjusted to match revised correlations.  Entropy rescue rate unchanged
-  at 0.30 — this is the honest conservative estimate for a general set.
-claude_reevaluated_by: "Claude Opus 4.6 — 2026-04-19"
+published_baselines:
+  docking_power_top1: 0.452
+published_source: "Gaudreault & Najmanovich 2015 JCIM Table 2 (Astex native FLRP, ideal subset, top-1)"
+
+# The published JCIM 2015 table reports Astex native FLRP top-1 at 45.2%
+# (ideal subset). Top-10 is 66.7% and top-100 is 81.0%. The current
+# expected_baselines are the FlexAIDdS target values used for regression
+# checks; published_baselines are the historical FlexAID comparator.

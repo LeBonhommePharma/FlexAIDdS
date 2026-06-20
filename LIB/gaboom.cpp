@@ -155,15 +155,18 @@ static inline void ring_load_chrom_to_fa(FA_Global* FA, const chromosome* c) {
         FA->ring_cur_phases[i] = c->ring_phases[i];
 }
 
-// ── count_receptor_chains ──────────────────────────────────────────────────
-// Count distinct chain IDs among receptor residues (type==0).
-// Returns at least 1. Used to normalise VCT evalue for symmetric assemblies
-// (homodimers, homotetramers, etc.) where all chains are scored simultaneously,
-// which inflates the CF landscape N-fold at symmetry axes and collapses the GA.
+// ── receptor_chain_normalizer ───────────────────────────────────────────────
+// Experimental diagnostic only. Blindly dividing GA evalue/app_evalue by the
+// number of receptor chains changes the effective selection temperature and
+// regresses multichain Astex cases. Keep production/default scoring extensive;
+// enable this only with FLEXAIDDS_CHAIN_NORM=1 for targeted ablations.
 static int count_receptor_chains(FA_Global* FA, const resid* residue) {
+    const char* env = std::getenv("FLEXAIDDS_CHAIN_NORM");
+    if (!env || env[0] == '\0' || env[0] == '0') return 1;
+
     std::unordered_set<char> seen;
     for (int r = 0; r < FA->res_cnt; ++r) {
-        if (residue[r].type == 0)
+        if (residue[r].type == 0 && residue[r].chn != '\0' && residue[r].chn != ' ')
             seen.insert(residue[r].chn);
     }
     return seen.empty() ? 1 : static_cast<int>(seen.size());
@@ -208,16 +211,15 @@ int GA(FA_Global* FA, GB_Global* GB,VC_Global* VC,chromosome** chrom,chromosome*
 	int i;
 	int print=0;
 
-	// ── Multi-chain VCT normalisation ─────────────────────────────────────────
-	// For symmetric assemblies (homodimers, homotetramers, …) vcfunction.cpp
-	// scores contacts against ALL receptor chains simultaneously, making the CF
-	// landscape N_chains× steeper at symmetry axes → false minima → GA collapse.
-	// Divide every evalue/app_evalue by the number of unique receptor chains so
-	// single-chain receptors are unaffected (n_receptor_chains == 1).
+	// ── Experimental multi-chain VCT normalisation ────────────────────────────
+	// Default is 1. FLEXAIDDS_CHAIN_NORM=1 enables a diagnostic ablation that
+	// divides every evalue/app_evalue by the number of explicit receptor chain
+	// IDs. Do not enable for production benchmarks without a target-specific
+	// justification: it changes GA selection pressure and regressed Astex smoke.
 	const int n_receptor_chains = count_receptor_chains(FA, residue);
 	if (n_receptor_chains > 1)
 		fprintf(stderr, "[CHAIN] %d receptor chains detected — "
-		        "normalising VCT evalue by chain count\n", n_receptor_chains);
+		        "normalising VCT evalue by chain count (diagnostic)\n", n_receptor_chains);
 
 	// ── Level-3 H(ω) diagnostic env override ──────────────────────────────────
 	// FLEXAIDDS_USE_SHANNON=1 enables the ligand vibrational-mode Shannon-entropy
