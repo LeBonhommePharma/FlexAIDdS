@@ -4,7 +4,39 @@
 (function () {
   'use strict';
 
-  var MOLSTAR_BUILD = '20260620-live';
+  var MOLSTAR_BUILD = '20260620-clean';
+
+  function installMolstarNetworkGuards() {
+    if (window.__FLEXAID_MOLSTAR_GUARDS__) return;
+    window.__FLEXAID_MOLSTAR_GUARDS__ = true;
+    var origFetch = window.fetch;
+    if (!origFetch) return;
+    window.fetch = function (input, init) {
+      var url = typeof input === 'string' ? input : (input && input.url) || '';
+      if (url.indexOf('molstarvolseg.ncbr.muni.cz') !== -1) {
+        return Promise.resolve(new Response('{}', {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }));
+      }
+      return origFetch.apply(this, arguments);
+    };
+  }
+
+  function bindMolstarRejectionGuard() {
+    if (window.__FLEXAID_MOLSTAR_REJECTION_GUARD__) return;
+    window.__FLEXAID_MOLSTAR_REJECTION_GUARD__ = true;
+    window.addEventListener('unhandledrejection', function (e) {
+      var reason = e.reason;
+      var msg = reason && (reason.message || String(reason)) || '';
+      if (/molstarvolseg|multiScale|is not iterable|Load failed/i.test(msg)) {
+        e.preventDefault();
+        molstarLog('warn', 'suppressed non-fatal Mol* rejection', reason);
+      }
+    });
+  }
+
+  installMolstarNetworkGuards();
 
   // ── Tab switching (Usage section) ──────────────────────────
   document.querySelectorAll('.usage-tabs .tab-btn').forEach(function (btn) {
@@ -152,6 +184,8 @@
     else fn.call(console, '[molstar] ' + message);
   }
 
+  bindMolstarRejectionGuard();
+
   function isLightTheme() {
     return document.documentElement.getAttribute('data-theme') === 'light';
   }
@@ -208,16 +242,22 @@
     });
   }
 
-  function publicationViewProps(light, tier) {
+  function safePostprocessing(outlineOn) {
+    var light = isLightTheme();
     var ios = isIOSLike();
     var outline = {
-      name: 'on',
-      params: {
+      name: outlineOn ? 'on' : 'off',
+      params: outlineOn ? {
         scale: ios ? 1.05 : 1.15,
         threshold: ios ? 0.26 : 0.22,
         color: light ? 0x111827 : 0x000000,
-      },
+      } : {},
     };
+    return { outline: outline, occlusion: { name: 'off', params: {} } };
+  }
+
+  function publicationViewProps(light, tier) {
+    var ios = isIOSLike();
     var props = {
       renderer: {
         backgroundColor: light ? 0xf8fafc : 0x0a0e14,
@@ -236,22 +276,10 @@
       },
     };
 
-    if (tier === 'full') {
-      props.postprocessing = {
-        outline: outline,
-        occlusion: {
-          name: 'on',
-          params: {
-            samples: ios ? 16 : 48,
-            radius: ios ? 4 : 6,
-            bias: 0.8,
-            blurKernelSize: ios ? 11 : 21,
-            resolutionScale: ios ? 0.75 : 1,
-          },
-        },
-      };
-    } else if (tier === 'outline') {
-      props.postprocessing = { outline: outline, occlusion: { name: 'off', params: {} } };
+    if (tier === 'outline') {
+      props.postprocessing = safePostprocessing(true);
+    } else if (tier === 'basic') {
+      props.postprocessing = safePostprocessing(false);
     }
 
     return props;
@@ -261,22 +289,12 @@
     if (!viewer || !viewer.plugin || !viewer.plugin.canvas3d) return;
     var light = isLightTheme();
     var canvas3d = viewer.plugin.canvas3d;
-    var tiers = isIOSLike() ? ['outline', 'basic'] : ['full', 'outline', 'basic'];
+    var tiers = ['outline', 'basic'];
 
     function applyTier(index) {
       if (index >= tiers.length) return;
       try {
-        var tier = tiers[index];
-        if (tier === 'basic') {
-          canvas3d.setProps({
-            renderer: publicationViewProps(light, 'basic').renderer,
-            camera: publicationViewProps(light, 'basic').camera,
-            trackball: publicationViewProps(light, 'basic').trackball,
-            postprocessing: { outline: { name: 'off', params: {} }, occlusion: { name: 'off', params: {} } },
-          });
-        } else {
-          canvas3d.setProps(publicationViewProps(light, tier));
-        }
+        canvas3d.setProps(publicationViewProps(light, tiers[index]));
         canvas3d.requestDraw();
       } catch (e) {
         molstarLog('warn', 'publication view tier failed: ' + tiers[index], e);
@@ -331,6 +349,29 @@
     requestAnimationFrame(function () {
       requestAnimationFrame(cb);
     });
+  }
+
+  function bindRenderErrorRecovery(viewer) {
+    try {
+      var canvas3d = viewer.plugin.canvas3d;
+      if (!canvas3d || canvas3d.__flexaidRenderGuard) return;
+      canvas3d.__flexaidRenderGuard = true;
+      var origUpdate = canvas3d.update.bind(canvas3d);
+      var recovered = false;
+      canvas3d.update = function () {
+        try {
+          return origUpdate();
+        } catch (e) {
+          var msg = e && (e.message || String(e)) || '';
+          if (!recovered && /multiScale/i.test(msg)) {
+            recovered = true;
+            molstarLog('warn', 'render loop error — disabling postprocessing', e);
+            canvas3d.setProps({ postprocessing: safePostprocessing(false) });
+            try { return origUpdate(); } catch (e2) { /* swallow repeat */ }
+          }
+        }
+      };
+    } catch (e) { /* optional guard */ }
   }
 
   function bindWebGLContextGuards(viewer) {
@@ -508,6 +549,8 @@
         viewportShowControls: false,
         pdbProvider: 'rcsb',
         emdbProvider: 'pdbe',
+        volumesAndSegmentationsDefaultServer: '',
+        volumeStreamingDisabled: true,
         canvas3d: {
           transparentBackground: true,
           renderer: {
@@ -515,7 +558,7 @@
             pixelRatio: ios ? Math.min(window.devicePixelRatio || 1, 2) : (window.devicePixelRatio || 1),
           },
           camera: { fog: 0, clipFar: false },
-          postprocessing: { outline: { name: 'on' } },
+          postprocessing: safePostprocessing(true),
           trackball: {
             noScroll: true,
             noRotate: false,
@@ -526,6 +569,7 @@
       }).then(function (viewer) {
         molstarViewer = viewer;
         bindViewerResize(viewer, container);
+        bindRenderErrorRecovery(viewer);
         bindWebGLContextGuards(viewer);
         return loadStructure(viewer, todaysComplex.pdb);
       }).then(function (loaded) {
