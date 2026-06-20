@@ -41,6 +41,14 @@
   --glow-teal:   0 0 20px rgba(34,211,238,0.25);
   --glow-gold:   0 0 20px rgba(251,191,36,0.20);
   --nav-bg:      rgba(10,14,20,0.92);
+  --harm-bg:           rgba(244,63,94,0.06);
+  --harm-eyebrow-line: rgba(244,63,94,0.18);
+  --harm-card-bg:      rgba(16,20,28,0.82);
+  --harm-card-border:  rgba(244,63,94,0.24);
+  --harm-fatal-bg:     rgba(244,63,94,0.10);
+  --harm-fatal-border: rgba(244,63,94,0.40);
+  --harm-fatal-strong: #ff6b7d;
+  --viewer-panel:      rgba(10,14,20,0.72);
 }
 
 /* ── Light theme (accents preserved) ────────────────────────── */
@@ -54,6 +62,14 @@
   --fg-muted:    #5a6478;
   --fg-dim:      rgba(90,100,120,0.55);
   --nav-bg:      rgba(255,255,255,0.85);
+  --harm-bg:           rgba(254,226,226,0.72);
+  --harm-eyebrow-line: rgba(220,38,38,0.28);
+  --harm-card-bg:      #ffffff;
+  --harm-card-border:  rgba(220,38,38,0.32);
+  --harm-fatal-bg:     rgba(254,202,202,0.92);
+  --harm-fatal-border: rgba(185,28,28,0.48);
+  --harm-fatal-strong: #be123c;
+  --viewer-panel:      rgba(255,255,255,0.96);
 }
 [data-theme="light"] body {
   background-image:
@@ -415,14 +431,14 @@ ul { list-style: none; }
 
 /* ── Harm Reduction ─────────────────────────────────────── */
 .harm-section {
-  background: rgba(244,63,94,0.04);
-  border: 1px solid rgba(244,63,94,0.20);
+  background: var(--harm-bg);
+  border: 1px solid var(--harm-card-border);
   border-radius: var(--r-lg);
   padding: 1.75rem 2rem;
   margin-top: 0;
 }
 .harm-section .section-eyebrow { color: var(--rose); }
-.harm-section .section-eyebrow::after { background: rgba(244,63,94,0.15); }
+.harm-section .section-eyebrow::after { background: var(--harm-eyebrow-line); }
 .harm-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
@@ -430,8 +446,8 @@ ul { list-style: none; }
   margin-top: 1rem;
 }
 .harm-card {
-  background: rgba(10,14,20,0.6);
-  border: 1px solid rgba(244,63,94,0.15);
+  background: var(--harm-card-bg);
+  border: 1px solid var(--harm-card-border);
   border-radius: var(--r-md);
   padding: 0.9rem 1.05rem;
 }
@@ -448,7 +464,7 @@ ul { list-style: none; }
 .harm-card ul { list-style: none; }
 .harm-card ul li {
   font-size: 12.5px;
-  color: var(--fg-muted);
+  color: var(--fg);
   padding: 2px 0;
   padding-left: 0.9rem;
   position: relative;
@@ -461,8 +477,8 @@ ul { list-style: none; }
   opacity: 0.5;
 }
 .fatal-box {
-  background: rgba(244,63,94,0.07);
-  border: 1px solid rgba(244,63,94,0.35);
+  background: var(--harm-fatal-bg);
+  border: 1px solid var(--harm-fatal-border);
   border-radius: var(--r-md);
   padding: 0.8rem 1rem;
   margin-top: 0.75rem;
@@ -471,7 +487,7 @@ ul { list-style: none; }
   color: var(--rose);
   font-weight: 500;
 }
-.fatal-box strong { color: #ff6b7d; }
+.fatal-box strong { color: var(--harm-fatal-strong); }
 
 /* ── Viewer Column ──────────────────────────────────────── */
 .viewer-col {}
@@ -483,7 +499,7 @@ ul { list-style: none; }
 
 /* ── NGL Viewer ─────────────────────────────────────────── */
 .ngl-wrap {
-  background: #080c12;
+  background: var(--bg);
   border: 1px solid var(--border);
   border-radius: var(--r-lg);
   overflow: hidden;
@@ -495,7 +511,7 @@ ul { list-style: none; }
   display: flex;
   align-items: center;
   justify-content: space-between;
-  background: rgba(10,14,20,0.7);
+  background: var(--viewer-panel);
 }
 .ngl-title {
   font-family: var(--font-mono);
@@ -518,15 +534,15 @@ ul { list-style: none; }
   height: 440px;
   display: block;
   cursor: grab;
-  background: transparent !important;
+  background: var(--bg) !important;
 }
-#ngl-viewport canvas { background: transparent !important; }
+#ngl-viewport canvas { background: var(--bg) !important; }
 #ngl-viewport:active { cursor: grabbing; }
 .ngl-controls {
   display: flex;
   gap: 0.5rem;
   padding: 0.6rem 1rem;
-  background: rgba(10,14,20,0.7);
+  background: var(--viewer-panel);
   border-top: 1px solid var(--border);
   flex-wrap: wrap;
 }
@@ -548,7 +564,7 @@ ul { list-style: none; }
   display: flex;
   gap: 1rem;
   flex-wrap: wrap;
-  background: rgba(10,14,20,0.5);
+  background: var(--viewer-panel);
   border-top: 1px solid var(--border);
 }
 .ngl-legend-item {
@@ -581,7 +597,7 @@ ul { list-style: none; }
   align-items: center;
   justify-content: center;
   gap: 0.75rem;
-  background: #080c12;
+  background: var(--bg);
   z-index: 5;
   transition: opacity 0.5s;
 }
@@ -751,7 +767,7 @@ table.binding-table {
   color: var(--fg-muted);
   flex-direction: column;
   gap: 0.5rem;
-  background: #080c12;
+  background: var(--bg);
 }
 </style>
 <link rel="stylesheet" href="../../theme.css">
@@ -1249,7 +1265,7 @@ table.binding-table {
 <!-- ── Footer ───────────────────────────────────────────────── -->
 <footer class="site-footer">
   <p>
-    Drug of the Day #002 · MDMA · Le Bonhomme Pharma · Montréal ·
+    Drug of the Day #003 · DMT · Le Bonhomme Pharma · Montréal ·
     <a href="/">FlexAID∆S</a> ·
     <a href="/drug-of-the-day/cocaine/">Cocaine #001</a>
     <a href="/drug-of-the-day/mdma/">MDMA #002</a>
@@ -1272,6 +1288,43 @@ table.binding-table {
   var surfaceRepr = null;
   var isSpinning = false;
 
+  function viewerThemePalette() {
+    var light = document.documentElement.getAttribute('data-theme') === 'light';
+    return {
+      backgroundColor: light ? 0xf4f6fb : 0x0a0e14,
+      outlineColor: light ? 0x000000 : 0xffffff
+    };
+  }
+
+  function applyViewerTheme() {
+    if (!stage) return;
+    var palette = viewerThemePalette();
+    stage.setParameters({
+      backgroundColor: palette.backgroundColor,
+      outline: true,
+      outlineScale: 1.0,
+      outlineColor: palette.outlineColor
+    });
+    try {
+      stage.viewer.renderer.setClearColor(palette.backgroundColor, 1);
+      stage.viewer.renderer.setClearAlpha(1);
+      stage.viewer.requestRender();
+    } catch (e) { console.warn('[NGL] theme sync failed:', e); }
+  }
+
+  function bindViewerThemeObserver() {
+    if (window.LBPTheme) {
+      var origApply = window.LBPTheme.apply;
+      window.LBPTheme.apply = function (next) {
+        origApply(next);
+        applyViewerTheme();
+      };
+      return;
+    }
+    new MutationObserver(function () { applyViewerTheme(); })
+      .observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+  }
+
   function initNGL() {
     if (typeof NGL === 'undefined') {
       var vp = document.getElementById('ngl-viewport');
@@ -1283,32 +1336,22 @@ table.binding-table {
       tooltip: false
     });
 
-    // High-quality render: transparent bg, outline ON, shadows ON, no clipping/fog
     stage.setParameters({
-      backgroundColor: 0x000000,         // base color; true transparency via renderer alpha below
-      quality: 'high',                   // max render quality
+      quality: 'high',
       impostor: true,
-      outline: true,                     // outline ON
+      outline: true,
       outlineScale: 1.0,
-      outlineColor: 0x000000,
-      clipDist: 0,                       // no cutoff
-      clipNear: 0,                       // no near clipping
-      fogNear: 100,                      // disable fog (push far)
+      clipDist: 0,
+      clipNear: 0,
+      fogNear: 100,
       fogFar: 100,
-      shadowIntensity: 0.5,              // shadows ON
+      shadowIntensity: 0.5,
       lightColor: 0xffffff,
       lightIntensity: 1.0,
       ambientColor: 0xffffff,
       ambientIntensity: 0.4
     });
-
-    // three.js has no "transparent" color keyword — force a transparent canvas
-    // at the renderer level so the page/card background shows through.
-    try {
-      stage.viewer.renderer.setClearColor(0x000000, 0);
-      stage.viewer.renderer.setClearAlpha(0);
-      stage.viewer.requestRender();
-    } catch (e) { console.warn('[NGL] transparent bg setup failed:', e); }
+    applyViewerTheme();
 
     // Responsive resize
     window.addEventListener('resize', function() {
@@ -1413,6 +1456,7 @@ table.binding-table {
 
   document.addEventListener('DOMContentLoaded', function() {
     initNGL();
+    bindViewerThemeObserver();
 
     var r = document.getElementById('btn-reset');
     var s = document.getElementById('btn-spin');
