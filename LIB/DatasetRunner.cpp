@@ -7112,10 +7112,20 @@ void DatasetRunner::write_report(const BenchmarkReport& report,
         std::string csv_path = output_dir + "/" + safe_name + "_results.csv";
         std::ofstream ofs(csv_path);
 
+        // ITC calibration: when FLEXAIDDS_THERMO_CSV=1, append the raw
+        // thermodynamic decomposition columns (H_vct/TdS_vib/TdS_shannon/G_bind)
+        // to the aggregate results CSV so benchmarks/calibrate_itc.py can fit the
+        // α (enthalpy) and β (entropy) scaling factors directly from one file.
+        const bool thermo_csv = (std::getenv("FLEXAIDDS_THERMO_CSV") != nullptr);
+
         ofs << "pdb_id,best_score,rmsd_to_crystal,rmsd_hungarian,predicted_dG,"
                "predicted_dH,predicted_TdS,shannon_entropy,search_entropy_proxy,num_poses,wall_time_s,success,"
                "cf_native,best_cluster_rmsd,best_cluster_idx,seed_echo,pose_source,"
-               "H_rep_rank0,H_pop,H_rep_mean,D_vib\n";
+               "H_rep_rank0,H_pop,H_rep_mean,D_vib";
+        if (thermo_csv) {
+            ofs << ",g_bind,h_vct,h_vct_raw,n_heavy,tds_shannon,tds_vib";
+        }
+        ofs << "\n";
 
         for (const auto& r : report.results) {
             ofs << std::fixed << std::setprecision(4)
@@ -7139,11 +7149,21 @@ void DatasetRunner::write_report(const BenchmarkReport& report,
                 << r.H_rep_rank0 << ","
                 << r.H_pop << ","
                 << r.H_rep_mean << ","
-                << r.D_vib << "\n";
+                << r.D_vib;
+            if (thermo_csv) {
+                ofs << "," << r.thermo_G_bind
+                    << "," << r.thermo_H_vct
+                    << "," << r.thermo_H_vct_raw
+                    << "," << r.thermo_n_heavy
+                    << "," << r.thermo_TdS_shannon
+                    << "," << r.thermo_TdS_vib;
+            }
+            ofs << "\n";
         }
 
         ofs.close();
-        std::cout << "  CSV results: " << csv_path << "\n";
+        std::cout << "  CSV results: " << csv_path
+                  << (thermo_csv ? "  [+thermo columns]" : "") << "\n";
     }
 
     // ── Summary CSV ──────────────────────────────────────────────────
