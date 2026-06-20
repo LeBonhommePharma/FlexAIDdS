@@ -394,9 +394,35 @@ button { font: inherit; color: inherit; background: none; border: none; cursor: 
   margin-bottom: 2rem;
 }
 .stat-item { text-align: center; }
+.stat-item--milestone {
+  padding: 1rem 1.25rem;
+  border-radius: 12px;
+  border: 1px solid rgba(251,191,36,0.45);
+  background: linear-gradient(135deg, rgba(251,191,36,0.10) 0%, rgba(34,211,238,0.06) 100%);
+  box-shadow: 0 0 28px rgba(251,191,36,0.14);
+}
+.stat-milestone-badge {
+  display: inline-block;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--gold);
+  background: rgba(251,191,36,0.14);
+  border: 1px solid rgba(251,191,36,0.38);
+  border-radius: 10px;
+  padding: 2px 8px;
+  margin-bottom: 6px;
+}
 .stat-item .stat-value {
   font-family: var(--font-mono); font-size: 1.75rem;
   font-weight: 700; color: var(--teal);
+}
+.stat-item .stat-value--milestone {
+  background: linear-gradient(135deg, #FBBF24 0%, #22D3EE 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
 }
 .stat-item .stat-label {
   font-family: var(--font-mono); font-size: 10px;

@@ -4,7 +4,7 @@
 (function () {
   'use strict';
 
-  var MOLSTAR_BUILD = '20260620-clean';
+  var MOLSTAR_BUILD = '20260620-theme';
 
   function installMolstarNetworkGuards() {
     if (window.__FLEXAID_MOLSTAR_GUARDS__) return;
@@ -242,26 +242,36 @@
     });
   }
 
-  function safePostprocessing(outlineOn) {
+  function viewerThemePalette() {
     var light = isLightTheme();
+    return {
+      backgroundColor: light ? 0xffffff : 0x0a0e14,
+      outlineColor: light ? 0x000000 : 0xffffff,
+      backgroundAlpha: 1,
+    };
+  }
+
+  function safePostprocessing(outlineOn) {
+    var palette = viewerThemePalette();
     var ios = isIOSLike();
     var outline = {
       name: outlineOn ? 'on' : 'off',
       params: outlineOn ? {
         scale: ios ? 1.05 : 1.15,
         threshold: ios ? 0.26 : 0.22,
-        color: light ? 0x111827 : 0x000000,
+        color: palette.outlineColor,
       } : {},
     };
     return { outline: outline, occlusion: { name: 'off', params: {} } };
   }
 
   function publicationViewProps(light, tier) {
+    var palette = viewerThemePalette();
     var ios = isIOSLike();
     var props = {
       renderer: {
-        backgroundColor: light ? 0xf8fafc : 0x0a0e14,
-        backgroundAlpha: 0,
+        backgroundColor: palette.backgroundColor,
+        backgroundAlpha: palette.backgroundAlpha,
         ambientIntensity: ios ? 0.85 : 0.78,
         lightIntensity: ios ? 0.68 : 0.62,
         highlightStrength: ios ? 0.28 : 0.35,
@@ -552,9 +562,10 @@
         volumesAndSegmentationsDefaultServer: '',
         volumeStreamingDisabled: true,
         canvas3d: {
-          transparentBackground: true,
+          transparentBackground: false,
           renderer: {
-            backgroundAlpha: 0,
+            backgroundColor: viewerThemePalette().backgroundColor,
+            backgroundAlpha: 1,
             pixelRatio: ios ? Math.min(window.devicePixelRatio || 1, 2) : (window.devicePixelRatio || 1),
           },
           camera: { fog: 0, clipFar: false },
@@ -594,7 +605,11 @@
   }
 
   function onThemeChange() {
-    if (molstarViewer) setPublicationView(molstarViewer);
+    if (!molstarViewer) return;
+    setPublicationView(molstarViewer);
+    if (molstarViewer.plugin && molstarViewer.plugin.canvas3d) {
+      molstarViewer.plugin.canvas3d.requestDraw();
+    }
   }
 
   if (window.LBPTheme) {

@@ -462,8 +462,9 @@ thermo = engine.compute()
       <div class="container">
         <h2>Repository</h2>
         <div class="stats-grid">
-          <div class="stat-card">
-            <span class="stat-value" data-count="1499">0</span>
+          <div class="stat-card stat-card--milestone">
+            <span class="stat-milestone-badge">1,500th commit</span>
+            <span class="stat-value stat-value--milestone" data-count="1500">0</span>
             <span class="stat-label">Commits</span>
           </div>
           <div class="stat-card">
@@ -669,7 +670,7 @@ thermo = engine.compute()
   </footer>
 
   <!-- Shared repo stats — patched by scripts/update_site_stats.py (synced with /FlexAIDdS/) -->
-  <span id="stat-commits" hidden>1499</span>
+  <span id="stat-commits" hidden>1500</span>
   <span id="stat-langs" hidden>14</span>
   <span id="last-updated" hidden>2026-06-20</span>
 
@@ -678,12 +679,12 @@ thermo = engine.compute()
     if (location.pathname.indexOf('/FlexAIDdS') === 0) return;
     var tag = document.querySelector('script[src*="app.js"]');
     var src = tag ? tag.getAttribute('src') : '';
-    if (src.indexOf('v=20260620-clean') !== -1) return;
+    if (src.indexOf('v=20260620-theme') !== -1) return;
     if (location.pathname === '/' || location.pathname === '/index.html') {
       location.replace('/FlexAIDdS/' + location.search + location.hash);
     }
   })();
   </script>
-  <script src="./app.js?v=20260620-clean" defer></script>
+  <script src="./app.js?v=20260620-theme" defer></script>
 </body>
 </html>
