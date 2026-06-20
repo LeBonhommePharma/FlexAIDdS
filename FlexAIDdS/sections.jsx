@@ -47,6 +47,10 @@ function HeroSection() {
           <span className="badge ga">C++26</span>
           <span className="badge terra">Python ≥ 3.9</span>
           <span className="badge gold">Linux · macOS · Windows</span>
+          <span className="badge cuda">CUDA</span>
+          <span className="badge metal">Metal</span>
+          <span className="badge rocm">ROCm</span>
+          <span className="badge avx">AVX-512</span>
         </div>
 
         <div className="hero-ctas">
