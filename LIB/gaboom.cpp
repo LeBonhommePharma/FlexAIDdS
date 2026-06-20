@@ -504,12 +504,17 @@ int GA(FA_Global* FA, GB_Global* GB,VC_Global* VC,chromosome** chrom,chromosome*
 	}
 
 	////////////////////////////////
-	// Stagnation detection: terminate GA when best fitness stops improving
+	// Stagnation detection: terminate GA when best CF energy stops improving.
+	// NOTE: fit_max is intentionally NOT used here — in SMFREE mode it is
+	// normalised to exactly 1000.0 every generation once any chromosome reaches
+	// rank-1, so comparing fit_max would always fire stagnation at gen 300
+	// (WINDOW=100, LIMIT=300) and waste 80% of the budget.  We track the actual
+	// best app_evalue (CF energy) instead, with a 0.01 kcal/mol threshold.
 	const int STAGNATION_WINDOW = 100;   // check every N generations
-	const int STAGNATION_LIMIT  = 300;   // break after this many stagnant windows
-	double prev_best_fitness = -1e30;
-	int    stagnation_count  = 0;
-	bool   ga_stagnant = false;
+	const int STAGNATION_LIMIT  = 300;   // break after this many stagnant gens
+	double prev_best_cf     = 1e18;      // best app_evalue seen so far (lower = better)
+	int    stagnation_count = 0;
+	bool   ga_stagnant      = false;
 
 	// ── Always-on H plateau early exit: ring buffer over last 20 checks ─────
 	// Fires independently of GB->entropy_convergence (that flag controls the
@@ -791,19 +796,26 @@ int GA(FA_Global* FA, GB_Global* GB,VC_Global* VC,chromosome** chrom,chromosome*
 		//printf("------fitness stats-------\navg=%8.3f\tmax=%8.3f\n",GB->fit_avg,GB->fit_max);
         //getchar();
 
-		// Stagnation detection: check if best fitness has plateaued
+		// Stagnation detection: check if best CF energy has plateaued.
+		// Scan all chromosomes for the minimum app_evalue (lower = better binding).
+		// fitness_stats() does not sort, so chrom[0] is not guaranteed best here.
 		if (!no_sec && (i + 1) % STAGNATION_WINDOW == 0 && i > 0) {
-			if (std::abs(GB->fit_max - prev_best_fitness) < 1e-6) {
+			double current_best_cf = (*chrom)[0].app_evalue;
+			for (int _q = 1; _q < GB->num_chrom; ++_q)
+				if ((*chrom)[_q].app_evalue < current_best_cf)
+					current_best_cf = (*chrom)[_q].app_evalue;
+			if (std::abs(current_best_cf - prev_best_cf) < 0.01) {  // 0.01 kcal/mol threshold
 				stagnation_count += STAGNATION_WINDOW;
 				if (stagnation_count >= STAGNATION_LIMIT) {
-					printf("GA terminated early: fitness stagnant for %d generations (best=%.4f)\n", stagnation_count, GB->fit_max);
+					printf("GA terminated early: CF energy stagnant for %d generations "
+					       "(best_cf=%.4f kcal/mol)\n", stagnation_count, current_best_cf);
 					ga_stagnant = true;
 					break;
 				}
 			} else {
 				stagnation_count = 0;
 			}
-			prev_best_fitness = GB->fit_max;
+			prev_best_cf = current_best_cf;
 		}
 
 		// ── Always-on H plateau early exit ─────────────────────────────────
