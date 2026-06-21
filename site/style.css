@@ -401,9 +401,9 @@ h2 {
   -webkit-text-fill-color: transparent;
 }
 .stat-label { font-family: var(--font-mono); font-size: 11px; color: var(--color-text-muted); letter-spacing: 0.1em; text-transform: uppercase; }
-.lang-bar { display: flex; height: 8px; border-radius: 4px; overflow: hidden; margin-bottom: 0.75rem; }
-.lang-segment { height: 100%; }
-.lang-legend { display: flex; flex-wrap: wrap; gap: 0.5rem 1.5rem; }
+.lang-bar { display: flex; width: 100%; height: 8px; border-radius: 4px; overflow: hidden; margin-bottom: 0.75rem; }
+.lang-segment { height: 100%; min-width: 0; flex: 0 0 auto; }
+.lang-legend { display: flex; flex-wrap: wrap; width: 100%; gap: 0.5rem 1.25rem; justify-content: space-between; }
 .lang-legend span { display: flex; align-items: center; gap: 5px; font-size: 12px; color: var(--color-text-muted); font-family: var(--font-mono); }
 .lang-legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; flex-shrink: 0; }
 

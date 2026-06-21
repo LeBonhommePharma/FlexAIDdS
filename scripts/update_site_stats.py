@@ -41,10 +41,6 @@ LANG_MAP = {
 MIN_PERCENT = 1.0  # Languages below this are grouped into "Other"
 OTHER_COLOR = "#555555"
 
-# Primary source languages shown on the site (everything else rolls into Other).
-PRIMARY_LANGS = ("C++", "Python", "Swift", "Objective-C++", "CMake")
-PRIMARY_LANG_COUNT = len(PRIMARY_LANGS)
-
 # All HTML files that receive the same semantic stat markers.
 HTML_TARGETS = [
     "site/index.html",
@@ -142,7 +138,7 @@ def fetch_latest_release(repo: str) -> str | None:
 def compute_percentages(
     languages: dict[str, int],
 ) -> list[tuple[str, str, str, float]]:
-    """Compute primary-language bar entries; bucket all others into Other."""
+    """Build bar segments from GitHub bytes; each lang ≥ MIN_PERCENT gets its own slice."""
     total = sum(languages.values())
     if total == 0:
         return []
@@ -150,15 +146,16 @@ def compute_percentages(
     entries: list[tuple[str, str, str, float]] = []
     other_pct = 0.0
 
-    for lang, bytes_count in languages.items():
+    for lang, bytes_count in sorted(languages.items(), key=lambda x: -x[1]):
         pct = round(bytes_count / total * 100, 1)
-        if lang in PRIMARY_LANGS and lang in LANG_MAP:
+        if lang in LANG_MAP:
             css_suffix, display, color = LANG_MAP[lang]
-            entries.append((css_suffix, display, color, pct))
+            if pct < MIN_PERCENT:
+                other_pct += pct
+            else:
+                entries.append((css_suffix, display, color, pct))
         else:
             other_pct += pct
-
-    entries.sort(key=lambda item: -item[3])
 
     if other_pct > 0:
         entries.append(("other", "Other", OTHER_COLOR, round(other_pct, 1)))
@@ -167,11 +164,20 @@ def compute_percentages(
 
 
 def count_source_languages(languages: dict[str, int]) -> int:
-    """Count primary source languages for the stats badge."""
-    if not languages:
-        return PRIMARY_LANG_COUNT
-    present = sum(1 for lang in PRIMARY_LANGS if languages.get(lang, 0) > 0)
-    return present or PRIMARY_LANG_COUNT
+    """Count languages reported by GitHub (badge matches repo stats)."""
+    return sum(1 for lang in languages if lang != "Makefile")
+
+
+def load_cached_stats() -> dict | None:
+    """Load the last known good stats snapshot when GitHub API is unavailable."""
+    if not os.path.isfile(STATS_JSON_PATH):
+        return None
+    try:
+        with open(STATS_JSON_PATH, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        return data if isinstance(data, dict) else None
+    except (OSError, json.JSONDecodeError):
+        return None
 
 
 def build_lang_bar(entries: list[tuple[str, str, str, float]]) -> str:
@@ -392,29 +398,63 @@ def main() -> int:
     )
     args = parser.parse_args()
 
-    commit_count = get_commit_count(args.repo)
+    cached = load_cached_stats()
+    remote_commits = fetch_commit_count(args.repo)
+    local_commits = 0
+    try:
+        result = subprocess.run(
+            ["git", "rev-list", "--count", "HEAD"],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        local_commits = int(result.stdout.strip())
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        pass
+
+    commit_count = remote_commits or (cached or {}).get("commits") or local_commits
     if commit_count <= 0:
         print("Error getting commit count", file=sys.stderr)
         return 1
     print(f"Commit count: {commit_count}")
 
     languages = fetch_languages(args.repo)
-    language_count = count_source_languages(languages) if languages else None
-    lang_entries = compute_percentages(languages) if languages else []
-    if lang_entries:
+    language_count: int | None = None
+    lang_entries: list[tuple[str, str, str, float]] = []
+
+    if languages:
+        language_count = count_source_languages(languages)
+        lang_entries = compute_percentages(languages)
         print("Language breakdown:")
         for _, display, _color, pct in lang_entries:
             print(f"  {display}: {pct}%")
+    elif cached and cached.get("languages"):
+        language_count = cached.get("languageCount")
+        lang_entries = [
+            (item["id"], item["name"], item["color"], item["percent"])
+            for item in cached["languages"]
+        ]
+        print("Using cached language breakdown (API unavailable)")
     else:
-        print("Skipping language update (API unavailable)")
+        print("Skipping language update (API unavailable, no cache)", file=sys.stderr)
+        return 1
 
     stars = fetch_stars(args.repo)
-    if stars is not None:
-        print(f"Stars: {stars}")
+    if stars is None and cached:
+        stars = cached.get("stars")
 
     release = fetch_latest_release(args.repo)
+    if not release and cached:
+        release = cached.get("latestRelease")
+
+    if stars is not None:
+        print(f"Stars: {stars}")
     if release:
         print(f"Latest release: {release}")
+
+    if not lang_entries:
+        print("No language data to publish", file=sys.stderr)
+        return 1
 
     changed = update_all(
         HTML_TARGETS,
