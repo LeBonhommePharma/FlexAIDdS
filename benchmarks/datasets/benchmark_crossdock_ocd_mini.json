@@ -1,14 +1,14 @@
 {
   "schema_version": 2,
   "name": "astex_ocd_mini",
-  "description": "Oracle cross-docking mini-benchmark: 6 bidirectional pairs from Astex Diverse 85. Tier-1 (same protein, same organism) = Factor Xa (FA10_HUMAN: 1LPZ/1MQ6) + HCV NS5B (>99% seq identity: 1YVF/2D3U). Tier-2 (same enzyme, cross-viral-strain) = Neuraminidase (Inf A 1L7F / Inf B 1VCJ — labeled control; expect higher RMSD). NOTE: Astex Diverse 85 was designed for structural diversity; only 2 Tier-1 same-protein families were confirmed by UniProt+sequence inspection. DHFR cross-organism pairs (1IA1/1S3V) removed — different organisms require superposition, violating the no-superposition OCD protocol. Raw result.csv RMSD is ground-truth ONLY for Tier-1 pairs (coordinate frames match within each crystal).",
+  "description": "Oracle cross-docking mini-benchmark: 6 bidirectional pairs from Astex Diverse 85. Tier-1 (same protein, same organism) = Factor Xa (FA10_HUMAN: 1LPZ/1MQ6) + HCV NS5B (>99% seq identity: 1YVF/2D3U). Tier-2 (same enzyme, cross-viral-strain) = Neuraminidase (Inf A 1L7F / Inf B 1VCJ \u2014 labeled control; expect higher RMSD). NOTE: Astex Diverse 85 was designed for structural diversity; only 2 Tier-1 same-protein families were confirmed by UniProt+sequence inspection. DHFR cross-organism pairs (1IA1/1S3V) removed \u2014 different organisms require superposition, violating the no-superposition OCD protocol. Raw result.csv RMSD is ground-truth ONLY for Tier-1 pairs (coordinate frames match within each crystal). Frame alignment verified by oracle-centroid vs donor-ligand-centroid distance: FXa pairs (1LPZ/1MQ6) are pre-aligned (~2.7 A), valid for raw RMSD. DHFR (1IA1/1S3V) and Neuraminidase (1L7F/1VCJ) require protein superimposition before RMSD.",
   "oracle_mode": true,
   "n_pairs": 6,
   "schema_version_notes": "v2: replaces broken DHFR cross-organism pairs with HCV NS5B Tier-1 pair confirmed by sequence identity check",
   "astex_diverse_dir": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse",
   "tier_legend": {
-    "1": "Same protein, same organism — raw RMSD is valid, NO superposition needed",
-    "2": "Same enzyme family, cross-strain/organism — raw RMSD is APPROXIMATE; coordinate frame drift expected"
+    "1": "Same protein, same organism \u2014 raw RMSD is valid, NO superposition needed",
+    "2": "Same enzyme family, cross-strain/organism \u2014 raw RMSD is APPROXIMATE; coordinate frame drift expected"
   },
   "pairs": [
     {
@@ -25,7 +25,9 @@
       "rmsd_ref_sdf": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1LPZ/1LPZ_ligand.sdf",
       "receptor_name": "1LPZ",
       "donor_name": "1MQ6",
-      "note": "Tier-1 OCD: receptor=1LPZ (FA10_HUMAN), donor ligand=1MQ6 (FA10_HUMAN). Oracle site = 1LPZ binding_site.pdb. RMSD ref = 1LPZ native ligand. No superposition needed."
+      "note": "Tier-1 OCD: receptor=1LPZ (FA10_HUMAN), donor ligand=1MQ6 (FA10_HUMAN). Oracle site = 1LPZ binding_site.pdb. RMSD ref = 1LPZ native ligand. No superposition needed.",
+      "frames_pre_aligned": true,
+      "oracle_to_donor_centroid_A": 2.7
     },
     {
       "index": 1,
@@ -41,7 +43,9 @@
       "rmsd_ref_sdf": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1MQ6/1MQ6_ligand.sdf",
       "receptor_name": "1MQ6",
       "donor_name": "1LPZ",
-      "note": "Tier-1 OCD reverse: receptor=1MQ6 (FA10_HUMAN), donor ligand=1LPZ (FA10_HUMAN). Oracle site = 1MQ6 binding_site.pdb. RMSD ref = 1MQ6 native ligand."
+      "note": "Tier-1 OCD reverse: receptor=1MQ6 (FA10_HUMAN), donor ligand=1LPZ (FA10_HUMAN). Oracle site = 1MQ6 binding_site.pdb. RMSD ref = 1MQ6 native ligand.",
+      "frames_pre_aligned": true,
+      "oracle_to_donor_centroid_A": null
     },
     {
       "index": 2,
@@ -85,13 +89,16 @@
       "tier": 2,
       "same_protein": false,
       "cross_strain": true,
-      "note_tier2": "Influenza A (NRAM_IATRA) vs Influenza B (NRAM_INBLE). ~35% overall sequence identity; active-site catalytic residues conserved. Coordinate frames differ — raw RMSD is approximate. Use as Tier-2 control only.",
+      "note_tier2": "Influenza A (NRAM_IATRA) vs Influenza B (NRAM_INBLE). ~35% overall sequence identity; active-site catalytic residues conserved. Coordinate frames differ \u2014 raw RMSD is approximate. Use as Tier-2 control only.",
       "receptor_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1L7F/1L7F_apo.pdb",
       "ligand_sdf": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1VCJ/1VCJ_ligand.sdf",
       "oracle_site_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1L7F/1L7F_binding_site.pdb",
       "rmsd_ref_sdf": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1L7F/1L7F_ligand.sdf",
       "receptor_name": "1L7F",
-      "donor_name": "1VCJ"
+      "donor_name": "1VCJ",
+      "frames_pre_aligned": false,
+      "oracle_to_donor_centroid_A": 30.3,
+      "requires_superposition": true
     },
     {
       "index": 5,
@@ -107,7 +114,10 @@
       "oracle_site_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1VCJ/1VCJ_binding_site.pdb",
       "rmsd_ref_sdf": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1VCJ/1VCJ_ligand.sdf",
       "receptor_name": "1VCJ",
-      "donor_name": "1L7F"
+      "donor_name": "1L7F",
+      "frames_pre_aligned": false,
+      "oracle_to_donor_centroid_A": null,
+      "requires_superposition": true
     }
   ]
 }
