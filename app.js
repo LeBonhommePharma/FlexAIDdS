@@ -76,27 +76,11 @@
   var commitTotal = readStat('stat-commits', 0);
   var langTotal = readStat('stat-langs', 0);
 
-  function syncRepoStatsDisplay() {
-    document.querySelectorAll('[data-count]').forEach(function (el) {
-      if (commitTotal > 0) el.dataset.count = String(commitTotal);
-    });
-    var langDisplay = document.getElementById('stat-langs-display');
-    if (langDisplay && langTotal > 0) langDisplay.textContent = String(langTotal);
-    var langMarker = document.getElementById('stat-langs');
-    if (langMarker && langTotal > 0) langMarker.textContent = String(langTotal);
-  }
-
-  syncRepoStatsDisplay();
-
-  fetch('./assets/repo-stats.json', { cache: 'no-store' })
-    .then(function (r) { return r.ok ? r.json() : null; })
-    .then(function (data) {
-      if (!data) return;
-      if (data.commits > 0) commitTotal = data.commits;
-      if (data.languageCount > 0) langTotal = data.languageCount;
-      syncRepoStatsDisplay();
-    })
-    .catch(function () {});
+  document.querySelectorAll('[data-count]').forEach(function (el) {
+    if (commitTotal > 0) el.dataset.count = String(commitTotal);
+  });
+  var langDisplay = document.getElementById('stat-langs-display');
+  if (langDisplay && langTotal > 0) langDisplay.textContent = String(langTotal);
 
   function animateCount(el) {
     var target = parseInt(el.dataset.count, 10);
