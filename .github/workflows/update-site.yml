@@ -50,7 +50,14 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add site/index.html site/FlexAIDdS/index.html site/assets/repo-stats.json
-          git diff --staged --quiet || git commit -m "Update: site stats (auto)" && git push
+          if ! git diff --staged --quiet; then
+            git commit -m "Update: site stats (auto)"
+            # Do not fail the whole deploy on non-fast-forward (re-runs on old SHAs, concurrent runs, or races).
+            # The next scheduled or push-triggered run will pick up the latest stats.
+            git push origin HEAD:master || echo "::warning::git push for stats failed (non-fast-forward or race). Continuing with deploy."
+          else
+            echo "No stats changes to commit"
+          fi
 
       - name: Setup Pages
         uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6
