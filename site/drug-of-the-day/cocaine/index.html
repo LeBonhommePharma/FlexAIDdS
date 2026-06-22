@@ -4,15 +4,12 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Cocaine HCl — Drug of the Day #001 · Le Bonhomme Pharma</title>
-<meta name="description" content="Full pharmacology of cocaine hydrochloride: DAT/NET/SERT reuptake inhibitor kinetics, local anesthetic Na⁺ channel block, cocaethylene transesterification, levamisole adulterant toxicology, and interactive 3D DAT binding-pose visualization via NGL Viewer.">
+<meta name="description" content="Full pharmacology of cocaine hydrochloride: DAT/NET/SERT reuptake inhibitor kinetics, local anesthetic Na⁺ channel block, cocaethylene transesterification, levamisole adulterant toxicology, and interactive 3D DAT binding-pose visualization via Mol* Viewer.">
 <link rel="icon" type="image/svg+xml" href="/assets/favicon-flexaid-ds.svg">
 
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600;700&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-
-<!-- NGL Viewer CDN -->
-<script src="https://cdn.jsdelivr.net/npm/ngl@2.0.0-dev.37/dist/ngl.js"></script>
 
 <style>
 /* ── Reset & Base ───────────────────────────────────────── */
@@ -538,7 +535,7 @@ ul { list-style: none; }
   top: calc(var(--nav-h) + 1rem);
 }
 
-/* ── NGL Viewer ─────────────────────────────────────────── */
+/* ── Mol* Viewer ─────────────────────────────────────────── */
 .ngl-wrap {
   background: var(--bg);
   border: 1px solid var(--border);
@@ -570,15 +567,15 @@ ul { list-style: none; }
   padding: 2px 8px;
   border-radius: 4px;
 }
-#ngl-viewport {
+#molstar-viewer {
   width: 100%;
   height: 440px;
   display: block;
   cursor: grab;
   background: var(--bg) !important;
 }
-#ngl-viewport canvas { background: var(--bg) !important; }
-#ngl-viewport:active { cursor: grabbing; }
+#molstar-viewer canvas { background: var(--bg) !important; }
+#molstar-viewer:active { cursor: grabbing; }
 .ngl-controls {
   display: flex;
   gap: 0.5rem;
@@ -630,7 +627,7 @@ ul { list-style: none; }
   line-height: 1.5;
 }
 .ngl-note a { font-size: 11px; }
-.ngl-loading {
+.molstar-loading {
   position: absolute;
   inset: 0;
   display: flex;
@@ -642,8 +639,8 @@ ul { list-style: none; }
   z-index: 5;
   transition: opacity 0.5s;
 }
-.ngl-loading.hidden { opacity: 0; pointer-events: none; }
-.ngl-spinner {
+.molstar-loading.hidden { opacity: 0; pointer-events: none; }
+.molstar-spinner {
   width: 28px; height: 28px;
   border: 2px solid var(--border);
   border-top-color: var(--gold-bright);
@@ -651,7 +648,7 @@ ul { list-style: none; }
   animation: spin 0.9s linear infinite;
 }
 @keyframes spin { to { transform: rotate(360deg); } }
-.ngl-loading-text {
+.molstar-loading-text {
   font-family: var(--font-mono);
   font-size: 11px;
   color: var(--fg-muted);
@@ -798,7 +795,7 @@ table.binding-table {
 .site-footer a { font-size: 11px; color: var(--gold-bright); }
 
 /* ── NGL Error ──────────────────────────────────────────── */
-.ngl-error {
+.molstar-error {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -823,7 +820,7 @@ table.binding-table {
   .viewer-col {
     order: -1;
   }
-  #ngl-viewport { height: 360px; }
+  #molstar-viewer { height: 360px; }
 }
 @media (max-width: 600px) {
   .hero { padding: 2.5rem 1rem 1.5rem; }
@@ -835,6 +832,8 @@ table.binding-table {
 }
 
 </style>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/molstar@4.5.0/build/viewer/molstar.css">
+<link rel="stylesheet" href="../../assets/molstar-drug-viewer.css">
 <link rel="stylesheet" href="../../theme.css">
 <script src="../../theme.js"></script>
 </head>
@@ -1311,23 +1310,23 @@ table.binding-table {
   <div class="viewer-col">
     <div class="viewer-sticky">
 
-      <!-- NGL Viewer -->
+      <!-- Mol* Viewer -->
       <div class="ngl-wrap">
         <div class="ngl-header">
           <span class="ngl-title">3D Binding Pose · dDAT S1 Site</span>
           <span class="ngl-pdb-tag">PDB: 4XP4</span>
         </div>
         <div style="position:relative;">
-          <div id="ngl-viewport"></div>
-          <div class="ngl-loading" id="ngl-loading">
-            <div class="ngl-spinner"></div>
-            <div class="ngl-loading-text">Loading structure from RCSB…</div>
+          <div id="molstar-viewer" data-pdb="4XP4"></div>
+          <div class="molstar-loading" id="molstar-loading">
+            <div class="molstar-spinner"></div>
+            <div class="molstar-loading-text">Loading structure from RCSB…</div>
           </div>
         </div>
         <div class="ngl-legend">
           <div class="ngl-legend-item">
             <div class="legend-dot" style="background:#1a3a5c;border:1px solid rgba(232,213,183,0.15)"></div>
-            Receptor (DAT cartoon)
+            Receptor (refined cartoon)
           </div>
           <div class="ngl-legend-item">
             <div class="legend-dot" style="background:#4a7a9b"></div>
@@ -1335,7 +1334,7 @@ table.binding-table {
           </div>
           <div class="ngl-legend-item">
             <div class="legend-dot" style="background:#FBBF24;box-shadow:0 0 4px #FBBF24"></div>
-            Ligand (cocaine · sticks)
+            Ligand (ball-and-stick · valence)
           </div>
         </div>
         <div class="ngl-controls">
@@ -1482,173 +1481,15 @@ table.binding-table {
   </p>
 </footer>
 
-<!-- ── NGL Viewer Initialization ─────────────────────────────── -->
+<!-- ── Mol* Viewer Initialization ─────────────────────────────── -->
+<script src="../../assets/molstar-drug-viewer.js"></script>
 <script>
-(function() {
-  'use strict';
-
-  var stage = null;
-  var mainComponent = null;
-  var surfaceRepr = null;
-  var isSpinning = false;
-
-  function viewerThemePalette() {
-    var light = document.documentElement.getAttribute('data-theme') === 'light';
-    return {
-      backgroundColor: light ? 0xf4f6fb : 0x0a0e14,
-      outlineColor: light ? 0x000000 : 0xffffff
-    };
-  }
-
-  function applyViewerTheme() {
-    if (!stage) return;
-    var palette = viewerThemePalette();
-    stage.setParameters({
-      backgroundColor: palette.backgroundColor,
-      outline: true,
-      outlineScale: 1.0,
-      outlineColor: palette.outlineColor
-    });
-    try {
-      stage.viewer.renderer.setClearColor(palette.backgroundColor, 1);
-      stage.viewer.renderer.setClearAlpha(1);
-      stage.viewer.requestRender();
-    } catch (e) { console.warn('[NGL] theme sync failed:', e); }
-  }
-
-  function bindViewerThemeObserver() {
-    if (window.LBPTheme) {
-      var origApply = window.LBPTheme.apply;
-      window.LBPTheme.apply = function (next) {
-        origApply(next);
-        applyViewerTheme();
-      };
-      return;
-    }
-    new MutationObserver(function () { applyViewerTheme(); })
-      .observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
-  }
-
-  function initNGL() {
-    if (typeof NGL === 'undefined') {
-      var vp = document.getElementById('ngl-viewport');
-      if (vp) vp.outerHTML = '<div class="ngl-error"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><path d="M15 9l-6 6M9 9l6 6"/></svg>NGL Viewer unavailable</div>';
-      return;
-    }
-
-    stage = new NGL.Stage('ngl-viewport', {
-      tooltip: false
-    });
-    stage.setParameters({
-      quality: 'high',
-      impostor: true,
-      outline: true,
-      outlineScale: 1.0
-    });
-    applyViewerTheme();
-
-    window.addEventListener('resize', function() {
-      if (stage) stage.handleResize();
-    });
-
-    var pdbId = '4XP4';
-    var url = 'https://files.rcsb.org/download/' + pdbId + '.pdb';
-
-    stage.loadFile(url, { defaultRepresentation: false, name: pdbId })
-      .then(function(component) {
-        mainComponent = component;
-
-        // 1. Protein: dark navy cartoon
-        component.addRepresentation('cartoon', {
-          sele: 'protein',
-          colorScheme: 'uniform',
-          colorValue: '#1a3a5c',
-          opacity: 0.80,
-          smoothSheet: true
-        });
-
-        // 2. Contact residues within 4Å of ligand
-        component.addRepresentation('licorice', {
-          sele: 'protein and (within(4, hetero and not water))',
-          colorScheme: 'element',
-          radiusScale: 0.09,
-          opacity: 0.80
-        });
-
-        // 3. Ligand (cocaine): fat warm-gold sticks — larger than receptor
-        component.addRepresentation('licorice', {
-          sele: 'hetero and not water and not ion',
-          colorScheme: 'element',
-          radiusScale: 0.28,
-          quality: 'high',
-          opacity: 1.0
-        });
-
-        // 4. Focus on cocaine in the binding site
-        component.autoView('hetero and not water and not ion', 1800);
-
-        var loading = document.getElementById('ngl-loading');
-        if (loading) loading.classList.add('hidden');
-      })
-      .catch(function(err) {
-        console.error('[NGL] Load error:', err);
-        var loading = document.getElementById('ngl-loading');
-        if (loading) {
-          loading.innerHTML =
-            '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#f43f5e" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><path d="M15 9l-6 6M9 9l6 6"/></svg>' +
-            '<div style="font-family:JetBrains Mono,monospace;font-size:11px;color:#8a93a8;">Structure load failed — check network</div>' +
-            '<a href="https://www.rcsb.org/structure/4XP4" target="_blank" style="font-family:JetBrains Mono,monospace;font-size:10px;color:#FBBF24;margin-top:4px;">View on RCSB →</a>';
-        }
-      });
-  }
-
-  function btnReset() {
-    if (!mainComponent) return;
-    mainComponent.autoView('hetero and not water and not ion', 800);
-  }
-
-  function btnSpin() {
-    if (!stage) return;
-    if (isSpinning) {
-      stage.setSpin(null);
-      isSpinning = false;
-    } else {
-      stage.setSpin([0, 1, 0], 0.005);
-      isSpinning = true;
-    }
-    document.getElementById('btn-spin').textContent = isSpinning ? 'Stop spin' : 'Toggle spin';
-  }
-
-  function btnLigand() {
-    if (!mainComponent) return;
-    mainComponent.autoView('hetero and not water and not ion', 800);
-  }
-
-  function btnSurface() {
-    if (!mainComponent) return;
-    if (surfaceRepr) {
-      mainComponent.removeRepresentation(surfaceRepr);
-      surfaceRepr = null;
-    } else {
-      surfaceRepr = mainComponent.addRepresentation('surface', {
-        sele: 'protein',
-        colorScheme: 'uniform',
-        colorValue: '#1a3a5c',
-        opacity: 0.18,
-        surfaceType: 'ms'
-      });
-    }
-  }
-
-  window.addEventListener('DOMContentLoaded', function() {
-    initNGL();
-    bindViewerThemeObserver();
-    document.getElementById('btn-reset').addEventListener('click', btnReset);
-    document.getElementById('btn-spin').addEventListener('click', btnSpin);
-    document.getElementById('btn-ligand').addEventListener('click', btnLigand);
-    document.getElementById('btn-surface').addEventListener('click', btnSurface);
+  MolstarDrugViewer.boot({
+    pdb: '4XP4',
+    containerId: 'molstar-viewer',
+    loadingId: 'molstar-loading',
+    controls: { reset: 'btn-reset', spin: 'btn-spin', ligand: 'btn-ligand', surface: 'btn-surface' }
   });
-})();
 </script>
 
 </body>

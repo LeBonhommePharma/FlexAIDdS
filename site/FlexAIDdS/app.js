@@ -585,7 +585,10 @@
           return;
         }
         setPublicationView(molstarViewer);
-        return applyDrugOfDayRepresentations(molstarViewer).catch(function (repErr) {
+        var applyReps = (window.MolstarDrugViewer && window.MolstarDrugViewer.applyPublicationRepresentations)
+          ? window.MolstarDrugViewer.applyPublicationRepresentations.bind(window.MolstarDrugViewer)
+          : applyDrugOfDayRepresentations;
+        return applyReps(molstarViewer).catch(function (repErr) {
           molstarLog('warn', 'representation customize failed — keeping default render', repErr);
         });
       }).then(function () {
