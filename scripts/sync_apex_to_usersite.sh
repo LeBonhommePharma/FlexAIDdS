@@ -30,7 +30,7 @@ mkdir -p "$WORKDIR/FlexAIDdS"
 rsync -a --delete "$SITE/FlexAIDdS/" "$WORKDIR/FlexAIDdS/"
 
 cd "$WORKDIR"
-git add index.html app.js style.css theme.css theme.js assets/ FlexAIDdS/
+git add index.html app.js style.css theme.css theme.js CNAME assets/ FlexAIDdS/
 
 if git diff --staged --quiet; then
   echo "user-site apex sync: no changes"
