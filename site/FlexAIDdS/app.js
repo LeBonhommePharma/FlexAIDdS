@@ -114,7 +114,10 @@
     { pdb: '6dzv', drug: 'MDMA',        target: 'serotonin transporter (SERT)', series: '002', href: '/drug-of-the-day/mdma/' },
     { pdb: '6wha', drug: 'DMT',         target: '5-HT\u2082A receptor', series: '003', href: '/drug-of-the-day/dmt/' },
     { pdb: '7wc7', drug: 'Psilocin',    target: '5-HT\u2082A receptor', series: '004', href: '/drug-of-the-day/psilocin/' },
-    // queued: 005 lsd · 006 amphetamine · 007 fentanyl · 008 salvinorin-a · 005 lsd/6WGT · 006 amphetamine/7XNA · 007 fentanyl/8EF5 · 008 salvinorin-a/4DJH
+    { pdb: '6wgt', drug: 'LSD',         target: '5-HT\u2082B receptor', series: '005', href: '/drug-of-the-day/lsd/' },
+    { pdb: '7xna', drug: 'Amphetamine', target: 'dopamine transporter (DAT)', series: '006', href: '/drug-of-the-day/amphetamine/' },
+    { pdb: '8ef5', drug: 'Fentanyl',    target: '\u03bc-opioid receptor', series: '007', href: '/drug-of-the-day/fentanyl/' },
+    { pdb: '4djh', drug: 'Salvinorin A', target: '\u03ba-opioid receptor', series: '008', href: '/drug-of-the-day/salvinorin-a/' },
   ];
   var dayIdx = Math.floor(Date.now() / 86400000) % drugComplexes.length;
   var todaysComplex = drugComplexes[dayIdx];
