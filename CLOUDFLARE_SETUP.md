@@ -28,13 +28,22 @@ A second repo (`FlexAIDdS` `gh-pages`) must **not** also claim `thebonhomme.com`
 2. **Custom domain** must be: `thebonhomme.com`  
 3. **Enforce HTTPS** should be on.
 
-### A2. Remove duplicate domain from FlexAIDdS gh-pages
+### A2. Remove duplicate domain from FlexAIDdS (two clicks — **do both**)
+
+**Step 1 — Clear custom domain in GitHub Settings (most important)**
+
+1. Open https://github.com/LeBonhommePharma/FlexAIDdS/settings/pages  
+2. Find the box **Custom domain**. It may show `thebonhomme.com` or be empty with a certificate still attached.  
+3. If anything is in that box → click **Remove** (or clear the field) → **Save**.  
+4. Wait until the page shows only the default `*.github.io` URL (no `thebonhomme.com` under this repo).  
+5. **Only** https://github.com/LeBonhommePharma/lebonhommepharma.github.io/settings/pages should list `thebonhomme.com`.
+
+**Step 2 — Confirm `CNAME` file is gone on gh-pages**
 
 1. Open https://github.com/LeBonhommePharma/FlexAIDdS/tree/gh-pages  
-2. If you see a file named **`CNAME`** containing `thebonhomme.com` → **delete it** (commit to `gh-pages`).  
-3. Future deploys: our workflow now excludes `CNAME` from `gh-pages` automatically.
+2. There must be **no** file named `CNAME`. (Deploy scripts no longer publish it.)
 
-**Why:** Two repos with the same `CNAME` made `/FlexAIDdS/` serve the corporate homepage instead of the product page.
+**Why:** The FlexAIDdS repo was also claiming `thebonhomme.com`. GitHub then served **this repo’s root `index.html`** (corporate homepage) for the URL `/FlexAIDdS/` instead of the product page in the user-site repo.
 
 ### A3. Full site sync (already automated)
 
