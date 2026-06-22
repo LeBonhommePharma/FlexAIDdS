@@ -26,9 +26,11 @@ for file in "${APEX_FILES[@]}"; do
 done
 mkdir -p "$WORKDIR/assets"
 rsync -a "$SITE/assets/" "$WORKDIR/assets/"
+mkdir -p "$WORKDIR/FlexAIDdS"
+rsync -a --delete "$SITE/FlexAIDdS/" "$WORKDIR/FlexAIDdS/"
 
 cd "$WORKDIR"
-git add index.html app.js style.css theme.css theme.js assets/
+git add index.html app.js style.css theme.css theme.js assets/ FlexAIDdS/
 
 if git diff --staged --quiet; then
   echo "user-site apex sync: no changes"
