@@ -13,9 +13,12 @@
    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@300;400;500;600;700&family=JetBrains+Mono:wght@300;400;500;600;700&display=swap" rel="stylesheet">
    ------------------------------------------------------------ */
 
-/* ───────── SELF-HOSTED BRAND FONT ─────────
+/* ───────── SELF-HOSTED BRAND FONT (disabled: no fonts/ dir in site/; use Google IBM Plex Sans) ─────────
    SF Pro Display (Apple) — committed body & display sans.
-   Self-hosted from /fonts; replaces IBM Plex Sans as --font-body. */
+   Self-hosted from /fonts; replaces IBM Plex Sans as --font-body.
+   Commented to avoid 404s. Body falls back to IBM Plex Sans from Google link in HTML.
+*/
+/*
 @font-face { font-family: 'SF Pro Display'; font-weight: 100; font-style: normal; font-display: swap; src: url('../fonts/SF-Pro-Display-Ultralight.otf') format('opentype'); }
 @font-face { font-family: 'SF Pro Display'; font-weight: 200; font-style: normal; font-display: swap; src: url('../fonts/SF-Pro-Display-Thin.otf') format('opentype'); }
 @font-face { font-family: 'SF Pro Display'; font-weight: 300; font-style: normal; font-display: swap; src: url('../fonts/SF-Pro-Display-Light.otf') format('opentype'); }
@@ -25,6 +28,7 @@
 @font-face { font-family: 'SF Pro Display'; font-weight: 700; font-style: normal; font-display: swap; src: url('../fonts/SF-Pro-Display-Bold.otf') format('opentype'); }
 @font-face { font-family: 'SF Pro Display'; font-weight: 800; font-style: normal; font-display: swap; src: url('../fonts/SF-Pro-Display-Heavy.otf') format('opentype'); }
 @font-face { font-family: 'SF Pro Display'; font-weight: 900; font-style: normal; font-display: swap; src: url('../fonts/SF-Pro-Display-Black.otf') format('opentype'); }
+*/
 
 :root {
   /* ───────── CORE PALETTE (dark-first, scientific) ───────── */

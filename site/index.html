@@ -11,9 +11,75 @@
 
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600;700&family=Inter:ital,wght@0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,400;1,600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@300;400;500;600;700&family=JetBrains+Mono:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 
-<link rel="stylesheet" href="./theme.css">
+<!-- FlexAID∆S Design System - Le Bonhomme Pharma brand (RED intensity variant) -->
+<link rel="stylesheet" href="./colors_and_type.css">
+<link rel="stylesheet" href="./lebonhomme-brand.css">
+
+<!-- RED overrides for brand landing intensity (keeps attitude distinct from teal FlexAIDdS product page) -->
+<style>
+:root {
+  /* RED brand accent for intensity and "nothing-to-fuck" attitude on landing */
+  --red: #DC2626;
+  --red-bright: #EF4444;
+  --red-muted: rgba(220,38,38,0.18);
+  --red-glow: rgba(220,38,38,0.08);
+
+  /* Override primary for brand page to RED while keeping triad for equation */
+  --teal: #DC2626; /* brand primary on landing = RED */
+  --accent: #DC2626;
+}
+
+/* Keep scientific triad for ΔG = ΔH − TΔS in hero */
+.hero-equation .dh { color: #22D3EE; }
+.hero-equation .tds { color: #A78BFA; }
+.hero-equation .dg { color: #FBBF24; }
+
+/* RED specific for nav pill, buttons, accents on landing */
+.nav-links a.pill {
+  border-color: var(--red);
+  color: var(--red);
+}
+.nav-links a.pill:hover { background: rgba(220,38,38,0.08); }
+
+.btn-primary { background: var(--red); color: #fff; box-shadow: 0 0 18px rgba(220,38,38,0.3); }
+.btn-primary:hover { background: #EF4444; box-shadow: 0 0 26px rgba(220,38,38,0.5); }
+
+.btn-outline { border-color: rgba(220,38,38,0.25); color: var(--fg); }
+.btn-outline:hover { border-color: var(--red); color: var(--red); }
+
+.hero-eyebrow { color: var(--red); }
+
+.manifesto-bar { background: var(--red); }
+
+.card-tag.tag-engine { background: rgba(220,38,38,0.15); color: var(--red-bright); }
+
+.principle-num { color: var(--red); }
+
+.divider { background: var(--red); }
+
+.lbp-hero h1 .pharma {
+  background: linear-gradient(135deg, var(--red), #EF4444);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+/* Preserve some of the old red grid for attitude */
+body::before {
+  background-image:
+    linear-gradient(rgba(220,38,38,0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(220,38,38,0.03) 1px, transparent 1px);
+}
+
+/* Font fallback */
+body, .nav, .hero-lede, .hero-sub { font-family: 'IBM Plex Sans', system-ui, -apple-system, sans-serif; }
+
+/* Ensure distinction: root is editorial RED brand, /FlexAIDdS is teal scientific product */
+</style>
+
+<script src="assets/flexaid-logo.js"></script>
 <script src="./theme.js"></script>
 
 <style>
@@ -722,27 +788,44 @@ section { position: relative; z-index: 1; }
 </head>
 <body>
 
-<!-- ── Header ──────────────────────────────────────────────── -->
-<header class="site-header">
-  <div class="header-inner">
-    <a href="/" class="logo" aria-label="Le Bonhomme Pharma — Home">
-      <div class="logo-mark" aria-hidden="true"></div>
-      <span class="logo-text">Le Bonhomme <em>Pharma</em></span>
+<!-- Nav from DS LeBonhommePharma design (RED variant) -->
+<nav class="nav">
+  <div class="nav-inner">
+    <a href="/" class="nav-brand" aria-label="Le Bonhomme Pharma — Home">
+      <span class="brandword">Le Bonhomme <span class="accent">Pharma</span></span>
     </a>
-    <nav class="main-nav" aria-label="Site navigation">
+    <div class="nav-links">
       <a href="#products">Products</a>
       <a href="#manifesto">Manifesto</a>
       <a href="#about">LP</a>
-      <a href="/FlexAIDdS/" class="nav-red">FlexAIDdS</a>
+      <a href="/FlexAIDdS/" class="pill">FlexAID∆S</a>
       <a href="/drug-of-the-day/">Drug of Day</a>
       <a href="/periodic/">Periodic</a>
-    </nav>
-    <div class="header-actions">
-      <a href="https://github.com/LeBonhommePharma" target="_blank" rel="noopener noreferrer" class="gh-link" aria-label="GitHub — LeBonhommePharma">
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/></svg>
-      </a>
-      <span data-theme-mount></span>
     </div>
+  </div>
+</nav>
+
+<!-- Hero from DS, with RED and intense copy -->
+<header class="lbp-hero">
+  <canvas id="particle-canvas" class="particle-canvas" aria-hidden="true"></canvas>
+  <p class="hero-eyebrow">Little Burgundy · Montréal · Open Science</p>
+  <div class="hero-mark" id="hero-logo"></div>
+  <h1><span class="le">Le Bonhomme</span> <span class="pharma">Pharma</span></h1>
+  <p class="hero-lede">
+    We've been told to say <strong>NO</strong> to drugs. Bonhomme disagrees.<br>
+    <strong>ALL IN</strong> psychopharmacology — open-source, thermodynamically rigorous, unapologetically pro-drug in the clinical sense that matters.
+  </p>
+  <p class="hero-sub">
+    Reimagining psychopharmacology for 21st-century psychiatric medicine. Radical harm reduction. The psychiatric system isn't broken — it was built for a different century. We're building the tools for this one.
+  </p>
+  <div class="hero-ctas">
+    <a class="btn btn-primary" href="/FlexAIDdS/">
+      Explore FlexAID∆S
+    </a>
+    <a class="btn btn-outline" href="#manifesto">Read the Manifesto</a>
+  </div>
+  <div class="hero-equation" aria-label="The equation at the core">
+    <span class="dg">ΔG</span> = <span class="dh">ΔH</span> − <span class="tds">TΔS</span>
   </div>
 </header>
 
@@ -817,7 +900,7 @@ section { position: relative; z-index: 1; }
       <div class="products-grid">
 
         <!-- FlexAIDdS — featured -->
-        <a href="/FlexAIDdS/" class="product-card product-card-featured">
+        <a href="/FlexAIDdS/" class="work-card flagship">
           <span class="card-tag tag-engine">Docking Engine</span>
           <div>
             <div class="card-name">FlexAID<sub>∆S</sub></div>
@@ -849,7 +932,7 @@ section { position: relative; z-index: 1; }
         </a>
 
         <!-- NATURaL -->
-        <a href="https://github.com/LeBonhommePharma/NATURaL" target="_blank" rel="noopener noreferrer" class="product-card">
+        <a href="https://github.com/LeBonhommePharma/NATURaL" target="_blank" rel="noopener noreferrer" class="work-card">
           <span class="card-tag tag-bio">Biophysics</span>
           <div class="card-name">NATURaL</div>
           <p class="card-desc">
