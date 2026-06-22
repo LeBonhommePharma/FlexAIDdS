@@ -235,34 +235,35 @@ function CountStat({ to, suffix = "", decimals = 0, color, label }) {
 }
 
 function DrugOfDayBadge() {
-  const [drug, setDrug] = React.useState(null);
+  // Compute synchronously so the badge is present on first paint (no flash/empty slot)
+  function getTodaysDrug() {
+    if (window && window.__TODAYS_DRUG) return window.__TODAYS_DRUG;
 
-  React.useEffect(() => {
-    function computeTodays() {
-      const list = [
-        { pdb: '4xp4', drug: 'Cocaine HCl', target: 'dopamine transporter (DAT)', series: '001', href: '/drug-of-the-day/cocaine/' },
-        { pdb: '6dzv', drug: 'MDMA',        target: 'serotonin transporter (SERT)', series: '002', href: '/drug-of-the-day/mdma/' },
-        { pdb: '6wha', drug: 'DMT',         target: '5-HT\u2082A receptor', series: '003', href: '/drug-of-the-day/dmt/' },
-        { pdb: '7wc7', drug: 'Psilocin',    target: '5-HT\u2082A receptor', series: '004', href: '/drug-of-the-day/psilocin/' },
-        { pdb: '6wgt', drug: 'LSD',         target: '5-HT\u2082B receptor', series: '005', href: '/drug-of-the-day/lsd/' },
-        { pdb: '7xna', drug: 'Amphetamine', target: 'dopamine transporter (DAT)', series: '006', href: '/drug-of-the-day/amphetamine/' },
-        { pdb: '8ef5', drug: 'Fentanyl',    target: '\u03bc-opioid receptor', series: '007', href: '/drug-of-the-day/fentanyl/' },
-        { pdb: '4djh', drug: 'Salvinorin A', target: '\u03ba-opioid receptor', series: '008', href: '/drug-of-the-day/salvinorin-a/' },
-      ];
-      const idx = Math.floor(Date.now() / 86400000) % list.length;
-      return list[idx];
-    }
-    const d = (window && window.__TODAYS_DRUG) || computeTodays();
-    setDrug(d);
-  }, []);
+    const list = [
+      { pdb: '4xp4', drug: 'Cocaine HCl', target: 'dopamine transporter (DAT)', series: '001', href: '/drug-of-the-day/cocaine/' },
+      { pdb: '6dzv', drug: 'MDMA',        target: 'serotonin transporter (SERT)', series: '002', href: '/drug-of-the-day/mdma/' },
+      { pdb: '6wha', drug: 'DMT',         target: '5-HT\u2082A receptor', series: '003', href: '/drug-of-the-day/dmt/' },
+      { pdb: '7wc7', drug: 'Psilocin',    target: '5-HT\u2082A receptor', series: '004', href: '/drug-of-the-day/psilocin/' },
+      { pdb: '6wgt', drug: 'LSD',         target: '5-HT\u2082B receptor', series: '005', href: '/drug-of-the-day/lsd/' },
+      { pdb: '7xna', drug: 'Amphetamine', target: 'dopamine transporter (DAT)', series: '006', href: '/drug-of-the-day/amphetamine/' },
+      { pdb: '8ef5', drug: 'Fentanyl',    target: '\u03bc-opioid receptor', series: '007', href: '/drug-of-the-day/fentanyl/' },
+      { pdb: '4djh', drug: 'Salvinorin A', target: '\u03ba-opioid receptor', series: '008', href: '/drug-of-the-day/salvinorin-a/' },
+    ];
+    const idx = Math.floor(Date.now() / 86400000) % list.length;
+    return list[idx];
+  }
 
-  if (!drug) return null;
+  const drug = getTodaysDrug();
 
+  // Render as a compact badge tag like "C++26", "CUDA", etc. in the hero-badges row
   return (
-    <a href={drug.href || '/drug-of-the-day/'} className="drug-of-day" aria-label="Drug of the Day">
-      <span className="drug-series">#{drug.series}</span>{' '}
-      <strong>{drug.drug}</strong> · <span className="drug-target">{drug.target}</span>{' '}
-      <span className="drug-pdb">PDB {drug.pdb.toUpperCase()}</span>
+    <a
+      href={drug.href || '/drug-of-the-day/'}
+      className="badge drug"
+      title={`Drug of the Day #${drug.series} — ${drug.target} (PDB ${drug.pdb.toUpperCase()})`}
+      aria-label={`Drug of the Day: ${drug.drug}`}
+    >
+      Drug of the Day · {drug.drug} <span className="drug-series">#{drug.series}</span>
     </a>
   );
 }
