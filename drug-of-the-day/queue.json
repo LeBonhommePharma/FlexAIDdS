@@ -51,7 +51,7 @@
       "mechanism": "Partial agonist",
       "ki_nm": 107,
       "pdb": "7WC7",
-      "status": "queued",
+      "status": "published",
       "href": "/drug-of-the-day/psilocin/",
       "blurb": "Active metabolite of psilocybin. Potent 5-HT2A partial agonist with Gq-biased signalling — the pharmacological reason mushrooms outlast smoked DMT. Dephosphorylation gate: psilocybin is a prodrug; psilocin is the ligand that actually binds."
     },

@@ -1,24 +1,24 @@
 {
-  "commits": 1525,
+  "commits": 1528,
   "languageCount": 14,
   "lastUpdated": "2026-06-22",
   "languages": [
     {
       "id": "cpp",
       "name": "C++",
-      "percent": 48.2,
+      "percent": 47.9,
       "color": "#f34b7d"
     },
     {
       "id": "python",
       "name": "Python",
-      "percent": 22.0,
+      "percent": 21.8,
       "color": "#3572A5"
     },
     {
       "id": "other",
       "name": "HTML",
-      "percent": 5.0,
+      "percent": 5.6,
       "color": "#e34c26"
     },
     {
@@ -60,7 +60,7 @@
     {
       "id": "other",
       "name": "Other",
-      "percent": 11.3,
+      "percent": 11.2,
       "color": "#555555"
     }
   ],
