@@ -7,7 +7,11 @@ const { useState: useStateS, useEffect: useEffectS } = React;
 function HeroSection() {
   return (
     <section id="hero" className="hero">
-      <ParticleCanvas />
+      <div className="hero-backdrop" aria-hidden="true">
+        <div id="molstar-viewer" />
+        <div className="hero-scrim" />
+        <ParticleCanvas />
+      </div>
       <div className="hero-content">
         <p className="hero-tagline-top">Le Bonhomme Pharma · Montréal · <span className="kw">Open Science</span></p>
 
@@ -54,15 +58,16 @@ function HeroSection() {
         </div>
 
         <div className="hero-ctas">
-          <a className="btn btn-primary" onClick={() => document.getElementById("install")?.scrollIntoView({ behavior: "smooth" })}>
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <button type="button" className="btn btn-primary" onClick={() => document.getElementById("install")?.scrollIntoView({ behavior: "smooth" })}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
               <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
               <polyline points="7 10 12 15 17 10"/>
               <line x1="12" y1="15" x2="12" y2="3"/>
             </svg>
             Get Started
-          </a>
+          </button>
           <a className="btn btn-outline" href="https://github.com/LeBonhommePharma/FlexAIDdS" target="_blank" rel="noreferrer noopener">View on GitHub</a>
+          <a className="btn btn-outline" href="/entropy-driven/">Entropy-Driven</a>
         </div>
       </div>
     </section>
@@ -337,7 +342,7 @@ function RepoStatsSection() {
         <div className="stats-row">
           <div className={"stat-item" + (commits >= 1500 ? " stat-item--milestone" : "")}>
             {commits >= 1500 && <span className="stat-milestone-badge">1,500th commit</span>}
-            <div className={"stat-value" + (commits >= 1500 ? " stat-value--milestone" : "")} id="stat-commits-display">{commits}</div>
+            <div className={"stat-value" + (commits >= 1500 ? " stat-value--milestone" : "")} id="stat-commits-display">{commits.toLocaleString()}</div>
             <div className="stat-label">Commits</div>
           </div>
           <div className="stat-item"><div className="stat-value">C++26</div><div className="stat-label">Standard</div></div>
@@ -373,10 +378,11 @@ function Footer() {
             <Wordmark size={14} />
           </div>
           <div className="footer-links">
+            <a href="/">Home</a>
+            <a href="/entropy-driven/">Entropy-Driven</a>
             <a href="https://github.com/LeBonhommePharma/FlexAIDdS" target="_blank" rel="noreferrer noopener">GitHub</a>
             <a href="https://x.com/BonhommePharma" target="_blank" rel="noreferrer noopener">@BonhommePharma</a>
             <a href="https://opensource.org/licenses/Apache-2.0" target="_blank" rel="noreferrer noopener">Apache 2.0</a>
-            <a>Le Bonhomme Pharma</a>
           </div>
         </div>
         <div className="footer-bottom">
@@ -488,22 +494,22 @@ function ExploreSection() {
           Explore More
         </SectionHeader>
         <div className="teaser-grid">
-          <a href="/flexaid" className="teaser-card">
-            <h3>FlexAID∆S</h3>
-            <p>The dedicated standalone product experience featuring a live Mol* 3D molecular viewer, benchmarks, and full technical documentation.</p>
-            <span className="teaser-label">Visit the FlexAID Landing</span>
-          </a>
-
-          <a href="/periodic" className="teaser-card">
-            <h3>Pharmacological Periodic Table</h3>
-            <p>An interactive periodic table of the elements annotated with clinical drugs, mechanisms of action, therapeutic uses, and toxicological context.</p>
-            <span className="teaser-label">Open the Periodic Table</span>
-          </a>
-
-          <a href="/entropy-driven" className="teaser-card">
-            <h3>Entropy-Driven Experience</h3>
-            <p>The complete standalone deep-dive into the thermodynamic and information-theoretic foundations — Shannon entropy, statistical mechanics, and the full ∆G = ∆H − T∆S framework.</p>
+          <a href="/entropy-driven/" className="teaser-card">
+            <h3>Entropy-Driven Deep-Dive</h3>
+            <p>Shannon entropy, statistical mechanics, and the full ΔG = ΔH − TΔS framework — the thermodynamic story behind every docking score.</p>
             <span className="teaser-label">Explore Entropy-Driven</span>
+          </a>
+
+          <a href="/drug-of-the-day/" className="teaser-card">
+            <h3>Drug of the Day</h3>
+            <p>Daily psychoactive pharmacology deep-dives with mechanism, clinical context, and harm-reduction framing — no moralising, just science.</p>
+            <span className="teaser-label">Today's Drug</span>
+          </a>
+
+          <a href="/periodic/" className="teaser-card">
+            <h3>Periodic Table of Psychoactives</h3>
+            <p>Elements annotated with clinical drugs, mechanisms of action, therapeutic uses, and toxicological context.</p>
+            <span className="teaser-label">Open the Periodic Table</span>
           </a>
         </div>
       </div>

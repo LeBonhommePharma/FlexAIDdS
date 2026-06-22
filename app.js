@@ -585,7 +585,10 @@
           return;
         }
         setPublicationView(molstarViewer);
-        return applyDrugOfDayRepresentations(molstarViewer).catch(function (repErr) {
+        var applyReps = (window.MolstarDrugViewer && window.MolstarDrugViewer.applyPublicationRepresentations)
+          ? window.MolstarDrugViewer.applyPublicationRepresentations.bind(window.MolstarDrugViewer)
+          : applyDrugOfDayRepresentations;
+        return applyReps(molstarViewer).catch(function (repErr) {
           molstarLog('warn', 'representation customize failed — keeping default render', repErr);
         });
       }).then(function () {
@@ -635,11 +638,28 @@
     tryBoot();
   }
 
+  function startWhenViewerReady() {
+    if (document.getElementById('molstar-viewer')) {
+      bootMolstar();
+      return;
+    }
+    var obs = new MutationObserver(function () {
+      if (document.getElementById('molstar-viewer')) {
+        obs.disconnect();
+        bootMolstar();
+      }
+    });
+    var root = document.body || document.documentElement;
+    obs.observe(root, { childList: true, subtree: true });
+    setTimeout(function () { obs.disconnect(); }, 30000);
+  }
+
   if (document.readyState === 'complete') {
-    bootMolstar();
+    startWhenViewerReady();
   } else {
-    window.addEventListener('load', bootMolstar);
+    window.addEventListener('load', startWhenViewerReady);
   }
 
   window.__FLEXAID_MOLSTAR_BUILD__ = MOLSTAR_BUILD;
+  window.bootFlexaidMolstar = bootMolstar;
 })();
