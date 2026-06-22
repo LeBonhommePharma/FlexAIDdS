@@ -1,166 +1,222 @@
-# Cloudflare Setup for Clean Root Paths (thebonhomme.com/periodic, /flexaid, /entropy-driven)
+# thebonhomme.com — Cloudflare & DNS setup (beginner guide)
 
-## Why this is needed
-The "Deploy Site" workflow (`.github/workflows/update-site.yml`) uploads the entire `site/` folder as the GitHub Pages artifact.
+**Last updated:** 2026-06-22  
+**Read this if:** FlexAID∆S, Entropy Docking, or Mol* look broken, or you see a stub homepage.
 
-Because this is a **project site** (not a user/org `*.github.io` root site), GitHub serves everything under the repo slug prefix:
-- Deployed content lives at `https://thebonhomme.com/FlexAIDdS/periodic` etc.
-- Confirmed in raw workflow logs: "Evaluated environment url: http://thebonhomme.com/FlexAIDdS/"
+---
 
-You requested clean apex paths:
-- https://thebonhomme.com/periodic (full interactive pharmacological periodic table)
-- https://thebonhomme.com/flexaid (redirect to the archive pre-redesign page)
-- https://thebonhomme.com/entropy-driven (standalone page)
+## What Cloudflare is (30 seconds)
 
-**Solution chosen**: Put Cloudflare (free tier) in front of the custom domain and use **URL Rewrite Transform Rules** (plus one Redirect Rule). This requires **zero changes** to the existing deployment pipeline, `site/` structure, or future PRs.
+When someone types `thebonhomme.com`, their browser asks DNS “where is this site?” Cloudflare (if you use it) sits between the visitor and GitHub Pages. It can:
 
-Repo-side preparation (already completed and pushed to master):
-- Hygiene improvements to `.gitignore` (prevents future untracked campaign/monitor script merge blocks).
-- Updated the limitation note in `site/periodic/index.html` (and the standalone enhanced copy) to accurately describe the GitHub Pages + Cloudflare setup.
+- Point the domain to the right server (DNS)
+- Speed up / cache pages (CDN — orange cloud)
+- Rewrite URLs (Transform Rules) — **this is what broke your site before**
 
-## Your required actions (registrar + Cloudflare dashboard only)
+**Today your site files live on GitHub.** One repo owns the domain:  
+`LeBonhommePharma/lebonhommepharma.github.io` → **thebonhomme.com**
 
-### 1. Add the domain to Cloudflare
-1. Go to https://dash.cloudflare.com
-2. "Add a Site" → enter `thebonhomme.com`
-3. Choose the **Free** plan.
-4. Cloudflare will scan your existing DNS records.
+A second repo (`FlexAIDdS` `gh-pages`) must **not** also claim `thebonhomme.com` or `/FlexAIDdS/` shows the wrong page.
 
-### 2. Change nameservers at your domain registrar
-This step is **mandatory** for Cloudflare proxying (orange cloud) and Transform Rules to work on an apex domain.
+---
 
-- Cloudflare will display two nameservers (e.g. `ada.ns.cloudflare.com` and another).
-- Log in to the registrar where you purchased `thebonhomme.com`.
-- Replace the current nameservers with Cloudflare's two nameservers.
-- Save. Propagation usually takes 5–60 minutes.
+## Part A — Fix GitHub first (do this before Cloudflare)
 
-**Do not** use "CNAME setup" or partial setups if you want full control (Transform Rules + apex support). Full nameserver delegation is the standard and most reliable path.
+### A1. Confirm who serves thebonhomme.com
 
-### 3. Configure DNS records in Cloudflare
-After nameserver propagation, go to the DNS tab for the zone.
+1. Open https://github.com/LeBonhommePharma/lebonhommepharma.github.io/settings/pages  
+2. **Custom domain** must be: `thebonhomme.com`  
+3. **Enforce HTTPS** should be on.
 
-**Apex domain (`@` / thebonhomme.com)** — create four A records, **all Proxied** (orange cloud icon):
-- `185.199.108.153`
-- `185.199.109.153`
-- `185.199.110.153`
-- `185.199.111.153`
+### A2. Remove duplicate domain from FlexAIDdS gh-pages
 
-**www (recommended)**:
-- Type: CNAME
-- Name: `www`
-- Target: `LeBonhommePharma.github.io` (confirm the exact value shown in your GitHub repo's Pages settings)
-- Proxy status: Proxied (orange)
+1. Open https://github.com/LeBonhommePharma/FlexAIDdS/tree/gh-pages  
+2. If you see a file named **`CNAME`** containing `thebonhomme.com` → **delete it** (commit to `gh-pages`).  
+3. Future deploys: our workflow now excludes `CNAME` from `gh-pages` automatically.
 
-Delete or disable any old conflicting A/CNAME records that pointed directly elsewhere.
+**Why:** Two repos with the same `CNAME` made `/FlexAIDdS/` serve the corporate homepage instead of the product page.
 
-### 4. Confirm / set the custom domain in GitHub Pages
-1. Go to the repo Settings → Pages.
-2. Under "Custom domain", ensure it says `thebonhomme.com`.
-3. Check "Enforce HTTPS" if the option appears (it may take a few minutes after DNS is correct).
+### A3. Full site sync (already automated)
 
-The domain verification should already be complete from previous deploys.
+CI runs `scripts/sync_apex_to_usersite.sh` after each deploy. It copies the entire `site/` folder to `lebonhommepharma.github.io`. That repo is what visitors get at `/`, `/FlexAIDdS/`, `/entropy-driven/`, etc.
 
-### 5. Create the URL Rewrite Transform Rules
-Go to **Rules → Overview → Create rule → URL Rewrite Rule**.
+---
 
-**Rule 0 (required): Apex homepage + static assets**
+## Part B — Cloudflare (step by step)
 
-GitHub Pages project deploys under `/FlexAIDdS/`, but `https://thebonhomme.com/` can keep stale orphan
-files (`/index.html`, `/app.js`, etc.) that hide the Mol* hero viewer. Rewrite apex requests to the
-live `/FlexAIDdS/` tree:
+### Do you even use Cloudflare?
 
-- Rule name: `Rewrite apex homepage to /FlexAIDdS`
-- Filter:
-  ```
-  http.host eq "thebonhomme.com" and (
-    http.request.uri.path eq "/" or
-    http.request.uri.path eq "/index.html" or
-    http.request.uri.path eq "/app.js" or
-    starts_with(http.request.uri.path, "/app.js") or
-    http.request.uri.path eq "/style.css" or
-    http.request.uri.path eq "/theme.css" or
-    http.request.uri.path eq "/theme.js" or
-    starts_with(http.request.uri.path, "/assets/")
-  )
-  ```
-- Rewrite to → **Dynamic**
-- Path expression:
-  ```
-  http.request.uri.path eq "/" ? "/FlexAIDdS/index.html" : concat("/FlexAIDdS", http.request.uri.path)
-  ```
-- Query: Preserve query string (checked)
+On your Mac, open **Terminal** and run:
 
-**Rule 1: /periodic**
-- Rule name: `Rewrite /periodic to /FlexAIDdS/periodic`
-- If incoming requests match: **Custom filter expression**
-  ```
-  http.host eq "thebonhomme.com" and starts_with(http.request.uri.path, "/periodic")
-  ```
-- Then:
-  - Rewrite to → **Dynamic**
-  - Path expression: `concat("/FlexAIDdS", http.request.uri.path)`
-  - Query: Preserve query string (checked)
-- Deploy
-
-**Rule 2: /entropy-driven** (identical pattern)
-- Filter: `... and starts_with(http.request.uri.path, "/entropy-driven")`
-- Path: `concat("/FlexAIDdS", http.request.uri.path)`
-
-**Rule 3 (optional but recommended): /entropy-help**
-- Same pattern for `/entropy-help`
-
-You can also create a broader rule or use the Wildcard pattern UI if you prefer the visual editor (Request URL `https://thebonhomme.com/periodic/*` → rewrite target `/FlexAIDdS/periodic/${1}`).
-
-### 6. Create the Redirect Rule for /flexaid
-This fulfills the original requirement that `/flexaid` "be a redirect (not a page)".
-
-Go to **Rules → Create rule → Redirect Rule** (or "URL Redirect").
-
-- Rule name: `Redirect /flexaid to pre-redesign archive`
-- If incoming requests match: Custom filter expression
-  ```
-  http.host eq "thebonhomme.com" and (http.request.uri.path eq "/flexaid" or starts_with(http.request.uri.path, "/flexaid/"))
-  ```
-- Then:
-  - URL redirect
-  - Target URL: `https://thebonhomme.com/archive/pre-redesign-light-dark-2026-05-23/`
-  - Status code: `301` (Permanent redirect) — or `302` if you prefer temporary
-  - Preserve query string: (optional, not needed here)
-- Deploy
-
-The existing `site/flexaid/index.html` (meta refresh + JS redirect) will remain as a fallback but the Cloudflare rule will take precedence and is cleaner.
-
-### 7. Wait for propagation and verify
-- Use https://dnschecker.org or run `dig thebonhomme.com` + `dig www.thebonhomme.com` from your machine.
-- Full propagation can take up to an hour in rare cases, but is often much faster with Cloudflare.
-
-**Verification commands** (run these):
 ```bash
-curl -I https://thebonhomme.com/periodic
-curl -I https://thebonhomme.com/periodic?element=Pt
-curl -I https://thebonhomme.com/flexaid
-curl -I https://thebonhomme.com/entropy-driven
-curl -I https://thebonhomme.com/entropy-help
+dig thebonhomme.com +short
 ```
 
-Expected results:
-- `/periodic*` → HTTP 200, serves the full interactive table (all the FDA + clinical trial drug data you asked for).
-- `/flexaid` → 301/302 redirecting to the archive URL.
-- Browser (incognito recommended): address bar must stay at the clean path; content renders correctly (design system, JS search/filters/modals all working).
+| You see | Meaning |
+|--------|---------|
+| `185.199.108.153` (and `.109`, `.110`, `.111`) | DNS goes **straight to GitHub**. Cloudflare proxy rules are **not** active unless you changed nameservers. |
+| `104.x` or `172.x` Cloudflare IPs | Domain is **proxied through Cloudflare**. Follow all steps below. |
 
-The old paths (`/FlexAIDdS/periodic` etc.) will continue to work as a direct fallback.
+---
 
-## Post-setup tips
-- No action needed in the GitHub Actions workflow for basic functionality.
-- If you later want instant cache invalidation on deploys, you can add a Cloudflare API purge step (using a token with Zone.Cache Purge permission) — we can implement that in a follow-up PR once everything is live.
-- The site/periodic/README.md and site/flexaid/README.md already document the intended clean URLs.
-- Future work (new elements in the table, content updates, etc.) is done exactly as before: edit under `site/`, open PR from a feature branch off `origin/master`, merge → workflow runs → live at clean paths.
+### B1. Log in
 
-## References
-- This file was created as the persistent, committed reminder after the repo-side preparation (gitignore + note cleanup) was completed and pushed.
-- Original diagnosis came from the raw GitHub Actions log you pasted (the `/FlexAIDdS/` prefix).
-- Cloudflare + GitHub Pages is a very common and well-supported pattern.
+1. Go to https://dash.cloudflare.com  
+2. Sign in (or create a free account).  
+3. Click your site **`thebonhomme.com`**.  
+   - If it’s **not listed**, you’re probably on GitHub-only DNS (Part B optional). Skip to **Part C — Verify**.
 
-Once you complete steps 1–7 above, reply here with the output of the `curl -I` commands (or screenshots of the browser) and we will verify together and close the loop on making everything functional at the exact URLs you asked for.
+---
 
-Le Bonhomme Pharma · 2026
+### B2. Delete ALL old Transform Rules (critical)
+
+Old rules prepended `/FlexAIDdS` to every path. That was for an outdated deploy layout and **breaks the site now**.
+
+1. Left sidebar → **Rules** → **Overview** (or **Transform Rules**).  
+2. Open **URL Rewrite Rules** (and **Redirect Rules** if listed).  
+3. **Delete** every rule whose name or path mentions any of:
+   - `Rewrite apex homepage to /FlexAIDdS`
+   - `Rewrite /periodic to /FlexAIDdS`
+   - `Rewrite /entropy-driven`
+   - `concat("/FlexAIDdS"`
+   - Redirect `/flexaid` to `archive/pre-redesign`
+4. Click **Deploy** / confirm deletes.
+
+**You should have zero URL Rewrite rules** for this site with the current architecture.
+
+---
+
+### B3. DNS records (if Cloudflare manages your domain)
+
+1. Left sidebar → **DNS** → **Records**.  
+2. Set this up (orange cloud = Proxied, grey = DNS only):
+
+| Type | Name | Content | Proxy |
+|------|------|---------|-------|
+| A | `@` | `185.199.108.153` | Your choice* |
+| A | `@` | `185.199.109.153` | Your choice* |
+| A | `@` | `185.199.110.153` | Your choice* |
+| A | `@` | `185.199.111.153` | Your choice* |
+| CNAME | `www` | `lebonhommepharma.github.io` | Your choice* |
+
+\* **Grey cloud (DNS only)** = simplest; behaves like today, no rewrite rules needed.  
+**Orange cloud (Proxied)** = Cloudflare CDN; still fine **if you deleted all Transform Rules**.
+
+3. Delete duplicate or conflicting A/CNAME records for `@` or `www`.
+
+---
+
+### B4. Optional redirect rules (only these two)
+
+Left sidebar → **Rules** → **Redirect Rules** → **Create rule**.
+
+**Rule 1 — www → apex**
+
+| Field | Value |
+|-------|-------|
+| Name | `www to apex` |
+| Expression | `(http.host eq "www.thebonhomme.com")` |
+| Type | Dynamic |
+| URL | `concat("https://thebonhomme.com", http.request.uri.path)` |
+| Status | `301` |
+
+**Rule 2 — legacy /flexaid shortcut**
+
+| Field | Value |
+|-------|-------|
+| Name | `flexaid to FlexAIDdS` |
+| Expression | `(http.host eq "thebonhomme.com" and http.request.uri.path eq "/flexaid") or (http.host eq "thebonhomme.com" and starts_with(http.request.uri.path, "/flexaid/"))` |
+| Target URL | `https://thebonhomme.com/FlexAIDdS/` |
+| Status | `301` |
+
+Do **not** add rules that rewrite `/periodic`, `/entropy-driven`, `/drug-of-the-day`, or `/FlexAIDdS` to a different path. GitHub already has the correct folders.
+
+---
+
+### B5. Purge cache (after rule changes)
+
+1. Left sidebar → **Caching** → **Configuration**.  
+2. Click **Purge Everything** → confirm.  
+3. Wait 2–5 minutes.
+
+---
+
+## Part C — Verify (copy-paste in Terminal)
+
+```bash
+# Corporate homepage (full brand page, NOT the stub)
+curl -sL https://thebonhomme.com/ | grep -o 'Bonhomme disagrees'
+
+# FlexAID∆S product (React) — title must mention FlexAID∆S, NOT "Le Bonhomme Pharma" only
+curl -sL https://thebonhomme.com/FlexAIDdS/ | grep '<title>'
+
+# Entropy-driven landing
+curl -sI https://thebonhomme.com/entropy-driven/ | head -1
+
+# Entropy Docking alias → entropy-driven
+curl -sI https://thebonhomme.com/entropy-docking/ | head -1
+
+# Drug of the Day
+curl -sI https://thebonhomme.com/drug-of-the-day/ | head -1
+```
+
+**Pass criteria:**
+
+| URL | Expected |
+|-----|----------|
+| `/` | Contains `Bonhomme disagrees`; ~33 KB page with manifesto & products |
+| `/FlexAIDdS/` | `<title>` contains `FlexAID∆S`; file size ~2–3 KB (not 33 KB) |
+| `/entropy-driven/` | HTTP `200` |
+| `/entropy-docking/` | HTTP `200` (redirect page) |
+| `/drug-of-the-day/` | HTTP `200` |
+
+Open in browser (incognito):  
+https://thebonhomme.com/  
+https://thebonhomme.com/FlexAIDdS/  
+https://thebonhomme.com/entropy-driven/
+
+---
+
+## Part D — URL map (no Cloudflare magic required)
+
+| Clean URL | What it is |
+|-----------|------------|
+| `/` | Le Bonhomme Pharma corporate homepage |
+| `/FlexAIDdS/` | FlexAID∆S product site (React) |
+| `/entropy-driven/` | Entropy-driven docking landing |
+| `/entropy-docking/` | Alias → `/entropy-driven/` |
+| `/entropy-help/` | Entropy.help audits |
+| `/drug-of-the-day/` | Drug of the Day series |
+| `/periodic/` | Periodic table of psychoactives |
+| `/flexaid/` | Redirect → `/FlexAIDdS/` |
+
+All paths are real folders in `site/` on `lebonhommepharma.github.io`. **No path prefix `/FlexAIDdS/` rewrite is needed.**
+
+---
+
+## Part E — Mol* 3D background
+
+The Mol* viewer lives on the **legacy apex** bundle (`site/app.js` + `#molstar-viewer`). The corporate homepage at `/` intentionally does **not** include Mol* (red brand shell). For the molecular hero:
+
+- Use **`/FlexAIDdS/`** (product) or the archived flexaid landing once Mol* is wired into the React hero.
+
+---
+
+## Troubleshooting
+
+| Symptom | Fix |
+|---------|-----|
+| Stub “site update in progress” | User-site out of date → re-run deploy or `GITHUB_TOKEN=$(gh auth token) bash scripts/sync_apex_to_usersite.sh` |
+| `/FlexAIDdS/` shows corporate homepage | Delete `CNAME` on FlexAIDdS `gh-pages`; purge Cloudflare cache |
+| CI deploy fails on “stats commit” | Non-fatal now; deploy still continues. Re-run workflow if needed. |
+| Old paths like `/FlexAIDdS/periodic` | Use `/periodic/` instead |
+
+---
+
+## Nameservers (only if you moved DNS to Cloudflare)
+
+If your registrar still points to Cloudflare nameservers, keep them. If you never moved off the registrar’s default nameservers and `dig` shows `185.199.x`, you’re on **GitHub Pages DNS** — Parts B2–B5 apply only if you later add the domain to Cloudflare.
+
+---
+
+Le Bonhomme Pharma · Montréal · 2026

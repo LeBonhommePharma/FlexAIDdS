@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
-# Publish the full site/ tree to the gh-pages branch.
-# GitHub Pages project workflow artifacts only update /FlexAIDdS/ on the custom
-# domain, leaving stale orphan files at thebonhomme.com/. Serving from gh-pages
-# keeps apex (/) and /FlexAIDdS/ paths in sync.
+# Publish site/ to the gh-pages branch (backup / workflow artifact).
+# Do NOT publish CNAME here — only lebonhommepharma.github.io may claim
+# thebonhomme.com. A duplicate CNAME on gh-pages hijacks /FlexAIDdS/ paths.
 
 set -euo pipefail
 
@@ -19,7 +18,9 @@ fi
 git -C "$ROOT" worktree add "$WORKTREE" origin/gh-pages
 
 # Replace published tree with the current site/ contents (keep worktree git metadata).
-rsync -a --delete --exclude '.git' "$SITE/" "$WORKTREE/"
+rsync -a --delete --exclude '.git' --exclude 'CNAME' "$SITE/" "$WORKTREE/"
+# Ensure gh-pages never steals the custom domain from the user-site repo.
+rm -f "$WORKTREE/CNAME"
 
 cd "$WORKTREE"
 git add -A
