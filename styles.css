@@ -141,58 +141,7 @@ button { font: inherit; color: inherit; background: none; border: none; cursor: 
   pointer-events: none; opacity: 0.45;
 }
 
-/* Drug of the Day floating label (hero) */
-.drug-of-day {
-  position: absolute;
-  top: 1.25rem;
-  right: 1.5rem;
-  z-index: 30;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-family: var(--font-mono);
-  font-size: 11px;
-  color: var(--fg-muted);
-  background: rgba(10, 14, 20, 0.82);
-  border: 1px solid rgba(34, 211, 238, 0.25);
-  border-radius: 999px;
-  padding: 4px 14px 4px 10px;
-  text-decoration: none;
-  transition: all 0.15s ease;
-  backdrop-filter: blur(8px);
-}
-.drug-of-day:hover {
-  border-color: var(--teal);
-  color: var(--fg);
-  box-shadow: 0 0 0 1px rgba(34, 211, 238, 0.15);
-}
-.drug-of-day .drug-series {
-  font-size: 10px;
-  color: #FBBF24;
-  letter-spacing: 0.08em;
-}
-.drug-of-day strong {
-  color: var(--fg);
-  font-weight: 600;
-}
-.drug-target {
-  color: var(--fg-muted);
-}
-.drug-pdb {
-  color: #FBBF24;
-  border-left: 1px solid rgba(34, 211, 238, 0.2);
-  margin-left: 6px;
-  padding-left: 7px;
-  font-size: 10px;
-}
 
-@media (max-width: 640px) {
-  .drug-of-day {
-    top: 0.6rem; right: 0.9rem;
-    font-size: 10px; padding: 3px 10px 3px 8px;
-  }
-  .drug-of-day .drug-series, .drug-pdb { font-size: 9px; }
-}
 .hero-content {
   position: relative; z-index: 10; max-width: 1152px; margin: 0 auto;
   width: 100%; text-align: center;
@@ -259,6 +208,25 @@ button { font: inherit; color: inherit; background: none; border: none; cursor: 
 .badge.metal { border-color: rgba(90,200,250,0.46); background: rgba(90,200,250,0.10); color: #7DD3FC; }
 .badge.rocm  { border-color: rgba(237,28,36,0.46);  background: rgba(237,28,36,0.10);  color: #F87171; }
 .badge.avx   { border-color: rgba(34,211,238,0.46); background: rgba(34,211,238,0.10); color: #22D3EE; }
+
+/* Drug of the Day as a hero badge (same row as C++26, CUDA, etc.) */
+.badge.drug {
+  border-color: rgba(251,191,36,0.55);
+  background: rgba(251,191,36,0.12);
+  color: #FBBF24;
+  font-weight: 600;
+  text-decoration: none;
+}
+.badge.drug:hover {
+  border-color: #FBBF24;
+  background: rgba(251,191,36,0.18);
+  color: #FDE68A;
+}
+.badge.drug .drug-series {
+  font-size: 9px;
+  opacity: 0.85;
+  margin-left: 3px;
+}
 
 /* CTAs */
 .hero-ctas { display: flex; flex-wrap: wrap; gap: 12px; justify-content: center; margin-top: 2rem; }

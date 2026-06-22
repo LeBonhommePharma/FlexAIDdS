@@ -12,7 +12,6 @@ function HeroSection() {
         <div className="hero-scrim" />
         <ParticleCanvas />
       </div>
-      <DrugOfDayBadge />
       <div className="hero-content">
         <p className="hero-tagline-top">Le Bonhomme Pharma · Montréal · <span className="kw">Open Science</span></p>
 
@@ -48,6 +47,7 @@ function HeroSection() {
         </div>
 
         <div className="hero-badges">
+          <DrugOfDayBadge />
           <span className="badge">Apache 2.0</span>
           <span className="badge ga">C++26</span>
           <span className="badge terra">Python ≥ 3.9</span>
