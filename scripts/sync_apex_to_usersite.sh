@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Sync apex homepage assets to LeBonhommePharma/lebonhommepharma.github.io.
 # thebonhomme.com/ is served from the user-site repo (custom domain CNAME),
-# not from FlexAIDdS/gh-pages — keep app.js + index.html in sync after deploys.
+# not from FlexAIDdS/gh-pages — keep index.html + assets + CNAME in sync after deploys.
 
 set -euo pipefail
 
@@ -16,7 +16,7 @@ if [ -z "$TOKEN" ]; then
   exit 1
 fi
 
-APEX_FILES=(index.html app.js style.css theme.css theme.js)
+APEX_FILES=(index.html app.js style.css theme.css theme.js CNAME)
 
 rm -rf "$WORKDIR"
 git clone "https://x-access-token:${TOKEN}@github.com/${USER_REPO}.git" "$WORKDIR"
