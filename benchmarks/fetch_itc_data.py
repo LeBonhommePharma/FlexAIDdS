@@ -40,6 +40,7 @@ Usage
 
 import argparse
 import csv
+import json
 import os
 import sys
 
@@ -83,8 +84,8 @@ SOURCES = {
         "url": "https://www.ebi.ac.uk/chembl/api/data/activity?standard_type=dH&format=json",
         "local": None,
         "doi": "10.1093/nar/gkad1004",
-        "notes": "REST API. assay_type=B, standard_type in (dH,Kd,Ka). Most entries lack a "
-                 "matched crystal; join to PDBe SIFTS for pdb_id. Implemented as documented stub.",
+        "notes": "REST API (implemented: --download pulls standard_type=dH, paginated). "
+                 "Most entries lack a matched crystal; join to PDBe SIFTS for pdb_id later.",
     },
     "csar": {
         "access": "manual_download",
@@ -262,6 +263,75 @@ PARSERS = {
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Network download (free/API sources). All best-effort: on failure the caller
+# falls back to the local copy so the unifier still works offline.
+# ─────────────────────────────────────────────────────────────────────────────
+def http_get(url, timeout=30):
+    import urllib.request
+    req = urllib.request.Request(url, headers={"User-Agent": "FlexAIDdS-ITC/1.0"})
+    with urllib.request.urlopen(req, timeout=timeout) as r:
+        return r.read()
+
+
+def download_file(url, dest, timeout=120):
+    """Stream a static file (e.g. SAMPL/BioLiP tables) to disk. Returns dest or None."""
+    try:
+        data = http_get(url, timeout=timeout)
+        os.makedirs(os.path.dirname(os.path.abspath(dest)) or ".", exist_ok=True)
+        with open(dest, "wb") as f:
+            f.write(data)
+        return dest
+    except Exception as e:  # noqa: BLE001 — network errors are non-fatal
+        print(f"[download] {url} failed: {type(e).__name__}: {str(e)[:100]}", file=sys.stderr)
+        return None
+
+
+def parse_chembl_json(obj):
+    """Map a ChEMBL /activity JSON page (dict with 'activities') to unified rows.
+
+    Pure function over already-loaded JSON so it is testable without network.
+    ChEMBL standard_type 'dH'/'Ka'/'Kd'; units kJ.mol-1 / kcal.mol-1 handled.
+    PDB id is not carried by the activity endpoint -> left empty (join later).
+    """
+    acts = obj.get("activities", obj if isinstance(obj, list) else [])
+    for a in acts:
+        st = (a.get("standard_type") or "").strip()
+        if st != "dH":
+            continue
+        units = (a.get("standard_units") or "").lower()
+        val = _f(a.get("standard_value"))
+        if val is None:
+            continue
+        if "kj" in units:
+            val /= KJ_PER_KCAL
+        # kcal or unknown -> assume kcal/mol
+        yield {
+            "pdb_id": "",  # not provided by ChEMBL activity endpoint
+            "ligand_smiles": (a.get("canonical_smiles") or "").strip(),
+            "dH_kcal_mol": val, "TdS_kcal_mol": None, "dG_kcal_mol": None,
+            "T_K": 298.15,
+            "source": "chembl",
+            "doi": (a.get("document_chembl_id") or "").strip(),
+        }
+
+
+def fetch_chembl(limit=1000, timeout=30):
+    """Page the ChEMBL REST API for standard_type=dH and yield unified rows."""
+    base = "https://www.ebi.ac.uk/chembl/api/data"
+    url = f"{base}/activity?standard_type=dH&format=json&limit={min(limit, 1000)}"
+    got = 0
+    while url and got < limit:
+        page = json.loads(http_get(url, timeout=timeout).decode("utf-8", "replace"))
+        for row in parse_chembl_json(page):
+            yield row
+            got += 1
+            if got >= limit:
+                return
+        nxt = (page.get("page_meta") or {}).get("next")
+        url = ("https://www.ebi.ac.uk" + nxt) if nxt else None
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # dedup + variance
 # ─────────────────────────────────────────────────────────────────────────────
 def dedup_report(rows):
@@ -308,6 +378,12 @@ def main():
                     help="Drop rows without a PDB id (needed for docking-based calibration).")
     ap.add_argument("--require-dh", action="store_true",
                     help="Drop rows without dH (needed for alpha calibration).")
+    ap.add_argument("--download", action="store_true",
+                    help="Fetch free/API sources over the network (chembl; static files). "
+                         "Falls back to the local copy if offline.")
+    ap.add_argument("--chembl-limit", type=int, default=1000,
+                    help="Max ChEMBL dH activities to pull when --download (default 1000).")
+    ap.add_argument("--timeout", type=int, default=30, help="Network timeout (s).")
     ap.add_argument("--list-sources", action="store_true")
     args = ap.parse_args()
 
@@ -339,7 +415,16 @@ def main():
                     print("[skip] pdbbind: pass --pdbbind-index <INDEX_general_PL_data.YYYY> "
                           "(register at pdbbind.org.cn)", file=sys.stderr); continue
                 got = list(parse_pdbbind_index(args.pdbbind_index))
-            elif src in ("chembl", "csar", "freire", "sampl", "biolip", "nist"):
+            elif src == "chembl":
+                if not args.download:
+                    print("[skip] chembl: pass --download to pull the free ChEMBL API "
+                          "(standard_type=dH).", file=sys.stderr); continue
+                try:
+                    got = list(fetch_chembl(limit=args.chembl_limit, timeout=args.timeout))
+                except Exception as e:  # noqa: BLE001 — network is best-effort
+                    print(f"[skip] chembl: network fetch failed "
+                          f"({type(e).__name__}: {str(e)[:80]})", file=sys.stderr); continue
+            elif src in ("csar", "freire", "sampl", "biolip", "nist"):
                 s = SOURCES[src]
                 print(f"[manual] {src}: {s['access']} — {s['url']}\n          {s['notes']}\n"
                       f"          Transcribe/export to the unified schema and pass via --csv-files.",
