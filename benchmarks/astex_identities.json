@@ -1,0 +1,1375 @@
+{
+  "1g9v": {
+    "title": "HIGH RESOLUTION CRYSTAL STRUCTURE OF DEOXY HEMOGLOBIN COMPLEXED WITH A POTENT ALLOSTERIC EFFECTOR",
+    "ec": [
+      "_entity.pdbx_mutation"
+    ],
+    "keywords": "Hemoglobin Tetramer, T state, Allosteric, OXYGEN STORAGE-TRANSPORT COMPLEX",
+    "entities": [
+      "HEMOGLOBIN ALPHA CHAIN",
+      "HEMOGLOBIN BETA CHAIN"
+    ],
+    "has_receptor": false,
+    "has_ligand": true,
+    "files": {
+      "_ligand.sdf": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1G9V/1g9v_ligand.sdf",
+      "cif": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1G9V/1G9V.cif"
+    }
+  },
+  "1gm8": {
+    "title": "Crystal structures of penicillin acylase enzyme-substrate complexes: Structural insights into the catalytic mechanism",
+    "ec": [
+      "_entity.pdbx_mutation"
+    ],
+    "keywords": "ANTIBIOTIC RESISTANCE, HYDROLASE",
+    "entities": [
+      "PENICILLIN G ACYLASE ALPHA SUBUNIT",
+      "PENICILLIN G ACYLASE BETA SUBUNIT"
+    ],
+    "has_receptor": false,
+    "has_ligand": true,
+    "files": {
+      "_ligand.sdf": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1GM8/1gm8_ligand.sdf",
+      "cif": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1GM8/1GM8.cif"
+    }
+  },
+  "1gpk": {
+    "title": "Structure of Acetylcholinesterase Complex with (+)-Huperzine A at 2.1A Resolution",
+    "ec": [
+      "_entity.pdbx_mutation"
+    ],
+    "keywords": ";HYDROLASE, CHOLINESTERASE, HUPERZINE A, ALZHEIMER'S DISEASE",
+    "entities": [
+      "ACETYLCHOLINESTERASE"
+    ],
+    "has_receptor": false,
+    "has_ligand": true,
+    "files": {
+      "_ligand.sdf": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1GPK/1gpk_ligand.sdf",
+      "cif": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1GPK/1GPK.cif"
+    }
+  },
+  "1hnn": {
+    "title": "CRYSTAL STRUCTURE OF HUMAN PNMT COMPLEXED WITH SK&F 29661 AND ADOHCY(SAH)",
+    "ec": [
+      "_entity.pdbx_mutation"
+    ],
+    "keywords": "methyltransferase, adrenaline synthesis, S-adenosyl methionine, TRANSFERASE",
+    "entities": [
+      "PHENYLETHANOLAMINE N-METHYLTRANSFERASE"
+    ],
+    "has_receptor": false,
+    "has_ligand": true,
+    "files": {
+      "_ligand.sdf": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1HNN/1hnn_ligand.sdf",
+      "cif": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1HNN/1HNN.cif"
+    }
+  },
+  "1hp0": {
+    "title": ";CRYSTAL STRUCTURE OF AN INOSINE-ADENOSINE-GUANOSINE-PREFERRING NUCLEOSIDE HYDROLASE FROM TRYPANOSOMA VIVAX IN COMPLEX WITH THE SUBSTRATE ANALOGUE 3-DEAZA-ADENOSINE",
+    "ec": [
+      "_entity.pdbx_mutation"
+    ],
+    "keywords": "Rossmann-fold-like motif, HYDROLASE",
+    "entities": [
+      "INOSINE-ADENOSINE-GUANOSINE-PREFERRING NUCLEOSIDE HYDROLASE"
+    ],
+    "has_receptor": false,
+    "has_ligand": true,
+    "files": {
+      "_ligand.sdf": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1HP0/1hp0_ligand.sdf",
+      "cif": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1HP0/1HP0.cif"
+    }
+  },
+  "1hq2": {
+    "title": ";CRYSTAL STRUCTURE OF A TERNARY COMPLEX OF E.COLI HPPK(R82A) WITH MGAMPCPP AND 6-HYDROXYMETHYL-7,8-DIHYDROPTERIN AT 1.25 ANGSTROM RESOLUTION",
+    "ec": [
+      "_entity.pdbx_mutation"
+    ],
+    "keywords": ";PYROPHOSPHOKINASE, PYROPHOSPHORYL TRANSFER, CATALYTIC MECHANISM, FOLATE, HPPK, PTERIN, 6-HYDROXYMETHYL-7, 8-DIHYDROPTERIN, TERNARY COMPLEX, SUBSTRATE SPECIFICITY, ANTIMICROBIAL AGENT, DRUG DESIGN, TRANSFERASE",
+    "entities": [
+      "6-HYDROXYMETHYL-7,8-DIHYDROPTERIN PYROPHOSPHOKINASE"
+    ],
+    "has_receptor": false,
+    "has_ligand": true,
+    "files": {
+      "_ligand.sdf": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1HQ2/1hq2_ligand.sdf",
+      "cif": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1HQ2/1HQ2.cif"
+    }
+  },
+  "1ia1": {
+    "title": ";Candida albicans dihydrofolate reductase complexed with dihydro-nicotinamide-adenine-dinucleotide phosphate (NADPH) and 5-(PHENYLSULFANYL)-2,4-QUINAZOLINEDIAMINE (GW997)",
+    "ec": [
+      "_entity.pdbx_mutation"
+    ],
+    "keywords": "OXIDOREDUCTASE, ANTIFUNGAL TARGET, REDUCTASE",
+    "entities": [
+      "DIHYDROFOLATE REDUCTASE"
+    ],
+    "has_receptor": false,
+    "has_ligand": true,
+    "files": {
+      "_ligand.sdf": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1IA1/1ia1_ligand.sdf",
+      "cif": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1IA1/1IA1.cif"
+    }
+  },
+  "1igj": {
+    "title": "26-10 FAB:DIGOXIN COMPLEX-AFFINITY AND SPECIFICITY DUE TO SURFACE COMPLEMENTARITY",
+    "ec": [
+      "_entity.pdbx_mutation"
+    ],
+    "keywords": "IMMUNOGLOBULIN",
+    "entities": [
+      "IGG2A-KAPPA 26-10 FAB (LIGHT CHAIN)",
+      "IGG2A-KAPPA 26-10 FAB (HEAVY CHAIN)"
+    ],
+    "has_receptor": false,
+    "has_ligand": true,
+    "files": {
+      "_ligand.sdf": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1IGJ/1igj_ligand.sdf",
+      "cif": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1IGJ/1IGJ.cif"
+    }
+  },
+  "1j3j": {
+    "title": ";Double mutant (C59R+S108N) Plasmodium falciparum dihydrofolate reductase-thymidylate synthase (PfDHFR-TS) complexed with pyrimethamine, NADPH, and dUMP",
+    "ec": [
+      "_entity.pdbx_mutation"
+    ],
+    "keywords": "bifunctional, OXIDOREDUCTASE, TRANSFERASE",
+    "entities": [
+      "Bifunctional dihydrofolate reductase-thymidylate synthase",
+      "Bifunctional dihydrofolate reductase-thymidylate synthase"
+    ],
+    "has_receptor": false,
+    "has_ligand": true,
+    "files": {
+      "_ligand.sdf": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1J3J/1j3j_ligand.sdf",
+      "cif": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1J3J/1J3J.cif"
+    }
+  },
+  "1jd0": {
+    "title": "CRYSTAL STRUCTURE OF THE EXTRACELLULAR DOMAIN OF HUMAN CARBONIC ANHYDRASE XII COMPLEXED WITH ACETAZOLAMIDE",
+    "ec": [
+      "_entity.pdbx_mutation"
+    ],
+    "keywords": "Extracellular Domain, Human Carbonic Anhydrase XII, bitopic membrane protein, TYPE I MEMBRANE PROTEIN, LYASE",
+    "entities": [
+      "CARBONIC ANHYDRASE XII"
+    ],
+    "has_receptor": false,
+    "has_ligand": true,
+    "files": {
+      "_ligand.sdf": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1JD0/1jd0_ligand.sdf",
+      "cif": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1JD0/1JD0.cif"
+    }
+  },
+  "1jje": {
+    "title": "IMP-1 METALLO BETA-LACTAMASE FROM PSEUDOMONAS AERUGINOSA IN COMPLEX WITH A BIARYL SUCCINIC ACID INHIBITOR (11)",
+    "ec": [
+      "_entity.pdbx_mutation"
+    ],
+    "keywords": "METALLO-BETA-LACTAMASE INHIBITOR, SUCCINIC ACID INHIBITOR, IMP-1 METALLO-BETA-LACTAMASE, HYDROLASE",
+    "entities": [
+      "IMP-1 METALLO BETA-LACTAMASE"
+    ],
+    "has_receptor": false,
+    "has_ligand": true,
+    "files": {
+      "_ligand.sdf": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1JJE/1jje_ligand.sdf",
+      "cif": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1JJE/1JJE.cif"
+    }
+  },
+  "1k3u": {
+    "title": "CRYSTAL STRUCTURE OF WILD-TYPE TRYPTOPHAN SYNTHASE COMPLEXED WITH N-[1H-INDOL-3-YL-ACETYL]ASPARTIC ACID",
+    "ec": [
+      "_entity.pdbx_mutation"
+    ],
+    "keywords": "CARBON-OXYGEN LYASE, TRYPTOPHAN BIOSYNTHESIS, PYRIDOXAL PHOSPHATE, LYASE",
+    "entities": [
+      "Tryptophan Synthase Alpha Chain",
+      "Tryptophan Synthase Beta Chain"
+    ],
+    "has_receptor": false,
+    "has_ligand": true,
+    "files": {
+      "_ligand.sdf": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1K3U/1k3u_ligand.sdf",
+      "cif": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1K3U/1K3U.cif"
+    }
+  },
+  "1ke5": {
+    "title": "CDK2 complexed with N-methyl-4-{[(2-oxo-1,2-dihydro-3H-indol-3-ylidene)methyl]amino}benzenesulfonamide",
+    "ec": [
+      "_entity.pdbx_mutation"
+    ],
+    "keywords": "cyclin kinase, TRANSFERASE",
+    "entities": [
+      "Cell division protein kinase 2"
+    ],
+    "has_receptor": false,
+    "has_ligand": true,
+    "files": {
+      "_ligand.sdf": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1KE5/1ke5_ligand.sdf",
+      "cif": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1KE5/1KE5.cif"
+    }
+  },
+  "1kzk": {
+    "title": "JE-2147-HIV Protease Complex",
+    "ec": [
+      "_entity.pdbx_mutation"
+    ],
+    "keywords": "HIV Protease Complex, Anisotropic Displacement Parameters, Viral protein, hydrolase, HYDROLASE-HYDROLASE INHIBITOR complex",
+    "entities": [
+      "Protease"
+    ],
+    "has_receptor": false,
+    "has_ligand": true,
+    "files": {
+      "_ligand.sdf": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1KZK/1kzk_ligand.sdf",
+      "cif": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1KZK/1KZK.cif"
+    }
+  },
+  "1l2s": {
+    "title": "X-ray crystal structure of AmpC beta-lactamase from E. coli in complex with a DOCK-predicted non-covalent inhibitor",
+    "ec": [
+      "_entity.pdbx_mutation"
+    ],
+    "keywords": "beta-lactamase-inhibitor complex, cephalosporinase, HYDROLASE",
+    "entities": [
+      "beta-lactamase"
+    ],
+    "has_receptor": false,
+    "has_ligand": true,
+    "files": {
+      "_ligand.sdf": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1L2S/1l2s_ligand.sdf",
+      "cif": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1L2S/1L2S.cif"
+    }
+  },
+  "1l7f": {
+    "title": "Crystal structure of influenza virus neuraminidase in complex with BCX-1812",
+    "ec": [
+      "_entity.pdbx_mutation"
+    ],
+    "keywords": "N9 neuraminidase, hydrolase, influenza, glycosylated protein, BCX-1812",
+    "entities": [
+      "neuraminidase"
+    ],
+    "has_receptor": false,
+    "has_ligand": true,
+    "files": {
+      "_ligand.sdf": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1L7F/1l7f_ligand.sdf",
+      "cif": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1L7F/1L7F.cif"
+    }
+  },
+  "1lpz": {
+    "title": "CRYSTAL STRUCTURE OF FXA IN COMPLEX WITH 41.",
+    "ec": [
+      "_entity.pdbx_mutation"
+    ],
+    "keywords": "Protein inhibitor complex, blood coagulation factor, serine proteinase, HYDROLASE",
+    "entities": [
+      "Blood coagulation factor Xa",
+      "Blood coagulation factor Xa"
+    ],
+    "has_receptor": false,
+    "has_ligand": true,
+    "files": {
+      "_ligand.sdf": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1LPZ/1lpz_ligand.sdf",
+      "cif": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1LPZ/1LPZ.cif"
+    }
+  },
+  "1m2z": {
+    "title": ";Crystal structure of a dimer complex of the human glucocorticoid receptor ligand-binding domain bound to dexamethasone and a TIF2 coactivator motif",
+    "ec": [
+      "_entity.pdbx_mutation"
+    ],
+    "keywords": ";glucocorticoid receptor, dexamethasone, TIF2, dimer interface, Hormone binding pocket, charge clamp, coactivator, HORMONE-HORMONE ACTIVATOR COMPLEX",
+    "entities": [
+      "glucocorticoid receptor",
+      "nuclear receptor coactivator 2"
+    ],
+    "has_receptor": false,
+    "has_ligand": true,
+    "files": {
+      "_ligand.sdf": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1M2Z/1m2z_ligand.sdf",
+      "cif": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1M2Z/1M2Z.cif"
+    }
+  },
+  "1meh": {
+    "title": "Inosine Monophosphate Dehydrogenase (IMPDH) From Tritrichomonas Foetus with IMP and MOA bound",
+    "ec": [
+      "_entity.pdbx_mutation"
+    ],
+    "keywords": "alpha beta barrel, OXIDOREDUCTASE",
+    "entities": [
+      ";INOSINE-5'-MONOPHOSPHATE"
+    ],
+    "has_receptor": false,
+    "has_ligand": true,
+    "files": {
+      "_ligand.sdf": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1MEH/1meh_ligand.sdf",
+      "cif": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1MEH/1MEH.cif"
+    }
+  },
+  "1mq6": {
+    "title": ";Crystal Structure of 3-chloro-N-[4-chloro-2-[[(5-chloro-2-pyridinyl)amino]carbonyl]-6-methoxyphenyl]-4-[[(4,5-dihydro-2-oxazolyl)methylamino]methyl]-2-thiophenecarboxamide Complexed with Human Factor Xa",
+    "ec": [
+      "_entity.pdbx_mutation"
+    ],
+    "keywords": "PROTEIN INHIBITOR COMPLEX, COAGULATION COFACTOR, PROTEASE, BLOOD CLOTTING",
+    "entities": [
+      "COAGULATION FACTOR X HEAVY CHAIN",
+      "COAGULATION FACTOR X LIGHT CHAIN"
+    ],
+    "has_receptor": false,
+    "has_ligand": true,
+    "files": {
+      "_ligand.sdf": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1MQ6/1mq6_ligand.sdf",
+      "cif": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1MQ6/1MQ6.cif"
+    }
+  },
+  "1n1m": {
+    "title": "Human Dipeptidyl Peptidase IV/CD26 in complex with an inhibitor",
+    "ec": [
+      "_entity.pdbx_mutation"
+    ],
+    "keywords": "alpha/beta, beta-propeller, dimer, HYDROLASE",
+    "entities": [
+      "Dipeptidyl peptidase IV SOLUBLE FORM"
+    ],
+    "has_receptor": false,
+    "has_ligand": true,
+    "files": {
+      "_ligand.sdf": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1N1M/1n1m_ligand.sdf",
+      "cif": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1N1M/1N1M.cif"
+    }
+  },
+  "1n2j": {
+    "title": "Crystal Structure of a Pantothenate Synthetase from M. tuberculosis in complex with pantoate",
+    "ec": [
+      "_entity.pdbx_mutation"
+    ],
+    "keywords": ";Structural genomics, Rossmann fold, dimer, intersubunit beta sheet, PSI, Protein Structure Initiative, TB Structural Genomics Consortium, TBSGC, LIGASE",
+    "entities": [
+      "pantothenate synthetase"
+    ],
+    "has_receptor": false,
+    "has_ligand": true,
+    "files": {
+      "_ligand.sdf": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1N2J/1n2j_ligand.sdf",
+      "cif": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1N2J/1N2J.cif"
+    }
+  },
+  "1n2v": {
+    "title": "Crystal Structure of TGT in complex with 2-Butyl-5,6-dihydro-1H-imidazo[4,5-d]pyridazine-4,7-dione",
+    "ec": [
+      "_entity.pdbx_mutation"
+    ],
+    "keywords": "Protein-Ligand complex, transferase",
+    "entities": [
+      "Queuine tRNA-ribosyltransferase"
+    ],
+    "has_receptor": false,
+    "has_ligand": true,
+    "files": {
+      "_ligand.sdf": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1N2V/1n2v_ligand.sdf",
+      "cif": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1N2V/1N2V.cif"
+    }
+  },
+  "1n46": {
+    "title": "CRYSTAL STRUCTURE OF HUMAN TR BETA LIGAND-BINDING DOMAIN COMPLEXED WITH A POTENT SUBTYPE-SELECTIVE THYROMIMETIC",
+    "ec": [
+      "_entity.pdbx_mutation"
+    ],
+    "keywords": "Transcription",
+    "entities": [
+      "Thyroid hormone receptor Beta-1"
+    ],
+    "has_receptor": false,
+    "has_ligand": true,
+    "files": {
+      "_ligand.sdf": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1N46/1n46_ligand.sdf",
+      "cif": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1N46/1N46.cif"
+    }
+  },
+  "1nav": {
+    "title": "Thyroid Receptor Alpha in complex with an agonist selective for Thyroid Receptor Beta1",
+    "ec": [
+      "_entity.pdbx_mutation"
+    ],
+    "keywords": "Nuclear receptor, Thyroid receptor, ligand, complex, MEMBRANE PROTEIN",
+    "entities": [
+      "hormone receptor alpha 1, THRA1"
+    ],
+    "has_receptor": false,
+    "has_ligand": true,
+    "files": {
+      "_ligand.sdf": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1NAV/1nav_ligand.sdf",
+      "cif": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1NAV/1NAV.cif"
+    }
+  },
+  "1of1": {
+    "title": "KINETICS AND CRYSTAL STRUCTURE OF THE HERPES SIMPLEX VIRUS TYPE 1 THYMIDINE KINASE INTERACTING WITH (SOUTH)-METHANOCARBA-THYMIDINE",
+    "ec": [
+      "_entity.pdbx_mutation"
+    ],
+    "keywords": "TRANSFERASE, THYMIDINE KINASE, ANTIVIRAL DRUG, ENZYME-PRODRUG GENE, KINASE, DNA SYNTHESIS, ATP-BINDING",
+    "entities": [
+      "THYMIDINE KINASE"
+    ],
+    "has_receptor": false,
+    "has_ligand": true,
+    "files": {
+      "_ligand.sdf": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1OF1/1of1_ligand.sdf",
+      "cif": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1OF1/1OF1.cif"
+    }
+  },
+  "1of6": {
+    "title": ";crystal structure of the tyrosine-regulated 3-deoxy-d-arabino-heptulosonate-7-phosphate synthase from saccharomyces cerevisiae complexed with tyrosine and manganese",
+    "ec": [
+      "_entity.pdbx_mutation"
+    ],
+    "keywords": "BETA-ALPHA-BARREL, LYASE, SYNTHASE, ALDOLASE, SYNTHETASE",
+    "entities": [
+      "PHOSPHO-2-DEHYDRO-3-DEOXYHEPTONATE ALDOLASE, TYROSINE-INHIBITED"
+    ],
+    "has_receptor": false,
+    "has_ligand": true,
+    "files": {
+      "_ligand.sdf": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1OF6/1of6_ligand.sdf",
+      "cif": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1OF6/1OF6.cif"
+    }
+  },
+  "1opk": {
+    "title": "Structural basis for the auto-inhibition of c-Abl tyrosine kinase",
+    "ec": [
+      "_entity.pdbx_mutation"
+    ],
+    "keywords": "TRANSFERASE",
+    "entities": [
+      "Proto-oncogene tyrosine-protein kinase ABL1"
+    ],
+    "has_receptor": false,
+    "has_ligand": true,
+    "files": {
+      "_ligand.sdf": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1OPK/1opk_ligand.sdf",
+      "cif": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1OPK/1OPK.cif"
+    }
+  },
+  "1oq5": {
+    "title": "CARBONIC ANHYDRASE II IN COMPLEX WITH NANOMOLAR INHIBITOR",
+    "ec": [
+      "_entity.pdbx_mutation"
+    ],
+    "keywords": "10-stranded, twisted beta-sheet, METAL BINDING PROTEIN",
+    "entities": [
+      "Carbonic anhydrase II"
+    ],
+    "has_receptor": false,
+    "has_ligand": true,
+    "files": {
+      "_ligand.sdf": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1OQ5/1oq5_ligand.sdf",
+      "cif": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1OQ5/1OQ5.cif"
+    }
+  },
+  "1owe": {
+    "title": "Substituted 2-Naphthamidine inhibitors of urokinase",
+    "ec": [
+      "_entity.pdbx_mutation"
+    ],
+    "keywords": "Plasminogen activation, Hydrolase, Serine protease, Glycoprotein, Kringle, EGF-like domain",
+    "entities": [
+      "Urokinase-type plasminogen activator"
+    ],
+    "has_receptor": false,
+    "has_ligand": true,
+    "files": {
+      "_ligand.sdf": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1OWE/1owe_ligand.sdf",
+      "cif": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1OWE/1OWE.cif"
+    }
+  },
+  "1p2y": {
+    "title": "CRYSTAL STRUCTURE OF CYTOCHROME P450CAM IN COMPLEX WITH (S)-(-)-NICOTINE",
+    "ec": [
+      "_entity.pdbx_mutation"
+    ],
+    "keywords": "OXIDOREDUCTASE, MONOOXYGENASE, HEME, NICOTINE",
+    "entities": [
+      "Cytochrome P450-cam"
+    ],
+    "has_receptor": false,
+    "has_ligand": true,
+    "files": {
+      "_ligand.sdf": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1P2Y/1p2y_ligand.sdf",
+      "cif": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1P2Y/1P2Y.cif"
+    }
+  },
+  "1p62": {
+    "title": "Structure of human dCK complexed with gemcitabine and ADP-MG",
+    "ec": [
+      "_entity.pdbx_mutation"
+    ],
+    "keywords": "nucleoside kinase, P-loop, gemcitabine, TRANSFERASE",
+    "entities": [
+      "Deoxycytidine kinase"
+    ],
+    "has_receptor": false,
+    "has_ligand": true,
+    "files": {
+      "_ligand.sdf": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1P62/1p62_ligand.sdf",
+      "cif": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1P62/1P62.cif"
+    }
+  },
+  "1pmn": {
+    "title": "Crystal structure of JNK3 in complex with an imidazole-pyrimidine inhibitor",
+    "ec": [
+      "_entity.pdbx_mutation"
+    ],
+    "keywords": "MAP kinase, apoptosis, inhibition, transferase",
+    "entities": [
+      "Mitogen-activated protein kinase 10"
+    ],
+    "has_receptor": false,
+    "has_ligand": true,
+    "files": {
+      "_ligand.sdf": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1PMN/1pmn_ligand.sdf",
+      "cif": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1PMN/1PMN.cif"
+    }
+  },
+  "1q1g": {
+    "title": ";Crystal structure of Plasmodium falciparum PNP with 5'-methylthio-immucillin-H",
+    "ec": [
+      "_entity.pdbx_mutation"
+    ],
+    "keywords": "TRANSITION STATE COMPLEX, transferase",
+    "entities": [
+      "Uridine phosphorylase putative"
+    ],
+    "has_receptor": false,
+    "has_ligand": true,
+    "files": {
+      "_ligand.sdf": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1Q1G/1q1g_ligand.sdf",
+      "cif": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1Q1G/1Q1G.cif"
+    }
+  },
+  "1q41": {
+    "title": ";GSK-3 Beta complexed with Indirubin-3'-monoxime",
+    "ec": [
+      "_entity.pdbx_mutation"
+    ],
+    "keywords": ";KINASE, INSULIN PATHWAY, Indirubin-3'-monoxime, TRANSFERASE",
+    "entities": [
+      "GLYCOGEN SYNTHASE KINASE-3 BETA"
+    ],
+    "has_receptor": false,
+    "has_ligand": true,
+    "files": {
+      "_ligand.sdf": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1Q41/1q41_ligand.sdf",
+      "cif": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1Q41/1Q41.cif"
+    }
+  },
+  "1q4g": {
+    "title": "2.0 Angstrom Crystal Structure of Ovine Prostaglandin H2 Synthase-1, in complex with alpha-methyl-4-biphenylacetic acid",
+    "ec": [
+      "_entity.pdbx_mutation"
+    ],
+    "keywords": ";cyclooxygenase, non-steroidal anti-inflammatory drug, peroxidase, prostaglandin synthase, EGF-like domain, membrane binding domain, OXIDOREDUCTASE",
+    "entities": [
+      "Prostaglandin G/H synthase 1"
+    ],
+    "has_receptor": false,
+    "has_ligand": true,
+    "files": {
+      "_ligand.sdf": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1Q4G/1q4g_ligand.sdf",
+      "cif": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1Q4G/1Q4G.cif"
+    }
+  },
+  "1r1h": {
+    "title": "STRUCTURAL ANALYSIS OF NEPRILYSIN WITH VARIOUS SPECIFIC AND POTENT INHIBITORS",
+    "ec": [
+      "_entity.pdbx_mutation"
+    ],
+    "keywords": "ENKEPHALINASE, glycoprotein, metalloprotease, hydrolase",
+    "entities": [
+      "Neprilysin"
+    ],
+    "has_receptor": false,
+    "has_ligand": true,
+    "files": {
+      "_ligand.sdf": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1R1H/1r1h_ligand.sdf",
+      "cif": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1R1H/1R1H.cif"
+    }
+  },
+  "1r55": {
+    "title": "Crystal structure of the catalytic domain of human ADAM 33",
+    "ec": [
+      "_entity.pdbx_mutation"
+    ],
+    "keywords": "metalloprotease, inhibitor, asthma, adam, HYDROLASE",
+    "entities": [
+      "ADAM 33"
+    ],
+    "has_receptor": false,
+    "has_ligand": true,
+    "files": {
+      "_ligand.sdf": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1R55/1r55_ligand.sdf",
+      "cif": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1R55/1R55.cif"
+    }
+  },
+  "1r58": {
+    "title": "Crystal Structure of MetAP2 complexed with A357300",
+    "ec": [
+      "_entity.pdbx_mutation"
+    ],
+    "keywords": "HYDROLASE",
+    "entities": [
+      "Methionine aminopeptidase 2"
+    ],
+    "has_receptor": false,
+    "has_ligand": true,
+    "files": {
+      "_ligand.sdf": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1R58/1r58_ligand.sdf",
+      "cif": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1R58/1R58.cif"
+    }
+  },
+  "1r9o": {
+    "title": "Crystal Structure of P4502C9 with Flurbiprofen bound",
+    "ec": [
+      "_entity.pdbx_mutation"
+    ],
+    "keywords": "P450, monooxygenase, drug metabolizing enzyme, oxidoreductase, heme",
+    "entities": [
+      "Cytochrome P450 2C9"
+    ],
+    "has_receptor": false,
+    "has_ligand": true,
+    "files": {
+      "_ligand.sdf": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1R9O/1r9o_ligand.sdf",
+      "cif": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1R9O/1R9O.cif"
+    }
+  },
+  "1s19": {
+    "title": "Crystal structure of VDR ligand binding domain complexed to calcipotriol.",
+    "ec": [
+      "_entity.pdbx_mutation"
+    ],
+    "keywords": "NUCLEAR RECEPTOR, TRANSCRIPTION REGULATION, ALPHA-HELICAL SANDWICH, GENE REGULATION",
+    "entities": [
+      "Vitamin D3 receptor"
+    ],
+    "has_receptor": false,
+    "has_ligand": true,
+    "files": {
+      "_ligand.sdf": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1S19/1s19_ligand.sdf",
+      "cif": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1S19/1S19.cif"
+    }
+  },
+  "1s3v": {
+    "title": ";Structure Determination of Tetrahydroquinazoline Antifolates in Complex with Human and Pneumocystis carinii Dihydrofolate Reductase: Correlations of Enzyme Selectivity and Stereochemistry",
+    "ec": [
+      "_entity.pdbx_mutation"
+    ],
+    "keywords": "dihydrofolate reductase, inhibitor, stereochemistry, OXIDOREDUCTASE",
+    "entities": [
+      "Dihydrofolate reductase"
+    ],
+    "has_receptor": false,
+    "has_ligand": true,
+    "files": {
+      "_ligand.sdf": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1S3V/1s3v_ligand.sdf",
+      "cif": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1S3V/1S3V.cif"
+    }
+  },
+  "1sg0": {
+    "title": "Crystal structure analysis of QR2 in complex with resveratrol",
+    "ec": [
+      "_entity.pdbx_mutation"
+    ],
+    "keywords": "quinone reductase 2, resveratrol, OXIDOREDUCTASE",
+    "entities": [
+      "NRH dehydrogenase [quinone] 2"
+    ],
+    "has_receptor": false,
+    "has_ligand": true,
+    "files": {
+      "_ligand.sdf": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1SG0/1sg0_ligand.sdf",
+      "cif": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1SG0/1SG0.cif"
+    }
+  },
+  "1sj0": {
+    "title": "Human Estrogen Receptor Alpha Ligand-binding Domain in Complex with the Antagonist Ligand 4-D",
+    "ec": [
+      "_entity.pdbx_mutation"
+    ],
+    "keywords": "NUCLEAR RECEPTOR, TRANSCRIPTION FACTOR, ER-ALPHA, ANTAGONIST, HORMONE-GROWTH FACTOR RECEPTOR COMPLEX",
+    "entities": [
+      "Estrogen receptor"
+    ],
+    "has_receptor": false,
+    "has_ligand": true,
+    "files": {
+      "_ligand.sdf": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1SJ0/1sj0_ligand.sdf",
+      "cif": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1SJ0/1SJ0.cif"
+    }
+  },
+  "1sq5": {
+    "title": "Crystal Structure of E. coli Pantothenate kinase",
+    "ec": [
+      "_entity.pdbx_mutation"
+    ],
+    "keywords": "P-loop, TRANSFERASE",
+    "entities": [
+      "Pantothenate kinase"
+    ],
+    "has_receptor": false,
+    "has_ligand": true,
+    "files": {
+      "_ligand.sdf": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1SQ5/1sq5_ligand.sdf",
+      "cif": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1SQ5/1SQ5.cif"
+    }
+  },
+  "1t40": {
+    "title": "Crystal structure of human aldose reductase complexed with NADP and IDD552 at ph 5",
+    "ec": [
+      "_entity.pdbx_mutation"
+    ],
+    "keywords": "aldose reductase, ternary complex, inhibitor binding, OXIDOREDUCTASE",
+    "entities": [
+      "Aldose reductase"
+    ],
+    "has_receptor": false,
+    "has_ligand": true,
+    "files": {
+      "_ligand.sdf": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1T40/1t40_ligand.sdf",
+      "cif": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1T40/1T40.cif"
+    }
+  },
+  "1t46": {
+    "title": "STRUCTURAL BASIS FOR THE AUTOINHIBITION AND STI-571 INHIBITION OF C-KIT TYROSINE KINASE",
+    "ec": [
+      "_entity.pdbx_mutation"
+    ],
+    "keywords": "KINASE, INHIBITOR, STI-571, Gleevec, TRANSFERASE ACTIVATOR",
+    "entities": [
+      "Homo sapiens v-kit Hardy-Zuckerman 4 feline sarcoma viral oncogene homolog"
+    ],
+    "has_receptor": false,
+    "has_ligand": true,
+    "files": {
+      "_ligand.sdf": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1T46/1t46_ligand.sdf",
+      "cif": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1T46/1T46.cif"
+    }
+  },
+  "1t9b": {
+    "title": "Crystal structure of yeast acetohydroxyacid synthase in complex with a sulfonylurea herbicide, chlorsulfuron",
+    "ec": [
+      "_entity.pdbx_mutation"
+    ],
+    "keywords": ";acetohydroxyacid synthase, acetolactate synthase, herbicide, sulfonylurea, thiamin diphosphate, FAD, inhibitor, chlorsulfuron, TRANSFERASE",
+    "entities": [
+      "Acetolactate synthase, mitochondrial"
+    ],
+    "has_receptor": false,
+    "has_ligand": true,
+    "files": {
+      "_ligand.sdf": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1T9B/1t9b_ligand.sdf",
+      "cif": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1T9B/1T9B.cif"
+    }
+  },
+  "1tt1": {
+    "title": "CRYSTAL STRUCTURE OF THE GLUR6 LIGAND BINDING CORE IN COMPLEX WITH KAINATE 1.93 A RESOLUTION",
+    "ec": [
+      "_entity.pdbx_mutation"
+    ],
+    "keywords": "MEMBRANE PROTEIN",
+    "entities": [
+      "Glutamate receptor, ionotropic kainate 2"
+    ],
+    "has_receptor": false,
+    "has_ligand": true,
+    "files": {
+      "_ligand.sdf": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1TT1/1tt1_ligand.sdf",
+      "cif": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1TT1/1TT1.cif"
+    }
+  },
+  "1tw6": {
+    "title": "Structure of an ML-IAP/XIAP chimera bound to a 9mer peptide derived from Smac",
+    "ec": [
+      "_entity.pdbx_mutation"
+    ],
+    "keywords": "ZINC BINDING, PEPTIDE COMPLEX, APOPTOSIS INHIBITION, INHIBITOR-APOPTOSIS COMPLEX",
+    "entities": [
+      "Baculoviral IAP repeat-containing protein 7",
+      "Diablo homolog, mitochondrial"
+    ],
+    "has_receptor": false,
+    "has_ligand": true,
+    "files": {
+      "_ligand.sdf": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1TW6/1tw6_ligand.sdf",
+      "cif": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1TW6/1TW6.cif"
+    }
+  },
+  "1tz8": {
+    "title": "The monoclinic crystal structure of transthyretin in complex with diethylstilbestrol",
+    "ec": [
+      "_entity.pdbx_mutation"
+    ],
+    "keywords": "Amyloid, Transthyretin, Diethylstilbestrol, Protein stabilization, Transport Protein",
+    "entities": [
+      "Transthyretin"
+    ],
+    "has_receptor": false,
+    "has_ligand": true,
+    "files": {
+      "_ligand.sdf": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1TZ8/1tz8_ligand.sdf",
+      "cif": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1TZ8/1TZ8.cif"
+    }
+  },
+  "1u1c": {
+    "title": "Structure of E. coli uridine phosphorylase complexed to 5-benzylacyclouridine (BAU)",
+    "ec": [
+      "_entity.pdbx_mutation"
+    ],
+    "keywords": "PYRIMIDINE NUCLEOSIDE PHOSPHORYLASE; URIDINE SALVAGE; benzylacyclouridine; BAU, TRANSFERASE",
+    "entities": [
+      "Uridine phosphorylase"
+    ],
+    "has_receptor": false,
+    "has_ligand": true,
+    "files": {
+      "_ligand.sdf": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1U1C/1u1c_ligand.sdf",
+      "cif": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1U1C/1U1C.cif"
+    }
+  },
+  "1u4d": {
+    "title": "Structure of the ACK1 Kinase Domain bound to Debromohymenialdisine",
+    "ec": [
+      "_entity.pdbx_mutation"
+    ],
+    "keywords": "Tyrosine Kinase, TRANSFERASE",
+    "entities": [
+      "Activated CDC42 kinase 1"
+    ],
+    "has_receptor": false,
+    "has_ligand": true,
+    "files": {
+      "_ligand.sdf": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1U4D/1u4d_ligand.sdf",
+      "cif": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1U4D/1U4D.cif"
+    }
+  },
+  "1uml": {
+    "title": "Crystal structure of adenosine deaminase complexed with a potent inhibitor FR233624",
+    "ec": [
+      "_entity.pdbx_mutation"
+    ],
+    "keywords": "beta barrel, zinc, HYDROLASE",
+    "entities": [
+      "Adenosine deaminase"
+    ],
+    "has_receptor": false,
+    "has_ligand": true,
+    "files": {
+      "_ligand.sdf": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1UML/1uml_ligand.sdf",
+      "cif": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1UML/1UML.cif"
+    }
+  },
+  "1unl": {
+    "title": "Structural mechanism for the inhibition of CD5-p25 from the roscovitine, aloisine and indirubin.",
+    "ec": [
+      "_entity.pdbx_mutation"
+    ],
+    "keywords": "CYCLIN DEPENDENT KINASE, INHIBITOR, ATP-ANALOGUE, NEURODEGENERATIVE DISEASES",
+    "entities": [
+      "CYCLIN-DEPENDENT KINASE 5",
+      "CYCLIN-DEPENDENT KINASE 5 ACTIVATOR 1"
+    ],
+    "has_receptor": false,
+    "has_ligand": true,
+    "files": {
+      "_ligand.sdf": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1UNL/1unl_ligand.sdf",
+      "cif": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1UNL/1UNL.cif"
+    }
+  },
+  "1uou": {
+    "title": "Crystal structure of human thymidine phosphorylase in complex with a small molecule inhibitor",
+    "ec": [
+      "_entity.pdbx_mutation"
+    ],
+    "keywords": "PHOSPHORYLASE, TRANSFERASE, GLYCOSYLTRANSFERASE, CHEMOTAXIS, ANGIOGENESIS",
+    "entities": [
+      "THYMIDINE PHOSPHORYLASE"
+    ],
+    "has_receptor": false,
+    "has_ligand": true,
+    "files": {
+      "_ligand.sdf": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1UOU/1uou_ligand.sdf",
+      "cif": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1UOU/1UOU.cif"
+    }
+  },
+  "1v0p": {
+    "title": "Structure of P. falciparum PfPK5-Purvalanol B ligand complex",
+    "ec": [
+      "_entity.pdbx_mutation"
+    ],
+    "keywords": "TRANSFERASE, SERINE/THREONINE-PROTEIN KINASE, ATP-BINDING, PHOSPHORYLATION, CDK",
+    "entities": [
+      "CELL DIVISION CONTROL PROTEIN 2 HOMOLOG"
+    ],
+    "has_receptor": false,
+    "has_ligand": true,
+    "files": {
+      "_ligand.sdf": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1V0P/1v0p_ligand.sdf",
+      "cif": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1V0P/1V0P.cif"
+    }
+  },
+  "1v48": {
+    "title": "Calf spleen purine nucleoside phosphorylase (PNP) binary complex with 9-(5,5-difluoro-5-phosphonopenthyl)guanine",
+    "ec": [
+      "_entity.pdbx_mutation"
+    ],
+    "keywords": "purine nucleoside phosphorylase, binary complex, multisubstrate analogue, inhibitor, TRANSFERASE",
+    "entities": [
+      "Purine nucleoside phosphorylase"
+    ],
+    "has_receptor": false,
+    "has_ligand": true,
+    "files": {
+      "_ligand.sdf": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1V48/1v48_ligand.sdf",
+      "cif": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1V48/1V48.cif"
+    }
+  },
+  "1v4s": {
+    "title": "Crystal structure of human glucokinase",
+    "ec": [
+      "_entity.pdbx_mutation"
+    ],
+    "keywords": "hexokinase IV, allosteric enzyme, diabetes, TRANSFERASE",
+    "entities": [
+      "glucokinase isoform 2"
+    ],
+    "has_receptor": false,
+    "has_ligand": true,
+    "files": {
+      "_ligand.sdf": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1V4S/1v4s_ligand.sdf",
+      "cif": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1V4S/1V4S.cif"
+    }
+  },
+  "1vcj": {
+    "title": "Influenza B virus neuraminidase complexed with 1-(4-Carboxy-2-(3-pentylamino)phenyl)-5-aminomethyl-5-hydroxymethyl-pyrrolidin-2-one",
+    "ec": [
+      "_entity.pdbx_mutation"
+    ],
+    "keywords": "neuraminidase, benzoic acid inhibitors, small molecule inhibitor, protein-inhibitor complex, HYDROLASE",
+    "entities": [
+      "NEURAMINIDASE"
+    ],
+    "has_receptor": false,
+    "has_ligand": true,
+    "files": {
+      "_ligand.sdf": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1VCJ/1vcj_ligand.sdf",
+      "cif": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1VCJ/1VCJ.cif"
+    }
+  },
+  "1w1p": {
+    "title": "Crystal structure of S. marcescens chitinase B in complex with the cyclic dipeptide inhibitor cyclo-(Gly-L-Pro) at 2.1 A resolution",
+    "ec": [
+      "_entity.pdbx_mutation"
+    ],
+    "keywords": "HYDROLASE, GLYCOSIDE HYDROLASE, CHITINASE, STRUCTURE-BASED INHIBITOR DESIGN, CYCLIC DIPEPTIDE",
+    "entities": [
+      "CHITINASE B"
+    ],
+    "has_receptor": false,
+    "has_ligand": true,
+    "files": {
+      "_ligand.sdf": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1W1P/1w1p_ligand.sdf",
+      "cif": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1W1P/1W1P.cif"
+    }
+  },
+  "1w2g": {
+    "title": "Crystal Structure Of Mycobacterium Tuberculosis Thymidylate Kinase Complexed With Deoxythymidine (dT) (2.1 A Resolution)",
+    "ec": [
+      "_entity.pdbx_mutation"
+    ],
+    "keywords": "MYCOBACTERIUM TUBERCULOSIS, THYMIDYLATE KINASE, AZT, INHIBITION MECHANISM, TRANSFERASE",
+    "entities": [
+      "THYMIDYLATE KINASE TMK"
+    ],
+    "has_receptor": false,
+    "has_ligand": true,
+    "files": {
+      "_ligand.sdf": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1W2G/1w2g_ligand.sdf",
+      "cif": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1W2G/1W2G.cif"
+    }
+  },
+  "1x8x": {
+    "title": "Tyrosyl t-RNA Synthetase from E.coli Complexed with Tyrosine",
+    "ec": [
+      "_entity.pdbx_mutation"
+    ],
+    "keywords": "LIGASE, RIKEN Structural Genomics/Proteomics Initiative, RSGI, Structural Genomics",
+    "entities": [
+      "Tyrosyl-tRNA synthetase"
+    ],
+    "has_receptor": false,
+    "has_ligand": true,
+    "files": {
+      "_ligand.sdf": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1X8X/1x8x_ligand.sdf",
+      "cif": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1X8X/1X8X.cif"
+    }
+  },
+  "1xm6": {
+    "title": "Catalytic Domain Of Human Phosphodiesterase 4B In Complex With (R)-Mesopram",
+    "ec": [
+      "_entity.pdbx_mutation"
+    ],
+    "keywords": "PDE4B, (R)-Mesopram, HYDROLASE",
+    "entities": [
+      ";cAMP-specific"
+    ],
+    "has_receptor": false,
+    "has_ligand": true,
+    "files": {
+      "_ligand.sdf": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1XM6/1xm6_ligand.sdf",
+      "cif": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1XM6/1XM6.cif"
+    }
+  },
+  "1xoz": {
+    "title": "Catalytic Domain Of Human Phosphodiesterase 5A In Complex With Tadalafil",
+    "ec": [
+      "_entity.pdbx_mutation"
+    ],
+    "keywords": "Phosphodiesterase, PDE, PDE5A, Tadalafil, Cialis, HYDROLASE",
+    "entities": [
+      ";cGMP-specific"
+    ],
+    "has_receptor": false,
+    "has_ligand": true,
+    "files": {
+      "_ligand.sdf": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1XOZ/1xoz_ligand.sdf",
+      "cif": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1XOZ/1XOZ.cif"
+    }
+  },
+  "1y6b": {
+    "title": "Crystal structure of VEGFR2 in complex with a 2-anilino-5-aryl-oxazole inhibitor",
+    "ec": [
+      "_entity.pdbx_mutation"
+    ],
+    "keywords": "TRANSFERASE",
+    "entities": [
+      "Vascular endothelial growth factor receptor 2"
+    ],
+    "has_receptor": false,
+    "has_ligand": true,
+    "files": {
+      "_ligand.sdf": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1Y6B/1y6b_ligand.sdf",
+      "cif": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1Y6B/1Y6B.cif"
+    }
+  },
+  "1y6r": {
+    "title": "Crystal structure of MTA/AdoHcy nucleosidase complexed with MT-ImmA.",
+    "ec": [
+      "_entity.pdbx_mutation"
+    ],
+    "keywords": "mixed alpha/beta, HYDROLASE",
+    "entities": [
+      "MTA/SAH nucleosidase"
+    ],
+    "has_receptor": false,
+    "has_ligand": true,
+    "files": {
+      "_ligand.sdf": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1Y6R/1y6r_ligand.sdf",
+      "cif": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1Y6R/1Y6R.cif"
+    }
+  },
+  "1ygc": {
+    "title": "Short Factor VIIa with a small molecule inhibitor",
+    "ec": [
+      "_entity.pdbx_mutation"
+    ],
+    "keywords": "inverted oxy-anion hole, HYDROLASE",
+    "entities": [
+      "Coagulation factor VII",
+      "Coagulation factor VII"
+    ],
+    "has_receptor": false,
+    "has_ligand": true,
+    "files": {
+      "_ligand.sdf": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1YGC/1ygc_ligand.sdf",
+      "cif": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1YGC/1YGC.cif"
+    }
+  },
+  "1yqy": {
+    "title": "Structure of B. Anthrax Lethal factor in complex with a hydroxamate inhibitor",
+    "ec": [
+      "_entity.pdbx_mutation"
+    ],
+    "keywords": "Toxin, Lethal Factor, inhibitors, hydroxamate, HYDROLASE",
+    "entities": [
+      "Lethal factor"
+    ],
+    "has_receptor": false,
+    "has_ligand": true,
+    "files": {
+      "_ligand.sdf": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1YQY/1yqy_ligand.sdf",
+      "cif": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1YQY/1YQY.cif"
+    }
+  },
+  "1yv3": {
+    "title": "The structural basis of blebbistatin inhibition and specificity for myosin II",
+    "ec": [
+      "_entity.pdbx_mutation"
+    ],
+    "keywords": "myosin, blebbistatin, myosin II inhibitor, myosin-inhibitor complex, metastable state, CONTRACTILE PROTEIN",
+    "entities": [
+      "Myosin II heavy chain"
+    ],
+    "has_receptor": false,
+    "has_ligand": true,
+    "files": {
+      "_ligand.sdf": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1YV3/1yv3_ligand.sdf",
+      "cif": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1YV3/1YV3.cif"
+    }
+  },
+  "1yvf": {
+    "title": "Hepatitis C virus NS5B RNA-dependent RNA polymerase complex with inhibitor PHA-00729145",
+    "ec": [
+      "_entity.pdbx_mutation"
+    ],
+    "keywords": "NS5B, polymerase, HCV, fingers, palm, thumb, TRANSFERASE",
+    "entities": [
+      "HCV NS5B POLYMERASE"
+    ],
+    "has_receptor": false,
+    "has_ligand": true,
+    "files": {
+      "_ligand.sdf": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1YVF/1yvf_ligand.sdf",
+      "cif": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1YVF/1YVF.cif"
+    }
+  },
+  "1ywr": {
+    "title": "Crystal Structure Analysis of inactive P38 kinase domain in complex with a Monocyclic Pyrazolone Inhibitor",
+    "ec": [
+      "_entity.pdbx_mutation"
+    ],
+    "keywords": "P38 kinase, moncyclic pyrazolone, TRANSFERASE",
+    "entities": [
+      "Mitogen-activated protein kinase 14"
+    ],
+    "has_receptor": false,
+    "has_ligand": true,
+    "files": {
+      "_ligand.sdf": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1YWR/1ywr_ligand.sdf",
+      "cif": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1YWR/1YWR.cif"
+    }
+  },
+  "1z95": {
+    "title": "Crystal Structure of the Androgen Receptor Ligand-binding Domain W741L Mutant Complex with R-bicalutamide",
+    "ec": [
+      "_entity.pdbx_mutation"
+    ],
+    "keywords": "steroid hormones; receptors; cellular proliferation; cellular differentiation, TRANSCRIPTION REGULATION, RECEPTOR",
+    "entities": [
+      "Androgen Receptor"
+    ],
+    "has_receptor": false,
+    "has_ligand": true,
+    "files": {
+      "_ligand.sdf": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1Z95/1z95_ligand.sdf",
+      "cif": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1Z95/1Z95.cif"
+    }
+  },
+  "2bm2": {
+    "title": "human beta-II tryptase in complex with 4-(3-Aminomethyl-phenyl)- piperidin-1-yl-(5-phenethyl- pyridin-3-yl)-methanone",
+    "ec": [
+      "_entity.pdbx_mutation"
+    ],
+    "keywords": "SERINE PROTEASE INHIBITOR, GLYCOPROTEIN, HYDROLASE, POLYMORPHISM, PROTEASE, SERINE PROTEASE",
+    "entities": [
+      "HUMAN BETA2 TRYPTASE"
+    ],
+    "has_receptor": false,
+    "has_ligand": true,
+    "files": {
+      "_ligand.sdf": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/2BM2/2bm2_ligand.sdf",
+      "cif": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/2BM2/2BM2.cif"
+    }
+  },
+  "2br1": {
+    "title": "Structure-based Design of Novel Chk1 Inhibitors: Insights into Hydrogen Bonding and Protein-Ligand Affinity",
+    "ec": [
+      "_entity.pdbx_mutation"
+    ],
+    "keywords": "TRANSFERASE, DRUG DESIGN, FURANOPYRIMIDINE, MOLECULAR RECOGNITION, ONCOLOGY, PYRROLOPYRIMIDINE, KINASE",
+    "entities": [
+      "SERINE/THREONINE-PROTEIN KINASE CHK1"
+    ],
+    "has_receptor": false,
+    "has_ligand": true,
+    "files": {
+      "_ligand.sdf": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/2BR1/2br1_ligand.sdf",
+      "cif": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/2BR1/2BR1.cif"
+    }
+  },
+  "2bsm": {
+    "title": "Novel, potent small molecule inhibitors of the molecular chaperone Hsp90 discovered through structure-based design",
+    "ec": [
+      "_entity.pdbx_mutation"
+    ],
+    "keywords": "HSP90, ATPASE, PU3, CHAPERONE, ATP-BINDING, HEAT SHOCK",
+    "entities": [
+      "HEAT SHOCK PROTEIN HSP90-ALPHA"
+    ],
+    "has_receptor": false,
+    "has_ligand": true,
+    "files": {
+      "_ligand.sdf": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/2BSM/2bsm_ligand.sdf",
+      "cif": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/2BSM/2BSM.cif"
+    }
+  },
+  "2bys": {
+    "title": "CRYSTAL STRUCTURE OF ACHBP FROM APLYSIA CALIFORNICA IN complex with lobeline",
+    "ec": [
+      "_entity.pdbx_mutation"
+    ],
+    "keywords": "ACETYLCHOLINE BINDING PROTEIN, NICOTINIC ACETYLCHOLINE, CONFORMATIONAL FLEXIBILITY, LOBELINE, RECEPTOR",
+    "entities": [
+      "ACETYLCHOLINE-BINDING PROTEIN"
+    ],
+    "has_receptor": false,
+    "has_ligand": true,
+    "files": {
+      "_ligand.sdf": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/2BYS/2bys_ligand.sdf",
+      "cif": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/2BYS/2BYS.cif"
+    }
+  },
+  "2c3i": {
+    "title": "CRYSTAL STRUCTURE OF HUMAN PIM1 IN COMPLEX WITH IMIDAZOPYRIDAZIN I",
+    "ec": [
+      "_entity.pdbx_mutation"
+    ],
+    "keywords": ";TRANSFERASE-PEPTIDE COMPLEX, COMPLEX TRANSFERASE-PEPTIDE, PIM1, KINASE, CANCER, LEUKEMIA, ATP-BINDING, NUCLEAR PROTEIN, NUCLEOTIDE-BINDING, PHOSPHORYLATION, PROTO- ONCOGENE, SERINE/THREONINE-PROTEIN KINASE, TRANSFERASE",
+    "entities": [
+      "PIMTIDE",
+      "PROTO-ONCOGENE SERINE THREONINE PROTEIN KINASE PIM1"
+    ],
+    "has_receptor": false,
+    "has_ligand": true,
+    "files": {
+      "_ligand.sdf": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/2C3I/2c3i_ligand.sdf",
+      "cif": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/2C3I/2C3I.cif"
+    }
+  },
+  "2cet": {
+    "title": "Beta-glucosidase from Thermotoga maritima in complex with phenethyl- substituted glucoimidazole",
+    "ec": [
+      "_entity.pdbx_mutation"
+    ],
+    "keywords": "GLYCOSIDE HYDROLASE, INHIBITOR, TRANSITION STATE MIMIC, FAMILY 1, PHENETHYL-SUBSTITUTED GLUCOIMIDAZOLE, HYDROLASE",
+    "entities": [
+      "BETA-GLUCOSIDASE A"
+    ],
+    "has_receptor": false,
+    "has_ligand": true,
+    "files": {
+      "_ligand.sdf": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/2CET/2cet_ligand.sdf",
+      "cif": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/2CET/2CET.cif"
+    }
+  },
+  "2cgr": {
+    "title": "LOCAL AND TRANSMITTED CONFORMATIONAL CHANGES ON COMPLEXATION OF AN ANTI-SWEETENER FAB",
+    "ec": [
+      "_entity.pdbx_mutation"
+    ],
+    "keywords": "IMMUNOGLOBULIN",
+    "entities": [
+      "IGG2B-KAPPA NC6.8 FAB (LIGHT CHAIN)",
+      "IGG2B-KAPPA NC6.8 FAB (HEAVY CHAIN)"
+    ],
+    "has_receptor": false,
+    "has_ligand": true,
+    "files": {
+      "_ligand.sdf": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/2CGR/2cgr_ligand.sdf",
+      "cif": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/2CGR/2CGR.cif"
+    }
+  },
+  "2d3u": {
+    "title": "X-ray crystal structure of hepatitis C virus RNA dependent RNA polymerase in complex with non-nucleoside analogue inhibitor",
+    "ec": [
+      "_entity.pdbx_mutation"
+    ],
+    "keywords": "Hepatitis C Virus, RNA-dependent RNA polymerase, Enzyme inhibition, TRANSFERASE",
+    "entities": [
+      "polyprotein"
+    ],
+    "has_receptor": false,
+    "has_ligand": true,
+    "files": {
+      "_ligand.sdf": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/2D3U/2d3u_ligand.sdf",
+      "cif": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/2D3U/2D3U.cif"
+    }
+  },
+  "2gbp": {
+    "title": "SUGAR AND SIGNAL-TRANSDUCER BINDING SITES OF THE ESCHERICHIA COLI GALACTOSE CHEMORECEPTOR PROTEIN",
+    "ec": [
+      "_entity.pdbx_mutation"
+    ],
+    "keywords": "PERIPLASMIC BINDING PROTEIN",
+    "entities": [
+      "D-GALACTOSE/D-GLUCOSE BINDING PROTEIN"
+    ],
+    "has_receptor": false,
+    "has_ligand": true,
+    "files": {
+      "_ligand.sdf": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/2GBP/2gbp_ligand.sdf",
+      "cif": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/2GBP/2GBP.cif"
+    }
+  },
+  "2hb1": {
+    "title": "Crystal Structure of PTP1B with Monocyclic Thiophene Inhibitor",
+    "ec": [
+      "_entity.pdbx_mutation"
+    ],
+    "keywords": "protein-inhibitor complex, HYDROLASE",
+    "entities": [
+      "Tyrosine-protein phosphatase non-receptor type 1"
+    ],
+    "has_receptor": false,
+    "has_ligand": true,
+    "files": {
+      "_ligand.sdf": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/2HB1/2hb1_ligand.sdf",
+      "cif": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/2HB1/2HB1.cif"
+    }
+  },
+  "2hr7": {
+    "title": "Insulin receptor (domains 1-3)",
+    "ec": [
+      "_entity.pdbx_mutation"
+    ],
+    "keywords": "HORMONE RECEPTOR, LEUCINE RICH REPEAT, TRANSFERASE",
+    "entities": [
+      "Insulin receptor"
+    ],
+    "has_receptor": false,
+    "has_ligand": true,
+    "files": {
+      "_ligand.sdf": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/2HR7/2hr7_ligand.sdf",
+      "cif": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/2HR7/2HR7.cif"
+    }
+  },
+  "2j62": {
+    "title": "Structure of a bacterial O-glcnacase in complex with glcnacstatin",
+    "ec": [
+      "_entity.pdbx_mutation"
+    ],
+    "keywords": "HYDROLASE",
+    "entities": [
+      "O-GlcNAcase NagJ"
+    ],
+    "has_receptor": false,
+    "has_ligand": true,
+    "files": {
+      "_ligand.sdf": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/2J62/2j62_ligand.sdf",
+      "cif": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/2J62/2J62.cif"
+    }
+  }
+}
