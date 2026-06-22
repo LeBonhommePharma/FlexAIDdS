@@ -122,6 +122,9 @@
   var dayIdx = Math.floor(Date.now() / 86400000) % drugComplexes.length;
   var todaysComplex = drugComplexes[dayIdx];
 
+  // Expose for React-rendered UI (FlexAIDdS homepage uses React)
+  window.__TODAYS_DRUG = todaysComplex;
+
   var label = document.getElementById('drug-of-day-label');
   if (label) {
     label.innerHTML =

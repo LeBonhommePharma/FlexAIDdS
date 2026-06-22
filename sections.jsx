@@ -12,6 +12,7 @@ function HeroSection() {
         <div className="hero-scrim" />
         <ParticleCanvas />
       </div>
+      <DrugOfDayBadge />
       <div className="hero-content">
         <p className="hero-tagline-top">Le Bonhomme Pharma · Montréal · <span className="kw">Open Science</span></p>
 
