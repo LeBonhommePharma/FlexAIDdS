@@ -266,7 +266,7 @@ function BindingDiagram({ phase }) {
 function ModulesSection() {
   const mods = [
     ["tENCoM", <><span className="kw">Torsional ENCoM</span> — backbone normal mode flexibility model</>],
-    ["NATURaL", "Co-translational & co-transcriptional assembly"],
+    ["NATURaL", "Native Assembly of Transcriptionally/Translationally Unified Receptor and Ligand — co-translational & co-transcriptional assembly"],
     ["ShannonThermoStack", <><span className="kw">Shannon entropy</span> thermodynamic scoring stack</>],
     ["LigandRingFlex", <><span className="kw">Non-aromatic ring conformer sampling</span> + sugar pucker</>],
     ["ChiralCenter", "Explicit R/S stereocenter discrimination"],
