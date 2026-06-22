@@ -113,7 +113,8 @@
     { pdb: '4xp4', drug: 'Cocaine HCl', target: 'dopamine transporter (DAT)', series: '001', href: '/drug-of-the-day/cocaine/' },
     { pdb: '6dzv', drug: 'MDMA',        target: 'serotonin transporter (SERT)', series: '002', href: '/drug-of-the-day/mdma/' },
     { pdb: '6wha', drug: 'DMT',         target: '5-HT\u2082A receptor', series: '003', href: '/drug-of-the-day/dmt/' },
-    // queued: 004 psilocin/7WC7 · 005 lsd/6WGT · 006 amphetamine/7XNA · 007 fentanyl/8EF5 · 008 salvinorin-a/4DJH
+    { pdb: '7wc7', drug: 'Psilocin',    target: '5-HT\u2082A receptor', series: '004', href: '/drug-of-the-day/psilocin/' },
+    // queued: 005 lsd · 006 amphetamine · 007 fentanyl · 008 salvinorin-a · 005 lsd/6WGT · 006 amphetamine/7XNA · 007 fentanyl/8EF5 · 008 salvinorin-a/4DJH
   ];
   var dayIdx = Math.floor(Date.now() / 86400000) % drugComplexes.length;
   var todaysComplex = drugComplexes[dayIdx];
