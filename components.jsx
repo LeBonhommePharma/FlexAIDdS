@@ -96,31 +96,65 @@ function EntropyMeter() {
 
 // ─── Sticky nav ───
 function Nav({ active, onJump }) {
+  const [open, setOpen] = useState(false);
   const items = ["Why", "Features", "Architecture", "Install", "Benchmarks"];
+  const jump = (id) => {
+    setOpen(false);
+    onJump(id);
+  };
+
   return (
     <nav className="nav">
       <div className="nav-inner">
-        <a className="nav-brand" onClick={() => onJump("hero")}>
+        <button type="button" className="nav-brand" onClick={() => jump("hero")} aria-label="FlexAID∆S home">
           <LogoMark size={26} poses={4} fan={54} period={6} well={false} />
           <Wordmark size={14} />
-        </a>
+        </button>
+
         <div className="nav-links">
           {items.map(label => {
             const id = label.toLowerCase();
             return (
-              <a key={id}
-                 className={active === id ? "active" : ""}
-                 onClick={() => onJump(id)}>{label}</a>
+              <button type="button" key={id}
+                 className={"nav-link" + (active === id ? " active" : "")}
+                 onClick={() => jump(id)}>{label}</button>
             );
           })}
-          <a href="/flexaid" className="hover:text-[#22D3EE] transition-colors">FlexAID</a>
-          <a href="/periodic" className="hover:text-[#22D3EE] transition-colors">Periodic</a>
-          <a href="/" className="nav-home" style={{ color: "var(--fg-muted)" }}>Home</a>
-          <a className="gh" href="https://github.com/LeBonhommePharma/FlexAIDdS" target="_blank" rel="noreferrer noopener" aria-label="GitHub">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="#7d8590"><path d="M12 .5C5.7.5.5 5.7.5 12c0 5.1 3.3 9.4 7.9 10.9.6.1.8-.3.8-.6v-2c-3.2.7-3.9-1.5-3.9-1.5-.5-1.3-1.3-1.7-1.3-1.7-1.1-.7.1-.7.1-.7 1.2.1 1.8 1.2 1.8 1.2 1 1.8 2.8 1.3 3.5 1 .1-.8.4-1.3.7-1.6-2.6-.3-5.3-1.3-5.3-5.7 0-1.3.5-2.3 1.2-3.1-.1-.3-.5-1.5.1-3.1 0 0 1-.3 3.3 1.2a11.5 11.5 0 0 1 6 0C17.3 4.7 18.3 5 18.3 5c.6 1.6.2 2.8.1 3.1.8.8 1.2 1.8 1.2 3.1 0 4.4-2.7 5.4-5.3 5.7.4.4.8 1.1.8 2.2v3.3c0 .3.2.7.8.6 4.6-1.5 7.9-5.8 7.9-10.9C23.5 5.7 18.3.5 12 .5z"/></svg>
+          <a href="/entropy-driven/" className="nav-link">Entropy</a>
+          <a href="/drug-of-the-day/" className="nav-link">Drugs</a>
+          <a href="/" className="nav-link nav-home">Home</a>
+          <a className="gh nav-link" href="https://github.com/LeBonhommePharma/FlexAIDdS" target="_blank" rel="noreferrer noopener" aria-label="GitHub">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 .5C5.7.5.5 5.7.5 12c0 5.1 3.3 9.4 7.9 10.9.6.1.8-.3.8-.6v-2c-3.2.7-3.9-1.5-3.9-1.5-.5-1.3-1.3-1.7-1.3-1.7-1.1-.7.1-.7.1-.7 1.2.1 1.8 1.2 1.8 1.2 1 1.8 2.8 1.3 3.5 1 .1-.8.4-1.3.7-1.6-2.6-.3-5.3-1.3-5.3-5.7 0-1.3.5-2.3 1.2-3.1-.1-.3-.5-1.5.1-3.1 0 0 1-.3 3.3 1.2a11.5 11.5 0 0 1 6 0C17.3 4.7 18.3 5 18.3 5c.6 1.6.2 2.8.1 3.1.8.8 1.2 1.8 1.2 3.1 0 4.4-2.7 5.4-5.3 5.7.4.4.8 1.1.8 2.2v3.3c0 .3.2.7.8.6 4.6-1.5 7.9-5.8 7.9-10.9C23.5 5.7 18.3.5 12 .5z"/></svg>
           </a>
           <span data-theme-mount></span>
         </div>
+
+        <button type="button"
+                className="nav-mobile-btn"
+                aria-expanded={open}
+                aria-controls="nav-mobile-menu"
+                aria-label={open ? "Close menu" : "Open menu"}
+                onClick={() => setOpen(v => !v)}>
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+            {open
+              ? <><line x1="6" y1="6" x2="18" y2="18"/><line x1="6" y1="18" x2="18" y2="6"/></>
+              : <><line x1="4" y1="7" x2="20" y2="7"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="17" x2="20" y2="17"/></>}
+          </svg>
+        </button>
+      </div>
+
+      <div id="nav-mobile-menu" className={"nav-mobile-menu" + (open ? " open" : "")}>
+        {items.map(label => {
+          const id = label.toLowerCase();
+          return (
+            <button type="button" key={id} className={active === id ? "active" : ""} onClick={() => jump(id)}>{label}</button>
+          );
+        })}
+        <a href="/entropy-driven/" onClick={() => setOpen(false)}>Entropy-Driven</a>
+        <a href="/drug-of-the-day/" onClick={() => setOpen(false)}>Drug of the Day</a>
+        <a href="/periodic/" onClick={() => setOpen(false)}>Periodic Table</a>
+        <a href="/" onClick={() => setOpen(false)}>Home</a>
+        <a href="https://github.com/LeBonhommePharma/FlexAIDdS" target="_blank" rel="noreferrer noopener" onClick={() => setOpen(false)}>GitHub</a>
       </div>
     </nav>
   );
