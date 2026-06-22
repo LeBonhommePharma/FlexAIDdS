@@ -45,7 +45,7 @@
       "id": "004",
       "slug": "psilocin",
       "drug": "Psilocin",
-      "tagline": "4-HO-DMT · the prodrug's payload",
+      "tagline": "4-HO-DMT \u00b7 the prodrug's payload",
       "class": "Tryptamine",
       "primary_target": "5-HT2A",
       "mechanism": "Partial agonist",
@@ -53,7 +53,7 @@
       "pdb": "7WC7",
       "status": "published",
       "href": "/drug-of-the-day/psilocin/",
-      "blurb": "Active metabolite of psilocybin. Potent 5-HT2A partial agonist with Gq-biased signalling — the pharmacological reason mushrooms outlast smoked DMT. Dephosphorylation gate: psilocybin is a prodrug; psilocin is the ligand that actually binds."
+      "blurb": "Active metabolite of psilocybin. Potent 5-HT2A partial agonist with Gq-biased signalling \u2014 the pharmacological reason mushrooms outlast smoked DMT. Dephosphorylation gate: psilocybin is a prodrug; psilocin is the ligand that actually binds."
     },
     {
       "id": "005",
@@ -65,9 +65,9 @@
       "mechanism": "Partial agonist",
       "ki_nm": 2.9,
       "pdb": "6WGT",
-      "status": "queued",
+      "status": "published",
       "href": "/drug-of-the-day/lsd/",
-      "blurb": "Lysergic acid diethylamide — the ergoline scaffold with a diethylamide 'lid' that traps the ligand in the receptor binding pocket, explaining the 8–12 h duration despite sub-nanomolar affinity. 5-HT2B cardiac liability meets 5-HT2A psychedelic efficacy."
+      "blurb": "Lysergic acid diethylamide \u2014 the ergoline scaffold with a diethylamide 'lid' that traps the ligand in the receptor binding pocket, explaining the 8\u201312 h duration despite sub-nanomolar affinity. 5-HT2B cardiac liability meets 5-HT2A psychedelic efficacy."
     },
     {
       "id": "006",
@@ -79,23 +79,23 @@
       "mechanism": "Substrate-releaser",
       "ki_nm": 1400,
       "pdb": "7XNA",
-      "status": "queued",
+      "status": "published",
       "href": "/drug-of-the-day/amphetamine/",
-      "blurb": "The reference monoamine releaser. DAT/NET substrate that reverses transporter flux — pharmacological parent of MDMA, methamphetamine, and the entire ADHD stimulant class. CYP2D6 hydroxylation to p-hydroxyamphetamine; trace amine-associated receptor 1 (TAAR1) negative feedback."
+      "blurb": "The reference monoamine releaser. DAT/NET substrate that reverses transporter flux \u2014 pharmacological parent of MDMA, methamphetamine, and the entire ADHD stimulant class. CYP2D6 hydroxylation to p-hydroxyamphetamine; trace amine-associated receptor 1 (TAAR1) negative feedback."
     },
     {
       "id": "007",
       "slug": "fentanyl",
       "drug": "Fentanyl",
-      "tagline": "Picomolar μ-opioid bias",
+      "tagline": "Picomolar \u03bc-opioid bias",
       "class": "Synthetic opioid",
-      "primary_target": "μ-opioid receptor",
+      "primary_target": "\u03bc-opioid receptor",
       "mechanism": "G protein-biased agonist",
       "ki_nm": 1.1,
       "pdb": "8EF5",
-      "status": "queued",
+      "status": "published",
       "href": "/drug-of-the-day/fentanyl/",
-      "blurb": "N-phenyl-N-[1-(2-phenylethyl)piperidin-4-yl]propanamide — sub-nanomolar MOR agonist with extreme lipophilicity (log P ~4). Rapid CNS penetration, narrow therapeutic index, and the structural reason illicit analogs (carfentanil, acetylfentanyl) are lethal at microgram doses. Naloxone-reversible; test your supply."
+      "blurb": "N-phenyl-N-[1-(2-phenylethyl)piperidin-4-yl]propanamide \u2014 sub-nanomolar MOR agonist with extreme lipophilicity (log P ~4). Rapid CNS penetration, narrow therapeutic index, and the structural reason illicit analogs (carfentanil, acetylfentanyl) are lethal at microgram doses. Naloxone-reversible; test your supply."
     },
     {
       "id": "008",
@@ -103,13 +103,13 @@
       "drug": "Salvinorin A",
       "tagline": "The non-serotonin psychedelic",
       "class": "Diterpene",
-      "primary_target": "κ-opioid receptor",
+      "primary_target": "\u03ba-opioid receptor",
       "mechanism": "Full agonist",
       "ki_nm": 1.8,
       "pdb": "4DJH",
-      "status": "queued",
+      "status": "published",
       "href": "/drug-of-the-day/salvinorin-a/",
-      "blurb": "Editorial pick: breaks the tryptamine arc. The only common hallucinogen with zero meaningful 5-HT2A activity — a neoclerodane diterpene and selective κ-opioid full agonist. Dissociative-adjacent phenomenology from KOR signalling in claustrum and ACC, not serotonin. Proof that 'psychedelic' is a phenomenology, not a receptor class."
+      "blurb": "Editorial pick: breaks the tryptamine arc. The only common hallucinogen with zero meaningful 5-HT2A activity \u2014 a neoclerodane diterpene and selective \u03ba-opioid full agonist. Dissociative-adjacent phenomenology from KOR signalling in claustrum and ACC, not serotonin. Proof that 'psychedelic' is a phenomenology, not a receptor class."
     }
   ]
 }
