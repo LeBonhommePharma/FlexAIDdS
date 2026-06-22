@@ -293,3 +293,98 @@ button { font: inherit; color: inherit; background: none; border: none; cursor: 
 .footer-cite { font-family: var(--font-mono); font-size: 11px; color: var(--fg-muted); line-height: 1.7; }
 .footer-eq { font-family: var(--font-mono); font-size: 10px; color: var(--fg-muted); margin-top: 6px; }
 .footer-eq .gold { color: var(--gold); }
+
+/* ============================================================
+   CHAOS LAYER — make landing feel alive, unpredictable, entropic
+   ============================================================ */
+
+/* Intensify the background grid + add occasional red static bursts */
+body::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background-image:
+    linear-gradient(rgba(220,38,38,0.035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(220,38,38,0.02) 1px, transparent 1px);
+  background-size: 3px 3px;
+  pointer-events: none;
+  z-index: 1;
+  mix-blend-mode: screen;
+  opacity: 0.6;
+  animation: bg-chaos 7.3s steps(3) infinite;
+}
+@keyframes bg-chaos {
+  0%, 92% { opacity: 0.55; }
+  94% { opacity: 0.95; }
+  96% { opacity: 0.4; }
+  100% { opacity: 0.55; }
+}
+
+/* Red chaotic scan / interference lines that randomly appear on hero */
+.lbp-hero::before {
+  content: '';
+  position: absolute; inset: 0; z-index: 2; pointer-events: none;
+  background: repeating-linear-gradient(
+    120deg,
+    transparent 0,
+    transparent 6px,
+    rgba(220,38,38,0.08) 6px,
+    rgba(220,38,38,0.08) 7px
+  );
+  opacity: 0.0;
+  animation: interference-scan 4200ms linear infinite;
+  mix-blend-mode: screen;
+}
+.lbp-hero:hover::before {
+  opacity: 0.65;
+  animation-duration: 680ms;
+}
+@keyframes interference-scan {
+  0% { transform: translateY(-30%); }
+  100% { transform: translateY(130%); }
+}
+
+/* Glitch / unpredictable micro shifts on key text */
+.glitchy {
+  position: relative;
+  display: inline-block;
+}
+.glitchy::before,
+.glitchy::after {
+  content: attr(data-text);
+  position: absolute; left: 0; top: 0;
+  width: 100%; overflow: hidden;
+  clip: rect(0, 900px, 0, 0);
+}
+.glitchy:hover::before {
+  animation: glitch-top 180ms steps(2, end) 1;
+  color: #F87171;
+  left: 1px;
+}
+.glitchy:hover::after {
+  animation: glitch-bot 140ms steps(2, end) 1;
+  color: #67E8F9;
+  left: -1px;
+}
+@keyframes glitch-top {
+  0% { clip: rect(0,9999px, 38%,0); }
+  100% { clip: rect(62%,9999px, 100%,0); }
+}
+@keyframes glitch-bot {
+  0% { clip: rect(0,9999px, 42%,0); }
+  100% { clip: rect(58%,9999px, 100%,0); }
+}
+
+/* Random entropy numbers / signal flicker elements */
+.entropy-sig {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: rgba(220,38,38,0.65);
+  letter-spacing: 0.2em;
+  user-select: none;
+  pointer-events: none;
+  position: absolute;
+  z-index: 3;
+  transition: opacity 60ms linear;
+}
+.entropy-sig.active { color: #FBBF24; }

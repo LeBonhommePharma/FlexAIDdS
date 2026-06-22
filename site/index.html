@@ -1076,6 +1076,308 @@ section { position: relative; z-index: 1; }
   </div>
 </footer>
 
+<!-- Chaotic / unpredictable landing behaviors -->
+<script>
+(function () {
+  'use strict';
+
+  // --- CHAOTIC PARTICLES for #particle-canvas in .lbp-hero ---
+  var canvas = document.getElementById('particle-canvas');
+  if (canvas) {
+    var ctx = canvas.getContext('2d', { alpha: true });
+    var particles = [];
+    var mouse = { x: -999, y: -999, down: false };
+    var W = 0, H = 0, lastKick = 0;
+
+    function resize() {
+      var rect = canvas.getBoundingClientRect();
+      W = canvas.width = Math.floor(rect.width * (window.devicePixelRatio || 1));
+      H = canvas.height = Math.floor(rect.height * (window.devicePixelRatio || 1));
+      canvas.style.width = rect.width + 'px';
+      canvas.style.height = rect.height + 'px';
+      ctx.setTransform(window.devicePixelRatio || 1, 0, 0, window.devicePixelRatio || 1, 0, 0);
+
+      var target = Math.min(210, Math.max(80, Math.floor((W * H) / 4200)));
+      particles = [];
+      var reds = ['#DC2626', '#EF4444', '#F87171'];
+      var accents = ['#22D3EE', '#A78BFA', '#FBBF24'];
+      for (var i = 0; i < target; i++) {
+        var useRed = Math.random() < 0.55;
+        particles.push({
+          x: Math.random() * W,
+          y: Math.random() * H,
+          vx: (Math.random() - 0.5) * (1.6 + Math.random() * 2.6),
+          vy: (Math.random() - 0.5) * (1.2 + Math.random() * 2.2),
+          r: 0.6 + Math.random() * (Math.random() < 0.2 ? 2.8 : 1.35),
+          col: useRed ? reds[(Math.random()*reds.length)|0] : accents[(Math.random()*accents.length)|0],
+          a: 0.25 + Math.random() * 0.7,
+          phase: Math.random() * Math.PI * 2,
+          spin: (Math.random() - 0.5) * 0.018,
+          chaos: Math.random() * 0.9 + 0.3
+        });
+      }
+    }
+
+    window.addEventListener('resize', function () { setTimeout(resize, 60); });
+    // initial size after layout
+    setTimeout(resize, 40);
+
+    canvas.addEventListener('mousemove', function (e) {
+      var rect = canvas.getBoundingClientRect();
+      mouse.x = (e.clientX - rect.left) * (canvas.width / rect.width);
+      mouse.y = (e.clientY - rect.top) * (canvas.height / rect.height);
+    });
+    canvas.addEventListener('mouseleave', function () { mouse.x = mouse.y = -999; });
+    canvas.addEventListener('mousedown', function () { mouse.down = true; });
+    window.addEventListener('mouseup', function () { mouse.down = false; });
+
+    function kickSome() {
+      // unpredictable random velocity impulses
+      var now = Date.now();
+      if (now - lastKick < 420) return;
+      lastKick = now;
+      for (var i = 0; i < particles.length; i++) {
+        if (Math.random() < 0.18) {
+          var p = particles[i];
+          p.vx += (Math.random() - 0.5) * 3.8 * p.chaos;
+          p.vy += (Math.random() - 0.5) * 3.4 * p.chaos;
+        }
+      }
+    }
+
+    function step() {
+      if (!W || !H) { requestAnimationFrame(step); return; }
+      ctx.clearRect(0, 0, W, H);
+
+      var t = performance.now() * 0.0012;
+      var mDisturb = (mouse.x > 0 ? 1 : 0);
+
+      // occasional chaotic kicks
+      if (Math.random() < 0.035) kickSome();
+
+      // draw connections first (entangled / chaotic network look)
+      ctx.lineWidth = 0.7;
+      for (var i = 0; i < particles.length; i++) {
+        var p1 = particles[i];
+        for (var j = i + 1; j < particles.length; j += (j % 3 === 0 ? 2 : 1)) { // sparse for perf + chaos
+          var p2 = particles[j];
+          var dx = p1.x - p2.x;
+          var dy = p1.y - p2.y;
+          var d2 = dx*dx + dy*dy;
+          if (d2 < 7800 && d2 > 12) {
+            var alpha = (1 - d2 / 7800) * 0.22 * (0.6 + 0.4 * Math.sin(t * 1.6 + p1.phase));
+            if (Math.random() < 0.03) alpha *= 1.9; // random bright links
+            ctx.strokeStyle = p1.col;
+            ctx.globalAlpha = Math.max(0.02, alpha);
+            ctx.beginPath();
+            ctx.moveTo(p1.x, p1.y);
+            ctx.lineTo(p2.x, p2.y);
+            ctx.stroke();
+          }
+        }
+      }
+      ctx.globalAlpha = 1;
+
+      // update + draw particles
+      for (var k = 0; k < particles.length; k++) {
+        var p = particles[k];
+
+        // mouse chaotic field (repel + swirl)
+        if (mDisturb) {
+          var mdx = p.x - mouse.x;
+          var mdy = p.y - mouse.y;
+          var md2 = mdx*mdx + mdy*mdy;
+          if (md2 < 42000 && md2 > 4) {
+            var inv = 1 / Math.sqrt(md2);
+            var force = (mouse.down ? 5.2 : 1.9) * p.chaos * (26000 / md2);
+            p.vx += mdx * inv * force * (Math.random() * 0.6 + 0.7);
+            p.vy += mdy * inv * force * (Math.random() * 0.6 + 0.7);
+            // add angular unpredictability
+            p.vx += mdy * 0.014 * (Math.random() - 0.5);
+            p.vy -= mdx * 0.014 * (Math.random() - 0.5);
+          }
+        }
+
+        // natural motion + jitter
+        p.x += p.vx;
+        p.y += p.vy;
+        p.vx *= 0.986 + (Math.random() - 0.5) * 0.004;
+        p.vy *= 0.982 + (Math.random() - 0.5) * 0.003;
+
+        // light sinusoidal wiggle (unpredictable)
+        p.x += Math.sin(t * 1.7 + p.phase) * 0.22 * p.chaos;
+        p.y += Math.cos(t * 1.3 + p.phase * 1.3) * 0.19 * p.chaos;
+
+        // wrap with occasional teleport for chaos
+        var tele = Math.random() < 0.0007;
+        if (p.x < 0 || p.x > W || tele) p.x = (Math.random() * W * 0.6) + (W * 0.2);
+        if (p.y < 0 || p.y > H || tele) p.y = (Math.random() * H * 0.6) + (H * 0.2);
+
+        // clamp absurd velocities
+        var maxV = 7.5;
+        if (Math.abs(p.vx) > maxV) p.vx *= 0.6;
+        if (Math.abs(p.vy) > maxV) p.vy *= 0.6;
+
+        // size / alpha pulse
+        var pulse = 0.6 + 0.4 * Math.sin(t * 2.2 + p.phase * 3);
+        var rad = p.r * (0.7 + 0.6 * pulse);
+
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, rad, 0, Math.PI * 2);
+        ctx.fillStyle = p.col;
+        ctx.globalAlpha = p.a * (0.55 + 0.45 * pulse);
+        ctx.fill();
+
+        // rare bright core
+        if (Math.random() < 0.018) {
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, rad * 0.35, 0, Math.PI * 2);
+          ctx.fillStyle = '#fff';
+          ctx.globalAlpha = 0.6;
+          ctx.fill();
+        }
+      }
+      ctx.globalAlpha = 1;
+
+      // random global velocity chaos impulse
+      if (Math.random() < 0.009) {
+        var idx = (Math.random() * particles.length) | 0;
+        if (particles[idx]) {
+          particles[idx].vx += (Math.random() - 0.5) * 4.2;
+          particles[idx].vy += (Math.random() - 0.5) * 4.2;
+        }
+      }
+
+      requestAnimationFrame(step);
+    }
+    requestAnimationFrame(step);
+  }
+
+  // --- Unpredictable micro effects on the landing ---
+  // Random entropy signals that flicker around hero
+  function spawnEntropySigs() {
+    var hero = document.querySelector('.lbp-hero');
+    if (!hero) return;
+    var sigs = [];
+    for (var i = 0; i < 5; i++) {
+      var s = document.createElement('div');
+      s.className = 'entropy-sig';
+      s.textContent = (Math.random() < 0.5 ? 'ΔS ' : 'H=') + (2.8 + Math.random() * 1.9).toFixed(2);
+      s.style.left = (8 + Math.random() * 82) + '%';
+      s.style.top = (12 + Math.random() * 58) + '%';
+      s.style.opacity = (0.15 + Math.random() * 0.35).toFixed(2);
+      hero.appendChild(s);
+      sigs.push(s);
+    }
+    setInterval(function () {
+      sigs.forEach(function (s) {
+        if (!s.parentNode) return;
+        if (Math.random() < 0.28) {
+          s.style.transitionDuration = (30 + Math.random() * 90) + 'ms';
+          s.style.opacity = (Math.random() * 0.85).toFixed(2);
+          s.textContent = (Math.random() < 0.5 ? 'ΔS ' : 'S=') + (2.1 + Math.random() * 2.6).toFixed(2);
+          if (Math.random() < 0.12) s.classList.add('active');
+          else s.classList.remove('active');
+        }
+      });
+    }, 520);
+  }
+  setTimeout(spawnEntropySigs, 900);
+
+  // Occasional slogan mutation (unpredictable text)
+  function chaosText() {
+    var slogans = document.querySelectorAll('.hero-slogan, .hero-lede, .manifesto-text');
+    if (!slogans.length) return;
+    var wordsPool = ['Drug', 'Entropy', 'Molecule', 'Signal', 'Chaos', 'Receptor', 'ΔS', 'ALL IN', 'Rigour'];
+    setInterval(function () {
+      var el = slogans[(Math.random() * slogans.length) | 0];
+      if (!el || Math.random() > 0.16) return;
+      var txt = el.innerHTML;
+      var w = wordsPool[(Math.random()*wordsPool.length)|0];
+      if (txt.indexOf('Drug') > -1 && Math.random() < 0.6) {
+        el.innerHTML = txt.replace(/Drug/g, w);
+      } else if (Math.random() < 0.35) {
+        el.style.transitionDuration = '60ms';
+        el.style.transform = 'translate(' + (Math.random()*1.6-0.8) + 'px,' + (Math.random()*0.9-0.5) + 'px)';
+        setTimeout(function () { if (el) el.style.transform = ''; }, 140);
+      }
+    }, 1450);
+  }
+  setTimeout(chaosText, 1350);
+
+  // Random red micro-flashes on the whole page (very subtle, unpredictable)
+  function flashChaos() {
+    setInterval(function () {
+      if (Math.random() < 0.11) {
+        var f = document.createElement('div');
+        f.style.cssText = 'position:fixed;inset:0;background:rgba(220,38,38,0.035);pointer-events:none;z-index:99999;mix-blend-mode:screen;';
+        document.body.appendChild(f);
+        setTimeout(function () { f && f.parentNode && f.parentNode.removeChild(f); }, 70 + Math.random() * 90);
+      }
+    }, 2600);
+  }
+  setTimeout(flashChaos, 2100);
+
+  // Make some headings glitchy on hover + occasional auto glitch
+  function addGlitch() {
+    var heads = document.querySelectorAll('h1, .section-title, .hero-lede strong');
+    heads.forEach(function (h) {
+      if (!h.hasAttribute('data-text')) h.setAttribute('data-text', h.textContent.trim().slice(0, 60));
+      h.classList.add('glitchy');
+      if (Math.random() < 0.3) {
+        setTimeout(function () {
+          h.style.transitionDuration = '30ms';
+          h.style.transform = 'translateX(' + (Math.random() < 0.5 ? 1 : -1) + 'px)';
+          setTimeout(function () { h.style.transform = ''; }, 90);
+        }, 2400 + Math.random() * 8000);
+      }
+    });
+  }
+  setTimeout(addGlitch, 1600);
+
+})();
+</script>
+
+<!-- Also show actual Drug of the Day on the landing product card (simple, deterministic) -->
+<script>
+(function(){
+  var complexes = [
+    {drug:'Cocaine HCl', series:'001', href:'/drug-of-the-day/cocaine/'},
+    {drug:'MDMA', series:'002', href:'/drug-of-the-day/mdma/'},
+    {drug:'DMT', series:'003', href:'/drug-of-the-day/dmt/'},
+    {drug:'Psilocin', series:'004', href:'/drug-of-the-day/psilocin/'},
+    {drug:'LSD', series:'005', href:'/drug-of-the-day/lsd/'},
+    {drug:'Amphetamine', series:'006', href:'/drug-of-the-day/amphetamine/'},
+    {drug:'Fentanyl', series:'007', href:'/drug-of-the-day/fentanyl/'},
+    {drug:'Salvinorin A', series:'008', href:'/drug-of-the-day/salvinorin-a/'}
+  ];
+  var idx = Math.floor(Date.now() / 86400000) % complexes.length;
+  var t = complexes[idx];
+  // Patch the static card link text + href
+  var cards = document.querySelectorAll('.product-card, .work-card');
+  for (var i=0; i<cards.length; i++) {
+    var c = cards[i];
+    if ((c.textContent || '').toLowerCase().indexOf('drug of') > -1) {
+      var link = c.querySelector('.card-link');
+      if (link) {
+        link.innerHTML = t.drug + ' <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12h14M13 6l6 6-6 6"/></svg>';
+      }
+      if (t.href) c.setAttribute('href', t.href);
+      // sprinkle a tiny series badge
+      var nm = c.querySelector('.card-name');
+      if (nm && !nm.querySelector('.series-mini')) {
+        var sm = document.createElement('span');
+        sm.className = 'series-mini';
+        sm.style.cssText = 'font-size:9px;opacity:.6;margin-left:6px;letter-spacing:.5px;font-family:var(--font-mono)';
+        sm.textContent = '#' + t.series;
+        nm.appendChild(sm);
+      }
+      break;
+    }
+  }
+})();
+</script>
+
 <!-- Hidden stat markers for stats updater / JS (keeps the site stats system working) -->
 <span id="stat-commits" hidden>1550</span>
 <span id="stat-langs" hidden>14</span>
