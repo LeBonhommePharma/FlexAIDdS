@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
-# Sync apex homepage assets to LeBonhommePharma/lebonhommepharma.github.io.
-# thebonhomme.com/ is served from the user-site repo (custom domain CNAME),
-# not from FlexAIDdS/gh-pages — keep index.html + assets + CNAME in sync after deploys.
+# Sync full site/ to LeBonhommePharma/lebonhommepharma.github.io (thebonhomme.com CNAME).
+# User-site Pages serves the apex domain; gh-pages alone does not update /.
 
 set -euo pipefail
 
@@ -16,30 +15,24 @@ if [ -z "$TOKEN" ]; then
   exit 1
 fi
 
-APEX_FILES=(index.html app.js style.css theme.css theme.js CNAME)
-
 rm -rf "$WORKDIR"
 git clone "https://x-access-token:${TOKEN}@github.com/${USER_REPO}.git" "$WORKDIR"
 
-for file in "${APEX_FILES[@]}"; do
-  cp "$SITE/$file" "$WORKDIR/$file"
-done
-mkdir -p "$WORKDIR/assets"
-rsync -a "$SITE/assets/" "$WORKDIR/assets/"
-mkdir -p "$WORKDIR/FlexAIDdS"
-rsync -a --delete "$SITE/FlexAIDdS/" "$WORKDIR/FlexAIDdS/"
+rsync -a --delete \
+  --exclude '.git' \
+  "$SITE/" "$WORKDIR/"
 
 cd "$WORKDIR"
-git add index.html app.js style.css theme.css theme.js CNAME assets/ FlexAIDdS/
+git add -A
 
 if git diff --staged --quiet; then
-  echo "user-site apex sync: no changes"
+  echo "user-site sync: no changes"
 else
   git -c user.name="github-actions[bot]" \
       -c user.email="github-actions[bot]@users.noreply.github.com" \
-      commit -m "Sync apex homepage from FlexAIDdS/site (Mol* viewer)"
+      commit -m "Sync full site/ from FlexAIDdS (corporate homepage + product paths)"
   git push origin HEAD:main
-  echo "user-site apex sync: pushed"
+  echo "user-site sync: pushed"
 fi
 
 rm -rf "$WORKDIR"

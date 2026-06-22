@@ -74,10 +74,10 @@ jobs:
       - name: Publish site to gh-pages branch
         run: bash scripts/sync_apex_to_ghpages.sh
 
-      - name: Sync apex homepage to user-site repo (thebonhomme.com/)
+      - name: Sync full site to user-site repo (thebonhomme.com/)
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: bash scripts/sync_apex_to_usersite.sh
+        run: bash scripts/sync_apex_to_usersite.sh || echo "::warning::user-site sync failed (check repo permissions). gh-pages deploy still live."
 
   check-cmake-deps:
     runs-on: ubuntu-latest
