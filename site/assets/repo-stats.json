@@ -1,12 +1,12 @@
 {
-  "commits": 1548,
+  "commits": 1550,
   "languageCount": 14,
   "lastUpdated": "2026-06-22",
   "languages": [
     {
       "id": "cpp",
       "name": "C++",
-      "percent": 46.7,
+      "percent": 46.6,
       "color": "#f34b7d"
     },
     {
@@ -24,7 +24,7 @@
     {
       "id": "swift",
       "name": "Swift",
-      "percent": 4.3,
+      "percent": 4.2,
       "color": "#F05138"
     },
     {
@@ -60,7 +60,7 @@
     {
       "id": "other",
       "name": "Other",
-      "percent": 11.0,
+      "percent": 11.1,
       "color": "#555555"
     }
   ],
