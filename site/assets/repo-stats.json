@@ -1,5 +1,5 @@
 {
-  "commits": 1561,
+  "commits": 1563,
   "languageCount": 14,
   "lastUpdated": "2026-06-23",
   "languages": [
@@ -18,7 +18,7 @@
     {
       "id": "other",
       "name": "HTML",
-      "percent": 7.7,
+      "percent": 7.9,
       "color": "#e34c26"
     },
     {
@@ -42,7 +42,7 @@
     {
       "id": "ts",
       "name": "TypeScript",
-      "percent": 1.8,
+      "percent": 1.7,
       "color": "#3178c6"
     },
     {
