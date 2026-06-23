@@ -3,28 +3,375 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Redirecting…</title>
-  <meta http-equiv="refresh" content="0; url=/FlexAIDdS/">
+  <title>FlexAID — Entropy Docking · thebonhomme.com</title>
+  <meta name="description" content="FlexAID • Entropy Docking. Shannon entropy meets genetic algorithm docking. Daily Drug of the Day (DotD) with real thermodynamic integration.">
+  <link rel="icon" type="image/svg+xml" href="/assets/favicon-flexaid-ds.svg">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600;700&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
   <style>
-    body {
-      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-      background: #0a0e14;
-      color: #d4dced;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      height: 100vh;
-      margin: 0;
-      text-align: center;
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg: #0a0e14;
+      --card: rgba(16,20,28,0.92);
+      --teal: #22D3EE;
+      --terra: #A84B2F;
+      --gold: #FBBF24;
+      --fg: #d4dced;
+      --muted: #8a93a8;
+      --border: rgba(34,211,238,0.15);
     }
-    a { color: #22D3EE; }
+    body {
+      font-family: 'Inter', system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--fg);
+      line-height: 1.6;
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
+    .mono { font-family: 'JetBrains Mono', monospace; }
+    a { color: var(--teal); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+
+    .nav {
+      position: sticky; top: 0; z-index: 100;
+      background: rgba(10,14,20,0.92); backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--border);
+      padding: 0 1.5rem; height: 56px; display: flex; align-items: center; gap: 1rem;
+    }
+    .nav-brand { font-weight: 700; font-size: 1rem; letter-spacing: -.02em; }
+    .nav-brand .s { color: var(--teal); }
+    .nav-links { margin-left: auto; display: flex; gap: 1.25rem; font-size: .85rem; }
+    .nav-links a { color: var(--muted); }
+    .nav-links a:hover { color: var(--fg); }
+
+    .hero {
+      padding: 4rem 1.5rem 3rem; text-align: center;
+      border-bottom: 1px solid var(--border);
+    }
+    .hero h1 { font-size: clamp(2.2rem, 6vw, 3.6rem); line-height: 1.05; margin-bottom: .5rem; }
+    .hero .sub { color: var(--muted); max-width: 620px; margin: 0 auto 1rem; font-size: 1.05rem; }
+    .tag-dotd {
+      display: inline-flex; align-items: center; gap: .4rem;
+      background: rgba(251,191,36,0.1); color: #FBBF24; font-size: .72rem; padding: .15rem .6rem;
+      border-radius: 999px; border: 1px solid rgba(251,191,36,0.3); font-weight: 600; letter-spacing: .05em;
+      text-transform: uppercase;
+    }
+
+    .section { padding: 3rem 1.5rem; }
+    .container { max-width: 1080px; margin: 0 auto; }
+
+    .beat-mic {
+      display: grid; grid-template-columns: 1fr 320px; gap: 2rem; align-items: center;
+      background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 1.5rem;
+    }
+    @media (max-width: 860px) { .beat-mic { grid-template-columns: 1fr; } }
+
+    .beat-visual { position: relative; }
+    #beat-canvas { width: 100%; height: 220px; border-radius: 10px; background: #05080d; border: 1px solid rgba(34,211,238,0.1); }
+    .beat-label { font-size: .7rem; color: var(--muted); margin-top: .5rem; letter-spacing: .08em; text-transform: uppercase; }
+
+    .mic-col {
+      display: flex; flex-direction: column; align-items: center; gap: 1rem;
+    }
+    .mic {
+      width: 110px; height: 110px; border-radius: 50%;
+      background: linear-gradient(145deg, #1a1f2b, #0c1118);
+      border: 3px solid var(--teal);
+      display: flex; align-items: center; justify-content: center;
+      position: relative; cursor: pointer; transition: transform .2s, box-shadow .2s;
+    }
+    .mic.active { border-color: #FBBF24; box-shadow: 0 0 0 8px rgba(251,191,36,0.15); transform: scale(1.02); }
+    .mic svg { width: 46px; height: 46px; }
+    .mic .live { position: absolute; bottom: 12px; font-size: 9px; letter-spacing: .1em; color: #FBBF24; opacity: 0; }
+    .mic.active .live { opacity: 1; }
+
+    .entropy-info h3 { font-size: 1.1rem; margin-bottom: .35rem; }
+    .entropy-info p { color: var(--muted); font-size: .95rem; }
+
+    .dotd {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 1.25rem 1.5rem;
+      margin-top: 1rem;
+    }
+    .dotd-header {
+      display: flex; align-items: center; gap: .6rem; margin-bottom: .6rem;
+    }
+    .dotd-tag {
+      font-size: .65rem; background: rgba(251,191,36,0.15); color: #FBBF24;
+      padding: .1rem .5rem; border-radius: 4px; font-weight: 700; letter-spacing: .06em;
+    }
+    .dotd-today { color: var(--muted); font-size: .8rem; }
+    .dotd-name { font-size: 1.35rem; font-weight: 700; margin: .15rem 0; }
+    .dotd-meta { color: var(--muted); font-size: .9rem; }
+
+    .links { margin-top: 2rem; display: flex; gap: 1rem; flex-wrap: wrap; }
+    .btn {
+      display: inline-flex; align-items: center; padding: .55rem 1.1rem; border-radius: 8px;
+      font-size: .9rem; font-weight: 600; border: 1px solid var(--border);
+    }
+    .btn-primary { background: var(--teal); color: #0a0e14; border-color: var(--teal); }
+    .btn-ghost { color: var(--fg); }
+
+    .footer { padding: 2rem 1.5rem; border-top: 1px solid var(--border); color: var(--muted); font-size: .8rem; text-align: center; }
   </style>
-  <script>
-    // Immediate client-side redirect as backup
-    window.location.replace("/FlexAIDdS/");
-  </script>
 </head>
 <body>
-  <p>Redirecting to <a href="/FlexAIDdS/">FlexAID∆S</a>…</p>
+  <nav class="nav">
+    <a href="/" class="nav-brand mono">thebonhomme<span class="s">.com</span> / <strong>FlexAID</strong></a>
+    <div class="nav-links mono">
+      <a href="/FlexAIDdS/">FlexAID∆S</a>
+      <a href="/entropy-driven/">Entropy-Driven</a>
+      <a href="/drug-of-the-day/">Drug of the Day</a>
+      <a href="https://github.com/LeBonhommePharma/FlexAIDdS" target="_blank">GitHub</a>
+    </div>
+  </nav>
+
+  <header class="hero">
+    <div class="tag-dotd mono">Drug of the Day</div>
+    <h1>FlexAID<span style="color:#22D3EE">•</span> Entropy Docking</h1>
+    <p class="sub mono">Genetic algorithms + full statistical mechanics. ΔG = ΔH − TΔS with Shannon configurational entropy. Daily rotating Drug of the Day entries — only one appears per day.</p>
+    <div class="links">
+      <a href="/FlexAIDdS/" class="btn btn-primary">Explore the full engine</a>
+      <a href="/entropy-driven/" class="btn btn-ghost">Deep dive: entropy-driven</a>
+    </div>
+  </header>
+
+  <div class="section">
+    <div class="container">
+      <h2 style="font-size:1.35rem;margin-bottom:1rem;">Entropy Docking • Tempo of the Beat + Microphone</h2>
+      <div class="beat-mic">
+        <div class="beat-visual">
+          <canvas id="beat-canvas" width="560" height="220"></canvas>
+          <div class="beat-label mono">Ensemble states pulsing to the beat — entropy collapse / expansion at ~110 bpm feel</div>
+        </div>
+
+        <div class="mic-col">
+          <div id="mic" class="mic" title="Click to activate live microphone mode — modulates beat amplitude and jitter (simulated signal)">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12 1v11m0 0a3 3 0 0 1 3-3 3 3 0 0 1 3 3m-6 0a3 3 0 0 0-3 3v1a3 3 0 0 0 3 3 3 3 0 0 0 3-3v-1a3 3 0 0 0-3-3"/>
+              <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+            </svg>
+            <div class="live mono">LIVE</div>
+          </div>
+          <div style="text-align:center;font-size:.8rem;color:var(--muted);max-width:180px;">
+            Microphone mode brings the docking ensemble to life.<br>
+            Real-time signal → varying tempo &amp; amplitude.
+          </div>
+          <div style="font-size:.65rem;color:#FBBF24;text-align:center;margin-top:.25rem;">TEMPO SYNC + ENTROPY SIGNAL</div>
+        </div>
+      </div>
+
+      <div class="entropy-info" style="margin-top:1.25rem;max-width:620px;">
+        <h3>Why the beat + mic?</h3>
+        <p>The conformational ensemble is a living distribution. Configurational entropy collapse is rhythmic — states “lock in” like a beat dropping. The microphone visual captures live signal input (HRV-style or docking pose sampling) that modulates the observed tempo and variance, just like NATURaL does for physiological data and FlexAID∆S does for binding.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Daily Drug of the Day -->
+  <div class="section" style="padding-top:0;">
+    <div class="container">
+      <div class="dotd">
+        <div class="dotd-header">
+          <span class="dotd-tag mono">DRUG OF THE DAY</span>
+          <span class="dotd-today mono" id="dotd-date"></span>
+        </div>
+        <div id="dotd-content">
+          <!-- Populated by JS: only today's entry -->
+        </div>
+        <div style="margin-top:.75rem;font-size:.75rem;">
+          <a href="/drug-of-the-day/">View full series →</a>
+          <span style="color:var(--muted);margin-left:1rem;">Only one entry appears per day. Rotates automatically.</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="footer mono">
+    Entropy docking • Le Bonhomme Pharma • <a href="https://thebonhomme.com">thebonhomme.com</a> • Apache 2.0
+  </div>
+
+  <script>
+    // === Daily Drug of the Day rotator (only one per day) ===
+    const DOTD_LIST = [
+      { id: '001', slug: 'cocaine', drug: 'Cocaine HCl', target: 'dopamine transporter (DAT)', href: '/drug-of-the-day/cocaine/' },
+      { id: '002', slug: 'mdma', drug: 'MDMA', target: 'serotonin transporter (SERT)', href: '/drug-of-the-day/mdma/' },
+      { id: '003', slug: 'dmt', drug: 'DMT', target: '5-HT₂A receptor', href: '/drug-of-the-day/dmt/' },
+      { id: '004', slug: 'psilocin', drug: 'Psilocin', target: '5-HT₂A receptor', href: '/drug-of-the-day/psilocin/' },
+      { id: '005', slug: 'lsd', drug: 'LSD', target: '5-HT₂B receptor', href: '/drug-of-the-day/lsd/' },
+      { id: '006', slug: 'amphetamine', drug: 'Amphetamine', target: 'dopamine transporter (DAT)', href: '/drug-of-the-day/amphetamine/' },
+      { id: '007', slug: 'fentanyl', drug: 'Fentanyl', target: 'μ-opioid receptor', href: '/drug-of-the-day/fentanyl/' },
+      { id: '008', slug: 'salvinorin-a', drug: 'Salvinorin A', target: 'κ-opioid receptor', href: '/drug-of-the-day/salvinorin-a/' }
+    ];
+
+    function getDayIndex() {
+      const d = new Date();
+      // Stable daily rotation: year * 366 + day-of-year
+      const start = new Date(d.getFullYear(), 0, 0);
+      const dayOfYear = Math.floor((d - start) / 86400000);
+      return (d.getFullYear() * 366 + dayOfYear) % DOTD_LIST.length;
+    }
+
+    function renderDrugOfTheDay() {
+      const idx = getDayIndex();
+      const entry = DOTD_LIST[idx];
+      const dateStr = new Date().toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
+
+      document.getElementById('dotd-date').textContent = dateStr;
+
+      const el = document.getElementById('dotd-content');
+      el.innerHTML = `
+        <div class="dotd-name">${entry.drug} <span class="mono" style="font-size:.65em;color:var(--muted);">#${entry.id}</span></div>
+        <div class="dotd-meta">${entry.target}</div>
+        <div style="margin-top:.5rem;">
+          <a href="${entry.href}" class="btn btn-ghost" style="padding:.35rem .75rem;font-size:.8rem;">Read today’s deep dive</a>
+        </div>
+      `;
+    }
+
+    // === Entropy Docking Beat + Microphone Visual ===
+    let beatCanvas, ctx, beatAnim, micActive = false;
+    let phase = 0, tempo = 110; // bpm feel
+    let amplitude = 1.0;
+
+    function resizeBeatCanvas() {
+      if (!beatCanvas) return;
+      const rect = beatCanvas.parentElement.getBoundingClientRect();
+      beatCanvas.width = Math.floor(rect.width * (window.devicePixelRatio || 1));
+      beatCanvas.height = 220 * (window.devicePixelRatio || 1);
+      beatCanvas.style.width = rect.width + 'px';
+      beatCanvas.style.height = '220px';
+    }
+
+    function drawBeat() {
+      if (!ctx || !beatCanvas) return;
+      const w = beatCanvas.width;
+      const h = beatCanvas.height;
+      ctx.clearRect(0, 0, w, h);
+
+      const centerY = h / 2;
+      const numStates = 7;
+      const spacing = w / (numStates + 1);
+      const baseR = 11 * (window.devicePixelRatio || 1);
+
+      const t = Date.now() / 1000;
+      const beatPeriod = 60 / tempo; // seconds per beat
+      const beatPhase = (t % beatPeriod) / beatPeriod;
+
+      for (let i = 0; i < numStates; i++) {
+        const x = spacing * (i + 1);
+        // Entropy "collapse" pulse: states lock in rhythmically
+        const localPhase = (beatPhase * 2 + i * 0.18) % 2;
+        let r = baseR;
+        let alpha = 0.35 + 0.65 * Math.sin(localPhase * Math.PI);
+
+        if (micActive) {
+          // Mic mode: add jitter + amplitude boost + slight tempo wobble
+          const jitter = (Math.sin(t * 14 + i) * 0.5 + 0.5) * 3.5 * amplitude;
+          r += jitter * amplitude;
+          alpha = Math.min(1, alpha * (0.7 + 0.6 * amplitude));
+        }
+
+        // Draw state (pose / energy basin)
+        ctx.beginPath();
+        ctx.arc(x, centerY + Math.sin(localPhase * Math.PI * 1.6) * (6 * amplitude), r, 0, Math.PI * 2);
+        ctx.fillStyle = i % 2 === 0 ? '#22D3EE' : (i === 3 ? '#FBBF24' : '#A84B2F');
+        ctx.globalAlpha = alpha * (0.6 + 0.4 * amplitude);
+        ctx.fill();
+
+        // Thin ring for ensemble
+        ctx.beginPath();
+        ctx.arc(x, centerY + Math.sin(localPhase * Math.PI * 1.6) * (6 * amplitude), r * 1.55, 0, Math.PI * 2);
+        ctx.strokeStyle = 'rgba(34,211,238,0.25)';
+        ctx.lineWidth = 1.5 * (window.devicePixelRatio || 1);
+        ctx.globalAlpha = 0.25 + 0.35 * (1 - Math.abs(Math.sin(localPhase * Math.PI)));
+        ctx.stroke();
+      }
+      ctx.globalAlpha = 1;
+
+      // Bottom waveform "mic signal"
+      ctx.beginPath();
+      ctx.moveTo(20, h - 28);
+      for (let x = 20; x < w - 20; x += 3) {
+        const s = Math.sin((x * 0.035) + phase * 3.8) * (micActive ? 11 * amplitude : 5);
+        const extra = micActive ? Math.sin(x * 0.11 + t * 9) * 4 * amplitude : 0;
+        ctx.lineTo(x, h - 28 + s + extra);
+      }
+      ctx.strokeStyle = micActive ? '#FBBF24' : 'rgba(34,211,238,0.55)';
+      ctx.lineWidth = 1.8 * (window.devicePixelRatio || 1);
+      ctx.stroke();
+
+      // Beat tick marker
+      const tickX = 20 + (w - 40) * beatPhase;
+      ctx.fillStyle = micActive ? '#FBBF24' : '#22D3EE';
+      ctx.fillRect(tickX - 1.5, h - 42, 3, 28);
+
+      phase += micActive ? 0.065 * amplitude : 0.038;
+    }
+
+    function loopBeat() {
+      drawBeat();
+      beatAnim = requestAnimationFrame(loopBeat);
+    }
+
+    function initBeatMic() {
+      beatCanvas = document.getElementById('beat-canvas');
+      if (!beatCanvas) return;
+      ctx = beatCanvas.getContext('2d');
+      resizeBeatCanvas();
+
+      const mic = document.getElementById('mic');
+      mic.addEventListener('click', () => {
+        micActive = !micActive;
+        mic.classList.toggle('active', micActive);
+        amplitude = micActive ? 1.6 : 1.0;
+        // subtle tempo shift when live
+        tempo = micActive ? 118 : 110;
+      });
+
+      // Click canvas to bump tempo momentarily (fun interaction)
+      beatCanvas.addEventListener('click', () => {
+        const old = tempo;
+        tempo = 138;
+        setTimeout(() => { tempo = old; }, 650);
+      });
+
+      window.addEventListener('resize', () => {
+        resizeBeatCanvas();
+      });
+
+      // Kick the animation
+      loopBeat();
+
+      // Gentle auto pulse hint
+      setTimeout(() => {
+        if (!micActive) amplitude = 1.15;
+        setTimeout(() => { if (!micActive) amplitude = 1.0; }, 1400);
+      }, 1600);
+    }
+
+    // Boot
+    function boot() {
+      renderDrugOfTheDay();
+      initBeatMic();
+
+      // Keyboard hint: press "m" to toggle mic
+      document.addEventListener('keydown', (e) => {
+        if (e.key.toLowerCase() === 'm') {
+          const mic = document.getElementById('mic');
+          if (mic) mic.click();
+        }
+      });
+    }
+
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', boot);
+    } else {
+      boot();
+    }
+  </script>
 </body>
 </html>
