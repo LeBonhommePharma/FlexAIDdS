@@ -32,16 +32,38 @@ struct RegionResult {
     float  best_coor[3];
     int    num_snapshots;
 
-    RegionResult() : region_id(-1), best_energy(1e30), best_coor{0,0,0}, num_snapshots(0) {}
+    // ── Best chromosome storage for downstream PDB output ──────────────────
+    // Deep copy of the best chromosome's genes array (indexed 0..num_genes-1).
+    // After run(), get_best_chromosome() uses this to populate chrom[0] in
+    // top.cpp so that the standard clustering/output path produces a real PDB.
+    std::vector<gene> best_genes;       // genes[0..num_genes-1] of best pose
+    chromosome        best_chrom_meta;  // evalue, cf, fitnes, etc. (genes ptr = NULL)
+    int               best_local_grd_idx;  // local subgrid index (1-based) for gene[0]
+
+    // Grid index mapping: best_local_grd_idx k → global index region_grid_indices[k-1]
+    // Copied from GridRegion::grid_indices at run_region() time.
+    std::vector<int>  region_grid_indices;
+
+    RegionResult() : region_id(-1), best_energy(1e30), best_coor{0,0,0},
+                     num_snapshots(0), best_local_grd_idx(-1) {
+        std::memset(&best_chrom_meta, 0, sizeof(best_chrom_meta));
+    }
 };
 
 class ParallelDockManager {
 public:
+    // parent_gene_lim: the genlim array from top.cpp covering genes 0..parent_num_genes-1.
+    //   genes[1..N-1] (flexible bonds, rotations) are COPIED into each region's workspace
+    //   so that GA() runs with correct gene bounds.  gene[0] is overridden per subgrid.
+    //   Pass nullptr to fall back to default [0,1] limits (produces wrong poses — only for
+    //   rigid-body docking where gene[0] is the only meaningful gene).
     ParallelDockManager(
         FA_Global* FA, GB_Global* GB, VC_Global* VC,
         atom* atoms, resid* residue,
         gridpoint* cleftgrid,
-        const ParallelDockConfig& config
+        const ParallelDockConfig& config,
+        genlim* parent_gene_lim = nullptr,
+        int     parent_num_genes = 0
     );
 
     // Phase 1: Decompose grid into octree regions
@@ -54,6 +76,17 @@ public:
 
     // Phase 3: Aggregate results into global partition function
     statmech::Thermodynamics aggregate() const;
+
+    // ── Best chromosome extraction ─────────────────────────────────────────
+    // Finds the region with lowest best_energy and copies its best chromosome
+    // into out_chrom (caller must have pre-allocated out_chrom.genes with at
+    // least num_genes entries).  Also writes the GLOBAL cleftgrid index to
+    // out_chrom.genes[0].to_ic so that ic2cf() operates on the correct point.
+    //
+    // Returns true on success, false if no valid chromosome was found.
+    // Called by top.cpp after run() to feed chrom[0] into the standard
+    // clustering/write_rrd output path.
+    bool get_best_chromosome(chromosome& out_chrom, int& out_global_grd_idx) const;
 
     // Access per-region results
     const std::vector<RegionResult>& region_results() const { return results_; }
@@ -72,6 +105,10 @@ private:
     resid* residue_;
     gridpoint* cleftgrid_;
     ParallelDockConfig config_;
+
+    // Parent gene limits (genes 1..N-1) inherited by every region workspace
+    genlim* parent_gene_lim_;
+    int     parent_num_genes_;
 
     std::vector<GridRegion> regions_;
     std::vector<RegionResult> results_;
