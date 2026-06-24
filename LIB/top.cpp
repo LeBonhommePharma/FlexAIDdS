@@ -2380,10 +2380,12 @@ int main(int argc, char **argv){
 				// The regular GA path sets chrom_snapshot, gene_lim, GB->num_genes
 				// automatically. For the parallel dock path we must do it manually.
 
-				// chrom_snapshot: calloc full-sized array (genes = NULL everywhere
-				// except slot 0). The top.cpp cleanup loop checks genes != NULL,
-				// so the zero-filled entries are freed correctly without crashing.
-				const int pd_snap_size = GB->num_chrom * std::max(1, (int)GB->max_generations);
+				// chrom_snapshot: 1 slot only — parallel dock produces exactly 1 best
+				// chromosome. Allocating num_chrom * max_generations = 3,500,000 slots
+				// wastes ~350 MB and causes the cleanup loop to read 3.5M entries
+				// even though only slot 0 has valid genes. The fix: allocate 1, then
+				// patch GB->num_chrom/max_generations to 1 so cleanup iterates once.
+				const int pd_snap_size = 1;
 				chrom_snapshot = (chromosome*)calloc(pd_snap_size, sizeof(chromosome));
 				if (chrom_snapshot) {
 					chrom_snapshot[0] = chrom[0];  // shallow copy struct fields
@@ -2410,6 +2412,11 @@ int main(int argc, char **argv){
 					fprintf(stderr, "ParallelDock: gene_lim alloc failed\n");
 					n_chrom_snapshot = 0;
 				}
+
+				// Patch GB counters so cleanup loop iterates 1 slot (not 3,500,000).
+				// Downstream code uses n_chrom_snapshot directly; this is safe to do now.
+				GB->num_chrom = 1;
+				GB->max_generations = 1;
 			}
 		} else if (use_campaign) {
 			// ── ParallelCampaign: multi-ligand virtual screening ──

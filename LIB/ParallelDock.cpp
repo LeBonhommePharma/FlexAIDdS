@@ -202,40 +202,21 @@ RegionResult ParallelDockManager::run_region(
     ws.fa.mif_sorted            = nullptr;
     ws.fa.mif_count             = 0;
 
-    // Allocate chromosomes; gene_lim is allocated by GA() via set_gene_lim()
-    // which now reads the patched opt_par arrays above.
-    //
-    // IMPORTANT: ws.gb.num_genes is NOT yet set at this point — GA() sets it
-    // internally via "GB->num_genes = FA->npar" on entry.  Use ws.fa.npar for
-    // pre-allocation sizing, and recapture the actual value AFTER GA() returns.
-    int num_genes = ws.fa.npar;  // = FA->npar, correct before GA() runs
+    // Capture num_chrom for post-GA snapshot cleanup
     int num_chrom = ws.gb.num_chrom;
 
-    chromosome* chrom = (chromosome*)calloc(num_chrom * 2, sizeof(chromosome));
-    chromosome* chrom_snapshot = (chromosome*)calloc(
-        num_chrom * ws.gb.max_generations, sizeof(chromosome));
-
-    if (!chrom || !chrom_snapshot) {
-        free(subgrid);
-        free(chrom);
-        free(chrom_snapshot);
-        return result;
-    }
-
-    // Allocate genes for each chromosome
-    for (int i = 0; i < num_chrom * 2; i++) {
-        chrom[i].genes = (gene*)calloc(num_genes, sizeof(gene));
-    }
-    for (int i = 0; i < num_chrom * ws.gb.max_generations; i++) {
-        chrom_snapshot[i].genes = (gene*)calloc(num_genes, sizeof(gene));
-    }
-
-    // gene_lim is allocated and initialized by GA() via (*gene_lim) = malloc(...)
-    // + set_gene_lim(FA, GB, gene_lim).  Pass a NULL pointer; GA() sets it.
-    genlim* gene_lim = nullptr;
-
-    int memchrom = num_chrom * 2;
-    char gainpfile[256] = "";
+    // Do NOT pre-allocate chrom or chrom_snapshot here.
+    // GA() always replaces (*chrom) and (*chrom_snapshot) via its own malloc()
+    // (gaboom.cpp lines ~395 and ~434).  Any pre-allocation is immediately leaked,
+    // costing ~1.27 GB per region (1000 chrom × 3500 gens × genes array).
+    // With 8 OMP threads in parallel this exceeds 18 GB RAM → OOM crash inside OMP.
+    // Passing chrom=nullptr and memchrom=0 is the same as the top.cpp single-GA path;
+    // GA() handles all internal allocation on its own.
+    chromosome* chrom          = nullptr;
+    chromosome* chrom_snapshot = nullptr;
+    genlim*     gene_lim       = nullptr;
+    int         memchrom       = 0;
+    char        gainpfile[256] = "";
 
     // Run the GA on this region's subgrid with per-region context.
     // GA() will: (1) allocate gene_lim via malloc, (2) call set_gene_lim()
@@ -292,9 +273,8 @@ RegionResult ParallelDockManager::run_region(
     result.num_snapshots = n_snap;
     result.local_thermo = regional_engine.compute();
 
-    // Cleanup: GA() reallocated *chrom and *chrom_snapshot via its own malloc.
-    // The pre-GA arrays we allocated above were leaked (GA replaced the pointers).
-    // Use actual_num_genes (set by GA) for gene array sizes.
+    // Cleanup: GA() allocated *chrom and *chrom_snapshot via its own malloc().
+    // Use memchrom (updated by GA to num_chrom*2) for chrom loop bound.
     // gene_lim was allocated by GA() (via (*gene_lim) = malloc(...)) — free it.
     for (int i = 0; i < memchrom; i++) {
         if (chrom[i].genes) free(chrom[i].genes);
