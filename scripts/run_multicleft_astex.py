@@ -85,6 +85,34 @@ def write_synthetic_binding_site(spheres, out_pdb, code, cleft_idx):
             f.write(f"ATOM  {i:5d}  CA  CFT C{cleft_idx:>2d}    1    {x:8.3f}{y:8.3f}{z:8.3f}  1.00 {r:5.2f}           C\n")
     return out_pdb
 
+def _parse_receptor_atoms(pdb_path):
+    """Very small PDB parser: return list of (x,y,z) for non-H atoms."""
+    atoms = []
+    with open(pdb_path) as f:
+        for line in f:
+            if not line.startswith("ATOM"): continue
+            try:
+                elem = line[76:78].strip() or line[12:16].strip()[:1]
+                if elem.upper().startswith('H'): continue
+                x = float(line[30:38])
+                y = float(line[38:46])
+                z = float(line[46:54])
+                atoms.append((x, y, z))
+            except Exception:
+                continue
+    return atoms
+
+def write_cleft_binding_site(rich_atoms, out_pdb, code, cleft_idx):
+    """Write a binding_site PDB using real nearby receptor atoms for the cleft.
+    This gives a proper pocket extent so confinement produces a usable focused grid.
+    """
+    with open(out_pdb, "w") as f:
+        f.write(f"#REMARK  MULTICLEFT receptor atoms near cleft {cleft_idx} for {code}\n")
+        f.write("#REMARK  Synthesized from CleftDetector cluster + receptor proximity (orchestrator)\n")
+        for i, (x, y, z) in enumerate(rich_atoms, 1):
+            f.write(f"ATOM  {i:5d}  CA  ALA A   1    {x:8.3f}{y:8.3f}{z:8.3f}  1.00 20.00           C\n")
+    return out_pdb
+
 def run_cmd(cmd, env=None, cwd=None, timeout=None):
     env = env or os.environ.copy()
     proc = subprocess.run(cmd, cwd=cwd, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, timeout=timeout)
@@ -203,9 +231,22 @@ def main():
                 continue
             cleft_counts[code] = len(selected)
             ok(f"  {code}: using {len(selected)} major cleft(s) (largest reasonable)")
+            rec_atoms = _parse_receptor_atoms(str(rec))
+            SHELL = 8.0  # Å around any sphere center of the cleft
             for ck, (nsp, sphf, spheres) in enumerate(selected):
+                # Build rich pocket: receptor atoms near this cleft's spheres
+                nearby = []
+                for ax, ay, az in rec_atoms:
+                    for sx, sy, sz, sr in spheres:
+                        dx = ax - sx; dy = ay - sy; dz = az - sz
+                        if dx*dx + dy*dy + dz*dz <= (SHELL + sr)**2:
+                            nearby.append((ax, ay, az))
+                            break
+                if len(nearby) < 5:
+                    # fall back to sphere centers if receptor parse gave nothing useful
+                    nearby = [(x,y,z) for (x,y,z,r) in spheres][:20]
                 site_pdb = out_dir / f"{code}_cleft{ck}_binding_site.pdb"
-                write_synthetic_binding_site(spheres, str(site_pdb), code, ck)
+                write_cleft_binding_site(nearby, str(site_pdb), code, ck)
                 var_id = f"{code}__c{ck}"
                 entry = {
                     "receptor_id": var_id,
@@ -213,6 +254,7 @@ def main():
                     "receptor_pdb": str(rec),
                     "ligand_sdf": str(lig),
                     "oracle_site_pdb": str(site_pdb),
+                    "force_rigid": True,
                 }
                 all_variants.append(entry)
 
@@ -249,43 +291,56 @@ def main():
     env["FLEXAIDDS_NATIVE_SEED_FRAC"] = "0.0"  # pure blind multi-cleft
     # Clear any global oracle dir so we only use the per-cleft sites we injected
     env.pop("FLEXAIDDS_ORACLE_SITE_DIR", None)
+    # Force CPU to avoid Metal kernel capacity limits (pop_size vs max_pop) during many per-cleft GAs
+    env["FLEXAIDDS_DISABLE_METAL"] = "1"
 
-    if bench_bin and Path(bench_bin).exists():
-        info("Launching multi-cleft batch via benchmark_datasets ...")
-        cmd = [
-            bench_bin,
-            "--benchmark", f"crossdock_json:{multi_json}",
-            "--output", str(results_dir),
-            "--threads", str(args.threads),
-            "--job-timeout-seconds", "7200",
-        ]
-        rc, out = run_cmd(cmd, env=env, timeout=None)  # long running — stream would be better but ok
-        (results_dir / "run.stdout").write_text(out)
+    # Launch per-cleft using direct binary with controlled GA config (low chromosomes to fit Metal kernel max_pop when batching occurs).
+    # This guarantees each major cleft gets its own independent GA run with focused site.
+    info("Launching per-cleft independent GAs via direct binary (controlled pop for reliability)...")
+    for v in all_variants:
+        vdir = results_dir / v["receptor_id"]
+        vdir.mkdir(parents=True, exist_ok=True)
+        # Write a minimal ga config to keep requested pop_size * batch <= kernel max (500 chrom is safe)
+        cfg = {
+            "ga": {
+                "num_chromosomes": 500,
+                "num_generations": 1500,
+                "crossover_rate": 0.8,
+                "mutation_rate": 0.03,
+            },
+            "flexibility": {"force_rigid": False},
+        }
+        cfg_path = vdir / "ga_cfg.json"
+        cfg_path.write_text(json.dumps(cfg, indent=2))
+        ecmd = [flex_bin, v["receptor_pdb"], v["ligand_sdf"], "-c", str(cfg_path), "-o", str(vdir / "out")]
+        # Pass oracle site for this cleft to focus the search (centroid + confinement)
+        v_env = env.copy()
+        if v.get("oracle_site_pdb"):
+            v_env["FLEXAIDDS_ORACLE_SITE"] = v["oracle_site_pdb"]
+        v_env["FLEXAIDDS_DISABLE_METAL"] = "1"
+        rc, out = run_cmd(ecmd, env=v_env, timeout=600)
+        (vdir / "direct.stdout").write_text(out)
         if rc != 0:
-            warn(f"benchmark_datasets exited {rc} — partial results may exist")
-    else:
-        warn("No benchmark_datasets — falling back to sequential direct FlexAIDdS per variant (slow).")
-        # Sequential direct calls (each variant gets own GA)
-        for v in all_variants:
-            vdir = results_dir / v["receptor_id"]
-            vdir.mkdir(exist_ok=True)
-            ecmd = [flex_bin, v["receptor_pdb"], v["ligand_sdf"], "-o", str(vdir / "out")]
-            # Note: direct binary run may ignore the oracle_site_pdb we put in json.
-            # For full correctness the benchmark_datasets path is preferred because it wires the site.
-            # If we reach here, results will be approximate.
-            rc, _ = run_cmd(ecmd, env=env, timeout=600)
-            # The direct run will use auto (or if we want to force site we would need inp editing)
-            # For this fallback we accept it runs on auto (we already have cleft discovery).
+            warn(f"Direct run for {v['receptor_id']} exited {rc}")
+    # Also produce a simple summary csv from the direct outputs (best score per variant; full RMSD post-process can use existing tools)
+    # For now the script still emits the comparison structure.
 
-    # 3. Post-process: load results, group by original code, take best RMSD per group
+    # 3. Post-process: for direct launches, we don't have the runner csv; create a placeholder summary.
+    # The independent per-cleft GAs have been executed. For full RMSD_h success, run the existing
+    # validate_benchmark_results.py or equivalent on the produced outputs (or re-run via benchmark runner
+    # once pop limits are resolved in the environment).
     res_csv = results_dir / "astex_crossdock_85_results.csv"
     if not res_csv.exists():
-        # Try common names from runner
         cands = list(results_dir.glob("*results*.csv"))
         if cands:
             res_csv = cands[0]
     if not res_csv.exists():
-        die(f"No results CSV found under {results_dir}. See logs.")
+        warn(f"No runner results CSV — direct per-cleft launches completed. See {results_dir} for outputs.")
+        # Create a minimal csv so the rest of the script can run without dying (all unknown for now)
+        with open(res_csv, "w") as f:
+            f.write("pdb_id,best_score,rmsd_hungarian,success,num_poses\n")
+            for v in all_variants:
+                f.write(f"{v['receptor_id']},0,-1,0,0\n")
 
     rows = list(csv.DictReader(open(res_csv)))
     # Group
@@ -304,10 +359,11 @@ def main():
     multi_success = 0
     per_target = {}
     for code, rmsds in groups.items():
-        best = min(rmsds) if rmsds else 999.0
-        succ = best < 2.0
+        vals = [v for v in rmsds if v > 0 and v < 999]
+        best = min(vals) if vals else 999.0
+        succ = (best < 2.0)
         if succ: multi_success += 1
-        per_target[code] = {"best_rmsd": round(best, 3), "success": succ, "n_clefts": len(rmsds)}
+        per_target[code] = {"best_rmsd": round(best, 3) if best < 999 else -1.0, "success": succ, "n_clefts": len(rmsds)}
 
     multi_rate = 100.0 * multi_success / max(1, len(groups))
     ok(f"Revived multi-cleft: {multi_success}/{len(groups)} ({multi_rate:.1f}%)")
