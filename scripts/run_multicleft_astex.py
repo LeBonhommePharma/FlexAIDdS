@@ -33,6 +33,12 @@ import time
 from pathlib import Path
 from datetime import datetime
 
+# Reuse existing parsers for real RMSD extraction (no new code)
+_script_dir = Path(__file__).resolve().parent
+if str(_script_dir) not in sys.path:
+    sys.path.insert(0, str(_script_dir))
+from parse_rdock_results import hungarian_rmsd, _read_sdf_records
+
 ASTEX_CODES = [
     "1G9V","1GM8","1GPK","1HNN","1HP0","1HQ2","1IA1","1IGJ","1J3J","1JD0",
     "1JJE","1K3U","1KE5","1KZK","1L2S","1L7F","1LPZ","1M2Z","1MEH","1MQ6",
@@ -114,9 +120,15 @@ def write_cleft_binding_site(rich_atoms, out_pdb, code, cleft_idx):
     return out_pdb
 
 def run_cmd(cmd, env=None, cwd=None, timeout=None):
-    env = env or os.environ.copy()
-    proc = subprocess.run(cmd, cwd=cwd, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, timeout=timeout)
-    return proc.returncode, proc.stdout
+    env = (env or os.environ).copy()
+    try:
+        proc = subprocess.run(cmd, cwd=cwd, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, timeout=timeout)
+        return proc.returncode, proc.stdout
+    except subprocess.TimeoutExpired as e:
+        out = (e.stdout or b"").decode(errors="replace") + "\n[TIMEOUT]"
+        return -1, out
+    except Exception as e:
+        return -2, str(e)
 
 def discover_clefts_for_target(flexaidds_bin, receptor, ligand, dump_dir, work_prefix, timeout=300):
     """Cheap discovery pass: run FlexAIDdS (hits detect) with CLEFTS_ONLY so it exits before GA."""
@@ -129,6 +141,100 @@ def discover_clefts_for_target(flexaidds_bin, receptor, ligand, dump_dir, work_p
     # Even on early exit we expect the dump prints.
     sphs = sorted(glob.glob(str(Path(dump_dir) / "cleft_*.sph")))
     return sphs, out
+
+
+def _parse_cf_and_ligand(pdb_path):
+    """Extract (cf or None, list[(elem,x,y,z) heavy]) from direct-run cluster PDB.
+    Uses CONECT + HETATM (existing pattern from v12_hungarian_rmsd.py and parse_rdock).
+    """
+    try:
+        text = pdb_path.read_text(errors="replace")
+    except Exception:
+        return None, []
+    cf = None
+    for ln in text.splitlines():
+        if "REMARK CF=" in ln:
+            try:
+                cf = float(ln.split("=", 1)[1].split()[0])
+                break
+            except Exception:
+                pass
+    # CONECT-based ligand atom collection (heavy only)
+    conect_serials = set()
+    for ln in text.splitlines():
+        if ln.startswith("CONECT"):
+            for i in range(6, len(ln), 5):
+                s = ln[i:i+5].strip()
+                if s:
+                    try:
+                        conect_serials.add(int(s))
+                    except Exception:
+                        pass
+    atoms = []
+    for ln in text.splitlines():
+        if not ln.startswith("HETATM"):
+            continue
+        try:
+            ser = int(ln[6:11])
+            if ser not in conect_serials:
+                continue
+            elem = (ln[76:78].strip() or ln[12:16].strip()[:1]).upper()
+            if elem in ("H", "D", "DU"):
+                continue
+            x = float(ln[30:38])
+            y = float(ln[38:46])
+            z = float(ln[46:54])
+            atoms.append((elem, x, y, z))
+        except Exception:
+            continue
+    return cf, atoms
+
+
+def extract_real_rmsds(variants, astex_dir, results_dir):
+    """For each variant's restart outputs, find best (lowest CF) pose PDB,
+    compute Hungarian RMSD vs crystal ligand SDF. Returns list of row dicts.
+    Falls back to any .pdb with ligand atoms if no CF.
+    """
+    rows = []
+    for v in variants:
+        code = v["ligand_id"]
+        vid = v["receptor_id"]
+        crystal = astex_dir / code / f"{code}_ligand.sdf"
+        if not crystal.exists():
+            continue
+        try:
+            ref_atoms = next(_read_sdf_records(str(crystal)))[0]
+        except Exception:
+            continue
+        best_r = 999.0
+        best_cf = None
+        rdirs = v.get("_restart_dirs") or [results_dir / vid]
+        for rdir in rdirs:
+            for p in list(rdir.glob("*.pdb")):
+                cf, pose = _parse_cf_and_ligand(p)
+                if not pose:
+                    continue
+                try:
+                    r = hungarian_rmsd(ref_atoms, pose)
+                    if r is not None:
+                        if (cf is not None and (best_cf is None or cf < best_cf)) or (best_r > 999):
+                            best_r = r
+                            if cf is not None:
+                                best_cf = cf
+                        elif best_r > 999:
+                            best_r = r
+                except Exception:
+                    continue
+        succ = 1 if best_r < 2.0 else 0
+        rows.append({
+            "pdb_id": vid,
+            "best_score": 0,
+            "rmsd_hungarian": round(best_r, 4) if best_r < 999 else -1,
+            "success": succ,
+            "num_poses": 1,
+        })
+    return rows
+
 
 def main():
     import argparse
@@ -298,51 +404,63 @@ def main():
     # This guarantees each major cleft gets its own independent GA run with focused site.
     info("Launching per-cleft independent GAs via direct binary (controlled pop for reliability)...")
     for v in all_variants:
-        vdir = results_dir / v["receptor_id"]
+        vid = v["receptor_id"]
+        vdir = results_dir / vid
         vdir.mkdir(parents=True, exist_ok=True)
-        # Write a minimal ga config to keep requested pop_size * batch <= kernel max (500 chrom is safe)
-        cfg = {
-            "ga": {
-                "num_chromosomes": 500,
-                "num_generations": 1500,
-                "crossover_rate": 0.8,
-                "mutation_rate": 0.03,
-            },
-            "flexibility": {"force_rigid": False},
-        }
-        cfg_path = vdir / "ga_cfg.json"
-        cfg_path.write_text(json.dumps(cfg, indent=2))
-        ecmd = [flex_bin, v["receptor_pdb"], v["ligand_sdf"], "-c", str(cfg_path), "-o", str(vdir / "out")]
-        # Pass oracle site for this cleft to focus the search (centroid + confinement)
-        v_env = env.copy()
-        if v.get("oracle_site_pdb"):
-            v_env["FLEXAIDDS_ORACLE_SITE"] = v["oracle_site_pdb"]
-        v_env["FLEXAIDDS_DISABLE_METAL"] = "1"
-        rc, out = run_cmd(ecmd, env=v_env, timeout=600)
-        (vdir / "direct.stdout").write_text(out)
-        if rc != 0:
-            warn(f"Direct run for {v['receptor_id']} exited {rc}")
+        force_rigid = bool(v.get("force_rigid", False))
+        base_seed = 10000 + (ASTEX_CODES.index(v["ligand_id"]) * 100 if v["ligand_id"] in ASTEX_CODES else 0)
+        restart_dirs = []
+        n_restarts = max(1, args.restarts_per_cleft)
+        for ri in range(n_restarts):
+            rdir = vdir / f"r{ri}"
+            rdir.mkdir(parents=True, exist_ok=True)
+            # Write per-restart cfg with distinct seed (direct path uses ga.seed)
+            cfg = {
+                "ga": {
+                    "num_chromosomes": 1000,
+                    "num_generations": 3500,
+                    "crossover_rate": 0.8,
+                    "mutation_rate": 0.03,
+                    "seed": base_seed + ri,
+                },
+                "flexibility": {"intramolecular": not force_rigid, "ligand_torsions": not force_rigid},
+            }
+            cfg_path = rdir / "ga_cfg.json"
+            cfg_path.write_text(json.dumps(cfg, indent=2))
+            ecmd = [flex_bin, v["receptor_pdb"], v["ligand_sdf"], "-c", str(cfg_path), "-o", str(rdir / "out")]
+            v_env = env.copy()
+            if v.get("oracle_site_pdb"):
+                v_env["FLEXAIDDS_ORACLE_SITE"] = v["oracle_site_pdb"]
+            v_env["FLEXAIDDS_DISABLE_METAL"] = "1"
+            rc, out = run_cmd(ecmd, env=v_env, timeout=600)
+            (rdir / "direct.stdout").write_text(out)
+            if rc != 0:
+                warn(f"Direct run for {vid} r{ri} exited {rc}")
+            restart_dirs.append(rdir)
+        v["_restart_dirs"] = restart_dirs
     # Also produce a simple summary csv from the direct outputs (best score per variant; full RMSD post-process can use existing tools)
     # For now the script still emits the comparison structure.
 
-    # 3. Post-process: for direct launches, we don't have the runner csv; create a placeholder summary.
-    # The independent per-cleft GAs have been executed. For full RMSD_h success, run the existing
-    # validate_benchmark_results.py or equivalent on the produced outputs (or re-run via benchmark runner
-    # once pop limits are resolved in the environment).
+    # 3. Post-process: extract real RMSD from produced direct outputs (out*.pdb files) using
+    # existing hungarian_rmsd + parsers. Writes real CSV so comparison has actual numbers.
     res_csv = results_dir / "astex_crossdock_85_results.csv"
-    if not res_csv.exists():
-        cands = list(results_dir.glob("*results*.csv"))
-        if cands:
-            res_csv = cands[0]
-    if not res_csv.exists():
-        warn(f"No runner results CSV — direct per-cleft launches completed. See {results_dir} for outputs.")
-        # Create a minimal csv so the rest of the script can run without dying (all unknown for now)
-        with open(res_csv, "w") as f:
-            f.write("pdb_id,best_score,rmsd_hungarian,success,num_poses\n")
+    real_rows = extract_real_rmsds(all_variants, astex, results_dir)
+    if real_rows:
+        with open(res_csv, "w", newline="") as f:
+            w = csv.DictWriter(f, fieldnames=["pdb_id", "best_score", "rmsd_hungarian", "success", "num_poses"])
+            w.writeheader()
+            for r in real_rows:
+                w.writerow(r)
+        rows = list(csv.DictReader(open(res_csv)))
+    else:
+        warn(f"No usable pose outputs found for RMSD extraction. See {results_dir}")
+        res_csv = results_dir / "astex_crossdock_85_results.csv"
+        with open(res_csv, "w", newline="") as f:
+            w = csv.DictWriter(f, fieldnames=["pdb_id", "best_score", "rmsd_hungarian", "success", "num_poses"])
+            w.writeheader()
             for v in all_variants:
-                f.write(f"{v['receptor_id']},0,-1,0,0\n")
-
-    rows = list(csv.DictReader(open(res_csv)))
+                w.writerow({"pdb_id": v["receptor_id"], "best_score": 0, "rmsd_hungarian": -1, "success": 0, "num_poses": 0})
+        rows = list(csv.DictReader(open(res_csv)))
     # Group
     from collections import defaultdict
     groups = defaultdict(list)
@@ -367,6 +485,41 @@ def main():
 
     multi_rate = 100.0 * multi_success / max(1, len(groups))
     ok(f"Revived multi-cleft: {multi_success}/{len(groups)} ({multi_rate:.1f}%)")
+
+    # Basic focus verification: parse existing oracle/SITE-CONFINE prints from direct stdout
+    # to confirm different clefts used different centroids (different confined grids).
+    focus_log = out_dir / "focus_verification.log"
+    with open(focus_log, "w") as flog:
+        per_code = {}
+        for v in all_variants:
+            vid = v["receptor_id"]
+            code = v["ligand_id"]
+            for rd in v.get("_restart_dirs", []):
+                sf = rd / "direct.stdout"
+                if not sf.exists():
+                    continue
+                try:
+                    out = sf.read_text(errors="replace")
+                except Exception:
+                    continue
+                for ln in out.splitlines():
+                    if "centroid:" in ln.lower() or "SITE-CONFINE" in ln or "CleftDetector: keeping" in ln or "[ORACLE]" in ln:
+                        flog.write(f"{vid}: {ln}\n")
+                        if "centroid:" in ln.lower():
+                            per_code.setdefault(code, []).append(ln)
+        for code, lines in per_code.items():
+            cents = set()
+            for l in lines:
+                try:
+                    parts = [p for p in l.replace(":", " ").split() if p.replace(".", "", 1).replace("-", "", 1).replace("+", "", 1).lstrip("0123456789.").replace("e", "E").replace("E+", "E").isdigit() or (p[0] in "-+." and p[1:].replace(".", "", 1).lstrip("0123456789.").replace("e", "E").replace("E+", "E").isdigit())]
+                    # crude: last 3 numeric-ish
+                    if len(parts) >= 3:
+                        c = tuple(float(p) for p in parts[-3:])
+                        cents.add(c)
+                except Exception:
+                    pass
+            flog.write(f"{code}: {len(cents)} distinct centroids observed\n")
+    ok(f"Focus verification log: {focus_log}")
 
     # 4. Write comparison
     cmp_path = out_dir / "multicleft_vs_single_vs_old.md"
