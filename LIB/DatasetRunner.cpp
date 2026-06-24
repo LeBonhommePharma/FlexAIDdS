@@ -5936,8 +5936,23 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                 << data_dir_arg
                 << "'" << effective_receptor << "' "
                 << "'" << dock_ligand_path << "' "
-                << "--config '" << config_path << "' "
-                << "-o '" << ri_prefix << "' "
+                << "--config '" << config_path << "' ";
+
+            // ── Multi-cleft parallel docking (FLEXAIDDS_MULTI_CLEFT=N) ────────
+            // When set, each FlexAIDdS invocation runs N independent GA instances
+            // on octree-decomposed spatial sub-regions of the binding site grid.
+            // The best pose across all regions is written to <prefix>_0.pdb via
+            // the fixed ParallelDockManager::get_best_chromosome() path.
+            // N=8 is recommended for M3 Pro (leaves headroom for DatasetRunner).
+            {
+                const char* mc_env = std::getenv("FLEXAIDDS_MULTI_CLEFT");
+                if (mc_env && std::atoi(mc_env) > 1) {
+                    int n_regions = std::atoi(mc_env);
+                    cmd << "--parallel-dock --parallel-dock-regions " << n_regions << " ";
+                }
+            }
+
+            cmd << "-o '" << ri_prefix << "' "
                 << "2>'" << ri_dir << "/stderr.log' "
                 << ">'" << ri_dir << "/stdout.log'";
 

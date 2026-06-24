@@ -2302,7 +2302,11 @@ int main(int argc, char **argv){
 
 			ParallelDockConfig pdcfg;
 			pdcfg.target_regions = parallel_dock_regions;
-			ParallelDockManager pdm(FA, GB, VC, atoms, residue, cleftgrid, pdcfg);
+			// Pass parent gene_lim so each region inherits correct flexible-bond
+			// and rotation gene limits (genes 1..N-1).  Previously these were
+			// uninitialized, producing physically nonsensical conformations.
+			ParallelDockManager pdm(FA, GB, VC, atoms, residue, cleftgrid, pdcfg,
+			                        gene_lim, GB->num_genes);
 			pdm.decompose();
 			pdm.run(ic2cf);
 			auto global_thermo = pdm.aggregate();
@@ -2311,9 +2315,20 @@ int main(int argc, char **argv){
 			       global_thermo.free_energy, -FA->temperature * global_thermo.entropy);
 			printf("ParallelDock: %zu regions completed\n", pdm.region_results().size());
 
-			// Use best region's snapshot count for downstream compatibility
-			for (const auto& rr : pdm.region_results()) {
-				n_chrom_snapshot += rr.num_snapshots;
+			// ── Extract best chromosome from best region -> chrom[0] ──────────
+			// Previously: summed all regions' num_snapshots into n_chrom_snapshot
+			// but chrom[] still held the pre-GA initialisation state, so clustering
+			// received garbage and wrote garbage PDB output.
+			// Fix: extract the globally best chromosome and put it in chrom[0] so
+			// the standard clustering/write_rrd path produces a valid pose file.
+			int pd_global_grd_idx = -1;
+			if (pdm.get_best_chromosome(chrom[0], pd_global_grd_idx)) {
+				chrom[0].genes[0].to_ic = (double)pd_global_grd_idx;
+				n_chrom_snapshot = 1;
+			} else {
+				fprintf(stderr, "ParallelDock: failed to extract best chromosome -- "
+				        "no output will be written\n");
+				n_chrom_snapshot = 0;
 			}
 		} else if (use_campaign) {
 			// ── ParallelCampaign: multi-ligand virtual screening ──
