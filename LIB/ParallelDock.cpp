@@ -160,8 +160,55 @@ RegionResult ParallelDockManager::run_region(
     // Override grid parameters for this region
     ws.fa.num_grd = sub_num_grd;
 
-    // Allocate chromosomes and gene limits for this region's GA
-    int num_genes = ws.gb.num_genes;
+    // ── Patch opt_par arrays so GA()'s set_gene_lim() uses subgrid limits ────
+    // FA_Global is shallow-copied: ws.fa.min_opt_par / max_opt_par still point
+    // to the PARENT's arrays, which have gene[0].max = GLOBAL_NUM_GRD - 1.
+    // GA() calls set_gene_lim(FA, GB, gene_lim) → gene_lim[0].max =
+    // FA->max_opt_par[0] = GLOBAL_NUM_GRD - 1, causing the GA to try to place
+    // the ligand at global grid indices that don't exist in the subgrid.
+    // Fix: deep-copy the opt_par arrays and patch index 0 for the subgrid.
+    int npar = ws.fa.npar;
+    std::vector<double> sub_min_par(ws.fa.min_opt_par, ws.fa.min_opt_par + npar);
+    std::vector<double> sub_max_par(ws.fa.max_opt_par, ws.fa.max_opt_par + npar);
+    std::vector<double> sub_del_par(ws.fa.del_opt_par, ws.fa.del_opt_par + npar);
+    std::vector<int>    sub_map_par(ws.fa.map_opt_par, ws.fa.map_opt_par + npar);
+
+    // Gene[0] = translation: restrict to this subgrid's valid range [1, sub_num_grd-1]
+    sub_min_par[0] = 1.0;
+    sub_max_par[0] = static_cast<double>(sub_num_grd - 1);
+    sub_del_par[0] = sub_max_par[0] - sub_min_par[0];
+    if (sub_del_par[0] <= 0.0) sub_del_par[0] = 1.0;  // guard: degenerate region
+
+    ws.fa.min_opt_par = sub_min_par.data();
+    ws.fa.max_opt_par = sub_max_par.data();
+    ws.fa.del_opt_par = sub_del_par.data();
+    ws.fa.map_opt_par = sub_map_par.data();
+
+    // ── Disable ALL global-index seeding overrides ─────────────────────────
+    // RefLig, coarse-init, and MIF seeding all use indices into the GLOBAL
+    // cleftgrid (FA_->reflig_nearest_grid[], coarse_seeds_grid[], mif_sorted[]).
+    // The shallow copy ws.fa = *FA_ carries these pointers/counts; using them
+    // in a subregion GA() causes out-of-bounds accesses into the subgrid array
+    // (heap corruption → SIGABRT).  Zero them out so GA() falls through to the
+    // cleft-biased seeding which correctly uses ws.fa.num_grd = sub_num_grd.
+    ws.fa.reflig_nearest_count = 0;
+    ws.fa.reflig_nearest_grid  = nullptr;
+    ws.fa.reflig_seed_fraction  = 0.0f;
+    ws.fa.coarse_init_enabled   = false;
+    ws.fa.coarse_seeds_count    = 0;
+    ws.fa.coarse_seeds_grid     = nullptr;
+    ws.fa.mif_enabled           = false;
+    ws.fa.mif_cdf               = nullptr;
+    ws.fa.mif_sorted            = nullptr;
+    ws.fa.mif_count             = 0;
+
+    // Allocate chromosomes; gene_lim is allocated by GA() via set_gene_lim()
+    // which now reads the patched opt_par arrays above.
+    //
+    // IMPORTANT: ws.gb.num_genes is NOT yet set at this point — GA() sets it
+    // internally via "GB->num_genes = FA->npar" on entry.  Use ws.fa.npar for
+    // pre-allocation sizing, and recapture the actual value AFTER GA() returns.
+    int num_genes = ws.fa.npar;  // = FA->npar, correct before GA() runs
     int num_chrom = ws.gb.num_chrom;
 
     chromosome* chrom = (chromosome*)calloc(num_chrom * 2, sizeof(chromosome));
@@ -183,43 +230,17 @@ RegionResult ParallelDockManager::run_region(
         chrom_snapshot[i].genes = (gene*)calloc(num_genes, sizeof(gene));
     }
 
-    genlim* gene_lim = (genlim*)calloc(num_genes, sizeof(genlim));
-
-    // ── gene[0]: translation — limited to this sub-region's grid ───────────
-    gene_lim[0].min = 1.0;
-    gene_lim[0].max = (double)(sub_num_grd - 1);
-    gene_lim[0].del = gene_lim[0].max - gene_lim[0].min;
-    set_bins(&gene_lim[0]);
-
-    // ── genes[1..N-1]: rotation + flexible bonds — copy from parent ─────────
-    // Previously these were left uninitialised (the "simplified version" TODO).
-    // Uninitialised gene limits cause GA() to search the full [0,1] cube for
-    // dihedral angles and produce physically nonsensical conformations.
-    if (parent_gene_lim_ && parent_num_genes_ >= num_genes) {
-        for (int g = 1; g < num_genes; g++) {
-            gene_lim[g] = parent_gene_lim_[g];
-        }
-    } else {
-        // Fallback when parent limits aren't provided (rigid-body docking only).
-        // Rotational genes are typically [-π, π] in IC space → map to [0, 1].
-        for (int g = 1; g < num_genes; g++) {
-            gene_lim[g].min = 0.0;
-            gene_lim[g].max = 1.0;
-            gene_lim[g].del = 1.0;
-            set_bins(&gene_lim[g]);
-        }
-        if (num_genes > 1) {
-            fprintf(stderr,
-                "ParallelDock WARNING: region %d using fallback gene limits "
-                "for genes 1..%d — pass parent_gene_lim for correct flex poses\n",
-                region.region_id, num_genes - 1);
-        }
-    }
+    // gene_lim is allocated and initialized by GA() via (*gene_lim) = malloc(...)
+    // + set_gene_lim(FA, GB, gene_lim).  Pass a NULL pointer; GA() sets it.
+    genlim* gene_lim = nullptr;
 
     int memchrom = num_chrom * 2;
     char gainpfile[256] = "";
 
-    // Run the GA on this region's subgrid with per-region context
+    // Run the GA on this region's subgrid with per-region context.
+    // GA() will: (1) allocate gene_lim via malloc, (2) call set_gene_lim()
+    // which reads ws.fa.min_opt_par[0] = 1.0, ws.fa.max_opt_par[0] = sub_num_grd-1
+    // (patched above), so gene[0] is correctly confined to the subgrid.
     GA(&ws.fa, &ws.gb, &ws.vc,
        &chrom, &chrom_snapshot,
        &gene_lim,
@@ -232,6 +253,10 @@ RegionResult ParallelDockManager::run_region(
        &ws.ga_ctx);
 
     // Collect results: snapshot energies for partition function + best chromosome
+    // GA() sets ws.gb.num_genes = FA->npar on entry; capture it NOW (after GA())
+    // so that best_genes.assign() uses the correct gene count (not 0).
+    int actual_num_genes = ws.gb.num_genes;
+    if (actual_num_genes <= 0) actual_num_genes = ws.fa.npar;  // safety fallback
     int n_snap = ws.gb.num_chrom;  // snapshot from last generation
     result.best_energy = 1e30;
 
@@ -255,7 +280,7 @@ RegionResult ParallelDockManager::run_region(
             // This is the fix: store genes[0..num_genes-1] so that top.cpp
             // can populate chrom[0] and feed it into the standard
             // clustering / write_rrd output pipeline.
-            result.best_genes.assign(chrom[i].genes, chrom[i].genes + num_genes);
+            result.best_genes.assign(chrom[i].genes, chrom[i].genes + actual_num_genes);
 
             // Copy all chromosome metadata (evalue, cf, fitnes, status,
             // boltzmann_weight, free_energy, ring flex arrays).
@@ -267,13 +292,19 @@ RegionResult ParallelDockManager::run_region(
     result.num_snapshots = n_snap;
     result.local_thermo = regional_engine.compute();
 
-    // Cleanup
-    for (int i = 0; i < num_chrom * 2; i++) free(chrom[i].genes);
-    for (int i = 0; i < num_chrom * ws.gb.max_generations; i++)
-        free(chrom_snapshot[i].genes);
+    // Cleanup: GA() reallocated *chrom and *chrom_snapshot via its own malloc.
+    // The pre-GA arrays we allocated above were leaked (GA replaced the pointers).
+    // Use actual_num_genes (set by GA) for gene array sizes.
+    // gene_lim was allocated by GA() (via (*gene_lim) = malloc(...)) — free it.
+    for (int i = 0; i < memchrom; i++) {
+        if (chrom[i].genes) free(chrom[i].genes);
+    }
+    for (int i = 0; i < num_chrom * (int)ws.gb.max_generations; i++) {
+        if (chrom_snapshot[i].genes) free(chrom_snapshot[i].genes);
+    }
     free(chrom);
     free(chrom_snapshot);
-    free(gene_lim);
+    if (gene_lim) free(gene_lim);
     free(subgrid);
 
     return result;

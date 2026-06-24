@@ -1559,13 +1559,30 @@ int main(int argc, char **argv){
 			static constexpr uint32_t RRG_MAGIC   = 0x56435400U;
 			static constexpr uint32_t RRG_VERSION = 1U;
 
+			// ── Multi-cleft restoration hook ────────────────────────────────────
+			// FLEXAIDDS_CLEFT_SPHERE_FILE is an opt-in direct-mode override for
+			// process-per-cleft docking.  Each child process receives one ranked
+			// Get_Cleft/FlexAID sphere file and builds its grid from that cleft
+			// only, reproducing the old independent-GA-per-major-cleft behavior.
+			const char* explicit_cleft_env = std::getenv("FLEXAIDDS_CLEFT_SPHERE_FILE");
+			const bool explicit_cleft_requested =
+			    explicit_cleft_env && explicit_cleft_env[0] != '\0';
+			if (explicit_cleft_requested &&
+			    !std::filesystem::exists(explicit_cleft_env)) {
+				fprintf(stderr,
+				        "ERROR: FLEXAIDDS_CLEFT_SPHERE_FILE does not exist: %s\n",
+				        explicit_cleft_env);
+				Terminate(2);
+			}
+
 			// ── Probe FLEXAIDDS_GRID_CACHE_DIR (content-hash keyed) ─────────────
 			// Used by Strategy B batch children: the first child builds and saves;
 			// subsequent children of the same receptor load and skip the grid build.
-			const std::string gc_vct_path = gridcache::cache_path(
-			    receptor_file, std::getenv("FLEXAIDDS_ORACLE_SITE"),
-			    FA->spacer_length, FA->permeability);
-			if (!gc_vct_path.empty()) {
+			const std::string gc_vct_path = explicit_cleft_requested
+			    ? std::string()
+			    : gridcache::cache_path(receptor_file, std::getenv("FLEXAIDDS_ORACLE_SITE"),
+			                            FA->spacer_length, FA->permeability);
+			if (!explicit_cleft_requested && !gc_vct_path.empty()) {
 				if (gridcache::load(gc_vct_path, &cleftgrid, &FA->num_grd)) {
 					grid_loaded_from_cache = true;
 					fprintf(stderr,
@@ -1574,7 +1591,8 @@ int main(int argc, char **argv){
 				}
 			}
 
-			if (!cached_grid_path.empty() && std::filesystem::exists(cached_grid_path)) {
+			if (!explicit_cleft_requested && !cached_grid_path.empty() &&
+			    std::filesystem::exists(cached_grid_path)) {
 				FILE* gf = fopen(cached_grid_path.c_str(), "rb");
 				if (gf) {
 					uint32_t magic = 0, version = 0;
@@ -1622,9 +1640,17 @@ int main(int argc, char **argv){
 			bool using_oracle = false;
 			float oracle_cx = 0.0f, oracle_cy = 0.0f, oracle_cz = 0.0f;
 			sphere* spheres = NULL;
+			bool using_explicit_cleft = false;
 
-			if (oracle_site_env && oracle_site_env[0] != '\0' &&
-			    std::filesystem::exists(oracle_site_env)) {
+			if (explicit_cleft_requested) {
+				std::vector<char> cleft_file(explicit_cleft_env,
+				                             explicit_cleft_env + strlen(explicit_cleft_env) + 1);
+				spheres = read_spheres(cleft_file.data());
+				using_explicit_cleft = true;
+				fprintf(stderr, "[MULTI-CLEFT] using explicit cleft sphere file: %s\n",
+				        explicit_cleft_env);
+			} else if (oracle_site_env && oracle_site_env[0] != '\0' &&
+			           std::filesystem::exists(oracle_site_env)) {
 				int n = 0;
 				FILE* fp_oracle = fopen(oracle_site_env, "r");
 				if (fp_oracle) {
@@ -1649,13 +1675,14 @@ int main(int argc, char **argv){
 				}
 			}
 
-			// Always run SURFNET void-space detection (probes placed in void between atoms).
+			// Always run SURFNET void-space detection (probes placed in void between atoms)
+			// unless a child process was given one explicit cleft sphere file.
 			// In oracle mode, spatially pre-filter atoms to the oracle centroid sphere so
 			// that multimeric receptors (e.g. 1OF6 octamer: 20826 atoms, 8 chains) do not
 			// cause O(N^3) blowup.  15 A covers the binding pocket + one shell of framework
 			// atoms needed to correctly cap probe spheres at the cavity boundary.
-			printf("SURFNET binding-site detection (CleftDetector) ...\n");
-			{
+			if (!using_explicit_cleft) {
+				printf("SURFNET binding-site detection (CleftDetector) ...\n");
 				CleftDetectorParams cleft_params = default_cleft_params();
 				if (using_oracle) {
 					cleft_params.oracle_center[0] = oracle_cx;
@@ -1686,7 +1713,7 @@ int main(int argc, char **argv){
 			// wrong cavity (1IGJ 74 Å, 1GM8 32 Å, 1GPK 6.8 Å off-centre).
 			// Index 0 (reflig reference conformation) is always preserved by
 			// mif::rebuild_cleftgrid.
-			{
+			if (!using_explicit_cleft) {
 				const float kSiteMargin = 0.0f;            // Å beyond ligand extent
 				int lig_res = FA->res_cnt;
 				int fa = residue[lig_res].fatm[0];
@@ -1802,6 +1829,8 @@ int main(int argc, char **argv){
 						       rcut, (int)keep.size(), FA->num_grd - 1);
 					}
 				}
+			} else {
+				printf("SITE-CONFINE: skipped for explicit multi-cleft sphere grid\n");
 			}
 
 			// ── MIF-weighted seeding (direct mode) ──────────────────────────
@@ -2319,16 +2348,68 @@ int main(int argc, char **argv){
 			// Previously: summed all regions' num_snapshots into n_chrom_snapshot
 			// but chrom[] still held the pre-GA initialisation state, so clustering
 			// received garbage and wrote garbage PDB output.
-			// Fix: extract the globally best chromosome and put it in chrom[0] so
-			// the standard clustering/write_rrd path produces a valid pose file.
+			// Fix: allocate one chromosome, extract the globally best from the best
+			// region (remap gene[0] to global grid index), put in chrom[0] so the
+			// standard clustering/write_rrd path produces a valid pose file.
+			//
+			// NOTE: in the parallel dock path GA() is never called for the main
+			// chrom pointer, so chrom == NULL here.  Allocate one chromosome.
+			int pd_num_genes = FA->npar;
+
+			chrom = (chromosome*)calloc(1, sizeof(chromosome));
+			if (chrom) {
+				chrom[0].genes = (gene*)calloc(pd_num_genes, sizeof(gene));
+			}
+			memchrom = 1;
+
 			int pd_global_grd_idx = -1;
-			if (pdm.get_best_chromosome(chrom[0], pd_global_grd_idx)) {
+
+			if (chrom && chrom[0].genes &&
+			    pdm.get_best_chromosome(chrom[0], pd_global_grd_idx)) {
+
 				chrom[0].genes[0].to_ic = (double)pd_global_grd_idx;
 				n_chrom_snapshot = 1;
 			} else {
 				fprintf(stderr, "ParallelDock: failed to extract best chromosome -- "
 				        "no output will be written\n");
 				n_chrom_snapshot = 0;
+			}
+
+			if (n_chrom_snapshot > 0) {
+				// ── Wire the best chromosome into the downstream pipeline ────────
+				// The regular GA path sets chrom_snapshot, gene_lim, GB->num_genes
+				// automatically. For the parallel dock path we must do it manually.
+
+				// chrom_snapshot: calloc full-sized array (genes = NULL everywhere
+				// except slot 0). The top.cpp cleanup loop checks genes != NULL,
+				// so the zero-filled entries are freed correctly without crashing.
+				const int pd_snap_size = GB->num_chrom * std::max(1, (int)GB->max_generations);
+				chrom_snapshot = (chromosome*)calloc(pd_snap_size, sizeof(chromosome));
+				if (chrom_snapshot) {
+					chrom_snapshot[0] = chrom[0];  // shallow copy struct fields
+					chrom_snapshot[0].genes = (gene*)calloc(pd_num_genes, sizeof(gene));
+					if (chrom_snapshot[0].genes) {
+						memcpy(chrom_snapshot[0].genes, chrom[0].genes,
+						       pd_num_genes * sizeof(gene));
+					}
+
+				} else {
+					fprintf(stderr, "ParallelDock: chrom_snapshot alloc failed\n");
+					n_chrom_snapshot = 0;
+				}
+
+				// gene_lim: allocate using global FA parameters (GLOBAL grid limits).
+				// Gene[0] in chrom_snapshot[0] already holds the global grid index,
+				// so these limits are correct for downstream scoring + clustering.
+				GB->num_genes = FA->npar;
+				gene_lim = (genlim*)malloc(FA->npar * sizeof(genlim));
+				if (gene_lim) {
+					set_gene_lim(FA, GB, gene_lim);
+
+				} else {
+					fprintf(stderr, "ParallelDock: gene_lim alloc failed\n");
+					n_chrom_snapshot = 0;
+				}
 			}
 		} else if (use_campaign) {
 			// ── ParallelCampaign: multi-ligand virtual screening ──
