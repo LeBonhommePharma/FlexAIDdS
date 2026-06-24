@@ -1677,6 +1677,15 @@ int main(int argc, char **argv){
 			// Free sphere linked list (oracle or SURFNET)
 			while (spheres) { sphere* p = spheres->prev; free(spheres); spheres = p; }
 
+			// Multi-cleft discovery support (orchestrator use only):
+			// When FLEXAIDDS_CLEFTS_ONLY=1, stop after detection+grid (cheap pass).
+			// The CleftDetector (if FLEXAIDDS_CLEFT_DUMP_DIR set) will have written
+			// cleft_XX.sph for each major cluster. No GA is run.
+			if (std::getenv("FLEXAIDDS_CLEFTS_ONLY")) {
+				printf("FLEXAIDDS_CLEFTS_ONLY=1 : cleft/grid setup done — early exit for discovery (no GA)\n");
+				return 0;
+			}
+
 			// ── Confine search to the cognate (reference-ligand) site ──────
 			// Skipped in oracle mode — the binding site PDB already defines
 			// the precise search space without further confinement needed.
