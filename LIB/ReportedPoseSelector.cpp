@@ -186,6 +186,7 @@ std::string elect_reported_pose(const std::vector<PoseCandidate>& pool, bool the
         double best_sc = -std::numeric_limits<double>::infinity();
         for (const auto& pc : pool) {
             if (chosen_ri >= 0 && pc.restart_id != chosen_ri) continue;
+            if (pc.path.find("_INI.pdb") != std::string::npos) continue; // skip native seed for reported pose under THERMO
             double sc = boltzmann_composite(pc);
             if (sc > best_sc || best == nullptr) {
                 best_sc = sc;
