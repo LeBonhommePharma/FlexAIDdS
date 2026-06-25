@@ -6459,10 +6459,11 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                 }
             }
             result.elected_pose = best_pose_pdb;  // record for CSV (C++ path, for verif)
-            // Avoid INI for the reported elected pose; pick a cluster pose in same dir if INI was chosen (seed elitism).
+            // Avoid INI for the reported elected pose; pick a cluster pose from the tree (recursive) if INI was chosen (seed elitism).
             if (result.elected_pose.find("_INI.pdb") != std::string::npos) {
-                std::string rdir = fs::path(result.elected_pose).parent_path().string();
-                for (auto& ent : fs::directory_iterator(rdir)) {
+                std::string base = fs::path(result.elected_pose).parent_path().string();
+                if (base.find("/r") != std::string::npos) base = fs::path(base).parent_path().string();
+                for (auto& ent : fs::recursive_directory_iterator(base)) {
                     std::string s = ent.path().string();
                     if (s.find("_INI.pdb") == std::string::npos && s.find(".pdb") != std::string::npos) {
                         result.elected_pose = s;
@@ -6476,6 +6477,21 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
             // exact [THERMO] line for the reported pose, not the last/main log or 0.
             if (!best_pose_pdb.empty()) {
                 std::string rlog = (fs::path(best_pose_pdb).parent_path() / "stdout.log").string();
+                if (!fs::exists(rlog) || !std::ifstream(rlog).good()) {
+                    // fallback: search any log in the pid tree for [THERMO] G_bind
+                    std::string pid_dir = fs::path(best_pose_pdb).parent_path().string();
+                    if (pid_dir.find("/r") != std::string::npos) pid_dir = fs::path(pid_dir).parent_path().string();
+                    for (auto& ent : fs::recursive_directory_iterator(pid_dir)) {
+                        if (ent.path().filename() == "stdout.log") {
+                            std::ifstream lf(ent.path());
+                            std::string txt((std::istreambuf_iterator<char>(lf)), std::istreambuf_iterator<char>());
+                            if (txt.find("[THERMO]") != std::string::npos && txt.find("G_bind=") != std::string::npos) {
+                                rlog = ent.path().string();
+                                break;
+                            }
+                        }
+                    }
+                }
                 if (fs::exists(rlog)) {
                     std::ifstream lf(rlog);
                     std::string txt((std::istreambuf_iterator<char>(lf)), std::istreambuf_iterator<char>());
@@ -6892,6 +6908,38 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                 if (result.thermo_G_bind == 0) result.thermo_G_bind = pt("G_bind=");
                 if (result.thermo_TdS_shannon == 0) result.thermo_TdS_shannon = pt("TdS_shannon=");
                 if (result.thermo_TdS_vib == 0) result.thermo_TdS_vib = pt("TdS_vib=");
+            }
+        }
+
+        // ensure non INI elected
+        if (result.elected_pose.find("_INI.pdb") != std::string::npos) {
+            std::string base = fs::path(result.elected_pose).parent_path().string();
+            if (base.find("/r") != std::string::npos) base = fs::path(base).parent_path().string();
+            for (auto& ent : fs::recursive_directory_iterator(base)) {
+                std::string s = ent.path().string();
+                if (s.find("_INI.pdb") == std::string::npos && s.find(".pdb") != std::string::npos) {
+                    result.elected_pose = s;
+                    break;
+                }
+            }
+        }
+        // robust thermo parse if still 0, search logs in tree for [THERMO] G_bind
+        if (result.thermo_G_bind == 0.0f) {
+            std::string base = fs::path(result.elected_pose).parent_path().string();
+            if (base.find("/r") != std::string::npos) base = fs::path(base).parent_path().string();
+            for (auto& ent : fs::recursive_directory_iterator(base)) {
+                if (ent.path().filename() == "stdout.log") {
+                    std::ifstream lf(ent.path());
+                    std::string txt((std::istreambuf_iterator<char>(lf)), std::istreambuf_iterator<char>());
+                    if (txt.find("[THERMO]") != std::string::npos && txt.find("G_bind=") != std::string::npos) {
+                        auto pf = [&](const char* tag){ auto p = txt.rfind(tag); if(p==std::string::npos) return 0.0f; p+=strlen(tag); try{return std::stof(txt.substr(p));}catch(...){return 0.0f;}; };
+                        result.thermo_G_bind = pf("G_bind=");
+                        result.thermo_TdS_shannon = pf("TdS_shannon=");
+                        result.thermo_TdS_vib = pf("TdS_vib=");
+                        result.has_thermo = true;
+                        break;
+                    }
+                }
             }
         }
 
