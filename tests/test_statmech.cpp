@@ -1440,12 +1440,15 @@ TEST(GBindSelect, ElectsMinGOverFullPool) {
     auto pool = reported_pose::build_cross_restart_pool(pfxs);
     std::string elected = reported_pose::elect_reported_pose(pool, true);
     // r1 must be elected (min G restart wins regardless of its CF being worse)
+    // HARD: EXPECT_EQ on exact path (drives shipped two-stage selector)
+    std::string expected_r1 = p1 + "_0.pdb";
     EXPECT_FALSE(elected.empty());
-    EXPECT_TRUE(elected.find("r1") != std::string::npos);
+    EXPECT_EQ(elected, expected_r1);
     // also verify the other path would have been chosen without thermo
     std::string elected_non = reported_pose::elect_reported_pose(pool, false);
     // non-thermo prefers better (lower) composite/CF => r0 (which has CF=-30)
-    EXPECT_TRUE(elected_non.find("r0") != std::string::npos);
+    std::string expected_r0 = p0 + "_0.pdb";
+    EXPECT_EQ(elected_non, expected_r0);
     std::filesystem::remove_all(tmp);
 }
 
