@@ -242,10 +242,24 @@ def _capture_per_entry_provenance(results_dir: Path) -> Dict[str, Any]:
                 "sha256": _get_file_sha256(manifest),
             })
 
-            # Count individual entry JSONs next to it
+            # Prefer manifest entry counts for large-N campaigns (avoid full dir glob)
             parent = manifest.parent
-            entry_jsons = [f for f in parent.glob("*.json") if not f.name.startswith("_")]
-            info["entry_count"] += len(entry_jsons)
+            try:
+                man_data = json.loads(manifest.read_text())
+                n_from_manifest = len(man_data.get("per_entry_status") or {})
+                if n_from_manifest == 0:
+                    n_from_manifest = len(
+                        man_data.get("timings", {}).get("per_entry_wall_seconds") or {}
+                    )
+                if n_from_manifest > 0:
+                    info["entry_count"] += n_from_manifest
+                    entry_jsons = []
+                else:
+                    entry_jsons = [f for f in parent.glob("*.json") if not f.name.startswith("_")]
+                    info["entry_count"] += len(entry_jsons)
+            except Exception:
+                entry_jsons = [f for f in parent.glob("*.json") if not f.name.startswith("_")]
+                info["entry_count"] += len(entry_jsons)
 
             # Sample up to 3 per manifest for the reproducibility package (keeps it compact)
             for jf in sorted(entry_jsons)[:3]:
@@ -584,6 +598,15 @@ def main() -> int:
         cmd += ["--resume"]
     if args.verbose:
         cmd += ["--verbose"]
+
+    large_slugs = {"astex_nonnative", "posex", "posex_cd", "posebusters"}
+    if args.dataset in large_slugs or args.all:
+        print(
+            f"\n[Skill] Large-N dataset campaign detected "
+            f"({'--all' if args.all else args.dataset}). "
+            f"Manifest-first resume is enabled with --resume; "
+            f"use --plan-runtime on the inner CLI for wall-clock estimates."
+        )
 
     print(f"\n[Skill] Launching DatasetRunner:")
     print("  " + " ".join(cmd))

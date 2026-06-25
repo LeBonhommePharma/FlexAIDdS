@@ -735,6 +735,167 @@ class EntryTaskManager:
                 local_pool.shutdown(wait=True)
 
 
+# ---------------------------------------------------------------------------
+# Entry manifest loader — O(1) resume discovery for 1000+ entry campaigns
+# ---------------------------------------------------------------------------
+
+KNOWN_LARGE_DATASETS: Dict[str, int] = {
+    "astex_nonnative": 1113,
+    "posex_cd": 1312,
+    "posex": 1319,
+}
+
+
+def load_entry_manifest(manifest_path: Union[str, Path]) -> Optional[dict]:
+    """Load _entry_manifest.json once; return None on absence or corruption."""
+    p = Path(manifest_path)
+    if not p.is_file():
+        return None
+    try:
+        return json.loads(p.read_text())
+    except Exception as exc:
+        logger.warning("Corrupt entry manifest %s — falling back to per-file scan: %s", p, exc)
+        return None
+
+
+def completed_targets_from_manifest(
+    manifest: dict,
+    targets: Sequence[str],
+    states: Sequence[str],
+) -> Optional[set[str]]:
+    """Derive fully-completed target_ids from a manifest without per-entry JSON reads.
+
+    Returns None when the manifest lacks enough structure for a trustworthy fast path.
+    """
+    per_entry_status = manifest.get("per_entry_status")
+    if isinstance(per_entry_status, dict) and per_entry_status:
+        completed: set[str] = set()
+        for tid in targets:
+            if all(
+                bool(per_entry_status.get(f"{tid}_{st}", {}).get("success", False))
+                for st in states
+            ):
+                completed.add(tid)
+        return completed
+
+    # Legacy manifests: single-state campaigns can trust the completed list directly.
+    if len(states) == 1:
+        legacy = set(manifest.get("completed", []))
+        if legacy:
+            return {tid for tid in targets if tid in legacy}
+
+        wall = manifest.get("timings", {}).get("per_entry_wall_seconds", {})
+        if isinstance(wall, dict) and wall:
+            state = states[0]
+            return {
+                tid for tid in targets
+                if f"{tid}_{state}" in wall and float(wall[f"{tid}_{state}"]) > 0.0
+            }
+
+    return None
+
+
+def plan_runtime(
+    *,
+    results_dir: Union[str, Path],
+    workers: int = 1,
+    omp_threads: int = 4,
+    datasets: Optional[Dict[str, int]] = None,
+    output_path: Optional[Union[str, Path]] = None,
+    default_mean_entry_s: float = 180.0,
+) -> Dict[str, Any]:
+    """Emit scaled wall-clock / CPU-second estimates for large benchmark campaigns.
+
+    Reads timing summaries from existing ``_entry_manifest.json`` files and/or
+    ``.cost_history.json`` EMA hints when present; otherwise uses
+    ``default_mean_entry_s``.
+    """
+    results_dir = Path(results_dir)
+    workers = max(1, int(workers))
+    omp_threads = max(1, int(omp_threads))
+    scales = dict(KNOWN_LARGE_DATASETS)
+    if datasets:
+        scales.update(datasets)
+
+    lines: List[str] = [
+        "FlexAIDdS DatasetRunner — Computational Runtime Plan",
+        f"Generated: {datetime.datetime.utcnow().isoformat()}Z",
+        f"Workers: {workers}  |  OMP threads/worker: {omp_threads}",
+        "",
+    ]
+    plan: Dict[str, Any] = {
+        "generated_at": datetime.datetime.utcnow().isoformat() + "Z",
+        "workers": workers,
+        "omp_threads": omp_threads,
+        "datasets": {},
+    }
+
+    for slug, n_entries in sorted(scales.items(), key=lambda kv: kv[0]):
+        mean_s = default_mean_entry_s
+        median_s = default_mean_entry_s
+        source = "default_prior"
+        tier_dir = results_dir / slug / "tier2"
+        if not tier_dir.is_dir():
+            tier_dir = results_dir / slug / "tier1"
+        manifest = load_entry_manifest(tier_dir / "_entry_manifest.json")
+        if manifest and "timings" in manifest:
+            summary = manifest["timings"].get("summary", {})
+            if summary.get("mean_entry_seconds", 0) > 0:
+                mean_s = float(summary["mean_entry_seconds"])
+                source = f"manifest:{tier_dir / '_entry_manifest.json'}"
+            if summary.get("median_entry_seconds", 0) > 0:
+                median_s = float(summary["median_entry_seconds"])
+        else:
+            history = tier_dir / ".cost_history.json"
+            if history.is_file():
+                try:
+                    hints = json.loads(history.read_text())
+                    if hints:
+                        mean_s = float(sum(hints.values()) / len(hints))
+                        median_s = mean_s
+                        source = f"cost_history:{history}"
+                except Exception:
+                    pass
+
+        est_wall_mean = mean_s * n_entries / workers
+        est_wall_median = median_s * n_entries / workers
+        est_cpu_mean = est_wall_mean * omp_threads
+
+        entry = {
+            "n_entries": n_entries,
+            "mean_entry_seconds": round(mean_s, 2),
+            "median_entry_seconds": round(median_s, 2),
+            "timing_source": source,
+            "estimated_wall_seconds_mean": round(est_wall_mean, 1),
+            "estimated_wall_seconds_median": round(est_wall_median, 1),
+            "estimated_cpu_seconds_mean": round(est_cpu_mean, 1),
+            "estimated_wall_hours_mean": round(est_wall_mean / 3600.0, 2),
+        }
+        plan["datasets"][slug] = entry
+
+        lines += [
+            f"## {slug}",
+            f"  N entries: {n_entries}",
+            f"  Timing source: {source}",
+            f"  Mean entry: {mean_s:.1f}s  |  Median entry: {median_s:.1f}s",
+            f"  Est. wall (mean): {entry['estimated_wall_hours_mean']:.2f} h "
+            f"({entry['estimated_wall_seconds_mean']:.0f} s)",
+            f"  Est. wall (median): {entry['estimated_wall_seconds_median']:.0f} s",
+            f"  Est. CPU-seconds (mean × OMP): {entry['estimated_cpu_seconds_mean']:.0f}",
+            "",
+        ]
+
+    text = "\n".join(lines)
+    plan["text_summary"] = text
+    if output_path is not None:
+        out = Path(output_path)
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(text)
+        plan_json = out.with_suffix(".json") if out.suffix == ".txt" else out.parent / f"{out.stem}.json"
+        plan_json.write_text(json.dumps(plan, indent=2))
+    return plan
+
+
 class CostHistory:
     """Persistent per-entry cost model with exponential moving average (EMA).
 
@@ -1520,15 +1681,49 @@ class DatasetRunner:
             logger.warning("Corrupt target result %s — will re-run: %s", path, e)
             return None
 
+    def _probe_entry_success(
+        self, config: DatasetConfig, tier: int, target_id: str, structural_state: str
+    ) -> Optional[bool]:
+        """Cheap success probe — reads JSON metadata only, skips pose parsing."""
+        path = self._target_result_path(config, tier, target_id, structural_state)
+        if not path.is_file():
+            return None
+        try:
+            data = json.loads(path.read_text())
+            if "success" in data:
+                return bool(data["success"])
+            return not bool(data.get("error")) and bool(data.get("poses"))
+        except Exception as exc:
+            logger.warning("Corrupt target result %s — will re-run: %s", path, exc)
+            return False
+
     def _discover_completed_targets(self, config: DatasetConfig, tier: int) -> set[str]:
-        """Return set of target_ids that have at least one successful result for every requested state."""
+        """Return target_ids with successful results for every requested state.
+
+        Uses manifest-first fast path (single JSON read) for 1000+ entry campaigns;
+        falls back to per-entry success probes without full pose parsing.
+        """
         states = config.structural_states
-        completed = set()
+        manifest_path = self._entry_results_dir(config, tier) / "_entry_manifest.json"
+        manifest = load_entry_manifest(manifest_path)
+        if manifest is not None:
+            fast = completed_targets_from_manifest(manifest, config.targets, states)
+            if fast is not None:
+                logger.info(
+                    "Manifest-first resume: %d/%d targets complete "
+                    "(1 manifest read, skipped %d per-entry JSON parses)",
+                    len(fast),
+                    len(config.targets),
+                    max(0, len(config.targets) - len(fast)),
+                )
+                return fast
+
+        completed: set[str] = set()
         for target_id in config.targets:
             all_states_ok = True
             for st in states:
-                tr = self._load_target_result(config, tier, target_id, st)
-                if not (tr and tr.success):
+                ok = self._probe_entry_success(config, tier, target_id, st)
+                if ok is not True:
                     all_states_ok = False
                     break
             if all_states_ok:
@@ -1555,6 +1750,7 @@ class DatasetRunner:
         entry_dir = self._entry_results_dir(config, tier)
         per_entry: Dict[str, float] = {}
         per_entry_cost: Dict[str, float] = {}
+        per_entry_status: Dict[str, Dict[str, Any]] = {}
         durations: List[float] = []
 
         for jf in sorted(entry_dir.glob("*_*.json")):
@@ -1565,8 +1761,13 @@ class DatasetRunner:
                 key = f"{data.get('target_id')}_{data.get('structural_state')}"
                 dur = float(data.get("duration_seconds", 0.0))
                 cost = float(data.get("cost_cpu_seconds", dur * max(1, self.omp_threads)))
+                success = bool(data.get("success", not data.get("error") and data.get("poses")))
                 per_entry[key] = round(dur, 2)
                 per_entry_cost[key] = round(cost, 2)
+                per_entry_status[key] = {
+                    "success": success,
+                    "duration_seconds": round(dur, 2),
+                }
                 if dur > 0:
                     durations.append(dur)
             except Exception:
@@ -1589,7 +1790,8 @@ class DatasetRunner:
             "completed": completed,
             "failed": failed,
             "total_attempted": len(completed) + len(failed),
-            # --- NEW: per-target timing + cost tracking (user priority #2 first) ---
+            "per_entry_status": per_entry_status,
+            # --- per-target timing + cost tracking ---
             "timings": {
                 "per_entry_wall_seconds": per_entry,
                 "per_entry_cost_cpu_seconds": per_entry_cost,

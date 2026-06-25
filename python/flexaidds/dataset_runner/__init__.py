@@ -19,6 +19,10 @@ from .runner import (
     TargetResult,
     BenchmarkReport,
     DatasetRunner,
+    load_entry_manifest,
+    completed_targets_from_manifest,
+    plan_runtime,
+    KNOWN_LARGE_DATASETS,
 )
 from .metrics import (
     PoseScore,
@@ -40,6 +44,10 @@ __all__ = [
     "DatasetResult",
     "TargetResult",
     "BenchmarkReport",
+    "load_entry_manifest",
+    "completed_targets_from_manifest",
+    "plan_runtime",
+    "KNOWN_LARGE_DATASETS",
     # Metrics
     "PoseScore",
     "entropy_rescue_rate",
