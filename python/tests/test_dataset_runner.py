@@ -16,8 +16,14 @@ from flexaidds.dataset_runner.runner import (
     load_timing_priors,
     load_large_dataset_catalog,
     sanitize_entry_manifest,
+    collect_per_entry_fields,
     _iter_entry_result_jsons,
     KNOWN_LARGE_DATASETS,
+)
+from flexaidds.dataset_runner.launch_queue import (
+    build_run_status,
+    build_launch_plan,
+    LARGE_N_ENTRIES,
 )
 
 
@@ -147,6 +153,45 @@ def test_iter_entry_result_jsons_excludes_dotfiles(tmp_path):
     assert names == {"ACE_holo.json"}
 
 
+def test_collect_per_entry_fields_ignores_cost_history(tmp_path):
+    d = tmp_path / "tier1"
+    d.mkdir()
+    (d / "ACE_holo.json").write_text(json.dumps({
+        "target_id": "ACE",
+        "structural_state": "holo",
+        "duration_seconds": 4.2,
+        "success": True,
+        "poses": [],
+    }))
+    (d / ".cost_history.json").write_text('{"ACE_holo": 1.0}')
+    (d / "_entry_manifest.json").write_text("{}")
+    status, wall, cost, durations = collect_per_entry_fields(d, omp_threads=2)
+    assert set(status.keys()) == {"ACE_holo"}
+    assert "None_None" not in status
+    assert wall["ACE_holo"] == 4.2
+    assert durations == [4.2]
+
+
+def test_write_entry_manifest_no_none_none_on_disk(tmp_path):
+    tier_dir = tmp_path / "astex_nonnative" / "tier1"
+    tier_dir.mkdir(parents=True)
+    (tier_dir / "ACE_holo.json").write_text(json.dumps({
+        "target_id": "ACE",
+        "structural_state": "holo",
+        "duration_seconds": 5.0,
+        "success": True,
+        "poses": [],
+    }))
+    (tier_dir / ".cost_history.json").write_text('{"ACE_holo": 1.0}')
+    config = DatasetConfig(slug="astex_nonnative", name="t", description="", targets=["ACE"])
+    runner = DatasetRunner(results_dir=tmp_path, dry_run=True)
+    runner._write_entry_manifest(config, tier=1, completed=["ACE"], failed=[])
+    raw = json.loads((tier_dir / "_entry_manifest.json").read_text())
+    assert "None_None" not in raw.get("per_entry_status", {})
+    assert "ACE_holo" in raw["per_entry_status"]
+    assert len(raw["per_entry_status"]) == 1
+
+
 def test_effective_entry_count_tier2_large_dataset():
     cfg = DatasetConfig(
         slug="astex_nonnative",
@@ -203,3 +248,19 @@ def test_plan_runtime_uses_timing_priors_not_default():
     src = plan["datasets"]["astex_nonnative"]["timing_source"]
     assert src != "default_prior"
     assert plan["datasets"]["astex_nonnative"]["mean_entry_seconds"] > 100
+
+
+def test_build_run_status_waiting_has_full_n_launch_plan():
+    status = build_run_status(214)
+    assert status["status"] == "waiting_for_astex_diverse_siblings"
+    assert status["launch_plan"]["astex_nonnative"]["n_entries"] == LARGE_N_ENTRIES["astex_nonnative"]
+    assert status["launch_plan"]["posex_cd"]["n_pairs"] == LARGE_N_ENTRIES["posex_cd"]
+
+
+def test_build_run_status_launched_full_has_commands():
+    status = build_run_status(0)
+    assert status["status"] == "launched_full"
+    plan = build_launch_plan()
+    assert plan["astex_nonnative"]["command"][2] == "astex_nonnative"
+    assert plan["posex_cd"]["command"][0] == "benchmark_datasets"
+    assert status["posex_cd"]["n_pairs"] == 1312

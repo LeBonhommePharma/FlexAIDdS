@@ -6,17 +6,22 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 SCRATCH="${SCRATCH:-/var/folders/8b/tgtvwb_j6zd_g03vl1w4ykfw0000gn/T/grok-goal-1e3f1c67d740/implementer}"
-LAUNCHER="$REPO_ROOT/.grok/skills/flexaid-docking/scripts/launch_full_benchmark.sh"
-POSEX_JSON="$REPO_ROOT/benchmarks/datasets/posex_cd_1312.json"
+STATUS="$SCRATCH/run_status.json"
 LOG="$SCRATCH/queue_large_benchmarks.log"
+PYTHON_PKG="$REPO_ROOT/python"
+MAX_WAIT_SECONDS="${MAX_WAIT_SECONDS:-7200}"
 
 mkdir -p "$SCRATCH"
 exec > >(tee -a "$LOG") 2>&1
 
-echo "=== queue_large_benchmarks $(date -Iseconds) ==="
+echo "=== queue_large_benchmarks $(date -Iseconds) MAX_WAIT_SECONDS=$MAX_WAIT_SECONDS ==="
 
 wait_for_astex_diverse_clear() {
   local max_wait_s="${1:-7200}"
+  if [[ "$max_wait_s" -le 0 ]]; then
+    echo "MAX_WAIT_SECONDS=0 — skipping sibling wait, proceeding to launch."
+    return 0
+  fi
   local elapsed=0
   local interval=60
   while (( elapsed < max_wait_s )); do
@@ -33,41 +38,14 @@ wait_for_astex_diverse_clear() {
   return 0
 }
 
-wait_for_astex_diverse_clear 7200
+wait_for_astex_diverse_clear "$MAX_WAIT_SECONDS"
 
-echo "=== Launching astex_nonnative (298 K dry-run prep via benchmark_datasets if launcher unavailable) ==="
-if [[ -x "$LAUNCHER" || -f "$LAUNCHER" ]]; then
-  bash "$LAUNCHER" astex_nonnative 298 "astex_nonnative_298K_vht" || {
-    echo "launch_full_benchmark astex_nonnative failed (rc=$?); see $LOG"
-  }
-else
-  echo "FATAL: launcher missing at $LAUNCHER"
-  exit 1
-fi
-
-echo "=== Launching PoseX crossdock_json (1312 pairs) ==="
-if [[ -f "$POSEX_JSON" ]] && command -v benchmark_datasets >/dev/null 2>&1; then
-  POSEX_OUT="${FLEXAIDDS_RESULTS:-$HOME/flexaidds_results}/posex_cd_298K_$(date +%s)"
-  mkdir -p "$POSEX_OUT"
-  STATUS="$POSEX_OUT/run_status.json"
-  cat > "$STATUS" <<EOF
-{
-  "status": "launched",
-  "dataset": "crossdock_json:posex_cd_1312",
-  "n_pairs": 1312,
-  "start_time": "$(date -Iseconds)",
-  "output_dir": "$POSEX_OUT"
-}
-EOF
-  nohup benchmark_datasets \
-    --benchmark "crossdock_json:$POSEX_JSON" \
-    --output "$POSEX_OUT" \
-    --threads 8 \
-    >> "$POSEX_OUT/binary.log" 2>> "$POSEX_OUT/stderr.log" </dev/null &
-  echo "{\"benchmark_runner_pid\": $!}" > "$POSEX_OUT/pid.json"
-  echo "PoseX launched detached → $POSEX_OUT (status: $STATUS)"
-else
-  echo "SKIP PoseX: missing $POSEX_JSON or benchmark_datasets not on PATH"
-fi
+echo "=== Launching astex_nonnative (1113) + posex_cd (1312) ==="
+PYTHONPATH="$PYTHON_PKG${PYTHONPATH:+:$PYTHONPATH}" python3 -m flexaidds.dataset_runner.launch_queue \
+  --scratch "$SCRATCH" \
+  --repo-root "$REPO_ROOT" \
+  --sibling-count 0 \
+  --write-status "$STATUS" \
+  --execute
 
 echo "=== queue_large_benchmarks complete $(date -Iseconds) ==="

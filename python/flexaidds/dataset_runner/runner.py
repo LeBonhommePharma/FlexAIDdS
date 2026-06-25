@@ -786,6 +786,42 @@ def _iter_entry_result_jsons(entry_dir: Path):
         yield jf
 
 
+def collect_per_entry_fields(
+    entry_dir: Path,
+    *,
+    omp_threads: int = 1,
+) -> Tuple[Dict[str, Dict[str, Any]], Dict[str, float], Dict[str, float], List[float]]:
+    """Collect per-entry status/timing from result JSONs via _iter_entry_result_jsons."""
+    per_entry: Dict[str, float] = {}
+    per_entry_cost: Dict[str, float] = {}
+    per_entry_status: Dict[str, Dict[str, Any]] = {}
+    durations: List[float] = []
+
+    for jf in _iter_entry_result_jsons(entry_dir):
+        try:
+            data = json.loads(jf.read_text())
+            target_id = data.get("target_id")
+            structural_state = data.get("structural_state")
+            if not target_id or not structural_state:
+                continue
+            key = f"{target_id}_{structural_state}"
+            dur = float(data.get("duration_seconds", 0.0))
+            cost = float(data.get("cost_cpu_seconds", dur * max(1, omp_threads)))
+            success = bool(data.get("success", not data.get("error") and data.get("poses")))
+            per_entry[key] = round(dur, 2)
+            per_entry_cost[key] = round(cost, 2)
+            per_entry_status[key] = {
+                "success": success,
+                "duration_seconds": round(dur, 2),
+            }
+            if dur > 0:
+                durations.append(dur)
+        except Exception:
+            continue
+
+    return per_entry_status, per_entry, per_entry_cost, durations
+
+
 def load_large_dataset_catalog(slug: str, catalog_path: Optional[Union[str, Path]] = None) -> List[Dict[str, Any]]:
     """Load tier-2 work-item catalog for large datasets (1113+ entries)."""
     p = Path(catalog_path) if catalog_path else _CATALOG_PATH
@@ -1858,30 +1894,9 @@ class DatasetRunner:
         # Build timing/cost data by scanning the individual result files we just wrote.
         # This is robust across MPI (each rank wrote its own) and resume runs.
         entry_dir = self._entry_results_dir(config, tier)
-        per_entry: Dict[str, float] = {}
-        per_entry_cost: Dict[str, float] = {}
-        per_entry_status: Dict[str, Dict[str, Any]] = {}
-        durations: List[float] = []
-
-        for jf in sorted(entry_dir.glob("*_*.json")):
-            if jf.name.startswith("_"):
-                continue
-            try:
-                data = json.loads(jf.read_text())
-                key = f"{data.get('target_id')}_{data.get('structural_state')}"
-                dur = float(data.get("duration_seconds", 0.0))
-                cost = float(data.get("cost_cpu_seconds", dur * max(1, self.omp_threads)))
-                success = bool(data.get("success", not data.get("error") and data.get("poses")))
-                per_entry[key] = round(dur, 2)
-                per_entry_cost[key] = round(cost, 2)
-                per_entry_status[key] = {
-                    "success": success,
-                    "duration_seconds": round(dur, 2),
-                }
-                if dur > 0:
-                    durations.append(dur)
-            except Exception:
-                continue
+        per_entry_status, per_entry, per_entry_cost, durations = collect_per_entry_fields(
+            entry_dir, omp_threads=self.omp_threads
+        )
 
         # Compute summary statistics (stdlib only, no extra imports)
         n = len(durations)
@@ -1916,6 +1931,7 @@ class DatasetRunner:
                 },
             },
         }
+        data = sanitize_entry_manifest(data)
         manifest_path.write_text(json.dumps(data, indent=2))
         logger.info("Per-entry manifest with timing/cost written: %s", manifest_path)
 

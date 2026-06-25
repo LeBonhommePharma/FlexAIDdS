@@ -219,6 +219,32 @@ def _capture_rich_environment() -> Dict[str, Any]:
     return env
 
 
+def _manifest_entry_count(man_data: dict) -> int:
+    """Count per-entry manifest rows, excluding polluted None_None keys."""
+    try:
+        repo_root = Path(__file__).resolve().parents[4]
+        python_pkg = repo_root / "python"
+        if python_pkg.is_dir():
+            import sys
+            if str(python_pkg) not in sys.path:
+                sys.path.insert(0, str(python_pkg))
+            from flexaidds.dataset_runner.runner import sanitize_entry_manifest
+            clean = sanitize_entry_manifest(dict(man_data))
+            status = clean.get("per_entry_status") or {}
+            if status:
+                return len(status)
+            return len(clean.get("timings", {}).get("per_entry_wall_seconds") or {})
+    except Exception:
+        pass
+    status = man_data.get("per_entry_status") or {}
+    status = {k: v for k, v in status.items() if k and "None" not in k and "_" in k}
+    if status:
+        return len(status)
+    wall = man_data.get("timings", {}).get("per_entry_wall_seconds") or {}
+    wall = {k: v for k, v in wall.items() if k and "None" not in k and "_" in k}
+    return len(wall)
+
+
 def _capture_per_entry_provenance(results_dir: Path) -> Dict[str, Any]:
     """Capture hashes and summary of per-entry benchmark artifacts produced by
     the inner DatasetRunner + EntryTaskManager (timing/cost manifests + individual results).
@@ -246,11 +272,7 @@ def _capture_per_entry_provenance(results_dir: Path) -> Dict[str, Any]:
             parent = manifest.parent
             try:
                 man_data = json.loads(manifest.read_text())
-                n_from_manifest = len(man_data.get("per_entry_status") or {})
-                if n_from_manifest == 0:
-                    n_from_manifest = len(
-                        man_data.get("timings", {}).get("per_entry_wall_seconds") or {}
-                    )
+                n_from_manifest = _manifest_entry_count(man_data)
                 if n_from_manifest > 0:
                     info["entry_count"] += n_from_manifest
                     entry_jsons = []
