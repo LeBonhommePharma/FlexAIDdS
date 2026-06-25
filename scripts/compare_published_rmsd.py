@@ -18,7 +18,7 @@ def main():
     args = ap.parse_args()
     rows = load_csv(args.csv)
     n = len(rows)
-    succ = sum(1 for r in rows if float(r.get("rmsd_hungarian", 99) or 99) < args.threshold)
+    succ = sum(1 for r in rows if (0 < float(r.get("rmsd_hungarian", 99) or 99) < args.threshold))
     rmsds = []
     for r in rows:
         try:
@@ -41,10 +41,10 @@ def main():
             pid = r["pdb_id"]
             if pid in refd:
                 h = float(r.get("rmsd_hungarian",99) or 99)
-                if h > 0 and refd[pid] > 0:
+                if 0 < h and refd[pid] > 0:
                     d = abs(h - refd[pid])
                     deltas.append(d)
-                    if (h < args.threshold) != (refd[pid] < args.threshold):
+                    if (0 < h < args.threshold) != (0 < refd[pid] < args.threshold):
                         flips += 1
         if deltas:
             print(f"vs ref: mean |delta|={sum(deltas)/len(deltas):.3f}  succ flips={flips}")

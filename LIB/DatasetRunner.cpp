@@ -5396,6 +5396,15 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                 skip = true;
                 std::cerr << "  [FORCE RE-ELECT FIXED SELECTOR] " << entry.pdb_id << " -- poses+stdout exist, skip GA to re-compute reported using min-G two-stage\n";
             }
+            // Env override for pure re-elect verification runs (no GA, just selector + RMSD write by C++)
+            if (!skip) {
+                if (const char* fre = std::getenv("FLEXAIDDS_FORCE_REELECT")) {
+                    if (std::atoi(fre) && fs::exists(out_dir + "/" + entry.pdb_id + "_0.pdb") && fs::exists(stdout_path)) {
+                        skip = true;
+                        std::cerr << "  [FORCE RE-ELECT ENV] " << entry.pdb_id << " -- forced skip for two-stage re-elect\n";
+                    }
+                }
+            }
         }
 
         // ret is initialised to 0; for cached runs we never call exec_cmd so
@@ -6416,6 +6425,7 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                     if (!best_pose_pdb.empty()) break;
                 }
             }
+            result.elected_pose = best_pose_pdb;  // record for CSV (C++ path, for verif)
 
             // ── v50 Lever 3: cross-restart cluster consensus re-ranking ──────
             // ... (see above for full doc). When THERMO=1 the G_bind two-stage
@@ -6756,10 +6766,10 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
         // Hungarian RMSD (element-typed assignment, see compute_pose_ligand_rmsd)
         // is the standard Astex success metric. On v23 arm A this alone lifts
         // top-1 from 27 to 43 (16 poses already sub-2Å under symmetry).
-        // Guard: rmsd_report >= 0.0f excludes the -1.0f sentinel so failed runs
-        // (no crystal reference or empty pose) are never counted as successful.
+        // Guard: rmsd_report > 0.0f && <2.0f (strict gate, excludes sentinels -1 and 0.0)
+        // so only valid positive RMSD <2 count as success. Matches emit/verify strict gate.
         const float rmsd_report = std::min(result.rmsd_to_crystal, result.rmsd_hungarian);
-        result.success = (docking_completed && rmsd_report >= 0.0f && rmsd_report < 2.0f);
+        result.success = (docking_completed && rmsd_report > 0.0f && rmsd_report < 2.0f);
 
         // ── Level-3 H(ω) vibrational-entropy diagnostic (FLEXAIDDS_HVIB=1) ──
         // Post-GA pass over the emitted cluster reps; gated OFF by default so
@@ -6829,7 +6839,7 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                     ofs << "pdb_id,best_score,rmsd_to_crystal,rmsd_hungarian,predicted_dG,"
                            "predicted_dH,predicted_TdS,shannon_entropy,search_entropy_proxy,num_poses,"
                            "wall_time_s,success,cf_native,best_cluster_rmsd,best_cluster_idx,"
-                           "seed_echo,pose_source,H_rep_rank0,H_pop,H_rep_mean,D_vib,"
+                           "seed_echo,pose_source,elected_pose,H_rep_rank0,H_pop,H_rep_mean,D_vib,"
                            "G_bind,H_vct,H_vct_raw,n_heavy,TdS_shannon,TdS_vib,D_vib_thermo,"
                            "compensation_ratio,TdS_shannon_gen500,TdS_shannon_gen1000\n";
                     ofs << std::fixed << std::setprecision(4)
@@ -6850,6 +6860,7 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                         << result.best_cluster_idx << ","
                         << (result.seed_echo ? 1 : 0) << ","
                         << result.pose_source << ","
+                        << result.elected_pose << ","
                         << result.H_rep_rank0 << ","
                         << result.H_pop << ","
                         << result.H_rep_mean << ","
@@ -7144,11 +7155,11 @@ void DatasetRunner::write_report(const BenchmarkReport& report,
 
         ofs << "pdb_id,best_score,rmsd_to_crystal,rmsd_hungarian,predicted_dG,"
                "predicted_dH,predicted_TdS,shannon_entropy,search_entropy_proxy,num_poses,wall_time_s,success,"
-               "cf_native,best_cluster_rmsd,best_cluster_idx,seed_echo,pose_source,"
+               "cf_native,best_cluster_rmsd,best_cluster_idx,seed_echo,pose_source,elected_pose,"
                "H_rep_rank0,H_pop,H_rep_mean,D_vib";
-        if (thermo_csv) {
-            ofs << ",g_bind,h_vct,h_vct_raw,n_heavy,tds_shannon,tds_vib";
-        }
+        // Always include thermo decomp cols for authentic JCIM v88+ output (G_bind + TdS_*)
+        // (was gated on THERMO_CSV env; now default-on for benchmark CSVs to meet criterion 3)
+        ofs << ",G_bind,H_vct,H_vct_raw,n_heavy,TdS_shannon,TdS_vib";
         ofs << "\n";
 
         for (const auto& r : report.results) {
@@ -7170,18 +7181,18 @@ void DatasetRunner::write_report(const BenchmarkReport& report,
                 << r.best_cluster_idx << ","
                 << (r.seed_echo ? 1 : 0) << ","
                 << r.pose_source << ","
+                << r.elected_pose << ","
                 << r.H_rep_rank0 << ","
                 << r.H_pop << ","
                 << r.H_rep_mean << ","
                 << r.D_vib;
-            if (thermo_csv) {
-                ofs << "," << r.thermo_G_bind
-                    << "," << r.thermo_H_vct
-                    << "," << r.thermo_H_vct_raw
-                    << "," << r.thermo_n_heavy
-                    << "," << r.thermo_TdS_shannon
-                    << "," << r.thermo_TdS_vib;
-            }
+            // thermo cols always now
+            ofs << "," << r.thermo_G_bind
+                << "," << r.thermo_H_vct
+                << "," << r.thermo_H_vct_raw
+                << "," << r.thermo_n_heavy
+                << "," << r.thermo_TdS_shannon
+                << "," << r.thermo_TdS_vib;
             ofs << "\n";
         }
 

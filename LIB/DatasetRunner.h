@@ -159,6 +159,9 @@ struct DockingResult {
     // (seed_elitism crystal-pose shortcut); "ga_cluster" for a genuine GA pose;
     // "" when docking did not complete or produced no poses.
     std::string pose_source{""};
+    // Elected reported pose file path (from two-stage min-G or freq-gate selector).
+    // Written to CSV for audit of which restart/pose was chosen for the RMSD/success.
+    std::string elected_pose{""};
     // Level-3 H(ω) vibrational-entropy diagnostic. Populated only when
     // FLEXAIDDS_HVIB=1; left at 0.0 otherwise (default-OFF, benchmarks
     // unaffected). Shannon entropy over ligand ANM eigenvalue spectra of the
