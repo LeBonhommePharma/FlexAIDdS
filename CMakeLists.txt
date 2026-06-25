@@ -1936,6 +1936,9 @@ flexaids_configure_simd(test_cavity_detect)
         LIB/NATURaL/DualAssemblyRunner.cpp
         LIB/UnifiedHardwareDispatch.cpp
         LIB/hardware_detect.cpp
+        LIB/LigandRingFlex/LigandRingFlex.cpp
+        LIB/LigandRingFlex/SugarPucker.cpp
+        LIB/LigandRingFlex/RingConformerLibrary.cpp
     )
     target_include_directories(test_binding_mode_statmech PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/LIB
