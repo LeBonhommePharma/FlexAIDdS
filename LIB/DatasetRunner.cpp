@@ -5704,7 +5704,7 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                    // Shannon-ON vs default A/B is a single-flag toggle on the same
                    // binary — no source fork. The flag is echoed into the per-case
                    // dock_config.json so the experiment arm is greppable on disk.
-                   << "    \"fitness_model\": \"SMFREE\"";
+                   << "    \"fitness_model\": \"PSHARE\"";  // v117: SMFREE Boltzmann overflows for docking CF; PSHARE = v50b original
                 if (std::getenv("FLEXAIDDS_USE_SHANNON")) {
                     jf << ",\n    \"use_shannon\": true";
                 }
