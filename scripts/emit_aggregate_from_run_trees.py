@@ -446,9 +446,9 @@ def main() -> None:
     print(f"Success (rmsd_hungarian < 2.0 and >0): {succ} / {n}  ({100.0*succ/n:.1f}%)")
 
     if succ >= 80:
-        print("OFFLINE GATE PASSED (>=80/85) — safe to launch full reproduce_astex85.sh for confirmation.")
+        print("OFFLINE: >=80/85 under current gate on these trees.")
     else:
-        print("OFFLINE: current trees yield <80; run full v88 reproduce (THERMO=1, RESTARTS=7, native_85 json) to generate authentic high-success trees then re-emit.")
+        print("OFFLINE: <80 under current gate; see actual rate.")
 
 
 if __name__ == '__main__':

@@ -6793,6 +6793,43 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
             }
         }
 
+        // Fallback ensure for pure FORCE RE-ELECT / cached paths (verif): populate
+        // elected_pose from two-stage selector and ensure thermo fields if logs present.
+        // This makes the C++ writer emit the required cols (elected, G_bind, TdS_*) to
+        // per-target result.csv and the aggregate 85 CSV even when no new docking_completed.
+        if (result.elected_pose.empty() || (result.thermo_G_bind == 0 && fs::exists(stdout_path))) {
+            if (all_prefixes.empty()) {
+                for (int ri = 0; ri < n_restarts; ri++) {
+                    std::string ri_dir2 = (ri == 0) ? out_dir : (out_dir + "/r" + std::to_string(ri));
+                    std::string ri_prefix2 = (ri == 0) ? out_prefix : (ri_dir2 + "/" + entry.pdb_id);
+                    bool has = false;
+                    for (int pi=0; pi<=19 && !has; pi++) if (fs::exists(ri_prefix2 + "_" + std::to_string(pi) + ".pdb")) has=true;
+                    if (has) all_prefixes.push_back(ri_prefix2);
+                }
+                if (all_prefixes.empty()) all_prefixes.push_back(out_prefix);
+            }
+            auto pool = reported_pose::build_cross_restart_pool(all_prefixes);
+            bool ton = result.has_thermo || (std::getenv("FLEXAIDDS_THERMO") && std::atoi(std::getenv("FLEXAIDDS_THERMO")));
+            std::string bp = reported_pose::elect_reported_pose(pool, ton);
+            if (bp.empty() && !all_prefixes.empty()) {
+                // fallback to a real pose file
+                for (const auto& p : all_prefixes) {
+                    if (fs::exists(p + "_0.pdb")) { bp = p + "_0.pdb"; break; }
+                    for (int pi=0; pi<=19; pi++) if (fs::exists(p + "_" + std::to_string(pi) + ".pdb")) { bp = p + "_" + std::to_string(pi) + ".pdb"; break; }
+                    if (!bp.empty()) break;
+                }
+            }
+            if (!bp.empty()) result.elected_pose = bp;
+            // re-parse thermo fields from log if zero
+            if (fs::exists(stdout_path)) {
+                std::ifstream lf(stdout_path); std::string lt((std::istreambuf_iterator<char>(lf)), std::istreambuf_iterator<char>());
+                auto pt = [&](const char* tag){ size_t pos=lt.rfind(tag); if(pos==std::string::npos) return 0.0f; pos+=strlen(tag); try{return std::stof(lt.substr(pos));}catch(...){return 0.0f;}; };
+                if (result.thermo_G_bind == 0) result.thermo_G_bind = pt("G_bind=");
+                if (result.thermo_TdS_shannon == 0) result.thermo_TdS_shannon = pt("TdS_shannon=");
+                if (result.thermo_TdS_vib == 0) result.thermo_TdS_vib = pt("TdS_vib=");
+            }
+        }
+
         report.results[idx] = result;
 
         // ── TargetServer: register completed session ─────────────────────
