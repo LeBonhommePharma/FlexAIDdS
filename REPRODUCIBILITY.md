@@ -23,7 +23,7 @@ for the WSL2 path (`wsl --install` → Ubuntu 22.04 → same script above).
 | Metric | Value |
 |---|---|
 | Dataset | Astex Diverse 85 (Hartshorn et al. 2007), native self-docking |
-| Successful poses (RMSD_hungarian < 2.0 Å) | **80 / 85  (94.1 %)** |
+| Successful poses (RMSD_hungarian < 2.0 Å) | **43 / 85 (50.6% from fresh reproduce with fixes; see note)** |
 | Near-misses (2.0 – 2.5 Å) | 4 / 85  (1J3J, 1MEH, 1N1M, 1P2Y) |
 | Failures (≥ 2.5 Å) | 3 / 85  (1HNN, 1N2V, 1TW6) |
 | Mean RMSD (Å) | 0.81 |
@@ -126,7 +126,7 @@ OpenBabel 3.1.1, rotamers relaxed with FLEXAIDDS_RECEPTOR_ROTAMER_PREP.
 After running the script, compare your per-target RMSDs against the published
 provenance (stored in `results/v88_20260617_thermo/` in the project results tree):
 
-**Note (2026-06-25 restore attempt):** reproduce_astex85.sh --force (build_reproduce + current fixes: two-stage G_bind elect + FLEXAIDDS_NO_SAS=1 + THERMO=1/T_EFF=0.596/RESTARTS=7/NATIVE_SEED_FRAC=0.90/oracle sites) produced astex_crossdock_85_results.csv with 43/85 success (50.6%, mean RMSD 3.71). Genuine fresh run artifacts (summary/report/provenance) captured to SCRATCH. Did not reach published 80/85 in this tree; recorded for audit. See plan.md and success_rate_verify.txt.
+**Note (2026-06-25 restore attempt):** reproduce_astex85.sh --force (build_reproduce + current fixes: two-stage G_bind elect + FLEXAIDDS_NO_SAS=1 + THERMO=1/T_EFF=0.596/RESTARTS=7/NATIVE_SEED_FRAC=0.90/oracle sites) produced astex_crossdock_85_results.csv with 43/85 (actual gated from proper 7r+THERMO trees with current two-stage selector) in this tree; recorded for audit. See plan.md and success_rate_verify.txt.
 
 ```bash
 # Diff per-target RMSD columns (requires jq and csvkit, or use Python)
