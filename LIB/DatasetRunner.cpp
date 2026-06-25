@@ -6050,6 +6050,29 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                       << "/" << n_restarts << " restart(s) for Fix B selection\n";
         }
 
+        // For cached/force-re-elect, ensure real thermo_* from any restart log with [THERMO]
+        // (so enqueue for per result.csv sees nonzero G/TdS from the tree logs).
+        if (result.thermo_G_bind == 0.0f) {
+            for (const auto& pfx : all_prefixes) {
+                std::string l = (fs::path(pfx).parent_path() / "stdout.log").string();
+                if (!fs::exists(l)) l = (fs::path(pfx) / "stdout.log").string();
+                if (fs::exists(l)) {
+                    std::ifstream lf(l);
+                    std::string t((std::istreambuf_iterator<char>(lf)), std::istreambuf_iterator<char>());
+                    auto pf = [&](const char* tag) -> float {
+                        auto p = t.rfind(tag);
+                        if (p == std::string::npos) return 0.0f;
+                        p += strlen(tag);
+                        try { return std::stof(t.substr(p)); } catch(...) { return 0.0f; }
+                    };
+                    if (result.thermo_G_bind == 0.0f) result.thermo_G_bind = pf("G_bind=");
+                    if (result.thermo_TdS_shannon == 0.0f) result.thermo_TdS_shannon = pf("TdS_shannon=");
+                    if (result.thermo_TdS_vib == 0.0f) result.thermo_TdS_vib = pf("TdS_vib=");
+                    if (result.thermo_G_bind != 0.0f) break;
+                }
+            }
+        }
+
         // ── Parse results ────────────────────────────────────────────────
         // Shared by both the fresh-run and cached-run paths.
         // Check for output files: <prefix>_INI.pdb, clustered PDBs
@@ -6389,9 +6412,12 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
         // Both encode the same molecule in the same atom order, so we compute
         // positional RMSD directly without alignment (self-docking) or use
         // minimum-distance matching for cross-docking.
-        if (docking_completed &&
-            !rmsd_reference_path.empty() &&
-            fs::exists(rmsd_reference_path)) {
+        // Run reported-pose finalize (two-stage elect + RMSD for elected + success) for both fresh
+        // docking runs and force-re-elect/cached paths (when we have all_prefixes from trees and ref).
+        // Previously gated on docking_completed, which is false for skip/force, leaving -1 RMSD and 0 thermo.
+        if (!rmsd_reference_path.empty() &&
+            fs::exists(rmsd_reference_path) &&
+            !all_prefixes.empty()) {
             // Frequency-gated cluster selection (v24 Fix B). The plain min-CF
             // rule picks the deeper-but-wrong "off-native CF minimum"; the
             // near-native cluster is almost always the populated runner-up.
@@ -6426,6 +6452,27 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                 }
             }
             result.elected_pose = best_pose_pdb;  // record for CSV (C++ path, for verif)
+
+            // Parse thermo from the *chosen* restart's log (min-G or elected) so that
+            // per-target result.csv and aggregate get real nonzero G_bind/TdS_* from the
+            // exact [THERMO] line for the reported pose, not the last/main log or 0.
+            if (!best_pose_pdb.empty()) {
+                std::string rlog = (fs::path(best_pose_pdb).parent_path() / "stdout.log").string();
+                if (fs::exists(rlog)) {
+                    std::ifstream lf(rlog);
+                    std::string txt((std::istreambuf_iterator<char>(lf)), std::istreambuf_iterator<char>());
+                    auto parsef = [&](const char* tag) -> float {
+                        size_t p = txt.rfind(tag);
+                        if (p == std::string::npos) return 0.0f;
+                        p += strlen(tag);
+                        try { return std::stof(txt.substr(p)); } catch(...) { return 0.0f; }
+                    };
+                    result.thermo_G_bind = parsef("G_bind=");
+                    result.thermo_TdS_shannon = parsef("TdS_shannon=");
+                    result.thermo_TdS_vib = parsef("TdS_vib=");
+                    result.has_thermo = (result.thermo_G_bind != 0.0f || result.thermo_TdS_shannon != 0.0f);
+                }
+            }
 
             // ── v50 Lever 3: cross-restart cluster consensus re-ranking ──────
             // ... (see above for full doc). When THERMO=1 the G_bind two-stage
