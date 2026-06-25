@@ -30,7 +30,7 @@ for the WSL2 path (`wsl --install` → Ubuntu 22.04 → same script above).
 | Median RMSD (Å) | 0.33 |
 | Thermodynamic engine | FLEXAIDDS_THERMO=1, T_EFF=0.596, TENCOM_SCALE=1.0 |
 
-**v88 historical (NATIVE_SEED_FRAC=0.90):** Success rate under standard Astex gate (rmsd_hungarian < 2.0 Å) was 91.4% (78/85 per historical claim; the Published v88 numbers dict in this file has 79/85 entries with rmsd < 2.0, i.e. 92.9%, including 0.00 seed-echo cases). See the dict below. This is explicitly documented here traceable to v88 result set. Current honest (NATIVE=0) is 21/85 under strict 0 < rmsd_hungarian < 2.
+**v88 historical (NATIVE_SEED_FRAC=0.90):** Claim 91.4% (78/85). Dict loose <2: 79/85 (92.9%); strict 0<rmsd<2: 46/85 (54.1%); seed_echo=33. Current under strict NATIVE=0 + 0<rmsd<2 is 21/85. 78/85 not reproduced under strict gate (seed-echo zeros explain gap). See dict below and gate_audit.json. Traceable to v88 result set.
 
 ---
 
