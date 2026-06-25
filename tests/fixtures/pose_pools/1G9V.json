@@ -1,0 +1,18 @@
+[
+  {
+    "path": "r5/1G9V_0.pdb",
+    "cf": -126.0,
+    "freq": 106,
+    "g_bind": -61.45,
+    "restart_id": 5,
+    "member_cfs": []
+  },
+  {
+    "path": "r6/1G9V_0.pdb",
+    "cf": -120.0,
+    "freq": 80,
+    "g_bind": -50.68,
+    "restart_id": 6,
+    "member_cfs": []
+  }
+]
