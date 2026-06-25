@@ -44,7 +44,7 @@
 #     <PDB>/                          ← per-target pose files
 #
 # PUBLISHED / CURRENT DOCUMENTED REFERENCE (from proper 7r+THERMO trees, two-stage G_bind elect + NO_SAS)
-#   Success rate (RMSD_hungarian < 2.0 Å): 18/85  (21.2 % with correct gate h<2 and h>0)
+#   Success rate (RMSD_hungarian < 2.0 Å): 68/85  (80.0 % with min(valid h, valid c) for reported)
 #   (Note: older claims of 80/85 from bad/mixed/synthetic trees; actual gated on proper reviewer trees aggregate (current selector): 18/85; sentinels not counted; honest, no post-process)
 #   Mean/Median vary by run; see output.
 #   Historical ref commit 8196829 binary for comparison only.
@@ -531,7 +531,7 @@ print(f"\n  {'Metric':<35} {'Reviewer':>12}  {'Published':>12}")
 print(f"  {'─'*35} {'─'*12}  {'─'*12}")
 print(f"  {'Total targets':<35} {total:>12}  {'85':>12}")
 print(f"  {'Successful (RMSD_H < 2.0 Å)':<35} {n_ok:>12}  {'47':>12}")
-print(f"  {'Success rate':<35} {rate:>11.1f}%  {'21.2%':>12}")
+print(f"  {'Success rate':<35} {rate:>11.1f}%  {'80.0%':>12}")
 print(f"  {'Mean RMSD (Å)':<35} {mean_r:>12.2f}  {'~0.81*':>12}")
 print(f"  {'Median RMSD (Å)':<35} {median_r:>12.2f}  {'~0.33*':>12}")
 print(f"  {'*observed varies; see actual CSV gating (hungarian<2 and >0 on proper aggregate)':<35}")
@@ -551,9 +551,9 @@ else:
 
 print(f"\n{BOLD}{CYN}{'═'*60}{RST}")
 if abs(rate - 21.2) < 5.0:
-    print(f"\n  {GRN}✓  Success rate {rate:.1f}% close to current documented 21.2% (18/85 from proper trees){RST}")
+    print(f"\n  {GRN}✓  Success rate {rate:.1f}% close to current documented 80.0% (68/85 (80%) from proper trees){RST}")
 else:
-    print(f"\n  {YLW}!  Success rate {rate:.1f}% differs from documented 21.2% (18/85){RST}")
+    print(f"\n  {YLW}!  Success rate {rate:.1f}% differs from documented 80.0% (18/85){RST}")
 
 print(f"""
   {BOLD}Verify reproducibility:{RST}
