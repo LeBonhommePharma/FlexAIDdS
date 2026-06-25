@@ -149,6 +149,25 @@ class DatasetConfig:
         """Return the subset of targets used for tier-1 (fast) runs."""
         return self.targets[: self.tier1_subset_size]
 
+    def scheduled_targets(self, tier: int) -> List[str]:
+        """Targets actually scheduled for this tier."""
+        if tier == 2 and self.slug in KNOWN_LARGE_DATASETS:
+            return [e["entry_id"] for e in load_large_dataset_catalog(self.slug)]
+        return self.tier1_targets() if tier == 1 else self.targets
+
+    def scheduled_work_items(self, tier: int) -> List[Tuple[str, str]]:
+        """(entry_id, state) pairs scheduled for this tier — full scale for large datasets."""
+        if tier == 2 and self.slug in KNOWN_LARGE_DATASETS:
+            catalog = load_large_dataset_catalog(self.slug)
+            return [(e["entry_id"], e.get("state", "crossdock")) for e in catalog]
+        targets = self.scheduled_targets(tier)
+        return [(tid, st) for tid in targets for st in self.structural_states]
+
+    def effective_entry_count(self, tier: int) -> int:
+        """Entry count for runtime planning (uses C++-parity scales for large datasets)."""
+        if tier == 2 and self.slug in KNOWN_LARGE_DATASETS:
+            return len(load_large_dataset_catalog(self.slug)) or KNOWN_LARGE_DATASETS[self.slug]
+        return len(self.scheduled_work_items(tier))
 
 # ---------------------------------------------------------------------------
 # Result dataclasses
@@ -745,6 +764,72 @@ KNOWN_LARGE_DATASETS: Dict[str, int] = {
     "posex": 1319,
 }
 
+_TIMING_PRIORS_PATH = (
+    Path(__file__).resolve().parents[3] / "benchmarks" / "m3pro" / "large_dataset_timing_priors.json"
+)
+_CATALOG_PATH = (
+    Path(__file__).resolve().parents[3] / "benchmarks" / "m3pro" / "large_dataset_entry_catalogs.json"
+)
+
+
+def _utc_now_iso() -> str:
+    return datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+
+
+def _iter_entry_result_jsons(entry_dir: Path):
+    """Yield per-entry result JSON files, excluding manifests and dotfiles."""
+    for jf in sorted(entry_dir.glob("*.json")):
+        if jf.name.startswith(("_", ".")):
+            continue
+        if "_" not in jf.stem:
+            continue
+        yield jf
+
+
+def load_large_dataset_catalog(slug: str, catalog_path: Optional[Union[str, Path]] = None) -> List[Dict[str, Any]]:
+    """Load tier-2 work-item catalog for large datasets (1113+ entries)."""
+    p = Path(catalog_path) if catalog_path else _CATALOG_PATH
+    if not p.is_file():
+        return []
+    try:
+        data = json.loads(p.read_text())
+        return list(data.get("datasets", {}).get(slug, {}).get("entries", []))
+    except Exception:
+        return []
+
+
+def sanitize_entry_manifest(manifest: dict) -> dict:
+    """Strip legacy polluted keys (e.g. None_None from .cost_history.json glob)."""
+    for section in ("per_entry_status",):
+        block = manifest.get(section)
+        if isinstance(block, dict):
+            manifest[section] = {
+                k: v for k, v in block.items()
+                if k and "None" not in k and "_" in k
+            }
+    timings = manifest.get("timings", {})
+    for key in ("per_entry_wall_seconds", "per_entry_cost_cpu_seconds"):
+        block = timings.get(key)
+        if isinstance(block, dict):
+            timings[key] = {
+                k: v for k, v in block.items()
+                if k and "None" not in k and "_" in k
+            }
+    return manifest
+
+
+def load_timing_priors(
+    priors_path: Optional[Union[str, Path]] = None,
+) -> Dict[str, Dict[str, Any]]:
+    """Load committed large-dataset timing priors (real benchmark wall_time_s aggregates)."""
+    p = Path(priors_path) if priors_path else _TIMING_PRIORS_PATH
+    if not p.is_file():
+        return {}
+    try:
+        data = json.loads(p.read_text())
+        return data.get("datasets", {})
+    except Exception:
+        return {}
 
 def load_entry_manifest(manifest_path: Union[str, Path]) -> Optional[dict]:
     """Load _entry_manifest.json once; return None on absence or corruption."""
@@ -752,7 +837,7 @@ def load_entry_manifest(manifest_path: Union[str, Path]) -> Optional[dict]:
     if not p.is_file():
         return None
     try:
-        return json.loads(p.read_text())
+        return sanitize_entry_manifest(json.loads(p.read_text()))
     except Exception as exc:
         logger.warning("Corrupt entry manifest %s — falling back to per-file scan: %s", p, exc)
         return None
@@ -817,14 +902,15 @@ def plan_runtime(
     if datasets:
         scales.update(datasets)
 
+    timing_priors = load_timing_priors()
     lines: List[str] = [
         "FlexAIDdS DatasetRunner — Computational Runtime Plan",
-        f"Generated: {datetime.datetime.utcnow().isoformat()}Z",
+        f"Generated: {_utc_now_iso()}",
         f"Workers: {workers}  |  OMP threads/worker: {omp_threads}",
         "",
     ]
     plan: Dict[str, Any] = {
-        "generated_at": datetime.datetime.utcnow().isoformat() + "Z",
+        "generated_at": _utc_now_iso(),
         "workers": workers,
         "omp_threads": omp_threads,
         "datasets": {},
@@ -834,6 +920,13 @@ def plan_runtime(
         mean_s = default_mean_entry_s
         median_s = default_mean_entry_s
         source = "default_prior"
+        prior = timing_priors.get(slug, {})
+        if prior:
+            n_entries = int(prior.get("n_entries", n_entries))
+            mean_s = float(prior.get("mean_entry_seconds", mean_s))
+            median_s = float(prior.get("median_entry_seconds", median_s))
+            source = str(prior.get("timing_source", "timing_priors_json"))
+
         tier_dir = results_dir / slug / "tier2"
         if not tier_dir.is_dir():
             tier_dir = results_dir / slug / "tier1"
@@ -845,7 +938,7 @@ def plan_runtime(
                 source = f"manifest:{tier_dir / '_entry_manifest.json'}"
             if summary.get("median_entry_seconds", 0) > 0:
                 median_s = float(summary["median_entry_seconds"])
-        else:
+        elif source == "default_prior":
             history = tier_dir / ".cost_history.json"
             if history.is_file():
                 try:
@@ -1311,15 +1404,17 @@ class DatasetRunner:
         A lightweight EntryTaskManager (see below) coordinates the work items.
         """
         t0 = time.monotonic()
-        targets = config.tier1_targets() if tier == 1 else config.targets
+        targets = config.scheduled_targets(tier)
         states = structural_states or config.structural_states
         requested_metrics = metric_subset or config.metrics or None
+        n_entries_scale = config.effective_entry_count(tier)
+        scheduled_items = config.scheduled_work_items(tier)
 
         dr = DatasetResult(
             config=config,
             tier=tier,
             targets_attempted=list(targets),
-            timestamp=datetime.datetime.utcnow().isoformat() + "Z",
+            timestamp=_utc_now_iso(),
             git_sha=_git_sha(self.repo_root),
             host=socket.gethostname(),
         )
@@ -1332,20 +1427,26 @@ class DatasetRunner:
         # --- NEW: Per-entry resume + individual processing automation ---
         already_completed: set[str] = set()
         if self.resume:
-            already_completed = self._discover_completed_targets(config, tier)
+            already_completed = self._discover_completed_targets(config, tier, targets)
             if already_completed:
                 logger.info(
-                    "Resume mode: %d/%d targets already have complete per-entry results — skipping them",
-                    len(already_completed), len(targets)
+                    "Resume mode: %d/%d targets already have complete per-entry results — skipping them "
+                    "(tier-%d scale: %d total entries for %s)",
+                    len(already_completed), len(targets), tier, n_entries_scale, config.slug,
                 )
 
-        # Build work items: (target_id, state) pairs that still need work on this rank
+        # Build work items from full catalog (tier-2 large-N) or targets × states
         all_work_items: List[Tuple[str, str]] = []
-        for tid in targets:
+        for tid, st in scheduled_items:
             if tid in already_completed:
                 continue
-            for st in states:
-                all_work_items.append((tid, st))
+            all_work_items.append((tid, st))
+
+        if tier == 2 and config.slug in KNOWN_LARGE_DATASETS:
+            logger.info(
+                "Large-N dataset %s tier-%d: %d scheduled work items (catalog scale)",
+                config.slug, tier, len(scheduled_items),
+            )
 
         # For stronger dynamic MPI master-worker, root sees the full remaining list.
         # Non-roots will participate as workers when the manager detects MPI.
@@ -1579,7 +1680,7 @@ class DatasetRunner:
         if not all_configs:
             logger.error("No datasets to run.")
             return BenchmarkReport(
-                generated_at=datetime.datetime.utcnow().isoformat() + "Z",
+                generated_at=_utc_now_iso(),
                 git_sha=_git_sha(self.repo_root),
                 host=socket.gethostname(),
                 runner_info=_runner_info(),
@@ -1603,7 +1704,7 @@ class DatasetRunner:
 
         report = BenchmarkReport(
             datasets=results,
-            generated_at=datetime.datetime.utcnow().isoformat() + "Z",
+            generated_at=_utc_now_iso(),
             git_sha=_git_sha(self.repo_root),
             host=socket.gethostname(),
             runner_info=_runner_info(),
@@ -1646,7 +1747,7 @@ class DatasetRunner:
             "error": tr.error,
             "poses": [p.to_dict() if hasattr(p, "to_dict") else p.__dict__ for p in tr.poses],
             "success": tr.success,
-            "timestamp": datetime.datetime.utcnow().isoformat() + "Z",
+            "timestamp": _utc_now_iso(),
         }
         tmp.write_text(json.dumps(payload, indent=2))
         os.replace(tmp, path)  # atomic on POSIX + Windows
@@ -1697,29 +1798,38 @@ class DatasetRunner:
             logger.warning("Corrupt target result %s — will re-run: %s", path, exc)
             return False
 
-    def _discover_completed_targets(self, config: DatasetConfig, tier: int) -> set[str]:
+    def _discover_completed_targets(
+        self,
+        config: DatasetConfig,
+        tier: int,
+        scheduled_targets: Optional[List[str]] = None,
+    ) -> set[str]:
         """Return target_ids with successful results for every requested state.
 
         Uses manifest-first fast path (single JSON read) for 1000+ entry campaigns;
         falls back to per-entry success probes without full pose parsing.
         """
-        states = config.structural_states
+        targets = scheduled_targets or config.scheduled_targets(tier)
+        if tier == 2 and config.slug in KNOWN_LARGE_DATASETS:
+            states = ["crossdock"]
+        else:
+            states = config.structural_states
         manifest_path = self._entry_results_dir(config, tier) / "_entry_manifest.json"
         manifest = load_entry_manifest(manifest_path)
         if manifest is not None:
-            fast = completed_targets_from_manifest(manifest, config.targets, states)
+            fast = completed_targets_from_manifest(manifest, targets, states)
             if fast is not None:
                 logger.info(
                     "Manifest-first resume: %d/%d targets complete "
                     "(1 manifest read, skipped %d per-entry JSON parses)",
                     len(fast),
-                    len(config.targets),
-                    max(0, len(config.targets) - len(fast)),
+                    len(targets),
+                    max(0, len(targets) - len(fast)),
                 )
                 return fast
 
         completed: set[str] = set()
-        for target_id in config.targets:
+        for target_id in targets:
             all_states_ok = True
             for st in states:
                 ok = self._probe_entry_success(config, tier, target_id, st)
@@ -1784,7 +1894,7 @@ class DatasetRunner:
         data = {
             "dataset": config.slug,
             "tier": tier,
-            "timestamp": datetime.datetime.utcnow().isoformat() + "Z",
+            "timestamp": _utc_now_iso(),
             "omp_threads": self.omp_threads,
             "n_workers_used": self.n_workers,
             "completed": completed,
@@ -1852,7 +1962,7 @@ class DatasetRunner:
         """
         report = BenchmarkReport(
             datasets=results,
-            generated_at=datetime.datetime.utcnow().isoformat() + "Z",
+            generated_at=_utc_now_iso(),
             git_sha=_git_sha(self.repo_root),
             host=socket.gethostname(),
             runner_info=_runner_info(),

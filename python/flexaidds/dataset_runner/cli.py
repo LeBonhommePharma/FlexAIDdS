@@ -217,7 +217,7 @@ def main(argv: list[str] | None = None) -> int:
         os.environ["FLEXAIDDS_BENCHMARK_DATA"] = args.data_dir
 
     # Import here so logging is already configured
-    from .runner import DatasetRunner, BenchmarkReport, _git_sha, _runner_info, plan_runtime
+    from .runner import DatasetRunner, BenchmarkReport, _git_sha, _runner_info, _utc_now_iso, plan_runtime
 
     if args.plan_runtime:
         out = Path(args.results_dir) / "runtime_plan.txt"
@@ -273,10 +273,10 @@ def main(argv: list[str] | None = None) -> int:
             return 2
 
         # Build report for single-dataset case
-        import datetime, socket
+        import socket
         report = BenchmarkReport(
             datasets=[dr],
-            generated_at=datetime.datetime.utcnow().isoformat() + "Z",
+            generated_at=_utc_now_iso(),
             git_sha=_git_sha(),
             host=socket.gethostname(),
             runner_info=_runner_info(),
@@ -287,8 +287,7 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     # ----- Report output -----
-    import datetime as _dt
-    timestamp = _dt.datetime.utcnow().strftime("%Y%m%dT%H%M%SZ")
+    timestamp = _utc_now_iso().replace("-", "").replace(":", "")[:15] + "Z"
     prefix = args.report_prefix or str(
         Path(args.results_dir) / f"report_{timestamp}"
     )

@@ -13,6 +13,10 @@ from flexaidds.dataset_runner.runner import (
     load_entry_manifest,
     completed_targets_from_manifest,
     plan_runtime,
+    load_timing_priors,
+    load_large_dataset_catalog,
+    sanitize_entry_manifest,
+    _iter_entry_result_jsons,
     KNOWN_LARGE_DATASETS,
 )
 
@@ -81,26 +85,29 @@ def test_completed_targets_from_manifest_legacy_single_state():
 
 
 def test_discover_completed_manifest_fast_path(tmp_path):
+    targets = [f"t{i}" for i in range(10)]
     config = DatasetConfig(
         slug="astex_nonnative",
         name="test",
         description="",
-        targets=[f"t{i}" for i in range(50)],
+        targets=targets,
+        tier1_subset_size=5,
         structural_states=["holo"],
     )
     tier_dir = tmp_path / "astex_nonnative" / "tier1"
     tier_dir.mkdir(parents=True)
-    status = {f"t{i}_holo": {"success": True, "duration_seconds": 5.0} for i in range(30)}
+    scheduled = config.scheduled_targets(1)
+    status = {f"{tid}_holo": {"success": True, "duration_seconds": 5.0} for tid in scheduled}
     manifest = {
-        "completed": [f"t{i}" for i in range(30)],
+        "completed": list(scheduled),
         "per_entry_status": status,
         "timings": {"summary": {"mean_entry_seconds": 5.0}},
     }
     (tier_dir / "_entry_manifest.json").write_text(json.dumps(manifest))
 
     runner = DatasetRunner(results_dir=tmp_path, dry_run=True, resume=True)
-    done = runner._discover_completed_targets(config, tier=1)
-    assert len(done) == 30
+    done = runner._discover_completed_targets(config, tier=1, scheduled_targets=scheduled)
+    assert len(done) == len(scheduled)
 
 
 def test_plan_runtime_writes_estimates(tmp_path):
@@ -127,3 +134,72 @@ def test_plan_runtime_writes_estimates(tmp_path):
     assert "posex" in text
     assert plan["datasets"]["astex_nonnative"]["estimated_wall_seconds_mean"] > 0
     assert KNOWN_LARGE_DATASETS["astex_nonnative"] == 1113
+    assert plan["datasets"]["astex_nonnative"]["timing_source"] != "default_prior"
+
+
+def test_iter_entry_result_jsons_excludes_dotfiles(tmp_path):
+    d = tmp_path / "tier1"
+    d.mkdir()
+    (d / "ACE_holo.json").write_text('{"target_id":"ACE","structural_state":"holo"}')
+    (d / ".cost_history.json").write_text('{"ACE_holo": 1.0}')
+    (d / "_entry_manifest.json").write_text("{}")
+    names = {p.name for p in _iter_entry_result_jsons(d)}
+    assert names == {"ACE_holo.json"}
+
+
+def test_effective_entry_count_tier2_large_dataset():
+    cfg = DatasetConfig(
+        slug="astex_nonnative",
+        name="x",
+        description="",
+        targets=["ACE"],
+        structural_states=["holo", "apo", "alternative"],
+    )
+    assert cfg.effective_entry_count(2) == 1113
+    assert cfg.effective_entry_count(1) == 3
+
+
+def test_scheduled_work_items_tier2_astex_nonnative():
+    cfg = DatasetConfig(slug="astex_nonnative", name="x", description="", targets=["ACE"])
+    items = cfg.scheduled_work_items(tier=2)
+    assert len(items) == 1113
+    assert items[0][1] == "crossdock"
+
+
+def test_scheduled_work_items_tier2_posex_cd():
+    cfg = DatasetConfig(slug="posex_cd", name="x", description="", targets=["7FVX_K7C"])
+    items = cfg.scheduled_work_items(tier=2)
+    assert len(items) == 1312
+
+
+def test_sanitize_manifest_removes_none_none():
+    dirty = {
+        "per_entry_status": {"None_None": {"success": False}, "ACE_holo": {"success": True}},
+        "timings": {"per_entry_wall_seconds": {"None_None": 0.0, "ACE_holo": 1.0}},
+    }
+    clean = sanitize_entry_manifest(dirty)
+    assert "None_None" not in clean["per_entry_status"]
+    assert "ACE_holo" in clean["per_entry_status"]
+
+
+def test_benchmark_report_no_utcnow_deprecation():
+    import warnings
+    from flexaidds.dataset_runner.runner import BenchmarkReport, _runner_info, _git_sha
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", DeprecationWarning)
+        BenchmarkReport(
+            datasets=[],
+            generated_at=__import__("flexaidds.dataset_runner.runner", fromlist=["_utc_now_iso"])._utc_now_iso(),
+            git_sha=_git_sha(),
+            host="test",
+            runner_info=_runner_info(),
+        )
+
+
+def test_plan_runtime_uses_timing_priors_not_default():
+    priors = load_timing_priors()
+    assert "astex_nonnative" in priors
+    plan = plan_runtime(results_dir="/nonexistent", workers=4)
+    src = plan["datasets"]["astex_nonnative"]["timing_source"]
+    assert src != "default_prior"
+    assert plan["datasets"]["astex_nonnative"]["mean_entry_seconds"] > 100
