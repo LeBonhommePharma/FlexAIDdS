@@ -391,7 +391,8 @@ static dataset::BenchmarkReport run_single_benchmark(const std::string& name,
         //   { "pairs": [ { "receptor_id": "1G9V", "ligand_id": "1GM8",
         //                   "receptor_pdb": "/abs/path/1G9V_apo.pdb",
         //                   "ligand_sdf":   "/abs/path/1GM8_ligand.sdf",
-        //                   "oracle_site_pdb": "/abs/path/1G9V_binding_site.pdb" }, ... ] }
+        //                   "oracle_site_pdb": "/abs/path/1G9V_binding_site.pdb",
+        //                   "cleft_sphere_file": "/abs/path/1G9V_sph_1.pdb" }, ... ] }
         std::string json_file = name.substr(15);
         // Expand leading ~
         if (!json_file.empty() && json_file[0] == '~') {
@@ -433,6 +434,7 @@ static dataset::BenchmarkReport run_single_benchmark(const std::string& name,
             entry.ligand_path       = extract_str(obj, "ligand_sdf");
             entry.rmsd_reference_path = extract_str(obj, "rmsd_ref_sdf");
             entry.binding_site_path = extract_str(obj, "oracle_site_pdb");
+            entry.cleft_sphere_path = extract_str(obj, "cleft_sphere_file");
             entry.source            = "astex_crossdock_85";
 
             if (!entry.pdb_id.empty() &&

@@ -5259,7 +5259,7 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
         // config will include a "grid_file" field so FlexAIDdS can skip grid
         // regeneration and reload the existing grid (~200 MB, ~2-5 s saved).
         std::string reusable_grid_path;
-        {
+        if (!entry.has_cleft_spheres()) {
             std::lock_guard<std::mutex> lock(grid_reuse_mtx);
             auto reuse_it = receptor_completed_prefix.find(entry.receptor_path);
             if (reuse_it != receptor_completed_prefix.end()) {
@@ -5939,11 +5939,18 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
             // ── end rotamer pre-relaxation ──────────────────────────────────
 
             std::ostringstream cmd;
+            if (!entry.cleft_sphere_path.empty() && fs::exists(entry.cleft_sphere_path)) {
+                cmd << "FLEXAIDDS_CLEFT_SPHERE_FILE='" << entry.cleft_sphere_path << "' ";
+                std::cerr << "  [MULTI-CLEFT] " << entry.pdb_id
+                          << " using cleft sphere file: "
+                          << entry.cleft_sphere_path << "\n";
+            }
             // Oracle LOCCLF: pass binding site PDB via env var so top.cpp
             // can skip SURFNET auto-detection and load the oracle spheres.
             // AUTONOMOUS mode must not inject this env var; otherwise a blind
             // run still uses the answer-derived site.
-            if (config.mode != BenchmarkMode::AUTONOMOUS &&
+            if (entry.cleft_sphere_path.empty() &&
+                config.mode != BenchmarkMode::AUTONOMOUS &&
                 !entry.binding_site_path.empty() && fs::exists(entry.binding_site_path)) {
                 cmd << "FLEXAIDDS_ORACLE_SITE='" << entry.binding_site_path << "' ";
                 std::cerr << "  [ORACLE] " << entry.pdb_id
