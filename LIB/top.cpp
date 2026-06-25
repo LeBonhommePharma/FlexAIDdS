@@ -566,6 +566,7 @@ int main(int argc, char **argv){
 	FA->use_hbond_rank=0;
 	FA->hbond_rank_rescore=0;
 	FA->hbond_weight=-2.5;
+	{ const char* _hbw=std::getenv("FLEXAIDDS_HBOND_WEIGHT"); if(_hbw) FA->hbond_weight=std::atof(_hbw); }  // v116: tuneable via env
 	FA->hbond_optimal_dist=2.8;
 	FA->hbond_optimal_angle=180.0;
 	FA->hbond_sigma_dist=0.4;
