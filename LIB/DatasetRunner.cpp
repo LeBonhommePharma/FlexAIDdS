@@ -6388,13 +6388,13 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
             // freq-gated/consensus + G_bind as pose-level tie-break (min G) when thermo_on.
             // This replaces the previous prefix-only min-G filter.
             std::string best_pose_pdb;
+            bool thermo_on = result.has_thermo;
+            // also check env if not set on result yet
+            if (!thermo_on) {
+                if (const char* te = std::getenv("FLEXAIDDS_THERMO")) thermo_on = (std::atoi(te) != 0);
+            }
             {
                 auto pool = reported_pose::build_cross_restart_pool(all_prefixes);
-                bool thermo_on = result.has_thermo;
-                // also check env if not set on result yet
-                if (!thermo_on) {
-                    if (const char* te = std::getenv("FLEXAIDDS_THERMO")) thermo_on = (std::atoi(te) != 0);
-                }
                 best_pose_pdb = reported_pose::elect_reported_pose(pool, thermo_on);
             }
             if (best_pose_pdb.empty()) {
@@ -6412,19 +6412,12 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
             }
 
             // ── v50 Lever 3: cross-restart cluster consensus re-ranking ──────
-            // Blind signal (no crystal coords, no oracle): reward a pose whose
-            // basin is independently rediscovered by multiple restarts.  If N
-            // independent thermodynamic trajectories converge to the same
-            // geometry, that basin is more likely the true free-energy minimum
-            // than one only a single restart finds.  Pool = every emitted cluster
-            // pose across all restart prefixes.  For each candidate, consensus =
-            // number of OTHER restart prefixes that have ≥1 pose within δ=1.5 Å
-            // (Hungarian heavy-atom RMSD, via pose_pose_rmsd).  Re-rank by
-            // PRIMARY consensus (desc), SECONDARY CF (asc); the winner becomes the
-            // reported pose.  Gated by FLEXAIDDS_CONSENSUS_SCORER (default 1; set
-            // 0 to keep the freq-gated selector's pose).  Needs ≥2 restart
-            // prefixes to carry any cross-restart signal.
-            {
+            // ... (see above for full doc). When THERMO=1 the G_bind two-stage
+            // election (min-G restart, then freq/Z+H within) is terminal for the
+            // reported pose whose RMSD is emitted to the aggregate CSV. Consensus
+            // re-ranking (blind cross-restart signal) applies only for !thermo runs
+            // to preserve 2015 JCIM methodology for success-rate numbers.
+            if (!thermo_on) {
                 const char* consensus_env = std::getenv("FLEXAIDDS_CONSENSUS_SCORER");
                 const int   consensus_on  = consensus_env ? std::atoi(consensus_env) : 1;
                 if (consensus_on && all_prefixes.size() >= 2 && !best_pose_pdb.empty()) {

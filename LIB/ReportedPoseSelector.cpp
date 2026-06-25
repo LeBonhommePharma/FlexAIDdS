@@ -59,8 +59,15 @@ float parse_g_bind_from_log(const std::string& log_text) {
     if (pos == std::string::npos) return std::numeric_limits<float>::quiet_NaN();
     size_t gpos = log_text.find("G_bind=", pos);
     if (gpos == std::string::npos) return std::numeric_limits<float>::quiet_NaN();
+    size_t start = gpos + 7;
+    size_t end = start;
+    while (end < log_text.size()) {
+      char c = log_text[end];
+      if (std::isdigit(c) || c == '.' || c == '-' || c == '+') ++end;
+      else break;
+    }
     try {
-        return std::stof(log_text.substr(gpos + 7));
+        return std::stof(log_text.substr(start, end - start));
     } catch (...) { return std::numeric_limits<float>::quiet_NaN(); }
 }
 
@@ -112,14 +119,14 @@ std::vector<PoseCandidate> build_cross_restart_pool(const std::vector<std::strin
             if (!fs::exists(cand)) continue;
             float cf; int freq; std::vector<float> mcfs;
             if (!parse_pose(cand, cf, freq, mcfs)) continue;
-            poses.push_back({cand, cf, freq, g, static_cast<int>(ri)});
+            poses.push_back({cand, cf, freq, g, static_cast<int>(ri), std::move(mcfs)});
         }
         // INI seed if present.
         std::string ini = out_prefix + "_INI.pdb";
         if (fs::exists(ini)) {
             float cf; int freq; std::vector<float> mcfs;
             if (parse_pose(ini, cf, freq, mcfs)) {
-                poses.push_back({ini, cf, 1, g, static_cast<int>(ri)});
+                poses.push_back({ini, cf, 1, g, static_cast<int>(ri), std::move(mcfs)});
             }
         }
     }
@@ -129,36 +136,87 @@ std::vector<PoseCandidate> build_cross_restart_pool(const std::vector<std::strin
 std::string elect_reported_pose(const std::vector<PoseCandidate>& pool, bool thermo_on) {
     if (pool.empty()) return {};
 
-    // Simple adaptation of the logic: group by restart for consensus, score with G tiebreak if thermo.
-    // For simplicity, replicate the default consensus path with G as tertiary tie-break (lower G better).
-    // Build per-restart best CF for rough, but use full pool scoring.
+    // Boltzmann Z+H composite (matches select_pose_freq_gated_pooled scoring)
+    constexpr double kT_kcalmol = 0.592;
+    constexpr double alpha_shannon = 1.0;
 
-    // To keep close to shipped: use the Z+H or consensus from the code.
-    // Here we implement a basic version that prefers high "consensus" (number of other restarts with close pose), low CF, then low G if thermo.
+    auto boltzmann_composite = [&](const PoseCandidate& p) -> double {
+        const size_t n_members = p.member_cfs.empty()
+            ? static_cast<size_t>(std::max(1, p.freq))
+            : p.member_cfs.size();
+        const double pop_weight = std::log1p(static_cast<double>(n_members));
+        if (p.member_cfs.empty()) {
+            return std::exp(-static_cast<double>(p.cf) / kT_kcalmol) * pop_weight;
+        }
+        double Z = 0.0;
+        for (float cf_i : p.member_cfs) {
+            Z += std::exp(-static_cast<double>(cf_i) / kT_kcalmol);
+        }
+        if (Z <= 0.0) return std::exp(-static_cast<double>(p.cf) / kT_kcalmol) * pop_weight;
+        double H = 0.0;
+        for (float cf_i : p.member_cfs) {
+            double pi = std::exp(-static_cast<double>(cf_i) / kT_kcalmol) / Z;
+            if (pi > 1e-300) H -= pi * std::log(pi);
+        }
+        return Z * std::exp(-alpha_shannon * H) * pop_weight;
+    };
 
-    // Compute approximate consensus for each.
-    std::vector<int> consensus(pool.size(), 0);
-    constexpr float kConsensusDelta = 1.5f;
-    // Note: full RMSD computation requires coords; for this, we fall back to simple CF + G if no coords loaded.
-    // For the module, we assume caller provides or we skip full consensus for now and use CF + G.
-    // To make functional, use CF primary, G secondary for thermo.
-
-    int best_i = -1;
-    for (size_t i = 0; i < pool.size(); ++i) {
-        bool better = false;
-        if (best_i < 0) better = true;
-        else {
-            if (pool[i].cf < pool[best_i].cf) better = true;
-            else if (pool[i].cf == pool[best_i].cf) {
-                if (thermo_on && std::isfinite(pool[i].g_bind) && std::isfinite(pool[best_i].g_bind)) {
-                    if (pool[i].g_bind < pool[best_i].g_bind) better = true;
-                }
+    if (thermo_on) {
+        // TWO-STAGE (v88/2015 JCIM methodology for reported pose):
+        // (a) Select the restart with the minimum (best) finite G_bind.
+        //     This makes thermo G_bind election the primary driver for which
+        //     ensemble's pose is reported in results.csv (RMSD column).
+        // (b) *Within that restart only*, apply freq-gated Z+H composite
+        //     selection (highest composite) to pick the representative pose.
+        // CF/consensus scoring remains for internal GA decisions and non-THERMO runs.
+        float min_g = std::numeric_limits<float>::infinity();
+        int chosen_ri = -1;
+        for (const auto& pc : pool) {
+            if (std::isfinite(pc.g_bind) && pc.g_bind < min_g) {
+                min_g = pc.g_bind;
+                chosen_ri = pc.restart_id;
             }
         }
-        if (better) best_i = static_cast<int>(i);
+        if (chosen_ri < 0) {
+            // No finite G_bind found in any log; fall back to composite across pool.
+            chosen_ri = -1;
+        }
+
+        const PoseCandidate* best = nullptr;
+        double best_sc = -std::numeric_limits<double>::infinity();
+        for (const auto& pc : pool) {
+            if (chosen_ri >= 0 && pc.restart_id != chosen_ri) continue;
+            double sc = boltzmann_composite(pc);
+            if (sc > best_sc || best == nullptr) {
+                best_sc = sc;
+                best = &pc;
+            }
+        }
+        if (best) return best->path;
+        return {};
     }
-    if (best_i < 0) return {};
-    return pool[best_i].path;
+
+    // !thermo_on: delegate to CF / Z+H freq-gated composite over full pool
+    // (cross-restart RMSD consensus re-ranking, when enabled, is applied in caller
+    //  for non-thermo; we provide the Z+H best here as base).
+    const PoseCandidate* best = nullptr;
+    double best_sc = -std::numeric_limits<double>::infinity();
+    for (const auto& pc : pool) {
+        double sc = boltzmann_composite(pc);
+        if (sc > best_sc || best == nullptr) {
+            best_sc = sc;
+            best = &pc;
+        }
+    }
+    if (best) return best->path;
+
+    // ultimate fallback: lowest CF
+    int best_i = -1;
+    for (size_t i = 0; i < pool.size(); ++i) {
+        if (best_i < 0 || pool[i].cf < pool[best_i].cf) best_i = static_cast<int>(i);
+    }
+    if (best_i >= 0) return pool[best_i].path;
+    return {};
 }
 
 } // namespace reported_pose

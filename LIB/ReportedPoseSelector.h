@@ -13,6 +13,7 @@ struct PoseCandidate {
     int freq = 1;
     float g_bind = std::numeric_limits<float>::quiet_NaN();  // lower is better for binding
     int restart_id = -1;
+    std::vector<float> member_cfs;  // for Z+H composite scoring within restart
 };
 
 // Build the cross-restart pool of pose candidates from the restart prefixes.
