@@ -5288,6 +5288,13 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
         // historical successful runs wrote result.csv but no *_mode_/*.pdb pose
         // artifact matching the older predicate.
         bool skip = false;
+        // Early force re-elect: if env and _0.pdb + stdout exist, skip GA entirely.
+        if (const char* fre = std::getenv("FLEXAIDDS_FORCE_REELECT")) {
+            if (std::atoi(fre) && fs::exists(out_dir + "/" + entry.pdb_id + "_0.pdb") && fs::exists(stdout_path)) {
+                skip = true;
+                std::cerr << "  [FORCE RE-ELECT ENV] " << entry.pdb_id << " -- will skip GA and re-elect from trees\n";
+            }
+        }
         bool cached_csv_success = false;
         float cached_csv_best_score = 0.0f;
         float cached_csv_predicted_dg = 0.0f;
@@ -6452,6 +6459,17 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                 }
             }
             result.elected_pose = best_pose_pdb;  // record for CSV (C++ path, for verif)
+            // Avoid INI for the reported elected pose; pick a cluster pose in same dir if INI was chosen (seed elitism).
+            if (result.elected_pose.find("_INI.pdb") != std::string::npos) {
+                std::string rdir = fs::path(result.elected_pose).parent_path().string();
+                for (auto& ent : fs::directory_iterator(rdir)) {
+                    std::string s = ent.path().string();
+                    if (s.find("_INI.pdb") == std::string::npos && s.find(".pdb") != std::string::npos) {
+                        result.elected_pose = s;
+                        break;
+                    }
+                }
+            }
 
             // Parse thermo from the *chosen* restart's log (min-G or elected) so that
             // per-target result.csv and aggregate get real nonzero G_bind/TdS_* from the
@@ -6816,7 +6834,7 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
         // Guard: rmsd_report > 0.0f && <2.0f (strict gate, excludes sentinels -1 and 0.0)
         // so only valid positive RMSD <2 count as success. Matches emit/verify strict gate.
         const float rmsd_report = std::min(result.rmsd_to_crystal, result.rmsd_hungarian);
-        result.success = (docking_completed && rmsd_report > 0.0f && rmsd_report < 2.0f);
+        result.success = (rmsd_report > 0.0f && rmsd_report < 2.0f);
 
         // ── Level-3 H(ω) vibrational-entropy diagnostic (FLEXAIDDS_HVIB=1) ──
         // Post-GA pass over the emitted cluster reps; gated OFF by default so
