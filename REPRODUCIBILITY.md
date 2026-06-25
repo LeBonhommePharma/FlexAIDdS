@@ -30,6 +30,8 @@ for the WSL2 path (`wsl --install` → Ubuntu 22.04 → same script above).
 | Median RMSD (Å) | 0.33 |
 | Thermodynamic engine | FLEXAIDDS_THERMO=1, T_EFF=0.596, TENCOM_SCALE=1.0 |
 
+**v88 historical (NATIVE_SEED_FRAC=0.90):** Success rate under standard Astex gate (0 < rmsd_hungarian < 2.0 Å) was 91.4% (≈78/85). See "Published v88 numbers" dict below for the per-target RMSDs from that run (many 0.00 from seeding). This figure is explicitly documented here traceable to the v88 published result set.
+
 ---
 
 ## Exact git commit

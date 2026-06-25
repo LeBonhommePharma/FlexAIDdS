@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
-SCRATCH="${1:-/var/folders/8b/tgtvwb_j6zd_g03vl1w4ykfw0000gn/T/grok-goal-4779e0ecbadf/implementer}"
+SCRATCH="${1:-/var/folders/8b/tgtvwb_j6zd_g03vl1w4ykfw0000gn/T/grok-goal-86a3d1efec00/implementer}"
 SLICE_LIST="scripts/rate_slice_targets.txt"
 CANONICAL="benchmark_trees_canonical"
 TMP_OUT="$SCRATCH/slice_run"
@@ -48,15 +48,25 @@ ONLY_CODES=$(cat "$SLICE_LIST" | tr '\n' ',' | sed 's/,$//')
   --omp-threads 6 \
   --job-timeout-seconds 7200 \
   2>&1 | tee "$SCRATCH/slice_run.log" | tail -20
-# the aggregate should be written to $TMP_OUT/astex_crossdock_85_results.csv or similar
-# copy to SCRATCH
-if [ -f "$TMP_OUT/astex_crossdock_85_results.csv" ]; then
-  cp "$TMP_OUT/astex_crossdock_85_results.csv" "$SCRATCH/slice_results.csv"
-elif [ -f "$TMP_OUT/results.csv" ]; then
-  cp "$TMP_OUT/results.csv" "$SCRATCH/slice_results.csv"
-else
-  find "$TMP_OUT" -name '*results*.csv' -exec cp {} "$SCRATCH/slice_results.csv" \; 2>/dev/null || true
-fi
+# aggregate per-target result.csv (from force re-elect or full) into top level for verif
+python3 -c '
+import csv, json, glob, os, sys
+tmp = "'"$TMP_OUT"'"
+scratch = "'"$SCRATCH"'"
+pers = glob.glob(os.path.join(tmp, "*/result.csv"))
+rows = []
+for p in pers:
+  for r in csv.DictReader(open(p)):
+    rows.append(r)
+outp = os.path.join(scratch, "slice_results.csv")
+if rows:
+  with open(outp, "w", newline="") as f:
+    w = csv.DictWriter(f, fieldnames=rows[0].keys())
+    w.writeheader(); w.writerows(rows)
+  print("aggregated", len(rows), "rows to", outp)
+else:
+  print("no per result.csv to aggregate")
+' 
 python3 -c '
 import csv, json, datetime, os
 p = "'"$SCRATCH"'/slice_results.csv"
