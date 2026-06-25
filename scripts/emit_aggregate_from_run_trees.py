@@ -46,9 +46,12 @@ def parse_last_g_bind(text: str) -> float:
 # --- RMSD helpers (adapted from scripts/p4_best_of_n_diagnostic.py for oracle) ---
 H_TOKENS = {"H", "D"}
 
-def parse_pdb_ligand(pdb_path: str, ligand_res: str = None):
-    """Extract ligand heavy atoms. If ligand_res (e.g. 'RQ3') given or auto-detected from REMARK 'optimizable residue', filter to that resname.
-    Falls back to all non-H if no match (for pure ligand files)."""
+def parse_pdb_ligand(pdb_path: str, ligand_res: str = None, n_ligand_atoms: int = None):
+    """Extract ligand heavy atoms. 
+    - If n_ligand_atoms, take the LAST n_ligand_atoms non-H atoms (ligand usually appended last in docked PDB).
+    - Else if ligand_res or auto-detected, filter to that resname.
+    - Falls back to all non-H.
+    """
     coords = []
     elems = []
     ligand_res_upper = (ligand_res or '').upper().strip() if ligand_res else None
@@ -92,7 +95,12 @@ def parse_pdb_ligand(pdb_path: str, ligand_res: str = None):
                 continue
             coords.append((x, y, z))
             elems.append(elem[:1] if elem else "X")
-    return np.asarray(coords, dtype=float), elems
+    arr_c = np.asarray(coords, dtype=float)
+    arr_e = elems
+    if n_ligand_atoms and len(arr_c) > n_ligand_atoms:
+        arr_c = arr_c[-n_ligand_atoms:]
+        arr_e = arr_e[-n_ligand_atoms:]
+    return arr_c, arr_e
 
 def parse_sdf_ligand(sdf_path: str):
     coords = []
@@ -333,11 +341,18 @@ def load_per_target(td: Path, dataset_dir: Optional[Path] = None, use_two_stage:
                     ref = Path('benchmarks/astex_diverse/astex_diverse') / td.name / f'{td.name}_ligand.sdf'
                 if ref and ref.exists():
                     cC, cE = parse_sdf_ligand(str(ref))
-                    pC, pE = parse_pdb_ligand(elected)
+                    pC, pE = parse_pdb_ligand(elected, n_ligand_atoms=len(cC))
                     rh = hungarian_rmsd(pC, pE, cC, cE)
                     if rh is not None:
                         row['rmsd_hungarian'] = rh
                         row['rmsd_to_crystal'] = rh  # approx
+                    else:
+                        # fallback ordered if still mismatch
+                        if len(pC) == len(cC):
+                            d = pC - cC
+                            rh = float(np.sqrt(np.mean(np.sum(d**2, axis=1))))
+                            row['rmsd_hungarian'] = rh
+                            row['rmsd_to_crystal'] = rh
             except Exception as ex:
                 pass  # keep whatever was in row or leave
         # success - sentinel (<=0 or -1) is fail, not pass
@@ -352,10 +367,10 @@ def load_per_target(td: Path, dataset_dir: Optional[Path] = None, use_two_stage:
         log_path = td / 'stdout.log'
         g = parse_last_g_bind(log_path.read_text(errors='ignore')) if log_path.exists() else float('nan')
         row['G_bind'] = g if math.isfinite(g) else ''
-    # ensure success
+    # ensure success - only valid positive <2
     try:
         rh = float(row.get('rmsd_hungarian', row.get('rmsd_to_crystal', 99.0)))
-        row['success'] = 1 if rh < 2.0 else 0
+        row['success'] = 1 if (rh < 2.0 and rh > 0) else 0
     except Exception:
         row.setdefault('success', 0)
     return row if row.get('pdb_id') else None
