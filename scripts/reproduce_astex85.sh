@@ -43,11 +43,11 @@
 #     stdout.log / stderr.log         ← full run transcript
 #     <PDB>/                          ← per-target pose files
 #
-# PUBLISHED / CURRENT DOCUMENTED REFERENCE (from proper 7r+THERMO trees, two-stage G_bind elect + NO_SAS)
-#   Success rate (RMSD_hungarian < 2.0 Å): 68/85  (80.0 % with min(valid h, valid c) for reported)
-#   (Note: older claims of 80/85 from bad/mixed/synthetic trees; actual gated on proper reviewer trees aggregate (current selector): 18/85; sentinels not counted; honest, no post-process)
-#   Mean/Median vary by run; see output.
-#   Historical ref commit 8196829 binary for comparison only.
+# CURRENT HONEST MEASURED (proper 7r+THERMO reviewer trees, two-stage min-G elect + THERMO G_bind, NO_SAS=1, strict gate)
+#   Success rate (rmsd_hungarian >0 and <2.0 Å): 18/85  (21.2 % raw C++ aggregate; sentinels excluded; no post-process, no min(h,c))
+#   Slice on proper trees (current code): 0/10.
+#   Older claims (68/85 or ~80%) came from loose gating or different election; this is the measured with correct methodology.
+#   Mean/Median vary; see output CSV. Historical ref commit for provenance only.
 # =============================================================================
 set -euo pipefail
 
@@ -501,7 +501,12 @@ output_dir    = sys.argv[5]
 rows = list(csv.DictReader(results_csv.open()))
 
 def rmsd(r): return float(r.get("rmsd_hungarian") or r.get("rmsd_to_crystal") or "9999")
-def succ(r): return r.get("success","0") == "1" or rmsd(r) < 2.0
+def succ(r):
+    try:
+        h = float(r.get("rmsd_hungarian") or r.get("rmsd_to_crystal") or 99)
+        return 0 < h < 2.0
+    except Exception:
+        return False
 
 success  = [r for r in rows if succ(r)]
 near     = [r for r in rows if not succ(r) and rmsd(r) < 2.5]
@@ -530,11 +535,11 @@ print(f"{BOLD}{CYN}{'═'*60}{RST}")
 print(f"\n  {'Metric':<35} {'Reviewer':>12}  {'Published':>12}")
 print(f"  {'─'*35} {'─'*12}  {'─'*12}")
 print(f"  {'Total targets':<35} {total:>12}  {'85':>12}")
-print(f"  {'Successful (RMSD_H < 2.0 Å)':<35} {n_ok:>12}  {'47':>12}")
-print(f"  {'Success rate':<35} {rate:>11.1f}%  {'80.0%':>12}")
-print(f"  {'Mean RMSD (Å)':<35} {mean_r:>12.2f}  {'~0.81*':>12}")
-print(f"  {'Median RMSD (Å)':<35} {median_r:>12.2f}  {'~0.33*':>12}")
-print(f"  {'*observed varies; see actual CSV gating (hungarian<2 and >0 on proper aggregate)':<35}")
+print(f"  {'Successful (RMSD_H >0 and <2.0 Å strict)':<35} {n_ok:>12}  {'18':>12}")
+print(f"  {'Success rate (strict gate)':<35} {rate:>11.1f}%  {'21.2%':>12}")
+print(f"  {'Mean RMSD (Å)':<35} {mean_r:>12.2f}  {'see CSV*':>12}")
+print(f"  {'Median RMSD (Å)':<35} {median_r:>12.2f}  {'see CSV*':>12}")
+print(f"  {'* raw from C++ two-stage on proper trees; sentinels=-1 excluded by gate; older 0.81 used different election':<35}")
 if wall_times:
     total_seq = sum(wall_times)
     print(f"  {'Total sequential docking time':<35} {total_seq/3600:>11.1f}h  {'~1.8h':>12}")
@@ -551,9 +556,9 @@ else:
 
 print(f"\n{BOLD}{CYN}{'═'*60}{RST}")
 if abs(rate - 21.2) < 5.0:
-    print(f"\n  {GRN}✓  Success rate {rate:.1f}% close to current documented 80.0% (68/85 (80%) from proper trees){RST}")
+    print(f"\n  {GRN}✓  Success rate {rate:.1f}% matches current honest measured (18/85 = 21.2% strict gate on proper 7r+THERMO trees){RST}")
 else:
-    print(f"\n  {YLW}!  Success rate {rate:.1f}% differs from documented 80.0% (18/85){RST}")
+    print(f"\n  {YLW}!  Success rate {rate:.1f}% differs from current honest measured 18/85 (21.2%){RST}")
 
 print(f"""
   {BOLD}Verify reproducibility:{RST}
