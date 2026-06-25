@@ -439,6 +439,9 @@ export FLEXAIDDS_THERMO=1
 export FLEXAIDDS_T_EFF=0.596
 export FLEXAIDDS_TENCOM_SCALE=1.0
 
+# Disable SAS desolvation (post-v50b regression that creates false minima deeper than native; env gate in vcfunction.cpp:35)
+export FLEXAIDDS_NO_SAS=1
+
 # Search configuration (exact match to published v89 run)
 export FLEXAIDDS_RESTARTS=7
 export FLEXAIDDS_PARALLEL_RESTARTS=1

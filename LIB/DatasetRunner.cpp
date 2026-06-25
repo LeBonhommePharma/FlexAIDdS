@@ -5390,6 +5390,12 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                               std::to_string(cached_poses) + " pose artifact(s)")
                           << " already on disk, skipping\n";
             }
+            // Force re-elect using current two-stage selector for verification on existing v88 pose trees
+            // (no GA re-run, just selection + rmsd for the min-G reported pose).
+            if (!skip && fs::exists(out_dir + "/" + entry.pdb_id + "_0.pdb") && fs::exists(stdout_path)) {
+                skip = true;
+                std::cerr << "  [FORCE RE-ELECT FIXED SELECTOR] " << entry.pdb_id << " -- poses+stdout exist, skip GA to re-compute reported using min-G two-stage\n";
+            }
         }
 
         // ret is initialised to 0; for cached runs we never call exec_cmd so

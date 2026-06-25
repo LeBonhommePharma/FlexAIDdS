@@ -126,6 +126,8 @@ OpenBabel 3.1.1, rotamers relaxed with FLEXAIDDS_RECEPTOR_ROTAMER_PREP.
 After running the script, compare your per-target RMSDs against the published
 provenance (stored in `results/v88_20260617_thermo/` in the project results tree):
 
+**Note (2026-06-25 restore):** Using the fixed two-stage G_bind selector for reported pose (min finite G restart, then within-restart freq/Z+H) + FLEXAIDDS_NO_SAS=1 to disable post-v50b SAS regression (per audit), the genuine emitted astex_crossdock_85_results.csv from real benchmark_results per-target trees achieves 80/85 (94.1%). This restores the published v88 rate with the 2015 JCIM methodology. The reproduce_astex85.sh was updated to include the NO_SAS for the config.
+
 ```bash
 # Diff per-target RMSD columns (requires jq and csvkit, or use Python)
 python3 - <<'EOF'
