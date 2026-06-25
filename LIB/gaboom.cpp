@@ -507,7 +507,9 @@ int GA(FA_Global* FA, GB_Global* GB,VC_Global* VC,chromosome** chrom,chromosome*
 	// Stagnation detection: terminate GA when best fitness stops improving
 	const int STAGNATION_WINDOW = 100;   // check every N generations
 	const int STAGNATION_LIMIT  = 300;   // break after this many stagnant windows
-	double prev_best_fitness = -1e30;
+	double prev_best_fitness = -1e30;  // SMFREE/others: best fitness (higher=better)
+	// For PSHARE fit_max is always num_chrom (rank 0); track best evalue instead.
+	double prev_best_evalue = 1e30;    // PSHARE: best CF seen (lower=better)
 	int    stagnation_count  = 0;
 	bool   ga_stagnant = false;
 
@@ -793,10 +795,15 @@ int GA(FA_Global* FA, GB_Global* GB,VC_Global* VC,chromosome** chrom,chromosome*
 
 		// Stagnation detection: check if best fitness has plateaued
 		if (!no_sec && (i + 1) % STAGNATION_WINDOW == 0 && i > 0) {
-			if (std::abs(GB->fit_max - prev_best_fitness) < 1e-6) {
+			// v117: PSHARE fit_max is always num_chrom (rank-based); use best evalue instead.
+			const bool _ps = (strcmp(GB->fitness_model,"PSHARE")==0);
+			const double _cur  = _ps ? (*chrom)[0].evalue : GB->fit_max;
+			const double _prev = _ps ? prev_best_evalue   : prev_best_fitness;
+			const double _tol  = _ps ? 1e-3               : 1e-6;
+			if (std::abs(_cur - _prev) < _tol) {
 				stagnation_count += STAGNATION_WINDOW;
 				if (stagnation_count >= STAGNATION_LIMIT) {
-					printf("GA terminated early: fitness stagnant for %d generations (best=%.4f)\n", stagnation_count, GB->fit_max);
+					printf("GA terminated early: fitness stagnant for %d generations (best=%.4f)\n", stagnation_count, _cur);
 					ga_stagnant = true;
 					break;
 				}
@@ -804,6 +811,7 @@ int GA(FA_Global* FA, GB_Global* GB,VC_Global* VC,chromosome** chrom,chromosome*
 				stagnation_count = 0;
 			}
 			prev_best_fitness = GB->fit_max;
+			if (_ps) prev_best_evalue = (*chrom)[0].evalue;
 		}
 
 		// ── Always-on H plateau early exit ─────────────────────────────────
