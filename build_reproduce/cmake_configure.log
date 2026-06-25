@@ -1,0 +1,69 @@
+-- Objective-C++ compiler found — Metal support enabled
+-- The CXX compiler identification is AppleClang 21.0.0.21000320
+-- The OBJCXX compiler identification is AppleClang 21.0.0.21000320
+-- Detecting CXX compiler ABI info
+-- Detecting CXX compiler ABI info - done
+-- Check for working CXX compiler: /usr/bin/c++ - skipped
+-- Detecting CXX compile features
+-- Detecting CXX compile features - done
+-- Detecting OBJCXX compiler ABI info
+-- Detecting OBJCXX compiler ABI info - done
+-- Check for working OBJCXX compiler: /usr/bin/clang++ - skipped
+CMake Warning at CMakeLists.txt:41 (message):
+  Building from a DIRTY working tree — reproducibility metadata will be
+  flagged.
+
+
+-- AppleClang on macOS: defaulting to C++23 for SDK compatibility. Use -DFLEXAIDS_FORCE_CXX26=ON to request C++26 (may hit libc++ template issues).
+-- Apple Silicon detected — disabling x86 SIMD flags (-mavx2, -mfma, -mavx512*)
+-- Could NOT find OpenMP_CXX (missing: OpenMP_CXX_FLAGS OpenMP_CXX_LIB_NAMES) 
+-- Could NOT find OpenMP (missing: OpenMP_CXX_FOUND) 
+-- Eigen3 found via pkg-config
+-- Metal acceleration enabled
+-- flexaid_core: ARM NEON enabled (baseline aarch64 ISA)
+-- FlexAID: ARM NEON enabled (baseline aarch64 ISA)
+-- tENCoM: ARM NEON enabled (baseline aarch64 ISA)
+-- tENCoM tool enabled — build target: tENCoM
+-- tencom_entropy_diff: ARM NEON enabled (baseline aarch64 ISA)
+-- Legacy tENCoM entropy diff tool enabled — build target: tencom_entropy_diff
+-- dift_torsion_fit: ARM NEON enabled (baseline aarch64 ISA)
+-- DiFT torsion fit tool enabled — build target: dift_torsion_fit
+-- FlexAIDdS: ARM NEON enabled (baseline aarch64 ISA)
+-- FlexAIDdS: Metal GPU acceleration enabled (Shannon + CavityDetect + TurboQuant + MetalRMSD)
+-- FlexAIDdS fast executable enabled
+-- dual_assembly: ARM NEON enabled (baseline aarch64 ISA)
+-- DualAssembly CLI enabled — build target: dual_assembly
+-- benchmark_datasets: ARM NEON enabled (baseline aarch64 ISA)
+-- Benchmark dataset runner enabled — build target: benchmark_datasets
+-- FlexAID 2015 benchmark targets: flexaid_bench_astex_diverse, flexaid_bench_astex_non_native, flexaid_bench_hap2
+-- Running FlexAID source validator (scripts/validate_sources.py)...
+-- WARNING: FlexAIDdS source guard found orphaned source files!
+
+  Scanned : 390 files
+  Orphans : 6
+  (Ignored: 122 via build_sources.ignore)
+
+Orphaned files (these exist on disk but are not referenced in any build file):
+
+  Headers (often transitively included — lower priority):
+    • LIB/ReportedPoseSelector.h
+    • LIB/ThermodynamicEngine.h
+    • LIB/VibEntropy.h
+    • LIB/coarse_init.h
+    • LIB/native_score.h
+    • LIB/receptor_prep.h
+      (Consider adding the corresponding .cpp/.cu to the module's CMakeLists.txt first)
+
+How to fix:
+  1. If this is a new module, create LIB/YourModule/CMakeLists.txt and list the files there.
+  2. Add one line `add_subdirectory(YourModule)` in LIB/CMakeLists.txt.
+  3. Or add the file to an existing module's CMakeLists.txt.
+  4. Re-run cmake (or pip install -e .).
+
+To temporarily allow an orphan (migration / legacy):
+  echo 'LIB/receptor_prep.h' >> build_sources.ignore
+
+This is a non-fatal warning. Switch to --strict (or STRICT in CMake) once clean.
+-- Configuring done (5.0s)
+-- Generating done (0.1s)
+-- Build files have been written to: /Users/lp.more/.grok/worktrees/projects-flexaidds/flexaidds-success-rates-restoration/build_reproduce
