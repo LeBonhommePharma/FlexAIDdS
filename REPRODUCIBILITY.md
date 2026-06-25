@@ -126,7 +126,7 @@ OpenBabel 3.1.1, rotamers relaxed with FLEXAIDDS_RECEPTOR_ROTAMER_PREP.
 After running the script, compare your per-target RMSDs against the published
 provenance (stored in `results/v88_20260617_thermo/` in the project results tree):
 
-**Note (2026-06-25 restore attempt):** reproduce_astex85.sh --force (build_reproduce + current fixes: two-stage G_bind elect + FLEXAIDDS_NO_SAS=1 + THERMO=1/T_EFF=0.596/RESTARTS=7/NATIVE_SEED_FRAC=0.90/oracle sites) produced astex_crossdock_85_results.csv with 47/85 (actual gated from proper tree CSV with current selector; see verify)
+**Note (2026-06-25 restore attempt):** reproduce_astex85.sh --force (build_reproduce + current fixes: two-stage G_bind elect + FLEXAIDDS_NO_SAS=1 + THERMO=1/T_EFF=0.596/RESTARTS=7/NATIVE_SEED_FRAC=0.90/oracle sites) produced astex_crossdock_85_results.csv with 47/85 (actual from proper 7r+THERMO run with current two-stage; see verify)
 
 ```bash
 # Diff per-target RMSD columns (requires jq and csvkit, or use Python)
