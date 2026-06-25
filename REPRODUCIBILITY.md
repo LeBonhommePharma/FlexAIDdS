@@ -30,7 +30,7 @@ for the WSL2 path (`wsl --install` → Ubuntu 22.04 → same script above).
 | Median RMSD (Å) | 0.33 |
 | Thermodynamic engine | FLEXAIDDS_THERMO=1, T_EFF=0.596, TENCOM_SCALE=1.0 |
 
-**v88 historical (NATIVE_SEED_FRAC=0.90):** Claim 91.4% (78/85). Dict loose <2: 79/85 (92.9%); strict 0<rmsd<2: 46/85 (54.1%); seed_echo=33. Current under strict NATIVE=0 + 0<rmsd<2 is 21/85. 78/85 not reproduced under strict gate (seed-echo zeros explain gap). See dict below and gate_audit.json. Traceable to v88 result set.
+**v88 historical (NATIVE_SEED_FRAC=0.90):** The v88 claim was 91.4% (≈78/85). See the "Published v88 numbers" dict below for the per-target RMSDs from that run (many 0.00 from seeding). Under the standard strict gate (0 < rmsd_hungarian < 2.0 Å) the dict yields 46/85 (79/85 if including 0.00). Current engine under NATIVE=0.0 and the strict gate is 21/85. The 91.4% (78/85) figure is explicitly documented here traceable to the v88 published result set, but does not match the strict gate count (seed-echo at 0 explain per the ban in BENCHMARK_STANDARD.md).
 
 ---
 
