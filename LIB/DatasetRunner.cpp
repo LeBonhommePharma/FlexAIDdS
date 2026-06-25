@@ -1073,7 +1073,7 @@ static std::pair<std::string,float> select_pose_freq_gated_pooled(
 // pfx so the *reported* rmsd_hungarian in the aggregate csv reflects the
 // v88 thermo methodology (min G_bind chooses the "top" ensemble). CF/selector
 // logic remains for internal GA decisions and non-thermo runs.
-static std::string select_pfx_with_min_g_bind(const std::vector<std::string>& prefixes) {
+std::string select_pfx_with_min_g_bind(const std::vector<std::string>& prefixes) {
     float min_g = std::numeric_limits<float>::max();
     std::string best;
     std::vector<float> gs;
