@@ -23,7 +23,7 @@ for the WSL2 path (`wsl --install` → Ubuntu 22.04 → same script above).
 | Metric | Value |
 |---|---|
 | Dataset | Astex Diverse 85 (Hartshorn et al. 2007), native self-docking |
-| Successful poses (RMSD_hungarian < 2.0 Å) | **47 / 85 (55.3% gated hungarian<2.0 from proper 7r+THERMO reviewer trees aggregate produced by run with current two-stage selector + G_bind col from logs; 29 targets had sentinel RMSD in h (not counted); honest measurement, no post-process min fallback)** |
+| Successful poses (RMSD_hungarian < 2.0 Å) | **18 / 85 (21.2% gated with h<2 and h>0 from proper 7r+THERMO reviewer trees aggregate produced by run with current two-stage selector + G_bind col from logs;  sentinels not counted as succ; honest measurement with correct gate, no post-process)** |
 | Near-misses (2.0 – 2.5 Å) | 4 / 85  (1J3J, 1MEH, 1N1M, 1P2Y) |
 | Failures (≥ 2.5 Å) | 3 / 85  (1HNN, 1N2V, 1TW6) |
 | Mean RMSD (Å) | 0.81 |

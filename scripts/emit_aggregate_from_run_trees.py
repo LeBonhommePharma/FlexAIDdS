@@ -46,9 +46,28 @@ def parse_last_g_bind(text: str) -> float:
 # --- RMSD helpers (adapted from scripts/p4_best_of_n_diagnostic.py for oracle) ---
 H_TOKENS = {"H", "D"}
 
-def parse_pdb_ligand(pdb_path: str):
+def parse_pdb_ligand(pdb_path: str, ligand_res: str = None):
+    """Extract ligand heavy atoms. If ligand_res (e.g. 'RQ3') given or auto-detected from REMARK 'optimizable residue', filter to that resname.
+    Falls back to all non-H if no match (for pure ligand files)."""
     coords = []
     elems = []
+    ligand_res_upper = (ligand_res or '').upper().strip() if ligand_res else None
+    # auto detect from REMARK
+    try:
+        with open(pdb_path) as f:
+            for line in f:
+                if 'optimizable residue' in line.lower():
+                    parts = line.split()
+                    for i, p in enumerate(parts):
+                        if 'residue' in p.lower() and i+1 < len(parts):
+                            cand = parts[i+1].upper().strip()
+                            if len(cand) == 3 and cand not in {'ALA','ARG','ASN','ASP','CYS','GLN','GLU','GLY','HIS','ILE','LEU','LYS','MET','PHE','PRO','SER','THR','TRP','TYR','VAL'}:
+                                ligand_res_upper = cand
+                                break
+                    break
+    except Exception:
+        pass
+    std_res = {'ALA','ARG','ASN','ASP','CYS','GLN','GLU','GLY','HIS','ILE','LEU','LYS','MET','PHE','PRO','SER','THR','TRP','TYR','VAL','HOH','WAT','SOL'}
     with open(pdb_path) as f:
         for line in f:
             if not line.startswith("ATOM") and not line.startswith("HETATM"):
@@ -57,8 +76,15 @@ def parse_pdb_ligand(pdb_path: str):
                 x = float(line[30:38])
                 y = float(line[38:46])
                 z = float(line[46:54])
+                res = line[17:20].strip().upper()
             except Exception:
                 continue
+            if ligand_res_upper:
+                if res != ligand_res_upper:
+                    continue
+            else:
+                if res in std_res:
+                    continue
             elem = line[76:78].strip().upper() or line[12:14].strip().upper() or line[13:14].upper()
             if len(elem) > 1 and elem[1].isdigit():
                 elem = elem[0]
@@ -314,10 +340,10 @@ def load_per_target(td: Path, dataset_dir: Optional[Path] = None, use_two_stage:
                         row['rmsd_to_crystal'] = rh  # approx
             except Exception as ex:
                 pass  # keep whatever was in row or leave
-        # success
+        # success - sentinel (<=0 or -1) is fail, not pass
         try:
             rh = float(row.get('rmsd_hungarian', 99.0))
-            row['success'] = 1 if rh < 2.0 else 0
+            row['success'] = 1 if (rh < 2.0 and rh > 0) else 0
         except Exception:
             row.setdefault('success', 0)
 
@@ -398,11 +424,11 @@ def main() -> None:
         wr.writeheader()
         wr.writerows(rows)
 
-    # Gating summary (the real metric)
+    # Gating summary (the real metric) - exclude sentinels (<=0)
     n = len(rows)
-    succ = sum(int(float(r.get('rmsd_hungarian', 99)) < 2.0 or int(r.get('success', 0)) == 1) for r in rows)
+    succ = sum(1 for r in rows if (h := float(r.get('rmsd_hungarian', 99) or 99)) < 2.0 and h > 0)
     print(f"Wrote {n} rows -> {out_path}")
-    print(f"Success (rmsd_hungarian < 2.0): {succ} / {n}  ({100.0*succ/n:.1f}%)")
+    print(f"Success (rmsd_hungarian < 2.0 and >0): {succ} / {n}  ({100.0*succ/n:.1f}%)")
 
     if succ >= 80:
         print("OFFLINE GATE PASSED (>=80/85) — safe to launch full reproduce_astex85.sh for confirmation.")
