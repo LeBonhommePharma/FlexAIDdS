@@ -112,6 +112,7 @@ struct DatasetEntry {
     std::string ligand_path;         // path to extracted ligand SDF
     std::string rmsd_reference_path; // optional crystal/reference SDF for RMSD/native CF
     std::string binding_site_path;   // oracle binding site PDB (optional; enables LOCCLF mode)
+    std::string cleft_sphere_path;   // explicit Get_Cleft sphere PDB for restored multi-cleft runs
     float experimental_affinity{-1.0f};  // pKd/pKi if available
     float experimental_dH{0.0f};     // ΔH in kcal/mol (ITC)
     float experimental_TdS{0.0f};    // TΔS in kcal/mol (ITC)
@@ -121,6 +122,7 @@ struct DatasetEntry {
     bool has_enthalpy()    const { return experimental_dH != 0.0f; }
     bool has_entropy()     const { return experimental_TdS != 0.0f; }
     bool has_oracle_site() const { return !binding_site_path.empty(); }
+    bool has_cleft_spheres() const { return !cleft_sphere_path.empty(); }
 };
 
 /// Result of docking a single entry
