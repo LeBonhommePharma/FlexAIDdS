@@ -5591,10 +5591,15 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                    // (GIST is intentionally NOT enabled here: it requires a
                    //  per-target .dx desolvation grid that the Astex set lacks,
                    //  and top.cpp silently disables it when no grid is present.)
-                   // v58: H-bond rank-only — steer GA with shape complementarity,
-                   // apply directional hbond when ranking emitted cluster poses.
+                   // v114: H-bond search re-enabled for oracle-ceiling mode.
+                   // v50b had hbond active during GA fitness — disabling it (v58)
+                   // removed the H-bond discriminator that let oracle seeds
+                   // out-compete false VCT minima. Re-enable for oracle-ceiling;
+                   // keep rank-only for autonomous (speed + blind-search stability).
                    << "    \"hbond_enabled\": true,\n"
-                   << "    \"hbond_search_enabled\": false,\n"
+                   << "    \"hbond_search_enabled\": "
+                   << (config.mode == BenchmarkMode::ORACLE_CEILING ? "true" : "false")
+                   << ",\n"
                    << "    \"hbond_rank_enabled\": true,\n"
                    << "    \"metal_coord_enabled\": true,\n"
                    << "    \"sas_weight\": 0.40,\n"
