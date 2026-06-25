@@ -62,7 +62,9 @@ def load_per_target(td: Path) -> Optional[Dict]:
             rows = list(csv.DictReader(f))
         if not rows:
             return None
-        row = dict(rows[0])  # take the (only) row for this target
+        row = dict(rows[0])
+        if "selected_policy" in row:
+            del row["selected_policy"]
         # Normalize keys we care about
         row['pdb_id'] = row.get('pdb_id') or td.name
         # Try enrich thermo from this target's stdout (if single) or look for per-r logs

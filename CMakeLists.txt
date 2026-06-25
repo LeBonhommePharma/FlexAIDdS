@@ -1912,6 +1912,7 @@ flexaids_configure_simd(test_cavity_detect)
         tests/test_binding_mode_statmech.cpp
         tests/stubs.cpp
         LIB/gaboom.cpp
+        LIB/statmech.cpp
         LIB/VibEntropy.cpp
         LIB/InStreamClustering.cpp
         LIB/GAContext.cpp
