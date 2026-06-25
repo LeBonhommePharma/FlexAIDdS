@@ -1067,6 +1067,64 @@ static std::pair<std::string,float> select_pose_freq_gated_pooled(
     return {best->path, best->cf};
 }
 
+// best-by-thermo selection helper (small, unit-testable): when THERMO=1,
+// return the restart prefix with the lowest G_bind (parsed from its [THERMO]
+// line). The caller can then restrict pose selection (freq-gated etc) to that
+// pfx so the *reported* rmsd_hungarian in the aggregate csv reflects the
+// v88 thermo methodology (min G_bind chooses the "top" ensemble). CF/selector
+// logic remains for internal GA decisions and non-thermo runs.
+static std::string select_pfx_with_min_g_bind(const std::vector<std::string>& prefixes) {
+    float min_g = std::numeric_limits<float>::max();
+    std::string best;
+    std::vector<float> gs;
+    // Collect G in order from main logs + per-pfx (for association by index if counts match)
+    for (const auto& pfx : prefixes) {
+        fs::path p(pfx);
+        std::vector<std::string> candidates = {
+            pfx + "/stdout.log",
+            (p.parent_path() / "stdout.log").string()
+        };
+        bool found_for_pfx = false;
+        for (const auto& lp : candidates) {
+            if (!fs::exists(lp)) continue;
+            std::ifstream f(lp);
+            std::string ln;
+            while (std::getline(f, ln)) {
+                if (ln.find("[THERMO]") != std::string::npos) {
+                    auto pos = ln.find("G_bind=");
+                    if (pos != std::string::npos) {
+                        try {
+                            float g = std::stof(ln.substr(pos + 7));
+                            std::cerr << "[G_BIND_SELECT] found G=" << g << " for pfx=" << pfx << " in " << lp << "\n";
+                            gs.push_back(g);
+                            if (g < min_g) {
+                                min_g = g;
+                                best = pfx;
+                            }
+                            found_for_pfx = true;
+                        } catch (...) {}
+                    }
+                }
+            }
+            if (found_for_pfx) break;
+        }
+    }
+    // If we collected exactly as many G as prefixes (common when emitted per restart in main log), map by min index
+    if (!gs.empty() && gs.size() == prefixes.size()) {
+        size_t min_idx = 0;
+        for (size_t i = 1; i < gs.size(); ++i) if (gs[i] < gs[min_idx]) min_idx = i;
+        best = prefixes[min_idx];
+        min_g = gs[min_idx];
+        std::cerr << "[G_BIND_SELECT] index-mapped to pfx " << best << " min_g=" << min_g << "\n";
+    }
+    if (!best.empty()) {
+        std::cerr << "[G_BIND_SELECT] final selected pfx " << best << " with min_g=" << min_g << "\n";
+    } else if (!prefixes.empty()) {
+        best = prefixes[0]; // safe fallback
+    }
+    return best;
+}
+
 // =============================================================================
 // Statistical functions — implemented from scratch, no external stats library
 // =============================================================================
@@ -6374,7 +6432,19 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
             // select_pose_freq_gated() drops degenerate (CF≈0) poses, prefers
             // clusters with Frequency>1, and returns the min-CF pose within that
             // pool (see helper definition near compute_pose_ligand_rmsd).
-            std::string best_pose_pdb = select_pose_freq_gated_pooled(all_prefixes, sel_elitism_ovr, cf_window_selector_).first;
+            // Under THERMO, override to G_bind-min (v88 methodology): pick the
+            // restart pfx with lowest G_bind, then its freq-gated pose as the
+            // *reported* one whose RMSD goes to the results csv for top-1 success.
+            std::string best_pose_pdb;
+            if (result.has_thermo) {
+                std::string minp = select_pfx_with_min_g_bind(all_prefixes);
+                if (!minp.empty()) {
+                    best_pose_pdb = select_pose_freq_gated_pooled({minp}, sel_elitism_ovr, cf_window_selector_).first;
+                }
+            }
+            if (best_pose_pdb.empty()) {
+                best_pose_pdb = select_pose_freq_gated_pooled(all_prefixes, sel_elitism_ovr, cf_window_selector_).first;
+            }
             // Fallback: no scored pose found — take first available pose file from any restart.
             if (best_pose_pdb.empty()) {
                 for (const auto& pfx : all_prefixes) {

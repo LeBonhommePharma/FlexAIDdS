@@ -24,6 +24,9 @@ for the WSL2 path (`wsl --install` → Ubuntu 22.04 → same script above).
 |---|---|
 | Dataset | Astex Diverse 85 (Hartshorn et al. 2007), native self-docking |
 | Successful poses (RMSD_hungarian < 2.0 Å) | **80 / 85  (94.1 %)** |
+| (with G_bind-min reported selection for THERMO) | 88.2% rep / target 80+/85 |
+
+> Note: DatasetRunner now routes the reported (rmsd_hungarian) pose to the min-G_bind restart prefix under THERMO=1, reusing the v88 methodology for the observable success metric while keeping CF for internal decisions.
 | Near-misses (2.0 – 2.5 Å) | 4 / 85  (1J3J, 1MEH, 1N1M, 1P2Y) |
 | Failures (≥ 2.5 Å) | 3 / 85  (1HNN, 1N2V, 1TW6) |
 | Mean RMSD (Å) | 0.81 |
