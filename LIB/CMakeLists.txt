@@ -5,6 +5,7 @@
 
 add_library(flexaid_core OBJECT
     fileio.cpp
+    ReportedPoseSelector.cpp
     assign_shift.cpp
     buildic.cpp
     Vcontacts.cpp

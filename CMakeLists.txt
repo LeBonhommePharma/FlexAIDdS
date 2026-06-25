@@ -1392,7 +1392,7 @@ if(BUILD_TESTING)
     endfunction()
 
     # test_statmech — StatMechEngine unit tests
-    add_executable(test_statmech tests/test_statmech.cpp LIB/statmech.cpp
+    add_executable(test_statmech tests/test_statmech.cpp LIB/statmech.cpp LIB/ReportedPoseSelector.cpp
         LIB/TurboQuant.cpp
                    LIB/UnifiedHardwareDispatch.cpp LIB/hardware_detect.cpp)
     target_include_directories(test_statmech PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/LIB)
