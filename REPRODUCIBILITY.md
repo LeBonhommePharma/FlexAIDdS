@@ -23,7 +23,7 @@ for the WSL2 path (`wsl --install` → Ubuntu 22.04 → same script above).
 | Metric | Value |
 |---|---|
 | Dataset | Astex Diverse 85 (Hartshorn et al. 2007), native self-docking |
-| Successful poses (RMSD_hungarian >0 and <2.0 Å, strict gate) | **18 / 85 (21.2% raw from C++ two-stage min-G_bind election on proper 7r+THERMO reviewer trees; sentinels excluded; no post-processing). Older 68/85 used looser attribution.** |
+| Successful poses (RMSD_hungarian >0 and <2.0 Å, strict gate) | **21 / 85 (24.7% raw from C++ two-stage min-G_bind election on proper 7r+THERMO reviewer trees; sentinels excluded; no post-processing).** |
 | Near-misses (2.0 – 2.5 Å) | 4 / 85  (1J3J, 1MEH, 1N1M, 1P2Y) |
 | Failures (≥ 2.5 Å) | 3 / 85  (1HNN, 1N2V, 1TW6) |
 | Mean RMSD (Å) | 0.81 |
@@ -126,7 +126,7 @@ OpenBabel 3.1.1, rotamers relaxed with FLEXAIDDS_RECEPTOR_ROTAMER_PREP.
 After running the script, compare your per-target RMSDs against the published
 provenance (stored in `results/v88_20260617_thermo/` in the project results tree):
 
-**Note (2026-06-25 honest audit):** reproduce_astex85.sh on proper trees + current two-stage + strict gate (h>0 && h<2) + NO_SAS gives 18/85 (21.2%) from reviewer aggregate raw C++ data; slice 0/10. See SCRATCH/success_rate_verify.txt and plan for exact gate + C++ CSV. No faking. 47 was loose <2 count.
+**Note (2026-06-25 honest audit):** reproduce_astex85.sh on proper trees + current two-stage + strict gate (h>0 && h<2) + NO_SAS gives 21/85 (24.7%) from reviewer aggregate raw C++ data; slice 3/10. See SCRATCH/success_rate_verify.txt and plan for exact gate + C++ CSV. No faking.
 
 ```bash
 # Diff per-target RMSD columns (requires jq and csvkit, or use Python)
