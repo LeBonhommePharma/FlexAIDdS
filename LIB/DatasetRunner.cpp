@@ -5554,9 +5554,35 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
             }
             const bool vct_norm = (std::getenv("FLEXAIDDS_VCT_NORM") != nullptr);
             double vct_entropy_w = 0.0;
-            if (const char* ewenv = std::getenv("FLEXAIDDS_VCT_ENTROPY_WEIGHT")) {
+            const char* ewenv = std::getenv("FLEXAIDDS_VCT_ENTROPY_WEIGHT");
+            const char* ewenv_w = std::getenv("FLEXAIDDS_VCT_ENTROPY_W");
+            if (ewenv) {
                 try { vct_entropy_w = std::stod(ewenv); } catch (...) { vct_entropy_w = 0.0; }
+            } else if (ewenv_w) {
+                try { vct_entropy_w = std::stod(ewenv_w); } catch (...) { vct_entropy_w = 0.0; }
             }
+            // v111 science: near-miss basin sharpening (orthogonal to deep-failure fixes).
+            if (std::getenv("FLEXAIDDS_NEARMISS_SHARPEN")) {
+                if (!std::getenv("FLEXAIDDS_VCT_R0")) vct_r0 = 4.5;
+                if (!ewenv && !ewenv_w) vct_entropy_w = 0.15;
+            }
+            // H-bond recalibration defaults when science-fix bundle is active.
+            double hbond_weight_cfg = -2.5;
+            double hbond_sigma_angle_cfg = 30.0;
+            double hbond_angle_gate_cfg = 0.0;
+            if (std::getenv("FLEXAIDDS_SCIENCE_FIXES")) {
+                hbond_weight_cfg = -3.5;
+                hbond_sigma_angle_cfg = 20.0;
+                hbond_angle_gate_cfg = 120.0;
+            }
+            if (const char* hw = std::getenv("FLEXAIDDS_HBOND_WEIGHT")) {
+                try { hbond_weight_cfg = std::stod(hw); } catch (...) {}
+            }
+            if (const char* hsa = std::getenv("FLEXAIDDS_HBOND_SIGMA_ANGLE")) {
+                try { hbond_sigma_angle_cfg = std::stod(hsa); } catch (...) {}
+            }
+            if (std::getenv("FLEXAIDDS_HBOND_ANGLE_GATE"))
+                hbond_angle_gate_cfg = 120.0;
             {
                 std::ofstream jf(config_path);
                 jf << "{\n"
@@ -5643,6 +5669,9 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                    << "    \"hbond_enabled\": true,\n"
                    << "    \"hbond_search_enabled\": true,\n"
                    << "    \"hbond_rank_enabled\": false,\n"
+                   << "    \"hbond_weight\": " << hbond_weight_cfg << ",\n"
+                   << "    \"hbond_sigma_angle\": " << hbond_sigma_angle_cfg << ",\n"
+                   << "    \"hbond_angle_gate_min\": " << hbond_angle_gate_cfg << ",\n"
                    << "    \"metal_coord_enabled\": true,\n"
                    << "    \"sas_weight\": 1.0,\n"
                    << "    \"tencom_weight\": 0.0,\n"

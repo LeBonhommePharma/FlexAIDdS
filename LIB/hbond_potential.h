@@ -324,6 +324,24 @@ inline double donor_angle_term(const atom_struct* atoms,
     return best; // multi-H donors (NH2): best-satisfied H wins
 }
 
+// Measured D-H...A angle (degrees) for directional gating; -1 if unknown.
+inline double measured_donor_angle_deg(const atom_struct* atoms,
+                                       const atom_struct& donor,
+                                       const atom_struct& acceptor) {
+    int h_idx = find_bonded_hydrogen(atoms, donor);
+    if (h_idx >= 0)
+        return angle_deg(atoms[h_idx].coor, donor.coor, acceptor.coor);
+    float vH[2][3];
+    int n = build_virtual_H(atoms, donor, vH);
+    if (n <= 0) return -1.0;
+    double best = -1.0;
+    for (int k = 0; k < n; ++k) {
+        double theta = angle_deg(vH[k], donor.coor, acceptor.coor);
+        if (theta > best) best = theta;
+    }
+    return best;
+}
+
 inline bool is_charge_supported_salt_bridge(const atom_struct& a,
                                             const atom_struct& b) {
     constexpr float Q_SALT = 0.30f;
@@ -353,7 +371,8 @@ inline double compute_hbond_energy(
     double sigma_dist,
     double sigma_angle,
     double weight,
-    double salt_bridge_weight)
+    double salt_bridge_weight,
+    double angle_gate_min = 0.0)
 {
     const atom_struct& a = atoms[idx_a];
     const atom_struct& b = atoms[idx_b];
@@ -370,6 +389,21 @@ inline double compute_hbond_energy(
 
     double dd = (dist - optimal_dist) / sigma_dist;
     double E_dist = std::exp(-0.5 * dd * dd);
+
+    // Hard angular gate: reject misaligned contacts before the 0.3 fallback.
+    if (!salt_bridge && angle_gate_min > 0.0) {
+        double best_measured = -1.0;
+        if (a_to_b) {
+            double theta = measured_donor_angle_deg(atoms, a, b);
+            if (theta > best_measured) best_measured = theta;
+        }
+        if (b_to_a) {
+            double theta = measured_donor_angle_deg(atoms, b, a);
+            if (theta > best_measured) best_measured = theta;
+        }
+        if (best_measured >= 0.0 && best_measured < angle_gate_min)
+            return 0.0;
+    }
 
     // Angular term: explicit H → virtual H → 0.0 (handled per direction)
     double best_angle_term = 0.0;

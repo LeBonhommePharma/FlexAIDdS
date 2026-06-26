@@ -197,3 +197,37 @@ EOF
 6. Prints a summary table and diff command
 
 Expected wall-clock time: **~45–60 min** on Apple M-series with 4 workers.
+
+---
+
+## v111 science-fix bundle (oracle-ceiling)
+
+Science interventions for VCT scoring recovery (matrix de-degeneration, H-bond
+angular gating, near-miss basin sharpening). Validated in oracle-ceiling mode only.
+
+```bash
+# 1. Generate matrix v2 (Priority-1 corrections vs canonical MC_st0r5.2_6.dat)
+python3 scripts/make_fa_matrix_v2_science.py MC_st0r5.2_6.dat MC_st0r5.2_6_v2_science.dat
+
+# 2. Build release + tests
+cmake -B build_lto -DBUILD_TESTING=ON -DCMAKE_BUILD_TYPE=Release
+cmake --build build_lto -j $(sysctl -n hw.ncpu 2>/dev/null || nproc)
+
+# 3. CF ground-truth audit on any result directory (run before re-tuning)
+python3 scripts/cf_ground_truth_audit.py <result_dir>
+python3 scripts/failure_classify.py <result_dir>
+
+# 4. Launch full oracle-ceiling benchmark with science bundle
+python3 scripts/launch_v111_science.py
+```
+
+**Environment flags** (each independently disableable):
+
+| Flag | Effect |
+|------|--------|
+| `FLEXAIDDS_SCIENCE_FIXES=1` | hbond_weight=-3.5, sigma_angle=20°, angle_gate=120° |
+| `FLEXAIDDS_ENERGY_MATRIX=<path>` | Override VCT matrix (default: `MC_st0r5.2_6.dat`) |
+| `FLEXAIDDS_NEARMISS_SHARPEN=1` | r0=4.5 Å, vct_entropy_weight=0.15 |
+| `FLEXAIDDS_T_HOT=350` | Lower GA annealing temperature |
+| `FLEXAIDDS_SHARING_ALPHA=6` | Stronger niche protection |
+| `FLEXAIDDS_HBOND_ANGLE_GATE=1` | Reject D-H…A angles below 120° |
