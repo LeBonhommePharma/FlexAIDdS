@@ -54,6 +54,7 @@ double vcfunction(FA_Global* FA,VC_Global* VC,atom* atoms,resid* residue, std::v
 		FA->optres[j].cf.hbond=0.0;
 		FA->optres[j].cf.gist_desolv=0.0;
 		FA->optres[j].cf.metal_coord=0.0;
+		FA->optres[j].cf.entropy=0.0;
 		FA->optres[j].cf.sas=0.0;
 		FA->optres[j].cf.totsas=0.0;
 	}
@@ -749,6 +750,38 @@ double vcfunction(FA_Global* FA,VC_Global* VC,atom* atoms,resid* residue, std::v
 		for(int j=0; j<FA->num_optres; ++j){
 			if(vct_ncon[j] > 0){
 				FA->optres[j].cf.com *= VCT_NREF / (double)vct_ncon[j];
+			}
+		}
+	}
+
+	// Shannon entropy of contact-type distribution as VCT false-minimum penalty.
+	// H = -Σ p_ij log₂(p_ij) over pairwise atom-type contribution matrix.
+	// False minima have HIGH entropy (many diffuse type-pair contacts);
+	// native sites have LOW entropy (few dominant, specific complementary pairs).
+	// Penalty: CF += λ·H demotes false minima relative to native binding mode.
+	// contributions[] is distance-weighted (exp(-r/r0) applied in contact loop).
+	// Only negative contributions (favorable contacts) define the distribution.
+	if (FA->vct_entropy_weight > 0.0) {
+		double total_abs = 0.0;
+		const int ntypes2 = FA->ntypes * FA->ntypes;
+		for (int k = 0; k < ntypes2; ++k) {
+			if (FA->contributions[k] < 0.0f)
+				total_abs += (double)(-FA->contributions[k]);
+		}
+		double H = 0.0;
+		if (total_abs > 0.0) {
+			for (int k = 0; k < ntypes2; ++k) {
+				if (FA->contributions[k] < 0.0f) {
+					double p = (double)(-FA->contributions[k]) / total_abs;
+					if (p > 0.0) H -= p * std::log2(p);
+				}
+			}
+		}
+		double entropy_penalty = FA->vct_entropy_weight * H;
+		for (int j = 0; j < FA->num_optres; ++j) {
+			if (FA->optres[j].type == 1) {  // ligand optres only
+				FA->optres[j].cf.entropy += entropy_penalty;
+				break;
 			}
 		}
 	}

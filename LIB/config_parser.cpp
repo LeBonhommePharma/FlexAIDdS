@@ -63,6 +63,9 @@ void apply_config(const json::Value& config, FA_Global* FA, GB_Global* GB) {
         // Lever 2: intensive CF.com (divide by contact count). Default OFF
         // keeps the extensive score so existing arms stay byte-for-byte stable.
         FA->vct_normalize_contacts = jbool(config, "scoring", "vct_normalize_contacts", false) ? 1 : 0;
+        FA->vct_entropy_weight = jdbl(config, "scoring", "vct_entropy_weight", 0.0);
+        if (const char* e = std::getenv("FLEXAIDDS_VCT_ENTROPY_WEIGHT"))
+            FA->vct_entropy_weight = std::atof(e);
         FA->useacs          = jbool(config, "scoring", "accessible_surface", false) ? 1 : 0;
         FA->acsweight       = jflt(config, "scoring", "acs_weight", 1.0f);
         FA->solventterm     = jflt(config, "scoring", "solvent_penalty", 0.0f);

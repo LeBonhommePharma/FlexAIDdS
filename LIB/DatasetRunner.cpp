@@ -5553,6 +5553,10 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                 try { vct_r0 = std::stod(r0env); } catch (...) { vct_r0 = 7.0; }
             }
             const bool vct_norm = (std::getenv("FLEXAIDDS_VCT_NORM") != nullptr);
+            double vct_entropy_w = 0.0;
+            if (const char* ewenv = std::getenv("FLEXAIDDS_VCT_ENTROPY_WEIGHT")) {
+                try { vct_entropy_w = std::stod(ewenv); } catch (...) { vct_entropy_w = 0.0; }
+            }
             {
                 std::ofstream jf(config_path);
                 jf << "{\n"
@@ -5634,7 +5638,8 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                    << "    \"hbond_rank_enabled\": true,\n"
                    << "    \"metal_coord_enabled\": true,\n"
                    << "    \"sas_weight\": 0.40,\n"
-                   << "    \"tencom_weight\": 0.0\n"
+                   << "    \"tencom_weight\": 0.0,\n"
+                   << "    \"vct_entropy_weight\": " << vct_entropy_w << "\n"
                    << "  },\n"
                    // MIF-weighted GA seeding: bias gene[0] toward grid points
                    // with favourable probe-interaction energy (Boltzmann CDF at
