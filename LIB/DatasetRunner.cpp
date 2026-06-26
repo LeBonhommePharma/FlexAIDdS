@@ -5595,18 +5595,18 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                    // (GIST is intentionally NOT enabled here: it requires a
                    //  per-target .dx desolvation grid that the Astex set lacks,
                    //  and top.cpp silently disables it when no grid is present.)
-                   // v114: H-bond search re-enabled for oracle-ceiling mode.
-                   // v50b had hbond active during GA fitness — disabling it (v58)
-                   // removed the H-bond discriminator that let oracle seeds
-                   // out-compete false VCT minima. Re-enable for oracle-ceiling;
-                   // keep rank-only for autonomous (speed + blind-search stability).
+                   // v122: match v50b scoring config — hbond_search/rank default-false
+                   // (hbond_enabled=true but search+rank flags off → hbond=0 in GA,
+                   //  matching v50b dock_config exactly). sas_weight restored to
+                   //  default 1.0 (v50b used engine default; 0.40 reduced native SAS
+                   //  contribution by 60%, damaging CF(native) by ~14 kcal for buried
+                   //  targets like 1GPK). These two changes together explain the
+                   //  81.2%→41.2% regression alongside the SMFREE→PSHARE switch.
                    << "    \"hbond_enabled\": true,\n"
-                   << "    \"hbond_search_enabled\": "
-                   << (config.mode == BenchmarkMode::ORACLE_CEILING ? "true" : "false")
-                   << ",\n"
-                   << "    \"hbond_rank_enabled\": true,\n"
+                   << "    \"hbond_search_enabled\": false,\n"
+                   << "    \"hbond_rank_enabled\": false,\n"
                    << "    \"metal_coord_enabled\": true,\n"
-                   << "    \"sas_weight\": 0.40,\n"
+                   << "    \"sas_weight\": 1.0,\n"
                    << "    \"tencom_weight\": 0.0,\n"
                    << "    \"vct_entropy_weight\": " << vct_entropy_w << "\n"
                    << "  },\n"
