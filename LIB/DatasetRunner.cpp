@@ -6837,33 +6837,80 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                     }
                 }
 
-                // ── BCR-gate: DIAGNOSTIC ONLY (v50) ──────────────────────────────
-                // v49 SUBSTITUTED the oracle-best cluster as the reported result
-                // whenever the oracle scan found a near-native cluster (best_cluster
-                // _rmsd < 2.0 A) that the freq-gated selector missed (>= 2.0 A).
-                // That made the headline number oracle-assisted (it requires the
-                // crystal ligand to identify the bcr cluster), so v50 DEMOTES the
-                // gate to a pure observer: it still computes best_cluster_rmsd and
-                // logs when it WOULD have fired, but it no longer overwrites
-                // result.rmsd_to_crystal / rmsd_hungarian / best_score.  The
-                // reported result is now a true autonomous docking result with no
-                // oracle substitution.  best_cluster_rmsd is still emitted to the
-                // CSV as a diagnostic column.  (best_cluster_pfx is retained only
-                // for this diagnostic gate's bookkeeping.)
-                (void)best_cluster_pfx;
-                // BCR diagnostic: only fire when BCR is a real measurement (>= 0)
-                // and the top-1 result genuinely missed (>= 2 Å). With sentinel
-                // -1.0f, bcr < 2.0 is true for uncomputed BCR — guard prevents
-                // spurious diagnostic on fully-failed runs.
-                if (result.best_cluster_rmsd >= 0.0f &&
+                // ── BCR-gate: known-site selector override ───────────────────────
+                // v50 correctly demoted this gate for AUTONOMOUS validation because
+                // the oracle-best cluster requires the crystal ligand to identify.
+                // In ORACLE_CEILING runs the binding site and crystal reference are
+                // already explicit protocol inputs, so the old v49 behavior is the
+                // reproducibility target: if the emitted cluster pool contains a
+                // sub-2 Å pose but the frequency/consensus selector reports a miss,
+                // report the actual BCR pose that achieved best_cluster_rmsd.
+                //
+                // No new physics or threshold is introduced here: 2 Å is the Astex
+                // success gate already used below; autonomous runs remain
+                // diagnostic-only.
+                const bool bcr_gate_candidate =
+                    result.best_cluster_rmsd >= 0.0f &&
                     result.best_cluster_rmsd < 2.0f &&
-                    std::min(result.rmsd_to_crystal, result.rmsd_hungarian) >= 2.0f) {
+                    std::min(result.rmsd_to_crystal, result.rmsd_hungarian) >= 2.0f;
+                const bool bcr_gate_enabled =
+                    config.mode == BenchmarkMode::ORACLE_CEILING &&
+                    !entry.binding_site_path.empty() &&
+                    fs::exists(entry.binding_site_path);
+
+                if (bcr_gate_candidate && bcr_gate_enabled &&
+                    !best_cluster_pfx.empty() && result.best_cluster_idx >= 0) {
+                    const float old_rmsd = std::min(result.rmsd_to_crystal,
+                                                    result.rmsd_hungarian);
+                    const std::string override_pdb = best_cluster_pfx + "_" +
+                        std::to_string(result.best_cluster_idx) + ".pdb";
+                    if (fs::exists(override_pdb)) {
+                        auto rov = compute_pose_ligand_rmsd(
+                            override_pdb, crystal_xyz, crystal_elem,
+                            entry.pdb_id, true);
+                        result.rmsd_to_crystal = rov.first;
+                        result.rmsd_hungarian  = rov.second;
+                        result.seed_echo = false;
+                        result.pose_source = "bcr_gate";
+                        best_pose_pdb = override_pdb;
+
+                        float override_cf = std::numeric_limits<float>::infinity();
+                        {
+                            std::ifstream pf(override_pdb);
+                            std::string pl;
+                            while (std::getline(pf, pl)) {
+                                if (pl.find("REMARK CF=") != std::string::npos) {
+                                    auto pos = pl.find("CF=");
+                                    if (pos != std::string::npos) {
+                                        try { override_cf = std::stof(pl.substr(pos + 3)); }
+                                        catch (...) {}
+                                    }
+                                    break;
+                                }
+                            }
+                        }
+                        if (std::isfinite(override_cf)) result.best_score = override_cf;
+
+                        std::cerr << "  [BCR-GATE] " << entry.pdb_id
+                                  << ": bcr=" << std::fixed << std::setprecision(3)
+                                  << result.best_cluster_rmsd
+                                  << "A sel_old=" << old_rmsd
+                                  << "A -> bcr_cluster rmsd="
+                                  << std::min(rov.first, rov.second)
+                                  << "A (idx=" << result.best_cluster_idx << ")\n";
+                    } else {
+                        std::cerr << "  [BCR-GATE-WARN] " << entry.pdb_id
+                                  << ": candidate pose missing for pfx="
+                                  << best_cluster_pfx
+                                  << " idx=" << result.best_cluster_idx << "\n";
+                    }
+                } else if (bcr_gate_candidate) {
                     const float kept = std::min(result.rmsd_to_crystal,
                                                 result.rmsd_hungarian);
                     std::cerr << "  [BCR-DIAGNOSTIC] " << entry.pdb_id
                               << ": bcr=" << std::fixed << std::setprecision(2)
                               << result.best_cluster_rmsd
-                              << "A (gate DISABLED — autonomous result kept: "
+                              << "A (gate DISABLED for autonomous/legacy mode — result kept: "
                               << kept << "A)"
                               << " (idx=" << result.best_cluster_idx << ")\n";
                 }
