@@ -478,6 +478,21 @@ double vcfunction(FA_Global* FA,VC_Global* VC,atom* atoms,resid* residue, std::v
 						contribution = yval;
 					}
 
+					// Aromatic stacking discriminator (C.ar–C.ar pairs only).
+					// SYBYL C.ar = type 4; matrix rows are nearly degenerate with
+					// C.2/N.ar/N.am — inline distance correction, no matrix edit.
+					{
+						const int type_i = VC->Calc[i].atom->type;
+						const int type_j = VC->Calc[VC->ca_rec[currindex].atom].atom->type;
+						const float dist = (float)VC->ca_rec[currindex].dist;
+						if (type_i == 4 && type_j == 4) {
+							if (dist >= 3.3f && dist <= 4.0f)
+								contribution *= 1.15f;
+							else if (dist < 3.3f)
+								contribution *= 0.70f;
+						}
+					}
+
 					if(FA->useacs){
 						//printf("USE ACS\n");
 						//printf("default contribution=%.3f\n", contribution);
