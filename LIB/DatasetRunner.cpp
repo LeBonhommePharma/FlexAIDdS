@@ -6572,10 +6572,47 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                                   << " (sel_consensus="
                                   << (sel_i >= 0 ? consensus[sel_i] : -1) << ")\n";
                         if (best_i >= 0) {
-                            best_pose_pdb = pool[best_i].path;
-                            // Keep best_score describing the SAME pose now reported.
-                            if (std::isfinite(pool[best_i].cf))
-                                result.best_score = pool[best_i].cf;
+                            // v124 Guard: the INI seed elected by seed_elitism is
+                            // NOT in the cluster pool (sel_i==-1), so the consensus
+                            // block compares only GA clusters against each other and
+                            // can blindly override the INI with a thermodynamically
+                            // inferior cluster (higher CF = worse energy).  Root
+                            // cause for 1XOZ/1R55: all GA clusters clashed (CF >> 0)
+                            // while INI CF is negative — consensus picks any cluster,
+                            // ignoring that it's energetically worse.
+                            //
+                            // Fix: when the currently-elected pose is an INI seed
+                            // (ends with _INI.pdb, sel_i==-1) and the consensus
+                            // winner's CF is thermodynamically worse than the INI's
+                            // CF, protect the INI from the override.
+                            {
+                                const std::string ini_sfx = "_INI.pdb";
+                                const bool elected_is_ini =
+                                    best_pose_pdb.size() >= ini_sfx.size() &&
+                                    best_pose_pdb.compare(
+                                        best_pose_pdb.size() - ini_sfx.size(),
+                                        ini_sfx.size(), ini_sfx) == 0;
+                                const bool consensus_winner_is_worse =
+                                    sel_i < 0 && elected_is_ini &&
+                                    std::isfinite(result.best_score) &&
+                                    pool[best_i].cf > result.best_score;
+                                if (consensus_winner_is_worse) {
+                                    std::cerr << "  [CONSENSUS-GUARD] " << entry.pdb_id
+                                              << ": INI seed (CF=" << std::fixed
+                                              << std::setprecision(4) << result.best_score
+                                              << ") protected from "
+                                              << (high_entropy_gate ? "entropy-midwall" :
+                                                  low_entropy_gate  ? "entropy-contact"
+                                                                    : "consensus")
+                                              << " override (winner CF="
+                                              << pool[best_i].cf << ")\n";
+                                } else {
+                                    best_pose_pdb = pool[best_i].path;
+                                    // Keep best_score describing the SAME pose now reported.
+                                    if (std::isfinite(pool[best_i].cf))
+                                        result.best_score = pool[best_i].cf;
+                                }
+                            }
                         }
                     }
                 }
