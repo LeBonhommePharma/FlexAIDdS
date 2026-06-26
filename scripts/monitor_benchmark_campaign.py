@@ -155,6 +155,61 @@ def run_ab_compare(v111: str, baseline: str, log_path: str) -> None:
         _log(log_path, f"[v111] WARN ab_compare failed: {e}")
 
 
+def notify_user(title: str, message: str) -> None:
+    """macOS Notification Center alert (no-op on other platforms)."""
+    if sys.platform != "darwin":
+        return
+    try:
+        subprocess.run(
+            [
+                "osascript", "-e",
+                f"display notification {json.dumps(message)} with title {json.dumps(title)}",
+            ],
+            capture_output=True,
+            timeout=5,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        pass
+
+
+def maybe_notify_campaign(root: str, label: str, snap: dict, log_path: str) -> None:
+    """Fire one macOS notification per campaign when it hits 85/85."""
+    marker = os.path.join(root, ".monitor_notify_done")
+    if os.path.isfile(marker) or snap["done"] < TOTAL_TARGETS:
+        return
+    pct = round(100.0 * snap["sub2"] / TOTAL_TARGETS, 1)
+    notify_user(
+        "FlexAIDdS Benchmark",
+        f"{label} complete: {snap['sub2']}/{TOTAL_TARGETS} sub-2Å ({pct}%)",
+    )
+    try:
+        with open(marker, "w") as f:
+            f.write(utc_now() + "\n")
+        _log(log_path, f"[{label}] macOS notification sent.")
+    except OSError:
+        pass
+
+
+def maybe_notify_all_done(snapshots: list[dict], log_path: str) -> None:
+    """Single summary notification when every watched campaign is complete."""
+    if not all(s["status"] == "complete" for s in snapshots):
+        return
+    marker = os.path.join(os.path.dirname(log_path), ".monitor_notify_all_done")
+    if os.path.isfile(marker):
+        return
+    parts = [
+        f"{s['label']}: {s['sub2']}/{s['total']} sub-2Å"
+        for s in snapshots
+    ]
+    notify_user("FlexAIDdS Benchmarks Done", " · ".join(parts))
+    try:
+        with open(marker, "w") as f:
+            f.write(utc_now() + "\n")
+        _log(log_path, "All-campaigns macOS notification sent.")
+    except OSError:
+        pass
+
+
 def _log(log_path: str, msg: str) -> None:
     line = f"{utc_now()} {msg}"
     print(line, flush=True)
@@ -229,6 +284,7 @@ def monitor_loop(campaigns: list[dict], log_path: str, interval: int) -> None:
 
             if snap["status"] == "complete":
                 run_post_audit(root, label, log_path)
+                maybe_notify_campaign(root, label, snap, log_path)
 
         v111 = next((s for s in snapshots if s["label"] == "v111_science"), None)
         baseline = next((s for s in snapshots if s["label"] == "baseline_8196829"), None)
@@ -245,6 +301,7 @@ def monitor_loop(campaigns: list[dict], log_path: str, interval: int) -> None:
 
         all_complete = all(s["status"] == "complete" for s in snapshots)
         if all_complete:
+            maybe_notify_all_done(snapshots, log_path)
             _log(log_path, "All campaigns complete. Monitor exiting.")
             summary_path = os.path.join(os.path.dirname(log_path), "monitor_final_summary.md")
             _write_final_summary(snapshots, summary_path, log_path)

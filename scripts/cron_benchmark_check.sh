@@ -21,6 +21,13 @@ TOTAL=85
 
 utc() { date -u +"%Y-%m-%dT%H:%M:%SZ"; }
 
+notify_user() {
+  local title="$1" msg="$2"
+  if command -v osascript >/dev/null 2>&1; then
+    osascript -e "display notification $(python3 -c 'import json,sys; print(json.dumps(sys.argv[1]))' "$msg") with title $(python3 -c 'import json,sys; print(json.dumps(sys.argv[1]))' "$title")" 2>/dev/null || true
+  fi
+}
+
 count_done() {
   local root="$1"
   find "$root" -maxdepth 2 -name result.csv 2>/dev/null | wc -l | tr -d ' '
@@ -99,6 +106,29 @@ for pair in "v111:${V111}" "baseline:${BASE}"; do
     if [[ "$done" -ge "$m" ]] && ! grep -q "^${key}:" "$MILESTONE_FILE" 2>/dev/null; then
       echo "${key}:$(utc)" >> "$MILESTONE_FILE"
       echo "$(utc) [cron] MILESTONE ${tag} reached ${m}/85"
+      if [[ "$m" -eq 85 ]]; then
+        sub2=$(count_sub2 "$root")
+        notify_marker="${root}/.cron_notify_done"
+        if [[ ! -f "$notify_marker" ]]; then
+          notify_user "FlexAIDdS Benchmark" "${tag} complete: ${sub2}/85 sub-2Å"
+          date -u +"%Y-%m-%dT%H:%M:%SZ" > "$notify_marker"
+          echo "$(utc) [cron] macOS notification sent for ${tag}"
+        fi
+      fi
     fi
   done
 done
+
+# ── 5. All-campaigns summary notification (cron safety net) ────────────────
+ALL_NOTIFY="${HOME}/flexaidds_results/.cron_notify_all_done"
+if [[ -d "$V111" && -d "$BASE" ]]; then
+  v_done=$(count_done "$V111")
+  b_done=$(count_done "$BASE")
+  if [[ "$v_done" -ge "$TOTAL" && "$b_done" -ge "$TOTAL" && ! -f "$ALL_NOTIFY" ]]; then
+    v_sub2=$(count_sub2 "$V111")
+    b_sub2=$(count_sub2 "$BASE")
+    notify_user "FlexAIDdS Benchmarks Done" "v111: ${v_sub2}/85 · baseline: ${b_sub2}/85 sub-2Å"
+    date -u +"%Y-%m-%dT%H:%M:%SZ" > "$ALL_NOTIFY"
+    echo "$(utc) [cron] All-campaigns macOS notification sent"
+  fi
+fi
