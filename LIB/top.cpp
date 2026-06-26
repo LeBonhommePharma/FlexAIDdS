@@ -566,12 +566,16 @@ int main(int argc, char **argv){
 	FA->use_hbond_rank=0;
 	FA->hbond_rank_rescore=0;
 	FA->hbond_weight=-2.5;
-	{ const char* _hbw=std::getenv("FLEXAIDDS_HBOND_WEIGHT"); if(_hbw) FA->hbond_weight=std::atof(_hbw); }  // v116: tuneable via env
+	{ const char* _hbw=std::getenv("FLEXAIDDS_HBOND_WEIGHT"); if(_hbw) FA->hbond_weight=std::atof(_hbw); }
 	FA->hbond_optimal_dist=2.8;
 	FA->hbond_optimal_angle=180.0;
 	FA->hbond_sigma_dist=0.4;
 	FA->hbond_sigma_angle=30.0;
+	{ const char* _hsa=std::getenv("FLEXAIDDS_HBOND_SIGMA_ANGLE"); if(_hsa) FA->hbond_sigma_angle=std::atof(_hsa); }
 	FA->hbond_salt_bridge_weight=-5.0;
+	FA->hbond_angle_gate_min=0.0;
+	{ const char* _hg=std::getenv("FLEXAIDDS_HBOND_ANGLE_GATE");
+	  if(_hg && _hg[0]=='1') FA->hbond_angle_gate_min=120.0; }
 
 	FA->use_metal_coord=0;
 	FA->metal_coord_weight=1.0;
@@ -943,16 +947,22 @@ int main(int argc, char **argv){
 		// ── 1. Interaction matrix ──
 		{
 			char emat[MAX_PATH__];
-			if (!strcmp(FA->dependencies_path, "")) {
-				strcpy(emat, FA->base_path);
+			const char* mat_override = std::getenv("FLEXAIDDS_ENERGY_MATRIX");
+			if (mat_override && mat_override[0] != '\0') {
+				strncpy(emat, mat_override, MAX_PATH__ - 1);
+				emat[MAX_PATH__ - 1] = '\0';
 			} else {
-				strcpy(emat, FA->dependencies_path);
-			}
+				if (!strcmp(FA->dependencies_path, "")) {
+					strcpy(emat, FA->base_path);
+				} else {
+					strcpy(emat, FA->dependencies_path);
+				}
 #ifdef _WIN32
-			strcat(emat, "\\MC_st0r5.2_6.dat");
+				strcat(emat, "\\MC_st0r5.2_6.dat");
 #else
-			strcat(emat, "/MC_st0r5.2_6.dat");
+				strcat(emat, "/MC_st0r5.2_6.dat");
 #endif
+			}
 			printf("interaction matrix is <%s>\n", emat);
 			read_emat(FA, emat);
 		}

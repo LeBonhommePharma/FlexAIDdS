@@ -2300,6 +2300,11 @@ flexaids_configure_simd(test_cavity_detect)
         add_test(NAME SoftContactMatrixTests COMMAND test_soft_contact_matrix)
     endif()
 
+    add_executable(test_matrix_v2_science tests/test_matrix_v2_science.cpp)
+    target_link_libraries(test_matrix_v2_science PRIVATE GTest::gtest GTest::gtest_main)
+    add_test(NAME MatrixV2ScienceTests COMMAND test_matrix_v2_science
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
+
     # test_compare_energy_matrices — compare 256×256 vs 40×40 energy matrices
     if(FLEXAIDS_USE_256_MATRIX)
         add_executable(test_compare_energy_matrices
