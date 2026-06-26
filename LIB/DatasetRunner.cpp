@@ -5595,8 +5595,13 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                    // Greedy Dunbrack search on pocket sidechains before GA launch.
                    // Documented here for provenance; actual flag read from
                    // BenchmarkConfig::receptor_rotamer_prep (DatasetRunner.h).
+                   // v122: disabled for ORACLE_CEILING — crystal receptor is already
+                   // in native crystal geometry; rotamer prep rotates sidechains away
+                   // from crystal packing → degrades CF(native) by ~15 kcal/mol for
+                   // buried targets (1GPK: -74→-59 kcal). v50b had this flag false.
                    << "    \"receptor_rotamer_prep\": "
-                   << (config.receptor_rotamer_prep ? "true" : "false") << "\n"
+                   << ((config.receptor_rotamer_prep &&
+                        config.mode != BenchmarkMode::ORACLE_CEILING) ? "true" : "false") << "\n"
                    << "  },\n"
                    << "  \"optimization\": {\n"
                    << "    \"grid_spacing\": " << config.grid_spacing << opt_extra << "\n"
@@ -5915,7 +5920,8 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
             // ── end chain pruning ─────────────────────────────────────────────
 
             if (config.receptor_rotamer_prep &&
-                use_oracle_geometry)
+                use_oracle_geometry &&
+                config.mode != BenchmarkMode::ORACLE_CEILING)
             {
                 std::string prepped = out_dir + "/" + entry.pdb_id + "_prepped.pdb";
                 bool need_prep =
