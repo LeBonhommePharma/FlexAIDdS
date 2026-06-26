@@ -6,6 +6,9 @@ This launcher is intentionally narrow:
 - Get_Cleft generates ranked *_sph_<rank>.pdb files.
 - benchmark_datasets runs one normal FlexAIDdS child per cleft variant.
 - Each child receives FLEXAIDDS_CLEFT_SPHERE_FILE for a real cleft grid.
+- In known-site mode, each child keeps the original oracle_site_pdb so the
+  ligand IC frame remains anchored to the crystal pose while the search grid is
+  still the ranked cleft sphere.
 """
 
 from __future__ import annotations
@@ -122,16 +125,25 @@ def write_manifest(entries: list[dict], args: argparse.Namespace, out_dir: Path)
 
     for entry in entries:
         code = entry["receptor_id"]
+        oracle_site = entry.get("oracle_site_pdb") or entry.get("binding_site_path") or ""
+        if args.mode != "autonomous" and not oracle_site:
+            die(f"{code}: known-site mode requested but source entry has no oracle_site_pdb")
+        if oracle_site and not Path(oracle_site).exists():
+            die(f"{code}: oracle site file is missing: {oracle_site}")
+
         sph_files = generate_clefts(entry, cleft_root / code, args.top_clefts, args.force_clefts)
         for rank, sph in enumerate(sph_files, 1):
-            pairs.append({
+            pair = {
                 "receptor_id": f"{code}__clf{rank}",
                 "ligand_id": entry.get("ligand_id", code),
                 "receptor_pdb": entry["receptor_pdb"],
                 "ligand_sdf": entry["ligand_sdf"],
                 "rmsd_ref_sdf": entry.get("rmsd_ref_sdf", entry["ligand_sdf"]),
                 "cleft_sphere_file": str(sph),
-            })
+            }
+            if args.mode != "autonomous":
+                pair["oracle_site_pdb"] = oracle_site
+            pairs.append(pair)
 
     manifest = {
         "schema_version": 1,
@@ -194,7 +206,7 @@ def main() -> int:
     parser.add_argument("--ga-population", type=int, default=1000)
     parser.add_argument("--restarts", type=int, default=1)
     parser.add_argument("--job-timeout-seconds", type=int, default=3600)
-    parser.add_argument("--mode", choices=["autonomous", "oracle-ceiling"], default="autonomous")
+    parser.add_argument("--mode", choices=["autonomous", "oracle-ceiling"], default="oracle-ceiling")
     parser.add_argument("--output-dir", default="")
     parser.add_argument("--force-clefts", action="store_true")
     parser.add_argument("--force-results", action="store_true")
