@@ -6441,7 +6441,7 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
             // prefixes to carry any cross-restart signal.
             {
                 const char* consensus_env = std::getenv("FLEXAIDDS_CONSENSUS_SCORER");
-                const int   consensus_on  = consensus_env ? std::atoi(consensus_env) : 1;
+                const int   consensus_on  = consensus_env ? std::atoi(consensus_env) : 0;
                 if (consensus_on && all_prefixes.size() >= 2 && !best_pose_pdb.empty()) {
                     constexpr float kConsensusDelta = 1.5f;
                     struct Cand {
