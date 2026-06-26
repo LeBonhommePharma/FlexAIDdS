@@ -132,6 +132,7 @@ struct cf_str{  // Complementarity Function value structure
 	double gist_desolv; // GIST grid-based desolvation energy
 	double metal_coord; // metal ion coordination energy (Morse potential)
 	double h_rep;  // tENCoM vibrational-mode Shannon entropy H(ω) (nats; diagnostic + CF when tencom_weight > 0)
+	double entropy;// Shannon contact-type distribution penalty (kcal/mol; vct_entropy_weight * H_bits)
 	double totsas; // overall sas of molecule
 	int   rclash; // flag that shows whether the residue is making steric clashes
 
@@ -418,6 +419,7 @@ struct FA_Global_struct{
 	// r0 in Å; <= 0 disables the weighting (legacy equal-weight behaviour).
 	double vct_dist_weight_r0;           // distance-decay length scale (default 7.0)
 	int    vct_normalize_contacts;       // 1 = divide CF.com by contact count (intensive score); 0 = extensive (default)
+	double vct_entropy_weight;           // Shannon contact-type entropy penalty weight λ (0.0=off; λ*H_bits added to CF)
 
 	int   use_gist;                      // enable GIST water displacement scoring
 	char  gist_dg_file[MAX_PATH__];      // path to GIST free-energy .dx file

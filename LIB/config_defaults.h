@@ -26,6 +26,7 @@ inline json::Value flexaid_default_config() {
             {"normalize_area",   V(false)},
             {"vct_dist_weight_r0", V(7.0)},      // P9: per-contact exp(-r/r0) decay length (Å); <=0 disables (v70: restored 4.0→7.0)
             {"vct_normalize_contacts", V(false)},// Lever 2: divide CF.com by contact count (intensive); default extensive
+            {"vct_entropy_weight",    V(0.0)},  // Shannon contact-type entropy penalty (0=off; λ*H_bits penalizes diffuse VCT false minima)
             {"accessible_surface", V(false)},    // ACS weighting
             {"acs_weight",       V(1.0)},
             {"solvent_penalty",  V(0.0)},
