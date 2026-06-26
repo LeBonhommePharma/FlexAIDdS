@@ -24,10 +24,8 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from lib_launch import launch_session_isolated
 
-REPO = os.environ.get(
-    "FLEXAIDDS_REPO",
-    os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-)
+# Always anchor to this script's repo — ignore stale FLEXAIDDS_REPO from the shell.
+REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 def _pick_build_dir() -> str:
     for name in ("build", "build_lto"):
         d = os.path.join(REPO, name)
