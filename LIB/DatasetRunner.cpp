@@ -5600,15 +5600,17 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                    // (GIST is intentionally NOT enabled here: it requires a
                    //  per-target .dx desolvation grid that the Astex set lacks,
                    //  and top.cpp silently disables it when no grid is present.)
-                   // v122: match v50b scoring config — hbond_search/rank default-false
-                   // (hbond_enabled=true but search+rank flags off → hbond=0 in GA,
-                   //  matching v50b dock_config exactly). sas_weight restored to
-                   //  default 1.0 (v50b used engine default; 0.40 reduced native SAS
-                   //  contribution by 60%, damaging CF(native) by ~14 kcal for buried
-                   //  targets like 1GPK). These two changes together explain the
-                   //  81.2%→41.2% regression alongside the SMFREE→PSHARE switch.
+                   // v123: re-enable hbond_search (was false in v122/v122b).
+                   // Diagnosis: 1XOZ/1Y6R/1R55/1T46 all show best_score >> 0
+                   // (clashed poses) because VCT-only CF(native) is too weak
+                   // (-22 to -103 kcal) to guide the GA — hbond is the only
+                   // directional discriminator for these targets. In v119
+                   // (PSHARE+hbond), 1Y6R reached 2.00 Å; with SMFREE's
+                   // softer Boltzmann selection the false-minimum amplification
+                   // risk is substantially reduced. hbond_rank=false kept to
+                   // avoid rescore-mode interference; sas_weight=1.0 preserved.
                    << "    \"hbond_enabled\": true,\n"
-                   << "    \"hbond_search_enabled\": false,\n"
+                   << "    \"hbond_search_enabled\": true,\n"
                    << "    \"hbond_rank_enabled\": false,\n"
                    << "    \"metal_coord_enabled\": true,\n"
                    << "    \"sas_weight\": 1.0,\n"
