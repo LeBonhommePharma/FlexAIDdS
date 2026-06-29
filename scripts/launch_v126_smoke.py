@@ -32,6 +32,25 @@ PROV   = f"{OUTPUT}/launch_provenance.json"
 BENCH_THREADS = os.environ.get("FLEXAIDDS_BENCH_THREADS", "4")
 SMOKE_TARGETS = "1R55,1G9V,1OF6,1T46,1XOZ,1Y6R"
 
+ENV_SNAPSHOT_KEYS = (
+    "FLEXAIDDS_BINARY",
+    "FLEXAIDDS_ORACLE_SITE_DIR",
+    "FLEXAIDDS_RESTARTS",
+    "FLEXAIDDS_PARALLEL_RESTARTS",
+    "FLEXAIDDS_EVAL_SCALE_DIHEDRAL",
+    "FLEXAIDDS_CONSENSUS_SCORER",
+    "FLEXAIDDS_SEED_ELITISM",
+    "FLEXAIDDS_N_ELITE",
+    "FLEXAIDDS_BUDGET_SCALE",
+    "FLEXAIDDS_SOFTCORE_WAL",
+    "FLEXAIDDS_SOFTCORE_FLOOR",
+    "FLEXAIDDS_T_HOT",
+    "FLEXAIDDS_NATIVE_SEED_FRAC",
+    "FLEXAIDDS_DATA_DIR",
+    "FLEXAIDDS_BENCH_CACHE",
+    "FLEXAIDDS_PRIORITY_TARGETS",
+)
+
 def sha256(p):
     h = hashlib.sha256()
     with open(p, "rb") as f:
@@ -137,8 +156,8 @@ if __name__ == "__main__":
         "description": (
             "Option B smoke: logsumexp-stable boltzmann_composite replaces "
             "exp(-CF/kT) overflow. Consensus scorer ON (now real thermodynamic "
-            "signal, not emergency fallback). 6 canary targets: 1R55,1G9V,1OF6,1T46,1XOZ,1Y6R. "
-            "Expected: all 6 success where v125 (consensus OFF) got -1.0 on 3."
+            "signal, not emergency fallback). Priority canary: 1R55,1G9V,1OF6,1T46,1XOZ,1Y6R. "
+            "FLEXAIDDS_CONSENSUS_SCORER=1 applies to all 85 targets via parent env."
         ),
         "binary":         BINARY,
         "binary_sha256":  engine_sha,
@@ -146,6 +165,12 @@ if __name__ == "__main__":
         "matrix_md5":     matrix_md5,
         "smoke_targets":  SMOKE_TARGETS,
         "pid":            child_pid,
+        "audit_notes": {
+            "code_default_FLEXAIDDS_CONSENSUS_SCORER": "0 (since ce8f3368 v125 Option A)",
+            "launch_override_FLEXAIDDS_CONSENSUS_SCORER": "1",
+            "consensus_applies_to": "all 85 targets via parent benchmark_datasets env",
+        },
+        "env_snapshot": {k: env[k] for k in ENV_SNAPSHOT_KEYS if k in env},
     }
     with open(PROV, "w") as f:
         json.dump(prov, f, indent=2)

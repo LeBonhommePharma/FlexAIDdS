@@ -35,6 +35,27 @@ PROV   = f"{OUTPUT}/launch_provenance.json"
 
 BENCH_THREADS = os.environ.get("FLEXAIDDS_BENCH_THREADS", "4")
 
+# Keys recorded in launch_provenance.json for thesis / reproducibility audit.
+# Parent benchmark_datasets inherits this env for all 85 targets (not canary-only).
+ENV_SNAPSHOT_KEYS = (
+    "FLEXAIDDS_BINARY",
+    "FLEXAIDDS_ORACLE_SITE_DIR",
+    "FLEXAIDDS_RESTARTS",
+    "FLEXAIDDS_PARALLEL_RESTARTS",
+    "FLEXAIDDS_EVAL_SCALE_DIHEDRAL",
+    "FLEXAIDDS_CONSENSUS_SCORER",
+    "FLEXAIDDS_SEED_ELITISM",
+    "FLEXAIDDS_N_ELITE",
+    "FLEXAIDDS_BUDGET_SCALE",
+    "FLEXAIDDS_SOFTCORE_WAL",
+    "FLEXAIDDS_SOFTCORE_FLOOR",
+    "FLEXAIDDS_T_HOT",
+    "FLEXAIDDS_NATIVE_SEED_FRAC",
+    "FLEXAIDDS_DATA_DIR",
+    "FLEXAIDDS_BENCH_CACHE",
+    "FLEXAIDDS_ALLOW_CONCURRENT",
+)
+
 
 def sha256(p):
     h = hashlib.sha256()
@@ -138,15 +159,32 @@ def main():
             "Full Astex 85 queued after v124 resume + v126 complete. "
             "Option B logsumexp composite, consensus ON, oracle-ceiling, "
             "5-restart SMFREE. HEAD binary includes H-bond cosine gate + "
-            "C.ar stacking discriminator (ba5364d3)."
+            "C.ar stacking discriminator (ba5364d3). "
+            "First-principles free-energy selector benchmark (log Z - alpha*H); "
+            "not a v50b degenerate-fitness reproduction."
         ),
         "binary":         BINARY,
         "binary_sha256":  engine_sha,
         "runner_sha256":  runner_sha,
         "matrix_md5":     matrix_md5,
+        "json_pairs":     JSON_PAIRS,
         "output_dir":     OUTPUT,
         "cache_dir":      CACHE,
         "pid":            child_pid,
+        "benchmark": {
+            "threads":             BENCH_THREADS,
+            "temperature_k":       298,
+            "job_timeout_seconds": 7200,
+            "mode":                "oracle-ceiling",
+            "n_pairs":             85,
+        },
+        "audit_notes": {
+            "code_default_FLEXAIDDS_CONSENSUS_SCORER": "0 (since ce8f3368 v125 Option A)",
+            "launch_override_FLEXAIDDS_CONSENSUS_SCORER": "1",
+            "consensus_applies_to": "all 85 targets via parent benchmark_datasets env",
+            "verify_post_run": "grep -c '\\[CONSENSUS\\]' stderr.log should equal completed target count",
+        },
+        "env_snapshot": {k: env[k] for k in ENV_SNAPSHOT_KEYS if k in env},
     }
     with open(PROV, "w") as f:
         json.dump(prov, f, indent=2)
