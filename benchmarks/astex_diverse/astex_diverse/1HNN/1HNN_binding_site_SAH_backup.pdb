@@ -1,4 +1,4 @@
-#REMARK  PARENTFILE  1HNN.pdb
+#REMARK  PARENTFILE  /var/folders/8b/tgtvwb_j6zd_g03vl1w4ykfw0000gn/T/gc_1HNN_stoxz2t6/1HNN.pdb
 ATOM      1  N   ALA A  22      33.323  50.745  36.402  1.00 82.95           N  
 ATOM      2  CA  ALA A  22      34.604  51.192  35.864  1.00 83.49           C  
 ATOM     12  CG2 VAL A  23      31.734  51.187  31.798  1.00 78.63           C  
