@@ -1,0 +1,50 @@
+{
+  "schema_version": 1,
+  "name": "perf_swarm_tier1_paired_5",
+  "description": "Five-target Astex tier-1 smoke for SoA validation and paired pre/post-P0 timing. Subset of benchmark_astex_native_85.json indices 0-4.",
+  "n_pairs": 5,
+  "oracle_mode": true,
+  "astex_diverse_dir": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse",
+  "pairs": [
+    {
+      "index": 0,
+      "receptor_id": "1G9V",
+      "ligand_id": "1G9V",
+      "receptor_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1G9V/1G9V_apo.pdb",
+      "ligand_sdf": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1G9V/1G9V_ligand.sdf",
+      "oracle_site_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1G9V/1G9V_binding_site.pdb"
+    },
+    {
+      "index": 1,
+      "receptor_id": "1GM8",
+      "ligand_id": "1GM8",
+      "receptor_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1GM8/1GM8_apo.pdb",
+      "ligand_sdf": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1GM8/1GM8_ligand.sdf",
+      "oracle_site_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1GM8/1GM8_binding_site.pdb"
+    },
+    {
+      "index": 2,
+      "receptor_id": "1GPK",
+      "ligand_id": "1GPK",
+      "receptor_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1GPK/1GPK_apo.pdb",
+      "ligand_sdf": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1GPK/1GPK_ligand.sdf",
+      "oracle_site_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1GPK/1GPK_binding_site.pdb"
+    },
+    {
+      "index": 3,
+      "receptor_id": "1HNN",
+      "ligand_id": "1HNN",
+      "receptor_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1HNN/1HNN_apo.pdb",
+      "ligand_sdf": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1HNN/1HNN_ligand.sdf",
+      "oracle_site_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1HNN/1HNN_binding_site.pdb"
+    },
+    {
+      "index": 4,
+      "receptor_id": "1HP0",
+      "ligand_id": "1HP0",
+      "receptor_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1HP0/1HP0_apo.pdb",
+      "ligand_sdf": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1HP0/1HP0_ligand.sdf",
+      "oracle_site_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1HP0/1HP0_binding_site.pdb"
+    }
+  ]
+}
