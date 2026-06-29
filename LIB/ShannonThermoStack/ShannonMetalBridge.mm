@@ -31,9 +31,33 @@ struct MetalContext {
     id<MTLComputePipelineState> boltzmannPipeline;
     id<MTLComputePipelineState> sumReducePipeline;
     id<MTLComputePipelineState> logSumExpPipeline;
+    // P2: reusable device buffers (grow-only pool)
+    id<MTLBuffer>               pooled_energy_buf;
+    id<MTLBuffer>               pooled_weight_buf;
+    id<MTLBuffer>               pooled_bin_buf;
+    id<MTLBuffer>               pooled_exp_buf;
+    id<MTLBuffer>               pooled_partial_buf;
+    NSUInteger                  pooled_energy_cap  = 0;
+    NSUInteger                  pooled_weight_cap  = 0;
+    NSUInteger                  pooled_bin_cap     = 0;
+    NSUInteger                  pooled_exp_cap     = 0;
+    NSUInteger                  pooled_partial_cap = 0;
     bool                        valid;
     std::string                 deviceInfo;
 };
+
+static id<MTLBuffer> ensure_buffer(MetalContext& ctx,
+                                   id<MTLBuffer>* slot,
+                                   NSUInteger* cap,
+                                   NSUInteger need_bytes)
+{
+    if (*cap < need_bytes) {
+        *slot = [ctx.device newBufferWithLength:need_bytes
+                                         options:MTLResourceStorageModeShared];
+        *cap = need_bytes;
+    }
+    return *slot;
+}
 
 static MetalContext& get_context() {
     static MetalContext ctx{};
@@ -136,12 +160,15 @@ double compute_shannon_entropy_metal(const std::vector<double>& energies,
     // Convert double → float for GPU
     std::vector<float> energies_f = to_float(energies);
 
-    id<MTLBuffer> energy_buf = [ctx.device newBufferWithBytes:energies_f.data()
-                                                       length:n * sizeof(float)
-                                                      options:MTLResourceStorageModeShared];
-    id<MTLBuffer> bin_buf = [ctx.device newBufferWithLength:num_bins * sizeof(int)
-                                                    options:MTLResourceStorageModeShared];
-    memset(bin_buf.contents, 0, num_bins * sizeof(int));
+    const NSUInteger energy_bytes = n * sizeof(float);
+    const NSUInteger bin_bytes = static_cast<NSUInteger>(num_bins) * sizeof(int);
+    id<MTLBuffer> energy_buf = ensure_buffer(ctx, &ctx.pooled_energy_buf,
+                                               &ctx.pooled_energy_cap, energy_bytes);
+    memcpy(energy_buf.contents, energies_f.data(), energy_bytes);
+
+    id<MTLBuffer> bin_buf = ensure_buffer(ctx, &ctx.pooled_bin_buf,
+                                          &ctx.pooled_bin_cap, bin_bytes);
+    memset(bin_buf.contents, 0, bin_bytes);
 
     id<MTLCommandBuffer> cmd = [ctx.queue commandBuffer];
     id<MTLComputeCommandEncoder> enc = [cmd computeCommandEncoder];
@@ -201,11 +228,13 @@ std::vector<double> compute_boltzmann_weights_metal(
     std::vector<float> energies_f = to_float(energies);
 
     // GPU path
-    id<MTLBuffer> energy_buf = [ctx.device newBufferWithBytes:energies_f.data()
-                                                       length:n * sizeof(float)
-                                                      options:MTLResourceStorageModeShared];
-    id<MTLBuffer> weight_buf = [ctx.device newBufferWithLength:n * sizeof(float)
-                                                       options:MTLResourceStorageModeShared];
+    const NSUInteger n_bytes = n * sizeof(float);
+    id<MTLBuffer> energy_buf = ensure_buffer(ctx, &ctx.pooled_energy_buf,
+                                               &ctx.pooled_energy_cap, n_bytes);
+    memcpy(energy_buf.contents, energies_f.data(), n_bytes);
+
+    id<MTLBuffer> weight_buf = ensure_buffer(ctx, &ctx.pooled_weight_buf,
+                                             &ctx.pooled_weight_cap, n_bytes);
 
     id<MTLCommandBuffer> cmd = [ctx.queue commandBuffer];
     id<MTLComputeCommandEncoder> enc = [cmd computeCommandEncoder];
@@ -226,8 +255,9 @@ std::vector<double> compute_boltzmann_weights_metal(
     // If sum reduction pipeline is available, use GPU for sum too
     if (ctx.sumReducePipeline && n > 1024) {
         NSUInteger numGroups = (n + 255) / 256;
-        id<MTLBuffer> partial_buf = [ctx.device newBufferWithLength:numGroups * sizeof(float)
-                                                            options:MTLResourceStorageModeShared];
+        const NSUInteger partial_bytes = numGroups * sizeof(float);
+        id<MTLBuffer> partial_buf = ensure_buffer(ctx, &ctx.pooled_partial_buf,
+                                                    &ctx.pooled_partial_cap, partial_bytes);
 
         id<MTLComputeCommandEncoder> enc2 = [cmd computeCommandEncoder];
         [enc2 setComputePipelineState:ctx.sumReducePipeline];
@@ -288,11 +318,13 @@ double log_sum_exp_metal(const std::vector<double>& values) {
     float x_max_f = static_cast<float>(x_max);
 
     // GPU: compute exp(x - x_max) then sum
-    id<MTLBuffer> val_buf = [ctx.device newBufferWithBytes:values_f.data()
-                                                    length:n * sizeof(float)
-                                                   options:MTLResourceStorageModeShared];
-    id<MTLBuffer> exp_buf = [ctx.device newBufferWithLength:n * sizeof(float)
-                                                    options:MTLResourceStorageModeShared];
+    const NSUInteger n_bytes = n * sizeof(float);
+    id<MTLBuffer> val_buf = ensure_buffer(ctx, &ctx.pooled_energy_buf,
+                                          &ctx.pooled_energy_cap, n_bytes);
+    memcpy(val_buf.contents, values_f.data(), n_bytes);
+
+    id<MTLBuffer> exp_buf = ensure_buffer(ctx, &ctx.pooled_exp_buf,
+                                          &ctx.pooled_exp_cap, n_bytes);
 
     id<MTLCommandBuffer> cmd = [ctx.queue commandBuffer];
     id<MTLComputeCommandEncoder> enc = [cmd computeCommandEncoder];
