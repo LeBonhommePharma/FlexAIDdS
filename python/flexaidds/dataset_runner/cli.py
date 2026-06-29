@@ -37,7 +37,7 @@ def _build_parser() -> argparse.ArgumentParser:
     )
 
     # --- Dataset selection ---
-    group = p.add_mutually_exclusive_group(required=True)
+    group = p.add_mutually_exclusive_group(required=False)
     group.add_argument(
         "--dataset", "-d",
         metavar="SLUG",
@@ -47,6 +47,14 @@ def _build_parser() -> argparse.ArgumentParser:
         "--all", "-a",
         action="store_true",
         help="Run all discovered datasets.",
+    )
+    group.add_argument(
+        "--plan-runtime",
+        action="store_true",
+        help=(
+            "Emit scaled wall-clock / CPU-second estimates for large datasets "
+            "(astex_nonnative ~1113, posex ~1319) and exit without docking."
+        ),
     )
 
     # --- Tier ---
@@ -209,7 +217,22 @@ def main(argv: list[str] | None = None) -> int:
         os.environ["FLEXAIDDS_BENCHMARK_DATA"] = args.data_dir
 
     # Import here so logging is already configured
-    from .runner import DatasetRunner, BenchmarkReport, _git_sha, _runner_info
+    from .runner import DatasetRunner, BenchmarkReport, _git_sha, _runner_info, _utc_now_iso, plan_runtime
+
+    if args.plan_runtime:
+        out = Path(args.results_dir) / "runtime_plan.txt"
+        plan = plan_runtime(
+            results_dir=args.results_dir,
+            workers=args.workers,
+            omp_threads=args.omp_threads or 4,
+            output_path=out,
+        )
+        print(plan["text_summary"])
+        print(f"\nRuntime plan saved: {out}\n")
+        return 0
+
+    if not args.dataset and not args.all:
+        parser.error("one of --dataset, --all, or --plan-runtime is required")
 
     runner_kwargs = dict(
         results_dir=args.results_dir,
@@ -250,10 +273,10 @@ def main(argv: list[str] | None = None) -> int:
             return 2
 
         # Build report for single-dataset case
-        import datetime, socket
+        import socket
         report = BenchmarkReport(
             datasets=[dr],
-            generated_at=datetime.datetime.utcnow().isoformat() + "Z",
+            generated_at=_utc_now_iso(),
             git_sha=_git_sha(),
             host=socket.gethostname(),
             runner_info=_runner_info(),
@@ -264,8 +287,7 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     # ----- Report output -----
-    import datetime as _dt
-    timestamp = _dt.datetime.utcnow().strftime("%Y%m%dT%H%M%SZ")
+    timestamp = _utc_now_iso().replace("-", "").replace(":", "")[:15] + "Z"
     prefix = args.report_prefix or str(
         Path(args.results_dir) / f"report_{timestamp}"
     )
