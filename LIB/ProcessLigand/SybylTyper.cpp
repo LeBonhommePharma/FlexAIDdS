@@ -78,6 +78,27 @@ static int count_double_bonds_to(const BonMol& mol, int atom_idx, Element target
     return cnt;
 }
 
+// Sulfonamide –SO2NH–: canonical VCT rows for N.3 (8) and S.O2 (20) are dead
+// (0/40 nonzero). Map to live N.am (11) and S.O (19) when S has ≥2 S=O and
+// bonds N — fixes 1HNN without global remap (41 Astex targets pass with dead rows).
+static bool is_sulfonamide_nitrogen(const BonMol& mol, int atom_idx) {
+    if (mol.atoms[atom_idx].element != Element::N) return false;
+    for (int nb : mol.adjacency[atom_idx]) {
+        if (mol.atoms[nb].element != Element::S) continue;
+        if (count_double_bonds_to(mol, nb, Element::O) >= 2) return true;
+    }
+    return false;
+}
+
+static bool is_sulfonamide_sulfur(const BonMol& mol, int atom_idx) {
+    if (mol.atoms[atom_idx].element != Element::S) return false;
+    if (count_double_bonds_to(mol, atom_idx, Element::O) < 2) return false;
+    for (int nb : mol.adjacency[atom_idx]) {
+        if (mol.atoms[nb].element == Element::N) return true;
+    }
+    return false;
+}
+
 // ---------------------------------------------------------------------------
 // Helper: check if atom is part of a carboxylate/carboxamide group
 // ---------------------------------------------------------------------------
@@ -236,6 +257,9 @@ int assign_sybyl_type_single(const BonMol& mol, int atom_idx) {
             float bos = mol.bond_order_sum(atom_idx) + a.implicit_h_count;
             if (bos >= 3.9f && a.formal_charge >= 1) return 9; // N.4
 
+            // N.am: sulfonamide –SO2NH– (live VCT row; N.3 row is dead)
+            if (is_sulfonamide_nitrogen(mol, atom_idx)) return 7; // N.am
+
             // N.am: amide N — bonded to C=O
             for (int nb : mol.adjacency[atom_idx]) {
                 if (mol.atoms[nb].element == Element::C) {
@@ -276,7 +300,11 @@ int assign_sybyl_type_single(const BonMol& mol, int atom_idx) {
         case Element::S: {
             if (in_aromatic_ring(mol, atom_idx) || a.is_aromatic) return 16; // S.3 (thiophene S)
             int dbo = count_double_bonds_to(mol, atom_idx, Element::O);
-            if (dbo >= 2) return 19; // S.O2
+            if (dbo >= 2) {
+                // Sulfonamide S: S.O (live) not S.O2 (dead canonical row 20)
+                if (is_sulfonamide_sulfur(mol, atom_idx)) return 18; // S.O
+                return 19; // S.O2 (sulfone / non-sulfonamide)
+            }
             if (dbo == 1) return 18; // S.O
             if (a.hybrid == Hybridization::SP2) return 17; // S.2
             return 16; // S.3

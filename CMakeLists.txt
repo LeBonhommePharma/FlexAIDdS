@@ -3090,39 +3090,41 @@ if(BUILD_SWIFT_BRIDGE)
     add_test(NAME LigandRingFlexTests COMMAND test_ligand_ring_flex)
 
     # test_natural — RibosomeElongation, TransloconInsertion, NucleationSeedDetector
-    add_executable(test_natural
-        tests/test_natural.cpp
-        LIB/NATURaL/RibosomeElongation.cpp
-        LIB/NATURaL/TransloconInsertion.cpp
-        LIB/NATURaL/NucleationDetector.cpp
-        LIB/NATURaL/NATURaLDualAssembly.cpp
-        LIB/statmech.cpp
-        LIB/TurboQuant.cpp
-        LIB/UnifiedHardwareDispatch.cpp
-        LIB/hardware_detect.cpp
-        LIB/Vcontacts.cpp
-        LIB/geometry.cpp
-    )
-    target_include_directories(test_natural PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/LIB
-        ${CMAKE_CURRENT_SOURCE_DIR}/LIB/NATURaL
-    )
-    target_link_libraries(test_natural PRIVATE GTest::gtest GTest::gtest_main)
-    if(MSVC)
-        target_compile_options(test_natural PRIVATE /O2)
-        target_compile_definitions(test_natural PRIVATE
-            _CRT_SECURE_NO_WARNINGS _USE_MATH_DEFINES NOMINMAX)
-    else()
-        target_compile_options(test_natural PRIVATE -O2)
+    if(NOT TARGET test_natural)
+        add_executable(test_natural
+            tests/test_natural.cpp
+            LIB/NATURaL/RibosomeElongation.cpp
+            LIB/NATURaL/TransloconInsertion.cpp
+            LIB/NATURaL/NucleationDetector.cpp
+            LIB/NATURaL/NATURaLDualAssembly.cpp
+            LIB/statmech.cpp
+            LIB/TurboQuant.cpp
+            LIB/UnifiedHardwareDispatch.cpp
+            LIB/hardware_detect.cpp
+            LIB/Vcontacts.cpp
+            LIB/geometry.cpp
+        )
+        target_include_directories(test_natural PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/LIB
+            ${CMAKE_CURRENT_SOURCE_DIR}/LIB/NATURaL
+        )
+        target_link_libraries(test_natural PRIVATE GTest::gtest GTest::gtest_main)
+        if(MSVC)
+            target_compile_options(test_natural PRIVATE /O2)
+            target_compile_definitions(test_natural PRIVATE
+                _CRT_SECURE_NO_WARNINGS _USE_MATH_DEFINES NOMINMAX)
+        else()
+            target_compile_options(test_natural PRIVATE -O2)
+        endif()
+        if(FLEXAIDS_USE_OPENMP AND OpenMP_CXX_FOUND)
+            target_link_libraries(test_natural PRIVATE OpenMP::OpenMP_CXX)
+        endif()
+        target_link_libraries(test_natural PRIVATE Eigen3::Eigen)
+        target_compile_definitions(test_natural PRIVATE FLEXAIDS_HAS_EIGEN)
+        flexaids_configure_simd(test_natural)
+        flexaids_configure_msvc_test(test_natural)
+        add_test(NAME NATURaLTests COMMAND test_natural)
     endif()
-    if(FLEXAIDS_USE_OPENMP AND OpenMP_CXX_FOUND)
-        target_link_libraries(test_natural PRIVATE OpenMP::OpenMP_CXX)
-    endif()
-    target_link_libraries(test_natural PRIVATE Eigen3::Eigen)
-    target_compile_definitions(test_natural PRIVATE FLEXAIDS_HAS_EIGEN)
-    flexaids_configure_simd(test_natural)
-    flexaids_configure_msvc_test(test_natural)
-    add_test(NAME NATURaLTests COMMAND test_natural)
 
     # test_docking_pipeline — end-to-end integration: ProcessLigand → StatMech → BindingMode
     add_executable(test_docking_pipeline
