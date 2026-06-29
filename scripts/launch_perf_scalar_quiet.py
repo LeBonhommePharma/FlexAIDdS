@@ -25,7 +25,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from lib_launch import launch_session_isolated
 
 REPO = Path(__file__).resolve().parents[1]
-BUILD_SCALAR = REPO / "build"
+DEFAULT_BUILD = REPO / "build"
 BENCH_JSON = REPO / "benchmarks/perf_swarm/tier1_paired_5.json"
 RESULTS_ROOT = Path(
     os.environ.get(
@@ -60,15 +60,15 @@ def git_info(repo: Path) -> dict:
         return {"commit": "unknown", "short": "unknown"}
 
 
-def ensure_build(skip_build: bool) -> None:
-    need = [BUILD_SCALAR / "FlexAIDdS", BUILD_SCALAR / "benchmark_datasets"]
+def ensure_build(build_dir: Path, skip_build: bool) -> None:
+    need = [build_dir / "FlexAIDdS", build_dir / "benchmark_datasets"]
     if all(p.is_file() for p in need):
         return
     if skip_build:
         missing = [str(p) for p in need if not p.is_file()]
         sys.exit(f"ERROR: missing build artifacts: {missing}")
     subprocess.check_call(
-        ["cmake", "--build", str(BUILD_SCALAR), "-j8", "--target", "FlexAIDdS", "benchmark_datasets"],
+        ["cmake", "--build", str(build_dir), "-j8", "--target", "FlexAIDdS", "benchmark_datasets"],
         cwd=str(REPO),
     )
 
@@ -138,22 +138,40 @@ def main() -> int:
         default=None,
         help="Override output directory (default: tier1_scalar_quiet_<stamp>)",
     )
+    parser.add_argument(
+        "--build-dir",
+        type=Path,
+        default=None,
+        help="FlexAIDdS build directory (default: REPO/build)",
+    )
+    parser.add_argument(
+        "--cache-dir",
+        type=Path,
+        default=None,
+        help="Fresh benchmark cache directory (default: ~/.flexaidds/benchmarks)",
+    )
+    parser.add_argument(
+        "--campaign-prefix",
+        default="tier1_scalar_quiet",
+        help="Output folder prefix (default: tier1_scalar_quiet)",
+    )
     args = parser.parse_args()
 
-    ensure_build(args.skip_build)
+    build_dir = args.build_dir or DEFAULT_BUILD
+    ensure_build(build_dir, args.skip_build)
 
     stamp = datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%d_%H%M")
-    output = args.output_root or (RESULTS_ROOT / f"tier1_scalar_quiet_{stamp}")
+    output = args.output_root or (RESULTS_ROOT / f"{args.campaign_prefix}_{stamp}")
     label_dir = output / "post_p0_scalar"
     label_dir.mkdir(parents=True, exist_ok=True)
 
-    runner = BUILD_SCALAR / "benchmark_datasets"
-    flexaid_bin = BUILD_SCALAR / "FlexAIDdS"
+    runner = build_dir / "benchmark_datasets"
+    flexaid_bin = build_dir / "FlexAIDdS"
 
     env = os.environ.copy()
     env.update(
         {
-            "FLEXAIDDS_BUILD": str(BUILD_SCALAR),
+            "FLEXAIDDS_BUILD": str(build_dir),
             "FLEXAIDDS_BINARY": str(flexaid_bin),
             "FLEXAIDDS_REPO": str(REPO),
             "FLEXAIDDS_RESTARTS": "1",
@@ -173,6 +191,11 @@ def main() -> int:
         str(runner),
         "--benchmark",
         f"crossdock_json:{BENCH_JSON}",
+    ]
+    if args.cache_dir:
+        args.cache_dir.mkdir(parents=True, exist_ok=True)
+        cmd.extend(["--cache", str(args.cache_dir)])
+    cmd.extend([
         "--output",
         str(label_dir),
         "--threads",
@@ -188,10 +211,12 @@ def main() -> int:
         "--mode",
         "oracle-ceiling",
         "--force",
-    ]
+    ])
 
     print(f"\nQueueing scalar-only quiet tier-1 → {output.name}", flush=True)
-    print(f"  build: {BUILD_SCALAR} @ {git_info(REPO)['short']}", flush=True)
+    print(f"  build: {build_dir} @ {git_info(REPO)['short']}", flush=True)
+    if args.cache_dir:
+        print(f"  cache: {args.cache_dir} (fresh)", flush=True)
     print(f"  nice:  {args.nice}", flush=True)
 
     pid = launch_session_isolated(
@@ -212,9 +237,10 @@ def main() -> int:
         "repo": str(REPO),
         "git": git_info(REPO),
         "build_scalar": {
-            "dir": str(BUILD_SCALAR),
+            "dir": str(build_dir),
             "flexaidds_sha256": sha256(flexaid_bin),
         },
+        "cache_dir": str(args.cache_dir) if args.cache_dir else None,
         "queue_safe": {
             "nice": args.nice,
             "omp_threads": 1,

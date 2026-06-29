@@ -30,6 +30,41 @@
     "validation_run": "tier1_paired_20260629_0854",
     "notes": "P0 speedup measured on quiet queue with build_lto scalar vs pre-P0 worktree (04ff1735 parent)."
   },
+  "perf_reporting": {
+    "policy": "benchmarks/perf_swarm/perf_reporting_policy.json",
+    "authoritative_runs": {
+      "p0_speedup": "tier1_paired_20260629_0854",
+      "segfault_stability": "tier1_scalar_quiet_20260629_1714"
+    },
+    "rejected_runs": [
+      "tier1_scalar_quiet_lto_20260629_1919",
+      "tier1_scalar_quiet_lto_20260629_2100",
+      "tier1_scalar_quiet_lto_20260629_2101",
+      "tier1_paired_20260629_1059"
+    ],
+    "build_lto_quiet_confirmation": {
+      "status": "failed",
+      "last_attempt": "tier1_scalar_quiet_lto_20260629_2101",
+      "authoritative_binary_sha256": "d4d0b4c26b2f1b1444d5d98a6a4a41488a79ec683ce312f05b7987470cc7c564",
+      "current_binary_sha256": "d4937d1c398f948707fdd72273700a1aca700bc1dfc5c34208b2c5cd2e6e0f04",
+      "notes": "Cache-busted re-run still ~8 ms/gen vs 0854 band 50-85; use 0854 for P0 speedup until binary/timing path reconciled."
+    },
+    "post_p0_scalar_ms_per_gen_0854": {
+      "1GPK": 50.7,
+      "1G9V": 58.97,
+      "1HP0": 60.46,
+      "1HNN": 57.85,
+      "1GM8": 85.08
+    },
+    "scalar_quiet_ms_per_gen_1714": {
+      "1GPK": 81.17,
+      "1G9V": 82.72,
+      "1HP0": 76.86,
+      "1HNN": 79.96,
+      "1GM8": 85.86,
+      "median": 81.17
+    }
+  },
   "p1_deliverables": [
     "FlexAIDdS CUDA kernel wiring (CMakeLists.txt)",
     "benchmark_datasets OMP/restart budget banner",

@@ -30,5 +30,14 @@
     "ok": 9,
     "fail": 3,
     "note": "Pre-buildcc-fix binary; crashes in coord_cache_fill with CLUSTER_STAGE markers"
+  },
+  "tier1_scalar_quiet_stability": {
+    "run_id": "tier1_scalar_quiet_20260629_1714",
+    "status": "trusted",
+    "report": "benchmarks/perf_swarm/tier1_scalar_quiet_1714_timing_report.json",
+    "median_ms_per_gen": 81.17,
+    "n_targets": 5,
+    "all_clustered": true,
+    "notes": "Real wall-clock timings on tier-1 after segfault fix; confirms stable CF clustering path."
   }
 }

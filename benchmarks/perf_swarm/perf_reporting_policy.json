@@ -1,0 +1,83 @@
+{
+  "schema_version": "1.0.0",
+  "recorded_at": "2026-06-29T21:00:00+00:00",
+  "policy": "What to trust for perf reporting (2026-06-29 ship)",
+  "authoritative": {
+    "p0_speedup": {
+      "run_id": "tier1_paired_20260629_0854",
+      "binary": "build_lto/FlexAIDdS",
+      "metric": "median_speedup_tier1_paired",
+      "value": 1.44,
+      "report": "benchmarks/perf_swarm/tier1_paired_validation_report.json",
+      "notes": "Quiet queue; post_p0_scalar build_lto vs pre_p0_scalar worktree @ 04ff1735."
+    },
+    "segfault_stability": {
+      "run_id": "tier1_scalar_quiet_20260629_1714",
+      "binary": "worktree build/FlexAIDdS (Metal)",
+      "metric": "median_ms_per_gen",
+      "value": 81.17,
+      "report": "benchmarks/perf_swarm/tier1_scalar_quiet_1714_timing_report.json",
+      "notes": "Real wall-clock GA timings; 5/5 clustered; post buildcc fix."
+    }
+  },
+  "rejected": {
+    "tier1_scalar_quiet_lto_20260629_1919": {
+      "reason": "invalid_timings",
+      "median_ms_per_gen": 12.75,
+      "expected_band_ms_per_gen": [50, 85],
+      "symptoms": [
+        "finished in ~3s total wall time",
+        "7-13 ms/gen (scalar) vs 50-85 ms/gen authoritative band",
+        "DatasetRunner elitism GA-retained on all 5 targets",
+        "not comparable to 0854 build_lto scalar path"
+      ],
+      "output_root": "/Users/lp.more/Documents/PhD/Programs/FlexAIDdS/results/perf_swarm_validation/tier1_scalar_quiet_lto_20260629_1919"
+    },
+    "tier1_paired_20260629_1059": {
+      "reason": "queue_contention",
+      "median_speedup": 0.78,
+      "notes": "Ran while v130+v124 queue busy; ignore."
+    }
+  },
+  "build_lto_binary_drift": {
+    "authoritative_0854_sha256": "d4d0b4c26b2f1b1444d5d98a6a4a41488a79ec683ce312f05b7987470cc7c564",
+    "current_build_lto_sha256": "d4937d1c398f948707fdd72273700a1aca700bc1dfc5c34208b2c5cd2e6e0f04",
+    "notes": "0854 P0 speedup used pre-rebuild build_lto @ 52d3ea1c; current HEAD binary rebuilt 2026-06-29 13:52."
+  },
+  "build_lto_quiet_confirmation": {
+    "status": "failed",
+    "attempts": [
+      {
+        "run_id": "tier1_scalar_quiet_lto_20260629_1919",
+        "median_ms_per_gen": 12.75,
+        "wall_time": "~3s",
+        "verdict": "rejected"
+      },
+      {
+        "run_id": "tier1_scalar_quiet_lto_20260629_2100",
+        "verdict": "aborted",
+        "reason": "disk_full_during_1GPK"
+      },
+      {
+        "run_id": "tier1_scalar_quiet_lto_20260629_2101",
+        "median_ms_per_gen": 8.3,
+        "wall_time": "~30s",
+        "cache_bust": "/tmp/perf_quiet_lto_cache_20260629_2105",
+        "verdict": "rejected",
+        "reason": "same fast-scalar pattern as 1919; not in 0854 50-85 ms/gen band"
+      }
+    ],
+    "acceptance_criteria": {
+      "median_ms_per_gen_min": 40,
+      "median_ms_per_gen_max": 90,
+      "min_wall_time_minutes": 5,
+      "n_targets": 5
+    }
+  },
+  "do_not_use_for_perf": [
+    "tier1_scalar_quiet_lto_20260629_1919",
+    "tier1_scalar_quiet_lto_20260629_2100",
+    "tier1_scalar_quiet_lto_20260629_2101",
+    "tier1_paired_20260629_1059"
+  ]
+}

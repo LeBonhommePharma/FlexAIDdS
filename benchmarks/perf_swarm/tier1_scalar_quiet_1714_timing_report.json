@@ -1,0 +1,29 @@
+{
+  "schema_version": "1.0.0",
+  "recorded_at": "2026-06-29T17:15:33.399926+00:00",
+  "campaign": "tier1_scalar_quiet_20260629_1714",
+  "status": "trusted",
+  "purpose": "segfault_fix_stability_and_real_wall_clock_timings",
+  "output_root": "/Users/lp.more/Documents/PhD/Programs/FlexAIDdS/results/perf_swarm_validation/tier1_scalar_quiet_20260629_1714",
+  "build": {
+    "dir": "/Users/lp.more/.grok/worktrees/projects-flexaidds/perfornance-swarm/build",
+    "flexaidds_sha256": "9585975b4696dc643ad7a1451262d7571857f0225360576e0017084669a9154e",
+    "hardware_dispatch": "Metal (Apple M3 Pro)"
+  },
+  "git": {
+    "commit": "1c6144876e3ca43e81bee5dbd1481fe2d75c806e",
+    "short": "1c614487"
+  },
+  "timings": [
+    {"target": "1G9V", "avg_ms_per_gen": 82.72},
+    {"target": "1GM8", "avg_ms_per_gen": 85.86},
+    {"target": "1GPK", "avg_ms_per_gen": 81.17},
+    {"target": "1HNN", "avg_ms_per_gen": 79.96},
+    {"target": "1HP0", "avg_ms_per_gen": 76.86}
+  ],
+  "median_ms_per_gen": 81.17,
+  "n_targets": 5,
+  "clustering": "CF",
+  "all_clustered": true,
+  "notes": "Post-segfault-fix soak path; worktree build/ with Metal. Real GA wall-clock timings (~50-85 ms/gen band vs 0854 build_lto scalar)."
+}
