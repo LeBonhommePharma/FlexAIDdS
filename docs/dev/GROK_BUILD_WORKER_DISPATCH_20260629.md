@@ -15,66 +15,66 @@
 
 **Persistent structural failures:** `1HNN`, `1N2V`, `1TW6` (until expB site + sulfo + holo fixes land).
 
+**Recent progress:** Vcontacts fix landed (revert 27e68e51 + f9c80fe5 identified; `FLEXAIDS_USE_SOA_DISTANCES=OFF` default; PR4 parity). v132_ablation_ladder active. Guard-bisect experiment (1HQ2/1T40) → best 1/2, "deeper selector bisect needed". New commit-bisect tools added for remaining suspects.
+
 ## Active Phase DAG (do not skip)
 
 ```
-NOW     Bisect Vcontacts (smoke-12 × 3)
-        └─ scripts/queue_bisect_vcontacts.py --daemon  [PID in queue_bisect_vcontacts.state.json]
-        └─ variants: safe → head_soa_off → head_soa_on
+NOW     v132 ablation ladder
+        └─ scripts/queue_v132_ablation_ladder.py --daemon
+        steps: consensus_on → safe_binary → logsumexp_only → hbond_zero
+        (Recent guard_bisect on 1HQ2/1T40; deeper commit-bisect tools for remaining Vcontacts suspects)
 
-NEXT    v131_safe_full85 (if bisect passes ≥8/12, 0/3 guard fail)
-        └─ scripts/launch_v131_safe_full85.py --skip-build --ignore-smoke-gate
-        └─ binary: v131_safe @ 82ad51f4+sulfo+holo (pre-27e68e51 escape hatch)
+NEXT    v131_safe_full85_recovery (deferred until after v132 consensus_on baseline)
+        └─ scripts/launch_v131_safe_full85.py --skip-build
 
-THEN    Cherry-pick only proven Vcontacts fix onto HEAD
-        └─ guilty commits since 82ad51f4: 27e68e51, f9c80fe5, d4d68592
-        └─ rebuild HEAD; re-run smoke-12 before any full-85
+LATER   r0=7 + expB/sulfo bundle (1G9V already recovering)
+        └─ only after v132 baseline + 78/85 recovery confirmed on safe/ patched binary
 
-LATER   r0=7 + expB/sulfo bundle (1G9V already recovering in v130/v131)
-        └─ only after 78/85 recovery confirmed on safe binary
-
-CEILING 83–84/85 after structural fixes on 1HNN/1N2V
+CEILING 83–84/85 after structural fixes on 1HNN/1N2V + selector work
 ```
 
-## BLOCKED until bisect names guilty commit
+**Vcontacts status (completed):** bisect identified 27e68e51 (catastrophic) + f9c80fe5. Reverted 27e68e51; default `FLEXAIDS_USE_SOA_DISTANCES=OFF`; PR4 scalar parity landed. Guard/commit-bisect ongoing for remaining suspects.
+
+## BLOCKED
 
 | Campaign | Script | Reason |
 |----------|--------|--------|
-| v132 ablation ladder (all steps) | `queue_v132_ablation_ladder.py`, `launch_v132_ablation.py` | Combined knob turns — paused |
-| v131 HEAD full-85 | `launch_v131_full85.py` | Wave-2 broken binary |
-| v132 consensus/hbond/logsumexp ablations | `launch_v132_ablation.py *` | Deferred until Vcontacts fixed |
-| New combined knob turns | any ad-hoc launcher | Audit violation |
+| v131 HEAD full-85 | `launch_v131_full85.py` | Under test via v132 ladder + selector work |
+| combined knob turns | any ad-hoc | Audit violation until v132 ladder baselines land |
 
 ## ALLOWED now
 
 | Action | Script |
 |--------|--------|
-| Vcontacts bisect watcher | `queue_bisect_vcontacts.py --daemon` |
-| Single bisect smoke variant | `launch_vcontacts_bisect_smoke.py {safe,head_soa_off,head_soa_on}` |
-| Build bisect binaries | `build_vcontacts_bisect.sh`, `build_v131_safe.sh` |
-| v131 safe smoke-12 | `launch_v131_smoke12.py` |
-| Scalar perf (quiet queue) | `queue_after_v130_scalar_perf.py` (does not compete with bisect) |
+| v132 ablation ladder | `queue_v132_ablation_ladder.py --daemon`, `launch_v132_ablation.py` |
+| Vcontacts commit bisect (remaining suspects) | `queue_bisect_vcontacts_commits.py`, `launch_vcontacts_commit_bisect_smoke.py`, `build_vcontacts_commit_bisect.sh` |
+| v132 guard / isolation | `launch_v132_guard_bisect.py`, `launch_v132_isolation4.py` |
+| v131 safe smoke-12 / recovery | `launch_v131_smoke12.py`, `launch_v131_safe_full85.py`, `build_v131_safe.sh` |
+| Scalar perf (quiet queue) | `queue_after_v130_scalar_perf.py`, `launch_perf_scalar_quiet.py` |
+| Legacy bisect tools | `queue_bisect_vcontacts.py`, `launch_vcontacts_bisect_smoke.py` |
 
 ## Worker startup checklist
 
 ```bash
 cat docs/dev/grok_build_worker_orders.json
-cat ~/Documents/PhD/Programs/FlexAIDdS/results/queue_bisect_vcontacts.state.json
 cat ~/Documents/PhD/Programs/FlexAIDdS/results/queue_v132_ablation_ladder.state.json
-# v132 status MUST be paused_for_vcontacts_bisect
+cat ~/Documents/PhD/Programs/FlexAIDdS/results/v132_*guard*/v132_guard_bisect_report.txt 2>/dev/null || true
+# v132 status should be "active" or "launching"
 ```
 
 ## Do NOT
 
-- Launch `launch_v131_full85.py` or any HEAD `build_lto` full-85 until bisect completes.
-- Resume `queue_v132_ablation_ladder.py` until `vcontacts_bisect_summary.json` exists and names fix.
-- Claim a new oracle record from v131 HEAD results (incomplete + regressed).
-- Start competing full-85 campaigns while `queue_bisect_vcontacts` is `watching` or `launching`.
+- Launch `launch_v131_full85.py` or HEAD `build_lto` full-85 until v132 ladder completes a consensus_on baseline.
+- Resume old v132 ablation until current queue state shows unblocked.
+- Claim new oracle records from incomplete/HEAD runs.
+- Start combined knob turns while ladder or commit-bisect is active.
 
 ## Success gates
 
 | Gate | Criterion |
 |------|-----------|
-| Bisect pass | `vcontacts_bisect_summary.json` best ≥8/12, regression guards (1HQ2,1S3V,1T40) clean |
-| Recovery | `v131_safe_full85` ≥78/85 on per-target `result.csv` |
-| HEAD unblocked | smoke-12 on patched HEAD matches safe ±1 after cherry-pick |
+| v132 ladder step | consensus_on baseline established; compare vs v130/v131; guards tracked |
+| Deeper Vcontacts | commit-bisect summary names next action for f9c80fe5 / d2295cf0 |
+| Recovery | `v131_safe_full85` or patched equivalent ≥78/85 (v109 record matched at 80/85 on safe) |
+| Unblock further | ladder passes + selector fixes land → re-enable other campaigns |
