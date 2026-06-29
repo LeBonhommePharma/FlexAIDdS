@@ -417,6 +417,7 @@ target_sources(FlexAID PRIVATE
         LIB/calc_cleftic.cpp
         LIB/write_pdb.cpp
         LIB/gaboom.cpp
+        LIB/coarse_init.cpp
         LIB/VibEntropy.cpp
         LIB/GAContext.cpp
         LIB/calc_center.cpp
