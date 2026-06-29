@@ -74,13 +74,16 @@ logger = logging.getLogger("thermoaffinity")
 # ---------------------------------------------------------------------------
 
 _HAS_PB = False
+HAS_POSEBUSTERS = False
 _PoseBusters = None  # type: ignore
 try:
     from posebusters import PoseBusters as _PoseBusters  # type: ignore
 
     _HAS_PB = True
+    HAS_POSEBUSTERS = True
 except Exception:
     _HAS_PB = False
+    HAS_POSEBUSTERS = False
     _PoseBusters = None
 
 

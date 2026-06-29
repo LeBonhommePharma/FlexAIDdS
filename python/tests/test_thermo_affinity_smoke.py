@@ -5,8 +5,6 @@ import os
 import tempfile
 from pathlib import Path
 
-import pytest
-
 REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(REPO_ROOT / "python") not in os.sys.path:
     os.sys.path.insert(0, str(REPO_ROOT / "python"))
@@ -14,8 +12,13 @@ if str(REPO_ROOT / "python") not in os.sys.path:
 from benchmarks.runner import ThermoAffinitySuite  # type: ignore
 
 
-@pytest.mark.slow
 def test_thermo_suite_imports_and_smoke():
+    # pytest marker is optional; this runs under plain python -c too
+    try:
+        import pytest  # noqa
+        _ = pytest.mark.slow
+    except Exception:
+        pass
     with tempfile.TemporaryDirectory() as td:
         suite = ThermoAffinitySuite(results_dir=td, dry_run=True)
         # Discover should at least see itc187.yaml
@@ -32,7 +35,8 @@ def test_thermo_suite_imports_and_smoke():
 
 
 def test_pb_wrapper_standalone():
-    from benchmarks.runner import run_posebusters, HAS_PB  # type: ignore
+    from benchmarks.runner import run_posebusters, HAS_POSEBUSTERS  # type: ignore
+    HAS_PB = HAS_POSEBUSTERS  # compat alias for test
     # Should not crash even without files
     out = run_posebusters("/non/existent.pdb", rmsd=1.1)
     assert "success_pb" in out
