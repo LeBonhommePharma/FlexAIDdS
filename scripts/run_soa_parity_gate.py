@@ -78,6 +78,7 @@ def run_benchmark(
     env["FLEXAIDDS_REPO"] = str(REPO)
     env["FLEXAIDDS_RESTARTS"] = "1"
     env["FLEXAIDDS_PARALLEL_RESTARTS"] = "0"
+    # gaboom.cpp: when ga.seed==0 in dock JSON, FLEXAID_SEED sets srand/mt19937
     env["FLEXAID_SEED"] = str(seed)
     env["OMP_NUM_THREADS"] = "1"
     env["OMP_PLACES"] = "cores"
