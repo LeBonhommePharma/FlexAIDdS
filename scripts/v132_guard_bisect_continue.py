@@ -96,6 +96,7 @@ def main() -> int:
         "parent": str(parent),
         "arms": [{"arm": "fixb_crg", "output_dir": str(arm1_dir)}],
         "targets": ["1HQ2", "1T40"],
+        "expected_arms": ["fixb_crg", "no_fixb", "no_crg", "no_fixb_no_crg"],
     }
     manifest_path.write_text(json.dumps(manifest, indent=2) + "\n")
 
@@ -122,10 +123,14 @@ def main() -> int:
         manifest["arms"].append({"arm": arm, "output_dir": str(out_dir)})
         manifest_path.write_text(json.dumps(manifest, indent=2) + "\n")
 
+    manifest["status"] = "complete" if len(manifest["arms"]) >= 4 else "failed"
+    manifest_path.write_text(json.dumps(manifest, indent=2) + "\n")
+
     r = subprocess.run(
         [sys.executable, str(launch), "--report", str(parent)],
         cwd=str(REPO),
     )
+    log(f"v132 guard_bisect ladder finished status={manifest['status']}")
     return r.returncode
 
 

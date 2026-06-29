@@ -55,15 +55,21 @@ def main() -> int:
             if n < 2:
                 all_done = False
 
-        if not all_done:
-            log(f"v132 guard_bisect progress: {', '.join(statuses)}")
+        expected = len(manifest.get("expected_arms", ("fixb_crg", "no_fixb", "no_crg", "no_fixb_no_crg")))
+
+        if not all_done or len(arms) < expected:
+            suffix = ""
+            if all_done and len(arms) < expected:
+                suffix = f" (ladder {len(arms)}/{expected} arms queued)"
+            log(f"v132 guard_bisect progress: {', '.join(statuses)}{suffix}")
             time.sleep(POLL_SEC)
             continue
 
-        if len(arms) < 4:
-            log(f"v132 guard_bisect ladder stopped early ({len(arms)}/4 arms)")
+        status = manifest.get("status")
+        if status == "failed":
+            log(f"v132 guard_bisect ladder failed ({len(arms)}/{expected} arms)")
         else:
-            log("v132 guard_bisect ladder complete (4/4 arms)")
+            log(f"v132 guard_bisect ladder complete ({len(arms)}/{expected} arms)")
 
         import subprocess
 
