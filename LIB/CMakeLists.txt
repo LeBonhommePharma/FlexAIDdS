@@ -201,6 +201,14 @@ else()
     # SharedPosePool, GrandPartitionFunction, UnifiedHardwareDispatch, etc.
     target_compile_options(flexaid_core PRIVATE
         -Wall -O3 -ffast-math -fno-finite-math-only)
+    if(BUILD_FLEXAIDDS_FAST)
+        target_compile_options(flexaid_core PRIVATE -DNDEBUG
+            $<$<AND:$<CXX_COMPILER_ID:AppleClang,Clang>,$<STREQUAL:${CMAKE_SYSTEM_PROCESSOR},arm64>>:-mcpu=native>
+        )
+        if(NOT APPLE)
+            target_compile_options(flexaid_core PRIVATE -march=native)
+        endif()
+    endif()
 endif()
 
 # ─── Required dependencies ───────────────────────────────────────────────

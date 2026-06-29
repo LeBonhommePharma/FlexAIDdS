@@ -129,6 +129,7 @@ option(FLEXAIDS_USE_256_MATRIX "Enable 256×256 soft contact matrix" ON)
 option(FLEXAIDS_USE_MPI     "Enable MPI distributed parallel docking" OFF)
 option(BUILD_PYTHON_BINDINGS "Build Python bindings via pybind11" OFF)
 option(FLEXAIDS_BUILD_CORE  "Build core executables (FlexAID/FlexAIDdS/tENCoM)" ON)
+option(BUILD_FLEXAIDDS_FAST "Build ultra-fast FlexAIDdS docking executable (LTO + native)" ON)
 option(FLEXAIDS_ENABLE_COVERAGE "Enable code coverage tracking (requires gcov/lcov)" OFF)
 
 # ─── platform / SIMD helpers ───────────────────────────────────────────────
@@ -937,7 +938,6 @@ endif()
 #   LIB/gpu_fast_optics_metal.metal LIB/gpu_batch_distance_hip.hip etc.
 # Uses flexaid_core OBJECT library (same sources as FlexAID) with aggressive
 # LTO and native-arch flags for production deployments.
-option(BUILD_FLEXAIDDS_FAST "Build ultra-fast FlexAIDdS docking executable (LTO + native)" ON)
 if(BUILD_FLEXAIDDS_FAST)
     add_executable(FlexAIDdS
         LIB/top.cpp
