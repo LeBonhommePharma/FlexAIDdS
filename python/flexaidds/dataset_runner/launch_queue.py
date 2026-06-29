@@ -96,6 +96,33 @@ def count_astex_diverse_siblings() -> int:
         return 0
 
 
+def astex_nonnative_running() -> bool:
+    """True when an astex_nonnative full benchmark is already in flight."""
+    try:
+        result = subprocess.run(
+            ["pgrep", "-fl", r"--benchmark astex_nonnative|astex_nonnative_298K"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        return result.returncode == 0 and bool(result.stdout.strip())
+    except Exception:
+        return False
+
+
+def wait_for_astex_nonnative_clear(max_wait_s: int = 0, interval_s: int = 120) -> bool:
+    """Poll until no astex_nonnative benchmark process remains. Returns True when clear."""
+    if max_wait_s <= 0:
+        return not astex_nonnative_running()
+    elapsed = 0
+    while elapsed < max_wait_s:
+        if not astex_nonnative_running():
+            return True
+        time.sleep(interval_s)
+        elapsed += interval_s
+    return not astex_nonnative_running()
+
+
 def write_run_status(path: Path, status: Dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(status, indent=2))
@@ -117,10 +144,16 @@ def execute_launches(
     plan = build_launch_plan(root)
     results: Dict[str, Any] = {"astex_nonnative": {}, "posex_cd": {}}
 
+    skip_nn = os.environ.get("SKIP_ASTEX_NONNATIVE", "").strip() in {"1", "true", "yes"}
     nn_cmd = plan["astex_nonnative"]["command"]
     launcher = Path(nn_cmd[1]) if len(nn_cmd) > 1 else None
     if dry_run:
         results["astex_nonnative"] = {"command": nn_cmd, "dry_run": True}
+    elif skip_nn or astex_nonnative_running():
+        results["astex_nonnative"] = {
+            "command": nn_cmd,
+            "skipped": "astex_nonnative already running or SKIP_ASTEX_NONNATIVE set",
+        }
     elif launcher is None or not launcher.is_file():
         results["astex_nonnative"] = {
             "command": nn_cmd,
