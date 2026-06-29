@@ -79,8 +79,18 @@ Simulation wall-clock is dominated by **steady-state GA offspring scoring** (`re
 ## CI Integration
 
 - **Tier-1/2 workflows:** accuracy gates (unchanged)
-- **`perf.yml`:** manual dispatch; use `scripts/compare_perf_baseline.py` with `baseline_sha` artifact
+- **`perf.yml`:** manual dispatch; AVX2+OpenMP microbench on `ubuntu-latest`; compare via `scripts/compare_perf_baseline.py` + `baseline_sha`
 - **Harvest script:** `scripts/harvest_perf_baselines.py` (low-I/O, queue-safe)
+- **Capture script:** `scripts/capture_microbench_baseline.py` (tencom + vcfbatch → JSON)
+- **Linux runbook:** `docs/PERFORMANCE_LINUX_BASELINE_RUNBOOK.md`
+
+### Linux baseline status (June 2026)
+
+| Artifact | Status | Notes |
+|----------|--------|-------|
+| `baseline_macos_metal.json` | **Done** | 182 dock timings; post-P0 median 1.44× (tier-1 paired) |
+| `baseline_linux_cpu.json` | **Stub** | Schema committed; metrics `null` until Ubuntu harvest |
+| `baseline_linux_cuda.json` | **Stub** | Requires self-hosted GPU runner or manual CUDA host |
 
 ---
 

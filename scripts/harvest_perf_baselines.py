@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import subprocess
 from datetime import datetime, timezone
@@ -11,7 +12,12 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
 DEFAULT_OUT = REPO / "results/perf_swarm"
-DEFAULT_RESULTS = Path("/Users/lp.more/Documents/PhD/Programs/FlexAIDdS/results")
+DEFAULT_RESULTS = Path(
+    os.environ.get(
+        "FLEXAIDDS_RESULTS_ROOT",
+        "/Users/lp.more/Documents/PhD/Programs/FlexAIDdS/results",
+    )
+)
 TIMING_RE = re.compile(
     r"TIMING SUMMARY:\s+\d+\s+gens timed,\s+avg\s+([\d.]+)\s+ms/gen"
 )

@@ -11,21 +11,36 @@ from pathlib import Path
 THRESHOLD_PCT = 5.0
 
 
+TENCOM_ROW_RE = re.compile(
+    r"^\s*(\d+)\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)"
+)
+VCFBATCH_SPEEDUP_RE = re.compile(r"Speedup\s*:\s*([\d.]+)", re.I)
+DEFAULT_TENCOM_N_RES = 200
+
+
 def parse_vcfbatch(text: str) -> dict[str, float]:
-    m = re.search(r"speedup:\s*([\d.]+)", text, re.I)
+    m = VCFBATCH_SPEEDUP_RE.search(text)
     return {"speedup_vs_scalar": float(m.group(1))} if m else {}
 
 
-def parse_tencom(text: str) -> dict[str, float]:
-    out: dict[str, float] = {}
-    for key, pat in [
-        ("build_ms_full", r"build.*?full.*?([\d.]+)\s*ms"),
-        ("sample_ms_full", r"sample.*?full.*?([\d.]+)\s*ms"),
-    ]:
-        m = re.search(pat, text, re.I)
-        if m:
-            out[key] = float(m.group(1))
-    return out
+def parse_tencom(text: str, *, reference_n_res: int = DEFAULT_TENCOM_N_RES) -> dict[str, float]:
+    rows: dict[int, tuple[float, float]] = {}
+    for line in text.splitlines():
+        match = TENCOM_ROW_RE.match(line)
+        if not match:
+            continue
+        n_res = int(match.group(1))
+        rows[n_res] = (float(match.group(2)), float(match.group(4)))
+
+    if reference_n_res in rows:
+        build_ms, sample_ms = rows[reference_n_res]
+    elif rows:
+        n_res = sorted(rows)[len(rows) // 2]
+        build_ms, sample_ms = rows[n_res]
+    else:
+        return {}
+
+    return {"build_ms_full": build_ms, "sample_ms_full": sample_ms}
 
 
 def delta_pct(current: float, baseline: float) -> float:

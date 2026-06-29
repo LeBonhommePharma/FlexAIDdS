@@ -1,0 +1,52 @@
+{
+  "schema_version": "1.0.0",
+  "recorded_at": null,
+  "git": {
+    "commit": "PENDING",
+    "dirty": null,
+    "branch": null
+  },
+  "phase0_mode": "ci_microbench",
+  "queue_interference": "n/a",
+  "platform": "linux_cuda",
+  "results_root": null,
+  "cmake_flags": {
+    "CMAKE_BUILD_TYPE": "Release",
+    "FLEXAIDS_USE_CUDA": "ON",
+    "FLEXAIDS_USE_METAL": "OFF",
+    "FLEXAIDS_USE_AVX2": "ON",
+    "FLEXAIDS_USE_OPENMP": "ON",
+    "ENABLE_TENCOM_BENCHMARK": "ON",
+    "ENABLE_VCFBATCH_BENCHMARK": "ON"
+  },
+  "benchmarks": [
+    {
+      "name": "tencom",
+      "reference_n_res": 200,
+      "metrics": {
+        "build_ms_full": null,
+        "sample_ms_full": null
+      },
+      "status": "pending"
+    },
+    {
+      "name": "vcfbatch",
+      "args": [200, 20],
+      "metrics": {
+        "speedup_vs_scalar": null
+      },
+      "status": "pending"
+    }
+  ],
+  "dock_timings_harvested": {
+    "count": 0,
+    "slowest_5": [],
+    "fastest_5": [],
+    "records": []
+  },
+  "notes": [
+    "Stub — requires NVIDIA GPU + CUDA toolkit (not available on GitHub-hosted ubuntu-latest).",
+    "Populate on a Linux CUDA machine per docs/PERFORMANCE_LINUX_BASELINE_RUNBOOK.md.",
+    "Use --label linux_cuda when harvesting dock timings."
+  ]
+}

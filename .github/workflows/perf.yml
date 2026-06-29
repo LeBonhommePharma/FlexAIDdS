@@ -7,10 +7,14 @@ on:
         description: 'Git SHA of baseline commit for comparison'
         required: false
         default: 'main'
+      platform:
+        description: 'Baseline label (linux_cpu or linux_cuda)'
+        required: false
+        default: 'linux_cpu'
 
 jobs:
   benchmark:
-    name: Performance benchmark
+    name: Performance benchmark (${{ inputs.platform }})
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
@@ -22,16 +26,20 @@ jobs:
           echo "CC=gcc-14" >> "$GITHUB_ENV"
           echo "CXX=g++-14" >> "$GITHUB_ENV"
 
-      - name: Build with benchmarks
+      - name: Build with benchmarks (Linux AVX2)
+        if: inputs.platform == 'linux_cpu'
         run: |
           cmake -S . -B build -G Ninja \
             -DCMAKE_BUILD_TYPE=Release \
             -DBUILD_TESTING=ON \
+            -DFLEXAIDS_USE_OPENMP=ON \
+            -DFLEXAIDS_USE_AVX2=ON \
             -DENABLE_TENCOM_BENCHMARK=ON \
             -DENABLE_VCFBATCH_BENCHMARK=ON \
             -DFLEXAIDS_USE_CUDA=OFF \
             -DFLEXAIDS_USE_METAL=OFF
-          cmake --build build -j $(nproc)
+          cmake --build build -j "$(nproc)" \
+            --target benchmark_tencom benchmark_vcfbatch
 
       - name: Run benchmarks
         run: |
@@ -40,15 +48,23 @@ jobs:
             ./benchmark_tencom | tee tencom_bench.txt
           fi
           if [ -f benchmark_vcfbatch ]; then
-            ./benchmark_vcfbatch | tee vcfbatch_bench.txt
+            ./benchmark_vcfbatch 200 20 | tee vcfbatch_bench.txt
           fi
+
+      - name: Capture current run snapshot
+        run: |
+          python3 scripts/capture_microbench_baseline.py \
+            --label "${{ inputs.platform }}_ci" \
+            --tencom build/tencom_bench.txt \
+            --vcfbatch build/vcfbatch_bench.txt \
+            --out results/perf_swarm/ci_runs
 
       - name: Fetch baseline artifact (optional)
         if: inputs.baseline_sha != ''
         continue-on-error: true
         run: |
           git fetch origin "${{ inputs.baseline_sha }}" --depth=1
-          git show "${{ inputs.baseline_sha }}:results/perf_swarm/baseline_linux_cpu.json" \
+          git show "${{ inputs.baseline_sha }}:results/perf_swarm/baseline_${{ inputs.platform }}.json" \
             > baseline_ref.json 2>/dev/null || echo '{"benchmarks":[]}' > baseline_ref.json
 
       - name: Compare against baseline
@@ -63,7 +79,34 @@ jobs:
       - name: Upload benchmark results
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          name: benchmark-results-${{ github.sha }}
+          name: benchmark-results-${{ inputs.platform }}-${{ github.sha }}
           path: |
             build/*_bench.txt
             baseline_ref.json
+            results/perf_swarm/ci_runs/baseline_${{ inputs.platform }}_ci.json
+
+  # CUDA baselines require a GPU runner; enable when a self-hosted label exists.
+  benchmark-cuda:
+    name: Performance benchmark (linux_cuda)
+    if: false
+    runs-on: [self-hosted, linux, cuda]
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+
+      - name: Build with CUDA
+        run: |
+          ./benchmarks/linux/build_linux_cpu.sh --cuda --build-dir build
+
+      - name: Run benchmarks
+        run: |
+          cd build
+          ./benchmark_tencom | tee tencom_bench.txt
+          ./benchmark_vcfbatch 200 20 | tee vcfbatch_bench.txt
+
+      - name: Capture baseline
+        run: |
+          python3 scripts/capture_microbench_baseline.py \
+            --label linux_cuda \
+            --merge results/perf_swarm/baseline_linux_cuda.json \
+            --tencom build/tencom_bench.txt \
+            --vcfbatch build/vcfbatch_bench.txt
