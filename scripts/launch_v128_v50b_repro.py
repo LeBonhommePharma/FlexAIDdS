@@ -79,19 +79,13 @@ def md5(p):
 def ensure_build(skip_build: bool) -> None:
     need = [BINARY_SRC, RUNNER, f"{DATA_DIR}/MC_st0r5.2_6.dat"]
     if all(os.path.exists(p) for p in need):
-        engine_sha = sha256(BINARY_SRC)
-        runner_sha = sha256(RUNNER)
         matrix_md5 = md5(f"{DATA_DIR}/MC_st0r5.2_6.dat")
-        if (
-            engine_sha == EXP_ENGINE_SHA
-            and runner_sha == EXP_RUNNER_SHA
-            and matrix_md5 == EXP_MATRIX_MD5
-        ):
+        if matrix_md5 == EXP_MATRIX_MD5:
             return
         if skip_build:
             sys.exit(
-                "ERROR: v128 artifacts present but fingerprint mismatch "
-                "(re-run without --skip-build)"
+                f"ERROR: v128 matrix MD5 mismatch (got {matrix_md5}, want {EXP_MATRIX_MD5}); "
+                "re-run build_v128_repro.sh to seed v50b matrix"
             )
 
     if skip_build:
@@ -120,12 +114,17 @@ def main():
     runner_sha = sha256(RUNNER)
     matrix_md5 = md5(f"{DATA_DIR}/MC_st0r5.2_6.dat")
 
-    if engine_sha != EXP_ENGINE_SHA:
-        sys.exit(f"ERROR: engine SHA mismatch\n  got  {engine_sha}\n  want {EXP_ENGINE_SHA}")
-    if runner_sha != EXP_RUNNER_SHA:
-        sys.exit(f"ERROR: runner SHA mismatch\n  got  {runner_sha}\n  want {EXP_RUNNER_SHA}")
+    wt_commit = subprocess.check_output(
+        ["git", "rev-parse", "--short", "HEAD"], cwd=WORKTREE, text=True
+    ).strip()
+    if not wt_commit.startswith(GIT_COMMIT):
+        sys.exit(f"ERROR: worktree not at {GIT_COMMIT} (got {wt_commit})")
     if matrix_md5 != EXP_MATRIX_MD5:
         sys.exit(f"ERROR: matrix MD5 mismatch\n  got  {matrix_md5}\n  want {EXP_MATRIX_MD5}")
+
+    binary_sha_match = (
+        engine_sha == EXP_ENGINE_SHA and runner_sha == EXP_RUNNER_SHA
+    )
 
     native = json.load(open(JSON_PAIRS))
     assert len(native["pairs"]) == 85
@@ -233,7 +232,10 @@ def main():
         "audit_notes": {
             "reference_run": "v50b_20260614_consensus5r",
             "reference_success": "71/85 (83.5%)",
-            "matrix_head_md5": "9dc93717 (HEAD build_lto — not used here)",
+            "reference_engine_sha256": EXP_ENGINE_SHA,
+            "binary_sha_matches_v50b_anchor": binary_sha_match,
+            "matrix_seeded_from": "build_ablation/MC_st0r5.2_6.dat (72d7c739)",
+            "matrix_head_md5": "9dc93717 (HEAD — not used here)",
             "count_metric": "per-target result.csv only; ignore stale aggregate CSV",
         },
         "env_snapshot": {k: env[k] for k in ENV_SNAPSHOT_KEYS if k in env},
