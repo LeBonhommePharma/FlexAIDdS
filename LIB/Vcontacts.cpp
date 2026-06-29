@@ -1867,13 +1867,7 @@ int get_contlist4(atom* atoms,int atomzero, contactlist contlist[],
 					int** rb = residue[Calc[atomzero].atom->ofres].bonded;
 					if(!intramolecular || rb == NULL ||
 					   rb[num_atm[Calc[atomzero].atom->number]-fatm][num_atm[Calc[cand_atomj].atom->number]-fatm] < 0){
-						const double d  = contlist[NC].dist;
-						const double d2 = d * d; const double d4 = d2 * d2; const double d6 = d4 * d2;
-						const double inv_d12 = 1.0 / (d6 * d6);
-						const double cr = cand_clashdist;
-						const double cr2 = cr * cr; const double cr4 = cr2 * cr2; const double cr6 = cr4 * cr2;
-						const double inv_cr12 = 1.0 / (cr6 * cr6);
-						*clash_value += KWALL * (inv_d12 - inv_cr12);
+						*clash_value += KWALL*(pow(contlist[NC].dist,-12.0)-pow(cand_clashdist,-12.0));
 					}
 				}
 				Calc[atomzero].done = 'Y';
@@ -1968,13 +1962,7 @@ int get_contlist4(atom* atoms,int atomzero, contactlist contlist[],
 						int** rb = residue[Calc[atomzero].atom->ofres].bonded;
 						if(!intramolecular || rb == NULL ||
 						   rb[num_atm[Calc[atomzero].atom->number]-fatm][num_atm[Calc[atomj].atom->number]-fatm] < 0){
-							const double d  = contlist[NC].dist;
-							const double d2 = d * d; const double d4 = d2 * d2; const double d6 = d4 * d2;
-							const double inv_d12 = 1.0 / (d6 * d6);
-							const double cr = clashdist;
-							const double cr2 = cr * cr; const double cr4 = cr2 * cr2; const double cr6 = cr4 * cr2;
-							const double inv_cr12 = 1.0 / (cr6 * cr6);
-							*clash_value += KWALL * (inv_d12 - inv_cr12);
+							*clash_value += KWALL*(pow(contlist[NC].dist,-12.0)-pow(clashdist,-12.0));
 						}
 					}
 					Calc[atomzero].done = 'Y';

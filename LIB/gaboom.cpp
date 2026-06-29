@@ -181,234 +181,10 @@ int reproduce(FA_Global* FA,GB_Global* GB,VC_Global* VC, chromosome* chrom, cons
                cfstr (*target)(FA_Global*,VC_Global*,atom*,resid*,gridpoint*,int,double*),
                GAContext& ctx);
 
-static void ga_eval_chromosomes_cpu_parallel(
-	FA_Global* FA, GB_Global* GB, VC_Global* VC,
-	chromosome* chrom, const genlim* gene_lim,
-	atom* atoms, resid* residue, gridpoint* cleftgrid,
-	cfstr (*target)(FA_Global*,VC_Global*,atom*,resid*,gridpoint*,int,double*),
-	int n_receptor_chains, int start_idx, int end_idx, bool skip_status_n)
-{
-	if (start_idx >= end_idx) return;
-	// ── Thread-safe CPU path (AVX-512 / AVX2 / OpenMP / scalar) ─────────
-	// Each OpenMP thread receives its own private copies of every data
-	// structure that Vcontacts/vcfunction/ic2cf writes to:
-	//   • atoms[]        – internal coords (dis/ang/dih) and Cartesian (coor)
-	//   • residue[]      – rotamer index (.rot)
-	//   • FA scratch     – contacts[], contributions[], optres[].cf
-	//   • VC workspace   – Calc[], Calclist[], ca_index[], ca_rec[],
-	//                      seed[], contlist[], ptorder[], centerpt[],
-	//                      poly[], cont[], vedge[]
-	// Read-only fields (energy_matrix, map_par, …) are shared.
-	// The DEE linked-list update in ic2cf is skipped in parallel mode
-	// (guarded by omp_in_parallel() in ic2cf.cpp) to avoid concurrent
-	// linked-list corruption; DEE pruning still operates in serial calls.
-	{
-#ifdef _OPENMP
-		const int n_thr = omp_get_max_threads();
-#else
-		const int n_thr = 1;
-#endif
-		const int natm  = FA->atm_cnt;
-		const int natmr = FA->atm_cnt_real;
-		const int nres  = FA->res_cnt;
-		const int nopt  = FA->num_optres;
-		const int nctb  = FA->ntypes * FA->ntypes;
-
-		// ── Dirty-tracking optimisation ─────────────────────────────────
-		// ic2cf only modifies atoms belonging to optimizable residues
-		// (ligand + flex sidechains) and buildcc rebuilds their Cartesian
-		// coords. vcfunction writes .acs for these same atoms.
-		// When normal modes are disabled, we restore only these "dirty"
-		// atoms per chromosome instead of copying the entire atom array.
-		// This reduces per-eval memory bandwidth by 90%+ for typical systems.
-		bool has_normal_modes = false;
-		for (int p = 0; p < FA->npar; ++p) {
-			if (FA->map_par[p].typ == 3) { has_normal_modes = true; break; }
-		}
-
-		// Build sorted unique list of atom indices modified by ic2cf.
-		// Sources: mov[] lists (buildcc targets) + map_par[].atm (IC targets).
-		std::vector<int> dirty_atm;
-		std::vector<int> dirty_res_idx;
-		if (!has_normal_modes) {
-			// Atoms in mov[] rebuild lists (ligand + flex sidechain Cartesian)
-			for (int r = 0; r < FA->nors; ++r)
-				for (int m = 0; m < FA->nmov[r]; ++m)
-					dirty_atm.push_back(FA->mov[r][m]);
-			// Atoms directly referenced by map_par (IC fields: dis/ang/dih)
-			for (int p = 0; p < FA->npar; ++p)
-				dirty_atm.push_back(FA->map_par[p].atm);
-			// Cascade dihedral atoms (atoms whose .dih depends on a flex bond)
-			for (int p = 0; p < FA->npar; ++p) {
-				if (FA->map_par[p].typ == 2) {
-					int j = FA->map_par[p].atm;
-					int cat = atoms[j].rec[3];
-					while (cat != 0 && cat != FA->map_par[p].atm) {
-						dirty_atm.push_back(cat);
-						j = cat;
-						cat = atoms[j].rec[3];
-					}
-				}
-			}
-			// Sort and deduplicate
-			std::sort(dirty_atm.begin(), dirty_atm.end());
-			dirty_atm.erase(std::unique(dirty_atm.begin(), dirty_atm.end()),
-			                dirty_atm.end());
-
-			// Residue indices with rotamer genes (typ==4 modifies .rot)
-			for (int p = 0; p < FA->npar; ++p) {
-				if (FA->map_par[p].typ == 4)
-					dirty_res_idx.push_back(atoms[FA->map_par[p].atm].ofres);
-			}
-			std::sort(dirty_res_idx.begin(), dirty_res_idx.end());
-			dirty_res_idx.erase(
-				std::unique(dirty_res_idx.begin(), dirty_res_idx.end()),
-				dirty_res_idx.end());
-		}
-		const bool use_selective = !has_normal_modes &&
-		    static_cast<int>(dirty_atm.size()) < natm / 2;
-		const int n_dirty_atm = static_cast<int>(dirty_atm.size());
-		const int n_dirty_res = static_cast<int>(dirty_res_idx.size());
-
-		// Per-thread mutable atom arrays.
-		std::vector<std::vector<atom>>  tl_atoms(n_thr,
-		    std::vector<atom>(atoms, atoms + natm + 1));
-		// Per-thread residue arrays (pointer fields shared read-only; .rot private).
-		std::vector<std::vector<resid>> tl_res(n_thr,
-		    std::vector<resid>(residue, residue + nres + 1));
-		// Per-thread FA copies with redirected mutable scratch buffers.
-		std::vector<FA_Global>           tl_fa(n_thr, *FA);
-		std::vector<std::vector<int>>    tl_contacts(n_thr, std::vector<int>(MAX_ATOM_NUMBER, 0));
-		std::vector<std::vector<float>>  tl_contrib(n_thr, std::vector<float>(nctb, 0.0f));
-		std::vector<std::vector<OptRes>> tl_optres(n_thr,
-		    std::vector<OptRes>(FA->optres, FA->optres + nopt));
-		// Per-thread VC workspace (Vcontacts writes all these each call).
-		std::vector<VC_Global>               tl_vc(n_thr, *VC);
-		std::vector<std::vector<atomsas>>    tl_calc(n_thr, std::vector<atomsas>(natmr));
-		std::vector<std::vector<int>>        tl_calclist(n_thr, std::vector<int>(natmr));
-		std::vector<std::vector<int>>        tl_caidx(n_thr, std::vector<int>(natmr, -1));
-		std::vector<std::vector<ca_struct>>  tl_carec(n_thr,
-		    std::vector<ca_struct>(VC->ca_recsize));
-		std::vector<std::vector<int>>        tl_seed(n_thr,
-		    std::vector<int>(3 * natmr));
-		std::vector<std::vector<contactlist>> tl_contlist(n_thr,
-		    std::vector<contactlist>(GA_CONTLIST_SIZE));
-		std::vector<std::vector<ptindex>>    tl_ptorder(n_thr,
-		    std::vector<ptindex>(MAX_PT));
-		std::vector<std::vector<vertex>>     tl_centerpt(n_thr,
-		    std::vector<vertex>(MAX_PT));
-		std::vector<std::vector<vertex>>     tl_poly(n_thr,
-		    std::vector<vertex>(MAX_POLY));
-		std::vector<std::vector<plane>>      tl_cont(n_thr,
-		    std::vector<plane>(MAX_PT));
-		std::vector<std::vector<edgevector>> tl_vedge(n_thr,
-		    std::vector<edgevector>(MAX_POLY));
-
-		for (int t = 0; t < n_thr; ++t) {
-			// Redirect FA mutable scratch to per-thread buffers.
-			tl_fa[t].contacts      = tl_contacts[t].data();
-			tl_fa[t].contributions = tl_contrib[t].data();
-			tl_fa[t].optres        = tl_optres[t].data();
-			// Redirect VC mutable workspace to per-thread buffers.
-			tl_vc[t].Calc      = tl_calc[t].data();
-			tl_vc[t].Calclist  = tl_calclist[t].data();
-			tl_vc[t].ca_index  = tl_caidx[t].data();
-			tl_vc[t].ca_rec    = tl_carec[t].data();
-			tl_vc[t].seed      = tl_seed[t].data();
-			tl_vc[t].contlist  = tl_contlist[t].data();
-			tl_vc[t].ptorder   = tl_ptorder[t].data();
-			tl_vc[t].centerpt  = tl_centerpt[t].data();
-			tl_vc[t].poly      = tl_poly[t].data();
-			tl_vc[t].cont      = tl_cont[t].data();
-			tl_vc[t].vedge     = tl_vedge[t].data();
-			// Keep the reference-calculation retry path enabled in GA workers.
-			// The direct native probe uses recalc=1; forcing 0 here caused the
-			// same pose to fall into the non-convergence penalty path.
-			tl_vc[t].recalc    = 1;
-			// box is shared: if vindex==1 it's pre-built read-only;
-			// if vindex==0 Vcontacts will malloc/vcfunction will free per call.
-		}
-
-		// A4a: precompute list of atoms that have optres pointers so the
-		// per-chromosome redirect loop skips the >90% of atoms with optres==NULL.
-		struct OptresAtomEntry { int ai; ptrdiff_t oidx; };
-		std::vector<OptresAtomEntry> optres_atom_list;
-		optres_atom_list.reserve(nopt * 4);
-		for(int ai = 1; ai <= natm; ++ai) {
-			if(atoms[ai].optres)
-				optres_atom_list.push_back({ai, atoms[ai].optres - FA->optres});
-		}
-		const int n_optres_atoms = (int)optres_atom_list.size();
-
-#ifdef _OPENMP
-#pragma omp parallel for schedule(dynamic, 4) default(none) \
-	shared(chrom, start_idx, end_idx, skip_status_n, n_receptor_chains, GB, gene_lim, cleftgrid, target, \
-	       atoms, residue, FA, VC, \
-	       tl_atoms, tl_res, tl_fa, tl_optres, tl_vc, \
-	       natm, nres, nopt, \
-	       use_selective, dirty_atm, dirty_res_idx, n_dirty_atm, n_dirty_res, \
-	       optres_atom_list, n_optres_atoms)
-#endif
-		for (int ii = start_idx; ii < end_idx; ++ii) {
-			if (skip_status_n && chrom[ii].status == 'n') continue;
-#ifdef _OPENMP
-			const int tid = omp_get_thread_num();
-#else
-			const int tid = 0;
-#endif
-			// Reset per-thread state to the reference protein configuration.
-			// When normal modes are off, only restore the atoms/residues that
-			// ic2cf + vcfunction actually modify (typically <10% of total).
-			if (use_selective) {
-				for (int d = 0; d < n_dirty_atm; ++d) {
-					const int ai = dirty_atm[d];
-					tl_atoms[tid][ai] = atoms[ai];
-				}
-				for (int d = 0; d < n_dirty_res; ++d) {
-					const int ri = dirty_res_idx[d];
-					tl_res[tid][ri] = residue[ri];
-				}
-			} else {
-				std::copy(atoms,   atoms + natm + 1,   tl_atoms[tid].begin());
-				std::copy(residue, residue + nres + 1, tl_res[tid].begin());
-			}
-			// A4a: redirect optres pointers using precomputed index list
-			// (skips atoms with optres==NULL — typically >90% of atoms).
-			for (int oa = 0; oa < n_optres_atoms; ++oa) {
-				const auto& e = optres_atom_list[oa];
-				tl_atoms[tid][e.ai].optres = &tl_optres[tid][e.oidx];
-			}
-			// optres cf fields are cleared by vcfunction itself; pre-clear for safety.
-			for (int o = 0; o < nopt; ++o) {
-				tl_optres[tid][o].cf.com         = 0.0;
-				tl_optres[tid][o].cf.wal         = 0.0;
-				tl_optres[tid][o].cf.sas         = 0.0;
-				tl_optres[tid][o].cf.totsas      = 0.0;
-				tl_optres[tid][o].cf.con         = 0.0;
-				tl_optres[tid][o].cf.gist        = 0.0;
-				tl_optres[tid][o].cf.elec        = 0.0;
-				tl_optres[tid][o].cf.hbond       = 0.0;
-				tl_optres[tid][o].cf.metal_coord = 0.0;
-				tl_optres[tid][o].cf.gist_desolv = 0.0;
-				tl_optres[tid][o].cf.rclash      = 0;
-			}
-			tl_vc[tid].numcarec = 0;
-
-			// Load this chromosome's ring pucker phases into the per-thread FA
-			// so ic2cf reconstructs its puckered ring (no-op when inactive).
-			ring_load_chrom_to_fa(&tl_fa[tid], &chrom[ii]);
-
-			chrom[ii].cf = eval_chromosome(
-			    &tl_fa[tid], GB, &tl_vc[tid], gene_lim,
-			    tl_atoms[tid].data(), tl_res[tid].data(),
-			    cleftgrid, chrom[ii].genes, target);
-			chrom[ii].evalue     = get_cf_evalue(&chrom[ii].cf, FA) / n_receptor_chains;
-			chrom[ii].app_evalue = get_apparent_cf_evalue(&chrom[ii].cf) / n_receptor_chains;
-			ccbm_inject_strain(FA, chrom[ii], gene_lim);  // CCBM strain
-			chrom[ii].status     = 'n';
-		}
-	}
-}
+void calculate_fitness(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* chrom, const genlim* gene_lim,
+                       atom* atoms,resid* residue,gridpoint* cleftgrid,char method[], int pop_size, int print,
+                       cfstr (*target)(FA_Global*,VC_Global*,atom*,resid*,gridpoint*,int,double*),
+                       GAContext& ctx);
 
 /***********************************************************************/
 /* 1         2         3         4         5         6          */
@@ -2081,7 +1857,15 @@ int reproduce(FA_Global* FA,GB_Global* GB,VC_Global* VC, chromosome* chrom, cons
 				memcpy(chrom[GB->num_chrom+i].ring_phases, rc1.ring_phases, sizeof(rc1.ring_phases));
 				memcpy(chrom[GB->num_chrom+i].ring_six,    rc1.ring_six,    sizeof(rc1.ring_six));
 				memcpy(chrom[GB->num_chrom+i].ring_five,   rc1.ring_five,   sizeof(rc1.ring_five));
+				ring_load_chrom_to_fa(FA, &chrom[GB->num_chrom+i]);
 			}
+
+			chrom[GB->num_chrom+i].cf=eval_chromosome(FA,GB,VC,gene_lim,atoms,residue,cleftgrid,
+								  chrom[GB->num_chrom+i].genes,target);
+			chrom[GB->num_chrom+i].evalue=get_cf_evalue(&chrom[GB->num_chrom+i].cf, FA) / n_receptor_chains;
+			chrom[GB->num_chrom+i].app_evalue=get_apparent_cf_evalue(&chrom[GB->num_chrom+i].cf) / n_receptor_chains;
+			ccbm_inject_strain(FA, chrom[GB->num_chrom+i], gene_lim);  // CCBM strain
+			chrom[GB->num_chrom+i].status='n';
 
 			duplicates[sig1] = 1;
 			i++;
@@ -2103,16 +1887,19 @@ int reproduce(FA_Global* FA,GB_Global* GB,VC_Global* VC, chromosome* chrom, cons
 				memcpy(chrom[GB->num_chrom+i].ring_phases, rc2.ring_phases, sizeof(rc2.ring_phases));
 				memcpy(chrom[GB->num_chrom+i].ring_six,    rc2.ring_six,    sizeof(rc2.ring_six));
 				memcpy(chrom[GB->num_chrom+i].ring_five,   rc2.ring_five,   sizeof(rc2.ring_five));
+				ring_load_chrom_to_fa(FA, &chrom[GB->num_chrom+i]);
 			}
+
+			chrom[GB->num_chrom+i].cf=eval_chromosome(FA,GB,VC,gene_lim,atoms,residue,cleftgrid,
+								  chrom[GB->num_chrom+i].genes,target);
+			chrom[GB->num_chrom+i].evalue=get_cf_evalue(&chrom[GB->num_chrom+i].cf, FA) / n_receptor_chains;
+			chrom[GB->num_chrom+i].app_evalue=get_apparent_cf_evalue(&chrom[GB->num_chrom+i].cf) / n_receptor_chains;
+			ccbm_inject_strain(FA, chrom[GB->num_chrom+i], gene_lim);  // CCBM strain
+			chrom[GB->num_chrom+i].status='n';
 
 			duplicates[sig2] = 1;
 			i++;
 		}
-	}
-
-	if (i > 0) {
-		ga_eval_chromosomes_cpu_parallel(FA, GB, VC, chrom, gene_lim, atoms, residue,
-		    cleftgrid, target, n_receptor_chains, GB->num_chrom, GB->num_chrom + i, false);
 	}
 
 	if(strcmp(repmodel,"STEADY")==0){
@@ -2551,8 +2338,225 @@ void calculate_fitness(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* chr
 #endif
 
 	if (!gpu_handled) {
-		ga_eval_chromosomes_cpu_parallel(FA, GB, VC, chrom, gene_lim, atoms, residue,
-		    cleftgrid, target, n_receptor_chains, 0, pop_size, true);
+	// ── Thread-safe CPU path (AVX-512 / AVX2 / OpenMP / scalar) ─────────
+	// Each OpenMP thread receives its own private copies of every data
+	// structure that Vcontacts/vcfunction/ic2cf writes to:
+	//   • atoms[]        – internal coords (dis/ang/dih) and Cartesian (coor)
+	//   • residue[]      – rotamer index (.rot)
+	//   • FA scratch     – contacts[], contributions[], optres[].cf
+	//   • VC workspace   – Calc[], Calclist[], ca_index[], ca_rec[],
+	//                      seed[], contlist[], ptorder[], centerpt[],
+	//                      poly[], cont[], vedge[]
+	// Read-only fields (energy_matrix, map_par, …) are shared.
+	// The DEE linked-list update in ic2cf is skipped in parallel mode
+	// (guarded by omp_in_parallel() in ic2cf.cpp) to avoid concurrent
+	// linked-list corruption; DEE pruning still operates in serial calls.
+	{
+#ifdef _OPENMP
+		const int n_thr = omp_get_max_threads();
+#else
+		const int n_thr = 1;
+#endif
+		const int natm  = FA->atm_cnt;
+		const int natmr = FA->atm_cnt_real;
+		const int nres  = FA->res_cnt;
+		const int nopt  = FA->num_optres;
+		const int nctb  = FA->ntypes * FA->ntypes;
+
+		// ── Dirty-tracking optimisation ─────────────────────────────────
+		// ic2cf only modifies atoms belonging to optimizable residues
+		// (ligand + flex sidechains) and buildcc rebuilds their Cartesian
+		// coords. vcfunction writes .acs for these same atoms.
+		// When normal modes are disabled, we restore only these "dirty"
+		// atoms per chromosome instead of copying the entire atom array.
+		// This reduces per-eval memory bandwidth by 90%+ for typical systems.
+		bool has_normal_modes = false;
+		for (int p = 0; p < FA->npar; ++p) {
+			if (FA->map_par[p].typ == 3) { has_normal_modes = true; break; }
+		}
+
+		// Build sorted unique list of atom indices modified by ic2cf.
+		// Sources: mov[] lists (buildcc targets) + map_par[].atm (IC targets).
+		std::vector<int> dirty_atm;
+		std::vector<int> dirty_res_idx;
+		if (!has_normal_modes) {
+			// Atoms in mov[] rebuild lists (ligand + flex sidechain Cartesian)
+			for (int r = 0; r < FA->nors; ++r)
+				for (int m = 0; m < FA->nmov[r]; ++m)
+					dirty_atm.push_back(FA->mov[r][m]);
+			// Atoms directly referenced by map_par (IC fields: dis/ang/dih)
+			for (int p = 0; p < FA->npar; ++p)
+				dirty_atm.push_back(FA->map_par[p].atm);
+			// Cascade dihedral atoms (atoms whose .dih depends on a flex bond)
+			for (int p = 0; p < FA->npar; ++p) {
+				if (FA->map_par[p].typ == 2) {
+					int j = FA->map_par[p].atm;
+					int cat = atoms[j].rec[3];
+					while (cat != 0 && cat != FA->map_par[p].atm) {
+						dirty_atm.push_back(cat);
+						j = cat;
+						cat = atoms[j].rec[3];
+					}
+				}
+			}
+			// Sort and deduplicate
+			std::sort(dirty_atm.begin(), dirty_atm.end());
+			dirty_atm.erase(std::unique(dirty_atm.begin(), dirty_atm.end()),
+			                dirty_atm.end());
+
+			// Residue indices with rotamer genes (typ==4 modifies .rot)
+			for (int p = 0; p < FA->npar; ++p) {
+				if (FA->map_par[p].typ == 4)
+					dirty_res_idx.push_back(atoms[FA->map_par[p].atm].ofres);
+			}
+			std::sort(dirty_res_idx.begin(), dirty_res_idx.end());
+			dirty_res_idx.erase(
+				std::unique(dirty_res_idx.begin(), dirty_res_idx.end()),
+				dirty_res_idx.end());
+		}
+		const bool use_selective = !has_normal_modes &&
+		    static_cast<int>(dirty_atm.size()) < natm / 2;
+		const int n_dirty_atm = static_cast<int>(dirty_atm.size());
+		const int n_dirty_res = static_cast<int>(dirty_res_idx.size());
+
+		// Per-thread mutable atom arrays.
+		std::vector<std::vector<atom>>  tl_atoms(n_thr,
+		    std::vector<atom>(atoms, atoms + natm + 1));
+		// Per-thread residue arrays (pointer fields shared read-only; .rot private).
+		std::vector<std::vector<resid>> tl_res(n_thr,
+		    std::vector<resid>(residue, residue + nres + 1));
+		// Per-thread FA copies with redirected mutable scratch buffers.
+		std::vector<FA_Global>           tl_fa(n_thr, *FA);
+		std::vector<std::vector<int>>    tl_contacts(n_thr, std::vector<int>(MAX_ATOM_NUMBER, 0));
+		std::vector<std::vector<float>>  tl_contrib(n_thr, std::vector<float>(nctb, 0.0f));
+		std::vector<std::vector<OptRes>> tl_optres(n_thr,
+		    std::vector<OptRes>(FA->optres, FA->optres + nopt));
+		// Per-thread VC workspace (Vcontacts writes all these each call).
+		std::vector<VC_Global>               tl_vc(n_thr, *VC);
+		std::vector<std::vector<atomsas>>    tl_calc(n_thr, std::vector<atomsas>(natmr));
+		std::vector<std::vector<int>>        tl_calclist(n_thr, std::vector<int>(natmr));
+		std::vector<std::vector<int>>        tl_caidx(n_thr, std::vector<int>(natmr, -1));
+		std::vector<std::vector<ca_struct>>  tl_carec(n_thr,
+		    std::vector<ca_struct>(VC->ca_recsize));
+		std::vector<std::vector<int>>        tl_seed(n_thr,
+		    std::vector<int>(3 * natmr));
+		std::vector<std::vector<contactlist>> tl_contlist(n_thr,
+		    std::vector<contactlist>(GA_CONTLIST_SIZE));
+		std::vector<std::vector<ptindex>>    tl_ptorder(n_thr,
+		    std::vector<ptindex>(MAX_PT));
+		std::vector<std::vector<vertex>>     tl_centerpt(n_thr,
+		    std::vector<vertex>(MAX_PT));
+		std::vector<std::vector<vertex>>     tl_poly(n_thr,
+		    std::vector<vertex>(MAX_POLY));
+		std::vector<std::vector<plane>>      tl_cont(n_thr,
+		    std::vector<plane>(MAX_PT));
+		std::vector<std::vector<edgevector>> tl_vedge(n_thr,
+		    std::vector<edgevector>(MAX_POLY));
+
+		for (int t = 0; t < n_thr; ++t) {
+			// Redirect FA mutable scratch to per-thread buffers.
+			tl_fa[t].contacts      = tl_contacts[t].data();
+			tl_fa[t].contributions = tl_contrib[t].data();
+			tl_fa[t].optres        = tl_optres[t].data();
+			// Redirect VC mutable workspace to per-thread buffers.
+			tl_vc[t].Calc      = tl_calc[t].data();
+			tl_vc[t].Calclist  = tl_calclist[t].data();
+			tl_vc[t].ca_index  = tl_caidx[t].data();
+			tl_vc[t].ca_rec    = tl_carec[t].data();
+			tl_vc[t].seed      = tl_seed[t].data();
+			tl_vc[t].contlist  = tl_contlist[t].data();
+			tl_vc[t].ptorder   = tl_ptorder[t].data();
+			tl_vc[t].centerpt  = tl_centerpt[t].data();
+			tl_vc[t].poly      = tl_poly[t].data();
+			tl_vc[t].cont      = tl_cont[t].data();
+			tl_vc[t].vedge     = tl_vedge[t].data();
+			// Keep the reference-calculation retry path enabled in GA workers.
+			// The direct native probe uses recalc=1; forcing 0 here caused the
+			// same pose to fall into the non-convergence penalty path.
+			tl_vc[t].recalc    = 1;
+			// box is shared: if vindex==1 it's pre-built read-only;
+			// if vindex==0 Vcontacts will malloc/vcfunction will free per call.
+		}
+
+		// A4a: precompute list of atoms that have optres pointers so the
+		// per-chromosome redirect loop skips the >90% of atoms with optres==NULL.
+		struct OptresAtomEntry { int ai; ptrdiff_t oidx; };
+		std::vector<OptresAtomEntry> optres_atom_list;
+		optres_atom_list.reserve(nopt * 4);
+		for(int ai = 1; ai <= natm; ++ai) {
+			if(atoms[ai].optres)
+				optres_atom_list.push_back({ai, atoms[ai].optres - FA->optres});
+		}
+		const int n_optres_atoms = (int)optres_atom_list.size();
+
+#ifdef _OPENMP
+#pragma omp parallel for schedule(dynamic) default(none) \
+	shared(chrom, pop_size, GB, gene_lim, cleftgrid, target, \
+	       atoms, residue, FA, VC, \
+	       tl_atoms, tl_res, tl_fa, tl_optres, tl_vc, \
+	       natm, nres, nopt, \
+	       use_selective, dirty_atm, dirty_res_idx, n_dirty_atm, n_dirty_res, \
+	       optres_atom_list, n_optres_atoms)
+#endif
+		for (int ii = 0; ii < pop_size; ++ii) {
+			if (chrom[ii].status == 'n') continue;
+#ifdef _OPENMP
+			const int tid = omp_get_thread_num();
+#else
+			const int tid = 0;
+#endif
+			// Reset per-thread state to the reference protein configuration.
+			// When normal modes are off, only restore the atoms/residues that
+			// ic2cf + vcfunction actually modify (typically <10% of total).
+			if (use_selective) {
+				for (int d = 0; d < n_dirty_atm; ++d) {
+					const int ai = dirty_atm[d];
+					tl_atoms[tid][ai] = atoms[ai];
+				}
+				for (int d = 0; d < n_dirty_res; ++d) {
+					const int ri = dirty_res_idx[d];
+					tl_res[tid][ri] = residue[ri];
+				}
+			} else {
+				std::copy(atoms,   atoms + natm + 1,   tl_atoms[tid].begin());
+				std::copy(residue, residue + nres + 1, tl_res[tid].begin());
+			}
+			// A4a: redirect optres pointers using precomputed index list
+			// (skips atoms with optres==NULL — typically >90% of atoms).
+			for (int oa = 0; oa < n_optres_atoms; ++oa) {
+				const auto& e = optres_atom_list[oa];
+				tl_atoms[tid][e.ai].optres = &tl_optres[tid][e.oidx];
+			}
+			// optres cf fields are cleared by vcfunction itself; pre-clear for safety.
+			for (int o = 0; o < nopt; ++o) {
+				tl_optres[tid][o].cf.com         = 0.0;
+				tl_optres[tid][o].cf.wal         = 0.0;
+				tl_optres[tid][o].cf.sas         = 0.0;
+				tl_optres[tid][o].cf.totsas      = 0.0;
+				tl_optres[tid][o].cf.con         = 0.0;
+				tl_optres[tid][o].cf.gist        = 0.0;
+				tl_optres[tid][o].cf.elec        = 0.0;
+				tl_optres[tid][o].cf.hbond       = 0.0;
+				tl_optres[tid][o].cf.metal_coord = 0.0;
+				tl_optres[tid][o].cf.gist_desolv = 0.0;
+				tl_optres[tid][o].cf.rclash      = 0;
+			}
+			tl_vc[tid].numcarec = 0;
+
+			// Load this chromosome's ring pucker phases into the per-thread FA
+			// so ic2cf reconstructs its puckered ring (no-op when inactive).
+			ring_load_chrom_to_fa(&tl_fa[tid], &chrom[ii]);
+
+			chrom[ii].cf = eval_chromosome(
+			    &tl_fa[tid], GB, &tl_vc[tid], gene_lim,
+			    tl_atoms[tid].data(), tl_res[tid].data(),
+			    cleftgrid, chrom[ii].genes, target);
+			chrom[ii].evalue     = get_cf_evalue(&chrom[ii].cf, FA) / n_receptor_chains;
+			chrom[ii].app_evalue = get_apparent_cf_evalue(&chrom[ii].cf) / n_receptor_chains;
+			ccbm_inject_strain(FA, chrom[ii], gene_lim);  // CCBM strain
+			chrom[ii].status     = 'n';
+		}
+	}
 	}  // !gpu_handled
 
 	QuickSort(chrom,0,pop_size-1,true);
