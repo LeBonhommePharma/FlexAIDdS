@@ -293,6 +293,39 @@ inline void assign_virtual_h_geometry(atom_struct* atoms, int i,
     }
 }
 
+// Cosine linearity ramp: D-H·D-A gate using explicit or virtual H position.
+// cos_theta < 0.5 (angle > 60° from linearity) → 0; cos_theta = 1.0 → full weight.
+inline double donor_cosine_linearity_ramp(const atom_struct* atoms,
+                                          const atom_struct& donor,
+                                          const atom_struct& acceptor) {
+    auto cos_theta_for_h = [&](const float* h_coor) -> float {
+        double vH_d[3], vD_a[3];
+        detail::sub3(vH_d, h_coor, donor.coor);
+        detail::sub3(vD_a, acceptor.coor, donor.coor);
+        if (!detail::normalize3(vH_d) || !detail::normalize3(vD_a)) return -1.0f;
+        float c = (float)detail::dot3(vH_d, vD_a);
+        if (c >  1.0f) c =  1.0f;
+        if (c < -1.0f) c = -1.0f;
+        return c;
+    };
+
+    float best_cos = -1.0f;
+    int h_idx = find_bonded_hydrogen(atoms, donor);
+    if (h_idx >= 0) {
+        best_cos = cos_theta_for_h(atoms[h_idx].coor);
+    } else {
+        float vH[2][3];
+        int n = build_virtual_H(atoms, donor, vH);
+        for (int k = 0; k < n; ++k) {
+            float c = cos_theta_for_h(vH[k]);
+            if (c > best_cos) best_cos = c;
+        }
+    }
+    if (best_cos < 0.0f) return -1.0;  // no explicit/virtual H — caller skips gate
+    if (best_cos < 0.5f) return 0.0;
+    return (double)((best_cos - 0.5f) * 2.0f);
+}
+
 // donor_angle_term: D-H...A angle Gaussian term.
 // Angle convention: vertex = H position, so D-H...A = 180° is ideal.
 // Priority: (1) explicit bonded H from find_bonded_hydrogen,
@@ -405,7 +438,7 @@ inline double compute_hbond_energy(
             return 0.0;
     }
 
-    // Angular term: explicit H → virtual H → 0.0 (handled per direction)
+    // Gaussian angular term: explicit H → virtual H → 0.3 fallback
     double best_angle_term = 0.0;
     if (a_to_b) {
         double term = donor_angle_term(atoms, a, b, optimal_angle, sigma_angle);
@@ -415,13 +448,26 @@ inline double compute_hbond_energy(
         double term = donor_angle_term(atoms, b, a, optimal_angle, sigma_angle);
         if (term > best_angle_term) best_angle_term = term;
     }
-
-    // Reduced fallback only when both explicit and virtual H are unavailable
-    // (rare: donor with underdetermined geometry — no recorded heavy neighbors).
     if (best_angle_term == 0.0) best_angle_term = 0.3;
 
+    // Cosine linearity gate after distance check (explicit H → virtual H).
+    double best_cos_ramp = 1.0;
+    if (!salt_bridge) {
+        double cos_ramp = -1.0;
+        if (a_to_b) {
+            double ramp = donor_cosine_linearity_ramp(atoms, a, b);
+            if (ramp > cos_ramp) cos_ramp = ramp;
+        }
+        if (b_to_a) {
+            double ramp = donor_cosine_linearity_ramp(atoms, b, a);
+            if (ramp > cos_ramp) cos_ramp = ramp;
+        }
+        if (cos_ramp == 0.0) return 0.0;
+        if (cos_ramp > 0.0) best_cos_ramp = cos_ramp;
+    }
+
     double w = salt_bridge ? salt_bridge_weight : weight;
-    double energy = w * E_dist * best_angle_term;
+    double energy = w * E_dist * best_angle_term * best_cos_ramp;
     constexpr double HBOND_PAIR_MIN = -2.0;
     if (energy < HBOND_PAIR_MIN) energy = HBOND_PAIR_MIN;
 
@@ -431,9 +477,8 @@ inline double compute_hbond_energy(
     // Used to diagnose cf_native collapse (e.g. 1JD0: expected ~-23, got -1.23).
     static const bool s_vh_debug = (std::getenv("FLEXAIDS_VH_DEBUG") != nullptr);
     if (s_vh_debug && energy != 0.0) {
-        const char* angle_src = "fallback(0.3)";
+        const char* angle_src = "cosine-gate";
         if (a_to_b || b_to_a) {
-            // Re-determine source for logging (lightweight, debug-only path)
             const atom_struct& donor_atom = a_to_b ? a : b;
             int h_idx = find_bonded_hydrogen(atoms, donor_atom);
             float vH[2][3]; int nv = build_virtual_H(atoms, donor_atom, vH);
@@ -441,9 +486,9 @@ inline double compute_hbond_energy(
             else if (nv > 0)     angle_src = "virtual-H";
         }
         printf("[hbdbg] %5s[%d]->%5s[%d] dist=%.3f E_dist=%.4f "
-               "angle_term=%.4f src=%-14s E=%.4f%s\n",
+               "angle=%.4f cos_ramp=%.4f src=%-14s E=%.4f%s\n",
                a.name, idx_a, b.name, idx_b,
-               dist, E_dist, best_angle_term, angle_src, energy,
+               dist, E_dist, best_angle_term, best_cos_ramp, angle_src, energy,
                salt_bridge ? " [salt]" : "");
     }
 

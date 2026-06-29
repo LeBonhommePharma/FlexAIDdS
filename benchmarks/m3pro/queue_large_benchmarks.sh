@@ -41,11 +41,12 @@ wait_for_astex_diverse_clear() {
 wait_for_astex_diverse_clear "$MAX_WAIT_SECONDS"
 
 echo "=== Launching astex_nonnative (1113) + posex_cd (1312) ==="
-PYTHONPATH="$PYTHON_PKG${PYTHONPATH:+:$PYTHONPATH}" python3 -m flexaidds.dataset_runner.launch_queue \
-  --scratch "$SCRATCH" \
-  --repo-root "$REPO_ROOT" \
-  --sibling-count 0 \
-  --write-status "$STATUS" \
-  --execute
+LAUNCH_ARGS=(--scratch "$SCRATCH" --repo-root "$REPO_ROOT" --sibling-count 0 --write-status "$STATUS")
+if [[ "${LAUNCH_DRY_RUN:-0}" == "1" ]]; then
+  LAUNCH_ARGS+=(--execute --dry-run)
+else
+  LAUNCH_ARGS+=(--execute)
+fi
+PYTHONPATH="$PYTHON_PKG${PYTHONPATH:+:$PYTHONPATH}" python3 -m flexaidds.dataset_runner.launch_queue "${LAUNCH_ARGS[@]}"
 
 echo "=== queue_large_benchmarks complete $(date -Iseconds) ==="

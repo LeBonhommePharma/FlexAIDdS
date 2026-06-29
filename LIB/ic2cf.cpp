@@ -67,7 +67,7 @@ cfstr ic2cf(FA_Global* FA,VC_Global* VC,atom* atoms,resid* residue,
 	int i,j,k;
 	int cat;    /* atom number constrained to the one considered */
 
-	cfstr cf;
+	cfstr cf{};
 	
 	int rclash=0;
 
@@ -99,6 +99,8 @@ cfstr ic2cf(FA_Global* FA,VC_Global* VC,atom* atoms,resid* residue,
 		if(FA->map_par[i].typ==-1) { //by index
 			
 			grd_idx = (uint)icv[i];
+			if(FA->num_grd > 0 && grd_idx >= (uint)FA->num_grd)
+				grd_idx = (uint)FA->num_grd - 1;
 			atoms[FA->map_par[i].atm].dis = cleftgrid[grd_idx].dis;
 			atoms[FA->map_par[i].atm].ang = cleftgrid[grd_idx].ang;
 			atoms[FA->map_par[i].atm].dih = cleftgrid[grd_idx].dih;
@@ -114,26 +116,39 @@ cfstr ic2cf(FA_Global* FA,VC_Global* VC,atom* atoms,resid* residue,
 			
 			j=FA->map_par[i].atm;
 			cat=atoms[j].rec[3];
-			if(cat != 0){
-				while(cat != FA->map_par[i].atm){
+			if(cat != 0 && cat != j){
+				int steps = 0;
+				const int root_atm = FA->map_par[i].atm;
+				while(cat != root_atm && steps < FA->atm_cnt){
+					if(cat < 0 || cat >= FA->atm_cnt) break;
 					atoms[cat].dih=atoms[j].dih + atoms[cat].shift; 
 					j=cat;
 					cat=atoms[j].rec[3];
+					++steps;
 				}
 			}
 			
 		}else if(FA->map_par[i].typ==3) { //by index
 			grd_idx = (uint)icv[i];
+			if(FA->normal_modes > 0 && grd_idx >= (uint)FA->normal_modes)
+				grd_idx = (uint)FA->normal_modes - 1;
 			//printf("icv(index): %d\n", grd_idx);
 			//PAUSE;
       
 			// serves as flag , but also as grid index
-			normalmode=grd_idx;
+			normalmode=(int)grd_idx;
       
 		}else if(FA->map_par[i].typ==4)  {
 			rot_idx = (uint)(icv[i]+0.5f);
-      
-			residue[atoms[FA->map_par[i].atm].ofres].rot=(int)rot_idx;
+			{
+				const int res_i = atoms[FA->map_par[i].atm].ofres;
+				const int trot  = residue[res_i].trot;
+				if(trot > 0){
+					if((int)rot_idx < 0) rot_idx = 0;
+					else if(rot_idx >= (uint)trot) rot_idx = (uint)trot - 1;
+				}
+				residue[res_i].rot = (int)rot_idx;
+			}
       
 			/*
 			  printf("residue[%d].rot[%d] - fatm=%d - latm=%d\n",
@@ -150,7 +165,7 @@ cfstr ic2cf(FA_Global* FA,VC_Global* VC,atom* atoms,resid* residue,
 	//PAUSE;
   
 	// do not alter default (ini) protein conf.
-	if(normalmode > -1){
+	if(normalmode > -1 && FA->normal_modes > 0 && normalmode < FA->normal_modes){
 		alter_mode(atoms,residue,FA->normal_grid[normalmode],FA->res_cnt,FA->normal_modes);
 	}
 

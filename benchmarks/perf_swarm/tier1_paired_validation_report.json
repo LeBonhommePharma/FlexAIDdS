@@ -1,0 +1,181 @@
+{
+  "recorded_at": "2026-06-29T09:00:38.019627+00:00",
+  "git": {
+    "commit": "fbb73e085e84754e1e4a7911e1c6cf85888ebbd4"
+  },
+  "pre_p0_sha": "04ff1735",
+  "benchmark_json": "/Users/lp.more/.grok/worktrees/projects-flexaidds/perfornance-swarm/benchmarks/perf_swarm/tier1_paired_5.json",
+  "output_root": "/Users/lp.more/Documents/PhD/Programs/FlexAIDdS/results/perf_swarm_validation/tier1_paired_20260629_0854",
+  "soa_accuracy_gate": {
+    "paired_targets": 5,
+    "max_rmsd_delta": 6.7858,
+    "gate_pass": false,
+    "tolerance_angstrom": 0.05,
+    "rows": [
+      {
+        "target": "1G9V",
+        "scalar_rmsd": 7.8704,
+        "soa_rmsd": 14.235,
+        "rmsd_delta": 6.364599999999999,
+        "scalar_method": "ga_cluster",
+        "soa_method": "ga_cluster"
+      },
+      {
+        "target": "1GM8",
+        "scalar_rmsd": 5.2961,
+        "soa_rmsd": 1.8516,
+        "rmsd_delta": 3.4445,
+        "scalar_method": "ga_cluster",
+        "soa_method": "ga_cluster"
+      },
+      {
+        "target": "1GPK",
+        "scalar_rmsd": 0.0,
+        "soa_rmsd": 6.7858,
+        "rmsd_delta": 6.7858,
+        "scalar_method": "ini_elitism",
+        "soa_method": "ga_cluster"
+      },
+      {
+        "target": "1HNN",
+        "scalar_rmsd": 13.6,
+        "soa_rmsd": 15.7325,
+        "rmsd_delta": 2.1325000000000003,
+        "scalar_method": "ga_cluster",
+        "soa_method": "ga_cluster"
+      },
+      {
+        "target": "1HP0",
+        "scalar_rmsd": 0.0,
+        "soa_rmsd": 5.9781,
+        "rmsd_delta": 5.9781,
+        "scalar_method": "ini_elitism",
+        "soa_method": "ga_cluster"
+      }
+    ]
+  },
+  "paired_timing": {
+    "paired_targets": 5,
+    "median_speedup": 1.439,
+    "rows": [
+      {
+        "target": "1G9V",
+        "pre_p0_ms_per_gen": 86.63,
+        "post_p0_ms_per_gen": 58.97,
+        "speedup": 1.469,
+        "delta_pct": -31.93
+      },
+      {
+        "target": "1GPK",
+        "pre_p0_ms_per_gen": 74.05,
+        "post_p0_ms_per_gen": 50.7,
+        "speedup": 1.461,
+        "delta_pct": -31.53
+      },
+      {
+        "target": "1HP0",
+        "pre_p0_ms_per_gen": 87.02,
+        "post_p0_ms_per_gen": 60.46,
+        "speedup": 1.439,
+        "delta_pct": -30.52
+      },
+      {
+        "target": "1HNN",
+        "pre_p0_ms_per_gen": 73.34,
+        "post_p0_ms_per_gen": 57.85,
+        "speedup": 1.268,
+        "delta_pct": -21.12
+      },
+      {
+        "target": "1GM8",
+        "pre_p0_ms_per_gen": 95.9,
+        "post_p0_ms_per_gen": 85.08,
+        "speedup": 1.127,
+        "delta_pct": -11.28
+      }
+    ]
+  },
+  "timings": {
+    "pre_p0": [
+      {
+        "target": "1G9V",
+        "avg_ms_per_gen": 86.63,
+        "log_path": "/Users/lp.more/Documents/PhD/Programs/FlexAIDdS/results/perf_swarm_validation/tier1_paired_20260629_0854/pre_p0_scalar/1G9V/stderr.log"
+      },
+      {
+        "target": "1GM8",
+        "avg_ms_per_gen": 95.9,
+        "log_path": "/Users/lp.more/Documents/PhD/Programs/FlexAIDdS/results/perf_swarm_validation/tier1_paired_20260629_0854/pre_p0_scalar/1GM8/stderr.log"
+      },
+      {
+        "target": "1GPK",
+        "avg_ms_per_gen": 74.05,
+        "log_path": "/Users/lp.more/Documents/PhD/Programs/FlexAIDdS/results/perf_swarm_validation/tier1_paired_20260629_0854/pre_p0_scalar/1GPK/stderr.log"
+      },
+      {
+        "target": "1HNN",
+        "avg_ms_per_gen": 73.34,
+        "log_path": "/Users/lp.more/Documents/PhD/Programs/FlexAIDdS/results/perf_swarm_validation/tier1_paired_20260629_0854/pre_p0_scalar/1HNN/stderr.log"
+      },
+      {
+        "target": "1HP0",
+        "avg_ms_per_gen": 87.02,
+        "log_path": "/Users/lp.more/Documents/PhD/Programs/FlexAIDdS/results/perf_swarm_validation/tier1_paired_20260629_0854/pre_p0_scalar/1HP0/stderr.log"
+      }
+    ],
+    "post_scalar": [
+      {
+        "target": "1G9V",
+        "avg_ms_per_gen": 58.97,
+        "log_path": "/Users/lp.more/Documents/PhD/Programs/FlexAIDdS/results/perf_swarm_validation/tier1_paired_20260629_0854/post_p0_scalar/1G9V/stderr.log"
+      },
+      {
+        "target": "1GM8",
+        "avg_ms_per_gen": 85.08,
+        "log_path": "/Users/lp.more/Documents/PhD/Programs/FlexAIDdS/results/perf_swarm_validation/tier1_paired_20260629_0854/post_p0_scalar/1GM8/stderr.log"
+      },
+      {
+        "target": "1GPK",
+        "avg_ms_per_gen": 50.7,
+        "log_path": "/Users/lp.more/Documents/PhD/Programs/FlexAIDdS/results/perf_swarm_validation/tier1_paired_20260629_0854/post_p0_scalar/1GPK/stderr.log"
+      },
+      {
+        "target": "1HNN",
+        "avg_ms_per_gen": 57.85,
+        "log_path": "/Users/lp.more/Documents/PhD/Programs/FlexAIDdS/results/perf_swarm_validation/tier1_paired_20260629_0854/post_p0_scalar/1HNN/stderr.log"
+      },
+      {
+        "target": "1HP0",
+        "avg_ms_per_gen": 60.46,
+        "log_path": "/Users/lp.more/Documents/PhD/Programs/FlexAIDdS/results/perf_swarm_validation/tier1_paired_20260629_0854/post_p0_scalar/1HP0/stderr.log"
+      }
+    ],
+    "post_soa": [
+      {
+        "target": "1G9V",
+        "avg_ms_per_gen": 83.65,
+        "log_path": "/Users/lp.more/Documents/PhD/Programs/FlexAIDdS/results/perf_swarm_validation/tier1_paired_20260629_0854/post_p0_soa/1G9V/stderr.log"
+      },
+      {
+        "target": "1GM8",
+        "avg_ms_per_gen": 115.56,
+        "log_path": "/Users/lp.more/Documents/PhD/Programs/FlexAIDdS/results/perf_swarm_validation/tier1_paired_20260629_0854/post_p0_soa/1GM8/stderr.log"
+      },
+      {
+        "target": "1GPK",
+        "avg_ms_per_gen": 102.36,
+        "log_path": "/Users/lp.more/Documents/PhD/Programs/FlexAIDdS/results/perf_swarm_validation/tier1_paired_20260629_0854/post_p0_soa/1GPK/stderr.log"
+      },
+      {
+        "target": "1HNN",
+        "avg_ms_per_gen": 103.1,
+        "log_path": "/Users/lp.more/Documents/PhD/Programs/FlexAIDdS/results/perf_swarm_validation/tier1_paired_20260629_0854/post_p0_soa/1HNN/stderr.log"
+      },
+      {
+        "target": "1HP0",
+        "avg_ms_per_gen": 97.97,
+        "log_path": "/Users/lp.more/Documents/PhD/Programs/FlexAIDdS/results/perf_swarm_validation/tier1_paired_20260629_0854/post_p0_soa/1HP0/stderr.log"
+      }
+    ]
+  }
+}

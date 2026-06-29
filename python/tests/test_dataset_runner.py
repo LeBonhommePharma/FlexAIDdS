@@ -23,6 +23,8 @@ from flexaidds.dataset_runner.runner import (
 from flexaidds.dataset_runner.launch_queue import (
     build_run_status,
     build_launch_plan,
+    execute_launches,
+    write_run_status,
     LARGE_N_ENTRIES,
 )
 
@@ -264,3 +266,30 @@ def test_build_run_status_launched_full_has_commands():
     assert plan["astex_nonnative"]["command"][2] == "astex_nonnative"
     assert plan["posex_cd"]["command"][0] == "benchmark_datasets"
     assert status["posex_cd"]["n_pairs"] == 1312
+
+
+def test_execute_launches_dry_run_never_raises(tmp_path):
+    results = execute_launches(scratch=tmp_path, dry_run=True)
+    assert results["astex_nonnative"]["dry_run"] is True
+    assert results["posex_cd"]["dry_run"] is True
+
+
+def test_launch_queue_writes_status_before_execute(tmp_path, monkeypatch):
+    """Status artifact must exist even when posex binary is unavailable."""
+    status_path = tmp_path / "run_status.json"
+    monkeypatch.setenv("SCRATCH", str(tmp_path))
+    from flexaidds.dataset_runner import launch_queue as lq
+
+    def _boom(*_a, **_k):
+        raise RuntimeError("simulated launch failure")
+
+    monkeypatch.setattr(lq, "execute_launches", _boom)
+    lq.main([
+        "--scratch", str(tmp_path),
+        "--sibling-count", "0",
+        "--write-status", str(status_path),
+        "--execute",
+    ])
+    raw = json.loads(status_path.read_text())
+    assert raw["status"] == "launched_full"
+    assert raw["astex_nonnative"]["n_entries"] == 1113

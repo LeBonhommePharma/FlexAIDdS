@@ -797,7 +797,7 @@ static std::pair<std::string,float> select_pose_freq_gated_pooled(
                 try { freq = std::stoi(pl.substr(p2 + 10)); } catch (...) {}
             }
         }
-        if (!have_cf || !std::isfinite(cf)) return false;
+        if (!have_cf || !std::isfinite(cf) || std::fabs(cf) > 1e6f) return false;
         // Read .mcf sidecar: one app_evalue per line (head first, then members).
         // Written by cluster.cpp immediately after write_pdb().
         {
@@ -832,28 +832,39 @@ static std::pair<std::string,float> select_pose_freq_gated_pooled(
     //
     // Falls back to exp(-CF/kT)*log1p(freq) when no .mcf sidecar was loaded.
     auto boltzmann_composite = [&](const PoseInfo& p) -> double {
-        // N = cluster member count (MCF entries when available, else freq).
+        // Option B: log-space free energy — numerically stable, never overflows.
+        // Returns log(composite) = logsumexp(-CF_i/kT) - alpha*H + log(log1p(N))
+        // Ranking is preserved (log is monotone). Fixes exp(135)=inf overflow at CF~-80.
         const size_t n_members = p.member_cfs.empty()
             ? static_cast<size_t>(std::max(1, p.freq))
             : p.member_cfs.size();
-        const double pop_weight = std::log1p(static_cast<double>(n_members));
+        const double log_pop_weight = std::log(std::log1p(static_cast<double>(n_members)));
 
         if (p.member_cfs.empty()) {
-            // No sidecar: treat as single member
-            return std::exp(-static_cast<double>(p.cf) / kT_kcalmol) * pop_weight;
+            // Single member: H=0, log(Z) = -CF/kT
+            return -static_cast<double>(p.cf) / kT_kcalmol + log_pop_weight;
         }
-        // Z = sum_i exp(-CF_i / kT)
-        double Z = 0.0;
+
+        // logsumexp(-CF_i/kT): subtract cf_min for stability (all shifted exps <= 1)
+        double cf_min = static_cast<double>(p.member_cfs.front());
         for (float cf_i : p.member_cfs)
-            Z += std::exp(-static_cast<double>(cf_i) / kT_kcalmol);
-        if (Z <= 0.0) return std::exp(-static_cast<double>(p.cf) / kT_kcalmol) * pop_weight;
-        // H = -sum_i p_i * log(p_i)
+            cf_min = std::min(cf_min, static_cast<double>(cf_i));
+
+        double sum_shifted = 0.0;
+        for (float cf_i : p.member_cfs)
+            sum_shifted += std::exp(-(static_cast<double>(cf_i) - cf_min) / kT_kcalmol);
+        const double log_Z = -cf_min / kT_kcalmol + std::log(sum_shifted);
+
+        // Shannon H via log-space probabilities (bounded, no overflow)
         double H = 0.0;
         for (float cf_i : p.member_cfs) {
-            double pi = std::exp(-static_cast<double>(cf_i) / kT_kcalmol) / Z;
-            if (pi > 1e-300) H -= pi * std::log(pi);
+            const double log_pi = -(static_cast<double>(cf_i) - cf_min) / kT_kcalmol
+                                  - std::log(sum_shifted);
+            const double pi = std::exp(log_pi);
+            if (pi > 1e-300) H -= pi * log_pi;
         }
-        return Z * std::exp(-alpha_shannon * H) * pop_weight;
+
+        return log_Z - alpha_shannon * H + log_pop_weight;
     };
 
     std::vector<PoseInfo> poses;
@@ -941,7 +952,7 @@ static std::pair<std::string,float> select_pose_freq_gated_pooled(
         for (int si = 0; si < log_n; ++si) {
             const auto* p = scored_chosen[si].second;
             fprintf(stderr,
-                "[Z+H] rank=%d cf=%.4f freq=%d nmembers=%zu Z*expH=%.4e path=%s\n",
+                "[Z+H] rank=%d cf=%.4f freq=%d nmembers=%zu logF=%+.4f path=%s\n",
                 si, p->cf, p->freq, p->member_cfs.size(),
                 scored_chosen[si].first, p->path.c_str());
         }
@@ -6585,7 +6596,7 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
             // to preserve 2015 JCIM methodology for success-rate numbers.
             if (!thermo_on) {
                 const char* consensus_env = std::getenv("FLEXAIDDS_CONSENSUS_SCORER");
-                const int   consensus_on  = consensus_env ? std::atoi(consensus_env) : 1;
+                const int   consensus_on  = consensus_env ? std::atoi(consensus_env) : 0;
                 if (consensus_on && all_prefixes.size() >= 2 && !best_pose_pdb.empty()) {
                     constexpr float kConsensusDelta = 1.5f;
                     struct Cand {

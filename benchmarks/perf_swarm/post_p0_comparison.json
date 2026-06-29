@@ -1,0 +1,27 @@
+{
+  "label": "multicleft_pre_vs_post_p0",
+  "mode": "cohort_distribution",
+  "baseline_file": "results/perf_swarm/baseline_macos_pre_p0_multicleft.json",
+  "current_file": "results/perf_swarm/baseline_macos_post_p0_resume.json",
+  "note": "No paired job keys; comparing aggregate distributions (different target sets).",
+  "baseline_cohort": {
+    "count": 218,
+    "median_ms_per_gen": 246.06,
+    "mean_ms_per_gen": 256.93,
+    "p25_ms_per_gen": 208.64,
+    "p75_ms_per_gen": 292.28,
+    "min_ms_per_gen": 115.49,
+    "max_ms_per_gen": 501.42
+  },
+  "current_cohort": {
+    "count": 435,
+    "median_ms_per_gen": 170.87,
+    "mean_ms_per_gen": 188.39,
+    "p25_ms_per_gen": 140.6,
+    "p75_ms_per_gen": 227.33,
+    "min_ms_per_gen": 83.0,
+    "max_ms_per_gen": 479.82
+  },
+  "median_speedup": 1.44,
+  "median_delta_pct": -30.56
+}

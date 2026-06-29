@@ -202,6 +202,19 @@ else()
     # SharedPosePool, GrandPartitionFunction, UnifiedHardwareDispatch, etc.
     target_compile_options(flexaid_core PRIVATE
         -Wall -O3 -ffast-math -fno-finite-math-only)
+    if(BUILD_FLEXAIDDS_FAST)
+        # Keep FLEXAIDS_SOA_ASSERT and other #ifndef NDEBUG hooks live in Debug
+        # builds (FLEXAIDS_SOA_ASSERT=1 repro); Release/LTO paths stay NDEBUG.
+        if(NOT CMAKE_BUILD_TYPE STREQUAL "Debug")
+            target_compile_options(flexaid_core PRIVATE -DNDEBUG)
+        endif()
+        target_compile_options(flexaid_core PRIVATE
+            $<$<AND:$<CXX_COMPILER_ID:AppleClang,Clang>,$<STREQUAL:${CMAKE_SYSTEM_PROCESSOR},arm64>>:-mcpu=native>
+        )
+        if(NOT APPLE)
+            target_compile_options(flexaid_core PRIVATE -march=native)
+        endif()
+    endif()
 endif()
 
 # ─── Required dependencies ───────────────────────────────────────────────

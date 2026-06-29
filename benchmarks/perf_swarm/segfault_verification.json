@@ -1,0 +1,34 @@
+{
+  "schema_version": "1.0.0",
+  "recorded_at": "2026-06-29T11:00:00+00:00",
+  "fix_commit": "8c25e402",
+  "target": "1HP0",
+  "symptom": "Intermittent SIGSEGV during post-GA CF clustering coord_cache_fill (~10-40% pre-fix)",
+  "asan_root_cause": {
+    "file": "LIB/buildcc.cpp",
+    "line": 24,
+    "detail": "heap-buffer-overflow reading atoms[j].coor via invalid rec[] index from snapshot chromosome IC rebuild"
+  },
+  "fix_files": [
+    "LIB/buildcc.cpp",
+    "LIB/calc_rmsd_chrom.cpp",
+    "LIB/cluster.cpp"
+  ],
+  "post_fix_regression": {
+    "build": "build_soa/FlexAIDdS @ 8c25e402",
+    "soak_runs": [
+      {"campaign": "1hp0_hunt3", "ok": 8, "fail": 0},
+      {"campaign": "1hp0_hunt4", "ok": 15, "fail": 0},
+      {"campaign": "1hp0_verify", "ok": 12, "fail": 0},
+      {"campaign": "asan_post_fix", "ok": 1, "fail": 0}
+    ],
+    "total_ok": 35,
+    "total_fail": 0
+  },
+  "pre_fix_baseline": {
+    "campaign": "1hp0_hunt",
+    "ok": 9,
+    "fail": 3,
+    "note": "Pre-buildcc-fix binary; crashes in coord_cache_fill with CLUSTER_STAGE markers"
+  }
+}

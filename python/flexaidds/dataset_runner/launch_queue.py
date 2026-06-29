@@ -3,11 +3,15 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
+import shutil
 import subprocess
 import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional
+
+logger = logging.getLogger(__name__)
 
 LARGE_N_ENTRIES = {
     "astex_nonnative": 1113,
@@ -97,6 +101,10 @@ def write_run_status(path: Path, status: Dict[str, Any]) -> None:
     path.write_text(json.dumps(status, indent=2))
 
 
+def _benchmark_datasets_available() -> bool:
+    return shutil.which("benchmark_datasets") is not None
+
+
 def execute_launches(
     repo_root: Optional[Path] = None,
     scratch: Optional[Path] = None,
@@ -110,18 +118,35 @@ def execute_launches(
     results: Dict[str, Any] = {"astex_nonnative": {}, "posex_cd": {}}
 
     nn_cmd = plan["astex_nonnative"]["command"]
+    launcher = Path(nn_cmd[1]) if len(nn_cmd) > 1 else None
     if dry_run:
         results["astex_nonnative"] = {"command": nn_cmd, "dry_run": True}
+    elif launcher is None or not launcher.is_file():
+        results["astex_nonnative"] = {
+            "command": nn_cmd,
+            "skipped": f"launcher missing: {launcher}",
+        }
     else:
-        proc = subprocess.run(nn_cmd, cwd=str(root), check=False)
-        results["astex_nonnative"] = {"command": nn_cmd, "returncode": proc.returncode}
+        try:
+            proc = subprocess.run(nn_cmd, cwd=str(root), check=False)
+            results["astex_nonnative"] = {"command": nn_cmd, "returncode": proc.returncode}
+        except Exception as exc:
+            logger.warning("astex_nonnative launch failed: %s", exc)
+            results["astex_nonnative"] = {"command": nn_cmd, "error": str(exc)}
 
     posex_json = Path(plan["posex_cd"]["posex_json"])
     posex_out = scratch / f"posex_cd_298K_{int(time.time())}"
     posex_out.mkdir(parents=True, exist_ok=True)
     results["posex_cd"]["output_dir"] = str(posex_out)
 
-    if posex_json.is_file() and not dry_run:
+    if dry_run:
+        results["posex_cd"]["command"] = plan["posex_cd"]["command"]
+        results["posex_cd"]["dry_run"] = True
+    elif not posex_json.is_file():
+        results["posex_cd"]["skipped"] = f"missing posex json: {posex_json}"
+    elif not _benchmark_datasets_available():
+        results["posex_cd"]["skipped"] = "benchmark_datasets not on PATH"
+    else:
         posex_cmd = [
             "benchmark_datasets",
             f"--benchmark=crossdock_json:{posex_json}",
@@ -130,26 +155,26 @@ def execute_launches(
         ]
         log_out = posex_out / "binary.log"
         err_out = posex_out / "stderr.log"
-        with open(log_out, "a") as log_f, open(err_out, "a") as err_f:
-            proc = subprocess.Popen(
-                posex_cmd,
-                cwd=str(root),
-                stdout=log_f,
-                stderr=err_f,
-                stdin=subprocess.DEVNULL,
-            )
-        results["posex_cd"].update({"command": posex_cmd, "pid": proc.pid})
-        write_run_status(posex_out / "run_status.json", {
-            "status": "launched",
-            "dataset": "crossdock_json:posex_cd_1312",
-            "n_pairs": LARGE_N_ENTRIES["posex_cd"],
-            "output_dir": str(posex_out),
-            "pid": proc.pid,
-        })
-    else:
-        results["posex_cd"]["skipped"] = (
-            "dry_run" if dry_run else f"missing {posex_json} or benchmark_datasets"
-        )
+        try:
+            with open(log_out, "a") as log_f, open(err_out, "a") as err_f:
+                proc = subprocess.Popen(
+                    posex_cmd,
+                    cwd=str(root),
+                    stdout=log_f,
+                    stderr=err_f,
+                    stdin=subprocess.DEVNULL,
+                )
+            results["posex_cd"].update({"command": posex_cmd, "pid": proc.pid})
+            write_run_status(posex_out / "run_status.json", {
+                "status": "launched",
+                "dataset": "crossdock_json:posex_cd_1312",
+                "n_pairs": LARGE_N_ENTRIES["posex_cd"],
+                "output_dir": str(posex_out),
+                "pid": proc.pid,
+            })
+        except Exception as exc:
+            logger.warning("posex_cd launch failed: %s", exc)
+            results["posex_cd"].update({"command": posex_cmd, "error": str(exc)})
 
     return results
 
@@ -176,12 +201,19 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     status = build_run_status(sibling_count, repo_root=repo_root, scratch=scratch)
 
-    if args.execute and status["status"] == "launched_full":
-        launch_meta = execute_launches(repo_root, scratch, dry_run=args.dry_run)
-        status["launch_results"] = launch_meta
-
+    # Write status before execution so verification artifacts survive launch failures.
     if args.write_status:
         write_run_status(args.write_status, status)
+
+    if args.execute and status["status"] == "launched_full":
+        try:
+            launch_meta = execute_launches(repo_root, scratch, dry_run=args.dry_run)
+        except Exception as exc:
+            logger.warning("execute_launches failed: %s", exc)
+            launch_meta = {"error": str(exc)}
+        status["launch_results"] = launch_meta
+        if args.write_status:
+            write_run_status(args.write_status, status)
 
     print(json.dumps(status, indent=2))
     return 0

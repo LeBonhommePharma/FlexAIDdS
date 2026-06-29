@@ -5,6 +5,9 @@
 #include <random>
 #include <algorithm>
 #include <chrono>
+#ifdef _OPENMP
+#include <omp.h>
+#endif
 #ifdef FLEXAIDS_USE_METAL
 #include "MetalRMSDBridge.h"
 #endif
@@ -735,21 +738,18 @@ void RandomProjectedNeighborsAndDensities::computeSetBounds(std::vector< int > &
         // std::vector<float> currentRp = this->Randomized_InternalCoord_Vector();
         std::vector<float> currentRp(this->Randomized_CartesianCoord_Vector());
 
-		int k = 0;
-		std::vector<int>::iterator it = ptList.begin();
-		while(it != ptList.end())
+		const int n_pts = static_cast<int>(ptList.size());
+		std::vector<float>& proj_row = this->projectedPoints[j];
+#ifdef _OPENMP
+		#pragma omp parallel for schedule(static) if(n_pts > 32)
+#endif
+		for (int k = 0; k < n_pts; ++k)
 		{
+			const std::vector<float>& vecPt = this->points[ptList[k]].second;
 			float sum = 0.0f;
-			// std::vector<float>::iterator vecPt = this->points[(*it)].second.begin();
-			std::vector<float> vecPt(this->points[(*it)].second);
-			std::vector<float>::iterator currPro = (this->projectedPoints[j]).begin();
-			for(int m = 0; m < this->nDimensions; ++m)
+			for (int m = 0; m < this->nDimensions; ++m)
 				sum += currentRp[m] * vecPt[m];
-
-			currPro[k] = sum;
-
-			++k;
-            ++it;
+			proj_row[k] = sum;
 		}
 	}
 
@@ -876,15 +876,30 @@ void RandomProjectedNeighborsAndDensities::getInverseDensities(std::vector< floa
         int len = pinSet.size();
 		int indoff = static_cast<int>(round(len/2));
 		int oldind = pinSet[indoff];
-		for(int j = 0; j < len; ++j)
+#ifdef _OPENMP
+		#pragma omp parallel for schedule(static) if(len > 48)
+#endif
+		for (int j = 0; j < len; ++j)
 		{
 			int ind = pinSet[j];
-			if(ind == oldind) continue;
+			if (ind == oldind) continue;
 
-			float dist = this->top->compute_distance(this->points[ind],this->points[oldind]);
+			float dist = this->top->compute_distance(this->points[ind], this->points[oldind]);
+#ifdef _OPENMP
+			#pragma omp atomic
+#endif
 			inverseDensities[oldind] += dist;
+#ifdef _OPENMP
+			#pragma omp atomic
+#endif
 			nDists[oldind]++;
+#ifdef _OPENMP
+			#pragma omp atomic
+#endif
 			inverseDensities[ind] += dist;
+#ifdef _OPENMP
+			#pragma omp atomic
+#endif
 			nDists[ind]++;
 		}
 	}

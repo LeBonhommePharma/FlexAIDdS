@@ -515,6 +515,34 @@ TEST(SybylTyper, AssignAllTypesDoesNotCrash) {
         EXPECT_GT(a.sybyl_type, 0);
 }
 
+// Sulfonamide: N.3/S.O2 map to dead VCT rows; –SO2NH– must use N.am/S.O (1HNN fix).
+TEST(SybylTyper, SulfonamideLiveVctTypes) {
+    auto mol = parse_full("NS(=O)(=O)c1ccccc1"); // benzenesulfonamide
+    sybyl::assign_sybyl_types(mol);
+    int n_idx = -1, s_idx = -1;
+    for (int i = 0; i < mol.num_atoms(); ++i) {
+        if (mol.atoms[i].element == Element::N) n_idx = i;
+        if (mol.atoms[i].element == Element::S) s_idx = i;
+    }
+    ASSERT_GE(n_idx, 0);
+    ASSERT_GE(s_idx, 0);
+    EXPECT_EQ(mol.atoms[n_idx].sybyl_type, 7)  << "sulfonamide N → N.am";
+    EXPECT_EQ(mol.atoms[s_idx].sybyl_type, 18) << "sulfonamide S → S.O not S.O2";
+    EXPECT_STREQ(sybyl::sybyl_type_name(mol.atoms[n_idx].sybyl_type), "N.am");
+    EXPECT_STREQ(sybyl::sybyl_type_name(mol.atoms[s_idx].sybyl_type), "S.O");
+}
+
+TEST(SybylTyper, SulfoneKeepsSO2Type) {
+    auto mol = parse_full("CS(=O)(=O)C"); // dimethyl sulfone (no N on S)
+    sybyl::assign_sybyl_types(mol);
+    int s_idx = -1;
+    for (int i = 0; i < mol.num_atoms(); ++i)
+        if (mol.atoms[i].element == Element::S) s_idx = i;
+    ASSERT_GE(s_idx, 0);
+    EXPECT_EQ(mol.atoms[s_idx].sybyl_type, 19);
+    EXPECT_STREQ(sybyl::sybyl_type_name(mol.atoms[s_idx].sybyl_type), "S.O2");
+}
+
 // ===========================================================================
 // ProcessLigand pipeline (integration)
 // ===========================================================================
