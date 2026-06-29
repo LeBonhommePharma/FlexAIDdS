@@ -18,7 +18,6 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update
-          # gcc-14 is required for C++26 support (see CMakeLists.txt compiler gate).
           sudo apt-get install -y cmake ninja-build libeigen3-dev libomp-dev gcc-14 g++-14
           echo "CC=gcc-14" >> "$GITHUB_ENV"
           echo "CXX=g++-14" >> "$GITHUB_ENV"
@@ -44,8 +43,27 @@ jobs:
             ./benchmark_vcfbatch | tee vcfbatch_bench.txt
           fi
 
+      - name: Fetch baseline artifact (optional)
+        if: inputs.baseline_sha != ''
+        continue-on-error: true
+        run: |
+          git fetch origin "${{ inputs.baseline_sha }}" --depth=1
+          git show "${{ inputs.baseline_sha }}:results/perf_swarm/baseline_linux_cpu.json" \
+            > baseline_ref.json 2>/dev/null || echo '{"benchmarks":[]}' > baseline_ref.json
+
+      - name: Compare against baseline
+        if: inputs.baseline_sha != ''
+        continue-on-error: true
+        run: |
+          python3 scripts/compare_perf_baseline.py \
+            --baseline baseline_ref.json \
+            --tencom build/tencom_bench.txt \
+            --vcfbatch build/vcfbatch_bench.txt
+
       - name: Upload benchmark results
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          name: benchmark-results
-          path: build/*_bench.txt
+          name: benchmark-results-${{ github.sha }}
+          path: |
+            build/*_bench.txt
+            baseline_ref.json

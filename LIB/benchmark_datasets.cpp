@@ -692,8 +692,24 @@ int main(int argc, char** argv) {
     std::cout << "  Workers:      " << threads << " concurrent FlexAIDdS process(es)\n";
     std::cout << "  OMP/worker:   " << effective_omp << " thread(s)"
               << (config.omp_threads_per_worker > 0 ? " (explicit)" : " (auto)") << "\n";
-    std::cout << "  Total threads:" << (threads * effective_omp) << " across "
-              << std::thread::hardware_concurrency() << " logical cores\n";
+    int n_restarts = 5;
+    if (const char* env_r = std::getenv("FLEXAIDDS_RESTARTS"))
+        n_restarts = std::max(1, std::atoi(env_r));
+    bool parallel_restarts = (n_restarts > 1);
+    if (const char* env_pr = std::getenv("FLEXAIDDS_PARALLEL_RESTARTS"))
+        parallel_restarts = (std::atoi(env_pr) != 0) && (n_restarts > 1);
+    const int effective_procs =
+        threads * (parallel_restarts ? n_restarts : 1);
+    const int effective_omp_total = effective_procs * effective_omp;
+
+    std::cout << "  OMP budget:   " << (threads * effective_omp)
+              << " threads (workers × omp/worker)\n";
+    std::cout << "  Restarts:     " << n_restarts
+              << (parallel_restarts ? " (parallel)" : " (serial)") << "\n";
+    std::cout << "  Effective:    " << effective_procs << " FlexAIDdS process(es), "
+              << effective_omp_total << " OMP threads peak\n";
+    std::cout << "  Host cores:   " << std::thread::hardware_concurrency()
+              << " logical\n";
     std::cout << "  Skip done:    " << (config.skip_completed ? "yes (--force to override)" : "no") << "\n";
     if (use_gpu) {
         std::cout << "  GPU:          " << gpu_backend << "\n";

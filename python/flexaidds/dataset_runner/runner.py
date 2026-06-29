@@ -1009,8 +1009,8 @@ class DatasetRunner:
                 try:
                     result = subprocess.run(
                         [self.binary, str(cfg_path)],
-                        capture_output=True,
-                        text=True,
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL,
                         timeout=3600,
                         cwd=tmp_path,
                         env=sub_env,

@@ -851,11 +851,6 @@ inline void dot3_batch(const float* a, const float* b, float* out, int N) noexce
 
 // ─── dispatch helper: compile-time dispatch to best available ────────────────
 
-// RMSD between two coordinate arrays (N atoms, interleaved xyz)
-inline float rmsd(const float* a, const float* b, int N) noexcept {
-    return std::sqrt(sum_sq_distances(a, b, N) / static_cast<float>(N));
-}
-
 }  // namespace simd
 
 // ─── flat namespace wrappers for use from C-style code ──────────────────────
@@ -903,3 +898,12 @@ inline float sum_sq_distances_f(const float* a, const float* b, int n_floats) no
 }
 
 }  // namespace flexaids
+
+namespace simd {
+
+// RMSD between two coordinate arrays (N floats, typically nAtoms*3 interleaved xyz)
+inline float rmsd(const float* a, const float* b, int N) noexcept {
+    return std::sqrt(flexaids::sum_sq_distances_f(a, b, N) / static_cast<float>(N));
+}
+
+}  // namespace simd

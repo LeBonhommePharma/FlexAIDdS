@@ -1001,6 +1001,25 @@ if(BUILD_FLEXAIDDS_FAST)
         set_property(TARGET FlexAIDdS PROPERTY HIP_ARCHITECTURES ${FLEXAIDS_HIP_ARCHITECTURES})
     endif()
 
+    # ─── CUDA sources for FlexAIDdS (mirrors FlexAID GPU kernel set) ─────────
+    if(FLEXAIDS_USE_CUDA)
+        target_sources(FlexAIDdS PRIVATE
+            LIB/cuda_eval.cu
+            LIB/ShannonThermoStack/shannon_cuda.cu
+            LIB/tENCoM/tencm_cuda.cu
+            LIB/gpu_fast_optics.cu
+            LIB/TurboQuant.cu
+            LIB/gpu_batch_distance.cu
+            LIB/gpu_batch_distance.cpp
+        )
+        target_compile_definitions(FlexAIDdS PRIVATE FLEXAIDS_USE_CUDA)
+        set_target_properties(FlexAIDdS PROPERTIES
+            CUDA_SEPARABLE_COMPILATION ON
+            CUDA_STANDARD 17)
+        target_link_libraries(FlexAIDdS PRIVATE CUDA::cudart CUDA::cudadevrt)
+        message(STATUS "FlexAIDdS: CUDA enabled — CF batch + Shannon + TENCoM kernels")
+    endif()
+
     # ─── Metal sources for FlexAIDdS ────────────────────────────────────────
     if(FLEXAIDS_USE_METAL)
         # Metal batch Voronoi evaluation bridge

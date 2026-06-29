@@ -37,6 +37,7 @@
 #include <cerrno>
 #include <string>
 #include <vector>
+#include <chrono>
 #include <filesystem>
 #include <system_error>
 #include <unistd.h>
@@ -2567,6 +2568,8 @@ int main(int argc, char **argv){
 
 			printf("n_chrom_snapshot=%d\n", n_chrom_snapshot);
 
+			const auto t_clus0 = std::chrono::steady_clock::now();
+
 			if( strcmp(FA->clustering_algorithm,"FO") == 0 )
 			{
 				printf("using the Fast OPTICS (FO) density based clustering algorithm.\n");
@@ -2581,6 +2584,15 @@ int main(int argc, char **argv){
 			{
 				printf("using the Complementarity Function (CF) based clustering algorithm.\n");
 				cluster(FA,GB,VC,chrom_snapshot,gene_lim,atoms,residue,cleftgrid,n_chrom_snapshot,end_strfile,tmp_end_strfile,dockinp,gainp);
+			}
+
+			{
+				const auto t_clus1 = std::chrono::steady_clock::now();
+				const double clus_ms = std::chrono::duration<double, std::milli>(
+				    t_clus1 - t_clus0).count();
+				fprintf(stderr,
+				        "TIMING CLUSTER: algo=%s n_snapshot=%d wall_ms=%.2f\n",
+				        FA->clustering_algorithm, n_chrom_snapshot, clus_ms);
 			}
 			//////////////////////////////////////////
 			// Looking at cleftgrid chrom's density //
