@@ -64,17 +64,16 @@ void DensityPeak_cluster(FA_Global* FA, GB_Global* GB, VC_Global* VC, chromosome
 			coord_cache.stride  = stride_mb;
 			coord_cache.data.resize(static_cast<std::size_t>(num_chrom) * stride_mb);
 
+			// One chromosome per iteration: disjoint cache writes + thread-local
+			// atoms in calc_rmsd_chrom make this safe under OpenMP.
+			#ifdef _OPENMP
+			#pragma omp parallel for schedule(static)
+			#endif
 			for (int c = 0; c < num_chrom; ++c) {
-				if (c + 1 < num_chrom) {
-					calc_rmsd_chrom(FA, GB, chrom, gene_lim, atoms, residue, cleftgrid,
-					                GB->num_genes, c, c + 1,
-					                &coord_cache.data[static_cast<std::size_t>(c) * stride_mb],
-					                &coord_cache.data[static_cast<std::size_t>(c + 1) * stride_mb], false);
-				} else {
-					calc_rmsd_chrom(FA, GB, chrom, gene_lim, atoms, residue, cleftgrid,
-					                GB->num_genes, c, c,
-					                &coord_cache.data[static_cast<std::size_t>(c) * stride_mb], NULL, false);
-				}
+				calc_rmsd_chrom(FA, GB, chrom, gene_lim, atoms, residue, cleftgrid,
+				                GB->num_genes, c, c,
+				                &coord_cache.data[static_cast<std::size_t>(c) * stride_mb],
+				                NULL, false);
 			}
 
 			// Collect energies
