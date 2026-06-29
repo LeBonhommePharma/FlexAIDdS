@@ -25,33 +25,25 @@ import os
 import shutil
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from lib_launch import launch_session_isolated
+from v131_safe_common import (
+    REPO,
+    git_root,
+    patch_manifest,
+    resolve_oracle_dir,
+    resolve_oracle_asset,
+    resolve_worktree,
+    scrub_env,
+    validate_lane_a_assets,
+    v127_protocol_env,
+)
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-REPO = "/Users/lp.more/Projects/FlexAIDdS"
-GIT_ROOT = subprocess.check_output(
-    ["git", "-C", SCRIPT_DIR, "rev-parse", "--show-toplevel"], text=True
-).strip()
-
-
-def resolve_worktree() -> str:
-    candidates = [
-        os.environ.get("FLEXAIDDS_V131_WORKTREE", ""),
-        f"{REPO}/../FlexAIDdS_v131_safe",
-        "/Users/lp.more/.grok/worktrees/projects-flexaidds/FlexAIDdS_v131_safe",
-    ]
-    for path in candidates:
-        if path and os.path.isdir(os.path.join(path, "build_lto")):
-            return path
-    for path in candidates:
-        if path and os.path.isdir(path):
-            return path
-    return f"{REPO}/../FlexAIDdS_v131_safe"
-
-
+GIT_ROOT = git_root(SCRIPT_DIR)
 WORKTREE = resolve_worktree()
 BUILD = f"{WORKTREE}/build_lto"
 BUILD_SCRIPT = os.path.join(SCRIPT_DIR, "build_v131_safe.sh")
@@ -59,29 +51,8 @@ BINARY_SRC = f"{BUILD}/FlexAIDdS"
 BINARY = "/tmp/FlexAIDdS_v131_safe"
 RUNNER = f"{BUILD}/benchmark_datasets"
 DATA_DIR = BUILD
-JSON_PAIRS = f"{GIT_ROOT}/benchmarks/datasets/benchmark_astex_smoke_12_v131.json"
-
-
-def resolve_oracle_dir() -> str:
-    rel = "benchmarks/astex_diverse/astex_diverse"
-    for root in (REPO, WORKTREE, GIT_ROOT):
-        path = os.path.join(root, rel)
-        if os.path.isdir(path):
-            return path
-    return os.path.join(REPO, rel)
-
-
-def resolve_oracle_asset(*parts: str) -> str:
-    for root in (REPO, WORKTREE, GIT_ROOT):
-        path = os.path.join(root, "benchmarks", "astex_diverse", "astex_diverse", *parts)
-        if os.path.exists(path):
-            return path
-    return os.path.join(REPO, "benchmarks", "astex_diverse", "astex_diverse", *parts)
-
-
-ORACLE_DIR = resolve_oracle_dir()
-TW6_HOLO = resolve_oracle_asset("1TW6", "1TW6_holo.pdb")
-HNN_LIGAND_SITE = resolve_oracle_asset("1HNN", "1HNN_ligand_centered_site.pdb")
+JSON_SRC = os.path.join(GIT_ROOT, "benchmarks/datasets/benchmark_astex_smoke_12_v131.json")
+ORACLE_DIR = resolve_oracle_dir(WORKTREE, GIT_ROOT)
 RESULTS_DIR = Path("/Users/lp.more/Documents/PhD/Programs/FlexAIDdS/results")
 
 BASE_COMMIT = "82ad51f4"
@@ -193,24 +164,35 @@ def main():
                     f"ERROR: --skip-build but missing {p}; run build_v131_safe.sh first"
                 )
 
-    for p in (
-        ORACLE_DIR,
-        JSON_PAIRS,
-        TW6_HOLO,
-        HNN_LIGAND_SITE,
-        f"{DATA_DIR}/MC_st0r5.2_6.dat",
-    ):
+    if not os.path.isfile(JSON_SRC):
+        sys.exit(f"ERROR: missing smoke JSON: {JSON_SRC}")
+
+    validate_lane_a_assets(WORKTREE, GIT_ROOT)
+
+    for p in (ORACLE_DIR, f"{DATA_DIR}/MC_st0r5.2_6.dat"):
         if not os.path.exists(p):
             sys.exit(f"ERROR: missing required path: {p}")
 
-    native = json.load(open(JSON_PAIRS))
+    native = patch_manifest(json.load(open(JSON_SRC)), WORKTREE, GIT_ROOT)
     assert len(native["pairs"]) == 12
+
+    with tempfile.NamedTemporaryFile(
+        mode="w", suffix="_v131_smoke12.json", delete=False
+    ) as tmp:
+        json.dump(native, tmp, indent=2)
+        tmp.write("\n")
+        json_pairs = tmp.name
+
+    g9v = next(p for p in native["pairs"] if p["receptor_id"] == "1G9V")
     tw6 = next(p for p in native["pairs"] if p["receptor_id"] == "1TW6")
     hnn = next(p for p in native["pairs"] if p["receptor_id"] == "1HNN")
-    assert tw6["receptor_pdb"].endswith("1TW6/1TW6_holo.pdb")
-    assert os.path.isfile(tw6["receptor_pdb"])
-    assert hnn["oracle_site_pdb"].endswith("1HNN/1HNN_ligand_centered_site.pdb")
-    assert os.path.isfile(hnn["oracle_site_pdb"])
+    for label, path in (
+        ("1G9V_apo", g9v["receptor_pdb"]),
+        ("1TW6_holo", tw6["receptor_pdb"]),
+        ("1HNN_expB", hnn["oracle_site_pdb"]),
+    ):
+        if not os.path.isfile(path):
+            sys.exit(f"ERROR: patched {label} missing: {path}")
 
     shutil.copy2(BINARY_SRC, BINARY)
     os.chmod(BINARY, 0o755)
@@ -226,47 +208,13 @@ def main():
     prov = f"{output}/launch_provenance.json"
     bench_threads = os.environ.get("FLEXAIDDS_BENCH_THREADS", "2")
 
-    env = dict(os.environ)
-    env.update({
-        "FLEXAIDDS_BINARY":                BINARY,
-        "FLEXAIDDS_BUILD":                 BUILD,
-        "FLEXAIDDS_REPO":                  REPO,
-        "FLEXAIDDS_ORACLE_SITE_DIR":       ORACLE_DIR,
-        "FLEXAIDDS_RESTARTS":              "5",
-        "FLEXAIDDS_PARALLEL_RESTARTS":     "1",
-        "FLEXAIDDS_EVAL_SCALE_DIHEDRAL":   "1",
-        "FLEXAIDDS_CONSENSUS_SCORER":      "1",
-        "FLEXAIDDS_SEED_ELITISM":          "1",
-        "FLEXAIDDS_N_ELITE":               "1",
-        "FLEXAIDDS_BUDGET_SCALE":          "1",
-        "FLEXAIDDS_SOFTCORE_WAL":          "1",
-        "FLEXAIDDS_SOFTCORE_FLOOR":        "0.5",
-        "FLEXAIDDS_T_HOT":                 "500",
-        "FLEXAIDDS_NATIVE_SEED_FRAC":      "0.90",
-        "FLEXAIDDS_VCT_R0":                "4",
-        "FLEXAIDDS_RECEPTOR_ROTAMER_PREP": "0",
-        "FLEXAIDDS_DATA_DIR":              DATA_DIR,
-        "FLEXAIDDS_ALLOW_CONCURRENT":      "1",
-        "FLEXAIDDS_BENCH_CACHE":           cache,
-        "OMP_WAIT_POLICY":                 "passive",
-        "OMP_PLACES":                      "cores",
-        "OMP_PROC_BIND":                   "spread",
-    })
-    for k in (
-        "FLEXAIDDS_USE_DP", "FLEXAIDDS_FINE_GRID",
-        "FLEXAIDDS_FORCE_RIGID", "FLEXAIDDS_USE_SHANNON",
-        "FLEXAIDDS_VCT_NORM",
-        "FLEXAIDDS_SHARING_ALPHA", "FLEXAIDDS_BOOM_FRAC",
-        "FLEXAIDDS_RING_FLEX",
-        "FLEXAIDDS_THERMO", "FLEXAIDDS_HVIB",
-        "FLEXAIDDS_PRIORITY_TARGETS", "FLEXAIDDS_FREQSEL",
-    ):
-        env.pop(k, None)
+    env = scrub_env(dict(os.environ))
+    env.update(v127_protocol_env(BINARY, BUILD, cache, ORACLE_DIR))
 
     cmd = [
         "caffeinate", "-i",
         RUNNER,
-        "--benchmark",           f"crossdock_json:{JSON_PAIRS}",
+        "--benchmark",           f"crossdock_json:{json_pairs}",
         "--output",              output,
         "--threads",             bench_threads,
         "--temperature",         "298",
@@ -324,7 +272,13 @@ def main():
         "binary_sha256":  engine_sha,
         "runner_sha256":  runner_sha,
         "matrix_md5":     matrix_md5,
-        "json_pairs":     JSON_PAIRS,
+        "json_pairs_src": JSON_SRC,
+        "json_pairs":     json_pairs,
+        "manifest_overrides": {
+            "1G9V": g9v["receptor_pdb"],
+            "1TW6": tw6["receptor_pdb"],
+            "1HNN": hnn["oracle_site_pdb"],
+        },
         "output_dir":     output,
         "cache_dir":      cache,
         "pid":            child_pid,
