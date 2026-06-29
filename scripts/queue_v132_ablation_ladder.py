@@ -28,6 +28,7 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(SCRIPT_DIR))
 from lib_launch import launch_session_isolated
 from lib_v132_ablation import RESULTS, ladder_step_ids, step_by_id
+from lib_worker_orders import assert_campaign_allowed, bisect_complete, load_orders
 
 REPO = SCRIPT_DIR.parent
 LAUNCH_SCRIPT = SCRIPT_DIR / "launch_v132_ablation.py"
@@ -194,6 +195,8 @@ def run_watcher(
     no_launch: bool,
     wait_v131_smoke: bool,
 ) -> int:
+    if not bisect_complete():
+        assert_campaign_allowed("v132_ablation_ladder", script_name=__file__)
     v131_dir = latest_run_dir(V131_FULL85_GLOB)
     smoke_dir = latest_run_dir(V131_SMOKE_GLOB) if wait_v131_smoke else None
     v131_pid = discover_pid_from_dir(v131_dir) if v131_dir else 0

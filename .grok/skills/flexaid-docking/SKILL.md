@@ -32,6 +32,17 @@ metadata:
 
 # FlexAID / FlexAIDδS Skill
 
+## Grok Build worker orders (2026-06-29 — mandatory for benchmark launches)
+
+Read `docs/dev/GROK_BUILD_WORKER_DISPATCH_20260629.md` before any full-85 or ablation campaign.
+
+- **NOW:** Bisect Vcontacts smoke-12×3 (`queue_bisect_vcontacts.py`)
+- **NEXT:** `v131_safe_full85` if bisect passes (78/85 recovery)
+- **BLOCKED:** v132 ablation, `launch_v131_full85.py` (HEAD), combined knob turns
+- **Escape hatch:** `v131_safe` binary @ 82ad51f4 (pre-`27e68e51`)
+
+Enforced by `scripts/lib_worker_orders.py` (exit 2).
+
 **Primary invocations (documented aliases):**
 - `/flexaid-docking`
 - `/FlexAid docking`

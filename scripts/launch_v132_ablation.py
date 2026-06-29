@@ -29,6 +29,7 @@ from pathlib import Path
 SCRIPT_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(SCRIPT_DIR))
 from lib_launch import launch_session_isolated
+from lib_worker_orders import assert_campaign_allowed
 from lib_v132_ablation import (
     ENV_SNAPSHOT_KEYS,
     RESULTS,
@@ -229,6 +230,7 @@ def main() -> int:
             print(f"  {step.step_id:16}  {step.ablation_knob:22}  {step.label}")
         return 0
 
+    assert_campaign_allowed("v132_ablation_step", script_name=__file__)
     launch_step(step_by_id(args.step), skip_build=args.skip_build)
     return 0
 

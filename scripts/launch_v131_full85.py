@@ -23,6 +23,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from lib_launch import launch_session_isolated
+from lib_worker_orders import assert_campaign_allowed
 
 REPO = "/Users/lp.more/Projects/FlexAIDdS"
 BUILD = f"{REPO}/build_lto"
@@ -88,6 +89,7 @@ def md5(p):
 
 
 def main():
+    assert_campaign_allowed("v131_head_full85", script_name=__file__)
     for p in (
         BINARY_SRC,
         RUNNER,
