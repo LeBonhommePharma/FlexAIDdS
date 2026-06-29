@@ -1,0 +1,61 @@
+# BindingDB_ITC_subset — Filtered ITC / Kd Calorimetry Benchmark
+#
+# High-quality BindingDB ITC (and high-confidence Kd) entries with PDB cross-references.
+# Filtered for: measurement type ITC or direct Kd, temperature ~298K, valid PDB ID,
+# no extreme artifacts. Provides additional affinity/thermo ground truth beyond ITC-187.
+#
+# References:
+#   BindingDB: Liu et al. (2015) Nucleic Acids Res. (DOI 10.1093/nar/gkv1072)
+#   ITC curation via fetch_itc_data.py + NRGlab filters for docking validation.
+
+slug: bindingdb_itc
+name: "BindingDB ITC Subset (Kd/ITC filtered)"
+description: >
+  Filtered subset of BindingDB focused on ITC measurements and high-confidence
+  Kd values with experimental PDB structures. Complements ITC-187 for broader
+  affinity validation with thermo annotations (ΔG primary; some ΔH).
+
+zenodo_doi: ""
+download_url: "https://www.bindingdb.org/"
+data_format: pdb
+tier: 2
+tier1_subset_size: 5
+
+structural_states:
+  - holo
+
+# Representative targets (full set prepared via fetch_itc_data.py + structure download).
+# These 5 chosen for tier-1 smoke (diverse targets, available structures).
+targets:
+  - 1a4g   # Trypsin example (overlaps ITC-187)
+  - 1t3r   # HIV-1 protease
+  - 2rh1   # β2 adrenergic receptor
+  - 1p62   # DHFR
+  - 3dzy   # ERα
+
+metrics:
+  - scoring_power_pearson_r
+  - scoring_power_spearman_r
+  - scoring_power_rmse
+  - scoring_power_mae
+  - entropy_rescue_rate
+  - docking_power_top1
+
+expected_baselines:
+  scoring_power_pearson_r: 0.65
+  scoring_power_spearman_r: 0.62
+  scoring_power_rmse: 1.9
+  scoring_power_mae: 1.4
+  entropy_rescue_rate: 0.45
+  docking_power_top1: 0.65
+
+baseline_tolerance: 0.08
+
+# Data prep: use benchmarks/fetch_itc_data.py --sources bindingdb --require-pdb
+# then align structures under benchmark_data/bindingdb_itc/<pdb_id>/
+# with receptor and ligand files.
+
+active_label_field: is_active
+
+# ThermoAffinitySuite v2.1 note: contributes to unified ITC-affinity leaderboard.
+# PB-Valid tracked when poses available.
