@@ -99,3 +99,5 @@ baseline_tolerance: 0.05
 
 # ITC-specific: experimental affinity field is ΔG in kcal/mol at 298 K
 active_label_field: is_active
+
+# v2.1: included in ThermoAffinitySuite production runs + PoseBusters PB-Valid.

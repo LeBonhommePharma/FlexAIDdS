@@ -134,3 +134,6 @@ claude_reevaluated_by: "Claude Opus 4.6 — 2026-04-19"
 
 # ITC-specific: experimental affinity field is ΔG in kcal/mol at 298 K
 active_label_field: is_active
+
+# v2.1 (ThermoAffinitySuite): ITC-187 is the primary full-thermo suite.
+# BindingDB_ITC + SCORPIO provide breadth. All support PB-Valid.
