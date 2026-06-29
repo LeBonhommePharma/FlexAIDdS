@@ -1,12 +1,25 @@
 # FlexAID∆S Version History
 
-**Current Version**: 2.0.0
+**Current Version**: 2.1.0 (ThermoAffinitySuite production)
 **Release Date**: 2026-04-04
 **Python Package**: 2.0.0 (`python/flexaidds/__version__.py`)
 **Repository**: [github.com/LeBonhommePharma/FlexAIDdS](https://github.com/LeBonhommePharma/FlexAIDdS)
 **License**: Apache-2.0
 
 ---
+
+## v2.1.0 — Production ThermoAffinitySuite (2026-06-29)
+
+**PR #148**: `[feat/benchmark] Production ThermoAffinitySuite v2.1 + BindingDB + SCORPIO + PoseBusters + analyzer`
+
+- Three new/expanded benchmark suites: ITC-187 (full thermo), BindingDB_ITC_subset, SCORPIO_ITC.
+- `benchmarks/runner.py`: `ThermoAffinitySuite` (run/ablation/PB-Valid/unified bundle/leaderboard).
+- `success_pb = (RMSD < 2 AND all_passed)` using real `PoseBusters()` (pip install posebusters).
+- `scripts/run_all_thermo.sh`, `run_itc187.sh` (executable one-command).
+- `scripts/analyze_pb_failures.py`: full analyzer (plots, stats, HTML report, entropy correlation).
+- Robustness: error handling, logging, type hints, --ablation, CI smoke.
+- Updated VERSION, CONTRIBUTING, pyproject (benchmarks extra), added smoke test.
+- All changes verified with execution; green tests before push.
 
 ## Weekly Highlights (2026-05-27 to 2026-06-03)
 
@@ -25,7 +38,7 @@ Selected changes that landed on `master` this week.
 - **Thermodynamics** — [#212](https://github.com/LeBonhommePharma/FlexAIDdS/pull/212), [#222](https://github.com/LeBonhommePharma/FlexAIDdS/pull/222), [#223](https://github.com/LeBonhommePharma/FlexAIDdS/pull/223), [#224](https://github.com/LeBonhommePharma/FlexAIDdS/pull/224), [#225](https://github.com/LeBonhommePharma/FlexAIDdS/pull/225), [#228](https://github.com/LeBonhommePharma/FlexAIDdS/pull/228)
 - **Reporting and preprocessing** — [#215](https://github.com/LeBonhommePharma/FlexAIDdS/pull/215), [#217](https://github.com/LeBonhommePharma/FlexAIDdS/pull/217), [#218](https://github.com/LeBonhommePharma/FlexAIDdS/pull/218)
 - **Docs and validation** — [#220](https://github.com/LeBonhommePharma/FlexAIDdS/pull/220), [#221](https://github.com/LeBonhommePharma/FlexAIDdS/pull/221), [#229](https://github.com/LeBonhommePharma/FlexAIDdS/pull/229)
-- **Benchmark operations** — [#230](https://github.com/LeBonhommePharma/FlexAIDdS/pull/230)
+- **Benchmark operations** — [#230](https://github.com/LeBonhommePharma/FlexAIDdS/pull/230), PR #148 (ThermoAffinitySuite v2.1)
 - **Tooling and site surface** — [#231](https://github.com/LeBonhommePharma/FlexAIDdS/pull/231), [#232](https://github.com/LeBonhommePharma/FlexAIDdS/pull/232), [#233](https://github.com/LeBonhommePharma/FlexAIDdS/pull/233)
 
 ---

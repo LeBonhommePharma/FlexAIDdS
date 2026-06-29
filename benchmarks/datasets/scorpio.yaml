@@ -1,0 +1,55 @@
+# SCORPIO_ITC — SCORPIO ITC-Enriched Thermodynamic Benchmark
+#
+# Curated ITC data from the SCORPIO database (Olsson et al. JMB 2008).
+# Enriched for thermodynamic measurements (ΔH, TΔS, ΔG) suitable for
+# entropy-aware docking validation. Complements ITC-187 and BindingDB_ITC.
+#
+# Reference: Olsson et al. (2008) J. Mol. Biol. 384(4):1002-1017
+#            https://doi.org/10.1016/j.jmb.2008.09.073
+
+slug: scorpio
+name: "SCORPIO ITC (ITC-enriched)"
+description: >
+  ITC-enriched subset drawn from SCORPIO database. High-quality calorimetric
+  measurements with PDB-mapped structures for entropy/enthalpy decomposition
+  validation. Strong signal for entropy-rescue metrics.
+
+zenodo_doi: ""
+download_url: "https://scorpio2.biophysics.ismb.lon.ac.uk/"
+data_format: pdb
+tier: 2
+tier1_subset_size: 5
+
+structural_states:
+  - holo
+
+# Representative targets (full ~100+ from SCORPIO; use fetch + prep for complete).
+targets:
+  - 1a4g
+  - 1c5c
+  - 2zff
+  - 1t3r
+  - 2rh1
+
+metrics:
+  - scoring_power_pearson_r
+  - scoring_power_spearman_r
+  - scoring_power_rmse
+  - scoring_power_mae
+  - entropy_rescue_rate
+  - docking_power_top1
+
+expected_baselines:
+  scoring_power_pearson_r: 0.68
+  scoring_power_spearman_r: 0.65
+  scoring_power_rmse: 1.85
+  scoring_power_mae: 1.35
+  entropy_rescue_rate: 0.50
+  docking_power_top1: 0.68
+
+baseline_tolerance: 0.08
+
+# Prep: benchmarks/fetch_itc_data.py --sources scorpio ; structure assembly required.
+active_label_field: is_active
+
+# ThermoAffinitySuite v2.1: part of unified 3-DB thermo leaderboard + PB-Valid.

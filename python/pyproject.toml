@@ -21,7 +21,7 @@ classifiers = [
 
 [project.optional-dependencies]
 dev = ["pytest", "pytest-cov"]
-benchmarks = ["numpy>=2.0.2", "pyyaml>=6.0.3"]
+benchmarks = ["numpy>=2.0.2", "pyyaml>=6.0.3", "pandas>=2.0", "matplotlib>=3.7", "posebusters>=0.6"]
 benchmarks-mpi = ["numpy>=2.0.2", "pyyaml>=6.0.3", "mpi4py>=4.1.1"]
 
 [project.scripts]
