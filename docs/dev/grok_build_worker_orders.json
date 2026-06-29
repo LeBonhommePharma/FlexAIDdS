@@ -2,7 +2,7 @@
   "schema_version": "1.0.0",
   "issued_at": "2026-06-29T15:00:00+00:00",
   "authority": "Grok Build worker dispatch — oracle record recovery",
-  "current_phase": "bisect_vcontacts_smoke12_x3",
+  "current_phase": "v131_safe_full85_recovery",
   "record_anchor": {
     "v109": "80/85 (94.1%)",
     "v127_baseline": "78/85",
@@ -12,7 +12,7 @@
   "phase_dag": [
     {
       "id": "bisect_vcontacts_smoke12_x3",
-      "status": "active",
+      "status": "completed",
       "scripts": [
         "scripts/queue_bisect_vcontacts.py",
         "scripts/launch_vcontacts_bisect_smoke.py",
@@ -24,16 +24,18 @@
     },
     {
       "id": "v131_safe_full85_recovery",
-      "status": "queued",
-      "gate": "bisect pass >=8/12 smoke, 0/3 regression guard fail",
+      "status": "active",
+      "gate": "regression bisect named 27e68e51 (reverted f66f9b95); SOA-off or f9c80fe5 revert pending",
       "script": "scripts/launch_v131_safe_full85.py",
       "target": "78/85 recovery"
     },
     {
       "id": "cherry_pick_vcontacts_fix",
-      "status": "blocked",
-      "gate": "vcontacts_bisect_summary.json names guilty commit",
-      "suspect_commits": ["27e68e51", "f9c80fe5", "d4d68592"]
+      "status": "completed",
+      "gate": "regression_bisect_summary.json",
+      "guilty_commits": ["27e68e51"],
+      "reverted": ["f66f9b95"],
+      "remaining_suspects": ["f9c80fe5", "d2295cf0"]
     },
     {
       "id": "r0_7_expB_sulfo_bundle",
@@ -68,5 +70,5 @@
       "state_file": "~/Documents/PhD/Programs/FlexAIDdS/results/queue_v132_ablation_ladder.state.json"
     }
   },
-  "worker_orders_text": "NOW: Bisect Vcontacts smoke-12×3. NEXT: v131_safe_full85 if bisect passes. THEN: cherry-pick proven Vcontacts fix only. LATER: r0=7+expB/sulfo. Do NOT run v132 ablation or HEAD full-85 until bisect names guilty commit. v131_safe is pre-27e68e51 escape hatch to 78/85."
+  "worker_orders_text": "NOW: v131_safe_full85 recovery (78/85 target). Regression bisect: 27e68e51 reverted (f66f9b95); test SOA=OFF or revert f9c80fe5+d2295cf0 if 6-target smoke still fails. LATER: r0=7+expB/sulfo after 78/85 confirmed. BLOCKED: v132 ablation, HEAD full-85."
 }
