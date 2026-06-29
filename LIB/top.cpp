@@ -37,6 +37,7 @@
 #include <cerrno>
 #include <string>
 #include <vector>
+#include <chrono>
 #include <filesystem>
 #include <system_error>
 #include <unistd.h>
@@ -571,7 +572,11 @@ int main(int argc, char **argv){
 	FA->hbond_optimal_angle=180.0;
 	FA->hbond_sigma_dist=0.4;
 	FA->hbond_sigma_angle=30.0;
+	{ const char* _hsa=std::getenv("FLEXAIDDS_HBOND_SIGMA_ANGLE"); if(_hsa) FA->hbond_sigma_angle=std::atof(_hsa); }
 	FA->hbond_salt_bridge_weight=-5.0;
+	FA->hbond_angle_gate_min=0.0;
+	{ const char* _hg=std::getenv("FLEXAIDDS_HBOND_ANGLE_GATE");
+	  if(_hg && _hg[0]=='1') FA->hbond_angle_gate_min=120.0; }
 
 	FA->use_metal_coord=0;
 	FA->metal_coord_weight=1.0;
@@ -943,16 +948,22 @@ int main(int argc, char **argv){
 		// ── 1. Interaction matrix ──
 		{
 			char emat[MAX_PATH__];
-			if (!strcmp(FA->dependencies_path, "")) {
-				strcpy(emat, FA->base_path);
+			const char* mat_override = std::getenv("FLEXAIDDS_ENERGY_MATRIX");
+			if (mat_override && mat_override[0] != '\0') {
+				strncpy(emat, mat_override, MAX_PATH__ - 1);
+				emat[MAX_PATH__ - 1] = '\0';
 			} else {
-				strcpy(emat, FA->dependencies_path);
-			}
+				if (!strcmp(FA->dependencies_path, "")) {
+					strcpy(emat, FA->base_path);
+				} else {
+					strcpy(emat, FA->dependencies_path);
+				}
 #ifdef _WIN32
-			strcat(emat, "\\MC_st0r5.2_6.dat");
+				strcat(emat, "\\MC_st0r5.2_6.dat");
 #else
-			strcat(emat, "/MC_st0r5.2_6.dat");
+				strcat(emat, "/MC_st0r5.2_6.dat");
 #endif
+			}
 			printf("interaction matrix is <%s>\n", emat);
 			read_emat(FA, emat);
 		}
@@ -1705,6 +1716,15 @@ int main(int argc, char **argv){
 			// Free sphere linked list (oracle or SURFNET)
 			while (spheres) { sphere* p = spheres->prev; free(spheres); spheres = p; }
 
+			// Multi-cleft discovery support (orchestrator use only):
+			// When FLEXAIDDS_CLEFTS_ONLY=1, stop after detection+grid (cheap pass).
+			// The CleftDetector (if FLEXAIDDS_CLEFT_DUMP_DIR set) will have written
+			// cleft_XX.sph for each major cluster. No GA is run.
+			if (std::getenv("FLEXAIDDS_CLEFTS_ONLY")) {
+				printf("FLEXAIDDS_CLEFTS_ONLY=1 : cleft/grid setup done — early exit for discovery (no GA)\n");
+				return 0;
+			}
+
 			// ── Confine search to the cognate (reference-ligand) site ──────
 			// Skipped in oracle mode — the binding site PDB already defines
 			// the precise search space without further confinement needed.
@@ -2240,11 +2260,22 @@ int main(int argc, char **argv){
 	cf=ic2cf(FA,VC,atoms,residue,cleftgrid,FA->npar,FA->opt_par);
 	VC->recalc = 0;
 
+	double ini_cf_total = get_cf_evalue(&cf, FA);
+	if(!std::isfinite(ini_cf_total) || std::fabs(ini_cf_total) > 1e6){
+		fprintf(stderr,
+		        "[INI_CF_SANITY] rejecting non-finite/absurd INI CF=%.4f — using penalty\n",
+		        ini_cf_total);
+		cfstr cf_penalty{};
+		cf_penalty.com = 99999.0;
+		cf = cf_penalty;
+		ini_cf_total = get_cf_evalue(&cf, FA);
+	}
+
 	for(i=0;i<FA->npar;i++){printf("[%8.3f]",FA->opt_par[i]);}
-	printf("=%8.5f\n", get_cf_evalue(&cf, FA));
+	printf("=%8.5f\n", ini_cf_total);
 	//getchar();
   
-	snprintf(tmpremark,MAX_REMARK,"REMARK CF=%8.5f\n", get_cf_evalue(&cf, FA));
+	snprintf(tmpremark,MAX_REMARK,"REMARK CF=%8.5f\n", ini_cf_total);
 	safe_remark_cat(remark,tmpremark,&remark_len);
 	snprintf(tmpremark,MAX_REMARK,"REMARK CF.app=%8.5f\n", get_apparent_cf_evalue(&cf));
 	safe_remark_cat(remark,tmpremark,&remark_len);
@@ -2567,6 +2598,8 @@ int main(int argc, char **argv){
 
 			printf("n_chrom_snapshot=%d\n", n_chrom_snapshot);
 
+			const auto t_clus0 = std::chrono::steady_clock::now();
+
 			if( strcmp(FA->clustering_algorithm,"FO") == 0 )
 			{
 				printf("using the Fast OPTICS (FO) density based clustering algorithm.\n");
@@ -2581,6 +2614,15 @@ int main(int argc, char **argv){
 			{
 				printf("using the Complementarity Function (CF) based clustering algorithm.\n");
 				cluster(FA,GB,VC,chrom_snapshot,gene_lim,atoms,residue,cleftgrid,n_chrom_snapshot,end_strfile,tmp_end_strfile,dockinp,gainp);
+			}
+
+			{
+				const auto t_clus1 = std::chrono::steady_clock::now();
+				const double clus_ms = std::chrono::duration<double, std::milli>(
+				    t_clus1 - t_clus0).count();
+				fprintf(stderr,
+				        "TIMING CLUSTER: algo=%s n_snapshot=%d wall_ms=%.2f\n",
+				        FA->clustering_algorithm, n_chrom_snapshot, clus_ms);
 			}
 			//////////////////////////////////////////
 			// Looking at cleftgrid chrom's density //

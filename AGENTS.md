@@ -25,7 +25,12 @@ git status
 find . -maxdepth 4 -iname '*skill*' -o -iname 'SKILL.md' -o -iname '*.xml' -o -iname 'AGENTS.md'
 python3 .grok/skills/flexaid-docking/scripts/validate_skill.py
 python3 .grok/skills/flexaid-docking/scripts/ensure_docking_data.py --check
+cat docs/dev/grok_build_worker_orders.json   # Grok Build benchmark campaign orders
 ```
+
+**Grok Build worker orders (2026-06-29):** Read `docs/dev/GROK_BUILD_WORKER_DISPATCH_20260629.md`.
+Active phase: **bisect Vcontacts smoke-12×3**. BLOCKED: v132 ablation, v131 HEAD full-85,
+combined knob turns. ALLOWED: `queue_bisect_vcontacts.py`, `launch_v131_safe_full85.py` after bisect pass.
 
 If `git status` hits an `fsmonitor--daemon.ipc` error, retry the repo check with:
 

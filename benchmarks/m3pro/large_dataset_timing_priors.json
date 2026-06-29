@@ -1,0 +1,28 @@
+{
+  "schema_version": 1,
+  "description": "Per-entry wall-time priors for large-N runtime planning (derived from real C++ benchmark output, not defaults).",
+  "sources": {
+    "astex_diverse_v118": "/Users/lp.more/Documents/PhD/Programs/FlexAIDdS/results/v118_20260625_0711_PSHARE_stalfix_full85",
+    "method": "median/mean wall_time_s from result.csv across completed Astex Diverse complexes (n=35 at capture time)"
+  },
+  "datasets": {
+    "astex_nonnative": {
+      "n_entries": 1113,
+      "mean_entry_seconds": 262.99,
+      "median_entry_seconds": 176.11,
+      "timing_source": "astex_diverse_v118_result_csv"
+    },
+    "posex": {
+      "n_entries": 1319,
+      "mean_entry_seconds": 315.0,
+      "median_entry_seconds": 210.0,
+      "timing_source": "astex_diverse_v118_scaled_crossdock_prior"
+    },
+    "posex_cd": {
+      "n_entries": 1312,
+      "mean_entry_seconds": 315.0,
+      "median_entry_seconds": 210.0,
+      "timing_source": "astex_diverse_v118_scaled_crossdock_prior"
+    }
+  }
+}

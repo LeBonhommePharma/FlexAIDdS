@@ -1,0 +1,209 @@
+[  0%] Compiling TurboQuant Metal shader (FlexAIDdS)
+[  0%] Compiling ShannonEntropy Metal shader
+[  2%] Compiling CavityDetect Metal shader (FlexAIDdS)
+[  2%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/ReportedPoseSelector.cpp.o
+[  2%] Compiling MetalRMSD Metal shader (FlexAIDdS)
+[  2%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/Vcontacts.cpp.o
+[  2%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/fileio.cpp.o
+[  2%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/buildic.cpp.o
+[  4%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/assign_shift.cpp.o
+[  6%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/vcfunction.cpp.o
+[  6%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/ic2cf.cpp.o
+[  6%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/create_rebuild_list.cpp.o
+/Users/lp.more/.grok/worktrees/projects-flexaidds/flexaidds-success-rates-restoration/LIB/ReportedPoseSelector.cpp:79:10: warning: unused variable 'score_composite' [-Wunused-variable]
+   79 |     auto score_composite = [&](const std::vector<float>& member_cfs, float best_cf, int pop) -> double {
+      |          ^~~~~~~~~~~~~~~
+[  6%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/read_coor.cpp.o
+[  8%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/read_constraints.cpp.o
+[ 11%] Linking ShannonEntropy.metallib
+[ 11%] Linking CavityDetect_ds.metallib
+[ 11%] Linking MetalRMSD_ds.metallib
+[ 13%] Linking TurboQuant_ds.metallib
+1 warning generated.
+[ 13%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/assign_constraint.cpp.o
+[ 13%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/modify_pdb.cpp.o
+[ 13%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/update_constraint.cpp.o
+[ 13%] Built target ShannonEntropyMetal
+[ 15%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/update_optres.cpp.o
+[ 15%] Built target TurboQuantMetalDS
+[ 15%] Built target CavityDetectMetalDS
+[ 15%] Built target MetalRMSDMetalDS
+[ 15%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/update_bonded.cpp.o
+[ 15%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/read_lig.cpp.o
+[ 15%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/read_grid.cpp.o
+[ 17%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/read_input.cpp.o
+[ 17%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/read_pdb.cpp.o
+[ 17%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/add2_optimiz_vec.cpp.o
+[ 20%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/assign_radius.cpp.o
+[ 20%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/assign_radii.cpp.o
+[ 20%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/assign_radii_types.cpp.o
+[ 20%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/assign_types.cpp.o
+[ 22%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/bondedlist.cpp.o
+[ 22%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/buildcc.cpp.o
+[ 22%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/buildlist.cpp.o
+[ 24%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/geometry.cpp.o
+[ 24%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/read_conect.cpp.o
+[ 24%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/residue_conect.cpp.o
+[ 24%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/wif083.cpp.o
+[ 26%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/calc_cleftic.cpp.o
+[ 26%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/gaboom.cpp.o
+[ 26%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/write_pdb.cpp.o
+[ 26%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/GAContext.cpp.o
+[ 28%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/calc_center.cpp.o
+[ 28%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/ic_bounds.cpp.o
+[ 28%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/buildic_point.cpp.o
+[ 31%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/buildcc_point.cpp.o
+[ 31%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/read_rmsdst.cpp.o
+[ 31%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/calc_rmsd_chrom.cpp.o
+[ 31%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/calc_rmsd.cpp.o
+[ 33%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/write_rrd.cpp.o
+[ 33%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/write_sphere.cpp.o
+[ 33%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/write_grid.cpp.o
+[ 33%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/read_rotlib.cpp.o
+[ 35%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/write_rrg.cpp.o
+[ 35%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/number_of_dihedrals.cpp.o
+[ 35%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/read_flexscfile.cpp.o
+[ 35%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/set_intprob.cpp.o
+[ 37%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/read_rotobs.cpp.o
+[ 37%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/receptor_prep.cpp.o
+[ 37%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/build_rotamers.cpp.o
+[ 40%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/check_clash.cpp.o
+[ 40%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/read_normalgrid.cpp.o
+[ 40%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/read_eigen.cpp.o
+[ 42%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/assign_eigen.cpp.o
+[ 42%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/print_surfmat.cpp.o
+[ 42%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/alter_mode.cpp.o
+[ 42%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/dee_pivot.cpp.o
+[ 44%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/read_emat.cpp.o
+[ 44%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/read_spheres.cpp.o
+[ 44%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/cluster.cpp.o
+[ 46%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/DensityPeak_Cluster.cpp.o
+[ 46%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/FastOPTICS_cluster.cpp.o
+[ 46%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/MinibatchSampler.cpp.o
+[ 46%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/FOPTICS.cpp.o
+[ 48%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/fast_optics.cpp.o
+[ 48%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/BindingMode.cpp.o
+[ 48%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/rna_structure.cpp.o
+[ 48%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/shortest_path.cpp.o
+[ 51%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/assign_shortflex.cpp.o
+[ 51%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/slice_grid.cpp.o
+[ 51%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/partition_grid.cpp.o
+[ 53%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/generate_grid.cpp.o
+[ 53%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/maps.cpp.o
+[ 53%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/tENCoM/tencm.cpp.o
+[ 53%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/statmech.cpp.o
+[ 55%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/encom.cpp.o
+[ 55%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/VibEntropy.cpp.o
+[ 55%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/DiFT/DiFT.cpp.o
+[ 57%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/GISTEvaluator.cpp.o
+[ 57%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/HBondEvaluator.cpp.o
+[ 57%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/TurboQuant.cpp.o
+[ 57%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/ProcessLigand/ProcessLigand.cpp.o
+[ 60%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/ProcessLigand/SmilesParser.cpp.o
+[ 60%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/ProcessLigand/RingPerception.cpp.o
+[ 60%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/ProcessLigand/Aromaticity.cpp.o
+[ 60%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/ProcessLigand/RotatableBonds.cpp.o
+[ 62%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/ProcessLigand/ValenceChecker.cpp.o
+[ 62%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/ProcessLigand/SybylTyper.cpp.o
+[ 62%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/ProcessLigand/FlexAIDWriter.cpp.o
+[ 64%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/ProcessLigand/ROCmDispatch.cpp.o
+[ 64%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/ProcessLigand/CoordBuilder.cpp.o
+[ 64%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/MultiModelDock.cpp.o
+[ 64%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/CifReader.cpp.o
+[ 66%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/LibrarySplitter.cpp.o
+[ 66%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/ReferenceEntropy.cpp.o
+[ 66%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/ParallelCampaign.cpp.o
+[ 66%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/hardware_detect.cpp.o
+[ 68%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/UnifiedHardwareDispatch.cpp.o
+[ 68%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/ShannonThermoStack/ShannonThermoStack.cpp.o
+[ 68%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/shannon_ga.cpp.o
+[ 71%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/LigandRingFlex/RingConformerLibrary.cpp.o
+[ 71%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/LigandRingFlex/SugarPucker.cpp.o
+[ 71%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/LigandRingFlex/LigandRingFlex.cpp.o
+[ 71%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/NATURaL/NATURaLDualAssembly.cpp.o
+[ 73%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/NATURaL/RibosomeElongation.cpp.o
+[ 73%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/NATURaL/TransloconInsertion.cpp.o
+[ 73%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/NATURaL/NucleationDetector.cpp.o
+[ 75%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/NATURaL/NascentChainScheduler.cpp.o
+[ 75%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/NATURaL/FibrilGrowthOracle.cpp.o
+[ 75%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/NATURaL/DualAssemblyRunner.cpp.o
+[ 75%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/ChiralCenter/ChiralCenterGene.cpp.o
+[ 77%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/CleftDetector.cpp.o
+[ 77%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/Mol2Reader.cpp.o
+[ 77%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/SdfReader.cpp.o
+[ 77%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/CavityDetect/CavityDetect.cpp.o
+[ 80%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/config_parser.cpp.o
+[ 80%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/PTMAttachment/PTMAttachment.cpp.o
+[ 80%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/ThermodynamicEngine.cpp.o
+[ 82%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/coarse_init.cpp.o
+[ 82%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/GridDecomposer.cpp.o
+[ 82%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/ParallelDock.cpp.o
+[ 82%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/SharedPosePool.cpp.o
+[ 84%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/CoarseScreen.cpp.o
+[ 84%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/TwoStageScreen.cpp.o
+[ 84%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/TargetValidation.cpp.o
+[ 86%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/GrandPartitionFunction.cpp.o
+[ 86%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/MultiSiteGPF.cpp.o
+[ 86%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/TargetKnowledgeBase.cpp.o
+[ 86%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/TargetServer.cpp.o
+[ 88%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/MPITransport.cpp.o
+[ 88%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/InStreamClustering.cpp.o
+[ 88%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/BinarySnapshot.cpp.o
+[ 88%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/build_close.cpp.o
+[ 91%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/cffunction.cpp.o
+[ 91%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/cpu_eval.cpp.o
+[ 91%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/cpu_fast_optics.cpp.o
+[ 93%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/dee_print.cpp.o
+[ 93%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/direct_input.cpp.o
+[ 93%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/spfunction.cpp.o
+[ 93%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/tENCoM/tencm_cpu_fallback.cpp.o
+[ 95%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/native_score.cpp.o
+/Users/lp.more/.grok/worktrees/projects-flexaidds/flexaidds-success-rates-restoration/LIB/cffunction.cpp:56:42: warning: implicit conversion of nullptr constant to 'bool' [-Wnull-conversion]
+   56 |       if ((FA->bondlist ? FA->bondlist : nullptr) && (FA->bondlist ? FA->bondlist : nullptr)[j].num == i) {
+      |                                          ^~~~~~~  ~~
+      |                                          false
+1 warning generated.
+/Users/lp.more/.grok/worktrees/projects-flexaidds/flexaidds-success-rates-restoration/LIB/spfunction.cpp:22:9: warning: variable 'contnum' set but not used [-Wunused-but-set-variable]
+   22 |   int   contnum;
+      |         ^
+1 warning generated.
+[ 95%] Built target flexaid_core
+[ 97%] Building OBJCXX object CMakeFiles/FlexAIDdS.dir/LIB/tENCoM/tencm_metal.mm.o
+[ 97%] Building CXX object CMakeFiles/FlexAIDdS.dir/LIB/top.cpp.o
+[ 97%] Building OBJCXX object CMakeFiles/FlexAIDdS.dir/LIB/metal_eval.mm.o
+[ 97%] Building OBJCXX object CMakeFiles/FlexAIDdS.dir/LIB/gpu_fast_optics_metal.mm.o
+[ 97%] Building OBJCXX object CMakeFiles/FlexAIDdS.dir/LIB/ShannonThermoStack/ShannonMetalBridge.mm.o
+[ 97%] Building OBJCXX object CMakeFiles/FlexAIDdS.dir/LIB/MetalRMSDBridge.mm.o
+[ 97%] Building OBJCXX object CMakeFiles/FlexAIDdS.dir/LIB/CavityDetect/CavityDetectMetalBridge.mm.o
+[100%] Building OBJCXX object CMakeFiles/FlexAIDdS.dir/LIB/TurboQuantMetalBridge.mm.o
+/Users/lp.more/.grok/worktrees/projects-flexaidds/flexaidds-success-rates-restoration/LIB/gpu_fast_optics_metal.mm:59:42: warning: 'newLibraryWithFile:error:' is deprecated: first deprecated in macOS 13.0 - Use -newLibraryWithURL:error: instead [-Wdeprecated-declarations]
+   59 |         id<MTLLibrary> library = [device newLibraryWithFile:metallibPath
+      |                                          ^
+/Applications/Xcode-beta.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/System/Library/Frameworks/Metal.framework/Headers/MTLDevice.h:765:1: note: 'newLibraryWithFile:error:' has been explicitly marked deprecated here
+  765 | - (nullable id <MTLLibrary>)newLibraryWithFile:(NSString *)filepath error:(__autoreleasing NSError **)error
+      | ^
+1 warning generated.
+[100%] Linking CXX executable FlexAIDdS
+Staging FlexAIDdS runtime data files next to the binary
+[100%] Built target FlexAIDdS
+[  2%] Built target CavityDetectMetalDS
+[  2%] Built target MetalRMSDMetalDS
+[  4%] Built target ShannonEntropyMetal
+[ 95%] Built target flexaid_core
+[ 95%] Building CXX object CMakeFiles/benchmark_datasets.dir/LIB/DatasetRunner.cpp.o
+[ 95%] Building OBJCXX object CMakeFiles/benchmark_datasets.dir/LIB/metal_eval.mm.o
+[ 97%] Building CXX object CMakeFiles/benchmark_datasets.dir/LIB/benchmark_datasets.cpp.o
+[ 97%] Building OBJCXX object CMakeFiles/benchmark_datasets.dir/LIB/CavityDetect/CavityDetectMetalBridge.mm.o
+[ 97%] Building OBJCXX object CMakeFiles/benchmark_datasets.dir/LIB/ShannonThermoStack/ShannonMetalBridge.mm.o
+[100%] Building CXX object CMakeFiles/benchmark_datasets.dir/LIB/AsyncPipeline.cpp.o
+[100%] Building OBJCXX object CMakeFiles/benchmark_datasets.dir/LIB/MetalRMSDBridge.mm.o
+[100%] Building OBJCXX object CMakeFiles/benchmark_datasets.dir/LIB/gpu_fast_optics_metal.mm.o
+/Users/lp.more/.grok/worktrees/projects-flexaidds/flexaidds-success-rates-restoration/LIB/gpu_fast_optics_metal.mm:59:42: warning: 'newLibraryWithFile:error:' is deprecated: first deprecated in macOS 13.0 - Use -newLibraryWithURL:error: instead [-Wdeprecated-declarations]
+   59 |         id<MTLLibrary> library = [device newLibraryWithFile:metallibPath
+      |                                          ^
+/Applications/Xcode-beta.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/System/Library/Frameworks/Metal.framework/Headers/MTLDevice.h:765:1: note: 'newLibraryWithFile:error:' has been explicitly marked deprecated here
+  765 | - (nullable id <MTLLibrary>)newLibraryWithFile:(NSString *)filepath error:(__autoreleasing NSError **)error
+      | ^
+1 warning generated.
+[100%] Linking CXX executable benchmark_datasets
+[100%] Built target benchmark_datasets

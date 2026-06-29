@@ -1,0 +1,5 @@
+MC_st0r5.2_6_v2_science.dat — Priority-1 corrections
+source: MC_st0r5.2_6.dat
+changed: 1 of 820
+
+   2- 4       -86.6 ->        -65

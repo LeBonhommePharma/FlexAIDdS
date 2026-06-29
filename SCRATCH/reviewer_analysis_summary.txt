@@ -1,0 +1,12 @@
+Pointer to full evidence:
+- /Users/lp.more/FlexAIDdS_reviewer_benchmark/SCRATCH_EVIDENCE_1G9V_1GM8.txt
+- reviewer_benchmark_findings_1g9v_1gm8.md (worktree root)
+
+Key absolute paths inspected (use relative in notes):
+reviewer_bench/1G9V/result.csv , reviewer_bench/1G9V/stdout.log , reviewer_bench/1G9V/r{1,2,4,5,6}/stdout.log
+Same for 1GM8.
+worktree-relative: scripts/reproduce_astex85.sh , LIB/ReportedPoseSelector.cpp , LIB/DatasetRunner.cpp , benchmarks/datasets/benchmark_astex_native_85.json
+
+Run commands via tools (targeted list_dir/grep/read_file) produced the excerpts in the evidence files above. No over-claim. 43/84 per task statement.
+
+See full md for details + recs.

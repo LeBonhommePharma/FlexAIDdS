@@ -1,0 +1,74 @@
+{
+  "schema_version": "1.0.0",
+  "issued_at": "2026-06-29T15:00:00+00:00",
+  "authority": "Grok Build worker dispatch — oracle record recovery",
+  "current_phase": "v131_safe_full85_recovery",
+  "record_anchor": {
+    "v109": "80/85 (94.1%)",
+    "v127_baseline": "78/85",
+    "v130_observed": "73/85",
+    "v131_head_observed": "72/84 incomplete"
+  },
+  "phase_dag": [
+    {
+      "id": "bisect_vcontacts_smoke12_x3",
+      "status": "completed",
+      "scripts": [
+        "scripts/queue_bisect_vcontacts.py",
+        "scripts/launch_vcontacts_bisect_smoke.py",
+        "scripts/build_vcontacts_bisect.sh"
+      ],
+      "variants": ["safe", "head_soa_off", "head_soa_on"],
+      "state_file": "~/Documents/PhD/Programs/FlexAIDdS/results/queue_bisect_vcontacts.state.json",
+      "summary_artifact": "~/Documents/PhD/Programs/FlexAIDdS/results/vcontacts_bisect_summary.json"
+    },
+    {
+      "id": "v131_safe_full85_recovery",
+      "status": "active",
+      "gate": "regression bisect named 27e68e51 (reverted f66f9b95); SOA-off or f9c80fe5 revert pending",
+      "script": "scripts/launch_v131_safe_full85.py",
+      "target": "78/85 recovery"
+    },
+    {
+      "id": "cherry_pick_vcontacts_fix",
+      "status": "completed",
+      "gate": "regression_bisect_summary.json",
+      "guilty_commits": ["27e68e51"],
+      "reverted": ["f66f9b95"],
+      "remaining_suspects": ["f9c80fe5", "d2295cf0"]
+    },
+    {
+      "id": "r0_7_expB_sulfo_bundle",
+      "status": "blocked",
+      "gate": "78/85 recovery on safe binary confirmed"
+    }
+  ],
+  "blocked_campaigns": [
+    "v132_ablation_ladder",
+    "v132_ablation_step",
+    "v131_head_full85",
+    "combined_knob_turn"
+  ],
+  "blocked_scripts": [
+    "scripts/queue_v132_ablation_ladder.py",
+    "scripts/launch_v132_ablation.py",
+    "scripts/launch_v131_full85.py"
+  ],
+  "allowed_scripts": [
+    "scripts/queue_bisect_vcontacts.py",
+    "scripts/launch_vcontacts_bisect_smoke.py",
+    "scripts/build_vcontacts_bisect.sh",
+    "scripts/build_v131_safe.sh",
+    "scripts/launch_v131_smoke12.py",
+    "scripts/launch_v131_safe_full85.py",
+    "scripts/queue_after_v130_scalar_perf.py",
+    "scripts/launch_perf_scalar_quiet.py"
+  ],
+  "paused_watchers": {
+    "v132_ablation": {
+      "required_status": "paused_for_vcontacts_bisect",
+      "state_file": "~/Documents/PhD/Programs/FlexAIDdS/results/queue_v132_ablation_ladder.state.json"
+    }
+  },
+  "worker_orders_text": "NOW: v131_safe_full85 recovery (78/85 target). Regression bisect: 27e68e51 reverted (f66f9b95); test SOA=OFF or revert f9c80fe5+d2295cf0 if 6-target smoke still fails. LATER: r0=7+expB/sulfo after 78/85 confirmed. BLOCKED: v132 ablation, HEAD full-85."
+}

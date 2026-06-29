@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "name": "astex_smoke_2_holo",
+  "description": "Pipeline holo-fix verification smoke: 1G9V (apo A+B+C, chain D stripped) and 1TW6 (holo A+B, inhibitor chains C+D stripped). Gate: 1G9V CF_native ~+50 not +209; 1TW6 no intra-clash sentinel.",
+  "n_pairs": 2,
+  "oracle_mode": true,
+  "astex_diverse_dir": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse",
+  "pairs": [
+    {
+      "index": 0,
+      "receptor_id": "1G9V",
+      "ligand_id": "1G9V",
+      "receptor_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1G9V/1G9V_apo.pdb",
+      "ligand_sdf": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1G9V/1G9V_ligand.sdf",
+      "oracle_site_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1G9V/1G9V_binding_site.pdb"
+    },
+    {
+      "index": 49,
+      "receptor_id": "1TW6",
+      "ligand_id": "1TW6",
+      "receptor_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1TW6/1TW6_holo.pdb",
+      "ligand_sdf": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1TW6/1TW6_ligand.sdf",
+      "oracle_site_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1TW6/1TW6_binding_site.pdb"
+    }
+  ]
+}

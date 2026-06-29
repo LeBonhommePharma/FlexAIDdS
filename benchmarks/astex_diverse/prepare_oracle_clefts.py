@@ -29,7 +29,9 @@ LIGAND_RESNAME: dict[str, str] = {
     "1G9V": "HEM",
     "1GM8": "SOX",
     "1GPK": "HUP",
-    "1HNN": "SAH",
+    # 1HNN co-crystallises SAH (cofactor) + SKF (PNMT inhibitor). Anchor on SKF —
+    # SAH-offset oracle sites guide the GA into a ~11 Å CF false minimum (v129 audit).
+    "1HNN": "SKF",
     "1HP0": "AD3",
     "1HQ2": "APC",
     "1IA1": "NDP",

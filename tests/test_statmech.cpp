@@ -5,8 +5,12 @@
 
 #include <gtest/gtest.h>
 #include "../LIB/statmech.h"
+#include "../LIB/ReportedPoseSelector.h"
 #include <cmath>
 #include <vector>
+#include <filesystem>
+#include <fstream>
+#include <iostream>
 #include <numeric>
 #include <random>
 
@@ -1388,6 +1392,64 @@ TEST(KirchhoffTest, ThrowsOnInvalidInput) {
     EXPECT_THROW(thermal_extrap::kirchhoff_deltaG(in, -5.0),  std::invalid_argument);
     thermal_extrap::KirchhoffInput bad{0.0, -8.0, -0.1};
     EXPECT_THROW(thermal_extrap::kirchhoff_deltaG(bad, 300.0), std::invalid_argument);
+}
+
+// Unit test for the G_bind min pfx selection helper (drives shipped code in DatasetRunner)
+TEST(GBindSelect, MinGFromMockLogs) {
+    std::string log = "[THERMO] G_bind=-42.5 H_vct=...";
+    float g = reported_pose::parse_g_bind_from_log(log);
+    EXPECT_FLOAT_EQ(g, -42.5f);
+}
+
+// Fixture-driven test for the new ReportedPoseSelector (two-stage: min-G restart first,
+// then freq-gated/Z+H within it). Hard adversarial case: r1 has *worse* CF but *best* G_bind.
+// Under thermo_on the election MUST return a pose from the min-G restart (r1), not the
+// better-CF r0. This drives the v88 JCIM reported-pose rule.
+TEST(GBindSelect, ElectsMinGOverFullPool) {
+    auto tmp = std::filesystem::temp_directory_path() / "gselect_test";
+    std::filesystem::create_directories(tmp);
+    // pfx strings; pose files at pfx_0.pdb , log at pfx/stdout.log (as code looks)
+    std::string p0 = (tmp / "r0").string();
+    std::string p1 = (tmp / "r1").string();
+    // r0: *best* CF (most negative) but *worse* G  (CF-primary adversary would wrongly elect this)
+    {
+        std::ofstream f(p0 + "_0.pdb");
+        f << "REMARK CF=-30\n";
+        f << "ATOM      1  C   LIG     1       0.000   0.000   0.000\n";
+        f << "CONECT    1    2\n";
+    }
+    // r1: worse CF but *best* G (thermo two-stage must elect from this restart)
+    {
+        std::ofstream f(p1 + "_0.pdb");
+        f << "REMARK CF=-5\n";
+        f << "ATOM      1  C   LIG     1       0.100   0.100   0.100\n";
+        f << "CONECT    1    2\n";
+    }
+    // logs 
+    std::filesystem::create_directories(p0);
+    std::filesystem::create_directories(p1);
+    {
+        std::ofstream f(p0 + "/stdout.log");
+        f << "[THERMO] G_bind=-10.0\n";
+    }
+    {
+        std::ofstream f(p1 + "/stdout.log");
+        f << "[THERMO] G_bind=-30.0\n";
+    }
+    std::vector<std::string> pfxs = {p0, p1};
+    auto pool = reported_pose::build_cross_restart_pool(pfxs);
+    std::string elected = reported_pose::elect_reported_pose(pool, true);
+    // r1 must be elected (min G restart wins regardless of its CF being worse)
+    // HARD: EXPECT_EQ on exact path (drives shipped two-stage selector)
+    std::string expected_r1 = p1 + "_0.pdb";
+    EXPECT_FALSE(elected.empty());
+    EXPECT_EQ(elected, expected_r1);
+    // also verify the other path would have been chosen without thermo
+    std::string elected_non = reported_pose::elect_reported_pose(pool, false);
+    // non-thermo prefers better (lower) composite/CF => r0 (which has CF=-30)
+    std::string expected_r0 = p0 + "_0.pdb";
+    EXPECT_EQ(elected_non, expected_r0);
+    std::filesystem::remove_all(tmp);
 }
 
 // ===========================================================================

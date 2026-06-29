@@ -1,0 +1,12 @@
+{
+  "pairs": [
+    {
+      "index": 3,
+      "receptor_id": "1HNN",
+      "ligand_id": "1HNN",
+      "receptor_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1HNN/1HNN_apo.pdb",
+      "ligand_sdf": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1HNN/1HNN_ligand.sdf",
+      "oracle_site_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1HNN/1HNN_ligand_centered_site.pdb"
+    }
+  ]
+}

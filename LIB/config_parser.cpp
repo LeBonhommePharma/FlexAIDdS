@@ -84,6 +84,13 @@ void apply_config(const json::Value& config, FA_Global* FA, GB_Global* GB) {
         FA->hbond_sigma_angle      = jdbl(config, "scoring", "hbond_sigma_angle", 30.0);
         FA->hbond_weight           = jdbl(config, "scoring", "hbond_weight", -2.5);
         FA->hbond_salt_bridge_weight = jdbl(config, "scoring", "hbond_salt_bridge_weight", -5.0);
+        FA->hbond_angle_gate_min   = jdbl(config, "scoring", "hbond_angle_gate_min", 0.0);
+        if (const char* e = std::getenv("FLEXAIDDS_HBOND_WEIGHT"))
+            FA->hbond_weight = std::atof(e);
+        if (const char* e = std::getenv("FLEXAIDDS_HBOND_SIGMA_ANGLE"))
+            FA->hbond_sigma_angle = std::atof(e);
+        if (const char* e = std::getenv("FLEXAIDDS_HBOND_ANGLE_GATE"))
+            if (e[0] == '1') FA->hbond_angle_gate_min = 120.0;
 
         // Metal ion coordination potential
         FA->use_metal_coord      = jbool(config, "scoring", "metal_coord_enabled", false) ? 1 : 0;

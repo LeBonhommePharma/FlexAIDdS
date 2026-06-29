@@ -1,0 +1,118 @@
+{
+  "schema_version": 1,
+  "name": "astex_smoke_12_v131",
+  "description": "v131 Lane A smoke (12 targets): holo/data (1G9V,1TW6), sulfo (1GPK,1T9B), v130 regression guards (1HQ2,1S3V,1T40), v127-only guards (1M2Z,1R58,1XM6), informational (1HNN,1N2V). Gate: >=10/12 pass AND 0/3 regression guards fail.",
+  "n_pairs": 12,
+  "oracle_mode": true,
+  "astex_diverse_dir": "/Users/lp.more/.grok/worktrees/projects-flexaidds/perfornance-swarm/benchmarks/astex_diverse/astex_diverse",
+  "pairs": [
+    {
+      "index": 0,
+      "receptor_id": "1G9V",
+      "ligand_id": "1G9V",
+      "receptor_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1G9V/1G9V_apo.pdb",
+      "ligand_sdf": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1G9V/1G9V_ligand.sdf",
+      "oracle_site_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1G9V/1G9V_binding_site.pdb",
+      "smoke_role": "data_fix"
+    },
+    {
+      "index": 1,
+      "receptor_id": "1TW6",
+      "ligand_id": "1TW6",
+      "receptor_pdb": "/Users/lp.more/.grok/worktrees/projects-flexaidds/perfornance-swarm/benchmarks/astex_diverse/astex_diverse/1TW6/1TW6_holo.pdb",
+      "ligand_sdf": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1TW6/1TW6_ligand.sdf",
+      "oracle_site_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1TW6/1TW6_binding_site.pdb",
+      "smoke_role": "holo_receptor"
+    },
+    {
+      "index": 2,
+      "receptor_id": "1GPK",
+      "ligand_id": "1GPK",
+      "receptor_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1GPK/1GPK_apo.pdb",
+      "ligand_sdf": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1GPK/1GPK_ligand.sdf",
+      "oracle_site_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1GPK/1GPK_binding_site.pdb",
+      "smoke_role": "sulfo_remap"
+    },
+    {
+      "index": 3,
+      "receptor_id": "1T9B",
+      "ligand_id": "1T9B",
+      "receptor_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1T9B/1T9B_apo.pdb",
+      "ligand_sdf": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1T9B/1T9B_ligand.sdf",
+      "oracle_site_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1T9B/1T9B_binding_site.pdb",
+      "smoke_role": "sulfo_remap"
+    },
+    {
+      "index": 4,
+      "receptor_id": "1HQ2",
+      "ligand_id": "1HQ2",
+      "receptor_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1HQ2/1HQ2_apo.pdb",
+      "ligand_sdf": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1HQ2/1HQ2_ligand.sdf",
+      "oracle_site_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1HQ2/1HQ2_binding_site.pdb",
+      "smoke_role": "v130_regression_guard"
+    },
+    {
+      "index": 5,
+      "receptor_id": "1S3V",
+      "ligand_id": "1S3V",
+      "receptor_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1S3V/1S3V_apo.pdb",
+      "ligand_sdf": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1S3V/1S3V_ligand.sdf",
+      "oracle_site_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1S3V/1S3V_binding_site.pdb",
+      "smoke_role": "v130_regression_guard"
+    },
+    {
+      "index": 6,
+      "receptor_id": "1T40",
+      "ligand_id": "1T40",
+      "receptor_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1T40/1T40_apo.pdb",
+      "ligand_sdf": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1T40/1T40_ligand.sdf",
+      "oracle_site_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1T40/1T40_binding_site.pdb",
+      "smoke_role": "v130_regression_guard"
+    },
+    {
+      "index": 7,
+      "receptor_id": "1M2Z",
+      "ligand_id": "1M2Z",
+      "receptor_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1M2Z/1M2Z_apo.pdb",
+      "ligand_sdf": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1M2Z/1M2Z_ligand.sdf",
+      "oracle_site_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1M2Z/1M2Z_binding_site.pdb",
+      "smoke_role": "v127_only_guard"
+    },
+    {
+      "index": 8,
+      "receptor_id": "1R58",
+      "ligand_id": "1R58",
+      "receptor_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1R58/1R58_apo.pdb",
+      "ligand_sdf": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1R58/1R58_ligand.sdf",
+      "oracle_site_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1R58/1R58_binding_site.pdb",
+      "smoke_role": "v127_only_guard"
+    },
+    {
+      "index": 9,
+      "receptor_id": "1XM6",
+      "ligand_id": "1XM6",
+      "receptor_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1XM6/1XM6_apo.pdb",
+      "ligand_sdf": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1XM6/1XM6_ligand.sdf",
+      "oracle_site_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1XM6/1XM6_binding_site.pdb",
+      "smoke_role": "v127_only_guard"
+    },
+    {
+      "index": 10,
+      "receptor_id": "1HNN",
+      "ligand_id": "1HNN",
+      "receptor_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1HNN/1HNN_apo.pdb",
+      "ligand_sdf": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1HNN/1HNN_ligand.sdf",
+      "oracle_site_pdb": "/Users/lp.more/.grok/worktrees/projects-flexaidds/perfornance-swarm/benchmarks/astex_diverse/astex_diverse/1HNN/1HNN_ligand_centered_site.pdb",
+      "smoke_role": "informational"
+    },
+    {
+      "index": 11,
+      "receptor_id": "1N2V",
+      "ligand_id": "1N2V",
+      "receptor_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1N2V/1N2V_apo.pdb",
+      "ligand_sdf": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1N2V/1N2V_ligand.sdf",
+      "oracle_site_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1N2V/1N2V_binding_site.pdb",
+      "smoke_role": "informational"
+    }
+  ]
+}

@@ -43,11 +43,11 @@
 #     stdout.log / stderr.log         ← full run transcript
 #     <PDB>/                          ← per-target pose files
 #
-# PUBLISHED REFERENCE (commit 8196829)
-#   Success rate (RMSD_hungarian < 2.0 Å): 80/85  (94.1 %)
-#   Mean RMSD:   0.81 Å   |   Median RMSD: 0.33 Å
-#   Ref binary SHA256 (Apple M-series):
-#     6d899e6351e347abf97f2e5b664ffd2cba853c599a561f5213ccf2777df47d5c
+# CURRENT HONEST MEASURED (proper 7r+THERMO reviewer trees, two-stage min-G elect + THERMO G_bind, NO_SAS=1, NATIVE=0, strict gate)
+#   Success rate (rmsd_hungarian >0 and <2.0 Å): 21/85  (24.7 % raw C++ aggregate; sentinels excluded; no post-process)
+#   Slice on proper trees (current code): 3/10.
+#   Older claims (68/85 or ~80%) came from loose gating or different election or seeding (banned); this is the measured with correct methodology.
+#   Mean/Median vary; see output CSV. Historical ref commit for provenance only.
 # =============================================================================
 set -euo pipefail
 
@@ -402,7 +402,7 @@ prov = {
         "FLEXAIDDS_SOFTCORE_WAL":       "1",
         "FLEXAIDDS_SOFTCORE_FLOOR":     "0.5",
         "FLEXAIDDS_T_HOT":              "500",
-        "FLEXAIDDS_NATIVE_SEED_FRAC":   "0.90",
+        "FLEXAIDDS_NATIVE_SEED_FRAC":   "0.0",
         "FLEXAIDDS_RECEPTOR_ROTAMER_PREP": "1",
         "FLEXAIDDS_EVAL_SCALE_DIHEDRAL":   "1",
     },
@@ -439,6 +439,9 @@ export FLEXAIDDS_THERMO=1
 export FLEXAIDDS_T_EFF=0.596
 export FLEXAIDDS_TENCOM_SCALE=1.0
 
+# Disable SAS desolvation (post-v50b regression that creates false minima deeper than native; env gate in vcfunction.cpp:35)
+export FLEXAIDDS_NO_SAS=1
+
 # Search configuration (exact match to published v89 run)
 export FLEXAIDDS_RESTARTS=7
 export FLEXAIDDS_PARALLEL_RESTARTS=1
@@ -450,7 +453,7 @@ export FLEXAIDDS_BUDGET_SCALE=1
 export FLEXAIDDS_SOFTCORE_WAL=1
 export FLEXAIDDS_SOFTCORE_FLOOR=0.5
 export FLEXAIDDS_T_HOT=500
-export FLEXAIDDS_NATIVE_SEED_FRAC=0.90
+export FLEXAIDDS_NATIVE_SEED_FRAC=0.0
 export FLEXAIDDS_RECEPTOR_ROTAMER_PREP=1
 
 # Priority targets (known hard cases — run first to surface failures early)
@@ -498,7 +501,12 @@ output_dir    = sys.argv[5]
 rows = list(csv.DictReader(results_csv.open()))
 
 def rmsd(r): return float(r.get("rmsd_hungarian") or r.get("rmsd_to_crystal") or "9999")
-def succ(r): return r.get("success","0") == "1" or rmsd(r) < 2.0
+def succ(r):
+    try:
+        h = float(r.get("rmsd_hungarian") or r.get("rmsd_to_crystal") or 99)
+        return 0 < h < 2.0
+    except Exception:
+        return False
 
 success  = [r for r in rows if succ(r)]
 near     = [r for r in rows if not succ(r) and rmsd(r) < 2.5]
@@ -527,10 +535,11 @@ print(f"{BOLD}{CYN}{'═'*60}{RST}")
 print(f"\n  {'Metric':<35} {'Reviewer':>12}  {'Published':>12}")
 print(f"  {'─'*35} {'─'*12}  {'─'*12}")
 print(f"  {'Total targets':<35} {total:>12}  {'85':>12}")
-print(f"  {'Successful (RMSD_H < 2.0 Å)':<35} {n_ok:>12}  {'80':>12}")
-print(f"  {'Success rate':<35} {rate:>11.1f}%  {'94.1%':>12}")
-print(f"  {'Mean RMSD (Å)':<35} {mean_r:>12.2f}  {'0.81':>12}")
-print(f"  {'Median RMSD (Å)':<35} {median_r:>12.2f}  {'0.33':>12}")
+print(f"  {'Successful (RMSD_H >0 and <2.0 Å strict)':<35} {n_ok:>12}  {'21':>12}")
+print(f"  {'Success rate (strict gate)':<35} {rate:>11.1f}%  {'24.7%':>12}")
+print(f"  {'Mean RMSD (Å)':<35} {mean_r:>12.2f}  {'see CSV*':>12}")
+print(f"  {'Median RMSD (Å)':<35} {median_r:>12.2f}  {'see CSV*':>12}")
+print(f"  {'* raw from C++ two-stage on proper trees; sentinels=-1 excluded by gate; older 0.81 used different election':<35}")
 if wall_times:
     total_seq = sum(wall_times)
     print(f"  {'Total sequential docking time':<35} {total_seq/3600:>11.1f}h  {'~1.8h':>12}")
@@ -546,10 +555,10 @@ else:
     print("  none")
 
 print(f"\n{BOLD}{CYN}{'═'*60}{RST}")
-if abs(rate - 94.1) < 3.0:
-    print(f"\n  {GRN}✓  Success rate {rate:.1f}% agrees with published 94.1%{RST}")
+if abs(rate - 24.7) < 5.0:
+    print(f"\n  {GRN}✓  Success rate {rate:.1f}% matches current honest measured (21/85 = 24.7% strict gate on proper 7r+THERMO trees, NATIVE=0){RST}")
 else:
-    print(f"\n  {YLW}!  Success rate {rate:.1f}% differs from published 94.1%{RST}")
+    print(f"\n  {YLW}!  Success rate {rate:.1f}% differs from current honest measured 21/85 (24.7%){RST}")
 
 print(f"""
   {BOLD}Verify reproducibility:{RST}

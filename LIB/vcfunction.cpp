@@ -579,7 +579,8 @@ double vcfunction(FA_Global* FA,VC_Global* VC,atom* atoms,resid* residue, std::v
 							atoms, atomzero, atomcont, dist,
 							FA->hbond_optimal_dist, FA->hbond_optimal_angle,
 							FA->hbond_sigma_dist, FA->hbond_sigma_angle,
-							FA->hbond_weight, FA->hbond_salt_bridge_weight);
+							FA->hbond_weight, FA->hbond_salt_bridge_weight,
+							FA->hbond_angle_gate_min);
 						cfs->hbond += E_hb;
 					}
 

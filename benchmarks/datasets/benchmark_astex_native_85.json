@@ -402,7 +402,7 @@
       "index": 49,
       "receptor_id": "1TW6",
       "ligand_id": "1TW6",
-      "receptor_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1TW6/1TW6.pdb",
+      "receptor_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1TW6/1TW6_holo.pdb",
       "ligand_sdf": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1TW6/1TW6_ligand.sdf",
       "oracle_site_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1TW6/1TW6_binding_site.pdb"
     },

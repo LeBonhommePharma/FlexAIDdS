@@ -1,0 +1,69 @@
+{
+  "schema_version": 1,
+  "name": "benchmark_positive_core",
+  "description": "Pinned Astex oracle-ceiling benchmark-positive commit bundle. v121–v124 recovery stack plus two-stage thermo selector (088a686c). Tip 563ce0f8 is the last commit in this bundle before v111 science experiments and v127+ Vcontacts regressions.",
+  "bundle_tip": "563ce0f8efcdfb0c11ca69247ddbf608c75017fb",
+  "branch": "benchmark/positive-core-v124",
+  "tag": "benchmark-positive-core-v124",
+  "expected_success": {
+    "dataset": "astex_diverse_85",
+    "mode": "oracle-ceiling",
+    "metric": "rmsd_hungarian < 2.0",
+    "record_class": "v109/v124",
+    "successes": 80,
+    "total": 85,
+    "rate_pct": 94.1,
+    "note": "80/85 under NATIVE_SEED_FRAC=0.90 + SMFREE + hbond_search + consensus-guard. Not v111 science bundle or v131 HEAD."
+  },
+  "commits": [
+    {
+      "sha": "088a686c",
+      "id": "thermo_two_stage_selector",
+      "summary": "Two-stage ReportedPoseSelector: min finite G_bind restart then Z+H/freq-gated within; THERMO election terminal (no consensus overwrite)",
+      "files": [
+        "LIB/DatasetRunner.cpp",
+        "LIB/ReportedPoseSelector.cpp",
+        "LIB/ReportedPoseSelector.h",
+        "scripts/emit_aggregate_from_run_trees.py",
+        "tests/test_statmech.cpp"
+      ]
+    },
+    {
+      "sha": "d1eaf996",
+      "id": "v121_smfree_revert",
+      "summary": "Revert fitness_model PSHARE→SMFREE — restored 81.2% mechanism (fixed 37.6% catastrophe)",
+      "files": ["LIB/DatasetRunner.cpp"]
+    },
+    {
+      "sha": "c8626368",
+      "id": "v122b_oracle_rotamer_prep_off",
+      "summary": "Disable receptor_rotamer_prep for ORACLE_CEILING — crystal geometry preserved (1GPK CF native fix)",
+      "files": ["LIB/DatasetRunner.cpp"]
+    },
+    {
+      "sha": "eea2a429",
+      "id": "v123_hbond_search",
+      "summary": "Re-enable hbond_search in benchmark JSON — directional GA landscape for polar-anchored pockets",
+      "files": ["LIB/DatasetRunner.cpp"]
+    },
+    {
+      "sha": "563ce0f8",
+      "id": "v124_consensus_guard",
+      "summary": "Consensus-guard: protect elitism-elected INI from worse-CF consensus override",
+      "files": ["LIB/DatasetRunner.cpp"]
+    }
+  ],
+  "reproduce": {
+    "checkout": "git checkout benchmark/positive-core-v124",
+    "or_tag": "git checkout benchmark-positive-core-v124",
+    "launch": "Use v124-class env: FLEXAIDDS_SEED_ELITISM=1, FLEXAIDDS_RESTARTS=7, FLEXAIDDS_T_HOT=500, FLEXAIDDS_NATIVE_SEED_FRAC=0.90, FLEXAIDDS_CONSENSUS_SCORER=1. Do NOT set FLEXAIDDS_SCIENCE_FIXES or FLEXAIDDS_ENERGY_MATRIX v2."
+  },
+  "excluded_from_bundle": {
+    "reason": "Experimental or documented regressions — not part of benchmark-positive core",
+    "examples": [
+      "48f9ed40 matrix v2",
+      "b447ee48 v111 science bundle",
+      "v127/v130/v131 HEAD Vcontacts SoA regressions"
+    ]
+  }
+}

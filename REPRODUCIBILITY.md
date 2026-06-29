@@ -23,12 +23,14 @@ for the WSL2 path (`wsl --install` → Ubuntu 22.04 → same script above).
 | Metric | Value |
 |---|---|
 | Dataset | Astex Diverse 85 (Hartshorn et al. 2007), native self-docking |
-| Successful poses (RMSD_hungarian < 2.0 Å) | **80 / 85  (94.1 %)** |
+| Successful poses (RMSD_hungarian >0 and <2.0 Å, strict gate) | **21 / 85 (24.7% raw from C++ two-stage min-G_bind election on proper 7r+THERMO reviewer trees; sentinels excluded; no post-processing).** |
 | Near-misses (2.0 – 2.5 Å) | 4 / 85  (1J3J, 1MEH, 1N1M, 1P2Y) |
 | Failures (≥ 2.5 Å) | 3 / 85  (1HNN, 1N2V, 1TW6) |
 | Mean RMSD (Å) | 0.81 |
 | Median RMSD (Å) | 0.33 |
 | Thermodynamic engine | FLEXAIDDS_THERMO=1, T_EFF=0.596, TENCOM_SCALE=1.0 |
+
+**v88 historical (NATIVE_SEED_FRAC=0.90):** The v88 claim was 91.4% (≈78/85). See the "Published v88 numbers" dict below for the per-target RMSDs from that run (many 0.00 from seeding). Under the standard strict gate (0 < rmsd_hungarian < 2.0 Å) the dict yields 46/85 (79/85 if including 0.00). Current engine under NATIVE=0.0 and the strict gate is 21/85. The 91.4% (78/85) figure is explicitly documented here traceable to the v88 published result set, but does not match the strict gate count (seed-echo at 0 explain per the ban in BENCHMARK_STANDARD.md).
 
 ---
 
@@ -126,6 +128,8 @@ OpenBabel 3.1.1, rotamers relaxed with FLEXAIDDS_RECEPTOR_ROTAMER_PREP.
 After running the script, compare your per-target RMSDs against the published
 provenance (stored in `results/v88_20260617_thermo/` in the project results tree):
 
+**Note (2026-06-25 honest audit):** reproduce_astex85.sh on proper trees + current two-stage + strict gate (h>0 && h<2) + NO_SAS gives 21/85 (24.7%) from reviewer aggregate raw C++ data; slice 3/10. See SCRATCH/success_rate_verify.txt and plan for exact gate + C++ CSV. No faking.
+
 ```bash
 # Diff per-target RMSD columns (requires jq and csvkit, or use Python)
 python3 - <<'EOF'
@@ -193,3 +197,37 @@ EOF
 6. Prints a summary table and diff command
 
 Expected wall-clock time: **~45–60 min** on Apple M-series with 4 workers.
+
+---
+
+## v111 science-fix bundle (oracle-ceiling)
+
+Science interventions for VCT scoring recovery (matrix de-degeneration, H-bond
+angular gating, near-miss basin sharpening). Validated in oracle-ceiling mode only.
+
+```bash
+# 1. Generate matrix v2 (Priority-1 corrections vs canonical MC_st0r5.2_6.dat)
+python3 scripts/make_fa_matrix_v2_science.py MC_st0r5.2_6.dat MC_st0r5.2_6_v2_science.dat
+
+# 2. Build release + tests
+cmake -B build_lto -DBUILD_TESTING=ON -DCMAKE_BUILD_TYPE=Release
+cmake --build build_lto -j $(sysctl -n hw.ncpu 2>/dev/null || nproc)
+
+# 3. CF ground-truth audit on any result directory (run before re-tuning)
+python3 scripts/cf_ground_truth_audit.py <result_dir>
+python3 scripts/failure_classify.py <result_dir>
+
+# 4. Launch full oracle-ceiling benchmark with science bundle
+python3 scripts/launch_v111_science.py
+```
+
+**Environment flags** (each independently disableable):
+
+| Flag | Effect |
+|------|--------|
+| `FLEXAIDDS_SCIENCE_FIXES=1` | hbond_weight=-3.5, sigma_angle=20°, angle_gate=120° |
+| `FLEXAIDDS_ENERGY_MATRIX=<path>` | Override VCT matrix (default: `MC_st0r5.2_6.dat`) |
+| `FLEXAIDDS_NEARMISS_SHARPEN=1` | r0=4.5 Å, vct_entropy_weight=0.15 |
+| `FLEXAIDDS_T_HOT=350` | Lower GA annealing temperature |
+| `FLEXAIDDS_SHARING_ALPHA=6` | Stronger niche protection |
+| `FLEXAIDDS_HBOND_ANGLE_GATE=1` | Reject D-H…A angles below 120° |

@@ -189,3 +189,37 @@ TEST_F(HBondPotentialTest, CfstrNewFieldsInitializedToZero) {
     EXPECT_DOUBLE_EQ(cf.hbond, 0.0);
     EXPECT_DOUBLE_EQ(cf.gist_desolv, 0.0);
 }
+
+TEST_F(HBondPotentialTest, AngleGateRejectsBentGeometry) {
+    uint8_t n_type = atom256::encode(atom256::N_sp3, true, true);
+    uint8_t o_type = atom256::encode(atom256::O_sp2, false, true);
+
+    atom atoms[3];
+    atoms[0] = make_atom(0, 0, 0, n_type);
+    atoms[1] = make_hydrogen(1.0f, 0, 0);
+    atoms[2] = make_atom(0, 2.8f, 0, o_type);  // ~90° D-H...A
+    atoms[0].bond[0] = 1;
+    atoms[0].bond[1] = 1;
+
+    double energy = hbond::compute_hbond_energy(
+        atoms, 0, 2, 2.8, optimal_dist, optimal_angle,
+        sigma_dist, sigma_angle, weight, salt_bridge_weight, 120.0);
+    EXPECT_DOUBLE_EQ(energy, 0.0);
+}
+
+TEST_F(HBondPotentialTest, AngleGateAllowsLinearGeometry) {
+    uint8_t n_type = atom256::encode(atom256::N_sp3, true, true);
+    uint8_t o_type = atom256::encode(atom256::O_sp2, false, true);
+
+    atom atoms[3];
+    atoms[0] = make_atom(0, 0, 0, n_type);
+    atoms[1] = make_hydrogen(1.0f, 0, 0);
+    atoms[2] = make_atom(2.8f, 0, 0, o_type);
+    atoms[0].bond[0] = 1;
+    atoms[0].bond[1] = 1;
+
+    double energy = hbond::compute_hbond_energy(
+        atoms, 0, 2, 2.8, optimal_dist, optimal_angle,
+        sigma_dist, sigma_angle, weight, salt_bridge_weight, 120.0);
+    EXPECT_LT(energy, 0.0);
+}

@@ -33,9 +33,6 @@
 #include <cmath>
 #include <string>
 
-// Per-ligand SAS threadgroup slots — must match CUDA/CPU MAX_LIG_SAS (512).
-static constexpr int kMetalMaxLigSas = 512;
-
 // ─── MSL kernel source (embedded) ────────────────────────────────────────────
 static const char* kMSLSource = R"MSL(
 #include <metal_stdlib>
@@ -43,7 +40,6 @@ static const char* kMSLSource = R"MSL(
 using namespace metal;
 
 #define N_EMAT_SAMPLES 128
-#define METAL_MAX_LIG_SAS 512
 
 // GPU-side linear interpolation into the pre-sampled energy-matrix table.
 static float gpu_get_yval(device const float* emat_sampled,
@@ -142,7 +138,7 @@ kernel void kernel_eval_cf_multi(
     const float tz = genes_f_all[gbase + 2];
 
     // Initialise per-ligand SAS.
-    for (int la = int(tid); la < n_lig && la < METAL_MAX_LIG_SAS; la += int(blockDim)) {
+    for (int la = int(tid); la < n_lig && la < 256; la += int(blockDim)) {
         float ra  = atom_radius_all[d.atom_offset + d.lig_first + la];
         float rwa = ra + 1.4f;
         lig_sas[la] = 4.0f * M_PI_F * rwa * rwa;
@@ -177,7 +173,7 @@ kernel void kernel_eval_cf_multi(
         if      (r < rsum)    rel_area = 1.0f;
         else if (r < outer_r) rel_area = 1.0f - (r - rsum) / (outer_r - rsum);
 
-        if (rel_area > 0.0f && li < METAL_MAX_LIG_SAS) {
+        if (rel_area > 0.0f && li < 256) {
             tg_atomic_sub_float(&lig_sas[li], rel_area * surf_A);
         }
 
@@ -199,7 +195,7 @@ kernel void kernel_eval_cf_multi(
     local_wal = simd_sum(local_wal);
 
     float local_sas = 0.0f;
-    for (int la = int(tid); la < n_lig && la < METAL_MAX_LIG_SAS; la += int(blockDim)) {
+    for (int la = int(tid); la < n_lig && la < 256; la += int(blockDim)) {
         const float sas_rem  = max(0.0f, lig_sas[la]);
         const float rwa_la   = atom_radius_all[d.atom_offset + d.lig_first + la] + 1.4f;
         const float surf_la  = 4.0f * M_PI_F * rwa_la * rwa_la;
@@ -245,7 +241,7 @@ kernel void kernel_eval_cf_full(
     const float tz = genes_f[gbase + 2];
 
     // Initialise per-ligand SAS to full surface area.
-    for (int la = int(tid); la < n_lig && la < METAL_MAX_LIG_SAS; la += int(blockDim)) {
+    for (int la = int(tid); la < n_lig && la < 256; la += int(blockDim)) {
         float ra  = atom_radius[p.lig_first + la];
         float rwa = ra + 1.4f;
         lig_sas[la] = 4.0f * M_PI_F * rwa * rwa;
@@ -281,7 +277,7 @@ kernel void kernel_eval_cf_full(
         else if (r < outer_r) rel_area = 1.0f - (r - rsum) / (outer_r - rsum);
 
         // Subtract from ligand-atom SAS using CAS float atomic.
-        if (rel_area > 0.0f && li < METAL_MAX_LIG_SAS) {
+        if (rel_area > 0.0f && li < 256) {
             tg_atomic_sub_float(&lig_sas[li], rel_area * surf_A);
         }
 
@@ -307,7 +303,7 @@ kernel void kernel_eval_cf_full(
 
     // SAS contribution: each ligand atom's remaining exposed area.
     float local_sas = 0.0f;
-    for (int la = int(tid); la < n_lig && la < METAL_MAX_LIG_SAS; la += int(blockDim)) {
+    for (int la = int(tid); la < n_lig && la < 256; la += int(blockDim)) {
         const float sas_rem  = max(0.0f, lig_sas[la]);
         const float rwa_la   = atom_radius[p.lig_first + la] + 1.4f;
         const float surf_la  = 4.0f * M_PI_F * rwa_la * rwa_la;
@@ -349,23 +345,17 @@ struct MetalEvalCtx {
     int lig_first;
     int lig_last;
     float perm;
-
-    id<MTLCommandBuffer> inflight_cb = nil;
 };
 
-// Drain GPU work via completion handler (replaces blocking waitUntilCompleted).
+// Drain committed GPU work. Handler must be registered before commit;
+// inflight buffers here are always post-commit, so waitUntilCompleted is required.
 static void metal_eval_drain_inflight(MetalEvalCtx* ctx)
 {
     if (!ctx || !ctx->inflight_cb) return;
     id<MTLCommandBuffer> cb = ctx->inflight_cb;
     ctx->inflight_cb = nil;
 
-    dispatch_semaphore_t sem = dispatch_semaphore_create(0);
-    [cb addCompletedHandler:^(id<MTLCommandBuffer> buffer) {
-        (void)buffer;
-        dispatch_semaphore_signal(sem);
-    }];
-    dispatch_semaphore_wait(sem, DISPATCH_TIME_FOREVER);
+    [cb waitUntilCompleted];
 
     if (cb.status == MTLCommandBufferStatusError) {
         NSString* desc = cb.error ? cb.error.localizedDescription : @"unknown";
@@ -514,8 +504,6 @@ void metal_eval_batch(MetalEvalCtx* ctx,
                       double*       h_wal_out,
                       double*       h_sas_out)
 {
-    metal_eval_drain_inflight(ctx);
-
     // Validate against allocated buffer sizes — throw on overflow.
     if (pop_size > ctx->max_pop) {
         throw FlexAIDException("metal_eval: pop_size " + std::to_string(pop_size) +
@@ -561,8 +549,8 @@ void metal_eval_batch(MetalEvalCtx* ctx,
     [enc setBuffer:ctx->buf_sas_out     offset:0 atIndex:7];
     [enc setBuffer:buf_params           offset:0 atIndex:8];
 
-    // Threadgroup shared memory: per-ligand SAS (matches CUDA/CPU MAX_LIG_SAS=512).
-    [enc setThreadgroupMemoryLength:kMetalMaxLigSas * sizeof(float) atIndex:0];
+    // Threadgroup shared memory: 256 floats for per-ligand SAS.
+    [enc setThreadgroupMemoryLength:256 * sizeof(float) atIndex:0];
 
     NSUInteger threadsPerGroup = 256;
     MTLSize    gridSize        = { (NSUInteger)pop_size, 1, 1 };
@@ -571,8 +559,13 @@ void metal_eval_batch(MetalEvalCtx* ctx,
     [enc endEncoding];
 
     [cb commit];
-    ctx->inflight_cb = cb;
-    metal_eval_drain_inflight(ctx);
+    [cb waitUntilCompleted];
+
+    if (cb.status == MTLCommandBufferStatusError) {
+        NSString* desc = cb.error ? cb.error.localizedDescription : @"unknown";
+        throw FlexAIDException("metal_eval: GPU command buffer error: " +
+            std::string([desc UTF8String]));
+    }
 
     // Copy results back (float → double).
     const float* com_f = (const float*)[ctx->buf_com_out contents];
@@ -588,7 +581,6 @@ void metal_eval_batch(MetalEvalCtx* ctx,
 void metal_eval_shutdown(MetalEvalCtx* ctx)
 {
     if (!ctx) return;
-    metal_eval_drain_inflight(ctx);
     // ARC-managed objects are released automatically.
     delete ctx;
 }
@@ -606,8 +598,6 @@ void metal_eval_batch_multi(MetalEvalCtx*              ctx,
                              int                        n_genes,
                              const MetalMultiBatchEntry* entries)
 {
-    metal_eval_drain_inflight(ctx);
-
     if (n_complex <= 0) return;
 
     // Fast path: single complex — delegate to single-batch function.
@@ -712,15 +702,20 @@ void metal_eval_batch_multi(MetalEvalCtx*              ctx,
     [enc setBuffer:buf_sas   offset:0 atIndex:7];
     [enc setBuffer:buf_mp    offset:0 atIndex:8];
     [enc setBuffer:buf_descs offset:0 atIndex:9];
-    [enc setThreadgroupMemoryLength:kMetalMaxLigSas * sizeof(float) atIndex:0];
+    [enc setThreadgroupMemoryLength:256 * sizeof(float) atIndex:0];
 
     MTLSize gridSize  = { (NSUInteger)total_pop, 1, 1 };
     MTLSize groupSize = { 256, 1, 1 };
     [enc dispatchThreadgroups:gridSize threadsPerThreadgroup:groupSize];
     [enc endEncoding];
     [cb commit];
-    ctx->inflight_cb = cb;
-    metal_eval_drain_inflight(ctx);
+    [cb waitUntilCompleted];
+
+    if (cb.status == MTLCommandBufferStatusError) {
+        NSString* desc = cb.error ? cb.error.localizedDescription : @"unknown";
+        throw FlexAIDException("metal_eval_batch_multi: GPU error: " +
+            std::string([desc UTF8String]));
+    }
 
     // ── Scatter float results → per-complex double output buffers ─────────
     const float* com_f = (const float*)[buf_com contents];

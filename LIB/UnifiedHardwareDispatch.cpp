@@ -141,6 +141,15 @@ void UnifiedHardwareDispatch::detect_gpu() {
     info_.has_metal = false;
 #endif
 
+    // Multi-cleft support: allow forcing CPU path to avoid Metal kernel capacity limits (e.g. max_pop 1000)
+    // when running many independent per-cleft GAs. Non-behavioral for normal use.
+    if (const char* dis = std::getenv("FLEXAIDDS_DISABLE_METAL")) {
+        if (*dis) {
+            info_.has_metal = false;
+            info_.metal_device_name = "disabled-by-env";
+        }
+    }
+
 #ifdef FLEXAIDS_USE_ROCM
     info_.has_rocm = true;
     info_.rocm_device_name = "ROCm device (compiled-in)";

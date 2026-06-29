@@ -219,6 +219,32 @@ def _capture_rich_environment() -> Dict[str, Any]:
     return env
 
 
+def _manifest_entry_count(man_data: dict) -> int:
+    """Count per-entry manifest rows, excluding polluted None_None keys."""
+    try:
+        repo_root = Path(__file__).resolve().parents[4]
+        python_pkg = repo_root / "python"
+        if python_pkg.is_dir():
+            import sys
+            if str(python_pkg) not in sys.path:
+                sys.path.insert(0, str(python_pkg))
+            from flexaidds.dataset_runner.runner import sanitize_entry_manifest
+            clean = sanitize_entry_manifest(dict(man_data))
+            status = clean.get("per_entry_status") or {}
+            if status:
+                return len(status)
+            return len(clean.get("timings", {}).get("per_entry_wall_seconds") or {})
+    except Exception:
+        pass
+    status = man_data.get("per_entry_status") or {}
+    status = {k: v for k, v in status.items() if k and "None" not in k and "_" in k}
+    if status:
+        return len(status)
+    wall = man_data.get("timings", {}).get("per_entry_wall_seconds") or {}
+    wall = {k: v for k, v in wall.items() if k and "None" not in k and "_" in k}
+    return len(wall)
+
+
 def _capture_per_entry_provenance(results_dir: Path) -> Dict[str, Any]:
     """Capture hashes and summary of per-entry benchmark artifacts produced by
     the inner DatasetRunner + EntryTaskManager (timing/cost manifests + individual results).
@@ -242,10 +268,20 @@ def _capture_per_entry_provenance(results_dir: Path) -> Dict[str, Any]:
                 "sha256": _get_file_sha256(manifest),
             })
 
-            # Count individual entry JSONs next to it
+            # Prefer manifest entry counts for large-N campaigns (avoid full dir glob)
             parent = manifest.parent
-            entry_jsons = [f for f in parent.glob("*.json") if not f.name.startswith("_")]
-            info["entry_count"] += len(entry_jsons)
+            try:
+                man_data = json.loads(manifest.read_text())
+                n_from_manifest = _manifest_entry_count(man_data)
+                if n_from_manifest > 0:
+                    info["entry_count"] += n_from_manifest
+                    entry_jsons = []
+                else:
+                    entry_jsons = [f for f in parent.glob("*.json") if not f.name.startswith("_")]
+                    info["entry_count"] += len(entry_jsons)
+            except Exception:
+                entry_jsons = [f for f in parent.glob("*.json") if not f.name.startswith("_")]
+                info["entry_count"] += len(entry_jsons)
 
             # Sample up to 3 per manifest for the reproducibility package (keeps it compact)
             for jf in sorted(entry_jsons)[:3]:
@@ -584,6 +620,15 @@ def main() -> int:
         cmd += ["--resume"]
     if args.verbose:
         cmd += ["--verbose"]
+
+    large_slugs = {"astex_nonnative", "posex", "posex_cd", "posebusters"}
+    if args.dataset in large_slugs or args.all:
+        print(
+            f"\n[Skill] Large-N dataset campaign detected "
+            f"({'--all' if args.all else args.dataset}). "
+            f"Manifest-first resume is enabled with --resume; "
+            f"use --plan-runtime on the inner CLI for wall-clock estimates."
+        )
 
     print(f"\n[Skill] Launching DatasetRunner:")
     print("  " + " ".join(cmd))

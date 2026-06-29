@@ -22,11 +22,13 @@ Outputs:
 2. selection_miss  — oracle min RMSD < lo_rmsd BUT top-1 reported RMSD >= lo_rmsd.
                      The near-native pose EXISTED in the ensemble but cluster
                      selection chose the wrong one.  This is what Z+H composite fixes.
-3. CF_false_minimum — best_score << cf_native by > cf_delta_threshold units AND
-                     RMSD >= lo_rmsd.  GA converged to a false minimum that outscores
-                     the native pose geometrically.
-4. timeout         — wall_time_s >= 900 s, or RMSD sentinel < 0 (−1.0 = not computed/failed).
-5. search_failure  — everything else; sub-tagged by DoF:
+3. harness_artifact — data/runner red flags (v46 cache, cf_native mismatch, etc.)
+4. CF_scoring_failure_deep — RMSD >= 6 Å AND best_score < cf_native - cf_delta
+5. CF_scoring_failure_near — 2 <= RMSD < 6 Å with scoring/selection pathology
+6. CF_false_minimum — legacy alias; deep/near modes subsume this when RMSD known
+7. selection_miss  — (moved after harness) oracle had sub-2 Å pose, selector did not
+8. timeout         — wall_time_s >= 900 s, or RMSD sentinel < 0 (−1.0 = not computed/failed).
+9. search_failure  — everything else; sub-tagged by DoF:
                        :rigid    num_genes ≤ 4   (rigid-body only — scoring suspect)
                        :flexible num_genes ≥ 8   (high-flex — search space explosion)
                        :medium   5 ≤ num_genes ≤ 7 (default)
@@ -142,6 +144,31 @@ def _seed_echo(row):
     return False
 
 
+def _harness_flags(row, target_dir, rmsd):
+    """Runner/data red flags — scoring re-tune must not proceed on these."""
+    flags = []
+    count_delta = _int(row, ["count_delta"])
+    if count_delta is not None and count_delta > 2:
+        flags.append("v46_cache_count_delta")
+    if rmsd is not None and rmsd >= 999.0:
+        flags.append("rmsd_sentinel_999")
+    cf_native = _float(row, ["cf_native"])
+    best_score = _float(row, ["best_score", "best_cf"])
+    if cf_native is not None and best_score is not None:
+        if abs(best_score - cf_native) <= SEED_ECHO_CF_TOL and rmsd is not None and rmsd >= 6.0:
+            flags.append("cf_match_high_rmsd_native_ic")
+    if cf_native == 0.0 and _int(row, ["num_poses"], 0) > 0:
+        flags.append("v51_cf_native_zero")
+    if cf_native is not None and cf_native > 1000.0:
+        flags.append("cf_native_wall_clash_overflow")
+    if cf_native is not None and cf_native < -50000.0:
+        flags.append("cf_native_sanity_underflow")
+    se_raw = _fget(row, ["seed_echo"])
+    if se_raw in ("1", "true", "yes") and cf_native is not None and cf_native > 0:
+        flags.append("seed_echo_clash_attractor")
+    return flags
+
+
 def _parse_num_genes_from_dir(target_dir):
     """Infer num_genes from per-target files:
     1. dock_config.json: force_rigid=true → 4
@@ -213,24 +240,38 @@ def classify_one(pdb_id, row, target_dir, lo_rmsd, cf_delta):
         out["cf_native"] = _float(row, ["cf_native"])
         return out
 
-    # ── 2. selection_miss ───────────────────────────────────────────────
-    # Oracle found a near-native pose BUT the selector chose the wrong one.
-    # Condition: best_cluster_rmsd < lo_rmsd  AND  rmsd_hungarian >= lo_rmsd
+    # ── 2. harness_artifact ─────────────────────────────────────────────
+    harness = _harness_flags(row, target_dir, rmsd) if target_dir else []
+    if harness:
+        out["failure_mode"] = "harness_artifact"
+        out["harness_flags"] = harness
+        return out
+
+    # ── 3. selection_miss ───────────────────────────────────────────────
     if oracle >= 0.0 and oracle < lo_rmsd and rmsd >= lo_rmsd:
         out["failure_mode"]     = "selection_miss"
         out["rmsd_in_ensemble"] = round(oracle, 4)
         return out
 
-    # ── 3. CF_false_minimum ─────────────────────────────────────────────
+    # ── 4–6. CF scoring failures (deep vs near) ─────────────────────────
     cf_best   = _float(row, ["best_score", "best_cf"])
     cf_native = _float(row, ["cf_native"])
     if cf_best is not None and cf_native is not None:
         if cf_best < cf_native - cf_delta:
-            out["failure_mode"] = "CF_false_minimum"
-            out["cf_best"]      = round(cf_best,   4)
-            out["cf_native"]    = round(cf_native, 4)
-            out["cf_gap"]       = round(cf_best - cf_native, 4)
+            out["cf_best"]   = round(cf_best,   4)
+            out["cf_native"] = round(cf_native, 4)
+            out["cf_gap"]    = round(cf_best - cf_native, 4)
+            if rmsd >= 6.0:
+                out["failure_mode"] = "CF_scoring_failure_deep"
+            elif rmsd >= lo_rmsd:
+                out["failure_mode"] = "CF_scoring_failure_near"
+            else:
+                out["failure_mode"] = "CF_false_minimum"
             return out
+    if rmsd >= lo_rmsd and 2.0 <= rmsd < 6.0 and oracle < lo_rmsd:
+        out["failure_mode"] = "CF_scoring_failure_near"
+        out["rmsd_in_ensemble"] = round(oracle, 4)
+        return out
 
     # ── 4. timeout ──────────────────────────────────────────────────────
     wall = _float(row, ["wall_time_s", "wall_time"], default=0.0)
@@ -347,7 +388,10 @@ def classify_run(result_dir, lo_rmsd=DEFAULT_LO_RMSD, cf_delta=DEFAULT_CF_DELTA)
 
 _MODE_ORDER = [
     "seed_echo",
+    "harness_artifact",
     "selection_miss",
+    "CF_scoring_failure_deep",
+    "CF_scoring_failure_near",
     "CF_false_minimum",
     "timeout",
     "search_failure:rigid",
@@ -413,10 +457,12 @@ def build_summary(results, lo_rmsd, hi_near_miss, missing_cols):
         extra = ""
         if mode == "selection_miss":
             extra = f"ensemble_best={r.get('rmsd_in_ensemble', '?'):.4f}"
-        elif mode == "CF_false_minimum":
+        elif mode in ("CF_false_minimum", "CF_scoring_failure_deep", "CF_scoring_failure_near"):
             extra = (f"cf_best={r.get('cf_best', '?'):.2f}  "
                      f"cf_native={r.get('cf_native', '?'):.2f}  "
                      f"gap={r.get('cf_gap', '?'):.2f}")
+        elif mode == "harness_artifact":
+            extra = ",".join(r.get("harness_flags", [])) or "?"
         elif mode == "seed_echo":
             extra = (f"cf_best={r.get('cf_best', '?')}  "
                      f"cf_native={r.get('cf_native', '?')}")

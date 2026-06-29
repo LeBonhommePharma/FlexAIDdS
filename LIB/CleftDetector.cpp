@@ -271,6 +271,35 @@ sphere* detect_cleft(const atom* atoms, const resid* /*residue*/,
            "largest cluster %d)\n",
            kept_clusters, params.min_cluster_size, kept_spheres, best_count);
 
+    // Dump per-cluster .sph files for multi-cleft GA orchestration (no behavior change otherwise).
+    // Activated by FLEXAIDDS_CLEFT_DUMP_DIR=/some/dir ; writes cleft_00.sph, cleft_01.sph, ...
+    if (const char* dump_dir = std::getenv("FLEXAIDDS_CLEFT_DUMP_DIR")) {
+        std::map<int, std::vector<int>> by_label;
+        for (int i = 0; i < static_cast<int>(probes.size()); ++i) {
+            if (kept_labels.find(labels[i]) != kept_labels.end()) {
+                by_label[labels[i]].push_back(i);
+            }
+        }
+        int ck = 0;
+        for (auto& kv : by_label) {
+            char fname[512];
+            snprintf(fname, sizeof(fname), "%s/cleft_%02d.sph", dump_dir, ck);
+            FILE* f = fopen(fname, "w");
+            if (f) {
+                int n = 1;
+                for (int idx : kv.second) {
+                    const Probe& p = probes[idx];
+                    fprintf(f, "ATOM  %5d  C   SPH Z   1      %8.3f%8.3f%8.3f  1.00%6.2f\n",
+                            n++, p.center[0], p.center[1], p.center[2], p.radius);
+                }
+                fclose(f);
+                printf("CleftDetector: dumped cleft cluster %d (%zu spheres) to %s\n",
+                       ck, kv.second.size(), fname);
+            }
+            ++ck;
+        }
+    }
+
     // 3. build linked list (same format as read_spheres) from all kept clusters
     sphere* head = nullptr;
     for (int i = 0; i < static_cast<int>(probes.size()); ++i) {

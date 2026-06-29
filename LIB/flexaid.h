@@ -440,6 +440,7 @@ struct FA_Global_struct{
 	double hbond_sigma_dist;             // Gaussian width distance (Å), default 0.4
 	double hbond_sigma_angle;            // Gaussian width angle (°), default 30
 	double hbond_salt_bridge_weight;     // salt bridge weight (kcal/mol), default -5.0
+	double hbond_angle_gate_min;         // D-H...A hard cutoff (°); 0=off, 120=science gate
 
 	int    use_metal_coord;              // enable metal ion coordination scoring
 	double metal_coord_weight;           // global weight multiplier (default 1.0)
