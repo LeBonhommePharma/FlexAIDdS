@@ -25,6 +25,7 @@ This document explains how to contribute while keeping the codebase fast, scient
    - Follow the existing C++ style in nearby files.
    - Keep performance in mind: FlexAID∆S is a docking engine, not a toy.
    - Add or update tests where behavior changes.
+   - Benchmark/thermo contributions: place dataset yamls in `benchmarks/datasets/` (and mirror), implement in `ThermoAffinitySuite` or new analyzers. Always support `--dry-run`/smoke and run verification before claiming done.
 
 4. **Run tests locally**
 
