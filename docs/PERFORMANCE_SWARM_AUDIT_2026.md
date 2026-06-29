@@ -12,7 +12,22 @@ Simulation wall-clock is dominated by **steady-state GA offspring scoring** (`re
 
 **P0 (implemented, `27e68e51`):** Parallel `reproduce()` eval, Vcontacts `inv_d12`, Metal SAS 512 + async drain, `flexaid_core` native flags.
 
-**P1 (this wave):** CUDA wired into `FlexAIDdS`, orchestration budget logging, Python I/O fix, SIMD RMSD path, clustering timing probe, `perf.yml` baseline hook.
+**P1 (implemented, `2edca10a`):** CUDA wired into `FlexAIDdS`, orchestration budget logging, Python I/O fix, SIMD RMSD path, clustering timing probe, `perf.yml` baseline hook.
+
+**Segfault fix (shipped, `8c25e402`):** Post-GA clustering SIGSEGV on 1HP0 — `buildcc` `rec[]` bounds + `calc_rmsd_chrom` guards. Verified 35/35 soak + ASAN clean.
+
+### Shipped bundle (2026-06-29)
+
+Reproducibility manifest: `benchmarks/perf_swarm/p0_p1_ship_bundle.json`
+
+| Artifact | Path |
+|----------|------|
+| Tier-1 paired validation (1.44× median) | `benchmarks/perf_swarm/tier1_paired_validation_report.json` |
+| Multicleft cohort comparison (1.44× median) | `benchmarks/perf_swarm/post_p0_comparison.json` |
+| Segfault verification | `benchmarks/perf_swarm/segfault_verification.json` |
+| Git tag | `perf-p0-p1-segfault-20260629` |
+
+SoA default-ON (`8864bd17`) is tracked separately; tier-1 SoA accuracy gate remains FAIL until PR4 parity lands.
 
 ---
 

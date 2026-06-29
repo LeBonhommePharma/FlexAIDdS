@@ -1,0 +1,58 @@
+{
+  "schema_version": "1.0.0",
+  "bundle_name": "perf_swarm_p0_p1_segfault_20260629",
+  "shipped_at": "2026-06-29T12:00:00+00:00",
+  "git": {
+    "ship_commit": "eb76a5e3",
+    "branch": "master"
+  },
+  "commits": {
+    "p0": {
+      "sha": "27e68e5114fbb364afeff12451c2dc32759c2b0a",
+      "summary": "Parallel reproduce() eval, Vcontacts inv_d12, Metal SAS 512 + async drain, flexaid_core native flags"
+    },
+    "p1": {
+      "sha": "2edca10ade2ef416de2c2d0aed311a965ad5ad95",
+      "summary": "CUDA on FlexAIDdS, OMP/restart budget logging, Python DEVNULL I/O, simd::rmsd fast path, TIMING CLUSTER probe, perf.yml baseline compare"
+    },
+    "segfault_fix": {
+      "sha": "8c25e402",
+      "summary": "buildcc rec[] bounds, calc_rmsd_chrom gene_lim/dihedral guards, cluster serial coord-cache fill",
+      "follow_ups": ["d2295cf0", "66cecbb9"]
+    }
+  },
+  "p0_validation": {
+    "tier1_paired_report": "benchmarks/perf_swarm/tier1_paired_validation_report.json",
+    "cohort_comparison": "benchmarks/perf_swarm/post_p0_comparison.json",
+    "median_speedup_tier1_paired": 1.439,
+    "median_speedup_multicleft_cohort": 1.44,
+    "benchmark_json": "benchmarks/perf_swarm/tier1_paired_5.json",
+    "validation_run": "tier1_paired_20260629_0854",
+    "notes": "P0 speedup measured on quiet queue with build_lto scalar vs pre-P0 worktree (04ff1735 parent)."
+  },
+  "p1_deliverables": [
+    "FlexAIDdS CUDA kernel wiring (CMakeLists.txt)",
+    "benchmark_datasets OMP/restart budget banner",
+    "python/flexaidds/dataset_runner/runner.py subprocess DEVNULL",
+    "LIB/simd_distance.h sum_sq_distances_f RMSD path",
+    "LIB/top.cpp TIMING CLUSTER stderr probe",
+    ".github/workflows/perf.yml + scripts/compare_perf_baseline.py"
+  ],
+  "segfault_verification": {
+    "report": "benchmarks/perf_swarm/segfault_verification.json",
+    "target": "1HP0",
+    "asan_root_cause": "buildcc.cpp:24 heap-buffer-overflow via OOB rec[] index in coord_cache_fill",
+    "post_fix_soak": "35/35 clean (hunt3 8/8, hunt4 15/15, verify 12/12, ASAN 1/1)"
+  },
+  "soa_gate_status": {
+    "default_on_commit": "8864bd17",
+    "tier1_accuracy_gate": "FAIL pending PR4 parity (max RMSD delta > 0.05 Å on tier-1 paired)",
+    "scalar_path": "production-ready",
+    "notes": "SoA ship is separate from this P0+P1 scalar bundle; see soa_gate runs in results/perf_swarm_validation."
+  },
+  "reproduce": {
+    "tier1_validation": "python3 scripts/run_perf_validation_smoke.py --build-scalar build --build-soa build_soa --nice 19",
+    "queue_launch": "python3 scripts/launch_perf_validation.py",
+    "harvest_baselines": "python3 scripts/harvest_perf_baselines.py --label macos_metal --out results/perf_swarm"
+  }
+}
