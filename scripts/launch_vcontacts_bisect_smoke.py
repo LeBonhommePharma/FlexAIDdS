@@ -40,7 +40,10 @@ from v131_safe_common import (
     v127_protocol_env,
 )
 
-GIT_ROOT = Path(git_root(str(SCRIPT_DIR)))
+# Pin perfornance-swarm worktree — never inherit caller cwd / Projects/FlexAIDdS.
+GIT_ROOT = Path(
+    os.environ.get("FLEXAIDDS_GIT_ROOT", git_root(str(SCRIPT_DIR)))
+)
 RESULTS = Path("/Users/lp.more/Documents/PhD/Programs/FlexAIDdS/results")
 SMOKE_JSON = GIT_ROOT / "benchmarks/datasets/benchmark_astex_smoke_12_v131.json"
 REGRESSION_GUARD = ("1HQ2", "1S3V", "1T40")
@@ -105,10 +108,17 @@ def ensure_build(variant: str, skip_build: bool) -> None:
     if skip_build:
         sys.exit(f"ERROR: --skip-build but missing {need}")
 
+    build_env = {**os.environ, "FLEXAIDDS_GIT_ROOT": str(GIT_ROOT)}
     if variant == "safe":
-        subprocess.check_call(["bash", str(BUILD_SAFE_SCRIPT)], cwd=str(GIT_ROOT))
+        subprocess.check_call(
+            ["bash", str(BUILD_SAFE_SCRIPT)], cwd=str(GIT_ROOT), env=build_env
+        )
     else:
-        subprocess.check_call(["bash", str(BUILD_BISECT_SCRIPT), str(GIT_ROOT)], cwd=str(GIT_ROOT))
+        subprocess.check_call(
+            ["bash", str(BUILD_BISECT_SCRIPT)],
+            cwd=str(GIT_ROOT),
+            env=build_env,
+        )
 
 
 def patched_smoke_json(worktree: str) -> str:

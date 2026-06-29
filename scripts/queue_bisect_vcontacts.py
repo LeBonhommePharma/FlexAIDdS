@@ -128,7 +128,54 @@ def wait_pid(pid: int, poll_s: int) -> None:
         time.sleep(poll_s)
 
 
-def run_bisect(poll_s: int, settle_s: int, queue_full85: bool) -> int:
+def load_prior_results(resume_from: str) -> list[dict]:
+    """Reuse completed variants before resume_from (e.g. safe after launch_failed)."""
+    prior: list[dict] = []
+    idx = BISECT_ORDER.index(resume_from)
+    for variant in BISECT_ORDER[:idx]:
+        out_dir: Path | None = None
+        if STATE_FILE.exists():
+            st = json.loads(STATE_FILE.read_text())
+            last = st.get("last") or {}
+            if last.get("variant") == variant and last.get("output_dir"):
+                out_dir = Path(last["output_dir"])
+        if out_dir is None or not out_dir.is_dir():
+            dirs = sorted(
+                RESULTS.glob(f"vcontacts_bisect_*_{variant}"),
+                key=lambda p: p.stat().st_mtime,
+            )
+            out_dir = dirs[-1] if dirs else None
+        if out_dir is None or not out_dir.is_dir():
+            log(f"ERROR: --resume-from {resume_from} but no prior output for {variant}")
+            return []
+        report_path = out_dir / "bisect_smoke_report.json"
+        if report_path.is_file():
+            report = json.loads(report_path.read_text())
+        else:
+            report = harvest_report(out_dir)
+            report_path.write_text(json.dumps(report, indent=2) + "\n")
+        entry = {
+            "variant": variant,
+            "label": VARIANTS[variant]["label"],
+            "suspect": VARIANTS[variant]["suspect"],
+            "output_dir": str(out_dir),
+            "resumed": True,
+            **report,
+        }
+        prior.append(entry)
+        log(
+            f"resumed {variant}: {report['n_success']}/12 success, "
+            f"guard_fail={report['regression_guard_fail']}"
+        )
+    return prior
+
+
+def run_bisect(
+    poll_s: int,
+    settle_s: int,
+    queue_full85: bool,
+    resume_from: str | None = None,
+) -> int:
     pause_v132_watcher()
     save_state(status="watching", bisect_order=list(BISECT_ORDER))
 
@@ -141,7 +188,19 @@ def run_bisect(poll_s: int, settle_s: int, queue_full85: bool) -> int:
     time.sleep(settle_s)
 
     results: list[dict] = []
-    for variant in BISECT_ORDER:
+    variants = BISECT_ORDER
+    if resume_from:
+        if resume_from not in BISECT_ORDER:
+            log(f"ERROR: unknown --resume-from {resume_from}")
+            return 1
+        prior = load_prior_results(resume_from)
+        if not prior:
+            return 1
+        results.extend(prior)
+        variants = BISECT_ORDER[BISECT_ORDER.index(resume_from):]
+        log(f"Resuming bisect from {resume_from} ({len(prior)} prior variant(s) loaded)")
+
+    for variant in variants:
         save_state(status="launching", current_variant=variant)
         pid, out_dir = launch_variant(variant)
         if pid <= 0 or not out_dir:
@@ -235,6 +294,11 @@ def main() -> int:
     parser.add_argument("--poll", type=int, default=120)
     parser.add_argument("--settle", type=int, default=120)
     parser.add_argument("--no-full85", action="store_true")
+    parser.add_argument(
+        "--resume-from",
+        choices=BISECT_ORDER,
+        help="Skip earlier variants and load their results from state/results (e.g. head_soa_off)",
+    )
     parser.add_argument("--daemon", action="store_true")
     args = parser.parse_args()
 
@@ -253,6 +317,8 @@ def main() -> int:
         ]
         if args.no_full85:
             cmd.append("--no-full85")
+        if args.resume_from:
+            cmd.extend(["--resume-from", args.resume_from])
         pid = launch_session_isolated(
             cmd,
             os.environ.copy(),
@@ -266,7 +332,9 @@ def main() -> int:
         print(f"Log: {QUEUE_LOG}")
         return 0
 
-    return run_bisect(args.poll, args.settle, not args.no_full85)
+    return run_bisect(
+        args.poll, args.settle, not args.no_full85, resume_from=args.resume_from
+    )
 
 
 if __name__ == "__main__":
