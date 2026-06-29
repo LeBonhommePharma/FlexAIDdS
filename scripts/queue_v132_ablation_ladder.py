@@ -26,7 +26,7 @@ from pathlib import Path
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(SCRIPT_DIR))
-from lib_launch import launch_session_isolated
+from lib_launch import active_foreign_benchmarks, launch_session_isolated
 from lib_v132_ablation import RESULTS, ladder_step_ids, step_by_id
 from lib_worker_orders import assert_campaign_allowed, bisect_complete, load_orders
 
@@ -96,19 +96,8 @@ def latest_run_dir(glob_pat: str) -> Path | None:
     return dirs[-1] if dirs else None
 
 
-def active_foreign_benchmarks() -> list[str]:
-    try:
-        ps = subprocess.check_output(["pgrep", "-fl", "benchmark_datasets"], text=True)
-    except subprocess.CalledProcessError:
-        return []
-    lines = []
-    for line in ps.strip().splitlines():
-        if "caffeinate" in line:
-            continue
-        if "v132_" in line or "queue_v132" in line:
-            continue
-        lines.append(line.strip())
-    return lines
+def foreign_benchmarks() -> list[str]:
+    return active_foreign_benchmarks(exclude_substrings=("v132_", "queue_v132"))
 
 
 def summarize_full85(run_dir: Path) -> dict:
@@ -228,7 +217,7 @@ def run_watcher(
             if not smoke_pid:
                 smoke_pid = discover_pid_from_dir(smoke_dir)
 
-        foreign = active_foreign_benchmarks()
+        foreign = foreign_benchmarks()
         busy = bool(v131_pid or smoke_pid or foreign)
         if busy:
             parts = []
@@ -251,7 +240,7 @@ def run_watcher(
     save_state(status="settling", settle_s=settle_s)
     time.sleep(settle_s)
 
-    if active_foreign_benchmarks():
+    if foreign_benchmarks():
         log("WARN: foreign benchmarks appeared during settle; restarting watch")
         return run_watcher(poll_s, settle_s, steps, skip_build, no_launch, wait_v131_smoke)
 

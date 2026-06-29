@@ -10,8 +10,32 @@ import csv
 import glob
 import json
 import os
+import re
 import signal
 import subprocess
+
+_BENCH_RE = re.compile(r"(?:^|/)(benchmark_datasets)\b")
+
+
+def active_foreign_benchmarks(*, exclude_substrings: tuple[str, ...] = ()) -> list[str]:
+    """Return ps lines for real benchmark_datasets PIDs (not shell wrappers)."""
+    try:
+        ps = subprocess.check_output(["ps", "ax", "-o", "pid=,command="], text=True)
+    except subprocess.CalledProcessError:
+        return []
+    lines: list[str] = []
+    for line in ps.splitlines():
+        cmd = line.strip()
+        if not cmd or "caffeinate" in cmd:
+            continue
+        if "dump_zsh_state" in cmd or cmd.lstrip().startswith("/bin/zsh"):
+            continue
+        if not _BENCH_RE.search(cmd):
+            continue
+        if any(tag in cmd for tag in exclude_substrings):
+            continue
+        lines.append(cmd)
+    return lines
 
 
 def priority_from_prev_run(prev_result_dir, lo=1.8, hi=2.5):
