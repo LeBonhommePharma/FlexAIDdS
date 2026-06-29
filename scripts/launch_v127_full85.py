@@ -51,6 +51,8 @@ ENV_SNAPSHOT_KEYS = (
     "FLEXAIDDS_SOFTCORE_FLOOR",
     "FLEXAIDDS_T_HOT",
     "FLEXAIDDS_NATIVE_SEED_FRAC",
+    "FLEXAIDDS_VCT_R0",
+    "FLEXAIDDS_RECEPTOR_ROTAMER_PREP",
     "FLEXAIDDS_DATA_DIR",
     "FLEXAIDDS_BENCH_CACHE",
     "FLEXAIDDS_ALLOW_CONCURRENT",
@@ -110,6 +112,8 @@ def main():
         "FLEXAIDDS_SOFTCORE_FLOOR":        "0.5",
         "FLEXAIDDS_T_HOT":                 "500",
         "FLEXAIDDS_NATIVE_SEED_FRAC":      "0.90",
+        "FLEXAIDDS_VCT_R0":                "4",
+        "FLEXAIDDS_RECEPTOR_ROTAMER_PREP": "0",
         "FLEXAIDDS_DATA_DIR":              DATA_DIR,
         "FLEXAIDDS_ALLOW_CONCURRENT":      "1",
         "FLEXAIDDS_BENCH_CACHE":           CACHE,
@@ -120,9 +124,9 @@ def main():
     for k in (
         "FLEXAIDDS_USE_DP", "FLEXAIDDS_FINE_GRID",
         "FLEXAIDDS_FORCE_RIGID", "FLEXAIDDS_USE_SHANNON",
-        "FLEXAIDDS_VCT_R0", "FLEXAIDDS_VCT_NORM",
+        "FLEXAIDDS_VCT_NORM",
         "FLEXAIDDS_SHARING_ALPHA", "FLEXAIDDS_BOOM_FRAC",
-        "FLEXAIDDS_RING_FLEX", "FLEXAIDDS_RECEPTOR_ROTAMER_PREP",
+        "FLEXAIDDS_RING_FLEX",
         "FLEXAIDDS_THERMO", "FLEXAIDDS_HVIB",
         "FLEXAIDDS_PRIORITY_TARGETS",
     ):
@@ -148,6 +152,7 @@ def main():
     print(f"  cache    : {CACHE}")
     print(f"  threads  : {BENCH_THREADS}")
     print(f"  consensus: ON")
+    print(f"  vct_r0   : 4  rotamer_prep: OFF")
 
     child_pid = launch_session_isolated(cmd, env, OUTPUT, cwd=REPO)
 
@@ -181,6 +186,14 @@ def main():
         "audit_notes": {
             "code_default_FLEXAIDDS_CONSENSUS_SCORER": "0 (since ce8f3368 v125 Option A)",
             "launch_override_FLEXAIDDS_CONSENSUS_SCORER": "1",
+            "code_default_FLEXAIDDS_VCT_R0": "7.0 (DatasetRunner.cpp; v124 used 4)",
+            "launch_override_FLEXAIDDS_VCT_R0": "4",
+            "code_default_receptor_rotamer_prep": "true (BenchmarkConfig; v124 oracle-ceiling OFF)",
+            "launch_override_FLEXAIDDS_RECEPTOR_ROTAMER_PREP": "0",
+            "v126_regression_note": (
+                "v126 unset both knobs → r0=7 + rotamer=true in dock_config; "
+                "logsumexp correctly picked deepest false minima. v126 invalid."
+            ),
             "consensus_applies_to": "all 85 targets via parent benchmark_datasets env",
             "verify_post_run": "grep -c '\\[CONSENSUS\\]' stderr.log should equal completed target count",
         },
