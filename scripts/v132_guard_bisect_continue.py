@@ -3,39 +3,20 @@
 from __future__ import annotations
 
 import json
-import subprocess
 import sys
-import time
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
 SCRIPTS = REPO / "scripts"
 RESULTS = Path("/Users/lp.more/Documents/PhD/Programs/FlexAIDdS/results")
 
+sys.path.insert(0, str(SCRIPTS))
+from v132_common import wait_for_benchmark_done
+
 ARM1_DIR = Path(
     "/Users/lp.more/Documents/PhD/Programs/FlexAIDdS/results/v132_20260629_1657_guard_bisect_fixb_crg"
 )
 REMAINING = ("no_fixb", "no_crg", "no_fixb_no_crg")
-
-
-def wait_done(run_dir: Path, n: int = 2, poll: int = 60) -> bool:
-    import os
-
-    pid_file = run_dir / "benchmark.pid"
-    while True:
-        done = len(list(run_dir.glob("*/result.csv")))
-        if done >= n:
-            return True
-        alive = False
-        if pid_file.exists():
-            try:
-                os.kill(int(pid_file.read_text().strip()), 0)
-                alive = True
-            except (ValueError, OSError):
-                pass
-        if not alive and done < n:
-            return False
-        time.sleep(poll)
 
 
 def main() -> int:
@@ -45,7 +26,7 @@ def main() -> int:
     manifest_path = parent / "ladder_manifest.json"
 
     print(f"waiting for arm1 fixb_crg: {ARM1_DIR}")
-    if not wait_done(ARM1_DIR):
+    if not wait_for_benchmark_done(ARM1_DIR):
         print("arm1 incomplete — abort")
         return 1
 
@@ -72,7 +53,7 @@ def main() -> int:
             print(f"no output dir for {arm}")
             return 1
         out_dir = candidates[-1]
-        if not wait_done(out_dir):
+        if not wait_for_benchmark_done(out_dir):
             print(f"arm {arm} incomplete")
             break
         manifest["arms"].append({"arm": arm, "output_dir": str(out_dir)})

@@ -29,7 +29,7 @@ from pathlib import Path
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from lib_launch import launch_session_isolated
-from v132_common import REPO, validate_manifest, v132_protocol_env
+from v132_common import REPO, validate_manifest, v132_protocol_env, wait_for_benchmark_done
 
 BUILD = f"{REPO}/build_lto"
 BINARY = "/tmp/FlexAIDdS_v132_f7a0708f"
@@ -99,24 +99,6 @@ def arm_summary(run_dir: Path) -> dict:
             out["pass"] += 1
     out["guard_pass"] = all(out["targets"].get(t, {}).get("pass") for t in TARGETS)
     return out
-
-
-def wait_for_done(run_dir: Path, n: int = 2, poll: int = 60) -> bool:
-    pid_file = run_dir / "benchmark.pid"
-    while True:
-        done = len(list(run_dir.glob("*/result.csv")))
-        if done >= n:
-            return True
-        alive = False
-        if pid_file.exists():
-            try:
-                os.kill(int(pid_file.read_text().strip()), 0)
-                alive = True
-            except (ValueError, OSError):
-                pass
-        if not alive and done < n:
-            return False
-        time.sleep(poll)
 
 
 def launch_arm(arm: str, parent: Path | None = None) -> tuple[Path, int]:
@@ -243,7 +225,7 @@ def run_ladder() -> int:
         with open(parent / "ladder_manifest.json", "w") as fh:
             json.dump(manifest, fh, indent=2)
             fh.write("\n")
-        ok = wait_for_done(out_dir, n=2)
+        ok = wait_for_benchmark_done(out_dir, n=2)
         if not ok:
             print(f"arm {arm} incomplete — stopping ladder")
             break

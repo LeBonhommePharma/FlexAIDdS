@@ -5,6 +5,9 @@ from __future__ import annotations
 
 import json
 import os
+import subprocess
+import time
+from pathlib import Path
 
 
 REPO = "/Users/lp.more/Projects/FlexAIDdS"
@@ -76,3 +79,70 @@ def v132_protocol_env(binary: str, build: str, cache: str, oracle_dir: str) -> d
         "OMP_PLACES":                      "cores",
         "OMP_PROC_BIND":                   "spread",
     }
+
+
+def run_dir_has_active_docking(run_dir: Path) -> bool:
+    """True if FlexAID or benchmark_datasets processes still reference run_dir."""
+    needle = str(run_dir.resolve())
+    try:
+        proc = subprocess.run(
+            ["pgrep", "-fl", "FlexAIDdS|benchmark_datasets"],
+            capture_output=True,
+            text=True,
+            timeout=15,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+    return needle in (proc.stdout or "")
+
+
+def wait_for_benchmark_done(
+    run_dir: Path,
+    n: int = 2,
+    poll: int = 60,
+    stall_grace: int = 300,
+) -> bool:
+    """Wait until n result.csv files exist under run_dir.
+
+    Parent benchmark.pid may die while orphaned FlexAID children finish; keep
+    polling until result.csv count is satisfied or no docking activity remains.
+    """
+    pid_file = run_dir / "benchmark.pid"
+    run_dir = run_dir.resolve()
+    last_done = -1
+    stall_since: float | None = None
+
+    while True:
+        done = len(list(run_dir.glob("*/result.csv")))
+        if done >= n:
+            return True
+
+        parent_alive = False
+        if pid_file.exists():
+            try:
+                os.kill(int(pid_file.read_text().strip()), 0)
+                parent_alive = True
+            except (ValueError, OSError):
+                pass
+
+        children_active = run_dir_has_active_docking(run_dir)
+
+        if parent_alive or children_active:
+            stall_since = None
+            time.sleep(poll)
+            continue
+
+        if done != last_done:
+            last_done = done
+            stall_since = None
+            time.sleep(poll)
+            continue
+
+        now = time.monotonic()
+        if stall_since is None:
+            stall_since = now
+        elif now - stall_since >= stall_grace:
+            return False
+
+        time.sleep(poll)
