@@ -278,7 +278,7 @@ double 	calc_rmsp(int npar, const gene* g1, const gene* g2, const optmap* map_pa
 void 	write_par(const chromosome* chrom,const genlim* gene_lim,int ger, char* outfile,int num_chrom,int num_genes);
 void 	adapt_prob(GB_Global* GB,double fitnes1,double fitnes2, double* mut_prob, double* cross_prob);
 void 	fitness_stats(GB_Global* GB, const chromosome* chrom,int nchrom);
-float  	calc_rmsd_chrom(FA_Global* FA,GB_Global* GB, const chromosome* chrom, const genlim* gene_lim,atom* atoms,resid* residue,gridpoint* cleftgrid,int npar, int chrom_a, int chrom_b, float*, float*, bool calc_rmsd); // calculates RMSD between chromossomes
+float  	calc_rmsd_chrom(FA_Global* FA,GB_Global* GB, const chromosome* chrom, const genlim* gene_lim,atom* atoms,resid* residue,gridpoint* cleftgrid,int npar, int chrom_a, int chrom_b, float*, float*, bool calc_rmsd, int* out_n_atoms = nullptr); // calculates RMSD between chromossomes
 int    	write_rrg(FA_Global* FA,GB_Global* GB, const chromosome* chrom, const genlim* gene_lim,atom* atoms,resid* residue, gridpoint* cleftgrid, char* outfile);        // writes GA output during simulation
 int    	write_rrd(FA_Global* FA,GB_Global* GB, const chromosome* chrom, const genlim* gene_lim,atom* atoms,resid* residue,gridpoint* cleftgrid,int* Clus_GAPOP,float* Clus_RMSDT,char outfile[]);
 int 	write_DensityPeak_rrd(FA_Global* FA, GB_Global* GB, const chromosome* chrom, const genlim* gene_lim, atom* atoms, resid* residue, gridpoint* cleftgrid, ClusterChrom* Chrom, DPcluster* Clust, float* RMSD, char outfile[]);

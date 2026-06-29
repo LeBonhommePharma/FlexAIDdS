@@ -2532,6 +2532,20 @@ flexaids_configure_simd(test_cavity_detect)
     flexaids_configure_msvc_test(test_dataset_runner)
     add_test(NAME DatasetRunnerTests COMMAND test_dataset_runner)
 
+    # test_calc_rmsd_chrom_bounds — OOB snapshot genes must not crash coord cache
+    add_executable(test_calc_rmsd_chrom_bounds
+        tests/test_calc_rmsd_chrom_bounds.cpp
+    )
+    target_include_directories(test_calc_rmsd_chrom_bounds PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/LIB)
+    target_link_libraries(test_calc_rmsd_chrom_bounds PRIVATE flexaid_core GTest::gtest GTest::gtest_main)
+    if(MSVC)
+        target_compile_options(test_calc_rmsd_chrom_bounds PRIVATE /O2)
+    else()
+        target_compile_options(test_calc_rmsd_chrom_bounds PRIVATE -O2)
+    endif()
+    flexaids_configure_msvc_test(test_calc_rmsd_chrom_bounds)
+    add_test(NAME CalcRmsdChromBoundsTests COMMAND test_calc_rmsd_chrom_bounds)
+
     # test_cofactor_blacklist — ligand-extraction cofactor blacklist (1HNN SAH/SKF)
     add_executable(test_cofactor_blacklist
         tests/test_cofactor_blacklist.cpp

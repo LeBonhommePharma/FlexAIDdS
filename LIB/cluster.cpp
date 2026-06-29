@@ -1,6 +1,7 @@
 #include "gaboom.h"
 #include "fileio.h"
 #include "simd_distance.h"
+#include <algorithm>
 #include <cmath>
 #include <limits>
 #include <vector>
@@ -130,14 +131,20 @@ void cluster(FA_Global* FA, GB_Global* GB, VC_Global* VC, chromosome* chrom, gen
 	if(nAtoms_clus < 1) nAtoms_clus = 1;
 	const int coord_stride = nAtoms_clus * 3;
 	std::vector<float> coord_cache((size_t)num_chrom * coord_stride, 0.0f);
+	std::vector<int> coord_atom_counts((size_t)num_chrom, nAtoms_clus);
 
 	// One chromosome per call: disjoint cache writes + thread-local scratch in
 	// calc_rmsd_chrom (same pattern as DensityPeak minibatch coord cache).
 	for(int c = 0; c < num_chrom; ++c)
 	{
+		int n_atoms_c = nAtoms_clus;
 		calc_rmsd_chrom(FA,GB,chrom,gene_lim,atoms,residue,cleftgrid,
 		                GB->num_genes, c, c,
-		                &coord_cache[(size_t)c * coord_stride], NULL, false);
+		                &coord_cache[(size_t)c * coord_stride], NULL, false,
+		                &n_atoms_c);
+		if(n_atoms_c < 1) n_atoms_c = 1;
+		if(n_atoms_c > nAtoms_clus) n_atoms_c = nAtoms_clus;
+		coord_atom_counts[(size_t)c] = n_atoms_c;
 	}
 
 	// Clustering part — uses cached coordinates + SIMD distance
@@ -177,8 +184,11 @@ void cluster(FA_Global* FA, GB_Global* GB, VC_Global* VC, chromosome* chrom, gen
 			if(Clus_GAPOP[i]==-1)
 			{
 				const float* coor_i = &coord_cache[i * coord_stride];
-				float d = flexaids::sum_sq_distances_f(coor_i, coor_j, coord_stride);
-				float loc_rmsd = sqrtf(d / (float)nAtoms_clus);
+				const int n_cmp = std::min(coord_atom_counts[(size_t)i],
+				                           coord_atom_counts[(size_t)j]);
+				const int n_floats = n_cmp * 3;
+				float d = flexaids::sum_sq_distances_f(coor_i, coor_j, n_floats);
+				float loc_rmsd = sqrtf(d / (float)n_cmp);
 
 				if(loc_rmsd <= FA->cluster_rmsd)
 				{

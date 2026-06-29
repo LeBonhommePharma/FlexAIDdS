@@ -29,7 +29,7 @@ static bool calc_rmsd_res_ok(int idx, int res_n) {
  * present in the population.
  *****************************************************************************/
 float calc_rmsd_chrom(FA_Global* FA, GB_Global* GB, const chromosome* chrom, const genlim* gene_lim,atom* atoms,resid* residue,gridpoint* cleftgrid,int npar, int chrom_a, int chrom_b,
-                      float* coor_a_dest, float* coor_b_dest, bool calc_rmsd){
+                      float* coor_a_dest, float* coor_b_dest, bool calc_rmsd, int* out_n_atoms){
 
 	float rmsd_chrom=0.0f;
 	int i = 0,k = 0,l = 0,m = 0;
@@ -221,7 +221,9 @@ float calc_rmsd_chrom(FA_Global* FA, GB_Global* GB, const chromosome* chrom, con
 				if(k==1) coor_b_dest[m*3+d]=work_atoms[i].coor[d];
 			}
 			m++;
-		}    
+		}
+		if(k == 0 && out_n_atoms != nullptr)
+			*out_n_atoms = m;
 	}
   
     if(calc_rmsd){
