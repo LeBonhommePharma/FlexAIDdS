@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "name": "astex_smoke_1_1tw6_holo",
+  "description": "1TW6 pipeline holo-fix verification: receptor 1TW6_holo.pdb = chains A+B (inhibitor C+D stripped). Gate: no vcfunction intra-clash sentinel; improved RMSD vs v109/v127 (~9.6 Å).",
+  "n_pairs": 1,
+  "oracle_mode": true,
+  "astex_diverse_dir": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse",
+  "pairs": [
+    {
+      "index": 49,
+      "receptor_id": "1TW6",
+      "ligand_id": "1TW6",
+      "receptor_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1TW6/1TW6_holo.pdb",
+      "ligand_sdf": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1TW6/1TW6_ligand.sdf",
+      "oracle_site_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1TW6/1TW6_binding_site.pdb"
+    }
+  ]
+}
