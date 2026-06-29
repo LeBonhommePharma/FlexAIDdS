@@ -1,0 +1,28 @@
+{
+  "pairs": [
+    {
+      "index": 0,
+      "receptor_id": "1G9V",
+      "ligand_id": "1G9V",
+      "receptor_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1G9V/1G9V_apo.pdb",
+      "ligand_sdf": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1G9V/1G9V_ligand.sdf",
+      "oracle_site_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1G9V/1G9V_binding_site.pdb"
+    },
+    {
+      "index": 42,
+      "receptor_id": "1SG0",
+      "ligand_id": "1SG0",
+      "receptor_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1SG0/1SG0_apo.pdb",
+      "ligand_sdf": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1SG0/1SG0_ligand.sdf",
+      "oracle_site_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1SG0/1SG0_binding_site.pdb"
+    },
+    {
+      "index": 49,
+      "receptor_id": "1TW6",
+      "ligand_id": "1TW6",
+      "receptor_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1TW6/1TW6.pdb",
+      "ligand_sdf": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1TW6/1TW6_ligand.sdf",
+      "oracle_site_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1TW6/1TW6_binding_site.pdb"
+    }
+  ]
+}
