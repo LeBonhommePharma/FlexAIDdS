@@ -53,7 +53,27 @@ export FLEXAIDDS_RECEPTOR_ROTAMER_PREP=1
   --job-timeout-seconds 7200
 
 SCIENCE="/Users/lp.more/.grok/worktrees/projects-flexaidds/opus-48-science-fixes"
-python3 "${SCIENCE}/scripts/cf_ground_truth_audit.py" "${OUT}"
+python3 "${SCIENCE}/scripts/cf_ground_truth_audit.py" "${OUT}" || true
 python3 "${SCIENCE}/scripts/failure_classify.py" "${OUT}"
+# Aggregate CSV for downstream compare (if not already emitted)
+if [[ ! -f "${OUT}/astex_crossdock_85_results.csv" ]]; then
+  python3 - "${OUT}" <<'PY'
+import csv, glob, os, sys
+out = sys.argv[1]
+rows = []
+for p in sorted(glob.glob(os.path.join(out, "*/result.csv"))):
+    with open(p, newline="") as fh:
+        for row in csv.DictReader(fh):
+            rows.append(row)
+            break
+if rows:
+    path = os.path.join(out, "astex_crossdock_85_results.csv")
+    with open(path, "w", newline="") as fh:
+        w = csv.DictWriter(fh, fieldnames=rows[0].keys())
+        w.writeheader()
+        w.writerows(rows)
+    print(f"[baseline_8196829] wrote {path} ({len(rows)} targets)")
+PY
+fi
 
 echo "[baseline_8196829] finished $(date -u +%Y-%m-%dT%H:%M:%SZ)"

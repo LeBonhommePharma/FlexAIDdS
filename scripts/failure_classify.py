@@ -453,10 +453,12 @@ def build_summary(results, lo_rmsd, hi_near_miss, missing_cols):
         extra = ""
         if mode == "selection_miss":
             extra = f"ensemble_best={r.get('rmsd_in_ensemble', '?'):.4f}"
-        elif mode == "CF_false_minimum":
+        elif mode in ("CF_false_minimum", "CF_scoring_failure_deep", "CF_scoring_failure_near"):
             extra = (f"cf_best={r.get('cf_best', '?'):.2f}  "
                      f"cf_native={r.get('cf_native', '?'):.2f}  "
                      f"gap={r.get('cf_gap', '?'):.2f}")
+        elif mode == "harness_artifact":
+            extra = ",".join(r.get("harness_flags", [])) or "?"
         elif mode == "seed_echo":
             extra = (f"cf_best={r.get('cf_best', '?')}  "
                      f"cf_native={r.get('cf_native', '?')}")
