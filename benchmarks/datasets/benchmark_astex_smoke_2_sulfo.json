@@ -1,0 +1,20 @@
+{
+  "pairs": [
+    {
+      "index": 3,
+      "receptor_id": "1HNN",
+      "ligand_id": "1HNN",
+      "receptor_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1HNN/1HNN_apo.pdb",
+      "ligand_sdf": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1HNN/1HNN_ligand.sdf",
+      "oracle_site_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1HNN/1HNN_binding_site.pdb"
+    },
+    {
+      "index": 47,
+      "receptor_id": "1T9B",
+      "ligand_id": "1T9B",
+      "receptor_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1T9B/1T9B_apo.pdb",
+      "ligand_sdf": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1T9B/1T9B_ligand.sdf",
+      "oracle_site_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1T9B/1T9B_binding_site.pdb"
+    }
+  ]
+}
