@@ -16,6 +16,14 @@ struct CalcRmsdChromScratch {
 };
 static thread_local CalcRmsdChromScratch tl_calc_rmsd_chrom_scratch;
 
+static bool calc_rmsd_atom_ok(int idx, int atm_n) {
+	return idx >= 0 && idx < atm_n;
+}
+
+static bool calc_rmsd_res_ok(int idx, int res_n) {
+	return idx >= 0 && idx < res_n;
+}
+
 /******************************************************************************
  * SUBROUTINE calc_rmsd_chrom calculates the rmsd between any two chromosomes  
  * present in the population.
@@ -24,7 +32,8 @@ float calc_rmsd_chrom(FA_Global* FA, GB_Global* GB, const chromosome* chrom, con
                       float* coor_a_dest, float* coor_b_dest, bool calc_rmsd){
 
 	float rmsd_chrom=0.0f;
-	int i = 0,j = 0,k = 0,l = 0,m = 0;
+	int i = 0,k = 0,l = 0,m = 0;
+	int chrom_idx = 0;
 	int cat;
 	int rot;
 
@@ -60,68 +69,100 @@ float calc_rmsd_chrom(FA_Global* FA, GB_Global* GB, const chromosome* chrom, con
 
 	for(k=0;k<2;k++)
 	{
-		j=chrom_a;
-		if(k==1){j=chrom_b;}
+		normalmode=-1;
+		chrom_idx=chrom_a;
+		if(k==1){chrom_idx=chrom_b;}
         
-		for(i=0;i<npar;i++){ opt_par[i] = chrom[j].genes[i].to_ic; }
+		// Mirror eval_chromosome(): clamp ICs to gene_lim before applying them.
+		// Snapshot chromosomes can carry raw crossover values; unclamped grid
+		// indices dereference cleftgrid[] out of bounds → intermittent SIGSEGV
+		// in the post-GA clustering coord-cache fill.
+		for(i=0;i<npar;i++){
+			double ic = chrom[chrom_idx].genes[i].to_ic;
+			if(gene_lim != nullptr){
+				if(ic > gene_lim[i].max) ic = gene_lim[i].max;
+				else if(ic < gene_lim[i].min) ic = gene_lim[i].min;
+			}
+			opt_par[i] = ic;
+		}
   
 		/*
-		  printf("%2d (",j);
+		  printf("%2d (",chrom_idx);
 		  for(l=0;l<GB->num_genes;l++) printf("%12.6f ",opt_par[l]);
 		  printf(") ");
-		  printf(" value=%11.6f fitnes=%11.6f\n",chrom[j].evalue,chrom[j].fitnes);
+		  printf(" value=%11.6f fitnes=%11.6f\n",chrom[chrom_idx].evalue,chrom[chrom_idx].fitnes);
 		*/
     
     
 		for(i=0;i<npar;i++)
 		{
+			const int atm_i = FA->map_par[i].atm;
+			if(!calc_rmsd_atom_ok(atm_i, atm_n))
+				continue;
+
 			//printf("[%8.3f]",opt_par[i]);
       
 			if(FA->map_par[i].typ==-1) 
 			{ //by index
 				grd_idx = (uint)opt_par[i];
+				if(FA->num_grd > 0 && grd_idx >= (uint)FA->num_grd)
+					grd_idx = (uint)FA->num_grd - 1;
 				//printf("opt_par(index): %d\n", grd_idx);
 				//PAUSE;
-				work_atoms[FA->map_par[i].atm].dis = cleftgrid[grd_idx].dis;
-				work_atoms[FA->map_par[i].atm].ang = cleftgrid[grd_idx].ang;
-				work_atoms[FA->map_par[i].atm].dih = cleftgrid[grd_idx].dih;
+				work_atoms[atm_i].dis = cleftgrid[grd_idx].dis;
+				work_atoms[atm_i].ang = cleftgrid[grd_idx].ang;
+				work_atoms[atm_i].dih = cleftgrid[grd_idx].dih;
 	
 			}
 			else if(FA->map_par[i].typ==0) 
 			{
-				work_atoms[FA->map_par[i].atm].dis = (float)opt_par[i];
+				work_atoms[atm_i].dis = (float)opt_par[i];
 			}
 			else if(FA->map_par[i].typ==1) 
 			{
-				work_atoms[FA->map_par[i].atm].ang = (float)opt_par[i];
+				work_atoms[atm_i].ang = (float)opt_par[i];
 			}
 			else if(FA->map_par[i].typ==2)
 			{
-				work_atoms[FA->map_par[i].atm].dih = (float)opt_par[i];
+				const int root_atm = atm_i;
+				work_atoms[root_atm].dih = (float)opt_par[i];
 	
-				j=FA->map_par[i].atm;
-				cat=work_atoms[j].rec[3];
-				if(cat != 0){
-					while(cat != FA->map_par[i].atm){
-						work_atoms[cat].dih=work_atoms[j].dih + work_atoms[cat].shift; 
-						j=cat;
-						cat=work_atoms[j].rec[3];
+				int atm_j = root_atm;
+				cat = work_atoms[atm_j].rec[3];
+				if(cat != 0 && cat != root_atm){
+					int steps = 0;
+					while(cat != root_atm && steps < atm_n){
+						if(!calc_rmsd_atom_ok(cat, atm_n))
+							break;
+						work_atoms[cat].dih = work_atoms[atm_j].dih + work_atoms[cat].shift;
+						atm_j = cat;
+						cat = work_atoms[atm_j].rec[3];
+						++steps;
 					}
 				}
 			}else if(FA->map_par[i].typ==3)
 			{ //by index
 				grd_idx = (uint)opt_par[i];
+				if(FA->normal_modes > 0 && grd_idx >= (uint)FA->normal_modes)
+					grd_idx = (uint)FA->normal_modes - 1;
 				//printf("opt_par(index): %d\n", grd_idx);
 				//PAUSE;
 	
 				// serves as flag , but also as grid index
-				normalmode=grd_idx;
+				normalmode=(int)grd_idx;
 	
 			}else if(FA->map_par[i].typ==4)
 			{
 				rot_idx = (int)(opt_par[i]+0.5);
-	
-				work_residue[work_atoms[FA->map_par[i].atm].ofres].rot=rot_idx;
+				const int res_i = work_atoms[atm_i].ofres;
+				if(calc_rmsd_res_ok(res_i, res_n)){
+					const int trot  = work_residue[res_i].trot;
+					if(trot > 0){
+						if(rot_idx < 0) rot_idx = 0;
+						else if(rot_idx >= trot) rot_idx = trot - 1;
+					}
+					work_residue[res_i].rot = rot_idx;
+				}
 	
 				/*
 				  printf("residue[%d].rot[%d] - fatm=%d - latm=%d\n",
@@ -134,7 +175,7 @@ float calc_rmsd_chrom(FA_Global* FA, GB_Global* GB, const chromosome* chrom, con
       
 		}
 
-		if(normalmode > -1)
+		if(normalmode > -1 && FA->normal_modes > 0 && normalmode < FA->normal_modes)
 			alter_mode(work_atoms,work_residue,FA->normal_grid[normalmode],FA->res_cnt,FA->normal_modes);
   
 		/* rebuild cartesian coordinates of optimized residues*/
@@ -149,18 +190,35 @@ float calc_rmsd_chrom(FA_Global* FA, GB_Global* GB, const chromosome* chrom, con
 		}
 
 		// residue that is optimized geometrically (ligand)
-		l=work_atoms[FA->map_par[0].atm].ofres;
-
 		m=0;
+		const int lig_atm = FA->map_par[0].atm;
+		if(!calc_rmsd_atom_ok(lig_atm, atm_n))
+			continue;
+		l = work_atoms[lig_atm].ofres;
+		if(!calc_rmsd_res_ok(l, res_n))
+			continue;
+
 		rot=work_residue[l].rot;
-		for(i=work_residue[l].fatm[rot];i<=work_residue[l].latm[rot];i++){
+		if(work_residue[l].trot > 0){
+			if(rot < 0) rot = 0;
+			else if(rot >= work_residue[l].trot) rot = work_residue[l].trot - 1;
+		}
+		const int max_coord_atoms = MAX_ATM_HET;
+		int fatm = work_residue[l].fatm[rot];
+		int latm = work_residue[l].latm[rot];
+		if(!calc_rmsd_atom_ok(fatm, atm_n) || !calc_rmsd_atom_ok(latm, atm_n) || fatm > latm)
+			continue;
+		for(i=fatm;i<=latm;i++){
+			if(!calc_rmsd_atom_ok(i, atm_n))
+				break;
 			//printf("i:%d %f %f %f\n",i,work_atoms[i].coor[0],
 			//     work_atoms[i].coor[1],
 			//     work_atoms[i].coor[2]);
-			for(j=0;j<3;j++)
+			if(m >= max_coord_atoms) break;
+			for(int d=0;d<3;d++)
 			{
-				if(k==0) coor_a_dest[m*3+j]=work_atoms[i].coor[j];
-				if(k==1) coor_b_dest[m*3+j]=work_atoms[i].coor[j];
+				if(k==0) coor_a_dest[m*3+d]=work_atoms[i].coor[d];
+				if(k==1) coor_b_dest[m*3+d]=work_atoms[i].coor[d];
 			}
 			m++;
 		}    

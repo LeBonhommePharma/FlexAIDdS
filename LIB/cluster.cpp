@@ -118,24 +118,26 @@ void cluster(FA_Global* FA, GB_Global* GB, VC_Global* VC, chromosome* chrom, gen
 	
 	// ── Pre-compute Cartesian coordinates for all chromosomes ──────────
 	// Eliminates redundant buildcc() calls in the O(N²) clustering loop.
-	// DensityPeak_Cluster already uses this pattern (Chrom[i].Coord).
-	const int nAtoms_clus = residue[atoms[FA->map_par[0].atm].ofres].latm[0]
-	                      - residue[atoms[FA->map_par[0].atm].ofres].fatm[0] + 1;
+	// Stride uses the largest rotamer atom count so per-chromosome rot
+	// selection never writes past its cache slot.
+	const int lig_res = atoms[FA->map_par[0].atm].ofres;
+	int nAtoms_clus = residue[lig_res].latm[0] - residue[lig_res].fatm[0] + 1;
+	const int nrot = std::max(1, residue[lig_res].trot);
+	for(int r = 0; r < nrot; ++r){
+		const int n_r = residue[lig_res].latm[r] - residue[lig_res].fatm[r] + 1;
+		if(n_r > nAtoms_clus) nAtoms_clus = n_r;
+	}
+	if(nAtoms_clus < 1) nAtoms_clus = 1;
 	const int coord_stride = nAtoms_clus * 3;
-	std::vector<float> coord_cache((size_t)num_chrom * coord_stride);
+	std::vector<float> coord_cache((size_t)num_chrom * coord_stride, 0.0f);
 
+	// One chromosome per call: disjoint cache writes + thread-local scratch in
+	// calc_rmsd_chrom (same pattern as DensityPeak minibatch coord cache).
 	for(int c = 0; c < num_chrom; ++c)
 	{
-		if(c + 1 < num_chrom) {
-			calc_rmsd_chrom(FA,GB,chrom,gene_lim,atoms,residue,cleftgrid,
-			                GB->num_genes, c, c+1,
-			                &coord_cache[c * coord_stride],
-			                &coord_cache[(c+1) * coord_stride], false);
-		} else {
-			calc_rmsd_chrom(FA,GB,chrom,gene_lim,atoms,residue,cleftgrid,
-			                GB->num_genes, c, c,
-			                &coord_cache[c * coord_stride], NULL, false);
-		}
+		calc_rmsd_chrom(FA,GB,chrom,gene_lim,atoms,residue,cleftgrid,
+		                GB->num_genes, c, c,
+		                &coord_cache[(size_t)c * coord_stride], NULL, false);
 	}
 
 	// Clustering part — uses cached coordinates + SIMD distance
@@ -184,6 +186,9 @@ void cluster(FA_Global* FA, GB_Global* GB, VC_Global* VC, chromosome* chrom, gen
 					#pragma omp critical
 					#endif
 					{
+						// Re-check: another thread may have claimed i while we
+						// computed RMSD; double-assign would corrupt n_unclus.
+						if(Clus_GAPOP[i] == -1) {
 						Clus_GAPOP[i]=j;
 						Clus_RMSDT[i]=loc_rmsd;
 						n_unclus--;
@@ -195,6 +200,7 @@ void cluster(FA_Global* FA, GB_Global* GB, VC_Global* VC, chromosome* chrom, gen
 							Clus_ACF[num_of_clusters] += chrom[i].app_evalue;
 						}
 						Clus_FRE[num_of_clusters]++;
+						}
 					}
 				}
 			}
