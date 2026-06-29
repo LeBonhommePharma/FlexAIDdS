@@ -476,9 +476,7 @@ class ThermoAffinitySuite:
         ablated = self.run(datasets=datasets, tier=tier, ablation=True, validate_pb=validate_pb)
         return {"full": full, "ablated": ablated}
 
-    def build_leaderboard(self, results: Dict[str, SuiteResult]) -> "pd.DataFrame":  # type: ignore
-        import pandas as pd  # type: ignore
-
+    def build_leaderboard(self, results: Dict[str, SuiteResult]) -> Any:
         rows = []
         for slug, r in results.items():
             rows.append(
@@ -493,8 +491,13 @@ class ThermoAffinitySuite:
                     "duration_s": round(r.duration_s, 1),
                 }
             )
-        df = pd.DataFrame(rows)
-        return df
+        try:
+            import pandas as pd  # type: ignore
+            return pd.DataFrame(rows)
+        except Exception:
+            # Fallback plain list-of-dicts for CI without pandas
+            logger.info("pandas not available — returning raw rows for leaderboard")
+            return rows  # type: ignore[return-value]
 
     def make_artifact_bundle(
         self,
@@ -519,8 +522,14 @@ class ThermoAffinitySuite:
         # leaderboard
         (bundle / "leaderboards").mkdir(exist_ok=True)
         try:
-            leaderboard.to_csv(bundle / "leaderboards" / "thermo_leaderboard.csv", index=False)
-            leaderboard.to_markdown(bundle / "leaderboards" / "thermo_leaderboard.md", index=False)
+            if hasattr(leaderboard, "to_csv"):
+                leaderboard.to_csv(bundle / "leaderboards" / "thermo_leaderboard.csv", index=False)
+                if hasattr(leaderboard, "to_markdown"):
+                    leaderboard.to_markdown(bundle / "leaderboards" / "thermo_leaderboard.md", index=False)
+            else:
+                # raw rows
+                import json
+                (bundle / "leaderboards" / "thermo_leaderboard.json").write_text(json.dumps(leaderboard, indent=2))
         except Exception:
             pass
 
