@@ -230,6 +230,10 @@ def _audit_one(pdb_id: str, row: dict, target_dir: str, lo_rmsd: float, cf_delta
         and abs(oracle_pose_cf - cf_native) > 10.0
     ):
         harness.append("oracle_native_cf_divergence")
+    if cf_native is not None and cf_native > 1000.0:
+        harness.append("cf_native_wall_clash_overflow")
+    if oracle_pose_cf is not None and oracle_pose_cf > 1000.0:
+        harness.append("oracle_pose_cf_clash")
 
     failure = classify_one(pdb_id, row, target_dir, lo_rmsd, cf_delta)
 

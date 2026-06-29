@@ -159,6 +159,10 @@ def _harness_flags(row, target_dir, rmsd):
             flags.append("cf_match_high_rmsd_native_ic")
     if cf_native == 0.0 and _int(row, ["num_poses"], 0) > 0:
         flags.append("v51_cf_native_zero")
+    if cf_native is not None and cf_native > 1000.0:
+        flags.append("cf_native_wall_clash_overflow")
+    if cf_native is not None and cf_native < -50000.0:
+        flags.append("cf_native_sanity_underflow")
     se_raw = _fget(row, ["seed_echo"])
     if se_raw in ("1", "true", "yes") and cf_native is not None and cf_native > 0:
         flags.append("seed_echo_clash_attractor")
