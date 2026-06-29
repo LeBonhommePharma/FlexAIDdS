@@ -155,7 +155,8 @@ def base_oracle_env(*, binary: str, build: str, data_dir: str, cache: str) -> di
 
 
 def build_steps() -> list[AblationStep]:
-    head_build = str(REPO / "build_lto")
+    # HEAD oracle binaries live in the performance worktree (not FLEXAIDDS_REPO scripts root).
+    head_build = str(GIT_ROOT / "build_lto")
     head_binary_src = f"{head_build}/FlexAIDdS"
     head_runner = f"{head_build}/benchmark_datasets"
     safe_root = resolve_v131_safe_worktree()
@@ -184,7 +185,7 @@ def build_steps() -> list[AblationStep]:
             runner_path=head_runner,
             data_dir=head_build,
             build_dir=head_build,
-            git_cwd=str(REPO),
+            git_cwd=str(GIT_ROOT),
             json_pairs=str(JSON_V131),
             cache_suffix="v132a_consensus_on",
             ablation_knob="consensus",
@@ -263,7 +264,7 @@ def build_steps() -> list[AblationStep]:
             runner_path=head_runner,
             data_dir=head_build,
             build_dir=head_build,
-            git_cwd=str(REPO),
+            git_cwd=str(GIT_ROOT),
             json_pairs=str(JSON_V131),
             cache_suffix="v132d_hbond_zero",
             ablation_knob="hbond",

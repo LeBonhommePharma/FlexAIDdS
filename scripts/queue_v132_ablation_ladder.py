@@ -27,7 +27,7 @@ from pathlib import Path
 SCRIPT_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(SCRIPT_DIR))
 from lib_launch import active_foreign_benchmarks, launch_session_isolated
-from lib_v132_ablation import RESULTS, ladder_step_ids, step_by_id
+from lib_v132_ablation import GIT_ROOT, RESULTS, ladder_step_ids, step_by_id
 from lib_worker_orders import assert_campaign_allowed, bisect_complete, load_orders
 
 REPO = SCRIPT_DIR.parent
@@ -319,9 +319,11 @@ def main() -> int:
             cmd.append("--no-launch")
         if args.no_wait_smoke12:
             cmd.append("--no-wait-smoke12")
+        daemon_env = os.environ.copy()
+        daemon_env["FLEXAIDDS_GIT_ROOT"] = str(GIT_ROOT)
         pid = launch_session_isolated(
             cmd,
-            os.environ.copy(),
+            daemon_env,
             str(watcher_log),
             cwd=str(REPO),
             stdout_log=str(watcher_log / "watcher_stdout.log"),
