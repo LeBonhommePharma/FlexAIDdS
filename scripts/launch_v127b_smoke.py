@@ -19,6 +19,7 @@ import os
 import shutil
 import subprocess
 import sys
+from pathlib import Path
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from lib_launch import launch_session_isolated
@@ -32,7 +33,7 @@ RUNNER = f"{BUILD}/benchmark_datasets"
 DATA_DIR = BUILD
 ORACLE_DIR = f"{REPO}/benchmarks/astex_diverse/astex_diverse"
 JSON_PAIRS = f"{REPO}/benchmarks/datasets/benchmark_astex_smoke_3_regression.json"
-RESULTS_DIR = "/Users/lp.more/Documents/PhD/Programs/FlexAIDdS/results"
+RESULTS_DIR = Path("/Users/lp.more/Documents/PhD/Programs/FlexAIDdS/results")
 BUILD_SCRIPT = f"{REPO}/scripts/build_v127b_logsumexp.sh"
 
 GIT_COMMIT = "a4056163"
@@ -132,8 +133,8 @@ def main():
     matrix_md5 = md5(f"{DATA_DIR}/MC_st0r5.2_6.dat")
 
     tag = datetime.datetime.now().strftime("%Y%m%d_%H%M")
-    output = f"{RESULTS_DIR}/v127b_{tag}_smoke3_logsumexp"
-    cache = f"{RESULTS_DIR}/cache_v127b_smoke3"
+    output = str(RESULTS_DIR / f"v127b_{tag}_smoke3_logsumexp")
+    cache = str(RESULTS_DIR / "cache_v127b_smoke3")
     prov = f"{output}/launch_provenance.json"
     bench_threads = os.environ.get("FLEXAIDDS_BENCH_THREADS", "2")
 
