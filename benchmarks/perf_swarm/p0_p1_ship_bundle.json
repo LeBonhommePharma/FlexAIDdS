@@ -3,7 +3,7 @@
   "bundle_name": "perf_swarm_p0_p1_segfault_20260629",
   "shipped_at": "2026-06-29T12:00:00+00:00",
   "git": {
-    "ship_commit": "eb76a5e3",
+    "ship_commit": "e6c17027",
     "branch": "master"
   },
   "commits": {
