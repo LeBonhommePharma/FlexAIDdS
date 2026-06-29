@@ -546,7 +546,11 @@ int GA(FA_Global* FA, GB_Global* GB,VC_Global* VC,chromosome** chrom,chromosome*
 	unsigned int tt;
 	if (GB->seed==0)
 	{
-		tt = static_cast<unsigned int>(time(0));
+		std::uint64_t env_seed = 0;
+		if (flexaids_rng::env_seed(env_seed))
+			tt = static_cast<unsigned int>(env_seed);
+		else
+			tt = static_cast<unsigned int>(time(0));
 	}
 	else
 	{

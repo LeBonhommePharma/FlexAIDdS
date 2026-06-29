@@ -8,12 +8,18 @@ void buildcc(FA_Global* FA,atom* atoms,int tot,int list[]){
   int an,i,j;
   float x[4],y[4],z[4];
   float a,b,c,op,cx,cy,cz,d,xn,yn,zn,ct,st,xk,yk,zk,angPI,dihPI;
+  const int atm_max = FA->atm_cnt;
 
   for(an=0;an<tot;an++){
-    
+    const int list_atm = list[an];
+    if(list_atm < 0 || list_atm >= atm_max)
+      continue;
+
     for(i=1;i<=3;i++)
     {
-      j=atoms[list[an]].rec[i-1];
+      j=atoms[list_atm].rec[i-1];
+      if(j != 0 && (j < 0 || j >= atm_max))
+        j = 0;
       //printf("recj[%d]=%d listan[%d]=%d\n",j,atoms[j].number,list[an],atoms[list[an]].number);
       //PAUSE;
       if(j != 0)
@@ -74,7 +80,7 @@ void buildcc(FA_Global* FA,atom* atoms,int tot,int list[]){
     c=z[2]-z[1];
 
     d=1.0f/sqrt(a*a+b*b+c*c);
-    op=atoms[list[an]].dis*d;
+    op=atoms[list_atm].dis*d;
     xn=a*op;
     yn=b*op;
     zn=c*op;
@@ -84,8 +90,8 @@ void buildcc(FA_Global* FA,atom* atoms,int tot,int list[]){
     b=cy*cy;
     c=cz*cz;
 
-    //printf("ang=%f\n",atoms[list[an]].ang);
-    angPI = (float)(atoms[list[an]].ang*PI/180.0f);
+    //printf("ang=%f\n",atoms[list_atm].ang);
+    angPI = (float)(atoms[list_atm].ang*PI/180.0f);
     { float _s, _c; __sincosf(angPI, &_s, &_c); ct=_c; st=-_s; }
 
     op=1.0f-ct;
@@ -100,9 +106,9 @@ void buildcc(FA_Global* FA,atom* atoms,int tot,int list[]){
     zk=(cz*cy*op-cx*st)*yn+((1.0f-c)*ct+c)*zn+(cz*cx*op+cy*st)*xn;
 
     //printf("xk=%f yk=%f zk=%f\n",xk,yk,zk);
-    //printf("dih=%f\n",atoms[list[an]].dih);
+    //printf("dih=%f\n",atoms[list_atm].dih);
     
-    dihPI = (float)(atoms[list[an]].dih*PI/180.0f);
+    dihPI = (float)(atoms[list_atm].dih*PI/180.0f);
     { float _s, _c; __sincosf(dihPI, &_s, &_c); ct=_c; st=_s; }
 
     op=1.0f-ct;
@@ -123,9 +129,9 @@ void buildcc(FA_Global* FA,atom* atoms,int tot,int list[]){
     y[0]=(cy*cx*op-cz*st)*xk+((1.0f-b)*ct+b)*yk+(cy*cz*op+cx*st)*zk+y[1];
     z[0]=(cz*cy*op-cx*st)*yk+((1.0f-c)*ct+c)*zk+(cz*cx*op+cy*st)*xk+z[1];
     
-    atoms[list[an]].coor[0]=x[0];
-    atoms[list[an]].coor[1]=y[0];
-    atoms[list[an]].coor[2]=z[0];
+    atoms[list_atm].coor[0]=x[0];
+    atoms[list_atm].coor[1]=y[0];
+    atoms[list_atm].coor[2]=z[0];
    }
 
 

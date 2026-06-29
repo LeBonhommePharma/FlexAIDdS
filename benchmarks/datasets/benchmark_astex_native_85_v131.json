@@ -1,0 +1,690 @@
+{
+  "schema_version": 1,
+  "name": "astex_native_85_v131",
+  "description": "v131 full-85: r0=7, consensus OFF (no Fix-B stacking), HEAD bug fixes, sulfo remap, 1HNN expB site, 1TW6_holo receptor (A+B). Target: beat v109 80/85.",
+  "n_pairs": 85,
+  "oracle_mode": true,
+  "astex_diverse_dir": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse",
+  "pairs": [
+    {
+      "index": 0,
+      "receptor_id": "1G9V",
+      "ligand_id": "1G9V",
+      "receptor_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1G9V/1G9V_apo.pdb",
+      "ligand_sdf": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1G9V/1G9V_ligand.sdf",
+      "oracle_site_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1G9V/1G9V_binding_site.pdb"
+    },
+    {
+      "index": 1,
+      "receptor_id": "1GM8",
+      "ligand_id": "1GM8",
+      "receptor_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1GM8/1GM8_apo.pdb",
+      "ligand_sdf": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1GM8/1GM8_ligand.sdf",
+      "oracle_site_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1GM8/1GM8_binding_site.pdb"
+    },
+    {
+      "index": 2,
+      "receptor_id": "1GPK",
+      "ligand_id": "1GPK",
+      "receptor_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1GPK/1GPK_apo.pdb",
+      "ligand_sdf": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1GPK/1GPK_ligand.sdf",
+      "oracle_site_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1GPK/1GPK_binding_site.pdb"
+    },
+    {
+      "index": 3,
+      "receptor_id": "1HNN",
+      "ligand_id": "1HNN",
+      "receptor_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1HNN/1HNN_apo.pdb",
+      "ligand_sdf": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1HNN/1HNN_ligand.sdf",
+      "oracle_site_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1HNN/1HNN_ligand_centered_site.pdb"
+    },
+    {
+      "index": 4,
+      "receptor_id": "1HP0",
+      "ligand_id": "1HP0",
+      "receptor_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1HP0/1HP0_apo.pdb",
+      "ligand_sdf": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1HP0/1HP0_ligand.sdf",
+      "oracle_site_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1HP0/1HP0_binding_site.pdb"
+    },
+    {
+      "index": 5,
+      "receptor_id": "1HQ2",
+      "ligand_id": "1HQ2",
+      "receptor_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1HQ2/1HQ2_apo.pdb",
+      "ligand_sdf": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1HQ2/1HQ2_ligand.sdf",
+      "oracle_site_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1HQ2/1HQ2_binding_site.pdb"
+    },
+    {
+      "index": 6,
+      "receptor_id": "1IA1",
+      "ligand_id": "1IA1",
+      "receptor_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1IA1/1IA1_apo.pdb",
+      "ligand_sdf": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1IA1/1IA1_ligand.sdf",
+      "oracle_site_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1IA1/1IA1_binding_site.pdb"
+    },
+    {
+      "index": 7,
+      "receptor_id": "1IGJ",
+      "ligand_id": "1IGJ",
+      "receptor_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1IGJ/1IGJ_apo.pdb",
+      "ligand_sdf": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1IGJ/1IGJ_ligand.sdf",
+      "oracle_site_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1IGJ/1IGJ_binding_site.pdb"
+    },
+    {
+      "index": 8,
+      "receptor_id": "1J3J",
+      "ligand_id": "1J3J",
+      "receptor_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1J3J/1J3J_apo.pdb",
+      "ligand_sdf": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1J3J/1J3J_ligand.sdf",
+      "oracle_site_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1J3J/1J3J_binding_site.pdb"
+    },
+    {
+      "index": 9,
+      "receptor_id": "1JD0",
+      "ligand_id": "1JD0",
+      "receptor_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1JD0/1JD0_apo.pdb",
+      "ligand_sdf": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1JD0/1JD0_ligand.sdf",
+      "oracle_site_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1JD0/1JD0_binding_site.pdb"
+    },
+    {
+      "index": 10,
+      "receptor_id": "1JJE",
+      "ligand_id": "1JJE",
+      "receptor_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1JJE/1JJE_apo.pdb",
+      "ligand_sdf": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1JJE/1JJE_ligand.sdf",
+      "oracle_site_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1JJE/1JJE_binding_site.pdb"
+    },
+    {
+      "index": 11,
+      "receptor_id": "1K3U",
+      "ligand_id": "1K3U",
+      "receptor_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1K3U/1K3U_apo.pdb",
+      "ligand_sdf": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1K3U/1K3U_ligand.sdf",
+      "oracle_site_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1K3U/1K3U_binding_site.pdb"
+    },
+    {
+      "index": 12,
+      "receptor_id": "1KE5",
+      "ligand_id": "1KE5",
+      "receptor_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1KE5/1KE5_apo.pdb",
+      "ligand_sdf": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1KE5/1KE5_ligand.sdf",
+      "oracle_site_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1KE5/1KE5_binding_site.pdb"
+    },
+    {
+      "index": 13,
+      "receptor_id": "1KZK",
+      "ligand_id": "1KZK",
+      "receptor_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1KZK/1KZK_apo.pdb",
+      "ligand_sdf": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1KZK/1KZK_ligand.sdf",
+      "oracle_site_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1KZK/1KZK_binding_site.pdb"
+    },
+    {
+      "index": 14,
+      "receptor_id": "1L2S",
+      "ligand_id": "1L2S",
+      "receptor_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1L2S/1L2S_apo.pdb",
+      "ligand_sdf": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1L2S/1L2S_ligand.sdf",
+      "oracle_site_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1L2S/1L2S_binding_site.pdb"
+    },
+    {
+      "index": 15,
+      "receptor_id": "1L7F",
+      "ligand_id": "1L7F",
+      "receptor_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1L7F/1L7F_apo.pdb",
+      "ligand_sdf": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1L7F/1L7F_ligand.sdf",
+      "oracle_site_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1L7F/1L7F_binding_site.pdb"
+    },
+    {
+      "index": 16,
+      "receptor_id": "1LPZ",
+      "ligand_id": "1LPZ",
+      "receptor_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1LPZ/1LPZ_apo.pdb",
+      "ligand_sdf": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1LPZ/1LPZ_ligand.sdf",
+      "oracle_site_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1LPZ/1LPZ_binding_site.pdb"
+    },
+    {
+      "index": 17,
+      "receptor_id": "1M2Z",
+      "ligand_id": "1M2Z",
+      "receptor_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1M2Z/1M2Z_apo.pdb",
+      "ligand_sdf": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1M2Z/1M2Z_ligand.sdf",
+      "oracle_site_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1M2Z/1M2Z_binding_site.pdb"
+    },
+    {
+      "index": 18,
+      "receptor_id": "1MEH",
+      "ligand_id": "1MEH",
+      "receptor_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1MEH/1MEH_apo.pdb",
+      "ligand_sdf": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1MEH/1MEH_ligand.sdf",
+      "oracle_site_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1MEH/1MEH_binding_site.pdb"
+    },
+    {
+      "index": 19,
+      "receptor_id": "1MQ6",
+      "ligand_id": "1MQ6",
+      "receptor_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1MQ6/1MQ6_apo.pdb",
+      "ligand_sdf": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1MQ6/1MQ6_ligand.sdf",
+      "oracle_site_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1MQ6/1MQ6_binding_site.pdb"
+    },
+    {
+      "index": 20,
+      "receptor_id": "1N1M",
+      "ligand_id": "1N1M",
+      "receptor_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1N1M/1N1M_apo.pdb",
+      "ligand_sdf": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1N1M/1N1M_ligand.sdf",
+      "oracle_site_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1N1M/1N1M_binding_site.pdb"
+    },
+    {
+      "index": 21,
+      "receptor_id": "1N2J",
+      "ligand_id": "1N2J",
+      "receptor_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1N2J/1N2J_apo.pdb",
+      "ligand_sdf": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1N2J/1N2J_ligand.sdf",
+      "oracle_site_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1N2J/1N2J_binding_site.pdb"
+    },
+    {
+      "index": 22,
+      "receptor_id": "1N2V",
+      "ligand_id": "1N2V",
+      "receptor_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1N2V/1N2V_apo.pdb",
+      "ligand_sdf": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1N2V/1N2V_ligand.sdf",
+      "oracle_site_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1N2V/1N2V_binding_site.pdb"
+    },
+    {
+      "index": 23,
+      "receptor_id": "1N46",
+      "ligand_id": "1N46",
+      "receptor_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1N46/1N46_apo.pdb",
+      "ligand_sdf": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1N46/1N46_ligand.sdf",
+      "oracle_site_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1N46/1N46_binding_site.pdb"
+    },
+    {
+      "index": 24,
+      "receptor_id": "1NAV",
+      "ligand_id": "1NAV",
+      "receptor_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1NAV/1NAV_apo.pdb",
+      "ligand_sdf": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1NAV/1NAV_ligand.sdf",
+      "oracle_site_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1NAV/1NAV_binding_site.pdb"
+    },
+    {
+      "index": 25,
+      "receptor_id": "1OF1",
+      "ligand_id": "1OF1",
+      "receptor_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1OF1/1OF1_apo.pdb",
+      "ligand_sdf": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1OF1/1OF1_ligand.sdf",
+      "oracle_site_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1OF1/1OF1_binding_site.pdb"
+    },
+    {
+      "index": 26,
+      "receptor_id": "1OF6",
+      "ligand_id": "1OF6",
+      "receptor_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1OF6/1OF6_apo.pdb",
+      "ligand_sdf": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1OF6/1OF6_ligand.sdf",
+      "oracle_site_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1OF6/1OF6_binding_site.pdb"
+    },
+    {
+      "index": 27,
+      "receptor_id": "1OPK",
+      "ligand_id": "1OPK",
+      "receptor_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1OPK/1OPK_apo.pdb",
+      "ligand_sdf": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1OPK/1OPK_ligand.sdf",
+      "oracle_site_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1OPK/1OPK_binding_site.pdb"
+    },
+    {
+      "index": 28,
+      "receptor_id": "1OQ5",
+      "ligand_id": "1OQ5",
+      "receptor_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1OQ5/1OQ5_apo.pdb",
+      "ligand_sdf": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1OQ5/1OQ5_ligand.sdf",
+      "oracle_site_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1OQ5/1OQ5_binding_site.pdb"
+    },
+    {
+      "index": 29,
+      "receptor_id": "1OWE",
+      "ligand_id": "1OWE",
+      "receptor_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1OWE/1OWE_apo.pdb",
+      "ligand_sdf": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1OWE/1OWE_ligand.sdf",
+      "oracle_site_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1OWE/1OWE_binding_site.pdb"
+    },
+    {
+      "index": 30,
+      "receptor_id": "1P2Y",
+      "ligand_id": "1P2Y",
+      "receptor_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1P2Y/1P2Y_apo.pdb",
+      "ligand_sdf": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1P2Y/1P2Y_ligand.sdf",
+      "oracle_site_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1P2Y/1P2Y_binding_site.pdb"
+    },
+    {
+      "index": 31,
+      "receptor_id": "1P62",
+      "ligand_id": "1P62",
+      "receptor_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1P62/1P62_apo.pdb",
+      "ligand_sdf": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1P62/1P62_ligand.sdf",
+      "oracle_site_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1P62/1P62_binding_site.pdb"
+    },
+    {
+      "index": 32,
+      "receptor_id": "1PMN",
+      "ligand_id": "1PMN",
+      "receptor_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1PMN/1PMN_apo.pdb",
+      "ligand_sdf": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1PMN/1PMN_ligand.sdf",
+      "oracle_site_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1PMN/1PMN_binding_site.pdb"
+    },
+    {
+      "index": 33,
+      "receptor_id": "1Q1G",
+      "ligand_id": "1Q1G",
+      "receptor_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1Q1G/1Q1G_apo.pdb",
+      "ligand_sdf": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1Q1G/1Q1G_ligand.sdf",
+      "oracle_site_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1Q1G/1Q1G_binding_site.pdb"
+    },
+    {
+      "index": 34,
+      "receptor_id": "1Q41",
+      "ligand_id": "1Q41",
+      "receptor_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1Q41/1Q41_apo.pdb",
+      "ligand_sdf": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1Q41/1Q41_ligand.sdf",
+      "oracle_site_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1Q41/1Q41_binding_site.pdb"
+    },
+    {
+      "index": 35,
+      "receptor_id": "1Q4G",
+      "ligand_id": "1Q4G",
+      "receptor_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1Q4G/1Q4G_apo.pdb",
+      "ligand_sdf": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1Q4G/1Q4G_ligand.sdf",
+      "oracle_site_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1Q4G/1Q4G_binding_site.pdb"
+    },
+    {
+      "index": 36,
+      "receptor_id": "1R1H",
+      "ligand_id": "1R1H",
+      "receptor_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1R1H/1R1H_apo.pdb",
+      "ligand_sdf": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1R1H/1R1H_ligand.sdf",
+      "oracle_site_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1R1H/1R1H_binding_site.pdb"
+    },
+    {
+      "index": 37,
+      "receptor_id": "1R55",
+      "ligand_id": "1R55",
+      "receptor_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1R55/1R55_apo.pdb",
+      "ligand_sdf": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1R55/1R55_ligand.sdf",
+      "oracle_site_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1R55/1R55_binding_site.pdb"
+    },
+    {
+      "index": 38,
+      "receptor_id": "1R58",
+      "ligand_id": "1R58",
+      "receptor_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1R58/1R58_apo.pdb",
+      "ligand_sdf": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1R58/1R58_ligand.sdf",
+      "oracle_site_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1R58/1R58_binding_site.pdb"
+    },
+    {
+      "index": 39,
+      "receptor_id": "1R9O",
+      "ligand_id": "1R9O",
+      "receptor_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1R9O/1R9O_apo.pdb",
+      "ligand_sdf": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1R9O/1R9O_ligand.sdf",
+      "oracle_site_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1R9O/1R9O_binding_site.pdb"
+    },
+    {
+      "index": 40,
+      "receptor_id": "1S19",
+      "ligand_id": "1S19",
+      "receptor_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1S19/1S19_apo.pdb",
+      "ligand_sdf": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1S19/1S19_ligand.sdf",
+      "oracle_site_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1S19/1S19_binding_site.pdb"
+    },
+    {
+      "index": 41,
+      "receptor_id": "1S3V",
+      "ligand_id": "1S3V",
+      "receptor_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1S3V/1S3V_apo.pdb",
+      "ligand_sdf": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1S3V/1S3V_ligand.sdf",
+      "oracle_site_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1S3V/1S3V_binding_site.pdb"
+    },
+    {
+      "index": 42,
+      "receptor_id": "1SG0",
+      "ligand_id": "1SG0",
+      "receptor_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1SG0/1SG0_apo.pdb",
+      "ligand_sdf": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1SG0/1SG0_ligand.sdf",
+      "oracle_site_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1SG0/1SG0_binding_site.pdb"
+    },
+    {
+      "index": 43,
+      "receptor_id": "1SJ0",
+      "ligand_id": "1SJ0",
+      "receptor_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1SJ0/1SJ0_apo.pdb",
+      "ligand_sdf": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1SJ0/1SJ0_ligand.sdf",
+      "oracle_site_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1SJ0/1SJ0_binding_site.pdb"
+    },
+    {
+      "index": 44,
+      "receptor_id": "1SQ5",
+      "ligand_id": "1SQ5",
+      "receptor_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1SQ5/1SQ5_apo.pdb",
+      "ligand_sdf": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1SQ5/1SQ5_ligand.sdf",
+      "oracle_site_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1SQ5/1SQ5_binding_site.pdb"
+    },
+    {
+      "index": 45,
+      "receptor_id": "1T40",
+      "ligand_id": "1T40",
+      "receptor_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1T40/1T40_apo.pdb",
+      "ligand_sdf": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1T40/1T40_ligand.sdf",
+      "oracle_site_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1T40/1T40_binding_site.pdb"
+    },
+    {
+      "index": 46,
+      "receptor_id": "1T46",
+      "ligand_id": "1T46",
+      "receptor_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1T46/1T46_apo.pdb",
+      "ligand_sdf": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1T46/1T46_ligand.sdf",
+      "oracle_site_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1T46/1T46_binding_site.pdb"
+    },
+    {
+      "index": 47,
+      "receptor_id": "1T9B",
+      "ligand_id": "1T9B",
+      "receptor_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1T9B/1T9B_apo.pdb",
+      "ligand_sdf": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1T9B/1T9B_ligand.sdf",
+      "oracle_site_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1T9B/1T9B_binding_site.pdb"
+    },
+    {
+      "index": 48,
+      "receptor_id": "1TT1",
+      "ligand_id": "1TT1",
+      "receptor_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1TT1/1TT1_apo.pdb",
+      "ligand_sdf": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1TT1/1TT1_ligand.sdf",
+      "oracle_site_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1TT1/1TT1_binding_site.pdb"
+    },
+    {
+      "index": 49,
+      "receptor_id": "1TW6",
+      "ligand_id": "1TW6",
+      "receptor_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1TW6/1TW6_holo.pdb",
+      "ligand_sdf": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1TW6/1TW6_ligand.sdf",
+      "oracle_site_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1TW6/1TW6_binding_site.pdb"
+    },
+    {
+      "index": 50,
+      "receptor_id": "1TZ8",
+      "ligand_id": "1TZ8",
+      "receptor_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1TZ8/1TZ8_apo.pdb",
+      "ligand_sdf": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1TZ8/1TZ8_ligand.sdf",
+      "oracle_site_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1TZ8/1TZ8_binding_site.pdb"
+    },
+    {
+      "index": 51,
+      "receptor_id": "1U1C",
+      "ligand_id": "1U1C",
+      "receptor_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1U1C/1U1C_apo.pdb",
+      "ligand_sdf": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1U1C/1U1C_ligand.sdf",
+      "oracle_site_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1U1C/1U1C_binding_site.pdb"
+    },
+    {
+      "index": 52,
+      "receptor_id": "1U4D",
+      "ligand_id": "1U4D",
+      "receptor_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1U4D/1U4D_apo.pdb",
+      "ligand_sdf": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1U4D/1U4D_ligand.sdf",
+      "oracle_site_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1U4D/1U4D_binding_site.pdb"
+    },
+    {
+      "index": 53,
+      "receptor_id": "1UML",
+      "ligand_id": "1UML",
+      "receptor_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1UML/1UML_apo.pdb",
+      "ligand_sdf": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1UML/1UML_ligand.sdf",
+      "oracle_site_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1UML/1UML_binding_site.pdb"
+    },
+    {
+      "index": 54,
+      "receptor_id": "1UNL",
+      "ligand_id": "1UNL",
+      "receptor_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1UNL/1UNL_apo.pdb",
+      "ligand_sdf": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1UNL/1UNL_ligand.sdf",
+      "oracle_site_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1UNL/1UNL_binding_site.pdb"
+    },
+    {
+      "index": 55,
+      "receptor_id": "1UOU",
+      "ligand_id": "1UOU",
+      "receptor_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1UOU/1UOU_apo.pdb",
+      "ligand_sdf": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1UOU/1UOU_ligand.sdf",
+      "oracle_site_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1UOU/1UOU_binding_site.pdb"
+    },
+    {
+      "index": 56,
+      "receptor_id": "1V0P",
+      "ligand_id": "1V0P",
+      "receptor_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1V0P/1V0P_apo.pdb",
+      "ligand_sdf": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1V0P/1V0P_ligand.sdf",
+      "oracle_site_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1V0P/1V0P_binding_site.pdb"
+    },
+    {
+      "index": 57,
+      "receptor_id": "1V48",
+      "ligand_id": "1V48",
+      "receptor_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1V48/1V48_apo.pdb",
+      "ligand_sdf": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1V48/1V48_ligand.sdf",
+      "oracle_site_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1V48/1V48_binding_site.pdb"
+    },
+    {
+      "index": 58,
+      "receptor_id": "1V4S",
+      "ligand_id": "1V4S",
+      "receptor_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1V4S/1V4S_apo.pdb",
+      "ligand_sdf": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1V4S/1V4S_ligand.sdf",
+      "oracle_site_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1V4S/1V4S_binding_site.pdb"
+    },
+    {
+      "index": 59,
+      "receptor_id": "1VCJ",
+      "ligand_id": "1VCJ",
+      "receptor_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1VCJ/1VCJ_apo.pdb",
+      "ligand_sdf": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1VCJ/1VCJ_ligand.sdf",
+      "oracle_site_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1VCJ/1VCJ_binding_site.pdb"
+    },
+    {
+      "index": 60,
+      "receptor_id": "1W1P",
+      "ligand_id": "1W1P",
+      "receptor_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1W1P/1W1P_apo.pdb",
+      "ligand_sdf": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1W1P/1W1P_ligand.sdf",
+      "oracle_site_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1W1P/1W1P_binding_site.pdb"
+    },
+    {
+      "index": 61,
+      "receptor_id": "1W2G",
+      "ligand_id": "1W2G",
+      "receptor_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1W2G/1W2G_apo.pdb",
+      "ligand_sdf": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1W2G/1W2G_ligand.sdf",
+      "oracle_site_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1W2G/1W2G_binding_site.pdb"
+    },
+    {
+      "index": 62,
+      "receptor_id": "1X8X",
+      "ligand_id": "1X8X",
+      "receptor_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1X8X/1X8X_apo.pdb",
+      "ligand_sdf": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1X8X/1X8X_ligand.sdf",
+      "oracle_site_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1X8X/1X8X_binding_site.pdb"
+    },
+    {
+      "index": 63,
+      "receptor_id": "1XM6",
+      "ligand_id": "1XM6",
+      "receptor_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1XM6/1XM6_apo.pdb",
+      "ligand_sdf": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1XM6/1XM6_ligand.sdf",
+      "oracle_site_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1XM6/1XM6_binding_site.pdb"
+    },
+    {
+      "index": 64,
+      "receptor_id": "1XOZ",
+      "ligand_id": "1XOZ",
+      "receptor_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1XOZ/1XOZ_apo.pdb",
+      "ligand_sdf": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1XOZ/1XOZ_ligand.sdf",
+      "oracle_site_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1XOZ/1XOZ_binding_site.pdb"
+    },
+    {
+      "index": 65,
+      "receptor_id": "1Y6B",
+      "ligand_id": "1Y6B",
+      "receptor_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1Y6B/1Y6B_apo.pdb",
+      "ligand_sdf": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1Y6B/1Y6B_ligand.sdf",
+      "oracle_site_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1Y6B/1Y6B_binding_site.pdb"
+    },
+    {
+      "index": 66,
+      "receptor_id": "1Y6R",
+      "ligand_id": "1Y6R",
+      "receptor_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1Y6R/1Y6R_apo.pdb",
+      "ligand_sdf": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1Y6R/1Y6R_ligand.sdf",
+      "oracle_site_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1Y6R/1Y6R_binding_site.pdb"
+    },
+    {
+      "index": 67,
+      "receptor_id": "1YGC",
+      "ligand_id": "1YGC",
+      "receptor_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1YGC/1YGC_apo.pdb",
+      "ligand_sdf": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1YGC/1YGC_ligand.sdf",
+      "oracle_site_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1YGC/1YGC_binding_site.pdb"
+    },
+    {
+      "index": 68,
+      "receptor_id": "1YQY",
+      "ligand_id": "1YQY",
+      "receptor_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1YQY/1YQY_apo.pdb",
+      "ligand_sdf": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1YQY/1YQY_ligand.sdf",
+      "oracle_site_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1YQY/1YQY_binding_site.pdb"
+    },
+    {
+      "index": 69,
+      "receptor_id": "1YV3",
+      "ligand_id": "1YV3",
+      "receptor_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1YV3/1YV3_apo.pdb",
+      "ligand_sdf": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1YV3/1YV3_ligand.sdf",
+      "oracle_site_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1YV3/1YV3_binding_site.pdb"
+    },
+    {
+      "index": 70,
+      "receptor_id": "1YVF",
+      "ligand_id": "1YVF",
+      "receptor_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1YVF/1YVF_apo.pdb",
+      "ligand_sdf": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1YVF/1YVF_ligand.sdf",
+      "oracle_site_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1YVF/1YVF_binding_site.pdb"
+    },
+    {
+      "index": 71,
+      "receptor_id": "1YWR",
+      "ligand_id": "1YWR",
+      "receptor_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1YWR/1YWR_apo.pdb",
+      "ligand_sdf": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1YWR/1YWR_ligand.sdf",
+      "oracle_site_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1YWR/1YWR_binding_site.pdb"
+    },
+    {
+      "index": 72,
+      "receptor_id": "1Z95",
+      "ligand_id": "1Z95",
+      "receptor_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1Z95/1Z95_apo.pdb",
+      "ligand_sdf": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1Z95/1Z95_ligand.sdf",
+      "oracle_site_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1Z95/1Z95_binding_site.pdb"
+    },
+    {
+      "index": 73,
+      "receptor_id": "2BM2",
+      "ligand_id": "2BM2",
+      "receptor_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/2BM2/2BM2_apo.pdb",
+      "ligand_sdf": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/2BM2/2BM2_ligand.sdf",
+      "oracle_site_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/2BM2/2BM2_binding_site.pdb"
+    },
+    {
+      "index": 74,
+      "receptor_id": "2BR1",
+      "ligand_id": "2BR1",
+      "receptor_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/2BR1/2BR1_apo.pdb",
+      "ligand_sdf": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/2BR1/2BR1_ligand.sdf",
+      "oracle_site_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/2BR1/2BR1_binding_site.pdb"
+    },
+    {
+      "index": 75,
+      "receptor_id": "2BSM",
+      "ligand_id": "2BSM",
+      "receptor_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/2BSM/2BSM_apo.pdb",
+      "ligand_sdf": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/2BSM/2BSM_ligand.sdf",
+      "oracle_site_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/2BSM/2BSM_binding_site.pdb"
+    },
+    {
+      "index": 76,
+      "receptor_id": "2BYS",
+      "ligand_id": "2BYS",
+      "receptor_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/2BYS/2BYS_apo.pdb",
+      "ligand_sdf": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/2BYS/2BYS_ligand.sdf",
+      "oracle_site_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/2BYS/2BYS_binding_site.pdb"
+    },
+    {
+      "index": 77,
+      "receptor_id": "2C3I",
+      "ligand_id": "2C3I",
+      "receptor_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/2C3I/2C3I_apo.pdb",
+      "ligand_sdf": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/2C3I/2C3I_ligand.sdf",
+      "oracle_site_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/2C3I/2C3I_binding_site.pdb"
+    },
+    {
+      "index": 78,
+      "receptor_id": "2CET",
+      "ligand_id": "2CET",
+      "receptor_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/2CET/2CET_apo.pdb",
+      "ligand_sdf": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/2CET/2CET_ligand.sdf",
+      "oracle_site_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/2CET/2CET_binding_site.pdb"
+    },
+    {
+      "index": 79,
+      "receptor_id": "2CGR",
+      "ligand_id": "2CGR",
+      "receptor_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/2CGR/2CGR_apo.pdb",
+      "ligand_sdf": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/2CGR/2CGR_ligand.sdf",
+      "oracle_site_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/2CGR/2CGR_binding_site.pdb"
+    },
+    {
+      "index": 80,
+      "receptor_id": "2D3U",
+      "ligand_id": "2D3U",
+      "receptor_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/2D3U/2D3U_apo.pdb",
+      "ligand_sdf": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/2D3U/2D3U_ligand.sdf",
+      "oracle_site_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/2D3U/2D3U_binding_site.pdb"
+    },
+    {
+      "index": 81,
+      "receptor_id": "2GBP",
+      "ligand_id": "2GBP",
+      "receptor_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/2GBP/2GBP_apo.pdb",
+      "ligand_sdf": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/2GBP/2GBP_ligand.sdf",
+      "oracle_site_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/2GBP/2GBP_binding_site.pdb"
+    },
+    {
+      "index": 82,
+      "receptor_id": "2HB1",
+      "ligand_id": "2HB1",
+      "receptor_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/2HB1/2HB1_apo.pdb",
+      "ligand_sdf": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/2HB1/2HB1_ligand.sdf",
+      "oracle_site_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/2HB1/2HB1_binding_site.pdb"
+    },
+    {
+      "index": 83,
+      "receptor_id": "2HR7",
+      "ligand_id": "2HR7",
+      "receptor_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/2HR7/2HR7_apo.pdb",
+      "ligand_sdf": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/2HR7/2HR7_ligand.sdf",
+      "oracle_site_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/2HR7/2HR7_binding_site.pdb"
+    },
+    {
+      "index": 84,
+      "receptor_id": "2J62",
+      "ligand_id": "2J62",
+      "receptor_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/2J62/2J62_apo.pdb",
+      "ligand_sdf": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/2J62/2J62_ligand.sdf",
+      "oracle_site_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/2J62/2J62_binding_site.pdb"
+    }
+  ]
+}

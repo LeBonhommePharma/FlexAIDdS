@@ -796,7 +796,7 @@ static std::pair<std::string,float> select_pose_freq_gated_pooled(
                 try { freq = std::stoi(pl.substr(p2 + 10)); } catch (...) {}
             }
         }
-        if (!have_cf || !std::isfinite(cf)) return false;
+        if (!have_cf || !std::isfinite(cf) || std::fabs(cf) > 1e6f) return false;
         // Read .mcf sidecar: one app_evalue per line (head first, then members).
         // Written by cluster.cpp immediately after write_pdb().
         {

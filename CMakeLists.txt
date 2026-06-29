@@ -121,7 +121,7 @@ else()
 endif()
 option(FLEXAIDS_USE_AVX2    "Enable AVX2 SIMD acceleration"       ON)
 option(FLEXAIDS_USE_AVX512  "Enable AVX-512 SIMD acceleration"    OFF)
-option(FLEXAIDS_USE_SOA_DISTANCES "Route Voronoi hot-path distances through AtomSoA float SoA arrays (C1)" OFF)
+option(FLEXAIDS_USE_SOA_DISTANCES "Route Voronoi hot-path distances through AtomSoA float SoA arrays (C1)" ON)
 option(FLEXAIDS_USE_OPENMP  "Enable OpenMP thread parallelism"    ON)
 # Eigen3 is a hard requirement — no option to disable
 set(FLEXAIDS_USE_EIGEN ON)
@@ -946,26 +946,40 @@ if(BUILD_FLEXAIDDS_FAST)
     target_link_libraries(FlexAIDdS PRIVATE flexaid_core)
 
     if(MSVC)
-        target_compile_options(FlexAIDdS PRIVATE /O2 /GL /DNDEBUG /MT)
+        if(NOT CMAKE_BUILD_TYPE STREQUAL "Debug")
+            target_compile_options(FlexAIDdS PRIVATE /O2 /GL /DNDEBUG /MT)
+        else()
+            target_compile_options(FlexAIDdS PRIVATE /Od /MT)
+        endif()
         target_link_options(FlexAIDdS PRIVATE /LTCG)
         target_compile_definitions(FlexAIDdS PRIVATE
             _CRT_SECURE_NO_WARNINGS _USE_MATH_DEFINES NOMINMAX)
     else()
-        target_compile_options(FlexAIDdS PRIVATE -O3 -ffast-math -fno-finite-math-only -flto -DNDEBUG
-            $<$<AND:$<CXX_COMPILER_ID:AppleClang,Clang>,$<STREQUAL:${CMAKE_SYSTEM_PROCESSOR},arm64>>:-mcpu=native>
-        )
-        if(NOT APPLE)
-            target_compile_options(FlexAIDdS PRIVATE -march=native)
-            target_link_options(FlexAIDdS PRIVATE -flto -s)
+        if(NOT CMAKE_BUILD_TYPE STREQUAL "Debug")
+            target_compile_options(FlexAIDdS PRIVATE -O3 -ffast-math -fno-finite-math-only -flto -DNDEBUG
+                $<$<AND:$<CXX_COMPILER_ID:AppleClang,Clang>,$<STREQUAL:${CMAKE_SYSTEM_PROCESSOR},arm64>>:-mcpu=native>
+            )
         else()
-            target_link_options(FlexAIDdS PRIVATE -flto)
+            target_compile_options(FlexAIDdS PRIVATE -O2 -ffast-math -fno-finite-math-only -g
+                $<$<AND:$<CXX_COMPILER_ID:AppleClang,Clang>,$<STREQUAL:${CMAKE_SYSTEM_PROCESSOR},arm64>>:-mcpu=native>
+            )
+        endif()
+        if(NOT CMAKE_BUILD_TYPE STREQUAL "Debug")
+            if(NOT APPLE)
+                target_compile_options(FlexAIDdS PRIVATE -march=native)
+                target_link_options(FlexAIDdS PRIVATE -flto -s)
+            else()
+                target_link_options(FlexAIDdS PRIVATE -flto)
+            endif()
+        elseif(NOT APPLE)
+            target_compile_options(FlexAIDdS PRIVATE -march=native)
         endif()
     endif()
 
     # ─── IPO / LTO via CMake property (supplements the -flto flag above) ────
     include(CheckIPOSupported)
     check_ipo_supported(RESULT ipo_ok OUTPUT ipo_err)
-    if(ipo_ok)
+    if(ipo_ok AND NOT CMAKE_BUILD_TYPE STREQUAL "Debug")
         set_property(TARGET FlexAIDdS PROPERTY INTERPROCEDURAL_OPTIMIZATION ON)
         set_property(TARGET flexaid_core PROPERTY INTERPROCEDURAL_OPTIMIZATION ON)
     else()
@@ -999,6 +1013,25 @@ if(BUILD_FLEXAIDDS_FAST)
         target_include_directories(FlexAIDdS PRIVATE ${hip_INCLUDE_DIRS})
         target_link_libraries(FlexAIDdS PRIVATE hip::host hip::device)
         set_property(TARGET FlexAIDdS PROPERTY HIP_ARCHITECTURES ${FLEXAIDS_HIP_ARCHITECTURES})
+    endif()
+
+    # ─── CUDA sources for FlexAIDdS (mirrors FlexAID GPU kernel set) ─────────
+    if(FLEXAIDS_USE_CUDA)
+        target_sources(FlexAIDdS PRIVATE
+            LIB/cuda_eval.cu
+            LIB/ShannonThermoStack/shannon_cuda.cu
+            LIB/tENCoM/tencm_cuda.cu
+            LIB/gpu_fast_optics.cu
+            LIB/TurboQuant.cu
+            LIB/gpu_batch_distance.cu
+            LIB/gpu_batch_distance.cpp
+        )
+        target_compile_definitions(FlexAIDdS PRIVATE FLEXAIDS_USE_CUDA)
+        set_target_properties(FlexAIDdS PROPERTIES
+            CUDA_SEPARABLE_COMPILATION ON
+            CUDA_STANDARD 17)
+        target_link_libraries(FlexAIDdS PRIVATE CUDA::cudart CUDA::cudadevrt)
+        message(STATUS "FlexAIDdS: CUDA enabled — CF batch + Shannon + TENCoM kernels")
     endif()
 
     # ─── Metal sources for FlexAIDdS ────────────────────────────────────────
@@ -2498,6 +2531,20 @@ flexaids_configure_simd(test_cavity_detect)
     endif()
     flexaids_configure_msvc_test(test_dataset_runner)
     add_test(NAME DatasetRunnerTests COMMAND test_dataset_runner)
+
+    # test_calc_rmsd_chrom_bounds — OOB snapshot genes must not crash coord cache
+    add_executable(test_calc_rmsd_chrom_bounds
+        tests/test_calc_rmsd_chrom_bounds.cpp
+    )
+    target_include_directories(test_calc_rmsd_chrom_bounds PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/LIB)
+    target_link_libraries(test_calc_rmsd_chrom_bounds PRIVATE flexaid_core GTest::gtest GTest::gtest_main)
+    if(MSVC)
+        target_compile_options(test_calc_rmsd_chrom_bounds PRIVATE /O2)
+    else()
+        target_compile_options(test_calc_rmsd_chrom_bounds PRIVATE -O2)
+    endif()
+    flexaids_configure_msvc_test(test_calc_rmsd_chrom_bounds)
+    add_test(NAME CalcRmsdChromBoundsTests COMMAND test_calc_rmsd_chrom_bounds)
 
     # test_cofactor_blacklist — ligand-extraction cofactor blacklist (1HNN SAH/SKF)
     add_executable(test_cofactor_blacklist

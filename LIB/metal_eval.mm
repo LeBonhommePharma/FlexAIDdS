@@ -353,19 +353,15 @@ struct MetalEvalCtx {
     id<MTLCommandBuffer> inflight_cb = nil;
 };
 
-// Drain GPU work via completion handler (replaces blocking waitUntilCompleted).
+// Drain committed GPU work. Handler must be registered before commit;
+// inflight buffers here are always post-commit, so waitUntilCompleted is required.
 static void metal_eval_drain_inflight(MetalEvalCtx* ctx)
 {
     if (!ctx || !ctx->inflight_cb) return;
     id<MTLCommandBuffer> cb = ctx->inflight_cb;
     ctx->inflight_cb = nil;
 
-    dispatch_semaphore_t sem = dispatch_semaphore_create(0);
-    [cb addCompletedHandler:^(id<MTLCommandBuffer> buffer) {
-        (void)buffer;
-        dispatch_semaphore_signal(sem);
-    }];
-    dispatch_semaphore_wait(sem, DISPATCH_TIME_FOREVER);
+    [cb waitUntilCompleted];
 
     if (cb.status == MTLCommandBufferStatusError) {
         NSString* desc = cb.error ? cb.error.localizedDescription : @"unknown";

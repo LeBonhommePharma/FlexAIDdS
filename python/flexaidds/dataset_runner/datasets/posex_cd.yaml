@@ -1,0 +1,17 @@
+slug: posex_cd
+name: "PoseX Cross-Docking (1312 pairs)"
+benchmark_order: 3
+description: >
+  PoseX cross-docking benchmark from benchmarks/datasets/posex_cd_1312.json.
+  Tier-2 uses the committed entry catalog (1312 pairs).
+tier: 2
+tier1_subset_size: 3
+structural_states:
+  - crossdock
+targets:
+  - 7FVX_K7C
+  - 8XYZ_PLACEHOLDER
+metrics:
+  - crossdock_success_rate_2A
+expected_baselines:
+  crossdock_success_rate_2A: 0.30

@@ -11,6 +11,23 @@ You are an expert on FlexAIDdS (FlexAID with ΔS Entropy) — an entropy-driven 
 
 **License**: Apache-2.0 only. Never introduce GPL/AGPL dependencies. Follow the clean-room policy in `docs/licensing/`.
 
+## Grok Build Worker Orders (Benchmark Campaigns — 2026-06-29)
+
+**Every worker must read** `docs/dev/GROK_BUILD_WORKER_DISPATCH_20260629.md` and
+`docs/dev/grok_build_worker_orders.json` before launching any full-85 or ablation campaign.
+
+| Phase | Status | Action |
+|-------|--------|--------|
+| **NOW** | ACTIVE | Bisect Vcontacts smoke-12×3 (`queue_bisect_vcontacts.py`) |
+| **NEXT** | QUEUED | `v131_safe_full85` if bisect passes → 78/85 recovery |
+| **THEN** | BLOCKED | Cherry-pick only proven Vcontacts fix onto HEAD |
+| **LATER** | BLOCKED | r0=7 + expB/sulfo bundle |
+
+**Do NOT run:** `launch_v132_ablation.py`, `queue_v132_ablation_ladder.py`, `launch_v131_full85.py`
+until `vcontacts_bisect_summary.json` exists. Use `v131_safe` binary (pre-`27e68e51`) as escape hatch.
+
+Launch scripts enforce this via `scripts/lib_worker_orders.py` (exit code 2 if blocked).
+
 ## Core Workflow Rules (Non-Negotiable)
 
 **Authoritative version**: See `AGENTS.md` in the repository root. The rules below are the Grok-optimized summary.
