@@ -1887,10 +1887,10 @@ int get_contlist4(atom* atoms,int atomzero, contactlist contlist[],
 	// time via simd::distance2_1x4 — the NEON kernel when FLEXAIDS_USE_NEON is
 	// defined, scalar otherwise). Per-candidate bookkeeping is unchanged.
 	//
-	// Numerical note: the scalar reference path computes sqrdist in double;
-	// this path accumulates the squared distance in float32. Results match the
-	// scalar path only within float32 rounding. Set FLEXAIDS_SOA_ASSERT=1 in
-	// the environment (debug builds) to flag any divergence beyond tolerance.
+	// Numerical note: SoA gather + float32 distance2_1x4 is for layout/SIMD
+	// throughput; contact/clash threshold decisions use double sqrdist_ref so
+	// GA parity matches the scalar path. Set FLEXAIDS_SOA_ASSERT=1 (debug) to
+	// compare float32 SIMD distances against the double reference.
 	(void)sqrdist; (void)neardist; (void)clashdist;
 	const float bx = Calc[atomzero].atom->coor[0];
 	const float by = Calc[atomzero].atom->coor[1];
@@ -1906,6 +1906,16 @@ int get_contlist4(atom* atoms,int atomzero, contactlist contlist[],
 		return e && e[0] && e[0] != '0';
 	}();
 #endif
+	// Contact/clash inclusion uses squared-distance thresholds (neardist²,
+	// clashdist). float32 SIMD distances can differ from the scalar double path
+	// without tripping FLEXAIDS_SOA_ASSERT tolerance yet still flip a threshold
+	// and diverge GA ranking. Always feed process_candidate double refs.
+	auto sqrdist_ref = [&](int cand_atomj) -> double {
+		double dx = (double)Calc[cand_atomj].atom->coor[0] - (double)bx;
+		double dy = (double)Calc[cand_atomj].atom->coor[1] - (double)by;
+		double dz = (double)Calc[cand_atomj].atom->coor[2] - (double)bz;
+		return dx*dx + dy*dy + dz*dz;
+	};
 
 	for(i=0; i<27; ++i) {
 		boxi = boxzero +dim2*((i/9)-1) + dim*(((i/3)%3)-1) +(i%3)-1;
@@ -1935,32 +1945,28 @@ int get_contlist4(atom* atoms,int atomzero, contactlist contlist[],
 			cand_x.push_back(bx); cand_y.push_back(by); cand_z.push_back(bz);
 		}
 
-		float d2[4];
 		int k = 0;
 		for(; k + 4 <= ncand; k += 4) {
-			simd::distance2_1x4(&cand_x[k], &cand_y[k], &cand_z[k],
-			                    bx, by, bz, d2);
-			for(int l = 0; l < 4; ++l) {
 #ifndef NDEBUG
-				if(soa_assert) {
-					double dx = (double)Calc[cand_idx[k+l]].atom->coor[0]-bx;
-					double dy = (double)Calc[cand_idx[k+l]].atom->coor[1]-by;
-					double dz = (double)Calc[cand_idx[k+l]].atom->coor[2]-bz;
-					double ref = dx*dx+dy*dy+dz*dz;
+			if(soa_assert) {
+				float d2[4];
+				simd::distance2_1x4(&cand_x[k], &cand_y[k], &cand_z[k],
+				                    bx, by, bz, d2);
+				for(int l = 0; l < 4; ++l) {
+					double ref = sqrdist_ref(cand_idx[k+l]);
 					double tol = 1e-3*(ref+1.0);
 					if(fabs((double)d2[l]-ref) > tol)
 						fprintf(stderr,"[FLEXAIDS_SOA_ASSERT] sqrdist mismatch atomj=%d soa=%.6f ref=%.6f\n",
 						        cand_idx[k+l],(double)d2[l],ref);
 				}
-#endif
-				process_candidate(cand_idx[k+l], (double)d2[l]);
 			}
+#endif
+			for(int l = 0; l < 4; ++l)
+				process_candidate(cand_idx[k+l], sqrdist_ref(cand_idx[k+l]));
 		}
 		// scalar tail (remaining 0..3 real candidates)
-		for(; k < ncand; ++k) {
-			float dx = cand_x[k]-bx, dy = cand_y[k]-by, dz = cand_z[k]-bz;
-			process_candidate(cand_idx[k], (double)(dx*dx+dy*dy+dz*dz));
-		}
+		for(; k < ncand; ++k)
+			process_candidate(cand_idx[k], sqrdist_ref(cand_idx[k]));
 	}
 #else
 	// ── original scalar / double-precision path (unchanged) ────────────────

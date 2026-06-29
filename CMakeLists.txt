@@ -946,26 +946,40 @@ if(BUILD_FLEXAIDDS_FAST)
     target_link_libraries(FlexAIDdS PRIVATE flexaid_core)
 
     if(MSVC)
-        target_compile_options(FlexAIDdS PRIVATE /O2 /GL /DNDEBUG /MT)
+        if(NOT CMAKE_BUILD_TYPE STREQUAL "Debug")
+            target_compile_options(FlexAIDdS PRIVATE /O2 /GL /DNDEBUG /MT)
+        else()
+            target_compile_options(FlexAIDdS PRIVATE /Od /MT)
+        endif()
         target_link_options(FlexAIDdS PRIVATE /LTCG)
         target_compile_definitions(FlexAIDdS PRIVATE
             _CRT_SECURE_NO_WARNINGS _USE_MATH_DEFINES NOMINMAX)
     else()
-        target_compile_options(FlexAIDdS PRIVATE -O3 -ffast-math -fno-finite-math-only -flto -DNDEBUG
-            $<$<AND:$<CXX_COMPILER_ID:AppleClang,Clang>,$<STREQUAL:${CMAKE_SYSTEM_PROCESSOR},arm64>>:-mcpu=native>
-        )
-        if(NOT APPLE)
-            target_compile_options(FlexAIDdS PRIVATE -march=native)
-            target_link_options(FlexAIDdS PRIVATE -flto -s)
+        if(NOT CMAKE_BUILD_TYPE STREQUAL "Debug")
+            target_compile_options(FlexAIDdS PRIVATE -O3 -ffast-math -fno-finite-math-only -flto -DNDEBUG
+                $<$<AND:$<CXX_COMPILER_ID:AppleClang,Clang>,$<STREQUAL:${CMAKE_SYSTEM_PROCESSOR},arm64>>:-mcpu=native>
+            )
         else()
-            target_link_options(FlexAIDdS PRIVATE -flto)
+            target_compile_options(FlexAIDdS PRIVATE -O2 -ffast-math -fno-finite-math-only -g
+                $<$<AND:$<CXX_COMPILER_ID:AppleClang,Clang>,$<STREQUAL:${CMAKE_SYSTEM_PROCESSOR},arm64>>:-mcpu=native>
+            )
+        endif()
+        if(NOT CMAKE_BUILD_TYPE STREQUAL "Debug")
+            if(NOT APPLE)
+                target_compile_options(FlexAIDdS PRIVATE -march=native)
+                target_link_options(FlexAIDdS PRIVATE -flto -s)
+            else()
+                target_link_options(FlexAIDdS PRIVATE -flto)
+            endif()
+        elseif(NOT APPLE)
+            target_compile_options(FlexAIDdS PRIVATE -march=native)
         endif()
     endif()
 
     # ─── IPO / LTO via CMake property (supplements the -flto flag above) ────
     include(CheckIPOSupported)
     check_ipo_supported(RESULT ipo_ok OUTPUT ipo_err)
-    if(ipo_ok)
+    if(ipo_ok AND NOT CMAKE_BUILD_TYPE STREQUAL "Debug")
         set_property(TARGET FlexAIDdS PROPERTY INTERPROCEDURAL_OPTIMIZATION ON)
         set_property(TARGET flexaid_core PROPERTY INTERPROCEDURAL_OPTIMIZATION ON)
     else()
