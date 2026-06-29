@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "name": "astex_guard_bisect_2_v132",
+  "description": "v132 guard selector bisect: 1HQ2+1T40",
+  "n_pairs": 2,
+  "oracle_mode": true,
+  "astex_diverse_dir": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse",
+  "pairs": [
+    {
+      "index": 0,
+      "receptor_id": "1HQ2",
+      "ligand_id": "1HQ2",
+      "receptor_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1HQ2/1HQ2_apo.pdb",
+      "ligand_sdf": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1HQ2/1HQ2_ligand.sdf",
+      "oracle_site_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1HQ2/1HQ2_binding_site.pdb"
+    },
+    {
+      "index": 1,
+      "receptor_id": "1T40",
+      "ligand_id": "1T40",
+      "receptor_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1T40/1T40_apo.pdb",
+      "ligand_sdf": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1T40/1T40_ligand.sdf",
+      "oracle_site_pdb": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1T40/1T40_binding_site.pdb"
+    }
+  ]
+}
