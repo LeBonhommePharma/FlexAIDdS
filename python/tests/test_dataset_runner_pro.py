@@ -13,8 +13,13 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SCRIPT_PATH = REPO_ROOT / "dataset_runner_pro.py"
 
+if not SCRIPT_PATH.exists():
+    pytest.skip("dataset_runner_pro.py missing (optional)", allow_module_level=True)
+
 
 def load_module():
+    if not SCRIPT_PATH.exists():
+        pytest.skip(f"dataset_runner_pro.py not present at {SCRIPT_PATH} (pro script optional)")
     spec = importlib.util.spec_from_file_location("dataset_runner_pro", SCRIPT_PATH)
     module = importlib.util.module_from_spec(spec)
     assert spec and spec.loader

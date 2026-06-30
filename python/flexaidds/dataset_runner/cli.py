@@ -1,18 +1,24 @@
 """CLI entry point for the FlexAIDdS DatasetRunner.
 
+THERMO/ITC (itc187, bindingdb_itc, scorpio) are automatically treated with:
+- 298 K forced
+- scoring+entropy_rescue metrics only
+- full provenance (git_sha + binary + host + temp + command) always in outputs
+
 Examples
 --------
 Run a tier-1 (PR sanity) benchmark on CASF-2016::
 
     python -m flexaidds.dataset_runner --dataset casf2016 --tier 1
 
+ITC thermo dry-run (auto 298 K, correct metrics, provenance)::
+
+    python -m flexaidds.dataset_runner --dataset itc187 --tier 1 --dry-run
+    python -m flexaidds.dataset_runner --dataset itc187,bindingdb_itc --tier 1 --dry-run --output /tmp/out.json
+
 Run all datasets at tier-2 with 4 MPI nodes::
 
     mpirun -n 4 python -m flexaidds.dataset_runner --all --tier 2 --distributed
-
-Run a single metric on ITC-187::
-
-    python -m flexaidds.dataset_runner --dataset itc187 --metric entropy_rescue_rate
 
 Dry run to test the pipeline without actual docking::
 
@@ -24,6 +30,7 @@ from __future__ import annotations
 import argparse
 import logging
 import os
+import shlex
 import sys
 from pathlib import Path
 
@@ -203,14 +210,30 @@ def main(argv: list[str] | None = None) -> int:
         format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
         datefmt="%H:%M:%S",
     )
+    logger = logging.getLogger(__name__)
 
     # Override data dir from CLI
     if args.data_dir:
         os.environ["FLEXAIDDS_BENCHMARK_DATA"] = args.data_dir
 
-    # Import here so logging is already configured
-    from .runner import DatasetRunner, BenchmarkReport, _git_sha, _runner_info
+    # Import early for thermo constants and runner
+    from .runner import DatasetRunner, BenchmarkReport, _git_sha, _runner_info, THERMO_DATASETS
 
+    # -------------------------------------------------------------------------
+    # Bulletproof ITC/thermo mode (handoff + validation prompt)
+    # - Auto-force 298 K for itc187 / bindingdb_itc / scorpio (and sequences)
+    # - Will be further restricted in runner for metrics + provenance
+    # -------------------------------------------------------------------------
+    if args.dataset:
+        slugs = {s.strip().lower() for s in args.dataset.split(",")}
+        if slugs & THERMO_DATASETS and args.temperature == 300.0:
+            logger.info(
+                "ITC/thermo dataset(s) %s detected — forcing --temperature 298.0 (reproducible as fuck)",
+                args.dataset,
+            )
+            args.temperature = 298.0
+
+    full_command = " ".join(shlex.quote(x) for x in sys.argv)
     runner_kwargs = dict(
         results_dir=args.results_dir,
         binary=args.binary,
@@ -223,6 +246,7 @@ def main(argv: list[str] | None = None) -> int:
         n_bootstrap=args.n_bootstrap,
         dry_run=args.dry_run,
         resume=args.resume,
+        command_line=full_command,
     )
     if args.datasets_dir is not None:
         runner_kwargs["datasets_dir"] = args.datasets_dir
@@ -257,6 +281,9 @@ def main(argv: list[str] | None = None) -> int:
             git_sha=_git_sha(),
             host=socket.gethostname(),
             runner_info=_runner_info(),
+            temperature=dr.temperature,
+            binary=dr.binary,
+            full_command=full_command,
         )
 
     # Only root rank prints / saves

@@ -1,0 +1,40 @@
+# SCORPIO ITC (ITC-enriched)
+slug: scorpio
+name: "SCORPIO ITC (ITC-enriched)"
+description: >
+  ITC-enriched set focused on entropy/enthalpy decomposition.
+  Primary for thermo ledger validation at 298 K.
+
+zenodo_doi: ""
+download_url: ""
+data_format: pdb
+tier: 2
+tier1_subset_size: 5
+
+structural_states:
+  - holo
+
+targets:
+  - 1a4g
+  - 1c5c
+  - 1t3r
+  - 2rh1
+  - 2zff
+
+metrics:
+  - scoring_power_pearson_r
+  - scoring_power_spearman_r
+  - scoring_power_rmse
+  - scoring_power_mae
+  - entropy_rescue_rate
+
+expected_baselines:
+  scoring_power_pearson_r: 0.68
+  scoring_power_spearman_r: 0.65
+  scoring_power_rmse: 1.85
+  scoring_power_mae: 1.45
+  entropy_rescue_rate: 0.50
+
+baseline_tolerance: 0.05
+
+active_label_field: is_active

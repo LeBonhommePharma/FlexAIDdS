@@ -4,6 +4,14 @@ Discovers dataset configs, distributes work across MPI nodes or local
 processes, runs FlexAIDdS docking, computes all metrics, and produces
 structured JSON + Markdown reports.
 
+THERMO/ITC MODE (bulletproof, always active for itc187/bindingdb_itc/scorpio):
+- Temperature is auto-forced to 298.0 K.
+- Metrics are restricted to scoring_power_* + entropy_rescue_rate only
+  (docking_power_* deliberately excluded).
+- Full provenance is ALWAYS emitted: git_sha, binary, host, temperature,
+  full_command (even in dry-run, for any dataset/method/sequence).
+- Works for --dry-run, real runs, --all, comma sequences, custom YAMLs.
+
 Typical usage
 -------------
 Library::
@@ -16,8 +24,8 @@ Library::
 
 CLI::
 
-    python -m flexaidds.dataset_runner --dataset casf2016 --tier 1
-    python -m flexaidds.dataset_runner --all --distributed --nodes 4
+    python -m flexaidds.dataset_runner --dataset itc187 --tier 1 --temperature 298 --dry-run
+    python -m flexaidds.dataset_runner --dataset itc187,bindingdb_itc --tier 1 --dry-run
 
 MPI distributed run::
 
@@ -58,6 +66,23 @@ from .metrics import (
 )
 
 logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# Thermo/ITC focus (bulletproof per handoff + validation prompt)
+# ITC/thermo datasets ALWAYS use 298 K, only scoring_power_* + entropy_rescue_rate
+# metrics, and full provenance (git_sha + binary + host + temperature + full_command).
+# This applies for dry-run and real runs, sequences, any kernel/method.
+# ---------------------------------------------------------------------------
+
+THERMO_DATASETS: set[str] = {"itc187", "bindingdb_itc", "scorpio"}
+THERMO_DEFAULT_TEMP: float = 298.0
+THERMO_METRICS: set[str] = {
+    "scoring_power_pearson_r",
+    "scoring_power_spearman_r",
+    "scoring_power_rmse",
+    "scoring_power_mae",
+    "entropy_rescue_rate",
+}
 
 
 # ---------------------------------------------------------------------------
@@ -209,6 +234,9 @@ class DatasetResult:
     timestamp: str = ""
     git_sha: str = ""
     host: str = ""
+    binary: str = ""
+    temperature: float = 300.0
+    full_command: str = ""
 
     def check_regressions(self) -> Dict[str, bool]:
         """Flag metrics that regressed below baseline − tolerance.
@@ -240,6 +268,9 @@ class DatasetResult:
             "timestamp": self.timestamp,
             "git_sha": self.git_sha,
             "host": self.host,
+            "binary": self.binary,
+            "temperature": self.temperature,
+            "full_command": self.full_command,
             "duration_seconds": self.duration_seconds,
             "targets_attempted": len(self.targets_attempted),
             "targets_completed": len(self.targets_completed),
@@ -275,6 +306,9 @@ class BenchmarkReport:
     git_sha: str = ""
     host: str = ""
     runner_info: Dict[str, str] = field(default_factory=dict)
+    temperature: float = 300.0
+    binary: str = ""
+    full_command: str = ""
 
     # ------------------------------------------------------------------
     # Serialisation
@@ -286,6 +320,9 @@ class BenchmarkReport:
             "git_sha": self.git_sha,
             "host": self.host,
             "runner_info": self.runner_info,
+            "temperature": self.temperature,
+            "binary": self.binary,
+            "full_command": self.full_command,
             "datasets": [d.to_dict() for d in self.datasets],
         }
 
@@ -300,6 +337,9 @@ class BenchmarkReport:
             f"**Generated**: {self.generated_at}  ",
             f"**Commit**: `{self.git_sha or 'unknown'}`  ",
             f"**Host**: {self.host}  ",
+            f"**Temperature**: {getattr(self, 'temperature', 300.0)} K  ",
+            f"**Binary**: {getattr(self, 'binary', 'unknown')}  ",
+            f"**Command**: {getattr(self, 'full_command', '')[:200]}  ",
             "",
             "---",
             "",
@@ -823,6 +863,7 @@ class DatasetRunner:
         dry_run: bool = False,
         repo_root: Optional[Union[str, Path]] = None,
         resume: bool = False,
+        command_line: Optional[str] = None,
     ) -> None:
         _default_datasets = Path(__file__).resolve().parent / "datasets"
         self.datasets_dir = Path(datasets_dir) if datasets_dir is not None else _default_datasets
@@ -844,6 +885,7 @@ class DatasetRunner:
         self.dry_run = dry_run
         self.repo_root = Path(repo_root) if repo_root else Path.cwd()
         self.resume = bool(resume)
+        self.command_line = command_line
 
         self.results_dir.mkdir(parents=True, exist_ok=True)
 
@@ -855,6 +897,31 @@ class DatasetRunner:
             self._mpi_rank, self._mpi_size, self._mpi_root, self._mpi_comm = (
                 0, 1, True, None
             )
+
+        # Store original requested temp for reference; effective is per-dataset
+        self._requested_temperature = temperature
+        self.command_line: Optional[str] = None  # set by CLI for full provenance
+
+    def _effective_temperature(self, slug: str) -> float:
+        """Auto-force 298 K for ITC/thermo datasets (handoff requirement).
+
+        Non-thermo datasets retain the configured temperature (default 300).
+        Always returns the value that should be used for this run.
+        """
+        if slug in THERMO_DATASETS:
+            return THERMO_DEFAULT_TEMP
+        return self.temperature
+
+    def _resolve_binary(self) -> str:
+        """Return resolved absolute path to FlexAID binary when possible."""
+        import shutil
+        b = self.binary
+        if os.path.isabs(b) and os.path.isfile(b):
+            return str(Path(b).resolve())
+        found = shutil.which(b)
+        if found and os.path.isfile(found):
+            return str(Path(found).resolve())
+        return b
 
     # ------------------------------------------------------------------
     # Dataset discovery
@@ -1152,7 +1219,31 @@ class DatasetRunner:
         t0 = time.monotonic()
         targets = config.tier1_targets() if tier == 1 else config.targets
         states = structural_states or config.structural_states
+        slug = config.slug
+        eff_temp = self._effective_temperature(slug)
+        if slug in THERMO_DATASETS and eff_temp != self.temperature:
+            logger.info(
+                "ITC/thermo dataset %s: auto-forcing temperature=%.1f K "
+                "(bulletproof per handoff; was %.1f)",
+                slug, eff_temp, self.temperature,
+            )
+
         requested_metrics = metric_subset or config.metrics or None
+        if slug in THERMO_DATASETS:
+            # Strictly limit to scoring + entropy_rescue (docking_power OFF for thermo)
+            if requested_metrics:
+                filtered = [
+                    m for m in requested_metrics
+                    if m in THERMO_METRICS or (m.startswith("scoring_power_") and "docking" not in m.lower())
+                ]
+                if set(filtered) != set(requested_metrics or []):
+                    logger.info(
+                        "Thermo dataset %s: restricting metrics to scoring_power_* + entropy_rescue_rate only",
+                        slug,
+                    )
+                    requested_metrics = filtered or list(THERMO_METRICS)
+            else:
+                requested_metrics = list(THERMO_METRICS)
 
         dr = DatasetResult(
             config=config,
@@ -1161,6 +1252,9 @@ class DatasetRunner:
             timestamp=datetime.datetime.utcnow().isoformat() + "Z",
             git_sha=_git_sha(self.repo_root),
             host=socket.gethostname(),
+            binary=self._resolve_binary(),
+            temperature=eff_temp,
+            full_command=getattr(self, "command_line", None) or " ".join(sys.argv),
         )
 
         if not targets:
@@ -1446,6 +1540,9 @@ class DatasetRunner:
             git_sha=_git_sha(self.repo_root),
             host=socket.gethostname(),
             runner_info=_runner_info(),
+            temperature=results[0].temperature if results else self.temperature,
+            binary=results[0].binary if results else self._resolve_binary(),
+            full_command=getattr(self, "command_line", None) or "",
         )
         return report
 
@@ -1654,6 +1751,9 @@ class DatasetRunner:
             git_sha=_git_sha(self.repo_root),
             host=socket.gethostname(),
             runner_info=_runner_info(),
+            temperature=results[0].temperature if results else self.temperature,
+            binary=results[0].binary if results else self._resolve_binary(),
+            full_command=getattr(self, "command_line", None) or "",
         )
         return report.to_dict(), report.to_markdown()
 

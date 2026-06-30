@@ -1,0 +1,41 @@
+# BindingDB ITC subset (Kd/ITC filtered)
+slug: bindingdb_itc
+name: "BindingDB ITC Subset (Kd/ITC filtered)"
+description: >
+  ITC-enriched subset from BindingDB with full thermo data (ΔG, ΔH, ΔS).
+  Used for scoring power + entropy rescue validation at 298 K.
+
+zenodo_doi: ""
+download_url: ""
+data_format: pdb
+tier: 2
+tier1_subset_size: 5
+
+structural_states:
+  - holo
+
+targets:
+  - 1a4g
+  - 1p62
+  - 1t3r
+  - 2rh1
+  - 3dzy
+
+metrics:
+  - scoring_power_pearson_r
+  - scoring_power_spearman_r
+  - scoring_power_rmse
+  - scoring_power_mae
+  - entropy_rescue_rate
+
+expected_baselines:
+  scoring_power_pearson_r: 0.65
+  scoring_power_spearman_r: 0.62
+  scoring_power_rmse: 1.90
+  scoring_power_mae: 1.50
+  entropy_rescue_rate: 0.45
+
+baseline_tolerance: 0.05
+
+active_label_field: is_active
+# thermo at 298 K

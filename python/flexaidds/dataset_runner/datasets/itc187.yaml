@@ -83,17 +83,16 @@ metrics:
   - scoring_power_rmse
   - scoring_power_mae
   - entropy_rescue_rate
-  - docking_power_top1
 
 # The key discriminator: entropy_rescue_rate measures how often −TΔS correction
 # rescues complexes where ΔH alone would rank the crystal pose outside top-3.
+# docking_power_* intentionally omitted for thermo/ITC sets (handoff spec).
 expected_baselines:
   scoring_power_pearson_r: 0.93
   scoring_power_spearman_r: 0.90
   scoring_power_rmse: 1.40
   scoring_power_mae: 1.05
   entropy_rescue_rate: 0.72
-  docking_power_top1: 0.78
 
 baseline_tolerance: 0.05
 
