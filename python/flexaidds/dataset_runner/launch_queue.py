@@ -100,7 +100,7 @@ def astex_nonnative_running() -> bool:
     """True when an astex_nonnative full benchmark is already in flight."""
     try:
         result = subprocess.run(
-            ["pgrep", "-fl", r"--benchmark astex_nonnative|astex_nonnative_298K"],
+            ["pgrep", "-fl", "astex_nonnative_298K|benchmark astex_nonnative"],
             capture_output=True,
             text=True,
             check=False,
