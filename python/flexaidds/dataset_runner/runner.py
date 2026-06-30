@@ -1,8 +1,17 @@
 """DatasetRunner — distributed benchmarking orchestrator for FlexAIDdS.
 
-Discovers dataset configs, distributes work across MPI nodes or local
-processes, runs FlexAIDdS docking, computes all metrics, and produces
-structured JSON + Markdown reports.
+IMPORTANT: Focus is on thermodynamic affinity / ITC (deltaG, deltaH, deltaS
+decomposition, entropy/enthalpy index, entropy_rescue_rate, scoring_power on
+experimental affinities). Autonomous blind docking power is NOT the target.
+
+Discovers dataset configs (including thermo ITC ones: itc187, bindingdb_itc,
+scorpio, and Astex native/nonnative), distributes work across MPI or local,
+runs FlexAIDdS, (optionally rescores with entropy metrics), computes metrics,
+produces structured reports with full provenance (git_sha, binary, host,
+temperature=298 for ITC).
+
+Integrates with external benchmarks like benchmarks/astex_entropy/ for
+Vina/rDock/Boltz + entropy re-rank + PB validity (RMSD<=2 AND all_passed).
 
 Typical usage
 -------------
@@ -10,19 +19,31 @@ Library::
 
     from flexaidds.dataset_runner import DatasetRunner
 
-    runner = DatasetRunner(results_dir="results/benchmark_run")
+    runner = DatasetRunner(results_dir="results/benchmark_run", temperature=298.0)
     report = runner.run_all(tier=1)
     json_path, md_path = report.save("results/benchmark_run/report")
 
 CLI::
 
-    python -m flexaidds.dataset_runner --dataset casf2016 --tier 1
+    python -m flexaidds.dataset_runner --dataset itc187 --tier 1
     python -m flexaidds.dataset_runner --all --distributed --nodes 4
 
 MPI distributed run::
 
     mpirun -n 8 python -m flexaidds.dataset_runner --all --distributed
 """
+
+# Key lessons for bulletproof reproducible impl:
+# - Always record git_sha, host, timestamp, full cmd, temperature.
+# - For thermo datasets: use scoring_power + entropy_rescue_rate; deprecate docking_power.
+# - Support external poses rescore + entropy re-rank (Shannon, tENCoM, thermo).
+# - PB for validity filter only (not autonomous success).
+# - Resume, error isolation, per-target artifacts.
+# - Provenance: link to specific commits (e.g. legacy 94.1% at 8196829f, current aef5c4b7...).
+# - Focus: ITC deltaH/deltaS, entropy/enthalpy index, not blind docking rates.
+# - Use existing yamls for astex native/nonnative.
+# - Minimal for external: rdkit etc as in astex_entropy module.
+
 
 from __future__ import annotations
 
@@ -1433,7 +1454,19 @@ class DatasetRunner:
         results: List[DatasetResult] = []
         for config in all_configs:
             logger.info("Running dataset: %s", config.slug)
-            dr = self.run_dataset(config, tier=tier, metric_subset=metric_subset)
+            try:
+                dr = self.run_dataset(config, tier=tier, metric_subset=metric_subset)
+            except Exception as exc:
+                logger.error("Dataset %s failed: %s", config.slug, exc)
+                # Bulletproof: continue with partial/failed result
+                dr = DatasetResult(
+                    config=config,
+                    tier=tier,
+                    targets_attempted=list(config.targets),
+                    error=str(exc),
+                    git_sha=_git_sha(self.repo_root),
+                    host=socket.gethostname(),
+                )
             results.append(dr)
 
             # Save incremental results after each dataset
