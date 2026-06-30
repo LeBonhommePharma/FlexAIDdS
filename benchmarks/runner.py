@@ -6,13 +6,15 @@ Orchestrates the three ITC/affinity thermodynamic benchmark suites:
   - bindingdb_itc (BindingDB filtered ITC/Kd)
   - scorpio (SCORPIO ITC-enriched)
 
+Focus: thermodynamic affinity prediction (ΔG accuracy and decomposition into
+enthalpy/entropy vs experimental ITC data), entropy contribution/rescue,
+and ablation of entropy terms. Not autonomous blind docking.
+
 Features:
-  * Full ThermoAffinitySuite class with run, ablation, PB validation
-  * PoseBusters integration via real PoseBusters() (pip install posebusters)
-  * success_pb = (RMSD < 2.0 AND all_passed)
-  * Detailed failure logging + heatmap generation
+  * Full ThermoAffinitySuite class with run, ablation, unified bundle + leaderboard
   * --ablation support (with/without entropy correction)
-  * Unified artifact bundle + cross-DB leaderboard
+  * Optional pose quality filtering (PoseBusters package) for physically plausible
+    poses before thermo property extraction (not used as primary success metric)
   * Full error handling, logging, type hints, CI/dry-run ready
   * One-command via scripts/run_all_thermo.sh and run_itc187.sh
 

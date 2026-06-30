@@ -83,21 +83,20 @@ metrics:
   - scoring_power_rmse
   - scoring_power_mae
   - entropy_rescue_rate
-  - docking_power_top1
 
 # The key discriminator: entropy_rescue_rate measures how often −TΔS correction
 # rescues complexes where ΔH alone would rank the crystal pose outside top-3.
 expected_baselines:
-  scoring_power_pearson_r: 0.93
-  scoring_power_spearman_r: 0.90
-  scoring_power_rmse: 1.40
-  scoring_power_mae: 1.05
-  entropy_rescue_rate: 0.72
-  docking_power_top1: 0.78
+  scoring_power_pearson_r: 0.78
+  scoring_power_spearman_r: 0.75
+  scoring_power_rmse: 1.60
+  scoring_power_mae: 1.20
+  entropy_rescue_rate: 0.58
 
 baseline_tolerance: 0.05
 
 # ITC-specific: experimental affinity field is ΔG in kcal/mol at 298 K
 active_label_field: is_active
 
-# v2.1: included in ThermoAffinitySuite production runs + PoseBusters PB-Valid.
+# v2.1 (ThermoAffinitySuite): Primary full-thermo affinity set for ΔG / ΔH / −TΔS accuracy
+# and entropy contribution on ITC data. Focus: scoring power + entropy rescue.

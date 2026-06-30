@@ -37,7 +37,6 @@ metrics:
   - scoring_power_rmse
   - scoring_power_mae
   - entropy_rescue_rate
-  - docking_power_top1
 
 expected_baselines:
   scoring_power_pearson_r: 0.68
@@ -45,11 +44,10 @@ expected_baselines:
   scoring_power_rmse: 1.85
   scoring_power_mae: 1.35
   entropy_rescue_rate: 0.50
-  docking_power_top1: 0.68
 
 baseline_tolerance: 0.08
 
 # Prep: benchmarks/fetch_itc_data.py --sources scorpio ; structure assembly required.
 active_label_field: is_active
 
-# ThermoAffinitySuite v2.1: part of unified 3-DB thermo leaderboard + PB-Valid.
+# ThermoAffinitySuite v2.1: ITC-enriched affinity set for thermo decomposition accuracy.

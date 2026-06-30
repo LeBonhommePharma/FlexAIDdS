@@ -39,7 +39,6 @@ metrics:
   - scoring_power_rmse
   - scoring_power_mae
   - entropy_rescue_rate
-  - docking_power_top1
 
 expected_baselines:
   scoring_power_pearson_r: 0.65
@@ -47,7 +46,6 @@ expected_baselines:
   scoring_power_rmse: 1.9
   scoring_power_mae: 1.4
   entropy_rescue_rate: 0.45
-  docking_power_top1: 0.65
 
 baseline_tolerance: 0.08
 
@@ -57,5 +55,5 @@ baseline_tolerance: 0.08
 
 active_label_field: is_active
 
-# ThermoAffinitySuite v2.1 note: contributes to unified ITC-affinity leaderboard.
-# PB-Valid tracked when poses available.
+# ThermoAffinitySuite v2.1: ITC/Kd affinity + thermo decomposition focus.
+# Scoring power and entropy rescue on filtered BindingDB ITC data.
