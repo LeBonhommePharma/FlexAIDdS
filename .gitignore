@@ -49,3 +49,8 @@ MANIFEST
 .env
 .envrc
 *.local
+
+# Local persistent tool installs (Vina, rDock, Boltz, PoseBusters etc for astex_entropy etc benchmarks)
+# Never commit the large binaries or isolated Python venvs.
+.tools/
+.venv*/
