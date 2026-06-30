@@ -1,0 +1,34 @@
+# benchmarks/astex_entropy/config.yaml
+#
+# Local persistent tool paths for Astex entropy benchmark wiring.
+# Generated to avoid PATH reliance for:
+#   - AutoDock Vina
+#   - rDock (rbcavity + rbdock)
+#   - Boltz
+#   - PoseBusters (bust)
+#
+# These match the user-specified install locations under the project root.
+
+workspace_root: .
+repo_root: .
+
+tools:
+  vina: .tools/bin/vina
+  rbcavity: .tools/rdock/bin/rbcavity
+  rbdock: .tools/rdock/bin/rbdock
+  boltz: .venv-boltz/bin/boltz
+  posebusters: .venv-posebusters/bin/bust
+
+# rDock needs this for data/ and to help runtime lib loading
+rbt_root: .tools/rdock
+
+work_dir: results/astex_entropy
+results_dir: results/astex_entropy
+
+# Optional overrides for posebusters / entropy integration
+entropy:
+  posebusters_command: null   # falls back to tools.posebusters
+
+datasets:
+  # reference to the astex_diverse structures used by the runner
+  astex_diverse: benchmarks/astex_diverse/astex_diverse
