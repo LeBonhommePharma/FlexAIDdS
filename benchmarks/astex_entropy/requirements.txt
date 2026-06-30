@@ -1,0 +1,11 @@
+# Minimal for benchmarks/astex_entropy on MacBook Pro (plus posebusters for validation as required)
+rdkit
+pandas
+pyyaml
+typer[all]
+matplotlib
+seaborn
+openbabel-wheel  # or install openbabel via conda/brew
+posebusters
+# Note: for full entropy metrics use your existing flexaidds/tENCoM build or python install
+# For tools: vina, rdock, boltz installed separately in PATH
