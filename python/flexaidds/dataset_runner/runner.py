@@ -1057,25 +1057,14 @@ class DatasetRunner:
 
             with tempfile.TemporaryDirectory(prefix=f"flexaid_{target_id}_") as tmp:
                 tmp_path = Path(tmp)
-                cfg_path = tmp_path / "dock.inp"
-
-                cfg_lines = [
-                    f"PDBNAM {receptor_path}",
-                    f"INPLIG {ligand_path}",
-                    f"TEMPER {int(self.temperature)}",
-                    "METOPT GA",
-                    "COMPLF VCT",
-                ]
-                if not with_entropy:
-                    cfg_lines.append("NOENTROPY 1")
-
-                cfg_path.write_text("\n".join(cfg_lines) + "\n")
 
                 sub_env = os.environ.copy()
                 sub_env["OMP_NUM_THREADS"] = str(self.omp_threads)
                 try:
+                    # Direct CLI: <receptor> <ligand> -o prefix  (binary auto-detects files)
+                    # Write outputs as flexaid_*.pdb so parser glob *.pdb catches them.
                     result = subprocess.run(
-                        [self.binary, str(cfg_path)],
+                        [self.binary, str(receptor_path), str(ligand_path), "-o", "flexaid"],
                         capture_output=True,
                         text=True,
                         timeout=3600,
@@ -1087,6 +1076,8 @@ class DatasetRunner:
                             "FlexAID returned %d for %s/%s",
                             result.returncode, target_id, ligand_id,
                         )
+                        if result.stderr:
+                            logger.debug("stderr: %s", result.stderr[:500])
                     else:
                         parsed = self._parse_flexaid_output(
                             tmp_path, target_id, ligand_id, structural_state
