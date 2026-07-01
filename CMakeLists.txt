@@ -116,6 +116,9 @@ add_subdirectory(LIB)
 # See cmake/FlexAIDComponents.cmake for the audit-driven split direction.
 include(cmake/FlexAIDComponents.cmake)
 
+# Professional helpers (test boilerplate reduction, common patterns)
+include(cmake/FlexAIDHelpers.cmake)
+
 # ─── executable ─────────────────────────────────────────────────────────
 if(FLEXAIDS_BUILD_CORE)
 add_executable(FlexAID "")
@@ -1019,40 +1022,22 @@ if(BUILD_TESTING)
     add_test(NAME ThermoLedgerTests COMMAND test_thermo_ledger)
 
     # test_json_config — JSON parser & config defaults tests (zero dependencies)
-    add_executable(test_json_config tests/test_json_config.cpp)
-    target_include_directories(test_json_config PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/LIB)
-    target_link_libraries(test_json_config PRIVATE GTest::gtest GTest::gtest_main)
-    if(MSVC)
-        target_compile_options(test_json_config PRIVATE /O2)
-    else()
-        target_compile_options(test_json_config PRIVATE -O2)
-    endif()
-    flexaids_configure_msvc_test(test_json_config)
-    add_test(NAME JsonConfigTests COMMAND test_json_config)
+    flexaids_add_unit_test(test_json_config
+        tests/test_json_config.cpp
+        TEST_NAME JsonConfigTests
+    )
 
     # test_metal_coordination — Metal ion coordination potential tests (header-only)
-    add_executable(test_metal_coordination tests/test_metal_coordination.cpp)
-    target_include_directories(test_metal_coordination PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/LIB)
-    target_link_libraries(test_metal_coordination PRIVATE GTest::gtest GTest::gtest_main)
-    if(MSVC)
-        target_compile_options(test_metal_coordination PRIVATE /O2)
-    else()
-        target_compile_options(test_metal_coordination PRIVATE -O2)
-    endif()
-    flexaids_configure_msvc_test(test_metal_coordination)
-    add_test(NAME MetalCoordinationTests COMMAND test_metal_coordination)
+    flexaids_add_unit_test(test_metal_coordination
+        tests/test_metal_coordination.cpp
+        TEST_NAME MetalCoordinationTests
+    )
 
     # test_formal_charges — PDB formal charge assignment tests (header-only)
-    add_executable(test_formal_charges tests/test_formal_charges.cpp)
-    target_include_directories(test_formal_charges PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/LIB)
-    target_link_libraries(test_formal_charges PRIVATE GTest::gtest GTest::gtest_main)
-    if(MSVC)
-        target_compile_options(test_formal_charges PRIVATE /O2)
-    else()
-        target_compile_options(test_formal_charges PRIVATE -O2)
-    endif()
-    flexaids_configure_msvc_test(test_formal_charges)
-    add_test(NAME FormalChargeTests COMMAND test_formal_charges)
+    flexaids_add_unit_test(test_formal_charges
+        tests/test_formal_charges.cpp
+        TEST_NAME FormalChargeTests
+    )
 
     # test_hardware_dispatch — ShannonThermoStack dispatch layer tests
     add_executable(test_hardware_dispatch

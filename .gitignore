@@ -49,3 +49,40 @@ MANIFEST
 .env
 .envrc
 *.local
+
+# Local development tool environments and venvs
+# (Vina, rDock, Boltz, PoseBusters, custom benchmark tooling, etc.)
+.tools/
+.venv/
+.venv-*/
+venv/
+env/
+
+# Local benchmark / experiment workspaces (not for commit)
+benchmarks/astex_entropy/
+benchmarks/results/
+results/local/
+wrk/
+BIN/
+
+# Additional build and temp artifacts
+build*/
+out/
+tmp/
+*.log
+*.tmp
+*.bak
+
+# macOS / misc cruft (ensure recursive)
+**/.DS_Store
+**/.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Node / TS / Swift build (if experimental stubs)
+node_modules/
+.swiftpm/
+.build/
