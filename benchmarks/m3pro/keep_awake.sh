@@ -5,12 +5,16 @@
 #   - caffeinate -dimsu : core assertions (Prevent*Idle*Sleep, PreventSystemSleep)
 #   - user pinger loop : repeated short -u assertions to keep "UserIsActive" high
 #     This defeats lock screen timers and idle-logout even when askForPassword=0.
-# Run once at start of benchmark campaign.
+#   - pmset + defaults : zero idle timers + no password-on-screensaver.
+#
+# Run at start of benchmark campaign. For strongest protection against "locking off/out"
+# or anything slowing long runs, also run the sudo pmset line printed on 'start'.
+#
 # Safe: just kills the caffeinates when done (or on logout / reboot they die).
 #
 # Usage:
 #   chmod +x benchmarks/m3pro/keep_awake.sh
-#   ./benchmarks/m3pro/keep_awake.sh start     # ensure master + pinger
+#   ./benchmarks/m3pro/keep_awake.sh start     # ensure master + pinger + print sudo advice
 #   ./benchmarks/m3pro/keep_awake.sh stop
 #   ./benchmarks/m3pro/keep_awake.sh status
 #
@@ -66,8 +70,16 @@ start() {
   defaults -currentHost write com.apple.screensaver askForPasswordDelay -int 0 2>/dev/null || true
   killall ScreenSaverEngine 2>/dev/null || true
 
-  # Note: for even stronger base (powernap/standby/sleep timers), run once in a shell with sudo:
-  #   sudo pmset sleep 0 displaysleep 0 disksleep 0 powernap 0 standby 0
+  # Base timers (non-root may be limited)
+  pmset sleep 0 displaysleep 0 disksleep 0 2>/dev/null || true
+
+  # Full persistent block against sleep, display sleep, disk, powernap, standby (prevents any background sleep/lock/slowdown)
+  # Run this ONCE with sudo for system-wide base settings (survives reboots better than caffeinate alone):
+  echo ""
+  echo ">>> To fully block sleep/lock/standby for benchmarks (recommended, run once):"
+  echo "    sudo pmset -a sleep 0 displaysleep 0 disksleep 0 powernap 0 standby 0"
+  echo "    # (Then re-run this script: ./benchmarks/m3pro/keep_awake.sh start)"
+  echo ""
 
   if [ "$ensured" = "1" ]; then
     sleep 1
@@ -132,6 +144,12 @@ status() {
   echo ""
   echo "=== Key assertions (from pmset) ==="
   pmset -g assertions | grep -E 'PreventUserIdle|PreventSystem|UserIsActive' | head -6 || true
+
+  echo ""
+  echo "=== Full block reminder (for lock/sleep prevention) ==="
+  echo "If you ever see display sleep or lock, run once:"
+  echo "  sudo pmset -a sleep 0 displaysleep 0 disksleep 0 powernap 0 standby 0"
+  echo "  ./benchmarks/m3pro/keep_awake.sh start"
 }
 
 case "${1:-start}" in
