@@ -1023,19 +1023,19 @@ if(BUILD_TESTING)
 
     # test_json_config — JSON parser & config defaults tests (zero dependencies)
     flexaids_add_unit_test(test_json_config
-        tests/test_json_config.cpp
+        SOURCES tests/test_json_config.cpp
         TEST_NAME JsonConfigTests
     )
 
     # test_metal_coordination — Metal ion coordination potential tests (header-only)
     flexaids_add_unit_test(test_metal_coordination
-        tests/test_metal_coordination.cpp
+        SOURCES tests/test_metal_coordination.cpp
         TEST_NAME MetalCoordinationTests
     )
 
     # test_formal_charges — PDB formal charge assignment tests (header-only)
     flexaids_add_unit_test(test_formal_charges
-        tests/test_formal_charges.cpp
+        SOURCES tests/test_formal_charges.cpp
         TEST_NAME FormalChargeTests
     )
 
