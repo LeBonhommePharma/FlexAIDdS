@@ -134,3 +134,11 @@ LIB/tENCoM/tencom_output.h
 tests/test_binding_mode_io.cpp
 tests/test_ga_population.cpp
 tests/test_production_blockers.cpp
+
+# Orphans silenced during cleanup sprint (main entry for sub-tool + transitively included headers)
+LIB/ProcessLigand/main.cpp
+LIB/ThermodynamicEngine.h
+LIB/VibEntropy.h
+LIB/coarse_init.h
+LIB/native_score.h
+LIB/receptor_prep.h
