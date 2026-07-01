@@ -229,3 +229,6 @@ endif()
 
 # ─── SIMD configuration ─────────────────────────────────────────────────
 flexaids_configure_simd(flexaid_core)
+
+# NOTE: FlexAID::Core alias is created in cmake/FlexAIDComponents.cmake (after subdir)
+# to avoid duplicate target definition.
