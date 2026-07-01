@@ -135,10 +135,8 @@ tests/test_binding_mode_io.cpp
 tests/test_ga_population.cpp
 tests/test_production_blockers.cpp
 
-# Orphans silenced during cleanup sprint (main entry for sub-tool + transitively included headers)
-# LIB/ProcessLigand/main.cpp kept out because it's a standalone tool main (not part of core lib)
+# Orphans silenced during cleanup sprint (transitively included headers)
 # The headers below are included transitively or via specific targets only.
-LIB/ProcessLigand/main.cpp
 LIB/ThermodynamicEngine.h
 LIB/VibEntropy.h
 LIB/coarse_init.h

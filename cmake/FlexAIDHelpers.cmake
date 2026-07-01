@@ -11,11 +11,12 @@ cmake_minimum_required(VERSION 3.28)
 # flexaids_add_unit_test
 #
 # Adds a GoogleTest unit test with standard FlexAIDdS conventions:
-#   - Standard include paths
-#   - GTest linking
-#   - Common compile flags (MSVC vs others)
-#   - SIMD / MSVC helper configuration
-#   - Registers the test
+#   - Standard include paths (LIB + common submodules)
+#   - GTest linking (gtest + gtest_main by default)
+#   - Common compile flags (MSVC vs others; -O2 default)
+#   - Optional: SIMD configuration, OpenMP link, custom compile opts
+#   - MSVC test helper + explicit DEFINES
+#   - Registers the test (custom TEST_NAME optional)
 #
 # Usage:
 #   flexaids_add_unit_test(my_test
@@ -24,20 +25,30 @@ cmake_minimum_required(VERSION 3.28)
 #           LIB/some.cpp
 #       LINK_LIBRARIES
 #           Eigen3::Eigen
-#           OpenMP::OpenMP_CXX
+#           flexaid_core
 #       DEFINES
 #           FOO=1
 #       INCLUDES
 #           ${CMAKE_CURRENT_SOURCE_DIR}/extra
+#       COMPILE_OPTIONS
+#           -std=c++26
+#       CONFIGURE_SIMD
+#       LINK_OPENMP
 #   )
+#
+# Flags (options):
+#   CONFIGURE_SIMD     - call flexaids_configure_simd
+#   LINK_OPENMP        - conditionally link OpenMP::OpenMP_CXX if enabled
+#   GTEST_MAIN_ONLY    - link only GTest::gtest_main (omit gtest)
+#   NO_DEFAULT_COMPILE_OPTS - skip the built-in /O2 or -O2
 #
 # Minimal:
 #   flexaids_add_unit_test(test_foo tests/test_foo.cpp)
 # ------------------------------------------------------------------------------
 function(flexaids_add_unit_test name)
-    set(options "")
+    set(options CONFIGURE_SIMD LINK_OPENMP GTEST_MAIN_ONLY NO_DEFAULT_COMPILE_OPTS)
     set(oneValueArgs TEST_NAME)
-    set(multiValueArgs SOURCES LINK_LIBRARIES DEFINES INCLUDES)
+    set(multiValueArgs SOURCES LINK_LIBRARIES DEFINES INCLUDES COMPILE_OPTIONS)
     cmake_parse_arguments(ARG "${options}" "${oneValueArgs}" "${multiValueArgs}" ${ARGN})
 
     if(NOT ARG_SOURCES)
@@ -58,24 +69,47 @@ function(flexaids_add_unit_test name)
         ${ARG_INCLUDES}
     )
 
-    target_link_libraries(${name} PRIVATE
-        GTest::gtest
-        GTest::gtest_main
-        ${ARG_LINK_LIBRARIES}
-    )
-
-    if(MSVC)
-        target_compile_options(${name} PRIVATE /O2)
-        target_compile_definitions(${name} PRIVATE
-            _CRT_SECURE_NO_WARNINGS
-            _USE_MATH_DEFINES
-            NOMINMAX
+    if(ARG_GTEST_MAIN_ONLY)
+        target_link_libraries(${name} PRIVATE
+            GTest::gtest_main
+            ${ARG_LINK_LIBRARIES}
         )
     else()
-        target_compile_options(${name} PRIVATE -O2)
+        target_link_libraries(${name} PRIVATE
+            GTest::gtest
+            GTest::gtest_main
+            ${ARG_LINK_LIBRARIES}
+        )
+    endif()
+
+    if(NOT ARG_NO_DEFAULT_COMPILE_OPTS)
+        if(MSVC)
+            target_compile_options(${name} PRIVATE /O2)
+            target_compile_definitions(${name} PRIVATE
+                _CRT_SECURE_NO_WARNINGS
+                _USE_MATH_DEFINES
+                NOMINMAX
+            )
+        else()
+            target_compile_options(${name} PRIVATE -O2)
+        endif()
+    endif()
+
+    if(ARG_COMPILE_OPTIONS)
+        target_compile_options(${name} PRIVATE ${ARG_COMPILE_OPTIONS})
     endif()
 
     flexaids_configure_msvc_test(${name})
+
+    if(ARG_CONFIGURE_SIMD)
+        flexaids_configure_simd(${name})
+    endif()
+
+    if(ARG_LINK_OPENMP)
+        if(FLEXAIDS_USE_OPENMP AND OpenMP_CXX_FOUND)
+            target_link_libraries(${name} PRIVATE OpenMP::OpenMP_CXX)
+        endif()
+    endif()
 
     foreach(def ${ARG_DEFINES})
         target_compile_definitions(${name} PRIVATE ${def})

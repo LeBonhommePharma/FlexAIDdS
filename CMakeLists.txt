@@ -527,6 +527,29 @@ if(ENABLE_VCFBATCH_BENCHMARK)
     message(STATUS "VoronoiCFBatch benchmark enabled — build target: benchmark_vcfbatch")
 endif()
 
+# ─── ProcessLigand CLI tool ─────────────────────────────────────────────────
+# Standalone ligand preprocessing CLI (SMILES/SDF/MOL2 -> FlexAID input files).
+# Uses the ProcessLigand module (now wired as first-class target, no longer orphan).
+option(ENABLE_PROCESS_LIGAND "Build the ProcessLigand standalone CLI tool (flexaidds-process-ligand)" OFF)
+if(ENABLE_PROCESS_LIGAND)
+    add_executable(flexaidds_process_ligand
+        LIB/ProcessLigand/main.cpp
+    )
+    target_link_libraries(flexaidds_process_ligand PRIVATE flexaid_core)
+    target_include_directories(flexaidds_process_ligand PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/LIB
+        ${CMAKE_CURRENT_SOURCE_DIR}/LIB/ProcessLigand
+    )
+    if(MSVC)
+        target_compile_options(flexaidds_process_ligand PRIVATE /O2)
+        target_compile_definitions(flexaidds_process_ligand PRIVATE
+            _CRT_SECURE_NO_WARNINGS _USE_MATH_DEFINES NOMINMAX)
+    else()
+        target_compile_options(flexaidds_process_ligand PRIVATE -O3)
+    endif()
+    message(STATUS "ProcessLigand CLI tool enabled — build target: flexaidds_process_ligand")
+endif()
+
 # ─── FlexAIDdS: ultra-fast docking executable ─────────────────────────────
 # P0 validator references for GPU/metal shaders (actual add in Metal block above)
 #   LIB/gpu_fast_optics_metal.metal LIB/gpu_batch_distance_hip.hip etc.
@@ -1322,163 +1345,77 @@ if(BUILD_TESTING)
     add_test(NAME CleftCavityTests COMMAND test_cleft_cavity)
 
     # test_encom — ENCoM vibrational entropy engine tests
-    add_executable(test_encom
-        tests/test_encom.cpp
-        LIB/encom.cpp
+    flexaids_add_unit_test(test_encom
+        SOURCES
+            tests/test_encom.cpp
+            LIB/encom.cpp
+        LINK_LIBRARIES Eigen3::Eigen
+        DEFINES FLEXAIDS_HAS_EIGEN
+        TEST_NAME ENCoMTests
     )
-    target_include_directories(test_encom PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/LIB)
-    target_link_libraries(test_encom PRIVATE GTest::gtest GTest::gtest_main)
-    if(MSVC)
-        target_compile_options(test_encom PRIVATE /O2)
-    else()
-        target_compile_options(test_encom PRIVATE -O2)
-    endif()
-    flexaids_configure_msvc_test(test_encom)
-    target_link_libraries(test_encom PRIVATE Eigen3::Eigen)
-    target_compile_definitions(test_encom PRIVATE FLEXAIDS_HAS_EIGEN)
-    add_test(NAME ENCoMTests COMMAND test_encom)
 
     # test_ring_conformer_library — RingConformerLibrary + ring detection tests
-    add_executable(test_ring_conformer_library
-        tests/test_ring_conformer_library.cpp
-        LIB/LigandRingFlex/RingConformerLibrary.cpp
+    flexaids_add_unit_test(test_ring_conformer_library
+        SOURCES
+            tests/test_ring_conformer_library.cpp
+            LIB/LigandRingFlex/RingConformerLibrary.cpp
+        TEST_NAME RingConformerLibraryTests
     )
-    target_include_directories(test_ring_conformer_library PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/LIB
-        ${CMAKE_CURRENT_SOURCE_DIR}/LIB/LigandRingFlex
-    )
-    target_link_libraries(test_ring_conformer_library PRIVATE GTest::gtest GTest::gtest_main)
-    if(MSVC)
-        target_compile_options(test_ring_conformer_library PRIVATE /O2)
-    else()
-        target_compile_options(test_ring_conformer_library PRIVATE -O2)
-    endif()
-    flexaids_configure_msvc_test(test_ring_conformer_library)
-    add_test(NAME RingConformerLibraryTests COMMAND test_ring_conformer_library)
 
     # test_sugar_pucker — SugarPucker Cremer-Pople pseudorotation tests
-    add_executable(test_sugar_pucker
-        tests/test_sugar_pucker.cpp
-        LIB/LigandRingFlex/SugarPucker.cpp
+    flexaids_add_unit_test(test_sugar_pucker
+        SOURCES
+            tests/test_sugar_pucker.cpp
+            LIB/LigandRingFlex/SugarPucker.cpp
+        LINK_LIBRARIES Eigen3::Eigen
+        DEFINES FLEXAIDS_HAS_EIGEN
+        TEST_NAME SugarPuckerTests
     )
-    target_include_directories(test_sugar_pucker PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/LIB
-        ${CMAKE_CURRENT_SOURCE_DIR}/LIB/LigandRingFlex
-    )
-    target_link_libraries(test_sugar_pucker PRIVATE GTest::gtest GTest::gtest_main)
-    if(MSVC)
-        target_compile_options(test_sugar_pucker PRIVATE /O2)
-    else()
-        target_compile_options(test_sugar_pucker PRIVATE -O2)
-    endif()
-    target_link_libraries(test_sugar_pucker PRIVATE Eigen3::Eigen)
-
-    target_compile_definitions(test_sugar_pucker PRIVATE FLEXAIDS_HAS_EIGEN)
-    flexaids_configure_msvc_test(test_sugar_pucker)
-    add_test(NAME SugarPuckerTests COMMAND test_sugar_pucker)
 
     # test_chiral_center — ChiralCenterGene R/S stereocenter tests
-    add_executable(test_chiral_center
-        tests/test_chiral_center.cpp
-        LIB/ChiralCenter/ChiralCenterGene.cpp
+    flexaids_add_unit_test(test_chiral_center
+        SOURCES
+            tests/test_chiral_center.cpp
+            LIB/ChiralCenter/ChiralCenterGene.cpp
+        LINK_LIBRARIES Eigen3::Eigen
+        DEFINES FLEXAIDS_HAS_EIGEN
+        TEST_NAME ChiralCenterTests
     )
-    target_include_directories(test_chiral_center PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/LIB
-        ${CMAKE_CURRENT_SOURCE_DIR}/LIB/ChiralCenter
-    )
-    target_link_libraries(test_chiral_center PRIVATE GTest::gtest GTest::gtest_main)
-    if(MSVC)
-        target_compile_options(test_chiral_center PRIVATE /O2)
-    else()
-        target_compile_options(test_chiral_center PRIVATE -O2)
-    endif()
-    target_link_libraries(test_chiral_center PRIVATE Eigen3::Eigen)
-
-    target_compile_definitions(test_chiral_center PRIVATE FLEXAIDS_HAS_EIGEN)
-    flexaids_configure_msvc_test(test_chiral_center)
-    add_test(NAME ChiralCenterTests COMMAND test_chiral_center)
 
     # test_cavity_detect — CavityDetect SURFNET cavity detection tests
-    add_executable(test_cavity_detect
-        tests/test_cavity_detect.cpp
-        LIB/CavityDetect/CavityDetect.cpp
+    flexaids_add_unit_test(test_cavity_detect
+        SOURCES
+            tests/test_cavity_detect.cpp
+            LIB/CavityDetect/CavityDetect.cpp
+        CONFIGURE_SIMD
+        LINK_OPENMP
+        TEST_NAME CavityDetectTests
     )
-    target_include_directories(test_cavity_detect PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/LIB
-        ${CMAKE_CURRENT_SOURCE_DIR}/LIB/CavityDetect
-    )
-    target_link_libraries(test_cavity_detect PRIVATE GTest::gtest GTest::gtest_main)
-    if(MSVC)
-        target_compile_options(test_cavity_detect PRIVATE /O2)
-    else()
-        target_compile_options(test_cavity_detect PRIVATE -O2)
-    endif()
-    if(FLEXAIDS_USE_OPENMP AND OpenMP_CXX_FOUND)
-        target_link_libraries(test_cavity_detect PRIVATE OpenMP::OpenMP_CXX)
-    endif()
-flexaids_configure_simd(test_cavity_detect)
-    flexaids_configure_msvc_test(test_cavity_detect)
-    add_test(NAME CavityDetectTests COMMAND test_cavity_detect)
 
     # test_mif_grid — MIFGrid molecular interaction field tests
-    add_executable(test_mif_grid
-        tests/test_mif_grid.cpp
+    flexaids_add_unit_test(test_mif_grid
+        SOURCES tests/test_mif_grid.cpp
+        CONFIGURE_SIMD
+        LINK_OPENMP
+        TEST_NAME MIFGridTests
     )
-    target_include_directories(test_mif_grid PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/LIB
-        ${CMAKE_CURRENT_SOURCE_DIR}/LIB/CavityDetect
-    )
-    target_link_libraries(test_mif_grid PRIVATE GTest::gtest GTest::gtest_main)
-    if(MSVC)
-        target_compile_options(test_mif_grid PRIVATE /O2)
-    else()
-        target_compile_options(test_mif_grid PRIVATE -O2)
-    endif()
-    if(FLEXAIDS_USE_OPENMP AND OpenMP_CXX_FOUND)
-        target_link_libraries(test_mif_grid PRIVATE OpenMP::OpenMP_CXX)
-    endif()
-    flexaids_configure_simd(test_mif_grid)
-    add_test(NAME MIFGridTests COMMAND test_mif_grid)
 
     # test_reflig_spectrophore — RefLigSeed + Spectrophore tests
-    add_executable(test_reflig_spectrophore
-        tests/test_reflig_spectrophore.cpp
+    flexaids_add_unit_test(test_reflig_spectrophore
+        SOURCES tests/test_reflig_spectrophore.cpp
+        LINK_OPENMP
+        TEST_NAME RefLigSpectrophoreTests
     )
-    target_include_directories(test_reflig_spectrophore PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/LIB
-        ${CMAKE_CURRENT_SOURCE_DIR}/LIB/CavityDetect
-    )
-    target_link_libraries(test_reflig_spectrophore PRIVATE GTest::gtest GTest::gtest_main)
-    if(MSVC)
-        target_compile_options(test_reflig_spectrophore PRIVATE /O2)
-    else()
-        target_compile_options(test_reflig_spectrophore PRIVATE -O2)
-    endif()
-    if(FLEXAIDS_USE_OPENMP AND OpenMP_CXX_FOUND)
-        target_link_libraries(test_reflig_spectrophore PRIVATE OpenMP::OpenMP_CXX)
-    endif()
-    add_test(NAME RefLigSpectrophoreTests COMMAND test_reflig_spectrophore)
 
     # test_binding_residues — Key binding-site residue identification tests
-    add_executable(test_binding_residues
-        tests/test_binding_residues.cpp
-        LIB/set_intprob.cpp
+    flexaids_add_unit_test(test_binding_residues
+        SOURCES
+            tests/test_binding_residues.cpp
+            LIB/set_intprob.cpp
+        CONFIGURE_SIMD
+        LINK_OPENMP
+        TEST_NAME BindingResiduesTests
     )
-    target_include_directories(test_binding_residues PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/LIB
-        ${CMAKE_CURRENT_SOURCE_DIR}/LIB/CavityDetect
-    )
-    target_link_libraries(test_binding_residues PRIVATE GTest::gtest GTest::gtest_main)
-    if(MSVC)
-        target_compile_options(test_binding_residues PRIVATE /O2)
-    else()
-        target_compile_options(test_binding_residues PRIVATE -O2)
-    endif()
-    if(FLEXAIDS_USE_OPENMP AND OpenMP_CXX_FOUND)
-        target_link_libraries(test_binding_residues PRIVATE OpenMP::OpenMP_CXX)
-    endif()
-    flexaids_configure_simd(test_binding_residues)
-    add_test(NAME BindingResiduesTests COMMAND test_binding_residues)
 
     # test_binding_mode_statmech — BindingMode ↔ StatMechEngine integration tests
     add_executable(test_binding_mode_statmech
@@ -1894,22 +1831,17 @@ flexaids_configure_simd(test_cavity_detect)
 
     # test_ion_handling — assign_radii / assign_types HETATM + ion coverage
     #                     + tENCoM ion contact surface (TmContSct) tests
-    add_executable(test_ion_handling
-        tests/test_ion_handling.cpp
-        LIB/assign_radii.cpp
-        LIB/assign_types.cpp
-        LIB/fileio.cpp
-        LIB/tENCoM/tencm.cpp)
-    target_include_directories(test_ion_handling PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/LIB)
-    target_link_libraries(test_ion_handling PRIVATE GTest::gtest GTest::gtest_main)
-    if(MSVC)
-        target_compile_options(test_ion_handling PRIVATE /O2)
-    else()
-        target_compile_options(test_ion_handling PRIVATE -O2)
-    endif()
-    target_link_libraries(test_ion_handling PRIVATE Eigen3::Eigen)
-    target_compile_definitions(test_ion_handling PRIVATE FLEXAIDS_HAS_EIGEN)
-    add_test(NAME IonHandlingTests COMMAND test_ion_handling)
+    flexaids_add_unit_test(test_ion_handling
+        SOURCES
+            tests/test_ion_handling.cpp
+            LIB/assign_radii.cpp
+            LIB/assign_types.cpp
+            LIB/fileio.cpp
+            LIB/tENCoM/tencm.cpp
+        LINK_LIBRARIES Eigen3::Eigen
+        DEFINES FLEXAIDS_HAS_EIGEN
+        TEST_NAME IonHandlingTests
+    )
 
     # test_entropy_ga — SMFREE fitness model, Boltzmann blending, entropy fields
     add_executable(test_entropy_ga
@@ -1961,93 +1893,62 @@ flexaids_configure_simd(test_cavity_detect)
     add_test(NAME EntropyGATests COMMAND test_entropy_ga)
 
     # test_cube_grid — GridKey reproducibility, diagonal formula, neighbor probing
-    add_executable(test_cube_grid
-        tests/test_cube_grid.cpp
-        LIB/maps.cpp
+    flexaids_add_unit_test(test_cube_grid
+        SOURCES
+            tests/test_cube_grid.cpp
+            LIB/maps.cpp
+        TEST_NAME CubeGridTests
     )
-    target_include_directories(test_cube_grid PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/LIB)
-    target_link_libraries(test_cube_grid PRIVATE GTest::gtest GTest::gtest_main)
-    if(MSVC)
-        target_compile_options(test_cube_grid PRIVATE /O2)
-    else()
-        target_compile_options(test_cube_grid PRIVATE -O2)
-    endif()
-    add_test(NAME CubeGridTests COMMAND test_cube_grid)
 
     # test_parallel_dock — GridDecomposer, SharedPosePool, StatMechEngine merge tests
-    add_executable(test_parallel_dock
-        tests/test_parallel_dock.cpp
-        LIB/GridDecomposer.cpp
-        LIB/SharedPosePool.cpp
-        LIB/statmech.cpp
-        LIB/TurboQuant.cpp
-        LIB/UnifiedHardwareDispatch.cpp
-        LIB/hardware_detect.cpp
+    flexaids_add_unit_test(test_parallel_dock
+        SOURCES
+            tests/test_parallel_dock.cpp
+            LIB/GridDecomposer.cpp
+            LIB/SharedPosePool.cpp
+            LIB/statmech.cpp
+            LIB/TurboQuant.cpp
+            LIB/UnifiedHardwareDispatch.cpp
+            LIB/hardware_detect.cpp
+        LINK_LIBRARIES Eigen3::Eigen
+        DEFINES FLEXAIDS_HAS_EIGEN
+        CONFIGURE_SIMD
+        LINK_OPENMP
+        TEST_NAME ParallelDockTests
     )
-    target_include_directories(test_parallel_dock PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/LIB)
-    target_link_libraries(test_parallel_dock PRIVATE GTest::gtest GTest::gtest_main)
-    if(MSVC)
-        target_compile_options(test_parallel_dock PRIVATE /O2)
-    else()
-        target_compile_options(test_parallel_dock PRIVATE -O2)
-    endif()
-    if(FLEXAIDS_USE_OPENMP AND OpenMP_CXX_FOUND)
-        target_link_libraries(test_parallel_dock PRIVATE OpenMP::OpenMP_CXX)
-    endif()
-    target_link_libraries(test_parallel_dock PRIVATE Eigen3::Eigen)
-
-    target_compile_definitions(test_parallel_dock PRIVATE FLEXAIDS_HAS_EIGEN)
-    flexaids_configure_msvc_test(test_parallel_dock)
-    add_test(NAME ParallelDockTests COMMAND test_parallel_dock)
 
     # test_knowledge_pool — TargetKnowledgeBase + SharedPosePool + MPIMergeable
-    add_executable(test_knowledge_pool
-        tests/test_knowledge_pool.cpp
-        LIB/TargetKnowledgeBase.cpp
-        LIB/SharedPosePool.cpp
+    flexaids_add_unit_test(test_knowledge_pool
+        SOURCES
+            tests/test_knowledge_pool.cpp
+            LIB/TargetKnowledgeBase.cpp
+            LIB/SharedPosePool.cpp
+        COMPILE_OPTIONS -std=c++26
+        TEST_NAME KnowledgePoolTests
     )
-    target_include_directories(test_knowledge_pool PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/LIB)
-    target_link_libraries(test_knowledge_pool PRIVATE GTest::gtest GTest::gtest_main)
-    target_compile_options(test_knowledge_pool PRIVATE -std=c++26)
-    if(MSVC)
-        target_compile_options(test_knowledge_pool PRIVATE /O2)
-    else()
-        target_compile_options(test_knowledge_pool PRIVATE -O2)
-    endif()
-    flexaids_configure_msvc_test(test_knowledge_pool)
-    add_test(NAME KnowledgePoolTests COMMAND test_knowledge_pool)
 
     # ── Mol2Reader / SdfReader tests ──────────────────────────────────────
-    add_executable(test_mol2_sdf_reader
-        tests/test_mol2_sdf_reader.cpp
-        tests/stubs.cpp
-        LIB/Mol2Reader.cpp
-        LIB/SdfReader.cpp
+    flexaids_add_unit_test(test_mol2_sdf_reader
+        SOURCES
+            tests/test_mol2_sdf_reader.cpp
+            tests/stubs.cpp
+            LIB/Mol2Reader.cpp
+            LIB/SdfReader.cpp
+        COMPILE_OPTIONS -std=c++26
+        CONFIGURE_SIMD
+        GTEST_MAIN_ONLY
+        TEST_NAME Mol2SdfReaderTests
     )
-    target_include_directories(test_mol2_sdf_reader PRIVATE LIB)
-    target_link_libraries(test_mol2_sdf_reader PRIVATE GTest::gtest_main)
-    target_compile_options(test_mol2_sdf_reader PRIVATE -std=c++26)
-    flexaids_configure_simd(test_mol2_sdf_reader)
-    flexaids_configure_msvc_test(test_mol2_sdf_reader)
-    add_test(NAME Mol2SdfReaderTests COMMAND test_mol2_sdf_reader)
 
     # test_turboquant — TurboQuant quantisation library unit tests
-    add_executable(test_turboquant
-        tests/test_turboquant.cpp
-        LIB/TurboQuant.cpp
+    flexaids_add_unit_test(test_turboquant
+        SOURCES
+            tests/test_turboquant.cpp
+            LIB/TurboQuant.cpp
+        LINK_LIBRARIES Eigen3::Eigen
+        DEFINES FLEXAIDS_HAS_EIGEN
+        TEST_NAME TurboQuantTests
     )
-    target_include_directories(test_turboquant PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/LIB)
-    target_link_libraries(test_turboquant PRIVATE GTest::gtest GTest::gtest_main)
-    if(MSVC)
-        target_compile_options(test_turboquant PRIVATE /O2)
-    else()
-        target_compile_options(test_turboquant PRIVATE -O2)
-    endif()
-    target_link_libraries(test_turboquant PRIVATE Eigen3::Eigen)
-
-    target_compile_definitions(test_turboquant PRIVATE FLEXAIDS_HAS_EIGEN)
-    flexaids_configure_msvc_test(test_turboquant)
-    add_test(NAME TurboQuantTests COMMAND test_turboquant)
 
     # test_dataset_runner — benchmark dataset runner tests
     add_executable(test_dataset_runner
@@ -2147,19 +2048,12 @@ flexaids_configure_simd(test_cavity_detect)
     add_test(NAME BindingModeVibrationalTests COMMAND test_binding_mode_vibrational)
 
     # test_fast_optics — FastOPTICS clustering algorithm
-    add_executable(test_fast_optics
-        tests/test_fast_optics.cpp
-        LIB/fast_optics.cpp
+    flexaids_add_unit_test(test_fast_optics
+        SOURCES
+            tests/test_fast_optics.cpp
+            LIB/fast_optics.cpp
+        TEST_NAME FastOPTICSTests
     )
-    target_include_directories(test_fast_optics PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/LIB)
-    target_link_libraries(test_fast_optics PRIVATE GTest::gtest GTest::gtest_main)
-    if(MSVC)
-        target_compile_options(test_fast_optics PRIVATE /O2)
-    else()
-        target_compile_options(test_fast_optics PRIVATE -O2)
-    endif()
-    flexaids_configure_msvc_test(test_fast_optics)
-    add_test(NAME FastOPTICSTests COMMAND test_fast_optics)
 
     # test_tencom_entropy_diff — tENCoM entropy differential
     add_executable(test_tencom_entropy_diff
@@ -2190,20 +2084,12 @@ flexaids_configure_simd(test_cavity_detect)
     add_test(NAME TencomEntropyDiffTests COMMAND test_tencom_entropy_diff)
 
     # ── TargetValidation tests ──────────────────────────────────────────
-    add_executable(test_target_validation
-        tests/test_target_validation.cpp
-        LIB/TargetValidation.cpp
+    flexaids_add_unit_test(test_target_validation
+        SOURCES
+            tests/test_target_validation.cpp
+            LIB/TargetValidation.cpp
+        TEST_NAME TargetValidationTests
     )
-    target_include_directories(test_target_validation PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/LIB)
-    target_link_libraries(test_target_validation PRIVATE GTest::gtest GTest::gtest_main)
-    if(MSVC)
-        target_compile_options(test_target_validation PRIVATE /O2)
-    else()
-        target_compile_options(test_target_validation PRIVATE -O2)
-    endif()
-    flexaids_configure_msvc_test(test_target_validation)
-    add_test(NAME TargetValidationTests COMMAND test_target_validation)
 
     # ── GrandPartitionFunction tests ──────────────────────────────────────
     add_executable(test_grand_partition
@@ -2287,94 +2173,45 @@ flexaids_configure_simd(test_cavity_detect)
     add_test(NAME MultiSiteGPFTests COMMAND test_multi_site_gpf)
 
     # test_gist_hbond — GIST evaluator + directional H-bond scoring
-    add_executable(test_gist_hbond tests/test_gist_hbond.cpp
-                   LIB/GISTEvaluator.cpp LIB/HBondEvaluator.cpp)
-    target_include_directories(test_gist_hbond PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/LIB)
-    target_link_libraries(test_gist_hbond PRIVATE GTest::gtest GTest::gtest_main)
-    if(MSVC)
-        target_compile_options(test_gist_hbond PRIVATE /O2)
-    else()
-        target_compile_options(test_gist_hbond PRIVATE -O2)
-    endif()
-    flexaids_configure_msvc_test(test_gist_hbond)
-    add_test(NAME GISTHBondTests COMMAND test_gist_hbond)
+    flexaids_add_unit_test(test_gist_hbond
+        SOURCES
+            tests/test_gist_hbond.cpp
+            LIB/GISTEvaluator.cpp
+            LIB/HBondEvaluator.cpp
+        TEST_NAME GISTHBondTests
+    )
 
     # test_buffer_safety — bounded legacy config parsing regressions
-    add_executable(test_buffer_safety
-        tests/test_buffer_safety.cpp
+    flexaids_add_unit_test(test_buffer_safety
+        SOURCES tests/test_buffer_safety.cpp
+        TEST_NAME BufferSafetyTests
     )
-    target_include_directories(test_buffer_safety PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/LIB)
-    target_link_libraries(test_buffer_safety PRIVATE GTest::gtest GTest::gtest_main)
-    if(MSVC)
-        target_compile_options(test_buffer_safety PRIVATE /O2)
-    else()
-        target_compile_options(test_buffer_safety PRIVATE -O2)
-    endif()
-    flexaids_configure_msvc_test(test_buffer_safety)
-    add_test(NAME BufferSafetyTests COMMAND test_buffer_safety)
 
     message(STATUS "Unit tests enabled — build targets: test_statmech, test_hardware_dispatch, test_tencom_diff, test_target_validation, test_grand_partition, test_target_server, test_multi_site_gpf")
     # test_hbond_potential — Angular-dependent H-bond potential unit tests
-    add_executable(test_hbond_potential
-        tests/test_hbond_potential.cpp
+    flexaids_add_unit_test(test_hbond_potential
+        SOURCES tests/test_hbond_potential.cpp
+        TEST_NAME HBondPotentialTests
     )
-    target_include_directories(test_hbond_potential PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/LIB)
-    target_link_libraries(test_hbond_potential PRIVATE GTest::gtest GTest::gtest_main)
-    if(MSVC)
-        target_compile_options(test_hbond_potential PRIVATE /O2)
-    else()
-        target_compile_options(test_hbond_potential PRIVATE -O2)
-    endif()
-    flexaids_configure_msvc_test(test_hbond_potential)
-    add_test(NAME HBondPotentialTests COMMAND test_hbond_potential)
 
     # test_gist_grid — GIST desolvation grid unit tests
-    add_executable(test_gist_grid
-        tests/test_gist_grid.cpp
+    flexaids_add_unit_test(test_gist_grid
+        SOURCES tests/test_gist_grid.cpp
+        TEST_NAME GISTGridTests
     )
-    target_include_directories(test_gist_grid PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/LIB)
-    target_link_libraries(test_gist_grid PRIVATE GTest::gtest GTest::gtest_main)
-    if(MSVC)
-        target_compile_options(test_gist_grid PRIVATE /O2)
-    else()
-        target_compile_options(test_gist_grid PRIVATE -O2)
-    endif()
-    flexaids_configure_msvc_test(test_gist_grid)
-    add_test(NAME GISTGridTests COMMAND test_gist_grid)
 
     # test_ga_diversity — GA population diversity monitoring unit tests
-    add_executable(test_ga_diversity
-        tests/test_ga_diversity.cpp
+    flexaids_add_unit_test(test_ga_diversity
+        SOURCES tests/test_ga_diversity.cpp
+        TEST_NAME GADiversityTests
     )
-    target_include_directories(test_ga_diversity PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/LIB)
-    target_link_libraries(test_ga_diversity PRIVATE GTest::gtest GTest::gtest_main)
-    if(MSVC)
-        target_compile_options(test_ga_diversity PRIVATE /O2)
-    else()
-        target_compile_options(test_ga_diversity PRIVATE -O2)
-    endif()
-    flexaids_configure_msvc_test(test_ga_diversity)
-    add_test(NAME GADiversityTests COMMAND test_ga_diversity)
 
     # test_soa_conversion — AoS↔SoA atom data conversion unit tests
-    add_executable(test_soa_conversion
-        tests/test_soa_conversion.cpp
+    flexaids_add_unit_test(test_soa_conversion
+        SOURCES tests/test_soa_conversion.cpp
+        CONFIGURE_SIMD
+        TEST_NAME SoAConversionTests
     )
-    target_include_directories(test_soa_conversion PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/LIB)
-    target_link_libraries(test_soa_conversion PRIVATE GTest::gtest GTest::gtest_main)
-    if(MSVC)
-        target_compile_options(test_soa_conversion PRIVATE /O2)
-    else()
-        target_compile_options(test_soa_conversion PRIVATE -O2)
-    endif()
-    flexaids_configure_simd(test_soa_conversion)
-    flexaids_configure_msvc_test(test_soa_conversion)
-    add_test(NAME SoAConversionTests COMMAND test_soa_conversion)
 
     # test_dift — Discrete Fourier Transform torsional parametrization
     add_executable(test_dift
@@ -2395,39 +2232,20 @@ flexaids_configure_simd(test_cavity_detect)
     add_test(NAME DiFTTests COMMAND test_dift)
 
     # test_distributed_backend — Distributed backend abstraction unit tests
-    add_executable(test_distributed_backend
-        tests/test_distributed_backend.cpp
+    flexaids_add_unit_test(test_distributed_backend
+        SOURCES tests/test_distributed_backend.cpp
+        TEST_NAME DistributedBackendTests
     )
-    target_include_directories(test_distributed_backend PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/LIB)
-    target_link_libraries(test_distributed_backend PRIVATE GTest::gtest GTest::gtest_main)
-    if(MSVC)
-        target_compile_options(test_distributed_backend PRIVATE /O2)
-    else()
-        target_compile_options(test_distributed_backend PRIVATE -O2)
-    endif()
-    flexaids_configure_msvc_test(test_distributed_backend)
-    add_test(NAME DistributedBackendTests COMMAND test_distributed_backend)
 
     # test_ga_context — GAContext re-entrant state + GPUContextPool singleton
-    add_executable(test_ga_context
-        tests/test_ga_context.cpp
-        LIB/GAContext.cpp
+    flexaids_add_unit_test(test_ga_context
+        SOURCES
+            tests/test_ga_context.cpp
+            LIB/GAContext.cpp
+        LINK_LIBRARIES Eigen3::Eigen
+        DEFINES FLEXAIDS_HAS_EIGEN
+        TEST_NAME GAContextTests
     )
-    target_include_directories(test_ga_context PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/LIB
-    )
-    target_link_libraries(test_ga_context PRIVATE GTest::gtest GTest::gtest_main)
-    if(MSVC)
-        target_compile_options(test_ga_context PRIVATE /O2)
-    else()
-        target_compile_options(test_ga_context PRIVATE -O2)
-    endif()
-    target_link_libraries(test_ga_context PRIVATE Eigen3::Eigen)
-
-    target_compile_definitions(test_ga_context PRIVATE FLEXAIDS_HAS_EIGEN)
-    flexaids_configure_msvc_test(test_ga_context)
-    add_test(NAME GAContextTests COMMAND test_ga_context)
 
     if(NOT TARGET test_natural)
         add_executable(test_natural
@@ -2525,7 +2343,10 @@ flexaids_configure_simd(test_cavity_detect)
 endif()
 
 # ─── Swift Bridge (macOS only) ────────────────────────────────────────────
-option(BUILD_SWIFT_BRIDGE "Build Swift bridge static library (macOS only)" OFF)
+# EXPERIMENTAL / STUB: Swift bindings and prototypes are NOT core components.
+# Default OFF. See .gitmodules for recommended submodule management.
+# Swift/TS code evolves separately; do not depend on in core C++ builds.
+option(BUILD_SWIFT_BRIDGE "Build Swift bridge static library (macOS only) [experimental stub, not core]" OFF)
 if(BUILD_SWIFT_BRIDGE)
     if(NOT APPLE)
         message(FATAL_ERROR "BUILD_SWIFT_BRIDGE requires macOS (Apple platform)")
