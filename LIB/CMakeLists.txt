@@ -2,8 +2,11 @@
 #
 # Defines the flexaid_core OBJECT library containing all core C++ sources.
 # GPU-specific sources (CUDA, Metal, ROCm) are added conditionally.
+#
+# Source list is in a variable to make maintenance easier and support
+# future component splits (see audit monolith reduction).
 
-add_library(flexaid_core OBJECT
+set(FLEXAID_CORE_SOURCES
     fileio.cpp
     assign_shift.cpp
     buildic.cpp
@@ -169,6 +172,12 @@ add_library(flexaid_core OBJECT
     # ── Native-pose CF scoring diagnostic (DatasetRunner IdealPopulation) ──
     native_score.cpp
 )
+
+add_library(flexaid_core OBJECT ${FLEXAID_CORE_SOURCES})
+
+# Export the source list for use by parent scope / other modules if needed
+# (e.g. for documentation or future finer-grained components).
+set(FLEXAID_CORE_SOURCES "${FLEXAID_CORE_SOURCES}" PARENT_SCOPE)
 
 target_include_directories(flexaid_core PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}
