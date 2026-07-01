@@ -1006,43 +1006,34 @@ if(BUILD_TESTING)
     # (single definition, available for all test targets below).
 
     # test_statmech — StatMechEngine unit tests
-    add_executable(test_statmech tests/test_statmech.cpp LIB/statmech.cpp
-        LIB/TurboQuant.cpp
-                   LIB/UnifiedHardwareDispatch.cpp LIB/hardware_detect.cpp)
-    target_include_directories(test_statmech PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/LIB)
-    target_link_libraries(test_statmech PRIVATE GTest::gtest GTest::gtest_main)
-    if(MSVC)
-        target_compile_options(test_statmech PRIVATE /O2)
-    else()
-        target_compile_options(test_statmech PRIVATE -O2)
-    endif()
-    flexaids_configure_simd(test_statmech)
-    if(FLEXAIDS_USE_OPENMP AND OpenMP_CXX_FOUND)
-        target_link_libraries(test_statmech PRIVATE OpenMP::OpenMP_CXX)
-    endif()
-    target_link_libraries(test_statmech PRIVATE Eigen3::Eigen)
+    flexaids_add_unit_test(test_statmech
+        SOURCES
+            tests/test_statmech.cpp
+            LIB/statmech.cpp
+            LIB/TurboQuant.cpp
+            LIB/UnifiedHardwareDispatch.cpp
+            LIB/hardware_detect.cpp
+        LINK_LIBRARIES Eigen3::Eigen
+        DEFINES FLEXAIDS_HAS_EIGEN
+        CONFIGURE_SIMD
+        LINK_OPENMP
+        TEST_NAME StatMechTests
+    )
 
-    target_compile_definitions(test_statmech PRIVATE FLEXAIDS_HAS_EIGEN)
-    flexaids_configure_msvc_test(test_statmech)
-    add_test(NAME StatMechTests COMMAND test_statmech)
-
-    add_executable(test_thermo_ledger tests/test_thermo_ledger.cpp LIB/statmech.cpp
-        LIB/TurboQuant.cpp
-        LIB/UnifiedHardwareDispatch.cpp LIB/hardware_detect.cpp)
-    target_include_directories(test_thermo_ledger PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/LIB)
-    target_link_libraries(test_thermo_ledger PRIVATE GTest::gtest GTest::gtest_main Eigen3::Eigen)
-    if(MSVC)
-        target_compile_options(test_thermo_ledger PRIVATE /O2)
-    else()
-        target_compile_options(test_thermo_ledger PRIVATE -O2)
-    endif()
-    flexaids_configure_simd(test_thermo_ledger)
-    if(FLEXAIDS_USE_OPENMP AND OpenMP_CXX_FOUND)
-        target_link_libraries(test_thermo_ledger PRIVATE OpenMP::OpenMP_CXX)
-    endif()
-    target_compile_definitions(test_thermo_ledger PRIVATE FLEXAIDS_HAS_EIGEN)
-    flexaids_configure_msvc_test(test_thermo_ledger)
-    add_test(NAME ThermoLedgerTests COMMAND test_thermo_ledger)
+    # test_thermo_ledger — Thermo ledger tests
+    flexaids_add_unit_test(test_thermo_ledger
+        SOURCES
+            tests/test_thermo_ledger.cpp
+            LIB/statmech.cpp
+            LIB/TurboQuant.cpp
+            LIB/UnifiedHardwareDispatch.cpp
+            LIB/hardware_detect.cpp
+        LINK_LIBRARIES Eigen3::Eigen
+        DEFINES FLEXAIDS_HAS_EIGEN
+        CONFIGURE_SIMD
+        LINK_OPENMP
+        TEST_NAME ThermoLedgerTests
+    )
 
     # test_json_config — JSON parser & config defaults tests (zero dependencies)
     flexaids_add_unit_test(test_json_config
@@ -1063,32 +1054,21 @@ if(BUILD_TESTING)
     )
 
     # test_hardware_dispatch — ShannonThermoStack dispatch layer tests
-    add_executable(test_hardware_dispatch
-        tests/test_hardware_dispatch.cpp
-        LIB/ShannonThermoStack/ShannonThermoStack.cpp
-        LIB/statmech.cpp
-        LIB/TurboQuant.cpp
-        LIB/UnifiedHardwareDispatch.cpp
-        LIB/hardware_detect.cpp
-        LIB/tENCoM/tencm.cpp)
-    target_include_directories(test_hardware_dispatch PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/LIB
-        ${CMAKE_CURRENT_SOURCE_DIR}/LIB/tENCoM
-        ${CMAKE_CURRENT_SOURCE_DIR}/LIB/ShannonThermoStack)
-    target_link_libraries(test_hardware_dispatch PRIVATE GTest::gtest GTest::gtest_main)
-    if(MSVC)
-        target_compile_options(test_hardware_dispatch PRIVATE /O2)
-    else()
-        target_compile_options(test_hardware_dispatch PRIVATE -O2)
-    endif()
-    if(FLEXAIDS_USE_OPENMP AND OpenMP_CXX_FOUND)
-        target_link_libraries(test_hardware_dispatch PRIVATE OpenMP::OpenMP_CXX)
-    endif()
-    target_link_libraries(test_hardware_dispatch PRIVATE Eigen3::Eigen)
-
-    target_compile_definitions(test_hardware_dispatch PRIVATE FLEXAIDS_HAS_EIGEN)
-    flexaids_configure_msvc_test(test_hardware_dispatch)
-    add_test(NAME HardwareDispatchTests COMMAND test_hardware_dispatch)
+    flexaids_add_unit_test(test_hardware_dispatch
+        SOURCES
+            tests/test_hardware_dispatch.cpp
+            LIB/ShannonThermoStack/ShannonThermoStack.cpp
+            LIB/statmech.cpp
+            LIB/TurboQuant.cpp
+            LIB/UnifiedHardwareDispatch.cpp
+            LIB/hardware_detect.cpp
+            LIB/tENCoM/tencm.cpp
+        LINK_LIBRARIES Eigen3::Eigen
+        DEFINES FLEXAIDS_HAS_EIGEN
+        CONFIGURE_SIMD
+        LINK_OPENMP
+        TEST_NAME HardwareDispatchTests
+    )
 
     # test_hardware_detect_dispatch — unified dispatch layer + hardware detection tests
     add_executable(test_hardware_detect_dispatch
@@ -1128,53 +1108,31 @@ if(BUILD_TESTING)
     add_test(NAME HardwareDetectDispatchTests COMMAND test_hardware_detect_dispatch)
 
     # test_tencom_diff — tENCoM differential engine tests
-    add_executable(test_tencom_diff
-        tests/test_tencom_diff.cpp
-        LIB/tENCoM/tencom_diff.cpp
-        LIB/tENCoM/pdb_calpha.cpp
-        LIB/tENCoM/tencm.cpp
-        LIB/statmech.cpp
-        LIB/TurboQuant.cpp
-        LIB/UnifiedHardwareDispatch.cpp
-        LIB/hardware_detect.cpp
-        LIB/encom.cpp
+    flexaids_add_unit_test(test_tencom_diff
+        SOURCES
+            tests/test_tencom_diff.cpp
+            LIB/tENCoM/tencom_diff.cpp
+            LIB/tENCoM/pdb_calpha.cpp
+            LIB/tENCoM/tencm.cpp
+            LIB/statmech.cpp
+            LIB/TurboQuant.cpp
+            LIB/UnifiedHardwareDispatch.cpp
+            LIB/hardware_detect.cpp
+            LIB/encom.cpp
+        LINK_LIBRARIES Eigen3::Eigen
+        DEFINES FLEXAIDS_HAS_EIGEN
+        CONFIGURE_SIMD
+        LINK_OPENMP
+        TEST_NAME TENCoMDiffTests
     )
-    target_include_directories(test_tencom_diff PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/LIB
-        ${CMAKE_CURRENT_SOURCE_DIR}/LIB/tENCoM)
-    target_link_libraries(test_tencom_diff PRIVATE GTest::gtest GTest::gtest_main)
-    if(MSVC)
-        target_compile_options(test_tencom_diff PRIVATE /O2)
-    else()
-        target_compile_options(test_tencom_diff PRIVATE -O2)
-    endif()
-    flexaids_configure_simd(test_tencom_diff)
-    if(FLEXAIDS_USE_OPENMP AND OpenMP_CXX_FOUND)
-        target_link_libraries(test_tencom_diff PRIVATE OpenMP::OpenMP_CXX)
-    endif()
-    target_link_libraries(test_tencom_diff PRIVATE Eigen3::Eigen)
-
-    target_compile_definitions(test_tencom_diff PRIVATE FLEXAIDS_HAS_EIGEN)
-    flexaids_configure_msvc_test(test_tencom_diff)
-    add_test(NAME TENCoMDiffTests COMMAND test_tencom_diff)
 
     # test_ptm_attachment — PTMAttachment module tests
-    add_executable(test_ptm_attachment
-        tests/test_ptm_attachment.cpp
-        LIB/PTMAttachment/PTMAttachment.cpp
+    flexaids_add_unit_test(test_ptm_attachment
+        SOURCES
+            tests/test_ptm_attachment.cpp
+            LIB/PTMAttachment/PTMAttachment.cpp
+        TEST_NAME PTMAttachmentTests
     )
-    target_include_directories(test_ptm_attachment PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/LIB
-        ${CMAKE_CURRENT_SOURCE_DIR}/LIB/PTMAttachment
-    )
-    target_link_libraries(test_ptm_attachment PRIVATE GTest::gtest GTest::gtest_main)
-    if(MSVC)
-        target_compile_options(test_ptm_attachment PRIVATE /O2)
-    else()
-        target_compile_options(test_ptm_attachment PRIVATE -O2)
-    endif()
-    flexaids_configure_msvc_test(test_ptm_attachment)
-    add_test(NAME PTMAttachmentTests COMMAND test_ptm_attachment)
 
     # test_gaboom — Genetic Algorithm engine unit tests
     add_executable(test_gaboom
