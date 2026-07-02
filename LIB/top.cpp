@@ -26,6 +26,7 @@
 #include "CavityDetect/SpatialGrid.h"
 #include "native_score.h"
 #include "hbond_potential.h"
+#include "RngSeed.h"
 
 #include <algorithm>
 #include <cmath>
@@ -393,6 +394,7 @@ static void print_usage(const char* progname) {
 
 int main(int argc, char **argv){
   try {
+	flexaids_rng::init_from_env();
 	int   i,j;
 	int   natm;
 
@@ -829,6 +831,9 @@ int main(int argc, char **argv){
 				config = json::merge(config, V(O{{"advanced", V(O{{"assume_folded", V(true)}})}}));
 			}
 			apply_config(config, FA, GB);
+			if (GB->seed != 0) {
+				flexaids_rng::set_master_seed(static_cast<std::uint64_t>(GB->seed));
+			}
 
 			// ── Strategy A: extract grid cache path from JSON "grid_file" key ──────
 			if (config.contains("grid_file")) {

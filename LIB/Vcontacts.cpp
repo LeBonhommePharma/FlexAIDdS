@@ -402,9 +402,9 @@ RESTART:
 				origcoor[1] = VC->Calc[atomzero].atom->coor[1];
 				origcoor[2] = VC->Calc[atomzero].atom->coor[2];
 				
-				// perturb atom coordinates (thread-safe RNG)
-				thread_local std::mt19937 vc_rng = flexaids_rng::make_thread_rng(0x0C0A11ULL);
+				// perturb atom coordinates (deterministic when ga.seed/FLEXAID_SEED set)
 				thread_local std::uniform_real_distribution<float> vc_dist(-0.005f, 0.005f);
+				auto& vc_rng = flexaids_rng::lazy_thread_rng(0x0C0A11ULL);
 				VC->Calc[atomzero].atom->coor[0] += vc_dist(vc_rng);
 				VC->Calc[atomzero].atom->coor[1] += vc_dist(vc_rng);
 				VC->Calc[atomzero].atom->coor[2] += vc_dist(vc_rng);

@@ -11,8 +11,7 @@
 
 static std::mt19937& foptics_rng()
 {
-    thread_local std::mt19937 gen = flexaids_rng::make_thread_rng(0xF0701C5ULL);
-    return gen;
+    return flexaids_rng::lazy_thread_rng(0xF0701C5ULL);
 }
 
 struct RNG

@@ -88,6 +88,27 @@ TEST(RngSeedTest, FlexaidSeedMakesStreamSeedsRepeatable) {
     EXPECT_NE(s1, s3);
 }
 
+TEST(RngSeedTest, MasterSeedOverridesRandomDevice) {
+    unset_test_env("FLEXAID_SEED");
+    flexaids_rng::set_master_seed(11);
+    auto s1 = flexaids_rng::seed_from_env_or_random(0x0C0A11ULL);
+    auto s2 = flexaids_rng::seed_from_env_or_random(0x0C0A11ULL);
+    EXPECT_EQ(s1, s2);
+    EXPECT_TRUE(flexaids_rng::has_master_seed());
+    EXPECT_EQ(flexaids_rng::master_seed(), 11u);
+}
+
+TEST(RngSeedTest, LazyThreadRngRespectsMasterSeedEpoch) {
+    flexaids_rng::set_master_seed(11);
+    std::uniform_real_distribution<double> dist(0.0, 1.0);
+    const double a = dist(flexaids_rng::lazy_thread_rng(0x9A800DULL));
+    flexaids_rng::set_master_seed(11);
+    const double b = dist(flexaids_rng::lazy_thread_rng(0x9A800DULL));
+    const double c = dist(flexaids_rng::lazy_thread_rng(0x9A800DULL));
+    EXPECT_DOUBLE_EQ(a, b);
+    EXPECT_NE(a, c);
+}
+
 #ifdef FLEXAIDS_USE_CUDA
 TEST(GPUContextPoolTest, SingletonInstance) {
     auto& pool1 = GPUContextPool::instance();

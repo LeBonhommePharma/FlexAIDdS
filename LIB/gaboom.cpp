@@ -320,17 +320,19 @@ int GA(FA_Global* FA, GB_Global* GB,VC_Global* VC,chromosome** chrom,chromosome*
 		GB->entropy_check_interval = GA_DEFAULT_ENTROPY_CHECK_INTERVAL;
 	}
 	unsigned int tt;
-	if (GB->seed==0)
-	{
-		tt = static_cast<unsigned int>(time(0));
-	}
-	else
-	{
+	if (GB->seed == 0) {
+		if (flexaids_rng::has_master_seed()) {
+			tt = static_cast<unsigned int>(flexaids_rng::master_seed());
+		} else {
+			tt = static_cast<unsigned int>(time(0));
+		}
+	} else {
 		tt = GB->seed;
 	}
 	//tt = (unsigned)1;
 	printf("srand=%u\n", tt);
 	srand(tt);
+	flexaids_rng::set_master_seed(static_cast<std::uint64_t>(tt));
 	std::mt19937 rng(tt);
 
 	std::uniform_int_distribution<int32_t> one_to_max_int32( 0, MAX_RANDOM_VALUE );
@@ -4015,8 +4017,7 @@ double RandomDouble(int32_t gene){
 }
 
 double RandomDouble(){
-	// Thread-safe RNG (replaces non-reentrant rand())
-	thread_local std::mt19937 tl_rng = flexaids_rng::make_thread_rng(0x9A800DULL);
+	// Thread-safe RNG tied to ga.seed / FLEXAID_SEED via lazy_thread_rng.
 	std::uniform_real_distribution<double> dist(0.0, 1.0);
-	return dist(tl_rng);
+	return dist(flexaids_rng::lazy_thread_rng(0x9A800DULL));
 }
