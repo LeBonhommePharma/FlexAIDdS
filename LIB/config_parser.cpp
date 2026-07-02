@@ -122,7 +122,7 @@ void apply_config(const json::Value& config, FA_Global* FA, GB_Global* GB) {
         FA->intrafraction        = jflt(config, "flexibility", "intramolecular_fraction", 1.0f);
         FA->permeability         = jflt(config, "flexibility", "permeability", 1.0f);
         FA->rotamer_permeability = jflt(config, "flexibility", "rotamer_permeability", 0.8f);
-        FA->soft_wall_cutoff     = jflt(config, "flexibility", "soft_wall_cutoff", 0.0f);
+        FA->soft_wall_cutoff     = jflt(config, "flexibility", "soft_wall_cutoff", 0.40f);
         FA->pbloops              = jint(config, "flexibility", "binding_site_conformations", 1);
         FA->bloops               = jint(config, "flexibility", "bonded_loops", 2);
         FA->useflexdee           = jbool(config, "flexibility", "use_flexdee", false) ? 1 : 0;

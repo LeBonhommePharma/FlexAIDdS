@@ -189,7 +189,7 @@ atomindex* index_protein(FA_Global*,atom*,resid*,atomsas*,int*,int*,int,atominde
 void    save_areas(const plane *,const contactlist *, int, int,atomsas*, int* ,int*,ca_struct** , int* );
 void    min_areas(ca_struct*, const atomsas*, const atomsas*, char*);
 void    print_areas(atomsas*, int, ca_struct*);
-int     get_contlist4(atom*,int, contactlist *, int, float, int, atomsas*, const int*, const atomindex*, const ca_struct*, const int*, double*, double,resid*,int*);
+int     get_contlist4(atom*,int, contactlist *, int, float, int, atomsas*, const int*, const atomindex*, const ca_struct*, const int*, double*, double, float, resid*,int*);
 void    save_seeds(int*,const plane *, const vertex *, int, int);
 void    get_firstvert(const int*,const plane *, int *, int *, int *, int, int);
 std::string  generate_dim_sig(float* global_min, int dim);

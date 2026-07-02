@@ -74,6 +74,7 @@ inline json::Value flexaid_default_config() {
             {"bonded_loops",                V(2)},      // bloops: exclude interactions n bonds away
             {"use_flexdee",                 V(false)},  // dead-end elimination for sidechains
             {"dee_clash",                   V(0.5)},
+            {"soft_wall_cutoff",            V(0.40)},   // overlap soft-core radius (Å); 0 = legacy hard r^-12
             {"multi_model",                 V(false)},  // CCBM: multi-conformer receptor docking
         })},
 

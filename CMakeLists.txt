@@ -1041,6 +1041,12 @@ if(BUILD_TESTING)
         TEST_NAME JsonConfigTests
     )
 
+    # test_soft_wall — overlap-based soft-core clash potential (header-only)
+    flexaids_add_unit_test(test_soft_wall
+        SOURCES tests/test_soft_wall.cpp
+        TEST_NAME SoftWallTests
+    )
+
     # test_metal_coordination — Metal ion coordination potential tests (header-only)
     flexaids_add_unit_test(test_metal_coordination
         SOURCES tests/test_metal_coordination.cpp

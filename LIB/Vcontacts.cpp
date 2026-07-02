@@ -1,4 +1,5 @@
 #include "Vcontacts.h"
+#include "soft_wall.h"
 #include "RngSeed.h"
 #include "fileio.h"
 #include <algorithm>
@@ -58,7 +59,8 @@ int Vcontacts(FA_Global* FA,atom* atoms,resid* residue,VC_Global* VC,
 		
 			get_contlist4(atoms,atomzero, VC->contlist, FA->atm_cnt_real, rado, VC->dim,
 					       VC->Calc, VC->Calclist, VC->box,VC->ca_rec, VC->ca_index,
-					       clash_value, (double)FA->permeability, residue, FA->num_atm);
+					       clash_value, (double)FA->permeability, FA->soft_wall_cutoff,
+					       residue, FA->num_atm);
 		}
 		if(*clash_value >= CLASH_THRESHOLD){ return(-2); }
 
@@ -128,7 +130,7 @@ int calc_region(FA_Global* FA,VC_Global* VC,atom* atoms,int atmcnt,bool non_scor
 		
 		NC = get_contlist4(atoms,atomzero, VC->contlist, atmcnt, rado, VC->dim,
 				   VC->Calc, VC->Calclist, VC->box,VC->ca_rec, VC->ca_index,
-				   NULL, 0.0, NULL, NULL);
+				   NULL, 0.0, 0.0f, NULL, NULL);
 		
 		// invalid write/read when NC = 0
 		// because planeA is negative subscript
@@ -1807,7 +1809,8 @@ int get_contlist4(atom* atoms,int atomzero, contactlist contlist[],
                   int atmcnt, float rado, int dim, atomsas* Calc, 
                   const int* Calclist, const atomindex* box, 
                   const ca_struct* ca_rec,const int* ca_index,
-		  double* clash_value, double permea, resid* residue, int* num_atm) 
+		  double* clash_value, double permea, float soft_wall_cutoff,
+		  resid* residue, int* num_atm) 
 {
 	double sqrdist;             // distance squared between two points
 	double neardist;            // max distance for contact between atom spheres
@@ -1865,7 +1868,9 @@ int get_contlist4(atom* atoms,int atomzero, contactlist contlist[],
 					int** rb = residue[Calc[atomzero].atom->ofres].bonded;
 					if(!intramolecular || rb == NULL ||
 					   rb[num_atm[Calc[atomzero].atom->number]-fatm][num_atm[Calc[cand_atomj].atom->number]-fatm] < 0){
-						*clash_value += KWALL*(pow(contlist[NC].dist,-12.0)-pow(cand_clashdist,-12.0));
+						*clash_value += soft_wall_fitness_energy(contlist[NC].dist,
+						                                       cand_clashdist,
+						                                       soft_wall_cutoff);
 					}
 				}
 				Calc[atomzero].done = 'Y';
@@ -2012,7 +2017,9 @@ int get_contlist4(atom* atoms,int atomzero, contactlist contlist[],
 						int** rb = residue[Calc[atomzero].atom->ofres].bonded;
 						if(!intramolecular || rb == NULL ||
 						   rb[num_atm[Calc[atomzero].atom->number]-fatm][num_atm[Calc[atomj].atom->number]-fatm] < 0){
-							*clash_value += KWALL*(pow(contlist[NC].dist,-12.0)-pow(clashdist,-12.0));
+							*clash_value += soft_wall_fitness_energy(contlist[NC].dist,
+							                                       clashdist,
+							                                       soft_wall_cutoff);
 						}
 					}
 					Calc[atomzero].done = 'Y';

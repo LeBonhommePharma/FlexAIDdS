@@ -240,6 +240,7 @@ TEST(ConfigDefaults, DefaultsAreValid) {
     EXPECT_EQ(cfg["scoring"]["function"].as_string(), "VCT");
     EXPECT_TRUE(cfg["flexibility"]["ligand_torsions"].as_bool());
     EXPECT_FALSE(cfg["flexibility"]["use_flexdee"].as_bool());
+    EXPECT_NEAR(cfg["flexibility"]["soft_wall_cutoff"].as_double(), 0.40, EPSILON);
 
     // Rigid overrides
     auto rigid = flexaid_rigid_overrides();
