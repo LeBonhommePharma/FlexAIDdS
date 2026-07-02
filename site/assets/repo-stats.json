@@ -1,6 +1,6 @@
 {
-  "commits": 1588,
-  "languageCount": 14,
+  "commits": 1589,
+  "languageCount": 15,
   "lastUpdated": "2026-07-01",
   "languages": [
     {
@@ -14,6 +14,12 @@
       "name": "Python",
       "percent": 21.4,
       "color": "#3572A5"
+    },
+    {
+      "id": "other",
+      "name": "Makefile",
+      "percent": 8.1,
+      "color": "#427819"
     },
     {
       "id": "other",
@@ -60,7 +66,7 @@
     {
       "id": "other",
       "name": "Other",
-      "percent": 11.1,
+      "percent": 3.0,
       "color": "#555555"
     }
   ],
