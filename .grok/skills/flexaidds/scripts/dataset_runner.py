@@ -2,7 +2,7 @@
 """
 dataset_runner.py
 
-Part of the flexaid-docking skill.
+Part of the flexaidds skill.
 
 Convenient, high-quality wrapper around the FlexAIDδS DatasetRunner
 with built-in safety, data checks, and helpful defaults.
@@ -16,19 +16,19 @@ This script follows the same professional patterns as the rest of the skill:
 
 Usage examples:
     # Basic tier-1 run on Astex Diverse (fast) — manifest is captured automatically
-    python3 .grok/skills/flexaid-docking/scripts/dataset_runner.py \
+    python3 .grok/skills/flexaidds/scripts/dataset_runner.py \
         --dataset astex_diverse --tier 1
 
     # Full distributed campaign + professional validation package (recommended)
-    mpirun -n 8 python3 .grok/skills/flexaid-docking/scripts/dataset_runner.py \
+    mpirun -n 8 python3 .grok/skills/flexaidds/scripts/dataset_runner.py \
         --all --tier 2 --distributed --package
 
     # Dry run to validate everything without docking
-    python3 .grok/skills/flexaid-docking/scripts/dataset_runner.py \
+    python3 .grok/skills/flexaidds/scripts/dataset_runner.py \
         --all --tier 1 --dry-run
 
     # Long campaign with per-entry checkpointing + MPI dynamic master-worker + timing/cost in reproducibility package
-    python3 .grok/skills/flexaid-docking/scripts/dataset_runner.py \
+    python3 .grok/skills/flexaidds/scripts/dataset_runner.py \
         --all --tier 2 --workers 8 --resume --package
 """
 
@@ -67,7 +67,7 @@ except ImportError:
 
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
-        prog="flexaid-docking dataset-runner",
+        prog="flexaidds dataset-runner",
         description="Run FlexAIDδS DatasetRunner campaigns with skill-integrated safety, data guarantees, and pharma-grade reproducibility.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
@@ -277,8 +277,8 @@ def gather_reproducibility_metadata(args: argparse.Namespace, binary_path: str |
         "platform": platform.platform(),
         "platform_system": platform.system(),
         "platform_release": platform.release(),
-        "skill_version": "2026-05 (flexaid-docking)",
-        "script": "dataset_runner.py (flexaid-docking skill wrapper)",
+        "skill_version": "2026-05 (flexaidds)",
+        "script": "dataset_runner.py (flexaidds skill wrapper)",
     }
 
     # Git (robust)
@@ -467,11 +467,11 @@ def generate_validation_summary(metadata: Dict[str, Any]) -> str:
     lines.append("")
     lines.append("To reproduce this exact campaign or audit the results:")
     lines.append("")
-    lines.append("1. Checkout the git commit listed above (or the version of the flexaid-docking skill used).")
+    lines.append("1. Checkout the git commit listed above (or the version of the flexaidds skill used).")
     lines.append("2. Ensure the FlexAIDδS binary whose SHA256 matches the manifest is on PATH or passed via `--binary`.")
     lines.append("3. Run the skill data ensure step (it will use the same data files whose hashes appear above):")
     lines.append("   ```bash")
-    lines.append("   python3 .grok/skills/flexaid-docking/scripts/ensure_docking_data.py --info")
+    lines.append("   python3 .grok/skills/flexaidds/scripts/ensure_docking_data.py --info")
     lines.append("   ```")
     lines.append("4. Re-execute the exact command line shown in section 4 (or the inner DatasetRunner invocation).")
     lines.append("5. Compare new REPRODUCIBILITY_MANIFEST.json hashes against the archived copy.")
@@ -493,11 +493,11 @@ def generate_validation_summary(metadata: Dict[str, Any]) -> str:
 
     lines.append("## 8. Disclaimer")
     lines.append("")
-    lines.append("This summary and the associated manifest were generated automatically by the flexaid-docking skill. They record the computational environment and inputs with high fidelity. They do not constitute a claim of experimental validation or regulatory approval. Users are responsible for interpreting results in the appropriate scientific and regulatory context.")
+    lines.append("This summary and the associated manifest were generated automatically by the flexaidds skill. They record the computational environment and inputs with high fidelity. They do not constitute a claim of experimental validation or regulatory approval. Users are responsible for interpreting results in the appropriate scientific and regulatory context.")
     lines.append("")
     lines.append("---")
     lines.append("*FlexAIDδS — entropy-augmented molecular docking (FlexAID + ΔS)*")
-    lines.append("*Part of the flexaid-docking Grok skill — professional reproducibility tooling*")
+    lines.append("*Part of the flexaidds Grok skill — professional reproducibility tooling*")
 
     return "\n".join(lines)
 

@@ -1,6 +1,6 @@
 # FlexAID / FlexAIDdS / FlexAID∆S Docking Guidance (Reference)
 
-This document preserves exact scientific terminology and guardrails for any agent or human working on the FlexAIDdS codebase via the `flexaid-docking` skill.
+This document preserves exact scientific terminology and guardrails for any agent or human working on the FlexAIDdS codebase via the `flexaidds` skill.
 
 ## Canonical Names (Never Alter)
 

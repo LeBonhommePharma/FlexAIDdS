@@ -2,7 +2,7 @@
 """
 inspect_definition_files.py
 
-Part of the flexaid-docking skill.
+Part of the flexaidds skill.
 
 A small standalone helper to inspect and report on the critical runtime data files
 that the FlexAIDδS binary requires in its base path:
@@ -19,9 +19,9 @@ Useful for:
 - Capturing reproducibility snapshots for papers, redock reports, or audit packages (--reproducibility)
 
 Example usage:
-    python3 .grok/skills/flexaid-docking/scripts/inspect_definition_files.py
-    python3 .grok/skills/flexaid-docking/scripts/inspect_definition_files.py --binary /path/to/FlexAIDdS
-    python3 .grok/skills/flexaid-docking/scripts/inspect_definition_files.py --source /path/to/good/install --reproducibility
+    python3 .grok/skills/flexaidds/scripts/inspect_definition_files.py
+    python3 .grok/skills/flexaidds/scripts/inspect_definition_files.py --binary /path/to/FlexAIDdS
+    python3 .grok/skills/flexaidds/scripts/inspect_definition_files.py --source /path/to/good/install --reproducibility
 """
 
 import argparse
@@ -205,7 +205,7 @@ def print_reproducibility_block(all_files: List[Path], verbose: bool = False) ->
     print("FLEXAIDδS REPRODUCIBILITY SNAPSHOT (from inspect_definition_files --repro)")
     print("=" * 70)
     print(f"Timestamp (UTC): {datetime.now(timezone.utc).isoformat()}")
-    print(f"Inspector:       inspect_definition_files.py (flexaid-docking skill)")
+    print(f"Inspector:       inspect_definition_files.py (flexaidds skill)")
 
     # Deduped critical files present
     seen = set()
@@ -243,7 +243,7 @@ def print_reproducibility_block(all_files: List[Path], verbose: bool = False) ->
     print("```json")
     block = {
         "timestamp_utc": datetime.now(timezone.utc).isoformat(),
-        "inspector": "inspect_definition_files.py --reproducibility (flexaid-docking skill)",
+        "inspector": "inspect_definition_files.py --reproducibility (flexaidds skill)",
         "critical_data_hashes": {
             name: _sha256(name_to_path[name]) if name in name_to_path else "missing"
             for name in critical_names
@@ -261,7 +261,7 @@ def print_reproducibility_block(all_files: List[Path], verbose: bool = False) ->
 def main() -> int:
     parser = argparse.ArgumentParser(
         description="Inspect all critical FlexAIDδS runtime data files (matrices + *.def + extras like Lovell_LIB, rotobs, etc.) and report on completeness + flexibility info.",
-        epilog="Part of the flexaid-docking skill. Use --reproducibility for a ready-to-paste manifest block (great for publications and manual redocking)."
+        epilog="Part of the flexaidds skill. Use --reproducibility for a ready-to-paste manifest block (great for publications and manual redocking)."
     )
     parser.add_argument("--binary", "-b", type=Path, help="Path to FlexAIDδS binary (helps locate data)")
     parser.add_argument("--source", "-s", type=Path, help="Explicit directory to search for definition files")

@@ -80,7 +80,7 @@ You rarely need to specify `--quick` or `--info` manually anymore.
 The recommended tool is:
 
 ```bash
-python3 .grok/skills/flexaid-docking/scripts/ensure_docking_data.py
+python3 .grok/skills/flexaidds/scripts/ensure_docking_data.py
 ```
 
 This script will:
@@ -93,7 +93,7 @@ For the common case of “I have another working FlexAIDδS installation”, use
 convenience wrapper:
 
 ```bash
-python3 .grok/skills/flexaid-docking/scripts/copy_docking_data_from_install.py \
+python3 .grok/skills/flexaidds/scripts/copy_docking_data_from_install.py \
     --source /path/to/my/other/working/flexaidds
 ```
 
@@ -121,10 +121,10 @@ The inspector and DatasetRunner wrapper automatically record cryptographic hashe
 
 ```bash
 # Rich hash table + ready-to-paste block for your lab notebook or paper
-python3 .grok/skills/flexaid-docking/scripts/inspect_definition_files.py --reproducibility
+python3 .grok/skills/flexaidds/scripts/inspect_definition_files.py --reproducibility
 
 # Full campaign with professional one-pager Validation Summary + manifest
-python3 .grok/skills/flexaid-docking/scripts/dataset_runner.py --all --tier 2 --package
+python3 .grok/skills/flexaidds/scripts/dataset_runner.py --all --tier 2 --package
 ```
 
 The resulting `VALIDATION_SUMMARY.md` (inside the generated zip) contains a clean table of every critical file hash together with environment capture. This is the mechanism that makes FlexAIDδS work attractive to pharma teams and reviewers who demand full computational provenance.

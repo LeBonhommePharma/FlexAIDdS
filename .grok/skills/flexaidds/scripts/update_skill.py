@@ -2,16 +2,16 @@
 """
 update_skill.py
 
-Part of the flexaid-docking skill.
+Part of the flexaidds skill.
 
-Built-in, safe, professional autoupdate for the flexaid-docking skill and its
+Built-in, safe, professional autoupdate for the flexaidds skill and its
 sub-components (scripts, references, documentation, data matrices, bin shortcuts).
 
 This makes it dramatically easier for users to keep the skill current without
 manual rsync, copy, or re-zip steps.
 
 Primary use cases:
-- Update the active Grok skill installation (~/.grok/skills/flexaid-docking)
+- Update the active Grok skill installation (~/.grok/skills/flexaidds)
 - Update a portable copy (the folder you share with Claude Code / Cursor / Aider)
 - Refresh a skills-export/ tree before re-zipping for distribution
 
@@ -37,7 +37,7 @@ from typing import List, Optional, Tuple
 # CONFIGURATION
 # =============================================================================
 
-SKILL_NAME = "flexaid-docking"
+SKILL_NAME = "flexaidds"
 VERSION = "2026-05"
 
 # Files and directories that are part of the skill "subskills" surface
@@ -61,7 +61,7 @@ DATA_ITEMS = [
 
 # Relative to the script location
 THIS_SCRIPT = Path(__file__).resolve()
-SKILL_ROOT = THIS_SCRIPT.parent.parent   # .grok/skills/flexaid-docking or portable equivalent
+SKILL_ROOT = THIS_SCRIPT.parent.parent   # .grok/skills/flexaidds or portable equivalent
 
 # Common places a full FlexAIDδS checkout might live
 CANONICAL_SEARCH_PATHS: List[Path] = [
@@ -86,7 +86,7 @@ def print_skill_banner(verbose: bool = False) -> None:
 
     if verbose:
         print("+" + "-" * 60 + "+")
-        print("|  flexaid-docking skill                                   |")
+        print("|  flexaidds skill                                   |")
         print(f"|  Script   : {script:<44}|")
         print(f"|  Version  : {VERSION:<44}|")
         print("|                                                          |")
@@ -95,7 +95,7 @@ def print_skill_banner(verbose: bool = False) -> None:
         print("|  No scientific claim is valid without running the code.  |")
         print("+" + "-" * 60 + "+")
     else:
-        print(f"[flexaid-docking] {script}  v{VERSION}")
+        print(f"[flexaidds] {script}  v{VERSION}")
 
 
 # =============================================================================
@@ -115,34 +115,34 @@ def find_canonical_source(explicit_source: Optional[Path] = None) -> Optional[So
     Priority:
       1. Explicit --source
       2. FLEXAIDDS_ROOT environment variable
-      3. Heuristic search for a full FlexAIDdS checkout containing .grok/skills/flexaid-docking
+      3. Heuristic search for a full FlexAIDdS checkout containing .grok/skills/flexaidds
       4. If the current location already looks like a full checkout, use it
     """
     if explicit_source:
         p = explicit_source.resolve()
-        if (p / ".grok/skills/flexaid-docking").exists() or (p / ".grok/skills/flexaid-docking/SKILL.md").exists():
+        if (p / ".grok/skills/flexaidds").exists() or (p / ".grok/skills/flexaidds/SKILL.md").exists():
             return SourceInfo(root=p, is_full_checkout=True, confidence="explicit")
         # Allow pointing directly at the skill dir inside a checkout
-        if (p / "SKILL.md").exists() and p.name == "flexaid-docking":
+        if (p / "SKILL.md").exists() and p.name == "flexaidds":
             return SourceInfo(root=p.parent.parent.parent, is_full_checkout=True, confidence="explicit-skill-dir")
         print(f"[WARN] --source {explicit_source} does not look like a FlexAIDδS checkout.")
         return None
 
     # Environment variable (power users)
     env_root = Path.home() if "FLEXAIDDS_ROOT" not in __import__("os").environ else Path(__import__("os").environ["FLEXAIDDS_ROOT"])
-    if env_root and (env_root / ".grok/skills/flexaid-docking/SKILL.md").exists():
+    if env_root and (env_root / ".grok/skills/flexaidds/SKILL.md").exists():
         return SourceInfo(root=env_root, is_full_checkout=True, confidence="env")
 
     # Current working tree / parents (very common when user is inside the repo)
     for candidate in [Path.cwd()] + list(Path.cwd().parents):
-        if (candidate / ".grok/skills/flexaid-docking/SKILL.md").exists():
+        if (candidate / ".grok/skills/flexaidds/SKILL.md").exists():
             return SourceInfo(root=candidate, is_full_checkout=True, confidence="cwd-parent")
 
     # Heuristic search
     for base in CANONICAL_SEARCH_PATHS:
         if not base.exists():
             continue
-        if (base / ".grok/skills/flexaid-docking/SKILL.md").exists():
+        if (base / ".grok/skills/flexaidds/SKILL.md").exists():
             return SourceInfo(root=base, is_full_checkout=True, confidence="heuristic")
 
     # Last resort: maybe the user only has the portable skill and no full repo
@@ -166,12 +166,12 @@ def compute_file_list(source_root: Path, include_data: bool = False) -> List[Pat
 
     rel_paths: List[Path] = []
     for item in items:
-        p = source_root / ".grok/skills/flexaid-docking" / item
+        p = source_root / ".grok/skills/flexaidds" / item
         if p.exists():
             if p.is_dir():
                 for f in p.rglob("*"):
                     if f.is_file():
-                        rel_paths.append(f.relative_to(source_root / ".grok/skills/flexaid-docking"))
+                        rel_paths.append(f.relative_to(source_root / ".grok/skills/flexaidds"))
             else:
                 rel_paths.append(Path(item))
     return sorted(set(rel_paths))
@@ -233,7 +233,7 @@ def perform_update(
     Returns (overall_success, list_of_human_readable_actions)
     """
     actions: List[str] = []
-    source_skill_dir = source.root / ".grok/skills/flexaid-docking"
+    source_skill_dir = source.root / ".grok/skills/flexaidds"
     if not source_skill_dir.exists():
         print(f"[ERROR] Source skill directory not found: {source_skill_dir}")
         return False, actions
@@ -294,9 +294,9 @@ def run_validator(target: Path, verbose: bool = False) -> bool:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Safe, built-in autoupdate for the flexaid-docking skill and all sub-components.",
+        description="Safe, built-in autoupdate for the flexaidds skill and all sub-components.",
         epilog=(
-            "Part of the flexaid-docking skill. "
+            "Part of the flexaidds skill. "
             "Recommended: start with --dry-run. "
             "Requires a full FlexAIDδS checkout as source (or --source)."
         ),

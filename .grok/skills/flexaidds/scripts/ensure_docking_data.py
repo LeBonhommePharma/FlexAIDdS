@@ -2,7 +2,7 @@
 """
 ensure_docking_data.py
 
-Part of the flexaid-docking skill.
+Part of the flexaidds skill.
 
 Ensures the critical precomputed interaction matrix files (MC_*.dat)
 and definition files (*.def) required by the FlexAIDδS binary are available
@@ -31,7 +31,7 @@ from typing import List, Optional, Tuple
 # CONFIGURATION
 # =============================================================================
 
-SKILL_NAME = "flexaid-docking"
+SKILL_NAME = "flexaidds"
 VERSION = "2026-05"
 
 EXPECTED_MATRICES = [
@@ -91,7 +91,7 @@ def print_skill_banner(verbose: bool = False) -> None:
 
     if verbose:
         print("+" + "-" * 60 + "+")
-        print("|  flexaid-docking skill                                   |")
+        print("|  flexaidds skill                                   |")
         print(f"|  Script   : {script:<44}|")
         print(f"|  Version  : {VERSION:<44}|")
         print("|                                                          |")
@@ -100,7 +100,7 @@ def print_skill_banner(verbose: bool = False) -> None:
         print("|  No scientific claim is valid without running the code.  |")
         print("+" + "-" * 60 + "+")
     else:
-        print(f"[flexaid-docking] {script}  v{VERSION}")
+        print(f"[flexaidds] {script}  v{VERSION}")
 
 
 # =============================================================================
@@ -456,7 +456,7 @@ def print_definition_file_info(def_files: List[Path], verbose: bool = False) -> 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Ensure critical FlexAIDδS runtime data (matrices + *.def + extra files like Lovell_LIB, rotobs, etc.) are available.",
-        epilog="Part of the flexaid-docking skill. Run before any real docking task.",
+        epilog="Part of the flexaidds skill. Run before any real docking task.",
     )
     parser.add_argument("--binary", "-b", type=Path, help="Path to FlexAIDδS binary")
     parser.add_argument("--source", "-s", dest="source", type=Path,

@@ -3,7 +3,7 @@
 summarize_campaign.py — Small helper for finished (or in-progress) FlexAIDdS campaign directories.
 
 Usage:
-    python3 .grok/skills/flexaid-docking/scripts/summarize_campaign.py /path/to/full-*-fixed-*
+    python3 .grok/skills/flexaidds/scripts/summarize_campaign.py /path/to/full-*-fixed-*
 
 Features:
 - Summarizes Metal / hardware acceleration usage from logs (dispatch, Shannon, backends).
@@ -12,7 +12,7 @@ Features:
 - Works on the canonical iCloud _fixed dirs from the skill launcher.
 - Pure stdlib, small, safe.
 
-Part of the flexaid-docking skill. Run after a campaign finishes (or while monitoring).
+Part of the flexaidds skill. Run after a campaign finishes (or while monitoring).
 """
 
 import argparse

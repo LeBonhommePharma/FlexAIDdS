@@ -242,12 +242,11 @@ pytest tests/
 - **GoogleTest**: Auto-downloaded via `FetchContent` when `BUILD_TESTING=ON`
 
 ## Languages & Testing
-- Primary languages: Python (scripts, orchestration, benchmarking), Swift (core framework, Xcode project), C++ (computational kernels, entropy library)
+- Primary languages: C++26 (core engine, `LIB/`), Python (scripts, orchestration, benchmarking, bindings/analysis in `python/flexaidds/`), Objective-C++ (Metal GPU), optional CUDA
 - Config formats: YAML (dataset definitions, benchmark configs), Markdown (documentation)
-- Test command: `ctest --output-on-failure` after building
+- Test command: `ctest --output-on-failure` after building (C++); `pytest` under `python/` for the Python package
 - Always confirm 0 test failures before pushing. If tests fail, fix them in the same session.
-- For Swift: use `xcodebuild test` — the project has SwiftData models and PoseKinematics.
-- For C++: ensure all new .cpp files are added to CMakeLists.txt sources list.
+- For C++: ensure all new .cpp files are added to the CMakeLists.txt sources list.
 
 ## Testing
 

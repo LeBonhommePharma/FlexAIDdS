@@ -12,11 +12,11 @@
 # It uses a single well-known complex (PDB 1STP) as a "tiny real benchmark".
 #
 # Usage (safe dry-run by default):
-#   bash .grok/skills/flexaid-docking/examples/small_real_benchmark_1stp.sh
+#   bash .grok/skills/flexaidds/examples/small_real_benchmark_1stp.sh
 #
 # For a real run (requires working FlexAIDδS binary + data):
 #   FLEXAIDDS_BINARY=/path/to/FlexAIDδS \
-#   bash .grok/skills/flexaid-docking/examples/small_real_benchmark_1stp.sh --real
+#   bash .grok/skills/flexaidds/examples/small_real_benchmark_1stp.sh --real
 #
 # Recommended for publications / audits:
 #   Always end with --package so you get the full validation zip.

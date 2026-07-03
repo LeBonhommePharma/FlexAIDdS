@@ -1,12 +1,12 @@
 # Quickstart: Real FlexAIDδS Docking with Thermodynamics
 
-This guide shows the fastest, most reliable way to run actual molecular docking + thermodynamic analysis using the `flexaid-docking` skill.
+This guide shows the fastest, most reliable way to run actual molecular docking + thermodynamic analysis using the `flexaidds` skill.
 
 It assumes you want production-quality results (Voronoi CF/contact-function scoring + full ensemble thermodynamic ledger), not just smoke tests.
 
 ## How the Skill Interacts — Clarification Flow
 
-The skill is designed to be conversational. When you trigger it with natural language (e.g. "dock biotin back into streptavidin", "redock the ligand from 1STP with thermodynamics", or "update the flexaid-docking skill"), it will ask focused clarifying questions **before** taking any action.
+The skill is designed to be conversational. When you trigger it with natural language (e.g. "dock biotin back into streptavidin", "redock the ligand from 1STP with thermodynamics", or "update the flexaidds skill"), it will ask focused clarifying questions **before** taking any action.
 
 This prevents incorrect assumptions about organism, target chains, ligand source, self-docking vs cross-docking, thermodynamic depth, or special constraints.
 
@@ -35,7 +35,7 @@ source ~/.venvs/flexaidds/bin/activate
 
 **Tip:** For even shorter commands you can use the skill's `bin/` shortcuts (they are pure symlinks — identical behavior):
 ```bash
-.grok/skills/flexaid-docking/bin/ensure-docking-data
+.grok/skills/flexaidds/bin/ensure-docking-data
 ```
 
 ### B. Ensure the FlexAIDδS binary is built
@@ -45,7 +45,7 @@ ls /path/to/your/build/FlexAIDδS
 
 ### C. Ensure the critical runtime data (matrices + definition files) are available
 ```bash
-python3 .grok/skills/flexaid-docking/scripts/ensure_docking_data.py
+python3 .grok/skills/flexaidds/scripts/ensure_docking_data.py
 ```
 
 This command is **mandatory** before real docking. It ensures both the MC interaction matrices **and** the `AMINO*.def` / `NUCLEOTIDES*.def` files (which control atom typing and side-chain flexibility via FLEDIH) are present next to the binary.
@@ -143,7 +143,7 @@ for mode in docking.binding_modes:
 For the common case of redocking a cocrystallized ligand back into its target:
 
 ```bash
-python3 .grok/skills/flexaid-docking/scripts/redock_from_pdb.py 1STP
+python3 .grok/skills/flexaidds/scripts/redock_from_pdb.py 1STP
 ```
 
 This experimental helper will:
@@ -157,12 +157,12 @@ This experimental helper will:
 ## 8. Next Steps
 
 - Read the full skill documentation: `SKILL.md`
-- See advanced guidance: `references/flexaid-docking-guidance.md`
+- See advanced guidance: `references/flexaidds-guidance.md`
 - Explore the thermodynamic models: `python/flexaidds/thermodynamics.py`
 
 **For systematic benchmarking campaigns**, see the DatasetRunner section in SKILL.md and use:
 ```bash
-.grok/skills/flexaid-docking/bin/dataset-runner --help
+.grok/skills/flexaidds/bin/dataset-runner --help
 ```
 
 **New (highly recommended for real campaigns):** per-entry checkpointing + master-managed resume + hybrid MPI + cost tracking
@@ -183,11 +183,11 @@ For development, testing new features, or a minimal publishable example, use the
 
 ```bash
 # Safe dry-run version (recommended first)
-bash .grok/skills/flexaid-docking/examples/small_real_benchmark_1stp.sh
+bash .grok/skills/flexaidds/examples/small_real_benchmark_1stp.sh
 
 # Real run (requires a working FlexAIDδS binary + data)
 FLEXAIDDS_BINARY=/path/to/FlexAIDδS \
-    bash .grok/skills/flexaid-docking/examples/small_real_benchmark_1stp.sh --real
+    bash .grok/skills/flexaidds/examples/small_real_benchmark_1stp.sh --real
 ```
 
 This script:
@@ -204,11 +204,11 @@ The skill provides first-class, general-purpose reproducibility tooling that wor
 
 ```bash
 # Best practice for anything you plan to publish or hand to collaborators
-python3 .grok/skills/flexaid-docking/scripts/dataset_runner.py \
+python3 .grok/skills/flexaidds/scripts/dataset_runner.py \
     --dataset astex_diverse --tier 1 --package
 
 # For one-off redocking or manual work, capture a snapshot at inspection time
-python3 .grok/skills/flexaid-docking/scripts/inspect_definition_files.py --reproducibility
+python3 .grok/skills/flexaidds/scripts/inspect_definition_files.py --reproducibility
 ```
 
 What you receive:
@@ -217,7 +217,7 @@ What you receive:
 
 This is the superior general solution (not bolted onto a single report type) and is attractive to pharma, reviewers, and regulatory contexts.
 
-The `flexaid-docking` skill is designed to make the above workflows safe, reproducible, and correctly scoped between scoring proxies and real statistical mechanics.
+The `flexaidds` skill is designed to make the above workflows safe, reproducible, and correctly scoped between scoring proxies and real statistical mechanics.
 
 After a successful Gate-6 run you can also request the high-end publication figure + 6 s animation of the best binding mode (NRDD aesthetic, real thermodynamic values, full branding + metadata overlay) via `--visualize` on the run wrapper or the `flexaidds.figures` helpers — the skill agent will then invoke the imagine tools as the final step of the workflow.
 

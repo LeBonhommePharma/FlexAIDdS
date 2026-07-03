@@ -12,7 +12,7 @@ from pathlib import Path
 import pytest
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-VALIDATOR = REPO_ROOT / ".grok" / "skills" / "flexaid-docking" / "scripts" / "validate_skill.py"
+VALIDATOR = REPO_ROOT / ".grok" / "skills" / "flexaidds" / "scripts" / "validate_skill.py"
 
 
 def test_skill_validator_exists_and_executable():
@@ -43,10 +43,10 @@ def test_skill_validator_passes():
 
 def test_skill_metadata_and_aliases_present():
     """Quick smoke that SKILL.md still carries the required frontmatter + aliases."""
-    skill_md = REPO_ROOT / ".grok" / "skills" / "flexaid-docking" / "SKILL.md"
+    skill_md = REPO_ROOT / ".grok" / "skills" / "flexaidds" / "SKILL.md"
     assert skill_md.exists()
     text = skill_md.read_text(encoding="utf-8")
-    assert "name: flexaid-docking" in text
+    assert "name: flexaidds" in text
     assert "description:" in text
     for alias in ("/FlexAid docking", "/FlexAidDS", "FlexAIDdS", "FlexAID∆S"):
         assert alias in text, f"Missing documented alias {alias}"

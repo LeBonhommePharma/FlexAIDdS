@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 FlexAIDdS / FlexAID Skill Validator
-Validates the flexaid-docking skill packaging:
+Validates the flexaidds skill packaging:
 - SKILL.md frontmatter has required name + description
 - All XML files in repo are well-formed (one root, proper escaping, UTF-8, nesting)
 - No broken local file references in SKILL.md
@@ -9,7 +9,7 @@ Validates the flexaid-docking skill packaging:
 - Scientific terminology guardrails present (no overclaim of true ΔG vs CF proxy)
 
 Run:
-  python3 .grok/skills/flexaid-docking/scripts/validate_skill.py
+  python3 .grok/skills/flexaidds/scripts/validate_skill.py
   python3 -m pytest tests/test_flexaid_skill.py -q --tb=line
 """
 import os
@@ -20,7 +20,7 @@ from pathlib import Path
 from typing import List, Tuple
 
 SKILL_DIR = Path(__file__).resolve().parent.parent
-REPO_ROOT = SKILL_DIR.parents[2]  # .grok/skills/flexaid-docking -> repo root
+REPO_ROOT = SKILL_DIR.parents[2]  # .grok/skills/flexaidds -> repo root
 
 
 def fail(msg: str) -> None:
@@ -54,8 +54,8 @@ def validate_frontmatter() -> bool:
     fm = parts[1].strip()
     # Required per task: name and description
     name_match = re.search(r"^name:\s*([A-Za-z0-9_-]+)", fm, re.MULTILINE)
-    if not name_match or name_match.group(1) != "flexaid-docking":
-        fail("Frontmatter must contain: name: flexaid-docking")
+    if not name_match or name_match.group(1) != "flexaidds":
+        fail("Frontmatter must contain: name: flexaidds")
         return False
 
     if "description:" not in fm:
@@ -71,7 +71,7 @@ def validate_frontmatter() -> bool:
         fail("description is too short or empty")
         return False
 
-    ok("SKILL.md frontmatter has required name: flexaid-docking and description")
+    ok("SKILL.md frontmatter has required name: flexaidds and description")
     return True
 
 
@@ -216,7 +216,7 @@ def main() -> int:
             all_pass = False
 
     if all_pass:
-        print("\nVALIDATION PASSED: skill is well-formed and ready for /flexaid-docking, /FlexAidDS, FlexAID∆S etc.")
+        print("\nVALIDATION PASSED: skill is well-formed and ready for /flexaidds, /FlexAidDS, FlexAID∆S etc.")
         return 0
     else:
         print("\nVALIDATION FAILED: see errors above. Fix before committing skill.", file=sys.stderr)

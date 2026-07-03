@@ -226,10 +226,10 @@ jobs:
           python -m pip install scipy
           pytest -q python/tests/test_statmech_smoke.py python/tests/test_statmech.py python/tests/test_thermodynamics.py python/tests/test_encom.py python/tests/test_energy_matrix.py python/tests/test_train_256x256.py
 
-  # New job: Validates the flexaid-docking skill's DatasetRunner features
+  # New job: Validates the flexaidds skill's DatasetRunner features
   # (per-entry checkpointing, --resume + CostHistory, --package reproducibility)
   flexaid_docking_datasetrunner:
-    name: flexaid-docking skill (DatasetRunner --resume --package)
+    name: flexaidds skill (DatasetRunner --resume --package)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -248,7 +248,7 @@ jobs:
         env:
           PYTHONPATH: ${{ github.workspace }}/python
         run: |
-          python3 .grok/skills/flexaid-docking/scripts/dataset_runner.py \
+          python3 .grok/skills/flexaidds/scripts/dataset_runner.py \
             --dataset astex_diverse \
             --tier 1 \
             --dry-run \

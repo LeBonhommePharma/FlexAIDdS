@@ -7,7 +7,7 @@
 # (especially Non-Native or at custom temperatures like 298 K / 310 K).
 #
 # Usage:
-#   python3 .grok/skills/flexaid-docking/scripts/launch_full_benchmark.sh \
+#   python3 .grok/skills/flexaidds/scripts/launch_full_benchmark.sh \
 #       <dataset> <temperature> <results_subdir_name>
 #
 # The script enforces:
@@ -20,7 +20,7 @@
 #
 # After launch it prints simple monitoring commands.
 #
-# This script lives inside the flexaid-docking skill so it is always available
+# This script lives inside the flexaidds skill so it is always available
 # and versioned with the skill.
 
 set -euo pipefail
@@ -123,7 +123,7 @@ CONFIG_FILE="$OUT_DIR/config_${TEMPERATURE}.json"
 cat > "$CONFIG_FILE" << EOF
 {
   "temperature": $TEMPERATURE,
-  "launched_via": "flexaid-docking skill launcher",
+  "launched_via": "flexaidds skill launcher",
   "timestamp": "$(date -Iseconds)"
 }
 EOF
@@ -181,7 +181,7 @@ with open("$STATUS_FILE", "w") as f:
 PYEOF
 
 echo ""
-echo "=== LAUNCH COMPLETE (using flexaid-docking skill launcher) ==="
+echo "=== LAUNCH COMPLETE (using flexaidds skill launcher) ==="
 echo ""
 echo "Monitor with:"
 echo "  tail -f $LOG_FILE"
@@ -191,7 +191,7 @@ echo "Health / PID:"
 echo "  cat $STATUS_FILE"
 echo ""
 echo "When finished, run the usual post-run verification:"
-echo "  python3 .grok/skills/flexaid-docking/scripts/validate_skill.py"
+echo "  python3 .grok/skills/flexaidds/scripts/validate_skill.py"
 echo "  python benchmarks/re-dock/icloud_fs_check.py --path $OUT_DIR"
 echo ""
 echo "You can safely log out. The real work is detached."
@@ -211,9 +211,9 @@ PYEOF
 # --- P1: Enhanced post-run guidance for "best BindingMode" exact answer + trap ---
 echo ""
 echo "=== [P1] Post-run commands for best BindingMode validity + extract (after child done): ==="
-echo "  python3 .grok/skills/flexaid-docking/scripts/summarize_campaign.py \"$OUT_DIR\" --verbose"
+echo "  python3 .grok/skills/flexaidds/scripts/summarize_campaign.py \"$OUT_DIR\" --verbose"
 echo "  # (when extended) --extract-best-mode to get top free_energy BindingMode + full thermo ledger (the exact requested answer)"
-echo "  python3 .grok/skills/flexaid-docking/scripts/validate_skill.py"
+echo "  python3 .grok/skills/flexaidds/scripts/validate_skill.py"
 echo "  python benchmarks/re-dock/icloud_fs_check.py --path \"$OUT_DIR\""
 echo "  cat \"$OUT_DIR/run_status.json\""
 echo "  grep -iE 'metal|backend|dispatch|shannon|using metal|success rate|RMSD|Binding Mode' \"$LOG_FILE\" | tail -30 || true"

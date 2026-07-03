@@ -17,7 +17,7 @@ This is the native environment for Grok Build (the current TUI/CLI session with 
 ```bash
 git status
 find . -maxdepth 4 -iname '*skill*' -o -iname 'SKILL.md' -o -iname '*.xml' -o -iname 'AGENTS.md'
-python3 .grok/skills/flexaid-docking/scripts/validate_skill.py   # or the flexaidds equivalent if present
+python3 .grok/skills/flexaidds/scripts/validate_skill.py   # or the flexaidds equivalent if present
 ```
 
 **Project & Commands**: See the main AGENTS.md / CLAUDE.md. Key ones you can run directly with your tools:
