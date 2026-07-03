@@ -1,10 +1,10 @@
 # Astex entropy benchmark defaults.
 #
 # The checked-out source/data tree is usually /Users/lp.more/Projects/FlexAIDdS.
-# Relative work_dir paths resolve inside that checkout.
+# Results default to long-term iCloud storage on LP's MacBook Pro.
 
 # repo_root auto-detected from checkout (override via FLEXAIDDS_REPO_ROOT).
-work_dir: results/astex_entropy
+work_dir: "{icloud_benchmarks}/astex_entropy"
 
 runtime:
   command_timeout_seconds: 7200
@@ -15,11 +15,25 @@ datasets:
   native_csv: "{repo_root}/benchmarks/astex_diverse/astex_diverse_set.csv"
   non_native_csv: "{repo_root}/benchmarks/astex_nonnative/astex_non_native_set.csv"
   native_data_root: "{repo_root}/benchmarks/astex_diverse/astex_diverse"
-  non_native_data_root: "{workspace_root}/results/astex_entropy/data/non_native"
+  non_native_data_root: "{work_dir}/data/non_native"
 
 tools:
-  obabel: obabel
+  obabel: /opt/homebrew/bin/obabel
   posebusters: "{repo_root}/.venv-posebusters/bin/bust"
+  flexaidds:
+    benchmark_datasets: "{repo_root}/build_lto/benchmark_datasets"
+    cache_dir: "{work_dir}/cache/flexaidds"
+    threads: 1
+    omp_threads: 6
+    parallel_restarts: 0
+    mode: autonomous
+    include_oracle_site: false
+    ga_generations: 500
+    ga_population: 1000
+    job_timeout_seconds: 7200
+    grid_spacing: 0.375
+    force: false
+    score_direction: lower
   vina:
     executable: "{repo_root}/.tools/bin/vina"
     cpu: 2
@@ -35,12 +49,16 @@ tools:
     score_direction: lower
   boltz:
     executable: "{repo_root}/.venv-boltz/bin/boltz"
-    cache_dir: "{workspace_root}/results/astex_entropy/cache/boltz"
+    python: "{repo_root}/.venv-boltz/bin/python"
+    wrapper: "{package_dir}/boltz_cli.py"
+    cache_dir: "~/.boltz"
     use_msa_server: false
     use_potentials: true
     recycling_steps: 3
     sampling_steps: 80
     diffusion_samples: 1
+    sampling_steps_affinity: 80
+    diffusion_samples_affinity: 1
     devices: 1
     num_workers: 1
     preprocessing_threads: 1

@@ -106,6 +106,12 @@ python3 .grok/skills/flexaidds/scripts/ensure_docking_data.py --check
 
 The skill is self-contained: `scripts/` (validator, data-ensure, dataset runner, updater), `data/` (matrices + `*.def` runtime files), `references/flexaidds-guidance.md` (terminology contract), `examples/`, and `bin/` convenience symlinks.
 
+### Astex Entropy / Benchmark Orchestration Skill
+
+For Astex entropy/FlexAIDdS benchmark launch, monitor, resume, restart, audit, or handoff work, use `.agents/skills/flexaidds-benchmarking/SKILL.md` before touching live runs. It is the shared contract for Grok Build, Claude Code, Claude Science, Claude Cowork Dispatch, Codex, and other agents.
+
+PoseBusters and tENCoM/Eigen are mandatory validators for benchmark claims. A pose is successful only when `RMSD <= 2.0 A` and PoseBusters passes; never report RMSD-only success as benchmark success.
+
 ---
 
 ## Project Snapshot

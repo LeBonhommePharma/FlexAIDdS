@@ -11,6 +11,7 @@ PACKAGE_DIR = Path(__file__).resolve().parent
 WORKSPACE_ROOT = PACKAGE_DIR.parents[1]
 DEFAULT_CONFIG_PATH = PACKAGE_DIR / "config.yaml"
 LIVE_REPO_FALLBACK = Path("/Users/lp.more/Projects/FlexAIDdS")
+ICLOUD_BENCHMARKS = Path.home() / "Library/Mobile Documents/com~apple~CloudDocs/FlexAIDdS_benchmarks"
 
 
 def _repo_root_from_config(raw: dict[str, Any]) -> Path:
@@ -49,12 +50,16 @@ def load_config(config_path: str | Path | None = None) -> dict[str, Any]:
         "repo_root": str(repo_root),
         "workspace_root": str(WORKSPACE_ROOT),
         "package_dir": str(PACKAGE_DIR),
+        "icloud_benchmarks": str(ICLOUD_BENCHMARKS),
     }
+    raw_work_dir = _expand(raw.get("work_dir", "results/astex_entropy"), context)
+    work_dir = (WORKSPACE_ROOT / str(raw_work_dir)).resolve()
+    context["work_dir"] = str(work_dir)
     cfg = _expand(raw, context)
     cfg["repo_root"] = str(repo_root)
     cfg["workspace_root"] = str(WORKSPACE_ROOT)
     cfg["config_path"] = str(path.resolve())
-    cfg["work_dir"] = str((WORKSPACE_ROOT / cfg.get("work_dir", "results/astex_entropy")).resolve())
+    cfg["work_dir"] = str(work_dir)
     return cfg
 
 

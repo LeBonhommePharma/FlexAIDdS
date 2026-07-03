@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import math
 import os
+import csv
 import shutil
 from pathlib import Path
 from typing import Any, Iterable
@@ -23,6 +24,10 @@ AA3_TO_1 = {
     "LEU": "L", "LYS": "K", "MET": "M", "PHE": "F", "PRO": "P",
     "SER": "S", "THR": "T", "TRP": "W", "TYR": "Y", "VAL": "V",
     "MSE": "M",
+}
+NON_LIGAND_HETATM = {
+    "HOH", "WAT", "DOD", "MG", "MN", "ZN", "CA", "FE", "FE2", "CU", "NA", "K",
+    "CO", "NI", "CL", "BR", "I",
 }
 
 
@@ -234,7 +239,7 @@ def _split_sdf(path: Path, out_dir: Path, prefix: str, scores: list[float | None
                 receptor_pdb=target.receptor_pdb,
                 reference_sdf=target.reference_sdf,
                 raw_score=raw_score,
-                score_direction=str(tool),
+                score_direction="lower",
                 source_file=str(source),
             )
         )
@@ -458,47 +463,72 @@ def _boltz_structure_to_ligand_sdf(structure_path: Path, out_sdf: Path, obabel: 
 
 
 def run_boltz(target: TargetRecord, cfg: dict[str, Any], target_dir: Path, *, dry_run: bool, skip_missing: bool) -> list[PoseRecord]:
-    exe = _require_executable(str(cfg["tools"]["boltz"]["executable"]), skip_missing=skip_missing)
-    if exe is None:
-        return []
+    boltz_cfg = cfg["tools"]["boltz"]
+    wrapper = str(boltz_cfg.get("wrapper", "") or "")
+    if wrapper:
+        python_exe = _require_executable(str(boltz_cfg.get("python", "")), skip_missing=skip_missing)
+        if python_exe is None:
+            return []
+        if not Path(wrapper).exists():
+            if skip_missing:
+                return []
+            raise RuntimeError(f"Boltz wrapper not found: {wrapper}")
+        base_args = [python_exe, wrapper]
+    else:
+        exe = _require_executable(str(boltz_cfg["executable"]), skip_missing=skip_missing)
+        if exe is None:
+            return []
+        base_args = [exe]
+
     boltz_dir = target_dir / "boltz"
     out_dir = boltz_dir / "prediction"
     input_yaml = boltz_dir / "input.yaml"
-    boltz_cache = Path(str(cfg["tools"]["boltz"].get("cache_dir", Path(cfg["work_dir"]) / "cache" / "boltz")))
+    boltz_cache = Path(str(boltz_cfg.get("cache_dir", "~/.boltz"))).expanduser().resolve()
     boltz_cache.mkdir(parents=True, exist_ok=True)
     if dry_run:
         return []
-    args = [exe, "predict", str(input_yaml), "--out_dir", str(out_dir), "--cache", str(boltz_cache)]
-    if bool(cfg["tools"]["boltz"].get("use_msa_server", True)):
+
+    args = [*base_args, "predict", str(input_yaml), "--out_dir", str(out_dir), "--cache", str(boltz_cache)]
+    if bool(boltz_cfg.get("use_msa_server", True)):
         args.append("--use_msa_server")
-    if bool(cfg["tools"]["boltz"].get("use_potentials", True)):
+    if bool(boltz_cfg.get("use_potentials", True)):
         args.append("--use_potentials")
-    if cfg["tools"]["boltz"].get("accelerator"):
-        args.extend(["--accelerator", str(cfg["tools"]["boltz"]["accelerator"])])
-    if cfg["tools"]["boltz"].get("recycling_steps"):
-        args.extend(["--recycling_steps", str(cfg["tools"]["boltz"]["recycling_steps"])])
-    if cfg["tools"]["boltz"].get("sampling_steps"):
-        args.extend(["--sampling_steps", str(cfg["tools"]["boltz"]["sampling_steps"])])
-    if cfg["tools"]["boltz"].get("diffusion_samples"):
-        args.extend(["--diffusion_samples", str(cfg["tools"]["boltz"]["diffusion_samples"])])
-    if cfg["tools"]["boltz"].get("devices"):
-        args.extend(["--devices", str(cfg["tools"]["boltz"]["devices"])])
-    if cfg["tools"]["boltz"].get("num_workers"):
-        args.extend(["--num_workers", str(cfg["tools"]["boltz"]["num_workers"])])
-    if cfg["tools"]["boltz"].get("preprocessing_threads"):
-        args.extend(["--preprocessing-threads", str(cfg["tools"]["boltz"]["preprocessing_threads"])])
-    if cfg["tools"]["boltz"].get("max_parallel_samples"):
-        args.extend(["--max_parallel_samples", str(cfg["tools"]["boltz"]["max_parallel_samples"])])
-    if cfg["tools"]["boltz"].get("model"):
-        args.extend(["--model", str(cfg["tools"]["boltz"]["model"])])
-    if cfg["tools"]["boltz"].get("output_format"):
-        args.extend(["--output_format", str(cfg["tools"]["boltz"]["output_format"])])
+    if boltz_cfg.get("accelerator"):
+        args.extend(["--accelerator", str(boltz_cfg["accelerator"])])
+    if boltz_cfg.get("recycling_steps"):
+        args.extend(["--recycling_steps", str(boltz_cfg["recycling_steps"])])
+    if boltz_cfg.get("sampling_steps"):
+        args.extend(["--sampling_steps", str(boltz_cfg["sampling_steps"])])
+    if boltz_cfg.get("diffusion_samples"):
+        args.extend(["--diffusion_samples", str(boltz_cfg["diffusion_samples"])])
+    if boltz_cfg.get("sampling_steps_affinity"):
+        args.extend(["--sampling_steps_affinity", str(boltz_cfg["sampling_steps_affinity"])])
+    if boltz_cfg.get("diffusion_samples_affinity"):
+        args.extend(["--diffusion_samples_affinity", str(boltz_cfg["diffusion_samples_affinity"])])
+    if boltz_cfg.get("devices"):
+        args.extend(["--devices", str(boltz_cfg["devices"])])
+    if boltz_cfg.get("num_workers"):
+        args.extend(["--num_workers", str(boltz_cfg["num_workers"])])
+    if boltz_cfg.get("preprocessing_threads"):
+        args.extend(["--preprocessing-threads", str(boltz_cfg["preprocessing_threads"])])
+    if boltz_cfg.get("max_parallel_samples"):
+        args.extend(["--max_parallel_samples", str(boltz_cfg["max_parallel_samples"])])
+    if boltz_cfg.get("model"):
+        args.extend(["--model", str(boltz_cfg["model"])])
+    if boltz_cfg.get("output_format"):
+        args.extend(["--output_format", str(boltz_cfg["output_format"])])
+    if boltz_cfg.get("seed") not in (None, ""):
+        args.extend(["--seed", str(boltz_cfg["seed"])])
     numba_cache = Path(cfg["work_dir"]) / "cache" / "numba"
     numba_cache.mkdir(parents=True, exist_ok=True)
     run_command(
         args,
         log_path=boltz_dir / "boltz.log",
-        env={"NUMBA_CACHE_DIR": str(numba_cache), "BOLTZ_CACHE": str(boltz_cache)},
+        env={
+            "NUMBA_CACHE_DIR": str(numba_cache),
+            "BOLTZ_CACHE": str(boltz_cache),
+            "XDG_CACHE_HOME": str(Path(cfg["work_dir"]) / "cache"),
+        },
         timeout=_command_timeout(cfg),
     )
 
@@ -538,6 +568,181 @@ def run_boltz(target: TargetRecord, cfg: dict[str, Any], target_dir: Path, *, dr
     return _fix_direction(records, cfg, "boltz")
 
 
+def _flexaidds_pair_json(records: list[TargetRecord], cfg: dict[str, Any], mode: str) -> Path:
+    flex_cfg = cfg["tools"]["flexaidds"]
+    include_oracle = bool(flex_cfg.get("include_oracle_site", False))
+    pairs: list[dict[str, Any]] = []
+    for idx, record in enumerate(records):
+        pair = {
+            "index": idx,
+            "receptor_id": record.target_dir_name,
+            "ligand_id": record.ligand_source_id or record.target_id,
+            "receptor_pdb": record.receptor_pdb,
+            "ligand_sdf": record.ligand_sdf,
+            "rmsd_ref_sdf": record.reference_sdf,
+        }
+        if include_oracle and record.pocket_pdb:
+            pair["oracle_site_pdb"] = record.pocket_pdb
+        pairs.append(pair)
+
+    payload = {
+        "schema_version": 1,
+        "name": f"astex_entropy_{mode}_flexaidds",
+        "description": "Generated by benchmarks.astex_entropy for FlexAIDdS head-to-head benchmarking.",
+        "oracle_mode": include_oracle,
+        "pairs": pairs,
+    }
+    out_path = Path(cfg["work_dir"]) / "manifests" / f"{mode}_flexaidds_crossdock.json"
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    out_path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n")
+    return out_path
+
+
+def _flexaidds_output_dir(cfg: dict[str, Any], mode: str) -> Path:
+    return Path(cfg["work_dir"]) / "flexaidds" / mode
+
+
+def _read_result_row(result_csv: Path) -> dict[str, str]:
+    if not result_csv.exists():
+        return {}
+    with result_csv.open(newline="") as fh:
+        rows = list(csv.DictReader(fh))
+    return rows[0] if rows else {}
+
+
+def _parse_flexaidds_pose_score(pdb_path: Path, result_row: dict[str, str]) -> str:
+    for line in pdb_path.read_text(errors="ignore").splitlines()[:80]:
+        if line.startswith("REMARK CF="):
+            return line.split("=", 1)[1].strip()
+    return result_row.get("best_score", "")
+
+
+def _extract_flexaidds_ligand_pdb(complex_pdb: Path, ligand_pdb: Path) -> bool:
+    ligand_lines: list[str] = []
+    ligand_serials: set[str] = set()
+    conect_lines: list[str] = []
+    for line in complex_pdb.read_text(errors="ignore").splitlines():
+        rec = line[:6].strip()
+        if rec == "HETATM":
+            resname = line[17:20].strip().upper() if len(line) >= 20 else ""
+            if resname in NON_LIGAND_HETATM:
+                continue
+            ligand_lines.append(line)
+            ligand_serials.add(line[6:11].strip())
+        elif rec == "CONECT":
+            conect_lines.append(line)
+    if not ligand_lines:
+        return False
+    kept_conect = [
+        line for line in conect_lines
+        if any(line[i:i + 5].strip() in ligand_serials for i in range(6, len(line), 5))
+    ]
+    ligand_pdb.write_text("\n".join(ligand_lines + kept_conect + ["END"]) + "\n")
+    return True
+
+
+def _numeric_pose_key(path: Path) -> tuple[int, str]:
+    stem = path.stem
+    try:
+        return int(stem.rsplit("_", 1)[1]), stem
+    except (IndexError, ValueError):
+        return 10_000, stem
+
+
+def _collect_flexaidds_records(
+    targets: list[TargetRecord],
+    cfg: dict[str, Any],
+    mode: str,
+) -> list[PoseRecord]:
+    output_root = _flexaidds_output_dir(cfg, mode)
+    records: list[PoseRecord] = []
+    for target in targets:
+        result_dir = output_root / target.target_dir_name
+        if not result_dir.exists():
+            continue
+        result_row = _read_result_row(result_dir / "result.csv")
+        pose_pdbs = [
+            path for path in result_dir.glob(f"{target.target_dir_name}_*.pdb")
+            if not path.name.endswith("_INI.pdb")
+        ]
+        for idx, pdb_path in enumerate(sorted(pose_pdbs, key=_numeric_pose_key), start=1):
+            pose_id = f"{target.target_dir_name}_flexaidds_{idx:03d}"
+            pose_dir = Path(cfg["work_dir"]) / "prepared" / mode / target.target_dir_name / "poses" / "flexaidds"
+            pose_dir.mkdir(parents=True, exist_ok=True)
+            ligand_pdb = pose_dir / f"{pose_id}.ligand.pdb"
+            pose_sdf = pose_dir / f"{pose_id}.sdf"
+            if not _extract_flexaidds_ligand_pdb(pdb_path, ligand_pdb):
+                continue
+            run_command(
+                [cfg["tools"]["obabel"], "-ipdb", str(ligand_pdb), "-osdf", "-O", str(pose_sdf)],
+                log_path=pose_sdf.with_suffix(".obabel.log"),
+                check=False,
+            )
+            if not pose_sdf.exists():
+                continue
+            records.append(
+                PoseRecord(
+                    target_id=target.target_id,
+                    mode=target.mode,
+                    tool="flexaidds",
+                    pose_id=pose_id,
+                    pose_sdf=str(pose_sdf),
+                    receptor_pdb=target.receptor_pdb,
+                    reference_sdf=target.reference_sdf,
+                    raw_score=_parse_flexaidds_pose_score(pdb_path, result_row),
+                    score_direction="lower",
+                    source_file=str(pdb_path),
+                )
+            )
+    return _fix_direction(records, cfg, "flexaidds")
+
+
+def run_flexaidds_batch(
+    targets: list[TargetRecord],
+    cfg: dict[str, Any],
+    mode: str,
+    *,
+    dry_run: bool,
+    skip_missing: bool,
+) -> list[PoseRecord]:
+    exe = _require_executable(str(cfg["tools"]["flexaidds"]["benchmark_datasets"]), skip_missing=skip_missing)
+    if exe is None:
+        return []
+    flex_cfg = cfg["tools"]["flexaidds"]
+    output_dir = _flexaidds_output_dir(cfg, mode)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    cache_dir = Path(str(flex_cfg.get("cache_dir", Path(cfg["work_dir"]) / "cache" / "flexaidds")))
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    pair_json = _flexaidds_pair_json(targets, cfg, mode)
+    args = [
+        exe,
+        "--benchmark", f"crossdock_json:{pair_json}",
+        "--output", str(output_dir),
+        "--threads", str(int(flex_cfg.get("threads", 1))),
+        "--omp-threads", str(int(flex_cfg.get("omp_threads", 6))),
+        "--cache", str(cache_dir),
+        "--mode", str(flex_cfg.get("mode", "autonomous")),
+        "--ga-generations", str(int(flex_cfg.get("ga_generations", 500))),
+        "--ga-population", str(int(flex_cfg.get("ga_population", 1000))),
+        "--job-timeout-seconds", str(int(flex_cfg.get("job_timeout_seconds", 7200))),
+    ]
+    if flex_cfg.get("grid_spacing"):
+        args.extend(["--grid-spacing", str(flex_cfg["grid_spacing"])])
+    if bool(flex_cfg.get("force", False)):
+        args.append("--force")
+
+    command_path = output_dir / "flexaidds_command.txt"
+    command_path.write_text(" ".join(str(arg) for arg in args) + "\n")
+    if dry_run:
+        return []
+    env = {
+        "OMP_NUM_THREADS": str(int(flex_cfg.get("omp_threads", 6))),
+        "FLEXAIDDS_PARALLEL_RESTARTS": str(int(flex_cfg.get("parallel_restarts", 0))),
+    }
+    run_command(args, cwd=cfg["repo_root"], log_path=output_dir / "flexaidds_benchmark.log", env=env, timeout=None)
+    return _collect_flexaidds_records(targets, cfg, mode)
+
+
 RUNNERS = {
     "vina": run_vina,
     "rdock": run_rdock,
@@ -560,10 +765,12 @@ def run_pose_generators(
     if not targets:
         raise RuntimeError(f"No targets found in manifest: {manifest}. Run data_prep first.")
     if not tools:
-        raise ValueError("No tools selected; use --tools vina,rdock,boltz or a non-empty subset.")
-    unknown = sorted(set(tools) - set(RUNNERS))
+        raise ValueError("No tools selected; use --tools flexaidds,vina,rdock,boltz or a non-empty subset.")
+    valid_tools = set(RUNNERS) | {"flexaidds"}
+    unknown = sorted(set(tools) - valid_tools)
     if unknown:
         raise ValueError(f"Unknown tool(s): {', '.join(unknown)}")
+
     counts: dict[str, int] = {tool: 0 for tool in tools}
     collected: dict[str, list[PoseRecord]] = {tool: [] for tool in tools}
     poses_dir = Path(cfg["work_dir"]) / "poses"
@@ -571,17 +778,33 @@ def run_pose_generators(
         for tool in tools:
             write_poses([], poses_dir / f"{mode}_{tool}_poses.csv")
         write_poses([], poses_dir / f"{mode}_all_poses.csv")
-    for target in targets:
-        target_dir = Path(cfg["work_dir"]) / "prepared" / mode / target.target_dir_name
-        prepare_tool_inputs(target, cfg, target_dir)
-        for tool in tools:
-            records = RUNNERS[tool](target, cfg, target_dir, dry_run=dry_run, skip_missing=skip_missing_tools)
-            if records:
-                collected[tool].extend(records)
-                pose_csv = poses_dir / f"{mode}_{tool}_poses.csv"
-                all_csv = poses_dir / f"{mode}_all_poses.csv"
-                write_poses(collected[tool], pose_csv)
-                all_records = [record for tool_records in collected.values() for record in tool_records]
-                write_poses(all_records, all_csv)
-                counts[tool] += len(records)
+
+    if "flexaidds" in tools:
+        records = run_flexaidds_batch(targets, cfg, mode, dry_run=dry_run, skip_missing=skip_missing_tools)
+        collected["flexaidds"].extend(records)
+        counts["flexaidds"] = len(records)
+        if not dry_run:
+            write_poses(records, poses_dir / f"{mode}_flexaidds_poses.csv")
+
+    if any(tool != "flexaidds" for tool in tools):
+        for target in targets:
+            target_dir = Path(cfg["work_dir"]) / "prepared" / mode / target.target_dir_name
+            prepare_tool_inputs(target, cfg, target_dir)
+            for tool in tools:
+                if tool == "flexaidds":
+                    continue
+                records = RUNNERS[tool](target, cfg, target_dir, dry_run=dry_run, skip_missing=skip_missing_tools)
+                if records:
+                    collected[tool].extend(records)
+                    counts[tool] += len(records)
+                    if not dry_run:
+                        pose_csv = poses_dir / f"{mode}_{tool}_poses.csv"
+                        all_csv = poses_dir / f"{mode}_all_poses.csv"
+                        write_poses(collected[tool], pose_csv)
+                        all_records = [record for tool_records in collected.values() for record in tool_records]
+                        write_poses(all_records, all_csv)
+
+    if not dry_run:
+        all_records = [record for tool_records in collected.values() for record in tool_records]
+        write_poses(all_records, poses_dir / f"{mode}_all_poses.csv")
     return counts

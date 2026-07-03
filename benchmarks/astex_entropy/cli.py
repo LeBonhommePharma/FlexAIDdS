@@ -6,12 +6,9 @@ from typing import Annotated
 import typer
 
 from .config import load_config
-from .entropy import rescore_poses
-from .prep import prepare_data
-from .tools import run_pose_generators
 
 
-app = typer.Typer(help="Astex entropy benchmark: Vina/rDock/Boltz-2 plus FlexAIDdS entropy metrics.")
+app = typer.Typer(help="Astex entropy benchmark: FlexAIDdS, Vina, rDock, Boltz-2, and entropy metrics.")
 
 
 ModeOpt = Annotated[str, typer.Option("--mode", help="Benchmark mode: native or non_native.")]
@@ -39,6 +36,8 @@ def data_prep(
     force: Annotated[bool, typer.Option("--force", help="Regenerate prepared inputs.")] = False,
 ) -> None:
     try:
+        from .prep import prepare_data
+
         cfg = load_config(config)
         mode = _check_mode(mode, allow_all=True)
         counts = prepare_data(cfg, mode, max_targets=max_targets, download_missing=download_missing, force=force)
@@ -53,11 +52,13 @@ def data_prep(
 def run(
     mode: ModeOpt,
     config: ConfigOpt = None,
-    tools: Annotated[str, typer.Option("--tools", help="Comma list: vina,rdock,boltz.")] = "vina,rdock,boltz",
+    tools: Annotated[str, typer.Option("--tools", help="Comma list: flexaidds,vina,rdock,boltz.")] = "flexaidds,vina,rdock,boltz",
     dry_run: Annotated[bool, typer.Option("--dry-run", help="Prepare commands/files but do not execute docking tools.")] = False,
     skip_missing_tools: Annotated[bool, typer.Option("--skip-missing-tools", help="Skip unavailable executables instead of failing.")] = False,
 ) -> None:
     try:
+        from .tools import run_pose_generators
+
         cfg = load_config(config)
         mode = _check_mode(mode)
         selected = [item.strip() for item in tools.split(",") if item.strip()]
@@ -75,20 +76,53 @@ def run(
 
 @app.command("rescore")
 def rescore(
-    poses_from: Annotated[str, typer.Option("--poses_from", help="Pose source: vina, rdock, or boltz.")],
+    poses_from: Annotated[str, typer.Option("--poses_from", help="Pose source: flexaidds, vina, rdock, or boltz.")],
     mode: ModeOpt = "native",
     config: ConfigOpt = None,
 ) -> None:
     try:
+        from .entropy import rescore_poses
+        from .orchestrate import preflight_required_validators
+
         cfg = load_config(config)
+        preflight_required_validators(cfg)
         mode = _check_mode(mode)
-        if poses_from not in {"vina", "rdock", "boltz"}:
-            raise typer.BadParameter("poses_from must be one of: vina, rdock, boltz")
-        out_csv = rescore_poses(
-            cfg,
-            mode=mode,
-            poses_from=poses_from,
-        )
+        if poses_from not in {"flexaidds", "vina", "rdock", "boltz"}:
+            raise typer.BadParameter("poses_from must be one of: flexaidds, vina, rdock, boltz")
+        out_csv = rescore_poses(cfg, mode=mode, poses_from=poses_from)
     except (FileNotFoundError, RuntimeError, ValueError) as exc:
         _abort(exc)
     typer.echo(f"Rescored poses: {out_csv}")
+
+
+@app.command("orchestrate")
+def orchestrate_cmd(
+    mode: Annotated[str, typer.Option("--mode", help="native, non_native, all, or comma list.")] = "native",
+    config: ConfigOpt = None,
+    tools: Annotated[str, typer.Option("--tools", help="Comma list: flexaidds,vina,rdock,boltz.")] = "flexaidds,vina,rdock,boltz",
+    max_targets: Annotated[int | None, typer.Option("--max-targets", help="Limit targets/pairs for smoke runs.")] = None,
+    download_missing: Annotated[bool, typer.Option("--download-missing", help="Download missing non-native PDB files from RCSB.")] = False,
+    force: Annotated[bool, typer.Option("--force", help="Regenerate prepared inputs.")] = False,
+    dry_run: Annotated[bool, typer.Option("--dry-run", help="Prepare commands/files but do not execute docking or rescoring.")] = False,
+    skip_missing_tools: Annotated[bool, typer.Option("--skip-missing-tools", help="Skip unavailable tools instead of failing.")] = False,
+    skip_rescore: Annotated[bool, typer.Option("--skip-rescore", help="Run pose generators but skip entropy/PoseBusters rescoring.")] = False,
+    continue_on_error: Annotated[bool, typer.Option("--continue-on-error", help="Keep later modes/tools running after a failure.")] = False,
+) -> None:
+    try:
+        from .orchestrate import _validate_modes, _validate_tools, orchestrate
+
+        out_dir = orchestrate(
+            modes=_validate_modes(mode),
+            tools=_validate_tools(tools),
+            config_path=config,
+            max_targets=max_targets,
+            download_missing=download_missing,
+            force=force,
+            dry_run=dry_run,
+            skip_missing_tools=skip_missing_tools,
+            skip_rescore=skip_rescore,
+            continue_on_error=continue_on_error,
+        )
+    except (FileNotFoundError, RuntimeError, ValueError) as exc:
+        _abort(exc)
+    typer.echo(f"Orchestrator summary: {out_dir}")

@@ -3,6 +3,7 @@ from __future__ import annotations
 import csv
 import math
 import os
+import re
 import sys
 from collections import defaultdict
 from pathlib import Path
@@ -103,12 +104,20 @@ def _make_complex_pdb(receptor_pdb: Path, ligand_pdb: Path, complex_pdb: Path) -
 
 
 def _parse_delta_f_vib(outdir: Path) -> float:
-    pdbs = sorted(outdir.glob("*.pdb"), key=lambda p: p.stat().st_mtime, reverse=True)
-    for pdb in pdbs:
-        for line in pdb.read_text(errors="ignore").splitlines():
-            if line.startswith("REMARK") and "DELTA_F_VIB=" in line:
+    pattern = re.compile(
+        r"(?:DELTA_F_VIB|delta_F_vib_star)\s*=?\s*([-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][-+]?\d+)?)",
+        re.IGNORECASE,
+    )
+    paths = sorted(outdir.glob("*.pdb"), key=lambda p: p.stat().st_mtime, reverse=True)
+    log_path = outdir / "tencom.log"
+    if log_path.exists():
+        paths.append(log_path)
+    for path in paths:
+        for line in path.read_text(errors="ignore").splitlines():
+            match = pattern.search(line)
+            if match:
                 try:
-                    return float(line.split("DELTA_F_VIB=", 1)[1].split()[0])
+                    return float(match.group(1))
                 except ValueError:
                     pass
     return 0.0
@@ -192,18 +201,28 @@ def _write_report(df: pd.DataFrame, out_dir: Path, poses_from: str, mode: str) -
         cache_dir.mkdir(parents=True, exist_ok=True)
         os.environ.setdefault("MPLCONFIGDIR", str(cache_dir / "matplotlib"))
         os.environ.setdefault("XDG_CACHE_HOME", str(cache_dir))
+        import matplotlib
+
+        matplotlib.use("Agg", force=True)
         import matplotlib.pyplot as plt
-        import seaborn as sns
 
         if len(df):
             plt.figure(figsize=(9, 5))
-            sns.scatterplot(data=df, x="G_bind", y="rmsd_A", hue="success_pb", style="target_id", legend=False)
+            try:
+                import seaborn as sns
+
+                sns.scatterplot(data=df, x="G_bind", y="rmsd_A", hue="success_pb", style="target_id", legend=False)
+            except ImportError:
+                colors = ["#1f77b4" if bool(value) else "#d62728" for value in df["success_pb"]]
+                plt.scatter(df["G_bind"], df["rmsd_A"], c=colors, edgecolors="black", linewidths=0.4)
             plt.axhline(2.0, color="black", linewidth=1, linestyle="--")
+            plt.xlabel("G_bind")
+            plt.ylabel("RMSD (A)")
             plt.tight_layout()
             plt.savefig(out_dir / "gbind_vs_rmsd.png", dpi=160)
             plt.close()
-    except Exception:
-        pass
+    except Exception as exc:
+        (out_dir / "plot_error.txt").write_text(f"{type(exc).__name__}: {exc}\n")
 
 
 def rescore_poses(

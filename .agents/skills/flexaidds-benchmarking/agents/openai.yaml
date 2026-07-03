@@ -1,0 +1,4 @@
+interface:
+  display_name: "FlexAIDdS Benchmarking"
+  short_description: "Coordinate benchmark runs and resumes."
+  default_prompt: "Use the FlexAIDdS benchmarking skill to inspect current benchmark state and continue safely."
