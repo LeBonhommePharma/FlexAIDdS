@@ -19,7 +19,7 @@ int spfunction(FA_Global* FA,atom* atoms,resid* residue){
 
   float radA,radB,radC;
   float rAB;
-  int   contnum;
+  [[maybe_unused]] int contnum;
 
   int    type;
   int    fatm;

@@ -12,7 +12,7 @@ cmake_minimum_required(VERSION 3.28)
 #
 # Adds a GoogleTest unit test with standard FlexAIDdS conventions:
 #   - Standard include paths (LIB + common submodules)
-#   - GTest linking (gtest + gtest_main by default)
+#   - GTest linking (gtest_main by default; the imported target carries gtest)
 #   - Common compile flags (MSVC vs others; -O2 default)
 #   - Optional: SIMD configuration, OpenMP link, custom compile opts
 #   - MSVC test helper + explicit DEFINES
@@ -63,6 +63,7 @@ function(flexaids_add_unit_test name)
         ${CMAKE_CURRENT_SOURCE_DIR}/LIB/tENCoM
         ${CMAKE_CURRENT_SOURCE_DIR}/LIB/ShannonThermoStack
         ${CMAKE_CURRENT_SOURCE_DIR}/LIB/LigandRingFlex
+        ${CMAKE_CURRENT_SOURCE_DIR}/LIB/ChiralCenter
         ${CMAKE_CURRENT_SOURCE_DIR}/LIB/NATURaL
         ${CMAKE_CURRENT_SOURCE_DIR}/LIB/CavityDetect
         ${CMAKE_CURRENT_SOURCE_DIR}/LIB/PTMAttachment
@@ -76,7 +77,6 @@ function(flexaids_add_unit_test name)
         )
     else()
         target_link_libraries(${name} PRIVATE
-            GTest::gtest
             GTest::gtest_main
             ${ARG_LINK_LIBRARIES}
         )

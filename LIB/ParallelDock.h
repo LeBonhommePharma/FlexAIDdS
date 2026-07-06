@@ -106,9 +106,11 @@ private:
     gridpoint* cleftgrid_;
     ParallelDockConfig config_;
 
-    // Parent gene limits (genes 1..N-1) inherited by every region workspace
-    genlim* parent_gene_lim_;
-    int     parent_num_genes_;
+    // Parent gene limits are accepted by the constructor for compatibility
+    // with callers that still pass them, but region workspaces now inherit
+    // their mutable state from the copied globals.
+    [[maybe_unused]] genlim* parent_gene_lim_;
+    [[maybe_unused]] int     parent_num_genes_;
 
     std::vector<GridRegion> regions_;
     std::vector<RegionResult> results_;

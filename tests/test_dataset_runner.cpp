@@ -249,14 +249,14 @@ TEST(RMSDComputation, UniformShift) {
 TEST(RMSDComputation, EmptyCoords) {
     std::vector<float> empty;
     double rmsd = compute_rmsd(empty, empty);
-    EXPECT_GT(rmsd, 100.0); // Should return large value for invalid input
+    EXPECT_EQ(rmsd, -1.0); // Invalid/not-computed sentinel
 }
 
 TEST(RMSDComputation, MismatchedSize) {
     std::vector<float> a = {0.0f, 0.0f, 0.0f};
     std::vector<float> b = {0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 1.0f};
     double rmsd = compute_rmsd(a, b);
-    EXPECT_GT(rmsd, 100.0); // Should return large value for mismatched sizes
+    EXPECT_EQ(rmsd, -1.0); // Invalid/not-computed sentinel
 }
 
 // =============================================================================
@@ -1297,7 +1297,7 @@ TEST(PrepareFromList, ParsePDBList) {
 TEST(DockingResult, DefaultValues) {
     DockingResult r;
     EXPECT_EQ(r.best_score, 0.0f);
-    EXPECT_EQ(r.rmsd_to_crystal, 999.0f);
+    EXPECT_EQ(r.rmsd_to_crystal, -1.0f);
     EXPECT_FALSE(r.success);
     EXPECT_EQ(r.num_poses, 0);
 }

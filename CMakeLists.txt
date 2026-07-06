@@ -109,6 +109,49 @@ include(cmake/FlexAIDOptions.cmake)
 # Extracted to fight CMake monolith. Must precede add_subdirectory(LIB).
 include(cmake/FlexAIDDependencies.cmake)
 
+if(APPLE AND FLEXAIDS_USE_METAL)
+    if(NOT FLEXAIDS_METALC)
+        execute_process(
+            COMMAND xcrun -f metal
+            OUTPUT_VARIABLE _FLEXAIDS_XCRUN_METALC
+            OUTPUT_STRIP_TRAILING_WHITESPACE
+            ERROR_QUIET
+            RESULT_VARIABLE _FLEXAIDS_XCRUN_METALC_RESULT
+        )
+        if(_FLEXAIDS_XCRUN_METALC_RESULT EQUAL 0 AND _FLEXAIDS_XCRUN_METALC)
+            set(FLEXAIDS_METALC "${_FLEXAIDS_XCRUN_METALC}" CACHE FILEPATH "Metal shader compiler")
+        endif()
+    endif()
+
+    if(FLEXAIDS_METALC)
+        get_filename_component(_FLEXAIDS_METAL_TOOL_DIR "${FLEXAIDS_METALC}" DIRECTORY)
+    endif()
+
+    if(NOT FLEXAIDS_METALLIB AND _FLEXAIDS_METAL_TOOL_DIR)
+        find_program(FLEXAIDS_METALLIB
+            NAMES metallib
+            HINTS "${_FLEXAIDS_METAL_TOOL_DIR}"
+            NO_DEFAULT_PATH
+        )
+    endif()
+
+    if(NOT FLEXAIDS_METALC OR NOT EXISTS "${FLEXAIDS_METALC}")
+        message(FATAL_ERROR "FLEXAIDS_USE_METAL=ON but no executable Metal compiler was found. Run: xcodebuild -downloadComponent MetalToolchain")
+    endif()
+    if(NOT FLEXAIDS_METALLIB OR NOT EXISTS "${FLEXAIDS_METALLIB}")
+        message(FATAL_ERROR "FLEXAIDS_USE_METAL=ON but metallib was not found beside ${FLEXAIDS_METALC}. Run: xcodebuild -downloadComponent MetalToolchain")
+    endif()
+
+    set(FLEXAIDS_METAL_MODULE_CACHE
+        "${CMAKE_BINARY_DIR}/metal_module_cache"
+        CACHE PATH "Run-local Metal compiler module cache"
+    )
+    file(MAKE_DIRECTORY "${FLEXAIDS_METAL_MODULE_CACHE}")
+    message(STATUS "Metal compiler: ${FLEXAIDS_METALC}")
+    message(STATUS "Metal library linker: ${FLEXAIDS_METALLIB}")
+    message(STATUS "Metal module cache: ${FLEXAIDS_METAL_MODULE_CACHE}")
+endif()
+
 # ─── Core library (LIB/) ────────────────────────────────────────────────
 add_subdirectory(LIB)
 
@@ -271,14 +314,14 @@ if(FLEXAIDS_USE_METAL)
     set(CAVITY_METALLIB   "${CMAKE_CURRENT_BINARY_DIR}/CavityDetect.metallib")
     add_custom_command(
         OUTPUT  "${CAVITY_AIR}"
-        COMMAND xcrun -sdk macosx metal -c "${CAVITY_METAL_SRC}" -o "${CAVITY_AIR}"
+        COMMAND "${FLEXAIDS_METALC}" "-fmodules-cache-path=${FLEXAIDS_METAL_MODULE_CACHE}" -c "${CAVITY_METAL_SRC}" -o "${CAVITY_AIR}"
         DEPENDS "${CAVITY_METAL_SRC}"
         COMMENT "Compiling CavityDetect Metal shader"
         VERBATIM
     )
     add_custom_command(
         OUTPUT  "${CAVITY_METALLIB}"
-        COMMAND xcrun -sdk macosx metallib "${CAVITY_AIR}" -o "${CAVITY_METALLIB}"
+        COMMAND "${FLEXAIDS_METALLIB}" "${CAVITY_AIR}" -o "${CAVITY_METALLIB}"
         DEPENDS "${CAVITY_AIR}"
         COMMENT "Linking CavityDetect.metallib"
         VERBATIM
@@ -300,14 +343,14 @@ if(FLEXAIDS_USE_METAL)
     set(TQ_METALLIB   "${CMAKE_CURRENT_BINARY_DIR}/TurboQuant.metallib")
     add_custom_command(
         OUTPUT  "${TQ_AIR}"
-        COMMAND xcrun -sdk macosx metal -c "${TQ_METAL_SRC}" -o "${TQ_AIR}"
+        COMMAND "${FLEXAIDS_METALC}" "-fmodules-cache-path=${FLEXAIDS_METAL_MODULE_CACHE}" -c "${TQ_METAL_SRC}" -o "${TQ_AIR}"
         DEPENDS "${TQ_METAL_SRC}"
         COMMENT "Compiling TurboQuant Metal shader"
         VERBATIM
     )
     add_custom_command(
         OUTPUT  "${TQ_METALLIB}"
-        COMMAND xcrun -sdk macosx metallib "${TQ_AIR}" -o "${TQ_METALLIB}"
+        COMMAND "${FLEXAIDS_METALLIB}" "${TQ_AIR}" -o "${TQ_METALLIB}"
         DEPENDS "${TQ_AIR}"
         COMMENT "Linking TurboQuant.metallib"
         VERBATIM
@@ -329,14 +372,14 @@ if(FLEXAIDS_USE_METAL)
     set(RMSD_METALLIB   "${CMAKE_CURRENT_BINARY_DIR}/MetalRMSD.metallib")
     add_custom_command(
         OUTPUT  "${RMSD_AIR}"
-        COMMAND xcrun -sdk macosx metal -c "${RMSD_METAL_SRC}" -o "${RMSD_AIR}"
+        COMMAND "${FLEXAIDS_METALC}" "-fmodules-cache-path=${FLEXAIDS_METAL_MODULE_CACHE}" -c "${RMSD_METAL_SRC}" -o "${RMSD_AIR}"
         DEPENDS "${RMSD_METAL_SRC}"
         COMMENT "Compiling MetalRMSD Metal shader"
         VERBATIM
     )
     add_custom_command(
         OUTPUT  "${RMSD_METALLIB}"
-        COMMAND xcrun -sdk macosx metallib "${RMSD_AIR}" -o "${RMSD_METALLIB}"
+        COMMAND "${FLEXAIDS_METALLIB}" "${RMSD_AIR}" -o "${RMSD_METALLIB}"
         DEPENDS "${RMSD_AIR}"
         COMMENT "Linking MetalRMSD.metallib"
         VERBATIM
@@ -647,14 +690,14 @@ if(BUILD_FLEXAIDDS_FAST)
         set(SHANNON_METALLIB   "${CMAKE_CURRENT_BINARY_DIR}/ShannonEntropy.metallib")
         add_custom_command(
             OUTPUT  "${SHANNON_AIR}"
-            COMMAND xcrun -sdk macosx metal -c "${SHANNON_METAL_SRC}" -o "${SHANNON_AIR}"
+            COMMAND "${FLEXAIDS_METALC}" "-fmodules-cache-path=${FLEXAIDS_METAL_MODULE_CACHE}" -c "${SHANNON_METAL_SRC}" -o "${SHANNON_AIR}"
             DEPENDS "${SHANNON_METAL_SRC}"
             COMMENT "Compiling ShannonEntropy Metal shader"
             VERBATIM
         )
         add_custom_command(
             OUTPUT  "${SHANNON_METALLIB}"
-            COMMAND xcrun -sdk macosx metallib "${SHANNON_AIR}" -o "${SHANNON_METALLIB}"
+            COMMAND "${FLEXAIDS_METALLIB}" "${SHANNON_AIR}" -o "${SHANNON_METALLIB}"
             DEPENDS "${SHANNON_AIR}"
             COMMENT "Linking ShannonEntropy.metallib"
             VERBATIM
@@ -688,14 +731,14 @@ if(BUILD_FLEXAIDDS_FAST)
         set(CAVITY_METALLIB_DS    "${CMAKE_CURRENT_BINARY_DIR}/CavityDetect_ds.metallib")
         add_custom_command(
             OUTPUT  "${CAVITY_AIR_DS}"
-            COMMAND xcrun -sdk macosx metal -c "${CAVITY_METAL_SRC_DS}" -o "${CAVITY_AIR_DS}"
+            COMMAND "${FLEXAIDS_METALC}" "-fmodules-cache-path=${FLEXAIDS_METAL_MODULE_CACHE}" -c "${CAVITY_METAL_SRC_DS}" -o "${CAVITY_AIR_DS}"
             DEPENDS "${CAVITY_METAL_SRC_DS}"
             COMMENT "Compiling CavityDetect Metal shader (FlexAIDdS)"
             VERBATIM
         )
         add_custom_command(
             OUTPUT  "${CAVITY_METALLIB_DS}"
-            COMMAND xcrun -sdk macosx metallib "${CAVITY_AIR_DS}" -o "${CAVITY_METALLIB_DS}"
+            COMMAND "${FLEXAIDS_METALLIB}" "${CAVITY_AIR_DS}" -o "${CAVITY_METALLIB_DS}"
             DEPENDS "${CAVITY_AIR_DS}"
             COMMENT "Linking CavityDetect_ds.metallib"
             VERBATIM
@@ -716,14 +759,14 @@ if(BUILD_FLEXAIDDS_FAST)
         set(TQ_METALLIB_DS    "${CMAKE_CURRENT_BINARY_DIR}/TurboQuant_ds.metallib")
         add_custom_command(
             OUTPUT  "${TQ_AIR_DS}"
-            COMMAND xcrun -sdk macosx metal -c "${TQ_METAL_SRC_DS}" -o "${TQ_AIR_DS}"
+            COMMAND "${FLEXAIDS_METALC}" "-fmodules-cache-path=${FLEXAIDS_METAL_MODULE_CACHE}" -c "${TQ_METAL_SRC_DS}" -o "${TQ_AIR_DS}"
             DEPENDS "${TQ_METAL_SRC_DS}"
             COMMENT "Compiling TurboQuant Metal shader (FlexAIDdS)"
             VERBATIM
         )
         add_custom_command(
             OUTPUT  "${TQ_METALLIB_DS}"
-            COMMAND xcrun -sdk macosx metallib "${TQ_AIR_DS}" -o "${TQ_METALLIB_DS}"
+            COMMAND "${FLEXAIDS_METALLIB}" "${TQ_AIR_DS}" -o "${TQ_METALLIB_DS}"
             DEPENDS "${TQ_AIR_DS}"
             COMMENT "Linking TurboQuant_ds.metallib"
             VERBATIM
@@ -744,14 +787,14 @@ if(BUILD_FLEXAIDDS_FAST)
         set(RMSD_METALLIB_DS    "${CMAKE_CURRENT_BINARY_DIR}/MetalRMSD_ds.metallib")
         add_custom_command(
             OUTPUT  "${RMSD_AIR_DS}"
-            COMMAND xcrun -sdk macosx metal -c "${RMSD_METAL_SRC_DS}" -o "${RMSD_AIR_DS}"
+            COMMAND "${FLEXAIDS_METALC}" "-fmodules-cache-path=${FLEXAIDS_METAL_MODULE_CACHE}" -c "${RMSD_METAL_SRC_DS}" -o "${RMSD_AIR_DS}"
             DEPENDS "${RMSD_METAL_SRC_DS}"
             COMMENT "Compiling MetalRMSD Metal shader (FlexAIDdS)"
             VERBATIM
         )
         add_custom_command(
             OUTPUT  "${RMSD_METALLIB_DS}"
-            COMMAND xcrun -sdk macosx metallib "${RMSD_AIR_DS}" -o "${RMSD_METALLIB_DS}"
+            COMMAND "${FLEXAIDS_METALLIB}" "${RMSD_AIR_DS}" -o "${RMSD_METALLIB_DS}"
             DEPENDS "${RMSD_AIR_DS}"
             COMMENT "Linking MetalRMSD_ds.metallib"
             VERBATIM
@@ -1085,7 +1128,7 @@ if(BUILD_TESTING)
         LIB/TurboQuant.cpp)
     target_include_directories(test_hardware_detect_dispatch PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/LIB)
-    target_link_libraries(test_hardware_detect_dispatch PRIVATE GTest::gtest GTest::gtest_main)
+    target_link_libraries(test_hardware_detect_dispatch PRIVATE GTest::gtest_main)
     if(MSVC)
         target_compile_options(test_hardware_detect_dispatch PRIVATE /O2)
     else()
@@ -1145,6 +1188,8 @@ if(BUILD_TESTING)
         tests/test_gaboom.cpp
         tests/stubs.cpp
         LIB/gaboom.cpp
+        LIB/coarse_init.cpp
+        LIB/ThermodynamicEngine.cpp
         LIB/VibEntropy.cpp
         LIB/InStreamClustering.cpp
         LIB/GAContext.cpp
@@ -1167,6 +1212,8 @@ if(BUILD_TESTING)
         LIB/NATURaL/FibrilGrowthOracle.cpp
         LIB/GrandPartitionFunction.cpp
         LIB/NATURaL/DualAssemblyRunner.cpp
+        LIB/LigandRingFlex/RingConformerLibrary.cpp
+        LIB/LigandRingFlex/SugarPucker.cpp
         LIB/UnifiedHardwareDispatch.cpp
         LIB/hardware_detect.cpp
     )
@@ -1176,8 +1223,9 @@ if(BUILD_TESTING)
         ${CMAKE_CURRENT_SOURCE_DIR}/LIB/ShannonThermoStack
         ${CMAKE_CURRENT_SOURCE_DIR}/LIB/NATURaL
         ${CMAKE_CURRENT_SOURCE_DIR}/LIB/CavityDetect
+        ${CMAKE_CURRENT_SOURCE_DIR}/LIB/LigandRingFlex
     )
-    target_link_libraries(test_gaboom PRIVATE GTest::gtest GTest::gtest_main)
+    target_link_libraries(test_gaboom PRIVATE GTest::gtest_main)
     if(MSVC)
         target_compile_options(test_gaboom PRIVATE /O2)
     else()
@@ -1198,6 +1246,8 @@ if(BUILD_TESTING)
         tests/stubs.cpp
         LIB/shannon_ga.cpp
         LIB/gaboom.cpp
+        LIB/coarse_init.cpp
+        LIB/ThermodynamicEngine.cpp
         LIB/VibEntropy.cpp
         LIB/InStreamClustering.cpp
         LIB/GAContext.cpp
@@ -1219,6 +1269,8 @@ if(BUILD_TESTING)
         LIB/NATURaL/FibrilGrowthOracle.cpp
         LIB/GrandPartitionFunction.cpp
         LIB/NATURaL/DualAssemblyRunner.cpp
+        LIB/LigandRingFlex/RingConformerLibrary.cpp
+        LIB/LigandRingFlex/SugarPucker.cpp
         LIB/UnifiedHardwareDispatch.cpp
         LIB/hardware_detect.cpp
     )
@@ -1228,8 +1280,9 @@ if(BUILD_TESTING)
         ${CMAKE_CURRENT_SOURCE_DIR}/LIB/ShannonThermoStack
         ${CMAKE_CURRENT_SOURCE_DIR}/LIB/NATURaL
         ${CMAKE_CURRENT_SOURCE_DIR}/LIB/CavityDetect
+        ${CMAKE_CURRENT_SOURCE_DIR}/LIB/LigandRingFlex
     )
-    target_link_libraries(test_shannon_ga PRIVATE GTest::gtest GTest::gtest_main)
+    target_link_libraries(test_shannon_ga PRIVATE GTest::gtest_main)
     if(MSVC)
         target_compile_options(test_shannon_ga PRIVATE /O2)
     else()
@@ -1253,7 +1306,7 @@ if(BUILD_TESTING)
         LIB/geometry.cpp
     )
     target_include_directories(test_vcontacts PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/LIB)
-    target_link_libraries(test_vcontacts PRIVATE GTest::gtest GTest::gtest_main)
+    target_link_libraries(test_vcontacts PRIVATE GTest::gtest_main)
     if(MSVC)
         target_compile_options(test_vcontacts PRIVATE /O2)
     else()
@@ -1273,7 +1326,7 @@ if(BUILD_TESTING)
         LIB/geometry.cpp
     )
     target_include_directories(test_vcontacts_geometry PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/LIB)
-    target_link_libraries(test_vcontacts_geometry PRIVATE GTest::gtest GTest::gtest_main)
+    target_link_libraries(test_vcontacts_geometry PRIVATE GTest::gtest_main)
     if(MSVC)
         target_compile_options(test_vcontacts_geometry PRIVATE /O2)
     else()
@@ -1296,7 +1349,7 @@ if(BUILD_TESTING)
         ${CMAKE_CURRENT_SOURCE_DIR}/LIB
         ${CMAKE_CURRENT_SOURCE_DIR}/LIB/CavityDetect
     )
-    target_link_libraries(test_cleft_cavity PRIVATE GTest::gtest GTest::gtest_main)
+    target_link_libraries(test_cleft_cavity PRIVATE GTest::gtest_main)
     if(MSVC)
         target_compile_options(test_cleft_cavity PRIVATE /O2)
     else()
@@ -1386,6 +1439,10 @@ if(BUILD_TESTING)
         tests/test_binding_mode_statmech.cpp
         tests/stubs.cpp
         LIB/gaboom.cpp
+        LIB/coarse_init.cpp
+        LIB/ThermodynamicEngine.cpp
+        LIB/LigandRingFlex/RingConformerLibrary.cpp
+        LIB/LigandRingFlex/SugarPucker.cpp
         LIB/VibEntropy.cpp
         LIB/InStreamClustering.cpp
         LIB/GAContext.cpp
@@ -1417,7 +1474,7 @@ if(BUILD_TESTING)
         ${CMAKE_CURRENT_SOURCE_DIR}/LIB/NATURaL
         ${CMAKE_CURRENT_SOURCE_DIR}/LIB/CavityDetect
     )
-    target_link_libraries(test_binding_mode_statmech PRIVATE GTest::gtest GTest::gtest_main)
+    target_link_libraries(test_binding_mode_statmech PRIVATE GTest::gtest_main)
     if(MSVC)
         target_compile_options(test_binding_mode_statmech PRIVATE /O2)
     else()
@@ -1437,6 +1494,10 @@ if(BUILD_TESTING)
         tests/test_ccbm.cpp
         tests/stubs.cpp
         LIB/gaboom.cpp
+        LIB/coarse_init.cpp
+        LIB/ThermodynamicEngine.cpp
+        LIB/LigandRingFlex/RingConformerLibrary.cpp
+        LIB/LigandRingFlex/SugarPucker.cpp
         LIB/VibEntropy.cpp
         LIB/InStreamClustering.cpp
         LIB/GAContext.cpp
@@ -1468,7 +1529,7 @@ if(BUILD_TESTING)
         ${CMAKE_CURRENT_SOURCE_DIR}/LIB/NATURaL
         ${CMAKE_CURRENT_SOURCE_DIR}/LIB/CavityDetect
     )
-    target_link_libraries(test_ccbm PRIVATE GTest::gtest GTest::gtest_main)
+    target_link_libraries(test_ccbm PRIVATE GTest::gtest_main)
     if(MSVC)
         target_compile_options(test_ccbm PRIVATE /O2)
     else()
@@ -1488,6 +1549,10 @@ if(BUILD_TESTING)
         tests/test_binding_mode_advanced.cpp
         tests/stubs.cpp
         LIB/gaboom.cpp
+        LIB/coarse_init.cpp
+        LIB/ThermodynamicEngine.cpp
+        LIB/LigandRingFlex/RingConformerLibrary.cpp
+        LIB/LigandRingFlex/SugarPucker.cpp
         LIB/VibEntropy.cpp
         LIB/InStreamClustering.cpp
         LIB/GAContext.cpp
@@ -1519,7 +1584,7 @@ if(BUILD_TESTING)
         ${CMAKE_CURRENT_SOURCE_DIR}/LIB/NATURaL
         ${CMAKE_CURRENT_SOURCE_DIR}/LIB/CavityDetect
     )
-    target_link_libraries(test_binding_mode_advanced PRIVATE GTest::gtest GTest::gtest_main)
+    target_link_libraries(test_binding_mode_advanced PRIVATE GTest::gtest_main)
     if(MSVC)
         target_compile_options(test_binding_mode_advanced PRIVATE /O2)
     else()
@@ -1539,6 +1604,10 @@ if(BUILD_TESTING)
         tests/test_ga_core.cpp
         tests/stubs.cpp
         LIB/gaboom.cpp
+        LIB/coarse_init.cpp
+        LIB/ThermodynamicEngine.cpp
+        LIB/LigandRingFlex/RingConformerLibrary.cpp
+        LIB/LigandRingFlex/SugarPucker.cpp
         LIB/VibEntropy.cpp
         LIB/GAContext.cpp
         LIB/Vcontacts.cpp
@@ -1570,7 +1639,7 @@ if(BUILD_TESTING)
         ${CMAKE_CURRENT_SOURCE_DIR}/LIB/NATURaL
         ${CMAKE_CURRENT_SOURCE_DIR}/LIB/CavityDetect
     )
-    target_link_libraries(test_ga_core PRIVATE GTest::gtest GTest::gtest_main)
+    target_link_libraries(test_ga_core PRIVATE GTest::gtest_main)
     if(MSVC)
         target_compile_options(test_ga_core PRIVATE /O2)
     else()
@@ -1590,6 +1659,10 @@ if(BUILD_TESTING)
         tests/test_ga_validation.cpp
         tests/stubs.cpp
         LIB/gaboom.cpp
+        LIB/coarse_init.cpp
+        LIB/ThermodynamicEngine.cpp
+        LIB/LigandRingFlex/RingConformerLibrary.cpp
+        LIB/LigandRingFlex/SugarPucker.cpp
         LIB/VibEntropy.cpp
         LIB/GAContext.cpp
         LIB/Vcontacts.cpp
@@ -1621,7 +1694,7 @@ if(BUILD_TESTING)
         ${CMAKE_CURRENT_SOURCE_DIR}/LIB/NATURaL
         ${CMAKE_CURRENT_SOURCE_DIR}/LIB/CavityDetect
     )
-    target_link_libraries(test_ga_validation PRIVATE GTest::gtest GTest::gtest_main)
+    target_link_libraries(test_ga_validation PRIVATE GTest::gtest_main)
     if(MSVC)
         target_compile_options(test_ga_validation PRIVATE /O2)
     else()
@@ -1641,6 +1714,10 @@ if(BUILD_TESTING)
         tests/test_ga_operators.cpp
         tests/stubs.cpp
         LIB/gaboom.cpp
+        LIB/coarse_init.cpp
+        LIB/ThermodynamicEngine.cpp
+        LIB/LigandRingFlex/RingConformerLibrary.cpp
+        LIB/LigandRingFlex/SugarPucker.cpp
         LIB/VibEntropy.cpp
         LIB/calc_rmsp.cpp
         LIB/GAContext.cpp
@@ -1673,7 +1750,7 @@ if(BUILD_TESTING)
         ${CMAKE_CURRENT_SOURCE_DIR}/LIB/NATURaL
         ${CMAKE_CURRENT_SOURCE_DIR}/LIB/CavityDetect
     )
-    target_link_libraries(test_ga_operators PRIVATE GTest::gtest GTest::gtest_main Eigen3::Eigen)
+    target_link_libraries(test_ga_operators PRIVATE GTest::gtest_main Eigen3::Eigen)
     target_compile_definitions(test_ga_operators PRIVATE FLEXAIDS_HAS_EIGEN)
     if(MSVC)
         target_compile_options(test_ga_operators PRIVATE /O2)
@@ -1691,6 +1768,10 @@ if(BUILD_TESTING)
         tests/test_binding_mode_comparison.cpp
         tests/stubs.cpp
         LIB/gaboom.cpp
+        LIB/coarse_init.cpp
+        LIB/ThermodynamicEngine.cpp
+        LIB/LigandRingFlex/RingConformerLibrary.cpp
+        LIB/LigandRingFlex/SugarPucker.cpp
         LIB/VibEntropy.cpp
         LIB/calc_rmsp.cpp
         LIB/GAContext.cpp
@@ -1723,7 +1804,7 @@ if(BUILD_TESTING)
         ${CMAKE_CURRENT_SOURCE_DIR}/LIB/NATURaL
         ${CMAKE_CURRENT_SOURCE_DIR}/LIB/CavityDetect
     )
-    target_link_libraries(test_binding_mode_comparison PRIVATE GTest::gtest GTest::gtest_main Eigen3::Eigen)
+    target_link_libraries(test_binding_mode_comparison PRIVATE GTest::gtest_main Eigen3::Eigen)
     target_compile_definitions(test_binding_mode_comparison PRIVATE FLEXAIDS_HAS_EIGEN)
     if(MSVC)
         target_compile_options(test_binding_mode_comparison PRIVATE /O2)
@@ -1752,7 +1833,7 @@ if(BUILD_TESTING)
             ${CMAKE_CURRENT_SOURCE_DIR}/LIB
             ${CMAKE_CURRENT_SOURCE_DIR}/LIB/ShannonThermoStack
         )
-        target_link_libraries(test_soft_contact_matrix PRIVATE GTest::gtest GTest::gtest_main)
+        target_link_libraries(test_soft_contact_matrix PRIVATE GTest::gtest_main)
         target_compile_definitions(test_soft_contact_matrix PRIVATE FLEXAIDS_USE_256_MATRIX)
         if(MSVC)
             target_compile_options(test_soft_contact_matrix PRIVATE /O2)
@@ -1777,7 +1858,7 @@ if(BUILD_TESTING)
             ${CMAKE_CURRENT_SOURCE_DIR}/LIB
             ${CMAKE_CURRENT_SOURCE_DIR}/LIB/ShannonThermoStack
         )
-        target_link_libraries(test_compare_energy_matrices PRIVATE GTest::gtest GTest::gtest_main)
+        target_link_libraries(test_compare_energy_matrices PRIVATE GTest::gtest_main)
         target_compile_definitions(test_compare_energy_matrices PRIVATE FLEXAIDS_USE_256_MATRIX)
         if(MSVC)
             target_compile_options(test_compare_energy_matrices PRIVATE /O2)
@@ -1812,6 +1893,10 @@ if(BUILD_TESTING)
         tests/test_entropy_ga.cpp
         tests/stubs.cpp
         LIB/gaboom.cpp
+        LIB/coarse_init.cpp
+        LIB/ThermodynamicEngine.cpp
+        LIB/LigandRingFlex/RingConformerLibrary.cpp
+        LIB/LigandRingFlex/SugarPucker.cpp
         LIB/VibEntropy.cpp
         LIB/InStreamClustering.cpp
         LIB/GAContext.cpp
@@ -1842,7 +1927,7 @@ if(BUILD_TESTING)
         ${CMAKE_CURRENT_SOURCE_DIR}/LIB/NATURaL
         ${CMAKE_CURRENT_SOURCE_DIR}/LIB/CavityDetect
     )
-    target_link_libraries(test_entropy_ga PRIVATE GTest::gtest GTest::gtest_main)
+    target_link_libraries(test_entropy_ga PRIVATE GTest::gtest_main)
     if(MSVC)
         target_compile_options(test_entropy_ga PRIVATE /O2)
     else()
@@ -1898,6 +1983,9 @@ if(BUILD_TESTING)
             tests/stubs.cpp
             LIB/Mol2Reader.cpp
             LIB/SdfReader.cpp
+            LIB/LigandRingFlex/SugarPucker.cpp
+        LINK_LIBRARIES Eigen3::Eigen
+        DEFINES FLEXAIDS_HAS_EIGEN
         COMPILE_OPTIONS -std=c++26
         CONFIGURE_SIMD
         GTEST_MAIN_ONLY
@@ -1921,7 +2009,7 @@ if(BUILD_TESTING)
         LIB/AsyncPipeline.cpp
     )
     target_include_directories(test_dataset_runner PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/LIB)
-    target_link_libraries(test_dataset_runner PRIVATE flexaid_core GTest::gtest GTest::gtest_main)
+    target_link_libraries(test_dataset_runner PRIVATE flexaid_core GTest::gtest_main)
     if(MSVC)
         target_compile_options(test_dataset_runner PRIVATE /O2)
         target_compile_definitions(test_dataset_runner PRIVATE
@@ -1943,7 +2031,7 @@ if(BUILD_TESTING)
         LIB/AsyncPipeline.cpp
     )
     target_include_directories(test_cofactor_blacklist PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/LIB)
-    target_link_libraries(test_cofactor_blacklist PRIVATE flexaid_core GTest::gtest GTest::gtest_main)
+    target_link_libraries(test_cofactor_blacklist PRIVATE flexaid_core GTest::gtest_main)
     target_compile_definitions(test_cofactor_blacklist PRIVATE
         FLEXAIDS_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
     if(MSVC)
@@ -1965,6 +2053,10 @@ if(BUILD_TESTING)
         tests/test_binding_mode_vibrational.cpp
         tests/stubs.cpp
         LIB/gaboom.cpp
+        LIB/coarse_init.cpp
+        LIB/ThermodynamicEngine.cpp
+        LIB/LigandRingFlex/RingConformerLibrary.cpp
+        LIB/LigandRingFlex/SugarPucker.cpp
         LIB/VibEntropy.cpp
         LIB/InStreamClustering.cpp
         LIB/GAContext.cpp
@@ -1996,7 +2088,7 @@ if(BUILD_TESTING)
         ${CMAKE_CURRENT_SOURCE_DIR}/LIB/NATURaL
         ${CMAKE_CURRENT_SOURCE_DIR}/LIB/CavityDetect
     )
-    target_link_libraries(test_binding_mode_vibrational PRIVATE GTest::gtest GTest::gtest_main)
+    target_link_libraries(test_binding_mode_vibrational PRIVATE GTest::gtest_main)
     if(MSVC)
         target_compile_options(test_binding_mode_vibrational PRIVATE /O2)
     else()
@@ -2034,7 +2126,7 @@ if(BUILD_TESTING)
     target_include_directories(test_tencom_entropy_diff PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/LIB
         ${CMAKE_CURRENT_SOURCE_DIR}/LIB/tENCoM)
-    target_link_libraries(test_tencom_entropy_diff PRIVATE GTest::gtest GTest::gtest_main)
+    target_link_libraries(test_tencom_entropy_diff PRIVATE GTest::gtest_main)
     if(MSVC)
         target_compile_options(test_tencom_entropy_diff PRIVATE /O2)
     else()
@@ -2065,7 +2157,7 @@ if(BUILD_TESTING)
     )
     target_include_directories(test_grand_partition PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/LIB)
-    target_link_libraries(test_grand_partition PRIVATE GTest::gtest GTest::gtest_main)
+    target_link_libraries(test_grand_partition PRIVATE GTest::gtest_main)
     if(MSVC)
         target_compile_options(test_grand_partition PRIVATE /O2)
     else()
@@ -2094,7 +2186,7 @@ if(BUILD_TESTING)
     )
     target_include_directories(test_target_server PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/LIB)
-    target_link_libraries(test_target_server PRIVATE GTest::gtest GTest::gtest_main)
+    target_link_libraries(test_target_server PRIVATE GTest::gtest_main)
     if(MSVC)
         target_compile_options(test_target_server PRIVATE /O2)
     else()
@@ -2121,7 +2213,7 @@ if(BUILD_TESTING)
     )
     target_include_directories(test_multi_site_gpf PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/LIB)
-    target_link_libraries(test_multi_site_gpf PRIVATE GTest::gtest GTest::gtest_main)
+    target_link_libraries(test_multi_site_gpf PRIVATE GTest::gtest_main)
     if(MSVC)
         target_compile_options(test_multi_site_gpf PRIVATE /O2)
     else()
@@ -2186,7 +2278,7 @@ if(BUILD_TESTING)
         ${CMAKE_CURRENT_SOURCE_DIR}/LIB
         ${CMAKE_CURRENT_SOURCE_DIR}/LIB/DiFT
     )
-    target_link_libraries(test_dift PRIVATE GTest::gtest GTest::gtest_main)
+    target_link_libraries(test_dift PRIVATE GTest::gtest_main)
     if(MSVC)
         target_compile_options(test_dift PRIVATE /Od /Zi)
     else()
@@ -2230,7 +2322,7 @@ if(BUILD_TESTING)
             ${CMAKE_CURRENT_SOURCE_DIR}/LIB
             ${CMAKE_CURRENT_SOURCE_DIR}/LIB/NATURaL
         )
-        target_link_libraries(test_natural PRIVATE GTest::gtest GTest::gtest_main)
+        target_link_libraries(test_natural PRIVATE GTest::gtest_main)
         if(MSVC)
             target_compile_options(test_natural PRIVATE /O2)
             target_compile_definitions(test_natural PRIVATE
@@ -2273,7 +2365,7 @@ if(BUILD_TESTING)
         ${CMAKE_CURRENT_SOURCE_DIR}/LIB/ShannonThermoStack
         ${CMAKE_CURRENT_SOURCE_DIR}/LIB/tENCoM
     )
-    target_link_libraries(test_nascent_chain_scheduler PRIVATE GTest::gtest GTest::gtest_main)
+    target_link_libraries(test_nascent_chain_scheduler PRIVATE GTest::gtest_main)
     if(MSVC)
         target_compile_options(test_nascent_chain_scheduler PRIVATE /O2)
         target_compile_definitions(test_nascent_chain_scheduler PRIVATE
@@ -2357,7 +2449,7 @@ if(BUILD_SWIFT_BRIDGE)
     )
     target_include_directories(test_unified_dispatch PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/LIB)
-    target_link_libraries(test_unified_dispatch PRIVATE GTest::gtest GTest::gtest_main)
+    target_link_libraries(test_unified_dispatch PRIVATE GTest::gtest_main)
     if(MSVC)
         target_compile_options(test_unified_dispatch PRIVATE /O2)
     else()
@@ -2380,7 +2472,7 @@ if(BUILD_SWIFT_BRIDGE)
     )
     target_include_directories(test_coarse_screen PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/LIB)
-    target_link_libraries(test_coarse_screen PRIVATE GTest::gtest GTest::gtest_main)
+    target_link_libraries(test_coarse_screen PRIVATE GTest::gtest_main)
     if(MSVC)
         target_compile_options(test_coarse_screen PRIVATE /O2)
     else()
@@ -2411,7 +2503,7 @@ if(BUILD_SWIFT_BRIDGE)
         ${CMAKE_CURRENT_SOURCE_DIR}/LIB
         ${CMAKE_CURRENT_SOURCE_DIR}/LIB/ProcessLigand
     )
-    target_link_libraries(test_process_ligand PRIVATE GTest::gtest GTest::gtest_main)
+    target_link_libraries(test_process_ligand PRIVATE GTest::gtest_main)
     if(MSVC)
         target_compile_options(test_process_ligand PRIVATE /Od /Zi)
         target_compile_definitions(test_process_ligand PRIVATE
@@ -2435,7 +2527,7 @@ if(BUILD_SWIFT_BRIDGE)
         ${CMAKE_CURRENT_SOURCE_DIR}/LIB
         ${CMAKE_CURRENT_SOURCE_DIR}/LIB/LigandRingFlex
     )
-    target_link_libraries(test_ligand_ring_flex PRIVATE GTest::gtest GTest::gtest_main)
+    target_link_libraries(test_ligand_ring_flex PRIVATE GTest::gtest_main)
     if(MSVC)
         target_compile_options(test_ligand_ring_flex PRIVATE /Od /Zi)
     else()
@@ -2464,7 +2556,7 @@ if(BUILD_SWIFT_BRIDGE)
         ${CMAKE_CURRENT_SOURCE_DIR}/LIB
         ${CMAKE_CURRENT_SOURCE_DIR}/LIB/NATURaL
     )
-    target_link_libraries(test_natural PRIVATE GTest::gtest GTest::gtest_main)
+    target_link_libraries(test_natural PRIVATE GTest::gtest_main)
     if(MSVC)
         target_compile_options(test_natural PRIVATE /O2)
         target_compile_definitions(test_natural PRIVATE
@@ -2497,6 +2589,10 @@ if(BUILD_SWIFT_BRIDGE)
         LIB/statmech.cpp
         LIB/TurboQuant.cpp
         LIB/gaboom.cpp
+        LIB/coarse_init.cpp
+        LIB/ThermodynamicEngine.cpp
+        LIB/LigandRingFlex/RingConformerLibrary.cpp
+        LIB/LigandRingFlex/SugarPucker.cpp
         LIB/VibEntropy.cpp
         LIB/InStreamClustering.cpp
         LIB/GAContext.cpp
@@ -2527,7 +2623,7 @@ if(BUILD_SWIFT_BRIDGE)
         ${CMAKE_CURRENT_SOURCE_DIR}/LIB/NATURaL
         ${CMAKE_CURRENT_SOURCE_DIR}/LIB/CavityDetect
     )
-    target_link_libraries(test_docking_pipeline PRIVATE GTest::gtest GTest::gtest_main)
+    target_link_libraries(test_docking_pipeline PRIVATE GTest::gtest_main)
     if(MSVC)
         target_compile_options(test_docking_pipeline PRIVATE /O2)
         target_compile_definitions(test_docking_pipeline PRIVATE

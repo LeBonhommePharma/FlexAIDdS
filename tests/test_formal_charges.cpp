@@ -20,7 +20,7 @@ protected:
     int latm_storage[10];
 
     void SetUp() override {
-        std::memset(&FA, 0, sizeof(FA));
+        FA = {};
         std::memset(atoms, 0, sizeof(atoms));
         std::memset(residues, 0, sizeof(residues));
         FA.res_cnt = 0;

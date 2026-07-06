@@ -56,8 +56,9 @@ void metal_foptics_knn(
         }
 
         NSError* error = nil;
-        id<MTLLibrary> library = [device newLibraryWithFile:metallibPath
-                                                      error:&error];
+        NSURL* metallibURL = [NSURL fileURLWithPath:metallibPath];
+        id<MTLLibrary> library = [device newLibraryWithURL:metallibURL
+                                                     error:&error];
         if (!library) {
             fprintf(stderr, "[metal_foptics_knn] Failed to load metallib: %s\n",
                     error ? [[error localizedDescription] UTF8String] : "unknown");

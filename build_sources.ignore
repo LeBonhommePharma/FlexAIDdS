@@ -81,6 +81,7 @@ LIB/ShannonThermoStack/ShannonMetalBridge.h
 LIB/ShannonThermoStack/ShannonThermoStack.h
 LIB/ShannonThermoStack/shannon_cuda.cuh
 LIB/SharedPosePool.h
+LIB/soft_wall.h
 LIB/TargetKnowledgeBase.h
 LIB/TargetServer.h
 LIB/TargetValidation.h

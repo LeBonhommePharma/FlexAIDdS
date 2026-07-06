@@ -432,7 +432,7 @@ TEST_F(BindingModeStatMechTest, GlobalEnsembleUsesRawMicrostates) {
     const double beta = 1.0 / (statmech::kB_kcal * TEST_TEMPERATURE);
     const std::vector<double> energies = {-1.0, 0.0, 0.0, 1.0};
     double Z = 0.0;
-    for (double E : energies) Z += std::exp(-beta * E);
+    for (double energy : energies) Z += std::exp(-beta * energy);
 
     for (std::size_t i = 0; i < energies.size(); ++i) {
         const double expected = std::exp(-beta * energies[i]) / Z;

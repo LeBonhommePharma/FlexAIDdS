@@ -23,10 +23,11 @@ TEST(AtomTyping256, EncodeDecodeRoundtrip) {
     for (int base = 0; base < 64; ++base) {
         for (int donor = 0; donor < 2; ++donor) {
             for (int acceptor = 0; acceptor < 2; ++acceptor) {
-                uint8_t code = atom256::encode(base, donor, acceptor);
+                uint8_t code = atom256::encode(
+                    static_cast<uint8_t>(base), donor != 0, acceptor != 0);
                 EXPECT_EQ(atom256::get_base(code), base);
-                EXPECT_EQ(atom256::get_donor(code), (bool)donor);
-                EXPECT_EQ(atom256::get_acceptor(code), (bool)acceptor);
+                EXPECT_EQ(atom256::get_hbond_donor(code), donor != 0);
+                EXPECT_EQ(atom256::get_hbond_acceptor(code), acceptor != 0);
                 EXPECT_EQ(atom256::get_hbond(code), donor || acceptor);
             }
         }
@@ -38,7 +39,8 @@ TEST(AtomTyping256, All256CodesUnique) {
     for (int base = 0; base < 64; ++base)
         for (int donor = 0; donor < 2; ++donor)
             for (int acceptor = 0; acceptor < 2; ++acceptor)
-                codes.push_back(atom256::encode(base, donor, acceptor));
+                codes.push_back(atom256::encode(
+                    static_cast<uint8_t>(base), donor != 0, acceptor != 0));
     EXPECT_EQ(codes.size(), 256u);
     std::sort(codes.begin(), codes.end());
     auto it = std::unique(codes.begin(), codes.end());
@@ -102,26 +104,33 @@ TEST(AtomTyping256, ContextRefinement) {
 }
 
 TEST(AtomTyping256, HBondRoles) {
-    EXPECT_TRUE(atom256::is_hbond_donor(atom256::N_sp3, 0));
-    EXPECT_TRUE(atom256::is_hbond_acceptor(atom256::N_sp3));
-    EXPECT_FALSE(atom256::is_hbond_donor(atom256::O_sp2, 0));
-    EXPECT_TRUE(atom256::is_hbond_acceptor(atom256::O_sp2));
-    EXPECT_FALSE(atom256::is_hbond_donor(atom256::N_sp, 0));
-    EXPECT_TRUE(atom256::is_hbond_acceptor(atom256::N_sp));
-    EXPECT_TRUE(atom256::is_hbond_donor(atom256::N_quat, 0));
-    EXPECT_FALSE(atom256::is_hbond_acceptor(atom256::N_quat));
+    EXPECT_FALSE(atom256::classify_hbond_donor(atom256::N_sp3, 0.0f, 1));
+    EXPECT_TRUE(atom256::classify_hbond_acceptor(atom256::N_sp3, 0.0f, 0));
+    EXPECT_FALSE(atom256::classify_hbond_donor(atom256::O_sp2, -0.5f, 0));
+    EXPECT_TRUE(atom256::classify_hbond_acceptor(atom256::O_sp2, -0.5f, 0));
+    EXPECT_FALSE(atom256::classify_hbond_donor(atom256::N_sp, 0.0f, 0));
+    EXPECT_TRUE(atom256::classify_hbond_acceptor(atom256::N_sp, 0.0f, 0));
+    EXPECT_TRUE(atom256::classify_hbond_donor(atom256::N_am, 0.0f, 1));
+    EXPECT_FALSE(atom256::classify_hbond_acceptor(atom256::N_am, 0.0f, 1));
+    EXPECT_FALSE(atom256::classify_hbond_donor(atom256::N_quat, 0.0f, 0));
+    EXPECT_FALSE(atom256::classify_hbond_acceptor(atom256::N_quat, 0.0f, 0));
 }
 
 TEST(AtomTyping256, EncodeFromSybyl) {
     uint8_t code = atom256::encode_from_sybyl(4, 0.1f, 0);
     EXPECT_EQ(atom256::get_base(code), atom256::C_ar);
-    EXPECT_FALSE(atom256::get_donor(code));
-    EXPECT_FALSE(atom256::get_acceptor(code));
+    EXPECT_FALSE(atom256::get_hbond_donor(code));
+    EXPECT_FALSE(atom256::get_hbond_acceptor(code));
 
-    code = atom256::encode_from_sybyl(8, 0.3f, 2);
+    code = atom256::encode_from_sybyl(11, 0.0f, 1);
+    EXPECT_EQ(atom256::get_base(code), atom256::N_am);
+    EXPECT_TRUE(atom256::get_hbond_donor(code));
+    EXPECT_FALSE(atom256::get_hbond_acceptor(code));
+
+    code = atom256::encode_from_sybyl(8, 0.0f, 0);
     EXPECT_EQ(atom256::get_base(code), atom256::N_sp3);
-    EXPECT_TRUE(atom256::get_donor(code));
-    EXPECT_TRUE(atom256::get_acceptor(code));
+    EXPECT_FALSE(atom256::get_hbond_donor(code));
+    EXPECT_TRUE(atom256::get_hbond_acceptor(code));
 
     // MG (28) → Metal_Mg, not Solvent
     code = atom256::encode_from_sybyl(28, 0.5f, 0);
