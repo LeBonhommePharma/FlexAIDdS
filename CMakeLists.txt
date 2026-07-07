@@ -1511,6 +1511,15 @@ if(BUILD_TESTING)
         TEST_NAME CavityDetectTests
     )
 
+    # test_read_spheres — read_spheres HETATM sphere PDB ingest
+    flexaids_add_unit_test(test_read_spheres
+        SOURCES
+            tests/test_read_spheres.cpp
+            LIB/read_spheres.cpp
+            LIB/fileio.cpp
+        TEST_NAME read_spheres
+    )
+
     # test_mif_grid — MIFGrid molecular interaction field tests
     flexaids_add_unit_test(test_mif_grid
         SOURCES tests/test_mif_grid.cpp

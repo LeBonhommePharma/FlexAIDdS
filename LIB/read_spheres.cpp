@@ -23,7 +23,7 @@ sphere* read_spheres(char filename[]){
 		for (i=0;i<6;i++) field[i] = buffer[i];
 		field[6] = '\0';
     
-		if (strcmp(field, "ATOM  ") == 0){
+		if (strncmp(buffer, "ATOM  ", 6) == 0 || strncmp(buffer, "HETATM", 6) == 0){
 			
 			sphere* _sphere;
 			_sphere = (sphere*)malloc(sizeof(sphere));
