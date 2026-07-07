@@ -235,7 +235,7 @@ jobs:
         with:
           python-version: '3.11'
       - name: Install skill test dependencies
-        run: python -m pip install --upgrade pip pytest pyyaml
+        run: python -m pip install --upgrade pip pytest pyyaml numpy
       - name: Check tracked secrets and hardcoded agent paths
         run: python3 scripts/check_repo_hygiene.py
       - name: Validate flexaidds skill packaging
@@ -245,6 +245,7 @@ jobs:
       - name: Skill unit tests (figure handler + resolve_build + edge cases)
         env:
           FLEXAIDDS_REQUIRE_BUILD: '0'
+          PYTHONPATH: ${{ github.workspace }}/python
         run: python3 -m pytest tests/test_flexaid_skill.py tests/test_flexaidds_skill_figure.py tests/test_resolve_build.py tests/test_skill_edge_cases.py -q --tb=line
 
   # New job: Validates the flexaidds skill's DatasetRunner features

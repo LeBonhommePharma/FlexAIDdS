@@ -20,7 +20,7 @@ jobs:
       - name: Install dependencies
         run: |
           bash scripts/ci/apt_get_update.sh
-          sudo apt-get install -y clang-18 llvm-18 cmake ninja-build libeigen3-dev lcov bc
+          sudo apt-get install -y --no-update clang-18 llvm-18 cmake ninja-build libeigen3-dev lcov bc
 
       - name: Configure CMake with coverage
         run: |

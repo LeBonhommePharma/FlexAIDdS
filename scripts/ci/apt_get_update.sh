@@ -7,13 +7,9 @@ if [[ "$(uname -s)" != "Linux" ]]; then
   exit 0
 fi
 
-for repo in \
-  /etc/apt/sources.list.d/microsoft-prod.list \
-  /etc/apt/sources.list.d/azure-cli.list \
-  /etc/apt/sources.list.d/msedge.list; do
-  if [[ -f "$repo" ]]; then
-    sudo mv "$repo" "${repo}.disabled" || sudo rm -f "$repo"
-  fi
+shopt -s nullglob
+for repo in /etc/apt/sources.list.d/*microsoft* /etc/apt/sources.list.d/*azure* /etc/apt/sources.list.d/*msedge*; do
+  sudo mv "$repo" "${repo}.disabled" 2>/dev/null || sudo rm -f "$repo"
 done
 
-sudo apt-get update -qq
+sudo apt-get update -qq -o Acquire::Retries=3
