@@ -755,10 +755,22 @@ class BenchmarkResult:
     @classmethod
     def from_json(cls, source: Union[str, Path]) -> "BenchmarkResult":
         """Load from JSON produced by :meth:`to_json`."""
-        source_path = Path(source)
-        if source_path.is_file():
-            text = source_path.read_text(encoding="utf-8")
+        # Robust path-vs-content detection (see models.py for rationale).
+        text = None
+        s = str(source).strip()
+        looks_like_json = (s.startswith("{") or s.startswith("[")) and len(s) > 2
+        if looks_like_json:
+            text = str(source)
         else:
+            try:
+                source_path = Path(source)
+                if source_path.is_file():
+                    text = source_path.read_text(encoding="utf-8")
+                else:
+                    text = str(source)
+            except (OSError, FileNotFoundError, RuntimeError):
+                text = str(source)
+        if text is None:
             text = str(source)
 
         payload = json.loads(text)
