@@ -115,6 +115,10 @@ function(flexaids_add_unit_test name)
         target_compile_definitions(${name} PRIVATE ${def})
     endforeach()
 
+    if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+        target_link_libraries(${name} PRIVATE m)
+    endif()
+
     if(ARG_TEST_NAME)
         add_test(NAME ${ARG_TEST_NAME} COMMAND ${name})
     else()
