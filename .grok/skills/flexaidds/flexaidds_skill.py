@@ -108,7 +108,11 @@ def figure_parameters_from_mapping(data: Optional[Mapping[str, Any]] = None) -> 
         return FigureParameters()
     cleaned: Dict[str, Any] = dict(data)
     for alias, target in _MANIFEST_ALIASES.items():
-        if alias in cleaned and target not in cleaned:
+        if alias not in cleaned:
+            continue
+        if target in cleaned:
+            cleaned.pop(alias)  # manifest alias must not override explicit tds_value
+        else:
             cleaned[target] = cleaned.pop(alias)
     unknown = set(cleaned) - _ALLOWED_PARAM_KEYS
     if unknown:
@@ -245,6 +249,8 @@ def generate_flexaids_figure(
         logger.info("No image_generator supplied — returning prompt only (deferred generation).")
         return result
 
+    out_dir = _resolve_output_dir(output_dir)
+
     try:
         gen_result = image_generator(prompt)
         if not isinstance(gen_result, dict) or "path" not in gen_result:
@@ -258,7 +264,6 @@ def generate_flexaids_figure(
         if not src_path.is_file():
             raise FileNotFoundError(f"Generator reported path that does not exist: {src_path}")
 
-        out_dir = _resolve_output_dir(output_dir)
         out_dir.mkdir(parents=True, exist_ok=True)
 
         # Unique, reproducible filename
@@ -287,9 +292,10 @@ def generate_flexaids_figure(
         logger.info("Figure generated and saved to %s (metadata: %s)", dst, meta_path)
         result["metadata_path"] = str(meta_path.resolve())
 
+    except ValueError:
+        raise
     except Exception as exc:
         logger.exception("Image generation failed: %s", exc)
-        # Re-raise as RuntimeError so callers (skill runtime) get a clean failure mode
         raise RuntimeError(f"Figure generation failed: {exc}") from exc
 
     return result
