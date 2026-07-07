@@ -5,7 +5,7 @@
 // Apache-2.0 (c) 2026 Le Bonhomme Pharma / NRGlab
 
 #include <gtest/gtest.h>
-#include "../LIB/HardwareDispatch.h"
+#include "../LIB/UnifiedHardwareDispatch.h"
 
 #include <cmath>
 #include <numeric>
@@ -19,24 +19,24 @@ static constexpr double EPSILON = 1e-6;
 // ===========================================================================
 
 TEST(HardwareDetection, DetectDoesNotCrash) {
-    auto& d = hw::HardwareDispatcher::instance();
+    auto& d = hw::UnifiedHardwareDispatch::instance();
     EXPECT_NO_THROW(d.detect());
 }
 
 TEST(HardwareDetection, ScalarAlwaysAvailable) {
-    auto& d = hw::HardwareDispatcher::instance();
+    auto& d = hw::UnifiedHardwareDispatch::instance();
     d.detect();
     EXPECT_TRUE(d.is_available(hw::Backend::SCALAR));
 }
 
 TEST(HardwareDetection, AutoAlwaysAvailable) {
-    auto& d = hw::HardwareDispatcher::instance();
+    auto& d = hw::UnifiedHardwareDispatch::instance();
     d.detect();
     EXPECT_TRUE(d.is_available(hw::Backend::AUTO));
 }
 
 TEST(HardwareDetection, AvailableBackendsNotEmpty) {
-    auto& d = hw::HardwareDispatcher::instance();
+    auto& d = hw::UnifiedHardwareDispatch::instance();
     d.detect();
     auto avail = d.available_backends();
     ASSERT_FALSE(avail.empty());
@@ -45,7 +45,7 @@ TEST(HardwareDetection, AvailableBackendsNotEmpty) {
 }
 
 TEST(HardwareDetection, HardwareReportIsNonEmpty) {
-    auto& d = hw::HardwareDispatcher::instance();
+    auto& d = hw::UnifiedHardwareDispatch::instance();
     d.detect();
     auto report = d.hardware_report();
     EXPECT_GT(report.size(), 50u);
@@ -54,13 +54,13 @@ TEST(HardwareDetection, HardwareReportIsNonEmpty) {
 }
 
 TEST(HardwareDetection, BackendNameIsValid) {
-    EXPECT_STREQ(hw::HardwareDispatcher::backend_name(hw::Backend::SCALAR), "scalar");
-    EXPECT_STREQ(hw::HardwareDispatcher::backend_name(hw::Backend::OPENMP), "OpenMP");
-    EXPECT_STREQ(hw::HardwareDispatcher::backend_name(hw::Backend::AVX2),   "AVX2");
-    EXPECT_STREQ(hw::HardwareDispatcher::backend_name(hw::Backend::AVX512), "AVX-512");
-    EXPECT_STREQ(hw::HardwareDispatcher::backend_name(hw::Backend::METAL),  "Metal");
-    EXPECT_STREQ(hw::HardwareDispatcher::backend_name(hw::Backend::CUDA),   "CUDA");
-    EXPECT_STREQ(hw::HardwareDispatcher::backend_name(hw::Backend::AUTO),   "auto");
+    EXPECT_STREQ(hw::UnifiedHardwareDispatch::backend_name(hw::Backend::SCALAR), "scalar");
+    EXPECT_STREQ(hw::UnifiedHardwareDispatch::backend_name(hw::Backend::OPENMP), "OpenMP");
+    EXPECT_STREQ(hw::UnifiedHardwareDispatch::backend_name(hw::Backend::AVX2),   "AVX2");
+    EXPECT_STREQ(hw::UnifiedHardwareDispatch::backend_name(hw::Backend::AVX512), "AVX-512");
+    EXPECT_STREQ(hw::UnifiedHardwareDispatch::backend_name(hw::Backend::METAL),  "Metal");
+    EXPECT_STREQ(hw::UnifiedHardwareDispatch::backend_name(hw::Backend::CUDA),   "CUDA");
+    EXPECT_STREQ(hw::UnifiedHardwareDispatch::backend_name(hw::Backend::AUTO),   "auto");
 }
 
 // ===========================================================================
@@ -68,7 +68,7 @@ TEST(HardwareDetection, BackendNameIsValid) {
 // ===========================================================================
 
 TEST(BackendOverride, OverrideAndClear) {
-    auto& d = hw::HardwareDispatcher::instance();
+    auto& d = hw::UnifiedHardwareDispatch::instance();
     d.detect();
 
     EXPECT_EQ(d.current_override(), hw::Backend::AUTO);
@@ -81,7 +81,7 @@ TEST(BackendOverride, OverrideAndClear) {
 }
 
 TEST(BackendSelection, FitnessEvalDefaultsToCpuBackend) {
-    auto& d = hw::HardwareDispatcher::instance();
+    auto& d = hw::UnifiedHardwareDispatch::instance();
     d.detect();
     d.clear_override();
 
@@ -93,7 +93,7 @@ TEST(BackendSelection, FitnessEvalDefaultsToCpuBackend) {
 }
 
 TEST(BackendSelection, GpuOverrideDoesNotApplyToFitnessEval) {
-    auto& d = hw::HardwareDispatcher::instance();
+    auto& d = hw::UnifiedHardwareDispatch::instance();
     d.detect();
 
     d.set_override(hw::Backend::CUDA);
@@ -108,13 +108,28 @@ TEST(BackendSelection, GpuOverrideDoesNotApplyToFitnessEval) {
     d.clear_override();
 }
 
+#ifdef FLEXAIDS_USE_METAL
+TEST(BackendSelection, MetalBuildKeepsFitnessOnCpu) {
+    auto& d = hw::UnifiedHardwareDispatch::instance();
+    d.detect();
+    d.clear_override();
+
+    if (!d.is_available(hw::Backend::METAL))
+        GTEST_SKIP() << "Metal runtime not available";
+
+    EXPECT_EQ(d.best_backend(hw::KernelType::SHANNON_ENTROPY), hw::Backend::METAL);
+    EXPECT_EQ(d.best_backend(hw::KernelType::CAVITY_DET), hw::Backend::METAL);
+    EXPECT_NE(d.best_backend(hw::KernelType::FITNESS_EVAL), hw::Backend::METAL);
+}
+#endif
+
 // ===========================================================================
 // SHANNON ENTROPY — DISPATCH CORRECTNESS
 // ===========================================================================
 
 class ShannonDispatchTest : public ::testing::Test {
 protected:
-    hw::HardwareDispatcher& d = hw::HardwareDispatcher::instance();
+    hw::UnifiedHardwareDispatch& d = hw::UnifiedHardwareDispatch::instance();
     std::vector<double> data;
 
     void SetUp() override {
@@ -159,6 +174,17 @@ TEST_F(ShannonDispatchTest, AVX512MatchesScalar) {
     EXPECT_NEAR(H_avx, H_scalar, EPSILON);
 }
 
+#ifdef FLEXAIDS_USE_METAL
+TEST_F(ShannonDispatchTest, MetalMatchesScalarWhenAvailable) {
+    if (!d.is_available(hw::Backend::METAL))
+        GTEST_SKIP() << "Metal runtime not available";
+
+    double H_scalar = d.compute_shannon_entropy(data, 20, hw::Backend::SCALAR);
+    double H_metal  = d.compute_shannon_entropy(data, 20, hw::Backend::METAL);
+    EXPECT_NEAR(H_metal, H_scalar, 1e-3);
+}
+#endif
+
 TEST_F(ShannonDispatchTest, Reproducible) {
     double H1 = d.compute_shannon_entropy(data, 20);
     double H2 = d.compute_shannon_entropy(data, 20);
@@ -192,7 +218,7 @@ TEST_F(ShannonDispatchTest, UpperBound) {
 // ===========================================================================
 
 TEST(LogSumExpDispatch, EmptyReturnsLargeNegative) {
-    auto& d = hw::HardwareDispatcher::instance();
+    auto& d = hw::UnifiedHardwareDispatch::instance();
     d.detect();
     std::vector<double> empty;
     double result = d.log_sum_exp(empty);
@@ -200,7 +226,7 @@ TEST(LogSumExpDispatch, EmptyReturnsLargeNegative) {
 }
 
 TEST(LogSumExpDispatch, SingleElement) {
-    auto& d = hw::HardwareDispatcher::instance();
+    auto& d = hw::UnifiedHardwareDispatch::instance();
     d.detect();
     std::vector<double> single = {5.0};
     double result = d.log_sum_exp(single);
@@ -208,7 +234,7 @@ TEST(LogSumExpDispatch, SingleElement) {
 }
 
 TEST(LogSumExpDispatch, KnownResult) {
-    auto& d = hw::HardwareDispatcher::instance();
+    auto& d = hw::UnifiedHardwareDispatch::instance();
     d.detect();
     // log(exp(0) + exp(0)) = log(2) ≈ 0.6931
     std::vector<double> vals = {0.0, 0.0};
@@ -217,7 +243,7 @@ TEST(LogSumExpDispatch, KnownResult) {
 }
 
 TEST(LogSumExpDispatch, NumericalStability) {
-    auto& d = hw::HardwareDispatcher::instance();
+    auto& d = hw::UnifiedHardwareDispatch::instance();
     d.detect();
     // Very large values should not overflow
     std::vector<double> large = {1000.0, 1001.0, 1002.0};
@@ -227,7 +253,7 @@ TEST(LogSumExpDispatch, NumericalStability) {
 }
 
 TEST(LogSumExpDispatch, ConsistentAcrossBackends) {
-    auto& d = hw::HardwareDispatcher::instance();
+    auto& d = hw::UnifiedHardwareDispatch::instance();
     d.detect();
     std::mt19937 rng(42);
     std::normal_distribution<double> dist(-10.0, 5.0);
@@ -239,19 +265,37 @@ TEST(LogSumExpDispatch, ConsistentAcrossBackends) {
     EXPECT_NEAR(lse_auto, lse_scalar, 1e-10);
 }
 
+#ifdef FLEXAIDS_USE_METAL
+TEST(LogSumExpDispatch, MetalMatchesScalarWhenAvailable) {
+    auto& d = hw::UnifiedHardwareDispatch::instance();
+    d.detect();
+    if (!d.is_available(hw::Backend::METAL))
+        GTEST_SKIP() << "Metal runtime not available";
+
+    std::mt19937 rng(42);
+    std::normal_distribution<double> dist(-10.0, 5.0);
+    std::vector<double> data(4096);
+    for (auto& v : data) v = dist(rng);
+
+    double lse_scalar = d.log_sum_exp(data, hw::Backend::SCALAR);
+    double lse_metal  = d.log_sum_exp(data, hw::Backend::METAL);
+    EXPECT_NEAR(lse_metal, lse_scalar, 1e-3);
+}
+#endif
+
 // ===========================================================================
 // BOLTZMANN WEIGHTS — DISPATCH CORRECTNESS
 // ===========================================================================
 
 TEST(BoltzmannDispatch, EmptyReturnsEmpty) {
-    auto& d = hw::HardwareDispatcher::instance();
+    auto& d = hw::UnifiedHardwareDispatch::instance();
     d.detect();
     auto w = d.compute_boltzmann_weights({}, 1.0);
     EXPECT_TRUE(w.empty());
 }
 
 TEST(BoltzmannDispatch, SumToOne) {
-    auto& d = hw::HardwareDispatcher::instance();
+    auto& d = hw::UnifiedHardwareDispatch::instance();
     d.detect();
     std::vector<double> E = {-15.0, -12.0, -10.0, -8.0, -5.0};
     double beta = 1.0 / (0.001987206 * 298.15);
@@ -261,7 +305,7 @@ TEST(BoltzmannDispatch, SumToOne) {
 }
 
 TEST(BoltzmannDispatch, LowestEnergyHighestWeight) {
-    auto& d = hw::HardwareDispatcher::instance();
+    auto& d = hw::UnifiedHardwareDispatch::instance();
     d.detect();
     std::vector<double> E = {-15.0, -12.0, -10.0};
     double beta = 1.0 / (0.001987206 * 298.15);
@@ -272,7 +316,7 @@ TEST(BoltzmannDispatch, LowestEnergyHighestWeight) {
 }
 
 TEST(BoltzmannDispatch, AllWeightsNonNegative) {
-    auto& d = hw::HardwareDispatcher::instance();
+    auto& d = hw::UnifiedHardwareDispatch::instance();
     d.detect();
     std::mt19937 rng(42);
     std::normal_distribution<double> dist(-15.0, 5.0);
@@ -286,18 +330,34 @@ TEST(BoltzmannDispatch, AllWeightsNonNegative) {
     }
 }
 
+#ifdef FLEXAIDS_USE_METAL
+TEST(BoltzmannDispatch, ExplicitMetalWeightsNormalizeWhenAvailable) {
+    auto& d = hw::UnifiedHardwareDispatch::instance();
+    d.detect();
+    if (!d.is_available(hw::Backend::METAL))
+        GTEST_SKIP() << "Metal runtime not available";
+
+    std::vector<double> E = {-15.0, -12.0, -10.0, -8.0, -5.0};
+    double beta = 1.0 / (0.001987206 * 298.15);
+    auto w = d.compute_boltzmann_weights(E, beta, hw::Backend::METAL);
+    double sum = std::accumulate(w.begin(), w.end(), 0.0);
+    EXPECT_NEAR(sum, 1.0, 1e-5);
+    EXPECT_GT(w[0], w[1]);
+}
+#endif
+
 // ===========================================================================
 // RMSD — DISPATCH CORRECTNESS
 // ===========================================================================
 
 TEST(RMSDDispatch, ZeroAtoms) {
-    auto& d = hw::HardwareDispatcher::instance();
+    auto& d = hw::UnifiedHardwareDispatch::instance();
     d.detect();
     EXPECT_FLOAT_EQ(d.rmsd(nullptr, nullptr, 0), 0.0f);
 }
 
 TEST(RMSDDispatch, IdenticalCoordsZeroRMSD) {
-    auto& d = hw::HardwareDispatcher::instance();
+    auto& d = hw::UnifiedHardwareDispatch::instance();
     d.detect();
     std::vector<float> c = {1.0f, 2.0f, 3.0f, 4.0f, 5.0f, 6.0f};
     float r = d.rmsd(c.data(), c.data(), 2);
@@ -305,7 +365,7 @@ TEST(RMSDDispatch, IdenticalCoordsZeroRMSD) {
 }
 
 TEST(RMSDDispatch, KnownValue) {
-    auto& d = hw::HardwareDispatcher::instance();
+    auto& d = hw::UnifiedHardwareDispatch::instance();
     d.detect();
     // Two atoms: A at (0,0,0),(0,0,0); B at (1,0,0),(0,1,0)
     // d^2 = 1 + 1 = 2, RMSD = sqrt(2/2) = 1.0
@@ -316,7 +376,7 @@ TEST(RMSDDispatch, KnownValue) {
 }
 
 TEST(RMSDDispatch, ConsistentAcrossBackends) {
-    auto& d = hw::HardwareDispatcher::instance();
+    auto& d = hw::UnifiedHardwareDispatch::instance();
     d.detect();
     std::mt19937 rng(42);
     std::uniform_real_distribution<float> dist(-50.0f, 50.0f);
@@ -335,7 +395,7 @@ TEST(RMSDDispatch, ConsistentAcrossBackends) {
 // ===========================================================================
 
 TEST(Distance2Dispatch, ScalarCorrectness) {
-    auto& d = hw::HardwareDispatcher::instance();
+    auto& d = hw::UnifiedHardwareDispatch::instance();
     d.detect();
     std::vector<float> ax = {1, 2, 3, 4};
     std::vector<float> ay = {0, 0, 0, 0};
@@ -351,7 +411,7 @@ TEST(Distance2Dispatch, ScalarCorrectness) {
 }
 
 TEST(Distance2Dispatch, ConsistentAcrossBackends) {
-    auto& d = hw::HardwareDispatcher::instance();
+    auto& d = hw::UnifiedHardwareDispatch::instance();
     d.detect();
     int n = 1024;
     std::mt19937 rng(42);
@@ -378,7 +438,7 @@ TEST(Distance2Dispatch, ConsistentAcrossBackends) {
 // ===========================================================================
 
 TEST(DispatchEdgeCases, LargeDataset) {
-    auto& d = hw::HardwareDispatcher::instance();
+    auto& d = hw::UnifiedHardwareDispatch::instance();
     d.detect();
     std::mt19937 rng(42);
     std::normal_distribution<double> dist(-10.0, 5.0);
@@ -391,7 +451,7 @@ TEST(DispatchEdgeCases, LargeDataset) {
 }
 
 TEST(DispatchEdgeCases, VeryLargeEnergies) {
-    auto& d = hw::HardwareDispatcher::instance();
+    auto& d = hw::UnifiedHardwareDispatch::instance();
     d.detect();
     std::vector<double> extreme(100);
     for (int i = 0; i < 100; ++i)
@@ -403,7 +463,7 @@ TEST(DispatchEdgeCases, VeryLargeEnergies) {
 }
 
 TEST(DispatchEdgeCases, MixedSignEnergies) {
-    auto& d = hw::HardwareDispatcher::instance();
+    auto& d = hw::UnifiedHardwareDispatch::instance();
     d.detect();
     std::vector<double> mixed = {-100.0, -50.0, 0.0, 50.0, 100.0};
     double H = d.compute_shannon_entropy(mixed, 5);

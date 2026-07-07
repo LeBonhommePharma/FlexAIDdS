@@ -28,10 +28,15 @@ tools:
     restarts: 1
     parallel_restarts: 0
     getcleft: /Users/lp.more/Projects/Get_Cleft/Get_Cleft
+    cavity_detect_cli: "{repo_root}/build_lto/cavity_detect_cli"
     cavity:
       protocol: main_occupied_cavity
-      use_precomputed: true
+      detector: native
+      use_precomputed: false
       top_cavities: 3
+      min_radius_A: 1.4
+      max_radius_A: 4.0
+      site_cutoff_A: 15.0
     mode: autonomous
     include_oracle_site: false
     ga_generations: 500

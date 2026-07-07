@@ -357,8 +357,10 @@ struct MetalEvalCtx {
 
 bool metal_eval_runtime_available()
 {
-    id<MTLDevice> device = MTLCreateSystemDefaultDevice();
-    return device != nil;
+    @autoreleasepool {
+        id<MTLDevice> device = MTLCreateSystemDefaultDevice();
+        return device != nil;
+    }
 }
 
 void metal_eval_get_capabilities(MetalCapabilities* out)

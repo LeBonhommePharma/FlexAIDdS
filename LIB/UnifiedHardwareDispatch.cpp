@@ -488,9 +488,14 @@ double UnifiedHardwareDispatch::compute_shannon_entropy(
     Backend b = (backend == Backend::AUTO) ? best_backend(KernelType::SHANNON_ENTROPY) : backend;
 
     switch (b) {
+        case Backend::METAL:
+#ifdef FLEXAIDS_HAS_METAL_SHANNON
+            if (ShannonMetalBridge::is_metal_available())
+                return ShannonMetalBridge::compute_shannon_entropy_metal(values, num_bins);
+#endif
+            [[fallthrough]];
         case Backend::CUDA:
         case Backend::ROCM:
-        case Backend::METAL:
             if (is_available(Backend::AVX512) && is_available(Backend::OPENMP))
                 return shannon_avx512_omp(values, num_bins);
             if (is_available(Backend::AVX512))
@@ -575,6 +580,13 @@ double UnifiedHardwareDispatch::log_sum_exp(const std::vector<double>& values, B
     Backend b = (backend == Backend::AUTO) ? best_backend(KernelType::PARTITION_FUNC) : backend;
 
     switch (b) {
+        case Backend::METAL:
+#ifdef FLEXAIDS_HAS_METAL_SHANNON
+            if (ShannonMetalBridge::is_metal_available())
+                return ShannonMetalBridge::log_sum_exp_metal(values);
+#endif
+            if (info_.has_eigen) return lse_eigen(values);
+            return lse_scalar(values);
         case Backend::AVX512: return lse_avx512(values);
         case Backend::OPENMP: return lse_openmp(values);
         case Backend::SCALAR: return lse_scalar(values);
@@ -599,6 +611,20 @@ std::vector<double> UnifiedHardwareDispatch::compute_boltzmann_weights(
     std::vector<double> log_w(N);
     for (std::size_t i = 0; i < N; ++i)
         log_w[i] = -beta * energies[i];
+
+#ifdef FLEXAIDS_HAS_METAL_SHANNON
+    if (backend == Backend::METAL && ShannonMetalBridge::is_metal_available()) {
+        double sum_w = 0.0;
+        double E_min = 0.0;
+        auto unnormalized = ShannonMetalBridge::compute_boltzmann_weights_metal(
+            energies, beta, sum_w, E_min);
+        if (sum_w > 0.0) {
+            for (double& w : unnormalized)
+                w /= sum_w;
+        }
+        return unnormalized;
+    }
+#endif
 
     double lnZ = log_sum_exp(log_w, backend);
 

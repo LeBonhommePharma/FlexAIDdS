@@ -17,6 +17,7 @@
 #include <vector>
 #include <mutex>
 #include <string>
+#include <cstdio>
 
 namespace ShannonMetalBridge {
 
@@ -42,32 +43,44 @@ static MetalContext& get_context() {
     std::call_once(flag, [&] {
         ctx.valid = false;
 
-        ctx.device = MTLCreateSystemDefaultDevice();
-        if (!ctx.device) return;
+        @autoreleasepool {
+            ctx.device = MTLCreateSystemDefaultDevice();
+            if (!ctx.device) return;
 
-        ctx.queue = [ctx.device newCommandQueue];
-        if (!ctx.queue) return;
+            ctx.queue = [ctx.device newCommandQueue];
+            if (!ctx.queue) return;
 
-        // Load library from default bundle or compiled metallib
-        NSError* err = nil;
-        ctx.library = [ctx.device newDefaultLibrary];
-        if (!ctx.library) return;
+            NSError* err = nil;
+#ifdef SHANNON_METALLIB_PATH
+            NSString* metallib_path = @SHANNON_METALLIB_PATH;
+            NSURL* metallib_url = [NSURL fileURLWithPath:metallib_path];
+            ctx.library = [ctx.device newLibraryWithURL:metallib_url error:&err];
+            if (!ctx.library) {
+                fprintf(stderr, "[ShannonMetal] failed to load metallib at %s: %s\n",
+                        [metallib_path UTF8String],
+                        err ? [[err localizedDescription] UTF8String] : "unknown");
+            }
+#endif
+            if (!ctx.library)
+                ctx.library = [ctx.device newDefaultLibrary];
+            if (!ctx.library) return;
 
-        // Build pipelines for each kernel
-        auto makePipeline = [&](NSString* name) -> id<MTLComputePipelineState> {
-            id<MTLFunction> fn = [ctx.library newFunctionWithName:name];
-            if (!fn) return nil;
-            return [ctx.device newComputePipelineStateWithFunction:fn error:&err];
-        };
+            // Build pipelines for each kernel
+            auto makePipeline = [&](NSString* name) -> id<MTLComputePipelineState> {
+                id<MTLFunction> fn = [ctx.library newFunctionWithName:name];
+                if (!fn) return nil;
+                return [ctx.device newComputePipelineStateWithFunction:fn error:&err];
+            };
 
-        ctx.histogramPipeline  = makePipeline(@"shannon_histogram");
-        ctx.boltzmannPipeline  = makePipeline(@"boltzmann_weights_batch");
-        ctx.sumReducePipeline  = makePipeline(@"parallel_sum_reduce");
-        ctx.logSumExpPipeline  = makePipeline(@"log_sum_exp_shifted");
+            ctx.histogramPipeline  = makePipeline(@"shannon_histogram");
+            ctx.boltzmannPipeline  = makePipeline(@"boltzmann_weights_batch");
+            ctx.sumReducePipeline  = makePipeline(@"parallel_sum_reduce");
+            ctx.logSumExpPipeline  = makePipeline(@"log_sum_exp_shifted");
 
-        ctx.valid = (ctx.histogramPipeline != nil);
+            ctx.valid = (ctx.histogramPipeline != nil);
 
-        ctx.deviceInfo = std::string([[ctx.device name] UTF8String]);
+            ctx.deviceInfo = std::string([[ctx.device name] UTF8String]);
+        }
     });
 
     return ctx;

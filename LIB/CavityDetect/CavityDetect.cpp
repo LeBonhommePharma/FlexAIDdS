@@ -35,6 +35,51 @@ namespace cavity_detect {
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
 
+static std::string trim_upper(std::string value) {
+    value.erase(value.begin(), std::find_if(value.begin(), value.end(), [](unsigned char c) {
+        return !std::isspace(c);
+    }));
+    value.erase(std::find_if(value.rbegin(), value.rend(), [](unsigned char c) {
+        return !std::isspace(c);
+    }).base(), value.end());
+    std::transform(value.begin(), value.end(), value.begin(), [](unsigned char c) {
+        return static_cast<char>(std::toupper(c));
+    });
+    return value;
+}
+
+static float vdw_radius_from_pdb_atom(const std::string& line, const std::string& atom_name) {
+    std::string element;
+    if (line.size() >= 78) {
+        element = trim_upper(line.substr(76, 2));
+    }
+    if (element.empty()) {
+        element = trim_upper(atom_name);
+        element.erase(std::remove_if(element.begin(), element.end(), [](unsigned char c) {
+            return std::isdigit(c) || c == '\'' || c == '*';
+        }), element.end());
+        if (element.size() >= 2) {
+            const std::string two = element.substr(0, 2);
+            if (two == "CL" || two == "BR")
+                element = two;
+            else
+                element = element.substr(0, 1);
+        }
+    }
+
+    if (element == "H")  return 1.20f;
+    if (element == "C")  return 1.70f;
+    if (element == "N")  return 1.55f;
+    if (element == "O")  return 1.52f;
+    if (element == "F")  return 1.47f;
+    if (element == "P")  return 1.80f;
+    if (element == "S")  return 1.80f;
+    if (element == "CL") return 1.75f;
+    if (element == "BR") return 1.85f;
+    if (element == "I")  return 1.98f;
+    return 1.70f;
+}
+
 float CavityDetector::distance(const float* a, const float* b) const {
     const float dx = a[0] - b[0];
     const float dy = a[1] - b[1];
@@ -283,14 +328,7 @@ void CavityDetector::load_from_pdb(const std::string& pdb_file) {
         a.coor[1] = std::stof(line.substr(38, 8));
         a.coor[2] = std::stof(line.substr(46, 8));
 
-        // Van der Waals radius from B-factor column if present; default 1.7 Å
-        if (line.size() >= 66) {
-            try { a.radius = std::stof(line.substr(60, 6)); }
-            catch (...) { a.radius = 1.7f; }
-        } else {
-            a.radius = 1.7f;
-        }
-        if (a.radius <= 0.0f) a.radius = 1.7f;
+        a.radius = vdw_radius_from_pdb_atom(line, name_str);
 
         a.ofres  = atom_idx;
         a.coor_ref = nullptr; a.par = nullptr;

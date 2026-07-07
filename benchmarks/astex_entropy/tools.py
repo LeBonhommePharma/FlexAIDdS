@@ -369,6 +369,114 @@ def _getcleft_executable(cfg: dict[str, Any], *, skip_missing: bool) -> str | No
     return _require_executable(str(configured), skip_missing=skip_missing)
 
 
+def _cavity_detector_kind(flex_cfg: dict[str, Any], cavity_cfg: dict[str, Any]) -> str:
+    return str(cavity_cfg.get("detector", flex_cfg.get("cavity_detector", "native"))).lower()
+
+
+def _native_cavity_detector_executable(cfg: dict[str, Any], *, skip_missing: bool) -> str | None:
+    flex_cfg = cfg["tools"].get("flexaidds", {})
+    cavity_cfg = flex_cfg.get("cavity", {}) if isinstance(flex_cfg.get("cavity", {}), dict) else {}
+    configured = (
+        cavity_cfg.get("cavity_detect_cli")
+        or flex_cfg.get("cavity_detect_cli")
+        or f"{cfg['repo_root']}/build_lto/cavity_detect_cli"
+    )
+    return _require_executable(str(configured), skip_missing=skip_missing)
+
+
+def _cavity_radius_args(cavity_cfg: dict[str, Any]) -> list[str]:
+    min_radius = float(cavity_cfg.get("min_radius_A", 1.4))
+    max_radius = float(cavity_cfg.get("max_radius_A", 4.0))
+    return ["--min-radius", str(min_radius), "--max-radius", str(max_radius)]
+
+
+def _cavity_site_cutoff_args(cavity_cfg: dict[str, Any]) -> list[str]:
+    cutoff = float(cavity_cfg.get("site_cutoff_A", 15.0))
+    return ["--site-cutoff", str(cutoff)]
+
+
+def _run_native_cavity_occupied(
+    record: TargetRecord,
+    cfg: dict[str, Any],
+    mode: str,
+    *,
+    skip_missing: bool,
+) -> Path:
+    receptor = Path(record.receptor_pdb)
+    if not receptor.exists():
+        raise RuntimeError(f"{record.target_id}: receptor missing for native CavityDetector run: {receptor}")
+
+    ligand = Path(record.cavity_ligand_sdf or record.reference_sdf)
+    if not ligand.exists():
+        raise RuntimeError(f"{record.target_id}: original ligand missing for occupied-cavity selection: {ligand}")
+
+    exe = _native_cavity_detector_executable(cfg, skip_missing=skip_missing)
+    if exe is None:
+        raise RuntimeError(f"{record.target_id}: native cavity_detect_cli is required for occupied-cavity generation")
+
+    flex_cfg = cfg["tools"].get("flexaidds", {})
+    cavity_cfg = flex_cfg.get("cavity", {}) if isinstance(flex_cfg.get("cavity", {}), dict) else {}
+    out_dir = Path(cfg["work_dir"]) / "cavities" / mode / record.target_dir_name / "native_occupied"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    out_path = out_dir / f"{record.target_dir_name}_occupied_sph_1.pdb"
+    if out_path.exists():
+        return out_path
+
+    args = [
+        exe,
+        "--receptor", str(receptor),
+        "--ligand", str(ligand),
+        "--out", str(out_path),
+        *_cavity_radius_args(cavity_cfg),
+        *_cavity_site_cutoff_args(cavity_cfg),
+    ]
+    run_command(args, cwd=cfg["repo_root"], log_path=out_dir / "cavity_detect_cli.log")
+    if not out_path.exists():
+        raise RuntimeError(f"{record.target_id}: native CavityDetector produced no occupied cavity at {out_path}")
+    return out_path
+
+
+def _run_native_cavity_multi(
+    record: TargetRecord,
+    cfg: dict[str, Any],
+    mode: str,
+    *,
+    top_cavities: int,
+    skip_missing: bool,
+) -> list[Path]:
+    receptor = Path(record.receptor_pdb)
+    if not receptor.exists():
+        raise RuntimeError(f"{record.target_id}: receptor missing for native CavityDetector run: {receptor}")
+
+    exe = _native_cavity_detector_executable(cfg, skip_missing=skip_missing)
+    if exe is None:
+        raise RuntimeError(f"{record.target_id}: native cavity_detect_cli is required for multi-cavity generation")
+
+    flex_cfg = cfg["tools"].get("flexaidds", {})
+    cavity_cfg = flex_cfg.get("cavity", {}) if isinstance(flex_cfg.get("cavity", {}), dict) else {}
+    out_dir = Path(cfg["work_dir"]) / "cavities" / mode / record.target_dir_name / "native_multi"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    prefix = record.target_dir_name
+    existing = sorted(out_dir.glob(f"{prefix}_sph_*.pdb"), key=_rank_from_cleft_name)
+    if len(existing) >= top_cavities:
+        return existing[:top_cavities]
+    for stale in out_dir.glob(f"{prefix}_sph_*.pdb"):
+        stale.unlink()
+    args = [
+        exe,
+        "--receptor", str(receptor),
+        "--out-dir", str(out_dir),
+        "--prefix", prefix,
+        "--top", str(top_cavities),
+        *_cavity_radius_args(cavity_cfg),
+    ]
+    run_command(args, cwd=cfg["repo_root"], log_path=out_dir / "cavity_detect_cli.log")
+    matches = sorted(out_dir.glob(f"{prefix}_sph_*.pdb"), key=_rank_from_cleft_name)
+    if not matches:
+        raise RuntimeError(f"{record.target_id}: native CavityDetector produced no ranked cavities in {out_dir}")
+    return matches[:top_cavities]
+
+
 def _run_getcleft_occupied(
     record: TargetRecord,
     cfg: dict[str, Any],
@@ -446,16 +554,22 @@ def _expand_flexaidds_cavity_targets(
     flex_cfg = cfg["tools"].get("flexaidds", {})
     cavity_cfg = flex_cfg.get("cavity", {}) if isinstance(flex_cfg.get("cavity", {}), dict) else {}
     protocol = str(cavity_cfg.get("protocol", flex_cfg.get("cavity_protocol", "main_occupied_cavity"))).lower()
+    detector = _cavity_detector_kind(flex_cfg, cavity_cfg)
     if protocol in {"", "none", "off", "legacy"}:
         return records
 
     if protocol in {"main", "main_occupied", "main_occupied_cavity", "occupied"}:
         expanded: list[TargetRecord] = []
-        use_precomputed = bool(cavity_cfg.get("use_precomputed", True))
+        use_precomputed = bool(cavity_cfg.get("use_precomputed", False))
         for record in records:
             cleft = Path(record.pocket_pdb) if use_precomputed and record.pocket_pdb else None
             if not cleft or not cleft.exists():
-                cleft = _run_getcleft_occupied(record, cfg, mode, skip_missing=skip_missing)
+                if detector in {"native", "native_cavity_detector", "cavity_detect", "cavity_detector", "flexaidds"}:
+                    cleft = _run_native_cavity_occupied(record, cfg, mode, skip_missing=skip_missing)
+                elif detector in {"getcleft", "get_cleft", "external_getcleft"}:
+                    cleft = _run_getcleft_occupied(record, cfg, mode, skip_missing=skip_missing)
+                else:
+                    raise RuntimeError(f"Unknown FlexAIDdS cavity detector: {detector}")
             expanded.append(_copy_target(record, cleft_sphere_pdb=str(cleft)))
         return expanded
 
@@ -463,10 +577,17 @@ def _expand_flexaidds_cavity_targets(
         top_cavities = int(cavity_cfg.get("top_cavities", flex_cfg.get("top_cavities", 3)))
         expanded = []
         for record in records:
-            for rank, cleft in enumerate(
-                _run_getcleft_multi(record, cfg, mode, top_cavities=top_cavities, skip_missing=skip_missing),
-                1,
-            ):
+            if detector in {"native", "native_cavity_detector", "cavity_detect", "cavity_detector", "flexaidds"}:
+                clefts = _run_native_cavity_multi(
+                    record, cfg, mode, top_cavities=top_cavities, skip_missing=skip_missing
+                )
+            elif detector in {"getcleft", "get_cleft", "external_getcleft"}:
+                clefts = _run_getcleft_multi(
+                    record, cfg, mode, top_cavities=top_cavities, skip_missing=skip_missing
+                )
+            else:
+                raise RuntimeError(f"Unknown FlexAIDdS cavity detector: {detector}")
+            for rank, cleft in enumerate(clefts, 1):
                 expanded.append(
                     _copy_target(
                         record,
@@ -779,6 +900,7 @@ def _flexaidds_pair_json(records: list[TargetRecord], cfg: dict[str, Any], mode:
         "description": "Generated by benchmarks.astex_entropy for FlexAIDdS head-to-head benchmarking.",
         "oracle_mode": include_oracle,
         "cavity_protocol": cavity_cfg.get("protocol", flex_cfg.get("cavity_protocol", "")),
+        "cavity_detector": _cavity_detector_kind(flex_cfg, cavity_cfg),
         "pairs": pairs,
     }
     out_path = Path(cfg["work_dir"]) / "manifests" / f"{mode}_flexaidds_crossdock.json"

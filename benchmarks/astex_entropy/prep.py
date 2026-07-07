@@ -158,6 +158,7 @@ def prepare_native(
             source_complex=str(source_complex) if source_complex.exists() else "",
             pocket_pdb=str(pocket) if pocket.exists() else "",
             cavity_source_pdb=str(source_complex) if source_complex.exists() else "",
+            cavity_ligand_sdf=str(reference_dst),
         )
         prepare_tool_inputs(record, cfg, target_dir, force=force)
         records.append(record)
@@ -201,6 +202,7 @@ def prepare_non_native(
         local_target_apo = (local_target_dir / f"{target_pdb.upper()}_apo.pdb") if local_target_dir else None
         local_target_complex = (local_target_dir / f"{target_pdb.upper()}.pdb") if local_target_dir else None
         local_target_site = (local_target_dir / f"{target_pdb.upper()}_binding_site.pdb") if local_target_dir else None
+        local_target_ligand_sdf = (local_target_dir / f"{target_pdb.upper()}_ligand.sdf") if local_target_dir else None
         local_ligand_sdf = (local_ligand_dir / f"{ligand_pdb.upper()}_ligand.sdf") if local_ligand_dir else None
         local_ligand_complex = (local_ligand_dir / f"{ligand_pdb.upper()}.pdb") if local_ligand_dir else None
 
@@ -250,6 +252,7 @@ def prepare_non_native(
             source_complex=str(local_ligand_complex) if local_ligand_complex and local_ligand_complex.exists() else str(ligand_raw),
             pocket_pdb=str(local_target_site) if local_target_site and local_target_site.exists() else "",
             cavity_source_pdb=str(local_target_complex) if local_target_complex and local_target_complex.exists() else str(target_raw),
+            cavity_ligand_sdf=str(local_target_ligand_sdf) if local_target_ligand_sdf and local_target_ligand_sdf.exists() else str(reference_sdf),
             ligand_source_id=ligand_pdb.upper(),
             notes=row.get("target_name", ""),
         )

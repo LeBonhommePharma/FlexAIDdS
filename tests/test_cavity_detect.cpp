@@ -59,6 +59,36 @@ static std::string write_test_pdb(const std::string& filename) {
     return path;
 }
 
+static std::string write_high_bfactor_test_pdb(const std::string& filename) {
+    std::string path = filename;
+    std::ofstream out(path);
+    float coords[][3] = {
+        { 0.0f,  0.0f,  0.0f},
+        { 8.0f,  0.0f,  0.0f},
+        { 0.0f,  8.0f,  0.0f},
+        { 8.0f,  8.0f,  0.0f},
+        { 0.0f,  0.0f,  8.0f},
+        { 8.0f,  0.0f,  8.0f},
+        { 0.0f,  8.0f,  8.0f},
+        { 8.0f,  8.0f,  8.0f},
+        { 4.0f,  0.0f,  0.0f},
+        { 0.0f,  4.0f,  0.0f},
+        { 0.0f,  0.0f,  4.0f},
+    };
+
+    int n_atoms = sizeof(coords) / sizeof(coords[0]);
+    for (int i = 0; i < n_atoms; ++i) {
+        char line[120];
+        std::snprintf(line, sizeof(line),
+            "ATOM  %5d  CA  ALA A%4d    %8.3f%8.3f%8.3f  1.00 99.99           C\n",
+            i + 1, i + 1, coords[i][0], coords[i][1], coords[i][2]);
+        out << line;
+    }
+    out << "END\n";
+    out.close();
+    return path;
+}
+
 // ===========================================================================
 // CONSTRUCTION
 // ===========================================================================
@@ -88,6 +118,16 @@ TEST(CavityDetect, LoadFromMissingPDB) {
     detector.load_from_pdb("nonexistent_file_xyz.pdb");
     // Should gracefully handle missing file
     EXPECT_TRUE(detector.clefts().empty());
+}
+
+TEST(CavityDetect, PDBBFactorIsNotUsedAsRadius) {
+    std::string pdb = write_high_bfactor_test_pdb("test_cavity_high_bfactor.pdb");
+    CavityDetector detector;
+    detector.load_from_pdb(pdb);
+    detector.detect(1.0f, 4.0f);
+
+    EXPECT_GE(detector.clefts().size(), 1u);
+    std::filesystem::remove(pdb);
 }
 
 // ===========================================================================

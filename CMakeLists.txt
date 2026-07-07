@@ -810,6 +810,39 @@ if(BUILD_FLEXAIDDS_FAST)
     message(STATUS "FlexAIDdS fast executable enabled")
 endif()
 
+function(flexaids_attach_metal_dispatch_runtime target_name)
+    if(NOT FLEXAIDS_USE_METAL)
+        return()
+    endif()
+    target_sources(${target_name} PRIVATE
+        LIB/metal_eval.mm
+        LIB/ShannonThermoStack/ShannonMetalBridge.mm
+    )
+    target_compile_definitions(${target_name} PRIVATE
+        FLEXAIDS_USE_METAL
+        FLEXAIDS_HAS_METAL_SHANNON
+    )
+    if(DEFINED SHANNON_METALLIB)
+        target_compile_definitions(${target_name} PRIVATE
+            SHANNON_METALLIB_PATH="${SHANNON_METALLIB}"
+        )
+    endif()
+    target_compile_options(${target_name} PRIVATE -fno-objc-arc)
+    target_link_libraries(${target_name} PRIVATE
+        ${METAL_LIBRARY}
+        ${FOUNDATION_LIBRARY}
+        ${METALKIT_LIBRARY}
+    )
+    set_source_files_properties(
+        LIB/metal_eval.mm
+        LIB/ShannonThermoStack/ShannonMetalBridge.mm
+        PROPERTIES LANGUAGE OBJCXX COMPILE_FLAGS "-std=c++26 -fno-objc-arc"
+    )
+    if(TARGET ShannonEntropyMetal)
+        add_dependencies(${target_name} ShannonEntropyMetal)
+    endif()
+endfunction()
+
 # ─── NATURaL Hammerhead Ribozyme simulation (standalone) ─────────────────────
 # Runs the Zhao 2011 RNAP master equation on the 40-nt Schistosoma mansoni
 # minimal hammerhead ribozyme in co-transcriptional (RNAP) mode.
@@ -913,10 +946,57 @@ if(ENABLE_DISPATCH_BENCHMARK)
     target_link_libraries(benchmark_dispatch PRIVATE Eigen3::Eigen)
 
     target_compile_definitions(benchmark_dispatch PRIVATE FLEXAIDS_HAS_EIGEN)
+    flexaids_attach_metal_dispatch_runtime(benchmark_dispatch)
     message(STATUS "Dispatch benchmark enabled — build target: benchmark_dispatch")
 endif()
 
 endif() # FLEXAIDS_BUILD_CORE
+
+# ─── Native CavityDetector CLI ─────────────────────────────────────────────
+option(ENABLE_CAVITY_DETECT_CLI "Build native FlexAIDdS cavity detector CLI" ON)
+if(ENABLE_CAVITY_DETECT_CLI)
+    add_executable(cavity_detect_cli
+        LIB/cavity_detect_cli.cpp
+    )
+    target_link_libraries(cavity_detect_cli PRIVATE flexaid_core)
+    target_include_directories(cavity_detect_cli PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/LIB)
+    if(MSVC)
+        target_compile_options(cavity_detect_cli PRIVATE /O2 /fp:fast)
+        target_compile_definitions(cavity_detect_cli PRIVATE
+            _CRT_SECURE_NO_WARNINGS _USE_MATH_DEFINES NOMINMAX)
+    else()
+        target_compile_options(cavity_detect_cli PRIVATE -O3 -ffast-math -fno-finite-math-only)
+    endif()
+    flexaids_configure_simd(cavity_detect_cli)
+    if(FLEXAIDS_USE_OPENMP AND OpenMP_CXX_FOUND)
+        target_link_libraries(cavity_detect_cli PRIVATE OpenMP::OpenMP_CXX)
+    endif()
+    if(FLEXAIDS_USE_METAL)
+        target_sources(cavity_detect_cli PRIVATE
+            LIB/CavityDetect/CavityDetectMetalBridge.mm
+        )
+        target_compile_definitions(cavity_detect_cli PRIVATE FLEXAIDS_USE_METAL)
+        target_compile_options(cavity_detect_cli PRIVATE -fno-objc-arc)
+        target_link_libraries(cavity_detect_cli PRIVATE
+            ${METAL_LIBRARY}
+            ${FOUNDATION_LIBRARY}
+            ${METALKIT_LIBRARY}
+        )
+        set_source_files_properties(
+            LIB/CavityDetect/CavityDetectMetalBridge.mm
+            PROPERTIES LANGUAGE OBJCXX COMPILE_FLAGS "-std=c++26 -fno-objc-arc"
+        )
+        if(TARGET CavityDetectMetalDS)
+            add_dependencies(cavity_detect_cli CavityDetectMetalDS)
+        endif()
+        if(DEFINED CAVITY_METALLIB_DS)
+            target_compile_definitions(cavity_detect_cli PRIVATE
+                CAVITY_METALLIB_PATH="${CAVITY_METALLIB_DS}"
+            )
+        endif()
+    endif()
+    message(STATUS "Native CavityDetector CLI enabled -- build target: cavity_detect_cli")
+endif()
 
 # ─── Benchmark Dataset Runner ──────────────────────────────────────────────
 option(ENABLE_BENCHMARK_DATASETS "Build benchmark dataset runner" ON)
@@ -1145,9 +1225,7 @@ if(BUILD_TESTING)
         target_compile_definitions(test_hardware_detect_dispatch PRIVATE FLEXAIDS_USE_CUDA)
         target_link_libraries(test_hardware_detect_dispatch PRIVATE CUDA::cudart)
     endif()
-    if(FLEXAIDS_USE_METAL)
-        target_compile_definitions(test_hardware_detect_dispatch PRIVATE FLEXAIDS_USE_METAL)
-    endif()
+    flexaids_attach_metal_dispatch_runtime(test_hardware_detect_dispatch)
     if(FLEXAIDS_USE_ROCM)
         target_compile_definitions(test_hardware_detect_dispatch PRIVATE FLEXAIDS_USE_ROCM)
         target_include_directories(test_hardware_detect_dispatch PRIVATE ${hip_INCLUDE_DIRS})
@@ -1155,6 +1233,30 @@ if(BUILD_TESTING)
     endif()
     flexaids_configure_msvc_test(test_hardware_detect_dispatch)
     add_test(NAME HardwareDetectDispatchTests COMMAND test_hardware_detect_dispatch)
+
+    # test_unified_dispatch — runtime HardwareDispatcher tests
+    add_executable(test_unified_dispatch
+        tests/test_unified_dispatch.cpp
+        LIB/UnifiedHardwareDispatch.cpp
+        LIB/hardware_detect.cpp
+    )
+    target_include_directories(test_unified_dispatch PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/LIB)
+    target_link_libraries(test_unified_dispatch PRIVATE GTest::gtest_main)
+    if(MSVC)
+        target_compile_options(test_unified_dispatch PRIVATE /O2)
+    else()
+        target_compile_options(test_unified_dispatch PRIVATE -O2)
+    endif()
+    flexaids_configure_simd(test_unified_dispatch)
+    if(FLEXAIDS_USE_OPENMP AND OpenMP_CXX_FOUND)
+        target_link_libraries(test_unified_dispatch PRIVATE OpenMP::OpenMP_CXX)
+    endif()
+    target_link_libraries(test_unified_dispatch PRIVATE Eigen3::Eigen)
+    target_compile_definitions(test_unified_dispatch PRIVATE FLEXAIDS_HAS_EIGEN)
+    flexaids_attach_metal_dispatch_runtime(test_unified_dispatch)
+    flexaids_configure_msvc_test(test_unified_dispatch)
+    add_test(NAME UnifiedDispatchTests COMMAND test_unified_dispatch)
 
     # test_tencom_diff — tENCoM differential engine tests
     flexaids_add_unit_test(test_tencom_diff
@@ -2441,28 +2543,6 @@ if(BUILD_SWIFT_BRIDGE)
     target_link_libraries(FlexAIDCore PUBLIC ${FOUNDATION_LIBRARY})
 
     message(STATUS "Swift bridge enabled — build target: FlexAIDCore (static library)")
-
-    # test_unified_dispatch — runtime HardwareDispatcher tests
-    add_executable(test_unified_dispatch
-        tests/test_unified_dispatch.cpp
-        LIB/UnifiedHardwareDispatch.cpp
-    )
-    target_include_directories(test_unified_dispatch PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/LIB)
-    target_link_libraries(test_unified_dispatch PRIVATE GTest::gtest_main)
-    if(MSVC)
-        target_compile_options(test_unified_dispatch PRIVATE /O2)
-    else()
-        target_compile_options(test_unified_dispatch PRIVATE -O2)
-    endif()
-    flexaids_configure_simd(test_unified_dispatch)
-    if(FLEXAIDS_USE_OPENMP AND OpenMP_CXX_FOUND)
-        target_link_libraries(test_unified_dispatch PRIVATE OpenMP::OpenMP_CXX)
-    endif()
-    target_link_libraries(test_unified_dispatch PRIVATE Eigen3::Eigen)
-
-    target_compile_definitions(test_unified_dispatch PRIVATE FLEXAIDS_HAS_EIGEN)
-    add_test(NAME UnifiedDispatchTests COMMAND test_unified_dispatch)
 
     # test_coarse_screen — NRGRank CoarseScreen + TwoStageScreen unit tests
     add_executable(test_coarse_screen

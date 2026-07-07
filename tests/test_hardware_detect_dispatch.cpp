@@ -117,6 +117,22 @@ TEST(BackendSelection, CPUBackendIsNotGPU) {
     EXPECT_NE(b, HardwareBackend::METAL);
 }
 
+#ifdef FLEXAIDS_USE_METAL
+TEST(BackendSelection, MetalDetectionAgreesAcrossDispatchLayers) {
+    const auto& legacy_hw = detect_hardware();
+    auto& d = hw::UnifiedHardwareDispatch::instance();
+    d.detect();
+
+    EXPECT_EQ(d.info().has_metal, legacy_hw.has_metal);
+    if (!legacy_hw.has_metal)
+        GTEST_SKIP() << "Metal runtime not available";
+
+    EXPECT_EQ(d.best_backend(hw::KernelType::SHANNON_ENTROPY), hw::Backend::METAL);
+    EXPECT_EQ(d.best_backend(hw::KernelType::CAVITY_DET), hw::Backend::METAL);
+    EXPECT_NE(d.best_backend(hw::KernelType::FITNESS_EVAL), hw::Backend::METAL);
+}
+#endif
+
 TEST(BackendSelection, BackendNameValid) {
     for (int i = 0; i <= 6; ++i) {
         const char* name = backend_name(static_cast<HardwareBackend>(i));
