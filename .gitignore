@@ -65,7 +65,7 @@ benchmarks/astex_entropy/
 benchmarks/results/
 results/local/
 wrk/
-BIN/
+/BIN/
 
 # Additional build and temp artifacts
 build*/

@@ -17,10 +17,15 @@
                 "minimum": 0,
                 "description": "Representative TΔS (or |TΔS|) value in kcal/mol scale (e.g. 0.93)."
               },
+              "tds_value": {
+                "type": "number",
+                "minimum": 0,
+                "description": "Value displayed as prominent -TΔS in the figure (e.g. 1.4)."
+              },
               "enthalpy_value": {
                 "type": "number",
                 "minimum": 0,
-                "description": "Representative ΔH (or |ΔH|) value (e.g. 1.4)."
+                "description": "Alias for tds_value (legacy manifest key; maps to -TΔS display slot)."
               },
               "index_value": {
                 "type": "number",
@@ -89,9 +94,13 @@
           "params": {
             "type": "object",
             "description": "The effective FigureParameters used (for audit)."
+          },
+          "metadata": {
+            "type": "object",
+            "description": "Reproducibility metadata from the canonical prompt builder (always present)."
           }
         },
-        "required": ["prompt", "params"]
+        "required": ["prompt", "params", "metadata"]
       }
     }
   },

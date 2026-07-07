@@ -28,24 +28,47 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"   # repo root
 
-# --- 1. Environment & PATH guarantee ----------------------------------------
-source ~/.flexaidds_env 2>/dev/null || {
-    echo "FATAL: Could not source ~/.flexaidds_env"
+# --- 1. Arguments (check before env so --help-style usage works) ------------
+if [ $# -ne 3 ]; then
+    echo "Usage: $0 <dataset> <temperature> <results_subdir_name>"
+    echo "Example: $0 astex_nonnative 310 astex_nonnative_310K"
+    echo ""
+    echo "Requires benchmark_datasets on PATH. Set FLEXAIDDS_BUILD or source ~/.flexaidds_env"
     exit 1
-}
+fi
+
+# --- 2. Environment & PATH guarantee ----------------------------------------
+FLEXAIDDS_BUILD="${FLEXAIDDS_BUILD:-}"
+
+if [ -f "${HOME}/.flexaidds_env" ]; then
+    # shellcheck disable=SC1091
+    source "${HOME}/.flexaidds_env"
+fi
+
+if [ -z "${FLEXAIDDS_BUILD:-}" ]; then
+    for candidate in \
+        "$REPO_ROOT/build_lto" \
+        "$REPO_ROOT/build" \
+        "${HOME}/Projects/FlexAIDdS/build_lto" \
+        "${HOME}/Projects/FlexAIDdS/build"; do
+        if [ -x "$candidate/benchmark_datasets" ]; then
+            FLEXAIDDS_BUILD="$candidate"
+            break
+        fi
+    done
+fi
+
+if [ -z "${FLEXAIDDS_BUILD:-}" ]; then
+    echo "FATAL: FLEXAIDDS_BUILD not set and no benchmark_datasets found."
+    echo "       Source ~/.flexaidds_env or export FLEXAIDDS_BUILD=/path/to/build"
+    exit 1
+fi
 
 export PATH="$FLEXAIDDS_BUILD:$PATH"
 
 if ! command -v benchmark_datasets >/dev/null 2>&1; then
     echo "FATAL: benchmark_datasets not found after PATH export."
-    echo "       Expected symlink at: $FLEXAIDDS_BUILD/benchmark_datasets"
-    exit 1
-fi
-
-# --- 2. Arguments -----------------------------------------------------------
-if [ $# -ne 3 ]; then
-    echo "Usage: $0 <dataset> <temperature> <results_subdir_name>"
-    echo "Example: $0 astex_nonnative 310 astex_nonnative_310K"
+    echo "       Expected at: $FLEXAIDDS_BUILD/benchmark_datasets"
     exit 1
 fi
 

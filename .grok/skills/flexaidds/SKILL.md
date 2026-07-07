@@ -428,7 +428,7 @@ See also the launched dirs' run_status.json + binary.log for live proof.
 
 ### Convenience Shortcuts (`bin/` directory)
 
-For ergonomics, the skill provides short commands in `bin/`:
+For ergonomics, the skill provides executable shell wrappers in `bin/` (never symlinks into `scripts/` — editing a symlink would corrupt the underlying Python tools):
 
 ```bash
 .grok/skills/flexaidds/bin/ensure-docking-data

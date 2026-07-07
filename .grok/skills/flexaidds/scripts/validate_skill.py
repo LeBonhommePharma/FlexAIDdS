@@ -173,6 +173,44 @@ def check_aliases_documented() -> bool:
     return True
 
 
+def check_bin_wrappers() -> bool:
+    """bin/ entries must be executable shell wrappers, not symlinks into scripts/."""
+    bin_dir = SKILL_DIR / "bin"
+    if not bin_dir.is_dir():
+        fail("bin/ directory missing")
+        return False
+    expected = (
+        "validate-skill",
+        "ensure-docking-data",
+        "inspect-definition-files",
+        "update-skill",
+        "dataset-runner",
+    )
+    missing = [name for name in expected if not (bin_dir / name).exists()]
+    if missing:
+        for name in missing:
+            fail(f"Missing bin/ wrapper: {name}")
+        return False
+    for name in expected:
+        path = bin_dir / name
+        if path.is_symlink():
+            fail(f"bin/{name} must not be a symlink (would overwrite scripts/ if edited)")
+            return False
+        if not os.access(path, os.X_OK):
+            fail(f"bin/{name} is not executable")
+            return False
+        try:
+            header = path.read_text(encoding="utf-8").splitlines()[0]
+        except (OSError, UnicodeDecodeError) as exc:
+            fail(f"bin/{name} unreadable: {exc}")
+            return False
+        if not header.startswith("#!"):
+            fail(f"bin/{name} must be a shell wrapper with shebang")
+            return False
+    ok(f"bin/ wrappers present and executable ({len(expected)} commands)")
+    return True
+
+
 def check_guardrails() -> bool:
     skill_md = SKILL_DIR / "SKILL.md"
     content = skill_md.read_text(encoding="utf-8").lower()
@@ -207,6 +245,7 @@ def main() -> int:
         ("xml-well-formed", validate_xml_files()),
         ("no-broken-refs", check_broken_local_refs()),
         ("aliases-documented", check_aliases_documented()),
+        ("bin-wrappers", check_bin_wrappers()),
         ("guardrails", check_guardrails()),
     ]
 

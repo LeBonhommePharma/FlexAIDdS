@@ -17,7 +17,7 @@ Primary use cases:
 
 Safety & Design Principles (non-negotiable):
 - Dry-run by default. Nothing is modified unless you explicitly request it.
-- Pure symlinks in bin/ (never wrappers or duplicated logic).
+- Thin executable bin/ wrappers (exec python3 on scripts/; never duplicate logic).
 - Always ends with the skill validator (unless --no-validate).
 - Clear distinction between "I have a full FlexAIDδS checkout" vs "I only have the portable folder".
 - Banners and shortcuts are purely informational. No scientific claim is ever valid
@@ -25,6 +25,7 @@ Safety & Design Principles (non-negotiable):
 """
 
 import argparse
+import os
 import shutil
 import subprocess
 import sys
@@ -128,10 +129,14 @@ def find_canonical_source(explicit_source: Optional[Path] = None) -> Optional[So
         print(f"[WARN] --source {explicit_source} does not look like a FlexAIDδS checkout.")
         return None
 
-    # Environment variable (power users)
-    env_root = Path.home() if "FLEXAIDDS_ROOT" not in __import__("os").environ else Path(__import__("os").environ["FLEXAIDDS_ROOT"])
-    if env_root and (env_root / ".grok/skills/flexaidds/SKILL.md").exists():
-        return SourceInfo(root=env_root, is_full_checkout=True, confidence="env")
+    # Environment variable (power users) — never treat $HOME as FLEXAIDDS_ROOT
+    env_root_raw = os.environ.get("FLEXAIDDS_ROOT", "").strip()
+    if env_root_raw:
+        env_root = Path(env_root_raw).expanduser().resolve()
+        skill_md = env_root / ".grok/skills/flexaidds/SKILL.md"
+        if skill_md.exists():
+            return SourceInfo(root=env_root, is_full_checkout=True, confidence="env")
+        print(f"[WARN] FLEXAIDDS_ROOT is set but skill not found at {skill_md}")
 
     # Current working tree / parents (very common when user is inside the repo)
     for candidate in [Path.cwd()] + list(Path.cwd().parents):
