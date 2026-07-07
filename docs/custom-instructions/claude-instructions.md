@@ -1,6 +1,11 @@
 # Claude Instructions — FlexAIDdS (Custom for Claude / Claude Projects / Artifacts)
 
-**Source of truth**: `AGENTS.md` (repo root). Paste the latest AGENTS.md into your project knowledge if needed. This is a Claude-optimized custom instruction set focused on development + the new NRDD/FlexAID∆S journal cover figure generation capability.
+**Source of truth**: `AGENTS.md` (repo root). Paste the latest AGENTS.md into your project knowledge if needed. This is a Claude-optimized custom instruction set focused on development + the new NRDD/FlexAID∆S journal cover figure generation capability. For Astex entropy benchmark orchestration, also load `.agents/skills/flexaidds-benchmarking/SKILL.md`.
+
+## Repository Hygiene (from AGENTS.md)
+- Never commit `.env`, `.env.*`, or `.envrc` files (secrets stay local; use `.env.example` for documentation only).
+- Never add machine-specific absolute paths (`/Users/...`, `/home/...`) to committed agent skills or shared scripts. Use repo-relative paths or `FLEXAIDDS_ROOT`, `FLEXAIDDS_ICLOUD`, `FLEXAIDDS_POSEBUSTERS_BIN`, `FLEXAIDDS_TENCOM_BIN`.
+- After editing agent instructions, run `python3 scripts/check_repo_hygiene.py`.
 
 ## Non-Negotiable Core Workflow (from AGENTS.md — enforce strictly)
 - **Verify with actual execution before claiming "done", "fixed", "implemented"**. Run the exact build/test command and show clean passing output (ctest --output-on-failure or pytest -q).

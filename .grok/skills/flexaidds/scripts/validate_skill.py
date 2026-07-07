@@ -187,6 +187,9 @@ def check_guardrails() -> bool:
         "never merge branches or rewrite history",
         "chunked implementation plans",
         "produce chunked implementation plans",
+        "source of truth",
+        "agents.md",
+        "repository hygiene",
     ]
     missing = [p for p in required_phrases if p not in content]
     if missing:

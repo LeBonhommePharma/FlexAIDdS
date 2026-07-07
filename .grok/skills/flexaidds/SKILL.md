@@ -32,6 +32,10 @@ metadata:
 
 # FlexAID / FlexAIDδS Skill
 
+**Source of truth:** `AGENTS.md` (repo root). This skill derives from `AGENTS.md` and defers to it when rules conflict. For Astex entropy benchmark launch/monitor/resume work, also read `.agents/skills/flexaidds-benchmarking/SKILL.md`.
+
+**Repository hygiene:** Never commit `.env` / secret files. Never add machine-specific absolute paths (`/Users/...`) to committed skills or shared scripts — use repo-relative paths or `FLEXAIDDS_*` environment variables. Run `python3 scripts/check_repo_hygiene.py` before pushing skill changes.
+
 **Primary invocations (documented aliases):**
 - `/flexaidds`
 - `/FlexAid docking`
@@ -502,3 +506,13 @@ All new visualization work lives behind the existing "chunked plans + tests + va
 See [references/flexaidds-guidance.md](references/flexaidds-guidance.md) for preserved scientific terminology, scoring proxy vs. thermodynamic ledger distinctions, and historical context from the FlexAIDδS implementation roadmap.
 
 This skill exists to keep all FlexAID / FlexAIDδS work safe, reproducible, and correctly scoped between scoring proxies and real statistical mechanics.
+
+## Agent Instruction Maintenance
+
+When workflow rules, build commands, or constraints change:
+
+1. Update `AGENTS.md` first.
+2. Propagate the delta into this file, `CLAUDE.md`, `.agents/skills/flexaidds-benchmarking/SKILL.md`, and `docs/custom-instructions/` (Claude, Codex/Cursor, Grok Build, ChatGPT).
+3. Run `python3 scripts/check_repo_hygiene.py` and `python3 .grok/skills/flexaidds/scripts/validate_skill.py`.
+
+Platform-specific packs live under `docs/custom-instructions/` — see the table in `AGENTS.md` → "Agent Instruction Files".

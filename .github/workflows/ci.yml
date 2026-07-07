@@ -226,6 +226,16 @@ jobs:
           python -m pip install scipy
           pytest -q python/tests/test_statmech_smoke.py python/tests/test_statmech.py python/tests/test_thermodynamics.py python/tests/test_encom.py python/tests/test_energy_matrix.py python/tests/test_train_256x256.py
 
+  repo_hygiene:
+    name: Repository hygiene (env + agent paths)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check tracked secrets and hardcoded agent paths
+        run: python3 scripts/check_repo_hygiene.py
+      - name: Validate flexaidds skill packaging
+        run: python3 .grok/skills/flexaidds/scripts/validate_skill.py
+
   # New job: Validates the flexaidds skill's DatasetRunner features
   # (per-entry checkpointing, --resume + CostHistory, --package reproducibility)
   flexaid_docking_datasetrunner:

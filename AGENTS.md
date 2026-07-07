@@ -50,6 +50,17 @@ These rules exist because this is a complex, performance-critical scientific cod
 
 ---
 
+## Repository Hygiene (Non-Negotiable)
+
+- **Never commit secrets or local environment files.** Do not add `.env`, `.env.*`, `.envrc`, or any file containing API keys, tokens, or machine-local credentials. Use `.env.example` (placeholders only) when documenting required variables. `.gitignore` already excludes these — do not force-add them with `git add -f`.
+- **Never commit machine-specific absolute paths in agent skills or shared scripts.** Committed automation under `.agents/`, `.grok/skills/`, `docs/custom-instructions/`, and new `scripts/` helpers must resolve paths from the repo root (`Path(__file__).resolve().parents[...]`, `git rev-parse --show-toplevel`) or from documented environment variables (`FLEXAIDDS_ROOT`, `FLEXAIDDS_ICLOUD`, `FLEXAIDDS_POSEBUSTERS_BIN`, `FLEXAIDDS_TENCOM_BIN`). Do not bake in `/Users/<username>/...` paths.
+- **Run the hygiene check before pushing skill or agent-instruction changes:**
+  ```bash
+  python3 scripts/check_repo_hygiene.py
+  ```
+
+---
+
 ## Essential Commands
 
 **C++ (recommended starting point for most work)**
@@ -133,15 +144,28 @@ Full details live in `CLAUDE.md`.
 
 ---
 
+## Agent Instruction Files (Per Platform)
+
+| Agent / platform | Primary file(s) |
+|------------------|-----------------|
+| **All agents** | `AGENTS.md` (source of truth) |
+| **Claude** | `CLAUDE.md` + `docs/custom-instructions/claude-instructions.md` |
+| **Codex / Cursor** | `docs/custom-instructions/codex-cursor-instructions.md` (or root `.cursorrules` pointing here) |
+| **Grok Build CLI** | `.grok/skills/flexaidds/SKILL.md` + `docs/custom-instructions/grok-build-cli-instructions.md` |
+| **ChatGPT** | `docs/custom-instructions/chatgpt-instructions.md` |
+| **Benchmark orchestration** (all agents) | `.agents/skills/flexaidds-benchmarking/SKILL.md` |
+
 ## Maintaining These Instructions (Production Discipline)
 
 - `AGENTS.md` is the **authoritative source** for workflow rules and high-level constraints.
 - When you change a core rule or command, update `AGENTS.md` first, then propagate the delta into the derived files:
   - `CLAUDE.md` (Claude's richer, more detailed reference)
-  - `.grok/skills/flexaidds/SKILL.md` (Grok skill)
-  - `docs/custom-instructions/` (ChatGPT / Codex / other agents)
+  - `.grok/skills/flexaidds/SKILL.md` (Grok `/flexaidds` skill)
+  - `.agents/skills/flexaidds-benchmarking/SKILL.md` (shared benchmark contract)
+  - `docs/custom-instructions/` (Claude, Codex/Cursor, Grok, ChatGPT platform packs)
 - Every derived file must state that `AGENTS.md` is the source of truth and defer to it, rather than restating rules that can drift. Prefer a short pointer over a duplicated paragraph.
 - Keep the "Core Workflow Rules" wording identical across files if you must repeat it, to prevent drift.
+- After any agent-instruction edit, run `python3 scripts/check_repo_hygiene.py` and `python3 .grok/skills/flexaidds/scripts/validate_skill.py`.
 
 ---
 

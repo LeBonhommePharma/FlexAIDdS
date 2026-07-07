@@ -29,11 +29,27 @@ All versions include:
 - Platform-specific details for calling image generation and handling the prompt + metadata handoff.
 
 ## Relationship to other files
-- Primary rules: `AGENTS.md` (repo root).
+- Primary rules: `AGENTS.md` (repo root) — **single source of truth for all agents**.
 - Detailed Claude guide: `CLAUDE.md`.
-- The actual implementation: `python/flexaidds/figures.py` (the handler) + `.grok/skills/flexaidds/SKILL.md` (the /flexaidds skill manifest).
-- Previous chatgpt instructions: the short root `chatgpt-instructions.md` (this docs/ version is the expanded, figure-aware one).
+- Grok `/flexaidds` skill: `.grok/skills/flexaidds/SKILL.md`.
+- Shared benchmark contract (all agents): `.agents/skills/flexaidds-benchmarking/SKILL.md`.
+- Figure implementation: `python/flexaidds/figures.py`.
+- Root pointer: `chatgpt-instructions.md` (expanded figure-aware copy lives here in `docs/custom-instructions/`).
 
-When the main AGENTS.md or the figure code changes, these custom versions should be refreshed.
+## Agent file map (keep in sync)
+| Platform | File |
+|----------|------|
+| Claude | `claude-instructions.md` |
+| Codex / Cursor | `codex-cursor-instructions.md` |
+| Grok Build CLI | `grok-build-cli-instructions.md` + `.grok/skills/flexaidds/SKILL.md` |
+| ChatGPT | `chatgpt-instructions.md` |
+| Benchmarks (all) | `.agents/skills/flexaidds-benchmarking/SKILL.md` |
+
+## Repository hygiene
+- Never commit `.env` / secret files (see `.gitignore`).
+- Never hardcode `/Users/...` paths in agent skills or shared scripts.
+- After updates: `python3 scripts/check_repo_hygiene.py` and `python3 .grok/skills/flexaidds/scripts/validate_skill.py`.
+
+When `AGENTS.md`, benchmark workflows, or figure code changes, refresh these custom versions and the Grok/benchmarking skills.
 
 This structure makes the powerful new figure generation (and all the disciplined dev practices) feel native no matter which AI the researcher or developer prefers.

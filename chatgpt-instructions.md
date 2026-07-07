@@ -11,4 +11,6 @@ When starting a ChatGPT session for FlexAIDdS, paste the latest `AGENTS.md`,
 
 Do not add or restate rules in this file — duplicated rules drift out of sync.
 Update `AGENTS.md` first, then propagate the delta into the derived files
-(`CLAUDE.md`, `.grok/skills/flexaidds/SKILL.md`, `docs/custom-instructions/`).
+(`CLAUDE.md`, `.grok/skills/flexaidds/SKILL.md`, `.agents/skills/flexaidds-benchmarking/SKILL.md`, `docs/custom-instructions/`).
+
+Never commit `.env` files or machine-specific absolute paths in agent skills — see `AGENTS.md` → Repository Hygiene.

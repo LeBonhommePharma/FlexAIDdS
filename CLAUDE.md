@@ -475,12 +475,19 @@ python -m flexaidds /path/to/results/ --top 5
 
 ## AI Instructions & Agent Maintenance
 
-This repository uses a deliberate three-file system for AI agents:
+This repository uses a deliberate multi-file system for AI agents. **Claude-specific copy-paste pack:** `docs/custom-instructions/claude-instructions.md`.
 
-- `AGENTS.md` — Single source of truth for workflow rules and constraints (all agents).
-- `CLAUDE.md` — This file. Rich technical depth + Claude-specific detail.
-- `.grok/skills/flexaidds/SKILL.md` — Self-contained Grok skill (project-scoped).
+| Agent / platform | Primary file(s) |
+|------------------|-----------------|
+| **All agents** | `AGENTS.md` (source of truth) |
+| **Claude** | `CLAUDE.md` (this file) + `docs/custom-instructions/claude-instructions.md` |
+| **Codex / Cursor** | `docs/custom-instructions/codex-cursor-instructions.md` |
+| **Grok Build CLI** | `.grok/skills/flexaidds/SKILL.md` + `docs/custom-instructions/grok-build-cli-instructions.md` |
+| **ChatGPT** | `docs/custom-instructions/chatgpt-instructions.md` |
+| **Benchmark orchestration** | `.agents/skills/flexaidds-benchmarking/SKILL.md` |
 
-**Maintenance rule**: When core workflow rules, build commands, or constraints change, update `AGENTS.md` first, then propagate the delta into this file and the Grok skill. The sacred “Workflow Rules” sections should stay as aligned as possible to prevent drift.
+**Maintenance rule**: When core workflow rules, build commands, or constraints change, update `AGENTS.md` first, then propagate the delta into this file, the Grok skill, the benchmarking skill, and `docs/custom-instructions/`. The sacred “Workflow Rules” sections should stay as aligned as possible to prevent drift.
+
+**Repository hygiene**: Never commit `.env` / secret files. Never add machine-specific absolute paths to committed agent skills or shared scripts — use repo-relative paths or `FLEXAIDDS_*` env vars. Run `python3 scripts/check_repo_hygiene.py` after agent-instruction edits.
 
 Claude should treat `AGENTS.md` as the contract and this document as the detailed reference manual.

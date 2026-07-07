@@ -5,40 +5,42 @@ description: Coordinate FlexAIDdS and Astex entropy benchmarks across agents. Us
 
 # FlexAIDdS Benchmarking
 
+**Source of truth:** `AGENTS.md` (repo root). This skill is the shared benchmark contract for Grok Build, Claude Code, Claude Science, Claude Cowork Dispatch, Codex, and other agents.
+
 ## Operating Rule
 
 Treat this skill as the shared benchmark contract. Any agent can work the benchmark, but it must leave artifacts and status clear enough that another agent can continue without asking LP which AI handled the prior step.
 
 Before touching a live run:
 
-1. Read `/Users/lp.more/Documents/PhD/Programs/FlexAIDdS/AGENTS.md`.
-2. Read `/Users/lp.more/Documents/PhD/Programs/FlexAIDdS/CLAUDE_BENCHMARK_HANDOFF.md` if the task could overlap older v90-v94 campaign work.
-3. Run the status script:
+1. Read `AGENTS.md` (repo root).
+2. Read `CLAUDE_BENCHMARK_HANDOFF.md` if present and the task could overlap older v90-v94 campaign work.
+3. Run the status script from the repo root:
 
 ```bash
-python3 /Users/lp.more/Documents/PhD/Programs/FlexAIDdS/.agents/skills/flexaidds-benchmarking/scripts/astex_entropy_status.py
+python3 .agents/skills/flexaidds-benchmarking/scripts/astex_entropy_status.py
 ```
 
 Do not launch duplicate benchmark work if a matching live process or current orchestrator run already exists. Monitor or resume the existing namespace instead.
 
-## Canonical Paths
+## Canonical Paths (environment variables — never hardcode machine paths)
 
-- Benchmark workspace: `/Users/lp.more/Documents/PhD/Programs/FlexAIDdS`
-- Live source/data checkout: `/Users/lp.more/Projects/FlexAIDdS`
-- Astex entropy module: `/Users/lp.more/Documents/PhD/Programs/FlexAIDdS/benchmarks/astex_entropy`
-- Long-term iCloud results: `/Users/lp.more/Library/Mobile Documents/com~apple~CloudDocs/FlexAIDdS_benchmarks/astex_entropy`
-- Orchestrator summaries: `<icloud>/orchestrator_runs/<run_id>/orchestrator_summary.{json,md}`
+Resolve everything from the git checkout root or documented env vars. Never commit `/Users/<username>/...` paths in skills or shared scripts.
+
+| Purpose | Variable | Typical default |
+|---------|----------|-----------------|
+| Repo / workspace root | `FLEXAIDDS_ROOT` | `git rev-parse --show-toplevel` |
+| Astex entropy module | (under root) | `benchmarks/astex_entropy` (local workspace; gitignored) |
+| Long-term iCloud results | `FLEXAIDDS_ICLOUD` | `~/Library/Mobile Documents/com~apple~CloudDocs/FlexAIDdS_benchmarks/astex_entropy` |
+| PoseBusters `bust` binary | `FLEXAIDDS_POSEBUSTERS_BIN` | `$FLEXAIDDS_ROOT/.venv-posebusters/bin/bust` |
+| tENCoM/Eigen diff binary | `FLEXAIDDS_TENCOM_BIN` | `$FLEXAIDDS_ROOT/build_lto/tencom_entropy_diff` |
+| Astex entropy venv | `FLEXAIDDS_ASTEX_VENV` | `$FLEXAIDDS_ROOT/.venv-astex-entropy` |
+
+Orchestrator summaries: `<FLEXAIDDS_ICLOUD>/orchestrator_runs/<run_id>/orchestrator_summary.{json,md}`
 
 ## Required Validators
 
 PoseBusters and tENCoM/Eigen are mandatory. No PoseBusters, no tENCoM/Eigen, no benchmark claim.
-
-Required paths by default:
-
-```text
-/Users/lp.more/Projects/FlexAIDdS/.venv-posebusters/bin/bust
-/Users/lp.more/Projects/FlexAIDdS/build_lto/tencom_entropy_diff
-```
 
 The orchestrator preflights both through `benchmarks/astex_entropy/orchestrate.py`. Do not disable this check. If either validator is missing, stop and report the exact missing path plus the rebuild/install step needed.
 
@@ -46,31 +48,33 @@ The orchestrator preflights both through `benchmarks/astex_entropy/orchestrate.p
 
 Use the orchestrator for normal work. It prepares the manifest, runs selected pose generators, rescoring each generated pose set with Shannon collapse, tENCoM/Eigen, thermodynamic `G_bind`, RMSD, and PoseBusters.
 
+All examples assume `cd` to `$FLEXAIDDS_ROOT` (repo root) and `.venv-astex-entropy` exists or use `$FLEXAIDDS_ASTEX_VENV`.
+
 Native one-target wiring smoke:
 
 ```bash
-cd /Users/lp.more/Documents/PhD/Programs/FlexAIDdS
+cd "${FLEXAIDDS_ROOT:-.}"
 .venv-astex-entropy/bin/python -m benchmarks.astex_entropy orchestrate --mode native --tools flexaidds --max-targets 1 --skip-rescore
 ```
 
 Native full head-to-head:
 
 ```bash
-cd /Users/lp.more/Documents/PhD/Programs/FlexAIDdS
+cd "${FLEXAIDDS_ROOT:-.}"
 .venv-astex-entropy/bin/python -m benchmarks.astex_entropy orchestrate --mode native --tools flexaidds,vina,rdock,boltz
 ```
 
 Non-native smoke:
 
 ```bash
-cd /Users/lp.more/Documents/PhD/Programs/FlexAIDdS
+cd "${FLEXAIDDS_ROOT:-.}"
 .venv-astex-entropy/bin/python -m benchmarks.astex_entropy orchestrate --mode non_native --tools flexaidds --max-targets 3 --download-missing --skip-rescore
 ```
 
 Native plus non-native:
 
 ```bash
-cd /Users/lp.more/Documents/PhD/Programs/FlexAIDdS
+cd "${FLEXAIDDS_ROOT:-.}"
 .venv-astex-entropy/bin/python -m benchmarks.astex_entropy orchestrate --mode all --tools flexaidds,vina,rdock,boltz --download-missing
 ```
 
@@ -78,7 +82,7 @@ Use `--dry-run` when validating command generation only. Use `--continue-on-erro
 
 ## Monitoring And Resume
 
-Use `scripts/astex_entropy_status.py` first. It reports active benchmark processes, latest orchestrator summary, pose CSV counts, rescored CSV counts, and the generated FlexAIDdS command.
+Use `scripts/astex_entropy_status.py` first (optionally `--work-dir "$FLEXAIDDS_ICLOUD"`). It reports active benchmark processes, latest orchestrator summary, pose CSV counts, rescored CSV counts, and the generated FlexAIDdS command.
 
 Resume rules:
 
@@ -119,3 +123,9 @@ Every closeout or handoff must include:
 - Any missing validators, failed tools, interrupted jobs, or partial outputs.
 
 Never report benchmark numbers from memory or logs alone when CSV artifacts exist. Read the CSV or summary JSON.
+
+## Repository Hygiene
+
+- Never commit `.env` files or API keys.
+- Never add machine-specific absolute paths to this skill or its scripts. Use env vars above.
+- After edits, run `python3 scripts/check_repo_hygiene.py` from repo root.

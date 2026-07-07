@@ -45,8 +45,10 @@ htmlcov/
 *.zip
 MANIFEST
 
-# Local environment
+# Local environment / secrets (never commit)
 .env
+.env.*
+!.env.example
 .envrc
 *.local
 
