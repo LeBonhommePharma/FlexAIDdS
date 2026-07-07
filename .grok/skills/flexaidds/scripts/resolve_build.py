@@ -35,7 +35,9 @@ SOURCE_FILES = ("LIB/benchmark_datasets.cpp", "LIB/DatasetRunner.cpp")
 ENGINE_NAME = "FlexAIDdS"
 RUNNER_NAME = "benchmark_datasets"
 
-STALE_TMP_PREFIXES = ("/tmp/", "/private/tmp/")
+# Only reject known ephemeral FlexAIDdS bench trees under /tmp — not every /tmp path
+# (pytest and CI use /tmp for legitimate ephemeral workspaces).
+STALE_TMP_MARKERS = ("/tmp/flexaidds", "/private/tmp/flexaidds")
 
 
 @dataclass(frozen=True)
@@ -135,8 +137,8 @@ def is_fresh(build_dir: Path, repo_root: Path | None) -> bool:
 
 
 def is_stale_tmp_path(path: Path) -> bool:
-    text = str(path.resolve())
-    return any(text.startswith(prefix) for prefix in STALE_TMP_PREFIXES)
+    text = str(path.resolve()).lower()
+    return any(marker in text for marker in STALE_TMP_MARKERS)
 
 
 def active_manifest_path() -> Path:
