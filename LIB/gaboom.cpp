@@ -2138,9 +2138,10 @@ void calculate_fitness(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* chr
 
 
 	// ── Chromosome evaluation ────────────────────────────────────────────────
-	// Runtime dispatch: CUDA GPU → Metal GPU → OpenMP CPU (thread-safe).
-	// All compiled-in backends are available simultaneously; select_backend()
-	// picks the best one at runtime based on detected hardware.
+	// Runtime dispatch keeps production GA fitness on the CPU/OpenMP path.
+	// The legacy GPU evaluators below remain compiled for explicit experiments,
+	// but default backend selection does not use them until their raw gene
+	// decoding and CF terms match the full ic2cf/vcfunction CPU path.
 
 #if defined(FLEXAIDS_USE_CUDA) || defined(FLEXAIDS_USE_METAL)
 	// Helper lambda: sample each energy-matrix density function at n_samples
@@ -2492,7 +2493,7 @@ void calculate_fitness(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* chr
 	shared(chrom, pop_size, GB, gene_lim, cleftgrid, target, \
 	       atoms, residue, FA, VC, \
 	       tl_atoms, tl_res, tl_fa, tl_optres, tl_vc, \
-	       natm, nres, nopt, \
+	       natm, nres, nopt, n_receptor_chains, \
 	       use_selective, dirty_atm, dirty_res_idx, n_dirty_atm, n_dirty_res, \
 	       optres_atom_list, n_optres_atoms)
 #endif
@@ -3189,7 +3190,8 @@ void populate_chromosomes(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* 
 #pragma omp parallel for schedule(dynamic) default(none) \
 	shared(chrom, FA, GB, VC, gene_lim, atoms, residue, cleftgrid, target, \
 	       popoffset, p_atoms, p_res, p_fa, p_optres, p_vc, natm, nres, nopt, \
-	       p_use_selective, p_dirty_atm, p_dirty_res_idx, p_n_dirty_atm, p_n_dirty_res)
+	       n_receptor_chains, p_use_selective, p_dirty_atm, p_dirty_res_idx, \
+	       p_n_dirty_atm, p_n_dirty_res)
 #endif
 		for(i=popoffset;i<GB->num_chrom;i++){
 #ifdef _OPENMP

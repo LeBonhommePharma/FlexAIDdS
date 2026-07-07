@@ -80,6 +80,34 @@ TEST(BackendOverride, OverrideAndClear) {
     EXPECT_EQ(d.current_override(), hw::Backend::AUTO);
 }
 
+TEST(BackendSelection, FitnessEvalDefaultsToCpuBackend) {
+    auto& d = hw::HardwareDispatcher::instance();
+    d.detect();
+    d.clear_override();
+
+    auto selected = d.best_backend(hw::KernelType::FITNESS_EVAL);
+    EXPECT_EQ(selected, d.select_cpu_backend());
+    EXPECT_NE(selected, hw::Backend::CUDA);
+    EXPECT_NE(selected, hw::Backend::ROCM);
+    EXPECT_NE(selected, hw::Backend::METAL);
+}
+
+TEST(BackendSelection, GpuOverrideDoesNotApplyToFitnessEval) {
+    auto& d = hw::HardwareDispatcher::instance();
+    d.detect();
+
+    d.set_override(hw::Backend::CUDA);
+    EXPECT_EQ(d.best_backend(hw::KernelType::FITNESS_EVAL), d.select_cpu_backend());
+
+    d.set_override(hw::Backend::ROCM);
+    EXPECT_EQ(d.best_backend(hw::KernelType::FITNESS_EVAL), d.select_cpu_backend());
+
+    d.set_override(hw::Backend::METAL);
+    EXPECT_EQ(d.best_backend(hw::KernelType::FITNESS_EVAL), d.select_cpu_backend());
+
+    d.clear_override();
+}
+
 // ===========================================================================
 // SHANNON ENTROPY — DISPATCH CORRECTNESS
 // ===========================================================================

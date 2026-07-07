@@ -72,6 +72,10 @@ def _score_as_energy(record: PoseRecord) -> float | None:
     return score
 
 
+def _analysis_target_id(target_id: str) -> str:
+    return target_id.split("__clf", 1)[0]
+
+
 def _boltzmann_probabilities(energies: list[float], temperature: float) -> list[float]:
     beta = 1.0 / (K_B_KCAL * temperature)
     e_min = min(energies)
@@ -161,11 +165,12 @@ def _run_tencom_for_pose(
 
 
 def _write_report(df: pd.DataFrame, out_dir: Path, poses_from: str, mode: str) -> None:
+    target_col = "analysis_target_id" if "analysis_target_id" in df.columns else "target_id"
     summary = {
         "mode": mode,
         "poses_from": poses_from,
         "n_poses": int(len(df)),
-        "n_targets": int(df["target_id"].nunique()) if len(df) else 0,
+        "n_targets": int(df[target_col].nunique()) if len(df) else 0,
         "success_pb": int(df["success_pb"].sum()) if len(df) else 0,
         "success_pb_rate": float(df["success_pb"].mean()) if len(df) else 0.0,
     }
@@ -181,16 +186,17 @@ def _write_report(df: pd.DataFrame, out_dir: Path, poses_from: str, mode: str) -
         "",
     ]
     if len(df):
-        top = df.sort_values(["target_id", "rank_entropy"]).groupby("target_id").head(1)
+        top = df.sort_values([target_col, "rank_entropy"]).groupby(target_col).head(1)
         lines.extend([
             "## Top Entropy-Ranked Pose Per Target",
             "",
-            "| target_id | pose_id | G_bind | RMSD_A | success_pb |",
-            "|---|---:|---:|---:|---:|",
+            "| target_id | cavity_target_id | pose_id | G_bind | RMSD_A | success_pb |",
+            "|---|---|---:|---:|---:|---:|",
         ])
         for row in top.itertuples():
+            target_id = getattr(row, target_col)
             lines.append(
-                f"| {row.target_id} | {row.pose_id} | {row.G_bind:.4f} | "
+                f"| {target_id} | {row.target_id} | {row.pose_id} | {row.G_bind:.4f} | "
                 f"{row.rmsd_A if pd.notna(row.rmsd_A) else 'NA'} | {bool(row.success_pb)} |"
             )
         lines.append("")
@@ -242,7 +248,7 @@ def rescore_poses(
 
     grouped: dict[str, list[PoseRecord]] = defaultdict(list)
     for record in records:
-        grouped[record.target_id].append(record)
+        grouped[_analysis_target_id(record.target_id)].append(record)
 
     rows: list[dict[str, Any]] = []
     for target_id, target_records in grouped.items():
@@ -282,6 +288,7 @@ def rescore_poses(
             rows.append(
                 {
                     **record.to_dict(),
+                    "analysis_target_id": target_id,
                     "H_vct_proxy": energy,
                     "ensemble_free_energy": ensemble_f,
                     "ensemble_shannon_nats": ensemble_shannon,
@@ -300,8 +307,9 @@ def rescore_poses(
 
     df = pd.DataFrame(rows)
     if len(df):
-        df["rank_entropy"] = df.groupby("target_id")["G_bind"].rank(method="first", ascending=True).astype(int)
-        df["rank_raw"] = df.groupby("target_id")["H_vct_proxy"].rank(method="first", ascending=True).astype(int)
+        rank_group = "analysis_target_id" if "analysis_target_id" in df.columns else "target_id"
+        df["rank_entropy"] = df.groupby(rank_group)["G_bind"].rank(method="first", ascending=True).astype(int)
+        df["rank_raw"] = df.groupby(rank_group)["H_vct_proxy"].rank(method="first", ascending=True).astype(int)
     out_dir = Path(cfg["work_dir"]) / "rescored" / mode / poses_from
     out_dir.mkdir(parents=True, exist_ok=True)
     out_csv = out_dir / "rescored_poses.csv"

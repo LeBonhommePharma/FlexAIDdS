@@ -14,6 +14,8 @@ class TargetRecord:
     reference_sdf: str
     source_complex: str = ""
     pocket_pdb: str = ""
+    cavity_source_pdb: str = ""
+    cleft_sphere_pdb: str = ""
     ligand_source_id: str = ""
     notes: str = ""
 

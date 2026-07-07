@@ -24,7 +24,36 @@ cmake_minimum_required(VERSION 3.28)
 
 # ─── OpenMP ───────────────────────────────────────────────────────────────
 if(FLEXAIDS_USE_OPENMP)
+    if(APPLE)
+        set(_flexaids_libomp_prefixes)
+        if(DEFINED ENV{HOMEBREW_PREFIX})
+            list(APPEND _flexaids_libomp_prefixes "$ENV{HOMEBREW_PREFIX}/opt/libomp")
+        endif()
+        list(APPEND _flexaids_libomp_prefixes
+            "/opt/homebrew/opt/libomp"
+            "/usr/local/opt/libomp")
+
+        foreach(_flexaids_libomp_prefix IN LISTS _flexaids_libomp_prefixes)
+            if(EXISTS "${_flexaids_libomp_prefix}/include/omp.h" AND
+               EXISTS "${_flexaids_libomp_prefix}/lib/libomp.dylib")
+                set(OpenMP_CXX_FLAGS
+                    "-Xpreprocessor -fopenmp -I${_flexaids_libomp_prefix}/include"
+                    CACHE STRING "CXX compiler flags for OpenMP parallelization" FORCE)
+                set(OpenMP_CXX_LIB_NAMES
+                    "omp"
+                    CACHE STRING "CXX compiler libraries for OpenMP parallelization" FORCE)
+                set(OpenMP_omp_LIBRARY
+                    "${_flexaids_libomp_prefix}/lib/libomp.dylib"
+                    CACHE FILEPATH "OpenMP libomp library" FORCE)
+                break()
+            endif()
+        endforeach()
+    endif()
+
     find_package(OpenMP)
+    if(NOT OpenMP_CXX_FOUND)
+        message(WARNING "FLEXAIDS_USE_OPENMP=ON but OpenMP was not found; CPU fallback will be serial")
+    endif()
 endif()
 
 # ─── Eigen3 (header-only; vendored at LIB/vendor/eigen) ─────────────────────

@@ -38,6 +38,7 @@ The default `config.yaml` is pinned to local tool paths under the checkout:
 /Users/lp.more/Projects/FlexAIDdS/.tools/bin/vina
 /Users/lp.more/Projects/FlexAIDdS/.tools/rdock/bin/rbcavity
 /Users/lp.more/Projects/FlexAIDdS/.tools/rdock/bin/rbdock
+/Users/lp.more/Projects/Get_Cleft/Get_Cleft
 /Users/lp.more/Projects/FlexAIDdS/.venv-posebusters/bin/bust
 /Users/lp.more/Projects/FlexAIDdS/build_lto/tencom_entropy_diff
 /Users/lp.more/Projects/FlexAIDdS/.venv-boltz/bin/boltz
@@ -94,6 +95,46 @@ runs the selected pose generators, rescoring each generated pose set with
 Shannon collapse, tENCoM, thermodynamic `G_bind`, RMSD, and PoseBusters.
 The orchestrator preflights PoseBusters and `tencom_entropy_diff` before doing
 anything else; both are mandatory.
+
+## Methodology
+
+The benchmark protocol from now on is:
+
+1. Prepare native targets from `astex_diverse.yaml` and non-native targets from
+   `astex_nonnative.yaml`.
+2. Define the FlexAIDdS binding site with the original-ligand occupied GetCleft
+   cavity. When the Astex `*_binding_site.pdb` file exists, it is used directly.
+   Otherwise the pipeline runs NRGlab `Get_Cleft` anchored on the original ligand
+   in the source complex.
+3. Keep FlexAIDdS pose-blinded and no-native-seed: `include_oracle_site: false`,
+   one `benchmark_datasets` worker, one FlexAIDdS child, `restarts: 1`, and
+   `parallel_restarts: 0`.
+4. Use CPU/OpenMP for FlexAIDdS GA chromosome fitness, even from a Metal-enabled
+   build. The current Metal evaluator is translation-only over raw genes and is
+   not parity-safe with the CPU `ic2cf`/`vcfunction` path.
+5. Run the selected pose generators: FlexAIDdS, Vina, rDock, and/or Boltz-2.
+6. Rescore every emitted pose with Shannon energy collapse, tENCoM/Eigen, and
+   thermodynamic `G_bind`.
+7. Validate every pose with PoseBusters.
+8. Report success only from `success_pb`, which means `RMSD <= 2.0 A` and
+   PoseBusters passed. RMSD-only success is not a benchmark result.
+
+The primary result is the main occupied cavity because it matches the ligand
+site definition used by the original Astex-style redocking benchmark. A
+multi-cavity run is useful as a blind-search ablation, not as the primary
+headline number. To run that diagnostic, copy `config.yaml` and change:
+
+```yaml
+tools:
+  flexaidds:
+    cavity:
+      protocol: multi_cavity
+      top_cavities: 3
+```
+
+Multi-cavity child targets are named like `1G9V__clf1`, `1G9V__clf2`, and
+`1G9V__clf3`. Rescoring groups them back under the original target through
+`analysis_target_id` so success rates remain target-level, not cavity-level.
 
 Native one-target smoke:
 
@@ -186,6 +227,8 @@ python -m benchmarks.astex_entropy run --mode native --tools flexaidds
 The generated command uses:
 
 ```text
+FLEXAIDDS_RESTARTS=1
+FLEXAIDDS_PARALLEL_RESTARTS=0
 --threads 1 --omp-threads 6 --mode autonomous --ga-generations 500 --ga-population 1000
 ```
 
@@ -268,6 +311,8 @@ Rescore outputs:
 
 `rescored_poses.csv` includes:
 
+- `analysis_target_id`: original target ID used for target-level ranking and
+  multi-cavity aggregation
 - `rmsd_A`: RDKit best RMSD to the reference ligand
 - `posebusters_all_passed`: PoseBusters validation result
 - `success_pb`: `rmsd_A <= 2.0` and PoseBusters passed
@@ -285,9 +330,16 @@ Rescore outputs:
   is missing, rescoring fails instead of emitting fake successes.
 - `tencom_entropy_diff` is treated as the Eigen-backed tENCoM validator. If it
   is missing, rebuild FlexAIDdS with Eigen/tENCoM support before benchmarking.
-- FlexAIDdS runs through `build_lto/benchmark_datasets`, writes its raw output
-  under the iCloud work dir, then harvests emitted pose PDBs into the same pose
-  CSV format as Vina/rDock/Boltz.
+- Metal-enabled builds are allowed, but `UnifiedHardwareDispatch` must not
+  select Metal for `FITNESS_EVAL` until the Metal path reconstructs the same
+  internal-coordinate geometry and CF terms as the CPU scorer. Metal can remain
+  available for parity-safe non-GA kernels.
+- FlexAIDdS defaults to `main_occupied_cavity`. The manifest writes
+  `cleft_sphere_file` for every target, and `benchmark_datasets` passes it to
+  FlexAIDdS as `FLEXAIDDS_CLEFT_SPHERE_FILE`.
+- FlexAIDdS runs through the configured `benchmark_datasets` binary, writes its
+  raw output under the iCloud work dir, then harvests emitted pose PDBs into the
+  same pose CSV format as Vina/rDock/Boltz.
 - The module defaults to `/Users/lp.more/Projects/FlexAIDdS` for source data
   because this benchmark workspace is not the main Git checkout.
 - Edit `config.yaml` if your binaries or source checkout live elsewhere.

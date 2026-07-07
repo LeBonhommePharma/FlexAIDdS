@@ -25,7 +25,13 @@ tools:
     cache_dir: "{work_dir}/cache/flexaidds"
     threads: 1
     omp_threads: 6
+    restarts: 1
     parallel_restarts: 0
+    getcleft: /Users/lp.more/Projects/Get_Cleft/Get_Cleft
+    cavity:
+      protocol: main_occupied_cavity
+      use_precomputed: true
+      top_cavities: 3
     mode: autonomous
     include_oracle_site: false
     ga_generations: 500

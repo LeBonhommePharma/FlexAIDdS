@@ -296,6 +296,190 @@ def _fix_direction(records: Iterable[PoseRecord], cfg: dict[str, Any], tool: str
     ]
 
 
+def _copy_target(record: TargetRecord, **updates: str) -> TargetRecord:
+    data = record.to_dict()
+    data.update({key: str(value) for key, value in updates.items()})
+    return TargetRecord(**data)
+
+
+def _rank_from_cleft_name(path: Path) -> int:
+    stem = path.stem
+    for marker in ("_clf_", "_sph_"):
+        if marker in stem:
+            try:
+                return int(stem.rsplit(marker, 1)[1])
+            except ValueError:
+                pass
+    return 10_000
+
+
+def _getcleft_anchor_from_complex(pdb_path: Path, target_id: str) -> str | None:
+    try:
+        from benchmarks.astex_diverse.prepare_oracle_clefts import (
+            LIGAND_RESNAME,
+            PEPTIDE_LIGAND,
+            build_anchor_string,
+            find_ligand_anchor,
+            find_peptide_anchor,
+        )
+    except Exception:
+        LIGAND_RESNAME = {}
+        PEPTIDE_LIGAND = {}
+        build_anchor_string = None
+        find_ligand_anchor = None
+        find_peptide_anchor = None
+
+    code = target_id.split("_x_", 1)[0].split("__", 1)[0].upper()
+    if code in PEPTIDE_LIGAND and find_peptide_anchor and build_anchor_string:
+        resname, resnum, chain = PEPTIDE_LIGAND[code]
+        found = find_peptide_anchor(pdb_path, resname, resnum, chain)
+        if found:
+            return build_anchor_string(resname, found[0], found[1])
+
+    if code in LIGAND_RESNAME and find_ligand_anchor and build_anchor_string:
+        resname = LIGAND_RESNAME[code]
+        found = find_ligand_anchor(pdb_path, resname)
+        if found:
+            return build_anchor_string(resname, found[0], found[1])
+
+    with pdb_path.open(errors="ignore") as fh:
+        for line in fh:
+            if not line.startswith("HETATM"):
+                continue
+            resname = line[17:20].strip().upper() if len(line) >= 20 else ""
+            if resname in NON_LIGAND_HETATM:
+                continue
+            chain = line[21].strip() or "-"
+            try:
+                resnum = int(line[22:26].strip())
+            except ValueError:
+                continue
+            if build_anchor_string:
+                return build_anchor_string(resname, resnum, chain)
+            if len(resname) < 3:
+                resname = "-" * (3 - len(resname)) + resname
+            return f"{resname}{resnum}{chain}-"
+    return None
+
+
+def _getcleft_executable(cfg: dict[str, Any], *, skip_missing: bool) -> str | None:
+    flex_cfg = cfg["tools"].get("flexaidds", {})
+    cavity_cfg = flex_cfg.get("cavity", {}) if isinstance(flex_cfg.get("cavity", {}), dict) else {}
+    configured = cavity_cfg.get("getcleft") or flex_cfg.get("getcleft") or "/Users/lp.more/Projects/Get_Cleft/Get_Cleft"
+    return _require_executable(str(configured), skip_missing=skip_missing)
+
+
+def _run_getcleft_occupied(
+    record: TargetRecord,
+    cfg: dict[str, Any],
+    mode: str,
+    *,
+    skip_missing: bool,
+) -> Path:
+    source = Path(record.cavity_source_pdb or record.source_complex)
+    if not source.exists():
+        raise RuntimeError(f"{record.target_id}: no cavity source PDB for occupied-cavity GetCleft run")
+
+    exe = _getcleft_executable(cfg, skip_missing=skip_missing)
+    if exe is None:
+        raise RuntimeError(f"{record.target_id}: GetCleft is required for occupied-cavity generation")
+
+    anchor = _getcleft_anchor_from_complex(source, record.target_id)
+    if not anchor:
+        raise RuntimeError(f"{record.target_id}: could not resolve original-ligand anchor in {source}")
+
+    out_dir = Path(cfg["work_dir"]) / "cavities" / mode / record.target_dir_name / "occupied"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    prefix = record.target_dir_name
+    existing = sorted(out_dir.glob(f"{prefix}*_clf_*.pdb"), key=_rank_from_cleft_name)
+    if existing:
+        return existing[0]
+    run_command([exe, "-p", str(source), "-o", prefix, "-a", anchor], cwd=out_dir, log_path=out_dir / "getcleft.log")
+    matches = sorted(out_dir.glob(f"{prefix}*_clf_*.pdb"), key=_rank_from_cleft_name)
+    if not matches:
+        raise RuntimeError(f"{record.target_id}: GetCleft produced no occupied cavity in {out_dir}")
+    return matches[0]
+
+
+def _run_getcleft_multi(
+    record: TargetRecord,
+    cfg: dict[str, Any],
+    mode: str,
+    *,
+    top_cavities: int,
+    skip_missing: bool,
+) -> list[Path]:
+    receptor = Path(record.receptor_pdb)
+    if not receptor.exists():
+        raise RuntimeError(f"{record.target_id}: receptor missing for multi-cavity GetCleft run: {receptor}")
+
+    exe = _getcleft_executable(cfg, skip_missing=skip_missing)
+    if exe is None:
+        raise RuntimeError(f"{record.target_id}: GetCleft is required for multi-cavity generation")
+
+    out_dir = Path(cfg["work_dir"]) / "cavities" / mode / record.target_dir_name / "multi"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    prefix = record.target_dir_name
+    existing = sorted(out_dir.glob(f"{prefix}_sph_*.pdb"), key=_rank_from_cleft_name)
+    if len(existing) >= top_cavities:
+        return existing[:top_cavities]
+    for stale in out_dir.glob(f"{prefix}_*"):
+        stale.unlink()
+    run_command(
+        [exe, "-p", str(receptor), "-t", str(top_cavities), "-s", "-o", prefix],
+        cwd=out_dir,
+        log_path=out_dir / "getcleft.log",
+    )
+    matches = sorted(out_dir.glob(f"{prefix}_sph_*.pdb"), key=_rank_from_cleft_name)
+    if not matches:
+        raise RuntimeError(f"{record.target_id}: GetCleft produced no ranked cavities in {out_dir}")
+    return matches[:top_cavities]
+
+
+def _expand_flexaidds_cavity_targets(
+    records: list[TargetRecord],
+    cfg: dict[str, Any],
+    mode: str,
+    *,
+    skip_missing: bool,
+) -> list[TargetRecord]:
+    flex_cfg = cfg["tools"].get("flexaidds", {})
+    cavity_cfg = flex_cfg.get("cavity", {}) if isinstance(flex_cfg.get("cavity", {}), dict) else {}
+    protocol = str(cavity_cfg.get("protocol", flex_cfg.get("cavity_protocol", "main_occupied_cavity"))).lower()
+    if protocol in {"", "none", "off", "legacy"}:
+        return records
+
+    if protocol in {"main", "main_occupied", "main_occupied_cavity", "occupied"}:
+        expanded: list[TargetRecord] = []
+        use_precomputed = bool(cavity_cfg.get("use_precomputed", True))
+        for record in records:
+            cleft = Path(record.pocket_pdb) if use_precomputed and record.pocket_pdb else None
+            if not cleft or not cleft.exists():
+                cleft = _run_getcleft_occupied(record, cfg, mode, skip_missing=skip_missing)
+            expanded.append(_copy_target(record, cleft_sphere_pdb=str(cleft)))
+        return expanded
+
+    if protocol in {"multi", "multi_cavity", "all_cavities"}:
+        top_cavities = int(cavity_cfg.get("top_cavities", flex_cfg.get("top_cavities", 3)))
+        expanded = []
+        for record in records:
+            for rank, cleft in enumerate(
+                _run_getcleft_multi(record, cfg, mode, top_cavities=top_cavities, skip_missing=skip_missing),
+                1,
+            ):
+                expanded.append(
+                    _copy_target(
+                        record,
+                        target_id=f"{record.target_id}__clf{rank}",
+                        cleft_sphere_pdb=str(cleft),
+                        notes=f"{record.notes};source_target_id={record.target_id};cavity_rank={rank}".strip(";"),
+                    )
+                )
+        return expanded
+
+    raise RuntimeError(f"Unknown FlexAIDdS cavity protocol: {protocol}")
+
+
 def run_vina(target: TargetRecord, cfg: dict[str, Any], target_dir: Path, *, dry_run: bool, skip_missing: bool) -> list[PoseRecord]:
     exe = _require_executable(str(cfg["tools"]["vina"]["executable"]), skip_missing=skip_missing)
     if exe is None:
@@ -571,6 +755,7 @@ def run_boltz(target: TargetRecord, cfg: dict[str, Any], target_dir: Path, *, dr
 def _flexaidds_pair_json(records: list[TargetRecord], cfg: dict[str, Any], mode: str) -> Path:
     flex_cfg = cfg["tools"]["flexaidds"]
     include_oracle = bool(flex_cfg.get("include_oracle_site", False))
+    cavity_cfg = flex_cfg.get("cavity", {}) if isinstance(flex_cfg.get("cavity", {}), dict) else {}
     pairs: list[dict[str, Any]] = []
     for idx, record in enumerate(records):
         pair = {
@@ -581,6 +766,9 @@ def _flexaidds_pair_json(records: list[TargetRecord], cfg: dict[str, Any], mode:
             "ligand_sdf": record.ligand_sdf,
             "rmsd_ref_sdf": record.reference_sdf,
         }
+        if record.cleft_sphere_pdb:
+            pair["cleft_sphere_file"] = record.cleft_sphere_pdb
+            pair["source_target_id"] = record.target_id.split("__clf", 1)[0]
         if include_oracle and record.pocket_pdb:
             pair["oracle_site_pdb"] = record.pocket_pdb
         pairs.append(pair)
@@ -590,6 +778,7 @@ def _flexaidds_pair_json(records: list[TargetRecord], cfg: dict[str, Any], mode:
         "name": f"astex_entropy_{mode}_flexaidds",
         "description": "Generated by benchmarks.astex_entropy for FlexAIDdS head-to-head benchmarking.",
         "oracle_mode": include_oracle,
+        "cavity_protocol": cavity_cfg.get("protocol", flex_cfg.get("cavity_protocol", "")),
         "pairs": pairs,
     }
     out_path = Path(cfg["work_dir"]) / "manifests" / f"{mode}_flexaidds_crossdock.json"
@@ -708,6 +897,7 @@ def run_flexaidds_batch(
     exe = _require_executable(str(cfg["tools"]["flexaidds"]["benchmark_datasets"]), skip_missing=skip_missing)
     if exe is None:
         return []
+    targets = _expand_flexaidds_cavity_targets(targets, cfg, mode, skip_missing=skip_missing)
     flex_cfg = cfg["tools"]["flexaidds"]
     output_dir = _flexaidds_output_dir(cfg, mode)
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -731,14 +921,23 @@ def run_flexaidds_batch(
     if bool(flex_cfg.get("force", False)):
         args.append("--force")
 
-    command_path = output_dir / "flexaidds_command.txt"
-    command_path.write_text(" ".join(str(arg) for arg in args) + "\n")
-    if dry_run:
-        return []
     env = {
         "OMP_NUM_THREADS": str(int(flex_cfg.get("omp_threads", 6))),
+        "FLEXAIDDS_RESTARTS": str(int(flex_cfg.get("restarts", 1))),
         "FLEXAIDDS_PARALLEL_RESTARTS": str(int(flex_cfg.get("parallel_restarts", 0))),
     }
+    flexaidds_binary = cfg.get("entropy", {}).get("flexaidds_binary")
+    if flexaidds_binary:
+        binary = _require_executable(str(flexaidds_binary), skip_missing=skip_missing)
+        if binary is not None:
+            env["FLEXAIDDS_BINARY"] = binary
+
+    command_path = output_dir / "flexaidds_command.txt"
+    command_lines = [f"{key}={value}" for key, value in sorted(env.items())]
+    command_lines.append(" ".join(str(arg) for arg in args))
+    command_path.write_text("\n".join(command_lines) + "\n")
+    if dry_run:
+        return []
     run_command(args, cwd=cfg["repo_root"], log_path=output_dir / "flexaidds_benchmark.log", env=env, timeout=None)
     return _collect_flexaidds_records(targets, cfg, mode)
 

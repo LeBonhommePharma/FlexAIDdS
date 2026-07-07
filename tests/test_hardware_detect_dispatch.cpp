@@ -87,6 +87,29 @@ TEST(BackendSelection, SelectsValidBackend) {
     EXPECT_LE(static_cast<int>(b), 6);
 }
 
+TEST(BackendSelection, DefaultFitnessBackendIsNotGPU) {
+    HardwareBackend b = select_backend();
+    EXPECT_NE(b, HardwareBackend::CUDA);
+    EXPECT_NE(b, HardwareBackend::ROCM);
+    EXPECT_NE(b, HardwareBackend::METAL);
+}
+
+TEST(BackendSelection, GpuOverrideDoesNotApplyToFitnessEval) {
+    auto& d = hw::UnifiedHardwareDispatch::instance();
+    d.detect();
+
+    d.set_override(hw::Backend::CUDA);
+    EXPECT_EQ(d.best_backend(hw::KernelType::FITNESS_EVAL), d.select_cpu_backend());
+
+    d.set_override(hw::Backend::ROCM);
+    EXPECT_EQ(d.best_backend(hw::KernelType::FITNESS_EVAL), d.select_cpu_backend());
+
+    d.set_override(hw::Backend::METAL);
+    EXPECT_EQ(d.best_backend(hw::KernelType::FITNESS_EVAL), d.select_cpu_backend());
+
+    d.clear_override();
+}
+
 TEST(BackendSelection, CPUBackendIsNotGPU) {
     HardwareBackend b = select_cpu_backend();
     EXPECT_NE(b, HardwareBackend::CUDA);

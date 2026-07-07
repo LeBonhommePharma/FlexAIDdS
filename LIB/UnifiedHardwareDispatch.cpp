@@ -183,20 +183,29 @@ bool UnifiedHardwareDispatch::is_available(Backend b) const noexcept {
 
 Backend UnifiedHardwareDispatch::best_backend(KernelType kernel) const {
     if (override_ != Backend::AUTO) {
+        if (kernel == KernelType::FITNESS_EVAL &&
+            (override_ == Backend::CUDA || override_ == Backend::ROCM || override_ == Backend::METAL)) {
+            return select_cpu_backend();
+        }
         return override_;
     }
 
     switch (kernel) {
-        case KernelType::SHANNON_ENTROPY:
         case KernelType::FITNESS_EVAL:
+            // GA chromosome fitness must stay on the CPU path for now. The
+            // legacy GPU evaluators consume raw FlexAID internal-coordinate
+            // genes as Cartesian translations and only return partial CF terms,
+            // so they are not benchmark-parity safe for pose search.
+            return select_cpu_backend();
+
+        case KernelType::SHANNON_ENTROPY:
         case KernelType::CONTACT_DISC:
         case KernelType::HESSIAN_ASM:
         case KernelType::TURBO_QUANT:
             if (is_available(Backend::CUDA))   return Backend::CUDA;
             if (is_available(Backend::ROCM))   return Backend::ROCM;
             if (is_available(Backend::METAL)) {
-                // P1.6 loud dispatch log for Metal on M3 (Shannon for configurational entropy part of thermo ledger / best BindingMode)
-                fprintf(stderr, "[HW-DISPATCH] Kernel SHANNON_ENTROPY/FITNESS etc. -> using Metal on Apple (M3 Pro) for entropy/thermo (see .metallib + UnifiedHardwareDispatch)\n");
+                fprintf(stderr, "[HW-DISPATCH] Kernel entropy/contact/thermo -> using Metal on Apple GPU (see .metallib + UnifiedHardwareDispatch)\n");
                 return Backend::METAL;
             }
             if (is_available(Backend::AVX512)) return Backend::AVX512;
@@ -298,6 +307,7 @@ std::string UnifiedHardwareDispatch::hardware_report() const {
     }
     os << "\n";
     os << "Best entropy backend:  " << backend_name(best_backend(KernelType::SHANNON_ENTROPY)) << "\n";
+    os << "Best fitness backend:  " << backend_name(best_backend(KernelType::FITNESS_EVAL)) << "\n";
     os << "Best distance backend: " << backend_name(best_backend(KernelType::DISTANCE_BATCH)) << "\n";
     return os.str();
 }
@@ -620,7 +630,8 @@ std::vector<double> UnifiedHardwareDispatch::compute_boltzmann_weights(
 // Boltzmann batch (span API with telemetry — from hardware_dispatch.cpp)
 // ═════════════════════════════════════════════════════════════════════════════
 
-#if 0  // currently unused — scalar boltzmann is inlined in compute_boltzmann_batchstatic BoltzmannBatchResult boltzmann_scalar(
+#if 0  // currently unused: scalar Boltzmann is inlined in compute_boltzmann_batch
+static BoltzmannBatchResult boltzmann_scalar(
     std::span<const double> energies, double beta)
 {
     auto start = std::chrono::steady_clock::now();
@@ -803,6 +814,11 @@ BoltzmannBatchResult UnifiedHardwareDispatch::compute_boltzmann_batch(
 #if HAS_AVX512_RT
     if (cpu == Backend::AVX512)
         return boltzmann_avx512(energies, beta);
+#endif
+
+#ifdef _OPENMP
+    if (cpu == Backend::OPENMP && energies.size() >= 4096)
+        return boltzmann_openmp(energies, beta);
 #endif
 
     return boltzmann_eigen(energies, beta, cpu);
@@ -1044,6 +1060,11 @@ DispatchReport UnifiedHardwareDispatch::get_dispatch_report() const {
         default:
             reason = "auto";
             break;
+    }
+
+    if (sel != Backend::CUDA && sel != Backend::ROCM && sel != Backend::METAL &&
+        (hwd.has_cuda || hwd.has_rocm || hwd.has_metal)) {
+        reason += "; GPU GA fitness disabled until internal-coordinate scoring parity is implemented";
     }
 
     return { sel, reason, hwd.summary() };
