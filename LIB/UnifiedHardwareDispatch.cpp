@@ -10,6 +10,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdlib>
 #include <cstring>
 #include <numeric>
 #include <sstream>
@@ -191,12 +192,28 @@ Backend UnifiedHardwareDispatch::best_backend(KernelType kernel) const {
     }
 
     switch (kernel) {
-        case KernelType::FITNESS_EVAL:
-            // GA chromosome fitness must stay on the CPU path for now. The
-            // legacy GPU evaluators consume raw FlexAID internal-coordinate
-            // genes as Cartesian translations and only return partial CF terms,
-            // so they are not benchmark-parity safe for pose search.
+        case KernelType::FITNESS_EVAL: {
+            // GA chromosome fitness defaults to CPU. Legacy GPU evaluators
+            // consume raw FlexAID internal-coordinate genes as Cartesian
+            // translations and only return partial CF terms, so Metal/CUDA
+            // paths are not benchmark-parity safe until validated.
+            // FLEXAIDDS_FITNESS_BACKEND=metal requires FLEXAIDDS_FITNESS_METAL_PARITY_OK.
+            const char* fitness_backend = std::getenv("FLEXAIDDS_FITNESS_BACKEND");
+            if (fitness_backend != nullptr) {
+                if (std::strcmp(fitness_backend, "metal") == 0) {
+                    if (is_available(Backend::METAL) &&
+                        std::getenv("FLEXAIDDS_FITNESS_METAL_PARITY_OK") != nullptr) {
+                        return Backend::METAL;
+                    }
+                    return select_cpu_backend();
+                }
+                if (std::strcmp(fitness_backend, "auto") == 0 ||
+                    std::strcmp(fitness_backend, "cpu") == 0) {
+                    return select_cpu_backend();
+                }
+            }
             return select_cpu_backend();
+        }
 
         case KernelType::SHANNON_ENTROPY:
         case KernelType::CONTACT_DISC:
