@@ -26,7 +26,9 @@ inline constexpr double kB_SI            = 1.380649e-23; // J K⁻¹
 inline constexpr double hbar_SI          = 1.054571817e-34; // J·s
 inline constexpr double TEMPERATURE_K    = 298.15;
 inline constexpr int   DEFAULT_HIST_BINS = 20;
-inline constexpr int   GPU_DISPATCH_THRESHOLD = 500000; // only use GPU for N > 500K
+// Compile-time CUDA default; runtime override via FLEXAIDDS_SHANNON_GPU_MIN_N.
+// Metal-only builds default to 1024 when the env var is unset (see .cpp).
+inline constexpr int   GPU_DISPATCH_THRESHOLD = 500000; // CUDA path: N > 500K
 
 // ─── Shannon Energy Collapse thresholds ──────────────────────────────────────
 // All internal entropy APIs return nats (natural log). Convert to bits at
