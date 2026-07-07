@@ -15,9 +15,9 @@ jobs:
 
       - name: Install toolchain
         run: |
-          sudo apt-get update
+          bash scripts/ci/apt_get_update.sh
           # clang-18 is required for C++26 support (see CMakeLists.txt compiler gate).
-          sudo apt-get install -y clang-18 ninja-build cmake
+          sudo apt-get install -y clang-18 ninja-build cmake libeigen3-dev libomp-dev
 
       - name: Configure (ThreadSanitizer)
         env:
@@ -26,6 +26,10 @@ jobs:
         run: |
           cmake -S . -B build-tsan -G Ninja \
             -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+            -DBUILD_TESTING=ON \
+            -DBUILD_PYTHON_BINDINGS=OFF \
+            -DFLEXAIDS_USE_CUDA=OFF \
+            -DFLEXAIDS_USE_METAL=OFF \
             -DCMAKE_C_FLAGS='-fsanitize=thread -fno-omit-frame-pointer' \
             -DCMAKE_CXX_FLAGS='-fsanitize=thread -fno-omit-frame-pointer' \
             -DCMAKE_EXE_LINKER_FLAGS='-fsanitize=thread' \

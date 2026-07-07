@@ -167,10 +167,7 @@ if(FLEXAIDS_BUILD_CORE)
 add_executable(FlexAID "")
 # Slimmed: use central OBJECT library instead of duplicating ~150 source files.
 # Only the dedicated entry points + the core objects.
-target_sources(FlexAID PRIVATE
-    LIB/top.cpp
-    $<TARGET_OBJECTS:flexaid_core>
-)
+target_sources(FlexAID PRIVATE LIB/top.cpp)
 target_link_libraries(FlexAID PRIVATE flexaid_core)
 
 target_include_directories(FlexAID PRIVATE
@@ -600,10 +597,7 @@ endif()
 # LTO and native-arch flags for production deployments.
 option(BUILD_FLEXAIDDS_FAST "Build ultra-fast FlexAIDdS docking executable (LTO + native)" ON)
 if(BUILD_FLEXAIDDS_FAST)
-    add_executable(FlexAIDdS
-        LIB/top.cpp
-        $<TARGET_OBJECTS:flexaid_core>
-    )
+    add_executable(FlexAIDdS LIB/top.cpp)
     target_link_libraries(FlexAIDdS PRIVATE flexaid_core)
 
     if(MSVC)

@@ -58,7 +58,7 @@ jobs:
 
       - name: Install build dependencies
         run: |
-          sudo apt-get update -q
+          bash scripts/ci/apt_get_update.sh
           # gcc-14 is required for C++26 support (see CMakeLists.txt compiler gate).
           sudo apt-get install -y --no-install-recommends \
             cmake ninja-build libeigen3-dev libomp-dev libopenmpi-dev openmpi-bin gcc-14 g++-14
@@ -83,7 +83,7 @@ jobs:
             -DFLEXAIDS_USE_METAL=OFF \
             -DFLEXAIDS_USE_AVX2=ON \
             -DFLEXAIDS_USE_OPENMP=ON \
-            -DFLEXAIDS_USE_MPI=ON \
+            -DFLEXAIDS_USE_MPI=OFF \
             -DBUILD_TESTING=OFF \
             -DBUILD_PYTHON_BINDINGS=OFF
           cmake --build build --parallel --target FlexAID
@@ -108,7 +108,8 @@ jobs:
       RESULTS_DIR: results/tier2
       N_WORKERS: ${{ inputs.n_workers || '4' }}
       DO_BOOTSTRAP: ${{ inputs.bootstrap || 'true' }}
-      DRY_RUN_FLAG: ${{ (inputs.dry_run == 'true') && '--dry-run' || '' }}
+      # Push events dry-run until Zenodo dataset IDs are configured.
+      DRY_RUN_FLAG: ${{ (github.event_name == 'push' || inputs.dry_run == 'true') && '--dry-run' || '' }}
       DATASET_FILTER: ${{ inputs.datasets || '' }}
 
     steps:
@@ -126,7 +127,7 @@ jobs:
 
       - name: Install runtime dependencies
         run: |
-          sudo apt-get update -q
+          bash scripts/ci/apt_get_update.sh
           sudo apt-get install -y --no-install-recommends \
             libopenmpi-dev openmpi-bin
 

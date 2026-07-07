@@ -35,7 +35,7 @@ jobs:
       - name: Install Linux dependencies
         if: runner.os == 'Linux'
         run: |
-          sudo apt-get update
+          bash scripts/ci/apt_get_update.sh
           # gcc-14 is required for C++26 support (see CMakeLists.txt compiler gate).
           sudo apt-get install -y cmake ninja-build libeigen3-dev libomp-dev gcc-14 g++-14
 

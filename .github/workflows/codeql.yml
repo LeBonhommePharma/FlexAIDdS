@@ -32,22 +32,24 @@ jobs:
       - name: Install C++ dependencies
         if: matrix.language == 'cpp'
         run: |
-          sudo apt-get update
+          bash scripts/ci/apt_get_update.sh
           # gcc-14 is required for C++26 support (see CMakeLists.txt compiler gate).
-          sudo apt-get install -y libeigen3-dev libboost-all-dev gcc-14 g++-14
+          sudo apt-get install -y cmake ninja-build libeigen3-dev libboost-all-dev gcc-14 g++-14
           echo "CC=gcc-14" >> "$GITHUB_ENV"
           echo "CXX=g++-14" >> "$GITHUB_ENV"
 
       - name: Build C++
         if: matrix.language == 'cpp'
         run: |
-          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release \
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release \
             -DENABLE_TENCOM_TOOL=OFF \
             -DENABLE_TENCOM_BENCHMARK=OFF \
             -DENABLE_VCFBATCH_BENCHMARK=OFF \
             -DBUILD_TESTING=OFF \
-            -DBUILD_PYTHON_BINDINGS=OFF
-          cmake --build build --parallel 2 --target FlexAID
+            -DBUILD_PYTHON_BINDINGS=OFF \
+            -DFLEXAIDS_USE_CUDA=OFF \
+            -DFLEXAIDS_USE_METAL=OFF
+          cmake --build build --parallel --target FlexAID
 
       - name: Autobuild
         if: matrix.language != 'cpp'
