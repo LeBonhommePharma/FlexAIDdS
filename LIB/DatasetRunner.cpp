@@ -5936,11 +5936,28 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
             // can skip SURFNET auto-detection and load the oracle spheres.
             // AUTONOMOUS mode must not inject this env var; otherwise a blind
             // run still uses the answer-derived site.
+            //
+            // COGNATE-REDOCK opt-in (FLEXAIDDS_COGNATE_SITE): allow the known
+            // binding site to be injected EVEN in AUTONOMOUS mode.  This composes
+            // the literature-standard cognate-redocking protocol — search confined
+            // to the known pocket (like ORACLE_CEILING) while retaining every
+            // AUTONOMOUS no-leakage property: reference_ligand seed_fraction=0.0,
+            // pose_seed_enabled=false, ligand pose-blinded, seed_elitism OFF, and
+            // no FLEXAIDDS_SCORE_NATIVE channel.  This is the protocol directly
+            // comparable to rDock/GOLD/Vina Astex redocking numbers (known site,
+            // ligand pose searched from scratch — NOT a crystal-pose ceiling).
+            const bool cognate_site_opt_in =
+                std::getenv("FLEXAIDDS_COGNATE_SITE") != nullptr;
+            const bool inject_oracle_site =
+                (config.mode != BenchmarkMode::AUTONOMOUS) || cognate_site_opt_in;
             if (entry.cleft_sphere_path.empty() &&
-                config.mode != BenchmarkMode::AUTONOMOUS &&
+                inject_oracle_site &&
                 !entry.binding_site_path.empty() && fs::exists(entry.binding_site_path)) {
                 cmd << "FLEXAIDDS_ORACLE_SITE='" << entry.binding_site_path << "' ";
-                std::cerr << "  [ORACLE] " << entry.pdb_id
+                std::cerr << "  ["
+                          << (config.mode == BenchmarkMode::AUTONOMOUS
+                                  ? "COGNATE-REDOCK" : "ORACLE")
+                          << "] " << entry.pdb_id
                           << " using binding site: " << entry.binding_site_path << "\n";
             }
             // Native-pose CF diagnostic: score crystal pose before GA, append
