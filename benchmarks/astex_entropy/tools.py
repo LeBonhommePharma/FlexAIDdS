@@ -14,6 +14,7 @@ from rdkit import RDLogger
 
 from .io_utils import run_command, write_poses
 from .models import PoseRecord, TargetRecord
+from .sdf_utils import read_first_sdf_mol, smiles_from_sdf
 
 RDLogger.DisableLog("rdApp.error")
 
@@ -45,22 +46,7 @@ def _require_executable(name: str, *, skip_missing: bool) -> str | None:
 
 
 def _read_mol(path: str | Path, obabel: str | None = None) -> Chem.Mol:
-    supplier = Chem.SDMolSupplier(str(path), removeHs=False)
-    mol = supplier[0] if supplier and len(supplier) else None
-    if mol is None:
-        obabel = obabel or shutil.which("obabel")
-        repaired = Path(path).with_suffix(".rdkit.sdf")
-        if obabel:
-            run_command(
-                [obabel, "-isdf", str(path), "-osdf", "-O", str(repaired)],
-                log_path=repaired.with_suffix(".obabel.log"),
-                check=False,
-            )
-            supplier = Chem.SDMolSupplier(str(repaired), removeHs=False)
-            mol = supplier[0] if supplier and len(supplier) else None
-    if mol is None:
-        raise RuntimeError(f"Could not read molecule: {path}")
-    return mol
+    return read_first_sdf_mol(path, obabel, allow_unsanitized=True)
 
 
 def _box_from_ligand(
@@ -96,8 +82,7 @@ def _box_from_ligand(
 
 
 def _ligand_smiles(path: str | Path, obabel: str | None = None) -> str:
-    mol = _read_mol(path, obabel)
-    return Chem.MolToSmiles(Chem.RemoveHs(mol), isomericSmiles=True)
+    return smiles_from_sdf(path, obabel)
 
 
 def _protein_sequences_from_pdb(path: str | Path) -> dict[str, str]:

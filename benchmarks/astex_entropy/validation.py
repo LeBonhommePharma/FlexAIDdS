@@ -12,27 +12,41 @@ from rdkit import RDLogger
 from rdkit.Chem import rdMolAlign
 
 from .io_utils import run_command
+from .sdf_utils import normalise_v2000_counts_file, read_first_sdf_mol
 
 RDLogger.DisableLog("rdApp.error")
 
 
 def _read_first_sdf(path: str | Path, obabel: str | None = None) -> Chem.Mol:
-    supplier = Chem.SDMolSupplier(str(path), removeHs=False)
-    mol = supplier[0] if supplier and len(supplier) else None
-    if mol is None:
-        obabel = obabel or shutil.which("obabel")
-        repaired = Path(path).with_suffix(".rdkit.sdf")
-        if obabel:
-            run_command(
-                [obabel, "-isdf", str(path), "-osdf", "-O", str(repaired)],
-                log_path=repaired.with_suffix(".obabel.log"),
-                check=False,
-            )
-            supplier = Chem.SDMolSupplier(str(repaired), removeHs=False)
-            mol = supplier[0] if supplier and len(supplier) else None
-    if mol is None:
-        raise RuntimeError(f"Could not read SDF molecule: {path}")
-    return mol
+    return read_first_sdf_mol(path, obabel, allow_unsanitized=True)
+
+
+def _remove_hs_for_rmsd(mol: Chem.Mol) -> Chem.Mol:
+    try:
+        return Chem.RemoveHs(mol, sanitize=False)
+    except TypeError:
+        return Chem.RemoveHs(mol)
+    except Exception:
+        return mol
+
+
+def _ordered_heavy_rmsd(pose: Chem.Mol, ref: Chem.Mol) -> float | None:
+    if pose.GetNumConformers() == 0 or ref.GetNumConformers() == 0:
+        return None
+    pose_conf = pose.GetConformer()
+    ref_conf = ref.GetConformer()
+    pose_atoms = [atom for atom in pose.GetAtoms() if atom.GetAtomicNum() > 1]
+    ref_atoms = [atom for atom in ref.GetAtoms() if atom.GetAtomicNum() > 1]
+    if len(pose_atoms) != len(ref_atoms):
+        return None
+    total = 0.0
+    for pose_atom, ref_atom in zip(pose_atoms, ref_atoms, strict=True):
+        if pose_atom.GetAtomicNum() != ref_atom.GetAtomicNum():
+            return None
+        p = pose_conf.GetAtomPosition(pose_atom.GetIdx())
+        r = ref_conf.GetAtomPosition(ref_atom.GetIdx())
+        total += (p.x - r.x) ** 2 + (p.y - r.y) ** 2 + (p.z - r.z) ** 2
+    return (total / len(pose_atoms)) ** 0.5 if pose_atoms else None
 
 
 def _normalise_sdf_for_posebusters(path: str | Path, suffix: str, obabel: str | None = None) -> Path:
@@ -46,6 +60,8 @@ def _normalise_sdf_for_posebusters(path: str | Path, suffix: str, obabel: str | 
         log_path=out_path.with_suffix(".obabel.log"),
         check=False,
     )
+    if out_path.exists():
+        normalise_v2000_counts_file(out_path)
     return out_path if out_path.exists() else source
 
 
@@ -56,14 +72,17 @@ def rmsd_to_reference(
     obabel: str | None = None,
 ) -> float | None:
     try:
-        pose = Chem.RemoveHs(_read_first_sdf(pose_sdf, obabel))
-        ref = Chem.RemoveHs(_read_first_sdf(reference_sdf, obabel))
+        pose = _remove_hs_for_rmsd(_read_first_sdf(pose_sdf, obabel))
+        ref = _remove_hs_for_rmsd(_read_first_sdf(reference_sdf, obabel))
         if pose.GetNumAtoms() != ref.GetNumAtoms():
             return None
         try:
             return float(rdMolAlign.GetBestRMS(pose, ref))
         except Exception:
-            return float(rdMolAlign.CalcRMS(pose, ref))
+            try:
+                return float(rdMolAlign.CalcRMS(pose, ref))
+            except Exception:
+                return _ordered_heavy_rmsd(pose, ref)
     except Exception:
         return None
 
