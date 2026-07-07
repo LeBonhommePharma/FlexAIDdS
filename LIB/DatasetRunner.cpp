@@ -5020,6 +5020,12 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
     std::cout << "[DatasetRunner] Docking " << entries.size() << " entries ("
               << config.num_threads << " threads)...\n";
 
+    // ── VCT grid cache (Strategy A): shared on-disk grid snapshots ────────
+    // top.cpp keys .vct files under FLEXAIDDS_GRID_CACHE_DIR; reuse across
+    // ligands sharing the same receptor without rebuilding from scratch.
+    std::string grid_cache_dir = cache_dir_ + "/vct_grids";
+    ensure_dir(grid_cache_dir);
+
     // ── TargetServer: one per unique receptor ───────────────────────────
     // Group entries by receptor path so ligands sharing a receptor
     // feed into the same TargetServer.  This enables cross-ligand
@@ -5926,6 +5932,7 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
             // ── end rotamer pre-relaxation ──────────────────────────────────
 
             std::ostringstream cmd;
+            cmd << "FLEXAIDDS_GRID_CACHE_DIR='" << grid_cache_dir << "' ";
             if (!entry.cleft_sphere_path.empty() && fs::exists(entry.cleft_sphere_path)) {
                 cmd << "FLEXAIDDS_CLEFT_SPHERE_FILE='" << entry.cleft_sphere_path << "' ";
                 std::cerr << "  [MULTI-CLEFT] " << entry.pdb_id
