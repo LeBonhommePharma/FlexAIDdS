@@ -489,10 +489,23 @@ class DockingResult:
             json.JSONDecodeError: If the input is not valid JSON.
             KeyError: If required fields are missing from the JSON payload.
         """
-        source_path = Path(source)
-        if source_path.is_file():
-            text = source_path.read_text(encoding="utf-8")
+        # Robust path-vs-content detection: avoid Path(<long-json-str>) on macOS
+        # (and other platforms) which raises ENAMETOOLONG for >255 char components.
+        text = None
+        s = str(source).strip()
+        looks_like_json = (s.startswith("{") or s.startswith("[")) and len(s) > 2
+        if looks_like_json:
+            text = str(source)
         else:
+            try:
+                source_path = Path(source)
+                if source_path.is_file():
+                    text = source_path.read_text(encoding="utf-8")
+                else:
+                    text = str(source)
+            except (OSError, FileNotFoundError, RuntimeError):
+                text = str(source)
+        if text is None:
             text = str(source)
 
         payload = json.loads(text)
