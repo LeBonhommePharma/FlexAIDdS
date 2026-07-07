@@ -364,7 +364,7 @@ def _native_cavity_detector_executable(cfg: dict[str, Any], *, skip_missing: boo
     configured = (
         cavity_cfg.get("cavity_detect_cli")
         or flex_cfg.get("cavity_detect_cli")
-        or f"{cfg['repo_root']}/build_lto/cavity_detect_cli"
+        or f"{cfg['repo_root']}/{cfg.get('build_dir', 'build_lto')}/cavity_detect_cli"
     )
     return _require_executable(str(configured), skip_missing=skip_missing)
 
@@ -1033,6 +1033,11 @@ def run_flexaidds_batch(
         "FLEXAIDDS_RESTARTS": str(int(flex_cfg.get("restarts", 1))),
         "FLEXAIDDS_PARALLEL_RESTARTS": str(int(flex_cfg.get("parallel_restarts", 0))),
     }
+    grid_cache_dir = flex_cfg.get("grid_cache_dir")
+    if grid_cache_dir:
+        grid_path = Path(str(grid_cache_dir)).expanduser().resolve()
+        grid_path.mkdir(parents=True, exist_ok=True)
+        env["FLEXAIDDS_GRID_CACHE_DIR"] = str(grid_path)
     flexaidds_binary = cfg.get("entropy", {}).get("flexaidds_binary")
     if flexaidds_binary:
         binary = _require_executable(str(flexaidds_binary), skip_missing=skip_missing)

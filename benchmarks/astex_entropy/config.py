@@ -14,6 +14,18 @@ LIVE_REPO_FALLBACK = Path("/Users/lp.more/Projects/FlexAIDdS")
 ICLOUD_BENCHMARKS = Path.home() / "Library/Mobile Documents/com~apple~CloudDocs/FlexAIDdS_benchmarks"
 
 
+VALID_BUILD_PROFILES = {"lto", "metal"}
+
+
+def _build_dir_from_profile(raw: dict[str, Any]) -> tuple[str, str]:
+    profile = str(raw.get("build_profile", "lto")).strip().lower()
+    if profile not in VALID_BUILD_PROFILES:
+        raise ValueError(
+            f"Unknown build_profile: {profile!r}; expected one of {sorted(VALID_BUILD_PROFILES)}"
+        )
+    return profile, f"build_{profile}"
+
+
 def _repo_root_from_config(raw: dict[str, Any]) -> Path:
     configured = raw.get("repo_root") or os.environ.get("FLEXAIDDS_REPO_ROOT")
     if configured:
@@ -46,11 +58,14 @@ def load_config(config_path: str | Path | None = None) -> dict[str, Any]:
         raw = yaml.safe_load(fh) or {}
 
     repo_root = _repo_root_from_config(raw)
+    build_profile, build_dir = _build_dir_from_profile(raw)
     context = {
         "repo_root": str(repo_root),
         "workspace_root": str(WORKSPACE_ROOT),
         "package_dir": str(PACKAGE_DIR),
         "icloud_benchmarks": str(ICLOUD_BENCHMARKS),
+        "build_profile": build_profile,
+        "build_dir": build_dir,
     }
     raw_work_dir = _expand(raw.get("work_dir", "results/astex_entropy"), context)
     work_dir = (WORKSPACE_ROOT / str(raw_work_dir)).resolve()
@@ -60,6 +75,8 @@ def load_config(config_path: str | Path | None = None) -> dict[str, Any]:
     cfg["workspace_root"] = str(WORKSPACE_ROOT)
     cfg["config_path"] = str(path.resolve())
     cfg["work_dir"] = str(work_dir)
+    cfg["build_profile"] = build_profile
+    cfg["build_dir"] = build_dir
     return cfg
 
 
