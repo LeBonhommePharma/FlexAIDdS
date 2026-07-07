@@ -553,6 +553,42 @@ def main() -> int:
         ensure_script = Path(__file__).parent / "ensure_docking_data.py"
         subprocess.run([sys.executable, str(ensure_script)], check=False)
 
+    repo_root = Path(__file__).resolve().parents[4]
+    resolved_binary = args.binary
+    if not args.dry_run and not args.binary:
+        resolve_script = Path(__file__).parent / "resolve_build.py"
+        try:
+            proc = subprocess.run(
+                [sys.executable, str(resolve_script), "--json", "--repo-root", str(repo_root)],
+                capture_output=True,
+                text=True,
+                check=True,
+                timeout=30,
+            )
+            resolution = json.loads(proc.stdout)
+            resolved_binary = resolution["engine_path"]
+            os.environ["FLEXAIDDS_BUILD"] = resolution["build_dir"]
+            os.environ["FLEXAIDDS_BINARY"] = resolution["engine_path"]
+            os.environ["FLEXAIDDS_RUNNER"] = resolution["runner_path"]
+            os.environ["FLEXAIDDS_ENGINE_SHA256"] = resolution["engine_sha256"]
+            os.environ["FLEXAIDDS_RUNNER_SHA256"] = resolution["runner_sha256"]
+            print(
+                f"\n[Skill] Resolved build: {resolution['build_dir']} "
+                f"(engine SHA {resolution['engine_sha256'][:16]}…)"
+            )
+        except (subprocess.CalledProcessError, json.JSONDecodeError, KeyError) as exc:
+            print(
+                "\n[Skill] FATAL: could not resolve FlexAIDdS build for a real run.",
+                file=sys.stderr,
+            )
+            print(
+                "        Run: python3 .grok/skills/flexaidds/scripts/resolve_build.py --sync-env",
+                file=sys.stderr,
+            )
+            if isinstance(exc, subprocess.CalledProcessError) and exc.stderr:
+                print(exc.stderr, file=sys.stderr)
+            return 1
+
     # Build the command for the real module
     cmd = [sys.executable, "-m", "flexaidds.dataset_runner"]
 
@@ -574,7 +610,9 @@ def main() -> int:
         cmd += ["--nodes", str(args.nodes)]
     if args.workers and args.workers > 1:
         cmd += ["--workers", str(args.workers)]
-    if args.binary:
+    if resolved_binary:
+        cmd += ["--binary", resolved_binary]
+    elif args.binary:
         cmd += ["--binary", args.binary]
     if args.results_dir:
         cmd += ["--results-dir", args.results_dir]
@@ -590,7 +628,7 @@ def main() -> int:
     print()
 
     # Gather reproducibility metadata before the run
-    binary_for_meta = args.binary
+    binary_for_meta = resolved_binary or args.binary
     metadata = gather_reproducibility_metadata(args, binary_for_meta)
 
     # The real module lives in the repo's python/ package dir, which is not

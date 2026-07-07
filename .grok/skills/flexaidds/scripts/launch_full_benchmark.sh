@@ -37,44 +37,46 @@ if [ $# -ne 3 ]; then
     exit 1
 fi
 
-# --- 2. Environment & PATH guarantee ----------------------------------------
-FLEXAIDDS_BUILD="${FLEXAIDDS_BUILD:-}"
+# --- 2. Resolve build (reject stale env, pin SHA256) -------------------------
+DATASET="$1"
+TEMPERATURE="$2"
+SUBDIR_NAME="$3"
 
 if [ -f "${HOME}/.flexaidds_env" ]; then
     # shellcheck disable=SC1091
     source "${HOME}/.flexaidds_env"
 fi
 
-if [ -z "${FLEXAIDDS_BUILD:-}" ]; then
-    for candidate in \
-        "$REPO_ROOT/build_lto" \
-        "$REPO_ROOT/build" \
-        "${HOME}/Projects/FlexAIDdS/build_lto" \
-        "${HOME}/Projects/FlexAIDdS/build"; do
-        if [ -x "$candidate/benchmark_datasets" ]; then
-            FLEXAIDDS_BUILD="$candidate"
-            break
-        fi
-    done
-fi
-
-if [ -z "${FLEXAIDDS_BUILD:-}" ]; then
-    echo "FATAL: FLEXAIDDS_BUILD not set and no benchmark_datasets found."
-    echo "       Source ~/.flexaidds_env or export FLEXAIDDS_BUILD=/path/to/build"
+echo "=== [Skill] Resolving active FlexAIDdS build (SHA-pinned) ==="
+if ! eval "$(python3 "$SCRIPT_DIR/resolve_build.py" --export-shell --repo-root "$REPO_ROOT")"; then
+    echo "FATAL: resolve_build.py failed — no valid build tree."
+    echo "       Fix: python3 $SCRIPT_DIR/resolve_build.py --sync-env"
     exit 1
 fi
 
-export PATH="$FLEXAIDDS_BUILD:$PATH"
+python3 "$SCRIPT_DIR/resolve_build.py" --write-pin --repo-root "$REPO_ROOT" >/dev/null
 
 if ! command -v benchmark_datasets >/dev/null 2>&1; then
-    echo "FATAL: benchmark_datasets not found after PATH export."
-    echo "       Expected at: $FLEXAIDDS_BUILD/benchmark_datasets"
+    echo "FATAL: benchmark_datasets not found after resolve_build."
+    echo "       Expected at: ${FLEXAIDDS_RUNNER:-$FLEXAIDDS_BUILD/benchmark_datasets}"
     exit 1
 fi
 
-DATASET="$1"
-TEMPERATURE="$2"
-SUBDIR_NAME="$3"
+FLEXAIDDS_RUNNER="${FLEXAIDDS_RUNNER:-$FLEXAIDDS_BUILD/benchmark_datasets}"
+FLEXAIDDS_BINARY="${FLEXAIDDS_BINARY:-$FLEXAIDDS_BUILD/FlexAIDdS}"
+
+RUNNING_PIDS="$(pgrep -f "benchmark_datasets" 2>/dev/null || true)"
+if [ -n "$RUNNING_PIDS" ]; then
+    echo "FATAL: benchmark_datasets already running (PIDs: $RUNNING_PIDS)"
+    echo "       Monitor or stop the existing run before launching a duplicate."
+    exit 1
+fi
+
+echo "  build_dir:       $FLEXAIDDS_BUILD"
+echo "  engine_sha256:   $FLEXAIDDS_ENGINE_SHA256"
+echo "  runner_sha256:   $FLEXAIDDS_RUNNER_SHA256"
+
+FLEXAIDDS_RESULTS="${FLEXAIDDS_RESULTS:-$HOME/flexaidds_results}"
 
 # --- 3. Full Skill Ritual (mandatory for production) ------------------------
 echo "=== [Skill] Full ritual for production full benchmark run ==="
@@ -153,18 +155,26 @@ EOF
 
 # --- 6. Early structured status (the key bulletproofing item) ---------------
 STATUS_FILE="$OUT_DIR/run_status.json"
-cat > "$STATUS_FILE" << EOF
-{
-  "status": "launched",
-  "wrapper_pid": $$,
-  "dataset": "$DATASET",
-  "temperature": $TEMPERATURE,
-  "start_time": "$(date -Iseconds)",
-  "command": "$0 $*",
-  "output_dir": "$OUT_DIR",
-  "binary": "$FLEXAIDDS_BINARY"
+python3 - <<PYEOF
+import json, os
+from datetime import datetime, timezone
+payload = {
+    "status": "launched",
+    "wrapper_pid": $$,
+    "dataset": "$DATASET",
+    "temperature": $TEMPERATURE,
+    "start_time": datetime.now(timezone.utc).isoformat(),
+    "command": "$0 $*",
+    "output_dir": "$OUT_DIR",
+    "build_dir": os.environ.get("FLEXAIDDS_BUILD", ""),
+    "engine_path": os.environ.get("FLEXAIDDS_BINARY", ""),
+    "runner_path": os.environ.get("FLEXAIDDS_RUNNER", ""),
+    "engine_sha256": os.environ.get("FLEXAIDDS_ENGINE_SHA256", ""),
+    "runner_sha256": os.environ.get("FLEXAIDDS_RUNNER_SHA256", ""),
 }
-EOF
+with open("$STATUS_FILE", "w") as f:
+    json.dump(payload, f, indent=2)
+PYEOF
 
 echo "Early status written: $STATUS_FILE"
 
@@ -183,11 +193,17 @@ echo "Log:         $LOG_FILE"
 # - no 'setsid' (Linux-only; it was causing the command/redirection to fail silently on macOS M3 Pro)
 # - </dev/null for clean stdin
 # - disown to fully detach from job control (best effort)
-nohup "$FLEXAIDDS_BINARY" \
+CACHE_DIR="${FLEXAIDDS_CACHE:-${FLEXAIDDS_CACHE_ROOT:-$HOME/.flexaidds/benchmarks}}"
+mkdir -p "$CACHE_DIR"
+
+nohup "$FLEXAIDDS_RUNNER" \
     --benchmark "$DATASET" \
-    -c "$CONFIG_FILE" \
     --temperature "$TEMPERATURE" \
-    -o "$OUT_DIR/${DATASET}_${TEMPERATURE}" \
+    --output "$OUT_DIR/${DATASET}_${TEMPERATURE}" \
+    --threads 1 \
+    --omp-threads "${OMP_NUM_THREADS:-6}" \
+    --cache "$CACHE_DIR" \
+    --job-timeout-seconds 7200 \
     >> "$LOG_FILE" 2>> "$ERR_FILE" </dev/null &
 
 CHILD_PID=$!

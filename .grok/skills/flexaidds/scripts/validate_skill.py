@@ -14,6 +14,7 @@ Run:
 """
 import os
 import re
+import subprocess
 import sys
 import xml.etree.ElementTree as ET
 from pathlib import Path
@@ -185,6 +186,7 @@ def check_bin_wrappers() -> bool:
         "inspect-definition-files",
         "update-skill",
         "dataset-runner",
+        "resolve-build",
     )
     missing = [name for name in expected if not (bin_dir / name).exists()]
     if missing:
@@ -238,6 +240,39 @@ def check_guardrails() -> bool:
     return True
 
 
+def check_active_build() -> bool:
+    """Warn or fail when no resolvable production build exists."""
+    resolver = SKILL_DIR / "scripts" / "resolve_build.py"
+    if not resolver.is_file():
+        fail("resolve_build.py missing")
+        return False
+    require = os.environ.get("FLEXAIDDS_REQUIRE_BUILD", "").strip() in ("1", "true", "yes")
+    try:
+        proc = subprocess.run(
+            [sys.executable, str(resolver), "--check", "--repo-root", str(REPO_ROOT)],
+            capture_output=True,
+            text=True,
+            timeout=30,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        msg = f"resolve_build check could not run: {exc}"
+        if require:
+            fail(msg)
+            return False
+        print(f"WARN: {msg}")
+        return True
+    if proc.returncode != 0:
+        msg = (proc.stderr or proc.stdout or "resolve_build failed").strip()
+        if require:
+            fail(f"Active build resolution failed: {msg}")
+            return False
+        print(f"WARN: Active build not resolved (set FLEXAIDDS_REQUIRE_BUILD=1 to enforce): {msg}")
+        return True
+    ok("Active build resolves (resolve_build.py --check)")
+    return True
+
+
 def main() -> int:
     print("=== FlexAIDdS Skill Packaging Validator ===\n")
     results = [
@@ -246,6 +281,7 @@ def main() -> int:
         ("no-broken-refs", check_broken_local_refs()),
         ("aliases-documented", check_aliases_documented()),
         ("bin-wrappers", check_bin_wrappers()),
+        ("active-build", check_active_build()),
         ("guardrails", check_guardrails()),
     ]
 

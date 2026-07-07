@@ -15,7 +15,13 @@ Before touching a live run:
 
 1. Read `AGENTS.md` (repo root).
 2. Read `CLAUDE_BENCHMARK_HANDOFF.md` if present and the task could overlap older v90-v94 campaign work.
-3. Run the status script from the repo root:
+3. Resolve and pin the active C++ build (rejects stale `FLEXAIDDS_BUILD` paths):
+
+```bash
+python3 .grok/skills/flexaidds/scripts/resolve_build.py --check
+```
+
+4. Run the status script from the repo root:
 
 ```bash
 python3 .agents/skills/flexaidds-benchmarking/scripts/astex_entropy_status.py

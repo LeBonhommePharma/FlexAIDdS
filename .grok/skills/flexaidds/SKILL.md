@@ -134,7 +134,18 @@ The skill itself is packaged under:
 **Local validation commands (run these before any claim of "done"):**
 ```bash
 python3 .grok/skills/flexaidds/scripts/validate_skill.py
+python3 .grok/skills/flexaidds/scripts/resolve_build.py --check
 python3 -m pytest tests/test_flexaid_skill.py -q --tb=line
+```
+
+**Production build resolution (autonomous, SHA-pinned):**
+```bash
+# After any C++ rebuild — refreshes ~/.flexaidds_env and ~/.flexaidds/active_build.json
+python3 .grok/skills/flexaidds/scripts/resolve_build.py --sync-env
+
+# Resume a campaign on the exact same engine binary:
+export FLEXAIDDS_ENGINE_SHA256="<sha-from-prior-run-manifest>"
+python3 .grok/skills/flexaidds/scripts/resolve_build.py --check
 ```
 
 Before any real docking run, run the unified data ensure script:

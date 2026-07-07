@@ -86,6 +86,8 @@ cmake --build build -j $(nproc)
 **Skill / runtime-data maintenance**
 ```bash
 python3 .grok/skills/flexaidds/scripts/validate_skill.py
+python3 .grok/skills/flexaidds/scripts/resolve_build.py --check    # reject stale builds; pin engine SHA256
+python3 .grok/skills/flexaidds/scripts/resolve_build.py --sync-env  # refresh ~/.flexaidds_env after rebuilds
 python3 .grok/skills/flexaidds/scripts/ensure_docking_data.py --check
 python3 .grok/skills/flexaidds/scripts/update_skill.py --dry-run -v
 ```
