@@ -32,10 +32,26 @@ static bool           s_cuda_ready = false;
 
 #include <algorithm>
 #include <cmath>
+#include <cstdlib>
 #include <numeric>
 #include <vector>
 
 namespace shannon_thermo {
+
+// Minimum sample count before Shannon histogram work is offloaded to GPU.
+// FLEXAIDDS_SHANNON_GPU_MIN_N overrides both backends when set (non-negative int).
+// Defaults when env is unset:
+//   CUDA (FLEXAIDS_USE_CUDA):                         GPU_DISPATCH_THRESHOLD (500000)
+//   Metal-only (FLEXAIDS_HAS_METAL_SHANNON, no CUDA): 1024 — lower launch overhead
+static int shannon_gpu_min_n(int path_default) {
+    if (const char* env = std::getenv("FLEXAIDDS_SHANNON_GPU_MIN_N")) {
+        char* end = nullptr;
+        const long v = std::strtol(env, &end, 10);
+        if (end && *end == '\0' && v >= 0)
+            return static_cast<int>(v);
+    }
+    return path_default;
+}
 
 // ─── ShannonEnergyMatrix ─────────────────────────────────────────────────────
 
@@ -195,13 +211,12 @@ double compute_shannon_entropy(const std::vector<double>& values, int num_bins) 
 
     std::vector<int> bins(num_bins, 0);
 
-// GPU dispatch only for large datasets (N > GPU_DISPATCH_THRESHOLD).
-// For typical docking populations (100–10K), scalar/OpenMP is faster
-// than GPU kernel launch + memory transfer overhead.
-if (n > GPU_DISPATCH_THRESHOLD) {
-// ── 1. CUDA ───────────────────────────────────────────────────────────────────
+    // GPU dispatch only above path-specific min-N (env-tunable).
+    // For typical docking populations (100–10K), scalar/OpenMP is faster
+    // than GPU kernel launch + memory transfer overhead on CUDA; Metal-only
+    // builds use a lower default (1024) when FLEXAIDDS_SHANNON_GPU_MIN_N is unset.
 #ifdef FLEXAIDS_USE_CUDA
-    {
+    if (n > shannon_gpu_min_n(GPU_DISPATCH_THRESHOLD)) {
         if (!s_cuda_ready) {
             shannon_cuda_init(s_cuda_ctx, 1 << 20, num_bins);
             s_cuda_ready = true;
@@ -214,11 +229,19 @@ if (n > GPU_DISPATCH_THRESHOLD) {
     }
 #endif
 
-// ── 2. Metal ──────────────────────────────────────────────────────────────────
 #ifdef FLEXAIDS_HAS_METAL_SHANNON
-    return ShannonMetalBridge::compute_shannon_entropy_metal(values, num_bins);
+    {
+        // Metal-only default 1024; when CUDA is also compiled, keep 500K default.
+        constexpr int kMetalGpuMinNDefault =
+#if defined(FLEXAIDS_USE_CUDA)
+            GPU_DISPATCH_THRESHOLD;
+#else
+            1024;
 #endif
-} // GPU_DISPATCH_THRESHOLD
+        if (n > shannon_gpu_min_n(kMetalGpuMinNDefault))
+            return ShannonMetalBridge::compute_shannon_entropy_metal(values, num_bins);
+    }
+#endif
 
 // ── 3. AVX-512 (+ optional OpenMP for multi-threaded private histograms) ──────
 #ifdef __AVX512F__
