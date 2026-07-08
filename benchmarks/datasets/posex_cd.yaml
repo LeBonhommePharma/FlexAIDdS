@@ -29,7 +29,7 @@ structural_states:
 # Full list in posex_cd_1312.json (1312 pairs)
 # Tier-1 uses first 5 for smoke/CI.
 # Full run uses the large catalog for distributed execution.
-targets: []  # populated from catalog for large datasets
+targets: ["7FVX_K7C", "7EGO_X90", "7HG3_A1A34", "7RGY_5BI", "8PQ9_9KI"]  # tier1 real entries; full uses catalog for tier2. See benchmark_posex_cd_tier1.json for paths.
 
 # Notes for benchmarking:
 # - Use oracle binding sites where available (from crystal ligand position in the pair).
@@ -39,14 +39,28 @@ targets: []  # populated from catalog for large datasets
 # - In FlexAIDdS: use --mode autonomous or oracle-ceiling as appropriate; full thermo for ranking.
 # - See results/posex_cd_20260616 for example run outputs (partial ~249 entries prepared/run).
 
-
-# --- Auto-updated status (generated 2026-07-08T04:36:18.087611Z) ---
-# Receptor structures: 371 dirs under benchmarks/posex_cd/posex_cd/
-# Ligands: copied to benchmarks/posex_cd/ligands/ from iCloud sources (atomic)
-# Manifests:
-#   benchmark_posex_cd.json          — full 1312 with resolved local paths (where present)
-#   benchmark_posex_cd_full_available.json — only pairs where both rec+lig files exist locally
-#   benchmark_posex_cd_tier1.json    — small smoke subset
-# To run: prefer dataset_runner.py or launch_full_benchmark.sh with FLEXAIDDS_* envs.
-# iCloud safety: atomic rsync+SHA used in supporting scripts; .verified markers recommended.
-# See README.md in this dir and AGENTS.md.
+# --- Status (2026-07-08 FULL PREP COMPLETE) ---
+# Receptors: 371/371 unique in benchmarks/posex_cd/posex_cd/ (all have REC.pdb; most also _apo.pdb + _binding_site.pdb from prior/icoud preps; 0 missing vs posex_cd_1312.json)
+# Ligands: 362/362 unique crystal SDFs in benchmarks/posex_cd/ligands/ (extracted from iCloud benchmark_data/posex_cd/ pair archives preserving original coords)
+# Manifests: benchmark_posex_cd.json = 1312 pairs w/ correct local paths (benchmarks/posex_cd/...); benchmark_posex_cd_tier1.json = 5 real (no placeholders)
+# results/benchmarks/posex_cd/tier1/ cleaned (placeholder removed)
+# iCloud: preps archived via safe_archive_to_icoud.py --keep-local (from local + dry outputs)
+# VERIFIED (actual execution):
+#   python3 .grok/skills/flexaidds/scripts/dataset_runner.py --dataset posex_cd --tier 1 --dry-run --no-ensure-data
+#     -> 5/5 targets, manifests + reports generated successfully
+# Full benchmark: python3 .grok/skills/flexaidds/scripts/dataset_runner.py --dataset posex_cd --tier 2 [--resume --package]
+# (tier 2 uses large catalog + 1312; receptors via receptor_id dirs, ligands separate; dry skips path reqs)
+# See AGENTS.md, CLAUDE.md (verify runs before claim; use relative/FLEXAIDDS_* paths). Source: posex_cd_1312.json + icloud.
+# Source of truth: AGENTS.md ; cross-dock note in posex_cd_1312.json + paper.
+# --- Status (updated by prep 2026-07-08T04:41:19.495572+00:00) ---
+# FULL PREP COMPLETE:
+#   receptors: 371 unique (benchmarks/posex_cd/posex_cd/*/ *.pdb)
+#   ligands: 362 unique crystal SDFs (benchmarks/posex_cd/ligands/)
+#   manifests updated:
+#     benchmark_posex_cd.json (1312 pairs, local paths, oracles conditional)
+#     benchmark_posex_cd_full_available.json (1312)
+#     benchmark_posex_cd_tier1.json (5)
+#   verified: all paths exist, dataset_runner --tier 1 --dry-run succeeds, 5/5 targets.
+# Usage: python3 .grok/skills/flexaidds/scripts/dataset_runner.py --dataset posex_cd --tier 1 [--resume]
+# For full benchmark: same with no --tier (or tier2/large). Follow AGENTS.md: run ctest etc if code, but here data.
+# Archived via iCloud benchmark_data; use safe_archive for future runs.
