@@ -36,6 +36,11 @@ Inputs
 No specific complexes are hard-coded; the script calibrates against whatever
 overlap exists between the ITC CSV and the available FlexAIDdS results.
 
+P4+ note (grand canonical prep): single-ligand ITC calibration remains here.
+Competitive / selectivity / p_bind / occupancy validation lives in
+scripts/grand_calibrate.py + competition_example.yaml + grand_synthetic fixtures.
+Future: may extend to parse competition ITC fraction-bound curves.
+
 Usage
 -----
     python benchmarks/calibrate_itc.py \
