@@ -352,7 +352,7 @@ def sync_flexaidds_env(resolution: BuildResolution) -> Path:
         f"export FLEXAIDDS_ENGINE_SHA256={_shell_quote(resolution.engine_sha256)}",
         f"export FLEXAIDDS_RUNNER_SHA256={_shell_quote(resolution.runner_sha256)}",
         f"export FLEXAIDDS_RESULTS={_shell_quote(results)}",
-        f"export PATH={_shell_quote(resolution.build_dir + ':$PATH')}",
+        f"export PATH={_shell_quote(resolution.build_dir)}:\$PATH",
         "",
         "# Re-resolve after rebuilds: python3 .grok/skills/flexaidds/scripts/resolve_build.py --sync-env",
     ]
