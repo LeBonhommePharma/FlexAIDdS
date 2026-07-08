@@ -24,14 +24,18 @@ ParallelDockManager::ParallelDockManager(
     gridpoint* cleftgrid,
     const ParallelDockConfig& config,
     genlim* parent_gene_lim,
-    int     parent_num_genes)
+    int     parent_num_genes,
+    target::TargetServer* ts,
+    const std::string& ligand_name)
     : FA_(FA), GB_(GB), VC_(VC),
       atoms_(atoms), residue_(residue),
       cleftgrid_(cleftgrid),
       config_(config),
       parent_gene_lim_(parent_gene_lim),
       parent_num_genes_(parent_num_genes),
-      pool_(config.pose_pool_size)
+      pool_(config.pose_pool_size),
+      ts_(ts),
+      ligand_name_(ligand_name)
 {}
 
 // ============================================================================
@@ -127,6 +131,17 @@ void ParallelDockManager::run(
 #endif
 
     printf("ParallelDock: completed %d region GA runs\n", n_regions);
+
+    // P1: if TargetServer provided at construction, register real log_Z from global engine
+    if (ts_ && !ligand_name_.empty()) {
+        auto eng = get_global_engine();
+        auto sess = ts_->create_session(ligand_name_);
+        sess.completed = true;
+        sess.n_poses = 0; // aggregate from regions if needed
+        sess.log_Z = eng.compute().log_Z;
+        ts_->register_result(sess);
+        printf("[GRAND] ParallelDock registered log_Z=%.6g for %s\n", sess.log_Z, ligand_name_.c_str());
+    }
 }
 
 // ============================================================================

@@ -2332,6 +2332,16 @@ int main(int argc, char **argv){
 
 		int n_chrom_snapshot = 0;
 
+		// P1: create local TargetServer for this GA run (P1 wiring; default 1M conc, later from config)
+		std::unique_ptr<target::TargetServer> local_ts;
+		target::TargetServer* active_ts = nullptr;
+		{
+			target::TargetConfig tcfg;
+			tcfg.temperature_K = static_cast<double>(FA->temperature);
+			local_ts = std::make_unique<target::TargetServer>(tcfg);
+			active_ts = local_ts.get();
+		}
+
 		if (use_parallel_dock) {
 			// ── ParallelDock: grid-decomposed parallel GA instances ──
 			printf("=== ParallelDock mode: %d spatial regions ===\n", parallel_dock_regions);
@@ -2342,7 +2352,7 @@ int main(int argc, char **argv){
 			// and rotation gene limits (genes 1..N-1).  Previously these were
 			// uninitialized, producing physically nonsensical conformations.
 			ParallelDockManager pdm(FA, GB, VC, atoms, residue, cleftgrid, pdcfg,
-			                        gene_lim, GB->num_genes);
+			                        gene_lim, GB->num_genes, active_ts, "parallel-dock");
 			pdm.decompose();
 			pdm.run(ic2cf);
 			auto global_thermo = pdm.aggregate();
@@ -2566,16 +2576,6 @@ int main(int argc, char **argv){
 				}
 				FA->hbond_rank_rescore = 0;
 				QuickSort(chrom_snapshot, 0, n_chrom_snapshot - 1, true);
-			}
-
-			// P1: create local TargetServer for this GA run (P1 wiring; default 1M conc, later from config)
-			std::unique_ptr<target::TargetServer> local_ts;
-			target::TargetServer* active_ts = nullptr;
-			{
-				target::TargetConfig tcfg;
-				tcfg.temperature_K = static_cast<double>(FA->temperature);
-				local_ts = std::make_unique<target::TargetServer>(tcfg);
-				active_ts = local_ts.get();
 			}
 
 			printf("clustering all individuals in GA...");
