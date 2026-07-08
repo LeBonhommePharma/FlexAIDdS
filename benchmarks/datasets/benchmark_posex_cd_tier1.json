@@ -9,8 +9,7 @@
       "ligand_id": "K7C",
       "receptor_pdb": "benchmarks/posex_cd/posex_cd/7FVX/7FVX.pdb",
       "ligand_sdf": "benchmarks/posex_cd/ligands/K7C.sdf",
-      "state": "crossdock",
-      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7FVX/7FVX_binding_site.pdb"
+      "state": "crossdock"
     },
     {
       "entry_id": "7EGO_X90",
@@ -18,8 +17,7 @@
       "ligand_id": "X90",
       "receptor_pdb": "benchmarks/posex_cd/posex_cd/7EGO/7EGO.pdb",
       "ligand_sdf": "benchmarks/posex_cd/ligands/X90.sdf",
-      "state": "crossdock",
-      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7EGO/7EGO_binding_site.pdb"
+      "state": "crossdock"
     },
     {
       "entry_id": "7HG3_A1A34",
@@ -27,8 +25,7 @@
       "ligand_id": "A1A34",
       "receptor_pdb": "benchmarks/posex_cd/posex_cd/7HG3/7HG3.pdb",
       "ligand_sdf": "benchmarks/posex_cd/ligands/A1A34.sdf",
-      "state": "crossdock",
-      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7HG3/7HG3_binding_site.pdb"
+      "state": "crossdock"
     },
     {
       "entry_id": "7RGY_5BI",
@@ -36,8 +33,7 @@
       "ligand_id": "5BI",
       "receptor_pdb": "benchmarks/posex_cd/posex_cd/7RGY/7RGY.pdb",
       "ligand_sdf": "benchmarks/posex_cd/ligands/5BI.sdf",
-      "state": "crossdock",
-      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7RGY/7RGY_binding_site.pdb"
+      "state": "crossdock"
     },
     {
       "entry_id": "8PQ9_9KI",
