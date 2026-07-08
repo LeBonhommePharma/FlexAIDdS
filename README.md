@@ -366,6 +366,30 @@ python -m flexaidds /path/to/results/ --json        # JSON output
 python -m flexaidds /path/to/results/ --csv out.csv  # CSV export
 ```
 
+### Grand Canonical Competitive Docking (Ξ, P3+)
+
+For multi-ligand competition on one receptor, use concentrations to compute the grand partition function Ξ, binding probabilities p_bind, and selectivity.
+
+```bash
+# Run via dataset runner with default conc (1 M) or explicit
+python -m flexaidds.benchmarks.dataset_runner --dataset competition_example --tier 1 --conc 1e-6 --resume
+
+# Or direct binary (per-ligand conc via YAML; default via --conc)
+./build/FlexAIDdS receptor.pdb ligandA.mol2 --conc 1e-6 -o runA
+# Parallel multi-ligand on same receptor auto-groups into TargetServer for Ξ
+
+# YAML per-ligand concs (see benchmarks/datasets/competition_example.yaml)
+# ligands or competition_sets: [ { ligand_id: "...", conc_M: 1e-6 }, ... ]
+```
+
+Outputs include:
+- grand_summary in JSON reports
+- `*_grand_summary.csv` (ligand, log_Z, conc_M, log_Xi, p_bind)
+- [GRAND] REMARKs/sidecars when --conc used (C++ path)
+- Python: `from flexaidds import compute_grand_partition; g = compute_grand_partition(...)`
+
+See: `benchmarks/grand_synthetic/`, `scripts/grand_calibrate.py` (in grand_synthetic), GPF_IMPLEMENTATION_PLAN.md, `docs/GrandPartitionFunction_Report.md`.
+
 <details>
 <summary><strong>PyMOL Plugin</strong></summary>
 

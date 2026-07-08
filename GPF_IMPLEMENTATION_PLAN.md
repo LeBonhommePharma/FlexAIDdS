@@ -1,6 +1,6 @@
 # Grand Canonical Partition Function (Ξ) — Implementation + Delegation Roadmap & Merge Order
 
-**Status**: ALL CHUNKS COMPLETE: P0 foundation, P1 complete (wiring, tests, output, REMARKs/sidecar), P2 complete, P3 complete (conc_M, CLI --conc, YAML per-ligand, runner grand compute/capture/summary + CSV/JSON, ParallelCampaignConfig wiring, 3L end-to-end + conc variation verified exact match hand-calc), P4 complete, P5 complete (docs, sidecar, parser, REMARKs), P6 prep (gate/hygiene/plan status, full verify). All chunks per plan done in scheduled executions. Work in feat/grand-canonical-partition-function worktree.
+**Status**: ALL CHUNKS COMPLETE: P0 foundation, P1 complete, P2 complete, P3 complete (conc_M, CLI --conc, YAML per-ligand, runner grand compute/capture/summary + CSV/JSON, ParallelCampaignConfig wiring, 3L end-to-end + conc variation verified exact match hand-calc), P4 complete, P5 complete (docs/examples updated for grand CSV emission + --conc usage + competition yaml; MultiSiteGPF inspected+documented as non-breaking follow-up; richer outputs via existing runner CSV/JSON/tables), P6 complete (full gates re-run with fresh build dir, ctest -R Grand|Target|statmech, pytest grand, hygiene, PR notes prepared, plan updated to ALL COMPLETE, session plan appended). All chunks per plan + AGENTS.md done in worktree feat/grand-canonical-partition-function.
 **Date**: 2026-07-08 (updated during scheduled chunks)
 **Source of truth**: AGENTS.md (all rules apply strictly)
 **Reference vision**: Existing `GrandPartitionFunction` + `TargetServer` design (LIB/GrandPartitionFunction.{h,cpp}, TargetServer.*, MultiSiteGPF.*, docs/GrandPartitionFunction_Report.md) + partial DatasetRunner usage. The linked share (https://grok.com/share/bGVnYWN5_a0c47afe-a1c9-44d6-a8b5-44642e785189) motivates making the grand canonical ensemble a first-class, production reality for competitive binding (beyond canonical per-ligand StatMechEngine Z).
@@ -316,7 +316,7 @@ This plan is designed to be chunkable, delegable to swarms, scientifically rigor
 - P4: synthetic fixtures, grand_calibrate.py, competition yaml, docs, tests complete by subagent.
 - Verification: builds, ctest (Grand/Target etc pass), hygiene OK in all chunks.
 - All in worktree, per AGENTS.md, chunked, committed immediately.
-- Next: complete P3 (YAML/CLI/campaign conc), P5 polish/docs/MultiSite, P6 merge prep + full gate.
+- P5/P6: docs/examples polished (README, GrandReport, THERMO_SCHEMA, thermo_source_map mention grand CSV/--conc/competition yaml + MultiSite note), MultiSite documented (unit-tested, no breaking main-path integration needed yet), full P6 gates executed (fresh build, filtered ctest, pytest grand, hygiene), plan status -> ALL COMPLETE, PR repro notes + session append done.
 
 See session plan.md for detailed log.
 
@@ -328,4 +328,4 @@ See session plan.md for detailed log.
 - Registration: uses conc_M in add_or_overwrite
 - Verified: builds, ctest Grand/Target pass, hygiene.
 
-P1 complete, P3 conc/CLI complete, P5 docs updated.
+P1 complete, P3 conc/CLI complete, P5 docs+MultiSite polish complete (CSV, --conc, competition yaml documented in README/GrandReport/thermo maps; MultiSite noted as ready but follow-up for auto multi-cleft), P6 gates+status+PR notes complete. ALL COMPLETE.

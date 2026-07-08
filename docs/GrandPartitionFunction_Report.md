@@ -304,6 +304,22 @@ The thread-safe `create_session()` / `register_result()` pattern supports parall
 |-----------|-------|----------|
 | `test_grand_partition.cpp` | 29 | Construction, single/multi ligand, competitive binding, equal ligands, ranking, overwrite/merge, remove, error handling, extreme values, StatMech integration, concentration, log-selectivity, intrinsic selectivity, all_log_zZ, impossible concentration guard, ΔG_bind |
 | `test_target_server.cpp` | 12 | Construction, validation, session management, GPF integration, re-docking, knowledge base, concurrent registration |
+| `test_multi_site_gpf.cpp` | 11+ | Independent/coupled sites, cooperativity (pos/neg), occupancy, marginal probs (unit tests only; full multi-cleft wiring is P5 follow-up) |
+
+### P3+ Emission: CSV/JSON + --conc + Competition YAML
+
+- Python `DatasetRunner` (and CLI `--conc` / `default_conc_M`) + per-ligand `ligand_concs` from YAML emit:
+  - `*_grand_summary.csv` with columns: ligand, log_Z, conc_M, log_Xi, p_bind
+  - grand_summary embedded in per-dataset JSON reports + markdown summary tables
+- C++ binary: `--conc` / `--concentration` sets default for TargetServer sessions; YAML competition_sets / ligands with `conc_M` parsed in runner.
+- `benchmarks/datasets/competition_example.yaml` provides per-ligand `conc_M` examples (nM-uM) + expected for validation harness.
+- `compute_grand_partition` (Python) + C++ GPF produce matching Ξ, p_bind etc.
+- Sidecar/REMARK: [GRAND] lines and grand_*.json when competitive context active (from prior chunks).
+- Repro: use `grand_calibrate.py --synthetic` (in benchmarks/grand_synthetic/) and exact fixtures (multi_ligand_exact.json verified 3L equal/varied conc cases).
+
+MultiSiteGPF (product over sites + coupling matrix) remains available for future multi-cleft/allosteric (non-breaking; not yet auto-wired from cleft detection into campaigns — documented follow-up).
+
+See also: GPF_IMPLEMENTATION_PLAN.md (P3/P5), runner.py _save + grand emission paths, competition_example.yaml.
 
 ---
 

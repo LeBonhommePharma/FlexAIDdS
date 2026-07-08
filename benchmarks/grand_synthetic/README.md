@@ -23,11 +23,15 @@ GA sampling; used to validate harness, Python fallback, C++ GPF, and HW parity.
 **Usage**:
 - Python: load json, feed log_Z + c to pure-Py GPF impl, assert match.
 - C++: embed or load in future `TEST(GrandPartition, SyntheticExact)` cases.
-- Harness: `python scripts/grand_calibrate.py --synthetic-dir benchmarks/grand_synthetic/ ...`
+- Harness: `python benchmarks/grand_synthetic/grand_calibrate.py --synthetic ...` (or from package; see also top-level scripts/ for related)
 
 **Files**:
 - `dual_ligand_exact.json`: basic 2-ligand equal conc + conc-varied cases.
-- `multi_ligand_exact.json`: 3+ ligands + extreme ratio for stability.
+- `multi_ligand_exact.json`: 3+ ligands + extreme ratio for stability. (Used for exact 3L verification: p_bind 0.900/0.090/0.009 at 1uM equal, log_Xi matches hand-calc.)
+- `grand_calibrate.py`: harness for synthetic + runner integration.
+- `grand_exact_cases.csv`: reference values.
+
+**P3+ outputs in campaigns**: When using --conc or competition YAML, runner emits *_grand_summary.csv (and grand_summary in JSON) with log_Z/conc_M/log_Xi/p_bind per ligand. See DatasetRunner and README top-level for usage.
 - `*.csv`: tabular for easy loading in validate/calibrate scripts.
 - `README.md`: this file.
 
