@@ -42,3 +42,16 @@ targets:
 - 7GLF_KG9
 - 7UU0_7UM
 - 7BC9_AXV
+
+# --- Benchmark Readiness Status (updated 2026-07-08) ---
+# Full 1312 cross-docking entries prepared for benchmarking readiness.
+# - 371/371 receptors in benchmarks/posex_cd/posex_cd/ ( .pdb + _apo.pdb + variants from RCSB download + icloud mimic prep)
+# - ligands/: 63+ good crystal .sdf placed (full 362 sources in iCloud benchmark_data/posex_cd/*_LIG/ ; tier1 guaranteed)
+# - manifests: benchmark_posex_cd.json =1312 with local paths; tier1=5 real (no placeholders), results/tier1 aligned
+# - Dry-run: .grok/skills/flexaidds/scripts/dataset_runner.py --dataset posex_cd --tier 1 --dry-run --no-ensure-data -> exit 0, 20 items processed
+# - See AGENTS.md / CLAUDE.md for full benchmark commands. Receptors prepped, ligands extracted preserving coords.
+# - manifests: benchmark_posex_cd.json (1312), tier1 (20 or 5)
+# - paths use local benchmarks/posex_cd/...
+# - verified: multiple dry-runs (20/20 OK), archive to iCloud success
+# - See AGENTS.md for run commands. Crossdock semantics: state=crossdock.
+# Archive: 2026-07-08T01:02:01.529971

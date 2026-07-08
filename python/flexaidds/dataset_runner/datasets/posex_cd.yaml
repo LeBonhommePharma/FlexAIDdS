@@ -8,7 +8,12 @@ description: 'Cross-docking benchmark from the PoseX suite: 1312 tasks on recent
   modern AI vs physics benchmarking. Includes annotations for pocket similarity (TM-score)
   to pre-2022 pockets.
 
-  '
+
+  Tier1 now uses 20 entries for better smoke testing.
+
+
+  Prepped receptors in benchmarks/posex_cd/posex_cd/ (371 unique), ligands in benchmarks/posex_cd/ligands/
+  . 1312 ready for tier2.'
 zenodo_doi: ''
 download_url: https://github.com/CataAI/PoseX
 data_format: pdb

@@ -1,9 +1,8 @@
 {
-  "dest": "/Users/lp.more/Library/Mobile Documents/com~apple~CloudDocs/flexaidds/benchmark_data/posex_cd_local_prepared/posex_cd-20260708T044606Z",
-  "dry_run": true,
-  "manifest_preview": "would compute tree sha + copy + verify",
+  "dest": "/Users/lp.more/Library/Mobile Documents/com~apple~CloudDocs/flexaidds/FlexAIDdS_benchmarks/archived/posex_cd-20260708T050716Z",
+  "dry_run": false,
   "source": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/posex_cd",
-  "started": "20260708T044606Z",
+  "started": "20260708T050716Z",
   "success": true,
-  "would_create": "/Users/lp.more/Library/Mobile Documents/com~apple~CloudDocs/flexaidds/benchmark_data/posex_cd_local_prepared/posex_cd-20260708T044606Z"
+  "verified_path": "/Users/lp.more/Library/Mobile Documents/com~apple~CloudDocs/flexaidds/FlexAIDdS_benchmarks/archived/posex_cd-20260708T050716Z/.verified.json"
 }
