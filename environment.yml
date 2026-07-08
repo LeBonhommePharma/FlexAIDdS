@@ -1,0 +1,35 @@
+# environment.yml — easy reproducible environment for FlexAIDdS (Python package + optional core)
+# Usage:
+#   conda env create -f environment.yml
+#   conda activate flexaidds
+#   # Then for the Python package (analysis + optional accelerated core):
+#   pip install -e python
+#
+# For full C++ engine + Python:
+#   conda install -c conda-forge cmake ninja eigen pybind11 compilers
+#   cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DBUILD_PYTHON_BINDINGS=ON
+#   cmake --build build --parallel
+name: flexaidds
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - python >=3.9
+  - pip
+  # Core scientific Python (used by many flexaidds features)
+  - numpy
+  - scipy
+  - pyyaml
+  - pandas
+  # Build / extension deps (for `pip install -e python` accelerated path)
+  - pybind11
+  - eigen
+  # Optional but recommended for performance / full use
+  - libomp  # OpenMP on macOS
+  # Dev / testing
+  - pytest
+  - pytest-cov
+  # For some ML / figure bits
+  - matplotlib
+  - pip:
+      - -e ./python  # editable install of the flexaidds package (will build _core if possible)

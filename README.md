@@ -66,6 +66,8 @@ See: [`docs/VALIDATED_CAPABILITIES.md`](docs/VALIDATED_CAPABILITIES.md) · [`doc
 
 ## Quick Start
 
+### Native tools (full power)
+
 ```bash
 git clone https://github.com/LeBonhommePharma/FlexAIDdS.git && cd FlexAIDdS
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
@@ -73,31 +75,33 @@ cmake --build build --parallel
 ```
 
 ```bash
-# Dock with full flexibility and entropy at 300 K (default)
+# Dock ...
 ./build/FlexAIDdS receptor.pdb ligand.mol2
+```
 
-# Argument order doesn't matter -- auto-detected from file content
-./build/FlexAIDdS ligand.mol2 receptor.pdb
+### Python package only (pip — easiest for analysis)
 
-# Dock directly from a SMILES string (3D coordinates built automatically)
-./build/FlexAIDdS receptor.pdb "CC(=O)Oc1ccccc1C(=O)O"
-
-# CIF/mmCIF input, JSON config override, rigid screening
-./build/FlexAIDdS receptor.cif ligand.sdf
-./build/FlexAIDdS receptor.pdb ligand.mol2 -c config.json
-./build/FlexAIDdS receptor.pdb ligand.mol2 --rigid
+```bash
+pip install -e ./python
 ```
 
 ```python
 import flexaidds as fd
+print(fd.__version__)
 
-results = fd.dock(
-    receptor="receptor.pdb",
-    ligand="ligand.mol2",
-    compute_entropy=True,
-)
+# Load results, thermodynamics, etc. (pure Python or accelerated)
+run = fd.load_results("some/results/dir")
+```
 
-for mode in results.rank_by_free_energy():
+See [docs/INSTALLATION.md](docs/INSTALLATION.md) for conda, full details, and platform notes.
+
+```bash
+# Dock with full flexibility and entropy at 300 K (default)
+./build/FlexAIDdS receptor.pdb ligand.mol2
+...
+```
+
+(For the Python `dock()` high-level API see the evolving `flexaidds.docking` module and docs.)
     print(f"Mode: dG={mode.free_energy:.2f} kcal/mol")
 ```
 

@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "flexaidds"
-version = "2.0.0"
-description = "Python bindings for the FlexAID∆S thermodynamic core"
+dynamic = ["version"]
+description = "Python bindings and analysis tools for the FlexAID∆S thermodynamic docking engine"
 authors = [
   { name = "Louis-Philippe Morency" },
 ]
@@ -17,7 +17,9 @@ classifiers = [
   "Programming Language :: C++",
   "License :: OSI Approved :: Apache Software License",
   "Topic :: Scientific/Engineering :: Bio-Informatics",
+  "Topic :: Scientific/Engineering :: Chemistry",
 ]
+dependencies = []
 
 [project.optional-dependencies]
 dev = ["pytest", "pytest-cov"]
@@ -25,17 +27,26 @@ benchmarks = ["numpy>=2.0.2", "pyyaml>=6.0.3"]
 benchmarks-mpi = ["numpy>=2.0.2", "pyyaml>=6.0.3", "mpi4py>=4.1.1"]
 
 [project.scripts]
+flexaidds = "flexaidds.__main__:main"
 flexaidds-benchmark = "flexaidds.dataset_runner.cli:main"
 
 [project.urls]
 Homepage = "https://github.com/LeBonhommePharma/FlexAIDdS"
+Documentation = "https://github.com/LeBonhommePharma/FlexAIDdS/tree/master/docs"
+Source = "https://github.com/LeBonhommePharma/FlexAIDdS"
+
+[tool.setuptools]
+zip-safe = false
+include-package-data = true
 
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["flexaidds*"]
+namespaces = false
 
 [tool.setuptools.package-data]
+"flexaidds" = ["py.typed"]
 "flexaidds.dataset_runner" = ["datasets/*.yaml"]
 
-[tool.setuptools.package-dir]
-"" = "."
+[tool.setuptools.dynamic]
+version = { attr = "flexaidds.__version__.__version__" }

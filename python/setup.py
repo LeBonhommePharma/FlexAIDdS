@@ -1,23 +1,14 @@
 import os
-import re
 import sys
+import warnings
 from pathlib import Path
 
 from setuptools import Extension, setup
-
-try:
-    import pybind11
-except ImportError as exc:
-    raise SystemExit(
-        "pybind11 is required to build flexaidds. "
-        "Install it with `pip install pybind11` and retry."
-    ) from exc
 
 # --- P0: Wire source validator guard (python path) ---
 # Runs early so developers doing `pip install -e .` (or equivalent) get
 # immediate feedback if they added sources without wiring them.
 try:
-    import sys
     repo_root = Path(__file__).resolve().parent.parent
     sys.path.insert(0, str(repo_root))
     from scripts.validate_sources import validate_sources
@@ -38,11 +29,9 @@ _rel_lib = "../LIB"
 
 
 def _find_eigen_include_dir():
-    """Locate Eigen headers, mirroring the fallback chain used by the
-    CMake build (cmake/FlexAIDDependencies.cmake): vendored submodule,
-    then system package via pkg-config/Homebrew, then common install
-    locations. Raises SystemExit with actionable instructions if none
-    of these resolve, matching the CMake build's error message.
+    """Locate Eigen headers. Returns path or None.
+    Does not raise so that `pip install` can succeed in pure-Python mode
+    (the package has graceful fallbacks when the _core extension is absent).
     """
     # 1. Vendored git submodule
     vendored = LIB_DIR / "vendor" / "eigen"
@@ -73,26 +62,12 @@ def _find_eigen_include_dir():
         if (candidate / "Eigen" / "Dense").exists():
             return str(candidate)
 
-    raise SystemExit(
-        "Eigen3 headers not found. Fix with one of:\n"
-        "  git submodule update --init LIB/vendor/eigen   (from repo root)\n"
-        "  macOS:   brew install eigen\n"
-        "  Linux:   sudo apt install libeigen3-dev\n"
-        "  Windows: choco install eigen"
-    )
+    return None
 
 
 _EIGEN_INCLUDE_DIR = _find_eigen_include_dir()
 
-# Read version from __version__.py without importing the package (which
-# would require _core to be built already).
-_version_file = ROOT / "flexaidds" / "__version__.py"
-_version_match = re.search(r'^__version__\s*=\s*["\']([^"\']+)["\']',
-                           _version_file.read_text(), re.MULTILINE)
-_version = _version_match.group(1) if _version_match else "0.0.0"
-
-# Keep in sync with python/CMakeLists.txt — statmech.cpp delegates log-sum-exp
-# and other hot paths to UnifiedHardwareDispatch.
+# Keep in sync with python/CMakeLists.txt and the main C++ build.
 _core_sources = [
     "flexaidds/_core.cpp",
     f"{_rel_lib}/statmech.cpp",
@@ -113,45 +88,70 @@ if _matrix_bindings.exists():
     _core_sources.append(str(_matrix_bindings))
     _core_defs.append(("FLEXAIDS_USE_256_MATRIX", "1"))
 
-ext_modules = [
-    Extension(
-        "flexaidds._core",
-        sources=_core_sources,
-        include_dirs=[
-            str(LIB_DIR),
-            str(LIB_DIR / "tENCoM"),
-            str(LIB_DIR / "ShannonThermoStack"),
-            _EIGEN_INCLUDE_DIR,
-            pybind11.get_include(),
-        ],
-        define_macros=_core_defs + (
-            [
-                ("_CRT_SECURE_NO_WARNINGS", "1"),
-                ("_USE_MATH_DEFINES", "1"),
-                ("NOMINMAX", "1"),
-            ]
-            if os.name == "nt"
-            else []
-        ),
-        language="c++",
-        extra_compile_args=(
-            ["/O2", "/std:c++latest", "/EHsc"]
-            if os.name == "nt"
-            else ["-std=c++26", "-O3"]
-        ),
-    ),
-]
+ext_modules = []
+build_core = True
 
+try:
+    import pybind11
+except ImportError:
+    warnings.warn(
+        "pybind11 not found. The accelerated _core extension will be skipped. "
+        "Install with `pip install pybind11` (or use conda) for full performance. "
+        "Pure-Python fallbacks will be used.",
+        stacklevel=2,
+    )
+    build_core = False
+
+if build_core and _EIGEN_INCLUDE_DIR is None:
+    warnings.warn(
+        "Eigen3 headers not found. The accelerated _core C++ extension will be "
+        "skipped.\n"
+        "  macOS:   brew install eigen\n"
+        "  Linux:   sudo apt install libeigen3-dev\n"
+        "  Windows: choco install eigen\n"
+        "  Or vendor: git submodule update --init LIB/vendor/eigen\n\n"
+        "The flexaidds package will still install and work in pure-Python fallback mode "
+        "(results loading, models, pure StatMech, etc.).",
+        stacklevel=2,
+    )
+    build_core = False
+
+if build_core:
+    try:
+        ext = Extension(
+            "flexaidds._core",
+            sources=_core_sources,
+            include_dirs=[
+                str(LIB_DIR),
+                str(LIB_DIR / "tENCoM"),
+                str(LIB_DIR / "ShannonThermoStack"),
+                _EIGEN_INCLUDE_DIR,
+                pybind11.get_include(),
+            ],
+            define_macros=_core_defs + (
+                [
+                    ("_CRT_SECURE_NO_WARNINGS", "1"),
+                    ("_USE_MATH_DEFINES", "1"),
+                    ("NOMINMAX", "1"),
+                ]
+                if os.name == "nt"
+                else []
+            ),
+            language="c++",
+            extra_compile_args=(
+                ["/O2", "/std:c++latest", "/EHsc"]
+                if os.name == "nt"
+                else ["-std=c++26", "-O3", "-ffast-math"]
+            ),
+        )
+        ext_modules = [ext]
+    except Exception as exc:  # pragma: no cover
+        warnings.warn(f"Failed to prepare _core extension, installing without it: {exc}", stacklevel=2)
+        ext_modules = []
+
+# IMPORTANT: most metadata (name, version from dynamic, description, packages,
+# package_data, scripts, etc.) lives in pyproject.toml for modern builds.
+# We only pass what is needed for the compiled extension here.
 setup(
-    name="flexaidds",
-    version=_version,
-    description="Python bindings for the FlexAID∆S thermodynamic core",
-    author="Louis-Philippe Morency",
-    packages=["flexaidds", "flexaidds.dataset_runner"],
-    package_dir={"": "."},
-    package_data={
-        "flexaidds": ["py.typed"],
-        "flexaidds.dataset_runner": ["datasets/*.yaml"],
-    },
     ext_modules=ext_modules,
 )

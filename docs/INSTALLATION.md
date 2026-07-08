@@ -32,7 +32,24 @@ Complete build and installation instructions for FlexAID∆S on all supported pl
 
 ## Quick Install
 
-### From Source (recommended)
+### Python package via pip (easiest for analysis, results, thermodynamics)
+
+```bash
+git clone https://github.com/LeBonhommePharma/FlexAIDdS.git && cd FlexAIDdS
+pip install -e ./python
+```
+
+- Installs the `flexaidds` package (and the `flexaidds` + `flexaidds-benchmark` CLIs).
+- The native C++ extension (`_core`) is **optional**. If build tools/Eigen are missing the package still installs and works in pure-Python mode (with fallbacks).
+- Works from sdist, git, or local checkout.
+
+Verify:
+```bash
+python -c "import flexaidds as fd; print(fd.__version__, 'HAS_CORE=', getattr(fd, 'HAS_CORE_BINDINGS', False))"
+python -m flexaidds --help || echo "CLI works via python -m"
+```
+
+### Full native tools + Python (CMake)
 
 ```bash
 git clone https://github.com/LeBonhommePharma/FlexAIDdS.git && cd FlexAIDdS
@@ -41,24 +58,24 @@ cmake .. -DCMAKE_BUILD_TYPE=Release
 cmake --build . -j $(nproc)
 ```
 
-This produces three binaries in `build/`:
+This produces the main executables (`FlexAIDdS`, `FlexAID`, `tENCoM`, ...).
 
-| Binary | Description |
-|:-------|:------------|
-| `FlexAID` | Standard docking executable |
-| `FlexAIDdS` | Optimized docking (LTO + `-march=native`) |
-| `tENCoM` | Vibrational entropy differential tool |
-| `flexaidds_process_ligand` | Standalone ligand preprocessing (SMILES → 3D, atom typing) |
-
-### Python Package
+### Conda
 
 ```bash
-cd python && pip install -e .
+git clone https://github.com/LeBonhommePharma/FlexAIDdS.git && cd FlexAIDdS
+conda env create -f environment.yml
+conda activate flexaidds
 ```
 
-The package works in two modes:
-- **Pure Python** — always available, no compilation needed
-- **C++ accelerated** — when built with `-DBUILD_PYTHON_BINDINGS=ON`
+Inside the env you get the Python package (editable). You can additionally build the full native tools with the usual cmake commands (conda compilers/eigen are already available).
+
+To build a conda package:
+```bash
+conda-build conda   # produces a flexaidds conda package
+```
+
+See the table below for per-platform dependency commands.
 
 ---
 
@@ -101,6 +118,30 @@ cmake --build build --parallel
 ```
 
 > **Windows note**: Install Eigen via `choco install eigen` or manually set `CMAKE_PREFIX_PATH`. OpenMP support on Windows requires additional configuration.
+
+---
+
+## Python Package Only (pip / conda) — no full C++ build required
+
+Most users who want to **analyze results**, load docking runs, use thermodynamic models, or run benchmarks can use just the Python package:
+
+```bash
+# pip (from repo root)
+pip install -e ./python
+
+# conda (recommended for complex dependency environments)
+conda env create -f environment.yml
+conda activate flexaidds
+```
+
+The package provides:
+- `flexaidds.load_results`, data models, CLI (`python -m flexaidds`)
+- Pure-Python + optional accelerated `StatMechEngine`, thermodynamics
+- Dataset runners, visualization helpers, etc.
+
+The heavy compiled `_core` extension (for maximum speed on StatMech/ENCoM) is built automatically during `pip install -e ./python` **if** a compiler + Eigen + pybind11 are present. Otherwise it silently falls back (see `HAS_CORE_BINDINGS`).
+
+See also `python/README.md`.
 
 ---
 

@@ -13,12 +13,39 @@ Higher-level live docking orchestration is still intentionally staged behind the
 
 ## Installation
 
-From the repository root:
+### With pip (recommended for most users)
 
 ```bash
-cd python
-pip install -e .
+# From the repo root
+pip install -e ./python
+
+# Or directly (also works for git URLs):
+# pip install -e /path/to/FlexAIDdS/python
 ```
+
+This installs the `flexaidds` package. The compiled acceleration (`_core`) is built if the required build dependencies (pybind11, Eigen headers, a C++ compiler) are present. Otherwise the package installs successfully in **pure-Python fallback mode** (full result loading, models, pure-Python thermodynamics, etc. still work).
+
+You can also do a non-editable install after building a wheel:
+```bash
+cd python
+python -m pip wheel . -w /tmp/wheels
+pip install /tmp/wheels/flexaidds-*.whl
+```
+
+### With conda
+
+```bash
+conda env create -f environment.yml
+conda activate flexaidds
+# (the env file does an editable pip install of the python package)
+```
+
+For a full conda package build (advanced):
+```bash
+conda-build conda
+```
+
+See the top-level `docs/INSTALLATION.md` for complete platform instructions (including when you also want the native `FlexAIDdS` / `tENCoM` executables).
 
 ## Quick example: thermodynamics
 
