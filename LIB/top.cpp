@@ -652,6 +652,7 @@ int main(int argc, char **argv){
 	std::string config_path;
 	std::string output_prefix = "flexaid_out";
 	std::string cached_grid_path;  // Strategy A: .rrg grid cache path from "grid_file" JSON key
+	double user_conc_M = 1.0;  // P3: per-run concentration for grand canonical (default 1M)
 
 	if (argc < 2) {
 		print_usage(argv[0]);
@@ -744,6 +745,10 @@ int main(int argc, char **argv){
 			}
 			if (arg == "--campaign") { use_campaign = true; continue; }
 			if (arg == "--folded") { use_folded = true; continue; }
+			if (arg == "--conc" || arg == "--concentration") {
+				if (a + 1 < argc) user_conc_M = std::atof(argv[++a]);
+				continue;
+			}
 			if (arg == "-h" || arg == "--help") { print_usage(argv[0]); Terminate(0); }
 
 			// Classify this positional argument
@@ -2338,7 +2343,7 @@ int main(int argc, char **argv){
 		{
 			target::TargetConfig tcfg;
 			tcfg.temperature_K = static_cast<double>(FA->temperature);
-			tcfg.default_conc_M = 1.0; // P3 default; override from config later
+			tcfg.default_conc_M = user_conc_M; // P3: from --conc or default
 			local_ts = std::make_unique<target::TargetServer>(tcfg);
 			active_ts = local_ts.get();
 		}

@@ -69,6 +69,7 @@ public:
     // ── Configuration ──────────────────────────────────────────────────
     double temperature() const noexcept { return config_.temperature_K; }
     int    n_models() const noexcept { return config_.n_models; }
+    double default_conc_M() const noexcept { return config_.default_conc_M; }  // P3
 
     // ── Validation ─────────────────────────────────────────────────────
     /// Validate a target structure given its FA_Global and atom arrays.
