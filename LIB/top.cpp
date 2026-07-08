@@ -9,6 +9,7 @@
 #include "CifReader.h"
 #include "CleftDetector.h"
 #include "statmech.h"
+#include "TargetServer.h"  // P1: for grand canonical TargetServer context in cluster paths
 #include "ProcessLigand/ProcessLigand.h"
 #include "ProcessLigand/CoordBuilder.h"
 #include "LibrarySplitter.h"
@@ -2567,6 +2568,16 @@ int main(int argc, char **argv){
 				QuickSort(chrom_snapshot, 0, n_chrom_snapshot - 1, true);
 			}
 
+			// P1: create local TargetServer for this GA run (P1 wiring; default 1M conc, later from config)
+			std::unique_ptr<target::TargetServer> local_ts;
+			target::TargetServer* active_ts = nullptr;
+			{
+				target::TargetConfig tcfg;
+				tcfg.temperature_K = static_cast<double>(FA->temperature);
+				local_ts = std::make_unique<target::TargetServer>(tcfg);
+				active_ts = local_ts.get();
+			}
+
 			printf("clustering all individuals in GA...");
 			fflush(stdout);
 
@@ -2575,17 +2586,17 @@ int main(int argc, char **argv){
 			if( strcmp(FA->clustering_algorithm,"FO") == 0 )
 			{
 				printf("using the Fast OPTICS (FO) density based clustering algorithm.\n");
-				FastOPTICS_cluster(FA,GB,VC,chrom_snapshot,gene_lim,atoms,residue,cleftgrid,n_chrom_snapshot,end_strfile,tmp_end_strfile,dockinp,gainp, nullptr, "");
+				FastOPTICS_cluster(FA,GB,VC,chrom_snapshot,gene_lim,atoms,residue,cleftgrid,n_chrom_snapshot,end_strfile,tmp_end_strfile,dockinp,gainp, active_ts, "ga-ligand");
 			}
 			else if( strcmp(FA->clustering_algorithm,"DP") == 0 )
 			{
 				printf("using the Density Peak (DP) based clustering algorithm.\n");
-				DensityPeak_cluster(FA,GB,VC,chrom_snapshot,gene_lim,atoms,residue,cleftgrid,n_chrom_snapshot,end_strfile,tmp_end_strfile,dockinp,gainp, nullptr, "");
+				DensityPeak_cluster(FA,GB,VC,chrom_snapshot,gene_lim,atoms,residue,cleftgrid,n_chrom_snapshot,end_strfile,tmp_end_strfile,dockinp,gainp, active_ts, "ga-ligand");
 			}
 			else
 			{
 				printf("using the Complementarity Function (CF) based clustering algorithm.\n");
-				cluster(FA,GB,VC,chrom_snapshot,gene_lim,atoms,residue,cleftgrid,n_chrom_snapshot,end_strfile,tmp_end_strfile,dockinp,gainp, nullptr, "");
+				cluster(FA,GB,VC,chrom_snapshot,gene_lim,atoms,residue,cleftgrid,n_chrom_snapshot,end_strfile,tmp_end_strfile,dockinp,gainp, active_ts, "ga-ligand");
 			}
 			//////////////////////////////////////////
 			// Looking at cleftgrid chrom's density //
