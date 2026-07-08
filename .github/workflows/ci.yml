@@ -50,6 +50,7 @@ jobs:
           python/tests/test_tencom_results.py
           python/tests/test_visualization.py
           python/tests/test_dift.py
+          benchmarks/tests/test_itc_calibration.py
 
   cxx_core_build:
     name: C++ core (${{ matrix.name }})
