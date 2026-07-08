@@ -8,9 +8,14 @@
 
 #include <gtest/gtest.h>
 #include "GrandPartitionFunction.h"
+#include "MultiSiteGPF.h"
 #include "statmech.h"
 
+#include <chrono>
 #include <cmath>
+#include <iostream>
+#include <random>
+#include <vector>
 
 using namespace target;
 
@@ -629,4 +634,110 @@ TEST(GrandPartition, AllLogZAccessor) {
     // all_log_Z returns intrinsic partition function (no concentration weighting)
     EXPECT_NEAR(logZ_A, 10.0, 1e-10);
     EXPECT_NEAR(logZ_B, 20.0, 1e-10);
+}
+
+// ════════════════════════════════════════════════════════════════════════
+// Performance / stress benchmark for Grand Canonical implementation
+// Run with: build/test_grand_partition --gtest_filter="*BenchmarkStress*"
+// Reports wall-clock timings for core operations under load.
+// These are not strict assertions (timings are environment-dependent) but
+// exercise scaling, cache behavior, and numerical paths at volume.
+// ════════════════════════════════════════════════════════════════════════
+
+#include <chrono>
+#include <iostream>
+#include <random>
+#include <vector>
+
+TEST(GrandPartition, BenchmarkStress) {
+    using clock = std::chrono::high_resolution_clock;
+    auto t0 = clock::now();
+
+    const int N = 200;  // scale: 200 competing ligands
+    std::mt19937 rng(42);
+    std::uniform_real_distribution<double> logz_dist(-30.0, 120.0);
+    std::uniform_real_distribution<double> conc_dist(1e-6, 10.0);
+
+    GrandPartitionFunction gpf(310.0);  // physiological-ish temp
+
+    auto t_add_start = clock::now();
+    for (int i = 0; i < N; ++i) {
+        std::string name = "L" + std::to_string(i);
+        double lz = logz_dist(rng);
+        double c = conc_dist(rng);
+        gpf.add_ligand(name, lz, c);
+    }
+    auto t_add = std::chrono::duration<double, std::milli>(clock::now() - t_add_start).count();
+
+    // Force cache population
+    auto t_xi_start = clock::now();
+    double lx = gpf.log_Xi();
+    auto t_xi = std::chrono::duration<double, std::milli>(clock::now() - t_xi_start).count();
+
+    auto t_prob_start = clock::now();
+    double sum_p = gpf.empty_probability();
+    std::vector<double> probs;
+    probs.reserve(N);
+    for (int i = 0; i < N; ++i) {
+        std::string name = "L" + std::to_string(i);
+        double p = gpf.binding_probability(name);
+        probs.push_back(p);
+        sum_p += p;
+    }
+    auto t_prob = std::chrono::duration<double, std::milli>(clock::now() - t_prob_start).count();
+
+    // Verify thermodynamic closure under load
+    EXPECT_NEAR(sum_p, 1.0, 1e-8);
+
+    auto t_rank_start = clock::now();
+    auto ranks = gpf.rank();
+    auto t_rank = std::chrono::duration<double, std::milli>(clock::now() - t_rank_start).count();
+    ASSERT_EQ(ranks.size(), static_cast<size_t>(N));
+
+    // Repeated queries should be near-instant (cache hit)
+    auto t_cached_start = clock::now();
+    for (int r = 0; r < 100; ++r) {
+        (void)gpf.log_Xi();
+        (void)gpf.binding_probability("L0");
+        (void)gpf.mean_occupancy();
+    }
+    auto t_cached = std::chrono::duration<double, std::milli>(clock::now() - t_cached_start).count();
+
+    // MultiSite stress
+    auto t_ms_start = clock::now();
+    MultiSiteGPF msgpf(300.0);
+    for (int s = 0; s < 4; ++s) {
+        msgpf.add_site("site_" + std::to_string(s));
+    }
+    for (int s = 0; s < 4; ++s) {
+        for (int i = 0; i < 30; ++i) {  // 120 total ligand registrations
+            double lz = logz_dist(rng) * 0.6;
+            msgpf.add_ligand(s, "M" + std::to_string(i), lz, 1.0);
+        }
+    }
+    msgpf.set_cooperativity(0, 1, 2.5);
+    msgpf.set_cooperativity(2, 3, 0.4);
+    double mxi = msgpf.log_Xi();
+    double p0 = msgpf.binding_probability(0, "M5");
+    auto t_ms = std::chrono::duration<double, std::milli>(clock::now() - t_ms_start).count();
+    EXPECT_TRUE(std::isfinite(mxi));
+    EXPECT_GE(p0, 0.0);
+
+    auto total_ms = std::chrono::duration<double, std::milli>(clock::now() - t0).count();
+
+    std::cout << "\n[GrandPartition BenchmarkStress]\n"
+              << "  Ligands: " << N << "\n"
+              << "  add_ligand (200): " << t_add << " ms\n"
+              << "  first log_Xi: " << t_xi << " ms\n"
+              << "  binding probs + empty (200): " << t_prob << " ms\n"
+              << "  rank(): " << t_rank << " ms\n"
+              << "  100x cached queries: " << t_cached << " ms\n"
+              << "  MultiSite (4 sites, ~120 regs + 2 coop + queries): " << t_ms << " ms\n"
+              << "  TOTAL: " << total_ms << " ms\n";
+
+    // Soft sanity: operations should complete in reasonable time even for N=200
+    // (these are generous to avoid flaky CI on slow CI runners)
+    EXPECT_LT(t_add, 500.0);
+    EXPECT_LT(t_rank, 200.0);
+    EXPECT_LT(t_cached, 50.0);
 }

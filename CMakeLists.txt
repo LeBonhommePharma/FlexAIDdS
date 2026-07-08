@@ -2271,6 +2271,7 @@ if(BUILD_TESTING)
     add_executable(test_grand_partition
         tests/test_grand_partition.cpp
         LIB/GrandPartitionFunction.cpp
+        LIB/MultiSiteGPF.cpp
         LIB/statmech.cpp
         LIB/UnifiedHardwareDispatch.cpp
         LIB/hardware_detect.cpp
