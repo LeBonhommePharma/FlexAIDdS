@@ -301,10 +301,10 @@ def main(argv: list[str] | None = None) -> int:
             return 2
 
         # Build report for single-dataset case
-        import datetime, socket
+        import datetime as _datetime, socket
         report = BenchmarkReport(
             datasets=[dr],
-            generated_at=datetime.datetime.utcnow().isoformat() + "Z",
+            generated_at=_datetime.datetime.utcnow().isoformat() + "Z",
             git_sha=_git_sha(),
             host=socket.gethostname(),
             runner_info=_runner_info(),
