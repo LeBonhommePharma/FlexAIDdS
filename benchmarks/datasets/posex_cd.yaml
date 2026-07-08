@@ -1,0 +1,52 @@
+# PoseX CD — Cross-docking benchmark (1312 entries)
+# From PoseX paper (2025): recent PDB complexes (2022-2025), cross-docking using apo-like receptors.
+# See: https://arxiv.org/abs/2505.01700
+# n=1312 cross-dock pairs.
+# Used for large-scale benchmarking (tier-2).
+# Source catalog: benchmarks/m3pro/large_dataset_entry_catalogs.json
+# Dataset definition: benchmarks/datasets/posex_cd_1312.json
+
+slug: posex_cd
+name: "PoseX Cross-Docking (1312)"
+benchmark_order: 10
+description: >
+  Cross-docking benchmark from the PoseX suite: 1312 tasks on recent (post-2021)
+  protein-ligand complexes. Receptors are non-native (cross) conformations;
+  ligands are cognate but docked into different structures of the same target.
+  Strict test of generalization and handling of conformational changes.
+  Complements Astex for modern AI vs physics benchmarking.
+  Includes annotations for pocket similarity (TM-score) to pre-2022 pockets.
+
+zenodo_doi: ""
+download_url: "https://github.com/CataAI/PoseX"
+data_format: pdb
+tier: 2
+tier1_subset_size: 5
+
+structural_states:
+  - crossdock
+
+# Full list in posex_cd_1312.json (1312 pairs)
+# Tier-1 uses first 5 for smoke/CI.
+# Full run uses the large catalog for distributed execution.
+targets: []  # populated from catalog for large datasets
+
+# Notes for benchmarking:
+# - Use oracle binding sites where available (from crystal ligand position in the pair).
+# - For fair comparison, use consistent prep (apo extraction, protonation, etc.).
+# - Metrics: docking_power (top-1/top-3 RMSD<2.0), success with PoseBusters validation.
+# - Typical baseline: physics-based ~50-60%, AI methods vary; high success requires good site definition and flexibility handling.
+# - In FlexAIDdS: use --mode autonomous or oracle-ceiling as appropriate; full thermo for ranking.
+# - See results/posex_cd_20260616 for example run outputs (partial ~249 entries prepared/run).
+
+
+# --- Auto-updated status (generated 2026-07-08T04:36:18.087611Z) ---
+# Receptor structures: 371 dirs under benchmarks/posex_cd/posex_cd/
+# Ligands: copied to benchmarks/posex_cd/ligands/ from iCloud sources (atomic)
+# Manifests:
+#   benchmark_posex_cd.json          — full 1312 with resolved local paths (where present)
+#   benchmark_posex_cd_full_available.json — only pairs where both rec+lig files exist locally
+#   benchmark_posex_cd_tier1.json    — small smoke subset
+# To run: prefer dataset_runner.py or launch_full_benchmark.sh with FLEXAIDDS_* envs.
+# iCloud safety: atomic rsync+SHA used in supporting scripts; .verified markers recommended.
+# See README.md in this dir and AGENTS.md.

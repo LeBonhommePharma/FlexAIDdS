@@ -1,0 +1,3149 @@
+{
+  "schema_version": 1,
+  "name": "posex_cd_full_available",
+  "n_pairs": 349,
+  "pairs": [
+    {
+      "entry_id": "7FVX_K7C",
+      "receptor_id": "7FVX",
+      "ligand_id": "K7C",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7FVX/7FVX.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/K7C.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7FVX/7FVX_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7EGO_X90",
+      "receptor_id": "7EGO",
+      "ligand_id": "X90",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7EGO/7EGO.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/X90.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7EGO/7EGO_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7HG3_A1A34",
+      "receptor_id": "7HG3",
+      "ligand_id": "A1A34",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7HG3/7HG3.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/A1A34.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7HG3/7HG3_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7RGY_5BI",
+      "receptor_id": "7RGY",
+      "ligand_id": "5BI",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7RGY/7RGY.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/5BI.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7RGY/7RGY_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "8PQ9_9KI",
+      "receptor_id": "8PQ9",
+      "ligand_id": "9KI",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/8PQ9/8PQ9.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/9KI.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/8PQ9/8PQ9_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7GLA_X77",
+      "receptor_id": "7GLA",
+      "ligand_id": "X77",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7GLA/7GLA.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/X77.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7GLA/7GLA_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "8QTJ_A1IEW",
+      "receptor_id": "8QTJ",
+      "ligand_id": "A1IEW",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/8QTJ/8QTJ.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/A1IEW.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/8QTJ/8QTJ_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7HGE_ZQD",
+      "receptor_id": "7HGE",
+      "ligand_id": "ZQD",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7HGE/7HGE.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/ZQD.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7HGE/7HGE_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7GZV_A1AK5",
+      "receptor_id": "7GZV",
+      "ligand_id": "A1AK5",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7GZV/7GZV.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/A1AK5.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7GZV/7GZV_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7FCX_4I1",
+      "receptor_id": "7FCX",
+      "ligand_id": "4I1",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7FCX/7FCX.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/4I1.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7FCX/7FCX_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7UU0_7UM",
+      "receptor_id": "7UU0",
+      "ligand_id": "7UM",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7UU0/7UU0.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/7UM.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7UU0/7UU0_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7FDT_4I1",
+      "receptor_id": "7FDT",
+      "ligand_id": "4I1",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7FDT/7FDT.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/4I1.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7FDT/7FDT_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7RH1_59O",
+      "receptor_id": "7RH1",
+      "ligand_id": "59O",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7RH1/7RH1.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/59O.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7RH1/7RH1_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7ENZ_37T",
+      "receptor_id": "7ENZ",
+      "ligand_id": "37T",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7ENZ/7ENZ.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/37T.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7ENZ/7ENZ_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7GZZ_A1AK4",
+      "receptor_id": "7GZZ",
+      "ligand_id": "A1AK4",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7GZZ/7GZZ.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/A1AK4.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7GZZ/7GZZ_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7SI4_9L0",
+      "receptor_id": "7SI4",
+      "ligand_id": "9L0",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7SI4/7SI4.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/9L0.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7SI4/7SI4_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "8BM2_2V9",
+      "receptor_id": "8BM2",
+      "ligand_id": "2V9",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/8BM2/8BM2.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/2V9.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/8BM2/8BM2_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7Q5O_7UM",
+      "receptor_id": "7Q5O",
+      "ligand_id": "7UM",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7Q5O/7Q5O.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/7UM.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7Q5O/7Q5O_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7GZW_A1ALR",
+      "receptor_id": "7GZW",
+      "ligand_id": "A1ALR",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7GZW/7GZW.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/A1ALR.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7GZW/7GZW_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7XFA_5BI",
+      "receptor_id": "7XFA",
+      "ligand_id": "5BI",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7XFA/7XFA.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/5BI.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7XFA/7XFA_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7EGO_4I6",
+      "receptor_id": "7EGO",
+      "ligand_id": "4I6",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7EGO/7EGO.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/4I6.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7EGO/7EGO_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "8CHN_9QN",
+      "receptor_id": "8CHN",
+      "ligand_id": "9QN",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/8CHN/8CHN.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/9QN.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/8CHN/8CHN_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "5SB1_1IF",
+      "receptor_id": "5SB1",
+      "ligand_id": "1IF",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/5SB1/5SB1.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/1IF.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/5SB1/5SB1_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "5SAU_1K2",
+      "receptor_id": "5SAU",
+      "ligand_id": "1K2",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/5SAU/5SAU.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/1K2.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/5SAU/5SAU_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7GZV_A1ALS",
+      "receptor_id": "7GZV",
+      "ligand_id": "A1ALS",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7GZV/7GZV.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/A1ALS.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7GZV/7GZV_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "9C1R_5IE",
+      "receptor_id": "9C1R",
+      "ligand_id": "5IE",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/9C1R/9C1R.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/5IE.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/9C1R/9C1R_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "8R5K_9QN",
+      "receptor_id": "8R5K",
+      "ligand_id": "9QN",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/8R5K/8R5K.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/9QN.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/8R5K/8R5K_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7XFA_57I",
+      "receptor_id": "7XFA",
+      "ligand_id": "57I",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7XFA/7XFA.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/57I.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7XFA/7XFA_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7GZY_A1AK4",
+      "receptor_id": "7GZY",
+      "ligand_id": "A1AK4",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7GZY/7GZY.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/A1AK4.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7GZY/7GZY_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7XFA_5EI",
+      "receptor_id": "7XFA",
+      "ligand_id": "5EI",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7XFA/7XFA.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/5EI.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7XFA/7XFA_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7VS1_8M6",
+      "receptor_id": "7VS1",
+      "ligand_id": "8M6",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7VS1/7VS1.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/8M6.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7VS1/7VS1_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "8ZU2_A1D82",
+      "receptor_id": "8ZU2",
+      "ligand_id": "A1D82",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/8ZU2/8ZU2.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/A1D82.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/8ZU2/8ZU2_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7Q6V_93L",
+      "receptor_id": "7Q6V",
+      "ligand_id": "93L",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7Q6V/7Q6V.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/93L.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7Q6V/7Q6V_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7GZX_A1AK7",
+      "receptor_id": "7GZX",
+      "ligand_id": "A1AK7",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7GZX/7GZX.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/A1AK7.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7GZX/7GZX_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7S85_88O",
+      "receptor_id": "7S85",
+      "ligand_id": "88O",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7S85/7S85.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/88O.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7S85/7S85_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7Q8Z_9IV",
+      "receptor_id": "7Q8Z",
+      "ligand_id": "9IV",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7Q8Z/7Q8Z.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/9IV.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7Q8Z/7Q8Z_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7ENZ_7UM",
+      "receptor_id": "7ENZ",
+      "ligand_id": "7UM",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7ENZ/7ENZ.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/7UM.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7ENZ/7ENZ_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7GL3_X77",
+      "receptor_id": "7GL3",
+      "ligand_id": "X77",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7GL3/7GL3.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/X77.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7GL3/7GL3_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "8GZC_6TI",
+      "receptor_id": "8GZC",
+      "ligand_id": "6TI",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/8GZC/8GZC.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/6TI.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/8GZC/8GZC_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7RGY_5A4",
+      "receptor_id": "7RGY",
+      "ligand_id": "5A4",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7RGY/7RGY.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/5A4.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7RGY/7RGY_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7EGO_4I1",
+      "receptor_id": "7EGO",
+      "ligand_id": "4I1",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7EGO/7EGO.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/4I1.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7EGO/7EGO_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7GZV_A1AK6",
+      "receptor_id": "7GZV",
+      "ligand_id": "A1AK6",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7GZV/7GZV.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/A1AK6.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7GZV/7GZV_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7B98_SWT",
+      "receptor_id": "7B98",
+      "ligand_id": "SWT",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7B98/7B98.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/SWT.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7B98/7B98_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "5SB1_1IJ",
+      "receptor_id": "5SB1",
+      "ligand_id": "1IJ",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/5SB1/5SB1.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/1IJ.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/5SB1/5SB1_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7B9D_SWT",
+      "receptor_id": "7B9D",
+      "ligand_id": "SWT",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7B9D/7B9D.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/SWT.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7B9D/7B9D_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7FDT_2AN",
+      "receptor_id": "7FDT",
+      "ligand_id": "2AN",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7FDT/7FDT.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/2AN.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7FDT/7FDT_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7FTI_YUF",
+      "receptor_id": "7FTI",
+      "ligand_id": "YUF",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7FTI/7FTI.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/YUF.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7FTI/7FTI_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "8SIV_A1AV4",
+      "receptor_id": "8SIV",
+      "ligand_id": "A1AV4",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/8SIV/8SIV.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/A1AV4.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/8SIV/8SIV_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7GZV_A1ALQ",
+      "receptor_id": "7GZV",
+      "ligand_id": "A1ALQ",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7GZV/7GZV.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/A1ALQ.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7GZV/7GZV_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "8U2D_0BG",
+      "receptor_id": "8U2D",
+      "ligand_id": "0BG",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/8U2D/8U2D.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/0BG.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/8U2D/8U2D_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7FDX_4I6",
+      "receptor_id": "7FDX",
+      "ligand_id": "4I6",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7FDX/7FDX.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/4I6.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7FDX/7FDX_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7RH1_57I",
+      "receptor_id": "7RH1",
+      "ligand_id": "57I",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7RH1/7RH1.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/57I.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7RH1/7RH1_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7ENZ_8M6",
+      "receptor_id": "7ENZ",
+      "ligand_id": "8M6",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7ENZ/7ENZ.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/8M6.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7ENZ/7ENZ_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7USG_8M6",
+      "receptor_id": "7USG",
+      "ligand_id": "8M6",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7USG/7USG.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/8M6.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7USG/7USG_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7H0B_A1ANI",
+      "receptor_id": "7H0B",
+      "ligand_id": "A1ANI",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7H0B/7H0B.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/A1ANI.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7H0B/7H0B_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7LDY_XUY",
+      "receptor_id": "7LDY",
+      "ligand_id": "XUY",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7LDY/7LDY.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/XUY.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7LDY/7LDY_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7RXO_8IQ",
+      "receptor_id": "7RXO",
+      "ligand_id": "8IQ",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7RXO/7RXO.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/8IQ.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7RXO/7RXO_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7HG8_A1A3P",
+      "receptor_id": "7HG8",
+      "ligand_id": "A1A3P",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7HG8/7HG8.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/A1A3P.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7HG8/7HG8_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "8QK9_A1H5P",
+      "receptor_id": "8QK9",
+      "ligand_id": "A1H5P",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/8QK9/8QK9.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/A1H5P.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/8QK9/8QK9_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7USG_37T",
+      "receptor_id": "7USG",
+      "ligand_id": "37T",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7USG/7USG.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/37T.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7USG/7USG_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "5SB1_1K2",
+      "receptor_id": "5SB1",
+      "ligand_id": "1K2",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/5SB1/5SB1.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/1K2.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/5SB1/5SB1_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7H0S_A1AMD",
+      "receptor_id": "7H0S",
+      "ligand_id": "A1AMD",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7H0S/7H0S.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/A1AMD.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7H0S/7H0S_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7H01_A1AK3",
+      "receptor_id": "7H01",
+      "ligand_id": "A1AK3",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7H01/7H01.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/A1AK3.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7H01/7H01_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "8IVS_1TB",
+      "receptor_id": "8IVS",
+      "ligand_id": "1TB",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/8IVS/8IVS.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/1TB.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/8IVS/8IVS_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7RWF_88O",
+      "receptor_id": "7RWF",
+      "ligand_id": "88O",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7RWF/7RWF.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/88O.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7RWF/7RWF_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7V3S_A1ATS",
+      "receptor_id": "7V3S",
+      "ligand_id": "A1ATS",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7V3S/7V3S.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/A1ATS.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7V3S/7V3S_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7VKZ_7OU",
+      "receptor_id": "7VKZ",
+      "ligand_id": "7OU",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7VKZ/7VKZ.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/7OU.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7VKZ/7VKZ_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7RH0_5EI",
+      "receptor_id": "7RH0",
+      "ligand_id": "5EI",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7RH0/7RH0.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/5EI.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7RH0/7RH0_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7HG8_A1A34",
+      "receptor_id": "7HG8",
+      "ligand_id": "A1A34",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7HG8/7HG8.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/A1A34.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7HG8/7HG8_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "9C1R_5I9",
+      "receptor_id": "9C1R",
+      "ligand_id": "5I9",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/9C1R/9C1R.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/5I9.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/9C1R/9C1R_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7FDX_6NA",
+      "receptor_id": "7FDX",
+      "ligand_id": "6NA",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7FDX/7FDX.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/6NA.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7FDX/7FDX_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "8B5G_82V",
+      "receptor_id": "8B5G",
+      "ligand_id": "82V",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/8B5G/8B5G.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/82V.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/8B5G/8B5G_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7VL1_7OU",
+      "receptor_id": "7VL1",
+      "ligand_id": "7OU",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7VL1/7VL1.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/7OU.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7VL1/7VL1_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7FEZ_2AN",
+      "receptor_id": "7FEZ",
+      "ligand_id": "2AN",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7FEZ/7FEZ.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/2AN.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7FEZ/7FEZ_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7UU0_37T",
+      "receptor_id": "7UU0",
+      "ligand_id": "37T",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7UU0/7UU0.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/37T.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7UU0/7UU0_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7HGE_A1A3P",
+      "receptor_id": "7HGE",
+      "ligand_id": "A1A3P",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7HGE/7HGE.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/A1A3P.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7HGE/7HGE_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7USG_7UM",
+      "receptor_id": "7USG",
+      "ligand_id": "7UM",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7USG/7USG.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/7UM.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7USG/7USG_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "8VQ3_A1AC5",
+      "receptor_id": "8VQ3",
+      "ligand_id": "A1AC5",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/8VQ3/8VQ3.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/A1AC5.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/8VQ3/8VQ3_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7HG1_A1A34",
+      "receptor_id": "7HG1",
+      "ligand_id": "A1A34",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7HG1/7HG1.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/A1A34.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7HG1/7HG1_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7RXO_88O",
+      "receptor_id": "7RXO",
+      "ligand_id": "88O",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7RXO/7RXO.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/88O.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7RXO/7RXO_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7BC9_SWT",
+      "receptor_id": "7BC9",
+      "ligand_id": "SWT",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7BC9/7BC9.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/SWT.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7BC9/7BC9_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7NEO_X77",
+      "receptor_id": "7NEO",
+      "ligand_id": "X77",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7NEO/7NEO.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/X77.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7NEO/7NEO_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "5SB2_1IM",
+      "receptor_id": "5SB2",
+      "ligand_id": "1IM",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/5SB2/5SB2.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/1IM.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/5SB2/5SB2_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7Q7I_9I5",
+      "receptor_id": "7Q7I",
+      "ligand_id": "9I5",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7Q7I/7Q7I.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/9I5.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7Q7I/7Q7I_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7S90_94M",
+      "receptor_id": "7S90",
+      "ligand_id": "94M",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7S90/7S90.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/94M.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7S90/7S90_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7V3R_A1ATS",
+      "receptor_id": "7V3R",
+      "ligand_id": "A1ATS",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7V3R/7V3R.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/A1ATS.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7V3R/7V3R_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "8PQD_9JI",
+      "receptor_id": "8PQD",
+      "ligand_id": "9JI",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/8PQD/8PQD.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/9JI.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/8PQD/8PQD_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7LE2_XUY",
+      "receptor_id": "7LE2",
+      "ligand_id": "XUY",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7LE2/7LE2.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/XUY.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7LE2/7LE2_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7GZZ_A1ALQ",
+      "receptor_id": "7GZZ",
+      "ligand_id": "A1ALQ",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7GZZ/7GZZ.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/A1ALQ.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7GZZ/7GZZ_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "8ZTX_A1D85",
+      "receptor_id": "8ZTX",
+      "ligand_id": "A1D85",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/8ZTX/8ZTX.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/A1D85.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/8ZTX/8ZTX_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "8ZUD_A1D83",
+      "receptor_id": "8ZUD",
+      "ligand_id": "A1D83",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/8ZUD/8ZUD.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/A1D83.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/8ZUD/8ZUD_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7GZX_A1AK4",
+      "receptor_id": "7GZX",
+      "ligand_id": "A1AK4",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7GZX/7GZX.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/A1AK4.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7GZX/7GZX_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "8FX3_YC9",
+      "receptor_id": "8FX3",
+      "ligand_id": "YC9",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/8FX3/8FX3.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/YC9.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/8FX3/8FX3_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7FVZ_K7C",
+      "receptor_id": "7FVZ",
+      "ligand_id": "K7C",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7FVZ/7FVZ.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/K7C.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7FVZ/7FVZ_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7HG1_A1A3P",
+      "receptor_id": "7HG1",
+      "ligand_id": "A1A3P",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7HG1/7HG1.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/A1A3P.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7HG1/7HG1_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7N4R_0B9",
+      "receptor_id": "7N4R",
+      "ligand_id": "0B9",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7N4R/7N4R.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/0B9.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7N4R/7N4R_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7VRQ_8M6",
+      "receptor_id": "7VRQ",
+      "ligand_id": "8M6",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7VRQ/7VRQ.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/8M6.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7VRQ/7VRQ_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7GAW_X77",
+      "receptor_id": "7GAW",
+      "ligand_id": "X77",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7GAW/7GAW.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/X77.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7GAW/7GAW_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7FU0_YUF",
+      "receptor_id": "7FU0",
+      "ligand_id": "YUF",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7FU0/7FU0.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/YUF.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7FU0/7FU0_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "5SAV_1IF",
+      "receptor_id": "5SAV",
+      "ligand_id": "1IF",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/5SAV/5SAV.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/1IF.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/5SAV/5SAV_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7EGO_6NA",
+      "receptor_id": "7EGO",
+      "ligand_id": "6NA",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7EGO/7EGO.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/6NA.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7EGO/7EGO_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7FEU_X90",
+      "receptor_id": "7FEU",
+      "ligand_id": "X90",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7FEU/7FEU.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/X90.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7FEU/7FEU_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7FU3_YUF",
+      "receptor_id": "7FU3",
+      "ligand_id": "YUF",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7FU3/7FU3.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/YUF.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7FU3/7FU3_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "8AOP_7SE",
+      "receptor_id": "8AOP",
+      "ligand_id": "7SE",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/8AOP/8AOP.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/7SE.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/8AOP/8AOP_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7GZW_A1AK7",
+      "receptor_id": "7GZW",
+      "ligand_id": "A1AK7",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7GZW/7GZW.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/A1AK7.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7GZW/7GZW_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7FCX_X90",
+      "receptor_id": "7FCX",
+      "ligand_id": "X90",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7FCX/7FCX.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/X90.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7FCX/7FCX_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7RH1_5BI",
+      "receptor_id": "7RH1",
+      "ligand_id": "5BI",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7RH1/7RH1.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/5BI.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7RH1/7RH1_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7GZX_A1AK6",
+      "receptor_id": "7GZX",
+      "ligand_id": "A1AK6",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7GZX/7GZX.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/A1AK6.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7GZX/7GZX_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7UU0_82V",
+      "receptor_id": "7UU0",
+      "ligand_id": "82V",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7UU0/7UU0.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/82V.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7UU0/7UU0_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7Q8Y_9IK",
+      "receptor_id": "7Q8Y",
+      "ligand_id": "9IK",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7Q8Y/7Q8Y.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/9IK.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7Q8Y/7Q8Y_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7FEZ_X90",
+      "receptor_id": "7FEZ",
+      "ligand_id": "X90",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7FEZ/7FEZ.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/X90.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7FEZ/7FEZ_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "9ETQ_A1H64",
+      "receptor_id": "9ETQ",
+      "ligand_id": "A1H64",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/9ETQ/9ETQ.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/A1H64.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/9ETQ/9ETQ_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "8OV7_A1ATS",
+      "receptor_id": "8OV7",
+      "ligand_id": "A1ATS",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/8OV7/8OV7.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/A1ATS.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/8OV7/8OV7_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7Q6V_963",
+      "receptor_id": "7Q6V",
+      "ligand_id": "963",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7Q6V/7Q6V.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/963.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7Q6V/7Q6V_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "9EY4_9QN",
+      "receptor_id": "9EY4",
+      "ligand_id": "9QN",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/9EY4/9EY4.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/9QN.sdf",
+      "oracle_site_pdb": "",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "8PQA_9JI",
+      "receptor_id": "8PQA",
+      "ligand_id": "9JI",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/8PQA/8PQA.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/9JI.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/8PQA/8PQA_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7H02_A1AK3",
+      "receptor_id": "7H02",
+      "ligand_id": "A1AK3",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7H02/7H02.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/A1AK3.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7H02/7H02_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7GZY_A1ALR",
+      "receptor_id": "7GZY",
+      "ligand_id": "A1ALR",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7GZY/7GZY.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/A1ALR.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7GZY/7GZY_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7GZY_A1AK5",
+      "receptor_id": "7GZY",
+      "ligand_id": "A1AK5",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7GZY/7GZY.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/A1AK5.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7GZY/7GZY_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7U3J_9QU",
+      "receptor_id": "7U3J",
+      "ligand_id": "9QU",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7U3J/7U3J.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/9QU.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7U3J/7U3J_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7RGX_5A4",
+      "receptor_id": "7RGX",
+      "ligand_id": "5A4",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7RGX/7RGX.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/5A4.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7RGX/7RGX_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "8SIX_A1AV4",
+      "receptor_id": "8SIX",
+      "ligand_id": "A1AV4",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/8SIX/8SIX.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/A1AV4.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/8SIX/8SIX_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7H01_A1AK5",
+      "receptor_id": "7H01",
+      "ligand_id": "A1AK5",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7H01/7H01.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/A1AK5.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7H01/7H01_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7H00_A1ALR",
+      "receptor_id": "7H00",
+      "ligand_id": "A1ALR",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7H00/7H00.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/A1ALR.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7H00/7H00_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "8VQ4_A1AC4",
+      "receptor_id": "8VQ4",
+      "ligand_id": "A1AC4",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/8VQ4/8VQ4.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/A1AC4.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/8VQ4/8VQ4_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7ZB3_6MJ",
+      "receptor_id": "7ZB3",
+      "ligand_id": "6MJ",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7ZB3/7ZB3.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/6MJ.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7ZB3/7ZB3_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7RH1_5A4",
+      "receptor_id": "7RH1",
+      "ligand_id": "5A4",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7RH1/7RH1.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/5A4.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7RH1/7RH1_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "8E80_A1AV4",
+      "receptor_id": "8E80",
+      "ligand_id": "A1AV4",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/8E80/8E80.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/A1AV4.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/8E80/8E80_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7ZGZ_6MJ",
+      "receptor_id": "7ZGZ",
+      "ligand_id": "6MJ",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7ZGZ/7ZGZ.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/6MJ.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7ZGZ/7ZGZ_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7XFA_59O",
+      "receptor_id": "7XFA",
+      "ligand_id": "59O",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7XFA/7XFA.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/59O.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7XFA/7XFA_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7FDU_6NA",
+      "receptor_id": "7FDU",
+      "ligand_id": "6NA",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7FDU/7FDU.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/6NA.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7FDU/7FDU_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7HGB_A1A3P",
+      "receptor_id": "7HGB",
+      "ligand_id": "A1A3P",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7HGB/7HGB.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/A1A3P.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7HGB/7HGB_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7FCX_4I6",
+      "receptor_id": "7FCX",
+      "ligand_id": "4I6",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7FCX/7FCX.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/4I6.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7FCX/7FCX_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7LE4_XUY",
+      "receptor_id": "7LE4",
+      "ligand_id": "XUY",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7LE4/7LE4.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/XUY.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7LE4/7LE4_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "8ARJ_25J",
+      "receptor_id": "8ARJ",
+      "ligand_id": "25J",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/8ARJ/8ARJ.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/25J.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/8ARJ/8ARJ_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7H01_A1ALS",
+      "receptor_id": "7H01",
+      "ligand_id": "A1ALS",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7H01/7H01.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/A1ALS.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7H01/7H01_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7FBF_4I6",
+      "receptor_id": "7FBF",
+      "ligand_id": "4I6",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7FBF/7FBF.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/4I6.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7FBF/7FBF_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7GZV_A1AK4",
+      "receptor_id": "7GZV",
+      "ligand_id": "A1AK4",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7GZV/7GZV.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/A1AK4.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7GZV/7GZV_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7RGZ_5EI",
+      "receptor_id": "7RGZ",
+      "ligand_id": "5EI",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7RGZ/7RGZ.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/5EI.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7RGZ/7RGZ_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7N4Q_0BG",
+      "receptor_id": "7N4Q",
+      "ligand_id": "0BG",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7N4Q/7N4Q.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/0BG.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7N4Q/7N4Q_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7FEZ_6NA",
+      "receptor_id": "7FEZ",
+      "ligand_id": "6NA",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7FEZ/7FEZ.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/6NA.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7FEZ/7FEZ_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7LTY_0BG",
+      "receptor_id": "7LTY",
+      "ligand_id": "0BG",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7LTY/7LTY.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/0BG.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7LTY/7LTY_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "5SAV_1IM",
+      "receptor_id": "5SAV",
+      "ligand_id": "1IM",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/5SAV/5SAV.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/1IM.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/5SAV/5SAV_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7H02_A1AK4",
+      "receptor_id": "7H02",
+      "ligand_id": "A1AK4",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7H02/7H02.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/A1AK4.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7H02/7H02_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7RGZ_5BI",
+      "receptor_id": "7RGZ",
+      "ligand_id": "5BI",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7RGZ/7RGZ.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/5BI.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7RGZ/7RGZ_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7H02_A1AK7",
+      "receptor_id": "7H02",
+      "ligand_id": "A1AK7",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7H02/7H02.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/A1AK7.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7H02/7H02_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "8ZTX_A1D82",
+      "receptor_id": "8ZTX",
+      "ligand_id": "A1D82",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/8ZTX/8ZTX.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/A1D82.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/8ZTX/8ZTX_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "8PQ9_98A",
+      "receptor_id": "8PQ9",
+      "ligand_id": "98A",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/8PQ9/8PQ9.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/98A.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/8PQ9/8PQ9_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7HG0_ZQD",
+      "receptor_id": "7HG0",
+      "ligand_id": "ZQD",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7HG0/7HG0.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/ZQD.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7HG0/7HG0_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7GZZ_A1AK6",
+      "receptor_id": "7GZZ",
+      "ligand_id": "A1AK6",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7GZZ/7GZZ.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/A1AK6.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7GZZ/7GZZ_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "8PQA_9VV",
+      "receptor_id": "8PQA",
+      "ligand_id": "9VV",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/8PQA/8PQA.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/9VV.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/8PQA/8PQA_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7FEU_6NA",
+      "receptor_id": "7FEU",
+      "ligand_id": "6NA",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7FEU/7FEU.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/6NA.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7FEU/7FEU_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7H00_A1ALS",
+      "receptor_id": "7H00",
+      "ligand_id": "A1ALS",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7H00/7H00.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/A1ALS.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7H00/7H00_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7F11_0BJ",
+      "receptor_id": "7F11",
+      "ligand_id": "0BJ",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7F11/7F11.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/0BJ.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7F11/7F11_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7H0Q_A1ANI",
+      "receptor_id": "7H0Q",
+      "ligand_id": "A1ANI",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7H0Q/7H0Q.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/A1ANI.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7H0Q/7H0Q_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "8ZUD_A1D85",
+      "receptor_id": "8ZUD",
+      "ligand_id": "A1D85",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/8ZUD/8ZUD.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/A1D85.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/8ZUD/8ZUD_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7Q6U_93L",
+      "receptor_id": "7Q6U",
+      "ligand_id": "93L",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7Q6U/7Q6U.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/93L.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7Q6U/7Q6U_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7FEZ_4I6",
+      "receptor_id": "7FEZ",
+      "ligand_id": "4I6",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7FEZ/7FEZ.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/4I6.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7FEZ/7FEZ_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7BCH_SWT",
+      "receptor_id": "7BCH",
+      "ligand_id": "SWT",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7BCH/7BCH.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/SWT.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7BCH/7BCH_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7B8M_SWT",
+      "receptor_id": "7B8M",
+      "ligand_id": "SWT",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7B8M/7B8M.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/SWT.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7B8M/7B8M_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "9FY5_81I",
+      "receptor_id": "9FY5",
+      "ligand_id": "81I",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/9FY5/9FY5.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/81I.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/9FY5/9FY5_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7FUO_YUF",
+      "receptor_id": "7FUO",
+      "ligand_id": "YUF",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7FUO/7FUO.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/YUF.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7FUO/7FUO_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7BCD_SWT",
+      "receptor_id": "7BCD",
+      "ligand_id": "SWT",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7BCD/7BCD.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/SWT.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7BCD/7BCD_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "8AQF_81I",
+      "receptor_id": "8AQF",
+      "ligand_id": "81I",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/8AQF/8AQF.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/81I.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/8AQF/8AQF_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7HG7_ZQD",
+      "receptor_id": "7HG7",
+      "ligand_id": "ZQD",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7HG7/7HG7.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/ZQD.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7HG7/7HG7_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7UR3_94M",
+      "receptor_id": "7UR3",
+      "ligand_id": "94M",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7UR3/7UR3.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/94M.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7UR3/7UR3_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "5SAU_1IJ",
+      "receptor_id": "5SAU",
+      "ligand_id": "1IJ",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/5SAU/5SAU.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/1IJ.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/5SAU/5SAU_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "8PQD_98A",
+      "receptor_id": "8PQD",
+      "ligand_id": "98A",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/8PQD/8PQD.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/98A.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/8PQD/8PQD_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7R7R_25J",
+      "receptor_id": "7R7R",
+      "ligand_id": "25J",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7R7R/7R7R.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/25J.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7R7R/7R7R_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "9GBE_25J",
+      "receptor_id": "9GBE",
+      "ligand_id": "25J",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/9GBE/9GBE.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/25J.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/9GBE/9GBE_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "8PQA_9KI",
+      "receptor_id": "8PQA",
+      "ligand_id": "9KI",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/8PQA/8PQA.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/9KI.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/8PQA/8PQA_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7GZY_A1AK3",
+      "receptor_id": "7GZY",
+      "ligand_id": "A1AK3",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7GZY/7GZY.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/A1AK3.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7GZY/7GZY_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "8OV7_5I9",
+      "receptor_id": "8OV7",
+      "ligand_id": "5I9",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/8OV7/8OV7.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/5I9.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/8OV7/8OV7_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7Q6W_963",
+      "receptor_id": "7Q6W",
+      "ligand_id": "963",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7Q6W/7Q6W.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/963.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7Q6W/7Q6W_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7S7A_7TW",
+      "receptor_id": "7S7A",
+      "ligand_id": "7TW",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7S7A/7S7A.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/7TW.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7S7A/7S7A_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7GZZ_A1ALR",
+      "receptor_id": "7GZZ",
+      "ligand_id": "A1ALR",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7GZZ/7GZZ.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/A1ALR.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7GZZ/7GZZ_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "5SAV_1K2",
+      "receptor_id": "5SAV",
+      "ligand_id": "1K2",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/5SAV/5SAV.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/1K2.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/5SAV/5SAV_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7S7A_88O",
+      "receptor_id": "7S7A",
+      "ligand_id": "88O",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7S7A/7S7A.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/88O.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7S7A/7S7A_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "8U2D_0B9",
+      "receptor_id": "8U2D",
+      "ligand_id": "0B9",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/8U2D/8U2D.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/0B9.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/8U2D/8U2D_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7USH_37T",
+      "receptor_id": "7USH",
+      "ligand_id": "37T",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7USH/7USH.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/37T.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7USH/7USH_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "8SBT_94M",
+      "receptor_id": "8SBT",
+      "ligand_id": "94M",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/8SBT/8SBT.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/94M.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/8SBT/8SBT_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "5SAV_1JI",
+      "receptor_id": "5SAV",
+      "ligand_id": "1JI",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/5SAV/5SAV.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/1JI.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/5SAV/5SAV_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7GZY_A1ALQ",
+      "receptor_id": "7GZY",
+      "ligand_id": "A1ALQ",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7GZY/7GZY.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/A1ALQ.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7GZY/7GZY_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7GZZ_A1AK3",
+      "receptor_id": "7GZZ",
+      "ligand_id": "A1AK3",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7GZZ/7GZZ.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/A1AK3.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7GZZ/7GZZ_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7GZW_A1AK6",
+      "receptor_id": "7GZW",
+      "ligand_id": "A1AK6",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7GZW/7GZW.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/A1AK6.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7GZW/7GZW_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7RGY_57I",
+      "receptor_id": "7RGY",
+      "ligand_id": "57I",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7RGY/7RGY.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/57I.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7RGY/7RGY_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7FW7_K7C",
+      "receptor_id": "7FW7",
+      "ligand_id": "K7C",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7FW7/7FW7.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/K7C.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7FW7/7FW7_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7V3R_5I9",
+      "receptor_id": "7V3R",
+      "ligand_id": "5I9",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7V3R/7V3R.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/5I9.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7V3R/7V3R_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7HGA_A1A34",
+      "receptor_id": "7HGA",
+      "ligand_id": "A1A34",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7HGA/7HGA.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/A1A34.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7HGA/7HGA_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7HG3_A1A3P",
+      "receptor_id": "7HG3",
+      "ligand_id": "A1A3P",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7HG3/7HG3.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/A1A3P.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7HG3/7HG3_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "8DUH_A1ASN",
+      "receptor_id": "8DUH",
+      "ligand_id": "A1ASN",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/8DUH/8DUH.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/A1ASN.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/8DUH/8DUH_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7GZZ_A1AK5",
+      "receptor_id": "7GZZ",
+      "ligand_id": "A1AK5",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7GZZ/7GZZ.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/A1AK5.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7GZZ/7GZZ_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7FDX_X90",
+      "receptor_id": "7FDX",
+      "ligand_id": "X90",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7FDX/7FDX.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/X90.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7FDX/7FDX_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7FU4_YUF",
+      "receptor_id": "7FU4",
+      "ligand_id": "YUF",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7FU4/7FU4.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/YUF.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7FU4/7FU4_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7VS1_37T",
+      "receptor_id": "7VS1",
+      "ligand_id": "37T",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7VS1/7VS1.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/37T.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7VS1/7VS1_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7HGE_A1A34",
+      "receptor_id": "7HGE",
+      "ligand_id": "A1A34",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7HGE/7HGE.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/A1A34.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7HGE/7HGE_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "8E81_A1AV4",
+      "receptor_id": "8E81",
+      "ligand_id": "A1AV4",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/8E81/8E81.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/A1AV4.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/8E81/8E81_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7RH0_59O",
+      "receptor_id": "7RH0",
+      "ligand_id": "59O",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7RH0/7RH0.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/59O.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7RH0/7RH0_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7S98_94M",
+      "receptor_id": "7S98",
+      "ligand_id": "94M",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7S98/7S98.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/94M.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7S98/7S98_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7FDT_4I6",
+      "receptor_id": "7FDT",
+      "ligand_id": "4I6",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7FDT/7FDT.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/4I6.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7FDT/7FDT_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7Q90_9IK",
+      "receptor_id": "7Q90",
+      "ligand_id": "9IK",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7Q90/7Q90.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/9IK.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7Q90/7Q90_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "8AVA_A1H3S",
+      "receptor_id": "8AVA",
+      "ligand_id": "A1H3S",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/8AVA/8AVA.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/A1H3S.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/8AVA/8AVA_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7Q6W_95O",
+      "receptor_id": "7Q6W",
+      "ligand_id": "95O",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7Q6W/7Q6W.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/95O.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7Q6W/7Q6W_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7Q5O_82V",
+      "receptor_id": "7Q5O",
+      "ligand_id": "82V",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7Q5O/7Q5O.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/82V.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7Q5O/7Q5O_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "8B5G_7UM",
+      "receptor_id": "8B5G",
+      "ligand_id": "7UM",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/8B5G/8B5G.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/7UM.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/8B5G/8B5G_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7S7A_8IQ",
+      "receptor_id": "7S7A",
+      "ligand_id": "8IQ",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7S7A/7S7A.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/8IQ.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7S7A/7S7A_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7RGX_59O",
+      "receptor_id": "7RGX",
+      "ligand_id": "59O",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7RGX/7RGX.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/59O.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7RGX/7RGX_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "8B5G_37T",
+      "receptor_id": "8B5G",
+      "ligand_id": "37T",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/8B5G/8B5G.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/37T.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/8B5G/8B5G_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "9ETR_A1H63",
+      "receptor_id": "9ETR",
+      "ligand_id": "A1H63",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/9ETR/9ETR.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/A1H63.sdf",
+      "oracle_site_pdb": "",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7Q90_9IV",
+      "receptor_id": "7Q90",
+      "ligand_id": "9IV",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7Q90/7Q90.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/9IV.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7Q90/7Q90_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7GZY_A1ALS",
+      "receptor_id": "7GZY",
+      "ligand_id": "A1ALS",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7GZY/7GZY.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/A1ALS.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7GZY/7GZY_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7FBF_2AN",
+      "receptor_id": "7FBF",
+      "ligand_id": "2AN",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7FBF/7FBF.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/2AN.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7FBF/7FBF_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7S85_80E",
+      "receptor_id": "7S85",
+      "ligand_id": "80E",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7S85/7S85.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/80E.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7S85/7S85_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7FDU_4I1",
+      "receptor_id": "7FDU",
+      "ligand_id": "4I1",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7FDU/7FDU.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/4I1.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7FDU/7FDU_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7HGA_A1A3P",
+      "receptor_id": "7HGA",
+      "ligand_id": "A1A3P",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7HGA/7HGA.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/A1A3P.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7HGA/7HGA_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7HG1_ZQD",
+      "receptor_id": "7HG1",
+      "ligand_id": "ZQD",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7HG1/7HG1.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/ZQD.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7HG1/7HG1_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7V3S_5IE",
+      "receptor_id": "7V3S",
+      "ligand_id": "5IE",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7V3S/7V3S.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/5IE.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7V3S/7V3S_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7HG7_A1A3P",
+      "receptor_id": "7HG7",
+      "ligand_id": "A1A3P",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7HG7/7HG7.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/A1A3P.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7HG7/7HG7_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7H02_A1AK5",
+      "receptor_id": "7H02",
+      "ligand_id": "A1AK5",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7H02/7H02.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/A1AK5.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7H02/7H02_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "5SAU_1JI",
+      "receptor_id": "5SAU",
+      "ligand_id": "1JI",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/5SAU/5SAU.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/1JI.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/5SAU/5SAU_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "9EY3_9QN",
+      "receptor_id": "9EY3",
+      "ligand_id": "9QN",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/9EY3/9EY3.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/9QN.sdf",
+      "oracle_site_pdb": "",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7H00_A1AK5",
+      "receptor_id": "7H00",
+      "ligand_id": "A1AK5",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7H00/7H00.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/A1AK5.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7H00/7H00_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7HG7_A1A34",
+      "receptor_id": "7HG7",
+      "ligand_id": "A1A34",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7HG7/7HG7.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/A1A34.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7HG7/7HG7_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7VS1_82V",
+      "receptor_id": "7VS1",
+      "ligand_id": "82V",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7VS1/7VS1.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/82V.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7VS1/7VS1_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7FDU_4I6",
+      "receptor_id": "7FDU",
+      "ligand_id": "4I6",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7FDU/7FDU.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/4I6.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7FDU/7FDU_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "9INW_A1BLJ",
+      "receptor_id": "9INW",
+      "ligand_id": "A1BLJ",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/9INW/9INW.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/A1BLJ.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/9INW/9INW_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "8I6B_5CU",
+      "receptor_id": "8I6B",
+      "ligand_id": "5CU",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/8I6B/8I6B.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/5CU.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/8I6B/8I6B_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7GZW_A1AK3",
+      "receptor_id": "7GZW",
+      "ligand_id": "A1AK3",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7GZW/7GZW.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/A1AK3.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7GZW/7GZW_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7H01_A1ALQ",
+      "receptor_id": "7H01",
+      "ligand_id": "A1ALQ",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7H01/7H01.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/A1ALQ.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7H01/7H01_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7H01_A1AK4",
+      "receptor_id": "7H01",
+      "ligand_id": "A1AK4",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7H01/7H01.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/A1AK4.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7H01/7H01_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7ENZ_82V",
+      "receptor_id": "7ENZ",
+      "ligand_id": "82V",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7ENZ/7ENZ.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/82V.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7ENZ/7ENZ_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7GZV_A1ALR",
+      "receptor_id": "7GZV",
+      "ligand_id": "A1ALR",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7GZV/7GZV.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/A1ALR.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7GZV/7GZV_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "8UL7_5N6",
+      "receptor_id": "8UL7",
+      "ligand_id": "5N6",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/8UL7/8UL7.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/5N6.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/8UL7/8UL7_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7GZW_A1ALQ",
+      "receptor_id": "7GZW",
+      "ligand_id": "A1ALQ",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7GZW/7GZW.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/A1ALQ.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7GZW/7GZW_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7FDX_4I1",
+      "receptor_id": "7FDX",
+      "ligand_id": "4I1",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7FDX/7FDX.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/4I1.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7FDX/7FDX_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7U3H_9QU",
+      "receptor_id": "7U3H",
+      "ligand_id": "9QU",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7U3H/7U3H.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/9QU.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7U3H/7U3H_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7GZZ_A1ALS",
+      "receptor_id": "7GZZ",
+      "ligand_id": "A1ALS",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7GZZ/7GZZ.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/A1ALS.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7GZZ/7GZZ_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "8BXC_2V9",
+      "receptor_id": "8BXC",
+      "ligand_id": "2V9",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/8BXC/8BXC.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/2V9.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/8BXC/8BXC_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7RXO_7TW",
+      "receptor_id": "7RXO",
+      "ligand_id": "7TW",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7RXO/7RXO.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/7TW.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7RXO/7RXO_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7B2U_X77",
+      "receptor_id": "7B2U",
+      "ligand_id": "X77",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7B2U/7B2U.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/X77.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7B2U/7B2U_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7B8K_SWT",
+      "receptor_id": "7B8K",
+      "ligand_id": "SWT",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7B8K/7B8K.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/SWT.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7B8K/7B8K_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7Q8Y_9IS",
+      "receptor_id": "7Q8Y",
+      "ligand_id": "9IS",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7Q8Y/7Q8Y.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/9IS.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7Q8Y/7Q8Y_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7H02_A1AK6",
+      "receptor_id": "7H02",
+      "ligand_id": "A1AK6",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7H02/7H02.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/A1AK6.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7H02/7H02_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "8I6A_5CU",
+      "receptor_id": "8I6A",
+      "ligand_id": "5CU",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/8I6A/8I6A.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/5CU.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/8I6A/8I6A_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7H00_A1AK4",
+      "receptor_id": "7H00",
+      "ligand_id": "A1AK4",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7H00/7H00.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/A1AK4.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7H00/7H00_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7FBF_6NA",
+      "receptor_id": "7FBF",
+      "ligand_id": "6NA",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7FBF/7FBF.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/6NA.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7FBF/7FBF_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "8B5G_8M6",
+      "receptor_id": "8B5G",
+      "ligand_id": "8M6",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/8B5G/8B5G.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/8M6.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/8B5G/8B5G_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7FEU_2AN",
+      "receptor_id": "7FEU",
+      "ligand_id": "2AN",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7FEU/7FEU.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/2AN.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7FEU/7FEU_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7RGX_5EI",
+      "receptor_id": "7RGX",
+      "ligand_id": "5EI",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7RGX/7RGX.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/5EI.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7RGX/7RGX_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "8QDG_6D6",
+      "receptor_id": "8QDG",
+      "ligand_id": "6D6",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/8QDG/8QDG.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/6D6.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/8QDG/8QDG_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7S85_8FI",
+      "receptor_id": "7S85",
+      "ligand_id": "8FI",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7S85/7S85.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/8FI.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7S85/7S85_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7GZV_A1AK7",
+      "receptor_id": "7GZV",
+      "ligand_id": "A1AK7",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7GZV/7GZV.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/A1AK7.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7GZV/7GZV_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7Q8Z_9IS",
+      "receptor_id": "7Q8Z",
+      "ligand_id": "9IS",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7Q8Z/7Q8Z.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/9IS.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7Q8Z/7Q8Z_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7RH0_57I",
+      "receptor_id": "7RH0",
+      "ligand_id": "57I",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7RH0/7RH0.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/57I.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7RH0/7RH0_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7F10_0ER",
+      "receptor_id": "7F10",
+      "ligand_id": "0ER",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7F10/7F10.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/0ER.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7F10/7F10_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7RWF_80E",
+      "receptor_id": "7RWF",
+      "ligand_id": "80E",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7RWF/7RWF.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/80E.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7RWF/7RWF_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "8PQF_9VV",
+      "receptor_id": "8PQF",
+      "ligand_id": "9VV",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/8PQF/8PQF.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/9VV.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/8PQF/8PQF_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "5SB2_1IF",
+      "receptor_id": "5SB2",
+      "ligand_id": "1IF",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/5SB2/5SB2.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/1IF.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/5SB2/5SB2_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7EGO_2AN",
+      "receptor_id": "7EGO",
+      "ligand_id": "2AN",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7EGO/7EGO.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/2AN.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7EGO/7EGO_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7UU0_8M6",
+      "receptor_id": "7UU0",
+      "ligand_id": "8M6",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7UU0/7UU0.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/8M6.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7UU0/7UU0_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7HG8_ZQD",
+      "receptor_id": "7HG8",
+      "ligand_id": "ZQD",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7HG8/7HG8.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/ZQD.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7HG8/7HG8_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7LDZ_XUY",
+      "receptor_id": "7LDZ",
+      "ligand_id": "XUY",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7LDZ/7LDZ.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/XUY.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7LDZ/7LDZ_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7Q5O_37T",
+      "receptor_id": "7Q5O",
+      "ligand_id": "37T",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7Q5O/7Q5O.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/37T.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7Q5O/7Q5O_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7GLF_X77",
+      "receptor_id": "7GLF",
+      "ligand_id": "X77",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7GLF/7GLF.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/X77.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7GLF/7GLF_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "8BI2_A1H2W",
+      "receptor_id": "8BI2",
+      "ligand_id": "A1H2W",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/8BI2/8BI2.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/A1H2W.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/8BI2/8BI2_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7XFA_5A4",
+      "receptor_id": "7XFA",
+      "ligand_id": "5A4",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7XFA/7XFA.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/5A4.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7XFA/7XFA_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7FBF_4I1",
+      "receptor_id": "7FBF",
+      "ligand_id": "4I1",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7FBF/7FBF.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/4I1.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7FBF/7FBF_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "8QTG_A1IEW",
+      "receptor_id": "8QTG",
+      "ligand_id": "A1IEW",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/8QTG/8QTG.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/A1IEW.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/8QTG/8QTG_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7H02_A1ALQ",
+      "receptor_id": "7H02",
+      "ligand_id": "A1ALQ",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7H02/7H02.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/A1ALQ.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7H02/7H02_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7LE6_XUY",
+      "receptor_id": "7LE6",
+      "ligand_id": "XUY",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7LE6/7LE6.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/XUY.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7LE6/7LE6_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7FUB_YUF",
+      "receptor_id": "7FUB",
+      "ligand_id": "YUF",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7FUB/7FUB.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/YUF.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7FUB/7FUB_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7LE5_XUY",
+      "receptor_id": "7LE5",
+      "ligand_id": "XUY",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7LE5/7LE5.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/XUY.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7LE5/7LE5_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "8HUT_X77",
+      "receptor_id": "8HUT",
+      "ligand_id": "X77",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/8HUT/8HUT.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/X77.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/8HUT/8HUT_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7FDU_2AN",
+      "receptor_id": "7FDU",
+      "ligand_id": "2AN",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7FDU/7FDU.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/2AN.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7FDU/7FDU_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7S4T_7TW",
+      "receptor_id": "7S4T",
+      "ligand_id": "7TW",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7S4T/7S4T.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/7TW.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7S4T/7S4T_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7Q6U_95O",
+      "receptor_id": "7Q6U",
+      "ligand_id": "95O",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7Q6U/7Q6U.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/95O.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7Q6U/7Q6U_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7RWF_8FI",
+      "receptor_id": "7RWF",
+      "ligand_id": "8FI",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7RWF/7RWF.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/8FI.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7RWF/7RWF_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7SI5_9JL",
+      "receptor_id": "7SI5",
+      "ligand_id": "9JL",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7SI5/7SI5.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/9JL.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7SI5/7SI5_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "8QTK_A1IEW",
+      "receptor_id": "8QTK",
+      "ligand_id": "A1IEW",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/8QTK/8QTK.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/A1IEW.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/8QTK/8QTK_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7S7A_80E",
+      "receptor_id": "7S7A",
+      "ligand_id": "80E",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7S7A/7S7A.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/80E.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7S7A/7S7A_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7S85_7TW",
+      "receptor_id": "7S85",
+      "ligand_id": "7TW",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7S85/7S85.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/7TW.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7S85/7S85_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "8ZU2_A1D83",
+      "receptor_id": "8ZU2",
+      "ligand_id": "A1D83",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/8ZU2/8ZU2.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/A1D83.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/8ZU2/8ZU2_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7FW3_K7C",
+      "receptor_id": "7FW3",
+      "ligand_id": "K7C",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7FW3/7FW3.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/K7C.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7FW3/7FW3_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7YZU_A1H5E",
+      "receptor_id": "7YZU",
+      "ligand_id": "A1H5E",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7YZU/7YZU.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/A1H5E.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7YZU/7YZU_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7FVY_K7C",
+      "receptor_id": "7FVY",
+      "ligand_id": "K7C",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7FVY/7FVY.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/K7C.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7FVY/7FVY_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7USG_82V",
+      "receptor_id": "7USG",
+      "ligand_id": "82V",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7USG/7USG.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/82V.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7USG/7USG_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7GZX_A1ALR",
+      "receptor_id": "7GZX",
+      "ligand_id": "A1ALR",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7GZX/7GZX.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/A1ALR.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7GZX/7GZX_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7M9G_XUY",
+      "receptor_id": "7M9G",
+      "ligand_id": "XUY",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7M9G/7M9G.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/XUY.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7M9G/7M9G_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7FDT_6NA",
+      "receptor_id": "7FDT",
+      "ligand_id": "6NA",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7FDT/7FDT.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/6NA.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7FDT/7FDT_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7S4T_80E",
+      "receptor_id": "7S4T",
+      "ligand_id": "80E",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7S4T/7S4T.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/80E.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7S4T/7S4T_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7FBF_X90",
+      "receptor_id": "7FBF",
+      "ligand_id": "X90",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7FBF/7FBF.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/X90.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7FBF/7FBF_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7GZX_A1ALQ",
+      "receptor_id": "7GZX",
+      "ligand_id": "A1ALQ",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7GZX/7GZX.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/A1ALQ.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7GZX/7GZX_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7H02_A1ALR",
+      "receptor_id": "7H02",
+      "ligand_id": "A1ALR",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7H02/7H02.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/A1ALR.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7H02/7H02_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "8PQ9_9VV",
+      "receptor_id": "8PQ9",
+      "ligand_id": "9VV",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/8PQ9/8PQ9.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/9VV.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/8PQ9/8PQ9_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7SDB_4IP",
+      "receptor_id": "7SDB",
+      "ligand_id": "4IP",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7SDB/7SDB.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/4IP.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7SDB/7SDB_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7FVU_K7C",
+      "receptor_id": "7FVU",
+      "ligand_id": "K7C",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7FVU/7FVU.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/K7C.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7FVU/7FVU_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7GNL_X77",
+      "receptor_id": "7GNL",
+      "ligand_id": "X77",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7GNL/7GNL.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/X77.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7GNL/7GNL_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "5SAW_1K2",
+      "receptor_id": "5SAW",
+      "ligand_id": "1K2",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/5SAW/5SAW.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/1K2.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/5SAW/5SAW_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "8PQF_98A",
+      "receptor_id": "8PQF",
+      "ligand_id": "98A",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/8PQF/8PQF.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/98A.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/8PQF/8PQF_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7H0S_A1AMV",
+      "receptor_id": "7H0S",
+      "ligand_id": "A1AMV",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7H0S/7H0S.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/A1AMV.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7H0S/7H0S_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7RWF_8IQ",
+      "receptor_id": "7RWF",
+      "ligand_id": "8IQ",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7RWF/7RWF.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/8IQ.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7RWF/7RWF_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7S4T_8IQ",
+      "receptor_id": "7S4T",
+      "ligand_id": "8IQ",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7S4T/7S4T.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/8IQ.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7S4T/7S4T_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7H0B_A1AMV",
+      "receptor_id": "7H0B",
+      "ligand_id": "A1AMV",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7H0B/7H0B.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/A1AMV.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7H0B/7H0B_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7FEU_4I1",
+      "receptor_id": "7FEU",
+      "ligand_id": "4I1",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7FEU/7FEU.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/4I1.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7FEU/7FEU_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7VRQ_82V",
+      "receptor_id": "7VRQ",
+      "ligand_id": "82V",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7VRQ/7VRQ.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/82V.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7VRQ/7VRQ_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7RGX_5BI",
+      "receptor_id": "7RGX",
+      "ligand_id": "5BI",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7RGX/7RGX.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/5BI.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7RGX/7RGX_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7H00_A1AK6",
+      "receptor_id": "7H00",
+      "ligand_id": "A1AK6",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7H00/7H00.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/A1AK6.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7H00/7H00_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7LTY_0B9",
+      "receptor_id": "7LTY",
+      "ligand_id": "0B9",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7LTY/7LTY.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/0B9.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7LTY/7LTY_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7RGY_5EI",
+      "receptor_id": "7RGY",
+      "ligand_id": "5EI",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7RGY/7RGY.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/5EI.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7RGY/7RGY_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7H01_A1AK6",
+      "receptor_id": "7H01",
+      "ligand_id": "A1AK6",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7H01/7H01.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/A1AK6.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7H01/7H01_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "5SAW_1JI",
+      "receptor_id": "5SAW",
+      "ligand_id": "1JI",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/5SAW/5SAW.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/1JI.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/5SAW/5SAW_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "8YKL_7YY",
+      "receptor_id": "8YKL",
+      "ligand_id": "7YY",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/8YKL/8YKL.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/7YY.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/8YKL/8YKL_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7RGZ_57I",
+      "receptor_id": "7RGZ",
+      "ligand_id": "57I",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7RGZ/7RGZ.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/57I.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7RGZ/7RGZ_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "5SAW_1IJ",
+      "receptor_id": "5SAW",
+      "ligand_id": "1IJ",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/5SAW/5SAW.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/1IJ.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/5SAW/5SAW_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "8PQD_9KI",
+      "receptor_id": "8PQD",
+      "ligand_id": "9KI",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/8PQD/8PQD.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/9KI.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/8PQD/8PQD_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "5SB1_1IM",
+      "receptor_id": "5SB1",
+      "ligand_id": "1IM",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/5SB1/5SB1.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/1IM.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/5SB1/5SB1_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "8PQF_9JI",
+      "receptor_id": "8PQF",
+      "ligand_id": "9JI",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/8PQF/8PQF.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/9JI.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/8PQF/8PQF_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7GZY_A1AK7",
+      "receptor_id": "7GZY",
+      "ligand_id": "A1AK7",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7GZY/7GZY.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/A1AK7.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7GZY/7GZY_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7USH_7UM",
+      "receptor_id": "7USH",
+      "ligand_id": "7UM",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7USH/7USH.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/7UM.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7USH/7USH_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "8RDS_7SE",
+      "receptor_id": "8RDS",
+      "ligand_id": "7SE",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/8RDS/8RDS.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/7SE.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/8RDS/8RDS_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7Q7K_9I8",
+      "receptor_id": "7Q7K",
+      "ligand_id": "9I8",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7Q7K/7Q7K.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/9I8.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7Q7K/7Q7K_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7FCX_2AN",
+      "receptor_id": "7FCX",
+      "ligand_id": "2AN",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7FCX/7FCX.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/2AN.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7FCX/7FCX_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "5SB2_1IJ",
+      "receptor_id": "5SB2",
+      "ligand_id": "1IJ",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/5SB2/5SB2.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/1IJ.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/5SB2/5SB2_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7HG0_A1A34",
+      "receptor_id": "7HG0",
+      "ligand_id": "A1A34",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7HG0/7HG0.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/A1A34.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7HG0/7HG0_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7FU9_YUF",
+      "receptor_id": "7FU9",
+      "ligand_id": "YUF",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7FU9/7FU9.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/YUF.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7FU9/7FU9_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7H00_A1AK3",
+      "receptor_id": "7H00",
+      "ligand_id": "A1AK3",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7H00/7H00.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/A1AK3.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7H00/7H00_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7H01_A1AK7",
+      "receptor_id": "7H01",
+      "ligand_id": "A1AK7",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7H01/7H01.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/A1AK7.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7H01/7H01_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7GZW_A1AK5",
+      "receptor_id": "7GZW",
+      "ligand_id": "A1AK5",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7GZW/7GZW.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/A1AK5.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7GZW/7GZW_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7HGB_ZQD",
+      "receptor_id": "7HGB",
+      "ligand_id": "ZQD",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7HGB/7HGB.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/ZQD.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7HGB/7HGB_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "8OV7_5IE",
+      "receptor_id": "8OV7",
+      "ligand_id": "5IE",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/8OV7/8OV7.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/5IE.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/8OV7/8OV7_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7FVW_K7C",
+      "receptor_id": "7FVW",
+      "ligand_id": "K7C",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7FVW/7FVW.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/K7C.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7FVW/7FVW_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "8QDI_6D6",
+      "receptor_id": "8QDI",
+      "ligand_id": "6D6",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/8QDI/8QDI.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/6D6.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/8QDI/8QDI_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7H00_A1AK7",
+      "receptor_id": "7H00",
+      "ligand_id": "A1AK7",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7H00/7H00.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/A1AK7.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7H00/7H00_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7S4T_8FI",
+      "receptor_id": "7S4T",
+      "ligand_id": "8FI",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7S4T/7S4T.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/8FI.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7S4T/7S4T_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7GZW_A1ALS",
+      "receptor_id": "7GZW",
+      "ligand_id": "A1ALS",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7GZW/7GZW.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/A1ALS.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7GZW/7GZW_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7GZX_A1ALS",
+      "receptor_id": "7GZX",
+      "ligand_id": "A1ALS",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7GZX/7GZX.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/A1ALS.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7GZX/7GZX_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7USH_8M6",
+      "receptor_id": "7USH",
+      "ligand_id": "8M6",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7USH/7USH.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/8M6.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7USH/7USH_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7FDT_X90",
+      "receptor_id": "7FDT",
+      "ligand_id": "X90",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7FDT/7FDT.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/X90.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7FDT/7FDT_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7RXO_8FI",
+      "receptor_id": "7RXO",
+      "ligand_id": "8FI",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7RXO/7RXO.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/8FI.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7RXO/7RXO_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "8I61_5CU",
+      "receptor_id": "8I61",
+      "ligand_id": "5CU",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/8I61/8I61.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/5CU.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/8I61/8I61_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "5SAU_1IM",
+      "receptor_id": "5SAU",
+      "ligand_id": "1IM",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/5SAU/5SAU.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/1IM.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/5SAU/5SAU_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7H0Q_A1AMD",
+      "receptor_id": "7H0Q",
+      "ligand_id": "A1AMD",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7H0Q/7H0Q.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/A1AMD.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7H0Q/7H0Q_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7HGA_ZQD",
+      "receptor_id": "7HGA",
+      "ligand_id": "ZQD",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7HGA/7HGA.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/ZQD.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7HGA/7HGA_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "5SAW_1IF",
+      "receptor_id": "5SAW",
+      "ligand_id": "1IF",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/5SAW/5SAW.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/1IF.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/5SAW/5SAW_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7GZX_A1AK3",
+      "receptor_id": "7GZX",
+      "ligand_id": "A1AK3",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7GZX/7GZX.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/A1AK3.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7GZX/7GZX_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "5SB2_1JI",
+      "receptor_id": "5SB2",
+      "ligand_id": "1JI",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/5SB2/5SB2.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/1JI.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/5SB2/5SB2_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7RGZ_59O",
+      "receptor_id": "7RGZ",
+      "ligand_id": "59O",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7RGZ/7RGZ.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/59O.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7RGZ/7RGZ_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7VRQ_7UM",
+      "receptor_id": "7VRQ",
+      "ligand_id": "7UM",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7VRQ/7VRQ.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/7UM.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7VRQ/7VRQ_binding_site.pdb",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7RH0_5A4",
+      "receptor_id": "7RH0",
+      "ligand_id": "5A4",
+      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7RH0/7RH0.pdb",
+      "ligand_sdf": "benchmarks/posex_cd/ligands/5A4.sdf",
+      "oracle_site_pdb": "benchmarks/posex_cd/posex_cd/7RH0/7RH0_binding_site.pdb",
+      "state": "crossdock"
+    }
+  ],
+  "generated": "2026-07-08T04:36:52.617594Z"
+}
