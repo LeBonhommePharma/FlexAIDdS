@@ -26,7 +26,7 @@ cmake --build build -j $(nproc)
 ctest --test-dir build --output-on-failure
 
 # Python package only
-cd python && pip install -e . && pytest tests/ -q
+pip install -e ./python && python -m pytest tests/ -q
 
 # Figure generation (new)
 python -c "

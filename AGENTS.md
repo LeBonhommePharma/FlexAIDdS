@@ -72,8 +72,7 @@ ctest --test-dir build --output-on-failure
 
 **Python package only** (many tasks do not need the full C++ build)
 ```bash
-cd python
-pip install -e .
+pip install -e ./python
 pytest tests/ -q
 ```
 

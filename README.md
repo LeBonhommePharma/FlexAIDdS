@@ -75,11 +75,11 @@ cmake --build build --parallel
 ```
 
 ```bash
-# Dock ...
+# Dock with full flexibility and entropy at 300 K (default)
 ./build/FlexAIDdS receptor.pdb ligand.mol2
 ```
 
-### Python package only (pip — easiest for analysis)
+### Python package (easiest for analysis, results loading, thermodynamics)
 
 ```bash
 pip install -e ./python
@@ -89,28 +89,17 @@ pip install -e ./python
 import flexaidds as fd
 print(fd.__version__)
 
-# Load results, thermodynamics, etc. (pure Python or accelerated)
-run = fd.load_results("some/results/dir")
+run = fd.load_results("path/to/results")
 ```
 
-### macOS: Homebrew (native tools)
+### macOS: Homebrew (native CLI tools)
 
 ```bash
 brew install --HEAD --formula https://raw.githubusercontent.com/LeBonhommePharma/FlexAIDdS/master/Formula/flexaidds.rb
-pip install flexaidds   # Python layer
+pip install flexaidds   # Python package (recommended)
 ```
 
-See [docs/INSTALLATION.md](docs/INSTALLATION.md) for conda, full details, and platform notes.
-
-```bash
-# Dock with full flexibility and entropy at 300 K (default)
-./build/FlexAIDdS receptor.pdb ligand.mol2
-...
-```
-
-(For the Python `dock()` high-level API see the evolving `flexaidds.docking` module and docs.)
-    print(f"Mode: dG={mode.free_energy:.2f} kcal/mol")
-```
+See [docs/INSTALLATION.md](docs/INSTALLATION.md) for conda, PyPI, Windows, and full platform instructions. The Python package and native tools can be installed independently.
 
 ---
 
@@ -341,7 +330,7 @@ benchmark-specific eigenvalue-to-frequency calibration is supplied. See
 ### Python Package
 
 ```bash
-cd python && pip install -e .
+pip install -e ./python
 ```
 
 The `flexaidds` package works in two modes: **pure Python** (always available) and **C++ accelerated** (when built with `BUILD_PYTHON_BINDINGS=ON`).
@@ -422,7 +411,7 @@ ctest --test-dir build --output-on-failure
 ### Python (pytest)
 
 ```bash
-cd python && pip install -e . && pytest tests/
+pip install -e ./python && pytest tests/
 ```
 
 32 test files. Tests marked `@requires_core` skip gracefully when the C++ extension is not built.

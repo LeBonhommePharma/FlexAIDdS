@@ -22,7 +22,7 @@ Optimized for Cursor, Windsurf, old Codex-style completions, or any AI code edit
 **Quick commands** (have these ready in .cursorrules or as slash commands):
 ```bash
 cmake -B build -DBUILD_TESTING=ON -DCMAKE_BUILD_TYPE=Release && cmake --build build -j 8 && ctest --test-dir build --output-on-failure
-cd python && pip install -e . && pytest tests/ -q
+pip install -e ./python && python -m pytest tests/ -q
 # Figure
 python -c "from flexaidds.figures import generate_flexaids_nrdd_cover; print(generate_flexaids_nrdd_cover(entropy_value=0.93, enthalpy_value=1.4, index_value=0.92, style='dramatic_faces')['prompt'][:800])"
 ```

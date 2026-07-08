@@ -34,6 +34,12 @@ Complete build and installation instructions for FlexAID∆S on all supported pl
 
 ### Python package via pip (easiest for analysis, results, thermodynamics)
 
+From a released version on PyPI (recommended once published):
+```bash
+pip install flexaidds
+```
+
+From source (for development or latest):
 ```bash
 git clone https://github.com/LeBonhommePharma/FlexAIDdS.git && cd FlexAIDdS
 pip install -e ./python
@@ -41,13 +47,15 @@ pip install -e ./python
 
 - Installs the `flexaidds` package (and the `flexaidds` + `flexaidds-benchmark` CLIs).
 - The native C++ extension (`_core`) is **optional**. If build tools/Eigen are missing the package still installs and works in pure-Python mode (with fallbacks).
-- Works from sdist, git, or local checkout.
+- Works from PyPI, sdist, git, or local checkout.
 
 Verify:
 ```bash
 python -c "import flexaidds as fd; print(fd.__version__, 'HAS_CORE=', getattr(fd, 'HAS_CORE_BINDINGS', False))"
 python -m flexaidds --help || echo "CLI works via python -m"
 ```
+
+A GitHub Actions workflow (`.github/workflows/pypi-release.yml`) handles building wheels + sdist and publishing via trusted publishing on release.
 
 ### Full native tools + Python (CMake)
 
@@ -96,30 +104,24 @@ cmake --build build --parallel
 
 ### macOS (Apple Silicon & Intel)
 
-#### Easy install via Homebrew (recommended for CLI tools)
+#### Easy install via Homebrew (recommended for native CLI tools)
 
 ```bash
-# Latest development version (recommended while we stabilize stable releases)
+# Latest development version
 brew install --HEAD --formula https://raw.githubusercontent.com/LeBonhommePharma/FlexAIDdS/master/Formula/flexaidds.rb
-
-# Or a specific released version (when stable tarballs are published):
-# brew install --formula https://raw.githubusercontent.com/LeBonhommePharma/FlexAIDdS/master/Formula/flexaidds.rb
 ```
 
-This installs the native tools (`FlexAIDdS`, `tENCoM`, `FlexAID`) with all required data files.
+This installs `FlexAIDdS`, `tENCoM`, `FlexAID` + required data files.
 
-Afterward, install the Python package for analysis (highly recommended):
+Then (recommended):
 ```bash
 pip install flexaidds
 ```
 
-#### Build from source (if you want full control)
+#### Build from source (full control)
 
 ```bash
-# Install dependencies via Homebrew
 brew install cmake ninja libomp eigen
-
-# Build
 git clone https://github.com/LeBonhommePharma/FlexAIDdS.git && cd FlexAIDdS
 cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
 cmake --build build --parallel
@@ -137,23 +139,6 @@ cmake --build build --parallel
 ```
 
 > **Windows note**: Install Eigen via `choco install eigen` or manually set `CMAKE_PREFIX_PATH`. OpenMP support on Windows requires additional configuration.
-
----
-
-## Homebrew (macOS) — easiest for native CLI tools
-
-```bash
-brew install --formula https://raw.githubusercontent.com/LeBonhommePharma/FlexAIDdS/master/Formula/flexaidds.rb
-```
-
-This gives you the optimized `FlexAIDdS`, `tENCoM`, and supporting tools with data files pre-staged.
-
-Then install the Python layer:
-```bash
-pip install flexaidds
-```
-
-See the full macOS section below for `--HEAD` and from-source details.
 
 ---
 
@@ -178,6 +163,30 @@ The package provides:
 The heavy compiled `_core` extension (for maximum speed on StatMech/ENCoM) is built automatically during `pip install -e ./python` **if** a compiler + Eigen + pybind11 are present. Otherwise it silently falls back (see `HAS_CORE_BINDINGS`).
 
 See also `python/README.md`.
+
+## Homebrew (macOS native tools)
+
+The formula provides the high-performance native executables with data files staged correctly:
+
+```bash
+# Development / latest
+brew install --HEAD --formula https://raw.githubusercontent.com/LeBonhommePharma/FlexAIDdS/master/Formula/flexaidds.rb
+
+# After install, add the Python package:
+pip install flexaidds
+```
+
+The formula lives at `Formula/flexaidds.rb`. It is currently source-based (HEAD) for the latest code. Bottles may be added later.
+
+---
+
+## Releasing & Distribution
+
+- **Python package (PyPI)**: The workflow `.github/workflows/pypi-release.yml` builds sdist + wheels (cibuildwheel) and publishes on GitHub Release using trusted publishing. Run the workflow manually for TestPyPI.
+
+- **Homebrew**: Update `Formula/flexaidds.rb` (version/sha for stable, HEAD for dev) when cutting releases. Users install via the raw URL or a tap.
+
+- **Native binaries**: Existing release workflow attaches platform archives on tag.
 
 ---
 

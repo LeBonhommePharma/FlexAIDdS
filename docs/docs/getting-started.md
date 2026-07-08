@@ -28,7 +28,7 @@ cmake --build . -j $(nproc)
 
 ```bash
 cd python
-pip install -e .
+pip install -e ./python
 pytest tests/
 ```
 

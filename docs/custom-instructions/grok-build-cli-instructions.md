@@ -27,7 +27,7 @@ python3 .grok/skills/flexaidds/scripts/validate_skill.py   # or the flexaidds eq
 
 **Project & Commands**: See the main AGENTS.md / CLAUDE.md. Key ones you can run directly with your tools:
 - C++ full test build + ctest
-- `cd python && python -m pip install -e . && python -m pytest tests/ -q`
+- `pip install -e ./python && python -m pytest tests/ -q`
 - Figure generation (your superpower in this environment):
   ```bash
   python -c "
