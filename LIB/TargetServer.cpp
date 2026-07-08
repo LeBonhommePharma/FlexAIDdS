@@ -42,7 +42,7 @@ DockingSession TargetServer::create_session(const std::string& ligand_name)
     session.completed = false;
     session.log_Z = 0.0;
     session.n_poses = 0;
-    session.conc_M = 1.0;  // P3 default
+    session.conc_M = config_.default_conc_M;  // P3 from config
     session.best_energy = 0.0;
     session.best_center[0] = session.best_center[1] = session.best_center[2] = 0.0f;
     return session;
@@ -53,7 +53,8 @@ void TargetServer::register_result(const DockingSession& session)
     if (!session.completed) return;
 
     // Register into grand partition function (atomic insert-or-overwrite)
-    grand_xi_.add_or_overwrite(session.ligand_name, session.log_Z);
+    // P3: pass conc_M for fugacity
+    grand_xi_.add_or_overwrite(session.ligand_name, session.log_Z, session.conc_M);
 
     // Accumulate conformer knowledge (CCBM) and binding center
     {
