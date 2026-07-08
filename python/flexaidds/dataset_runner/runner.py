@@ -154,6 +154,7 @@ class DatasetConfig:
     data_format: str = "pdb"
     active_label_field: str = "is_active"
     default_conc_M: float = 1.0  # P3: for grand canonical per-ligand or default
+    ligand_concs: Dict[str, float] = field(default_factory=dict)  # P3: per-ligand_id -> conc_M from yaml
 
     @classmethod
     def from_yaml(cls, yaml_path: Path) -> "DatasetConfig":
@@ -185,6 +186,7 @@ class DatasetConfig:
             data_format=str(raw.pop("data_format", "pdb")),
             active_label_field=str(raw.pop("active_label_field", "is_active")),
             default_conc_M=float(raw.pop("default_conc_M", 1.0)),
+            ligand_concs=DatasetConfig._parse_ligand_concs(raw),
         )
         if data_dir_raw:
             config.data_dir = Path(data_dir_raw)
@@ -233,6 +235,25 @@ class DatasetConfig:
             return KNOWN_LARGE_DATASETS[self.slug]
         return len(self.scheduled_work_items(tier))
 
+    @staticmethod
+    def _parse_ligand_concs(raw: dict) -> Dict[str, float]:
+        """P3: parse per-ligand conc_M from 'ligands' list or competition_sets in yaml."""
+        concs: Dict[str, float] = {}
+        # direct 'ligands': [{ligand_id: , conc_M: }, ...]
+        for lig in raw.get("ligands", []) or []:
+            if isinstance(lig, dict):
+                lid = lig.get("ligand_id") or lig.get("name")
+                if lid and "conc_M" in lig:
+                    concs[str(lid)] = float(lig["conc_M"])
+        # competition_sets style from example yamls
+        for cs in raw.get("competition_sets", []) or []:
+            for lig in cs.get("ligands", []) or []:
+                if isinstance(lig, dict):
+                    lid = lig.get("ligand_id") or lig.get("name")
+                    if lid and "conc_M" in lig:
+                        concs[str(lid)] = float(lig["conc_M"])
+        return concs
+
 
 def load_large_dataset_catalog(
     slug: str,
@@ -272,6 +293,8 @@ class TargetResult:
     duration_seconds: float = 0.0
     error: str = ""
     grand_log_Z: Optional[float] = None  # P3: ensemble log_Z for this ligand (for grand Xi)
+    conc_M: float = 1.0  # P3: the conc used for this ligand
+    grand_xi: Optional[float] = None  # P3: computed log_Xi if grand_log_Z present
 
     @property
     def success(self) -> bool:
@@ -1438,12 +1461,17 @@ class DatasetRunner:
                         error = f"No ligand found for {target_id}/{state}"
                         return target_id, state, [], time.monotonic() - t_start, error
 
+                # P3: per-ligand conc from config.ligand_concs if present (from yaml)
+                eff_conc = getattr(config, 'default_conc_M', self.default_conc_M)
+                if ligands:
+                    lid = ligands[0].stem
+                    eff_conc = getattr(config, 'ligand_concs', {}).get(lid, eff_conc)
                 poses = self._dock_target(
                     target_id,
                     receptor or Path("/dev/null"),
                     ligands or [Path(f"{target_id}.mol2")],
                     structural_state=state,
-                    conc_M=getattr(config, 'default_conc_M', self.default_conc_M),
+                    conc_M=eff_conc,
                 )
 
                 elapsed = time.monotonic() - t_start
@@ -1455,9 +1483,16 @@ class DatasetRunner:
                     poses=poses,
                     duration_seconds=elapsed,
                     error=error,
+                    conc_M=eff_conc,
                 )
                 if poses and getattr(poses[0], 'ensemble_log_Z', None) is not None:
                     tr.grand_log_Z = poses[0].ensemble_log_Z
+                    try:
+                        from ..grand_canonical import compute_grand_partition
+                        g = compute_grand_partition([(target_id, tr.grand_log_Z, tr.conc_M)], temperature_K=298.0)
+                        tr.grand_xi = g.log_Xi
+                    except Exception as e:
+                        logger.debug("P3 grand compute: %s", e)
                 try:
                     saved_path = self._save_target_result(tr, config, tier, cost_cpu=cost_cpu)
                     logger.debug(
@@ -1681,6 +1716,8 @@ class DatasetRunner:
             "poses": [p.to_dict() if hasattr(p, "to_dict") else p.__dict__ for p in tr.poses],
             "success": tr.success,
             "grand_log_Z": getattr(tr, 'grand_log_Z', None),
+            "grand_xi": getattr(tr, 'grand_xi', None),
+            "conc_M": getattr(tr, 'conc_M', 1.0),
             "timestamp": datetime.datetime.utcnow().isoformat() + "Z",
         }
         tmp.write_text(json.dumps(payload, indent=2))
@@ -1712,6 +1749,8 @@ class DatasetRunner:
                 duration_seconds=data.get("duration_seconds", 0.0),
                 error=data.get("error", ""),
                 grand_log_Z=data.get("grand_log_Z"),
+                conc_M=data.get("conc_M", 1.0),
+                grand_xi=data.get("grand_xi"),
             )
         except Exception as e:
             logger.warning("Corrupt target result %s — will re-run: %s", path, e)
