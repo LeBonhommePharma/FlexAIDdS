@@ -2599,6 +2599,18 @@ int main(int argc, char **argv){
 				printf("using the Complementarity Function (CF) based clustering algorithm.\n");
 				cluster(FA,GB,VC,chrom_snapshot,gene_lim,atoms,residue,cleftgrid,n_chrom_snapshot,end_strfile,tmp_end_strfile,dockinp,gainp, active_ts, "ga-ligand");
 			}
+
+			// P1/P5: augment output with grand canonical info if ts active (per-ligand p_bind, Xi etc.)
+			if (active_ts) {
+				printf("[GRAND] sessions=%d\n", active_ts->completed_sessions());
+				auto ranks = active_ts->rank_ligands();
+				for (const auto& r : ranks) {
+					double p = active_ts->binding_probability(r.name);
+					printf("[GRAND] %s: log_zZ=%.6g p_bind=%.6g log_intr=%.6g\n",
+					       r.name.c_str(), r.log_zZ, p, r.log_intrinsic_selectivity);
+				}
+			}
+
 			//////////////////////////////////////////
 			// Looking at cleftgrid chrom's density //
 			//////////////////////////////////////////
