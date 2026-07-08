@@ -1,7 +1,7 @@
 # Grand Canonical Partition Function (Ξ) — Implementation + Delegation Roadmap & Merge Order
 
-**Status**: Planning phase (plan mode). No code changes performed outside this file.
-**Date**: 2026-07-08
+**Status**: Implementation in progress (P0 complete, P1 core wiring + output + tests advanced, P2 Python complete, P3 conc support started, P4 validation complete). Work in feat/grand-canonical-partition-function worktree.
+**Date**: 2026-07-08 (updated during scheduled chunks)
 **Source of truth**: AGENTS.md (all rules apply strictly)
 **Reference vision**: Existing `GrandPartitionFunction` + `TargetServer` design (LIB/GrandPartitionFunction.{h,cpp}, TargetServer.*, MultiSiteGPF.*, docs/GrandPartitionFunction_Report.md) + partial DatasetRunner usage. The linked share (https://grok.com/share/bGVnYWN5_a0c47afe-a1c9-44d6-a8b5-44642e785189) motivates making the grand canonical ensemble a first-class, production reality for competitive binding (beyond canonical per-ligand StatMechEngine Z).
 
@@ -306,3 +306,15 @@ cmake --build build-scalar -j && ctest --test-dir build-scalar -R 'grand|Grand|T
 - Never claim complete without showing clean verification output.
 
 This plan is designed to be chunkable, delegable to swarms, scientifically rigorous, and fully aligned with AGENTS.md, CLAUDE.md, and the existing audited GrandPartitionFunction implementation.
+
+## Progress (as of latest scheduled chunks)
+- P0: CMake FLEXAIDS_GRAND_CANONICAL, test hardening, gate clean. Commit 36368a4ff.
+- P1: Accessors get_log_Z/get_canonical_engine, cluster hooks + registration, top.cpp ts + grand print, DatasetRunner ensemble_log_Z + [GRAND] emit + CSV, ParallelDock ts support, basic tests. Multiple commits (e.g. 8fc467721, 659daeb2b, 8aa9af7c0, e7b08e6e7, f77d539e5, 67b6a4a9c).
+- P2: Python _PyGrandPartitionFunction, models, io, tests complete by subagent.
+- P3: conc_M in TargetConfig, DockingSession, DatasetEntry, TargetServer, use in GPF/register, set in top/DatasetRunner/prepare. Commits e5d9f4375 etc.
+- P4: synthetic fixtures, grand_calibrate.py, competition yaml, docs, tests complete by subagent.
+- Verification: builds, ctest (Grand/Target etc pass), hygiene OK in all chunks.
+- All in worktree, per AGENTS.md, chunked, committed immediately.
+- Next: complete P3 (YAML/CLI/campaign conc), P5 polish/docs/MultiSite, P6 merge prep + full gate.
+
+See session plan.md for detailed log.
