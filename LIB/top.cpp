@@ -2338,6 +2338,7 @@ int main(int argc, char **argv){
 		{
 			target::TargetConfig tcfg;
 			tcfg.temperature_K = static_cast<double>(FA->temperature);
+			tcfg.default_conc_M = 1.0; // P3 default; override from config later
 			local_ts = std::make_unique<target::TargetServer>(tcfg);
 			active_ts = local_ts.get();
 		}

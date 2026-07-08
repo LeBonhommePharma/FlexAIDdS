@@ -42,6 +42,7 @@ DockingSession TargetServer::create_session(const std::string& ligand_name)
     session.completed = false;
     session.log_Z = 0.0;
     session.n_poses = 0;
+    session.conc_M = 1.0;  // P3 default
     session.best_energy = 0.0;
     session.best_center[0] = session.best_center[1] = session.best_center[2] = 0.0f;
     return session;

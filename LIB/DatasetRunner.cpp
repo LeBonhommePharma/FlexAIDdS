@@ -5075,6 +5075,7 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
     {
         target::TargetConfig tcfg;
         tcfg.temperature_K = static_cast<double>(config.temperature);
+        tcfg.default_conc_M = 1.0; // P3 default; per-ligand conc_M from yaml later
 
         for (const auto& entry : entries) {
             if (entry.receptor_path.empty()) continue;
@@ -6918,6 +6919,7 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                 sess.completed = true;
                 sess.n_poses = result.num_poses;
                 sess.best_energy = static_cast<double>(result.predicted_dG);
+                sess.conc_M = 1.0; // P3: from entry later
                 // P1: use real ensemble_log_Z if emitted by binary (from BindingPop.get_log_Z() via cluster hook)
                 // else fallback to approx. This replaces the dG/kT proxy when available.
                 if (result.ensemble_log_Z != 0.0) {
