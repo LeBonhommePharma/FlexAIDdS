@@ -1,46 +1,126 @@
 {
   "schema_version": 1,
   "name": "posex_cd_tier1",
-  "n_pairs": 5,
+  "n_pairs": 20,
   "pairs": [
     {
       "entry_id": "7FVX_K7C",
       "receptor_id": "7FVX",
       "ligand_id": "K7C",
-      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7FVX/7FVX.pdb",
-      "ligand_sdf": "benchmarks/posex_cd/ligands/K7C.sdf",
       "state": "crossdock"
     },
     {
       "entry_id": "7EGO_X90",
       "receptor_id": "7EGO",
       "ligand_id": "X90",
-      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7EGO/7EGO.pdb",
-      "ligand_sdf": "benchmarks/posex_cd/ligands/X90.sdf",
       "state": "crossdock"
     },
     {
       "entry_id": "7HG3_A1A34",
       "receptor_id": "7HG3",
       "ligand_id": "A1A34",
-      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7HG3/7HG3.pdb",
-      "ligand_sdf": "benchmarks/posex_cd/ligands/A1A34.sdf",
       "state": "crossdock"
     },
     {
       "entry_id": "7RGY_5BI",
       "receptor_id": "7RGY",
       "ligand_id": "5BI",
-      "receptor_pdb": "benchmarks/posex_cd/posex_cd/7RGY/7RGY.pdb",
-      "ligand_sdf": "benchmarks/posex_cd/ligands/5BI.sdf",
       "state": "crossdock"
     },
     {
       "entry_id": "8PQ9_9KI",
       "receptor_id": "8PQ9",
       "ligand_id": "9KI",
-      "receptor_pdb": "benchmarks/posex_cd/posex_cd/8PQ9/8PQ9.pdb",
-      "ligand_sdf": "benchmarks/posex_cd/ligands/9KI.sdf",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7GLA_X77",
+      "receptor_id": "7GLA",
+      "ligand_id": "X77",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "8QTJ_A1IEW",
+      "receptor_id": "8QTJ",
+      "ligand_id": "A1IEW",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7HGE_ZQD",
+      "receptor_id": "7HGE",
+      "ligand_id": "ZQD",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7NGW_UAK",
+      "receptor_id": "7NGW",
+      "ligand_id": "UAK",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "8CHN_A1H78",
+      "receptor_id": "8CHN",
+      "ligand_id": "A1H78",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7GZV_A1AK5",
+      "receptor_id": "7GZV",
+      "ligand_id": "A1AK5",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "8BM8_R0O",
+      "receptor_id": "8BM8",
+      "ligand_id": "R0O",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7FUQ_YUB",
+      "receptor_id": "7FUQ",
+      "ligand_id": "YUB",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7UR3_ADE",
+      "receptor_id": "7UR3",
+      "ligand_id": "ADE",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7FCX_4I1",
+      "receptor_id": "7FCX",
+      "ligand_id": "4I1",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7HGB_TU6",
+      "receptor_id": "7HGB",
+      "ligand_id": "TU6",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "9CE4_UU6",
+      "receptor_id": "9CE4",
+      "ligand_id": "UU6",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7GLF_KG9",
+      "receptor_id": "7GLF",
+      "ligand_id": "KG9",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7UU0_7UM",
+      "receptor_id": "7UU0",
+      "ligand_id": "7UM",
+      "state": "crossdock"
+    },
+    {
+      "entry_id": "7BC9_AXV",
+      "receptor_id": "7BC9",
+      "ligand_id": "AXV",
       "state": "crossdock"
     }
   ]
