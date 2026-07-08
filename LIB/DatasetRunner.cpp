@@ -3650,6 +3650,7 @@ DatasetEntry DatasetRunner::prepare_pdb_entry(const std::string& pdb_id,
     entry.experimental_affinity = affinity;
     entry.experimental_dH  = dH;
     entry.experimental_TdS = dS;
+    entry.conc_M = 1.0; // P3 default; override from dataset yaml later
 
     // Download structure, preferring mmCIF over legacy PDB.
     if (download_structure(upper_id, entry_dir, receptor_path)) {
