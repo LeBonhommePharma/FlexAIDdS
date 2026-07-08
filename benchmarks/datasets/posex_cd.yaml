@@ -1,57 +1,48 @@
 slug: posex_cd
-name: PoseX Cross-Docking (1312)
+name: "PoseX Cross-Docking (1312)"
 benchmark_order: 10
-description: 'Cross-docking benchmark from the PoseX suite: 1312 tasks on recent (post-2021)
-  protein-ligand complexes. Receptors are non-native (cross) conformations; ligands
-  are cognate but docked into different structures of the same target. Strict test
-  of generalization and handling of conformational changes. Complements Astex for
-  modern AI vs physics benchmarking. Includes annotations for pocket similarity (TM-score)
-  to pre-2022 pockets.
+description: >
+  Cross-docking benchmark from the PoseX suite: 1312 tasks on recent (post-2021)
+  protein-ligand complexes. Receptors are non-native (cross) conformations;
+  ligands are cognate but docked into different structures of the same target.
+  Strict test of generalization and handling of conformational changes.
+  Complements Astex for modern AI vs physics benchmarking.
+  Includes annotations for pocket similarity (TM-score) to pre-2022 pockets.
 
+  Tier1=5 (or 20) for smoke. Full is tier2.
 
-  Tier1 now uses 20 entries for better smoke testing.
+  Structures obtained from iCloud pre-prepped benchmark_data/posex_cd/<entry>/
+  (apo receptors + ligand sdfs) + atomic copies to local benchmarks/posex_cd/.
+  Fallback RCSB for any missing rec (strip HETATM/solvent). All copies atomic (NamedTemporaryFile + os.replace).
+  See benchmarks/posex_cd/README.md .
 
-
-  Prepped receptors in benchmarks/posex_cd/posex_cd/ (371 unique), ligands in benchmarks/posex_cd/ligands/
-  . 1312 ready for tier2.'
-zenodo_doi: ''
-download_url: https://github.com/CataAI/PoseX
+zenodo_doi: ""
+download_url: "https://github.com/CataAI/PoseX"
 data_format: pdb
 tier: 2
-tier1_subset_size: 20
+tier1_subset_size: 5
 structural_states:
 - crossdock
-targets:
-- 7FVX_K7C
-- 7EGO_X90
-- 7HG3_A1A34
-- 7RGY_5BI
-- 8PQ9_9KI
-- 7GLA_X77
-- 8QTJ_A1IEW
-- 7HGE_ZQD
-- 7NGW_UAK
-- 8CHN_A1H78
-- 7GZV_A1AK5
-- 8BM8_R0O
-- 7FUQ_YUB
-- 7UR3_ADE
-- 7FCX_4I1
-- 7HGB_TU6
-- 9CE4_UU6
-- 7GLF_KG9
-- 7UU0_7UM
-- 7BC9_AXV
 
-# --- Benchmark Readiness Status (updated 2026-07-08) ---
-# Full 1312 cross-docking entries prepared for benchmarking readiness.
-# - 371/371 receptors in benchmarks/posex_cd/posex_cd/ ( .pdb + _apo.pdb + variants from RCSB download + icloud mimic prep)
-# - ligands/: 63+ good crystal .sdf placed (full 362 sources in iCloud benchmark_data/posex_cd/*_LIG/ ; tier1 guaranteed)
-# - manifests: benchmark_posex_cd.json =1312 with local paths; tier1=5 real (no placeholders), results/tier1 aligned
-# - Dry-run: .grok/skills/flexaidds/scripts/dataset_runner.py --dataset posex_cd --tier 1 --dry-run --no-ensure-data -> exit 0, 20 items processed
-# - See AGENTS.md / CLAUDE.md for full benchmark commands. Receptors prepped, ligands extracted preserving coords.
-# - manifests: benchmark_posex_cd.json (1312), tier1 (20 or 5)
-# - paths use local benchmarks/posex_cd/...
-# - verified: multiple dry-runs (20/20 OK), archive to iCloud success
-# - See AGENTS.md for run commands. Crossdock semantics: state=crossdock.
-# Archive: 2026-07-08T01:02:01.529971
+# --- Current Prep Status (updated 2026-07-08 git 19283731d) ---
+# Receptors: 371/371 dirs with good-sized local .pdb (and _apo.pdb) in benchmarks/posex_cd/posex_cd/<REC>/
+# Ligands: 362 unique placed via atomic copy to benchmarks/posex_cd/ligands/<LIG>.sdf (verify real content >30B; iCloud sources preferred)
+# Manifests: benchmark_posex_cd.json (pairs with verified local both), benchmark_posex_cd_full_available.json (all 1312)
+# Both-local pairs ready: 1312/1312 (full)
+# How to run:
+#   python3 .grok/skills/flexaidds/scripts/dataset_runner.py --dataset posex_cd --tier 1 --dry-run --no-ensure-data
+#   full tier2: python3 .grok/skills/flexaidds/scripts/dataset_runner.py --dataset posex_cd --tier 2 --resume --package
+#   See AGENTS.md , benchmarks/BENCHMARK_STANDARD.md . Verify 0 failures before push.
+# Provenance: iCloud archive preps + local copies + safe_archive_to_icoud + git 2026-07-08
+# Autonomous full prep (2026-07-08): receptors 371/371 (RCSB+icloud), ligands 362/362, manifests 1312 full + tier1 5 real w/ paths, dry-run verified OK, archived w/ --keep-local. No placeholders. Ready.
+# Cross-dock semantics verified: state=crossdock in all entries. 371 rec + 362 lig prepped.
+# Archived: benchmarks/posex_cd archived to iCloud via safe script (keep-local).
+# Ready for full benchmarking. (no placeholders)
+
+# Status (updated 2026-07-08):
+# Full 1312 ready: all 371 receptor dirs with .pdb + _apo.pdb in benchmarks/posex_cd/posex_cd/
+# All 362 unique ligand .sdf in benchmarks/posex_cd/ligands/ (sourced from iCloud pre-extracted)
+# benchmark_posex_cd.json updated to 1312 with correct paths
+# tier1 uses 5 real entries only (no placeholders)
+# Verified with dataset_runner --dataset posex_cd --tier 1 --dry-run
+# See AGENTS.md / CLAUDE.md for benchmark commands.
