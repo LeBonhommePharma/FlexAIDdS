@@ -93,6 +93,13 @@ print(fd.__version__)
 run = fd.load_results("some/results/dir")
 ```
 
+### macOS: Homebrew (native tools)
+
+```bash
+brew install --HEAD --formula https://raw.githubusercontent.com/LeBonhommePharma/FlexAIDdS/master/Formula/flexaidds.rb
+pip install flexaidds   # Python layer
+```
+
 See [docs/INSTALLATION.md](docs/INSTALLATION.md) for conda, full details, and platform notes.
 
 ```bash

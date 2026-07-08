@@ -33,6 +33,16 @@ def _find_eigen_include_dir():
     Does not raise so that `pip install` can succeed in pure-Python mode
     (the package has graceful fallbacks when the _core extension is absent).
     """
+    # Allow explicit override (very useful for cibuildwheel / CI / conda)
+    if os.environ.get("EIGEN_INCLUDE_DIR"):
+        p = Path(os.environ["EIGEN_INCLUDE_DIR"])
+        if (p / "Eigen" / "Dense").exists():
+            return str(p)
+        if p.name == "eigen" or p.name.startswith("eigen-"):
+            # allow pointing at the extracted dir containing Eigen/
+            if (p / "Eigen" / "Dense").exists():
+                return str(p)
+
     # 1. Vendored git submodule
     vendored = LIB_DIR / "vendor" / "eigen"
     if (vendored / "Eigen" / "Dense").exists():
@@ -53,13 +63,15 @@ def _find_eigen_include_dir():
     except Exception:
         pass
 
-    # 3. Homebrew (Apple Silicon + Intel prefixes), common Linux paths
+    # 3. Homebrew / common system / extracted locations (cibuildwheel friendly)
     for candidate in (
         Path("/opt/homebrew/include/eigen3"),
         Path("/usr/local/include/eigen3"),
         Path("/usr/include/eigen3"),
+        Path("/usr/local/include/eigen"),   # sometimes extracted this way
+        Path(os.environ.get("EIGEN_ROOT", "")) if os.environ.get("EIGEN_ROOT") else None,
     ):
-        if (candidate / "Eigen" / "Dense").exists():
+        if candidate and (candidate / "Eigen" / "Dense").exists():
             return str(candidate)
 
     return None

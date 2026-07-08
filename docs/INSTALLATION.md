@@ -96,6 +96,25 @@ cmake --build build --parallel
 
 ### macOS (Apple Silicon & Intel)
 
+#### Easy install via Homebrew (recommended for CLI tools)
+
+```bash
+# Latest development version (recommended while we stabilize stable releases)
+brew install --HEAD --formula https://raw.githubusercontent.com/LeBonhommePharma/FlexAIDdS/master/Formula/flexaidds.rb
+
+# Or a specific released version (when stable tarballs are published):
+# brew install --formula https://raw.githubusercontent.com/LeBonhommePharma/FlexAIDdS/master/Formula/flexaidds.rb
+```
+
+This installs the native tools (`FlexAIDdS`, `tENCoM`, `FlexAID`) with all required data files.
+
+Afterward, install the Python package for analysis (highly recommended):
+```bash
+pip install flexaidds
+```
+
+#### Build from source (if you want full control)
+
 ```bash
 # Install dependencies via Homebrew
 brew install cmake ninja libomp eigen
@@ -118,6 +137,23 @@ cmake --build build --parallel
 ```
 
 > **Windows note**: Install Eigen via `choco install eigen` or manually set `CMAKE_PREFIX_PATH`. OpenMP support on Windows requires additional configuration.
+
+---
+
+## Homebrew (macOS) — easiest for native CLI tools
+
+```bash
+brew install --formula https://raw.githubusercontent.com/LeBonhommePharma/FlexAIDdS/master/Formula/flexaidds.rb
+```
+
+This gives you the optimized `FlexAIDdS`, `tENCoM`, and supporting tools with data files pre-staged.
+
+Then install the Python layer:
+```bash
+pip install flexaidds
+```
+
+See the full macOS section below for `--HEAD` and from-source details.
 
 ---
 
