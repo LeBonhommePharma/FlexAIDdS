@@ -138,6 +138,7 @@ void ParallelDockManager::run(
         auto sess = ts_->create_session(ligand_name_);
         sess.completed = true;
         sess.n_poses = 0; // aggregate from regions if needed
+        sess.conc_M = 1.0; // P3
         sess.log_Z = eng.compute().log_Z;
         ts_->register_result(sess);
         printf("[GRAND] ParallelDock registered log_Z=%.6g for %s\n", sess.log_Z, ligand_name_.c_str());
