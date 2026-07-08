@@ -989,9 +989,15 @@ if(ENABLE_CAVITY_DETECT_CLI)
     message(STATUS "Native CavityDetector CLI enabled -- build target: cavity_detect_cli")
 endif()
 
-# ─── Benchmark Dataset Runner ──────────────────────────────────────────────
-option(ENABLE_BENCHMARK_DATASETS "Build benchmark dataset runner" ON)
-if(ENABLE_BENCHMARK_DATASETS)
+# ─── Benchmark Dataset Runner (UNIX only) ───────────────────────────────────
+# POSIX subprocess management (fork/exec/waitpid/killpg) — not available on Windows.
+# See REPRODUCIBILITY_WINDOWS.md for the WSL2 benchmark path.
+if(ENABLE_BENCHMARK_DATASETS AND NOT UNIX)
+    message(FATAL_ERROR
+        "ENABLE_BENCHMARK_DATASETS is UNIX-only (Linux/macOS). "
+        "On Windows, run benchmarks via WSL2 — see REPRODUCIBILITY_WINDOWS.md.")
+endif()
+if(ENABLE_BENCHMARK_DATASETS AND UNIX)
     find_package(CURL QUIET)
 
     add_executable(benchmark_datasets
@@ -1069,7 +1075,7 @@ endif()
 #         cmake --build build --target flexaid_bench_astex_non_native
 #        cmake --build build --target flexaid_bench_hap2
 find_package(Python3 QUIET COMPONENTS Interpreter)
-if(Python3_FOUND)
+if(Python3_FOUND AND UNIX)
     add_custom_target(flexaid_bench_astex_diverse
         COMMAND ${Python3_EXECUTABLE} -m flexaidds.dataset_runner
                 --dataset astex_diverse --tier 2
@@ -1098,6 +1104,8 @@ if(Python3_FOUND)
     )
 
     message(STATUS "FlexAID 2015 benchmark targets: flexaid_bench_astex_diverse, flexaid_bench_astex_non_native, flexaid_bench_hap2")
+elseif(NOT UNIX)
+    message(STATUS "Benchmark convenience targets skipped — UNIX only (use WSL2 on Windows)")
 else()
     message(STATUS "Python3 not found — FlexAID 2015 benchmark custom targets skipped")
 endif()
@@ -2107,7 +2115,8 @@ if(BUILD_TESTING)
         TEST_NAME TurboQuantTests
     )
 
-    # test_dataset_runner — benchmark dataset runner tests
+    # test_dataset_runner — benchmark dataset runner tests (UNIX only)
+    if(UNIX)
     add_executable(test_dataset_runner
         tests/test_dataset_runner.cpp
         LIB/DatasetRunner.cpp
@@ -2131,8 +2140,10 @@ if(BUILD_TESTING)
     endif()
     flexaids_configure_msvc_test(test_dataset_runner)
     add_test(NAME DatasetRunnerTests COMMAND test_dataset_runner)
+    endif() # UNIX — test_dataset_runner
 
     # test_cofactor_blacklist — ligand-extraction cofactor blacklist (1HNN SAH/SKF)
+    if(UNIX)
     add_executable(test_cofactor_blacklist
         tests/test_cofactor_blacklist.cpp
         LIB/DatasetRunner.cpp
@@ -2158,6 +2169,7 @@ if(BUILD_TESTING)
     endif()
     flexaids_configure_msvc_test(test_cofactor_blacklist)
     add_test(NAME CofactorBlacklistTests COMMAND test_cofactor_blacklist)
+    endif() # UNIX — test_cofactor_blacklist
 
     # test_binding_mode_vibrational — Phase 3 ENCoM vibrational entropy integration
     add_executable(test_binding_mode_vibrational

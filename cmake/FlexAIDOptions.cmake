@@ -68,6 +68,14 @@ option(FLEXAIDS_USE_MPI     "Enable MPI distributed parallel docking" OFF)
 option(BUILD_PYTHON_BINDINGS "Build Python bindings via pybind11" OFF)
 option(FLEXAIDS_BUILD_CORE  "Build core executables (FlexAID/FlexAIDdS/tENCoM)" ON)
 
+# Benchmark orchestration (DatasetRunner, Astex campaigns) is UNIX-only.
+# Windows builds the docking engine and unit tests; use WSL2 for benchmarks.
+if(UNIX)
+    option(ENABLE_BENCHMARK_DATASETS "Build benchmark dataset runner (UNIX only)" ON)
+else()
+    option(ENABLE_BENCHMARK_DATASETS "Build benchmark dataset runner (UNIX only)" OFF)
+endif()
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Platform / architecture detection
 # ─────────────────────────────────────────────────────────────────────────────

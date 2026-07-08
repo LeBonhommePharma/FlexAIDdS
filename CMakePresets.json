@@ -55,7 +55,8 @@
                 "CMAKE_BUILD_TYPE": "Release",
                 "CMAKE_C_COMPILER": "cl",
                 "CMAKE_CXX_COMPILER": "cl",
-                "FLEXAIDS_USE_OPENMP": "OFF"
+                "FLEXAIDS_USE_OPENMP": "OFF",
+                "ENABLE_BENCHMARK_DATASETS": "OFF"
             },
             "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Windows" }
         },
@@ -69,6 +70,7 @@
                 "CMAKE_C_COMPILER": "cl",
                 "CMAKE_CXX_COMPILER": "cl",
                 "FLEXAIDS_USE_OPENMP": "OFF",
+                "ENABLE_BENCHMARK_DATASETS": "OFF",
                 "BUILD_TESTING": "ON"
             },
             "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Windows" }
@@ -94,7 +96,8 @@
                 "FLEXAIDS_USE_CUDA": "OFF",
                 "FLEXAIDS_USE_METAL": "OFF",
                 "BUILD_TESTING": "ON",
-                "FLEXAIDS_STRICT_SOURCE_VALIDATION": "ON"
+                "FLEXAIDS_STRICT_SOURCE_VALIDATION": "ON",
+                "ENABLE_BENCHMARK_DATASETS": "OFF"
             },
             "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Windows" }
         },
@@ -110,7 +113,8 @@
                 "FLEXAIDS_USE_OPENMP": "OFF",
                 "BUILD_PYTHON_BINDINGS": "ON",
                 "DPYBIND11_FINDPYTHON": "ON",
-                "CMAKE_LIBRARY_OUTPUT_DIRECTORY": "${sourceDir}/python/flexaidds"
+                "CMAKE_LIBRARY_OUTPUT_DIRECTORY": "${sourceDir}/python/flexaidds",
+                "ENABLE_BENCHMARK_DATASETS": "OFF"
             },
             "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Windows" }
         }

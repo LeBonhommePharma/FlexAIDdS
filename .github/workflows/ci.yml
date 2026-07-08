@@ -95,7 +95,7 @@ jobs:
             os: windows-latest
             cc: cl
             cxx: cl
-            cmake_extra: "-DFLEXAIDS_USE_OPENMP=OFF"
+            cmake_extra: "-DFLEXAIDS_USE_OPENMP=OFF -DENABLE_BENCHMARK_DATASETS=OFF"
             allow_failure: true
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
@@ -160,6 +160,7 @@ jobs:
             -DFLEXAIDS_USE_CUDA=OFF ^
             -DFLEXAIDS_USE_METAL=OFF ^
             -DFLEXAIDS_USE_OPENMP=OFF ^
+            -DENABLE_BENCHMARK_DATASETS=OFF ^
             -DBUILD_PYTHON_BINDINGS=OFF ^
             -DBUILD_TESTING=ON ^
             -DFLEXAIDS_STRICT_SOURCE_VALIDATION=ON ^
