@@ -23,6 +23,10 @@ from typing import Any, Dict, List, Optional, Union
 
 from .thermodynamics import ThermodynamicBreakdown
 
+# Grand-canonical / competitive models (P2 additive, behind HAS_GRAND_BINDINGS in __init__)
+# LigandSpec describes inputs for multi-ligand grand canonical calculations.
+# Extended fields on DockingResult are optional (None/empty for legacy single-ligand paths).
+
 
 def _as_breakdown(value):
     """Coerce a serialized thermodynamics dict into a ThermodynamicBreakdown.
@@ -33,6 +37,32 @@ def _as_breakdown(value):
     if isinstance(value, dict):
         return ThermodynamicBreakdown.from_dict(value)
     return value
+
+
+@dataclass(frozen=True)
+class LigandSpec:
+    """Specification for one ligand in a grand-canonical / competitive binding context.
+
+    Used by compute_grand_partition and future multi-ligand loaders/campaigns.
+    concentration_M is in molar units (standard state = 1.0 M).
+
+    Additive only — existing single-ligand flows are unaffected.
+    """
+
+    name: str
+    concentration_M: float = 1.0
+    # Optional metadata for manifests, sidecars, reports
+    smiles: Optional[str] = None
+    ligand_id: Optional[str] = None
+    results_dir: Optional[str] = None  # path for per-ligand result dir (multi-ligand layout)
+
+    def __post_init__(self):
+        if self.concentration_M <= 0.0:
+            raise ValueError(f"concentration_M must be > 0 (got {self.concentration_M})")
+        if self.concentration_M > 1000.0:
+            raise ValueError(
+                f"concentration_M > 1000 M — convert µM/nM to M first (got {self.concentration_M})"
+            )
 
 
 @dataclass(frozen=True)
@@ -276,6 +306,16 @@ class DockingResult:
     temperature: Optional[float] = None
     metadata: Dict[str, Any] = field(default_factory=dict)
 
+    # ── Grand canonical / competitive augmentation (P2, additive, default=None/empty) ──
+    # Present when results were produced/loaded under a competitive TargetServer/GPF context.
+    # Legacy single-ligand load_results paths leave these at defaults.
+    grand_log_xi: Optional[float] = None          # ln(Ξ)
+    ligand_occupancies: Dict[str, float] = field(default_factory=dict)  # name -> p(bound)
+    selectivities: Dict[str, float] = field(default_factory=dict)       # e.g. "A/B": ratio or log
+    per_ligand_results: Dict[str, Any] = field(default_factory=dict)    # name -> summary dict or sub-result
+    empty_probability: Optional[float] = None
+    mean_occupancy: Optional[float] = None
+
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "DockingResult":
         """Reconstruct a DockingResult from a dictionary.
@@ -315,6 +355,13 @@ class DockingResult:
             binding_modes=modes,
             temperature=data.get("temperature"),
             metadata=data.get("metadata", {}),
+            # grand fields (additive, tolerant)
+            grand_log_xi=data.get("grand_log_xi"),
+            ligand_occupancies=data.get("ligand_occupancies", {}) or {},
+            selectivities=data.get("selectivities", {}) or {},
+            per_ligand_results=data.get("per_ligand_results", {}) or {},
+            empty_probability=data.get("empty_probability"),
+            mean_occupancy=data.get("mean_occupancy"),
         )
 
     @property
@@ -454,6 +501,13 @@ class DockingResult:
                 self._binding_mode_json_record(mode)
                 for mode in self.binding_modes
             ],
+            # Grand canonical fields (only emitted if populated — additive, non-breaking)
+            "grand_log_xi": self.grand_log_xi,
+            "ligand_occupancies": self.ligand_occupancies,
+            "selectivities": self.selectivities,
+            "per_ligand_results": self.per_ligand_results,
+            "empty_probability": self.empty_probability,
+            "mean_occupancy": self.mean_occupancy,
         }
         kwargs.setdefault("indent", 2)
         text = json.dumps(payload, **kwargs)
@@ -557,6 +611,13 @@ class DockingResult:
             binding_modes=modes,
             temperature=payload.get("temperature"),
             metadata=payload.get("metadata", {}),
+            # grand (tolerant defaults for old JSONs)
+            grand_log_xi=payload.get("grand_log_xi"),
+            ligand_occupancies=payload.get("ligand_occupancies") or {},
+            selectivities=payload.get("selectivities") or {},
+            per_ligand_results=payload.get("per_ligand_results") or {},
+            empty_probability=payload.get("empty_probability"),
+            mean_occupancy=payload.get("mean_occupancy"),
         )
 
     def to_csv(self, path: Union[str, Path, None] = None) -> Optional[str]:

@@ -89,6 +89,15 @@ def _normalize_key(raw: str) -> str:
         "sigma_energy": "std_energy",
         "cv": "heat_capacity",
         "temp": "temperature",
+        # Grand canonical REMARK aliases (additive, parsed into remarks dict)
+        "grand_xi": "grand_log_xi",
+        "log_xi": "grand_log_xi",
+        "logxi": "grand_log_xi",
+        "xi": "grand_log_xi",
+        "p_empty": "empty_probability",
+        "pempty": "empty_probability",
+        "mean_occupancy": "mean_occupancy",
+        "occupancy": "mean_occupancy",
     }
     return aliases.get(key, key)
 

@@ -192,6 +192,11 @@ class BindingPopulation
 		 	double	compute_delta_G(const BindingMode& mode1, const BindingMode& mode2) const;
 		 	/// Get global ensemble StatMechEngine aggregating all binding modes
 		 	statmech::StatMechEngine get_global_ensemble() const;
+		 	/// Convenience: log_Z from the full population ensemble (P1 grand canonical hook)
+		 	/// Returns the canonical log partition function for use with TargetServer / GrandPartitionFunction.
+		 	double get_log_Z() const;
+		 	/// Get canonical engine (alias for get_global_ensemble for clarity in GPF paths)
+		 	statmech::StatMechEngine get_canonical_engine() const { return get_global_ensemble(); }
 		 	/// Get super-cluster filtered ensemble (dominant energy basin only)
 		 	statmech::StatMechEngine get_super_cluster_ensemble() const;
 

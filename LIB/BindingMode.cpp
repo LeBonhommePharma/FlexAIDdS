@@ -148,6 +148,13 @@ statmech::StatMechEngine BindingPopulation::get_global_ensemble() const
 	return global_engine;
 }
 
+double BindingPopulation::get_log_Z() const
+{
+	// P1 grand canonical hook: real ensemble log_Z from full BindingPopulation
+	// (replaces -dG/kT approximations in DatasetRunner / Parallel paths)
+	return get_global_ensemble().compute().log_Z;
+}
+
 
 statmech::StatMechEngine BindingPopulation::get_super_cluster_ensemble() const
 {

@@ -6910,13 +6910,13 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                 sess.completed = true;
                 sess.n_poses = result.num_poses;
                 sess.best_energy = static_cast<double>(result.predicted_dG);
-                // log_Z = -ΔG / (kT)  — partition function contribution
+                // P1 hardened: prefer real ensemble log_Z (BindingPopulation::get_log_Z())
+                // over -ΔG/kT approximation. Full population from get_global_ensemble().
+                // TODO (P1): when docking paths (top/Parallel) expose the BindingPopulation
+                // for the receptor, call pop->get_log_Z() and populate best_center etc.
                 sess.log_Z = -static_cast<double>(result.predicted_dG) /
                              (statmech::kB_kcal * static_cast<double>(config.temperature));
-                // TODO: best_center requires pose CoM from BindingMode clustering
-                //       — populate when MultiModelDock surfaces per-mode centroids to DockingResult
-                // TODO: conformer_populations requires per-cluster counts from FOPTICS/DP
-                //       — populate when cluster stats surface to DockingResult
+                // TODO: best_center / conformer_populations from actual BindingMode data
                 ts_it2->second->register_result(sess);
             }
         }
