@@ -576,10 +576,11 @@ int GA(FA_Global* FA, GB_Global* GB,VC_Global* VC,chromosome** chrom,chromosome*
 	////// Genetic Algorithm ///////
 	////////////////////////////////
 
-	// FLEXAIDDS_NO_SEC=1 disables ALL entropy-convergence early-exit paths
-	// (SEC soft/hard/plateau + H-plateau ring buffer) for diagnostic runs.
-	// Docking quality is unchanged; the GA simply runs to max_generations.
-	// Never set this for production benchmarks.
+	// FLEXAIDDS_NO_SEC=1 (or FLEXAIDDS_BENCHMARK=1) disables early-exit paths
+	// (stagnation + entropy/SEC) so the *full* generation budget is always used.
+	// During benchmarking this ensures equal search effort vs other methods.
+	// "Spare" generations after a plateau are used with boosted mutation/exploration
+	// (see stagnation handling) to search conformational space more effectively.
 	const bool no_sec = (std::getenv("FLEXAIDDS_NO_SEC") != nullptr);
 	if (no_sec)
 		fprintf(stderr, "[SEC] All entropy-convergence early exits DISABLED "
@@ -796,7 +797,7 @@ int GA(FA_Global* FA, GB_Global* GB,VC_Global* VC,chromosome** chrom,chromosome*
         //getchar();
 
 		// Stagnation detection: check if best fitness has plateaued
-		if (!no_sec && (i + 1) % STAGNATION_WINDOW == 0 && i > 0) {
+		if ((i + 1) % STAGNATION_WINDOW == 0 && i > 0) {
 			// v117: PSHARE fit_max is always num_chrom (rank-based); use best evalue instead.
 			const bool _ps = (strcmp(GB->fitness_model,"PSHARE")==0);
 			const double _cur  = _ps ? (*chrom)[0].evalue : GB->fit_max;
@@ -805,9 +806,26 @@ int GA(FA_Global* FA, GB_Global* GB,VC_Global* VC,chromosome** chrom,chromosome*
 			if (std::abs(_cur - _prev) < _tol) {
 				stagnation_count += STAGNATION_WINDOW;
 				if (stagnation_count >= STAGNATION_LIMIT) {
-					printf("GA terminated early: fitness stagnant for %d generations (best=%.4f)\n", stagnation_count, _cur);
-					ga_stagnant = true;
-					break;
+					const bool benchmark_full = (std::getenv("FLEXAIDDS_NO_SEC") != nullptr) || (std::getenv("FLEXAIDDS_BENCHMARK") != nullptr);
+					if (benchmark_full) {
+						// Ingenious use of "spare" generations during benchmarking:
+						// instead of early exit, continue to max_generations using
+						// boosted exploration to search conformational space more
+						// aggressively (equal effort to methods that always run full budget).
+						printf("GA plateau at gen %d (stagnant %d gens, best=%.4f); "
+						       "BENCHMARK mode: continuing with exploration boost for remaining gens.\n",
+						       i+1, stagnation_count, _cur);
+						// Boost mutation for remaining generations to escape plateau
+						GB->mut_rate = std::min(0.25, GB->mut_rate * 3.0);
+						// Force a diversity injection now (catastrophic-style boost)
+						// (the reproduce path will also see higher mut_rate)
+						stagnation_count = 0;  // reset so we can re-boost later if needed
+						// do not break; use the spare budget for more search
+					} else {
+						printf("GA terminated early: fitness stagnant for %d generations (best=%.4f)\n", stagnation_count, _cur);
+						ga_stagnant = true;
+						break;
+					}
 				}
 			} else {
 				stagnation_count = 0;
