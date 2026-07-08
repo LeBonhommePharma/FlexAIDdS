@@ -1,9 +1,11 @@
 #include "FOPTICS.h"
 #include "fast_optics.hpp"
 #include "MinibatchSampler.h"
+#include "TargetServer.h"
 #include <set>
+#include <string>
 
-void FastOPTICS_cluster(FA_Global* FA, GB_Global* GB, VC_Global* VC, chromosome* chrom, genlim* gene_lim, atom* atoms, resid* residue, gridpoint* cleftgrid, int nChrom, char* end_strfile, char* tmp_end_strfile, char* dockinp, char* gainp)
+void FastOPTICS_cluster(FA_Global* FA, GB_Global* GB, VC_Global* VC, chromosome* chrom, genlim* gene_lim, atom* atoms, resid* residue, gridpoint* cleftgrid, int nChrom, char* end_strfile, char* tmp_end_strfile, char* dockinp, char* gainp, target::TargetServer* ts, const std::string& ligand_name)
 {
     // Adaptive minPoints based on conformational diversity.
     // Compute the ratio of distinct CF values to total snapshots.
@@ -173,5 +175,16 @@ void FastOPTICS_cluster(FA_Global* FA, GB_Global* GB, VC_Global* VC, chromosome*
     Population3.output_Population(FA->max_results, end_strfile, tmp_end_strfile, dockinp, gainp, Algo3.get_minPoints());
     // Population4.output_Population(FA->max_results, end_strfile, tmp_end_strfile, dockinp, gainp, Algo4.get_minPoints());
     // Population5.output_Population(FA->max_results, end_strfile, tmp_end_strfile, dockinp, gainp, Algo5.get_minPoints());
+
+    // P1 cluster hook: if TargetServer provided, register real log_Z from BindingPopulation ensemble (uses total_energy for CCBM)
+    if (ts && !ligand_name.empty()) {
+        auto sess = ts->create_session(ligand_name);
+        sess.completed = true;
+        sess.n_poses = Population1.get_Population_size();
+        sess.log_Z = Population1.get_log_Z();  // P1 accessor: full ensemble, not dG approx
+        // TODO (later chunks): sess.best_energy, best_center, conformer_populations from modes
+        ts->register_result(sess);
+    }
+
     printf("-- end of FastOPTICS_cluster --\n");
 }

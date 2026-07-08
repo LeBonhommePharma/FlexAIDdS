@@ -63,11 +63,11 @@ int dee_pivot(psFlexDEE_Node, psFlexDEE_Node*, int, int, int, int, int) { return
 // cluster.cpp, DensityPeak_Cluster.cpp, FastOPTICS_cluster.cpp
 // ---------------------------------------------------------------------------
 void cluster(FA_Global*, GB_Global*, VC_Global*, chromosome*, genlim*,
-             atom*, resid*, gridpoint*, int, char*, char*, char*, char*) {}
+             atom*, resid*, gridpoint*, int, char*, char*, char*, char*, target::TargetServer*, const std::string&) {}
 void DensityPeak_cluster(FA_Global*, GB_Global*, VC_Global*, chromosome*, genlim*,
-                         atom*, resid*, gridpoint*, int, char*, char*, char*, char*) {}
+                         atom*, resid*, gridpoint*, int, char*, char*, char*, char*, target::TargetServer*, const std::string&) {}
 void FastOPTICS_cluster(FA_Global*, GB_Global*, VC_Global*, chromosome*, genlim*,
-                        atom*, resid*, gridpoint*, int, char*, char*, char*, char*) {}
+                        atom*, resid*, gridpoint*, int, char*, char*, char*, char*, target::TargetServer*, const std::string&) {}
 int write_DensityPeak_rrd(FA_Global*, GB_Global*, const chromosome*, const genlim*,
                           atom*, resid*, gridpoint*, ClusterChrom*, DPcluster*,
                           float*, char[]) { return 0; }

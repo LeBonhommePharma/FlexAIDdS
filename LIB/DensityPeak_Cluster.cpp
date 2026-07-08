@@ -1,8 +1,10 @@
 #include "gaboom.h"
 #include "fileio.h"
 #include "MinibatchSampler.h"
+#include "TargetServer.h"
 #include <cmath>
 #include <limits>
+#include <string>
 #ifdef _OPENMP
 #include <omp.h>
 #endif
@@ -23,7 +25,7 @@
 // algorithm. (Runtime wiring would belong in config_parser, which is off-limits.)
 #define OUTPUT_CLUSTER_CENTER true
 
-void DensityPeak_cluster(FA_Global* FA, GB_Global* GB, VC_Global* VC, chromosome* chrom, genlim* gene_lim, atom* atoms, resid* residue, gridpoint* cleftgrid, int num_chrom, char* end_strfile, char* tmp_end_strfile, char* dockinp, char* gainp)
+void DensityPeak_cluster(FA_Global* FA, GB_Global* GB, VC_Global* VC, chromosome* chrom, genlim* gene_lim, atom* atoms, resid* residue, gridpoint* cleftgrid, int num_chrom, char* end_strfile, char* tmp_end_strfile, char* dockinp, char* gainp, target::TargetServer* ts, const std::string& ligand_name)
 {
 	// Density Peak Clustering variables declaration
 	int i,j,k;
