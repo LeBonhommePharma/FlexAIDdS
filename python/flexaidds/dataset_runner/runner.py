@@ -271,6 +271,7 @@ class TargetResult:
     poses: List[PoseScore]
     duration_seconds: float = 0.0
     error: str = ""
+    grand_log_Z: Optional[float] = None  # P3: ensemble log_Z for this ligand (for grand Xi)
 
     @property
     def success(self) -> bool:
@@ -1142,6 +1143,18 @@ class DatasetRunner:
                         structural_state,
                         reference_ligand=ligand_path,
                     )
+                    # P3: capture grand log_Z from [GRAND] stdout (emitted by C++ cluster hook when --conc used)
+                    grand_log_z = None
+                    if result.stdout:
+                        for line in result.stdout.splitlines():
+                            if '[GRAND]' in line and 'log_Z=' in line:
+                                try:
+                                    grand_log_z = float(line.split('log_Z=')[1].split()[0])
+                                except Exception:
+                                    pass
+                    if grand_log_z is not None:
+                        for p in parsed:
+                            p.ensemble_log_Z = grand_log_z
                     poses.extend(parsed)
                 except subprocess.TimeoutExpired:
                     logger.error("Docking timed out: %s/%s", target_id, ligand_id)
@@ -1264,6 +1277,7 @@ class DatasetRunner:
                         total_score=total,
                         is_active=rng.random() < 0.3,
                         exp_affinity=rng.uniform(-12, -6),
+                        ensemble_log_Z = rng.uniform(5, 15),  # synthetic for grand test
                         structural_state=structural_state,
                     )
                 )
@@ -1442,6 +1456,8 @@ class DatasetRunner:
                     duration_seconds=elapsed,
                     error=error,
                 )
+                if poses and getattr(poses[0], 'ensemble_log_Z', None) is not None:
+                    tr.grand_log_Z = poses[0].ensemble_log_Z
                 try:
                     saved_path = self._save_target_result(tr, config, tier, cost_cpu=cost_cpu)
                     logger.debug(
@@ -1664,6 +1680,7 @@ class DatasetRunner:
             "error": tr.error,
             "poses": [p.to_dict() if hasattr(p, "to_dict") else p.__dict__ for p in tr.poses],
             "success": tr.success,
+            "grand_log_Z": getattr(tr, 'grand_log_Z', None),
             "timestamp": datetime.datetime.utcnow().isoformat() + "Z",
         }
         tmp.write_text(json.dumps(payload, indent=2))

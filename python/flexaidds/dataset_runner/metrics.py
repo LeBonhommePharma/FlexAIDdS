@@ -59,6 +59,7 @@ class PoseScore:
     is_active: bool
     exp_affinity: Optional[float] = None
     structural_state: str = "holo"
+    ensemble_log_Z: Optional[float] = None  # P3 grand canonical: real log_Z from ensemble (for conc-weighted Xi)
 
 
 # ---------------------------------------------------------------------------
