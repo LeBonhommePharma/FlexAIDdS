@@ -461,6 +461,11 @@ def compute_all_metrics(
     Returns:
         Dict of ``{metric_name: value}`` (and ``{metric_name + "_ci_lo/hi"}``
         when bootstrapping).
+
+    Note:
+        Callers running with synthetic/dry-run poses must not treat
+        ``docking_power_*`` values as real docking success rates.  The
+        DatasetRunner strips those keys when ``dry_run=True``.
     """
     _all = {
         "entropy_rescue_rate",

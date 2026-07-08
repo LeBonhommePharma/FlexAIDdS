@@ -102,6 +102,36 @@ THERMO_METRICS: set[str] = {
     "entropy_rescue_rate",
 }
 
+# Dry-run uses synthetic poses for pipeline smoke tests only. Never report
+# docking_power_* as if it were a real docking success rate.
+DRY_RUN_METRICS_NOTE: str = (
+    "dry_run=True: poses are synthetic (pipeline smoke test only). "
+    "docking_power_* metrics are omitted because they would not reflect real "
+    "docking success rates. Any remaining metrics (scoring_power_*, "
+    "entropy_rescue_rate, etc.) are also computed on synthetic data and must "
+    "not be reported as production results."
+)
+
+
+def _is_docking_power_metric(name: str) -> bool:
+    """True for docking_power_* keys (including bootstrap CI suffixes)."""
+    return name.startswith("docking_power_")
+
+
+def _strip_docking_power_metrics(metrics: Dict[str, Any]) -> Dict[str, Any]:
+    """Drop docking_power_* entries so synthetic dry-run rates are never sold as real."""
+    return {k: v for k, v in metrics.items() if not _is_docking_power_metric(k)}
+
+
+def _filter_requested_metrics_for_dry_run(
+    requested: Optional[List[str]],
+) -> Optional[List[str]]:
+    """Remove docking_power_* from a requested metric list for dry-run runs."""
+    if requested is None:
+        return None
+    filtered = [m for m in requested if not _is_docking_power_metric(m)]
+    return filtered
+
 
 # ---------------------------------------------------------------------------
 # Configuration dataclasses
@@ -309,6 +339,8 @@ class DatasetResult:
     binary: str = ""
     temperature: float = 300.0
     full_command: str = ""
+    dry_run: bool = False
+    metrics_note: str = ""
 
     def check_regressions(self) -> Dict[str, bool]:
         """Flag metrics that regressed below baseline − tolerance.
@@ -334,7 +366,7 @@ class DatasetResult:
 
     def to_dict(self) -> dict:
         """Serialise to a JSON-compatible dict."""
-        return {
+        payload = {
             "dataset": self.config.slug,
             "tier": self.tier,
             "timestamp": self.timestamp,
@@ -353,7 +385,11 @@ class DatasetResult:
             "expected_baselines": self.config.expected_baselines,
             "published_baselines": self.config.published_baselines,
             "published_source": self.config.published_source,
+            "dry_run": self.dry_run,
         }
+        if self.metrics_note:
+            payload["metrics_note"] = self.metrics_note
+        return payload
 
 
 # ---------------------------------------------------------------------------
@@ -447,6 +483,13 @@ class BenchmarkReport:
             f"{dr.duration_seconds:.1f}s*",
             "",
         ]
+
+        if dr.dry_run:
+            note = dr.metrics_note or DRY_RUN_METRICS_NOTE
+            lines += [
+                f"> **DRY-RUN** — {note}",
+                "",
+            ]
 
         if dr.metrics:
             lines += ["| Metric | Value | 95% CI | Baseline | Published | Regressed? |",
@@ -556,6 +599,8 @@ class BenchmarkReport:
                 git_sha=d.get("git_sha", ""),
                 host=d.get("host", ""),
                 duration_seconds=d.get("duration_seconds", 0.0),
+                dry_run=bool(d.get("dry_run", False)),
+                metrics_note=str(d.get("metrics_note", "") or ""),
             )
             ds_results.append(dr)
         return cls(
@@ -916,7 +961,9 @@ class DatasetRunner:
                         env var if None.
         bootstrap_ci:   Whether to compute 95% bootstrap CIs (slower).
         n_bootstrap:    Number of bootstrap resamples.
-        dry_run:        Skip actual docking; useful for testing the framework.
+        dry_run:        Skip actual docking; use synthetic poses for pipeline
+                        smoke tests. docking_power_* is never reported as a real
+                        success rate in this mode.
         repo_root:      Root of the FlexAIDdS repository (for git SHA detection).
     """
 
@@ -1312,6 +1359,15 @@ class DatasetRunner:
             else:
                 requested_metrics = list(THERMO_METRICS)
 
+        if self.dry_run:
+            # Synthetic poses must never produce docking_power success rates.
+            before = list(requested_metrics) if requested_metrics is not None else None
+            requested_metrics = _filter_requested_metrics_for_dry_run(requested_metrics)
+            if before is not None and before != requested_metrics:
+                logger.info(
+                    "Dry-run: omitting docking_power_* metrics (synthetic poses are not real docking results)"
+                )
+
         dr = DatasetResult(
             config=config,
             tier=tier,
@@ -1322,6 +1378,8 @@ class DatasetRunner:
             binary=self._resolve_binary(),
             temperature=eff_temp,
             full_command=getattr(self, "command_line", None) or " ".join(sys.argv),
+            dry_run=bool(self.dry_run),
+            metrics_note=DRY_RUN_METRICS_NOTE if self.dry_run else "",
         )
 
         if not targets:
@@ -1495,15 +1553,24 @@ class DatasetRunner:
 
             if all_poses:
                 metrics = compute_all_metrics(all_poses, requested=requested_metrics)
+                if self.dry_run:
+                    # Safety net: never surface docking_power_* from synthetic poses.
+                    metrics = _strip_docking_power_metrics(metrics)
                 dr.metrics = metrics
 
                 if self.do_bootstrap:
-                    dr.ci_95 = self._compute_bootstrap_cis(all_poses, requested_metrics)
+                    cis = self._compute_bootstrap_cis(all_poses, requested_metrics)
+                    if self.dry_run:
+                        cis = _strip_docking_power_metrics(cis)
+                    dr.ci_95 = cis
 
             if not self.dry_run:
                 dr.check_regressions()
             else:
-                logger.info("Dry-run mode — skipping regression checks")
+                logger.info(
+                    "Dry-run mode — skipping regression checks; docking_power_* omitted "
+                    "(synthetic poses are not production docking rates)"
+                )
 
             # Also write a small per-dataset manifest of individual entry status (for audit + reproducibility)
             self._write_entry_manifest(config, tier, completed, failed)
@@ -1544,6 +1611,9 @@ class DatasetRunner:
             "docking_power_top1": _dock_fn,
         }
         for name, fn in fns.items():
+            # Dry-run never bootstraps docking_power (synthetic poses ≠ real rates).
+            if self.dry_run and _is_docking_power_metric(name):
+                continue
             if requested is None or name in requested:
                 lo, hi = bootstrap_ci(fn, poses, n_resamples=self.n_bootstrap)
                 cis[name] = (lo, hi)

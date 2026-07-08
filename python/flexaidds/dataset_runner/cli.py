@@ -180,7 +180,11 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument(
         "--dry-run",
         action="store_true",
-        help="Skip actual docking; use synthetic scores to test the pipeline.",
+        help=(
+            "Skip actual docking; use synthetic poses for pipeline smoke tests. "
+            "docking_power_* is omitted (not real docking success rates); remaining "
+            "metrics are also synthetic and must not be reported as production results."
+        ),
     )
     p.add_argument(
         "--resume",
