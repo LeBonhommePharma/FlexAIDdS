@@ -23,6 +23,7 @@ FlexAIDdS (FlexAID with ΔS Entropy) is an entropy-driven molecular docking engi
 - Don't over-explore. If the user asks to RUN something, run it — don't spend 20+ tool calls exploring first.
 - When implementing a prioritized list (P0, P1, P2...), complete ALL items before stopping. Don't skip items by claiming they're already done without checking.
 - After completing code changes, always commit and push immediately. Don't batch multiple changes without committing.
+  - **Exception — scoped commits & branch safety**: When the working tree contains unrelated changes, or when you are on the default branch (`master`), do NOT auto-commit everything or push directly to `master`, and do NOT stop to ask. Stage only the files relevant to the current change, commit them on a dedicated branch (e.g. `fix/…`, `test/…`), and push that branch. Never sweep unrelated modified/untracked files into a commit. Landing on `master` is done via PR, not a direct push.
 - If a git operation hangs (commit/push), kill stale git processes (`kill $(pgrep -f git)`) and retry. Check for git fsmonitor issues with `git config core.fsmonitor`.
 - For dataset YAML configs, verify semantics (self-docking vs cross-docking) before generating entries.
 
