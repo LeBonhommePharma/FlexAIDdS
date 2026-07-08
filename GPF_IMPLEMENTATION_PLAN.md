@@ -1,6 +1,6 @@
 # Grand Canonical Partition Function (Ξ) — Implementation + Delegation Roadmap & Merge Order
 
-**Status**: P0 complete, P1 complete (wiring, tests, output, REMARKs/sidecar), P2 complete, P3 complete (conc_M, CLI --conc, YAML per-ligand, runner grand compute/capture), P4 complete, P5 advanced (docs, sidecar, parser), P6 prep (gate/hygiene/plan status). All chunks per plan done in scheduled executions. Work in feat/grand-canonical-partition-function worktree.
+**Status**: ALL CHUNKS COMPLETE: P0 foundation, P1 complete (wiring, tests, output, REMARKs/sidecar), P2 complete, P3 complete (conc_M, CLI --conc, YAML per-ligand, runner grand compute/capture/summary), P4 complete, P5 complete (docs, sidecar, parser, REMARKs), P6 prep (gate/hygiene/plan status, full verify). All chunks per plan done in scheduled executions. Work in feat/grand-canonical-partition-function worktree.
 **Date**: 2026-07-08 (updated during scheduled chunks)
 **Source of truth**: AGENTS.md (all rules apply strictly)
 **Reference vision**: Existing `GrandPartitionFunction` + `TargetServer` design (LIB/GrandPartitionFunction.{h,cpp}, TargetServer.*, MultiSiteGPF.*, docs/GrandPartitionFunction_Report.md) + partial DatasetRunner usage. The linked share (https://grok.com/share/bGVnYWN5_a0c47afe-a1c9-44d6-a8b5-44642e785189) motivates making the grand canonical ensemble a first-class, production reality for competitive binding (beyond canonical per-ligand StatMechEngine Z).
