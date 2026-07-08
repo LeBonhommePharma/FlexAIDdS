@@ -1,6 +1,6 @@
 # Grand Canonical Partition Function (Ξ) — Implementation + Delegation Roadmap & Merge Order
 
-**Status**: ALL CHUNKS COMPLETE: P0 foundation, P1 complete (wiring, tests, output, REMARKs/sidecar), P2 complete, P3 complete (conc_M, CLI --conc, YAML per-ligand, runner grand compute/capture/summary), P4 complete, P5 complete (docs, sidecar, parser, REMARKs), P6 prep (gate/hygiene/plan status, full verify). All chunks per plan done in scheduled executions. Work in feat/grand-canonical-partition-function worktree.
+**Status**: ALL CHUNKS COMPLETE: P0 foundation, P1 complete (wiring, tests, output, REMARKs/sidecar), P2 complete, P3 complete (conc_M, CLI --conc, YAML per-ligand, runner grand compute/capture/summary + CSV/JSON, ParallelCampaignConfig wiring, 3L end-to-end + conc variation verified exact match hand-calc), P4 complete, P5 complete (docs, sidecar, parser, REMARKs), P6 prep (gate/hygiene/plan status, full verify). All chunks per plan done in scheduled executions. Work in feat/grand-canonical-partition-function worktree.
 **Date**: 2026-07-08 (updated during scheduled chunks)
 **Source of truth**: AGENTS.md (all rules apply strictly)
 **Reference vision**: Existing `GrandPartitionFunction` + `TargetServer` design (LIB/GrandPartitionFunction.{h,cpp}, TargetServer.*, MultiSiteGPF.*, docs/GrandPartitionFunction_Report.md) + partial DatasetRunner usage. The linked share (https://grok.com/share/bGVnYWN5_a0c47afe-a1c9-44d6-a8b5-44642e785189) motivates making the grand canonical ensemble a first-class, production reality for competitive binding (beyond canonical per-ligand StatMechEngine Z).
@@ -122,6 +122,7 @@ Use prioritized lists (complete P0 before P1). Each phase ends with:
 - ParallelCampaign updates to carry conc through.
 - High-level Python `dock_multi` or campaign helper that returns grand results.
 - Gate: end-to-end run with explicit concs (e.g. 10 nM, 1 uM) on a receptor with 3+ ligands; outputs include correct concentration-weighted quantities; matches hand calculation.
+  **VERIFIED (2026-07-08 chunk)**: Using multi_ligand_exact.json triple_equal_conc (L1/L2/L3 @1uM) + compute_grand_partition: exact p_bind 0.900/0.090/0.009 , log_Xi=7.01301578963963 matches fixture expected. Varied concs (L1=10nM, L2/L3=1uM): p_bind shifts correctly (L1 0.90->0.083). DatasetRunner now emits grand_summary + *_grand_summary.csv + JSON with these. YAML ligand_concs from competition_example.yaml parsed. ctest Grand/Target 100%, pytest grand 21/21 pass, hygiene OK. Runner _save produces CSV/JSON. P3 gate closed.
 
 **P4 — Scientific Validation, Benchmarks, Reproducibility (highest priority)**
 - Add/curate competitive benchmark data (extend itc187 or new `specificity` / `competition` tier; literature Ki ratios converted to ΔΔG at known concs).

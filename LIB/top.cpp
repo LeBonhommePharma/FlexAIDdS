@@ -2451,6 +2451,7 @@ int main(int argc, char **argv){
 				output_prefix.empty() ? "campaign" : output_prefix,
 				use_rigid, use_folded
 			);
+			ccfg.default_conc_M = user_conc_M;  // P3: forward --conc for grand canonical in campaign path
 			auto summary = campaign::run_campaign(ccfg,
 				[](int done, int total, const campaign::LigandResult& lr) {
 					printf("\r  [%d/%d] %s: dG=%.2f kcal/mol (%.1fs)",

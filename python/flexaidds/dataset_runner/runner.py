@@ -36,6 +36,7 @@ from __future__ import annotations
 
 import datetime
 import json
+import csv
 import logging
 import os
 import socket
@@ -1720,10 +1721,28 @@ class DatasetRunner:
         return report
 
     def _save_dataset_result(self, dr: DatasetResult) -> None:
-        """Write a per-dataset JSON result file as soon as it's ready."""
+        """Write a per-dataset JSON result file as soon as it's ready.
+        P3: also emit grand_summary.csv when grand canonical data present (Ξ, p_bind, concs etc).
+        """
         out_path = self.results_dir / f"{dr.config.slug}_tier{dr.tier}.json"
         out_path.write_text(json.dumps(dr.to_dict(), indent=2))
         logger.info("Dataset result saved: %s", out_path)
+        if getattr(dr, "grand_summary", None):
+            csv_path = self.results_dir / f"{dr.config.slug}_tier{dr.tier}_grand_summary.csv"
+            try:
+                rows = []
+                for lid, info in sorted(dr.grand_summary.items()):
+                    row = {"ligand": lid}
+                    row.update({k: info.get(k) for k in ("log_Z", "conc_M", "log_Xi", "p_bind") if k in info})
+                    rows.append(row)
+                if rows:
+                    with open(csv_path, "w", newline="") as fh:
+                        w = csv.DictWriter(fh, fieldnames=rows[0].keys())
+                        w.writeheader()
+                        w.writerows(rows)
+                    logger.info("P3 grand CSV saved: %s", csv_path)
+            except Exception as e:
+                logger.debug("P3 grand CSV emission skipped: %s", e)
 
     # ------------------------------------------------------------------
     # Per-entry (per-target) persistence — the new automated model
