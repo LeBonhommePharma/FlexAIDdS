@@ -42,5 +42,6 @@
       "ligand_sdf": "benchmarks/posex_cd/ligands/9KI.sdf",
       "state": "crossdock"
     }
-  ]
+  ],
+  "n_pairs": 5
 }

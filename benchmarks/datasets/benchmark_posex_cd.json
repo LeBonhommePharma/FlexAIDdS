@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "name": "posex_cd",
-  "description": "PoseX CD cross-docking benchmark, full 1312 pairs with prepped structures in benchmarks/posex_cd/",
+  "description": "PoseX CD 1312 using prepped structures in benchmarks/posex_cd/",
   "n_pairs": 1312,
   "pairs": [
     {
