@@ -88,9 +88,8 @@ FlexAIDdS/
 │   └── results_adapter.py   # Bridge to flexaidds.load_results()
 ├── docs/                   # Documentation
 │   ├── IMPLEMENTATION_ROADMAP.md  # Development roadmap
-│   ├── PHASE1_SUMMARY_AND_DELIVERABLES.md  # Phase 1 deliverables
 │   ├── architecture/        # Architecture diagrams
-│   ├── implementation/      # Phase summaries & corrected docs
+│   ├── implementation/      # Implementation notes
 │   └── licensing/           # License matrix, clean-room policy, GPL isolation
 ├── cmake/                  # CMake helpers
 │   └── MetalAcceleration.cmake  # Metal GPU build helper

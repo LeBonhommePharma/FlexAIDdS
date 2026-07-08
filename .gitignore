@@ -39,6 +39,8 @@ htmlcov/
 *.gcov
 *.gcda
 *.gcno
+*.profraw
+default_*.profraw
 
 # Distribution / packaging
 *.tar.gz
@@ -88,3 +90,15 @@ Thumbs.db
 node_modules/
 .swiftpm/
 .build/
+swift/.build/
+
+# Local one-off experiment launchers / audit notes (never re-commit)
+/launch_v*.py
+/launch_v*.command
+/build_v*.sh
+/build_v*.command
+/*_audit.md
+/*_HANDOFF*.md
+/hvib_*.csv
+/v9_*.md
+/CODEX_*.md
