@@ -6919,7 +6919,7 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                 sess.completed = true;
                 sess.n_poses = result.num_poses;
                 sess.best_energy = static_cast<double>(result.predicted_dG);
-                sess.conc_M = 1.0; // P3: from entry later
+                sess.conc_M = entry.conc_M; // P3: per-ligand
                 // P1: use real ensemble_log_Z if emitted by binary (from BindingPop.get_log_Z() via cluster hook)
                 // else fallback to approx. This replaces the dG/kT proxy when available.
                 if (result.ensemble_log_Z != 0.0) {

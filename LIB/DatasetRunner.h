@@ -123,6 +123,7 @@ struct DatasetEntry {
     bool has_entropy()     const { return experimental_TdS != 0.0f; }
     bool has_oracle_site() const { return !binding_site_path.empty(); }
     bool has_cleft_spheres() const { return !cleft_sphere_path.empty(); }
+    double conc_M = 1.0;  // P3: ligand concentration for grand canonical
 };
 
 /// Result of docking a single entry
