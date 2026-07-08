@@ -1,24 +1,24 @@
 {
-  "commits": 1630,
+  "commits": 1663,
   "languageCount": 14,
-  "lastUpdated": "2026-07-07",
+  "lastUpdated": "2026-07-08",
   "languages": [
     {
       "id": "cpp",
       "name": "C++",
-      "percent": 45.9,
+      "percent": 45.5,
       "color": "#f34b7d"
     },
     {
       "id": "python",
       "name": "Python",
-      "percent": 22.4,
+      "percent": 22.8,
       "color": "#3572A5"
     },
     {
       "id": "other",
       "name": "HTML",
-      "percent": 7.7,
+      "percent": 7.6,
       "color": "#e34c26"
     },
     {
@@ -30,13 +30,13 @@
     {
       "id": "other",
       "name": "Shell",
-      "percent": 2.8,
+      "percent": 3.0,
       "color": "#89e051"
     },
     {
       "id": "cmake",
       "name": "CMake",
-      "percent": 1.9,
+      "percent": 1.8,
       "color": "#8b949e"
     },
     {
@@ -60,7 +60,7 @@
     {
       "id": "other",
       "name": "Other",
-      "percent": 10.9,
+      "percent": 10.8,
       "color": "#555555"
     }
   ],
