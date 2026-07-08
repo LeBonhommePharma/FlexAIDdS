@@ -318,3 +318,13 @@ This plan is designed to be chunkable, delegable to swarms, scientifically rigor
 - Next: complete P3 (YAML/CLI/campaign conc), P5 polish/docs/MultiSite, P6 merge prep + full gate.
 
 See session plan.md for detailed log.
+
+## P3 CLI/Config/conc support (latest chunk)
+- C++ top: --conc / --concentration sets user_conc_M -> ts.default_conc_M
+- Parallel/cluster: use ts default_conc_M for sess.conc_M
+- Python: DatasetRunner and CLI support default_conc_M / --conc , forward to binary
+- DatasetEntry/prepare/fetches: conc_M=1.0 explicit, per-ligand ready for yaml
+- Registration: uses conc_M in add_or_overwrite
+- Verified: builds, ctest Grand/Target pass, hygiene.
+
+P1 complete, P3 conc/CLI complete, P5 docs updated.
