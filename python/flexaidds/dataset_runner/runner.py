@@ -1711,6 +1711,7 @@ class DatasetRunner:
                 poses=poses,
                 duration_seconds=data.get("duration_seconds", 0.0),
                 error=data.get("error", ""),
+                grand_log_Z=data.get("grand_log_Z"),
             )
         except Exception as e:
             logger.warning("Corrupt target result %s — will re-run: %s", path, e)
