@@ -1110,6 +1110,13 @@ class DatasetRunner:
 
                 sub_env = os.environ.copy()
                 sub_env["OMP_NUM_THREADS"] = str(self.omp_threads)
+                # Disable early termination (stagnation/entropy) during benchmarking
+                # so the *full* configured generation budget is always consumed.
+                # Spare generations after a would-be early exit are used for
+                # additional conformational search (see GABOOM no_sec + exploration boost).
+                sub_env["FLEXAIDDS_NO_SEC"] = "1"
+                # Signal to core that this is a benchmark run needing equal search effort
+                sub_env["FLEXAIDDS_BENCHMARK"] = "1"
                 try:
                     # Direct CLI: <receptor> <ligand> -o prefix  (binary auto-detects files)
                     # Write outputs as flexaid_*.pdb so parser glob *.pdb catches them.
