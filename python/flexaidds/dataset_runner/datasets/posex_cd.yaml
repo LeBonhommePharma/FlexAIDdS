@@ -1,53 +1,39 @@
-# PoseX CD — Cross-docking benchmark (1312 entries)
-# From PoseX paper (2025): recent PDB complexes (2022-2025), cross-docking using apo-like receptors.
-# See: https://arxiv.org/abs/2505.01700
-# n=1312 cross-dock pairs.
-# Used for large-scale benchmarking (tier-2).
-# Source catalog: benchmarks/m3pro/large_dataset_entry_catalogs.json
-# Dataset definition: benchmarks/datasets/posex_cd_1312.json
-
 slug: posex_cd
-name: "PoseX Cross-Docking (1312)"
+name: PoseX Cross-Docking (1312)
 benchmark_order: 10
-description: >
-  Cross-docking benchmark from the PoseX suite: 1312 tasks on recent (post-2021)
-  protein-ligand complexes. Receptors are non-native (cross) conformations;
-  ligands are cognate but docked into different structures of the same target.
-  Strict test of generalization and handling of conformational changes.
-  Complements Astex for modern AI vs physics benchmarking.
-  Includes annotations for pocket similarity (TM-score) to pre-2022 pockets.
+description: 'Cross-docking benchmark from the PoseX suite: 1312 tasks on recent (post-2021)
+  protein-ligand complexes. Receptors are non-native (cross) conformations; ligands
+  are cognate but docked into different structures of the same target. Strict test
+  of generalization and handling of conformational changes. Complements Astex for
+  modern AI vs physics benchmarking. Includes annotations for pocket similarity (TM-score)
+  to pre-2022 pockets.
 
-zenodo_doi: ""
-download_url: "https://github.com/CataAI/PoseX"
+  '
+zenodo_doi: ''
+download_url: https://github.com/CataAI/PoseX
 data_format: pdb
 tier: 2
-tier1_subset_size: 5
-
+tier1_subset_size: 20
 structural_states:
-  - crossdock
-
-# Full list in posex_cd_1312.json (1312 pairs)
-# Tier-1 uses first 5 for smoke/CI.
-# Full run uses the large catalog for distributed execution.
-targets: ["7FVX_K7C", "7EGO_X90", "7HG3_A1A34", "7RGY_5BI", "8PQ9_9KI"]  # tier1 real entries; full uses catalog for tier2. See benchmark_posex_cd_tier1.json for paths.
-
-# Notes for benchmarking:
-# - Use oracle binding sites where available (from crystal ligand position in the pair).
-# - For fair comparison, use consistent prep (apo extraction, protonation, etc.).
-# - Metrics: docking_power (top-1/top-3 RMSD<2.0), success with PoseBusters validation.
-# - Typical baseline: physics-based ~50-60%, AI methods vary; high success requires good site definition and flexibility handling.
-# - In FlexAIDdS: use --mode autonomous or oracle-ceiling as appropriate; full thermo for ranking.
-# - See results/posex_cd_20260616 for example run outputs (partial ~249 entries prepared/run).
-# FULL READINESS (2026-07-08): 1312 pairs, 371 receptors prepped (with .pdb + _apo.pdb in benchmarks/posex_cd/posex_cd/), 362 ligands (crystal SDFs), manifests use local paths. Verified by actual dataset_runner --dry-run. Archive done.
-
-# --- Status (2026-07-08 FULL PREP COMPLETE) ---
-# Receptors: 371/371 unique in benchmarks/posex_cd/posex_cd/ (all have REC.pdb ; 123 added from iCloud archived apos to match exactly prepped format of prior 248)
-# Ligands: 362/362 unique crystal SDFs in benchmarks/posex_cd/ligands/ (extracted/copied from iCloud benchmark_data/posex_cd/ pair preps)
-# Manifests: benchmark_posex_cd.json updated to full 1312 with local paths (benchmarks/posex_cd/posex_cd/RECP/RECP.pdb + ligands/LIG.sdf); tier1/_entry_manifest.json + 5 real *_crossdock.json (no placeholders)
-# results/benchmarks/posex_cd/tier1/ : cleaned to 5 real entries only
-# VERIFIED (actual commands):
-#   python3 .grok/skills/flexaidds/scripts/dataset_runner.py --dataset posex_cd --tier 1 --dry-run --no-ensure-data
-#     -> recognizes 1312, prepares 5 tier1 items, writes manifests/reports successfully (no errors)
-#   ls checks + python counts: 1312 pairs, 371 rec .pdb, 362 lig .sdf all present
-# Archived: python3 scripts/safe_archive_to_icoud.py --source benchmarks/posex_cd --dest $FLEXAIDDS_ICLOUD/... --keep-local (verified copy)
-# Ready for full benchmark: use dataset_runner --dataset posex_cd --tier 2 (or 1 for smoke)
+- crossdock
+targets:
+- 7FVX_K7C
+- 7EGO_X90
+- 7HG3_A1A34
+- 7RGY_5BI
+- 8PQ9_9KI
+- 7GLA_X77
+- 8QTJ_A1IEW
+- 7HGE_ZQD
+- 7NGW_UAK
+- 8CHN_A1H78
+- 7GZV_A1AK5
+- 8BM8_R0O
+- 7FUQ_YUB
+- 7UR3_ADE
+- 7FCX_4I1
+- 7HGB_TU6
+- 9CE4_UU6
+- 7GLF_KG9
+- 7UU0_7UM
+- 7BC9_AXV
