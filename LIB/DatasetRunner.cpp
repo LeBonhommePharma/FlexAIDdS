@@ -6218,6 +6218,14 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                     result.thermo_compensation  = parse_tag("compensation=");
                     result.has_thermo           = true;
                 }
+                // P1: [GRAND] log_Z=... from BindingPopulation ensemble (emitted by top/cluster hook)
+                if (line.find("[GRAND]") != std::string::npos && line.find("log_Z=") != std::string::npos) {
+                    auto pos = line.find("log_Z=");
+                    if (pos != std::string::npos) {
+                        pos += 6;
+                        try { result.ensemble_log_Z = std::stod(line.substr(pos)); } catch (...) {}
+                    }
+                }
                 // "[THERMO_SNAP gen=N] TdS_shannon=V"
                 if (line.find("[THERMO_SNAP") != std::string::npos) {
                     auto parse_snap_val = [&]() -> float {
@@ -6910,12 +6918,14 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                 sess.completed = true;
                 sess.n_poses = result.num_poses;
                 sess.best_energy = static_cast<double>(result.predicted_dG);
-                // P1 hardened: prefer real ensemble log_Z (BindingPopulation::get_log_Z())
-                // over -ΔG/kT approximation. Full population from get_global_ensemble().
-                // TODO (P1): when docking paths (top/Parallel) expose the BindingPopulation
-                // for the receptor, call pop->get_log_Z() and populate best_center etc.
-                sess.log_Z = -static_cast<double>(result.predicted_dG) /
-                             (statmech::kB_kcal * static_cast<double>(config.temperature));
+                // P1: use real ensemble_log_Z if emitted by binary (from BindingPop.get_log_Z() via cluster hook)
+                // else fallback to approx. This replaces the dG/kT proxy when available.
+                if (result.ensemble_log_Z != 0.0) {
+                    sess.log_Z = result.ensemble_log_Z;
+                } else {
+                    sess.log_Z = -static_cast<double>(result.predicted_dG) /
+                                 (statmech::kB_kcal * static_cast<double>(config.temperature));
+                }
                 // TODO: best_center / conformer_populations from actual BindingMode data
                 ts_it2->second->register_result(sess);
             }

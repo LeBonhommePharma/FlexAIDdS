@@ -179,6 +179,8 @@ struct DockingResult {
     float thermo_D_vib{0.0f};        // H_rep_bound (raw bound-complex tENCoM entropy)
     float thermo_compensation{0.0f};
     bool  has_thermo{false};
+    // P1: real ensemble log_Z from BindingPopulation.get_log_Z() (preferred over -dG/kT)
+    double ensemble_log_Z{0.0};
     // Mid-run H_shannon snapshots at fixed generations (causality test).
     // Populated when FLEXAIDDS_THERMO=1. NaN when that generation was not
     // reached (early exit) or when thermo is disabled.

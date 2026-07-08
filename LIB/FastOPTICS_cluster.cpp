@@ -184,6 +184,7 @@ void FastOPTICS_cluster(FA_Global* FA, GB_Global* GB, VC_Global* VC, chromosome*
         sess.log_Z = Population1.get_log_Z();  // P1 accessor: full ensemble, not dG approx
         // TODO (later chunks): sess.best_energy, best_center, conformer_populations from modes
         ts->register_result(sess);
+        printf("[GRAND] log_Z=%.6g ligand=%s n_modes=%d\n", sess.log_Z, ligand_name.c_str(), Population1.get_Population_size());
     }
 
     printf("-- end of FastOPTICS_cluster --\n");
