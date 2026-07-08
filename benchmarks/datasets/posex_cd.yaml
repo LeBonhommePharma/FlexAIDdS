@@ -65,3 +65,10 @@ targets:
 # - Archived to iCloud via safe_archive (see benchmarks/posex_cd-archive-report.json)
 # - Dry-run verified with dataset_runner --tier 1
 # Ready for: python3 .grok/skills/flexaidds/scripts/dataset_runner.py --dataset posex_cd --tier 2 --resume --package
+
+# Status update (2026-07): Full preparation complete for 1312.
+# - 371 receptor dirs in benchmarks/posex_cd/posex_cd/ with .pdb/_apo/_binding_site (sourced RCSB + iCloud preps)
+# - 362 ligand .sdf in benchmarks/posex_cd/ligands/ (extracted from icloud pair preps)
+# - Manifests updated to local paths in benchmark_posex_cd.json (1312) and tier1
+# - Dry-run verified. Use --no-ensure-data for runs if iCloud hydration pending.
+# - Archived receptors via safe_archive_to_icoud.py --keep-local
