@@ -153,6 +153,7 @@ class DatasetConfig:
     data_dir: Optional[Path] = None
     data_format: str = "pdb"
     active_label_field: str = "is_active"
+    default_conc_M: float = 1.0  # P3: for grand canonical per-ligand or default
 
     @classmethod
     def from_yaml(cls, yaml_path: Path) -> "DatasetConfig":
@@ -183,6 +184,7 @@ class DatasetConfig:
             baseline_tolerance=float(raw.pop("baseline_tolerance", 0.05)),
             data_format=str(raw.pop("data_format", "pdb")),
             active_label_field=str(raw.pop("active_label_field", "is_active")),
+            default_conc_M=float(raw.pop("default_conc_M", 1.0)),
         )
         if data_dir_raw:
             config.data_dir = Path(data_dir_raw)
@@ -936,6 +938,7 @@ class DatasetRunner:
         repo_root: Optional[Union[str, Path]] = None,
         resume: bool = False,
         command_line: Optional[str] = None,
+        default_conc_M: float = 1.0,  # P3
     ) -> None:
         _default_datasets = Path(__file__).resolve().parent / "datasets"
         self.datasets_dir = Path(datasets_dir) if datasets_dir is not None else _default_datasets
@@ -958,6 +961,7 @@ class DatasetRunner:
         self.repo_root = Path(repo_root) if repo_root else Path.cwd()
         self.resume = bool(resume)
         self.command_line = command_line
+        self.default_conc_M = float(default_conc_M)
 
         self.results_dir.mkdir(parents=True, exist_ok=True)
 
@@ -1061,6 +1065,7 @@ class DatasetRunner:
         ligand_paths: List[Path],
         structural_state: str = "holo",
         with_entropy: bool = True,
+        conc_M: float = 1.0,  # P3
     ) -> List[PoseScore]:
         """Run FlexAIDdS on one target and return scored poses.
 
@@ -1086,6 +1091,7 @@ class DatasetRunner:
                 ligand_paths,
                 structural_state,
                 with_entropy,
+                conc_M=conc_M,
             )
         except Exception as exc:
             logger.error("Docking failed for %s: %s", target_id, exc)
@@ -1098,6 +1104,7 @@ class DatasetRunner:
         ligand_paths: List[Path],
         structural_state: str,
         with_entropy: bool,
+        conc_M: float = 1.0,  # P3
     ) -> List[PoseScore]:
         """Invoke the FlexAID binary and parse output poses."""
         poses: List[PoseScore] = []
@@ -1114,7 +1121,7 @@ class DatasetRunner:
                     # Direct CLI: <receptor> <ligand> -o prefix  (binary auto-detects files)
                     # Write outputs as flexaid_*.pdb so parser glob *.pdb catches them.
                     result = subprocess.run(
-                        [self.binary, str(receptor_path), str(ligand_path), "-o", "flexaid"],
+                        [self.binary, str(receptor_path), str(ligand_path), "-o", "flexaid", "--conc", str(conc_M)],
                         capture_output=True,
                         text=True,
                         timeout=3600,
@@ -1422,6 +1429,7 @@ class DatasetRunner:
                     receptor or Path("/dev/null"),
                     ligands or [Path(f"{target_id}.mol2")],
                     structural_state=state,
+                    conc_M=getattr(config, 'default_conc_M', self.default_conc_M),
                 )
 
                 elapsed = time.monotonic() - t_start
