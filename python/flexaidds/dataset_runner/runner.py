@@ -318,6 +318,7 @@ class DatasetResult:
         timestamp:          ISO-8601 timestamp of run completion.
         git_sha:            Git commit SHA of the FlexAIDdS repo at run time.
         host:               Hostname of the machine that ran this dataset.
+        grand_summary:      P3: per-ligand grand info (log_Z, conc, Xi, p_bind etc) for grand canonical emission.
     """
 
     config: DatasetConfig
@@ -332,6 +333,7 @@ class DatasetResult:
     timestamp: str = ""
     git_sha: str = ""
     host: str = ""
+    grand_summary: Dict[str, Dict[str, float]] = field(default_factory=dict)  # P3 grand
     binary: str = ""
     temperature: float = 300.0
     full_command: str = ""
@@ -379,6 +381,7 @@ class DatasetResult:
             "expected_baselines": self.config.expected_baselines,
             "published_baselines": self.config.published_baselines,
             "published_source": self.config.published_source,
+            "grand_summary": self.grand_summary,  # P3
         }
 
 
@@ -1534,6 +1537,30 @@ class DatasetRunner:
                 "Entry %s/%s: %d poses in %.1fs",
                 target_id, state, len(poses), elapsed,
             )
+
+        # P3: emit grand canonical summary for ligands that have grand_log_Z (e.g. from multi-ligand on receptor or grand datasets)
+        # Group by target (ligand), use conc from config, compute Xi, p etc using the module.
+        grand_summary: Dict[str, Dict[str, float]] = {}
+        for target_id, state, poses, elapsed, error in results:
+            if not error and poses:
+                logz = getattr(poses[0], 'ensemble_log_Z', None)
+                if logz is not None:
+                    conc = getattr(config, 'ligand_concs', {}).get(target_id, getattr(config, 'default_conc_M', 1.0))
+                    try:
+                        from ..grand_canonical import compute_grand_partition
+                        g = compute_grand_partition([(target_id, logz, conc)], temperature_K=298.0)
+                        p_bind = g.binding_probability(target_id) if hasattr(g, 'binding_probability') else (math.exp(logz + math.log(conc)) / math.exp(g.log_Xi) if conc > 0 else 0)
+                        grand_summary[target_id] = {
+                            'log_Z': logz,
+                            'conc_M': conc,
+                            'log_Xi': g.log_Xi,
+                            'p_bind': p_bind,
+                        }
+                    except Exception as e:
+                        logger.debug("P3 grand summary compute skip for %s: %s", target_id, e)
+        if grand_summary:
+            dr.grand_summary = grand_summary
+            logger.info("P3: emitted grand summary for %d ligands", len(grand_summary))
 
         completed = sorted(completed_targets)
         failed = sorted(failed_targets)
