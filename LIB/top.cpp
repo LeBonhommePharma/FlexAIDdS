@@ -2626,6 +2626,12 @@ int main(int argc, char **argv){
 					}
 					fclose(gf);
 				}
+				// P5: also emit as REMARK GRAND for parsers (per plan)
+				printf("REMARK GRAND_SESSIONS %d\n", active_ts->completed_sessions());
+				for (const auto& r : ranks) {
+					double p = active_ts->binding_probability(r.name);
+					printf("REMARK GRAND %s log_zZ=%.6g p_bind=%.6g log_intr=%.6g\n", r.name.c_str(), r.log_zZ, p, r.log_intrinsic_selectivity);
+				}
 			}
 
 			//////////////////////////////////////////
