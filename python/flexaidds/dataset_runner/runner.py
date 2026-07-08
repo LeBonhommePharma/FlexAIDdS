@@ -500,6 +500,14 @@ class BenchmarkReport:
                 "",
             ]
 
+        # P3: grand canonical summary emission (Ξ, p_bind etc) if present
+        if dr.grand_summary:
+            lines += ["### Grand Canonical Summary (P3)", ""]
+            lines += ["| Ligand | log_Z | conc_M | log_Xi | p_bind |", "|--------|-------|--------|--------|--------|"]
+            for lid, info in sorted(dr.grand_summary.items()):
+                lines.append(f"| {lid} | {info.get('log_Z', 0):.4f} | {info.get('conc_M', 1):.2e} | {info.get('log_Xi', 0):.4f} | {info.get('p_bind', 0):.4f} |")
+            lines.append("")
+
         if dr.targets_failed:
             lines += [
                 f"**Failed targets** ({len(dr.targets_failed)}): "
