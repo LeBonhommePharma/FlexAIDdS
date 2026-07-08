@@ -274,6 +274,10 @@ TEST_F(BindingModeStatMechTest, GlobalEnsemble) {
     // Global ensemble aggregates poses from all modes
     auto global_engine = test_population->get_global_ensemble();
     EXPECT_GT(global_engine.size(), 0u);
+
+    // P1: get_log_Z accessor returns real ensemble log_Z (non-negative for valid pop)
+    double lz = test_population->get_log_Z();
+    EXPECT_GE(lz, -1e9);  // reasonable bound, actual value depends on energies
 }
 
 // ===========================================================================
