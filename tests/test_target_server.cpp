@@ -8,11 +8,17 @@
 
 #include <gtest/gtest.h>
 #include "TargetServer.h"
+#include "statmech.h"
 
-#include <cstring>
-#include <vector>
-#include <thread>
 #include <cmath>
+#include <cstring>
+#include <filesystem>
+#include <fstream>
+#include <iostream>
+#include <regex>
+#include <string>
+#include <thread>
+#include <vector>
 
 using namespace target;
 
@@ -303,4 +309,229 @@ TEST(TargetServer, ConcurrentRegistration) {
     double sum = server.grand_partition().empty_probability();
     for (const auto& r : ranks) sum += r.p_bound;
     EXPECT_NEAR(sum, 1.0, 1e-8);
+}
+
+// ════════════════════════════════════════════════════════════════════════
+// Astex Diverse tier-1 → GrandPartitionFunction / TargetServer
+//
+// Drives the *shipped* TargetServer + GrandPartitionFunction path with
+// partition-function contributions derived from real Astex Diverse docking
+// result artifacts under results/benchmarks/astex_diverse/tier1/.
+//
+// Conversion matches DatasetRunner.cpp:
+//   log_Z = −predicted_dG / (kB_kcal · T)
+// where predicted_dG is taken from each entry's best-pose total_score.
+// ════════════════════════════════════════════════════════════════════════
+
+namespace {
+
+struct AstexTier1Entry {
+    std::string pdb_id;
+    double predicted_dG = 0.0;  // kcal/mol (total_score from result JSON)
+    bool ok = false;
+};
+
+// Minimal JSON scrape — no external deps. Looks for first "total_score": <num>
+// after the poses array starts. Sufficient for the known tier-1 schema.
+static bool parse_astex_tier1_json(const std::filesystem::path& path,
+                                   AstexTier1Entry& out)
+{
+    std::ifstream in(path);
+    if (!in) return false;
+    std::string content((std::istreambuf_iterator<char>(in)),
+                        std::istreambuf_iterator<char>());
+
+    // target_id
+    std::smatch m_id;
+    if (std::regex_search(content, m_id,
+                          std::regex("\"target_id\"\\s*:\\s*\"([^\"]+)\""))) {
+        out.pdb_id = m_id[1].str();
+    } else {
+        out.pdb_id = path.stem().string();
+    }
+
+    // first total_score (best pose is first in the known schema)
+    std::smatch m_sc;
+    if (!std::regex_search(content, m_sc,
+                           std::regex("\"total_score\"\\s*:\\s*([-0-9.eE+]+)"))) {
+        return false;
+    }
+    try {
+        out.predicted_dG = std::stod(m_sc[1].str());
+    } catch (...) {
+        return false;
+    }
+    out.ok = std::isfinite(out.predicted_dG);
+    return out.ok;
+}
+
+// Resolve results/benchmarks/astex_diverse/tier1 from CWD or parents.
+static std::filesystem::path find_astex_tier1_dir()
+{
+    namespace fs = std::filesystem;
+    fs::path cur = fs::current_path();
+    for (int i = 0; i < 6; ++i) {
+        fs::path cand = cur / "results" / "benchmarks" / "astex_diverse" / "tier1";
+        if (fs::is_directory(cand)) return cand;
+        if (!cur.has_parent_path() || cur == cur.root_path()) break;
+        cur = cur.parent_path();
+    }
+    return {};
+}
+
+// DatasetRunner formula: log_Z = −ΔG / (kT)
+static double log_Z_from_dG(double predicted_dG, double T_K)
+{
+    return -predicted_dG / (statmech::kB_kcal * T_K);
+}
+
+} // namespace
+
+TEST(TargetServer, AstexDiverseTier1SingleLigandGPF) {
+    auto tier1 = find_astex_tier1_dir();
+    if (tier1.empty()) {
+        GTEST_SKIP() << "Astex tier-1 result dir not found "
+                        "(results/benchmarks/astex_diverse/tier1)";
+    }
+
+    // Prefer canonical Astex Diverse first entry 1gpk if present; else any.
+    std::vector<std::filesystem::path> jsons;
+    for (auto& e : std::filesystem::directory_iterator(tier1)) {
+        if (e.path().extension() == ".json" &&
+            e.path().filename().string().find("_holo") != std::string::npos) {
+            jsons.push_back(e.path());
+        }
+    }
+    ASSERT_FALSE(jsons.empty()) << "No *_holo.json under " << tier1;
+
+    std::filesystem::path pick = jsons.front();
+    for (const auto& p : jsons) {
+        if (p.filename().string().find("1gpk") != std::string::npos) {
+            pick = p;
+            break;
+        }
+    }
+
+    AstexTier1Entry entry;
+    ASSERT_TRUE(parse_astex_tier1_json(pick, entry))
+        << "Failed to parse " << pick;
+
+    const double T = 300.0;
+    const double log_Z = log_Z_from_dG(entry.predicted_dG, T);
+    ASSERT_TRUE(std::isfinite(log_Z)) << "log_Z not finite for " << entry.pdb_id;
+
+    TargetConfig cfg;
+    cfg.temperature_K = T;
+    TargetServer server(cfg);
+
+    auto sess = server.create_session(entry.pdb_id);
+    sess.completed = true;
+    sess.log_Z = log_Z;
+    sess.n_poses = 5;
+    sess.best_energy = entry.predicted_dG;
+    server.register_result(sess);
+
+    ASSERT_EQ(server.completed_sessions(), 1);
+    ASSERT_TRUE(server.grand_partition().has_ligand(entry.pdb_id));
+
+    const auto& gpf = server.grand_partition();
+    const double log_xi = gpf.log_Xi();
+    const double p_bound = server.binding_probability(entry.pdb_id);
+    const double p_empty = gpf.empty_probability();
+    const double mean_occ = gpf.mean_occupancy();
+    const double F = gpf.F_bound(entry.pdb_id);
+
+    EXPECT_TRUE(std::isfinite(log_xi));
+    EXPECT_TRUE(std::isfinite(F));
+    EXPECT_TRUE(std::isfinite(p_bound));
+    EXPECT_TRUE(std::isfinite(p_empty));
+    EXPECT_GE(p_bound, 0.0);
+    EXPECT_LE(p_bound, 1.0);
+    EXPECT_GE(p_empty, 0.0);
+    EXPECT_LE(p_empty, 1.0);
+    EXPECT_NEAR(p_bound + p_empty, 1.0, 1e-8);
+    EXPECT_NEAR(mean_occ + p_empty, 1.0, 1e-8);
+    EXPECT_NEAR(F, -statmech::kB_kcal * T * log_Z, 1e-8);
+
+    std::cout << "\n[AstexDiverseTier1SingleLigandGPF]\n"
+              << "  pdb_id=" << entry.pdb_id << "\n"
+              << "  predicted_dG(total_score)=" << entry.predicted_dG << " kcal/mol\n"
+              << "  log_Z=" << log_Z << "\n"
+              << "  log_Xi=" << log_xi << "\n"
+              << "  p_bound=" << p_bound << " p_empty=" << p_empty
+              << " sum=" << (p_bound + p_empty) << "\n"
+              << "  mean_occupancy=" << mean_occ << "\n"
+              << "  F_bound=" << F << " kcal/mol\n";
+}
+
+TEST(TargetServer, AstexDiverseTier1CompetitiveGPF) {
+    // Register all available Astex tier-1 ligands onto one TargetServer to
+    // exercise multi-ligand grand-canonical ranking with Astex-derived log_Z.
+    // Note: native Astex Diverse is 1 ligand/receptor; this is a synthetic
+    // multi-ligand competitive pilot using Astex affinities as inputs.
+    auto tier1 = find_astex_tier1_dir();
+    if (tier1.empty()) {
+        GTEST_SKIP() << "Astex tier-1 result dir not found";
+    }
+
+    const double T = 300.0;
+    TargetConfig cfg;
+    cfg.temperature_K = T;
+    TargetServer server(cfg);
+
+    std::vector<AstexTier1Entry> entries;
+    for (auto& e : std::filesystem::directory_iterator(tier1)) {
+        if (e.path().extension() != ".json") continue;
+        if (e.path().filename().string().find("_holo") == std::string::npos) continue;
+        AstexTier1Entry entry;
+        if (!parse_astex_tier1_json(e.path(), entry)) continue;
+        entries.push_back(entry);
+    }
+    ASSERT_GE(entries.size(), 2u) << "Need ≥2 Astex tier-1 entries for competitive test";
+
+    for (const auto& entry : entries) {
+        double log_Z = log_Z_from_dG(entry.predicted_dG, T);
+        ASSERT_TRUE(std::isfinite(log_Z));
+        auto sess = server.create_session(entry.pdb_id);
+        sess.completed = true;
+        sess.log_Z = log_Z;
+        sess.n_poses = 5;
+        sess.best_energy = entry.predicted_dG;
+        server.register_result(sess);
+    }
+
+    ASSERT_EQ(server.completed_sessions(), static_cast<int>(entries.size()));
+    ASSERT_GE(server.completed_sessions(), 2);  // DatasetRunner multi-ligand gate
+
+    const auto& gpf = server.grand_partition();
+    double log_xi = gpf.log_Xi();
+    EXPECT_TRUE(std::isfinite(log_xi));
+
+    double sum = gpf.empty_probability();
+    auto ranks = server.rank_ligands();
+    ASSERT_EQ(ranks.size(), entries.size());
+    for (const auto& r : ranks) {
+        EXPECT_TRUE(std::isfinite(r.dG));
+        EXPECT_TRUE(std::isfinite(r.p_bound));
+        EXPECT_GE(r.p_bound, 0.0);
+        EXPECT_LE(r.p_bound, 1.0);
+        sum += r.p_bound;
+    }
+    EXPECT_NEAR(sum, 1.0, 1e-8);
+
+    // Strongest (most negative dG / largest log_Z) should rank first
+    EXPECT_LE(ranks.front().dG, ranks.back().dG);
+
+    std::cout << "\n[AstexDiverseTier1CompetitiveGPF]\n"
+              << "  n_ligands=" << entries.size() << "\n"
+              << "  log_Xi=" << log_xi << "\n"
+              << "  empty_p=" << gpf.empty_probability() << "\n"
+              << "  sum(empty+bound)=" << sum << "\n"
+              << "  rank order (best first):\n";
+    for (const auto& r : ranks) {
+        std::cout << "    " << r.name
+                  << "  dG=" << r.dG
+                  << "  p_bound=" << r.p_bound
+                  << "  log_Z=" << r.log_Z << "\n";
+    }
 }
