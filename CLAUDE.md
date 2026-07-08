@@ -47,6 +47,7 @@ The rules below are the non-negotiable operating contract for any AI agent (Clau
 - **Zero test failures before any push.** `ctest --output-on-failure` (C++) or full pytest run after relevant changes.
 - **Complete every item on a prioritized list** before stopping.
 - **When the user says “run it”, run it** — do not over-explore first.
+- **Local GitHub identity is always `LeBonhommePharma`.** Never use the legacy `lmorency` label for local `gh`/`git`/API work. Verify with `gh api user --jq .login` before push/PR work (see `AGENTS.md` → Repository Hygiene).
 
 These rules exist to protect velocity and correctness in a complex scientific codebase. Claude is expected to be the strictest enforcer of them.
 

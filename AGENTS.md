@@ -52,6 +52,12 @@ These rules exist because this is a complex, performance-critical scientific cod
 
 ## Repository Hygiene (Non-Negotiable)
 
+- **Local GitHub identity is always `LeBonhommePharma`.** On this machine and for every local `gh` / `git` / GitHub API operation in agent sessions, use **only** the GitHub account **`LeBonhommePharma`**. Never switch to, log in as, or prefer the legacy label `lmorency` (same person/history, obsolete username). Before push / `gh` / PR work, verify:
+  ```bash
+  gh auth status
+  gh api user --jq .login   # must print: LeBonhommePharma
+  ```
+  If the active account is not `LeBonhommePharma`, fix it immediately (`gh auth switch --user LeBonhommePharma` or restore via the existing keyring/token — do **not** leave sessions on another account). Do not invent a second account; do not use device-login churn when a valid `LeBonhommePharma` token already exists.
 - **Never commit secrets or local environment files.** Do not add `.env`, `.env.*`, `.envrc`, or any file containing API keys, tokens, or machine-local credentials. Use `.env.example` (placeholders only) when documenting required variables. `.gitignore` already excludes these — do not force-add them with `git add -f`.
 - **Never commit machine-specific absolute paths in agent skills or shared scripts.** Committed automation under `.agents/`, `.grok/skills/`, `docs/custom-instructions/`, and new `scripts/` helpers must resolve paths from the repo root (`Path(__file__).resolve().parents[...]`, `git rev-parse --show-toplevel`) or from documented environment variables (`FLEXAIDDS_ROOT`, `FLEXAIDDS_ICLOUD`, `FLEXAIDDS_POSEBUSTERS_BIN`, `FLEXAIDDS_TENCOM_BIN`). Do not bake in `/Users/<username>/...` paths.
 - **Run the hygiene check before pushing skill or agent-instruction changes:**
