@@ -64,6 +64,15 @@ option(FLEXAIDS_USE_MPI     "Enable MPI distributed parallel docking" OFF)
 option(BUILD_PYTHON_BINDINGS "Build Python bindings via pybind11" OFF)
 option(FLEXAIDS_BUILD_CORE  "Build core executables (FlexAID/FlexAIDdS/tENCoM)" ON)
 
+# Grand canonical partition function (Ξ) for competitive binding (P0 foundation).
+# Default ON so existing behavior is unchanged. Sources for GrandPartitionFunction,
+# TargetServer and MultiSiteGPF are wired to be compiled generally and always
+# when BUILD_TESTING=ON (see root CMakeLists.txt force + LIB/CMakeLists.txt).
+option(FLEXAIDS_GRAND_CANONICAL "Enable Grand Canonical Partition Function (Ξ) + TargetServer/MultiSiteGPF for competitive binding" ON)
+if(FLEXAIDS_GRAND_CANONICAL)
+    message(STATUS "FLEXAIDS_GRAND_CANONICAL=ON — GrandPartitionFunction/TargetServer/MultiSiteGPF enabled (forced for BUILD_TESTING)")
+endif()
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Platform / architecture detection
 # ─────────────────────────────────────────────────────────────────────────────

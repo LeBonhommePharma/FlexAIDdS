@@ -11,6 +11,7 @@
 #include "statmech.h"
 
 #include <cmath>
+#include <limits>
 
 using namespace target;
 
@@ -629,4 +630,119 @@ TEST(GrandPartition, AllLogZAccessor) {
     // all_log_Z returns intrinsic partition function (no concentration weighting)
     EXPECT_NEAR(logZ_A, 10.0, 1e-10);
     EXPECT_NEAR(logZ_B, 20.0, 1e-10);
+}
+
+// ════════════════════════════════════════════════════════════════════════
+// P0 extensions: additional analytical concentration/fugacity, edge ratios,
+// log-space stability, merge behavior, and HW-parity smoke.
+// These are pure analytical (no change to single-ligand canonical paths).
+// ════════════════════════════════════════════════════════════════════════
+
+TEST(GrandPartition, NanomolarConcentrationFugacity) {
+    // 10 nM = 1e-8 M; fugacity z = 1e-8 ; for strong binder log_Z=25 should dominate
+    GrandPartitionFunction gpf(300.0);
+    gpf.add_ligand("strong_nM", 25.0, 1e-8);  // zZ = exp(ln(1e-8)+25) ~ exp(6.48)
+    gpf.add_ligand("weak_nM", 5.0, 1e-8);
+
+    double p_strong = gpf.binding_probability("strong_nM");
+    double p_empty = gpf.empty_probability();
+    EXPECT_GT(p_strong, 0.99);   // should be nearly fully occupied by strong at this Z despite low c
+    EXPECT_LT(p_empty, 0.01);
+    // sum p + p_empty ~ 1
+    EXPECT_NEAR(p_strong + gpf.binding_probability("weak_nM") + p_empty, 1.0, 1e-9);
+}
+
+TEST(GrandPartition, MicromolarVsMillimolarFugacity) {
+    GrandPartitionFunction gpf(298.15);
+    // Same intrinsic Z, different concs → different p
+    gpf.add_ligand("lig_uM", 8.0, 1e-6);   // 1 uM
+    gpf.add_ligand("lig_mM", 8.0, 1e-3);   // 1 mM = 1000x higher fugacity
+
+    double p_uM = gpf.binding_probability("lig_uM");
+    double p_mM = gpf.binding_probability("lig_mM");
+    EXPECT_GT(p_mM, p_uM * 900);  // roughly scales with conc (not exact due to competition with empty)
+    EXPECT_NEAR(p_uM + p_mM + gpf.empty_probability(), 1.0, 1e-9);
+}
+
+TEST(GrandPartition, ExtremeRatioSelectivitySentinels) {
+    GrandPartitionFunction gpf(300.0);
+    gpf.add_ligand("super", 800.0, 1.0);   // extreme positive logZ
+    gpf.add_ligand("tiny", -800.0, 1.0);
+
+    double sel = gpf.selectivity("super", "tiny");
+    EXPECT_EQ(sel, std::numeric_limits<double>::max());  // >700 triggers sentinel
+
+    double sel_rev = gpf.selectivity("tiny", "super");
+    EXPECT_DOUBLE_EQ(sel_rev, 0.0);
+
+    double log_sel = gpf.log_selectivity("super", "tiny");
+    EXPECT_GT(log_sel, 700.0);
+}
+
+TEST(GrandPartition, LogSpaceStabilityExtremeEnsemble) {
+    // Mix of huge positive, near-zero, negative logZ + varied conc; verify no NaN/Inf and probs sum to 1
+    GrandPartitionFunction gpf(310.0);
+    gpf.add_ligand("huge", 1200.0, 0.001);
+    gpf.add_ligand("medium", 42.0, 1.0);
+    gpf.add_ligand("small", -50.0, 10.0);
+    gpf.add_ligand("zeroish", 1e-9, 1e-9);
+
+    double xi = gpf.log_Xi();
+    EXPECT_TRUE(std::isfinite(xi));
+    EXPECT_GE(xi, 0.0);
+
+    double p_h = gpf.binding_probability("huge");
+    double p_m = gpf.binding_probability("medium");
+    double p_s = gpf.binding_probability("small");
+    double p_z = gpf.binding_probability("zeroish");
+    double p_e = gpf.empty_probability();
+
+    EXPECT_TRUE(std::isfinite(p_h) && p_h >= 0.0 && p_h <= 1.0);
+    EXPECT_NEAR(p_h + p_m + p_s + p_z + p_e, 1.0, 1e-8);
+    EXPECT_GT(p_h, 0.5);  // dominant despite low conc
+}
+
+TEST(GrandPartition, MergeBehaviorMultipleAndConsistency) {
+    GrandPartitionFunction gpf(300.0);
+    gpf.add_ligand("L", 10.0, 1.0);
+
+    // First merge: equivalent to adding another ensemble with same conc
+    gpf.merge_ligand("L", 10.0);  // log_Z effective should become 10 + ln(2)
+    double logZ_after1 = gpf.all_log_Z()[0].second;
+    EXPECT_NEAR(logZ_after1, 10.0 + std::log(2.0), 1e-10);
+
+    // Second merge
+    gpf.merge_ligand("L", 10.0);
+    double logZ_after2 = gpf.all_log_Z()[0].second;
+    EXPECT_NEAR(logZ_after2, 10.0 + std::log(3.0), 1e-10);
+
+    // p should reflect the merged larger Z
+    double p = gpf.binding_probability("L");
+    EXPECT_GT(p, 0.99);
+}
+
+TEST(GrandPartition, HWParitySmoke_ScalarVsAnyContext) {
+    // GPF itself performs only scalar log-sum-exp + mutex ops (no HW kernels).
+    // Inputs (log_Z) come from accelerated paths (Metal/AVX/Eigen/OpenMP in statmech/GA/Voronoi).
+    // Here we assert that GPF observables are bit-identical for identical numeric inputs,
+    // independent of how the calling context (accelerated or not) obtained the log_Z.
+    // Full HW parity for end-to-end is covered by binding_mode_statmech + dispatch tests.
+    GrandPartitionFunction gpf_scalar(300.0);
+    GrandPartitionFunction gpf_other(300.0);
+
+    // Simulate "accelerated" input numbers (same values)
+    const double logZ = 12.34567890123;
+    const double conc = 2.5e-7;  // 250 nM
+    gpf_scalar.add_ligand("from_accel", logZ, conc);
+    gpf_other.add_ligand("from_accel", logZ, conc);
+
+    EXPECT_EQ(gpf_scalar.log_Xi(), gpf_other.log_Xi());
+    EXPECT_EQ(gpf_scalar.binding_probability("from_accel"), gpf_other.binding_probability("from_accel"));
+    EXPECT_EQ(gpf_scalar.mean_occupancy(), gpf_other.mean_occupancy());
+    EXPECT_EQ(gpf_scalar.F_bound("from_accel"), gpf_other.F_bound("from_accel"));
+
+    // Different T contexts also produce consistent math
+    GrandPartitionFunction gpf_298(298.0);
+    gpf_298.add_ligand("L", 5.0, 1.0);
+    EXPECT_TRUE(std::isfinite(gpf_298.log_Xi()));
 }

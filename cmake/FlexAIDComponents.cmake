@@ -72,8 +72,9 @@ message(STATUS "FlexAIDComponents: FlexAID::ENCoM ready")
 # Future components can follow the same pattern:
 #  - tENCoM
 #  - ShannonThermo
-#  - GrandCanonical
+#  - GrandCanonical (see FLEXAIDS_GRAND_CANONICAL option + TargetServer/MultiSiteGPF)
 #  - etc.
+# Note: Grand canonical sources are already in flexaid_core when FLEXAIDS_GRAND_CANONICAL=ON (P0).
 
 # Export a variable so root / other modules know components were loaded
 set(FLEXAIDS_COMPONENTS_LOADED TRUE)

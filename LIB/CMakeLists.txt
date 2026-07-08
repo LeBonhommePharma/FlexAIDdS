@@ -149,12 +149,6 @@ set(FLEXAID_CORE_SOURCES
     # ── CoarseScreen ──
     CoarseScreen.cpp
     TwoStageScreen.cpp
-    # ── TargetServer ──
-    TargetValidation.cpp
-    GrandPartitionFunction.cpp
-    MultiSiteGPF.cpp
-    TargetKnowledgeBase.cpp
-    TargetServer.cpp
     # ── MPI transport (stubs when MPI is off) ──
     MPITransport.cpp
     # ── InStreamClustering: online medoid clustering during GA ──
@@ -172,6 +166,20 @@ set(FLEXAID_CORE_SOURCES
     # ── Native-pose CF scoring diagnostic (DatasetRunner IdealPopulation) ──
     native_score.cpp
 )
+
+if(FLEXAIDS_GRAND_CANONICAL)
+    # ── TargetServer / Grand canonical (Ξ) + MultiSiteGPF (P0) ──
+    # Appended so always compiled when BUILD_TESTING (forced ON) and generally (default ON).
+    # Wires the option to control GrandPartitionFunction, TargetServer, MultiSiteGPF sources
+    # (plus support TargetValidation + TargetKnowledgeBase).
+    list(APPEND FLEXAID_CORE_SOURCES
+        TargetValidation.cpp
+        GrandPartitionFunction.cpp
+        MultiSiteGPF.cpp
+        TargetKnowledgeBase.cpp
+        TargetServer.cpp
+    )
+endif()
 
 add_library(flexaid_core OBJECT ${FLEXAID_CORE_SOURCES})
 
