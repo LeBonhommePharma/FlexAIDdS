@@ -13,7 +13,7 @@ This schema defines the **auditable, engine-agnostic** representation of configu
 
 It is deliberately distinct from:
 - `ThermodynamicBreakdown` (existing per-mode + correction ledger)
-- `GrandPartitionFunction` (competitive binding / grand canonical)
+- `GrandPartitionFunction` (competitive binding / grand canonical; see GPF_IMPLEMENTATION_PLAN.md P4, competition_example.yaml, grand_calibrate.py for validation prep)
 
 The new construct is the **TotalSampledPartitionFunction** — the finite-sample canonical partition function over every pose and multiplicity generated during the GA run.
 
