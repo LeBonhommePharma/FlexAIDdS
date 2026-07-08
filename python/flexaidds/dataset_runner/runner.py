@@ -1233,6 +1233,11 @@ class DatasetRunner:
                         exp_affinity = _parse_remark_float(line, "EXP_AFFINITY:")
                     elif "ACTIVE:1" in line:
                         is_active = True
+                    elif "ENSEMBLE_LOG_Z:" in line or "GRAND_LOG_Z:" in line:
+                        try:
+                            grand_log_z = float( line.split(":")[-1].strip() )
+                        except:
+                            pass
                     else:
                         m = _RMSD_REMARK_RE.search(line)
                         if m:
