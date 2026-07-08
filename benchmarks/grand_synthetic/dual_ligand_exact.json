@@ -1,0 +1,138 @@
+{
+  "schema_version": "1.0",
+  "description": "Synthetic exact grand canonical fixtures for dual-ligand competition. Analytical ground truth using log-space arithmetic matching GrandPartitionFunction implementation. T=298 K, c0=1M. Used for P4 validation harness and future C++ tests.",
+  "temperature_K": 298.0,
+  "standard_conc_M": 1.0,
+  "notes": "log_Z values chosen for Z=1e8 and 1e7 (representative of strong binders). All expected computed via lnXi = logsumexp([0, lnz+lnZ for each]). p sums to 1.0. Selectivity defined per GrandPartitionFunction_Report.md",
+  "cases": [
+    {
+      "case_id": "dual_equal_1uM",
+      "description": "Equal concentrations 1uM. Intrinsic and apparent selectivity identical (=10).",
+      "ligands": [
+        {
+          "name": "A",
+          "log_Z": 18.420680743952367,
+          "Z": 100000000.0,
+          "conc_M": 1e-6,
+          "source": "synthetic_exact"
+        },
+        {
+          "name": "B",
+          "log_Z": 16.11809565095832,
+          "Z": 10000000.0,
+          "conc_M": 1e-6,
+          "source": "synthetic_exact"
+        }
+      ],
+      "expected": {
+        "log_Xi": 4.709530201312337,
+        "Xi": 111.00000000000027,
+        "p_empty": 0.009009009009008986,
+        "p_bind": {
+          "A": 0.9009009009009007,
+          "B": 0.09009009009008997
+        },
+        "mean_occupancy": 0.990990990990991,
+        "selectivity": {
+          "A_over_B": {
+            "apparent": 10.00000000000001,
+            "intrinsic": 10.00000000000001,
+            "log_apparent": 2.302585092994046,
+            "log_intrinsic": 2.302585092994046
+          }
+        },
+        "notes": "z=1e-6; zZA=100, zZB=10; Xi=111; pA=100/111"
+      },
+      "tolerance": {
+        "log_rel": 1e-9,
+        "prob_abs": 1e-12
+      }
+    },
+    {
+      "case_id": "dual_conc_sweep_A_high_B_low",
+      "description": "A at 1uM, B at 1nM. A dominates despite 10x intrinsic weaker? No: A tighter (higher Z), and higher conc.",
+      "ligands": [
+        {
+          "name": "A",
+          "log_Z": 18.420680743952367,
+          "Z": 100000000.0,
+          "conc_M": 1e-6,
+          "source": "synthetic_exact"
+        },
+        {
+          "name": "B",
+          "log_Z": 16.11809565095832,
+          "Z": 10000000.0,
+          "conc_M": 1e-9,
+          "source": "synthetic_exact"
+        }
+      ],
+      "expected": {
+        "log_Xi": 4.615219521841095,
+        "Xi": 101.00010000000001,
+        "p_empty": 0.0099009802950495,
+        "p_bind": {
+          "A": 0.9900009900009896,
+          "B": 9.900009900009897e-05
+        },
+        "mean_occupancy": 0.9900990197049505,
+        "selectivity": {
+          "A_over_B": {
+            "apparent": 10000.0,
+            "intrinsic": 10.0,
+            "log_apparent": 9.210340371976184,
+            "log_intrinsic": 2.302585092994046
+          }
+        },
+        "notes": "cB 1000x lower => apparent sel boosted by 1000x"
+      },
+      "tolerance": {
+        "log_rel": 1e-9,
+        "prob_abs": 1e-12
+      }
+    },
+    {
+      "case_id": "dual_empty_dominated",
+      "description": "Very low concs: p_empty near 1.",
+      "ligands": [
+        {
+          "name": "A",
+          "log_Z": 18.420680743952367,
+          "Z": 100000000.0,
+          "conc_M": 1e-12,
+          "source": "synthetic_exact"
+        },
+        {
+          "name": "B",
+          "log_Z": 16.11809565095832,
+          "Z": 10000000.0,
+          "conc_M": 1e-12,
+          "source": "synthetic_exact"
+        }
+      ],
+      "expected": {
+        "log_Xi": 0.00010000500033334732,
+        "Xi": 1.0001000050003334,
+        "p_empty": 0.9999000050003333,
+        "p_bind": {
+          "A": 9.99900009999e-05,
+          "B": 9.99900009999e-08
+        },
+        "mean_occupancy": 0.0000999949996667,
+        "selectivity": {
+          "A_over_B": {
+            "apparent": 1000.0,
+            "intrinsic": 10.0,
+            "log_apparent": 6.907755278982137,
+            "log_intrinsic": 2.302585092994046
+          }
+        },
+        "notes": "z~1e-12; zZA~1e-4, zZB~1e-5; almost empty"
+      },
+      "tolerance": {
+        "log_rel": 1e-9,
+        "prob_abs": 1e-12
+      }
+    }
+  ]
+}
