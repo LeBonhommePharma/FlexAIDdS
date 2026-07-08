@@ -48,8 +48,10 @@ FAST_BASE="${FLEXAIDDS_FAST_BASE:-$HOME/.flexaidds_fast}"
 RESULTS="$FAST_BASE/results"
 LOGS="${FLEXAIDDS_LOGS:-$HOME/Library/Mobile Documents/com~apple~CloudDocs/FlexAIDdS/logs}"
 CACHE="${FLEXAIDDS_BENCHMARK_DATA:-$HOME/Library/Mobile Documents/com~apple~CloudDocs/FlexAIDdS/benchmark_data}"
-ICLOUD_RESULTS="${FLEXAIDDS_ICLOUD:-$HOME/Library/Mobile Documents/com~apple~CloudDocs/FlexAIDdS}/results"
-FLEET_STATUS_DIR="${FLEXAIDDS_ICLOUD:-$HOME/Library/Mobile Documents/com~apple~CloudDocs/FlexAIDdS}"
+# Prefer FLEXAIDDS_ICLOUD everywhere; avoid baking full iCloud container paths.
+ICLOUD_BASE="${FLEXAIDDS_ICLOUD:-${HOME}/Library/Mobile Documents/com~apple~CloudDocs/FlexAIDdS}"
+ICLOUD_RESULTS="${ICLOUD_BASE}/results"
+FLEET_STATUS_DIR="${ICLOUD_BASE}"
 
 export FLEXAIDDS_OMP_THREADS="${FLEXAIDDS_OMP_THREADS:-2}"
 

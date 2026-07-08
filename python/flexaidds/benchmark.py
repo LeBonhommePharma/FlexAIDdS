@@ -998,10 +998,21 @@ def _detect_cloud_drives() -> List[Path]:
 
     candidates: List[Path] = []
 
-    # iCloud Drive
-    icloud = Path.home() / "Library" / "Mobile Documents" / "com~apple~CloudDocs"
-    if icloud.is_dir():
-        candidates.append(icloud)
+    # iCloud Drive — prefer explicit FLEXAIDDS_ICLOUD (or its parent); then standard container
+    icloud_env = os.environ.get("FLEXAIDDS_ICLOUD")
+    if icloud_env:
+        ic = Path(icloud_env).expanduser()
+        if ic.is_dir():
+            candidates.append(ic)
+        else:
+            # parent container if env points inside
+            parent = ic.parent if ic.name != "com~apple~CloudDocs" else ic
+            if parent.is_dir():
+                candidates.append(parent)
+    if not candidates:
+        icloud = Path.home() / "Library" / "Mobile Documents" / "com~apple~CloudDocs"
+        if icloud.is_dir():
+            candidates.append(icloud)
 
     # Google Drive (any account)
     gd_pattern = str(Path.home() / "Library" / "CloudStorage" / "GoogleDrive-*" / "My Drive")

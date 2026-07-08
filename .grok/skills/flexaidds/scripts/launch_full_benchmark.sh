@@ -76,7 +76,20 @@ echo "  build_dir:       $FLEXAIDDS_BUILD"
 echo "  engine_sha256:   $FLEXAIDDS_ENGINE_SHA256"
 echo "  runner_sha256:   $FLEXAIDDS_RUNNER_SHA256"
 
-FLEXAIDDS_RESULTS="${FLEXAIDDS_RESULTS:-$HOME/flexaidds_results}"
+# Prefer iCloud for all results/logs/outputs (safer than safe).
+# FLEXAIDDS_ICLOUD takes precedence for $FLEXAIDDS_RESULTS if RESULTS not explicitly set.
+# Active runs go under a working/ subdirectory (timestamped) to avoid iCloud sync conflicts
+# during long writes. After completion, promote finals with safe_archive_to_icoud.py
+# into $FLEXAIDDS_ICLOUD/archived/ (or results/ final) — see script end for guidance.
+# iCloud sync risks: concurrent writes, placeholder .icloud files, conflicted copies.
+# Never assume immediate visibility; use fs checks post-run.
+if [[ -z "${FLEXAIDDS_RESULTS:-}" ]]; then
+    if [[ -n "${FLEXAIDDS_ICLOUD:-}" ]]; then
+        FLEXAIDDS_RESULTS="${FLEXAIDDS_ICLOUD}/results"
+    else
+        FLEXAIDDS_RESULTS="$HOME/flexaidds_results"
+    fi
+fi
 
 # --- 3. Full Skill Ritual (mandatory for production) ------------------------
 echo "=== [Skill] Full ritual for production full benchmark run ==="
@@ -139,9 +152,13 @@ if [[ "$OSTYPE" == "darwin"* ]]; then
     echo "    grep -iE 'metal|backend|dispatch|shannon|using metal' \"\$LOG_FILE\" | tail -20"
 fi
 
-# --- 5. Prepare output directory on iCloud ----------------------------------
+# --- 5. Prepare output directory (working/ under iCloud for active/safer writes) ---
 TS=$(date +%s)
-OUT_DIR="$FLEXAIDDS_RESULTS/full-${TEMPERATURE}K-${SUBDIR_NAME}-${TS}"
+# Active in-progress runs use working/ + timestamp to isolate from iCloud sync churn.
+# Finalized artifacts should be promoted via safe_archive (verifies + moves to archived/).
+WORKING_BASE="${FLEXAIDDS_RESULTS}/working"
+mkdir -p "$WORKING_BASE"
+OUT_DIR="$WORKING_BASE/full-${TEMPERATURE}K-${SUBDIR_NAME}-${TS}"
 mkdir -p "$OUT_DIR"
 
 CONFIG_FILE="$OUT_DIR/config_${TEMPERATURE}.json"
@@ -234,6 +251,15 @@ echo "  python3 .grok/skills/flexaidds/scripts/validate_skill.py"
 echo "  python benchmarks/re-dock/icloud_fs_check.py --path $OUT_DIR"
 echo ""
 echo "You can safely log out. The real work is detached."
+echo ""
+echo "=== iCloud safer-than-safe note ==="
+echo "  This run is writing to: $OUT_DIR (under working/)"
+echo "  iCloud sync risks during active run: lag, .icloud placeholders, conflicted copies."
+echo "  After successful completion + verification, promote with:"
+echo "    python3 scripts/safe_archive_to_icoud.py --source \"$OUT_DIR\" \\"
+echo "        --dest \"\${FLEXAIDDS_ICLOUD:-}/archived/full-${TEMPERATURE}K-${SUBDIR_NAME}-${TS}\" \\"
+echo "        --keep-local   # or omit to evict local after verified copy"
+echo "  (The safe_archive tool does SHA verification, atomic, conflict checks.)"
 echo ""
 
 # Mark as running

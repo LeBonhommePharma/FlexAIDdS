@@ -157,7 +157,15 @@ if [[ -n "${RESULTS_DIR:-}" ]]; then
 elif [[ -n "${OUTDIR}" ]]; then
     RESULTS_DIR="${OUTDIR}"
 else
-    RESULTS_DIR="${HOME}/flexaidds_results/run_${TIMESTAMP}"
+    # Prefer FLEXAIDDS_ICLOUD/results/working for active; fallback local.
+    if [[ -n "${FLEXAIDDS_ICLOUD:-}" ]]; then
+        RESULTS_BASE="${FLEXAIDDS_ICLOUD}/results/working"
+    elif [[ -n "${FLEXAIDDS_RESULTS:-}" ]]; then
+        RESULTS_BASE="${FLEXAIDDS_RESULTS}/working"
+    else
+        RESULTS_BASE="${HOME}/flexaidds_results"
+    fi
+    RESULTS_DIR="${RESULTS_BASE}/run_${TIMESTAMP}"
 fi
 mkdir -p "${RESULTS_DIR}"
 

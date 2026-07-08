@@ -28,6 +28,7 @@ Usage examples:
         --all --tier 1 --dry-run
 
     # Long campaign with per-entry checkpointing + MPI dynamic master-worker + timing/cost in reproducibility package
+    # (defaults to iCloud $FLEXAIDDS_ICLOUD/results/working/... when env present)
     python3 .grok/skills/flexaidds/scripts/dataset_runner.py \
         --all --tier 2 --workers 8 --resume --package
 """
@@ -82,6 +83,7 @@ Examples:
   python3 .../dataset_runner.py --dataset astex_diverse --tier 1
 
   # Full campaign with shareable audit package (recommended for publications / internal reviews)
+  # (results-dir defaults to iCloud working/ when FLEXAIDDS_ICLOUD set — override for custom)
   python3 .../dataset_runner.py --all --tier 2 --results-dir results/my_benchmark --package
 
   # Distributed run (launch via mpirun)
@@ -103,8 +105,15 @@ Always run ensure_docking_data.py first (or let this script remind you).
     p.add_argument("--nodes", type=int, default=1, help="Informational: number of nodes")
     p.add_argument("--workers", type=int, default=1, help="Local parallel workers")
     p.add_argument("--binary", help="Path to FlexAIDδS binary (overrides FLEXAIDDS_BINARY)")
-    p.add_argument("--results-dir", default="results/benchmarks",
-                   help="Where to write reports (default: results/benchmarks)")
+    p.add_argument("--results-dir",
+                   default=None,
+                   help=(
+                       "Where to write reports and per-entry artifacts. "
+                       "Default (when omitted): $FLEXAIDDS_ICLOUD/results/working/<timestamped> if set, "
+                       "else $FLEXAIDDS_RESULTS or 'results/benchmarks'. "
+                       "Active runs prefer a working/ subdir under iCloud (safer-than-safe pattern). "
+                       "Full override compatibility; use --results-dir to force any path."
+                   ))
     p.add_argument("--dry-run", action="store_true",
                    help="Skip actual docking; useful for pipeline validation")
     p.add_argument("--resume", action="store_true",
@@ -363,7 +372,9 @@ def gather_reproducibility_metadata(args: argparse.Namespace, binary_path: str |
     # === NEW: Per-entry provenance integration (3rd priority) ===
     # Capture hashes of the new per-entry result artifacts produced by the inner DatasetRunner + EntryTaskManager
     try:
-        results_dir = Path(getattr(args, "results_dir", "results/benchmarks"))
+        # results_dir may be None here (resolved later); fall back only for provenance snapshot
+        rd = getattr(args, "results_dir", None) or "results/benchmarks"
+        results_dir = Path(rd)
         per_entry_info = _capture_per_entry_provenance(results_dir)
         if per_entry_info.get("entry_manifests") or per_entry_info.get("entry_count", 0) > 0:
             meta["per_entry_benchmark_artifacts"] = per_entry_info
@@ -545,6 +556,27 @@ def create_validation_package(results_dir: Path, metadata: Dict[str, Any], packa
 def main() -> int:
     parser = build_parser()
     args = parser.parse_args()
+
+    # Resolve --results-dir default preferring FLEXAIDDS_ICLOUD (then FLEXAIDDS_RESULTS).
+    # For active runs: place under working/<timestamped-run> to be "safer than safe".
+    # iCloud Drive risks during active writes: sync lag, .icloud placeholders, "conflicted copy",
+    # partial visibility. Always prefer working/ for in-flight; use scripts/safe_archive_to_icoud.py
+    # for final promotion to archived/ after verification (SHA tree + manifest, never delete unverified).
+    # --results-dir on CLI always wins (full override compatibility).
+    if not getattr(args, "results_dir", None):
+        icloud = os.environ.get("FLEXAIDDS_ICLOUD")
+        results_env = os.environ.get("FLEXAIDDS_RESULTS")
+        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+        if icloud:
+            base = Path(icloud).expanduser() / "results" / "working"
+            args.results_dir = str(base / f"dataset_runner_{ts}")
+        elif results_env:
+            base = Path(results_env).expanduser() / "working"
+            args.results_dir = str(base / f"dataset_runner_{ts}")
+        else:
+            args.results_dir = "results/benchmarks"
+        # Ensure the dir exists for active run (mirrors launchers)
+        Path(args.results_dir).mkdir(parents=True, exist_ok=True)
 
     print_skill_banner(verbose=args.verbose)
 

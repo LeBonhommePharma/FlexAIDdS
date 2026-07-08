@@ -260,7 +260,7 @@ python3 .grok/skills/flexaidds/scripts/ensure_docking_data.py
 # Run a single well-known dataset (Tier 1 for speed)
 python3 -m flexaidds.dataset_runner --dataset astex_diverse --tier 1
 
-# Full campaign with reports
+# Full campaign with reports (defaults to iCloud $FLEXAIDDS_ICLOUD/results/working/... when env set)
 python3 -m flexaidds.dataset_runner --all --tier 2 --results-dir results/benchmarks_2026
 
 # Distributed run (launch with mpirun)
@@ -299,6 +299,7 @@ See `examples/small_real_benchmark_1stp.sh` for a minimal real-world-style examp
 # Recommended for anything you intend to share or publish
 python3 .grok/skills/flexaidds/scripts/dataset_runner.py \
     --all --tier 2 --package
+# Note: iCloud results/working/ is now default when FLEXAIDDS_ICLOUD present (active run safety); promote with safe_archive_to_icoud.py to archived/
 
 # For manual redocking or one-off work, capture a snapshot at inspection time
 python3 .grok/skills/flexaidds/scripts/inspect_definition_files.py --reproducibility
@@ -342,7 +343,7 @@ python3 .grok/skills/flexaidds/scripts/ensure_docking_data.py
 ```
 
 ### 3. Launch the 4 canonical (exact command; iCloud-only results + Metal pre-flight enforced)
-All output exclusively under $FLEXAIDDS_RESULTS (iCloud /Mobile Documents/.../FlexAIDdS/results).
+All output exclusively under $FLEXAIDDS_RESULTS (iCloud preferred via FLEXAIDDS_ICLOUD/results , using working/<ts> for active runs). See safer-than-safe pattern in dataset_runner.py / launchers + safe_archive_to_icoud.py for promotion to archived/.
 
 ```bash
 # 298 K
