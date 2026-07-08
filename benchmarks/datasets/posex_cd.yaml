@@ -38,6 +38,7 @@ targets: ["7FVX_K7C", "7EGO_X90", "7HG3_A1A34", "7RGY_5BI", "8PQ9_9KI"]  # tier1
 # - Typical baseline: physics-based ~50-60%, AI methods vary; high success requires good site definition and flexibility handling.
 # - In FlexAIDdS: use --mode autonomous or oracle-ceiling as appropriate; full thermo for ranking.
 # - See results/posex_cd_20260616 for example run outputs (partial ~249 entries prepared/run).
+# FULL READINESS (2026-07-08): 1312 pairs, 371 receptors prepped (with .pdb + _apo.pdb in benchmarks/posex_cd/posex_cd/), 362 ligands (crystal SDFs), manifests use local paths. Verified by actual dataset_runner --dry-run. Archive done.
 
 # --- Status (2026-07-08 FULL PREP COMPLETE) ---
 # Receptors: 371/371 unique in benchmarks/posex_cd/posex_cd/ (all have REC.pdb ; 123 added from iCloud archived apos to match exactly prepped format of prior 248)
