@@ -3757,6 +3757,7 @@ std::vector<DatasetEntry> DatasetRunner::fetch_astex() {
     int oracle_count = 0;
     for (const auto& pdb : codes) {
         auto entry = prepare_pdb_entry(pdb, "astex_diverse");
+        entry.conc_M = 1.0; // P3 explicit
 
         // Locate oracle binding site PDB for LOCCLF mode.
         // Primary: adjacent to the receptor in the cache entry directory.
@@ -4067,6 +4068,7 @@ std::vector<DatasetEntry> DatasetRunner::fetch_hap2() {
 
     for (const auto& pdb : codes) {
         auto entry = prepare_pdb_entry(pdb, "hap2");
+        entry.conc_M = 1.0; // P3 explicit; override from yaml for custom conc
         entries.push_back(std::move(entry));
     }
 
@@ -4136,6 +4138,7 @@ std::vector<DatasetEntry> DatasetRunner::fetch_casf2016() {
 
     for (const auto& pdb : codes) {
         auto entry = prepare_pdb_entry(pdb, "casf2016");
+        entry.conc_M = 1.0; // P3 explicit; from dataset yaml later
         entries.push_back(std::move(entry));
     }
 
