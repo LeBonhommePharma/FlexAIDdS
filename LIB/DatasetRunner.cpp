@@ -4027,6 +4027,7 @@ std::vector<DatasetEntry> DatasetRunner::fetch_astex_nonnative() {
                 : "Astex Non-Native (ligand donor " + ligand_source + ")";
             entry.receptor_path = alt_structure;
             entry.ligand_path = native_lig;
+            entry.conc_M = 1.0; // P3 default; from dataset yaml for custom
             entries.push_back(std::move(entry));
         }
     }
@@ -5203,6 +5204,7 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
         auto ts_it = target_servers_.find(entry.receptor_path);
         if (ts_it != target_servers_.end()) {
             session = ts_it->second->create_session(entry.pdb_id);
+            session.conc_M = entry.conc_M;  // P3: per-ligand conc from entry (yaml or hardcoded)
         }
         sessions[idx] = session;
 
