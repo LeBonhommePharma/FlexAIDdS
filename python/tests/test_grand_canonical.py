@@ -251,6 +251,18 @@ def test_grand_pure_py_roundtrip_plan():
     (log_Xi, p, selectivities, rank dG) match within 1e-9 rel.
     Also test load_results on a multi-ligand GPF-augmented output dir.
     """
-    # This test always passes; it serves as executable reminder.
+    # This test always passes for the skeleton; we now also execute an exact
+    # match against the analytical fixture to fulfill the prior TODO.
     assert not HAS_GRAND_BINDINGS or HAS_CORE_BINDINGS  # either way ok for skeleton
-    # TODO(P3/P4): add exact match tests + fixtures with known analytical solutions.
+
+    # Exact match test using known analytical fixture (multi-ligand, conc-dependent).
+    # This addresses the former TODO(P3/P4) for exact match tests + fixtures.
+    fixture_path = Path(__file__).resolve().parents[2] / "benchmarks" / "grand_synthetic" / "multi_ligand_exact.json"
+    data = json.loads(fixture_path.read_text())
+    case = data["cases"][0]
+    ligs = [(l["name"], l["log_Z"], l["conc_M"]) for l in case["ligands"]]
+    g = compute_grand_partition(ligs, temperature_K=298.0)
+    lx = g.log_Xi() if callable(getattr(g, "log_Xi", None)) else g.log_Xi
+    assert abs(lx - case["expected"]["log_Xi"]) < 1e-9
+    for name, expected_p in case["expected"]["p_bind"].items():
+        assert abs(g.binding_probability(name) - expected_p) < 1e-9
