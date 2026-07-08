@@ -2614,6 +2614,18 @@ int main(int argc, char **argv){
 					printf("[GRAND] %s: log_zZ=%.6g p_bind=%.6g log_intr=%.6g\n",
 					       r.name.c_str(), r.log_zZ, p, r.log_intrinsic_selectivity);
 				}
+				// P5: write sidecar .grand.txt for richer output (Xi, p_bind per ligand)
+				char grandfile[512];
+				snprintf(grandfile, sizeof(grandfile), "%s.grand.txt", end_strfile ? end_strfile : "flexaid");
+				FILE* gf = fopen(grandfile, "w");
+				if (gf) {
+					fprintf(gf, "# Grand canonical summary (P3/P5)\n");
+					for (const auto& r : ranks) {
+						double p = active_ts->binding_probability(r.name);
+						fprintf(gf, "ligand=%s log_zZ=%.6g p_bind=%.6g log_intr=%.6g\n", r.name.c_str(), r.log_zZ, p, r.log_intrinsic_selectivity);
+					}
+					fclose(gf);
+				}
 			}
 
 			//////////////////////////////////////////
