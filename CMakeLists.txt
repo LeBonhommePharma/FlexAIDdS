@@ -81,18 +81,12 @@ elseif(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
 elseif(MSVC)
     if(MSVC_VERSION LESS 1940)
         message(FATAL_ERROR
-            "FlexAIDdS requires MSVC ≥ 19.40 (Visual Studio 2022 17.10+) for C++26 — "
+            "FlexAIDdS requires MSVC ≥ 19.40 (Visual Studio 2022 17.10+) — "
             "found MSVC ${MSVC_VERSION}.")
     endif()
-    # MSVC does not yet implement /std:c++26 even in VS 2022 17.14 (19.44).
-    # Cap to C++20 so the Python-bindings smoke test can configure and build on
-    # Windows CI.  The full FlexAID engine is intentionally excluded from the
-    # Windows CI matrix (see ci.yml) due to deep C++26 gaps in MSVC.
-    message(WARNING
-        "MSVC ${MSVC_VERSION}: /std:c++26 is not yet available — "
-        "building with C++20. Only the _core Python extension will build "
-        "correctly; the full FlexAID engine requires GCC ≥ 14 or Clang ≥ 18.")
-    set(CMAKE_CXX_STANDARD 20)   # override normal variable — CACHE form leaves it shadowed at 26
+    # /std:c++26 is not yet available in VS 2022; FlexAIDWindows.cmake selects
+    # the newest supported mode (/std:c++23 or /std:c++20) and keeps CRT=/MD.
+    set(CMAKE_CXX_STANDARD 20)
 endif()
 
 if(POLICY CMP0167)
@@ -104,6 +98,7 @@ endif()
 # All FLEXAIDS_* toggles, architecture detection, flexaids_configure_simd(),
 # and coverage global flags now live in one place.
 include(cmake/FlexAIDOptions.cmake)
+include(cmake/FlexAIDWindows.cmake)
 
 # External dependencies (Eigen, OpenMP, CUDA, HIP, Metal, MPI, pybind11, etc.)
 # Extracted to fight CMake monolith. Must precede add_subdirectory(LIB).
@@ -186,12 +181,9 @@ target_include_directories(FlexAID PRIVATE
 
 # ─── compiler flags ────────────────────────────────────────────────────
 if(MSVC)
-    target_compile_options(FlexAID PRIVATE /W4 /O2 /MT)
-    target_compile_definitions(FlexAID PRIVATE
-        _CRT_SECURE_NO_WARNINGS      # suppress MSVC sprintf/strcpy deprecation
-        _USE_MATH_DEFINES             # expose M_PI in <cmath>
-        NOMINMAX                      # prevent windows.h min/max macros
-    )
+    target_compile_options(FlexAID PRIVATE /O2)
+    flexaids_apply_msvc_target_options(FlexAID)
+    flexaids_configure_msvc_hotpath(FlexAID)
 else()
     target_compile_options(FlexAID PRIVATE -Wall -O3 -ffast-math -fno-finite-math-only)
 endif()
@@ -449,10 +441,9 @@ if(ENABLE_TENCOM_TOOL)
         ${CMAKE_CURRENT_SOURCE_DIR}/LIB/tENCoM
         ${CMAKE_CURRENT_SOURCE_DIR}/LIB/ShannonThermoStack)
     if(MSVC)
-        target_compile_options(tENCoM PRIVATE /O2 /GL /fp:fast /DNDEBUG /MT)
-        target_compile_definitions(tENCoM PRIVATE
-            _CRT_SECURE_NO_WARNINGS _USE_MATH_DEFINES NOMINMAX)
-        target_link_options(tENCoM PRIVATE /LTCG)
+        target_compile_options(tENCoM PRIVATE /O2 /DNDEBUG)
+        flexaids_configure_msvc_hotpath(tENCoM)
+        flexaids_configure_msvc_lto(tENCoM)
     else()
         target_compile_options(tENCoM PRIVATE -O3 -ffast-math -fno-finite-math-only -flto -DNDEBUG)
         if(NOT APPLE)
@@ -509,10 +500,9 @@ if(ENABLE_TENCOM_TOOL)
         ${CMAKE_CURRENT_SOURCE_DIR}/LIB
         ${CMAKE_CURRENT_SOURCE_DIR}/LIB/tENCoM)
     if(MSVC)
-        target_compile_options(tencom_entropy_diff PRIVATE /O2 /GL /fp:fast /DNDEBUG /MT)
-        target_compile_definitions(tencom_entropy_diff PRIVATE
-            _CRT_SECURE_NO_WARNINGS _USE_MATH_DEFINES NOMINMAX)
-        target_link_options(tencom_entropy_diff PRIVATE /LTCG)
+        target_compile_options(tencom_entropy_diff PRIVATE /O2 /DNDEBUG)
+        flexaids_configure_msvc_hotpath(tencom_entropy_diff)
+        flexaids_configure_msvc_lto(tencom_entropy_diff)
     else()
         target_compile_options(tencom_entropy_diff PRIVATE -O3 -ffast-math -fno-finite-math-only -flto -DNDEBUG)
         if(NOT APPLE)
@@ -607,8 +597,9 @@ if(BUILD_FLEXAIDDS_FAST)
     endif()
 
     if(MSVC)
-        target_compile_options(FlexAIDdS PRIVATE /O2 /GL /DNDEBUG /MT)
-        target_link_options(FlexAIDdS PRIVATE /LTCG)
+        target_compile_options(FlexAIDdS PRIVATE /O2 /DNDEBUG)
+        flexaids_configure_msvc_hotpath(FlexAIDdS)
+        flexaids_configure_msvc_lto(FlexAIDdS)
         target_compile_definitions(FlexAIDdS PRIVATE
             _CRT_SECURE_NO_WARNINGS _USE_MATH_DEFINES NOMINMAX)
     else()

@@ -1,6 +1,6 @@
 {
     "version": 6,
-    "cmakeMinimumRequired": { "major": 3, "minor": 18, "patch": 0 },
+    "cmakeMinimumRequired": { "major": 3, "minor": 28, "patch": 0 },
     "configurePresets": [
         {
             "name": "default",
@@ -54,7 +54,8 @@
             "cacheVariables": {
                 "CMAKE_BUILD_TYPE": "Release",
                 "CMAKE_C_COMPILER": "cl",
-                "CMAKE_CXX_COMPILER": "cl"
+                "CMAKE_CXX_COMPILER": "cl",
+                "FLEXAIDS_USE_OPENMP": "OFF"
             },
             "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Windows" }
         },
@@ -67,6 +68,7 @@
                 "CMAKE_BUILD_TYPE": "Debug",
                 "CMAKE_C_COMPILER": "cl",
                 "CMAKE_CXX_COMPILER": "cl",
+                "FLEXAIDS_USE_OPENMP": "OFF",
                 "BUILD_TESTING": "ON"
             },
             "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Windows" }
@@ -89,8 +91,26 @@
                 "CMAKE_C_COMPILER": "cl",
                 "CMAKE_CXX_COMPILER": "cl",
                 "FLEXAIDS_USE_OPENMP": "OFF",
-                "FLEXAIDS_USE_EIGEN": "OFF",
-                "BUILD_TESTING": "ON"
+                "FLEXAIDS_USE_CUDA": "OFF",
+                "FLEXAIDS_USE_METAL": "OFF",
+                "BUILD_TESTING": "ON",
+                "FLEXAIDS_STRICT_SOURCE_VALIDATION": "ON"
+            },
+            "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Windows" }
+        },
+        {
+            "name": "windows-python-bindings",
+            "displayName": "Windows MSVC Python bindings smoke",
+            "inherits": "default",
+            "generator": "Ninja",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Release",
+                "CMAKE_C_COMPILER": "cl",
+                "CMAKE_CXX_COMPILER": "cl",
+                "FLEXAIDS_USE_OPENMP": "OFF",
+                "BUILD_PYTHON_BINDINGS": "ON",
+                "DPYBIND11_FINDPYTHON": "ON",
+                "CMAKE_LIBRARY_OUTPUT_DIRECTORY": "${sourceDir}/python/flexaidds"
             },
             "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Windows" }
         }
@@ -110,6 +130,12 @@
             "name": "ci-windows",
             "configurePreset": "ci-windows",
             "configuration": "Release"
+        },
+        {
+            "name": "windows-python-bindings",
+            "configurePreset": "windows-python-bindings",
+            "configuration": "Release",
+            "targets": ["_core"]
         }
     ],
     "testPresets": [

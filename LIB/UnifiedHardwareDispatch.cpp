@@ -16,8 +16,15 @@
 #include <thread>
 #include <limits>
 
-#ifdef __x86_64__
-#  include <cpuid.h>
+#if defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86)
+#  define FLEXAIDS_DISPATCH_X86 1
+#  ifdef _MSC_VER
+#    include <intrin.h>
+#  else
+#    include <cpuid.h>
+#  endif
+#else
+#  define FLEXAIDS_DISPATCH_X86 0
 #endif
 
 #ifdef __AVX2__
@@ -75,18 +82,52 @@ void UnifiedHardwareDispatch::detect_cpu() {
     info_.logical_cores = static_cast<int>(std::thread::hardware_concurrency());
     if (info_.logical_cores < 1) info_.logical_cores = 1;
 
-#ifdef __x86_64__
+#if FLEXAIDS_DISPATCH_X86
     {
-        unsigned int eax, ebx, ecx, edx;
+        int regs[4] = {};
         char brand[49] = {};
 
-        for (unsigned int leaf = 0x80000002; leaf <= 0x80000004; ++leaf) {
-            if (__get_cpuid(leaf, &eax, &ebx, &ecx, &edx)) {
-                int offset = static_cast<int>((leaf - 0x80000002) * 16);
-                std::memcpy(brand + offset,      &eax, 4);
-                std::memcpy(brand + offset + 4,   &ebx, 4);
-                std::memcpy(brand + offset + 8,   &ecx, 4);
-                std::memcpy(brand + offset + 12,  &edx, 4);
+#  ifdef _MSC_VER
+        auto cpuid_leaf = [&](int leaf) {
+            __cpuid(regs, leaf);
+            return true;
+        };
+        auto cpuid_subleaf = [&](int leaf, int sub) {
+            __cpuidex(regs, leaf, sub);
+            return true;
+        };
+#  else
+        auto cpuid_leaf = [&](int leaf) -> bool {
+            unsigned eax = 0, ebx = 0, ecx = 0, edx = 0;
+            if (!__get_cpuid(static_cast<unsigned>(leaf), &eax, &ebx, &ecx, &edx))
+                return false;
+            regs[0] = static_cast<int>(eax);
+            regs[1] = static_cast<int>(ebx);
+            regs[2] = static_cast<int>(ecx);
+            regs[3] = static_cast<int>(edx);
+            return true;
+        };
+        auto cpuid_subleaf = [&](int leaf, int sub) -> bool {
+            unsigned eax = 0, ebx = 0, ecx = 0, edx = 0;
+            if (!__get_cpuid_count(static_cast<unsigned>(leaf),
+                                   static_cast<unsigned>(sub),
+                                   &eax, &ebx, &ecx, &edx))
+                return false;
+            regs[0] = static_cast<int>(eax);
+            regs[1] = static_cast<int>(ebx);
+            regs[2] = static_cast<int>(ecx);
+            regs[3] = static_cast<int>(edx);
+            return true;
+        };
+#  endif
+
+        for (int leaf = 0x80000002; leaf <= 0x80000004; ++leaf) {
+            if (cpuid_leaf(leaf)) {
+                int offset = (leaf - 0x80000002) * 16;
+                std::memcpy(brand + offset,      &regs[0], 4);
+                std::memcpy(brand + offset + 4,  &regs[1], 4);
+                std::memcpy(brand + offset + 8,  &regs[2], 4);
+                std::memcpy(brand + offset + 12, &regs[3], 4);
             }
         }
         brand[48] = '\0';
@@ -94,18 +135,22 @@ void UnifiedHardwareDispatch::detect_cpu() {
         auto pos = info_.cpu_name.find_first_not_of(' ');
         if (pos != std::string::npos) info_.cpu_name = info_.cpu_name.substr(pos);
 
-        if (__get_cpuid_count(7, 0, &eax, &ebx, &ecx, &edx)) {
+        if (cpuid_subleaf(7, 0)) {
+            const unsigned ebx = static_cast<unsigned>(regs[1]);
+            const unsigned ecx = static_cast<unsigned>(regs[2]);
             info_.has_avx2     = (ebx & (1u << 5))  != 0;
             info_.has_avx512f  = (ebx & (1u << 16)) != 0;
             info_.has_avx512dq = (ebx & (1u << 17)) != 0;
             info_.has_avx512bw = (ebx & (1u << 30)) != 0;
+            (void)ecx;
         }
 
-        if (__get_cpuid(1, &eax, &ebx, &ecx, &edx)) {
+        if (cpuid_leaf(1)) {
+            const unsigned ecx = static_cast<unsigned>(regs[2]);
             info_.has_fma = (ecx & (1u << 12)) != 0;
         }
     }
-#elif defined(__aarch64__)
+#elif defined(__aarch64__) || defined(_M_ARM64)
     info_.cpu_name = "AArch64";
 #endif
 

@@ -198,12 +198,9 @@ set_target_properties(flexaid_core PROPERTIES
 
 # ─── Compiler flags ──────────────────────────────────────────────────────
 if(MSVC)
-    target_compile_options(flexaid_core PRIVATE /W4 /O2 /MT)
-    target_compile_definitions(flexaid_core PRIVATE
-        _CRT_SECURE_NO_WARNINGS
-        _USE_MATH_DEFINES
-        NOMINMAX
-    )
+    target_compile_options(flexaid_core PRIVATE /O2)
+    flexaids_apply_msvc_target_options(flexaid_core)
+    flexaids_configure_msvc_hotpath(flexaid_core)
 else()
     # -fno-finite-math-only: keep -ffast-math optimizations but preserve
     # infinity()/NaN semantics used as sentinels in fast_optics, BindingMode,

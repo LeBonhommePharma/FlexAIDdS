@@ -19,6 +19,10 @@
 #include <functional>
 #include <cstdint>
 
+#if defined(_MSC_VER) && (defined(_M_X64) || defined(_M_IX86))
+#include <immintrin.h>
+#endif
+
 #ifdef FLEXAIDS_USE_CUDA
 #include <cuda_runtime.h>
 #endif
@@ -161,7 +165,9 @@ public:
             // Spin-wait (Metal/CPU events are typically fast)
             while (!cpu_complete_.load(std::memory_order_acquire)) {
                 // Yield to avoid burning a core
-#if defined(__x86_64__) || defined(_M_X64)
+#if defined(_MSC_VER) && (defined(_M_X64) || defined(_M_IX86))
+                _mm_pause();
+#elif defined(__x86_64__) || defined(_M_X64)
                 __builtin_ia32_pause();
 #elif defined(__aarch64__)
                 asm volatile("yield");

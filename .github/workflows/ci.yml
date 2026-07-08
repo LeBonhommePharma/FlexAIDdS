@@ -91,7 +91,12 @@ jobs:
             cmake_extra: >-
               -DCMAKE_CXX_FLAGS='-fsanitize=address,undefined -fno-omit-frame-pointer -g'
               -DCMAKE_EXE_LINKER_FLAGS='-fsanitize=address,undefined'
-          # windows-msvc excluded: deep MSVC C++20/C++26 incompatibilities in legacy sources
+          - name: windows-msvc
+            os: windows-latest
+            cc: cl
+            cxx: cl
+            cmake_extra: "-DFLEXAIDS_USE_OPENMP=OFF"
+            allow_failure: true
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
@@ -120,7 +125,8 @@ jobs:
         run: |
           choco install ninja eigen -y
         shell: cmd
-      - name: Configure
+      - name: Configure (Unix)
+        if: runner.os != 'Windows'
         shell: bash
         run: |
           export CC=${{ matrix.cc }}
@@ -142,10 +148,33 @@ jobs:
             CMAKE_ARGS+=(-DOpenMP_ROOT="$(brew --prefix libomp)")
           fi
           cmake "${CMAKE_ARGS[@]}"
-      - name: Build
+      - name: Configure (Windows)
+        if: runner.os == 'Windows'
+        shell: cmd
+        run: |
+          call "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
+          cmake -S . -B build -G Ninja ^
+            -DCMAKE_BUILD_TYPE=Release ^
+            -DCMAKE_C_COMPILER=cl ^
+            -DCMAKE_CXX_COMPILER=cl ^
+            -DFLEXAIDS_USE_CUDA=OFF ^
+            -DFLEXAIDS_USE_METAL=OFF ^
+            -DFLEXAIDS_USE_OPENMP=OFF ^
+            -DBUILD_PYTHON_BINDINGS=OFF ^
+            -DBUILD_TESTING=ON ^
+            -DFLEXAIDS_STRICT_SOURCE_VALIDATION=ON ^
+            ${{ matrix.cmake_extra }}
+      - name: Build (Unix)
+        if: runner.os != 'Windows'
         run: cmake --build build --parallel
+      - name: Build (Windows)
+        if: runner.os == 'Windows'
+        shell: cmd
+        run: |
+          call "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
+          cmake --build build --parallel
       - name: Test
-        if: matrix.name == 'linux-gcc' || matrix.name == 'linux-clang' || matrix.name == 'linux-gcc-mpi' || matrix.name == 'linux-gcc-asan'
+        if: matrix.name == 'linux-gcc' || matrix.name == 'linux-clang' || matrix.name == 'linux-gcc-mpi' || matrix.name == 'linux-gcc-asan' || matrix.name == 'windows-msvc'
         run: ctest --test-dir build --output-on-failure
 
   python_bindings_smoke:
