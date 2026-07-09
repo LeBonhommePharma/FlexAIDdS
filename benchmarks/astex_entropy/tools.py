@@ -1336,19 +1336,31 @@ def _write_pose_sdf_from_reference_topology(
         ref = _read_mol(reference_sdf, obabel)
     except Exception:
         return False
-    try:
-        ref_heavy = Chem.RemoveHs(Chem.Mol(ref))
-    except Exception:
-        ref_heavy = Chem.RemoveHs(ref)
+
+    def _remove_hs_lenient(mol: Chem.Mol) -> Chem.Mol:
+        try:
+            return Chem.RemoveHs(mol, sanitize=False)
+        except TypeError:
+            try:
+                return Chem.RemoveHs(mol)
+            except Exception:
+                return mol
+        except Exception:
+            return mol
+
+    ref_heavy = _remove_hs_lenient(Chem.Mol(ref))
 
     coords = [(float(a["x"]), float(a["y"]), float(a["z"])) for a in atoms]
     elements = [(a.get("element") or "C") for a in atoms]
     target_mol: Chem.Mol | None = None
-    if len(coords) == ref_heavy.GetNumAtoms():
-        target_mol = Chem.Mol(ref_heavy)
-    elif len(coords) == ref.GetNumAtoms():
-        target_mol = Chem.Mol(ref)
-    else:
+    try:
+        if len(coords) == ref_heavy.GetNumAtoms():
+            target_mol = Chem.Mol(ref_heavy)
+        elif len(coords) == ref.GetNumAtoms():
+            target_mol = Chem.Mol(ref)
+        else:
+            return False
+    except Exception:
         return False
 
     def _elem_key(symbol: str) -> str:
