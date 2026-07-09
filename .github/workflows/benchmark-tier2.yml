@@ -296,16 +296,22 @@ jobs:
             echo "No report found to post."
             exit 0
           fi
-          # Truncate to 65535 chars
-          python - <<PYEOF
-          content = open("$REPORT").read()
+          export REPORT_PATH="$REPORT"
+          # Truncate to 65535 chars (GitHub commit comment limit)
+          python - <<'PYEOF' > /tmp/comment_body.md
+          import os
+          report = os.environ["REPORT_PATH"]
+          run_id = os.environ["GITHUB_RUN_ID"]
+          server = os.environ["GITHUB_SERVER_URL"]
+          repo = os.environ["GITHUB_REPOSITORY"]
+          content = open(report, encoding="utf-8").read()
           if len(content) > 65000:
               content = content[:65000] + "\n\n_[truncated — download artifact for full report]_"
-          header = f"## Benchmark Tier 2 Report\n\n"
-          footer = f"\n\n> _Run [{{'${{ github.run_id }}'}}]({{'${{ github.server_url }}'}}/{{'${{ github.repository }}'}}/actions/runs/{{'${{ github.run_id }}'}})_"
+          header = "## Benchmark Tier 2 Report\n\n"
+          footer = f"\n\n> _Run [{run_id}]({server}/{repo}/actions/runs/{run_id})_"
           print(header + content + footer, end="")
-          PYEOF > /tmp/comment_body.md
-          gh api repos/${{ github.repository }}/commits/${{ github.sha }}/comments \
+          PYEOF
+          gh api "repos/${{ github.repository }}/commits/${{ github.sha }}/comments" \
             --method POST \
             --field body="$(cat /tmp/comment_body.md)" || true
 

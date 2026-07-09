@@ -44,9 +44,13 @@ jobs:
           cd build
           mkdir -p coverage
 
+          # googletest .gcda from FetchContent can trip lcov gcov version checks on clang.
+          find . -path './_deps/*' -name '*.gcda' -delete 2>/dev/null || true
+
           lcov --directory . \
                --capture \
                --output-file coverage/coverage.info \
+               --ignore-errors mismatch,unused,negative,gcov \
                --exclude '*/_deps/*' \
                --exclude '*/tests/*' \
                --exclude '*/python/*' \
