@@ -135,8 +135,4 @@ jobs:
       - name: Publish to TestPyPI
         uses: pypa/gh-action-pypi-publish@76f52bc884231f62b9a034ebfe128415bbaabdfc # v1.10.3
         with:
-<<<<<<< HEAD
           repository-url: https://test.pypi.org/legacy/
-=======
-          repository-url: https://test.pypi.org/legacy/
->>>>>>> 3b7008036 (Fix: CI link failures (__sincosf, LTO OBJECT lib, pypi-release YAML))
