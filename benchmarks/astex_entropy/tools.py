@@ -1059,12 +1059,24 @@ _HETATM_XYZ_RE = re.compile(
 _CONECT_SERIAL_RE = re.compile(r"\d+")
 
 
+def _remove_hs_lenient(mol: Chem.Mol) -> Chem.Mol:
+    try:
+        return Chem.RemoveHs(mol, sanitize=False)
+    except TypeError:
+        try:
+            return Chem.RemoveHs(mol)
+        except Exception:
+            return mol
+    except Exception:
+        return mol
+
+
 def _reference_heavy_atom_count(reference_sdf: str | Path | None, obabel: str | None) -> int | None:
     if not reference_sdf:
         return None
     try:
         mol = _read_mol(reference_sdf, obabel)
-        return Chem.RemoveHs(mol).GetNumAtoms()
+        return _remove_hs_lenient(mol).GetNumAtoms()
     except Exception:
         return None
 
@@ -1076,7 +1088,7 @@ def _reference_heavy_formula(
     if not reference_sdf:
         return None
     try:
-        mol = Chem.RemoveHs(_read_mol(reference_sdf, obabel))
+        mol = _remove_hs_lenient(_read_mol(reference_sdf, obabel))
         counts: dict[str, int] = {}
         for atom in mol.GetAtoms():
             if atom.GetAtomicNum() <= 1:
@@ -1337,17 +1349,6 @@ def _write_pose_sdf_from_reference_topology(
     except Exception:
         return False
 
-    def _remove_hs_lenient(mol: Chem.Mol) -> Chem.Mol:
-        try:
-            return Chem.RemoveHs(mol, sanitize=False)
-        except TypeError:
-            try:
-                return Chem.RemoveHs(mol)
-            except Exception:
-                return mol
-        except Exception:
-            return mol
-
     ref_heavy = _remove_hs_lenient(Chem.Mol(ref))
 
     coords = [(float(a["x"]), float(a["y"]), float(a["z"])) for a in atoms]
@@ -1480,7 +1481,7 @@ def _collect_flexaidds_records(
                 continue
             # Final heavy-atom guard on the pose SDF itself.
             try:
-                pose_mol = Chem.RemoveHs(_read_mol(pose_sdf, cfg["tools"].get("obabel")))
+                pose_mol = _remove_hs_lenient(_read_mol(pose_sdf, cfg["tools"].get("obabel")))
                 if ref_heavy is not None and pose_mol.GetNumAtoms() != ref_heavy:
                     continue
             except Exception:
