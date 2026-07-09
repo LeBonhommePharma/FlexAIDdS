@@ -190,6 +190,13 @@ void read_coor(FA_Global* FA,atom** atoms,resid** residue,char line[], char res_
 				//printf("memory re-allocated for residue\n");
 			}
 
+			// Guard against zero-size malloc when callers memset FA to 0
+			// without setting top.cpp defaults (MIN_ROTAMER=1, MIN_FLEX_BONDS=5).
+			// malloc(0) is implementation-defined and writing fatm[0]/latm[0]
+			// then becomes a heap-buffer-overflow under ASan.
+			if (FA->MIN_ROTAMER < 1) FA->MIN_ROTAMER = 1;
+			if (FA->MIN_FLEX_BONDS < 1) FA->MIN_FLEX_BONDS = 5;
+
 			(*residue)[FA->res_cnt].fatm = (int*)malloc(FA->MIN_ROTAMER*sizeof(int));
 			(*residue)[FA->res_cnt].latm = (int*)malloc(FA->MIN_ROTAMER*sizeof(int));
 			(*residue)[FA->res_cnt].bond = (int*)malloc(FA->MIN_FLEX_BONDS*sizeof(int));
@@ -202,7 +209,7 @@ void read_coor(FA_Global* FA,atom** atoms,resid** residue,char line[], char res_
 
 			memset((*residue)[FA->res_cnt].fatm,0,FA->MIN_ROTAMER*sizeof(int));
 			memset((*residue)[FA->res_cnt].latm,0,FA->MIN_ROTAMER*sizeof(int));
-			memset((*residue)[FA->res_cnt].bond,0,FA->MIN_ROTAMER*sizeof(int));
+			memset((*residue)[FA->res_cnt].bond,0,FA->MIN_FLEX_BONDS*sizeof(int));
 
 			(*residue)[FA->res_cnt].ter = 0;
 			(*residue)[FA->res_cnt].rot=0;

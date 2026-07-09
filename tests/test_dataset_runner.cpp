@@ -903,6 +903,10 @@ TEST(PDBParsing, ReadPdbSplitsConvertedNonpolymerResidues) {
     std::memset(static_cast<void*>(&FA), 0, sizeof(FA));
     FA.MIN_NUM_ATOM = 32;
     FA.MIN_NUM_RESIDUE = 16;
+    // Match top.cpp production defaults — read_coor allocates fatm/latm/bond
+    // with these sizes; zero leaves malloc(0) and ASan heap-buffer-overflow.
+    FA.MIN_ROTAMER = 1;
+    FA.MIN_FLEX_BONDS = 5;
     FA.ntypes = 40;
     atom* atoms = nullptr;
     resid* residue = nullptr;
