@@ -88,6 +88,7 @@ public:
     // ── Grand Partition Function ───────────────────────────────────────
 
     const GrandPartitionFunction& grand_partition() const { return grand_xi_; }
+    GrandPartitionFunction& grand_partition() { return grand_xi_; }
 
     /// p(ligand_i bound) = Z_i / Ξ
     double binding_probability(const std::string& ligand_name) const;
@@ -97,6 +98,13 @@ public:
 
     /// Rank all ligands by ΔG (ascending).
     std::vector<GrandPartitionFunction::LigandRank> rank_ligands() const;
+
+    /// NRGsuite / multi-ligand: set concentrations (M) without re-docking.
+    /// Updates fugacities z_i = c_i/c° in Ξ; canonical Z_i unchanged.
+    /// Does NOT alter GA pose ranking (CF proxy remains the search objective).
+    void set_concentration(const std::string& ligand_name, double concentration_M);
+    void set_concentrations(const std::vector<std::string>& names,
+                            const std::vector<double>& concentrations_M);
 
     /// Number of completed ligand sessions.
     int completed_sessions() const;

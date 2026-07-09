@@ -88,6 +88,19 @@ std::vector<GrandPartitionFunction::LigandRank> TargetServer::rank_ligands() con
     return grand_xi_.rank();
 }
 
+void TargetServer::set_concentration(const std::string& ligand_name,
+                                     double concentration_M)
+{
+    // μVT only: updates fugacity in Ξ. Pose ranking (CF proxy) untouched.
+    grand_xi_.set_concentration(ligand_name, concentration_M);
+}
+
+void TargetServer::set_concentrations(const std::vector<std::string>& names,
+                                      const std::vector<double>& concentrations_M)
+{
+    grand_xi_.set_concentrations(names, concentrations_M);
+}
+
 int TargetServer::completed_sessions() const
 {
     return completed_count_.load(std::memory_order_relaxed);

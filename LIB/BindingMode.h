@@ -136,6 +136,11 @@ class BindingMode // aggregation of poses (Cluster)
 			/// Decompose total entropy into:
 			///   S_total = S_ligand_pose + S_receptor_conformer - I(ligand; receptor)
 			/// This is the entropy decomposition that NO other docking tool can do.
+			///
+			/// Multi-ligand competitive mixing entropy (−T S_mix, ligand entropy
+			/// collapse, concentration titration) is NOT computed here — it lives
+			/// in target::GrandPartitionFunction (μVT). BindingMode is single-ligand
+			/// NVT ensemble analysis. See docs/theory.md.
 			struct EntropyDecomposition {
 				double S_total;          // total configurational entropy
 				double S_ligand;         // marginal ligand pose entropy

@@ -195,8 +195,8 @@ Hardware: CUDA > Metal > AVX-512 > AVX2 > OpenMP > scalar
 - **Structural water retention** -- ordered crystallographic waters (B-factor < 20 A^2) participate in Voronoi CF scoring
 
 #### Thermodynamics
-- **Canonical ensemble** -- partition function *Z*, Helmholtz free energy *F*, entropy *S*, heat capacity *C_v*
-- **Grand canonical ensemble** -- competitive ligand binding with concentration-dependent occupancy, pairwise selectivity, and intrinsic free energy ranking
+- **Canonical ensemble** -- partition function *Z*, Helmholtz free energy *F*, entropy *S*, heat capacity *C_v* (`StatMechEngine`)
+- **Grand canonical ensemble** -- competitive ligand binding via `GrandPartitionFunction` (μVT Ξ): concentration-dependent occupancy, pairwise selectivity, intrinsic free energy ranking, mixing entropy, ligand entropy collapse, and `set_concentration` retitration (see `docs/theory.md`)
 - **Shannon entropy** -- S = -k_B sum(p_i ln p_i) with log-sum-exp numerical stability
 - **Torsional ENCoM** (tENCoM) -- backbone vibrational entropy without full rotamer rebuilds
 - **ShannonThermoStack** -- combined configurational + vibrational entropy pipeline

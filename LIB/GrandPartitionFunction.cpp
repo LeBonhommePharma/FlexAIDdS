@@ -111,6 +111,39 @@ void GrandPartitionFunction::remove_ligand(const std::string& name)
     cached_log_xi_.reset();
 }
 
+void GrandPartitionFunction::set_concentration(const std::string& name,
+                                               double concentration_M)
+{
+    // Thermodynamic: only the fugacity z = c/c° changes; Z is fixed from
+    // the canonical ensemble. In-place update avoids remove/re-add churn.
+    if (concentration_M <= 0.0)
+        throw std::domain_error("concentration_M must be > 0 (got "
+                                + std::to_string(concentration_M) + " M)");
+    if (concentration_M > 1e3)
+        throw std::invalid_argument(
+            "Concentration > 1000 M — did you pass µM or nM without conversion to M?");
+
+    std::scoped_lock lock(mtx_);
+    auto it = ligands_.find(name);
+    if (it == ligands_.end())
+        throw std::invalid_argument("Ligand '" + name + "' not found");
+
+    it->second.log_c = std::log(concentration_M / c_standard);
+    it->second.log_zZ = it->second.log_c + it->second.log_Z;
+    cached_log_xi_.reset();
+}
+
+void GrandPartitionFunction::set_concentrations(
+    const std::vector<std::string>& names,
+    const std::vector<double>& concentrations_M)
+{
+    if (names.size() != concentrations_M.size())
+        throw std::invalid_argument(
+            "set_concentrations: names and concentrations size mismatch");
+    for (std::size_t i = 0; i < names.size(); ++i)
+        set_concentration(names[i], concentrations_M[i]);
+}
+
 // ── Thermodynamic queries ──────────────────────────────────────────────
 
 double GrandPartitionFunction::compute_log_Xi_fresh() const
@@ -176,6 +209,44 @@ double GrandPartitionFunction::occupancy_variance() const
     // Var(n) = ⟨n²⟩ − ⟨n⟩²  = ⟨n⟩(1 − ⟨n⟩)  for binary n ∈ {0,1}
     double mu = mean_occupancy();
     return mu * (1.0 - mu);
+}
+
+double GrandPartitionFunction::chemical_potential(const std::string& name) const
+{
+    // Ideal solution: μ − μ° = kT ln(c/c°) = kT · log_c
+    std::scoped_lock lock(mtx_);
+    auto it = ligands_.find(name);
+    if (it == ligands_.end())
+        throw std::invalid_argument("Ligand '" + name + "' not found");
+    return (1.0 / beta_) * it->second.log_c;
+}
+
+double GrandPartitionFunction::concentration(const std::string& name) const
+{
+    std::scoped_lock lock(mtx_);
+    auto it = ligands_.find(name);
+    if (it == ligands_.end())
+        throw std::invalid_argument("Ligand '" + name + "' not found");
+    // c = c° · exp(log_c); c° = 1 M
+    return c_standard * std::exp(it->second.log_c);
+}
+
+double GrandPartitionFunction::apparent_Ki_M(const std::string& name) const
+{
+    // Competitive Langmuir (diagnostic): p_i / p_empty = c_i / K_i
+    // ⇒ K_i = c_i · p_empty / p_i
+    std::scoped_lock lock(mtx_);
+    auto it = ligands_.find(name);
+    if (it == ligands_.end())
+        throw std::invalid_argument("Ligand '" + name + "' not found");
+
+    const double log_xi = log_Xi_cached();
+    const double p_i = std::exp(it->second.log_zZ - log_xi);
+    const double p_e = std::exp(-log_xi);
+    if (p_i < 1e-300)
+        return std::numeric_limits<double>::max();
+    const double c = c_standard * std::exp(it->second.log_c);
+    return c * p_e / p_i;
 }
 
 double GrandPartitionFunction::F_bound(const std::string& name) const
@@ -263,6 +334,101 @@ std::vector<GrandPartitionFunction::LigandRank> GrandPartitionFunction::rank() c
               });
 
     return ranks;
+}
+
+// ── GC entropy diagnostics ─────────────────────────────────────────────
+
+double GrandPartitionFunction::mixing_entropy() const
+{
+    // S_mix = −k_B Σ_α p_α ln p_α over {empty + all ligands}.
+    // Additive μVT extension of the NVT −TΔS ledger; diagnostic only.
+    std::scoped_lock lock(mtx_);
+    const double log_xi = log_Xi_cached();
+    double S_nats = 0.0;
+
+    const double p_empty = std::exp(-log_xi);
+    if (p_empty > 1e-300)
+        S_nats -= p_empty * std::log(p_empty);
+
+    for (const auto& [name, entry] : ligands_) {
+        const double p = std::exp(entry.log_zZ - log_xi);
+        if (p > 1e-300)
+            S_nats -= p * std::log(p);
+    }
+    return statmech::kB_kcal * S_nats;
+}
+
+double GrandPartitionFunction::minus_T_mixing_entropy() const
+{
+    return -T_ * mixing_entropy();
+}
+
+double GrandPartitionFunction::ligand_entropy_collapse() const
+{
+    // Collapse on *bound* species only (empty excluded).
+    // S_lig / ln(M) → 0 when one ligand dominates → collapse → 1.
+    std::scoped_lock lock(mtx_);
+    const int M = static_cast<int>(ligands_.size());
+    if (M <= 1)
+        return 0.0;
+
+    const double log_xi = log_Xi_cached();
+    const double p_empty = std::exp(-log_xi);
+    const double p_bound = 1.0 - p_empty;
+    if (p_bound < 1e-15)
+        return 0.0;  // fully apo — no ligand collapse to report
+
+    double S_nats = 0.0;
+    for (const auto& [name, entry] : ligands_) {
+        const double p_tilde = std::exp(entry.log_zZ - log_xi) / p_bound;
+        if (p_tilde > 1e-300)
+            S_nats -= p_tilde * std::log(p_tilde);
+    }
+    const double S_max = std::log(static_cast<double>(M));
+    if (S_max < 1e-15)
+        return 0.0;
+    double collapse = 1.0 - S_nats / S_max;
+    if (collapse < 0.0) collapse = 0.0;
+    if (collapse > 1.0) collapse = 1.0;
+    return collapse;
+}
+
+std::vector<GrandPartitionFunction::OccupancyPoint>
+GrandPartitionFunction::occupancy_vs_concentration(
+    const std::string& titrate,
+    const std::vector<double>& concentrations_M) const
+{
+    // Snapshot state, then sweep titrate concentration on a temporary GPF
+    // so this query is const and thread-safe w.r.t. the live ensemble.
+    std::vector<std::pair<std::string, LigandEntry>> snapshot;
+    {
+        std::scoped_lock lock(mtx_);
+        if (!ligands_.count(titrate))
+            throw std::invalid_argument("Titrate ligand '" + titrate + "' not found");
+        snapshot.reserve(ligands_.size());
+        for (const auto& [n, e] : ligands_)
+            snapshot.emplace_back(n, e);
+    }
+
+    std::vector<OccupancyPoint> curve;
+    curve.reserve(concentrations_M.size());
+
+    for (double c : concentrations_M) {
+        if (c <= 0.0)
+            continue;
+        GrandPartitionFunction tmp(T_);
+        for (const auto& [n, e] : snapshot) {
+            const double ci = (n == titrate) ? c : (c_standard * std::exp(e.log_c));
+            tmp.add_ligand(n, e.log_Z, ci);
+        }
+        OccupancyPoint pt;
+        pt.concentration_M = c;
+        pt.p_bound = tmp.mean_occupancy();
+        pt.p_species = tmp.binding_probability(titrate);
+        pt.mean_N = tmp.mean_N();
+        curve.push_back(pt);
+    }
+    return curve;
 }
 
 // ── State queries ──────────────────────────────────────────────────────

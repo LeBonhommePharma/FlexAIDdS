@@ -649,6 +649,150 @@ TEST(GrandPartition, AllLogZAccessor) {
 #include <random>
 #include <vector>
 
+// ════════════════════════════════════════════════════════════════════════
+// Additive μVT diagnostics (set_concentration, mixing entropy, collapse)
+// These extend the existing GrandPartitionFunction — they do NOT introduce
+// a parallel GrandCanonicalEngine (GPF already IS the μVT single-site engine).
+// ════════════════════════════════════════════════════════════════════════
+
+TEST(GrandPartition, SetConcentrationInPlace) {
+    GrandPartitionFunction gpf(300.0);
+    gpf.add_ligand("A", 10.0, 1.0);
+    gpf.add_ligand("B", 10.0, 1.0);
+    EXPECT_NEAR(gpf.binding_probability("A"), gpf.binding_probability("B"), 1e-12);
+
+    gpf.set_concentration("B", 0.01);  // 10 mM
+    EXPECT_GT(gpf.binding_probability("A"), gpf.binding_probability("B"));
+    EXPECT_NEAR(gpf.concentration("B"), 0.01, 1e-12);
+    EXPECT_NEAR(gpf.selectivity("A", "B"), 100.0, 0.1);
+}
+
+TEST(GrandPartition, SetConcentrationsBatch) {
+    GrandPartitionFunction gpf(300.0);
+    gpf.add_ligand("A", 5.0, 1.0);
+    gpf.add_ligand("B", 5.0, 1.0);
+    gpf.set_concentrations({"A", "B"}, {1e-6, 1e-3});
+    EXPECT_NEAR(gpf.concentration("A"), 1e-6, 1e-15);
+    EXPECT_NEAR(gpf.concentration("B"), 1e-3, 1e-12);
+    EXPECT_GT(gpf.binding_probability("B"), gpf.binding_probability("A"));
+}
+
+TEST(GrandPartition, ChemicalPotentialIdealSolution) {
+    GrandPartitionFunction gpf(300.0);
+    gpf.add_ligand("A", 5.0, 0.01);  // 10 mM
+    // μ = kT ln(c/c°) = kT ln(0.01)
+    EXPECT_NEAR(gpf.chemical_potential("A"), kT_300 * std::log(0.01), 1e-10);
+}
+
+TEST(GrandPartition, ApparentKiHalfSaturation) {
+    // At half-saturation for single ligand: Z=1, c=1 M → p=0.5 → K_i = c
+    GrandPartitionFunction gpf(300.0);
+    gpf.add_ligand("A", 0.0, 1.0);
+    EXPECT_NEAR(gpf.apparent_Ki_M("A"), 1.0, 1e-10);
+}
+
+TEST(GrandPartition, MixingEntropyEquipartition) {
+    // Empty + 1 ligand at half sat: p=0.5,0.5 → S = kB ln 2
+    GrandPartitionFunction gpf(300.0);
+    gpf.add_ligand("A", 0.0, 1.0);
+    EXPECT_NEAR(gpf.mixing_entropy(),
+                statmech::kB_kcal * std::log(2.0), 1e-12);
+    EXPECT_NEAR(gpf.minus_T_mixing_entropy(),
+                -300.0 * statmech::kB_kcal * std::log(2.0), 1e-10);
+}
+
+TEST(GrandPartition, LigandEntropyCollapseDominated) {
+    GrandPartitionFunction gpf(300.0);
+    // One overwhelming, one tiny — collapse → 1
+    gpf.add_ligand("dom", 50.0, 1.0);
+    gpf.add_ligand("tiny", 0.0, 1.0);
+    EXPECT_GT(gpf.ligand_entropy_collapse(), 0.9);
+
+    // Equal competitors — low collapse
+    GrandPartitionFunction gpf2(300.0);
+    gpf2.add_ligand("X", 10.0, 1.0);
+    gpf2.add_ligand("Y", 10.0, 1.0);
+    EXPECT_LT(gpf2.ligand_entropy_collapse(), 0.05);
+}
+
+TEST(GrandPartition, OccupancyVsConcentrationMonotonic) {
+    GrandPartitionFunction gpf(300.0);
+    gpf.add_ligand("A", 5.0, 1e-9);
+    auto curve = gpf.occupancy_vs_concentration(
+        "A", {1e-9, 1e-6, 1e-3, 1.0});
+    ASSERT_EQ(curve.size(), 4u);
+    for (std::size_t i = 1; i < curve.size(); ++i) {
+        EXPECT_GE(curve[i].p_species, curve[i - 1].p_species);
+        EXPECT_GE(curve[i].mean_N, curve[i - 1].mean_N);
+    }
+}
+
+// ════════════════════════════════════════════════════════════════════════
+// MOR + naloxone toy: NVT (canonical Z) vs partial μVT (competitive Ξ)
+// Synthetic log_Z values stand in for docked ensembles — no full dock.
+// ════════════════════════════════════════════════════════════════════════
+
+TEST(GrandPartition, MORnaloxone_NVT_vs_muVT) {
+    // Toy partition functions (synthetic; not experimental claims):
+    // fentanyl: high affinity  → large Z
+    // naloxone: moderate Z, but high clinical concentration can outcompete
+    constexpr double T = 310.0;  // physiological
+    const double kT = statmech::kB_kcal * T;
+
+    // Canonical NVT: each ligand alone → F = −kT ln Z
+    statmech::StatMechEngine fen_nvt(T);
+    fen_nvt.add_sample(-12.0, 10);  // favourable CF-proxy samples
+    fen_nvt.add_sample(-10.0, 5);
+    auto fen_th = fen_nvt.compute();
+
+    statmech::StatMechEngine nal_nvt(T);
+    nal_nvt.add_sample(-9.0, 8);
+    nal_nvt.add_sample(-7.5, 4);
+    auto nal_th = nal_nvt.compute();
+
+    // NVT: free energies are concentration-independent
+    EXPECT_LT(fen_th.free_energy, nal_th.free_energy);  // fentanyl stronger alone
+
+    // μVT competitive: Ξ = 1 + z_f Z_f + z_n Z_n
+    GrandPartitionFunction gpf(T);
+    gpf.add_ligand("fentanyl", fen_th.log_Z, 1e-9);   // 1 nM
+    gpf.add_ligand("naloxone", nal_th.log_Z, 1e-6);    // 1 µM antagonist
+
+    // Probabilities must form a partition of unity
+    const double p_f = gpf.binding_probability("fentanyl");
+    const double p_n = gpf.binding_probability("naloxone");
+    const double p_e = gpf.empty_probability();
+    EXPECT_NEAR(p_f + p_n + p_e, 1.0, 1e-10);
+
+    // ⟨N⟩ ≡ mean_occupancy
+    EXPECT_NEAR(gpf.mean_N(), 1.0 - p_e, 1e-12);
+
+    // Raising naloxone concentration should increase its occupancy
+    const double p_n_low = p_n;
+    gpf.set_concentration("naloxone", 1e-4);  // 100 µM
+    EXPECT_GT(gpf.binding_probability("naloxone"), p_n_low);
+
+    // Collapse rises when one species dominates after titration
+    EXPECT_GE(gpf.ligand_entropy_collapse(), 0.0);
+    EXPECT_LE(gpf.ligand_entropy_collapse(), 1.0);
+
+    // Intrinsic selectivity independent of the concentration swing
+    const double log_int = gpf.log_intrinsic_selectivity("fentanyl", "naloxone");
+    EXPECT_NEAR(log_int, fen_th.log_Z - nal_th.log_Z, 1e-10);
+
+    // Apparent K_i diagnostic is finite and positive
+    EXPECT_GT(gpf.apparent_Ki_M("fentanyl"), 0.0);
+    EXPECT_TRUE(std::isfinite(gpf.apparent_Ki_M("fentanyl")));
+
+    // NVT F_bound matches engine free energy (concentration-independent piece)
+    EXPECT_NEAR(gpf.F_bound("fentanyl"), fen_th.free_energy, 1e-10);
+    EXPECT_NEAR(gpf.F_bound("naloxone"), nal_th.free_energy, 1e-10);
+
+    // Sanity: kT positive at 310 K
+    EXPECT_GT(kT, 0.5);
+    EXPECT_LT(kT, 0.7);
+}
+
 TEST(GrandPartition, BenchmarkStress) {
     using clock = std::chrono::high_resolution_clock;
     auto t0 = clock::now();

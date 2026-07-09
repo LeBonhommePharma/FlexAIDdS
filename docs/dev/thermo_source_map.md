@@ -26,13 +26,24 @@
 
 ## Grand Canonical And Selectivity
 
+> **`GrandPartitionFunction` is the single-site μVT engine.** Do not add a
+> parallel `GrandCanonicalEngine` that rewraps the same Ξ math. See `docs/theory.md`.
+
 - `LIB/GrandPartitionFunction.h/.cpp`
   - `GrandPartitionFunction::add_ligand()`
   - `GrandPartitionFunction::log_Xi()`
   - `GrandPartitionFunction::binding_probability()`
   - `GrandPartitionFunction::empty_probability()`
+  - `GrandPartitionFunction::mean_occupancy()` / `mean_N()`
+  - `GrandPartitionFunction::set_concentration()` / `set_concentrations()`
+  - `GrandPartitionFunction::chemical_potential()` / `concentration()` / `apparent_Ki_M()`
+  - `GrandPartitionFunction::mixing_entropy()` / `ligand_entropy_collapse()`
+  - `GrandPartitionFunction::occupancy_vs_concentration()` isotherm curve
   - `GrandPartitionFunction::selectivity()` apparent concentration-aware selectivity
   - `GrandPartitionFunction::log_intrinsic_selectivity()` concentration-independent selectivity
+- `LIB/MultiSiteGPF.*` — multi-site + cooperativity (wraps per-site GPF)
+- `LIB/TargetServer.*` — owns live Ξ; `set_concentration` for NRGsuite retitration
+- `python/flexaidds/grand_canonical.py` — pure-Python mirror + `set_concentration()`
 
 ## Vibrational, NATURaL, GIST, H-bond, And Strain Terms
 

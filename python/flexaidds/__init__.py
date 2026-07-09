@@ -54,6 +54,14 @@ from .thermodynamics import (
     kirchhoff_dS,
 )
 
+# Pure-Python μVT competitive binding (mirrors GrandPartitionFunction; no C++ required)
+from .grand_canonical import (
+    CompetitiveSite,
+    OccupancyPoint,
+    set_concentration,
+    plot_occupancy_curve,
+)
+
 # entropy.help audit schema (A1.1) — pure Python, always available
 from .schemas.thermo_audit import (
     ThermodynamicOutput,
@@ -266,6 +274,11 @@ __all__ = [
     "Thermodynamics",
     "kB_kcal",
     "kB_SI",
+    # Grand-canonical competitive binding (pure-Python μVT helpers)
+    "CompetitiveSite",
+    "OccupancyPoint",
+    "set_concentration",
+    "plot_occupancy_curve",
     # Availability flag
     "HAS_CORE_BINDINGS",
     # Core types (C++ when available, pure-Python fallback otherwise)

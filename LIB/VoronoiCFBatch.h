@@ -11,6 +11,14 @@
 //   • batch_eval()            — parallel evaluation of chromosome population
 //   • benchmark()             — wall-clock comparison: serial vs OpenMP
 //
+// Multi-ligand / concentration note
+// ─────────────────────────────────
+// VoronoiCFBatch scores ONE ligand geometry per chromosome (CF proxy, NVT
+// search). Competitive multi-ligand occupancy vs concentration is handled
+// post-hoc by target::GrandPartitionFunction (μVT Ξ), not inside this batch
+// CF loop. Do not fold fugacity into the CF score here — that would alter
+// GA ranking without an explicit feature flag + tests (AGENTS.md).
+//
 // Apache-2.0 © 2026 Le Bonhomme Pharma
 
 #pragma once

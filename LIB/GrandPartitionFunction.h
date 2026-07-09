@@ -89,6 +89,15 @@ public:
     /// Remove a ligand from the ensemble.
     void remove_ligand(const std::string& name);
 
+    /// Update concentration of an existing ligand in-place (M).
+    /// Thermodynamic: z_i = c_i/c° changes; Z_i unchanged.
+    /// Invalidates Ξ cache. Used by NRGsuite set_concentration([L1,L2,...]).
+    void set_concentration(const std::string& name, double concentration_M);
+
+    /// Batch update concentrations. Names and values must be same length.
+    void set_concentrations(const std::vector<std::string>& names,
+                            const std::vector<double>& concentrations_M);
+
     // ── Thermodynamic queries ──────────────────────────────────────────
 
     /// ln(Ξ) = ln(1 + Σ_i z_i·Z_i) using log-sum-exp for stability
@@ -103,12 +112,29 @@ public:
     /// Mean site occupancy ⟨n⟩ = 1 − p(empty) = Σ_i p(ligand_i).
     /// For a single binding site n ∈ {0,1}; this equals the probability
     /// that the receptor is bound by ANY ligand.
+    ///
+    /// Grand-canonical identity (single site / one chemical potential):
+    ///   ⟨N⟩ = (1/β) ∂lnΞ/∂μ  = 1 − p(empty)  when μ is shared.
+    /// Alias: mean_N() == mean_occupancy().
     [[nodiscard]] double mean_occupancy() const;
+
+    /// Alias for mean_occupancy() — ⟨N⟩ notation preferred in μVT literature.
+    [[nodiscard]] double mean_N() const { return mean_occupancy(); }
 
     /// Occupancy variance Var(n) = ⟨n⟩·(1 − ⟨n⟩).
     /// Maximised at 0.25 when mean_occupancy = 0.5 (half-saturation).
     /// Useful for detecting near-saturation or near-apo conditions.
     [[nodiscard]] double occupancy_variance() const;
+
+    /// Ideal-solution chemical potential relative to μ°=0: μ = kT ln(c/c°).
+    [[nodiscard]] double chemical_potential(const std::string& name) const;
+
+    /// Current concentration (M) for a registered ligand.
+    [[nodiscard]] double concentration(const std::string& name) const;
+
+    /// Apparent K_i (M) under competitive Langmuir form (diagnostic only):
+    ///   K_i = c_i · p_empty / p_i
+    [[nodiscard]] double apparent_Ki_M(const std::string& name) const;
 
     /// Helmholtz free energy of the bound ensemble: F_bound = −kT · ln Z_i  (kcal/mol).
     /// This is NOT the binding free energy (which requires an unbound reference).
@@ -166,6 +192,33 @@ public:
 
     /// Rank all ligands by ΔG (ascending = most favorable first).
     [[nodiscard]] std::vector<LigandRank> rank() const;
+
+    // ── GC entropy diagnostics (additive; never used for GA ranking) ───
+
+    /// Shannon mixing entropy over {empty + ligands}:
+    ///   S_mix = −k_B Σ_α p_α ln p_α   (kcal mol⁻¹ K⁻¹)
+    /// Extends the NVT −TΔS ledger with the multi-species occupancy term.
+    [[nodiscard]] double mixing_entropy() const;
+
+    /// −T · S_mix (kcal/mol).
+    [[nodiscard]] double minus_T_mixing_entropy() const;
+
+    /// Ligand entropy collapse ∈ [0,1] (bound-species only; empty excluded):
+    ///   0 = equipartition among M ligands; 1 = one ligand fully dominates.
+    /// Same Shannon "entropy crash" signature as GA diversity collapse.
+    [[nodiscard]] double ligand_entropy_collapse() const;
+
+    /// Fractional occupancy of `titrate` vs a concentration sweep (M),
+    /// holding other ligands fixed. For isotherm plots / NRGsuite viz.
+    struct OccupancyPoint {
+        double concentration_M = 0.0;
+        double p_bound = 0.0;    ///< 1 − p(empty)
+        double p_species = 0.0;  ///< p(titrate)
+        double mean_N = 0.0;
+    };
+    [[nodiscard]] std::vector<OccupancyPoint> occupancy_vs_concentration(
+        const std::string& titrate,
+        const std::vector<double>& concentrations_M) const;
 
     // ── State queries ──────────────────────────────────────────────────
 
