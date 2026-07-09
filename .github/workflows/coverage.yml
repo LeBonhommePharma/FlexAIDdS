@@ -47,21 +47,38 @@ jobs:
           # googletest .gcda from FetchContent can trip lcov gcov version checks on clang.
           find . -path './_deps/*' -name '*.gcda' -delete 2>/dev/null || true
 
+          # Clang-18 emits .gcda that stock /usr/bin/gcov (GCC 13) rejects as
+          # "Incompatible GCC/GCOV version" / version 'B33*'. Prefer llvm-cov's
+          # gcov frontend; also ignore version/mismatch so a fallback still works.
+          GCOV_TOOL=gcov
+          if command -v llvm-cov-18 >/dev/null 2>&1; then
+            printf '%s\n' '#!/bin/sh' 'exec llvm-cov-18 gcov "$@"' > /tmp/llvm-gcov.sh
+            chmod +x /tmp/llvm-gcov.sh
+            GCOV_TOOL=/tmp/llvm-gcov.sh
+          elif command -v llvm-cov >/dev/null 2>&1; then
+            printf '%s\n' '#!/bin/sh' 'exec llvm-cov gcov "$@"' > /tmp/llvm-gcov.sh
+            chmod +x /tmp/llvm-gcov.sh
+            GCOV_TOOL=/tmp/llvm-gcov.sh
+          fi
+
           lcov --directory . \
                --capture \
                --output-file coverage/coverage.info \
-               --ignore-errors mismatch,unused,negative,gcov \
+               --gcov-tool "$GCOV_TOOL" \
+               --ignore-errors mismatch,unused,negative,gcov,version \
                --exclude '*/_deps/*' \
                --exclude '*/tests/*' \
                --exclude '*/python/*' \
                --exclude '*/benchmarks/*'
 
           lcov --extract coverage/coverage.info '*/LIB/*' \
-               --output-file coverage/core.info
+               --output-file coverage/core.info \
+               --ignore-errors unused,empty,mismatch,version
 
           genhtml coverage/core.info \
                   --output-directory coverage/html \
-                  --title "FlexAIDdS Code Coverage"
+                  --title "FlexAIDdS Code Coverage" \
+                  --ignore-errors source,unmapped
 
       - name: Calculate coverage percentage
         run: |
