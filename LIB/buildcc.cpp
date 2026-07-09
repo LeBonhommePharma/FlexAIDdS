@@ -86,7 +86,8 @@ void buildcc(FA_Global* FA,atom* atoms,int tot,int list[]){
 
     //printf("ang=%f\n",atoms[list[an]].ang);
     angPI = (float)(atoms[list[an]].ang*PI/180.0f);
-    { float _s, _c; __sincosf(angPI, &_s, &_c); ct=_c; st=-_s; }
+    st = -sinf(angPI);
+    ct = cosf(angPI);
 
     op=1.0f-ct;
 
@@ -103,7 +104,8 @@ void buildcc(FA_Global* FA,atom* atoms,int tot,int list[]){
     //printf("dih=%f\n",atoms[list[an]].dih);
     
     dihPI = (float)(atoms[list[an]].dih*PI/180.0f);
-    { float _s, _c; __sincosf(dihPI, &_s, &_c); ct=_c; st=_s; }
+    st = sinf(dihPI);
+    ct = cosf(dihPI);
 
     op=1.0f-ct;
 

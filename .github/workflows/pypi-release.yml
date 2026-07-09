@@ -84,9 +84,7 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          $before = @'
-powershell -Command "Invoke-WebRequest -Uri https://gitlab.com/libeigen/eigen/-/archive/3.4.0/eigen-3.4.0.tar.gz -OutFile $env:TEMP\eigen.tar.gz; tar -xzf $env:TEMP\eigen.tar.gz -C $env:TEMP"
-'@
+          $before = 'powershell -Command "Invoke-WebRequest -Uri https://gitlab.com/libeigen/eigen/-/archive/3.4.0/eigen-3.4.0.tar.gz -OutFile $env:TEMP\eigen.tar.gz; tar -xzf $env:TEMP\eigen.tar.gz -C $env:TEMP"'
           "CIBW_BEFORE_ALL_WINDOWS=$before" | Out-File -FilePath $env:GITHUB_ENV -Append
           "CIBW_ENVIRONMENT_WINDOWS=EIGEN_INCLUDE_DIR=$env:TEMP\eigen-3.4.0" | Out-File -FilePath $env:GITHUB_ENV -Append
 
@@ -137,4 +135,8 @@ powershell -Command "Invoke-WebRequest -Uri https://gitlab.com/libeigen/eigen/-/
       - name: Publish to TestPyPI
         uses: pypa/gh-action-pypi-publish@76f52bc884231f62b9a034ebfe128415bbaabdfc # v1.10.3
         with:
+<<<<<<< HEAD
           repository-url: https://test.pypi.org/legacy/
+=======
+          repository-url: https://test.pypi.org/legacy/
+>>>>>>> 3b7008036 (Fix: CI link failures (__sincosf, LTO OBJECT lib, pypi-release YAML))

@@ -227,8 +227,8 @@ if(FLEXAIDS_USE_MPI)
     target_compile_definitions(flexaid_core PUBLIC FLEXAIDS_USE_MPI)
 endif()
 
-# __sincosf and other libm symbols (buildcc.cpp) must resolve on Linux,
-# especially under LTO where the linker does not auto-pull libm.
+# libm symbols must resolve on Linux, especially under LTO where the linker
+# does not auto-pull libm.
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     target_link_libraries(flexaid_core PUBLIC m)
 endif()
