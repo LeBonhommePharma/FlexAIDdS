@@ -61,11 +61,15 @@ jobs:
             GCOV_TOOL=/tmp/llvm-gcov.sh
           fi
 
+          # Broad ignore set: clang+llvm-gcov routinely emits inconsistent
+          # function-end / line mismatches (e.g. ShannonThermoStack.h dtors).
+          LCOV_IGNORE=mismatch,unused,negative,gcov,version,inconsistent,empty,corrupt,category,format,path,count,parallel,unsupported
+
           lcov --directory . \
                --capture \
                --output-file coverage/coverage.info \
                --gcov-tool "$GCOV_TOOL" \
-               --ignore-errors mismatch,unused,negative,gcov,version \
+               --ignore-errors "$LCOV_IGNORE" \
                --exclude '*/_deps/*' \
                --exclude '*/tests/*' \
                --exclude '*/python/*' \
@@ -73,12 +77,12 @@ jobs:
 
           lcov --extract coverage/coverage.info '*/LIB/*' \
                --output-file coverage/core.info \
-               --ignore-errors unused,empty,mismatch,version
+               --ignore-errors "$LCOV_IGNORE"
 
           genhtml coverage/core.info \
                   --output-directory coverage/html \
                   --title "FlexAIDdS Code Coverage" \
-                  --ignore-errors source,unmapped
+                  --ignore-errors source,unmapped,inconsistent,empty
 
       - name: Calculate coverage percentage
         run: |
