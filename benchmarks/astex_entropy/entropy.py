@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import csv
+import json
 import math
 import os
 import re
@@ -11,9 +12,21 @@ from typing import Any
 
 import pandas as pd
 
-from .io_utils import read_poses, run_command
+from .io_utils import (
+    _local_scratch_root,
+    _materialize_local,
+    _safe_exists,
+    _safe_mtime,
+    _safe_read_csv,
+    _safe_read_text,
+    _safe_unlink,
+    _safe_write_csv,
+    _safe_write_text,
+    read_poses,
+    run_command,
+)
 from .models import PoseRecord
-from .validation import rmsd_to_reference, run_posebusters
+from .validation import rmsd_diagnostics, rmsd_to_reference, run_posebusters
 
 
 K_B_KCAL = 0.001987206
@@ -76,6 +89,29 @@ def _analysis_target_id(target_id: str) -> str:
     return target_id.split("__clf", 1)[0]
 
 
+def _raw_score_sort_key(record: PoseRecord) -> float:
+    try:
+        score = float(record.raw_score)
+    except (TypeError, ValueError):
+        return float("inf")
+    if record.score_direction.lower() in {"higher", "max", "higher_better"}:
+        return -score
+    return score
+
+
+def limit_poses_per_target(records: list[PoseRecord], max_poses: int) -> list[PoseRecord]:
+    if max_poses <= 0:
+        return list(records)
+    grouped: dict[str, list[PoseRecord]] = defaultdict(list)
+    for record in records:
+        grouped[_analysis_target_id(record.target_id)].append(record)
+    limited: list[PoseRecord] = []
+    for group in grouped.values():
+        ranked = sorted(group, key=_raw_score_sort_key)
+        limited.extend(ranked[:max_poses])
+    return limited
+
+
 def _boltzmann_probabilities(energies: list[float], temperature: float) -> list[float]:
     beta = 1.0 / (K_B_KCAL * temperature)
     e_min = min(energies)
@@ -87,23 +123,23 @@ def _boltzmann_probabilities(energies: list[float], temperature: float) -> list[
 
 
 def _pose_ligand_pdb(pose_sdf: Path, out_pdb: Path, obabel: str) -> Path:
-    if not out_pdb.exists() or pose_sdf.stat().st_mtime > out_pdb.stat().st_mtime:
+    if not _safe_exists(out_pdb) or _safe_mtime(pose_sdf) > _safe_mtime(out_pdb):
         run_command([obabel, "-isdf", str(pose_sdf), "-opdb", "-O", str(out_pdb)], log_path=out_pdb.with_suffix(".obabel.log"))
     return out_pdb
 
 
 def _make_complex_pdb(receptor_pdb: Path, ligand_pdb: Path, complex_pdb: Path) -> Path:
-    if complex_pdb.exists() and complex_pdb.stat().st_mtime > ligand_pdb.stat().st_mtime:
+    if _safe_exists(complex_pdb) and _safe_mtime(complex_pdb) > _safe_mtime(ligand_pdb):
         return complex_pdb
     receptor_lines = [
-        line for line in receptor_pdb.read_text(errors="ignore").splitlines()
+        line for line in _safe_read_text(receptor_pdb).splitlines()
         if not line.startswith("END")
     ]
     ligand_lines = []
-    for line in ligand_pdb.read_text(errors="ignore").splitlines():
+    for line in _safe_read_text(ligand_pdb).splitlines():
         if line.startswith(("ATOM", "HETATM")):
             ligand_lines.append("HETATM" + line[6:])
-    complex_pdb.write_text("\n".join(receptor_lines + ligand_lines + ["END"]) + "\n")
+    _safe_write_text(complex_pdb, "\n".join(receptor_lines + ligand_lines + ["END"]) + "\n")
     return complex_pdb
 
 
@@ -112,12 +148,16 @@ def _parse_delta_f_vib(outdir: Path) -> float:
         r"(?:DELTA_F_VIB|delta_F_vib_star)\s*=?\s*([-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][-+]?\d+)?)",
         re.IGNORECASE,
     )
-    paths = sorted(outdir.glob("*.pdb"), key=lambda p: p.stat().st_mtime, reverse=True)
+    paths: list[Path] = []
+    try:
+        paths = sorted(outdir.glob("*.pdb"), key=_safe_mtime, reverse=True)
+    except (TimeoutError, OSError):
+        paths = []
     log_path = outdir / "tencom.log"
-    if log_path.exists():
+    if _safe_exists(log_path):
         paths.append(log_path)
     for path in paths:
-        for line in path.read_text(errors="ignore").splitlines():
+        for line in _safe_read_text(path).splitlines():
             match = pattern.search(line)
             if match:
                 try:
@@ -138,17 +178,25 @@ def _run_tencom_for_pose(
         if require_tencom:
             raise RuntimeError(f"tENCoM binary not found: {tencom}")
         return 0.0, "tencom_missing"
-    pose_sdf = Path(record.pose_sdf)
-    pose_dir = pose_sdf.parent / "tencom" / record.pose_id
+    pose_sdf = _materialize_local(Path(record.pose_sdf))
+    pose_dir = _local_scratch_root() / "tencom" / record.target_id / record.pose_id
     pose_dir.mkdir(parents=True, exist_ok=True)
     ligand_pdb = _pose_ligand_pdb(pose_sdf, pose_dir / "ligand_pose.pdb", cfg["tools"]["obabel"])
-    complex_pdb = _make_complex_pdb(Path(record.receptor_pdb), ligand_pdb, pose_dir / "complex.pdb")
+    receptor_pdb = _materialize_local(Path(record.receptor_pdb))
+    complex_pdb = _make_complex_pdb(receptor_pdb, ligand_pdb, pose_dir / "complex.pdb")
     log_path = pose_dir / "tencom.log"
-    if not log_path.exists():
+    if not _safe_exists(log_path):
+        timeout = int(
+            cfg.get("entropy", {}).get(
+                "tencom_timeout_seconds",
+                cfg.get("runtime", {}).get("command_timeout_seconds", 7200),
+            )
+            or 7200
+        )
         result = run_command(
             [
                 str(tencom),
-                "--ref", record.receptor_pdb,
+                "--ref", str(receptor_pdb),
                 str(complex_pdb),
                 "--temp", str(float(cfg["entropy"].get("temperature_K", 298.15))),
                 "--outdir", str(pose_dir),
@@ -156,6 +204,7 @@ def _run_tencom_for_pose(
             ],
             log_path=log_path,
             check=False,
+            timeout=timeout,
         )
         if result.returncode != 0:
             if require_tencom:
@@ -164,22 +213,49 @@ def _run_tencom_for_pose(
     return _parse_delta_f_vib(pose_dir), "ok"
 
 
-def _write_report(df: pd.DataFrame, out_dir: Path, poses_from: str, mode: str) -> None:
+def _cross_rescore_label(poses_from: str, scorer_tool: str | None) -> str:
+    if not scorer_tool or scorer_tool == poses_from:
+        return poses_from
+    return f"{poses_from}__scored_by_{scorer_tool}"
+
+
+def _write_report(
+    df: pd.DataFrame,
+    out_dir: Path,
+    poses_from: str,
+    mode: str,
+    *,
+    scorer_tool: str | None = None,
+) -> None:
     target_col = "analysis_target_id" if "analysis_target_id" in df.columns else "target_id"
+    label = _cross_rescore_label(poses_from, scorer_tool)
+    target_success = 0
+    target_success_rate = 0.0
+    if len(df):
+        best = df.sort_values([target_col, "rank_entropy"]).groupby(target_col).head(1)
+        target_success = int(best["success_pb"].sum())
+        target_success_rate = float(best["success_pb"].mean())
     summary = {
         "mode": mode,
         "poses_from": poses_from,
+        "scorer_tool": scorer_tool or poses_from,
+        "label": label,
         "n_poses": int(len(df)),
         "n_targets": int(df[target_col].nunique()) if len(df) else 0,
-        "success_pb": int(df["success_pb"].sum()) if len(df) else 0,
-        "success_pb_rate": float(df["success_pb"].mean()) if len(df) else 0.0,
+        "success_pb_poses": int(df["success_pb"].sum()) if len(df) else 0,
+        "success_pb_pose_rate": float(df["success_pb"].mean()) if len(df) else 0.0,
+        "success_pb_targets": target_success,
+        "success_pb_target_rate": target_success_rate,
     }
     lines = [
-        f"# Astex Entropy Rescore: {mode} / {poses_from}",
+        f"# Astex Entropy Rescore: {mode} / {label}",
         "",
+        f"- Pose source: {poses_from}",
+        f"- Scoring function: {summary['scorer_tool']}",
         f"- Poses: {summary['n_poses']}",
         f"- Targets: {summary['n_targets']}",
-        f"- PoseBusters successes: {summary['success_pb']} ({summary['success_pb_rate']:.3f})",
+        f"- Pose-level successes: {summary['success_pb_poses']} ({summary['success_pb_pose_rate']:.3f})",
+        f"- Target-level successes (best entropy rank): {summary['success_pb_targets']} ({summary['success_pb_target_rate']:.3f})",
         "",
         "A pose counts as successful only when RMSD <= 2.0 A and PoseBusters passes.",
         "Ranking uses G_bind = H_proxy + TdS_shannon - TdS_vib, matching the FlexAIDdS thermodynamic sign convention.",
@@ -231,17 +307,14 @@ def _write_report(df: pd.DataFrame, out_dir: Path, poses_from: str, mode: str) -
         (out_dir / "plot_error.txt").write_text(f"{type(exc).__name__}: {exc}\n")
 
 
-def rescore_poses(
+def _rescore_records(
+    records: list[PoseRecord],
     cfg: dict[str, Any],
     *,
     mode: str,
     poses_from: str,
-) -> Path:
-    pose_csv = Path(cfg["work_dir"]) / "poses" / f"{mode}_{poses_from}_poses.csv"
-    records = read_poses(pose_csv)
-    if not records:
-        raise RuntimeError(f"No poses found: {pose_csv}")
-
+    scorer_tool: str | None = None,
+) -> pd.DataFrame:
     temperature = float(cfg["entropy"].get("temperature_K", 298.15))
     bins = int(cfg["entropy"].get("shannon_bins", 20))
     rmsd_cutoff = float(cfg["entropy"].get("rmsd_cutoff_A", 2.0))
@@ -267,11 +340,13 @@ def rescore_poses(
         ensemble_f = _ensemble_free_energy(energies, temperature, cfg)
 
         for record, energy, probability in zip(target_records, energies, probabilities):
-            rmsd = rmsd_to_reference(
+            # success_pb uses whole-ligand RMSD only; fragment MCS is diagnostic.
+            rmsd_info = rmsd_diagnostics(
                 record.pose_sdf,
                 record.reference_sdf,
                 obabel=cfg["tools"].get("obabel"),
             )
+            rmsd = rmsd_info.get("rmsd_A")
             pb = run_posebusters(
                 record.pose_sdf,
                 record.reference_sdf,
@@ -284,11 +359,18 @@ def rescore_poses(
             surprisal = -math.log(max(probability, 1e-300))
             tds_shannon = K_B_KCAL * temperature * surprisal
             g_bind = energy + tds_shannon - tds_vib
-            success_pb = bool(rmsd is not None and rmsd <= rmsd_cutoff and pb["all_passed"])
+            success_pb = bool(
+                rmsd_info.get("whole_ligand")
+                and rmsd is not None
+                and rmsd <= rmsd_cutoff
+                and pb["all_passed"]
+            )
             rows.append(
                 {
                     **record.to_dict(),
                     "analysis_target_id": target_id,
+                    "poses_from": poses_from,
+                    "scorer_tool": scorer_tool or poses_from,
                     "H_vct_proxy": energy,
                     "ensemble_free_energy": ensemble_f,
                     "ensemble_shannon_nats": ensemble_shannon,
@@ -298,6 +380,10 @@ def rescore_poses(
                     "TdS_vib": tds_vib,
                     "G_bind": g_bind,
                     "rmsd_A": rmsd,
+                    "fragment_mcs_rmsd_A": rmsd_info.get("fragment_mcs_rmsd_A"),
+                    "whole_ligand_rmsd": bool(rmsd_info.get("whole_ligand")),
+                    "pose_heavy_atoms": rmsd_info.get("pose_heavy_atoms"),
+                    "ref_heavy_atoms": rmsd_info.get("ref_heavy_atoms"),
                     "posebusters_all_passed": bool(pb["all_passed"]),
                     "success_pb": success_pb,
                     "posebusters_failures": ";".join(pb.get("failures", [])),
@@ -310,9 +396,163 @@ def rescore_poses(
         rank_group = "analysis_target_id" if "analysis_target_id" in df.columns else "target_id"
         df["rank_entropy"] = df.groupby(rank_group)["G_bind"].rank(method="first", ascending=True).astype(int)
         df["rank_raw"] = df.groupby(rank_group)["H_vct_proxy"].rank(method="first", ascending=True).astype(int)
-    out_dir = Path(cfg["work_dir"]) / "rescored" / mode / poses_from
+    return df
+
+
+def rescore_poses(
+    cfg: dict[str, Any],
+    *,
+    mode: str,
+    poses_from: str,
+    scorer_tool: str | None = None,
+) -> Path:
+    pose_csv = Path(cfg["work_dir"]) / "poses" / f"{mode}_{poses_from}_poses.csv"
+    records = read_poses(pose_csv)
+    if not records:
+        raise RuntimeError(f"No poses found: {pose_csv}")
+
+    max_poses = int(cfg.get("entropy", {}).get("max_poses_per_target", 0) or 0)
+    records = limit_poses_per_target(records, max_poses)
+
+    scorer = scorer_tool or poses_from
+    if scorer != poses_from:
+        from .cross_score import cross_score_records
+
+        records = cross_score_records(
+            records,
+            cfg,
+            mode=mode,
+            poses_from=poses_from,
+            scorer_tool=scorer,
+        )
+
+    label = _cross_rescore_label(poses_from, scorer if scorer != poses_from else None)
+    out_dir = Path(cfg["work_dir"]) / "rescored" / mode / label
     out_dir.mkdir(parents=True, exist_ok=True)
     out_csv = out_dir / "rescored_poses.csv"
-    df.to_csv(out_csv, index=False, quoting=csv.QUOTE_MINIMAL)
-    _write_report(df, out_dir, poses_from, mode)
+    checkpoint_csv = out_dir / "rescored_poses.checkpoint.csv"
+
+    grouped: dict[str, list[PoseRecord]] = defaultdict(list)
+    for record in records:
+        grouped[_analysis_target_id(record.target_id)].append(record)
+
+    frames: list[pd.DataFrame] = []
+    completed_targets: set[str] = set()
+    prior = _safe_read_csv(checkpoint_csv)
+    if prior is not None and len(prior):
+        target_col = "analysis_target_id" if "analysis_target_id" in prior.columns else "target_id"
+        completed_targets = set(prior[target_col].astype(str).unique())
+        frames.append(prior)
+
+    for target_id in sorted(grouped):
+        if target_id in completed_targets:
+            continue
+        target_df = _rescore_records(
+            grouped[target_id],
+            cfg,
+            mode=mode,
+            poses_from=poses_from,
+            scorer_tool=scorer if scorer != poses_from else None,
+        )
+        frames.append(target_df)
+        partial = pd.concat(frames, ignore_index=True) if frames else target_df
+        _safe_write_csv(partial, checkpoint_csv)
+
+    df = pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
+    _safe_write_csv(df, out_csv)
+    if _safe_exists(checkpoint_csv):
+        _safe_unlink(checkpoint_csv)
+    _write_report(
+        df,
+        out_dir,
+        poses_from,
+        mode,
+        scorer_tool=scorer if scorer != poses_from else None,
+    )
     return out_csv
+
+
+def _write_cross_matrix_summary(
+    cfg: dict[str, Any],
+    *,
+    mode: str,
+    matrix: dict[str, dict[str, Any]],
+) -> Path:
+    out_dir = Path(cfg["work_dir"]) / "rescored" / mode
+    out_dir.mkdir(parents=True, exist_ok=True)
+    out_json = out_dir / "cross_score_matrix.json"
+    out_json.write_text(json.dumps(matrix, indent=2, sort_keys=True) + "\n")
+
+    lines = [
+        f"# Cross-Score Matrix: {mode}",
+        "",
+        "Rows are pose sources; columns are scoring functions. "
+        "Off-diagonal cells run cross-scoring before Shannon/tENCoM rescoring.",
+        "",
+        "| poses_from \\\\ scorer | " + " | ".join(matrix["scorers"]) + " |",
+        "|---|" + "|".join(["---:"] * len(matrix["scorers"])) + "|",
+    ]
+    for poses_from in matrix["poses_sources"]:
+        cells = []
+        for scorer in matrix["scorers"]:
+            entry = matrix["cells"].get(poses_from, {}).get(scorer, {})
+            if entry.get("status") == "ok":
+                cells.append(f"{entry.get('success_pb', 0)}/{entry.get('n_poses', 0)}")
+            else:
+                cells.append(entry.get("status", "missing"))
+        lines.append(f"| {poses_from} | " + " | ".join(cells) + " |")
+    lines.append("")
+    (out_dir / "cross_score_matrix.md").write_text("\n".join(lines))
+    return out_json
+
+
+def cross_rescore_matrix(
+    cfg: dict[str, Any],
+    *,
+    mode: str,
+    poses_sources: list[str],
+    scorers: list[str],
+    continue_on_error: bool = False,
+) -> dict[str, Any]:
+    matrix: dict[str, Any] = {
+        "mode": mode,
+        "poses_sources": poses_sources,
+        "scorers": scorers,
+        "cells": {},
+    }
+    for poses_from in poses_sources:
+        matrix["cells"][poses_from] = {}
+        pose_csv = Path(cfg["work_dir"]) / "poses" / f"{mode}_{poses_from}_poses.csv"
+        if not pose_csv.exists() or not read_poses(pose_csv):
+            for scorer in scorers:
+                matrix["cells"][poses_from][scorer] = {
+                    "status": "no_poses",
+                    "pose_csv": str(pose_csv),
+                }
+            continue
+        for scorer in scorers:
+            try:
+                out_csv = rescore_poses(
+                    cfg,
+                    mode=mode,
+                    poses_from=poses_from,
+                    scorer_tool=scorer,
+                )
+                df = pd.read_csv(out_csv)
+                matrix["cells"][poses_from][scorer] = {
+                    "status": "ok",
+                    "rescored_csv": str(out_csv),
+                    "n_poses": int(len(df)),
+                    "success_pb": int(df["success_pb"].sum()) if len(df) and "success_pb" in df.columns else 0,
+                    "success_pb_rate": float(df["success_pb"].mean()) if len(df) and "success_pb" in df.columns else 0.0,
+                }
+            except Exception as exc:
+                matrix["cells"][poses_from][scorer] = {
+                    "status": "error",
+                    "message": str(exc),
+                }
+                if not continue_on_error:
+                    _write_cross_matrix_summary(cfg, mode=mode, matrix=matrix)
+                    raise
+    _write_cross_matrix_summary(cfg, mode=mode, matrix=matrix)
+    return matrix

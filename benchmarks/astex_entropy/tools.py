@@ -4,6 +4,7 @@ import json
 import math
 import os
 import csv
+import re
 import shutil
 from pathlib import Path
 from typing import Any, Iterable
@@ -29,6 +30,10 @@ AA3_TO_1 = {
 NON_LIGAND_HETATM = {
     "HOH", "WAT", "DOD", "MG", "MN", "ZN", "CA", "FE", "FE2", "CU", "NA", "K",
     "CO", "NI", "CL", "BR", "I",
+}
+COFACTOR_RESNAMES = {
+    "HEM", "HEC", "HEA", "HEB", "FAD", "NAD", "NAH", "NAP", "NDP", "ADP", "ATP",
+    "GTP", "GDP", "FMN", "PLP", "SAH", "SAM", "COA", "ACP",
 }
 
 
@@ -168,6 +173,125 @@ def _write_boltz_input(target: TargetRecord, cfg: dict[str, Any], target_dir: Pa
     (boltz_dir / "input.yaml").write_text(yaml.safe_dump(data, sort_keys=False))
 
 
+# AutoDock types Open Babel emits that Vina 1.2.x rejects (map → valid AD4 type).
+_VINA_AD_TYPE_MAP = {
+    "NA": "N ",   # neutral amide N — Vina parse_pdbqt rejects "NA"
+    "OA": "OA",  # keep
+    "SA": "SA",  # keep
+    "HD": "HD",  # keep
+}
+
+
+def _normalize_vina_ad_type(ad_type: str) -> str:
+    token = ad_type.strip().upper()
+    if token in _VINA_AD_TYPE_MAP:
+        return _VINA_AD_TYPE_MAP[token]
+    if len(token) == 1:
+        return f"{token} "
+    if len(token) >= 2:
+        return token[:2].ljust(2)
+    return "C "
+
+
+def _sanitize_vina_ligand_pdbqt(path: Path) -> None:
+    """Fix Open Babel PDBQT quirks that crash Vina's parser (dummy *, empty/NA types)."""
+    if not path.exists():
+        return
+    lines = path.read_text(errors="ignore").splitlines()
+    cleaned: list[str] = []
+    changed = 0
+    for line in lines:
+        if line.startswith(("ATOM", "HETATM")) and "  *   " in line:
+            changed += 1
+            continue
+        if line.startswith(("ATOM", "HETATM")):
+            body = line.rstrip()
+            # Open Babel sometimes omits the space between charge and AD type (+0.000N).
+            spaced = re.sub(r"([+-]\d+\.\d+)([A-Za-z])", r"\1 \2", body)
+            if spaced != body:
+                body = spaced
+                changed += 1
+            match = re.search(r"([+-]\d+\.\d+)\s+(\S+)\s*$", body)
+            if match:
+                charge, raw_type = match.group(1), match.group(2)
+                ad_type = _normalize_vina_ad_type(raw_type)
+                suffix = f"    {charge} {ad_type}"
+                if not body.endswith(suffix.rstrip()) or raw_type != ad_type.rstrip():
+                    body = body[: match.start()] + suffix
+                    changed += 1
+            elif body.endswith("+0.000"):
+                body = body + " C "
+                changed += 1
+            line = body
+        cleaned.append(line)
+    if changed:
+        path.write_text("\n".join(cleaned) + "\n")
+
+
+def _sanitize_rdock_sdf(path: Path) -> None:
+    """Remove Open Babel torsion dummy atoms (element '*') that crash rbcavity."""
+    if not path.exists():
+        return
+    text = path.read_text(errors="ignore")
+    has_star = any(
+        len(line) >= 34 and line[0:10].strip() and line[31:34].strip() == "*"
+        for line in text.splitlines()
+    )
+    if not has_star:
+        return
+
+    blocks = text.split("$$$$\n")
+    out_blocks: list[str] = []
+    changed = False
+    for block in blocks:
+        if not block.strip():
+            continue
+        lines = block.splitlines()
+        if len(lines) < 4:
+            out_blocks.append(block)
+            continue
+        try:
+            natoms = int(lines[3][0:3])
+            nbonds = int(lines[3][3:6])
+        except ValueError:
+            out_blocks.append(block)
+            continue
+        atom_lines = lines[4:4 + natoms]
+        bond_lines = lines[4 + natoms:4 + natoms + nbonds]
+        rest = lines[4 + natoms + nbonds:]
+        kept_atoms: list[str] = []
+        removed_idxs: set[int] = set()
+        for i, line in enumerate(atom_lines):
+            elem = line[31:34].strip() if len(line) >= 34 else ""
+            if elem == "*":
+                removed_idxs.add(i + 1)  # SDF atom indices are 1-based
+                changed = True
+                continue
+            kept_atoms.append(line)
+        if not removed_idxs:
+            out_blocks.append(block)
+            continue
+        kept_bonds: list[str] = []
+        for line in bond_lines:
+            try:
+                a1 = int(line[0:3])
+                a2 = int(line[3:6])
+            except ValueError:
+                continue
+            if a1 in removed_idxs or a2 in removed_idxs:
+                changed = True
+                continue
+            shift = sum(1 for r in removed_idxs if r < a1)
+            shift2 = sum(1 for r in removed_idxs if r < a2)
+            new_a1 = a1 - shift
+            new_a2 = a2 - shift2
+            kept_bonds.append(f"{new_a1:3d}{new_a2:3d}{line[6:]}")
+        counts = f"{len(kept_atoms):3d}{len(kept_bonds):3d}{lines[3][6:]}"
+        out_blocks.append("\n".join(lines[:3] + [counts] + kept_atoms + kept_bonds + rest))
+    if changed:
+        path.write_text("$$$$\n".join(out_blocks) + ("$$$$\n" if text.rstrip().endswith("$$$$") else ""))
+
+
 def prepare_tool_inputs(target: TargetRecord, cfg: dict[str, Any], target_dir: Path, *, force: bool = False) -> None:
     obabel = cfg["tools"]["obabel"]
     vina_dir = target_dir / "vina"
@@ -179,10 +303,13 @@ def prepare_tool_inputs(target: TargetRecord, cfg: dict[str, Any], target_dir: P
 
     receptor_pdbqt = vina_dir / "receptor.pdbqt"
     ligand_pdbqt = vina_dir / "ligand.pdbqt"
-    if force or not receptor_pdbqt.exists():
+    _invalidate_zero_byte(receptor_pdbqt)
+    _invalidate_zero_byte(ligand_pdbqt)
+    if force or not _is_nonzero_file(receptor_pdbqt):
         run_command([obabel, "-ipdb", target.receptor_pdb, "-opdbqt", "-O", str(receptor_pdbqt), "-xr", "-xc"], log_path=vina_dir / "obabel_receptor.log")
-    if force or not ligand_pdbqt.exists():
+    if force or not _is_nonzero_file(ligand_pdbqt):
         run_command([obabel, "-isdf", target.ligand_sdf, "-opdbqt", "-O", str(ligand_pdbqt), "-h"], log_path=vina_dir / "obabel_ligand.log")
+    _sanitize_vina_ligand_pdbqt(ligand_pdbqt)
     _write_vina_config(target, cfg, target_dir)
 
     receptor_mol2 = rdock_dir / "receptor.mol2"
@@ -194,6 +321,8 @@ def prepare_tool_inputs(target: TargetRecord, cfg: dict[str, Any], target_dir: P
         run_command([obabel, "-isdf", target.ligand_sdf, "-osdf", "-O", str(rdock_ligand_sdf)], log_path=rdock_dir / "obabel_ligand.log")
     if force or not rdock_reference_sdf.exists():
         run_command([obabel, "-isdf", target.reference_sdf, "-osdf", "-O", str(rdock_reference_sdf)], log_path=rdock_dir / "obabel_reference.log")
+    _sanitize_rdock_sdf(rdock_ligand_sdf)
+    _sanitize_rdock_sdf(rdock_reference_sdf)
     _write_rdock_prm(target, target_dir, rdock_reference_sdf)
     _write_boltz_input(target, cfg, target_dir)
 
@@ -610,12 +739,13 @@ def run_vina(target: TargetRecord, cfg: dict[str, Any], target_dir: Path, *, dry
         timeout=_command_timeout(cfg),
     )
     poses_sdf = vina_dir / "vina_poses.sdf"
+    _invalidate_zero_byte(poses_sdf)
     run_command(
         [cfg["tools"]["obabel"], "-ipdbqt", str(out_pdbqt), "-osdf", "-O", str(poses_sdf)],
         log_path=vina_dir / "obabel_poses.log",
         timeout=_command_timeout(cfg),
     )
-    if not poses_sdf.exists():
+    if not _is_nonzero_file(poses_sdf):
         return []
     scores = _parse_vina_scores(log_path)
     records = _split_sdf(poses_sdf, target_dir / "poses" / "vina", f"{target.target_id}_vina", scores, "vina", target, poses_sdf)
@@ -861,6 +991,7 @@ def run_boltz(target: TargetRecord, cfg: dict[str, Any], target_dir: Path, *, dr
 def _flexaidds_pair_json(records: list[TargetRecord], cfg: dict[str, Any], mode: str) -> Path:
     flex_cfg = cfg["tools"]["flexaidds"]
     include_oracle = bool(flex_cfg.get("include_oracle_site", False))
+    cognate_site = bool(flex_cfg.get("cognate_site", False))
     cavity_cfg = flex_cfg.get("cavity", {}) if isinstance(flex_cfg.get("cavity", {}), dict) else {}
     pairs: list[dict[str, Any]] = []
     for idx, record in enumerate(records):
@@ -875,8 +1006,11 @@ def _flexaidds_pair_json(records: list[TargetRecord], cfg: dict[str, Any], mode:
         if record.cleft_sphere_pdb:
             pair["cleft_sphere_file"] = record.cleft_sphere_pdb
             pair["source_target_id"] = record.target_id.split("__clf", 1)[0]
-        if include_oracle and record.pocket_pdb:
-            pair["oracle_site_pdb"] = record.pocket_pdb
+        site_pdb = record.pocket_pdb
+        if cognate_site and site_pdb and Path(site_pdb).exists():
+            pair["oracle_site_pdb"] = site_pdb
+        elif include_oracle and site_pdb:
+            pair["oracle_site_pdb"] = site_pdb
         pairs.append(pair)
 
     payload = {
@@ -884,6 +1018,7 @@ def _flexaidds_pair_json(records: list[TargetRecord], cfg: dict[str, Any], mode:
         "name": f"astex_entropy_{mode}_flexaidds",
         "description": "Generated by benchmarks.astex_entropy for FlexAIDdS head-to-head benchmarking.",
         "oracle_mode": include_oracle,
+        "cognate_mode": cognate_site,
         "cavity_protocol": cavity_cfg.get("protocol", flex_cfg.get("cavity_protocol", "")),
         "cavity_detector": _cavity_detector_kind(flex_cfg, cavity_cfg),
         "pairs": pairs,
@@ -913,28 +1048,315 @@ def _parse_flexaidds_pose_score(pdb_path: Path, result_row: dict[str, str]) -> s
     return result_row.get("best_score", "")
 
 
-def _extract_flexaidds_ligand_pdb(complex_pdb: Path, ligand_pdb: Path) -> bool:
-    ligand_lines: list[str] = []
-    ligand_serials: set[str] = set()
-    conect_lines: list[str] = []
-    for line in complex_pdb.read_text(errors="ignore").splitlines():
-        rec = line[:6].strip()
-        if rec == "HETATM":
-            resname = line[17:20].strip().upper() if len(line) >= 20 else ""
-            if resname in NON_LIGAND_HETATM:
+# FlexAIDdS write_pdb uses variable-width atom names ("%s"), which shifts the
+# fixed PDB columns for resname/chain/resseq once names exceed 3 characters
+# (e.g. "C 10"). Never use fixed-column residue grouping for these records.
+# See wwPDB format v3.3 §9 and FLEXAIDDS_ASTEX_DEEP_FAILURE_ROOT_CAUSES_20260708.
+_HETATM_SERIAL_RE = re.compile(r"^HETATM\s*(\d+)\s+(.*)$")
+_HETATM_XYZ_RE = re.compile(
+    r"(-?\d+\.\d+)\s+(-?\d+\.\d+)\s+(-?\d+\.\d+)\s+1\.00\s+0\.00"
+)
+_CONECT_SERIAL_RE = re.compile(r"\d+")
+
+
+def _reference_heavy_atom_count(reference_sdf: str | Path | None, obabel: str | None) -> int | None:
+    if not reference_sdf:
+        return None
+    try:
+        mol = _read_mol(reference_sdf, obabel)
+        return Chem.RemoveHs(mol).GetNumAtoms()
+    except Exception:
+        return None
+
+
+def _reference_heavy_formula(
+    reference_sdf: str | Path | None,
+    obabel: str | None,
+) -> tuple[tuple[str, int], ...] | None:
+    if not reference_sdf:
+        return None
+    try:
+        mol = Chem.RemoveHs(_read_mol(reference_sdf, obabel))
+        counts: dict[str, int] = {}
+        for atom in mol.GetAtoms():
+            if atom.GetAtomicNum() <= 1:
                 continue
-            ligand_lines.append(line)
-            ligand_serials.add(line[6:11].strip())
-        elif rec == "CONECT":
-            conect_lines.append(line)
-    if not ligand_lines:
+            symbol = atom.GetSymbol()
+            counts[symbol] = counts.get(symbol, 0) + 1
+        return tuple(sorted(counts.items()))
+    except Exception:
+        return None
+
+
+def _parse_flexaidds_hetatm_line(line: str) -> dict[str, Any] | None:
+    """Token/regex parse HETATM without relying on fixed PDB columns."""
+    raw = line.rstrip("\n")
+    if not raw.startswith("HETATM"):
+        return None
+    match = _HETATM_SERIAL_RE.match(raw)
+    if not match:
+        return None
+    serial = int(match.group(1))
+    rest = match.group(2)
+    xyz = _HETATM_XYZ_RE.search(rest)
+    if not xyz:
+        # Fall back to three consecutive floats if occupancy fields differ.
+        floats = re.findall(r"-?\d+\.\d+", rest)
+        if len(floats) < 3:
+            return None
+        x, y, z = (float(floats[0]), float(floats[1]), float(floats[2]))
+        prefix = rest[: rest.find(floats[0])].strip() if floats[0] in rest else rest
+    else:
+        x, y, z = float(xyz.group(1)), float(xyz.group(2)), float(xyz.group(3))
+        prefix = rest[: xyz.start()].strip()
+
+    element = ""
+    if len(raw) >= 78:
+        element = raw[76:78].strip()
+    tokens = prefix.split()
+    resname = ""
+    chain = ""
+    resnum = ""
+    atom_name = ""
+
+    def _is_resname_token(tok: str) -> bool:
+        # PDB residue names are 1-3 chars and may include digits (e.g. RQ3, PA0).
+        if not (1 <= len(tok) <= 3):
+            return False
+        if tok.isdigit():
+            return False
+        return any(ch.isalpha() for ch in tok)
+
+    if tokens:
+        # Last integer-like token is typically resnum; resname is 1-3 alnum before it.
+        if tokens[-1].lstrip("-").isdigit():
+            resnum = tokens[-1]
+            body = tokens[:-1]
+        else:
+            body = tokens
+        if body and len(body[-1]) == 1 and body[-1].isalpha() and len(body) >= 2:
+            chain = body[-1]
+            body = body[:-1]
+        if body:
+            for idx in range(len(body) - 1, -1, -1):
+                tok = body[idx]
+                if _is_resname_token(tok):
+                    resname = tok.upper()
+                    atom_name = " ".join(body[:idx]).strip() or tok
+                    break
+            if not resname:
+                atom_name = " ".join(body)
+                resname = body[-1][:3].upper() if body else ""
+    if not element:
+        # Infer element from atom name head (N, C, Cl, Br, S, O, P, F, I, ...).
+        name_head = (atom_name or "").strip()
+        if name_head.upper().startswith("CL"):
+            element = "Cl"
+        elif name_head.upper().startswith("BR"):
+            element = "Br"
+        elif name_head:
+            element = name_head[0].upper()
+    if not atom_name:
+        atom_name = element or "X"
+    return {
+        "serial": serial,
+        "atom_name": atom_name,
+        "resname": resname.upper(),
+        "chain": chain,
+        "resnum": resnum,
+        "x": x,
+        "y": y,
+        "z": z,
+        "element": element,
+        "raw": raw,
+    }
+
+
+def _format_fixed_hetatm(atom: dict[str, Any]) -> str:
+    """Rewrite a FlexAIDdS HETATM as a fixed-column PDB record (wwPDB §9)."""
+    serial = int(atom["serial"]) % 100000
+    element = (atom.get("element") or "C")[:2]
+    name = (atom.get("atom_name") or element).strip()
+    # PDB atom name occupies columns 13-16; altLoc is column 17; resName 18-20.
+    if len(name) >= 4:
+        atom_name_field = name[:4]
+    elif len(element) == 2:
+        atom_name_field = f"{name:<4}"[:4]
+    else:
+        atom_name_field = f" {name:<3}"[:4]
+    resname = f"{(atom.get('resname') or 'LIG')[:3]:<3}"
+    chain = (atom.get("chain") or " ")[:1] or " "
+    try:
+        resnum = int(str(atom.get("resnum") or "1"))
+    except ValueError:
+        resnum = 1
+    # HETATM + serial(5) + ' ' + name(4) + altLoc(' ') + resName(3) + chain + resSeq(4)
+    return (
+        f"HETATM{serial:5d} {atom_name_field} {resname}{chain}{resnum:4d}    "
+        f"{atom['x']:8.3f}{atom['y']:8.3f}{atom['z']:8.3f}  1.00  0.00          {element:>2}  "
+    )
+
+
+def _parse_conect_serials(line: str) -> list[int]:
+    body = line[6:] if line.upper().startswith("CONECT") else line
+    return [int(tok) for tok in _CONECT_SERIAL_RE.findall(body)]
+
+
+def _format_conect(serials: list[int]) -> str:
+    return "CONECT" + "".join(f"{int(s) % 100000:5d}" for s in serials)
+
+
+def _is_nonzero_file(path: Path) -> bool:
+    try:
+        return path.is_file() and path.stat().st_size > 0
+    except OSError:
         return False
+
+
+def _invalidate_zero_byte(path: Path) -> None:
+    try:
+        if path.is_file() and path.stat().st_size == 0:
+            path.unlink()
+    except OSError:
+        pass
+
+
+def _extract_flexaidds_ligand_atoms(
+    complex_pdb: Path,
+    *,
+    reference_sdf: str | Path | None = None,
+    obabel: str | None = None,
+) -> tuple[list[dict[str, Any]], list[list[int]]]:
+    atoms: list[dict[str, Any]] = []
+    conect: list[list[int]] = []
+    for line in complex_pdb.read_text(errors="ignore").splitlines():
+        rec = line[:6].strip().upper()
+        if rec == "HETATM":
+            parsed = _parse_flexaidds_hetatm_line(line)
+            if parsed is None:
+                continue
+            resname = parsed["resname"]
+            if resname in NON_LIGAND_HETATM or resname in COFACTOR_RESNAMES:
+                continue
+            atoms.append(parsed)
+        elif rec == "CONECT":
+            serials = _parse_conect_serials(line)
+            if serials:
+                conect.append(serials)
+    if not atoms:
+        return [], []
+
+    ref_heavy = _reference_heavy_atom_count(reference_sdf, obabel)
+    # Prefer FlexAIDdS-generated ligand serial block (>= 90000).
+    high_serial = [a for a in atoms if int(a["serial"]) >= 90000]
+    if high_serial:
+        selected = high_serial
+    else:
+        grouped: dict[tuple[str, str, str], list[dict[str, Any]]] = {}
+        for atom in atoms:
+            key = (atom["resname"], atom["resnum"], atom["chain"])
+            grouped.setdefault(key, []).append(atom)
+
+        def _score(item: tuple[tuple[str, str, str], list[dict[str, Any]]]) -> tuple[int, int]:
+            _key, group = item
+            count = len(group)
+            if ref_heavy is None:
+                return (-count, 0)
+            return (abs(count - ref_heavy), -count)
+
+        selected = min(grouped.items(), key=_score)[1]
+
+    if ref_heavy is not None and len(selected) != ref_heavy:
+        # Still return atoms; caller can reject after formula checks.
+        pass
+
+    selected_serials = {int(a["serial"]) for a in selected}
     kept_conect = [
-        line for line in conect_lines
-        if any(line[i:i + 5].strip() in ligand_serials for i in range(6, len(line), 5))
+        serials
+        for serials in conect
+        if serials and all(s in selected_serials for s in serials)
     ]
-    ligand_pdb.write_text("\n".join(ligand_lines + kept_conect + ["END"]) + "\n")
+    return selected, kept_conect
+
+
+def _extract_flexaidds_ligand_pdb(
+    complex_pdb: Path,
+    ligand_pdb: Path,
+    *,
+    reference_sdf: str | Path | None = None,
+    obabel: str | None = None,
+) -> bool:
+    selected, kept_conect = _extract_flexaidds_ligand_atoms(
+        complex_pdb,
+        reference_sdf=reference_sdf,
+        obabel=obabel,
+    )
+    if not selected:
+        return False
+    lines = [_format_fixed_hetatm(atom) for atom in selected]
+    for serials in kept_conect:
+        lines.append(_format_conect(serials))
+    lines.append("END")
+    ligand_pdb.write_text("\n".join(lines) + "\n")
     return True
+
+
+def _write_pose_sdf_from_reference_topology(
+    atoms: list[dict[str, Any]],
+    reference_sdf: str | Path,
+    pose_sdf: Path,
+    *,
+    obabel: str | None = None,
+) -> bool:
+    """
+    Preferred pose SDF path: copy reference ligand bond topology and replace
+    coordinates from FlexAIDdS output. Rejects heavy-atom count/formula mismatch.
+    """
+    try:
+        ref = _read_mol(reference_sdf, obabel)
+    except Exception:
+        return False
+    try:
+        ref_heavy = Chem.RemoveHs(Chem.Mol(ref))
+    except Exception:
+        ref_heavy = Chem.RemoveHs(ref)
+
+    coords = [(float(a["x"]), float(a["y"]), float(a["z"])) for a in atoms]
+    elements = [(a.get("element") or "C") for a in atoms]
+    target_mol: Chem.Mol | None = None
+    if len(coords) == ref_heavy.GetNumAtoms():
+        target_mol = Chem.Mol(ref_heavy)
+    elif len(coords) == ref.GetNumAtoms():
+        target_mol = Chem.Mol(ref)
+    else:
+        return False
+
+    # Element/formula guard (heavy atoms only).
+    ref_elems = [
+        atom.GetSymbol().upper()
+        for atom in target_mol.GetAtoms()
+        if atom.GetAtomicNum() > 1
+    ]
+    if len(coords) == len(ref_elems):
+        pose_elems = [str(e).upper() for e in elements]
+    else:
+        pose_elems = [str(e).upper() for e in elements if str(e).upper() not in {"H", "D"}]
+    if sorted(pose_elems) != sorted(ref_elems):
+        return False
+
+    from rdkit.Geometry import Point3D
+
+    conf = Chem.Conformer(target_mol.GetNumAtoms())
+    for idx, (x, y, z) in enumerate(coords[: target_mol.GetNumAtoms()]):
+        conf.SetAtomPosition(idx, Point3D(x, y, z))
+    if target_mol.GetNumConformers():
+        target_mol.RemoveAllConformers()
+    target_mol.AddConformer(conf, assignId=True)
+    pose_sdf.parent.mkdir(parents=True, exist_ok=True)
+    writer = Chem.SDWriter(str(pose_sdf))
+    writer.write(target_mol)
+    writer.close()
+    return _is_nonzero_file(pose_sdf)
 
 
 def _numeric_pose_key(path: Path) -> tuple[int, str]:
@@ -967,14 +1389,56 @@ def _collect_flexaidds_records(
             pose_dir.mkdir(parents=True, exist_ok=True)
             ligand_pdb = pose_dir / f"{pose_id}.ligand.pdb"
             pose_sdf = pose_dir / f"{pose_id}.sdf"
-            if not _extract_flexaidds_ligand_pdb(pdb_path, ligand_pdb):
-                continue
-            run_command(
-                [cfg["tools"]["obabel"], "-ipdb", str(ligand_pdb), "-osdf", "-O", str(pose_sdf)],
-                log_path=pose_sdf.with_suffix(".obabel.log"),
-                check=False,
+            _invalidate_zero_byte(pose_sdf)
+            _invalidate_zero_byte(ligand_pdb)
+
+            atoms, _conect = _extract_flexaidds_ligand_atoms(
+                pdb_path,
+                reference_sdf=target.reference_sdf,
+                obabel=cfg["tools"].get("obabel"),
             )
-            if not pose_sdf.exists():
+            if not atoms:
+                continue
+            if not _extract_flexaidds_ligand_pdb(
+                pdb_path,
+                ligand_pdb,
+                reference_sdf=target.reference_sdf,
+                obabel=cfg["tools"].get("obabel"),
+            ):
+                continue
+
+            ref_heavy = _reference_heavy_atom_count(target.reference_sdf, cfg["tools"].get("obabel"))
+            if ref_heavy is not None and len(atoms) != ref_heavy:
+                # Reject incomplete ligands before RMSD/PoseBusters.
+                continue
+
+            needs_sdf = (
+                not _is_nonzero_file(pose_sdf)
+                or not _is_nonzero_file(ligand_pdb)
+                or ligand_pdb.stat().st_mtime > pose_sdf.stat().st_mtime
+                or pdb_path.stat().st_mtime > pose_sdf.stat().st_mtime
+            )
+            if needs_sdf:
+                wrote = _write_pose_sdf_from_reference_topology(
+                    atoms,
+                    target.reference_sdf,
+                    pose_sdf,
+                    obabel=cfg["tools"].get("obabel"),
+                )
+                if not wrote:
+                    run_command(
+                        [cfg["tools"]["obabel"], "-ipdb", str(ligand_pdb), "-osdf", "-O", str(pose_sdf), "-h"],
+                        log_path=pose_sdf.with_suffix(".obabel.log"),
+                        check=False,
+                    )
+            if not _is_nonzero_file(pose_sdf):
+                continue
+            # Final heavy-atom guard on the pose SDF itself.
+            try:
+                pose_mol = Chem.RemoveHs(_read_mol(pose_sdf, cfg["tools"].get("obabel")))
+                if ref_heavy is not None and pose_mol.GetNumAtoms() != ref_heavy:
+                    continue
+            except Exception:
                 continue
             records.append(
                 PoseRecord(
@@ -1033,6 +1497,8 @@ def run_flexaidds_batch(
         "FLEXAIDDS_RESTARTS": str(int(flex_cfg.get("restarts", 1))),
         "FLEXAIDDS_PARALLEL_RESTARTS": str(int(flex_cfg.get("parallel_restarts", 0))),
     }
+    if bool(flex_cfg.get("cognate_site", False)):
+        env["FLEXAIDDS_COGNATE_SITE"] = "1"
     grid_cache_dir = flex_cfg.get("grid_cache_dir")
     if grid_cache_dir:
         grid_path = Path(str(grid_cache_dir)).expanduser().resolve()
@@ -1061,6 +1527,10 @@ RUNNERS = {
 }
 
 
+def _target_tool_done(collected: dict[str, list[PoseRecord]], tool: str, target_id: str) -> bool:
+    return any(record.target_id == target_id for record in collected.get(tool, []))
+
+
 def run_pose_generators(
     cfg: dict[str, Any],
     mode: str,
@@ -1068,8 +1538,10 @@ def run_pose_generators(
     *,
     dry_run: bool = False,
     skip_missing_tools: bool = False,
+    continue_on_error: bool = False,
+    resume: bool = True,
 ) -> dict[str, int]:
-    from .io_utils import read_targets
+    from .io_utils import read_poses, read_targets
 
     manifest = Path(cfg["work_dir"]) / "manifests" / f"{mode}_manifest.csv"
     targets = read_targets(manifest)
@@ -1085,12 +1557,20 @@ def run_pose_generators(
     counts: dict[str, int] = {tool: 0 for tool in tools}
     collected: dict[str, list[PoseRecord]] = {tool: [] for tool in tools}
     poses_dir = Path(cfg["work_dir"]) / "poses"
-    if not dry_run:
+    run_errors: list[str] = []
+
+    if not dry_run and resume:
+        for tool in tools:
+            existing = read_poses(poses_dir / f"{mode}_{tool}_poses.csv")
+            if existing:
+                collected[tool] = existing
+                counts[tool] = len(existing)
+    elif not dry_run:
         for tool in tools:
             write_poses([], poses_dir / f"{mode}_{tool}_poses.csv")
         write_poses([], poses_dir / f"{mode}_all_poses.csv")
 
-    if "flexaidds" in tools:
+    if "flexaidds" in tools and not (resume and counts.get("flexaidds", 0) > 0):
         records = run_flexaidds_batch(targets, cfg, mode, dry_run=dry_run, skip_missing=skip_missing_tools)
         collected["flexaidds"].extend(records)
         counts["flexaidds"] = len(records)
@@ -1104,18 +1584,28 @@ def run_pose_generators(
             for tool in tools:
                 if tool == "flexaidds":
                     continue
-                records = RUNNERS[tool](target, cfg, target_dir, dry_run=dry_run, skip_missing=skip_missing_tools)
+                if resume and _target_tool_done(collected, tool, target.target_id):
+                    continue
+                try:
+                    records = RUNNERS[tool](target, cfg, target_dir, dry_run=dry_run, skip_missing=skip_missing_tools)
+                except Exception as exc:
+                    msg = f"{target.target_id}/{tool}: {exc}"
+                    run_errors.append(msg)
+                    if not continue_on_error:
+                        raise RuntimeError(msg) from exc
+                    continue
                 if records:
                     collected[tool].extend(records)
-                    counts[tool] += len(records)
+                    counts[tool] = len(collected[tool])
                     if not dry_run:
                         pose_csv = poses_dir / f"{mode}_{tool}_poses.csv"
-                        all_csv = poses_dir / f"{mode}_all_poses.csv"
                         write_poses(collected[tool], pose_csv)
                         all_records = [record for tool_records in collected.values() for record in tool_records]
-                        write_poses(all_records, all_csv)
+                        write_poses(all_records, poses_dir / f"{mode}_all_poses.csv")
 
     if not dry_run:
         all_records = [record for tool_records in collected.values() for record in tool_records]
         write_poses(all_records, poses_dir / f"{mode}_all_poses.csv")
+    if run_errors and not continue_on_error:
+        raise RuntimeError(run_errors[0])
     return counts

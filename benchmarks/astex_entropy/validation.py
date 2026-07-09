@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import csv
+import hashlib
 import json
+import math
+import os
 from pathlib import Path
 import shutil
 import shlex
@@ -9,9 +12,18 @@ from typing import Any
 
 from rdkit import Chem
 from rdkit import RDLogger
-from rdkit.Chem import rdMolAlign
+from rdkit.Chem import AllChem, rdFMCS, rdMolAlign
 
-from .io_utils import run_command
+from .io_utils import (
+    _local_scratch_root,
+    _materialize_local,
+    _safe_exists,
+    _safe_read_text,
+    _safe_stat_size,
+    _safe_unlink,
+    _safe_write_text,
+    run_command,
+)
 from .sdf_utils import normalise_v2000_counts_file, read_first_sdf_mol
 
 RDLogger.DisableLog("rdApp.error")
@@ -28,6 +40,43 @@ def _remove_hs_for_rmsd(mol: Chem.Mol) -> Chem.Mol:
         return Chem.RemoveHs(mol)
     except Exception:
         return mol
+
+
+def _heavy_formula(mol: Chem.Mol) -> tuple[tuple[str, int], ...]:
+    counts: dict[str, int] = {}
+    for atom in mol.GetAtoms():
+        if atom.GetAtomicNum() <= 1:
+            continue
+        symbol = atom.GetSymbol()
+        counts[symbol] = counts.get(symbol, 0) + 1
+    return tuple(sorted(counts.items()))
+
+
+def _whole_ligand_compatible(pose: Chem.Mol, ref: Chem.Mol) -> bool:
+    """Require complete whole-ligand topology for success-bearing RMSD."""
+    if pose.GetNumAtoms() != ref.GetNumAtoms():
+        return False
+    if pose.GetNumAtoms() == 0:
+        return False
+    return _heavy_formula(pose) == _heavy_formula(ref)
+
+
+def _mcs_rmsd(pose: Chem.Mol, ref: Chem.Mol) -> float | None:
+    """Diagnostic-only MCS/fragment RMSD. Never use for success_pb."""
+    if pose.GetNumConformers() == 0 or ref.GetNumConformers() == 0:
+        return None
+    mcs = rdFMCS.FindMCS([pose, ref], timeout=30)
+    if mcs.numAtoms <= 0:
+        return None
+    pattern = Chem.MolFromSmarts(mcs.smartsString)
+    if pattern is None:
+        return None
+    pose_match = pose.GetSubstructMatch(pattern)
+    ref_match = ref.GetSubstructMatch(pattern)
+    if not pose_match or not ref_match or len(pose_match) != len(ref_match):
+        return None
+    atom_map = list(zip(pose_match, ref_match, strict=True))
+    return float(AllChem.AlignMol(pose, ref, atomMap=atom_map))
 
 
 def _ordered_heavy_rmsd(pose: Chem.Mol, ref: Chem.Mol) -> float | None:
@@ -49,20 +98,123 @@ def _ordered_heavy_rmsd(pose: Chem.Mol, ref: Chem.Mol) -> float | None:
     return (total / len(pose_atoms)) ** 0.5 if pose_atoms else None
 
 
+def _posebusters_scratch(pose_path: Path) -> Path:
+    scratch = _local_scratch_root() / "posebusters" / pose_path.stem
+    scratch.mkdir(parents=True, exist_ok=True)
+    return scratch
+
+
+def _file_fingerprint(path: Path) -> dict[str, Any]:
+    try:
+        st = path.stat()
+        return {
+            "path": str(path),
+            "mtime_ns": int(getattr(st, "st_mtime_ns", int(st.st_mtime * 1e9))),
+            "size": int(st.st_size),
+        }
+    except OSError:
+        return {"path": str(path), "mtime_ns": -1, "size": -1}
+
+
+def _executable_fingerprint(executable: str) -> dict[str, Any]:
+    path = Path(executable)
+    if path.is_file():
+        return _file_fingerprint(path)
+    resolved = shutil.which(executable)
+    if resolved:
+        return _file_fingerprint(Path(resolved))
+    return {"path": executable, "mtime_ns": -1, "size": -1}
+
+
 def _normalise_sdf_for_posebusters(path: str | Path, suffix: str, obabel: str | None = None) -> Path:
-    source = Path(path)
-    out_path = source.with_suffix(suffix)
+    source = _materialize_local(Path(path))
+    out_path = _posebusters_scratch(source) / f"{source.stem}{suffix}"
     executable = obabel or shutil.which("obabel")
     if not executable:
         return source
-    run_command(
-        [executable, "-isdf", str(source), "-osdf", "-O", str(out_path)],
-        log_path=out_path.with_suffix(".obabel.log"),
-        check=False,
-    )
-    if out_path.exists():
-        normalise_v2000_counts_file(out_path)
-    return out_path if out_path.exists() else source
+
+    source_fp = _file_fingerprint(source)
+    meta_path = out_path.with_suffix(out_path.suffix + ".meta.json")
+    reuse = False
+    if _safe_exists(out_path) and _safe_stat_size(out_path) > 0 and _safe_exists(meta_path):
+        try:
+            meta = json.loads(_safe_read_text(meta_path))
+            reuse = meta.get("source") == source_fp and meta.get("obabel") == executable
+        except (json.JSONDecodeError, OSError, TypeError):
+            reuse = False
+    if not reuse:
+        if _safe_exists(out_path):
+            _safe_unlink(out_path)
+        run_command(
+            [executable, "-isdf", str(source), "-osdf", "-O", str(out_path)],
+            log_path=out_path.with_suffix(".obabel.log"),
+            check=False,
+        )
+        if _safe_exists(out_path):
+            normalise_v2000_counts_file(out_path)
+            _safe_write_text(
+                meta_path,
+                json.dumps({"source": source_fp, "obabel": executable}, indent=2) + "\n",
+            )
+    return out_path if _safe_exists(out_path) and _safe_stat_size(out_path) > 0 else source
+
+
+def rmsd_diagnostics(
+    pose_sdf: str | Path,
+    reference_sdf: str | Path,
+    *,
+    obabel: str | None = None,
+) -> dict[str, Any]:
+    """
+    Compute whole-ligand RMSD (success-bearing) and diagnostic fragment MCS RMSD.
+
+    success_pb must use only `rmsd_A` when `whole_ligand` is True. Fragment MCS
+    values are diagnostics only — truncated ligands can produce false sub-2 A
+    fragment scores (Astex Diverse success definition requires complete ligand).
+    """
+    result: dict[str, Any] = {
+        "rmsd_A": None,
+        "fragment_mcs_rmsd_A": None,
+        "whole_ligand": False,
+        "pose_heavy_atoms": None,
+        "ref_heavy_atoms": None,
+        "formula_match": False,
+    }
+    try:
+        pose = _remove_hs_for_rmsd(_read_first_sdf(_materialize_local(Path(pose_sdf)), obabel))
+        ref = _remove_hs_for_rmsd(_read_first_sdf(_materialize_local(Path(reference_sdf)), obabel))
+    except Exception:
+        return result
+
+    result["pose_heavy_atoms"] = int(pose.GetNumAtoms())
+    result["ref_heavy_atoms"] = int(ref.GetNumAtoms())
+    result["formula_match"] = _heavy_formula(pose) == _heavy_formula(ref)
+    result["whole_ligand"] = _whole_ligand_compatible(pose, ref)
+
+    # Diagnostic MCS always attempted (does not feed success_pb).
+    try:
+        mcs_value = _mcs_rmsd(pose, ref)
+        if mcs_value is not None and math.isfinite(float(mcs_value)):
+            result["fragment_mcs_rmsd_A"] = float(mcs_value)
+    except Exception:
+        pass
+
+    if not result["whole_ligand"]:
+        return result
+
+    for calculator in (
+        lambda: float(rdMolAlign.GetBestRMS(pose, ref)),
+        lambda: float(rdMolAlign.CalcRMS(pose, ref)),
+        lambda: _ordered_heavy_rmsd(pose, ref),
+    ):
+        try:
+            value = calculator()
+        except Exception:
+            value = None
+        if value is not None and math.isfinite(float(value)):
+            result["rmsd_A"] = float(value)
+            return result
+    return result
 
 
 def rmsd_to_reference(
@@ -71,20 +223,71 @@ def rmsd_to_reference(
     *,
     obabel: str | None = None,
 ) -> float | None:
+    """Whole-ligand RMSD only. Returns None for incomplete/truncated poses."""
+    return rmsd_diagnostics(pose_sdf, reference_sdf, obabel=obabel).get("rmsd_A")
+
+
+def _posebusters_cache_meta_path(scratch: Path) -> Path:
+    return scratch / "posebusters.cache.json"
+
+
+def _build_posebusters_cache_meta(
+    *,
+    pose_sdf: Path,
+    reference_sdf: Path,
+    receptor_pdb: Path,
+    pose_input: Path,
+    reference_input: Path,
+    executable: str,
+    command_template: str,
+    args: list[str],
+    config_name: str,
+) -> dict[str, Any]:
+    return {
+        "version": 1,
+        "pose_sdf": _file_fingerprint(pose_sdf),
+        "reference_sdf": _file_fingerprint(reference_sdf),
+        "receptor_pdb": _file_fingerprint(receptor_pdb),
+        "pose_input": _file_fingerprint(pose_input),
+        "reference_input": _file_fingerprint(reference_input),
+        "posebusters_executable": _executable_fingerprint(executable),
+        "command_template": command_template,
+        "command_args": args,
+        "posebusters_config": config_name,
+    }
+
+
+def _posebusters_cache_is_valid(
+    meta_path: Path,
+    expected: dict[str, Any],
+    out_csv: Path,
+    out_json: Path,
+) -> bool:
+    if not _safe_exists(meta_path):
+        return False
+    if not (
+        (_safe_exists(out_csv) and _safe_stat_size(out_csv) > 0)
+        or (_safe_exists(out_json) and _safe_stat_size(out_json) > 0)
+    ):
+        return False
     try:
-        pose = _remove_hs_for_rmsd(_read_first_sdf(pose_sdf, obabel))
-        ref = _remove_hs_for_rmsd(_read_first_sdf(reference_sdf, obabel))
-        if pose.GetNumAtoms() != ref.GetNumAtoms():
-            return None
-        try:
-            return float(rdMolAlign.GetBestRMS(pose, ref))
-        except Exception:
-            try:
-                return float(rdMolAlign.CalcRMS(pose, ref))
-            except Exception:
-                return _ordered_heavy_rmsd(pose, ref)
-    except Exception:
-        return None
+        meta = json.loads(_safe_read_text(meta_path))
+    except (json.JSONDecodeError, OSError, TypeError):
+        return False
+    for key in (
+        "pose_sdf",
+        "reference_sdf",
+        "receptor_pdb",
+        "pose_input",
+        "reference_input",
+        "posebusters_executable",
+        "command_template",
+        "command_args",
+        "posebusters_config",
+    ):
+        if meta.get(key) != expected.get(key):
+            return False
+    return True
 
 
 def run_posebusters(
@@ -110,50 +313,96 @@ def run_posebusters(
             "has_posebusters": False,
         }
 
-    pose_path = Path(pose_sdf)
+    pose_path = _materialize_local(Path(pose_sdf))
+    reference_path = _materialize_local(Path(reference_sdf))
+    receptor_path = _materialize_local(Path(receptor_pdb))
     obabel = str(tools_cfg.get("obabel", "")) or None
-    pose_input = _normalise_sdf_for_posebusters(pose_sdf, ".posebusters_pose.sdf", obabel)
-    reference_input = _normalise_sdf_for_posebusters(reference_sdf, ".posebusters_reference.sdf", obabel)
-    out_csv = pose_path.with_suffix(".posebusters.csv")
-    out_json = pose_path.with_suffix(".posebusters.json")
-    log_path = pose_path.with_suffix(".posebusters.log")
+    pose_input = _normalise_sdf_for_posebusters(pose_path, ".posebusters_pose.sdf", obabel)
+    reference_input = _normalise_sdf_for_posebusters(reference_path, ".posebusters_reference.sdf", obabel)
+    scratch = _posebusters_scratch(pose_path)
+    out_csv = scratch / "posebusters.csv"
+    out_json = scratch / "posebusters.json"
+    log_path = scratch / "posebusters.log"
+    meta_path = _posebusters_cache_meta_path(scratch)
+    config_name = str(entropy_cfg.get("posebusters_config", "redock"))
+
+    for stale in (out_csv, out_json):
+        if _safe_exists(stale) and _safe_stat_size(stale) == 0:
+            _safe_unlink(stale)
+
     context = {
         "posebusters": executable,
         "pose_sdf": str(pose_input),
         "reference_sdf": str(reference_input),
-        "receptor_pdb": str(receptor_pdb),
-        "posebusters_config": str(entropy_cfg.get("posebusters_config", "redock")),
+        "receptor_pdb": str(receptor_path),
+        "posebusters_config": config_name,
         "out_csv": str(out_csv),
         "out_json": str(out_json),
     }
     args = [part.format_map(context) for part in shlex.split(command_template)]
+    expected_meta = _build_posebusters_cache_meta(
+        pose_sdf=pose_path,
+        reference_sdf=reference_path,
+        receptor_pdb=receptor_path,
+        pose_input=pose_input,
+        reference_input=reference_input,
+        executable=executable,
+        command_template=command_template,
+        args=args,
+        config_name=config_name,
+    )
+
+    if _posebusters_cache_is_valid(meta_path, expected_meta, out_csv, out_json):
+        cached = out_csv if _safe_stat_size(out_csv) > 0 else out_json
+        parsed = _read_posebusters_output(cached)
+        if "posebusters_output_unreadable" not in parsed["failures"]:
+            all_passed = parsed["all_passed"]
+            failures = parsed["failures"]
+            success = bool(rmsd is not None and rmsd <= 2.0 and all_passed)
+            return {
+                "success_pb": success,
+                "all_passed": all_passed,
+                "failures": failures,
+                "has_posebusters": True,
+                "cache_hit": True,
+            }
+
+    # Invalidate stale caches when inputs/command changed.
+    for path in (out_csv, out_json, meta_path):
+        if _safe_exists(path):
+            _safe_unlink(path)
+
+    timeout = int(entropy_cfg.get("posebusters_timeout_seconds", 300))
     try:
-        result = run_command(args, log_path=log_path, check=False)
+        result = run_command(args, log_path=log_path, check=False, timeout=timeout)
     except Exception as exc:
-        if require_posebusters:
-            raise RuntimeError(f"PoseBusters command failed to launch for {pose_sdf}: {exc}") from exc
+        _safe_write_text(log_path, f"PoseBusters command error for {pose_sdf}: {exc}\n")
         return {
             "success_pb": False,
             "all_passed": False,
-            "failures": ["posebusters_launch_failed"],
-            "has_posebusters": False,
+            "failures": ["posebusters_command_error"],
+            "has_posebusters": True,
+            "cache_hit": False,
         }
     if result.returncode != 0:
-        if require_posebusters:
-            raise RuntimeError(f"PoseBusters failed for {pose_sdf}; see {log_path}")
         return {
             "success_pb": False,
             "all_passed": False,
             "failures": ["posebusters_failed"],
-            "has_posebusters": False,
+            "has_posebusters": True,
+            "cache_hit": False,
         }
 
-    if out_csv.exists():
+    if _safe_exists(out_csv) and _safe_stat_size(out_csv) > 0:
         parsed = _read_posebusters_output(out_csv)
-    elif out_json.exists():
+    elif _safe_exists(out_json) and _safe_stat_size(out_json) > 0:
         parsed = _read_posebusters_output(out_json)
     else:
         parsed = _read_posebusters_output(log_path)
+
+    if _safe_stat_size(out_csv) > 0 or _safe_stat_size(out_json) > 0:
+        _safe_write_text(meta_path, json.dumps(expected_meta, indent=2) + "\n")
+
     all_passed = parsed["all_passed"]
     failures = parsed["failures"]
     success = bool(rmsd is not None and rmsd <= 2.0 and all_passed)
@@ -162,15 +411,16 @@ def run_posebusters(
         "all_passed": all_passed,
         "failures": failures,
         "has_posebusters": True,
+        "cache_hit": False,
     }
 
 
 def _read_posebusters_output(path: Path) -> dict[str, Any]:
-    if not path.exists():
+    if not _safe_exists(path):
         return {"all_passed": False, "failures": ["posebusters_output_missing"]}
-    text = path.read_text(errors="ignore").strip()
+    text = _safe_read_text(path).strip()
     if not text:
-        return {"all_passed": False, "failures": ["posebusters_output_empty"]}
+        return {"all_passed": False, "failures": ["posebusters_output_empty", "posebusters_output_unreadable"]}
     if path.suffix.lower() == ".csv" or text.splitlines()[0].count(",") >= 1:
         return _parse_posebusters_csv(text)
     try:

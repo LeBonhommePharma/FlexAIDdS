@@ -74,11 +74,32 @@ def run(
         typer.echo(f"{tool}: {count} poses")
 
 
+VALID_TOOLS = {"flexaidds", "vina", "rdock", "boltz"}
+
+
+def _split_csv(value: str) -> list[str]:
+    return [item.strip() for item in value.split(",") if item.strip()]
+
+
+def _validate_tool_list(value: str, *, allow_all: bool = False) -> list[str]:
+    if value == "all":
+        return sorted(VALID_TOOLS)
+    tools = _split_csv(value)
+    bad = sorted(set(tools) - VALID_TOOLS)
+    if bad:
+        raise typer.BadParameter(f"unknown tool(s): {', '.join(bad)}")
+    return tools
+
+
 @app.command("rescore")
 def rescore(
     poses_from: Annotated[str, typer.Option("--poses_from", help="Pose source: flexaidds, vina, rdock, or boltz.")],
     mode: ModeOpt = "native",
     config: ConfigOpt = None,
+    scorer: Annotated[
+        str | None,
+        typer.Option("--scorer", help="Optional cross-scorer (defaults to poses_from native score)."),
+    ] = None,
 ) -> None:
     try:
         from .entropy import rescore_poses
@@ -87,12 +108,55 @@ def rescore(
         cfg = load_config(config)
         preflight_required_validators(cfg)
         mode = _check_mode(mode)
-        if poses_from not in {"flexaidds", "vina", "rdock", "boltz"}:
+        if poses_from not in VALID_TOOLS:
             raise typer.BadParameter("poses_from must be one of: flexaidds, vina, rdock, boltz")
-        out_csv = rescore_poses(cfg, mode=mode, poses_from=poses_from)
+        if scorer and scorer not in VALID_TOOLS:
+            raise typer.BadParameter("scorer must be one of: flexaidds, vina, rdock, boltz")
+        out_csv = rescore_poses(cfg, mode=mode, poses_from=poses_from, scorer_tool=scorer)
     except (FileNotFoundError, RuntimeError, ValueError) as exc:
         _abort(exc)
     typer.echo(f"Rescored poses: {out_csv}")
+
+
+@app.command("cross-rescore")
+def cross_rescore(
+    mode: ModeOpt = "native",
+    config: ConfigOpt = None,
+    poses_from: Annotated[
+        str,
+        typer.Option("--poses-from", help="Pose source tool, comma list, or all."),
+    ] = "all",
+    scorers: Annotated[
+        str,
+        typer.Option("--scorers", help="Scoring tools to apply, comma list, or all."),
+    ] = "all",
+    continue_on_error: Annotated[
+        bool,
+        typer.Option("--continue-on-error", help="Keep running later matrix cells after a failure."),
+    ] = False,
+) -> None:
+    try:
+        from .entropy import cross_rescore_matrix
+        from .orchestrate import preflight_required_validators
+
+        cfg = load_config(config)
+        preflight_required_validators(cfg)
+        mode = _check_mode(mode)
+        matrix = cross_rescore_matrix(
+            cfg,
+            mode=mode,
+            poses_sources=_validate_tool_list(poses_from, allow_all=True),
+            scorers=_validate_tool_list(scorers, allow_all=True),
+            continue_on_error=continue_on_error,
+        )
+    except (FileNotFoundError, RuntimeError, ValueError) as exc:
+        _abort(exc)
+    summary = Path(cfg["work_dir"]) / "rescored" / mode / "cross_score_matrix.json"
+    typer.echo(f"Cross-score matrix: {summary}")
+    for poses_source in matrix["poses_sources"]:
+        for scorer in matrix["scorers"]:
+            entry = matrix["cells"].get(poses_source, {}).get(scorer, {})
+            typer.echo(f"{poses_source} x {scorer}: {entry.get('status', 'missing')}")
 
 
 @app.command("orchestrate")
