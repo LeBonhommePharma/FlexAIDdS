@@ -1113,6 +1113,10 @@ def _parse_flexaidds_hetatm_line(line: str) -> dict[str, Any] | None:
     element = ""
     if len(raw) >= 78:
         element = raw[76:78].strip()
+    # Trailing element token is more reliable than fixed columns on short lines.
+    trailing = raw.split()[-1] if raw.split() else ""
+    if len(trailing) in (1, 2) and trailing.isalpha():
+        element = trailing
     tokens = prefix.split()
     resname = ""
     chain = ""
@@ -1126,6 +1130,21 @@ def _parse_flexaidds_hetatm_line(line: str) -> dict[str, Any] | None:
         if tok.isdigit():
             return False
         return any(ch.isalpha() for ch in tok)
+
+    def _canonical_element(symbol: str) -> str:
+        sym = (symbol or "").strip()
+        if not sym:
+            return ""
+        upper = sym.upper()
+        if upper == "CL":
+            return "Cl"
+        if upper == "BR":
+            return "Br"
+        if len(sym) == 1:
+            return sym.upper()
+        if len(sym) == 2:
+            return sym[0].upper() + sym[1].lower()
+        return sym[0].upper()
 
     if tokens:
         # Last integer-like token is typically resnum; resname is 1-3 alnum before it.
@@ -1156,6 +1175,7 @@ def _parse_flexaidds_hetatm_line(line: str) -> dict[str, Any] | None:
             element = "Br"
         elif name_head:
             element = name_head[0].upper()
+    element = _canonical_element(element)
     if not atom_name:
         atom_name = element or "X"
     return {
@@ -1331,16 +1351,29 @@ def _write_pose_sdf_from_reference_topology(
     else:
         return False
 
+    def _elem_key(symbol: str) -> str:
+        sym = (symbol or "").strip()
+        if not sym:
+            return ""
+        upper = sym.upper()
+        if upper in {"CL", "BR"}:
+            return upper
+        if len(sym) == 1:
+            return upper
+        if len(sym) == 2:
+            return sym[0].upper() + sym[1].lower()
+        return upper
+
     # Element/formula guard (heavy atoms only).
     ref_elems = [
-        atom.GetSymbol().upper()
+        _elem_key(atom.GetSymbol())
         for atom in target_mol.GetAtoms()
         if atom.GetAtomicNum() > 1
     ]
     if len(coords) == len(ref_elems):
-        pose_elems = [str(e).upper() for e in elements]
+        pose_elems = [_elem_key(e) for e in elements]
     else:
-        pose_elems = [str(e).upper() for e in elements if str(e).upper() not in {"H", "D"}]
+        pose_elems = [_elem_key(e) for e in elements if _elem_key(e) not in {"H", "D"}]
     if sorted(pose_elems) != sorted(ref_elems):
         return False
 
