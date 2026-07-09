@@ -607,6 +607,13 @@ modes). No user threshold — the spectrum itself decides.
   `score_torsional()` returns `{energy, minus_TS, n_bonds}` per pose.
 - `python/flexaidds/dift.py` — bit-identical pure-Python (NumPy) mirror; the
   always-available path even without `_core`.
+- `python/flexaidds/docking.py` — **consumer**: `BindingMode.set_torsional_\
+potentials()` / `set_torsional_profiles()` attach per-bond DiFT potentials, and
+  the torsional `energy + (−TΔS)` folds additively into the mode's
+  `free_energy`, `enthalpy`, and `entropy` (and `get_thermodynamics()`). Opt-in
+  and zero-cost when no potentials are attached — a mode is otherwise a pure
+  configurational ensemble. This is where the entropy-driven engine finally
+  spends the ΔS payoff instead of a heuristic rotatable-bond count.
 - `python/bindings/dift_bindings.h` — pybind11 bindings, registered into both
   `_core.cpp` (setup.py) and `core_bindings.cpp` (CMake).
 - `tests/test_dift.cpp` — 23 GoogleTest cases (round-trip, Shannon collapse,
@@ -615,7 +622,9 @@ modes). No user threshold — the spectrum itself decides.
 - `python/tests/test_dift.py` — 23 pytest cases mirroring the C++ suite + a
   C++/Python parity check that runs whenever `_core.DiFTEngine` is available.
 
-**Status**: ✅ Complete (engine, bindings, tests, CMake/CI wiring, docs).
+**Status**: ✅ Complete (engine, bindings, tests, CMake/CI wiring, docs) and
+now consumed by the docking thermodynamics layer via `BindingMode` (opt-in
+torsional ΔG/ΔS folding, `python/tests/test_docking.py::TestBindingModeTorsional`).
 
 ### PTM Attachment (`LIB/PTMAttachment/`)
 
