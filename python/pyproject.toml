@@ -11,20 +11,30 @@ authors = [
 ]
 readme = "README.md"
 requires-python = ">=3.9"
-license = { text = "Apache-2.0" }
+license = "Apache-2.0"
 classifiers = [
   "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.9",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
   "Programming Language :: C++",
-  "License :: OSI Approved :: Apache Software License",
+  "Operating System :: OS Independent",
   "Topic :: Scientific/Engineering :: Bio-Informatics",
   "Topic :: Scientific/Engineering :: Chemistry",
 ]
-dependencies = []
+# numpy is imported by core modules (io, docking, thermodynamics helpers, etc.)
+dependencies = [
+  "numpy>=1.22",
+]
 
 [project.optional-dependencies]
 dev = ["pytest", "pytest-cov"]
-benchmarks = ["numpy>=2.0.2", "pyyaml>=6.0.3"]
-benchmarks-mpi = ["numpy>=2.0.2", "pyyaml>=6.0.3", "mpi4py>=4.1.1"]
+# DatasetRunner YAML configs + extra analysis stack
+benchmarks = ["pyyaml>=6.0.3"]
+benchmarks-mpi = ["pyyaml>=6.0.3", "mpi4py>=4.1.1"]
+yaml = ["pyyaml>=6.0.3"]
 
 [project.scripts]
 flexaidds = "flexaidds.__main__:main"
@@ -34,6 +44,8 @@ flexaidds-benchmark = "flexaidds.dataset_runner.cli:main"
 Homepage = "https://github.com/LeBonhommePharma/FlexAIDdS"
 Documentation = "https://github.com/LeBonhommePharma/FlexAIDdS/tree/master/docs"
 Source = "https://github.com/LeBonhommePharma/FlexAIDdS"
+Issues = "https://github.com/LeBonhommePharma/FlexAIDdS/issues"
+Changelog = "https://github.com/LeBonhommePharma/FlexAIDdS/blob/master/VERSION.md"
 
 [tool.setuptools]
 zip-safe = false
@@ -50,3 +62,25 @@ namespaces = false
 
 [tool.setuptools.dynamic]
 version = { attr = "flexaidds.__version__.__version__" }
+
+# cibuildwheel: produce installable wheels even when the optional C++ extension
+# cannot be compiled (pure-Python fallback). setup.py never fails the install.
+[tool.cibuildwheel]
+build-frontend = "build"
+# Skip exotic / EOL targets that inflate CI without real users.
+skip = "pp* *-win32 *-manylinux_i686 *-musllinux_i686"
+test-command = "python -c \"import flexaidds as fd; print(fd.__version__)\""
+test-skip = ""
+
+[tool.cibuildwheel.linux]
+# Prefer modern manylinux images; extension may still fall back pure-Python
+# when the image compiler lacks C++26.
+manylinux-x86_64-image = "manylinux_2_28"
+manylinux-aarch64-image = "manylinux_2_28"
+
+[tool.cibuildwheel.macos]
+environment = { MACOSX_DEPLOYMENT_TARGET = "12.0" }
+
+[tool.cibuildwheel.windows]
+# MSVC via cibuildwheel; extension optional.
+

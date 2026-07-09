@@ -38,6 +38,13 @@ jobs:
         working-directory: python
         run: python -m build --sdist --outdir ../dist
 
+      - name: Verify sdist installs (pure-Python fallback OK)
+        run: |
+          python -m pip install dist/*.tar.gz
+          python -c "import flexaidds as fd; print('flexaidds', fd.__version__, 'HAS_CORE=', getattr(fd, 'HAS_CORE_BINDINGS', False))"
+          python -m flexaidds --help
+          python -m flexaidds --check-update || true
+
       - name: Upload sdist artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
@@ -66,32 +73,37 @@ jobs:
       - name: Install cibuildwheel
         run: python -m pip install --upgrade pip cibuildwheel
 
-      # Provide Eigen headers for the extension build inside the isolated environments.
-      # We download a known-good version (header-only) and point setup.py at it via env var.
-      - name: Configure Eigen + cibuildwheel environment (Linux)
-        if: runner.os == 'Linux'
+      # Provide Eigen headers before the isolated wheel builds. setup.py reads
+      # EIGEN_INCLUDE_DIR; if missing it falls back to pure-Python wheels.
+      - name: Install Eigen headers
+        shell: bash
         run: |
-          echo "CIBW_BEFORE_ALL_LINUX=curl -sL https://gitlab.com/libeigen/eigen/-/archive/3.4.0/eigen-3.4.0.tar.gz | tar xz -C /tmp" >> $GITHUB_ENV
-          echo "CIBW_ENVIRONMENT_LINUX=EIGEN_INCLUDE_DIR=/tmp/eigen-3.4.0" >> $GITHUB_ENV
-
-      - name: Configure Eigen + cibuildwheel environment (macOS)
-        if: runner.os == 'macOS'
-        run: |
-          echo "CIBW_BEFORE_ALL_MACOS=curl -sL https://gitlab.com/libeigen/eigen/-/archive/3.4.0/eigen-3.4.0.tar.gz | tar xz -C /tmp" >> $GITHUB_ENV
-          echo "CIBW_ENVIRONMENT_MACOS=EIGEN_INCLUDE_DIR=/tmp/eigen-3.4.0" >> $GITHUB_ENV
-
-      - name: Configure Eigen + cibuildwheel environment (Windows)
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          $before = @'
-powershell -Command "Invoke-WebRequest -Uri https://gitlab.com/libeigen/eigen/-/archive/3.4.0/eigen-3.4.0.tar.gz -OutFile $env:TEMP\eigen.tar.gz; tar -xzf $env:TEMP\eigen.tar.gz -C $env:TEMP"
-'@
-          "CIBW_BEFORE_ALL_WINDOWS=$before" | Out-File -FilePath $env:GITHUB_ENV -Append
-          "CIBW_ENVIRONMENT_WINDOWS=EIGEN_INCLUDE_DIR=$env:TEMP\eigen-3.4.0" | Out-File -FilePath $env:GITHUB_ENV -Append
+          set -euo pipefail
+          EIGEN_ROOT="${RUNNER_TEMP}/eigen-3.4.0"
+          curl -sL "https://gitlab.com/libeigen/eigen/-/archive/3.4.0/eigen-3.4.0.tar.gz" \
+            | tar xz -C "${RUNNER_TEMP}"
+          test -f "${EIGEN_ROOT}/Eigen/Dense"
+          {
+            echo "EIGEN_INCLUDE_DIR=${EIGEN_ROOT}"
+            echo "CIBW_ENVIRONMENT=EIGEN_INCLUDE_DIR=${EIGEN_ROOT}"
+          } >> "$GITHUB_ENV"
 
       - name: Build wheels with cibuildwheel
         run: python -m cibuildwheel --output-dir wheelhouse python
+
+      - name: Smoke-test built wheels
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          shopt -s nullglob
+          wheels=(wheelhouse/*.whl)
+          if [ ${#wheels[@]} -eq 0 ]; then
+            echo "No wheels produced" >&2
+            exit 1
+          fi
+          python -m pip install "${wheels[0]}"
+          python -c "import flexaidds as fd; print('flexaidds', fd.__version__, 'HAS_CORE=', getattr(fd, 'HAS_CORE_BINDINGS', False))"
 
       - name: Upload wheels artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
@@ -111,7 +123,7 @@ powershell -Command "Invoke-WebRequest -Uri https://gitlab.com/libeigen/eigen/-/
       url: https://pypi.org/project/flexaidds
     steps:
       - name: Download all artifacts
-        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4
+        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
         with:
           path: dist
           merge-multiple: true
@@ -129,7 +141,7 @@ powershell -Command "Invoke-WebRequest -Uri https://gitlab.com/libeigen/eigen/-/
       url: https://test.pypi.org/project/flexaidds
     steps:
       - name: Download all artifacts
-        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4
+        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
         with:
           path: dist
           merge-multiple: true

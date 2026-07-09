@@ -10,6 +10,8 @@ build/
 .eggs/
 *.so
 *.dylib
+# Staged by sdist only inside the release tree — never commit a local copy
+python/LIB/
 
 # C++ build artifacts
 build/

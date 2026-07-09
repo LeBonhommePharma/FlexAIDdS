@@ -1,22 +1,26 @@
 class Flexaidds < Formula
   desc "Entropy-driven molecular docking engine (FlexAID + ΔS thermodynamic analysis)"
   homepage "https://github.com/LeBonhommePharma/FlexAIDdS"
+  url "https://github.com/LeBonhommePharma/FlexAIDdS/archive/refs/tags/v2.0.0.tar.gz"
+  sha256 "31488777f361bb02cb29df7a5e65e62cea15434e451bb574a14b10e702ae21e3"
   license "Apache-2.0"
   head "https://github.com/LeBonhommePharma/FlexAIDdS.git", branch: "master"
-  # Stable releases will be added here with proper tarball + sha256 when cutting releases.
-  # For now the formula is optimized for `brew install --HEAD ...` and direct formula URLs.
+
+  livecheck do
+    url :stable
+    strategy :github_latest
+  end
 
   depends_on "cmake" => :build
   depends_on "ninja" => :build
   depends_on "eigen"
   depends_on "libomp" if OS.mac?
-  depends_on "python@3.11" => :recommended # for the flexaidds Python package (recommended install separately via pip too)
 
   def install
     # Build the main tools. Focus on the fast optimized FlexAIDdS binary,
     # the tENCoM tool, and legacy FlexAID for compatibility.
     args = std_cmake_args + %W[
-      -G Ninja
+      -GNinja
       -DCMAKE_BUILD_TYPE=Release
       -DBUILD_TESTING=OFF
       -DBUILD_PYTHON_BINDINGS=OFF
@@ -29,7 +33,7 @@ class Flexaidds < Formula
 
     if OS.mac?
       # Help CMake find Homebrew's libomp (keg-only)
-      libomp = Formula["libomp"].opt_prefix
+      libomp = formula_opt_prefix("libomp")
       args += %W[
         -DOpenMP_C_FLAGS=-Xpreprocessor\ -fopenmp\ -I#{libomp}/include
         -DOpenMP_C_LIB_NAMES=omp
@@ -45,11 +49,11 @@ class Flexaidds < Formula
     # The build system stages runtime data files (MC_*.dat, AMINO.def, etc.)
     # next to the built binaries via POST_BUILD rules. Install them together
     # so relative-path lookup in the executables succeeds out of the box.
-    bin.install "build/FlexAIDdS"
-    bin.install "build/tENCoM"
+    bin.install "build/FlexAIDdS" if File.exist?("build/FlexAIDdS")
+    bin.install "build/tENCoM" if File.exist?("build/tENCoM")
     bin.install "build/FlexAID" if File.exist?("build/FlexAID")
 
-    # Install co-located data files (staged by the build)
+    # Install co-located data files (staged by the build).
     # These are looked up relative to the executable directory.
     bin.install Dir["build/MC_*.dat"]
     bin.install "build/AMINO.def" if File.exist?("build/AMINO.def")
@@ -60,7 +64,7 @@ class Flexaidds < Formula
     bin.install "build/flexaids_process_ligand" if File.exist?("build/flexaids_process_ligand")
     bin.install "build/tencom_entropy_diff" if File.exist?("build/tencom_entropy_diff")
 
-    # Note: The Python package "flexaidds" is best installed via pip:
+    # NOTE: The Python package "flexaidds" is best installed via pip:
     #   pip install flexaidds
     # This formula focuses on the high-performance native CLI tools.
   end
@@ -75,8 +79,12 @@ class Flexaidds < Formula
       For the Python package (analysis, results loader, thermodynamics):
         pip install flexaidds
 
-      To use the full Python + native integration, install the Python package
-      after this formula.
+      To upgrade the Python package later:
+        pip install --upgrade flexaidds
+        # or: python -m flexaidds --self-update
+
+      To rebuild the latest development tip of this formula:
+        brew reinstall --HEAD flexaidds
 
       Example usage:
         FlexAIDdS receptor.pdb ligand.mol2
@@ -85,10 +93,8 @@ class Flexaidds < Formula
   end
 
   test do
-    # Basic smoke test - the binaries should exist and report something
-    assert_predicate bin/"FlexAIDdS", :exist?
-    # Most of these tools accept -h or --help; fall back to existence + basic run
-    system "#{bin}/FlexAIDdS", "--help" if (bin/"FlexAIDdS").exist?
-    assert_predicate bin/"tENCoM", :exist?
+    assert_path_exists bin/"FlexAIDdS"
+    system bin/"FlexAIDdS", "--help"
+    assert_path_exists bin/"tENCoM"
   end
 end
