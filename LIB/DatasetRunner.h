@@ -151,6 +151,12 @@ struct DockingResult {
     // P4: oracle best-of-N over emitted cluster poses (best achievable by selection)
     float best_cluster_rmsd{-1.0f};   // min Hungarian RMSD across all emitted poses (Å); -1 = not computed/failed
     int   best_cluster_idx{-1};       // pose index (0-19) achieving best_cluster_rmsd
+    // Election-gap diagnostic: CF (REMARK CF=) of the near-native pose that achieved
+    // best_cluster_rmsd. Paired with best_score (the CF of the selected rank-0 pose)
+    // it quantifies why a sub-2 Å pose was not elected: cf_best_cluster - best_score
+    // is the CF penalty the selector paid for choosing the false minimum. NaN when
+    // no best-cluster pose was found or its CF could not be parsed.
+    float cf_best_cluster{std::numeric_limits<float>::quiet_NaN()};
     // Fix 2 (revised): seed-echo flag. true when the elected pose path ends in
     // "_INI.pdb" — i.e. the crystal-seeded chromosome protected by seed_elitism
     // was returned as rank-0 rather than a genuine GA-cluster pose.  Path-based

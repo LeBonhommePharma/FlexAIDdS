@@ -6694,6 +6694,20 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                 // Declared here so BCR-gate below can reference it (inner block scope
                 // would make it invisible to the BCR-gate at this outer level).
                 std::string best_cluster_pfx;   // prefix that achieved best_cluster_rmsd
+                // Parse "REMARK CF=" from a pose PDB (election-gap diagnostic).
+                auto parse_pose_cf = [](const std::string& cand) -> float {
+                    std::ifstream pf(cand);
+                    if (!pf) return std::numeric_limits<float>::quiet_NaN();
+                    std::string pl;
+                    while (std::getline(pf, pl)) {
+                        auto p = pl.find("REMARK CF=");
+                        if (p != std::string::npos) {
+                            try { return std::stof(pl.substr(p + 10)); }
+                            catch (...) { return std::numeric_limits<float>::quiet_NaN(); }
+                        }
+                    }
+                    return std::numeric_limits<float>::quiet_NaN();
+                };
                 {
                     auto r0 = compute_pose_ligand_rmsd(
                         best_pose_pdb, crystal_xyz, crystal_elem, entry.pdb_id, true);
@@ -6725,6 +6739,7 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                                 result.best_cluster_rmsd = rp.second;
                                 result.best_cluster_idx = pi;
                                 best_cluster_pfx = pfx;
+                                result.cf_best_cluster = parse_pose_cf(cand);
                             }
 
                             // ── Fix B: cluster member recovery for near-miss clusters ──
@@ -6768,6 +6783,7 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                                         result.best_cluster_rmsd = mr.second;
                                         result.best_cluster_idx  = pi;
                                         best_cluster_pfx = pfx;
+                                        result.cf_best_cluster = parse_pose_cf(mcand);
                                     }
                                     // Emit the member pose under a self-describing name
                                     // alongside the representative for inspection.
@@ -6953,7 +6969,8 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                            "wall_time_s,success,cf_native,best_cluster_rmsd,best_cluster_idx,"
                            "seed_echo,pose_source,H_rep_rank0,H_pop,H_rep_mean,D_vib,"
                            "G_bind,H_vct,H_vct_raw,n_heavy,TdS_shannon,TdS_vib,D_vib_thermo,"
-                           "compensation_ratio,TdS_shannon_gen500,TdS_shannon_gen1000\n";
+                           "compensation_ratio,TdS_shannon_gen500,TdS_shannon_gen1000,"
+                           "cf_best_cluster\n";
                     ofs << std::fixed << std::setprecision(4)
                         << result.pdb_id << ","
                         << result.best_score << ","
@@ -6985,7 +7002,8 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                         << result.thermo_D_vib << ","
                         << result.thermo_compensation << ","
                         << (std::isnan(result.thermo_TdS_shannon_gen500)  ? "NA" : std::to_string(result.thermo_TdS_shannon_gen500))  << ","
-                        << (std::isnan(result.thermo_TdS_shannon_gen1000) ? "NA" : std::to_string(result.thermo_TdS_shannon_gen1000)) << "\n";
+                        << (std::isnan(result.thermo_TdS_shannon_gen1000) ? "NA" : std::to_string(result.thermo_TdS_shannon_gen1000)) << ","
+                        << (std::isnan(result.cf_best_cluster) ? "NA" : std::to_string(result.cf_best_cluster)) << "\n";
                 }
             } catch (...) {
                 // Per-complex CSV is best-effort; failures are non-fatal.
