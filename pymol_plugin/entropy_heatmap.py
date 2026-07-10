@@ -25,12 +25,12 @@ try:
 except ImportError as exc:
     raise ImportError("PyMOL not available") from exc
 
+# flexaidds is only required for type/runtime mode objects; pure helpers
+# (_read_pose_coords, entropy color, grid math) work without it.
 try:
-    from flexaidds import BindingModeResult, DockingResult, load_results
-except ImportError as exc:
-    raise ImportError(
-        "flexaidds Python package is required for entropy heatmap"
-    ) from exc
+    from flexaidds import BindingModeResult  # noqa: F401
+except ImportError:
+    BindingModeResult = object  # type: ignore[misc, assignment]
 
 
 def _read_pose_coords(
@@ -394,6 +394,11 @@ def render_entropy_heatmap(
 
     if not grid_points:
         print(f"WARNING: No entropy density computed for mode {mode_id}.")
+        print("  Recovery tips:")
+        print("    • Need ≥2 poses with readable ATOM/HETATM coordinates")
+        print("    • Try larger sigma / coarser grid_spacing (e.g. sigma=3, grid=3)")
+        print("    • Confirm PDBs are not empty or ligand-only without coords")
+        print("    • Check that mode_id matches a loaded mode (flexaids_status)")
         return
 
     obj_name = f"entropy_map_mode{mode_id}"

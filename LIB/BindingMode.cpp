@@ -581,6 +581,30 @@ void BindingMode::output_BindingMode(int num_result, char* end_strfile, char* tm
 			safe_remark_cat(remark, tmpremark, &remark_len);
 		}
 	}
+	// Canonical thermodynamic ledger for plugin / load_results (audited fields only)
+	{
+		const statmech::Thermodynamics td = this->get_thermodynamics();
+		double T = 300.0;
+		if (this->Population && this->Population->FA && this->Population->FA->temperature > 0) {
+			T = static_cast<double>(this->Population->FA->temperature);
+		} else if (this->Population && this->Population->Temperature > 0) {
+			T = static_cast<double>(this->Population->Temperature);
+		}
+		snprintf(tmpremark, MAX_REMARK, "REMARK free_energy = %.6f\n", td.free_energy);
+		safe_remark_cat(remark, tmpremark, &remark_len);
+		snprintf(tmpremark, MAX_REMARK, "REMARK enthalpy = %.6f\n", td.mean_energy);
+		safe_remark_cat(remark, tmpremark, &remark_len);
+		snprintf(tmpremark, MAX_REMARK, "REMARK entropy = %.8f\n", td.entropy);
+		safe_remark_cat(remark, tmpremark, &remark_len);
+		snprintf(tmpremark, MAX_REMARK, "REMARK heat_capacity = %.8f\n", td.heat_capacity);
+		safe_remark_cat(remark, tmpremark, &remark_len);
+		snprintf(tmpremark, MAX_REMARK, "REMARK temperature = %.2f\n", T);
+		safe_remark_cat(remark, tmpremark, &remark_len);
+		snprintf(tmpremark, MAX_REMARK, "REMARK binding_mode = %d\n", num_result);
+		safe_remark_cat(remark, tmpremark, &remark_len);
+		snprintf(tmpremark, MAX_REMARK, "REMARK pose_rank = 1\n");
+		safe_remark_cat(remark, tmpremark, &remark_len);
+	}
 	for (int j = 0; j < this->Population->FA->npar; ++j)
 	{
 		snprintf(tmpremark, MAX_REMARK, "REMARK [%8.3f]\n", this->Population->FA->opt_par[j]);
@@ -590,12 +614,16 @@ void BindingMode::output_BindingMode(int num_result, char* end_strfile, char* tm
 	if (this->Population->FA->refstructure == 1)
 	{
 		bool Hungarian = false;
-		snprintf(tmpremark, MAX_REMARK, "REMARK %8.5f RMSD to ref. structure (no symmetry correction)\n",
-			calc_rmsd(this->Population->FA, this->Population->atoms, this->Population->residue, this->Population->cleftgrid, this->Population->FA->npar, this->Population->FA->opt_par, Hungarian));
+		const double rmsd_raw = calc_rmsd(this->Population->FA, this->Population->atoms, this->Population->residue, this->Population->cleftgrid, this->Population->FA->npar, this->Population->FA->opt_par, Hungarian);
+		snprintf(tmpremark, MAX_REMARK, "REMARK %8.5f RMSD to ref. structure (no symmetry correction)\n", rmsd_raw);
+		safe_remark_cat(remark, tmpremark, &remark_len);
+		snprintf(tmpremark, MAX_REMARK, "REMARK rmsd_raw = %.5f\n", rmsd_raw);
 		safe_remark_cat(remark, tmpremark, &remark_len);
 		Hungarian = true;
-		snprintf(tmpremark, MAX_REMARK, "REMARK %8.5f RMSD to ref. structure     (symmetry corrected)\n",
-			calc_rmsd(this->Population->FA, this->Population->atoms, this->Population->residue, this->Population->cleftgrid, this->Population->FA->npar, this->Population->FA->opt_par, Hungarian));
+		const double rmsd_sym = calc_rmsd(this->Population->FA, this->Population->atoms, this->Population->residue, this->Population->cleftgrid, this->Population->FA->npar, this->Population->FA->opt_par, Hungarian);
+		snprintf(tmpremark, MAX_REMARK, "REMARK %8.5f RMSD to ref. structure     (symmetry corrected)\n", rmsd_sym);
+		safe_remark_cat(remark, tmpremark, &remark_len);
+		snprintf(tmpremark, MAX_REMARK, "REMARK rmsd_sym = %.5f\n", rmsd_sym);
 		safe_remark_cat(remark, tmpremark, &remark_len);
 	}
 	snprintf(tmpremark, MAX_REMARK, "REMARK inputs: %s & %s\n", dockinp, gainp);
@@ -667,6 +695,34 @@ void BindingMode::output_dynamic_BindingMode(int num_result, char* end_strfile, 
 			safe_remark_cat(remark, tmpremark, &remark_len);
 		}
 
+		// Mode-level ledger + per-pose identity (pose_rank = MODEL index)
+		{
+			const statmech::Thermodynamics td = this->get_thermodynamics();
+			double T = 300.0;
+			if (this->Population && this->Population->FA && this->Population->FA->temperature > 0) {
+				T = static_cast<double>(this->Population->FA->temperature);
+			} else if (this->Population && this->Population->Temperature > 0) {
+				T = static_cast<double>(this->Population->Temperature);
+			}
+			snprintf(tmpremark, MAX_REMARK, "REMARK Binding Mode:%d Best CF in Binding Mode:%8.5f Binding Mode Frequency:%d\n",
+				num_result, this->Poses.empty() ? 0.0 : this->Poses.front().CF, this->get_BindingMode_size());
+			safe_remark_cat(remark, tmpremark, &remark_len);
+			snprintf(tmpremark, MAX_REMARK, "REMARK free_energy = %.6f\n", td.free_energy);
+			safe_remark_cat(remark, tmpremark, &remark_len);
+			snprintf(tmpremark, MAX_REMARK, "REMARK enthalpy = %.6f\n", td.mean_energy);
+			safe_remark_cat(remark, tmpremark, &remark_len);
+			snprintf(tmpremark, MAX_REMARK, "REMARK entropy = %.8f\n", td.entropy);
+			safe_remark_cat(remark, tmpremark, &remark_len);
+			snprintf(tmpremark, MAX_REMARK, "REMARK heat_capacity = %.8f\n", td.heat_capacity);
+			safe_remark_cat(remark, tmpremark, &remark_len);
+			snprintf(tmpremark, MAX_REMARK, "REMARK temperature = %.2f\n", T);
+			safe_remark_cat(remark, tmpremark, &remark_len);
+			snprintf(tmpremark, MAX_REMARK, "REMARK binding_mode = %d\n", num_result);
+			safe_remark_cat(remark, tmpremark, &remark_len);
+			snprintf(tmpremark, MAX_REMARK, "REMARK pose_rank = %d\n", nModel);
+			safe_remark_cat(remark, tmpremark, &remark_len);
+		}
+
 		for (int j = 0; j < this->Population->FA->npar; ++j)
 		{
 			snprintf(tmpremark, MAX_REMARK, "REMARK [%8.3f]\n", this->Population->FA->opt_par[j]);
@@ -676,12 +732,16 @@ void BindingMode::output_dynamic_BindingMode(int num_result, char* end_strfile, 
 		if (this->Population->FA->refstructure == 1)
 		{
 			bool Hungarian = false;
-			snprintf(tmpremark, MAX_REMARK, "REMARK %8.5f RMSD to ref. structure (no symmetry correction)\n",
-				calc_rmsd(this->Population->FA, this->Population->atoms, this->Population->residue, this->Population->cleftgrid, this->Population->FA->npar, this->Population->FA->opt_par, Hungarian));
+			const double rmsd_raw = calc_rmsd(this->Population->FA, this->Population->atoms, this->Population->residue, this->Population->cleftgrid, this->Population->FA->npar, this->Population->FA->opt_par, Hungarian);
+			snprintf(tmpremark, MAX_REMARK, "REMARK %8.5f RMSD to ref. structure (no symmetry correction)\n", rmsd_raw);
+			safe_remark_cat(remark, tmpremark, &remark_len);
+			snprintf(tmpremark, MAX_REMARK, "REMARK rmsd_raw = %.5f\n", rmsd_raw);
 			safe_remark_cat(remark, tmpremark, &remark_len);
 			Hungarian = true;
-			snprintf(tmpremark, MAX_REMARK, "REMARK %8.5f RMSD to ref. structure     (symmetry corrected)\n",
-				calc_rmsd(this->Population->FA, this->Population->atoms, this->Population->residue, this->Population->cleftgrid, this->Population->FA->npar, this->Population->FA->opt_par, Hungarian));
+			const double rmsd_sym = calc_rmsd(this->Population->FA, this->Population->atoms, this->Population->residue, this->Population->cleftgrid, this->Population->FA->npar, this->Population->FA->opt_par, Hungarian);
+			snprintf(tmpremark, MAX_REMARK, "REMARK %8.5f RMSD to ref. structure     (symmetry corrected)\n", rmsd_sym);
+			safe_remark_cat(remark, tmpremark, &remark_len);
+			snprintf(tmpremark, MAX_REMARK, "REMARK rmsd_sym = %.5f\n", rmsd_sym);
 			safe_remark_cat(remark, tmpremark, &remark_len);
 		}
 		snprintf(tmpremark, MAX_REMARK, "REMARK inputs: %s & %s\n", dockinp, gainp);

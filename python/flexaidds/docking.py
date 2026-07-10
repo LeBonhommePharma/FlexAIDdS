@@ -576,57 +576,164 @@ class Docking:
             timeout: int = 3600, **kwargs) -> BindingPopulation:
         """Execute docking via the FlexAID C++ binary and parse results.
 
-        Locates the ``FlexAID`` binary (in PATH, project build/, or explicit
-        *binary* argument), invokes it with this config file, waits for
-        completion, then parses all ``*_N_M.pdb`` output files written by
-        ``output_Population()`` to reconstruct a ``BindingPopulation``.
+        Prefers the modern CLI::
+
+            FlexAID <receptor> <ligand> -o <prefix> [-c config.json]
+
+        when receptor + ligand paths are available (PDBNAM/INPLIG in a legacy
+        .inp, or explicit kwargs).  Falls back to ``--legacy config.inp ga.inp
+        prefix`` when a second GA .inp is present.  A bare single ``.inp`` is
+        no longer accepted by the binary.
 
         Args:
-            binary:  Path to FlexAID executable.  If *None*, searches PATH and
-                     common build locations (``build/FlexAID``,
-                     ``../build/FlexAID``).
+            binary:  Path to FlexAID executable.  If *None*, checks
+                     ``FLEXAIDDS_BINARY``, then PATH and common build locations.
             timeout: Wall-clock timeout in seconds (default 3600).
-            **kwargs: Ignored; reserved for future keyword overrides.
+            **kwargs: Optional overrides:
+                receptor, ligand, output_prefix, config_json, ga_inp,
+                progress_callback (callable receiving log lines).
 
         Returns:
             BindingPopulation populated from the PDB REMARK lines written by
-            ``output_BindingMode()`` / ``output_Population()``.
+            ``output_BindingMode()`` / ``output_Population()`` / cluster().
 
         Raises:
             FileNotFoundError: binary not found.
             RuntimeError:      FlexAID exited non-zero or produced no output.
         """
+        import json
+        import math
+        import os
+
         # ── 1. Locate binary ─────────────────────────────────────────────────
         exe = self._find_binary(binary)
 
-        # ── 2. Invoke FlexAID ────────────────────────────────────────────────
-        cmd = [str(exe), str(self.config_file)]
+        work_dir = self.config_file.parent
+        receptor = kwargs.get("receptor") or self.receptor
+        ligand = kwargs.get("ligand") or self.ligand
+        output_prefix = kwargs.get("output_prefix") or "flexaid_out"
+        ga_inp = kwargs.get("ga_inp")
+        config_json = kwargs.get("config_json")
+        progress_cb = kwargs.get("progress_callback")
+        temperature = self._config.get("TEMPER", 300) or 300
+
+        # Resolve relative paths against the config directory
+        def _resolve(p: Optional[str]) -> Optional[Path]:
+            if not p:
+                return None
+            path = Path(p)
+            if not path.is_absolute():
+                path = (work_dir / path).resolve()
+            return path if path.is_file() else path  # may still exist as path
+
+        receptor_path = _resolve(receptor) if receptor else None
+        ligand_path = _resolve(ligand) if ligand else None
+
+        # Auto-write a minimal JSON config when only .inp is present
+        if config_json is None and receptor_path is not None and ligand_path is not None:
+            n_results = self._config.get("NRGOUT", 10) or 10
+            json_path = work_dir / "dock_config.json"
+            cfg = {
+                "thermodynamics": {
+                    "temperature": int(temperature),
+                    "clustering_algorithm": "CF",
+                    "cluster_rmsd": float(self._config.get("CLRMSD", 2.0) or 2.0),
+                },
+                "output": {"max_results": int(n_results)},
+                "ga": {
+                    "num_chromosomes": 500,
+                    "num_generations": 500,
+                },
+            }
+            json_path.write_text(json.dumps(cfg, indent=2), encoding="utf-8")
+            config_json = str(json_path)
+
+        # ── 2. Build command ─────────────────────────────────────────────────
+        if receptor_path is not None and ligand_path is not None and receptor_path.is_file() and ligand_path.is_file():
+            cmd = [str(exe), str(receptor_path), str(ligand_path),
+                   "-o", str(work_dir / output_prefix)]
+            if config_json:
+                cmd.extend(["-c", str(config_json)])
+        elif ga_inp is not None:
+            cmd = [str(exe), "--legacy",
+                   str(self.config_file), str(ga_inp),
+                   str(work_dir / output_prefix)]
+        else:
+            # Look for a sibling GA .inp
+            sibling_ga = None
+            for cand in (work_dir / "ga.inp", work_dir / "GA.inp"):
+                if cand.is_file() and cand.resolve() != self.config_file.resolve():
+                    sibling_ga = cand
+                    break
+            if sibling_ga is not None:
+                cmd = [str(exe), "--legacy",
+                       str(self.config_file), str(sibling_ga),
+                       str(work_dir / output_prefix)]
+            else:
+                raise RuntimeError(
+                    "Modern FlexAID CLI requires receptor + ligand paths "
+                    "(PDBNAM/INPLIG in the config, or receptor=/ligand= kwargs), "
+                    "or --legacy mode with both config.inp and ga.inp. "
+                    "A single .inp file is no longer accepted."
+                )
+
         try:
-            result = subprocess.run(
-                cmd,
-                cwd=self.config_file.parent,
-                capture_output=True,
-                text=True,
-                timeout=timeout,
-            )
+            if progress_cb is not None:
+                # Stream stdout line-by-line for status bar updates
+                proc = subprocess.Popen(
+                    cmd,
+                    cwd=str(work_dir),
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    text=True,
+                    bufsize=1,
+                )
+                stdout_lines: List[str] = []
+                assert proc.stdout is not None
+                for line in proc.stdout:
+                    stdout_lines.append(line)
+                    try:
+                        progress_cb(line.rstrip("\n"))
+                    except Exception:
+                        pass
+                proc.wait(timeout=timeout)
+                returncode = proc.returncode
+                combined = "".join(stdout_lines)
+                result_stdout, result_stderr = combined, ""
+            else:
+                result = subprocess.run(
+                    cmd,
+                    cwd=str(work_dir),
+                    capture_output=True,
+                    text=True,
+                    timeout=timeout,
+                )
+                returncode = result.returncode
+                result_stdout, result_stderr = result.stdout, result.stderr
         except subprocess.TimeoutExpired as exc:
             raise RuntimeError(
                 f"FlexAID timed out after {timeout}s"
             ) from exc
 
-        if result.returncode != 0:
+        if returncode != 0:
             raise RuntimeError(
-                f"FlexAID exited with code {result.returncode}.\n"
-                f"stdout: {result.stdout[-2000:]}\n"
-                f"stderr: {result.stderr[-2000:]}"
+                f"FlexAID exited with code {returncode}.\n"
+                f"cmd: {' '.join(cmd)}\n"
+                f"stdout: {result_stdout[-2000:]}\n"
+                f"stderr: {result_stderr[-2000:]}"
             )
 
         # ── 3. Discover output PDBs ──────────────────────────────────────────
-        # output_BindingMode writes files named <prefix>_<minPoints>_<mode>.pdb
-        # Collect all candidate PDB files in the working directory.
-        work_dir = self.config_file.parent
-        pdb_files = sorted(work_dir.glob("*_*.pdb"),
-                           key=lambda p: p.stat().st_mtime)
+        pdb_files = sorted(
+            [p for p in work_dir.rglob("*.pdb")
+             if p.name not in ("receptor.pdb",) and "_INI" not in p.name
+             and "prepped" not in p.name.lower()],
+            key=lambda p: p.stat().st_mtime,
+        )
+        # Prefer files under the output prefix
+        prefixed = [p for p in pdb_files if output_prefix in p.name or output_prefix in str(p.parent)]
+        if prefixed:
+            pdb_files = prefixed
 
         if not pdb_files:
             raise RuntimeError(
@@ -635,12 +742,10 @@ class Docking:
             )
 
         # ── 4. Parse PDB REMARK lines into BindingModes ──────────────────────
-        temperature = self._config.get("TEMPER", 300) or 300
-        modes: List[BindingMode] = []
         seen_modes: Dict[int, BindingMode] = {}
 
         for pdb_path in pdb_files:
-            mode_info = self._parse_remark_pdb(pdb_path, temperature)
+            mode_info = self._parse_remark_pdb(pdb_path, float(temperature))
             if mode_info is None:
                 continue
             mode_idx, pose = mode_info
@@ -648,82 +753,98 @@ class Docking:
                 seen_modes[mode_idx] = BindingMode(temperature=float(temperature))
             seen_modes[mode_idx]._poses.append(pose)
 
-        # Sort modes by free energy (ascending → most favourable first)
-        modes = sorted(seen_modes.values(),
-                       key=lambda m: m.free_energy)
-
+        modes = sorted(seen_modes.values(), key=lambda m: m.free_energy)
         return BindingPopulation(modes, temperature=float(temperature))
 
     # ── helpers ───────────────────────────────────────────────────────────────
 
-    def _find_binary(self, binary: Optional[str]) -> Path:
-        """Locate the FlexAID executable."""
+    def _find_binary(self, binary: Optional[str] = None) -> Path:
+        """Locate the FlexAID / FlexAIDdS executable.
+
+        Search order:
+        1. Explicit *binary* argument
+        2. ``FLEXAIDDS_BINARY`` environment variable
+        3. ``PATH`` (``FlexAID``, ``FlexAIDdS``)
+        4. Project-relative build directories
+        """
+        import os
+
         if binary is not None:
             p = Path(binary)
             if not p.is_file():
                 raise FileNotFoundError(f"Specified FlexAID binary not found: {binary}")
             return p
 
-        # Search order: PATH → project-relative build dirs
-        in_path = shutil.which("FlexAID")
-        if in_path:
-            return Path(in_path)
+        env_bin = os.environ.get("FLEXAIDDS_BINARY")
+        if env_bin:
+            p = Path(env_bin)
+            if p.is_file():
+                return p
+            raise FileNotFoundError(
+                f"FLEXAIDDS_BINARY is set but not a file: {env_bin}"
+            )
 
+        for name in ("FlexAIDdS", "FlexAID"):
+            in_path = shutil.which(name)
+            if in_path:
+                return Path(in_path)
+
+        repo_root = Path(__file__).resolve().parents[2]
         candidates = [
             self.config_file.parent / "FlexAID",
+            self.config_file.parent / "FlexAIDdS",
             self.config_file.parent / "build" / "FlexAID",
-            Path(__file__).parents[3] / "build" / "FlexAID",
+            repo_root / "build" / "FlexAID",
+            repo_root / "build" / "FlexAIDdS",
+            repo_root / "build_lto" / "FlexAID",
+            repo_root / "build_lto" / "FlexAIDdS",
         ]
         for c in candidates:
             if c.is_file():
                 return c
 
         raise FileNotFoundError(
-            "FlexAID binary not found in PATH or build/. "
-            "Build with 'cmake --build build' or pass binary= argument."
+            "FlexAID binary not found. Set FLEXAIDDS_BINARY, add FlexAID to PATH, "
+            "build with 'cmake --build build', or pass binary= argument."
         )
 
     @staticmethod
     def _parse_remark_pdb(
             pdb_path: Path, temperature: float) -> Optional[tuple]:
-        """Parse a single output PDB written by output_BindingMode().
+        """Parse a single output PDB written by output_BindingMode() / cluster().
 
         Extracts mode index, CF, RMSD, and per-pose energy from REMARK lines.
         Returns (mode_index, Pose) or None if the file lacks FlexAID remarks.
         """
-        mode_idx   = None
-        cf_val     = None
-        rmsd_val   = None
-        freq       = 1
+        from .io import parse_remark_map, infer_mode_id
 
         try:
             text = pdb_path.read_text(errors="replace")
         except OSError:
             return None
 
-        for line in text.splitlines():
-            if not line.startswith("REMARK"):
-                continue
-            # "REMARK Binding Mode:N Best CF in Binding Mode:X …"
-            m = re.search(
-                r"Binding Mode:(\d+).*?Best CF in Binding Mode:\s*([-\d.]+)"
-                r".*?Binding Mode Frequency:(\d+)",
-                line)
-            if m:
-                mode_idx = int(m.group(1))
-                cf_val   = float(m.group(2))
-                freq     = int(m.group(3))
-            # "REMARK 0.12345 RMSD to ref. structure …"
-            m2 = re.search(r"REMARK\s+([\d.]+)\s+RMSD to ref\.", line)
-            if m2 and rmsd_val is None:
-                rmsd_val = float(m2.group(1))
+        remarks = parse_remark_map(text.splitlines())
+        mode_idx = infer_mode_id(pdb_path, remarks)
 
-        if mode_idx is None or cf_val is None:
+        cf_val = None
+        for key in ("cf", "best_cf", "best_cf_in_binding_mode", "average_cf"):
+            v = remarks.get(key)
+            if isinstance(v, (int, float)):
+                cf_val = float(v)
+                break
+        if cf_val is None:
             return None
+
+        rmsd_val = None
+        for key in ("rmsd_raw", "rmsd", "rmsd_sym"):
+            v = remarks.get(key)
+            if isinstance(v, (int, float)):
+                rmsd_val = float(v)
+                break
 
         import math
         beta = 1.0 / (0.001987206 * float(temperature))
-        bw   = math.exp(-beta * cf_val)
+        bw = math.exp(-beta * cf_val)
 
         pose = Pose(
             index=mode_idx,
@@ -732,6 +853,6 @@ class Docking:
             boltzmann_weight=bw,
         )
         return mode_idx, pose
-    
+
     def __repr__(self) -> str:
         return f"<Docking config={self.config_file.name}>"
