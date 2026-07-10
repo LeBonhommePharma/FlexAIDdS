@@ -200,6 +200,17 @@ class TestParseRemarkMap:
         result = parse_remark_map(lines)
         assert result["cf"] == pytest.approx(-6.0)
 
+    def test_flexaid_compound_binding_mode_remark(self):
+        """Classic FlexAID multi-field REMARK extracts mode, CF, frequency."""
+        lines = [
+            "REMARK Binding Mode:1 Best CF in Binding Mode:-5.500 "
+            "Binding Mode Frequency:2"
+        ]
+        result = parse_remark_map(lines)
+        assert result["binding_mode"] == 1
+        assert result["cf"] == pytest.approx(-5.5)
+        assert result["frequency"] == 2
+
     def test_integer_coercion(self):
         lines = ["REMARK binding_mode = 4.0"]
         result = parse_remark_map(lines)

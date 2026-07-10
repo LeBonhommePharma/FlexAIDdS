@@ -120,16 +120,16 @@ def plot_enthalpy_entropy_compensation(
     fig, ax = plt.subplots(1, 1, figsize=(8, 6))
 
     ax.scatter(enthalpies, entropy_terms, c="steelblue", s=60, zorder=3,
-               label="FlexAID∆S modes")
+               label="FlexAID∆S modes (ensemble ledger)")
 
     for i, label in enumerate(labels):
         ax.annotate(label, (enthalpies[i], entropy_terms[i]),
                     textcoords="offset points", xytext=(5, 5),
                     fontsize=8, color="grey")
 
-    ax.set_xlabel("ΔH (kcal/mol)", fontsize=12)
-    ax.set_ylabel("-TΔS (kcal/mol)", fontsize=12)
-    ax.set_title("Enthalpy-Entropy Compensation", fontsize=14)
+    ax.set_xlabel("ΔH / H (kcal/mol)", fontsize=12)
+    ax.set_ylabel("−T·S (kcal/mol)", fontsize=12)
+    ax.set_title("Enthalpy–Entropy Compensation (ensemble ledger)", fontsize=14)
 
     # Diagonal line: ΔG = ΔH + (-TΔS) = constant
     h_range = max(enthalpies) - min(enthalpies) if len(enthalpies) > 1 else 10.0

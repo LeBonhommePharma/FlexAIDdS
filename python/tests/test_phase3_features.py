@@ -460,3 +460,151 @@ class TestCGORenderer:
         assert 25.0 in cgo_list  # ALPHA
         assert 6.0 in cgo_list   # COLOR
         assert 7.0 in cgo_list   # SPHERE
+
+
+# ---------------------------------------------------------------------------
+# Shared session + load-path sync
+# ---------------------------------------------------------------------------
+
+class TestPluginSession:
+    """Shared SESSION state used by all plugin modules."""
+
+    def test_object_and_group_naming(self, mock_pymol):
+        from pymol_plugin.session import object_name, group_name, mode_label
+        assert object_name("flexaids", 1, 2) == "flexaids_mode1_pose2"
+        assert group_name("dock", 3) == "dock_mode3"
+        assert mode_label(7) == "mode7"
+
+    def test_session_clear(self, mock_pymol):
+        from pymol_plugin.session import SESSION
+        SESSION.prefix = "tmp"
+        SESSION.objects[1] = ["a"]
+        SESSION.clear()
+        assert SESSION.result is None
+        assert SESSION.objects == {}
+        assert SESSION.prefix == "flexaids"
+
+    def test_get_mode(self, mock_pymol, sample_pdb, tmp_dir):
+        from pymol_plugin.session import SESSION
+        from flexaidds.models import PoseResult, BindingModeResult, DockingResult
+
+        pose = PoseResult(path=sample_pdb, mode_id=1, pose_rank=1, cf=-5.0)
+        mode = BindingModeResult(
+            mode_id=1, rank=1, poses=[pose], free_energy=-8.0, best_cf=-5.0,
+        )
+        SESSION.clear()
+        SESSION.result = DockingResult(
+            source_dir=tmp_dir, binding_modes=[mode], temperature=298.0,
+        )
+        assert SESSION.get_mode(1) is mode
+        assert SESSION.get_mode(99) is None
+        SESSION.clear()
+
+
+class TestLoadPathSync:
+    """flexaids_load and flexaids_load_results share object naming + state."""
+
+    def _write_mode_pdb(self, path: Path, mode_id: int, cf: float) -> None:
+        path.write_text(
+            f"REMARK Binding Mode:{mode_id} Best CF in Binding Mode:{cf} "
+            f"Binding Mode Frequency:1\n"
+            f"REMARK Free Energy:{-abs(cf) - 2.0}\n"
+            f"REMARK Enthalpy:{-abs(cf) - 1.0}\n"
+            f"REMARK Entropy:0.01\n"
+            f"REMARK Temperature:298.15\n"
+            "HETATM    1  C1  LIG A   1       1.000   2.000   3.000  1.00  0.00           C\n"
+            "HETATM    2  C2  LIG A   1       2.000   3.000   4.000  1.00  0.00           C\n"
+            "END\n"
+        )
+
+    def test_load_docking_results_populates_session(self, mock_pymol, tmp_dir):
+        from pymol_plugin.session import SESSION
+        from pymol_plugin import results_adapter
+
+        pdb = tmp_dir / "mode1_pose1.pdb"
+        self._write_mode_pdb(pdb, 1, -5.5)
+        SESSION.clear()
+        results_adapter.load_docking_results(str(tmp_dir), prefix="flexaids")
+
+        assert SESSION.result is not None
+        assert SESSION.n_modes >= 1
+        assert 1 in SESSION.objects or any(SESSION.objects)
+        # Objects use canonical names
+        names = [n for ns in SESSION.objects.values() for n in ns]
+        assert any(n.startswith("flexaids_mode") for n in names)
+        mock_pymol.cmd.load.assert_called()
+        SESSION.clear()
+
+    def test_load_binding_modes_syncs_results_adapter(self, mock_pymol, tmp_dir):
+        from pymol_plugin.session import SESSION
+        from pymol_plugin import visualization, results_adapter
+
+        pdb = tmp_dir / "mode1_pose1.pdb"
+        self._write_mode_pdb(pdb, 1, -4.0)
+        SESSION.clear()
+        visualization.load_binding_modes(str(tmp_dir), temperature=298.15)
+
+        assert SESSION.result is not None
+        # results_adapter can resolve the mode
+        mode = results_adapter._get_mode(1)
+        assert mode is not None
+        assert mode.mode_id == 1
+        # visualization records exist
+        assert "mode1" in SESSION.mode_records
+        SESSION.clear()
+
+    def test_unload_results(self, mock_pymol, tmp_dir):
+        from pymol_plugin.session import SESSION
+        from pymol_plugin import results_adapter
+
+        pdb = tmp_dir / "mode1_pose1.pdb"
+        self._write_mode_pdb(pdb, 1, -3.0)
+        results_adapter.load_docking_results(str(tmp_dir))
+        assert SESSION.result is not None
+        results_adapter.unload_results(delete_objects=1)
+        assert SESSION.result is None
+        assert SESSION.objects == {}
+
+    def test_show_mode_details_handles_missing(self, mock_pymol, capsys):
+        from pymol_plugin.session import SESSION
+        from pymol_plugin import results_adapter
+
+        SESSION.clear()
+        results_adapter.show_mode_details(99)
+        out = capsys.readouterr().out
+        assert "ERROR" in out
+
+    def test_boltzmann_weights_stable(self, mock_pymol):
+        from pymol_plugin.visualization import _compute_boltzmann_weights
+        w = _compute_boltzmann_weights([-10.0, -9.0, -5.0], 300.0)
+        assert len(w) == 3
+        assert abs(sum(w) - 1.0) < 1e-9
+        assert w[0] > w[1] > w[2]
+
+    def test_mode_name_accepts_integer_string(self, mock_pymol, tmp_dir):
+        from pymol_plugin.session import SESSION
+        from pymol_plugin import visualization
+        from flexaidds.models import PoseResult, BindingModeResult, DockingResult
+
+        pose = PoseResult(path=tmp_dir / "p.pdb", mode_id=2, pose_rank=1, cf=-1.0)
+        mode = BindingModeResult(mode_id=2, rank=1, poses=[pose], best_cf=-1.0)
+        SESSION.clear()
+        SESSION.result = DockingResult(
+            source_dir=tmp_dir, binding_modes=[mode], temperature=300.0,
+        )
+        SESSION.objects[2] = ["flexaids_mode2_pose1"]
+        visualization.sync_from_session()
+        rec = visualization._find_mode("2")
+        assert rec is not None
+        assert rec.mode_id == 2
+        SESSION.clear()
+
+
+class TestPluginHelp:
+    def test_flexaids_help_prints(self, mock_pymol, capsys):
+        from pymol_plugin import flexaids_help
+        flexaids_help()
+        out = capsys.readouterr().out
+        assert "flexaids_load" in out
+        assert "flexaids_entropy_heatmap" in out
+        assert "CF/contact-function" in out

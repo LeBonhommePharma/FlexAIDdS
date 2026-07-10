@@ -12,6 +12,7 @@ except ImportError:
     raise ImportError("PyMOL Qt bindings not available")
 
 from . import results_adapter as ro_adapter
+from .session import SESSION
 
 
 class FlexAIDSPanel(QtWidgets.QDialog):
@@ -21,7 +22,7 @@ class FlexAIDSPanel(QtWidgets.QDialog):
         super().__init__(parent)
         self.setWindowTitle("FlexAID∆S: Entropy-Driven Docking")
         self.setMinimumWidth(420)
-        self.setMinimumHeight(520)
+        self.setMinimumHeight(560)
 
         self._setup_ui()
         self._connect_signals()
@@ -49,10 +50,15 @@ class FlexAIDSPanel(QtWidgets.QDialog):
         layout.addWidget(file_group)
 
         adapter_info = QtWidgets.QLabel(
-            "This panel now loads result directories through the read-only flexaidds Python API."
+            "Loads result directories through the flexaidds Python API "
+            "(ensemble thermodynamic ledger + CF scoring proxy)."
         )
         adapter_info.setWordWrap(True)
         layout.addWidget(adapter_info)
+
+        self.status_label = QtWidgets.QLabel("No results loaded.")
+        self.status_label.setWordWrap(True)
+        layout.addWidget(self.status_label)
 
         mode_group = QtWidgets.QGroupBox("Binding Modes")
         mode_layout = QtWidgets.QVBoxLayout()
@@ -109,6 +115,9 @@ class FlexAIDSPanel(QtWidgets.QDialog):
         self.itc_plot_btn = QtWidgets.QPushButton("ITC Compensation Plot")
         self.itc_plot_btn.setEnabled(False)
 
+        self.unload_btn = QtWidgets.QPushButton("Unload Results")
+        self.unload_btn.setEnabled(False)
+
         viz_layout.addWidget(self.show_ensemble_btn)
         viz_layout.addWidget(self.color_cf_btn)
         viz_layout.addWidget(self.color_free_energy_btn)
@@ -117,6 +126,7 @@ class FlexAIDSPanel(QtWidgets.QDialog):
         viz_layout.addWidget(self.entropy_heatmap_btn)
         viz_layout.addWidget(self.animate_btn)
         viz_layout.addWidget(self.itc_plot_btn)
+        viz_layout.addWidget(self.unload_btn)
 
         viz_group.setLayout(viz_layout)
         layout.addWidget(viz_group)
@@ -156,6 +166,7 @@ class FlexAIDSPanel(QtWidgets.QDialog):
         self.itc_plot_btn.clicked.connect(self._itc_compensation_plot)
         self.launch_nrgsuite_btn.clicked.connect(self._launch_nrgsuite)
         self.export_to_nrg_btn.clicked.connect(self._export_mode_table)
+        self.unload_btn.clicked.connect(self._unload_results)
 
     def _browse_directory(self):
         """Open file dialog to select FlexAID output directory."""
@@ -165,21 +176,32 @@ class FlexAIDSPanel(QtWidgets.QDialog):
         if directory:
             self.file_path_edit.setText(directory)
 
-    def _disable_viz_buttons(self):
-        """Disable all visualization buttons (called before load attempts)."""
-        for btn in (
+    def _viz_buttons(self):
+        return (
             self.show_ensemble_btn, self.color_cf_btn,
             self.color_free_energy_btn, self.show_representative_btn,
             self.print_details_btn, self.entropy_heatmap_btn,
             self.animate_btn, self.itc_plot_btn, self.export_to_nrg_btn,
-        ):
+            self.unload_btn,
+        )
+
+    def _disable_viz_buttons(self):
+        """Disable all visualization buttons (called before load attempts)."""
+        for btn in self._viz_buttons():
             btn.setEnabled(False)
+
+    def _enable_viz_buttons(self, enabled: bool = True):
+        for btn in self._viz_buttons():
+            btn.setEnabled(enabled)
 
     def _load_results(self):
         """Load docking results from the selected output directory."""
         self._disable_viz_buttons()
+        self.mode_list.clear()
+        self._mode_ids.clear()
         output_dir = Path(self.file_path_edit.text().strip())
         if not output_dir.exists():
+            self.status_label.setText("Directory not found.")
             QtWidgets.QMessageBox.warning(
                 self, "Error", f"Directory not found: {output_dir}"
             )
@@ -188,6 +210,7 @@ class FlexAIDSPanel(QtWidgets.QDialog):
         try:
             ro_adapter.load_docking_results(str(output_dir))
         except Exception as exc:
+            self.status_label.setText(f"Load failed: {exc}")
             QtWidgets.QMessageBox.warning(
                 self,
                 "Load Failed",
@@ -195,17 +218,15 @@ class FlexAIDSPanel(QtWidgets.QDialog):
             )
             return
 
-        result = ro_adapter._loaded_result
+        result = SESSION.result if SESSION.result is not None else ro_adapter._loaded_result
         if result is None or not result.binding_modes:
+            self.status_label.setText("No binding modes found.")
             QtWidgets.QMessageBox.warning(
                 self,
                 "No Results",
                 f"No docking results could be parsed in:\n{output_dir}",
             )
             return
-
-        self.mode_list.clear()
-        self._mode_ids.clear()
 
         sorted_modes = sorted(
             result.binding_modes,
@@ -222,22 +243,18 @@ class FlexAIDSPanel(QtWidgets.QDialog):
                 if mode.free_energy is not None
                 else "N/A"
             )
-            label = f"mode{mode.mode_id}: ΔG = {dg_str}  ({mode.n_poses} poses)"
+            cf_str = f"{mode.best_cf:.2f}" if mode.best_cf is not None else "N/A"
+            label = (
+                f"mode{mode.mode_id}: F={dg_str}  CF={cf_str}  "
+                f"({mode.n_poses} poses)"
+            )
             self.mode_list.addItem(label)
             self._mode_ids.append(mode.mode_id)
 
-        for btn in (
-            self.show_ensemble_btn,
-            self.color_cf_btn,
-            self.color_free_energy_btn,
-            self.show_representative_btn,
-            self.print_details_btn,
-            self.entropy_heatmap_btn,
-            self.animate_btn,
-            self.itc_plot_btn,
-            self.export_to_nrg_btn,
-        ):
-            btn.setEnabled(True)
+        self._enable_viz_buttons(True)
+        self.status_label.setText(
+            f"Loaded {result.n_modes} mode(s) from {output_dir.name}."
+        )
 
         if self.mode_list.count():
             self.mode_list.setCurrentRow(0)
@@ -245,30 +262,51 @@ class FlexAIDSPanel(QtWidgets.QDialog):
         QtWidgets.QMessageBox.information(
             self,
             "Loaded",
-            f"Loaded {result.n_modes} binding modes from {output_dir.name} using the Python adapter.",
+            f"Loaded {result.n_modes} binding modes from {output_dir.name}.",
         )
 
-    def _selected_mode_id(self) -> int | None:
+    def _unload_results(self):
+        """Unload results and clear the panel."""
+        try:
+            ro_adapter.unload_results(delete_objects=1)
+        except Exception as exc:
+            QtWidgets.QMessageBox.warning(self, "Unload Failed", str(exc))
+            return
+        self.mode_list.clear()
+        self._mode_ids.clear()
+        self._disable_viz_buttons()
+        for label in (
+            self.free_energy_label, self.enthalpy_label, self.entropy_label,
+            self.entropy_term_label, self.n_poses_label,
+        ):
+            label.setText("-")
+        self.status_label.setText("Results unloaded.")
+
+    def _selected_mode_id(self, *, warn: bool = True) -> int | None:
         row = self.mode_list.currentRow()
         if row < 0 or row >= len(self._mode_ids):
-            QtWidgets.QMessageBox.warning(
-                self, "No Mode Selected", "Please select a binding mode first."
-            )
+            if warn:
+                QtWidgets.QMessageBox.warning(
+                    self, "No Mode Selected", "Please select a binding mode first."
+                )
             return None
         return self._mode_ids[row]
 
     def _find_mode(self, mode_id: int):
+        mode = SESSION.get_mode(mode_id)
+        if mode is not None:
+            return mode
         result = ro_adapter._loaded_result
         if result is None:
             return None
-        for mode in result.binding_modes:
-            if mode.mode_id == mode_id:
-                return mode
+        for m in result.binding_modes:
+            if m.mode_id == mode_id:
+                return m
         return None
 
     def _on_mode_selected(self):
         """Update thermodynamics panel when a binding mode is selected."""
-        mode_id = self._selected_mode_id()
+        mode_id = self._selected_mode_id(warn=False)
         if mode_id is None:
             return
 
@@ -277,9 +315,16 @@ class FlexAIDSPanel(QtWidgets.QDialog):
             return
 
         temperature = mode.temperature
-        if temperature is None and ro_adapter._loaded_result is not None:
-            temperature = ro_adapter._loaded_result.temperature
-        entropy_term = (mode.entropy * temperature) if (mode.entropy is not None and temperature is not None) else None
+        if temperature is None:
+            if SESSION.result is not None and SESSION.result.temperature is not None:
+                temperature = SESSION.result.temperature
+            elif ro_adapter._loaded_result is not None:
+                temperature = ro_adapter._loaded_result.temperature
+        entropy_term = (
+            (mode.entropy * temperature)
+            if (mode.entropy is not None and temperature is not None)
+            else None
+        )
 
         def _fmt(val, fmt=".4f"):
             return f"{val:{fmt}}" if val is not None else "N/A"
@@ -329,7 +374,7 @@ class FlexAIDSPanel(QtWidgets.QDialog):
 
     def _animate_modes(self):
         """Animate transition between two binding modes."""
-        result = ro_adapter._loaded_result
+        result = SESSION.result if SESSION.result is not None else ro_adapter._loaded_result
         if result is None or len(result.binding_modes) < 2:
             QtWidgets.QMessageBox.warning(
                 self, "Not Enough Modes",
@@ -369,7 +414,7 @@ class FlexAIDSPanel(QtWidgets.QDialog):
 
     def _export_mode_table(self):
         """Export the current read-only mode table as TSV."""
-        result = ro_adapter._loaded_result
+        result = SESSION.result if SESSION.result is not None else ro_adapter._loaded_result
         if result is None:
             QtWidgets.QMessageBox.warning(
                 self, "No Results", "Load a results directory first."

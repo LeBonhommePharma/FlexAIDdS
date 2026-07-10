@@ -119,12 +119,58 @@ def _coerce_value(raw: str) -> Any:
     return value
 
 
+# Classic FlexAID multi-field REMARK (single line with several Key:value pairs)
+_FLEXAID_COMPOUND_RE = re.compile(
+    r"Binding Mode\s*:\s*(\d+).*?"
+    r"Best CF in Binding Mode\s*:\s*([-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][-+]?\d+)?)"
+    r"(?:.*?Binding Mode Frequency\s*:\s*(\d+))?",
+    re.IGNORECASE,
+)
+
+# Secondary Key:value tokens on compound REMARK lines
+_COMPOUND_TOKEN_RE = re.compile(
+    r"([A-Za-z][A-Za-z0-9 ._\-/]*?)\s*:\s*"
+    r"([-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][-+]?\d+)?|[A-Za-z0-9_./+-]+)"
+)
+
+
+def _merge_flexaid_compound_remark(payload: str, remarks: Dict[str, Any]) -> bool:
+    """Extract fields from a classic FlexAID multi-field REMARK line.
+
+    Example payload::
+
+        Binding Mode:1 Best CF in Binding Mode:-5.5 Binding Mode Frequency:3
+
+    Returns True if the compound pattern matched.
+    """
+    m = _FLEXAID_COMPOUND_RE.search(payload)
+    if not m:
+        return False
+    if "binding_mode" not in remarks:
+        remarks["binding_mode"] = int(m.group(1))
+    if "cf" not in remarks:
+        remarks["cf"] = float(m.group(2))
+    if m.group(3) is not None and "frequency" not in remarks:
+        remarks["frequency"] = int(m.group(3))
+    # Also harvest any other simple Key:value tokens on the line
+    for tok in _COMPOUND_TOKEN_RE.finditer(payload):
+        key = _normalize_key(tok.group(1))
+        if key not in remarks:
+            remarks[key] = _coerce_value(tok.group(2))
+    # Alias best_cf for mode aggregation convenience
+    if "best_cf" not in remarks and "cf" in remarks:
+        remarks["best_cf"] = remarks["cf"]
+    return True
+
+
 def parse_remark_map(lines: Iterable[str]) -> Dict[str, Any]:
     """Parse ``REMARK`` records from PDB lines into a key→value dictionary.
 
     Supported REMARK formats:
     - ``REMARK Key = value`` (``=`` or ``:`` delimiter)
     - ``REMARK Key value`` (space delimiter, first-seen wins)
+    - Classic FlexAID multi-field lines:
+      ``REMARK Binding Mode:N Best CF in Binding Mode:X Binding Mode Frequency:Y``
 
     Keys are normalised via :func:`_normalize_key`; values are coerced via
     :func:`_coerce_value`.  Non-REMARK lines are silently ignored.
@@ -144,15 +190,22 @@ def parse_remark_map(lines: Iterable[str]) -> Dict[str, Any]:
         if not payload:
             continue
 
+        # Prefer compound FlexAID pattern when present
+        if "Best CF in Binding Mode" in payload or "Binding Mode:" in payload:
+            if _merge_flexaid_compound_remark(payload, remarks):
+                continue
+
         match = re.match(r"([A-Za-z][A-Za-z0-9 ._\-/]*)\s*(?:=|:)\s*(.+)", payload)
         if match:
             key = _normalize_key(match.group(1))
+            # Equals/colon form: last occurrence wins (historical behaviour)
             remarks[key] = _coerce_value(match.group(2))
             continue
 
         match = re.match(r"([A-Za-z][A-Za-z0-9_\-/]*)\s+(.+)", payload)
         if match:
             key = _normalize_key(match.group(1))
+            # Space form: first occurrence wins
             if key not in remarks:
                 remarks[key] = _coerce_value(match.group(2))
     return remarks
@@ -254,7 +307,14 @@ def parse_pose_result(path: Path) -> PoseResult:
     pose_rank = infer_pose_rank(path, remarks)
 
     cf_app = _first_float(remarks, "cf_app", "cfapp", "apparent_cf")
-    cf = _first_float(remarks, "cf", "complementarity_function", "score")
+    cf = _first_float(
+        remarks,
+        "cf",
+        "best_cf",
+        "best_cf_in_binding_mode",
+        "complementarity_function",
+        "score",
+    )
     if cf is None:
         cf = cf_app
 
