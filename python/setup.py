@@ -285,12 +285,18 @@ class optional_build_ext(_build_ext):
                     level=2,
                 )
         self.extensions = kept
-        if not kept and any(getattr(e, "name", "") == "flexaidds._core" for e in requested):
-            warnings.warn(
-                "flexaidds._core was not built. Installing pure-Python fallback only. "
-                "Install a C++26 compiler + Eigen + pybind11 for the accelerated path.",
-                stacklevel=2,
-            )
+        # When nothing was built, clear ext_modules so bdist_wheel emits a pure
+        # ``py3-none-any`` wheel. Leaving empty Extension declarations makes
+        # cibuildwheel/delocate tag a platform wheel with no binary and fail
+        # (macOS: "Failed to find any binary with the required architecture").
+        if not kept:
+            self.distribution.ext_modules = []
+            if any(getattr(e, "name", "") == "flexaidds._core" for e in requested):
+                warnings.warn(
+                    "flexaidds._core was not built. Installing pure-Python fallback only. "
+                    "Install a C++26 compiler + Eigen + pybind11 for the accelerated path.",
+                    stacklevel=2,
+                )
 
     def build_extension(self, ext: Extension) -> None:
         if ext.name == "flexaidds._core":

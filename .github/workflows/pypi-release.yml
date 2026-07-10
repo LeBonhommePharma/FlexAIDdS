@@ -105,9 +105,13 @@ jobs:
           path: dist/*.whl
           retention-days: 5
 
+  # Optional accelerated wheels. Pure py3-none-any + sdist already make
+  # `pip install flexaidds` work on every platform; platform wheels are additive.
+  # continue-on-error so a delocate/cibuildwheel glitch never blocks publish.
   build-wheels:
     name: Build wheels (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
+    continue-on-error: true
     strategy:
       fail-fast: false
       matrix:
@@ -178,10 +182,18 @@ jobs:
 
   publish:
     name: Publish to PyPI
+    # Platform wheels are optional (continue-on-error); always ship sdist + pure.
     needs: [build-sdist, build-pure-wheel, build-wheels]
     runs-on: ubuntu-latest
     # Only publish on actual releases or when manually requested for pypi
-    if: (github.event_name == 'release' && github.event.action == 'published') || (github.event_name == 'workflow_dispatch' && github.event.inputs.target == 'pypi')
+    if: >-
+      always() &&
+      needs.build-sdist.result == 'success' &&
+      needs.build-pure-wheel.result == 'success' &&
+      (
+        (github.event_name == 'release' && github.event.action == 'published') ||
+        (github.event_name == 'workflow_dispatch' && github.event.inputs.target == 'pypi')
+      )
     environment:
       name: pypi
       url: https://pypi.org/project/flexaidds
@@ -210,7 +222,12 @@ jobs:
     name: Publish to TestPyPI (manual or pre-release)
     needs: [build-sdist, build-pure-wheel, build-wheels]
     runs-on: ubuntu-latest
-    if: github.event_name == 'workflow_dispatch' && github.event.inputs.target == 'testpypi'
+    if: >-
+      always() &&
+      needs.build-sdist.result == 'success' &&
+      needs.build-pure-wheel.result == 'success' &&
+      github.event_name == 'workflow_dispatch' &&
+      github.event.inputs.target == 'testpypi'
     environment:
       name: testpypi
       url: https://test.pypi.org/project/flexaidds
@@ -229,6 +246,11 @@ jobs:
           from pathlib import Path
           files = sorted(Path("dist").glob("*"))
           assert files, "no artifacts to publish"
+          # Ensure at least one sdist and one pure wheel are present.
+          sdists = list(Path("dist").glob("*.tar.gz"))
+          wheels = list(Path("dist").glob("*.whl"))
+          assert sdists, "missing sdist"
+          assert wheels, "missing wheel"
           print("\n".join(str(p) for p in files))
           PY
 
