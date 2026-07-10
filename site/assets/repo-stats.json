@@ -1,24 +1,24 @@
 {
-  "commits": 1699,
+  "commits": 1706,
   "languageCount": 15,
   "lastUpdated": "2026-07-10",
   "languages": [
     {
       "id": "cpp",
       "name": "C++",
-      "percent": 49.4,
+      "percent": 49.3,
       "color": "#f34b7d"
     },
     {
       "id": "python",
       "name": "Python",
-      "percent": 24.5,
+      "percent": 24.6,
       "color": "#3572A5"
     },
     {
       "id": "other",
       "name": "HTML",
-      "percent": 8.4,
+      "percent": 8.3,
       "color": "#e34c26"
     },
     {
@@ -42,7 +42,7 @@
     {
       "id": "ts",
       "name": "TypeScript",
-      "percent": 1.9,
+      "percent": 1.8,
       "color": "#3178c6"
     },
     {
