@@ -45,6 +45,9 @@ protected:
         mock_fa = new FA_Global();
         mock_fa->temperature = static_cast<uint>(TEST_TEMPERATURE);
         mock_fa->normal_modes = 0;  // No vibrational correction by default
+        // Vibrational correction lives on the physical ranking/ledger path.
+        // Classic soft-β global-Z ranking is covered in test_classic_entropy_ranking.
+        mock_fa->force_cf_rank_emission = true;
 
         mock_gb = new GB_Global();
         mock_gb->num_genes = 6;

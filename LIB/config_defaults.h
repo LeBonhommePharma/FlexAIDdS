@@ -80,9 +80,14 @@ inline json::Value flexaid_default_config() {
 
         // ── Thermodynamics ───────────────────────────────────────
         {"thermodynamics", V(O{
-            {"temperature",           V(300)},   // Kelvin (0 = entropy off)
-            {"clustering_algorithm",  V("CF")},  // CF, DP, or FO
-            {"cluster_rmsd",          V(2.0)},   // RMSD threshold for clustering
+            {"temperature",               V(300)},   // Kelvin (0 = entropy off)
+            {"clustering_algorithm",      V("CF")},  // CF, DP, or FO
+            {"cluster_rmsd",              V(2.0)},   // RMSD threshold for clustering
+            // Classic FlexAID soft-β ACF / BindingMode F elects rank-0 (default).
+            // Set force_cf_rank_emission true (or classic_entropy_ranking false) to
+            // restore P3b lowest-CF emission without reverting the branch.
+            {"classic_entropy_ranking",   V(true)},
+            {"force_cf_rank_emission",    V(false)},
         })},
 
         // ── Genetic Algorithm ────────────────────────────────────

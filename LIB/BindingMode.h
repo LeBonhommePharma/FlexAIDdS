@@ -158,6 +158,9 @@ class BindingMode // aggregation of poses (Cluster)
 		void	set_energy();                         // updates cached energy value
 		void	rebuild_engine() const;               // populates engine_ from Poses (called on-demand)
 		double	compute_vibrational_correction() const; // Phase 3: -T*S_vib from ENCoM modes
+		// Classic FlexAID soft-β ranking when T>0 && !FA->force_cf_rank_emission.
+		// Ranking F also adds ENCoM vib correction (FlexAIDdS). Rollback: force_cf_rank_emission.
+		bool	use_classic_entropy_ranking() const noexcept;
 
 	private:
 		void 	output_BindingMode(int num_result, char* end_strfile, char* tmp_end_strfile, char* dockinp, char* gainp, int minPoints);

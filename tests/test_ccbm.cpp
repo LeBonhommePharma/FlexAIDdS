@@ -53,6 +53,8 @@ protected:
         mock_fa->n_models = 1;
         mock_fa->model_gene_index = -1;
         mock_fa->normal_modes = 0;  // no ENCoM modes for these tests
+        // CCBM free-energy assertions use per-mode physical StatMech (incl. strain).
+        mock_fa->force_cf_rank_emission = true;
 
         mock_gb = new GB_Global();
         std::memset(mock_gb, 0, sizeof(GB_Global));
