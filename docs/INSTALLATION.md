@@ -34,27 +34,35 @@ Complete build and installation instructions for FlexAID∆S on all supported pl
 
 ### Python package via pip (easiest for analysis, results, thermodynamics)
 
-From a released version on PyPI:
+> **Status (2026-07):** `flexaidds` is **not yet published on the public PyPI index**.
+> Use the GitHub install below until the first PyPI release ships (GitHub Actions
+> workflow `.github/workflows/pypi-release.yml` + trusted publishing). After that,
+> `pip install flexaidds` will work as usual.
+
+**Recommended today — install from GitHub (no clone required):**
 ```bash
-pip install flexaidds
-# later: pip install --upgrade flexaidds
-# or:    python -m flexaidds --self-update
+pip install "git+https://github.com/LeBonhommePharma/FlexAIDdS.git#subdirectory=python"
+# later upgrade:
+pip install --upgrade --force-reinstall \
+  "git+https://github.com/LeBonhommePharma/FlexAIDdS.git#subdirectory=python"
+# or: python -m flexaidds --self-update   # uses GitHub Releases + git fallback
 ```
 
-From source (for development or latest):
+From a local checkout (development):
 ```bash
 git clone https://github.com/LeBonhommePharma/FlexAIDdS.git && cd FlexAIDdS
 pip install -e ./python
 ```
 
-Direct from GitHub (when you want tip-of-tree without a local clone):
+Once published on PyPI:
 ```bash
-pip install "git+https://github.com/LeBonhommePharma/FlexAIDdS.git#subdirectory=python"
+pip install flexaidds
+pip install --upgrade flexaidds
 ```
 
 - Installs the `flexaidds` package (and the `flexaidds` + `flexaidds-benchmark` CLIs).
 - The native C++ extension (`_core`) is **optional**. If build tools/Eigen are missing **or** compilation fails, the package still installs and works in pure-Python mode (with fallbacks). Set `FLEXAIDDS_SKIP_CORE=1` to force pure-Python.
-- Works from PyPI, sdist, git, or local checkout.
+- Works from sdist, git, local checkout, and (after first publish) PyPI.
 
 Verify:
 ```bash
@@ -129,9 +137,10 @@ brew reinstall --HEAD --formula https://raw.githubusercontent.com/LeBonhommePhar
 
 This installs `FlexAIDdS`, `tENCoM`, `FlexAID` + required data files.
 
-Then (recommended):
+Then (recommended — GitHub until PyPI publish):
 ```bash
-pip install flexaidds
+pip install "git+https://github.com/LeBonhommePharma/FlexAIDdS.git#subdirectory=python"
+# after first PyPI release: pip install flexaidds
 ```
 
 #### Build from source (full control)
@@ -191,8 +200,9 @@ brew install --formula https://raw.githubusercontent.com/LeBonhommePharma/FlexAI
 # Development / latest
 brew install --HEAD --formula https://raw.githubusercontent.com/LeBonhommePharma/FlexAIDdS/master/Formula/flexaidds.rb
 
-# After install, add the Python package:
-pip install flexaidds
+# After install, add the Python package (GitHub until PyPI publish):
+pip install "git+https://github.com/LeBonhommePharma/FlexAIDdS.git#subdirectory=python"
+# after first PyPI release: pip install flexaidds
 ```
 
 The formula lives at `Formula/flexaidds.rb`. It supports both a stable `url`/`sha256` (tagged release) and `head` for tip-of-tree. Bottles may be added later.

@@ -173,6 +173,12 @@ def download_asset(
     return dest
 
 
+# Git install target used when the package is not (yet) on the default PyPI index.
+_GIT_INSTALL_SPEC = (
+    "git+https://github.com/LeBonhommePharma/FlexAIDdS.git#subdirectory=python"
+)
+
+
 def update_pip(version: str = "latest", *, index_url: Optional[str] = None) -> int:
     """Update the flexaidds Python package via pip.
 
@@ -184,6 +190,11 @@ def update_pip(version: str = "latest", *, index_url: Optional[str] = None) -> i
 
     Returns:
         pip exit code.
+
+    Notes:
+        When ``version == "latest"`` and the default PyPI index does not yet
+        host ``flexaidds``, this falls back to a direct GitHub VCS install so
+        ``python -m flexaidds --self-update`` works before the first publish.
     """
     cmd = [sys.executable, "-m", "pip", "install", "--upgrade"]
     if index_url:
@@ -196,6 +207,22 @@ def update_pip(version: str = "latest", *, index_url: Optional[str] = None) -> i
         cmd.append(f"flexaidds=={version.lstrip('v')}")
 
     result = subprocess.run(cmd, capture_output=False)
+    # Pre-PyPI / missing-index fallback: try the GitHub VCS URL once.
+    if (
+        result.returncode != 0
+        and version == "latest"
+        and not index_url
+    ):
+        fallback = [
+            sys.executable,
+            "-m",
+            "pip",
+            "install",
+            "--upgrade",
+            "--force-reinstall",
+            _GIT_INSTALL_SPEC,
+        ]
+        result = subprocess.run(fallback, capture_output=False)
     return result.returncode
 
 

@@ -599,6 +599,16 @@ endif()
 # Uses flexaid_core OBJECT library (same sources as FlexAID) with aggressive
 # LTO and native-arch flags for production deployments.
 option(BUILD_FLEXAIDDS_FAST "Build ultra-fast FlexAIDdS docking executable (LTO + native)" ON)
+# LTO is incompatible with gcov coverage and with ASan/TSan/UBSan instrumented builds.
+if(FLEXAIDS_ENABLE_COVERAGE
+   OR CMAKE_CXX_FLAGS MATCHES "-fsanitize"
+   OR CMAKE_C_FLAGS MATCHES "-fsanitize"
+   OR CMAKE_EXE_LINKER_FLAGS MATCHES "-fsanitize")
+    if(BUILD_FLEXAIDDS_FAST)
+        message(STATUS "Disabling BUILD_FLEXAIDDS_FAST (incompatible with coverage/sanitizer flags)")
+    endif()
+    set(BUILD_FLEXAIDDS_FAST OFF CACHE BOOL "Build ultra-fast FlexAIDdS docking executable (LTO + native)" FORCE)
+endif()
 if(BUILD_FLEXAIDDS_FAST)
     add_executable(FlexAIDdS LIB/top.cpp)
     target_link_libraries(FlexAIDdS PRIVATE flexaid_core)
@@ -627,8 +637,10 @@ if(BUILD_FLEXAIDDS_FAST)
     include(CheckIPOSupported)
     check_ipo_supported(RESULT ipo_ok OUTPUT ipo_err)
     if(ipo_ok)
+        # IPO on flexaid_core only — FlexAIDdS links with -flto. Do not enable IPO on
+        # the OBJECT library itself: other targets (FlexAID, tests) link those .o files
+        # without -flto and clang then reports "file not recognized" on LTO bitcode.
         set_property(TARGET FlexAIDdS PROPERTY INTERPROCEDURAL_OPTIMIZATION ON)
-        set_property(TARGET flexaid_core PROPERTY INTERPROCEDURAL_OPTIMIZATION ON)
     else()
         message(WARNING "IPO not supported: ${ipo_err}")
     endif()

@@ -97,11 +97,12 @@ run = fd.load_results("path/to/results")
 ```bash
 # Stable release, or add --HEAD for tip-of-tree
 brew install --formula https://raw.githubusercontent.com/LeBonhommePharma/FlexAIDdS/master/Formula/flexaidds.rb
-pip install flexaidds   # Python package (recommended)
-# later: pip install --upgrade flexaidds   # or: python -m flexaidds --self-update
+# Python package (not yet on public PyPI — install from GitHub):
+pip install "git+https://github.com/LeBonhommePharma/FlexAIDdS.git#subdirectory=python"
+# later: python -m flexaidds --self-update
 ```
 
-See [docs/INSTALLATION.md](docs/INSTALLATION.md) for conda, PyPI, Windows, and full platform instructions. The Python package and native tools can be installed independently.
+See [docs/INSTALLATION.md](docs/INSTALLATION.md) for conda, GitHub/PyPI, Windows, and full platform instructions. The Python package and native tools can be installed independently.
 
 ---
 

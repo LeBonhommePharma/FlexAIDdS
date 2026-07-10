@@ -64,8 +64,8 @@ class Flexaidds < Formula
     bin.install "build/flexaids_process_ligand" if File.exist?("build/flexaids_process_ligand")
     bin.install "build/tencom_entropy_diff" if File.exist?("build/tencom_entropy_diff")
 
-    # NOTE: The Python package "flexaidds" is best installed via pip:
-    #   pip install flexaidds
+    # NOTE: The Python package "flexaidds" is best installed via pip from GitHub
+    # until the first public PyPI release (see docs/INSTALLATION.md).
     # This formula focuses on the high-performance native CLI tools.
   end
 
@@ -76,12 +76,13 @@ class Flexaidds < Formula
       Runtime data files (MC matrices, AMINO.def, etc.) are installed alongside the
       binaries so they are found automatically.
 
-      For the Python package (analysis, results loader, thermodynamics):
-        pip install flexaidds
+      For the Python package (analysis, results loader, thermodynamics).
+      Not yet on public PyPI — install from GitHub:
+        pip install "git+https://github.com/LeBonhommePharma/FlexAIDdS.git#subdirectory=python"
 
-      To upgrade the Python package later:
-        pip install --upgrade flexaidds
-        # or: python -m flexaidds --self-update
+      To upgrade later:
+        python -m flexaidds --self-update
+        # or re-run the git+https pip install above
 
       To rebuild the latest development tip of this formula:
         brew reinstall --HEAD flexaidds

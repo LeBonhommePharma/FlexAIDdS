@@ -76,6 +76,12 @@ from ._fallback_types import TemperatureScanPoint, DeltaCpFit
 # ImportError and force HAS_CORE_BINDINGS=False even when the .so was present
 # and fully functional — breaking pip-installed accelerated wheels.
 try:
+    from . import _core as _core_mod  # type: ignore[attr-defined]
+
+    # Reject the pure-Python test stub injected by python/tests/conftest.py.
+    if getattr(_core_mod, "_FLEXAIDDS_CORE_STUB", False):
+        raise ImportError("flexaidds._core is a test stub, not a compiled extension")
+
     from ._core import (  # type: ignore[attr-defined]
         BoltzmannLUT,
         Replica,

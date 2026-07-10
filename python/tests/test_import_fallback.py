@@ -139,23 +139,37 @@ def test_load_results_works_without_core(tmp_path: Path):
 
 
 def test_has_core_true_when_extension_loads():
-    """HAS_CORE_BINDINGS must be True whenever flexaidds._core is importable.
+    """HAS_CORE_BINDINGS must be True whenever the *compiled* _core loads.
 
     Regression guard: pure-Python-only symbols (TemperatureScanPoint,
     DeltaCpFit) must not be imported from _core — that used to raise
     ImportError and force HAS_CORE_BINDINGS=False even with a working .so,
     breaking accelerated pip wheels.
+
+    Note: ``python/tests/conftest.py`` injects a lightweight stub module named
+    ``flexaidds._core`` for pure-Python CI. We must clear that stub first and
+    only assert when a real extension binary is present.
     """
-    try:
-        import flexaidds._core  # noqa: F401
-    except ImportError:
-        import pytest
+    import pytest
 
-        pytest.skip("_core extension not built in this environment")
-
-    # Fresh import so we exercise the package's own try/except path.
-    saved = {k: sys.modules.pop(k, None) for k in list(sys.modules) if k == "flexaidds" or k.startswith("flexaidds.")}
+    # Drop package modules *and* any session-level stub so a real .so/.pyd can
+    # be discovered. Keep a copy for restore.
+    saved = {
+        k: sys.modules.pop(k, None)
+        for k in list(sys.modules)
+        if k == "flexaidds" or k.startswith("flexaidds.")
+    }
     try:
+        try:
+            import flexaidds._core as core  # noqa: F401
+        except ImportError:
+            pytest.skip("_core extension not built in this environment")
+
+        # Reject the pure-Python test stub (no binary origin).
+        core_file = getattr(core, "__file__", None) or ""
+        if not any(core_file.endswith(ext) for ext in (".so", ".pyd", ".dll")):
+            pytest.skip("_core extension not built in this environment")
+
         import flexaidds
 
         assert flexaidds.HAS_CORE_BINDINGS is True

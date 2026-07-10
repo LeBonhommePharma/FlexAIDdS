@@ -5,6 +5,7 @@
 #include <gtest/gtest.h>
 #include "../LIB/Mol2Reader.h"
 #include "../LIB/SdfReader.h"
+#include "../LIB/LigandRingFlex/LigandRingFlex.h"  // complete RingFlexGenes for delete
 #include <cstring>
 #include <cstdlib>
 #include <cstdio>
@@ -45,6 +46,10 @@ static void cleanup_fa(FA_Global* FA, atom* atoms, resid* residue) {
         free(residue[r].latm);
         free(residue[r].bond);
     }
+    // SdfReader may heap-allocate ring topology on FA->ring_flex_template
+    // (even when FLEXAIDDS_RING_FLEX is off — detection always runs).
+    delete FA->ring_flex_template;
+    FA->ring_flex_template = nullptr;
     free(FA->optres);
     free(FA->num_atm);
     free(atoms);
