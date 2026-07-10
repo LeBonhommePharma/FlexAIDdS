@@ -1,6 +1,7 @@
 #include "gaboom.h"
 #include "fileio.h"
 #include "simd_distance.h"
+#include "statmech.h"
 #include <cmath>
 #include <limits>
 #include <vector>
@@ -348,20 +349,54 @@ void cluster(FA_Global* FA, GB_Global* GB, VC_Global* VC, chromosome* chrom, gen
 		snprintf(tmpremark, MAX_REMARK, "REMARK Cluster %d: Rank (top):%d Average CF:%8.5f Frequency:%d\n",
 			j,Clus_TOP[j],Clus_ACF[j],Clus_FRE[j]);
 		safe_remark_cat(remark, tmpremark, &remark_len);
+		// Canonical ledger from cluster member CF ensemble (display / plugin only;
+		// does not change GA ranking or cluster selection).
+		{
+			const double T = (FA->temperature > 0)
+				? static_cast<double>(FA->temperature) : 300.0;
+			statmech::StatMechEngine engine(T);
+			engine.add_sample(static_cast<double>(chrom[Clus_TOP[j]].app_evalue));
+			for (int k = 0; k < num_chrom; ++k) {
+				if (k != Clus_TOP[j] && Clus_GAPOP[k] == Clus_TOP[j])
+					engine.add_sample(static_cast<double>(chrom[k].app_evalue));
+			}
+			const statmech::Thermodynamics td = engine.compute();
+			snprintf(tmpremark, MAX_REMARK, "REMARK free_energy = %.6f\n", td.free_energy);
+			safe_remark_cat(remark, tmpremark, &remark_len);
+			snprintf(tmpremark, MAX_REMARK, "REMARK enthalpy = %.6f\n", td.mean_energy);
+			safe_remark_cat(remark, tmpremark, &remark_len);
+			snprintf(tmpremark, MAX_REMARK, "REMARK entropy = %.8f\n", td.entropy);
+			safe_remark_cat(remark, tmpremark, &remark_len);
+			snprintf(tmpremark, MAX_REMARK, "REMARK heat_capacity = %.8f\n", td.heat_capacity);
+			safe_remark_cat(remark, tmpremark, &remark_len);
+			snprintf(tmpremark, MAX_REMARK, "REMARK temperature = %.2f\n", T);
+			safe_remark_cat(remark, tmpremark, &remark_len);
+			snprintf(tmpremark, MAX_REMARK, "REMARK binding_mode = %d\n", j);
+			safe_remark_cat(remark, tmpremark, &remark_len);
+			snprintf(tmpremark, MAX_REMARK, "REMARK pose_rank = 1\n");
+			safe_remark_cat(remark, tmpremark, &remark_len);
+			snprintf(tmpremark, MAX_REMARK, "REMARK frequency = %d\n", Clus_FRE[j]);
+			safe_remark_cat(remark, tmpremark, &remark_len);
+		}
 		for(i=0;i<FA->npar;++i)
 		{
 			snprintf(tmpremark, MAX_REMARK, "REMARK [%8.3f]\n",FA->opt_par[i]);
 			safe_remark_cat(remark, tmpremark, &remark_len);
 		}
 		//snprintf(tmpremark, MAX_REMARK, "REMARK seed=%ld\n",FA->seed_ini);
-		safe_remark_cat(remark, tmpremark, &remark_len);
 		if(FA->refstructure == 1){
+			const double rmsd_raw = calc_rmsd(FA,atoms,residue,cleftgrid,FA->npar,FA->opt_par, Hungarian);
 			snprintf(tmpremark, MAX_REMARK, "REMARK %8.5f RMSD to ref. structure (no symmetry correction)\n",
-				calc_rmsd(FA,atoms,residue,cleftgrid,FA->npar,FA->opt_par, Hungarian));
+				rmsd_raw);
+			safe_remark_cat(remark, tmpremark, &remark_len);
+			snprintf(tmpremark, MAX_REMARK, "REMARK rmsd_raw = %.5f\n", rmsd_raw);
 			safe_remark_cat(remark, tmpremark, &remark_len);
 			Hungarian = true;
+			const double rmsd_sym = calc_rmsd(FA,atoms,residue,cleftgrid,FA->npar,FA->opt_par, Hungarian);
 			snprintf(tmpremark, MAX_REMARK, "REMARK %8.5f RMSD to ref. structure     (symmetry corrected)\n",
-				calc_rmsd(FA,atoms,residue,cleftgrid,FA->npar,FA->opt_par, Hungarian));
+				rmsd_sym);
+			safe_remark_cat(remark, tmpremark, &remark_len);
+			snprintf(tmpremark, MAX_REMARK, "REMARK rmsd_sym = %.5f\n", rmsd_sym);
 			safe_remark_cat(remark, tmpremark, &remark_len);
 		}
 		snprintf(tmpremark, MAX_REMARK, "REMARK inputs: %s & %s\n",dockinp,gainp);

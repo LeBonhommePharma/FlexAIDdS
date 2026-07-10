@@ -88,12 +88,33 @@ def _delete_previous_objects(prefix: Optional[str] = None) -> None:
 def unload_results(delete_objects: int = 1) -> None:
     """Clear the loaded docking result session.
 
+    Safe unload: deletes only ``{prefix}_*`` objects plus heatmaps/morphs
+    created by the plugin.
+
     Args:
         delete_objects: 1 (default) also deletes PyMOL objects created by
             the last load; 0 only clears the in-memory session.
     """
+    pref = SESSION.prefix or "flexaids"
     if int(delete_objects):
-        _delete_previous_objects()
+        _delete_previous_objects(pref)
+        # Heatmaps, morphs, contact maps
+        try:
+            for obj in list(cmd.get_object_list("all") or []):
+                s = str(obj)
+                if (
+                    s.startswith("entropy_map_mode")
+                    or s.startswith(f"{pref}_contacts_")
+                    or s.startswith(f"{pref}_morph")
+                    or s.startswith(f"{pref}_cleft")
+                    or "flexaids_morph" in s
+                ):
+                    try:
+                        cmd.delete(obj)
+                    except Exception:
+                        pass
+        except Exception:
+            pass
     SESSION.clear()
     _sync_compat_aliases()
     try:
@@ -101,80 +122,37 @@ def unload_results(delete_objects: int = 1) -> None:
         visualization.clear_session_view()
     except Exception:
         pass
-    print("FlexAID∆S results unloaded.")
+    print("FlexAID∆S results unloaded (prefix-scoped cleanup).")
 
 
-def load_docking_results(results_dir: str, prefix: str = "flexaids") -> None:
-    """Load FlexAID∆S result files through the Python read-only loader.
+def load_docking_results(
+    results_dir: str,
+    prefix: str = "flexaids",
+    temperature: float = 300.0,
+) -> None:
+    """Load FlexAID∆S results — alias of the unified ``flexaids_load`` path.
+
+    Deprecated as a distinct entrypoint; prefer ``flexaids_load``.
+    Kept for back-compat with scripts and GUI code that still call it.
 
     Args:
         results_dir: Directory containing docking result PDB files.
         prefix: Prefix used to create PyMOL object and group names.
+        temperature: Fallback temperature (K) if REMARKs omit T.
 
     Example:
         PyMOL> flexaids_load_results /path/to/output
+        PyMOL> flexaids_load /path/to/output [, prefix] [, temperature]
     """
-    results_path = Path(results_dir)
-    if not results_path.exists():
-        print(f"ERROR: Directory not found: {results_dir}")
-        return
+    from . import visualization
 
-    try:
-        result = load_results(results_path)
-    except Exception as exc:
-        print(f"ERROR: Could not load docking results: {exc}")
-        return
-
-    if not result.binding_modes:
-        print(f"ERROR: No binding modes found in {results_path.resolve()}.")
-        return
-
-    # Drop previous load so reloads do not accumulate objects
-    _delete_previous_objects(SESSION.prefix)
-
-    SESSION.result = result
-    SESSION.prefix = prefix
-    SESSION.objects = {}
-    SESSION.output_dir = getattr(result, "source_dir", None) or results_path
-    if result.temperature is not None:
-        SESSION.temperature_K = float(result.temperature)
-
-    for mode in result.binding_modes:
-        gname = group_name(prefix, mode.mode_id)
-        object_names: List[str] = []
-        best_pose = mode.best_pose()
-
-        for pose in mode.poses:
-            obj_name = object_name(prefix, mode.mode_id, pose.pose_rank)
-            try:
-                cmd.load(str(pose.path), obj_name)
-            except Exception as exc:
-                print(f"WARNING: Failed to load {pose.path.name}: {exc}")
-                continue
-            cmd.group(gname, obj_name)
-            cmd.hide("everything", obj_name)
-            cmd.show("sticks", f"{obj_name} and organic")
-            cmd.show("lines", obj_name)
-            if best_pose is None or pose.path != best_pose.path:
-                cmd.disable(obj_name)
-            object_names.append(obj_name)
-
-        SESSION.objects[mode.mode_id] = object_names
-
-    _sync_compat_aliases()
-
-    # Keep visualization module in sync for flexaids_show_ensemble / thermo
-    try:
-        from . import visualization
-        visualization.sync_from_session()
-    except Exception:
-        pass
-
-    print(
-        f"Loaded {result.n_modes} binding modes from {results_path.resolve()} "
-        f"with prefix '{prefix}'."
+    # Delegate fully to the canonical loader (same object model + readiness card)
+    visualization.load_binding_modes(
+        results_dir,
+        prefix=prefix,
+        temperature=temperature,
     )
-    print("Use 'flexaids_show_mode <mode_id>' to inspect a mode.")
+    _sync_compat_aliases()
 
 
 def show_binding_mode(mode_id: int, show_all: int = 0) -> None:

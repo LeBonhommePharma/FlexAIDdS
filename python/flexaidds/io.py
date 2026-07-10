@@ -78,9 +78,11 @@ def _normalize_key(raw: str) -> str:
         "binding_mode_id": "binding_mode",
         "modeid": "binding_mode",
         "clusterid": "cluster_id",
+        "cluster": "cluster_id",
         "cf_app": "cf_app",
         "cfapp": "cf_app",
         "app_cf": "cf_app",
+        "average_cf": "average_cf",
         "delta_g": "free_energy",
         "dg": "free_energy",
         "freeenergy": "free_energy",
@@ -89,6 +91,10 @@ def _normalize_key(raw: str) -> str:
         "sigma_energy": "std_energy",
         "cv": "heat_capacity",
         "temp": "temperature",
+        "rmsd": "rmsd_raw",
+        "rmsd_unsym": "rmsd_raw",
+        "rmsd_symmetric": "rmsd_sym",
+        "sym_rmsd": "rmsd_sym",
     }
     return aliases.get(key, key)
 
@@ -127,11 +133,58 @@ _FLEXAID_COMPOUND_RE = re.compile(
     re.IGNORECASE,
 )
 
+# Production CF clustering line (cluster.cpp):
+#   Cluster 4: Rank (top):4 Average CF:-153.81 Frequency:12
+_CLUSTER_RANK_RE = re.compile(
+    r"Cluster\s+(\d+)\s*:\s*"
+    r"(?:Rank\s*\(top\)\s*:\s*(\d+))?"
+    r"(?:.*?Average\s+CF\s*:\s*([-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][-+]?\d+)?))?"
+    r"(?:.*?Frequency\s*:\s*(\d+))?",
+    re.IGNORECASE,
+)
+
+# DensityPeak style: Cluster:N Best CF in Cluster:X ...
+_CLUSTER_COLON_RE = re.compile(
+    r"Cluster\s*:\s*(\d+).*?"
+    r"(?:Best CF in Cluster\s*:\s*([-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][-+]?\d+)?))?"
+    r"(?:.*?Cluster Frequency\s*:\s*(\d+))?",
+    re.IGNORECASE,
+)
+
 # Secondary Key:value tokens on compound REMARK lines
 _COMPOUND_TOKEN_RE = re.compile(
-    r"([A-Za-z][A-Za-z0-9 ._\-/]*?)\s*:\s*"
+    r"([A-Za-z][A-Za-z0-9 ._\-/()]*?)\s*:\s*"
     r"([-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][-+]?\d+)?|[A-Za-z0-9_./+-]+)"
 )
+
+# Classic numeric RMSD prose lines written by the engine
+_RMSD_PROSE_RE = re.compile(
+    r"^([-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][-+]?\d+)?)\s+RMSD to ref\.\s*structure",
+    re.IGNORECASE,
+)
+
+# Strip PDB remark class numbers: "REMARK  99  Free Energy: -8.5"
+_REMARK_NUMBER_RE = re.compile(r"^\d{1,3}\s+")
+
+
+def _strip_remark_payload(line: str) -> str:
+    """Return payload after REMARK, stripping optional remark class number."""
+    if not line.startswith("REMARK"):
+        return ""
+    payload = line[6:].strip()
+    payload = _REMARK_NUMBER_RE.sub("", payload, count=1).strip()
+    return payload
+
+
+def _harvest_compound_tokens(payload: str, remarks: Dict[str, Any]) -> None:
+    """Harvest all Key:value tokens from a compound REMARK payload."""
+    for tok in _COMPOUND_TOKEN_RE.finditer(payload):
+        key = _normalize_key(tok.group(1))
+        # Skip tokens whose "key" is pure noise (e.g. bare numbers mis-matched)
+        if not key or key[0].isdigit():
+            continue
+        if key not in remarks:
+            remarks[key] = _coerce_value(tok.group(2))
 
 
 def _merge_flexaid_compound_remark(payload: str, remarks: Dict[str, Any]) -> bool:
@@ -152,15 +205,62 @@ def _merge_flexaid_compound_remark(payload: str, remarks: Dict[str, Any]) -> boo
         remarks["cf"] = float(m.group(2))
     if m.group(3) is not None and "frequency" not in remarks:
         remarks["frequency"] = int(m.group(3))
-    # Also harvest any other simple Key:value tokens on the line
-    for tok in _COMPOUND_TOKEN_RE.finditer(payload):
-        key = _normalize_key(tok.group(1))
-        if key not in remarks:
-            remarks[key] = _coerce_value(tok.group(2))
+    _harvest_compound_tokens(payload, remarks)
     # Alias best_cf for mode aggregation convenience
     if "best_cf" not in remarks and "cf" in remarks:
         remarks["best_cf"] = remarks["cf"]
     return True
+
+
+def _merge_cluster_remark(payload: str, remarks: Dict[str, Any]) -> bool:
+    """Extract fields from production Cluster REMARK lines.
+
+    Supports::
+
+        Cluster 4: Rank (top):4 Average CF:-153.81 Frequency:12
+        Cluster:4 Best CF in Cluster:-5.5 Cluster Frequency:3
+
+    Cluster index maps to ``binding_mode`` / ``cluster_id``.  ``Rank (top)``
+    is the GA chromosome index of the representative (stored as
+    ``rank_top``), *not* the within-mode pose rank.
+    """
+    m = _CLUSTER_RANK_RE.search(payload)
+    if m:
+        cluster_id = int(m.group(1))
+        if "binding_mode" not in remarks:
+            remarks["binding_mode"] = cluster_id
+        if "cluster_id" not in remarks:
+            remarks["cluster_id"] = cluster_id
+        if m.group(2) is not None and "rank_top" not in remarks:
+            remarks["rank_top"] = int(m.group(2))
+        if m.group(3) is not None and "average_cf" not in remarks:
+            remarks["average_cf"] = float(m.group(3))
+        if m.group(4) is not None and "frequency" not in remarks:
+            remarks["frequency"] = int(m.group(4))
+        # Representative pose for this cluster file
+        if "pose_rank" not in remarks:
+            remarks["pose_rank"] = 1
+        _harvest_compound_tokens(payload, remarks)
+        return True
+
+    m2 = _CLUSTER_COLON_RE.search(payload)
+    if m2:
+        cluster_id = int(m2.group(1))
+        if "binding_mode" not in remarks:
+            remarks["binding_mode"] = cluster_id
+        if "cluster_id" not in remarks:
+            remarks["cluster_id"] = cluster_id
+        if m2.group(2) is not None and "cf" not in remarks:
+            remarks["cf"] = float(m2.group(2))
+        if m2.group(3) is not None and "frequency" not in remarks:
+            remarks["frequency"] = int(m2.group(3))
+        if "pose_rank" not in remarks:
+            remarks["pose_rank"] = 1
+        _harvest_compound_tokens(payload, remarks)
+        if "best_cf" not in remarks and "cf" in remarks:
+            remarks["best_cf"] = remarks["cf"]
+        return True
+    return False
 
 
 def parse_remark_map(lines: Iterable[str]) -> Dict[str, Any]:
@@ -169,8 +269,14 @@ def parse_remark_map(lines: Iterable[str]) -> Dict[str, Any]:
     Supported REMARK formats:
     - ``REMARK Key = value`` (``=`` or ``:`` delimiter)
     - ``REMARK Key value`` (space delimiter, first-seen wins)
+    - ``REMARK  99  Key: value`` (remark class number stripped)
     - Classic FlexAID multi-field lines:
       ``REMARK Binding Mode:N Best CF in Binding Mode:X Binding Mode Frequency:Y``
+    - Production CF cluster lines:
+      ``REMARK Cluster N: Rank (top):R Average CF:X Frequency:F``
+    - Compound thermo lines:
+      ``REMARK Free Energy:-8.5 Enthalpy:-10.0 Entropy:0.01``
+    - Classic RMSD prose lines (``rmsd_raw`` / ``rmsd_sym``)
 
     Keys are normalised via :func:`_normalize_key`; values are coerced via
     :func:`_coerce_value`.  Non-REMARK lines are silently ignored.
@@ -180,20 +286,48 @@ def parse_remark_map(lines: Iterable[str]) -> Dict[str, Any]:
 
     Returns:
         Dictionary mapping normalised keys to coerced values.  If the same
-        key appears multiple times the first occurrence wins.
+        key appears multiple times the first occurrence wins (except equals/
+        colon form which overwrites for simple single-key lines).
     """
     remarks: Dict[str, Any] = {}
     for line in lines:
         if not line.startswith("REMARK"):
             continue
-        payload = line[6:].strip()
+        payload = _strip_remark_payload(line)
         if not payload:
             continue
 
-        # Prefer compound FlexAID pattern when present
+        # Prefer compound FlexAID / Cluster patterns
         if "Best CF in Binding Mode" in payload or "Binding Mode:" in payload:
             if _merge_flexaid_compound_remark(payload, remarks):
                 continue
+
+        if payload.lower().startswith("cluster"):
+            if _merge_cluster_remark(payload, remarks):
+                continue
+
+        # Classic RMSD prose (must run before space-delimited Key value)
+        rmsd_m = _RMSD_PROSE_RE.match(payload)
+        if rmsd_m:
+            val = float(rmsd_m.group(1))
+            pl = payload.lower()
+            if "no symmetry" in pl:
+                if "rmsd_raw" not in remarks:
+                    remarks["rmsd_raw"] = val
+            elif "symmetry" in pl:
+                if "rmsd_sym" not in remarks:
+                    remarks["rmsd_sym"] = val
+            else:
+                if "rmsd_raw" not in remarks:
+                    remarks["rmsd_raw"] = val
+            continue
+
+        # Multi-token compound thermo lines: harvest every Key:value
+        # e.g. "Free Energy:-8.5 Enthalpy:-10.0 Entropy:0.01"
+        colon_tokens = list(_COMPOUND_TOKEN_RE.finditer(payload))
+        if len(colon_tokens) >= 2:
+            _harvest_compound_tokens(payload, remarks)
+            continue
 
         match = re.match(r"([A-Za-z][A-Za-z0-9 ._\-/]*)\s*(?:=|:)\s*(.+)", payload)
         if match:

@@ -242,43 +242,41 @@ class TestITCComparison:
 # ---------------------------------------------------------------------------
 
 class TestInteractiveDockingHelpers:
-    """Test interactive docking configuration generation."""
+    """Test interactive docking configuration generation (modern JSON CLI)."""
 
-    def test_write_minimal_config(self, tmp_dir):
-        """Should generate a valid FlexAID configuration file."""
-        from pymol_plugin.interactive_docking import _write_minimal_config
-        config_path = str(tmp_dir / "test.inp")
-        _write_minimal_config(
+    def test_write_modern_json(self, tmp_dir):
+        """Should generate a valid modern JSON docking config."""
+        import json
+        from pymol_plugin.interactive_docking import _write_modern_json
+        config_path = tmp_dir / "dock_config.json"
+        _write_modern_json(
             config_path,
-            receptor_pdb="receptor.pdb",
-            ligand_file="ligand.mol2",
-            center=(10.0, 20.0, 30.0),
-            radius=15.0,
             temperature=310,
             n_results=5,
+            center=(10.0, 20.0, 30.0),
+            radius=15.0,
         )
-        text = Path(config_path).read_text()
-        assert "PDBNAM receptor.pdb" in text
-        assert "INPLIG ligand.mol2" in text
-        assert "TEMPER 310" in text
-        assert "NRGOUT 5" in text
-        assert "COMPLF 10.000 20.000 30.000" in text
-        assert "SPACER 15.0" in text
+        data = json.loads(config_path.read_text())
+        assert data["thermodynamics"]["temperature"] == 310
+        assert data["output"]["max_results"] == 5
+        assert data["pymol_site"]["center"] == [10.0, 20.0, 30.0]
+        assert data["pymol_site"]["radius_A"] == 15.0
 
-    def test_write_minimal_config_defaults(self, tmp_dir):
+    def test_write_modern_json_defaults(self, tmp_dir):
         """Default temperature and n_results should be used."""
-        from pymol_plugin.interactive_docking import _write_minimal_config
-        config_path = str(tmp_dir / "defaults.inp")
-        _write_minimal_config(
+        import json
+        from pymol_plugin.interactive_docking import _write_modern_json
+        config_path = tmp_dir / "defaults.json"
+        _write_modern_json(
             config_path,
-            receptor_pdb="rec.pdb",
-            ligand_file="lig.mol2",
+            temperature=300,
+            n_results=10,
             center=(0.0, 0.0, 0.0),
             radius=10.0,
         )
-        text = Path(config_path).read_text()
-        assert "TEMPER 300" in text
-        assert "NRGOUT 10" in text
+        data = json.loads(config_path.read_text())
+        assert data["thermodynamics"]["temperature"] == 300
+        assert data["output"]["max_results"] == 10
 
 
 # ---------------------------------------------------------------------------

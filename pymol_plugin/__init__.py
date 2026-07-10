@@ -83,32 +83,41 @@ def flexaids_help(*_args, **_kwargs) -> None:
 FlexAID∆S PyMOL Plugin v{__version__}
 ====================================
 Load / inspect
-  flexaids_load <dir> [, temperature]
-  flexaids_load_results <dir> [, prefix]
+  flexaids_load <dir> [, prefix] [, temperature]   # canonical
+  flexaids_load_results <dir> [, prefix]           # alias of flexaids_load
   flexaids_unload [, delete_objects]
+  flexaids_status
+  flexaids_recent
   flexaids_show_mode <mode_id> [, show_all]
   flexaids_show_ensemble <modeN|id> [, show_all]
   flexaids_mode_details <mode_id>
   flexaids_thermo <modeN|id>
 
 Color / viz
-  flexaids_color_boltzmann <modeN|id>
+  flexaids_color_boltzmann <modeN|id>   # CF-proxy weights (labelled)
   flexaids_color_mode <mode_id> [, metric=cf|free_energy]
+  flexaids_colorbar [, metric]
   flexaids_entropy_heatmap <mode_id> [, grid_spacing, sigma, renderer]
+  flexaids_publication <mode_id> [, ray, output_png]
+  flexaids_cf_contacts <mode_id>
+  flexaids_rmsd <mode_id>
+  flexaids_cleft <sphere.pdb>
 
 Analysis
   flexaids_animate <mode_a>, <mode_b> [, n_frames, align]
   flexaids_itc_plot [, output_png]
   flexaids_itc_compare <itc.csv> [, output_png]
+  flexaids_tscan <mode_id> [, temperatures]   # e.g. 298,310
 
-Docking
+Docking (modern CLI)
   flexaids_dock <receptor_obj>, <ligand.mol2> [, site_selection, temperature]
   flexaids_dock_cancel
 
 Notes
   - Ranking uses the CF/contact-function scoring proxy during GA search.
-  - Free energy / entropy shown here are ensemble thermodynamic ledger values
-    from StatMech when present in PDB REMARKs.
+  - Free energy / entropy are ensemble ledger values from REMARKs when present,
+    else recomputed from CF (labelled "ensemble estimate from CF proxy").
+  - Boltzmann coloring uses CF proxy energies, not ensemble F.
 """
     )
 
@@ -140,6 +149,16 @@ def _register_commands() -> None:
             plot_free_energy_comparison,
         )
         from .interactive_docking import dock_interactive, dock_cancel
+        from .plugin_extras import (
+            flexaids_status,
+            publication_view,
+            show_cf_contacts,
+            show_rmsd_overlay,
+            temperature_scan,
+            show_cleft,
+            colorbar_legend,
+            recent_results,
+        )
     except ImportError as exc:
         print(f"FlexAID∆S Plugin: command registration incomplete: {exc}")
         print("  Install the flexaidds package (pip install -e ./python) and retry.")
@@ -149,7 +168,7 @@ def _register_commands() -> None:
     cmd.extend("flexaids_show_ensemble", show_pose_ensemble)
     cmd.extend("flexaids_color_boltzmann", color_by_boltzmann_weight)
     cmd.extend("flexaids_thermo", show_thermodynamics)
-    cmd.extend("flexaids_load_results", load_docking_results)
+    cmd.extend("flexaids_load_results", load_docking_results)  # alias
     cmd.extend("flexaids_show_mode", show_binding_mode)
     cmd.extend("flexaids_color_mode", color_mode_by_score)
     cmd.extend("flexaids_mode_details", show_mode_details)
@@ -160,6 +179,14 @@ def _register_commands() -> None:
     cmd.extend("flexaids_itc_compare", plot_free_energy_comparison)
     cmd.extend("flexaids_dock", dock_interactive)
     cmd.extend("flexaids_dock_cancel", dock_cancel)
+    cmd.extend("flexaids_status", flexaids_status)
+    cmd.extend("flexaids_publication", publication_view)
+    cmd.extend("flexaids_cf_contacts", show_cf_contacts)
+    cmd.extend("flexaids_rmsd", show_rmsd_overlay)
+    cmd.extend("flexaids_tscan", temperature_scan)
+    cmd.extend("flexaids_cleft", show_cleft)
+    cmd.extend("flexaids_colorbar", colorbar_legend)
+    cmd.extend("flexaids_recent", recent_results)
     cmd.extend("flexaids_help", flexaids_help)
 
     _COMMANDS_REGISTERED = True

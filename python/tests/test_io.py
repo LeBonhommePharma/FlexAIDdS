@@ -211,6 +211,58 @@ class TestParseRemarkMap:
         assert result["cf"] == pytest.approx(-5.5)
         assert result["frequency"] == 2
 
+    def test_production_cluster_rank_top_remark(self):
+        """Production CF clustering line maps Cluster N → binding_mode."""
+        lines = [
+            "REMARK Cluster 4: Rank (top):4 Average CF:-153.81088 Frequency:12"
+        ]
+        result = parse_remark_map(lines)
+        assert result["binding_mode"] == 4
+        assert result["cluster_id"] == 4
+        assert result["rank_top"] == 4
+        assert result["average_cf"] == pytest.approx(-153.81088)
+        assert result["frequency"] == 12
+        assert result["pose_rank"] == 1
+
+    def test_compound_thermo_line_multi_token(self):
+        """Compound Free Energy/Enthalpy/Entropy line harvests each field."""
+        lines = ["REMARK Free Energy:-8.5 Enthalpy:-10.0 Entropy:0.01"]
+        result = parse_remark_map(lines)
+        assert result["free_energy"] == pytest.approx(-8.5)
+        assert result["enthalpy"] == pytest.approx(-10.0)
+        assert result["entropy"] == pytest.approx(0.01)
+
+    def test_remark_class_number_stripped(self):
+        """REMARK  99  Free Energy: -8.5 must parse."""
+        lines = ["REMARK  99  Free Energy: -8.5"]
+        result = parse_remark_map(lines)
+        assert result.get("free_energy") == pytest.approx(-8.5)
+
+    def test_canonical_ledger_block(self):
+        lines = [
+            "REMARK free_energy = -12.5",
+            "REMARK enthalpy = -11.0",
+            "REMARK entropy = 0.005",
+            "REMARK heat_capacity = 0.02",
+            "REMARK temperature = 298.15",
+            "REMARK binding_mode = 2",
+            "REMARK pose_rank = 1",
+            "REMARK rmsd_sym = 1.25",
+        ]
+        result = parse_remark_map(lines)
+        assert result["free_energy"] == pytest.approx(-12.5)
+        assert result["binding_mode"] == 2
+        assert result["rmsd_sym"] == pytest.approx(1.25)
+
+    def test_rmsd_prose_raw_and_sym(self):
+        lines = [
+            "REMARK  1.23456 RMSD to ref. structure (no symmetry correction)",
+            "REMARK  0.98765 RMSD to ref. structure     (symmetry corrected)",
+        ]
+        result = parse_remark_map(lines)
+        assert result["rmsd_raw"] == pytest.approx(1.23456)
+        assert result["rmsd_sym"] == pytest.approx(0.98765)
+
     def test_integer_coercion(self):
         lines = ["REMARK binding_mode = 4.0"]
         result = parse_remark_map(lines)
@@ -266,6 +318,9 @@ class TestInferModeId:
     def test_remark_takes_priority_over_filename(self):
         """Even if filename says mode 3, REMARK binding_mode=8 wins."""
         assert infer_mode_id(Path("mode_3.pdb"), {"binding_mode": 8}) == 8
+
+    def test_cluster_zero_from_production_remarks(self):
+        assert infer_mode_id(Path("1GM8_0.pdb"), {"binding_mode": 0}) == 0
 
 
 # ===========================================================================

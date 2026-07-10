@@ -460,12 +460,87 @@ class TestDockingParseConfig:
 # ── Docking.run – raises FileNotFoundError when binary not found ──────────────
 
 class TestDockingRun:
-    def test_run_raises_file_not_found_when_no_binary(self, tmp_path):
+    def test_run_raises_file_not_found_when_no_binary(self, tmp_path, monkeypatch):
+        """Must raise FileNotFoundError even if a FlexAID binary is on PATH.
+
+        Isolates binary discovery so a developer machine with build_lto/FlexAID
+        on PATH does not convert this into a CLI RuntimeError.
+        """
+        import flexaidds.docking as docking_mod
+
         cfg = tmp_path / "test.inp"
-        _write_config(cfg, ["PDBNAM receptor.pdb"])
+        _write_config(cfg, ["PDBNAM receptor.pdb", "INPLIG ligand.mol2"])
+        # Create dummy files so modern CLI path is selected before binary check
+        (tmp_path / "receptor.pdb").write_text("ATOM\nEND\n")
+        (tmp_path / "ligand.mol2").write_text("@<TRIPOS>MOLECULE\n")
         d = Docking(str(cfg))
+        monkeypatch.delenv("FLEXAIDDS_BINARY", raising=False)
+        monkeypatch.setattr(docking_mod.shutil, "which", lambda *_a, **_k: None)
+        monkeypatch.setattr(
+            Docking,
+            "_find_binary",
+            lambda self, binary=None: (_ for _ in ()).throw(
+                FileNotFoundError("no binary")
+            ),
+        )
         with pytest.raises(FileNotFoundError):
             d.run()
+
+    def test_run_builds_modern_cli_when_receptor_ligand_present(
+        self, tmp_path, monkeypatch
+    ):
+        """Modern CLI: FlexAID receptor ligand -o prefix -c json (mocked)."""
+        import subprocess as sp
+
+        cfg = tmp_path / "test.inp"
+        rec = tmp_path / "receptor.pdb"
+        lig = tmp_path / "ligand.mol2"
+        rec.write_text(
+            "ATOM      1  N   ALA A   1       0.000   0.000   0.000  1.00  0.00\nEND\n"
+        )
+        lig.write_text("@<TRIPOS>MOLECULE\ntest\n")
+        _write_config(cfg, [
+            f"PDBNAM {rec.name}",
+            f"INPLIG {lig.name}",
+            "TEMPER 298",
+            "NRGOUT 2",
+        ])
+
+        # Fake binary + successful run writing a Cluster REMARK PDB
+        fake_bin = tmp_path / "FakeFlexAID"
+        fake_bin.write_text("#!/bin/sh\nexit 0\n")
+        fake_bin.chmod(0o755)
+
+        out_pdb = tmp_path / "flexaid_out_0.pdb"
+        out_pdb.write_text(
+            "REMARK CF=-10.0\n"
+            "REMARK Cluster 0: Rank (top):1 Average CF:-9.0 Frequency:3\n"
+            "REMARK free_energy = -9.5\n"
+            "REMARK binding_mode = 0\n"
+            "ATOM      1  C   LIG A   1       1.000   2.000   3.000  1.00  0.00\n"
+            "END\n"
+        )
+
+        captured = {}
+
+        def fake_run(cmd, **kwargs):
+            captured["cmd"] = list(cmd)
+
+            class R:
+                returncode = 0
+                stdout = "ok"
+                stderr = ""
+
+            return R()
+
+        monkeypatch.setattr(sp, "run", fake_run)
+        d = Docking(str(cfg))
+        pop = d.run(binary=str(fake_bin), timeout=10)
+        assert "cmd" in captured
+        assert str(fake_bin) in captured["cmd"][0] or captured["cmd"][0].endswith("FakeFlexAID")
+        assert str(rec) in captured["cmd"] or rec.name in " ".join(captured["cmd"])
+        assert "-o" in captured["cmd"]
+        assert len(pop) >= 1
 
 
 # ── BindingPopulation.compute_global_thermodynamics – needs C++ core ─────────

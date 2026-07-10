@@ -394,6 +394,11 @@ def render_entropy_heatmap(
 
     if not grid_points:
         print(f"WARNING: No entropy density computed for mode {mode_id}.")
+        print("  Recovery tips:")
+        print("    • Need ≥2 poses with readable ATOM/HETATM coordinates")
+        print("    • Try larger sigma / coarser grid_spacing (e.g. sigma=3, grid=3)")
+        print("    • Confirm PDBs are not empty or ligand-only without coords")
+        print("    • Check that mode_id matches a loaded mode (flexaids_status)")
         return
 
     obj_name = f"entropy_map_mode{mode_id}"

@@ -15,6 +15,7 @@ regardless of which load command was used.
 from __future__ import annotations
 
 import math
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, List, Optional
@@ -174,19 +175,76 @@ def sync_from_session() -> None:
     _loaded_modes = SESSION.mode_records
 
 
-def load_binding_modes(output_dir: str, temperature: float = 300.0) -> None:
-    """Load FlexAID∆S docking results from output directory.
+def _print_readiness_card(result: DockingResult, temperature: float) -> None:
+    """Print a one-line readiness summary after load."""
+    n_modes = result.n_modes
+    n_poses = sum(m.n_poses for m in result.binding_modes)
+    has_cf = any(m.best_cf is not None for m in result.binding_modes)
+    sources = {
+        (m.metadata or {}).get("ledger_source", "missing")
+        for m in result.binding_modes
+    }
+    if "engine_remark" in sources:
+        fhs = "yes"
+    elif "ensemble_estimate_from_cf" in sources:
+        fhs = "recomputed"
+    elif any(m.free_energy is not None for m in result.binding_modes):
+        fhs = "yes"
+    else:
+        fhs = "missing"
+    rmsd_vals = []
+    for m in result.binding_modes:
+        for p in m.poses:
+            if p.rmsd_sym is not None:
+                rmsd_vals.append(p.rmsd_sym)
+            elif p.rmsd_raw is not None:
+                rmsd_vals.append(p.rmsd_raw)
+    rmsd_str = f"{min(rmsd_vals):.2f}–{max(rmsd_vals):.2f}" if rmsd_vals else "n/a"
+    print(
+        f"  readiness: modes={n_modes} poses={n_poses} "
+        f"CF={'yes' if has_cf else 'no'} F/H/S={fhs} "
+        f"T={temperature:.1f} RMSD={rmsd_str}"
+    )
+    if fhs == "recomputed":
+        print(
+            "  note: F/H/S are ensemble estimates from CF proxy "
+            "(not full vib/solvent ledger)."
+        )
 
-    This legacy PyMOL entrypoint now delegates parsing to ``flexaidds.load_results``
-    and only handles PyMOL object creation plus display bookkeeping.  It shares
-    object naming with ``flexaids_load_results`` so all plugin features work.
+
+def load_binding_modes(
+    output_dir: str,
+    prefix: str = "flexaids",
+    temperature: float = 300.0,
+) -> None:
+    """Load FlexAID∆S docking results (canonical plugin entrypoint).
+
+    Usage::
+
+        flexaids_load <dir> [, prefix] [, temperature]
+
+    Back-compat: if the second argument is numeric and no third arg is given,
+    it is treated as temperature (legacy ``flexaids_load dir, T``).
+
+    Objects: ``{prefix}_mode{N}_pose{R}`` grouped as ``{prefix}_mode{N}``.
+    ``flexaids_load_results`` is an alias of this function.
     """
     global _loaded_modes, _loaded_result, _output_dir, _temperature_K
 
-    output_path = Path(output_dir)
+    output_path = Path(str(output_dir).strip())
     if not output_path.exists():
         print(f"ERROR: Directory not found: {output_dir}")
         return
+
+    # PyMOL string args + back-compat: load(dir, T) vs load(dir, prefix [, T])
+    # If second positional arg is purely numeric, treat it as temperature.
+    prefix_s = str(prefix).strip() if prefix is not None else "flexaids"
+    temperature_f = float(temperature)
+    if re.fullmatch(r"[-+]?\d+(?:\.\d*)?", prefix_s):
+        temperature_f = float(prefix_s)
+        prefix_s = "flexaids"
+    if not prefix_s:
+        prefix_s = "flexaids"
 
     try:
         result = load_results(output_path)
@@ -198,20 +256,17 @@ def load_binding_modes(output_dir: str, temperature: float = 300.0) -> None:
         print(f"ERROR: No binding modes found in {output_path.resolve()}.")
         return
 
-    temperature = float(temperature)
-    prefix = SESSION.prefix if SESSION.prefix else "flexaids"
-
     # Clear previous PyMOL objects via results_adapter cleanup
     try:
         from . import results_adapter
-        results_adapter._delete_previous_objects(prefix)
+        results_adapter._delete_previous_objects(SESSION.prefix or prefix_s)
     except Exception:
         pass
 
     SESSION.clear()
     SESSION.result = result
-    SESSION.prefix = prefix
-    SESSION.temperature_K = temperature
+    SESSION.prefix = prefix_s
+    SESSION.temperature_K = temperature_f
     SESSION.output_dir = getattr(result, "source_dir", None) or output_path.resolve()
     if result.temperature is not None:
         SESSION.temperature_K = float(result.temperature)
@@ -222,12 +277,12 @@ def load_binding_modes(output_dir: str, temperature: float = 300.0) -> None:
     for mode in result.binding_modes:
         mode_name = _mode_name(mode.mode_id)
         record = _make_mode_record(mode)
-        gname = group_name(prefix, mode.mode_id)
+        gname = group_name(prefix_s, mode.mode_id)
         object_names: List[str] = []
         best_pose = mode.best_pose()
 
         for pose in mode.poses:
-            obj_name = object_name(prefix, mode.mode_id, pose.pose_rank)
+            obj_name = object_name(prefix_s, mode.mode_id, pose.pose_rank)
             try:
                 cmd.load(str(pose.path), obj_name)
             except Exception as exc:
@@ -237,7 +292,7 @@ def load_binding_modes(output_dir: str, temperature: float = 300.0) -> None:
             cmd.hide("everything", obj_name)
             cmd.show("sticks", f"{obj_name} and organic")
             cmd.show("cartoon", f"{obj_name} and polymer")
-            cmd.show("lines", obj_name)
+            cmd.show("lines", f"{obj_name} and organic")
             if best_pose is None or pose.path != best_pose.path:
                 cmd.disable(obj_name)
             object_names.append(obj_name)
@@ -257,8 +312,12 @@ def load_binding_modes(output_dir: str, temperature: float = 300.0) -> None:
 
     n_modes = len(SESSION.mode_records)
     n_poses = sum(len(rec.pdb_objects) for rec in SESSION.mode_records.values())
-    print(f"Loaded {n_modes} binding modes ({n_poses} PDB objects) from {SESSION.output_dir}")
-    print("Use 'flexaids_show_ensemble modeN' or 'flexaids_show_mode N' to visualize.")
+    print(
+        f"Loaded {n_modes} binding modes ({n_poses} PDB objects) from "
+        f"{SESSION.output_dir} (prefix='{prefix_s}')"
+    )
+    _print_readiness_card(result, SESSION.temperature_K)
+    print("Use 'flexaids_show_mode N' / 'flexaids_show_ensemble modeN' to visualize.")
 
 
 def show_pose_ensemble(mode_name: str, show_all: bool = True) -> None:
@@ -368,8 +427,18 @@ def color_by_boltzmann_weight(mode_name: str) -> None:
 
     print(
         f"Colored {len(rec.pdb_objects)} poses for {_mode_name(rec.mode_id)} by Boltzmann weight "
-        "(burgundy=high, purple=low). Weights from CF scoring proxy ensemble."
+        "(burgundy=high, purple=low). "
+        "NOTE: weights use CF/contact-function scoring proxy energies, "
+        "not ensemble free energy F — do not read as true thermodynamic p_i."
     )
+    # Optional opacity by weight (high weight → more opaque)
+    try:
+        for obj, weight in zip(rec.pdb_objects, weights):
+            # transparency: 0 = opaque, 1 = invisible
+            t_alpha = max(0.0, min(0.85, 1.0 - float(weight)))
+            cmd.set("stick_transparency", t_alpha, obj)
+    except Exception:
+        pass
 
 
 def show_thermodynamics(mode_name: str) -> None:
@@ -387,10 +456,13 @@ def show_thermodynamics(mode_name: str) -> None:
         return
 
     temperature = SESSION.temperature_K
+    ledger_source = "unknown"
     if SESSION.result is not None:
         for mode in SESSION.result.binding_modes:
-            if mode.mode_id == rec.mode_id and mode.temperature is not None:
-                temperature = mode.temperature
+            if mode.mode_id == rec.mode_id:
+                if mode.temperature is not None:
+                    temperature = mode.temperature
+                ledger_source = (mode.metadata or {}).get("ledger_source", "engine_remark")
                 break
         else:
             if SESSION.result.temperature is not None:
@@ -407,6 +479,11 @@ def show_thermodynamics(mode_name: str) -> None:
     print(f"  Heat Capacity (Cv):   {rec.heat_capacity:10.4f} kcal/(mol·K²)" if rec.heat_capacity is not None else "  Heat Capacity (Cv):   N/A")
     print(f"  Best CF (proxy):      {rec.best_cf:10.5f}" if rec.best_cf is not None else "  Best CF (proxy):      N/A")
     print(f"  # Poses / frequency:  {rec.frequency:10d}")
+    print(f"  ledger_source:        {ledger_source}")
+    if ledger_source == "ensemble_estimate_from_cf":
+        print("  note: ensemble estimate from CF proxy (not full vib/solvent ledger)")
+    if rec.heat_capacity is None or rec.entropy is None:
+        print("  flag: incomplete ledger (missing Cv and/or S; Gate 6 language)")
     print()
 
 

@@ -115,15 +115,35 @@ class FlexAIDSPanel(QtWidgets.QDialog):
         self.itc_plot_btn = QtWidgets.QPushButton("ITC Compensation Plot")
         self.itc_plot_btn.setEnabled(False)
 
+        self.color_boltzmann_btn = QtWidgets.QPushButton("Color by Boltzmann (CF proxy)")
+        self.color_boltzmann_btn.setEnabled(False)
+
+        self.publication_btn = QtWidgets.QPushButton("Publication View")
+        self.publication_btn.setEnabled(False)
+
+        self.rmsd_btn = QtWidgets.QPushButton("RMSD Overlay")
+        self.rmsd_btn.setEnabled(False)
+
+        self.cf_contacts_btn = QtWidgets.QPushButton("CF Component Contacts")
+        self.cf_contacts_btn.setEnabled(False)
+
+        self.tscan_btn = QtWidgets.QPushButton("Temperature Scan (298/310)")
+        self.tscan_btn.setEnabled(False)
+
         self.unload_btn = QtWidgets.QPushButton("Unload Results")
         self.unload_btn.setEnabled(False)
 
         viz_layout.addWidget(self.show_ensemble_btn)
         viz_layout.addWidget(self.color_cf_btn)
         viz_layout.addWidget(self.color_free_energy_btn)
+        viz_layout.addWidget(self.color_boltzmann_btn)
         viz_layout.addWidget(self.show_representative_btn)
         viz_layout.addWidget(self.print_details_btn)
         viz_layout.addWidget(self.entropy_heatmap_btn)
+        viz_layout.addWidget(self.publication_btn)
+        viz_layout.addWidget(self.rmsd_btn)
+        viz_layout.addWidget(self.cf_contacts_btn)
+        viz_layout.addWidget(self.tscan_btn)
         viz_layout.addWidget(self.animate_btn)
         viz_layout.addWidget(self.itc_plot_btn)
         viz_layout.addWidget(self.unload_btn)
@@ -131,15 +151,38 @@ class FlexAIDSPanel(QtWidgets.QDialog):
         viz_group.setLayout(viz_layout)
         layout.addWidget(viz_group)
 
+        dock_group = QtWidgets.QGroupBox("Interactive Docking (modern CLI)")
+        dock_layout = QtWidgets.QFormLayout()
+        self.dock_receptor_edit = QtWidgets.QLineEdit()
+        self.dock_receptor_edit.setPlaceholderText("PyMOL receptor object name")
+        self.dock_ligand_edit = QtWidgets.QLineEdit()
+        self.dock_ligand_edit.setPlaceholderText("/path/to/ligand.mol2")
+        self.dock_site_edit = QtWidgets.QLineEdit("sele")
+        self.dock_temp_spin = QtWidgets.QSpinBox()
+        self.dock_temp_spin.setRange(200, 400)
+        self.dock_temp_spin.setValue(300)
+        self.dock_run_btn = QtWidgets.QPushButton("Run Docking")
+        self.dock_cancel_btn = QtWidgets.QPushButton("Cancel Docking")
+        dock_layout.addRow("Receptor obj:", self.dock_receptor_edit)
+        dock_layout.addRow("Ligand file:", self.dock_ligand_edit)
+        dock_layout.addRow("Site selection:", self.dock_site_edit)
+        dock_layout.addRow("T (K):", self.dock_temp_spin)
+        dock_layout.addRow(self.dock_run_btn, self.dock_cancel_btn)
+        dock_group.setLayout(dock_layout)
+        layout.addWidget(dock_group)
+
         nrg_group = QtWidgets.QGroupBox("Export")
         nrg_layout = QtWidgets.QVBoxLayout()
 
         self.launch_nrgsuite_btn = QtWidgets.QPushButton("Launch NRGSuite")
         self.export_to_nrg_btn = QtWidgets.QPushButton("Export Mode Table")
         self.export_to_nrg_btn.setEnabled(False)
+        self.itc_csv_btn = QtWidgets.QPushButton("ITC CSV Compare…")
+        self.itc_csv_btn.setEnabled(False)
 
         nrg_layout.addWidget(self.launch_nrgsuite_btn)
         nrg_layout.addWidget(self.export_to_nrg_btn)
+        nrg_layout.addWidget(self.itc_csv_btn)
 
         nrg_group.setLayout(nrg_layout)
         layout.addWidget(nrg_group)
@@ -164,6 +207,14 @@ class FlexAIDSPanel(QtWidgets.QDialog):
         self.entropy_heatmap_btn.clicked.connect(self._show_entropy_heatmap)
         self.animate_btn.clicked.connect(self._animate_modes)
         self.itc_plot_btn.clicked.connect(self._itc_compensation_plot)
+        self.color_boltzmann_btn.clicked.connect(self._color_boltzmann)
+        self.publication_btn.clicked.connect(self._publication_view)
+        self.rmsd_btn.clicked.connect(self._rmsd_overlay)
+        self.cf_contacts_btn.clicked.connect(self._cf_contacts)
+        self.tscan_btn.clicked.connect(self._tscan)
+        self.dock_run_btn.clicked.connect(self._run_docking)
+        self.dock_cancel_btn.clicked.connect(self._cancel_docking)
+        self.itc_csv_btn.clicked.connect(self._itc_csv_compare)
         self.launch_nrgsuite_btn.clicked.connect(self._launch_nrgsuite)
         self.export_to_nrg_btn.clicked.connect(self._export_mode_table)
         self.unload_btn.clicked.connect(self._unload_results)
@@ -179,10 +230,13 @@ class FlexAIDSPanel(QtWidgets.QDialog):
     def _viz_buttons(self):
         return (
             self.show_ensemble_btn, self.color_cf_btn,
-            self.color_free_energy_btn, self.show_representative_btn,
+            self.color_free_energy_btn, self.color_boltzmann_btn,
+            self.show_representative_btn,
             self.print_details_btn, self.entropy_heatmap_btn,
+            self.publication_btn, self.rmsd_btn, self.cf_contacts_btn,
+            self.tscan_btn,
             self.animate_btn, self.itc_plot_btn, self.export_to_nrg_btn,
-            self.unload_btn,
+            self.itc_csv_btn, self.unload_btn,
         )
 
     def _disable_viz_buttons(self):
@@ -329,7 +383,11 @@ class FlexAIDSPanel(QtWidgets.QDialog):
         def _fmt(val, fmt=".4f"):
             return f"{val:{fmt}}" if val is not None else "N/A"
 
-        self.free_energy_label.setText(_fmt(mode.free_energy))
+        ledger_src = (mode.metadata or {}).get("ledger_source", "")
+        f_txt = _fmt(mode.free_energy)
+        if ledger_src == "ensemble_estimate_from_cf" and mode.free_energy is not None:
+            f_txt = f"{f_txt} (CF est.)"
+        self.free_energy_label.setText(f_txt)
         self.enthalpy_label.setText(_fmt(mode.enthalpy))
         self.entropy_label.setText(_fmt(mode.entropy, ".6f"))
         self.entropy_term_label.setText(_fmt(entropy_term))
@@ -399,6 +457,62 @@ class FlexAIDSPanel(QtWidgets.QDialog):
         """Generate enthalpy-entropy compensation plot."""
         from .itc_comparison import plot_enthalpy_entropy_compensation
         plot_enthalpy_entropy_compensation()
+
+    def _color_boltzmann(self):
+        mode_id = self._selected_mode_id()
+        if mode_id is not None:
+            from .visualization import color_by_boltzmann_weight
+            color_by_boltzmann_weight(f"mode{mode_id}")
+
+    def _publication_view(self):
+        mode_id = self._selected_mode_id()
+        if mode_id is not None:
+            from .plugin_extras import publication_view
+            publication_view(mode_id)
+
+    def _rmsd_overlay(self):
+        mode_id = self._selected_mode_id()
+        if mode_id is not None:
+            from .plugin_extras import show_rmsd_overlay
+            show_rmsd_overlay(mode_id)
+
+    def _cf_contacts(self):
+        mode_id = self._selected_mode_id()
+        if mode_id is not None:
+            from .plugin_extras import show_cf_contacts
+            show_cf_contacts(mode_id)
+
+    def _tscan(self):
+        mode_id = self._selected_mode_id()
+        if mode_id is not None:
+            from .plugin_extras import temperature_scan
+            temperature_scan(mode_id, "298,310")
+
+    def _run_docking(self):
+        receptor = self.dock_receptor_edit.text().strip()
+        ligand = self.dock_ligand_edit.text().strip()
+        site = self.dock_site_edit.text().strip() or "sele"
+        temp = int(self.dock_temp_spin.value())
+        if not receptor or not ligand:
+            QtWidgets.QMessageBox.warning(
+                self, "Docking", "Set receptor object and ligand file path."
+            )
+            return
+        from .interactive_docking import dock_interactive
+        dock_interactive(receptor, ligand, site_selection=site, temperature=temp)
+
+    def _cancel_docking(self):
+        from .interactive_docking import dock_cancel
+        dock_cancel()
+
+    def _itc_csv_compare(self):
+        path, _ = QtWidgets.QFileDialog.getOpenFileName(
+            self, "ITC CSV", "", "CSV Files (*.csv);;All Files (*)"
+        )
+        if not path:
+            return
+        from .itc_comparison import plot_free_energy_comparison
+        plot_free_energy_comparison(path)
 
     def _launch_nrgsuite(self):
         """Launch NRGSuite plugin (if installed)."""

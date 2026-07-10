@@ -78,16 +78,45 @@ def _kabsch_align(
 def _read_atom_coords(pdb_path: str) -> List[List[float]]:
     """Read all ATOM/HETATM coordinates from a PDB file.
 
+    Tolerates fixed-column and free-format (whitespace-separated) coords.
     Returns a list of [x, y, z] lists preserving atom order.
     """
     coords = []
     with open(pdb_path) as fh:
         for line in fh:
-            if line.startswith("ATOM") or line.startswith("HETATM"):
-                x = float(line[30:38])
-                y = float(line[38:46])
-                z = float(line[46:54])
-                coords.append([x, y, z])
+            if not (line.startswith("ATOM") or line.startswith("HETATM")):
+                continue
+            try:
+                # Prefer fixed-column PDB (standard)
+                if len(line) >= 54:
+                    x = float(line[30:38])
+                    y = float(line[38:46])
+                    z = float(line[46:54])
+                    coords.append([x, y, z])
+                    continue
+            except ValueError:
+                pass
+            # Free-format fallback: last three floats before occupancy/B
+            try:
+                parts = line.split()
+                # ATOM serial name res chain resseq x y z ...
+                floats = []
+                for tok in parts:
+                    try:
+                        floats.append(float(tok))
+                    except ValueError:
+                        continue
+                # x,y,z are the first three consecutive coordinate-like values
+                # after residue number; take three floats in the middle range
+                if len(floats) >= 4:
+                    # skip serial (+ maybe resseq), take three coords
+                    # Heuristic: coords are typically the three values near |v|<1000
+                    cand = [f for f in floats if abs(f) < 1.0e4]
+                    if len(cand) >= 3:
+                        # Prefer values after the first integer-like serial/resseq
+                        coords.append([cand[-5], cand[-4], cand[-3]] if len(cand) >= 5 else cand[:3])
+            except (ValueError, IndexError):
+                continue
     return coords
 
 
