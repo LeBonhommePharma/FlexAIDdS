@@ -105,95 +105,18 @@ jobs:
           path: dist/*.whl
           retention-days: 5
 
-  # Optional accelerated wheels. Pure py3-none-any + sdist already make
-  # `pip install flexaidds` work on every platform; platform wheels are additive.
-  # continue-on-error so a delocate/cibuildwheel glitch never blocks publish.
-  build-wheels:
-    name: Build wheels (${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
-    continue-on-error: true
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
-
-    steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
-        with:
-          fetch-depth: 0
-
-      - name: Set up Python
-        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6
-        with:
-          python-version: "3.11"
-
-      - name: Install cibuildwheel
-        run: python -m pip install --upgrade pip cibuildwheel
-
-      # Eigen for native (macOS/Windows) host builds. Linux cibuildwheel runs
-      # inside manylinux containers, so Eigen must be fetched with BEFORE_ALL.
-      - name: Install Eigen headers (host)
-        if: runner.os != 'Linux'
-        shell: bash
-        run: |
-          set -euo pipefail
-          EIGEN_ROOT="${RUNNER_TEMP}/eigen-3.4.0"
-          curl -sL "https://gitlab.com/libeigen/eigen/-/archive/3.4.0/eigen-3.4.0.tar.gz" \
-            | tar xz -C "${RUNNER_TEMP}"
-          test -f "${EIGEN_ROOT}/Eigen/Dense"
-          {
-            echo "EIGEN_INCLUDE_DIR=${EIGEN_ROOT}"
-            echo "CIBW_ENVIRONMENT=EIGEN_INCLUDE_DIR=${EIGEN_ROOT}"
-          } >> "$GITHUB_ENV"
-
-      - name: Configure Eigen for manylinux containers
-        if: runner.os == 'Linux'
-        shell: bash
-        run: |
-          set -euo pipefail
-          {
-            echo "CIBW_BEFORE_ALL_LINUX=curl -sL https://gitlab.com/libeigen/eigen/-/archive/3.4.0/eigen-3.4.0.tar.gz | tar xz -C /tmp && test -f /tmp/eigen-3.4.0/Eigen/Dense"
-            echo "CIBW_ENVIRONMENT_LINUX=EIGEN_INCLUDE_DIR=/tmp/eigen-3.4.0"
-          } >> "$GITHUB_ENV"
-
-      - name: Build wheels with cibuildwheel
-        run: python -m cibuildwheel --output-dir wheelhouse python
-
-      - name: Smoke-test built wheels
-        shell: bash
-        run: |
-          set -euo pipefail
-          python -m pip install --upgrade pip
-          shopt -s nullglob
-          wheels=(wheelhouse/*.whl)
-          if [ ${#wheels[@]} -eq 0 ]; then
-            echo "No wheels produced" >&2
-            exit 1
-          fi
-          python -m pip install "${wheels[0]}"
-          python -c "import flexaidds as fd; print('flexaidds', fd.__version__, 'HAS_CORE=', getattr(fd, 'HAS_CORE_BINDINGS', False))"
-
-      - name: Upload wheels artifact
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
-        with:
-          name: wheels-${{ matrix.os }}
-          path: wheelhouse/*.whl
-          retention-days: 5
+  # First release ships pure py3-none-any + sdist only. That is enough for
+  # `pip install flexaidds` on every platform. Accelerated wheels (cibuildwheel)
+  # can be re-enabled later once delocate/Eigen paths are fully green.
 
   publish:
     name: Publish to PyPI
-    # Platform wheels are optional (continue-on-error); always ship sdist + pure.
-    needs: [build-sdist, build-pure-wheel, build-wheels]
+    needs: [build-sdist, build-pure-wheel]
     runs-on: ubuntu-latest
     # Only publish on actual releases or when manually requested for pypi
     if: >-
-      always() &&
-      needs.build-sdist.result == 'success' &&
-      needs.build-pure-wheel.result == 'success' &&
-      (
-        (github.event_name == 'release' && github.event.action == 'published') ||
-        (github.event_name == 'workflow_dispatch' && github.event.inputs.target == 'pypi')
-      )
+      (github.event_name == 'release' && github.event.action == 'published') ||
+      (github.event_name == 'workflow_dispatch' && github.event.inputs.target == 'pypi')
     environment:
       name: pypi
       url: https://pypi.org/project/flexaidds
@@ -220,12 +143,9 @@ jobs:
 
   publish-testpypi:
     name: Publish to TestPyPI (manual or pre-release)
-    needs: [build-sdist, build-pure-wheel, build-wheels]
+    needs: [build-sdist, build-pure-wheel]
     runs-on: ubuntu-latest
     if: >-
-      always() &&
-      needs.build-sdist.result == 'success' &&
-      needs.build-pure-wheel.result == 'success' &&
       github.event_name == 'workflow_dispatch' &&
       github.event.inputs.target == 'testpypi'
     environment:
