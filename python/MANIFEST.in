@@ -1,32 +1,25 @@
 # MANIFEST.in for flexaidds Python package sdist
-# Ensures C++ sources for the pybind11 extension are included so that
-# `pip install` from sdist or git (without the full repo checkout layout)
-# can still compile the accelerated _core extension.
+# C++ sources for the optional _core extension are staged by setup.py's
+# sdist_with_lib command from ../LIB (or FLEXAIDDS_LIB_DIR) into LIB/ inside
+# the sdist. Paths below cover in-tree files only.
 
 include flexaidds/py.typed
-recursive-include flexaidds/dataset_runner datasets *.yaml
-
-# C++ sources and headers required to build the _core extension.
-# These live one level up in the repo (../LIB) when developing from python/.
-# When building an sdist the files are included at the expected relative paths.
-recursive-include ../LIB *.cpp *.c *.cu
-recursive-include ../LIB *.h *.hpp *.cuh *.hh
-recursive-include ../LIB tENCoM *.cpp *.h
-recursive-include ../LIB ShannonThermoStack *.cpp *.h *.metal
-recursive-include ../LIB DiFT *.cpp *.h
-recursive-include ../LIB ChiralCenter *.cpp *.h
-recursive-include ../LIB LigandRingFlex *.cpp *.h
-include ../LIB/*.dat
-include ../LIB/*.def
-
-# Also include the pybind11 wrapper source explicitly (already covered by flexaidds/_core.cpp glob above but be explicit)
 include flexaidds/_core.cpp
-include bindings/*.cpp bindings/*.h
+include README.md
+include pyproject.toml
+include setup.py
 
-# License and readme for the sdist
-include ../LICENSE
-include ../THIRD_PARTY_LICENSES.md
-global-exclude __pycache__ *.py[cod] *~ .git* .DS_Store
+recursive-include flexaidds/dataset_runner/datasets *.yaml
+recursive-include bindings *.cpp *.h *.hpp
+
+# If LIB was pre-staged next to setup.py (e.g. by a packaging script), include it.
+recursive-include LIB *.cpp *.c *.h *.hpp *.hh *.cuh
+
+# License when present next to the package (copied by some packaging flows)
+include LICENSE
+include THIRD_PARTY_LICENSES.md
+
+global-exclude __pycache__ *.py[cod] *~ .git* .DS_Store *.so *.dylib *.pyd
 prune */__pycache__
 prune */*.egg-info
 prune build

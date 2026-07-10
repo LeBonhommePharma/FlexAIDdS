@@ -32,17 +32,77 @@ jobs:
           python-version: "3.11"
 
       - name: Install build tools
-        run: python -m pip install --upgrade pip build
+        run: python -m pip install --upgrade pip build twine
 
       - name: Build sdist
         working-directory: python
         run: python -m build --sdist --outdir ../dist
+
+      - name: Twine check sdist
+        run: python -m twine check dist/*.tar.gz
+
+      - name: Verify sdist installs (pure-Python fallback OK)
+        run: |
+          set -euo pipefail
+          python -m venv /tmp/flexaidds-sdist-venv
+          # shellcheck disable=SC1091
+          source /tmp/flexaidds-sdist-venv/bin/activate
+          python -m pip install --upgrade pip
+          # Force pure-Python path so CI does not depend on a C++26 toolchain.
+          FLEXAIDDS_SKIP_CORE=1 python -m pip install dist/*.tar.gz
+          python -c "import flexaidds as fd; print('flexaidds', fd.__version__, 'HAS_CORE=', getattr(fd, 'HAS_CORE_BINDINGS', False))"
+          python -m flexaidds --help
+          python -m flexaidds --check-update || true
+          test "$(python -c 'import flexaidds; print(flexaidds.__version__)')" = "2.0.0" \
+            || python -c "import flexaidds as fd; assert fd.__version__, fd.__version__"
 
       - name: Upload sdist artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: sdist
           path: dist/*.tar.gz
+          retention-days: 5
+
+  # Guaranteed universal wheel so `pip install flexaidds` works without a
+  # C++ compiler on any platform (accelerated wheels are additive).
+  build-pure-wheel:
+    name: Build pure-Python wheel
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6
+        with:
+          python-version: "3.11"
+
+      - name: Install build tools
+        run: python -m pip install --upgrade pip build twine
+
+      - name: Build pure-Python wheel
+        working-directory: python
+        env:
+          FLEXAIDDS_SKIP_CORE: "1"
+        run: python -m build --wheel --outdir ../dist
+
+      - name: Twine check + smoke install
+        run: |
+          set -euo pipefail
+          python -m twine check dist/*.whl
+          python -m venv /tmp/flexaidds-pure-venv
+          # shellcheck disable=SC1091
+          source /tmp/flexaidds-pure-venv/bin/activate
+          python -m pip install --upgrade pip
+          python -m pip install dist/*.whl
+          python -c "import flexaidds as fd; print('flexaidds', fd.__version__, 'HAS_CORE=', getattr(fd, 'HAS_CORE_BINDINGS', False)); assert not fd.HAS_CORE_BINDINGS"
+          python -m flexaidds --help
+
+      - name: Upload pure wheel artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: wheels-pure
+          path: dist/*.whl
           retention-days: 5
 
   build-wheels:
@@ -66,30 +126,48 @@ jobs:
       - name: Install cibuildwheel
         run: python -m pip install --upgrade pip cibuildwheel
 
-      # Provide Eigen headers for the extension build inside the isolated environments.
-      # We download a known-good version (header-only) and point setup.py at it via env var.
-      - name: Configure Eigen + cibuildwheel environment (Linux)
+      # Eigen for native (macOS/Windows) host builds. Linux cibuildwheel runs
+      # inside manylinux containers, so Eigen must be fetched with BEFORE_ALL.
+      - name: Install Eigen headers (host)
+        if: runner.os != 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          EIGEN_ROOT="${RUNNER_TEMP}/eigen-3.4.0"
+          curl -sL "https://gitlab.com/libeigen/eigen/-/archive/3.4.0/eigen-3.4.0.tar.gz" \
+            | tar xz -C "${RUNNER_TEMP}"
+          test -f "${EIGEN_ROOT}/Eigen/Dense"
+          {
+            echo "EIGEN_INCLUDE_DIR=${EIGEN_ROOT}"
+            echo "CIBW_ENVIRONMENT=EIGEN_INCLUDE_DIR=${EIGEN_ROOT}"
+          } >> "$GITHUB_ENV"
+
+      - name: Configure Eigen for manylinux containers
         if: runner.os == 'Linux'
+        shell: bash
         run: |
-          echo "CIBW_BEFORE_ALL_LINUX=curl -sL https://gitlab.com/libeigen/eigen/-/archive/3.4.0/eigen-3.4.0.tar.gz | tar xz -C /tmp" >> $GITHUB_ENV
-          echo "CIBW_ENVIRONMENT_LINUX=EIGEN_INCLUDE_DIR=/tmp/eigen-3.4.0" >> $GITHUB_ENV
-
-      - name: Configure Eigen + cibuildwheel environment (macOS)
-        if: runner.os == 'macOS'
-        run: |
-          echo "CIBW_BEFORE_ALL_MACOS=curl -sL https://gitlab.com/libeigen/eigen/-/archive/3.4.0/eigen-3.4.0.tar.gz | tar xz -C /tmp" >> $GITHUB_ENV
-          echo "CIBW_ENVIRONMENT_MACOS=EIGEN_INCLUDE_DIR=/tmp/eigen-3.4.0" >> $GITHUB_ENV
-
-      - name: Configure Eigen + cibuildwheel environment (Windows)
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          $before = 'powershell -Command "Invoke-WebRequest -Uri https://gitlab.com/libeigen/eigen/-/archive/3.4.0/eigen-3.4.0.tar.gz -OutFile $env:TEMP\eigen.tar.gz; tar -xzf $env:TEMP\eigen.tar.gz -C $env:TEMP"'
-          "CIBW_BEFORE_ALL_WINDOWS=$before" | Out-File -FilePath $env:GITHUB_ENV -Append
-          "CIBW_ENVIRONMENT_WINDOWS=EIGEN_INCLUDE_DIR=$env:TEMP\eigen-3.4.0" | Out-File -FilePath $env:GITHUB_ENV -Append
+          set -euo pipefail
+          {
+            echo "CIBW_BEFORE_ALL_LINUX=curl -sL https://gitlab.com/libeigen/eigen/-/archive/3.4.0/eigen-3.4.0.tar.gz | tar xz -C /tmp && test -f /tmp/eigen-3.4.0/Eigen/Dense"
+            echo "CIBW_ENVIRONMENT_LINUX=EIGEN_INCLUDE_DIR=/tmp/eigen-3.4.0"
+          } >> "$GITHUB_ENV"
 
       - name: Build wheels with cibuildwheel
         run: python -m cibuildwheel --output-dir wheelhouse python
+
+      - name: Smoke-test built wheels
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          shopt -s nullglob
+          wheels=(wheelhouse/*.whl)
+          if [ ${#wheels[@]} -eq 0 ]; then
+            echo "No wheels produced" >&2
+            exit 1
+          fi
+          python -m pip install "${wheels[0]}"
+          python -c "import flexaidds as fd; print('flexaidds', fd.__version__, 'HAS_CORE=', getattr(fd, 'HAS_CORE_BINDINGS', False))"
 
       - name: Upload wheels artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
@@ -100,7 +178,7 @@ jobs:
 
   publish:
     name: Publish to PyPI
-    needs: [build-sdist, build-wheels]
+    needs: [build-sdist, build-pure-wheel, build-wheels]
     runs-on: ubuntu-latest
     # Only publish on actual releases or when manually requested for pypi
     if: (github.event_name == 'release' && github.event.action == 'published') || (github.event_name == 'workflow_dispatch' && github.event.inputs.target == 'pypi')
@@ -109,17 +187,28 @@ jobs:
       url: https://pypi.org/project/flexaidds
     steps:
       - name: Download all artifacts
-        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4
+        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
         with:
           path: dist
           merge-multiple: true
+
+      - name: List packages to publish
+        run: |
+          set -euo pipefail
+          ls -la dist/
+          python - <<'PY'
+          from pathlib import Path
+          files = sorted(Path("dist").glob("*"))
+          assert files, "no artifacts to publish"
+          print("\n".join(str(p) for p in files))
+          PY
 
       - name: Publish to PyPI (trusted publishing)
         uses: pypa/gh-action-pypi-publish@76f52bc884231f62b9a034ebfe128415bbaabdfc # v1.10.3
 
   publish-testpypi:
     name: Publish to TestPyPI (manual or pre-release)
-    needs: [build-sdist, build-wheels]
+    needs: [build-sdist, build-pure-wheel, build-wheels]
     runs-on: ubuntu-latest
     if: github.event_name == 'workflow_dispatch' && github.event.inputs.target == 'testpypi'
     environment:
@@ -127,10 +216,21 @@ jobs:
       url: https://test.pypi.org/project/flexaidds
     steps:
       - name: Download all artifacts
-        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4
+        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
         with:
           path: dist
           merge-multiple: true
+
+      - name: List packages to publish
+        run: |
+          set -euo pipefail
+          ls -la dist/
+          python - <<'PY'
+          from pathlib import Path
+          files = sorted(Path("dist").glob("*"))
+          assert files, "no artifacts to publish"
+          print("\n".join(str(p) for p in files))
+          PY
 
       - name: Publish to TestPyPI
         uses: pypa/gh-action-pypi-publish@76f52bc884231f62b9a034ebfe128415bbaabdfc # v1.10.3
