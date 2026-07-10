@@ -89,12 +89,20 @@ protected:
         delete mock_fa;
     }
     
-    // Helper: Create mock pose with specific CF
+    // Helper: Create mock pose with specific CF (also sets app_evalue so soft-β
+    // Pose::boltzmann_weight matches CF — required for classic global-Z ranking).
     Pose create_mock_pose(double cf_value, int index) {
+        mock_chroms[index].app_evalue = cf_value;
+        mock_chroms[index].evalue = cf_value;
         std::vector<float> empty_vec;
         Pose p(&mock_chroms[index], index, 0, 0.0f, static_cast<uint>(TEST_TEMPERATURE), empty_vec);
         p.CF = cf_value;
         return p;
+    }
+
+    // Physical per-mode StatMech ranking path (pre-classic-entropy product).
+    void enable_force_cf_ranking() {
+        mock_fa->force_cf_rank_emission = true;
     }
 };
 
@@ -127,6 +135,9 @@ TEST_F(BindingModeStatMechTest, LazyEngineRebuild) {
 }
 
 TEST_F(BindingModeStatMechTest, ConsistencyWithLegacy) {
+    // Physical ranking path: ranking F must match StatMech ledger.
+    // Classic path intentionally diverges (soft-β global Z vs kB per-mode).
+    enable_force_cf_ranking();
     BindingMode mode(test_population);
     
     // Add diverse CF distribution
@@ -150,6 +161,8 @@ TEST_F(BindingModeStatMechTest, ConsistencyWithLegacy) {
 }
 
 TEST_F(BindingModeStatMechTest, ThermodynamicBreakdownPreservesLegacyRankingEnergy) {
+    // Breakdown ledger is physical-kB; ranking under force_cf matches it.
+    enable_force_cf_ranking();
     BindingMode mode(test_population);
 
     std::vector<double> cf_values = {-14.0, -11.0, -9.0};
@@ -200,6 +213,8 @@ TEST_F(BindingModeStatMechTest, BoltzmannWeightsNormalization) {
 }
 
 TEST_F(BindingModeStatMechTest, EntropyBehavior) {
+    // Physical β: ground-state collapse on broad CF spreads.
+    enable_force_cf_ranking();
     BindingMode mode_sharp(test_population);
     BindingMode mode_broad(test_population);
     
@@ -230,6 +245,8 @@ TEST_F(BindingModeStatMechTest, EntropyBehavior) {
 // ===========================================================================
 
 TEST_F(BindingModeStatMechTest, DeltaGCalculation) {
+    // Per-mode physical F without global Z (modes not yet in population PF).
+    enable_force_cf_ranking();
     BindingMode mode1(test_population);
     BindingMode mode2(test_population);
     
@@ -297,6 +314,7 @@ TEST_F(BindingModeStatMechTest, CacheInvalidationOnClear) {
 }
 
 TEST_F(BindingModeStatMechTest, MultipleRebuilds) {
+    enable_force_cf_ranking();
     BindingMode mode(test_population);
     
     // First batch of poses

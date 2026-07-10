@@ -1615,6 +1615,60 @@ if(BUILD_TESTING)
     flexaids_configure_msvc_test(test_binding_mode_statmech)
     add_test(NAME BindingModeStatMechTests COMMAND test_binding_mode_statmech)
 
+    # test_classic_entropy_ranking — classic FlexAID soft-β / ACF rank-0 (rollback: force_cf_rank_emission)
+    add_executable(test_classic_entropy_ranking
+        tests/test_classic_entropy_ranking.cpp
+        tests/stubs.cpp
+        LIB/gaboom.cpp
+        LIB/coarse_init.cpp
+        LIB/ThermodynamicEngine.cpp
+        LIB/LigandRingFlex/RingConformerLibrary.cpp
+        LIB/LigandRingFlex/SugarPucker.cpp
+        LIB/VibEntropy.cpp
+        LIB/InStreamClustering.cpp
+        LIB/GAContext.cpp
+        LIB/Vcontacts.cpp
+        LIB/statmech.cpp
+        LIB/TurboQuant.cpp
+        LIB/geometry.cpp
+        LIB/tENCoM/tencm.cpp
+        LIB/encom.cpp
+        LIB/BindingMode.cpp
+        LIB/fast_optics.cpp
+        LIB/ShannonThermoStack/ShannonThermoStack.cpp
+        LIB/CleftDetector.cpp
+        LIB/NATURaL/NATURaLDualAssembly.cpp
+        LIB/NATURaL/RibosomeElongation.cpp
+        LIB/NATURaL/TransloconInsertion.cpp
+        LIB/NATURaL/NucleationDetector.cpp
+        LIB/NATURaL/NascentChainScheduler.cpp
+        LIB/NATURaL/FibrilGrowthOracle.cpp
+        LIB/GrandPartitionFunction.cpp
+        LIB/NATURaL/DualAssemblyRunner.cpp
+        LIB/UnifiedHardwareDispatch.cpp
+        LIB/hardware_detect.cpp
+    )
+    target_include_directories(test_classic_entropy_ranking PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/LIB
+        ${CMAKE_CURRENT_SOURCE_DIR}/LIB/tENCoM
+        ${CMAKE_CURRENT_SOURCE_DIR}/LIB/ShannonThermoStack
+        ${CMAKE_CURRENT_SOURCE_DIR}/LIB/NATURaL
+        ${CMAKE_CURRENT_SOURCE_DIR}/LIB/CavityDetect
+    )
+    target_link_libraries(test_classic_entropy_ranking PRIVATE GTest::gtest_main)
+    if(MSVC)
+        target_compile_options(test_classic_entropy_ranking PRIVATE /O2)
+    else()
+        target_compile_options(test_classic_entropy_ranking PRIVATE -O2)
+    endif()
+    if(FLEXAIDS_USE_OPENMP AND OpenMP_CXX_FOUND)
+        target_link_libraries(test_classic_entropy_ranking PRIVATE OpenMP::OpenMP_CXX)
+    endif()
+    target_link_libraries(test_classic_entropy_ranking PRIVATE Eigen3::Eigen)
+    target_compile_definitions(test_classic_entropy_ranking PRIVATE FLEXAIDS_HAS_EIGEN)
+    flexaids_configure_msvc_test(test_classic_entropy_ranking)
+    add_test(NAME ClassicEntropyRankingTests COMMAND test_classic_entropy_ranking)
+
     # test_ccbm — Conformer-Coupled Binding Modes (CCBM) unit tests
     add_executable(test_ccbm
         tests/test_ccbm.cpp

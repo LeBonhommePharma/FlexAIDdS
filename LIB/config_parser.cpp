@@ -144,6 +144,26 @@ void apply_config(const json::Value& config, FA_Global* FA, GB_Global* GB) {
         }
         FA->cluster_rmsd = jflt(config, "thermodynamics", "cluster_rmsd", 2.0f);
         FA->use_super_cluster = jbool(config, "thermodynamics", "use_super_cluster", false);
+        // Classic FlexAID entropy ranking is the default product when T>0.
+        // force_cf_rank_emission restores P3b lowest-CF emission (easy rollback).
+        // classic_entropy_ranking=false is an alias that also forces CF emission.
+        FA->force_cf_rank_emission = jbool(config, "thermodynamics", "force_cf_rank_emission", false);
+        if (!jbool(config, "thermodynamics", "classic_entropy_ranking", true)) {
+            FA->force_cf_rank_emission = true;
+        }
+        if (const char* e = std::getenv("FLEXAIDDS_FORCE_CF_RANK_EMISSION")) {
+            if (e[0] == '1' || e[0] == 't' || e[0] == 'T' || e[0] == 'y' || e[0] == 'Y')
+                FA->force_cf_rank_emission = true;
+            else if (e[0] == '0' || e[0] == 'f' || e[0] == 'F' || e[0] == 'n' || e[0] == 'N')
+                FA->force_cf_rank_emission = false;
+        }
+        if (const char* e = std::getenv("FLEXAIDDS_CLASSIC_ENTROPY_RANKING")) {
+            // 0/false → CF emission (rollback); 1/true → classic entropy (default)
+            if (e[0] == '0' || e[0] == 'f' || e[0] == 'F' || e[0] == 'n' || e[0] == 'N')
+                FA->force_cf_rank_emission = true;
+            else if (e[0] == '1' || e[0] == 't' || e[0] == 'T' || e[0] == 'y' || e[0] == 'Y')
+                FA->force_cf_rank_emission = false;
+        }
         FA->use_tqcm  = jbool(config, "turboquant", "compressed_contact_matrix", false);
         FA->use_tqens = jbool(config, "turboquant", "ensemble_compression", false);
         FA->use_tqnn  = jbool(config, "turboquant", "compressed_nn", false);

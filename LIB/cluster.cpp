@@ -213,31 +213,45 @@ void cluster(FA_Global* FA, GB_Global* GB, VC_Global* VC, chromosome* chrom, gen
 	if(FA->temperature)
 	{
 		// Reordering the clusters properly by lowest ACF values first (after considering cluster's entropy !)
+		// Classic FlexAID contract: this ACF order IS emission order when T>0.
 		QuickSort_Clusters(Clus_TOP, Clus_FRE, Clus_TCF, Clus_ACF, Clus_GAPOP, 0, num_of_results-1);
 	}
 
-	// ── Emit rank-0 = lowest-CF representative ───────────────────────────────
-	// The ACF ordering above is the entropy-augmented cluster free energy, which
-	// can rank a densely-populated cluster at WORSE representative CF ahead of a
-	// sparse cluster at BETTER CF (e.g. 1KZK: emitted _0.pdb = -390.45 while a
-	// -420.62 representative existed in another cluster). DatasetRunner measures
-	// both the RMSD and best_score on the lowest "REMARK CF=" pose, and that
-	// REMARK is chrom[Clus_TOP[j]].evalue (see emission below). Re-sort the
-	// clusters by representative evalue ascending (most negative first) so the
-	// emitted _0.pdb is always the lowest-CF cluster representative the GA found.
-	// Selection sort over num_of_results (≤ max_results, small) reusing
-	// swap_clusters to keep all five parallel arrays consistent.
-	for(int a=0; a<num_of_results-1; ++a)
+	// ── Rank-0 emission policy ───────────────────────────────────────────────
+	// Classic FlexAID (default when T>0 && !force_cf_rank_emission): keep ACF
+	// order so dense entropy-favored basins can beat sparse lowest-CF clusters.
+	// P3b rollback (force_cf_rank_emission or T==0): re-sort by representative
+	// evalue so _0.pdb is always lowest CF (commit cd9004d behavior).
+	// Single gate — flip FA->force_cf_rank_emission to restore old product path.
+	const bool classic_entropy_emit =
+		(FA->temperature > 0) && !FA->force_cf_rank_emission;
+	if (!classic_entropy_emit)
 	{
-		int best_idx = a;
-		for(int b=a+1; b<num_of_results; ++b)
+		for(int a=0; a<num_of_results-1; ++a)
 		{
-			if(chrom[Clus_TOP[b]].evalue < chrom[Clus_TOP[best_idx]].evalue)
-				best_idx = b;
+			int best_idx = a;
+			for(int b=a+1; b<num_of_results; ++b)
+			{
+				if(chrom[Clus_TOP[b]].evalue < chrom[Clus_TOP[best_idx]].evalue)
+					best_idx = b;
+			}
+			if(best_idx != a)
+				swap_clusters(&Clus_TOP[a], &Clus_FRE[a], &Clus_TCF[a], &Clus_ACF[a], &Clus_GAPOP[a],
+				              &Clus_TOP[best_idx], &Clus_FRE[best_idx], &Clus_TCF[best_idx], &Clus_ACF[best_idx], &Clus_GAPOP[best_idx]);
 		}
-		if(best_idx != a)
-			swap_clusters(&Clus_TOP[a], &Clus_FRE[a], &Clus_TCF[a], &Clus_ACF[a], &Clus_GAPOP[a],
-			              &Clus_TOP[best_idx], &Clus_FRE[best_idx], &Clus_TCF[best_idx], &Clus_ACF[best_idx], &Clus_GAPOP[best_idx]);
+	}
+	else if (num_of_results > 0)
+	{
+		// Debuggable proof that rank-0 is ACF, not necessarily min CF.
+		double best_cf = chrom[Clus_TOP[0]].evalue;
+		for (int a = 1; a < num_of_results; ++a) {
+			if (chrom[Clus_TOP[a]].evalue < best_cf)
+				best_cf = chrom[Clus_TOP[a]].evalue;
+		}
+		fprintf(stdout,
+			"[ENTROPY_RANK] classic FlexAID: rank-0 by ACF (ACF=%.4f CF=%.4f freq=%d); "
+			"best_CF_among_emitted=%.4f (CF re-sort off; set force_cf_rank_emission to restore P3b)\n",
+			Clus_ACF[0], chrom[Clus_TOP[0]].evalue, Clus_FRE[0], best_cf);
 	}
 
 	// print cluster information

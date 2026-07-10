@@ -36,6 +36,8 @@ protected:
         std::memset(fa, 0, sizeof(FA_Global));
 #pragma clang diagnostic pop
         fa->temperature = static_cast<uint>(TEMP);
+        // Advanced thermo/profile tests use physical per-mode F.
+        fa->force_cf_rank_emission = true;
 
         gb = new GB_Global();
         std::memset(gb, 0, sizeof(GB_Global));

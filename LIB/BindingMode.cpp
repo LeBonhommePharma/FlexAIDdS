@@ -257,6 +257,7 @@ void BindingMode::add_Pose(Pose& pose)
 /// === Cache rebuild infrastructure (Phase 1 + CCBM) ===
 /// Uses pose.total_energy() (= CF + receptor_strain) for the true
 /// multi-conformer free energy: F = -kT ln Σ_{r,i} exp(-β(E_CF(r,i) + E_strain(r)))
+/// Physical-kB path used for diagnostic ledger + force_cf_rank_emission ranking.
 void BindingMode::rebuild_engine() const
 {
 	if (thermo_cache_valid_)
@@ -273,25 +274,80 @@ void BindingMode::rebuild_engine() const
 }
 
 
+bool BindingMode::use_classic_entropy_ranking() const noexcept
+{
+	// Classic FlexAID: soft-β global-Z free energy elects modes when T>0.
+	// force_cf_rank_emission restores physical per-mode StatMech ranking (rollback).
+	if (!Population || Population->Temperature == 0)
+		return false;
+	if (Population->FA && Population->FA->force_cf_rank_emission)
+		return false;
+	return true;
+}
+
+
 double BindingMode::compute_enthalpy() const
 {
-	rebuild_engine();
-	return engine_.compute().mean_energy;
+	if (!use_classic_entropy_ranking())
+	{
+		rebuild_engine();
+		return engine_.compute().mean_energy;
+	}
+	// Classic FlexAID: H = Σ_{i in mode} p_i E_i with p_i = w_i / Z_global
+	double enthalpy = 0.0;
+	const double Z = Population->PartitionFunction;
+	if (Z <= 0.0 || Poses.empty())
+		return 0.0;
+	for (const auto& pose : Poses)
+	{
+		const double p = pose.boltzmann_weight / Z;
+		enthalpy += p * static_cast<double>(pose.CF);
+	}
+	return enthalpy;
 }
 
 
 double BindingMode::compute_entropy() const
 {
-	rebuild_engine();
-	return engine_.compute().entropy;
+	if (!use_classic_entropy_ranking())
+	{
+		rebuild_engine();
+		return engine_.compute().entropy;
+	}
+	// Classic FlexAID: S = −Σ_{i in mode} p_i ln p_i  (Shannon, global p_i)
+	double entropy = 0.0;
+	const double Z = Population->PartitionFunction;
+	if (Z <= 0.0 || Poses.empty())
+		return 0.0;
+	for (const auto& pose : Poses)
+	{
+		const double p = pose.boltzmann_weight / Z;
+		if (p > 0.0)
+			entropy += p * std::log(p);
+	}
+	return -entropy;
 }
 
 
 double BindingMode::compute_energy() const
 {
-	rebuild_engine();
-	double nat_dg = (Population && Population->FA) ? Population->FA->natural_deltaG : 0.0;
-	return engine_.compute().free_energy + compute_vibrational_correction() + nat_dg;
+	if (!use_classic_entropy_ranking())
+	{
+		rebuild_engine();
+		double nat_dg = (Population && Population->FA) ? Population->FA->natural_deltaG : 0.0;
+		return engine_.compute().free_energy + compute_vibrational_correction() + nat_dg;
+	}
+	// Classic FlexAID configurational free energy: F_conf = H − T·S
+	// (soft-β, global Z, T without kB) — this is what elects modes.
+	// FlexAIDdS keeps vibrational entropy on the ranking path as well:
+	// F = F_conf + (−T·S_vib) [ENCoM/tENCoM] + optional NATURaL ΔG.
+	// Vib is additive; it does not replace classic soft-β ranking.
+	const double nat_dg =
+		(Population && Population->FA) ? Population->FA->natural_deltaG : 0.0;
+	return compute_enthalpy()
+		- (static_cast<double>(Population->Temperature) * compute_entropy())
+		+ compute_vibrational_correction()
+		+ nat_dg;
 }
 
 
@@ -691,7 +747,16 @@ Pose::Pose(chromosome* chrom, int index, int iorder, float dist, uint temperatur
 	energy_components.metal = chrom->cf.metal_coord;
 	energy_components.water = chrom->cf.gist;
 	energy_components.complete = false;
-	this->boltzmann_weight = std::exp(-chrom->app_evalue / (statmech::kB_kcal * static_cast<double>(temperature)));
+	// Classic FlexAID soft-β: w = exp(−E/T). Physical 1/(kB·T) collapsed ranking
+	// entropy to zero on CF magnitudes. PartitionFunction + classic BindingMode F
+	// use these weights. Physical ledger uses StatMechEngine (unchanged).
+	// Rollback of ranking product is FA->force_cf_rank_emission, not this weight.
+	if (temperature > 0) {
+		this->boltzmann_weight = std::exp(
+			-static_cast<double>(chrom->app_evalue) / static_cast<double>(temperature));
+	} else {
+		this->boltzmann_weight = 0.0;
+	}
 }
 
 

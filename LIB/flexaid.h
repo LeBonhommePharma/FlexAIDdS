@@ -399,6 +399,10 @@ struct FA_Global_struct{
 	bool  use_tqnn;                      // TurboQuant compressed NN for FastOPTICS
 	uint temperature;					 // temperature parameter
 	double beta;						 // Metropolis ß parament == 1/T *may be worth trying 1/kT*
+	// When true: restore pre-classic-entropy emission (P3b cd9004d) — rank-0 = lowest CF.
+	// When false (default) and temperature > 0: classic FlexAID ACF / BindingMode F ranking.
+	// Revert product path: set force_cf_rank_emission = true (JSON or FLEXAIDDS_FORCE_CF_RANK_EMISSION=1).
+	bool  force_cf_rank_emission;
 	double dsf_Tm_K;                     // DSF/TSA melting temperature (K); 0.0 = not provided
 	double dsf_delta_Hm;                 // enthalpy at Tm from ITC/DSF (kcal/mol); 0.0 = not provided
 	float permeability;                  // allow permeability or not between atoms
