@@ -7,9 +7,10 @@ The accelerated ``flexaidds._core`` extension is **optional**:
 
 Important packaging constraints:
 - ``setup()`` Extension sources must be relative paths under ``python/`` (never
-  absolute, never ``../``), otherwise setuptools rejects the sdist/wheel or
-  materializes a stray ``python/LIB/`` tree in the checkout.
-- Monorepo ``../LIB`` sources are wired in at ``build_ext`` time only.
+  absolute, never ``../``). Modern setuptools rejects absolute paths even when
+  assigned later in ``build_ext``.
+- Monorepo ``../LIB`` sources are **staged** into the gitignored ``python/LIB/``
+  tree at ``build_ext`` time so every source path stays relative to ``setup.py``.
 - The custom ``sdist`` command stages the minimal LIB files into the *release
   tree* as ``LIB/`` so out-of-tree builds can still compile ``_core``.
 """
@@ -178,26 +179,118 @@ def _can_attempt_core() -> bool:
     return True
 
 
+def _path_is_under_root(path: Path) -> bool:
+    """True if *path* is the same as ROOT or a descendant (not via ``..``)."""
+    try:
+        path.resolve().relative_to(ROOT.resolve())
+        return True
+    except ValueError:
+        return False
+
+
+def _stage_lib_under_root(lib_dir: Path) -> Optional[Path]:
+    """Ensure LIB sources live under ``python/`` as relative paths.
+
+    setuptools rejects absolute paths and ``../`` in ``Extension.sources``.
+    When the monorepo has sources at ``../LIB``, we copy the minimal set into
+    the gitignored ``python/LIB/`` tree (same layout as the sdist).
+    """
+    if _path_is_under_root(lib_dir) and _core_sources_available(lib_dir):
+        return lib_dir.resolve()
+
+    dest = (ROOT / "LIB").resolve()
+    dest.mkdir(parents=True, exist_ok=True)
+
+    # Sources + headers + transitive headers from known subdirs.
+    wanted = list(_CORE_LIB_REL_SOURCES) + list(_CORE_LIB_REL_HEADERS)
+    for sub, patterns in (
+        ("tENCoM", ("*.h", "*.hpp", "*.hh")),
+        ("ShannonThermoStack", ("*.h", "*.hpp", "*.hh")),
+        ("DiFT", ("*.h", "*.hpp", "*.hh")),
+    ):
+        src_sub = lib_dir / sub
+        if not src_sub.is_dir():
+            continue
+        for pattern in patterns:
+            for src in src_sub.glob(pattern):
+                wanted.append(f"{sub}/{src.name}")
+
+    seen = set()
+    staged = 0
+    for rel in wanted:
+        if rel in seen:
+            continue
+        seen.add(rel)
+        src = lib_dir / rel
+        if not src.is_file():
+            continue
+        dst = dest / rel
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        # Copy when missing or source is newer (cheap mtime check).
+        if (
+            not dst.is_file()
+            or src.stat().st_mtime > dst.stat().st_mtime
+            or src.stat().st_size != dst.stat().st_size
+        ):
+            shutil.copy2(src, dst)
+        staged += 1
+
+    if not _core_sources_available(dest):
+        return None
+    return dest
+
+
+def _relpath_from_root(path: Path) -> str:
+    """Return a POSIX-style path relative to setup.py's directory."""
+    rel = path.resolve().relative_to(ROOT.resolve())
+    return rel.as_posix()
+
+
 class optional_build_ext(_build_ext):
     """Build extensions, but never fail the whole install if compile breaks.
 
-    Real LIB/ sources (monorepo ``../LIB`` or sdist ``LIB/``) are attached here
-    so ``setup()`` only ever sees in-tree relative paths.
+    Real LIB/ sources (monorepo ``../LIB`` or sdist ``LIB/``) are staged under
+    ``python/`` here so every ``Extension.sources`` entry is a relative path
+    (required by modern setuptools).
+
+    Extensions that are skipped or fail to compile are removed from
+    ``self.extensions`` so setuptools does not try to package a missing
+    ``.so`` / ``.pyd`` (which would otherwise fail the wheel build).
     """
 
     def build_extensions(self) -> None:
         if not self.extensions:
             return
-        try:
-            super().build_extensions()
-        except Exception as exc:  # pragma: no cover - platform/compiler dependent
+        requested = list(self.extensions)
+        kept: List[Extension] = []
+        for ext in requested:
+            try:
+                self.build_extension(ext)
+            except Exception as exc:  # pragma: no cover - platform/compiler dependent
+                warnings.warn(
+                    f"Failed to build extension {ext.name} ({exc}). Skipping.",
+                    stacklevel=2,
+                )
+                continue
+            # Only keep extensions that actually produced a binary.
+            try:
+                built = Path(self.get_ext_fullpath(ext.name))
+            except Exception:
+                built = None
+            if built is not None and built.is_file():
+                kept.append(ext)
+            else:
+                self.announce(
+                    f"skipping package of {ext.name} (no binary produced)",
+                    level=2,
+                )
+        self.extensions = kept
+        if not kept and any(getattr(e, "name", "") == "flexaidds._core" for e in requested):
             warnings.warn(
-                f"Failed to build flexaidds._core extension ({exc}). "
-                "Installing pure-Python fallback only. "
+                "flexaidds._core was not built. Installing pure-Python fallback only. "
                 "Install a C++26 compiler + Eigen + pybind11 for the accelerated path.",
                 stacklevel=2,
             )
-            self.extensions = []
 
     def build_extension(self, ext: Extension) -> None:
         if ext.name == "flexaidds._core":
@@ -232,10 +325,19 @@ class optional_build_ext(_build_ext):
             )
             return False
 
-        lib_dir = _resolve_lib_dir()
-        if lib_dir is None or not _core_sources_available(lib_dir):
+        lib_src = _resolve_lib_dir()
+        if lib_src is None or not _core_sources_available(lib_src):
             warnings.warn(
                 "C++ sources for flexaidds._core not found. "
+                "Installing pure-Python fallback only.",
+                stacklevel=2,
+            )
+            return False
+
+        lib_dir = _stage_lib_under_root(lib_src)
+        if lib_dir is None:
+            warnings.warn(
+                "Failed to stage LIB sources under python/ for setuptools. "
                 "Installing pure-Python fallback only.",
                 stacklevel=2,
             )
@@ -253,17 +355,17 @@ class optional_build_ext(_build_ext):
             )
             return False
 
-        # Compile-time sources may be absolute (monorepo). Packaging never sees these.
-        sources = [str((ROOT / "flexaidds" / "_core.cpp").resolve())]
+        # Relative paths only — absolute / parent paths are rejected by setuptools.
+        sources = ["flexaidds/_core.cpp"]
         for rel in _CORE_LIB_REL_SOURCES:
-            sources.append(str((lib_dir / rel).resolve()))
+            sources.append(_relpath_from_root(lib_dir / rel))
 
         matrix_bindings = ROOT / "bindings" / "bindings_matrix.cpp"
         define_macros: List[Tuple[str, Optional[str]]] = list(ext.define_macros or [])
         if not any(k == "FLEXAIDS_HAS_EIGEN" for k, _ in define_macros):
             define_macros.append(("FLEXAIDS_HAS_EIGEN", "1"))
         if matrix_bindings.is_file():
-            sources.append(str(matrix_bindings.resolve()))
+            sources.append("bindings/bindings_matrix.cpp")
             if not any(k == "FLEXAIDS_USE_256_MATRIX" for k, _ in define_macros):
                 define_macros.append(("FLEXAIDS_USE_256_MATRIX", "1"))
 
@@ -277,6 +379,7 @@ class optional_build_ext(_build_ext):
                     define_macros.append(macro)
 
         ext.sources = sources
+        # include_dirs may be absolute (headers only; setuptools allows this).
         ext.include_dirs = [
             str(lib_dir),
             str(lib_dir / "tENCoM"),

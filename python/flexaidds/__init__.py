@@ -65,32 +65,38 @@ from .schemas.thermo_audit import (
     make_total_sampled_output,
 )
 
-# C++ extension — optional: pure-Python helpers work without it
+# Pure-Python-only types (never exported by the C++ _core extension).
+# Import these *before* the _core try block so a missing/partial extension
+# cannot take down HAS_CORE_BINDINGS for the symbols that *are* bound.
+from ._fallback_types import TemperatureScanPoint, DeltaCpFit
+
+# C++ extension — optional: pure-Python helpers work without it.
+# Important: only import symbols that _core actually exports. Importing a
+# pure-Python-only name (e.g. TemperatureScanPoint) from _core used to raise
+# ImportError and force HAS_CORE_BINDINGS=False even when the .so was present
+# and fully functional — breaking pip-installed accelerated wheels.
 try:
-    from ._core import (
+    from ._core import (  # type: ignore[attr-defined]
         BoltzmannLUT,
         Replica,
         State,
         TIPoint,
         WHAMBin,
-        TemperatureScanPoint,
-        DeltaCpFit,
         kB_kcal,  # noqa: F811  (more precise C++ value)
         kB_SI,    # noqa: F811
     )
-    # Override with C++ StatMechEngine when available
-    from ._core import StatMechEngine as _CppStatMechEngine  # noqa: F811
-    from ._core import Thermodynamics as _CppThermodynamics  # noqa: F811
-    from ._core import ThermodynamicBreakdown as _CppThermodynamicBreakdown  # noqa: F811
-    from ._core import ENCoMEngine as _CppENCoMEngine        # noqa: F811
-    from ._core import NormalMode as _CppNormalMode           # noqa: F811
-    from ._core import VibrationalEntropy as _CppVibrationalEntropy  # noqa: F811
+    # Override pure-Python engines/types with the compiled implementations.
+    from ._core import StatMechEngine as StatMechEngine  # noqa: F811
+    from ._core import Thermodynamics as Thermodynamics  # noqa: F811
+    from ._core import ThermodynamicBreakdown as ThermodynamicBreakdown  # noqa: F811
+    from ._core import ENCoMEngine as ENCoMEngine  # noqa: F811
+    from ._core import NormalMode as NormalMode  # noqa: F811
+    from ._core import VibrationalEntropy as VibrationalEntropy  # noqa: F811
     HAS_CORE_BINDINGS = True
 except ImportError:
-    # Fallback when C++ extension is not built
+    # Fallback when C++ extension is not built / fails to load
     from ._fallback_types import (
         BoltzmannLUT, Replica, State, TIPoint, WHAMBin,
-        TemperatureScanPoint, DeltaCpFit,
     )
     kB_kcal = 0.001987206   # kcal mol⁻¹ K⁻¹
     kB_SI = 1.380649e-23    # J K⁻¹

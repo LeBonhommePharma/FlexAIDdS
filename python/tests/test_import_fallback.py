@@ -136,3 +136,38 @@ def test_load_results_works_without_core(tmp_path: Path):
     result = load_results(tmp_path)
     assert result.n_modes == 1
     assert result.binding_modes[0].best_cf == -5.0
+
+
+def test_has_core_true_when_extension_loads():
+    """HAS_CORE_BINDINGS must be True whenever flexaidds._core is importable.
+
+    Regression guard: pure-Python-only symbols (TemperatureScanPoint,
+    DeltaCpFit) must not be imported from _core — that used to raise
+    ImportError and force HAS_CORE_BINDINGS=False even with a working .so,
+    breaking accelerated pip wheels.
+    """
+    try:
+        import flexaidds._core  # noqa: F401
+    except ImportError:
+        import pytest
+
+        pytest.skip("_core extension not built in this environment")
+
+    # Fresh import so we exercise the package's own try/except path.
+    saved = {k: sys.modules.pop(k, None) for k in list(sys.modules) if k == "flexaidds" or k.startswith("flexaidds.")}
+    try:
+        import flexaidds
+
+        assert flexaidds.HAS_CORE_BINDINGS is True
+        # Pure-Python-only types must still be available.
+        assert flexaidds.TemperatureScanPoint is not None
+        assert flexaidds.DeltaCpFit is not None
+        # Compiled engines should be the ones from _core.
+        assert flexaidds.StatMechEngine is flexaidds._core.StatMechEngine
+    finally:
+        for k in list(sys.modules):
+            if k == "flexaidds" or k.startswith("flexaidds."):
+                sys.modules.pop(k, None)
+        for k, v in saved.items():
+            if v is not None:
+                sys.modules[k] = v
