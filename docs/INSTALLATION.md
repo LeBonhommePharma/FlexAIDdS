@@ -71,7 +71,7 @@ python -m flexaidds --help || echo "CLI works via python -m"
 python -m flexaidds --check-update
 ```
 
-A GitHub Actions workflow (`.github/workflows/pypi-release.yml`) handles building wheels + sdist and publishing via trusted publishing on release (or manual `workflow_dispatch` to TestPyPI/PyPI).
+A GitHub Actions workflow (`.github/workflows/pypi-release.yml`) builds a pure `py3-none-any` wheel + sdist (smoke-tested in CI) and publishes via trusted publishing on GitHub Release, or manual `workflow_dispatch` to TestPyPI/PyPI. Accelerated platform wheels are optional and not on the first-release critical path.
 
 ### Full native tools + Python (CMake)
 
@@ -219,15 +219,43 @@ curl -sL "https://github.com/LeBonhommePharma/FlexAIDdS/archive/refs/tags/${TAG}
 
 ## Releasing & Distribution
 
-- **Python package (PyPI)**: The workflow `.github/workflows/pypi-release.yml` builds sdist + wheels (cibuildwheel) and publishes on GitHub Release using trusted publishing. Run the workflow manually (`workflow_dispatch`) for TestPyPI. The optional `_core` extension is built when possible; otherwise pure-Python wheels/sdists still publish.
-  - Required once per environment: configure PyPI / TestPyPI **trusted publishing** for the `pypi` and `testpypi` GitHub Environments.
-  - Smoke checks: sdist install + `import flexaidds` run in CI before publish.
+- **Python package (PyPI)**: The workflow `.github/workflows/pypi-release.yml` builds:
+  1. **sdist** (includes staged minimal `LIB/` so out-of-tree builds can compile `_core` when Eigen + a C++26 compiler are present)
+  2. **pure `py3-none-any` wheel** (`FLEXAIDDS_SKIP_CORE=1`) so `pip install flexaidds` always works without a compiler
+
+  Both artifacts are smoke-tested (install + `import flexaidds` + CLI) before publish. Publish runs on GitHub Release (`pypi`) or manual `workflow_dispatch` (`testpypi` / `pypi`).
+
+  **One-time trusted publisher setup** (required before the first upload — this is the usual cause of `invalid-publisher`):
+
+  | Field | TestPyPI | PyPI |
+  |:------|:---------|:-----|
+  | Project | `flexaidds` (pending OK) | `flexaidds` (pending OK) |
+  | Owner | `LeBonhommePharma` | `LeBonhommePharma` |
+  | Repository | `FlexAIDdS` | `FlexAIDdS` |
+  | Workflow filename | `pypi-release.yml` | `pypi-release.yml` |
+  | Environment name | `testpypi` | `pypi` |
+
+  - TestPyPI pending publisher: https://test.pypi.org/manage/account/publishing/
+  - PyPI pending publisher: https://pypi.org/manage/account/publishing/
+  - GitHub Environments `pypi` / `testpypi` must already exist on the repo (they do).
+  - **Token fallback** (optional): set repo secret `TEST_PYPI_API_TOKEN` or `PYPI_API_TOKEN` (API token starting with `pypi-`). When set, the workflow uses token auth instead of OIDC.
+
+  Local packaging smoke test (mirrors CI):
+  ```bash
+  python3 -m venv /tmp/flexaidds-pkg && source /tmp/flexaidds-pkg/bin/activate
+  pip install -U pip build twine
+  cd python
+  FLEXAIDDS_SKIP_CORE=1 python -m build --sdist --wheel --outdir /tmp/flexaidds-dist
+  twine check /tmp/flexaidds-dist/*
+  FLEXAIDDS_SKIP_CORE=1 pip install /tmp/flexaidds-dist/*.whl
+  python -c "import flexaidds as fd; print(fd.__version__, fd.HAS_CORE_BINDINGS)"
+  ```
 
 - **Homebrew**: Update `Formula/flexaidds.rb` (`url` + `sha256` for stable; `head` tracks `master`) when cutting releases. Users install via the raw formula URL (or a personal tap).
 
 - **Native binaries**: Existing release workflow attaches platform archives on tag.
 
-- **In-package updater**: `python -m flexaidds --check-update` / `--self-update` uses the GitHub Releases API and `pip install --upgrade flexaidds`.
+- **In-package updater**: `python -m flexaidds --check-update` / `--self-update` uses the GitHub Releases API and `pip install --upgrade flexaidds` (falls back to the GitHub VCS URL when the package is not yet on the default index).
 
 ---
 

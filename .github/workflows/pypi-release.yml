@@ -97,6 +97,15 @@ jobs:
           python -m pip install dist/*.whl
           python -c "import flexaidds as fd; print('flexaidds', fd.__version__, 'HAS_CORE=', getattr(fd, 'HAS_CORE_BINDINGS', False)); assert not fd.HAS_CORE_BINDINGS"
           python -m flexaidds --help
+          # Confirm wheel is pure py3-none-any (no platform tag).
+          python - <<'PY'
+          from pathlib import Path
+          wheels = list(Path("dist").glob("*.whl"))
+          assert wheels, "no wheel built"
+          name = wheels[0].name
+          assert name.endswith("py3-none-any.whl"), f"expected pure wheel, got {name}"
+          print("pure wheel tag OK:", name)
+          PY
 
       - name: Upload pure wheel artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
@@ -127,7 +136,7 @@ jobs:
           path: dist
           merge-multiple: true
 
-      - name: List packages to publish
+      - name: List packages + trusted-publisher checklist
         run: |
           set -euo pipefail
           ls -la dist/
@@ -135,11 +144,31 @@ jobs:
           from pathlib import Path
           files = sorted(Path("dist").glob("*"))
           assert files, "no artifacts to publish"
+          sdists = list(Path("dist").glob("*.tar.gz"))
+          wheels = list(Path("dist").glob("*.whl"))
+          assert sdists, "missing sdist"
+          assert wheels, "missing wheel"
           print("\n".join(str(p) for p in files))
           PY
+          cat <<'EOF'
+          === Trusted publisher must match (pypi.org → Publishing) ===
+          Owner:             LeBonhommePharma
+          Repository:        FlexAIDdS
+          Workflow filename: pypi-release.yml
+          Environment name:  pypi
+          =======================================================================
+          Alternative: set repo secret PYPI_API_TOKEN (pypi.org API token for
+          project flexaidds). When that secret is non-empty, the publish action
+          uses token auth; otherwise it uses OIDC trusted publishing.
+          EOF
 
-      - name: Publish to PyPI (trusted publishing)
+      # password empty → OIDC trusted publishing; non-empty → API token.
+      - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@76f52bc884231f62b9a034ebfe128415bbaabdfc # v1.10.3
+        with:
+          skip-existing: true
+          # Prefer trusted publishing when PYPI_API_TOKEN is unset.
+          password: ${{ secrets.PYPI_API_TOKEN }}
 
   publish-testpypi:
     name: Publish to TestPyPI (manual or pre-release)
@@ -158,7 +187,7 @@ jobs:
           path: dist
           merge-multiple: true
 
-      - name: List packages to publish
+      - name: List packages + trusted-publisher checklist
         run: |
           set -euo pipefail
           ls -la dist/
@@ -171,10 +200,30 @@ jobs:
           wheels = list(Path("dist").glob("*.whl"))
           assert sdists, "missing sdist"
           assert wheels, "missing wheel"
+          pure = [w for w in wheels if w.name.endswith("py3-none-any.whl")]
+          assert pure, f"missing pure py3-none-any wheel among {[w.name for w in wheels]}"
           print("\n".join(str(p) for p in files))
           PY
+          cat <<'EOF'
+          === Trusted publisher must match (test.pypi.org → Publishing) ===
+          If the project does not exist yet, create a *pending* publisher:
+            https://test.pypi.org/manage/account/publishing/
+          Values (must match OIDC claims exactly):
+            PyPI Project Name:   flexaidds   (pending OK)
+            Owner:               LeBonhommePharma
+            Repository:          FlexAIDdS
+            Workflow filename:   pypi-release.yml
+            Environment name:    testpypi
+          ==================================================================
+          Alternative: set repo secret TEST_PYPI_API_TOKEN (TestPyPI API token).
+          When that secret is non-empty, the publish action uses token auth;
+          otherwise it uses OIDC trusted publishing.
+          EOF
 
+      # password empty → OIDC trusted publishing; non-empty → API token.
       - name: Publish to TestPyPI
         uses: pypa/gh-action-pypi-publish@76f52bc884231f62b9a034ebfe128415bbaabdfc # v1.10.3
         with:
           repository-url: https://test.pypi.org/legacy/
+          skip-existing: true
+          password: ${{ secrets.TEST_PYPI_API_TOKEN }}
