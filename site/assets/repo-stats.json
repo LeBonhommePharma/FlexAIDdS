@@ -1,18 +1,18 @@
 {
-  "commits": 1710,
+  "commits": 1714,
   "languageCount": 15,
-  "lastUpdated": "2026-07-10",
+  "lastUpdated": "2026-07-11",
   "languages": [
     {
       "id": "cpp",
       "name": "C++",
-      "percent": 49.4,
+      "percent": 49.0,
       "color": "#f34b7d"
     },
     {
       "id": "python",
       "name": "Python",
-      "percent": 24.5,
+      "percent": 25.1,
       "color": "#3572A5"
     },
     {
@@ -24,13 +24,13 @@
     {
       "id": "swift",
       "name": "Swift",
-      "percent": 4.5,
+      "percent": 4.4,
       "color": "#F05138"
     },
     {
       "id": "other",
       "name": "Shell",
-      "percent": 3.3,
+      "percent": 3.2,
       "color": "#89e051"
     },
     {
