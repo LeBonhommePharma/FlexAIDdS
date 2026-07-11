@@ -512,8 +512,27 @@ def _placeholder_extension_modules() -> List[Extension]:
     ]
 
 
-# IMPORTANT: most metadata lives in pyproject.toml for modern builds.
+def _read_version() -> str:
+    """Parse version from flexaidds/__version__.py without importing the package.
+
+    Importing ``flexaidds`` pulls numpy (via ``__init__.py``). Build isolation
+    does not install numpy, so ``import flexaidds.__version__`` fails and older
+    tooling falls back to ``UNKNOWN-0.0.0`` wheels.
+    """
+    version_file = ROOT / "flexaidds" / "__version__.py"
+    for line in version_file.read_text(encoding="utf-8").splitlines():
+        stripped = line.strip()
+        if stripped.startswith("__version__") and "=" in stripped:
+            rhs = stripped.split("=", 1)[1].strip()
+            return rhs.strip().strip("\"'")
+    return "0.0.0"
+
+
+# Metadata primarily lives in pyproject.toml. Explicit name/version here are a
+# hard fallback for legacy pip/setuptools that do not fully apply PEP 621.
 setup(
+    name="flexaidds",
+    version=_read_version(),
     ext_modules=_placeholder_extension_modules(),
     cmdclass={
         "build_ext": optional_build_ext,
