@@ -4,7 +4,12 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "flexaidds"
-dynamic = ["version"]
+# Static version (keep in sync with flexaidds/__version__.py).
+# Do NOT use dynamic attr = "flexaidds.__version__.__version__": importing
+# that path executes flexaidds/__init__.py, which needs numpy — and numpy is
+# not a build-system dependency. That produced UNKNOWN-0.0.0 wheels on clean
+# / older pip builds (the classic PyPI installer failure mode).
+version = "2.0.0"
 description = "Python bindings and analysis tools for the FlexAID∆S thermodynamic docking engine"
 authors = [
   { name = "Louis-Philippe Morency" },
@@ -60,9 +65,6 @@ namespaces = false
 [tool.setuptools.package-data]
 "flexaidds" = ["py.typed"]
 "flexaidds.dataset_runner" = ["datasets/*.yaml"]
-
-[tool.setuptools.dynamic]
-version = { attr = "flexaidds.__version__.__version__" }
 
 # cibuildwheel: produce installable wheels even when the optional C++ extension
 # cannot be compiled (pure-Python fallback). setup.py never fails the install.
