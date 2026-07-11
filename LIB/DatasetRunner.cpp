@@ -6800,6 +6800,35 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                     }
                 }
 
+                // ── Seed-echo refinement: GA-found-native guard ──────────────────
+                // seed_echo was set above purely from path (_INI.pdb suffix).  Now
+                // that best_cluster_rmsd is known, tighten the definition: a run
+                // where the INI seed was elected BUT the GA's own best cluster pose
+                // (scanned above, _0/_1/…/_19, no INI) is already sub-2 Å means the
+                // GA DID find native independently — the INI is irrelevant.  Only
+                // flag seed_echo when the GA genuinely failed to find native (all
+                // cluster reps ≥ 2 Å or no cluster poses emitted at all).
+                if (result.seed_echo) {
+                    const bool ga_found_native =
+                        (result.best_cluster_rmsd >= 0.0f &&
+                         result.best_cluster_rmsd < 2.0f);
+                    if (ga_found_native) {
+                        result.seed_echo = false;  // GA independently found native; not a false positive
+                        std::cerr << "  [SEED-ECHO-CLEAR] " << entry.pdb_id
+                                  << ": INI elected but GA best_cluster_rmsd="
+                                  << std::fixed << std::setprecision(2)
+                                  << result.best_cluster_rmsd
+                                  << "A — GA found native, seed_echo cleared\n";
+                    } else {
+                        std::cerr << "  [SEED-ECHO] " << entry.pdb_id
+                                  << ": INI seed elected, GA best_cluster_rmsd="
+                                  << (result.best_cluster_rmsd < 0.0f ? -1.0f : result.best_cluster_rmsd)
+                                  << "A cf_best_cluster="
+                                  << (std::isnan(result.cf_best_cluster) ? 0.0f : result.cf_best_cluster)
+                                  << " — flagged as seed echo (false positive)\n";
+                    }
+                }
+
                 // ── BCR-gate: known-site selector override ───────────────────────
                 // v50 correctly demoted this gate for AUTONOMOUS validation because
                 // the oracle-best cluster requires the crystal ligand to identify.
@@ -6892,7 +6921,11 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
         // Guard: rmsd_report >= 0.0f excludes the -1.0f sentinel so failed runs
         // (no crystal reference or empty pose) are never counted as successful.
         const float rmsd_report = std::min(result.rmsd_to_crystal, result.rmsd_hungarian);
-        result.success = (docking_completed && rmsd_report >= 0.0f && rmsd_report < 2.0f);
+        // seed_echo=1 means the INI crystal seed survived into rank-0 but the GA
+        // never found native independently (all cluster reps ≥ 2 Å).  Count these
+        // as failures: the 0.00 Å RMSD is seed survival, not a GA discovery.
+        result.success = (docking_completed && rmsd_report >= 0.0f && rmsd_report < 2.0f &&
+                          !result.seed_echo);
 
         // ── Level-3 H(ω) vibrational-entropy diagnostic (FLEXAIDDS_HVIB=1) ──
         // Post-GA pass over the emitted cluster reps; gated OFF by default so
