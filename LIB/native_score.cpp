@@ -335,7 +335,7 @@ void score_native_pose(FA_Global* FA, VC_Global* VC, atom* atoms,
     }
 
     // ── 5. Emit [NATIVE_CF] line for DatasetRunner parsing ───────────────────
-    const double cf_total = get_cf_evalue(&cf);
+    const double cf_total = get_cf_evalue(&cf, FA);
     fprintf(stderr,
         "[NATIVE_CF] cf=%.6f breakdown=com:%.4f,wal:%.4f,sas:%.4f,con:%.4f,hbond:%.4f\n",
         cf_total,
