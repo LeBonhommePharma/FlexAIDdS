@@ -3,9 +3,8 @@ class Flexaidds < Formula
   homepage "https://github.com/LeBonhommePharma/FlexAIDdS"
   # v2.0.1 ships production MC_st0r5.2_6.dat (md5 9dc93717…) at repo root and
   # WRK/. v2.0.0 only had an outdated WRK matrix (md5 204b75ef…) that broke typing.
-  # sha256 is filled after the v2.0.1 tag exists (see release notes).
   url "https://github.com/LeBonhommePharma/FlexAIDdS/archive/refs/tags/v2.0.1.tar.gz"
-  sha256 "0000000000000000000000000000000000000000000000000000000000000000"
+  sha256 "08b0d3aecb71a8960f25396a48dd8facc76696b51072f78679e39ad198ebb971"
   license "Apache-2.0"
   head "https://github.com/LeBonhommePharma/FlexAIDdS.git", branch: "master"
 
