@@ -1,4 +1,5 @@
 #include "CleftDetector.h"
+#include "ensemble_pipeline.h"
 #include <cstdlib>
 #include <cstdio>
 #include <cstring>
@@ -234,29 +235,40 @@ sphere* detect_cleft(const atom* atoms, const resid* /*residue*/,
         if (kv.second > best_count) { best_label = kv.first; best_count = kv.second; }
     }
 
-    // ── Cognate-aware coverage ──────────────────────────────────────────────
-    // SURFNET historically returned ONLY the largest gap-sphere cluster as the
-    // binding cleft.  For ~40% of Astex Diverse the largest cavity is NOT the
-    // cognate ligand site, so those complexes were starved of grid points at the
-    // true pocket and scored 0 successes.  Instead, keep EVERY cluster meeting
-    // min_cluster_size (all genuine pockets, not just the biggest).  The
-    // downstream site-confinement filter in top.cpp restricts the final grid to
-    // the cognate centroid sphere, so handing it all pockets simply guarantees
-    // the right one is present.  Tiny (< min_cluster_size) singleton/noise
-    // clusters are still dropped to keep the grid build bounded.
-    std::set<int> kept_labels;
-    int kept_clusters = 0, kept_spheres = 0;
+    // ── Layer 2: ligandable top-K (not largest void only) ───────────────────
+    // Score each cluster meeting min_cluster_size by volume×enclosure proxy
+    // (ensemble::ligandable_score). Keep top_k_clefts; fallback to largest.
+    std::vector<std::pair<int, double>> scored;
+    scored.reserve(freq.size());
     for (auto& kv : freq) {
-        if (kv.second >= params.min_cluster_size) {
-            kept_labels.insert(kv.first);
-            ++kept_clusters;
-            kept_spheres += kv.second;
+        if (kv.second < params.min_cluster_size) continue;
+        double sum_r = 0.0, minx = 1e30, miny = 1e30, minz = 1e30;
+        double maxx = -1e30, maxy = -1e30, maxz = -1e30;
+        int n = 0;
+        for (int i = 0; i < static_cast<int>(probes.size()); ++i) {
+            if (labels[i] != kv.first) continue;
+            sum_r += probes[i].radius;
+            minx = std::min(minx, (double)probes[i].center[0]);
+            miny = std::min(miny, (double)probes[i].center[1]);
+            minz = std::min(minz, (double)probes[i].center[2]);
+            maxx = std::max(maxx, (double)probes[i].center[0]);
+            maxy = std::max(maxy, (double)probes[i].center[1]);
+            maxz = std::max(maxz, (double)probes[i].center[2]);
+            ++n;
         }
+        if (n <= 0) continue;
+        const double mean_r = sum_r / static_cast<double>(n);
+        const double dx = maxx - minx, dy = maxy - miny, dz = maxz - minz;
+        const double bbox_diag = std::sqrt(dx * dx + dy * dy + dz * dz);
+        const double s = ensemble::ligandable_score(n, mean_r, bbox_diag);
+        scored.emplace_back(kv.first, s);
+        printf("CleftDetector: cluster label=%d n=%d ligandable_score=%.3f\n",
+               kv.first, n, s);
     }
 
-    if (kept_labels.empty()) {
-        // No cluster reached min_cluster_size — fall back to the single largest
-        // so detection still yields a usable cleft rather than nothing.
+    std::set<int> kept_labels;
+    int kept_clusters = 0, kept_spheres = 0;
+    if (scored.empty()) {
         fprintf(stderr, "CleftDetector WARNING: no cluster reached min_cluster_size "
                 "(largest has %d, min is %d) — falling back to largest cluster\n",
                 best_count, params.min_cluster_size);
@@ -265,11 +277,22 @@ sphere* detect_cleft(const atom* atoms, const resid* /*residue*/,
             kept_clusters = 1;
             kept_spheres  = best_count;
         }
+    } else {
+        const int k = (params.top_k_clefts > 0)
+            ? params.top_k_clefts
+            : static_cast<int>(scored.size());
+        const auto top = ensemble::select_top_k_clefts(scored, k);
+        for (int lab : top) {
+            kept_labels.insert(lab);
+            kept_spheres += freq[lab];
+        }
+        kept_clusters = static_cast<int>(kept_labels.size());
     }
 
-    printf("CleftDetector: keeping %d cluster(s) >= %d spheres (%d spheres total; "
-           "largest cluster %d)\n",
-           kept_clusters, params.min_cluster_size, kept_spheres, best_count);
+    printf("CleftDetector: keeping %d ligandable cluster(s) (top_k=%d, min_size=%d; "
+           "%d spheres total; largest cluster %d)\n",
+           kept_clusters, params.top_k_clefts, params.min_cluster_size,
+           kept_spheres, best_count);
 
     // 3. build linked list (same format as read_spheres) from all kept clusters
     sphere* head = nullptr;
