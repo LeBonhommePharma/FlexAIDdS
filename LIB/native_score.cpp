@@ -32,6 +32,8 @@
 // =============================================================================
 
 #include "native_score.h"
+#include "ensemble_pipeline.h"
+#include "fileio.h"  // Terminate() for strict frame-chart gate
 
 #include <algorithm>
 #include <cmath>
@@ -141,19 +143,38 @@ void score_native_pose(FA_Global* FA, VC_Global* VC, atom* atoms,
                     rmsdst, rmsd, FA->npar, n_lig,
                     FA->npar > 0 ? FA->opt_par[0] : 0.0);
 
-                // ── Fix 5: preflight gate (loud, non-aborting) ─────────────
-                // A native-seed IC round-trip worse than 1.0 A means the oracle
-                // seed cannot faithfully encode the crystal pose, so the whole
-                // run's oracle mode is suspect. Make it impossible to miss in the
-                // logs; LP decides whether to promote this to a hard abort.
-                if (rmsd > 1.0) {
+                // Layer 1 frame-chart gate (ensemble_pipeline): identity-class
+                // Cartesian⇄gene chart. Soft warn at 1.0 A; hard fail at 0.1 A
+                // only when FLEXAIDDS_FRAME_CHART_STRICT=1 (CI / product gate).
+                {
+                    const bool strict = ensemble::frame_chart_strict_enabled();
+                    const auto st = ensemble::classify_frame_chart_rmsd(rmsd, strict);
+                    const char* st_s =
+                        (st == ensemble::FrameChartStatus::Ok)   ? "ok" :
+                        (st == ensemble::FrameChartStatus::Warn) ? "warn" : "fail";
                     fprintf(stderr,
-                        "[WARN] NATIVE-SEED-RMSD = %.2f A exceeds 1.0 A threshold.\n"
-                        "       IC round-trip fidelity is poor — oracle seed may not "
-                        "faithfully encode crystal pose.\n"
-                        "       Check grid resolution, cleft centroid, and IC "
-                        "parameter bounds before trusting this run.\n",
-                        rmsd);
+                        "[FRAME_CHART] status=%s rmsd=%.3f strict=%d "
+                        "warn_A=%.1f strict_A=%.1f\n",
+                        st_s, rmsd, strict ? 1 : 0,
+                        ensemble::kFrameChartWarnRmsdA,
+                        ensemble::kFrameChartStrictRmsdA);
+                    if (st == ensemble::FrameChartStatus::Warn) {
+                        fprintf(stderr,
+                            "[WARN] NATIVE-SEED-RMSD = %.2f A exceeds %.1f A threshold.\n"
+                            "       IC round-trip fidelity is poor — oracle seed may not "
+                            "faithfully encode crystal pose.\n"
+                            "       Check grid resolution, cleft centroid, and IC "
+                            "parameter bounds before trusting this run.\n",
+                            rmsd, ensemble::kFrameChartWarnRmsdA);
+                    }
+                    if (st == ensemble::FrameChartStatus::Fail) {
+                        fprintf(stderr,
+                            "[FRAME_CHART] FATAL: native-seed RMSD %.3f A > strict "
+                            "%.1f A (FLEXAIDDS_FRAME_CHART_STRICT). "
+                            "Gene chart cannot represent the crystal pose.\n",
+                            rmsd, ensemble::kFrameChartStrictRmsdA);
+                        Terminate(2);
+                    }
                 }
             } else {
                 fprintf(stderr,

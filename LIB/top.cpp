@@ -27,6 +27,7 @@
 #include "native_score.h"
 #include "hbond_potential.h"
 #include "RngSeed.h"
+#include "ensemble_pipeline.h"
 
 #include <algorithm>
 #include <cmath>
@@ -1751,6 +1752,13 @@ int main(int argc, char **argv){
 			cleftgrid = generate_grid(FA, spheres, atoms, residue);
 			calc_cleftic(FA, cleftgrid);
 
+			// Layer 2 reproducibility: capture cleft centroid/extent BEFORE free
+			// so explicit multi-cleft runs confine Ω to the sphere support
+			// (not whole-protein translation).
+			ensemble::CleftCentroid cleft_geom{};
+			const bool have_cleft_geom =
+				ensemble::cleft_centroid_extent(spheres, &cleft_geom);
+
 			// Free sphere linked list (oracle or SURFNET)
 			while (spheres) { sphere* p = spheres->prev; free(spheres); spheres = p; }
 
@@ -1879,8 +1887,55 @@ int main(int argc, char **argv){
 						       rcut, (int)keep.size(), FA->num_grd - 1);
 					}
 				}
+			} else if (have_cleft_geom && FA->num_grd > 1) {
+				// Explicit multi-cleft: confine translation to sphere support
+				// (reproducible Ω_cleft; not whole-protein).
+				const double cx = cleft_geom.cx, cy = cleft_geom.cy, cz = cleft_geom.cz;
+				const int    MIN_SITE_GRID = 500;
+				const double rcut_initial  = std::max(cleft_geom.extent_A, 4.0);
+				const double rcut_max      = 12.0;
+				const double rcut_step     = 2.0;
+				double rcut = rcut_initial;
+				std::vector<int> keep;
+				keep.reserve(static_cast<size_t>(FA->num_grd));
+				for (;;) {
+					keep.clear();
+					const double rcut2 = rcut * rcut;
+					for (int i = 1; i < FA->num_grd; ++i) {
+						const double dx = cleftgrid[i].coor[0] - cx;
+						const double dy = cleftgrid[i].coor[1] - cy;
+						const double dz = cleftgrid[i].coor[2] - cz;
+						if (dx * dx + dy * dy + dz * dz <= rcut2) keep.push_back(i);
+					}
+					if ((int)keep.size() >= MIN_SITE_GRID || rcut >= rcut_max) break;
+					rcut += rcut_step;
+				}
+				printf("SITE-CONFINE: cleft-centroid %.2f %.2f %.2f extent=%.1f A "
+				       "n_spheres=%d rcut=%.1f keep=%d/%d\n",
+				       cx, cy, cz, cleft_geom.extent_A, cleft_geom.n_spheres,
+				       rcut, (int)keep.size(), FA->num_grd - 1);
+				if (!keep.empty() && (int)keep.size() >= MIN_SITE_GRID
+				    && (int)keep.size() < FA->num_grd - 1) {
+					gridpoint* confined = nullptr;
+					int new_count = mif::rebuild_cleftgrid(
+						cleftgrid, FA->num_grd, keep, &confined);
+					if (confined && new_count > 0) {
+						const int old_count = FA->num_grd;
+						free(cleftgrid);
+						cleftgrid = confined;
+						FA->num_grd = new_count;
+						calc_cleftic(FA, cleftgrid);
+						printf("SITE-CONFINE: %d pts within %.1f A of cleft centroid "
+						       "(%d->%d grid pts)\n",
+						       new_count - 1, rcut, old_count - 1, new_count - 1);
+					}
+				} else {
+					printf("SITE-CONFINE: WARNING explicit-cleft full-grid fallback "
+					       "(keep=%d, total=%d)\n",
+					       (int)keep.size(), FA->num_grd - 1);
+				}
 			} else {
-				printf("SITE-CONFINE: skipped for explicit multi-cleft sphere grid\n");
+				printf("SITE-CONFINE: skipped for explicit multi-cleft (no sphere geometry)\n");
 			}
 
 			// ── MIF-weighted seeding (direct mode) ──────────────────────────

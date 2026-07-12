@@ -1535,6 +1535,13 @@ if(BUILD_TESTING)
         TEST_NAME read_spheres
     )
 
+    # test_ensemble_pipeline — 4-layer reproducibility helpers (header-only)
+    flexaids_add_unit_test(test_ensemble_pipeline
+        SOURCES
+            tests/test_ensemble_pipeline.cpp
+        TEST_NAME EnsemblePipelineTests
+    )
+
     # test_mif_grid — MIFGrid molecular interaction field tests
     flexaids_add_unit_test(test_mif_grid
         SOURCES tests/test_mif_grid.cpp

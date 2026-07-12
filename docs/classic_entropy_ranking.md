@@ -73,3 +73,8 @@ Full code revert of this feature: revert the PR / branch that touches:
 Pose success = RMSD / PoseBusters — **not** lowest CF and not claimed true ΔG.
 
 Live exhibit (pre-fix 1HNN): ACF-best cluster (freq 29) was emitted as rank 3; CF champion was rank 0. Classic ranking puts ACF-best first.
+
+## Ensemble pipeline (layers 1–3)
+
+Classic election is layer 4 of the full reproducibility contract (frame chart →
+pocket Ω → soft-β SMFREE → ACF election). See **`docs/ensemble_pipeline.md`**.

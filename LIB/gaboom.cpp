@@ -8,6 +8,7 @@
 #include "MIFGrid.h"
 #include "CavityDetect/SpatialGrid.h"
 #include "RngSeed.h"
+#include "ensemble_pipeline.h"
 
 #include <random>
 #include <functional>
@@ -2629,17 +2630,15 @@ void calculate_fitness(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* chr
 	}
 
 	if(strcmp(method,"SMFREE")==0){
-		/* SMFREE — StatMech Free-energy-weighted fitness with niche sharing.
-		   Uses the StatMechEngine to compute Boltzmann weights from the
-		   current population's energies. Fitness blends rank-based fitness
-		   with thermodynamic Boltzmann probability:
-		     fitness_i = [(1-w) * rank_component + w * boltzmann_component] / share_i
-		   where w = entropy_weight ∈ [0,1].
-		   This biases selection toward thermodynamically favorable poses
-		   (low free energy) while maintaining diversity via niche sharing.
+		/* SMFREE — soft-β CF sampling with niche sharing (ensemble layer 3).
+		   Selection uses β_sel = 1/T (same as ACF clustering), NOT physical
+		   1/(kB·T). Niche share is gene-space calc_rmsp. Physical StatMech
+		   compute() is diagnostic only. Reproducibility: same β as election.
 		*/
 		if (FA->temperature > 0) {
 			const double T = static_cast<double>(FA->temperature);
+			double beta_sel = 0.0;
+			(void)ensemble::soft_selection_beta(T, &beta_sel);
 			statmech::StatMechEngine engine(T);
 
 			// Feed all chromosome energies into the engine.
@@ -2705,14 +2704,32 @@ void calculate_fitness(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* chr
 					chrom[pi].fitnes = blended * static_cast<double>(GB->num_chrom) / pshare;
 			}
 
-			// Log ensemble thermodynamics periodically.
+			// Log selection β + thermo periodically (greppable reproducibility audit).
 			if (gen_id % GA_SMFREE_LOG_INTERVAL == 0) {
-				fprintf(stderr, "[SMFREE] gen=%d  F=%.3f  <E>=%.3f  S=%.6f  Cv=%.4f  σ_E=%.3f\n",
-				        gen_id, thermo.free_energy, thermo.mean_energy,
-				        thermo.entropy, thermo.heat_capacity, thermo.std_energy);
+				fprintf(stderr,
+					"[SMFREE] gen=%d  beta_sel=%.6f  T=%.1f  F=%.3f  <E>=%.3f  "
+					"S=%.6f  Cv=%.4f  σ_E=%.3f\n",
+					gen_id, beta_sel, T, thermo.free_energy, thermo.mean_energy,
+					thermo.entropy, thermo.heat_capacity, thermo.std_energy);
 			}
 		} else {
-			// Temperature = 0: fall back to rank-only (same as LINEAR).
+			// Temperature = 0: rank-only. Loud warn — product claims entropy but
+			// sampling is not soft-β (non-reproducible vs T>0 runs).
+			static int smfree_t0_warned = 0;
+			if (!smfree_t0_warned) {
+				smfree_t0_warned = 1;
+				fprintf(stderr,
+					"[SMFREE] WARN: temperature=0 → rank-only fitness "
+					"(no soft-β sampling). Set thermodynamics.temperature>0 "
+					"for reproducible ensemble layer 3 (β=1/T).\n");
+				const char* req = std::getenv("FLEXAIDDS_SMFREE_REQUIRE_T");
+				if (req && (req[0] == '1' || req[0] == 't' || req[0] == 'T'
+				            || req[0] == 'y' || req[0] == 'Y')) {
+					fprintf(stderr,
+						"[SMFREE] FATAL: FLEXAIDDS_SMFREE_REQUIRE_T set and T=0\n");
+					Terminate(2);
+				}
+			}
 			for (i = 0; i < GB->num_chrom; i++) {
 				chrom[i].fitnes = static_cast<double>(GB->num_chrom - i);
 				chrom[i].boltzmann_weight = 0.0;

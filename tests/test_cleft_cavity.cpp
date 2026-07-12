@@ -66,6 +66,7 @@ void free_residue(resid& r) {
 
 TEST(CleftDetectorParams, DefaultValues) {
     CleftDetectorParams p = default_cleft_params();
+    EXPECT_EQ(p.top_k_clefts, 5);
 
     EXPECT_FLOAT_EQ(p.max_pair_dist, 12.0f);
     EXPECT_FLOAT_EQ(p.probe_radius_max, 5.0f);
