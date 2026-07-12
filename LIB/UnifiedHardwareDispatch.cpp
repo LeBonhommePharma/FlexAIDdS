@@ -7,6 +7,7 @@
 // Apache-2.0 (c) 2026 Le Bonhomme Pharma / NRGlab
 
 #include "UnifiedHardwareDispatch.h"
+#include "simd_distance.h"
 
 #include <algorithm>
 #include <cmath>
@@ -109,6 +110,13 @@ void UnifiedHardwareDispatch::detect_cpu() {
     info_.cpu_name = "AArch64";
 #endif
 
+    // ARM NEON is baseline on aarch64 (and when FLEXAIDS_HAS_NEON is compiled in).
+#if FLEXAIDS_HAS_NEON
+    info_.has_neon = true;
+#else
+    info_.has_neon = false;
+#endif
+
 #ifdef _OPENMP
     info_.has_openmp      = true;
     info_.omp_max_threads = omp_get_max_threads();
@@ -173,6 +181,12 @@ bool UnifiedHardwareDispatch::is_available(Backend b) const noexcept {
 #else
             return false;
 #endif
+        case Backend::NEON:
+#if FLEXAIDS_HAS_NEON
+            return info_.has_neon;
+#else
+            return false;
+#endif
         case Backend::METAL:   return info_.has_metal;
         case Backend::CUDA:    return info_.has_cuda;
         case Backend::ROCM:    return info_.has_rocm;
@@ -214,8 +228,10 @@ Backend UnifiedHardwareDispatch::best_backend(KernelType kernel) const {
 
         case KernelType::DISTANCE_BATCH:
         case KernelType::RMSD:
+            // Prefer SIMD over OpenMP for geometry (small N, low parallel overhead).
             if (is_available(Backend::AVX512)) return Backend::AVX512;
             if (is_available(Backend::AVX2))   return Backend::AVX2;
+            if (is_available(Backend::NEON))   return Backend::NEON;
             if (is_available(Backend::OPENMP)) return Backend::OPENMP;
             return Backend::SCALAR;
 
@@ -245,6 +261,9 @@ Backend UnifiedHardwareDispatch::select_cpu_backend() const {
 #endif
     if (is_available(Backend::AVX2))
         return Backend::AVX2;
+    // ARM: NEON before OpenMP for distance/RMSD-class CPU work.
+    if (is_available(Backend::NEON))
+        return Backend::NEON;
     if (is_available(Backend::OPENMP))
         return Backend::OPENMP;
     return Backend::SCALAR;
@@ -256,6 +275,7 @@ const char* UnifiedHardwareDispatch::backend_name(Backend b) noexcept {
         case Backend::OPENMP:  return "OpenMP";
         case Backend::AVX2:    return "AVX2";
         case Backend::AVX512:  return "AVX-512";
+        case Backend::NEON:    return "NEON";
         case Backend::METAL:   return "Metal";
         case Backend::CUDA:    return "CUDA";
         case Backend::ROCM:    return "ROCm";
@@ -271,6 +291,7 @@ std::vector<Backend> UnifiedHardwareDispatch::available_backends() const {
     if (is_available(Backend::METAL))  result.push_back(Backend::METAL);
     if (is_available(Backend::AVX512)) result.push_back(Backend::AVX512);
     if (is_available(Backend::AVX2))   result.push_back(Backend::AVX2);
+    if (is_available(Backend::NEON))   result.push_back(Backend::NEON);
     if (is_available(Backend::OPENMP)) result.push_back(Backend::OPENMP);
     result.push_back(Backend::SCALAR);
     return result;
@@ -286,6 +307,7 @@ std::string UnifiedHardwareDispatch::hardware_report() const {
     os << "AVX-512F: " << (info_.has_avx512f ? "YES" : "no") << "\n";
     os << "AVX-512DQ:" << (info_.has_avx512dq? "YES" : "no") << "\n";
     os << "AVX-512BW:" << (info_.has_avx512bw? "YES" : "no") << "\n";
+    os << "NEON:     " << (info_.has_neon    ? "YES" : "no") << "\n";
     os << "OpenMP:   " << (info_.has_openmp  ? "YES" : "no");
     if (info_.has_openmp) os << " (" << info_.omp_max_threads << " threads)";
     os << "\n";
@@ -1030,8 +1052,30 @@ void UnifiedHardwareDispatch::distance2_batch(
     }
 #endif
 
+#if FLEXAIDS_HAS_NEON
+    // ARM NEON: 4-wide SoA distances via simd_distance.h (reuse tested kernel).
+    if ((b == Backend::NEON || b == Backend::AUTO || b == Backend::SCALAR
+         || b == Backend::OPENMP) && is_available(Backend::NEON)) {
+        int i = 0;
+        for (; i + 3 < n; i += 4)
+            simd::distance2_1x4(ax + i, ay + i, az + i, bx, by, bz, out + i);
+        for (; i < n; ++i)
+            out[i] = sq(ax[i] - bx) + sq(ay[i] - by) + sq(az[i] - bz);
+        return;
+    }
+#endif
+
     for (int i = 0; i < n; ++i)
         out[i] = sq(ax[i] - bx) + sq(ay[i] - by) + sq(az[i] - bz);
+}
+
+float UnifiedHardwareDispatch::rmsd_neon(const float* a, const float* b, int n) {
+#if FLEXAIDS_HAS_NEON
+    // Reuse simd::rmsd (AoS interleaved xyz, NEON sum_sq_distances).
+    return simd::rmsd(a, b, n);
+#else
+    return rmsd_scalar(a, b, n);
+#endif
 }
 
 float UnifiedHardwareDispatch::rmsd(const float* a_xyz, const float* b_xyz,
@@ -1044,6 +1088,7 @@ float UnifiedHardwareDispatch::rmsd(const float* a_xyz, const float* b_xyz,
     switch (b) {
         case Backend::AVX512: return rmsd_avx512(a_xyz, b_xyz, n_atoms);
         case Backend::AVX2:   return rmsd_avx2(a_xyz, b_xyz, n_atoms);
+        case Backend::NEON:   return rmsd_neon(a_xyz, b_xyz, n_atoms);
         case Backend::OPENMP: return rmsd_openmp(a_xyz, b_xyz, n_atoms);
         default:              return rmsd_scalar(a_xyz, b_xyz, n_atoms);
     }
@@ -1076,6 +1121,9 @@ DispatchReport UnifiedHardwareDispatch::get_dispatch_report() const {
             break;
         case Backend::AVX2:
             reason = "AVX2+FMA detected on CPU";
+            break;
+        case Backend::NEON:
+            reason = "ARM NEON float32x4 detected on CPU";
             break;
         case Backend::OPENMP:
             reason = "OpenMP with " + std::to_string(hwd.openmp_max_threads) + " threads";

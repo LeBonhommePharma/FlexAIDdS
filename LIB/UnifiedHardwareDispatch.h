@@ -39,6 +39,7 @@ enum class Backend : uint8_t {
     METAL   = 4,
     CUDA    = 5,
     ROCM    = 6,
+    NEON    = 7,   // ARM NEON (aarch64 baseline; distance/RMSD CPU path)
     AUTO    = 255
 };
 
@@ -91,6 +92,7 @@ struct HardwareInfo {
     bool        has_avx512f      = false;
     bool        has_avx512dq     = false;
     bool        has_avx512bw     = false;
+    bool        has_neon         = false;  // ARM NEON (compile-time on aarch64)
     bool        has_openmp       = false;
     int         omp_max_threads  = 1;
 
@@ -234,6 +236,7 @@ private:
     float rmsd_scalar(const float* a, const float* b, int n);
     float rmsd_avx2(const float* a, const float* b, int n);
     float rmsd_avx512(const float* a, const float* b, int n);
+    float rmsd_neon(const float* a, const float* b, int n);
     float rmsd_openmp(const float* a, const float* b, int n);
 };
 
@@ -252,6 +255,7 @@ enum class HardwareBackend : uint8_t {
     METAL   = static_cast<uint8_t>(hw::Backend::METAL),
     AVX512  = static_cast<uint8_t>(hw::Backend::AVX512),
     AVX2    = static_cast<uint8_t>(hw::Backend::AVX2),
+    NEON    = static_cast<uint8_t>(hw::Backend::NEON),
     OPENMP  = static_cast<uint8_t>(hw::Backend::OPENMP),
     SCALAR  = static_cast<uint8_t>(hw::Backend::SCALAR),
 };
