@@ -1,8 +1,8 @@
 # FlexAID∆S Version History
 
-**Current Version**: 2.0.1
+**Current Version**: 2.0.2
 **Release Date**: 2026-07-12
-**Python Package**: 2.0.1 (`python/flexaidds/__version__.py`)
+**Python Package**: 2.0.2 (`python/flexaidds/__version__.py`)
 **Repository**: [github.com/LeBonhommePharma/FlexAIDdS](https://github.com/LeBonhommePharma/FlexAIDdS)
 **License**: Apache-2.0
 
@@ -29,6 +29,10 @@ Selected changes that landed on `master` this week.
 - **Tooling and site surface** — [#231](https://github.com/LeBonhommePharma/FlexAIDdS/pull/231), [#232](https://github.com/LeBonhommePharma/FlexAIDdS/pull/232), [#233](https://github.com/LeBonhommePharma/FlexAIDdS/pull/233)
 
 ---
+
+## v2.0.2 (2026-07-12) — Homebrew build fix
+
+Hotfix on top of v2.0.1: fix `const char*` / `char*` mismatch in `LIB/top.cpp` path resolution so Apple Clang builds (Homebrew) succeed. Matrix shipping and installer changes from v2.0.1 unchanged.
 
 ## v2.0.1 (2026-07-12) — Homebrew + packaging hotfix
 
