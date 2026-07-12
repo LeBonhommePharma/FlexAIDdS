@@ -1,8 +1,8 @@
 # FlexAID∆S Version History
 
-**Current Version**: 2.0.0
-**Release Date**: 2026-04-04
-**Python Package**: 2.0.0 (`python/flexaidds/__version__.py`)
+**Current Version**: 2.0.1
+**Release Date**: 2026-07-12
+**Python Package**: 2.0.1 (`python/flexaidds/__version__.py`)
 **Repository**: [github.com/LeBonhommePharma/FlexAIDdS](https://github.com/LeBonhommePharma/FlexAIDdS)
 **License**: Apache-2.0
 
@@ -29,6 +29,19 @@ Selected changes that landed on `master` this week.
 - **Tooling and site surface** — [#231](https://github.com/LeBonhommePharma/FlexAIDdS/pull/231), [#232](https://github.com/LeBonhommePharma/FlexAIDdS/pull/232), [#233](https://github.com/LeBonhommePharma/FlexAIDdS/pull/233)
 
 ---
+
+## v2.0.1 (2026-07-12) — Homebrew + packaging hotfix
+
+Production docking matrix and installer fixes for out-of-the-box Homebrew / PyPI installs.
+
+### Critical
+- **Ship production VCT matrix** `MC_st0r5.2_6.dat` (md5 `9dc93717…`) at repo root **and** `WRK/` so release tarballs and Homebrew stable builds type atoms correctly (v2.0.0 only had an outdated matrix under `WRK/`, causing mass "unknown atom type" failures).
+- **Homebrew formula**: libexec layout + PATH wrappers setting `FLEXAIDDS_DATA_DIR`; Metal off by default; data co-located with binaries.
+- **Engine path resolution** (`LIB/top.cpp`): `realpath(argv[0])`, honor `FLEXAIDDS_DATA_DIR`, fall back to `share/flexaidds` / `WRK`.
+- **PyPI metadata**: static PEP 621 version so clean builds no longer emit `UNKNOWN-0.0.0` wheels.
+
+### Python
+- Package version **2.0.1** (`python/flexaidds/__version__.py`, `python/pyproject.toml`).
 
 ## v2.0.0 (2026-04-04) — Stable Release
 

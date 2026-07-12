@@ -1,8 +1,11 @@
 class Flexaidds < Formula
   desc "Entropy-driven molecular docking engine (FlexAID + ΔS thermodynamic analysis)"
   homepage "https://github.com/LeBonhommePharma/FlexAIDdS"
-  url "https://github.com/LeBonhommePharma/FlexAIDdS/archive/refs/tags/v2.0.0.tar.gz"
-  sha256 "31488777f361bb02cb29df7a5e65e62cea15434e451bb574a14b10e702ae21e3"
+  # v2.0.1 ships production MC_st0r5.2_6.dat (md5 9dc93717…) at repo root and
+  # WRK/. v2.0.0 only had an outdated WRK matrix (md5 204b75ef…) that broke typing.
+  # sha256 is filled after the v2.0.1 tag exists (see release notes).
+  url "https://github.com/LeBonhommePharma/FlexAIDdS/archive/refs/tags/v2.0.1.tar.gz"
+  sha256 "0000000000000000000000000000000000000000000000000000000000000000"
   license "Apache-2.0"
   head "https://github.com/LeBonhommePharma/FlexAIDdS.git", branch: "master"
 
@@ -11,28 +14,32 @@ class Flexaidds < Formula
     strategy :github_latest
   end
 
+  # Optional Metal GPU path (macOS only). Off by default — see install notes.
+  option "with-metal", "Build with Metal GPU acceleration (macOS; may fail on pure CLT SDKs)"
+
   depends_on "cmake" => :build
   depends_on "ninja" => :build
   depends_on "eigen"
   depends_on "libomp" if OS.mac?
 
   def install
-    # Build the main tools. Focus on the fast optimized FlexAIDdS binary,
-    # the tENCoM tool, and legacy FlexAID for compatibility.
+    # Metal OFF by default: HEAD can fail to link metal_eval/metal_rmsd under
+    # pure Command Line Tools SDKs. CPU + OpenMP is the portable brew path.
+    metal = build.with?("metal") ? "ON" : "OFF"
+
     args = std_cmake_args + %W[
       -GNinja
       -DCMAKE_BUILD_TYPE=Release
       -DBUILD_TESTING=OFF
       -DBUILD_PYTHON_BINDINGS=OFF
       -DFLEXAIDS_USE_CUDA=OFF
-      -DFLEXAIDS_USE_METAL=#{OS.mac? ? "ON" : "OFF"}
+      -DFLEXAIDS_USE_METAL=#{metal}
       -DFLEXAIDS_USE_OPENMP=ON
       -DBUILD_FLEXAIDDS_FAST=ON
       -DENABLE_TENCOM_TOOL=ON
     ]
 
     if OS.mac?
-      # Help CMake find Homebrew's libomp (keg-only)
       libomp = formula_opt_prefix("libomp")
       args += %W[
         -DOpenMP_C_FLAGS=-Xpreprocessor\ -fopenmp\ -I#{libomp}/include
@@ -46,56 +53,114 @@ class Flexaidds < Formula
     system "cmake", "-S", ".", "-B", "build", *args
     system "cmake", "--build", "build", "--parallel"
 
-    # The build system stages runtime data files (MC_*.dat, AMINO.def, etc.)
-    # next to the built binaries via POST_BUILD rules. Install them together
-    # so relative-path lookup in the executables succeeds out of the box.
-    bin.install "build/FlexAIDdS" if File.exist?("build/FlexAIDdS")
-    bin.install "build/tENCoM" if File.exist?("build/tENCoM")
-    bin.install "build/FlexAID" if File.exist?("build/FlexAID")
+    # Real binaries + data live in libexec so PATH symlinks under /opt/homebrew/bin
+    # do not break relative data lookup. Wrappers set FLEXAIDDS_DATA_DIR.
+    libexec.mkpath
+    (libexec/"bin").mkpath
+    (libexec/"share").mkpath
 
-    # Install co-located data files (staged by the build).
-    # These are looked up relative to the executable directory.
-    bin.install Dir["build/MC_*.dat"]
-    bin.install "build/AMINO.def" if File.exist?("build/AMINO.def")
-    bin.install "build/NUCLEOTIDES.def" if File.exist?("build/NUCLEOTIDES.def")
-    bin.install Dir["build/FA_matrix*.dat"]
+    %w[FlexAIDdS tENCoM FlexAID tencom_entropy_diff flexaids_process_ligand].each do |exe|
+      %W[build/#{exe} build_lto/#{exe}].each do |candidate|
+        next unless File.exist?(candidate)
 
-    # Optional useful tools
-    bin.install "build/flexaids_process_ligand" if File.exist?("build/flexaids_process_ligand")
-    bin.install "build/tencom_entropy_diff" if File.exist?("build/tencom_entropy_diff")
+        (libexec/"bin").install candidate
+        break
+      end
+    end
 
-    # NOTE: The Python package "flexaidds" is best installed via pip from GitHub
-    # until the first public PyPI release (see docs/INSTALLATION.md).
-    # This formula focuses on the high-performance native CLI tools.
+    # Install data BOTH next to the real binary (base_path lookup) and under
+    # share/ (FLEXAIDDS_DATA_DIR for engines that honor it after the path fix).
+    install_runtime_data!(libexec/"bin")
+    install_runtime_data!(libexec/"share")
+
+    # Prefer root matrix over WRK/ when both exist (v2.0.1+ ships production both).
+    write_wrappers!
+  end
+
+  def install_runtime_data!(dest)
+    dest = Pathname(dest)
+    dest.mkpath
+    def_names = %w[AMINO.def NUCLEOTIDES.def]
+    # Prefer repo-root / build-staged matrices over WRK/ (legacy outdated copy).
+    data_candidates = %w[build build_lto . data]
+    wrk_fallback = %w[WRK]
+
+    copy_data = lambda do |dirs|
+      dirs.each do |dir|
+        Dir["#{dir}/MC_*.dat"].each do |f|
+          target = dest/File.basename(f)
+          cp f, target unless target.exist?
+        end
+        Dir["#{dir}/FA_matrix*.dat"].each do |f|
+          target = dest/File.basename(f)
+          cp f, target unless target.exist?
+        end
+        def_names.each do |name|
+          path = Pathname("#{dir}/#{name}")
+          next unless path.exist?
+
+          target = dest/name
+          cp path, target unless target.exist?
+        end
+      end
+    end
+
+    copy_data.call(data_candidates)
+    # Only use WRK if we still lack the primary matrix.
+    copy_data.call(wrk_fallback) if Dir["#{dest}/MC_*.dat"].empty?
+  end
+
+  def write_wrappers!
+    data_dir = libexec/"share"
+    %w[FlexAIDdS tENCoM FlexAID tencom_entropy_diff flexaids_process_ligand].each do |exe|
+      real = libexec/"bin"/exe
+      next unless real.exist?
+
+      (bin/exe).write <<~EOS
+        #!/bin/bash
+        # Homebrew wrapper: force data dir next to installed runtime files and
+        # exec the real binary (avoids argv[0] resolving to /opt/homebrew/bin).
+        export FLEXAIDDS_DATA_DIR="${FLEXAIDDS_DATA_DIR:-#{data_dir}}"
+        exec "#{real}" "$@"
+      EOS
+      chmod 0755, bin/exe
+    end
   end
 
   def caveats
     <<~EOS
       The FlexAIDdS native tools (FlexAIDdS, tENCoM, FlexAID) have been installed.
 
-      Runtime data files (MC matrices, AMINO.def, etc.) are installed alongside the
-      binaries so they are found automatically.
+      Wrappers under #{bin} set FLEXAIDDS_DATA_DIR=#{libexec}/share so PATH
+      symlinks still find MC matrices and AMINO.def.
 
-      For the Python package (analysis, results loader, thermodynamics).
-      Not yet on public PyPI — install from GitHub:
-        pip install "git+https://github.com/LeBonhommePharma/FlexAIDdS.git#subdirectory=python"
+      Stable v2.0.1+ includes the production docking matrix (atom typing works
+      out of the box). Upgrade from broken v2.0.0 installs with:
+        brew update && brew reinstall flexaidds
 
-      To upgrade later:
-        python -m flexaidds --self-update
-        # or re-run the git+https pip install above
+      Python package:
+        pip install flexaidds
+        # or from git: pip install "git+https://github.com/LeBonhommePharma/FlexAIDdS.git#subdirectory=python"
 
-      To rebuild the latest development tip of this formula:
-        brew reinstall --HEAD flexaidds
+      Default brew build uses CPU + OpenMP (no Metal).
+      Metal: brew install --with-metal flexaidds
 
-      Example usage:
-        FlexAIDdS receptor.pdb ligand.mol2
+      Example:
+        FlexAIDdS receptor.pdb ligand.sdf --rigid -o /tmp/out
         tENCoM --help
     EOS
   end
 
   test do
     assert_path_exists bin/"FlexAIDdS"
-    system bin/"FlexAIDdS", "--help"
-    assert_path_exists bin/"tENCoM"
+    assert_path_exists libexec/"bin"/"FlexAIDdS"
+    assert_path_exists libexec/"share"/"AMINO.def"
+    assert Dir["#{libexec}/share/MC_*.dat"].any?, "expected MC_*.dat in libexec/share"
+
+    # Wrapper must advertise the Cellar data dir, not /opt/homebrew/bin.
+    output = shell_output("#{bin}/FlexAIDdS --help")
+    assert_match "base path", output
+
+    system bin/"tENCoM", "--help"
   end
 end

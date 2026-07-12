@@ -593,47 +593,87 @@ int main(int argc, char **argv){
 	FA->vcontacts_planedef = 'X';
 
 	// ── Determine base path from executable location ──
-	pch=strrchr(argv[0],'\\');
-	if(pch==NULL)
-	{
-		pch=strrchr(argv[0],'/');
-	}
-
+	// Prefer the real path of argv[0] so Homebrew/PATH symlinks still resolve
+	// to Cellar/.../bin (where runtime data is installed), not /opt/homebrew/bin.
 #ifndef _WIN32
-	if(pch!=NULL){
-		for(i=0;i<(int)(pch-argv[0]);i++){
-			FA->base_path[i]=argv[0][i];
-			FA->base_path[i+1]='\0';
+	{
+		char resolved[MAX_PATH__];
+		const char* src = argv[0];
+		char* rp = realpath(src, resolved);
+		if (rp != NULL) {
+			src = resolved;
 		}
-	}else{
-		strncpy(FA->base_path,".",MAX_PATH__-1); FA->base_path[MAX_PATH__-1]='\0';
+		pch = strrchr(src, '/');
+		if (pch != NULL) {
+			size_t n = (size_t)(pch - src);
+			if (n >= MAX_PATH__) n = MAX_PATH__ - 1;
+			memcpy(FA->base_path, src, n);
+			FA->base_path[n] = '\0';
+		} else {
+			strncpy(FA->base_path, ".", MAX_PATH__ - 1);
+			FA->base_path[MAX_PATH__ - 1] = '\0';
+		}
 	}
 #else
-	strncpy(FA->base_path,".",MAX_PATH__-1); FA->base_path[MAX_PATH__-1]='\0';
+	pch = strrchr(argv[0], '\\');
+	if (pch == NULL) {
+		pch = strrchr(argv[0], '/');
+	}
+	if (pch != NULL) {
+		for (i = 0; i < (int)(pch - argv[0]); i++) {
+			FA->base_path[i] = argv[0][i];
+			FA->base_path[i + 1] = '\0';
+		}
+	} else {
+		strncpy(FA->base_path, ".", MAX_PATH__ - 1);
+		FA->base_path[MAX_PATH__ - 1] = '\0';
+	}
 #endif //_WIN32
 
 	printf("base path is '%s'\n", FA->base_path);
 
-		// ── Auto-detect WRK data directory ──────────────────────────────────
-		// If data files (MC_st0r5.2_6.dat, AMINO.def) are not in base_path,
-		// try base_path/../WRK/ as a fallback.  This allows the binary to live
-		// in build/ while data files stay in WRK/ without manual symlinks.
+		// ── Auto-detect data directory ──────────────────────────────────────
+		// Priority:
+		//   1. FLEXAIDDS_DATA_DIR env (Homebrew wrappers set this)
+		//   2. base_path itself (MC_st0r5.2_6.dat next to the binary)
+		//   3. base_path/../WRK (dev layout: binary in build/, data in WRK/)
+		//   4. base_path/../share/flexaidds (Homebrew share layout)
 		// The --data-dir flag (parsed below) overrides this auto-detection.
 		{
 			char probe[MAX_PATH__];
-			snprintf(probe, MAX_PATH__, "%s/MC_st0r5.2_6.dat", FA->base_path);
-			FILE* fp = fopen(probe, "r");
-			if (fp) {
-				fclose(fp);
-				// Data files found in base_path — nothing to do
-			} else {
-				// Try ../WRK/ relative to base_path
-				snprintf(probe, MAX_PATH__, "%s/../WRK/MC_st0r5.2_6.dat", FA->base_path);
-				fp = fopen(probe, "r");
+			int found = 0;
+			const char* env_dd = getenv("FLEXAIDDS_DATA_DIR");
+			if (env_dd != NULL && env_dd[0] != '\0') {
+				snprintf(probe, MAX_PATH__, "%s/MC_st0r5.2_6.dat", env_dd);
+				FILE* fp = fopen(probe, "r");
 				if (fp) {
 					fclose(fp);
-					snprintf(FA->dependencies_path, MAX_PATH__, "%s/../WRK", FA->base_path);
-					printf("auto-detected data directory: '%s'\n", FA->dependencies_path);
+					strncpy(FA->dependencies_path, env_dd, MAX_PATH__ - 1);
+					FA->dependencies_path[MAX_PATH__ - 1] = '\0';
+					printf("data directory from FLEXAIDDS_DATA_DIR: '%s'\n", FA->dependencies_path);
+					found = 1;
+				}
+			}
+			if (!found) {
+				snprintf(probe, MAX_PATH__, "%s/MC_st0r5.2_6.dat", FA->base_path);
+				FILE* fp = fopen(probe, "r");
+				if (fp) {
+					fclose(fp);
+					found = 1; // data co-located with binary
+				}
+			}
+			if (!found) {
+				const char* suffixes[] = { "/../WRK", "/../share/flexaidds", "/share/flexaidds" };
+				for (size_t si = 0; si < sizeof(suffixes) / sizeof(suffixes[0]); ++si) {
+					snprintf(probe, MAX_PATH__, "%s%s/MC_st0r5.2_6.dat", FA->base_path, suffixes[si]);
+					FILE* fp = fopen(probe, "r");
+					if (fp) {
+						fclose(fp);
+						snprintf(FA->dependencies_path, MAX_PATH__, "%s%s", FA->base_path, suffixes[si]);
+						printf("auto-detected data directory: '%s'\n", FA->dependencies_path);
+						found = 1;
+						break;
+					}
 				}
 			}
 		}
