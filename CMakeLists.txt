@@ -1191,6 +1191,16 @@ if(BUILD_TESTING)
         TEST_NAME MetalCoordinationTests
     )
 
+    # test_cf_aggregator — pins the REAL get_cf_evalue() term set (links ic2cf.cpp,
+    # not the reduced stub in tests/stubs.cpp)
+    flexaids_add_unit_test(test_cf_aggregator
+        SOURCES
+            tests/test_cf_aggregator.cpp
+            tests/cf_aggregator_stubs.cpp
+            LIB/ic2cf.cpp
+        TEST_NAME CFAggregatorTests
+    )
+
     # test_formal_charges — PDB formal charge assignment tests (header-only)
     flexaids_add_unit_test(test_formal_charges
         SOURCES tests/test_formal_charges.cpp
@@ -2711,6 +2721,10 @@ if(BUILD_SWIFT_BRIDGE)
     add_test(NAME LigandRingFlexTests COMMAND test_ligand_ring_flex)
 
     # test_natural — RibosomeElongation, TransloconInsertion, NucleationSeedDetector
+    # Guarded: an earlier block already defines this target with the same
+    # NATURaLTests name; without the guard a fresh configure fails with a
+    # duplicate-target error.
+    if(NOT TARGET test_natural)
     add_executable(test_natural
         tests/test_natural.cpp
         LIB/NATURaL/RibosomeElongation.cpp
@@ -2744,6 +2758,7 @@ if(BUILD_SWIFT_BRIDGE)
     flexaids_configure_simd(test_natural)
     flexaids_configure_msvc_test(test_natural)
     add_test(NAME NATURaLTests COMMAND test_natural)
+    endif()
 
     # test_docking_pipeline — end-to-end integration: ProcessLigand → StatMech → BindingMode
     add_executable(test_docking_pipeline
