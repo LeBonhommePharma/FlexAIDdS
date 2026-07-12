@@ -15,7 +15,11 @@ theme:
 nav:
   - Home: index.md
   - Getting Started: getting-started.md
+  - Architecture: architecture.md
+  - Support Boundary: support-boundary.md
   - Configuration: configuration.md
+  - Thermodynamics: thermodynamics.md
+  - Testing: testing.md
   - Scoring Functions:
     - Overview: scoring/overview.md
     - H-Bond Potential: scoring/hbond.md

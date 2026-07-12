@@ -79,6 +79,50 @@ def test_search_never_beats_seed(rb):
     assert rb.search_never_beats_seed(poses, cf_seed=-5.0) is False
 
 
+def test_search_never_beats_seed_empty(rb):
+    assert rb.search_never_beats_seed([], cf_seed=-10.0) is True
+
+
+def test_rank_of_best_rmsd_none_without_rmsd(rb):
+    PoseCF = rb.PoseCF
+    poses = [PoseCF("a", cf=-10.0), PoseCF("b", cf=-20.0)]
+    assert rb.rank_of_best_rmsd(poses) is None
+
+
+def test_spearman_cf_rmsd_positive_when_aligned(rb):
+    PoseCF = rb.PoseCF
+    # Better CF (lower) with lower RMSD → positive Spearman
+    poses = [
+        PoseCF("n", cf=-50.0, rmsd=0.5),
+        PoseCF("m", cf=-30.0, rmsd=2.0),
+        PoseCF("d", cf=-10.0, rmsd=6.0),
+        PoseCF("x", cf=-5.0, rmsd=8.0),
+    ]
+    rho = rb.spearman_cf_rmsd(poses)
+    assert rho is not None
+    assert rho > 0.9
+
+
+def test_spearman_cf_rmsd_insufficient_points(rb):
+    PoseCF = rb.PoseCF
+    poses = [
+        PoseCF("a", cf=-10.0, rmsd=1.0),
+        PoseCF("b", cf=-20.0, rmsd=2.0),
+    ]
+    assert rb.spearman_cf_rmsd(poses) is None
+
+
+def test_wal_over_abs_com(rb):
+    assert rb.wal_over_abs_com(cf_wal=-20.0, cf_com=-10.0) == pytest.approx(2.0)
+    assert rb.wal_over_abs_com(None, -10.0) is None
+    assert rb.wal_over_abs_com(-5.0, 0.0) is None
+    assert rb.wal_over_abs_com(-5.0, None) is None
+
+
+def test_near_native_empty_poses(rb):
+    assert rb.near_native_missed_by_top1([]) is False
+
+
 def test_spearman_positive_when_cf_tracks_rmsd(rb):
     PoseCF = rb.PoseCF
     poses = [

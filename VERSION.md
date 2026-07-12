@@ -8,6 +8,16 @@
 
 ---
 
+## Documentation & test actualization (2026-07-12)
+
+- Rewrote `docs/TEST_COVERAGE_ANALYSIS.md` from a live suite inventory; added operator guide `docs/TESTING.md`.
+- Expanded MkDocs tree (`docs/docs/`): architecture, thermodynamics summary, testing, support boundary, full Python API, fixed getting-started install paths.
+- Registered previously orphan GoogleTest sources: `test_binding_mode_io`, `test_ga_population`, `test_production_blockers`.
+- Extended Python coverage: `dataset_adapters`, `truncate_chain`, `_fallback_types`, thermo schema, ranking-bias diagnostics; expanded C++ thermo ledger + buffer-safety cases.
+- Actualized README documentation hub, Weekly Pulse framing, and `VALIDATED_CAPABILITIES.md` automation map.
+
+---
+
 ## Weekly Highlights (2026-05-27 to 2026-06-03)
 
 Selected changes that landed on `master` this week.

@@ -18,7 +18,7 @@
 
 </div>
 
-**[Weekly Pulse](#weekly-pulse)** · **[Installation](docs/INSTALLATION.md)** · **[User Guide](docs/USERGUIDE.md)** · **[Support Matrix](docs/SUPPORT_MATRIX.md)** · **[Reproducibility](docs/REPRODUCIBILITY.md)** · **[Benchmarks](docs/BENCHMARKS.md)** · **[Changelog](VERSION.md)** · **[Website](https://lmorency.github.io/FlexAIDdS/)** · **[Documentation Hub](#documentation)**
+**[Weekly Pulse](#weekly-pulse)** · **[Installation](docs/INSTALLATION.md)** · **[User Guide](docs/USERGUIDE.md)** · **[Testing](docs/TESTING.md)** · **[Support Matrix](docs/SUPPORT_MATRIX.md)** · **[Reproducibility](docs/REPRODUCIBILITY.md)** · **[Benchmarks](docs/BENCHMARKS.md)** · **[Changelog](VERSION.md)** · **[Website](https://lmorency.github.io/FlexAIDdS/)** · **[Documentation Hub](#documentation)**
 
 ---
 
@@ -108,36 +108,37 @@ See [docs/INSTALLATION.md](docs/INSTALLATION.md) for conda, GitHub/PyPI, Windows
 
 ## Weekly Pulse
 
+Snapshot language below tracks major themes since the late-May 2026 thermo/reporting wave. For exact commit and PR history, always use [VERSION.md](VERSION.md) and `git log`.
+
 <table>
 <tr>
 <td valign="top" width="25%">
-<strong>242 commits</strong><br/>
-landed on <code>master</code> from 2026-05-27 to 2026-06-03.
+<strong>Docs + tests actualized</strong><br/>
+Testing guide, coverage inventory, MkDocs depth, and orphan C++ suite registration (2026-07).
 </td>
 <td valign="top" width="25%">
-<strong>19 merged PRs</strong><br/>
-spanned thermodynamics, validation, benchmark ops, and web/docs work.
+<strong>~2,700+ automated cases</strong><br/>
+GoogleTest + pytest across engine, thermo ledger, adapters, and diagnostics.
 </td>
 <td valign="top" width="25%">
-<strong>M3 Pro benchmark path</strong><br/>
-hardened for iCloud-only launches, Metal pre-flight, temperature fidelity, and best-mode extraction.
+<strong>Installers &amp; ranking</strong><br/>
+PyPI/Homebrew paths, classic soft-β entropy ranking restoration, DiFT integration PRs.
 </td>
 <td valign="top" width="25%">
-<strong>Astex non-native grew</strong><br/>
-from pair definitions to a 20-pair pilot and the full 85-pair cross-docking set.
+<strong>Benchmark ops</strong><br/>
+Astex entropy skill contract, DatasetRunner path hardening, PoseBusters success criteria.
 </td>
 </tr>
 </table>
 
-### This Week on `master`
+### Recent themes on `master` (see changelog for dates)
 
-- **Thermodynamics** — `ThermodynamicBreakdown`, component averages, `ThermodynamicOutput`, `TotalSampledPartitionFunction`, Python temperature scans, and targeted thermo verification all landed.
-- **Reporting and preprocessing** — cleft annotation, flexible-residue selection, safe standard-state affinity calibration, and JSON-driven PyMOL / Markdown plotting landed.
-- **Benchmark operations** — the M3 Pro / iCloud launcher path gained iCloud-only support, `EntryTaskManager.run()`, explicit temperature forwarding, and stricter best-mode validation.
-- **Docs and web** — entropy.help, the documentation/validation boundary, `/flexaid`, `/periodic`, and homepage teaser/navigation work all landed this week.
+- **Thermodynamics & audit** — ledger breakdowns, temperature helpers, entropy.help schema, classic FlexAID soft-β ranking optionality.
+- **Packaging** — pure-wheel PyPI install path, Homebrew formula, `HAS_CORE` stub guards.
+- **Python/plugin** — PyMOL session optimize, REMARK ledger alignment with engine, DatasetRunner path oracle fixes.
+- **Documentation & validation** — support boundary docs, coverage CI, agent skill contracts under `AGENTS.md`.
 
-**Full weekly notes and PR links**: see [VERSION.md](VERSION.md).
-
+**Full notes and PR links**: [VERSION.md](VERSION.md).
 ---
 
 ## What's New in v2.0
@@ -480,11 +481,11 @@ FlexAIDdS/
 |   +-- CleftDetector.cpp/h  # Binding-site detection
 |   +-- VoronoiCFBatch.h     # Batch Voronoi CF (header-only)
 +-- src/                    # Entry points
-+-- tests/                  # GoogleTest suite (48 test targets)
++-- tests/                  # GoogleTest suite (60+ registered targets)
 +-- python/                 # Python package + pybind11 bindings
-|   +-- flexaidds/           # Python package (22+ modules)
+|   +-- flexaidds/           # Python package (analysis, DatasetRunner, schemas)
 |   +-- bindings/            # C++ bridge
-|   +-- tests/               # pytest suite (32 test files)
+|   +-- tests/               # pytest suite (50+ modules)
 |   +-- setup.py
 +-- pymol_plugin/           # PyMOL visualization plugin
 +-- swift/                  # Swift package (experimental)
@@ -511,6 +512,9 @@ Browse the full documentation at **[lmorency.github.io/FlexAIDdS](https://lmoren
 |:---------|:------------|
 | [Installation Guide](docs/INSTALLATION.md) | Prerequisites, build instructions, platform-specific notes |
 | [User Guide](docs/USERGUIDE.md) | Full parameter reference, Python API, PyMOL plugin |
+| [Testing Guide](docs/TESTING.md) | How to run C++/Python/skill tests and interpret markers |
+| [Test Coverage Analysis](docs/TEST_COVERAGE_ANALYSIS.md) | Live inventory of suites, gaps, and maintenance rules |
+| [Thermodynamics](docs/thermodynamics.md) | Ensemble quantities, support classification, automation map |
 | [Support Matrix](docs/SUPPORT_MATRIX.md) | Supported platforms, compilers, GPU backends, CI coverage |
 | [Benchmarks](docs/BENCHMARKS.md) | ITC-187, CASF-2016, LIT-PCBA, cross-docking validation |
 | [Reproducibility](docs/REPRODUCIBILITY.md) | Benchmark claim policy, dataset provenance |
@@ -527,7 +531,9 @@ Browse the full documentation at **[lmorency.github.io/FlexAIDdS](https://lmoren
 | [Genetic Algorithm](docs/docs/ga/overview.md) | Fitness models (SMFREE, PSHARE, LINEAR), key parameters |
 | [GA Diversity](docs/docs/ga/diversity.md) | Entropy collapse detection and adaptive mutation |
 | [GA Optimizer](docs/docs/ga/optimize.md) | Automated hyperparameter tuning with GAOptimizer |
-| [Python API](docs/docs/api/python.md) | StatMechEngine, ENCoMEngine, dock(), load_results() |
+| [Python API](docs/docs/api/python.md) | Full package surface: thermo, adapters, diagnostics, DatasetRunner |
+| [Architecture](docs/docs/architecture.md) | GA → CF → BindingMode → StatMech pipeline |
+| [MkDocs Thermodynamics](docs/docs/thermodynamics.md) | Scoring proxy vs ledger summary |
 | [ML Rescoring](docs/docs/ml-rescore.md) | Feature extraction bridge for hybrid physics/ML scoring |
 | [Configuration](docs/docs/configuration.md) | JSON config reference for scoring, GA, and distributed settings |
 

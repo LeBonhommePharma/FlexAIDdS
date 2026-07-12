@@ -1,5 +1,7 @@
 # User Guide
 
+> **Testing & validation**: See [`TESTING.md`](TESTING.md) and [`TEST_COVERAGE_ANALYSIS.md`](TEST_COVERAGE_ANALYSIS.md) for how Core behaviors are automated. Thermodynamic field meanings: [`thermodynamics.md`](thermodynamics.md).
+
 Complete reference for using FlexAID∆S — from zero-config docking to advanced thermodynamic analysis.
 
 ---

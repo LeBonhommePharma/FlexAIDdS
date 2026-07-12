@@ -4,6 +4,7 @@
 
 #include <gtest/gtest.h>
 #include "../LIB/gaboom.h"
+#include "GPUContextPool.h"
 
 #include <cmath>
 #include <vector>

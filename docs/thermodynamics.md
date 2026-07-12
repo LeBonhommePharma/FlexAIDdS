@@ -133,6 +133,20 @@ See also:
 
 All legacy fields (`free_energy`, `enthalpy`, `entropy`, etc.) on `BindingModeResult` and REMARKs are preserved. New fields are additive.
 
+
+## Automation map (actualized 2026-07-12)
+
+| Concern | Tests / docs |
+|---------|----------------|
+| Partition function identities | `tests/test_statmech.cpp`, `tests/test_thermo_ledger.cpp` |
+| BindingMode ↔ StatMech | `tests/test_binding_mode_statmech.cpp`, vibrational suite |
+| Python pure-Python engine | `python/tests/test_thermodynamics*.py`, `test_py_statmech.py` |
+| Audit schema F/S consistency | `python/tests/test_thermo_schema.py` |
+| Operator guide | `docs/TESTING.md` |
+| Coverage inventory | `docs/TEST_COVERAGE_ANALYSIS.md` |
+
+When adding thermodynamic features: place them behind tests and feature flags; never change default pose ranking without an explicit request (`AGENTS.md`).
+
 ---
 
-**End of document.** All claims in this file are supported by unit tests and the implementation PRs (#212–#218).
+**End of document.** Core identities in this file are enforced by the automation map above (historical implementation PRs #212–#218 remain the feature origin).
