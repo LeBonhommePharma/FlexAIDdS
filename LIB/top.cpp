@@ -497,6 +497,10 @@ int main(int argc, char **argv){
 	FA->rotamer_permeability = 0.8;
 	FA->temperature = 0;
 	FA->beta = 0.0;
+	// Classic FlexAID entropy ranking is the product default when T>0
+	// (see config_parser / docs/classic_entropy_ranking.md). Explicit zero
+	// here so non-JSON paths never inherit garbage for the emission gate.
+	FA->force_cf_rank_emission = false;
 
 	FA->force_interaction=0;
 	FA->interaction_factor=5.0;

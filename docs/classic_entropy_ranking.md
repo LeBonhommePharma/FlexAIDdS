@@ -78,3 +78,21 @@ Live exhibit (pre-fix 1HNN): ACF-best cluster (freq 29) was emitted as rank 3; C
 
 Classic election is layer 4 of the full reproducibility contract (frame chart →
 pocket Ω → soft-β SMFREE → ACF election). See **`docs/ensemble_pipeline.md`**.
+
+## 1HNN ACF-vs-CF ablation (offline)
+
+No re-dock required. The gate is pure election policy over an existing ensemble:
+
+```bash
+# Built-in pre-fix 1HNN numbers (CF champion vs dense ACF basin)
+python3 scripts/acf_vs_cf_ablation.py --synthetic-1hnn
+
+# Live target directory with <PDB>.cad (+ optional rank PDBs for rep CF)
+python3 scripts/acf_vs_cf_ablation.py results/.../1HNN --json
+
+# Unit tests (no C++ binary)
+python3 -m pytest tests/test_acf_vs_cf_ablation.py -q
+ctest --test-dir build -R ClassicEntropyRankingTests --output-on-failure
+```
+
+Expected synthetic verdict: **election flip** — classic elects cluster 3 (ACF≈−263, freq 29); `force_cf` elects cluster 0 (CF≈−189.9).

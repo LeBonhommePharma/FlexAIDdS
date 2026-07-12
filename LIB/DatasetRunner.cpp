@@ -5662,7 +5662,12 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                    << "  \"thermodynamics\": {\n"
                    << "    \"temperature\": " << config.temperature << ",\n"
                    << "    \"clustering_algorithm\": \"" << effective_clustering_algo << "\",\n"
-                   << "    \"cluster_rmsd\": 2.0\n"
+                   << "    \"cluster_rmsd\": 2.0,\n"
+                   // Classic FlexAID soft-β ACF / BindingMode F elects rank-0 when T>0.
+                   // force_cf_rank_emission=true restores P3b lowest-CF emission (rollback).
+                   // Env overrides: FLEXAIDDS_FORCE_CF_RANK_EMISSION, FLEXAIDDS_CLASSIC_ENTROPY_RANKING.
+                   << "    \"classic_entropy_ranking\": true,\n"
+                   << "    \"force_cf_rank_emission\": false\n"
                    << "  },\n"
                    << "  \"ga\": {\n"
                    << "    \"num_chromosomes\": " << config.ga_population << ",\n"
