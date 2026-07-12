@@ -75,6 +75,10 @@ static void detect_x86_simd(HardwareCapabilities& hw) {
     hw.has_avx512vnni= (regs[2] & (1 << 11)) != 0; // ECX bit 11
 
     hw.has_avx512 = hw.has_avx512f && hw.has_avx512dq && hw.has_avx512bw;
+    hw.has_neon   = false;
+#elif defined(__ARM_NEON) || defined(__ARM_NEON__) || defined(__aarch64__)
+    // NEON is baseline on aarch64; also true when building with ARM NEON.
+    hw.has_neon = true;
 #else
     (void)hw;
 #endif
@@ -203,6 +207,8 @@ std::string HardwareCapabilities::summary() const {
         os << "[HW]   AVX2+FMA: yes\n";
     else if (has_sse42)
         os << "[HW]   SSE4.2: yes (no AVX)\n";
+    else if (has_neon)
+        os << "[HW]   NEON: yes (ARM float32x4)\n";
     else
         os << "[HW]   SIMD: baseline only\n";
 

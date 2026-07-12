@@ -33,6 +33,9 @@ struct CleftDetectorParams {
     float probe_shrink_step; // radius decrement per iteration (A)
     float cluster_cutoff;    // single-linkage clustering distance (A)
     int   min_cluster_size;  // discard clusters smaller than this
+    // Layer 2: keep at most this many ligandable clusters (volume×enclosure).
+    // Default 5 — larger than multi-cleft fan-out; 0 = keep all min_cluster_size.
+    int   top_k_clefts;
     // Optional spatial pre-filter: when oracle_radius > 0, SURFNET only processes
     // atoms within this radius of oracle_center.  Eliminates O(N^3) blowup on
     // multimeric receptors (e.g. 1OF6 octamer, 20826 atoms): a 15 A filter reduces
@@ -50,6 +53,7 @@ inline CleftDetectorParams default_cleft_params() {
     p.probe_shrink_step=  0.1f;
     p.cluster_cutoff   =  4.0f;
     p.min_cluster_size =  10;
+    p.top_k_clefts     =  5;   // ligandable top-K (ensemble layer 2)
     p.oracle_center[0] = 0.0f; p.oracle_center[1] = 0.0f; p.oracle_center[2] = 0.0f;
     p.oracle_radius    = 0.0f;  // disabled by default
     return p;
