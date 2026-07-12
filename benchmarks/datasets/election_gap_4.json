@@ -1,0 +1,42 @@
+{
+  "schema_version": 1,
+  "name": "election_gap_4",
+  "description": "4-case Astex Diverse native self-docking subset for election-gap failure-mode analysis. Oracle binding sites used. Paths are repo-relative to benchmarks/astex_diverse/astex_diverse.",
+  "n_pairs": 4,
+  "oracle_mode": true,
+  "astex_diverse_dir": "benchmarks/astex_diverse/astex_diverse",
+  "pairs": [
+    {
+      "index": 3,
+      "receptor_id": "1HNN",
+      "ligand_id": "1HNN",
+      "receptor_pdb": "benchmarks/astex_diverse/astex_diverse/1HNN/1HNN_apo.pdb",
+      "ligand_sdf": "benchmarks/astex_diverse/astex_diverse/1HNN/1HNN_ligand.sdf",
+      "oracle_site_pdb": "benchmarks/astex_diverse/astex_diverse/1HNN/1HNN_binding_site.pdb"
+    },
+    {
+      "index": 5,
+      "receptor_id": "1HQ2",
+      "ligand_id": "1HQ2",
+      "receptor_pdb": "benchmarks/astex_diverse/astex_diverse/1HQ2/1HQ2_apo.pdb",
+      "ligand_sdf": "benchmarks/astex_diverse/astex_diverse/1HQ2/1HQ2_ligand.sdf",
+      "oracle_site_pdb": "benchmarks/astex_diverse/astex_diverse/1HQ2/1HQ2_binding_site.pdb"
+    },
+    {
+      "index": 35,
+      "receptor_id": "1Q4G",
+      "ligand_id": "1Q4G",
+      "receptor_pdb": "benchmarks/astex_diverse/astex_diverse/1Q4G/1Q4G_apo.pdb",
+      "ligand_sdf": "benchmarks/astex_diverse/astex_diverse/1Q4G/1Q4G_ligand.sdf",
+      "oracle_site_pdb": "benchmarks/astex_diverse/astex_diverse/1Q4G/1Q4G_binding_site.pdb"
+    },
+    {
+      "index": 63,
+      "receptor_id": "1XM6",
+      "ligand_id": "1XM6",
+      "receptor_pdb": "benchmarks/astex_diverse/astex_diverse/1XM6/1XM6_apo.pdb",
+      "ligand_sdf": "benchmarks/astex_diverse/astex_diverse/1XM6/1XM6_ligand.sdf",
+      "oracle_site_pdb": "benchmarks/astex_diverse/astex_diverse/1XM6/1XM6_binding_site.pdb"
+    }
+  ]
+}

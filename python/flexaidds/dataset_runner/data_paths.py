@@ -67,6 +67,26 @@ def find_ligand_file(data_dir: Path, pdb_id: str) -> Optional[Path]:
     return _first_existing(_ligand_probes(data_dir, pdb_id))
 
 
+def find_binding_site_pdb(data_dir: Path, pdb_id: str) -> Optional[Path]:
+    """Locate the pre-computed cognate binding-site PDB for a target, if any.
+
+    Mirrors LIB/DatasetRunner.cpp's Priority-3 lookup (co-located
+    ``<stem>_binding_site.pdb``, "Astex pre-computed site"). When present,
+    this should be surfaced to the FlexAID subprocess via
+    ``FLEXAIDDS_ORACLE_SITE`` so blind whole-receptor SURFNET search is
+    replaced with oracle-guided site-confined search -- the actual
+    cognate-redocking protocol the 2015 JCIM baselines were measured under.
+    Without it, docking_power numbers are not comparable to those baselines
+    (they reflect a much harder blind-search task instead).
+    """
+    tid = pdb_id.upper()
+    tdir = data_dir / tid
+    for cand in (tdir / f"{tid}_binding_site.pdb", data_dir / f"{tid}_binding_site.pdb"):
+        if cand.is_file():
+            return cand
+    return None
+
+
 def resolve_astex_nonnative_paths(
     data_dir: Path,
     entry_id: str,

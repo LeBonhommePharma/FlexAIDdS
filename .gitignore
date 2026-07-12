@@ -104,3 +104,13 @@ swift/.build/
 /hvib_*.csv
 /v9_*.md
 /CODEX_*.md
+
+# Local experiment / repro workspaces (machine-local, large, not for commit)
+.virgin_scratch/
+benchmarks/astex_repro/
+*_ligand_centered_site.pdb
+*_apo_full10chain.pdb
+virgin_bench_fixes.diff
+astex85_repro_final.png
+election_cf.csv
+benchmarks/datasets-archive-report.json
