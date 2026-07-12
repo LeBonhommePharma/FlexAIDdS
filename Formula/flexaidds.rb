@@ -1,10 +1,10 @@
 class Flexaidds < Formula
   desc "Entropy-driven molecular docking engine (FlexAID + ΔS thermodynamic analysis)"
   homepage "https://github.com/LeBonhommePharma/FlexAIDdS"
-  # v2.0.1 ships production MC_st0r5.2_6.dat (md5 9dc93717…) at repo root and
+  # v2.0.2 ships production MC_st0r5.2_6.dat (md5 9dc93717…) at repo root and
   # WRK/. v2.0.0 only had an outdated WRK matrix (md5 204b75ef…) that broke typing.
-  url "https://github.com/LeBonhommePharma/FlexAIDdS/archive/refs/tags/v2.0.1.tar.gz"
-  sha256 "08b0d3aecb71a8960f25396a48dd8facc76696b51072f78679e39ad198ebb971"
+  url "https://github.com/LeBonhommePharma/FlexAIDdS/archive/refs/tags/v2.0.2.tar.gz"
+  sha256 "0000000000000000000000000000000000000000000000000000000000000000"
   license "Apache-2.0"
   head "https://github.com/LeBonhommePharma/FlexAIDdS.git", branch: "master"
 
@@ -72,7 +72,7 @@ class Flexaidds < Formula
     install_runtime_data!(libexec/"bin")
     install_runtime_data!(libexec/"share")
 
-    # Prefer root matrix over WRK/ when both exist (v2.0.1+ ships production both).
+    # Prefer root matrix over WRK/ when both exist (v2.0.2+ ships production both).
     write_wrappers!
   end
 
@@ -133,7 +133,7 @@ class Flexaidds < Formula
       Wrappers under #{bin} set FLEXAIDDS_DATA_DIR=#{libexec}/share so PATH
       symlinks still find MC matrices and AMINO.def.
 
-      Stable v2.0.1+ includes the production docking matrix (atom typing works
+      Stable v2.0.2+ includes the production docking matrix (atom typing works
       out of the box). Upgrade from broken v2.0.0 installs with:
         brew update && brew reinstall flexaidds
 

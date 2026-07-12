@@ -9,7 +9,7 @@ name = "flexaidds"
 # that path executes flexaidds/__init__.py, which needs numpy — and numpy is
 # not a build-system dependency. That produced UNKNOWN-0.0.0 wheels on clean
 # / older pip builds (the classic PyPI installer failure mode).
-version = "2.0.1"
+version = "2.0.2"
 description = "Python bindings and analysis tools for the FlexAID∆S thermodynamic docking engine"
 authors = [
   { name = "Louis-Philippe Morency" },

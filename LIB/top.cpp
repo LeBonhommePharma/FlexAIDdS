@@ -603,15 +603,19 @@ int main(int argc, char **argv){
 		if (rp != NULL) {
 			src = resolved;
 		}
-		pch = strrchr(src, '/');
-		if (pch != NULL) {
-			size_t n = (size_t)(pch - src);
+		// strrchr(const char*) returns const char* — keep a local const pointer
+		// instead of assigning into the legacy char* pch variable.
+		const char* slash = strrchr(src, '/');
+		if (slash != NULL) {
+			size_t n = (size_t)(slash - src);
 			if (n >= MAX_PATH__) n = MAX_PATH__ - 1;
 			memcpy(FA->base_path, src, n);
 			FA->base_path[n] = '\0';
+			pch = FA->base_path; // satisfy any later uses of pch
 		} else {
 			strncpy(FA->base_path, ".", MAX_PATH__ - 1);
 			FA->base_path[MAX_PATH__ - 1] = '\0';
+			pch = NULL;
 		}
 	}
 #else
