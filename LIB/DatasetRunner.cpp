@@ -5730,7 +5730,7 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                    // and the raw RANDOM gen-0 collapses to CF≈0 (floating ligand).
                    << "  \"coarse_init\": {\n"
                    << "    \"enabled\": "
-                   << (config.mode == BenchmarkMode::AUTONOMOUS ? "true" : "false")
+                   << "false"  // v130: coarse_init disabled (224s overhead per restart at OMP=1)
                    << ",\n"
                    << "    \"grid_step\": 3.0,\n"
                    << "    \"n_seeds\": 25,\n"
