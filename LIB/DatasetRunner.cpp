@@ -5512,6 +5512,62 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                     : (ri_dir + "/" + entry.pdb_id);
                 if (ri > 0) ensure_dir(ri_dir);
 
+                // ── Cross-binary contamination guard (FLEXAIDDS_IGNORE_CACHE) ──
+                // There is NO per-restart "already done" skip: this loop always
+                // re-launches every restart index (0..n_restarts-1) whenever the
+                // target was not skipped.  However the engine writes its pose
+                // PDBs (<ri_prefix>_<N>.pdb, _INI, _mode_/_cluster_) into the SAME
+                // ri_dir/ri_prefix WITHOUT clearing prior output.  If an OLDER
+                // binary left more pose modes on disk than the current binary
+                // emits for this restart, those high-index stragglers survive and
+                // the downstream consensus / Fix-B pool — which globs
+                // <ri_prefix>_<0..19>.pdb — silently mixes poses produced by two
+                // different binaries: a contaminated comparison.
+                //
+                // FLEXAIDDS_IGNORE_CACHE=1 is the documented signal that the
+                // binary or scoring parameters changed between runs (it already
+                // forces re-execution of every restart by keeping skip=false), so
+                // scrub stale pose artifacts from this restart dir before the
+                // engine re-runs.  Only pool-visible pose PDBs are removed;
+                // prepared inputs (<pdb>_pruned/_prepped.pdb, <pdb>_dockin.*) and
+                // any reusable grid file are left untouched.  When
+                // ignore_cache==false this is skipped, so normal resume of a
+                // partial campaign with an unchanged binary is unaffected.
+                if (ignore_cache) {
+                    try {
+                        const std::string pref = entry.pdb_id + "_";
+                        for (const auto& pf : fs::directory_iterator(ri_dir)) {
+                            if (!pf.is_regular_file()) continue;
+                            const std::string fn = pf.path().filename().string();
+                            if (fn.size() < 4 ||
+                                fn.compare(fn.size() - 4, 4, ".pdb") != 0)
+                                continue;
+                            if (fn.rfind(pref, 0) != 0) continue;
+                            const std::string tail =
+                                fn.substr(pref.size(), fn.size() - pref.size() - 4);
+                            bool is_pose = (tail == "INI");
+                            if (!is_pose && !tail.empty()) {
+                                is_pose = true;
+                                for (char c : tail) {
+                                    if (!std::isdigit(
+                                            static_cast<unsigned char>(c))) {
+                                        is_pose = false;
+                                        break;
+                                    }
+                                }
+                            }
+                            if (!is_pose && tail.rfind("mode_", 0) == 0)
+                                is_pose = true;
+                            if (!is_pose && tail.rfind("cluster_", 0) == 0)
+                                is_pose = true;
+                            if (is_pose) {
+                                std::error_code rec;
+                                fs::remove(pf.path(), rec);
+                            }
+                        }
+                    } catch (...) {}
+                }
+
             // Generate per-target JSON config for FlexAIDdS
             std::string config_path = ri_dir + "/dock_config.json";
             // P7: opt-in fine sampling grid (FLEXAIDDS_FINE_GRID=1) — halve the
@@ -6094,6 +6150,16 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
         // For cached (skip=true) runs we reconstruct from whatever restart subdirs
         // are already on disk.  This ensures re-scored runs automatically gain
         // benefit from any previously-completed restarts.
+        //
+        // Cross-binary note: this reconstruction can only fire on the cached
+        // path (all_prefixes stays empty only when skip==true).  skip is set
+        // exclusively inside the `!ignore_cache` block above, so whenever
+        // FLEXAIDDS_IGNORE_CACHE=1 (the documented signal that the binary or
+        // scoring changed) skip==false, all_prefixes is populated fresh by the
+        // re-run loop, and this block is never entered — so it cannot pull in
+        // old-binary poses under the changed-binary protocol.  On the plain
+        // cache path (ignore_cache==false) the binary is unchanged by contract,
+        // so reconstructing from prior restart dirs is a legitimate resume.
         if (all_prefixes.empty()) {
             for (int ri = 0; ri < n_restarts; ri++) {
                 std::string ri_dir2    = (ri == 0) ? out_dir
