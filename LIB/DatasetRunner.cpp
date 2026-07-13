@@ -5425,36 +5425,50 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
             const int   eval_scale_on  = eval_scale_env ? std::atoi(eval_scale_env) : 1;
             const int   n_flex_bonds   = fdih_est;
             const int   n_gen_base     = config.ga_generations;
-            int n_gen_scaled;
+            const int   pop_base       = config.ga_population;
+            int n_gen_scaled           = n_gen_base;  // generations fixed at base
+            int pop_scaled             = pop_base;    // population scaled by DoF
             if (eval_scale_on) {
+                // ── Population-based eval scaling (iso-budget chromosome swap) ──
+                // Rationale: GA search space dimensionality grows linearly with
+                // n_flex_bonds.  In a D-dimensional landscape, a fixed population
+                // collapses prematurely — the initial Shannon entropy H(X) over the
+                // gene distribution is too low to cover multiple binding-mode basins.
+                // Scaling POPULATION instead of generations preserves total evaluations
+                // (pop x gen = constant) while raising H(initial) proportionally to
+                // the DoF count, so harder ligands start with more diverse hypotheses
+                // rather than converging faster on whichever basin the small population
+                // happened to seed.  This is strictly better than gen-scaling when
+                // premature convergence (not search depth) is the bottleneck.
+                //
+                // Scale: pop_effective = pop_base x max(1, n_flex_bonds / 4)
+                //        n_gen stays at n_gen_base (no generation inflation)
+                // Iso-budget: total_evals ~= pop_base x n_gen_base (unchanged).
                 const float dihedral_scale =
                     std::max(1.0f, static_cast<float>(n_flex_bonds) / 4.0f);
-                n_gen_scaled = static_cast<int>(
-                    std::lround(static_cast<double>(n_gen_base) * dihedral_scale));
+                pop_scaled = static_cast<int>(
+                    std::lround(static_cast<double>(pop_base) * dihedral_scale));
                 fprintf(stderr,
-                        "[EVAL-SCALE] %s: n_flex_bonds=%d n_gen_base=%d n_gen_effective=%d\n",
-                        entry.pdb_id.c_str(), n_flex_bonds, n_gen_base, n_gen_scaled);
+                        "[EVAL-SCALE] %s: n_flex_bonds=%d pop_base=%d pop_effective=%d n_gen=%d\n",
+                        entry.pdb_id.c_str(), n_flex_bonds, pop_base, pop_scaled, n_gen_scaled);
             } else {
                 n_gen_scaled = n_gen_base * ((n_genes + 3) / 4);  // legacy ceil(n_genes/4)
             }
 
             // ── v27 high-DoF budget scaling (FLEXAIDDS_BUDGET_SCALE) ──
-            // High-DoF ligands (n_genes >= 14, i.e. >=10 rotatable bonds) need a
-            // wider GA eval budget for seed-anchored elitism to converge the extra
-            // torsional dimensions.  When enabled, multiply n_gen by
-            // max(1.0, n_genes/7.0).  Gated by FLEXAIDDS_BUDGET_SCALE (default 1 =
-            // ON; set 0 to disable).  Echoed for greppability on disk.
+            // High-DoF ligands (n_genes >= 14, i.e. >=10 rotatable bonds): same
+            // population-scaling logic absorbs the extra budget multiplier.
             const char* bscale_env = std::getenv("FLEXAIDDS_BUDGET_SCALE");
             const int   budget_scale_on = bscale_env ? std::atoi(bscale_env) : 1;
             double budget_scale_factor = 1.0;
             if (budget_scale_on && n_genes >= 14) {
                 budget_scale_factor = std::max(1.0,
                                                static_cast<double>(n_genes) / 7.0);
-                n_gen_scaled = static_cast<int>(
-                    std::lround(static_cast<double>(n_gen_scaled) * budget_scale_factor));
+                pop_scaled = static_cast<int>(
+                    std::lround(static_cast<double>(pop_scaled) * budget_scale_factor));
             }
-            fprintf(stderr, "[EVAL-BUDGET] %s: fdih=%d ring_dof=%d n_genes=%d budget_scale=%.3f n_gen=%d\n",
-                    entry.pdb_id.c_str(), fdih_est, ring_dof_est, n_genes, budget_scale_factor, n_gen_scaled);
+            fprintf(stderr, "[EVAL-BUDGET] %s: fdih=%d ring_dof=%d n_genes=%d budget_scale=%.3f n_gen=%d pop=%d\n",
+                    entry.pdb_id.c_str(), fdih_est, ring_dof_est, n_genes, budget_scale_factor, n_gen_scaled, pop_scaled);
 
             // ── Multi-restart loop ──────────────────────────────────────────
             // Restart 0 uses the canonical out_dir/out_prefix.  Restarts 1+
@@ -5670,7 +5684,7 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                    << "    \"force_cf_rank_emission\": false\n"
                    << "  },\n"
                    << "  \"ga\": {\n"
-                   << "    \"num_chromosomes\": " << config.ga_population << ",\n"
+                   << "    \"num_chromosomes\": " << pop_scaled << ",\n"
                    << "    \"num_generations\": " << n_gen_scaled << ",\n"
                    << "    \"crossover_rate\": 0.8,\n"
                    << "    \"mutation_rate\": 0.03,\n"
