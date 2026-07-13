@@ -510,7 +510,7 @@ int GA(FA_Global* FA, GB_Global* GB,VC_Global* VC,chromosome** chrom,chromosome*
 	// Stagnation detection: terminate GA when best fitness stops improving
 	const int STAGNATION_WINDOW = 100;   // check every N generations
 	const int STAGNATION_LIMIT  = 300;   // break after this many stagnant windows
-	double prev_best_fitness = -1e30;  // SMFREE/others: best fitness (higher=better)
+	// prev_best_fitness removed: SMFREE stagnation now tracks CF (evalue), not fit_max
 	// For PSHARE fit_max is always num_chrom (rank 0); track best evalue instead.
 	double prev_best_evalue = 1e30;    // PSHARE: best CF seen (lower=better)
 	int    stagnation_count  = 0;
@@ -797,42 +797,48 @@ int GA(FA_Global* FA, GB_Global* GB,VC_Global* VC,chromosome** chrom,chromosome*
 		//printf("------fitness stats-------\navg=%8.3f\tmax=%8.3f\n",GB->fit_avg,GB->fit_max);
         //getchar();
 
-		// Stagnation detection: check if best fitness has plateaued
+		// Stagnation detection: track best CF (evalue), not SMFREE fitness.
+		// SMFREE fitness overflows to cap=1000 for all chromosomes immediately
+		// (exp(-CF/kT) underflows for typical CF -50 to -200 kcal/mol at kT=0.596),
+		// so tracking fit_max was a bug: stagnation fired at gen ~100-300 while
+		// gene-space allele_H was still 43-86% — search murdered by saturated proxy.
+		// Fable-5 analysis: preserve _ps discriminator for _tol (PSHARE converges
+		// in sub-kcal increments during late descent; 1e-3 sensitivity is correct there).
+		// Joint termination gate: stagnation only terminates if BOTH CF is stuck AND
+		// gene space has collapsed (sec_may_terminate checks allele_H < 0.300).
+		// For SMFREE+N=1000: allele_H drifts to 0.300 in ~2100 gens (mutation-drift
+		// equilibrium), so 1GPK-class targets (H=0.863) run to gen 2000 — correct.
 		if ((i + 1) % STAGNATION_WINDOW == 0 && i > 0) {
-			// v117: PSHARE fit_max is always num_chrom (rank-based); use best evalue instead.
 			const bool _ps = (strcmp(GB->fitness_model,"PSHARE")==0);
-			const double _cur  = _ps ? (*chrom)[0].evalue : GB->fit_max;
-			const double _prev = _ps ? prev_best_evalue   : prev_best_fitness;
-			const double _tol  = _ps ? 1e-3               : 1e-6;
-			if (std::abs(_cur - _prev) < _tol) {
+			const double _cur  = (*chrom)[0].evalue;  // always CF; elitism guarantees monotonic
+			const double _prev = prev_best_evalue;
+			const double _tol  = _ps ? 1e-3 : 1.0;   // SMFREE: 1 kcal/mol (~1.68 kT) threshold
+			const bool stagnant = (_prev - _cur) < _tol;  // improvement = _prev - _cur
+			if (stagnant) {
 				stagnation_count += STAGNATION_WINDOW;
 				if (stagnation_count >= STAGNATION_LIMIT) {
 					const bool benchmark_full = (std::getenv("FLEXAIDDS_NO_SEC") != nullptr) || (std::getenv("FLEXAIDDS_BENCHMARK") != nullptr);
 					if (benchmark_full) {
-						// Ingenious use of "spare" generations during benchmarking:
-						// instead of early exit, continue to max_generations using
-						// boosted exploration to search conformational space more
-						// aggressively (equal effort to methods that always run full budget).
-						printf("GA plateau at gen %d (stagnant %d gens, best=%.4f); "
+						printf("GA plateau at gen %d (stagnant %d gens, best_CF=%.4f); "
 						       "BENCHMARK mode: continuing with exploration boost for remaining gens.\n",
 						       i+1, stagnation_count, _cur);
-						// Boost mutation for remaining generations to escape plateau
 						GB->mut_rate = std::min(0.25, GB->mut_rate * 3.0);
-						// Force a diversity injection now (catastrophic-style boost)
-						// (the reproduce path will also see higher mut_rate)
-						stagnation_count = 0;  // reset so we can re-boost later if needed
-						// do not break; use the spare budget for more search
-					} else {
-						printf("GA terminated early: fitness stagnant for %d generations (best=%.4f)\n", stagnation_count, _cur);
+						stagnation_count = 0;
+					} else if (sec_may_terminate(i + 1)) {
+						// Joint condition: CF stagnant AND gene space collapsed.
+						// If allele_H is still high (e.g. 0.863 for 1GPK-class targets
+						// under SMFREE+drift), sec_may_terminate defers -> keep running.
+						printf("GA terminated: CF stagnant for %d gens (best_CF=%.4f) "
+						       "with gene-space collapsed\n", stagnation_count, _cur);
 						ga_stagnant = true;
 						break;
 					}
+					// CF stagnant but gene space diverse -> continue search
 				}
 			} else {
 				stagnation_count = 0;
 			}
-			prev_best_fitness = GB->fit_max;
-			if (_ps) prev_best_evalue = (*chrom)[0].evalue;
+			prev_best_evalue = _cur;  // always update (was conditional on _ps)
 		}
 
 		// ── Always-on H plateau early exit ─────────────────────────────────
