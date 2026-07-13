@@ -5278,13 +5278,20 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
         // stdout.log. The CSV path matters for resumed campaigns because some
         // historical successful runs wrote result.csv but no *_mode_/*.pdb pose
         // artifact matching the older predicate.
+        // FLEXAIDDS_IGNORE_CACHE=1 forces re-run regardless of cached result.csv.
+        // Use when the binary or scoring parameters changed between runs so stale
+        // cached results from a different binary are not silently reused.
+        const bool ignore_cache = []() -> bool {
+            const char* e = std::getenv("FLEXAIDDS_IGNORE_CACHE");
+            return e && std::atoi(e) != 0;
+        }();
         bool skip = false;
         bool cached_csv_success = false;
         float cached_csv_best_score = 0.0f;
         float cached_csv_predicted_dg = 0.0f;
         int cached_csv_num_poses = 0;
         double cached_csv_wall_time_s = 0.0;
-        if (config.skip_completed && fs::exists(out_dir)) {
+        if (!ignore_cache && config.skip_completed && fs::exists(out_dir)) {
             int cached_poses = 0;
             try {
                 for (const auto& f : fs::directory_iterator(out_dir)) {
@@ -5703,8 +5710,14 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                    // half) to hold multiple binding-mode hypotheses against the
                    // deepest VCT minimum.  sharing already active via SMFREE fitness.
                    << "    \"sharing_alpha\": "
+                   // Inverse pop-scaling: when pop_scaled > pop_base (DoF scaling
+                   // increased chromosomes), niche density increases proportionally.
+                   // Reduce alpha so each niche still contains ~pop_base chromosomes:
+                   //   alpha_eff = 4.0 * pop_base / pop_scaled
+                   // At pop_scaled==pop_base (rigid target) this is 4.0 (original).
                    << (std::getenv("FLEXAIDDS_SHARING_ALPHA")
-                         ? std::atof(std::getenv("FLEXAIDDS_SHARING_ALPHA")) : 4.0)
+                         ? std::atof(std::getenv("FLEXAIDDS_SHARING_ALPHA"))
+                         : 4.0 * static_cast<double>(pop_base) / static_cast<double>(pop_scaled))
                    << ",\n"
                    << "    \"boom_inject_interval\": 100,\n"
                    << "    \"boom_inject_fraction\": "
