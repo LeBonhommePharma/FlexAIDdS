@@ -130,3 +130,11 @@ benchmarks/astex_repro/full/
 benchmarks/astex_repro/smoke/
 benchmarks/astex_repro/**/stdout.log
 benchmarks/astex_repro/**/stderr.log
+
+# More local astex_repro campaign residue
+benchmarks/astex_repro/full_*/
+benchmarks/astex_repro/smoke_*/
+benchmarks/astex_repro/*.pid
+benchmarks/astex_repro/*.log
+benchmarks/astex_repro/**/*.bak
+benchmarks/astex_repro/spheres/
