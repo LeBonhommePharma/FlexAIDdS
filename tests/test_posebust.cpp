@@ -112,6 +112,91 @@ std::map<std::string, bool> parse_bust_bools(const std::string& csv) {
 
 }  // namespace
 
+// P1: Cl recovered when atom name is Cl* but element column was shifted to "L".
+TEST(PoseBustLoaders, ClElementRecoveredFromMisalignedPdb) {
+    const fs::path tmp = fs::temp_directory_path() / "flexaidds_cl_misalign.pdb";
+    {
+        std::ofstream out(tmp);
+        // Deliberately wrong element column " L" (would read as L without name recovery).
+        // Name "Cl1 " + element " L" mimics short-name shift bugs.
+        out << "REMARK optimizable residue LIG 1\n";
+        out << "HETATM90001 Cl1  LIG A   1       0.000   0.000   0.000  1.00  0.00           L  \n";
+        out << "HETATM90002  C1  LIG A   1       1.800   0.000   0.000  1.00  0.00           C  \n";
+        out << "HETATM90003  C2  LIG A   1       2.500   1.400   0.000  1.00  0.00           C  \n";
+        out << "CONECT9000190002\n";
+        out << "CONECT900029000190003\n";
+        out << "CONECT9000390002\n";
+        out << "END\n";
+    }
+    Molecule m;
+    std::string err;
+    ASSERT_TRUE(load_pdb_flexaid_ligand(tmp.string(), m, &err)) << err;
+    ASSERT_GE(m.atoms.size(), 3u);
+    // First atom should be chlorine, not "L"
+    bool found_cl = false;
+    for (const auto& a : m.atoms) {
+        if (a.atomic_num == 17 || a.element == "Cl" || a.element == "CL") {
+            found_cl = true;
+            break;
+        }
+    }
+    EXPECT_TRUE(found_cl) << "expected Cl recovery from name Cl1 with bad element L";
+    fs::remove(tmp);
+}
+
+// P1: Du-labeled hydrogens must not inflate heavy-atom count.
+TEST(PoseBustLoaders, DuHydrogenNotCountedAsHeavy) {
+    const fs::path tmp = fs::temp_directory_path() / "flexaidds_du_h.pdb";
+    {
+        std::ofstream out(tmp);
+        out << "REMARK optimizable residue LIG 1\n";
+        out << "HETATM90001  C1  LIG A   1       0.000   0.000   0.000  1.00  0.00           C  \n";
+        out << "HETATM90002  C2  LIG A   1       1.500   0.000   0.000  1.00  0.00           C  \n";
+        out << "HETATM90003  C3  LIG A   1       2.000   1.400   0.000  1.00  0.00           C  \n";
+        out << "HETATM90004  H1  LIG A   1       0.000   1.000   0.000  1.00  0.00          Du  \n";
+        out << "CONECT900019000290004\n";
+        out << "CONECT900029000190003\n";
+        out << "CONECT9000390002\n";
+        out << "CONECT9000490001\n";
+        out << "END\n";
+    }
+    Molecule m;
+    std::string err;
+    ASSERT_TRUE(load_pdb_flexaid_ligand(tmp.string(), m, &err)) << err;
+    EXPECT_EQ(m.n_heavy(), 3) << "Du hydrogen must not count as heavy";
+    fs::remove(tmp);
+}
+
+// P1: topology assign falls back to same-element nearest match when order differs.
+TEST(PoseBustLoaders, TopologyAssignPermutedOrder) {
+    Molecule pred, ref;
+    // Triangle of C-N-O heavy atoms (same elements, different order).
+    auto add = [](Molecule& m, const char* el, float x, float y, float z) {
+        Atom a;
+        a.element = el;
+        a.x = x;
+        a.y = y;
+        a.z = z;
+        a.atomic_num = atomic_number(el);
+        a.is_h = false;
+        a.id = static_cast<int>(m.atoms.size()) + 1;
+        m.atoms.push_back(a);
+    };
+    add(pred, "C", 0.f, 0.f, 0.f);
+    add(pred, "N", 1.4f, 0.f, 0.f);
+    add(pred, "O", 0.f, 1.4f, 0.f);
+    // Reference has O, N, C order with bonds O-N, N-C
+    add(ref, "O", 0.05f, 1.35f, 0.f);
+    add(ref, "N", 1.35f, 0.05f, 0.f);
+    add(ref, "C", 0.05f, 0.05f, 0.f);
+    ref.bonds.push_back(Bond{0, 1, 1});
+    ref.bonds.push_back(Bond{1, 2, 1});
+    ref.build_adjacency();
+    std::string err;
+    ASSERT_TRUE(assign_topology_from_reference(pred, ref, &err)) << err;
+    EXPECT_EQ(pred.bonds.size(), 2u);
+}
+
 TEST(PoseBustLoaders, CrystalSdf1G9VLoads25Heavy) {
     const fs::path lig = astex_dir("1G9V") / "1G9V_ligand.sdf";
     if (!fs::is_regular_file(lig)) {

@@ -113,49 +113,84 @@ bool is_hetatm_junk(const std::string& res) {
 }
 
 // Element from PDB atom name / element column.
+// Hardens against FlexAID misaligned writes: "Cl0" with shifted element "L",
+// or hydrogen written as Du with name H*.
 std::string element_from_pdb(const std::string& atom_name, const std::string& elem_col) {
+    const std::string name = trim_copy(atom_name);
+    const std::string name_up = to_upper(name);
+
+    // Prefer two-letter elements from the atom name when unambiguous (Cl, Br, …).
+    // This recovers Cl when a short name shifts the element column to "L".
+    auto element_from_name = [&]() -> std::string {
+        std::size_t i = 0;
+        while (i < name.size() && std::isdigit(static_cast<unsigned char>(name[i]))) {
+            ++i;
+        }
+        if (i >= name.size()) {
+            return {};
+        }
+        std::string e;
+        e.push_back(static_cast<char>(std::toupper(static_cast<unsigned char>(name[i]))));
+        if (i + 1 < name.size() && std::isalpha(static_cast<unsigned char>(name[i + 1]))) {
+            const char c2 =
+                static_cast<char>(std::tolower(static_cast<unsigned char>(name[i + 1])));
+            const std::string two = std::string(1, e[0]) + c2;
+            if (atomic_number(two) > 0) {
+                return two;
+            }
+        }
+        return e;
+    };
+
+    const std::string from_name = element_from_name();
+
     if (!elem_col.empty()) {
-        // PDB element is right-justified 2-char; normalize first letter upper, rest lower.
         std::string e = trim_copy(elem_col);
         if (!e.empty()) {
             e[0] = static_cast<char>(std::toupper(static_cast<unsigned char>(e[0])));
             for (std::size_t i = 1; i < e.size(); ++i) {
                 e[i] = static_cast<char>(std::tolower(static_cast<unsigned char>(e[i])));
             }
-            // Collapse "CL"/"Cl" etc.
             if (e.size() == 2 && std::isupper(static_cast<unsigned char>(e[1]))) {
                 e[1] = static_cast<char>(std::tolower(static_cast<unsigned char>(e[1])));
             }
-            return e;
+            // Recover Cl/Br when element column is a single garbage letter (e.g. "L").
+            if (e.size() == 1 && from_name.size() == 2 && atomic_number(from_name) > 0) {
+                return from_name;
+            }
+            // Du/H dummy hydrogens written with element Du
+            if ((to_upper(e) == "DU" || to_upper(e) == "D") && !name_up.empty() &&
+                name_up[0] == 'H') {
+                return "H";
+            }
+            if (atomic_number(e) > 0 || to_upper(e) == "DU") {
+                return e;
+            }
         }
     }
 
-    // Fallback: strip leading digits from atom name.
-    std::string name = trim_copy(atom_name);
-    std::size_t i = 0;
-    while (i < name.size() && std::isdigit(static_cast<unsigned char>(name[i]))) {
-        ++i;
+    if (!from_name.empty()) {
+        return from_name;
     }
-    if (i >= name.size()) {
-        return "C";
-    }
-    std::string e;
-    e.push_back(static_cast<char>(std::toupper(static_cast<unsigned char>(name[i]))));
-    if (i + 1 < name.size() && std::isalpha(static_cast<unsigned char>(name[i + 1]))) {
-        // Two-letter elements common in ligands: Cl, Br, Si, Fe, Zn, …
-        const char c2 = static_cast<char>(std::tolower(static_cast<unsigned char>(name[i + 1])));
-        const std::string two = std::string(1, e[0]) + c2;
-        if (atomic_number(two) > 0) {
-            return two;
-        }
-    }
-    return e;
+    return "C";
 }
 
-void finalize_atom(Atom& a) {
+// Returns false if the atom should be dropped entirely (orphan dummy).
+bool finalize_atom(Atom& a, const std::string& atom_name = {}) {
+    const std::string name_up = to_upper(trim_copy(atom_name));
+    const std::string el_up = to_upper(a.element);
+    // Recover H from Du dummy labels left by some writers (H… Du).
+    if ((el_up == "DU" || el_up == "D") && !name_up.empty() && name_up[0] == 'H') {
+        a.element = "H";
+    }
     a.atomic_num = atomic_number(a.element);
     const std::string el = to_upper(a.element);
     a.is_h = (a.atomic_num == 1) || (el == "H") || (el == "D") || (el == "T");
+    // Drop pure dummy / unknown non-hydrogen placeholders (never count as heavy).
+    if (a.atomic_num == 0 && !a.is_h) {
+        return false;
+    }
+    return true;
 }
 
 // Infer single bonds from covalent radii (1.2 * (r1+r2)).
@@ -232,8 +267,14 @@ void molecule_from_pdb_recs(const std::vector<PdbAtomRec>& recs, Molecule& out,
         a.x       = r.x;
         a.y       = r.y;
         a.z       = r.z;
-        finalize_atom(a);
+        if (!finalize_atom(a, r.name)) {
+            continue;
+        }
         out.atoms.push_back(std::move(a));
+    }
+    // Re-number ids after filtering
+    for (std::size_t i = 0; i < out.atoms.size(); ++i) {
+        out.atoms[i].id = static_cast<int>(i) + 1;
     }
     infer_bonds(out);
 }
@@ -674,7 +715,9 @@ bool load_pdb_flexaid_ligand(const std::string& path, Molecule& out, std::string
 
 bool assign_topology_from_reference(Molecule& pred, const Molecule& reference,
                                     std::string* err) {
-    // Match heavy-atom element sequence (SDF order vs pose order).
+    // Match heavy atoms: prefer sequential element order; fall back to
+    // element-matched nearest-neighbour assignment when serial order differs
+    // (common when CONECT sort order ≠ crystal SDF atom block order).
     std::vector<int> pred_h, ref_h;
     for (std::size_t i = 0; i < pred.atoms.size(); ++i)
         if (!pred.atoms[i].is_h) pred_h.push_back(static_cast<int>(i));
@@ -687,35 +730,67 @@ bool assign_topology_from_reference(Molecule& pred, const Molecule& reference,
                          std::to_string(ref_h.size()) + ")");
         return false;
     }
+
+    auto elements_match = [&](int pi, int ri) -> bool {
+        const Atom& pa = pred.atoms[static_cast<std::size_t>(pi)];
+        const Atom& ra = reference.atoms[static_cast<std::size_t>(ri)];
+        if (pa.atomic_num > 0 && ra.atomic_num > 0 && pa.atomic_num == ra.atomic_num) {
+            return true;
+        }
+        return to_upper(pa.element) == to_upper(ra.element);
+    };
+
+    bool sequence_ok = true;
     for (std::size_t k = 0; k < pred_h.size(); ++k) {
-        const int zp = pred.atoms[static_cast<std::size_t>(pred_h[k])].atomic_num;
-        const int zr = reference.atoms[static_cast<std::size_t>(ref_h[k])].atomic_num;
-        // Allow Z==0 on either side if element symbols match
-        const auto& ep = pred.atoms[static_cast<std::size_t>(pred_h[k])].element;
-        const auto& er = reference.atoms[static_cast<std::size_t>(ref_h[k])].element;
-        if (zp != zr && to_upper(ep) != to_upper(er)) {
-            set_err(err, "assign_topology_from_reference: element order mismatch at heavy index " +
-                             std::to_string(k) + " pred=" + ep + " ref=" + er);
-            return false;
+        if (!elements_match(pred_h[k], ref_h[k])) {
+            sequence_ok = false;
+            break;
         }
     }
 
-    // Map reference atom index -> pred atom index (heavy only; H dropped if pred has no H)
-    // If pred has only heavy atoms (FlexAID often writes heavy-only), map ref heavy→pred.
+    // Map reference atom index -> pred atom index
     std::unordered_map<int, int> ref_to_pred;
-    if (pred.atoms.size() == pred_h.size() &&
-        reference.atoms.size() >= ref_h.size()) {
-        for (std::size_t k = 0; k < ref_h.size(); ++k) {
-            ref_to_pred[ref_h[k]] = pred_h[k];
-        }
-    } else if (pred.atoms.size() == reference.atoms.size()) {
-        for (std::size_t i = 0; i < pred.atoms.size(); ++i) {
-            ref_to_pred[static_cast<int>(i)] = static_cast<int>(i);
+    if (sequence_ok) {
+        if (pred.atoms.size() == pred_h.size() &&
+            reference.atoms.size() >= ref_h.size()) {
+            for (std::size_t k = 0; k < ref_h.size(); ++k) {
+                ref_to_pred[ref_h[k]] = pred_h[k];
+            }
+        } else if (pred.atoms.size() == reference.atoms.size()) {
+            for (std::size_t i = 0; i < pred.atoms.size(); ++i) {
+                ref_to_pred[static_cast<int>(i)] = static_cast<int>(i);
+            }
+        } else {
+            for (std::size_t k = 0; k < ref_h.size(); ++k) {
+                ref_to_pred[ref_h[k]] = pred_h[k];
+            }
         }
     } else {
-        // Heavy-only pred vs full ref (with H): map heavy only
-        for (std::size_t k = 0; k < ref_h.size(); ++k) {
-            ref_to_pred[ref_h[k]] = pred_h[k];
+        // Greedy nearest same-element matching (crystal-blind; coords only).
+        std::vector<char> used(pred_h.size(), 0);
+        for (std::size_t rk = 0; rk < ref_h.size(); ++rk) {
+            const Atom& ra = reference.atoms[static_cast<std::size_t>(ref_h[rk])];
+            int best = -1;
+            float best_d2 = 1.0e30f;
+            for (std::size_t pk = 0; pk < pred_h.size(); ++pk) {
+                if (used[pk]) continue;
+                if (!elements_match(pred_h[pk], ref_h[rk])) continue;
+                const Atom& pa = pred.atoms[static_cast<std::size_t>(pred_h[pk])];
+                const float dx = pa.x - ra.x, dy = pa.y - ra.y, dz = pa.z - ra.z;
+                const float d2 = dx * dx + dy * dy + dz * dz;
+                if (d2 < best_d2) {
+                    best_d2 = d2;
+                    best = static_cast<int>(pk);
+                }
+            }
+            if (best < 0) {
+                set_err(err,
+                        "assign_topology_from_reference: no same-element match for ref heavy " +
+                            std::to_string(rk) + " (" + ra.element + ")");
+                return false;
+            }
+            used[static_cast<std::size_t>(best)] = 1;
+            ref_to_pred[ref_h[rk]] = pred_h[static_cast<std::size_t>(best)];
         }
     }
 
@@ -724,7 +799,6 @@ bool assign_topology_from_reference(Molecule& pred, const Molecule& reference,
         auto ia = ref_to_pred.find(b.a);
         auto ib = ref_to_pred.find(b.b);
         if (ia == ref_to_pred.end() || ib == ref_to_pred.end()) {
-            // Bond involves H not present in pred — skip
             continue;
         }
         new_bonds.push_back(Bond{ia->second, ib->second, b.order});

@@ -1,5 +1,6 @@
 #include "flexaid.h"
 #include "fileio.h"
+#include <cstdio>
 
 /******************************************************************************
  * SUBROUTINE write_MODEL_to_pdb writes a MODEL structure to a PDB file
@@ -45,18 +46,42 @@ int write_MODEL_pdb(bool isFirst, bool isLast, int nModel, FA_Global* FA,atom *a
                     
 					if(residue[atoms[i].ofres].type==0){strcpy(field,"ATOM  ");}
 					if(residue[atoms[i].ofres].type==1){strcpy(field,"HETATM");}
+
+					char aname[5];
+					std::snprintf(aname, sizeof(aname), "%-4.4s", atoms[i].name);
+					char elem[3] = {' ', ' ', '\0'};
+					if (atoms[i].element[0] != '\0') {
+						const char* e = atoms[i].element;
+						if (e[1] == '\0') {
+							elem[0] = ' ';
+							elem[1] = e[0];
+						} else {
+							elem[0] = e[0];
+							elem[1] = e[1];
+						}
+					} else {
+						const char* ge = get_element(atoms[i].type);
+						if (ge[0] != '\0' && ge[1] != '\0') {
+							elem[0] = ge[0];
+							elem[1] = ge[1];
+						} else if (ge[0] != '\0') {
+							elem[0] = ' ';
+							elem[1] = ge[0];
+						}
+					}
 					
-					fprintf(outfile_ptr,"%s%5d %s %s %c%4d    %8.3f%8.3f%8.3f  1.00  0.00          %2s  \n",
+					fprintf(outfile_ptr,
+						"%s%5d %-4s %3s %c%4d    %8.3f%8.3f%8.3f  1.00  0.00          %2s\n",
 						field,
 						atoms[i].number,
-						atoms[i].name,
+						aname,
 						residue[atoms[i].ofres].name,
 						residue[atoms[i].ofres].chn,
 						residue[atoms[i].ofres].number,
 						atoms[i].coor[0],
 						atoms[i].coor[1],
 						atoms[i].coor[2],
-						get_element(atoms[i].type)
+						elem
 						);
 				}
 			}
@@ -126,18 +151,46 @@ int write_pdb(FA_Global* FA,atom *atoms, resid* residue,char outfile[], char rem
                     
 					if(residue[atoms[i].ofres].type==0){strcpy(field,"ATOM  ");}
 					if(residue[atoms[i].ofres].type==1){strcpy(field,"HETATM");}
+
+					// Fixed-width PDB columns 13–16 (atom name) and 77–78 (element)
+					// so two-letter elements (Cl, Br) never shift the element field.
+					char aname[5];
+					std::snprintf(aname, sizeof(aname), "%-4.4s", atoms[i].name);
+					char elem[3] = {' ', ' ', '\0'};
+					if (atoms[i].element[0] != '\0') {
+						// Prefer stored element (SDF/MOL2 path); right-justify to 2 cols.
+						const char* e = atoms[i].element;
+						if (e[1] == '\0') {
+							elem[0] = ' ';
+							elem[1] = e[0];
+						} else {
+							elem[0] = e[0];
+							elem[1] = e[1];
+						}
+					} else {
+						const char* ge = get_element(atoms[i].type);
+						// get_element returns " C"/"Cl"/… already 2 chars when possible
+						if (ge[0] != '\0' && ge[1] != '\0') {
+							elem[0] = ge[0];
+							elem[1] = ge[1];
+						} else if (ge[0] != '\0') {
+							elem[0] = ' ';
+							elem[1] = ge[0];
+						}
+					}
 					
-					fprintf(outfile_ptr,"%s%5d %s %s %c%4d    %8.3f%8.3f%8.3f  1.00  0.00          %2s  \n",
+					fprintf(outfile_ptr,
+						"%s%5d %-4s %3s %c%4d    %8.3f%8.3f%8.3f  1.00  0.00          %2s\n",
 						field,
 						atoms[i].number,
-						atoms[i].name,
+						aname,
 						residue[atoms[i].ofres].name,
 						residue[atoms[i].ofres].chn,
 						residue[atoms[i].ofres].number,
 						atoms[i].coor[0],
 						atoms[i].coor[1],
 						atoms[i].coor[2],
-						get_element(atoms[i].type)
+						elem
 						);
 					
 				}
