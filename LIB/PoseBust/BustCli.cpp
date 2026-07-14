@@ -27,6 +27,18 @@ namespace fs = std::filesystem;
                fs::perms::none;
 }
 
+std::string shell_quote(const std::string& s) {
+    std::string o = "'";
+    for (char c : s) {
+        if (c == '\'') o += "'\\''";
+        else o += c;
+    }
+    o += "'";
+    return o;
+}
+
+std::string shell_quote(const std::string& s);
+
 // Portable file SHA-256 via openssl (always present on macOS/Linux CI).
 std::string sha256_via_openssl(const std::string& path) {
     const std::string cmd =
@@ -44,16 +56,6 @@ std::string sha256_via_openssl(const std::string& path) {
     if (hex.size() != 64) return {};
     for (char& c : hex) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
     return hex;
-}
-
-std::string shell_quote(const std::string& s) {
-    std::string o = "'";
-    for (char c : s) {
-        if (c == '\'') o += "'\\''";
-        else o += c;
-    }
-    o += "'";
-    return o;
 }
 
 // Columns that are metadata / optional, not part of official pb_pass dock gate.

@@ -85,7 +85,7 @@ namespace fs = std::filesystem;
 
 void fill_continuous_summaries(PoseBustReport& report) {
     for (const CheckItem& c : report.checks) {
-        if (c.key == "no_clashes") {
+        if (c.key == "minimum_distance_to_protein" || c.key == "no_clashes") {
             if (std::isfinite(c.metric)) {
                 report.min_lig_prot_dist = c.metric;
             } else {
@@ -94,7 +94,8 @@ void fill_continuous_summaries(PoseBustReport& report) {
                     report.min_lig_prot_dist = v;
                 }
             }
-        } else if (c.key == "no_volume_clash") {
+        } else if (c.key == "volume_overlap_with_protein" ||
+                   c.key == "no_volume_clash") {
             if (std::isfinite(c.metric)) {
                 report.volume_overlap = c.metric;
             } else {
@@ -235,7 +236,7 @@ PoseBustReport evaluate(const Molecule& ligand_pred,
                         const EvaluateOptions& opt) {
     PoseBustReport report;
     report.ran     = true;
-    report.backend = "native";
+    report.backend = "native_pose_qc";
     report.n_ligand_atoms = static_cast<int>(ligand_pred.atoms.size());
 
     // Crop protein to pocket around ligand heavy COM (empty if no protein).
@@ -253,35 +254,39 @@ PoseBustReport evaluate(const Molecule& ligand_pred,
     check_loading(&ligand_pred, protein_for_loading, report.checks);
     check_chemistry_sanity(ligand_pred, report.checks);
 
-    // Geometry (ligand-only; soft fails do not block campaign gate)
+    // Geometry (ligand-only)
     check_distance_geometry(ligand_pred, report.checks);
     check_flatness(ligand_pred, report.checks);
 
-    // Protein-conditioned checks — high-impact campaign gate path
+    // Stereo / chirality / soft energy — use crystal when provided (Dock+Redock)
+    check_stereochemistry(ligand_pred, ligand_true, report.checks);
+    check_internal_energy(ligand_pred, ligand_true, report.checks);
+
+    // Protein-conditioned checks
     if (!protein_cropped.empty()) {
         check_intermolecular_distance(ligand_pred, protein_cropped, report.checks);
         check_volume_overlap(ligand_pred, protein_cropped, report.checks);
         fill_continuous_summaries(report);
     } else if (!protein.empty()) {
-        // Crop emptied — still emit fail-closed campaign keys via empty-protein path
+        // Crop emptied — still emit fail-closed protein keys
         CheckItem miss;
-        miss.key = "no_clashes";
+        miss.key = "minimum_distance_to_protein";
         miss.label = "Minimum distance to protein";
         miss.passed = false;
         miss.detail = "protein crop empty (no heavy atoms within crop radius of ligand)";
         report.checks.push_back(miss);
-        miss.key = "not_too_far_away";
+        miss.key = "protein-ligand_maximum_distance";
         miss.label = "Protein-ligand maximum distance";
         miss.detail = "protein crop empty";
         report.checks.push_back(miss);
-        miss.key = "no_volume_clash";
+        miss.key = "volume_overlap_with_protein";
         miss.label = "Volume overlap with protein";
         miss.detail = "protein crop empty";
         report.checks.push_back(miss);
     }
 
-    // Redock suite: identity vs crystal / true ligand
-    if (opt.suite == Suite::Redock && ligand_true != nullptr) {
+    // Identity vs crystal when reference provided (dock + redock)
+    if (ligand_true != nullptr) {
         check_identity_formula(ligand_pred, ligand_true, report.checks);
     }
 

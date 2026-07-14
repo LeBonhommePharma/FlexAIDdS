@@ -27,20 +27,20 @@ namespace flexaids::posebust {
 /// Intermolecular steric check between ligand and protein heavy atoms.
 ///
 /// Appends to \p out:
-///   - "no_clashes": min heavy–heavy lig–prot distance ≥ 1.5 Å
+///   - "minimum_distance_to_protein": min heavy–heavy lig–prot distance
+///     (absolute floor + relative vdW scale)
 ///     (soft vdW scale 0.75·(ri+rj) is reported in detail only).
 ///     Pairs use a 5 Å cell list, or brute-force O(n·m) when n·m < 5e6.
 void check_intermolecular_distance(const Molecule& ligand,
                                    const Molecule& protein,
                                    std::vector<CheckItem>& out);
 
-/// Approximate volume-overlap and pocket-presence checks.
+/// Approximate volume-overlap, pocket-presence, and cofactor/water keys.
 ///
 /// Appends to \p out:
-///   - "no_volume_clash": fraction of ligand-occupied 0.5 Å voxels (ligand bbox
-///         expanded by 2 Å) that are also protein-occupied ≤ 0.075
-///   - "not_too_far_away": ≥1 protein heavy atom within 5 Å of any
-///         ligand heavy atom
+///   - "volume_overlap_with_protein"
+///   - "protein-ligand_maximum_distance" (pocket presence within 5 Å)
+///   - cofactor/water min-distance + volume keys (vacuous pass on apo crop)
 void check_volume_overlap(const Molecule& ligand,
                           const Molecule& protein,
                           std::vector<CheckItem>& out);

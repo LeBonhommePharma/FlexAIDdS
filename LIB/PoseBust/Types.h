@@ -116,14 +116,15 @@ struct CheckItem {
 // NativePoseQC diagnostic subset (extraction + protein clash/volume).
 // NOT the authoritative PoseBusters gate — that is upstream `bust` via BustCli.
 // Soft chemistry/geometry heuristics remain in `checks` for diagnostics only.
+// Diagnostic subset keys use upstream PoseBusters names (True = pass).
 inline constexpr const char* kNativeQcDiagnosticKeys[] = {
     "mol_pred_loaded",
     "mol_cond_loaded",
     "all_atoms_connected",
-    "no_internal_clash",
-    "no_clashes",            // min distance to protein
-    "not_too_far_away",      // pocket presence
-    "no_volume_clash",
+    "internal_steric_clash",
+    "minimum_distance_to_protein",
+    "protein-ligand_maximum_distance",
+    "volume_overlap_with_protein",
 };
 struct PoseBustReport {
     std::vector<CheckItem> checks;

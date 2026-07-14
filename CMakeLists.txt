@@ -1189,6 +1189,20 @@ if(BUILD_TESTING)
         TEST_NAME JsonConfigTests
     )
 
+    # test_posebust — NativePoseQC clean-room + BustCli (real Astex 1G9V artifacts)
+    flexaids_add_unit_test(test_posebust
+        SOURCES
+            tests/test_posebust.cpp
+            LIB/PoseBust/Loaders.cpp
+            LIB/PoseBust/ChecksChemistry.cpp
+            LIB/PoseBust/ChecksGeometry.cpp
+            LIB/PoseBust/ChecksProtein.cpp
+            LIB/PoseBust/Engine.cpp
+            LIB/PoseBust/BustCli.cpp
+        INCLUDES ${CMAKE_CURRENT_SOURCE_DIR}/LIB/PoseBust
+        TEST_NAME PoseBustTests
+    )
+
     # test_soft_wall — overlap-based soft-core clash potential (header-only)
     flexaids_add_unit_test(test_soft_wall
         SOURCES tests/test_soft_wall.cpp

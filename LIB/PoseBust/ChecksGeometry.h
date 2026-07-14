@@ -1,8 +1,8 @@
 // ChecksGeometry.h — PoseBusters dock-suite geometry plausibility (clean-room)
 //
 // Binary check keys align with the public PoseBusters dock geometry suite:
-//   bond_lengths_within_bounds, bond_angles_within_bounds, no_internal_clash,
-//   flatness_passes (aromatic), flat_double_bonds
+//   bond_lengths, bond_angles, internal_steric_clash,
+//   aromatic_ring_flatness, non-aromatic_ring_non-flatness, double_bond_flatness
 //
 // Implementation uses independent covalent/vdW and hybridization heuristics;
 // it does not copy RDKit distance-geometry or PoseBusters source.
@@ -42,16 +42,17 @@ inline constexpr float kThresholdDoubleBondSinPhi = 0.25f;
 [[nodiscard]] float vdw_radius(int Z) noexcept;
 
 /// Append binary geometry checks for intramolecular distance geometry:
-///   - bond_lengths_within_bounds
-///   - bond_angles_within_bounds
-///   - no_internal_clash
+///   - bond_lengths
+///   - bond_angles
+///   - internal_steric_clash  (True = no clash)
 /// Hydrogens are ignored for clashes; angles that only involve hydrogens
 /// (or have H as the central atom) are skipped.
 void check_distance_geometry(const Molecule& pred, std::vector<CheckItem>& out);
 
 /// Append planarity checks:
-///   - flatness_passes (aromatic / sp2 ring flatness)
-///   - flat_double_bonds
+///   - aromatic_ring_flatness
+///   - non-aromatic_ring_non-flatness
+///   - double_bond_flatness
 void check_flatness(const Molecule& pred, std::vector<CheckItem>& out);
 
 } // namespace flexaids::posebust

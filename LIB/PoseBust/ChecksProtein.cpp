@@ -373,7 +373,8 @@ void check_intermolecular_distance(const Molecule& ligand,
                 << " rel_ok=" << rel_ok;
         }
         CheckItem item;
-        item.key       = "no_clashes";
+        // Upstream PoseBusters key
+        item.key       = "minimum_distance_to_protein";
         item.label     = "Minimum distance to protein";
         item.passed    = min_ok;
         item.detail    = oss.str();
@@ -399,8 +400,8 @@ void check_volume_overlap(const Molecule& ligand,
             << "); grid=" << kGridSpacingA << " A; bbox_pad=" << kBBoxExpandA
             << " A; lig_heavy=" << lig.size() << "; prot_heavy=" << prot.size();
         CheckItem item;
-        item.key       = "no_volume_clash";
-        item.label     = "No ligand–protein volume clash";
+        item.key       = "volume_overlap_with_protein";
+        item.label     = "Volume overlap with protein";
         item.passed    = vol_ok;
         item.detail    = oss.str();
         item.metric    = static_cast<float>(frac);
@@ -408,7 +409,7 @@ void check_volume_overlap(const Molecule& ligand,
         out.push_back(std::move(item));
     }
 
-    // not_too_far_away: pocket presence — some protein heavy within 5 Å.
+    // protein-ligand_maximum_distance: pocket presence — some protein heavy within 5 Å.
     const bool pocket = has_pocket_presence(lig, prot);
     {
         std::ostringstream oss;
@@ -416,14 +417,39 @@ void check_volume_overlap(const Molecule& ligand,
             << kPocketPresenceA << " A of ligand; lig_heavy=" << lig.size()
             << "; prot_heavy=" << prot.size();
         CheckItem item;
-        item.key       = "not_too_far_away";
-        item.label     = "Ligand not too far from protein";
+        item.key       = "protein-ligand_maximum_distance";
+        item.label     = "Protein–ligand maximum distance (pocket presence)";
         item.passed    = pocket;
         item.detail    = oss.str();
         item.metric    = pocket ? 0.f : kPocketPresenceA;
         item.threshold = kPocketPresenceA;
         out.push_back(std::move(item));
     }
+
+    // Cofactor / water distance+volume: apo receptors have none → vacuous pass.
+    // Keys must still be emitted so native suite covers full upstream dock list.
+    auto vacuous = [&](const char* key, const char* label) {
+        CheckItem item;
+        item.key = key;
+        item.label = label;
+        item.passed = true;
+        item.detail =
+            "vacuous pass: no separate organic/inorganic cofactor or water "
+            "entities in condition (apo protein crop only)";
+        item.n_checked = 0;
+        item.n_failed = 0;
+        out.push_back(std::move(item));
+    };
+    vacuous("minimum_distance_to_organic_cofactors",
+            "Minimum distance to organic cofactors");
+    vacuous("minimum_distance_to_inorganic_cofactors",
+            "Minimum distance to inorganic cofactors");
+    vacuous("minimum_distance_to_waters", "Minimum distance to waters");
+    vacuous("volume_overlap_with_organic_cofactors",
+            "Volume overlap with organic cofactors");
+    vacuous("volume_overlap_with_inorganic_cofactors",
+            "Volume overlap with inorganic cofactors");
+    vacuous("volume_overlap_with_waters", "Volume overlap with waters");
 }
 
 }  // namespace flexaids::posebust

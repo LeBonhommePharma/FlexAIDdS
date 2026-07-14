@@ -7026,6 +7026,46 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                       << " cluster=" << result.elected_cluster
                       << " CF=" << result.elected_cf
                       << " sha256=" << result.pose_sha256 << "\n";
+
+            // Immutable per-pose ledger entry (unique by restart/cluster/sha).
+            // Full pre-election multi-pose ledger is a follow-on; elected is
+            // always written so validators cite the same hash as result.csv.
+            try {
+                const std::string led_dir = out_dir + "/pose_ledger";
+                fs::create_directories(led_dir);
+                const std::string sha12 = result.pose_sha256.empty()
+                    ? "unknown"
+                    : result.pose_sha256.substr(0, 12);
+                std::ostringstream led_name;
+                led_name << entry.pdb_id
+                         << "_r" << result.elected_restart
+                         << "_c" << result.elected_cluster
+                         << "_" << sha12 << ".json";
+                const std::string led_path = led_dir + "/" + led_name.str();
+                std::ofstream led(led_path);
+                if (led) {
+                    led << "{\n"
+                        << "  \"pdb_id\": \"" << entry.pdb_id << "\",\n"
+                        << "  \"role\": \"elected\",\n"
+                        << "  \"restart\": " << result.elected_restart << ",\n"
+                        << "  \"cluster\": " << result.elected_cluster << ",\n"
+                        << "  \"cf\": " << (std::isnan(result.elected_cf)
+                                               ? "null"
+                                               : std::to_string(result.elected_cf))
+                        << ",\n"
+                        << "  \"source_path\": \"" << result.elected_pose_source
+                        << "\",\n"
+                        << "  \"elected_pose_path\": \"" << result.elected_pose_path
+                        << "\",\n"
+                        << "  \"pose_sha256\": \"" << result.pose_sha256 << "\",\n"
+                        << "  \"rmsd_to_crystal\": " << result.rmsd_to_crystal << ",\n"
+                        << "  \"rmsd_hungarian\": " << result.rmsd_hungarian << "\n"
+                        << "}\n";
+                    std::cerr << "  [POSE-LEDGER] " << led_path << "\n";
+                }
+            } catch (...) {
+                // ledger is best-effort provenance; do not fail docking
+            }
         }
 
         // ── Authoritative PoseBusters = upstream `bust` (audit P0) ─────────

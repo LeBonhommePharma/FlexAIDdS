@@ -391,7 +391,8 @@ void check_distance_geometry(const Molecule& pred, std::vector<CheckItem>& out) 
         oss << n_checked << " bonds; " << n_failed << " outside covalent sum ± "
             << kThresholdBadBondLength << "*(r1+r2); worst |Δ|/ideal="
             << worst_rel;
-        out.push_back(make_item("bond_lengths_within_bounds",
+        // Upstream PoseBusters key: "bond_lengths"
+        out.push_back(make_item("bond_lengths",
                                 "Bond lengths within bounds",
                                 passed,
                                 n_checked,
@@ -401,7 +402,7 @@ void check_distance_geometry(const Molecule& pred, std::vector<CheckItem>& out) 
                                 oss.str()));
     }
 
-    // --- bond_angles_within_bounds ------------------------------------------
+    // --- bond_angles --------------------------------------------------------
     {
         int n_checked = 0;
         int n_failed  = 0;
@@ -442,7 +443,8 @@ void check_distance_geometry(const Molecule& pred, std::vector<CheckItem>& out) 
         oss << n_checked << " angles; " << n_failed
             << " with |Δθ|/θ_ideal > " << kThresholdBadAngle
             << " (deg4→109.5, deg3→120, deg2→180); worst rel=" << worst_rel;
-        out.push_back(make_item("bond_angles_within_bounds",
+        // Upstream PoseBusters key: "bond_angles"
+        out.push_back(make_item("bond_angles",
                                 "Bond angles within bounds",
                                 passed,
                                 n_checked,
@@ -452,7 +454,7 @@ void check_distance_geometry(const Molecule& pred, std::vector<CheckItem>& out) 
                                 oss.str()));
     }
 
-    // --- no_internal_clash --------------------------------------------------
+    // --- internal_steric_clash (True = no clash, matching upstream) ---------
     {
         const auto gdist = all_pairs_graph_distance(adj);
         int n_checked = 0;
@@ -498,7 +500,7 @@ void check_distance_geometry(const Molecule& pred, std::vector<CheckItem>& out) 
         oss << n_checked << " heavy pairs (graph dist≥" << kClashMinGraphDistance
             << "); " << n_failed << " with d < " << kClashVdwScale
             << "*(vdW_i+vdW_j); min d/cutoff=" << worst_ratio;
-        out.push_back(make_item("no_internal_clash",
+        out.push_back(make_item("internal_steric_clash",
                                 "No internal steric clash",
                                 passed,
                                 n_checked,
@@ -552,7 +554,8 @@ void check_flatness(const Molecule& pred, std::vector<CheckItem>& out) {
         oss << n_checked << " aromatic/sp2 rings (size 5–6); " << n_failed
             << " with max OOP > " << kThresholdFlatnessAngstrom
             << " Å; worst OOP=" << worst_oop << " Å";
-        out.push_back(make_item("flatness_passes",
+        // Upstream: aromatic_ring_flatness
+        out.push_back(make_item("aromatic_ring_flatness",
                                 "Aromatic ring flatness",
                                 passed,
                                 n_checked,
@@ -562,7 +565,68 @@ void check_flatness(const Molecule& pred, std::vector<CheckItem>& out) {
                                 oss.str()));
     }
 
-    // --- flat_double_bonds (separate flat key) ------------------------------
+    // --- non-aromatic_ring_non-flatness -------------------------------------
+    // Upstream requires aliphatic rings to be *non*-planar (puckered).
+    // Only rings with zero aromatic bonds are considered; sp2/aromatic rings
+    // belong to aromatic_ring_flatness (avoids misclassification False fails).
+    {
+        const auto cycles = find_simple_cycles_5_6(adj);
+        int n_checked = 0;
+        int n_failed  = 0;
+        double min_oop = std::numeric_limits<double>::infinity();
+
+        auto ring_has_aromatic_bond = [&](const Cycle& cyc) -> bool {
+            for (std::size_t i = 0; i < cyc.size(); ++i) {
+                const int a = cyc[i];
+                const int b = cyc[(i + 1) % cyc.size()];
+                for (const Bond& bond : pred.bonds) {
+                    if (((bond.a == a && bond.b == b) ||
+                         (bond.a == b && bond.b == a)) &&
+                        bond.order == 4) {
+                        return true;
+                    }
+                }
+            }
+            return false;
+        };
+
+        for (const Cycle& cyc : cycles) {
+            if (ring_has_aromatic_bond(cyc) ||
+                majority_aromatic_or_sp2(pred, cyc, adj)) {
+                continue;  // aromatic / sp2 handled by aromatic_ring_flatness
+            }
+            std::vector<Vec3> pts;
+            pts.reserve(cyc.size());
+            for (int idx : cyc) {
+                if (idx < 0 || idx >= n) continue;
+                pts.push_back(pred.atoms[static_cast<std::size_t>(idx)].pos());
+            }
+            if (pts.size() < 5) continue;
+            const float oop = max_out_of_plane_distance(pts);
+            min_oop = std::min(min_oop, static_cast<double>(oop));
+            ++n_checked;
+            // Non-aromatic rings should NOT be flat.
+            if (oop < kThresholdFlatnessAngstrom - 1e-6f) {
+                ++n_failed;
+            }
+        }
+        if (!std::isfinite(min_oop)) min_oop = 0.0;
+        const bool passed = (n_failed == 0);  // vacuous pass when none checked
+        std::ostringstream oss;
+        oss << n_checked << " aliphatic rings (size 5–6, no aromatic bonds); "
+            << n_failed << " with max OOP < " << kThresholdFlatnessAngstrom
+            << " Å (too flat); min OOP=" << min_oop << " Å";
+        out.push_back(make_item("non-aromatic_ring_non-flatness",
+                                "Non-aromatic ring non-flatness",
+                                passed,
+                                n_checked,
+                                n_failed,
+                                min_oop,
+                                static_cast<double>(kThresholdFlatnessAngstrom),
+                                oss.str()));
+    }
+
+    // --- double_bond_flatness -----------------------------------------------
     {
         int n_checked = 0;
         int n_failed  = 0;
@@ -627,7 +691,7 @@ void check_flatness(const Molecule& pred, std::vector<CheckItem>& out) {
         oss << n_checked << " bonds with order≥2; " << n_failed
             << " with |sin(φ)| > " << kThresholdDoubleBondSinPhi
             << "; worst |sin(φ)|=" << worst_sin;
-        out.push_back(make_item("flat_double_bonds",
+        out.push_back(make_item("double_bond_flatness",
                                 "Double-bond planarity",
                                 passed,
                                 n_checked,

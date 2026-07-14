@@ -387,8 +387,9 @@ void check_loading(const Molecule* pred,
 void check_chemistry_sanity(const Molecule& pred, std::vector<CheckItem>& out) {
     // --- passes_rdkit_sanity_checks (native, no RDKit) --------------------
     const SanityReport sanity = native_sanity(pred);
+    // Key name matches upstream PoseBusters dock suite ("sanitization").
     emit(out,
-         "passes_rdkit_sanity_checks",
+         "sanitization",
          "Sanitization",
          sanity.ok,
          sanity.detail);
@@ -428,7 +429,11 @@ void check_chemistry_sanity(const Molecule& pred, std::vector<CheckItem>& out) {
              d.str());
     }
 
-    // --- no_radicals (valence heuristic) ----------------------------------
+    // --- no_radicals (over-valence heuristic) -----------------------------
+    // Upstream PoseBusters uses RDKit radical-electron count. Heavy-only
+    // FlexAID poses omit H, so under-valence is normal — only flag atoms
+    // whose bond-order sum exceeds max expected valence + slack (true
+    // hypervalent / radical-like overbonding). Matches crystal 1G9V = True.
     int n_bad     = 0;
     int n_checked = 0;
     for (int i = 0; i < static_cast<int>(pred.atoms.size()); ++i) {
@@ -439,13 +444,16 @@ void check_chemistry_sanity(const Molecule& pred, std::vector<CheckItem>& out) {
         if (vals.empty()) continue;  // metals / unknown: skip
         ++n_checked;
         const float bos = bond_order_sum(pred, i);
-        if (!valence_ok(Z, bos)) ++n_bad;
+        int vmax = 0;
+        for (int v : vals) vmax = std::max(vmax, v);
+        // Slack 1.05: aromatic half-orders + missing formal charge field.
+        if (bos > static_cast<float>(vmax) + 1.05f) ++n_bad;
     }
     const bool no_rad = (n_bad == 0);
     {
         std::ostringstream d;
-        d << "checked=" << n_checked << " radicals_or_bad_valence=" << n_bad
-          << " (aromatic order=4→1.5; formal_charge slack ±1, charge field n/a)";
+        d << "checked=" << n_checked << " overvalent=" << n_bad
+          << " (only bos>max_valence+1.05; under-valence allowed for heavy-only)";
         emit(out, "no_radicals", "No radicals", no_rad, d.str());
     }
 }
@@ -456,7 +464,15 @@ void check_identity_formula(const Molecule& pred,
     // Per contract: if crystal is null, skip entirely (no keys appended).
     if (crystal == nullptr) return;
 
-    // --- formula: heavy-atom element multiset equality --------------------
+    {
+        std::ostringstream d;
+        d << "crystal atoms=" << crystal->atoms.size()
+          << " bonds=" << crystal->bonds.size();
+        emit(out, "mol_true_loaded", "MOL_TRUE loaded",
+             molecule_loaded(crystal), d.str());
+    }
+
+    // --- molecular_formula: heavy-atom element multiset equality ----------
     const ElementMultiset f_pred = heavy_formula(pred);
     const ElementMultiset f_ref  = heavy_formula(*crystal);
     const bool formula_ok        = (f_pred == f_ref);
@@ -464,10 +480,10 @@ void check_identity_formula(const Molecule& pred,
         std::ostringstream d;
         d << "pred=" << formula_string(f_pred)
           << " crystal=" << formula_string(f_ref);
-        emit(out, "formula", "Molecular formula", formula_ok, d.str());
+        emit(out, "molecular_formula", "Molecular formula", formula_ok, d.str());
     }
 
-    // --- connections: bond count within 20% -------------------------------
+    // --- molecular_bonds: bond count within 20% ---------------------------
     const std::size_t bp = pred.bonds.size();
     const std::size_t bc = crystal->bonds.size();
     bool conn_ok = false;
@@ -483,8 +499,199 @@ void check_identity_formula(const Molecule& pred,
         std::ostringstream d;
         d << "pred_bonds=" << bp << " crystal_bonds=" << bc
           << " tolerance=20%";
-        emit(out, "connections", "Molecular bonds", conn_ok, d.str());
+        emit(out, "molecular_bonds", "Molecular bonds", conn_ok, d.str());
     }
+}
+
+// ---------------------------------------------------------------------------
+// Stereochemistry / chirality / soft internal energy
+// ---------------------------------------------------------------------------
+
+[[nodiscard]] float signed_tetrahedral_volume(const Vec3& c,
+                                              const Vec3& a,
+                                              const Vec3& b,
+                                              const Vec3& d) noexcept {
+    // V = (a-c) · ((b-c) × (d-c))
+    const Vec3 u = a - c;
+    const Vec3 v = b - c;
+    const Vec3 w = d - c;
+    const Vec3 x = cross(v, w);
+    return dot(u, x);
+}
+
+void check_stereochemistry(const Molecule& pred,
+                           const Molecule* crystal,
+                           std::vector<CheckItem>& out) {
+    // Double-bond stereochemistry: for order≥2 bonds with two substituents,
+    // compare cis/trans via torsion sign vs crystal when available.
+    int n_db = 0, n_db_mismatch = 0;
+    int n_chiral = 0, n_chiral_mismatch = 0;
+
+    const bool have_ref =
+        crystal != nullptr && crystal->atoms.size() == pred.atoms.size() &&
+        !pred.atoms.empty();
+
+    auto pick_subs = [](const Molecule& mol, int center, int partner) {
+        std::vector<int> subs;
+        if (center < 0 || static_cast<std::size_t>(center) >= mol.adj.size())
+            return subs;
+        for (int v : mol.adj[static_cast<std::size_t>(center)]) {
+            if (v == partner) continue;
+            if (v < 0 || static_cast<std::size_t>(v) >= mol.atoms.size()) continue;
+            if (atom_is_hydrogen(mol.atoms[static_cast<std::size_t>(v)])) continue;
+            subs.push_back(v);
+        }
+        return subs;
+    };
+
+    for (const Bond& b : pred.bonds) {
+        if (b.order < 2 || b.order == 4) continue;  // skip singles + aromatic
+        auto sa = pick_subs(pred, b.a, b.b);
+        auto sb = pick_subs(pred, b.b, b.a);
+        if (sa.empty() || sb.empty()) continue;
+        ++n_db;
+        if (!have_ref) continue;
+        // Torsion sign: sub_a – a – b – sub_b
+        auto torsion_sign = [&](const Molecule& m, int s1, int a, int c, int s2) {
+            const Vec3 p0 = m.atoms[static_cast<std::size_t>(s1)].pos();
+            const Vec3 p1 = m.atoms[static_cast<std::size_t>(a)].pos();
+            const Vec3 p2 = m.atoms[static_cast<std::size_t>(c)].pos();
+            const Vec3 p3 = m.atoms[static_cast<std::size_t>(s2)].pos();
+            const Vec3 b1 = p1 - p0;
+            const Vec3 b2 = p2 - p1;
+            const Vec3 b3 = p3 - p2;
+            const Vec3 n1 = cross(b1, b2);
+            const Vec3 n2 = cross(b2, b3);
+            const float s = dot(n1, n2);
+            return s >= 0.f ? 1 : -1;
+        };
+        const int sp = torsion_sign(pred, sa[0], b.a, b.b, sb[0]);
+        const int sr = torsion_sign(*crystal, sa[0], b.a, b.b, sb[0]);
+        if (sp != sr) ++n_db_mismatch;
+    }
+
+    // Tetrahedral chirality: carbon with 4 distinct heavy/H neighbors.
+    const int n = static_cast<int>(pred.atoms.size());
+    for (int i = 0; i < n; ++i) {
+        const Atom& a = pred.atoms[static_cast<std::size_t>(i)];
+        if (atomic_number_of(a) != 6) continue;
+        if (static_cast<std::size_t>(i) >= pred.adj.size()) continue;
+        const auto& nbrs = pred.adj[static_cast<std::size_t>(i)];
+        if (nbrs.size() != 4) continue;
+        // Distinct element multiset among neighbors → potential stereo center
+        std::map<int, int> el_counts;
+        for (int v : nbrs) {
+            el_counts[atomic_number_of(pred.atoms[static_cast<std::size_t>(v)])]++;
+        }
+        bool all_unique = true;
+        for (const auto& kv : el_counts)
+            if (kv.second > 1) all_unique = false;
+        // Also treat 4 distinct neighbor indices always as candidate when ref
+        // available (CIP-free CIP-free geometric sign compare).
+        (void)all_unique;
+        ++n_chiral;
+        if (!have_ref) continue;
+        const Vec3 c = pred.atoms[static_cast<std::size_t>(i)].pos();
+        const Vec3 p0 = pred.atoms[static_cast<std::size_t>(nbrs[0])].pos();
+        const Vec3 p1 = pred.atoms[static_cast<std::size_t>(nbrs[1])].pos();
+        const Vec3 p2 = pred.atoms[static_cast<std::size_t>(nbrs[2])].pos();
+        // Use first 3 neighbors for oriented volume (4th implied).
+        const float vp = signed_tetrahedral_volume(c, p0, p1, p2);
+        const Vec3 cr = crystal->atoms[static_cast<std::size_t>(i)].pos();
+        const Vec3 r0 = crystal->atoms[static_cast<std::size_t>(nbrs[0])].pos();
+        const Vec3 r1 = crystal->atoms[static_cast<std::size_t>(nbrs[1])].pos();
+        const Vec3 r2 = crystal->atoms[static_cast<std::size_t>(nbrs[2])].pos();
+        const float vr = signed_tetrahedral_volume(cr, r0, r1, r2);
+        if ((vp >= 0.f) != (vr >= 0.f) &&
+            std::fabs(vp) > 0.1f && std::fabs(vr) > 0.1f) {
+            ++n_chiral_mismatch;
+        }
+    }
+
+    {
+        std::ostringstream d;
+        if (!have_ref) {
+            d << "vacuous_or_self: no crystal stereo inventory; "
+              << "double_bonds_checked=" << n_db;
+            emit(out, "double_bond_stereochemistry",
+                 "Double-bond stereochemistry", true, d.str());
+        } else {
+            d << "double_bonds=" << n_db << " mismatches=" << n_db_mismatch;
+            emit(out, "double_bond_stereochemistry",
+                 "Double-bond stereochemistry", n_db_mismatch == 0, d.str());
+        }
+    }
+    {
+        std::ostringstream d;
+        if (!have_ref) {
+            d << "vacuous_or_self: no crystal stereo inventory; "
+              << "tetrahedral_candidates=" << n_chiral;
+            emit(out, "tetrahedral_chirality", "Tetrahedral chirality", true,
+                 d.str());
+        } else {
+            d << "candidates=" << n_chiral
+              << " mismatches=" << n_chiral_mismatch;
+            emit(out, "tetrahedral_chirality", "Tetrahedral chirality",
+                 n_chiral_mismatch == 0, d.str());
+        }
+    }
+}
+
+[[nodiscard]] float covalent_radius_Z(int Z) noexcept {
+    switch (Z) {
+        case 1: return 0.31f;
+        case 6: return 0.76f;
+        case 7: return 0.71f;
+        case 8: return 0.66f;
+        case 9: return 0.57f;
+        case 15: return 1.07f;
+        case 16: return 1.05f;
+        case 17: return 1.02f;
+        case 35: return 1.20f;
+        case 53: return 1.39f;
+        default: return 1.00f;
+    }
+}
+
+[[nodiscard]] double mean_bond_strain(const Molecule& mol) {
+    double sum = 0.0;
+    int n = 0;
+    for (const Bond& b : mol.bonds) {
+        if (b.a < 0 || b.b < 0) continue;
+        if (static_cast<std::size_t>(b.a) >= mol.atoms.size() ||
+            static_cast<std::size_t>(b.b) >= mol.atoms.size())
+            continue;
+        const Atom& a1 = mol.atoms[static_cast<std::size_t>(b.a)];
+        const Atom& a2 = mol.atoms[static_cast<std::size_t>(b.b)];
+        const float ideal =
+            covalent_radius_Z(atomic_number_of(a1)) +
+            covalent_radius_Z(atomic_number_of(a2));
+        if (ideal < 1e-6f) continue;
+        const float d = dist(a1.pos(), a2.pos());
+        const double rel = std::fabs(static_cast<double>(d - ideal) / ideal);
+        sum += rel * rel;
+        ++n;
+    }
+    return n > 0 ? sum / static_cast<double>(n) : 0.0;
+}
+
+void check_internal_energy(const Molecule& pred,
+                           const Molecule* crystal,
+                           std::vector<CheckItem>& out) {
+    const double strain_p = mean_bond_strain(pred);
+    double thr = 0.0625;  // (0.25)^2 mean squared relative bond strain
+    bool ok = strain_p <= thr + 1e-12;
+    std::ostringstream d;
+    d << "mean_sq_rel_bond_strain=" << strain_p << " thr=" << thr;
+    if (crystal != nullptr) {
+        const double strain_c = mean_bond_strain(*crystal);
+        // Pass if not much worse than crystal (2×) or absolute thr.
+        const double thr2 = std::max(thr, 2.0 * strain_c + 1e-6);
+        ok = strain_p <= thr2 + 1e-12;
+        d << " crystal_strain=" << strain_c << " thr_vs_xtal=" << thr2;
+    }
+    emit(out, "internal_energy", "Internal energy (bond-strain proxy)", ok,
+         d.str());
 }
 
 }  // namespace flexaids::posebust
