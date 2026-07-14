@@ -930,10 +930,42 @@ static std::pair<std::string,float> select_pose_freq_gated_pooled(
 
         // ── Log top-3 Z+H scores to stderr ───────────────────────────────────
         // Precompute composite scores once so each pose is evaluated once.
+        // Guard against pathological CF (e.g. −1700) that drive Z*expH → inf and
+        // elect non-physical basins (v130 1G9V/1HP0). Drop CF < floor from the
+        // Z+H ranking pool unless that would empty it.
+        float cf_floor = -250.0f;
+        if (const char* e = std::getenv("FLEXAIDDS_CF_FLOOR")) {
+            try { cf_floor = std::stof(e); } catch (...) {}
+        }
+        std::vector<const PoseInfo*> zh_pool;
+        zh_pool.reserve(chosen.size());
+        for (const auto* p : chosen) {
+            if (std::isfinite(p->cf) && p->cf >= cf_floor)
+                zh_pool.push_back(p);
+            else
+                fprintf(stderr, "[CF-SANITY] drop pathological CF=%.4f path=%s (floor=%.1f)\n",
+                        p->cf, p->path.c_str(), cf_floor);
+        }
+        if (zh_pool.empty()) zh_pool.assign(chosen.begin(), chosen.end());
+
         std::vector<std::pair<double, const PoseInfo*>> scored_chosen;
-        scored_chosen.reserve(chosen.size());
-        for (const auto* p : chosen)
-            scored_chosen.push_back({boltzmann_composite(*p), p});
+        scored_chosen.reserve(zh_pool.size());
+        for (const auto* p : zh_pool) {
+            double c = boltzmann_composite(*p);
+            if (!std::isfinite(c)) {
+                fprintf(stderr, "[CF-SANITY] non-finite Z+H composite for CF=%.4f path=%s — skip\n",
+                        p->cf, p->path.c_str());
+                continue;
+            }
+            scored_chosen.push_back({c, p});
+        }
+        if (scored_chosen.empty()) {
+            // Fall back: pure min-CF among chosen.
+            const PoseInfo* min_cf = chosen.front();
+            for (const auto* p : chosen)
+                if (p->cf < min_cf->cf) min_cf = p;
+            scored_chosen.push_back({0.0, min_cf});
+        }
         std::sort(scored_chosen.begin(), scored_chosen.end(),
                   [](const auto& a, const auto& b){ return a.first > b.first; });
         int log_n = std::min(3, static_cast<int>(scored_chosen.size()));
@@ -947,6 +979,65 @@ static std::pair<std::string,float> select_pose_freq_gated_pooled(
 
         // Winner (fallback) = highest composite score (broadest basin).
         freq_best = scored_chosen.front().second;
+
+        // ── v132 CF-primary election (default ON) ────────────────────────────
+        // v130/v131 diagnosis: Z+H frequency term elects CF>0 over CF≪0 and
+        // drops BCR≤2 poses (1G9V BCR 1.97 → top-1 3.6).  CF-primary elects the
+        // lowest non-pathological CF; Z+H only breaks ties within cf_eps.
+        // Disable with FLEXAIDDS_CF_PRIMARY=0 to restore pure Z+H.
+        bool cf_primary = true;
+        if (const char* e = std::getenv("FLEXAIDDS_CF_PRIMARY"))
+            cf_primary = (std::atoi(e) != 0);
+        double cf_eps = 1.0;  // kcal/mol tie window
+        if (const char* e = std::getenv("FLEXAIDDS_CF_PRIMARY_EPS")) {
+            try { cf_eps = std::stod(e); } catch (...) {}
+        }
+        if (cf_primary && !zh_pool.empty()) {
+            // Prefer attractive poses when any exist.
+            bool any_neg = false;
+            for (const auto* p : zh_pool)
+                if (p->cf < 0.0f) { any_neg = true; break; }
+            std::vector<const PoseInfo*> cf_cand;
+            for (const auto* p : zh_pool) {
+                if (any_neg && p->cf >= 0.0f) continue;  // veto repulsive if attractive exist
+                cf_cand.push_back(p);
+            }
+            if (cf_cand.empty()) cf_cand = zh_pool;
+
+            const PoseInfo* cf_best = cf_cand.front();
+            for (const auto* p : cf_cand)
+                if (p->cf < cf_best->cf) cf_best = p;
+
+            // Among poses within eps of best CF, pick highest Z+H (if available).
+            const PoseInfo* winner = cf_best;
+            double best_comp = -std::numeric_limits<double>::infinity();
+            for (const auto& sc : scored_chosen) {
+                if (sc.second->cf <= cf_best->cf + static_cast<float>(cf_eps) &&
+                    (!(any_neg && sc.second->cf >= 0.0f)) &&
+                    sc.second->cf >= cf_floor) {
+                    if (sc.first > best_comp) {
+                        best_comp = sc.first;
+                        winner = sc.second;
+                    }
+                }
+            }
+            // Still force pure min-CF if the Z+H pick is worse by more than eps.
+            if (winner->cf > cf_best->cf + static_cast<float>(cf_eps))
+                winner = cf_best;
+
+            if (winner != freq_best)
+                fprintf(stderr,
+                    "[CF-PRIMARY] override Z+H: elect CF=%.4f path=%s "
+                    "(was Z+H CF=%.4f path=%s; best_CF=%.4f eps=%.2f)\n",
+                    winner->cf, winner->path.c_str(),
+                    freq_best->cf, freq_best->path.c_str(),
+                    cf_best->cf, cf_eps);
+            else
+                fprintf(stderr,
+                    "[CF-PRIMARY] agrees with Z+H: CF=%.4f path=%s\n",
+                    winner->cf, winner->path.c_str());
+            freq_best = winner;
+        }
 
         // ── v70: frequency-weighted macro-cluster selection ─────────────────
         // The Z+H composite collapses to pure CF-rank-0 at kT=0.592 (all intra-
@@ -5500,6 +5591,18 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                 pop_scaled = static_cast<int>(
                     std::lround(static_cast<double>(pop_scaled) * budget_scale_factor));
             }
+            // Cap population so extreme DoF (e.g. 2HR7 n_flex=19 → pop 4750)
+            // cannot blow the 3h wall.  FLEXAIDDS_POP_CAP=0 disables. Default 2000.
+            int pop_cap = 2000;
+            if (const char* e = std::getenv("FLEXAIDDS_POP_CAP")) {
+                try { pop_cap = std::stoi(e); } catch (...) {}
+            }
+            if (pop_cap > 0 && pop_scaled > pop_cap) {
+                fprintf(stderr,
+                        "[EVAL-SCALE] %s: pop_effective %d capped to %d (FLEXAIDDS_POP_CAP)\n",
+                        entry.pdb_id.c_str(), pop_scaled, pop_cap);
+                pop_scaled = pop_cap;
+            }
             fprintf(stderr, "[EVAL-BUDGET] %s: fdih=%d ring_dof=%d n_genes=%d budget_scale=%.3f n_gen=%d pop=%d\n",
                     entry.pdb_id.c_str(), fdih_est, ring_dof_est, n_genes, budget_scale_factor, n_gen_scaled, pop_scaled);
 
@@ -6688,10 +6791,25 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                                               << " override (winner CF="
                                               << pool[best_i].cf << ")\n";
                                 } else {
-                                    best_pose_pdb = pool[best_i].path;
-                                    // Keep best_score describing the SAME pose now reported.
-                                    if (std::isfinite(pool[best_i].cf))
-                                        result.best_score = pool[best_i].cf;
+                                    // v132 CF-primary: do not let consensus replace a better CF.
+                                    // (v130/v131: Z+H/consensus elected CF>0 over deep basins.)
+                                    bool cf_primary = true;
+                                    if (const char* e = std::getenv("FLEXAIDDS_CF_PRIMARY"))
+                                        cf_primary = (std::atoi(e) != 0);
+                                    const float cons_cf = pool[best_i].cf;
+                                    const float cur_cf  = result.best_score;
+                                    if (cf_primary && std::isfinite(cur_cf) && std::isfinite(cons_cf)
+                                        && cons_cf > cur_cf + 1.0f) {
+                                        std::cerr << "  [CF-PRIMARY-CONSENSUS] " << entry.pdb_id
+                                                  << ": keep elected CF=" << std::fixed
+                                                  << std::setprecision(3) << cur_cf
+                                                  << " over consensus CF=" << cons_cf << "\n";
+                                    } else {
+                                        best_pose_pdb = pool[best_i].path;
+                                        // Keep best_score describing the SAME pose now reported.
+                                        if (std::isfinite(pool[best_i].cf))
+                                            result.best_score = pool[best_i].cf;
+                                    }
                                 }
                             }
                         }

@@ -1,0 +1,11 @@
+# Explicit biological-unit / pocket-chain overrides for Astex Diverse.
+# Used by campaign preflight and documented for DatasetRunner prune QA.
+# Prefer ligand-centroid prune when no entry is listed.
+version: 1
+targets:
+  1G9V:
+    keep_chains: ["A", "B", "C"]
+    note: "Ligand contact shell; D min-dist ~12.7 A. Wrong site kept A+D."
+  2BYS:
+    keep_chains: ["A", "E"]
+    note: "Biological dimer; full assembly is 10-chain homodecamer."
