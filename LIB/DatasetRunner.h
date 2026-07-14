@@ -140,7 +140,25 @@ struct DockingResult {
     float search_entropy_proxy{0.0f}; // legacy H_final collapse proxy from GA energy histogram (nats)
     int   num_poses{0};               // number of binding modes found
     double wall_time_s{0.0};          // docking wall time
-    bool  success{false};             // RMSD < 2.0 Å
+    // ── Success gates (AGENTS.md: claimable = RMSD≤2 ∧ PoseBust pass) ─────
+    // success_rmsd: Hungarian/serial RMSD < 2 Å and not seed_echo.
+    // success_pb:   native PoseBust (or skipped→false when backend off after run).
+    // success_strict: success_rmsd && success_pb && pb_ran  — paper/claim gate.
+    // success: default == success_rmsd for CSV back-compat; set to success_strict
+    //          when FLEXAIDDS_SUCCESS_STRICT=1.
+    bool  success_rmsd{false};
+    bool  success_pb{false};
+    bool  success_strict{false};
+    bool  success{false};             // see above (legacy column)
+    // Native PoseBust report summary (full detail in out_dir/posebust/*.json)
+    bool  pb_ran{false};
+    int   pb_n_pass{0};
+    int   pb_n_fail{0};
+    int   pb_n_checks{0};
+    std::string pb_failed_keys;       // "bond_lengths;no_clashes"
+    std::string pb_backend;           // "native" | "skipped" | "error"
+    float pb_min_lig_prot_dist{std::numeric_limits<float>::quiet_NaN()};
+    float pb_volume_overlap{std::numeric_limits<float>::quiet_NaN()};
     // Clash diagnostics (populated from stdout parsing)
     long  individuals_clashed{0};     // total clashing evaluations
     long  individuals_total{0};       // total evaluations (across all generations)
@@ -196,8 +214,14 @@ struct DockingResult {
 struct BenchmarkReport {
     std::string dataset_name;
     int total_systems{0};
-    int successful{0};               // RMSD < 2.0 Å
+    int successful{0};               // count of result.success (policy-dependent)
     double success_rate{0.0};        // fraction
+    int successful_rmsd{0};          // success_rmsd
+    int successful_pb{0};            // success_pb
+    int successful_strict{0};        // success_strict (claim gate)
+    double success_rate_rmsd{0.0};
+    double success_rate_pb{0.0};
+    double success_rate_strict{0.0};
     double mean_rmsd{0.0};
     double median_rmsd{0.0};
     int affinity_pairs{0};           // entries with both exp affinity and predicted dG

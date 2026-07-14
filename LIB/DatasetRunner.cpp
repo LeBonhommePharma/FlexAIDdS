@@ -20,6 +20,7 @@
 #include "receptor_prep.h"
 #include "tENCoM/tencm.h"   // tencm::TorsionalENM — ligand Cartesian ANM for H(ω)
 #include "VibEntropy.h"     // vibentropy::compute_vib_entropy_collapse — Level-3 H(ω)
+#include "PoseBust/Engine.h"  // native PoseBust dock-suite validator
 
 #include <algorithm>
 #include <array>
@@ -6454,6 +6455,8 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
         // Both encode the same molecule in the same atom order, so we compute
         // positional RMSD directly without alignment (self-docking) or use
         // minimum-distance matching for cross-docking.
+        // Elected pose path is hoisted so PoseBust can run after this block.
+        std::string elected_pose_pdb;
         if (docking_completed &&
             !rmsd_reference_path.empty() &&
             fs::exists(rmsd_reference_path)) {
@@ -6463,6 +6466,7 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
             // select_pose_freq_gated() drops degenerate (CF≈0) poses, prefers
             // clusters with Frequency>1, and returns the min-CF pose within that
             // pool (see helper definition near compute_pose_ligand_rmsd).
+            // elected_pose_for_pb lives outside this block for PoseBust post-pass.
             std::string best_pose_pdb = select_pose_freq_gated_pooled(all_prefixes, sel_elitism_ovr, cf_window_selector_).first;
             // Fallback: no scored pose found — take first available pose file from any restart.
             if (best_pose_pdb.empty()) {
@@ -6938,11 +6942,18 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                               << kept << "A)"
                               << " (idx=" << result.best_cluster_idx << ")\n";
                 }
+                // Hoist elected path for PoseBust (after consensus / BCR mutations).
+                elected_pose_pdb = best_pose_pdb;
             } else {
                 result.rmsd_to_crystal = -1.0f;
             }
         } else {
             result.rmsd_to_crystal = -1.0f;
+            // Still try to elect a pose for PoseBust even without crystal RMSD ref.
+            if (docking_completed) {
+                elected_pose_pdb = select_pose_freq_gated_pooled(
+                    all_prefixes, sel_elitism_ovr, cf_window_selector_).first;
+            }
         }
 
         // Fix A: success uses the symmetry-corrected RMSD. Serial-order RMSD
@@ -6956,8 +6967,61 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
         // seed_echo=1 means the INI crystal seed survived into rank-0 but the GA
         // never found native independently (all cluster reps ≥ 2 Å).  Count these
         // as failures: the 0.00 Å RMSD is seed survival, not a GA discovery.
-        result.success = (docking_completed && rmsd_report >= 0.0f && rmsd_report < 2.0f &&
-                          !result.seed_echo);
+        result.success_rmsd = (docking_completed && rmsd_report >= 0.0f && rmsd_report < 2.0f &&
+                               !result.seed_echo);
+
+        // ── Native PoseBust (PoseBusters-compatible dock suite) ────────────
+        // After election + RMSD. Topology from crystal SDF; coords from FlexAID
+        // CONECT ligand (not all HETATM / HEM). FLEXAIDDS_POSEBUST=0 disables.
+        {
+            using flexaids::posebust::Backend;
+            using flexaids::posebust::EvaluateOptions;
+            using flexaids::posebust::Suite;
+            const Backend pb_backend = flexaids::posebust::resolve_backend_from_env();
+            if (pb_backend == Backend::Off || !docking_completed || elected_pose_pdb.empty()) {
+                result.pb_ran     = false;
+                result.success_pb = false;
+                result.pb_backend = (pb_backend == Backend::Off) ? "skipped" : "skipped";
+            } else {
+                EvaluateOptions pb_opt;
+                pb_opt.suite        = Suite::Dock;
+                pb_opt.protein_crop_A = 10.0f;
+                pb_opt.sidecar_dir  = out_dir + "/posebust";
+                pb_opt.pdb_id       = entry.pdb_id;
+                const std::string crystal =
+                    !rmsd_reference_path.empty() ? rmsd_reference_path : entry.ligand_path;
+                auto pb_rep = flexaids::posebust::evaluate_paths(
+                    elected_pose_pdb,
+                    entry.receptor_path,
+                    crystal,
+                    pb_opt);
+                result.pb_ran              = pb_rep.ran;
+                result.success_pb          = pb_rep.success_pb();
+                result.pb_n_pass           = pb_rep.n_pass();
+                result.pb_n_fail           = pb_rep.n_fail();
+                result.pb_n_checks         = pb_rep.n_checks();
+                result.pb_failed_keys      = pb_rep.failed_keys_csv();
+                result.pb_backend          = pb_rep.backend.empty() ? "native" : pb_rep.backend;
+                result.pb_min_lig_prot_dist = pb_rep.min_lig_prot_dist;
+                result.pb_volume_overlap   = pb_rep.volume_overlap;
+                if (!pb_rep.error.empty() && pb_rep.backend == "error") {
+                    result.success_pb = false;
+                    result.pb_backend = "error";
+                }
+                std::cerr << "  [POSEBUST] " << entry.pdb_id
+                          << " backend=" << result.pb_backend
+                          << " pass=" << (result.success_pb ? 1 : 0)
+                          << " checks=" << result.pb_n_pass << "/" << result.pb_n_checks
+                          << " failed=[" << result.pb_failed_keys << "]"
+                          << " n_lig_atoms_via_CONECT\n";
+            }
+            result.success_strict = result.success_rmsd && result.success_pb && result.pb_ran;
+            const bool strict_policy = []() {
+                const char* e = std::getenv("FLEXAIDDS_SUCCESS_STRICT");
+                return e && std::atoi(e) != 0;
+            }();
+            result.success = strict_policy ? result.success_strict : result.success_rmsd;
+        }
 
         // ── Level-3 H(ω) vibrational-entropy diagnostic (FLEXAIDDS_HVIB=1) ──
         // Post-GA pass over the emitted cluster reps; gated OFF by default so
@@ -7026,7 +7090,10 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                 if (ofs.is_open()) {
                     ofs << "pdb_id,best_score,rmsd_to_crystal,rmsd_hungarian,predicted_dG,"
                            "predicted_dH,predicted_TdS,shannon_entropy,search_entropy_proxy,num_poses,"
-                           "wall_time_s,success,cf_native,best_cluster_rmsd,best_cluster_idx,"
+                           "wall_time_s,success,success_rmsd,success_pb,success_strict,"
+                           "pb_ran,pb_n_pass,pb_n_fail,pb_n_checks,pb_failed_keys,pb_backend,"
+                           "pb_min_lig_prot_dist,pb_volume_overlap,"
+                           "cf_native,best_cluster_rmsd,best_cluster_idx,"
                            "seed_echo,pose_source,H_rep_rank0,H_pop,H_rep_mean,D_vib,"
                            "G_bind,H_vct,H_vct_raw,n_heavy,TdS_shannon,TdS_vib,D_vib_thermo,"
                            "compensation_ratio,TdS_shannon_gen500,TdS_shannon_gen1000,"
@@ -7044,6 +7111,17 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                         << result.num_poses << ","
                         << result.wall_time_s << ","
                         << (result.success ? 1 : 0) << ","
+                        << (result.success_rmsd ? 1 : 0) << ","
+                        << (result.success_pb ? 1 : 0) << ","
+                        << (result.success_strict ? 1 : 0) << ","
+                        << (result.pb_ran ? 1 : 0) << ","
+                        << result.pb_n_pass << ","
+                        << result.pb_n_fail << ","
+                        << result.pb_n_checks << ","
+                        << "\"" << result.pb_failed_keys << "\","
+                        << result.pb_backend << ","
+                        << (std::isnan(result.pb_min_lig_prot_dist) ? "NA" : std::to_string(result.pb_min_lig_prot_dist)) << ","
+                        << (std::isnan(result.pb_volume_overlap) ? "NA" : std::to_string(result.pb_volume_overlap)) << ","
                         << result.cf_native << ","
                         << result.best_cluster_rmsd << ","
                         << result.best_cluster_idx << ","
@@ -7143,6 +7221,9 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
 
     // Compute aggregate statistics
     int success_count = 0;
+    int success_rmsd_count = 0;
+    int success_pb_count = 0;
+    int success_strict_count = 0;
     std::vector<double> rmsds;
     std::vector<double> pred_affinities;
     std::vector<double> exp_affinities;
@@ -7150,6 +7231,9 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
     for (size_t i = 0; i < report.results.size(); ++i) {
         const auto& r = report.results[i];
         if (r.success) success_count++;
+        if (r.success_rmsd) success_rmsd_count++;
+        if (r.success_pb) success_pb_count++;
+        if (r.success_strict) success_strict_count++;
         if (r.rmsd_to_crystal >= 0.0f) {
             rmsds.push_back(r.rmsd_to_crystal);
         }
@@ -7160,9 +7244,17 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
     }
 
     report.successful = success_count;
+    report.successful_rmsd = success_rmsd_count;
+    report.successful_pb = success_pb_count;
+    report.successful_strict = success_strict_count;
     report.affinity_pairs = static_cast<int>(pred_affinities.size());
     report.success_rate = (report.total_systems > 0)
         ? static_cast<double>(success_count) / report.total_systems : 0.0;
+    if (report.total_systems > 0) {
+        report.success_rate_rmsd = static_cast<double>(success_rmsd_count) / report.total_systems;
+        report.success_rate_pb = static_cast<double>(success_pb_count) / report.total_systems;
+        report.success_rate_strict = static_cast<double>(success_strict_count) / report.total_systems;
+    }
 
     // Mean RMSD
     if (!rmsds.empty()) {

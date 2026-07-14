@@ -1019,12 +1019,21 @@ if(ENABLE_BENCHMARK_DATASETS)
         LIB/benchmark_datasets.cpp
         LIB/DatasetRunner.cpp
         LIB/AsyncPipeline.cpp
+        # Native PoseBust (PoseBusters-compatible dock suite, clean-room C++26)
+        LIB/PoseBust/Loaders.cpp
+        LIB/PoseBust/ChecksChemistry.cpp
+        LIB/PoseBust/ChecksGeometry.cpp
+        LIB/PoseBust/ChecksProtein.cpp
+        LIB/PoseBust/Engine.cpp
     )
     target_link_libraries(benchmark_datasets PRIVATE flexaid_core)
     if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
         target_link_libraries(benchmark_datasets PRIVATE m)
     endif()
-    target_include_directories(benchmark_datasets PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/LIB)
+    target_include_directories(benchmark_datasets PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/LIB
+        ${CMAKE_CURRENT_SOURCE_DIR}/LIB/PoseBust
+    )
     if(MSVC)
         target_compile_options(benchmark_datasets PRIVATE /O2 /fp:fast)
         target_compile_definitions(benchmark_datasets PRIVATE
