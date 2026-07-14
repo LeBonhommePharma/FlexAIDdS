@@ -66,3 +66,19 @@ TEST(SoftWall, HermiteRampIsContinuousAtCutoff) {
 
 	EXPECT_NEAR(e_at, e_eps, 0.05);
 }
+
+TEST(SoftWall, RelativeVdwCutoffMatchesPoseBustersBoundary) {
+	const double oxygen_radius = posebusters_vdw_radius("O", 0.0);
+	const double radius_sum = 2.0 * oxygen_radius;
+	const float cutoff = 0.75f;
+	const double boundary = static_cast<double>(cutoff) * radius_sum;
+
+	EXPECT_NEAR(oxygen_radius, 1.55, EPSILON);
+	EXPECT_NEAR(posebusters_vdw_radius("Cl", 0.0), 1.80, EPSILON);
+	EXPECT_NEAR(posebusters_vdw_radius("unknown", 1.42), 1.42, EPSILON);
+	EXPECT_FALSE(violates_relative_vdw_cutoff(boundary - 1.0, radius_sum, 0.0f));
+	EXPECT_TRUE(violates_relative_vdw_cutoff(1.904304, radius_sum, cutoff));
+	EXPECT_TRUE(violates_relative_vdw_cutoff(boundary - 1e-6, radius_sum, cutoff));
+	EXPECT_FALSE(violates_relative_vdw_cutoff(boundary, radius_sum, cutoff));
+	EXPECT_FALSE(violates_relative_vdw_cutoff(boundary + 1e-6, radius_sum, cutoff));
+}

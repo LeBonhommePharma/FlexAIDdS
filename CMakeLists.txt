@@ -529,6 +529,42 @@ if(ENABLE_TENCOM_TOOL)
     target_link_libraries(tencom_entropy_diff PRIVATE Eigen3::Eigen)
     target_compile_definitions(tencom_entropy_diff PRIVATE FLEXAIDS_HAS_EIGEN)
     message(STATUS "Legacy tENCoM entropy diff tool enabled — build target: tencom_entropy_diff")
+
+    add_executable(ligand_tencom_pose
+        LIB/ligand_tencom_pose.cpp
+        LIB/tENCoM/tencm.cpp
+        LIB/VibEntropy.cpp
+        LIB/PoseBust/Loaders.cpp
+        LIB/TurboQuant.cpp
+        LIB/UnifiedHardwareDispatch.cpp
+        LIB/hardware_detect.cpp
+    )
+    target_include_directories(ligand_tencom_pose PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/LIB
+        ${CMAKE_CURRENT_SOURCE_DIR}/LIB/tENCoM
+        ${CMAKE_CURRENT_SOURCE_DIR}/LIB/PoseBust)
+    target_link_libraries(ligand_tencom_pose PRIVATE Eigen3::Eigen)
+    target_compile_definitions(ligand_tencom_pose PRIVATE FLEXAIDS_HAS_EIGEN)
+    if(MSVC)
+        target_compile_options(ligand_tencom_pose PRIVATE /O2)
+        target_compile_definitions(ligand_tencom_pose PRIVATE
+            _CRT_SECURE_NO_WARNINGS _USE_MATH_DEFINES NOMINMAX)
+    else()
+        target_compile_options(ligand_tencom_pose PRIVATE -O3)
+    endif()
+    flexaids_configure_simd(ligand_tencom_pose)
+    if(FLEXAIDS_USE_OPENMP AND OpenMP_CXX_FOUND)
+        target_link_libraries(ligand_tencom_pose PRIVATE OpenMP::OpenMP_CXX)
+    endif()
+    if(FLEXAIDS_USE_METAL)
+        target_sources(ligand_tencom_pose PRIVATE LIB/tENCoM/tencm_metal.mm)
+        target_compile_definitions(ligand_tencom_pose PRIVATE FLEXAIDS_HAS_METAL_TENCM)
+        set_source_files_properties(LIB/tENCoM/tencm_metal.mm PROPERTIES
+            LANGUAGE OBJCXX COMPILE_FLAGS "-std=c++26 -fno-objc-arc")
+        target_link_libraries(ligand_tencom_pose PRIVATE
+            ${METAL_LIBRARY} ${FOUNDATION_LIBRARY} ${METALKIT_LIBRARY})
+    endif()
+    message(STATUS "Ligand tENCoM/Eigen pose validator enabled — build target: ligand_tencom_pose")
 endif()
 
 # ─── VoronoiCFBatch benchmark (Task 2.3) ───────────────────────────────────────
@@ -1015,17 +1051,28 @@ option(ENABLE_BENCHMARK_DATASETS "Build benchmark dataset runner" ON)
 if(ENABLE_BENCHMARK_DATASETS)
     find_package(CURL QUIET)
 
-    add_executable(benchmark_datasets
-        LIB/benchmark_datasets.cpp
-        LIB/DatasetRunner.cpp
-        LIB/AsyncPipeline.cpp
-        # NativePoseQC diagnostic plus upstream PoseBusters CLI bridge
+    set(FLEXAIDDS_POSEBUST_SOURCES
         LIB/PoseBust/Loaders.cpp
         LIB/PoseBust/ChecksChemistry.cpp
         LIB/PoseBust/ChecksGeometry.cpp
         LIB/PoseBust/ChecksProtein.cpp
         LIB/PoseBust/Engine.cpp
         LIB/PoseBust/BustCli.cpp
+    )
+
+    add_executable(benchmark_datasets
+        LIB/benchmark_datasets.cpp
+        LIB/DatasetRunner.cpp
+        LIB/AsyncPipeline.cpp
+        # NativePoseQC diagnostic plus upstream PoseBusters CLI bridge
+        ${FLEXAIDDS_POSEBUST_SOURCES}
+        LIB/PoseBust/BustCli.h
+        LIB/PoseBust/ChecksChemistry.h
+        LIB/PoseBust/ChecksGeometry.h
+        LIB/PoseBust/ChecksProtein.h
+        LIB/PoseBust/Engine.h
+        LIB/PoseBust/Loaders.h
+        LIB/PoseBust/Types.h
     )
     target_link_libraries(benchmark_datasets PRIVATE flexaid_core)
     if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
@@ -2204,9 +2251,17 @@ if(BUILD_TESTING)
             tests/stubs.cpp
             LIB/Mol2Reader.cpp
             LIB/SdfReader.cpp
+            LIB/buildcc.cpp
+            LIB/buildic.cpp
+            LIB/buildlist.cpp
+            LIB/read_pdb.cpp
+            LIB/read_coor.cpp
+            LIB/read_conect.cpp
+            LIB/assign_radii_types.cpp
+            LIB/geometry.cpp
             LIB/LigandRingFlex/SugarPucker.cpp
         LINK_LIBRARIES Eigen3::Eigen
-        DEFINES FLEXAIDS_HAS_EIGEN
+        DEFINES FLEXAIDS_HAS_EIGEN FLEXAIDS_READER_REAL_GEOMETRY
         COMPILE_OPTIONS -std=c++26
         CONFIGURE_SIMD
         GTEST_MAIN_ONLY
@@ -2228,6 +2283,7 @@ if(BUILD_TESTING)
         tests/test_dataset_runner.cpp
         LIB/DatasetRunner.cpp
         LIB/AsyncPipeline.cpp
+        ${FLEXAIDDS_POSEBUST_SOURCES}
     )
     target_include_directories(test_dataset_runner PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/LIB)
     target_link_libraries(test_dataset_runner PRIVATE flexaid_core GTest::gtest_main)
@@ -2253,6 +2309,7 @@ if(BUILD_TESTING)
         tests/test_cofactor_blacklist.cpp
         LIB/DatasetRunner.cpp
         LIB/AsyncPipeline.cpp
+        ${FLEXAIDDS_POSEBUST_SOURCES}
     )
     target_include_directories(test_cofactor_blacklist PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/LIB)
     target_link_libraries(test_cofactor_blacklist PRIVATE flexaid_core GTest::gtest_main)

@@ -13,6 +13,7 @@
 // Copyright 2026 Le Bonhomme Pharma. Apache-2.0.
 
 #include "SdfReader.h"
+#include "DirectLigandIC.h"
 #include "LigandRingFlex/LigandRingFlex.h"   // Phase 2: ring pucker detection
 #include <cstdio>
 #include <cstdlib>
@@ -581,58 +582,21 @@ int read_sdf_ligand(FA_Global* FA, atom** atoms, resid** residue,
         int la = (*residue)[FA->res_cnt].latm[0];
         int n  = la - fa + 1;
 
-        std::vector<int>  parent(n, -1), grandpar(n, -1), grtgpar(n, -1);
-        std::vector<bool> visited(n, false);
-        std::queue<int>   q;
-        q.push(fa);
-        visited[0] = true;
-
-        while (!q.empty()) {
-            int cur = q.front(); q.pop();
-            int ci  = cur - fa;
-            for (int k = 1; k <= (*atoms)[cur].bond[0]; k++) {
-                int nb = (*atoms)[cur].bond[k];
-                if (nb < fa || nb > la) continue;
-                int ni = nb - fa;
-                if (!visited[ni]) {
-                    visited[ni]  = true;
-                    parent[ni]   = cur;
-                    grandpar[ni] = parent[ci];
-                    grtgpar[ni]  = grandpar[ci];
-                    q.push(nb);
-                }
-            }
-        }
+        std::vector<bool> is_heavy(n, true);
+        for (int i = 0; i < n; ++i)
+            is_heavy[i] = strcmp(satoms[i].elem, "H") != 0 &&
+                          strcmp(satoms[i].elem, "D") != 0;
+        auto tree = direct_ligand_ic::build_tree(
+            *atoms, (*residue)[FA->res_cnt], fa, nbr, is_heavy);
 
         // Warn about disconnected atoms (missing bonds, salt forms, counterions)
         int unreached = 0;
-        for (int i = 0; i < n; ++i) if (!visited[i]) ++unreached;
+        for (int i = 0; i < n; ++i) if (!tree.visited[i]) ++unreached;
         if (unreached > 0)
             fprintf(stderr,
                 "WARN [SDF %s]: %d atom(s) not reachable from atom 1 "
                 "(disconnected fragment or missing bonds — check connectivity)\n",
                 sdf_file, unreached);
-
-        for (int ai = fa; ai <= la; ai++) {
-            int li = ai - fa;
-            atom& a  = (*atoms)[ai];
-            a.recs   = 'm';
-            a.rec[0] = (parent[li]   >= 0) ? parent[li]   : 0;
-            a.rec[1] = (grandpar[li] >= 0) ? grandpar[li] : 0;
-            a.rec[2] = (grtgpar[li]  >= 0) ? grtgpar[li]  : 0;
-        }
-
-        // Force GPA IC chain: first three atoms anchor rigid-body genes.
-        if (n >= 2) {
-            (*atoms)[fa+1].rec[0] = fa;
-            (*atoms)[fa+1].rec[1] = 0;
-            (*atoms)[fa+1].rec[2] = 0;
-        }
-        if (n >= 3) {
-            (*atoms)[fa+2].rec[0] = fa+1;
-            (*atoms)[fa+2].rec[1] = fa;
-            (*atoms)[fa+2].rec[2] = 0;
-        }
 
         buildic(FA, *atoms, *residue, FA->res_cnt);
 
@@ -646,29 +610,6 @@ int read_sdf_ligand(FA_Global* FA, atom** atoms, resid** residue,
         // (atoms[child].dih) the GA optimises (add2_optimiz_vec, val[1] > 0).
         // Without this, direct-mode SDF ligands carried fdih==0 and docked as
         // rigid bodies (npar = 4) — unable to reach their bound conformer.
-        auto heavy_deg = [&](int li){
-            int d = 0;
-            for (const auto& nb : nbr[li])
-                if (strcmp(satoms[nb.first].elem, "H") != 0 &&
-                    strcmp(satoms[nb.first].elem, "D") != 0) ++d;
-            return d;
-        };
-        auto is_bridge = [&](int u, int v){
-            // BFS from u over all bonds except the (u,v) edge; if v stays
-            // unreachable the bond is a bridge (acyclic, hence rotatable).
-            std::vector<bool> seen(natoms, false);
-            std::queue<int> bq; bq.push(u); seen[u] = true;
-            while (!bq.empty()) {
-                int x = bq.front(); bq.pop();
-                for (const auto& nb : nbr[x]) {
-                    int y = nb.first;
-                    if ((x == u && y == v) || (x == v && y == u)) continue;
-                    if (y >= 0 && y < natoms && !seen[y]) { seen[y] = true; bq.push(y); }
-                }
-            }
-            return !seen[v];
-        };
-
         // Grow the flexible-bond array if the molecule could exceed the default
         // capacity (MIN_FLEX_BONDS = 5 holds only bond[1..4]).
         if (FA->MIN_FLEX_BONDS < n + 1) {
@@ -682,20 +623,8 @@ int read_sdf_ligand(FA_Global* FA, atom** atoms, resid** residue,
         memset((*residue)[FA->res_cnt].bond, 0,
                FA->MIN_FLEX_BONDS * sizeof(int));
 
-        int& fdih = (*residue)[FA->res_cnt].fdih;
-        fdih = 0;
-        for (int li = 3; li < n; ++li) {           // skip GPA atoms (li 0,1,2)
-            if (!visited[li]) continue;            // disconnected fragment
-            int p_abs = parent[li];                // BFS parent (absolute atom idx)
-            if (p_abs < fa) continue;              // root / no parent
-            int lp = p_abs - fa;                   // parent, 0-based
-            int order = 0;                         // bond order parent↔child
-            for (const auto& nb : nbr[li]) if (nb.first == lp) { order = nb.second; break; }
-            if (order != 1) continue;              // double/triple/aromatic ⇒ rigid
-            if (heavy_deg(li) < 2 || heavy_deg(lp) < 2) continue; // terminal group
-            if (!is_bridge(lp, li)) continue;      // ring bond ⇒ rigid
-            (*residue)[FA->res_cnt].bond[++fdih] = fa + li; // 1-indexed; absolute child
-        }
+        const int fdih = direct_ligand_ic::configure_rotatable_bonds(
+            *atoms, (*residue)[FA->res_cnt], fa, nbr, is_heavy, tree);
         if (getenv("FLEXAIDDS_DEBUG_TYPES"))
             fprintf(stderr, "[FLEX] perceived %d rotatable bond(s) for ligand\n", fdih);
 

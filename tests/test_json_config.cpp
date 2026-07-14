@@ -241,6 +241,7 @@ TEST(ConfigDefaults, DefaultsAreValid) {
     EXPECT_TRUE(cfg["flexibility"]["ligand_torsions"].as_bool());
     EXPECT_FALSE(cfg["flexibility"]["use_flexdee"].as_bool());
     EXPECT_NEAR(cfg["flexibility"]["soft_wall_cutoff"].as_double(), 0.40, EPSILON);
+    EXPECT_NEAR(cfg["flexibility"]["intermolecular_clash_ratio"].as_double(), 0.0, EPSILON);
 
     // Rigid overrides
     auto rigid = flexaid_rigid_overrides();

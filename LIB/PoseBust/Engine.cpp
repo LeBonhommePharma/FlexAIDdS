@@ -448,9 +448,9 @@ Backend resolve_backend_from_env() {
         if (iequals(v, "bust") || iequals(v, "bust_cli") || iequals(v, "posebusters"))
             return Backend::BustCli;
     }
-    // Default: clean-room NativePoseQC is DatasetRunner's PoseBusters path.
-    // Set FLEXAIDDS_POSEBUST_BACKEND=bust for upstream CLI cross-check.
-    return Backend::Native;
+    // Benchmark claims require the official upstream PoseBusters implementation.
+    // NativePoseQC remains available explicitly for fast parity diagnostics.
+    return Backend::BustCli;
 }
 
 }  // namespace flexaids::posebust

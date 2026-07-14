@@ -77,6 +77,7 @@ static void print_usage(const char* progname) {
     printf("  --output-json <path>  Write Fleet JSON result to this file\n");
     printf("  --mode <mode>         Benchmark protocol (Layer 1):\n");
     printf("                        oracle-ceiling  seed_elitism=ON,  blinding=OFF (ceiling)\n");
+    printf("                        defined-cleft-redock  seed_elitism=OFF, blinding=ON, known cleft/site\n");
     printf("                        autonomous      seed_elitism=OFF, blinding=ON  (thesis number)\n");
     printf("                        (default: unset — reads FLEXAIDDS_SEED_ELITISM env var)\n");
     printf("  -h, --help            Show this help\n\n");
@@ -496,6 +497,25 @@ int main(int argc, char** argv) {
         return 1;
     }
 
+    // Keep the benchmark runner and docking engine from the same build tree.
+    // An explicit FLEXAIDDS_BINARY still wins, but absent that override the
+    // sibling FlexAIDdS executable is authoritative. This prevents a
+    // build_lto/benchmark_datasets invocation from silently using build/FlexAIDdS.
+    if (std::getenv("FLEXAIDDS_BINARY") == nullptr) {
+        std::error_code exe_ec;
+        fs::path runner_path = fs::weakly_canonical(fs::absolute(argv[0]), exe_ec);
+        if (!exe_ec) {
+            const fs::path sibling = runner_path.parent_path() / "FlexAIDdS";
+            if (fs::is_regular_file(sibling, exe_ec) && !exe_ec) {
+#ifdef _WIN32
+                _putenv_s("FLEXAIDDS_BINARY", sibling.string().c_str());
+#else
+                setenv("FLEXAIDDS_BINARY", sibling.string().c_str(), 0);
+#endif
+            }
+        }
+    }
+
     // Parse arguments
     std::string benchmark_name;
     std::string output_dir = "benchmark_results";
@@ -642,10 +662,12 @@ int main(int argc, char** argv) {
     // Layer 1: explicit benchmark protocol mode
     if (mode_str == "oracle-ceiling") {
         config.mode = dataset::BenchmarkMode::ORACLE_CEILING;
+    } else if (mode_str == "defined-cleft-redock" || mode_str == "cognate-redock") {
+        config.mode = dataset::BenchmarkMode::DEFINED_CLEFT_REDOCK;
     } else if (mode_str == "autonomous") {
         config.mode = dataset::BenchmarkMode::AUTONOMOUS;
     } else if (!mode_str.empty()) {
-        fprintf(stderr, "ERROR: Unknown --mode '%s'. Use 'oracle-ceiling' or 'autonomous'\n",
+        fprintf(stderr, "ERROR: Unknown --mode '%s'. Use 'oracle-ceiling', 'defined-cleft-redock', or 'autonomous'\n",
                 mode_str.c_str());
         return 1;
     }
@@ -707,9 +729,10 @@ int main(int argc, char** argv) {
     // Layer 1: mode
     {
         const char* mode_label =
-            (config.mode == dataset::BenchmarkMode::ORACLE_CEILING) ? "oracle-ceiling" :
-            (config.mode == dataset::BenchmarkMode::AUTONOMOUS)     ? "autonomous" :
-                                                                      "unset (env-var)";
+            (config.mode == dataset::BenchmarkMode::ORACLE_CEILING)       ? "oracle-ceiling" :
+            (config.mode == dataset::BenchmarkMode::DEFINED_CLEFT_REDOCK) ? "defined-cleft-redock" :
+            (config.mode == dataset::BenchmarkMode::AUTONOMOUS)           ? "autonomous" :
+                                                                            "unset (env-var)";
         std::cout << "  Mode:         " << mode_label << "\n";
     }
     if (fleet_mode) {

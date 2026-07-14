@@ -1,9 +1,9 @@
-// coarse_init.h — Coarse pocket-scan seeding for gen-0 (autonomous docking)
+// coarse_init.h — Coarse pocket-scan seeding for gen-0 (no-seed docking)
 //
 // Scores a coarse grid over the binding cleft with random orientations before
-// the GA initialisation loop, then injects the lowest-CF (best-contact)
+// the GA initialisation loop, then injects the lowest apparent-CF
 // placements as guaranteed gen-0 seeds so the population starts with real
-// pocket contacts rather than floating (CF≈0) chromosomes.
+// pocket contacts rather than floating or sterically invalid chromosomes.
 //
 // Apache-2.0 © 2026 Le Bonhomme Pharma / NRGlab, Université de Montréal
 

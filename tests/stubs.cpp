@@ -44,8 +44,10 @@ void write_contributions(FA_Global*, FILE*, bool) {}
 // ---------------------------------------------------------------------------
 // geometry/build functions — referenced by gaboom.cpp
 // ---------------------------------------------------------------------------
+#ifndef FLEXAIDS_READER_REAL_GEOMETRY
 void buildcc(FA_Global*, atom*, int, int[]) {}
 void buildic(FA_Global*, atom*, resid*, int) {}
+#endif
 void build_rotamers(FA_Global*, atom**, resid*, rot*) {}
 void bondedlist(atom*, int, int, int*, int*, int*) {}
 void update_bonded(resid*, int, int, int*, int*) {}

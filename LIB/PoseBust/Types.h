@@ -215,8 +215,8 @@ struct PoseBustReport {
 enum class Suite { Dock, Redock, Mol };
 
 // Backend selection for DatasetRunner
-// Native  = NativePoseQC clean-room full dock suite (default → pb_pass)
-// BustCli = upstream PoseBusters CLI cross-check
+// Native  = NativePoseQC clean-room diagnostic suite
+// BustCli = official upstream PoseBusters CLI (default → pb_pass)
 // Off     = skip
 enum class Backend { BustCli, Native, Off };
 
