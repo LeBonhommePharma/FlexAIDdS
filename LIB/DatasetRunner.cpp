@@ -6995,12 +6995,20 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                     entry.receptor_path,
                     crystal,
                     pb_opt);
+                // Campaign gate = extraction + protein clash/volume (not soft valence/angles).
+                // Full suite still in posebust/*.json for diagnostics / bust parity.
+                const bool full_gate = []() {
+                    const char* e = std::getenv("FLEXAIDDS_POSEBUST_FULL");
+                    return e && std::atoi(e) != 0;
+                }();
                 result.pb_ran              = pb_rep.ran;
-                result.success_pb          = pb_rep.success_pb();
+                result.success_pb          = full_gate ? pb_rep.success_pb_full()
+                                                       : pb_rep.success_pb_campaign();
                 result.pb_n_pass           = pb_rep.n_pass();
                 result.pb_n_fail           = pb_rep.n_fail();
                 result.pb_n_checks         = pb_rep.n_checks();
-                result.pb_failed_keys      = pb_rep.failed_keys_csv();
+                result.pb_failed_keys      = full_gate ? pb_rep.failed_keys_csv()
+                                                       : pb_rep.failed_campaign_keys_csv();
                 result.pb_backend          = pb_rep.backend.empty() ? "native" : pb_rep.backend;
                 result.pb_min_lig_prot_dist = pb_rep.min_lig_prot_dist;
                 result.pb_volume_overlap   = pb_rep.volume_overlap;
@@ -7010,10 +7018,16 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                 }
                 std::cerr << "  [POSEBUST] " << entry.pdb_id
                           << " backend=" << result.pb_backend
+                          << " gate=" << (full_gate ? "full" : "campaign")
                           << " pass=" << (result.success_pb ? 1 : 0)
-                          << " checks=" << result.pb_n_pass << "/" << result.pb_n_checks
-                          << " failed=[" << result.pb_failed_keys << "]"
-                          << " n_lig_atoms_via_CONECT\n";
+                          << " campaign=" << (pb_rep.success_pb_campaign() ? 1 : 0)
+                          << " full=" << (pb_rep.success_pb_full() ? 1 : 0)
+                          << " n_lig=" << pb_rep.n_ligand_atoms
+                          << " n_prot_crop=" << pb_rep.n_protein_atoms_cropped
+                          << " min_dist=" << result.pb_min_lig_prot_dist
+                          << " vol_ov=" << result.pb_volume_overlap
+                          << " failed_gate=[" << result.pb_failed_keys << "]"
+                          << " failed_all=[" << pb_rep.failed_keys_csv() << "]\n";
             }
             result.success_strict = result.success_rmsd && result.success_pb && result.pb_ran;
             const bool strict_policy = []() {

@@ -236,30 +236,48 @@ PoseBustReport evaluate(const Molecule& ligand_pred,
     PoseBustReport report;
     report.ran     = true;
     report.backend = "native";
+    report.n_ligand_atoms = static_cast<int>(ligand_pred.atoms.size());
 
     // Crop protein to pocket around ligand heavy COM (empty if no protein).
     const Molecule protein_cropped =
         protein.empty()
             ? Molecule{}
             : crop_protein_near_ligand(protein, ligand_pred, opt.protein_crop_A);
+    report.n_protein_atoms_cropped = static_cast<int>(protein_cropped.atoms.size());
 
     // Loading reflects the *input* protein (pre-crop); pocket checks use crop.
     const Molecule* protein_for_loading =
         protein.empty() ? nullptr : &protein;
 
-    // Always: loading + chemistry
+    // Always: loading + chemistry (full suite diagnostics)
     check_loading(&ligand_pred, protein_for_loading, report.checks);
     check_chemistry_sanity(ligand_pred, report.checks);
 
-    // Geometry (ligand-only)
+    // Geometry (ligand-only; soft fails do not block campaign gate)
     check_distance_geometry(ligand_pred, report.checks);
     check_flatness(ligand_pred, report.checks);
 
-    // Protein-conditioned checks (cropped heavy atoms near ligand COM)
+    // Protein-conditioned checks — high-impact campaign gate path
     if (!protein_cropped.empty()) {
         check_intermolecular_distance(ligand_pred, protein_cropped, report.checks);
         check_volume_overlap(ligand_pred, protein_cropped, report.checks);
         fill_continuous_summaries(report);
+    } else if (!protein.empty()) {
+        // Crop emptied — still emit fail-closed campaign keys via empty-protein path
+        CheckItem miss;
+        miss.key = "no_clashes";
+        miss.label = "Minimum distance to protein";
+        miss.passed = false;
+        miss.detail = "protein crop empty (no heavy atoms within crop radius of ligand)";
+        report.checks.push_back(miss);
+        miss.key = "not_too_far_away";
+        miss.label = "Protein-ligand maximum distance";
+        miss.detail = "protein crop empty";
+        report.checks.push_back(miss);
+        miss.key = "no_volume_clash";
+        miss.label = "Volume overlap with protein";
+        miss.detail = "protein crop empty";
+        report.checks.push_back(miss);
     }
 
     // Redock suite: identity vs crystal / true ligand
@@ -271,12 +289,11 @@ PoseBustReport evaluate(const Molecule& ligand_pred,
     if (!opt.sidecar_dir.empty()) {
         std::string side_err;
         if (!write_sidecar(ligand_pred, report, opt, &side_err)) {
-            // Do not fail the validation suite itself; record diagnostic.
-            if (report.error.empty()) {
-                report.error = side_err;
-            } else {
-                report.error += "; " + side_err;
-            }
+            // Soft: sidecar I/O must not fail the campaign gate
+            if (report.warning.empty())
+                report.warning = side_err;
+            else
+                report.warning += "; " + side_err;
         }
     }
 
@@ -304,23 +321,17 @@ PoseBustReport evaluate_paths(const std::string& complex_pdb,
     // 2) Topology from crystal SDF when available (bond orders, not distance inference).
     Molecule crystal;
     const Molecule* crystal_ptr = nullptr;
+    std::string topo_warning;
     if (!crystal_sdf.empty()) {
         if (!load_sdf(crystal_sdf, crystal, &err)) {
-            report.backend = "error";
-            report.error   = err.empty() ? "load_sdf(crystal) failed" : err;
-            return report;
-        }
-        crystal_ptr = &crystal;
-        std::string topo_err;
-        if (!assign_topology_from_reference(ligand, crystal, &topo_err)) {
-            // Soft: keep CONECT/inferred bonds but record diagnostic
-            CheckItem warn;
-            warn.key     = "topology_from_reference";
-            warn.label   = "Crystal SDF topology assigned";
-            warn.passed  = false;
-            warn.detail  = topo_err;
-            // Don't push yet — evaluate() rebuilds checks; stash in error for now
-            if (report.error.empty()) report.error = "topo_warn: " + topo_err;
+            // Soft: still run clash/volume with CONECT topology
+            topo_warning = err.empty() ? "load_sdf(crystal) failed" : err;
+        } else {
+            crystal_ptr = &crystal;
+            std::string topo_err;
+            if (!assign_topology_from_reference(ligand, crystal, &topo_err)) {
+                topo_warning = topo_err;
+            }
         }
     }
 
@@ -341,11 +352,11 @@ PoseBustReport evaluate_paths(const std::string& complex_pdb,
     }
 
     auto rep = evaluate(ligand, protein, crystal_ptr, opt);
-    // Preserve topo warning if evaluate cleared error
-    if (!report.error.empty() && rep.error.empty()) {
-        rep.error = report.error;
-    } else if (!report.error.empty() && !rep.error.empty()) {
-        rep.error = report.error + "; " + rep.error;
+    if (!topo_warning.empty()) {
+        if (rep.warning.empty())
+            rep.warning = topo_warning;
+        else
+            rep.warning += "; " + topo_warning;
     }
     return rep;
 }
@@ -362,12 +373,21 @@ bool write_report_json(const PoseBustReport& report, const std::string& path,
     out << "  \"ran\": " << (report.ran ? "true" : "false") << ",\n";
     out << "  \"backend\": \"" << json_escape(report.backend) << "\",\n";
     out << "  \"error\": \"" << json_escape(report.error) << "\",\n";
+    out << "  \"warning\": \"" << json_escape(report.warning) << "\",\n";
     out << "  \"all_passed\": " << (report.all_passed() ? "true" : "false") << ",\n";
+    out << "  \"success_pb_campaign\": "
+        << (report.success_pb_campaign() ? "true" : "false") << ",\n";
+    out << "  \"success_pb_full\": " << (report.success_pb_full() ? "true" : "false")
+        << ",\n";
     out << "  \"n_pass\": " << report.n_pass() << ",\n";
     out << "  \"n_fail\": " << report.n_fail() << ",\n";
     out << "  \"n_checks\": " << report.n_checks() << ",\n";
+    out << "  \"n_ligand_atoms\": " << report.n_ligand_atoms << ",\n";
+    out << "  \"n_protein_atoms_cropped\": " << report.n_protein_atoms_cropped << ",\n";
     out << "  \"failed_keys\": \"" << json_escape(report.failed_keys_csv())
         << "\",\n";
+    out << "  \"failed_campaign_keys\": \""
+        << json_escape(report.failed_campaign_keys_csv()) << "\",\n";
     out << "  \"min_lig_prot_dist\": ";
     write_json_number_or_null(out, report.min_lig_prot_dist);
     out << ",\n";

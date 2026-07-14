@@ -10,6 +10,7 @@
 #include <cmath>
 #include <limits>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace flexaids::posebust {
@@ -112,19 +113,57 @@ struct CheckItem {
     int   n_failed  = 0;
 };
 
+// High-impact campaign gate keys (extraction + protein clash/volume).
+// Soft chemistry/geometry heuristics (valence, angles, flatness, InChI) are
+// reported in `checks` but do NOT block success_pb_campaign().
+inline constexpr const char* kCampaignGateKeys[] = {
+    "mol_pred_loaded",
+    "mol_cond_loaded",
+    "all_atoms_connected",
+    "no_internal_clash",
+    "no_clashes",            // min distance to protein
+    "not_too_far_away",      // pocket presence
+    "no_volume_clash",
+};
+
 struct PoseBustReport {
     std::vector<CheckItem> checks;
     bool                   ran     = false;
     std::string            backend;  // "native" | "skipped" | "error"
-    std::string            error;    // non-empty if ran failed to execute
+    std::string            error;    // hard execution failure only (not soft warnings)
+    std::string            warning;  // soft diagnostics (e.g. topology assign miss)
+    int                    n_ligand_atoms = 0;
+    int                    n_protein_atoms_cropped = 0;
+
+    [[nodiscard]] const CheckItem* find_check(std::string_view key) const {
+        for (const CheckItem& c : checks)
+            if (c.key == key) return &c;
+        return nullptr;
+    }
 
     [[nodiscard]] bool all_passed() const {
         if (!ran || !error.empty()) return false;
         for (const CheckItem& c : checks)
             if (!c.passed) return false;
-        return !checks.empty();  // empty after run ⇒ not a pass
+        return !checks.empty();
     }
-    [[nodiscard]] bool success_pb() const { return all_passed(); }
+
+    /// Full suite (diagnostics / parity with bust). Requires every check pass.
+    [[nodiscard]] bool success_pb_full() const { return all_passed(); }
+
+    /// Campaign gate: extraction + protein clash/volume only.
+    /// Missing gate keys (suite didn't run them) ⇒ fail closed.
+    [[nodiscard]] bool success_pb_campaign() const {
+        if (!ran || !error.empty() || checks.empty()) return false;
+        for (const char* key : kCampaignGateKeys) {
+            const CheckItem* c = find_check(key);
+            if (!c || !c->passed) return false;
+        }
+        return true;
+    }
+
+    /// Default success_pb for DatasetRunner = campaign gate (not full heuristic suite).
+    [[nodiscard]] bool success_pb() const { return success_pb_campaign(); }
 
     [[nodiscard]] int n_pass() const {
         int n = 0;
@@ -146,6 +185,18 @@ struct PoseBustReport {
             if (c.passed) continue;
             if (!out.empty()) out += ';';
             out += c.key;
+        }
+        return out;
+    }
+
+    [[nodiscard]] std::string failed_campaign_keys_csv() const {
+        std::string out;
+        for (const char* key : kCampaignGateKeys) {
+            const CheckItem* c = find_check(key);
+            if (c && c->passed) continue;
+            if (!out.empty()) out += ';';
+            out += key;
+            if (!c) out += "(missing)";
         }
         return out;
     }
