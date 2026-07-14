@@ -5693,15 +5693,12 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                    << ",\n"
                    << "    \"k_nearest\": 10\n"
                    << "  },\n"
-                   // Coarse pocket scan: pre-screen a grid over the binding cleft
-                   // with random orientations before the GA loop so gen-0 starts with
-                   // VCT-scored contact-forming placements instead of blind randoms.
-                   // Enabled in AUTONOMOUS mode where no crystal IC seeds are injected
-                   // and the raw RANDOM gen-0 collapses to CF≈0 (floating ligand).
+                   // Coarse pocket scan: DISABLED for production benchmarks (v130+).
+                   // At OMP=1, 25 seeds × 16 orientations ≈ 224s/restart before GA starts
+                   // (5 restarts × 85 targets ≈ 27h pure overhead). Was re-enabled by
+                   // AUTONOMOUS?true after ac639e367 drifted; keep hard false.
                    << "  \"coarse_init\": {\n"
-                   << "    \"enabled\": "
-                   << (config.mode == BenchmarkMode::AUTONOMOUS ? "true" : "false")
-                   << ",\n"
+                   << "    \"enabled\": false,\n"
                    << "    \"grid_step\": 3.0,\n"
                    << "    \"n_seeds\": 25,\n"
                    << "    \"n_orientations\": 16\n"
