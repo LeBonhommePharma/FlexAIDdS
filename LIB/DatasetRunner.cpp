@@ -1319,36 +1319,62 @@ static std::string prune_receptor_to_site_chains(
         return stem;
     };
 
-    // Priority 1: explicit binding_site_path (oracle mode)
-    if (!binding_site_path.empty() && fs::exists(binding_site_path))
-        have_centroid = pdb_centroid(binding_site_path, centroid);
-
-    // Priority 2: co-located <stem>_ligand.sdf (autonomous cross-docking)
-    if (!have_centroid) {
+    // Resolve a pocket centroid. Prefer the cognate ligand when available: some
+    // Astex *_binding_site.pdb files sit in a wrong pocket (1G9V: site 17.7 Å from
+    // ligand → min-dist prune kept chains A+D instead of the ligand shell A+B+C).
+    // Same 8 Å site-vs-ligand gate as the ORACLE-SITE repair path above.
+    auto try_ligand_centroid = [&](std::array<double,3>& out) -> bool {
         fs::path rec_p(receptor_path);
         std::string base = strip_apo(rec_p.stem().string());
         fs::path lig_sdf = rec_p.parent_path() / (base + "_ligand.sdf");
-        if (fs::exists(lig_sdf)) {
-            std::vector<std::array<double,3>> lig_xyz;
-            if (read_sdf_xyz(lig_sdf.string(), lig_xyz) && !lig_xyz.empty()) {
-                centroid = {0.0, 0.0, 0.0};
-                for (const auto& a : lig_xyz) {
-                    centroid[0] += a[0]; centroid[1] += a[1]; centroid[2] += a[2];
-                }
-                const double n = static_cast<double>(lig_xyz.size());
-                centroid[0] /= n; centroid[1] /= n; centroid[2] /= n;
-                have_centroid = true;
-            }
+        if (!fs::exists(lig_sdf)) return false;
+        std::vector<std::array<double,3>> lig_xyz;
+        if (!read_sdf_xyz(lig_sdf.string(), lig_xyz) || lig_xyz.empty()) return false;
+        out = {0.0, 0.0, 0.0};
+        for (const auto& a : lig_xyz) {
+            out[0] += a[0]; out[1] += a[1]; out[2] += a[2];
         }
-    }
+        const double n = static_cast<double>(lig_xyz.size());
+        out[0] /= n; out[1] /= n; out[2] /= n;
+        return true;
+    };
 
-    // Priority 3: co-located <stem>_binding_site.pdb (Astex pre-computed site)
-    if (!have_centroid) {
+    std::array<double,3> lig_centroid{0.0, 0.0, 0.0};
+    const bool have_lig = try_ligand_centroid(lig_centroid);
+
+    std::array<double,3> site_centroid{0.0, 0.0, 0.0};
+    bool have_site = false;
+    if (!binding_site_path.empty() && fs::exists(binding_site_path))
+        have_site = pdb_centroid(binding_site_path, site_centroid);
+    if (!have_site) {
         fs::path rec_p(receptor_path);
         std::string base = strip_apo(rec_p.stem().string());
         fs::path site_pdb = rec_p.parent_path() / (base + "_binding_site.pdb");
         if (fs::exists(site_pdb))
-            have_centroid = pdb_centroid(site_pdb.string(), centroid);
+            have_site = pdb_centroid(site_pdb.string(), site_centroid);
+    }
+
+    if (have_lig && have_site) {
+        const double dx = site_centroid[0] - lig_centroid[0];
+        const double dy = site_centroid[1] - lig_centroid[1];
+        const double dz = site_centroid[2] - lig_centroid[2];
+        const double delta = std::sqrt(dx * dx + dy * dy + dz * dz);
+        if (delta > 8.0) {
+            // Wrong-pocket site file — use ligand (would keep A+D on 1G9V).
+            centroid = lig_centroid;
+            have_centroid = true;
+            std::cerr << "  [PRUNE] site centroid " << std::fixed << std::setprecision(2)
+                      << delta << " A from ligand; using ligand centroid for chain prune\n";
+        } else {
+            centroid = site_centroid;
+            have_centroid = true;
+        }
+    } else if (have_lig) {
+        centroid = lig_centroid;
+        have_centroid = true;
+    } else if (have_site) {
+        centroid = site_centroid;
+        have_centroid = true;
     }
 
     if (!have_centroid) return receptor_path;   // no reference point — skip
@@ -5905,20 +5931,29 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
             // ── Chain pruning for large multimers ────────────────────────────
             // Large assemblies (octamers, hexamers, tetramers) bloat MIF
             // grid computation and rotamer prep far beyond what the binding
-            // pocket requires.  Prune to chains within 12 Å of the binding
-            // site centroid before passing the receptor to FlexAIDdS.
+            // pocket requires.  Prune to chains within 12 Å of the pocket
+            // centroid before passing the receptor to FlexAIDdS.
             // This is a receptor topology fix, not a scoring change: SURFNET,
             // MIF, and VCT all operate on the trimmed pocket-relevant chains.
-            if (use_oracle_geometry) {
-                std::string pruned = out_dir + "/" + entry.pdb_id + "_pruned.pdb";
-                std::string pruned_rec = prune_receptor_to_site_chains(
-                    effective_receptor,
-                    entry.binding_site_path,
-                    pruned,
-                    12.0f,   // Å cutoff: A+B at 3/3.5Å kept; C-H at 13–59Å dropped
-                    4);      // only activate for ≥4-chain assemblies
-                if (pruned_rec != effective_receptor)
-                    effective_receptor = pruned_rec;
+            //
+            // MUST run in AUTONOMOUS too (not only use_oracle_geometry): v130
+            // docked full 1G9V tetramer A–D because prune was gated off, while
+            // the ligand contact shell is A+B+C (chain D min-dist ≈12.7 Å).
+            // A wrong *_binding_site.pdb would have kept A+D (~−32 kcal CF).
+            {
+                const bool can_prune =
+                    entry_has_oracle_site || !entry.ligand_path.empty();
+                if (can_prune) {
+                    std::string pruned = out_dir + "/" + entry.pdb_id + "_pruned.pdb";
+                    std::string pruned_rec = prune_receptor_to_site_chains(
+                        effective_receptor,
+                        entry.binding_site_path,
+                        pruned,
+                        12.0f,   // Å cutoff from pocket centroid
+                        4);      // only activate for ≥4-chain assemblies
+                    if (pruned_rec != effective_receptor)
+                        effective_receptor = pruned_rec;
+                }
             }
             // ── end chain pruning ─────────────────────────────────────────────
 
