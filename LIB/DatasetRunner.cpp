@@ -70,6 +70,29 @@ namespace fs = std::filesystem;
 
 namespace dataset {
 
+static std::uint64_t stable_seed_hash(const std::string& label,
+                                      std::uint64_t stream = 0) {
+    std::uint64_t hash = 14695981039346656037ULL;
+    for (const unsigned char byte : label) {
+        hash ^= byte;
+        hash *= 1099511628211ULL;
+    }
+    for (int shift = 0; shift < 64; shift += 8) {
+        hash ^= static_cast<unsigned char>((stream >> shift) & 0xffU);
+        hash *= 1099511628211ULL;
+    }
+    return hash;
+}
+
+static int deterministic_ga_seed(const std::string& target_id, int restart) {
+    std::uint64_t base = 0;
+    if (const char* value = std::getenv("FLEXAIDDS_SEED_BASE")) {
+        try { base = std::stoull(value); } catch (...) { base = 0; }
+    }
+    const std::uint64_t stream = base ^ static_cast<std::uint64_t>(restart);
+    return 1 + static_cast<int>(stable_seed_hash(target_id, stream) % 2147483646ULL);
+}
+
 // =============================================================================
 // Static pointers for async-signal-safe handler access.
 // Set just before sigaction(), cleared after signal restore on normal exit.
@@ -606,6 +629,74 @@ struct HvibColumns {
     int   n_reps      = 0;     // contributing reps
 };
 
+struct PoseHvibColumns {
+    float H_vib = 0.0f;
+    int n_modes = 0;
+    bool ok = false;
+    std::string error;
+};
+
+static std::vector<double> compute_pose_eigenvalues(
+    const std::string& pose_path, std::string* error = nullptr)
+{
+    std::vector<std::array<float,3>> xyz;
+    std::vector<std::string> elem;
+    if (!load_pose_ligand_coords(pose_path, xyz, elem)) {
+        if (error) *error = "no ligand heavy atoms in elected pose";
+        return {};
+    }
+    if (xyz.size() < 3) {
+        if (error) *error = "ligand ANM requires at least three heavy atoms";
+        return {};
+    }
+
+    std::vector<atom> latoms(xyz.size());
+    for (size_t k = 0; k < xyz.size(); ++k) {
+        latoms[k] = atom{};
+        latoms[k].coor[0] = xyz[k][0];
+        latoms[k].coor[1] = xyz[k][1];
+        latoms[k].coor[2] = xyz[k][2];
+        std::strncpy(latoms[k].element, elem[k].c_str(),
+                     sizeof(latoms[k].element) - 1);
+    }
+
+    try {
+        tencm::TorsionalENM ligand_enm;
+        ligand_enm.build_from_ligand(latoms.data(), 0,
+                                     static_cast<int>(latoms.size()));
+        if (!ligand_enm.is_built()) {
+            if (error) *error = "ligand tENCoM model did not build";
+            return {};
+        }
+        std::vector<double> eigs;
+        eigs.reserve(ligand_enm.modes().size());
+        for (const auto& mode : ligand_enm.modes()) {
+            if (std::isfinite(mode.eigenvalue) && mode.eigenvalue > 0.0)
+                eigs.push_back(mode.eigenvalue);
+        }
+        if (eigs.empty() && error) *error = "Eigen returned no positive modes";
+        return eigs;
+    } catch (const std::exception& exc) {
+        if (error) *error = exc.what();
+    } catch (...) {
+        if (error) *error = "unknown tENCoM/Eigen failure";
+    }
+    return {};
+}
+
+static PoseHvibColumns compute_pose_hvib(const std::string& pose_path)
+{
+    PoseHvibColumns out;
+    std::vector<double> eigs = compute_pose_eigenvalues(pose_path, &out.error);
+    if (eigs.empty()) return out;
+    const vibentropy::VibEntropyResult entropy =
+        vibentropy::compute_vib_entropy_collapse({eigs});
+    out.H_vib = static_cast<float>(entropy.H_pop);
+    out.n_modes = static_cast<int>(eigs.size());
+    out.ok = true;
+    return out;
+}
+
 static HvibColumns compute_target_hvib(const std::vector<std::string>& all_prefixes,
                                        int top_n = 10)
 {
@@ -641,42 +732,17 @@ static HvibColumns compute_target_hvib(const std::vector<std::string>& all_prefi
     // Build the per-rep eigenvalue arrays (positive eigenvalues only).
     std::vector<std::vector<double>> rep_eigs;
     rep_eigs.reserve(pool.size());
-    for (const auto& pp : pool) {
-        std::vector<std::array<float,3>> xyz;
-        std::vector<std::string>         elem;
-        if (!load_pose_ligand_coords(pp.path, xyz, elem)) continue;
-        if (xyz.size() < 3) continue;  // ANM needs >= 3 heavy atoms
-        // Minimal FA atom array — build_from_ligand only reads coor[] + element.
-        // atom{} value-initialises pointer/scalar members to zero.
-        std::vector<atom> latoms(xyz.size());
-        for (size_t k = 0; k < xyz.size(); ++k) {
-            latoms[k] = atom{};
-            latoms[k].coor[0] = xyz[k][0];
-            latoms[k].coor[1] = xyz[k][1];
-            latoms[k].coor[2] = xyz[k][2];
-            // element[3]; zero-init guarantees null-termination for 1-2 char symbols.
-            std::strncpy(latoms[k].element, elem[k].c_str(),
-                         sizeof(latoms[k].element) - 1);
+    for (size_t i = 0; i < pool.size(); ++i) {
+        std::vector<double> eigs = compute_pose_eigenvalues(pool[i].path);
+        if (eigs.empty()) continue;
+        if (i == 0) {
+            const vibentropy::VibEntropyResult rank0 =
+                vibentropy::compute_vib_entropy_collapse({eigs});
+            out.H_rep_rank0 = static_cast<float>(rank0.H_pop);
         }
-        tencm::TorsionalENM lig_enm;
-        lig_enm.build_from_ligand(latoms.data(), 0,
-                                  static_cast<int>(latoms.size()));
-        if (!lig_enm.is_built()) continue;
-        std::vector<double> eigs;
-        eigs.reserve(lig_enm.modes().size());
-        for (const auto& nm : lig_enm.modes())
-            if (nm.eigenvalue > 0.0) eigs.push_back(nm.eigenvalue);
-        if (!eigs.empty()) rep_eigs.push_back(std::move(eigs));
+        rep_eigs.push_back(std::move(eigs));
     }
     if (rep_eigs.empty()) return out;
-
-    // H_rep_rank0: H(ω) of the best-CF rep alone (single-rep pooled distribution).
-    {
-        std::vector<std::vector<double>> single = { rep_eigs.front() };
-        vibentropy::VibEntropyResult r0 =
-            vibentropy::compute_vib_entropy_collapse(single);
-        out.H_rep_rank0 = static_cast<float>(r0.H_pop);
-    }
     vibentropy::VibEntropyResult hvib =
         vibentropy::compute_vib_entropy_collapse(rep_eigs);
     out.H_pop      = static_cast<float>(hvib.H_pop);
@@ -4922,9 +4988,10 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
     // Layer 1: log BenchmarkMode for provenance
     {
         const char* mode_label =
-            (config.mode == BenchmarkMode::ORACLE_CEILING) ? "oracle-ceiling" :
-            (config.mode == BenchmarkMode::AUTONOMOUS)     ? "autonomous" :
-                                                             "unset (env-var)";
+            (config.mode == BenchmarkMode::ORACLE_CEILING)       ? "oracle-ceiling" :
+            (config.mode == BenchmarkMode::DEFINED_CLEFT_REDOCK) ? "defined-cleft-redock" :
+            (config.mode == BenchmarkMode::AUTONOMOUS)           ? "autonomous" :
+                                                                   "unset (env-var)";
         std::cout << "[DatasetRunner] BenchmarkMode:    " << mode_label << "\n";
     }
 
@@ -5429,16 +5496,27 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
             // one (which caused stochastic search failure for flexible ligands).
             //   n_flex_bonds   = perceived rotatable bonds = dihedral genes (fdih)
             //   n_gen_effective = n_gen_base × max(1.0, n_flex_bonds / 4.0)
-            // Gated by FLEXAIDDS_EVAL_SCALE_DIHEDRAL (default 1 = ON; set 0 to
-            // fall back to the legacy ceil(n_genes/4) scaling without recompile).
+            // Gated by FLEXAIDDS_EVAL_SCALE_DIHEDRAL:
+            //   1 (default) = pop-scale by DoF (iso-budget chromosome swap)
+            //   0           = legacy gen-scale ceil(n_genes/4)
+            //   -1 / "off"  = fixed pop+gen (no DoF scaling) — v43 oracle-ceiling restore
             const char* eval_scale_env = std::getenv("FLEXAIDDS_EVAL_SCALE_DIHEDRAL");
-            const int   eval_scale_on  = eval_scale_env ? std::atoi(eval_scale_env) : 1;
+            int eval_scale_mode = 1;
+            if (eval_scale_env) {
+                if (std::strcmp(eval_scale_env, "off") == 0 ||
+                    std::strcmp(eval_scale_env, "none") == 0 ||
+                    std::strcmp(eval_scale_env, "fixed") == 0) {
+                    eval_scale_mode = -1;
+                } else {
+                    eval_scale_mode = std::atoi(eval_scale_env);
+                }
+            }
             const int   n_flex_bonds   = fdih_est;
             const int   n_gen_base     = config.ga_generations;
             const int   pop_base       = config.ga_population;
             int n_gen_scaled           = n_gen_base;  // generations fixed at base
             int pop_scaled             = pop_base;    // population scaled by DoF
-            if (eval_scale_on) {
+            if (eval_scale_mode > 0) {
                 // ── Population-based eval scaling (iso-budget chromosome swap) ──
                 // Rationale: GA search space dimensionality grows linearly with
                 // n_flex_bonds.  In a D-dimensional landscape, a fixed population
@@ -5461,8 +5539,13 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                 fprintf(stderr,
                         "[EVAL-SCALE] %s: n_flex_bonds=%d pop_base=%d pop_effective=%d n_gen=%d\n",
                         entry.pdb_id.c_str(), n_flex_bonds, pop_base, pop_scaled, n_gen_scaled);
-            } else {
+            } else if (eval_scale_mode == 0) {
                 n_gen_scaled = n_gen_base * ((n_genes + 3) / 4);  // legacy ceil(n_genes/4)
+            } else {
+                // mode < 0: fixed budget (v43 / oracle-ceiling restore)
+                fprintf(stderr,
+                        "[EVAL-SCALE] %s: FIXED pop=%d n_gen=%d (no DoF scaling)\n",
+                        entry.pdb_id.c_str(), pop_scaled, n_gen_scaled);
             }
 
             // ── v27 high-DoF budget scaling (FLEXAIDDS_BUDGET_SCALE) ──
@@ -5663,10 +5746,12 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                          ? rmsd_reference_path : std::string())
                    << "\",\n"
                    << "    \"seed_fraction\": "
-                   << (config.mode == BenchmarkMode::AUTONOMOUS ? 0.0 : 0.90)
+                   << ((config.mode == BenchmarkMode::AUTONOMOUS ||
+                        config.mode == BenchmarkMode::DEFINED_CLEFT_REDOCK) ? 0.0 : 0.90)
                    << ",\n"
                    << "    \"pose_seed_enabled\": "
-                   << (config.mode == BenchmarkMode::AUTONOMOUS ? "false" : "true")
+                   << ((config.mode == BenchmarkMode::AUTONOMOUS ||
+                        config.mode == BenchmarkMode::DEFINED_CLEFT_REDOCK) ? "false" : "true")
                    << ",\n"
                    << "    \"k_nearest\": 10\n"
                    << "  },\n"
@@ -5677,7 +5762,8 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                    // and the raw RANDOM gen-0 collapses to CF≈0 (floating ligand).
                    << "  \"coarse_init\": {\n"
                    << "    \"enabled\": "
-                   << (config.mode == BenchmarkMode::AUTONOMOUS ? "true" : "false")
+                   << ((config.mode == BenchmarkMode::AUTONOMOUS ||
+                        config.mode == BenchmarkMode::DEFINED_CLEFT_REDOCK) ? "true" : "false")
                    << ",\n"
                    << "    \"grid_step\": 3.0,\n"
                    << "    \"n_seeds\": 25,\n"
@@ -5724,7 +5810,7 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                    << ",\n"
                    << "    \"boom_inject_interval\": 100,\n"
                    << "    \"boom_inject_fraction\": "
-                   // AUTONOMOUS mode = true blind search (no crystal IC seed).
+                   // No-seed modes must preserve accumulated GA progress.
                    // boom_inject_fraction=1.0 fires every 100 gens and replaces the
                    // entire population with fresh randoms, destroying any convergence
                    // progress before it can accumulate.  In oracle mode this never
@@ -5732,8 +5818,9 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                    // the first injection.  In blind mode it is catastrophic — the GA
                    // terminates at gen 300 by fitness stagnation with CF≈0 (no
                    // contacts found) because every 100-gen run gets reset.
-                   // Fix: disable boom injection in AUTONOMOUS mode entirely.
-                   << (config.mode == BenchmarkMode::AUTONOMOUS
+                   // Fix: disable boom injection in both no-seed modes entirely.
+                   << ((config.mode == BenchmarkMode::AUTONOMOUS ||
+                        config.mode == BenchmarkMode::DEFINED_CLEFT_REDOCK)
                          ? 0.0
                          : (std::getenv("FLEXAIDDS_BOOM_FRAC")
                                ? std::atof(std::getenv("FLEXAIDDS_BOOM_FRAC")) : 1.0))
@@ -5755,12 +5842,11 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                 if (std::getenv("FLEXAIDDS_USE_SHANNON")) {
                     jf << ",\n    \"use_shannon\": true";
                 }
-                // Per-restart seed: restart 0 uses 0 (→ clock time at engine init,
-                // preserving original behaviour); restarts 1+ use deterministic primes
-                // so each run diverges even when launched in the same second.
-                if (ri > 0) {
-                    jf << ",\n    \"seed\": " << (ri * 7919);
-                }
+                // Every restart is deterministic. FLEXAIDDS_SEED_BASE can define
+                // an independent replicate while the emitted config records the
+                // exact target-specific seed used by this run.
+                jf << ",\n    \"seed\": "
+                   << deterministic_ga_seed(entry.pdb_id, ri);
                 jf << "\n  }";
                 // ThermodynamicEngine — disabled by default; enable via FLEXAIDDS_THERMO=1
                 if (std::getenv("FLEXAIDDS_THERMO")) {
@@ -5873,6 +5959,8 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
             bool oracle_direct_active;
             if (config.mode == BenchmarkMode::ORACLE_CEILING) {
                 oracle_direct_active = entry_has_oracle_site && !config.force_rigid;
+            } else if (config.mode == BenchmarkMode::DEFINED_CLEFT_REDOCK) {
+                oracle_direct_active = false;  // known cleft, ligand pose searched from scratch
             } else if (config.mode == BenchmarkMode::AUTONOMOUS) {
                 oracle_direct_active = false;  // always blind in autonomous mode
             } else {
@@ -5889,13 +5977,14 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                 std::string blinded = out_dir + "/" + entry.pdb_id + "_dockin"
                                     + fs::path(entry.ligand_path).extension().string();
                 const std::uint64_t blind_seed =
-                    std::hash<std::string>{}(entry.pdb_id);
+                    stable_seed_hash(entry.pdb_id, 0x424c494e44ULL);
                 if (write_blinded_ligand(entry.ligand_path, blinded, blind_seed)) {
                     dock_ligand_path = blinded;
                 } else {
-                    std::cerr << "  [WARN] " << entry.pdb_id
-                              << ": could not blind ligand placement (kept crystal "
-                                 "coords — RMSD may be a false positive)\n";
+                    throw std::runtime_error(
+                        entry.pdb_id +
+                        ": could not blind ligand placement; refusing to run a "
+                        "no-seed benchmark with crystal coordinates");
                 }
             }
 
@@ -5991,7 +6080,10 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                 cmd << "FLEXAIDDS_ORACLE_SITE='" << entry.binding_site_path << "' ";
                 std::cerr << "  ["
                           << (config.mode == BenchmarkMode::AUTONOMOUS
-                                  ? "COGNATE-REDOCK" : "ORACLE")
+                                  ? "COGNATE-REDOCK"
+                                  : config.mode == BenchmarkMode::DEFINED_CLEFT_REDOCK
+                                      ? "DEFINED-CLEFT-REDOCK"
+                                      : "ORACLE")
                           << "] " << entry.pdb_id
                           << " using binding site: " << entry.binding_site_path << "\n";
             }
@@ -6001,6 +6093,7 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
             // Skip in AUTONOMOUS mode so blind runs have no native/reference
             // scoring channel in the child process environment.
             if (config.mode != BenchmarkMode::AUTONOMOUS &&
+                config.mode != BenchmarkMode::DEFINED_CLEFT_REDOCK &&
                 !rmsd_reference_path.empty() && fs::exists(rmsd_reference_path)) {
                 cmd << "FLEXAIDDS_SCORE_NATIVE=1 "
                     << "FLEXAIDDS_RMSDST='" << rmsd_reference_path << "' ";
@@ -6361,8 +6454,9 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
         // Layer 1: pre-compute seed_elitism_override for both pose-selection calls.
         // Matches oracle_direct_active logic above; keeps the two controls in sync.
         const int sel_elitism_ovr =
-            (config.mode == BenchmarkMode::ORACLE_CEILING) ? 1 :
-            (config.mode == BenchmarkMode::AUTONOMOUS)     ? 0 : -1;
+            (config.mode == BenchmarkMode::ORACLE_CEILING)       ? 1 :
+            (config.mode == BenchmarkMode::AUTONOMOUS ||
+             config.mode == BenchmarkMode::DEFINED_CLEFT_REDOCK) ? 0 : -1;
 
         // ── best_score: report the EMITTED pose CF, not the stdout-trace min ──
         // The stdout GA trace ("... cf=...") includes the gen-0 seeded population.
@@ -6838,25 +6932,28 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                     }
                 }
 
-                // ── Seed-echo refinement: GA-found-native guard ──────────────────
+                // ── Seed-echo refinement: non-INI native-cluster diagnostic ──────
                 // seed_echo was set above purely from path (_INI.pdb suffix).  Now
                 // that best_cluster_rmsd is known, tighten the definition: a run
                 // where the INI seed was elected BUT the GA's own best cluster pose
                 // (scanned above, _0/_1/…/_19, no INI) is already sub-2 Å means the
-                // GA DID find native independently — the INI is irrelevant.  Only
-                // flag seed_echo when the GA genuinely failed to find native (all
-                // cluster reps ≥ 2 Å or no cluster poses emitted at all).
+                // a non-INI cluster is sub-2 Å. That cluster may still descend from
+                // a crystal-seeded chromosome, so this is not evidence of an
+                // independent discovery. Protocol-level native_pose_seeded records
+                // that exposure separately. Only retain literal seed_echo when all
+                // non-INI cluster representatives miss or none were emitted.
                 if (result.seed_echo) {
                     const bool ga_found_native =
                         (result.best_cluster_rmsd >= 0.0f &&
                          result.best_cluster_rmsd <= 2.0f);
                     if (ga_found_native) {
-                        result.seed_echo = false;  // GA independently found native; not a false positive
+                        result.seed_echo = false;
                         std::cerr << "  [SEED-ECHO-CLEAR] " << entry.pdb_id
                                   << ": INI elected but GA best_cluster_rmsd="
                                   << std::fixed << std::setprecision(2)
                                   << result.best_cluster_rmsd
-                                  << "A — GA found native, seed_echo cleared\n";
+                                  << "A — non-INI native cluster present; "
+                                     "seed_echo cleared (protocol seeding tracked separately)\n";
                     } else {
                         std::cerr << "  [SEED-ECHO] " << entry.pdb_id
                                   << ": INI seed elected, GA best_cluster_rmsd="
@@ -6966,9 +7063,20 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
         // Guard: rmsd_report >= 0.0f excludes the -1.0f sentinel so failed runs
         // (no crystal reference or empty pose) are never counted as successful.
         const float rmsd_report = std::min(result.rmsd_to_crystal, result.rmsd_hungarian);
-        // seed_echo=1 means the INI crystal seed survived into rank-0 but the GA
-        // never found native independently (all cluster reps ≥ 2 Å).  Count these
-        // as failures: the 0.00 Å RMSD is seed survival, not a GA discovery.
+        // The generated dock config exposes the crystal pose to every mode
+        // except autonomous and defined-cleft redocking. Track that protocol
+        // exposure independently of seed_echo: a GA cluster can descend from
+        // a crystal-seeded chromosome without being the literal _INI file.
+        result.native_pose_seeded =
+            config.mode != BenchmarkMode::AUTONOMOUS &&
+            config.mode != BenchmarkMode::DEFINED_CLEFT_REDOCK;
+        result.native_pose_seed_fraction = result.native_pose_seeded ? 0.90f : 0.0f;
+        result.protocol_claim_eligible =
+            !result.native_pose_seeded && !result.seed_echo;
+        // seed_echo=1 means the literal INI crystal seed survived into rank-0 and
+        // all non-INI cluster representatives miss. Count it as a failure. Even
+        // when seed_echo is cleared, native_pose_seeded remains the authoritative
+        // protocol-level answer-exposure flag.
         result.success_rmsd = (docking_completed && rmsd_report >= 0.0f && rmsd_report <= 2.0f &&
                                !result.seed_echo);
         // Legacy column: ALWAYS success_rmsd (never remapped by env — audit P0).
@@ -7191,25 +7299,22 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
 
             // Contract: success_pb = RMSD∧PoseBusters (not PB alone).
             result.success_pb = result.success_rmsd && result.pb_pass;
-            // tENCoM/Eigen is mandatory for benchmark claims. The C++ dataset
-            // runner does not run the external Eigen/tENCoM validator inline;
-            // the Astex entropy orchestrator/post-validator must populate these
-            // fields on the same pose SHA before claim_ready can become true.
+            // tENCoM/Eigen is mandatory for benchmark claims and is computed
+            // below from the exact immutable elected-pose artifact.
             result.tencom_status = "not_run";
             result.eigen_status  = "not_run";
-            result.claim_ready =
-                result.success_pb &&
-                result.tencom_status == "ok" &&
-                result.eigen_status == "ok";
+            result.claim_ready = false;
         }
 
-        // ── Level-3 H(ω) vibrational-entropy diagnostic (FLEXAIDDS_HVIB=1) ──
-        // Post-GA pass over the emitted cluster reps; gated OFF by default so
-        // existing benchmarks are bit-for-bit unaffected.  Purely diagnostic —
-        // does NOT touch result.success, best_score, or pose selection.
+        // ── Exact-pose tENCoM/Eigen validator + population H(ω) diagnostic ──
+        // Enabled by default because claim_ready requires it. Set
+        // FLEXAIDDS_HVIB=0 only for non-claim diagnostics. The pooled metrics do
+        // not alter pose election; exact-pose status is hash-joined to the same
+        // elected_pose.pdb used by RMSD and PoseBusters.
         {
             const char* hvib_env = std::getenv("FLEXAIDDS_HVIB");
-            if (hvib_env && std::strcmp(hvib_env, "1") == 0) {
+            const bool hvib_enabled = !(hvib_env && std::strcmp(hvib_env, "0") == 0);
+            if (hvib_enabled) {
                 HvibColumns hv = compute_target_hvib(all_prefixes);
                 result.H_rep_rank0 = hv.H_rep_rank0;
                 result.H_pop       = hv.H_pop;
@@ -7222,8 +7327,52 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                           << " H_rep_mean=" << hv.H_rep_mean
                           << " D_vib=" << hv.D_vib
                           << " n_reps=" << hv.n_reps << "\n";
+
+                if (!result.elected_pose_path.empty() &&
+                    !result.pose_sha256.empty()) {
+                    const PoseHvibColumns elected =
+                        compute_pose_hvib(result.elected_pose_path);
+                    result.elected_H_vib = elected.H_vib;
+                    result.eigen_n_modes = elected.n_modes;
+                    result.tencom_pose_sha256 =
+                        flexaids::posebust::sha256_file(result.elected_pose_path);
+                    const bool same_pose =
+                        !result.tencom_pose_sha256.empty() &&
+                        result.tencom_pose_sha256 == result.pose_sha256;
+                    result.tencom_status = elected.ok && same_pose ? "ok" : "fail";
+                    result.eigen_status  = elected.ok &&
+                                           elected.n_modes > 0 && same_pose
+                                         ? "ok" : "fail";
+                    std::cerr << "  [TENCOM-EIGEN] " << entry.pdb_id
+                              << " status=" << result.tencom_status
+                              << " eigen_status=" << result.eigen_status
+                              << " modes=" << result.eigen_n_modes
+                              << " H_elected=" << result.elected_H_vib
+                              << " pose_sha256=" << result.tencom_pose_sha256;
+                    if (!elected.error.empty())
+                        std::cerr << " error=\"" << elected.error << "\"";
+                    if (!same_pose)
+                        std::cerr << " error=\"pose hash mismatch\"";
+                    std::cerr << "\n";
+                } else {
+                    result.tencom_status = "fail";
+                    result.eigen_status = "fail";
+                    std::cerr << "  [TENCOM-EIGEN] " << entry.pdb_id
+                              << " fail: elected pose or SHA-256 missing\n";
+                }
             }
         }
+
+        // Publication gate: official PoseBusters and ligand tENCoM/Eigen must
+        // all have consumed the exact elected pose represented by pose_sha256.
+        result.claim_ready =
+            result.success_pb &&
+            result.protocol_claim_eligible &&
+            result.pb_backend == "bust_cli" &&
+            result.tencom_status == "ok" &&
+            result.eigen_status == "ok" &&
+            !result.pose_sha256.empty() &&
+            result.tencom_pose_sha256 == result.pose_sha256;
 
         report.results[idx] = result;
 
@@ -7271,11 +7420,13 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                     ofs << "pdb_id,best_score,rmsd_to_crystal,rmsd_hungarian,predicted_dG,"
                            "predicted_dH,predicted_TdS,shannon_entropy,search_entropy_proxy,num_poses,"
                            "wall_time_s,success,success_rmsd,pb_pass,success_pb,claim_ready,"
+                           "native_pose_seeded,native_pose_seed_fraction,protocol_claim_eligible,"
                            "pb_ran,pb_n_pass,pb_n_fail,pb_n_checks,pb_failed_keys,pb_backend,"
                            "native_qc_ran,native_qc_pass,native_qc_failed_keys,"
                            "pb_min_lig_prot_dist,pb_volume_overlap,"
                            "elected_pose_path,elected_pose_source,elected_restart,elected_cluster,"
                            "elected_cf,pose_sha256,tencom_status,eigen_status,"
+                           "tencom_pose_sha256,eigen_n_modes,elected_H_vib,"
                            "cf_native,best_cluster_rmsd,best_cluster_idx,"
                            "seed_echo,pose_source,H_rep_rank0,H_pop,H_rep_mean,D_vib,"
                            "G_bind,H_vct,H_vct_raw,n_heavy,TdS_shannon,TdS_vib,D_vib_thermo,"
@@ -7298,6 +7449,9 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                         << (result.pb_pass ? 1 : 0) << ","
                         << (result.success_pb ? 1 : 0) << ","
                         << (result.claim_ready ? 1 : 0) << ","
+                        << (result.native_pose_seeded ? 1 : 0) << ","
+                        << result.native_pose_seed_fraction << ","
+                        << (result.protocol_claim_eligible ? 1 : 0) << ","
                         << (result.pb_ran ? 1 : 0) << ","
                         << result.pb_n_pass << ","
                         << result.pb_n_fail << ","
@@ -7317,6 +7471,9 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                         << result.pose_sha256 << ","
                         << result.tencom_status << ","
                         << result.eigen_status << ","
+                        << result.tencom_pose_sha256 << ","
+                        << result.eigen_n_modes << ","
+                        << result.elected_H_vib << ","
                         << result.cf_native << ","
                         << result.best_cluster_rmsd << ","
                         << result.best_cluster_idx << ","
@@ -7634,6 +7791,9 @@ void DatasetRunner::write_report(const BenchmarkReport& report,
 
         ofs << "pdb_id,best_score,rmsd_to_crystal,rmsd_hungarian,predicted_dG,"
                "predicted_dH,predicted_TdS,shannon_entropy,search_entropy_proxy,num_poses,wall_time_s,success,"
+               "success_rmsd,pb_pass,success_pb,claim_ready,pb_backend,pose_sha256,"
+               "tencom_status,eigen_status,tencom_pose_sha256,eigen_n_modes,elected_H_vib,"
+               "native_pose_seeded,native_pose_seed_fraction,protocol_claim_eligible,"
                "cf_native,best_cluster_rmsd,best_cluster_idx,seed_echo,pose_source,"
                "H_rep_rank0,H_pop,H_rep_mean,D_vib";
         if (thermo_csv) {
@@ -7655,6 +7815,20 @@ void DatasetRunner::write_report(const BenchmarkReport& report,
                 << r.num_poses << ","
                 << r.wall_time_s << ","
                 << (r.success ? 1 : 0) << ","
+                << (r.success_rmsd ? 1 : 0) << ","
+                << (r.pb_pass ? 1 : 0) << ","
+                << (r.success_pb ? 1 : 0) << ","
+                << (r.claim_ready ? 1 : 0) << ","
+                << r.pb_backend << ","
+                << r.pose_sha256 << ","
+                << r.tencom_status << ","
+                << r.eigen_status << ","
+                << r.tencom_pose_sha256 << ","
+                << r.eigen_n_modes << ","
+                << r.elected_H_vib << ","
+                << (r.native_pose_seeded ? 1 : 0) << ","
+                << r.native_pose_seed_fraction << ","
+                << (r.protocol_claim_eligible ? 1 : 0) << ","
                 << r.cf_native << ","
                 << r.best_cluster_rmsd << ","
                 << r.best_cluster_idx << ","
