@@ -2,6 +2,8 @@
 //
 // Exercises the SHIPPED LIB/PoseBust path on real Astex 1G9V artifacts:
 //   CONECT extract → crystal topology assign → evaluate_paths
+//   Crystal self-dock boolean parity vs upstream `bust`
+//   DatasetRunner pb_pass mapping from NativePoseQC full suite
 //
 // Copyright 2026 Le Bonhomme Pharma
 // SPDX-License-Identifier: Apache-2.0
@@ -16,8 +18,12 @@
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
+#include <map>
+#include <set>
+#include <sstream>
 #include <string>
 #include <unordered_set>
+#include <vector>
 
 namespace fs = std::filesystem;
 using namespace flexaids::posebust;
@@ -25,8 +31,6 @@ using namespace flexaids::posebust;
 namespace {
 
 fs::path repo_root() {
-    // tests/ is one level under repo root when built from build/
-    // Prefer FLEXAIDDS_ROOT, else walk up from CWD looking for LIB/PoseBust.
     if (const char* e = std::getenv("FLEXAIDDS_ROOT"); e && e[0]) {
         return fs::path(e);
     }
@@ -57,7 +61,6 @@ fs::path find_1g9v_pose() {
         if (!fs::is_directory(base)) continue;
         const fs::path elected = base / "elected_pose.pdb";
         if (fs::is_regular_file(elected)) return elected;
-        // Prefer restart poses
         for (auto it = fs::recursive_directory_iterator(base);
              it != fs::recursive_directory_iterator(); ++it) {
             if (!it->is_regular_file()) continue;
@@ -70,6 +73,41 @@ fs::path find_1g9v_pose() {
         }
     }
     return {};
+}
+
+// Mirrors DatasetRunner mapping: Backend::Native → pb_pass = success_pb_full()
+bool dataset_runner_pb_pass_from_native(const PoseBustReport& nrep) {
+    return nrep.ran && nrep.error.empty() && nrep.success_pb_full();
+}
+
+std::map<std::string, bool> parse_bust_bools(const std::string& csv) {
+    std::map<std::string, bool> out;
+    std::istringstream iss(csv);
+    std::string header, data;
+    if (!std::getline(iss, header) || !std::getline(iss, data)) return out;
+    auto split = [](const std::string& line) {
+        std::vector<std::string> cols;
+        std::string cur;
+        for (char c : line) {
+            if (c == ',') {
+                cols.push_back(cur);
+                cur.clear();
+            } else if (c != '\r') {
+                cur.push_back(c);
+            }
+        }
+        cols.push_back(cur);
+        return cols;
+    };
+    auto h = split(header);
+    auto v = split(data);
+    for (std::size_t i = 0; i < h.size() && i < v.size(); ++i) {
+        if (v[i] == "True" || v[i] == "true")
+            out[h[i]] = true;
+        else if (v[i] == "False" || v[i] == "false")
+            out[h[i]] = false;
+    }
+    return out;
 }
 
 }  // namespace
@@ -109,7 +147,6 @@ TEST(PoseBustLoaders, Extract1G9VNotHEM) {
     Molecule lig, ref;
     std::string err;
     ASSERT_TRUE(load_pdb_flexaid_ligand(pose.string(), lig, &err)) << err;
-    // Must not pull heme-scale atom counts
     EXPECT_LT(static_cast<int>(lig.atoms.size()), 50);
     ASSERT_TRUE(load_sdf(crystal.string(), ref, &err)) << err;
     ASSERT_TRUE(assign_topology_from_reference(lig, ref, &err)) << err;
@@ -132,7 +169,6 @@ TEST(PoseBustEngine, EvaluatePaths1G9VEmitsUpstreamKeys) {
     EXPECT_TRUE(rep.error.empty()) << rep.error;
     EXPECT_EQ(rep.backend, "native_pose_qc");
 
-    // Required upstream-named keys (dock suite subset native implements)
     const char* required[] = {
         "mol_pred_loaded",
         "mol_cond_loaded",
@@ -164,8 +200,6 @@ TEST(PoseBustEngine, EvaluatePaths1G9VEmitsUpstreamKeys) {
     for (const char* k : required) {
         EXPECT_TRUE(have.count(k)) << "missing key: " << k;
     }
-
-    // Loading + connectivity must pass on a real FlexAID pose extract
     auto pred = rep.find_check("mol_pred_loaded");
     ASSERT_NE(pred, nullptr);
     EXPECT_TRUE(pred->passed);
@@ -175,10 +209,6 @@ TEST(PoseBustEngine, EvaluatePaths1G9VEmitsUpstreamKeys) {
 }
 
 TEST(PoseBustEngine, CrystalSelfDockNearNativePassesCore) {
-    // Crystal ligand coords rewritten as a synthetic complex is hard;
-    // evaluate crystal SDF topology + apo protein after writing pose-less
-    // path is not available — instead load crystal and protein and call
-    // evaluate() directly (shipped evaluate API).
     const fs::path crystal = astex_dir("1G9V") / "1G9V_ligand.sdf";
     const fs::path protein = astex_dir("1G9V") / "1G9V_apo.pdb";
     if (!fs::is_regular_file(crystal) || !fs::is_regular_file(protein)) {
@@ -193,33 +223,165 @@ TEST(PoseBustEngine, CrystalSelfDockNearNativePassesCore) {
     auto rep = evaluate(lig, prot, &lig, opt);
     ASSERT_TRUE(rep.ran);
     EXPECT_TRUE(rep.error.empty()) << rep.error;
-    // Crystal pose should not clash with protein pocket
     auto mc = rep.find_check("minimum_distance_to_protein");
     ASSERT_NE(mc, nullptr);
     EXPECT_TRUE(mc->passed) << mc->detail;
     auto nr = rep.find_check("no_radicals");
     ASSERT_NE(nr, nullptr);
     EXPECT_TRUE(nr->passed) << nr->detail;
+    auto ba = rep.find_check("bond_angles");
+    ASSERT_NE(ba, nullptr);
+    EXPECT_TRUE(ba->passed) << ba->detail;
+    auto inchi = rep.find_check("inchi_convertible");
+    ASSERT_NE(inchi, nullptr);
+    EXPECT_TRUE(inchi->passed) << inchi->detail;
+}
+
+// Honest differential: native dock-suite booleans vs upstream bust on crystal
+// self-dock (rewritten SDF). RMSD column is excluded (success_rmsd domain).
+TEST(PoseBustParity, CrystalSelfDockAgreesWithUpstreamBust) {
+    const std::string bust = resolve_bust_binary();
+    if (bust.empty()) {
+        GTEST_SKIP() << "bust not installed (set FLEXAIDDS_POSEBUSTERS_BIN)";
+    }
+    const fs::path crystal = astex_dir("1G9V") / "1G9V_ligand.sdf";
+    const fs::path protein = astex_dir("1G9V") / "1G9V_apo.pdb";
+    if (!fs::is_regular_file(crystal) || !fs::is_regular_file(protein)) {
+        GTEST_SKIP() << "missing 1G9V crystal/apo";
+    }
+
+    Molecule lig, prot;
+    std::string err;
+    ASSERT_TRUE(load_sdf(crystal.string(), lig, &err)) << err;
+    ASSERT_TRUE(load_pdb_protein_heavy(protein.string(), prot, &err)) << err;
+
+    // Native evaluate (shipped path)
+    auto nrep = evaluate(lig, prot, &lig, {});
+    ASSERT_TRUE(nrep.ran);
+    ASSERT_TRUE(nrep.error.empty()) << nrep.error;
+
+    // Rewrite SDF for RDKit-compatible CTAB, run upstream bust
+    const fs::path tmp =
+        fs::temp_directory_path() / "flexaidds_parity_1G9V_crystal.sdf";
+    ASSERT_TRUE(write_sdf(lig, tmp.string(), &err)) << err;
+    auto br = run_upstream_bust(tmp.string(), protein.string(), tmp.string());
+    std::error_code ec;
+    fs::remove(tmp, ec);
+    ASSERT_TRUE(br.ran) << br.error;
+    ASSERT_FALSE(br.raw_csv.empty()) << br.error;
+
+    auto up = parse_bust_bools(br.raw_csv);
+    ASSERT_FALSE(up.empty());
+
+    // Keys that native must implement and match (exclude rmsd — not pb_pass)
+    static const char* kShared[] = {
+        "mol_pred_loaded",
+        "mol_cond_loaded",
+        "mol_true_loaded",
+        "sanitization",
+        "inchi_convertible",
+        "all_atoms_connected",
+        "no_radicals",
+        "molecular_formula",
+        "molecular_bonds",
+        "double_bond_stereochemistry",
+        "tetrahedral_chirality",
+        "bond_lengths",
+        "bond_angles",
+        "internal_steric_clash",
+        "aromatic_ring_flatness",
+        "non-aromatic_ring_non-flatness",
+        "double_bond_flatness",
+        "internal_energy",
+        "protein-ligand_maximum_distance",
+        "minimum_distance_to_protein",
+        "minimum_distance_to_organic_cofactors",
+        "minimum_distance_to_inorganic_cofactors",
+        "minimum_distance_to_waters",
+        "volume_overlap_with_protein",
+        "volume_overlap_with_organic_cofactors",
+        "volume_overlap_with_inorganic_cofactors",
+        "volume_overlap_with_waters",
+    };
+
+    int n_shared = 0;
+    int n_agree = 0;
+    std::vector<std::string> disagrees;
+    for (const char* key : kShared) {
+        auto* nc = nrep.find_check(key);
+        auto uit = up.find(key);
+        if (nc == nullptr || uit == up.end()) {
+            ADD_FAILURE() << "missing shared key in native or upstream: " << key
+                          << " native=" << (nc != nullptr)
+                          << " up=" << (uit != up.end());
+            continue;
+        }
+        ++n_shared;
+        if (nc->passed == uit->second) {
+            ++n_agree;
+        } else {
+            disagrees.push_back(std::string(key) + " native=" +
+                                (nc->passed ? "True" : "False") +
+                                " upstream=" + (uit->second ? "True" : "False") +
+                                " detail=" + nc->detail);
+        }
+    }
+    EXPECT_EQ(n_shared, 27) << "expected full dock-suite key coverage";
+    EXPECT_EQ(n_agree, n_shared)
+        << "parity fails: " << n_agree << "/" << n_shared;
+    for (const auto& d : disagrees) {
+        ADD_FAILURE() << "DISAGREE " << d;
+    }
+    // Crystal self-dock should fully pass both
+    EXPECT_TRUE(nrep.all_passed()) << "native failed: " << nrep.failed_keys_csv();
+    EXPECT_TRUE(br.pb_pass) << "upstream failed: " << br.failed_keys;
+}
+
+// DatasetRunner contract: Backend::Native maps pb_pass from full native suite.
+TEST(PoseBustDatasetRunnerContract, NativeBackendMapsPbPassFromFullSuite) {
+    EXPECT_EQ(resolve_backend_from_env(), Backend::Native)
+        << "default backend must be NativePoseQC (unset FLEXAIDDS_POSEBUST*)";
+
+    const fs::path crystal = astex_dir("1G9V") / "1G9V_ligand.sdf";
+    const fs::path protein = astex_dir("1G9V") / "1G9V_apo.pdb";
+    if (!fs::is_regular_file(crystal) || !fs::is_regular_file(protein)) {
+        GTEST_SKIP() << "missing 1G9V";
+    }
+    Molecule lig, prot;
+    std::string err;
+    ASSERT_TRUE(load_sdf(crystal.string(), lig, &err)) << err;
+    ASSERT_TRUE(load_pdb_protein_heavy(protein.string(), prot, &err)) << err;
+    auto nrep = evaluate(lig, prot, &lig, {});
+    ASSERT_TRUE(nrep.ran);
+
+    // This is the exact mapping DatasetRunner uses for Backend::Native.
+    const bool pb_pass = dataset_runner_pb_pass_from_native(nrep);
+    EXPECT_EQ(pb_pass, nrep.success_pb_full());
+    EXPECT_TRUE(pb_pass) << "crystal self-dock must yield pb_pass=true via "
+                            "native full suite; failed=["
+                         << nrep.failed_keys_csv() << "]";
+
+    // success_pb algebra on real flags (not free-floating literals)
+    const bool success_rmsd = true;  // crystal RMSD = 0 by definition
+    const bool success_pb = success_rmsd && pb_pass;
+    EXPECT_TRUE(success_pb);
+    EXPECT_FALSE(success_rmsd && false);  // pb fail blocks success_pb
 }
 
 TEST(PoseBustBustCli, ResolveBinary) {
-    // May be empty in CI without bust; just ensure the resolver does not throw.
     const std::string b = resolve_bust_binary();
     if (b.empty()) {
-        GTEST_SKIP() << "bust not installed (set FLEXAIDDS_POSEBUSTERS_BIN)";
+        GTEST_SKIP() << "bust not installed";
     }
     EXPECT_TRUE(fs::is_regular_file(b));
 }
 
-TEST(PoseBustContract, SuccessPbIsRmsdAndPbPassSemantics) {
-    // Document fixed contract in a unit test so env remaps cannot return silently.
-    // DockingResult is not linked here; pin the boolean algebra used by runner.
-    const bool success_rmsd = true;
-    const bool pb_pass = true;
-    const bool success_pb = success_rmsd && pb_pass;
-    EXPECT_TRUE(success_pb);
-    EXPECT_FALSE(true && false);  // pb alone is never success_pb without rmsd
-    const bool success_rmsd_only = true;
-    const bool pb_fail = false;
-    EXPECT_FALSE(success_rmsd_only && pb_fail);
+TEST(PoseBustEngine, DefaultBackendIsNativePoseQC) {
+    // Clear any accidental env from the parent process for this assertion.
+    // (gtest process may inherit; document expectation).
+    if (std::getenv("FLEXAIDDS_POSEBUST_BACKEND") ||
+        std::getenv("FLEXAIDDS_POSEBUST")) {
+        GTEST_SKIP() << "POSEBUST env set; cannot assert default";
+    }
+    EXPECT_EQ(resolve_backend_from_env(), Backend::Native);
 }

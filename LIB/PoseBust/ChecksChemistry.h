@@ -32,8 +32,9 @@ void check_loading(const Molecule* pred,
 ///       Finite coords, known elements, valid bond indices, no NaN/Inf.
 ///       (Named for interoperability; no RDKit dependency.)
 ///   - "inchi_convertible"
-///       Soft placeholder without an InChI library: true iff heavy-atom count > 0
-///       and every atom has a known element. Documented as soft / non-strict.
+///       Real conversion via system `inchi-1` (IUPAC InChI CLI) when available
+///       (FLEXAIDDS_INCHI_BIN / PATH / Homebrew). Requires connected graph,
+///       known elements, sanitization OK; fails closed on conversion error.
 ///   - "all_atoms_connected"
 ///       Single connected component on the heavy-atom graph (bonds only).
 ///   - "no_radicals"

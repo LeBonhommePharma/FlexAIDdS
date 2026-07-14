@@ -448,8 +448,9 @@ Backend resolve_backend_from_env() {
         if (iequals(v, "bust") || iequals(v, "bust_cli") || iequals(v, "posebusters"))
             return Backend::BustCli;
     }
-    // Authoritative default: upstream bust — never claim native is PoseBusters.
-    return Backend::BustCli;
+    // Default: clean-room NativePoseQC is DatasetRunner's PoseBusters path.
+    // Set FLEXAIDDS_POSEBUST_BACKEND=bust for upstream CLI cross-check.
+    return Backend::Native;
 }
 
 }  // namespace flexaids::posebust

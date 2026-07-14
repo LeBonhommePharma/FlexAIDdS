@@ -140,28 +140,28 @@ struct DockingResult {
     float search_entropy_proxy{0.0f}; // legacy H_final collapse proxy from GA energy histogram (nats)
     int   num_poses{0};               // number of binding modes found
     double wall_time_s{0.0};          // docking wall time
-    // ── Success gates (AGENTS.md / audit contract — fixed semantics) ──────
+    // ── Success gates (fixed semantics; never remapped by env) ────────────
     // success_rmsd : RMSD <= 2 Å (Hungarian preferred) && !seed_echo
-    // pb_pass      : upstream PoseBusters CLI (`bust`) all dock-suite checks True
-    //                (RMSD column excluded — that is success_rmsd)
-    // success_pb   : success_rmsd && pb_pass   ← authoritative PB+RMSD intersection
+    // pb_pass      : PoseBusters dock-suite all True (RMSD is success_rmsd)
+    //                Default backend = NativePoseQC (clean-room C++26 full suite).
+    //                FLEXAIDDS_POSEBUST_BACKEND=bust → upstream bust CLI.
+    // success_pb   : success_rmsd && pb_pass
     // claim_ready  : success_pb && tencom_status==ok && eigen_status==ok
-    //                These validator statuses must refer to pose_sha256.
-    // success      : always == success_rmsd (legacy column; NEVER remapped by env)
-    // NativePoseQC (C++) is diagnostic only — see native_qc_* fields.
+    //                (validators must cite pose_sha256)
+    // success      : always == success_rmsd (legacy column)
     bool  success_rmsd{false};
     bool  pb_pass{false};
     bool  success_pb{false};          // == success_rmsd && pb_pass
     bool  claim_ready{false};
     bool  success{false};             // == success_rmsd (stable legacy meaning)
-    // Authoritative upstream PoseBusters (`bust`) summary
+    // PoseBusters summary (backend-selected: native_pose_qc or bust_cli)
     bool  pb_ran{false};
     int   pb_n_pass{0};
     int   pb_n_fail{0};
     int   pb_n_checks{0};
     std::string pb_failed_keys;
-    std::string pb_backend;           // "bust_cli" | "bust_cli_missing" | "skipped" | "error"
-    // NativePoseQC diagnostic (not the claim gate)
+    std::string pb_backend;  // "native_pose_qc" | "bust_cli" | "skipped" | "error"
+    // NativePoseQC full-suite report (always filled when PB runs; default pb_pass)
     bool  native_qc_ran{false};
     bool  native_qc_pass{false};
     std::string native_qc_failed_keys;

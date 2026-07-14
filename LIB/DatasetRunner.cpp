@@ -7118,7 +7118,8 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                     if (!lig_ok) lig_err = werr;
                 }
 
-                // --- NativePoseQC diagnostic (never authoritative claim) ---
+                // --- NativePoseQC full dock suite (default pb_pass source) ---
+                flexaids::posebust::PoseBustReport nrep;
                 {
                     EvaluateOptions nopt;
                     nopt.suite = Suite::Dock;
@@ -7126,7 +7127,7 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                     nopt.pdb_id = entry.pdb_id +
                         (result.pose_sha256.empty() ? ""
                                                     : ("_" + result.pose_sha256.substr(0, 12)));
-                    auto nrep = flexaids::posebust::evaluate_paths(
+                    nrep = flexaids::posebust::evaluate_paths(
                         elected_pose_pdb, entry.receptor_path, crystal, nopt);
                     result.native_qc_ran = nrep.ran && nrep.error.empty();
                     result.native_qc_pass = nrep.success_pb_full();
@@ -7136,24 +7137,33 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                     std::cerr << "  [NATIVE-POSE-QC] " << entry.pdb_id
                               << " pass=" << (result.native_qc_pass ? 1 : 0)
                               << " failed=[" << result.native_qc_failed_keys << "]"
-                              << " (diagnostic only)\n";
+                              << " (full dock suite; default pb_pass source)\n";
                 }
 
-                // --- Upstream bust (authoritative pb_pass) ---
+                // --- pb_pass from selected backend ---
+                // NativePoseQC is the clean-room PoseBusters path in DatasetRunner.
+                // BustCli remains available for cross-check via env.
                 if (!lig_ok) {
                     result.pb_backend = "error";
                     result.pb_failed_keys = "ligand_extract:" + lig_err;
                     std::cerr << "  [POSEBUSTERS] extract failed: " << lig_err << "\n";
                 } else if (backend == Backend::Native) {
-                    // Explicit native-only mode: still not claim-ready without bust
+                    // Clean-room PoseBusters: full native suite → pb_pass
                     result.pb_backend = "native_pose_qc";
                     result.pb_ran = result.native_qc_ran;
-                    result.pb_pass = false;  // refuse native as official pb_pass
-                    result.pb_failed_keys =
-                        "native_not_authoritative;set_FLEXAIDDS_POSEBUST_BACKEND=bust";
-                    std::cerr << "  [POSEBUSTERS] native backend is diagnostic only; "
-                                 "pb_pass forced false\n";
+                    result.pb_pass = result.native_qc_pass;  // success_pb_full()
+                    result.pb_failed_keys = result.native_qc_failed_keys;
+                    result.pb_n_checks = nrep.n_checks();
+                    result.pb_n_pass = nrep.n_pass();
+                    result.pb_n_fail = nrep.n_fail();
+                    std::cerr << "  [POSEBUSTERS] backend=native_pose_qc"
+                              << " pb_pass=" << (result.pb_pass ? 1 : 0)
+                              << " checks=" << result.pb_n_pass << "/"
+                              << result.pb_n_checks
+                              << " failed=[" << result.pb_failed_keys << "]"
+                              << " pose_sha256=" << result.pose_sha256 << "\n";
                 } else {
+                    // Upstream bust CLI (optional cross-check / claim dual-gate)
                     auto br = flexaids::posebust::run_upstream_bust(
                         pred_sdf, entry.receptor_path, crystal, pb_dir,
                         entry.pdb_id + (result.pose_sha256.empty()

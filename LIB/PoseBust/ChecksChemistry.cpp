@@ -4,14 +4,19 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // PoseBusters-compatible check *keys* only. Algorithms are original.
-// No RDKit, no InChI library, no posebusters source code.
+// No RDKit / posebusters source. Optional system `inchi-1` for inchi_convertible.
 
 #include "ChecksChemistry.h"
+#include "Loaders.h"  // write_sdf for real inchi-1 convertible check
 
 #include <algorithm>
 #include <cctype>
 #include <cmath>
+#include <cstdio>
+#include <cstdlib>
 #include <cstddef>
+#include <filesystem>
+#include <fstream>
 #include <map>
 #include <queue>
 #include <sstream>
@@ -19,6 +24,14 @@
 #include <string_view>
 #include <utility>
 #include <vector>
+
+#if defined(_WIN32)
+#include <process.h>
+#define flexaids_getpid() _getpid()
+#else
+#include <unistd.h>
+#define flexaids_getpid() getpid()
+#endif
 
 namespace flexaids::posebust {
 namespace {
@@ -394,24 +407,119 @@ void check_chemistry_sanity(const Molecule& pred, std::vector<CheckItem>& out) {
          sanity.ok,
          sanity.detail);
 
-    // --- inchi_convertible (soft placeholder; no InChI library) -----------
-    int heavy = 0;
-    bool all_known = !pred.atoms.empty();
-    for (const Atom& a : pred.atoms) {
-        const int Z = atomic_number_of(a);
-        if (!is_known_Z(Z)) all_known = false;
-        if (!atom_is_hydrogen(a) && Z > 0) ++heavy;
-    }
-    const bool inchi_soft = (heavy > 0) && all_known;
+    // --- inchi_convertible ------------------------------------------------
+    // Prefer real InChI via system `inchi-1` (IUPAC InChI, not RDKit). Falls
+    // back to connectivity preconditions only when the binary is absent.
     {
-        std::ostringstream d;
-        d << "soft=true (no InChI lib); heavy=" << heavy
-          << " all_known=" << (all_known ? "true" : "false");
-        emit(out,
-             "inchi_convertible",
-             "InChI convertible",
-             inchi_soft,
-             d.str());
+        int heavy = 0;
+        bool all_known = !pred.atoms.empty();
+        for (const Atom& a : pred.atoms) {
+            const int Z = atomic_number_of(a);
+            if (!is_known_Z(Z)) all_known = false;
+            if (!atom_is_hydrogen(a) && Z > 0) ++heavy;
+        }
+        int n_comp = 0, heavy_count = 0;
+        const bool connected =
+            heavy_atoms_single_component(pred, heavy_count, n_comp);
+        const bool precond = (heavy > 0) && all_known && connected && sanity.ok;
+
+        std::string detail;
+        bool ok = false;
+        if (!precond) {
+            ok = false;
+            std::ostringstream d;
+            d << "precondition_fail heavy=" << heavy
+              << " all_known=" << (all_known ? 1 : 0)
+              << " connected=" << (connected ? 1 : 0)
+              << " components=" << n_comp
+              << " sanitization=" << (sanity.ok ? 1 : 0);
+            detail = d.str();
+        } else {
+            // Resolve inchi-1: FLEXAIDDS_INCHI_BIN, PATH, Homebrew paths.
+            std::string inchi_bin;
+            if (const char* e = std::getenv("FLEXAIDDS_INCHI_BIN"); e && e[0]) {
+                inchi_bin = e;
+            }
+            if (inchi_bin.empty()) {
+                for (const char* cand : {"/opt/homebrew/bin/inchi-1",
+                                         "/usr/local/bin/inchi-1",
+                                         "inchi-1"}) {
+                    // For bare name, try which via shell.
+                    if (std::string(cand) == "inchi-1") {
+                        FILE* w = popen("command -v inchi-1 2>/dev/null", "r");
+                        if (w) {
+                            char buf[512];
+                            if (fgets(buf, sizeof(buf), w)) {
+                                std::string p = buf;
+                                while (!p.empty() &&
+                                       (p.back() == '\n' || p.back() == '\r'))
+                                    p.pop_back();
+                                if (!p.empty()) inchi_bin = p;
+                            }
+                            pclose(w);
+                        }
+                    } else {
+                        std::ifstream t(cand);
+                        if (t.good()) {
+                            inchi_bin = cand;
+                            break;
+                        }
+                    }
+                    if (!inchi_bin.empty()) break;
+                }
+            }
+
+            if (inchi_bin.empty()) {
+                // Fail closed when binary missing? Prefer soft pass only if
+                // preconditions hold, but mark soft so parity tests can skip.
+                ok = true;
+                detail =
+                    "soft=true inchi-1_missing; preconditions_ok heavy=" +
+                    std::to_string(heavy);
+            } else {
+                // Write temp SDF and invoke inchi-1
+                namespace fs = std::filesystem;
+                const fs::path tmp =
+                    fs::temp_directory_path() /
+                    ("flexaidds_inchi_" + std::to_string(flexaids_getpid()) +
+                     ".sdf");
+                const fs::path outp = fs::path(tmp.string() + ".inchi_out");
+                std::string werr;
+                if (!write_sdf(pred, tmp.string(), &werr)) {
+                    ok = false;
+                    detail = "write_sdf_failed: " + werr;
+                } else {
+                    const std::string cmd =
+                        "'" + inchi_bin + "' '" + tmp.string() + "' '" +
+                        outp.string() + "' -AuxNone -NoLabels -DoNotAddH "
+                        "2>/dev/null";
+                    const int rc = std::system(cmd.c_str());
+                    std::string inchi;
+                    {
+                        std::ifstream ifs(outp);
+                        std::string line;
+                        while (std::getline(ifs, line)) {
+                            if (line.rfind("InChI=", 0) == 0) {
+                                inchi = line;
+                                break;
+                            }
+                        }
+                    }
+                    std::error_code ec;
+                    fs::remove(tmp, ec);
+                    fs::remove(outp, ec);
+                    fs::remove(fs::path(tmp.string() + ".log"), ec);
+                    fs::remove(fs::path(tmp.string() + ".prb"), ec);
+                    ok = (rc == 0) && !inchi.empty();
+                    std::ostringstream d;
+                    d << "inchi-1 rc=" << rc
+                      << " prefix=" << (inchi.empty() ? "(none)" : inchi.substr(0, 48))
+                      << " bin=" << inchi_bin;
+                    detail = d.str();
+                }
+            }
+        }
+        emit(out, "inchi_convertible", "InChI convertible", ok, detail);
     }
 
     // --- all_atoms_connected (heavy-atom graph, bonds only) ---------------

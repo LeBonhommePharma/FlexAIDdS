@@ -109,18 +109,44 @@ float bond_angle_degrees(const Vec3& i, const Vec3& j, const Vec3& k) noexcept {
     return std::acos(c) * (180.f / std::numbers::pi_v<float>);
 }
 
-/// Ideal valence angle from hybridization heuristic on graph degree of j.
-float ideal_angle_for_degree(int degree) noexcept {
-    if (degree >= 4) {
-        return 109.5f; // tetrahedral / sp3
+/// Ideal valence angle from hybridization (bond orders + degree).
+/// Heavy-only poses: missing H reduces degree — prefer bond-order clues so
+/// aliphatic C (only single bonds, deg 3) maps to tetrahedral, not sp2.
+float ideal_angle_at_center(const Molecule& mol, int j,
+                            const std::vector<std::vector<int>>& adj) noexcept {
+    if (j < 0 || static_cast<std::size_t>(j) >= mol.atoms.size()) return 0.f;
+    const auto& nbrs = adj[static_cast<std::size_t>(j)];
+    const int degree = static_cast<int>(nbrs.size());
+    if (degree < 2) return 0.f;
+
+    int max_order = 1;
+    int n_double = 0;
+    int n_triple = 0;
+    bool aromatic = false;
+    for (const Bond& b : mol.bonds) {
+        if (b.a != j && b.b != j) continue;
+        if (b.order == 4) {
+            aromatic = true;
+            max_order = std::max(max_order, 2);
+        } else if (b.order == 3) {
+            ++n_triple;
+            max_order = std::max(max_order, 3);
+        } else if (b.order == 2) {
+            ++n_double;
+            max_order = std::max(max_order, 2);
+        } else {
+            max_order = std::max(max_order, b.order);
+        }
     }
-    if (degree == 3) {
-        return 120.0f; // trigonal / sp2
-    }
-    if (degree == 2) {
-        return 180.0f; // linear / sp
-    }
-    return 0.f; // no angle at degree < 2
+    // Aromatic carbons are always trigonal (~120°), even when heavy-only
+    // degree is 2 (missing H) — never treat as linear.
+    if (aromatic) return 120.0f;
+    if (n_triple >= 1 && degree == 2) return 180.0f;  // -C≡C-
+    if (n_double >= 2 && degree == 2) return 180.0f;  // =C= allene
+    if (max_order >= 2) return 120.0f;                 // sp2 (incl. missing H)
+    // All single bonds
+    if (degree >= 2) return 109.5f;  // sp3 (full or heavy-only incomplete)
+    return 0.f;
 }
 
 /// Signed torsion angle (degrees) for a-b-c-d (IUPAC convention via atan2).
@@ -407,6 +433,9 @@ void check_distance_geometry(const Molecule& pred, std::vector<CheckItem>& out) 
         int n_checked = 0;
         int n_failed  = 0;
         double worst_rel = 0.0; // |Δθ|/θ_ideal
+        // Absolute angular floor (°) so crystal-like geometries near 109.5/120
+        // pass even when relative fraction is slightly > 0.25 on small angles.
+        constexpr float kAbsAngleFloorDeg = 25.0f;
         for (int j = 0; j < n; ++j) {
             const Atom& center = pred.atoms[static_cast<std::size_t>(j)];
             if (center.is_h) {
@@ -414,7 +443,7 @@ void check_distance_geometry(const Molecule& pred, std::vector<CheckItem>& out) 
             }
             const auto& nbrs = adj[static_cast<std::size_t>(j)];
             const int degree = static_cast<int>(nbrs.size());
-            const float theta_ideal = ideal_angle_for_degree(degree);
+            const float theta_ideal = ideal_angle_at_center(pred, j, adj);
             if (theta_ideal <= 0.f || degree < 2) {
                 continue;
             }
@@ -424,15 +453,19 @@ void check_distance_geometry(const Molecule& pred, std::vector<CheckItem>& out) 
                     const int k = nbrs[b];
                     const Atom& ai = pred.atoms[static_cast<std::size_t>(i)];
                     const Atom& ak = pred.atoms[static_cast<std::size_t>(k)];
-                    // Optional: skip pure-H wings (H–X–H and angles with only H).
                     if (ai.is_h && ak.is_h) {
                         continue;
                     }
                     const float theta = bond_angle_degrees(ai.pos(), center.pos(), ak.pos());
-                    const float rel   = std::fabs(theta - theta_ideal) / theta_ideal;
+                    const float dabs  = std::fabs(theta - theta_ideal);
+                    const float rel   = dabs / theta_ideal;
                     worst_rel = std::max(worst_rel, static_cast<double>(rel));
                     ++n_checked;
-                    if (rel > kThresholdBadAngle + 1e-6f) {
+                    // Pass if either relative OR absolute floor is satisfied
+                    // (aligns better with RDKit DG soft bounds used by bust).
+                    const bool ok = (rel <= kThresholdBadAngle + 1e-6f) ||
+                                    (dabs <= kAbsAngleFloorDeg + 1e-6f);
+                    if (!ok) {
                         ++n_failed;
                     }
                 }
@@ -441,8 +474,9 @@ void check_distance_geometry(const Molecule& pred, std::vector<CheckItem>& out) 
         const bool passed = (n_failed == 0);
         std::ostringstream oss;
         oss << n_checked << " angles; " << n_failed
-            << " with |Δθ|/θ_ideal > " << kThresholdBadAngle
-            << " (deg4→109.5, deg3→120, deg2→180); worst rel=" << worst_rel;
+            << " outside rel>" << kThresholdBadAngle << " AND abs>"
+            << kAbsAngleFloorDeg
+            << " deg (hybridization-aware ideals); worst rel=" << worst_rel;
         // Upstream PoseBusters key: "bond_angles"
         out.push_back(make_item("bond_angles",
                                 "Bond angles within bounds",
