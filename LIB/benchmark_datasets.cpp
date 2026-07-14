@@ -105,7 +105,7 @@ static void print_publication_table(const dataset::BenchmarkReport& report) {
     printf("  │ Metric                      │ Value              │\n");
     printf("  ├─────────────────────────────┼────────────────────┤\n");
     printf("  │ Total systems               │ %18d │\n", report.total_systems);
-    printf("  │ Successful (RMSD < 2.0 Å)   │ %18d │\n", report.successful);
+    printf("  │ Successful (RMSD <= 2.0 A)  │ %18d │\n", report.successful);
     printf("  │ Success rate                │ %17.1f%% │\n", report.success_rate * 100.0);
     printf("  │ Mean RMSD (Å)               │ %18.2f │\n", report.mean_rmsd);
     printf("  │ Median RMSD (Å)             │ %18.2f │\n", report.median_rmsd);

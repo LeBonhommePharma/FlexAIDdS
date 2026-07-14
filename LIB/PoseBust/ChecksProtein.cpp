@@ -351,10 +351,14 @@ void check_intermolecular_distance(const Molecule& ligand,
     const auto prot = collect_heavy(protein);
     const DistClashResult r = compute_distance_clash(lig, prot);
 
-    // Dock-suite key: no_clashes — pass when min lig–prot heavy distance is OK.
-    const bool min_ok =
+    // Align with upstream PoseBusters: minimum_distance_to_protein fails when
+    // any heavy pair has d < kVdwClashScale * (vdW_i + vdW_j), not only absolute
+    // 1.5 Å. Upstream 1G9V: min_dist=2.50 Å but relative=0.734 → Fail.
+    const bool abs_ok =
         !r.has_pair ||
         (std::isfinite(r.min_dist) && r.min_dist >= kMinDistanceA);
+    const bool rel_ok = (r.n_clashes == 0);
+    const bool min_ok = abs_ok && rel_ok;
 
     {
         std::ostringstream oss;
@@ -362,20 +366,21 @@ void check_intermolecular_distance(const Molecule& ligand,
             oss << "no heavy-heavy pair (lig_heavy=" << lig.size()
                 << ", prot_heavy=" << prot.size() << "); vacuous pass";
         } else {
-            oss << "min_dist=" << r.min_dist << " A (threshold "
+            oss << "min_dist=" << r.min_dist << " A (abs_floor="
                 << kMinDistanceA << " A); pairs_examined=" << r.n_pairs
-                << "; soft_vdw_clashes=" << r.n_clashes
-                << " (scale=" << kVdwClashScale << ")";
+                << "; relative_vdw_clashes=" << r.n_clashes
+                << " (scale=" << kVdwClashScale << "); abs_ok=" << abs_ok
+                << " rel_ok=" << rel_ok;
         }
         CheckItem item;
         item.key       = "no_clashes";
-        item.label     = "No ligand–protein clashes";
+        item.label     = "Minimum distance to protein";
         item.passed    = min_ok;
         item.detail    = oss.str();
         item.metric    = r.has_pair ? r.min_dist : std::numeric_limits<float>::quiet_NaN();
         item.threshold = kMinDistanceA;
         item.n_checked = r.n_pairs;
-        item.n_failed  = min_ok ? 0 : 1;
+        item.n_failed  = r.n_clashes;
         out.push_back(std::move(item));
     }
 }

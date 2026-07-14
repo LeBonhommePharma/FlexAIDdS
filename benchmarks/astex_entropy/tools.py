@@ -957,11 +957,31 @@ def _collect_flexaidds_records(
         if not result_dir.exists():
             continue
         result_row = _read_result_row(result_dir / "result.csv")
-        pose_pdbs = [
-            path for path in result_dir.glob(f"{target.target_dir_name}_*.pdb")
-            if not path.name.endswith("_INI.pdb")
-        ]
-        for idx, pdb_path in enumerate(sorted(pose_pdbs, key=_numeric_pose_key), start=1):
+        pose_pdbs: list[Path] = []
+        elected = result_dir / "elected_pose.pdb"
+        if elected.is_file():
+            pose_pdbs.append(elected)
+        for path in sorted(result_dir.rglob(f"{target.target_dir_name}_*.pdb"), key=lambda p: (str(p.parent), _numeric_pose_key(p))):
+            if path.name.endswith("_INI.pdb") or "member" in path.name:
+                continue
+            if path == elected:
+                continue
+            pose_pdbs.append(path)
+
+        seen_pose_hashes: set[tuple[int, int]] = set()
+        unique_pose_pdbs: list[Path] = []
+        for path in pose_pdbs:
+            try:
+                stat = path.stat()
+            except OSError:
+                continue
+            key = (stat.st_ino, stat.st_size)
+            if key in seen_pose_hashes:
+                continue
+            seen_pose_hashes.add(key)
+            unique_pose_pdbs.append(path)
+
+        for idx, pdb_path in enumerate(unique_pose_pdbs, start=1):
             pose_id = f"{target.target_dir_name}_flexaidds_{idx:03d}"
             pose_dir = Path(cfg["work_dir"]) / "prepared" / mode / target.target_dir_name / "poses" / "flexaidds"
             pose_dir.mkdir(parents=True, exist_ok=True)
@@ -1033,6 +1053,11 @@ def run_flexaidds_batch(
         "FLEXAIDDS_RESTARTS": str(int(flex_cfg.get("restarts", 1))),
         "FLEXAIDDS_PARALLEL_RESTARTS": str(int(flex_cfg.get("parallel_restarts", 0))),
     }
+    extra_env = flex_cfg.get("environment", {})
+    if isinstance(extra_env, dict):
+        for key, value in extra_env.items():
+            if value is not None:
+                env[str(key)] = str(value)
     flexaidds_binary = cfg.get("entropy", {}).get("flexaidds_binary")
     if flexaidds_binary:
         binary = _require_executable(str(flexaidds_binary), skip_missing=skip_missing)

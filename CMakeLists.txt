@@ -1019,12 +1019,13 @@ if(ENABLE_BENCHMARK_DATASETS)
         LIB/benchmark_datasets.cpp
         LIB/DatasetRunner.cpp
         LIB/AsyncPipeline.cpp
-        # Native PoseBust (PoseBusters-compatible dock suite, clean-room C++26)
+        # NativePoseQC diagnostic plus upstream PoseBusters CLI bridge
         LIB/PoseBust/Loaders.cpp
         LIB/PoseBust/ChecksChemistry.cpp
         LIB/PoseBust/ChecksGeometry.cpp
         LIB/PoseBust/ChecksProtein.cpp
         LIB/PoseBust/Engine.cpp
+        LIB/PoseBust/BustCli.cpp
     )
     target_link_libraries(benchmark_datasets PRIVATE flexaid_core)
     if(CMAKE_SYSTEM_NAME STREQUAL "Linux")

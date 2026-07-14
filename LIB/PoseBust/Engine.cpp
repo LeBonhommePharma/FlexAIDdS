@@ -306,7 +306,7 @@ PoseBustReport evaluate_paths(const std::string& complex_pdb,
                               const EvaluateOptions& opt) {
     PoseBustReport report;
     report.ran     = true;
-    report.backend = "native";
+    report.backend = "native_pose_qc";
 
     // 1) Coordinates from FlexAID pose via CONECT / optimizable residue
     //    (NOT all HETATM — that swallows HEM and cofactors).
@@ -318,21 +318,28 @@ PoseBustReport evaluate_paths(const std::string& complex_pdb,
         return report;
     }
 
-    // 2) Topology from crystal SDF when available (bond orders, not distance inference).
+    // 2) Topology from crystal SDF is MANDATORY (fail-closed).
+    //    Never fall back to coordinate-inferred bonds for validation.
     Molecule crystal;
-    const Molecule* crystal_ptr = nullptr;
-    std::string topo_warning;
-    if (!crystal_sdf.empty()) {
-        if (!load_sdf(crystal_sdf, crystal, &err)) {
-            // Soft: still run clash/volume with CONECT topology
-            topo_warning = err.empty() ? "load_sdf(crystal) failed" : err;
-        } else {
-            crystal_ptr = &crystal;
-            std::string topo_err;
-            if (!assign_topology_from_reference(ligand, crystal, &topo_err)) {
-                topo_warning = topo_err;
-            }
-        }
+    if (crystal_sdf.empty()) {
+        report.backend = "error";
+        report.error =
+            "crystal_sdf required for NativePoseQC (no inferred-bond fallback)";
+        return report;
+    }
+    if (!load_sdf(crystal_sdf, crystal, &err)) {
+        report.backend = "error";
+        report.error   = err.empty() ? "load_sdf(crystal) failed" : err;
+        return report;
+    }
+    std::string topo_err;
+    if (!assign_topology_from_reference(ligand, crystal, &topo_err)) {
+        report.backend = "error";
+        report.error   = topo_err.empty()
+                             ? "assign_topology_from_reference failed"
+                             : topo_err;
+        report.n_ligand_atoms = static_cast<int>(ligand.atoms.size());
+        return report;
     }
 
     // 3) Protein from receptor apo preferred (no cofactors/ligand); complex fallback.
@@ -351,13 +358,8 @@ PoseBustReport evaluate_paths(const std::string& complex_pdb,
         }
     }
 
-    auto rep = evaluate(ligand, protein, crystal_ptr, opt);
-    if (!topo_warning.empty()) {
-        if (rep.warning.empty())
-            rep.warning = topo_warning;
-        else
-            rep.warning += "; " + topo_warning;
-    }
+    auto rep = evaluate(ligand, protein, &crystal, opt);
+    rep.backend = "native_pose_qc";  // never claim "posebusters"
     return rep;
 }
 
@@ -375,6 +377,9 @@ bool write_report_json(const PoseBustReport& report, const std::string& path,
     out << "  \"error\": \"" << json_escape(report.error) << "\",\n";
     out << "  \"warning\": \"" << json_escape(report.warning) << "\",\n";
     out << "  \"all_passed\": " << (report.all_passed() ? "true" : "false") << ",\n";
+    // Diagnostic-only fields — NOT DatasetRunner success_pb (that is rmsd∧bust).
+    out << "  \"native_qc_diagnostic_pass\": "
+        << (report.native_qc_diagnostic_pass() ? "true" : "false") << ",\n";
     out << "  \"success_pb_campaign\": "
         << (report.success_pb_campaign() ? "true" : "false") << ",\n";
     out << "  \"success_pb_full\": " << (report.success_pb_full() ? "true" : "false")
@@ -386,6 +391,8 @@ bool write_report_json(const PoseBustReport& report, const std::string& path,
     out << "  \"n_protein_atoms_cropped\": " << report.n_protein_atoms_cropped << ",\n";
     out << "  \"failed_keys\": \"" << json_escape(report.failed_keys_csv())
         << "\",\n";
+    out << "  \"failed_native_qc_keys\": \""
+        << json_escape(report.failed_campaign_keys_csv()) << "\",\n";
     out << "  \"failed_campaign_keys\": \""
         << json_escape(report.failed_campaign_keys_csv()) << "\",\n";
     out << "  \"min_lig_prot_dist\": ";
@@ -427,13 +434,17 @@ bool write_report_json(const PoseBustReport& report, const std::string& path,
 
 Backend resolve_backend_from_env() {
     if (const char* v = std::getenv("FLEXAIDDS_POSEBUST")) {
-        // Explicit off: "0" only (per locked Engine.h contract).
         if (std::string_view(v) == "0") return Backend::Off;
     }
     if (const char* v = std::getenv("FLEXAIDDS_POSEBUST_BACKEND")) {
         if (iequals(v, "off")) return Backend::Off;
+        if (iequals(v, "native") || iequals(v, "native_pose_qc"))
+            return Backend::Native;
+        if (iequals(v, "bust") || iequals(v, "bust_cli") || iequals(v, "posebusters"))
+            return Backend::BustCli;
     }
-    return Backend::Native;
+    // Authoritative default: upstream bust — never claim native is PoseBusters.
+    return Backend::BustCli;
 }
 
 }  // namespace flexaids::posebust

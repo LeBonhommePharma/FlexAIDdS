@@ -113,10 +113,10 @@ struct CheckItem {
     int   n_failed  = 0;
 };
 
-// High-impact campaign gate keys (extraction + protein clash/volume).
-// Soft chemistry/geometry heuristics (valence, angles, flatness, InChI) are
-// reported in `checks` but do NOT block success_pb_campaign().
-inline constexpr const char* kCampaignGateKeys[] = {
+// NativePoseQC diagnostic subset (extraction + protein clash/volume).
+// NOT the authoritative PoseBusters gate — that is upstream `bust` via BustCli.
+// Soft chemistry/geometry heuristics remain in `checks` for diagnostics only.
+inline constexpr const char* kNativeQcDiagnosticKeys[] = {
     "mol_pred_loaded",
     "mol_cond_loaded",
     "all_atoms_connected",
@@ -125,11 +125,10 @@ inline constexpr const char* kCampaignGateKeys[] = {
     "not_too_far_away",      // pocket presence
     "no_volume_clash",
 };
-
 struct PoseBustReport {
     std::vector<CheckItem> checks;
     bool                   ran     = false;
-    std::string            backend;  // "native" | "skipped" | "error"
+    std::string            backend;  // "native_pose_qc" | "bust_cli" | "skipped" | "error"
     std::string            error;    // hard execution failure only (not soft warnings)
     std::string            warning;  // soft diagnostics (e.g. topology assign miss)
     int                    n_ligand_atoms = 0;
@@ -148,22 +147,27 @@ struct PoseBustReport {
         return !checks.empty();
     }
 
-    /// Full suite (diagnostics / parity with bust). Requires every check pass.
+    /// Full NativePoseQC suite (diagnostic / parity target). Not claim gate.
     [[nodiscard]] bool success_pb_full() const { return all_passed(); }
 
-    /// Campaign gate: extraction + protein clash/volume only.
-    /// Missing gate keys (suite didn't run them) ⇒ fail closed.
-    [[nodiscard]] bool success_pb_campaign() const {
+    /// NativePoseQC diagnostic subset only (extract + clash/volume).
+    /// Missing keys ⇒ fail closed. NEVER use as DatasetRunner.success_pb.
+    [[nodiscard]] bool native_qc_diagnostic_pass() const {
         if (!ran || !error.empty() || checks.empty()) return false;
-        for (const char* key : kCampaignGateKeys) {
+        for (const char* key : kNativeQcDiagnosticKeys) {
             const CheckItem* c = find_check(key);
             if (!c || !c->passed) return false;
         }
         return true;
     }
 
-    /// Default success_pb for DatasetRunner = campaign gate (not full heuristic suite).
-    [[nodiscard]] bool success_pb() const { return success_pb_campaign(); }
+    /// @deprecated Alias of native_qc_diagnostic_pass — not the claim gate.
+    [[nodiscard]] bool success_pb_campaign() const {
+        return native_qc_diagnostic_pass();
+    }
+
+    /// @deprecated Do not map to DockingResult.success_pb (that is rmsd∧bust).
+    [[nodiscard]] bool success_pb() const { return native_qc_diagnostic_pass(); }
 
     [[nodiscard]] int n_pass() const {
         int n = 0;
@@ -191,7 +195,7 @@ struct PoseBustReport {
 
     [[nodiscard]] std::string failed_campaign_keys_csv() const {
         std::string out;
-        for (const char* key : kCampaignGateKeys) {
+        for (const char* key : kNativeQcDiagnosticKeys) {
             const CheckItem* c = find_check(key);
             if (c && c->passed) continue;
             if (!out.empty()) out += ';';
@@ -210,6 +214,9 @@ struct PoseBustReport {
 enum class Suite { Dock, Redock, Mol };
 
 // Backend selection for DatasetRunner
-enum class Backend { Native, Off };
+// BustCli = authoritative upstream PoseBusters CLI (default)
+// Native  = NativePoseQC diagnostic only (not claim-ready alone)
+// Off     = skip
+enum class Backend { BustCli, Native, Off };
 
 }  // namespace flexaids::posebust

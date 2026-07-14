@@ -41,9 +41,11 @@ bool write_report_json(const PoseBustReport& report, const std::string& path,
                        std::string* err = nullptr);
 
 /// Resolve backend from FLEXAIDDS_POSEBUST / FLEXAIDDS_POSEBUST_BACKEND.
-///   FLEXAIDDS_POSEBUST=0           → Off
-///   FLEXAIDDS_POSEBUST_BACKEND=off → Off
-///   default                        → Native
+///   FLEXAIDDS_POSEBUST=0              → Off
+///   FLEXAIDDS_POSEBUST_BACKEND=off    → Off
+///   FLEXAIDDS_POSEBUST_BACKEND=native → NativePoseQC (diagnostic only)
+///   default                          → BustCli (authoritative upstream bust)
+/// Native C++ is NEVER the default authoritative PoseBusters gate.
 [[nodiscard]] Backend resolve_backend_from_env();
 
 }  // namespace flexaids::posebust

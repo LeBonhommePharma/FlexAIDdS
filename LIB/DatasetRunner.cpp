@@ -20,7 +20,9 @@
 #include "receptor_prep.h"
 #include "tENCoM/tencm.h"   // tencm::TorsionalENM — ligand Cartesian ANM for H(ω)
 #include "VibEntropy.h"     // vibentropy::compute_vib_entropy_collapse — Level-3 H(ω)
-#include "PoseBust/Engine.h"  // native PoseBust dock-suite validator
+#include "PoseBust/Engine.h"   // NativePoseQC (diagnostic)
+#include "PoseBust/BustCli.h"  // authoritative upstream bust
+#include "PoseBust/Loaders.h"
 
 #include <algorithm>
 #include <array>
@@ -6847,7 +6849,7 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                 if (result.seed_echo) {
                     const bool ga_found_native =
                         (result.best_cluster_rmsd >= 0.0f &&
-                         result.best_cluster_rmsd < 2.0f);
+                         result.best_cluster_rmsd <= 2.0f);
                     if (ga_found_native) {
                         result.seed_echo = false;  // GA independently found native; not a false positive
                         std::cerr << "  [SEED-ECHO-CLEAR] " << entry.pdb_id
@@ -6879,7 +6881,7 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                 // diagnostic-only.
                 const bool bcr_gate_candidate =
                     result.best_cluster_rmsd >= 0.0f &&
-                    result.best_cluster_rmsd < 2.0f &&
+                    result.best_cluster_rmsd <= 2.0f &&
                     std::min(result.rmsd_to_crystal, result.rmsd_hungarian) >= 2.0f;
                 const bool bcr_gate_enabled =
                     config.mode == BenchmarkMode::ORACLE_CEILING &&
@@ -6967,74 +6969,188 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
         // seed_echo=1 means the INI crystal seed survived into rank-0 but the GA
         // never found native independently (all cluster reps ≥ 2 Å).  Count these
         // as failures: the 0.00 Å RMSD is seed survival, not a GA discovery.
-        result.success_rmsd = (docking_completed && rmsd_report >= 0.0f && rmsd_report < 2.0f &&
+        result.success_rmsd = (docking_completed && rmsd_report >= 0.0f && rmsd_report <= 2.0f &&
                                !result.seed_echo);
+        // Legacy column: ALWAYS success_rmsd (never remapped by env — audit P0).
+        result.success = result.success_rmsd;
 
-        // ── Native PoseBust (PoseBusters-compatible dock suite) ────────────
-        // After election + RMSD. Topology from crystal SDF; coords from FlexAID
-        // CONECT ligand (not all HETATM / HEM). FLEXAIDDS_POSEBUST=0 disables.
+        // ── Persist elected pose + SHA256 (audit P0) ───────────────────────
+        // Downstream validators must cite this hash, not root <pdb>_0.pdb.
+        if (docking_completed && !elected_pose_pdb.empty() && fs::exists(elected_pose_pdb)) {
+            result.elected_pose_source = elected_pose_pdb;
+            // Parse restart / cluster from path: .../r3/1G9V_2.pdb or .../1G9V_2.pdb
+            {
+                const fs::path ep(elected_pose_pdb);
+                const std::string parent = ep.parent_path().filename().string();
+                if (!parent.empty() && parent[0] == 'r' && parent.size() > 1 &&
+                    std::isdigit(static_cast<unsigned char>(parent[1]))) {
+                    try { result.elected_restart = std::stoi(parent.substr(1)); }
+                    catch (...) { result.elected_restart = -1; }
+                } else {
+                    result.elected_restart = 0;
+                }
+                // stem like 1G9V_2
+                const std::string stem = ep.stem().string();
+                auto us = stem.find_last_of('_');
+                if (us != std::string::npos) {
+                    try { result.elected_cluster = std::stoi(stem.substr(us + 1)); }
+                    catch (...) { result.elected_cluster = -1; }
+                }
+            }
+            // REMARK CF from elected pose
+            {
+                std::ifstream pf(elected_pose_pdb);
+                std::string pl;
+                while (std::getline(pf, pl)) {
+                    auto p = pl.find("REMARK CF=");
+                    if (p != std::string::npos) {
+                        try { result.elected_cf = std::stof(pl.substr(p + 10)); }
+                        catch (...) {}
+                        break;
+                    }
+                }
+            }
+            const std::string elect_dst = out_dir + "/elected_pose.pdb";
+            std::string copy_err;
+            if (flexaids::posebust::copy_file_atomic(elected_pose_pdb, elect_dst, &copy_err)) {
+                result.elected_pose_path = elect_dst;
+                result.pose_sha256 = flexaids::posebust::sha256_file(elect_dst);
+            } else {
+                std::cerr << "  [ELECTED-POSE] copy failed: " << copy_err << "\n";
+                result.pose_sha256 = flexaids::posebust::sha256_file(elected_pose_pdb);
+                result.elected_pose_path = elected_pose_pdb;
+            }
+            std::cerr << "  [ELECTED-POSE] src=" << result.elected_pose_source
+                      << " dst=" << result.elected_pose_path
+                      << " restart=" << result.elected_restart
+                      << " cluster=" << result.elected_cluster
+                      << " CF=" << result.elected_cf
+                      << " sha256=" << result.pose_sha256 << "\n";
+        }
+
+        // ── Authoritative PoseBusters = upstream `bust` (audit P0) ─────────
+        // NativePoseQC is diagnostic only. success_pb := success_rmsd && pb_pass.
         {
             using flexaids::posebust::Backend;
             using flexaids::posebust::EvaluateOptions;
             using flexaids::posebust::Suite;
-            const Backend pb_backend = flexaids::posebust::resolve_backend_from_env();
-            if (pb_backend == Backend::Off || !docking_completed || elected_pose_pdb.empty()) {
-                result.pb_ran     = false;
-                result.success_pb = false;
-                result.pb_backend = (pb_backend == Backend::Off) ? "skipped" : "skipped";
+            const Backend backend = flexaids::posebust::resolve_backend_from_env();
+            result.pb_pass = false;
+            result.pb_ran  = false;
+
+            if (backend == Backend::Off || !docking_completed || elected_pose_pdb.empty()) {
+                result.pb_backend = "skipped";
             } else {
-                EvaluateOptions pb_opt;
-                pb_opt.suite        = Suite::Dock;
-                pb_opt.protein_crop_A = 10.0f;
-                pb_opt.sidecar_dir  = out_dir + "/posebust";
-                pb_opt.pdb_id       = entry.pdb_id;
                 const std::string crystal =
                     !rmsd_reference_path.empty() ? rmsd_reference_path : entry.ligand_path;
-                auto pb_rep = flexaids::posebust::evaluate_paths(
-                    elected_pose_pdb,
-                    entry.receptor_path,
-                    crystal,
-                    pb_opt);
-                // Campaign gate = extraction + protein clash/volume (not soft valence/angles).
-                // Full suite still in posebust/*.json for diagnostics / bust parity.
-                const bool full_gate = []() {
-                    const char* e = std::getenv("FLEXAIDDS_POSEBUST_FULL");
-                    return e && std::atoi(e) != 0;
-                }();
-                result.pb_ran              = pb_rep.ran;
-                result.success_pb          = full_gate ? pb_rep.success_pb_full()
-                                                       : pb_rep.success_pb_campaign();
-                result.pb_n_pass           = pb_rep.n_pass();
-                result.pb_n_fail           = pb_rep.n_fail();
-                result.pb_n_checks         = pb_rep.n_checks();
-                result.pb_failed_keys      = full_gate ? pb_rep.failed_keys_csv()
-                                                       : pb_rep.failed_campaign_keys_csv();
-                result.pb_backend          = pb_rep.backend.empty() ? "native" : pb_rep.backend;
-                result.pb_min_lig_prot_dist = pb_rep.min_lig_prot_dist;
-                result.pb_volume_overlap   = pb_rep.volume_overlap;
-                if (!pb_rep.error.empty() && pb_rep.backend == "error") {
-                    result.success_pb = false;
-                    result.pb_backend = "error";
+                const std::string pb_dir = out_dir + "/posebust";
+                fs::create_directories(pb_dir);
+
+                // Extract ligand SDF via FlexAID CONECT + crystal topology (fail-closed).
+                flexaids::posebust::Molecule lig;
+                std::string lig_err;
+                bool lig_ok = flexaids::posebust::load_pdb_flexaid_ligand(
+                    elected_pose_pdb, lig, &lig_err);
+                flexaids::posebust::Molecule crystal_mol;
+                if (lig_ok && !crystal.empty() && fs::exists(crystal)) {
+                    std::string e2;
+                    if (flexaids::posebust::load_sdf(crystal, crystal_mol, &e2)) {
+                        if (!flexaids::posebust::assign_topology_from_reference(
+                                lig, crystal_mol, &e2)) {
+                            lig_ok = false;
+                            lig_err = e2;
+                        }
+                    } else {
+                        lig_ok = false;
+                        lig_err = e2;
+                    }
+                } else if (lig_ok) {
+                    lig_ok = false;
+                    lig_err = "crystal SDF required for authoritative PB extract";
                 }
-                std::cerr << "  [POSEBUST] " << entry.pdb_id
-                          << " backend=" << result.pb_backend
-                          << " gate=" << (full_gate ? "full" : "campaign")
-                          << " pass=" << (result.success_pb ? 1 : 0)
-                          << " campaign=" << (pb_rep.success_pb_campaign() ? 1 : 0)
-                          << " full=" << (pb_rep.success_pb_full() ? 1 : 0)
-                          << " n_lig=" << pb_rep.n_ligand_atoms
-                          << " n_prot_crop=" << pb_rep.n_protein_atoms_cropped
-                          << " min_dist=" << result.pb_min_lig_prot_dist
-                          << " vol_ov=" << result.pb_volume_overlap
-                          << " failed_gate=[" << result.pb_failed_keys << "]"
-                          << " failed_all=[" << pb_rep.failed_keys_csv() << "]\n";
+                const std::string pred_sdf = pb_dir + "/" + entry.pdb_id +
+                    (result.pose_sha256.empty() ? "_ligand.sdf"
+                                                : ("_" + result.pose_sha256.substr(0, 12) +
+                                                   "_ligand.sdf"));
+                if (lig_ok) {
+                    std::string werr;
+                    lig_ok = flexaids::posebust::write_sdf(lig, pred_sdf, &werr);
+                    if (!lig_ok) lig_err = werr;
+                }
+
+                // --- NativePoseQC diagnostic (never authoritative claim) ---
+                {
+                    EvaluateOptions nopt;
+                    nopt.suite = Suite::Dock;
+                    nopt.sidecar_dir = pb_dir + "/native_qc";
+                    nopt.pdb_id = entry.pdb_id +
+                        (result.pose_sha256.empty() ? ""
+                                                    : ("_" + result.pose_sha256.substr(0, 12)));
+                    auto nrep = flexaids::posebust::evaluate_paths(
+                        elected_pose_pdb, entry.receptor_path, crystal, nopt);
+                    result.native_qc_ran = nrep.ran && nrep.error.empty();
+                    result.native_qc_pass = nrep.success_pb_full();
+                    result.native_qc_failed_keys = nrep.failed_keys_csv();
+                    result.pb_min_lig_prot_dist = nrep.min_lig_prot_dist;
+                    result.pb_volume_overlap = nrep.volume_overlap;
+                    std::cerr << "  [NATIVE-POSE-QC] " << entry.pdb_id
+                              << " pass=" << (result.native_qc_pass ? 1 : 0)
+                              << " failed=[" << result.native_qc_failed_keys << "]"
+                              << " (diagnostic only)\n";
+                }
+
+                // --- Upstream bust (authoritative pb_pass) ---
+                if (!lig_ok) {
+                    result.pb_backend = "error";
+                    result.pb_failed_keys = "ligand_extract:" + lig_err;
+                    std::cerr << "  [POSEBUSTERS] extract failed: " << lig_err << "\n";
+                } else if (backend == Backend::Native) {
+                    // Explicit native-only mode: still not claim-ready without bust
+                    result.pb_backend = "native_pose_qc";
+                    result.pb_ran = result.native_qc_ran;
+                    result.pb_pass = false;  // refuse native as official pb_pass
+                    result.pb_failed_keys =
+                        "native_not_authoritative;set_FLEXAIDDS_POSEBUST_BACKEND=bust";
+                    std::cerr << "  [POSEBUSTERS] native backend is diagnostic only; "
+                                 "pb_pass forced false\n";
+                } else {
+                    auto br = flexaids::posebust::run_upstream_bust(
+                        pred_sdf, entry.receptor_path, crystal, pb_dir,
+                        entry.pdb_id + (result.pose_sha256.empty()
+                                            ? ""
+                                            : ("_" + result.pose_sha256.substr(0, 12))));
+                    result.pb_ran = br.ran;
+                    result.pb_pass = br.pb_pass;
+                    result.pb_n_pass = br.n_pass;
+                    result.pb_n_fail = br.n_fail;
+                    result.pb_n_checks = br.n_checks;
+                    result.pb_failed_keys = br.failed_keys;
+                    result.pb_backend = br.backend;
+                    if (!br.error.empty() && !br.pb_pass) {
+                        if (!result.pb_failed_keys.empty()) result.pb_failed_keys += ';';
+                        result.pb_failed_keys += br.error;
+                    }
+                    std::cerr << "  [POSEBUSTERS] backend=" << result.pb_backend
+                              << " pb_pass=" << (result.pb_pass ? 1 : 0)
+                              << " checks=" << result.pb_n_pass << "/"
+                              << result.pb_n_checks
+                              << " failed=[" << result.pb_failed_keys << "]"
+                              << " pose_sha256=" << result.pose_sha256 << "\n";
+                }
             }
-            result.success_strict = result.success_rmsd && result.success_pb && result.pb_ran;
-            const bool strict_policy = []() {
-                const char* e = std::getenv("FLEXAIDDS_SUCCESS_STRICT");
-                return e && std::atoi(e) != 0;
-            }();
-            result.success = strict_policy ? result.success_strict : result.success_rmsd;
+
+            // Contract: success_pb = RMSD∧PoseBusters (not PB alone).
+            result.success_pb = result.success_rmsd && result.pb_pass;
+            // tENCoM/Eigen is mandatory for benchmark claims. The C++ dataset
+            // runner does not run the external Eigen/tENCoM validator inline;
+            // the Astex entropy orchestrator/post-validator must populate these
+            // fields on the same pose SHA before claim_ready can become true.
+            result.tencom_status = "not_run";
+            result.eigen_status  = "not_run";
+            result.claim_ready =
+                result.success_pb &&
+                result.tencom_status == "ok" &&
+                result.eigen_status == "ok";
         }
 
         // ── Level-3 H(ω) vibrational-entropy diagnostic (FLEXAIDDS_HVIB=1) ──
@@ -7104,9 +7220,12 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                 if (ofs.is_open()) {
                     ofs << "pdb_id,best_score,rmsd_to_crystal,rmsd_hungarian,predicted_dG,"
                            "predicted_dH,predicted_TdS,shannon_entropy,search_entropy_proxy,num_poses,"
-                           "wall_time_s,success,success_rmsd,success_pb,success_strict,"
+                           "wall_time_s,success,success_rmsd,pb_pass,success_pb,claim_ready,"
                            "pb_ran,pb_n_pass,pb_n_fail,pb_n_checks,pb_failed_keys,pb_backend,"
+                           "native_qc_ran,native_qc_pass,native_qc_failed_keys,"
                            "pb_min_lig_prot_dist,pb_volume_overlap,"
+                           "elected_pose_path,elected_pose_source,elected_restart,elected_cluster,"
+                           "elected_cf,pose_sha256,tencom_status,eigen_status,"
                            "cf_native,best_cluster_rmsd,best_cluster_idx,"
                            "seed_echo,pose_source,H_rep_rank0,H_pop,H_rep_mean,D_vib,"
                            "G_bind,H_vct,H_vct_raw,n_heavy,TdS_shannon,TdS_vib,D_vib_thermo,"
@@ -7126,16 +7245,28 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                         << result.wall_time_s << ","
                         << (result.success ? 1 : 0) << ","
                         << (result.success_rmsd ? 1 : 0) << ","
+                        << (result.pb_pass ? 1 : 0) << ","
                         << (result.success_pb ? 1 : 0) << ","
-                        << (result.success_strict ? 1 : 0) << ","
+                        << (result.claim_ready ? 1 : 0) << ","
                         << (result.pb_ran ? 1 : 0) << ","
                         << result.pb_n_pass << ","
                         << result.pb_n_fail << ","
                         << result.pb_n_checks << ","
                         << "\"" << result.pb_failed_keys << "\","
                         << result.pb_backend << ","
+                        << (result.native_qc_ran ? 1 : 0) << ","
+                        << (result.native_qc_pass ? 1 : 0) << ","
+                        << "\"" << result.native_qc_failed_keys << "\","
                         << (std::isnan(result.pb_min_lig_prot_dist) ? "NA" : std::to_string(result.pb_min_lig_prot_dist)) << ","
                         << (std::isnan(result.pb_volume_overlap) ? "NA" : std::to_string(result.pb_volume_overlap)) << ","
+                        << "\"" << result.elected_pose_path << "\","
+                        << "\"" << result.elected_pose_source << "\","
+                        << result.elected_restart << ","
+                        << result.elected_cluster << ","
+                        << (std::isnan(result.elected_cf) ? "NA" : std::to_string(result.elected_cf)) << ","
+                        << result.pose_sha256 << ","
+                        << result.tencom_status << ","
+                        << result.eigen_status << ","
                         << result.cf_native << ","
                         << result.best_cluster_rmsd << ","
                         << result.best_cluster_idx << ","
@@ -7237,7 +7368,7 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
     int success_count = 0;
     int success_rmsd_count = 0;
     int success_pb_count = 0;
-    int success_strict_count = 0;
+    int claim_ready_count = 0;
     std::vector<double> rmsds;
     std::vector<double> pred_affinities;
     std::vector<double> exp_affinities;
@@ -7247,7 +7378,7 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
         if (r.success) success_count++;
         if (r.success_rmsd) success_rmsd_count++;
         if (r.success_pb) success_pb_count++;
-        if (r.success_strict) success_strict_count++;
+        if (r.claim_ready) claim_ready_count++;
         if (r.rmsd_to_crystal >= 0.0f) {
             rmsds.push_back(r.rmsd_to_crystal);
         }
@@ -7260,14 +7391,17 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
     report.successful = success_count;
     report.successful_rmsd = success_rmsd_count;
     report.successful_pb = success_pb_count;
-    report.successful_strict = success_strict_count;
+    report.claim_ready_count = claim_ready_count;
     report.affinity_pairs = static_cast<int>(pred_affinities.size());
     report.success_rate = (report.total_systems > 0)
         ? static_cast<double>(success_count) / report.total_systems : 0.0;
     if (report.total_systems > 0) {
-        report.success_rate_rmsd = static_cast<double>(success_rmsd_count) / report.total_systems;
-        report.success_rate_pb = static_cast<double>(success_pb_count) / report.total_systems;
-        report.success_rate_strict = static_cast<double>(success_strict_count) / report.total_systems;
+        report.success_rate_rmsd =
+            static_cast<double>(success_rmsd_count) / report.total_systems;
+        report.success_rate_pb =
+            static_cast<double>(success_pb_count) / report.total_systems;
+        report.claim_ready_rate =
+            static_cast<double>(claim_ready_count) / report.total_systems;
     }
 
     // Mean RMSD
@@ -7335,7 +7469,7 @@ void DatasetRunner::write_report(const BenchmarkReport& report,
         ofs << "| Metric | Value |\n";
         ofs << "|--------|-------|\n";
         ofs << "| Total systems | " << report.total_systems << " |\n";
-        ofs << "| Successful (RMSD < 2.0 Å) | " << report.successful << " |\n";
+        ofs << "| Successful (RMSD <= 2.0 A) | " << report.successful << " |\n";
         ofs << std::fixed << std::setprecision(1);
         ofs << "| Success rate | " << (report.success_rate * 100.0) << "% |\n";
         ofs << std::setprecision(2);

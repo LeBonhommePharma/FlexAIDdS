@@ -140,25 +140,42 @@ struct DockingResult {
     float search_entropy_proxy{0.0f}; // legacy H_final collapse proxy from GA energy histogram (nats)
     int   num_poses{0};               // number of binding modes found
     double wall_time_s{0.0};          // docking wall time
-    // ── Success gates (AGENTS.md: claimable = RMSD≤2 ∧ PoseBust pass) ─────
-    // success_rmsd: Hungarian/serial RMSD < 2 Å and not seed_echo.
-    // success_pb:   native PoseBust (or skipped→false when backend off after run).
-    // success_strict: success_rmsd && success_pb && pb_ran  — paper/claim gate.
-    // success: default == success_rmsd for CSV back-compat; set to success_strict
-    //          when FLEXAIDDS_SUCCESS_STRICT=1.
+    // ── Success gates (AGENTS.md / audit contract — fixed semantics) ──────
+    // success_rmsd : RMSD <= 2 Å (Hungarian preferred) && !seed_echo
+    // pb_pass      : upstream PoseBusters CLI (`bust`) all dock-suite checks True
+    //                (RMSD column excluded — that is success_rmsd)
+    // success_pb   : success_rmsd && pb_pass   ← authoritative PB+RMSD intersection
+    // claim_ready  : success_pb && tencom_status==ok && eigen_status==ok
+    //                These validator statuses must refer to pose_sha256.
+    // success      : always == success_rmsd (legacy column; NEVER remapped by env)
+    // NativePoseQC (C++) is diagnostic only — see native_qc_* fields.
     bool  success_rmsd{false};
-    bool  success_pb{false};
-    bool  success_strict{false};
-    bool  success{false};             // see above (legacy column)
-    // Native PoseBust report summary (full detail in out_dir/posebust/*.json)
+    bool  pb_pass{false};
+    bool  success_pb{false};          // == success_rmsd && pb_pass
+    bool  claim_ready{false};
+    bool  success{false};             // == success_rmsd (stable legacy meaning)
+    // Authoritative upstream PoseBusters (`bust`) summary
     bool  pb_ran{false};
     int   pb_n_pass{0};
     int   pb_n_fail{0};
     int   pb_n_checks{0};
-    std::string pb_failed_keys;       // "bond_lengths;no_clashes"
-    std::string pb_backend;           // "native" | "skipped" | "error"
+    std::string pb_failed_keys;
+    std::string pb_backend;           // "bust_cli" | "bust_cli_missing" | "skipped" | "error"
+    // NativePoseQC diagnostic (not the claim gate)
+    bool  native_qc_ran{false};
+    bool  native_qc_pass{false};
+    std::string native_qc_failed_keys;
     float pb_min_lig_prot_dist{std::numeric_limits<float>::quiet_NaN()};
     float pb_volume_overlap{std::numeric_limits<float>::quiet_NaN()};
+    // Validator / provenance (must cite same pose hash)
+    std::string elected_pose_path;    // absolute or workdir-relative path to elected_pose.pdb
+    std::string elected_pose_source;  // original restart path e.g. r1/1G9V_2.pdb
+    int         elected_restart{-1};  // -1 = r0 / root
+    int         elected_cluster{-1};  // pose index 0–19
+    float       elected_cf{std::numeric_limits<float>::quiet_NaN()};
+    std::string pose_sha256;          // SHA-256 of elected_pose.pdb
+    std::string tencom_status{"not_run"};  // ok | fail | not_run | skipped
+    std::string eigen_status{"not_run"};
     // Clash diagnostics (populated from stdout parsing)
     long  individuals_clashed{0};     // total clashing evaluations
     long  individuals_total{0};       // total evaluations (across all generations)
@@ -214,14 +231,14 @@ struct DockingResult {
 struct BenchmarkReport {
     std::string dataset_name;
     int total_systems{0};
-    int successful{0};               // count of result.success (policy-dependent)
-    double success_rate{0.0};        // fraction
-    int successful_rmsd{0};          // success_rmsd
-    int successful_pb{0};            // success_pb
-    int successful_strict{0};        // success_strict (claim gate)
+    int successful{0};               // count of success (== success_rmsd)
+    double success_rate{0.0};
+    int successful_rmsd{0};
+    int successful_pb{0};            // success_rmsd && pb_pass
+    int claim_ready_count{0};
     double success_rate_rmsd{0.0};
     double success_rate_pb{0.0};
-    double success_rate_strict{0.0};
+    double claim_ready_rate{0.0};
     double mean_rmsd{0.0};
     double median_rmsd{0.0};
     int affinity_pairs{0};           // entries with both exp affinity and predicted dG
