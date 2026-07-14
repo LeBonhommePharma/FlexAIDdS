@@ -104,3 +104,29 @@ swift/.build/
 /hvib_*.csv
 /v9_*.md
 /CODEX_*.md
+
+# Local virgin / scratch experiment trees
+.virgin_scratch/
+virgin_bench_fixes.diff
+election_cf.csv
+astex85_repro_final.png
+
+# Never commit staged engine binaries or local repro caches
+benchmarks/astex_repro/engine/
+benchmarks/astex_repro/**/FlexAIDdS
+benchmarks/astex_repro/**/benchmark_datasets
+benchmarks/astex_repro/**/*.bak
+benchmarks/astex_repro/full*.log
+benchmarks/astex_repro/cache/
+benchmarks/datasets-archive-report.json
+
+# Local apo/HEM experiment backups (not canonical dataset)
+benchmarks/astex_diverse/**/*_backup.pdb
+benchmarks/astex_diverse/**/*_preHEMfix.pdb
+benchmarks/astex_diverse/**/*_withHEM.pdb
+benchmarks/astex_diverse/**/*_full10chain.pdb
+
+benchmarks/astex_repro/full/
+benchmarks/astex_repro/smoke/
+benchmarks/astex_repro/**/stdout.log
+benchmarks/astex_repro/**/stderr.log
