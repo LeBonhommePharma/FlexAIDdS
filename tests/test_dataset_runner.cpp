@@ -484,6 +484,8 @@ TEST(PDBParsing, ExtractPeptideLigandFallback) {
     int nbonds = std::stoi(counts.substr(3, 3));
     EXPECT_EQ(natoms, 27);          // AVPI heavy-atom count
     EXPECT_GE(nbonds, 26);          // connected peptide (tree has natoms-1 bonds; PRO ring adds one)
+    ASSERT_GE(counts.size(), 39u);
+    EXPECT_EQ(counts.substr(34, 5), "V2000");
 
     // Receptor cleanup must remove the peptide chain from the apo receptor too.
     std::string apo_path = test_dir + "/apo.pdb";
@@ -560,7 +562,7 @@ TEST(PDBParsing, ExtractLigandFromMMCIFWithChemCompBonds) {
     std::ifstream ifs(sdf_path);
     ASSERT_TRUE(ifs.good());
     std::string contents((std::istreambuf_iterator<char>(ifs)), std::istreambuf_iterator<char>());
-    EXPECT_NE(contents.find("FLEXAIDDS_LIGAND_EXTRACTOR_V4"), std::string::npos);
+    EXPECT_NE(contents.find("FLEXAIDDS_LIGAND_EXTRACTOR_V5"), std::string::npos);
 
     std::istringstream iss(contents);
     std::string line1, line2, line3, counts;
@@ -779,7 +781,7 @@ TEST(PDBParsing, PrepareEntryRegeneratesStaleLigandCache) {
     std::ifstream ifs(sdf_path);
     ASSERT_TRUE(ifs.good());
     std::string contents((std::istreambuf_iterator<char>(ifs)), std::istreambuf_iterator<char>());
-    EXPECT_NE(contents.find("FLEXAIDDS_LIGAND_EXTRACTOR_V4"), std::string::npos);
+    EXPECT_NE(contents.find("FLEXAIDDS_LIGAND_EXTRACTOR_V5"), std::string::npos);
 
     fs::remove_all(test_dir);
 }

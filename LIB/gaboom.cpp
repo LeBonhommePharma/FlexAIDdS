@@ -2406,14 +2406,21 @@ void calculate_fitness(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* chr
 		if (!has_normal_modes) {
 			// Atoms in mov[] rebuild lists (ligand + flex sidechain Cartesian)
 			for (int r = 0; r < FA->nors; ++r)
-				for (int m = 0; m < FA->nmov[r]; ++m)
-					dirty_atm.push_back(FA->mov[r][m]);
+				for (int m = 0; m < FA->nmov[r]; ++m) {
+					const int ai = FA->mov[r][m];
+					if (ai >= 1 && ai <= natm) dirty_atm.push_back(ai);
+				}
 			// Atoms directly referenced by map_par (IC fields: dis/ang/dih)
-			for (int p = 0; p < FA->npar; ++p)
-				dirty_atm.push_back(FA->map_par[p].atm);
+			// Direct-mode rigid-body parameters use pseudo indices >= 90000;
+			// those are not entries in atoms[] and must never enter copy lists.
+			for (int p = 0; p < FA->npar; ++p) {
+				const int ai = FA->map_par[p].atm;
+				if (ai >= 1 && ai <= natm) dirty_atm.push_back(ai);
+			}
 			// Cascade dihedral atoms (atoms whose .dih depends on a flex bond)
 			for (int p = 0; p < FA->npar; ++p) {
-				if (FA->map_par[p].typ == 2) {
+				if (FA->map_par[p].typ == 2 &&
+				    FA->map_par[p].atm >= 1 && FA->map_par[p].atm <= natm) {
 					int j = FA->map_par[p].atm;
 					int cat = atoms[j].rec[3];
 					while (cat != 0 && cat != FA->map_par[p].atm) {
@@ -2430,7 +2437,8 @@ void calculate_fitness(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* chr
 
 			// Residue indices with rotamer genes (typ==4 modifies .rot)
 			for (int p = 0; p < FA->npar; ++p) {
-				if (FA->map_par[p].typ == 4)
+				if (FA->map_par[p].typ == 4 &&
+				    FA->map_par[p].atm >= 1 && FA->map_par[p].atm <= natm)
 					dirty_res_idx.push_back(atoms[FA->map_par[p].atm].ofres);
 			}
 			std::sort(dirty_res_idx.begin(), dirty_res_idx.end());
@@ -2973,7 +2981,9 @@ void populate_chromosomes(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* 
 					chrom[ci].genes[g].to_ic    = ic;
 					chrom[ci].genes[g].to_int32 = ictogene(&gene_lim[g], ic);
 				}
-				ring_randomise_chrom(FA, &chrom[ci]);
+				// Preserve the exact genes that were scored by coarse_init. Ring
+				// randomisation here changed a screened pose after its score was
+				// accepted, breaking the seed-to-gen-0 correspondence.
 				const size_t csig = hash_genes(chrom[ci].genes, GB->num_genes);
 				duplicates[csig] = 1;
 			}
@@ -2988,33 +2998,71 @@ void populate_chromosomes(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* 
 				generate_random_individual(FA,GB,atoms,chrom[i].genes,gene_lim,dice,0,GB->num_genes);
 
 				// ── MIF-weighted or RefLig seeding override for gene 0 ──
+				// Oracle-ceiling / re-dock: when pose_seed_enabled and seed_fraction>0,
+				// inject the crystal IC (gene0=0 + opt_par orientations/torsions) into
+				// the seeded fraction.  Historically this worked when reflig_file was
+				// empty (native_direct_seed).  Modern DatasetRunner always sets
+				// reference_ligand.file to the crystal SDF for RMSD/PB; that must NOT
+				// disable orientation seeding or the seeded fraction stays random
+				// (Astex 1GPK: gen-0 CF≈+32 with no native, hist CF≈−74 with native flood).
+				const int seed_budget = static_cast<int>(
+				    FA->reflig_seed_fraction *
+				    static_cast<float>(GB->num_chrom - popoffset));
+				const bool want_pose_seed =
+				    FA->reflig_pose_seed_enabled &&
+				    FA->opt_par != nullptr &&
+				    FA->map_par != nullptr &&
+				    seed_budget > 0;
 				const bool reflig_seeded =
-				    FA->reflig_nearest_count > 0 &&
-				    i < popoffset + static_cast<int>(FA->reflig_seed_fraction *
-				        static_cast<float>(GB->num_chrom - popoffset));
+				    (FA->reflig_nearest_count > 0 || want_pose_seed) &&
+				    i < popoffset + seed_budget;
 				if (reflig_seeded) {
-					// Direct-mode native fallback: grid index 0 is the input pose
-					// anchor. Keep it exactly so redocking starts from a physically
-					// valid native-like chromosome instead of a nearby clash point.
-					bool native_direct_seed =
-					    FA->reflig_file[0] == '\0' && FA->reflig_hetatm_fallback &&
-					    FA->resligand != NULL && gene_lim[0].min <= 0.0;
+					// Prefer native grid anchor (index 0) whenever the IC frame
+					// allows it and pose seeding is on.  Nearest-grid cycling is a
+					// fallback only when gene0 cannot be 0 (or pose seed is off).
+					const bool native_direct_seed =
+					    FA->resligand != NULL && gene_lim[0].min <= 0.0 &&
+					    (FA->reflig_file[0] == '\0' || FA->reflig_pose_seed_enabled);
 					int grid_idx = 0;
-					if (!native_direct_seed) {
-						// Explicit RefLig seeding: distribute K nearest grid points.
+					if (!native_direct_seed && FA->reflig_nearest_count > 0 &&
+					    FA->reflig_nearest_grid) {
+						// Explicit RefLig grid bias without native pose seed.
 						int k = (i - popoffset) % FA->reflig_nearest_count;
 						grid_idx = FA->reflig_nearest_grid[k];
 					}
 					chrom[i].genes[0].to_ic = static_cast<double>(grid_idx);
 					chrom[i].genes[0].to_int32 = ictogene(&gene_lim[0],
 					                                       static_cast<double>(grid_idx));
-					for (int g = 1; FA->reflig_pose_seed_enabled && g < GB->num_genes; g++) {
-						if (!FA->map_par || !FA->opt_par) break;
-						if (FA->map_par[g].typ == 1 || FA->map_par[g].typ == 2) {
+					if (want_pose_seed) {
+						for (int g = 1; g < GB->num_genes; g++) {
+							// typ: -1 translation (gene0 only), 1 angle, 2 dihedral,
+							// 3 normal mode (skip), 4 other special.
+							const int typ = FA->map_par[g].typ;
+							if (typ == 3) continue;
 							double ref_ic = FA->opt_par[g];
+							// Tiny per-chromosome jitter keeps near-native diversity
+							// when GB->duplicates is off, without leaving the basin.
+							if (i > popoffset && (typ == 1 || typ == 2)) {
+								const double jitter =
+								    (static_cast<int>(dice() % 5) - 2) * 0.25; // −0.5..0.5°
+								ref_ic += jitter;
+							}
 							chrom[i].genes[g].to_ic = ref_ic;
-							chrom[i].genes[g].to_int32 = ictogene(&gene_lim[g], ref_ic);
+							chrom[i].genes[g].to_int32 =
+							    ictogene(&gene_lim[g], ref_ic);
 						}
+					}
+					if (i == popoffset) {
+						printf("[REFLIG-SEED] native_anchor=%d pose_seed=%d frac=%.2f "
+						       "budget=%d nearest=%d ngenes=%d first=(",
+						       native_direct_seed ? 1 : 0,
+						       FA->reflig_pose_seed_enabled,
+						       FA->reflig_seed_fraction, seed_budget,
+						       FA->reflig_nearest_count, GB->num_genes);
+						for (int g = 0; g < GB->num_genes && g < 8; g++)
+							printf("%s%.3f", g ? "," : "",
+							       chrom[i].genes[g].to_ic);
+						printf(")\n");
 					}
 				} else if (FA->mif_enabled && FA->mif_cdf && FA->mif_count > 0) {
 					// MIF-weighted Boltzmann sampling
@@ -3027,51 +3075,7 @@ void populate_chromosomes(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* 
 					chrom[i].genes[0].to_ic = static_cast<double>(grid_idx);
 					chrom[i].genes[0].to_int32 = ictogene(&gene_lim[0],
 					                                       static_cast<double>(grid_idx));
-				} else if (FA->num_grd > 0) {
-					// ── Cleft-biased GPA0 seeding ──────────────────────────────────
-					// Seed gene[0] (rigid-body grid index) near cleftgrid[0], the
-					// highest Voronoi contact density point.  Box-Muller Gaussian
-					// with σ = max(3, num_grd/10) indices ≈ 2 Å spread across the
-					// pocket.  Dramatically reduces the 479 k clashes/run caused by
-					// blind uniform placement.  Chromosomes that still clash receive
-					// the OOB penalty as normal and die through selection pressure.
-					//
-					// v58 rigid multi-seed: low-DoF ligands (num_genes≤7) collapse to
-					// a single placement without diverse gene[0] seeds.  Dedicate the
-					// first N chromosomes to evenly spaced cleft grid indices with
-					// small jitter so rigid targets explore multiple pocket poses.
-					const int pop_idx   = i - popoffset;
-					const int pop_span  = GB->num_chrom - popoffset;
-					const bool rigid_lig = (GB->num_genes <= 7);
-					int rigid_n_seeds = 8;
-					if (const char* env_rs = std::getenv("FLEXAIDDS_RIGID_MULTI_SEED"))
-						rigid_n_seeds = std::max(1, std::atoi(env_rs));
-					rigid_n_seeds = std::min({rigid_n_seeds, FA->num_grd, pop_span});
-
-					int grid_idx = 0;
-					if (rigid_lig && rigid_n_seeds > 1 && pop_idx < rigid_n_seeds) {
-						const int base = (pop_idx * FA->num_grd) / rigid_n_seeds;
-						const int jitter = static_cast<int>(dice() % 5) - 2;
-						grid_idx = std::clamp(base + jitter, 0, FA->num_grd - 1);
-					} else {
-						const int sigma_idx = std::max(3, FA->num_grd / 10);
-						const double u1 = std::max(1e-10, RandomDouble(dice()));
-						const double u2 = RandomDouble(dice());
-						// Box-Muller N(0,1) → N(0, sigma_idx)
-						const double z = std::sqrt(-2.0 * std::log(u1))
-						                 * std::cos(2.0 * M_PI * u2);
-						grid_idx = std::clamp(
-						    static_cast<int>(std::round(z * sigma_idx)),
-						    0, FA->num_grd - 1);
 					}
-					chrom[i].genes[0].to_ic    = static_cast<double>(grid_idx);
-					chrom[i].genes[0].to_int32 = ictogene(&gene_lim[0],
-					                                       static_cast<double>(grid_idx));
-					if (rigid_lig && pop_idx == 0 && rigid_n_seeds > 1) {
-						printf("v58 rigid multi-seed: num_genes=%d, N=%d placements\n",
-						       GB->num_genes, rigid_n_seeds);
-					}
-				}
 
 				sig = hash_genes(chrom[i].genes,GB->num_genes);
 				if(reflig_seeded || GB->duplicates || duplicates.find(sig) == duplicates.end()){
@@ -3195,12 +3199,17 @@ void populate_chromosomes(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* 
 		std::vector<int> p_dirty_res_idx;
 		if (!p_has_normal_modes) {
 			for (int r = 0; r < FA->nors; ++r)
-				for (int m = 0; m < FA->nmov[r]; ++m)
-					p_dirty_atm.push_back(FA->mov[r][m]);
-			for (int p = 0; p < FA->npar; ++p)
-				p_dirty_atm.push_back(FA->map_par[p].atm);
+				for (int m = 0; m < FA->nmov[r]; ++m) {
+					const int ai = FA->mov[r][m];
+					if (ai >= 1 && ai <= natm) p_dirty_atm.push_back(ai);
+				}
 			for (int p = 0; p < FA->npar; ++p) {
-				if (FA->map_par[p].typ == 2) {
+				const int ai = FA->map_par[p].atm;
+				if (ai >= 1 && ai <= natm) p_dirty_atm.push_back(ai);
+			}
+			for (int p = 0; p < FA->npar; ++p) {
+				if (FA->map_par[p].typ == 2 &&
+				    FA->map_par[p].atm >= 1 && FA->map_par[p].atm <= natm) {
 					int j = FA->map_par[p].atm;
 					int cat = atoms[j].rec[3];
 					while (cat != 0 && cat != FA->map_par[p].atm) {
@@ -3214,7 +3223,8 @@ void populate_chromosomes(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* 
 			p_dirty_atm.erase(std::unique(p_dirty_atm.begin(), p_dirty_atm.end()),
 			                   p_dirty_atm.end());
 			for (int p = 0; p < FA->npar; ++p) {
-				if (FA->map_par[p].typ == 4)
+				if (FA->map_par[p].typ == 4 &&
+				    FA->map_par[p].atm >= 1 && FA->map_par[p].atm <= natm)
 					p_dirty_res_idx.push_back(atoms[FA->map_par[p].atm].ofres);
 			}
 			std::sort(p_dirty_res_idx.begin(), p_dirty_res_idx.end());

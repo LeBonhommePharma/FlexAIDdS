@@ -130,6 +130,7 @@ set(FLEXAID_CORE_SOURCES
     ChiralCenter/ChiralCenterGene.cpp
     # ── CleftDetector + Mol2Reader + SdfReader ──
     CleftDetector.cpp
+    DirectLigandIC.h
     Mol2Reader.cpp
     SdfReader.cpp
     # ── CavityDetect ──

@@ -3,10 +3,10 @@
 #include "RngSeed.h"
 #include "fileio.h"
 #include <algorithm>
+#include <cstdlib>
 #include <random>
 #ifdef FLEXAIDS_USE_SOA_DISTANCES
 #include "simd_distance.h"
-#include <cstdlib>   // getenv
 #include <cmath>     // fabs
 #endif
 
@@ -14,8 +14,10 @@
 int Vcontacts(FA_Global* FA,atom* atoms,resid* residue,VC_Global* VC,
 	      double* clash_value, bool non_scorable)
 {
-	static std::map<std::string, atomindex*> indexed;
-	static atomindex* prev_box = NULL;
+	// Each OpenMP worker owns its indexing cache. Sharing these mutable objects
+	// races map insertion, box clearing, and prev_box updates across poses.
+	static thread_local std::map<std::string, atomindex*> indexed;
+	static thread_local atomindex* prev_box = NULL;
 	
 	//VC->planedef = 'X';  // extended radical plane (default)
 	//VC->planedef = 'R';  // radical plane
@@ -60,6 +62,7 @@ int Vcontacts(FA_Global* FA,atom* atoms,resid* residue,VC_Global* VC,
 			get_contlist4(atoms,atomzero, VC->contlist, FA->atm_cnt_real, rado, VC->dim,
 					       VC->Calc, VC->Calclist, VC->box,VC->ca_rec, VC->ca_index,
 					       clash_value, (double)FA->permeability, FA->soft_wall_cutoff,
+					       FA->intermolecular_clash_ratio,
 					       residue, FA->num_atm);
 		}
 		if(*clash_value >= CLASH_THRESHOLD){ return(-2); }
@@ -130,7 +133,7 @@ int calc_region(FA_Global* FA,VC_Global* VC,atom* atoms,int atmcnt,bool non_scor
 		
 		NC = get_contlist4(atoms,atomzero, VC->contlist, atmcnt, rado, VC->dim,
 				   VC->Calc, VC->Calclist, VC->box,VC->ca_rec, VC->ca_index,
-				   NULL, 0.0, 0.0f, NULL, NULL);
+				   NULL, 0.0, 0.0f, 0.0f, NULL, NULL);
 		
 		// invalid write/read when NC = 0
 		// because planeA is negative subscript
@@ -1709,13 +1712,22 @@ atomindex* index_protein(FA_Global* FA,atom* atoms,resid* residue,atomsas* Calc,
 	
 	std::string sig = generate_dim_sig(global_min,(*dim));
 	std::map<std::string, atomindex*>::iterator it;
-	if(!FA->vindex || (it=indexed.find(sig)) == indexed.end()){
+	if(!FA->vindex){
 		box = (atomindex*)malloc(dim3*sizeof(atomindex));
 		if(!box){
 			fprintf(stderr,"ERROR: memory allocation error for box\n");
 			Terminate(2);
 		}
-		indexed.insert(std::pair<std::string, atomindex*>(sig,box));
+		for(atmi=0;atmi<atmcnt;++atmi){
+			Calc[atmi].boxnum = -1;
+		}
+	}else if((it=indexed.find(sig)) == indexed.end()){
+		box = (atomindex*)malloc(dim3*sizeof(atomindex));
+		if(!box){
+			fprintf(stderr,"ERROR: memory allocation error for box\n");
+			Terminate(2);
+		}
+		indexed.emplace(sig,box);
 		for(atmi=0;atmi<atmcnt;++atmi){
 			// all atoms need to be re-assigned a new box
 			Calc[atmi].boxnum = -1;
@@ -1810,11 +1822,10 @@ int get_contlist4(atom* atoms,int atomzero, contactlist contlist[],
                   const int* Calclist, const atomindex* box, 
                   const ca_struct* ca_rec,const int* ca_index,
 		  double* clash_value, double permea, float soft_wall_cutoff,
+		  float intermolecular_clash_ratio,
 		  resid* residue, int* num_atm) 
 {
 	double sqrdist;             // distance squared between two points
-	double neardist;            // max distance for contact between atom spheres
-	double clashdist;           // clashing distance
 	int boxi;
 	int NC;                     // number of contacts
 	int bai;                    // box atom counter
@@ -1863,7 +1874,31 @@ int get_contlist4(atom* atoms,int atomzero, contactlist contlist[],
 
 			bool intramolecular = Calc[atomzero].atom->ofres == Calc[cand_atomj].atom->ofres;
 			if(clash_value != NULL){
-				if(contlist[NC].dist < cand_clashdist){
+				const int atomzero_residue = Calc[atomzero].atom->ofres;
+				const int candidate_residue = Calc[cand_atomj].atom->ofres;
+				const bool atomzero_is_direct_ligand =
+					Calc[atomzero].atom->number >= 90000;
+				const bool candidate_is_direct_ligand =
+					Calc[cand_atomj].atom->number >= 90000;
+				const bool protein_ligand_pair =
+					(atomzero_is_direct_ligand &&
+					 residue[candidate_residue].type == 0) ||
+					(candidate_is_direct_ligand &&
+					 residue[atomzero_residue].type == 0);
+				const double posebusters_radius_sum =
+					posebusters_vdw_radius(Calc[atomzero].atom->element,
+					                         Calc[atomzero].atom->radius) +
+					posebusters_vdw_radius(Calc[cand_atomj].atom->element,
+					                         Calc[cand_atomj].atom->radius);
+				const bool hard_intermolecular_clash =
+					!intramolecular && protein_ligand_pair &&
+					violates_relative_vdw_cutoff(
+						contlist[NC].dist, posebusters_radius_sum,
+						intermolecular_clash_ratio);
+				if(hard_intermolecular_clash){
+					// Do not let capped soft-wall energy be outweighed by attraction.
+					*clash_value = CLASH_THRESHOLD;
+				}else if(contlist[NC].dist < cand_clashdist){
 					int fatm = residue[Calc[atomzero].atom->ofres].fatm[0];
 					int** rb = residue[Calc[atomzero].atom->ofres].bonded;
 					if(!intramolecular || rb == NULL ||
@@ -1890,7 +1925,7 @@ int get_contlist4(atom* atoms,int atomzero, contactlist contlist[],
 	// this path accumulates the squared distance in float32. Results match the
 	// scalar path only within float32 rounding. Set FLEXAIDS_SOA_ASSERT=1 in
 	// the environment (debug builds) to flag any divergence beyond tolerance.
-	(void)sqrdist; (void)neardist; (void)clashdist;
+	(void)sqrdist;
 	const float bx = Calc[atomzero].atom->coor[0];
 	const float by = Calc[atomzero].atom->coor[1];
 	const float bz = Calc[atomzero].atom->coor[2];
@@ -1988,49 +2023,14 @@ int get_contlist4(atom* atoms,int atomzero, contactlist contlist[],
 				continue;
 			}
 			
-			double rAB = Calc[atomzero].atom->radius + Calc[atomj].atom->radius;
-			
 			sqrdist = (Calc[atomzero].atom->coor[0]-Calc[atomj].atom->coor[0])*(Calc[atomzero].atom->coor[0]-Calc[atomj].atom->coor[0]) 
 				+ (Calc[atomzero].atom->coor[1]-Calc[atomj].atom->coor[1])*(Calc[atomzero].atom->coor[1]-Calc[atomj].atom->coor[1])
 				+ (Calc[atomzero].atom->coor[2]-Calc[atomj].atom->coor[2])*(Calc[atomzero].atom->coor[2]-Calc[atomj].atom->coor[2]);
-			
-			neardist =  rado + Calc[atomj].atom->radius + Rw;
-			clashdist = permea*rAB;
-			
-			//printf("neardist = rado(%.3f) + atomj.rad(%.3f) + Rw(%.3f)\n",rado,Calc[atomj].atom->radius,Rw);
-			//printf("atom %d is sqrdist(%5.2fA) & neardist(%5.2fA) from atom %d\n",
-			//        Calc[atomzero].atom->number,sqrdist,neardist*neardist,Calc[atomj].atom->number);
-			
-			if((sqrdist < neardist*neardist) && (sqrdist != 0.0)) {
-                
-				// add atoms to list
-				//printf("atom %d is in contact with atom %d (%.3f)...\n",
-				//       Calc[atomzero].atom->number,Calc[atomj].atom->number,sqrtf(sqrdist));
-				
-				contlist[NC].index = atomj;
-				contlist[NC].dist = sqrt(sqrdist);
-				
-				bool intramolecular = Calc[atomzero].atom->ofres == Calc[atomj].atom->ofres;
-				if(clash_value != NULL){
-					if(contlist[NC].dist < clashdist){
-						int fatm = residue[Calc[atomzero].atom->ofres].fatm[0];
-						int** rb = residue[Calc[atomzero].atom->ofres].bonded;
-						if(!intramolecular || rb == NULL ||
-						   rb[num_atm[Calc[atomzero].atom->number]-fatm][num_atm[Calc[atomj].atom->number]-fatm] < 0){
-							*clash_value += soft_wall_fitness_energy(contlist[NC].dist,
-							                                       clashdist,
-							                                       soft_wall_cutoff);
-						}
-					}
-					Calc[atomzero].done = 'Y';
-				}
-				++NC;
-			}
+			process_candidate(atomj, sqrdist);
 			++bai;
 		}
 	}
 #endif // FLEXAIDS_USE_SOA_DISTANCES
-	(void)process_candidate;
 	
 	// reset atoms to 'done'
 	currindex = ca_index[atomzero];
