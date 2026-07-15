@@ -4,12 +4,35 @@
 #include <algorithm>
 #include <cfloat>
 #include <cmath>
+#include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <limits>
 #include <map>
 #include <stdexcept>
 #include <string>
+
+// DatasetRunner reads sibling `.mcf` files (one app_evalue per line, head first)
+// to build multi-member Shannon G̃. Format matches LIB/cluster.cpp exactly.
+bool write_mcf_sidecar(const char* pdb_path,
+                       const std::vector<double>& app_evalues_head_first)
+{
+	if (pdb_path == nullptr || pdb_path[0] == '\0') return false;
+	std::string mcf_path(pdb_path);
+	if (mcf_path.size() > 4 &&
+	    mcf_path.substr(mcf_path.size() - 4) == ".pdb")
+		mcf_path = mcf_path.substr(0, mcf_path.size() - 4) + ".mcf";
+	else
+		mcf_path += ".mcf";
+	FILE* mf = std::fopen(mcf_path.c_str(), "w");
+	if (!mf) return false;
+	for (double v : app_evalues_head_first) {
+		if (std::isfinite(v))
+			std::fprintf(mf, "%.6f\n", v);
+	}
+	std::fclose(mf);
+	return true;
+}
 
 /*****************************************\\
 			BindingPopulation  
@@ -685,6 +708,27 @@ void BindingMode::output_BindingMode(int num_result, char* end_strfile, char* tm
 	snprintf(sufix, sizeof(sufix), "_%d_%d.pdb", minPoints, num_result);
 	snprintf(tmp_end_strfile, MAX_PATH__, "%s%s", end_strfile, sufix);
 	write_pdb(this->Population->FA, this->Population->atoms, this->Population->residue, tmp_end_strfile, remark);
+
+	// ── Write member-CF sidecar (.mcf) for DatasetRunner Shannon G̃ ──
+	// Same format as cluster.cpp: one app_evalue per line; head first, then
+	// remaining finite members. Without this, FO path collapses to S̃=0, G̃=CF.
+	{
+		std::vector<double> mcf_vals;
+		mcf_vals.reserve(this->Poses.size());
+		if (Rep != this->Poses.end() && Rep->chrom != nullptr &&
+		    std::isfinite(Rep->chrom->app_evalue)) {
+			mcf_vals.push_back(Rep->chrom->app_evalue);
+		}
+		for (std::vector<Pose>::const_iterator it = this->Poses.begin();
+		     it != this->Poses.end(); ++it) {
+			if (it == Rep) continue;
+			if (it->chrom == nullptr) continue;
+			if (!std::isfinite(it->chrom->app_evalue)) continue;
+			mcf_vals.push_back(it->chrom->app_evalue);
+		}
+		if (!mcf_vals.empty())
+			(void)write_mcf_sidecar(tmp_end_strfile, mcf_vals);
+	}
 }
 
 

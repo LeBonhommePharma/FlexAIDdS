@@ -1676,6 +1676,7 @@ flexaids_add_unit_test(test_protocol_config
         tests/test_binding_mode_advanced.cpp
         tests/stubs.cpp
         LIB/gaboom.cpp
+        LIB/ProtocolConfig.cpp
         LIB/coarse_init.cpp
         LIB/ThermodynamicEngine.cpp
         LIB/LigandRingFlex/RingConformerLibrary.cpp
