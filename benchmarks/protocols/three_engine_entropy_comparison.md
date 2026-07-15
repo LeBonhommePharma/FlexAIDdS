@@ -5,7 +5,8 @@
 
 **Audience:** Queue operators, thesis methods, agents launching array jobs.
 
-**Related:** `benchmarks/BENCHMARK_STANDARD.md` (tiers, no-seed rule), `AGENTS.md` (scientific guardrails).
+**Related:** `benchmarks/BENCHMARK_STANDARD.md` (tiers, no-seed rule), `AGENTS.md` (scientific guardrails),
+**`benchmarks/protocols/admission_metrics_contract.md`** (normative S1/S2/S3 + claim admission; enforced by `scripts/aggregate_claim_metrics.py`).
 
 ---
 
@@ -231,6 +232,18 @@ budget_class
 
 **Admission rule for claim table:**  
 `native_pose_seeded == 0 AND seed_echo == 0 AND matrix_md5 == PIN`.
+
+**Enforced aggregation** (claim filters + separate S1/S2/S3; S3 never primary):
+
+```bash
+python3 scripts/aggregate_claim_metrics.py <results/<ARM>> [--json out.json]
+# C0 full85 after source ~/.flexaidds_env:
+python3 scripts/aggregate_claim_metrics.py --c0-full85
+# FAIL: python3 scripts/aggregate_claim_metrics.py <dir> --headline s3   # needs --diagnostic-only
+```
+
+Default matrix pin: `72d7c7396702331d96ff12d18f831796` (or `RUN_RECEIPT.json` / `provenance.json`).  
+Full contract: `benchmarks/protocols/admission_metrics_contract.md`.
 
 ---
 
