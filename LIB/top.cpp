@@ -28,6 +28,7 @@
 #include "hbond_potential.h"
 #include "RngSeed.h"
 #include "ensemble_pipeline.h"
+#include "ProtocolConfig.h"
 
 #include <algorithm>
 #include <cmath>
@@ -573,7 +574,8 @@ int main(int argc, char **argv){
 	FA->use_hbond_rank=0;
 	FA->hbond_rank_rescore=0;
 	FA->hbond_weight=-2.5;
-	{ const char* _hbw=std::getenv("FLEXAIDDS_HBOND_WEIGHT"); if(_hbw) FA->hbond_weight=std::atof(_hbw); }  // v116: tuneable via env
+	// v116: tuneable via env — routed through ProtocolConfig (typed adapter).
+	FA->hbond_weight = flexaids::ProtocolConfig::from_env().hbond_weight;
 	FA->hbond_optimal_dist=2.8;
 	FA->hbond_optimal_angle=180.0;
 	FA->hbond_sigma_dist=0.4;
@@ -651,13 +653,13 @@ int main(int argc, char **argv){
 		{
 			char probe[MAX_PATH__];
 			int found = 0;
-			const char* env_dd = getenv("FLEXAIDDS_DATA_DIR");
-			if (env_dd != NULL && env_dd[0] != '\0') {
-				snprintf(probe, MAX_PATH__, "%s/MC_st0r5.2_6.dat", env_dd);
+			const flexaids::ProtocolConfig proto = flexaids::ProtocolConfig::from_env();
+			if (!proto.data_dir.empty()) {
+				snprintf(probe, MAX_PATH__, "%s/MC_st0r5.2_6.dat", proto.data_dir.c_str());
 				FILE* fp = fopen(probe, "r");
 				if (fp) {
 					fclose(fp);
-					strncpy(FA->dependencies_path, env_dd, MAX_PATH__ - 1);
+					strncpy(FA->dependencies_path, proto.data_dir.c_str(), MAX_PATH__ - 1);
 					FA->dependencies_path[MAX_PATH__ - 1] = '\0';
 					printf("data directory from FLEXAIDDS_DATA_DIR: '%s'\n", FA->dependencies_path);
 					found = 1;

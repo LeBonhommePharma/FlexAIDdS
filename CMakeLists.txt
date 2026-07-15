@@ -1075,6 +1075,14 @@ if(BUILD_TESTING)
         TEST_NAME JsonConfigTests
     )
 
+    # test_protocol_config — typed ProtocolConfig env adapter + JSON round-trip
+    flexaids_add_unit_test(test_protocol_config
+        SOURCES
+            tests/test_protocol_config.cpp
+            LIB/ProtocolConfig.cpp
+        TEST_NAME ProtocolConfigTests
+    )
+
     # test_posebust — NativePoseQC clean-room + BustCli (real Astex 1G9V artifacts)
     flexaids_add_unit_test(test_posebust
         SOURCES

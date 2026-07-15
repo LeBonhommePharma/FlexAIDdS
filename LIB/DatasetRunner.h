@@ -38,6 +38,7 @@
 #endif
 
 #include "TargetServer.h"
+#include "ProtocolConfig.h"
 
 namespace dataset {
 
@@ -499,6 +500,13 @@ public:
 
 private:
     std::string cache_dir_;
+
+    /// Typed protocol snapshot (seed/restarts/VCT/GA/thermo/data_dir).
+    /// Loaded once via ProtocolConfig::from_env() in the constructor so
+    /// high-traffic getenv fragments go through one adapter (see
+    /// docs/implementation/protocol-config.md). Residual getenv sites remain
+    /// until later migration chunks.
+    flexaids::ProtocolConfig protocol_cfg_{};
 
     // ── Pose selector tuning ─────────────────────────────────────────
     /// CF-window gate (Fix A): when true the freq>1 gate in

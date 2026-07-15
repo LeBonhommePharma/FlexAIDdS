@@ -139,6 +139,8 @@ set(FLEXAID_CORE_SOURCES
     PTMAttachment/PTMAttachment.cpp
     # ── JSON config parser ──
     config_parser.cpp
+    # ── Typed protocol knobs (env adapter; audit getenv consolidation) ──
+    ProtocolConfig.cpp
     # ── ThermodynamicEngine: G_bind decomposition (disabled by default) ──
     ThermodynamicEngine.cpp
     # ── Coarse pocket-scan gen-0 seeding ──
