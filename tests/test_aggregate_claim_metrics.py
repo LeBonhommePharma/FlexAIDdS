@@ -271,3 +271,84 @@ def test_cli_csv_flag(tmp_path: Path):
 if __name__ == "__main__":
     # Allow bare `python3 tests/test_aggregate_claim_metrics.py`
     pytest.main([__file__, "-v"])
+
+
+def test_missing_seed_columns_fail_closed(tmp_path: Path):
+    """Fail-closed: omit seed columns → not claim-eligible."""
+    mod = _load()
+    r = _row("1AAA", rmsd_h=1.0, bcr=0.5)
+    del r["seed_echo"]
+    del r["native_pose_seeded"]
+    camp = _write_campaign(tmp_path, [r])
+    # rewrite without seed columns
+    import csv
+    path = camp / "1AAA" / "result.csv"
+    fields = [c for c in CSV_FIELDS if c not in ("seed_echo", "native_pose_seeded")]
+    row = {k: r.get(k, "") for k in fields}
+    with path.open("w", newline="") as fh:
+        w = csv.DictWriter(fh, fieldnames=fields)
+        w.writeheader()
+        w.writerow(row)
+    rows = mod.load_campaign_rows(camp)
+    pin, _ = mod.load_matrix_pin(camp, None)
+    rep = mod.aggregate_rows(rows, pin, "test", str(camp))
+    assert rep["N_claim"] == 0
+    assert rep["N_dropped"] == 1
+
+
+def test_rmsd_top1_three_engine_schema(tmp_path: Path):
+    mod = _load()
+    camp = tmp_path / "camp"
+    camp.mkdir()
+    d = camp / "1BBB"
+    d.mkdir()
+    fields = ["pdb_id", "rmsd_top1", "rmsd_bcr", "seed_echo", "native_pose_seeded", "matrix_md5"]
+    with (d / "result.csv").open("w", newline="") as fh:
+        w = csv.DictWriter(fh, fieldnames=fields)
+        w.writeheader()
+        w.writerow({
+            "pdb_id": "1BBB",
+            "rmsd_top1": "1.2",
+            "rmsd_bcr": "0.8",
+            "seed_echo": "0",
+            "native_pose_seeded": "0",
+            "matrix_md5": "",
+        })
+    (camp / "RUN_RECEIPT.json").write_text('{"matrix_md5": "%s"}' % DEFAULT_PIN)
+    rows = mod.load_campaign_rows(camp)
+    pin, _ = mod.load_matrix_pin(camp, None)
+    rep = mod.aggregate_rows(rows, pin, "test", str(camp))
+    assert rep["N_claim"] == 1
+    assert rep["metrics"]["S1"]["n"] == 1
+    assert rep["metrics"]["S3"]["n"] == 1
+
+
+def test_success_s1_flag_cannot_override_high_rmsd(tmp_path: Path):
+    mod = _load()
+    r = _row("1CCC", rmsd_h=5.0, bcr=5.0)
+    r["success_s1"] = "1"
+    r["success_rmsd"] = "1"
+    camp = _write_campaign(tmp_path, [r])
+    rows = mod.load_campaign_rows(camp)
+    # inject success_s1 into loaded row via rewriting
+    import csv
+    path = camp / "1CCC" / "result.csv"
+    fields = CSV_FIELDS + ["success_s1"]
+    with path.open("w", newline="") as fh:
+        w = csv.DictWriter(fh, fieldnames=fields, extrasaction="ignore")
+        w.writeheader()
+        full = {k: r.get(k, "") for k in CSV_FIELDS}
+        full["success_s1"] = "1"
+        w.writerow(full)
+    rows = mod.load_campaign_rows(camp)
+    pin, _ = mod.load_matrix_pin(camp, None)
+    rep = mod.aggregate_rows(rows, pin, "test", str(camp))
+    assert rep["N_claim"] == 1
+    assert rep["metrics"]["S1"]["n"] == 0
+
+
+def test_seed_echo_0_0_accepted():
+    mod = _load()
+    row = {"seed_echo": "0.0", "native_pose_seeded": "0.0", "matrix_md5": ""}
+    assert mod._flag0(row, "seed_echo")
+    assert mod._flag0(row, "native_pose_seeded")

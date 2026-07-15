@@ -305,7 +305,7 @@ jobs:
         env:
           FLEXAIDDS_REQUIRE_BUILD: '0'
           PYTHONPATH: ${{ github.workspace }}/python
-        run: python3 -m pytest tests/test_flexaid_skill.py tests/test_flexaidds_skill_figure.py tests/test_resolve_build.py tests/test_skill_edge_cases.py -q --tb=line
+        run: python3 -m pytest tests/test_flexaid_skill.py tests/test_flexaidds_skill_figure.py tests/test_resolve_build.py tests/test_skill_edge_cases.py tests/test_aggregate_claim_metrics.py -q --tb=line
 
   # New job: Validates the flexaidds skill's DatasetRunner features
   # (per-entry checkpointing, --resume + CostHistory, --package reproducibility)

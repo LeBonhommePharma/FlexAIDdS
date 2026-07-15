@@ -2,7 +2,7 @@
 
 **Status:** Normative for claim-table aggregation and abstract / headline rates.  
 **Aligned with:** `benchmarks/protocols/three_engine_entropy_comparison.md` §1.4–§5, `AGENTS.md` scientific guardrails, `benchmarks/BENCHMARK_STANDARD.md` (no-seed, seed_echo).  
-**Enforcement:** `scripts/aggregate_claim_metrics.py` (fail-closed claim filters; S3 never primary).
+**Enforcement:** `scripts/aggregate_claim_metrics.py` (fail-closed claim filters (missing seed columns fail); S3 never primary).
 
 ---
 
@@ -123,3 +123,8 @@ Expect per-target `<PDB>/result.csv`, plus `RUN_RECEIPT.json` / `provenance.json
 | `CLAUDE_BENCHMARK_HANDOFF.md` | Live C0 full85 ops handoff |
 | `scripts/aggregate_claim_metrics.py` | Enforcement implementation |
 | `scripts/aggregate_oracle_ceiling.py` | Seeded ceiling track only |
+
+
+### Fail-closed seed flags
+
+`seed_echo` and `native_pose_seeded` must be **explicitly** `0` (or `0.0`/`false`). Missing/blank columns fail admission.

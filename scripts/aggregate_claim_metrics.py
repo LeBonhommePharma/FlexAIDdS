@@ -77,14 +77,17 @@ def _truth(row: dict[str, str], key: str) -> bool:
 
 
 def _flag0(row: dict[str, str], key: str) -> bool:
-    """True when the admission flag is explicitly zero / false / missing-as-zero-ok.
+    """True when the admission flag is *explicitly* zero / false.
 
-    Missing key is treated as 0 (claim-pass) so older CSVs without the column
-    can still be filtered by the other gates. Explicit non-zero fails.
+    Fail-closed: missing or blank keys fail admission (return False).
+    Explicit non-zero also fails. Accept common zero spellings including "0.0".
     """
-    if key not in row or row.get(key) is None or str(row.get(key, "")).strip() == "":
-        return True  # missing → treat as 0 for admission
-    return str(row.get(key, "")).strip() in ("0", "False", "false", "NO", "no")
+    if key not in row or row.get(key) is None:
+        return False
+    s = str(row.get(key, "")).strip()
+    if s == "":
+        return False
+    return s in ("0", "0.0", "False", "false", "NO", "no")
 
 
 def _pdb_id(row: dict[str, str]) -> str:
@@ -122,10 +125,17 @@ def resolve_c0_full85_dir() -> Path:
     )
 
 
+def _normalize_matrix_pin(md: str) -> str:
+    s = str(md).strip().lower()
+    if len(s) != 32 or any(c not in "0123456789abcdef" for c in s):
+        raise ValueError(f"matrix_md5 pin must be 32 hex chars, got {md!r}")
+    return s
+
+
 def load_matrix_pin(campaign_dir: Path, cli_pin: str | None) -> tuple[str, str]:
     """Return (md5, source_label)."""
     if cli_pin:
-        return cli_pin.strip().lower(), "cli"
+        return _normalize_matrix_pin(cli_pin), "cli"
     for name in ("RUN_RECEIPT.json", "provenance.json"):
         p = campaign_dir / name
         if not p.is_file():
@@ -136,8 +146,8 @@ def load_matrix_pin(campaign_dir: Path, cli_pin: str | None) -> tuple[str, str]:
             continue
         md = data.get("matrix_md5")
         if md:
-            return str(md).strip().lower(), name
-    return DEFAULT_MATRIX_MD5, "default_pin"
+            return _normalize_matrix_pin(str(md)), name
+    return _normalize_matrix_pin(DEFAULT_MATRIX_MD5), "default_pin"
 
 
 def load_campaign_rows(out_dir: Path) -> list[dict[str, str]]:
@@ -170,22 +180,24 @@ def load_rows_from_csv(path: Path) -> list[dict[str, str]]:
 
 
 def elected_rmsd(row: dict[str, str]) -> float:
-    """Preferred elected RMSD: Hungarian, then crystal."""
-    return _f(row, "rmsd_hungarian", "rmsd_to_crystal")
+    """Preferred elected RMSD: Hungarian → three-engine rmsd_top1 → crystal."""
+    return _f(row, "rmsd_hungarian", "rmsd_top1", "rmsd_to_crystal")
 
 
 def is_s1(row: dict[str, str]) -> bool:
-    """S1: elected pose RMSD ≤ 2.0 Å (not seed echo)."""
+    """S1: elected pose RMSD ≤ 2.0 Å (not seed echo).
+
+    Finite elected RMSD always wins over success_s1 / success_rmsd flags so a
+    stale or wrong flag cannot admit a high-RMSD pose.
+    """
     if _truth(row, "seed_echo"):
         return False
-    if "success_s1" in row and str(row.get("success_s1", "")).strip() != "":
-        return _truth(row, "success_s1")
-    # Prefer recomputation from Hungarian (protocol) over engine success_rmsd,
-    # which historically used min(crystal, hungarian). When success_rmsd is the
-    # only signal and RMSD columns are absent, honour it.
     rh = elected_rmsd(row)
     if math.isfinite(rh):
         return 0.0 <= rh <= RMSD_SUCCESS_A
+    # No finite RMSD: fall back to engine flags only
+    if "success_s1" in row and str(row.get("success_s1", "")).strip() != "":
+        return _truth(row, "success_s1")
     if "success_rmsd" in row and str(row.get("success_rmsd", "")).strip() != "":
         return _truth(row, "success_rmsd")
     if "success" in row and str(row.get("success", "")).strip() != "":
@@ -207,11 +219,13 @@ def is_s2(row: dict[str, str], s1: bool) -> bool:
 
 
 def is_s3(row: dict[str, str]) -> bool:
-    """S3: any-pose / BCR ceiling (diagnostic only)."""
+    """S3: any-pose / BCR ceiling (diagnostic only). Finite BCR always wins over flags."""
+    bc = _f(row, "best_cluster_rmsd", "rmsd_bcr")
+    if math.isfinite(bc):
+        return 0.0 <= bc <= RMSD_SUCCESS_A
     if "success_s3" in row and str(row.get("success_s3", "")).strip() != "":
         return _truth(row, "success_s3")
-    bc = _f(row, "best_cluster_rmsd", "rmsd_bcr")
-    return math.isfinite(bc) and 0.0 <= bc <= RMSD_SUCCESS_A
+    return False
 
 
 def row_matrix_ok(row: dict[str, str], pin: str) -> bool:
@@ -454,6 +468,20 @@ def main(argv: list[str] | None = None) -> int:
     )
     args = ap.parse_args(argv)
 
+    n_sources = sum(
+        [
+            args.csv is not None,
+            bool(args.c0_full85),
+            args.campaign_dir is not None,
+        ]
+    )
+    if n_sources > 1:
+        print(
+            "error: provide exactly one of campaign_dir, --csv, or --c0-full85",
+            file=sys.stderr,
+        )
+        return 2
+
     campaign: Path | None = None
     rows: list[dict[str, str]] = []
 
@@ -492,7 +520,11 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     assert campaign is not None
-    pin, pin_src = load_matrix_pin(campaign, args.matrix_md5)
+    try:
+        pin, pin_src = load_matrix_pin(campaign, args.matrix_md5)
+    except ValueError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
     report = aggregate_rows(
         rows,
         matrix_pin=pin,
