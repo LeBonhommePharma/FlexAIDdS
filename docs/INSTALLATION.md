@@ -122,17 +122,25 @@ cmake --build build --parallel
 
 #### Easy install via Homebrew (recommended for native CLI tools)
 
+Homebrew 6+ rejects one-off raw formula URLs and path installs. Install from a
+proper tap (with `origin`) so `brew update` / `brew doctor` stay clean — do
+**not** use `brew tap-new test/...` temporary taps without a remote (they leave
+orphan-tap doctor warnings).
+
 ```bash
+# One-time: tap the monorepo (Formula/flexaidds.rb lives at repo root)
+brew tap lebonhommepharma/flexaidds https://github.com/LeBonhommePharma/FlexAIDdS
+
 # Stable tagged release (v2.0.0+)
-brew install --formula https://raw.githubusercontent.com/LeBonhommePharma/FlexAIDdS/master/Formula/flexaidds.rb
+brew install flexaidds
 
 # Or latest development tip
-brew install --HEAD --formula https://raw.githubusercontent.com/LeBonhommePharma/FlexAIDdS/master/Formula/flexaidds.rb
+brew install --HEAD flexaidds
 
 # Update later
-brew reinstall --formula https://raw.githubusercontent.com/LeBonhommePharma/FlexAIDdS/master/Formula/flexaidds.rb
+brew update && brew reinstall flexaidds
 # or, for HEAD builds:
-brew reinstall --HEAD --formula https://raw.githubusercontent.com/LeBonhommePharma/FlexAIDdS/master/Formula/flexaidds.rb
+brew reinstall --HEAD flexaidds
 ```
 
 This installs `FlexAIDdS`, `tENCoM`, `FlexAID` + required data files.
@@ -194,11 +202,14 @@ See also `python/README.md`.
 The formula provides the high-performance native executables with data files staged correctly:
 
 ```bash
+# One-time tap (required on Homebrew 6+; raw URL / bare path installs are rejected)
+brew tap lebonhommepharma/flexaidds https://github.com/LeBonhommePharma/FlexAIDdS
+
 # Stable release
-brew install --formula https://raw.githubusercontent.com/LeBonhommePharma/FlexAIDdS/master/Formula/flexaidds.rb
+brew install flexaidds
 
 # Development / latest
-brew install --HEAD --formula https://raw.githubusercontent.com/LeBonhommePharma/FlexAIDdS/master/Formula/flexaidds.rb
+brew install --HEAD flexaidds
 
 # After install, add the Python package (GitHub until PyPI publish):
 pip install "git+https://github.com/LeBonhommePharma/FlexAIDdS.git#subdirectory=python"
@@ -206,6 +217,18 @@ pip install "git+https://github.com/LeBonhommePharma/FlexAIDdS.git#subdirectory=
 ```
 
 The formula lives at `Formula/flexaidds.rb`. It supports both a stable `url`/`sha256` (tagged release) and `head` for tip-of-tree. Bottles may be added later.
+
+**Local formula testing (maintainers):** if you must exercise a local formula edit
+before push, either `brew install --build-from-source lebonhommepharma/flexaidds/flexaidds`
+after syncing the tap, or use a temporary tap **with cleanup**:
+
+```bash
+# Prefer this over leaving orphan test taps
+TAP="test/flexaidds-local-$$"
+brew tap-new --no-git "$TAP"   # or set origin if you init git
+# copy Formula/flexaidds.rb into the tap Formula/ dir, install, then:
+brew untap --force "$TAP"      # always clean up; never leave test/* without origin
+```
 
 When cutting a new stable release, update the formula’s `url`, `sha256`, and version together:
 ```bash
@@ -251,8 +274,7 @@ curl -sL "https://github.com/LeBonhommePharma/FlexAIDdS/archive/refs/tags/${TAG}
   python -c "import flexaidds as fd; print(fd.__version__, fd.HAS_CORE_BINDINGS)"
   ```
 
-- **Homebrew**: Update `Formula/flexaidds.rb` (`url` + `sha256` for stable; `head` tracks `master`) when cutting releases. Users install via the raw formula URL (or a personal tap).
-
+- **Homebrew**: Update `Formula/flexaidds.rb` (`url` + `sha256` for stable; `head` tracks `master`) when cutting releases. Users install via `brew tap lebonhommepharma/flexaidds https://github.com/LeBonhommePharma/FlexAIDdS` then `brew install flexaidds` (Homebrew 6+ requires a real tap with `origin`; raw formula URLs are rejected).
 - **Native binaries**: Existing release workflow attaches platform archives on tag.
 
 - **In-package updater**: `python -m flexaidds --check-update` / `--self-update` uses the GitHub Releases API and `pip install --upgrade flexaidds` (falls back to the GitHub VCS URL when the package is not yet on the default index).

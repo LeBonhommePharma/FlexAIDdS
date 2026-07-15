@@ -95,8 +95,10 @@ run = fd.load_results("path/to/results")
 ### macOS: Homebrew (native CLI tools)
 
 ```bash
-# Stable release, or add --HEAD for tip-of-tree
-brew install --formula https://raw.githubusercontent.com/LeBonhommePharma/FlexAIDdS/master/Formula/flexaidds.rb
+# Tap the monorepo (Homebrew 6+ requires formulae to live in a tap with a git remote)
+brew tap lebonhommepharma/flexaidds https://github.com/LeBonhommePharma/FlexAIDdS
+brew install flexaidds
+# Tip-of-tree: brew install --HEAD flexaidds
 # Python package (not yet on public PyPI — install from GitHub):
 pip install "git+https://github.com/LeBonhommePharma/FlexAIDdS.git#subdirectory=python"
 # later: python -m flexaidds --self-update
