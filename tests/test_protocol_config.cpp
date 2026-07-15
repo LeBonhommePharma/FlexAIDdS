@@ -4,9 +4,13 @@
 #include <gtest/gtest.h>
 
 #include "ProtocolConfig.h"
+#include "RunReceipt.h"
 
 #include <cstdlib>
+#include <filesystem>
+#include <fstream>
 #include <string>
+#include <unistd.h>
 
 namespace {
 
@@ -99,7 +103,11 @@ struct ClearProtocolEnv {
         , t_hot("FLEXAIDDS_T_HOT", nullptr)
         , instream("FLEXAIDDS_INSTREAM_INTERVAL", nullptr)
         , chain("FLEXAIDDS_CHAIN_NORM", nullptr)
-        , smfree("FLEXAIDDS_SMFREE_REQUIRE_T", nullptr) {}
+        , smfree("FLEXAIDDS_SMFREE_REQUIRE_T", nullptr)
+        , force_cf("FLEXAIDDS_FORCE_CF_RANK_EMISSION", nullptr)
+        , classic("FLEXAIDDS_CLASSIC_ENTROPY_RANKING", nullptr)
+        , ent_w("FLEXAIDDS_ENTROPY_WEIGHT", nullptr)
+        , div_m("FLEXAIDDS_DIVERSITY_MONITORING", nullptr) {}
 
     ScopedEnv seed_base, restarts, parallel, vct_r0, vct_norm, vct_ew,
               sharing, boom, n_elite, shannon, thermo, t_eff, tencom,
@@ -107,7 +115,7 @@ struct ClearProtocolEnv {
               seed_elit, seed_delta, freqsel, freq_a, freq_r, consensus,
               hvib, ring, eval_scale, budget, fine, multi, cognate, score_n,
               native_o, use_dp, ignore, thermo_csv, hbond, no_sec, bench,
-              t_hot, instream, chain, smfree;
+              t_hot, instream, chain, smfree, force_cf, classic, ent_w, div_m;
 };
 
 }  // namespace
@@ -161,6 +169,14 @@ TEST(ProtocolConfig, DefaultsMatchHistoricalFallbacks) {
     EXPECT_FALSE(e.chain_norm);
     EXPECT_FALSE(e.smfree_require_t);
 
+    // Chunk 3 defaults (optional ranking/ablation knobs)
+    EXPECT_FALSE(e.n_elite_set);
+    EXPECT_FALSE(e.vct_entropy_weight_set);
+    EXPECT_FALSE(e.force_cf_rank_emission.has_value());
+    EXPECT_FALSE(e.classic_entropy_ranking.has_value());
+    EXPECT_FALSE(e.entropy_weight.has_value());
+    EXPECT_FALSE(e.diversity_monitoring.has_value());
+
     EXPECT_DOUBLE_EQ(e.effective_sharing_alpha(1000, 1000), 4.0);
     EXPECT_DOUBLE_EQ(e.effective_sharing_alpha(1000, 2000), 2.0);
     EXPECT_DOUBLE_EQ(e.effective_boom_frac(), 1.0);
@@ -184,6 +200,7 @@ TEST(ProtocolConfig, FromEnvOverridesKeyVars) {
     EXPECT_DOUBLE_EQ(*cfg.sharing_alpha, 2.5);
     EXPECT_DOUBLE_EQ(cfg.effective_sharing_alpha(1000, 2000), 2.5);
     EXPECT_EQ(cfg.n_elite, 4);
+    EXPECT_TRUE(cfg.n_elite_set);
     EXPECT_EQ(cfg.data_dir, "/tmp/flexaidds-data");
     EXPECT_DOUBLE_EQ(cfg.hbond_weight, -3.1);
 }
@@ -274,4 +291,103 @@ TEST(ProtocolConfig, JsonRoundTrip) {
     EXPECT_EQ(b.data_dir, "/opt/share/flexaidds");
     EXPECT_DOUBLE_EQ(b.t_hot, 900.0);
     EXPECT_EQ(b.multi_cleft, 4);
+}
+
+TEST(ProtocolConfig, Chunk3RankingAndAblationKnobs) {
+    ClearProtocolEnv clear;
+    ScopedEnv force("FLEXAIDDS_FORCE_CF_RANK_EMISSION", "1");
+    ScopedEnv classic("FLEXAIDDS_CLASSIC_ENTROPY_RANKING", "0");
+    ScopedEnv ew("FLEXAIDDS_ENTROPY_WEIGHT", "0.25");
+    ScopedEnv div("FLEXAIDDS_DIVERSITY_MONITORING", "0");
+    ScopedEnv vctew("FLEXAIDDS_VCT_ENTROPY_WEIGHT", "0.7");
+    ScopedEnv elite("FLEXAIDDS_N_ELITE", "3");
+
+    const auto cfg = flexaids::ProtocolConfig::from_env();
+    ASSERT_TRUE(cfg.force_cf_rank_emission.has_value());
+    EXPECT_TRUE(*cfg.force_cf_rank_emission);
+    ASSERT_TRUE(cfg.classic_entropy_ranking.has_value());
+    EXPECT_FALSE(*cfg.classic_entropy_ranking);
+    ASSERT_TRUE(cfg.entropy_weight.has_value());
+    EXPECT_DOUBLE_EQ(*cfg.entropy_weight, 0.25);
+    ASSERT_TRUE(cfg.diversity_monitoring.has_value());
+    EXPECT_FALSE(*cfg.diversity_monitoring);
+    EXPECT_TRUE(cfg.vct_entropy_weight_set);
+    EXPECT_DOUBLE_EQ(cfg.vct_entropy_weight, 0.7);
+    EXPECT_TRUE(cfg.n_elite_set);
+    EXPECT_EQ(cfg.n_elite, 3);
+}
+
+TEST(RunReceipt, BuildJsonHasRequiredKeys) {
+    ClearProtocolEnv clear;
+    flexaids::RunReceiptInput in;
+    in.run_id = "unit_test_run";
+    in.started_utc = "2026-07-15T00:00:00Z";
+    in.output = "/tmp/flexaidds_receipt_test";
+    in.dataset = "astex_diverse";
+    in.mode = "defined-cleft-redock";
+    in.temperature_K = 298.0;
+    in.pop = 1000;
+    in.gen = 6000;
+    in.restarts = 5;
+    in.seed_base = 42;
+    in.seed_elitism = false;
+    in.matrix_path = "/data/MC_st0r5.2_6.dat";
+    in.matrix_md5 = "deadbeef";
+    in.matrix_sha256 = "cafebabe";
+    in.binary_path = "/bin/FlexAIDdS";
+    in.binary_sha256 = "0123456789abcdef";
+    in.git_commit = "abc123";
+    in.protocol = flexaids::ProtocolConfig::from_env();
+    in.protocol.seed_base = 42;
+    in.protocol.restarts = 5;
+
+    const std::string json = flexaids::build_run_receipt_json(in);
+    EXPECT_NE(json.find("\"schema_version\": 1"), std::string::npos);
+    EXPECT_NE(json.find("\"run_id\": \"unit_test_run\""), std::string::npos);
+    EXPECT_NE(json.find("\"mode\": \"defined-cleft-redock\""), std::string::npos);
+    EXPECT_NE(json.find("\"temperature_K\":"), std::string::npos);
+    EXPECT_NE(json.find("\"pop\": 1000"), std::string::npos);
+    EXPECT_NE(json.find("\"gen\": 6000"), std::string::npos);
+    EXPECT_NE(json.find("\"restarts\": 5"), std::string::npos);
+    EXPECT_NE(json.find("\"seed_base\": 42"), std::string::npos);
+    EXPECT_NE(json.find("\"seed_elitism\": 0"), std::string::npos);
+    EXPECT_NE(json.find("\"matrix_md5\": \"deadbeef\""), std::string::npos);
+    EXPECT_NE(json.find("\"matrix_sha256\": \"cafebabe\""), std::string::npos);
+    EXPECT_NE(json.find("\"binary_sha256\": \"0123456789abcdef\""), std::string::npos);
+    EXPECT_NE(json.find("\"git_commit\": \"abc123\""), std::string::npos);
+    EXPECT_NE(json.find("\"protocol_config\":"), std::string::npos);
+    EXPECT_NE(json.find("\"seed_base\":42"), std::string::npos);
+}
+
+TEST(RunReceipt, WriteReceiptFiles) {
+    ClearProtocolEnv clear;
+    namespace fs = std::filesystem;
+    const auto tmp = fs::temp_directory_path() /
+        ("flexaidds_receipt_" + std::to_string(::getpid()));
+    fs::create_directories(tmp);
+
+    flexaids::RunReceiptInput in;
+    in.run_id = "write_test";
+    in.started_utc = flexaids::utc_now_iso8601();
+    in.output = tmp.string();
+    in.dataset = "smoke";
+    in.mode = "autonomous";
+    in.temperature_K = 300.0;
+    in.pop = 500;
+    in.gen = 1000;
+    in.restarts = 2;
+    in.seed_elitism = true;
+    in.protocol = flexaids::ProtocolConfig::defaults();
+
+    ASSERT_TRUE(flexaids::write_run_receipt(tmp.string(), in, true));
+    EXPECT_TRUE(fs::exists(tmp / "RUN_RECEIPT.json"));
+    EXPECT_TRUE(fs::exists(tmp / "provenance.json"));
+
+    std::ifstream rf(tmp / "RUN_RECEIPT.json");
+    std::string body((std::istreambuf_iterator<char>(rf)),
+                     std::istreambuf_iterator<char>());
+    EXPECT_NE(body.find("\"run_id\": \"write_test\""), std::string::npos);
+    EXPECT_NE(body.find("\"protocol_config\":"), std::string::npos);
+
+    fs::remove_all(tmp);
 }

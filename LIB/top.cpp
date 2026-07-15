@@ -888,7 +888,9 @@ int main(int argc, char **argv){
 				using O = json::Object;
 				config = json::merge(config, V(O{{"advanced", V(O{{"assume_folded", V(true)}})}}));
 			}
-			apply_config(config, FA, GB);
+			// Snapshot protocol once for apply_config (no mid-apply getenv dual path).
+			const flexaids::ProtocolConfig apply_proto = flexaids::ProtocolConfig::from_env();
+			apply_config(config, FA, GB, &apply_proto);
 			if (GB->seed != 0) {
 				flexaids_rng::set_master_seed(static_cast<std::uint64_t>(GB->seed));
 			}

@@ -141,6 +141,8 @@ set(FLEXAID_CORE_SOURCES
     config_parser.cpp
     # ── Typed protocol knobs (env adapter; audit getenv consolidation) ──
     ProtocolConfig.cpp
+    # ── Campaign RUN_RECEIPT.json provenance (DatasetRunner + C0 schema) ──
+    RunReceipt.cpp
     # ── ThermodynamicEngine: G_bind decomposition (disabled by default) ──
     ThermodynamicEngine.cpp
     # ── Coarse pocket-scan gen-0 seeding ──

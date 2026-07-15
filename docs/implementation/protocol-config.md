@@ -1,28 +1,60 @@
 # ProtocolConfig — typed protocol knobs (getenv consolidation)
 
-**Status:** Chunk 2 (pose/budget/GA high-value knobs)  
-**Owner path:** `LIB/ProtocolConfig.{h,cpp}`  
-**Related audit:** DatasetRunner / gaboom / top getenv consolidation.
+**Status:** Chunk 3 (config_parser science knobs + RUN_RECEIPT)  
+**Owner path:** `LIB/ProtocolConfig.{h,cpp}`, `LIB/RunReceipt.{h,cpp}`  
+**Related audit:** DatasetRunner / gaboom / top / config_parser getenv consolidation.
 
 ## Goal
 
 Replace ad-hoc `FLEXAIDDS_*` environment reads with **one typed, serializable
 `flexaids::ProtocolConfig`**. Environment variables remain a **compatibility
-adapter only** (`ProtocolConfig::from_env()`). Future chunks can load JSON /
-CLI / skill configs into the same struct without touching call sites again.
+adapter only** (`ProtocolConfig::from_env()`). Campaigns also write
+`RUN_RECEIPT.json` (C0 schema-aligned) with a ProtocolConfig snapshot so mid-run
+`setenv` cannot create dual-protocol provenance.
 
 ## Snapshot policy
 
 | When | What |
 |------|------|
 | `DatasetRunner` constructor | `protocol_cfg_ = ProtocolConfig::from_env()` |
-| `DatasetRunner::run()` entry | **Re-snapshot** `protocol_cfg_` (chunk 2) so long-lived runners pick up env changes after construction |
+| `DatasetRunner::run()` entry | **Re-snapshot** `protocol_cfg_` so long-lived runners pick up env changes after construction |
+| `apply_config()` | Single snapshot at entry (or caller-supplied `const ProtocolConfig*`) — **no mid-apply getenv** |
 | `GA()` (gaboom) entry | Local `ProtocolConfig::from_env()` for engine-side knobs |
-| `top.cpp` site/grid paths | Local snapshot at use site |
+| `top.cpp` site/grid paths | Local snapshot at use site; apply_config receives explicit snapshot |
 
-Chunk 1 only snapshotted the constructor; chunk 2 re-snapshots at `run()`.
+Chunk 1 only snapshotted the constructor; chunk 2 re-snapshots at `run()`;
+chunk 3 eliminates dual getenv inside `apply_config` and emits RUN_RECEIPT.
 
-## Migrated env vars (chunk 1 + 2)
+## RUN_RECEIPT.json schema (C0-aligned)
+
+Written by `DatasetRunner::run()` via `flexaids::write_run_receipt()` to
+`<output_dir>/RUN_RECEIPT.json` (also keeps legacy `provenance.json`).
+
+| Key | Type | Notes |
+|-----|------|-------|
+| `schema_version` | int | `1` |
+| `run_id` | string | Dataset name or output basename |
+| `started_utc` | string | ISO-8601 UTC |
+| `output` | string | Output directory |
+| `dataset` | string | Dataset label |
+| `mode` | string | `oracle-ceiling` / `defined-cleft-redock` / `autonomous` / `unset` |
+| `temperature_K` | number | DockingConfig temperature |
+| `pop` | int | GA population |
+| `gen` | int | GA generations |
+| `restarts` | int | From ProtocolConfig |
+| `seed_base` | uint | From ProtocolConfig |
+| `seed_elitism` | 0/1 | Mode-aware (oracle ON; defined-cleft/autonomous OFF) |
+| `matrix_path` / `matrix_md5` / `matrix_sha256` | string | Scoring matrix |
+| `binary_path` / `binary_sha256` | string | FlexAIDdS docking binary |
+| `runner_path` / `runner_sha256` | string | Host process when resolvable |
+| `git_commit` | string | `git rev-parse HEAD` if available |
+| `oracle_site_dir` / `oracle_site_dir_set` | string/bool | Oracle site |
+| `protocol_config` | object | Full `ProtocolConfig::to_json()` snapshot |
+
+C0 launch scripts under the iCloud queue may still write a thinner receipt before
+start; the C++ path is a superset (adds `protocol_config`, hashes, git, schema).
+
+## Migrated env vars
 
 ### Chunk 1
 
@@ -78,9 +110,26 @@ Chunk 1 only snapshotted the constructor; chunk 2 re-snapshots at `run()`.
 | `FLEXAIDDS_CHAIN_NORM` | `chain_norm` | off | gaboom |
 | `FLEXAIDDS_SMFREE_REQUIRE_T` | `smfree_require_t` | off | gaboom fitness |
 
-## Residual getenv inventory (after chunk 2)
+### Chunk 3 (config_parser science knobs)
 
-**Audit trio call-site estimate: ~11** (down from ~42 after chunk 1 / ~64 baseline).
+| Env var | Field | Default when unset | Call sites |
+|---------|-------|--------------------|------------|
+| `FLEXAIDDS_VCT_ENTROPY_WEIGHT` | `vct_entropy_weight` + `vct_entropy_weight_set` | no override | apply_config |
+| `FLEXAIDDS_N_ELITE` | `n_elite` + `n_elite_set` | no override | apply_config |
+| `FLEXAIDDS_SHARING_ALPHA` | `sharing_alpha` optional | no override | apply_config |
+| `FLEXAIDDS_BOOM_FRAC` | `boom_frac` optional | no override | apply_config |
+| `FLEXAIDDS_FORCE_CF_RANK_EMISSION` | `force_cf_rank_emission` optional | no override | apply_config |
+| `FLEXAIDDS_CLASSIC_ENTROPY_RANKING` | `classic_entropy_ranking` optional | no override | apply_config |
+| `FLEXAIDDS_ENTROPY_WEIGHT` | `entropy_weight` optional | no override | apply_config |
+| `FLEXAIDDS_DIVERSITY_MONITORING` | `diversity_monitoring` optional | no override | apply_config |
+
+**Ranking algorithm is unchanged** — only the source of the override moves from
+raw `getenv` to a single ProtocolConfig snapshot.
+
+## Residual getenv inventory (after chunk 3)
+
+**Audit files residual science-knob getenv: 0 in config_parser.**  
+**Audit trio (DatasetRunner / gaboom / top) residual: ~11 platform/infra paths.**
 
 ### `LIB/DatasetRunner.cpp` (~7)
 
@@ -106,13 +155,9 @@ Chunk 1 only snapshotted the constructor; chunk 2 re-snapshots at `run()`.
 | `FLEXAIDDS_LIGAND_BATCH` | Batch ligand directory | P2 |
 | `FLEXAIDS_VH_DEBUG` | Vector H-bond debug dump | P3 |
 
-### Related but out of audit trio
+### `LIB/config_parser.cpp` (~0)
 
-`LIB/config_parser.cpp` still applies several `FLEXAIDDS_*` overrides at
-JSON-parse time (`VCT_ENTROPY_WEIGHT`, `N_ELITE`, `SHARING_ALPHA`,
-`BOOM_FRAC`, `ENTROPY_WEIGHT`, ranking flags). **Chunk 3 recommendation:**
-have `apply_config()` accept an optional `const ProtocolConfig*` so
-engine-side overrides share the same typed source.
+All former FLEXAIDDS_* overrides go through ProtocolConfig.
 
 ## Migration rules
 
@@ -122,6 +167,7 @@ engine-side overrides share the same typed source.
 4. Prefer reading `protocol_cfg_` (or a passed-in snapshot) over re-calling `getenv` in loops.
 5. Leave platform env (`HOME`, `PATH`, `OMP_*`) as raw getenv unless a strong reason exists.
 6. Document each migrated var and drop it from Residual.
+7. Do not change pose ranking / clustering order without an explicit request + feature flag.
 
 ## Tests
 
@@ -130,3 +176,7 @@ cmake -B build -DBUILD_TESTING=ON -DCMAKE_BUILD_TYPE=Release
 cmake --build build --target test_protocol_config -j
 ctest --test-dir build -R ProtocolConfigTests --output-on-failure
 ```
+
+
+## Shell safety
+Dock paths use `shell_exec.h` (`shell_quote` / argv helpers). Residual getenv for OMP/HOME is platform-only.
