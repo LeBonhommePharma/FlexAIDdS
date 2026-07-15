@@ -7,11 +7,17 @@ Headline: median of B bootstrap resamples of the case set (with replacement).
 Input formats (auto-detected):
   - Directory of per-PDB result.csv with columns like top_k_rmsd / mode_rmsd_0..9
   - TSV/CSV with columns: pdb_id, rank, rmsd  (rank 0..9)
-  - JSON list of {pdb_id, rmsds: [..]} 
+  - JSON list of {pdb_id, rmsds: [..]}
+  - cases JSON from scripts/extract_3dsig_s_top10_from_arm.py
 
 Usage:
   python3 scripts/bootstrap_3dsig_s_top10.py --cases cases.json --bootstraps 10000
   python3 scripts/bootstrap_3dsig_s_top10.py --arm-dir path/to/3dsig_r10
+  python3 scripts/extract_3dsig_s_top10_from_arm.py --arm-dir path/to/3dsig_r10 \\
+      --json-out /tmp/A_cases.json
+  python3 scripts/bootstrap_3dsig_s_top10.py --cases /tmp/A_cases.json
+
+When no cases have RMSDs, prints NA (exit 0) so partial campaigns do not crash.
 
 Copyright 2026 Le Bonhomme Pharma
 SPDX-License-Identifier: Apache-2.0
@@ -44,13 +50,17 @@ def load_cases_json(path: Path) -> Dict[str, List[float]]:
     if isinstance(data, dict):
         for k, v in data.items():
             if isinstance(v, dict) and "rmsds" in v:
-                out[str(k)] = [float(x) for x in v["rmsds"]]
-            elif isinstance(v, list):
+                rms = [float(x) for x in v["rmsds"] if x is not None and x != ""]
+                if rms:
+                    out[str(k)] = rms
+            elif isinstance(v, list) and v:
                 out[str(k)] = [float(x) for x in v]
     elif isinstance(data, list):
         for row in data:
             pid = str(row.get("pdb_id") or row.get("pdb") or row["id"])
-            out[pid] = [float(x) for x in row["rmsds"]]
+            rms = [float(x) for x in row["rmsds"] if x is not None and x != ""]
+            if rms:
+                out[pid] = rms
     return out
 
 
@@ -68,6 +78,8 @@ def load_rank_table(path: Path) -> Dict[str, List[float]]:
             pid = row[keys.get("pdb_id") or keys.get("pdb") or keys.get("case") or list(row)[0]]
             rank = int(float(row[keys.get("rank") or list(row)[1]]))
             rmsd = float(row[keys.get("rmsd") or list(row)[2]])
+            if not math.isfinite(rmsd) or rmsd < 0:
+                continue
             by.setdefault(str(pid), []).append((rank, rmsd))
     out: Dict[str, List[float]] = {}
     for pid, pairs in by.items():
@@ -106,7 +118,7 @@ def load_arm_dir(arm_dir: Path) -> Dict[str, List[float]]:
                         pass
         # fallback: single elected + best_cluster only (incomplete for S_top10)
         if not rmsds:
-            for key in ("rmsd_to_crystal", "rmsd_hungarian", "best_cluster_rmsd"):
+            for key in ("rmsd_to_crystal", "rmsd_hungarian", "best_cluster_rmsd", "rmsd_top1", "rmsd_bcr"):
                 if key in row and row[key] not in ("", None, "NA"):
                     try:
                         v = float(row[key])
@@ -125,7 +137,17 @@ def bootstrap_median(
     rng = random.Random(seed)
     n = len(case_success)
     if n == 0:
-        return {"n_cases": 0, "point": None, "median": None, "p05": None, "p95": None}
+        return {
+            "n_cases": 0,
+            "n_success": 0,
+            "point": None,
+            "median": None,
+            "p05": None,
+            "p95": None,
+            "n_boot": n_boot,
+            "status": "NA",
+            "reason": "no_cases_with_rmsds",
+        }
     point = sum(case_success) / n
     samples = []
     for _ in range(n_boot):
@@ -143,7 +165,15 @@ def bootstrap_median(
         "p05": p05,
         "p95": p95,
         "n_boot": n_boot,
+        "status": "ok",
+        "reason": "",
     }
+
+
+def _fmt(x: Optional[float]) -> str:
+    if x is None:
+        return "NA"
+    return f"{x:.4f}"
 
 
 def main() -> int:
@@ -155,6 +185,19 @@ def main() -> int:
     ap.add_argument("--seed", type=int, default=20170715)
     ap.add_argument("--thresh", type=float, default=2.0)
     ap.add_argument("--json-out", type=Path, default=None)
+    ap.add_argument(
+        "--deck-flexaid",
+        type=float,
+        default=0.66,
+        help="Archived deck FlexAID median (Astex Diverse)",
+    )
+    ap.add_argument(
+        "--deck-flexaidds",
+        type=float,
+        default=0.69,
+        help="Archived deck FlexAIDdS median (Astex Diverse)",
+    )
+    ap.add_argument("--label", default="", help="Arm label for printout (A/B/B0)")
     args = ap.parse_args()
 
     cases: Dict[str, List[float]] = {}
@@ -174,13 +217,31 @@ def main() -> int:
     stats["thresh_A"] = args.thresh
     stats["n_pdbs_loaded"] = len(cases)
     stats["pdb_ids"] = sorted(cases.keys())
+    stats["label"] = args.label
+    stats["deck_flexaid"] = args.deck_flexaid
+    stats["deck_flexaidds"] = args.deck_flexaidds
 
-    print(
-        f"S_top10 point={stats['point']:.4f}  "
-        f"bootstrap_median={stats['median']:.4f}  "
-        f"p05–p95=[{stats['p05']:.4f},{stats['p95']:.4f}]  "
-        f"n={stats['n_cases']} success={stats['n_success']}"
-    )
+    label = f"[{args.label}] " if args.label else ""
+    if stats["status"] == "NA" or stats["n_cases"] == 0:
+        print(
+            f"{label}S_top10 point=NA  bootstrap_median=NA  p05–p95=[NA,NA]  "
+            f"n=0 success=0  reason={stats.get('reason', 'no_cases')}"
+        )
+        print(
+            f"{label}deck compare: FlexAID={args.deck_flexaid:.2f} "
+            f"FlexAIDdS={args.deck_flexaidds:.2f}  (live=NA — insufficient RMSD data)"
+        )
+    else:
+        print(
+            f"{label}S_top10 point={_fmt(stats['point'])}  "
+            f"bootstrap_median={_fmt(stats['median'])}  "
+            f"p05–p95=[{_fmt(stats['p05'])},{_fmt(stats['p95'])}]  "
+            f"n={stats['n_cases']} success={stats['n_success']}"
+        )
+        print(
+            f"{label}deck compare: live_median={_fmt(stats['median'])} vs "
+            f"FlexAID={args.deck_flexaid:.2f} / FlexAIDdS={args.deck_flexaidds:.2f}"
+        )
     if args.json_out:
         args.json_out.parent.mkdir(parents=True, exist_ok=True)
         args.json_out.write_text(json.dumps(stats, indent=2) + "\n")
