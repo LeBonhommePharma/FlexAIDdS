@@ -136,12 +136,14 @@ print(fd.__version__)  # 2.0.3
 
 ```bash
 brew tap lebonhommepharma/flexaidds https://github.com/LeBonhommePharma/FlexAIDdS
+# Homebrew 6+ tap trust (formula-scoped; required when HOMEBREW_REQUIRE_TAP_TRUST is set):
+brew trust --formula lebonhommepharma/flexaidds/flexaidds
 brew install lebonhommepharma/flexaidds/flexaidds
-# Metal-enabled builds: brew install lebonhommepharma/flexaidds/flexaidds --with-metal
-# (requires sufficient free disk; see formula notes for v2.0.3+)
+# Metal (stable v2.0.3+ on main/tag — no feature branch):
+#   brew install --build-from-source --with-metal lebonhommepharma/flexaidds/flexaidds
 ```
 
-Native tools and the Python package are separate installs. Full platform notes: [`docs/INSTALLATION.md`](docs/INSTALLATION.md).
+Native tools and the Python package are separate installs. Full platform notes (including recovery if a stale HEAD branch breaks reinstall): [`docs/INSTALLATION.md`](docs/INSTALLATION.md).
 
 ---
 
