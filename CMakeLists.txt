@@ -1092,6 +1092,7 @@ flexaids_add_unit_test(test_protocol_config
         SOURCES
             tests/test_protocol_config.cpp
             LIB/ProtocolConfig.cpp
+            LIB/RunReceipt.cpp
         TEST_NAME ProtocolConfigTests
     )
 

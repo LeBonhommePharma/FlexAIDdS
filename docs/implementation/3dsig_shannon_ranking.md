@@ -46,10 +46,12 @@ p_i = \frac{e^{-\mathrm{CF}_i / T}}{Z}
 
 | Env | Default | Meaning |
 |-----|---------|---------|
-| `FLEXAIDDS_ELECTION_SHANNON_F` | **1 (ON)** | Elect by \(\tilde G=H-TS\) (do not flip default without P0.5) |
-| `FLEXAIDDS_ELECTION_LEGACY_ZH` | 0 | Rollback ≈ min-CF (not 3Dsig) |
+| `FLEXAIDDS_ELECTION_SHANNON_F` | **0 (OFF)** | Elect by \(\tilde G=H-TS\) when set to `1` |
+| `FLEXAIDDS_ELECTION_LEGACY_ZH` | 0 | Force legacy ZH / ≈ min-CF (not 3Dsig); same OFF path when Shannon unset |
 | `FLEXAIDDS_ELECTION_SOFT_T` | 0 → resolve below | Soft-β \(T\) in K (env override) |
 | `FLEXAIDDS_FORCE_CF_RANK_EMISSION` | 0 | Engine emits min-CF (rollback); classic SoftBeta path off |
+
+**Default OFF until Astex pilot + SoftBeta identity.** Shannon S1 election stays **off** when both env knobs are unset. Enable with `FLEXAIDDS_ELECTION_SHANNON_F=1` after validation (`LIB/SoftBetaFreeEnergy.h`). Claim / 3Dsig launchers that need Shannon ON export that env (e.g. `scripts/run_C0_claim_clean.sh`).
 
 **Soft-β \(T\) resolution** in `select_pose_freq_gated_pooled` (DatasetRunner S1):
 
@@ -60,7 +62,7 @@ p_i = \frac{e^{-\mathrm{CF}_i / T}}{Z}
 
 Log line: `[3DSIG-RANK] … T=… source=dock|env|fallback …`. Soft-β is \(\beta=1/T\) on the CF scoring proxy (not \(k_B\)).
 
-**FlexAIDdS engine and DatasetRunner must not invent different ranking objectives.** Search still optimizes CF; ranking/election uses \(\tilde G\) via `LIB/SoftBetaFreeEnergy.h`. Engine ACF and DatasetRunner election must share the same dock \(T\). Unit gates: `SoftBetaIdentity::*` and `BindingModeMatchesSoftBetaLocal` in `tests/test_classic_entropy_ranking.cpp`.
+**FlexAIDdS engine and DatasetRunner must not invent different ranking objectives.** Search still optimizes CF; when Shannon ranking is enabled, ranking/election uses \(\tilde G\) via `LIB/SoftBetaFreeEnergy.h`. Engine ACF and DatasetRunner election must share the same dock \(T\). Unit gates: `SoftBetaIdentity::*` and `BindingModeMatchesSoftBetaLocal` in `tests/test_classic_entropy_ranking.cpp`.
 
 ---
 
