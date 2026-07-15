@@ -43,23 +43,97 @@ gate.
 - Job: `macos_metal_compile_smoke` in `.github/workflows/ci.yml`
 - Script: `scripts/ci/metal_compile_smoke.sh`
 - Compiles tracked `*.metal` sources to `.air` (and `.metallib` when `metallib` exists)
-- Does **not** full-link Metal OBJCXX bridges into `FlexAID` (that path needs a stable Apple Silicon + Xcode Metal toolchain environment)
+- Does **not** full-link Metal OBJCXX bridges into `FlexAID` / `FlexAIDdS`
 - Runtime: seconds to a few minutes — not a docking campaign
 
-If GitHub-hosted `macos-15` lacks the Metal compiler component, the job prints a clear skip notice and exits 0 so Linux/macOS CPU gates stay green. That **does not** authorize Metal release claims.
+If GitHub-hosted `macos-15` lacks the Metal compiler component, the job prints a
+clear skip notice and exits 0 so Linux/macOS CPU gates stay green.
+
+**Soft-skip is not a Metal release claim.** A green or soft-skipped
+`macos_metal_compile_smoke` only means “hosted shader compile was attempted;
+when metalc was missing the job skipped cleanly.” It does **not** validate
+Metal OBJCXX link, `metal_eval_*` / `metal_rmsd` symbols in production
+binaries, GPU runtime, or docking performance.
 
 ### Self-hosted full gate (Metal release claims)
 
 - Workflow: `.github/workflows/metal-self-hosted.yml`
 - Trigger: **`workflow_dispatch` only** (manual or release checklist)
-- Runner labels: **`self-hosted`**, **`self-hosted-m3`**
+  - GitHub UI: **Actions → “Metal full gate (self-hosted M3)” → Run workflow**
+  - Inputs: `run_ctest` (default true), `nm_symbol_smoke` (default true)
+- Runner labels (both required): **`self-hosted`**, **`self-hosted-m3`**
+- Builds: **`FlexAID` and `FlexAIDdS`** with `FLEXAIDS_USE_METAL=ON`
+- Optional **`nm` symbol smoke** for `metal_eval_get_capabilities`, other
+  `metal_eval_*` entry points, and `metal_rmsd` (C++ namespace) on **both**
+  binaries
 - Behavior: **fail-closed**
   - Missing Metal compiler → job fails
-  - CMake `FLEXAIDS_USE_METAL=ON` configure/build/link failure → job fails
+  - CMake configure with `FLEXAIDS_USE_METAL=ON` fails or resolves Metal OFF → job fails
+  - Link of either binary fails → job fails
+  - Missing required Metal symbols → job fails (when `nm_symbol_smoke=true`)
   - Optional `ctest` (default on) failure → job fails
   - No `continue-on-error`
 
-Register an Apple Silicon (M-series) machine as a GitHub Actions self-hosted runner with both labels. Without a matching runner, the workflow stays queued until a runner appears or the run is cancelled — it never soft-passes.
+#### Runner registration
+
+```bash
+# On the Apple Silicon host (after installing the GitHub Actions runner):
+# Labels must include BOTH of:
+#   self-hosted
+#   self-hosted-m3
+#
+# Verify for this repo (empty list ⇒ no M3 runner is registered; do not claim one exists):
+gh api repos/LeBonhommePharma/FlexAIDdS/actions/runners \
+  --jq '.runners[] | {name,status,labels:[.labels[].name]}'
+```
+
+Without a matching runner, a dispatched workflow **stays queued** until a runner
+appears or the run is cancelled — it never soft-passes. **Do not claim an M3
+self-hosted runner is online unless the API above lists one with label
+`self-hosted-m3`.**
+
+## Allowed release language vs forbidden claims
+
+Use this table for GitHub releases, Homebrew caveats, README badges, papers,
+and verbal product claims. “Green” means the named gate passed for the
+**same commit/tag** being shipped.
+
+### Allowed without self-hosted Metal green
+
+| You may say | Only if |
+|:--|:--|
+| “macOS CPU build and unit tests are CI-gated.” | `macos_cpu_tests` green on the release commit |
+| “Hosted CI compiles Metal shaders when the Metal toolchain is present.” | `macos_metal_compile_smoke` status is `ok` (not soft-skip) on that commit |
+| “Metal acceleration is **experimental / best-effort** on Apple Silicon; not a production guarantee.” | Always allowed; preferred default when self-hosted gate is not green |
+| “Metal full link/runtime validation requires a self-hosted M3 runner (`metal-self-hosted.yml`).” | Always allowed (factual process note) |
+| “Linux GCC/Clang `ctest` is green.” | Corresponding `cxx_core_build` matrix cells green |
+
+### Forbidden without green `Metal full gate (self-hosted M3)`
+
+Do **not** use any of the following (or equivalent) unless
+`metal-self-hosted.yml` is green for that commit/tag:
+
+| Forbidden claim | Why |
+|:--|:--|
+| “Metal is release-validated / production-ready.” | Needs full self-hosted link (+ optional ctest) |
+| “Metal-accelerated docking is CI-proven on Apple Silicon.” | Hosted jobs do not link/run Metal docking |
+| “`FlexAID` / `FlexAIDdS` ship with verified Metal GPU kernels.” | Needs OBJCXX link + symbol smoke (and preferably runtime) |
+| “Homebrew `--with-metal` is fully validated by GitHub Actions.” | Hosted GHA is shader-smoke only; full gate is self-hosted |
+| “Soft-skipped Metal smoke means Metal works.” | Soft-skip = metalc missing; **not** a Metal pass |
+| “We have a self-hosted M3 runner online.” | Only if `gh api …/actions/runners` lists `self-hosted-m3` |
+
+### Allowed **with** green self-hosted Metal full gate
+
+| You may say | Scope of the green run |
+|:--|:--|
+| “Metal OBJCXX bridges **link** into `FlexAID` and `FlexAIDdS` on Apple Silicon (self-hosted M3 gate).” | Configure + build both targets with `FLEXAIDS_USE_METAL=ON` |
+| “Linked binaries expose `metal_eval_get_capabilities` / `metal_rmsd` symbols (`nm` smoke).” | `nm_symbol_smoke=true` (default) |
+| “Metal-enabled unit tests passed on the self-hosted M3 runner.” | Only if `run_ctest=true` and ctest green |
+| “Metal full gate green for tag/commit X.” | Cite the Actions run URL for that ref |
+
+Still **not** automatic from the full gate alone (unless you add separate
+evidence): full Astex / campaign docking throughput claims, numerical parity
+vs CPU for every kernel, or third-party hardware beyond the registered runner.
 
 ## What still needs a self-hosted M3
 
@@ -67,18 +141,42 @@ Register an Apple Silicon (M-series) machine as a GitHub Actions self-hosted run
 |:--|:--|:--|
 | macOS CPU build + unit tests | Yes (`macos_cpu_tests`) | PR CI |
 | Metal `.metal` → `.air` compile | Usually yes (when Xcode Metal toolchain present) | PR CI smoke |
-| Metal OBJCXX bridge **link** into `FlexAID` | **No** (treat as self-hosted) | `metal-self-hosted.yml` |
+| Metal OBJCXX bridge **link** into `FlexAID` **and** `FlexAIDdS` | **No** (treat as self-hosted) | `metal-self-hosted.yml` |
+| `metal_eval_*` / `metal_rmsd` symbols in both binaries | **No** | self-hosted + `nm` smoke |
 | Metal **runtime** correctness / GPU kernels | **No** | self-hosted + local validation |
 | Full docking campaign on Apple Silicon | **No** | Local / fleet benchmarks (not this gate) |
 
-## Release checklist (minimum)
+## Release checklist (LP release managers)
 
-1. Green blocking jobs on `ci.yml` for the commit/tag (including **`macos_cpu_tests`**).
-2. Linux `ctest` clean (`linux-gcc` and `linux-clang` at minimum).
-3. If advertising Metal acceleration in release notes:
-   - Green `Metal full gate (self-hosted M3)` for that commit/tag, **or**
-   - Explicitly mark Metal as experimental with no production guarantee (see `docs/SUPPORT_MATRIX.md`).
-4. No secrets / machine-absolute paths: `python3 scripts/check_repo_hygiene.py`.
+Copy this into the release issue or PR checklist.
+
+### Always (every release)
+
+- [ ] Green blocking jobs on `ci.yml` for the commit/tag, including **`macos_cpu_tests`** (blocking; no `continue-on-error`).
+- [ ] Linux `ctest` clean (`linux-gcc` and `linux-clang` at minimum).
+- [ ] `python3 scripts/check_repo_hygiene.py` clean.
+- [ ] Release notes use only **allowed** language from the table above for platforms not fully gated.
+
+### macOS CPU claims
+
+- [ ] Cite green `macos_cpu_tests` for the release SHA.
+- [ ] Do **not** imply Metal from macOS CPU green alone.
+
+### Metal claims
+
+- [ ] Decide claim level:
+  - **Experimental only** → no self-hosted run required; use experimental wording.
+  - **Link / production Metal** → dispatch `Metal full gate (self-hosted M3)` on the release SHA.
+- [ ] Confirm a runner exists: `gh api repos/LeBonhommePharma/FlexAIDdS/actions/runners --jq '.runners[] | {name,status,labels:[.labels[].name]}'` shows `self-hosted-m3`.
+- [ ] Green self-hosted run for that SHA builds **both** `FlexAID` and `FlexAIDdS`.
+- [ ] Prefer leave `nm_symbol_smoke=true` and `run_ctest=true` (defaults).
+- [ ] Paste Actions run URL into the release notes / checklist.
+- [ ] Never treat hosted `macos_metal_compile_smoke` soft-skip as Metal validation.
+
+### Explicit non-claims (unless separate evidence)
+
+- [ ] No RMSD-only “success” without PoseBusters when citing docking benchmarks.
+- [ ] No “true ΔG” language for CF-only scoring (see `AGENTS.md` scientific guardrails).
 
 ## Local reproduction
 
@@ -101,6 +199,9 @@ bash scripts/ci/metal_compile_smoke.sh /tmp/metal-smoke
 cmake -B build-metal -G Ninja \
   -DCMAKE_BUILD_TYPE=Release \
   -DFLEXAIDS_USE_METAL=ON \
-  -DBUILD_TESTING=ON
-cmake --build build-metal --parallel --target FlexAID
+  -DBUILD_TESTING=ON \
+  -DBUILD_FLEXAIDDS_FAST=ON
+cmake --build build-metal --parallel --target FlexAID FlexAIDdS
+# Optional symbol smoke (matches metal-self-hosted.yml nm step)
+nm -gU build-metal/FlexAID build-metal/FlexAIDdS | grep -E 'metal_eval_get_capabilities|metal_rmsd'
 ```
