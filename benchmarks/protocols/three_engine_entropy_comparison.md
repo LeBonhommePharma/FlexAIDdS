@@ -73,20 +73,42 @@ No matrix-swap ablation. No “default M6 vs MC_*” drift. Atom-type defs (`AMI
 
 | Parameter | Target | Notes |
 |-----------|--------|--------|
-| Population | 1000 | Scale down only if 2015 binary cannot allocate; then **match total CF evaluations** and report ratio |
-| Generations | 6000 | Or SEC early-stop if identical policy is enabled on all arms that support it — prefer **fixed gen** for fairness |
+| Population (**base**) | 1000 | Base chromosomes; **this is the modulated axis** for DoF (see below) |
+| Generations | **6000 fixed** | Do **not** inflate generations for flexible ligands |
 | Restarts | 5 | Same RNG scheme: `SEED_BASE + stable_hash(pdb_id, restart_i)` |
 | Wall clock / job | ≤ 3 h per target×arm (queue default); fail and retry once | |
 
-If FlexAID-2015 cannot sustain 1000×6000, freeze a **budget ladder** in provenance:
+#### 1.3.1 DoF budget modulation — **population, not generations** (normative)
+
+Hard ligands need more search **diversity**, not longer trajectories. DatasetRunner implements this in `LIB/DatasetRunner.cpp` (Lever 1 + high-DoF budget):
+
+| Knob | Value for three-engine / TIER-1 claim | Effect |
+|------|--------------------------------------|--------|
+| `FLEXAIDDS_EVAL_SCALE_DIHEDRAL` | **`1`** (default) | `pop_eff = pop_base × max(1, n_flex_bonds/4)`; **`n_gen` stays at base** |
+| `FLEXAIDDS_EVAL_SCALE_DIHEDRAL` | `0` | **Legacy — forbidden for new claim runs:** scales **generations** by `ceil(n_genes/4)` |
+| `FLEXAIDDS_EVAL_SCALE_DIHEDRAL` | `-1` / `off` | Fixed pop+gen — **oracle-ceiling / restore only**, not three-engine claim |
+| `FLEXAIDDS_BUDGET_SCALE` | `1` (default ON) | Extra **population** multiplier when `n_genes ≥ 14` (`× max(1, n_genes/7)`); gens still fixed |
+
+**Anti-pattern (Codex / agents):** treating CLI `--ga-population 1000 --ga-generations 6000` as a fully fixed budget and setting `EVAL_SCALE_DIHEDRAL=-1` “to match.” That **disables** the intended chromosome (pop) modulation. Receipts may still show `pop: 1000, gen: 6000` while logs show effective pop via `[EVAL-BUDGET] … pop=…`.
+
+**Correct reading of logs:**
+
+```text
+[EVAL-SCALE]  … FIXED pop=1000 n_gen=6000     ← mode -1: NO dihedral pop-scale (wrong for claim path)
+[EVAL-SCALE]  … pop_base=1000 pop_effective=N n_gen=6000  ← mode 1: correct (gens fixed, pop grows with DoF)
+[EVAL-BUDGET] … budget_scale=S n_gen=6000 pop=P           ← final pop after high-DoF multiplier; n_gen must stay 6000
+```
+
+If FlexAID-2015 cannot sustain large `pop_eff`, freeze a **budget ladder** in provenance and match **total CF evaluations** where possible — still prefer **pop** ladder over **gen** ladder:
 
 ```text
 budget_class: full | half | quarter
-evals_nominal: pop * gen * restarts
+evals_nominal: pop_effective * gen_fixed * restarts
 evals_actual: logged
+modulation_axis: population   # never generations for claim runs
 ```
 
-Do not mix budget classes in the headline table.
+Do not mix budget classes or modulation axes in the headline table.
 
 ### 1.4 Success metrics (all reported; abstract uses S1)
 

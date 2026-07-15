@@ -5458,17 +5458,19 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
             const int n_genes  = 4 + fdih_est + ring_dof_est;
 
             // ── Lever 1 (v50): dihedral eval-budget scaling ──────────────────
-            // v18 ablation: going from 4 → 11 dihedral genes needs ≥2.75× more
-            // evaluations to converge.  Scale n_gen proportionally to the
-            // ligand's flexible-bond count so high-DoF ligands receive a budget
-            // matched to their search-space dimensionality instead of a fixed
-            // one (which caused stochastic search failure for flexible ligands).
-            //   n_flex_bonds   = perceived rotatable bonds = dihedral genes (fdih)
-            //   n_gen_effective = n_gen_base × max(1.0, n_flex_bonds / 4.0)
+            // Contract (normative for claim runs — agents: do not invert this):
+            //   **Modulate POPULATION (chromosomes), keep GENERATIONS fixed.**
+            // High-DoF ligands need more initial diversity H(X), not longer
+            // trajectories. Scaling n_gen is legacy and forbidden for new claim
+            // campaigns (mode 0). Base CLI pop×gen is the *base*, not the ceiling.
+            //
             // Gated by FLEXAIDDS_EVAL_SCALE_DIHEDRAL (ProtocolConfig):
-            //   1 (default) = pop-scale by DoF (iso-budget chromosome swap)
-            //   0           = legacy gen-scale ceil(n_genes/4)
-            //   -1 / "off"  = fixed pop+gen (no DoF scaling) — v43 oracle-ceiling restore
+            //   1 (default) = pop-scale by DoF; n_gen fixed at base
+            //   0           = legacy gen-scale ceil(n_genes/4) — NOT for claim runs
+            //   -1 / "off"  = fixed pop+gen — oracle-ceiling restore only
+            //
+            // Anti-pattern: --ga-population 1000 --ga-generations 6000 plus
+            // EVAL_SCALE_DIHEDRAL=-1 freezes the budget and disables pop modulation.
             const int eval_scale_mode = protocol_cfg_.eval_scale_dihedral;
             const int   n_flex_bonds   = fdih_est;
             const int   n_gen_base     = config.ga_generations;
@@ -5476,21 +5478,15 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
             int n_gen_scaled           = n_gen_base;  // generations fixed at base
             int pop_scaled             = pop_base;    // population scaled by DoF
             if (eval_scale_mode > 0) {
-                // ── Population-based eval scaling (iso-budget chromosome swap) ──
-                // Rationale: GA search space dimensionality grows linearly with
-                // n_flex_bonds.  In a D-dimensional landscape, a fixed population
-                // collapses prematurely — the initial Shannon entropy H(X) over the
-                // gene distribution is too low to cover multiple binding-mode basins.
-                // Scaling POPULATION instead of generations preserves total evaluations
-                // (pop x gen = constant) while raising H(initial) proportionally to
-                // the DoF count, so harder ligands start with more diverse hypotheses
-                // rather than converging faster on whichever basin the small population
-                // happened to seed.  This is strictly better than gen-scaling when
-                // premature convergence (not search depth) is the bottleneck.
+                // ── Population-based eval scaling (chromosome / diversity axis) ──
+                // Rationale: GA search-space dimensionality grows with n_flex_bonds.
+                // Fixed small populations collapse early; scaling POPULATION raises
+                // initial Shannon entropy over genes so multi-basin ligands explore
+                // more hypotheses. Generations stay at n_gen_base (depth fixed).
+                // Total evals grow with pop_eff (not iso-budget); that is intentional.
                 //
-                // Scale: pop_effective = pop_base x max(1, n_flex_bonds / 4)
+                // Scale: pop_effective = pop_base × max(1, n_flex_bonds / 4)
                 //        n_gen stays at n_gen_base (no generation inflation)
-                // Iso-budget: total_evals ~= pop_base x n_gen_base (unchanged).
                 const float dihedral_scale =
                     std::max(1.0f, static_cast<float>(n_flex_bonds) / 4.0f);
                 pop_scaled = static_cast<int>(
@@ -5499,6 +5495,7 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                         "[EVAL-SCALE] %s: n_flex_bonds=%d pop_base=%d pop_effective=%d n_gen=%d\n",
                         entry.pdb_id.c_str(), n_flex_bonds, pop_base, pop_scaled, n_gen_scaled);
             } else if (eval_scale_mode == 0) {
+                // LEGACY: generation inflation — not for three-engine / TIER-1 claim.
                 n_gen_scaled = n_gen_base * ((n_genes + 3) / 4);  // legacy ceil(n_genes/4)
             } else {
                 // mode < 0: fixed budget (v43 / oracle-ceiling restore)
@@ -5508,8 +5505,8 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
             }
 
             // ── v27 high-DoF budget scaling (FLEXAIDDS_BUDGET_SCALE via ProtocolConfig) ──
-            // High-DoF ligands (n_genes >= 14, i.e. >=10 rotatable bonds): same
-            // population-scaling logic absorbs the extra budget multiplier.
+            // High-DoF ligands (n_genes >= 14): extra POPULATION multiplier only
+            // (generations still fixed). Not a generation budget multiplier.
             const bool budget_scale_on = protocol_cfg_.budget_scale;
             double budget_scale_factor = 1.0;
             if (budget_scale_on && n_genes >= 14) {

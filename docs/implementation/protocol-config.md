@@ -90,8 +90,8 @@ start; the C++ path is a superset (adds `protocol_config`, hashes, git, schema).
 | `FLEXAIDDS_CONSENSUS_SCORER` | `consensus_scorer` | `false` | DatasetRunner election |
 | `FLEXAIDDS_HVIB` | `hvib_enabled` | ON unless `=0` | DatasetRunner |
 | `FLEXAIDDS_RING_FLEX` | `ring_flex` | `false` | budget scaling |
-| `FLEXAIDDS_EVAL_SCALE_DIHEDRAL` | `eval_scale_dihedral` | `1` (`off`→`-1`) | budget scaling |
-| `FLEXAIDDS_BUDGET_SCALE` | `budget_scale` | `true` | budget scaling |
+| `FLEXAIDDS_EVAL_SCALE_DIHEDRAL` | `eval_scale_dihedral` | `1` (`off`→`-1`) | **Pop** scale by DoF when `1`; legacy **gen** scale when `0`; fixed when `-1` |
+| `FLEXAIDDS_BUDGET_SCALE` | `budget_scale` | `true` | Extra **population** multiplier for `n_genes≥14` (does **not** scale generations) |
 | `FLEXAIDDS_FINE_GRID` | `fine_grid` | off (presence) | dock_config |
 | `FLEXAIDDS_MULTI_CLEFT` | `multi_cleft` | `0` | dock cmd |
 | `FLEXAIDDS_COGNATE_SITE` | `cognate_site` | off (presence) | dock cmd |

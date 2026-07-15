@@ -69,10 +69,10 @@ non-standard run that may not be quoted under a tier label):
 # ── FlexAIDdS shared engine configuration (TIER-invariant) ──
 export FLEXAIDDS_RESTARTS=5             # independent GA restarts, pooled
 export FLEXAIDDS_PARALLEL_RESTARTS=0    # restarts run serially within a job
-export FLEXAIDDS_EVAL_SCALE_DIHEDRAL=1  # per-dihedral evaluation scaling
+export FLEXAIDDS_EVAL_SCALE_DIHEDRAL=1  # DoF budget: scale POPULATION (chromosomes), NOT generations
 export FLEXAIDDS_CONSENSUS_SCORER=1     # consensus pose selection
 export FLEXAIDDS_N_ELITE=1              # GA-internal elitism (1 elite snapshot)
-export FLEXAIDDS_BUDGET_SCALE=1         # GA generation budget multiplier
+export FLEXAIDDS_BUDGET_SCALE=1         # high-DoF (n_genes≥14): extra POPULATION multiplier (not gen)
 export FLEXAIDDS_SOFTCORE_WAL=1         # softcore (capped) wall term
 export FLEXAIDDS_SOFTCORE_FLOOR=0.5     # softcore floor
 export FLEXAIDDS_T_HOT=500              # hot-replica temperature (K)
