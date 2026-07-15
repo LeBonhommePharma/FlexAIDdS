@@ -6,7 +6,10 @@ class Flexaidds < Formula
   url "https://github.com/LeBonhommePharma/FlexAIDdS/archive/refs/tags/v2.0.3.tar.gz"
   sha256 "6c8442fc672a127db354ff3b6e08a2252e8c921372d902d062ecbf4296aef186"
   license "Apache-2.0"
-  # Default branch is main (Git 3.0 / repo rename).
+  # HEAD always tracks main only. Never pin ephemeral fix/* branches — the
+  # Homebrew tap clones this monorepo; a deleted branch breaks every reinstall
+  # (fatal: couldn't find remote ref refs/heads/fix/…). Metal is a CMake option
+  # (FLEXAIDS_USE_METAL), not a git branch.
   head "https://github.com/LeBonhommePharma/FlexAIDdS.git", branch: "main"
 
   livecheck do
@@ -154,17 +157,22 @@ class Flexaidds < Formula
         brew update && brew reinstall lebonhommepharma/flexaidds/flexaidds
 
       Install / reinstall path (Homebrew 6+ requires a real tap; raw URL installs
-      are rejected):
+      are rejected). The tap is this monorepo — keep the tap checkout on main:
         brew tap lebonhommepharma/flexaidds https://github.com/LeBonhommePharma/FlexAIDdS
+        cd "$(brew --repo lebonhommepharma/flexaidds)" && git checkout main && git pull --ff-only
+        brew trust --formula lebonhommepharma/flexaidds/flexaidds   # Homebrew Tap-Trust
         brew install lebonhommepharma/flexaidds/flexaidds
 
       Default brew build uses CPU + OpenMP (no Metal) and is the portable path.
+      HEAD builds always use branch "main" (never fix/*).
 
       Metal GPU (macOS + Xcode Metal toolchain). Stable v2.0.3+ links Metal
       bridges via flexaid_core (PR #260):
         brew install --build-from-source --with-metal lebonhommepharma/flexaidds/flexaidds
       Or after tap update if already installed:
         brew reinstall --build-from-source --with-metal lebonhommepharma/flexaidds/flexaidds
+      Optional HEAD (main) Metal:
+        brew reinstall --build-from-source --HEAD --with-metal lebonhommepharma/flexaidds/flexaidds
 
       Example:
         FlexAIDdS receptor.pdb ligand.sdf --rigid -o /tmp/out
