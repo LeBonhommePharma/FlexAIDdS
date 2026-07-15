@@ -18,6 +18,7 @@
 #include <gtest/gtest.h>
 #define private public
 #include "DatasetRunner.h"
+#include "DatasetRunnerStats.h"  // P0 leaf: pure stats must compile standalone
 #undef private
 #include <cmath>
 #include <chrono>
@@ -214,6 +215,22 @@ TEST(StatisticalMetrics, EmptyInput) {
 TEST(StatisticalMetrics, SingleElement) {
     std::vector<double> x = {1.0};
     std::vector<double> y = {2.0};
+    EXPECT_EQ(compute_pearson_r(x, y), 0.0);
+    EXPECT_EQ(compute_spearman_rho(x, y), 0.0);
+    EXPECT_EQ(compute_kendall_tau(x, y), 0.0);
+}
+
+// Leaf isolation: constant / mismatched series (DatasetRunnerStats.cpp contract)
+TEST(StatisticalMetrics, ConstantSeriesReturnsZero) {
+    std::vector<double> x = {3.0, 3.0, 3.0, 3.0};
+    std::vector<double> y = {1.0, 2.0, 3.0, 4.0};
+    EXPECT_EQ(compute_pearson_r(x, y), 0.0);
+    EXPECT_EQ(compute_pearson_r(y, x), 0.0);
+}
+
+TEST(StatisticalMetrics, MismatchedLengthReturnsZero) {
+    std::vector<double> x = {1.0, 2.0, 3.0};
+    std::vector<double> y = {1.0, 2.0};
     EXPECT_EQ(compute_pearson_r(x, y), 0.0);
     EXPECT_EQ(compute_spearman_rho(x, y), 0.0);
     EXPECT_EQ(compute_kendall_tau(x, y), 0.0);

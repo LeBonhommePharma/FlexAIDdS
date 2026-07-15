@@ -39,6 +39,7 @@
 
 #include "TargetServer.h"
 #include "ProtocolConfig.h"
+#include "DatasetRunnerStats.h"  // pure correlation / RMSD helpers (P0 leaf)
 
 namespace dataset {
 
@@ -411,22 +412,8 @@ struct PDBAtom {
     bool   is_hetatm{false};
 };
 
-// =============================================================================
-// Statistical helper functions
-// =============================================================================
-
-/// Pearson correlation coefficient (computed from scratch)
-double compute_pearson_r(const std::vector<double>& x, const std::vector<double>& y);
-
-/// Spearman rank correlation (computed from scratch)
-double compute_spearman_rho(const std::vector<double>& x, const std::vector<double>& y);
-
-/// Kendall tau-b rank correlation (computed from scratch)
-double compute_kendall_tau(const std::vector<double>& x, const std::vector<double>& y);
-
-/// Compute RMSD between two coordinate sets (3N floats: x1,y1,z1,x2,y2,z2,...)
-double compute_rmsd(const std::vector<float>& coords_a,
-                    const std::vector<float>& coords_b);
+// Statistical helpers (compute_pearson_r / spearman / kendall / compute_rmsd)
+// live in DatasetRunnerStats.h — included above for a stable public API.
 
 // =============================================================================
 // DatasetRunner class

@@ -25,6 +25,7 @@ LIB/CifReader.h
 LIB/CleftDetector.h
 LIB/CoarseScreen.h
 LIB/DatasetRunner.h
+LIB/DatasetRunnerStats.h
 LIB/DiFT/DiFT.h
 LIB/DiFT/DiFTGAAdapter.h
 LIB/DistributedBackend.h
