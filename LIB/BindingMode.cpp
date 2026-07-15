@@ -519,6 +519,48 @@ void BindingMode::output_BindingMode(int num_result, char* end_strfile, char* tm
 	std::vector<Pose>::const_iterator Rep = Rep_lowOPTICS;
 	if (Rep == this->Poses.end() || isUndefinedDist(Rep->reachDist)) Rep = Rep_lowCF;
 
+	// P2 (feature-flagged): PB-aware member promotion within this BindingMode.
+	// When FLEXAIDDS_PB_AWARE_PROMOTION=1, elect the member with lowest stored
+	// intermolecular wall energy (CF.wal) among poses near the density center.
+	// Mode ranking / BindingPopulation sort keys are untouched — emission only.
+	// Metric is crystal-blind (no RMSD-to-ref). Default OFF.
+	bool pb_promotion = false;
+	if (const char* env_pb = std::getenv("FLEXAIDDS_PB_AWARE_PROMOTION")) {
+		pb_promotion = (env_pb[0] != '\0' && env_pb[0] != '0');
+	}
+	if (pb_promotion && this->Poses.size() > 1 && Rep != this->Poses.end()) {
+		const float center_reach = Rep->reachDist;
+		const double center_cf = Rep->CF;
+		// Cap: keep candidates in the same basin (reachDist or CF window).
+		const float reach_cap = 2.0f;  // same scale as typical cluster_rmsd
+		const double cf_window = 5.0;  // kcal proxy; wide enough for near-center members
+		std::vector<Pose>::const_iterator best = Rep;
+		double best_wal = (Rep->chrom != nullptr) ? Rep->chrom->cf.wal : 1.0e300;
+		double best_cf = Rep->CF;
+		for (std::vector<Pose>::const_iterator it = this->Poses.begin();
+		     it != this->Poses.end(); ++it) {
+			if (it->chrom == nullptr) continue;
+			// Basin filter: OPTICS reachDist when defined, else CF proximity.
+			bool in_basin = true;
+			if (!isUndefinedDist(center_reach) && !isUndefinedDist(it->reachDist)) {
+				if (it->reachDist > center_reach + reach_cap) in_basin = false;
+			} else if ((it->CF - center_cf) > cf_window) {
+				in_basin = false;
+			}
+			if (!in_basin) continue;
+			const double wal = it->chrom->cf.wal;
+			const double cf = it->CF;
+			// Lexicographic: min wall, then min CF (same mode, lower clash preferred).
+			if (wal < best_wal - 1e-9 ||
+			    (std::fabs(wal - best_wal) <= 1e-9 && cf < best_cf - 1e-9)) {
+				best = it;
+				best_wal = wal;
+				best_cf = cf;
+			}
+		}
+		Rep = best;
+	}
+
 	for (int k = 0; k < this->Population->GB->num_genes; ++k) this->Population->FA->opt_par[k] = Rep->chrom->genes[k].to_ic;
 
 	// Ring pucker (LigandRingFlex Phase 2): emit the representative pose's
@@ -539,8 +581,20 @@ void BindingMode::output_BindingMode(int num_result, char* end_strfile, char* tm
 	remark[0] = '\0';
 	safe_remark_cat(remark, "REMARK optimized structure\n", &remark_len);
 
-	snprintf(tmpremark, MAX_REMARK, "REMARK Fast OPTICS clustering algorithm used to output the OPTICS density center as Binding Mode representative\n");
-	safe_remark_cat(remark, tmpremark, &remark_len);
+	if (pb_promotion) {
+		snprintf(tmpremark, MAX_REMARK,
+			"REMARK emission_rep_policy=pb_aware_promotion (min CF.wal within mode; FLEXAIDDS_PB_AWARE_PROMOTION=1)\n");
+		safe_remark_cat(remark, tmpremark, &remark_len);
+		snprintf(tmpremark, MAX_REMARK,
+			"REMARK emission_promoted=1 optics_center_cf=%8.5f elected_cf=%8.5f elected_wal=%8.5f\n",
+			(Rep_lowOPTICS != this->Poses.end() ? Rep_lowOPTICS->CF : Rep->CF),
+			Rep->CF,
+			(Rep->chrom != nullptr ? Rep->chrom->cf.wal : 0.0));
+		safe_remark_cat(remark, tmpremark, &remark_len);
+	} else {
+		snprintf(tmpremark, MAX_REMARK, "REMARK Fast OPTICS clustering algorithm used to output the OPTICS density center as Binding Mode representative\n");
+		safe_remark_cat(remark, tmpremark, &remark_len);
+	}
 
 	snprintf(tmpremark, MAX_REMARK, "REMARK CF=%8.5f\n", Rep->chrom->evalue);
 	safe_remark_cat(remark, tmpremark, &remark_len);

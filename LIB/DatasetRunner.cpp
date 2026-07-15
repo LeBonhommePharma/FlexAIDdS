@@ -20,6 +20,9 @@
 #include "receptor_prep.h"
 #include "tENCoM/tencm.h"   // tencm::TorsionalENM — ligand Cartesian ANM for H(ω)
 #include "VibEntropy.h"     // vibentropy::compute_vib_entropy_collapse — Level-3 H(ω)
+#include "PoseBust/Engine.h"   // NativePoseQC (diagnostic)
+#include "PoseBust/BustCli.h"  // authoritative upstream bust
+#include "PoseBust/Loaders.h"
 
 #include <algorithm>
 #include <array>
@@ -66,6 +69,33 @@
 namespace fs = std::filesystem;
 
 namespace dataset {
+
+// Preserve a broad, fixed candidate set before any post-docking validator or
+// reranker runs. Candidate RMSD is diagnostic only and never affects retention.
+constexpr int kBenchmarkPoseLimit = 50;
+
+static std::uint64_t stable_seed_hash(const std::string& label,
+                                      std::uint64_t stream = 0) {
+    std::uint64_t hash = 14695981039346656037ULL;
+    for (const unsigned char byte : label) {
+        hash ^= byte;
+        hash *= 1099511628211ULL;
+    }
+    for (int shift = 0; shift < 64; shift += 8) {
+        hash ^= static_cast<unsigned char>((stream >> shift) & 0xffU);
+        hash *= 1099511628211ULL;
+    }
+    return hash;
+}
+
+static int deterministic_ga_seed(const std::string& target_id, int restart) {
+    std::uint64_t base = 0;
+    if (const char* value = std::getenv("FLEXAIDDS_SEED_BASE")) {
+        try { base = std::stoull(value); } catch (...) { base = 0; }
+    }
+    const std::uint64_t stream = base ^ static_cast<std::uint64_t>(restart);
+    return 1 + static_cast<int>(stable_seed_hash(target_id, stream) % 2147483646ULL);
+}
 
 // =============================================================================
 // Static pointers for async-signal-safe handler access.
@@ -477,7 +507,8 @@ static std::pair<float,float> compute_pose_ligand_rmsd(
 static bool load_pose_ligand_coords(
     const std::string& pose_pdb,
     std::vector<std::array<float,3>>& out_xyz,
-    std::vector<std::string>& out_elem)
+    std::vector<std::string>& out_elem,
+    bool require_conect = false)
 {
     out_xyz.clear();
     out_elem.clear();
@@ -514,6 +545,7 @@ static bool load_pose_ligand_coords(
             }
         }
     }
+    if (require_conect && conect_serials.empty()) return false;
 
     std::vector<std::tuple<long, std::array<float,3>, std::string>> docked;
     {
@@ -603,6 +635,84 @@ struct HvibColumns {
     int   n_reps      = 0;     // contributing reps
 };
 
+struct PoseHvibColumns {
+    float H_vib = 0.0f;
+    int n_modes = 0;
+    bool ok = false;
+    std::string error;
+};
+
+static std::vector<double> compute_pose_eigenvalues(
+    const std::string& pose_path, std::string* error = nullptr)
+{
+    std::vector<std::array<float,3>> xyz;
+    std::vector<std::string> elem;
+    if (!load_pose_ligand_coords(pose_path, xyz, elem, true)) {
+        if (error) *error = "no CONECT-defined ligand heavy atoms in elected pose";
+        return {};
+    }
+    if (xyz.size() < 3) {
+        if (error) *error = "ligand ANM requires at least three heavy atoms";
+        return {};
+    }
+
+    std::vector<atom> latoms(xyz.size());
+    for (size_t k = 0; k < xyz.size(); ++k) {
+        latoms[k] = atom{};
+        latoms[k].coor[0] = xyz[k][0];
+        latoms[k].coor[1] = xyz[k][1];
+        latoms[k].coor[2] = xyz[k][2];
+        std::strncpy(latoms[k].element, elem[k].c_str(),
+                     sizeof(latoms[k].element) - 1);
+    }
+
+    try {
+        tencm::TorsionalENM ligand_enm;
+        ligand_enm.build_from_ligand(latoms.data(), 0,
+                                     static_cast<int>(latoms.size()));
+        if (!ligand_enm.is_built()) {
+            if (error) *error = "ligand tENCoM model did not build";
+            return {};
+        }
+        double max_lambda = 0.0;
+        for (const auto& mode : ligand_enm.modes()) {
+            if (std::isfinite(mode.eigenvalue))
+                max_lambda = std::max(max_lambda, mode.eigenvalue);
+        }
+        // Cartesian ANM contains six rigid-body null modes plus any additional
+        // disconnected-network nullspace. Remove numerical remnants relative to
+        // the spectrum scale instead of treating tiny positive roundoff as motion.
+        const double rigid_cutoff = std::max(1e-10, max_lambda * 1e-8);
+        std::vector<double> eigs;
+        eigs.reserve(ligand_enm.modes().size());
+        for (const auto& mode : ligand_enm.modes()) {
+            if (std::isfinite(mode.eigenvalue) &&
+                mode.eigenvalue > rigid_cutoff)
+                eigs.push_back(mode.eigenvalue);
+        }
+        if (eigs.empty() && error) *error = "Eigen returned no positive modes";
+        return eigs;
+    } catch (const std::exception& exc) {
+        if (error) *error = exc.what();
+    } catch (...) {
+        if (error) *error = "unknown tENCoM/Eigen failure";
+    }
+    return {};
+}
+
+static PoseHvibColumns compute_pose_hvib(const std::string& pose_path)
+{
+    PoseHvibColumns out;
+    std::vector<double> eigs = compute_pose_eigenvalues(pose_path, &out.error);
+    if (eigs.empty()) return out;
+    const vibentropy::VibEntropyResult entropy =
+        vibentropy::compute_vib_entropy_collapse({eigs});
+    out.H_vib = static_cast<float>(entropy.H_pop);
+    out.n_modes = static_cast<int>(eigs.size());
+    out.ok = true;
+    return out;
+}
+
 static HvibColumns compute_target_hvib(const std::vector<std::string>& all_prefixes,
                                        int top_n = 10)
 {
@@ -613,7 +723,7 @@ static HvibColumns compute_target_hvib(const std::vector<std::string>& all_prefi
     struct PosePath { std::string path; float cf; };
     std::vector<PosePath> pool;
     for (const auto& pfx : all_prefixes) {
-        for (int pi = 0; pi <= 19; ++pi) {
+        for (int pi = 0; pi < kBenchmarkPoseLimit; ++pi) {
             std::string cand = pfx + "_" + std::to_string(pi) + ".pdb";
             if (!fs::exists(cand)) continue;
             float cf = std::numeric_limits<float>::infinity();
@@ -638,42 +748,17 @@ static HvibColumns compute_target_hvib(const std::vector<std::string>& all_prefi
     // Build the per-rep eigenvalue arrays (positive eigenvalues only).
     std::vector<std::vector<double>> rep_eigs;
     rep_eigs.reserve(pool.size());
-    for (const auto& pp : pool) {
-        std::vector<std::array<float,3>> xyz;
-        std::vector<std::string>         elem;
-        if (!load_pose_ligand_coords(pp.path, xyz, elem)) continue;
-        if (xyz.size() < 3) continue;  // ANM needs >= 3 heavy atoms
-        // Minimal FA atom array — build_from_ligand only reads coor[] + element.
-        // atom{} value-initialises pointer/scalar members to zero.
-        std::vector<atom> latoms(xyz.size());
-        for (size_t k = 0; k < xyz.size(); ++k) {
-            latoms[k] = atom{};
-            latoms[k].coor[0] = xyz[k][0];
-            latoms[k].coor[1] = xyz[k][1];
-            latoms[k].coor[2] = xyz[k][2];
-            // element[3]; zero-init guarantees null-termination for 1-2 char symbols.
-            std::strncpy(latoms[k].element, elem[k].c_str(),
-                         sizeof(latoms[k].element) - 1);
+    for (size_t i = 0; i < pool.size(); ++i) {
+        std::vector<double> eigs = compute_pose_eigenvalues(pool[i].path);
+        if (eigs.empty()) continue;
+        if (i == 0) {
+            const vibentropy::VibEntropyResult rank0 =
+                vibentropy::compute_vib_entropy_collapse({eigs});
+            out.H_rep_rank0 = static_cast<float>(rank0.H_pop);
         }
-        tencm::TorsionalENM lig_enm;
-        lig_enm.build_from_ligand(latoms.data(), 0,
-                                  static_cast<int>(latoms.size()));
-        if (!lig_enm.is_built()) continue;
-        std::vector<double> eigs;
-        eigs.reserve(lig_enm.modes().size());
-        for (const auto& nm : lig_enm.modes())
-            if (nm.eigenvalue > 0.0) eigs.push_back(nm.eigenvalue);
-        if (!eigs.empty()) rep_eigs.push_back(std::move(eigs));
+        rep_eigs.push_back(std::move(eigs));
     }
     if (rep_eigs.empty()) return out;
-
-    // H_rep_rank0: H(ω) of the best-CF rep alone (single-rep pooled distribution).
-    {
-        std::vector<std::vector<double>> single = { rep_eigs.front() };
-        vibentropy::VibEntropyResult r0 =
-            vibentropy::compute_vib_entropy_collapse(single);
-        out.H_rep_rank0 = static_cast<float>(r0.H_pop);
-    }
     vibentropy::VibEntropyResult hvib =
         vibentropy::compute_vib_entropy_collapse(rep_eigs);
     out.H_pop      = static_cast<float>(hvib.H_pop);
@@ -688,7 +773,7 @@ static HvibColumns compute_target_hvib(const std::vector<std::string>& all_prefi
 // (the near-native cluster is almost always the runner-up, idx=1). The emitted
 // REMARK already carries each cluster's population (Frequency:) — fitness
 // sharing / entropy favour broad, populated minima as near-native. This helper:
-//   1. parses CF= and Frequency: from each emitted pose _0..19.pdb,
+//   1. parses CF= and Frequency: from each emitted benchmark pose,
 //   2. drops degenerate poses (CF≈0 = unscored / empty emission),
 //   3. prefers the pool of populated clusters (freq>1) when any exist,
 //      falling back to all scored poses when the GA collapsed to singletons,
@@ -699,7 +784,7 @@ static std::pair<std::string,float> select_pose_freq_gated(const std::string& ou
 {
     struct PoseInfo { std::string path; float cf; int freq; };
     std::vector<PoseInfo> poses;
-    for (int pi = 0; pi <= 19; ++pi) {
+    for (int pi = 0; pi < kBenchmarkPoseLimit; ++pi) {
         std::string cand = out_prefix + "_" + std::to_string(pi) + ".pdb";
         if (!fs::exists(cand)) continue;
         float cf = std::numeric_limits<float>::infinity();
@@ -746,7 +831,8 @@ static std::pair<std::string,float> select_pose_freq_gated(const std::string& ou
 }
 
 // Multi-restart pooled Fix B: same frequency-gate + min-CF logic applied across
-// ALL restart prefixes simultaneously.  Each restart contributes poses _0…_19.pdb
+// ALL restart prefixes simultaneously. Each restart contributes every retained
+// benchmark pose.
 // under its own prefix; the combined pool is treated as a single ensemble — a
 // larger, more diverse set for Fix B to select from (v25 multi-restart pooling).
 static std::pair<std::string,float> select_pose_freq_gated_pooled(
@@ -858,7 +944,7 @@ static std::pair<std::string,float> select_pose_freq_gated_pooled(
     std::vector<PoseInfo> poses;
     for (size_t ri = 0; ri < prefixes.size(); ++ri) {
         const auto& out_prefix = prefixes[ri];
-        for (int pi = 0; pi <= 19; ++pi) {
+        for (int pi = 0; pi < kBenchmarkPoseLimit; ++pi) {
             std::string cand = out_prefix + "_" + std::to_string(pi) + ".pdb";
             if (!fs::exists(cand)) continue;
             float cf; int freq; std::vector<float> mcfs;
@@ -1471,27 +1557,19 @@ static bool write_ligand_centered_site(const std::string& receptor_path,
 // and RMSD≈0 is achievable without any real search (1G9V/1HNN/1HQ2 false
 // positives: ligand identical across _INI/_0/_1, never moves).
 //
-// Astex Diverse is a RE-DOCKING benchmark: the binding *site* is legitimately
-// known, only the *pose* must be predicted.  The engine has no separate
-// site-center flag in direct mode — the ligand's position is the only site
-// signal — so we must NOT translate the ligand away from the site (doing so
-// strands the search in the wrong pocket, e.g. zero-centred 1G9V→34.9 Å).
-//
-// Instead we BLIND ONLY THE POSE: keep the heavy-atom centroid exactly where it
-// is (site preserved) and apply a deterministic, uniformly-random rigid
-// ROTATION about that centroid.  The starting orientation is now scrambled
-// (RMSD-to-crystal of the input is large), so a no-op GA can no longer echo the
-// answer — recovering RMSD<2 Å now requires genuinely searching orientation
-// space.  The rotation is seeded by a hash of the PDB id, so the benchmark stays
-// bit-for-bit reproducible.  The original crystal-coordinate file is kept
-// untouched for the RMSD reference.
+// Astex Diverse redocking legitimately defines the binding site, not the native
+// pose. Apply a deterministic uniform rigid rotation and, when a site-derived
+// target center is provided, translate the ligand centroid to that cavity
+// center. This removes both native orientation and exact native-centroid leakage
+// while preserving a reproducible known-site protocol. The original crystal
+// coordinates remain untouched and are used only after election for RMSD.
 //
 // Supports SDF (V2000) and MOL2.  Returns true if a blinded copy was written to
-// `dst`; on any parse failure returns false (caller falls back to the un-blinded
-// original rather than crash a benchmark run).
+// `dst`; on any parse failure returns false and the benchmark caller fails closed.
 static bool write_blinded_ligand(const std::string& src,
                                  const std::string& dst,
-                                 std::uint64_t seed) {
+                                 std::uint64_t seed,
+                                 const std::array<double,3>* target_center = nullptr) {
     std::ifstream in(src);
     if (!in.is_open()) return false;
     std::vector<std::string> lines;
@@ -1533,9 +1611,12 @@ static bool write_blinded_ligand(const std::string& src,
                             double cx, double cy, double cz,
                             double& ox, double& oy, double& oz) {
         const double dx = x - cx, dy = y - cy, dz = z - cz;
-        ox = cx + R[0][0]*dx + R[0][1]*dy + R[0][2]*dz;
-        oy = cy + R[1][0]*dx + R[1][1]*dy + R[1][2]*dz;
-        oz = cz + R[2][0]*dx + R[2][1]*dy + R[2][2]*dz;
+        const double tx = target_center ? (*target_center)[0] : cx;
+        const double ty = target_center ? (*target_center)[1] : cy;
+        const double tz = target_center ? (*target_center)[2] : cz;
+        ox = tx + R[0][0]*dx + R[0][1]*dy + R[0][2]*dz;
+        oy = ty + R[1][0]*dx + R[1][1]*dy + R[1][2]*dz;
+        oz = tz + R[2][0]*dx + R[2][1]*dy + R[2][2]*dz;
     };
 
     auto lower = [](std::string s) {
@@ -2931,7 +3012,7 @@ static bool ligand_sdf_is_current(const std::string& sdf_path,
     bool has_stamp = false;
     for (int i = 0; i < 4 && std::getline(ifs, header[i]); ++i) {
         ++nhdr;
-        if (header[i].find("FLEXAIDDS_LIGAND_EXTRACTOR_V4") != std::string::npos)
+        if (header[i].find("FLEXAIDDS_LIGAND_EXTRACTOR_V5") != std::string::npos)
             has_stamp = true;
     }
     if (!has_stamp || nhdr < 1) return false;
@@ -3381,7 +3462,7 @@ bool DatasetRunner::extract_ligand(const std::string& structure_path,
 
     ofs << best_atom.resName << "\n";
     ofs << "  FlexAIDdS DatasetRunner\n";
-    ofs << "  Extracted from structure HETATM/peptide records | FLEXAIDDS_LIGAND_EXTRACTOR_V4\n";
+    ofs << "  Extracted from structure HETATM/peptide records | FLEXAIDDS_LIGAND_EXTRACTOR_V5\n";
 
     // Counts line — write ACTUAL bond count so readers respect the block
     size_t selected_bond_count = 0;
@@ -3394,7 +3475,7 @@ bool DatasetRunner::extract_ligand(const std::string& structure_path,
 
     ofs << std::setw(3) << selected_indices.size()
         << std::setw(3) << selected_bond_count
-        << "  0  0  0  0  0  0  0999 V2000\n";
+        << "  0  0  0  0  0  0  0  0999 V2000\n";
 
     // Atom block
     for (size_t sel_idx : selected_indices) {
@@ -4919,9 +5000,10 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
     // Layer 1: log BenchmarkMode for provenance
     {
         const char* mode_label =
-            (config.mode == BenchmarkMode::ORACLE_CEILING) ? "oracle-ceiling" :
-            (config.mode == BenchmarkMode::AUTONOMOUS)     ? "autonomous" :
-                                                             "unset (env-var)";
+            (config.mode == BenchmarkMode::ORACLE_CEILING)       ? "oracle-ceiling" :
+            (config.mode == BenchmarkMode::DEFINED_CLEFT_REDOCK) ? "defined-cleft-redock" :
+            (config.mode == BenchmarkMode::AUTONOMOUS)           ? "autonomous" :
+                                                                   "unset (env-var)";
         std::cout << "[DatasetRunner] BenchmarkMode:    " << mode_label << "\n";
     }
 
@@ -4965,8 +5047,9 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
             return t;
         };
 
-        // Resolve the scoring matrix path with the SAME precedence the per-job
-        // command uses (FLEXAIDDS_DATA_DIR override, else <bin>/../WRK).
+        // Resolve the scoring matrix with the same precedence as each child:
+        // explicit override, immutable data staged beside the binary, then the
+        // mutable source-tree WRK directory as a development fallback.
         std::string matrix_path;
         if (const char* dd = std::getenv("FLEXAIDDS_DATA_DIR")) {
             std::string cand = std::string(dd) + "/MC_st0r5.2_6.dat";
@@ -4976,8 +5059,10 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
             std::string bin_dir = flexaidds_bin;
             auto slash = bin_dir.rfind('/');
             if (slash != std::string::npos) bin_dir = bin_dir.substr(0, slash);
-            std::string cand = bin_dir + "/../WRK/MC_st0r5.2_6.dat";
-            if (fs::exists(cand)) matrix_path = cand;
+            const std::string staged = bin_dir + "/MC_st0r5.2_6.dat";
+            const std::string source = bin_dir + "/../WRK/MC_st0r5.2_6.dat";
+            if (fs::exists(staged)) matrix_path = staged;
+            else if (fs::exists(source)) matrix_path = source;
         }
 
         const char* oracle_env = std::getenv("FLEXAIDDS_ORACLE_SITE_DIR");
@@ -5003,6 +5088,7 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                << "  \"dataset\": \""        << json_esc(report.dataset_name)   << "\",\n"
                << "  \"matrix_path\": \""    << json_esc(matrix_path)           << "\",\n"
                << "  \"matrix_md5\": \""     << json_esc(md5_of(matrix_path))   << "\",\n"
+               << "  \"matrix_sha256\": \""  << json_esc(sha256_of(matrix_path)) << "\",\n"
                << "  \"binary_path\": \""    << json_esc(flexaidds_bin)         << "\",\n"
                << "  \"binary_sha256\": \""  << json_esc(sha256_of(flexaidds_bin)) << "\",\n"
                << "  \"git_commit\": \""     << json_esc(git_commit)            << "\",\n"
@@ -5278,13 +5364,20 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
         // stdout.log. The CSV path matters for resumed campaigns because some
         // historical successful runs wrote result.csv but no *_mode_/*.pdb pose
         // artifact matching the older predicate.
+        // FLEXAIDDS_IGNORE_CACHE=1 forces re-run regardless of cached result.csv.
+        // Use when the binary or scoring parameters changed between runs so stale
+        // cached results from a different binary are not silently reused.
+        const bool ignore_cache = []() -> bool {
+            const char* e = std::getenv("FLEXAIDDS_IGNORE_CACHE");
+            return e && std::atoi(e) != 0;
+        }();
         bool skip = false;
         bool cached_csv_success = false;
         float cached_csv_best_score = 0.0f;
         float cached_csv_predicted_dg = 0.0f;
         int cached_csv_num_poses = 0;
         double cached_csv_wall_time_s = 0.0;
-        if (config.skip_completed && fs::exists(out_dir)) {
+        if (!ignore_cache && config.skip_completed && fs::exists(out_dir)) {
             int cached_poses = 0;
             try {
                 for (const auto& f : fs::directory_iterator(out_dir)) {
@@ -5419,42 +5512,72 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
             // one (which caused stochastic search failure for flexible ligands).
             //   n_flex_bonds   = perceived rotatable bonds = dihedral genes (fdih)
             //   n_gen_effective = n_gen_base × max(1.0, n_flex_bonds / 4.0)
-            // Gated by FLEXAIDDS_EVAL_SCALE_DIHEDRAL (default 1 = ON; set 0 to
-            // fall back to the legacy ceil(n_genes/4) scaling without recompile).
+            // Gated by FLEXAIDDS_EVAL_SCALE_DIHEDRAL:
+            //   1 (default) = pop-scale by DoF (iso-budget chromosome swap)
+            //   0           = legacy gen-scale ceil(n_genes/4)
+            //   -1 / "off"  = fixed pop+gen (no DoF scaling) — v43 oracle-ceiling restore
             const char* eval_scale_env = std::getenv("FLEXAIDDS_EVAL_SCALE_DIHEDRAL");
-            const int   eval_scale_on  = eval_scale_env ? std::atoi(eval_scale_env) : 1;
+            int eval_scale_mode = 1;
+            if (eval_scale_env) {
+                if (std::strcmp(eval_scale_env, "off") == 0 ||
+                    std::strcmp(eval_scale_env, "none") == 0 ||
+                    std::strcmp(eval_scale_env, "fixed") == 0) {
+                    eval_scale_mode = -1;
+                } else {
+                    eval_scale_mode = std::atoi(eval_scale_env);
+                }
+            }
             const int   n_flex_bonds   = fdih_est;
             const int   n_gen_base     = config.ga_generations;
-            int n_gen_scaled;
-            if (eval_scale_on) {
+            const int   pop_base       = config.ga_population;
+            int n_gen_scaled           = n_gen_base;  // generations fixed at base
+            int pop_scaled             = pop_base;    // population scaled by DoF
+            if (eval_scale_mode > 0) {
+                // ── Population-based eval scaling (iso-budget chromosome swap) ──
+                // Rationale: GA search space dimensionality grows linearly with
+                // n_flex_bonds.  In a D-dimensional landscape, a fixed population
+                // collapses prematurely — the initial Shannon entropy H(X) over the
+                // gene distribution is too low to cover multiple binding-mode basins.
+                // Scaling POPULATION instead of generations preserves total evaluations
+                // (pop x gen = constant) while raising H(initial) proportionally to
+                // the DoF count, so harder ligands start with more diverse hypotheses
+                // rather than converging faster on whichever basin the small population
+                // happened to seed.  This is strictly better than gen-scaling when
+                // premature convergence (not search depth) is the bottleneck.
+                //
+                // Scale: pop_effective = pop_base x max(1, n_flex_bonds / 4)
+                //        n_gen stays at n_gen_base (no generation inflation)
+                // Iso-budget: total_evals ~= pop_base x n_gen_base (unchanged).
                 const float dihedral_scale =
                     std::max(1.0f, static_cast<float>(n_flex_bonds) / 4.0f);
-                n_gen_scaled = static_cast<int>(
-                    std::lround(static_cast<double>(n_gen_base) * dihedral_scale));
+                pop_scaled = static_cast<int>(
+                    std::lround(static_cast<double>(pop_base) * dihedral_scale));
                 fprintf(stderr,
-                        "[EVAL-SCALE] %s: n_flex_bonds=%d n_gen_base=%d n_gen_effective=%d\n",
-                        entry.pdb_id.c_str(), n_flex_bonds, n_gen_base, n_gen_scaled);
-            } else {
+                        "[EVAL-SCALE] %s: n_flex_bonds=%d pop_base=%d pop_effective=%d n_gen=%d\n",
+                        entry.pdb_id.c_str(), n_flex_bonds, pop_base, pop_scaled, n_gen_scaled);
+            } else if (eval_scale_mode == 0) {
                 n_gen_scaled = n_gen_base * ((n_genes + 3) / 4);  // legacy ceil(n_genes/4)
+            } else {
+                // mode < 0: fixed budget (v43 / oracle-ceiling restore)
+                fprintf(stderr,
+                        "[EVAL-SCALE] %s: FIXED pop=%d n_gen=%d (no DoF scaling)\n",
+                        entry.pdb_id.c_str(), pop_scaled, n_gen_scaled);
             }
 
             // ── v27 high-DoF budget scaling (FLEXAIDDS_BUDGET_SCALE) ──
-            // High-DoF ligands (n_genes >= 14, i.e. >=10 rotatable bonds) need a
-            // wider GA eval budget for seed-anchored elitism to converge the extra
-            // torsional dimensions.  When enabled, multiply n_gen by
-            // max(1.0, n_genes/7.0).  Gated by FLEXAIDDS_BUDGET_SCALE (default 1 =
-            // ON; set 0 to disable).  Echoed for greppability on disk.
+            // High-DoF ligands (n_genes >= 14, i.e. >=10 rotatable bonds): same
+            // population-scaling logic absorbs the extra budget multiplier.
             const char* bscale_env = std::getenv("FLEXAIDDS_BUDGET_SCALE");
             const int   budget_scale_on = bscale_env ? std::atoi(bscale_env) : 1;
             double budget_scale_factor = 1.0;
             if (budget_scale_on && n_genes >= 14) {
                 budget_scale_factor = std::max(1.0,
                                                static_cast<double>(n_genes) / 7.0);
-                n_gen_scaled = static_cast<int>(
-                    std::lround(static_cast<double>(n_gen_scaled) * budget_scale_factor));
+                pop_scaled = static_cast<int>(
+                    std::lround(static_cast<double>(pop_scaled) * budget_scale_factor));
             }
-            fprintf(stderr, "[EVAL-BUDGET] %s: fdih=%d ring_dof=%d n_genes=%d budget_scale=%.3f n_gen=%d\n",
-                    entry.pdb_id.c_str(), fdih_est, ring_dof_est, n_genes, budget_scale_factor, n_gen_scaled);
+            fprintf(stderr, "[EVAL-BUDGET] %s: fdih=%d ring_dof=%d n_genes=%d budget_scale=%.3f n_gen=%d pop=%d\n",
+                    entry.pdb_id.c_str(), fdih_est, ring_dof_est, n_genes, budget_scale_factor, n_gen_scaled, pop_scaled);
 
             // ── Multi-restart loop ──────────────────────────────────────────
             // Restart 0 uses the canonical out_dir/out_prefix.  Restarts 1+
@@ -5560,6 +5683,9 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                    // without softening genuine clashes (o > 0.40 Å → quadratic).
                    // Set to 0.0 to recover v42 hard-wall (legacy) behaviour.
                    << "    \"soft_wall_cutoff\": 0.40,\n"
+                   // Match PoseBusters' relative-vdW intermolecular clash cutoff
+                   // during search so invalid overlaps cannot win on VCT score.
+                   << "    \"intermolecular_clash_ratio\": 0.75,\n"
                    // v44: receptor rotamer pre-relaxation enabled by default.
                    // Greedy Dunbrack search on pocket sidechains before GA launch.
                    // Documented here for provenance; actual flag read from
@@ -5574,6 +5700,9 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                    << "  },\n"
                    << "  \"optimization\": {\n"
                    << "    \"grid_spacing\": " << config.grid_spacing << opt_extra << "\n"
+                   << "  },\n"
+                   << "  \"output\": {\n"
+                   << "    \"max_results\": " << kBenchmarkPoseLimit << "\n"
                    << "  },\n"
                    // The MC_st0r5.2_6 interaction matrix is loaded weighted (single
                    // value per type-pair), so the complementarity term must be
@@ -5627,37 +5756,32 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                    << "  \"seeding\": {\n"
                    << "    \"mif_enabled\": true\n"
                    << "  },\n"
-                   // Self-docking re-docking: in oracle-ceiling mode the cognate
-                   // site is known, so bias the initial population to grid points
-                   // nearest the reference-ligand anchor. In AUTONOMOUS mode,
-                   // disable reference-ligand seeding entirely; the blind smoke/
-                   // thesis number must come from coarse/MIF/site initialization,
-                   // not from the crystal/reference ligand frame.
+                   // Crystal coordinates must NOT enter the GA as pose seeds.
+                   // RMSD/PoseBusters use a separate post-dock reference path
+                   // (rmsd_reference_path); leave reference_ligand.file empty so
+                   // neither orientation/torsion flood nor nearest-grid crystal
+                   // bias is injected. Known-site search (ORACLE_CEILING /
+                   // DEFINED_CLEFT) is pocket confinement only — not inheritance.
                    << "  \"reference_ligand\": {\n"
-                   << "    \"file\": \""
-                   << (!rmsd_reference_path.empty() && fs::exists(rmsd_reference_path)
-                         ? rmsd_reference_path : std::string())
-                   << "\",\n"
-                   << "    \"seed_fraction\": "
-                   << (config.mode == BenchmarkMode::AUTONOMOUS ? 0.0 : 0.90)
-                   << ",\n"
-                   << "    \"pose_seed_enabled\": "
-                   << (config.mode == BenchmarkMode::AUTONOMOUS ? "false" : "true")
-                   << ",\n"
-                   << "    \"k_nearest\": 10\n"
+                   << "    \"file\": \"\",\n"
+                   << "    \"seed_fraction\": 0.0,\n"
+                   << "    \"pose_seed_enabled\": false,\n"
+                   << "    \"k_nearest\": 10,\n"
+                   << "    \"hetatm_fallback\": false\n"
                    << "  },\n"
                    // Coarse pocket scan: pre-screen a grid over the binding cleft
                    // with random orientations before the GA loop so gen-0 starts with
                    // VCT-scored contact-forming placements instead of blind randoms.
-                   // Enabled in AUTONOMOUS mode where no crystal IC seeds are injected
-                   // and the raw RANDOM gen-0 collapses to CF≈0 (floating ligand).
+                   // Required whenever crystal IC seeds are not injected.
                    << "  \"coarse_init\": {\n"
                    << "    \"enabled\": "
-                   << (config.mode == BenchmarkMode::AUTONOMOUS ? "true" : "false")
+                   << ((config.mode == BenchmarkMode::AUTONOMOUS ||
+                        config.mode == BenchmarkMode::DEFINED_CLEFT_REDOCK ||
+                        config.mode == BenchmarkMode::ORACLE_CEILING) ? "true" : "false")
                    << ",\n"
                    << "    \"grid_step\": 3.0,\n"
                    << "    \"n_seeds\": 25,\n"
-                   << "    \"n_orientations\": 16\n"
+                   << "    \"n_orientations\": 64\n"
                    << "  },\n"
                    << "  \"thermodynamics\": {\n"
                    << "    \"temperature\": " << config.temperature << ",\n"
@@ -5670,7 +5794,7 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                    << "    \"force_cf_rank_emission\": false\n"
                    << "  },\n"
                    << "  \"ga\": {\n"
-                   << "    \"num_chromosomes\": " << config.ga_population << ",\n"
+                   << "    \"num_chromosomes\": " << pop_scaled << ",\n"
                    << "    \"num_generations\": " << n_gen_scaled << ",\n"
                    << "    \"crossover_rate\": 0.8,\n"
                    << "    \"mutation_rate\": 0.03,\n"
@@ -5689,12 +5813,18 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                    // half) to hold multiple binding-mode hypotheses against the
                    // deepest VCT minimum.  sharing already active via SMFREE fitness.
                    << "    \"sharing_alpha\": "
+                   // Inverse pop-scaling: when pop_scaled > pop_base (DoF scaling
+                   // increased chromosomes), niche density increases proportionally.
+                   // Reduce alpha so each niche still contains ~pop_base chromosomes:
+                   //   alpha_eff = 4.0 * pop_base / pop_scaled
+                   // At pop_scaled==pop_base (rigid target) this is 4.0 (original).
                    << (std::getenv("FLEXAIDDS_SHARING_ALPHA")
-                         ? std::atof(std::getenv("FLEXAIDDS_SHARING_ALPHA")) : 4.0)
+                         ? std::atof(std::getenv("FLEXAIDDS_SHARING_ALPHA"))
+                         : 4.0 * static_cast<double>(pop_base) / static_cast<double>(pop_scaled))
                    << ",\n"
                    << "    \"boom_inject_interval\": 100,\n"
                    << "    \"boom_inject_fraction\": "
-                   // AUTONOMOUS mode = true blind search (no crystal IC seed).
+                   // No-seed modes must preserve accumulated GA progress.
                    // boom_inject_fraction=1.0 fires every 100 gens and replaces the
                    // entire population with fresh randoms, destroying any convergence
                    // progress before it can accumulate.  In oracle mode this never
@@ -5702,8 +5832,10 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                    // the first injection.  In blind mode it is catastrophic — the GA
                    // terminates at gen 300 by fitness stagnation with CF≈0 (no
                    // contacts found) because every 100-gen run gets reset.
-                   // Fix: disable boom injection in AUTONOMOUS mode entirely.
-                   << (config.mode == BenchmarkMode::AUTONOMOUS
+                   // Fix: disable boom injection in all no-seed modes entirely.
+                   << ((config.mode == BenchmarkMode::AUTONOMOUS ||
+                        config.mode == BenchmarkMode::DEFINED_CLEFT_REDOCK ||
+                        config.mode == BenchmarkMode::ORACLE_CEILING)
                          ? 0.0
                          : (std::getenv("FLEXAIDDS_BOOM_FRAC")
                                ? std::atof(std::getenv("FLEXAIDDS_BOOM_FRAC")) : 1.0))
@@ -5725,12 +5857,11 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                 if (std::getenv("FLEXAIDDS_USE_SHANNON")) {
                     jf << ",\n    \"use_shannon\": true";
                 }
-                // Per-restart seed: restart 0 uses 0 (→ clock time at engine init,
-                // preserving original behaviour); restarts 1+ use deterministic primes
-                // so each run diverges even when launched in the same second.
-                if (ri > 0) {
-                    jf << ",\n    \"seed\": " << (ri * 7919);
-                }
+                // Every restart is deterministic. FLEXAIDDS_SEED_BASE can define
+                // an independent replicate while the emitted config records the
+                // exact target-specific seed used by this run.
+                jf << ",\n    \"seed\": "
+                   << deterministic_ga_seed(entry.pdb_id, ri);
                 jf << "\n  }";
                 // ThermodynamicEngine — disabled by default; enable via FLEXAIDDS_THERMO=1
                 if (std::getenv("FLEXAIDDS_THERMO")) {
@@ -5749,14 +5880,13 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
             }
 
             // Build FlexAIDdS command with --config
-            // Detect WRK data directory (same location as in top.cpp auto-detect)
+            // Resolve the runtime data directory with reproducible precedence.
             std::string data_dir_arg;
             {
-                // P10: matrix-swap diagnostic. FLEXAIDDS_DATA_DIR overrides the
-                // auto-detected WRK data dir, letting an alternative interaction
-                // matrix (staged as MC_st0r5.2_6.dat in that dir) replace the
-                // default MC_st0r5.2_6.dat without rebuilding — isolate the scoring
-                // matrix as the single variable in a targeted re-dock.
+                // FLEXAIDDS_DATA_DIR remains the explicit matrix-swap hook for
+                // controlled A/B tests. Normal runs prefer data staged beside
+                // the binary so uncommitted WRK edits cannot silently change a
+                // benchmark; WRK remains a development-only fallback.
                 const char* dd_override = std::getenv("FLEXAIDDS_DATA_DIR");
                 if (dd_override && fs::exists(std::string(dd_override) + "/MC_st0r5.2_6.dat")) {
                     data_dir_arg = " --data-dir '" +
@@ -5765,9 +5895,14 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                     std::string bin_dir = flexaidds_bin;
                     auto slash = bin_dir.rfind('/');
                     if (slash != std::string::npos) bin_dir = bin_dir.substr(0, slash);
-                    std::string wrk_candidate = bin_dir + "/../WRK";
-                    if (fs::exists(wrk_candidate + "/MC_st0r5.2_6.dat")) {
-                        data_dir_arg = " --data-dir '" + fs::canonical(wrk_candidate).string() + "' ";
+                    const std::string staged_candidate = bin_dir;
+                    const std::string wrk_candidate = bin_dir + "/../WRK";
+                    if (fs::exists(staged_candidate + "/MC_st0r5.2_6.dat")) {
+                        data_dir_arg = " --data-dir '" +
+                                       fs::canonical(staged_candidate).string() + "' ";
+                    } else if (fs::exists(wrk_candidate + "/MC_st0r5.2_6.dat")) {
+                        data_dir_arg = " --data-dir '" +
+                                       fs::canonical(wrk_candidate).string() + "' ";
                     }
                 }
             }
@@ -5792,80 +5927,81 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
             }
 
             // ── Blind the initial placement (Bug #1 fix) ─────────────────
-            // Hand FlexAIDdS a pose-blinded copy of the ligand: same centroid
-            // (binding site preserved — Astex is a re-docking benchmark) but a
-            // deterministic random orientation, so the direct-mode reflig seed
-            // can no longer inject the crystal pose into the GA.  The seed is the
-            // PDB-id hash -> reproducible.  The RMSD/native reference is kept
-            // separate from the ligand input path; cross-docking manifests can
-            // provide a start conformer for docking and a crystal SDF for scoring.
-            // On any failure we fall back to the original file rather than abort.
+            // Hand FlexAIDdS a pose-blinded ligand copy. Known-site modes
+            // (ORACLE_CEILING, DEFINED_CLEFT) rotate + recenter on the pocket
+            // centroid; AUTONOMOUS rotates without a crystal site. Crystal
+            // coordinates are evaluation-only (post-election RMSD/PB) — never
+            // GA pose seeds. Fail closed if blinding cannot be performed.
             //
-            // ── v20 oracle-mode native-seed fix ──────────────────────────
-            // FlexAIDdS builds its internal-coordinate (IC) frame relative to the
-            // *input* ligand orientation.  The reference-ligand "direct seed"
-            // (seed_fraction 0.90 below) seeds the population's opt_par with the IC
-            // zero-rotation state — which decodes to whatever orientation the input
-            // ligand has.  When we blind (rotate) the input, those native seeds
-            // start at the BLINDED orientation, not the crystal pose, so the
-            // ~90% native-seeded chromosomes begin at the right translation but the
-            // wrong orientation (v19: 0/71 sub-2 Å).
-            //
-            // Oracle mode explicitly provides the crystal binding site (via the
-            // FLEXAIDDS_ORACLE_SITE env passed below, line ~4116) — there is no
-            // blind-validation cheating concern.  So in oracle direct mode we DO
-            // NOT blind: pass the crystal SDF directly, anchoring the IC frame to
-            // the crystal orientation so the native seeds start at the true crystal
-            // pose.  The random ~10% of the population still draw genes 1–3
-            // uniformly over [−180°,180°] regardless of the IC zero-point, so this
-            // does NOT preferentially start the random search at the answer — it
-            // only fixes the native-seeded fraction.
-            //
-            // Gate on the per-entry binding-site path actually being present (the
-            // exact condition under which FLEXAIDDS_ORACLE_SITE is handed to the
-            // engine), NOT merely on FLEXAIDDS_ORACLE_SITE_DIR being exported: the
-            // oracle site can resolve via the primary path (a *_binding_site.pdb
-            // adjacent to the receptor) with no env var set, and conversely the env
-            // var can be set while a particular entry has no site file.  Tying the
-            // skip to entry.binding_site_path keeps the IC-anchoring exactly aligned
-            // with whether the engine is search-confined to the crystal pocket.
-            // Native-seed flexibility (reference_ligand.seed_fraction 0.90 below) is
-            // suppressed only under the force_rigid ablation, so require !force_rigid.
             const bool entry_has_oracle_site =
                 !entry.binding_site_path.empty() &&
                 fs::exists(entry.binding_site_path);
+            // Known-site modes may use the pocket file for chain pruning / rotamer
+            // prep of the receptor, but never for ligand pose inheritance.
             const bool use_oracle_geometry =
-                config.mode != BenchmarkMode::AUTONOMOUS && entry_has_oracle_site;
-            // Layer 1: BenchmarkMode controls blinding independently of oracle-site
-            // presence. AUTONOMOUS always blinds (thesis number — no crystal pose
-            // leakage). ORACLE_CEILING skips blinding (ceiling — IC anchored).
-            // UNSET: legacy behavior (blind iff no oracle site present).
+                entry_has_oracle_site &&
+                (config.mode == BenchmarkMode::ORACLE_CEILING ||
+                 config.mode == BenchmarkMode::UNSET);
+            // Layer 1: BenchmarkMode controls blinding. All publishable modes
+            // (AUTONOMOUS, DEFINED_CLEFT_REDOCK, ORACLE_CEILING) blind the ligand
+            // pose so crystal orientation/torsions cannot enter the GA. UNSET
+            // retains legacy "skip blinding when an oracle site is present"
+            // behavior for internal ablations only — not for campaign claims.
             bool oracle_direct_active;
-            if (config.mode == BenchmarkMode::ORACLE_CEILING) {
-                oracle_direct_active = entry_has_oracle_site && !config.force_rigid;
-            } else if (config.mode == BenchmarkMode::AUTONOMOUS) {
-                oracle_direct_active = false;  // always blind in autonomous mode
+            if (config.mode == BenchmarkMode::ORACLE_CEILING ||
+                config.mode == BenchmarkMode::DEFINED_CLEFT_REDOCK ||
+                config.mode == BenchmarkMode::AUTONOMOUS) {
+                oracle_direct_active = false;  // no crystal pose inheritance
             } else {
                 oracle_direct_active = entry_has_oracle_site && !config.force_rigid;
             }
             std::string dock_ligand_path = entry.ligand_path;
             if (oracle_direct_active) {
-                std::cerr << "  [ORACLE-SEED] " << entry.pdb_id
-                          << ": skipping pose-blinding (oracle direct mode) — "
-                             "IC frame anchored to crystal so native seeds start "
-                             "at the true crystal pose\n";
+                std::cerr << "  [ORACLE-DIRECT] " << entry.pdb_id
+                          << ": skipping pose-blinding (legacy UNSET ablation only)\n";
                 // dock_ligand_path stays = entry.ligand_path (crystal SDF).
             } else {
                 std::string blinded = out_dir + "/" + entry.pdb_id + "_dockin"
                                     + fs::path(entry.ligand_path).extension().string();
                 const std::uint64_t blind_seed =
-                    std::hash<std::string>{}(entry.pdb_id);
-                if (write_blinded_ligand(entry.ligand_path, blinded, blind_seed)) {
+                    stable_seed_hash(entry.pdb_id, 0x424c494e44ULL);
+                std::array<double,3> site_anchor{};
+                const std::array<double,3>* site_anchor_ptr = nullptr;
+                if (config.mode == BenchmarkMode::DEFINED_CLEFT_REDOCK ||
+                    config.mode == BenchmarkMode::ORACLE_CEILING) {
+                    const std::string anchor_path =
+                        (!entry.cleft_sphere_path.empty() &&
+                         fs::exists(entry.cleft_sphere_path))
+                            ? entry.cleft_sphere_path
+                            : entry.binding_site_path;
+                    if (config.mode == BenchmarkMode::DEFINED_CLEFT_REDOCK &&
+                        (anchor_path.empty() || !fs::exists(anchor_path) ||
+                         !pdb_centroid(anchor_path, site_anchor))) {
+                        throw std::runtime_error(
+                            entry.pdb_id +
+                            ": defined-cleft redocking requires a readable site "
+                            "or cleft centroid for pose blinding");
+                    }
+                    if (!anchor_path.empty() && fs::exists(anchor_path) &&
+                        pdb_centroid(anchor_path, site_anchor)) {
+                        site_anchor_ptr = &site_anchor;
+                        std::cerr << "  [POSE-BLIND] " << entry.pdb_id
+                                  << " recentered on site/cleft centroid ("
+                                  << site_anchor[0] << ", " << site_anchor[1] << ", "
+                                  << site_anchor[2] << ")\n";
+                    } else if (config.mode == BenchmarkMode::ORACLE_CEILING) {
+                        std::cerr << "  [POSE-BLIND] " << entry.pdb_id
+                                  << " random blind (no site centroid for recenter)\n";
+                    }
+                }
+                if (write_blinded_ligand(entry.ligand_path, blinded, blind_seed,
+                                         site_anchor_ptr)) {
                     dock_ligand_path = blinded;
                 } else {
-                    std::cerr << "  [WARN] " << entry.pdb_id
-                              << ": could not blind ligand placement (kept crystal "
-                                 "coords — RMSD may be a false positive)\n";
+                    throw std::runtime_error(
+                        entry.pdb_id +
+                        ": could not blind ligand placement; refusing to run a "
+                        "no-seed benchmark with crystal coordinates");
                 }
             }
 
@@ -5961,7 +6097,10 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                 cmd << "FLEXAIDDS_ORACLE_SITE='" << entry.binding_site_path << "' ";
                 std::cerr << "  ["
                           << (config.mode == BenchmarkMode::AUTONOMOUS
-                                  ? "COGNATE-REDOCK" : "ORACLE")
+                                  ? "COGNATE-REDOCK"
+                                  : config.mode == BenchmarkMode::DEFINED_CLEFT_REDOCK
+                                      ? "DEFINED-CLEFT-REDOCK"
+                                      : "ORACLE")
                           << "] " << entry.pdb_id
                           << " using binding site: " << entry.binding_site_path << "\n";
             }
@@ -5970,7 +6109,13 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
             // scorer sees the correct reference pose, not the blinded input.
             // Skip in AUTONOMOUS mode so blind runs have no native/reference
             // scoring channel in the child process environment.
+            const char* native_diag_env = std::getenv("FLEXAIDDS_SCORE_NATIVE");
+            const bool native_diag_requested =
+                native_diag_env && native_diag_env[0] != '\0' &&
+                std::strcmp(native_diag_env, "0") != 0;
             if (config.mode != BenchmarkMode::AUTONOMOUS &&
+                (config.mode != BenchmarkMode::DEFINED_CLEFT_REDOCK ||
+                 native_diag_requested) &&
                 !rmsd_reference_path.empty() && fs::exists(rmsd_reference_path)) {
                 cmd << "FLEXAIDDS_SCORE_NATIVE=1 "
                     << "FLEXAIDDS_RMSDST='" << rmsd_reference_path << "' ";
@@ -6074,7 +6219,7 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                 std::string ri_prefix2 = (ri == 0) ? out_prefix
                     : (ri_dir2 + "/" + entry.pdb_id);
                 bool has_poses = false;
-                for (int pi = 0; pi <= 19 && !has_poses; pi++) {
+                for (int pi = 0; pi < kBenchmarkPoseLimit && !has_poses; pi++) {
                     if (fs::exists(ri_prefix2 + "_" + std::to_string(pi) + ".pdb"))
                         has_poses = true;
                 }
@@ -6331,8 +6476,9 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
         // Layer 1: pre-compute seed_elitism_override for both pose-selection calls.
         // Matches oracle_direct_active logic above; keeps the two controls in sync.
         const int sel_elitism_ovr =
-            (config.mode == BenchmarkMode::ORACLE_CEILING) ? 1 :
-            (config.mode == BenchmarkMode::AUTONOMOUS)     ? 0 : -1;
+            (config.mode == BenchmarkMode::ORACLE_CEILING ||
+             config.mode == BenchmarkMode::AUTONOMOUS ||
+             config.mode == BenchmarkMode::DEFINED_CLEFT_REDOCK) ? 0 : -1;
 
         // ── best_score: report the EMITTED pose CF, not the stdout-trace min ──
         // The stdout GA trace ("... cf=...") includes the gen-0 seeded population.
@@ -6427,6 +6573,11 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
         // Both encode the same molecule in the same atom order, so we compute
         // positional RMSD directly without alignment (self-docking) or use
         // minimum-distance matching for cross-docking.
+        // Elected pose path and crystal coordinates are hoisted so all
+        // validators can be tied to the final immutable elected artifact.
+        std::string elected_pose_pdb;
+        std::vector<std::array<float,3>> crystal_xyz;
+        std::vector<std::string> crystal_elem;
         if (docking_completed &&
             !rmsd_reference_path.empty() &&
             fs::exists(rmsd_reference_path)) {
@@ -6436,11 +6587,12 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
             // select_pose_freq_gated() drops degenerate (CF≈0) poses, prefers
             // clusters with Frequency>1, and returns the min-CF pose within that
             // pool (see helper definition near compute_pose_ligand_rmsd).
+            // elected_pose_for_pb lives outside this block for PoseBust post-pass.
             std::string best_pose_pdb = select_pose_freq_gated_pooled(all_prefixes, sel_elitism_ovr, cf_window_selector_).first;
             // Fallback: no scored pose found — take first available pose file from any restart.
             if (best_pose_pdb.empty()) {
                 for (const auto& pfx : all_prefixes) {
-                    for (int pi = 0; pi <= 19; pi++) {
+                    for (int pi = 0; pi < kBenchmarkPoseLimit; pi++) {
                         std::string cand = pfx + "_" + std::to_string(pi) + ".pdb";
                         if (fs::exists(cand)) { best_pose_pdb = cand; break; }
                     }
@@ -6458,12 +6610,13 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
             // number of OTHER restart prefixes that have ≥1 pose within δ=1.5 Å
             // (Hungarian heavy-atom RMSD, via pose_pose_rmsd).  Re-rank by
             // PRIMARY consensus (desc), SECONDARY CF (asc); the winner becomes the
-            // reported pose.  Gated by FLEXAIDDS_CONSENSUS_SCORER (default 1; set
-            // 0 to keep the freq-gated selector's pose).  Needs ≥2 restart
+            // reported pose. Gated by FLEXAIDDS_CONSENSUS_SCORER and disabled by
+            // default because it is a diagnostic heuristic, not a preregistered
+            // benchmark endpoint. It needs at least two restart
             // prefixes to carry any cross-restart signal.
             {
                 const char* consensus_env = std::getenv("FLEXAIDDS_CONSENSUS_SCORER");
-                const int   consensus_on  = consensus_env ? std::atoi(consensus_env) : 1;
+                const int   consensus_on  = consensus_env ? std::atoi(consensus_env) : 0;
                 if (consensus_on && all_prefixes.size() >= 2 && !best_pose_pdb.empty()) {
                     constexpr float kConsensusDelta = 1.5f;
                     struct Cand {
@@ -6478,7 +6631,7 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                     std::vector<Cand> pool;
                     for (size_t ip = 0; ip < all_prefixes.size(); ++ip) {
                         const std::string& pfx = all_prefixes[ip];
-                        for (int pi = 0; pi <= 19; ++pi) {
+                        for (int pi = 0; pi < kBenchmarkPoseLimit; ++pi) {
                             std::string cand = pfx + "_" + std::to_string(pi) + ".pdb";
                             if (!fs::exists(cand)) continue;
                             Cand c;
@@ -6655,8 +6808,6 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                     result.pose_source = is_ini ? "ini_elitism" : "ga_cluster";
                 }
                 // Read crystal ligand heavy-atom coords from SDF (lines with X Y Z elem)
-                std::vector<std::array<float,3>> crystal_xyz;
-                std::vector<std::string> crystal_elem;  // parallel element labels
                 {
                     std::ifstream sdf(rmsd_reference_path);
                     std::string sline;
@@ -6715,7 +6866,7 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                     result.rmsd_hungarian  = r0.second;
 
                     // P4: oracle best-of-N ceiling — scan every emitted cluster pose
-                    // (0-19) and record the minimum Hungarian RMSD and which pose
+                    // and record the minimum Hungarian RMSD and which pose
                     // index achieved it.  This is the best a perfect cluster-selector
                     // could have reached given the poses the GA actually emitted;
                     // the gap to rank-0 measures selection (not search) headroom.
@@ -6727,10 +6878,10 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                     // so the two columns measured different candidate sets (hence
                     // rmsd_hungarian=0.0 next to best_cluster_rmsd=5.97). Now
                     // best_cluster_rmsd is a true oracle-best ceiling over the same
-                    // pool. best_cluster_idx is the 0-19 pose index within whichever
+                    // pool. best_cluster_idx is the retained pose index within whichever
                     // pooled restart achieved the minimum.
                     for (const auto& pfx : all_prefixes) {
-                        for (int pi = 0; pi <= 19; ++pi) {
+                        for (int pi = 0; pi < kBenchmarkPoseLimit; ++pi) {
                             std::string cand = pfx + "_" + std::to_string(pi) + ".pdb";
                             if (!fs::exists(cand)) continue;
                             auto rp = compute_pose_ligand_rmsd(
@@ -6805,25 +6956,28 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                     }
                 }
 
-                // ── Seed-echo refinement: GA-found-native guard ──────────────────
+                // ── Seed-echo refinement: non-INI native-cluster diagnostic ──────
                 // seed_echo was set above purely from path (_INI.pdb suffix).  Now
                 // that best_cluster_rmsd is known, tighten the definition: a run
                 // where the INI seed was elected BUT the GA's own best cluster pose
                 // (scanned above, _0/_1/…/_19, no INI) is already sub-2 Å means the
-                // GA DID find native independently — the INI is irrelevant.  Only
-                // flag seed_echo when the GA genuinely failed to find native (all
-                // cluster reps ≥ 2 Å or no cluster poses emitted at all).
+                // a non-INI cluster is sub-2 Å. That cluster may still descend from
+                // a crystal-seeded chromosome, so this is not evidence of an
+                // independent discovery. Protocol-level native_pose_seeded records
+                // that exposure separately. Only retain literal seed_echo when all
+                // non-INI cluster representatives miss or none were emitted.
                 if (result.seed_echo) {
                     const bool ga_found_native =
                         (result.best_cluster_rmsd >= 0.0f &&
-                         result.best_cluster_rmsd < 2.0f);
+                         result.best_cluster_rmsd <= 2.0f);
                     if (ga_found_native) {
-                        result.seed_echo = false;  // GA independently found native; not a false positive
+                        result.seed_echo = false;
                         std::cerr << "  [SEED-ECHO-CLEAR] " << entry.pdb_id
                                   << ": INI elected but GA best_cluster_rmsd="
                                   << std::fixed << std::setprecision(2)
                                   << result.best_cluster_rmsd
-                                  << "A — GA found native, seed_echo cleared\n";
+                                  << "A — non-INI native cluster present; "
+                                     "seed_echo cleared (protocol seeding tracked separately)\n";
                     } else {
                         std::cerr << "  [SEED-ECHO] " << entry.pdb_id
                                   << ": INI seed elected, GA best_cluster_rmsd="
@@ -6848,7 +7002,7 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                 // diagnostic-only.
                 const bool bcr_gate_candidate =
                     result.best_cluster_rmsd >= 0.0f &&
-                    result.best_cluster_rmsd < 2.0f &&
+                    result.best_cluster_rmsd <= 2.0f &&
                     std::min(result.rmsd_to_crystal, result.rmsd_hungarian) >= 2.0f;
                 const bool bcr_gate_enabled =
                     config.mode == BenchmarkMode::ORACLE_CEILING &&
@@ -6911,34 +7065,334 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                               << kept << "A)"
                               << " (idx=" << result.best_cluster_idx << ")\n";
                 }
+                // Hoist elected path for PoseBust (after consensus / BCR mutations).
+                elected_pose_pdb = best_pose_pdb;
             } else {
                 result.rmsd_to_crystal = -1.0f;
             }
         } else {
             result.rmsd_to_crystal = -1.0f;
+            // Still try to elect a pose for PoseBust even without crystal RMSD ref.
+            if (docking_completed) {
+                elected_pose_pdb = select_pose_freq_gated_pooled(
+                    all_prefixes, sel_elitism_ovr, cf_window_selector_).first;
+            }
         }
 
-        // Fix A: success uses the symmetry-corrected RMSD. Serial-order RMSD
-        // over-reports for ligands with topologically-equivalent atoms; the
-        // Hungarian RMSD (element-typed assignment, see compute_pose_ligand_rmsd)
-        // is the standard Astex success metric. On v23 arm A this alone lifts
-        // top-1 from 27 to 43 (16 poses already sub-2Å under symmetry).
-        // Guard: rmsd_report >= 0.0f excludes the -1.0f sentinel so failed runs
-        // (no crystal reference or empty pose) are never counted as successful.
-        const float rmsd_report = std::min(result.rmsd_to_crystal, result.rmsd_hungarian);
-        // seed_echo=1 means the INI crystal seed survived into rank-0 but the GA
-        // never found native independently (all cluster reps ≥ 2 Å).  Count these
-        // as failures: the 0.00 Å RMSD is seed survival, not a GA discovery.
-        result.success = (docking_completed && rmsd_report >= 0.0f && rmsd_report < 2.0f &&
-                          !result.seed_echo);
+        // Publishable modes never inject crystal pose into the GA. Track that
+        // protocol exposure independently of seed_echo (literal _INI election).
+        // native_pose_seeded is reserved for legacy UNSET ablations only.
+        result.native_pose_seeded =
+            config.mode != BenchmarkMode::AUTONOMOUS &&
+            config.mode != BenchmarkMode::DEFINED_CLEFT_REDOCK &&
+            config.mode != BenchmarkMode::ORACLE_CEILING;
+        result.native_pose_seed_fraction = result.native_pose_seeded ? 0.90f : 0.0f;
+        result.protocol_claim_eligible =
+            !result.native_pose_seeded && !result.seed_echo;
+        result.success_rmsd = false;
+        result.success = false;
 
-        // ── Level-3 H(ω) vibrational-entropy diagnostic (FLEXAIDDS_HVIB=1) ──
-        // Post-GA pass over the emitted cluster reps; gated OFF by default so
-        // existing benchmarks are bit-for-bit unaffected.  Purely diagnostic —
-        // does NOT touch result.success, best_score, or pose selection.
+        // ── Persist elected pose + SHA256 (audit P0) ───────────────────────
+        // Downstream validators must cite this hash, not root <pdb>_0.pdb.
+        if (docking_completed && !elected_pose_pdb.empty() && fs::exists(elected_pose_pdb)) {
+            result.elected_pose_source = elected_pose_pdb;
+            // Parse restart / cluster from path: .../r3/1G9V_2.pdb or .../1G9V_2.pdb
+            {
+                const fs::path ep(elected_pose_pdb);
+                const std::string parent = ep.parent_path().filename().string();
+                if (!parent.empty() && parent[0] == 'r' && parent.size() > 1 &&
+                    std::isdigit(static_cast<unsigned char>(parent[1]))) {
+                    try { result.elected_restart = std::stoi(parent.substr(1)); }
+                    catch (...) { result.elected_restart = -1; }
+                } else {
+                    result.elected_restart = 0;
+                }
+                // stem like 1G9V_2
+                const std::string stem = ep.stem().string();
+                auto us = stem.find_last_of('_');
+                if (us != std::string::npos) {
+                    try { result.elected_cluster = std::stoi(stem.substr(us + 1)); }
+                    catch (...) { result.elected_cluster = -1; }
+                }
+            }
+            // Exact emitted-pose CF audit from the elected artifact.
+            {
+                std::ifstream pf(elected_pose_pdb);
+                std::string pl;
+                while (std::getline(pf, pl)) {
+                    auto p = pl.find("REMARK CF=");
+                    if (p != std::string::npos) {
+                        try { result.elected_cf = std::stof(pl.substr(p + 10)); }
+                        catch (...) {}
+                    }
+                    constexpr const char* delta_key = "REMARK CF.pose_score_delta=";
+                    p = pl.find(delta_key);
+                    if (p != std::string::npos) {
+                        try {
+                            result.score_pose_delta = std::stof(
+                                pl.substr(p + std::strlen(delta_key)));
+                        } catch (...) {}
+                    }
+                    constexpr const char* consistent_key =
+                        "REMARK CF.pose_score_consistent=";
+                    p = pl.find(consistent_key);
+                    if (p != std::string::npos) {
+                        const std::string value =
+                            pl.substr(p + std::strlen(consistent_key));
+                        result.score_pose_consistent = value.rfind("true", 0) == 0;
+                    }
+                }
+            }
+            const std::string elect_dst = out_dir + "/elected_pose.pdb";
+            std::string copy_err;
+            if (flexaids::posebust::copy_file_atomic(elected_pose_pdb, elect_dst, &copy_err)) {
+                result.elected_pose_path = elect_dst;
+                result.pose_sha256 = flexaids::posebust::sha256_file(elect_dst);
+            } else {
+                std::cerr << "  [ELECTED-POSE] copy failed: " << copy_err << "\n";
+                result.pose_sha256 = flexaids::posebust::sha256_file(elected_pose_pdb);
+                result.elected_pose_path = elected_pose_pdb;
+            }
+
+            // Recompute authoritative RMSD from the immutable elected artifact.
+            // Earlier RMSDs are selection diagnostics only (for example BCR).
+            if (!crystal_xyz.empty() && crystal_xyz.size() == crystal_elem.size()) {
+                const auto canonical_rmsd = compute_pose_ligand_rmsd(
+                    result.elected_pose_path, crystal_xyz, crystal_elem,
+                    entry.pdb_id, true);
+                result.rmsd_to_crystal = canonical_rmsd.first;
+                result.rmsd_hungarian = canonical_rmsd.second;
+                result.rmsd_pose_sha256 =
+                    flexaids::posebust::sha256_file(result.elected_pose_path);
+            }
+            const float rmsd_report =
+                std::min(result.rmsd_to_crystal, result.rmsd_hungarian);
+            result.success_rmsd =
+                docking_completed && rmsd_report >= 0.0f &&
+                rmsd_report <= 2.0f && !result.seed_echo &&
+                !result.pose_sha256.empty() &&
+                result.rmsd_pose_sha256 == result.pose_sha256;
+            // Legacy column remains exactly the same-pose RMSD gate.
+            result.success = result.success_rmsd;
+            std::cerr << "  [ELECTED-POSE] src=" << result.elected_pose_source
+                      << " dst=" << result.elected_pose_path
+                      << " restart=" << result.elected_restart
+                      << " cluster=" << result.elected_cluster
+                      << " CF=" << result.elected_cf
+                      << " score_pose_delta=" << result.score_pose_delta
+                      << " score_pose_consistent="
+                      << (result.score_pose_consistent ? 1 : 0)
+                      << " sha256=" << result.pose_sha256 << "\n";
+
+            // Immutable per-pose ledger entry (unique by restart/cluster/sha).
+            // Full pre-election multi-pose ledger is a follow-on; elected is
+            // always written so validators cite the same hash as result.csv.
+            try {
+                const std::string led_dir = out_dir + "/pose_ledger";
+                fs::create_directories(led_dir);
+                const std::string sha12 = result.pose_sha256.empty()
+                    ? "unknown"
+                    : result.pose_sha256.substr(0, 12);
+                std::ostringstream led_name;
+                led_name << entry.pdb_id
+                         << "_r" << result.elected_restart
+                         << "_c" << result.elected_cluster
+                         << "_" << sha12 << ".json";
+                const std::string led_path = led_dir + "/" + led_name.str();
+                std::ofstream led(led_path);
+                if (led) {
+                    led << "{\n"
+                        << "  \"pdb_id\": \"" << entry.pdb_id << "\",\n"
+                        << "  \"role\": \"elected\",\n"
+                        << "  \"restart\": " << result.elected_restart << ",\n"
+                        << "  \"cluster\": " << result.elected_cluster << ",\n"
+                        << "  \"cf\": " << (std::isnan(result.elected_cf)
+                                               ? "null"
+                                               : std::to_string(result.elected_cf))
+                        << ",\n"
+                        << "  \"score_pose_consistent\": "
+                        << (result.score_pose_consistent ? "true" : "false") << ",\n"
+                        << "  \"score_pose_delta\": "
+                        << (std::isnan(result.score_pose_delta)
+                                ? "null"
+                                : std::to_string(result.score_pose_delta))
+                        << ",\n"
+                        << "  \"source_path\": \"" << result.elected_pose_source
+                        << "\",\n"
+                        << "  \"elected_pose_path\": \"" << result.elected_pose_path
+                        << "\",\n"
+                        << "  \"pose_sha256\": \"" << result.pose_sha256 << "\",\n"
+                        << "  \"rmsd_pose_sha256\": \"" << result.rmsd_pose_sha256 << "\",\n"
+                        << "  \"rmsd_to_crystal\": " << result.rmsd_to_crystal << ",\n"
+                        << "  \"rmsd_hungarian\": " << result.rmsd_hungarian << "\n"
+                        << "}\n";
+                    std::cerr << "  [POSE-LEDGER] " << led_path << "\n";
+                }
+            } catch (...) {
+                // ledger is best-effort provenance; do not fail docking
+            }
+        }
+
+        // ── Authoritative PoseBusters = upstream `bust` (audit P0) ─────────
+        // NativePoseQC is diagnostic only. success_pb := success_rmsd && pb_pass.
+        {
+            using flexaids::posebust::Backend;
+            using flexaids::posebust::EvaluateOptions;
+            using flexaids::posebust::Suite;
+            const Backend backend = flexaids::posebust::resolve_backend_from_env();
+            result.pb_pass = false;
+            result.pb_ran  = false;
+
+            if (backend == Backend::Off || !docking_completed ||
+                result.elected_pose_path.empty()) {
+                result.pb_backend = "skipped";
+            } else {
+                const std::string crystal =
+                    !rmsd_reference_path.empty() ? rmsd_reference_path : entry.ligand_path;
+                const std::string pb_dir = out_dir + "/posebust";
+                fs::create_directories(pb_dir);
+
+                // Extract ligand SDF via FlexAID CONECT + crystal topology (fail-closed).
+                flexaids::posebust::Molecule lig;
+                std::string lig_err;
+                result.posebusters_pose_sha256 =
+                    flexaids::posebust::sha256_file(result.elected_pose_path);
+                bool lig_ok =
+                    !result.posebusters_pose_sha256.empty() &&
+                    result.posebusters_pose_sha256 == result.pose_sha256;
+                if (lig_ok) {
+                    lig_ok = flexaids::posebust::load_pdb_flexaid_ligand(
+                        result.elected_pose_path, lig, &lig_err);
+                } else {
+                    lig_err = "elected pose hash mismatch before PoseBusters";
+                }
+                flexaids::posebust::Molecule crystal_mol;
+                if (lig_ok && !crystal.empty() && fs::exists(crystal)) {
+                    std::string e2;
+                    if (flexaids::posebust::load_sdf(crystal, crystal_mol, &e2)) {
+                        if (!flexaids::posebust::assign_topology_from_reference(
+                                lig, crystal_mol, &e2)) {
+                            lig_ok = false;
+                            lig_err = e2;
+                        }
+                    } else {
+                        lig_ok = false;
+                        lig_err = e2;
+                    }
+                } else if (lig_ok) {
+                    lig_ok = false;
+                    lig_err = "crystal SDF required for authoritative PB extract";
+                }
+                const std::string pred_sdf = pb_dir + "/" + entry.pdb_id +
+                    (result.pose_sha256.empty() ? "_ligand.sdf"
+                                                : ("_" + result.pose_sha256.substr(0, 12) +
+                                                   "_ligand.sdf"));
+                if (lig_ok) {
+                    std::string werr;
+                    lig_ok = flexaids::posebust::write_sdf(lig, pred_sdf, &werr);
+                    if (!lig_ok) lig_err = werr;
+                    else result.posebusters_input_sha256 =
+                        flexaids::posebust::sha256_file(pred_sdf);
+                }
+
+                // --- NativePoseQC full dock suite (parity diagnostic) ---
+                flexaids::posebust::PoseBustReport nrep;
+                {
+                    EvaluateOptions nopt;
+                    nopt.suite = Suite::Dock;
+                    nopt.sidecar_dir = pb_dir + "/native_qc";
+                    nopt.pdb_id = entry.pdb_id +
+                        (result.pose_sha256.empty() ? ""
+                                                    : ("_" + result.pose_sha256.substr(0, 12)));
+                    nrep = flexaids::posebust::evaluate_paths(
+                        result.elected_pose_path, entry.receptor_path, crystal, nopt);
+                    result.native_qc_ran = nrep.ran && nrep.error.empty();
+                    result.native_qc_pass = nrep.success_pb_full();
+                    result.native_qc_failed_keys = nrep.failed_keys_csv();
+                    result.pb_min_lig_prot_dist = nrep.min_lig_prot_dist;
+                    result.pb_volume_overlap = nrep.volume_overlap;
+                    std::cerr << "  [NATIVE-POSE-QC] " << entry.pdb_id
+                              << " pass=" << (result.native_qc_pass ? 1 : 0)
+                              << " failed=[" << result.native_qc_failed_keys << "]"
+                              << " (full dock suite; parity diagnostic)\n";
+                }
+
+                // --- pb_pass from selected backend ---
+                // Official upstream PoseBusters is the default claim backend.
+                if (!lig_ok) {
+                    result.pb_backend = "error";
+                    result.pb_failed_keys = "ligand_extract:" + lig_err;
+                    std::cerr << "  [POSEBUSTERS] extract failed: " << lig_err << "\n";
+                } else if (backend == Backend::Native) {
+                    // Clean-room PoseBusters: full native suite → pb_pass
+                    result.pb_backend = "native_pose_qc";
+                    result.pb_ran = result.native_qc_ran;
+                    result.pb_pass = result.native_qc_pass;  // success_pb_full()
+                    result.pb_failed_keys = result.native_qc_failed_keys;
+                    result.pb_n_checks = nrep.n_checks();
+                    result.pb_n_pass = nrep.n_pass();
+                    result.pb_n_fail = nrep.n_fail();
+                    std::cerr << "  [POSEBUSTERS] backend=native_pose_qc"
+                              << " pb_pass=" << (result.pb_pass ? 1 : 0)
+                              << " checks=" << result.pb_n_pass << "/"
+                              << result.pb_n_checks
+                              << " failed=[" << result.pb_failed_keys << "]"
+                              << " pose_sha256=" << result.pose_sha256 << "\n";
+                } else {
+                    // Official upstream PoseBusters CLI.
+                    auto br = flexaids::posebust::run_upstream_bust(
+                        pred_sdf, entry.receptor_path, crystal, pb_dir,
+                        entry.pdb_id + (result.pose_sha256.empty()
+                                            ? ""
+                                            : ("_" + result.pose_sha256.substr(0, 12))));
+                    result.pb_ran = br.ran;
+                    result.pb_pass = br.pb_pass;
+                    result.pb_n_pass = br.n_pass;
+                    result.pb_n_fail = br.n_fail;
+                    result.pb_n_checks = br.n_checks;
+                    result.pb_failed_keys = br.failed_keys;
+                    result.pb_backend = br.backend;
+                    if (!br.error.empty() && !br.pb_pass) {
+                        if (!result.pb_failed_keys.empty()) result.pb_failed_keys += ';';
+                        result.pb_failed_keys += br.error;
+                    }
+                    std::cerr << "  [POSEBUSTERS] backend=" << result.pb_backend
+                              << " pb_pass=" << (result.pb_pass ? 1 : 0)
+                              << " checks=" << result.pb_n_pass << "/"
+                              << result.pb_n_checks
+                              << " failed=[" << result.pb_failed_keys << "]"
+                              << " pose_sha256=" << result.pose_sha256 << "\n";
+                }
+
+                const std::string pb_pose_hash_after =
+                    flexaids::posebust::sha256_file(result.elected_pose_path);
+                if (pb_pose_hash_after != result.posebusters_pose_sha256 ||
+                    result.posebusters_pose_sha256 != result.pose_sha256 ||
+                    result.posebusters_input_sha256.empty()) {
+                    result.pb_pass = false;
+                    if (!result.pb_failed_keys.empty()) result.pb_failed_keys += ';';
+                    result.pb_failed_keys += "validator_input_provenance";
+                }
+            }
+
+            // Contract: success_pb = RMSD∧PoseBusters (not PB alone).
+            result.success_pb = result.success_rmsd && result.pb_pass;
+            // tENCoM/Eigen is mandatory for benchmark claims and is computed
+            // below from the exact immutable elected-pose artifact.
+            result.tencom_status = "not_run";
+            result.eigen_status  = "not_run";
+            result.claim_ready = false;
+        }
+
+        // ── Exact-pose tENCoM/Eigen validator + population H(ω) diagnostic ──
+        // Enabled by default because claim_ready requires it. Set
+        // FLEXAIDDS_HVIB=0 only for non-claim diagnostics. The pooled metrics do
+        // not alter pose election; exact-pose status is hash-joined to the same
+        // elected_pose.pdb used by RMSD and PoseBusters.
         {
             const char* hvib_env = std::getenv("FLEXAIDDS_HVIB");
-            if (hvib_env && std::strcmp(hvib_env, "1") == 0) {
+            const bool hvib_enabled = !(hvib_env && std::strcmp(hvib_env, "0") == 0);
+            if (hvib_enabled) {
                 HvibColumns hv = compute_target_hvib(all_prefixes);
                 result.H_rep_rank0 = hv.H_rep_rank0;
                 result.H_pop       = hv.H_pop;
@@ -6951,7 +7405,88 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                           << " H_rep_mean=" << hv.H_rep_mean
                           << " D_vib=" << hv.D_vib
                           << " n_reps=" << hv.n_reps << "\n";
+
+                if (!result.elected_pose_path.empty() &&
+                    !result.pose_sha256.empty()) {
+                    const PoseHvibColumns elected =
+                        compute_pose_hvib(result.elected_pose_path);
+                    result.elected_H_vib = elected.H_vib;
+                    result.eigen_n_modes = elected.n_modes;
+                    result.tencom_pose_sha256 =
+                        flexaids::posebust::sha256_file(result.elected_pose_path);
+                    const bool same_pose =
+                        !result.tencom_pose_sha256.empty() &&
+                        result.tencom_pose_sha256 == result.pose_sha256;
+                    result.tencom_status = elected.ok && same_pose ? "ok" : "fail";
+                    result.eigen_status  = elected.ok &&
+                                           elected.n_modes > 0 && same_pose
+                                         ? "ok" : "fail";
+                    std::cerr << "  [TENCOM-EIGEN] " << entry.pdb_id
+                              << " status=" << result.tencom_status
+                              << " eigen_status=" << result.eigen_status
+                              << " modes=" << result.eigen_n_modes
+                              << " H_elected=" << result.elected_H_vib
+                              << " pose_sha256=" << result.tencom_pose_sha256;
+                    if (!elected.error.empty())
+                        std::cerr << " error=\"" << elected.error << "\"";
+                    if (!same_pose)
+                        std::cerr << " error=\"pose hash mismatch\"";
+                    std::cerr << "\n";
+                } else {
+                    result.tencom_status = "fail";
+                    result.eigen_status = "fail";
+                    std::cerr << "  [TENCOM-EIGEN] " << entry.pdb_id
+                              << " fail: elected pose or SHA-256 missing\n";
+                }
             }
+        }
+
+        // Publication gate: official PoseBusters and ligand tENCoM/Eigen must
+        // all have consumed the exact elected pose represented by pose_sha256.
+        result.claim_ready =
+            result.success_pb &&
+            result.protocol_claim_eligible &&
+            result.score_pose_consistent &&
+            std::isfinite(result.score_pose_delta) &&
+            std::fabs(result.score_pose_delta) <= 1e-4f &&
+            result.pb_backend == "bust_cli" &&
+            result.rmsd_pose_sha256 == result.pose_sha256 &&
+            result.posebusters_pose_sha256 == result.pose_sha256 &&
+            !result.posebusters_input_sha256.empty() &&
+            result.tencom_status == "ok" &&
+            result.eigen_status == "ok" &&
+            !result.pose_sha256.empty() &&
+            result.tencom_pose_sha256 == result.pose_sha256;
+
+        try {
+            std::ofstream vp(out_dir + "/validator_provenance.json");
+            if (vp) {
+                vp << "{\n"
+                   << "  \"pdb_id\": \"" << entry.pdb_id << "\",\n"
+                   << "  \"pose_sha256\": \"" << result.pose_sha256 << "\",\n"
+                   << "  \"rmsd_pose_sha256\": \"" << result.rmsd_pose_sha256 << "\",\n"
+                   << "  \"posebusters_backend\": \"" << result.pb_backend << "\",\n"
+                   << "  \"posebusters_pose_sha256\": \""
+                   << result.posebusters_pose_sha256 << "\",\n"
+                   << "  \"posebusters_input_sha256\": \""
+                   << result.posebusters_input_sha256 << "\",\n"
+                   << "  \"tencom_pose_sha256\": \""
+                   << result.tencom_pose_sha256 << "\",\n"
+                   << "  \"eigen_model\": \"" << result.eigen_model << "\",\n"
+                   << "  \"eigen_n_modes\": " << result.eigen_n_modes << ",\n"
+                   << "  \"score_pose_consistent\": "
+                   << (result.score_pose_consistent ? "true" : "false") << ",\n"
+                   << "  \"score_pose_delta\": "
+                   << (std::isnan(result.score_pose_delta)
+                           ? "null"
+                           : std::to_string(result.score_pose_delta))
+                   << ",\n"
+                   << "  \"claim_ready\": "
+                   << (result.claim_ready ? "true" : "false") << "\n"
+                   << "}\n";
+            }
+        } catch (...) {
+            // CSV output still carries the complete validator provenance.
         }
 
         report.results[idx] = result;
@@ -6999,7 +7534,18 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                 if (ofs.is_open()) {
                     ofs << "pdb_id,best_score,rmsd_to_crystal,rmsd_hungarian,predicted_dG,"
                            "predicted_dH,predicted_TdS,shannon_entropy,search_entropy_proxy,num_poses,"
-                           "wall_time_s,success,cf_native,best_cluster_rmsd,best_cluster_idx,"
+                           "wall_time_s,success,success_rmsd,pb_pass,success_pb,claim_ready,"
+                           "native_pose_seeded,native_pose_seed_fraction,protocol_claim_eligible,"
+                           "pb_ran,pb_n_pass,pb_n_fail,pb_n_checks,pb_failed_keys,pb_backend,"
+                           "native_qc_ran,native_qc_pass,native_qc_failed_keys,"
+                           "pb_min_lig_prot_dist,pb_volume_overlap,"
+                           "elected_pose_path,elected_pose_source,elected_restart,elected_cluster,"
+                           "elected_cf,score_pose_consistent,score_pose_delta,"
+                           "pose_sha256,rmsd_pose_sha256,"
+                           "posebusters_pose_sha256,posebusters_input_sha256,"
+                           "tencom_status,eigen_status,"
+                           "tencom_pose_sha256,eigen_n_modes,elected_H_vib,"
+                           "cf_native,best_cluster_rmsd,best_cluster_idx,"
                            "seed_echo,pose_source,H_rep_rank0,H_pop,H_rep_mean,D_vib,"
                            "G_bind,H_vct,H_vct_raw,n_heavy,TdS_shannon,TdS_vib,D_vib_thermo,"
                            "compensation_ratio,TdS_shannon_gen500,TdS_shannon_gen1000,"
@@ -7017,6 +7563,40 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                         << result.num_poses << ","
                         << result.wall_time_s << ","
                         << (result.success ? 1 : 0) << ","
+                        << (result.success_rmsd ? 1 : 0) << ","
+                        << (result.pb_pass ? 1 : 0) << ","
+                        << (result.success_pb ? 1 : 0) << ","
+                        << (result.claim_ready ? 1 : 0) << ","
+                        << (result.native_pose_seeded ? 1 : 0) << ","
+                        << result.native_pose_seed_fraction << ","
+                        << (result.protocol_claim_eligible ? 1 : 0) << ","
+                        << (result.pb_ran ? 1 : 0) << ","
+                        << result.pb_n_pass << ","
+                        << result.pb_n_fail << ","
+                        << result.pb_n_checks << ","
+                        << "\"" << result.pb_failed_keys << "\","
+                        << result.pb_backend << ","
+                        << (result.native_qc_ran ? 1 : 0) << ","
+                        << (result.native_qc_pass ? 1 : 0) << ","
+                        << "\"" << result.native_qc_failed_keys << "\","
+                        << (std::isnan(result.pb_min_lig_prot_dist) ? "NA" : std::to_string(result.pb_min_lig_prot_dist)) << ","
+                        << (std::isnan(result.pb_volume_overlap) ? "NA" : std::to_string(result.pb_volume_overlap)) << ","
+                        << "\"" << result.elected_pose_path << "\","
+                        << "\"" << result.elected_pose_source << "\","
+                        << result.elected_restart << ","
+                        << result.elected_cluster << ","
+                        << (std::isnan(result.elected_cf) ? "NA" : std::to_string(result.elected_cf)) << ","
+                        << (result.score_pose_consistent ? 1 : 0) << ","
+                        << (std::isnan(result.score_pose_delta) ? "NA" : std::to_string(result.score_pose_delta)) << ","
+                        << result.pose_sha256 << ","
+                        << result.rmsd_pose_sha256 << ","
+                        << result.posebusters_pose_sha256 << ","
+                        << result.posebusters_input_sha256 << ","
+                        << result.tencom_status << ","
+                        << result.eigen_status << ","
+                        << result.tencom_pose_sha256 << ","
+                        << result.eigen_n_modes << ","
+                        << result.elected_H_vib << ","
                         << result.cf_native << ","
                         << result.best_cluster_rmsd << ","
                         << result.best_cluster_idx << ","
@@ -7116,6 +7696,9 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
 
     // Compute aggregate statistics
     int success_count = 0;
+    int success_rmsd_count = 0;
+    int success_pb_count = 0;
+    int claim_ready_count = 0;
     std::vector<double> rmsds;
     std::vector<double> pred_affinities;
     std::vector<double> exp_affinities;
@@ -7123,6 +7706,9 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
     for (size_t i = 0; i < report.results.size(); ++i) {
         const auto& r = report.results[i];
         if (r.success) success_count++;
+        if (r.success_rmsd) success_rmsd_count++;
+        if (r.success_pb) success_pb_count++;
+        if (r.claim_ready) claim_ready_count++;
         if (r.rmsd_to_crystal >= 0.0f) {
             rmsds.push_back(r.rmsd_to_crystal);
         }
@@ -7133,9 +7719,20 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
     }
 
     report.successful = success_count;
+    report.successful_rmsd = success_rmsd_count;
+    report.successful_pb = success_pb_count;
+    report.claim_ready_count = claim_ready_count;
     report.affinity_pairs = static_cast<int>(pred_affinities.size());
     report.success_rate = (report.total_systems > 0)
         ? static_cast<double>(success_count) / report.total_systems : 0.0;
+    if (report.total_systems > 0) {
+        report.success_rate_rmsd =
+            static_cast<double>(success_rmsd_count) / report.total_systems;
+        report.success_rate_pb =
+            static_cast<double>(success_pb_count) / report.total_systems;
+        report.claim_ready_rate =
+            static_cast<double>(claim_ready_count) / report.total_systems;
+    }
 
     // Mean RMSD
     if (!rmsds.empty()) {
@@ -7202,7 +7799,7 @@ void DatasetRunner::write_report(const BenchmarkReport& report,
         ofs << "| Metric | Value |\n";
         ofs << "|--------|-------|\n";
         ofs << "| Total systems | " << report.total_systems << " |\n";
-        ofs << "| Successful (RMSD < 2.0 Å) | " << report.successful << " |\n";
+        ofs << "| Successful (RMSD <= 2.0 A) | " << report.successful << " |\n";
         ofs << std::fixed << std::setprecision(1);
         ofs << "| Success rate | " << (report.success_rate * 100.0) << "% |\n";
         ofs << std::setprecision(2);
@@ -7317,6 +7914,11 @@ void DatasetRunner::write_report(const BenchmarkReport& report,
 
         ofs << "pdb_id,best_score,rmsd_to_crystal,rmsd_hungarian,predicted_dG,"
                "predicted_dH,predicted_TdS,shannon_entropy,search_entropy_proxy,num_poses,wall_time_s,success,"
+               "success_rmsd,pb_pass,success_pb,claim_ready,score_pose_consistent,score_pose_delta,"
+               "pb_backend,pose_sha256,rmsd_pose_sha256,"
+               "posebusters_pose_sha256,posebusters_input_sha256,"
+               "tencom_status,eigen_status,tencom_pose_sha256,eigen_n_modes,elected_H_vib,"
+               "native_pose_seeded,native_pose_seed_fraction,protocol_claim_eligible,"
                "cf_native,best_cluster_rmsd,best_cluster_idx,seed_echo,pose_source,"
                "H_rep_rank0,H_pop,H_rep_mean,D_vib";
         if (thermo_csv) {
@@ -7338,6 +7940,25 @@ void DatasetRunner::write_report(const BenchmarkReport& report,
                 << r.num_poses << ","
                 << r.wall_time_s << ","
                 << (r.success ? 1 : 0) << ","
+                << (r.success_rmsd ? 1 : 0) << ","
+                << (r.pb_pass ? 1 : 0) << ","
+                << (r.success_pb ? 1 : 0) << ","
+                << (r.claim_ready ? 1 : 0) << ","
+                << (r.score_pose_consistent ? 1 : 0) << ","
+                << (std::isnan(r.score_pose_delta) ? "NA" : std::to_string(r.score_pose_delta)) << ","
+                << r.pb_backend << ","
+                << r.pose_sha256 << ","
+                << r.rmsd_pose_sha256 << ","
+                << r.posebusters_pose_sha256 << ","
+                << r.posebusters_input_sha256 << ","
+                << r.tencom_status << ","
+                << r.eigen_status << ","
+                << r.tencom_pose_sha256 << ","
+                << r.eigen_n_modes << ","
+                << r.elected_H_vib << ","
+                << (r.native_pose_seeded ? 1 : 0) << ","
+                << r.native_pose_seed_fraction << ","
+                << (r.protocol_claim_eligible ? 1 : 0) << ","
                 << r.cf_native << ","
                 << r.best_cluster_rmsd << ","
                 << r.best_cluster_idx << ","

@@ -79,6 +79,13 @@ void read_pdb(FA_Global* FA,atom** atoms,resid** residue, char* pdb_name){
   }
 
   fclose(infile_ptr);
+
+	// read_coor() uses one-based atom indices and FA->atm_cnt is the index of
+	// the last atom read. Finalize the terminal residue here; otherwise callers
+	// historically used atm_cnt-1 and silently dropped the last receptor atom
+	// (often the only metal ion or the Fe atom of a terminal HEM record).
+	if (FA->res_cnt > 0 && (*residue)[FA->res_cnt].latm != NULL)
+	  (*residue)[FA->res_cnt].latm[0] = FA->atm_cnt;
   
   //CloseFile_B(&infile_ptr,"r");
   

@@ -8,8 +8,49 @@
 #pragma once
 
 #include <cmath>
+#include <string_view>
 
 constexpr double WAL_CONTACT_CAP = 50.0;
+
+inline bool violates_relative_vdw_cutoff(double distance,
+                                         double radius_sum,
+                                         float cutoff_ratio)
+{
+	return cutoff_ratio > 0.0f && radius_sum > 0.0 &&
+	       distance < static_cast<double>(cutoff_ratio) * radius_sum;
+}
+
+// RDKit periodic-table vdW radii used by PoseBusters' intermolecular-distance
+// check. Keep this separate from FlexAID's NRG contact radii: the two serve
+// different purposes and are not numerically interchangeable.
+inline double posebusters_vdw_radius(std::string_view element, double fallback)
+{
+	if (element == "H")  return 1.20;
+	if (element == "C")  return 1.70;
+	if (element == "N")  return 1.60;
+	if (element == "O")  return 1.55;
+	if (element == "F")  return 1.50;
+	if (element == "P")  return 1.95;
+	if (element == "S")  return 1.80;
+	if (element == "Cl") return 1.80;
+	if (element == "Br") return 1.90;
+	if (element == "I")  return 2.10;
+	if (element == "Se") return 1.90;
+	if (element == "Mg") return 2.20;
+	if (element == "Sr") return 2.55;
+	if (element == "Cu") return 2.00;
+	if (element == "Mn") return 2.05;
+	if (element == "Hg") return 2.05;
+	if (element == "Cd") return 2.20;
+	if (element == "Ni") return 2.00;
+	if (element == "Zn") return 2.10;
+	if (element == "Ca") return 2.40;
+	if (element == "Fe") return 2.05;
+	if (element == "Co") return 2.00;
+	if (element == "Na") return 2.40;
+	if (element == "K")  return 2.80;
+	return fallback;
+}
 
 // Raw r^-12 wall energy: KWALL * (d^-12 - cr^-12).  Unbounded as d -> 0.
 inline double wall_energy_raw_r12(double d, double cr)

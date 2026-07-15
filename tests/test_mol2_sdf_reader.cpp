@@ -5,13 +5,19 @@
 #include <gtest/gtest.h>
 #include "../LIB/Mol2Reader.h"
 #include "../LIB/SdfReader.h"
+#include "../LIB/fileio.h"
 #include "../LIB/LigandRingFlex/LigandRingFlex.h"  // complete RingFlexGenes for delete
+#include <algorithm>
 #include <cstring>
 #include <cstdlib>
 #include <cstdio>
 #include <fstream>
 #include <filesystem>
+#include <cmath>
 #include <string>
+#include <vector>
+
+void assign_radii_types(FA_Global* FA, atom* atoms, resid* residue);
 
 // ===========================================================================
 // HELPER: Initialize FA_Global with minimum required fields
@@ -45,6 +51,7 @@ static void cleanup_fa(FA_Global* FA, atom* atoms, resid* residue) {
         free(residue[r].fatm);
         free(residue[r].latm);
         free(residue[r].bond);
+        free(residue[r].gpa);
     }
     // SdfReader may heap-allocate ring topology on FA->ring_flex_template
     // (even when FLEXAIDDS_RING_FLEX is off — detection always runs).
@@ -54,6 +61,54 @@ static void cleanup_fa(FA_Global* FA, atom* atoms, resid* residue) {
     free(FA->num_atm);
     free(atoms);
     free(residue);
+}
+
+TEST(PdbReceptorTest, RetainedCofactorsHaveCanonicalTypesAndNonzeroRadii) {
+    const std::string path =
+        std::filesystem::temp_directory_path().string() + "/flexaids_cofactor_reader.pdb";
+    {
+        std::ofstream pdb(path);
+        pdb << "ATOM      1  CA  ALA A   1       0.000   0.000   0.000  1.00 10.00           C  \n"
+            << "HETATM    2  CHA HEM A 500       2.000   0.000   0.000  1.00 10.00           C  \n"
+            << "HETATM    3  FE  HEM A 500       3.000   0.000   0.000  1.00 10.00          FE  \n"
+            << "HETATM    4  MG   MG B 401       4.000   0.000   0.000  1.00 10.00          MG  \n"
+            << "END\n";
+    }
+
+    FA_Global FA{};
+    FA.MIN_NUM_ATOM = 32;
+    FA.MIN_NUM_RESIDUE = 8;
+    FA.MIN_ROTAMER = 1;
+    FA.MIN_FLEX_BONDS = 5;
+    FA.ntypes = 40;
+    atom* atoms = nullptr;
+    resid* residue = nullptr;
+
+    read_pdb(&FA, &atoms, &residue, const_cast<char*>(path.c_str()));
+    ASSERT_EQ(FA.atm_cnt, 4);
+    ASSERT_EQ(FA.res_cnt, 3);
+    EXPECT_EQ(residue[FA.res_cnt].latm[0], 4);
+    EXPECT_STREQ(atoms[2].element, "C");
+    EXPECT_STREQ(atoms[3].element, "Fe");
+    EXPECT_STREQ(atoms[4].element, "Mg");
+    EXPECT_EQ(atoms[2].type, 3);
+    EXPECT_EQ(atoms[3].type, 37);
+    EXPECT_EQ(atoms[4].type, 28);
+
+    assign_radii_types(&FA, atoms, residue);
+    EXPECT_GT(atoms[2].radius, 1.0f);
+    EXPECT_NEAR(atoms[3].radius, 0.61f, 1e-6f);
+    EXPECT_NEAR(atoms[4].radius, 0.72f, 1e-6f);
+
+    for (int r = 0; r <= FA.res_cnt; ++r) {
+        free(residue[r].fatm);
+        free(residue[r].latm);
+        free(residue[r].bond);
+    }
+    free(FA.num_atm);
+    free(atoms);
+    free(residue);
+    std::remove(path.c_str());
 }
 
 // ===========================================================================
@@ -583,6 +638,135 @@ TEST_F(SdfReaderTest, BondOutOfRangeIgnored) {
     // Only the valid bond (1-2) should be recorded.
     EXPECT_EQ(atoms[1].bond[0], 1);
     EXPECT_EQ(atoms[2].bond[0], 1);
+
+    cleanup_fa(&FA, atoms, residue);
+    std::remove(sdf.c_str());
+}
+
+TEST_F(SdfReaderTest, TopologyDerivedFrameAndTorsionPreserveLocalGeometry) {
+    // The first three records are disconnected substituents. A direct reader
+    // must choose its GPA from the bonded aromatic core, not record order.
+    std::string sdf = write_sdf("topology_frame.sdf",
+        "frame\n\n\n"
+        " 12 13  0  0  0  0  0  0  0  0999 V2000\n"
+        "    3.5000    0.0000    0.0000 C   0  0  0  0  0  0\n"
+        "   -1.7500    3.0311    0.0000 C   0  0  0  0  0  0\n"
+        "   -1.7500   -3.0311    0.0000 C   0  0  0  0  0  0\n"
+        "    2.0000    0.0000    0.0000 C   0  0  0  0  0  0\n"
+        "    1.0000    1.7321    0.0000 C   0  0  0  0  0  0\n"
+        "   -1.0000    1.7321    0.0000 C   0  0  0  0  0  0\n"
+        "   -2.0000    0.0000    0.0000 C   0  0  0  0  0  0\n"
+        "   -1.0000   -1.7321    0.0000 C   0  0  0  0  0  0\n"
+        "    1.0000   -1.7321    0.0000 C   0  0  0  0  0  0\n"
+        "    1.0000    3.2321    0.0000 C   0  0  0  0  0  0\n"
+        "    2.2000    4.0321    0.6000 C   0  0  0  0  0  0\n"
+        "   -0.2000    4.0321   -0.6000 C   0  0  0  0  0  0\n"
+        "  1  4  1  0\n"
+        "  2  6  1  0\n"
+        "  3  8  1  0\n"
+        "  4  5  4  0\n"
+        "  5  6  4  0\n"
+        "  6  7  4  0\n"
+        "  7  8  4  0\n"
+        "  8  9  4  0\n"
+        "  9  4  4  0\n"
+        "  5 10  1  0\n"
+        " 10 11  1  0\n"
+        " 10 12  1  0\n"
+        " 11 12  1  0\n"
+        "M  END\n$$$$\n");
+
+    FA_Global FA;
+    atom* atoms = nullptr;
+    resid* residue = nullptr;
+    init_fa_for_reader(&FA, &atoms, &residue);
+    ASSERT_EQ(read_sdf_ligand(&FA, &atoms, &residue, sdf.c_str()), 1);
+
+    auto bonded = [&](int a, int b) {
+        for (int i = 1; i <= atoms[a].bond[0]; ++i)
+            if (atoms[a].bond[i] == b) return true;
+        return false;
+    };
+    ASSERT_NE(residue[1].gpa, nullptr);
+    EXPECT_TRUE(bonded(residue[1].gpa[0], residue[1].gpa[1]));
+    EXPECT_TRUE(bonded(residue[1].gpa[1], residue[1].gpa[2]));
+    EXPECT_GT(residue[1].gpa[0], 3);
+    EXPECT_GT(residue[1].gpa[1], 3);
+    EXPECT_GT(residue[1].gpa[2], 3);
+
+    auto distance = [&](int a, int b) {
+        const double dx = atoms[a].coor[0] - atoms[b].coor[0];
+        const double dy = atoms[a].coor[1] - atoms[b].coor[1];
+        const double dz = atoms[a].coor[2] - atoms[b].coor[2];
+        return std::sqrt(dx * dx + dy * dy + dz * dz);
+    };
+    auto angle = [&](int a, int b, int c) {
+        double u[3], v[3];
+        for (int i = 0; i < 3; ++i) {
+            u[i] = atoms[a].coor[i] - atoms[b].coor[i];
+            v[i] = atoms[c].coor[i] - atoms[b].coor[i];
+        }
+        const double un = std::sqrt(u[0]*u[0] + u[1]*u[1] + u[2]*u[2]);
+        const double vn = std::sqrt(v[0]*v[0] + v[1]*v[1] + v[2]*v[2]);
+        const double cosine = std::clamp(
+            (u[0]*v[0] + u[1]*v[1] + u[2]*v[2]) / (un * vn), -1.0, 1.0);
+        return std::acos(cosine) * 180.0 / 3.14159265358979323846;
+    };
+
+    struct BondMetric { int a, b; double value; };
+    struct AngleMetric { int a, b, c; double value; };
+    std::vector<BondMetric> bond_metrics;
+    std::vector<AngleMetric> angle_metrics;
+    for (int a = 1; a <= FA.num_het_atm; ++a) {
+        for (int bi = 1; bi <= atoms[a].bond[0]; ++bi) {
+            const int b = atoms[a].bond[bi];
+            if (a < b) bond_metrics.push_back({a, b, distance(a, b)});
+        }
+        for (int i = 1; i <= atoms[a].bond[0]; ++i) {
+            for (int j = i + 1; j <= atoms[a].bond[0]; ++j) {
+                angle_metrics.push_back(
+                    {atoms[a].bond[i], a, atoms[a].bond[j],
+                     angle(atoms[a].bond[i], a, atoms[a].bond[j])});
+            }
+        }
+    }
+
+    auto expect_local_geometry = [&] {
+        for (const auto& metric : bond_metrics)
+            EXPECT_NEAR(distance(metric.a, metric.b), metric.value, 2e-3);
+        for (const auto& metric : angle_metrics)
+            EXPECT_NEAR(angle(metric.a, metric.b, metric.c), metric.value, 0.15);
+    };
+
+    int rebuild[MAX_ATM_HET] = {};
+    int rebuilt = 0;
+    buildlist(&FA, atoms, residue, 1, 0, &rebuilt, rebuild);
+    atoms[residue[1].gpa[0]].dis += 4.0f;
+    atoms[residue[1].gpa[0]].ang += 25.0f;
+    atoms[residue[1].gpa[0]].dih += 35.0f;
+    atoms[residue[1].gpa[1]].ang += 40.0f;
+    atoms[residue[1].gpa[1]].dih -= 55.0f;
+    atoms[residue[1].gpa[2]].dih += 70.0f;
+    buildcc(&FA, atoms, rebuilt, rebuild);
+    expect_local_geometry();
+
+    ASSERT_EQ(residue[1].fdih, 1);
+    const int control = residue[1].bond[1];
+    const int axis_child = atoms[control].rec[0];
+    const int axis_parent = atoms[control].rec[1];
+    EXPECT_TRUE(bonded(axis_child, axis_parent));
+    atoms[control].dih += 60.0f;
+    int current = control;
+    int shifted = atoms[current].rec[3];
+    while (shifted != 0 && shifted != control) {
+        atoms[shifted].dih = atoms[current].dih + atoms[shifted].shift;
+        current = shifted;
+        shifted = atoms[current].rec[3];
+    }
+    rebuilt = 0;
+    buildlist(&FA, atoms, residue, 1, 1, &rebuilt, rebuild);
+    buildcc(&FA, atoms, rebuilt, rebuild);
+    expect_local_geometry();
 
     cleanup_fa(&FA, atoms, residue);
     std::remove(sdf.c_str());

@@ -1,4 +1,4 @@
-// coarse_init.cpp — Coarse pocket-scan seeding for gen-0 (autonomous docking)
+// coarse_init.cpp — Coarse pocket-scan seeding for gen-0 (no-seed docking)
 //
 // Apache-2.0 © 2026 Le Bonhomme Pharma / NRGlab, Université de Montréal
 
@@ -6,17 +6,66 @@
 #include "Vcontacts.h"   // ic2cf declaration
 
 #include <algorithm>
+#include <cmath>
 #include <cstdlib>
 #include <cstring>
+#include <map>
+#include <tuple>
 #include <unordered_set>
 #include <vector>
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
-static inline double rand_in_range(double lo, double hi,
-                                   std::function<int32_t()>& dice) {
-    double u = static_cast<double>(dice()) / (2147483647.0 + 1.0); // [0,1)
-    return lo + u * (hi - lo);
+static inline double unit_fraction(double value) {
+    return value - std::floor(value);
+}
+
+static int prime_for_dimension(int dimension) {
+    int found = 0;
+    for (int candidate = 2; ; ++candidate) {
+        bool prime = true;
+        for (int divisor = 2; divisor * divisor <= candidate; ++divisor) {
+            if (candidate % divisor == 0) {
+                prime = false;
+                break;
+            }
+        }
+        if (prime && found++ == dimension) return candidate;
+    }
+}
+
+static double radical_inverse(unsigned long long index, int base) {
+    double result = 0.0;
+    double factor = 1.0 / static_cast<double>(base);
+    while (index > 0) {
+        result += static_cast<double>(index % static_cast<unsigned long long>(base)) * factor;
+        index /= static_cast<unsigned long long>(base);
+        factor /= static_cast<double>(base);
+    }
+    return result;
+}
+
+static double low_discrepancy_ic(const FA_Global* FA,
+                                 const genlim* gene_lim,
+                                 int gene_index,
+                                 int prime_base,
+                                 unsigned long long sample_index,
+                                 double shift) {
+    const double u = unit_fraction(
+        radical_inverse(sample_index, prime_base) + shift);
+
+    // The first rotational IC is the polar angle of the ligand GPA frame.
+    // Uniform theta would over-sample the poles; uniform cos(theta), combined
+    // with the two linearly sampled azimuth/roll ICs, gives isotropic rigid-body
+    // coverage without using the native orientation.
+    if (gene_index == 1 && FA->map_par && FA->map_par[gene_index].typ == 1) {
+        constexpr double kRadToDeg = 57.2957795130823208768;
+        const double theta = std::acos(std::clamp(1.0 - 2.0 * u, -1.0, 1.0)) * kRadToDeg;
+        return std::clamp(theta, gene_lim[gene_index].min, gene_lim[gene_index].max);
+    }
+
+    return gene_lim[gene_index].min
+           + u * (gene_lim[gene_index].max - gene_lim[gene_index].min);
 }
 
 // Euclidean distance squared between two gridpoints.
@@ -55,30 +104,49 @@ void run_coarse_pocket_scan(
     // Seed from reflig_nearest_grid, then expand one neighbourhood shell.
     std::unordered_set<int> cand_set;
 
-    if (FA->reflig_nearest_count > 0 && FA->reflig_nearest_grid) {
+    const bool has_reflig_candidates =
+        FA->reflig_nearest_count > 0 && FA->reflig_nearest_grid;
+    if (has_reflig_candidates) {
         for (int k = 0; k < FA->reflig_nearest_count; k++) {
             int idx = FA->reflig_nearest_grid[k];
             if (idx >= 1 && idx < FA->num_grd)
                 cand_set.insert(idx);
         }
     } else {
-        // Fallback: use the first MIN(50, num_grd-1) grid points
-        int fallback_n = std::min(50, FA->num_grd - 1);
-        for (int k = 1; k <= fallback_n; k++)
-            cand_set.insert(k);
+        // No reference ligand is allowed in a defined-cleft benchmark. Cover
+        // the complete cleft deterministically with one representative per
+        // coarse spatial voxel instead of taking the first 50 storage-order
+        // points, which can miss most of an elongated cavity.
+        const float voxel_step = std::max(step, 0.5f);
+        std::map<std::tuple<int,int,int>, int> voxel_representatives;
+        for (int gi = 1; gi < FA->num_grd; ++gi) {
+            const auto key = std::make_tuple(
+                static_cast<int>(std::floor(cleftgrid[gi].coor[0] / voxel_step)),
+                static_cast<int>(std::floor(cleftgrid[gi].coor[1] / voxel_step)),
+                static_cast<int>(std::floor(cleftgrid[gi].coor[2] / voxel_step)));
+            voxel_representatives.emplace(key, gi);
+        }
+        for (const auto& [key, gi] : voxel_representatives) {
+            (void)key;
+            cand_set.insert(gi);
+        }
     }
 
     // Expand: for each seed, add all grid points within thresh2
-    std::vector<int> seeds_snapshot(cand_set.begin(), cand_set.end());
-    for (int si : seeds_snapshot) {
-        for (int gi = 1; gi < FA->num_grd; gi++) {
-            if (cand_set.count(gi)) continue;
-            if (dist_sq(cleftgrid[si], cleftgrid[gi]) <= thresh2)
-                cand_set.insert(gi);
+    if (has_reflig_candidates) {
+        std::vector<int> seeds_snapshot(cand_set.begin(), cand_set.end());
+        std::sort(seeds_snapshot.begin(), seeds_snapshot.end());
+        for (int si : seeds_snapshot) {
+            for (int gi = 1; gi < FA->num_grd; gi++) {
+                if (cand_set.count(gi)) continue;
+                if (dist_sq(cleftgrid[si], cleftgrid[gi]) <= thresh2)
+                    cand_set.insert(gi);
+            }
         }
     }
 
     std::vector<int> candidates(cand_set.begin(), cand_set.end());
+    std::sort(candidates.begin(), candidates.end());
     if (candidates.empty()) {
         fprintf(stderr, "[COARSE-INIT] WARN: empty candidate set, skipping scan\n");
         return;
@@ -95,12 +163,29 @@ void run_coarse_pocket_scan(
     FA->reflig_seed_fraction = 0.0f;
 
     // ── 3. Evaluate each (candidate, orientation) pair ───────────────────────
-    // IMPORTANT: ligand atoms in FlexAID live at special high-index slots
-    // (map_par[i].atm ≈ 90001+), far outside a natm-sized copy.  Using a
-    // shallow working copy caused out-of-bounds reads producing false CF values.
-    // ic2cf already saves/restores FA->ori (and the atoms it moves via saved_atoms
-    // on early-exit paths); for normal exits atoms are left modified but the
-    // next ic2cf call rebuilds from IC values, so using the real buffers is safe.
+    // Score against the live buffers because ic2cf expects the complete FlexAID
+    // atom/residue graph. Normal ic2cf exits intentionally leave Cartesian atom
+    // state materialised for pose output, so preserve the pre-scan state and
+    // restore it before the actual population is evaluated. Without this reset,
+    // gen-0 decodes the screened genes against the final trial pose and the
+    // accepted score is not reproducible.
+    const std::vector<atom> atom_baseline(
+        atoms, atoms + static_cast<std::size_t>(FA->atm_cnt) + 1);
+    const std::vector<resid> residue_baseline(
+        residue, residue + static_cast<std::size_t>(FA->res_cnt) + 1);
+    std::vector<OptRes> optres_baseline;
+    if (FA->optres && FA->num_optres > 0) {
+        optres_baseline.assign(FA->optres, FA->optres + FA->num_optres);
+    }
+    const int numcarec_baseline = VC->numcarec;
+    const auto restore_scan_state = [&]() {
+        std::copy(atom_baseline.begin(), atom_baseline.end(), atoms);
+        std::copy(residue_baseline.begin(), residue_baseline.end(), residue);
+        if (!optres_baseline.empty()) {
+            std::copy(optres_baseline.begin(), optres_baseline.end(), FA->optres);
+        }
+        VC->numcarec = numcarec_baseline;
+    };
     struct ScanResult {
         int    grid_idx;
         double cf_val;
@@ -111,8 +196,16 @@ void run_coarse_pocket_scan(
     results.reserve(static_cast<std::size_t>(candidates.size()) * n_orient);
 
     double icv[MAX_NUM_GENES] = {};
+    std::vector<double> sequence_shifts(static_cast<std::size_t>(n_genes), 0.0);
+    std::vector<int> sequence_bases(static_cast<std::size_t>(n_genes), 2);
+    for (int g = 1; g < n_genes; ++g) {
+        sequence_bases[static_cast<std::size_t>(g)] = prime_for_dimension(g - 1);
+        sequence_shifts[static_cast<std::size_t>(g)] =
+            static_cast<double>(dice()) / (2147483647.0 + 1.0);
+    }
 
-    for (int ci : candidates) {
+    for (std::size_t candidate_pos = 0; candidate_pos < candidates.size(); ++candidate_pos) {
+        const int ci = candidates[candidate_pos];
         // Gene 0: grid index (translation)
         const double grid_ic = static_cast<double>(ci);
         if (grid_ic < gene_lim[0].min || grid_ic > gene_lim[0].max)
@@ -120,9 +213,20 @@ void run_coarse_pocket_scan(
         icv[0] = grid_ic;
 
         for (int oi = 0; oi < n_orient; oi++) {
-            // Genes 1..N-1: random IC in [min, max]
+            restore_scan_state();
+            // Genes 1..N-1: randomized low-discrepancy IC coverage. The
+            // per-restart shifts come from the seeded RNG, but the sequence
+            // itself stratifies every dimension instead of relying on a joint
+            // random draw whose coverage collapses as torsions are added.
+            const unsigned long long sample_index =
+                static_cast<unsigned long long>(candidate_pos)
+                    * static_cast<unsigned long long>(n_orient)
+                + static_cast<unsigned long long>(oi) + 1ULL;
             for (int g = 1; g < n_genes; g++) {
-                icv[g] = rand_in_range(gene_lim[g].min, gene_lim[g].max, dice);
+                icv[g] = low_discrepancy_ic(
+                    FA, gene_lim, g,
+                    sequence_bases[static_cast<std::size_t>(g)], sample_index,
+                    sequence_shifts[static_cast<std::size_t>(g)]);
             }
 
             cfstr cf{};
@@ -136,11 +240,18 @@ void run_coarse_pocket_scan(
             // Capture the IC values (genes 1..N-1) for storage.
             ScanResult r;
             r.grid_idx = ci;
-            r.cf_val   = cf.com;
+            // Rank with the same apparent CF used by the GA. Sorting on the
+            // attractive contact component alone preferentially selected
+            // interpenetrating poses with very negative cf.com but a dominant
+            // positive steric wall; those seeds became poor gen-0 chromosomes.
+            r.cf_val = get_apparent_cf_evalue(&cf);
+            if (!std::isfinite(r.cf_val)) continue;
             r.ics.assign(icv + 1, icv + n_genes);
             results.push_back(std::move(r));
         }
     }
+
+    restore_scan_state();
 
     if (results.empty()) {
         fprintf(stderr, "[COARSE-INIT] WARN: all evaluations failed, skipping seed injection\n");

@@ -140,7 +140,58 @@ struct DockingResult {
     float search_entropy_proxy{0.0f}; // legacy H_final collapse proxy from GA energy histogram (nats)
     int   num_poses{0};               // number of binding modes found
     double wall_time_s{0.0};          // docking wall time
-    bool  success{false};             // RMSD < 2.0 Å
+    // ── Success gates (fixed semantics; never remapped by env) ────────────
+    // success_rmsd : RMSD <= 2 Å (Hungarian preferred) && !seed_echo
+    // pb_pass      : selected pose-quality backend passes (RMSD is success_rmsd)
+    //                Default backend = official upstream PoseBusters `bust` CLI.
+    //                NativePoseQC remains available as a diagnostic backend.
+    // success_pb   : success_rmsd && pb_pass
+    // claim_ready  : success_pb && validators complete && protocol_claim_eligible
+    //                (validators must cite pose_sha256)
+    // success      : always == success_rmsd (legacy column)
+    bool  success_rmsd{false};
+    bool  pb_pass{false};
+    bool  success_pb{false};          // == success_rmsd && pb_pass
+    bool  claim_ready{false};
+    bool  success{false};             // == success_rmsd (stable legacy meaning)
+    // Protocol-level native-pose exposure. This remains true even when the
+    // elected file is a GA cluster descendant rather than the literal _INI.pdb.
+    // A seeded oracle-retention result is useful diagnostically, but cannot be
+    // presented as no-seed redocking success.
+    bool  native_pose_seeded{false};
+    float native_pose_seed_fraction{0.0f};
+    bool  protocol_claim_eligible{false};
+    // PoseBusters summary (backend-selected: native_pose_qc or bust_cli)
+    bool  pb_ran{false};
+    int   pb_n_pass{0};
+    int   pb_n_fail{0};
+    int   pb_n_checks{0};
+    std::string pb_failed_keys;
+    std::string pb_backend;  // "native_pose_qc" | "bust_cli" | "skipped" | "error"
+    // NativePoseQC full-suite report (always filled as a parity diagnostic)
+    bool  native_qc_ran{false};
+    bool  native_qc_pass{false};
+    std::string native_qc_failed_keys;
+    float pb_min_lig_prot_dist{std::numeric_limits<float>::quiet_NaN()};
+    float pb_volume_overlap{std::numeric_limits<float>::quiet_NaN()};
+    // Validator / provenance (must cite same pose hash)
+    std::string elected_pose_path;    // absolute or workdir-relative path to elected_pose.pdb
+    std::string elected_pose_source;  // original restart path e.g. r1/1G9V_2.pdb
+    int         elected_restart{-1};  // -1 = r0 / root
+    int         elected_cluster{-1};  // pose index 0–19
+    float       elected_cf{std::numeric_limits<float>::quiet_NaN()};
+    bool        score_pose_consistent{false}; // emitted coordinates reproduce elected CF
+    float       score_pose_delta{std::numeric_limits<float>::quiet_NaN()};
+    std::string pose_sha256;          // SHA-256 of elected_pose.pdb
+    std::string rmsd_pose_sha256;     // exact elected-pose bytes consumed by RMSD
+    std::string posebusters_pose_sha256;  // parent elected PDB consumed by PoseBusters
+    std::string posebusters_input_sha256; // derived predicted-ligand SDF consumed by bust
+    std::string tencom_status{"not_run"};  // ok | fail | not_run | skipped
+    std::string eigen_status{"not_run"};
+    std::string tencom_pose_sha256;   // re-hash of the exact pose consumed by tENCoM/Eigen
+    int         eigen_n_modes{0};     // positive ligand ANM eigenmodes on elected pose
+    float       elected_H_vib{0.0f}; // H(omega) of the exact elected pose (nats)
+    std::string eigen_model{"ligand_cartesian_anm"};
     // Clash diagnostics (populated from stdout parsing)
     long  individuals_clashed{0};     // total clashing evaluations
     long  individuals_total{0};       // total evaluations (across all generations)
@@ -167,9 +218,8 @@ struct DockingResult {
     // (seed_elitism crystal-pose shortcut); "ga_cluster" for a genuine GA pose;
     // "" when docking did not complete or produced no poses.
     std::string pose_source{""};
-    // Level-3 H(ω) vibrational-entropy diagnostic. Populated only when
-    // FLEXAIDDS_HVIB=1; left at 0.0 otherwise (default-OFF, benchmarks
-    // unaffected). Shannon entropy over ligand ANM eigenvalue spectra of the
+    // Level-3 H(ω) vibrational-entropy diagnostic. Enabled by default; set
+    // FLEXAIDDS_HVIB=0 only for non-claim diagnostic runs. Shannon entropy over ligand ANM eigenvalue spectra of the
     // top-10 emitted cluster reps. See compute_target_hvib() in DatasetRunner.cpp.
     float H_rep_rank0{0.0f};  // H(ω) of rank-0 (best-CF) cluster rep, computed individually
     float H_pop{0.0f};        // pooled population vibrational entropy H(ω)
@@ -196,8 +246,14 @@ struct DockingResult {
 struct BenchmarkReport {
     std::string dataset_name;
     int total_systems{0};
-    int successful{0};               // RMSD < 2.0 Å
-    double success_rate{0.0};        // fraction
+    int successful{0};               // count of success (== success_rmsd)
+    double success_rate{0.0};
+    int successful_rmsd{0};
+    int successful_pb{0};            // success_rmsd && pb_pass
+    int claim_ready_count{0};
+    double success_rate_rmsd{0.0};
+    double success_rate_pb{0.0};
+    double claim_ready_rate{0.0};
     double mean_rmsd{0.0};
     double median_rmsd{0.0};
     int affinity_pairs{0};           // entries with both exp affinity and predicted dG
@@ -223,12 +279,14 @@ struct BenchmarkReport {
 
 /// Layer 1: Explicit benchmark protocol mode.
 /// Controls both seed_elitism and pose-blinding behavior in DatasetRunner::run().
-/// UNSET          → legacy env-var behavior (FLEXAIDDS_SEED_ELITISM, backward-compat).
-/// ORACLE_CEILING → seed_elitism ON, blinding OFF; ceiling measurement with crystal IC.
-/// AUTONOMOUS     → seed_elitism OFF, blinding ON; thesis/publication number.
+/// UNSET                 → legacy env-var behavior (FLEXAIDDS_SEED_ELITISM, backward-compat).
+/// ORACLE_CEILING        → seed_elitism ON, blinding OFF; ceiling measurement with crystal IC.
+/// DEFINED_CLEFT_REDOCK  → seed_elitism OFF, blinding ON; known cleft injected.
+/// AUTONOMOUS            → seed_elitism OFF, blinding ON; thesis/publication number.
 enum class BenchmarkMode {
     UNSET,            ///< legacy env-var behavior (backward compatible)
     ORACLE_CEILING,   ///< seed_elitism=ON, blinding=OFF (crystal IC anchor)
+    DEFINED_CLEFT_REDOCK, ///< known cleft/site, no crystal pose seed
     AUTONOMOUS,       ///< seed_elitism=OFF, blinding=ON (thesis number)
 };
 
@@ -273,8 +331,9 @@ struct DockingConfig {
     /// Set false only for ablation / legacy-baseline comparison.
     bool   receptor_rotamer_prep{true};   // Option 3 apo-strain fix (v44 default)
     /// Layer 1 benchmark protocol selector.
-    /// ORACLE_CEILING: seed_elitism=ON, blinding=OFF (ceiling measurement).
-    /// AUTONOMOUS:     seed_elitism=OFF, blinding=ON (publication/thesis number).
+    /// ORACLE_CEILING:       seed_elitism=ON, blinding=OFF (ceiling measurement).
+    /// DEFINED_CLEFT_REDOCK: seed_elitism=OFF, blinding=ON, known cleft injected.
+    /// AUTONOMOUS:           seed_elitism=OFF, blinding=ON (publication/thesis number).
     /// UNSET (default): preserves legacy env-var-based behavior.
     BenchmarkMode mode{BenchmarkMode::UNSET};
 };
