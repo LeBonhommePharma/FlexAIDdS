@@ -28,6 +28,7 @@
 #include <filesystem>
 #include <fstream>
 #include <numeric>
+#include <set>
 #include <sstream>
 #include <vector>
 
@@ -1523,4 +1524,127 @@ TEST(SAMPL7Data, EntryCount) {
     }
 
     fs::remove_all("/tmp/flexaidds_test_sampl7");
+}
+
+
+// =============================================================================
+// FO dual-suffix / CF single-suffix cluster-head enumeration
+// =============================================================================
+
+TEST(EmittedClusterHeads, SingleSuffixCfDpOnly) {
+    const fs::path dir = fs::temp_directory_path() / "flexaidds_enum_single";
+    fs::remove_all(dir);
+    fs::create_directories(dir);
+    const std::string prefix = (dir / "1G9V").string();
+
+    // CF/DP emission: prefix_rank.pdb
+    for (int i : {0, 1, 3}) {
+        std::ofstream((dir / ("1G9V_" + std::to_string(i) + ".pdb")).string())
+            << "REMARK CF=-12.3\n";
+    }
+    // Noise that must NOT be enumerated as heads
+    std::ofstream((dir / "1G9V_INI.pdb").string()) << "REMARK CF=0\n";
+    std::ofstream((dir / "1G9V_0_member0.pdb").string()) << "REMARK CF=-1\n";
+    std::ofstream((dir / "1G9V_notes.txt").string()) << "nope\n";
+
+    auto heads = enumerate_emitted_cluster_heads(prefix);
+    ASSERT_EQ(heads.size(), 3u);
+    EXPECT_TRUE(has_emitted_cluster_heads(prefix));
+
+    std::set<int> ranks;
+    for (const auto& h : heads) {
+        EXPECT_EQ(h.min_pts, -1);
+        ranks.insert(h.rank);
+        EXPECT_TRUE(fs::exists(h.path));
+        EXPECT_NE(h.path.find("1G9V_"), std::string::npos);
+        // Must not pick dual-suffix or members
+        EXPECT_EQ(h.path.find("_member"), std::string::npos);
+    }
+    EXPECT_EQ(ranks, (std::set<int>{0, 1, 3}));
+
+    fs::remove_all(dir);
+}
+
+TEST(EmittedClusterHeads, DualSuffixFoOnly) {
+    const fs::path dir = fs::temp_directory_path() / "flexaidds_enum_dual";
+    fs::remove_all(dir);
+    fs::create_directories(dir);
+    const std::string prefix = (dir / "1G9V").string();
+
+    // FO emission: prefix_minPts_rank.pdb (BindingMode.cpp)
+    std::ofstream((dir / "1G9V_15_0.pdb").string()) << "REMARK CF=-10.0\nFrequency: 12\n";
+    std::ofstream((dir / "1G9V_15_1.pdb").string()) << "REMARK CF=-8.5\nFrequency: 4\n";
+    std::ofstream((dir / "1G9V_12_0.pdb").string()) << "REMARK CF=-9.0\nFrequency: 3\n";
+    // Noise
+    std::ofstream((dir / "1G9V_15_0_member0.pdb").string()) << "REMARK CF=-1\n";
+    std::ofstream((dir / "1G9V_15_MODEL_0.pdb").string()) << "REMARK CF=-1\n";
+    std::ofstream((dir / "other_15_0.pdb").string()) << "REMARK CF=-1\n";
+
+    auto heads = enumerate_emitted_cluster_heads(prefix);
+    ASSERT_EQ(heads.size(), 3u) << "FO dual-suffix heads must be discovered without single-suffix files";
+    EXPECT_TRUE(has_emitted_cluster_heads(prefix));
+
+    // All dual-suffix; ranks/minPts parsed
+    std::set<std::pair<int,int>> keys;
+    for (const auto& h : heads) {
+        EXPECT_GE(h.min_pts, 0);
+        EXPECT_GE(h.rank, 0);
+        keys.insert({h.min_pts, h.rank});
+        // path ends with .pdb and contains minPts_rank
+        EXPECT_TRUE(h.path.size() > 4 && h.path.substr(h.path.size() - 4) == ".pdb");
+        EXPECT_EQ(h.path.find("_member"), std::string::npos);
+        EXPECT_EQ(h.path.find("MODEL"), std::string::npos);
+    }
+    EXPECT_EQ(keys, (std::set<std::pair<int,int>>{{15, 0}, {15, 1}, {12, 0}}));
+
+    fs::remove_all(dir);
+}
+
+TEST(EmittedClusterHeads, MixedSingleAndDualSuffix) {
+    const fs::path dir = fs::temp_directory_path() / "flexaidds_enum_mixed";
+    fs::remove_all(dir);
+    fs::create_directories(dir);
+    const std::string prefix = (dir / "1Z95").string();
+
+    std::ofstream((dir / "1Z95_0.pdb").string()) << "REMARK CF=-5\n";
+    std::ofstream((dir / "1Z95_1.pdb").string()) << "REMARK CF=-4\n";
+    std::ofstream((dir / "1Z95_10_0.pdb").string()) << "REMARK CF=-6\n";
+    std::ofstream((dir / "1Z95_10_2.pdb").string()) << "REMARK CF=-3\n";
+
+    auto heads = enumerate_emitted_cluster_heads(prefix);
+    ASSERT_EQ(heads.size(), 4u);
+
+    int n_single = 0, n_dual = 0;
+    for (const auto& h : heads) {
+        if (h.min_pts < 0) ++n_single;
+        else ++n_dual;
+    }
+    EXPECT_EQ(n_single, 2);
+    EXPECT_EQ(n_dual, 2);
+
+    // Empty prefix yields no heads
+    EXPECT_FALSE(has_emitted_cluster_heads((dir / "MISSING").string()));
+    EXPECT_TRUE(enumerate_emitted_cluster_heads((dir / "MISSING").string()).empty());
+
+    fs::remove_all(dir);
+}
+
+TEST(EmittedClusterHeads, RejectsNonDigitSuffixes) {
+    const fs::path dir = fs::temp_directory_path() / "flexaidds_enum_reject";
+    fs::remove_all(dir);
+    fs::create_directories(dir);
+    const std::string prefix = (dir / "2BM2").string();
+
+    std::ofstream((dir / "2BM2_foo_0.pdb").string()) << "x\n";
+    std::ofstream((dir / "2BM2_10_bar.pdb").string()) << "x\n";
+    std::ofstream((dir / "2BM2_10_0_extra.pdb").string()) << "x\n";  // extra non-digit mid
+    // valid FO head for contrast
+    std::ofstream((dir / "2BM2_10_0.pdb").string()) << "REMARK CF=-1\n";
+
+    auto heads = enumerate_emitted_cluster_heads(prefix);
+    ASSERT_EQ(heads.size(), 1u);
+    EXPECT_EQ(heads[0].min_pts, 10);
+    EXPECT_EQ(heads[0].rank, 0);
+
+    fs::remove_all(dir);
 }
