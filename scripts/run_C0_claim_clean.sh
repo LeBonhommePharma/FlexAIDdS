@@ -42,6 +42,11 @@ Q="${FLEXAIDDS_QUEUE_ROOT}"
 MANIFEST="${C0_CLAIM_MANIFEST}"
 
 if (( USE_LOCAL )); then
+  # Ensure local-first layout (campaigns/, logs/, pins/, three_engine_entropy_q1/…)
+  bash "$ROOT/scripts/ensure_local_first_layout.sh" || {
+    echo "FAIL: ensure_local_first_layout.sh" >&2
+    exit 1
+  }
   OUT="${C0_CLAIM_OUT:-$C0_CLAIM_LOCAL_OUT}"
   LOGDIR="${C0_CLAIM_LOCAL_LOGDIR}"
   RUNNER="${C0_CLAIM_RUNNER}"

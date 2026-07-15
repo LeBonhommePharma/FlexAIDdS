@@ -51,12 +51,21 @@ These rules exist because this is a complex, performance-critical scientific cod
 
 ---
 
-## Benchmark storage (Non-Negotiable)
+## Benchmark storage (Non-Negotiable) — local-first / thin-iCloud
 
-- **All production / claim / three-engine / residual campaign results go to iCloud Drive** under `$FLEXAIDDS_ICLOUD` → `$FLEXAIDDS_RESULTS/campaigns/…` (operator: ~2 TB iCloud, large free quota).
-- Source before launch: `source scripts/use_icloud_benchmark_storage.sh` (and `scripts/require_icloud_out.sh` for OUT checks).
-- `~/flexaidds_results` is **legacy archive / binary staging only** — do not start new claim campaigns there.
-- Queue binaries may remain on local disk via `bin/` symlinks (Mach-O + iCloud sync is unsafe).
+**Live compute is local APFS only; iCloud is a durable thin mirror — not a working filesystem.**
+
+| Layer | Rule |
+|-------|------|
+| Live GA / OUT / logs / binaries | **Local** `$FLEXAIDDS_LOCAL_ROOT` (default `~/flexaidds_results`) via `scripts/claim_local_staging_paths.sh` + `scripts/ensure_local_first_layout.sh` |
+| iCloud (`$FLEXAIDDS_ICLOUD` → `$FLEXAIDDS_RESULTS/campaigns/…`) | **Thin durable mirror only**: `result.csv`, RUN_RECEIPT, thin OPS status — synced by `scripts/sync_claim_local_to_icloud.sh` / `claim_icloud_sync_loop.sh` |
+| Any CloudDocs hash/read | **Must** use `scripts/icloud_safe_io.py` (timeout-bounded child process, or materialize → local pin-cache then hash). Never raw `open`/`md5` that can hang FileProvider. |
+| Tree walks | **Never** `find` / `Path.rglob` under `Mobile Documents/` (or any CloudDocs path). |
+| Ops / cron | Local-first scan: `bash scripts/run_benchmark_ops_monitor.sh --reap-walkers` (wall-clock cap + optional walker reaper). |
+| Reaper | `scripts/reap_hung_icloud_walkers.sh` kills hung CloudDocs walkers only — **never** FlexAIDdS, `benchmark_datasets`, claim `caffeinate`, or `claim_icloud_sync_loop`. |
+
+- Default claim launch: `bash scripts/run_C0_claim_clean.sh` (local OUT; use `--icloud-out` only for experiments).
+- Binaries: prefer local `$FLEXAIDDS_LOCAL_ROOT/three_engine_entropy_q1/bin/C` (Mach-O + iCloud sync is unsafe).
 - Details: `docs/ICLOUD_BENCHMARK_STORAGE.md`.
 
 ## Repository Hygiene (Non-Negotiable)
