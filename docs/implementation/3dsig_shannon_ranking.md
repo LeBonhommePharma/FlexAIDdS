@@ -76,7 +76,7 @@ Reuse **FlexAID JCIM 2015** comparative design (Gaudreault & Najmanovich, *J. Ch
 | **Also reported in deck** | Astex Non-Native (N=1112), HAP2 flexibility set — secondary |
 | **Per method, per case** | **10** independent simulations |
 | **Budget each sim** | **2 000 000** energy evaluations |
-| **Success (per case, bootstrap)** | RMSD **&lt; 2.0 Å** among the **top 10** predicted results |
+| **Success (per case, bootstrap)** | RMSD **≤ 2.0 Å** among the **top 10** predicted results (claim contract; inclusive) |
 | **Headline statistic** | **Median** success rate over **10 000** bootstrap resamples of the N cases (with replacement) |
 | **Arms on barplots** | FlexAID · FlexAID+entropy (FlexAIDdS) · AutoDock Vina · FlexX · rDock |
 
@@ -86,7 +86,7 @@ Reuse **FlexAID JCIM 2015** comparative design (Gaudreault & Najmanovich, *J. Ch
 |------------|---------------------------|
 | 2 000 000 evals / sim | e.g. pop×gen = 2e6 per restart (e.g. 1000×2000) with **fixed gen**, pop×DoF only if documented |
 | 10 sims / case | `FLEXAIDDS_RESTARTS=10` (or 10 independent jobs); **do not** silently use 5 without labeling |
-| Top-10 success | Track success if **any of top-10 emitted modes** has RMSD &lt; 2 Å (**S_top10**); S1 = top-1 only is extra modern KPI |
+| Top-10 success | Track success if **any of top-10 emitted modes** has RMSD ≤ 2.0 Å (**S_top10**); S1 = top-1 only is extra modern KPI |
 | Bootstrap 10k median | `scripts/` analysis: resample cases, recompute success rate, report median + CI |
 | Matrix | JCIM 2015 pin — **do not change mid-campaign** (see `docs/implementation/MATRIX_PIN_JCIM2015.md`) |
 | Site / seed | Cognate pocket, **no native-pose seed** for claim-style fair compare |
@@ -95,7 +95,7 @@ Reuse **FlexAID JCIM 2015** comparative design (Gaudreault & Najmanovich, *J. Ch
 
 | ID | Definition | 3Dsig deck |
 |----|------------|------------|
-| **S_top10** | Min RMSD among top-10 ranked modes ≤ 2 Å | **Primary in PDF bootstrap** |
+| **S_top10** | Any of top-10 ranked modes (emitted rank order) has RMSD ≤ 2.0 Å | **Primary in PDF bootstrap** |
 | **S1** | Rank-0 / elected mode RMSD ≤ 2 Å | Modern claim KPI (stricter) |
 | **S2** | S1 ∧ PoseBusters | Modern secondary (not in 2017 deck) |
 | **BCR** | Best cluster-head RMSD ≤ 2 Å | Diagnostic sampling ceiling |
