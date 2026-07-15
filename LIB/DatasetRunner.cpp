@@ -17,6 +17,7 @@
 #include "AsyncPipeline.h"
 #include "BenchmarkRunner.h"
 #include "ProtocolConfig.h"
+#include "SoftBetaFreeEnergy.h"
 #include "shell_exec.h"
 #include "RunReceipt.h"
 #include "statmech.h"
@@ -891,7 +892,8 @@ static std::pair<std::string,float> select_pose_freq_gated_pooled(
         const std::vector<std::string>& prefixes,
         int seed_elitism_override = -1,  // -1=ProtocolConfig default, 0=force off, 1=force on
         bool cf_window_selector = false, // Fix A: CF-window gate (see header member)
-        const flexaids::ProtocolConfig* protocol = nullptr)
+        const flexaids::ProtocolConfig* protocol = nullptr,
+        double dock_temperature_K = 0.0)  // dock T for soft-β when election_soft_T unset
 {
     // Pose-selector knobs come from ProtocolConfig (env adapter). Prefer a
     // caller-supplied snapshot (DatasetRunner::protocol_cfg_); fall back to a
@@ -919,11 +921,14 @@ static std::pair<std::string,float> select_pose_freq_gated_pooled(
     const bool use_shannon_G = proto.election_shannon_free_energy;
     const bool include_singletons =
         proto.election_include_singletons || proto.election_v135 || use_shannon_G;
-    // Soft-β T (3Dsig poster / FlexAID): dock temperature in K, β=1/T.
-    // Override with FLEXAIDDS_ELECTION_SOFT_T. Legacy ZH may use SCORE_TAU.
+    // Soft-β T (3Dsig poster / FlexAID): same T as engine FA->temperature when
+    // available. Priority: FLEXAIDDS_ELECTION_SOFT_T > dock_temperature_K >
+    // (legacy ZH only) SCORE_TAU > 298 K fallback.
     double soft_T = 298.0;
     if (proto.election_soft_T > 0.0)
         soft_T = proto.election_soft_T;
+    else if (dock_temperature_K > 0.0)
+        soft_T = dock_temperature_K;
     else if (!use_shannon_G && proto.election_score_tau > 0.0)
         soft_T = proto.election_score_tau;
     soft_T = std::max(soft_T, 1e-6);
@@ -992,10 +997,9 @@ static std::pair<std::string,float> select_pose_freq_gated_pooled(
         return true;
     };
 
-    // Build soft-β p_i over member CFs (or single head CF).
-    // Returns {H̃, S̃, G̃=H̃−T·S̃}  (G̃ lower is better — elect min G̃).
+    // Soft-β free energy via shared SoftBetaFreeEnergy.h (≡ cluster ACF /
+    // BindingMode classic G̃). G̃ lower is better — elect min G̃.
     auto soft_free_energy = [&](const PoseInfo& p, double& H_out, double& S_out) -> double {
-        const double T = soft_T;
         std::vector<double> energies;
         if (!p.member_cfs.empty()) {
             energies.reserve(p.member_cfs.size());
@@ -1004,32 +1008,12 @@ static std::pair<std::string,float> select_pose_freq_gated_pooled(
         }
         if (energies.empty()) {
             // No members: singleton head — S̃=0, G̃=CF (matches paper for N=1).
-            H_out = static_cast<double>(p.cf);
-            S_out = 0.0;
-            return H_out;
+            energies.push_back(static_cast<double>(p.cf));
         }
-        // Numerically stable Z: shift by E_min
-        double Emin = energies[0];
-        for (double e : energies) Emin = std::min(Emin, e);
-        double Z = 0.0;
-        for (double e : energies)
-            Z += std::exp(-(e - Emin) / T);
-        if (!(Z > 0.0) || !std::isfinite(Z)) {
-            H_out = static_cast<double>(p.cf);
-            S_out = 0.0;
-            return H_out;
-        }
-        double H = 0.0;
-        double S = 0.0;
-        for (double e : energies) {
-            const double p_i = std::exp(-(e - Emin) / T) / Z;
-            if (p_i <= 0.0) continue;
-            H += p_i * e;
-            S -= p_i * std::log(p_i);
-        }
-        H_out = H;
-        S_out = S;
-        return H - T * S;  // G̃
+        const auto fe = flexaids::soft_beta::free_energy(energies, soft_T);
+        H_out = fe.H;
+        S_out = fe.S;
+        return fe.G;
     };
 
     // Legacy Z+H composite (maximize). Only when election_shannon_free_energy=false.
@@ -6533,7 +6517,8 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
         {
             auto sel = select_pose_freq_gated_pooled(all_prefixes, sel_elitism_ovr,
                                                      cf_window_selector_,
-                                                     &protocol_cfg_);
+                                                     &protocol_cfg_,
+                                                     static_cast<double>(config.temperature));
             if (!sel.first.empty() && std::isfinite(sel.second))
                 best_cf = sel.second;
         }
@@ -6631,7 +6616,8 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
             // pool (see helper definition near compute_pose_ligand_rmsd).
             // elected_pose_for_pb lives outside this block for PoseBust post-pass.
             std::string best_pose_pdb = select_pose_freq_gated_pooled(
-                all_prefixes, sel_elitism_ovr, cf_window_selector_, &protocol_cfg_).first;
+                all_prefixes, sel_elitism_ovr, cf_window_selector_, &protocol_cfg_,
+                static_cast<double>(config.temperature)).first;
             // Fallback: no scored pose found — take first available pose file from any restart.
             if (best_pose_pdb.empty()) {
                 for (const auto& pfx : all_prefixes) {
@@ -7118,7 +7104,7 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
             if (docking_completed) {
                 elected_pose_pdb = select_pose_freq_gated_pooled(
                     all_prefixes, sel_elitism_ovr, cf_window_selector_,
-                    &protocol_cfg_).first;
+                    &protocol_cfg_, static_cast<double>(config.temperature)).first;
             }
         }
 
