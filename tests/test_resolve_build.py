@@ -69,12 +69,16 @@ def test_pin_requires_exact_sha(tmp_path: Path, monkeypatch: pytest.MonkeyPatch)
     reason="production build not present on this machine",
 )
 def test_resolves_main_checkout_build():
+    build = Path.home() / "Projects/FlexAIDdS/build_lto"
+    environment = os.environ.copy()
+    environment["FLEXAIDDS_ENGINE_SHA256"] = rb._sha256(build / rb.ENGINE_NAME)
     proc = subprocess.run(
         [sys.executable, str(RESOLVE), "--check", "--repo-root", str(REPO_ROOT)],
         capture_output=True,
         text=True,
         timeout=30,
         cwd=REPO_ROOT,
+        env=environment,
     )
     assert proc.returncode == 0, proc.stderr or proc.stdout
 
@@ -88,7 +92,9 @@ def test_export_shell_is_safe(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
         (build / name).write_text("data")
     monkeypatch.setenv("FLEXAIDDS_BUILD", str(build))
 
-    resolution = rb.resolve_build(repo_root=tmp_path)
+    resolution = rb.resolve_build(
+        repo_root=tmp_path, pin_sha=rb._sha256(build / rb.ENGINE_NAME)
+    )
     shell = rb.export_shell(resolution)
     assert "export FLEXAIDDS_ENGINE_SHA256=" in shell
     assert "';" not in shell

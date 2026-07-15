@@ -1021,9 +1021,20 @@ if(ENABLE_CAVITY_DETECT_CLI)
     endif()
     if(FLEXAIDS_USE_METAL)
         target_sources(cavity_detect_cli PRIVATE
+            LIB/metal_eval.mm
+            LIB/MetalRMSDBridge.mm
             LIB/CavityDetect/CavityDetectMetalBridge.mm
+            LIB/ShannonThermoStack/ShannonMetalBridge.mm
+            LIB/gpu_fast_optics_metal.mm
         )
-        target_compile_definitions(cavity_detect_cli PRIVATE FLEXAIDS_USE_METAL)
+        target_compile_definitions(cavity_detect_cli PRIVATE
+            FLEXAIDS_USE_METAL
+            FLEXAIDS_HAS_METAL_SHANNON
+            SHANNON_METALLIB_PATH="${SHANNON_METALLIB}"
+            METALRMSD_METALLIB_PATH="${RMSD_METALLIB_DS}"
+            CAVITY_METALLIB_PATH="${CAVITY_METALLIB_DS}"
+            TURBOQUANT_METALLIB_PATH="${TQ_METALLIB_DS}"
+        )
         target_compile_options(cavity_detect_cli PRIVATE -fno-objc-arc)
         target_link_libraries(cavity_detect_cli PRIVATE
             ${METAL_LIBRARY}
@@ -1031,17 +1042,18 @@ if(ENABLE_CAVITY_DETECT_CLI)
             ${METALKIT_LIBRARY}
         )
         set_source_files_properties(
+            LIB/metal_eval.mm
+            LIB/MetalRMSDBridge.mm
             LIB/CavityDetect/CavityDetectMetalBridge.mm
+            LIB/ShannonThermoStack/ShannonMetalBridge.mm
+            LIB/gpu_fast_optics_metal.mm
             PROPERTIES LANGUAGE OBJCXX COMPILE_FLAGS "-std=c++26 -fno-objc-arc"
         )
-        if(TARGET CavityDetectMetalDS)
-            add_dependencies(cavity_detect_cli CavityDetectMetalDS)
-        endif()
-        if(DEFINED CAVITY_METALLIB_DS)
-            target_compile_definitions(cavity_detect_cli PRIVATE
-                CAVITY_METALLIB_PATH="${CAVITY_METALLIB_DS}"
-            )
-        endif()
+        add_dependencies(cavity_detect_cli
+            CavityDetectMetalDS
+            ShannonEntropyMetal
+            MetalRMSDMetalDS
+        )
     endif()
     message(STATUS "Native CavityDetector CLI enabled -- build target: cavity_detect_cli")
 endif()
@@ -1063,6 +1075,8 @@ if(ENABLE_BENCHMARK_DATASETS)
     add_executable(benchmark_datasets
         LIB/benchmark_datasets.cpp
         LIB/DatasetRunner.cpp
+        LIB/FleetRunner.cpp
+        LIB/FleetRunner.h
         LIB/AsyncPipeline.cpp
         # NativePoseQC diagnostic plus upstream PoseBusters CLI bridge
         ${FLEXAIDDS_POSEBUST_SOURCES}
@@ -2279,6 +2293,14 @@ if(BUILD_TESTING)
     )
 
     # test_dataset_runner — benchmark dataset runner tests
+    flexaids_add_unit_test(test_fleet_runner
+        SOURCES
+            tests/test_fleet_runner.cpp
+            LIB/FleetRunner.cpp
+            LIB/FleetRunner.h
+        TEST_NAME FleetRunnerTests
+    )
+
     add_executable(test_dataset_runner
         tests/test_dataset_runner.cpp
         LIB/DatasetRunner.cpp
@@ -2300,6 +2322,44 @@ if(BUILD_TESTING)
     if(CURL_FOUND)
         target_link_libraries(test_dataset_runner PRIVATE CURL::libcurl)
         target_compile_definitions(test_dataset_runner PRIVATE FLEXAIDS_HAS_LIBCURL)
+    endif()
+    if(FLEXAIDS_USE_METAL)
+        target_sources(test_dataset_runner PRIVATE
+            LIB/metal_eval.mm
+            LIB/MetalRMSDBridge.mm
+            LIB/CavityDetect/CavityDetectMetalBridge.mm
+            LIB/ShannonThermoStack/ShannonMetalBridge.mm
+            LIB/gpu_fast_optics_metal.mm
+        )
+        target_compile_definitions(test_dataset_runner PRIVATE
+            FLEXAIDS_USE_METAL
+            FLEXAIDS_HAS_METAL_SHANNON
+        )
+        target_compile_options(test_dataset_runner PRIVATE -fno-objc-arc)
+        target_link_libraries(test_dataset_runner PRIVATE
+            ${METAL_LIBRARY}
+            ${FOUNDATION_LIBRARY}
+            ${METALKIT_LIBRARY}
+        )
+        set_source_files_properties(
+            LIB/metal_eval.mm
+            LIB/MetalRMSDBridge.mm
+            LIB/CavityDetect/CavityDetectMetalBridge.mm
+            LIB/ShannonThermoStack/ShannonMetalBridge.mm
+            LIB/gpu_fast_optics_metal.mm
+            PROPERTIES LANGUAGE OBJCXX COMPILE_FLAGS "-std=c++26 -fno-objc-arc"
+        )
+        add_dependencies(test_dataset_runner
+            CavityDetectMetalDS
+            ShannonEntropyMetal
+            MetalRMSDMetalDS
+        )
+        target_compile_definitions(test_dataset_runner PRIVATE
+            SHANNON_METALLIB_PATH="${SHANNON_METALLIB}"
+            METALRMSD_METALLIB_PATH="${RMSD_METALLIB_DS}"
+            CAVITY_METALLIB_PATH="${CAVITY_METALLIB_DS}"
+            TURBOQUANT_METALLIB_PATH="${TQ_METALLIB_DS}"
+        )
     endif()
     flexaids_configure_msvc_test(test_dataset_runner)
     add_test(NAME DatasetRunnerTests COMMAND test_dataset_runner)
@@ -2328,6 +2388,34 @@ if(BUILD_TESTING)
     if(CURL_FOUND)
         target_link_libraries(test_cofactor_blacklist PRIVATE CURL::libcurl)
         target_compile_definitions(test_cofactor_blacklist PRIVATE FLEXAIDS_HAS_LIBCURL)
+    endif()
+    if(FLEXAIDS_USE_METAL)
+        target_sources(test_cofactor_blacklist PRIVATE
+            LIB/metal_eval.mm
+            LIB/MetalRMSDBridge.mm
+            LIB/CavityDetect/CavityDetectMetalBridge.mm
+            LIB/ShannonThermoStack/ShannonMetalBridge.mm
+            LIB/gpu_fast_optics_metal.mm
+        )
+        target_compile_definitions(test_cofactor_blacklist PRIVATE
+            FLEXAIDS_USE_METAL
+            FLEXAIDS_HAS_METAL_SHANNON
+            SHANNON_METALLIB_PATH="${SHANNON_METALLIB}"
+            METALRMSD_METALLIB_PATH="${RMSD_METALLIB_DS}"
+            CAVITY_METALLIB_PATH="${CAVITY_METALLIB_DS}"
+            TURBOQUANT_METALLIB_PATH="${TQ_METALLIB_DS}"
+        )
+        target_compile_options(test_cofactor_blacklist PRIVATE -fno-objc-arc)
+        target_link_libraries(test_cofactor_blacklist PRIVATE
+            ${METAL_LIBRARY}
+            ${FOUNDATION_LIBRARY}
+            ${METALKIT_LIBRARY}
+        )
+        add_dependencies(test_cofactor_blacklist
+            CavityDetectMetalDS
+            ShannonEntropyMetal
+            MetalRMSDMetalDS
+        )
     endif()
     flexaids_configure_msvc_test(test_cofactor_blacklist)
     add_test(NAME CofactorBlacklistTests COMMAND test_cofactor_blacklist)

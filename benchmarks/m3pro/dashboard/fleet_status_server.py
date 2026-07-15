@@ -10,7 +10,8 @@ Endpoints:
   GET /api/progress/<dataset>/<run> — Deep-scan progress for a specific run
   GET /api/fleet/<filename>         — Raw fleet status JSON file
 
-CORS headers (Access-Control-Allow-Origin: *) are added to all responses.
+The server binds to loopback by default. Cross-origin access is disabled unless
+an explicit ``--cors-origin`` is supplied.
 
 Usage:
   # Start on default port 8787
@@ -43,7 +44,7 @@ from glob import glob
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
-from urllib.parse import unquote
+from urllib.parse import unquote, urlsplit
 
 __version__ = "1.0.0"
 
@@ -52,6 +53,25 @@ ICLOUD_DEFAULT = os.path.expanduser(
 )
 FAST_DEFAULT = os.path.expanduser("~/.flexaidds_fast")
 RESULTS_SUBDIR = "results/tier2"
+SAFE_COMPONENT = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$")
+
+
+def _confined_path(root: str, *parts: str) -> str:
+    """Resolve a path below root, including symlinks, or raise ValueError."""
+    base = os.path.realpath(root)
+    candidate = os.path.realpath(os.path.join(base, *parts))
+    try:
+        if os.path.commonpath((base, candidate)) != base:
+            raise ValueError("path traversal denied")
+    except ValueError as exc:
+        raise ValueError("path traversal denied") from exc
+    return candidate
+
+
+def _safe_component(value: str, label: str) -> str:
+    if not SAFE_COMPONENT.fullmatch(value):
+        raise ValueError(f"invalid {label}")
+    return value
 
 
 def safe_read_json(filepath: str) -> Optional[Dict[str, Any]]:
@@ -64,9 +84,13 @@ def safe_read_json(filepath: str) -> Optional[Dict[str, Any]]:
 
 
 def discover_fleet_status_files(icloud_dir: str) -> List[str]:
-    """Find all fleet_status*.json files in the iCloud directory."""
-    pattern = os.path.join(icloud_dir, "fleet_status*.json")
-    return sorted(glob(pattern))
+    """Find legacy runner files and Bonhomme Fleet campaign status files."""
+    patterns = (
+        os.path.join(icloud_dir, "fleet_status*.json"),
+        os.path.join(icloud_dir, "campaigns", "*", "status.json"),
+        os.path.join(icloud_dir, "results", "campaigns", "*", "status.json"),
+    )
+    return sorted({path for pattern in patterns for path in glob(pattern)})
 
 
 def merge_fleet_status(icloud_dir: str) -> Dict[str, Any]:
@@ -84,14 +108,37 @@ def merge_fleet_status(icloud_dir: str) -> Dict[str, Any]:
         "runners": {},
         "total_workers": 0,
         "fleet_files": [os.path.basename(f) for f in files],
+        "devices": [],
+        "activeChunks": [],
     }
 
     for fpath in files:
         data = safe_read_json(fpath)
         if data is None:
             continue
-        runner_name = data.get("runner", os.path.basename(fpath))
+        runner_name = data.get("runner", data.get("campaign_id", os.path.basename(fpath)))
         merged["runners"][runner_name] = data
+        merged["devices"].extend(data.get("devices", []))
+        merged["activeChunks"].extend(data.get("activeChunks", []))
+
+    metrics = [
+        data.get("metrics", {})
+        for data in merged["runners"].values()
+        if isinstance(data.get("metrics"), dict)
+    ]
+    merged["total_workers"] = sum(int(item.get("activeDevices", 0)) for item in metrics)
+    merged["metrics"] = {
+        "jobID": "fleet-merged",
+        "totalChunks": sum(int(item.get("totalChunks", 0)) for item in metrics),
+        "completedChunks": sum(int(item.get("completedChunks", 0)) for item in metrics),
+        "failedChunks": sum(int(item.get("failedChunks", 0)) for item in metrics),
+        "orphanedChunks": sum(int(item.get("orphanedChunks", 0)) for item in metrics),
+        "activeDevices": merged["total_workers"],
+        "totalTFLOPS": sum(float(item.get("totalTFLOPS", 0.0)) for item in metrics),
+        "meanChunkTimeSeconds": None,
+        "estimatedRemainingSeconds": None,
+        "timestamp": merged["timestamp"],
+    }
 
     return merged
 
@@ -114,6 +161,8 @@ def deep_scan_run(
     Returns:
         Dictionary with per-target progress and summary stats.
     """
+    dataset = _safe_component(dataset, "dataset")
+    run_name = _safe_component(run_name, "run name")
     result: Dict[str, Any] = {
         "dataset": dataset,
         "run": run_name,
@@ -130,7 +179,7 @@ def deep_scan_run(
 
     for base in results_dirs:
         tier2 = base if base.endswith(RESULTS_SUBDIR) else os.path.join(base, RESULTS_SUBDIR)
-        run_path = os.path.join(tier2, dataset, run_name)
+        run_path = _confined_path(tier2, dataset, run_name)
 
         if not os.path.isdir(run_path):
             continue
@@ -179,7 +228,11 @@ def _classify_target(target_path: str) -> Dict[str, Any]:
     except OSError:
         return status
 
-    has_result_csv = "result.csv" in entries
+    result_csv = os.path.join(target_path, "result.csv")
+    try:
+        has_result_csv = "result.csv" in entries and os.path.getsize(result_csv) > 0
+    except OSError:
+        has_result_csv = False
     has_dock_config = "dock_config.json" in entries
     has_stdout = "stdout.log" in entries
 
@@ -188,7 +241,7 @@ def _classify_target(target_path: str) -> Dict[str, Any]:
         for e in entries
     )
 
-    status["has_result"] = has_result_csv or has_output_pdb
+    status["has_result"] = has_result_csv
 
     if has_stdout:
         stdout_path = os.path.join(target_path, "stdout.log")
@@ -202,9 +255,9 @@ def _classify_target(target_path: str) -> Dict[str, Any]:
         except OSError:
             pass
 
-    if has_result_csv or has_output_pdb:
+    if has_result_csv:
         status["state"] = "done"
-    elif has_dock_config:
+    elif has_dock_config or has_stdout or has_output_pdb:
         status["state"] = "in_progress"
     else:
         status["state"] = "queued"
@@ -217,6 +270,7 @@ class FleetStatusHandler(BaseHTTPRequestHandler):
 
     icloud_dir: str = ICLOUD_DEFAULT
     results_dirs: List[str] = []
+    cors_origin: Optional[str] = None
 
     def log_message(self, format: str, *args: Any) -> None:
         """Override to use a cleaner log format."""
@@ -225,14 +279,15 @@ class FleetStatusHandler(BaseHTTPRequestHandler):
         )
 
     def _send_json(self, data: Any, status_code: int = 200) -> None:
-        """Send a JSON response with CORS headers."""
+        """Send a JSON response."""
         body = json.dumps(data, indent=2, default=str).encode("utf-8")
         self.send_response(status_code)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(body)))
-        self.send_header("Access-Control-Allow-Origin", "*")
-        self.send_header("Access-Control-Allow-Methods", "GET, OPTIONS")
-        self.send_header("Access-Control-Allow-Headers", "Content-Type")
+        if self.cors_origin:
+            self.send_header("Access-Control-Allow-Origin", self.cors_origin)
+            self.send_header("Access-Control-Allow-Methods", "GET, OPTIONS")
+            self.send_header("Access-Control-Allow-Headers", "Content-Type")
         self.send_header("Cache-Control", "no-cache")
         self.end_headers()
         self.wfile.write(body)
@@ -243,15 +298,18 @@ class FleetStatusHandler(BaseHTTPRequestHandler):
 
     def do_OPTIONS(self) -> None:
         """Handle CORS preflight requests."""
+        if not self.cors_origin:
+            self._send_error_json("CORS is disabled", 403)
+            return
         self.send_response(204)
-        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Access-Control-Allow-Origin", self.cors_origin)
         self.send_header("Access-Control-Allow-Methods", "GET, OPTIONS")
         self.send_header("Access-Control-Allow-Headers", "Content-Type")
         self.end_headers()
 
     def do_GET(self) -> None:
         """Route GET requests to appropriate handlers."""
-        path = unquote(self.path).rstrip("/")
+        path = unquote(urlsplit(self.path).path).rstrip("/")
 
         if path == "" or path == "/":
             self._handle_index()
@@ -275,8 +333,6 @@ class FleetStatusHandler(BaseHTTPRequestHandler):
                 "GET /api/progress/<dataset>/<run>": "Deep-scan progress for a run",
                 "GET /api/fleet/<filename>": "Raw fleet status JSON file",
             },
-            "icloud_dir": self.icloud_dir,
-            "results_dirs": self.results_dirs,
         })
 
     def _handle_status(self) -> None:
@@ -287,7 +343,7 @@ class FleetStatusHandler(BaseHTTPRequestHandler):
     def _handle_progress(self, path: str) -> None:
         """Handle GET /api/progress/<dataset>/<run> — deep scan."""
         parts = path.replace("/api/progress/", "").split("/")
-        if len(parts) < 2:
+        if len(parts) != 2:
             self._send_error_json(
                 "Usage: /api/progress/<dataset>/<run>", 400
             )
@@ -296,7 +352,11 @@ class FleetStatusHandler(BaseHTTPRequestHandler):
         dataset = parts[0]
         run_name = parts[1]
 
-        progress = deep_scan_run(self.results_dirs, dataset, run_name)
+        try:
+            progress = deep_scan_run(self.results_dirs, dataset, run_name)
+        except ValueError as exc:
+            self._send_error_json(str(exc), 400)
+            return
         self._send_json(progress)
 
     def _handle_fleet_file(self, path: str) -> None:
@@ -306,10 +366,9 @@ class FleetStatusHandler(BaseHTTPRequestHandler):
             self._send_error_json("Invalid filename pattern", 400)
             return
 
-        filepath = os.path.join(self.icloud_dir, filename)
-        filepath = os.path.realpath(filepath)
-
-        if not filepath.startswith(os.path.realpath(self.icloud_dir)):
+        try:
+            filepath = _confined_path(self.icloud_dir, filename)
+        except ValueError:
             self._send_error_json("Path traversal denied", 403)
             return
 
@@ -336,8 +395,13 @@ def build_argparser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--host",
         type=str,
-        default="0.0.0.0",
-        help="Bind address (default: 0.0.0.0)",
+        default="127.0.0.1",
+        help="Bind address (default: 127.0.0.1)",
+    )
+    parser.add_argument(
+        "--cors-origin",
+        default=None,
+        help="Exact allowed browser origin; CORS is disabled by default",
     )
     parser.add_argument(
         "--icloud",
@@ -388,6 +452,7 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     FleetStatusHandler.icloud_dir = icloud_dir
     FleetStatusHandler.results_dirs = results_dirs
+    FleetStatusHandler.cors_origin = args.cors_origin
 
     server = HTTPServer((args.host, args.port), FleetStatusHandler)
 
