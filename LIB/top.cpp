@@ -405,7 +405,9 @@ int main(int argc, char **argv){
 	char tmpremark[MAX_REMARK];
 	char dockinp[MAX_PATH__];
 	char gainp[MAX_PATH__];
+	#ifdef _WIN32
 	char *pch;                               // for finding base path
+	#endif
 	char end_strfile[MAX_PATH__];
 	char tmp_end_strfile[MAX_PATH__];
 
@@ -619,11 +621,9 @@ int main(int argc, char **argv){
 			if (n >= MAX_PATH__) n = MAX_PATH__ - 1;
 			memcpy(FA->base_path, src, n);
 			FA->base_path[n] = '\0';
-			pch = FA->base_path; // satisfy any later uses of pch
 		} else {
 			strncpy(FA->base_path, ".", MAX_PATH__ - 1);
 			FA->base_path[MAX_PATH__ - 1] = '\0';
-			pch = NULL;
 		}
 	}
 #else
@@ -888,7 +888,9 @@ int main(int argc, char **argv){
 				using O = json::Object;
 				config = json::merge(config, V(O{{"advanced", V(O{{"assume_folded", V(true)}})}}));
 			}
-			apply_config(config, FA, GB);
+			// Snapshot protocol once for apply_config (no mid-apply getenv dual path).
+			const flexaids::ProtocolConfig apply_proto = flexaids::ProtocolConfig::from_env();
+			apply_config(config, FA, GB, &apply_proto);
 			if (GB->seed != 0) {
 				flexaids_rng::set_master_seed(static_cast<std::uint64_t>(GB->seed));
 			}

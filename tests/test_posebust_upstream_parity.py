@@ -24,6 +24,8 @@ import sys
 import tempfile
 from pathlib import Path
 
+import pytest
+
 ROOT = Path(__file__).resolve().parents[1]
 BUST = Path(
     os.environ.get(
@@ -169,6 +171,31 @@ int main(int c,char**v){
   return 0;
 }
 """
+
+
+@pytest.fixture(scope="module")
+def posebust_tools(tmp_path_factory: pytest.TempPathFactory) -> dict[str, Path]:
+    directory = tmp_path_factory.mktemp("posebust-tools")
+    return {
+        "extract": compile_tool(EXTRACT_MAIN, "extract", directory),
+        "mismatch": compile_tool(MISMATCH_MAIN, "mismatch", directory),
+        "crystal_self": compile_tool(CRYSTAL_SELF_MAIN, "crystal_self", directory),
+    }
+
+
+@pytest.fixture(scope="module")
+def bin_extract(posebust_tools: dict[str, Path]) -> Path:
+    return posebust_tools["extract"]
+
+
+@pytest.fixture(scope="module")
+def bin_mismatch(posebust_tools: dict[str, Path]) -> Path:
+    return posebust_tools["mismatch"]
+
+
+@pytest.fixture(scope="module")
+def bin_self(posebust_tools: dict[str, Path]) -> Path:
+    return posebust_tools["crystal_self"]
 
 
 def extract_ligand(pose: Path, crystal: Path, out_sdf: Path, bin_extract: Path) -> int:

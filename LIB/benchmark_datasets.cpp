@@ -17,6 +17,7 @@
 
 #include "DatasetRunner.h"
 #include "BenchmarkRunner.h"
+#include "FleetRunner.h"
 
 #include <algorithm>
 #include <chrono>
@@ -26,11 +27,8 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
-#include <numeric>
 #include <set>
 #include <sstream>
-#include <iomanip>
-#include <ctime>
 #include <string>
 #include <thread>
 #include <vector>
@@ -72,9 +70,15 @@ static void print_usage(const char* progname) {
     printf("  --ga-population <N>   GA population size (default: 1000)\n");
     printf("  --grid-spacing <F>    Grid spacing in Å (default: 0.375; use 0.5 for coarse pass)\n");
     printf("  --job-timeout-seconds <N>  Per-complex timeout in s (default: 3600)\n");
-    printf("  --fleet               Enable Fleet mode (JSON chunk result output)\n");
-    printf("  --chunk-id <ID>       Unique chunk identifier for Fleet mode\n");
-    printf("  --output-json <path>  Write Fleet JSON result to this file\n");
+    printf("  --fleet               Enable immutable Fleet chunk-result output\n");
+    printf("  --campaign-id <ID>    Fleet campaign identifier (required with --fleet)\n");
+    printf("  --chunk-id <ID>       Fleet chunk identifier (required with --fleet)\n");
+    printf("  --attempt-id <ID>     Fleet attempt identifier (required with --fleet)\n");
+    printf("  --worker-id <ID>      Fleet worker identifier (required with --fleet)\n");
+    printf("  --manifest-sha256 <H> SHA-256 of immutable campaign manifest\n");
+    printf("  --runner-sha256 <H>   SHA-256 of this benchmark runner\n");
+    printf("  --engine-sha256 <H>   SHA-256 of the pinned FlexAIDdS engine\n");
+    printf("  --output-json <path>  Immutable Fleet chunk JSON destination\n");
     printf("  --mode <mode>         Benchmark protocol (Layer 1):\n");
     printf("                        oracle-ceiling  seed_elitism=ON,  blinding=OFF (ceiling)\n");
     printf("                        defined-cleft-redock  seed_elitism=OFF, blinding=ON, known cleft/site\n");
@@ -282,79 +286,6 @@ static void filter_entries_by_code(std::vector<dataset::DatasetEntry>& entries,
     entries = std::move(filtered);
 }
 
-/// Write Fleet-compatible JSON chunk result.
-static void write_fleet_json(const std::string& json_path,
-                              const std::string& chunk_id,
-                              const std::string& dataset,
-                              const dataset::BenchmarkReport& report,
-                              double duration_s) {
-    std::vector<double> dG_vals, rmsd_vals;
-    int n_completed = 0;
-    for (const auto& r : report.results) {
-        if (r.success) {
-            n_completed++;
-            dG_vals.push_back(static_cast<double>(r.predicted_dG));
-            rmsd_vals.push_back(static_cast<double>(r.rmsd_to_crystal));
-        }
-    }
-    int n_failed = static_cast<int>(report.results.size()) - n_completed;
-
-    double dG_mean = 0.0, dG_std = 0.0, rmsd_mean = 0.0;
-    if (!dG_vals.empty()) {
-        dG_mean = std::accumulate(dG_vals.begin(), dG_vals.end(), 0.0) / dG_vals.size();
-        double sq_sum = 0.0;
-        for (double v : dG_vals) sq_sum += (v - dG_mean) * (v - dG_mean);
-        dG_std = dG_vals.size() > 1 ? std::sqrt(sq_sum / (dG_vals.size() - 1)) : 0.0;
-    }
-    if (!rmsd_vals.empty()) {
-        rmsd_mean = std::accumulate(rmsd_vals.begin(), rmsd_vals.end(), 0.0) / rmsd_vals.size();
-    }
-
-    auto now = std::chrono::system_clock::now();
-    auto time_t_now = std::chrono::system_clock::to_time_t(now);
-    char ts_buf[32];
-    std::strftime(ts_buf, sizeof(ts_buf), "%Y-%m-%dT%H:%M:%S", std::localtime(&time_t_now));
-
-    std::ostringstream json;
-    json << "{\n"
-         << "  \"chunk_id\": \"" << chunk_id << "\",\n"
-         << "  \"dataset\": \"" << dataset << "\",\n"
-         << "  \"n_total\": " << report.total_systems << ",\n"
-         << "  \"n_completed\": " << n_completed << ",\n"
-         << "  \"n_failed\": " << n_failed << ",\n"
-         << "  \"success_rate\": " << std::fixed << std::setprecision(4) << report.success_rate << ",\n"
-         << "  \"dG_mean\": " << std::setprecision(3) << dG_mean << ",\n"
-         << "  \"dG_std\": " << dG_std << ",\n"
-         << "  \"rmsd_mean\": " << rmsd_mean << ",\n"
-         << "  \"pearson_r\": " << std::setprecision(4) << report.pearson_r << ",\n"
-         << "  \"duration_s\": " << std::setprecision(1) << duration_s << ",\n"
-         << "  \"timestamp\": \"" << ts_buf << "\",\n"
-         << "  \"cross_ligand\": [\n";
-    for (size_t i = 0; i < report.cross_ligand_results.size(); ++i) {
-        const auto& clr = report.cross_ligand_results[i];
-        json << "    {\"receptor\": \"" << clr.receptor_id << "\","
-             << " \"n_ligands\": " << clr.n_ligands << ","
-             << " \"n_completed\": " << clr.n_completed << "}";
-        if (i + 1 < report.cross_ligand_results.size()) json << ",";
-        json << "\n";
-    }
-    json << "  ]\n}\n";
-
-    if (json_path == "-" || json_path.empty()) {
-        std::cout << json.str();
-    } else {
-        std::ofstream ofs(json_path);
-        if (ofs.is_open()) {
-            ofs << json.str();
-            std::cerr << "  [Fleet] JSON written to " << json_path << "\n";
-        } else {
-            std::cerr << "  [Fleet] WARNING: could not open " << json_path << "\n";
-            std::cout << json.str();
-        }
-    }
-}
-
-
 static dataset::BenchmarkReport run_single_benchmark(const std::string& name,
                                   dataset::DatasetRunner& runner,
                                   const dataset::DockingConfig& config,
@@ -407,6 +338,7 @@ static dataset::BenchmarkReport run_single_benchmark(const std::string& name,
         }
         std::string content((std::istreambuf_iterator<char>(ifs)),
                              std::istreambuf_iterator<char>());
+        const fs::path json_base = fs::absolute(fs::path(json_file)).parent_path();
 
         // Minimal JSON string-field extractor (no external JSON lib needed).
         auto extract_str = [&](const std::string& obj, const std::string& key) -> std::string {
@@ -416,6 +348,14 @@ static dataset::BenchmarkReport run_single_benchmark(const std::string& name,
             pos += needle.size();
             auto end = obj.find('"', pos);
             return (end != std::string::npos) ? obj.substr(pos, end - pos) : "";
+        };
+        auto resolve_input_path = [&](const std::string& value) -> std::string {
+            if (value.empty()) return value;
+            fs::path path(value);
+            if (path.is_relative()) path = json_base / path;
+            std::error_code ec;
+            fs::path normalized = fs::weakly_canonical(path, ec);
+            return ec ? path.lexically_normal().string() : normalized.string();
         };
 
         // Walk JSON locating each pair object by scanning for "receptor_id" keys.
@@ -431,11 +371,11 @@ static dataset::BenchmarkReport run_single_benchmark(const std::string& name,
 
             dataset::DatasetEntry entry;
             entry.pdb_id            = extract_str(obj, "receptor_id");
-            entry.receptor_path     = extract_str(obj, "receptor_pdb");
-            entry.ligand_path       = extract_str(obj, "ligand_sdf");
-            entry.rmsd_reference_path = extract_str(obj, "rmsd_ref_sdf");
-            entry.binding_site_path = extract_str(obj, "oracle_site_pdb");
-            entry.cleft_sphere_path = extract_str(obj, "cleft_sphere_file");
+            entry.receptor_path     = resolve_input_path(extract_str(obj, "receptor_pdb"));
+            entry.ligand_path       = resolve_input_path(extract_str(obj, "ligand_sdf"));
+            entry.rmsd_reference_path = resolve_input_path(extract_str(obj, "rmsd_ref_sdf"));
+            entry.binding_site_path = resolve_input_path(extract_str(obj, "oracle_site_pdb"));
+            entry.cleft_sphere_path = resolve_input_path(extract_str(obj, "cleft_sphere_file"));
             entry.source            = "astex_crossdock_85";
 
             if (!entry.pdb_id.empty() &&
@@ -536,7 +476,13 @@ int main(int argc, char** argv) {
     std::vector<std::string> only_codes;
     // Fleet mode options
     bool fleet_mode = false;
+    std::string campaign_id;
     std::string chunk_id;
+    std::string attempt_id;
+    std::string worker_id;
+    std::string manifest_sha256;
+    std::string runner_sha256;
+    std::string engine_sha256;
     std::string output_json;
     // Layer 1: benchmark protocol mode
     std::string mode_str;
@@ -617,8 +563,32 @@ int main(int argc, char** argv) {
             fleet_mode = true;
             continue;
         }
+        if (arg == "--campaign-id" && i + 1 < argc) {
+            campaign_id = argv[++i];
+            continue;
+        }
         if (arg == "--chunk-id" && i + 1 < argc) {
             chunk_id = argv[++i];
+            continue;
+        }
+        if (arg == "--attempt-id" && i + 1 < argc) {
+            attempt_id = argv[++i];
+            continue;
+        }
+        if (arg == "--worker-id" && i + 1 < argc) {
+            worker_id = argv[++i];
+            continue;
+        }
+        if (arg == "--manifest-sha256" && i + 1 < argc) {
+            manifest_sha256 = argv[++i];
+            continue;
+        }
+        if (arg == "--runner-sha256" && i + 1 < argc) {
+            runner_sha256 = argv[++i];
+            continue;
+        }
+        if (arg == "--engine-sha256" && i + 1 < argc) {
+            engine_sha256 = argv[++i];
             continue;
         }
         if (arg == "--output-json" && i + 1 < argc) {
@@ -640,6 +610,23 @@ int main(int argc, char** argv) {
         fprintf(stderr, "ERROR: No benchmark specified. Use --benchmark <name>\n");
         print_usage(argv[0]);
         return 1;
+    }
+
+    if (fleet_mode) {
+        const bool missing_metadata = campaign_id.empty() || chunk_id.empty() ||
+            attempt_id.empty() || worker_id.empty() || manifest_sha256.empty() ||
+            runner_sha256.empty() || engine_sha256.empty() || output_json.empty();
+        if (missing_metadata) {
+            fprintf(stderr, "ERROR: --fleet requires campaign/chunk/attempt/worker IDs, "
+                    "manifest/runner/engine SHA-256 values, and --output-json\n");
+            return 1;
+        }
+        if (benchmark_name == "all" || prepare_only || list_codes_only ||
+            only_codes.empty() || mode_str.empty() || output_json == "-") {
+            fprintf(stderr, "ERROR: Fleet mode requires one explicit benchmark, --only-codes, "
+                    "an explicit --mode, and a file output; prepare/list/all modes are unsupported\n");
+            return 1;
+        }
     }
 
     // Create runner and config
@@ -736,10 +723,10 @@ int main(int argc, char** argv) {
         std::cout << "  Mode:         " << mode_label << "\n";
     }
     if (fleet_mode) {
-        if (chunk_id.empty()) chunk_id = benchmark_name + "_chunk";
-        std::cout << "  Fleet:   enabled (chunk_id=" << chunk_id << ")\n";
-        if (!output_json.empty())
-            std::cout << "  JSON:    " << output_json << "\n";
+        std::cout << "  Fleet:        enabled\n";
+        std::cout << "  Campaign:     " << campaign_id << "\n";
+        std::cout << "  Chunk/attempt:" << chunk_id << "/" << attempt_id << "\n";
+        std::cout << "  JSON:         " << output_json << "\n";
     }
     std::cout << "\n";
 
@@ -764,13 +751,47 @@ int main(int argc, char** argv) {
         std::cout << "  All benchmarks completed. Results in: " << output_dir << "\n";
         std::cout << "═══════════════════════════════════════════════════════════════\n";
     } else {
+        const auto fleet_started = std::chrono::steady_clock::now();
         auto report = run_single_benchmark(benchmark_name, runner, config, prepare_only, list_codes_only, only_codes);
 
-        // Fleet mode: emit JSON chunk result
-        if (fleet_mode && report.total_systems > 0) {
-            double total_wall = 0.0;
-            for (const auto& r : report.results) total_wall += r.wall_time_s;
-            write_fleet_json(output_json, chunk_id, benchmark_name, report, total_wall);
+        if (fleet_mode) {
+            const double duration_s = std::chrono::duration<double>(
+                std::chrono::steady_clock::now() - fleet_started).count();
+            std::ostringstream command;
+            for (int i = 0; i < argc; ++i) {
+                if (i > 0) command << ' ';
+                command << argv[i];
+            }
+            std::error_code path_error;
+            fs::path runner_path = fs::weakly_canonical(fs::absolute(argv[0]), path_error);
+            if (path_error) runner_path = fs::absolute(argv[0]);
+            const char* engine_env = std::getenv("FLEXAIDDS_BINARY");
+            fleet::ChunkMetadata metadata{
+                campaign_id,
+                chunk_id,
+                attempt_id,
+                worker_id,
+                benchmark_name,
+                command.str(),
+                runner_path.string(),
+                runner_sha256,
+                engine_env ? engine_env : "",
+                engine_sha256,
+                manifest_sha256,
+            };
+            const std::string payload = fleet::FleetRunner::serialize_chunk_result(
+                metadata, report, config, duration_s);
+            std::string write_error;
+            if (!fleet::FleetRunner::write_chunk_result_atomic(
+                    output_json, payload, &write_error)) {
+                std::cerr << "ERROR: Fleet result publication failed: " << write_error << "\n";
+                return 3;
+            }
+            std::cout << "  [Fleet] immutable chunk result: " << output_json << "\n";
+            if (report.total_systems == 0 || report.results.empty()) {
+                std::cerr << "ERROR: Fleet chunk produced no target results\n";
+                return 2;
+            }
         }
     }
 

@@ -932,6 +932,8 @@ if(ENABLE_BENCHMARK_DATASETS)
     add_executable(benchmark_datasets
         LIB/benchmark_datasets.cpp
         LIB/DatasetRunner.cpp
+        LIB/FleetRunner.cpp
+        LIB/FleetRunner.h
         LIB/DatasetRunnerStats.cpp
         LIB/AsyncPipeline.cpp
         # NativePoseQC diagnostic plus upstream PoseBusters CLI bridge
@@ -1077,7 +1079,16 @@ if(BUILD_TESTING)
     )
 
     # test_protocol_config — typed ProtocolConfig env adapter + JSON round-trip
-    flexaids_add_unit_test(test_protocol_config
+    
+    flexaids_add_unit_test(test_fleet_runner
+        SOURCES
+            tests/test_fleet_runner.cpp
+            LIB/FleetRunner.cpp
+            LIB/FleetRunner.h
+        TEST_NAME FleetRunnerTests
+    )
+
+flexaids_add_unit_test(test_protocol_config
         SOURCES
             tests/test_protocol_config.cpp
             LIB/ProtocolConfig.cpp

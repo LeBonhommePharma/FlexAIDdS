@@ -465,21 +465,27 @@ Requires: `pip install -e ./python`
 
 ## Bonhomme Fleet (Distributed Docking)
 
-Fleet distributes docking workloads across Apple devices via iCloud Drive coordination.
+Fleet provides resumable, target-sharded DatasetRunner execution with verified
+iCloud archival. Its file contract allows different coding agents or terminals
+to monitor and resume the same campaign without duplicate accepted work.
 
 ### Architecture
 
-- **FleetScheduler** (Swift actor) — coordinates work chunks across devices
-- **Device-aware weighting** — adjusts for battery level, thermal state, and TFLOPS
-- **Orphan recovery** — timed-out chunks reclaimed with exponential backoff
-- **Encrypted transit** — ChaChaPoly encryption for secure computation
-- **TypeScript PWA** — real-time Fleet dashboard with Mol* 3D viewer
+- **Immutable manifest** - pins runner, engine, PoseBusters, protocol, and target shards
+- **Lease fencing** - stale attempts cannot publish an accepted result
+- **Local compute** - avoids running active SQLite-like workflows directly in iCloud
+- **Verified archive** - copies results to iCloud, hashes the copied tree, then commits
+- **Strict aggregation** - separates execution, RMSD, PoseBusters, and claim-ready rates
 
 ### Requirements
 
-- macOS 14+ / iOS 17+ (Swift package)
-- iCloud Drive enabled across participating devices
-- FlexAID∆S built with Metal acceleration recommended
+- Python 3.9+, `benchmark_datasets`, `FlexAIDdS`, and official PoseBusters `bust`
+- Built-in tENCoM/Eigen enabled; Fleet refuses a manifest that disables it
+- A local compute directory and an iCloud-backed campaign directory
+
+See [Bonhomme Fleet Benchmarks](FLEET_BENCHMARKS.md) for exact M3 Pro build,
+plan, run, monitor, resume, and aggregate commands. The Swift scheduler and
+TypeScript PWA remain experimental clients of this file contract.
 
 ---
 

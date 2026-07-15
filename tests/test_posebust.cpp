@@ -424,9 +424,6 @@ TEST(PoseBustParity, CrystalSelfDockAgreesWithUpstreamBust) {
 
 // DatasetRunner contract: Backend::Native maps pb_pass from full native suite.
 TEST(PoseBustDatasetRunnerContract, NativeBackendMapsPbPassFromFullSuite) {
-    EXPECT_EQ(resolve_backend_from_env(), Backend::Native)
-        << "default backend must be NativePoseQC (unset FLEXAIDDS_POSEBUST*)";
-
     const fs::path crystal = astex_dir("1G9V") / "1G9V_ligand.sdf";
     const fs::path protein = astex_dir("1G9V") / "1G9V_apo.pdb";
     if (!fs::is_regular_file(crystal) || !fs::is_regular_file(protein)) {
@@ -461,12 +458,12 @@ TEST(PoseBustBustCli, ResolveBinary) {
     EXPECT_TRUE(fs::is_regular_file(b));
 }
 
-TEST(PoseBustEngine, DefaultBackendIsNativePoseQC) {
+TEST(PoseBustEngine, DefaultBackendIsOfficialBustCli) {
     // Clear any accidental env from the parent process for this assertion.
     // (gtest process may inherit; document expectation).
     if (std::getenv("FLEXAIDDS_POSEBUST_BACKEND") ||
         std::getenv("FLEXAIDDS_POSEBUST")) {
         GTEST_SKIP() << "POSEBUST env set; cannot assert default";
     }
-    EXPECT_EQ(resolve_backend_from_env(), Backend::Native);
+    EXPECT_EQ(resolve_backend_from_env(), Backend::BustCli);
 }
