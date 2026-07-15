@@ -2142,6 +2142,7 @@ flexaids_add_unit_test(test_protocol_config
         tests/test_dataset_runner.cpp
         LIB/DatasetRunner.cpp
         LIB/DatasetRunnerStats.cpp
+        LIB/DatasetRunnerProvenance.cpp
         LIB/AsyncPipeline.cpp
         ${FLEXAIDDS_POSEBUST_SOURCES}
     )
