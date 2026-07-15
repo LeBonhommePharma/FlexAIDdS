@@ -835,9 +835,17 @@ static std::pair<std::string,float> select_pose_freq_gated(const std::string& ou
 // larger, more diverse set for Fix B to select from (v25 multi-restart pooling).
 static std::pair<std::string,float> select_pose_freq_gated_pooled(
         const std::vector<std::string>& prefixes,
-        int seed_elitism_override = -1,  // -1=read env var, 0=force off, 1=force on
-        bool cf_window_selector = false) // Fix A: CF-window gate (see header member)
+        int seed_elitism_override = -1,  // -1=ProtocolConfig default, 0=force off, 1=force on
+        bool cf_window_selector = false, // Fix A: CF-window gate (see header member)
+        const flexaids::ProtocolConfig* protocol = nullptr)
 {
+    // Pose-selector knobs come from ProtocolConfig (env adapter). Prefer a
+    // caller-supplied snapshot (DatasetRunner::protocol_cfg_); fall back to a
+    // fresh from_env() for standalone / legacy call sites.
+    const flexaids::ProtocolConfig local_proto =
+        protocol ? flexaids::ProtocolConfig{} : flexaids::ProtocolConfig::from_env();
+    const flexaids::ProtocolConfig& proto = protocol ? *protocol : local_proto;
+
     // ── Boltzmann Z+H composite cluster selection (Options B+C) ─────────────
     // Instead of pure CF-rank-0, score each cluster by:
     //   Z_cluster  = sum_{i in members} exp(-CF_i / kT)        [partition fn]
@@ -967,9 +975,7 @@ static std::pair<std::string,float> select_pose_freq_gated_pooled(
     if (seed_elitism_override >= 0) {
         seed_elitism = (seed_elitism_override != 0);
     } else {
-        seed_elitism = true;
-        if (const char* e = std::getenv("FLEXAIDDS_SEED_ELITISM"))
-            seed_elitism = (std::atoi(e) != 0);
+        seed_elitism = proto.seed_elitism;
     }
     std::vector<PoseInfo> seeds;
     if (seed_elitism) {
@@ -1052,15 +1058,9 @@ static std::pair<std::string,float> select_pose_freq_gated_pooled(
         // pose — it broke 1J3J/1SG0 and never flipped 1Q4G/1MEH. The real lever
         // is the CF scoring false minimum, not pose selection. Kept env-gated
         // (FLEXAIDDS_FREQSEL=1) for experimentation only.
-        bool freqsel = false;
-        if (const char* e = std::getenv("FLEXAIDDS_FREQSEL"))
-            freqsel = (std::atoi(e) != 0);
-        double freqsel_alpha = 12.0;
-        if (const char* e = std::getenv("FLEXAIDDS_FREQSEL_ALPHA"))
-            try { freqsel_alpha = std::stod(e); } catch (...) {}
-        float freqsel_rmsd = 1.5f;
-        if (const char* e = std::getenv("FLEXAIDDS_FREQSEL_RMSD"))
-            try { freqsel_rmsd = std::stof(e); } catch (...) {}
+        const bool freqsel = proto.freqsel;
+        const double freqsel_alpha = proto.freqsel_alpha;
+        const float freqsel_rmsd = proto.freqsel_rmsd;
 
         if (freqsel && chosen.size() > 1) {
             const int n = static_cast<int>(chosen.size());
@@ -1128,12 +1128,8 @@ static std::pair<std::string,float> select_pose_freq_gated_pooled(
     // no GA pose qualified at all.  The threshold prevents IC-round-trip error
     // from overriding geometrically superior GA poses when the CF gap is small
     // (e.g. 1XM6: crystal IC 2.60 Å vs GA 0.96 Å with ΔCF ≈ 5).
-    // Env: FLEXAIDDS_SEED_ELITISM_DELTA_CF (float, default 10.0).
-    static const double DELTA_CF = [](){
-        if (const char* e = std::getenv("FLEXAIDDS_SEED_ELITISM_DELTA_CF"))
-            try { return std::stod(e); } catch (...) {}
-        return 10.0;
-    }();
+    // Env: FLEXAIDDS_SEED_ELITISM_DELTA_CF via ProtocolConfig (default 10.0).
+    const double DELTA_CF = proto.seed_elitism_delta_cf;
     const PoseInfo* best = freq_best;
     for (const auto& s : seeds)
         if (best == nullptr || s.cf < best->cf - DELTA_CF) best = &s;
@@ -3714,8 +3710,10 @@ std::vector<DatasetEntry> DatasetRunner::fetch_astex() {
     std::vector<DatasetEntry> entries;
     entries.reserve(codes.size());
 
-    // Fallback oracle site directory from env var (used when cache != source tree)
-    const char* oracle_site_dir_env = std::getenv("FLEXAIDDS_ORACLE_SITE_DIR");
+    // Fallback oracle site directory (ProtocolConfig / FLEXAIDDS_ORACLE_SITE_DIR)
+    const char* oracle_site_dir_env =
+        protocol_cfg_.oracle_site_dir.empty() ? nullptr
+                                             : protocol_cfg_.oracle_site_dir.c_str();
 
     int oracle_count = 0;
     for (const auto& pdb : codes) {
@@ -4819,14 +4817,19 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
     report.dataset_name = entries.front().source;
     report.total_systems = static_cast<int>(entries.size());
 
+    // Re-snapshot protocol knobs at run() entry so long-lived runners pick up
+    // env changes after construction (chunk 1 only snapshotted the ctor).
+    protocol_cfg_ = flexaids::ProtocolConfig::from_env();
+    cf_window_selector_ = protocol_cfg_.cf_window_selector;
+    cluster_member_emit_ = protocol_cfg_.cluster_member_emit;
+
     // ── Clustering algorithm override ─────────────────────────────────────
     // FLEXAIDDS_USE_DP=1  → use Density Peak (DP) clustering instead of the
     // default CF.  DP elects the highest-density region as cluster head
     // (OUTPUT_CLUSTER_CENTER=true in DensityPeak_Cluster.cpp) which is more
     // representative of the fitness landscape than the lowest-CF outlier.
-    const char* use_dp_env = std::getenv("FLEXAIDDS_USE_DP");
     const std::string effective_clustering_algo =
-        (use_dp_env && std::strcmp(use_dp_env, "1") == 0) ? "DP" : config.clustering_algorithm;
+        protocol_cfg_.use_dp ? "DP" : config.clustering_algorithm;
     if (effective_clustering_algo != config.clustering_algorithm) {
         std::cout << "[DatasetRunner] FLEXAIDDS_USE_DP=1 → clustering_algorithm overridden to DP\n";
     }
@@ -4948,7 +4951,9 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
             else if (fs::exists(source)) matrix_path = source;
         }
 
-        const char* oracle_env = std::getenv("FLEXAIDDS_ORACLE_SITE_DIR");
+        const char* oracle_env =
+            protocol_cfg_.oracle_site_dir.empty() ? nullptr
+                                                 : protocol_cfg_.oracle_site_dir.c_str();
         std::string git_commit = cmd_token(
             "git rev-parse HEAD 2>/dev/null");
 
@@ -5249,10 +5254,7 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
         // FLEXAIDDS_IGNORE_CACHE=1 forces re-run regardless of cached result.csv.
         // Use when the binary or scoring parameters changed between runs so stale
         // cached results from a different binary are not silently reused.
-        const bool ignore_cache = []() -> bool {
-            const char* e = std::getenv("FLEXAIDDS_IGNORE_CACHE");
-            return e && std::atoi(e) != 0;
-        }();
+        const bool ignore_cache = protocol_cfg_.ignore_cache;
         bool skip = false;
         bool cached_csv_success = false;
         float cached_csv_best_score = 0.0f;
@@ -5380,9 +5382,8 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
             // Ring pucker (LigandRingFlex Phase 2) adds DoF via a side-channel
             // gene that does NOT pass through FA->npar — so fold its DoF into the
             // budget scaling input here, but only when ring flex is enabled.
-            const char* ring_flex_env = std::getenv("FLEXAIDDS_RING_FLEX");
             const int   ring_dof_est =
-                (ring_flex_env && std::atoi(ring_flex_env) != 0)
+                protocol_cfg_.ring_flex
                 ? count_ring_pucker_dof_sdf(entry.ligand_path) : 0;
             const int n_genes  = 4 + fdih_est + ring_dof_est;
 
@@ -5394,21 +5395,11 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
             // one (which caused stochastic search failure for flexible ligands).
             //   n_flex_bonds   = perceived rotatable bonds = dihedral genes (fdih)
             //   n_gen_effective = n_gen_base × max(1.0, n_flex_bonds / 4.0)
-            // Gated by FLEXAIDDS_EVAL_SCALE_DIHEDRAL:
+            // Gated by FLEXAIDDS_EVAL_SCALE_DIHEDRAL (ProtocolConfig):
             //   1 (default) = pop-scale by DoF (iso-budget chromosome swap)
             //   0           = legacy gen-scale ceil(n_genes/4)
             //   -1 / "off"  = fixed pop+gen (no DoF scaling) — v43 oracle-ceiling restore
-            const char* eval_scale_env = std::getenv("FLEXAIDDS_EVAL_SCALE_DIHEDRAL");
-            int eval_scale_mode = 1;
-            if (eval_scale_env) {
-                if (std::strcmp(eval_scale_env, "off") == 0 ||
-                    std::strcmp(eval_scale_env, "none") == 0 ||
-                    std::strcmp(eval_scale_env, "fixed") == 0) {
-                    eval_scale_mode = -1;
-                } else {
-                    eval_scale_mode = std::atoi(eval_scale_env);
-                }
-            }
+            const int eval_scale_mode = protocol_cfg_.eval_scale_dihedral;
             const int   n_flex_bonds   = fdih_est;
             const int   n_gen_base     = config.ga_generations;
             const int   pop_base       = config.ga_population;
@@ -5446,11 +5437,10 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                         entry.pdb_id.c_str(), pop_scaled, n_gen_scaled);
             }
 
-            // ── v27 high-DoF budget scaling (FLEXAIDDS_BUDGET_SCALE) ──
+            // ── v27 high-DoF budget scaling (FLEXAIDDS_BUDGET_SCALE via ProtocolConfig) ──
             // High-DoF ligands (n_genes >= 14, i.e. >=10 rotatable bonds): same
             // population-scaling logic absorbs the extra budget multiplier.
-            const char* bscale_env = std::getenv("FLEXAIDDS_BUDGET_SCALE");
-            const int   budget_scale_on = bscale_env ? std::atoi(bscale_env) : 1;
+            const bool budget_scale_on = protocol_cfg_.budget_scale;
             double budget_scale_factor = 1.0;
             if (budget_scale_on && n_genes >= 14) {
                 budget_scale_factor = std::max(1.0,
@@ -5500,7 +5490,7 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
             // rotation step (5->2.5 deg) and tighten torsion/side-chain steps.
             // Emitted into the optimization block below so the arm is greppable.
             std::string opt_extra;
-            if (std::getenv("FLEXAIDDS_FINE_GRID")) {
+            if (protocol_cfg_.fine_grid) {
                 opt_extra = ",\n    \"angle_step\": 2.5,"
                             "\n    \"dihedral_step\": 5.0,"
                             "\n    \"flexible_step\": 5.0";
@@ -5956,8 +5946,7 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
             // no FLEXAIDDS_SCORE_NATIVE channel.  This is the protocol directly
             // comparable to rDock/GOLD/Vina Astex redocking numbers (known site,
             // ligand pose searched from scratch — NOT a crystal-pose ceiling).
-            const bool cognate_site_opt_in =
-                std::getenv("FLEXAIDDS_COGNATE_SITE") != nullptr;
+            const bool cognate_site_opt_in = protocol_cfg_.cognate_site;
             const bool inject_oracle_site =
                 (config.mode != BenchmarkMode::AUTONOMOUS) || cognate_site_opt_in;
             if (entry.cleft_sphere_path.empty() &&
@@ -5978,10 +5967,7 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
             // scorer sees the correct reference pose, not the blinded input.
             // Skip in AUTONOMOUS mode so blind runs have no native/reference
             // scoring channel in the child process environment.
-            const char* native_diag_env = std::getenv("FLEXAIDDS_SCORE_NATIVE");
-            const bool native_diag_requested =
-                native_diag_env && native_diag_env[0] != '\0' &&
-                std::strcmp(native_diag_env, "0") != 0;
+            const bool native_diag_requested = protocol_cfg_.score_native;
             if (config.mode != BenchmarkMode::AUTONOMOUS &&
                 (config.mode != BenchmarkMode::DEFINED_CLEFT_REDOCK ||
                  native_diag_requested) &&
@@ -6006,10 +5992,9 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
             // the fixed ParallelDockManager::get_best_chromosome() path.
             // N=8 is recommended for M3 Pro (leaves headroom for DatasetRunner).
             {
-                const char* mc_env = std::getenv("FLEXAIDDS_MULTI_CLEFT");
-                if (mc_env && std::atoi(mc_env) > 1) {
-                    int n_regions = std::atoi(mc_env);
-                    cmd << "--parallel-dock --parallel-dock-regions " << n_regions << " ";
+                if (protocol_cfg_.multi_cleft > 1) {
+                    cmd << "--parallel-dock --parallel-dock-regions "
+                        << protocol_cfg_.multi_cleft << " ";
                 }
             }
 
@@ -6364,7 +6349,8 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
         // min only if no emitted pose with a REMARK CF is found.
         {
             auto sel = select_pose_freq_gated_pooled(all_prefixes, sel_elitism_ovr,
-                                                     cf_window_selector_);
+                                                     cf_window_selector_,
+                                                     &protocol_cfg_);
             if (!sel.first.empty() && std::isfinite(sel.second))
                 best_cf = sel.second;
         }
@@ -6461,7 +6447,8 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
             // clusters with Frequency>1, and returns the min-CF pose within that
             // pool (see helper definition near compute_pose_ligand_rmsd).
             // elected_pose_for_pb lives outside this block for PoseBust post-pass.
-            std::string best_pose_pdb = select_pose_freq_gated_pooled(all_prefixes, sel_elitism_ovr, cf_window_selector_).first;
+            std::string best_pose_pdb = select_pose_freq_gated_pooled(
+                all_prefixes, sel_elitism_ovr, cf_window_selector_, &protocol_cfg_).first;
             // Fallback: no scored pose found — take first available pose file from any restart.
             if (best_pose_pdb.empty()) {
                 for (const auto& pfx : all_prefixes) {
@@ -6488,8 +6475,7 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
             // benchmark endpoint. It needs at least two restart
             // prefixes to carry any cross-restart signal.
             {
-                const char* consensus_env = std::getenv("FLEXAIDDS_CONSENSUS_SCORER");
-                const int   consensus_on  = consensus_env ? std::atoi(consensus_env) : 0;
+                const bool consensus_on = protocol_cfg_.consensus_scorer;
                 if (consensus_on && all_prefixes.size() >= 2 && !best_pose_pdb.empty()) {
                     constexpr float kConsensusDelta = 1.5f;
                     struct Cand {
@@ -6948,7 +6934,8 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
             // Still try to elect a pose for PoseBust even without crystal RMSD ref.
             if (docking_completed) {
                 elected_pose_pdb = select_pose_freq_gated_pooled(
-                    all_prefixes, sel_elitism_ovr, cf_window_selector_).first;
+                    all_prefixes, sel_elitism_ovr, cf_window_selector_,
+                    &protocol_cfg_).first;
             }
         }
 
@@ -7263,8 +7250,7 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
         // not alter pose election; exact-pose status is hash-joined to the same
         // elected_pose.pdb used by RMSD and PoseBusters.
         {
-            const char* hvib_env = std::getenv("FLEXAIDDS_HVIB");
-            const bool hvib_enabled = !(hvib_env && std::strcmp(hvib_env, "0") == 0);
+            const bool hvib_enabled = protocol_cfg_.hvib_enabled;
             if (hvib_enabled) {
                 HvibColumns hv = compute_target_hvib(all_prefixes);
                 result.H_rep_rank0 = hv.H_rep_rank0;
@@ -7796,7 +7782,7 @@ void DatasetRunner::write_report(const BenchmarkReport& report,
         // thermodynamic decomposition columns (H_vct/TdS_vib/TdS_shannon/G_bind)
         // to the aggregate results CSV so benchmarks/calibrate_itc.py can fit the
         // α (enthalpy) and β (entropy) scaling factors directly from one file.
-        const bool thermo_csv = (std::getenv("FLEXAIDDS_THERMO_CSV") != nullptr);
+        const bool thermo_csv = protocol_cfg_.thermo_csv;
 
         ofs << "pdb_id,best_score,rmsd_to_crystal,rmsd_hungarian,predicted_dG,"
                "predicted_dH,predicted_TdS,shannon_entropy,search_entropy_proxy,num_poses,wall_time_s,success,"

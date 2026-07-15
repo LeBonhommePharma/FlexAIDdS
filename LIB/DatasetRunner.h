@@ -488,11 +488,10 @@ public:
 private:
     std::string cache_dir_;
 
-    /// Typed protocol snapshot (seed/restarts/VCT/GA/thermo/data_dir).
-    /// Loaded once via ProtocolConfig::from_env() in the constructor so
-    /// high-traffic getenv fragments go through one adapter (see
-    /// docs/implementation/protocol-config.md). Residual getenv sites remain
-    /// until later migration chunks.
+    /// Typed protocol snapshot (seed/restarts/VCT/GA/thermo/data_dir + chunk-2
+    /// pose/budget/site knobs). Loaded via ProtocolConfig::from_env() in the
+    /// constructor and re-snapshotted at run() entry so long-lived runners pick
+    /// up env changes (see docs/implementation/protocol-config.md).
     flexaids::ProtocolConfig protocol_cfg_{};
 
     // ── Pose selector tuning ─────────────────────────────────────────
