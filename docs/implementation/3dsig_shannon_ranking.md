@@ -93,6 +93,7 @@ Reuse **FlexAID JCIM 2015** comparative design (Gaudreault & Najmanovich, *J. Ch
 
 - Binding modes = density-based clusters of similar poses (small movements, multi-conformer modes).  
 - Production FO: **single** MinPts (literature Ankerst/Sander) — see `docs/implementation/fo_minpts_literature.md`.  
+- **3Dsig red-pair arm B** must use that same single-pass FO (`CLUSTA FO` + engine `fo_choose_minpts`); **never** a triple MinPts ladder.  
 - Engine emission names: FO dual-suffix `prefix_minPts_rank.pdb`; CF/DP `prefix_rank.pdb`. DatasetRunner must enumerate **both**.
 
 ---

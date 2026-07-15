@@ -2,7 +2,8 @@
 
 **Status:** implementation in `LIB/FastOPTICS_cluster.cpp`, constants in `LIB/ga_constants.h`.  
 **Log tag:** `[FO-MINPTS]`  
-**Production rule:** **one** FastOPTICS + BindingPopulation pass. The old triple MinPts ladder (×1.5 scales) was testing-only in the legacy repo and is **not** used.
+**Production rule:** **one** FastOPTICS + BindingPopulation pass. The old triple MinPts ladder (×1.5 scales) was testing-only in the legacy repo and is **not** used.  
+**3Dsig red-pair:** arm **B** (`CLUSTA FO`, `TEMPER 21`) must follow this single-MinPts rule — see `docs/implementation/3dsig_red_pair_protocol.md` §2.1.
 
 ## Peer-reviewed sources
 

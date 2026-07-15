@@ -57,10 +57,24 @@ PILOT8 = ["1G9V", "1GPK", "1MEH", "1P62", "1Q4G", "1R9O", "1T40", "2BYS"]
 
 # TEMPER for arm B default = 21 (LP-optimized entropy ranking temperature).
 # Override per run: --temper N  (applies to all listed arms that receive entropy).
+# Arm B: CLUSTA FO with exactly ONE literature MinPts (Ankerst[10-20]+Sander 2*dim+Ester floor).
+# Engine chooses MinPts once in FastOPTICS_cluster.cpp — no multi-scale ladder in CONFIG.
+# See docs/implementation/fo_minpts_literature.md and 3dsig_red_pair_protocol.md §2.1.
 ARM_SPEC = {
-    "A": {"bin_arm": "A", "temper": 0, "label": "FlexAID-2015 JCIM CF"},
-    "B0": {"bin_arm": "B", "temper": 0, "label": "FlexAID-master TEMPER 0 / CF (deferred)"},
-    "B": {"bin_arm": "B", "temper": 21, "label": "FlexAID-master TEMPER 21 / entropy"},
+    "A": {"bin_arm": "A", "temper": 0, "clusta": "CF", "label": "FlexAID-2015 JCIM CF"},
+    "B0": {
+        "bin_arm": "B",
+        "temper": 0,
+        "clusta": "CF",
+        "label": "FlexAID-master TEMPER 0 / CF (deferred)",
+    },
+    "B": {
+        "bin_arm": "B",
+        "temper": 21,
+        "clusta": "FO",
+        "fo_minpts_policy": "single_literature",
+        "label": "FlexAID-master TEMPER 21 / FO single-literature-MinPts entropy",
+    },
 }
 
 
@@ -238,6 +252,7 @@ def write_config(
             f"DEPSPA {depspa}",
             f"MAXRES {maxres}",
             f"TEMPER {temper}",
+            # FO path: engine runs ONE FastOPTICS pass at literature MinPts (no ladder).
             "CLUSTA CF" if temper <= 0 else "CLUSTA FO",
             "CLRMSD 2.0",
             "ENDINP",
@@ -450,12 +465,18 @@ def prepare_target(
         )
         (rdir / "seed.txt").write_text(f"{seed}\n")
 
+    clusta = spec.get("clusta") or ("CF" if temper <= 0 else "FO")
     meta = {
         "arm": arm,
         "bin_arm": spec["bin_arm"],
         "label": spec["label"],
         "pdb_id": pdb,
         "temper": temper,
+        "clusta": clusta,
+        "fo_minpts_policy": spec.get(
+            "fo_minpts_policy",
+            "single_literature" if clusta == "FO" else "n/a",
+        ),
         "pop": pop,
         "gen": gen,
         "restarts": restarts,
