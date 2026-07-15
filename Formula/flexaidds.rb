@@ -22,8 +22,9 @@ class Flexaidds < Formula
   depends_on "libomp" if OS.mac?
 
   def install
-    # Metal OFF by default: HEAD can fail to link metal_eval/metal_rmsd under
-    # pure Command Line Tools SDKs. CPU + OpenMP is the portable brew path.
+    # Metal OFF by default for CLT-only SDKs without a working metalc; use
+    # --with-metal when Xcode/Metal toolchain is present. Metal OBJCXX bridges
+    # are linked via flexaid_core (not only the executable) so the link succeeds.
     metal = build.with?("metal") ? "ON" : "OFF"
 
     args = std_cmake_args + %W[

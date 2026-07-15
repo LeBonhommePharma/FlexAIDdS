@@ -235,10 +235,13 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
 endif()
 
 # ─── Metal (optional) ───────────────────────────────────────────────────
-# Propagate FLEXAIDS_USE_METAL so hardware_detect.cpp and
-# UnifiedHardwareDispatch.cpp compile in their Metal detection paths.
-# metal_eval.mm is compiled directly into FlexAIDdS (not flexaid_core) to
-# keep Obj-C++ runtime isolated; the linker resolves the symbol at link time.
+# Propagate FLEXAIDS_USE_METAL so hardware_detect.cpp / UnifiedHardwareDispatch
+# / gaboom / FOPTICS compile their Metal call sites. The OBJCXX bridges
+# (metal_eval.mm, MetalRMSDBridge.mm, …) and Metal frameworks are attached to
+# flexaid_core in the root CMakeLists.txt after this subdirectory returns —
+# see "Metal sources (attach to flexaid_core once)". Do NOT leave Metal
+# implementations only on executables: that breaks multi-target and LTO links
+# (Homebrew --with-metal undefined-symbol failures).
 if(FLEXAIDS_USE_METAL)
     target_compile_definitions(flexaid_core PUBLIC FLEXAIDS_USE_METAL)
 endif()
