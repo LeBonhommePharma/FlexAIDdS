@@ -1,0 +1,56 @@
+# FlexAIDdS clang-tidy — small starter set (not world-ending).
+#
+# Enable gradually. Do not gate CI on full-tree tidy until allowlisted.
+# Run examples:
+#   clang-tidy -p build LIB/statmech.cpp
+#   scripts/format_check.sh --tidy   # if clang-tidy + compile_commands exist
+#
+# Checks deliberately omit readability-identifier-naming and most modernize-*
+# rewrites that would churn legacy GA code.
+
+Checks: >
+  -*,
+  bugprone-argument-comment,
+  bugprone-assert-side-effect,
+  bugprone-bool-pointer-implicit-conversion,
+  bugprone-dangling-handle,
+  bugprone-infinite-loop,
+  bugprone-move-forwarding-reference,
+  bugprone-parent-virtual-call,
+  bugprone-sizeof-expression,
+  bugprone-string-constructor,
+  bugprone-suspicious-memset-usage,
+  bugprone-undefined-memory-manipulation,
+  bugprone-use-after-move,
+  clang-analyzer-core.*,
+  clang-analyzer-cplusplus.*,
+  misc-definitions-in-headers,
+  misc-misplaced-const,
+  misc-redundant-expression,
+  misc-static-assert,
+  misc-unconventional-assign-operator,
+  misc-unused-using-decls,
+  modernize-use-nullptr,
+  modernize-use-override,
+  performance-faster-string-find,
+  performance-for-range-copy,
+  performance-implicit-conversion-in-loop,
+  performance-inefficient-algorithm,
+  performance-inefficient-vector-operation,
+  performance-move-const-arg,
+  performance-unnecessary-copy-initialization,
+  performance-unnecessary-value-param,
+  readability-delete-null-pointer,
+  readability-misleading-indentation,
+  readability-redundant-control-flow,
+  readability-redundant-string-cstr,
+  readability-simplify-boolean-expr
+
+WarningsAsErrors: ''
+HeaderFilterRegex: '.*(LIB|src|tests)/.*'
+FormatStyle: file
+CheckOptions:
+  - key: performance-for-range-copy.WarnOnAllAutoCopies
+    value: '1'
+  - key: performance-unnecessary-value-param.AllowedTypes
+    value: 'std::string_view;std::span'

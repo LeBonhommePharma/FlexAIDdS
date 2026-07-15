@@ -17,8 +17,11 @@ benchmarks/
 ├── ligand_prep.py        # SMILES → Mol2 → .inp preparation pipeline
 ├── run.py                # CLI entry point
 ├── __init__.py           # Package init
-├── datasets/             # YAML dataset configurations
+├── datasets/             # YAML dataset configurations + canonical docs
+│   ├── CANONICAL.md      # Which Astex tree is authoritative (+ deprecations)
 │   ├── astex_diverse.yaml # Astex Diverse Set (FlexAID 2015 validation #1)
+│   ├── astex_diverse_sha256.csv  # Key-file checksums for canonical tree
+│   ├── astex_diverse_manifest.json
 │   ├── astex_nonnative.yaml # Astex Non-Native Set (FlexAID 2015 validation #2)
 │   ├── hap2.yaml         # HAP2 holo/apo benchmark (FlexAID 2015 validation #3)
 │   ├── casf2016.yaml     # CASF-2016 (285 targets, 4-power benchmark)
@@ -26,14 +29,21 @@ benchmarks/
 │   ├── dude37.yaml       # DUD-E 37-target cross-docking
 │   ├── lsd_docking.yaml  # lsd.docking.org 11-target prospective
 │   ├── psychopharm23.yaml # NRGlab 23 CNS targets
-   ├── naloxone_ss.yaml  # Naloxone repurposing for Serotonin Syndrome (5-HT2A/SERT focus + entropy collapse)
+│   ├── naloxone_ss.yaml  # Naloxone / Serotonin Syndrome focus + entropy collapse
 │   ├── muv.yaml          # MUV 17-target unbiased VS
 │   └── erds_specificity.yaml  # ERDS Z-score specificity
+├── astex_diverse/        # Astex harness + CANONICAL structures
+│   └── astex_diverse/    # <PDB>/ apo, ligand, binding_site (source of truth)
 └── smoke/                # Lightweight smoke validation (CI sanity)
     ├── run.sh
     ├── manifest.yaml
     └── README.md
 ```
+
+**Astex structures:** use `benchmarks/astex_diverse/astex_diverse/` only.
+Nested `benchmarks/astex_diverse/data/astex_diverse/` is deprecated
+(`benchmarks/datasets/CANONICAL.md`). Large `astex_repro/` campaign outputs
+are local/gitignored and are not the dataset.
 
 ---
 

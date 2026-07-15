@@ -19,16 +19,28 @@ Hartshorn MJ, Verdonk ML, Chessari G, et al. (2007)
 Original set: Nissink JWM, Murray C, Hartshorn M, et al. (2002)
 *Proteins* 49(4):457–471. https://doi.org/10.1002/prot.10232
 
+## Canonical data path
+
+**Structures live in `astex_diverse/<PDB>/` (this directory’s nested tree).**
+That path is the repository source of truth for the 85-complex set.
+
+- Full map of duplicates / deprecations: [`../datasets/CANONICAL.md`](../datasets/CANONICAL.md)
+- Checksums: [`../datasets/astex_diverse_sha256.csv`](../datasets/astex_diverse_sha256.csv)
+- Nested `data/astex_diverse/` is **deprecated** (do not use for new work)
+
 ## Contents
 
 | File | Description |
 |:-----|:------------|
+| `astex_diverse/` | **Canonical** per-PDB structures (apo, ligand, binding site, deposit) |
 | `astex_diverse_set.csv` | 85 complexes: PDB ID, ligand ID, resolution, RMSD threshold, citation |
 | `manifest.yaml` | Tier-1 bundle spec (5 targets, baselines, entrypoint) |
 | `run.sh` | Download + dock + report script |
 | `download.sh` | Fetch PDB files from RCSB; extract apo receptors + ligands via `benchmark_datasets` |
 | `environment.txt` | Hardware/software record for reproducibility |
 | `expected/` | Reference outputs after first validated run |
+| `data/` | **Deprecated** nested copy + tier-1 loose PDBs — see `data/DEPRECATION.md` |
+| `structures/` | Symlink alias layer only (not a second store) |
 
 ## Dataset
 
