@@ -1,0 +1,95 @@
+# 3Dsig red-pair reproduction protocol
+
+**Source deck:** `Morency_LP_3Dsig_2017.pdf` (ISMB/ECCB 2017 — 3Dsig)  
+**Contract parent:** `docs/implementation/3dsig_shannon_ranking.md`  
+**Goal:** Reproduce the **red** FlexAID vs FlexAID+entropy (FlexAIDdS) success rates only.  
+**Not in scope for 2017 bars:** S1-only, BCR, PoseBusters, Density Peak (DP).
+
+---
+
+## 1. Frozen metric (non-negotiable)
+
+| Item | Value |
+|------|--------|
+| Success | **S_top10**: min RMSD among **top 10** ranked modes **&lt; 2.0 Å** |
+| Sims / case | **10** independent runs |
+| Budget / sim | **2 000 000** energy evaluations (`pop × gen = 1000 × 2000`) |
+| Headline | **Median** success rate over **10 000** bootstrap resamples of N cases |
+| Seed | **Off** for claim-style fair redock (no native pose seed) |
+| Matrix | `MC_st0r5.2_6.dat` MD5 **`72d7c7396702331d96ff12d18f831796`** |
+| Primary N | Astex Diverse **85** (pilot gate: pilot8 first) |
+
+**Do not report as 3Dsig success:** S1 alone, BCR, S2/PoseBusters, CF=10000 packaging, RMSD −1 sentinels.
+
+Optional modern columns (S1, S2, BCR) may be logged beside S_top10 but **must not** replace the red-bar statistic.
+
+---
+
+## 2. Red pair arms (exactly two science arms)
+
+| Deck label | Engine | Ranking | Three-engine map | TEMPER |
+|------------|--------|---------|------------------|--------|
+| **FlexAID** (red) | FlexAID JCIM 2015-era **or** master CF | CF / no entropy | **A** (primary) · **B0** (master CF control) | **0** |
+| **FlexAIDdS** (red) | FlexAID + conformational entropy | soft-β \(\tilde G=\tilde H-T\tilde S\) on modes | **B** (entropy ON) | **21** (LP-optimized; override `--temper 298` only with receipt note) |
+
+- Historical entropy clustering = **FO / density modes**, **not DP**.
+- C0 FlexAIDdS DatasetRunner packaging is **out of band** until FO dual-suffix election is verified; red-pair science uses **classic FlexAID A/B binaries** first.
+- **Serial only** on this Mac (~18 GiB): never dual-launch A with B0/B or C0.
+
+---
+
+## 3. Deck medians (archived targets — figure fast path)
+
+| Dataset | FlexAID | FlexAIDdS | Source |
+|---------|---------|-----------|--------|
+| Astex Diverse (N=85) | **0.66** | **0.69** | PDF bar labels |
+| Astex NN FLRP | 0.48 | 0.52 | PDF + `notes_05-05017.dat` |
+| Astex NN FLFP | 0.50 | 0.54 | same |
+| HAP2 FLRP | 0.18 | 0.22 | same |
+| HAP2 FLFP | 0.29 | 0.36 | same |
+
+Figure rebuild: `python3 scripts/plot_3dsig_archived_bars.py`
+
+---
+
+## 4. Launch sequence
+
+```bash
+source ~/.flexaidds_env 2>/dev/null || true
+export FLEXAIDDS_ROOT="${FLEXAIDDS_ROOT:-$HOME/Projects/FlexAIDdS}"
+cd "$FLEXAIDDS_ROOT"
+# C0 must be dead (no dual-launch)
+bash scripts/run_3dsig_red_pair_serial.sh --from A   # A then B0 then B
+# or single arm:
+export FLEXAID_POP=1000 FLEXAID_GEN=2000 FLEXAID_RESTARTS=10 NOHUP=1
+export FLEXAID_ARM_OUT="$FLEXAIDDS_RESULTS/campaigns/three_engine/A/3dsig_r10"
+bash scripts/run_A_pilot8.sh
+```
+
+After all arms complete on pilot8 (or full85):
+
+```bash
+python3 scripts/bootstrap_3dsig_s_top10.py --arm-dir "$FLEXAIDDS_RESULTS/campaigns/three_engine/A/3dsig_r10" ...
+```
+
+---
+
+## 5. Priority vs C0
+
+| Job | Status under this protocol |
+|-----|----------------------------|
+| **A → B0 → B** (3Dsig red pair) | **PRIORITY** |
+| C0_claim / C0_legacy | **STOPPED / SUSPENDED** — do not treat packaging junk as science |
+| DPFO pilot | Plumbing only; not red bars |
+
+---
+
+## 6. Checklist
+
+- [x] Metric frozen (this file)
+- [x] Matrix pin 72d7 verified on queue data/
+- [ ] C0 processes dead; stale locks removed
+- [ ] Arm A 3dsig_r10 running or complete
+- [ ] Arm B0 then B serial after A
+- [ ] S_top10 + 10k bootstrap medians vs 0.66 / 0.69
+- [ ] Archived barplots generated for handout figures

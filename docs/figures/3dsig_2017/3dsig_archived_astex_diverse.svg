@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="720" height="420" viewBox="0 0 720 420">
+<rect width="100%" height="100%" fill="white"/>
+<text x="360.0" y="28" text-anchor="middle" font-family="Helvetica,Arial,sans-serif" font-size="15" font-weight="bold">Astex Diverse (N=85) — self-dock</text>
+<line x1="70" y1="50" x2="70" y2="330" stroke="#222" stroke-width="1.5"/>
+<line x1="70" y1="330" x2="690" y2="330" stroke="#222" stroke-width="1.5"/>
+<line x1="70" y1="330.0" x2="690" y2="330.0" stroke="#eee" stroke-width="1"/>
+<text x="62" y="334.0" text-anchor="end" font-size="11" font-family="Helvetica,Arial,sans-serif" fill="#444">0.0</text>
+<line x1="70" y1="274.0" x2="690" y2="274.0" stroke="#eee" stroke-width="1"/>
+<text x="62" y="278.0" text-anchor="end" font-size="11" font-family="Helvetica,Arial,sans-serif" fill="#444">0.2</text>
+<line x1="70" y1="218.0" x2="690" y2="218.0" stroke="#eee" stroke-width="1"/>
+<text x="62" y="222.0" text-anchor="end" font-size="11" font-family="Helvetica,Arial,sans-serif" fill="#444">0.4</text>
+<line x1="70" y1="162.0" x2="690" y2="162.0" stroke="#eee" stroke-width="1"/>
+<text x="62" y="166.0" text-anchor="end" font-size="11" font-family="Helvetica,Arial,sans-serif" fill="#444">0.6</text>
+<line x1="70" y1="106.0" x2="690" y2="106.0" stroke="#eee" stroke-width="1"/>
+<text x="62" y="110.0" text-anchor="end" font-size="11" font-family="Helvetica,Arial,sans-serif" fill="#444">0.8</text>
+<line x1="70" y1="50.0" x2="690" y2="50.0" stroke="#eee" stroke-width="1"/>
+<text x="62" y="54.0" text-anchor="end" font-size="11" font-family="Helvetica,Arial,sans-serif" fill="#444">1.0</text>
+<text x="18" y="190.0" transform="rotate(-90 18 190.0)" text-anchor="middle" font-size="12" font-family="Helvetica,Arial,sans-serif">Success rate (bootstrap median)</text>
+<rect x="82.0" y="145.2" width="109.6" height="184.8" fill="#E53935" stroke="#111" stroke-width="0.8"/>
+<text x="136.8" y="139.2" text-anchor="middle" font-size="12" font-weight="bold" font-family="Helvetica,Arial,sans-serif">0.66</text>
+<text x="136.8" y="346" text-anchor="middle" font-size="11" font-family="Helvetica,Arial,sans-serif" transform="rotate(20 136.8 346)">FlexAID</text>
+<rect x="203.6" y="136.8" width="109.6" height="193.2" fill="#E53935" stroke="#111" stroke-width="0.8"/>
+<text x="258.4" y="130.8" text-anchor="middle" font-size="12" font-weight="bold" font-family="Helvetica,Arial,sans-serif">0.69</text>
+<text x="258.4" y="346" text-anchor="middle" font-size="11" font-family="Helvetica,Arial,sans-serif" transform="rotate(20 258.4 346)">FlexAIDdS</text>
+<rect x="325.2" y="100.4" width="109.6" height="229.6" fill="#1E88E5" stroke="#111" stroke-width="0.8"/>
+<text x="380.0" y="94.4" text-anchor="middle" font-size="12" font-weight="bold" font-family="Helvetica,Arial,sans-serif">0.82</text>
+<text x="380.0" y="346" text-anchor="middle" font-size="11" font-family="Helvetica,Arial,sans-serif" transform="rotate(20 380.0 346)">Vina</text>
+<rect x="446.8" y="111.6" width="109.6" height="218.4" fill="#00ACC1" stroke="#111" stroke-width="0.8"/>
+<text x="501.6" y="105.6" text-anchor="middle" font-size="12" font-weight="bold" font-family="Helvetica,Arial,sans-serif">0.78</text>
+<text x="501.6" y="346" text-anchor="middle" font-size="11" font-family="Helvetica,Arial,sans-serif" transform="rotate(20 501.6 346)">FlexX</text>
+<rect x="568.4" y="83.6" width="109.6" height="246.4" fill="#8E24AA" stroke="#111" stroke-width="0.8"/>
+<text x="623.2" y="77.6" text-anchor="middle" font-size="12" font-weight="bold" font-family="Helvetica,Arial,sans-serif">0.88</text>
+<text x="623.2" y="346" text-anchor="middle" font-size="11" font-family="Helvetica,Arial,sans-serif" transform="rotate(20 623.2 346)">rDock</text>
+<text x="360.0" y="392" text-anchor="middle" font-size="12" fill="#B71C1C" font-family="Helvetica,Arial,sans-serif">Δ FlexAIDdS−FlexAID = +0.03  ·  red = FlexAID pair</text>
+<text x="8" y="412" font-size="9" fill="#555" font-family="Helvetica,Arial,sans-serif">Archived · Morency_LP_3Dsig_2017.pdf bar labels · S_top10 RMSD&lt;2Å · 10×2e6 · 10k bootstrap · not a live re-dock</text>
+</svg>

@@ -1,0 +1,133 @@
+{
+  "note": "Archived 3Dsig 2017 medians for figure rebuild only",
+  "protocol": "docs/implementation/3dsig_red_pair_protocol.md",
+  "deck": "Morency_LP_3Dsig_2017.pdf",
+  "panels": {
+    "astex_diverse": {
+      "title": "Astex Diverse (N=85) \u2014 self-dock",
+      "source": "Morency_LP_3Dsig_2017.pdf bar labels",
+      "methods": [
+        "FlexAID",
+        "FlexAIDdS",
+        "Vina",
+        "FlexX",
+        "rDock"
+      ],
+      "median": [
+        0.66,
+        0.69,
+        0.82,
+        0.78,
+        0.88
+      ],
+      "colors": [
+        "#E53935",
+        "#E53935",
+        "#1E88E5",
+        "#00ACC1",
+        "#8E24AA"
+      ]
+    },
+    "astex_nn_flrp": {
+      "title": "Astex Non-Native FLRP (N=1112)",
+      "source": "PDF + notes_05-05017.dat",
+      "methods": [
+        "FlexAID",
+        "FlexAIDdS",
+        "Vina",
+        "FlexX",
+        "rDock"
+      ],
+      "median": [
+        0.48,
+        0.52,
+        0.44,
+        0.5,
+        0.64
+      ],
+      "colors": [
+        "#E53935",
+        "#E53935",
+        "#1E88E5",
+        "#00ACC1",
+        "#8E24AA"
+      ]
+    },
+    "astex_nn_flfp": {
+      "title": "Astex Non-Native FLFP (N=1112)",
+      "source": "PDF + notes_05-05017.dat",
+      "methods": [
+        "FlexAID",
+        "FlexAIDdS",
+        "Vina",
+        "rDock"
+      ],
+      "median": [
+        0.5,
+        0.54,
+        0.5,
+        0.74
+      ],
+      "colors": [
+        "#E53935",
+        "#E53935",
+        "#1E88E5",
+        "#8E24AA"
+      ]
+    },
+    "hap2_flrp": {
+      "title": "HAP2 FLRP (N=76)",
+      "source": "PDF + notes_05-05017.dat",
+      "methods": [
+        "FlexAID",
+        "FlexAIDdS",
+        "Vina",
+        "FlexX",
+        "rDock"
+      ],
+      "median": [
+        0.18,
+        0.22,
+        0.13,
+        0.11,
+        0.22
+      ],
+      "colors": [
+        "#E53935",
+        "#E53935",
+        "#1E88E5",
+        "#00ACC1",
+        "#8E24AA"
+      ]
+    },
+    "hap2_flfp": {
+      "title": "HAP2 FLFP (N=76)",
+      "source": "PDF + notes_05-05017.dat",
+      "methods": [
+        "FlexAID",
+        "FlexAIDdS",
+        "Vina",
+        "rDock"
+      ],
+      "median": [
+        0.29,
+        0.36,
+        0.33,
+        0.2
+      ],
+      "colors": [
+        "#E53935",
+        "#E53935",
+        "#1E88E5",
+        "#8E24AA"
+      ]
+    }
+  },
+  "files": [
+    "/Users/lp.more/Projects/FlexAIDdS/docs/figures/3dsig_2017/3dsig_archived_astex_diverse.svg",
+    "/Users/lp.more/Projects/FlexAIDdS/docs/figures/3dsig_2017/3dsig_archived_astex_nn_flrp.svg",
+    "/Users/lp.more/Projects/FlexAIDdS/docs/figures/3dsig_2017/3dsig_archived_astex_nn_flfp.svg",
+    "/Users/lp.more/Projects/FlexAIDdS/docs/figures/3dsig_2017/3dsig_archived_hap2_flrp.svg",
+    "/Users/lp.more/Projects/FlexAIDdS/docs/figures/3dsig_2017/3dsig_archived_hap2_flfp.svg"
+  ]
+}
