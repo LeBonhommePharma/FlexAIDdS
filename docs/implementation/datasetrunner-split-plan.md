@@ -1,8 +1,8 @@
 # DatasetRunner.cpp Split Plan
 
-**Status:** P0 landed (stats leaf). Full split is multi-PR; do not attempt monolithically.
+**Status:** P0 + P1 landed (stats + provenance leaves). Full split is multi-PR; do not attempt monolithically.
 **Source of truth for workflow:** `AGENTS.md`.
-**Audit trigger:** `LIB/DatasetRunner.cpp` ≈ 8010 lines (monolithic prep + execute + validate + report).
+**Audit trigger:** `LIB/DatasetRunner.cpp` ≈ 7816 lines after P1 (was ~8010 at audit; P0 stats + P1 provenance extracted).
 
 ## Goals
 
@@ -44,7 +44,7 @@ extractions. After each extract, ranges for remaining regions shift — re-map f
 LIB/
   DatasetRunner.h / .cpp          # facade: prepare(), run(), class state
   DatasetRunnerStats.h / .cpp     # P0 — pure metrics (done)
-  DatasetRunnerProvenance.*       # P1 candidate — provenance.json + hash helpers
+  DatasetRunnerProvenance.h / .cpp # P1 — provenance.json + hash helpers (done)
   DatasetRunnerRmsd.*             # Hungarian / pose RMSD (not ranking selector)
   DatasetRunnerPrep.*             # download, extract_ligand, residue sets
   DatasetRunnerFetch.*            # fetch_astex, fetch_casf, code lists
@@ -56,7 +56,7 @@ LIB/
 
 ## PR chunks and test gates
 
-### P0 — Pure stats leaf (this PR)
+### P0 — Pure stats leaf ✅ DONE
 
 **Extract:** `compute_pearson_r`, `compute_spearman_rho`, `compute_kendall_tau`, `compute_rmsd` (+ internal `compute_ranks`).
 
@@ -74,11 +74,25 @@ cmake --build build -j$(sysctl -n hw.ncpu) --target test_dataset_runner
 ./build/test_dataset_runner --gtest_filter='StatisticalMetrics.*:RMSDComputation.*'
 ```
 
-### P1 — Provenance JSON writer (leaf)
+### P1 — Provenance JSON writer (leaf) ✅ DONE
 
-**Extract:** `run()` block ~5010–5104 (`cmd_token`, hashes, matrix path, `provenance.json`).
+**Extract:** `run()` block (`cmd_token`, hashes, matrix path, `provenance.json`).
 
-**Test gate:** Temp-dir unit test for JSON keys; no network/docking; DatasetRunnerTests still green.
+**Files:**
+- `LIB/DatasetRunnerProvenance.h` / `.cpp`
+- Wired into `benchmark_datasets`, `test_dataset_runner`, `test_cofactor_blacklist`
+- `DatasetRunner.h` includes `DatasetRunnerProvenance.h`
+- Call site in `DatasetRunner::run()` delegates to `write_dataset_run_provenance(...)`
+
+**Why next:** Self-contained I/O + hash helpers; no ranking, no claim_ready, no GA.
+
+**Test gate:**
+```bash
+cmake -B build -DBUILD_TESTING=ON -DCMAKE_BUILD_TYPE=Release
+cmake --build build -j$(sysctl -n hw.ncpu) --target test_dataset_runner
+./build/test_dataset_runner --gtest_filter='ProvenanceJson.*:StatisticalMetrics.*:RMSDComputation.*'
+ctest --test-dir build -R DatasetRunnerTests --output-on-failure
+```
 
 ### P2 — Residue sets + path utilities
 
@@ -134,6 +148,6 @@ Do not extract until P0–P6 are green. Includes config/restart loop, Fix B/BCR 
 ```bash
 cmake -B build -DBUILD_TESTING=ON -DCMAKE_BUILD_TYPE=Release
 cmake --build build -j$(sysctl -n hw.ncpu) --target test_dataset_runner
-./build/test_dataset_runner --gtest_filter='StatisticalMetrics.*:RMSDComputation.*'
+./build/test_dataset_runner --gtest_filter='StatisticalMetrics.*:RMSDComputation.*:ProvenanceJson.*'
 ctest --test-dir build -R DatasetRunnerTests --output-on-failure
 ```

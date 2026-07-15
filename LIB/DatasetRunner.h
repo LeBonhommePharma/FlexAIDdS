@@ -40,6 +40,7 @@
 #include "TargetServer.h"
 #include "ProtocolConfig.h"
 #include "DatasetRunnerStats.h"  // pure correlation / RMSD helpers (P0 leaf)
+#include "DatasetRunnerProvenance.h"  // provenance.json writer (P1 leaf)
 
 namespace dataset {
 

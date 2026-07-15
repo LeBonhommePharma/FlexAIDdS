@@ -19,7 +19,9 @@
 #define private public
 #include "DatasetRunner.h"
 #include "DatasetRunnerStats.h"  // P0 leaf: pure stats must compile standalone
+#include "DatasetRunnerProvenance.h"  // P1 leaf: provenance.json writer
 #undef private
+#include <cctype>
 #include <cmath>
 #include <chrono>
 #include <cstring>
@@ -274,6 +276,155 @@ TEST(RMSDComputation, MismatchedSize) {
     std::vector<float> b = {0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 1.0f};
     double rmsd = compute_rmsd(a, b);
     EXPECT_EQ(rmsd, -1.0); // Invalid/not-computed sentinel
+}
+
+// =============================================================================
+// Provenance JSON writer tests (P1 leaf — DatasetRunnerProvenance)
+// No network, no docking; temp-dir only.
+// =============================================================================
+
+TEST(ProvenanceJson, EscapeQuotesAndBackslash) {
+    EXPECT_EQ(provenance_json_escape("a\"b\\c"), "a\\\"b\\\\c");
+    EXPECT_EQ(provenance_json_escape("line\nbreak"), "line\\nbreak");
+    EXPECT_EQ(provenance_json_escape("plain"), "plain");
+}
+
+TEST(ProvenanceJson, FormatContainsRequiredKeys) {
+    RunProvenanceFields p;
+    p.dataset = "Astex Diverse";
+    p.matrix_path = "/tmp/MC_st0r5.2_6.dat";
+    p.matrix_md5 = "deadbeef";
+    p.matrix_sha256 = "cafebabe";
+    p.binary_path = "/opt/FlexAID";
+    p.binary_sha256 = "012345";
+    p.git_commit = "abc123";
+    p.oracle_site_dir = "/sites";
+    p.oracle_site_dir_set = true;
+
+    const std::string j = format_run_provenance_json(p);
+    for (const char* key : {
+             "\"dataset\"", "\"matrix_path\"", "\"matrix_md5\"", "\"matrix_sha256\"",
+             "\"binary_path\"", "\"binary_sha256\"", "\"git_commit\"",
+             "\"oracle_site_dir\"", "\"oracle_site_dir_set\""}) {
+        EXPECT_NE(j.find(key), std::string::npos) << "missing key " << key;
+    }
+    EXPECT_NE(j.find("\"Astex Diverse\""), std::string::npos);
+    EXPECT_NE(j.find("\"oracle_site_dir_set\": true"), std::string::npos);
+    // Trailing newline, no trailing comma after last field
+    EXPECT_NE(j.find("true\n}\n"), std::string::npos);
+}
+
+TEST(ProvenanceJson, FormatOracleUnset) {
+    RunProvenanceFields p;
+    p.dataset = "test";
+    p.oracle_site_dir_set = false;
+    const std::string j = format_run_provenance_json(p);
+    EXPECT_NE(j.find("\"oracle_site_dir\": \"\""), std::string::npos);
+    EXPECT_NE(j.find("\"oracle_site_dir_set\": false"), std::string::npos);
+}
+
+TEST(ProvenanceJson, WriteToTempDir) {
+    const auto tmp = fs::temp_directory_path() /
+                     ("flexaidds_prov_test_" +
+                      std::to_string(
+                          std::chrono::steady_clock::now().time_since_epoch().count()));
+    fs::create_directories(tmp);
+
+    RunProvenanceFields p;
+    p.dataset = "unit-test-set";
+    p.matrix_path = (tmp / "MC_st0r5.2_6.dat").string();
+    p.matrix_md5 = "md5hash";
+    p.matrix_sha256 = "sha256hash";
+    p.binary_path = (tmp / "FlexAID").string();
+    p.binary_sha256 = "binhash";
+    p.git_commit = "deadbeef";
+    p.oracle_site_dir = "";
+    p.oracle_site_dir_set = false;
+
+    ASSERT_TRUE(write_run_provenance_json(tmp.string(), p, /*log=*/false));
+
+    const fs::path prov = tmp / "provenance.json";
+    ASSERT_TRUE(fs::exists(prov));
+    std::ifstream in(prov);
+    std::stringstream buf;
+    buf << in.rdbuf();
+    const std::string body = buf.str();
+    EXPECT_EQ(body, format_run_provenance_json(p));
+    EXPECT_NE(body.find("\"dataset\": \"unit-test-set\""), std::string::npos);
+    EXPECT_NE(body.find("\"matrix_md5\": \"md5hash\""), std::string::npos);
+    EXPECT_NE(body.find("\"binary_sha256\": \"binhash\""), std::string::npos);
+    EXPECT_NE(body.find("\"git_commit\": \"deadbeef\""), std::string::npos);
+    EXPECT_NE(body.find("\"oracle_site_dir_set\": false"), std::string::npos);
+
+    fs::remove_all(tmp);
+}
+
+TEST(ProvenanceJson, ResolveMatrixPrefersDataDir) {
+    const auto tmp = fs::temp_directory_path() /
+                     ("flexaidds_matrix_test_" +
+                      std::to_string(
+                          std::chrono::steady_clock::now().time_since_epoch().count()));
+    const fs::path data_dir = tmp / "data";
+    const fs::path bin_dir = tmp / "bin";
+    const fs::path wrk = tmp / "WRK";
+    fs::create_directories(data_dir);
+    fs::create_directories(bin_dir);
+    fs::create_directories(wrk);
+
+    {
+        std::ofstream(data_dir / "MC_st0r5.2_6.dat") << "data\n";
+        std::ofstream(bin_dir / "MC_st0r5.2_6.dat") << "staged\n";
+        std::ofstream(wrk / "MC_st0r5.2_6.dat") << "wrk\n";
+        std::ofstream(bin_dir / "FlexAID") << "bin\n";
+    }
+
+    const std::string bin = (bin_dir / "FlexAID").string();
+    const std::string resolved =
+        resolve_scoring_matrix_path(data_dir.string(), bin);
+    EXPECT_EQ(resolved, (data_dir / "MC_st0r5.2_6.dat").string());
+
+    // Without data_dir, prefer binary-adjacent staged matrix over WRK.
+    const std::string staged_only = resolve_scoring_matrix_path("", bin);
+    EXPECT_EQ(staged_only, (bin_dir / "MC_st0r5.2_6.dat").string());
+
+    fs::remove(bin_dir / "MC_st0r5.2_6.dat");
+    const std::string wrk_fallback = resolve_scoring_matrix_path("", bin);
+    // path is bin_dir + "/../WRK/MC_st0r5.2_6.dat" (not necessarily lexically unique)
+    EXPECT_TRUE(fs::exists(wrk_fallback));
+    EXPECT_NE(wrk_fallback.find("WRK/MC_st0r5.2_6.dat"), std::string::npos);
+
+    fs::remove_all(tmp);
+}
+
+TEST(ProvenanceJson, FileHashesEmptyWhenMissing) {
+    EXPECT_EQ(provenance_file_md5(""), "");
+    EXPECT_EQ(provenance_file_sha256(""), "");
+    EXPECT_EQ(provenance_file_md5("/no/such/file/for/provenance_test"), "");
+    EXPECT_EQ(provenance_file_sha256("/no/such/file/for/provenance_test"), "");
+}
+
+TEST(ProvenanceJson, FileHashesMatchOnTempFile) {
+    const auto tmp = fs::temp_directory_path() /
+                     ("flexaidds_hash_test_" +
+                      std::to_string(
+                          std::chrono::steady_clock::now().time_since_epoch().count()));
+    {
+        std::ofstream out(tmp);
+        out << "hello provenance\n";
+    }
+    const std::string md5 = provenance_file_md5(tmp.string());
+    const std::string sha = provenance_file_sha256(tmp.string());
+    EXPECT_FALSE(md5.empty());
+    EXPECT_FALSE(sha.empty());
+    // Hex digests only
+    for (char c : md5) {
+        EXPECT_TRUE(std::isxdigit(static_cast<unsigned char>(c))) << md5;
+    }
+    for (char c : sha) {
+        EXPECT_TRUE(std::isxdigit(static_cast<unsigned char>(c))) << sha;
+    }
+    EXPECT_EQ(sha.size(), 64u);
+    fs::remove(tmp);
 }
 
 // =============================================================================

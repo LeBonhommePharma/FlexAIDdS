@@ -4895,95 +4895,15 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
     // this run so results are reproducible without relying on /tmp staging or
     // file timestamps (which do not survive a reboot). Best-effort: any
     // failure here is non-fatal and must not block docking.
+    // Implementation lives in DatasetRunnerProvenance (P1 split leaf).
     {
-        // First non-empty whitespace token of a shell command's stdout, or "".
-        auto cmd_token = [](const std::string& cmd) -> std::string {
-            std::string out;
-            FILE* p = popen(cmd.c_str(), "r");
-            if (!p) return out;
-            char buf[512];
-            while (fgets(buf, sizeof(buf), p)) out += buf;
-            pclose(p);
-            std::string tok;
-            for (char c : out) {
-                if (std::isspace(static_cast<unsigned char>(c))) { if (!tok.empty()) break; }
-                else tok += c;
-            }
-            return tok;
-        };
-        auto shell_quote = [](const std::string& s) {
-            std::string q = "'";
-            for (char c : s) { if (c == '\'') q += "'\\''"; else q += c; }
-            q += "'";
-            return q;
-        };
-        auto md5_of = [&](const std::string& path) -> std::string {
-            if (path.empty() || !fs::exists(path)) return "";
-            std::string t = cmd_token("md5 -q " + shell_quote(path) + " 2>/dev/null");
-            if (t.empty()) t = cmd_token("md5sum " + shell_quote(path) + " 2>/dev/null");
-            return t;
-        };
-        auto sha256_of = [&](const std::string& path) -> std::string {
-            if (path.empty() || !fs::exists(path)) return "";
-            std::string t = cmd_token("shasum -a 256 " + shell_quote(path) + " 2>/dev/null");
-            if (t.empty()) t = cmd_token("sha256sum " + shell_quote(path) + " 2>/dev/null");
-            return t;
-        };
-
-        // Resolve the scoring matrix with the same precedence as each child:
-        // explicit override, immutable data staged beside the binary, then the
-        // mutable source-tree WRK directory as a development fallback.
-        std::string matrix_path;
-        if (!protocol_cfg_.data_dir.empty()) {
-            std::string cand = protocol_cfg_.data_dir + "/MC_st0r5.2_6.dat";
-            if (fs::exists(cand)) matrix_path = cand;
-        }
-        if (matrix_path.empty()) {
-            std::string bin_dir = flexaidds_bin;
-            auto slash = bin_dir.rfind('/');
-            if (slash != std::string::npos) bin_dir = bin_dir.substr(0, slash);
-            const std::string staged = bin_dir + "/MC_st0r5.2_6.dat";
-            const std::string source = bin_dir + "/../WRK/MC_st0r5.2_6.dat";
-            if (fs::exists(staged)) matrix_path = staged;
-            else if (fs::exists(source)) matrix_path = source;
-        }
-
         const char* oracle_env = std::getenv("FLEXAIDDS_ORACLE_SITE_DIR");
-        std::string git_commit = cmd_token(
-            "git rev-parse HEAD 2>/dev/null");
-
-        auto json_esc = [](const std::string& s) {
-            std::string r;
-            for (char c : s) {
-                if (c == '\\' || c == '"') { r += '\\'; r += c; }
-                else if (c == '\n') r += "\\n";
-                else r += c;
-            }
-            return r;
-        };
-
-        std::error_code mk_ec;
-        fs::create_directories(config.output_dir, mk_ec);
-        std::string prov_path = config.output_dir + "/provenance.json";
-        std::ofstream pj(prov_path);
-        if (pj.is_open()) {
-            pj << "{\n"
-               << "  \"dataset\": \""        << json_esc(report.dataset_name)   << "\",\n"
-               << "  \"matrix_path\": \""    << json_esc(matrix_path)           << "\",\n"
-               << "  \"matrix_md5\": \""     << json_esc(md5_of(matrix_path))   << "\",\n"
-               << "  \"matrix_sha256\": \""  << json_esc(sha256_of(matrix_path)) << "\",\n"
-               << "  \"binary_path\": \""    << json_esc(flexaidds_bin)         << "\",\n"
-               << "  \"binary_sha256\": \""  << json_esc(sha256_of(flexaidds_bin)) << "\",\n"
-               << "  \"git_commit\": \""     << json_esc(git_commit)            << "\",\n"
-               << "  \"oracle_site_dir\": \""<< json_esc(oracle_env ? oracle_env : "") << "\",\n"
-               << "  \"oracle_site_dir_set\": " << (oracle_env && oracle_env[0] ? "true" : "false") << "\n"
-               << "}\n";
-            pj.close();
-            std::cout << "[DatasetRunner] Wrote provenance: " << prov_path << "\n";
-        } else {
-            std::cerr << "[WARN] Could not write provenance.json to "
-                      << prov_path << "\n";
-        }
+        write_dataset_run_provenance(
+            config.output_dir,
+            report.dataset_name,
+            flexaidds_bin,
+            protocol_cfg_.data_dir,
+            oracle_env ? std::string(oracle_env) : std::string());
     }
 
     std::cout << "[DatasetRunner] Docking " << entries.size() << " entries ("
