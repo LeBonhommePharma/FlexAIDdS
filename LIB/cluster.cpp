@@ -267,12 +267,16 @@ void cluster(FA_Global* FA, GB_Global* GB, VC_Global* VC, chromosome* chrom, gen
         //num_of_results=1;
       
 	printf("num_of_clusters=%d num_of_results=%d\n",num_of_clusters,num_of_results);
+	fflush(stdout);
 	
         // output results, 10% of the number of chromosomes or 
         // the number of clusters, the smallest.
       
 	for(j=0;j<num_of_results;++j)
 	{
+		printf("emitting ranked pose %d/%d (TOP chrom=%d)...\n",
+		       j + 1, num_of_results, Clus_TOP[j]);
+		fflush(stdout);
 		// get parameters of fittest individual in population
 		// after optimization -> best docking candidate
     

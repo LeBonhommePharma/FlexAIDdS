@@ -2689,6 +2689,7 @@ int main(int argc, char **argv){
 			fflush(stdout);
 
 			printf("n_chrom_snapshot=%d\n", n_chrom_snapshot);
+			fflush(stdout);
 
 			if( strcmp(FA->clustering_algorithm,"FO") == 0 )
 			{
