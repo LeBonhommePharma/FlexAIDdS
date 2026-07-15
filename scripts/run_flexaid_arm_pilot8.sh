@@ -1,5 +1,12 @@
 #!/usr/bin/env bash
-# Run FlexAID arm A / B0 / B pilot8 → iCloud results only.
+# Run FlexAID arm A / B0 / B pilot8.
+#
+# Default storage (anti-hang): local APFS via use_local_first_benchmark_storage.sh
+#   OUT:  $FLEXAIDDS_LOCAL_ROOT/campaigns/three_engine/{A,B0,B}/...
+#   work: $FLEXAIDDS_LOCAL_QUEUE/work/{A,B0,B}/...
+# Sync later: bash scripts/sync_three_engine_local_to_icloud.sh
+#
+# Force live iCloud OUT (legacy): FLEXAIDDS_FORCE_ICLOUD_OUT=1
 #
 # Usage:
 #   scripts/run_flexaid_arm_pilot8.sh A            # real pilot8
@@ -7,21 +14,19 @@
 #   scripts/run_flexaid_arm_pilot8.sh B --pdb 1GPK # single target
 #   scripts/run_flexaid_arm_pilot8.sh A --smoke    # tiny pop/gen smoke (1 target)
 #
-# Outputs:
-#   $FLEXAIDDS_RESULTS/campaigns/three_engine/{A,B0,B}/pilot8/<PDB>/
-# Work/scratch:
-#   $FLEXAIDDS_QUEUE_ROOT/work/{A,B0,B}/<PDB>/
-#
 # Does NOT touch C0 full85 outputs. Separate lock per arm.
 set -euo pipefail
 
 # shellcheck disable=SC1090
 [[ -f "${HOME}/.flexaidds_env" ]] && source "${HOME}/.flexaidds_env"
 
-# Production: all campaign OUT on iCloud Drive (2TB / large free cloud quota).
 _ROOT_FOR_STORAGE="$(cd "$(dirname "$0")/.." && pwd)"
 # shellcheck disable=SC1091
-source "$_ROOT_FOR_STORAGE/scripts/use_icloud_benchmark_storage.sh"
+if [[ "${FLEXAIDDS_FORCE_ICLOUD_OUT:-0}" == "1" ]]; then
+  source "$_ROOT_FOR_STORAGE/scripts/use_icloud_benchmark_storage.sh"
+else
+  source "$_ROOT_FOR_STORAGE/scripts/use_local_first_benchmark_storage.sh"
+fi
 # shellcheck disable=SC1091
 source "$_ROOT_FOR_STORAGE/scripts/require_icloud_out.sh"
 
@@ -82,16 +87,32 @@ if (( SMOKE )) && [[ -z "${FLEXAID_ARM_OUT:-}" ]]; then
 fi
 
 WORK_ROOT="${FLEXAID_WORK_ROOT:-$Q/work}"
-LOGDIR="$Q/logs"
+# Logs on local when local-first; else queue logs (may be iCloud)
+LOGDIR="${FLEXAIDDS_LOCAL_LOGDIR:-$Q/logs}"
 mkdir -p "$OUT" "$LOGDIR" "$WORK_ROOT" "$FLEXAIDDS_RESULTS/campaigns/three_engine/$ARM"
 
 require_icloud_out "$OUT" || exit 91
+
+# Prefer local binary if queue is on CloudDocs but local staging has the arm binary
+_LOCAL_BIN="${FLEXAIDDS_LOCAL_ROOT:-$HOME/flexaidds_results}/three_engine_entropy_q1/bin/$BIN_ARM/FlexAID"
+if [[ ! -x "$BINARY" && -x "$_LOCAL_BIN" ]]; then
+  BINARY="$_LOCAL_BIN"
+elif [[ "$BINARY" == *"/Mobile Documents/"* && -x "$_LOCAL_BIN" ]]; then
+  BINARY="$_LOCAL_BIN"
+  echo "OK: using local FlexAID binary (avoid CloudDocs): $BINARY"
+fi
+_LOCAL_MAT="${FLEXAIDDS_LOCAL_ROOT:-$HOME/flexaidds_results}/three_engine_entropy_q1/data/MC_st0r5.2_6.dat"
+if [[ -f "$_LOCAL_MAT" ]]; then
+  MATRIX="$_LOCAL_MAT"
+fi
 
 echo "=== FlexAID arm $ARM pilot8 ==="
 echo "Q=$Q"
 echo "OUT=$OUT"
 echo "BINARY=$BINARY"
 echo "WORK_ROOT=$WORK_ROOT"
+echo "LOGDIR=$LOGDIR"
+echo "ALLOW_LOCAL_OUT=${FLEXAIDDS_ALLOW_LOCAL_OUT:-0}"
 
 [[ -x "$BINARY" ]] || { echo "FAIL: not executable: $BINARY" >&2; exit 1; }
 [[ -f "$MATRIX" ]] || { echo "FAIL: matrix missing: $MATRIX" >&2; exit 1; }
@@ -234,10 +255,11 @@ run_one() {
     local rdir="$wdir/restart_$r"
     local prefix="$odir/${pdb}_r${r}"
     echo "=== $ARM $pdb restart $r ==="
-    echo "CMD: $BINARY $rdir/CONFIG.inp $rdir/ga.inp $prefix"
+    # Staged A/B binaries are FlexAIDdS-unified CLI; classic 3-file mode needs --legacy
+    echo "CMD: $BINARY --legacy $rdir/CONFIG.inp $rdir/ga.inp $prefix"
     if ! (
       cd "$rdir"
-      caffeinate -i -s "$BINARY" "$rdir/CONFIG.inp" "$rdir/ga.inp" "$prefix"
+      caffeinate -i -s "$BINARY" --legacy "$rdir/CONFIG.inp" "$rdir/ga.inp" "$prefix"
     ); then
       echo "WARN: FlexAID exit non-zero for $ARM $pdb r$r" >&2
     else
