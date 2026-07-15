@@ -12,6 +12,13 @@
 #define isUndefinedDist(a) ((a - UNDEFINED_DIST) <= FLT_EPSILON)
 
 class BindingPopulation; // forward-declaration in order to access BindingPopulation* Population pointer
+
+/// Write DatasetRunner-compatible member-CF sidecar next to a FO/cluster PDB.
+/// Format matches cluster.cpp: one app_evalue per line (head first); finite only.
+/// Replaces trailing `.pdb` with `.mcf`. Returns true if the file was written.
+bool write_mcf_sidecar(const char* pdb_path,
+                       const std::vector<double>& app_evalues_head_first);
+
 /*****************************************\
 			  Pose
 \*****************************************/

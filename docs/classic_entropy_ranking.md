@@ -12,8 +12,10 @@
 |--------|-----------------|---------------------------|
 | β | `1/T` (not `1/(kB T)`) | same for configurational weights |
 | Cluster free energy (ACF) | soft-β cluster free energy | same; elects CF-path emission |
-| BindingMode F | `H − T·S` (global Z) | `H − T·S_conf + (−T·S_vib) [+ NATURaL]` |
-| Rank-0 | lowest ACF / lowest F | same product role |
+| BindingMode F | `G̃ = H̃ − T·S̃` over **mode members** (≡ ACF) | `G̃ + (−T·S_vib) [+ NATURaL]` |
+| DatasetRunner S1 | — | same `G̃` over heads + `.mcf` members |
+| Shared math | — | `LIB/SoftBetaFreeEnergy.h` |
+| Rank-0 | lowest ACF / lowest F | same product role (elect lowest G̃) |
 
 | Layer | Elects rank-0? |
 |-------|----------------|
@@ -64,8 +66,10 @@ Full code revert of this feature: revert the PR / branch that touches:
 
 | File | Change |
 |------|--------|
-| `LIB/cluster.cpp` | Skip post-ACF CF re-sort unless `force_cf` or `T==0` |
-| `LIB/BindingMode.cpp` | Classic global-Z F for ranking; physical ledger unchanged |
+| `LIB/SoftBetaFreeEnergy.h` | Shared `G̃ = H̃ − T·S̃ ≡ E_min − T ln Z` |
+| `LIB/cluster.cpp` | ACF via SoftBeta; skip post-ACF CF re-sort unless `force_cf` or `T==0` |
+| `LIB/BindingMode.cpp` | Classic SoftBeta G̃ over mode members (+ vib); physical ledger unchanged |
+| `LIB/DatasetRunner.cpp` | S1 elect min SoftBeta G̃ (dock T); `LEGACY_ZH` rollback |
 | `LIB/flexaid.h` | `force_cf_rank_emission` |
 
 ## Success metric

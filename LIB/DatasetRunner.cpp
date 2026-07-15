@@ -17,6 +17,7 @@
 #include "AsyncPipeline.h"
 #include "BenchmarkRunner.h"
 #include "ProtocolConfig.h"
+#include "SoftBetaFreeEnergy.h"
 #include "shell_exec.h"
 #include "RunReceipt.h"
 #include "statmech.h"
@@ -81,6 +82,79 @@ namespace dataset {
 // Preserve a broad, fixed candidate set before any post-docking validator or
 // reranker runs. Candidate RMSD is diagnostic only and never affects retention.
 constexpr int kBenchmarkPoseLimit = 50;
+
+// ── Cluster-head enumeration (CF/DP single-suffix + FO dual-suffix) ─────────
+// Engine emission (BindingMode.cpp / FastOPTICS_cluster.cpp):
+//   CLUSTA CF/DP → <prefix>_<rank>.pdb
+//   CLUSTA FO    → <prefix>_<minPts>_<rank>.pdb
+// Election and BCR must both see FO dual-suffix heads; otherwise packaging
+// reports empty election / best_cluster_rmsd=-1 on FO-only runs.
+std::vector<EmittedClusterHead>
+enumerate_emitted_cluster_heads(const std::string& out_prefix)
+{
+    std::vector<EmittedClusterHead> out;
+    std::set<std::string> seen;
+    auto try_add = [&](const std::string& path, int rank, int min_pts) {
+        if (path.empty() || !fs::exists(path) || !seen.insert(path).second) return;
+        out.push_back(EmittedClusterHead{path, rank, min_pts});
+    };
+
+    // CF / DensityPeak single-suffix: <prefix>_<rank>.pdb
+    for (int pi = 0; pi < kBenchmarkPoseLimit; ++pi) {
+        try_add(out_prefix + "_" + std::to_string(pi) + ".pdb", pi, /*min_pts=*/-1);
+    }
+
+    // FastOPTICS dual-suffix: <prefix>_<minPts>_<rank>.pdb
+    try {
+        const fs::path pfx(out_prefix);
+        const fs::path dir = pfx.parent_path().empty() ? fs::path(".") : pfx.parent_path();
+        const std::string base = pfx.filename().string();
+        if (!base.empty() && fs::is_directory(dir)) {
+            const std::string prefix_match = base + "_";
+            for (const auto& ent : fs::directory_iterator(dir)) {
+                if (!ent.is_regular_file()) continue;
+                const std::string fname = ent.path().filename().string();
+                if (fname.size() < prefix_match.size() + 6) continue;
+                if (fname.compare(0, prefix_match.size(), prefix_match) != 0) continue;
+                if (fname.size() < 4 || fname.compare(fname.size() - 4, 4, ".pdb") != 0)
+                    continue;
+                const std::string mid = fname.substr(
+                    prefix_match.size(), fname.size() - prefix_match.size() - 4);
+                const auto us = mid.find('_');
+                if (us == std::string::npos || us == 0 || us + 1 >= mid.size())
+                    continue;
+                if (mid.find('_', us + 1) != std::string::npos)
+                    continue;
+                bool ok = true;
+                for (size_t k = 0; k < mid.size(); ++k) {
+                    if (k == us) continue;
+                    if (!std::isdigit(static_cast<unsigned char>(mid[k]))) {
+                        ok = false;
+                        break;
+                    }
+                }
+                if (!ok) continue;
+                int min_pts = -1;
+                int rank = -1;
+                try {
+                    min_pts = std::stoi(mid.substr(0, us));
+                    rank = std::stoi(mid.substr(us + 1));
+                } catch (...) {
+                    continue;
+                }
+                if (min_pts < 0 || rank < 0) continue;
+                try_add(ent.path().string(), rank, min_pts);
+            }
+        }
+    } catch (...) {
+    }
+    return out;
+}
+
+bool has_emitted_cluster_heads(const std::string& out_prefix)
+{
+    return !enumerate_emitted_cluster_heads(out_prefix).empty();
+}
 
 static std::uint64_t stable_seed_hash(const std::string& label,
                                       std::uint64_t stream = 0) {
@@ -775,9 +849,8 @@ static HvibColumns compute_target_hvib(const std::vector<std::string>& all_prefi
     struct PosePath { std::string path; float cf; };
     std::vector<PosePath> pool;
     for (const auto& pfx : all_prefixes) {
-        for (int pi = 0; pi < kBenchmarkPoseLimit; ++pi) {
-            std::string cand = pfx + "_" + std::to_string(pi) + ".pdb";
-            if (!fs::exists(cand)) continue;
+        for (const auto& head : enumerate_emitted_cluster_heads(pfx)) {
+            const std::string& cand = head.path;
             float cf = std::numeric_limits<float>::infinity();
             std::ifstream pf(cand);
             std::string   pl;
@@ -836,9 +909,8 @@ static std::pair<std::string,float> select_pose_freq_gated(const std::string& ou
 {
     struct PoseInfo { std::string path; float cf; int freq; };
     std::vector<PoseInfo> poses;
-    for (int pi = 0; pi < kBenchmarkPoseLimit; ++pi) {
-        std::string cand = out_prefix + "_" + std::to_string(pi) + ".pdb";
-        if (!fs::exists(cand)) continue;
+    for (const auto& head : enumerate_emitted_cluster_heads(out_prefix)) {
+        const std::string& cand = head.path;
         float cf = std::numeric_limits<float>::infinity();
         int   freq = 1;
         bool  have_cf = false;
@@ -891,7 +963,8 @@ static std::pair<std::string,float> select_pose_freq_gated_pooled(
         const std::vector<std::string>& prefixes,
         int seed_elitism_override = -1,  // -1=ProtocolConfig default, 0=force off, 1=force on
         bool cf_window_selector = false, // Fix A: CF-window gate (see header member)
-        const flexaids::ProtocolConfig* protocol = nullptr)
+        const flexaids::ProtocolConfig* protocol = nullptr,
+        double dock_temperature_K = 0.0)  // dock TEMPER / DockingConfig::temperature
 {
     // Pose-selector knobs come from ProtocolConfig (env adapter). Prefer a
     // caller-supplied snapshot (DatasetRunner::protocol_cfg_); fall back to a
@@ -919,25 +992,35 @@ static std::pair<std::string,float> select_pose_freq_gated_pooled(
     const bool use_shannon_G = proto.election_shannon_free_energy;
     const bool include_singletons =
         proto.election_include_singletons || proto.election_v135 || use_shannon_G;
-    // Soft-β T (3Dsig poster / FlexAID): dock temperature in K, β=1/T.
-    // Override with FLEXAIDDS_ELECTION_SOFT_T. Legacy ZH may use SCORE_TAU.
+    // Soft-β T priority (3Dsig / FlexAID soft-β, β=1/T, CF a.u.):
+    //   1. FLEXAIDDS_ELECTION_SOFT_T (env override)
+    //   2. dock TEMPER / DockingConfig::temperature (same T as the dock)
+    //   3. (legacy ZH only) FLEXAIDDS_ELECTION_SCORE_TAU
+    //   4. 298 K fallback
+    const char* soft_T_source = "fallback";
     double soft_T = 298.0;
-    if (proto.election_soft_T > 0.0)
+    if (proto.election_soft_T > 0.0) {
         soft_T = proto.election_soft_T;
-    else if (!use_shannon_G && proto.election_score_tau > 0.0)
+        soft_T_source = "env";
+    } else if (dock_temperature_K > 0.0) {
+        soft_T = dock_temperature_K;
+        soft_T_source = "dock";
+    } else if (!use_shannon_G && proto.election_score_tau > 0.0) {
         soft_T = proto.election_score_tau;
+        soft_T_source = "env";  // SCORE_TAU is also an env knob (legacy ZH only)
+    }
     soft_T = std::max(soft_T, 1e-6);
 
     if (use_shannon_G) {
         fprintf(stderr,
                 "[3DSIG-RANK] elect by G̃=H̃−T·S̃ (Shannon on ranking path): "
-                "T=%.4f (soft-β, CF a.u.) include_singletons=%d\n",
-                soft_T, include_singletons ? 1 : 0);
+                "T=%.4f source=%s (soft-β, CF a.u.) include_singletons=%d\n",
+                soft_T, soft_T_source, include_singletons ? 1 : 0);
     } else {
         fprintf(stderr,
-                "[Z+H-LEGACY] elect by Z·exp(−αH)·log1p(N) τ=%.4f "
+                "[Z+H-LEGACY] elect by Z·exp(−αH)·log1p(N) τ=%.4f source=%s "
                 "(Shannon NOT used for ranking — rollback path)\n",
-                soft_T);
+                soft_T, soft_T_source);
     }
 
     struct PoseInfo {
@@ -992,10 +1075,9 @@ static std::pair<std::string,float> select_pose_freq_gated_pooled(
         return true;
     };
 
-    // Build soft-β p_i over member CFs (or single head CF).
-    // Returns {H̃, S̃, G̃=H̃−T·S̃}  (G̃ lower is better — elect min G̃).
+    // Soft-β free energy via shared SoftBetaFreeEnergy.h (≡ cluster ACF /
+    // BindingMode classic G̃). G̃ lower is better — elect min G̃.
     auto soft_free_energy = [&](const PoseInfo& p, double& H_out, double& S_out) -> double {
-        const double T = soft_T;
         std::vector<double> energies;
         if (!p.member_cfs.empty()) {
             energies.reserve(p.member_cfs.size());
@@ -1004,32 +1086,12 @@ static std::pair<std::string,float> select_pose_freq_gated_pooled(
         }
         if (energies.empty()) {
             // No members: singleton head — S̃=0, G̃=CF (matches paper for N=1).
-            H_out = static_cast<double>(p.cf);
-            S_out = 0.0;
-            return H_out;
+            energies.push_back(static_cast<double>(p.cf));
         }
-        // Numerically stable Z: shift by E_min
-        double Emin = energies[0];
-        for (double e : energies) Emin = std::min(Emin, e);
-        double Z = 0.0;
-        for (double e : energies)
-            Z += std::exp(-(e - Emin) / T);
-        if (!(Z > 0.0) || !std::isfinite(Z)) {
-            H_out = static_cast<double>(p.cf);
-            S_out = 0.0;
-            return H_out;
-        }
-        double H = 0.0;
-        double S = 0.0;
-        for (double e : energies) {
-            const double p_i = std::exp(-(e - Emin) / T) / Z;
-            if (p_i <= 0.0) continue;
-            H += p_i * e;
-            S -= p_i * std::log(p_i);
-        }
-        H_out = H;
-        S_out = S;
-        return H - T * S;  // G̃
+        const auto fe = flexaids::soft_beta::free_energy(energies, soft_T);
+        H_out = fe.H;
+        S_out = fe.S;
+        return fe.G;
     };
 
     // Legacy Z+H composite (maximize). Only when election_shannon_free_energy=false.
@@ -1058,48 +1120,13 @@ static std::pair<std::string,float> select_pose_freq_gated_pooled(
     std::vector<PoseInfo> poses;
     for (size_t ri = 0; ri < prefixes.size(); ++ri) {
         const auto& out_prefix = prefixes[ri];
-        std::set<std::string> seen;
-        auto try_add = [&](const std::string& cand) {
-            if (!fs::exists(cand) || !seen.insert(cand).second) return;
+        // Shared CF/DP + FO dual-suffix enumeration (see enumerate_emitted_cluster_heads).
+        for (const auto& head : enumerate_emitted_cluster_heads(out_prefix)) {
             float cf; int freq; std::vector<float> mcfs;
-            if (!parse_pose(cand, cf, freq, mcfs)) return;
-            poses.push_back({cand, cf, freq, std::move(mcfs), /*is_seed=*/false,
+            if (!parse_pose(head.path, cf, freq, mcfs)) continue;
+            poses.push_back({head.path, cf, freq, std::move(mcfs), /*is_seed=*/false,
                              /*restart=*/static_cast<int>(ri)});
-        };
-        // CF / DensityPeak: <prefix>_<rank>.pdb
-        for (int pi = 0; pi < kBenchmarkPoseLimit; ++pi)
-            try_add(out_prefix + "_" + std::to_string(pi) + ".pdb");
-        // FastOPTICS dual-suffix: <prefix>_<minPts>_<rank>.pdb (BindingMode.cpp)
-        try {
-            const fs::path pfx(out_prefix);
-            const fs::path dir = pfx.parent_path().empty() ? fs::path(".") : pfx.parent_path();
-            const std::string base = pfx.filename().string();
-            if (!base.empty() && fs::is_directory(dir)) {
-                const std::string prefix_match = base + "_";
-                for (const auto& ent : fs::directory_iterator(dir)) {
-                    if (!ent.is_regular_file()) continue;
-                    const std::string fname = ent.path().filename().string();
-                    if (fname.size() < prefix_match.size() + 6) continue;
-                    if (fname.compare(0, prefix_match.size(), prefix_match) != 0) continue;
-                    if (fname.size() < 4 || fname.compare(fname.size() - 4, 4, ".pdb") != 0)
-                        continue;
-                    // Require two underscores after base: _digits_digits.pdb
-                    const std::string mid = fname.substr(
-                        prefix_match.size(), fname.size() - prefix_match.size() - 4);
-                    const auto us = mid.find('_');
-                    if (us == std::string::npos || us == 0 || us + 1 >= mid.size())
-                        continue;
-                    bool ok = true;
-                    for (size_t k = 0; k < mid.size(); ++k) {
-                        if (k == us) continue;
-                        if (!std::isdigit(static_cast<unsigned char>(mid[k]))) {
-                            ok = false; break;
-                        }
-                    }
-                    if (ok) try_add(ent.path().string());
-                }
-            }
-        } catch (...) {}
+        }
     }
 
     // ── Seed-anchored elitism (FLEXAIDDS_SEED_ELITISM, default ON) ──────────
@@ -6255,12 +6282,10 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                     : (out_dir + "/r" + std::to_string(ri));
                 std::string ri_prefix2 = (ri == 0) ? out_prefix
                     : (ri_dir2 + "/" + entry.pdb_id);
-                bool has_poses = false;
-                for (int pi = 0; pi < kBenchmarkPoseLimit && !has_poses; pi++) {
-                    if (fs::exists(ri_prefix2 + "_" + std::to_string(pi) + ".pdb"))
-                        has_poses = true;
-                }
-                if (has_poses) all_prefixes.push_back(ri_prefix2);
+                // FO dual-suffix heads (prefix_minPts_rank.pdb) must count too —
+                // otherwise FO-only restarts are dropped from the election/BCR pool.
+                if (has_emitted_cluster_heads(ri_prefix2))
+                    all_prefixes.push_back(ri_prefix2);
             }
             if (all_prefixes.empty()) all_prefixes.push_back(out_prefix);
         }
@@ -6531,9 +6556,9 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
         // rmsd_to_crystal always describe one pose. Fall back to the stdout-trace
         // min only if no emitted pose with a REMARK CF is found.
         {
-            auto sel = select_pose_freq_gated_pooled(all_prefixes, sel_elitism_ovr,
-                                                     cf_window_selector_,
-                                                     &protocol_cfg_);
+            auto sel = select_pose_freq_gated_pooled(
+                all_prefixes, sel_elitism_ovr, cf_window_selector_,
+                &protocol_cfg_, static_cast<double>(config.temperature));
             if (!sel.first.empty() && std::isfinite(sel.second))
                 best_cf = sel.second;
         }
@@ -6631,15 +6656,16 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
             // pool (see helper definition near compute_pose_ligand_rmsd).
             // elected_pose_for_pb lives outside this block for PoseBust post-pass.
             std::string best_pose_pdb = select_pose_freq_gated_pooled(
-                all_prefixes, sel_elitism_ovr, cf_window_selector_, &protocol_cfg_).first;
+                all_prefixes, sel_elitism_ovr, cf_window_selector_,
+                &protocol_cfg_, static_cast<double>(config.temperature)).first;
             // Fallback: no scored pose found — take first available pose file from any restart.
             if (best_pose_pdb.empty()) {
                 for (const auto& pfx : all_prefixes) {
-                    for (int pi = 0; pi < kBenchmarkPoseLimit; pi++) {
-                        std::string cand = pfx + "_" + std::to_string(pi) + ".pdb";
-                        if (fs::exists(cand)) { best_pose_pdb = cand; break; }
+                    auto heads = enumerate_emitted_cluster_heads(pfx);
+                    if (!heads.empty()) {
+                        best_pose_pdb = heads.front().path;
+                        break;
                     }
-                    if (!best_pose_pdb.empty()) break;
                 }
             }
 
@@ -6673,9 +6699,8 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                     std::vector<Cand> pool;
                     for (size_t ip = 0; ip < all_prefixes.size(); ++ip) {
                         const std::string& pfx = all_prefixes[ip];
-                        for (int pi = 0; pi < kBenchmarkPoseLimit; ++pi) {
-                            std::string cand = pfx + "_" + std::to_string(pi) + ".pdb";
-                            if (!fs::exists(cand)) continue;
+                        for (const auto& head : enumerate_emitted_cluster_heads(pfx)) {
+                            const std::string& cand = head.path;
                             Cand c;
                             c.path   = cand;
                             c.pfx_id = static_cast<int>(ip);
@@ -6887,6 +6912,7 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                 // Declared here so BCR-gate below can reference it (inner block scope
                 // would make it invisible to the BCR-gate at this outer level).
                 std::string best_cluster_pfx;   // prefix that achieved best_cluster_rmsd
+                std::string best_cluster_path;  // full path (single- or dual-suffix FO)
                 // Parse "REMARK CF=" from a pose PDB (election-gap diagnostic).
                 auto parse_pose_cf = [](const std::string& cand) -> float {
                     std::ifstream pf(cand);
@@ -6907,65 +6933,35 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                     result.rmsd_to_crystal = r0.first;
                     result.rmsd_hungarian  = r0.second;
 
-                    // P4: oracle best-of-N ceiling — scan every emitted cluster pose
-                    // and record the minimum Hungarian RMSD and which pose
-                    // index achieved it.  This is the best a perfect cluster-selector
-                    // could have reached given the poses the GA actually emitted;
-                    // the gap to rank-0 measures selection (not search) headroom.
-                    //
-                    // Fix 3: scan the SAME pooled prefix set (all_prefixes) that the
-                    // freq-gated selector draws rmsd_hungarian from — not just this
-                    // one restart's out_prefix. Previously best_cluster_rmsd scanned
-                    // a single restart while rmsd_hungarian pooled across restarts,
-                    // so the two columns measured different candidate sets (hence
-                    // rmsd_hungarian=0.0 next to best_cluster_rmsd=5.97). Now
-                    // best_cluster_rmsd is a true oracle-best ceiling over the same
-                    // pool. best_cluster_idx is the retained pose index within whichever
-                    // pooled restart achieved the minimum.
+                    // P4: oracle best-of-N ceiling over all emitted cluster heads.
+                    // FO dual-suffix: <prefix>_<minPts>_<rank>.pdb via shared helper
+                    // so BCR is not stuck at -1 on FO-only packaging.
                     for (const auto& pfx : all_prefixes) {
-                        for (int pi = 0; pi < kBenchmarkPoseLimit; ++pi) {
-                            std::string cand = pfx + "_" + std::to_string(pi) + ".pdb";
-                            if (!fs::exists(cand)) continue;
+                        for (const auto& head : enumerate_emitted_cluster_heads(pfx)) {
+                            const std::string& cand = head.path;
+                            const int pi = head.rank;
                             auto rp = compute_pose_ligand_rmsd(
                                 cand, crystal_xyz, crystal_elem, entry.pdb_id, false);
                             if (result.best_cluster_rmsd < 0.0f || rp.second < result.best_cluster_rmsd) {
                                 result.best_cluster_rmsd = rp.second;
                                 result.best_cluster_idx = pi;
                                 best_cluster_pfx = pfx;
+                                best_cluster_path = cand;
                                 result.cf_best_cluster = parse_pose_cf(cand);
                             }
 
-                            // ── Fix B: cluster member recovery for near-miss clusters ──
-                            // A near-native sub-Å pose can be swallowed into a clash-
-                            // attractor cluster whose representative (centroid) is
-                            // displaced far from native, so the cluster head scanned
-                            // above misses it (1OF6: head 14.2 Å, member 2.30 Å). For
-                            // any cluster whose representative Hungarian RMSD falls in
-                            // the near-miss window [2.0, 4.0] Å, also scan its member
-                            // poses, fold the minimum member RMSD into the oracle BCR,
-                            // and emit each member as a renamed PDB for inspection.
-                            //
-                            // Member poses use the same compute_pose_ligand_rmsd()
-                            // (Hungarian) employed for the representatives — no new
-                            // RMSD path is introduced.
-                            //
-                            // Coordinate availability: DatasetRunner runs FlexAIDdS as
-                            // a subprocess and holds no cluster struct with member
-                            // coordinates; the engine writes the representative PDB and
-                            // a `.mcf` sidecar of member CF values only. Reconstructing
-                            // member Cartesians from chromosome IC is intentionally out
-                            // of scope (too fragile), so this recovery activates only
-                            // when member pose PDBs following the
-                            // `<prefix>_<N>_member<M>.pdb` convention are present on
-                            // disk; otherwise it is a no-op (member loop finds nothing).
+                            // Fix B: cluster member recovery for near-miss clusters.
+                            // Members: <head_stem>_member<M>.pdb (single- and dual-suffix).
                             if (cluster_member_emit_ &&
                                 rp.second >= 2.0f && rp.second <= 4.0f) {
+                                std::string head_stem = cand;
+                                if (head_stem.size() > 4 &&
+                                    head_stem.compare(head_stem.size() - 4, 4, ".pdb") == 0)
+                                    head_stem = head_stem.substr(0, head_stem.size() - 4);
                                 for (int mi = 0; mi < 64; ++mi) {
-                                    std::string mcand = pfx + "_" + std::to_string(pi) +
+                                    std::string mcand = head_stem +
                                                         "_member" + std::to_string(mi) + ".pdb";
                                     if (!fs::exists(mcand)) {
-                                        // Members are written contiguously from 0; the
-                                        // first gap ends this cluster's member list.
                                         if (mi == 0) break;
                                         continue;
                                     }
@@ -6976,10 +6972,9 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                                         result.best_cluster_rmsd = mr.second;
                                         result.best_cluster_idx  = pi;
                                         best_cluster_pfx = pfx;
+                                        best_cluster_path = mcand;
                                         result.cf_best_cluster = parse_pose_cf(mcand);
                                     }
-                                    // Emit the member pose under a self-describing name
-                                    // alongside the representative for inspection.
                                     try {
                                         char rbuf[16];
                                         std::snprintf(rbuf, sizeof(rbuf), "%.2f", mr.second);
@@ -6990,7 +6985,6 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                                         fs::copy_file(mcand, dst,
                                             fs::copy_options::overwrite_existing);
                                     } catch (const std::exception&) {
-                                        // Non-fatal: emission is diagnostic only.
                                     }
                                 }
                             }
@@ -7052,11 +7046,11 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                     fs::exists(entry.binding_site_path);
 
                 if (bcr_gate_candidate && bcr_gate_enabled &&
-                    !best_cluster_pfx.empty() && result.best_cluster_idx >= 0) {
+                    !best_cluster_path.empty() && result.best_cluster_idx >= 0) {
                     const float old_rmsd = std::min(result.rmsd_to_crystal,
                                                     result.rmsd_hungarian);
-                    const std::string override_pdb = best_cluster_pfx + "_" +
-                        std::to_string(result.best_cluster_idx) + ".pdb";
+                    // Full path from dual-suffix-aware BCR scan (FO cannot rebuild from idx).
+                    const std::string& override_pdb = best_cluster_path;
                     if (fs::exists(override_pdb)) {
                         auto rov = compute_pose_ligand_rmsd(
                             override_pdb, crystal_xyz, crystal_elem,
@@ -7093,8 +7087,9 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                                   << "A (idx=" << result.best_cluster_idx << ")\n";
                     } else {
                         std::cerr << "  [BCR-GATE-WARN] " << entry.pdb_id
-                                  << ": candidate pose missing for pfx="
-                                  << best_cluster_pfx
+                                  << ": candidate pose missing path="
+                                  << best_cluster_path
+                                  << " pfx=" << best_cluster_pfx
                                   << " idx=" << result.best_cluster_idx << "\n";
                     }
                 } else if (bcr_gate_candidate) {
@@ -7118,7 +7113,7 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
             if (docking_completed) {
                 elected_pose_pdb = select_pose_freq_gated_pooled(
                     all_prefixes, sel_elitism_ovr, cf_window_selector_,
-                    &protocol_cfg_).first;
+                    &protocol_cfg_, static_cast<double>(config.temperature)).first;
             }
         }
 

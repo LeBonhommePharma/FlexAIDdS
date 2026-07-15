@@ -1092,6 +1092,7 @@ flexaids_add_unit_test(test_protocol_config
         SOURCES
             tests/test_protocol_config.cpp
             LIB/ProtocolConfig.cpp
+            LIB/RunReceipt.cpp
         TEST_NAME ProtocolConfigTests
     )
 
@@ -1567,6 +1568,7 @@ flexaids_add_unit_test(test_protocol_config
         tests/test_classic_entropy_ranking.cpp
         tests/stubs.cpp
         LIB/gaboom.cpp
+        LIB/ProtocolConfig.cpp
         LIB/coarse_init.cpp
         LIB/ThermodynamicEngine.cpp
         LIB/LigandRingFlex/RingConformerLibrary.cpp
@@ -1676,6 +1678,7 @@ flexaids_add_unit_test(test_protocol_config
         tests/test_binding_mode_advanced.cpp
         tests/stubs.cpp
         LIB/gaboom.cpp
+        LIB/ProtocolConfig.cpp
         LIB/coarse_init.cpp
         LIB/ThermodynamicEngine.cpp
         LIB/LigandRingFlex/RingConformerLibrary.cpp
@@ -2142,6 +2145,7 @@ flexaids_add_unit_test(test_protocol_config
         tests/test_dataset_runner.cpp
         LIB/DatasetRunner.cpp
         LIB/DatasetRunnerStats.cpp
+        LIB/DatasetRunnerProvenance.cpp
         LIB/AsyncPipeline.cpp
         ${FLEXAIDDS_POSEBUST_SOURCES}
     )

@@ -7,7 +7,11 @@
 #include "../LIB/BindingMode.h"
 #include "../LIB/statmech.h"
 #include <cmath>
+#include <cstdio>
 #include <cstring>
+#include <limits>
+#include <string>
+#include <unistd.h>
 #include <vector>
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -273,6 +277,64 @@ TEST_F(BindingModeAdvancedTest, GlobalEnsembleAggregatesModes) {
     // Global ensemble should have aggregated poses
     auto global = population->get_global_ensemble();
     EXPECT_GT(global.size(), 0u);
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// FO .mcf sidecar (member CFs for DatasetRunner Shannon G̃)
+// ═══════════════════════════════════════════════════════════════════════
+
+TEST_F(BindingModeAdvancedTest, WriteMcfSidecar_HeadFirstFiniteOnly) {
+    // Matches cluster.cpp format: one app_evalue per line; head first.
+    // Non-finite values must be skipped so DatasetRunner parse_pose stays clean.
+    char tmpl[] = "/tmp/flexaidds_fo_mcf_XXXXXX";
+    int fd = mkstemp(tmpl);
+    ASSERT_GE(fd, 0);
+    close(fd);
+    std::string pdb_path = std::string(tmpl) + ".pdb";
+    // mkstemp created empty file at tmpl; rename conceptually to .pdb basename
+    std::remove(tmpl);
+    {
+        FILE* pf = std::fopen(pdb_path.c_str(), "w");
+        ASSERT_NE(pf, nullptr);
+        std::fputs("REMARK dummy FO head\n", pf);
+        std::fclose(pf);
+    }
+
+    std::vector<double> vals = {
+        -12.345678,  // head
+        -10.0,
+        std::numeric_limits<double>::quiet_NaN(),  // skip
+        -8.5,
+        std::numeric_limits<double>::infinity(),   // skip
+        -7.0
+    };
+    ASSERT_TRUE(write_mcf_sidecar(pdb_path.c_str(), vals));
+
+    std::string mcf_path = pdb_path.substr(0, pdb_path.size() - 4) + ".mcf";
+    FILE* mf = std::fopen(mcf_path.c_str(), "r");
+    ASSERT_NE(mf, nullptr);
+    std::vector<double> read_vals;
+    char line[128];
+    while (std::fgets(line, sizeof(line), mf)) {
+        read_vals.push_back(std::strtod(line, nullptr));
+    }
+    std::fclose(mf);
+
+    ASSERT_EQ(read_vals.size(), 4u);
+    EXPECT_NEAR(read_vals[0], -12.345678, 1e-6);  // head first, %.6f
+    EXPECT_NEAR(read_vals[1], -10.0, 1e-6);
+    EXPECT_NEAR(read_vals[2], -8.5, 1e-6);
+    EXPECT_NEAR(read_vals[3], -7.0, 1e-6);
+
+    // First line formatting: six decimal places like cluster.cpp
+    mf = std::fopen(mcf_path.c_str(), "r");
+    ASSERT_NE(mf, nullptr);
+    ASSERT_NE(std::fgets(line, sizeof(line), mf), nullptr);
+    std::fclose(mf);
+    EXPECT_STREQ(line, "-12.345678\n");
+
+    std::remove(pdb_path.c_str());
+    std::remove(mcf_path.c_str());
 }
 
 // ═══════════════════════════════════════════════════════════════════════

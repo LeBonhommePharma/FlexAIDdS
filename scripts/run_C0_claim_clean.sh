@@ -94,7 +94,8 @@ export FLEXAIDDS_BUDGET_SCALE=1
 export FLEXAIDDS_NATIVE_SEED_FRAC=0
 export FLEXAIDDS_SEED_ELITISM=0
 export FLEXAIDDS_POSEBUSTERS_BIN="${FLEXAIDDS_POSEBUSTERS_BIN:-$ROOT/.venv-posebusters/bin/bust}"
-# 3Dsig Shannon ranking path (G̃=H̃−T·S̃) — ON by default; LEGACY_ZH=1 rolls back
+# 3Dsig Shannon ranking path (G̃=H̃−T·S̃) — engine default is OFF until Astex pilot;
+# this claim launch explicitly opts in. LEGACY_ZH=1 rolls back to legacy ZH / min-CF.
 export FLEXAIDDS_ELECTION_SHANNON_F="${FLEXAIDDS_ELECTION_SHANNON_F:-1}"
 export FLEXAIDDS_ELECTION_SOFT_T="${FLEXAIDDS_ELECTION_SOFT_T:-298}"
 unset FLEXAIDDS_FORCE_SEED 2>/dev/null || true

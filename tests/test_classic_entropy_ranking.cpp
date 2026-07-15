@@ -1,5 +1,5 @@
 // tests/test_classic_entropy_ranking.cpp
-// Classic FlexAID entropy ranking (soft-β, global Z, ACF elects rank-0).
+// Classic FlexAID entropy ranking (soft-β SoftBeta G̃ ≡ ACF elects rank-0).
 // Rollback: FA->force_cf_rank_emission = true (P3b CF emission / physical F).
 // Apache-2.0 © 2026 Le Bonhomme Pharma
 
@@ -7,10 +7,12 @@
 #include "../LIB/BindingMode.h"
 #include "../LIB/statmech.h"
 #include "../LIB/gaboom.h"
+#include "../LIB/SoftBetaFreeEnergy.h"
 #include <cmath>
 #include <cstring>
 #include <vector>
 #include <algorithm>
+#include <limits>
 
 namespace {
 
@@ -237,4 +239,82 @@ TEST_F(ClassicEntropyRankingTest, ClassicRankingIncludesVibCorrectionTerm) {
     // No modes → vib = 0; ranking F must match classic conf free energy.
     EXPECT_NEAR(F, F_conf, EPS);
     EXPECT_GT(S, 0.0);
+}
+
+// ─── SoftBeta free-energy identity (shared ranking objective) ───────────────
+// G̃ = H̃ − T·S̃ ≡ E_min − T ln Z  (cluster ACF form). Used by cluster.cpp,
+// BindingMode classic ranking, and DatasetRunner S1 election.
+
+TEST(SoftBetaIdentity, EmptyIsInf) {
+    auto fe = flexaids::soft_beta::free_energy({}, 300.0);
+    EXPECT_TRUE(std::isinf(fe.G));
+}
+
+TEST(SoftBetaIdentity, SingletonEqualsEnergy) {
+    auto fe = flexaids::soft_beta::free_energy({-42.5}, 300.0);
+    EXPECT_NEAR(fe.G, -42.5, 1e-12);
+    EXPECT_NEAR(fe.H, -42.5, 1e-12);
+    EXPECT_NEAR(fe.S, 0.0, 1e-12);
+    EXPECT_EQ(fe.n, 1);
+}
+
+TEST(SoftBetaIdentity, GEqualsHminusTS) {
+    const std::vector<double> energies = {-100.0, -98.0, -95.0, -90.0, -88.0};
+    const double T = 300.0;
+    auto fe = flexaids::soft_beta::free_energy(energies, T);
+    EXPECT_NEAR(fe.G, fe.H - T * fe.S, 1e-9);
+}
+
+TEST(SoftBetaIdentity, GEqualsEminMinusTlnZ) {
+    const std::vector<double> energies = {-100.0, -98.0, -95.0, -90.0, -88.0};
+    const double T = 300.0;
+    auto fe = flexaids::soft_beta::free_energy(energies, T);
+    const double acf_form = fe.Emin - T * std::log(fe.Z);
+    EXPECT_NEAR(fe.G, acf_form, 1e-9);
+    EXPECT_NEAR(flexaids::soft_beta::acf(energies, T), fe.G, 1e-12);
+}
+
+TEST(SoftBetaIdentity, DenseBasinBeatsDeepSingleton) {
+    // 1HNN-class: dense middling basin vs sparse deep false minimum
+    std::vector<double> dense(29, -72.0);
+    for (int i = 0; i < 29; ++i)
+        dense[static_cast<size_t>(i)] = -72.0 - 0.05 * (i % 7);
+    const std::vector<double> deep = {-189.9};
+    const double T = 300.0;
+    const double G_dense = flexaids::soft_beta::free_energy_G(dense, T);
+    const double G_deep  = flexaids::soft_beta::free_energy_G(deep, T);
+    EXPECT_LT(G_dense, G_deep);  // elect lowest G → dense wins
+}
+
+TEST(SoftBetaIdentity, OffsetInvariance) {
+    // Adding constant Δ to all CF must shift G by Δ (soft-β property)
+    const std::vector<double> energies = {-50.0, -48.0, -45.0};
+    const double T = 250.0;
+    const double delta = 12.3;
+    std::vector<double> energies2 = energies;
+    for (double& e : energies2) e += delta;
+    auto a = flexaids::soft_beta::free_energy(energies, T);
+    auto b = flexaids::soft_beta::free_energy(energies2, T);
+    EXPECT_NEAR(b.G, a.G + delta, 1e-9);
+    EXPECT_NEAR(b.S, a.S, 1e-9);
+}
+
+TEST_F(ClassicEntropyRankingTest, BindingModeMatchesSoftBetaLocal) {
+    ASSERT_FALSE(mock_fa->force_cf_rank_emission);
+    BindingMode mode(pop);
+    std::vector<double> cfs;
+    for (int i = 0; i < 8; ++i) {
+        const double cf = -80.0 - 0.5 * i;
+        cfs.push_back(cf);
+        Pose p = make_pose(cf, i);
+        mode.add_Pose(p);
+    }
+    pop->add_BindingMode(mode);
+    const BindingMode& ranked = pop->get_binding_mode(0);
+    const double T = 300.0;
+    auto fe = flexaids::soft_beta::free_energy(cfs, T);
+    EXPECT_NEAR(ranked.compute_enthalpy(), fe.H, 1e-9);
+    EXPECT_NEAR(ranked.compute_entropy(), fe.S, 1e-9);
+    // vib=0, nat=0 → ranking energy == SoftBeta G
+    EXPECT_NEAR(ranked.compute_energy(), fe.G, 1e-9);
 }

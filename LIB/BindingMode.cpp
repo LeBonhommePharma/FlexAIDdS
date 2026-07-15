@@ -1,15 +1,39 @@
 #include "BindingMode.h"
 #include "fast_optics.hpp"
+#include "SoftBetaFreeEnergy.h"
 
 #include <algorithm>
 #include <cfloat>
 #include <cmath>
+#include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <limits>
 #include <map>
 #include <stdexcept>
 #include <string>
+
+// DatasetRunner reads sibling `.mcf` files (one app_evalue per line, head first)
+// to build multi-member Shannon G̃. Format matches LIB/cluster.cpp exactly.
+bool write_mcf_sidecar(const char* pdb_path,
+                       const std::vector<double>& app_evalues_head_first)
+{
+	if (pdb_path == nullptr || pdb_path[0] == '\0') return false;
+	std::string mcf_path(pdb_path);
+	if (mcf_path.size() > 4 &&
+	    mcf_path.substr(mcf_path.size() - 4) == ".pdb")
+		mcf_path = mcf_path.substr(0, mcf_path.size() - 4) + ".mcf";
+	else
+		mcf_path += ".mcf";
+	FILE* mf = std::fopen(mcf_path.c_str(), "w");
+	if (!mf) return false;
+	for (double v : app_evalues_head_first) {
+		if (std::isfinite(v))
+			std::fprintf(mf, "%.6f\n", v);
+	}
+	std::fclose(mf);
+	return true;
+}
 
 /*****************************************\\
 			BindingPopulation  
@@ -276,13 +300,28 @@ void BindingMode::rebuild_engine() const
 
 bool BindingMode::use_classic_entropy_ranking() const noexcept
 {
-	// Classic FlexAID: soft-β global-Z free energy elects modes when T>0.
-	// force_cf_rank_emission restores physical per-mode StatMech ranking (rollback).
+	// Classic FlexAID: soft-β free energy over mode members (local Z) elects modes
+	// when T>0 (SoftBetaFreeEnergy.h ≡ ACF). force_cf_rank_emission restores
+	// physical per-mode StatMech ranking (rollback).
 	if (!Population || Population->Temperature == 0)
 		return false;
 	if (Population->FA && Population->FA->force_cf_rank_emission)
 		return false;
 	return true;
+}
+
+
+// Collect mode-member CF values for SoftBeta (3Dsig / DatasetRunner identity).
+static std::vector<double> soft_beta_mode_energies(const std::vector<Pose>& poses)
+{
+	std::vector<double> energies;
+	energies.reserve(poses.size());
+	for (const auto& pose : poses) {
+		const double e = static_cast<double>(pose.CF);
+		if (std::isfinite(e))
+			energies.push_back(e);
+	}
+	return energies;
 }
 
 
@@ -293,17 +332,12 @@ double BindingMode::compute_enthalpy() const
 		rebuild_engine();
 		return engine_.compute().mean_energy;
 	}
-	// Classic FlexAID: H = Σ_{i in mode} p_i E_i with p_i = w_i / Z_global
-	double enthalpy = 0.0;
-	const double Z = Population->PartitionFunction;
-	if (Z <= 0.0 || Poses.empty())
+	// Soft-β H̃ over mode members only (≡ SoftBetaFreeEnergy / cluster ACF / DatasetRunner).
+	// Local re-normalization — not global PartitionFunction weights.
+	if (!Population || Poses.empty())
 		return 0.0;
-	for (const auto& pose : Poses)
-	{
-		const double p = pose.boltzmann_weight / Z;
-		enthalpy += p * static_cast<double>(pose.CF);
-	}
-	return enthalpy;
+	const double T = static_cast<double>(Population->Temperature);
+	return flexaids::soft_beta::free_energy(soft_beta_mode_energies(Poses), T).H;
 }
 
 
@@ -314,18 +348,11 @@ double BindingMode::compute_entropy() const
 		rebuild_engine();
 		return engine_.compute().entropy;
 	}
-	// Classic FlexAID: S = −Σ_{i in mode} p_i ln p_i  (Shannon, global p_i)
-	double entropy = 0.0;
-	const double Z = Population->PartitionFunction;
-	if (Z <= 0.0 || Poses.empty())
+	// Soft-β S̃ = −Σ p_i ln p_i over mode members (nats). Same T as ACF / 3Dsig.
+	if (!Population || Poses.empty())
 		return 0.0;
-	for (const auto& pose : Poses)
-	{
-		const double p = pose.boltzmann_weight / Z;
-		if (p > 0.0)
-			entropy += p * std::log(p);
-	}
-	return -entropy;
+	const double T = static_cast<double>(Population->Temperature);
+	return flexaids::soft_beta::free_energy(soft_beta_mode_energies(Poses), T).S;
 }
 
 
@@ -337,17 +364,18 @@ double BindingMode::compute_energy() const
 		double nat_dg = (Population && Population->FA) ? Population->FA->natural_deltaG : 0.0;
 		return engine_.compute().free_energy + compute_vibrational_correction() + nat_dg;
 	}
-	// Classic FlexAID configurational free energy: F_conf = H − T·S
-	// (soft-β, global Z, T without kB) — this is what elects modes.
-	// FlexAIDdS keeps vibrational entropy on the ranking path as well:
-	// F = F_conf + (−T·S_vib) [ENCoM/tENCoM] + optional NATURaL ΔG.
-	// Vib is additive; it does not replace classic soft-β ranking.
+	// Ranking objective: G̃ = H̃ − T·S̃ over mode members (SoftBetaFreeEnergy.h).
+	// Identity: G̃ ≡ ACF ≡ E_min − T ln Z_local. Same formula as cluster.cpp emission
+	// order and DatasetRunner S1 election. FlexAIDdS adds vib + optional NATURaL:
+	//   F_rank = G̃_conf + (−T·S_vib) + ΔG_NATURaL
+	// Vib is additive; it does not replace soft-β configurational ranking.
+	if (!Population)
+		return 0.0;
+	const double T = static_cast<double>(Population->Temperature);
+	const auto fe = flexaids::soft_beta::free_energy(soft_beta_mode_energies(Poses), T);
 	const double nat_dg =
-		(Population && Population->FA) ? Population->FA->natural_deltaG : 0.0;
-	return compute_enthalpy()
-		- (static_cast<double>(Population->Temperature) * compute_entropy())
-		+ compute_vibrational_correction()
-		+ nat_dg;
+		(Population->FA) ? Population->FA->natural_deltaG : 0.0;
+	return fe.G + compute_vibrational_correction() + nat_dg;
 }
 
 
@@ -646,6 +674,9 @@ void BindingMode::output_BindingMode(int num_result, char* end_strfile, char* tm
 		}
 		snprintf(tmpremark, MAX_REMARK, "REMARK free_energy = %.6f\n", td.free_energy);
 		safe_remark_cat(remark, tmpremark, &remark_len);
+		// Ranking objective (soft-β G̃); free_energy above is physical StatMech ledger.
+		snprintf(tmpremark, MAX_REMARK, "REMARK soft_beta_G = %.6f\n", this->compute_energy());
+		safe_remark_cat(remark, tmpremark, &remark_len);
 		snprintf(tmpremark, MAX_REMARK, "REMARK enthalpy = %.6f\n", td.mean_energy);
 		safe_remark_cat(remark, tmpremark, &remark_len);
 		snprintf(tmpremark, MAX_REMARK, "REMARK entropy = %.8f\n", td.entropy);
@@ -685,6 +716,27 @@ void BindingMode::output_BindingMode(int num_result, char* end_strfile, char* tm
 	snprintf(sufix, sizeof(sufix), "_%d_%d.pdb", minPoints, num_result);
 	snprintf(tmp_end_strfile, MAX_PATH__, "%s%s", end_strfile, sufix);
 	write_pdb(this->Population->FA, this->Population->atoms, this->Population->residue, tmp_end_strfile, remark);
+
+	// ── Write member-CF sidecar (.mcf) for DatasetRunner Shannon G̃ ──
+	// Same format as cluster.cpp: one app_evalue per line; head first, then
+	// remaining finite members. Without this, FO path collapses to S̃=0, G̃=CF.
+	{
+		std::vector<double> mcf_vals;
+		mcf_vals.reserve(this->Poses.size());
+		if (Rep != this->Poses.end() && Rep->chrom != nullptr &&
+		    std::isfinite(Rep->chrom->app_evalue)) {
+			mcf_vals.push_back(Rep->chrom->app_evalue);
+		}
+		for (std::vector<Pose>::const_iterator it = this->Poses.begin();
+		     it != this->Poses.end(); ++it) {
+			if (it == Rep) continue;
+			if (it->chrom == nullptr) continue;
+			if (!std::isfinite(it->chrom->app_evalue)) continue;
+			mcf_vals.push_back(it->chrom->app_evalue);
+		}
+		if (!mcf_vals.empty())
+			(void)write_mcf_sidecar(tmp_end_strfile, mcf_vals);
+	}
 }
 
 
@@ -762,6 +814,8 @@ void BindingMode::output_dynamic_BindingMode(int num_result, char* end_strfile, 
 				num_result, this->Poses.empty() ? 0.0 : this->Poses.front().CF, this->get_BindingMode_size());
 			safe_remark_cat(remark, tmpremark, &remark_len);
 			snprintf(tmpremark, MAX_REMARK, "REMARK free_energy = %.6f\n", td.free_energy);
+			safe_remark_cat(remark, tmpremark, &remark_len);
+			snprintf(tmpremark, MAX_REMARK, "REMARK soft_beta_G = %.6f\n", this->compute_energy());
 			safe_remark_cat(remark, tmpremark, &remark_len);
 			snprintf(tmpremark, MAX_REMARK, "REMARK enthalpy = %.6f\n", td.mean_energy);
 			safe_remark_cat(remark, tmpremark, &remark_len);
