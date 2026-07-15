@@ -237,7 +237,7 @@ def safe_is_file(path: str) -> bool:
 
 
 def discover_fleet_status_files(icloud_dir: str) -> List[str]:
-    """Find all fleet_status*.json files in the iCloud directory.
+    """Find legacy runner files and Bonhomme Fleet campaign status files.
 
     Args:
         icloud_dir: Path to the iCloud FlexAIDdS directory.
@@ -245,9 +245,12 @@ def discover_fleet_status_files(icloud_dir: str) -> List[str]:
     Returns:
         Sorted list of absolute paths to fleet status JSON files.
     """
-    pattern = os.path.join(icloud_dir, "fleet_status*.json")
-    files = glob(pattern)
-    return sorted(files)
+    patterns = (
+        os.path.join(icloud_dir, "fleet_status*.json"),
+        os.path.join(icloud_dir, "campaigns", "*", "status.json"),
+        os.path.join(icloud_dir, "results", "campaigns", "*", "status.json"),
+    )
+    return sorted({path for pattern in patterns for path in glob(pattern)})
 
 
 def count_flexaidds_workers() -> int:
@@ -342,9 +345,9 @@ def scan_target_dir(target_path: str) -> TargetStatus:
     """Determine the status of a single target directory.
 
     A target is:
-      - "done" if it has a result.csv or non-INI .pdb output file
+      - "done" only if it has a non-empty result.csv commit artifact
       - "stuck" if stdout.log contains [STUCK]
-      - "in_progress" if it has dock_config.json but no result yet
+      - "in_progress" if it has config/log/pose artifacts but no result yet
       - "queued" if the directory doesn't exist yet
 
     Args:
@@ -362,7 +365,11 @@ def scan_target_dir(target_path: str) -> TargetStatus:
 
     entries = safe_list_dir(target_path)
 
-    has_result_csv = "result.csv" in entries
+    result_csv = os.path.join(target_path, "result.csv")
+    try:
+        has_result_csv = "result.csv" in entries and os.path.getsize(result_csv) > 0
+    except OSError:
+        has_result_csv = False
     has_dock_config = "dock_config.json" in entries
     has_stdout = "stdout.log" in entries
 
@@ -372,7 +379,7 @@ def scan_target_dir(target_path: str) -> TargetStatus:
             has_output_pdb = True
             break
 
-    status.has_result = has_result_csv or has_output_pdb
+    status.has_result = has_result_csv
 
     if has_stdout:
         stdout_path = os.path.join(target_path, "stdout.log")
@@ -382,9 +389,9 @@ def scan_target_dir(target_path: str) -> TargetStatus:
             status.state = "stuck"
             return status
 
-    if has_result_csv or has_output_pdb:
+    if has_result_csv:
         status.state = "done"
-    elif has_dock_config:
+    elif has_dock_config or has_stdout or has_output_pdb:
         status.state = "in_progress"
     else:
         status.state = "queued"
@@ -528,8 +535,10 @@ def parse_runner(
         return runner
 
     runner.raw_json = data
-    runner.name = data.get("runner", _runner_name_from_file(filepath))
-    runner.active_dataset = data.get("activeDataset", "none")
+    runner.name = data.get(
+        "runner", data.get("campaign_id", _runner_name_from_file(filepath))
+    )
+    runner.active_dataset = data.get("activeDataset", data.get("dataset", "none"))
     runner.timestamp = data.get("timestamp")
 
     metrics = data.get("metrics", {})
@@ -542,6 +551,23 @@ def parse_runner(
             pass
 
     campaign = data.get("campaign", {})
+    if not campaign and data.get("campaign_id") and data.get("dataset"):
+        states = data.get("states", {})
+        if states.get("completed", 0) == data.get("totalChunks", 0):
+            fleet_status = "complete"
+        elif states.get("running", 0) > 0:
+            fleet_status = "running"
+        elif states.get("failed", 0) > 0:
+            fleet_status = "failed"
+        else:
+            fleet_status = "pending"
+        campaign = {
+            data["dataset"]: {
+                "total": data.get("totalChunks", 0),
+                "completed": data.get("completedChunks", 0),
+                "status": fleet_status,
+            }
+        }
     for ds_name, ds_info in campaign.items():
         total = ds_info.get("total", 0)
         completed = ds_info.get("completed", 0)
@@ -605,6 +631,8 @@ def parse_runner(
 def _runner_name_from_file(filepath: str) -> str:
     """Derive a runner name from the fleet status filename."""
     basename = os.path.basename(filepath)
+    if basename == "status.json":
+        return os.path.basename(os.path.dirname(filepath))
     name = basename.replace("fleet_status", "").replace(".json", "").strip("_")
     if not name:
         return "unknown"

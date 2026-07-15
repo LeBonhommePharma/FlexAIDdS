@@ -932,8 +932,9 @@ if(ENABLE_BENCHMARK_DATASETS)
     add_executable(benchmark_datasets
         LIB/benchmark_datasets.cpp
         LIB/DatasetRunner.cpp
+        LIB/FleetRunner.cpp
+        LIB/FleetRunner.h
         LIB/DatasetRunnerStats.cpp
-        LIB/DatasetRunnerProvenance.cpp
         LIB/AsyncPipeline.cpp
         # NativePoseQC diagnostic plus upstream PoseBusters CLI bridge
         ${FLEXAIDDS_POSEBUST_SOURCES}
@@ -1077,12 +1078,20 @@ if(BUILD_TESTING)
         TEST_NAME JsonConfigTests
     )
 
-    # test_protocol_config — typed ProtocolConfig env adapter + RUN_RECEIPT keys
-    flexaids_add_unit_test(test_protocol_config
+    # test_protocol_config — typed ProtocolConfig env adapter + JSON round-trip
+    
+    flexaids_add_unit_test(test_fleet_runner
+        SOURCES
+            tests/test_fleet_runner.cpp
+            LIB/FleetRunner.cpp
+            LIB/FleetRunner.h
+        TEST_NAME FleetRunnerTests
+    )
+
+flexaids_add_unit_test(test_protocol_config
         SOURCES
             tests/test_protocol_config.cpp
             LIB/ProtocolConfig.cpp
-            LIB/RunReceipt.cpp
         TEST_NAME ProtocolConfigTests
     )
 
@@ -2133,7 +2142,6 @@ if(BUILD_TESTING)
         tests/test_dataset_runner.cpp
         LIB/DatasetRunner.cpp
         LIB/DatasetRunnerStats.cpp
-        LIB/DatasetRunnerProvenance.cpp
         LIB/AsyncPipeline.cpp
         ${FLEXAIDDS_POSEBUST_SOURCES}
     )
@@ -2161,7 +2169,6 @@ if(BUILD_TESTING)
         tests/test_cofactor_blacklist.cpp
         LIB/DatasetRunner.cpp
         LIB/DatasetRunnerStats.cpp
-        LIB/DatasetRunnerProvenance.cpp
         LIB/AsyncPipeline.cpp
         ${FLEXAIDDS_POSEBUST_SOURCES}
     )
