@@ -1092,6 +1092,7 @@ flexaids_add_unit_test(test_protocol_config
         SOURCES
             tests/test_protocol_config.cpp
             LIB/ProtocolConfig.cpp
+            LIB/RunReceipt.cpp
         TEST_NAME ProtocolConfigTests
     )
 
@@ -1567,6 +1568,7 @@ flexaids_add_unit_test(test_protocol_config
         tests/test_classic_entropy_ranking.cpp
         tests/stubs.cpp
         LIB/gaboom.cpp
+        LIB/ProtocolConfig.cpp
         LIB/coarse_init.cpp
         LIB/ThermodynamicEngine.cpp
         LIB/LigandRingFlex/RingConformerLibrary.cpp
@@ -1676,6 +1678,7 @@ flexaids_add_unit_test(test_protocol_config
         tests/test_binding_mode_advanced.cpp
         tests/stubs.cpp
         LIB/gaboom.cpp
+        LIB/ProtocolConfig.cpp
         LIB/coarse_init.cpp
         LIB/ThermodynamicEngine.cpp
         LIB/LigandRingFlex/RingConformerLibrary.cpp
@@ -2142,6 +2145,7 @@ flexaids_add_unit_test(test_protocol_config
         tests/test_dataset_runner.cpp
         LIB/DatasetRunner.cpp
         LIB/DatasetRunnerStats.cpp
+        LIB/DatasetRunnerProvenance.cpp
         LIB/AsyncPipeline.cpp
         ${FLEXAIDDS_POSEBUST_SOURCES}
     )
@@ -2387,6 +2391,17 @@ flexaids_add_unit_test(test_protocol_config
     flexaids_add_unit_test(test_buffer_safety
         SOURCES tests/test_buffer_safety.cpp
         TEST_NAME BufferSafetyTests
+    )
+
+    # test_hungarian_rmsd_bounds — post-cluster RMSDST Hungarian SEGV regression
+    # (cad_only_no_pose_pdb: atoms[k+l] walked past ligand into NULL coor_ref)
+    flexaids_add_unit_test(test_hungarian_rmsd_bounds
+        SOURCES
+            tests/test_hungarian_rmsd_bounds.cpp
+            tests/hungarian_rmsd_stubs.cpp
+            LIB/calc_rmsd.cpp
+            LIB/geometry.cpp
+        TEST_NAME HungarianRmsdBoundsTests
     )
 
     # test_shell_exec — path-safe shell quoting / argv exec helpers

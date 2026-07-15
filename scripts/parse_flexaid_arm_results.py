@@ -1,10 +1,19 @@
 #!/usr/bin/env python3
 """Parse classic FlexAID pilot outputs into a normalized result.csv row.
 
-Reads ``*_r*_0.pdb`` (cluster rank 0) REMARK lines for CF and RMSD when
-RMSDST was set. Elects best CF.app among restart rank-0 poses.
+Reads emitted cluster-head PDBs for CF and RMSD when RMSDST was set.
+
+**S1 / top-1:** elects best CF.app (else CF) among restart rank-0 poses
+(``*_r*_0.pdb`` or ``*_0.pdb``).
+
+**S_top10 / mode_rmsd_0..9:** RMSDs of the top-10 modes in **emitted rank
+order** (crystal-blind). For multi-restart outputs, uses the elected restart's
+rank 0..9 heads. Missing ranks → empty cells (not NaN strings).
 
 Does not claim PoseBusters or thermodynamic ΔG.
+
+Copyright 2026 Le Bonhomme Pharma
+SPDX-License-Identifier: Apache-2.0
 """
 
 from __future__ import annotations
@@ -27,6 +36,32 @@ RMSD_NS_RE = re.compile(
 )
 CF_RE = re.compile(r"REMARK\s+CF=([-+]?\d+\.?\d*)", re.I)
 CF_APP_RE = re.compile(r"REMARK\s+CF\.app=([-+]?\d+\.?\d*)", re.I)
+
+# Success threshold for S1 / S_top10 / BCR (claim contract: ≤ 2.0 Å)
+RMSD_SUCCESS_THRESH = 2.0
+TOP_N_MODES = 10
+
+# Filename patterns (stem without .pdb):
+#   {PDB}_{rank}                  CF/DP emission
+#   {PDB}_{minPts}_{rank}         FO dual-suffix
+#   {PDB}_r{restart}_{rank}       multi-restart CF/DP
+#   {PDB}_r{restart}_{minPts}_{rank}  multi-restart FO
+_RESTART_FO = re.compile(
+    r"^(?P<pdb>[A-Za-z0-9]+)_r(?P<restart>\d+)_(?P<minpts>\d+)_(?P<rank>\d+)$",
+    re.I,
+)
+_RESTART_CF = re.compile(
+    r"^(?P<pdb>[A-Za-z0-9]+)_r(?P<restart>\d+)_(?P<rank>\d+)$",
+    re.I,
+)
+_FO_DUAL = re.compile(
+    r"^(?P<pdb>[A-Za-z0-9]+)_(?P<minpts>\d+)_(?P<rank>\d+)$",
+    re.I,
+)
+_CF_RANK = re.compile(
+    r"^(?P<pdb>[A-Za-z0-9]+)_(?P<rank>\d+)$",
+    re.I,
+)
 
 
 def sha256_file(path: Path) -> str:
@@ -60,16 +95,157 @@ def parse_pose_pdb(path: Path) -> Dict[str, Optional[float]]:
     return out
 
 
-def collect_restart_poses(out_dir: Path, pdb: str) -> List[Tuple[int, Path, Dict]]:
-    rows = []
-    for rdir_pdb in sorted(out_dir.glob(f"{pdb}_r*_0.pdb")):
-        name = rdir_pdb.name
-        try:
-            r = int(name.split("_r")[1].split("_")[0])
-        except (IndexError, ValueError):
-            r = -1
-        rows.append((r, rdir_pdb, parse_pose_pdb(rdir_pdb)))
+def pose_rmsd(meta: Dict[str, Optional[float]]) -> Optional[float]:
+    if meta.get("rmsd_sym") is not None:
+        return meta["rmsd_sym"]
+    return meta.get("rmsd_nosym")
+
+
+def pose_score(meta: Dict[str, Optional[float]]) -> Optional[float]:
+    """Crystal-blind score for election: CF.app preferred, else CF (lower better)."""
+    if meta.get("cf_app") is not None:
+        return meta["cf_app"]
+    return meta.get("cf")
+
+
+def parse_pose_filename(
+    path: Path, pdb: str
+) -> Optional[Tuple[Optional[int], int]]:
+    """Return (restart_or_None, emitted_rank) or None if not a cluster head.
+
+    Rank is the engine-emitted rank index (0 = top), never derived from RMSD.
+    """
+    stem = path.stem
+    if stem.upper().endswith("_INI") or stem.upper() == f"{pdb.upper()}_INI":
+        return None
+    if not stem.upper().startswith(pdb.upper()):
+        return None
+
+    m = _RESTART_FO.match(stem)
+    if m and m.group("pdb").upper() == pdb.upper():
+        return int(m.group("restart")), int(m.group("rank"))
+
+    m = _RESTART_CF.match(stem)
+    if m and m.group("pdb").upper() == pdb.upper():
+        return int(m.group("restart")), int(m.group("rank"))
+
+    m = _FO_DUAL.match(stem)
+    if m and m.group("pdb").upper() == pdb.upper():
+        # FO dual-suffix: middle token is minPts (not a restart index)
+        return None, int(m.group("rank"))
+
+    m = _CF_RANK.match(stem)
+    if m and m.group("pdb").upper() == pdb.upper():
+        return None, int(m.group("rank"))
+
+    return None
+
+
+def collect_all_heads(
+    out_dir: Path, pdb: str
+) -> List[Tuple[Optional[int], int, Path, Dict[str, Optional[float]]]]:
+    """All cluster-head PDBs: (restart, rank, path, meta)."""
+    rows: List[Tuple[Optional[int], int, Path, Dict[str, Optional[float]]]] = []
+    for path in sorted(out_dir.glob(f"{pdb}*.pdb")):
+        parsed = parse_pose_filename(path, pdb)
+        if parsed is None:
+            continue
+        restart, rank = parsed
+        rows.append((restart, rank, path, parse_pose_pdb(path)))
     return rows
+
+
+def collect_restart_poses(
+    out_dir: Path, pdb: str
+) -> List[Tuple[int, Path, Dict[str, Optional[float]]]]:
+    """Rank-0 heads per restart (legacy helper; restart index from filename)."""
+    rows: List[Tuple[int, Path, Dict[str, Optional[float]]]] = []
+    for restart, rank, path, meta in collect_all_heads(out_dir, pdb):
+        if rank != 0:
+            continue
+        r = 0 if restart is None else restart
+        rows.append((r, path, meta))
+    # Prefer restart-style globs if nothing matched via collect_all_heads
+    if not rows:
+        for rdir_pdb in sorted(out_dir.glob(f"{pdb}_r*_0.pdb")):
+            name = rdir_pdb.name
+            try:
+                r = int(name.split("_r")[1].split("_")[0])
+            except (IndexError, ValueError):
+                r = -1
+            rows.append((r, rdir_pdb, parse_pose_pdb(rdir_pdb)))
+    return rows
+
+
+def elect_best_rank0(
+    heads: List[Tuple[Optional[int], int, Path, Dict[str, Optional[float]]]]
+) -> Optional[Tuple[float, Optional[int], Path, Dict[str, Optional[float]]]]:
+    """Elect best CF.app/CF among rank-0 heads. Returns (score, restart, path, meta)."""
+    best: Optional[Tuple[float, Optional[int], Path, Dict[str, Optional[float]]]] = None
+    for restart, rank, path, meta in heads:
+        if rank != 0:
+            continue
+        cf = pose_score(meta)
+        if cf is None:
+            continue
+        if best is None or cf < best[0]:
+            best = (cf, restart, path, meta)
+    return best
+
+
+def mode_rmsds_emitted_order(
+    heads: List[Tuple[Optional[int], int, Path, Dict[str, Optional[float]]]],
+    elected_restart: Optional[int],
+    n: int = TOP_N_MODES,
+) -> List[Optional[float]]:
+    """mode_rmsd_0..n-1 in **emitted rank order** (not RMSD-sorted).
+
+    - Single-emission (no restart token): ranks 0..n-1 from that emission.
+    - Multi-restart: ranks 0..n-1 from the **elected** restart only.
+    - If a rank is missing → None (empty CSV cell).
+    - If multiple heads share a rank (e.g. FO dual minPts), keep lowest score.
+    """
+    # Filter to the emission group we rank within
+    restarts_present = {r for r, _, _, _ in heads if r is not None}
+    if restarts_present:
+        # Multi-restart: stick to elected restart; if None, fall back to first
+        # available restart that has rank-0
+        target = elected_restart
+        if target is None:
+            # Prefer restart with best rank-0 score already encoded as elected;
+            # if still None, take the minimum restart id that has any head
+            target = min(restarts_present)
+        group = [(rank, path, meta) for r, rank, path, meta in heads if r == target]
+    else:
+        group = [(rank, path, meta) for r, rank, path, meta in heads if r is None]
+
+    # Per-rank: keep best score when duplicates (FO multi minPts should not
+    # happen under single-MinPts protocol, but be safe)
+    by_rank: Dict[int, Tuple[Optional[float], Optional[float]]] = {}
+    # value: (score_for_tiebreak, rmsd)
+    for rank, _path, meta in group:
+        if rank < 0 or rank >= n:
+            continue
+        sc = pose_score(meta)
+        rmsd = pose_rmsd(meta)
+        if rank not in by_rank:
+            by_rank[rank] = (sc, rmsd)
+        else:
+            prev_sc, _ = by_rank[rank]
+            if sc is not None and (prev_sc is None or sc < prev_sc):
+                by_rank[rank] = (sc, rmsd)
+
+    return [by_rank[i][1] if i in by_rank else None for i in range(n)]
+
+
+def success_s_top10(
+    mode_rmsds: List[Optional[float]], thresh: float = RMSD_SUCCESS_THRESH
+) -> int:
+    """1 if any finite mode_rmsd_i ≤ thresh."""
+    for v in mode_rmsds:
+        if v is not None and v == v and v >= 0.0 and v <= thresh:  # v==v → not NaN
+            return 1
+    return 0
 
 
 def main() -> int:
@@ -83,49 +259,53 @@ def main() -> int:
     args = ap.parse_args()
 
     pdb = args.pdb.upper()
-    poses = collect_restart_poses(args.out_dir, pdb)
-    if not poses:
+    heads = collect_all_heads(args.out_dir, pdb)
+    if not heads:
+        # Fallback: any *_0.pdb rank-0 style
         for p in sorted(args.out_dir.glob("*_0.pdb")):
-            poses.append((0, p, parse_pose_pdb(p)))
+            meta = parse_pose_pdb(p)
+            heads.append((0, 0, p, meta))
 
-    best = None
-    for r, path, meta in poses:
-        cf = meta.get("cf_app") if meta.get("cf_app") is not None else meta.get("cf")
-        if cf is None:
-            continue
-        if best is None or cf < best[0]:
-            best = (cf, r, path, meta)
+    best = elect_best_rank0(heads)
 
-    rmsd_top1 = None
-    score_top1 = None
+    rmsd_top1: Optional[float] = None
+    score_top1: Optional[float] = None
     elected_path = ""
-    restarts_finished = len(poses)
-    rmsd_bcr = None
+    elected_restart: Optional[int] = None
     if best:
         score_top1 = best[0]
+        elected_restart = best[1]
         elected_path = str(best[2])
-        m = best[3]
-        rmsd_top1 = m.get("rmsd_sym") if m.get("rmsd_sym") is not None else m.get("rmsd_nosym")
+        rmsd_top1 = pose_rmsd(best[3])
 
-    all_rmsds = []
-    for p in args.out_dir.glob(f"{pdb}_r*_*.pdb"):
-        if p.name.endswith("_INI.pdb"):
-            continue
-        meta = parse_pose_pdb(p)
-        v = meta.get("rmsd_sym") if meta.get("rmsd_sym") is not None else meta.get("rmsd_nosym")
+    mode_rmsds = mode_rmsds_emitted_order(heads, elected_restart, TOP_N_MODES)
+    # Keep S1 aligned with elected rank-0 (mode_rmsd_0 when elected emission used)
+    if mode_rmsds and mode_rmsds[0] is not None and rmsd_top1 is None:
+        rmsd_top1 = mode_rmsds[0]
+    # Prefer elected rmsd_top1 as mode_rmsd_0 when both exist (same pose)
+    if rmsd_top1 is not None:
+        mode_rmsds[0] = rmsd_top1
+
+    all_rmsds: List[float] = []
+    for _r, _rank, _path, meta in heads:
+        v = pose_rmsd(meta)
         if v is not None:
             all_rmsds.append(v)
-    if all_rmsds:
-        rmsd_bcr = min(all_rmsds)
+    rmsd_bcr = min(all_rmsds) if all_rmsds else None
 
-    success_s1 = int(rmsd_top1 is not None and rmsd_top1 <= 2.0)
-    success_s3 = int(rmsd_bcr is not None and rmsd_bcr <= 2.0)
+    restarts_finished = len({r for r, rank, _, _ in heads if rank == 0})
+    if restarts_finished == 0:
+        restarts_finished = len(heads)
+
+    success_s1 = int(rmsd_top1 is not None and rmsd_top1 <= RMSD_SUCCESS_THRESH)
+    success_s3 = int(rmsd_bcr is not None and rmsd_bcr <= RMSD_SUCCESS_THRESH)
+    s_top10 = success_s_top10(mode_rmsds, RMSD_SUCCESS_THRESH)
 
     bin_sha = ""
     if args.binary and args.binary.is_file():
         bin_sha = sha256_file(args.binary.resolve())
 
-    row = {
+    row: Dict[str, object] = {
         "arm": args.arm,
         "engine_sha": bin_sha,
         "matrix_md5": args.matrix_md5,
@@ -135,9 +315,10 @@ def main() -> int:
         "success_s1": success_s1,
         "success_s2": "",
         "success_s3": success_s3,
+        "success_s_top10": s_top10,
         "rank_native_mode": "",
-        "n_poses": restarts_finished,
-        "n_modes": restarts_finished,
+        "n_poses": len(heads),
+        "n_modes": sum(1 for v in mode_rmsds if v is not None),
         "score_top1": "" if score_top1 is None else f"{score_top1:.5f}",
         "H": "",
         "TS": "",
@@ -154,13 +335,52 @@ def main() -> int:
         "elected_path": elected_path,
         "parsed_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
     }
+    for i, v in enumerate(mode_rmsds):
+        row[f"mode_rmsd_{i}"] = "" if v is None else f"{v:.4f}"
+
+    # Stable column order: identity → top1/BCR → mode_rmsd_* → flags
+    fieldnames = [
+        "arm",
+        "engine_sha",
+        "matrix_md5",
+        "pdb_id",
+        "rmsd_top1",
+        "rmsd_bcr",
+        *[f"mode_rmsd_{i}" for i in range(TOP_N_MODES)],
+        "success_s1",
+        "success_s2",
+        "success_s3",
+        "success_s_top10",
+        "rank_native_mode",
+        "n_poses",
+        "n_modes",
+        "score_top1",
+        "H",
+        "TS",
+        "F",
+        "pb_pass",
+        "tencom_status",
+        "seed_echo",
+        "native_pose_seeded",
+        "protocol_claim_eligible",
+        "wall_s",
+        "restarts_finished",
+        "evals_actual",
+        "budget_class",
+        "elected_path",
+        "parsed_utc",
+    ]
 
     out_csv = args.out_dir / "result.csv"
     with out_csv.open("w", newline="") as f:
-        w = csv.DictWriter(f, fieldnames=list(row.keys()))
+        w = csv.DictWriter(f, fieldnames=fieldnames)
         w.writeheader()
         w.writerow(row)
-    print(f"wrote {out_csv} s1={success_s1} rmsd_top1={row['rmsd_top1']} bcr={row['rmsd_bcr']}")
+    print(
+        f"wrote {out_csv} s1={success_s1} s_top10={s_top10} "
+        f"rmsd_top1={row['rmsd_top1']} bcr={row['rmsd_bcr']} "
+        f"modes={[row[f'mode_rmsd_{i}'] for i in range(TOP_N_MODES)]}"
+    )
     return 0
 
 

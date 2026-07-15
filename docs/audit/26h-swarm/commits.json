@@ -1,0 +1,457 @@
+[
+  {
+    "full": "3b4a53ab155191ecc74116dac5c7c0926c939123",
+    "short": "3b4a53ab1",
+    "subj": "Update: freeze single literature MinPts FO for 3Dsig red-pair arm B"
+  },
+  {
+    "full": "5a24ebbd28e33cbe6e80c71efd7b171b025fe162",
+    "short": "5a24ebbd2",
+    "subj": "Fix: FlexAID --legacy for A/B/B0 pilot; local-first OUT + deferred iCloud sync"
+  },
+  {
+    "full": "0e39f3a0bb7b73a17fcb281f9af39373553446cd",
+    "short": "0e39f3a0b",
+    "subj": "Add: 3Dsig red-pair protocol, archived bars, serial A\u2192B0\u2192B launcher"
+  },
+  {
+    "full": "ab0850a6d4cdd6ff157dca3c1e72dc3331505e8a",
+    "short": "ab0850a6d",
+    "subj": "Fix: enforce local-first / thin-iCloud benchmark storage policy"
+  },
+  {
+    "full": "f75cdfc50a2322a76e5f9acc3cda575ca39ecefa",
+    "short": "f75cdfc50",
+    "subj": "Fix: Production CloudDocs anti-hang I/O for ops and agents"
+  },
+  {
+    "full": "d280a8fc5ea04eaf3ca2ccf72d5a35fe24490b4c",
+    "short": "d280a8fc5",
+    "subj": "Fix: Pin Homebrew HEAD formula to main only"
+  },
+  {
+    "full": "b1ae633b65a154c9eb78eb877dd8d64860b632a8",
+    "short": "b1ae633b6",
+    "subj": "Fix: Claim live I/O on local disk to stop iCloud fileprovider hangs"
+  },
+  {
+    "full": "c82e6fc246c061a300ddfd51b491cd41e7f616b8",
+    "short": "c82e6fc24",
+    "subj": "Fix: DatasetRunner elects by 3Dsig Shannon free energy G\u0303=H\u0303\u2212T\u00b7S\u0303"
+  },
+  {
+    "full": "6ec671a92b7a79b0f2425f39978688c3b614cc3e",
+    "short": "6ec671a92",
+    "subj": "Fix: run FastOPTICS once with literature MinPts (drop triple ladder)"
+  },
+  {
+    "full": "c93b866a4aed4bfcacf9376238ef9b9dda076d92",
+    "short": "c93b866a4",
+    "subj": "Fix: DPFO aggregator RMSD sentinels and claim CSV columns"
+  },
+  {
+    "full": "e18cb6b8cf85d6bf5851892128d595d6df3f37ef",
+    "short": "e18cb6b8c",
+    "subj": "Add: DP vs FO clustering small-sim pilot (8 random Astex)"
+  },
+  {
+    "full": "4277b416f7ab49aa402b3d9b85a6911394f9569e",
+    "short": "4277b416f",
+    "subj": "Add: clean claim C0 reboot (gen=2000, pop\u00d7DoF, MAXRES=50)"
+  },
+  {
+    "full": "a9cb06e6440e2e18677f737b1d3deea3f3b0bc9b",
+    "short": "a9cb06e64",
+    "subj": "Add: unified benchmark ops + finished-run monitor automation"
+  },
+  {
+    "full": "f2fce514fef036c8581ef19282d5050c939d78ec",
+    "short": "f2fce514f",
+    "subj": "Docs/Ops: force all production benchmark results onto iCloud Drive"
+  },
+  {
+    "full": "cee401f4d5cb4c05db460c49b490d2f16ea87022",
+    "short": "cee401f4d",
+    "subj": "Docs: production-grade README for pharma / industrial use"
+  },
+  {
+    "full": "68063cc9de33f00309543fbab50f9214f9def41c",
+    "short": "68063cc9d",
+    "subj": "Docs/Fix: DoF budget modulates population, not generations"
+  },
+  {
+    "full": "06ab2584c42f550bd27e400f3b17d79654dada80",
+    "short": "06ab2584c",
+    "subj": "Docs: fill Apache LICENSE appendix, NOTICE, and PoseBust licensing"
+  },
+  {
+    "full": "046c628f63ba46dc47272cd0a726bd3bffe928d4",
+    "short": "046c628f6",
+    "subj": "Merge pull request #279 from LeBonhommePharma/docs/three-engine-priority-goal"
+  },
+  {
+    "full": "97da54e75b4c42da8f803bcf12327523cdacde5a",
+    "short": "97da54e75",
+    "subj": "Docs: Prioritize three-engine Astex 85 as primary live science goal"
+  },
+  {
+    "full": "dee34c9c649af68334db568e169121484a6628e4",
+    "short": "dee34c9c6",
+    "subj": "Merge pull request #278 from LeBonhommePharma/merge/science-residual-stack"
+  },
+  {
+    "full": "413141f07c0a134698ee98be5fc7263984cb5ea6",
+    "short": "413141f07",
+    "subj": "Merge: PR #266 Bonhomme Fleet orchestration onto science residual stack"
+  },
+  {
+    "full": "bf461767461477a933ae8845bf8497998cc6fd28",
+    "short": "bf4617674",
+    "subj": "Merge: PR #272 DatasetRunnerProvenance leaf (keep RunReceipt run path)"
+  },
+  {
+    "full": "0e3d0333b6fa5e474d1bf549de5b5a52eb25a55c",
+    "short": "0e3d0333b",
+    "subj": "Merge: ProtocolConfig chunk 3 + RUN_RECEIPT (PR #277) onto main"
+  },
+  {
+    "full": "814e86e589aa22513aa82f3b43dd5cfd798cc4ce",
+    "short": "814e86e58",
+    "subj": "Merge pull request #276 from LeBonhommePharma/fix/three-engine-flexaid-ab-wiring"
+  },
+  {
+    "full": "88118066baeed38be0b0a0f9906817ca717eb6b2",
+    "short": "88118066b",
+    "subj": "Merge pull request #275 from LeBonhommePharma/fix/science-shell-exec-hardening"
+  },
+  {
+    "full": "9c4bceb6132606bf7c59a7f2e4a24b2a966ed277",
+    "short": "9c4bceb61",
+    "subj": "Merge pull request #274 from LeBonhommePharma/fix/science-admission-metrics-contract"
+  },
+  {
+    "full": "4dabec5657f00f669738426f9a51f9f589435f6f",
+    "short": "4dabec565",
+    "subj": "Fix: Harden shell/exec path handling for provenance safety"
+  },
+  {
+    "full": "646824df1e37a0a0b703d6f3e5b4affd00a1d0a3",
+    "short": "646824df1",
+    "subj": "Fix: Shell-quote DatasetRunner dock paths; add fork_exec_argv"
+  },
+  {
+    "full": "c957d32b29239c683d3d520cf157db1112d8d623",
+    "short": "c957d32b2",
+    "subj": "Update: ProtocolConfig chunk 2 \u2014 pose/budget/GA knobs + run() resnapshot"
+  },
+  {
+    "full": "d7fc2afaa4d1c9cf75bb15a936f1850d411b42a6",
+    "short": "d7fc2afaa",
+    "subj": "Fix: Isolate FlexAID smoke OUT from pilot8 to prevent budget contamination"
+  },
+  {
+    "full": "9dbbd9fa9edc36543e6b3966f259870559df5b17",
+    "short": "9dbbd9fa9",
+    "subj": "Fix: Admission metrics fail-closed seeds + three-engine rmsd_top1"
+  },
+  {
+    "full": "439a2be8c135ba05304a6f1e769b91bf3032d709",
+    "short": "439a2be8c",
+    "subj": "Merge pull request #273 from LeBonhommePharma/fix/science-astex-apo-strip-validation"
+  },
+  {
+    "full": "125f76cc88959f7594d2b0d744d6119b1471184d",
+    "short": "125f76cc8",
+    "subj": "Merge pull request #271 from LeBonhommePharma/fix/science-macos-metal-release-gates"
+  },
+  {
+    "full": "af2ab13484252eeb8ad5a3eccba2fb40fabe4a26",
+    "short": "af2ab1348",
+    "subj": "Merge pull request #270 from LeBonhommePharma/docs/v2.0.3-install-metal-notes"
+  },
+  {
+    "full": "04735c31b42c80309626aa2b9af6635c1f1dbfaf",
+    "short": "04735c31b",
+    "subj": "Add: ProtocolConfig chunk 3 + RUN_RECEIPT.json on DatasetRunner paths"
+  },
+  {
+    "full": "c4509428dd3901863766b5af1066a30520123a13",
+    "short": "c4509428d",
+    "subj": "Add: FlexAID A/B0/B pilot harness for three-engine campaign"
+  },
+  {
+    "full": "668cc3095734d6f074c50814fd117c3f70c8eb0c",
+    "short": "668cc3095",
+    "subj": "Add: Enforceable S1/S2/S3 admission + metrics claim contract"
+  },
+  {
+    "full": "fe0b961e49fd1f51784064aaae0b439aba4a6af7",
+    "short": "fe0b961e4",
+    "subj": "Add: Astex apo strip validation with strict gate and summary JSON"
+  },
+  {
+    "full": "88ae49d7b47a9c2c7814ab73aa2b3afaa255e3d2",
+    "short": "88ae49d7b",
+    "subj": "Update: ProtocolConfig chunk 2 \u2014 pose/budget/GA knobs + run() resnapshot"
+  },
+  {
+    "full": "9d87f0740f0441e2628fb92ccb7f941cdc4f6cac",
+    "short": "9d87f0740",
+    "subj": "Refactor: Extract DatasetRunnerProvenance leaf from DatasetRunner.cpp (P1 split)"
+  },
+  {
+    "full": "4d51e413eebf6a7b2de5908c9cb45530c571d677",
+    "short": "4d51e413e",
+    "subj": "Revert \"Fix: Harden self-hosted Metal gate + exact release language\""
+  },
+  {
+    "full": "8c42517bd2ffc7b32c622b375eb1049339a5b3f5",
+    "short": "8c42517bd",
+    "subj": "Fix: Harden self-hosted Metal gate + exact release language"
+  },
+  {
+    "full": "e752df7aada3314897610b566913b9568d489d97",
+    "short": "e752df7aa",
+    "subj": "Fix: Harden self-hosted Metal gate + exact release language"
+  },
+  {
+    "full": "80f6ba78395939a833f11952f317f1c064a25deb",
+    "short": "80f6ba783",
+    "subj": "Docs: Align INSTALLATION with v2.0.3 stable Metal Homebrew path"
+  },
+  {
+    "full": "65afedcb2488ff76ae83671b4dadf8c07731aa1b",
+    "short": "65afedcb2",
+    "subj": "Add: Astex apo ligand-strip validation script and report CSV"
+  },
+  {
+    "full": "342d6650de100537a69907d36a9d3468af132efc",
+    "short": "342d6650d",
+    "subj": "Merge pull request #268 from LeBonhommePharma/release/v2.0.3-formula-sha"
+  },
+  {
+    "full": "00a7b6eae6216e89e2dafd2121cfeffb398089f6",
+    "short": "00a7b6eae",
+    "subj": "Fix: Formula sha256 for v2.0.3 release tarball"
+  },
+  {
+    "full": "388e17336ceb965bdc0a8c8c392b1ac03537a981",
+    "short": "388e17336",
+    "subj": "Merge pull request #267 from LeBonhommePharma/release/v2.0.3"
+  },
+  {
+    "full": "600e95ba9bae0e104d79ebe5986201547ea795a1",
+    "short": "600e95ba9",
+    "subj": "Release: v2.0.3 \u2014 Homebrew Metal link fix + packaging"
+  },
+  {
+    "full": "43a5dbfa3a33b2edfc7fd6dd44888ed35a49e64c",
+    "short": "43a5dbfa3",
+    "subj": "Merge pull request #265 from LeBonhommePharma/fix/audit-datasetrunner-split-p0"
+  },
+  {
+    "full": "e6032dc39c7f26e71d49daf93cca7ef5f3563f17",
+    "short": "e6032dc39",
+    "subj": "Refactor: Extract DatasetRunnerStats leaf from DatasetRunner.cpp (P0 split)"
+  },
+  {
+    "full": "599a66216b0e0a99705a98ab4ed19016cd0d7041",
+    "short": "599a66216",
+    "subj": "Merge pull request #264 from LeBonhommePharma/fix/audit-protocol-config"
+  },
+  {
+    "full": "205ed08870eb3938f8e6ab9f4b985fdbd8efa214",
+    "short": "205ed0887",
+    "subj": "Add: ProtocolConfig typed env adapter (audit getenv chunk 1)"
+  },
+  {
+    "full": "b056a1d3c2dcdee3f85422322a7a83ed9f17b5c0",
+    "short": "b056a1d3c",
+    "subj": "Merge pull request #263 from LeBonhommePharma/fix/audit-cf-naming-clarity"
+  },
+  {
+    "full": "033eeb889c71cf2c6fc5c19851528475d6f30e11",
+    "short": "033eeb889",
+    "subj": "Fix: Clarify CF scoring proxy vs free energy / \u0394G naming"
+  },
+  {
+    "full": "52ed304d845dd25bb8a9c466ad0b6c3681369b44",
+    "short": "52ed304d8",
+    "subj": "Merge pull request #262 from LeBonhommePharma/fix/audit-format-and-astex-canonical"
+  },
+  {
+    "full": "e2b799495d3ad6a369f08accb8228bfbe8b6b0b6",
+    "short": "e2b799495",
+    "subj": "Merge pull request #261 from LeBonhommePharma/fix/audit-macos-ci-gate"
+  },
+  {
+    "full": "1dba43f4b3191ffbd079a13611564a26f192a390",
+    "short": "1dba43f4b",
+    "subj": "Merge pull request #260 from LeBonhommePharma/fix/homebrew-metal-link"
+  },
+  {
+    "full": "99e5b35eb59fcd699228f8d50f786bce8b6459fe",
+    "short": "99e5b35eb",
+    "subj": "Fix: Point Formula head at main (not feature branch) after Metal link fix"
+  },
+  {
+    "full": "d9bee5a38f9be588e818eb9a26f2f6149b264e63",
+    "short": "d9bee5a38",
+    "subj": "Update: CI default branch master \u2192 main (Git 3.0)"
+  },
+  {
+    "full": "d842e324754662f431782788b110a1a69a700160",
+    "short": "d842e3247",
+    "subj": "Add: production Bonhomme Fleet benchmark orchestration"
+  },
+  {
+    "full": "12f3a6a0847ee49d3bc9db85704661dc62031519",
+    "short": "12f3a6a08",
+    "subj": "Fix: Document Homebrew 6 install -s --HEAD --with-metal (not reinstall)"
+  },
+  {
+    "full": "6263cd7e0ee71df5493925d375addd7763669ff6",
+    "short": "6263cd7e0",
+    "subj": "Add: formatting scaffolding and Astex canonical dataset docs"
+  },
+  {
+    "full": "ffa7499cdf1464709b7d34760fc1c3c3be588564",
+    "short": "ffa7499cd",
+    "subj": "Fix: Make macOS CPU ctest blocking and add Metal CI release gates"
+  },
+  {
+    "full": "5a3b9543060142a45df3a9222560d7f490a8c34b",
+    "short": "5a3b95430",
+    "subj": "Fix: Route Homebrew --with-metal through HEAD until flexaid_core fix ships"
+  },
+  {
+    "full": "3e059594b95570b10b3d1c706e61cfcf243351ec",
+    "short": "3e059594b",
+    "subj": "Fix: Link Metal OBJCXX bridges via flexaid_core for Homebrew --with-metal"
+  },
+  {
+    "full": "283d9ee1905353fa1f6c97af0259303d25a312f4",
+    "short": "283d9ee19",
+    "subj": "Fix: Align Homebrew/PyPI install docs, formula caveats, and release checks"
+  },
+  {
+    "full": "5eb1be79ee2de41f6f38c580a696555f77f07e98",
+    "short": "5eb1be79e",
+    "subj": "Fix: Homebrew install docs for tap-based install (Homebrew 6+)"
+  },
+  {
+    "full": "292a0ce6a2a77e6c2a4a2ffde003b73b5dca0caa",
+    "short": "292a0ce6a",
+    "subj": "Merge: origin/master into main \u2014 align main with master tip"
+  },
+  {
+    "full": "8eaf043ae7160e2517dabda5aba34c9e69480d1d",
+    "short": "8eaf043ae",
+    "subj": "Merge pull request #257 from LeBonhommePharma/feature/bonhomme-fleet-dataset-runner-v1"
+  },
+  {
+    "full": "711b83cc9ab24f81ff92cb23f9d659a3fb9172b6",
+    "short": "711b83cc9",
+    "subj": "Merge branch 'main' into feature/bonhomme-fleet-dataset-runner-v1"
+  },
+  {
+    "full": "964bec0a2bb5ea6518868a9487288d0ddb81ac5c",
+    "short": "964bec0a2",
+    "subj": "Merge pull request #258 from LeBonhommePharma/feature/bonhomme-fleet-dataset-runner"
+  },
+  {
+    "full": "a4e13fc9b0abbe1186d82dd0c8e6c32d488952b5",
+    "short": "a4e13fc9b",
+    "subj": "Merge branch 'master' into feature/bonhomme-fleet-dataset-runner"
+  },
+  {
+    "full": "2fc7189d8d68eeae7a3d02cd5fe7c0a1233974e7",
+    "short": "2fc7189d8",
+    "subj": "fix(build): Update CMakeLists.txt to include FleetRunner, metal_microbench, tests, and new targets for Bonhomme Fleet DatasetRunner"
+  },
+  {
+    "full": "69aa0fab6db269e23f74a7d3724e71588926da40",
+    "short": "69aa0fab6",
+    "subj": "feat: Integrate Bonhomme Fleet as first-class DatasetRunner backend + full testing & monitoring + pose viz tools"
+  },
+  {
+    "full": "155ebbb7b6a002a80e786fde70ac560cdd74905e",
+    "short": "155ebbb7b",
+    "subj": "Merge pull request #255 from LeBonhommePharma/dependabot/github_actions/actions/checkout-7.0.0"
+  },
+  {
+    "full": "8071a5582235795e6145e4f8d1ff8d3927f6dd00",
+    "short": "8071a5582",
+    "subj": "Merge pull request #254 from LeBonhommePharma/dependabot/github_actions/actions/github-script-9"
+  },
+  {
+    "full": "e55c2eecf1de01fd639f365b72af25cdc19c503c",
+    "short": "e55c2eecf",
+    "subj": "Merge pull request #253 from LeBonhommePharma/dependabot/github_actions/marocchino/sticky-pull-request-comment-3.0.5"
+  },
+  {
+    "full": "214113cbb6fd8b23b3ea81e2f488ed10f0a289ae",
+    "short": "214113cbb",
+    "subj": "Merge pull request #252 from LeBonhommePharma/dependabot/github_actions/actions/cache-6"
+  },
+  {
+    "full": "b041397ffaa8ce610bb1fa84ccef9a1566f840dc",
+    "short": "b041397ff",
+    "subj": "Merge pull request #251 from LeBonhommePharma/dependabot/github_actions/pypa/gh-action-pypi-publish-1.14.0"
+  },
+  {
+    "full": "6774dcb7d70fd07d722f0ce33fa00114ebdcb73e",
+    "short": "6774dcb7d",
+    "subj": "Merge branch 'master' into dependabot/github_actions/pypa/gh-action-pypi-publish-1.14.0"
+  },
+  {
+    "full": "83f7a8584817e7d3ba578a012d5ac1a4bb0f0787",
+    "short": "83f7a8584",
+    "subj": "Add: PB extract hygiene + optional BindingMode clash promotion"
+  },
+  {
+    "full": "7e79352e3ee4f27ab5b739bbc9ec3e76c89d59cb",
+    "short": "7e79352e3",
+    "subj": "Merge pull request #256 from LeBonhommePharma/feat/native-posebust-cpp26"
+  },
+  {
+    "full": "51e842ef4b3e2bf12e705353788a92bf18c5627e",
+    "short": "51e842ef4",
+    "subj": "Merge: origin/master into feat/native-posebust-cpp26 before landing"
+  },
+  {
+    "full": "465c7a6113e76f3d3212f94f5de59e0c57160a1d",
+    "short": "465c7a611",
+    "subj": "Update: ignore remaining local astex_repro campaign residue"
+  },
+  {
+    "full": "9971dff7ec4770ec8b725ee649a577646b6e8daa",
+    "short": "9971dff7e",
+    "subj": "Add: Astex repro launch/score scripts and handoff notes"
+  },
+  {
+    "full": "0fca498a9bd3218f1c16e40099643888f09a89ee",
+    "short": "0fca498a9",
+    "subj": "Update: gitignore local scratch, repro engines, and apo backups"
+  },
+  {
+    "full": "89e4979a950f1b9de9e738c8be1733df158d5f3c",
+    "short": "89e4979a9",
+    "subj": "Add: Astex ligand-centered site PDBs for cognate-pocket redock"
+  },
+  {
+    "full": "dea70ea885490acd9b8bf7d5acdc48d8b7d11edc",
+    "short": "dea70ea88",
+    "subj": "Add: no-seed cognate docking stack + DirectLigandIC geometry"
+  },
+  {
+    "full": "4e87c0b3ca000cb8b9ceebba76215e55aeb306b5",
+    "short": "4e87c0b3c",
+    "subj": "Add: queue-ready three-engine entropy comparison protocol"
+  },
+  {
+    "full": "26cb9927638e18c72e3aba0b1fcd43783fe5d526",
+    "short": "26cb99276",
+    "subj": "Fix: oracle-ceiling native pose seed when reference_ligand.file is set"
+  }
+]

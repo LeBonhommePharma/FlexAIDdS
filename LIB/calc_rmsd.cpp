@@ -99,7 +99,11 @@ float calc_rmsd(FA_Global* FA,atom* atoms,resid* residue, gridpoint* cleftgrid,i
                 }
             }
         }
-        rmsd = sqrtf(rmsd/((float)l));
+        if (l > 0) {
+            rmsd = sqrtf(rmsd/((float)l));
+        } else {
+            rmsd = 0.0f;
+        }
     }
     else if(Hungarian == true)
     {
@@ -120,7 +124,12 @@ float calc_Hungarian_RMSD(FA_Global* FA, atom* atoms, resid* residue, gridpoint*
     int nTypes = 0;
     int nUniqueTypes = 0;
     bool unique_flag = true;
-    
+    int atoms_in_assignment = 0;
+
+    if (FA == NULL || atoms == NULL || residue == NULL || FA->num_het_atm <= 0) {
+        return 0.0f;
+    }
+
     // Counting the number of unique atom types
     // Declaration and Memory Allocation for (int*)unique_atom_type[]
     int *unique_atom_type;
@@ -139,8 +148,14 @@ float calc_Hungarian_RMSD(FA_Global* FA, atom* atoms, resid* residue, gridpoint*
         {
             if(j == FA->het_res[i])
             {
+                const int fatm = residue[j].fatm[0];
+                const int latm = residue[j].latm[0];
+                if (fatm <= 0 || latm < fatm) {
+                    continue;
+                }
+
                 // The 'for loop' below iterates through all the atoms of the ligand
-                for(k=residue[j].fatm[0]; k<=residue[j].latm[0]; k++)
+                for(k=fatm; k<=latm; k++)
                 {
                     for(int jj=0; jj < nUniqueTypes+1; jj++)
                     {
@@ -152,18 +167,42 @@ float calc_Hungarian_RMSD(FA_Global* FA, atom* atoms, resid* residue, gridpoint*
                     }
                     if(unique_flag)
                     {
+                        if (nUniqueTypes >= FA->num_het_atm) {
+                            break;
+                        }
                         unique_atom_type[nUniqueTypes] = atoms[k].type;
                         nUniqueTypes++;
                     }
                     unique_flag = true;
                 }
-                // Counting the number of unique atom types
+                // Per-type symmetric RMSD via Hungarian assignment among same-type atoms.
+                // CRITICAL: only index atoms inside [fatm, latm]. The historical
+                // atoms[k+l] walk (l = 0..num_het_atm-1) read past the ligand into
+                // protein/unmapped memory and dereferenced NULL coor_ref → SIGSEGV
+                // right after CF clustering wrote *.cad but before ranked *_N.pdb.
                 for(int z = 0; z < nUniqueTypes; z++)
                 {
+                    if (unique_atom_type[z] <= 0) {
+                        continue;
+                    }
+
+                    // Collect ligand atoms of this type that have a reference pose.
+                    int *type_atoms = (int*) malloc(sizeof(int) * (size_t)(latm - fatm + 1));
+                    if (type_atoms == NULL) {
+                        fprintf(stderr,"ERROR: memory allocation error for hungarian algorithm.\n");
+                        free(unique_atom_type);
+                        Terminate(2);
+                    }
                     nTypes = 0;
-                    for(k=residue[j].fatm[0]; k<=residue[j].latm[0]; k++)
+                    for(k=fatm; k<=latm; k++)
                     {
-                        if(atoms[k].type > 0 && atoms[k].type == unique_atom_type[z]) nTypes++;
+                        if(atoms[k].type == unique_atom_type[z] && atoms[k].coor_ref != NULL) {
+                            type_atoms[nTypes++] = k;
+                        }
+                    }
+                    if (nTypes <= 0) {
+                        free(type_atoms);
+                        continue;
                     }
                     
                     // Declaration, Memory Allocation and Initialization of the Hungarian algorihm arrays
@@ -178,6 +217,8 @@ float calc_Hungarian_RMSD(FA_Global* FA, atom* atoms, resid* residue, gridpoint*
                     {
                         printf("ERROR: memory allocation error for hungarian algorithm.\n");
                         fprintf(stderr,"ERROR: memory allocation error for hungarian algorithm.\n");
+                        free(type_atoms);
+                        free(unique_atom_type);
                         Terminate(2);
                     }
                     for(k = 0; k < nTypes; k++)
@@ -189,6 +230,8 @@ float calc_Hungarian_RMSD(FA_Global* FA, atom* atoms, resid* residue, gridpoint*
                         {
                             printf("ERROR: memory allocation error for hungarian algorithm.\n");
                             fprintf(stderr,"ERROR: memory allocation error for hungarian algorithm.\n");
+                            free(type_atoms);
+                            free(unique_atom_type);
                             Terminate(2);
                         }
                     }
@@ -200,6 +243,8 @@ float calc_Hungarian_RMSD(FA_Global* FA, atom* atoms, resid* residue, gridpoint*
                     if(row_count == NULL || column_count == NULL || column_assigned == NULL || row_assigned == NULL || matrix_match == NULL)
                     {
                         fprintf(stderr,"ERROR: memory allocation error for hungarian algorithm.\n");
+                        free(type_atoms);
+                        free(unique_atom_type);
                         Terminate(2);
                     }
                     // ~initialize() arrays
@@ -209,40 +254,20 @@ float calc_Hungarian_RMSD(FA_Global* FA, atom* atoms, resid* residue, gridpoint*
                     memset( row_assigned, 0, nTypes * sizeof(row_assigned[0]) );
                     memset( column_assigned, 0, nTypes * sizeof(column_assigned[0]) );
                     memset( matrix_match, 0, nTypes * sizeof(matrix_match[0]) );
-                    // 2D array init for floats arrays (matrix[][] && matrix_original[][]) and int array (matrix_case[][])
-                    for(k = 0; k < nTypes; k++)
+                    // 2D cost matrix: row = docked atom, col = reference atom of same type
+                    for(int ii = 0; ii < nTypes; ii++)
                     {
-                        for(int kk = 0; kk < nTypes; kk++)
+                        const int ai = type_atoms[ii];
+                        for(int jj = 0; jj < nTypes; jj++)
                         {
-                            matrix[k][kk] = 0.0f;
-                            matrix_original[k][kk] = 0.0f;
-                            matrix_case[k][kk] = 0; 
+                            const int aj = type_atoms[jj];
+                            // coor_ref non-NULL guaranteed by type_atoms filter above
+                            matrix[ii][jj] = sqrdist(atoms[ai].coor, atoms[aj].coor_ref);
+                            matrix_original[ii][jj] = matrix[ii][jj];
+                            matrix_case[ii][jj] = 0;
                         }
                     }
 
-                    // Init
-                    int count_i = -1;
-                    int count_j = -1;
-                    
-                    // Filling the matrix
-                    for(k=residue[j].fatm[0]; k<=residue[j].latm[0]; k++) // Foreach Atom in Lig
-                    {
-                        if(atoms[k].type == unique_atom_type[z])
-                        {
-                            count_i++;
-                            count_j = -1;
-
-                            for(int l = 0; l < FA->num_het_atm; l++)
-                            {
-                                if(atoms[k+l].type == unique_atom_type[z])
-                                {
-                                    count_j++;
-                                    matrix[count_i][count_j] = sqrdist(atoms[k].coor,atoms[k+l].coor_ref);
-                                }
-                            }
-                        }
-                    }
-                    
                     // run the Hungarian assignment algorithm. matrix[][], matrix_case[][], matrix_match[], row_count[]. column_count[], row_assigned[] && column_assigned[] memory adresses will
                     Hungarian(matrix, matrix_original, matrix_case, unique_atom_type, row_count, column_count, row_assigned, column_assigned, matrix_match, nTypes, FA->num_het_atm);
                     
@@ -250,8 +275,15 @@ float calc_Hungarian_RMSD(FA_Global* FA, atom* atoms, resid* residue, gridpoint*
                     float assignment = 0.0f;
                     for(int ii = 0; ii < nTypes; ii++)
                     {
-                        assignment += matrix_original[ii][matrix_match[ii]];
-                        // printf("(%d:%d)=%f (total=%f)\n",ii, matrix_match[ii], matrix_original[ii][matrix_match[ii]], assignment);
+                        const int mj = matrix_match[ii];
+                        if (mj < 0 || mj >= nTypes) {
+                            fprintf(stderr,
+                                    "WARNING: Hungarian match out of range for type %d (row=%d match=%d nTypes=%d); skipping atom\n",
+                                    unique_atom_type[z], ii, mj, nTypes);
+                            continue;
+                        }
+                        assignment += matrix_original[ii][mj];
+                        atoms_in_assignment++;
                     }
                     total_assignment += assignment;
                     
@@ -276,20 +308,26 @@ float calc_Hungarian_RMSD(FA_Global* FA, atom* atoms, resid* residue, gridpoint*
                     if(row_assigned != NULL) {free(row_assigned);}
                     if(column_assigned != NULL) {free(column_assigned);}
                     if(matrix_match != NULL) {free(matrix_match);}
+                    free(type_atoms);
                 }
                 
                 // Freeing the unique_atom_type[] dynamically allocated memory (check if it could be placed elsewhere)
                 if(unique_atom_type != NULL) {free(unique_atom_type);}
-                
-                // Return symetry corrected RMSD
-//                rmsd = sqrt(total_assignment/FA->num_het_atm);
-//                return(rmsd);
+                unique_atom_type = NULL;
             }
         }
     }
-    // Return symetry corrected RMSD
-     rmsd = sqrt(total_assignment/(float)FA->num_het_atm);
-     return(rmsd);
+    if (unique_atom_type != NULL) {free(unique_atom_type);}
+
+    // Return symmetry-corrected RMSD (guard empty assignment / zero denom)
+    if (atoms_in_assignment > 0) {
+        rmsd = sqrtf(total_assignment / (float)atoms_in_assignment);
+    } else if (FA->num_het_atm > 0) {
+        rmsd = sqrtf(total_assignment / (float)FA->num_het_atm);
+    } else {
+        rmsd = 0.0f;
+    }
+    return(rmsd);
 }
 
 void Hungarian(float** matrix, float** matrix_original, int** matrix_case, int* unique_atom_type, int* row_count, int* column_count, int* row_assigned, int* column_assigned, int* matrix_match, int nTypes, int num_het_atoms)

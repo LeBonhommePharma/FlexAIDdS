@@ -32,24 +32,37 @@ p_i = \frac{e^{-\mathrm{CF}_i / T}}{Z}
 | \(T\) | Temperature in K; \(\beta=1/T\) (FlexAID soft-β, **not** \(1/(k_B T)\)) |
 | Elect | **Lowest** \(\tilde G\) binding mode / head |
 
-**Identity:** \(\tilde G = E_{\min}-T\ln Z_{\mathrm{local}}\) (cluster **ACF** in `cluster.cpp`). Shared implementation: `LIB/SoftBetaFreeEnergy.h`.
+**Identity:** \(\tilde G = \tilde H - T\cdot\tilde S \equiv E_{\min}-T\ln Z_{\mathrm{local}}\) (cluster **ACF**).  
+**Single implementation:** `LIB/SoftBetaFreeEnergy.h` (`flexaids::soft_beta::free_energy` / `acf`).  
+**Local Z only:** each cluster/mode re-normalizes \(p_i\) over **its own members** — never the global `BindingPopulation::PartitionFunction` for ranking H/S/\(\tilde G\). Physical StatMech REMARK `free_energy` is separate; optional REMARK `soft_beta_G` logs the ranking objective.
 
 ### Code layers (must stay identical)
 
 | Layer | Behavior | Log / API |
 |--------|----------|-----------|
-| `cluster.cpp` ACF | Local soft-β free energy; emission order when \(T>0\) | `[ENTROPY_RANK]` |
-| `BindingMode::compute_energy` | Same \(\tilde G\) over mode members (+ optional vib on FO path — document if on) | BindingMode sort |
-| `DatasetRunner` S1 | Same \(\tilde G\) over heads + `.mcf` members; dock \(T\) | `[3DSIG-RANK]` |
+| `cluster.cpp` ACF | `soft_beta::acf(member CFs, T)`; emission order when \(T>0\) | `[ENTROPY_RANK]`; REMARK `soft_beta_G` |
+| `BindingMode` classic H/S/F | Same \(\tilde G\) over **mode members** only (+ vib additive; not global Z) | BindingMode sort; REMARK `soft_beta_G` |
+| `DatasetRunner` S1 | Same `soft_beta::free_energy` over heads + `.mcf` members | `[3DSIG-RANK]` |
 
 | Env | Default | Meaning |
 |-----|---------|---------|
-| `FLEXAIDDS_ELECTION_SHANNON_F` | **1 (ON)** | Elect by \(\tilde G=H-TS\) |
-| `FLEXAIDDS_ELECTION_LEGACY_ZH` | 0 | Rollback ≈ min-CF (not 3Dsig) |
-| `FLEXAIDDS_ELECTION_SOFT_T` | 0 → **dock \(T\)** (else 298) | Soft-β \(T\) in K |
-| `FLEXAIDDS_FORCE_CF_RANK_EMISSION` | 0 | Engine emits min-CF (rollback) |
+| `FLEXAIDDS_ELECTION_SHANNON_F` | **0 (OFF)** | Elect by \(\tilde G=H-TS\) when set to `1` |
+| `FLEXAIDDS_ELECTION_LEGACY_ZH` | 0 | Force legacy ZH / ≈ min-CF (not 3Dsig); same OFF path when Shannon unset |
+| `FLEXAIDDS_ELECTION_SOFT_T` | 0 → resolve below | Soft-β \(T\) in K (env override) |
+| `FLEXAIDDS_FORCE_CF_RANK_EMISSION` | 0 | Engine emits min-CF (rollback); classic SoftBeta path off |
 
-**FlexAIDdS engine and DatasetRunner must not invent different ranking objectives.** Search still optimizes CF; ranking/election uses \(\tilde G\).
+**Default OFF until Astex pilot + SoftBeta identity.** Shannon S1 election stays **off** when both env knobs are unset. Enable with `FLEXAIDDS_ELECTION_SHANNON_F=1` after validation (`LIB/SoftBetaFreeEnergy.h`). Claim / 3Dsig launchers that need Shannon ON export that env (e.g. `scripts/run_C0_claim_clean.sh`).
+
+**Soft-β \(T\) resolution** in `select_pose_freq_gated_pooled` (DatasetRunner S1):
+
+1. `FLEXAIDDS_ELECTION_SOFT_T` if set and \(>0\) → log `source=env`
+2. else **dock TEMPER** (`DockingConfig::temperature` / CONFIG `TEMPER`) if \(>0\) → log `source=dock`
+3. else (legacy ZH only) `FLEXAIDDS_ELECTION_SCORE_TAU` if \(>0\) → log `source=env`
+4. else **298 K** → log `source=fallback`
+
+Log line: `[3DSIG-RANK] … T=… source=dock|env|fallback …`. Soft-β is \(\beta=1/T\) on the CF scoring proxy (not \(k_B\)).
+
+**FlexAIDdS engine and DatasetRunner must not invent different ranking objectives.** Search still optimizes CF; when Shannon ranking is enabled, ranking/election uses \(\tilde G\) via `LIB/SoftBetaFreeEnergy.h`. Engine ACF and DatasetRunner election must share the same dock \(T\). Unit gates: `SoftBetaIdentity::*` and `BindingModeMatchesSoftBetaLocal` in `tests/test_classic_entropy_ranking.cpp`.
 
 ---
 
@@ -63,7 +76,7 @@ Reuse **FlexAID JCIM 2015** comparative design (Gaudreault & Najmanovich, *J. Ch
 | **Also reported in deck** | Astex Non-Native (N=1112), HAP2 flexibility set — secondary |
 | **Per method, per case** | **10** independent simulations |
 | **Budget each sim** | **2 000 000** energy evaluations |
-| **Success (per case, bootstrap)** | RMSD **&lt; 2.0 Å** among the **top 10** predicted results |
+| **Success (per case, bootstrap)** | RMSD **≤ 2.0 Å** among the **top 10** predicted results (claim contract; inclusive) |
 | **Headline statistic** | **Median** success rate over **10 000** bootstrap resamples of the N cases (with replacement) |
 | **Arms on barplots** | FlexAID · FlexAID+entropy (FlexAIDdS) · AutoDock Vina · FlexX · rDock |
 
@@ -73,7 +86,7 @@ Reuse **FlexAID JCIM 2015** comparative design (Gaudreault & Najmanovich, *J. Ch
 |------------|---------------------------|
 | 2 000 000 evals / sim | e.g. pop×gen = 2e6 per restart (e.g. 1000×2000) with **fixed gen**, pop×DoF only if documented |
 | 10 sims / case | `FLEXAIDDS_RESTARTS=10` (or 10 independent jobs); **do not** silently use 5 without labeling |
-| Top-10 success | Track success if **any of top-10 emitted modes** has RMSD &lt; 2 Å (**S_top10**); S1 = top-1 only is extra modern KPI |
+| Top-10 success | Track success if **any of top-10 emitted modes** has RMSD ≤ 2.0 Å (**S_top10**); S1 = top-1 only is extra modern KPI |
 | Bootstrap 10k median | `scripts/` analysis: resample cases, recompute success rate, report median + CI |
 | Matrix | JCIM 2015 pin — **do not change mid-campaign** (see `docs/implementation/MATRIX_PIN_JCIM2015.md`) |
 | Site / seed | Cognate pocket, **no native-pose seed** for claim-style fair compare |
@@ -82,7 +95,7 @@ Reuse **FlexAID JCIM 2015** comparative design (Gaudreault & Najmanovich, *J. Ch
 
 | ID | Definition | 3Dsig deck |
 |----|------------|------------|
-| **S_top10** | Min RMSD among top-10 ranked modes ≤ 2 Å | **Primary in PDF bootstrap** |
+| **S_top10** | Any of top-10 ranked modes (emitted rank order) has RMSD ≤ 2.0 Å | **Primary in PDF bootstrap** |
 | **S1** | Rank-0 / elected mode RMSD ≤ 2 Å | Modern claim KPI (stricter) |
 | **S2** | S1 ∧ PoseBusters | Modern secondary (not in 2017 deck) |
 | **BCR** | Best cluster-head RMSD ≤ 2 Å | Diagnostic sampling ceiling |

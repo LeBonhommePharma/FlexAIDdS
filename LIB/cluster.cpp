@@ -2,6 +2,7 @@
 #include "fileio.h"
 #include "simd_distance.h"
 #include "statmech.h"
+#include "SoftBetaFreeEnergy.h"
 #include <cmath>
 #include <limits>
 #include <vector>
@@ -160,28 +161,20 @@ void cluster(FA_Global* FA, GB_Global* GB, VC_Global* VC, chromosome* chrom, gen
 				}
 			}
 		}
-		// Basin score: cluster-local log-sum-exp free energy. Unlike the former
-		// global-probability sum, this is invariant to a constant energy offset and
-		// keeps cluster membership separate from summary ordering.
+		// Basin score: cluster-local soft-β free energy G̃ = H̃ − T·S̃ ≡ ACF.
+		// Shared identity with BindingMode classic ranking and DatasetRunner S1
+		// (LIB/SoftBetaFreeEnergy.h). Soft-β: β = 1/T (FA->beta), not 1/(k_B T).
 		Clus_TCF[num_of_clusters] = chrom[j].app_evalue;
 		Clus_ACF[num_of_clusters] = chrom[j].app_evalue;
 		if (FA->temperature > 0 && FA->beta > 0.0) {
-			double local_origin = std::numeric_limits<double>::infinity();
+			std::vector<double> member_energies;
+			member_energies.reserve(static_cast<size_t>(num_chrom));
 			for (int k = 0; k < num_chrom; ++k) {
 				if (Clus_GAPOP[k] == j && std::isfinite(chrom[k].app_evalue))
-					local_origin = std::min(local_origin, chrom[k].app_evalue);
+					member_energies.push_back(chrom[k].app_evalue);
 			}
-			if (std::isfinite(local_origin)) {
-				double local_z = 0.0;
-				for (int k = 0; k < num_chrom; ++k) {
-					if (Clus_GAPOP[k] == j && std::isfinite(chrom[k].app_evalue))
-						local_z += std::exp(-FA->beta *
-						                    (chrom[k].app_evalue - local_origin));
-				}
-				if (local_z > 0.0)
-					Clus_ACF[num_of_clusters] = local_origin -
-					    std::log(local_z) / FA->beta;
-			}
+			Clus_ACF[num_of_clusters] = flexaids::soft_beta::acf(
+				member_energies, static_cast<double>(FA->temperature));
 		}
 		num_of_clusters++;
 
@@ -274,12 +267,16 @@ void cluster(FA_Global* FA, GB_Global* GB, VC_Global* VC, chromosome* chrom, gen
         //num_of_results=1;
       
 	printf("num_of_clusters=%d num_of_results=%d\n",num_of_clusters,num_of_results);
+	fflush(stdout);
 	
         // output results, 10% of the number of chromosomes or 
         // the number of clusters, the smallest.
       
 	for(j=0;j<num_of_results;++j)
 	{
+		printf("emitting ranked pose %d/%d (TOP chrom=%d)...\n",
+		       j + 1, num_of_results, Clus_TOP[j]);
+		fflush(stdout);
 		// get parameters of fittest individual in population
 		// after optimization -> best docking candidate
     
@@ -376,7 +373,10 @@ void cluster(FA_Global* FA, GB_Global* GB, VC_Global* VC, chromosome* chrom, gen
 					engine.add_sample(static_cast<double>(chrom[k].app_evalue));
 			}
 			const statmech::Thermodynamics td = engine.compute();
+			// Physical StatMech ledger (diagnostic). Ranking objective is soft_beta_G = ACF.
 			snprintf(tmpremark, MAX_REMARK, "REMARK free_energy = %.6f\n", td.free_energy);
+			safe_remark_cat(remark, tmpremark, &remark_len);
+			snprintf(tmpremark, MAX_REMARK, "REMARK soft_beta_G = %.6f\n", Clus_ACF[j]);
 			safe_remark_cat(remark, tmpremark, &remark_len);
 			snprintf(tmpremark, MAX_REMARK, "REMARK enthalpy = %.6f\n", td.mean_energy);
 			safe_remark_cat(remark, tmpremark, &remark_len);

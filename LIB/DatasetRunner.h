@@ -525,7 +525,8 @@ private:
     /// of member CF values. Reconstructing member Cartesians from chromosome
     /// IC coordinates is intentionally out of scope (too fragile). This path
     /// consequently recovers members only when member pose PDBs following the
-    /// `<prefix>_<N>_member<M>.pdb` convention are present on disk.
+    /// `<head_stem>_member<M>.pdb` convention are present on disk (head_stem is
+    /// the CF/DP or FO dual-suffix head without `.pdb`).
     bool cluster_member_emit_ = false;
 
     // ── Subprocess lifecycle ─────────────────────────────────────────
@@ -611,5 +612,27 @@ struct AstexNonNativeTarget {
 
 /// Get the full Astex Non-Native target list (65 targets, 1112 structures)
 std::vector<AstexNonNativeTarget> astex_nonnative_targets();
+
+// =============================================================================
+// Emitting cluster-head enumeration (CF/DP single-suffix + FO dual-suffix)
+// =============================================================================
+
+/// One cluster-head PDB under a restart out_prefix.
+/// CF/DP: <prefix>_<rank>.pdb              → min_pts = -1
+/// FO:    <prefix>_<minPts>_<rank>.pdb     → min_pts >= 0  (BindingMode dual-suffix)
+struct EmittedClusterHead {
+    std::string path;
+    int rank{-1};     ///< trailing rank index (0..N)
+    int min_pts{-1};  ///< FO minPts; -1 for single-suffix CF/DP
+};
+
+/// Enumerate cluster-head PDBs for one restart prefix.
+/// Deduplicated. Single-suffix ranks first, then FO dual-suffix directory scan.
+/// Used by election AND oracle BCR so FO packaging does not leave BCR at -1.
+std::vector<EmittedClusterHead>
+enumerate_emitted_cluster_heads(const std::string& out_prefix);
+
+/// True if any CF/DP or FO dual-suffix cluster head exists for out_prefix.
+bool has_emitted_cluster_heads(const std::string& out_prefix);
 
 } // namespace dataset

@@ -152,27 +152,33 @@ class Flexaidds < Formula
       Wrappers under #{bin} set FLEXAIDDS_DATA_DIR=#{libexec}/share so PATH
       symlinks still find MC matrices and AMINO.def.
 
-      Stable v2.0.2+ includes the production docking matrix (atom typing works
-      out of the box). Upgrade from broken v2.0.0 installs with:
+      Stable v2.0.3+ includes the production docking matrix (atom typing works
+      out of the box). Upgrade from broken v2.0.0 / stale HEAD installs with:
         brew update && brew reinstall lebonhommepharma/flexaidds/flexaidds
 
       Install / reinstall path (Homebrew 6+ requires a real tap; raw URL installs
       are rejected). The tap is this monorepo — keep the tap checkout on main:
         brew tap lebonhommepharma/flexaidds https://github.com/LeBonhommePharma/FlexAIDdS
-        cd "$(brew --repo lebonhommepharma/flexaidds)" && git checkout main && git pull --ff-only
-        brew trust --formula lebonhommepharma/flexaidds/flexaidds   # Homebrew Tap-Trust
+        # Prefer formula-scoped trust when HOMEBREW_REQUIRE_TAP_TRUST is set
+        # (https://docs.brew.sh/Tap-Trust). Do not use HOMEBREW_NO_REQUIRE_TAP_TRUST.
+        brew trust --formula lebonhommepharma/flexaidds/flexaidds
         brew install lebonhommepharma/flexaidds/flexaidds
 
       Default brew build uses CPU + OpenMP (no Metal) and is the portable path.
-      HEAD builds always use branch "main" (never fix/*).
+      Formula head tracks main only (never ephemeral fix/* branches).
+
+      If reinstall fails with "couldn't find remote ref" after an old --HEAD
+      install that pinned a deleted branch (e.g. fix/homebrew-metal-link):
+        cd "$(brew --repository lebonhommepharma/flexaidds)"
+        git fetch --prune && git checkout main && git reset --hard origin/main
+        brew uninstall --force lebonhommepharma/flexaidds/flexaidds
+        brew install --build-from-source lebonhommepharma/flexaidds/flexaidds
 
       Metal GPU (macOS + Xcode Metal toolchain). Stable v2.0.3+ links Metal
-      bridges via flexaid_core (PR #260):
+      bridges via flexaid_core (PR #260); no special git branch required:
         brew install --build-from-source --with-metal lebonhommepharma/flexaidds/flexaidds
       Or after tap update if already installed:
         brew reinstall --build-from-source --with-metal lebonhommepharma/flexaidds/flexaidds
-      Optional HEAD (main) Metal:
-        brew reinstall --build-from-source --HEAD --with-metal lebonhommepharma/flexaidds/flexaidds
 
       Example:
         FlexAIDdS receptor.pdb ligand.sdf --rigid -o /tmp/out
