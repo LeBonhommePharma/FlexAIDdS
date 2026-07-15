@@ -32,24 +32,26 @@ p_i = \frac{e^{-\mathrm{CF}_i / T}}{Z}
 | \(T\) | Temperature in K; \(\beta=1/T\) (FlexAID soft-β, **not** \(1/(k_B T)\)) |
 | Elect | **Lowest** \(\tilde G\) binding mode / head |
 
-**Identity:** \(\tilde G = E_{\min}-T\ln Z_{\mathrm{local}}\) (cluster **ACF** in `cluster.cpp`). Shared implementation: `LIB/SoftBetaFreeEnergy.h`.
+**Identity:** \(\tilde G = \tilde H - T\cdot\tilde S \equiv E_{\min}-T\ln Z_{\mathrm{local}}\) (cluster **ACF**).  
+**Single implementation:** `LIB/SoftBetaFreeEnergy.h` (`flexaids::soft_beta::free_energy` / `acf`).  
+**Local Z only:** each cluster/mode re-normalizes \(p_i\) over **its own members** — never the global `BindingPopulation::PartitionFunction` for ranking H/S/\(\tilde G\). Physical StatMech REMARK `free_energy` is separate; optional REMARK `soft_beta_G` logs the ranking objective.
 
 ### Code layers (must stay identical)
 
 | Layer | Behavior | Log / API |
 |--------|----------|-----------|
-| `cluster.cpp` ACF | Local soft-β free energy; emission order when \(T>0\) | `[ENTROPY_RANK]` |
-| `BindingMode::compute_energy` | Same \(\tilde G\) over mode members (+ optional vib on FO path — document if on) | BindingMode sort |
-| `DatasetRunner` S1 | Same \(\tilde G\) over heads + `.mcf` members; dock \(T\) | `[3DSIG-RANK]` |
+| `cluster.cpp` ACF | `soft_beta::acf(member CFs, T)`; emission order when \(T>0\) | `[ENTROPY_RANK]`; REMARK `soft_beta_G` |
+| `BindingMode` classic H/S/F | Same \(\tilde G\) over **mode members** only (+ vib additive; not global Z) | BindingMode sort; REMARK `soft_beta_G` |
+| `DatasetRunner` S1 | Same `soft_beta::free_energy` over heads + `.mcf` members | `[3DSIG-RANK]` |
 
 | Env | Default | Meaning |
 |-----|---------|---------|
-| `FLEXAIDDS_ELECTION_SHANNON_F` | **1 (ON)** | Elect by \(\tilde G=H-TS\) |
+| `FLEXAIDDS_ELECTION_SHANNON_F` | **1 (ON)** | Elect by \(\tilde G=H-TS\) (do not flip default without P0.5) |
 | `FLEXAIDDS_ELECTION_LEGACY_ZH` | 0 | Rollback ≈ min-CF (not 3Dsig) |
-| `FLEXAIDDS_ELECTION_SOFT_T` | 0 → **dock \(T\)** (else 298) | Soft-β \(T\) in K |
-| `FLEXAIDDS_FORCE_CF_RANK_EMISSION` | 0 | Engine emits min-CF (rollback) |
+| `FLEXAIDDS_ELECTION_SOFT_T` | 0 → **dock \(T\)** (else 298) | Soft-β \(T\) in K (priority: SOFT_T > dock T > 298) |
+| `FLEXAIDDS_FORCE_CF_RANK_EMISSION` | 0 | Engine emits min-CF (rollback); classic SoftBeta path off |
 
-**FlexAIDdS engine and DatasetRunner must not invent different ranking objectives.** Search still optimizes CF; ranking/election uses \(\tilde G\).
+**FlexAIDdS engine and DatasetRunner must not invent different ranking objectives.** Search still optimizes CF; ranking/election uses \(\tilde G\). Unit gates: `SoftBetaIdentity::*` and `BindingModeMatchesSoftBetaLocal` in `tests/test_classic_entropy_ranking.cpp`.
 
 ---
 

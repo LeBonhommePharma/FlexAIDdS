@@ -277,8 +277,9 @@ void BindingMode::rebuild_engine() const
 
 bool BindingMode::use_classic_entropy_ranking() const noexcept
 {
-	// Classic FlexAID: soft-β global-Z free energy elects modes when T>0.
-	// force_cf_rank_emission restores physical per-mode StatMech ranking (rollback).
+	// Classic FlexAID: soft-β free energy over mode members (local Z) elects modes
+	// when T>0 (SoftBetaFreeEnergy.h ≡ ACF). force_cf_rank_emission restores
+	// physical per-mode StatMech ranking (rollback).
 	if (!Population || Population->Temperature == 0)
 		return false;
 	if (Population->FA && Population->FA->force_cf_rank_emission)
