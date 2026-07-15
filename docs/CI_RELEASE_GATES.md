@@ -52,14 +52,35 @@ If GitHub-hosted `macos-15` lacks the Metal compiler component, the job prints a
 
 - Workflow: `.github/workflows/metal-self-hosted.yml`
 - Trigger: **`workflow_dispatch` only** (manual or release checklist)
-- Runner labels: **`self-hosted`**, **`self-hosted-m3`**
+  - GitHub UI: **Actions → “Metal full gate (self-hosted M3)” → Run workflow**
+  - Inputs: `run_ctest` (default true), `nm_symbol_smoke` (default true)
+- Runner labels (both required): **`self-hosted`**, **`self-hosted-m3`**
+- Builds: **`FlexAID` and `FlexAIDdS`** with `FLEXAIDS_USE_METAL=ON`
+- Optional **`nm` symbol smoke** for public `metal_eval_*` C API symbols on both binaries
 - Behavior: **fail-closed**
   - Missing Metal compiler → job fails
-  - CMake `FLEXAIDS_USE_METAL=ON` configure/build/link failure → job fails
+  - CMake configure / link of either binary fails → job fails
+  - Missing `metal_eval_init` / `metal_eval_batch` / … symbols → job fails (when smoke on)
   - Optional `ctest` (default on) failure → job fails
   - No `continue-on-error`
 
-Register an Apple Silicon (M-series) machine as a GitHub Actions self-hosted runner with both labels. Without a matching runner, the workflow stays queued until a runner appears or the run is cancelled — it never soft-passes.
+#### Runner registration
+
+```bash
+# On the Apple Silicon host (after installing the GitHub Actions runner):
+# Labels must include BOTH of:
+#   self-hosted
+#   self-hosted-m3
+#
+# Verify for this repo (empty list ⇒ no M3 runner is registered; do not claim one exists):
+gh api repos/LeBonhommePharma/FlexAIDdS/actions/runners \
+  --jq '.runners[] | {name,status,labels:[.labels[].name]}'
+```
+
+Without a matching runner, a dispatched workflow **stays queued** until a runner
+appears or the run is cancelled — it never soft-passes. **Do not claim an M3
+self-hosted runner is online unless the API above lists one with label
+`self-hosted-m3`.**
 
 ## What still needs a self-hosted M3
 
@@ -67,7 +88,8 @@ Register an Apple Silicon (M-series) machine as a GitHub Actions self-hosted run
 |:--|:--|:--|
 | macOS CPU build + unit tests | Yes (`macos_cpu_tests`) | PR CI |
 | Metal `.metal` → `.air` compile | Usually yes (when Xcode Metal toolchain present) | PR CI smoke |
-| Metal OBJCXX bridge **link** into `FlexAID` | **No** (treat as self-hosted) | `metal-self-hosted.yml` |
+| Metal OBJCXX bridge **link** into `FlexAID` **and** `FlexAIDdS` | **No** (treat as self-hosted) | `metal-self-hosted.yml` |
+| `metal_eval_*` symbols present in both binaries | **No** | self-hosted + `nm` smoke |
 | Metal **runtime** correctness / GPU kernels | **No** | self-hosted + local validation |
 | Full docking campaign on Apple Silicon | **No** | Local / fleet benchmarks (not this gate) |
 
@@ -101,6 +123,9 @@ bash scripts/ci/metal_compile_smoke.sh /tmp/metal-smoke
 cmake -B build-metal -G Ninja \
   -DCMAKE_BUILD_TYPE=Release \
   -DFLEXAIDS_USE_METAL=ON \
-  -DBUILD_TESTING=ON
-cmake --build build-metal --parallel --target FlexAID
+  -DBUILD_TESTING=ON \
+  -DBUILD_FLEXAIDDS_FAST=ON
+cmake --build build-metal --parallel --target FlexAID FlexAIDdS
+# Optional symbol smoke (matches metal-self-hosted.yml nm step)
+nm -gU build-metal/FlexAID build-metal/FlexAIDdS | grep metal_eval
 ```
