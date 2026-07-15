@@ -131,17 +131,23 @@ orphan-tap doctor warnings).
 # One-time: tap the monorepo (Formula/flexaidds.rb lives at repo root)
 brew tap lebonhommepharma/flexaidds https://github.com/LeBonhommePharma/FlexAIDdS
 
-# Stable tagged release (v2.0.2+). Qualified name always works.
+# Stable tagged release (v2.0.3+). Qualified name always works.
 brew install lebonhommepharma/flexaidds/flexaidds
 # short form after tap: brew install flexaidds
 
-# Or latest development tip
+# Metal GPU (macOS + Xcode Metal toolchain). Stable v2.0.3+ links bridges via
+# flexaid_core (PR #260) — no longer requires --HEAD for a clean Metal link.
+brew install --build-from-source --with-metal lebonhommepharma/flexaidds/flexaidds
+
+# Or latest development tip (head tracks main)
 brew install --HEAD lebonhommepharma/flexaidds/flexaidds
 
 # Update later
 brew update && brew reinstall lebonhommepharma/flexaidds/flexaidds
 # or, for HEAD builds (Homebrew 6+: --HEAD is install-only; reinstall --HEAD is invalid):
 brew install -s --HEAD lebonhommepharma/flexaidds/flexaidds
+# Metal reinstall after tap update:
+# brew reinstall --build-from-source --with-metal lebonhommepharma/flexaidds/flexaidds
 ```
 
 This installs **native** tools only (`FlexAIDdS`, `tENCoM`, `FlexAID` + MC matrices / `AMINO.def`). The Python package is separate (see pip section below).
@@ -207,7 +213,7 @@ See also `python/README.md`.
 | **Homebrew** (`flexaidds` formula) | Native C++ tools: `FlexAIDdS`, `FlexAID`, `tENCoM`, `tencom_entropy_diff` + production MC matrices / `AMINO.def` | Python package, `flexaidds` CLI, `load_results`, pure-Python StatMech |
 | **pip / PyPI** (`flexaidds` package) | Python API + CLIs (`flexaidds`, `flexaidds-benchmark`), optional `_core` acceleration | Full docking engine binary / cavity search campaign binary |
 
-Install both if you want native docking **and** Python analysis. Versions are aligned at **2.0.2** (`Formula/flexaidds.rb` ↔ `python/pyproject.toml` ↔ `python/flexaidds/__version__.py`).
+Install both if you want native docking **and** Python analysis. Versions are aligned at **2.0.3** (`Formula/flexaidds.rb` ↔ `python/pyproject.toml` ↔ `python/flexaidds/__version__.py` ↔ `VERSION.md`).
 
 The formula provides the high-performance native executables with data files staged correctly:
 
@@ -219,7 +225,10 @@ brew tap lebonhommepharma/flexaidds https://github.com/LeBonhommePharma/FlexAIDd
 brew install lebonhommepharma/flexaidds/flexaidds
 # short form after tap: brew install flexaidds
 
-# Development / latest
+# Metal GPU (stable v2.0.3+ — flexaid_core Metal link fix, PR #260)
+brew install --build-from-source --with-metal lebonhommepharma/flexaidds/flexaidds
+
+# Development / latest (formula head tracks main)
 brew install --HEAD lebonhommepharma/flexaidds/flexaidds
 
 # After install, add the Python package (GitHub until PyPI publish):
@@ -227,7 +236,7 @@ pip install "git+https://github.com/LeBonhommePharma/FlexAIDdS.git#subdirectory=
 # after first PyPI release: pip install flexaidds
 ```
 
-The formula lives at `Formula/flexaidds.rb`. It supports both a stable `url`/`sha256` (tagged release) and `head` for tip-of-tree. Bottles may be added later.
+The formula lives at `Formula/flexaidds.rb`. It supports both a stable `url`/`sha256` (tagged release `v2.0.3`) and `head` on `main` for tip-of-tree. Bottles may be added later.
 
 **Local formula testing (maintainers):** if you must exercise a local formula edit
 before push, either `brew install --build-from-source lebonhommepharma/flexaidds/flexaidds`
@@ -245,7 +254,7 @@ When cutting a new stable release, update the formula’s `url`, `sha256`, and v
 (and keep `python/pyproject.toml` + `python/flexaidds/__version__.py` in sync):
 ```bash
 # Example maintainer steps
-TAG=v2.0.2
+TAG=v2.0.3
 curl -sL "https://github.com/LeBonhommePharma/FlexAIDdS/archive/refs/tags/${TAG}.tar.gz" | shasum -a 256
 # paste sha256 into Formula/flexaidds.rb, commit, push
 # users: brew update && brew reinstall lebonhommepharma/flexaidds/flexaidds
@@ -287,7 +296,7 @@ curl -sL "https://github.com/LeBonhommePharma/FlexAIDdS/archive/refs/tags/${TAG}
   python -c "import flexaidds as fd; print(fd.__version__, fd.HAS_CORE_BINDINGS)"
   ```
 
-- **Homebrew**: Update `Formula/flexaidds.rb` (`url` + `sha256` for stable; `head` tracks `master`) when cutting releases. Users install via `brew tap lebonhommepharma/flexaidds https://github.com/LeBonhommePharma/FlexAIDdS` then `brew install flexaidds` (Homebrew 6+ requires a real tap with `origin`; raw formula URLs are rejected).
+- **Homebrew**: Update `Formula/flexaidds.rb` (`url` + `sha256` for stable; `head` tracks `main`) when cutting releases. Users install via `brew tap lebonhommepharma/flexaidds https://github.com/LeBonhommePharma/FlexAIDdS` then `brew install flexaidds` (Homebrew 6+ requires a real tap with `origin`; raw formula URLs are rejected). For Metal: `brew install --build-from-source --with-metal lebonhommepharma/flexaidds/flexaidds` (stable v2.0.3+).
 - **Native binaries**: Existing release workflow attaches platform archives on tag.
 
 - **In-package updater**: `python -m flexaidds --check-update` / `--self-update` uses the GitHub Releases API and `pip install --upgrade flexaidds` (falls back to the GitHub VCS URL when the package is not yet on the default index).
@@ -352,11 +361,15 @@ Requires: CUDA Toolkit installed, NVIDIA GPU with compute capability ≥ 7.0 (Vo
 ### Metal GPU Acceleration (macOS)
 
 ```bash
+# Source build
 cmake .. -DCMAKE_BUILD_TYPE=Release -DFLEXAIDS_USE_METAL=ON
 cmake --build . -j $(nproc)
+
+# Or Homebrew stable (v2.0.3+; Metal bridges PUBLIC on flexaid_core — PR #260)
+brew install --build-from-source --with-metal lebonhommepharma/flexaidds/flexaidds
 ```
 
-Requires: macOS with Xcode installed.
+Requires: macOS with Xcode + Metal toolchain (`xcodebuild -downloadComponent MetalToolchain` if `xcrun -f metal` fails). Prefer ≥12 GiB free disk before a full Metal Homebrew rebuild.
 
 ### ROCm/HIP GPU Acceleration (AMD)
 
