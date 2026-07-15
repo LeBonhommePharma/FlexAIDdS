@@ -16,6 +16,7 @@
 #include "DatasetRunner.h"
 #include "AsyncPipeline.h"
 #include "BenchmarkRunner.h"
+#include "ProtocolConfig.h"
 #include "statmech.h"
 #include "receptor_prep.h"
 #include "tENCoM/tencm.h"   // tencm::TorsionalENM — ligand Cartesian ANM for H(ω)
@@ -88,12 +89,9 @@ static std::uint64_t stable_seed_hash(const std::string& label,
     return hash;
 }
 
-static int deterministic_ga_seed(const std::string& target_id, int restart) {
-    std::uint64_t base = 0;
-    if (const char* value = std::getenv("FLEXAIDDS_SEED_BASE")) {
-        try { base = std::stoull(value); } catch (...) { base = 0; }
-    }
-    const std::uint64_t stream = base ^ static_cast<std::uint64_t>(restart);
+static int deterministic_ga_seed(const std::string& target_id, int restart,
+                                 std::uint64_t seed_base = 0) {
+    const std::uint64_t stream = seed_base ^ static_cast<std::uint64_t>(restart);
     return 1 + static_cast<int>(stable_seed_hash(target_id, stream) % 2147483646ULL);
 }
 
@@ -1885,13 +1883,14 @@ DatasetRunner::DatasetRunner(const std::string& cache_dir) {
     }
     ensure_dir(cache_dir_);
 
+    // Typed protocol snapshot: env remains the compatibility adapter only.
+    protocol_cfg_ = flexaids::ProtocolConfig::from_env();
+
     // Fix A: CF-window pose selector gate (default off for safety).
-    if (const char* e = std::getenv("FLEXAIDDS_CF_WINDOW_SELECTOR"))
-        cf_window_selector_ = (std::atoi(e) != 0);
+    cf_window_selector_ = protocol_cfg_.cf_window_selector;
 
     // Fix B: cluster member emission for near-miss BCR recovery (default off).
-    if (const char* e = std::getenv("FLEXAIDDS_CLUSTER_MEMBER_EMIT"))
-        cluster_member_emit_ = (std::atoi(e) != 0);
+    cluster_member_emit_ = protocol_cfg_.cluster_member_emit;
 }
 
 // =============================================================================
@@ -5051,8 +5050,8 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
         // explicit override, immutable data staged beside the binary, then the
         // mutable source-tree WRK directory as a development fallback.
         std::string matrix_path;
-        if (const char* dd = std::getenv("FLEXAIDDS_DATA_DIR")) {
-            std::string cand = std::string(dd) + "/MC_st0r5.2_6.dat";
+        if (!protocol_cfg_.data_dir.empty()) {
+            std::string cand = protocol_cfg_.data_dir + "/MC_st0r5.2_6.dat";
             if (fs::exists(cand)) matrix_path = cand;
         }
         if (matrix_path.empty()) {
@@ -5325,9 +5324,8 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
         // any changes to GA internals.  Restart 0 always uses the canonical out_dir
         // / out_prefix for backward compatibility with cached single-run results.
         // v58 default: consensus-5r (v50b proved +2% vs single-run v55).
-        int n_restarts = 5;
-        if (const char* env_r = std::getenv("FLEXAIDDS_RESTARTS"))
-            n_restarts = std::max(1, std::atoi(env_r));
+        // FLEXAIDDS_RESTARTS via protocol_cfg_ (ProtocolConfig::from_env).
+        const int n_restarts = std::max(1, protocol_cfg_.restarts);
         std::vector<std::string> all_prefixes;  // populated by exec_dock loop below
 
         // ── Grid reuse: check if a prior same-receptor run left a grid file ──
@@ -5593,9 +5591,7 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
             //   n_restarts x T_dock  ->  max(T_dock_r0, T_dock_r1, ...)
             // which is ~3x speedup for the default FLEXAIDDS_RESTARTS=3.
             // Set FLEXAIDDS_PARALLEL_RESTARTS=0 to revert to sequential mode.
-            bool parallel_restarts = (n_restarts > 1);
-            if (const char* e = std::getenv("FLEXAIDDS_PARALLEL_RESTARTS"))
-                parallel_restarts = (std::atoi(e) != 0) && (n_restarts > 1);
+            bool parallel_restarts = protocol_cfg_.parallel_restarts && (n_restarts > 1);
             // Fall back to sequential if proc_guard_ unavailable (no PID tracking).
             if (!proc_guard_) parallel_restarts = false;
 
@@ -5640,15 +5636,9 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
             // v70: restored P9 default 4.0 → 7.0.  The v69 r0=4.0 revert was a net
             // regression (79/85 vs v68's 82/85); r0=7.0 was better for the full
             // set, so we keep it (env FLEXAIDDS_VCT_R0 still overrides).
-            double vct_r0 = 7.0;
-            if (const char* r0env = std::getenv("FLEXAIDDS_VCT_R0")) {
-                try { vct_r0 = std::stod(r0env); } catch (...) { vct_r0 = 7.0; }
-            }
-            const bool vct_norm = (std::getenv("FLEXAIDDS_VCT_NORM") != nullptr);
-            double vct_entropy_w = 0.0;
-            if (const char* ewenv = std::getenv("FLEXAIDDS_VCT_ENTROPY_WEIGHT")) {
-                try { vct_entropy_w = std::stod(ewenv); } catch (...) { vct_entropy_w = 0.0; }
-            }
+            const double vct_r0 = protocol_cfg_.vct_r0;
+            const bool vct_norm = protocol_cfg_.vct_normalize_contacts;
+            const double vct_entropy_w = protocol_cfg_.vct_entropy_weight;
             {
                 std::ofstream jf(config_path);
                 jf << "{\n"
@@ -5818,9 +5808,7 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                    // Reduce alpha so each niche still contains ~pop_base chromosomes:
                    //   alpha_eff = 4.0 * pop_base / pop_scaled
                    // At pop_scaled==pop_base (rigid target) this is 4.0 (original).
-                   << (std::getenv("FLEXAIDDS_SHARING_ALPHA")
-                         ? std::atof(std::getenv("FLEXAIDDS_SHARING_ALPHA"))
-                         : 4.0 * static_cast<double>(pop_base) / static_cast<double>(pop_scaled))
+                   << protocol_cfg_.effective_sharing_alpha(pop_base, pop_scaled)
                    << ",\n"
                    << "    \"boom_inject_interval\": 100,\n"
                    << "    \"boom_inject_fraction\": "
@@ -5837,15 +5825,13 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                         config.mode == BenchmarkMode::DEFINED_CLEFT_REDOCK ||
                         config.mode == BenchmarkMode::ORACLE_CEILING)
                          ? 0.0
-                         : (std::getenv("FLEXAIDDS_BOOM_FRAC")
-                               ? std::atof(std::getenv("FLEXAIDDS_BOOM_FRAC")) : 1.0))
+                         : protocol_cfg_.effective_boom_frac())
                    << ",\n"
                    // v27: true GA elitism — protect n_elite lowest-CF individuals
                    // from boom injection + niche-sharing (engine-side env override
                    // FLEXAIDDS_N_ELITE still wins, but echo it for auditability).
                    << "    \"n_elite\": "
-                   << (std::getenv("FLEXAIDDS_N_ELITE")
-                         ? std::atoi(std::getenv("FLEXAIDDS_N_ELITE")) : 1)
+                   << protocol_cfg_.n_elite
                    << ",\n"
                    // Shannon configurational entropy in the GA fitness is OFF by
                    // default (config_parser ga.use_shannon=false). Setting the
@@ -5854,22 +5840,20 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                    // binary — no source fork. The flag is echoed into the per-case
                    // dock_config.json so the experiment arm is greppable on disk.
                    <<    "    \"fitness_model\": \"SMFREE\"";  // v121: SMFREE e^(-CF/kT) overflows at docking CF~-80,kT=0.596 -> fitness=1000 for all -> GA=random sampler. v50b 81.2% relied on this: crystal-seed+exploration+5r-consensus finds native. PSHARE (ee9db7f9) optimizes correctly but converges to CF false-min -> 41.2%.
-                if (std::getenv("FLEXAIDDS_USE_SHANNON")) {
+                if (protocol_cfg_.use_shannon) {
                     jf << ",\n    \"use_shannon\": true";
                 }
                 // Every restart is deterministic. FLEXAIDDS_SEED_BASE can define
                 // an independent replicate while the emitted config records the
                 // exact target-specific seed used by this run.
                 jf << ",\n    \"seed\": "
-                   << deterministic_ga_seed(entry.pdb_id, ri);
+                   << deterministic_ga_seed(entry.pdb_id, ri, protocol_cfg_.seed_base);
                 jf << "\n  }";
                 // ThermodynamicEngine — disabled by default; enable via FLEXAIDDS_THERMO=1
-                if (std::getenv("FLEXAIDDS_THERMO")) {
-                    const char* t_eff_env = std::getenv("FLEXAIDDS_T_EFF");
-                    float t_eff_val = t_eff_env ? std::stof(t_eff_env) : 0.596f;
-                    const char* ts_env = std::getenv("FLEXAIDDS_TENCOM_SCALE");
-                    float ts_val = ts_env ? std::stof(ts_env) : 1.0f;
-                    jf << ",\n  \"thermo_engine\": {\"enabled\": true, \"T_eff\": " << t_eff_val << ", \"tencom_scale\": " << ts_val << "}";
+                if (protocol_cfg_.thermo_enabled) {
+                    jf << ",\n  \"thermo_engine\": {\"enabled\": true, \"T_eff\": "
+                       << protocol_cfg_.t_eff << ", \"tencom_scale\": "
+                       << protocol_cfg_.tencom_scale << "}";
                 }
                 // If a grid file from a prior same-receptor run exists, tell
                 // FlexAIDdS to reuse it instead of regenerating from scratch.
@@ -5887,8 +5871,9 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                 // controlled A/B tests. Normal runs prefer data staged beside
                 // the binary so uncommitted WRK edits cannot silently change a
                 // benchmark; WRK remains a development-only fallback.
-                const char* dd_override = std::getenv("FLEXAIDDS_DATA_DIR");
-                if (dd_override && fs::exists(std::string(dd_override) + "/MC_st0r5.2_6.dat")) {
+                const std::string& dd_override = protocol_cfg_.data_dir;
+                if (!dd_override.empty() &&
+                    fs::exists(dd_override + "/MC_st0r5.2_6.dat")) {
                     data_dir_arg = " --data-dir '" +
                                    fs::canonical(dd_override).string() + "' ";
                 } else {
