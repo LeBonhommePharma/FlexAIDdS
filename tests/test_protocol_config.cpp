@@ -150,6 +150,11 @@ TEST(ProtocolConfig, DefaultsMatchHistoricalFallbacks) {
     EXPECT_DOUBLE_EQ(e.freqsel_alpha, 12.0);
     EXPECT_FLOAT_EQ(e.freqsel_rmsd, 1.5f);
     EXPECT_FALSE(e.consensus_scorer);
+    EXPECT_FALSE(e.election_v135);
+    EXPECT_DOUBLE_EQ(e.election_score_tau, 0.0);
+    EXPECT_FALSE(e.election_include_singletons);
+    EXPECT_TRUE(e.election_shannon_free_energy);  // 3Dsig default ON
+    EXPECT_DOUBLE_EQ(e.election_soft_T, 0.0);
     EXPECT_TRUE(e.hvib_enabled);
     EXPECT_FALSE(e.ring_flex);
     EXPECT_EQ(e.eval_scale_dihedral, 1);
@@ -245,6 +250,7 @@ TEST(ProtocolConfig, Chunk2PoseAndBudgetKnobs) {
     ScopedEnv multi("FLEXAIDDS_MULTI_CLEFT", "8");
     ScopedEnv hvib("FLEXAIDDS_HVIB", "0");
     ScopedEnv cons("FLEXAIDDS_CONSENSUS_SCORER", "1");
+    ScopedEnv v135("FLEXAIDDS_ELECTION_V135", "1");
     ScopedEnv hot("FLEXAIDDS_T_HOT", "1500");
     ScopedEnv nosec("FLEXAIDDS_NO_SEC", "1");
     ScopedEnv bench("FLEXAIDDS_BENCHMARK", "1");
@@ -262,9 +268,23 @@ TEST(ProtocolConfig, Chunk2PoseAndBudgetKnobs) {
     EXPECT_EQ(cfg.multi_cleft, 8);
     EXPECT_FALSE(cfg.hvib_enabled);
     EXPECT_TRUE(cfg.consensus_scorer);
+    EXPECT_TRUE(cfg.election_v135);
+    EXPECT_DOUBLE_EQ(cfg.election_score_tau, 25.0);  // CF a.u. default under v135
+    EXPECT_TRUE(cfg.election_include_singletons);
     EXPECT_DOUBLE_EQ(cfg.t_hot, 1500.0);
     EXPECT_TRUE(cfg.no_sec);
     EXPECT_TRUE(cfg.benchmark_mode);
+}
+
+TEST(ProtocolConfig, ElectionV135TauOverride) {
+    ClearProtocolEnv clear;
+    ScopedEnv v135("FLEXAIDDS_ELECTION_V135", "1");
+    ScopedEnv tau("FLEXAIDDS_ELECTION_SCORE_TAU", "40.0");
+    ScopedEnv sing("FLEXAIDDS_ELECTION_INCLUDE_SINGLETONS", "0");
+    const auto cfg = flexaids::ProtocolConfig::from_env();
+    EXPECT_TRUE(cfg.election_v135);
+    EXPECT_DOUBLE_EQ(cfg.election_score_tau, 40.0);
+    EXPECT_FALSE(cfg.election_include_singletons);
 }
 
 TEST(ProtocolConfig, JsonRoundTrip) {

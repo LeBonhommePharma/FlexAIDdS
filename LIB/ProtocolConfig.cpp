@@ -188,6 +188,33 @@ ProtocolConfig ProtocolConfig::from_env() {
     }
     cfg.consensus_scorer =
         env_truthy_int("FLEXAIDDS_CONSENSUS_SCORER", /*default_value=*/false);
+    // v135 BCR-proxy election (default OFF — does not change claim ranking).
+    cfg.election_v135 =
+        env_truthy_int("FLEXAIDDS_ELECTION_V135", /*default_value=*/false);
+    if (auto v = env_opt_double("FLEXAIDDS_ELECTION_SCORE_TAU")) {
+        cfg.election_score_tau = *v;
+    } else if (cfg.election_v135) {
+        cfg.election_score_tau = 25.0;  // CF a.u. score temperature (not kcal)
+    }
+    cfg.election_include_singletons =
+        env_truthy_int("FLEXAIDDS_ELECTION_INCLUDE_SINGLETONS",
+                       /*default_value=*/cfg.election_v135);
+    // 3Dsig 2017 ranking: G̃ = H̃ − T S̃ with Shannon S̃ (default ON).
+    // FLEXAIDDS_ELECTION_LEGACY_ZH=1 or ELECTION_SHANNON_F=0 restores Z+H.
+    {
+        const bool legacy_zh =
+            env_truthy_int("FLEXAIDDS_ELECTION_LEGACY_ZH", /*default_value=*/false);
+        if (legacy_zh) {
+            cfg.election_shannon_free_energy = false;
+        } else {
+            cfg.election_shannon_free_energy =
+                env_truthy_int("FLEXAIDDS_ELECTION_SHANNON_F",
+                               /*default_value=*/true);
+        }
+    }
+    if (auto v = env_opt_double("FLEXAIDDS_ELECTION_SOFT_T")) {
+        cfg.election_soft_T = *v;
+    }
     // HVIB default ON; only FLEXAIDDS_HVIB=0 disables (historical strcmp).
     {
         const char* e = env_raw("FLEXAIDDS_HVIB");
@@ -321,6 +348,11 @@ std::string ProtocolConfig::to_json() const {
     o << "\"freqsel_alpha\":" << freqsel_alpha << ',';
     o << "\"freqsel_rmsd\":" << freqsel_rmsd << ',';
     json_bool(o, "consensus_scorer", consensus_scorer);
+    json_bool(o, "election_v135", election_v135);
+    o << "\"election_score_tau\":" << election_score_tau << ',';
+    json_bool(o, "election_include_singletons", election_include_singletons);
+    json_bool(o, "election_shannon_free_energy", election_shannon_free_energy);
+    o << "\"election_soft_T\":" << election_soft_T << ',';
     json_bool(o, "hvib_enabled", hvib_enabled);
     json_bool(o, "ring_flex", ring_flex);
     o << "\"eval_scale_dihedral\":" << eval_scale_dihedral << ',';
@@ -417,6 +449,18 @@ ProtocolConfig ProtocolConfig::from_json(const std::string& json_text) {
         cfg.freqsel_rmsd = root["freqsel_rmsd"].as_float(1.5f);
     if (!root["consensus_scorer"].is_null())
         cfg.consensus_scorer = root["consensus_scorer"].as_bool(false);
+    if (!root["election_v135"].is_null())
+        cfg.election_v135 = root["election_v135"].as_bool(false);
+    if (!root["election_score_tau"].is_null())
+        cfg.election_score_tau = root["election_score_tau"].as_double(0.0);
+    if (!root["election_include_singletons"].is_null())
+        cfg.election_include_singletons =
+            root["election_include_singletons"].as_bool(false);
+    if (!root["election_shannon_free_energy"].is_null())
+        cfg.election_shannon_free_energy =
+            root["election_shannon_free_energy"].as_bool(true);
+    if (!root["election_soft_T"].is_null())
+        cfg.election_soft_T = root["election_soft_T"].as_double(0.0);
     if (!root["hvib_enabled"].is_null())
         cfg.hvib_enabled = root["hvib_enabled"].as_bool(true);
     if (!root["ring_flex"].is_null())

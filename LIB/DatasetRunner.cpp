@@ -900,16 +900,45 @@ static std::pair<std::string,float> select_pose_freq_gated_pooled(
         protocol ? flexaids::ProtocolConfig{} : flexaids::ProtocolConfig::from_env();
     const flexaids::ProtocolConfig& proto = protocol ? *protocol : local_proto;
 
-    // ── Boltzmann Z+H composite cluster selection (Options B+C) ─────────────
-    // Instead of pure CF-rank-0, score each cluster by:
-    //   Z_cluster  = sum_{i in members} exp(-CF_i / kT)        [partition fn]
-    //   H_cluster  = -sum_i p_i * log(p_i),  p_i = exp(-CF_i/kT) / Z
-    //   composite  = Z * exp(alpha * H)
-    // Favors thermodynamically broad basins over narrow false minima.
-    // Member CFs are read from a .mcf sidecar written by cluster.cpp.
-    // Falls back gracefully to single-member (H=0) when sidecar is absent.
-    constexpr double kT_kcalmol   = 0.592;   // T=298 K, tuneable
-    constexpr double alpha_shannon = 1.0;    // Shannon weight, tuneable
+    // ── Cluster-head election (Morency / 3Dsig 2017 FlexAIDdS ranking) ─────
+    //
+    //   Z  = Σ_i exp(−CF_i / T)
+    //   p_i = exp(−CF_i / T) / Z
+    //   H̃  = Σ_i p_i CF_i
+    //   S̃  = −Σ_i p_i ln p_i          (Shannon, nats)
+    //   G̃  = H̃ − T S̃                 (elect LOWEST G̃)
+    //
+    // Soft-β convention: T is the dock temperature in K (β = 1/T), CF is the
+    // contact-function scoring proxy in arbitrary units — same as classic
+    // FlexAID BindingMode F and cluster ACF. NOT physical k_B·T (AGENTS.md).
+    //
+    // Rollback: FLEXAIDDS_ELECTION_LEGACY_ZH=1 uses the old Z·exp(−αH)·log1p(N)
+    // composite with τ=0.592 (≈ pure min-CF; Shannon inert).
+    //
+    // Member CFs: .mcf sidecar from cluster.cpp; else head CF only (S̃=0, G̃=CF).
+    const bool use_shannon_G = proto.election_shannon_free_energy;
+    const bool include_singletons =
+        proto.election_include_singletons || proto.election_v135 || use_shannon_G;
+    // Soft-β T (3Dsig poster / FlexAID): dock temperature in K, β=1/T.
+    // Override with FLEXAIDDS_ELECTION_SOFT_T. Legacy ZH may use SCORE_TAU.
+    double soft_T = 298.0;
+    if (proto.election_soft_T > 0.0)
+        soft_T = proto.election_soft_T;
+    else if (!use_shannon_G && proto.election_score_tau > 0.0)
+        soft_T = proto.election_score_tau;
+    soft_T = std::max(soft_T, 1e-6);
+
+    if (use_shannon_G) {
+        fprintf(stderr,
+                "[3DSIG-RANK] elect by G̃=H̃−T·S̃ (Shannon on ranking path): "
+                "T=%.4f (soft-β, CF a.u.) include_singletons=%d\n",
+                soft_T, include_singletons ? 1 : 0);
+    } else {
+        fprintf(stderr,
+                "[Z+H-LEGACY] elect by Z·exp(−αH)·log1p(N) τ=%.4f "
+                "(Shannon NOT used for ranking — rollback path)\n",
+                soft_T);
+    }
 
     struct PoseInfo {
         std::string path;
@@ -963,55 +992,114 @@ static std::pair<std::string,float> select_pose_freq_gated_pooled(
         return true;
     };
 
-    // ── Boltzmann Z+H composite score with counting-entropy population bonus ──
-    // Returns composite = Z * exp(-alpha * H) * log1p(N).
-    //
-    // Motivation: at kT=0.592 kcal/mol every intra-cluster Boltzmann
-    // distribution is thermally degenerate (all CF gaps >> kT), so H≈0 for
-    // all clusters and the formula collapses to pure Z = exp(-CF_best/kT).
-    // The log1p(N) population bonus adds a counting-entropy tiebreaker that
-    // rewards convergence reproducibility: a basin attracting N independent GA
-    // trajectories contributes log(N+1) nats of counting entropy to the
-    // effective free energy, breaking near-CF ties in favour of more
-    // robustly-reproducible attractors without distorting well-separated cases.
-    //
-    // Falls back to exp(-CF/kT)*log1p(freq) when no .mcf sidecar was loaded.
-    auto boltzmann_composite = [&](const PoseInfo& p) -> double {
-        // N = cluster member count (MCF entries when available, else freq).
+    // Build soft-β p_i over member CFs (or single head CF).
+    // Returns {H̃, S̃, G̃=H̃−T·S̃}  (G̃ lower is better — elect min G̃).
+    auto soft_free_energy = [&](const PoseInfo& p, double& H_out, double& S_out) -> double {
+        const double T = soft_T;
+        std::vector<double> energies;
+        if (!p.member_cfs.empty()) {
+            energies.reserve(p.member_cfs.size());
+            for (float e : p.member_cfs)
+                if (std::isfinite(e)) energies.push_back(static_cast<double>(e));
+        }
+        if (energies.empty()) {
+            // No members: singleton head — S̃=0, G̃=CF (matches paper for N=1).
+            H_out = static_cast<double>(p.cf);
+            S_out = 0.0;
+            return H_out;
+        }
+        // Numerically stable Z: shift by E_min
+        double Emin = energies[0];
+        for (double e : energies) Emin = std::min(Emin, e);
+        double Z = 0.0;
+        for (double e : energies)
+            Z += std::exp(-(e - Emin) / T);
+        if (!(Z > 0.0) || !std::isfinite(Z)) {
+            H_out = static_cast<double>(p.cf);
+            S_out = 0.0;
+            return H_out;
+        }
+        double H = 0.0;
+        double S = 0.0;
+        for (double e : energies) {
+            const double p_i = std::exp(-(e - Emin) / T) / Z;
+            if (p_i <= 0.0) continue;
+            H += p_i * e;
+            S -= p_i * std::log(p_i);
+        }
+        H_out = H;
+        S_out = S;
+        return H - T * S;  // G̃
+    };
+
+    // Legacy Z+H composite (maximize). Only when election_shannon_free_energy=false.
+    auto score_composite_legacy_zh = [&](const PoseInfo& p) -> double {
         const size_t n_members = p.member_cfs.empty()
             ? static_cast<size_t>(std::max(1, p.freq))
             : p.member_cfs.size();
         const double pop_weight = std::log1p(static_cast<double>(n_members));
-
+        const double tau = soft_T;
         if (p.member_cfs.empty()) {
-            // No sidecar: treat as single member
-            return std::exp(-static_cast<double>(p.cf) / kT_kcalmol) * pop_weight;
+            return std::exp(-static_cast<double>(p.cf) / tau) * pop_weight;
         }
-        // Z = sum_i exp(-CF_i / kT)
         double Z = 0.0;
         for (float cf_i : p.member_cfs)
-            Z += std::exp(-static_cast<double>(cf_i) / kT_kcalmol);
-        if (Z <= 0.0) return std::exp(-static_cast<double>(p.cf) / kT_kcalmol) * pop_weight;
-        // H = -sum_i p_i * log(p_i)
-        double H = 0.0;
+            Z += std::exp(-static_cast<double>(cf_i) / tau);
+        if (Z <= 0.0)
+            return std::exp(-static_cast<double>(p.cf) / tau) * pop_weight;
+        double H_shannon = 0.0;
         for (float cf_i : p.member_cfs) {
-            double pi = std::exp(-static_cast<double>(cf_i) / kT_kcalmol) / Z;
-            if (pi > 1e-300) H -= pi * std::log(pi);
+            double pi = std::exp(-static_cast<double>(cf_i) / tau) / Z;
+            if (pi > 1e-300) H_shannon -= pi * std::log(pi);
         }
-        return Z * std::exp(-alpha_shannon * H) * pop_weight;
+        return Z * std::exp(-1.0 * H_shannon) * pop_weight;
     };
 
     std::vector<PoseInfo> poses;
     for (size_t ri = 0; ri < prefixes.size(); ++ri) {
         const auto& out_prefix = prefixes[ri];
-        for (int pi = 0; pi < kBenchmarkPoseLimit; ++pi) {
-            std::string cand = out_prefix + "_" + std::to_string(pi) + ".pdb";
-            if (!fs::exists(cand)) continue;
+        std::set<std::string> seen;
+        auto try_add = [&](const std::string& cand) {
+            if (!fs::exists(cand) || !seen.insert(cand).second) return;
             float cf; int freq; std::vector<float> mcfs;
-            if (!parse_pose(cand, cf, freq, mcfs)) continue;
+            if (!parse_pose(cand, cf, freq, mcfs)) return;
             poses.push_back({cand, cf, freq, std::move(mcfs), /*is_seed=*/false,
                              /*restart=*/static_cast<int>(ri)});
-        }
+        };
+        // CF / DensityPeak: <prefix>_<rank>.pdb
+        for (int pi = 0; pi < kBenchmarkPoseLimit; ++pi)
+            try_add(out_prefix + "_" + std::to_string(pi) + ".pdb");
+        // FastOPTICS dual-suffix: <prefix>_<minPts>_<rank>.pdb (BindingMode.cpp)
+        try {
+            const fs::path pfx(out_prefix);
+            const fs::path dir = pfx.parent_path().empty() ? fs::path(".") : pfx.parent_path();
+            const std::string base = pfx.filename().string();
+            if (!base.empty() && fs::is_directory(dir)) {
+                const std::string prefix_match = base + "_";
+                for (const auto& ent : fs::directory_iterator(dir)) {
+                    if (!ent.is_regular_file()) continue;
+                    const std::string fname = ent.path().filename().string();
+                    if (fname.size() < prefix_match.size() + 6) continue;
+                    if (fname.compare(0, prefix_match.size(), prefix_match) != 0) continue;
+                    if (fname.size() < 4 || fname.compare(fname.size() - 4, 4, ".pdb") != 0)
+                        continue;
+                    // Require two underscores after base: _digits_digits.pdb
+                    const std::string mid = fname.substr(
+                        prefix_match.size(), fname.size() - prefix_match.size() - 4);
+                    const auto us = mid.find('_');
+                    if (us == std::string::npos || us == 0 || us + 1 >= mid.size())
+                        continue;
+                    bool ok = true;
+                    for (size_t k = 0; k < mid.size(); ++k) {
+                        if (k == us) continue;
+                        if (!std::isdigit(static_cast<unsigned char>(mid[k]))) {
+                            ok = false; break;
+                        }
+                    }
+                    if (ok) try_add(ent.path().string());
+                }
+            }
+        } catch (...) {}
     }
 
     // ── Seed-anchored elitism (FLEXAIDDS_SEED_ELITISM, default ON) ──────────
@@ -1059,59 +1147,79 @@ static std::pair<std::string,float> select_pose_freq_gated_pooled(
         else for (const auto& p : poses) pool.push_back(&p);
 
         // Prefer populated clusters (freq>1); fall back to all when GA collapsed.
-        // CF-window gate: include singletons within 30 CF units of rank-0 (Fix A)
+        // CF-window gate: include singletons within 30 CF units of rank-0 (Fix A).
+        // v135: include all singletons (crystal-blind BCR-proxy — near-natives
+        // often emit as Frequency:1).
         float cf_min = std::numeric_limits<float>::max();
-        if (cf_window_selector)
+        if (cf_window_selector || include_singletons)
             for (const auto* p : pool)
                 cf_min = std::min(cf_min, p->cf);
         std::vector<const PoseInfo*> populated;
         for (const auto* p : pool)
             if (p->freq > 1 ||
+                include_singletons ||
                 (cf_window_selector && p->cf <= cf_min + 30.0f))
                 populated.push_back(p);
         const std::vector<const PoseInfo*>& chosen =
             populated.empty() ? pool : populated;
 
-        // ── Log top-3 Z+H scores to stderr ───────────────────────────────────
-        // Precompute composite scores once so each pose is evaluated once.
+        // ── Score + elect ────────────────────────────────────────────────────
+        // 3Dsig path: LOWEST G̃ = H̃ − T·S̃ wins (Shannon on ranking path).
+        // Legacy ZH:   HIGHEST Z·exp(−αH)·log1p(N) wins (≈ min-CF at small τ).
         std::vector<std::pair<double, const PoseInfo*>> scored_chosen;
         scored_chosen.reserve(chosen.size());
-        for (const auto* p : chosen)
-            scored_chosen.push_back({boltzmann_composite(*p), p});
-        std::sort(scored_chosen.begin(), scored_chosen.end(),
-                  [](const auto& a, const auto& b){ return a.first > b.first; });
+        for (const auto* p : chosen) {
+            if (use_shannon_G) {
+                double H_tmp = 0.0, S_tmp = 0.0;
+                const double G = soft_free_energy(*p, H_tmp, S_tmp);
+                scored_chosen.push_back({G, p});
+            } else {
+                scored_chosen.push_back({score_composite_legacy_zh(*p), p});
+            }
+        }
+        if (use_shannon_G) {
+            // Ascending G̃ (best free energy first)
+            std::sort(scored_chosen.begin(), scored_chosen.end(),
+                      [](const auto& a, const auto& b){ return a.first < b.first; });
+        } else {
+            // Descending legacy composite
+            std::sort(scored_chosen.begin(), scored_chosen.end(),
+                      [](const auto& a, const auto& b){ return a.first > b.first; });
+        }
         int log_n = std::min(3, static_cast<int>(scored_chosen.size()));
         for (int si = 0; si < log_n; ++si) {
             const auto* p = scored_chosen[si].second;
-            fprintf(stderr,
-                "[Z+H] rank=%d cf=%.4f freq=%d nmembers=%zu Z*expH=%.4e path=%s\n",
-                si, p->cf, p->freq, p->member_cfs.size(),
-                scored_chosen[si].first, p->path.c_str());
+            if (use_shannon_G) {
+                double H_tmp = 0.0, S_tmp = 0.0;
+                const double G = soft_free_energy(*p, H_tmp, S_tmp);
+                fprintf(stderr,
+                    "[3DSIG-RANK] rank=%d G=%.4f H=%.4f S=%.4f T=%.2f cf=%.4f "
+                    "freq=%d nmembers=%zu path=%s\n",
+                    si, G, H_tmp, S_tmp, soft_T, p->cf, p->freq,
+                    p->member_cfs.empty()
+                        ? static_cast<size_t>(std::max(1, p->freq))
+                        : p->member_cfs.size(),
+                    p->path.c_str());
+            } else {
+                fprintf(stderr,
+                    "[Z+H] rank=%d cf=%.4f freq=%d nmembers=%zu score=%.4e tau=%.4f path=%s\n",
+                    si, p->cf, p->freq, p->member_cfs.size(),
+                    scored_chosen[si].first, soft_T, p->path.c_str());
+            }
         }
 
-        // Winner (fallback) = highest composite score (broadest basin).
+        // Winner = best-ranked after sort above.
         freq_best = scored_chosen.front().second;
 
         // ── v70: frequency-weighted macro-cluster selection ─────────────────
-        // The Z+H composite collapses to pure CF-rank-0 at kT=0.592 (all intra-
-        // cluster CF gaps >> kT), so a false minimum that scores a lower CF than
-        // the true binding mode in a single restart is elected as the winner —
-        // the exact failure on 1MEH/1Q4G/1X8X (near-native cluster EXISTS at
-        // 0.28–0.73 Å but a lower-CF false min is picked).  The true mode is the
-        // one that RE-CONVERGES: independent GA restarts rediscover it.  We group
-        // the candidate poses into macro-clusters by pose–pose Hungarian RMSD
-        // (single linkage, <= rmsd_thr) and score each macro-cluster by
+        // At small τ the composite collapses toward CF-rank-0, so a false
+        // minimum that scores a lower CF can win even when a near-native head
+        // exists. Macro-cluster by pose–pose Hungarian RMSD and score:
         //     effective_CF = CF_min - alpha * (N_restarts_supporting - 1)
-        // alpha defaults to 12 kcal/mol/restart so a mode supported by >=2
-        // restarts dominates a single-restart cluster up to 12 kcal/mol lower in
-        // CF (spec: must beat a 10 kcal/mol-lower single-restart cluster).
+        // alpha is in CF a.u. / restart (legacy name "kcal" was incorrect).
         //
         // DEFAULT OFF (v70 full oracle): freq weighting was a net regression
-        // (78/85 vs v68's 82/85). The false minimum IS the reproducible multi-
-        // restart consensus, so this lever picks the decoy, not the rare true
-        // pose — it broke 1J3J/1SG0 and never flipped 1Q4G/1MEH. The real lever
-        // is the CF scoring false minimum, not pose selection. Kept env-gated
-        // (FLEXAIDDS_FREQSEL=1) for experimentation only.
+        // (78/85 vs v68's 82/85). Kept env-gated (FLEXAIDDS_FREQSEL=1).
         const bool freqsel = proto.freqsel;
         const double freqsel_alpha = proto.freqsel_alpha;
         const float freqsel_rmsd = proto.freqsel_rmsd;

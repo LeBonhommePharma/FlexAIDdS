@@ -72,6 +72,25 @@ struct ProtocolConfig {
     double freqsel_alpha{12.0};       ///< FLEXAIDDS_FREQSEL_ALPHA
     float freqsel_rmsd{1.5f};         ///< FLEXAIDDS_FREQSEL_RMSD
     bool consensus_scorer{false};     ///< FLEXAIDDS_CONSENSUS_SCORER
+    /// v135 crystal-blind basin recovery election (BCR-proxy). Default OFF —
+    /// preserves claim ranking (AGENTS.md). Master switch enables:
+    ///   • include freq=1 cluster heads (no freq>1 gate)
+    ///   • score temperature τ in CF a.u. (not mixed kT=0.592 kcal-scale)
+    bool election_v135{false};        ///< FLEXAIDDS_ELECTION_V135
+    /// Score temperature τ in **CF arbitrary units** for Z-like composite.
+    /// 0 = legacy hard-coded 0.592 (unit-mixed). When election_v135 and unset,
+    /// from_env applies default τ=25 CF a.u.
+    double election_score_tau{0.0};   ///< FLEXAIDDS_ELECTION_SCORE_TAU
+    /// Include Frequency=1 heads in the election pool (helps BCR-like singletons).
+    bool election_include_singletons{false}; ///< FLEXAIDDS_ELECTION_INCLUDE_SINGLETONS
+    /// Rank cluster heads by 3Dsig/Morency 2017 soft free energy
+    ///   G̃ = H̃ − T S̃,  H̃=Σ p_i CF_i,  S̃=−Σ p_i ln p_i,  p_i ∝ exp(−CF_i/T)
+    /// Default ON (Shannon entropy on the ranking path). Rollback:
+    /// FLEXAIDDS_ELECTION_LEGACY_ZH=1 restores inert Z+H composite (≈ min-CF).
+    bool election_shannon_free_energy{true}; ///< FLEXAIDDS_ELECTION_SHANNON_F (default ON)
+    /// Soft-β temperature T for G̃ (same role as poster T). 0 → use dock temperature
+    /// or 298 K. Units: CF is scoring-proxy a.u.; this is FlexAID soft-β, not k_B.
+    double election_soft_T{0.0};      ///< FLEXAIDDS_ELECTION_SOFT_T
     /// tENCoM/H(ω) validator; default ON, disable with FLEXAIDDS_HVIB=0.
     bool hvib_enabled{true};
 
