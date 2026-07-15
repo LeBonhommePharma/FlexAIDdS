@@ -3,9 +3,8 @@ class Flexaidds < Formula
   homepage "https://github.com/LeBonhommePharma/FlexAIDdS"
   # v2.0.3 includes flexaid_core Metal OBJCXX membership (PR #260) so stable
   # --with-metal links. Still ships production MC_st0r5.2_6.dat (md5 9dc93717…).
-  # sha256 placeholder until the annotated tag exists; follow-up sets the real digest.
   url "https://github.com/LeBonhommePharma/FlexAIDdS/archive/refs/tags/v2.0.3.tar.gz"
-  sha256 "0000000000000000000000000000000000000000000000000000000000000000"
+  sha256 "6c8442fc672a127db354ff3b6e08a2252e8c921372d902d062ecbf4296aef186"
   license "Apache-2.0"
   # Default branch is main (Git 3.0 / repo rename).
   head "https://github.com/LeBonhommePharma/FlexAIDdS.git", branch: "main"
