@@ -221,7 +221,21 @@ receipt = {
     "seed_note": "STRTSEED written; staged binaries may use time(0)",
 }
 (out / "RUN_RECEIPT.json").write_text(json.dumps(receipt, indent=2) + "\n")
-(q / f"provenance_run_{'''$ARM'''}_pilot8.json").write_text(json.dumps(receipt, indent=2) + "\n")
+# Queue provenance is best-effort: never abort the arm if CloudDocs/iCloud hangs.
+prov = q / f"provenance_run_{'''$ARM'''}_pilot8.json"
+try:
+    prov.write_text(json.dumps(receipt, indent=2) + "\n")
+    print("wrote", prov)
+except OSError as e:
+    print(f"WARN: skip queue provenance {prov}: {e}")
+    local_q = Path(r'''${FLEXAIDDS_LOCAL_ROOT:-$HOME/flexaidds_results}''') / "three_engine_entropy_q1"
+    try:
+        local_q.mkdir(parents=True, exist_ok=True)
+        alt = local_q / f"provenance_run_{'''$ARM'''}_pilot8.json"
+        alt.write_text(json.dumps(receipt, indent=2) + "\n")
+        print("wrote", alt)
+    except OSError as e2:
+        print(f"WARN: local provenance also failed: {e2}")
 print("wrote", out / "RUN_RECEIPT.json")
 PY
 
