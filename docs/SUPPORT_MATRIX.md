@@ -35,8 +35,18 @@ Anything not listed here should be treated as experimental.
 | AVX2 | Supported | Performance optimization, not correctness dependency |
 | AVX-512 | Experimental | Optional and architecture-specific |
 | CUDA | Experimental | Not required for 1.0 support guarantees |
-| Metal | Experimental | Not required for 1.0 support guarantees |
+| Metal | Experimental | Hosted CI: shader compile smoke only. Full link/runtime gate: self-hosted `self-hosted-m3` (`metal-self-hosted.yml`). Not required for 1.0 CPU support guarantees. See `docs/CI_RELEASE_GATES.md`. |
 | ROCm/HIP | Experimental | Not required for 1.0 support guarantees |
+
+### Platform CI gates (summary)
+
+| Platform | Blocking PR gate | What is still self-hosted |
+|:--|:--|:--|
+| Linux CPU | `cxx_core_build` + `ctest` | Full docking campaigns |
+| macOS CPU | `macos_cpu_tests` + `ctest` (no soft-fail) | Full docking campaigns |
+| Metal GPU | `macos_metal_compile_smoke` (shaders) | Link + runtime via `self-hosted-m3` |
+
+Full table and release checklist: **`docs/CI_RELEASE_GATES.md`**.
 
 ## Python support
 

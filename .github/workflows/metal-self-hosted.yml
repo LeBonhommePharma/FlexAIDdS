@@ -1,0 +1,117 @@
+# Full Metal build + link gate for Apple Silicon self-hosted runners.
+#
+# GitHub-hosted macOS runners can compile .metal shaders (see ci.yml
+# macos_metal_compile_smoke) but cannot reliably provide a production
+# Metal link/runtime environment for release claims.
+#
+# Fail-closed: when this workflow is dispatched, jobs require a runner
+# labeled `self-hosted-m3`. Missing toolchain or build/link failure fails
+# the job (no continue-on-error).
+#
+# Register a runner with labels: self-hosted, self-hosted-m3
+# Docs: docs/CI_RELEASE_GATES.md
+
+name: Metal full gate (self-hosted M3)
+
+on:
+  workflow_dispatch:
+    inputs:
+      run_ctest:
+        description: "Run ctest after Metal-enabled build (slower)"
+        required: false
+        default: "true"
+        type: choice
+        options:
+          - "true"
+          - "false"
+
+concurrency:
+  group: metal-self-hosted-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  metal_full_gate:
+    name: Metal build + smoke (self-hosted-m3)
+    runs-on: [self-hosted, self-hosted-m3]
+    timeout-minutes: 90
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v6
+        with:
+          submodules: false
+
+      - name: Fail-closed Metal toolchain preflight
+        run: |
+          set -euo pipefail
+          echo "Runner: $(uname -a)"
+          echo "Labels expected: self-hosted, self-hosted-m3"
+          if ! command -v xcrun >/dev/null 2>&1; then
+            echo "FATAL: xcrun missing on self-hosted-m3 runner"
+            exit 1
+          fi
+          METALC="$(xcrun -f metal 2>/dev/null || true)"
+          if [[ -z "${METALC}" || ! -x "${METALC}" ]]; then
+            echo "FATAL: Metal compiler not found. Install Xcode Metal toolchain:"
+            echo "  xcodebuild -downloadComponent MetalToolchain"
+            exit 1
+          fi
+          echo "Metal compiler: ${METALC}"
+          xcodebuild -version || true
+          # Hosted CI only smokes shaders; this gate requires frameworks too.
+          python3 - <<'PY'
+          import ctypes, sys
+          try:
+              ctypes.CDLL("/System/Library/Frameworks/Metal.framework/Metal")
+          except OSError as e:
+              print("FATAL: Metal.framework not loadable:", e)
+              sys.exit(1)
+          print("Metal.framework: OK")
+          PY
+
+      - name: Install deps (Homebrew if available)
+        run: |
+          set -euo pipefail
+          if command -v brew >/dev/null 2>&1; then
+            brew install cmake ninja libomp eigen || true
+          else
+            echo "NOTE: brew not found; assuming cmake/ninja/eigen already on PATH"
+          fi
+          command -v cmake
+          command -v ninja
+
+      - name: Configure (Metal ON, tests ON)
+        run: |
+          set -euo pipefail
+          CMAKE_ARGS=(
+            -S . -B build-metal
+            -G Ninja
+            -DCMAKE_BUILD_TYPE=Release
+            -DFLEXAIDS_USE_CUDA=OFF
+            -DFLEXAIDS_USE_METAL=ON
+            -DBUILD_PYTHON_BINDINGS=OFF
+            -DBUILD_TESTING=ON
+            -DFLEXAIDS_STRICT_SOURCE_VALIDATION=ON
+          )
+          if command -v brew >/dev/null 2>&1; then
+            CMAKE_ARGS+=(-DCMAKE_PREFIX_PATH="$(brew --prefix)")
+            if [[ -d "$(brew --prefix libomp 2>/dev/null || true)" ]]; then
+              CMAKE_ARGS+=(-DOpenMP_ROOT="$(brew --prefix libomp)")
+            fi
+          fi
+          cmake "${CMAKE_ARGS[@]}"
+
+      - name: Build FlexAID (Metal-linked)
+        run: cmake --build build-metal --parallel --target FlexAID
+
+      - name: Metal shader compile smoke
+        run: bash scripts/ci/metal_compile_smoke.sh build-metal/metal-smoke
+
+      - name: Unit tests (optional)
+        if: inputs.run_ctest == 'true'
+        run: ctest --test-dir build-metal --output-on-failure --timeout 120
+
+      - name: Summarize gate
+        run: |
+          echo "Metal full gate PASSED on self-hosted-m3"
+          echo "Binary: build-metal/FlexAID (or FlexAIDdS)"
+          ls -la build-metal/FlexAID build-metal/FlexAIDdS 2>/dev/null || true

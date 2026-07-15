@@ -46,6 +46,23 @@ This document explains how to contribute while keeping the codebase fast, scient
    - Call out any API changes, new config options, or new dependencies.
    - Mention any licensing or build-system impact.
 
+## 2b. CI release gates (macOS + Metal)
+
+Merge and release claims follow the blocking jobs documented in
+**[`docs/CI_RELEASE_GATES.md`](docs/CI_RELEASE_GATES.md)**. Short version:
+
+| Gate | Blocking? | Notes |
+|:--|:--|:--|
+| Linux C++ build + `ctest` | Yes | `cxx_core_build` (GCC/Clang/MPI/ASan) |
+| **macOS CPU build + `ctest`** | **Yes** | Job `macos_cpu_tests` — no `continue-on-error` |
+| Metal `.metal` shader compile | Yes if toolchain present | Job `macos_metal_compile_smoke` |
+| Metal full link / GPU runtime | Self-hosted only | `workflow_dispatch` → `metal-self-hosted.yml` (`self-hosted-m3`) |
+
+Do **not** re-add `continue-on-error: true` (or matrix `allow_failure`) to
+`macos_cpu_tests` without an issue link and an explicit temporary waiver in
+`docs/CI_RELEASE_GATES.md`. Metal production claims require a green
+self-hosted M3 full gate; hosted CI only smokes shader compilation.
+
 ## 3. Coding Guidelines
 
 - **Languages**

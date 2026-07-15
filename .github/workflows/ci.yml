@@ -52,6 +52,8 @@ jobs:
           python/tests/test_dift.py
           benchmarks/tests/test_itc_calibration.py
 
+  # Linux C++ matrix only. macOS CPU build+ctest is the dedicated blocking job
+  # macos_cpu_tests (no continue-on-error). See docs/CI_RELEASE_GATES.md.
   cxx_core_build:
     name: C++ core (${{ matrix.name }})
     runs-on: ${{ matrix.os }}
@@ -68,11 +70,6 @@ jobs:
             os: ubuntu-latest
             cc: clang-18
             cxx: clang++-18
-          - name: macos-clang
-            os: macos-15
-            cc: clang
-            cxx: clang++
-            allow_failure: true
           - name: linux-gcc-avx512
             os: ubuntu-latest
             cc: gcc-14
@@ -92,6 +89,7 @@ jobs:
               -DCMAKE_CXX_FLAGS='-fsanitize=address,undefined -fno-omit-frame-pointer -g'
               -DCMAKE_EXE_LINKER_FLAGS='-fsanitize=address,undefined'
           # windows-msvc excluded: deep MSVC C++20/C++26 incompatibilities in legacy sources
+          # macos-clang removed from soft-fail matrix → see macos_cpu_tests (blocking)
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v6
         with:
@@ -108,13 +106,6 @@ jobs:
             PKGS="$PKGS libopenmpi-dev openmpi-bin"
           fi
           sudo apt-get install -y $PKGS
-      - name: Install macOS dependencies
-        if: runner.os == 'macOS'
-        run: |
-          # Apple Clang ≥ 16 (Xcode 16) is required for C++26.
-          # Eigen3: system install via brew; vendored submodule skipped in CI.
-          sudo xcode-select -s /Applications/Xcode_16.app || true
-          brew install cmake ninja libomp eigen
       - name: Install Windows dependencies
         if: runner.os == 'Windows'
         run: |
@@ -135,18 +126,84 @@ jobs:
             -DFLEXAIDS_STRICT_SOURCE_VALIDATION=ON
             ${{ matrix.cmake_extra }}
           )
-          # Homebrew on Apple Silicon installs to /opt/homebrew
-          if [ "$RUNNER_OS" = "macOS" ]; then
-            CMAKE_ARGS+=(-DCMAKE_PREFIX_PATH="$(brew --prefix)")
-            CMAKE_ARGS+=(-DBUILD_TESTING=OFF)
-            CMAKE_ARGS+=(-DOpenMP_ROOT="$(brew --prefix libomp)")
-          fi
           cmake "${CMAKE_ARGS[@]}"
       - name: Build
         run: cmake --build build --parallel
       - name: Test
         if: matrix.name == 'linux-gcc' || matrix.name == 'linux-clang' || matrix.name == 'linux-gcc-mpi' || matrix.name == 'linux-gcc-asan'
         run: ctest --test-dir build --output-on-failure
+
+  # Blocking macOS CPU gate (audit: was allow_failure + BUILD_TESTING=OFF).
+  # No continue-on-error. Metal is intentionally OFF here; shader smoke and
+  # self-hosted full Metal gate are separate (docs/CI_RELEASE_GATES.md).
+  macos_cpu_tests:
+    name: macOS CPU tests (blocking)
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v6
+        with:
+          submodules: false
+      - name: Install macOS dependencies
+        run: |
+          # Apple Clang ≥ 16 (Xcode 16) is required for C++26.
+          # Eigen3: system install via brew; vendored submodule skipped in CI.
+          sudo xcode-select -s /Applications/Xcode_16.app || true
+          brew install cmake ninja libomp eigen
+      - name: Configure (CPU, tests ON, Metal OFF)
+        run: |
+          CMAKE_ARGS=(
+            -S . -B build
+            -G Ninja
+            -DCMAKE_BUILD_TYPE=Release
+            -DFLEXAIDS_USE_CUDA=OFF
+            -DFLEXAIDS_USE_METAL=OFF
+            -DBUILD_PYTHON_BINDINGS=OFF
+            -DBUILD_TESTING=ON
+            -DFLEXAIDS_STRICT_SOURCE_VALIDATION=ON
+            -DCMAKE_PREFIX_PATH="$(brew --prefix)"
+            -DOpenMP_ROOT="$(brew --prefix libomp)"
+          )
+          cmake "${CMAKE_ARGS[@]}"
+      - name: Build
+        run: cmake --build build --parallel
+      - name: Test (ctest blocking)
+        run: ctest --test-dir build --output-on-failure --timeout 120
+
+  # Hosted Metal compile smoke: .metal → .air only (no full OBJCXX link).
+  # Exit 2 from the script = toolchain missing → soft-skip with notice.
+  # Full Metal link/runtime: workflow_dispatch metal-self-hosted.yml (self-hosted-m3).
+  macos_metal_compile_smoke:
+    name: Metal shader compile smoke
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v6
+        with:
+          submodules: false
+      - name: Prefer recent Xcode (Metal toolchain)
+        run: |
+          sudo xcode-select -s /Applications/Xcode_16.app || true
+          xcodebuild -version || true
+          xcrun -f metal || true
+      - name: Compile Metal shaders (smoke)
+        id: metal_smoke
+        run: |
+          set +e
+          bash scripts/ci/metal_compile_smoke.sh "${{ github.workspace }}/build-metal-smoke"
+          rc=$?
+          set -e
+          if [ "$rc" -eq 0 ]; then
+            echo "status=ok" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [ "$rc" -eq 2 ]; then
+            echo "status=skipped" >> "$GITHUB_OUTPUT"
+            echo "::notice title=Metal toolchain absent::Hosted runner has no metal compiler; full Metal release gate is metal-self-hosted.yml (label self-hosted-m3). See docs/CI_RELEASE_GATES.md"
+            exit 0
+          fi
+          echo "status=failed" >> "$GITHUB_OUTPUT"
+          exit "$rc"
+      - name: Record smoke outcome
+        run: echo "Metal smoke status=${{ steps.metal_smoke.outputs.status }}"
 
   python_bindings_smoke:
     name: Python bindings smoke (${{ matrix.name }})
