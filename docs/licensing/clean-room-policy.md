@@ -43,6 +43,8 @@ Direct or transitive dependencies must be under:
 
 Current examples include RDKit (BSD-3), Eigen (MPL-2.0, header-only), PyMOL (PSF), OpenMP runtime via compilers, CUDA and Metal as user-installed toolkits.
 
+**Pose validation:** `LIB/PoseBust` is first-party Apache-2.0 (clean-room NativePoseQC). The optional official PoseBusters `bust` CLI (BSD) may be invoked as a subprocess for claim-ready `pb_pass`; it is not vendored and its source must not be copied into this tree. A standalone sibling package is published as [PoseBust](https://github.com/LeBonhommePharma/PoseBust) under Apache-2.0.
+
 ### 3.2 Forbidden
 
 Not allowed as dependencies for code shipped in this repo:

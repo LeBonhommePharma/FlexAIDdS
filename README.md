@@ -705,7 +705,15 @@ Contributions are welcome. Please read [CONTRIBUTING.md](CONTRIBUTING.md) before
 
 [Apache License 2.0](LICENSE) -- free for academic and commercial use.
 
-See [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md) for dependency licenses.
+| File | Purpose |
+|------|---------|
+| [LICENSE](LICENSE) | Full Apache-2.0 text (appendix copyright filled) |
+| [NOTICE](NOTICE) | Copyright holders and sibling-package attribution |
+| [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md) | Dependency and optional-tool licenses |
+| [docs/licensing/LICENSE_MATRIX.md](docs/licensing/LICENSE_MATRIX.md) | Compatibility matrix |
+| [docs/licensing/clean-room-policy.md](docs/licensing/clean-room-policy.md) | No GPL / clean-room rules |
+
+**Pose validation:** in-tree `LIB/PoseBust` is Apache-2.0 first-party (NativePoseQC diagnostic + optional upstream `bust` bridge). The standalone sibling package is **[PoseBust](https://github.com/LeBonhommePharma/PoseBust)** (Apache-2.0). Official `pb_pass` / S2 claims still require the BSD PoseBusters CLI when available — not NativePoseQC alone.
 
 ---
 

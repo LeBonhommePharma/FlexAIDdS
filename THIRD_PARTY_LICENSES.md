@@ -163,11 +163,41 @@ Python Software Foundation License Version 2
 
 ---
 
+## First-party pose validation (`LIB/PoseBust`)
+
+### NativePoseQC + BustCli (Apache-2.0)
+
+| | |
+|--|--|
+| **Location** | `LIB/PoseBust/` (namespace `flexaids::posebust`) |
+| **License** | Apache-2.0 (this repository) |
+| **Role** | Clean-room pose QC diagnostics + argv bridge to optional upstream `bust` |
+| **Claim gate** | Official `pb_pass` uses **upstream PoseBusters CLI** when configured; NativePoseQC is diagnostic only |
+| **Standalone sibling** | [LeBonhommePharma/PoseBust](https://github.com/LeBonhommePharma/PoseBust) — same clean-room lineage, namespace `posebust`, no docking engine dependency |
+
+**Not** a copy of PoseBusters or RDKit. Check *key names* match published PoseBusters columns for report parity only. See that sibling’s `NOTICE` / `THIRD_PARTY_LICENSES.md` for packaging details.
+
+### PoseBusters (`bust`) — optional external tool (BSD)
+
+| | |
+|--|--|
+| **Upstream** | https://github.com/maabuu/posebusters |
+| **License** | BSD (see upstream) |
+| **Use in FlexAIDdS** | Authoritative S2 / `pb_pass` / `success_pb` when `FLEXAIDDS_POSEBUSTERS_BIN` or `.venv-posebusters/bin/bust` is available |
+| **Distribution** | **Not vendored** — user or CI installs separately; invoked via subprocess only |
+
+Benchmark contract: success requires `RMSD <= 2.0 Å` **and** PoseBusters pass. NativePoseQC alone is not claim-ready S2.
+
+---
+
 ## License Compatibility Summary
 
 | Component | License | Compatibility with Apache-2.0 | Distribution Status |
 |-----------|---------|-------------------------------|---------------------|
 | **FlexAID Core** | Apache-2.0 | ✅ Same license | Incorporated |
+| **LIB/PoseBust (NativePoseQC)** | Apache-2.0 | ✅ Same license | Incorporated (first-party) |
+| **PoseBust (sibling repo)** | Apache-2.0 | ✅ Same license | Separate package; optional consumer |
+| **PoseBusters (`bust`)** | BSD | ✅ Permissive | Optional runtime (subprocess; not vendored) |
 | **RDKit** | BSD-3-Clause | ✅ Permissive | Dependency |
 | **Eigen** | MPL 2.0 | ✅ File-level copyleft | Header-only dependency |
 | **PyMOL** | PSF | ✅ Permissive | Optional dependency |
@@ -219,15 +249,17 @@ Python Software Foundation License Version 2
 This file is maintained alongside FlexAID∆S releases:
 
 - **Version 1.0 (March 2026):** Initial comprehensive third-party license documentation
-- Future updates will track dependency changes and new integrations
+- **Version 1.1 (July 2026):** Document `LIB/PoseBust` (Apache-2.0 first-party), optional PoseBusters `bust` (BSD), sibling [PoseBust](https://github.com/LeBonhommePharma/PoseBust) repo; add root `NOTICE`; fill Apache LICENSE appendix copyright
 
 For questions about licensing compliance, see:
-- Main LICENSE file (Apache-2.0 full text)
+- Main [LICENSE](LICENSE) (Apache-2.0 full text; appendix copyright filled)
+- [NOTICE](NOTICE) (copyright holders and sibling package attribution)
 - [docs/licensing/clean-room-policy.md](docs/licensing/clean-room-policy.md) (GPL avoidance strategy)
+- [docs/licensing/LICENSE_MATRIX.md](docs/licensing/LICENSE_MATRIX.md)
 - GitHub issues: https://github.com/LeBonhommePharma/FlexAIDdS/issues
 
 ---
 
-**Maintained by:** Louis-Philippe Morency, PhD (Candidate)  
-**Last Updated:** March 7, 2026  
+**Maintained by:** Louis-Philippe Morency, PhD (Candidate) / Le Bonhomme Pharma  
+**Last Updated:** July 15, 2026  
 **Repository:** https://github.com/LeBonhommePharma/FlexAIDdS

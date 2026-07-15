@@ -412,6 +412,7 @@ Plugin files: `gui.py` (FlexAIDSPanel widget), `visualization.py` (rendering), `
 | `LIB/Vcontacts.cpp` | Voronoi contact scoring |
 | `LIB/BindingMode.cpp` | Pose clustering + thermodynamics |
 | `LIB/encom.cpp` | ENCoM vibrational entropy |
+| `LIB/PoseBust/` | NativePoseQC (Apache-2.0) + optional upstream `bust` bridge; sibling repo [PoseBust](https://github.com/LeBonhommePharma/PoseBust) |
 | `LIB/tENCoM/tencm.cpp` | Torsional ENCoM backbone flexibility |
 | `LIB/tENCoM/tencom_diff.cpp` | tENCoM differential engine |
 | `LIB/Mol2Reader.cpp` | MOL2 molecular file reader |
