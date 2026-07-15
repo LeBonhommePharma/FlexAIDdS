@@ -1,0 +1,13 @@
+# Copy to ~/.flexaidds_env or run:
+#   python3 .grok/skills/flexaidds/scripts/resolve_build.py --sync-env
+#
+# Do not hand-edit FLEXAIDDS_BUILD to stale /tmp paths — resolve_build.py
+# validates binaries exist and pins engine SHA256 for reproducibility.
+
+export FLEXAIDDS_BUILD='/path/to/build_lto'
+export FLEXAIDDS_BINARY='$FLEXAIDDS_BUILD/FlexAIDdS'
+export FLEXAIDDS_RUNNER='$FLEXAIDDS_BUILD/benchmark_datasets'
+export FLEXAIDDS_ENGINE_SHA256='full-sha256-of-FlexAIDdS-binary'
+export FLEXAIDDS_RUNNER_SHA256='full-sha256-of-benchmark_datasets-binary'
+export FLEXAIDDS_RESULTS='$HOME/Library/Mobile Documents/com~apple~CloudDocs/flexaidds/results'
+export PATH="$FLEXAIDDS_BUILD:$PATH"

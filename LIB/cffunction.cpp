@@ -53,7 +53,7 @@ cfstr cffunction(FA_Global* FA,atom* atoms,resid* residue,int num){
     
     // bondedlist(i,bloops,&nblist,blist);
     for (j=0;j<FA->num_het_atm;j++){
-      if ((FA->bondlist ? FA->bondlist : nullptr) && (FA->bondlist ? FA->bondlist : nullptr)[j].num == i) {
+      if (FA->bondlist && FA->bondlist[j].num == i) {
 	b = j;
 	break;
       }
@@ -90,8 +90,8 @@ cfstr cffunction(FA_Global* FA,atom* atoms,resid* residue,int num){
 	    
 	    // Considered as bonded only if its bloops bonds away from atom j
 	    bond_flag=0;
-	    for (c=0;c<(FA->bondlist ? FA->bondlist : nullptr)[b].tot;c++){
-	      if (j==(FA->bondlist ? FA->bondlist : nullptr)[b].nbr[c]){
+	    for (c=0;c<FA->bondlist[b].tot;c++){
+	      if (j==FA->bondlist[b].nbr[c]){
 		bond_flag=1;
 		break;
 	      }
@@ -159,8 +159,8 @@ cfstr cffunction(FA_Global* FA,atom* atoms,resid* residue,int num){
 	if(dis <= (atoms[close2atom[m]].radius + Rw)*(atoms[close2atom[m]].radius + Rw)){
 	  bond_flag=0;
 	  
-	  for(n=1;n<(FA->bondlist ? FA->bondlist : nullptr)[c].tot;n++){
-	    if((FA->bondlist ? FA->bondlist : nullptr)[c].nbr[n] == close2atom[m]){
+	  for(n=1;n<FA->bondlist[c].tot;n++){
+	    if(FA->bondlist[c].nbr[n] == close2atom[m]){
 	      bond_flag=1;
 	      break;
 	    }

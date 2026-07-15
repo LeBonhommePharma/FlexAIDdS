@@ -64,6 +64,22 @@ TEST(HardwareDetect, DetectsAVX512) {
 }
 #endif
 
+#if FLEXAIDS_HAS_NEON
+TEST(HardwareDetect, DetectsNEON) {
+    const auto& hw = detect_hardware();
+    EXPECT_TRUE(hw.has_neon);
+    EXPECT_NE(hw.summary().find("NEON"), std::string::npos);
+}
+
+TEST(HardwareDispatch, DistanceBackendPrefersNEON) {
+    auto& d = hw::UnifiedHardwareDispatch::instance();
+    d.detect();
+    EXPECT_TRUE(d.is_available(hw::Backend::NEON));
+    auto b = d.best_backend(hw::KernelType::DISTANCE_BATCH);
+    EXPECT_EQ(b, hw::Backend::NEON);
+}
+#endif
+
 #ifdef _OPENMP
 TEST(HardwareDetect, DetectsOpenMP) {
     const auto& hw = detect_hardware();
@@ -84,7 +100,31 @@ TEST(HardwareDetect, DetectsEigen) {
 TEST(BackendSelection, SelectsValidBackend) {
     HardwareBackend b = select_backend();
     EXPECT_GE(static_cast<int>(b), 0);
-    EXPECT_LE(static_cast<int>(b), 6);
+    // Backend enum: SCALAR..ROCM, NEON=7 (AUTO=255 not returned by select)
+    EXPECT_LE(static_cast<int>(b), static_cast<int>(HardwareBackend::NEON));
+}
+
+TEST(BackendSelection, DefaultFitnessBackendIsNotGPU) {
+    HardwareBackend b = select_backend();
+    EXPECT_NE(b, HardwareBackend::CUDA);
+    EXPECT_NE(b, HardwareBackend::ROCM);
+    EXPECT_NE(b, HardwareBackend::METAL);
+}
+
+TEST(BackendSelection, GpuOverrideDoesNotApplyToFitnessEval) {
+    auto& d = hw::UnifiedHardwareDispatch::instance();
+    d.detect();
+
+    d.set_override(hw::Backend::CUDA);
+    EXPECT_EQ(d.best_backend(hw::KernelType::FITNESS_EVAL), d.select_cpu_backend());
+
+    d.set_override(hw::Backend::ROCM);
+    EXPECT_EQ(d.best_backend(hw::KernelType::FITNESS_EVAL), d.select_cpu_backend());
+
+    d.set_override(hw::Backend::METAL);
+    EXPECT_EQ(d.best_backend(hw::KernelType::FITNESS_EVAL), d.select_cpu_backend());
+
+    d.clear_override();
 }
 
 TEST(BackendSelection, CPUBackendIsNotGPU) {
@@ -94,8 +134,24 @@ TEST(BackendSelection, CPUBackendIsNotGPU) {
     EXPECT_NE(b, HardwareBackend::METAL);
 }
 
+#ifdef FLEXAIDS_USE_METAL
+TEST(BackendSelection, MetalDetectionAgreesAcrossDispatchLayers) {
+    const auto& legacy_hw = detect_hardware();
+    auto& d = hw::UnifiedHardwareDispatch::instance();
+    d.detect();
+
+    EXPECT_EQ(d.info().has_metal, legacy_hw.has_metal);
+    if (!legacy_hw.has_metal)
+        GTEST_SKIP() << "Metal runtime not available";
+
+    EXPECT_EQ(d.best_backend(hw::KernelType::SHANNON_ENTROPY), hw::Backend::METAL);
+    EXPECT_EQ(d.best_backend(hw::KernelType::CAVITY_DET), hw::Backend::METAL);
+    EXPECT_NE(d.best_backend(hw::KernelType::FITNESS_EVAL), hw::Backend::METAL);
+}
+#endif
+
 TEST(BackendSelection, BackendNameValid) {
-    for (int i = 0; i <= 6; ++i) {
+    for (int i = 0; i <= static_cast<int>(HardwareBackend::NEON); ++i) {
         const char* name = backend_name(static_cast<HardwareBackend>(i));
         EXPECT_NE(name, nullptr);
         EXPECT_GT(std::strlen(name), 0u);
@@ -108,6 +164,7 @@ TEST(BackendSelection, BackendNameCoversAll) {
     EXPECT_STREQ(backend_name(HardwareBackend::METAL), "Metal");
     EXPECT_STREQ(backend_name(HardwareBackend::AVX512), "AVX-512");
     EXPECT_STREQ(backend_name(HardwareBackend::AVX2), "AVX2");
+    EXPECT_STREQ(backend_name(HardwareBackend::NEON), "NEON");
     EXPECT_STREQ(backend_name(HardwareBackend::OPENMP), "OpenMP");
     EXPECT_STREQ(backend_name(HardwareBackend::SCALAR), "scalar");
 }
@@ -269,7 +326,8 @@ TEST(LogSumExp, LargeArray) {
 TEST(DispatchReport, HasValidBackend) {
     auto report = get_dispatch_report();
     EXPECT_GE(static_cast<int>(report.selected), 0);
-    EXPECT_LE(static_cast<int>(report.selected), 5);
+    // Includes NEON=7; AUTO=255 is not a selected fitness backend
+    EXPECT_LE(static_cast<int>(report.selected), static_cast<int>(hw::Backend::NEON));
 }
 
 TEST(DispatchReport, ReasonIsNonEmpty) {
@@ -330,6 +388,61 @@ TEST(SimdDistance, LargeArrayRMSD) {
             sum += simd::sq(a[i*3+c] - b[i*3+c]);
     float expected = std::sqrt(sum / N);
     EXPECT_NEAR(r, expected, 1e-3f);
+}
+
+// flexaids::sum_sq_distances_f — NEON path on ARM, AVX on x86, scalar fallback.
+TEST(SimdDistance, SumSqDistancesFMatchesScalar) {
+    const int n = 97;  // odd length to exercise NEON/AVX tails
+    std::vector<float> a(static_cast<size_t>(n)), b(static_cast<size_t>(n));
+    std::mt19937 rng(7);
+    std::uniform_real_distribution<float> dist(-5.0f, 5.0f);
+    for (int i = 0; i < n; ++i) {
+        a[static_cast<size_t>(i)] = dist(rng);
+        b[static_cast<size_t>(i)] = dist(rng);
+    }
+    float simd_sum = flexaids::sum_sq_distances_f(a.data(), b.data(), n);
+    float ref = 0.0f;
+    for (int i = 0; i < n; ++i) {
+        float d = a[static_cast<size_t>(i)] - b[static_cast<size_t>(i)];
+        ref += d * d;
+    }
+    EXPECT_NEAR(simd_sum, ref, 1e-3f * std::max(1.0f, ref));
+}
+
+TEST(SimdDistance, DispatchDistance2BatchMatchesScalar) {
+    auto& d = hw::UnifiedHardwareDispatch::instance();
+    d.detect();
+    const int n = 11;
+    std::vector<float> ax(n), ay(n), az(n), out(n), ref(n);
+    for (int i = 0; i < n; ++i) {
+        ax[static_cast<size_t>(i)] = 0.1f * static_cast<float>(i);
+        ay[static_cast<size_t>(i)] = 0.2f * static_cast<float>(i);
+        az[static_cast<size_t>(i)] = 0.3f * static_cast<float>(i);
+        const float dx = ax[static_cast<size_t>(i)] - 1.0f;
+        const float dy = ay[static_cast<size_t>(i)] - 2.0f;
+        const float dz = az[static_cast<size_t>(i)] - 3.0f;
+        ref[static_cast<size_t>(i)] = dx * dx + dy * dy + dz * dz;
+    }
+    d.distance2_batch(ax.data(), ay.data(), az.data(), 1.0f, 2.0f, 3.0f,
+                      out.data(), n, hw::Backend::AUTO);
+    for (int i = 0; i < n; ++i)
+        EXPECT_NEAR(out[static_cast<size_t>(i)], ref[static_cast<size_t>(i)], 1e-4f);
+}
+
+TEST(SimdDistance, DispatchRMSDMatchesScalar) {
+    auto& d = hw::UnifiedHardwareDispatch::instance();
+    d.detect();
+    const int N = 64;
+    std::vector<float> a(static_cast<size_t>(N) * 3), b(static_cast<size_t>(N) * 3);
+    std::mt19937 rng(99);
+    std::uniform_real_distribution<float> dist(-2.0f, 2.0f);
+    for (size_t i = 0; i < a.size(); ++i) {
+        a[i] = dist(rng);
+        b[i] = dist(rng);
+    }
+    float r_auto = d.rmsd(a.data(), b.data(), N, hw::Backend::AUTO);
+    float r_sc   = d.rmsd(a.data(), b.data(), N, hw::Backend::SCALAR);
+    EXPECT_NEAR(r_auto, r_sc, 1e-3f);
 }
 
 #if FLEXAIDS_HAS_AVX512

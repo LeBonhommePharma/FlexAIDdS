@@ -1,6 +1,7 @@
 #include "gaboom.h"
 #include "fileio.h"
 #include "simd_distance.h"
+#include "statmech.h"
 #include <cmath>
 #include <limits>
 #include <vector>
@@ -17,11 +18,6 @@ void cluster(FA_Global* FA, GB_Global* GB, VC_Global* VC, chromosome* chrom, gen
 	cfstr* cf_ptr = NULL;
 
 	FILE* outfile_ptr = NULL;
-
-	// will 
-	double partition_function = 0.0;
-	double boltzmann_origin = 0.0;
-	bool boltzmann_has_origin = false;
 
 	float rmsd = 0.0f;
 	int num_of_results = FA->max_results;
@@ -73,17 +69,7 @@ void cluster(FA_Global* FA, GB_Global* GB, VC_Global* VC, chromosome* chrom, gen
 	n_unclus=num_chrom;
 	num_of_clusters=0;
 	
-	if (FA->temperature) {
-		for(j=0;j<num_chrom;++j) {
-			if (std::isfinite(chrom[j].app_evalue) &&
-			    (!boltzmann_has_origin || chrom[j].app_evalue < boltzmann_origin)) {
-				boltzmann_origin = chrom[j].app_evalue;
-				boltzmann_has_origin = true;
-			}
-		}
-	}
-
-	// CLustering Variable Initialization and partition_function calculation
+	// Clustering variable initialization.
 	for(j=0;j<num_chrom;++j)
 	{
 		Clus_GAPOP[j]=-1;
@@ -91,9 +77,6 @@ void cluster(FA_Global* FA, GB_Global* GB, VC_Global* VC, chromosome* chrom, gen
 		Clus_TCF[j]=0.0;
 		Clus_TOP[j]=0;
 		Clus_FRE[j]=0;
-		if(FA->temperature && boltzmann_has_origin && std::isfinite(chrom[j].app_evalue)){
-			partition_function += exp((-1.0) * FA->beta * (chrom[j].app_evalue - boltzmann_origin));
-		}
 	}
     //printf("n_unclus=%d\n",n_unclus);
     //PAUSE;
@@ -111,9 +94,6 @@ void cluster(FA_Global* FA, GB_Global* GB, VC_Global* VC, chromosome* chrom, gen
 			Clus_ACF[0]=Clus_TCF[0]=chrom[0].app_evalue;
 			Clus_TOP[0]=0;   Clus_FRE[0]=1;
 		}
-	} else if (FA->temperature && partition_function == 0.0) {
-		fprintf(stderr,"ERROR: The Partition Function is NULL in the clustering step after shifted Boltzmann normalization.\n");
-		Terminate(2);
 	}
 	
 	// ── Pre-compute Cartesian coordinates for all chromosomes ──────────
@@ -147,18 +127,6 @@ void cluster(FA_Global* FA, GB_Global* GB, VC_Global* VC, chromosome* chrom, gen
         Clus_GAPOP[j]=j;
 		Clus_RMSDT[j]=0.0;
 		n_unclus--;
-		if(FA->temperature > 0)
-		{
-			double Pj = exp((-1.0) * FA->beta * (chrom[j].app_evalue - boltzmann_origin)) / partition_function;
-			double H_j = (Pj > 0.0) ? (FA->temperature * Pj * log(Pj)) : 0.0;  // 0*log(0)=0 by Shannon convention
-			Clus_ACF[num_of_clusters] = (double)( Pj * chrom[j].app_evalue ) + H_j;
-			Clus_TCF[num_of_clusters] = (double)( Pj * chrom[j].app_evalue ) + H_j;
-		}
-		else
-		{
-			Clus_TCF[num_of_clusters] = chrom[j].app_evalue;
-			Clus_ACF[num_of_clusters] = chrom[j].app_evalue;
-		}
 		Clus_TOP[num_of_clusters]=j;
 		Clus_FRE[num_of_clusters]++;
 
@@ -187,16 +155,32 @@ void cluster(FA_Global* FA, GB_Global* GB, VC_Global* VC, chromosome* chrom, gen
 						Clus_GAPOP[i]=j;
 						Clus_RMSDT[i]=loc_rmsd;
 						n_unclus--;
-						if(FA->temperature){
-							double Pi = exp((-1.0) * FA->beta * (chrom[i].app_evalue - boltzmann_origin)) / partition_function;
-							Clus_ACF[num_of_clusters] += (double)( Pi * chrom[i].app_evalue )
-							                              + ((Pi > 0.0) ? (FA->temperature * Pi * log(Pi)) : 0.0);
-						}else{
-							Clus_ACF[num_of_clusters] += chrom[i].app_evalue;
-						}
 						Clus_FRE[num_of_clusters]++;
 					}
 				}
+			}
+		}
+		// Basin score: cluster-local log-sum-exp free energy. Unlike the former
+		// global-probability sum, this is invariant to a constant energy offset and
+		// keeps cluster membership separate from summary ordering.
+		Clus_TCF[num_of_clusters] = chrom[j].app_evalue;
+		Clus_ACF[num_of_clusters] = chrom[j].app_evalue;
+		if (FA->temperature > 0 && FA->beta > 0.0) {
+			double local_origin = std::numeric_limits<double>::infinity();
+			for (int k = 0; k < num_chrom; ++k) {
+				if (Clus_GAPOP[k] == j && std::isfinite(chrom[k].app_evalue))
+					local_origin = std::min(local_origin, chrom[k].app_evalue);
+			}
+			if (std::isfinite(local_origin)) {
+				double local_z = 0.0;
+				for (int k = 0; k < num_chrom; ++k) {
+					if (Clus_GAPOP[k] == j && std::isfinite(chrom[k].app_evalue))
+						local_z += std::exp(-FA->beta *
+						                    (chrom[k].app_evalue - local_origin));
+				}
+				if (local_z > 0.0)
+					Clus_ACF[num_of_clusters] = local_origin -
+					    std::log(local_z) / FA->beta;
 			}
 		}
 		num_of_clusters++;
@@ -213,31 +197,47 @@ void cluster(FA_Global* FA, GB_Global* GB, VC_Global* VC, chromosome* chrom, gen
 	if(FA->temperature)
 	{
 		// Reordering the clusters properly by lowest ACF values first (after considering cluster's entropy !)
-		QuickSort_Clusters(Clus_TOP, Clus_FRE, Clus_TCF, Clus_ACF, Clus_GAPOP, 0, num_of_results-1);
+		// Classic FlexAID contract: this ACF order IS emission order when T>0.
+		QuickSort_Clusters(Clus_TOP, Clus_FRE, Clus_TCF, Clus_ACF,
+		                   0, num_of_results-1);
 	}
 
-	// ── Emit rank-0 = lowest-CF representative ───────────────────────────────
-	// The ACF ordering above is the entropy-augmented cluster free energy, which
-	// can rank a densely-populated cluster at WORSE representative CF ahead of a
-	// sparse cluster at BETTER CF (e.g. 1KZK: emitted _0.pdb = -390.45 while a
-	// -420.62 representative existed in another cluster). DatasetRunner measures
-	// both the RMSD and best_score on the lowest "REMARK CF=" pose, and that
-	// REMARK is chrom[Clus_TOP[j]].evalue (see emission below). Re-sort the
-	// clusters by representative evalue ascending (most negative first) so the
-	// emitted _0.pdb is always the lowest-CF cluster representative the GA found.
-	// Selection sort over num_of_results (≤ max_results, small) reusing
-	// swap_clusters to keep all five parallel arrays consistent.
-	for(int a=0; a<num_of_results-1; ++a)
+	// ── Rank-0 emission policy ───────────────────────────────────────────────
+	// Classic FlexAID (default when T>0 && !force_cf_rank_emission): keep ACF
+	// order so dense entropy-favored basins can beat sparse lowest-CF clusters.
+	// P3b rollback (force_cf_rank_emission or T==0): re-sort by representative
+	// evalue so _0.pdb is always lowest CF (commit cd9004d behavior).
+	// Single gate — flip FA->force_cf_rank_emission to restore old product path.
+	const bool classic_entropy_emit =
+		(FA->temperature > 0) && !FA->force_cf_rank_emission;
+	if (!classic_entropy_emit)
 	{
-		int best_idx = a;
-		for(int b=a+1; b<num_of_results; ++b)
+		for(int a=0; a<num_of_results-1; ++a)
 		{
-			if(chrom[Clus_TOP[b]].evalue < chrom[Clus_TOP[best_idx]].evalue)
-				best_idx = b;
+			int best_idx = a;
+			for(int b=a+1; b<num_of_results; ++b)
+			{
+				if(chrom[Clus_TOP[b]].evalue < chrom[Clus_TOP[best_idx]].evalue)
+					best_idx = b;
+			}
+			if(best_idx != a)
+					swap_clusters(&Clus_TOP[a], &Clus_FRE[a], &Clus_TCF[a], &Clus_ACF[a],
+					              &Clus_TOP[best_idx], &Clus_FRE[best_idx],
+					              &Clus_TCF[best_idx], &Clus_ACF[best_idx]);
 		}
-		if(best_idx != a)
-			swap_clusters(&Clus_TOP[a], &Clus_FRE[a], &Clus_TCF[a], &Clus_ACF[a], &Clus_GAPOP[a],
-			              &Clus_TOP[best_idx], &Clus_FRE[best_idx], &Clus_TCF[best_idx], &Clus_ACF[best_idx], &Clus_GAPOP[best_idx]);
+	}
+	else if (num_of_results > 0)
+	{
+		// Debuggable proof that rank-0 is ACF, not necessarily min CF.
+		double best_cf = chrom[Clus_TOP[0]].evalue;
+		for (int a = 1; a < num_of_results; ++a) {
+			if (chrom[Clus_TOP[a]].evalue < best_cf)
+				best_cf = chrom[Clus_TOP[a]].evalue;
+		}
+		fprintf(stdout,
+			"[ENTROPY_RANK] classic FlexAID: rank-0 by ACF (ACF=%.4f CF=%.4f freq=%d); "
+			"best_CF_among_emitted=%.4f (CF re-sort off; set force_cf_rank_emission to restore P3b)\n",
+			Clus_ACF[0], chrom[Clus_TOP[0]].evalue, Clus_FRE[0], best_cf);
 	}
 
 	// print cluster information
@@ -298,19 +298,35 @@ void cluster(FA_Global* FA, GB_Global* GB, VC_Global* VC, chromosome* chrom, gen
 				FA->ring_cur_phases[s] = chrom[Clus_TOP[j]].ring_phases[s];
 		}
 
-		// Rebuild atom coordinates for PDB output and populate the per-optres
-		// CF breakdown as a side effect. The returned re-score is NOT used for
-		// the REMARK CF line: at emission Vcontacts can early-return a raw
-		// uncapped clash penalty (up to ~1e15) that bypasses the per-contact
-		// wall cap and blows up the reported CF. Report the stored chromosome
-		// evalue instead — that is exactly what the GA optimized.
+		// Rebuild atom coordinates for PDB output and score that exact geometry.
+		// A clash penalty is evidence about the emitted pose, never a reason to
+		// substitute a stale search score.
 		cf=ic2cf(FA,VC,atoms,residue,cleftgrid,GB->num_genes,FA->opt_par);
+		const double emitted_cf = get_cf_evalue(&cf, FA);
+		const double score_delta = std::abs(emitted_cf - chrom[Clus_TOP[j]].evalue);
+		const bool score_pose_consistent = std::isfinite(emitted_cf) &&
+		                                   score_delta <= 1e-4;
+		if (!score_pose_consistent) {
+			fprintf(stderr,
+			        "WARNING: cluster %d stored CF=%.8f emitted-pose CF=%.8f "
+			        "delta=%.8f\n",
+			        j, chrom[Clus_TOP[j]].evalue, emitted_cf, score_delta);
+		}
 
 		size_t remark_len = 0;
 		remark[0] = '\0';
 		safe_remark_cat(remark, "REMARK optimized structure\n", &remark_len);
 
-		snprintf(tmpremark, MAX_REMARK, "REMARK CF=%8.5f\n",chrom[Clus_TOP[j]].evalue);
+		snprintf(tmpremark, MAX_REMARK, "REMARK CF=%8.5f\n", emitted_cf);
+		safe_remark_cat(remark, tmpremark, &remark_len);
+		snprintf(tmpremark, MAX_REMARK, "REMARK CF.search=%8.5f\n",
+		         chrom[Clus_TOP[j]].evalue);
+		safe_remark_cat(remark, tmpremark, &remark_len);
+		snprintf(tmpremark, MAX_REMARK, "REMARK CF.pose_score_delta=%.8f\n",
+		         score_delta);
+		safe_remark_cat(remark, tmpremark, &remark_len);
+		snprintf(tmpremark, MAX_REMARK, "REMARK CF.pose_score_consistent=%s\n",
+		         score_pose_consistent ? "true" : "false");
 		safe_remark_cat(remark, tmpremark, &remark_len);
 		snprintf(tmpremark, MAX_REMARK, "REMARK CF.app=%8.5f\n",chrom[Clus_TOP[j]].app_evalue);
 		safe_remark_cat(remark, tmpremark, &remark_len);
@@ -348,20 +364,54 @@ void cluster(FA_Global* FA, GB_Global* GB, VC_Global* VC, chromosome* chrom, gen
 		snprintf(tmpremark, MAX_REMARK, "REMARK Cluster %d: Rank (top):%d Average CF:%8.5f Frequency:%d\n",
 			j,Clus_TOP[j],Clus_ACF[j],Clus_FRE[j]);
 		safe_remark_cat(remark, tmpremark, &remark_len);
+		// Canonical ledger from cluster member CF ensemble (display / plugin only;
+		// does not change GA ranking or cluster selection).
+		{
+			const double T = (FA->temperature > 0)
+				? static_cast<double>(FA->temperature) : 300.0;
+			statmech::StatMechEngine engine(T);
+			engine.add_sample(static_cast<double>(chrom[Clus_TOP[j]].app_evalue));
+			for (int k = 0; k < num_chrom; ++k) {
+				if (k != Clus_TOP[j] && Clus_GAPOP[k] == Clus_TOP[j])
+					engine.add_sample(static_cast<double>(chrom[k].app_evalue));
+			}
+			const statmech::Thermodynamics td = engine.compute();
+			snprintf(tmpremark, MAX_REMARK, "REMARK free_energy = %.6f\n", td.free_energy);
+			safe_remark_cat(remark, tmpremark, &remark_len);
+			snprintf(tmpremark, MAX_REMARK, "REMARK enthalpy = %.6f\n", td.mean_energy);
+			safe_remark_cat(remark, tmpremark, &remark_len);
+			snprintf(tmpremark, MAX_REMARK, "REMARK entropy = %.8f\n", td.entropy);
+			safe_remark_cat(remark, tmpremark, &remark_len);
+			snprintf(tmpremark, MAX_REMARK, "REMARK heat_capacity = %.8f\n", td.heat_capacity);
+			safe_remark_cat(remark, tmpremark, &remark_len);
+			snprintf(tmpremark, MAX_REMARK, "REMARK temperature = %.2f\n", T);
+			safe_remark_cat(remark, tmpremark, &remark_len);
+			snprintf(tmpremark, MAX_REMARK, "REMARK binding_mode = %d\n", j);
+			safe_remark_cat(remark, tmpremark, &remark_len);
+			snprintf(tmpremark, MAX_REMARK, "REMARK pose_rank = 1\n");
+			safe_remark_cat(remark, tmpremark, &remark_len);
+			snprintf(tmpremark, MAX_REMARK, "REMARK frequency = %d\n", Clus_FRE[j]);
+			safe_remark_cat(remark, tmpremark, &remark_len);
+		}
 		for(i=0;i<FA->npar;++i)
 		{
 			snprintf(tmpremark, MAX_REMARK, "REMARK [%8.3f]\n",FA->opt_par[i]);
 			safe_remark_cat(remark, tmpremark, &remark_len);
 		}
 		//snprintf(tmpremark, MAX_REMARK, "REMARK seed=%ld\n",FA->seed_ini);
-		safe_remark_cat(remark, tmpremark, &remark_len);
 		if(FA->refstructure == 1){
+			const double rmsd_raw = calc_rmsd(FA,atoms,residue,cleftgrid,FA->npar,FA->opt_par, Hungarian);
 			snprintf(tmpremark, MAX_REMARK, "REMARK %8.5f RMSD to ref. structure (no symmetry correction)\n",
-				calc_rmsd(FA,atoms,residue,cleftgrid,FA->npar,FA->opt_par, Hungarian));
+				rmsd_raw);
+			safe_remark_cat(remark, tmpremark, &remark_len);
+			snprintf(tmpremark, MAX_REMARK, "REMARK rmsd_raw = %.5f\n", rmsd_raw);
 			safe_remark_cat(remark, tmpremark, &remark_len);
 			Hungarian = true;
+			const double rmsd_sym = calc_rmsd(FA,atoms,residue,cleftgrid,FA->npar,FA->opt_par, Hungarian);
 			snprintf(tmpremark, MAX_REMARK, "REMARK %8.5f RMSD to ref. structure     (symmetry corrected)\n",
-				calc_rmsd(FA,atoms,residue,cleftgrid,FA->npar,FA->opt_par, Hungarian));
+				rmsd_sym);
+			safe_remark_cat(remark, tmpremark, &remark_len);
+			snprintf(tmpremark, MAX_REMARK, "REMARK rmsd_sym = %.5f\n", rmsd_sym);
 			safe_remark_cat(remark, tmpremark, &remark_len);
 		}
 		snprintf(tmpremark, MAX_REMARK, "REMARK inputs: %s & %s\n",dockinp,gainp);
@@ -414,7 +464,8 @@ void cluster(FA_Global* FA, GB_Global* GB, VC_Global* VC, chromosome* chrom, gen
 /*                  QuickSort functions for Clusters                   */
 /*        1         2         3         4         5         6         7*/
 /***********************************************************************/
-void QuickSort_Clusters(int* TOP, int* FRE, double* TCF, double* ACF, int* GAPOP, int beg, int end)
+void QuickSort_Clusters(int* TOP, int* FRE, double* TCF, double* ACF,
+	                    int beg, int end)
 {
 	int l,r,p;
 	double piv;
@@ -431,22 +482,24 @@ void QuickSort_Clusters(int* TOP, int* FRE, double* TCF, double* ACF, int* GAPOP
 			
 			if (l > r) break;
 			
-			swap_clusters(&TOP[l], &FRE[l], &TCF[l], &ACF[l], &GAPOP[l],&TOP[r], &FRE[r], &TCF[r], &ACF[r], &GAPOP[r]);
+			swap_clusters(&TOP[l], &FRE[l], &TCF[l], &ACF[l],
+			              &TOP[r], &FRE[r], &TCF[r], &ACF[r]);
 			
 			if (p == r) p=l;
 			++l;--r;
 		}
-		swap_clusters(&TOP[p], &FRE[p], &TCF[p], &ACF[p], &GAPOP[p],&TOP[r], &FRE[r], &TCF[r], &ACF[r], &GAPOP[r]);
+		swap_clusters(&TOP[p], &FRE[p], &TCF[p], &ACF[p],
+		              &TOP[r], &FRE[r], &TCF[r], &ACF[r]);
 		--r;
 
 		if( (r-beg) < (end-l) )
 		{
-			QuickSort_Clusters(TOP, FRE, TCF, ACF, GAPOP, beg, r);
+			QuickSort_Clusters(TOP, FRE, TCF, ACF, beg, r);
 			beg = l;
 		}
 		else
 		{
-			QuickSort_Clusters(TOP, FRE, TCF, ACF, GAPOP, l, end);
+			QuickSort_Clusters(TOP, FRE, TCF, ACF, l, end);
 			end = r;
 		}
 	}
@@ -456,13 +509,13 @@ void QuickSort_Clusters(int* TOP, int* FRE, double* TCF, double* ACF, int* GAPOP
 /*                   Swap Function for Clusters                        */
 /*        1         2         3         4         5         6         7*/
 /***********************************************************************/
-void swap_clusters(int* TOPx, int* FREx, double* TCFx, double* ACFx, int* GAPOPx, int* TOPy, int* FREy, double* TCFy, double* ACFy, int* GAPOPy)
+void swap_clusters(int* TOPx, int* FREx, double* TCFx, double* ACFx,
+	               int* TOPy, int* FREy, double* TCFy, double* ACFy)
 {
-	int TOPt, FREt, GAPOPt;
+	int TOPt, FREt;
 	double TCFt, ACFt;
 	TOPt = *TOPx; *TOPx = *TOPy; *TOPy = TOPt;
 	FREt = *FREx; *FREx = *FREy; *FREy = FREt;
 	TCFt = *TCFx; *TCFx = *TCFy; *TCFy = TCFt;
 	ACFt = *ACFx; *ACFx = *ACFy; *ACFy = ACFt;
-	GAPOPt = *GAPOPx; *GAPOPx = *GAPOPy; *GAPOPy = GAPOPt;
 }

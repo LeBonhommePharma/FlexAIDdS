@@ -173,22 +173,56 @@ def download_asset(
     return dest
 
 
-def update_pip(version: str = "latest") -> int:
+# Git install target used when the package is not (yet) on the default PyPI index.
+_GIT_INSTALL_SPEC = (
+    "git+https://github.com/LeBonhommePharma/FlexAIDdS.git#subdirectory=python"
+)
+
+
+def update_pip(version: str = "latest", *, index_url: Optional[str] = None) -> int:
     """Update the flexaidds Python package via pip.
 
     Args:
         version: Version to install, or "latest" for the newest.
+        index_url: Optional extra index URL (e.g. TestPyPI). When the package
+            is not yet on the default index, callers can pass TestPyPI or a
+            direct VCS URL via ``version`` as ``git+https://...``.
 
     Returns:
         pip exit code.
+
+    Notes:
+        When ``version == "latest"`` and the default PyPI index does not yet
+        host ``flexaidds``, this falls back to a direct GitHub VCS install so
+        ``python -m flexaidds --self-update`` works before the first publish.
     """
     cmd = [sys.executable, "-m", "pip", "install", "--upgrade"]
+    if index_url:
+        cmd.extend(["--index-url", index_url])
     if version == "latest":
         cmd.append("flexaidds")
+    elif version.startswith("git+") or version.startswith("https://") or version.startswith("http://"):
+        cmd.append(version)
     else:
-        cmd.append(f"flexaidds=={version}")
+        cmd.append(f"flexaidds=={version.lstrip('v')}")
 
     result = subprocess.run(cmd, capture_output=False)
+    # Pre-PyPI / missing-index fallback: try the GitHub VCS URL once.
+    if (
+        result.returncode != 0
+        and version == "latest"
+        and not index_url
+    ):
+        fallback = [
+            sys.executable,
+            "-m",
+            "pip",
+            "install",
+            "--upgrade",
+            "--force-reinstall",
+            _GIT_INSTALL_SPEC,
+        ]
+        result = subprocess.run(fallback, capture_output=False)
     return result.returncode
 
 

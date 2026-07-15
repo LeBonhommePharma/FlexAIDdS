@@ -249,14 +249,14 @@ TEST(RMSDComputation, UniformShift) {
 TEST(RMSDComputation, EmptyCoords) {
     std::vector<float> empty;
     double rmsd = compute_rmsd(empty, empty);
-    EXPECT_GT(rmsd, 100.0); // Should return large value for invalid input
+    EXPECT_EQ(rmsd, -1.0); // Invalid/not-computed sentinel
 }
 
 TEST(RMSDComputation, MismatchedSize) {
     std::vector<float> a = {0.0f, 0.0f, 0.0f};
     std::vector<float> b = {0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 1.0f};
     double rmsd = compute_rmsd(a, b);
-    EXPECT_GT(rmsd, 100.0); // Should return large value for mismatched sizes
+    EXPECT_EQ(rmsd, -1.0); // Invalid/not-computed sentinel
 }
 
 // =============================================================================
@@ -484,6 +484,8 @@ TEST(PDBParsing, ExtractPeptideLigandFallback) {
     int nbonds = std::stoi(counts.substr(3, 3));
     EXPECT_EQ(natoms, 27);          // AVPI heavy-atom count
     EXPECT_GE(nbonds, 26);          // connected peptide (tree has natoms-1 bonds; PRO ring adds one)
+    ASSERT_GE(counts.size(), 39u);
+    EXPECT_EQ(counts.substr(34, 5), "V2000");
 
     // Receptor cleanup must remove the peptide chain from the apo receptor too.
     std::string apo_path = test_dir + "/apo.pdb";
@@ -560,7 +562,7 @@ TEST(PDBParsing, ExtractLigandFromMMCIFWithChemCompBonds) {
     std::ifstream ifs(sdf_path);
     ASSERT_TRUE(ifs.good());
     std::string contents((std::istreambuf_iterator<char>(ifs)), std::istreambuf_iterator<char>());
-    EXPECT_NE(contents.find("FLEXAIDDS_LIGAND_EXTRACTOR_V4"), std::string::npos);
+    EXPECT_NE(contents.find("FLEXAIDDS_LIGAND_EXTRACTOR_V5"), std::string::npos);
 
     std::istringstream iss(contents);
     std::string line1, line2, line3, counts;
@@ -779,7 +781,7 @@ TEST(PDBParsing, PrepareEntryRegeneratesStaleLigandCache) {
     std::ifstream ifs(sdf_path);
     ASSERT_TRUE(ifs.good());
     std::string contents((std::istreambuf_iterator<char>(ifs)), std::istreambuf_iterator<char>());
-    EXPECT_NE(contents.find("FLEXAIDDS_LIGAND_EXTRACTOR_V4"), std::string::npos);
+    EXPECT_NE(contents.find("FLEXAIDDS_LIGAND_EXTRACTOR_V5"), std::string::npos);
 
     fs::remove_all(test_dir);
 }
@@ -903,6 +905,10 @@ TEST(PDBParsing, ReadPdbSplitsConvertedNonpolymerResidues) {
     std::memset(static_cast<void*>(&FA), 0, sizeof(FA));
     FA.MIN_NUM_ATOM = 32;
     FA.MIN_NUM_RESIDUE = 16;
+    // Match top.cpp production defaults — read_coor allocates fatm/latm/bond
+    // with these sizes; zero leaves malloc(0) and ASan heap-buffer-overflow.
+    FA.MIN_ROTAMER = 1;
+    FA.MIN_FLEX_BONDS = 5;
     FA.ntypes = 40;
     atom* atoms = nullptr;
     resid* residue = nullptr;
@@ -1297,7 +1303,7 @@ TEST(PrepareFromList, ParsePDBList) {
 TEST(DockingResult, DefaultValues) {
     DockingResult r;
     EXPECT_EQ(r.best_score, 0.0f);
-    EXPECT_EQ(r.rmsd_to_crystal, 999.0f);
+    EXPECT_EQ(r.rmsd_to_crystal, -1.0f);
     EXPECT_FALSE(r.success);
     EXPECT_EQ(r.num_poses, 0);
 }

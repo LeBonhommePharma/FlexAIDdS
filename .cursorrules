@@ -1,0 +1,14 @@
+# FlexAIDdS — Cursor / Codex rules
+# Source of truth: AGENTS.md (repo root). Full Codex pack: docs/custom-instructions/codex-cursor-instructions.md
+
+Read and follow AGENTS.md before any task. For technical depth, also read CLAUDE.md.
+For docking workflows: .grok/skills/flexaidds/SKILL.md
+For benchmark orchestration: .agents/skills/flexaidds-benchmarking/SKILL.md
+
+Repository hygiene:
+- Never commit .env / .env.* / .envrc (secrets stay local).
+- Never add machine-specific absolute paths (/Users/..., /home/...) to committed skills or shared scripts.
+- Use repo-relative paths or FLEXAIDDS_* env vars.
+- Run: python3 scripts/check_repo_hygiene.py
+
+Core workflow (non-negotiable): verify with real builds/tests before claiming done; todo list for 3+ steps; commit+push after changes; zero test failures; complete prioritized lists; run when asked.

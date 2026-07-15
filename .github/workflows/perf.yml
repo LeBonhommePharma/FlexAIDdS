@@ -13,11 +13,11 @@ jobs:
     name: Performance benchmark
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v6
 
       - name: Install dependencies
         run: |
-          sudo apt-get update
+          bash scripts/ci/apt_get_update.sh
           # gcc-14 is required for C++26 support (see CMakeLists.txt compiler gate).
           sudo apt-get install -y cmake ninja-build libeigen3-dev libomp-dev gcc-14 g++-14
           echo "CC=gcc-14" >> "$GITHUB_ENV"

@@ -2,6 +2,8 @@ import csv
 import json
 from pathlib import Path
 
+import pytest
+
 from flexaidds.models import DockingResult
 from flexaidds.results import load_results
 
@@ -60,6 +62,44 @@ def test_load_results_groups_poses_by_mode(tmp_path: Path) -> None:
     assert result.binding_modes[0].free_energy == -41.0
     assert result.binding_modes[1].mode_id == 2
     assert result.binding_modes[1].best_cf == -35.0
+
+
+def test_load_results_cluster_remark_mode_identity(tmp_path: Path) -> None:
+    """Real production Cluster N REMARK lines must not collapse to mode_id=1."""
+    for mid, cf in ((0, -86.1), (1, -69.5), (2, -2.9)):
+        _write_pdb(
+            tmp_path / f"complex_{mid}.pdb",
+            [
+                f"CF = {cf}",
+                f"Cluster {mid}: Rank (top):{mid} Average CF:{cf - 10} Frequency:10",
+            ],
+        )
+    result = load_results(tmp_path)
+    mode_ids = sorted(m.mode_id for m in result.binding_modes)
+    assert mode_ids == [0, 1, 2]
+    # CF-only files should recompute F (labelled)
+    for mode in result.binding_modes:
+        assert mode.free_energy is not None
+        assert mode.metadata.get("ledger_source") == "ensemble_estimate_from_cf"
+
+
+def test_load_results_engine_ledger_not_recomputed(tmp_path: Path) -> None:
+    _write_pdb(
+        tmp_path / "mode_1_pose_1.pdb",
+        [
+            "binding_mode = 1",
+            "pose_rank = 1",
+            "CF = -42.5",
+            "free_energy = -41.0",
+            "enthalpy = -40.0",
+            "entropy = 0.0033",
+            "temperature = 300.0",
+        ],
+    )
+    result = load_results(tmp_path)
+    mode = result.binding_modes[0]
+    assert mode.free_energy == pytest.approx(-41.0)
+    assert mode.metadata.get("ledger_source") == "engine_remark"
 
 
 def test_load_results_uses_filename_heuristics_when_remarks_missing(tmp_path: Path) -> None:
@@ -252,7 +292,7 @@ def test_no_pdb_files_returns_empty_result(tmp_path: Path) -> None:
 
 
 def test_partial_remarks_only_cf(tmp_path: Path) -> None:
-    """Files with only CF REMARK (no thermodynamics) still load correctly."""
+    """Files with only CF REMARK still load; F is recomputed from CF (labelled)."""
     _write_pdb(
         tmp_path / "binding_mode_1_pose_1.pdb",
         [
@@ -265,8 +305,11 @@ def test_partial_remarks_only_cf(tmp_path: Path) -> None:
     result = load_results(tmp_path)
     assert result.n_modes == 1
     mode = result.binding_modes[0]
-    assert mode.free_energy is None   # not provided
     assert mode.best_cf == -11.0
+    # Smoothing: recompute ensemble estimate from CF when ledger REMARKs missing
+    assert mode.free_energy is not None
+    assert mode.free_energy == pytest.approx(-11.0)  # single sample → F ≈ E
+    assert mode.metadata.get("ledger_source") == "ensemble_estimate_from_cf"
 
 
 def test_multiple_poses_per_mode_aggregated(tmp_path: Path) -> None:

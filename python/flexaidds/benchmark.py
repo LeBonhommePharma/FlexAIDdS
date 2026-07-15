@@ -755,10 +755,22 @@ class BenchmarkResult:
     @classmethod
     def from_json(cls, source: Union[str, Path]) -> "BenchmarkResult":
         """Load from JSON produced by :meth:`to_json`."""
-        source_path = Path(source)
-        if source_path.is_file():
-            text = source_path.read_text(encoding="utf-8")
+        # Robust path-vs-content detection (see models.py for rationale).
+        text = None
+        s = str(source).strip()
+        looks_like_json = (s.startswith("{") or s.startswith("[")) and len(s) > 2
+        if looks_like_json:
+            text = str(source)
         else:
+            try:
+                source_path = Path(source)
+                if source_path.is_file():
+                    text = source_path.read_text(encoding="utf-8")
+                else:
+                    text = str(source)
+            except (OSError, FileNotFoundError, RuntimeError):
+                text = str(source)
+        if text is None:
             text = str(source)
 
         payload = json.loads(text)
@@ -986,10 +998,21 @@ def _detect_cloud_drives() -> List[Path]:
 
     candidates: List[Path] = []
 
-    # iCloud Drive
-    icloud = Path.home() / "Library" / "Mobile Documents" / "com~apple~CloudDocs"
-    if icloud.is_dir():
-        candidates.append(icloud)
+    # iCloud Drive — prefer explicit FLEXAIDDS_ICLOUD (or its parent); then standard container
+    icloud_env = os.environ.get("FLEXAIDDS_ICLOUD")
+    if icloud_env:
+        ic = Path(icloud_env).expanduser()
+        if ic.is_dir():
+            candidates.append(ic)
+        else:
+            # parent container if env points inside
+            parent = ic.parent if ic.name != "com~apple~CloudDocs" else ic
+            if parent.is_dir():
+                candidates.append(parent)
+    if not candidates:
+        icloud = Path.home() / "Library" / "Mobile Documents" / "com~apple~CloudDocs"
+        if icloud.is_dir():
+            candidates.append(icloud)
 
     # Google Drive (any account)
     gd_pattern = str(Path.home() / "Library" / "CloudStorage" / "GoogleDrive-*" / "My Drive")

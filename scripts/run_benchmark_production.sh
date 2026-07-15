@@ -47,8 +47,28 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 BUILD_DIR="${FLEXAIDDS_BUILD_DIR:-${REPO_ROOT}/build}"
 TIMESTAMP="$(date +%Y%m%d_%H%M%S)"
-RESULTS_ROOT="${FLEXAIDDS_RESULTS_ROOT:-${HOME}/flexaidds_benchmark_results}"
-LOG_ROOT="${FLEXAIDDS_LOG_ROOT:-${HOME}/flexaidds_logs}"
+# Prefer iCloud via FLEXAIDDS_ICLOUD (or FLEXAIDDS_RESULTS*) for benchmark outputs/logs.
+# Active under working/ subdirs when iCloud used.
+if [[ -z "${FLEXAIDDS_RESULTS_ROOT:-}" ]]; then
+    if [[ -n "${FLEXAIDDS_ICLOUD:-}" ]]; then
+        FLEXAIDDS_RESULTS_ROOT="${FLEXAIDDS_ICLOUD}/results"
+    else
+        FLEXAIDDS_RESULTS_ROOT="${HOME}/flexaidds_benchmark_results"
+    fi
+fi
+RESULTS_ROOT="${FLEXAIDDS_RESULTS_ROOT}"
+if [[ -z "${FLEXAIDDS_LOG_ROOT:-}" ]]; then
+    if [[ -n "${FLEXAIDDS_ICLOUD:-}" ]]; then
+        FLEXAIDDS_LOG_ROOT="${FLEXAIDDS_ICLOUD}/logs"
+    else
+        FLEXAIDDS_LOG_ROOT="${HOME}/flexaidds_logs"
+    fi
+fi
+LOG_ROOT="${FLEXAIDDS_LOG_ROOT}"
+# For iCloud-based results, route active benchmark outputs through working/ (timestamp keeps unique)
+if [[ "${RESULTS_ROOT}" == *"/results" && -n "${FLEXAIDDS_ICLOUD:-}" ]]; then
+    RESULTS_ROOT="${RESULTS_ROOT}/working"
+fi
 LOG_DIR="${LOG_ROOT}/benchmark/${TIMESTAMP}"
 RESULTS_DIR="${RESULTS_ROOT}/${TIMESTAMP}"
 FIGURES_DIR="${RESULTS_DIR}/figures"

@@ -19,7 +19,7 @@ dataclass, error handling, unique output naming).
 Usage (from skill/agent):
     from flexaidds_skill import generate_flexaids_figure, FigureParameters
 
-    params = FigureParameters(entropy_value=0.93, enthalpy_value=1.4, index_value=0.92)
+    params = FigureParameters(entropy_value=0.93, tds_value=1.4, index_value=0.92)
     result = generate_flexaids_figure(params=params)  # returns prompt if no generator
     # or
     result = generate_flexaids_figure(
@@ -34,12 +34,13 @@ Claude, etc.) to supply its native image tool (image_gen, DALL·E, etc.) via inj
 This keeps the module pure and testable.
 """
 
+import json
 import logging
 import shutil
-from dataclasses import dataclass, asdict
+from dataclasses import asdict, dataclass, fields
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Callable, Dict, Optional
+from typing import Any, Callable, Dict, Mapping, Optional, Union
 
 # Reuse the battle-tested builder and params from the main package for consistency,
 # scientific guardrails, JetBrains Mono / thebonhomme.com typography, PLIP-style
@@ -97,10 +98,59 @@ class FigureParameters:
             raise ValueError("style must be 'dramatic_faces' or 'molecular_gauge'")
 
 
+_ALLOWED_PARAM_KEYS = {f.name for f in fields(FigureParameters)}
+_MANIFEST_ALIASES = {"enthalpy_value": "tds_value"}
+
+
+def figure_parameters_from_mapping(data: Optional[Mapping[str, Any]] = None) -> FigureParameters:
+    """Build FigureParameters from a manifest/agent dict (accepts enthalpy_value alias)."""
+    if not data:
+        return FigureParameters()
+    cleaned: Dict[str, Any] = dict(data)
+    for alias, target in _MANIFEST_ALIASES.items():
+        if alias not in cleaned:
+            continue
+        if target in cleaned:
+            cleaned.pop(alias)  # manifest alias must not override explicit tds_value
+        else:
+            cleaned[target] = cleaned.pop(alias)
+    unknown = set(cleaned) - _ALLOWED_PARAM_KEYS
+    if unknown:
+        raise ValueError(f"Unknown figure parameter keys: {sorted(unknown)}")
+    return FigureParameters(**cleaned)
+
+
+def _sanitize_override_value(value: Any) -> str:
+    text = str(value)
+    if any(ch in text for ch in ("\n", "\r", "\x00")):
+        raise ValueError("prompt override values must be single-line strings")
+    if len(text) > 500:
+        raise ValueError("prompt override value too long (max 500 chars)")
+    return text
+
+
+def _resolve_output_dir(output_dir: str) -> Path:
+    if not output_dir or not str(output_dir).strip():
+        raise ValueError("output_dir must be a non-empty path")
+    raw = Path(output_dir).expanduser()
+    resolved = (raw if raw.is_absolute() else Path.cwd() / raw).resolve()
+    return resolved
+
+
+def _coerce_params(params: Optional[Union[FigureParameters, Mapping[str, Any]]]) -> FigureParameters:
+    if params is None:
+        return FigureParameters()
+    if isinstance(params, FigureParameters):
+        return params
+    if isinstance(params, Mapping):
+        return figure_parameters_from_mapping(params)
+    raise TypeError("params must be FigureParameters or a mapping dict")
+
+
 def _build_prompt(
     params: FigureParameters,
     overrides: Optional[Dict[str, str]] = None,
-) -> str:
+) -> tuple[str, Dict[str, Any]]:
     """
     Build the full descriptive prompt using the core package logic.
 
@@ -121,27 +171,26 @@ def _build_prompt(
         # date/volume are embedded in the prompt via the package's internal templates
     )
     prompt = res["prompt"]
+    metadata = dict(res.get("metadata") or {})
 
     if overrides:
         unknown = set(overrides) - {"title", "subtitle", "date", "volume"}  # whitelisted safe keys
         if unknown:
             raise ValueError(f"Unknown prompt override keys (sanitized): {unknown}")
         for key, value in overrides.items():
-            # Simple safe substitution for the few whitelisted fields
+            safe_value = _sanitize_override_value(value)
             placeholder = "{" + key + "}"
             if placeholder in prompt:
-                prompt = prompt.replace(placeholder, str(value))
-            else:
-                # Also try the literal strings that appear in the generated prompt
-                if key == "title":
-                    prompt = prompt.replace(params.title, str(value))
-                elif key == "subtitle":
-                    prompt = prompt.replace(params.subtitle, str(value))
-    return prompt
+                prompt = prompt.replace(placeholder, safe_value)
+            elif key == "title":
+                prompt = prompt.replace(params.title, safe_value)
+            elif key == "subtitle":
+                prompt = prompt.replace(params.subtitle, safe_value)
+    return prompt, metadata
 
 
 def generate_flexaids_figure(
-    params: Optional[FigureParameters] = None,
+    params: Optional[Union[FigureParameters, Mapping[str, Any]]] = None,
     image_generator: Optional[Callable[[str], Dict[str, Any]]] = None,
     output_dir: str = "figures",
     prompt_overrides: Optional[Dict[str, str]] = None,
@@ -175,11 +224,8 @@ def generate_flexaids_figure(
             result = image_gen(prompt=prompt, aspect_ratio="16:9")  # the env tool
             return {"path": result["path"]}   # adapt to actual tool return shape
     """
-    if params is None:
-        params = FigureParameters()
+    params_obj = _coerce_params(params)
 
-    # Strict validation (fail fast, clear errors)
-    # (dataclass __post_init__ already did basic checks; we can add more here)
     if prompt_overrides:
         allowed = {"title", "subtitle", "date", "volume"}
         bad = set(prompt_overrides) - allowed
@@ -188,15 +234,22 @@ def generate_flexaids_figure(
 
     logger.info(
         "Generating FlexAID∆S NRDD figure with params: entropy=%s, tds=%s, index=%s, style=%s",
-        params.entropy_value, params.tds_value, params.index_value, params.style,
+        params_obj.entropy_value, params_obj.tds_value, params_obj.index_value, params_obj.style,
     )
 
-    prompt = _build_prompt(params, prompt_overrides)
-    result: Dict[str, Any] = {"prompt": prompt, "path": None, "params": asdict(params)}
+    prompt, cover_metadata = _build_prompt(params_obj, prompt_overrides)
+    result: Dict[str, Any] = {
+        "prompt": prompt,
+        "path": None,
+        "params": asdict(params_obj),
+        "metadata": cover_metadata,
+    }
 
     if image_generator is None:
         logger.info("No image_generator supplied — returning prompt only (deferred generation).")
         return result
+
+    out_dir = _resolve_output_dir(output_dir)
 
     try:
         gen_result = image_generator(prompt)
@@ -204,42 +257,58 @@ def generate_flexaids_figure(
             raise ValueError(
                 "image_generator must return a dict containing at least {'path': <str>}"
             )
-        src_path = Path(gen_result["path"])
-        if not src_path.exists():
+        raw_path = str(gen_result["path"])
+        if "\x00" in raw_path:
+            raise ValueError("image path must not contain null bytes")
+        src_path = Path(raw_path).expanduser().resolve()
+        if not src_path.is_file():
             raise FileNotFoundError(f"Generator reported path that does not exist: {src_path}")
 
-        out_dir = Path(output_dir)
         out_dir.mkdir(parents=True, exist_ok=True)
 
         # Unique, reproducible filename
         ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S_%f")
         suffix = src_path.suffix or ".png"
-        dst = out_dir / f"flexaids_nrdd_{params.style}_{ts}{suffix}"
+        dst = out_dir / f"flexaids_nrdd_{params_obj.style}_{ts}{suffix}"
 
         shutil.copy2(src_path, dst)
         result["path"] = str(dst.resolve())
 
-        # Write sidecar metadata for full reproducibility (params + prompt + timing)
         meta_path = dst.with_suffix(".json")
         meta = {
             "generated_at": datetime.now(timezone.utc).isoformat(),
-            "params": asdict(params),
+            "params": asdict(params_obj),
             "prompt": prompt,
+            "cover_metadata": cover_metadata,
             "source_image": str(src_path),
             "output_image": str(dst.resolve()),
             "skill": "flexaidds",
             "version": "1.0",
         }
         with open(meta_path, "w", encoding="utf-8") as f:
-            import json
             json.dump(meta, f, indent=2, ensure_ascii=False)
+        result["metadata"] = meta
 
         logger.info("Figure generated and saved to %s (metadata: %s)", dst, meta_path)
         result["metadata_path"] = str(meta_path.resolve())
 
+    except ValueError:
+        raise
     except Exception as exc:
         logger.exception("Image generation failed: %s", exc)
-        # Re-raise as RuntimeError so callers (skill runtime) get a clean failure mode
         raise RuntimeError(f"Figure generation failed: {exc}") from exc
 
     return result
+
+
+def invoke_manifest_action(action: str, arguments: Optional[Mapping[str, Any]] = None) -> Dict[str, Any]:
+    """Dispatch a manifest-declared action (for autonomous agent runtimes)."""
+    args = dict(arguments or {})
+    if action != "generate_flexaids_figure":
+        raise ValueError(f"Unknown manifest action: {action}")
+    return generate_flexaids_figure(
+        params=args.get("params"),
+        image_generator=args.get("image_generator"),
+        output_dir=args.get("output_dir", "figures"),
+        prompt_overrides=args.get("prompt_overrides"),
+    )

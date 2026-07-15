@@ -399,11 +399,16 @@ struct FA_Global_struct{
 	bool  use_tqnn;                      // TurboQuant compressed NN for FastOPTICS
 	uint temperature;					 // temperature parameter
 	double beta;						 // Metropolis ß parament == 1/T *may be worth trying 1/kT*
+	// When true: restore pre-classic-entropy emission (P3b cd9004d) — rank-0 = lowest CF.
+	// When false (default) and temperature > 0: classic FlexAID ACF / BindingMode F ranking.
+	// Revert product path: set force_cf_rank_emission = true (JSON or FLEXAIDDS_FORCE_CF_RANK_EMISSION=1).
+	bool  force_cf_rank_emission;
 	double dsf_Tm_K;                     // DSF/TSA melting temperature (K); 0.0 = not provided
 	double dsf_delta_Hm;                 // enthalpy at Tm from ITC/DSF (kcal/mol); 0.0 = not provided
 	float permeability;                  // allow permeability or not between atoms
 	float rotamer_permeability;          // rotamer acceptance vdw permeability
 	float soft_wall_cutoff;              // overlap soft-core radius (Å); 0.0 = legacy hard r^-12 wall
+	float intermolecular_clash_ratio;    // hard d/(r_i+r_j) exclusion; 0.0 disables
 	int   intramolecular;                // consider intramolecular forces (ligand only)
 	float solventterm;                   // solvent penalty term
 	double sas_weight;                   // SAS desolvation penalty multiplier (default 1.0)
@@ -641,7 +646,7 @@ struct FA_Global_struct{
 	bool    coarse_init_enabled;
 	float   coarse_init_grid_step;   // neighbourhood radius to expand candidates (Å), default 3.0
 	int     coarse_init_n_seeds;     // top-N seeds to keep and inject, default 25
-	int     coarse_init_n_orient;    // random orientations evaluated per grid point, default 16
+	int     coarse_init_n_orient;    // low-discrepancy orientation/torsion samples per grid point, default 64
 	int*    coarse_seeds_grid;       // [coarse_seeds_count] pre-screened grid indices
 	float*  coarse_seeds_genes;      // [coarse_seeds_count * (num_genes-1)] IC values for genes 1..N-1
 	int     coarse_seeds_count;      // actual filled count after scan (0 before scan runs)

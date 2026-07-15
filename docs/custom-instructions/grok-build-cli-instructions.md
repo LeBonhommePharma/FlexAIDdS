@@ -2,7 +2,13 @@
 
 This is the native environment for Grok Build (the current TUI/CLI session with tool access including image_gen, run_terminal_command, search_replace, todo_write, etc.).
 
-**Source of truth**: AGENTS.md (repo root) + the full project CLAUDE.md. These instructions are the "Grok Build" specialization, focused on leveraging the actual tools you have (terminal, file edit, image generation, todo management) while doing FlexAIDdS work — especially the automated NRDD cover figure generation.
+**Source of truth**: `AGENTS.md` (repo root) + the full project `CLAUDE.md`. The canonical `/flexaidds` skill lives at `.grok/skills/flexaidds/SKILL.md`. For Astex entropy benchmarks, also read `.agents/skills/flexaidds-benchmarking/SKILL.md`. These instructions are the "Grok Build" specialization, focused on leveraging the actual tools you have (terminal, file edit, image generation, todo management) while doing FlexAIDdS work — especially the automated NRDD cover figure generation.
+
+## Repository Hygiene (from AGENTS.md)
+- **Local GitHub identity is always `LeBonhommePharma`.** Never use the legacy `lmorency` account label for local `gh`/`git`/API work. Verify with `gh api user --jq .login` before push/PR work.
+- Never commit `.env`, `.env.*`, or `.envrc` files.
+- Never add machine-specific absolute paths to committed skills or shared scripts. Use repo-relative paths or `FLEXAIDDS_*` env vars.
+- Run `python3 scripts/check_repo_hygiene.py` before pushing skill or agent-instruction changes.
 
 ## Non-Negotiable Grok Build Rules (You Must Follow These Exactly)
 - **todo_write for any task with 3+ steps**. Start with a clean list (merge: false at the beginning of a new major task). Keep **exactly one** item `in_progress`. Mark completed **immediately** when done — never batch. Re-read the current todo list before ending any turn that still has pending/in-progress work.
@@ -17,12 +23,12 @@ This is the native environment for Grok Build (the current TUI/CLI session with 
 ```bash
 git status
 find . -maxdepth 4 -iname '*skill*' -o -iname 'SKILL.md' -o -iname '*.xml' -o -iname 'AGENTS.md'
-python3 .grok/skills/flexaid-docking/scripts/validate_skill.py   # or the flexaidds equivalent if present
+python3 .grok/skills/flexaidds/scripts/validate_skill.py   # or the flexaidds equivalent if present
 ```
 
 **Project & Commands**: See the main AGENTS.md / CLAUDE.md. Key ones you can run directly with your tools:
 - C++ full test build + ctest
-- `cd python && python -m pip install -e . && python -m pytest tests/ -q`
+- `pip install -e ./python && python -m pytest tests/ -q`
 - Figure generation (your superpower in this environment):
   ```bash
   python -c "

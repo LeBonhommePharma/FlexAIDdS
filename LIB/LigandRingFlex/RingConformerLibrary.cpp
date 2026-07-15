@@ -66,12 +66,12 @@ void RingConformerLibrary::build_five_conformers() {
 }
 
 int RingConformerLibrary::random_six_index() const {
-    thread_local std::mt19937 rng = flexaids_rng::make_thread_rng(0x516ULL);
+    auto& rng = flexaids_rng::lazy_thread_rng(0x516ULL);
     return std::uniform_int_distribution<int>(0, n_six() - 1)(rng);
 }
 
 int RingConformerLibrary::random_five_index() const {
-    thread_local std::mt19937 rng = flexaids_rng::make_thread_rng(0x515ULL);
+    auto& rng = flexaids_rng::lazy_thread_rng(0x515ULL);
     return std::uniform_int_distribution<int>(0, n_five() - 1)(rng);
 }
 

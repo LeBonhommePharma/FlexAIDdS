@@ -21,7 +21,7 @@ cmake -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build -j
 
 # Python
-pip install -e python/
+pip install -e ./python
 python -m flexaidds /path/to/results/
 ```
 

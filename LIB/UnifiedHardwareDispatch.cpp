@@ -7,6 +7,7 @@
 // Apache-2.0 (c) 2026 Le Bonhomme Pharma / NRGlab
 
 #include "UnifiedHardwareDispatch.h"
+#include "simd_distance.h"
 
 #include <algorithm>
 #include <cmath>
@@ -109,6 +110,13 @@ void UnifiedHardwareDispatch::detect_cpu() {
     info_.cpu_name = "AArch64";
 #endif
 
+    // ARM NEON is baseline on aarch64 (and when FLEXAIDS_HAS_NEON is compiled in).
+#if FLEXAIDS_HAS_NEON
+    info_.has_neon = true;
+#else
+    info_.has_neon = false;
+#endif
+
 #ifdef _OPENMP
     info_.has_openmp      = true;
     info_.omp_max_threads = omp_get_max_threads();
@@ -173,6 +181,12 @@ bool UnifiedHardwareDispatch::is_available(Backend b) const noexcept {
 #else
             return false;
 #endif
+        case Backend::NEON:
+#if FLEXAIDS_HAS_NEON
+            return info_.has_neon;
+#else
+            return false;
+#endif
         case Backend::METAL:   return info_.has_metal;
         case Backend::CUDA:    return info_.has_cuda;
         case Backend::ROCM:    return info_.has_rocm;
@@ -183,20 +197,29 @@ bool UnifiedHardwareDispatch::is_available(Backend b) const noexcept {
 
 Backend UnifiedHardwareDispatch::best_backend(KernelType kernel) const {
     if (override_ != Backend::AUTO) {
+        if (kernel == KernelType::FITNESS_EVAL &&
+            (override_ == Backend::CUDA || override_ == Backend::ROCM || override_ == Backend::METAL)) {
+            return select_cpu_backend();
+        }
         return override_;
     }
 
     switch (kernel) {
-        case KernelType::SHANNON_ENTROPY:
         case KernelType::FITNESS_EVAL:
+            // GA chromosome fitness must stay on the CPU path for now. The
+            // legacy GPU evaluators consume raw FlexAID internal-coordinate
+            // genes as Cartesian translations and only return partial CF terms,
+            // so they are not benchmark-parity safe for pose search.
+            return select_cpu_backend();
+
+        case KernelType::SHANNON_ENTROPY:
         case KernelType::CONTACT_DISC:
         case KernelType::HESSIAN_ASM:
         case KernelType::TURBO_QUANT:
             if (is_available(Backend::CUDA))   return Backend::CUDA;
             if (is_available(Backend::ROCM))   return Backend::ROCM;
             if (is_available(Backend::METAL)) {
-                // P1.6 loud dispatch log for Metal on M3 (Shannon for configurational entropy part of thermo ledger / best BindingMode)
-                fprintf(stderr, "[HW-DISPATCH] Kernel SHANNON_ENTROPY/FITNESS etc. -> using Metal on Apple (M3 Pro) for entropy/thermo (see .metallib + UnifiedHardwareDispatch)\n");
+                fprintf(stderr, "[HW-DISPATCH] Kernel entropy/contact/thermo -> using Metal on Apple GPU (see .metallib + UnifiedHardwareDispatch)\n");
                 return Backend::METAL;
             }
             if (is_available(Backend::AVX512)) return Backend::AVX512;
@@ -205,8 +228,10 @@ Backend UnifiedHardwareDispatch::best_backend(KernelType kernel) const {
 
         case KernelType::DISTANCE_BATCH:
         case KernelType::RMSD:
+            // Prefer SIMD over OpenMP for geometry (small N, low parallel overhead).
             if (is_available(Backend::AVX512)) return Backend::AVX512;
             if (is_available(Backend::AVX2))   return Backend::AVX2;
+            if (is_available(Backend::NEON))   return Backend::NEON;
             if (is_available(Backend::OPENMP)) return Backend::OPENMP;
             return Backend::SCALAR;
 
@@ -236,6 +261,9 @@ Backend UnifiedHardwareDispatch::select_cpu_backend() const {
 #endif
     if (is_available(Backend::AVX2))
         return Backend::AVX2;
+    // ARM: NEON before OpenMP for distance/RMSD-class CPU work.
+    if (is_available(Backend::NEON))
+        return Backend::NEON;
     if (is_available(Backend::OPENMP))
         return Backend::OPENMP;
     return Backend::SCALAR;
@@ -247,6 +275,7 @@ const char* UnifiedHardwareDispatch::backend_name(Backend b) noexcept {
         case Backend::OPENMP:  return "OpenMP";
         case Backend::AVX2:    return "AVX2";
         case Backend::AVX512:  return "AVX-512";
+        case Backend::NEON:    return "NEON";
         case Backend::METAL:   return "Metal";
         case Backend::CUDA:    return "CUDA";
         case Backend::ROCM:    return "ROCm";
@@ -262,6 +291,7 @@ std::vector<Backend> UnifiedHardwareDispatch::available_backends() const {
     if (is_available(Backend::METAL))  result.push_back(Backend::METAL);
     if (is_available(Backend::AVX512)) result.push_back(Backend::AVX512);
     if (is_available(Backend::AVX2))   result.push_back(Backend::AVX2);
+    if (is_available(Backend::NEON))   result.push_back(Backend::NEON);
     if (is_available(Backend::OPENMP)) result.push_back(Backend::OPENMP);
     result.push_back(Backend::SCALAR);
     return result;
@@ -277,6 +307,7 @@ std::string UnifiedHardwareDispatch::hardware_report() const {
     os << "AVX-512F: " << (info_.has_avx512f ? "YES" : "no") << "\n";
     os << "AVX-512DQ:" << (info_.has_avx512dq? "YES" : "no") << "\n";
     os << "AVX-512BW:" << (info_.has_avx512bw? "YES" : "no") << "\n";
+    os << "NEON:     " << (info_.has_neon    ? "YES" : "no") << "\n";
     os << "OpenMP:   " << (info_.has_openmp  ? "YES" : "no");
     if (info_.has_openmp) os << " (" << info_.omp_max_threads << " threads)";
     os << "\n";
@@ -298,6 +329,7 @@ std::string UnifiedHardwareDispatch::hardware_report() const {
     }
     os << "\n";
     os << "Best entropy backend:  " << backend_name(best_backend(KernelType::SHANNON_ENTROPY)) << "\n";
+    os << "Best fitness backend:  " << backend_name(best_backend(KernelType::FITNESS_EVAL)) << "\n";
     os << "Best distance backend: " << backend_name(best_backend(KernelType::DISTANCE_BATCH)) << "\n";
     return os.str();
 }
@@ -478,9 +510,14 @@ double UnifiedHardwareDispatch::compute_shannon_entropy(
     Backend b = (backend == Backend::AUTO) ? best_backend(KernelType::SHANNON_ENTROPY) : backend;
 
     switch (b) {
+        case Backend::METAL:
+#ifdef FLEXAIDS_HAS_METAL_SHANNON
+            if (ShannonMetalBridge::is_metal_available())
+                return ShannonMetalBridge::compute_shannon_entropy_metal(values, num_bins);
+#endif
+            [[fallthrough]];
         case Backend::CUDA:
         case Backend::ROCM:
-        case Backend::METAL:
             if (is_available(Backend::AVX512) && is_available(Backend::OPENMP))
                 return shannon_avx512_omp(values, num_bins);
             if (is_available(Backend::AVX512))
@@ -565,6 +602,13 @@ double UnifiedHardwareDispatch::log_sum_exp(const std::vector<double>& values, B
     Backend b = (backend == Backend::AUTO) ? best_backend(KernelType::PARTITION_FUNC) : backend;
 
     switch (b) {
+        case Backend::METAL:
+#ifdef FLEXAIDS_HAS_METAL_SHANNON
+            if (ShannonMetalBridge::is_metal_available())
+                return ShannonMetalBridge::log_sum_exp_metal(values);
+#endif
+            if (info_.has_eigen) return lse_eigen(values);
+            return lse_scalar(values);
         case Backend::AVX512: return lse_avx512(values);
         case Backend::OPENMP: return lse_openmp(values);
         case Backend::SCALAR: return lse_scalar(values);
@@ -589,6 +633,20 @@ std::vector<double> UnifiedHardwareDispatch::compute_boltzmann_weights(
     std::vector<double> log_w(N);
     for (std::size_t i = 0; i < N; ++i)
         log_w[i] = -beta * energies[i];
+
+#ifdef FLEXAIDS_HAS_METAL_SHANNON
+    if (backend == Backend::METAL && ShannonMetalBridge::is_metal_available()) {
+        double sum_w = 0.0;
+        double E_min = 0.0;
+        auto unnormalized = ShannonMetalBridge::compute_boltzmann_weights_metal(
+            energies, beta, sum_w, E_min);
+        if (sum_w > 0.0) {
+            for (double& w : unnormalized)
+                w /= sum_w;
+        }
+        return unnormalized;
+    }
+#endif
 
     double lnZ = log_sum_exp(log_w, backend);
 
@@ -620,7 +678,8 @@ std::vector<double> UnifiedHardwareDispatch::compute_boltzmann_weights(
 // Boltzmann batch (span API with telemetry — from hardware_dispatch.cpp)
 // ═════════════════════════════════════════════════════════════════════════════
 
-#if 0  // currently unused — scalar boltzmann is inlined in compute_boltzmann_batchstatic BoltzmannBatchResult boltzmann_scalar(
+#if 0  // currently unused: scalar Boltzmann is inlined in compute_boltzmann_batch
+static BoltzmannBatchResult boltzmann_scalar(
     std::span<const double> energies, double beta)
 {
     auto start = std::chrono::steady_clock::now();
@@ -803,6 +862,11 @@ BoltzmannBatchResult UnifiedHardwareDispatch::compute_boltzmann_batch(
 #if HAS_AVX512_RT
     if (cpu == Backend::AVX512)
         return boltzmann_avx512(energies, beta);
+#endif
+
+#ifdef _OPENMP
+    if (cpu == Backend::OPENMP && energies.size() >= 4096)
+        return boltzmann_openmp(energies, beta);
 #endif
 
     return boltzmann_eigen(energies, beta, cpu);
@@ -988,8 +1052,30 @@ void UnifiedHardwareDispatch::distance2_batch(
     }
 #endif
 
+#if FLEXAIDS_HAS_NEON
+    // ARM NEON: 4-wide SoA distances via simd_distance.h (reuse tested kernel).
+    if ((b == Backend::NEON || b == Backend::AUTO || b == Backend::SCALAR
+         || b == Backend::OPENMP) && is_available(Backend::NEON)) {
+        int i = 0;
+        for (; i + 3 < n; i += 4)
+            simd::distance2_1x4(ax + i, ay + i, az + i, bx, by, bz, out + i);
+        for (; i < n; ++i)
+            out[i] = sq(ax[i] - bx) + sq(ay[i] - by) + sq(az[i] - bz);
+        return;
+    }
+#endif
+
     for (int i = 0; i < n; ++i)
         out[i] = sq(ax[i] - bx) + sq(ay[i] - by) + sq(az[i] - bz);
+}
+
+float UnifiedHardwareDispatch::rmsd_neon(const float* a, const float* b, int n) {
+#if FLEXAIDS_HAS_NEON
+    // Reuse simd::rmsd (AoS interleaved xyz, NEON sum_sq_distances).
+    return simd::rmsd(a, b, n);
+#else
+    return rmsd_scalar(a, b, n);
+#endif
 }
 
 float UnifiedHardwareDispatch::rmsd(const float* a_xyz, const float* b_xyz,
@@ -1002,6 +1088,7 @@ float UnifiedHardwareDispatch::rmsd(const float* a_xyz, const float* b_xyz,
     switch (b) {
         case Backend::AVX512: return rmsd_avx512(a_xyz, b_xyz, n_atoms);
         case Backend::AVX2:   return rmsd_avx2(a_xyz, b_xyz, n_atoms);
+        case Backend::NEON:   return rmsd_neon(a_xyz, b_xyz, n_atoms);
         case Backend::OPENMP: return rmsd_openmp(a_xyz, b_xyz, n_atoms);
         default:              return rmsd_scalar(a_xyz, b_xyz, n_atoms);
     }
@@ -1035,6 +1122,9 @@ DispatchReport UnifiedHardwareDispatch::get_dispatch_report() const {
         case Backend::AVX2:
             reason = "AVX2+FMA detected on CPU";
             break;
+        case Backend::NEON:
+            reason = "ARM NEON float32x4 detected on CPU";
+            break;
         case Backend::OPENMP:
             reason = "OpenMP with " + std::to_string(hwd.openmp_max_threads) + " threads";
             break;
@@ -1044,6 +1134,11 @@ DispatchReport UnifiedHardwareDispatch::get_dispatch_report() const {
         default:
             reason = "auto";
             break;
+    }
+
+    if (sel != Backend::CUDA && sel != Backend::ROCM && sel != Backend::METAL &&
+        (hwd.has_cuda || hwd.has_rocm || hwd.has_metal)) {
+        reason += "; GPU GA fitness disabled until internal-coordinate scoring parity is implemented";
     }
 
     return { sel, reason, hwd.summary() };

@@ -25,6 +25,10 @@
 namespace py = pybind11;
 using namespace statmech;
 
+#ifdef FLEXAIDS_USE_256_MATRIX
+void register_matrix_bindings(py::module_& m);
+#endif
+
 PYBIND11_MODULE(_core, m) {
     m.doc() = "FlexAID\u0394S C++ core: statistical mechanics, "
               "Boltzmann lookup tables, and ENCoM vibrational entropy";
@@ -510,4 +514,8 @@ PYBIND11_MODULE(_core, m) {
     // DiFT: Discrete Fourier Transform torsional parametrization
     // ═══════════════════════════════════════════════════════════════════════
     register_dift_bindings(m);
+
+#ifdef FLEXAIDS_USE_256_MATRIX
+    register_matrix_bindings(m);
+#endif
 }

@@ -22,6 +22,10 @@ except ImportError:
 
 try:
     from pymol import cmd
+    try:
+        from pymol import stored as _pymol_stored
+    except ImportError:
+        _pymol_stored = getattr(cmd, "stored", None)
 except ImportError as exc:
     raise ImportError("PyMOL not available") from exc
 
@@ -74,16 +78,45 @@ def _kabsch_align(
 def _read_atom_coords(pdb_path: str) -> List[List[float]]:
     """Read all ATOM/HETATM coordinates from a PDB file.
 
+    Tolerates fixed-column and free-format (whitespace-separated) coords.
     Returns a list of [x, y, z] lists preserving atom order.
     """
     coords = []
     with open(pdb_path) as fh:
         for line in fh:
-            if line.startswith("ATOM") or line.startswith("HETATM"):
-                x = float(line[30:38])
-                y = float(line[38:46])
-                z = float(line[46:54])
-                coords.append([x, y, z])
+            if not (line.startswith("ATOM") or line.startswith("HETATM")):
+                continue
+            try:
+                # Prefer fixed-column PDB (standard)
+                if len(line) >= 54:
+                    x = float(line[30:38])
+                    y = float(line[38:46])
+                    z = float(line[46:54])
+                    coords.append([x, y, z])
+                    continue
+            except ValueError:
+                pass
+            # Free-format fallback: last three floats before occupancy/B
+            try:
+                parts = line.split()
+                # ATOM serial name res chain resseq x y z ...
+                floats = []
+                for tok in parts:
+                    try:
+                        floats.append(float(tok))
+                    except ValueError:
+                        continue
+                # x,y,z are the first three consecutive coordinate-like values
+                # after residue number; take three floats in the middle range
+                if len(floats) >= 4:
+                    # skip serial (+ maybe resseq), take three coords
+                    # Heuristic: coords are typically the three values near |v|<1000
+                    cand = [f for f in floats if abs(f) < 1.0e4]
+                    if len(cand) >= 3:
+                        # Prefer values after the first integer-like serial/resseq
+                        coords.append([cand[-5], cand[-4], cand[-3]] if len(cand) >= 5 else cand[:3])
+            except (ValueError, IndexError):
+                continue
     return coords
 
 
@@ -103,6 +136,12 @@ def _interpolate_coords(
         Interpolated coordinates.
     """
     n = min(len(coords1), len(coords2))
+    if n == 0:
+        return []
+    if _HAS_NUMPY:
+        a = np.asarray(coords1[:n], dtype=np.float64)
+        b = np.asarray(coords2[:n], dtype=np.float64)
+        return ((1.0 - t) * a + t * b).tolist()
     result = []
     for i in range(n):
         result.append([
@@ -179,9 +218,20 @@ def animate_binding_modes(
         print("  Kabsch alignment applied.")
 
     obj_name = f"morph_m{mode_id_1}_m{mode_id_2}"
+    # Remove prior morph with the same name
+    try:
+        cmd.delete(obj_name)
+    except Exception:
+        pass
 
     # Load the first pose as the base object
     cmd.load(str(best1.path), obj_name, state=1)
+
+    # Resolve PyMOL stored namespace (cmd.stored or pymol.stored)
+    stored_ns = _pymol_stored if _pymol_stored is not None else getattr(cmd, "stored", None)
+    if stored_ns is None:
+        print("ERROR: PyMOL stored namespace unavailable; cannot build morph frames.")
+        return
 
     # Create interpolated states
     for frame_idx in range(1, n_frames):
@@ -191,9 +241,11 @@ def animate_binding_modes(
         # Load the base PDB into a new state, then update coordinates
         cmd.load(str(best1.path), obj_name, state=frame_idx + 1)
 
-        # Use stored for coordinate update via alter_state
         stored_key = f"_morph_coords_{frame_idx}"
-        cmd.stored.__dict__[stored_key] = iter(interp)
+        try:
+            stored_ns.__dict__[stored_key] = iter(interp)
+        except Exception:
+            setattr(stored_ns, stored_key, iter(interp))
 
         cmd.alter_state(
             frame_idx + 1,

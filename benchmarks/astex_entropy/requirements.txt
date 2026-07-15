@@ -1,0 +1,7 @@
+rdkit
+pandas
+pyyaml
+typer
+matplotlib
+seaborn
+# Open Babel is required as the Homebrew CLI (`/opt/homebrew/bin/obabel`).

@@ -32,6 +32,7 @@ import logging
 import os
 import shlex
 import sys
+from datetime import datetime
 from pathlib import Path
 
 
@@ -123,9 +124,15 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     p.add_argument(
         "--results-dir",
-        default="results/benchmarks",
+        default=None,
         metavar="DIR",
-        help="Output directory for reports and per-dataset JSON (default: results/benchmarks).",
+        help=(
+            "Output directory for reports and per-dataset JSON. "
+            "Default (omitted): prefers $FLEXAIDDS_ICLOUD/results/working/<ts> when set "
+            "(or $FLEXAIDDS_RESULTS), else 'results/benchmarks'. "
+            "Writes to working/ subdir for active runs (iCloud sync-safe pattern). "
+            "Override always honored."
+        ),
     )
     p.add_argument(
         "--data-dir",
@@ -173,7 +180,11 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument(
         "--dry-run",
         action="store_true",
-        help="Skip actual docking; use synthetic scores to test the pipeline.",
+        help=(
+            "Skip actual docking; use synthetic poses for pipeline smoke tests. "
+            "docking_power_* is omitted (not real docking success rates); remaining "
+            "metrics are also synthetic and must not be reported as production results."
+        ),
     )
     p.add_argument(
         "--resume",
@@ -202,6 +213,26 @@ def main(argv: list[str] | None = None) -> int:
     """Entry point.  Returns 0 on success, non-zero on failure/regression."""
     parser = _build_parser()
     args = parser.parse_args(argv)
+
+    # Resolve --results-dir preferring iCloud (FLEXAIDDS_ICLOUD > FLEXAIDDS_RESULTS).
+    # Active runs default into working/ + timestamped dir (safer-than-safe for iCloud Drive).
+    # Comments: iCloud sync can lag / produce placeholders / conflicted-copies during heavy concurrent writes.
+    # Use working/ for live runs; promote final outputs via scripts/safe_archive_to_icoud.py --source ... --dest .../archived/
+    # (the archiver does full SHA verification + atomic + never-evict-until-verified).
+    # --results-dir override is always respected for full compatibility.
+    if not getattr(args, "results_dir", None):
+        icloud = os.environ.get("FLEXAIDDS_ICLOUD")
+        results_env = os.environ.get("FLEXAIDDS_RESULTS")
+        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+        if icloud:
+            base = Path(icloud).expanduser() / "results" / "working"
+            args.results_dir = str(base / f"flexaidds_bench_{ts}")
+        elif results_env:
+            base = Path(results_env).expanduser() / "working"
+            args.results_dir = str(base / f"flexaidds_bench_{ts}")
+        else:
+            args.results_dir = "results/benchmarks"
+        Path(args.results_dir).mkdir(parents=True, exist_ok=True)
 
     # Logging
     level = logging.DEBUG if args.verbose else logging.INFO
@@ -274,10 +305,10 @@ def main(argv: list[str] | None = None) -> int:
             return 2
 
         # Build report for single-dataset case
-        import datetime, socket
+        import datetime as _datetime, socket
         report = BenchmarkReport(
             datasets=[dr],
-            generated_at=datetime.datetime.utcnow().isoformat() + "Z",
+            generated_at=_datetime.datetime.utcnow().isoformat() + "Z",
             git_sha=_git_sha(),
             host=socket.gethostname(),
             runner_info=_runner_info(),

@@ -1,15 +1,20 @@
 #include "flexaid.h"
 #include "fileio.h"
+#include "ensemble_pipeline.h"
+
+#include <cstdlib>
+#include <cstring>
 
 sphere* read_spheres(char filename[]){
 
 	FILE* file_ptr;             // read file stream
-	char buffer[81];            // buffer to read line
+	char buffer[128];           // buffer to read line (was 81; need ≥66 for B-factor radius)
 	char field[7];              // 6 first character of the line
 	char coor[9];               // coordinate
-	char radius[6];             // radius
+	char radius[8];             // radius field
 	int i,j,k;                  // dummy counters
 	sphere* spheres = NULL;     // spheres list
+	int n_rejected = 0;
 	
 	file_ptr=NULL;
 	if (!OpenFile_B(filename,"r",&file_ptr))
@@ -23,8 +28,14 @@ sphere* read_spheres(char filename[]){
 		for (i=0;i<6;i++) field[i] = buffer[i];
 		field[6] = '\0';
     
-		if (strcmp(field, "ATOM  ") == 0){
-			
+		if (strncmp(buffer, "ATOM  ", 6) == 0 || strncmp(buffer, "HETATM", 6) == 0){
+			// Reproducibility: reject short/malformed lines (silent r=0 → empty grid).
+			const size_t len = std::strlen(buffer);
+			if (len < 66) {
+				++n_rejected;
+				continue;
+			}
+
 			sphere* _sphere;
 			_sphere = (sphere*)malloc(sizeof(sphere));
 			if(_sphere == NULL){
@@ -39,23 +50,43 @@ sphere* read_spheres(char filename[]){
 					coor[k++] = buffer[i];
 				coor[8] = '\0';
 				
-				sscanf(coor, "%f", &_sphere->center[j]);
+				if (sscanf(coor, "%f", &_sphere->center[j]) != 1) {
+					free(_sphere);
+					++n_rejected;
+					_sphere = NULL;
+					break;
+				}
 			}
+			if (!_sphere) continue;
 			
+			// B-factor columns 61-66 hold radius (GetCleft / CleftDetector convention).
 			for(i=0; i<5; i++)
 				radius[i] = buffer[i+61];
 			radius[5] = '\0';
 
-			sscanf(radius, "%f", &_sphere->radius);
-			
-			/*
-			printf("new sphere\nradius: %f\ncoor[0]: %.3f coor[1]: %.3f coor[2]: %.3f\n",
-			       _sphere->radius, _sphere->center[0], _sphere->center[1], _sphere->center[2]);
-			*/
+			char* endp = nullptr;
+			const float r = static_cast<float>(std::strtod(radius, &endp));
+			if (endp == radius || !ensemble::valid_sphere_radius(r)) {
+				free(_sphere);
+				++n_rejected;
+				continue;
+			}
+			_sphere->radius = r;
 
 			_sphere->prev = spheres;
 			spheres = _sphere;
 		}
+	}
+
+	if (n_rejected > 0) {
+		fprintf(stderr,
+			"[read_spheres] rejected %d malformed/zero-radius sphere line(s) in %s\n",
+			n_rejected, filename);
+	}
+	if (spheres == NULL) {
+		fprintf(stderr,
+			"[read_spheres] ERROR: no valid spheres in %s (empty grid would not be reproducible)\n",
+			filename);
 	}
   
 	return spheres;

@@ -32,45 +32,6 @@ void buildlist(FA_Global* FA,atom* atoms,resid* residue,int rnum, int bnum, int 
 	/* residue.type=0 -> amino acid 
 	   residue.type=1 -> ligand     */
 	if(residue[rnum].type==1){
-		if(bnum == 0){
-			/* Rigid-body ligand motion rebuilds every ligand atom once.  Do
-			 * this directly from the residue atom span instead of shuffling a
-			 * temporary topology list: fused cofactors and cleaned receptors can
-			 * leave cyclic/stale rec[] relationships, but rigid-body order is
-			 * irrelevant after the GPA triplet. */
-			int fa = residue[rnum].fatm[rot];
-			int la = residue[rnum].latm[rot];
-
-			for(j = 0; j <= 2; j++){
-				int g = residue[rnum].gpa ? residue[rnum].gpa[j] : fa + j;
-				if(g < fa || g > la) continue;
-				flag = 0;
-				for(k = 0; k < *tot; k++){
-					if(lout[k] == g){ flag = 1; break; }
-				}
-				if(flag == 0){
-					lout[*tot] = g;
-					(*tot)++;
-				}
-			}
-
-			for(i = fa; i <= la; i++){
-				flag = 0;
-				for(k = 0; k < *tot; k++){
-					if(lout[k] == i){ flag = 1; break; }
-				}
-				if(flag == 0){
-					lout[*tot] = i;
-					(*tot)++;
-				}
-			}
-
-			if (FA->htpmode == false) {
-				for(k=0;k<*tot;k++){printf("lout[%d]= %d\n",k,atoms[lout[k]].number);}
-			}
-			return;
-		}
-
 		if(bnum != 0){
 			a=atoms[residue[rnum].bond[bnum]].rec[0];
 			b=atoms[residue[rnum].bond[bnum]].rec[1];
@@ -196,19 +157,8 @@ void buildlist(FA_Global* FA,atom* atoms,resid* residue,int rnum, int bnum, int 
 		//printf("num=%d\n",num);
 		//PAUSE;
 
-		/* For rigid body motion (bnum==0) reconstruction order is irrelevant:
-		 * all atoms translate/rotate as a unit.  Bypass the topological sort to
-		 * avoid infinite loop on fused polycyclic ligands with cyclic rec[] deps
-		 * (e.g. PFA/1N46).  GPA triplet already in lout[0..2]; append rest.   */
-		if(bnum == 0) {
-			for(i = 0; i < num; i++) {
-				lout[*tot] = list[i];
-				(*tot)++;
-			}
-			num = 0;
-		}
-
 		while(num > 0){
+			int emitted = 0;
 			//printf("here\n");
 			for(i=0;i<num;i++){
 				flag=0;
@@ -229,13 +179,31 @@ void buildlist(FA_Global* FA,atom* atoms,resid* residue,int rnum, int bnum, int 
 				if(flag==0){
 					lout[*tot]=list[i];
 					(*tot)++;
+					emitted++;
 					for(j=i;j<num;j++){
 						list[j]=list[j+1];
 					}
 					num--;
+					i--;
 					//for(k=0;k<*tot;k++){printf("lout[%d]=%d\n",k,lout[k]);}
 					//PAUSE;
 				}
+			}
+
+			/* Malformed legacy rec[] graphs can contain a cycle.  Never spin
+			 * forever, but make the loss of topological reconstruction explicit.
+			 * Direct MOL2/SDF readers create an acyclic BFS tree, so production
+			 * docking must not take this fallback. */
+			if(emitted == 0){
+				fprintf(stderr,
+				        "WARNING: cyclic ligand reconstruction graph for residue %d; "
+				        "appending %d unresolved atoms deterministically.\n",
+				        rnum, num);
+				for(i=0;i<num;i++){
+					lout[*tot]=list[i];
+					(*tot)++;
+				}
+				num=0;
 			}
 		}
 

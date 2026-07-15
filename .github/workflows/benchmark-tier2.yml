@@ -54,11 +54,11 @@ jobs:
     timeout-minutes: 30
 
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v6
 
       - name: Install build dependencies
         run: |
-          sudo apt-get update -q
+          bash scripts/ci/apt_get_update.sh
           # gcc-14 is required for C++26 support (see CMakeLists.txt compiler gate).
           sudo apt-get install -y --no-install-recommends \
             cmake ninja-build libeigen3-dev libomp-dev libopenmpi-dev openmpi-bin gcc-14 g++-14
@@ -67,7 +67,7 @@ jobs:
 
       - name: Cache build artifacts
         id: cache-build
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: build
           key: tier2-build-${{ runner.os }}-${{ hashFiles('CMakeLists.txt', 'LIB/**/*.cpp', 'LIB/**/*.h') }}
@@ -83,7 +83,7 @@ jobs:
             -DFLEXAIDS_USE_METAL=OFF \
             -DFLEXAIDS_USE_AVX2=ON \
             -DFLEXAIDS_USE_OPENMP=ON \
-            -DFLEXAIDS_USE_MPI=ON \
+            -DFLEXAIDS_USE_MPI=OFF \
             -DBUILD_TESTING=OFF \
             -DBUILD_PYTHON_BINDINGS=OFF
           cmake --build build --parallel --target FlexAID
@@ -108,11 +108,12 @@ jobs:
       RESULTS_DIR: results/tier2
       N_WORKERS: ${{ inputs.n_workers || '4' }}
       DO_BOOTSTRAP: ${{ inputs.bootstrap || 'true' }}
-      DRY_RUN_FLAG: ${{ (inputs.dry_run == 'true') && '--dry-run' || '' }}
+      # Push events dry-run until Zenodo dataset IDs are configured.
+      DRY_RUN_FLAG: ${{ (github.event_name == 'push' || inputs.dry_run == 'true') && '--dry-run' || '' }}
       DATASET_FILTER: ${{ inputs.datasets || '' }}
 
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v6
 
       - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6
         with:
@@ -126,7 +127,7 @@ jobs:
 
       - name: Install runtime dependencies
         run: |
-          sudo apt-get update -q
+          bash scripts/ci/apt_get_update.sh
           sudo apt-get install -y --no-install-recommends \
             libopenmpi-dev openmpi-bin
 
@@ -141,28 +142,28 @@ jobs:
 
       # -- Dataset cache / download --
       - name: Cache CASF-2016 dataset
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: benchmark_data/casf2016
           key: bench-data-casf2016-v1
           restore-keys: bench-data-casf2016-
 
       - name: Cache ITC-187 dataset
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: benchmark_data/itc187
           key: bench-data-itc187-v1
           restore-keys: bench-data-itc187-
 
       - name: Cache DUD-E 37 dataset
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: benchmark_data/dude37
           key: bench-data-dude37-v1
           restore-keys: bench-data-dude37-
 
       - name: Cache MUV dataset
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: benchmark_data/muv
           key: bench-data-muv-v1
@@ -295,16 +296,22 @@ jobs:
             echo "No report found to post."
             exit 0
           fi
-          # Truncate to 65535 chars
-          python - <<PYEOF
-          content = open("$REPORT").read()
+          export REPORT_PATH="$REPORT"
+          # Truncate to 65535 chars (GitHub commit comment limit)
+          python - <<'PYEOF' > /tmp/comment_body.md
+          import os
+          report = os.environ["REPORT_PATH"]
+          run_id = os.environ["GITHUB_RUN_ID"]
+          server = os.environ["GITHUB_SERVER_URL"]
+          repo = os.environ["GITHUB_REPOSITORY"]
+          content = open(report, encoding="utf-8").read()
           if len(content) > 65000:
               content = content[:65000] + "\n\n_[truncated — download artifact for full report]_"
-          header = f"## Benchmark Tier 2 Report\n\n"
-          footer = f"\n\n> _Run [{{'${{ github.run_id }}'}}]({{'${{ github.server_url }}'}}/{{'${{ github.repository }}'}}/actions/runs/{{'${{ github.run_id }}'}})_"
+          header = "## Benchmark Tier 2 Report\n\n"
+          footer = f"\n\n> _Run [{run_id}]({server}/{repo}/actions/runs/{run_id})_"
           print(header + content + footer, end="")
-          PYEOF > /tmp/comment_body.md
-          gh api repos/${{ github.repository }}/commits/${{ github.sha }}/comments \
+          PYEOF
+          gh api "repos/${{ github.repository }}/commits/${{ github.sha }}/comments" \
             --method POST \
             --field body="$(cat /tmp/comment_body.md)" || true
 
@@ -338,7 +345,7 @@ jobs:
         nodes: [4, 8]
 
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v6
 
       - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6
         with:

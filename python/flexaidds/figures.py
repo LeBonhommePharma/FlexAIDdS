@@ -396,7 +396,7 @@ def prepare_publication_figures(
     """Prepare prompts + metadata for imagine cover + animation.
 
     This is the function called by run_flexaidds.sh --visualize and by the
-    flexaid-docking skill agent after a Gate-6-successful docking.
+    flexaidds skill agent after a Gate-6-successful docking.
 
     Returns a dict with paths and status. Creates <results_dir>/figures/ only
     when it decides to proceed.

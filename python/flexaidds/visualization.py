@@ -83,22 +83,32 @@ def load_population(
     palette = palette or default_palette
     pdb_dir_path = Path(pdb_dir)
 
+    # Canonical naming aligns with pymol_plugin: flexaids_mode{N}_pose{R}
+    prefix = "flexaids"
     for mode_idx, mode in enumerate(population):
         color = palette[mode_idx % len(palette)]
-        pattern = f"*_{mode_idx + 1}_*.pdb"
+        mode_id = mode_idx + 1
+        pattern = f"*_{mode_id}_*.pdb"
         mode_pdbs = sorted(pdb_dir_path.glob(pattern))
         if not mode_pdbs:
+            # Fallback: any PDBs with mode token
+            mode_pdbs = sorted(pdb_dir_path.glob(f"*mode*{mode_id}*.pdb"))
+        if not mode_pdbs:
             warnings.warn(
-                f"No PDB files found for binding mode {mode_idx + 1} "
+                f"No PDB files found for binding mode {mode_id} "
                 f"(pattern: {pattern})", RuntimeWarning
             )
             continue
-        load_binding_mode(
-            mode,
-            [str(p) for p in mode_pdbs],
-            mode_name=f"mode_{mode_idx + 1:02d}",
-            color=color,
-        )
+        for pose_rank, pdb_path in enumerate(mode_pdbs, start=1):
+            obj = f"{prefix}_mode{mode_id}_pose{pose_rank}"
+            _cmd.load(str(pdb_path), obj)
+            _cmd.color(color, obj)
+            _cmd.show("sticks", f"{obj} and organic")
+            _cmd.show("cartoon", f"{obj} and polymer")
+            try:
+                _cmd.group(f"{prefix}_mode{mode_id}", obj)
+            except Exception:
+                pass
 
 
 def _burgundy_purple_rgb(frac: float):

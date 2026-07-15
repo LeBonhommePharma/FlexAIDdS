@@ -55,6 +55,10 @@ struct HardwareCapabilities {
     // Convenience composite
     bool has_avx512  = false;            // avx512f && avx512dq && avx512bw
 
+    // ── SIMD: ARM ──
+    // aarch64 has NEON as baseline ISA (always true when built for ARM64).
+    bool has_neon    = false;
+
     // ── OpenMP ──
     bool has_openmp       = false;
     int  openmp_max_threads = 1;

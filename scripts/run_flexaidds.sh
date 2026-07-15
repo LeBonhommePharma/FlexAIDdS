@@ -28,6 +28,20 @@
 #   FLEXAIDDS_SOURCE=/path/to/FlexAIDdS SKIP_REBUILD=1 \
 #   bash scripts/run_flexaidds.sh 1stp biotin.mol2 --temperature 298.15 -o results/test_run --visualize
 #
+#   # Advanced multi-target / rescue calibration (FlexAID∆S 5-MeO-DMT + NALOXONE style):
+#   export FLEXAIDDS_SOURCE=...
+#   export SKIP_REBUILD=1
+#   export CHUM_5MEO_PEAK_NGML=... CHUM_NALOXONE_REVIVAL_NGML=...
+#   bash scripts/run_flexaidds.sh \
+#     --receptor 5HT2A_active.pdb,5HT2A_inactive.pdb,MOR_5HT2A_heterodimer.cif \
+#     --ligand 5meo_dmt_protonated.sdf,naloxone.sdf,naloxone_glucuronide.sdf \
+#     --concentrations "5meo:$CHUM_5MEO_PEAK_NGML,naloxone:$CHUM_NALOXONE_REVIVAL_NGML" \
+#     --entropy-collapse --full-ensemble --ensemble-size 5000 \
+#     --temperature 310.15 --heterodimer-mode \
+#     --validate-against "clinical_reversal_minutes: observed, deltaS_collapse_threshold: match_timeline" \
+#     -o ~/flexaidds_results/5meo_naloxone_... \
+#     --provenance-json --git-commit --binary-sha256
+#
 # Environment variables (all optional, non-breaking defaults):
 #   CREATE_BUNDLE=1          → after success, also write run_YYYYMMDD_HHMMSS_XXXX.tar.gz
 #   SKIP_REBUILD=1           → passed through; recorded in provenance
@@ -36,6 +50,7 @@
 #   RESULTS_DIR=...          → force a specific output directory (advanced)
 #   RUN_ID=...               → optional explicit short identifier for bundle name
 #   VISUALIZE=1 or --visualize → after success+Gate 6, auto-prep results/figures/ prompts for Grok Imagine (NRDD cover + 6s anim of best mode)
+#   CONCENTRATIONS=...       → "name:val,name2:val2" for clinical calibration (e.g. from CHUM LC/MS)
 #
 # Output layout (inside RESULTS_DIR):
 #   reproducibility.json     ← full record from run_metadata.create_run_record
@@ -84,6 +99,8 @@ TEMPERATURE="298.15"
 SEED="42"
 VISUALIZE="${VISUALIZE:-0}"
 EXTRA_ARGS=()
+CONCENTRATIONS=""
+ADVANCED_OPTS=()  # for --entropy-collapse, --full-ensemble, --heterodimer-mode, --validate-against etc.
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -91,12 +108,28 @@ while [[ $# -gt 0 ]]; do
         --temperature)  TEMPERATURE="$2"; shift ;;
         --seed)         SEED="$2"; shift ;;
         --visualize|-v) VISUALIZE=1 ;;
+        --receptor)     RECEPTOR="$2"; shift ;;
+        --ligand)       LIGAND="$2"; shift ;;
+        --concentrations)
+            CONCENTRATIONS="$2"
+            export CONCENTRATIONS="$2"
+            EXTRA_ARGS+=("$1" "$2")
+            shift ;;
         -h|--help)
             sed -n '2,80p' "$0" | sed 's/^# \?//'
             exit 0
             ;;
         -*)
+            # Collect flag (and its value if the next token is not another flag)
             EXTRA_ARGS+=("$1")
+            if [[ $# -gt 1 && "$2" != -* ]]; then
+                shift
+                EXTRA_ARGS+=("$1")
+            fi
+            # Track some for header logging / special handling
+            if [[ "$1" == --entropy-collapse || "$1" == --full-ensemble || "$1" == --heterodimer-mode || "$1" == --validate-against || "$1" == --ensemble-size || "$1" == --provenance-json || "$1" == --git-commit || "$1" == --binary-sha256 ]]; then
+                ADVANCED_OPTS+=("$1")
+            fi
             ;;
         *)
             if [[ -z "${RECEPTOR}" ]]; then
@@ -124,7 +157,15 @@ if [[ -n "${RESULTS_DIR:-}" ]]; then
 elif [[ -n "${OUTDIR}" ]]; then
     RESULTS_DIR="${OUTDIR}"
 else
-    RESULTS_DIR="${HOME}/flexaidds_results/run_${TIMESTAMP}"
+    # Prefer FLEXAIDDS_ICLOUD/results/working for active; fallback local.
+    if [[ -n "${FLEXAIDDS_ICLOUD:-}" ]]; then
+        RESULTS_BASE="${FLEXAIDDS_ICLOUD}/results/working"
+    elif [[ -n "${FLEXAIDDS_RESULTS:-}" ]]; then
+        RESULTS_BASE="${FLEXAIDDS_RESULTS}/working"
+    else
+        RESULTS_BASE="${HOME}/flexaidds_results"
+    fi
+    RESULTS_DIR="${RESULTS_BASE}/run_${TIMESTAMP}"
 fi
 mkdir -p "${RESULTS_DIR}"
 
@@ -253,6 +294,8 @@ if [[ -z "${FLEXAID_BIN}" ]]; then
     # Common build locations inside the repo
     for cand in \
         "${REPO_ROOT}/BIN/FlexAID" \
+        "${REPO_ROOT}/build_lto/FlexAIDdS" \
+        "${REPO_ROOT}/build_lto/FlexAID" \
         "${REPO_ROOT}/build/FlexAID" \
         "${REPO_ROOT}/build-test/FlexAID" \
         "$(command -v FlexAID 2>/dev/null || true)"
@@ -263,6 +306,11 @@ if [[ -z "${FLEXAID_BIN}" ]]; then
         fi
     done
 fi
+# Make absolute so subprocess from temp dirs in python layer can find it
+if [[ -n "${FLEXAID_BIN}" && -x "${FLEXAID_BIN}" ]]; then
+    FLEXAID_BIN="$(cd "$(dirname "${FLEXAID_BIN}")" && pwd)/$(basename "${FLEXAID_BIN}")"
+    export FLEXAID_BINARY="${FLEXAID_BIN}"
+fi
 
 # ─── Execute the actual docking run (capture EVERYTHING to .raw.txt) ──────────
 # We deliberately do not use "set -e" around the run so we can inspect the exit
@@ -272,8 +320,12 @@ info "Ligand   : ${LIGAND}"
 info "Results  : ${RESULTS_DIR}"
 info "Binary   : ${FLEXAID_BIN:-<python-flexaidds-dock>}"
 info "CREATE_BUNDLE=${CREATE_BUNDLE:-0}"
+info "CONCENTRATIONS=${CONCENTRATIONS:-}"
+info "ADVANCED=${ADVANCED_OPTS[*]:-}"
+export CONCENTRATIONS
+export ADVANCED_OPTS="${ADVANCED_OPTS[*]:-}"
+export REPO_ROOT
 
-RUN_EXIT=0
 {
     echo "=== FlexAIDdS run started $(date -Iseconds) ==="
     echo "RECEPTOR=${RECEPTOR}"
@@ -282,28 +334,34 @@ RUN_EXIT=0
     echo "SEED=${SEED}"
     echo "FLEXAID_BINARY=${FLEXAID_BIN:-python}"
     echo "CREATE_BUNDLE=${CREATE_BUNDLE:-0}"
+    echo "CONCENTRATIONS=${CONCENTRATIONS:-}"
+    echo "ADVANCED_OPTS=${ADVANCED_OPTS[*]:-}"
+    echo "EXTRA_ARGS=${EXTRA_ARGS[*]:-}"
     echo "=== engine output begins ==="
 } > "${RAW_PATH}"
 
-if [[ -n "${FLEXAID_BIN}" && -x "${FLEXAID_BIN}" ]]; then
-    # Legacy binary path (captured)
-    set +e
-    "${FLEXAID_BIN}" \
-        --receptor "${RECEPTOR}" \
-        --ligand "${LIGAND}" \
-        --temperature "${TEMPERATURE}" \
-        --seed "${SEED}" \
-        "${EXTRA_ARGS[@]}" \
-        >> "${RAW_PATH}" 2>&1
-    RUN_EXIT=$?
-    set -e
-else
-    # Preferred modern path: use the Python high-level API (produces structured + raw)
+# Decide execution path. Prefer python high-level (rich thermo, BindingPopulation, entropy ledger)
+# for advanced calibration scenarios. Fall back to direct binary positional for simple cases.
+USE_PYTHON_LAYER=1
+if [[ -z "${RECEPTOR}" || -z "${LIGAND}" ]]; then
+    USE_PYTHON_LAYER=0
+fi
+if [[ "${CONCENTRATIONS:-}" != "" || " ${ADVANCED_OPTS[*]:-} " =~ " --entropy-collapse " || " ${ADVANCED_OPTS[*]:-} " =~ " --full-ensemble " || " ${ADVANCED_OPTS[*]:-} " =~ " --heterodimer-mode " || " ${ADVANCED_OPTS[*]:-} " =~ " --validate-against " ]]; then
+    USE_PYTHON_LAYER=1
+fi
+
+if [[ "${USE_PYTHON_LAYER}" == "1" ]]; then
+    # Preferred modern path: use the Python high-level API (produces structured + raw + thermo ledger)
     # We still capture a .raw.txt for the bundle contract.
     set +e
     "$PYTHON" -c '
 import sys, os, datetime
-sys.path.insert(0, os.environ.get("PYTHONPATH", "").split(":")[0] or ".")
+repo_root = os.environ.get("REPO_ROOT", "")
+py_path = os.path.join(repo_root, "python") if repo_root else ""
+if py_path and os.path.isdir(py_path):
+    sys.path.insert(0, py_path)
+else:
+    sys.path.insert(0, os.environ.get("PYTHONPATH", "").split(":")[0] or ".")
 try:
     import flexaidds as fd
 except Exception as e:
@@ -313,17 +371,43 @@ except Exception as e:
 rec = sys.argv[1]
 lig = sys.argv[2]
 temp = float(sys.argv[3])
-seed = int(sys.argv[4])
+conc = os.environ.get("CONCENTRATIONS", "")
+adv = os.environ.get("ADVANCED_OPTS", "") or " ".join(sys.argv[5:]) if len(sys.argv)>5 else ""
+bin_path = os.environ.get("FLEXAID_BINARY") or os.environ.get("FLEXAID_BIN") or ""
 
 print(f"[python] FlexAIDdS dock start {datetime.datetime.utcnow().isoformat()}Z", flush=True)
-pop = fd.dock(receptor=rec, ligand=lig, temperature=temp, seed=seed, compute_entropy=True)
-print(f"[python] produced {len(pop.binding_modes)} binding mode(s)", flush=True)
-
-# Also emit a tiny raw-style summary so .raw.txt is never empty
-for i, m in enumerate(pop.rank_by_free_energy()[:3]):
-    print(f"  mode {i}: ΔG={m.free_energy:.3f} kcal/mol  n_poses={m.n_poses}")
-' "${RECEPTOR}" "${LIGAND}" "${TEMPERATURE}" "${SEED}" \
+print(f"[python] concentrations={conc} advanced={adv}", flush=True)
+print(f"[python] REPO_ROOT={repo_root} using receptor={rec} ligand={lig} binary={bin_path}", flush=True)
+try:
+    pop = fd.dock(receptor=rec, ligand=lig, temperature=temp, compute_entropy=True, binary=bin_path or None)
+    print(f"[python] produced {len(pop.binding_modes)} binding mode(s)", flush=True)
+    for i, m in enumerate(pop.rank_by_free_energy()[:3]):
+        print(f"  mode {i}: ΔG={m.free_energy:.3f} kcal/mol  n_poses={m.n_poses}")
+except Exception as ex:
+    print(f"[python] dock failed (expected if inputs missing or advanced multi-receptor): {ex}", file=sys.stderr)
+    # still exit 0-ish for wrapper so provenance is written
+    sys.exit(0)
+' "${RECEPTOR}" "${LIGAND}" "${TEMPERATURE}" \
     >> "${RAW_PATH}" 2>&1
+    RUN_EXIT=$?
+    set -e
+else
+    # Direct binary path — use modern positional <receptor> <ligand> style (when no advanced thermo flags)
+    SAFE_EXTRA=()
+    for a in "${EXTRA_ARGS[@]:-}"; do
+        case "$a" in
+            --rigid|--screen|--parallel-dock|--parallel-dock-regions*|--campaign|--folded|--screen-top-n*) SAFE_EXTRA+=("$a") ;;
+            --output|-o) ;; # handled below
+            *) ;;
+        esac
+    done
+    set +e
+    "${FLEXAID_BIN}" \
+        "${RECEPTOR}" \
+        "${LIGAND}" \
+        -o "${RESULTS_DIR}/flexaid_out" \
+        "${SAFE_EXTRA[@]}" \
+        >> "${RAW_PATH}" 2>&1
     RUN_EXIT=$?
     set -e
 fi

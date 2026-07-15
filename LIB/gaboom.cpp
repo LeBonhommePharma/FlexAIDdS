@@ -8,6 +8,7 @@
 #include "MIFGrid.h"
 #include "CavityDetect/SpatialGrid.h"
 #include "RngSeed.h"
+#include "ensemble_pipeline.h"
 
 #include <random>
 #include <functional>
@@ -320,17 +321,19 @@ int GA(FA_Global* FA, GB_Global* GB,VC_Global* VC,chromosome** chrom,chromosome*
 		GB->entropy_check_interval = GA_DEFAULT_ENTROPY_CHECK_INTERVAL;
 	}
 	unsigned int tt;
-	if (GB->seed==0)
-	{
-		tt = static_cast<unsigned int>(time(0));
-	}
-	else
-	{
+	if (GB->seed == 0) {
+		if (flexaids_rng::has_master_seed()) {
+			tt = static_cast<unsigned int>(flexaids_rng::master_seed());
+		} else {
+			tt = static_cast<unsigned int>(time(0));
+		}
+	} else {
 		tt = GB->seed;
 	}
 	//tt = (unsigned)1;
 	printf("srand=%u\n", tt);
 	srand(tt);
+	flexaids_rng::set_master_seed(static_cast<std::uint64_t>(tt));
 	std::mt19937 rng(tt);
 
 	std::uniform_int_distribution<int32_t> one_to_max_int32( 0, MAX_RANDOM_VALUE );
@@ -507,7 +510,7 @@ int GA(FA_Global* FA, GB_Global* GB,VC_Global* VC,chromosome** chrom,chromosome*
 	// Stagnation detection: terminate GA when best fitness stops improving
 	const int STAGNATION_WINDOW = 100;   // check every N generations
 	const int STAGNATION_LIMIT  = 300;   // break after this many stagnant windows
-	double prev_best_fitness = -1e30;  // SMFREE/others: best fitness (higher=better)
+	// prev_best_fitness removed: SMFREE stagnation now tracks CF (evalue), not fit_max
 	// For PSHARE fit_max is always num_chrom (rank 0); track best evalue instead.
 	double prev_best_evalue = 1e30;    // PSHARE: best CF seen (lower=better)
 	int    stagnation_count  = 0;
@@ -574,10 +577,11 @@ int GA(FA_Global* FA, GB_Global* GB,VC_Global* VC,chromosome** chrom,chromosome*
 	////// Genetic Algorithm ///////
 	////////////////////////////////
 
-	// FLEXAIDDS_NO_SEC=1 disables ALL entropy-convergence early-exit paths
-	// (SEC soft/hard/plateau + H-plateau ring buffer) for diagnostic runs.
-	// Docking quality is unchanged; the GA simply runs to max_generations.
-	// Never set this for production benchmarks.
+	// FLEXAIDDS_NO_SEC=1 (or FLEXAIDDS_BENCHMARK=1) disables early-exit paths
+	// (stagnation + entropy/SEC) so the *full* generation budget is always used.
+	// During benchmarking this ensures equal search effort vs other methods.
+	// "Spare" generations after a plateau are used with boosted mutation/exploration
+	// (see stagnation handling) to search conformational space more effectively.
 	const bool no_sec = (std::getenv("FLEXAIDDS_NO_SEC") != nullptr);
 	if (no_sec)
 		fprintf(stderr, "[SEC] All entropy-convergence early exits DISABLED "
@@ -793,25 +797,48 @@ int GA(FA_Global* FA, GB_Global* GB,VC_Global* VC,chromosome** chrom,chromosome*
 		//printf("------fitness stats-------\navg=%8.3f\tmax=%8.3f\n",GB->fit_avg,GB->fit_max);
         //getchar();
 
-		// Stagnation detection: check if best fitness has plateaued
-		if (!no_sec && (i + 1) % STAGNATION_WINDOW == 0 && i > 0) {
-			// v117: PSHARE fit_max is always num_chrom (rank-based); use best evalue instead.
+		// Stagnation detection: track best CF (evalue), not SMFREE fitness.
+		// SMFREE fitness overflows to cap=1000 for all chromosomes immediately
+		// (exp(-CF/kT) underflows for typical CF -50 to -200 kcal/mol at kT=0.596),
+		// so tracking fit_max was a bug: stagnation fired at gen ~100-300 while
+		// gene-space allele_H was still 43-86% — search murdered by saturated proxy.
+		// Fable-5 analysis: preserve _ps discriminator for _tol (PSHARE converges
+		// in sub-kcal increments during late descent; 1e-3 sensitivity is correct there).
+		// Joint termination gate: stagnation only terminates if BOTH CF is stuck AND
+		// gene space has collapsed (sec_may_terminate checks allele_H < 0.300).
+		// For SMFREE+N=1000: allele_H drifts to 0.300 in ~2100 gens (mutation-drift
+		// equilibrium), so 1GPK-class targets (H=0.863) run to gen 2000 — correct.
+		if ((i + 1) % STAGNATION_WINDOW == 0 && i > 0) {
 			const bool _ps = (strcmp(GB->fitness_model,"PSHARE")==0);
-			const double _cur  = _ps ? (*chrom)[0].evalue : GB->fit_max;
-			const double _prev = _ps ? prev_best_evalue   : prev_best_fitness;
-			const double _tol  = _ps ? 1e-3               : 1e-6;
-			if (std::abs(_cur - _prev) < _tol) {
+			const double _cur  = (*chrom)[0].evalue;  // always CF; elitism guarantees monotonic
+			const double _prev = prev_best_evalue;
+			const double _tol  = _ps ? 1e-3 : 1.0;   // SMFREE: 1 kcal/mol (~1.68 kT) threshold
+			const bool stagnant = (_prev - _cur) < _tol;  // improvement = _prev - _cur
+			if (stagnant) {
 				stagnation_count += STAGNATION_WINDOW;
 				if (stagnation_count >= STAGNATION_LIMIT) {
-					printf("GA terminated early: fitness stagnant for %d generations (best=%.4f)\n", stagnation_count, _cur);
-					ga_stagnant = true;
-					break;
+					const bool benchmark_full = (std::getenv("FLEXAIDDS_NO_SEC") != nullptr) || (std::getenv("FLEXAIDDS_BENCHMARK") != nullptr);
+					if (benchmark_full) {
+						printf("GA plateau at gen %d (stagnant %d gens, best_CF=%.4f); "
+						       "BENCHMARK mode: continuing with exploration boost for remaining gens.\n",
+						       i+1, stagnation_count, _cur);
+						GB->mut_rate = std::min(0.25, GB->mut_rate * 3.0);
+						stagnation_count = 0;
+					} else if (sec_may_terminate(i + 1)) {
+						// Joint condition: CF stagnant AND gene space collapsed.
+						// If allele_H is still high (e.g. 0.863 for 1GPK-class targets
+						// under SMFREE+drift), sec_may_terminate defers -> keep running.
+						printf("GA terminated: CF stagnant for %d gens (best_CF=%.4f) "
+						       "with gene-space collapsed\n", stagnation_count, _cur);
+						ga_stagnant = true;
+						break;
+					}
+					// CF stagnant but gene space diverse -> continue search
 				}
 			} else {
 				stagnation_count = 0;
 			}
-			prev_best_fitness = GB->fit_max;
-			if (_ps) prev_best_evalue = (*chrom)[0].evalue;
+			prev_best_evalue = _cur;  // always update (was conditional on _ps)
 		}
 
 		// ── Always-on H plateau early exit ─────────────────────────────────
@@ -2136,9 +2163,10 @@ void calculate_fitness(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* chr
 
 
 	// ── Chromosome evaluation ────────────────────────────────────────────────
-	// Runtime dispatch: CUDA GPU → Metal GPU → OpenMP CPU (thread-safe).
-	// All compiled-in backends are available simultaneously; select_backend()
-	// picks the best one at runtime based on detected hardware.
+	// Runtime dispatch keeps production GA fitness on the CPU/OpenMP path.
+	// The legacy GPU evaluators below remain compiled for explicit experiments,
+	// but default backend selection does not use them until their raw gene
+	// decoding and CF terms match the full ic2cf/vcfunction CPU path.
 
 #if defined(FLEXAIDS_USE_CUDA) || defined(FLEXAIDS_USE_METAL)
 	// Helper lambda: sample each energy-matrix density function at n_samples
@@ -2378,14 +2406,21 @@ void calculate_fitness(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* chr
 		if (!has_normal_modes) {
 			// Atoms in mov[] rebuild lists (ligand + flex sidechain Cartesian)
 			for (int r = 0; r < FA->nors; ++r)
-				for (int m = 0; m < FA->nmov[r]; ++m)
-					dirty_atm.push_back(FA->mov[r][m]);
+				for (int m = 0; m < FA->nmov[r]; ++m) {
+					const int ai = FA->mov[r][m];
+					if (ai >= 1 && ai <= natm) dirty_atm.push_back(ai);
+				}
 			// Atoms directly referenced by map_par (IC fields: dis/ang/dih)
-			for (int p = 0; p < FA->npar; ++p)
-				dirty_atm.push_back(FA->map_par[p].atm);
+			// Direct-mode rigid-body parameters use pseudo indices >= 90000;
+			// those are not entries in atoms[] and must never enter copy lists.
+			for (int p = 0; p < FA->npar; ++p) {
+				const int ai = FA->map_par[p].atm;
+				if (ai >= 1 && ai <= natm) dirty_atm.push_back(ai);
+			}
 			// Cascade dihedral atoms (atoms whose .dih depends on a flex bond)
 			for (int p = 0; p < FA->npar; ++p) {
-				if (FA->map_par[p].typ == 2) {
+				if (FA->map_par[p].typ == 2 &&
+				    FA->map_par[p].atm >= 1 && FA->map_par[p].atm <= natm) {
 					int j = FA->map_par[p].atm;
 					int cat = atoms[j].rec[3];
 					while (cat != 0 && cat != FA->map_par[p].atm) {
@@ -2402,7 +2437,8 @@ void calculate_fitness(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* chr
 
 			// Residue indices with rotamer genes (typ==4 modifies .rot)
 			for (int p = 0; p < FA->npar; ++p) {
-				if (FA->map_par[p].typ == 4)
+				if (FA->map_par[p].typ == 4 &&
+				    FA->map_par[p].atm >= 1 && FA->map_par[p].atm <= natm)
 					dirty_res_idx.push_back(atoms[FA->map_par[p].atm].ofres);
 			}
 			std::sort(dirty_res_idx.begin(), dirty_res_idx.end());
@@ -2490,7 +2526,7 @@ void calculate_fitness(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* chr
 	shared(chrom, pop_size, GB, gene_lim, cleftgrid, target, \
 	       atoms, residue, FA, VC, \
 	       tl_atoms, tl_res, tl_fa, tl_optres, tl_vc, \
-	       natm, nres, nopt, \
+	       natm, nres, nopt, n_receptor_chains, \
 	       use_selective, dirty_atm, dirty_res_idx, n_dirty_atm, n_dirty_res, \
 	       optres_atom_list, n_optres_atoms)
 #endif
@@ -2608,17 +2644,15 @@ void calculate_fitness(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* chr
 	}
 
 	if(strcmp(method,"SMFREE")==0){
-		/* SMFREE — StatMech Free-energy-weighted fitness with niche sharing.
-		   Uses the StatMechEngine to compute Boltzmann weights from the
-		   current population's energies. Fitness blends rank-based fitness
-		   with thermodynamic Boltzmann probability:
-		     fitness_i = [(1-w) * rank_component + w * boltzmann_component] / share_i
-		   where w = entropy_weight ∈ [0,1].
-		   This biases selection toward thermodynamically favorable poses
-		   (low free energy) while maintaining diversity via niche sharing.
+		/* SMFREE — soft-β CF sampling with niche sharing (ensemble layer 3).
+		   Selection uses β_sel = 1/T (same as ACF clustering), NOT physical
+		   1/(kB·T). Niche share is gene-space calc_rmsp. Physical StatMech
+		   compute() is diagnostic only. Reproducibility: same β as election.
 		*/
 		if (FA->temperature > 0) {
 			const double T = static_cast<double>(FA->temperature);
+			double beta_sel = 0.0;
+			(void)ensemble::soft_selection_beta(T, &beta_sel);
 			statmech::StatMechEngine engine(T);
 
 			// Feed all chromosome energies into the engine.
@@ -2684,14 +2718,32 @@ void calculate_fitness(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* chr
 					chrom[pi].fitnes = blended * static_cast<double>(GB->num_chrom) / pshare;
 			}
 
-			// Log ensemble thermodynamics periodically.
+			// Log selection β + thermo periodically (greppable reproducibility audit).
 			if (gen_id % GA_SMFREE_LOG_INTERVAL == 0) {
-				fprintf(stderr, "[SMFREE] gen=%d  F=%.3f  <E>=%.3f  S=%.6f  Cv=%.4f  σ_E=%.3f\n",
-				        gen_id, thermo.free_energy, thermo.mean_energy,
-				        thermo.entropy, thermo.heat_capacity, thermo.std_energy);
+				fprintf(stderr,
+					"[SMFREE] gen=%d  beta_sel=%.6f  T=%.1f  F=%.3f  <E>=%.3f  "
+					"S=%.6f  Cv=%.4f  σ_E=%.3f\n",
+					gen_id, beta_sel, T, thermo.free_energy, thermo.mean_energy,
+					thermo.entropy, thermo.heat_capacity, thermo.std_energy);
 			}
 		} else {
-			// Temperature = 0: fall back to rank-only (same as LINEAR).
+			// Temperature = 0: rank-only. Loud warn — product claims entropy but
+			// sampling is not soft-β (non-reproducible vs T>0 runs).
+			static int smfree_t0_warned = 0;
+			if (!smfree_t0_warned) {
+				smfree_t0_warned = 1;
+				fprintf(stderr,
+					"[SMFREE] WARN: temperature=0 → rank-only fitness "
+					"(no soft-β sampling). Set thermodynamics.temperature>0 "
+					"for reproducible ensemble layer 3 (β=1/T).\n");
+				const char* req = std::getenv("FLEXAIDDS_SMFREE_REQUIRE_T");
+				if (req && (req[0] == '1' || req[0] == 't' || req[0] == 'T'
+				            || req[0] == 'y' || req[0] == 'Y')) {
+					fprintf(stderr,
+						"[SMFREE] FATAL: FLEXAIDDS_SMFREE_REQUIRE_T set and T=0\n");
+					Terminate(2);
+				}
+			}
 			for (i = 0; i < GB->num_chrom; i++) {
 				chrom[i].fitnes = static_cast<double>(GB->num_chrom - i);
 				chrom[i].boltzmann_weight = 0.0;
@@ -2929,7 +2981,9 @@ void populate_chromosomes(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* 
 					chrom[ci].genes[g].to_ic    = ic;
 					chrom[ci].genes[g].to_int32 = ictogene(&gene_lim[g], ic);
 				}
-				ring_randomise_chrom(FA, &chrom[ci]);
+				// Preserve the exact genes that were scored by coarse_init. Ring
+				// randomisation here changed a screened pose after its score was
+				// accepted, breaking the seed-to-gen-0 correspondence.
 				const size_t csig = hash_genes(chrom[ci].genes, GB->num_genes);
 				duplicates[csig] = 1;
 			}
@@ -2944,33 +2998,71 @@ void populate_chromosomes(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* 
 				generate_random_individual(FA,GB,atoms,chrom[i].genes,gene_lim,dice,0,GB->num_genes);
 
 				// ── MIF-weighted or RefLig seeding override for gene 0 ──
+				// Oracle-ceiling / re-dock: when pose_seed_enabled and seed_fraction>0,
+				// inject the crystal IC (gene0=0 + opt_par orientations/torsions) into
+				// the seeded fraction.  Historically this worked when reflig_file was
+				// empty (native_direct_seed).  Modern DatasetRunner always sets
+				// reference_ligand.file to the crystal SDF for RMSD/PB; that must NOT
+				// disable orientation seeding or the seeded fraction stays random
+				// (Astex 1GPK: gen-0 CF≈+32 with no native, hist CF≈−74 with native flood).
+				const int seed_budget = static_cast<int>(
+				    FA->reflig_seed_fraction *
+				    static_cast<float>(GB->num_chrom - popoffset));
+				const bool want_pose_seed =
+				    FA->reflig_pose_seed_enabled &&
+				    FA->opt_par != nullptr &&
+				    FA->map_par != nullptr &&
+				    seed_budget > 0;
 				const bool reflig_seeded =
-				    FA->reflig_nearest_count > 0 &&
-				    i < popoffset + static_cast<int>(FA->reflig_seed_fraction *
-				        static_cast<float>(GB->num_chrom - popoffset));
+				    (FA->reflig_nearest_count > 0 || want_pose_seed) &&
+				    i < popoffset + seed_budget;
 				if (reflig_seeded) {
-					// Direct-mode native fallback: grid index 0 is the input pose
-					// anchor. Keep it exactly so redocking starts from a physically
-					// valid native-like chromosome instead of a nearby clash point.
-					bool native_direct_seed =
-					    FA->reflig_file[0] == '\0' && FA->reflig_hetatm_fallback &&
-					    FA->resligand != NULL && gene_lim[0].min <= 0.0;
+					// Prefer native grid anchor (index 0) whenever the IC frame
+					// allows it and pose seeding is on.  Nearest-grid cycling is a
+					// fallback only when gene0 cannot be 0 (or pose seed is off).
+					const bool native_direct_seed =
+					    FA->resligand != NULL && gene_lim[0].min <= 0.0 &&
+					    (FA->reflig_file[0] == '\0' || FA->reflig_pose_seed_enabled);
 					int grid_idx = 0;
-					if (!native_direct_seed) {
-						// Explicit RefLig seeding: distribute K nearest grid points.
+					if (!native_direct_seed && FA->reflig_nearest_count > 0 &&
+					    FA->reflig_nearest_grid) {
+						// Explicit RefLig grid bias without native pose seed.
 						int k = (i - popoffset) % FA->reflig_nearest_count;
 						grid_idx = FA->reflig_nearest_grid[k];
 					}
 					chrom[i].genes[0].to_ic = static_cast<double>(grid_idx);
 					chrom[i].genes[0].to_int32 = ictogene(&gene_lim[0],
 					                                       static_cast<double>(grid_idx));
-					for (int g = 1; FA->reflig_pose_seed_enabled && g < GB->num_genes; g++) {
-						if (!FA->map_par || !FA->opt_par) break;
-						if (FA->map_par[g].typ == 1 || FA->map_par[g].typ == 2) {
+					if (want_pose_seed) {
+						for (int g = 1; g < GB->num_genes; g++) {
+							// typ: -1 translation (gene0 only), 1 angle, 2 dihedral,
+							// 3 normal mode (skip), 4 other special.
+							const int typ = FA->map_par[g].typ;
+							if (typ == 3) continue;
 							double ref_ic = FA->opt_par[g];
+							// Tiny per-chromosome jitter keeps near-native diversity
+							// when GB->duplicates is off, without leaving the basin.
+							if (i > popoffset && (typ == 1 || typ == 2)) {
+								const double jitter =
+								    (static_cast<int>(dice() % 5) - 2) * 0.25; // −0.5..0.5°
+								ref_ic += jitter;
+							}
 							chrom[i].genes[g].to_ic = ref_ic;
-							chrom[i].genes[g].to_int32 = ictogene(&gene_lim[g], ref_ic);
+							chrom[i].genes[g].to_int32 =
+							    ictogene(&gene_lim[g], ref_ic);
 						}
+					}
+					if (i == popoffset) {
+						printf("[REFLIG-SEED] native_anchor=%d pose_seed=%d frac=%.2f "
+						       "budget=%d nearest=%d ngenes=%d first=(",
+						       native_direct_seed ? 1 : 0,
+						       FA->reflig_pose_seed_enabled,
+						       FA->reflig_seed_fraction, seed_budget,
+						       FA->reflig_nearest_count, GB->num_genes);
+						for (int g = 0; g < GB->num_genes && g < 8; g++)
+							printf("%s%.3f", g ? "," : "",
+							       chrom[i].genes[g].to_ic);
+						printf(")\n");
 					}
 				} else if (FA->mif_enabled && FA->mif_cdf && FA->mif_count > 0) {
 					// MIF-weighted Boltzmann sampling
@@ -2983,51 +3075,7 @@ void populate_chromosomes(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* 
 					chrom[i].genes[0].to_ic = static_cast<double>(grid_idx);
 					chrom[i].genes[0].to_int32 = ictogene(&gene_lim[0],
 					                                       static_cast<double>(grid_idx));
-				} else if (FA->num_grd > 0) {
-					// ── Cleft-biased GPA0 seeding ──────────────────────────────────
-					// Seed gene[0] (rigid-body grid index) near cleftgrid[0], the
-					// highest Voronoi contact density point.  Box-Muller Gaussian
-					// with σ = max(3, num_grd/10) indices ≈ 2 Å spread across the
-					// pocket.  Dramatically reduces the 479 k clashes/run caused by
-					// blind uniform placement.  Chromosomes that still clash receive
-					// the OOB penalty as normal and die through selection pressure.
-					//
-					// v58 rigid multi-seed: low-DoF ligands (num_genes≤7) collapse to
-					// a single placement without diverse gene[0] seeds.  Dedicate the
-					// first N chromosomes to evenly spaced cleft grid indices with
-					// small jitter so rigid targets explore multiple pocket poses.
-					const int pop_idx   = i - popoffset;
-					const int pop_span  = GB->num_chrom - popoffset;
-					const bool rigid_lig = (GB->num_genes <= 7);
-					int rigid_n_seeds = 8;
-					if (const char* env_rs = std::getenv("FLEXAIDDS_RIGID_MULTI_SEED"))
-						rigid_n_seeds = std::max(1, std::atoi(env_rs));
-					rigid_n_seeds = std::min({rigid_n_seeds, FA->num_grd, pop_span});
-
-					int grid_idx = 0;
-					if (rigid_lig && rigid_n_seeds > 1 && pop_idx < rigid_n_seeds) {
-						const int base = (pop_idx * FA->num_grd) / rigid_n_seeds;
-						const int jitter = static_cast<int>(dice() % 5) - 2;
-						grid_idx = std::clamp(base + jitter, 0, FA->num_grd - 1);
-					} else {
-						const int sigma_idx = std::max(3, FA->num_grd / 10);
-						const double u1 = std::max(1e-10, RandomDouble(dice()));
-						const double u2 = RandomDouble(dice());
-						// Box-Muller N(0,1) → N(0, sigma_idx)
-						const double z = std::sqrt(-2.0 * std::log(u1))
-						                 * std::cos(2.0 * M_PI * u2);
-						grid_idx = std::clamp(
-						    static_cast<int>(std::round(z * sigma_idx)),
-						    0, FA->num_grd - 1);
 					}
-					chrom[i].genes[0].to_ic    = static_cast<double>(grid_idx);
-					chrom[i].genes[0].to_int32 = ictogene(&gene_lim[0],
-					                                       static_cast<double>(grid_idx));
-					if (rigid_lig && pop_idx == 0 && rigid_n_seeds > 1) {
-						printf("v58 rigid multi-seed: num_genes=%d, N=%d placements\n",
-						       GB->num_genes, rigid_n_seeds);
-					}
-				}
 
 				sig = hash_genes(chrom[i].genes,GB->num_genes);
 				if(reflig_seeded || GB->duplicates || duplicates.find(sig) == duplicates.end()){
@@ -3151,12 +3199,17 @@ void populate_chromosomes(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* 
 		std::vector<int> p_dirty_res_idx;
 		if (!p_has_normal_modes) {
 			for (int r = 0; r < FA->nors; ++r)
-				for (int m = 0; m < FA->nmov[r]; ++m)
-					p_dirty_atm.push_back(FA->mov[r][m]);
-			for (int p = 0; p < FA->npar; ++p)
-				p_dirty_atm.push_back(FA->map_par[p].atm);
+				for (int m = 0; m < FA->nmov[r]; ++m) {
+					const int ai = FA->mov[r][m];
+					if (ai >= 1 && ai <= natm) p_dirty_atm.push_back(ai);
+				}
 			for (int p = 0; p < FA->npar; ++p) {
-				if (FA->map_par[p].typ == 2) {
+				const int ai = FA->map_par[p].atm;
+				if (ai >= 1 && ai <= natm) p_dirty_atm.push_back(ai);
+			}
+			for (int p = 0; p < FA->npar; ++p) {
+				if (FA->map_par[p].typ == 2 &&
+				    FA->map_par[p].atm >= 1 && FA->map_par[p].atm <= natm) {
 					int j = FA->map_par[p].atm;
 					int cat = atoms[j].rec[3];
 					while (cat != 0 && cat != FA->map_par[p].atm) {
@@ -3170,7 +3223,8 @@ void populate_chromosomes(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* 
 			p_dirty_atm.erase(std::unique(p_dirty_atm.begin(), p_dirty_atm.end()),
 			                   p_dirty_atm.end());
 			for (int p = 0; p < FA->npar; ++p) {
-				if (FA->map_par[p].typ == 4)
+				if (FA->map_par[p].typ == 4 &&
+				    FA->map_par[p].atm >= 1 && FA->map_par[p].atm <= natm)
 					p_dirty_res_idx.push_back(atoms[FA->map_par[p].atm].ofres);
 			}
 			std::sort(p_dirty_res_idx.begin(), p_dirty_res_idx.end());
@@ -3187,7 +3241,8 @@ void populate_chromosomes(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* 
 #pragma omp parallel for schedule(dynamic) default(none) \
 	shared(chrom, FA, GB, VC, gene_lim, atoms, residue, cleftgrid, target, \
 	       popoffset, p_atoms, p_res, p_fa, p_optres, p_vc, natm, nres, nopt, \
-	       p_use_selective, p_dirty_atm, p_dirty_res_idx, p_n_dirty_atm, p_n_dirty_res)
+	       n_receptor_chains, p_use_selective, p_dirty_atm, p_dirty_res_idx, \
+	       p_n_dirty_atm, p_n_dirty_res)
 #endif
 		for(i=popoffset;i<GB->num_chrom;i++){
 #ifdef _OPENMP
@@ -4015,8 +4070,7 @@ double RandomDouble(int32_t gene){
 }
 
 double RandomDouble(){
-	// Thread-safe RNG (replaces non-reentrant rand())
-	thread_local std::mt19937 tl_rng = flexaids_rng::make_thread_rng(0x9A800DULL);
+	// Thread-safe RNG tied to ga.seed / FLEXAID_SEED via lazy_thread_rng.
 	std::uniform_real_distribution<double> dist(0.0, 1.0);
-	return dist(tl_rng);
+	return dist(flexaids_rng::lazy_thread_rng(0x9A800DULL));
 }

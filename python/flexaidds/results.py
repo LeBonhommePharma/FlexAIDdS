@@ -17,12 +17,16 @@ from __future__ import annotations
 
 from collections import defaultdict
 from pathlib import Path
-from typing import Dict, Iterable, List, Optional, Sequence
+from typing import Dict, Iterable, List, Optional, Sequence, Tuple
 
 from .io import parse_pose_result
 from .models import BindingModeResult, DockingResult, PoseResult
+from .thermodynamics import StatMechEngine
 
 _PDB_SUFFIXES = {".pdb", ".ent"}
+# Default temperature when REMARKs omit T (K). Used only for labelled
+# ensemble-estimate recompute from CF proxy energies.
+_DEFAULT_RECOMPUTE_T = 300.0
 
 
 def _collect_pose_files(root: Path) -> List[Path]:
@@ -106,11 +110,46 @@ def _mode_metadata(poses: Sequence[PoseResult]) -> Dict[str, object]:
     return meta
 
 
+def _recompute_thermo_from_cf(
+    poses: Sequence[PoseResult],
+    temperature: float,
+) -> Optional[Tuple[float, float, float, float, float]]:
+    """Recompute ensemble F/H/S/Cv from pose CF values via StatMechEngine.
+
+    This is an **ensemble estimate from the CF/contact-function scoring proxy**,
+    not a full thermodynamic ledger with vibrational/solvent corrections.
+    Returns ``(F, H, S, Cv, std_E)`` or ``None`` if fewer than one CF sample.
+    """
+    energies = []
+    for pose in poses:
+        if pose.cf is not None:
+            energies.append(float(pose.cf))
+        elif pose.cf_app is not None:
+            energies.append(float(pose.cf_app))
+    if not energies:
+        return None
+    if temperature is None or temperature <= 0.0:
+        temperature = _DEFAULT_RECOMPUTE_T
+    engine = StatMechEngine(float(temperature))
+    for e in energies:
+        engine.add_sample(e)
+    td = engine.compute()
+    return (
+        float(td.free_energy),
+        float(td.mean_energy),
+        float(td.entropy),
+        float(td.heat_capacity),
+        float(td.std_energy),
+    )
+
+
 def _build_mode(mode_id: int, poses: Sequence[PoseResult], rank: int = 1) -> BindingModeResult:
     """Construct a :class:`BindingModeResult` from a flat list of poses.
 
     Poses are sorted by ``(pose_rank, filename)`` and thermodynamic
     aggregates are extracted from the first pose that carries each field.
+    When F/H/S REMARKs are missing, recompute from pose CF ensemble and
+    label metadata as ``ensemble_estimate_from_cf``.
 
     Args:
         mode_id: Numeric binding-mode identifier.
@@ -128,19 +167,50 @@ def _build_mode(mode_id: int, poses: Sequence[PoseResult], rank: int = 1) -> Bin
     elif ordered:
         best_pose = ordered[0]
 
+    free_energy = _mode_metric(ordered, "free_energy")
+    enthalpy = _mode_metric(ordered, "enthalpy")
+    entropy = _mode_metric(ordered, "entropy")
+    heat_capacity = _mode_metric(ordered, "heat_capacity")
+    std_energy = _mode_metric(ordered, "std_energy")
+    temperature = _mode_temperature(ordered)
+    metadata = _mode_metadata(ordered)
+
+    ledger_source = "engine_remark" if free_energy is not None else "missing"
+    if free_energy is None:
+        # Use REMARK T when present; otherwise default only for recompute math.
+        # Do not invent mode.temperature when REMARKs omit T.
+        T_recompute = temperature if temperature is not None else _DEFAULT_RECOMPUTE_T
+        recomputed = _recompute_thermo_from_cf(ordered, T_recompute)
+        if recomputed is not None:
+            free_energy, enthalpy, entropy, heat_capacity, std_energy = recomputed
+            ledger_source = "ensemble_estimate_from_cf"
+            metadata = dict(metadata)
+            metadata["ledger_source"] = ledger_source
+            metadata["recompute_temperature"] = T_recompute
+            metadata["ledger_note"] = (
+                "ensemble estimate from CF proxy via pure-Python StatMech; "
+                "not a full vib/solvent thermodynamic ledger"
+            )
+        else:
+            metadata = dict(metadata)
+            metadata["ledger_source"] = "missing"
+    else:
+        metadata = dict(metadata)
+        metadata["ledger_source"] = ledger_source
+
     return BindingModeResult(
         mode_id=mode_id,
         rank=rank,
         poses=list(ordered),
-        free_energy=_mode_metric(ordered, "free_energy"),
-        enthalpy=_mode_metric(ordered, "enthalpy"),
-        entropy=_mode_metric(ordered, "entropy"),
-        heat_capacity=_mode_metric(ordered, "heat_capacity"),
-        std_energy=_mode_metric(ordered, "std_energy"),
+        free_energy=free_energy,
+        enthalpy=enthalpy,
+        entropy=entropy,
+        heat_capacity=heat_capacity,
+        std_energy=std_energy,
         best_cf=best_pose.cf if best_pose else None,
         frequency=_mode_frequency(ordered),
-        temperature=_mode_temperature(ordered),
-        metadata=_mode_metadata(ordered),
+        temperature=temperature,
+        metadata=metadata,
     )
 
 

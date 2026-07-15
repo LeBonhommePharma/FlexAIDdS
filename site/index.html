@@ -77,6 +77,77 @@ body::before {
 body, .nav, .hero-lede, .hero-sub { font-family: 'IBM Plex Sans', system-ui, -apple-system, sans-serif; }
 
 /* Ensure distinction: root is editorial RED brand, /FlexAIDdS is teal scientific product */
+
+/* ── Hero comp-chem structure enhancements (scoped to landing) ───────── */
+.hero-thermo-legend {
+  position: relative; z-index: 2; list-style: none;
+  display: flex; flex-wrap: wrap; justify-content: center; gap: 1.1rem 1.75rem;
+  margin: 1rem auto 0; padding: 0; max-width: 620px;
+}
+.hero-thermo-legend li { display: flex; align-items: baseline; gap: 0.5rem; }
+.hero-thermo-legend .tk {
+  font-family: var(--mono); font-weight: 700; font-size: 0.95rem; letter-spacing: 0.02em;
+}
+.hero-thermo-legend .tk.dg  { color: #FBBF24; }
+.hero-thermo-legend .tk.dh  { color: #22D3EE; }
+.hero-thermo-legend .tk.tds { color: #A78BFA; }
+.hero-thermo-legend .tl {
+  font-family: var(--mono); font-size: 10px; letter-spacing: 0.16em;
+  text-transform: uppercase; color: var(--text-faint);
+}
+
+.hero-pipeline {
+  position: relative; z-index: 2; list-style: none;
+  display: flex; flex-wrap: wrap; align-items: stretch; justify-content: center;
+  gap: 0.55rem; margin: 2.5rem auto 0; padding: 0; max-width: 760px;
+}
+.hero-pipeline > li:not(.pipe-arrow) {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 2px;
+  padding: 0.6rem 0.95rem; min-width: 128px;
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  background: linear-gradient(180deg, rgba(220,38,38,0.05), rgba(13,16,24,0.55));
+  transition: border-color 0.18s ease, transform 0.18s ease, box-shadow 0.18s ease;
+}
+.hero-pipeline > li:not(.pipe-arrow):hover {
+  border-color: var(--red);
+  transform: translateY(-2px);
+  box-shadow: 0 6px 22px rgba(220,38,38,0.14);
+}
+.hero-pipeline .pi {
+  font-family: var(--mono); font-size: 9px; letter-spacing: 0.28em;
+  color: var(--red-bright); opacity: 0.85;
+}
+.hero-pipeline .pn {
+  font-family: var(--mono); font-weight: 700; font-size: 1rem; color: var(--text);
+}
+.hero-pipeline .pd {
+  font-size: 11px; color: var(--text-muted); line-height: 1.35;
+}
+.hero-pipeline .pipe-arrow {
+  display: flex; align-items: center; color: var(--text-faint);
+  font-size: 1.1rem; padding: 0 0.15rem;
+}
+
+.hero-method-chips {
+  position: relative; z-index: 2; list-style: none;
+  display: flex; flex-wrap: wrap; justify-content: center; gap: 0.5rem;
+  margin: 1.5rem auto 0; padding: 0; max-width: 640px;
+}
+.hero-method-chips li {
+  font-family: var(--mono); font-size: 10px; letter-spacing: 0.14em;
+  text-transform: uppercase; color: var(--text-muted);
+  padding: 5px 11px; border: 1px solid var(--border);
+  border-radius: 999px; background: rgba(220,38,38,0.04);
+}
+
+@media (max-width: 560px) {
+  .hero-pipeline .pipe-arrow { display: none; }
+  .hero-pipeline > li:not(.pipe-arrow) { flex: 1 1 44%; min-width: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .hero-pipeline > li:not(.pipe-arrow):hover { transform: none; }
+}
 </style>
 
 <script src="assets/flexaid-logo.js"></script>
@@ -827,6 +898,28 @@ section { position: relative; z-index: 1; }
   <div class="hero-equation" aria-label="The equation at the core">
     <span class="dg">ΔG</span> = <span class="dh">ΔH</span> − <span class="tds">TΔS</span>
   </div>
+  <ul class="hero-thermo-legend" aria-label="Thermodynamic decomposition of binding">
+    <li><span class="tk dg">ΔG</span><span class="tl">free energy of binding</span></li>
+    <li><span class="tk dh">ΔH</span><span class="tl">enthalpy · contacts</span></li>
+    <li><span class="tk tds">TΔS</span><span class="tl">entropy · flexibility</span></li>
+  </ul>
+
+  <ol class="hero-pipeline" aria-label="Computational docking pipeline">
+    <li><span class="pi">01</span><span class="pn">Target</span><span class="pd">binding-site cleft</span></li>
+    <li aria-hidden="true" class="pipe-arrow">▸</li>
+    <li><span class="pi">02</span><span class="pn">Dock</span><span class="pd">GA conformational search</span></li>
+    <li aria-hidden="true" class="pipe-arrow">▸</li>
+    <li><span class="pi">03</span><span class="pn">Score</span><span class="pd">soft complementarity</span></li>
+    <li aria-hidden="true" class="pipe-arrow">▸</li>
+    <li><span class="pi">04</span><span class="pn">Rank</span><span class="pd">pose &amp; affinity</span></li>
+  </ol>
+
+  <ul class="hero-method-chips" aria-label="Scoring-function characteristics">
+    <li>soft scoring</li>
+    <li>surface complementarity</li>
+    <li>side-chain flexibility</li>
+    <li>open-source</li>
+  </ul>
 </header>
 
 <main>
@@ -1375,10 +1468,10 @@ section { position: relative; z-index: 1; }
 </script>
 
 <!-- Hidden stat markers for stats updater / JS (keeps the site stats system working) -->
-<span id="stat-commits" hidden>1561</span>
-<span id="stat-langs" hidden>14</span>
+<span id="stat-commits" hidden>1744</span>
+<span id="stat-langs" hidden>15</span>
 <span id="stat-stars" hidden>9</span>
-<span id="last-updated" hidden>2026-06-23</span>
+<span id="last-updated" hidden>2026-07-14</span>
 <span id="latest-release" hidden>v2.0.0</span>
 
 </body>

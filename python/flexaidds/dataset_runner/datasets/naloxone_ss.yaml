@@ -1,0 +1,29 @@
+# Naloxone Repurposing for Serotonin Syndrome (Python dataset runner copy)
+# Mirrors benchmarks/datasets/naloxone_ss.yaml for the flexaidds DatasetRunner / campaigns.
+
+slug: naloxone_ss
+name: "Naloxone SS Repurposing"
+description: >
+  5-HT focused repurposing set for Naloxone ideas in Serotonin Syndrome.
+  Uses entropy collapse, thermodynamic integration, PoseBusters validation.
+
+targets:
+  - 5HT2A
+  - 5HT2C
+  - SERT
+  - 5HT6
+  - D2R
+
+ligand_files:
+  - naloxone.sdf
+
+metrics:
+  - entropy_rescue_rate
+  - shannon_energy_collapse
+  - posebusters_pass_rate
+  - g_bind
+
+notes: |
+  Primary targets for SS: 5-HT2A driven. Compare entropy signatures.
+  See benchmarks/datasets/naloxone_ss.yaml for full spec + example commands.
+  Requires ligands/naloxone.sdf (rdkit-generated 3D).

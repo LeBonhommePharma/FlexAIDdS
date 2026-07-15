@@ -1,0 +1,66 @@
+{% set name = "flexaidds" %}
+{% set version = "2.0.0" %}
+
+package:
+  name: {{ name|lower }}
+  version: {{ version }}
+
+source:
+  path: ..
+
+build:
+  number: 0
+  # We build the Python package (which optionally compiles the pybind11 _core extension)
+  script: "{{ PYTHON }} -m pip install ./python -vv --no-deps --no-build-isolation"
+  # The extension is optional at runtime (package has pure-Python fallbacks)
+  ignore_run_exports:
+    - libeigen
+
+requirements:
+  build:
+    - {{ compiler('c') }}
+    - {{ compiler('cxx') }}
+    - cmake
+    - ninja  # [not win]
+    - pybind11
+    - eigen
+    - python
+    - pip
+    - setuptools >=82
+    - wheel
+  host:
+    - python
+    - pybind11
+    - eigen
+    - pip
+    - setuptools
+  run:
+    - python
+    - numpy
+    - pyyaml
+    - scipy
+    # The C++ extension (if built) is a separate .so; no strict run dep on eigen needed at runtime for most paths
+
+test:
+  imports:
+    - flexaidds
+  commands:
+    - python -c "import flexaidds as fd; print('flexaidds', fd.__version__); print('HAS_CORE_BINDINGS=', getattr(fd, 'HAS_CORE_BINDINGS', False))"
+    - python -m flexaidds --help || python -c "from flexaidds.__main__ import main; print('CLI entry present')"
+
+about:
+  home: https://github.com/LeBonhommePharma/FlexAIDdS
+  license: Apache-2.0
+  license_file: LICENSE
+  summary: "Python package for FlexAID∆S (entropy-driven molecular docking + thermodynamic analysis)"
+  description: |
+    flexaidds provides Python bindings and high-level tools for the FlexAID∆S
+    docking engine. It includes result loading, statistical mechanics
+    (partition functions, free energy, entropy), docking data models,
+    and optional C++ accelerated components built via pybind11.
+  doc_url: https://github.com/LeBonhommePharma/FlexAIDdS/tree/master/docs
+  dev_url: https://github.com/LeBonhommePharma/FlexAIDdS
+
+extra:
+  recipe-maintainers:
+    - LeBonhommePharma

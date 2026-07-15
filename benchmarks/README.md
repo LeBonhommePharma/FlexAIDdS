@@ -26,6 +26,7 @@ benchmarks/
 │   ├── dude37.yaml       # DUD-E 37-target cross-docking
 │   ├── lsd_docking.yaml  # lsd.docking.org 11-target prospective
 │   ├── psychopharm23.yaml # NRGlab 23 CNS targets
+   ├── naloxone_ss.yaml  # Naloxone repurposing for Serotonin Syndrome (5-HT2A/SERT focus + entropy collapse)
 │   ├── muv.yaml          # MUV 17-target unbiased VS
 │   └── erds_specificity.yaml  # ERDS Z-score specificity
 └── smoke/                # Lightweight smoke validation (CI sanity)

@@ -445,7 +445,7 @@ print(f"S_vib = {result.torsionalVibEntropy:.6f} kcal/(mol·K)")
 2. Select the `pymol_plugin/` directory
 3. Restart PyMOL — access via Plugin → FlexAID∆S
 
-Requires: `pip install -e python/`
+Requires: `pip install -e ./python`
 
 ### Commands
 
