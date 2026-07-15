@@ -72,6 +72,11 @@ GEN="$REPO/scripts/generate_flexaid_inp.py"
 PARSE="$REPO/scripts/parse_flexaid_arm_results.py"
 
 OUT="${FLEXAID_ARM_OUT:-$FLEXAIDDS_RESULTS/campaigns/three_engine/$ARM/pilot8}"
+# Smoke must NEVER share pilot8 OUT (skip would keep tiny-GA result.csv).
+if (( SMOKE )) && [[ -z "${FLEXAID_ARM_OUT:-}" ]]; then
+  OUT="$FLEXAIDDS_RESULTS/campaigns/three_engine/$ARM/smoke"
+fi
+
 WORK_ROOT="${FLEXAID_WORK_ROOT:-$Q/work}"
 LOGDIR="$Q/logs"
 mkdir -p "$OUT" "$LOGDIR" "$WORK_ROOT" "$FLEXAIDDS_RESULTS/campaigns/three_engine/$ARM"
@@ -205,6 +210,15 @@ run_one() {
   local odir="$OUT/$pdb"
   mkdir -p "$odir"
   if [[ -f "$odir/result.csv" && "$FORCE" -eq 0 ]]; then
+    # Refuse skip when existing receipt is smoke-budget (prevents contamination)
+    if [[ -f "$odir/RUN_RECEIPT.json" ]] && grep -q '"smoke"[[:space:]]*:[[:space:]]*true' "$odir/RUN_RECEIPT.json" 2>/dev/null; then
+      echo "REFUSE SKIP $ARM/$pdb: existing result is smoke-budget — use --force or remove $odir"
+      return 1
+    fi
+    if (( ! SMOKE )) && [[ -f "$odir/meta.json" ]] && grep -q '"smoke"[[:space:]]*:[[:space:]]*true' "$odir/meta.json" 2>/dev/null; then
+      echo "REFUSE SKIP $ARM/$pdb: meta marks smoke — use --force or remove $odir"
+      return 1
+    fi
     echo "SKIP $ARM/$pdb (result.csv exists)"
     return 0
   fi
