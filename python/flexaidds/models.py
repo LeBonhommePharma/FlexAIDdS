@@ -43,12 +43,14 @@ class PoseResult:
         path: Absolute path to the PDB file on disk.
         mode_id: Binding-mode (cluster) index this pose belongs to.
         pose_rank: Rank of this pose within its binding mode (1-based).
-        cf: NATURaL complementarity-function score (kcal/mol). Lower is better.
-        cf_app: Apparent CF score after grid-approximation correction (kcal/mol).
+        cf: CF/contact-function scoring proxy (Voronoi CF). Lower is better.
+            Not a free energy or experimental ΔG.
+        cf_app: Apparent CF scoring proxy after grid-approximation correction.
         rmsd_raw: RMSD to reference structure without symmetry correction (Å).
         rmsd_sym: Symmetry-corrected RMSD to reference structure (Å).
-        free_energy: Helmholtz free energy F = H − TS (kcal/mol), if present
-            in the PDB REMARK section.
+        free_energy: Ensemble Helmholtz free energy estimate F = H − TS (kcal/mol),
+            if present in the PDB REMARK section. Not experimental ΔG_bind unless
+            the full validated ledger path applies.
         enthalpy: Boltzmann-weighted average energy ⟨E⟩ (kcal/mol).
         entropy: Configurational entropy S = (⟨E⟩ − F) / T
             (kcal mol⁻¹ K⁻¹).
@@ -137,14 +139,17 @@ class BindingModeResult:
 
     Attributes:
         mode_id: Unique integer identifier for this binding mode.
-        rank: Rank of this mode among all modes (1 = best free energy).
+        rank: Rank of this mode among all modes (1 = best ensemble F estimate).
         poses: Ordered list of individual poses belonging to this mode.
-        free_energy: Helmholtz free energy F (kcal/mol) for the mode ensemble.
-        enthalpy: Boltzmann-weighted mean energy ⟨E⟩ (kcal/mol).
+        free_energy: Ensemble Helmholtz free energy estimate F (kcal/mol) for the
+            mode ensemble — not experimental binding free energy ΔG unless the
+            full validated ledger path applies.
+        enthalpy: Boltzmann-weighted mean energy ⟨E⟩ (kcal/mol; CF-proxy ensemble).
         entropy: Configurational entropy S (kcal mol⁻¹ K⁻¹).
         heat_capacity: Ensemble heat capacity Cv (kcal mol⁻¹ K⁻²).
         std_energy: Standard deviation of ensemble energies σ_E (kcal/mol).
-        best_cf: Lowest (most favourable) individual CF score within the mode.
+        best_cf: Lowest (most favourable) individual CF/contact-function scoring
+            proxy within the mode (not free energy).
         frequency: Number of GA chromosomes assigned to this mode; proportional
             to Boltzmann population weight.
         temperature: Simulation temperature (K) associated with this mode.

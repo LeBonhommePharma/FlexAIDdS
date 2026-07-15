@@ -321,19 +321,22 @@ TEST(TargetServer, ConcurrentRegistration) {
 //
 // Conversion matches DatasetRunner.cpp:
 //   log_Z = −predicted_dG / (kB_kcal · T)
-// where predicted_dG is taken from each entry's best-pose total_score.
+// where predicted_dG is the ensemble F estimate when available; these tier-1
+// fixtures use best-pose total_score (CF scoring proxy) as a stand-in for that
+// session energy — not experimental binding free energy.
 // ════════════════════════════════════════════════════════════════════════
 
 namespace {
 
 struct AstexPose {
     double rmsd = 0.0;
-    double total_score = 0.0;  // CF-style score in artifact (kcal/mol proxy)
+    double total_score = 0.0;  // CF/contact-function scoring proxy in artifact
 };
 
 struct AstexTier1Entry {
     std::string pdb_id;
-    double predicted_dG = 0.0;  // kcal/mol from score-selected pose
+    // Session energy for grand-PF (F estimate or CF stand-in); not exp. ΔG
+    double predicted_dG = 0.0;
     std::vector<AstexPose> poses;
     bool ok = false;
 };
@@ -410,7 +413,8 @@ static bool parse_astex_tier1_json(const std::filesystem::path& path,
         out.poses.push_back({rmsds[i], scores[i]});
     }
 
-    // DatasetRunner uses best CF score as predicted_dG for log_Z.
+    // Fixture path: use best CF proxy as predicted_dG stand-in for log_Z
+    // (production may prefer ensemble F when the ledger is present).
     auto best = select_pose_without_gce(out);
     out.predicted_dG = best.total_score;
     out.ok = true;

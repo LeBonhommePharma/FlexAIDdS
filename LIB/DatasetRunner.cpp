@@ -6480,12 +6480,14 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
              config.mode == BenchmarkMode::AUTONOMOUS ||
              config.mode == BenchmarkMode::DEFINED_CLEFT_REDOCK) ? 0 : -1;
 
-        // ── best_score: report the EMITTED pose CF, not the stdout-trace min ──
-        // The stdout GA trace ("... cf=...") includes the gen-0 seeded population.
-        // With seed_fraction≈0.90 those seeded chromosomes start AT the crystal
-        // pose, so min(cf= over stdout) collapses onto cf_native — best_score
-        // ends up echoing the crystal score rather than the GA's emitted result
-        // (see project_pose_emission_blowup / project_vct_degeneracy_is_conflation).
+        // ── best_score: CF/contact-function scoring proxy of the EMITTED pose ──
+        // CSV column `best_score` is the Voronoi CF of the elected pose (NOT free
+        // energy / ΔG). Prefer the emitted REMARK CF, not the stdout-trace min:
+        // the GA trace ("... cf=...") includes the gen-0 seeded population. With
+        // seed_fraction≈0.90 those seeded chromosomes start AT the crystal pose,
+        // so min(cf= over stdout) collapses onto cf_native — best_score would echo
+        // the crystal score rather than the GA's emitted result (see
+        // project_pose_emission_blowup / project_vct_degeneracy_is_conflation).
         // After the P0 emission fix (920609d) each emitted rank pose carries a
         // valid "REMARK CF=" (its app_evalue). Report the CF of the SAME pose the
         // frequency-gated selector (Fix B) picks for the RMSD, so best_score and
@@ -6500,7 +6502,7 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
 
         if (!std::isfinite(best_cf)) best_cf = 0.0f;
         result.num_poses = n_poses;
-        result.best_score = best_cf;
+        result.best_score = best_cf;  // CF proxy; column name is historical
 
         // ── Fix 2 (revised): seed-echo detection ────────────────────────
         // Moved to the pose-election site below (after best_pose_pdb is
@@ -6508,7 +6510,9 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
         // path ending in "_INI.pdb" → ini_elitism; anything else → ga_cluster.
         // The old CF-tolerance ±0.01 missed cases like 1SJ0 (diff=0.17).
         result.seed_echo = false;   // overwritten below once best_pose_pdb is known
-        // Use Free energy F from Post-GA thermodynamics block; fall back to CF score.
+        // predicted_dG CSV column: ensemble F estimate when Post-GA Helmholtz F
+        // is available; otherwise best_dG parse or CF fallback. NOT experimental
+        // binding free energy ΔG unless the full validated ledger path applies.
         result.predicted_dG = have_free_energy ? free_energy_F
                             : (best_dG != 0.0f) ? best_dG
                                                 : best_cf;
@@ -6528,10 +6532,10 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
             result.shannon_entropy = h_final_parsed;
         }
 
-        // Configurational thermodynamic decomposition:
-        //   ΔG = F
-        //   ΔH ≈ <E>
-        //   TΔS = <E> - F = T * S_conf = kBT * H_conf
+        // Configurational thermodynamic ledger (ensemble estimates, not exp. ΔG):
+        //   F_est ≈ Helmholtz F from StatMech (stored in predicted_dG column)
+        //   ΔH_est ≈ <E>
+        //   TΔS_est = <E> - F = T * S_conf = kBT * H_conf
         const float temperature_K = static_cast<float>(config.temperature);
         const float kBT = static_cast<float>(statmech::kB_kcal) * temperature_K;
         if (have_free_energy && have_mean_energy) {
@@ -7498,8 +7502,10 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                 auto& sess = sessions[idx];
                 sess.completed = true;
                 sess.n_poses = result.num_poses;
+                // best_energy / log_Z use predicted_dG (ensemble F estimate, or CF
+                // fallback when the ledger is absent) — not experimental ΔG_bind.
                 sess.best_energy = static_cast<double>(result.predicted_dG);
-                // log_Z = -ΔG / (kT)  — partition function contribution
+                // log_Z = -F_est / (kT)  — grand-PF contribution from session energy
                 sess.log_Z = -static_cast<double>(result.predicted_dG) /
                              (statmech::kB_kcal * static_cast<double>(config.temperature));
                 // TODO: best_center requires pose CoM from BindingMode clustering
@@ -7822,9 +7828,16 @@ void DatasetRunner::write_report(const BenchmarkReport& report,
         ofs << "\n";
 
         // Per-system results table
+        // Column semantics (CSV names kept for campaign compatibility):
+        //   CF (best_score) = Voronoi CF scoring proxy of elected pose — NOT ΔG
+        //   F_est (predicted_dG) = ensemble free-energy estimate or CF fallback
+        //   ΔH_est / TΔS_est = configurational ledger proxies when available
         ofs << "## Per-System Results\n\n";
-        ofs << "| PDB | Score | RMSD (Å) | RMSD_H (Å) | ΔG | ΔH | TΔS | I_EE | H_conf | H_search | Poses | Time (s) | Success |\n";
-        ofs << "|-----|-------|----------|------------|-----|-----|------|------|--------|----------|-------|----------|--------|\n";
+        ofs << "Column notes: **CF** = `best_score` (contact-function scoring proxy, not free energy); "
+               "**F_est** = `predicted_dG` (ensemble free-energy estimate when ledger available, else CF fallback — not experimental ΔG_bind); "
+               "**ΔH_est** / **TΔS_est** = configurational ledger proxies.\n\n";
+        ofs << "| PDB | CF (best_score) | RMSD (Å) | RMSD_H (Å) | F_est (predicted_dG) | ΔH_est | TΔS_est | I_EE | H_conf | H_search | Poses | Time (s) | Success |\n";
+        ofs << "|-----|----------------|----------|------------|----------------------|--------|---------|------|--------|----------|-------|----------|--------|\n";
 
         for (const auto& r : report.results) {
             std::string iee_str = r.has_IEE
@@ -7864,9 +7877,11 @@ void DatasetRunner::write_report(const BenchmarkReport& report,
             ofs << "- Completed (binding modes found): " << clr.n_completed << "\n\n";
 
             if (!clr.ranked_ligands.empty()) {
-                ofs << "### Ranked Ligands (by ΔG, ascending)\n\n";
-                ofs << "| Rank | Ligand | ΔG (kcal/mol) | p(bind) |\n";
-                ofs << "|------|--------|---------------|--------|\n";
+                ofs << "### Ranked Ligands (by ensemble F estimate, ascending)\n\n";
+                ofs << "F_est is the grand-partition session energy (ensemble free-energy "
+                       "estimate or CF fallback), **not** experimental binding free energy.\n\n";
+                ofs << "| Rank | Ligand | F_est (kcal/mol proxy) | p(bind) |\n";
+                ofs << "|------|--------|------------------------|--------|\n";
                 int rank = 1;
                 for (const auto& lr : clr.ranked_ligands) {
                     ofs << "| " << rank++
@@ -7885,6 +7900,8 @@ void DatasetRunner::write_report(const BenchmarkReport& report,
         // CSV version
         std::string cl_csv = output_dir + "/" + safe_name + "_cross_ligand.csv";
         std::ofstream coefs(cl_csv);
+        // Column `delta_G_kcal` kept for compatibility: stores grand-PF F_est
+        // (ensemble free-energy estimate / CF fallback), not experimental ΔG.
         coefs << "receptor,ligand,delta_G_kcal,binding_probability,rank\n";
         for (const auto& clr : report.cross_ligand_results) {
             int rank = 1;

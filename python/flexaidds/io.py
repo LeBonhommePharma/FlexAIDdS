@@ -1,9 +1,11 @@
 """PDB I/O and REMARK-header parsing for FlexAID∆S docking output files.
 
-FlexAID∆S writes thermodynamic quantities (free energy, entropy, heat
-capacity, etc.) as ``REMARK`` records in each output PDB file.  This module
-provides low-level parsers that extract those values and infer binding-mode
-and pose-rank identifiers from both REMARK content and file names.
+FlexAID∆S writes CF/contact-function scores and (when available) ensemble
+thermodynamic ledger fields (Helmholtz F estimate, entropy, heat capacity,
+etc.) as ``REMARK`` records in each output PDB file.  CF is a scoring proxy,
+not free energy.  This module provides low-level parsers that extract those
+values and infer binding-mode and pose-rank identifiers from both REMARK
+content and file names.
 
 Also provides general-purpose PDB, MOL2, and FlexAID config file readers
 and writers.
