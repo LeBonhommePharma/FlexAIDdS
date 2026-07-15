@@ -48,10 +48,19 @@ p_i = \frac{e^{-\mathrm{CF}_i / T}}{Z}
 |-----|---------|---------|
 | `FLEXAIDDS_ELECTION_SHANNON_F` | **1 (ON)** | Elect by \(\tilde G=H-TS\) (do not flip default without P0.5) |
 | `FLEXAIDDS_ELECTION_LEGACY_ZH` | 0 | Rollback ≈ min-CF (not 3Dsig) |
-| `FLEXAIDDS_ELECTION_SOFT_T` | 0 → **dock \(T\)** (else 298) | Soft-β \(T\) in K (priority: SOFT_T > dock T > 298) |
+| `FLEXAIDDS_ELECTION_SOFT_T` | 0 → resolve below | Soft-β \(T\) in K (env override) |
 | `FLEXAIDDS_FORCE_CF_RANK_EMISSION` | 0 | Engine emits min-CF (rollback); classic SoftBeta path off |
 
-**FlexAIDdS engine and DatasetRunner must not invent different ranking objectives.** Search still optimizes CF; ranking/election uses \(\tilde G\). Unit gates: `SoftBetaIdentity::*` and `BindingModeMatchesSoftBetaLocal` in `tests/test_classic_entropy_ranking.cpp`.
+**Soft-β \(T\) resolution** in `select_pose_freq_gated_pooled` (DatasetRunner S1):
+
+1. `FLEXAIDDS_ELECTION_SOFT_T` if set and \(>0\) → log `source=env`
+2. else **dock TEMPER** (`DockingConfig::temperature` / CONFIG `TEMPER`) if \(>0\) → log `source=dock`
+3. else (legacy ZH only) `FLEXAIDDS_ELECTION_SCORE_TAU` if \(>0\) → log `source=env`
+4. else **298 K** → log `source=fallback`
+
+Log line: `[3DSIG-RANK] … T=… source=dock|env|fallback …`. Soft-β is \(\beta=1/T\) on the CF scoring proxy (not \(k_B\)).
+
+**FlexAIDdS engine and DatasetRunner must not invent different ranking objectives.** Search still optimizes CF; ranking/election uses \(\tilde G\) via `LIB/SoftBetaFreeEnergy.h`. Engine ACF and DatasetRunner election must share the same dock \(T\). Unit gates: `SoftBetaIdentity::*` and `BindingModeMatchesSoftBetaLocal` in `tests/test_classic_entropy_ranking.cpp`.
 
 ---
 

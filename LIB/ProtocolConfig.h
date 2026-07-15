@@ -88,8 +88,9 @@ struct ProtocolConfig {
     /// Default ON (Shannon entropy on the ranking path). Rollback:
     /// FLEXAIDDS_ELECTION_LEGACY_ZH=1 restores inert Z+H composite (≈ min-CF).
     bool election_shannon_free_energy{true}; ///< FLEXAIDDS_ELECTION_SHANNON_F (default ON)
-    /// Soft-β temperature T for G̃ (same role as poster T). 0 → use dock temperature
-    /// or 298 K. Units: CF is scoring-proxy a.u.; this is FlexAID soft-β, not k_B.
+    /// Soft-β temperature T for G̃ (same role as poster T). 0 → resolve at election:
+    /// dock TEMPER / DockingConfig::temperature, else (legacy ZH) SCORE_TAU, else 298 K.
+    /// Units: CF is scoring-proxy a.u.; this is FlexAID soft-β (β=1/T), not k_B.
     double election_soft_T{0.0};      ///< FLEXAIDDS_ELECTION_SOFT_T
     /// tENCoM/H(ω) validator; default ON, disable with FLEXAIDDS_HVIB=0.
     bool hvib_enabled{true};

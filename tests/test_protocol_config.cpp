@@ -287,6 +287,40 @@ TEST(ProtocolConfig, ElectionV135TauOverride) {
     EXPECT_FALSE(cfg.election_include_singletons);
 }
 
+// FLEXAIDDS_ELECTION_SOFT_T=0 (unset) means "resolve at election": dock TEMPER
+// first, then 298 fallback. The env knob itself stays 0 in ProtocolConfig.
+// Positive values override dock T in select_pose_freq_gated_pooled (source=env).
+TEST(ProtocolConfig, ElectionSoftTFromEnv) {
+    ClearProtocolEnv clear;
+    {
+        const auto unset = flexaids::ProtocolConfig::from_env();
+        EXPECT_DOUBLE_EQ(unset.election_soft_T, 0.0);
+        EXPECT_TRUE(unset.election_shannon_free_energy);  // 3Dsig default ON
+    }
+    {
+        ScopedEnv soft("FLEXAIDDS_ELECTION_SOFT_T", "21.0");
+        const auto cfg = flexaids::ProtocolConfig::from_env();
+        EXPECT_DOUBLE_EQ(cfg.election_soft_T, 21.0);
+        EXPECT_TRUE(cfg.election_shannon_free_energy);
+    }
+    {
+        ScopedEnv soft("FLEXAIDDS_ELECTION_SOFT_T", "298.15");
+        const auto cfg = flexaids::ProtocolConfig::from_env();
+        EXPECT_DOUBLE_EQ(cfg.election_soft_T, 298.15);
+    }
+}
+
+TEST(ProtocolConfig, ElectionSoftTJsonRoundTrip) {
+    ClearProtocolEnv clear;
+    ScopedEnv soft("FLEXAIDDS_ELECTION_SOFT_T", "21.0");
+    const auto a = flexaids::ProtocolConfig::from_env();
+    EXPECT_DOUBLE_EQ(a.election_soft_T, 21.0);
+    const std::string json = a.to_json();
+    EXPECT_NE(json.find("\"election_soft_T\":"), std::string::npos);
+    const auto b = flexaids::ProtocolConfig::from_json(json);
+    EXPECT_DOUBLE_EQ(b.election_soft_T, 21.0);
+}
+
 TEST(ProtocolConfig, JsonRoundTrip) {
     ClearProtocolEnv clear;
     ScopedEnv seed("FLEXAIDDS_SEED_BASE", "99");

@@ -893,7 +893,7 @@ static std::pair<std::string,float> select_pose_freq_gated_pooled(
         int seed_elitism_override = -1,  // -1=ProtocolConfig default, 0=force off, 1=force on
         bool cf_window_selector = false, // Fix A: CF-window gate (see header member)
         const flexaids::ProtocolConfig* protocol = nullptr,
-        double dock_temperature_K = 0.0)  // dock T for soft-β when election_soft_T unset
+        double dock_temperature_K = 0.0)  // dock TEMPER / DockingConfig::temperature
 {
     // Pose-selector knobs come from ProtocolConfig (env adapter). Prefer a
     // caller-supplied snapshot (DatasetRunner::protocol_cfg_); fall back to a
@@ -921,28 +921,35 @@ static std::pair<std::string,float> select_pose_freq_gated_pooled(
     const bool use_shannon_G = proto.election_shannon_free_energy;
     const bool include_singletons =
         proto.election_include_singletons || proto.election_v135 || use_shannon_G;
-    // Soft-β T (3Dsig poster / FlexAID): same T as engine FA->temperature when
-    // available. Priority: FLEXAIDDS_ELECTION_SOFT_T > dock_temperature_K >
-    // (legacy ZH only) SCORE_TAU > 298 K fallback.
+    // Soft-β T priority (3Dsig / FlexAID soft-β, β=1/T, CF a.u.):
+    //   1. FLEXAIDDS_ELECTION_SOFT_T (env override)
+    //   2. dock TEMPER / DockingConfig::temperature (same T as the dock)
+    //   3. (legacy ZH only) FLEXAIDDS_ELECTION_SCORE_TAU
+    //   4. 298 K fallback
+    const char* soft_T_source = "fallback";
     double soft_T = 298.0;
-    if (proto.election_soft_T > 0.0)
+    if (proto.election_soft_T > 0.0) {
         soft_T = proto.election_soft_T;
-    else if (dock_temperature_K > 0.0)
+        soft_T_source = "env";
+    } else if (dock_temperature_K > 0.0) {
         soft_T = dock_temperature_K;
-    else if (!use_shannon_G && proto.election_score_tau > 0.0)
+        soft_T_source = "dock";
+    } else if (!use_shannon_G && proto.election_score_tau > 0.0) {
         soft_T = proto.election_score_tau;
+        soft_T_source = "env";  // SCORE_TAU is also an env knob (legacy ZH only)
+    }
     soft_T = std::max(soft_T, 1e-6);
 
     if (use_shannon_G) {
         fprintf(stderr,
                 "[3DSIG-RANK] elect by G̃=H̃−T·S̃ (Shannon on ranking path): "
-                "T=%.4f (soft-β, CF a.u.) include_singletons=%d\n",
-                soft_T, include_singletons ? 1 : 0);
+                "T=%.4f source=%s (soft-β, CF a.u.) include_singletons=%d\n",
+                soft_T, soft_T_source, include_singletons ? 1 : 0);
     } else {
         fprintf(stderr,
-                "[Z+H-LEGACY] elect by Z·exp(−αH)·log1p(N) τ=%.4f "
+                "[Z+H-LEGACY] elect by Z·exp(−αH)·log1p(N) τ=%.4f source=%s "
                 "(Shannon NOT used for ranking — rollback path)\n",
-                soft_T);
+                soft_T, soft_T_source);
     }
 
     struct PoseInfo {
@@ -6515,10 +6522,9 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
         // rmsd_to_crystal always describe one pose. Fall back to the stdout-trace
         // min only if no emitted pose with a REMARK CF is found.
         {
-            auto sel = select_pose_freq_gated_pooled(all_prefixes, sel_elitism_ovr,
-                                                     cf_window_selector_,
-                                                     &protocol_cfg_,
-                                                     static_cast<double>(config.temperature));
+            auto sel = select_pose_freq_gated_pooled(
+                all_prefixes, sel_elitism_ovr, cf_window_selector_,
+                &protocol_cfg_, static_cast<double>(config.temperature));
             if (!sel.first.empty() && std::isfinite(sel.second))
                 best_cf = sel.second;
         }
@@ -6616,8 +6622,8 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
             // pool (see helper definition near compute_pose_ligand_rmsd).
             // elected_pose_for_pb lives outside this block for PoseBust post-pass.
             std::string best_pose_pdb = select_pose_freq_gated_pooled(
-                all_prefixes, sel_elitism_ovr, cf_window_selector_, &protocol_cfg_,
-                static_cast<double>(config.temperature)).first;
+                all_prefixes, sel_elitism_ovr, cf_window_selector_,
+                &protocol_cfg_, static_cast<double>(config.temperature)).first;
             // Fallback: no scored pose found — take first available pose file from any restart.
             if (best_pose_pdb.empty()) {
                 for (const auto& pfx : all_prefixes) {
