@@ -30,9 +30,24 @@ constexpr int GA_TQENS_MIN_SNAPSHOTS = 64;     // minimum snapshots for TurboQua
 constexpr int GA_TQENS_BITS = 3;               // bits/coordinate (97% fidelity, 10.7x compression)
 constexpr int GA_TQENS_ENERGY_DIM = 4;         // energy descriptor dimensions (com, wal, sas, elec)
 
-// ── FastOPTICS super-clustering ─────────────────────────────────────
-constexpr int GA_FOPTICS_MIN_POINTS = 4;       // minimum minPts for FastOPTICS
-constexpr int GA_FOPTICS_DIVISOR = 20;         // minPts = max(MIN_POINTS, n / DIVISOR)
+// ── FastOPTICS / OPTICS MinPts (literature-validated) ─────────────────
+// Primary sources (peer-reviewed):
+//   • Ankerst et al., SIGMOD 1999 (OPTICS): MinPts is the density core size;
+//     experiments “always get good results using values between 10 and 20”;
+//     larger MinPts smooths the reachability plot and weakens single-link
+//     chaining (ACM SIGMOD Record 28(2):49–60, doi:10.1145/304181.304187).
+//   • Ester et al., KDD 1996 (DBSCAN): default MinPts = 4 for 2-D data.
+//   • Sander et al., Data Mining & Knowledge Discovery 2:169–194 (1998)
+//     (GDBSCAN): for dim > 2, MinPts ≈ 2·dim is a standard rule of thumb.
+// Super-cluster helper (energy 1-D projection) keeps a small core:
+constexpr int GA_FOPTICS_MIN_POINTS = 4;       // Ester et al. 1996 2-D floor
+constexpr int GA_FOPTICS_DIVISOR = 20;         // super-cluster: minPts ≈ n / DIVISOR
+// Ankerst et al. 1999 recommended operating band for MinPts:
+constexpr int GA_FOPTICS_ANKERST_LO = 10;
+constexpr int GA_FOPTICS_ANKERST_HI = 20;
+// Absolute cap: above Ankerst HI only for very large N (still ≤ N/3).
+// Production runs FastOPTICS once at a single MinPts (no multi-scale ladder).
+constexpr int GA_FOPTICS_MAX_MINPTS = 50;
 
 // ── Fitness statistics ──────────────────────────────────────────────
 constexpr double GA_FITNESS_DENOM_FLOOR = 1e-15; // minimum denominator to prevent division by zero

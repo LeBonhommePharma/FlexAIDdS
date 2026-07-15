@@ -1,51 +1,128 @@
 #include "FOPTICS.h"
 #include "fast_optics.hpp"
 #include "MinibatchSampler.h"
+#include "ga_constants.h"
+
+#include <algorithm>
+#include <cmath>
+#include <cstdio>
 #include <set>
+#include <vector>
+
+namespace {
+
+inline int clampi(int x, int lo, int hi) {
+    return std::max(lo, std::min(hi, x));
+}
+
+// Ligand flexible dihedral count lives on the ligand residue (not FA_Global).
+int fo_ligand_fdih(const FA_Global* FA)
+{
+    if (!FA || !FA->resligand) return 0;
+    return (FA->resligand->fdih > 0) ? FA->resligand->fdih : 0;
+}
+
+// Effective dimensionality for pose density clustering (Sander et al. 1998).
+// Rigid-body placement ≈ 6 continuous DoF; each flexible dihedral adds one.
+// Cap at 20 so 2·dim stays inside Ankerst's practical MinPts band for typical
+// drug-like ligands. IC gene count is a fallback when fdih unset.
+int fo_effective_dim(const FA_Global* FA, const GB_Global* GB)
+{
+    const int fdih = fo_ligand_fdih(FA);
+    const int npar = (FA && FA->npar > 0) ? FA->npar
+                     : (GB && GB->num_genes > 0) ? GB->num_genes : 0;
+    int dim = 6 + fdih;  // SE(3) + torsions
+    if (fdih <= 0 && npar > 0)
+        dim = std::max(2, npar);
+    return clampi(dim, 2, 20);
+}
+
+// Single MinPts for one FastOPTICS pass (production: run the algorithm once).
+//
+//   1. Sander et al. 1998: MinPts ≈ 2 · dim  (dim > 2)
+//   2. Ankerst et al. 1999: MinPts ∈ [10, 20] “always good results”
+//   3. Ester et al. 1996:   MinPts = 4 floor for low-d / small-N
+//   4. Ensemble feasibility: MinPts < N and MinPts ≤ N/3 so cores can form
+//
+// CF diversity only softens MinPts toward Ester's floor on near-degenerate
+// landscapes — it does not replace Sander/Ankerst. Do not re-run FO at multiple
+// MinPts (legacy triple ladder was a testing-only artifact from the old repo).
+int fo_choose_minpts(const FA_Global* FA, const GB_Global* GB,
+                     int nChrom, double diversity_ratio, int* dim_out)
+{
+    const int dim = fo_effective_dim(FA, GB);
+    if (dim_out) *dim_out = dim;
+
+    const int sander = 2 * dim;
+    const int n_cap = std::max(GA_FOPTICS_MIN_POINTS,
+                               std::min(GA_FOPTICS_MAX_MINPTS,
+                                        std::max(GA_FOPTICS_MIN_POINTS, nChrom / 3)));
+
+    int minPts;
+    if (nChrom < 2 * GA_FOPTICS_ANKERST_LO) {
+        // Small snapshot: cannot honour Ankerst 10–20; Ester floor when N allows.
+        minPts = clampi(sander, GA_FOPTICS_MIN_POINTS, n_cap);
+        if (nChrom < 2 * GA_FOPTICS_MIN_POINTS)
+            minPts = clampi(2, 2, std::max(2, nChrom - 1));
+    } else {
+        minPts = clampi(std::max(sander, GA_FOPTICS_ANKERST_LO),
+                        GA_FOPTICS_MIN_POINTS, n_cap);
+        minPts = clampi(minPts, GA_FOPTICS_MIN_POINTS, GA_FOPTICS_ANKERST_HI);
+        // Very large N + high dim: mild climb (Ankerst: larger MinPts reduces single-link).
+        if (nChrom >= 500 && dim >= 12)
+            minPts = clampi(std::max(minPts, sander), GA_FOPTICS_ANKERST_LO,
+                            std::min(n_cap, GA_FOPTICS_MAX_MINPTS));
+    }
+
+    if (diversity_ratio > 0.0 && diversity_ratio < 0.05 && minPts > GA_FOPTICS_MIN_POINTS) {
+        minPts = std::max(GA_FOPTICS_MIN_POINTS,
+                          minPts - std::max(1, (minPts - GA_FOPTICS_MIN_POINTS) / 2));
+    }
+
+    minPts = clampi(minPts, 2, std::max(2, nChrom - 1));
+
+    printf("[FO-MINPTS] literature=Ankerst1999[10-20]+Sander1998(2*dim)+Ester1996(floor4) "
+           "nChrom=%d dim_eff=%d fdih=%d npar=%d diversity=%.4f minPts=%d "
+           "(single FO pass; Ankerst band [%d,%d])\n",
+           nChrom, dim, fo_ligand_fdih(FA),
+           (FA && FA->npar > 0) ? FA->npar : (GB ? GB->num_genes : 0),
+           diversity_ratio, minPts,
+           GA_FOPTICS_ANKERST_LO, GA_FOPTICS_ANKERST_HI);
+
+    return minPts;
+}
+
+} // namespace
 
 void FastOPTICS_cluster(FA_Global* FA, GB_Global* GB, VC_Global* VC, chromosome* chrom, genlim* gene_lim, atom* atoms, resid* residue, gridpoint* cleftgrid, int nChrom, char* end_strfile, char* tmp_end_strfile, char* dockinp, char* gainp)
 {
-    // Adaptive minPoints based on conformational diversity.
-    // Compute the ratio of distinct CF values to total snapshots.
-    // When the landscape is flat (few distinct CFs), minPoints must be small
-    // to find clusters.  When diverse, larger minPoints gives robust clusters.
-    int minPoints;
-    {
+    double diversity_ratio = 0.0;
+    if (nChrom > 0) {
         std::set<double> distinct_cf;
         for (int i = 0; i < nChrom; ++i)
             distinct_cf.insert(chrom[i].evalue);
-        double diversity_ratio = static_cast<double>(distinct_cf.size()) / static_cast<double>(nChrom);
-
-        // Map diversity [0,1] → minPoints fraction [0.5%, 5%] of population
-        //   diversity=0.001 (flat)  → minPoints ≈ 0.5% × nChrom (very small)
-        //   diversity=0.50  (rich)  → minPoints ≈ 2.8% × nChrom
-        //   diversity=1.00  (max)   → minPoints ≈ 5% × nChrom
-        double fraction = 0.005 + 0.045 * diversity_ratio;
-        minPoints = std::max(5, std::min(50, static_cast<int>(fraction * nChrom)));
+        diversity_ratio = static_cast<double>(distinct_cf.size()) /
+                          static_cast<double>(nChrom);
     }
 
-    // Optional super-cluster pre-filter using lightweight FastOPTICS.
-    // Identifies the dominant energy basin and compacts filtered poses
-    // to the front of the chrom array so downstream OPTICS runs operate
-    // on a cleaner, smaller ensemble (~40% faster Shannon entropy collapse).
+    // Optional super-cluster pre-filter (energy 1-D; not a second full FO pose cluster).
     if (FA->use_super_cluster && nChrom > 4) {
-        std::vector<fast_optics::Point> energy_pts(nChrom);
+        std::vector<fast_optics::Point> energy_pts(static_cast<size_t>(nChrom));
         for (int i = 0; i < nChrom; ++i)
-            energy_pts[i].coords = { chrom[i].evalue };
+            energy_pts[static_cast<size_t>(i)].coords = { chrom[i].evalue };
 
-        fast_optics::FastOPTICS sc_optics(energy_pts, std::max(4, nChrom / 20));
+        fast_optics::FastOPTICS sc_optics(
+            energy_pts, std::max(GA_FOPTICS_MIN_POINTS, nChrom / GA_FOPTICS_DIVISOR));
         auto sc_indices = sc_optics.extractSuperCluster(fast_optics::ClusterMode::SUPER_CLUSTER_ONLY);
 
         if (!sc_indices.empty() && sc_indices.size() < static_cast<size_t>(nChrom)) {
-            // Mark which chromosomes belong to the super-cluster
-            std::vector<bool> in_sc(nChrom, false);
+            std::vector<bool> in_sc(static_cast<size_t>(nChrom), false);
             for (size_t idx : sc_indices)
                 in_sc[idx] = true;
 
-            // Compact: swap super-cluster members to front of array
             int write_pos = 0;
             for (int i = 0; i < nChrom; ++i) {
-                if (in_sc[i]) {
+                if (in_sc[static_cast<size_t>(i)]) {
                     if (i != write_pos)
                         std::swap(chrom[write_pos], chrom[i]);
                     ++write_pos;
@@ -55,19 +132,22 @@ void FastOPTICS_cluster(FA_Global* FA, GB_Global* GB, VC_Global* VC, chromosome*
             printf("--- SuperCluster pre-filter: %zu / %d poses in dominant basin ---\n",
                    sc_indices.size(), nChrom);
             nChrom = static_cast<int>(sc_indices.size());
+
+            std::set<double> distinct_cf;
+            for (int i = 0; i < nChrom; ++i)
+                distinct_cf.insert(chrom[i].evalue);
+            diversity_ratio = nChrom > 0
+                ? static_cast<double>(distinct_cf.size()) / static_cast<double>(nChrom)
+                : 0.0;
         }
     }
 
-    // ── Minibatch pre-filter (farthest-point sampling) ─────────────────────
-    // When the population exceeds a configurable threshold, reduce to ~5K
-    // diverse representatives before clustering.  This turns O(N^2) clustering
-    // into O(k*N + k^2) where k << N, giving ~100x speedup for large ensembles.
+    // Minibatch pre-filter for very large ensembles (not a second FO clustering).
     {
-        const int MINIBATCH_THRESHOLD = 10000;  // only activate above this size
-        const int MINIBATCH_TARGET    = 5000;   // target representative count
+        const int MINIBATCH_THRESHOLD = 10000;
+        const int MINIBATCH_TARGET    = 5000;
 
         if (nChrom > MINIBATCH_THRESHOLD) {
-            // Build coordinate cache (same pattern as cluster.cpp)
             const int nAtoms_mb = residue[atoms[FA->map_par[0].atm].ofres].latm[0]
                                 - residue[atoms[FA->map_par[0].atm].ofres].fatm[0] + 1;
             const int stride_mb = nAtoms_mb * 3;
@@ -75,7 +155,7 @@ void FastOPTICS_cluster(FA_Global* FA, GB_Global* GB, VC_Global* VC, chromosome*
             minibatch::CoordCache coord_cache;
             coord_cache.n_chrom = nChrom;
             coord_cache.stride  = stride_mb;
-            coord_cache.data.resize(static_cast<std::size_t>(nChrom) * stride_mb);
+            coord_cache.data.resize(static_cast<std::size_t>(nChrom) * static_cast<std::size_t>(stride_mb));
 
             for (int c = 0; c < nChrom; ++c) {
                 if (c + 1 < nChrom) {
@@ -90,88 +170,60 @@ void FastOPTICS_cluster(FA_Global* FA, GB_Global* GB, VC_Global* VC, chromosome*
                 }
             }
 
-            // Collect energies
             std::vector<double> energies(static_cast<std::size_t>(nChrom));
             for (int i = 0; i < nChrom; ++i)
-                energies[i] = chrom[i].app_evalue;
+                energies[static_cast<size_t>(i)] = chrom[i].app_evalue;
 
-            // Run farthest-point sampling
             auto sample = minibatch::MinibatchSampler::farthest_point_sample(
                 coord_cache, energies.data(), nAtoms_mb, MINIBATCH_TARGET, /*verbose=*/true);
 
             if (sample.n_selected > 0 && sample.n_selected < nChrom) {
-                // Compact selected chromosomes to front of array
                 const auto& sel = sample.selected_indices;
                 std::vector<bool> is_selected(static_cast<std::size_t>(nChrom), false);
                 for (int idx : sel)
-                    is_selected[idx] = true;
+                    is_selected[static_cast<size_t>(idx)] = true;
 
                 int write_pos = 0;
                 for (int i = 0; i < nChrom; ++i) {
-                    if (is_selected[i]) {
+                    if (is_selected[static_cast<size_t>(i)]) {
                         if (i != write_pos)
                             std::swap(chrom[write_pos], chrom[i]);
                         ++write_pos;
                     }
                 }
                 nChrom = sample.n_selected;
+
+                std::set<double> distinct_cf;
+                for (int i = 0; i < nChrom; ++i)
+                    distinct_cf.insert(chrom[i].evalue);
+                diversity_ratio = nChrom > 0
+                    ? static_cast<double>(distinct_cf.size()) / static_cast<double>(nChrom)
+                    : 0.0;
             }
         }
     }
 
-    // BindingPopulation() : BindingPopulation constructor *non-overridable*
-    BindingPopulation Population1(FA,GB,VC,chrom,gene_lim,atoms,residue,cleftgrid,nChrom);
-    BindingPopulation Population2(FA,GB,VC,chrom,gene_lim,atoms,residue,cleftgrid,nChrom);
-    BindingPopulation Population3(FA,GB,VC,chrom,gene_lim,atoms,residue,cleftgrid,nChrom);
- //    BindingPopulation::BindingPopulation Population4(FA,GB,VC,chrom,gene_lim,atoms,residue,cleftgrid,nChrom);
-	// BindingPopulation::BindingPopulation Population5(FA,GB,VC,chrom,gene_lim,atoms,residue,cleftgrid,nChrom);
-    
-    // FastOPTICS() : calling FastOPTICS constructors
-    FastOPTICS Algo1(FA, GB, VC, chrom, gene_lim, atoms, residue, cleftgrid, nChrom, Population1, minPoints);
-    minPoints = std::floor(minPoints * 1.5);
-    FastOPTICS Algo2(FA, GB, VC, chrom, gene_lim, atoms, residue, cleftgrid, nChrom, Population2, minPoints);
-    minPoints = std::floor(minPoints * 1.5);
-    FastOPTICS Algo3(FA, GB, VC, chrom, gene_lim, atoms, residue, cleftgrid, nChrom, Population3, minPoints);
-    // minPoints = std::floor(minPoints * 1.5);
-    // FastOPTICS::FastOPTICS Algo4(FA, GB, VC, chrom, gene_lim, atoms, residue, cleftgrid, nChrom, Population4, minPoints);
-    // minPoints = std::floor(minPoints * 1.5);
-    // FastOPTICS::FastOPTICS Algo5(FA, GB, VC, chrom, gene_lim, atoms, residue, cleftgrid, nChrom, Population5, minPoints);
-    
-    // 	1. Partition Sets using Random Vectorial Projections
-    // 	2. Calculate Neighborhood
-    // 	3. Calculate reachability distance
-    // 	4. Compute the Ordering of Points To Identify Cluster Structure (OPTICS)
-    // 	5. Populate BindingPopulation::Population after analyzing OPTICS
-    Algo1.Execute_FastOPTICS(end_strfile, tmp_end_strfile);
-    Algo2.Execute_FastOPTICS(end_strfile, tmp_end_strfile);
-    Algo3.Execute_FastOPTICS(end_strfile, tmp_end_strfile);
-    // Algo4.Execute_FastOPTICS(end_strfile, tmp_end_strfile);
-    // Algo5.Execute_FastOPTICS(end_strfile, tmp_end_strfile);
+    if (nChrom < 2) {
+        fprintf(stderr, "[FO-MINPTS] WARN: nChrom=%d too small for FO clustering\n", nChrom);
+        printf("-- end of FastOPTICS_cluster --\n");
+        return;
+    }
 
-    // Algo1.output_OPTICS(end_strfile, tmp_end_strfile);
-    // Algo2.output_OPTICS(end_strfile, tmp_end_strfile);
-    // Algo3.output_OPTICS(end_strfile, tmp_end_strfile);
-    // Algo4.output_OPTICS(end_strfile, tmp_end_strfile);
-    // Algo5.output_OPTICS(end_strfile, tmp_end_strfile);
+    int dim = 0;
+    const int minPts = fo_choose_minpts(FA, GB, nChrom, diversity_ratio, &dim);
+    (void)dim;
 
-    // output the 3D poses ordered with Fast OPTICS (done only once for the purpose as the order should not change)
-    // Algo1.output_3d_OPTICS_ordering(end_strfile, tmp_end_strfile);
-    // Algo2.output_3d_OPTICS_ordering(end_strfile, tmp_end_strfile);
-    // Algo3.output_3d_OPTICS_ordering(end_strfile, tmp_end_strfile);
-    // Algo4.output_3d_OPTICS_ordering(end_strfile, tmp_end_strfile);
-    // Algo5.output_3d_OPTICS_ordering(end_strfile, tmp_end_strfile);
-    
-    std::cout << "Size of Population 1 is " << Population1.get_Population_size() << " Binding Modes." << std::endl;
-    std::cout << "Size of Population 2 is " << Population2.get_Population_size() << " Binding Modes." << std::endl;
-    std::cout << "Size of Population 3 is " << Population3.get_Population_size() << " Binding Modes." << std::endl;
-    // std::cout << "Size of Population 4 is " << Population4.get_Population_size() << " Binding Modes." << std::endl;
-    // std::cout << "Size of Population 5 is " << Population5.get_Population_size() << " Binding Modes." << std::endl;
-    
-    // output FA->max_result BindingModes
-    Population1.output_Population(FA->max_results, end_strfile, tmp_end_strfile, dockinp, gainp, Algo1.get_minPoints());
-    Population2.output_Population(FA->max_results, end_strfile, tmp_end_strfile, dockinp, gainp, Algo2.get_minPoints());
-    Population3.output_Population(FA->max_results, end_strfile, tmp_end_strfile, dockinp, gainp, Algo3.get_minPoints());
-    // Population4.output_Population(FA->max_results, end_strfile, tmp_end_strfile, dockinp, gainp, Algo4.get_minPoints());
-    // Population5.output_Population(FA->max_results, end_strfile, tmp_end_strfile, dockinp, gainp, Algo5.get_minPoints());
+    // Single FastOPTICS pass + single BindingPopulation emission.
+    // Output: <prefix>_<minPts>_<rank>.pdb (BindingMode.cpp).
+    BindingPopulation population(FA, GB, VC, chrom, gene_lim, atoms, residue, cleftgrid, nChrom);
+    FastOPTICS algo(FA, GB, VC, chrom, gene_lim, atoms, residue, cleftgrid, nChrom,
+                    population, minPts);
+    algo.Execute_FastOPTICS(end_strfile, tmp_end_strfile);
+
+    std::cout << "Size of Population is " << population.get_Population_size()
+              << " Binding Modes (minPts=" << minPts << ")." << std::endl;
+
+    population.output_Population(FA->max_results, end_strfile, tmp_end_strfile, dockinp, gainp,
+                                 algo.get_minPoints());
     printf("-- end of FastOPTICS_cluster --\n");
 }
