@@ -327,7 +327,8 @@ Protocolized campaigns (Astex Diverse, three-engine comparison, admission metric
 - Pin interaction matrix MD5 (e.g. `MC_st0r5.2_6.dat`) in every arm’s receipt  
 - Cognate / defined-cleft redock: **no native pose seed** on claim paths  
 - Report **S1** and **S2**; do not sell BCR/S3 as abstract success  
-- Prefer **iCloud / designated results roots** for long campaigns; stage binaries off-sync if needed  
+- **All campaign results → iCloud Drive** (`$FLEXAIDDS_RESULTS` under CloudDocs; ~2 TB quota) — see [`docs/ICLOUD_BENCHMARK_STORAGE.md`](docs/ICLOUD_BENCHMARK_STORAGE.md)  
+- Stage Mach-O binaries on **local** disk only; never new claim OUT under `~/flexaidds_results`  
 - On memory-constrained hosts: **one heavy GA process at a time**  
 - Aggregate from on-disk CSV/JSON — never from chat memory  
 

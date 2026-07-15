@@ -1,10 +1,14 @@
 #!/usr/bin/env python3
 """Generate classic FlexAID CONFIG.inp + ga.inp work trees for arms A / B0 / B.
 
-Three-engine entropy comparison protocol (TIER-1 cognate, no native seed):
-  A  = FlexAID 2015-era binary  (CF election; TEMPER 0)
-  B0 = FlexAID master           (TEMPER 0 → CF clustering forced)
-  B  = FlexAID master           (TEMPER 298 → BindingMode/colony entropy)
+Primary three-engine claim path (TIER-1 cognate, no native seed):
+  A  = FlexAID 2015-era (JCIM 2015) binary  (CF election; TEMPER 0)
+  B  = FlexAID master, entropy ranking ON   (TEMPER 21 — operator-optimized)
+  C0 = FlexAIDdS (separate runner; not this generator)
+
+Optional / deferred:
+  B0 = FlexAID master, entropy OFF          (TEMPER 0 → CF clustering forced)
+  B@298 = prior protocol default TEMPER 298 (use --temper 298 to restore)
 
 Inputs per target (from queue):
   <PDB>_apo.pdb, <PDB>_ligand.sdf, cleft spheres (GetCleft or queue site)
@@ -50,10 +54,12 @@ ATOM_INDEX = 90000
 
 PILOT8 = ["1G9V", "1GPK", "1MEH", "1P62", "1Q4G", "1R9O", "1T40", "2BYS"]
 
+# TEMPER for arm B default = 21 (LP-optimized entropy ranking temperature).
+# Override per run: --temper N  (applies to all listed arms that receive entropy).
 ARM_SPEC = {
-    "A": {"bin_arm": "A", "temper": 0, "label": "FlexAID-2015 CF"},
-    "B0": {"bin_arm": "B", "temper": 0, "label": "FlexAID-master TEMPER 0 / CF"},
-    "B": {"bin_arm": "B", "temper": 298, "label": "FlexAID-master TEMPER 298"},
+    "A": {"bin_arm": "A", "temper": 0, "label": "FlexAID-2015 JCIM CF"},
+    "B0": {"bin_arm": "B", "temper": 0, "label": "FlexAID-master TEMPER 0 / CF (deferred)"},
+    "B": {"bin_arm": "B", "temper": 21, "label": "FlexAID-master TEMPER 21 / entropy"},
 }
 
 
@@ -321,6 +327,7 @@ def prepare_target(
     seed_base: int = SEED_BASE,
     processligand: Optional[Path] = None,
     force: bool = False,
+    temper_override: Optional[int] = None,
 ) -> Path:
     if arm not in ARM_SPEC:
         raise ValueError(f"unknown arm {arm}; expected one of {list(ARM_SPEC)}")
@@ -396,7 +403,7 @@ def prepare_target(
         (work / "sphere_source.txt").write_text(str(sph_src) + "\n")
 
     n_flex = parse_fledih_count(ligand_inp)
-    temper = int(spec["temper"])
+    temper = int(spec["temper"]) if temper_override is None else int(temper_override)
 
     statep = work / "state"
     tempop = work / "tmp"
@@ -509,6 +516,12 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     ap.add_argument("--gen", type=int, default=DEFAULT_GEN)
     ap.add_argument("--restarts", type=int, default=DEFAULT_RESTARTS)
     ap.add_argument("--seed-base", type=int, default=SEED_BASE)
+    ap.add_argument(
+        "--temper",
+        type=int,
+        default=None,
+        help="Override TEMPER for all prepared arms (e.g. 21 for optimized entropy B)",
+    )
     ap.add_argument("--force", action="store_true")
     ap.add_argument("--dry-run", action="store_true", help="Print plan only")
     args = ap.parse_args(argv)
@@ -561,6 +574,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                     work_root,
                     pop=args.pop,
                     gen=args.gen,
+                    temper_override=args.temper,
                     restarts=args.restarts,
                     seed_base=args.seed_base,
                     processligand=pl,

@@ -18,10 +18,14 @@ set -euo pipefail
 # shellcheck disable=SC1090
 [[ -f "${HOME}/.flexaidds_env" ]] && source "${HOME}/.flexaidds_env"
 
-ICLOUD_DEFAULT="${HOME}/Library/Mobile Documents/com~apple~CloudDocs/FlexAIDdS_benchmarks"
-export FLEXAIDDS_ICLOUD="${FLEXAIDDS_ICLOUD:-$ICLOUD_DEFAULT}"
-export FLEXAIDDS_RESULTS="${FLEXAIDDS_RESULTS:-$FLEXAIDDS_ICLOUD/results}"
-Q="${QUEUE_ROOT:-${FLEXAIDDS_QUEUE_ROOT:-$FLEXAIDDS_ICLOUD/queues/three_engine_entropy_q1}}"
+# Production: all campaign OUT on iCloud Drive (2TB / large free cloud quota).
+_ROOT_FOR_STORAGE="$(cd "$(dirname "$0")/.." && pwd)"
+# shellcheck disable=SC1091
+source "$_ROOT_FOR_STORAGE/scripts/use_icloud_benchmark_storage.sh"
+# shellcheck disable=SC1091
+source "$_ROOT_FOR_STORAGE/scripts/require_icloud_out.sh"
+
+Q="${QUEUE_ROOT:-${FLEXAIDDS_QUEUE_ROOT}}"
 export QUEUE_ROOT="$Q"
 export FLEXAIDDS_QUEUE_ROOT="$Q"
 
@@ -81,10 +85,7 @@ WORK_ROOT="${FLEXAID_WORK_ROOT:-$Q/work}"
 LOGDIR="$Q/logs"
 mkdir -p "$OUT" "$LOGDIR" "$WORK_ROOT" "$FLEXAIDDS_RESULTS/campaigns/three_engine/$ARM"
 
-case "$OUT" in
-  *"/Mobile Documents/com~apple~CloudDocs/"*) ;;
-  *) echo "REFUSE: output must be under iCloud Drive, got: $OUT" >&2; exit 91 ;;
-esac
+require_icloud_out "$OUT" || exit 91
 
 echo "=== FlexAID arm $ARM pilot8 ==="
 echo "Q=$Q"

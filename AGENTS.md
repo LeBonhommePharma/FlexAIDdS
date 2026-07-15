@@ -51,6 +51,14 @@ These rules exist because this is a complex, performance-critical scientific cod
 
 ---
 
+## Benchmark storage (Non-Negotiable)
+
+- **All production / claim / three-engine / residual campaign results go to iCloud Drive** under `$FLEXAIDDS_ICLOUD` → `$FLEXAIDDS_RESULTS/campaigns/…` (operator: ~2 TB iCloud, large free quota).
+- Source before launch: `source scripts/use_icloud_benchmark_storage.sh` (and `scripts/require_icloud_out.sh` for OUT checks).
+- `~/flexaidds_results` is **legacy archive / binary staging only** — do not start new claim campaigns there.
+- Queue binaries may remain on local disk via `bin/` symlinks (Mach-O + iCloud sync is unsafe).
+- Details: `docs/ICLOUD_BENCHMARK_STORAGE.md`.
+
 ## Repository Hygiene (Non-Negotiable)
 
 - **Local GitHub identity is always `LeBonhommePharma`.** On this machine and for every local `gh` / `git` / GitHub API operation in agent sessions, use **only** the GitHub account **`LeBonhommePharma`**. Never switch to, log in as, or prefer the legacy label `lmorency` (same person/history, obsolete username). Before push / `gh` / PR work, verify:
