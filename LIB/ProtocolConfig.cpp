@@ -8,6 +8,7 @@
 
 #include <algorithm>
 #include <cstdlib>
+#include <cstring>
 #include <sstream>
 #include <stdexcept>
 
@@ -30,6 +31,11 @@ bool env_truthy_int(const char* name, bool default_value) {
     const char* e = env_raw(name);
     if (!e || e[0] == '\0') return default_value;
     return std::atoi(e) != 0;
+}
+
+// Presence-only historical gates: any non-null getenv is ON (even "0").
+bool env_present_any(const char* name) {
+    return env_raw(name) != nullptr;
 }
 
 std::optional<double> env_opt_double(const char* name) {
@@ -62,6 +68,11 @@ std::string json_escape(const std::string& s) {
         }
     }
     return out;
+}
+
+void json_bool(std::ostringstream& o, const char* key, bool v, bool trailing_comma = true) {
+    o << '"' << key << "\":" << (v ? "true" : "false");
+    if (trailing_comma) o << ',';
 }
 
 }  // namespace
@@ -119,15 +130,93 @@ ProtocolConfig ProtocolConfig::from_env() {
     if (const char* e = env_raw("FLEXAIDDS_DATA_DIR")) {
         if (e[0] != '\0') cfg.data_dir = e;
     }
+    if (const char* e = env_raw("FLEXAIDDS_ORACLE_SITE_DIR")) {
+        if (e[0] != '\0') cfg.oracle_site_dir = e;
+    }
+    if (const char* e = env_raw("FLEXAIDDS_ORACLE_SITE")) {
+        if (e[0] != '\0') cfg.oracle_site = e;
+    }
+    if (const char* e = env_raw("FLEXAIDDS_CLEFT_SPHERE_FILE")) {
+        if (e[0] != '\0') cfg.cleft_sphere_file = e;
+    }
 
     cfg.cf_window_selector =
         env_truthy_int("FLEXAIDDS_CF_WINDOW_SELECTOR", /*default_value=*/false);
     cfg.cluster_member_emit =
         env_truthy_int("FLEXAIDDS_CLUSTER_MEMBER_EMIT", /*default_value=*/false);
 
+    cfg.seed_elitism = env_truthy_int("FLEXAIDDS_SEED_ELITISM", /*default_value=*/true);
+    if (auto v = env_opt_double("FLEXAIDDS_SEED_ELITISM_DELTA_CF")) {
+        cfg.seed_elitism_delta_cf = *v;
+    }
+    cfg.freqsel = env_truthy_int("FLEXAIDDS_FREQSEL", /*default_value=*/false);
+    if (auto v = env_opt_double("FLEXAIDDS_FREQSEL_ALPHA")) {
+        cfg.freqsel_alpha = *v;
+    }
+    if (auto v = env_opt_double("FLEXAIDDS_FREQSEL_RMSD")) {
+        cfg.freqsel_rmsd = static_cast<float>(*v);
+    }
+    cfg.consensus_scorer =
+        env_truthy_int("FLEXAIDDS_CONSENSUS_SCORER", /*default_value=*/false);
+    // HVIB default ON; only FLEXAIDDS_HVIB=0 disables (historical strcmp).
+    {
+        const char* e = env_raw("FLEXAIDDS_HVIB");
+        cfg.hvib_enabled = !(e && std::strcmp(e, "0") == 0);
+    }
+
+    cfg.ring_flex = env_truthy_int("FLEXAIDDS_RING_FLEX", /*default_value=*/false);
+    {
+        const char* e = env_raw("FLEXAIDDS_EVAL_SCALE_DIHEDRAL");
+        if (!e || e[0] == '\0') {
+            cfg.eval_scale_dihedral = 1;
+        } else if (std::strcmp(e, "off") == 0 ||
+                   std::strcmp(e, "none") == 0 ||
+                   std::strcmp(e, "fixed") == 0) {
+            cfg.eval_scale_dihedral = -1;
+        } else {
+            cfg.eval_scale_dihedral = std::atoi(e);
+        }
+    }
+    cfg.budget_scale = env_truthy_int("FLEXAIDDS_BUDGET_SCALE", /*default_value=*/true);
+    cfg.fine_grid = env_present_any("FLEXAIDDS_FINE_GRID");
+    if (auto n = env_opt_int("FLEXAIDDS_MULTI_CLEFT")) {
+        cfg.multi_cleft = *n;
+    }
+    // COGNATE_SITE: historical presence gate (any non-null).
+    cfg.cognate_site = env_present_any("FLEXAIDDS_COGNATE_SITE");
+    {
+        const char* e = env_raw("FLEXAIDDS_SCORE_NATIVE");
+        cfg.score_native = e && e[0] != '\0' && std::strcmp(e, "0") != 0;
+    }
+    {
+        const char* e = env_raw("FLEXAIDDS_NATIVE_ONLY");
+        cfg.native_only = e && e[0] != '\0' && std::strcmp(e, "0") != 0;
+    }
+    {
+        const char* e = env_raw("FLEXAIDDS_USE_DP");
+        cfg.use_dp = e && std::strcmp(e, "1") == 0;
+    }
+    cfg.ignore_cache = env_truthy_int("FLEXAIDDS_IGNORE_CACHE", /*default_value=*/false);
+    cfg.thermo_csv = env_present_any("FLEXAIDDS_THERMO_CSV");
+
     if (auto v = env_opt_double("FLEXAIDDS_HBOND_WEIGHT")) {
         cfg.hbond_weight = *v;
     }
+
+    // gaboom / GA
+    cfg.no_sec = env_present_any("FLEXAIDDS_NO_SEC");
+    cfg.benchmark_mode = env_present_any("FLEXAIDDS_BENCHMARK");
+    if (auto v = env_opt_double("FLEXAIDDS_T_HOT")) {
+        cfg.t_hot = *v;
+    }
+    if (auto n = env_opt_int("FLEXAIDDS_INSTREAM_INTERVAL")) {
+        if (*n >= 1) cfg.instream_interval = *n;
+    }
+    {
+        const char* e = env_raw("FLEXAIDDS_CHAIN_NORM");
+        cfg.chain_norm = e && e[0] != '\0' && e[0] != '0';
+    }
+    cfg.smfree_require_t = env_present("FLEXAIDDS_SMFREE_REQUIRE_T");
 
     return cfg;
 }
@@ -149,10 +238,9 @@ std::string ProtocolConfig::to_json() const {
     o << '{';
     o << "\"seed_base\":" << seed_base << ',';
     o << "\"restarts\":" << restarts << ',';
-    o << "\"parallel_restarts\":" << (parallel_restarts ? "true" : "false") << ',';
+    json_bool(o, "parallel_restarts", parallel_restarts);
     o << "\"vct_r0\":" << vct_r0 << ',';
-    o << "\"vct_normalize_contacts\":"
-      << (vct_normalize_contacts ? "true" : "false") << ',';
+    json_bool(o, "vct_normalize_contacts", vct_normalize_contacts);
     o << "\"vct_entropy_weight\":" << vct_entropy_weight << ',';
     if (sharing_alpha) {
         o << "\"sharing_alpha\":" << *sharing_alpha << ',';
@@ -165,14 +253,41 @@ std::string ProtocolConfig::to_json() const {
         o << "\"boom_frac\":null,";
     }
     o << "\"n_elite\":" << n_elite << ',';
-    o << "\"use_shannon\":" << (use_shannon ? "true" : "false") << ',';
-    o << "\"thermo_enabled\":" << (thermo_enabled ? "true" : "false") << ',';
+    json_bool(o, "use_shannon", use_shannon);
+    json_bool(o, "thermo_enabled", thermo_enabled);
     o << "\"t_eff\":" << t_eff << ',';
     o << "\"tencom_scale\":" << tencom_scale << ',';
     o << "\"data_dir\":\"" << json_escape(data_dir) << "\",";
-    o << "\"cf_window_selector\":" << (cf_window_selector ? "true" : "false") << ',';
-    o << "\"cluster_member_emit\":" << (cluster_member_emit ? "true" : "false") << ',';
-    o << "\"hbond_weight\":" << hbond_weight;
+    o << "\"oracle_site_dir\":\"" << json_escape(oracle_site_dir) << "\",";
+    o << "\"oracle_site\":\"" << json_escape(oracle_site) << "\",";
+    o << "\"cleft_sphere_file\":\"" << json_escape(cleft_sphere_file) << "\",";
+    json_bool(o, "cf_window_selector", cf_window_selector);
+    json_bool(o, "cluster_member_emit", cluster_member_emit);
+    json_bool(o, "seed_elitism", seed_elitism);
+    o << "\"seed_elitism_delta_cf\":" << seed_elitism_delta_cf << ',';
+    json_bool(o, "freqsel", freqsel);
+    o << "\"freqsel_alpha\":" << freqsel_alpha << ',';
+    o << "\"freqsel_rmsd\":" << freqsel_rmsd << ',';
+    json_bool(o, "consensus_scorer", consensus_scorer);
+    json_bool(o, "hvib_enabled", hvib_enabled);
+    json_bool(o, "ring_flex", ring_flex);
+    o << "\"eval_scale_dihedral\":" << eval_scale_dihedral << ',';
+    json_bool(o, "budget_scale", budget_scale);
+    json_bool(o, "fine_grid", fine_grid);
+    o << "\"multi_cleft\":" << multi_cleft << ',';
+    json_bool(o, "cognate_site", cognate_site);
+    json_bool(o, "score_native", score_native);
+    json_bool(o, "native_only", native_only);
+    json_bool(o, "use_dp", use_dp);
+    json_bool(o, "ignore_cache", ignore_cache);
+    json_bool(o, "thermo_csv", thermo_csv);
+    o << "\"hbond_weight\":" << hbond_weight << ',';
+    json_bool(o, "no_sec", no_sec);
+    json_bool(o, "benchmark_mode", benchmark_mode);
+    o << "\"t_hot\":" << t_hot << ',';
+    o << "\"instream_interval\":" << instream_interval << ',';
+    json_bool(o, "chain_norm", chain_norm);
+    json_bool(o, "smfree_require_t", smfree_require_t, /*trailing_comma=*/false);
     o << '}';
     return o.str();
 }
@@ -212,12 +327,66 @@ ProtocolConfig ProtocolConfig::from_json(const std::string& json_text) {
         cfg.tencom_scale = root["tencom_scale"].as_float(1.0f);
     if (!root["data_dir"].is_null())
         cfg.data_dir = root["data_dir"].as_string("");
+    if (!root["oracle_site_dir"].is_null())
+        cfg.oracle_site_dir = root["oracle_site_dir"].as_string("");
+    if (!root["oracle_site"].is_null())
+        cfg.oracle_site = root["oracle_site"].as_string("");
+    if (!root["cleft_sphere_file"].is_null())
+        cfg.cleft_sphere_file = root["cleft_sphere_file"].as_string("");
     if (!root["cf_window_selector"].is_null())
         cfg.cf_window_selector = root["cf_window_selector"].as_bool(false);
     if (!root["cluster_member_emit"].is_null())
         cfg.cluster_member_emit = root["cluster_member_emit"].as_bool(false);
+    if (!root["seed_elitism"].is_null())
+        cfg.seed_elitism = root["seed_elitism"].as_bool(true);
+    if (!root["seed_elitism_delta_cf"].is_null())
+        cfg.seed_elitism_delta_cf = root["seed_elitism_delta_cf"].as_double(10.0);
+    if (!root["freqsel"].is_null())
+        cfg.freqsel = root["freqsel"].as_bool(false);
+    if (!root["freqsel_alpha"].is_null())
+        cfg.freqsel_alpha = root["freqsel_alpha"].as_double(12.0);
+    if (!root["freqsel_rmsd"].is_null())
+        cfg.freqsel_rmsd = root["freqsel_rmsd"].as_float(1.5f);
+    if (!root["consensus_scorer"].is_null())
+        cfg.consensus_scorer = root["consensus_scorer"].as_bool(false);
+    if (!root["hvib_enabled"].is_null())
+        cfg.hvib_enabled = root["hvib_enabled"].as_bool(true);
+    if (!root["ring_flex"].is_null())
+        cfg.ring_flex = root["ring_flex"].as_bool(false);
+    if (!root["eval_scale_dihedral"].is_null())
+        cfg.eval_scale_dihedral = root["eval_scale_dihedral"].as_int(1);
+    if (!root["budget_scale"].is_null())
+        cfg.budget_scale = root["budget_scale"].as_bool(true);
+    if (!root["fine_grid"].is_null())
+        cfg.fine_grid = root["fine_grid"].as_bool(false);
+    if (!root["multi_cleft"].is_null())
+        cfg.multi_cleft = root["multi_cleft"].as_int(0);
+    if (!root["cognate_site"].is_null())
+        cfg.cognate_site = root["cognate_site"].as_bool(false);
+    if (!root["score_native"].is_null())
+        cfg.score_native = root["score_native"].as_bool(false);
+    if (!root["native_only"].is_null())
+        cfg.native_only = root["native_only"].as_bool(false);
+    if (!root["use_dp"].is_null())
+        cfg.use_dp = root["use_dp"].as_bool(false);
+    if (!root["ignore_cache"].is_null())
+        cfg.ignore_cache = root["ignore_cache"].as_bool(false);
+    if (!root["thermo_csv"].is_null())
+        cfg.thermo_csv = root["thermo_csv"].as_bool(false);
     if (!root["hbond_weight"].is_null())
         cfg.hbond_weight = root["hbond_weight"].as_double(-2.5);
+    if (!root["no_sec"].is_null())
+        cfg.no_sec = root["no_sec"].as_bool(false);
+    if (!root["benchmark_mode"].is_null())
+        cfg.benchmark_mode = root["benchmark_mode"].as_bool(false);
+    if (!root["t_hot"].is_null())
+        cfg.t_hot = root["t_hot"].as_double(0.0);
+    if (!root["instream_interval"].is_null())
+        cfg.instream_interval = root["instream_interval"].as_int(0);
+    if (!root["chain_norm"].is_null())
+        cfg.chain_norm = root["chain_norm"].as_bool(false);
+    if (!root["smfree_require_t"].is_null())
+        cfg.smfree_require_t = root["smfree_require_t"].as_bool(false);
 
     return cfg;
 }
