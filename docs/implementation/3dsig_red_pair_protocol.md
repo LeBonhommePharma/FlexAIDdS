@@ -94,6 +94,32 @@ python3 scripts/bootstrap_3dsig_s_top10.py --arm-dir "$FLEXAIDDS_RESULTS/campaig
 
 ---
 
+## 4.1 Cleft / grid parity gate (A vs B0 vs B)
+
+Before comparing red-pair S_top10 across arms, the **same cleft and grid** must be proven for every PDB. TEMPER / CLUSTA are allowed to differ by arm protocol; spheres, SPACER, LOCCLF basename, and IMATRX content must not.
+
+| Check | Rule |
+|-------|------|
+| `{PDB}_spheres.pdb` MD5 | Identical across `work/{A,B0,B}/{PDB}/` |
+| `SPACER` | Identical (protocol **0.375**) |
+| `RNGOPT LOCCLF` basename | Identical (typically `{PDB}_spheres.pdb`) |
+| `IMATRX` file MD5 | Identical (protocol pin `72d7c7396702331d96ff12d18f831796`) |
+| `TEMPER` / `CLUSTA` | **May differ** (A/B0: `0`/`CF`; B: `21`/`FO`) |
+| Runtime log (optional) | `will build a grid with spacing 0.375` when present |
+
+```bash
+# pilot8 (default work: $FLEXAID_WORK_ROOT or ~/flexaidds_results/three_engine_entropy_q1/work)
+python3 scripts/validate_flexaid_arm_cleft_grid.py --require-all-arms --check-logs
+
+# full85 (union of PDB dirs under work arms, or Astex tree fallback)
+python3 scripts/validate_flexaid_arm_cleft_grid.py --panel full85 --require-all-arms
+
+# JSON report
+python3 scripts/validate_flexaid_arm_cleft_grid.py --check-logs --json /tmp/cleft_grid_report.json
+```
+
+Read-only — does **not** kill or pause running docks. Exit **0** = all MATCH; **1** = any FAIL.
+
 ## 5. Priority vs C0
 
 | Job | Status under this protocol |
@@ -108,6 +134,7 @@ python3 scripts/bootstrap_3dsig_s_top10.py --arm-dir "$FLEXAIDDS_RESULTS/campaig
 
 - [x] Metric frozen (this file)
 - [x] Matrix pin 72d7 verified on queue data/
+- [x] Cleft/grid parity gate (`validate_flexaid_arm_cleft_grid.py`) PASS for pilot8 (2026-07-15)
 - [x] Arm B FO = **single literature MinPts** only (no ladder; fo_minpts_literature.md)
 - [ ] C0 processes dead; stale locks removed
 - [ ] Arm A 3dsig_r10 running or complete
