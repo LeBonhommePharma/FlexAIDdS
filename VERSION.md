@@ -1,12 +1,24 @@
 # FlexAID∆S Version History
 
-**Current Version**: 2.0.2
-**Release Date**: 2026-07-12
-**Python Package**: 2.0.2 (`python/flexaidds/__version__.py`)
+**Current Version**: 2.0.3
+**Release Date**: 2026-07-15
+**Python Package**: 2.0.3 (`python/flexaidds/__version__.py`)
 **Repository**: [github.com/LeBonhommePharma/FlexAIDdS](https://github.com/LeBonhommePharma/FlexAIDdS)
 **License**: Apache-2.0
 
 ---
+
+## v2.0.3 (2026-07-15) — Homebrew Metal link fix
+
+Patch release so stable Homebrew `brew install --with-metal` can build from a fixed source tag.
+
+### Critical
+- **Metal on `flexaid_core`** (PR [#260](https://github.com/LeBonhommePharma/FlexAIDdS/pull/260)): attach Metal OBJCXX bridges (`.mm`) and Metal/Foundation/MetalKit frameworks **PUBLIC** on `flexaid_core` so every consumer inherits implementations. Fixes `ld: symbol(s) not found` (`metal_eval_*` / `metal_rmsd::*`) under Homebrew LTO / multi-target links.
+- **Homebrew formula**: stable `url` → `v2.0.3`; remove temporary “refuse stable `--with-metal`” gate; `head` tracks `main`.
+- **Packaging**: version alignment for Python package / formula / `VERSION.md`.
+
+### Python
+- Package version **2.0.3** (`python/flexaidds/__version__.py`, `python/pyproject.toml`).
 
 ## Weekly Highlights (2026-05-27 to 2026-06-03)
 
