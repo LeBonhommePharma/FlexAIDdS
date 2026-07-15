@@ -148,3 +148,33 @@ def resolve_benchmark_paths(
                 + list(target_dir.glob("*.sdf"))
             )
     return receptor, ligands
+
+
+def validate_exec_path(path: str | Path) -> None:
+    """Refuse paths that must never reach a shell or corrupt provenance.
+
+    Raises ValueError on empty path, embedded NUL, newlines, or other C0
+    control characters (TAB is allowed). Mirrors ``LIB/shell_exec.h``.
+    """
+    s = str(path)
+    if not s:
+        raise ValueError("path is empty")
+    if '\x00' in s:
+        raise ValueError("path contains NUL byte")
+    for ch in s:
+        if ch in ('\n', '\r'):
+            raise ValueError("path contains newline/CR")
+        o = ord(ch)
+        if o < 0x20 and ch != '\t':
+            raise ValueError("path contains control character")
+        if o == 0x7F:
+            raise ValueError("path contains control character")
+
+
+def is_safe_exec_path(path: str | Path) -> bool:
+    try:
+        validate_exec_path(path)
+        return True
+    except ValueError:
+        return False
+

@@ -17,6 +17,7 @@
 #include "AsyncPipeline.h"
 #include "BenchmarkRunner.h"
 #include "ProtocolConfig.h"
+#include "shell_exec.h"
 #include "statmech.h"
 #include "receptor_prep.h"
 #include "tENCoM/tencm.h"   // tencm::TorsionalENM — ligand Cartesian ANM for H(ω)
@@ -96,17 +97,13 @@ static int deterministic_ga_seed(const std::string& target_id, int restart,
 }
 
 /// POSIX-shell single-quote escape for paths interpolated into `sh -c` strings.
-/// Turns `foo'bar` into `'foo'\''bar'`. Prefer argv/exec when no shell is needed.
-static std::string shell_quote(const std::string& s) {
-    std::string o = "'";
-    o.reserve(s.size() + 8);
-    for (char c : s) {
-        if (c == '\'') o += "'\\''";
-        else o += c;
-    }
-    o += "'";
-    return o;
-}
+/// Turns `foo'bar` into `'foo'\''bar'`. Refuses NUL/newlines/control chars.
+/// Prefer argv/exec (fork_exec_argv / shell_exec::run_argv) when no shell is needed.
+using flexaids::shell_exec::shell_quote;
+using flexaids::shell_exec::is_safe_exec_path;
+using flexaids::shell_exec::run_argv;
+using flexaids::shell_exec::run_argv_capture;
+using flexaids::shell_exec::run_argv_first_token;
 
 // =============================================================================
 // Static pointers for async-signal-safe handler access.
@@ -1918,12 +1915,20 @@ bool DatasetRunner::http_download(const std::string& url, const std::string& out
         return retries < 0 ? 0 : retries;
     };
 
-    // Use system curl with retry logic
-    std::ostringstream cmd;
-    cmd << "curl -sS -L --retry " << download_retry_count() << " --retry-delay 2 -o \""
-        << out_path << "\" \"" << url << "\" 2>&1";
+    // Argv exec — no shell. Paths/URLs never pass through sh -c interpolation.
+    if (!is_safe_exec_path(out_path) || !is_safe_exec_path(url)) {
+        std::cerr << "  [ERROR] Unsafe path/URL for download (NUL/newline/control)\n";
+        return false;
+    }
 
-    int ret = exec_cmd(cmd.str());
+    const std::vector<std::string> argv = {
+        "curl", "-sS", "-L",
+        "--retry", std::to_string(download_retry_count()),
+        "--retry-delay", "2",
+        "-o", out_path,
+        url,
+    };
+    int ret = run_argv(argv);
     if (ret != 0) {
         std::cerr << "  [ERROR] Download failed: " << url << "\n";
         return false;
@@ -4950,32 +4955,17 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
     // file timestamps (which do not survive a reboot). Best-effort: any
     // failure here is non-fatal and must not block docking.
     {
-        // First non-empty whitespace token of a shell command's stdout, or "".
-        auto cmd_token = [](const std::string& cmd) -> std::string {
-            std::string out;
-            FILE* p = popen(cmd.c_str(), "r");
-            if (!p) return out;
-            char buf[512];
-            while (fgets(buf, sizeof(buf), p)) out += buf;
-            pclose(p);
-            std::string tok;
-            for (char c : out) {
-                if (std::isspace(static_cast<unsigned char>(c))) { if (!tok.empty()) break; }
-                else tok += c;
-            }
-            return tok;
-        };
-        // shell_quote is file-scope (shell path hardening); reused for md5/sha.
-        auto md5_of = [&](const std::string& path) -> std::string {
-            if (path.empty() || !fs::exists(path)) return "";
-            std::string t = cmd_token("md5 -q " + shell_quote(path) + " 2>/dev/null");
-            if (t.empty()) t = cmd_token("md5sum " + shell_quote(path) + " 2>/dev/null");
+        // Argv-only hash helpers — no shell, so provenance paths cannot inject.
+        auto md5_of = [](const std::string& path) -> std::string {
+            if (path.empty() || !fs::exists(path) || !is_safe_exec_path(path)) return "";
+            std::string t = run_argv_first_token({"md5", "-q", path});
+            if (t.empty()) t = run_argv_first_token({"md5sum", path});
             return t;
         };
-        auto sha256_of = [&](const std::string& path) -> std::string {
-            if (path.empty() || !fs::exists(path)) return "";
-            std::string t = cmd_token("shasum -a 256 " + shell_quote(path) + " 2>/dev/null");
-            if (t.empty()) t = cmd_token("sha256sum " + shell_quote(path) + " 2>/dev/null");
+        auto sha256_of = [](const std::string& path) -> std::string {
+            if (path.empty() || !fs::exists(path) || !is_safe_exec_path(path)) return "";
+            std::string t = run_argv_first_token({"shasum", "-a", "256", path});
+            if (t.empty()) t = run_argv_first_token({"sha256sum", path});
             return t;
         };
 
@@ -5000,8 +4990,7 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
         const char* oracle_env =
             protocol_cfg_.oracle_site_dir.empty() ? nullptr
                                                  : protocol_cfg_.oracle_site_dir.c_str();
-        std::string git_commit = cmd_token(
-            "git rev-parse HEAD 2>/dev/null");
+        std::string git_commit = run_argv_first_token({"git", "rev-parse", "HEAD"});
 
         auto json_esc = [](const std::string& s) {
             std::string r;
@@ -5796,8 +5785,12 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                 const std::string& dd_override = protocol_cfg_.data_dir;
                 if (!dd_override.empty() &&
                     fs::exists(dd_override + "/MC_st0r5.2_6.dat")) {
-                    data_dir_arg = " --data-dir " +
-                                   shell_quote(fs::canonical(dd_override).string()) + " ";
+                    const std::string canon = fs::canonical(dd_override).string();
+                    if (!is_safe_exec_path(canon)) {
+                        throw std::runtime_error(
+                            "FLEXAIDDS_DATA_DIR/path is unsafe for shell (NUL/newline/control)");
+                    }
+                    data_dir_arg = " --data-dir " + shell_quote(canon) + " ";
                 } else {
                     std::string bin_dir = flexaidds_bin;
                     auto slash = bin_dir.rfind('/');

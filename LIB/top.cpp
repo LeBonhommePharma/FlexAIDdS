@@ -29,6 +29,7 @@
 #include "RngSeed.h"
 #include "ensemble_pipeline.h"
 #include "ProtocolConfig.h"
+#include "shell_exec.h"
 
 #include <algorithm>
 #include <cmath>
@@ -729,16 +730,22 @@ int main(int argc, char **argv){
 			fprintf(stderr, "  Also: doi:<DOI>, pdb_list:<file>\n");
 			Terminate(1);
 		}
-		// Forward to benchmark_datasets executable or run inline
-		// Build the command to invoke the benchmark_datasets binary
-		std::string cmd = "benchmark_datasets";
+		// Forward to benchmark_datasets via argv exec (no shell).
+		// Single child only -- never dual-launch.
+		std::vector<std::string> bench_argv;
+		bench_argv.reserve(static_cast<size_t>(argc));
+		bench_argv.emplace_back("benchmark_datasets");
 		for (int a = 1; a < argc; a++) {
-			cmd += " ";
-			cmd += argv[a];
+			if (!flexaids::shell_exec::is_safe_exec_path(argv[a])) {
+				fprintf(stderr,
+				        "ERROR: unsafe argument for --benchmark (NUL/newline/control)\n");
+				Terminate(1);
+			}
+			bench_argv.emplace_back(argv[a]);
 		}
-		printf("Launching benchmark runner: %s\n", cmd.c_str());
-		int ret = system(cmd.c_str());
-		Terminate(WEXITSTATUS(ret));
+		printf("Launching benchmark runner (argv exec, no shell)\n");
+		int ret = flexaids::shell_exec::run_argv(bench_argv);
+		Terminate(ret < 0 ? 127 : ret);
 	}
 
 	// Check for --legacy mode first

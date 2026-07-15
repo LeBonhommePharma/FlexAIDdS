@@ -4,6 +4,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include "BustCli.h"
+#include "shell_exec.h"
 
 #include <cctype>
 #include <cstdio>
@@ -20,6 +21,10 @@ namespace {
 
 namespace fs = std::filesystem;
 
+using flexaids::shell_exec::is_safe_exec_path;
+using flexaids::shell_exec::run_argv_capture;
+using flexaids::shell_exec::run_argv_first_token;
+
 [[nodiscard]] bool file_executable(const fs::path& p) {
     std::error_code ec;
     return fs::is_regular_file(p, ec) &&
@@ -27,32 +32,12 @@ namespace fs = std::filesystem;
                fs::perms::none;
 }
 
-std::string shell_quote(const std::string& s) {
-    std::string o = "'";
-    for (char c : s) {
-        if (c == '\'') o += "'\\''";
-        else o += c;
-    }
-    o += "'";
-    return o;
-}
-
-std::string shell_quote(const std::string& s);
-
 // Portable file SHA-256 via openssl (always present on macOS/Linux CI).
+// Argv exec — path never reaches a shell.
 std::string sha256_via_openssl(const std::string& path) {
-    const std::string cmd =
-        "openssl dgst -sha256 -r " + shell_quote(path) + " 2>/dev/null";
-    FILE* pipe = popen(cmd.c_str(), "r");
-    if (!pipe) return {};
-    char buf[128];
-    std::string out;
-    while (fgets(buf, sizeof(buf), pipe)) out += buf;
-    pclose(pipe);
-    // format: "<hex> *path" or "<hex> path"
-    std::istringstream iss(out);
-    std::string hex;
-    iss >> hex;
+    if (!is_safe_exec_path(path)) return {};
+    std::string hex = run_argv_first_token(
+        {"openssl", "dgst", "-sha256", "-r", path});
     if (hex.size() != 64) return {};
     for (char& c : hex) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
     return hex;
@@ -171,30 +156,36 @@ BustCliResult run_upstream_bust(const std::string& pred_sdf,
         return r;
     }
 
-    std::ostringstream cmd;
-    cmd << shell_quote(bust) << " " << shell_quote(pred_sdf)
-        << " -p " << shell_quote(protein_pdb);
-    if (!crystal_sdf.empty() && fs::is_regular_file(crystal_sdf)) {
-        cmd << " -l " << shell_quote(crystal_sdf);
-    }
-    cmd << " --outfmt csv 2>/dev/null";
-
-    FILE* pipe = popen(cmd.str().c_str(), "r");
-    if (!pipe) {
-        r.error = "popen(bust) failed";
+    if (!is_safe_exec_path(bust) || !is_safe_exec_path(pred_sdf) ||
+        !is_safe_exec_path(protein_pdb) ||
+        (!crystal_sdf.empty() && !is_safe_exec_path(crystal_sdf))) {
+        r.error = "unsafe path for bust argv (NUL/newline/control)";
         r.backend = "error";
         return r;
     }
-    char buf[4096];
-    std::string out;
-    while (fgets(buf, sizeof(buf), pipe)) out += buf;
-    const int rc = pclose(pipe);
+
+    std::vector<std::string> argv = {bust, pred_sdf, "-p", protein_pdb};
+    if (!crystal_sdf.empty() && fs::is_regular_file(crystal_sdf)) {
+        argv.push_back("-l");
+        argv.push_back(crystal_sdf);
+    }
+    argv.push_back("--outfmt");
+    argv.push_back("csv");
+
+    auto cap = run_argv_capture(argv, /*discard_stderr=*/true);
+    if (!cap.ok) {
+        r.error = "exec(bust) failed";
+        r.backend = "error";
+        return r;
+    }
+    const int rc = cap.exit_code;
+    const std::string& out = cap.stdout_text;
     r.raw_csv = out;
     r.ran = true;
     r.backend = "bust_cli";
 
     if (out.empty()) {
-        r.error = "bust produced empty CSV (pclose_status=" + std::to_string(rc) + ")";
+        r.error = "bust produced empty CSV (exit_status=" + std::to_string(rc) + ")";
         r.pb_pass = false;
         return r;
     }
