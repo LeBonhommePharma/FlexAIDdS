@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Run FlexAID arm A / B0 / B pilot8.
+# Run FlexAID arm A / B0 / B (pilot8 or full85 Astex Diverse).
 #
 # Default storage (anti-hang): local APFS via use_local_first_benchmark_storage.sh
 #   OUT:  $FLEXAIDDS_LOCAL_ROOT/campaigns/three_engine/{A,B0,B}/...
@@ -13,8 +13,9 @@
 #   scripts/run_flexaid_arm_pilot8.sh B0 --dry-run
 #   scripts/run_flexaid_arm_pilot8.sh B --pdb 1GPK # single target
 #   scripts/run_flexaid_arm_pilot8.sh A --smoke    # tiny pop/gen smoke (1 target)
+#   scripts/run_flexaid_arm_pilot8.sh A --full85   # Astex Diverse N=85 (3Dsig full)
 #
-# Does NOT touch C0 full85 outputs. Separate lock per arm.
+# Does NOT touch C0 full85 outputs. Separate lock per arm/panel (pilot8 vs full85).
 set -euo pipefail
 
 # shellcheck disable=SC1090
@@ -36,13 +37,14 @@ export FLEXAIDDS_QUEUE_ROOT="$Q"
 
 ARM="${1:-}"
 if [[ -z "$ARM" || "$ARM" == -* ]]; then
-  echo "Usage: $0 <A|B0|B> [--dry-run|--smoke|--pdb ID|--force|--no-prepare]" >&2
+  echo "Usage: $0 <A|B0|B> [--dry-run|--smoke|--full85|--pdb ID|--force|--no-prepare]" >&2
   exit 2
 fi
 shift || true
 
 DRY=0
 SMOKE=0
+FULL85=0
 FORCE=0
 NOPREP=0
 ONLY_PDB=""
@@ -50,12 +52,18 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
     --dry-run) DRY=1; shift ;;
     --smoke) SMOKE=1; shift ;;
+    --full85) FULL85=1; shift ;;
     --force) FORCE=1; shift ;;
     --no-prepare) NOPREP=1; shift ;;
     --pdb) ONLY_PDB="${2:-}"; shift 2 ;;
     *) echo "Unknown arg: $1" >&2; exit 2 ;;
   esac
 done
+
+if (( SMOKE && FULL85 )); then
+  echo "ERROR: --smoke and --full85 are mutually exclusive" >&2
+  exit 2
+fi
 
 case "$ARM" in
   A|B0|B) ;;
@@ -80,8 +88,21 @@ export FLEXAIDDS_ROOT="$REPO"
 GEN="$REPO/scripts/generate_flexaid_inp.py"
 PARSE="$REPO/scripts/parse_flexaid_arm_results.py"
 
-OUT="${FLEXAID_ARM_OUT:-$FLEXAIDDS_RESULTS/campaigns/three_engine/$ARM/pilot8}"
-# Smoke must NEVER share pilot8 OUT (skip would keep tiny-GA result.csv).
+PANEL="pilot8"
+(( FULL85 )) && PANEL="full85"
+(( SMOKE )) && PANEL="smoke"
+
+OUT="${FLEXAID_ARM_OUT:-}"
+if [[ -z "$OUT" ]]; then
+  if (( SMOKE )); then
+    OUT="$FLEXAIDDS_RESULTS/campaigns/three_engine/$ARM/smoke"
+  elif (( FULL85 )); then
+    OUT="$FLEXAIDDS_RESULTS/campaigns/three_engine/$ARM/3dsig_full85_r10"
+  else
+    OUT="$FLEXAIDDS_RESULTS/campaigns/three_engine/$ARM/pilot8"
+  fi
+fi
+# Smoke must NEVER share pilot8/full85 OUT (skip would keep tiny-GA result.csv).
 if (( SMOKE )) && [[ -z "${FLEXAID_ARM_OUT:-}" ]]; then
   OUT="$FLEXAIDDS_RESULTS/campaigns/three_engine/$ARM/smoke"
 fi
@@ -106,7 +127,7 @@ if [[ -f "$_LOCAL_MAT" ]]; then
   MATRIX="$_LOCAL_MAT"
 fi
 
-echo "=== FlexAID arm $ARM pilot8 ==="
+echo "=== FlexAID arm $ARM $PANEL ==="
 echo "Q=$Q"
 echo "OUT=$OUT"
 echo "BINARY=$BINARY"
@@ -135,9 +156,9 @@ if [[ -z "${FLEXAIDDS_PROCESSLIGAND:-}" ]]; then
 fi
 echo "OK: ProcessLigand=$FLEXAIDDS_PROCESSLIGAND"
 
-LOCK="$LOGDIR/run_${ARM}_pilot8.lock"
+LOCK="$LOGDIR/run_${ARM}_${PANEL}.lock"
 if [[ -f "$LOCK" ]] && kill -0 "$(cat "$LOCK" 2>/dev/null)" 2>/dev/null; then
-  echo "REFUSE: arm $ARM pilot already running pid $(cat "$LOCK")" >&2
+  echo "REFUSE: arm $ARM $PANEL already running pid $(cat "$LOCK")" >&2
   exit 92
 fi
 if [[ -f "$LOGDIR/C0_full85.lock" ]] && kill -0 "$(cat "$LOGDIR/C0_full85.lock" 2>/dev/null)" 2>/dev/null; then
@@ -149,6 +170,25 @@ if [[ -n "$ONLY_PDB" ]]; then
   TARGETS=("${ONLY_PDB^^}")
 elif (( SMOKE )); then
   TARGETS=(1GPK)
+elif (( FULL85 )); then
+  # All prepared Astex Diverse inputs under queue (must be 85 for deck claim)
+  TARGETS=()
+  while IFS= read -r _tid; do
+    [[ -n "$_tid" ]] && TARGETS+=("$_tid")
+  done < <(
+    # Local queue only — never walk CloudDocs. basename dirs under inputs/astex_diverse.
+    for _d in "$Q/inputs/astex_diverse"/*/; do
+      [[ -d "$_d" ]] || continue
+      basename "${_d%/}"
+    done | LC_ALL=C sort
+  )
+  if (( ${#TARGETS[@]} == 0 )); then
+    echo "FAIL: no inputs under $Q/inputs/astex_diverse" >&2
+    exit 1
+  fi
+  if (( ${#TARGETS[@]} != 85 )); then
+    echo "WARN: expected 85 Astex Diverse targets, found ${#TARGETS[@]} under $Q/inputs/astex_diverse" >&2
+  fi
 else
   TARGETS=("${PILOT8[@]}")
 fi
@@ -163,7 +203,13 @@ if (( SMOKE )); then
   echo "SMOKE mode: pop=$POP gen=$GENS R=$RESTARTS targets=${TARGETS[*]}"
 fi
 
-echo "targets=${TARGETS[*]} pop=$POP gen=$GENS R=$RESTARTS"
+echo "targets_n=${#TARGETS[@]} pop=$POP gen=$GENS R=$RESTARTS"
+if (( ${#TARGETS[@]} <= 12 )); then
+  echo "targets=${TARGETS[*]}"
+else
+  _last=$((${#TARGETS[@]} - 1))
+  echo "targets=${TARGETS[0]} ... ${TARGETS[$_last]} (n=${#TARGETS[@]})"
+fi
 
 if (( DRY )); then
   echo "DRY-RUN: prepare plan only (no FlexAID exec)"
@@ -172,6 +218,8 @@ if (( DRY )); then
     PREP_ARGS+=(--pdb "$ONLY_PDB")
   elif (( SMOKE )); then
     PREP_ARGS+=(--pdb 1GPK)
+  elif (( FULL85 )); then
+    : # all targets under inputs/astex_diverse (no --pilot8)
   else
     PREP_ARGS+=(--pilot8)
   fi
@@ -185,6 +233,8 @@ if (( NOPREP == 0 )); then
   (( FORCE )) && PREP_ARGS+=(--force)
   if [[ ${#TARGETS[@]} -eq 1 ]]; then
     PREP_ARGS+=(--pdb "${TARGETS[0]}")
+  elif (( FULL85 )); then
+    : # generate for full queue inputs/astex_diverse
   else
     PREP_ARGS+=(--pilot8)
   fi
@@ -205,27 +255,31 @@ def sha(p):
             h.update(c)
     return h.hexdigest()
 receipt = {
-    "run_id": f"flexaid_{'''$ARM'''}_pilot8",
+    "run_id": f"flexaid_{'''$ARM'''}_{'''$PANEL'''}",
     "arm": '''$ARM''',
+    "panel": '''$PANEL''',
     "started_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
     "output": str(out),
-    "storage": "icloud_drive",
+    "storage": "local_first_or_icloud",
     "pop": int('''$POP'''),
     "gen": int('''$GENS'''),
     "restarts": int('''$RESTARTS'''),
     "targets": '''${TARGETS[*]}'''.split(),
+    "n_targets": int('''${#TARGETS[@]}'''),
     "matrix_md5": hashlib.md5(mat.read_bytes()).hexdigest(),
     "binary_sha256": sha(binp),
     "binary": str(binp),
     "smoke": bool(int('''$SMOKE''')),
+    "full85": bool(int('''$FULL85''')),
     "seed_note": "STRTSEED written; staged binaries may use time(0)",
+    "cli_mode": "--legacy classic CONFIG+ga",
 }
 (out / "RUN_RECEIPT.json").write_text(json.dumps(receipt, indent=2) + "\n")
-(q / f"provenance_run_{'''$ARM'''}_pilot8.json").write_text(json.dumps(receipt, indent=2) + "\n")
+(q / f"provenance_run_{'''$ARM'''}_{'''$PANEL'''}.json").write_text(json.dumps(receipt, indent=2) + "\n")
 print("wrote", out / "RUN_RECEIPT.json")
 PY
 
-LOG="$LOGDIR/run_${ARM}_pilot8.log"
+LOG="$LOGDIR/run_${ARM}_${PANEL}.log"
 run_one() {
   local pdb="$1"
   local wdir="$WORK_ROOT/$ARM/$pdb"
@@ -290,5 +344,5 @@ else
   for pdb in "${TARGETS[@]}"; do
     run_one "$pdb" || true
   done
-  echo "COMPLETE arm=$ARM out=$OUT log=$LOG"
+  echo "COMPLETE arm=$ARM panel=$PANEL out=$OUT log=$LOG"
 fi
