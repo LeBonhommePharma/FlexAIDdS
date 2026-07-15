@@ -2378,6 +2378,12 @@ if(BUILD_TESTING)
         TEST_NAME BufferSafetyTests
     )
 
+    # test_shell_exec — path-safe shell quoting / argv exec helpers
+    flexaids_add_unit_test(test_shell_exec
+        SOURCES tests/test_shell_exec.cpp
+        TEST_NAME ShellExecTests
+    )
+
     message(STATUS "Unit tests enabled — build targets: test_statmech, test_hardware_dispatch, test_tencom_diff, test_target_validation, test_grand_partition, test_target_server, test_multi_site_gpf")
     # test_hbond_potential — Angular-dependent H-bond potential unit tests
     flexaids_add_unit_test(test_hbond_potential

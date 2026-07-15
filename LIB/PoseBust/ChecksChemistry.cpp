@@ -7,6 +7,7 @@
 // No RDKit / posebusters source. Optional system `inchi-1` for inchi_convertible.
 
 #include "ChecksChemistry.h"
+#include "shell_exec.h"
 #include "Loaders.h"  // write_sdf for real inchi-1 convertible check
 
 #include <algorithm>
@@ -489,11 +490,15 @@ void check_chemistry_sanity(const Molecule& pred, std::vector<CheckItem>& out) {
                     ok = false;
                     detail = "write_sdf_failed: " + werr;
                 } else {
-                    const std::string cmd =
-                        "'" + inchi_bin + "' '" + tmp.string() + "' '" +
-                        outp.string() + "' -AuxNone -NoLabels -DoNotAddH "
-                        "2>/dev/null";
-                    const int rc = std::system(cmd.c_str());
+                    // Argv exec — no shell. Paths never interpolated into sh -c.
+                    const int rc = flexaids::shell_exec::run_argv({
+                        inchi_bin,
+                        tmp.string(),
+                        outp.string(),
+                        "-AuxNone",
+                        "-NoLabels",
+                        "-DoNotAddH",
+                    });
                     std::string inchi;
                     {
                         std::ifstream ifs(outp);

@@ -45,13 +45,47 @@ struct ProtocolConfig {
 
     // ── Paths ────────────────────────────────────────────────────────────
     std::string data_dir;             ///< FLEXAIDDS_DATA_DIR (empty = unset)
+    std::string oracle_site_dir;      ///< FLEXAIDDS_ORACLE_SITE_DIR
+    std::string oracle_site;          ///< FLEXAIDDS_ORACLE_SITE
+    std::string cleft_sphere_file;    ///< FLEXAIDDS_CLEFT_SPHERE_FILE
 
     // ── DatasetRunner pose-selector gates ────────────────────────────────
     bool cf_window_selector{false};   ///< FLEXAIDDS_CF_WINDOW_SELECTOR
     bool cluster_member_emit{false};  ///< FLEXAIDDS_CLUSTER_MEMBER_EMIT
+    bool seed_elitism{true};          ///< FLEXAIDDS_SEED_ELITISM (default ON)
+    double seed_elitism_delta_cf{10.0}; ///< FLEXAIDDS_SEED_ELITISM_DELTA_CF
+    bool freqsel{false};              ///< FLEXAIDDS_FREQSEL
+    double freqsel_alpha{12.0};       ///< FLEXAIDDS_FREQSEL_ALPHA
+    float freqsel_rmsd{1.5f};         ///< FLEXAIDDS_FREQSEL_RMSD
+    bool consensus_scorer{false};     ///< FLEXAIDDS_CONSENSUS_SCORER
+    /// tENCoM/H(ω) validator; default ON, disable with FLEXAIDDS_HVIB=0.
+    bool hvib_enabled{true};
+
+    // ── Budget / grid (DatasetRunner dock path) ──────────────────────────
+    bool ring_flex{false};            ///< FLEXAIDDS_RING_FLEX
+    /// 1=pop-scale (default), 0=legacy gen-scale, -1=fixed (off/none/fixed).
+    int eval_scale_dihedral{1};       ///< FLEXAIDDS_EVAL_SCALE_DIHEDRAL
+    bool budget_scale{true};          ///< FLEXAIDDS_BUDGET_SCALE (default ON)
+    bool fine_grid{false};            ///< FLEXAIDDS_FINE_GRID (presence)
+    int multi_cleft{0};               ///< FLEXAIDDS_MULTI_CLEFT (0 = off)
+    bool cognate_site{false};         ///< FLEXAIDDS_COGNATE_SITE (presence)
+    bool score_native{false};         ///< FLEXAIDDS_SCORE_NATIVE (truthy)
+    bool native_only{false};          ///< FLEXAIDDS_NATIVE_ONLY (truthy)
+    bool use_dp{false};               ///< FLEXAIDDS_USE_DP (=1)
+    bool ignore_cache{false};         ///< FLEXAIDDS_IGNORE_CACHE
+    bool thermo_csv{false};           ///< FLEXAIDDS_THERMO_CSV (presence)
 
     // ── Engine init (top.cpp) ────────────────────────────────────────────
     double hbond_weight{-2.5};        ///< FLEXAIDDS_HBOND_WEIGHT
+
+    // ── GA engine (gaboom.cpp) ───────────────────────────────────────────
+    bool no_sec{false};               ///< FLEXAIDDS_NO_SEC (presence)
+    bool benchmark_mode{false};       ///< FLEXAIDDS_BENCHMARK (presence)
+    double t_hot{0.0};                ///< FLEXAIDDS_T_HOT (0 = annealing off)
+    /// 0 → keep compile-time GA_INSTREAM_INTERVAL; else override (>=1).
+    int instream_interval{0};         ///< FLEXAIDDS_INSTREAM_INTERVAL
+    bool chain_norm{false};           ///< FLEXAIDDS_CHAIN_NORM
+    bool smfree_require_t{false};     ///< FLEXAIDDS_SMFREE_REQUIRE_T
 
     /// Built-in defaults (no env consultation).
     static ProtocolConfig defaults();

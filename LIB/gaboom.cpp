@@ -9,6 +9,7 @@
 #include "CavityDetect/SpatialGrid.h"
 #include "RngSeed.h"
 #include "ensemble_pipeline.h"
+#include "ProtocolConfig.h"
 
 #include <random>
 #include <functional>
@@ -161,9 +162,12 @@ static inline void ring_load_chrom_to_fa(FA_Global* FA, const chromosome* c) {
 // number of receptor chains changes the effective selection temperature and
 // regresses multichain Astex cases. Keep production/default scoring extensive;
 // enable this only with FLEXAIDDS_CHAIN_NORM=1 for targeted ablations.
-static int count_receptor_chains(FA_Global* FA, const resid* residue) {
-    const char* env = std::getenv("FLEXAIDDS_CHAIN_NORM");
-    if (!env || env[0] == '\0' || env[0] == '0') return 1;
+static int count_receptor_chains(FA_Global* FA, const resid* residue,
+                                 bool chain_norm_enabled = false) {
+    // When chain_norm_enabled is false (default), preserve the historical
+    // extensive scoring path (return 1). Callers that want the diagnostic
+    // multi-chain normalisation pass ProtocolConfig::chain_norm.
+    if (!chain_norm_enabled) return 1;
 
     std::unordered_set<char> seen;
     for (int r = 0; r < FA->res_cnt; ++r) {
@@ -201,8 +205,12 @@ int GA(FA_Global* FA, GB_Global* GB,VC_Global* VC,chromosome** chrom,chromosome*
 	GAContext local_ctx;
 	if (!ctx) ctx = &local_ctx;
 
+	// Typed protocol snapshot (env remains the compatibility adapter).
+	const flexaids::ProtocolConfig proto = flexaids::ProtocolConfig::from_env();
+
 	// ── OMP thread default: 2/worker if OMP_NUM_THREADS not set in environment.
 	// Leaves headroom for Metal dispatch and OS scheduling on M3 Pro 11 P-cores.
+	// OMP_NUM_THREADS is a platform OpenMP contract — left as raw getenv.
 #ifdef _OPENMP
 	if (!std::getenv("OMP_NUM_THREADS")) {
 		omp_set_num_threads(2);
@@ -217,7 +225,7 @@ int GA(FA_Global* FA, GB_Global* GB,VC_Global* VC,chromosome** chrom,chromosome*
 	// divides every evalue/app_evalue by the number of explicit receptor chain
 	// IDs. Do not enable for production benchmarks without a target-specific
 	// justification: it changes GA selection pressure and regressed Astex smoke.
-	const int n_receptor_chains = count_receptor_chains(FA, residue);
+	const int n_receptor_chains = count_receptor_chains(FA, residue, proto.chain_norm);
 	if (n_receptor_chains > 1)
 		fprintf(stderr, "[CHAIN] %d receptor chains detected — "
 		        "normalising VCT evalue by chain count (diagnostic)\n", n_receptor_chains);
@@ -227,13 +235,11 @@ int GA(FA_Global* FA, GB_Global* GB,VC_Global* VC,chromosome** chrom,chromosome*
 	// monitor (per-generation [HVIB] lines) even on the bare binary, mirroring the
 	// DatasetRunner config toggle.  Engine-side env wins, matching FLEXAIDDS_N_ELITE.
 	// Purely diagnostic — does NOT enter CF or fitness.  Default stays OFF.
-	if (const char* _hv = std::getenv("FLEXAIDDS_USE_SHANNON")) {
-		if (_hv[0] != '\0' && _hv[0] != '0') {
-			if (!GB->use_shannon)
-				fprintf(stderr, "[HVIB] FLEXAIDDS_USE_SHANNON set: enabling ligand "
-				        "vibrational-entropy H(ω) monitor (diagnostic only)\n");
-			GB->use_shannon = 1;
-		}
+	if (proto.use_shannon) {
+		if (!GB->use_shannon)
+			fprintf(stderr, "[HVIB] FLEXAIDDS_USE_SHANNON set: enabling ligand "
+			        "vibrational-entropy H(ω) monitor (diagnostic only)\n");
+		GB->use_shannon = 1;
 	}
 
 	//char tmp_rrgfile[MAX_PATH__];
@@ -565,13 +571,10 @@ int GA(FA_Global* FA, GB_Global* GB,VC_Global* VC,chromosome** chrom,chromosome*
 	// early exit (which can trigger well before generation 100).  Default behaviour
 	// for production benchmarks is unchanged.
 	int instream_interval = GA_INSTREAM_INTERVAL;
-	if (const char* _ii = std::getenv("FLEXAIDDS_INSTREAM_INTERVAL")) {
-		int v = std::atoi(_ii);
-		if (v >= 1) {
-			instream_interval = v;
-			fprintf(stderr, "[INSTREAM] merge/H(ω) cadence overridden to every %d "
-			        "generation(s) via FLEXAIDDS_INSTREAM_INTERVAL\n", instream_interval);
-		}
+	if (proto.instream_interval >= 1) {
+		instream_interval = proto.instream_interval;
+		fprintf(stderr, "[INSTREAM] merge/H(ω) cadence overridden to every %d "
+		        "generation(s) via FLEXAIDDS_INSTREAM_INTERVAL\n", instream_interval);
 	}
 
 	////// Genetic Algorithm ///////
@@ -582,7 +585,7 @@ int GA(FA_Global* FA, GB_Global* GB,VC_Global* VC,chromosome** chrom,chromosome*
 	// During benchmarking this ensures equal search effort vs other methods.
 	// "Spare" generations after a plateau are used with boosted mutation/exploration
 	// (see stagnation handling) to search conformational space more effectively.
-	const bool no_sec = (std::getenv("FLEXAIDDS_NO_SEC") != nullptr);
+	const bool no_sec = proto.no_sec;
 	if (no_sec)
 		fprintf(stderr, "[SEC] All entropy-convergence early exits DISABLED "
 		        "(FLEXAIDDS_NO_SEC=1) — GA will run to max_generations.\n");
@@ -603,7 +606,7 @@ int GA(FA_Global* FA, GB_Global* GB,VC_Global* VC,chromosome** chrom,chromosome*
 		fprintf(stderr, "[ELITE] GA-internal elitism active: protecting %d "
 		        "lowest-CF individual(s) per generation\n", n_elite);
 
-	// ── Temperature annealing (FLEXAIDDS_T_HOT) ──────────────────────────────
+	// ── Temperature annealing (FLEXAIDDS_T_HOT via ProtocolConfig) ────────────
 	// Exponential decay T_hot -> target K:
 	//   T(alpha) = T_hot*exp(-5alpha) + T_target*(1-exp(-5alpha)).
 	// Affects SMFREE Boltzmann-weight selection only; post-GA thermodynamics
@@ -612,10 +615,7 @@ int GA(FA_Global* FA, GB_Global* GB,VC_Global* VC,chromosome** chrom,chromosome*
 	// → native basin gravitationally dominant.  Annealing targets near-miss
 	// false-minimum escape early in the run while native seeds lock in.
 	// Useful calibration range: 500–2000 K.
-	const double t_hot_anneal = []() -> double {
-		const char* env = std::getenv("FLEXAIDDS_T_HOT");
-		return (env && env[0] != '\0') ? std::atof(env) : 0.0;
-	}();
+	const double t_hot_anneal = proto.t_hot;
 	const double target_temperature_d = static_cast<double>(target_temperature_K);
 	const bool do_anneal = (target_temperature_K > 0) &&
 	                        (t_hot_anneal > target_temperature_d);
@@ -817,7 +817,7 @@ int GA(FA_Global* FA, GB_Global* GB,VC_Global* VC,chromosome** chrom,chromosome*
 			if (stagnant) {
 				stagnation_count += STAGNATION_WINDOW;
 				if (stagnation_count >= STAGNATION_LIMIT) {
-					const bool benchmark_full = (std::getenv("FLEXAIDDS_NO_SEC") != nullptr) || (std::getenv("FLEXAIDDS_BENCHMARK") != nullptr);
+					const bool benchmark_full = proto.no_sec || proto.benchmark_mode;
 					if (benchmark_full) {
 						printf("GA plateau at gen %d (stagnant %d gens, best_CF=%.4f); "
 						       "BENCHMARK mode: continuing with exploration boost for remaining gens.\n",
@@ -2736,9 +2736,7 @@ void calculate_fitness(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* chr
 					"[SMFREE] WARN: temperature=0 → rank-only fitness "
 					"(no soft-β sampling). Set thermodynamics.temperature>0 "
 					"for reproducible ensemble layer 3 (β=1/T).\n");
-				const char* req = std::getenv("FLEXAIDDS_SMFREE_REQUIRE_T");
-				if (req && (req[0] == '1' || req[0] == 't' || req[0] == 'T'
-				            || req[0] == 'y' || req[0] == 'Y')) {
+				if (flexaids::ProtocolConfig::from_env().smfree_require_t) {
 					fprintf(stderr,
 						"[SMFREE] FATAL: FLEXAIDDS_SMFREE_REQUIRE_T set and T=0\n");
 					Terminate(2);
