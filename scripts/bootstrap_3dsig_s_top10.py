@@ -89,9 +89,52 @@ def load_rank_table(path: Path) -> Dict[str, List[float]]:
 
 
 def load_arm_dir(arm_dir: Path) -> Dict[str, List[float]]:
-    """Scan result.csv under arm_dir/<PDB>/ for rmsd columns if present."""
+    """Scan arm_dir/<PDB>/ for S_top10 mode RMSD lists.
+
+    Preference order:
+      1. scripts/extract_3dsig_s_top10_from_arm.py (pose PDB REMARK RMSDs)
+      2. result.csv mode_rmsd_0..9 (shallow */result.csv only — no rglob)
+
+    Single-metric columns (rmsd_top1 / BCR alone) are **not** S_top10 and are ignored.
+    """
     out: Dict[str, List[float]] = {}
-    for csv_path in sorted(arm_dir.rglob("result.csv")):
+    if not arm_dir.is_dir():
+        return out
+
+    # 1) dedicated extractor (pose PDBs + gap report)
+    extract_path = Path(__file__).resolve().parent / "extract_3dsig_s_top10_from_arm.py"
+    if extract_path.is_file():
+        try:
+            import importlib.util
+
+            spec = importlib.util.spec_from_file_location(
+                "extract_3dsig_s_top10_from_arm", extract_path
+            )
+            if spec is not None and spec.loader is not None:
+                import sys as _sys
+                mod = importlib.util.module_from_spec(spec)
+                # Required for @dataclass under importlib (Py3.12+)
+                _sys.modules[spec.name] = mod
+                spec.loader.exec_module(mod)
+                if hasattr(mod, "scan_arm"):
+                    cases = mod.scan_arm(arm_dir, strategy="auto", score="cf", top_n=10)
+                    for pid, ex in cases.items():
+                        rms = [float(x) for x in getattr(ex, "rmsds", []) or [] if x is not None]
+                        rms = [r for r in rms if math.isfinite(r) and r >= 0]
+                        if rms:
+                            out[str(pid).upper()[:4]] = rms[:10]
+                if out:
+                    return out
+        except Exception as exc:  # noqa: BLE001 — fall back to CSV
+            print(f"note: extract_3dsig hook skipped: {exc}", file=sys.stderr)
+
+    # 2) shallow result.csv with mode_rmsd_* only
+    for child in sorted(arm_dir.iterdir()):
+        if not child.is_dir():
+            continue
+        csv_path = child / "result.csv"
+        if not csv_path.is_file():
+            continue
         try:
             with csv_path.open(newline="") as f:
                 rows = list(csv.DictReader(f))
@@ -103,7 +146,7 @@ def load_arm_dir(arm_dir: Path) -> Dict[str, List[float]]:
         pdb = (
             row.get("pdb_id")
             or row.get("receptor_id")
-            or csv_path.parent.name
+            or child.name
         ).upper()[:4]
         rmsds: List[float] = []
         for i in range(10):
@@ -116,16 +159,7 @@ def load_arm_dir(arm_dir: Path) -> Dict[str, List[float]]:
                             break
                     except ValueError:
                         pass
-        # fallback: single elected + best_cluster only (incomplete for S_top10)
-        if not rmsds:
-            for key in ("rmsd_to_crystal", "rmsd_hungarian", "best_cluster_rmsd", "rmsd_top1", "rmsd_bcr"):
-                if key in row and row[key] not in ("", None, "NA"):
-                    try:
-                        v = float(row[key])
-                        if math.isfinite(v) and v >= 0:
-                            rmsds.append(v)
-                    except ValueError:
-                        pass
+        # Do NOT promote S1/BCR single values to S_top10
         if rmsds:
             out[pdb] = rmsds
     return out

@@ -118,6 +118,7 @@ Operational freeze + serial launch for the **red** bars:
 - **Protocol:** `docs/implementation/3dsig_red_pair_protocol.md`
 - **Launcher:** `scripts/run_3dsig_red_pair_serial.sh` (A → B0 → B, `R=10`, `pop×gen=2e6`)
 - **Archived figures:** `scripts/plot_3dsig_archived_bars.py`
+- **Live red-pair bars (new docks):** `scripts/plot_3dsig_live_bars.py`
 - **Bootstrap metric:** `scripts/bootstrap_3dsig_s_top10.py`
 
 C0 packaging campaigns are **not** the 2017 red-bar path until FO dual-suffix election is validated.

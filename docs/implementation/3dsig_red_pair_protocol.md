@@ -68,7 +68,9 @@ Do **not** add a second FO pass or a fixed multi-MinPts ladder in CONFIG/GA. Min
 | HAP2 FLRP | 0.18 | 0.22 | same |
 | HAP2 FLFP | 0.29 | 0.36 | same |
 
-Figure rebuild: `python3 scripts/plot_3dsig_archived_bars.py`
+Figure rebuild (archived labels only): `python3 scripts/plot_3dsig_archived_bars.py`
+
+Live red-pair bars (from **new docks**, not archived): `python3 scripts/plot_3dsig_live_bars.py` — see §4.2.
 
 ---
 
@@ -89,8 +91,29 @@ bash scripts/run_A_pilot8.sh
 After all arms complete on pilot8 (or full85):
 
 ```bash
-python3 scripts/bootstrap_3dsig_s_top10.py --arm-dir "$FLEXAIDDS_RESULTS/campaigns/three_engine/A/3dsig_r10" ...
+export FLEXAIDDS_LOCAL_ROOT="${FLEXAIDDS_LOCAL_ROOT:-$HOME/flexaidds_results}"
+TE="$FLEXAIDDS_LOCAL_ROOT/campaigns/three_engine"
+
+# Per-arm S_top10 bootstrap (optional debug)
+python3 scripts/bootstrap_3dsig_s_top10.py \
+  --arm-dir "$TE/A/3dsig_r10" --bootstraps 10000 --json-out /tmp/A_s_top10.json
+python3 scripts/bootstrap_3dsig_s_top10.py \
+  --arm-dir "$TE/B0/3dsig_r10" --bootstraps 10000 --json-out /tmp/B0_s_top10.json
+python3 scripts/bootstrap_3dsig_s_top10.py \
+  --arm-dir "$TE/B/3dsig_r10" --bootstraps 10000 --json-out /tmp/B_s_top10.json
+
+# Deck-style red-pair barplot (FlexAID A|B0 vs FlexAIDdS B)
+python3 scripts/plot_3dsig_live_bars.py \
+  --campaign-root "$TE" \
+  --campaign 3dsig_r10 \
+  --out-dir docs/figures/3dsig_live \
+  --bootstraps 10000
 ```
+
+Partial A is OK: the live plotter writes inventory + empty-aware SVG and lists `blocked_on`.
+Layout smoke without docks: `python3 scripts/plot_3dsig_live_bars.py --demo --out-dir /tmp/3dsig_live_demo`.
+
+**S_top10 inputs (in order):** ranked pose PDBs with `REMARK … RMSD to ref.` → `mode_rmsd_0..9` in `result.csv` (written by `parse_flexaid_arm_results.py`). A `result.csv` with only empty `rmsd_top1` (no pose PDBs) is **not** S_top10-complete.
 
 ---
 
@@ -120,6 +143,36 @@ python3 scripts/validate_flexaid_arm_cleft_grid.py --check-logs --json /tmp/clef
 
 Read-only — does **not** kill or pause running docks. Exit **0** = all MATCH; **1** = any FAIL.
 
+## 4.2 Live red-pair barplots (new docks)
+
+| Script | Role |
+|--------|------|
+| `scripts/extract_3dsig_s_top10_from_arm.py` | Pose PDB / RRD → per-case top-10 RMSDs + gap report |
+| `scripts/bootstrap_3dsig_s_top10.py` | Per-arm S_top10 + 10k bootstrap median |
+| `scripts/plot_3dsig_live_bars.py` | Inventory A/B0/B → SVG bars + bootstrap JSON |
+| `scripts/plot_3dsig_archived_bars.py` | PDF/notes medians only (handout fast path) |
+| `scripts/parse_flexaid_arm_results.py` | Writes `result.csv` including `mode_rmsd_0..9` |
+
+Exact regenerate command (after A→B0→B finish):
+
+```bash
+export FLEXAIDDS_LOCAL_ROOT="${FLEXAIDDS_LOCAL_ROOT:-$HOME/flexaidds_results}"
+cd "${FLEXAIDDS_ROOT:-$HOME/Projects/FlexAIDdS}"
+python3 scripts/plot_3dsig_live_bars.py \
+  --campaign-root "$FLEXAIDDS_LOCAL_ROOT/campaigns/three_engine" \
+  --campaign 3dsig_r10 \
+  --out-dir docs/figures/3dsig_live \
+  --bootstraps 10000
+```
+
+Optional competitors (only if you have medians): `--competitors path/to/competitors.json`  
+(`[{"name":"Vina","median":0.82}, …]` or `{"Vina": 0.82, …}`).
+
+Outputs:
+- `docs/figures/3dsig_live/3dsig_live_3dsig_r10_red_pair.svg`
+- `docs/figures/3dsig_live/3dsig_live_3dsig_r10_bootstrap.json`
+- `docs/figures/3dsig_live/3dsig_live_inventory.json`
+
 ## 5. Priority vs C0
 
 | Job | Status under this protocol |
@@ -142,3 +195,5 @@ Read-only — does **not** kill or pause running docks. Exit **0** = all MATCH; 
 - [ ] Arm B logs show **one** `[FO-MINPTS]` / one `Size of Population … (minPts=N)` per clustering
 - [ ] S_top10 + 10k bootstrap medians vs 0.66 / 0.69
 - [ ] Archived barplots generated for handout figures
+- [x] Live barplot pipeline (`plot_3dsig_live_bars.py`) ships with empty/partial handling
+- [ ] Live red-pair SVG from complete A/B0/B pilot8 (or full85) S_top10

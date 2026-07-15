@@ -1,0 +1,80 @@
+{
+  "note": "DEMO synthetic layout only",
+  "protocol": "docs/implementation/3dsig_red_pair_protocol.md",
+  "metric": "S_top10",
+  "thresh_A": 2.0,
+  "n_boot": 10000,
+  "seed": 20170715,
+  "campaign": "3dsig_r10",
+  "campaign_root": "/Users/lp.more/flexaidds_results/campaigns/three_engine",
+  "flexaid_arm_used": "A",
+  "demo": true,
+  "arms": {
+    "A": {
+      "n_cases": 8,
+      "n_success": 5,
+      "point": 0.625,
+      "median": 0.625,
+      "p05": 0.375,
+      "p95": 0.875,
+      "n_boot": 10000,
+      "complete": true,
+      "pdb_ids": [
+        "DEMO1",
+        "DEMO2",
+        "DEMO3",
+        "DEMO4",
+        "DEMO5",
+        "DEMO6",
+        "DEMO7",
+        "DEMO8"
+      ],
+      "note": "synthetic --demo"
+    },
+    "B0": {
+      "n_cases": 0,
+      "n_success": 0,
+      "point": null,
+      "median": null,
+      "p05": null,
+      "p95": null,
+      "n_boot": 10000,
+      "complete": false,
+      "pdb_ids": [],
+      "note": "synthetic --demo unused"
+    },
+    "B": {
+      "n_cases": 8,
+      "n_success": 6,
+      "point": 0.75,
+      "median": 0.75,
+      "p05": 0.5,
+      "p95": 1.0,
+      "n_boot": 10000,
+      "complete": true,
+      "pdb_ids": [
+        "DEMO1",
+        "DEMO2",
+        "DEMO3",
+        "DEMO4",
+        "DEMO5",
+        "DEMO6",
+        "DEMO7",
+        "DEMO8"
+      ],
+      "note": "synthetic --demo"
+    }
+  },
+  "inventory": null,
+  "methods": [
+    "FlexAID (A)",
+    "FlexAIDdS (B)"
+  ],
+  "medians": [
+    0.625,
+    0.75
+  ],
+  "svg": "docs/figures/3dsig_live/demo/3dsig_live_3dsig_r10_red_pair.svg",
+  "blocked_on": [],
+  "regen_command": "python3 scripts/plot_3dsig_live_bars.py --campaign-root \"/Users/lp.more/flexaidds_results/campaigns/three_engine\" --campaign 3dsig_r10 --out-dir \"docs/figures/3dsig_live/demo\" --bootstraps 10000"
+}

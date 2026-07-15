@@ -1,0 +1,148 @@
+{
+  "note": "Live 3Dsig red-pair S_top10 bootstrap medians from new docks",
+  "protocol": "docs/implementation/3dsig_red_pair_protocol.md",
+  "metric": "S_top10",
+  "thresh_A": 2.0,
+  "n_boot": 10000,
+  "seed": 20170715,
+  "campaign": "3dsig_r10",
+  "campaign_root": "/Users/lp.more/flexaidds_results/campaigns/three_engine",
+  "flexaid_arm_used": "A",
+  "demo": false,
+  "arms": {
+    "A": {
+      "n_cases": 0,
+      "n_success": 0,
+      "point": null,
+      "median": null,
+      "p05": null,
+      "p95": null,
+      "n_boot": 10000,
+      "status": "NA",
+      "reason": "no_cases_with_rmsds",
+      "metric": "S_top10",
+      "thresh_A": 2.0,
+      "n_pdbs_loaded": 0,
+      "pdb_ids": [],
+      "case_success": {},
+      "arm_dir": "/Users/lp.more/flexaidds_results/campaigns/three_engine/A/3dsig_r10",
+      "complete": false
+    },
+    "B0": {
+      "n_cases": 0,
+      "n_success": 0,
+      "point": null,
+      "median": null,
+      "p05": null,
+      "p95": null,
+      "n_boot": 10000,
+      "status": "NA",
+      "reason": "no_cases_with_rmsds",
+      "metric": "S_top10",
+      "thresh_A": 2.0,
+      "n_pdbs_loaded": 0,
+      "pdb_ids": [],
+      "case_success": {},
+      "arm_dir": "/Users/lp.more/flexaidds_results/campaigns/three_engine/B0/3dsig_r10",
+      "complete": false
+    },
+    "B": {
+      "n_cases": 0,
+      "n_success": 0,
+      "point": null,
+      "median": null,
+      "p05": null,
+      "p95": null,
+      "n_boot": 10000,
+      "status": "NA",
+      "reason": "no_cases_with_rmsds",
+      "metric": "S_top10",
+      "thresh_A": 2.0,
+      "n_pdbs_loaded": 0,
+      "pdb_ids": [],
+      "case_success": {},
+      "arm_dir": "/Users/lp.more/flexaidds_results/campaigns/three_engine/B/3dsig_r10",
+      "complete": false
+    }
+  },
+  "inventory": {
+    "campaign_root": "/Users/lp.more/flexaidds_results/campaigns/three_engine",
+    "campaign": "3dsig_r10",
+    "A": {
+      "arm_dir": "/Users/lp.more/flexaidds_results/campaigns/three_engine/A/3dsig_r10",
+      "exists": true,
+      "case_dirs": [
+        "1G9V",
+        "1GPK"
+      ],
+      "result_csv": [
+        "1G9V"
+      ],
+      "result_csv_with_rmsd": [],
+      "result_csv_empty": [
+        "1G9V"
+      ],
+      "pose_pdb_cases": [],
+      "receipt": {
+        "run_id": "flexaid_A_pilot8",
+        "arm": "A",
+        "started_utc": "2026-07-15T11:29:27Z",
+        "output": "/Users/lp.more/flexaidds_results/campaigns/three_engine/A/3dsig_r10",
+        "storage": "icloud_drive",
+        "pop": 1000,
+        "gen": 2000,
+        "restarts": 10,
+        "targets": [
+          "1G9V",
+          "1GPK",
+          "1MEH",
+          "1P62",
+          "1Q4G",
+          "1R9O",
+          "1T40",
+          "2BYS"
+        ],
+        "matrix_md5": "72d7c7396702331d96ff12d18f831796",
+        "binary_sha256": "fefe9a2b80bb44188c0e2526e5d4c2006f251d8d45789baf4be91885d2d3132d",
+        "binary": "/Users/lp.more/flexaidds_results/three_engine_entropy_q1/bin/A/FlexAID",
+        "smoke": false,
+        "seed_note": "STRTSEED written; staged binaries may use time(0)"
+      }
+    },
+    "B0": {
+      "arm_dir": "/Users/lp.more/flexaidds_results/campaigns/three_engine/B0/3dsig_r10",
+      "exists": false,
+      "case_dirs": [],
+      "result_csv": [],
+      "result_csv_with_rmsd": [],
+      "result_csv_empty": [],
+      "pose_pdb_cases": [],
+      "receipt": null
+    },
+    "B": {
+      "arm_dir": "/Users/lp.more/flexaidds_results/campaigns/three_engine/B/3dsig_r10",
+      "exists": true,
+      "case_dirs": [],
+      "result_csv": [],
+      "result_csv_with_rmsd": [],
+      "result_csv_empty": [],
+      "pose_pdb_cases": [],
+      "receipt": null
+    }
+  },
+  "methods": [
+    "FlexAID (A)",
+    "FlexAIDdS (B)"
+  ],
+  "medians": [
+    null,
+    null
+  ],
+  "svg": "docs/figures/3dsig_live/3dsig_live_3dsig_r10_red_pair.svg",
+  "blocked_on": [
+    "FlexAID arm (A or B0): need complete S_top10 cases (pose PDBs with REMARK RMSD or mode_rmsd_* columns)",
+    "FlexAIDdS arm B: not started or no complete S_top10 cases yet",
+    "A: result.csv present for ['1G9V'] but no RMSD / no ranked pose PDBs (engine wrote .cad/.par.res only \u2014 packaging gap)"
+  ],
+  "regen_command": "python3 scripts/plot_3dsig_live_bars.py --campaign-root \"/Users/lp.more/flexaidds_results/campaigns/three_engine\" --campaign 3dsig_r10 --out-dir \"docs/figures/3dsig_live\" --bootstraps 10000"
+}

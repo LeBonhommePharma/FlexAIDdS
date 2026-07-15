@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="720" height="440" viewBox="0 0 720 440">
+<rect width="100%" height="100%" fill="white"/>
+<text x="360.0" y="28" text-anchor="middle" font-family="Helvetica,Arial,sans-serif" font-size="15" font-weight="bold">3Dsig red pair — LIVE 3dsig_r10 [PARTIAL]</text>
+<text x="360.0" y="46" text-anchor="middle" font-size="11" fill="#555" font-family="Helvetica,Arial,sans-serif">n=0/0 cases (FlexAID/FlexAIDdS) · success=0/0</text>
+<line x1="70" y1="58" x2="70" y2="340" stroke="#222" stroke-width="1.5"/>
+<line x1="70" y1="340" x2="690" y2="340" stroke="#222" stroke-width="1.5"/>
+<line x1="70" y1="340.0" x2="690" y2="340.0" stroke="#eee" stroke-width="1"/>
+<text x="62" y="344.0" text-anchor="end" font-size="11" font-family="Helvetica,Arial,sans-serif" fill="#444">0.0</text>
+<line x1="70" y1="283.6" x2="690" y2="283.6" stroke="#eee" stroke-width="1"/>
+<text x="62" y="287.6" text-anchor="end" font-size="11" font-family="Helvetica,Arial,sans-serif" fill="#444">0.2</text>
+<line x1="70" y1="227.2" x2="690" y2="227.2" stroke="#eee" stroke-width="1"/>
+<text x="62" y="231.2" text-anchor="end" font-size="11" font-family="Helvetica,Arial,sans-serif" fill="#444">0.4</text>
+<line x1="70" y1="170.8" x2="690" y2="170.8" stroke="#eee" stroke-width="1"/>
+<text x="62" y="174.8" text-anchor="end" font-size="11" font-family="Helvetica,Arial,sans-serif" fill="#444">0.6</text>
+<line x1="70" y1="114.4" x2="690" y2="114.4" stroke="#eee" stroke-width="1"/>
+<text x="62" y="118.4" text-anchor="end" font-size="11" font-family="Helvetica,Arial,sans-serif" fill="#444">0.8</text>
+<line x1="70" y1="58.0" x2="690" y2="58.0" stroke="#eee" stroke-width="1"/>
+<text x="62" y="62.0" text-anchor="end" font-size="11" font-family="Helvetica,Arial,sans-serif" fill="#444">1.0</text>
+<text x="18" y="199.0" transform="rotate(-90 18 199.0)" text-anchor="middle" font-size="12" font-family="Helvetica,Arial,sans-serif">Success rate (bootstrap median)</text>
+<rect x="82.0" y="58.0" width="292.0" height="282.0" fill="#f5f5f5" stroke="#bbb" stroke-width="0.8" stroke-dasharray="4 3"/>
+<text x="228.0" y="199.0" text-anchor="middle" font-size="11" fill="#888" font-family="Helvetica,Arial,sans-serif">n/a</text>
+<text x="228.0" y="356" text-anchor="middle" font-size="11" font-family="Helvetica,Arial,sans-serif" transform="rotate(20 228.0 356)">FlexAID (A)</text>
+<rect x="386.0" y="58.0" width="292.0" height="282.0" fill="#f5f5f5" stroke="#bbb" stroke-width="0.8" stroke-dasharray="4 3"/>
+<text x="532.0" y="199.0" text-anchor="middle" font-size="11" fill="#888" font-family="Helvetica,Arial,sans-serif">n/a</text>
+<text x="532.0" y="356" text-anchor="middle" font-size="11" font-family="Helvetica,Arial,sans-serif" transform="rotate(20 532.0 356)">FlexAIDdS (B)</text>
+<text x="360.0" y="404" text-anchor="middle" font-size="12" fill="#666" font-family="Helvetica,Arial,sans-serif">No complete S_top10 cases yet — waiting on docks</text>
+<text x="8" y="430" font-size="9" fill="#555" font-family="Helvetica,Arial,sans-serif">LIVE 3dsig_r10 · S_top10 RMSD&lt;2Å · 10000 bootstrap · campaign_root=/Users/lp.more/flexaidds_results/campaigns/three_engine · not archived medians · regenerate after A→B0→B complete</text>
+</svg>
