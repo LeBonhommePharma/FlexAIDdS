@@ -370,9 +370,16 @@ public:
     SubprocessGuard();
     ~SubprocessGuard();
 
-    /// Fork, set process group, exec.  Returns child PID (or -1 on failure).
-    /// The child PID is registered for automatic cleanup.
+    /// Fork, set process group, exec via `/bin/sh -c`.  Returns child PID
+    /// (or -1 on failure). The child PID is registered for automatic cleanup.
+    /// Prefer fork_exec_argv when no shell metacharacters/redirection are needed.
     pid_t fork_exec(const std::string& cmd);
+
+    /// Fork + execvp(argv) without a shell. argv[0] is the program path;
+    /// remaining entries are arguments (no env KEY=VAL prefixes). Use this for
+    /// pure binary invocations; use fork_exec(shell string) when the command
+    /// must set env vars or redirect stdout/stderr.
+    pid_t fork_exec_argv(const std::vector<std::string>& argv);
 
     /// Wait for a specific child with a timeout.
     /// Returns exit code (0-255) on normal exit, -1 on signal/timeout/error.
