@@ -10,6 +10,10 @@
 #
 # Register a runner with labels: self-hosted, self-hosted-m3
 # Docs: docs/CI_RELEASE_GATES.md
+#
+# Status note: do not claim an M3 self-hosted runner exists unless
+# `gh api repos/.../actions/runners` lists one with label self-hosted-m3.
+# Without a matching runner this workflow stays queued until cancelled.
 
 name: Metal full gate (self-hosted M3)
 
@@ -18,6 +22,14 @@ on:
     inputs:
       run_ctest:
         description: "Run ctest after Metal-enabled build (slower)"
+        required: false
+        default: "true"
+        type: choice
+        options:
+          - "true"
+          - "false"
+      nm_symbol_smoke:
+        description: "Run nm symbol smoke (metal_eval_get_capabilities / metal_rmsd) on linked binaries"
         required: false
         default: "true"
         type: choice
@@ -82,6 +94,7 @@ jobs:
       - name: Configure (Metal ON, tests ON)
         run: |
           set -euo pipefail
+          # Fail-closed: any cmake configure error exits non-zero (no continue-on-error).
           CMAKE_ARGS=(
             -S . -B build-metal
             -G Ninja
@@ -90,6 +103,7 @@ jobs:
             -DFLEXAIDS_USE_METAL=ON
             -DBUILD_PYTHON_BINDINGS=OFF
             -DBUILD_TESTING=ON
+            -DBUILD_FLEXAIDDS_FAST=ON
             -DFLEXAIDS_STRICT_SOURCE_VALIDATION=ON
           )
           if command -v brew >/dev/null 2>&1; then
@@ -99,12 +113,69 @@ jobs:
             fi
           fi
           cmake "${CMAKE_ARGS[@]}"
+          # Confirm Metal was actually enabled (do not soft-pass a CPU-only configure).
+          if ! grep -E "FLEXAIDS_USE_METAL|Metal" build-metal/CMakeCache.txt >/dev/null 2>&1; then
+            echo "FATAL: expected Metal-related entries in CMakeCache after FLEXAIDS_USE_METAL=ON"
+            exit 1
+          fi
+          if grep -E '^FLEXAIDS_USE_METAL:BOOL=OFF' build-metal/CMakeCache.txt >/dev/null 2>&1; then
+            echo "FATAL: FLEXAIDS_USE_METAL resolved to OFF despite -DFLEXAIDS_USE_METAL=ON"
+            exit 1
+          fi
 
-      - name: Build FlexAID (Metal-linked)
-        run: cmake --build build-metal --parallel --target FlexAID
+      - name: Build FlexAID + FlexAIDdS (Metal-linked)
+        run: |
+          set -euo pipefail
+          # Both production docking binaries must link with Metal ON.
+          cmake --build build-metal --parallel --target FlexAID FlexAIDdS
+          ls -la build-metal/FlexAID build-metal/FlexAIDdS
 
       - name: Metal shader compile smoke
         run: bash scripts/ci/metal_compile_smoke.sh build-metal/metal-smoke
+
+      - name: nm symbol smoke (metal_eval / metal_rmsd)
+        if: inputs.nm_symbol_smoke == 'true'
+        run: |
+          set -euo pipefail
+          # Confirm Metal OBJCXX bridges contributed symbols into both binaries.
+          # C API names appear as substrings even when mangled; metal_rmsd is a
+          # C++ namespace (mangled forms still contain "metal_rmsd").
+          required=(
+            metal_eval_get_capabilities
+            metal_eval_init
+            metal_eval_batch
+            metal_eval_shutdown
+            metal_eval_runtime_available
+            metal_rmsd
+          )
+          for bin in build-metal/FlexAID build-metal/FlexAIDdS; do
+            echo "== nm smoke: ${bin} =="
+            if [[ ! -x "${bin}" ]]; then
+              echo "FATAL: missing binary ${bin}"
+              exit 1
+            fi
+            # Prefer demangled/global table; fall back to full nm.
+            nm_out="$(nm -gU "${bin}" 2>/dev/null || nm "${bin}" 2>/dev/null || true)"
+            if [[ -z "${nm_out}" ]]; then
+              echo "FATAL: nm produced no output for ${bin}"
+              exit 1
+            fi
+            missing=0
+            for sym in "${required[@]}"; do
+              if ! printf '%s\n' "${nm_out}" | grep -E "${sym}" >/dev/null 2>&1; then
+                echo "FATAL: symbol pattern '${sym}' not found in ${bin}"
+                missing=1
+              else
+                echo "OK: ${sym}"
+              fi
+            done
+            if [[ "${missing}" -ne 0 ]]; then
+              echo "---- nm (filtered metal) ----"
+              printf '%s\n' "${nm_out}" | grep -i metal | head -80 || true
+              exit 1
+            fi
+          done
+          echo "nm metal_eval / metal_rmsd symbol smoke PASSED"
 
       - name: Unit tests (optional)
         if: inputs.run_ctest == 'true'
@@ -113,5 +184,7 @@ jobs:
       - name: Summarize gate
         run: |
           echo "Metal full gate PASSED on self-hosted-m3"
-          echo "Binary: build-metal/FlexAID (or FlexAIDdS)"
+          echo "Binaries:"
           ls -la build-metal/FlexAID build-metal/FlexAIDdS 2>/dev/null || true
+          echo "Runner labels required: self-hosted, self-hosted-m3"
+          echo "Dispatch: Actions → 'Metal full gate (self-hosted M3)' → Run workflow"
