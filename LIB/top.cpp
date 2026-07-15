@@ -1623,7 +1623,10 @@ int main(int argc, char **argv){
 			// process-per-cleft docking.  Each child process receives one ranked
 			// Get_Cleft/FlexAID sphere file and builds its grid from that cleft
 			// only, reproducing the old independent-GA-per-major-cleft behavior.
-			const char* explicit_cleft_env = std::getenv("FLEXAIDDS_CLEFT_SPHERE_FILE");
+			const flexaids::ProtocolConfig proto_grid = flexaids::ProtocolConfig::from_env();
+			const char* explicit_cleft_env =
+			    proto_grid.cleft_sphere_file.empty() ? nullptr
+			                                        : proto_grid.cleft_sphere_file.c_str();
 			const bool explicit_cleft_requested =
 			    explicit_cleft_env && explicit_cleft_env[0] != '\0';
 			if (explicit_cleft_requested &&
@@ -1637,9 +1640,12 @@ int main(int argc, char **argv){
 			// ── Probe FLEXAIDDS_GRID_CACHE_DIR (content-hash keyed) ─────────────
 			// Used by Strategy B batch children: the first child builds and saves;
 			// subsequent children of the same receptor load and skip the grid build.
+			// GRID_CACHE_DIR stays raw getenv (infra path, not a science knob).
+			const char* oracle_site_for_cache =
+			    proto_grid.oracle_site.empty() ? nullptr : proto_grid.oracle_site.c_str();
 			const std::string gc_vct_path = explicit_cleft_requested
 			    ? std::string()
-			    : gridcache::cache_path(receptor_file, std::getenv("FLEXAIDDS_ORACLE_SITE"),
+			    : gridcache::cache_path(receptor_file, oracle_site_for_cache,
 			                            FA->spacer_length, FA->permeability);
 			if (!explicit_cleft_requested && !gc_vct_path.empty()) {
 				if (gridcache::load(gc_vct_path, &cleftgrid, &FA->num_grd)) {
@@ -1740,11 +1746,12 @@ int main(int argc, char **argv){
 			};
 
 			if (!grid_loaded_from_cache) {
-			// Oracle mode: FLEXAIDDS_ORACLE_SITE env var points to a binding
+			// Oracle mode: FLEXAIDDS_ORACLE_SITE (ProtocolConfig) points to a binding
 			// site PDB.  Parse for centroid only — SURFNET void-space detection
 			// always runs (probes placed in void between atoms, not on atoms).
 			// Oracle centroid guides cleft selection and site-confinement.
-			const char* oracle_site_env = std::getenv("FLEXAIDDS_ORACLE_SITE");
+			const char* oracle_site_env =
+			    proto_grid.oracle_site.empty() ? nullptr : proto_grid.oracle_site.c_str();
 			bool using_oracle = false;
 			float oracle_cx = 0.0f, oracle_cy = 0.0f, oracle_cz = 0.0f;
 			sphere* spheres = NULL;
@@ -2333,13 +2340,11 @@ int main(int argc, char **argv){
 	// DatasetRunner uses FLEXAIDDS_SCORE_NATIVE=1 alone so the GA still runs and
 	// produces pose files that DatasetRunner parses alongside [NATIVE_CF].
 	{
-		const char* _native_env  = std::getenv("FLEXAIDDS_SCORE_NATIVE");
-		const char* _native_only = std::getenv("FLEXAIDDS_NATIVE_ONLY");
-		const bool  do_native    = (_native_env  && _native_env[0]  != '\0' && std::strcmp(_native_env,  "0") != 0)
-		                        || (_native_only && _native_only[0] != '\0' && std::strcmp(_native_only, "0") != 0);
+		const flexaids::ProtocolConfig native_proto = flexaids::ProtocolConfig::from_env();
+		const bool do_native = native_proto.score_native || native_proto.native_only;
 		if (do_native) {
 			score_native_pose(FA, VC, atoms, residue, cleftgrid);
-			if (_native_only && _native_only[0] != '\0' && std::strcmp(_native_only, "0") != 0) {
+			if (native_proto.native_only) {
 				std::exit(0);  // native-only mode: bail before GA (does not write pose files)
 			}
 		}

@@ -70,13 +70,44 @@ struct ClearProtocolEnv {
         , t_eff("FLEXAIDDS_T_EFF", nullptr)
         , tencom("FLEXAIDDS_TENCOM_SCALE", nullptr)
         , data_dir("FLEXAIDDS_DATA_DIR", nullptr)
+        , oracle_dir("FLEXAIDDS_ORACLE_SITE_DIR", nullptr)
+        , oracle_site("FLEXAIDDS_ORACLE_SITE", nullptr)
+        , cleft("FLEXAIDDS_CLEFT_SPHERE_FILE", nullptr)
         , cf_win("FLEXAIDDS_CF_WINDOW_SELECTOR", nullptr)
         , cluster("FLEXAIDDS_CLUSTER_MEMBER_EMIT", nullptr)
-        , hbond("FLEXAIDDS_HBOND_WEIGHT", nullptr) {}
+        , seed_elit("FLEXAIDDS_SEED_ELITISM", nullptr)
+        , seed_delta("FLEXAIDDS_SEED_ELITISM_DELTA_CF", nullptr)
+        , freqsel("FLEXAIDDS_FREQSEL", nullptr)
+        , freq_a("FLEXAIDDS_FREQSEL_ALPHA", nullptr)
+        , freq_r("FLEXAIDDS_FREQSEL_RMSD", nullptr)
+        , consensus("FLEXAIDDS_CONSENSUS_SCORER", nullptr)
+        , hvib("FLEXAIDDS_HVIB", nullptr)
+        , ring("FLEXAIDDS_RING_FLEX", nullptr)
+        , eval_scale("FLEXAIDDS_EVAL_SCALE_DIHEDRAL", nullptr)
+        , budget("FLEXAIDDS_BUDGET_SCALE", nullptr)
+        , fine("FLEXAIDDS_FINE_GRID", nullptr)
+        , multi("FLEXAIDDS_MULTI_CLEFT", nullptr)
+        , cognate("FLEXAIDDS_COGNATE_SITE", nullptr)
+        , score_n("FLEXAIDDS_SCORE_NATIVE", nullptr)
+        , native_o("FLEXAIDDS_NATIVE_ONLY", nullptr)
+        , use_dp("FLEXAIDDS_USE_DP", nullptr)
+        , ignore("FLEXAIDDS_IGNORE_CACHE", nullptr)
+        , thermo_csv("FLEXAIDDS_THERMO_CSV", nullptr)
+        , hbond("FLEXAIDDS_HBOND_WEIGHT", nullptr)
+        , no_sec("FLEXAIDDS_NO_SEC", nullptr)
+        , bench("FLEXAIDDS_BENCHMARK", nullptr)
+        , t_hot("FLEXAIDDS_T_HOT", nullptr)
+        , instream("FLEXAIDDS_INSTREAM_INTERVAL", nullptr)
+        , chain("FLEXAIDDS_CHAIN_NORM", nullptr)
+        , smfree("FLEXAIDDS_SMFREE_REQUIRE_T", nullptr) {}
 
     ScopedEnv seed_base, restarts, parallel, vct_r0, vct_norm, vct_ew,
               sharing, boom, n_elite, shannon, thermo, t_eff, tencom,
-              data_dir, cf_win, cluster, hbond;
+              data_dir, oracle_dir, oracle_site, cleft, cf_win, cluster,
+              seed_elit, seed_delta, freqsel, freq_a, freq_r, consensus,
+              hvib, ring, eval_scale, budget, fine, multi, cognate, score_n,
+              native_o, use_dp, ignore, thermo_csv, hbond, no_sec, bench,
+              t_hot, instream, chain, smfree;
 };
 
 }  // namespace
@@ -103,6 +134,32 @@ TEST(ProtocolConfig, DefaultsMatchHistoricalFallbacks) {
     EXPECT_FALSE(e.cf_window_selector);
     EXPECT_FALSE(e.cluster_member_emit);
     EXPECT_DOUBLE_EQ(e.hbond_weight, -2.5);
+
+    // Chunk 2 defaults
+    EXPECT_TRUE(e.seed_elitism);
+    EXPECT_DOUBLE_EQ(e.seed_elitism_delta_cf, 10.0);
+    EXPECT_FALSE(e.freqsel);
+    EXPECT_DOUBLE_EQ(e.freqsel_alpha, 12.0);
+    EXPECT_FLOAT_EQ(e.freqsel_rmsd, 1.5f);
+    EXPECT_FALSE(e.consensus_scorer);
+    EXPECT_TRUE(e.hvib_enabled);
+    EXPECT_FALSE(e.ring_flex);
+    EXPECT_EQ(e.eval_scale_dihedral, 1);
+    EXPECT_TRUE(e.budget_scale);
+    EXPECT_FALSE(e.fine_grid);
+    EXPECT_EQ(e.multi_cleft, 0);
+    EXPECT_FALSE(e.cognate_site);
+    EXPECT_FALSE(e.score_native);
+    EXPECT_FALSE(e.native_only);
+    EXPECT_FALSE(e.use_dp);
+    EXPECT_FALSE(e.ignore_cache);
+    EXPECT_FALSE(e.thermo_csv);
+    EXPECT_FALSE(e.no_sec);
+    EXPECT_FALSE(e.benchmark_mode);
+    EXPECT_DOUBLE_EQ(e.t_hot, 0.0);
+    EXPECT_EQ(e.instream_interval, 0);
+    EXPECT_FALSE(e.chain_norm);
+    EXPECT_FALSE(e.smfree_require_t);
 
     EXPECT_DOUBLE_EQ(e.effective_sharing_alpha(1000, 1000), 4.0);
     EXPECT_DOUBLE_EQ(e.effective_sharing_alpha(1000, 2000), 2.0);
@@ -157,17 +214,57 @@ TEST(ProtocolConfig, PresenceFlagsAndParallelRestarts) {
     EXPECT_TRUE(cfg.parallel_restarts_explicit);
 }
 
+TEST(ProtocolConfig, Chunk2PoseAndBudgetKnobs) {
+    ClearProtocolEnv clear;
+    ScopedEnv elit("FLEXAIDDS_SEED_ELITISM", "0");
+    ScopedEnv delta("FLEXAIDDS_SEED_ELITISM_DELTA_CF", "7.5");
+    ScopedEnv freq("FLEXAIDDS_FREQSEL", "1");
+    ScopedEnv fa("FLEXAIDDS_FREQSEL_ALPHA", "9.0");
+    ScopedEnv fr("FLEXAIDDS_FREQSEL_RMSD", "2.0");
+    ScopedEnv ring("FLEXAIDDS_RING_FLEX", "1");
+    ScopedEnv eval("FLEXAIDDS_EVAL_SCALE_DIHEDRAL", "off");
+    ScopedEnv budget("FLEXAIDDS_BUDGET_SCALE", "0");
+    ScopedEnv fine("FLEXAIDDS_FINE_GRID", "1");
+    ScopedEnv multi("FLEXAIDDS_MULTI_CLEFT", "8");
+    ScopedEnv hvib("FLEXAIDDS_HVIB", "0");
+    ScopedEnv cons("FLEXAIDDS_CONSENSUS_SCORER", "1");
+    ScopedEnv hot("FLEXAIDDS_T_HOT", "1500");
+    ScopedEnv nosec("FLEXAIDDS_NO_SEC", "1");
+    ScopedEnv bench("FLEXAIDDS_BENCHMARK", "1");
+
+    const auto cfg = flexaids::ProtocolConfig::from_env();
+    EXPECT_FALSE(cfg.seed_elitism);
+    EXPECT_DOUBLE_EQ(cfg.seed_elitism_delta_cf, 7.5);
+    EXPECT_TRUE(cfg.freqsel);
+    EXPECT_DOUBLE_EQ(cfg.freqsel_alpha, 9.0);
+    EXPECT_FLOAT_EQ(cfg.freqsel_rmsd, 2.0f);
+    EXPECT_TRUE(cfg.ring_flex);
+    EXPECT_EQ(cfg.eval_scale_dihedral, -1);
+    EXPECT_FALSE(cfg.budget_scale);
+    EXPECT_TRUE(cfg.fine_grid);
+    EXPECT_EQ(cfg.multi_cleft, 8);
+    EXPECT_FALSE(cfg.hvib_enabled);
+    EXPECT_TRUE(cfg.consensus_scorer);
+    EXPECT_DOUBLE_EQ(cfg.t_hot, 1500.0);
+    EXPECT_TRUE(cfg.no_sec);
+    EXPECT_TRUE(cfg.benchmark_mode);
+}
+
 TEST(ProtocolConfig, JsonRoundTrip) {
     ClearProtocolEnv clear;
     ScopedEnv seed("FLEXAIDDS_SEED_BASE", "99");
     ScopedEnv restarts("FLEXAIDDS_RESTARTS", "7");
     ScopedEnv alpha("FLEXAIDDS_SHARING_ALPHA", "3.25");
     ScopedEnv data("FLEXAIDDS_DATA_DIR", "/opt/share/flexaidds");
+    ScopedEnv hot("FLEXAIDDS_T_HOT", "900");
+    ScopedEnv multi("FLEXAIDDS_MULTI_CLEFT", "4");
 
     const auto a = flexaids::ProtocolConfig::from_env();
     const std::string json = a.to_json();
     EXPECT_NE(json.find("\"seed_base\":99"), std::string::npos);
     EXPECT_NE(json.find("\"restarts\":7"), std::string::npos);
+    EXPECT_NE(json.find("\"t_hot\":"), std::string::npos);
+    EXPECT_NE(json.find("\"multi_cleft\":4"), std::string::npos);
 
     const auto b = flexaids::ProtocolConfig::from_json(json);
     EXPECT_EQ(b.seed_base, a.seed_base);
@@ -175,4 +272,6 @@ TEST(ProtocolConfig, JsonRoundTrip) {
     ASSERT_TRUE(b.sharing_alpha.has_value());
     EXPECT_DOUBLE_EQ(*b.sharing_alpha, 3.25);
     EXPECT_EQ(b.data_dir, "/opt/share/flexaidds");
+    EXPECT_DOUBLE_EQ(b.t_hot, 900.0);
+    EXPECT_EQ(b.multi_cleft, 4);
 }
