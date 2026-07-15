@@ -85,9 +85,11 @@ struct ProtocolConfig {
     bool election_include_singletons{false}; ///< FLEXAIDDS_ELECTION_INCLUDE_SINGLETONS
     /// Rank cluster heads by 3Dsig/Morency 2017 soft free energy
     ///   G̃ = H̃ − T S̃,  H̃=Σ p_i CF_i,  S̃=−Σ p_i ln p_i,  p_i ∝ exp(−CF_i/T)
-    /// Default ON (Shannon entropy on the ranking path). Rollback:
-    /// FLEXAIDDS_ELECTION_LEGACY_ZH=1 restores inert Z+H composite (≈ min-CF).
-    bool election_shannon_free_energy{true}; ///< FLEXAIDDS_ELECTION_SHANNON_F (default ON)
+    /// Default OFF until Astex pilot + SoftBeta identity validation.
+    /// Opt in: FLEXAIDDS_ELECTION_SHANNON_F=1. Force legacy ZH (already OFF path):
+    /// FLEXAIDDS_ELECTION_LEGACY_ZH=1. When both unset → Shannon OFF (legacy ZH /
+    /// pure CF path as coded for use_shannon_G=false).
+    bool election_shannon_free_energy{false}; ///< FLEXAIDDS_ELECTION_SHANNON_F (default OFF)
     /// Soft-β temperature T for G̃ (same role as poster T). 0 → use dock temperature
     /// or 298 K. Units: CF is scoring-proxy a.u.; this is FlexAID soft-β, not k_B.
     double election_soft_T{0.0};      ///< FLEXAIDDS_ELECTION_SOFT_T

@@ -44,12 +44,14 @@ p_i = \frac{e^{-\mathrm{CF}_i / T}}{Z}
 
 | Env | Default | Meaning |
 |-----|---------|---------|
-| `FLEXAIDDS_ELECTION_SHANNON_F` | **1 (ON)** | Elect by \(\tilde G=H-TS\) |
-| `FLEXAIDDS_ELECTION_LEGACY_ZH` | 0 | Rollback ≈ min-CF (not 3Dsig) |
+| `FLEXAIDDS_ELECTION_SHANNON_F` | **0 (OFF)** | Elect by \(\tilde G=H-TS\) when set to `1` |
+| `FLEXAIDDS_ELECTION_LEGACY_ZH` | 0 | Force legacy ZH / ≈ min-CF (not 3Dsig); same OFF path when Shannon unset |
 | `FLEXAIDDS_ELECTION_SOFT_T` | 0 → **dock \(T\)** (else 298) | Soft-β \(T\) in K |
 | `FLEXAIDDS_FORCE_CF_RANK_EMISSION` | 0 | Engine emits min-CF (rollback) |
 
-**FlexAIDdS engine and DatasetRunner must not invent different ranking objectives.** Search still optimizes CF; ranking/election uses \(\tilde G\).
+**Default OFF until Astex pilot + SoftBeta identity.** Shannon S1 election (`election_shannon_free_energy`) stays **off** when both env knobs are unset (legacy ZH / pure CF path for `use_shannon_G=false`). Enable explicitly with `FLEXAIDDS_ELECTION_SHANNON_F=1` after Astex pilot validation and SoftBeta identity checks (`LIB/SoftBetaFreeEnergy.h`). Claim / 3Dsig launch scripts that need Shannon ON must export that env themselves (e.g. `scripts/run_C0_claim_clean.sh`).
+
+**FlexAIDdS engine and DatasetRunner must not invent different ranking objectives.** Search still optimizes CF; when Shannon ranking is enabled, ranking/election uses \(\tilde G\).
 
 ---
 
