@@ -268,47 +268,42 @@ if(FLEXAIDS_USE_ROCM)
     message(STATUS "ROCm/HIP enabled — CF batch + runtime detection")
 endif()
 
-# ─── Metal sources ──────────────────────────────────────────────────────
+# ─── Metal sources (attach to flexaid_core once) ─────────────────────────
+# hardware_detect.cpp, UnifiedHardwareDispatch.cpp, gaboom.cpp, FOPTICS.cpp and
+# other flexaid_core TUs reference metal_eval / metal_rmsd when FLEXAIDS_USE_METAL
+# is on. Implementations MUST live on flexaid_core (or a library it pulls in),
+# not only on individual executables. Attaching .mm files solely to FlexAID /
+# FlexAIDdS left undefined symbols under LTO / multi-target links (Homebrew
+# --with-metal). All consumers of flexaid_core inherit the OBJCXX objects and
+# Metal frameworks via PUBLIC linkage below.
 if(FLEXAIDS_USE_METAL)
-    target_sources(FlexAID PRIVATE LIB/metal_eval.mm)
-    target_compile_definitions(FlexAID PRIVATE FLEXAIDS_USE_METAL)
-    target_compile_options(FlexAID PRIVATE -fno-objc-arc)
-    target_link_libraries(FlexAID PRIVATE
+    set(_FLEXAIDS_METAL_BRIDGES
+        LIB/metal_eval.mm
+        LIB/MetalRMSDBridge.mm
+        LIB/ShannonThermoStack/ShannonMetalBridge.mm
+        LIB/tENCoM/tencm_metal.mm
+        LIB/gpu_fast_optics_metal.mm
+        LIB/CavityDetect/CavityDetectMetalBridge.mm
+        LIB/TurboQuantMetalBridge.mm
+    )
+    target_sources(flexaid_core PRIVATE ${_FLEXAIDS_METAL_BRIDGES})
+    target_compile_options(flexaid_core PRIVATE -fno-objc-arc)
+    target_link_libraries(flexaid_core PUBLIC
         ${METAL_LIBRARY}
         ${FOUNDATION_LIBRARY}
         ${METALKIT_LIBRARY}
     )
-    set_source_files_properties(LIB/metal_eval.mm PROPERTIES
+    set_source_files_properties(${_FLEXAIDS_METAL_BRIDGES} PROPERTIES
         LANGUAGE OBJCXX
         COMPILE_FLAGS "-std=c++26 -fno-objc-arc"
     )
-    # Shannon Metal GPU bridge (Apple Silicon Shannon entropy histogram)
-    target_sources(FlexAID PRIVATE LIB/ShannonThermoStack/ShannonMetalBridge.mm)
-    target_compile_definitions(FlexAID PRIVATE FLEXAIDS_HAS_METAL_SHANNON)
-    set_source_files_properties(LIB/ShannonThermoStack/ShannonMetalBridge.mm PROPERTIES
-        LANGUAGE OBJCXX
-        COMPILE_FLAGS "-std=c++26 -fno-objc-arc"
+    target_compile_definitions(flexaid_core PUBLIC
+        FLEXAIDS_USE_METAL
+        FLEXAIDS_HAS_METAL_SHANNON
+        FLEXAIDS_HAS_METAL_TENCM
     )
-    # TENCoM Metal bridge (GPU contact discovery + Hessian assembly)
-    target_sources(FlexAID PRIVATE LIB/tENCoM/tencm_metal.mm)
-    target_compile_definitions(FlexAID PRIVATE FLEXAIDS_HAS_METAL_TENCM)
-    set_source_files_properties(LIB/tENCoM/tencm_metal.mm PROPERTIES
-        LANGUAGE OBJCXX
-        COMPILE_FLAGS "-std=c++26 -fno-objc-arc"
-    )
-    # FastOPTICS Metal kNN (GPU-accelerated neighbor discovery)
-    target_sources(FlexAID PRIVATE LIB/gpu_fast_optics_metal.mm)
-    set_source_files_properties(LIB/gpu_fast_optics_metal.mm PROPERTIES
-        LANGUAGE OBJCXX
-        COMPILE_FLAGS "-std=c++26 -fno-objc-arc"
-    )
-    # CavityDetect Metal bridge (Task 1.4: GPU probe-sphere generation)
-    target_sources(FlexAID PRIVATE LIB/CavityDetect/CavityDetectMetalBridge.mm)
-    set_source_files_properties(LIB/CavityDetect/CavityDetectMetalBridge.mm PROPERTIES
-        LANGUAGE OBJCXX
-        COMPILE_FLAGS "-std=c++26 -fno-objc-arc"
-    )
-    # Compile CavityDetect.metal shader → .metallib
+
+    # ── Compile .metal shaders → .metallib (single shared set) ────────────
     set(CAVITY_METAL_SRC  "${CMAKE_CURRENT_SOURCE_DIR}/LIB/CavityDetect/CavityDetect.metal")
     set(CAVITY_AIR        "${CMAKE_CURRENT_BINARY_DIR}/CavityDetect.air")
     set(CAVITY_METALLIB   "${CMAKE_CURRENT_BINARY_DIR}/CavityDetect.metallib")
@@ -327,17 +322,7 @@ if(FLEXAIDS_USE_METAL)
         VERBATIM
     )
     add_custom_target(CavityDetectMetal DEPENDS "${CAVITY_METALLIB}")
-    add_dependencies(FlexAID CavityDetectMetal)
-    target_compile_definitions(FlexAID PRIVATE
-        CAVITY_METALLIB_PATH="${CAVITY_METALLIB}"
-    )
-    # TurboQuant Metal bridge (TurboQuant.metal batch quantize/dequantize)
-    target_sources(FlexAID PRIVATE LIB/TurboQuantMetalBridge.mm)
-    set_source_files_properties(LIB/TurboQuantMetalBridge.mm PROPERTIES
-        LANGUAGE OBJCXX
-        COMPILE_FLAGS "-std=c++26 -fno-objc-arc"
-    )
-    # Compile TurboQuant.metal shader → .metallib
+
     set(TQ_METAL_SRC  "${CMAKE_CURRENT_SOURCE_DIR}/LIB/TurboQuant.metal")
     set(TQ_AIR        "${CMAKE_CURRENT_BINARY_DIR}/TurboQuant.air")
     set(TQ_METALLIB   "${CMAKE_CURRENT_BINARY_DIR}/TurboQuant.metallib")
@@ -356,17 +341,7 @@ if(FLEXAIDS_USE_METAL)
         VERBATIM
     )
     add_custom_target(TurboQuantMetal DEPENDS "${TQ_METALLIB}")
-    add_dependencies(FlexAID TurboQuantMetal)
-    target_compile_definitions(FlexAID PRIVATE
-        TURBOQUANT_METALLIB_PATH="${TQ_METALLIB}"
-    )
-    # MetalRMSD bridge (GPU pairwise RMSD for FOPTICS clustering)
-    target_sources(FlexAID PRIVATE LIB/MetalRMSDBridge.mm)
-    set_source_files_properties(LIB/MetalRMSDBridge.mm PROPERTIES
-        LANGUAGE OBJCXX
-        COMPILE_FLAGS "-std=c++26 -fno-objc-arc"
-    )
-    # Compile MetalRMSD.metal shader → .metallib
+
     set(RMSD_METAL_SRC  "${CMAKE_CURRENT_SOURCE_DIR}/LIB/MetalRMSD.metal")
     set(RMSD_AIR        "${CMAKE_CURRENT_BINARY_DIR}/MetalRMSD.air")
     set(RMSD_METALLIB   "${CMAKE_CURRENT_BINARY_DIR}/MetalRMSD.metallib")
@@ -385,10 +360,55 @@ if(FLEXAIDS_USE_METAL)
         VERBATIM
     )
     add_custom_target(MetalRMSDMetal DEPENDS "${RMSD_METALLIB}")
-    add_dependencies(FlexAID MetalRMSDMetal)
-    target_compile_definitions(FlexAID PRIVATE
-        METALRMSD_METALLIB_PATH="${RMSD_METALLIB}"
+
+    set(SHANNON_METAL_SRC  "${CMAKE_CURRENT_SOURCE_DIR}/LIB/ShannonThermoStack/shannon_metal.metal")
+    set(SHANNON_AIR        "${CMAKE_CURRENT_BINARY_DIR}/ShannonEntropy.air")
+    set(SHANNON_METALLIB   "${CMAKE_CURRENT_BINARY_DIR}/ShannonEntropy.metallib")
+    add_custom_command(
+        OUTPUT  "${SHANNON_AIR}"
+        COMMAND "${FLEXAIDS_METALC}" "-fmodules-cache-path=${FLEXAIDS_METAL_MODULE_CACHE}" -c "${SHANNON_METAL_SRC}" -o "${SHANNON_AIR}"
+        DEPENDS "${SHANNON_METAL_SRC}"
+        COMMENT "Compiling ShannonEntropy Metal shader"
+        VERBATIM
     )
+    add_custom_command(
+        OUTPUT  "${SHANNON_METALLIB}"
+        COMMAND "${FLEXAIDS_METALLIB}" "${SHANNON_AIR}" -o "${SHANNON_METALLIB}"
+        DEPENDS "${SHANNON_AIR}"
+        COMMENT "Linking ShannonEntropy.metallib"
+        VERBATIM
+    )
+    add_custom_target(ShannonEntropyMetal DEPENDS "${SHANNON_METALLIB}")
+
+    # Path macros for bridges that load metallibs at runtime.
+    # PUBLIC so every TU that includes the bridges sees the same paths.
+    target_compile_definitions(flexaid_core PUBLIC
+        CAVITY_METALLIB_PATH="${CAVITY_METALLIB}"
+        TURBOQUANT_METALLIB_PATH="${TQ_METALLIB}"
+        METALRMSD_METALLIB_PATH="${RMSD_METALLIB}"
+        SHANNON_METALLIB_PATH="${SHANNON_METALLIB}"
+    )
+    add_dependencies(flexaid_core
+        CavityDetectMetal
+        TurboQuantMetal
+        MetalRMSDMetal
+        ShannonEntropyMetal
+    )
+    # Convenience aliases for older custom-target names referenced by helpers.
+    if(NOT TARGET CavityDetectMetalDS)
+        add_custom_target(CavityDetectMetalDS DEPENDS CavityDetectMetal)
+    endif()
+    if(NOT TARGET MetalRMSDMetalDS)
+        add_custom_target(MetalRMSDMetalDS DEPENDS MetalRMSDMetal)
+    endif()
+    if(NOT TARGET TurboQuantMetalDS)
+        add_custom_target(TurboQuantMetalDS DEPENDS TurboQuantMetal)
+    endif()
+    # Back-compat path vars used by benchmark_datasets / attach helpers.
+    set(CAVITY_METALLIB_DS "${CAVITY_METALLIB}")
+    set(RMSD_METALLIB_DS "${RMSD_METALLIB}")
+    set(TQ_METALLIB_DS "${TQ_METALLIB}")
+    message(STATUS "Metal bridges attached to flexaid_core (all executables inherit them)")
 endif()
 
 # ─── Python bindings (pybind11 module) ─────────────────────────────────────────
@@ -710,156 +730,25 @@ if(BUILD_FLEXAIDDS_FAST)
         set_property(TARGET FlexAIDdS PROPERTY HIP_ARCHITECTURES ${FLEXAIDS_HIP_ARCHITECTURES})
     endif()
 
-    # ─── Metal sources for FlexAIDdS ────────────────────────────────────────
+    # Metal OBJCXX bridges + frameworks come from flexaid_core when
+    # FLEXAIDS_USE_METAL=ON (see "Metal sources (attach to flexaid_core once)").
     if(FLEXAIDS_USE_METAL)
-        # Metal batch Voronoi evaluation bridge
-        target_sources(FlexAIDdS PRIVATE LIB/metal_eval.mm)
-        target_compile_definitions(FlexAIDdS PRIVATE FLEXAIDS_USE_METAL)
-        target_compile_options(FlexAIDdS PRIVATE -fno-objc-arc)
-        target_link_libraries(FlexAIDdS PRIVATE
-            ${METAL_LIBRARY}
-            ${FOUNDATION_LIBRARY}
-            ${METALKIT_LIBRARY}
-        )
-        set_source_files_properties(LIB/metal_eval.mm PROPERTIES
-            LANGUAGE OBJCXX
-            COMPILE_FLAGS "-std=c++26 -fno-objc-arc"
-        )
-        # Shannon Metal GPU bridge (histogram binning on Apple Silicon)
-        target_sources(FlexAIDdS PRIVATE LIB/ShannonThermoStack/ShannonMetalBridge.mm)
-        target_compile_definitions(FlexAIDdS PRIVATE FLEXAIDS_HAS_METAL_SHANNON)
-        set_source_files_properties(LIB/ShannonThermoStack/ShannonMetalBridge.mm PROPERTIES
-            LANGUAGE OBJCXX
-            COMPILE_FLAGS "-std=c++26 -fno-objc-arc"
-        )
-        # Shannon Metal shader → .metallib
-        set(SHANNON_METAL_SRC  "${CMAKE_CURRENT_SOURCE_DIR}/LIB/ShannonThermoStack/shannon_metal.metal")
-        set(SHANNON_AIR        "${CMAKE_CURRENT_BINARY_DIR}/ShannonEntropy.air")
-        set(SHANNON_METALLIB   "${CMAKE_CURRENT_BINARY_DIR}/ShannonEntropy.metallib")
-        add_custom_command(
-            OUTPUT  "${SHANNON_AIR}"
-            COMMAND "${FLEXAIDS_METALC}" "-fmodules-cache-path=${FLEXAIDS_METAL_MODULE_CACHE}" -c "${SHANNON_METAL_SRC}" -o "${SHANNON_AIR}"
-            DEPENDS "${SHANNON_METAL_SRC}"
-            COMMENT "Compiling ShannonEntropy Metal shader"
-            VERBATIM
-        )
-        add_custom_command(
-            OUTPUT  "${SHANNON_METALLIB}"
-            COMMAND "${FLEXAIDS_METALLIB}" "${SHANNON_AIR}" -o "${SHANNON_METALLIB}"
-            DEPENDS "${SHANNON_AIR}"
-            COMMENT "Linking ShannonEntropy.metallib"
-            VERBATIM
-        )
-        add_custom_target(ShannonEntropyMetal DEPENDS "${SHANNON_METALLIB}")
-        add_dependencies(FlexAIDdS ShannonEntropyMetal)
-        target_compile_definitions(FlexAIDdS PRIVATE
-            SHANNON_METALLIB_PATH="${SHANNON_METALLIB}"
-        )
-        # TENCoM Metal bridge (GPU contact discovery + Hessian assembly)
-        target_sources(FlexAIDdS PRIVATE LIB/tENCoM/tencm_metal.mm)
-        target_compile_definitions(FlexAIDdS PRIVATE FLEXAIDS_HAS_METAL_TENCM)
-        set_source_files_properties(LIB/tENCoM/tencm_metal.mm PROPERTIES
-            LANGUAGE OBJCXX
-            COMPILE_FLAGS "-std=c++26 -fno-objc-arc"
-        )
-        # FastOPTICS Metal kNN (GPU-accelerated neighbor discovery)
-        target_sources(FlexAIDdS PRIVATE LIB/gpu_fast_optics_metal.mm)
-        set_source_files_properties(LIB/gpu_fast_optics_metal.mm PROPERTIES
-            LANGUAGE OBJCXX
-            COMPILE_FLAGS "-std=c++26 -fno-objc-arc"
-        )
-        # CavityDetect Metal bridge + shader
-        target_sources(FlexAIDdS PRIVATE LIB/CavityDetect/CavityDetectMetalBridge.mm)
-        set_source_files_properties(LIB/CavityDetect/CavityDetectMetalBridge.mm PROPERTIES
-            LANGUAGE OBJCXX
-            COMPILE_FLAGS "-std=c++26 -fno-objc-arc"
-        )
-        set(CAVITY_METAL_SRC_DS  "${CMAKE_CURRENT_SOURCE_DIR}/LIB/CavityDetect/CavityDetect.metal")
-        set(CAVITY_AIR_DS         "${CMAKE_CURRENT_BINARY_DIR}/CavityDetect_ds.air")
-        set(CAVITY_METALLIB_DS    "${CMAKE_CURRENT_BINARY_DIR}/CavityDetect_ds.metallib")
-        add_custom_command(
-            OUTPUT  "${CAVITY_AIR_DS}"
-            COMMAND "${FLEXAIDS_METALC}" "-fmodules-cache-path=${FLEXAIDS_METAL_MODULE_CACHE}" -c "${CAVITY_METAL_SRC_DS}" -o "${CAVITY_AIR_DS}"
-            DEPENDS "${CAVITY_METAL_SRC_DS}"
-            COMMENT "Compiling CavityDetect Metal shader (FlexAIDdS)"
-            VERBATIM
-        )
-        add_custom_command(
-            OUTPUT  "${CAVITY_METALLIB_DS}"
-            COMMAND "${FLEXAIDS_METALLIB}" "${CAVITY_AIR_DS}" -o "${CAVITY_METALLIB_DS}"
-            DEPENDS "${CAVITY_AIR_DS}"
-            COMMENT "Linking CavityDetect_ds.metallib"
-            VERBATIM
-        )
-        add_custom_target(CavityDetectMetalDS DEPENDS "${CAVITY_METALLIB_DS}")
-        add_dependencies(FlexAIDdS CavityDetectMetalDS)
-        target_compile_definitions(FlexAIDdS PRIVATE
-            CAVITY_METALLIB_PATH="${CAVITY_METALLIB_DS}"
-        )
-        # TurboQuant Metal bridge + shader
-        target_sources(FlexAIDdS PRIVATE LIB/TurboQuantMetalBridge.mm)
-        set_source_files_properties(LIB/TurboQuantMetalBridge.mm PROPERTIES
-            LANGUAGE OBJCXX
-            COMPILE_FLAGS "-std=c++26 -fno-objc-arc"
-        )
-        set(TQ_METAL_SRC_DS  "${CMAKE_CURRENT_SOURCE_DIR}/LIB/TurboQuant.metal")
-        set(TQ_AIR_DS         "${CMAKE_CURRENT_BINARY_DIR}/TurboQuant_ds.air")
-        set(TQ_METALLIB_DS    "${CMAKE_CURRENT_BINARY_DIR}/TurboQuant_ds.metallib")
-        add_custom_command(
-            OUTPUT  "${TQ_AIR_DS}"
-            COMMAND "${FLEXAIDS_METALC}" "-fmodules-cache-path=${FLEXAIDS_METAL_MODULE_CACHE}" -c "${TQ_METAL_SRC_DS}" -o "${TQ_AIR_DS}"
-            DEPENDS "${TQ_METAL_SRC_DS}"
-            COMMENT "Compiling TurboQuant Metal shader (FlexAIDdS)"
-            VERBATIM
-        )
-        add_custom_command(
-            OUTPUT  "${TQ_METALLIB_DS}"
-            COMMAND "${FLEXAIDS_METALLIB}" "${TQ_AIR_DS}" -o "${TQ_METALLIB_DS}"
-            DEPENDS "${TQ_AIR_DS}"
-            COMMENT "Linking TurboQuant_ds.metallib"
-            VERBATIM
-        )
-        add_custom_target(TurboQuantMetalDS DEPENDS "${TQ_METALLIB_DS}")
-        add_dependencies(FlexAIDdS TurboQuantMetalDS)
-        target_compile_definitions(FlexAIDdS PRIVATE
-            TURBOQUANT_METALLIB_PATH="${TQ_METALLIB_DS}"
-        )
-        # MetalRMSD bridge + shader (GPU pairwise RMSD for FOPTICS clustering)
-        target_sources(FlexAIDdS PRIVATE LIB/MetalRMSDBridge.mm)
-        set_source_files_properties(LIB/MetalRMSDBridge.mm PROPERTIES
-            LANGUAGE OBJCXX
-            COMPILE_FLAGS "-std=c++26 -fno-objc-arc"
-        )
-        set(RMSD_METAL_SRC_DS  "${CMAKE_CURRENT_SOURCE_DIR}/LIB/MetalRMSD.metal")
-        set(RMSD_AIR_DS         "${CMAKE_CURRENT_BINARY_DIR}/MetalRMSD_ds.air")
-        set(RMSD_METALLIB_DS    "${CMAKE_CURRENT_BINARY_DIR}/MetalRMSD_ds.metallib")
-        add_custom_command(
-            OUTPUT  "${RMSD_AIR_DS}"
-            COMMAND "${FLEXAIDS_METALC}" "-fmodules-cache-path=${FLEXAIDS_METAL_MODULE_CACHE}" -c "${RMSD_METAL_SRC_DS}" -o "${RMSD_AIR_DS}"
-            DEPENDS "${RMSD_METAL_SRC_DS}"
-            COMMENT "Compiling MetalRMSD Metal shader (FlexAIDdS)"
-            VERBATIM
-        )
-        add_custom_command(
-            OUTPUT  "${RMSD_METALLIB_DS}"
-            COMMAND "${FLEXAIDS_METALLIB}" "${RMSD_AIR_DS}" -o "${RMSD_METALLIB_DS}"
-            DEPENDS "${RMSD_AIR_DS}"
-            COMMENT "Linking MetalRMSD_ds.metallib"
-            VERBATIM
-        )
-        add_custom_target(MetalRMSDMetalDS DEPENDS "${RMSD_METALLIB_DS}")
-        add_dependencies(FlexAIDdS MetalRMSDMetalDS)
-        target_compile_definitions(FlexAIDdS PRIVATE
-            METALRMSD_METALLIB_PATH="${RMSD_METALLIB_DS}"
-        )
-        message(STATUS "FlexAIDdS: Metal GPU acceleration enabled (Shannon + CavityDetect + TurboQuant + MetalRMSD)")
+        message(STATUS "FlexAIDdS: Metal GPU acceleration via flexaid_core")
     endif()
 
     message(STATUS "FlexAIDdS fast executable enabled")
 endif()
 
+# Attach Metal dispatch runtime to targets that compile hardware_detect /
+# UnifiedHardwareDispatch themselves WITHOUT linking flexaid_core.
+# Targets that already link flexaid_core already get metal_eval.mm etc.
 function(flexaids_attach_metal_dispatch_runtime target_name)
     if(NOT FLEXAIDS_USE_METAL)
+        return()
+    endif()
+    # Avoid duplicate-symbol if the target already pulls flexaid_core objects.
+    get_target_property(_flexaids_metal_link_libs ${target_name} LINK_LIBRARIES)
+    if(_flexaids_metal_link_libs MATCHES "flexaid_core")
         return()
     endif()
     target_sources(${target_name} PRIVATE
@@ -1019,29 +908,9 @@ if(ENABLE_CAVITY_DETECT_CLI)
     if(FLEXAIDS_USE_OPENMP AND OpenMP_CXX_FOUND)
         target_link_libraries(cavity_detect_cli PRIVATE OpenMP::OpenMP_CXX)
     endif()
-    if(FLEXAIDS_USE_METAL)
-        target_sources(cavity_detect_cli PRIVATE
-            LIB/CavityDetect/CavityDetectMetalBridge.mm
-        )
-        target_compile_definitions(cavity_detect_cli PRIVATE FLEXAIDS_USE_METAL)
-        target_compile_options(cavity_detect_cli PRIVATE -fno-objc-arc)
-        target_link_libraries(cavity_detect_cli PRIVATE
-            ${METAL_LIBRARY}
-            ${FOUNDATION_LIBRARY}
-            ${METALKIT_LIBRARY}
-        )
-        set_source_files_properties(
-            LIB/CavityDetect/CavityDetectMetalBridge.mm
-            PROPERTIES LANGUAGE OBJCXX COMPILE_FLAGS "-std=c++26 -fno-objc-arc"
-        )
-        if(TARGET CavityDetectMetalDS)
-            add_dependencies(cavity_detect_cli CavityDetectMetalDS)
-        endif()
-        if(DEFINED CAVITY_METALLIB_DS)
-            target_compile_definitions(cavity_detect_cli PRIVATE
-                CAVITY_METALLIB_PATH="${CAVITY_METALLIB_DS}"
-            )
-        endif()
+    # Metal CavityDetect bridge + frameworks come from flexaid_core.
+    if(FLEXAIDS_USE_METAL AND TARGET CavityDetectMetal)
+        add_dependencies(cavity_detect_cli CavityDetectMetal)
     endif()
     message(STATUS "Native CavityDetector CLI enabled -- build target: cavity_detect_cli")
 endif()
@@ -1097,43 +966,13 @@ if(ENABLE_BENCHMARK_DATASETS)
     if(FLEXAIDS_USE_OPENMP AND OpenMP_CXX_FOUND)
         target_link_libraries(benchmark_datasets PRIVATE OpenMP::OpenMP_CXX)
     endif()
-    # Metal bridge sources — required when flexaid_core was compiled with Metal.
+    # Metal bridges/frameworks are on flexaid_core when FLEXAIDS_USE_METAL=ON.
     if(FLEXAIDS_USE_METAL)
-        target_sources(benchmark_datasets PRIVATE
-            LIB/metal_eval.mm
-            LIB/MetalRMSDBridge.mm
-            LIB/CavityDetect/CavityDetectMetalBridge.mm
-            LIB/ShannonThermoStack/ShannonMetalBridge.mm
-            LIB/gpu_fast_optics_metal.mm
-        )
-        target_compile_definitions(benchmark_datasets PRIVATE
-            FLEXAIDS_USE_METAL
-            FLEXAIDS_HAS_METAL_SHANNON
-        )
-        target_compile_options(benchmark_datasets PRIVATE -fno-objc-arc)
-        target_link_libraries(benchmark_datasets PRIVATE
-            ${METAL_LIBRARY}
-            ${FOUNDATION_LIBRARY}
-            ${METALKIT_LIBRARY}
-        )
-        set_source_files_properties(
-            LIB/metal_eval.mm
-            LIB/MetalRMSDBridge.mm
-            LIB/CavityDetect/CavityDetectMetalBridge.mm
-            LIB/ShannonThermoStack/ShannonMetalBridge.mm
-            LIB/gpu_fast_optics_metal.mm
-            PROPERTIES LANGUAGE OBJCXX COMPILE_FLAGS "-std=c++26 -fno-objc-arc"
-        )
         add_dependencies(benchmark_datasets
-            CavityDetectMetalDS
+            CavityDetectMetal
             ShannonEntropyMetal
-            MetalRMSDMetalDS
-        )
-        target_compile_definitions(benchmark_datasets PRIVATE
-            SHANNON_METALLIB_PATH="${SHANNON_METALLIB}"
-            METALRMSD_METALLIB_PATH="${RMSD_METALLIB_DS}"
-            CAVITY_METALLIB_PATH="${CAVITY_METALLIB_DS}"
-            TURBOQUANT_METALLIB_PATH="${TQ_METALLIB_DS}"
+            MetalRMSDMetal
+            TurboQuantMetal
         )
     endif()
     message(STATUS "Benchmark dataset runner enabled — build target: benchmark_datasets")
