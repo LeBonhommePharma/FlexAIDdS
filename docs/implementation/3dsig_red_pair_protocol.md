@@ -11,7 +11,7 @@
 
 | Item | Value |
 |------|--------|
-| Success | **S_top10**: min RMSD among **top 10** ranked modes **&lt; 2.0 Å** |
+| Success | **S_top10**: any of **top 10** ranked modes has RMSD **≤ 2.0 Å** (claim contract; inclusive) |
 | Sims / case | **10** independent runs |
 | Budget / sim | **2 000 000** energy evaluations (`pop × gen = 1000 × 2000`) |
 | Headline | **Median** success rate over **10 000** bootstrap resamples of N cases |
@@ -89,8 +89,17 @@ bash scripts/run_A_pilot8.sh
 After all arms complete on pilot8 (or full85):
 
 ```bash
-python3 scripts/bootstrap_3dsig_s_top10.py --arm-dir "$FLEXAIDDS_RESULTS/campaigns/three_engine/A/3dsig_r10" ...
+# Requires mode_rmsd_0..9 on each result.csv (from parse_flexaid_arm_results.py).
+# Fail-closed if those columns are missing — never treats rmsd_bcr as S_top10.
+python3 scripts/bootstrap_3dsig_s_top10.py \
+  --arm-dir "$FLEXAIDDS_RESULTS/campaigns/three_engine/A/3dsig_r10" \
+  --bootstraps 10000 \
+  --json-out /tmp/A_s_top10.json
 ```
+
+**CSV schema (parser):** `mode_rmsd_0`…`mode_rmsd_9` (emitted rank order, crystal-blind),
+`success_s_top10` (1 if any finite mode RMSD ≤ 2.0), plus existing `rmsd_top1` /
+`success_s1` / `rmsd_bcr` / `success_s3`.
 
 ---
 
