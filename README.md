@@ -92,19 +92,20 @@ print(fd.__version__)
 run = fd.load_results("path/to/results")
 ```
 
-### macOS: Homebrew (native CLI tools)
+### macOS: Homebrew (native docking tools)
 
 ```bash
-# Tap the monorepo (Homebrew 6+ requires formulae to live in a tap with a git remote)
+# Tap the monorepo (Homebrew 6+ requires formulae to live in a tap with a git remote;
+# raw formula URL installs are rejected)
 brew tap lebonhommepharma/flexaidds https://github.com/LeBonhommePharma/FlexAIDdS
-brew install flexaidds
-# Tip-of-tree: brew install --HEAD flexaidds
-# Python package (not yet on public PyPI — install from GitHub):
+brew install lebonhommepharma/flexaidds/flexaidds
+# Tip-of-tree: brew install --HEAD lebonhommepharma/flexaidds/flexaidds
+# Python analysis package is separate (not yet on public PyPI — install from GitHub):
 pip install "git+https://github.com/LeBonhommePharma/FlexAIDdS.git#subdirectory=python"
 # later: python -m flexaidds --self-update
 ```
 
-See [docs/INSTALLATION.md](docs/INSTALLATION.md) for conda, GitHub/PyPI, Windows, and full platform instructions. The Python package and native tools can be installed independently.
+Homebrew installs **native** binaries (`FlexAIDdS`, `tENCoM`, …). pip installs the **Python** package (`import flexaidds`, `flexaidds` CLI). Install both when you need docking *and* analysis. See [docs/INSTALLATION.md](docs/INSTALLATION.md) for conda, GitHub/PyPI, Windows, and full platform instructions.
 
 ---
 

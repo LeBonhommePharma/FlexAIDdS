@@ -19,6 +19,7 @@ Higher-level live docking orchestration is still intentionally staged behind the
 # Recommended today (package not yet on public PyPI):
 pip install "git+https://github.com/LeBonhommePharma/FlexAIDdS.git#subdirectory=python"
 python -m flexaidds --check-update       # or --self-update
+# Console scripts after install: flexaidds, flexaidds-benchmark
 
 # From the repo root (development)
 pip install -e ./python
@@ -28,7 +29,13 @@ pip install flexaidds
 pip install --upgrade flexaidds
 ```
 
-This installs the `flexaidds` package. The compiled acceleration (`_core`) is built if the required build dependencies (pybind11, Eigen headers, a C++ compiler) are present. Otherwise the package installs successfully in **pure-Python fallback mode** (full result loading, models, pure-Python thermodynamics, etc. still work). Set `FLEXAIDDS_SKIP_CORE=1` to force pure-Python.
+This installs the **Python analysis package** only (not the native `FlexAIDdS` docking binary — use Homebrew or a CMake build for that). The compiled acceleration (`_core`) is built if the required build dependencies (pybind11, Eigen headers, a C++ compiler) are present. Otherwise the package installs successfully in **pure-Python fallback mode** (full result loading, models, pure-Python thermodynamics, etc. still work). Set `FLEXAIDDS_SKIP_CORE=1` to force pure-Python.
+
+**Native docking tools (separate):**
+```bash
+brew tap lebonhommepharma/flexaidds https://github.com/LeBonhommePharma/FlexAIDdS
+brew install lebonhommepharma/flexaidds/flexaidds
+```
 
 You can also do a non-editable install after building a wheel:
 ```bash

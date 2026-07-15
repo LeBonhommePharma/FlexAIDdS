@@ -131,19 +131,20 @@ orphan-tap doctor warnings).
 # One-time: tap the monorepo (Formula/flexaidds.rb lives at repo root)
 brew tap lebonhommepharma/flexaidds https://github.com/LeBonhommePharma/FlexAIDdS
 
-# Stable tagged release (v2.0.0+)
-brew install flexaidds
+# Stable tagged release (v2.0.2+). Qualified name always works.
+brew install lebonhommepharma/flexaidds/flexaidds
+# short form after tap: brew install flexaidds
 
 # Or latest development tip
-brew install --HEAD flexaidds
+brew install --HEAD lebonhommepharma/flexaidds/flexaidds
 
 # Update later
-brew update && brew reinstall flexaidds
+brew update && brew reinstall lebonhommepharma/flexaidds/flexaidds
 # or, for HEAD builds:
-brew reinstall --HEAD flexaidds
+brew reinstall --HEAD lebonhommepharma/flexaidds/flexaidds
 ```
 
-This installs `FlexAIDdS`, `tENCoM`, `FlexAID` + required data files.
+This installs **native** tools only (`FlexAIDdS`, `tENCoM`, `FlexAID` + MC matrices / `AMINO.def`). The Python package is separate (see pip section below).
 
 Then (recommended — GitHub until PyPI publish):
 ```bash
@@ -199,17 +200,27 @@ See also `python/README.md`.
 
 ## Homebrew (macOS native tools)
 
+### What each installer provides
+
+| Installer | Provides | Does **not** provide |
+|:----------|:---------|:---------------------|
+| **Homebrew** (`flexaidds` formula) | Native C++ tools: `FlexAIDdS`, `FlexAID`, `tENCoM`, `tencom_entropy_diff` + production MC matrices / `AMINO.def` | Python package, `flexaidds` CLI, `load_results`, pure-Python StatMech |
+| **pip / PyPI** (`flexaidds` package) | Python API + CLIs (`flexaidds`, `flexaidds-benchmark`), optional `_core` acceleration | Full docking engine binary / cavity search campaign binary |
+
+Install both if you want native docking **and** Python analysis. Versions are aligned at **2.0.2** (`Formula/flexaidds.rb` ↔ `python/pyproject.toml` ↔ `python/flexaidds/__version__.py`).
+
 The formula provides the high-performance native executables with data files staged correctly:
 
 ```bash
 # One-time tap (required on Homebrew 6+; raw URL / bare path installs are rejected)
 brew tap lebonhommepharma/flexaidds https://github.com/LeBonhommePharma/FlexAIDdS
 
-# Stable release
-brew install flexaidds
+# Stable release (qualified name always works)
+brew install lebonhommepharma/flexaidds/flexaidds
+# short form after tap: brew install flexaidds
 
 # Development / latest
-brew install --HEAD flexaidds
+brew install --HEAD lebonhommepharma/flexaidds/flexaidds
 
 # After install, add the Python package (GitHub until PyPI publish):
 pip install "git+https://github.com/LeBonhommePharma/FlexAIDdS.git#subdirectory=python"
@@ -230,12 +241,14 @@ brew tap-new --no-git "$TAP"   # or set origin if you init git
 brew untap --force "$TAP"      # always clean up; never leave test/* without origin
 ```
 
-When cutting a new stable release, update the formula’s `url`, `sha256`, and version together:
+When cutting a new stable release, update the formula’s `url`, `sha256`, and version together
+(and keep `python/pyproject.toml` + `python/flexaidds/__version__.py` in sync):
 ```bash
 # Example maintainer steps
-TAG=v2.0.1
+TAG=v2.0.2
 curl -sL "https://github.com/LeBonhommePharma/FlexAIDdS/archive/refs/tags/${TAG}.tar.gz" | shasum -a 256
 # paste sha256 into Formula/flexaidds.rb, commit, push
+# users: brew update && brew reinstall lebonhommepharma/flexaidds/flexaidds
 ```
 
 ---

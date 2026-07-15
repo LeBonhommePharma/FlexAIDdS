@@ -128,21 +128,29 @@ class Flexaidds < Formula
 
   def caveats
     <<~EOS
-      The FlexAIDdS native tools (FlexAIDdS, tENCoM, FlexAID) have been installed.
+      This formula installs the *native* docking tools only:
+        FlexAIDdS, FlexAID, tENCoM, tencom_entropy_diff
+
+      It does *not* install the Python analysis package. Those are separate:
+        # Python CLI + load_results / StatMech (GitHub until public PyPI):
+        pip install "git+https://github.com/LeBonhommePharma/FlexAIDdS.git#subdirectory=python"
+        # After the first PyPI release: pip install flexaidds
+        # Then: flexaidds --help   or   python -m flexaidds --help
 
       Wrappers under #{bin} set FLEXAIDDS_DATA_DIR=#{libexec}/share so PATH
       symlinks still find MC matrices and AMINO.def.
 
       Stable v2.0.2+ includes the production docking matrix (atom typing works
       out of the box). Upgrade from broken v2.0.0 installs with:
-        brew update && brew reinstall flexaidds
+        brew update && brew reinstall lebonhommepharma/flexaidds/flexaidds
 
-      Python package:
-        pip install flexaidds
-        # or from git: pip install "git+https://github.com/LeBonhommePharma/FlexAIDdS.git#subdirectory=python"
+      Install / reinstall path (Homebrew 6+ requires a real tap; raw URL installs
+      are rejected):
+        brew tap lebonhommepharma/flexaidds https://github.com/LeBonhommePharma/FlexAIDdS
+        brew install lebonhommepharma/flexaidds/flexaidds
 
       Default brew build uses CPU + OpenMP (no Metal).
-      Metal: brew install --with-metal flexaidds
+      Metal: brew install --with-metal lebonhommepharma/flexaidds/flexaidds
 
       Example:
         FlexAIDdS receptor.pdb ligand.sdf --rigid -o /tmp/out

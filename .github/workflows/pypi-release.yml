@@ -53,8 +53,27 @@ jobs:
           python -c "import flexaidds as fd; print('flexaidds', fd.__version__, 'HAS_CORE=', getattr(fd, 'HAS_CORE_BINDINGS', False))"
           python -m flexaidds --help
           python -m flexaidds --check-update || true
-          test "$(python -c 'import flexaidds; print(flexaidds.__version__)')" = "2.0.0" \
-            || python -c "import flexaidds as fd; assert fd.__version__, fd.__version__"
+          # Version must be non-empty and match the static PEP 621 field in pyproject.toml
+          # (do not hardcode — that drifted when we shipped 2.0.1/2.0.2).
+          python -c "
+import re
+from pathlib import Path
+import flexaidds as fd
+assert fd.__version__, fd.__version__
+text = Path('python/pyproject.toml').read_text(encoding='utf-8')
+in_project = False
+found = None
+for line in text.splitlines():
+    s = line.strip()
+    if s.startswith('[') and s.endswith(']'):
+        in_project = s == '[project]'
+        continue
+    if in_project and s.startswith('version') and '=' in s:
+        found = s.split('=', 1)[1].strip().strip('\"\'')
+        break
+assert found == fd.__version__, (found, fd.__version__)
+print('version_ok', fd.__version__)
+"
 
       - name: Upload sdist artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
