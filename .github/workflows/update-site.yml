@@ -2,7 +2,7 @@ name: Deploy Site
 
 on:
   push:
-    branches: [main, master]
+    branches: [main]
     paths:
       - 'README.md'
       - 'docs/**'
@@ -54,7 +54,7 @@ jobs:
             git commit -m "Update: site stats (auto)"
             # Do not fail the whole deploy on non-fast-forward (re-runs on old SHAs, concurrent runs, or races).
             # The next scheduled or push-triggered run will pick up the latest stats.
-            git push origin HEAD:master || echo "::warning::git push for stats failed (non-fast-forward or race). Continuing with deploy."
+            git push origin HEAD:main || echo "::warning::git push for stats failed (non-fast-forward or race). Continuing with deploy."
           else
             echo "No stats changes to commit"
           fi

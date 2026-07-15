@@ -4,7 +4,7 @@ name: Benchmark Tier 2 (Nightly Comprehensive)
 # tracking, and a Markdown report committed as a commit comment.
 #
 # Triggers:
-#   - After every merge to master (post-merge validation)
+#   - After every merge to main (post-merge validation)
 #   - Weekly cron (Sunday 02:00 UTC) for baseline drift detection
 #   - Manual dispatch for on-demand full runs
 #
@@ -18,7 +18,7 @@ name: Benchmark Tier 2 (Nightly Comprehensive)
 on:
   push:
     branches:
-      - master
+      - main
   schedule:
     - cron: "0 2 * * 0"   # Weekly: Sunday 02:00 UTC
   workflow_dispatch:

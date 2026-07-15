@@ -1,6 +1,6 @@
 name: Benchmark Tier 1 (PR Sanity)
 
-# Lightweight benchmark gate on every PR to master.
+# Lightweight benchmark gate on every PR to main.
 # Runs 5 CASF-2016 targets with a 10-minute hard timeout.
 # Posts results as a PR comment via a workflow summary + comment action.
 #
@@ -10,7 +10,7 @@ name: Benchmark Tier 1 (PR Sanity)
 on:
   pull_request:
     branches:
-      - master
+      - main
   workflow_dispatch:
     inputs:
       dataset:
