@@ -932,6 +932,7 @@ if(ENABLE_BENCHMARK_DATASETS)
     add_executable(benchmark_datasets
         LIB/benchmark_datasets.cpp
         LIB/DatasetRunner.cpp
+        LIB/DatasetRunnerStats.cpp
         LIB/AsyncPipeline.cpp
         # NativePoseQC diagnostic plus upstream PoseBusters CLI bridge
         ${FLEXAIDDS_POSEBUST_SOURCES}
@@ -2129,6 +2130,7 @@ if(BUILD_TESTING)
     add_executable(test_dataset_runner
         tests/test_dataset_runner.cpp
         LIB/DatasetRunner.cpp
+        LIB/DatasetRunnerStats.cpp
         LIB/AsyncPipeline.cpp
         ${FLEXAIDDS_POSEBUST_SOURCES}
     )
@@ -2155,6 +2157,7 @@ if(BUILD_TESTING)
     add_executable(test_cofactor_blacklist
         tests/test_cofactor_blacklist.cpp
         LIB/DatasetRunner.cpp
+        LIB/DatasetRunnerStats.cpp
         LIB/AsyncPipeline.cpp
         ${FLEXAIDDS_POSEBUST_SOURCES}
     )
