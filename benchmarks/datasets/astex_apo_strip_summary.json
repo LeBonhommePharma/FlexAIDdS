@@ -1,0 +1,66 @@
+{
+  "generated_at": "2026-07-15T04:44:43.033856+00:00",
+  "tree": "benchmarks/astex_diverse/astex_diverse",
+  "n_targets": 85,
+  "n_pass": 85,
+  "n_warn": 0,
+  "n_fail": 0,
+  "n_identical_sha_to_deposit": 83,
+  "n_ligand_atoms_remaining": 0,
+  "n_coord_match": 0,
+  "n_fix_planned": 0,
+  "n_fix_applied": 0,
+  "fail_pdb_ids": [],
+  "non_identical_apo_deposit": [
+    {
+      "pdb_id": "1TW6",
+      "ligand_title": "ALA",
+      "status": "pass",
+      "identical_sha_to_deposit": false,
+      "ligand_atoms_in_apo": 0,
+      "coord_match_atoms": 0,
+      "notes": "peptide_like_ligand_title"
+    },
+    {
+      "pdb_id": "2BYS",
+      "ligand_title": "LOB",
+      "status": "pass",
+      "identical_sha_to_deposit": false,
+      "ligand_atoms_in_apo": 0,
+      "coord_match_atoms": 0,
+      "notes": ""
+    }
+  ],
+  "worst_offenders": [
+    {
+      "pdb_id": "1TW6",
+      "ligand_title": "ALA",
+      "status": "pass",
+      "pass_fail": "pass",
+      "identical_sha_to_deposit": false,
+      "ligand_atoms_in_apo": 0,
+      "ligand_hetatm_names": "",
+      "coord_match_atoms": 0,
+      "nonstd_hetatm_residues": "",
+      "notes": "peptide_like_ligand_title"
+    },
+    {
+      "pdb_id": "2BYS",
+      "ligand_title": "LOB",
+      "status": "pass",
+      "pass_fail": "pass",
+      "identical_sha_to_deposit": false,
+      "ligand_atoms_in_apo": 0,
+      "ligand_hetatm_names": "",
+      "coord_match_atoms": 0,
+      "nonstd_hetatm_residues": "",
+      "notes": ""
+    }
+  ],
+  "interpretation": "status=fail means cognate ligand residue atoms (or strong coordinate match) remain in *_apo.pdb. Byte-identity of apo to deposit alone is NOT a fail when the cognate ligand is already absent from the deposit PDB (ligand lives in CIF/SDF only).",
+  "fix_dry_run": false,
+  "write": false,
+  "all_safe": false,
+  "strict": true,
+  "csv_report": "benchmarks/datasets/astex_apo_strip_report.csv"
+}
