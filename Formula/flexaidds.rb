@@ -6,7 +6,9 @@ class Flexaidds < Formula
   url "https://github.com/LeBonhommePharma/FlexAIDdS/archive/refs/tags/v2.0.2.tar.gz"
   sha256 "11109a3eb6cac4185cee10390be7bf09be2520e89f13064a524e984be1366cc0"
   license "Apache-2.0"
-  head "https://github.com/LeBonhommePharma/FlexAIDdS.git", branch: "master"
+  # HEAD carries the flexaid_core Metal OBJCXX link fix (stable v2.0.2 does not).
+  # Track this fix branch until it lands on master; after merge, flip back to master.
+  head "https://github.com/LeBonhommePharma/FlexAIDdS.git", branch: "fix/homebrew-metal-link"
 
   livecheck do
     url :stable
@@ -14,7 +16,10 @@ class Flexaidds < Formula
   end
 
   # Optional Metal GPU path (macOS only). Off by default — see install notes.
-  option "with-metal", "Build with Metal GPU acceleration (macOS; may fail on pure CLT SDKs)"
+  # Requires a working Metal toolchain (Xcode + MetalToolchain). Stable v2.0.2
+  # lacks the flexaid_core OBJCXX membership fix; use --HEAD --with-metal until
+  # the next release tag that includes that CMake change (PR #260).
+  option "with-metal", "Build with Metal GPU acceleration (macOS; needs Metal toolchain)"
 
   depends_on "cmake" => :build
   depends_on "ninja" => :build
@@ -23,9 +28,28 @@ class Flexaidds < Formula
 
   def install
     # Metal OFF by default for CLT-only SDKs without a working metalc; use
-    # --with-metal when Xcode/Metal toolchain is present. Metal OBJCXX bridges
-    # are linked via flexaid_core (not only the executable) so the link succeeds.
+    # --with-metal when Xcode/Metal toolchain is present. On sources that include
+    # the flexaid_core Metal fix, OBJCXX bridges + frameworks are linked via
+    # flexaid_core so every consumer (FlexAID, FlexAIDdS, cavity tools) links.
     metal = build.with?("metal") ? "ON" : "OFF"
+
+    # Stable v2.0.2 tarball still attaches Metal .mm only to some executables;
+    # targets that link flexaid_core alone (e.g. cavity_detect_cli) then fail with
+    # undefined metal_eval_* / metal_rmsd::*. Prefer HEAD for Metal until the next
+    # release ships the core membership fix.
+    if build.with?("metal") && !build.head?
+      odie <<~EOS
+        --with-metal requires source that links Metal bridges via flexaid_core.
+        Stable v2.0.2 still fails that link (undefined metal_eval_* from gaboom /
+        hardware_detect / FOPTICS when building auxiliary targets).
+
+        Until the next release tag, install Metal from HEAD:
+          brew reinstall --build-from-source --HEAD --with-metal lebonhommepharma/flexaidds/flexaidds
+
+        Default (CPU + OpenMP, no Metal) still works on stable:
+          brew reinstall lebonhommepharma/flexaidds/flexaidds
+      EOS
+    end
 
     args = std_cmake_args + %W[
       -GNinja
@@ -37,6 +61,10 @@ class Flexaidds < Formula
       -DFLEXAIDS_USE_OPENMP=ON
       -DBUILD_FLEXAIDDS_FAST=ON
       -DENABLE_TENCOM_TOOL=ON
+      -DENABLE_CAVITY_DETECT_CLI=OFF
+      -DENABLE_BENCHMARK_DATASETS=OFF
+      -DENABLE_DUAL_ASSEMBLY_TOOL=OFF
+      -DENABLE_DIFT_TOOL=OFF
     ]
 
     if OS.mac?
@@ -150,8 +178,13 @@ class Flexaidds < Formula
         brew tap lebonhommepharma/flexaidds https://github.com/LeBonhommePharma/FlexAIDdS
         brew install lebonhommepharma/flexaidds/flexaidds
 
-      Default brew build uses CPU + OpenMP (no Metal).
-      Metal: brew install --with-metal lebonhommepharma/flexaidds/flexaidds
+      Default brew build uses CPU + OpenMP (no Metal) and is the portable path.
+
+      Metal GPU (macOS + Xcode Metal toolchain). Stable v2.0.2 cannot link Metal
+      into every flexaid_core consumer; use HEAD until the next release:
+        brew reinstall --build-from-source --HEAD --with-metal lebonhommepharma/flexaidds/flexaidds
+      After a post-v2.0.2 tag with the flexaid_core Metal fix:
+        brew install --with-metal lebonhommepharma/flexaidds/flexaidds
 
       Example:
         FlexAIDdS receptor.pdb ligand.sdf --rigid -o /tmp/out
