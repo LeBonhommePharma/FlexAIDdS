@@ -27,11 +27,12 @@ from typing import Any, Dict, List, Optional
 
 
 def _f(row: dict, *keys: str) -> Optional[float]:
+    """Parse first finite float from keys. Negative RMSD sentinels (-1) → None."""
     for k in keys:
-        if k in row and row[k] not in (None, "", "NA", "nan"):
+        if k in row and row[k] not in (None, "", "NA", "nan", "NaN"):
             try:
                 v = float(row[k])
-                if math.isfinite(v):
+                if math.isfinite(v) and v >= 0.0:
                     return v
             except (TypeError, ValueError):
                 pass
@@ -83,14 +84,17 @@ def pdb_id(row: dict) -> str:
 
 
 def score_row(row: dict) -> Dict[str, Any]:
+    # DatasetRunner claim schema: rmsd_to_crystal = elected; best_cluster_rmsd = BCR
     rmsd_s1 = _f(
         row,
-        "rmsd",
+        "rmsd_to_crystal",
         "elected_rmsd",
+        "rmsd",
         "best_rmsd",
         "top_rmsd",
         "rmsd_top1",
         "S1_rmsd",
+        "rmsd_hungarian",
     )
     rmsd_bcr = _f(
         row,
@@ -101,11 +105,16 @@ def score_row(row: dict) -> Dict[str, Any]:
         "lowest_rmsd",
         "best_pose_rmsd",
     )
-    if rmsd_bcr is None:
-        rmsd_bcr = rmsd_s1
     seed_echo = _truth(row, "seed_echo") if "seed_echo" in row else False
-    s1 = (rmsd_s1 is not None and rmsd_s1 <= 2.0 and not seed_echo)
-    bcr = (rmsd_bcr is not None and rmsd_bcr <= 2.0)
+    # Prefer explicit flags when present
+    if "success_rmsd" in row and str(row.get("success_rmsd", "")).strip() != "":
+        s1 = _truth(row, "success_rmsd") and not seed_echo
+        if rmsd_s1 is not None and rmsd_s1 > 2.0:
+            s1 = False
+    else:
+        s1 = rmsd_s1 is not None and rmsd_s1 <= 2.0 and not seed_echo
+    bcr = rmsd_bcr is not None and rmsd_bcr <= 2.0
+    elected_ok = bool(str(row.get("elected_pose_path", "") or "").strip())
     return {
         "pdb_id": pdb_id(row),
         "rmsd_s1": rmsd_s1,
@@ -114,6 +123,9 @@ def score_row(row: dict) -> Dict[str, Any]:
         "bcr": bcr,
         "election_gap": bool(bcr and not s1),
         "seed_echo": seed_echo,
+        "elected_pose_present": elected_ok,
+        "num_poses": _f(row, "num_poses"),
+        "best_score": _f(row, "best_score"),
         "path": row.get("_path"),
     }
 
