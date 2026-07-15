@@ -262,7 +262,7 @@ def load_results(path: str | Path) -> DockingResult:
     # Build modes (initially with rank=1, will be corrected after sorting)
     modes = [_build_mode(mode_id, poses, rank=1) for mode_id, poses in sorted(grouped.items())]
 
-    # Sort modes by free energy (best = lowest ΔG), fallback to alphabetical mode_id
+    # Sort modes by ensemble free-energy estimate F (lowest first); fallback mode_id
     modes_sorted = sorted(
         modes,
         key=lambda m: (m.free_energy is None, m.free_energy, m.mode_id)

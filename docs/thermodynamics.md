@@ -18,6 +18,22 @@ FlexAID∆S computes the canonical ensemble over the genetic algorithm conformat
 
 All calculations use numerically stable log-sum-exp.
 
+## DatasetRunner CSV columns vs thermodynamics (naming contract)
+
+Benchmark CSVs emitted by `DatasetRunner` keep stable historical headers for
+live campaign compatibility. Do **not** read them as experimental binding free
+energies:
+
+| Column | Meaning | Is it ΔG? |
+|--------|---------|-----------|
+| `best_score` | CF/contact-function scoring proxy of the elected pose (Voronoi CF / REMARK CF). Alias concept: `cf_score` / `elected_cf`. | **No** — never call this free energy |
+| `predicted_dG` | Ensemble free-energy *estimate* F = −kT ln Z when the Post-GA StatMech ledger is available; otherwise may fall back to CF | **Only as ensemble F estimate** — not experimental ΔG_bind unless full Z + vib + solvent/concentration path is active and validated |
+| `predicted_dH` / `predicted_TdS` | Configurational ledger proxies ⟨E⟩ and T·S_conf when available | Not calorimetric ΔH / TΔS without calibration |
+| `elected_cf`, `cf_native`, `cf_best_cluster` | Explicit CF diagnostics | CF only |
+
+See also `AGENTS.md` (Separate the scoring proxy from thermodynamics) and
+`.grok/skills/flexaidds/references/flexaidds-guidance.md`.
+
 ## Additive Corrections (in ThermodynamicBreakdown)
 
 The full free energy is decomposed as:

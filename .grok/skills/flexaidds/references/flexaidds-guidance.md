@@ -19,6 +19,19 @@ This document preserves exact scientific terminology and guardrails for any agen
 
 **Rule**: Never claim "we computed the true binding free energy" from a single docking run. The ledger is an *estimate* from the sampled ensemble under the chosen force field and solvent model.
 
+### DatasetRunner / campaign CSV columns (compatibility names)
+
+Live campaign CSVs keep historical column names. Agents **must** use the semantics below in prose, reports, and claims:
+
+| CSV column        | Actual meaning                                                                 | Forbidden language                          |
+|-------------------|---------------------------------------------------------------------------------|---------------------------------------------|
+| `best_score`      | CF/contact-function scoring proxy of the elected pose (same concept as `elected_cf` / REMARK CF) | "free energy", "ΔG", "binding affinity"     |
+| `predicted_dG`    | Ensemble free-energy *estimate* F when StatMech ledger is present; may fall back to CF | "experimental ΔG", "true binding free energy" without full Z+vib+solvent validation |
+| `predicted_dH` / `predicted_TdS` | Configurational ledger proxies when available                         | Calorimetric ΔH / TΔS without calibration   |
+| `elected_cf` / `cf_native` / `cf_best_cluster` | Explicit CF fields (correct names)                        | Equating CF to ΔG                           |
+
+Prefer saying **cf_score** / **CF proxy** in new documentation while leaving CSV headers unchanged.
+
 ## Historical Context (for Roadmap Tasks)
 
 - Phase 1: StatMechEngine core (partition function, WHAM, TI, parallel tempering).
