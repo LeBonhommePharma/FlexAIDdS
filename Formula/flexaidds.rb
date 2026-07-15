@@ -43,8 +43,10 @@ class Flexaidds < Formula
         Stable v2.0.2 still fails that link (undefined metal_eval_* from gaboom /
         hardware_detect / FOPTICS when building auxiliary targets).
 
-        Until the next release tag, install Metal from HEAD:
-          brew reinstall --build-from-source --HEAD --with-metal lebonhommepharma/flexaidds/flexaidds
+        Until the next release tag, install Metal from HEAD. Homebrew 6 accepts
+        --HEAD on install (not reinstall):
+          brew uninstall flexaidds 2>/dev/null
+          brew install -s --HEAD --with-metal lebonhommepharma/flexaidds/flexaidds
 
         Default (CPU + OpenMP, no Metal) still works on stable:
           brew reinstall lebonhommepharma/flexaidds/flexaidds
@@ -181,8 +183,10 @@ class Flexaidds < Formula
       Default brew build uses CPU + OpenMP (no Metal) and is the portable path.
 
       Metal GPU (macOS + Xcode Metal toolchain). Stable v2.0.2 cannot link Metal
-      into every flexaid_core consumer; use HEAD until the next release:
-        brew reinstall --build-from-source --HEAD --with-metal lebonhommepharma/flexaidds/flexaidds
+      into every flexaid_core consumer; use HEAD until the next release.
+      Homebrew 6: --HEAD is an install flag (reinstall --HEAD is invalid):
+        brew uninstall flexaidds 2>/dev/null
+        brew install -s --HEAD --with-metal lebonhommepharma/flexaidds/flexaidds
       After a post-v2.0.2 tag with the flexaid_core Metal fix:
         brew install --with-metal lebonhommepharma/flexaidds/flexaidds
 
