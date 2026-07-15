@@ -11,6 +11,8 @@ description: Coordinate FlexAIDdS and Astex entropy benchmarks across agents. Us
 
 Treat this skill as the shared benchmark contract. Any agent can work the benchmark, but it must leave artifacts and status clear enough that another agent can continue without asking LP which AI handled the prior step.
 
+**Primary live goal:** three-engine Astex Diverse 85 — FlexAID 2015 (A) vs master entropy off (B0) vs master entropy on (B) vs FlexAIDdS (C0/C). See `LIVE_QUEUE.md`.
+
 Before touching a live run:
 
 1. Read `AGENTS.md` (repo root).
