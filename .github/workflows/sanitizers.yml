@@ -13,11 +13,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v6
 
       - name: Install dependencies
         run: |
-          sudo apt-get update
+          bash scripts/ci/apt_get_update.sh
           # clang-18 is required for C++26 support (see CMakeLists.txt compiler gate).
           sudo apt-get install -y cmake ninja-build clang-18 libeigen3-dev libomp-dev
 
@@ -32,6 +32,7 @@ jobs:
             -DFLEXAIDS_USE_METAL=OFF \
             -DBUILD_PYTHON_BINDINGS=OFF \
             -DBUILD_TESTING=ON \
+            -DBUILD_FLEXAIDDS_FAST=OFF \
             -DCMAKE_C_FLAGS='-fsanitize=address,undefined -fno-omit-frame-pointer' \
             -DCMAKE_CXX_FLAGS='-fsanitize=address,undefined -fno-omit-frame-pointer' \
             -DCMAKE_EXE_LINKER_FLAGS='-fsanitize=address,undefined' \

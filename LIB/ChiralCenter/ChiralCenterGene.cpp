@@ -19,8 +19,7 @@
 namespace chiral {
 
 static std::mt19937& rng() {
-    thread_local std::mt19937 gen = flexaids_rng::make_thread_rng(0xC417A1ULL);
-    return gen;
+    return flexaids_rng::lazy_thread_rng(0xC417A1ULL);
 }
 
 // ─── detect_stereocenters ────────────────────────────────────────────────────

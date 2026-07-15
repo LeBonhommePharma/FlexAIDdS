@@ -35,13 +35,16 @@
 #   Build adds ~5–10 minutes before docking starts.
 #
 # OUTPUTS
-#   ~/FlexAIDdS_reviewer_benchmark/
+#   $FLEXAIDDS_ICLOUD/results/working/reproduce_astex85_.../   (preferred when FLEXAIDDS_ICLOUD set)
+#   or ~/FlexAIDdS_reviewer_benchmark/
 #     provenance.json                 ← machine stamp + env snapshot
 #     astex_crossdock_85_results.csv  ← per-target scores + RMSD
 #     astex_crossdock_85_report.md    ← publication-format summary table
 #     astex_crossdock_85_summary.csv  ← top-line metrics
 #     stdout.log / stderr.log         ← full run transcript
 #     <PDB>/                          ← per-target pose files
+#   NOTE: Active writes target working/ subdir; finalize to archived/ via safe_archive_to_icoud.py
+#   (protects against iCloud Drive sync risks: delays, placeholders, conflicted copies).
 #
 # PUBLISHED REFERENCE (commit 8196829)
 #   Success rate (RMSD_hungarian < 2.0 Å): 80/85  (94.1 %)
@@ -65,7 +68,19 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
 # ── Configuration ─────────────────────────────────────────────────────────────
-OUTPUT_DIR="${HOME}/FlexAIDdS_reviewer_benchmark"
+# Prefer iCloud Drive for results/logs/benchmark outputs (via FLEXAIDDS_ICLOUD).
+# For active reproduction run, use a timestamped subdir under results/working/
+# (safer than safe: isolates in-progress writes from iCloud sync conflicts/lag).
+# After success, the script already calls safe_archive_to_icoud.py into /archived/
+# if FLEXAIDDS_ICLOUD is set. Full compatibility with overrides.
+# iCloud comment: writes under working/ recommended; use safe_archive for finals
+# to avoid sync races (see safe_archive_to_icoud.py for verified copy + manifest).
+if [[ -n "${FLEXAIDDS_ICLOUD:-}" ]]; then
+    TS_R=$(date +%Y%m%d_%H%M%S)
+    OUTPUT_DIR="${FLEXAIDDS_ICLOUD}/results/working/reproduce_astex85_${TS_R}"
+else
+    OUTPUT_DIR="${HOME}/FlexAIDdS_reviewer_benchmark"
+fi
 BUILD_DIR="${REPO_ROOT}/build_reproduce"
 ASTEX_DIR="${REPO_ROOT}/benchmarks/astex_diverse/astex_diverse"
 DATASETS_DIR="${REPO_ROOT}/benchmarks/datasets"
@@ -574,4 +589,17 @@ if [[ "$EXIT_CODE" -ne 0 ]]; then
     warn "benchmark_datasets exited with code ${EXIT_CODE}."
     warn "Partial results may be in ${OUTPUT_DIR}."
     exit "${EXIT_CODE}"
+fi
+
+# =============================================================================
+# Optional: Safe archive to iCloud (if FLEXAIDDS_ICLOUD is configured)
+# =============================================================================
+if [[ -n "${FLEXAIDDS_ICLOUD:-}" ]]; then
+    ICLOUD_ARCHIVE="${FLEXAIDDS_ICLOUD}/archived"
+    mkdir -p "$ICLOUD_ARCHIVE"
+    echo "[INFO] Attempting safe verified archive to iCloud..."
+    python3 "${REPO_ROOT}/scripts/safe_archive_to_icoud.py" \
+        --source "$OUTPUT_DIR" \
+        --dest "$ICLOUD_ARCHIVE" \
+        --keep-local || warn "iCloud archive step had issues (data still in $OUTPUT_DIR)"
 fi

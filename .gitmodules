@@ -3,3 +3,16 @@
 	url = https://gitlab.com/libeigen/eigen.git
 	branch = 3.4
 	shallow = true
+
+# Swift and TypeScript components are experimental stubs / prototypes.
+# They are NOT core components of the FlexAIDdS docking engine.
+# Manage as git submodules (separate evolution, not pulled into core builds by default).
+# Example setup (replace URLs with actual separate repos when split):
+#   git submodule add https://github.com/LeBonhommePharma/FlexAIDdS-swift.git swift
+#   git submodule add https://github.com/LeBonhommePharma/FlexAIDdS-ts.git typescript
+[submodule "swift"]
+	path = swift
+	url = https://github.com/LeBonhommePharma/FlexAIDdS-swift.git
+[submodule "typescript"]
+	path = typescript
+	url = https://github.com/LeBonhommePharma/FlexAIDdS-ts.git

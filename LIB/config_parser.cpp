@@ -122,7 +122,9 @@ void apply_config(const json::Value& config, FA_Global* FA, GB_Global* GB) {
         FA->intrafraction        = jflt(config, "flexibility", "intramolecular_fraction", 1.0f);
         FA->permeability         = jflt(config, "flexibility", "permeability", 1.0f);
         FA->rotamer_permeability = jflt(config, "flexibility", "rotamer_permeability", 0.8f);
-        FA->soft_wall_cutoff     = jflt(config, "flexibility", "soft_wall_cutoff", 0.0f);
+        FA->soft_wall_cutoff     = jflt(config, "flexibility", "soft_wall_cutoff", 0.40f);
+        FA->intermolecular_clash_ratio =
+            jflt(config, "flexibility", "intermolecular_clash_ratio", 0.0f);
         FA->pbloops              = jint(config, "flexibility", "binding_site_conformations", 1);
         FA->bloops               = jint(config, "flexibility", "bonded_loops", 2);
         FA->useflexdee           = jbool(config, "flexibility", "use_flexdee", false) ? 1 : 0;
@@ -144,6 +146,26 @@ void apply_config(const json::Value& config, FA_Global* FA, GB_Global* GB) {
         }
         FA->cluster_rmsd = jflt(config, "thermodynamics", "cluster_rmsd", 2.0f);
         FA->use_super_cluster = jbool(config, "thermodynamics", "use_super_cluster", false);
+        // Classic FlexAID entropy ranking is the default product when T>0.
+        // force_cf_rank_emission restores P3b lowest-CF emission (easy rollback).
+        // classic_entropy_ranking=false is an alias that also forces CF emission.
+        FA->force_cf_rank_emission = jbool(config, "thermodynamics", "force_cf_rank_emission", false);
+        if (!jbool(config, "thermodynamics", "classic_entropy_ranking", true)) {
+            FA->force_cf_rank_emission = true;
+        }
+        if (const char* e = std::getenv("FLEXAIDDS_FORCE_CF_RANK_EMISSION")) {
+            if (e[0] == '1' || e[0] == 't' || e[0] == 'T' || e[0] == 'y' || e[0] == 'Y')
+                FA->force_cf_rank_emission = true;
+            else if (e[0] == '0' || e[0] == 'f' || e[0] == 'F' || e[0] == 'n' || e[0] == 'N')
+                FA->force_cf_rank_emission = false;
+        }
+        if (const char* e = std::getenv("FLEXAIDDS_CLASSIC_ENTROPY_RANKING")) {
+            // 0/false → CF emission (rollback); 1/true → classic entropy (default)
+            if (e[0] == '0' || e[0] == 'f' || e[0] == 'F' || e[0] == 'n' || e[0] == 'N')
+                FA->force_cf_rank_emission = true;
+            else if (e[0] == '1' || e[0] == 't' || e[0] == 'T' || e[0] == 'y' || e[0] == 'Y')
+                FA->force_cf_rank_emission = false;
+        }
         FA->use_tqcm  = jbool(config, "turboquant", "compressed_contact_matrix", false);
         FA->use_tqens = jbool(config, "turboquant", "ensemble_compression", false);
         FA->use_tqnn  = jbool(config, "turboquant", "compressed_nn", false);
@@ -286,6 +308,16 @@ void apply_config(const json::Value& config, FA_Global* FA, GB_Global* GB) {
             jbool(config, "reference_ligand", "hetatm_fallback", true) ? 1 : 0;
     }
 
+    // ── Cavity-only MIF seeding ──
+    {
+        FA->mif_enabled =
+            jbool(config, "seeding", "mif_enabled", false) ? 1 : 0;
+        FA->mif_temperature =
+            jflt(config, "seeding", "mif_temperature", 300.0f);
+        FA->grid_prio_percent =
+            jflt(config, "seeding", "grid_prio_percent", 100.0f);
+    }
+
     // ── Advanced ──
     {
         FA->vindex             = jbool(config, "advanced", "vcontacts_index", false) ? 1 : 0;
@@ -300,7 +332,7 @@ void apply_config(const json::Value& config, FA_Global* FA, GB_Global* GB) {
         FA->coarse_init_enabled   = jbool(config, "coarse_init", "enabled",       false);
         FA->coarse_init_grid_step = jflt (config, "coarse_init", "grid_step",     3.0f);
         FA->coarse_init_n_seeds   = jint (config, "coarse_init", "n_seeds",       25);
-        FA->coarse_init_n_orient  = jint (config, "coarse_init", "n_orientations",16);
+        FA->coarse_init_n_orient  = jint (config, "coarse_init", "n_orientations",64);
         // coarse_seeds_* arrays are populated at runtime by run_coarse_pocket_scan()
         FA->coarse_seeds_grid     = nullptr;
         FA->coarse_seeds_genes    = nullptr;

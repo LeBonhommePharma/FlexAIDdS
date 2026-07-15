@@ -1,0 +1,44 @@
+slug: posex_cd
+name: PoseX Cross-Docking (1312)
+benchmark_order: 10
+description: 'Cross-docking benchmark from the PoseX suite: 1312 tasks on recent (post-2021)
+  protein-ligand complexes. Receptors are non-native (cross) conformations; ligands
+  are cognate but docked into different structures of the same target. Strict test
+  of generalization and handling of conformational changes. Complements Astex for
+  modern AI vs physics benchmarking. Includes annotations for pocket similarity (TM-score)
+  to pre-2022 pockets.
+
+
+  Tier1 now uses 20 entries for better smoke testing.
+
+
+  Prepped receptors in benchmarks/posex_cd/posex_cd/ (371 unique), ligands in benchmarks/posex_cd/ligands/
+  . 1312 ready for tier2.'
+zenodo_doi: ''
+download_url: https://github.com/CataAI/PoseX
+data_format: pdb
+tier: 2
+tier1_subset_size: 20
+structural_states:
+- crossdock
+targets:
+- 7FVX_K7C
+- 7EGO_X90
+- 7HG3_A1A34
+- 7RGY_5BI
+- 8PQ9_9KI
+- 7GLA_X77
+- 8QTJ_A1IEW
+- 7HGE_ZQD
+- 7NGW_UAK
+- 8CHN_A1H78
+- 7GZV_A1AK5
+- 8BM8_R0O
+- 7FUQ_YUB
+- 7UR3_ADE
+- 7FCX_4I1
+- 7HGB_TU6
+- 9CE4_UU6
+- 7GLF_KG9
+- 7UU0_7UM
+- 7BC9_AXV

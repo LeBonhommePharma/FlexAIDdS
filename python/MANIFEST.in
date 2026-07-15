@@ -1,0 +1,28 @@
+# MANIFEST.in for flexaidds Python package sdist
+# C++ sources for the optional _core extension are staged by setup.py's
+# sdist_with_lib command from ../LIB (or FLEXAIDDS_LIB_DIR) into LIB/ inside
+# the sdist. Paths below cover in-tree files only.
+
+include flexaidds/py.typed
+include flexaidds/_core.cpp
+include README.md
+include pyproject.toml
+include setup.py
+
+recursive-include flexaidds/dataset_runner/datasets *.yaml
+recursive-include bindings *.cpp *.h *.hpp
+
+# If LIB was pre-staged next to setup.py (e.g. by a packaging script), include it.
+recursive-include LIB *.cpp *.c *.h *.hpp *.hh *.cuh
+
+# License when present next to the package (copied by some packaging flows)
+include LICENSE
+include THIRD_PARTY_LICENSES.md
+
+global-exclude __pycache__ *.py[cod] *~ .git* .DS_Store *.so *.dylib *.pyd
+prune */__pycache__
+prune */*.egg-info
+prune build
+prune dist
+prune */.git
+prune */.github

@@ -1,42 +1,42 @@
 {
-  "commits": 1561,
-  "languageCount": 14,
-  "lastUpdated": "2026-06-23",
+  "commits": 1744,
+  "languageCount": 15,
+  "lastUpdated": "2026-07-14",
   "languages": [
     {
       "id": "cpp",
       "name": "C++",
-      "percent": 46.5,
+      "percent": 49.1,
       "color": "#f34b7d"
     },
     {
       "id": "python",
       "name": "Python",
-      "percent": 21.2,
+      "percent": 25.2,
       "color": "#3572A5"
     },
     {
       "id": "other",
       "name": "HTML",
-      "percent": 7.7,
+      "percent": 8.2,
       "color": "#e34c26"
     },
     {
       "id": "swift",
       "name": "Swift",
-      "percent": 4.2,
+      "percent": 4.4,
       "color": "#F05138"
     },
     {
       "id": "other",
       "name": "Shell",
-      "percent": 2.7,
+      "percent": 3.2,
       "color": "#89e051"
     },
     {
       "id": "cmake",
       "name": "CMake",
-      "percent": 1.9,
+      "percent": 2.0,
       "color": "#8b949e"
     },
     {
@@ -48,7 +48,7 @@
     {
       "id": "objcpp",
       "name": "Obj-C++",
-      "percent": 1.4,
+      "percent": 1.5,
       "color": "#438eff"
     },
     {
@@ -60,10 +60,10 @@
     {
       "id": "other",
       "name": "Other",
-      "percent": 11.2,
+      "percent": 3.2,
       "color": "#555555"
     }
   ],
   "stars": 9,
-  "latestRelease": "v2.0.0"
+  "latestRelease": "v2.0.2"
 }

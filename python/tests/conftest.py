@@ -17,6 +17,8 @@ import pytest
 def _make_core_stub() -> types.ModuleType:
     """Return a minimal module that satisfies ``flexaidds/__init__.py``."""
     stub = types.ModuleType("flexaidds._core")
+    # Marker so the package never treats this placeholder as a real extension.
+    stub._FLEXAIDDS_CORE_STUB = True
 
     # Physical constants the package exposes at module level
     stub.kB_kcal = 0.001987206  # kcal mol⁻¹ K⁻¹

@@ -1,8 +1,14 @@
 // metal_eval.mm — Metal GPU batched chromosome evaluation
 //
-// Implements the same full-fidelity CF scoring as cuda_eval.cu but using
-// Apple's Metal compute API.  The MSL kernel is compiled at runtime from
-// an embedded string; no separate .metal compilation step is needed.
+// Experimental approximate Metal chromosome evaluation.
+//
+// This path does not currently reproduce the full CPU ic2cf/vcfunction scoring
+// path: it treats the first three raw genes as Cartesian translations and
+// returns a reduced set of CF terms. UnifiedHardwareDispatch therefore keeps
+// production GA fitness on CPU/OpenMP until parity is implemented.
+//
+// The MSL kernel is compiled at runtime from an embedded string; no separate
+// .metal compilation step is needed.
 //
 // Scoring pipeline (per chromosome, one threadgroup per chromosome):
 //   1. Decode translation genes (tx, ty, tz) from the gene vector.
@@ -351,8 +357,10 @@ struct MetalEvalCtx {
 
 bool metal_eval_runtime_available()
 {
-    id<MTLDevice> device = MTLCreateSystemDefaultDevice();
-    return device != nil;
+    @autoreleasepool {
+        id<MTLDevice> device = MTLCreateSystemDefaultDevice();
+        return device != nil;
+    }
 }
 
 void metal_eval_get_capabilities(MetalCapabilities* out)

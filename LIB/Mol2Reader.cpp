@@ -1,4 +1,5 @@
 #include "Mol2Reader.h"
+#include "DirectLigandIC.h"
 #include "flexaid.h"
 #include <cstdio>
 #include <cstdlib>
@@ -343,6 +344,17 @@ int read_mol2_ligand(FA_Global* FA, atom** atoms, resid** residue,
         if (at.bond[0] < 6) { at.bond[0]++; at.bond[at.bond[0]] = idx_o; }
     }
 
+    direct_ligand_ic::BondGraph nbr(tmp_atoms.size());
+    for (const auto& bond : tmp_bonds) {
+        auto it_o = id_map.find(bond.origin);
+        auto it_t = id_map.find(bond.target);
+        if (it_o == id_map.end() || it_t == id_map.end()) continue;
+        const int origin = it_o->second - (*residue)[FA->res_cnt].fatm[0];
+        const int target = it_t->second - (*residue)[FA->res_cnt].fatm[0];
+        nbr[origin].push_back({target, bond.type});
+        nbr[target].push_back({origin, bond.type});
+    }
+
     // Build IC reconstruction tree via BFS from the first ligand atom.
     // Each atom needs rec[0,1,2] = internal indices of parent, grandparent,
     // great-grandparent in the spanning tree (0 = use FA->ori reference frame).
@@ -352,66 +364,32 @@ int read_mol2_ligand(FA_Global* FA, atom** atoms, resid** residue,
         int la = (*residue)[FA->res_cnt].latm[0];
         int n  = la - fa + 1;
 
-        // BFS ancestors: parent_idx[i-fa] = internal index of parent in tree, -1 if root
-        std::vector<int> parent(n, -1);
-        std::vector<int> grandpar(n, -1);
-        std::vector<int> grtgpar(n, -1);
-        std::vector<bool> visited(n, false);
-
-        std::queue<int> q;
-        q.push(fa);
-        visited[fa - fa] = true;
-
-        while (!q.empty()) {
-            int cur = q.front(); q.pop();
-            int ci = cur - fa; // local index
-
-            for (int k = 1; k <= (*atoms)[cur].bond[0]; k++) {
-                int nb = (*atoms)[cur].bond[k]; // internal index of neighbour
-                if (nb < fa || nb > la) continue;
-                int ni = nb - fa;
-                if (!visited[ni]) {
-                    visited[ni] = true;
-                    parent[ni]   = cur;
-                    grandpar[ni] = parent[ci];   // may be -1
-                    grtgpar[ni]  = grandpar[ci]; // may be -1
-                    q.push(nb);
-                }
-            }
+        std::vector<bool> is_heavy(n, true);
+        for (int i = 0; i < n; ++i) {
+            const char* sybyl = tmp_atoms[i].sybyl;
+            is_heavy[i] = sybyl[0] != 'H' && sybyl[0] != 'D';
         }
-
-        // Assign rec[] and recs for each ligand atom
-        for (int ai = fa; ai <= la; ai++) {
-            int li = ai - fa;
-            atom& a = (*atoms)[ai];
-            a.recs   = 'm';
-            a.rec[0] = (parent[li]  >= 0) ? parent[li]  : 0;
-            a.rec[1] = (grandpar[li] >= 0) ? grandpar[li] : 0;
-            a.rec[2] = (grtgpar[li] >= 0) ? grtgpar[li] : 0;
-        }
-
-        // Force GPA IC chain: GPA1 parent=GPA0, GPA2 parent=GPA1.
-        // The first three ligand atoms serve as GPA (global positioning) atoms
-        // for rigid-body translation and rotation genes. ic2cf reconstructs
-        // GPA0 from cleft-grid IC (relative to FA->ori), then reconstructs
-        // GPA1/GPA2 from rotation genes relative to their parent GPA atom.
-        // Without this override, BFS may assign ori-based rec[] to GPA1/GPA2
-        // (e.g. when atom 0 and atom 1 are not directly bonded), which breaks
-        // the GPA rotation reference frame when GPA0 translates.
-        if (n >= 2) {
-            (*atoms)[fa+1].rec[0] = fa;    // GPA1 parent  = GPA0
-            (*atoms)[fa+1].rec[1] = 0;     // GPA1 grandpar = ori
-            (*atoms)[fa+1].rec[2] = 0;
-        }
-        if (n >= 3) {
-            (*atoms)[fa+2].rec[0] = fa+1;  // GPA2 parent   = GPA1
-            (*atoms)[fa+2].rec[1] = fa;    // GPA2 grandpar = GPA0
-            (*atoms)[fa+2].rec[2] = 0;
-        }
+        auto tree = direct_ligand_ic::build_tree(
+            *atoms, (*residue)[FA->res_cnt], fa, nbr, is_heavy);
 
         // Compute IC for all ligand atoms using buildic() which reads rec[]
         // and current coor[] to produce dis/ang/dih consistent with buildcc.
         buildic(FA, *atoms, *residue, FA->res_cnt);
+
+        if (FA->MIN_FLEX_BONDS < n + 1) {
+            FA->MIN_FLEX_BONDS = n + 1;
+            (*residue)[FA->res_cnt].bond = static_cast<int*>(realloc(
+                (*residue)[FA->res_cnt].bond,
+                FA->MIN_FLEX_BONDS * sizeof(int)));
+            if (!(*residue)[FA->res_cnt].bond) {
+                fprintf(stderr, "ERROR [MOL2]: flexible-bond realloc failed\n");
+                return 0;
+            }
+        }
+        memset((*residue)[FA->res_cnt].bond, 0,
+               FA->MIN_FLEX_BONDS * sizeof(int));
+        direct_ligand_ic::configure_rotatable_bonds(
+            *atoms, (*residue)[FA->res_cnt], fa, nbr, is_heavy, tree);
     }
 
     // Build bonded matrix, shortest paths, and shortflex (mirrors read_lig.cpp)

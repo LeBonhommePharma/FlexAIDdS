@@ -81,6 +81,7 @@ LIB/ShannonThermoStack/ShannonMetalBridge.h
 LIB/ShannonThermoStack/ShannonThermoStack.h
 LIB/ShannonThermoStack/shannon_cuda.cuh
 LIB/SharedPosePool.h
+LIB/soft_wall.h
 LIB/TargetKnowledgeBase.h
 LIB/TargetServer.h
 LIB/TargetValidation.h
@@ -134,3 +135,12 @@ LIB/tENCoM/tencom_output.h
 tests/test_binding_mode_io.cpp
 tests/test_ga_population.cpp
 tests/test_production_blockers.cpp
+
+# Orphans silenced during cleanup sprint (transitively included headers)
+# The headers below are included transitively or via specific targets only.
+LIB/ThermodynamicEngine.h
+LIB/VibEntropy.h
+LIB/coarse_init.h
+LIB/native_score.h
+LIB/receptor_prep.h
+LIB/ensemble_pipeline.h

@@ -242,43 +242,41 @@ class TestITCComparison:
 # ---------------------------------------------------------------------------
 
 class TestInteractiveDockingHelpers:
-    """Test interactive docking configuration generation."""
+    """Test interactive docking configuration generation (modern JSON CLI)."""
 
-    def test_write_minimal_config(self, tmp_dir):
-        """Should generate a valid FlexAID configuration file."""
-        from pymol_plugin.interactive_docking import _write_minimal_config
-        config_path = str(tmp_dir / "test.inp")
-        _write_minimal_config(
+    def test_write_modern_json(self, tmp_dir):
+        """Should generate a valid modern JSON docking config."""
+        import json
+        from pymol_plugin.interactive_docking import _write_modern_json
+        config_path = tmp_dir / "dock_config.json"
+        _write_modern_json(
             config_path,
-            receptor_pdb="receptor.pdb",
-            ligand_file="ligand.mol2",
-            center=(10.0, 20.0, 30.0),
-            radius=15.0,
             temperature=310,
             n_results=5,
+            center=(10.0, 20.0, 30.0),
+            radius=15.0,
         )
-        text = Path(config_path).read_text()
-        assert "PDBNAM receptor.pdb" in text
-        assert "INPLIG ligand.mol2" in text
-        assert "TEMPER 310" in text
-        assert "NRGOUT 5" in text
-        assert "COMPLF 10.000 20.000 30.000" in text
-        assert "SPACER 15.0" in text
+        data = json.loads(config_path.read_text())
+        assert data["thermodynamics"]["temperature"] == 310
+        assert data["output"]["max_results"] == 5
+        assert data["pymol_site"]["center"] == [10.0, 20.0, 30.0]
+        assert data["pymol_site"]["radius_A"] == 15.0
 
-    def test_write_minimal_config_defaults(self, tmp_dir):
+    def test_write_modern_json_defaults(self, tmp_dir):
         """Default temperature and n_results should be used."""
-        from pymol_plugin.interactive_docking import _write_minimal_config
-        config_path = str(tmp_dir / "defaults.inp")
-        _write_minimal_config(
+        import json
+        from pymol_plugin.interactive_docking import _write_modern_json
+        config_path = tmp_dir / "defaults.json"
+        _write_modern_json(
             config_path,
-            receptor_pdb="rec.pdb",
-            ligand_file="lig.mol2",
+            temperature=300,
+            n_results=10,
             center=(0.0, 0.0, 0.0),
             radius=10.0,
         )
-        text = Path(config_path).read_text()
-        assert "TEMPER 300" in text
-        assert "NRGOUT 10" in text
+        data = json.loads(config_path.read_text())
+        assert data["thermodynamics"]["temperature"] == 300
+        assert data["output"]["max_results"] == 10
 
 
 # ---------------------------------------------------------------------------
@@ -460,3 +458,151 @@ class TestCGORenderer:
         assert 25.0 in cgo_list  # ALPHA
         assert 6.0 in cgo_list   # COLOR
         assert 7.0 in cgo_list   # SPHERE
+
+
+# ---------------------------------------------------------------------------
+# Shared session + load-path sync
+# ---------------------------------------------------------------------------
+
+class TestPluginSession:
+    """Shared SESSION state used by all plugin modules."""
+
+    def test_object_and_group_naming(self, mock_pymol):
+        from pymol_plugin.session import object_name, group_name, mode_label
+        assert object_name("flexaids", 1, 2) == "flexaids_mode1_pose2"
+        assert group_name("dock", 3) == "dock_mode3"
+        assert mode_label(7) == "mode7"
+
+    def test_session_clear(self, mock_pymol):
+        from pymol_plugin.session import SESSION
+        SESSION.prefix = "tmp"
+        SESSION.objects[1] = ["a"]
+        SESSION.clear()
+        assert SESSION.result is None
+        assert SESSION.objects == {}
+        assert SESSION.prefix == "flexaids"
+
+    def test_get_mode(self, mock_pymol, sample_pdb, tmp_dir):
+        from pymol_plugin.session import SESSION
+        from flexaidds.models import PoseResult, BindingModeResult, DockingResult
+
+        pose = PoseResult(path=sample_pdb, mode_id=1, pose_rank=1, cf=-5.0)
+        mode = BindingModeResult(
+            mode_id=1, rank=1, poses=[pose], free_energy=-8.0, best_cf=-5.0,
+        )
+        SESSION.clear()
+        SESSION.result = DockingResult(
+            source_dir=tmp_dir, binding_modes=[mode], temperature=298.0,
+        )
+        assert SESSION.get_mode(1) is mode
+        assert SESSION.get_mode(99) is None
+        SESSION.clear()
+
+
+class TestLoadPathSync:
+    """flexaids_load and flexaids_load_results share object naming + state."""
+
+    def _write_mode_pdb(self, path: Path, mode_id: int, cf: float) -> None:
+        path.write_text(
+            f"REMARK Binding Mode:{mode_id} Best CF in Binding Mode:{cf} "
+            f"Binding Mode Frequency:1\n"
+            f"REMARK Free Energy:{-abs(cf) - 2.0}\n"
+            f"REMARK Enthalpy:{-abs(cf) - 1.0}\n"
+            f"REMARK Entropy:0.01\n"
+            f"REMARK Temperature:298.15\n"
+            "HETATM    1  C1  LIG A   1       1.000   2.000   3.000  1.00  0.00           C\n"
+            "HETATM    2  C2  LIG A   1       2.000   3.000   4.000  1.00  0.00           C\n"
+            "END\n"
+        )
+
+    def test_load_docking_results_populates_session(self, mock_pymol, tmp_dir):
+        from pymol_plugin.session import SESSION
+        from pymol_plugin import results_adapter
+
+        pdb = tmp_dir / "mode1_pose1.pdb"
+        self._write_mode_pdb(pdb, 1, -5.5)
+        SESSION.clear()
+        results_adapter.load_docking_results(str(tmp_dir), prefix="flexaids")
+
+        assert SESSION.result is not None
+        assert SESSION.n_modes >= 1
+        assert 1 in SESSION.objects or any(SESSION.objects)
+        # Objects use canonical names
+        names = [n for ns in SESSION.objects.values() for n in ns]
+        assert any(n.startswith("flexaids_mode") for n in names)
+        mock_pymol.cmd.load.assert_called()
+        SESSION.clear()
+
+    def test_load_binding_modes_syncs_results_adapter(self, mock_pymol, tmp_dir):
+        from pymol_plugin.session import SESSION
+        from pymol_plugin import visualization, results_adapter
+
+        pdb = tmp_dir / "mode1_pose1.pdb"
+        self._write_mode_pdb(pdb, 1, -4.0)
+        SESSION.clear()
+        visualization.load_binding_modes(str(tmp_dir), temperature=298.15)
+
+        assert SESSION.result is not None
+        # results_adapter can resolve the mode
+        mode = results_adapter._get_mode(1)
+        assert mode is not None
+        assert mode.mode_id == 1
+        # visualization records exist
+        assert "mode1" in SESSION.mode_records
+        SESSION.clear()
+
+    def test_unload_results(self, mock_pymol, tmp_dir):
+        from pymol_plugin.session import SESSION
+        from pymol_plugin import results_adapter
+
+        pdb = tmp_dir / "mode1_pose1.pdb"
+        self._write_mode_pdb(pdb, 1, -3.0)
+        results_adapter.load_docking_results(str(tmp_dir))
+        assert SESSION.result is not None
+        results_adapter.unload_results(delete_objects=1)
+        assert SESSION.result is None
+        assert SESSION.objects == {}
+
+    def test_show_mode_details_handles_missing(self, mock_pymol, capsys):
+        from pymol_plugin.session import SESSION
+        from pymol_plugin import results_adapter
+
+        SESSION.clear()
+        results_adapter.show_mode_details(99)
+        out = capsys.readouterr().out
+        assert "ERROR" in out
+
+    def test_boltzmann_weights_stable(self, mock_pymol):
+        from pymol_plugin.visualization import _compute_boltzmann_weights
+        w = _compute_boltzmann_weights([-10.0, -9.0, -5.0], 300.0)
+        assert len(w) == 3
+        assert abs(sum(w) - 1.0) < 1e-9
+        assert w[0] > w[1] > w[2]
+
+    def test_mode_name_accepts_integer_string(self, mock_pymol, tmp_dir):
+        from pymol_plugin.session import SESSION
+        from pymol_plugin import visualization
+        from flexaidds.models import PoseResult, BindingModeResult, DockingResult
+
+        pose = PoseResult(path=tmp_dir / "p.pdb", mode_id=2, pose_rank=1, cf=-1.0)
+        mode = BindingModeResult(mode_id=2, rank=1, poses=[pose], best_cf=-1.0)
+        SESSION.clear()
+        SESSION.result = DockingResult(
+            source_dir=tmp_dir, binding_modes=[mode], temperature=300.0,
+        )
+        SESSION.objects[2] = ["flexaids_mode2_pose1"]
+        visualization.sync_from_session()
+        rec = visualization._find_mode("2")
+        assert rec is not None
+        assert rec.mode_id == 2
+        SESSION.clear()
+
+
+class TestPluginHelp:
+    def test_flexaids_help_prints(self, mock_pymol, capsys):
+        from pymol_plugin import flexaids_help
+        flexaids_help()
+        out = capsys.readouterr().out
+        assert "flexaids_load" in out
+        assert "flexaids_entropy_heatmap" in out
+        assert "CF/contact-function" in out

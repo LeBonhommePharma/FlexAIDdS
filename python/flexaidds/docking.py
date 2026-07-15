@@ -8,10 +8,17 @@ import shutil
 import re
 import numpy as np
 from pathlib import Path
-from typing import List, Optional, Dict, Any
-from dataclasses import dataclass
+from typing import List, Optional, Dict, Any, Sequence
+from dataclasses import dataclass, replace
 
 from .thermodynamics import Thermodynamics, StatMechEngine, kB_kcal
+from .dift import (
+    DiFTEngine,
+    RotatableBondTorsion,
+    TorsionalScore,
+    make_bond_torsion,
+    score_torsional,
+)
 
 try:
     from . import _core
@@ -58,11 +65,25 @@ class BindingMode:
     A binding mode represents a distinct local minimum on the binding energy
     landscape, characterized by an ensemble of similar poses.
 
+    The configurational thermodynamics come from the pose-energy ensemble. In
+    addition, a binding mode can carry the DiFT (Discrete Fourier Transform)
+    torsional potentials of the ligand's rotatable bonds; when attached, the
+    per-bond torsional free-energy contribution ``V_tors(φ) − T·S_tors`` folds
+    into ``free_energy``, ``enthalpy``, and ``entropy``. This replaces the
+    classical crude per-rotatable-bond count penalty with a first-principles
+    statistical-mechanical ΔS term derived from the same Fourier spectrum that
+    parametrizes the torsional energy. See :mod:`flexaidds.dift`.
+
     Example:
         >>> mode = results.binding_modes[0]  # top-ranked mode
         >>> thermo = mode.get_thermodynamics()
         >>> print(f"ΔG = {thermo.free_energy:.2f} kcal/mol")
         >>> print(f"ΔH = {thermo.mean_energy:.2f}, TΔS = {thermo.entropy_term:.2f}")
+
+        >>> # Fold in ligand torsional entropy from QM/CG dihedral profiles:
+        >>> mode.set_torsional_profiles([qm_scan_bond0, qm_scan_bond1],
+        ...                             dihedral_angles_rad=[phi0, phi1])
+        >>> mode.torsional_free_energy  # kcal/mol (energy + confinement −TΔS)
     """
 
     def __init__(self, cpp_binding_mode=None, temperature: float = 300.0):
@@ -79,9 +100,19 @@ class BindingMode:
         # Receptor-bound ions and cofactors present in the complex.
         # Each entry is a string "RESNAME:CHAIN:RESNUM", e.g. "MG:A:101".
         self.receptor_cofactors: List[str] = []
+        # DiFT torsional potentials of the ligand's rotatable bonds (optional).
+        # When empty, torsional contributions are exactly zero and the binding
+        # mode behaves as a pure configurational ensemble.
+        self._torsional_bonds: List[RotatableBondTorsion] = []
+        # Representative dihedral state (radians) used for the torsional energy
+        # term. May be None: the confinement −TΔS penalty is state-independent
+        # and is still applied, while the energy term contributes zero.
+        self._torsional_dihedrals: Optional[List[float]] = None
+        self._cached_torsional: Optional[TorsionalScore] = None
 
     def _invalidate_cache(self) -> None:
         self._cached_thermo = None
+        self._cached_torsional = None
 
     def _compute_python_thermo(self) -> Thermodynamics:
         """Compute thermodynamics from pose energies using StatMechEngine."""
@@ -100,15 +131,125 @@ class BindingMode:
         self._cached_thermo = engine.compute()
         return self._cached_thermo
 
+    # ── DiFT torsional contribution ─────────────────────────────────────────
+
+    def set_torsional_potentials(
+            self,
+            bonds: Sequence[RotatableBondTorsion],
+            dihedral_angles_rad: Optional[Sequence[float]] = None) -> None:
+        """Attach DiFT torsional potentials for the ligand's rotatable bonds.
+
+        Each bond carries a DiFT-parametrized :class:`~flexaidds.dift.\
+TorsionalPotential` (from a QM scan or a Boltzmann-inverted coarse-grained
+        dihedral histogram). Once attached, this binding mode's ``free_energy``,
+        ``enthalpy``, and ``entropy`` include the torsional contribution.
+
+        Args:
+            bonds: Per-rotatable-bond DiFT potentials.
+            dihedral_angles_rad: Representative dihedral value (radians) of each
+                bond, in the same order as *bonds* — typically the dihedral
+                state of the mode's best pose. Drives the torsional *energy*
+                term; if *None*, only the state-independent confinement −TΔS
+                penalty is applied (the energy term is zero). Must match the
+                length of *bonds* to be used.
+        """
+        self._torsional_bonds = list(bonds)
+        self._torsional_dihedrals = (
+            list(dihedral_angles_rad) if dihedral_angles_rad is not None else None)
+        self._cached_torsional = None
+
+    def set_torsional_profiles(
+            self,
+            profiles: Sequence[Sequence[float]],
+            dihedral_angles_rad: Optional[Sequence[float]] = None,
+            temperature_K: Optional[float] = None,
+            max_multiplicity: int = 6) -> None:
+        """Attach torsional potentials by DiFT-parametrizing raw profiles.
+
+        Convenience wrapper over :func:`~flexaidds.dift.make_bond_torsion`:
+        each entry of *profiles* is an M-point torsional energy profile over
+        [0, 2π) (a QM scan or a Boltzmann-inverted CG histogram) which is
+        transformed and Shannon-collapse truncated on the spot.
+
+        Args:
+            profiles: One torsional profile per rotatable bond.
+            dihedral_angles_rad: Representative dihedral of each bond (radians);
+                see :meth:`set_torsional_potentials`.
+            temperature_K: Temperature for the DiFT fit; defaults to this
+                mode's temperature.
+            max_multiplicity: Anti-overfit cap on Fourier multiplicity.
+        """
+        temp = self._temperature if temperature_K is None else temperature_K
+        bonds = [
+            make_bond_torsion(profile, gene_index=i, temperature_K=temp,
+                              max_multiplicity=max_multiplicity)
+            for i, profile in enumerate(profiles)
+        ]
+        self.set_torsional_potentials(bonds, dihedral_angles_rad)
+
+    @property
+    def torsional_score(self) -> TorsionalScore:
+        """Decomposed torsional contribution (kcal/mol) of the attached bonds.
+
+        ``energy`` is Σ V_tors,b(φ_b) relative to each well minimum (zero unless
+        representative dihedral angles were supplied); ``minus_TS`` is the
+        confinement −TΔS penalty, well-defined from the potentials alone.
+        Returns an all-zero score when no potentials are attached.
+        """
+        if self._cached_torsional is not None:
+            return self._cached_torsional
+
+        bonds = self._torsional_bonds
+        angles = self._torsional_dihedrals
+        if not bonds:
+            score = TorsionalScore()
+        elif angles is not None and len(angles) == len(bonds):
+            # Full energy + entropy from the representative dihedral state.
+            score = score_torsional(bonds, angles, self._temperature)
+        else:
+            # No (or mismatched) dihedral state: apply only the state-independent
+            # confinement −TΔS penalty; leave the energy term at zero.
+            engine = DiFTEngine(self._temperature)
+            score = TorsionalScore()
+            for bond in bonds:
+                score.minus_TS += engine.thermodynamics(bond.potential).minus_TS
+                score.n_bonds += 1
+        self._cached_torsional = score
+        return score
+
+    @property
+    def torsional_free_energy(self) -> float:
+        """Torsional free-energy contribution ΔG_tors (kcal/mol).
+
+        ``Σ_b [V_tors,b(φ_b) − T·S_tors,b]`` — energy at the representative
+        dihedral state plus the confinement entropy penalty. Zero when no
+        DiFT potentials are attached.
+        """
+        return self.torsional_score.total()
+
+    @property
+    def torsional_entropy(self) -> float:
+        """Torsional entropy S_tors (kcal mol⁻¹ K⁻¹), ≤ 0 (a confinement loss).
+
+        Derived from the same Fourier spectra as the torsional energy; zero
+        when no DiFT potentials are attached.
+        """
+        # minus_TS = −T·S_tors  ⇒  S_tors = −minus_TS / T.
+        return -self.torsional_score.minus_TS / self._temperature
+
     def get_thermodynamics(self) -> Thermodynamics:
         """Get full thermodynamic properties of this binding mode.
+
+        When DiFT torsional potentials are attached, the returned free energy,
+        enthalpy (``mean_energy``), and entropy include the torsional
+        contribution on top of the configurational ensemble.
 
         Returns:
             Thermodynamics object with F, S, H, Cv, etc.
         """
         if self._cpp_mode is not None:
             thermo_cpp = self._cpp_mode.get_thermodynamics()
-            return Thermodynamics(
+            base = Thermodynamics(
                 temperature=thermo_cpp.temperature,
                 log_Z=thermo_cpp.log_Z,
                 free_energy=thermo_cpp.free_energy,
@@ -118,28 +259,52 @@ class BindingMode:
                 entropy=thermo_cpp.entropy,
                 std_energy=thermo_cpp.std_energy,
             )
-        return self._compute_python_thermo()
+        else:
+            base = self._compute_python_thermo()
+        return self._with_torsional(base)
+
+    def _with_torsional(self, base: Thermodynamics) -> Thermodynamics:
+        """Fold the torsional contribution into a configurational Thermodynamics.
+
+        Returns *base* unchanged when no torsional potentials are attached, so
+        the pure-configurational path is untouched.
+        """
+        score = self.torsional_score
+        if score.n_bonds == 0:
+            return base
+        return replace(
+            base,
+            free_energy=base.free_energy + score.total(),
+            mean_energy=base.mean_energy + score.energy,
+            entropy=base.entropy + self.torsional_entropy,
+        )
 
     @property
     def free_energy(self) -> float:
-        """Helmholtz free energy F = -kT ln Z (kcal/mol)."""
+        """Helmholtz free energy F = -kT ln Z (kcal/mol), incl. torsional term."""
         if self._cpp_mode:
-            return self._cpp_mode.get_free_energy()
-        return self._compute_python_thermo().free_energy
+            base = self._cpp_mode.get_free_energy()
+        else:
+            base = self._compute_python_thermo().free_energy
+        return base + self.torsional_free_energy
 
     @property
     def enthalpy(self) -> float:
-        """Boltzmann-weighted average energy ⟨E⟩ (kcal/mol)."""
+        """Boltzmann-weighted average energy ⟨E⟩ (kcal/mol), incl. torsional."""
         if self._cpp_mode:
-            return self._cpp_mode.compute_enthalpy()
-        return self._compute_python_thermo().mean_energy
+            base = self._cpp_mode.compute_enthalpy()
+        else:
+            base = self._compute_python_thermo().mean_energy
+        return base + self.torsional_score.energy
 
     @property
     def entropy(self) -> float:
-        """Configurational entropy S (kcal mol⁻¹ K⁻¹)."""
+        """Entropy S (kcal mol⁻¹ K⁻¹) — configurational plus torsional."""
         if self._cpp_mode:
-            return self._cpp_mode.compute_entropy()
-        return self._compute_python_thermo().entropy
+            base = self._cpp_mode.compute_entropy()
+        else:
+            base = self._compute_python_thermo().entropy
+        return base + self.torsional_entropy
 
     @property
     def n_poses(self) -> int:
@@ -411,57 +576,164 @@ class Docking:
             timeout: int = 3600, **kwargs) -> BindingPopulation:
         """Execute docking via the FlexAID C++ binary and parse results.
 
-        Locates the ``FlexAID`` binary (in PATH, project build/, or explicit
-        *binary* argument), invokes it with this config file, waits for
-        completion, then parses all ``*_N_M.pdb`` output files written by
-        ``output_Population()`` to reconstruct a ``BindingPopulation``.
+        Prefers the modern CLI::
+
+            FlexAID <receptor> <ligand> -o <prefix> [-c config.json]
+
+        when receptor + ligand paths are available (PDBNAM/INPLIG in a legacy
+        .inp, or explicit kwargs).  Falls back to ``--legacy config.inp ga.inp
+        prefix`` when a second GA .inp is present.  A bare single ``.inp`` is
+        no longer accepted by the binary.
 
         Args:
-            binary:  Path to FlexAID executable.  If *None*, searches PATH and
-                     common build locations (``build/FlexAID``,
-                     ``../build/FlexAID``).
+            binary:  Path to FlexAID executable.  If *None*, checks
+                     ``FLEXAIDDS_BINARY``, then PATH and common build locations.
             timeout: Wall-clock timeout in seconds (default 3600).
-            **kwargs: Ignored; reserved for future keyword overrides.
+            **kwargs: Optional overrides:
+                receptor, ligand, output_prefix, config_json, ga_inp,
+                progress_callback (callable receiving log lines).
 
         Returns:
             BindingPopulation populated from the PDB REMARK lines written by
-            ``output_BindingMode()`` / ``output_Population()``.
+            ``output_BindingMode()`` / ``output_Population()`` / cluster().
 
         Raises:
             FileNotFoundError: binary not found.
             RuntimeError:      FlexAID exited non-zero or produced no output.
         """
+        import json
+        import math
+        import os
+
         # ── 1. Locate binary ─────────────────────────────────────────────────
         exe = self._find_binary(binary)
 
-        # ── 2. Invoke FlexAID ────────────────────────────────────────────────
-        cmd = [str(exe), str(self.config_file)]
+        work_dir = self.config_file.parent
+        receptor = kwargs.get("receptor") or self.receptor
+        ligand = kwargs.get("ligand") or self.ligand
+        output_prefix = kwargs.get("output_prefix") or "flexaid_out"
+        ga_inp = kwargs.get("ga_inp")
+        config_json = kwargs.get("config_json")
+        progress_cb = kwargs.get("progress_callback")
+        temperature = self._config.get("TEMPER", 300) or 300
+
+        # Resolve relative paths against the config directory
+        def _resolve(p: Optional[str]) -> Optional[Path]:
+            if not p:
+                return None
+            path = Path(p)
+            if not path.is_absolute():
+                path = (work_dir / path).resolve()
+            return path if path.is_file() else path  # may still exist as path
+
+        receptor_path = _resolve(receptor) if receptor else None
+        ligand_path = _resolve(ligand) if ligand else None
+
+        # Auto-write a minimal JSON config when only .inp is present
+        if config_json is None and receptor_path is not None and ligand_path is not None:
+            n_results = self._config.get("NRGOUT", 10) or 10
+            json_path = work_dir / "dock_config.json"
+            cfg = {
+                "thermodynamics": {
+                    "temperature": int(temperature),
+                    "clustering_algorithm": "CF",
+                    "cluster_rmsd": float(self._config.get("CLRMSD", 2.0) or 2.0),
+                },
+                "output": {"max_results": int(n_results)},
+                "ga": {
+                    "num_chromosomes": 500,
+                    "num_generations": 500,
+                },
+            }
+            json_path.write_text(json.dumps(cfg, indent=2), encoding="utf-8")
+            config_json = str(json_path)
+
+        # ── 2. Build command ─────────────────────────────────────────────────
+        if receptor_path is not None and ligand_path is not None and receptor_path.is_file() and ligand_path.is_file():
+            cmd = [str(exe), str(receptor_path), str(ligand_path),
+                   "-o", str(work_dir / output_prefix)]
+            if config_json:
+                cmd.extend(["-c", str(config_json)])
+        elif ga_inp is not None:
+            cmd = [str(exe), "--legacy",
+                   str(self.config_file), str(ga_inp),
+                   str(work_dir / output_prefix)]
+        else:
+            # Look for a sibling GA .inp
+            sibling_ga = None
+            for cand in (work_dir / "ga.inp", work_dir / "GA.inp"):
+                if cand.is_file() and cand.resolve() != self.config_file.resolve():
+                    sibling_ga = cand
+                    break
+            if sibling_ga is not None:
+                cmd = [str(exe), "--legacy",
+                       str(self.config_file), str(sibling_ga),
+                       str(work_dir / output_prefix)]
+            else:
+                raise RuntimeError(
+                    "Modern FlexAID CLI requires receptor + ligand paths "
+                    "(PDBNAM/INPLIG in the config, or receptor=/ligand= kwargs), "
+                    "or --legacy mode with both config.inp and ga.inp. "
+                    "A single .inp file is no longer accepted."
+                )
+
         try:
-            result = subprocess.run(
-                cmd,
-                cwd=self.config_file.parent,
-                capture_output=True,
-                text=True,
-                timeout=timeout,
-            )
+            if progress_cb is not None:
+                # Stream stdout line-by-line for status bar updates
+                proc = subprocess.Popen(
+                    cmd,
+                    cwd=str(work_dir),
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    text=True,
+                    bufsize=1,
+                )
+                stdout_lines: List[str] = []
+                assert proc.stdout is not None
+                for line in proc.stdout:
+                    stdout_lines.append(line)
+                    try:
+                        progress_cb(line.rstrip("\n"))
+                    except Exception:
+                        pass
+                proc.wait(timeout=timeout)
+                returncode = proc.returncode
+                combined = "".join(stdout_lines)
+                result_stdout, result_stderr = combined, ""
+            else:
+                result = subprocess.run(
+                    cmd,
+                    cwd=str(work_dir),
+                    capture_output=True,
+                    text=True,
+                    timeout=timeout,
+                )
+                returncode = result.returncode
+                result_stdout, result_stderr = result.stdout, result.stderr
         except subprocess.TimeoutExpired as exc:
             raise RuntimeError(
                 f"FlexAID timed out after {timeout}s"
             ) from exc
 
-        if result.returncode != 0:
+        if returncode != 0:
             raise RuntimeError(
-                f"FlexAID exited with code {result.returncode}.\n"
-                f"stdout: {result.stdout[-2000:]}\n"
-                f"stderr: {result.stderr[-2000:]}"
+                f"FlexAID exited with code {returncode}.\n"
+                f"cmd: {' '.join(cmd)}\n"
+                f"stdout: {result_stdout[-2000:]}\n"
+                f"stderr: {result_stderr[-2000:]}"
             )
 
         # ── 3. Discover output PDBs ──────────────────────────────────────────
-        # output_BindingMode writes files named <prefix>_<minPoints>_<mode>.pdb
-        # Collect all candidate PDB files in the working directory.
-        work_dir = self.config_file.parent
-        pdb_files = sorted(work_dir.glob("*_*.pdb"),
-                           key=lambda p: p.stat().st_mtime)
+        pdb_files = sorted(
+            [p for p in work_dir.rglob("*.pdb")
+             if p.name not in ("receptor.pdb",) and "_INI" not in p.name
+             and "prepped" not in p.name.lower()],
+            key=lambda p: p.stat().st_mtime,
+        )
+        # Prefer files under the output prefix
+        prefixed = [p for p in pdb_files if output_prefix in p.name or output_prefix in str(p.parent)]
+        if prefixed:
+            pdb_files = prefixed
 
         if not pdb_files:
             raise RuntimeError(
@@ -470,12 +742,10 @@ class Docking:
             )
 
         # ── 4. Parse PDB REMARK lines into BindingModes ──────────────────────
-        temperature = self._config.get("TEMPER", 300) or 300
-        modes: List[BindingMode] = []
         seen_modes: Dict[int, BindingMode] = {}
 
         for pdb_path in pdb_files:
-            mode_info = self._parse_remark_pdb(pdb_path, temperature)
+            mode_info = self._parse_remark_pdb(pdb_path, float(temperature))
             if mode_info is None:
                 continue
             mode_idx, pose = mode_info
@@ -483,82 +753,98 @@ class Docking:
                 seen_modes[mode_idx] = BindingMode(temperature=float(temperature))
             seen_modes[mode_idx]._poses.append(pose)
 
-        # Sort modes by free energy (ascending → most favourable first)
-        modes = sorted(seen_modes.values(),
-                       key=lambda m: m.free_energy)
-
+        modes = sorted(seen_modes.values(), key=lambda m: m.free_energy)
         return BindingPopulation(modes, temperature=float(temperature))
 
     # ── helpers ───────────────────────────────────────────────────────────────
 
-    def _find_binary(self, binary: Optional[str]) -> Path:
-        """Locate the FlexAID executable."""
+    def _find_binary(self, binary: Optional[str] = None) -> Path:
+        """Locate the FlexAID / FlexAIDdS executable.
+
+        Search order:
+        1. Explicit *binary* argument
+        2. ``FLEXAIDDS_BINARY`` environment variable
+        3. ``PATH`` (``FlexAID``, ``FlexAIDdS``)
+        4. Project-relative build directories
+        """
+        import os
+
         if binary is not None:
             p = Path(binary)
             if not p.is_file():
                 raise FileNotFoundError(f"Specified FlexAID binary not found: {binary}")
             return p
 
-        # Search order: PATH → project-relative build dirs
-        in_path = shutil.which("FlexAID")
-        if in_path:
-            return Path(in_path)
+        env_bin = os.environ.get("FLEXAIDDS_BINARY")
+        if env_bin:
+            p = Path(env_bin)
+            if p.is_file():
+                return p
+            raise FileNotFoundError(
+                f"FLEXAIDDS_BINARY is set but not a file: {env_bin}"
+            )
 
+        for name in ("FlexAIDdS", "FlexAID"):
+            in_path = shutil.which(name)
+            if in_path:
+                return Path(in_path)
+
+        repo_root = Path(__file__).resolve().parents[2]
         candidates = [
             self.config_file.parent / "FlexAID",
+            self.config_file.parent / "FlexAIDdS",
             self.config_file.parent / "build" / "FlexAID",
-            Path(__file__).parents[3] / "build" / "FlexAID",
+            repo_root / "build" / "FlexAID",
+            repo_root / "build" / "FlexAIDdS",
+            repo_root / "build_lto" / "FlexAID",
+            repo_root / "build_lto" / "FlexAIDdS",
         ]
         for c in candidates:
             if c.is_file():
                 return c
 
         raise FileNotFoundError(
-            "FlexAID binary not found in PATH or build/. "
-            "Build with 'cmake --build build' or pass binary= argument."
+            "FlexAID binary not found. Set FLEXAIDDS_BINARY, add FlexAID to PATH, "
+            "build with 'cmake --build build', or pass binary= argument."
         )
 
     @staticmethod
     def _parse_remark_pdb(
             pdb_path: Path, temperature: float) -> Optional[tuple]:
-        """Parse a single output PDB written by output_BindingMode().
+        """Parse a single output PDB written by output_BindingMode() / cluster().
 
         Extracts mode index, CF, RMSD, and per-pose energy from REMARK lines.
         Returns (mode_index, Pose) or None if the file lacks FlexAID remarks.
         """
-        mode_idx   = None
-        cf_val     = None
-        rmsd_val   = None
-        freq       = 1
+        from .io import parse_remark_map, infer_mode_id
 
         try:
             text = pdb_path.read_text(errors="replace")
         except OSError:
             return None
 
-        for line in text.splitlines():
-            if not line.startswith("REMARK"):
-                continue
-            # "REMARK Binding Mode:N Best CF in Binding Mode:X …"
-            m = re.search(
-                r"Binding Mode:(\d+).*?Best CF in Binding Mode:\s*([-\d.]+)"
-                r".*?Binding Mode Frequency:(\d+)",
-                line)
-            if m:
-                mode_idx = int(m.group(1))
-                cf_val   = float(m.group(2))
-                freq     = int(m.group(3))
-            # "REMARK 0.12345 RMSD to ref. structure …"
-            m2 = re.search(r"REMARK\s+([\d.]+)\s+RMSD to ref\.", line)
-            if m2 and rmsd_val is None:
-                rmsd_val = float(m2.group(1))
+        remarks = parse_remark_map(text.splitlines())
+        mode_idx = infer_mode_id(pdb_path, remarks)
 
-        if mode_idx is None or cf_val is None:
+        cf_val = None
+        for key in ("cf", "best_cf", "best_cf_in_binding_mode", "average_cf"):
+            v = remarks.get(key)
+            if isinstance(v, (int, float)):
+                cf_val = float(v)
+                break
+        if cf_val is None:
             return None
+
+        rmsd_val = None
+        for key in ("rmsd_raw", "rmsd", "rmsd_sym"):
+            v = remarks.get(key)
+            if isinstance(v, (int, float)):
+                rmsd_val = float(v)
+                break
 
         import math
         beta = 1.0 / (0.001987206 * float(temperature))
-        bw   = math.exp(-beta * cf_val)
+        bw = math.exp(-beta * cf_val)
 
         pose = Pose(
             index=mode_idx,
@@ -567,6 +853,6 @@ class Docking:
             boltzmann_weight=bw,
         )
         return mode_idx, pose
-    
+
     def __repr__(self) -> str:
         return f"<Docking config={self.config_file.name}>"

@@ -460,12 +460,87 @@ class TestDockingParseConfig:
 # ── Docking.run – raises FileNotFoundError when binary not found ──────────────
 
 class TestDockingRun:
-    def test_run_raises_file_not_found_when_no_binary(self, tmp_path):
+    def test_run_raises_file_not_found_when_no_binary(self, tmp_path, monkeypatch):
+        """Must raise FileNotFoundError even if a FlexAID binary is on PATH.
+
+        Isolates binary discovery so a developer machine with build_lto/FlexAID
+        on PATH does not convert this into a CLI RuntimeError.
+        """
+        import flexaidds.docking as docking_mod
+
         cfg = tmp_path / "test.inp"
-        _write_config(cfg, ["PDBNAM receptor.pdb"])
+        _write_config(cfg, ["PDBNAM receptor.pdb", "INPLIG ligand.mol2"])
+        # Create dummy files so modern CLI path is selected before binary check
+        (tmp_path / "receptor.pdb").write_text("ATOM\nEND\n")
+        (tmp_path / "ligand.mol2").write_text("@<TRIPOS>MOLECULE\n")
         d = Docking(str(cfg))
+        monkeypatch.delenv("FLEXAIDDS_BINARY", raising=False)
+        monkeypatch.setattr(docking_mod.shutil, "which", lambda *_a, **_k: None)
+        monkeypatch.setattr(
+            Docking,
+            "_find_binary",
+            lambda self, binary=None: (_ for _ in ()).throw(
+                FileNotFoundError("no binary")
+            ),
+        )
         with pytest.raises(FileNotFoundError):
             d.run()
+
+    def test_run_builds_modern_cli_when_receptor_ligand_present(
+        self, tmp_path, monkeypatch
+    ):
+        """Modern CLI: FlexAID receptor ligand -o prefix -c json (mocked)."""
+        import subprocess as sp
+
+        cfg = tmp_path / "test.inp"
+        rec = tmp_path / "receptor.pdb"
+        lig = tmp_path / "ligand.mol2"
+        rec.write_text(
+            "ATOM      1  N   ALA A   1       0.000   0.000   0.000  1.00  0.00\nEND\n"
+        )
+        lig.write_text("@<TRIPOS>MOLECULE\ntest\n")
+        _write_config(cfg, [
+            f"PDBNAM {rec.name}",
+            f"INPLIG {lig.name}",
+            "TEMPER 298",
+            "NRGOUT 2",
+        ])
+
+        # Fake binary + successful run writing a Cluster REMARK PDB
+        fake_bin = tmp_path / "FakeFlexAID"
+        fake_bin.write_text("#!/bin/sh\nexit 0\n")
+        fake_bin.chmod(0o755)
+
+        out_pdb = tmp_path / "flexaid_out_0.pdb"
+        out_pdb.write_text(
+            "REMARK CF=-10.0\n"
+            "REMARK Cluster 0: Rank (top):1 Average CF:-9.0 Frequency:3\n"
+            "REMARK free_energy = -9.5\n"
+            "REMARK binding_mode = 0\n"
+            "ATOM      1  C   LIG A   1       1.000   2.000   3.000  1.00  0.00\n"
+            "END\n"
+        )
+
+        captured = {}
+
+        def fake_run(cmd, **kwargs):
+            captured["cmd"] = list(cmd)
+
+            class R:
+                returncode = 0
+                stdout = "ok"
+                stderr = ""
+
+            return R()
+
+        monkeypatch.setattr(sp, "run", fake_run)
+        d = Docking(str(cfg))
+        pop = d.run(binary=str(fake_bin), timeout=10)
+        assert "cmd" in captured
+        assert str(fake_bin) in captured["cmd"][0] or captured["cmd"][0].endswith("FakeFlexAID")
+        assert str(rec) in captured["cmd"] or rec.name in " ".join(captured["cmd"])
+        assert "-o" in captured["cmd"]
+        assert len(pop) >= 1
 
 
 # ── BindingPopulation.compute_global_thermodynamics – needs C++ core ─────────
@@ -507,3 +582,102 @@ class TestComputeGlobalThermodynamics:
         result = pop.compute_global_thermodynamics()
         # Ensemble F ≤ min(E) for canonical ensemble
         assert result.free_energy <= -9.0
+
+
+# ── DiFT torsional integration into BindingMode ────────────────────────────────
+
+class TestBindingModeTorsional:
+    """The DiFT torsional free-energy / entropy contribution folds into a
+    BindingMode additively and opt-in: absent attached potentials the mode is a
+    pure configurational ensemble; attaching them adds a first-principles ΔS."""
+
+    @staticmethod
+    def _cosine_profile(n=128, k=1, amp=3.0, phase=math.pi):
+        """A single-cosine torsional profile over [0, 2π): a confined bond."""
+        return [amp * math.cos(k * (2.0 * math.pi * j / n) - phase)
+                for j in range(n)]
+
+    def _confined_mode(self):
+        mode = BindingMode(cpp_binding_mode=None)
+        mode._poses = [Pose(0, -10.0), Pose(1, -9.0)]
+        return mode
+
+    def test_no_torsional_by_default(self):
+        mode = self._confined_mode()
+        assert mode.torsional_free_energy == 0.0
+        assert mode.torsional_entropy == 0.0
+        assert mode.torsional_score.n_bonds == 0
+
+    def test_free_energy_unchanged_without_potentials(self):
+        mode = self._confined_mode()
+        f_config = mode.free_energy
+        # Attaching an empty list keeps it a pure configurational ensemble.
+        mode.set_torsional_potentials([])
+        assert mode.free_energy == f_config
+
+    def test_confinement_penalty_is_positive(self):
+        mode = self._confined_mode()
+        f_config = mode.free_energy
+        mode.set_torsional_profiles([self._cosine_profile()])
+        # A confined bond loses entropy → −TΔS > 0 → free energy rises.
+        assert mode.torsional_free_energy > 0.0
+        assert mode.torsional_entropy < 0.0
+        assert mode.free_energy > f_config
+
+    def test_energy_term_needs_dihedral_state(self):
+        mode = self._confined_mode()
+        # Without dihedral angles: only the state-independent −TΔS penalty.
+        mode.set_torsional_profiles([self._cosine_profile()])
+        assert mode.torsional_score.energy == 0.0
+        assert mode.torsional_score.minus_TS > 0.0
+
+    def test_energy_rises_away_from_well_minimum(self):
+        # Profile amp·cos(φ − π) = −amp·cos φ: minimum at φ = 0, maximum at φ = π.
+        prof = self._cosine_profile(amp=4.0, phase=math.pi)
+        m_min = self._confined_mode()
+        m_min.set_torsional_profiles([prof], dihedral_angles_rad=[0.0])
+        m_top = self._confined_mode()
+        m_top.set_torsional_profiles([prof], dihedral_angles_rad=[math.pi])
+        assert m_top.torsional_score.energy > m_min.torsional_score.energy + 1.0
+
+    def test_get_thermodynamics_includes_torsional(self):
+        mode = self._confined_mode()
+        base = mode.get_thermodynamics()
+        mode.set_torsional_profiles([self._cosine_profile()])
+        withtors = mode.get_thermodynamics()
+        assert withtors.free_energy > base.free_energy
+        assert withtors.entropy < base.entropy  # torsional entropy is a loss
+        assert withtors.temperature == base.temperature
+
+    def test_free_rotor_adds_nothing(self):
+        mode = self._confined_mode()
+        f_config = mode.free_energy
+        # A flat profile (V ≡ const) is a free rotor: zero excess entropy.
+        mode.set_torsional_profiles([[0.0] * 64])
+        assert abs(mode.torsional_free_energy) < 1e-9
+        assert abs(mode.free_energy - f_config) < 1e-9
+
+    def test_two_bonds_penalize_more_than_one(self):
+        prof = self._cosine_profile()
+        one = self._confined_mode()
+        one.set_torsional_profiles([prof])
+        two = self._confined_mode()
+        two.set_torsional_profiles([prof, prof])
+        assert two.torsional_free_energy > one.torsional_free_energy
+        assert two.torsional_score.n_bonds == 2
+
+    def test_set_potentials_directly(self):
+        from flexaidds.dift import make_bond_torsion
+        mode = self._confined_mode()
+        rbt = make_bond_torsion(self._cosine_profile(), gene_index=0)
+        mode.set_torsional_potentials([rbt], dihedral_angles_rad=[0.0])
+        assert mode.torsional_score.n_bonds == 1
+        assert mode.torsional_score.minus_TS > 0.0
+
+    def test_result_is_cached_until_reset(self):
+        mode = self._confined_mode()
+        mode.set_torsional_profiles([self._cosine_profile()])
+        first = mode.torsional_score
+        assert mode.torsional_score is first  # cached identity
+        mode.set_torsional_profiles([self._cosine_profile(), self._cosine_profile()])
+        assert mode.torsional_score is not first  # reset on re-attach

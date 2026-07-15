@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+set -euo pipefail
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+REPO_ROOT="$(cd "$ROOT/../../.." && pwd)"
+exec python3 "$ROOT/scripts/resolve_build.py" --repo-root "$REPO_ROOT" "$@"

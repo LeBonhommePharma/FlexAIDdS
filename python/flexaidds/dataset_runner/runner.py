@@ -57,6 +57,12 @@ except ImportError:
 
 import numpy as np
 
+from .data_paths import (
+    _CF_APP_REMARK_RE,
+    _CF_REMARK_RE,
+    _RMSD_REMARK_RE,
+    resolve_benchmark_paths,
+)
 from .metrics import (
     PoseScore,
     bootstrap_ci,
@@ -66,6 +72,18 @@ from .metrics import (
 )
 
 logger = logging.getLogger(__name__)
+
+# Tier-2 full-N datasets use committed entry catalogs (C++ parity).
+KNOWN_LARGE_DATASETS: Dict[str, int] = {
+    "astex_nonnative": 1113,
+    "posex_cd": 1312,
+}
+_CATALOG_PATH = (
+    Path(__file__).resolve().parents[3]
+    / "benchmarks"
+    / "m3pro"
+    / "large_dataset_entry_catalogs.json"
+)
 
 # ---------------------------------------------------------------------------
 # Thermo/ITC focus (bulletproof per handoff + validation prompt)
@@ -83,6 +101,36 @@ THERMO_METRICS: set[str] = {
     "scoring_power_mae",
     "entropy_rescue_rate",
 }
+
+# Dry-run uses synthetic poses for pipeline smoke tests only. Never report
+# docking_power_* as if it were a real docking success rate.
+DRY_RUN_METRICS_NOTE: str = (
+    "dry_run=True: poses are synthetic (pipeline smoke test only). "
+    "docking_power_* metrics are omitted because they would not reflect real "
+    "docking success rates. Any remaining metrics (scoring_power_*, "
+    "entropy_rescue_rate, etc.) are also computed on synthetic data and must "
+    "not be reported as production results."
+)
+
+
+def _is_docking_power_metric(name: str) -> bool:
+    """True for docking_power_* keys (including bootstrap CI suffixes)."""
+    return name.startswith("docking_power_")
+
+
+def _strip_docking_power_metrics(metrics: Dict[str, Any]) -> Dict[str, Any]:
+    """Drop docking_power_* entries so synthetic dry-run rates are never sold as real."""
+    return {k: v for k, v in metrics.items() if not _is_docking_power_metric(k)}
+
+
+def _filter_requested_metrics_for_dry_run(
+    requested: Optional[List[str]],
+) -> Optional[List[str]]:
+    """Remove docking_power_* from a requested metric list for dry-run runs."""
+    if requested is None:
+        return None
+    filtered = [m for m in requested if not _is_docking_power_metric(m)]
+    return filtered
 
 
 # ---------------------------------------------------------------------------
@@ -174,6 +222,60 @@ class DatasetConfig:
         """Return the subset of targets used for tier-1 (fast) runs."""
         return self.targets[: self.tier1_subset_size]
 
+    def _uses_crossdock_catalog(self, tier: int) -> bool:
+        """Full-N crossdock catalog applies only when YAML requests crossdock state."""
+        return (
+            tier == 2
+            and self.slug in KNOWN_LARGE_DATASETS
+            and "crossdock" in self.structural_states
+        )
+
+    def scheduled_targets(self, tier: int) -> List[str]:
+        """Targets actually scheduled for this tier."""
+        if self._uses_crossdock_catalog(tier):
+            return [e["entry_id"] for e in load_large_dataset_catalog(self.slug)]
+        return self.tier1_targets() if tier == 1 else self.targets
+
+    def scheduled_work_items(self, tier: int) -> List[Tuple[str, str]]:
+        """(entry_id, state) pairs scheduled for this tier."""
+        if self._uses_crossdock_catalog(tier):
+            catalog = load_large_dataset_catalog(self.slug)
+            families = {t.upper() for t in self.targets} if self.targets else None
+            items: List[Tuple[str, str]] = []
+            for entry in catalog:
+                if families and entry.get("family", "").upper() not in families:
+                    continue
+                items.append((entry["entry_id"], entry.get("state", "crossdock")))
+            if items:
+                return items
+            return [(e["entry_id"], e.get("state", "crossdock")) for e in catalog]
+        targets = self.scheduled_targets(tier)
+        return [(tid, st) for tid in targets for st in self.structural_states]
+
+    def effective_entry_count(self, tier: int) -> int:
+        """Entry count for runtime planning."""
+        if self._uses_crossdock_catalog(tier):
+            items = self.scheduled_work_items(tier)
+            if items:
+                return len(items)
+            return KNOWN_LARGE_DATASETS[self.slug]
+        return len(self.scheduled_work_items(tier))
+
+
+def load_large_dataset_catalog(
+    slug: str,
+    catalog_path: Optional[Union[str, Path]] = None,
+) -> List[Dict[str, Any]]:
+    """Load tier-2 work-item catalog for large datasets (1113+ entries)."""
+    p = Path(catalog_path) if catalog_path else _CATALOG_PATH
+    if not p.is_file():
+        return []
+    try:
+        data = json.loads(p.read_text())
+        return list(data.get("datasets", {}).get(slug, {}).get("entries", []))
+    except Exception:
+        return []
+
 
 # ---------------------------------------------------------------------------
 # Result dataclasses
@@ -237,6 +339,8 @@ class DatasetResult:
     binary: str = ""
     temperature: float = 300.0
     full_command: str = ""
+    dry_run: bool = False
+    metrics_note: str = ""
 
     def check_regressions(self) -> Dict[str, bool]:
         """Flag metrics that regressed below baseline − tolerance.
@@ -262,7 +366,7 @@ class DatasetResult:
 
     def to_dict(self) -> dict:
         """Serialise to a JSON-compatible dict."""
-        return {
+        payload = {
             "dataset": self.config.slug,
             "tier": self.tier,
             "timestamp": self.timestamp,
@@ -281,7 +385,11 @@ class DatasetResult:
             "expected_baselines": self.config.expected_baselines,
             "published_baselines": self.config.published_baselines,
             "published_source": self.config.published_source,
+            "dry_run": self.dry_run,
         }
+        if self.metrics_note:
+            payload["metrics_note"] = self.metrics_note
+        return payload
 
 
 # ---------------------------------------------------------------------------
@@ -375,6 +483,13 @@ class BenchmarkReport:
             f"{dr.duration_seconds:.1f}s*",
             "",
         ]
+
+        if dr.dry_run:
+            note = dr.metrics_note or DRY_RUN_METRICS_NOTE
+            lines += [
+                f"> **DRY-RUN** — {note}",
+                "",
+            ]
 
         if dr.metrics:
             lines += ["| Metric | Value | 95% CI | Baseline | Published | Regressed? |",
@@ -484,6 +599,8 @@ class BenchmarkReport:
                 git_sha=d.get("git_sha", ""),
                 host=d.get("host", ""),
                 duration_seconds=d.get("duration_seconds", 0.0),
+                dry_run=bool(d.get("dry_run", False)),
+                metrics_note=str(d.get("metrics_note", "") or ""),
             )
             ds_results.append(dr)
         return cls(
@@ -844,7 +961,9 @@ class DatasetRunner:
                         env var if None.
         bootstrap_ci:   Whether to compute 95% bootstrap CIs (slower).
         n_bootstrap:    Number of bootstrap resamples.
-        dry_run:        Skip actual docking; useful for testing the framework.
+        dry_run:        Skip actual docking; use synthetic poses for pipeline
+                        smoke tests. docking_power_* is never reported as a real
+                        success rate in this mode.
         repo_root:      Root of the FlexAIDdS repository (for git SHA detection).
     """
 
@@ -963,49 +1082,24 @@ class DatasetRunner:
     # Core docking dispatch
     # ------------------------------------------------------------------
 
-    def _find_receptor(self, target_id: str, data_dir: Path, state: str) -> Optional[Path]:
-        """Locate receptor PDB for a given target and structural state.
-
-        Probes multiple naming conventions:
-        - PDBbind/CASF style:  <id>/<id>_holo.pdb  or  <id>/<id>_protein.pdb
-        - Astex Diverse style: <id>/<id>.pdb        (uppercase or lowercase)
-        - Flat layout:         <id>.pdb
-        """
-        def _probes(tid: str) -> List[Path]:
-            return [
-                data_dir / tid / f"{tid}_{state}.pdb",
-                data_dir / tid / f"{tid}_protein.pdb",
-                data_dir / tid / f"{tid}.pdb",          # Astex Diverse bare-name convention
-                data_dir / tid / "receptor.pdb",
-                data_dir / f"{tid}.pdb",
-            ]
-
-        for p in _probes(target_id):
-            if p.is_file():
-                return p
-        # Case-insensitive fallback: Astex Diverse stores PDB IDs as uppercase on disk
-        upper = target_id.upper()
-        if upper != target_id:
-            for p in _probes(upper):
-                if p.is_file():
-                    return p
-        logger.warning("No receptor found for %s (%s) in %s", target_id, state, data_dir)
-        return None
-
-    def _find_ligands(self, target_id: str, data_dir: Path) -> List[Path]:
-        """Locate all ligand files for a target (Mol2 or SDF)."""
-        target_dir = data_dir / target_id
-        if not target_dir.is_dir():
-            # Try uppercase variant (Astex Diverse stores IDs as uppercase)
-            target_dir = data_dir / target_id.upper()
-        if not target_dir.is_dir():
-            target_dir = data_dir
-        ligands = (
-            list(target_dir.glob("*.mol2"))
-            + list(target_dir.glob("*.sdf"))
-            + list((target_dir / "ligands").glob("*.mol2") if (target_dir / "ligands").is_dir() else [])
+    def _resolve_entry_paths(
+        self,
+        config: DatasetConfig,
+        target_id: str,
+        state: str,
+    ) -> Tuple[Optional[Path], List[Path]]:
+        """Locate receptor PDB and ligand files for a benchmark entry."""
+        if config.data_dir is None:
+            return None, []
+        receptor, ligands = resolve_benchmark_paths(
+            config.slug, config.data_dir, target_id, state
         )
-        return ligands
+        if receptor is None:
+            logger.warning(
+                "No receptor found for %s (%s) in %s",
+                target_id, state, config.data_dir,
+            )
+        return receptor, ligands
 
     def _dock_target(
         self,
@@ -1034,8 +1128,11 @@ class DatasetRunner:
 
         try:
             return self._run_flexaid(
-                target_id, receptor_path, ligand_paths,
-                structural_state, with_entropy,
+                target_id,
+                receptor_path,
+                ligand_paths,
+                structural_state,
+                with_entropy,
             )
         except Exception as exc:
             logger.error("Docking failed for %s: %s", target_id, exc)
@@ -1057,25 +1154,21 @@ class DatasetRunner:
 
             with tempfile.TemporaryDirectory(prefix=f"flexaid_{target_id}_") as tmp:
                 tmp_path = Path(tmp)
-                cfg_path = tmp_path / "dock.inp"
-
-                cfg_lines = [
-                    f"PDBNAM {receptor_path}",
-                    f"INPLIG {ligand_path}",
-                    f"TEMPER {int(self.temperature)}",
-                    "METOPT GA",
-                    "COMPLF VCT",
-                ]
-                if not with_entropy:
-                    cfg_lines.append("NOENTROPY 1")
-
-                cfg_path.write_text("\n".join(cfg_lines) + "\n")
 
                 sub_env = os.environ.copy()
                 sub_env["OMP_NUM_THREADS"] = str(self.omp_threads)
+                # Disable early termination (stagnation/entropy) during benchmarking
+                # so the *full* configured generation budget is always consumed.
+                # Spare generations after a would-be early exit are used for
+                # additional conformational search (see GABOOM no_sec + exploration boost).
+                sub_env["FLEXAIDDS_NO_SEC"] = "1"
+                # Signal to core that this is a benchmark run needing equal search effort
+                sub_env["FLEXAIDDS_BENCHMARK"] = "1"
                 try:
+                    # Direct CLI: <receptor> <ligand> -o prefix  (binary auto-detects files)
+                    # Write outputs as flexaid_*.pdb so parser glob *.pdb catches them.
                     result = subprocess.run(
-                        [self.binary, str(cfg_path)],
+                        [self.binary, str(receptor_path), str(ligand_path), "-o", "flexaid"],
                         capture_output=True,
                         text=True,
                         timeout=3600,
@@ -1087,11 +1180,16 @@ class DatasetRunner:
                             "FlexAID returned %d for %s/%s",
                             result.returncode, target_id, ligand_id,
                         )
-                    else:
-                        parsed = self._parse_flexaid_output(
-                            tmp_path, target_id, ligand_id, structural_state
-                        )
-                        poses.extend(parsed)
+                        if result.stderr:
+                            logger.debug("stderr: %s", result.stderr[:500])
+                    parsed = self._parse_flexaid_output(
+                        tmp_path,
+                        target_id,
+                        ligand_id,
+                        structural_state,
+                        reference_ligand=ligand_path,
+                    )
+                    poses.extend(parsed)
                 except subprocess.TimeoutExpired:
                     logger.error("Docking timed out: %s/%s", target_id, ligand_id)
 
@@ -1103,13 +1201,23 @@ class DatasetRunner:
         target_id: str,
         ligand_id: str,
         structural_state: str,
+        reference_ligand: Optional[Path] = None,
     ) -> List[PoseScore]:
         """Parse FlexAIDdS result PDB files from a completed docking run.
 
-        Reads REMARK lines for energy, entropy, RMSD metadata.
+        Accepts both legacy ``REMARK CF_SCORE:`` headers and current
+        ``REMARK CF=`` / ``REMARK <rmsd> RMSD to ref. structure`` output.
+        Computes post-hoc RMSD vs the reference ligand when REMARK omits it.
         """
         poses: List[PoseScore] = []
-        pdb_files = sorted(work_dir.glob("*.pdb"))
+        pdb_files = sorted(
+            p for p in work_dir.glob("*.pdb")
+            if p.name.startswith("flexaid") or p.name.startswith("FlexAID")
+        )
+        if not pdb_files:
+            pdb_files = sorted(work_dir.glob("*.pdb"))
+
+        ref_coords = _reference_ligand_coords(reference_ligand) if reference_ligand else None
 
         for rank, pdb_path in enumerate(pdb_files, start=1):
             rmsd = -1.0
@@ -1120,10 +1228,10 @@ class DatasetRunner:
             exp_affinity: Optional[float] = None
 
             try:
-                for line in pdb_path.read_text().splitlines():
+                lines = pdb_path.read_text().splitlines()
+                for line in lines:
                     if not line.startswith("REMARK"):
                         continue
-                    # Parse structured REMARK fields emitted by FlexAID
                     if "RMSD:" in line:
                         rmsd = _parse_remark_float(line, "RMSD:")
                     elif "CF_SCORE:" in line:
@@ -1136,13 +1244,25 @@ class DatasetRunner:
                         exp_affinity = _parse_remark_float(line, "EXP_AFFINITY:")
                     elif "ACTIVE:1" in line:
                         is_active = True
+                    else:
+                        m = _RMSD_REMARK_RE.search(line)
+                        if m:
+                            rmsd = float(m.group(1))
+                        m = _CF_REMARK_RE.search(line)
+                        if m and enthalpy_score == 0.0:
+                            enthalpy_score = float(m.group(1))
+                        m = _CF_APP_REMARK_RE.search(line)
+                        if m and enthalpy_score == 0.0:
+                            enthalpy_score = float(m.group(1))
+
+                if rmsd < 0.0 and ref_coords is not None:
+                    rmsd = _pose_rmsd_vs_reference(pdb_path, ref_coords)
 
             except Exception as exc:
                 logger.debug("Error parsing %s: %s", pdb_path, exc)
                 continue
 
-            # Fallback: total = enthalpy - entropy if not set
-            if total_score == 0.0:
+            if total_score == 0.0 and enthalpy_score != 0.0:
                 total_score = enthalpy_score - entropy_correction
 
             poses.append(
@@ -1217,8 +1337,9 @@ class DatasetRunner:
         A lightweight EntryTaskManager (see below) coordinates the work items.
         """
         t0 = time.monotonic()
-        targets = config.tier1_targets() if tier == 1 else config.targets
+        targets = config.scheduled_targets(tier)
         states = structural_states or config.structural_states
+        scheduled_items = config.scheduled_work_items(tier)
         slug = config.slug
         eff_temp = self._effective_temperature(slug)
         if slug in THERMO_DATASETS and eff_temp != self.temperature:
@@ -1245,6 +1366,15 @@ class DatasetRunner:
             else:
                 requested_metrics = list(THERMO_METRICS)
 
+        if self.dry_run:
+            # Synthetic poses must never produce docking_power success rates.
+            before = list(requested_metrics) if requested_metrics is not None else None
+            requested_metrics = _filter_requested_metrics_for_dry_run(requested_metrics)
+            if before is not None and before != requested_metrics:
+                logger.info(
+                    "Dry-run: omitting docking_power_* metrics (synthetic poses are not real docking results)"
+                )
+
         dr = DatasetResult(
             config=config,
             tier=tier,
@@ -1255,6 +1385,8 @@ class DatasetRunner:
             binary=self._resolve_binary(),
             temperature=eff_temp,
             full_command=getattr(self, "command_line", None) or " ".join(sys.argv),
+            dry_run=bool(self.dry_run),
+            metrics_note=DRY_RUN_METRICS_NOTE if self.dry_run else "",
         )
 
         if not targets:
@@ -1272,13 +1404,18 @@ class DatasetRunner:
                     len(already_completed), len(targets)
                 )
 
-        # Build work items: (target_id, state) pairs that still need work on this rank
+        # Build work items from catalog (large-N tier-2) or targets × states
         all_work_items: List[Tuple[str, str]] = []
-        for tid in targets:
+        for tid, st in scheduled_items:
             if tid in already_completed:
                 continue
-            for st in states:
-                all_work_items.append((tid, st))
+            all_work_items.append((tid, st))
+
+        if config._uses_crossdock_catalog(tier):
+            logger.info(
+                "Large-N dataset %s tier-%d: %d scheduled crossdock work items",
+                config.slug, tier, len(scheduled_items),
+            )
 
         # For stronger dynamic MPI master-worker, root sees the full remaining list.
         # Non-roots will participate as workers when the manager detects MPI.
@@ -1337,11 +1474,13 @@ class DatasetRunner:
                 ligands: List[Path] = []
 
                 if config.data_dir and not self.dry_run:
-                    receptor = self._find_receptor(target_id, config.data_dir, state)
+                    receptor, ligands = self._resolve_entry_paths(config, target_id, state)
                     if receptor is None:
                         error = f"No receptor found for {target_id}/{state}"
                         return target_id, state, [], time.monotonic() - t_start, error
-                    ligands = self._find_ligands(target_id, config.data_dir) or []
+                    if not ligands:
+                        error = f"No ligand found for {target_id}/{state}"
+                        return target_id, state, [], time.monotonic() - t_start, error
 
                 poses = self._dock_target(
                     target_id,
@@ -1421,15 +1560,24 @@ class DatasetRunner:
 
             if all_poses:
                 metrics = compute_all_metrics(all_poses, requested=requested_metrics)
+                if self.dry_run:
+                    # Safety net: never surface docking_power_* from synthetic poses.
+                    metrics = _strip_docking_power_metrics(metrics)
                 dr.metrics = metrics
 
                 if self.do_bootstrap:
-                    dr.ci_95 = self._compute_bootstrap_cis(all_poses, requested_metrics)
+                    cis = self._compute_bootstrap_cis(all_poses, requested_metrics)
+                    if self.dry_run:
+                        cis = _strip_docking_power_metrics(cis)
+                    dr.ci_95 = cis
 
             if not self.dry_run:
                 dr.check_regressions()
             else:
-                logger.info("Dry-run mode — skipping regression checks")
+                logger.info(
+                    "Dry-run mode — skipping regression checks; docking_power_* omitted "
+                    "(synthetic poses are not production docking rates)"
+                )
 
             # Also write a small per-dataset manifest of individual entry status (for audit + reproducibility)
             self._write_entry_manifest(config, tier, completed, failed)
@@ -1470,6 +1618,9 @@ class DatasetRunner:
             "docking_power_top1": _dock_fn,
         }
         for name, fn in fns.items():
+            # Dry-run never bootstraps docking_power (synthetic poses ≠ real rates).
+            if self.dry_run and _is_docking_power_metric(name):
+                continue
             if requested is None or name in requested:
                 lo, hi = bootstrap_ci(fn, poses, n_resamples=self.n_bootstrap)
                 cis[name] = (lo, hi)
@@ -1770,3 +1921,74 @@ def _parse_remark_float(line: str, key: str) -> float:
         return float(line[idx:].split()[0])
     except (ValueError, IndexError):
         return 0.0
+
+
+def _reference_ligand_coords(ligand_path: Path):
+    """Heavy-atom coordinates from a reference ligand file (SDF/MOL2/PDB)."""
+    from flexaidds.benchmark import extract_ligand_coords_from_pdb
+
+    suffix = ligand_path.suffix.lower()
+    if suffix == ".pdb":
+        return extract_ligand_coords_from_pdb(ligand_path)
+    if suffix in {".sdf", ".mol"}:
+        return _extract_ligand_coords_from_sdf(ligand_path)
+    if suffix == ".mol2":
+        from flexaidds.dataset_adapters import parse_mol2_atoms
+
+        atoms = parse_mol2_atoms(str(ligand_path))
+        if not atoms:
+            raise ValueError(f"No atoms in {ligand_path}")
+        import numpy as np
+
+        return np.array([[a.x, a.y, a.z] for a in atoms], dtype=np.float64)
+    raise ValueError(f"Unsupported reference ligand format: {ligand_path}")
+
+
+def _extract_ligand_coords_from_sdf(sdf_path: Path):
+    """Parse heavy-atom XYZ rows from a V2000 SD file."""
+    import numpy as np
+
+    lines = sdf_path.read_text().splitlines()
+    counts_line = None
+    for i, line in enumerate(lines):
+        if "V2000" in line or "V3000" in line:
+            counts_line = i
+            break
+    if counts_line is None:
+        raise ValueError(f"Cannot parse SDF atom block in {sdf_path}")
+
+    n_atoms = int(lines[counts_line][0:3].strip())
+    coords = []
+    for line in lines[counts_line + 1: counts_line + 1 + n_atoms]:
+        parts = line.split()
+        if len(parts) < 4:
+            continue
+        element = parts[3] if len(parts) > 3 else ""
+        if element.upper() == "H":
+            continue
+        coords.append((float(parts[0]), float(parts[1]), float(parts[2])))
+    if not coords:
+        raise ValueError(f"No heavy atoms in {sdf_path}")
+    return np.array(coords, dtype=np.float64)
+
+
+def _pose_rmsd_vs_reference(pose_pdb: Path, ref_coords) -> float:
+    """RMSD between docked pose ligand heavy atoms and reference coordinates."""
+    from flexaidds.benchmark import compute_rmsd, extract_ligand_coords_from_pdb
+
+    try:
+        pred = extract_ligand_coords_from_pdb(pose_pdb)
+    except ValueError:
+        return -1.0
+    if pred.shape != ref_coords.shape:
+        n = min(len(pred), len(ref_coords))
+        if n < 3:
+            return -1.0
+        pred = pred[:n]
+        ref = ref_coords[:n]
+    else:
+        ref = ref_coords
+    try:
+        return compute_rmsd(pred, ref)
+    except ValueError:
+        return -1.0

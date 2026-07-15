@@ -45,7 +45,7 @@ jobs:
       FLEXAIDDS_BENCHMARK_DATA: ${{ github.workspace }}/benchmarks/astex_diverse
 
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v6
 
       - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6
         with:
@@ -59,7 +59,7 @@ jobs:
 
       - name: Install Linux build dependencies
         run: |
-          sudo apt-get update -q
+          bash scripts/ci/apt_get_update.sh
           # gcc-14 is required for C++26 support (see CMakeLists.txt compiler gate).
           sudo apt-get install -y --no-install-recommends \
             cmake ninja-build libeigen3-dev libomp-dev gcc-14 g++-14
@@ -68,7 +68,7 @@ jobs:
 
       - name: Cache build
         id: cache-build
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: build
           key: tier1-build-${{ runner.os }}-${{ hashFiles('CMakeLists.txt', 'LIB/**/*.cpp', 'LIB/**/*.h') }}
@@ -146,7 +146,7 @@ jobs:
       - name: Comment benchmark results on PR
         if: github.event_name == 'pull_request'
         continue-on-error: true   # posting comment is informational; never block the gate
-        uses: marocchino/sticky-pull-request-comment@0ea0beb66eb9baf113663a64ec522f60e49231c0 # v3.0.4
+        uses: marocchino/sticky-pull-request-comment@5770ad5eb8f42dd2c4f34da00c94c5381e49af88 # v3.0.5
         with:
           header: benchmark-tier1
           message: |

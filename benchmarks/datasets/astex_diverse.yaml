@@ -1,9 +1,8 @@
 # Astex Diverse Set — 85 protein-ligand complexes
 #
-# The Astex Diverse Set is a curated collection of 85 high-quality
-# protein-ligand crystal structures used for benchmarking docking and
-# scoring functions.  Selected for structural diversity and medicinal
-# chemistry relevance.
+# Expanded Verdonk/Gaudreault benchmark set used by DatasetRunner.cpp
+# (astex_diverse_codes()).  Structures are keyed by PDB code under
+# benchmark_data/astex_diverse/<PDB>/.
 #
 # Reference: Hartshorn et al. (2007) J. Med. Chem. 50(4):726-741
 #            https://doi.org/10.1021/jm061277y
@@ -25,32 +24,94 @@ tier1_subset_size: 5
 structural_states:
   - holo
 
-# Full 85 PDB codes are hardcoded in DatasetRunner::astex_diverse_codes()
-# IMPORTANT: tier-1 CI uses the first tier1_subset_size=5 entries.
-# These 5 are confirmed to exist in benchmarks/astex_diverse/astex_diverse/ (uppercase IDs on disk).
+# Parity with LIB/DatasetRunner.cpp::astex_diverse_codes() (85 PDB IDs).
+# Tier-1 CI uses the first tier1_subset_size entries (confirmed on disk).
 targets:
-  - 1gpk   # Carbonic anhydrase II (1GPK)
-  - 1mq6   # Factor Xa (1MQ6)
-  - 1n2j   # Thymidine kinase (1N2J)
-  - 1t46   # PDGFR-beta (1T46)
-  - 1t9b   # Androgen receptor (1T9B)
-  # --- remaining targets (not required for tier-1 CI) ---
-  - 2cet   # Factor Xa (2CET)
-  - 2hb1   # Thrombin (2HB1)
-  - 1g9v   # CDK2 (1G9V)
-  - 1gm8   # Thrombin (1GM8)
-  - 1hnn   # CDK2 (1HNN)
-  - 1hp0   # Aldose reductase (1HP0)
-  - 1hq2   # CDK2 (1HQ2)
-  - 1ia1   # FKBP12 (1IA1)
-  - 1igj   # CDK2 (1IGJ)
-  - 1j3j   # CHK1 (1J3J)
-  - 1jd0   # CDK2 (1JD0)
-  - 1jje   # Thrombin (1JJE)
-  - 1k3u   # Carbonic anhydrase II (1K3U)
-  - 1ke5   # CDK2 (1KE5)
-  - 1kzk   # CDK2 (1KZK)
-  # NOTE: Full 85-target list is hardcoded in C++ (astex_diverse_codes()).
+  - 1gpk
+  - 1mq6
+  - 1n2j
+  - 1t46
+  - 1t9b
+  - 1g9v
+  - 1gm8
+  - 1hnn
+  - 1hp0
+  - 1hq2
+  - 1ia1
+  - 1igj
+  - 1j3j
+  - 1jd0
+  - 1jje
+  - 1k3u
+  - 1ke5
+  - 1kzk
+  - 1l2s
+  - 1l7f
+  - 1lpz
+  - 1m2z
+  - 1meh
+  - 1n1m
+  - 1n2v
+  - 1n46
+  - 1nav
+  - 1of1
+  - 1of6
+  - 1opk
+  - 1oq5
+  - 1owe
+  - 1p2y
+  - 1p62
+  - 1pmn
+  - 1q1g
+  - 1q41
+  - 1q4g
+  - 1r1h
+  - 1r55
+  - 1r58
+  - 1r9o
+  - 1s19
+  - 1s3v
+  - 1sg0
+  - 1sj0
+  - 1sq5
+  - 1t40
+  - 1tt1
+  - 1tw6
+  - 1tz8
+  - 1u1c
+  - 1u4d
+  - 1uml
+  - 1unl
+  - 1uou
+  - 1v0p
+  - 1v48
+  - 1v4s
+  - 1vcj
+  - 1w1p
+  - 1w2g
+  - 1x8x
+  - 1xm6
+  - 1xoz
+  - 1y6b
+  - 1y6r
+  - 1ygc
+  - 1yqy
+  - 1yv3
+  - 1yvf
+  - 1ywr
+  - 1z95
+  - 2bm2
+  - 2br1
+  - 2bsm
+  - 2bys
+  - 2c3i
+  - 2cet
+  - 2cgr
+  - 2d3u
+  - 2gbp
+  - 2hb1
+  - 2hr7
+  - 2j62
 
 metrics:
   - docking_power_top1
@@ -75,8 +136,3 @@ baseline_tolerance: 0.05
 published_baselines:
   docking_power_top1: 0.452
 published_source: "Gaudreault & Najmanovich 2015 JCIM Table 2 (Astex native FLRP, ideal subset, top-1)"
-
-# The published JCIM 2015 table reports Astex native FLRP top-1 at 45.2%
-# (ideal subset). Top-10 is 66.7% and top-100 is 81.0%. The current
-# expected_baselines are the FlexAIDdS target values used for regression
-# checks; published_baselines are the historical FlexAID comparator.

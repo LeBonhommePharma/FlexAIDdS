@@ -862,8 +862,9 @@ inline float rmsd(const float* a, const float* b, int N) noexcept {
 namespace flexaids {
 
 // Sum of squared element-wise differences over n_floats contiguous floats.
-// Dispatches to AVX-512 / AVX2 / scalar automatically.
+// Dispatches to AVX-512 / AVX2 / NEON / scalar automatically.
 // Use this for RMSD on interleaved xyz where you pass nAtoms*3 as n_floats.
+// Ranking-neutral geometry only (clustering / RMSD metrics, not CF scoring).
 inline float sum_sq_distances_f(const float* a, const float* b, int n_floats) noexcept {
 #if FLEXAIDS_HAS_AVX512
     __m512 acc = _mm512_setzero_ps();
@@ -893,6 +894,19 @@ inline float sum_sq_distances_f(const float* a, const float* b, int n_floats) no
     __m128 s2  = _mm_add_ps(s4, _mm_movehl_ps(s4, s4));
     __m128 s1  = _mm_add_ss(s2, _mm_shuffle_ps(s2, s2, 1));
     float sum  = _mm_cvtss_f32(s1);
+    for (; i < n_floats; ++i) { float d = a[i] - b[i]; sum += d * d; }
+    return sum;
+#elif FLEXAIDS_HAS_NEON
+    // 4-wide FMA accumulation (Apple Silicon / aarch64 baseline ISA).
+    float32x4_t acc = vdupq_n_f32(0.0f);
+    int i = 0;
+    for (; i + 3 < n_floats; i += 4) {
+        float32x4_t va = vld1q_f32(a + i);
+        float32x4_t vb = vld1q_f32(b + i);
+        float32x4_t d  = vsubq_f32(va, vb);
+        acc = vfmaq_f32(acc, d, d);
+    }
+    float sum = simd::hsum128_ps(acc);
     for (; i < n_floats; ++i) { float d = a[i] - b[i]; sum += d * d; }
     return sum;
 #else

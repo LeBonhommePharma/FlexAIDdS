@@ -1,0 +1,91 @@
+# Naloxone Repurposing for Serotonin Syndrome — FlexAIDdS Campaign Dataset
+#
+# Focused subset and configuration for computational investigation of Naloxone
+# (and close analogs) against key serotonergic targets implicated in Serotonin
+# Syndrome (SS).
+#
+# Rationale (from project ideas):
+# - Serotonin Syndrome driven largely by 5-HT2A hyperactivation.
+# - Naloxone (mu-opioid antagonist) has hypothesized off-target or modulatory
+#   effects on 5-HT systems in certain contexts.
+# - Use entropy-aware docking (Shannon configurational + vibrational) to
+#   discriminate poses and estimate thermodynamic profiles (ΔG, ΔS contributions)
+#   in flexible CNS binding sites.
+# - Compare binding to primary target (OPRM1/mu) vs. 5-HT off-targets.
+# - Support cross-docking and ensemble analysis for repurposing hypotheses.
+#
+# Success criteria in this domain: entropy collapse signal + PoseBusters pass
+# + agreement with any known pharmacology.
+#
+# This dataset complements psychopharm23 and lsd_docking.
+#
+# Ligands: Naloxone (provided in ligands/naloxone.sdf); extend with analogs as needed.
+# Receptors: Use high-quality PDBs/holo or AF2 models from psychopharm collection.
+
+slug: naloxone_ss
+name: "Naloxone for Serotonin Syndrome Repurposing"
+description: >
+  Targeted docking set for Naloxone repurposing ideas in Serotonin Syndrome.
+  Focuses on 5-HT2A (primary mediator), other 5-HT subtypes, SERT, with
+  comparison to classical opioid target. Leverages FlexAIDdS entropy
+  integration for better free energy estimates and specificity in
+  flexible monoamine receptor pockets. Includes thermodynamic ledger
+  output and collapse metrics.
+
+zenodo_doi: ""
+download_url: ""   # Structures from psychopharm23 + local ligands/
+data_format: pdb
+tier: 2
+tier1_subset_size: 3
+
+structural_states:
+  - holo
+
+ligands:
+  - naloxone   # See ligands/naloxone.sdf (generated 3D from SMILES via rdkit)
+
+targets:
+  # Core SS-relevant serotonergic targets (from psychopharm23)
+  - 5HT2A    # Serotonin 2A receptor (key in SS hyperthermia, hallucinations)
+             # PDB: 6A93 (or better recent cryo-EM / AF)
+  - 5HT2C    # Serotonin 2C receptor       PDB: 6BQG
+  - SERT     # Serotonin transporter       PDB: 5I6X
+  - 5HT6     # Serotonin 6 receptor        PDB: 4ZWJ (homology/AF2)
+
+  # Comparison / context (primary action + related)
+  - D2R      # Dopamine D2 (atypical cross-talk in CNS) PDB: 6CM4
+  # Optional extension for full profile:
+  # - OPRM1  # Mu opioid receptor (Naloxone primary target) — add PDB when available
+
+metrics:
+  - entropy_rescue_rate
+  - shannon_energy_collapse
+  - ensemble_shannon_nats
+  - TdS_shannon
+  - docking_power_top1
+  - ef_1pct
+  - posebusters_pass_rate
+  - thermodynamic_g_bind
+
+expected_baselines:
+  entropy_rescue_rate: 0.80   # CNS GPCRs are entropy-rich; high rescue expected
+  shannon_energy_collapse: ">2.0 nats for specific binding"
+  posebusters_pass_rate: 0.7
+
+baseline_tolerance: 0.10
+
+notes: |
+  - Primary scientific question: Does Naloxone (or derivatives) show
+    meaningful interaction/entropy signature at 5-HT2A that could
+    modulate SS?
+  - Run with --entropy analysis, full ensemble, tENCoM if receptor flexibility.
+  - Use non-native / cross-dock modes where holo/apo differ.
+  - Post-process with PoseBusters + thermodynamic ledger.
+  - Aligns with FlexAIDdS psychopharm strengths (92% rescue reported on 23-target set).
+  - Extend ligands/ with analogs (e.g. naltrexone, methylnaltrexone) for SAR.
+
+# Example invocation (after build + data prep):
+#   python -m flexaidds.dock --receptor benchmarks/astex_diverse/.../6A93/6A93_apo.pdb \
+#     --ligand ligands/naloxone.sdf --output results/naloxone_5ht2a --entropy
+#
+# Or via DatasetRunner / astex_entropy-style harness with mode repurposing.

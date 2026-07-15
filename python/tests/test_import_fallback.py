@@ -136,3 +136,52 @@ def test_load_results_works_without_core(tmp_path: Path):
     result = load_results(tmp_path)
     assert result.n_modes == 1
     assert result.binding_modes[0].best_cf == -5.0
+
+
+def test_has_core_true_when_extension_loads():
+    """HAS_CORE_BINDINGS must be True whenever the *compiled* _core loads.
+
+    Regression guard: pure-Python-only symbols (TemperatureScanPoint,
+    DeltaCpFit) must not be imported from _core — that used to raise
+    ImportError and force HAS_CORE_BINDINGS=False even with a working .so,
+    breaking accelerated pip wheels.
+
+    Note: ``python/tests/conftest.py`` injects a lightweight stub module named
+    ``flexaidds._core`` for pure-Python CI. We must clear that stub first and
+    only assert when a real extension binary is present.
+    """
+    import pytest
+
+    # Drop package modules *and* any session-level stub so a real .so/.pyd can
+    # be discovered. Keep a copy for restore.
+    saved = {
+        k: sys.modules.pop(k, None)
+        for k in list(sys.modules)
+        if k == "flexaidds" or k.startswith("flexaidds.")
+    }
+    try:
+        try:
+            import flexaidds._core as core  # noqa: F401
+        except ImportError:
+            pytest.skip("_core extension not built in this environment")
+
+        # Reject the pure-Python test stub (no binary origin).
+        core_file = getattr(core, "__file__", None) or ""
+        if not any(core_file.endswith(ext) for ext in (".so", ".pyd", ".dll")):
+            pytest.skip("_core extension not built in this environment")
+
+        import flexaidds
+
+        assert flexaidds.HAS_CORE_BINDINGS is True
+        # Pure-Python-only types must still be available.
+        assert flexaidds.TemperatureScanPoint is not None
+        assert flexaidds.DeltaCpFit is not None
+        # Compiled engines should be the ones from _core.
+        assert flexaidds.StatMechEngine is flexaidds._core.StatMechEngine
+    finally:
+        for k in list(sys.modules):
+            if k == "flexaidds" or k.startswith("flexaidds."):
+                sys.modules.pop(k, None)
+        for k, v in saved.items():
+            if v is not None:
+                sys.modules[k] = v

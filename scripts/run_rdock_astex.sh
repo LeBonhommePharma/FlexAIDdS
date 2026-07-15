@@ -24,8 +24,9 @@ set -u
 
 # ---- Paths -------------------------------------------------------------------
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-ASTEX_DIR="${REPO_ROOT}/benchmarks/astex_diverse/astex_diverse"
-OUT_ROOT="${RDOCK_OUT:-${HOME}/flexaidds_benchmark_results/rdock_astex}"
+# Support env overrides for iCloud / custom data (e.g. ASTEX_DIR=... RDOCK_OUT=... )
+ASTEX_DIR="${ASTEX_DIR:-${REPO_ROOT}/benchmarks/astex_diverse/astex_diverse}"
+OUT_ROOT="${OUT_ROOT:-${RDOCK_OUT:-${HOME}/flexaidds_benchmark_results/rdock_astex}}"
 N_POSES="${RDOCK_N_POSES:-10}"
 PH="${RDOCK_PH:-7.4}"          # protonation pH for obabel
 CAVITY_RADIUS="${RDOCK_RADIUS:-6.0}"   # ref-ligand site mapper radius (A)
@@ -99,7 +100,7 @@ echo "Output dir : ${OUT_ROOT}"
 echo "Poses/lig  : ${N_POSES}   pH: ${PH}   cavity radius: ${CAVITY_RADIUS} A"
 echo
 
-CODES=$(ls -d "${ASTEX_DIR}"/*/ 2>/dev/null | xargs -n1 basename)
+CODES=$(find "${ASTEX_DIR}" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | xargs -n1 basename | sort)
 total=$(echo "${CODES}" | wc -w | tr -d ' ')
 echo "Found ${total} complexes."
 echo
@@ -107,15 +108,22 @@ echo
 ok=0; skipped=0; failed=0
 for code in ${CODES}; do
     src="${ASTEX_DIR}/${code}"
-    rec_pdb="${src}/${code}_apo.pdb"
+    # Robust receptor: prefer clean _apo.pdb (no cloud ' 2' dupes), fall back to receptor.pdb or any _apo
+    rec_pdb=$(ls "${src}/${code}_apo.pdb" "${src}/receptor.pdb" 2>/dev/null | grep -v ' 2' | head -1)
+    if [ -z "${rec_pdb}" ]; then
+        rec_pdb=$(ls "${src}"/*_apo*.pdb 2>/dev/null | grep -v ' 2' | head -1)
+    fi
     lig_sdf="${src}/${code}_ligand.sdf"
+    if [ ! -f "${lig_sdf}" ]; then
+        lig_sdf=$(ls "${src}"/*_ligand*.sdf 2>/dev/null | head -1)
+    fi
     work="${OUT_ROOT}/${code}"
     mkdir -p "${work}"
 
-    if [ ! -f "${rec_pdb}" ]; then
+    if [ -z "${rec_pdb}" ] || [ ! -f "${rec_pdb}" ]; then
         echo "[${code}] SKIP — no apo receptor PDB"; skipped=$((skipped+1)); continue
     fi
-    if [ ! -f "${lig_sdf}" ]; then
+    if [ -z "${lig_sdf}" ] || [ ! -f "${lig_sdf}" ]; then
         # 1TW6 = Smac AVPI peptide ligand, no extracted SDF (see project memory)
         echo "[${code}] SKIP — no ligand SDF (peptide/unsupported ligand)"
         skipped=$((skipped+1)); continue

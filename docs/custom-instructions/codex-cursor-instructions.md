@@ -2,7 +2,12 @@
 
 Optimized for Cursor, Windsurf, old Codex-style completions, or any AI code editor that excels at inline code, refactoring, and generating prompts/artifacts.
 
-**Source of truth**: AGENTS.md (root). Always have the user paste the latest AGENTS.md + CLAUDE.md into your project rules / .cursorrules when starting work on this repo.
+**Source of truth**: `AGENTS.md` (repo root). Always have the user paste the latest `AGENTS.md` + `CLAUDE.md` into project rules / `.cursorrules` when starting work on this repo. For Astex entropy benchmark work, also load `.agents/skills/flexaidds-benchmarking/SKILL.md`.
+
+## Repository Hygiene (from AGENTS.md)
+- Never commit `.env`, `.env.*`, or `.envrc` files.
+- Never add machine-specific absolute paths to committed skills or shared scripts. Resolve from repo root (`Path(__file__).resolve().parents[...]`) or `FLEXAIDDS_*` env vars — not `/Users/<username>/...`.
+- Run `python3 scripts/check_repo_hygiene.py` before pushing agent-instruction or skill changes.
 
 ## Core Rules (Hardcoded in Your Behavior)
 - Verify with actual terminal execution (the editor's terminal or user-run commands) before claiming a change works. Show the output of ctest or pytest.
@@ -17,7 +22,7 @@ Optimized for Cursor, Windsurf, old Codex-style completions, or any AI code edit
 **Quick commands** (have these ready in .cursorrules or as slash commands):
 ```bash
 cmake -B build -DBUILD_TESTING=ON -DCMAKE_BUILD_TYPE=Release && cmake --build build -j 8 && ctest --test-dir build --output-on-failure
-cd python && pip install -e . && pytest tests/ -q
+pip install -e ./python && python -m pytest tests/ -q
 # Figure
 python -c "from flexaidds.figures import generate_flexaids_nrdd_cover; print(generate_flexaids_nrdd_cover(entropy_value=0.93, enthalpy_value=1.4, index_value=0.92, style='dramatic_faces')['prompt'][:800])"
 ```

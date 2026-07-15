@@ -66,6 +66,8 @@ See: [`docs/VALIDATED_CAPABILITIES.md`](docs/VALIDATED_CAPABILITIES.md) · [`doc
 
 ## Quick Start
 
+### Native tools (full power)
+
 ```bash
 git clone https://github.com/LeBonhommePharma/FlexAIDdS.git && cd FlexAIDdS
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
@@ -75,31 +77,32 @@ cmake --build build --parallel
 ```bash
 # Dock with full flexibility and entropy at 300 K (default)
 ./build/FlexAIDdS receptor.pdb ligand.mol2
+```
 
-# Argument order doesn't matter -- auto-detected from file content
-./build/FlexAIDdS ligand.mol2 receptor.pdb
+### Python package (easiest for analysis, results loading, thermodynamics)
 
-# Dock directly from a SMILES string (3D coordinates built automatically)
-./build/FlexAIDdS receptor.pdb "CC(=O)Oc1ccccc1C(=O)O"
-
-# CIF/mmCIF input, JSON config override, rigid screening
-./build/FlexAIDdS receptor.cif ligand.sdf
-./build/FlexAIDdS receptor.pdb ligand.mol2 -c config.json
-./build/FlexAIDdS receptor.pdb ligand.mol2 --rigid
+```bash
+pip install -e ./python
 ```
 
 ```python
 import flexaidds as fd
+print(fd.__version__)
 
-results = fd.dock(
-    receptor="receptor.pdb",
-    ligand="ligand.mol2",
-    compute_entropy=True,
-)
-
-for mode in results.rank_by_free_energy():
-    print(f"Mode: dG={mode.free_energy:.2f} kcal/mol")
+run = fd.load_results("path/to/results")
 ```
+
+### macOS: Homebrew (native CLI tools)
+
+```bash
+# Stable release, or add --HEAD for tip-of-tree
+brew install --formula https://raw.githubusercontent.com/LeBonhommePharma/FlexAIDdS/master/Formula/flexaidds.rb
+# Python package (not yet on public PyPI — install from GitHub):
+pip install "git+https://github.com/LeBonhommePharma/FlexAIDdS.git#subdirectory=python"
+# later: python -m flexaidds --self-update
+```
+
+See [docs/INSTALLATION.md](docs/INSTALLATION.md) for conda, GitHub/PyPI, Windows, and full platform instructions. The Python package and native tools can be installed independently.
 
 ---
 
@@ -330,7 +333,7 @@ benchmark-specific eigenvalue-to-frequency calibration is supplied. See
 ### Python Package
 
 ```bash
-cd python && pip install -e .
+pip install -e ./python
 ```
 
 The `flexaidds` package works in two modes: **pure Python** (always available) and **C++ accelerated** (when built with `BUILD_PYTHON_BINDINGS=ON`).
@@ -411,7 +414,7 @@ ctest --test-dir build --output-on-failure
 ### Python (pytest)
 
 ```bash
-cd python && pip install -e . && pytest tests/
+pip install -e ./python && pytest tests/
 ```
 
 32 test files. Tests marked `@requires_core` skip gracefully when the C++ extension is not built.
@@ -703,26 +706,26 @@ See [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md) for dependency licenses.
 
 ---
 
-## Grok / Codex Agent Skills (flexaid-docking)
+## Grok / Codex Agent Skills (flexaidds)
 
 This repository packages a first-class Grok skill for all FlexAID, FlexAIDdS, and FlexAID∆S work:
 
 ```
-.grok/skills/flexaid-docking/
+.grok/skills/flexaidds/
 ├── SKILL.md
 ├── scripts/validate_skill.py
-└── references/flexaid-docking-guidance.md
+└── references/flexaidds-guidance.md
 ```
 
 **Invocation (user-facing trigger phrases + native slash):**
-- `/flexaid-docking`
+- `/flexaidds`
 - `/FlexAid docking`
 - `/FlexAidDS`
 - Mention `FlexAIDdS`, `FlexAID∆S`, "FlexAID docking", "ensemble analysis", or "thermodynamic ledger" in any prompt.
 
 **Validation (ALWAYS run before claiming completion):**
 ```bash
-python3 .grok/skills/flexaid-docking/scripts/validate_skill.py
+python3 .grok/skills/flexaidds/scripts/validate_skill.py
 python3 -m pytest tests/test_flexaid_skill.py -q --tb=line
 ```
 
@@ -732,9 +735,9 @@ The skill **mandates**:
 - Use precise language: "CF/contact-function scoring proxy" vs. full thermodynamic ledger.
 - Produce only chunked plans; never rewrite history or merge without confirmation.
 
-See the skill's own [SKILL.md](.grok/skills/flexaid-docking/SKILL.md) and [references/flexaid-docking-guidance.md](.grok/skills/flexaid-docking/references/flexaid-docking-guidance.md) for the full guardrails and terminology contract.
+See the skill's own [SKILL.md](.grok/skills/flexaidds/SKILL.md) and [references/flexaidds-guidance.md](.grok/skills/flexaidds/references/flexaidds-guidance.md) for the full guardrails and terminology contract.
 
-**For Claude Code / Codex / other agents**: Copy or symlink the `.grok/skills/flexaid-docking/` tree into your agent's skill directory (or `.skills/flexaid-docking/`) and reference the same validation commands.
+**For Claude Code / Codex / other agents**: Copy or symlink the `.grok/skills/flexaidds/` tree into your agent's skill directory (or `.skills/flexaidds/`) and reference the same validation commands.
 
 ---
 

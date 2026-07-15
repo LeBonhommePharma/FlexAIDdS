@@ -74,14 +74,21 @@ inline json::Value flexaid_default_config() {
             {"bonded_loops",                V(2)},      // bloops: exclude interactions n bonds away
             {"use_flexdee",                 V(false)},  // dead-end elimination for sidechains
             {"dee_clash",                   V(0.5)},
+            {"soft_wall_cutoff",            V(0.40)},   // overlap soft-core radius (Å); 0 = legacy hard r^-12
+            {"intermolecular_clash_ratio",  V(0.0)},    // hard d/(r_i+r_j) exclusion; 0 = disabled
             {"multi_model",                 V(false)},  // CCBM: multi-conformer receptor docking
         })},
 
         // ── Thermodynamics ───────────────────────────────────────
         {"thermodynamics", V(O{
-            {"temperature",           V(300)},   // Kelvin (0 = entropy off)
-            {"clustering_algorithm",  V("CF")},  // CF, DP, or FO
-            {"cluster_rmsd",          V(2.0)},   // RMSD threshold for clustering
+            {"temperature",               V(300)},   // Kelvin (0 = entropy off)
+            {"clustering_algorithm",      V("CF")},  // CF, DP, or FO
+            {"cluster_rmsd",              V(2.0)},   // RMSD threshold for clustering
+            // Classic FlexAID soft-β ACF / BindingMode F elects rank-0 (default).
+            // Set force_cf_rank_emission true (or classic_entropy_ranking false) to
+            // restore P3b lowest-CF emission without reverting the branch.
+            {"classic_entropy_ranking",   V(true)},
+            {"force_cf_rank_emission",    V(false)},
         })},
 
         // ── Genetic Algorithm ────────────────────────────────────

@@ -432,8 +432,8 @@ TEST(CompareEnergyMatrices, CapacityComparison) {
             base == atom256::C_pi_bridge) {
             printf("    code=%3d  base=%-10s  donor=%s  acceptor=%s\n",
                    c, atom256::base_type_name(base),
-                   atom256::get_donor(c) ? "yes" : "no",
-                   atom256::get_acceptor(c) ? "yes" : "no");
+                   atom256::get_hbond_donor(c) ? "yes" : "no",
+                   atom256::get_hbond_acceptor(c) ? "yes" : "no");
             ++c_ar_codes;
         }
     }

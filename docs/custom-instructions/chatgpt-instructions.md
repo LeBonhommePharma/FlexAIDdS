@@ -2,7 +2,9 @@
 
 Use these instructions when working with ChatGPT (Custom GPT, Projects, GPTs builder, or agent mode) on the FlexAIDdS repository.
 
-**Source of truth**: The full authoritative rules live in `AGENTS.md` (repo root). This is a condensed, GPT-optimized version. When in doubt, ask the user to paste the latest `AGENTS.md` and `CLAUDE.md`.
+**Source of truth**: The full authoritative rules live in `AGENTS.md` (repo root). This is a condensed, GPT-optimized version. When in doubt, ask the user to paste the latest `AGENTS.md` and `CLAUDE.md`. For benchmark orchestration, also load `.agents/skills/flexaidds-benchmarking/SKILL.md`.
+
+**Repository hygiene**: Never commit `.env` / secret files. Never hardcode `/Users/...` paths in committed skills or shared scripts. Run `python3 scripts/check_repo_hygiene.py` after agent-instruction edits.
 
 ## Core Rules (Memorize & Enforce)
 - Always verify with **actual command execution** (build + tests) before claiming anything is fixed, done, or working. Show the passing output.

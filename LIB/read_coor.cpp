@@ -1,6 +1,77 @@
 #include "flexaid.h"
 #include "fileio.h"
 
+#include <cctype>
+#include <cstring>
+
+namespace {
+
+void pdb_element(const char* line, const char atom_name[5], char out[3])
+{
+	out[0] = '\0';
+	out[1] = '\0';
+	out[2] = '\0';
+
+	const std::size_t len = std::strlen(line);
+	char raw[3] = {'\0', '\0', '\0'};
+	if (len > 76) raw[0] = line[76];
+	if (len > 77) raw[1] = line[77];
+
+	int n = 0;
+	for (char c : raw) {
+		if (c != '\0' && !std::isspace(static_cast<unsigned char>(c)) && n < 2)
+			out[n++] = c;
+	}
+
+	// Element columns are optional in older PDBs. The PDB atom-name alignment
+	// makes a leading blank the reliable one-letter-element case.
+	if (n == 0) {
+		int first = 0;
+		while (first < 4 && (atom_name[first] == ' ' ||
+		                     std::isdigit(static_cast<unsigned char>(atom_name[first]))))
+			++first;
+		if (first < 4) out[n++] = atom_name[first];
+		if (first == 0 && first + 1 < 4 &&
+		    std::isalpha(static_cast<unsigned char>(atom_name[first + 1])) &&
+		    std::islower(static_cast<unsigned char>(atom_name[first + 1])))
+			out[n++] = atom_name[first + 1];
+	}
+
+	if (n > 0) out[0] = static_cast<char>(
+		std::toupper(static_cast<unsigned char>(out[0])));
+	if (n > 1) out[1] = static_cast<char>(
+		std::tolower(static_cast<unsigned char>(out[1])));
+}
+
+int canonical_vct_type_for_element(const char element[3], int ntypes)
+{
+	int type = ntypes > 1 ? ntypes - 1 : 1; // DUMMY fallback
+	if      (!std::strcmp(element, "C"))  type = 3;
+	else if (!std::strcmp(element, "N"))  type = 11;
+	else if (!std::strcmp(element, "O"))  type = 14;
+	else if (!std::strcmp(element, "S"))  type = 18;
+	else if (!std::strcmp(element, "P"))  type = 22;
+	else if (!std::strcmp(element, "F"))  type = 23;
+	else if (!std::strcmp(element, "Cl")) type = 24;
+	else if (!std::strcmp(element, "Br")) type = 25;
+	else if (!std::strcmp(element, "I"))  type = 26;
+	else if (!std::strcmp(element, "Se")) type = 27;
+	else if (!std::strcmp(element, "Mg")) type = 28;
+	else if (!std::strcmp(element, "Sr")) type = 29;
+	else if (!std::strcmp(element, "Cu")) type = 30;
+	else if (!std::strcmp(element, "Mn")) type = 31;
+	else if (!std::strcmp(element, "Hg")) type = 32;
+	else if (!std::strcmp(element, "Cd")) type = 33;
+	else if (!std::strcmp(element, "Ni")) type = 34;
+	else if (!std::strcmp(element, "Zn")) type = 35;
+	else if (!std::strcmp(element, "Ca")) type = 36;
+	else if (!std::strcmp(element, "Fe")) type = 37;
+	else if (!std::strcmp(element, "Co")) type = 38;
+	return (type >= 1 && type <= ntypes) ? type : (ntypes > 1 ? ntypes - 1 : 1);
+}
+
+} // namespace
+
 static int standard_polymer_residue(const char rnam[4])
 {
 	static const char* aa[] = {
@@ -102,35 +173,27 @@ void read_coor(FA_Global* FA,atom** atoms,resid** residue,char line[], char res_
 
 		//(*atoms)[FA->atm_cnt].radius=assign_radius((*atoms)[FA->atm_cnt].name);
 		
-		int type = atoi(&line[76]);
-		if(type && type >= 1 && type <= FA->ntypes) {
-			(*atoms)[FA->atm_cnt].type = type;
-		} else {
-			// Raw PDBs from RCSB have element symbols (C, N, O, etc.)
-			// in columns 76-78, not numeric type codes.  Map element to a
-			// provisional FlexAID type (overwritten later by assign_types()
-			// from AMINO.def): 1=H, 2=C, 3=N, 4=O, 5=S, 6=neutral/other
-			char elem[3] = {' ', ' ', '\0'};
-			if(line[76] != '\0' && line[76] != '\n' && line[76] != '\r')
-				elem[0] = line[76];
-			if(line[77] != '\0' && line[77] != '\n' && line[77] != '\r')
-				elem[1] = line[77];
-			char* e = elem;
-			if(*e == ' ') e++;
+			char element[3];
+			pdb_element(line, atm_typ, element);
+			std::strncpy((*atoms)[FA->atm_cnt].element, element,
+			             sizeof((*atoms)[FA->atm_cnt].element) - 1);
+			(*atoms)[FA->atm_cnt].element[
+				sizeof((*atoms)[FA->atm_cnt].element) - 1] = '\0';
 
-			if(e[0]=='C') type = 2;
-			else if(e[0]=='N') type = 3;
-			else if(e[0]=='O') type = 4;
-			else if(e[0]=='S') type = 5;
-			else if(e[0]=='H') type = 1;
-			else if(e[0]=='P') type = 6;
-			else if(e[0]=='F') type = 6;
-			else if(e[0]=='I') type = 6;
-			else if(e[0]=='B' && e[1]=='r') type = 6;
-			else type = 6;
-
-			(*atoms)[FA->atm_cnt].type = type;
-		}
+			char type_field[3] = {'\0', '\0', '\0'};
+			const std::size_t line_len = std::strlen(line);
+			if (line_len > 76) type_field[0] = line[76];
+			if (line_len > 77) type_field[1] = line[77];
+			int type = std::atoi(type_field);
+			if(type && type >= 1 && type <= FA->ntypes) {
+				(*atoms)[FA->atm_cnt].type = type;
+			} else {
+				// Standard polymer atoms are refined by assign_types(). Retained
+				// receptor HETATMs are not, so their initial type must already use
+				// the canonical VCT matrix numbering.
+				(*atoms)[FA->atm_cnt].type =
+					canonical_vct_type_for_element(element, FA->ntypes);
+			}
 		
 		for(j=0;j<=4;j++){num_char[j]=line[j+6];}
 		num_char[5]='\0';
@@ -190,6 +253,13 @@ void read_coor(FA_Global* FA,atom** atoms,resid** residue,char line[], char res_
 				//printf("memory re-allocated for residue\n");
 			}
 
+			// Guard against zero-size malloc when callers memset FA to 0
+			// without setting top.cpp defaults (MIN_ROTAMER=1, MIN_FLEX_BONDS=5).
+			// malloc(0) is implementation-defined and writing fatm[0]/latm[0]
+			// then becomes a heap-buffer-overflow under ASan.
+			if (FA->MIN_ROTAMER < 1) FA->MIN_ROTAMER = 1;
+			if (FA->MIN_FLEX_BONDS < 1) FA->MIN_FLEX_BONDS = 5;
+
 			(*residue)[FA->res_cnt].fatm = (int*)malloc(FA->MIN_ROTAMER*sizeof(int));
 			(*residue)[FA->res_cnt].latm = (int*)malloc(FA->MIN_ROTAMER*sizeof(int));
 			(*residue)[FA->res_cnt].bond = (int*)malloc(FA->MIN_FLEX_BONDS*sizeof(int));
@@ -202,7 +272,7 @@ void read_coor(FA_Global* FA,atom** atoms,resid** residue,char line[], char res_
 
 			memset((*residue)[FA->res_cnt].fatm,0,FA->MIN_ROTAMER*sizeof(int));
 			memset((*residue)[FA->res_cnt].latm,0,FA->MIN_ROTAMER*sizeof(int));
-			memset((*residue)[FA->res_cnt].bond,0,FA->MIN_ROTAMER*sizeof(int));
+			memset((*residue)[FA->res_cnt].bond,0,FA->MIN_FLEX_BONDS*sizeof(int));
 
 			(*residue)[FA->res_cnt].ter = 0;
 			(*residue)[FA->res_cnt].rot=0;

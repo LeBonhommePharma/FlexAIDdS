@@ -131,6 +131,15 @@ static void bench_shannon(hw::UnifiedHardwareDispatch& disp, int n, int reps,
         results.push_back({"ShannonEntropy", "AVX-512", n, ms / reps,
                             n * reps / (ms * 1e-3), scalar_ms / ms});
     }
+
+    if (disp.is_available(hw::Backend::METAL)) {
+        t.start();
+        for (int r = 0; r < reps; ++r)
+            sink = disp.compute_shannon_entropy(data, bins, hw::Backend::METAL);
+        double ms = t.elapsed_ms();
+        results.push_back({"ShannonEntropy", "Metal", n, ms / reps,
+                            n * reps / (ms * 1e-3), scalar_ms / ms});
+    }
 }
 
 static void bench_lse(hw::UnifiedHardwareDispatch& disp, int n, int reps,
@@ -153,6 +162,15 @@ static void bench_lse(hw::UnifiedHardwareDispatch& disp, int n, int reps,
             sink = disp.log_sum_exp(data, hw::Backend::OPENMP);
         double ms = t.elapsed_ms();
         results.push_back({"LogSumExp", "OpenMP", n, ms / reps,
+                            n * reps / (ms * 1e-3), scalar_ms / ms});
+    }
+
+    if (disp.is_available(hw::Backend::METAL)) {
+        t.start();
+        for (int r = 0; r < reps; ++r)
+            sink = disp.log_sum_exp(data, hw::Backend::METAL);
+        double ms = t.elapsed_ms();
+        results.push_back({"LogSumExp", "Metal", n, ms / reps,
                             n * reps / (ms * 1e-3), scalar_ms / ms});
     }
 }
@@ -181,6 +199,16 @@ static void bench_boltzmann(hw::UnifiedHardwareDispatch& disp, int n, int reps,
     results.push_back({"BoltzmannWeights",
                         hw::UnifiedHardwareDispatch::backend_name(best), n, ms / reps,
                         n * reps / (ms * 1e-3), scalar_ms / ms});
+
+    if (disp.is_available(hw::Backend::METAL)) {
+        t.start();
+        for (int r = 0; r < reps; ++r) {
+            auto w = disp.compute_boltzmann_weights(data, beta, hw::Backend::METAL);
+        }
+        ms = t.elapsed_ms();
+        results.push_back({"BoltzmannWeights", "Metal", n, ms / reps,
+                            n * reps / (ms * 1e-3), scalar_ms / ms});
+    }
 }
 
 static void bench_rmsd(hw::UnifiedHardwareDispatch& disp, int n_atoms, int reps,

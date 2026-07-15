@@ -32,7 +32,48 @@ Complete build and installation instructions for FlexAID∆S on all supported pl
 
 ## Quick Install
 
-### From Source (recommended)
+### Python package via pip (easiest for analysis, results, thermodynamics)
+
+> **Status (2026-07):** `flexaidds` is **not yet published on the public PyPI index**.
+> Use the GitHub install below until the first PyPI release ships (GitHub Actions
+> workflow `.github/workflows/pypi-release.yml` + trusted publishing). After that,
+> `pip install flexaidds` will work as usual.
+
+**Recommended today — install from GitHub (no clone required):**
+```bash
+pip install "git+https://github.com/LeBonhommePharma/FlexAIDdS.git#subdirectory=python"
+# later upgrade:
+pip install --upgrade --force-reinstall \
+  "git+https://github.com/LeBonhommePharma/FlexAIDdS.git#subdirectory=python"
+# or: python -m flexaidds --self-update   # uses GitHub Releases + git fallback
+```
+
+From a local checkout (development):
+```bash
+git clone https://github.com/LeBonhommePharma/FlexAIDdS.git && cd FlexAIDdS
+pip install -e ./python
+```
+
+Once published on PyPI:
+```bash
+pip install flexaidds
+pip install --upgrade flexaidds
+```
+
+- Installs the `flexaidds` package (and the `flexaidds` + `flexaidds-benchmark` CLIs).
+- The native C++ extension (`_core`) is **optional**. If build tools/Eigen are missing **or** compilation fails, the package still installs and works in pure-Python mode (with fallbacks). Set `FLEXAIDDS_SKIP_CORE=1` to force pure-Python.
+- Works from sdist, git, local checkout, and (after first publish) PyPI.
+
+Verify:
+```bash
+python -c "import flexaidds as fd; print(fd.__version__, 'HAS_CORE=', getattr(fd, 'HAS_CORE_BINDINGS', False))"
+python -m flexaidds --help || echo "CLI works via python -m"
+python -m flexaidds --check-update
+```
+
+A GitHub Actions workflow (`.github/workflows/pypi-release.yml`) builds a pure `py3-none-any` wheel + sdist (smoke-tested in CI) and publishes via trusted publishing on GitHub Release, or manual `workflow_dispatch` to TestPyPI/PyPI. Accelerated platform wheels are optional and not on the first-release critical path.
+
+### Full native tools + Python (CMake)
 
 ```bash
 git clone https://github.com/LeBonhommePharma/FlexAIDdS.git && cd FlexAIDdS
@@ -41,24 +82,24 @@ cmake .. -DCMAKE_BUILD_TYPE=Release
 cmake --build . -j $(nproc)
 ```
 
-This produces three binaries in `build/`:
+This produces the main executables (`FlexAIDdS`, `FlexAID`, `tENCoM`, ...).
 
-| Binary | Description |
-|:-------|:------------|
-| `FlexAID` | Standard docking executable |
-| `FlexAIDdS` | Optimized docking (LTO + `-march=native`) |
-| `tENCoM` | Vibrational entropy differential tool |
-| `flexaidds_process_ligand` | Standalone ligand preprocessing (SMILES → 3D, atom typing) |
-
-### Python Package
+### Conda
 
 ```bash
-cd python && pip install -e .
+git clone https://github.com/LeBonhommePharma/FlexAIDdS.git && cd FlexAIDdS
+conda env create -f environment.yml
+conda activate flexaidds
 ```
 
-The package works in two modes:
-- **Pure Python** — always available, no compilation needed
-- **C++ accelerated** — when built with `-DBUILD_PYTHON_BINDINGS=ON`
+Inside the env you get the Python package (editable). You can additionally build the full native tools with the usual cmake commands (conda compilers/eigen are already available).
+
+To build a conda package:
+```bash
+conda-build conda   # produces a flexaidds conda package
+```
+
+See the table below for per-platform dependency commands.
 
 ---
 
@@ -79,11 +120,33 @@ cmake --build build --parallel
 
 ### macOS (Apple Silicon & Intel)
 
-```bash
-# Install dependencies via Homebrew
-brew install cmake ninja libomp eigen
+#### Easy install via Homebrew (recommended for native CLI tools)
 
-# Build
+```bash
+# Stable tagged release (v2.0.0+)
+brew install --formula https://raw.githubusercontent.com/LeBonhommePharma/FlexAIDdS/master/Formula/flexaidds.rb
+
+# Or latest development tip
+brew install --HEAD --formula https://raw.githubusercontent.com/LeBonhommePharma/FlexAIDdS/master/Formula/flexaidds.rb
+
+# Update later
+brew reinstall --formula https://raw.githubusercontent.com/LeBonhommePharma/FlexAIDdS/master/Formula/flexaidds.rb
+# or, for HEAD builds:
+brew reinstall --HEAD --formula https://raw.githubusercontent.com/LeBonhommePharma/FlexAIDdS/master/Formula/flexaidds.rb
+```
+
+This installs `FlexAIDdS`, `tENCoM`, `FlexAID` + required data files.
+
+Then (recommended — GitHub until PyPI publish):
+```bash
+pip install "git+https://github.com/LeBonhommePharma/FlexAIDdS.git#subdirectory=python"
+# after first PyPI release: pip install flexaidds
+```
+
+#### Build from source (full control)
+
+```bash
+brew install cmake ninja libomp eigen
 git clone https://github.com/LeBonhommePharma/FlexAIDdS.git && cd FlexAIDdS
 cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
 cmake --build build --parallel
@@ -101,6 +164,98 @@ cmake --build build --parallel
 ```
 
 > **Windows note**: Install Eigen via `choco install eigen` or manually set `CMAKE_PREFIX_PATH`. OpenMP support on Windows requires additional configuration.
+
+---
+
+## Python Package Only (pip / conda) — no full C++ build required
+
+Most users who want to **analyze results**, load docking runs, use thermodynamic models, or run benchmarks can use just the Python package:
+
+```bash
+# pip (from repo root)
+pip install -e ./python
+
+# conda (recommended for complex dependency environments)
+conda env create -f environment.yml
+conda activate flexaidds
+```
+
+The package provides:
+- `flexaidds.load_results`, data models, CLI (`python -m flexaidds`)
+- Pure-Python + optional accelerated `StatMechEngine`, thermodynamics
+- Dataset runners, visualization helpers, etc.
+
+The heavy compiled `_core` extension (for maximum speed on StatMech/ENCoM) is built automatically during `pip install -e ./python` **if** a compiler + Eigen + pybind11 are present. Otherwise it silently falls back (see `HAS_CORE_BINDINGS`).
+
+See also `python/README.md`.
+
+## Homebrew (macOS native tools)
+
+The formula provides the high-performance native executables with data files staged correctly:
+
+```bash
+# Stable release
+brew install --formula https://raw.githubusercontent.com/LeBonhommePharma/FlexAIDdS/master/Formula/flexaidds.rb
+
+# Development / latest
+brew install --HEAD --formula https://raw.githubusercontent.com/LeBonhommePharma/FlexAIDdS/master/Formula/flexaidds.rb
+
+# After install, add the Python package (GitHub until PyPI publish):
+pip install "git+https://github.com/LeBonhommePharma/FlexAIDdS.git#subdirectory=python"
+# after first PyPI release: pip install flexaidds
+```
+
+The formula lives at `Formula/flexaidds.rb`. It supports both a stable `url`/`sha256` (tagged release) and `head` for tip-of-tree. Bottles may be added later.
+
+When cutting a new stable release, update the formula’s `url`, `sha256`, and version together:
+```bash
+# Example maintainer steps
+TAG=v2.0.1
+curl -sL "https://github.com/LeBonhommePharma/FlexAIDdS/archive/refs/tags/${TAG}.tar.gz" | shasum -a 256
+# paste sha256 into Formula/flexaidds.rb, commit, push
+```
+
+---
+
+## Releasing & Distribution
+
+- **Python package (PyPI)**: The workflow `.github/workflows/pypi-release.yml` builds:
+  1. **sdist** (includes staged minimal `LIB/` so out-of-tree builds can compile `_core` when Eigen + a C++26 compiler are present)
+  2. **pure `py3-none-any` wheel** (`FLEXAIDDS_SKIP_CORE=1`) so `pip install flexaidds` always works without a compiler
+
+  Both artifacts are smoke-tested (install + `import flexaidds` + CLI) before publish. Publish runs on GitHub Release (`pypi`) or manual `workflow_dispatch` (`testpypi` / `pypi`).
+
+  **One-time trusted publisher setup** (required before the first upload — this is the usual cause of `invalid-publisher`):
+
+  | Field | TestPyPI | PyPI |
+  |:------|:---------|:-----|
+  | Project | `flexaidds` (pending OK) | `flexaidds` (pending OK) |
+  | Owner | `LeBonhommePharma` | `LeBonhommePharma` |
+  | Repository | `FlexAIDdS` | `FlexAIDdS` |
+  | Workflow filename | `pypi-release.yml` | `pypi-release.yml` |
+  | Environment name | `testpypi` | `pypi` |
+
+  - TestPyPI pending publisher: https://test.pypi.org/manage/account/publishing/
+  - PyPI pending publisher: https://pypi.org/manage/account/publishing/
+  - GitHub Environments `pypi` / `testpypi` must already exist on the repo (they do).
+  - **Token fallback** (optional): set repo secret `TEST_PYPI_API_TOKEN` or `PYPI_API_TOKEN` (API token starting with `pypi-`). When set, the workflow uses token auth instead of OIDC.
+
+  Local packaging smoke test (mirrors CI):
+  ```bash
+  python3 -m venv /tmp/flexaidds-pkg && source /tmp/flexaidds-pkg/bin/activate
+  pip install -U pip build twine
+  cd python
+  FLEXAIDDS_SKIP_CORE=1 python -m build --sdist --wheel --outdir /tmp/flexaidds-dist
+  twine check /tmp/flexaidds-dist/*
+  FLEXAIDDS_SKIP_CORE=1 pip install /tmp/flexaidds-dist/*.whl
+  python -c "import flexaidds as fd; print(fd.__version__, fd.HAS_CORE_BINDINGS)"
+  ```
+
+- **Homebrew**: Update `Formula/flexaidds.rb` (`url` + `sha256` for stable; `head` tracks `master`) when cutting releases. Users install via the raw formula URL (or a personal tap).
+
+- **Native binaries**: Existing release workflow attaches platform archives on tag.
+
+- **In-package updater**: `python -m flexaidds --check-update` / `--self-update` uses the GitHub Releases API and `pip install --upgrade flexaidds` (falls back to the GitHub VCS URL when the package is not yet on the default index).
 
 ---
 

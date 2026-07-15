@@ -23,6 +23,7 @@ FlexAIDdS (FlexAID with ΔS Entropy) is an entropy-driven molecular docking engi
 - Don't over-explore. If the user asks to RUN something, run it — don't spend 20+ tool calls exploring first.
 - When implementing a prioritized list (P0, P1, P2...), complete ALL items before stopping. Don't skip items by claiming they're already done without checking.
 - After completing code changes, always commit and push immediately. Don't batch multiple changes without committing.
+  - **Exception — scoped commits & branch safety**: When the working tree contains unrelated changes, or when you are on the default branch (`master`), do NOT auto-commit everything or push directly to `master`, and do NOT stop to ask. Stage only the files relevant to the current change, commit them on a dedicated branch (e.g. `fix/…`, `test/…`), and push that branch. Never sweep unrelated modified/untracked files into a commit. Landing on `master` is done via PR, not a direct push.
 - If a git operation hangs (commit/push), kill stale git processes (`kill $(pgrep -f git)`) and retry. Check for git fsmonitor issues with `git config core.fsmonitor`.
 - For dataset YAML configs, verify semantics (self-docking vs cross-docking) before generating entries.
 
@@ -47,6 +48,7 @@ The rules below are the non-negotiable operating contract for any AI agent (Clau
 - **Zero test failures before any push.** `ctest --output-on-failure` (C++) or full pytest run after relevant changes.
 - **Complete every item on a prioritized list** before stopping.
 - **When the user says “run it”, run it** — do not over-explore first.
+- **Local GitHub identity is always `LeBonhommePharma`.** Never use the legacy `lmorency` label for local `gh`/`git`/API work. Verify with `gh api user --jq .login` before push/PR work (see `AGENTS.md` → Repository Hygiene).
 
 These rules exist to protect velocity and correctness in a complex scientific codebase. Claude is expected to be the strictest enforcer of them.
 
@@ -88,9 +90,8 @@ FlexAIDdS/
 │   └── results_adapter.py   # Bridge to flexaidds.load_results()
 ├── docs/                   # Documentation
 │   ├── IMPLEMENTATION_ROADMAP.md  # Development roadmap
-│   ├── PHASE1_SUMMARY_AND_DELIVERABLES.md  # Phase 1 deliverables
 │   ├── architecture/        # Architecture diagrams
-│   ├── implementation/      # Phase summaries & corrected docs
+│   ├── implementation/      # Implementation notes
 │   └── licensing/           # License matrix, clean-room policy, GPL isolation
 ├── cmake/                  # CMake helpers
 │   └── MetalAcceleration.cmake  # Metal GPU build helper
@@ -242,12 +243,11 @@ pytest tests/
 - **GoogleTest**: Auto-downloaded via `FetchContent` when `BUILD_TESTING=ON`
 
 ## Languages & Testing
-- Primary languages: Python (scripts, orchestration, benchmarking), Swift (core framework, Xcode project), C++ (computational kernels, entropy library)
+- Primary languages: C++26 (core engine, `LIB/`), Python (scripts, orchestration, benchmarking, bindings/analysis in `python/flexaidds/`), Objective-C++ (Metal GPU), optional CUDA
 - Config formats: YAML (dataset definitions, benchmark configs), Markdown (documentation)
-- Test command: `ctest --output-on-failure` after building
+- Test command: `ctest --output-on-failure` after building (C++); `pytest` under `python/` for the Python package
 - Always confirm 0 test failures before pushing. If tests fail, fix them in the same session.
-- For Swift: use `xcodebuild test` — the project has SwiftData models and PoseKinematics.
-- For C++: ensure all new .cpp files are added to CMakeLists.txt sources list.
+- For C++: ensure all new .cpp files are added to the CMakeLists.txt sources list.
 
 ## Testing
 
@@ -476,12 +476,19 @@ python -m flexaidds /path/to/results/ --top 5
 
 ## AI Instructions & Agent Maintenance
 
-This repository uses a deliberate three-file system for AI agents:
+This repository uses a deliberate multi-file system for AI agents. **Claude-specific copy-paste pack:** `docs/custom-instructions/claude-instructions.md`.
 
-- `AGENTS.md` — Single source of truth for workflow rules and constraints (all agents).
-- `CLAUDE.md` — This file. Rich technical depth + Claude-specific detail.
-- `.grok/skills/flexaidds/SKILL.md` — Self-contained Grok skill (project-scoped).
+| Agent / platform | Primary file(s) |
+|------------------|-----------------|
+| **All agents** | `AGENTS.md` (source of truth) |
+| **Claude** | `CLAUDE.md` (this file) + `docs/custom-instructions/claude-instructions.md` |
+| **Codex / Cursor** | `docs/custom-instructions/codex-cursor-instructions.md` |
+| **Grok Build CLI** | `.grok/skills/flexaidds/SKILL.md` + `docs/custom-instructions/grok-build-cli-instructions.md` |
+| **ChatGPT** | `docs/custom-instructions/chatgpt-instructions.md` |
+| **Benchmark orchestration** | `.agents/skills/flexaidds-benchmarking/SKILL.md` |
 
-**Maintenance rule**: When core workflow rules, build commands, or constraints change, update `AGENTS.md` first, then propagate the delta into this file and the Grok skill. The sacred “Workflow Rules” sections should stay as aligned as possible to prevent drift.
+**Maintenance rule**: When core workflow rules, build commands, or constraints change, update `AGENTS.md` first, then propagate the delta into this file, the Grok skill, the benchmarking skill, and `docs/custom-instructions/`. The sacred “Workflow Rules” sections should stay as aligned as possible to prevent drift.
+
+**Repository hygiene**: Never commit `.env` / secret files. Never add machine-specific absolute paths to committed agent skills or shared scripts — use repo-relative paths or `FLEXAIDDS_*` env vars. Run `python3 scripts/check_repo_hygiene.py` after agent-instruction edits.
 
 Claude should treat `AGENTS.md` as the contract and this document as the detailed reference manual.

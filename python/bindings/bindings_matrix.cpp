@@ -25,15 +25,21 @@ void register_matrix_bindings(py::module_& m) {
 
     auto m_at = m.def_submodule("atom256", "256-type atom encoding");
 
-    m_at.def("encode", &atom256::encode,
+    // atom256::encode is overloaded (plus deleted guard overloads for stale
+    // v55 call sites), so &atom256::encode is ambiguous for pybind11's
+    // template deduction. Bind via a lambda pinned to the real signature.
+    m_at.def("encode",
+        [](uint8_t base_type, bool donor, bool acceptor) {
+            return atom256::encode(base_type, donor, acceptor);
+        },
         py::arg("base_type"), py::arg("donor"), py::arg("acceptor"),
         "Encode 8-bit atom type from (base_type, donor, acceptor)");
 
     m_at.def("get_base", &atom256::get_base,
         py::arg("code"), "Extract base type (bits 0-5)");
-    m_at.def("get_donor", &atom256::get_donor,
+    m_at.def("get_donor", &atom256::get_hbond_donor,
         py::arg("code"), "Extract H-bond donor flag (bit 7)");
-    m_at.def("get_acceptor", &atom256::get_acceptor,
+    m_at.def("get_acceptor", &atom256::get_hbond_acceptor,
         py::arg("code"), "Extract H-bond acceptor flag (bit 6)");
     m_at.def("get_hbond", &atom256::get_hbond,
         py::arg("code"), "True if donor or acceptor (bits 6-7)");
@@ -53,7 +59,7 @@ void register_matrix_bindings(py::module_& m) {
         py::arg("is_bridgehead") = false,
         "Full encoding from SYBYL type + charge + structural context");
 
-    m_at.attr("BASE_TYPE_COUNT") = atom256::BASE_TYPE_COUNT;
+    m_at.attr("BASE_TYPE_COUNT") = py::int_(static_cast<int>(atom256::BASE_TYPE_COUNT));
 
     // ═══════════════════════════════════════════════════════════════════════
     // SoftContactMatrix — 256×256 interaction matrix
@@ -231,6 +237,6 @@ void register_matrix_bindings(py::module_& m) {
         });
 
     // Constants
-    m.attr("MATRIX_DIM") = scm::MATRIX_DIM;
-    m.attr("MATRIX_SIZE") = scm::MATRIX_SIZE;
+    m.attr("MATRIX_DIM") = py::int_(scm::MATRIX_DIM);
+    m.attr("MATRIX_SIZE") = py::int_(scm::MATRIX_SIZE);
 }

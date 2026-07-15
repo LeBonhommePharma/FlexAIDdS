@@ -1,34 +1,93 @@
-# benchmarks/astex_entropy/config.yaml
+# Astex entropy benchmark defaults.
 #
-# Local persistent tool paths for Astex entropy benchmark wiring.
-# Generated to avoid PATH reliance for:
-#   - AutoDock Vina
-#   - rDock (rbcavity + rbdock)
-#   - Boltz
-#   - PoseBusters (bust)
-#
-# These match the user-specified install locations under the project root.
+# The checked-out source/data tree is usually /Users/lp.more/Projects/FlexAIDdS.
+# Results default to long-term iCloud storage on LP's MacBook Pro.
 
-workspace_root: .
-repo_root: .
+# repo_root auto-detected from checkout (override via FLEXAIDDS_REPO_ROOT).
+work_dir: "{icloud_benchmarks}/astex_entropy"
 
-tools:
-  vina: .tools/bin/vina
-  rbcavity: .tools/rdock/bin/rbcavity
-  rbdock: .tools/rdock/bin/rbdock
-  boltz: .venv-boltz/bin/boltz
-  posebusters: .venv-posebusters/bin/bust
-
-# rDock needs this for data/ and to help runtime lib loading
-rbt_root: .tools/rdock
-
-work_dir: results/astex_entropy
-results_dir: results/astex_entropy
-
-# Optional overrides for posebusters / entropy integration
-entropy:
-  posebusters_command: null   # falls back to tools.posebusters
+runtime:
+  command_timeout_seconds: 7200
 
 datasets:
-  # reference to the astex_diverse structures used by the runner
-  astex_diverse: benchmarks/astex_diverse/astex_diverse
+  native_yaml: "{repo_root}/benchmarks/datasets/astex_diverse.yaml"
+  non_native_yaml: "{repo_root}/benchmarks/datasets/astex_nonnative.yaml"
+  native_csv: "{repo_root}/benchmarks/astex_diverse/astex_diverse_set.csv"
+  non_native_csv: "{repo_root}/benchmarks/astex_nonnative/astex_non_native_set.csv"
+  native_data_root: "{repo_root}/benchmarks/astex_diverse/astex_diverse"
+  non_native_data_root: "{work_dir}/data/non_native"
+
+tools:
+  obabel: /opt/homebrew/bin/obabel
+  posebusters: "{repo_root}/.venv-posebusters/bin/bust"
+  flexaidds:
+    benchmark_datasets: "{repo_root}/build_lto/benchmark_datasets"
+    cache_dir: "{work_dir}/cache/flexaidds"
+    threads: 1
+    omp_threads: 6
+    restarts: 1
+    parallel_restarts: 0
+    getcleft: /Users/lp.more/Projects/Get_Cleft/Get_Cleft
+    cavity_detect_cli: "{repo_root}/build_lto/cavity_detect_cli"
+    cavity:
+      protocol: main_occupied_cavity
+      detector: native
+      use_precomputed: false
+      top_cavities: 3
+      min_radius_A: 1.4
+      max_radius_A: 4.0
+      site_cutoff_A: 15.0
+    mode: autonomous
+    include_oracle_site: false
+    ga_generations: 500
+    ga_population: 1000
+    job_timeout_seconds: 7200
+    grid_spacing: 0.375
+    force: false
+    score_direction: lower
+  vina:
+    executable: "{repo_root}/.tools/bin/vina"
+    cpu: 2
+    exhaustiveness: 16
+    num_modes: 20
+    energy_range: 8
+    box_padding_A: 8.0
+    score_direction: lower
+  rdock:
+    rbcavity: "{repo_root}/.tools/rdock/bin/rbcavity"
+    rbdock: "{repo_root}/.tools/rdock/bin/rbdock"
+    nrun: 20
+    score_direction: lower
+  boltz:
+    executable: "{repo_root}/.venv-boltz/bin/boltz"
+    python: "{repo_root}/.venv-boltz/bin/python"
+    wrapper: "{package_dir}/boltz_cli.py"
+    cache_dir: "~/.boltz"
+    use_msa_server: false
+    use_potentials: true
+    recycling_steps: 3
+    sampling_steps: 80
+    diffusion_samples: 1
+    sampling_steps_affinity: 80
+    diffusion_samples_affinity: 1
+    devices: 1
+    num_workers: 1
+    preprocessing_threads: 1
+    max_parallel_samples: 1
+    accelerator: cpu
+    model: boltz2
+    output_format: pdb
+    score_direction: lower
+
+entropy:
+  python_path: "{repo_root}/python"
+  flexaidds_binary: "{repo_root}/build_lto/FlexAIDdS"
+  tencom_binary: "{repo_root}/build_lto/tencom_entropy_diff"
+  temperature_K: 298.15
+  shannon_bins: 20
+  rmsd_cutoff_A: 2.0
+  posebusters_config: ""
+  # External PoseBusters command template. Placeholders:
+  # {posebusters}, {pose_sdf}, {reference_sdf}, {receptor_pdb},
+  # {posebusters_config}, {out_csv}, {out_json}
+  posebusters_command: "{posebusters} {pose_sdf} -l {reference_sdf} -p {receptor_pdb} --outfmt csv --output {out_csv} --max-workers 0"

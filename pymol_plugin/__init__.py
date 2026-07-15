@@ -4,7 +4,7 @@ Visualization and analysis interface for molecular docking results.
 
 Features:
 - Binding mode cluster rendering
-- Thermodynamic property display
+- Thermodynamic property display (ensemble ledger)
 - Pose ensemble visualization with Boltzmann weighting
 - Integration with NRGSuite workflow
 - Read-only loading of docking result ensembles through the flexaidds Python API
@@ -20,12 +20,13 @@ Installation:
 
 Usage:
     PyMOL> Plugin > FlexAID∆S
+    PyMOL> flexaids_help
 """
 
-from __future__ import absolute_import, print_function
+from __future__ import annotations
 
 try:
-    from pymol import cmd, stored
+    from pymol import cmd
 
     PYMOL_AVAILABLE = True
 except ImportError:
@@ -34,9 +35,11 @@ except ImportError:
 
     warnings.warn("PyMOL not available. Plugin functionality disabled.", ImportWarning)
 
-__version__ = "2.0.0-alpha"
+__version__ = "2.1.0"
 __author__ = "Louis-Philippe Morency"
 __email__ = "lp@thebonhomme.com"
+
+_COMMANDS_REGISTERED = False
 
 
 def __init_plugin__(app=None):
@@ -45,9 +48,14 @@ def __init_plugin__(app=None):
         print("FlexAID∆S Plugin: PyMOL not available")
         return
 
-    from pymol.plugins import addmenuitemqt
+    try:
+        from pymol.plugins import addmenuitemqt
 
-    addmenuitemqt("FlexAID∆S", run_plugin_gui)
+        addmenuitemqt("FlexAID∆S", run_plugin_gui)
+    except Exception as exc:
+        print(f"FlexAID∆S Plugin: could not register menu item: {exc}")
+
+    _register_commands()
 
 
 def run_plugin_gui():
@@ -56,45 +64,135 @@ def run_plugin_gui():
         print("ERROR: PyMOL not available")
         return
 
-    from .gui import FlexAIDSPanel
+    try:
+        from .gui import FlexAIDSPanel
+    except ImportError as exc:
+        print(f"ERROR: Could not load FlexAID∆S GUI: {exc}")
+        return
 
     dialog = FlexAIDSPanel()
     dialog.show()
+    # Keep a reference so the dialog is not garbage-collected
+    run_plugin_gui._dialog = dialog  # type: ignore[attr-defined]
 
 
-# Register PyMOL commands for CLI access
-if PYMOL_AVAILABLE:
-    from .visualization import (
-        load_binding_modes,
-        show_pose_ensemble,
-        color_by_boltzmann_weight,
-        show_thermodynamics,
+def flexaids_help(*_args, **_kwargs) -> None:
+    """Print available FlexAID∆S PyMOL commands."""
+    print(
+        f"""
+FlexAID∆S PyMOL Plugin v{__version__}
+====================================
+Load / inspect
+  flexaids_load <dir> [, prefix] [, temperature]   # canonical
+  flexaids_load_results <dir> [, prefix]           # alias of flexaids_load
+  flexaids_unload [, delete_objects]
+  flexaids_status
+  flexaids_recent
+  flexaids_show_mode <mode_id> [, show_all]
+  flexaids_show_ensemble <modeN|id> [, show_all]
+  flexaids_mode_details <mode_id>
+  flexaids_thermo <modeN|id>
+
+Color / viz
+  flexaids_color_boltzmann <modeN|id>   # CF-proxy weights (labelled)
+  flexaids_color_mode <mode_id> [, metric=cf|free_energy]
+  flexaids_colorbar [, metric]
+  flexaids_entropy_heatmap <mode_id> [, grid_spacing, sigma, renderer]
+  flexaids_publication <mode_id> [, ray, output_png]
+  flexaids_cf_contacts <mode_id>
+  flexaids_rmsd <mode_id>
+  flexaids_cleft <sphere.pdb>
+
+Analysis
+  flexaids_animate <mode_a>, <mode_b> [, n_frames, align]
+  flexaids_itc_plot [, output_png]
+  flexaids_itc_compare <itc.csv> [, output_png]
+  flexaids_tscan <mode_id> [, temperatures]   # e.g. 298,310
+
+Docking (modern CLI)
+  flexaids_dock <receptor_obj>, <ligand.mol2> [, site_selection, temperature]
+  flexaids_dock_cancel
+
+Notes
+  - Ranking uses the CF/contact-function scoring proxy during GA search.
+  - Free energy / entropy are ensemble ledger values from REMARKs when present,
+    else recomputed from CF (labelled "ensemble estimate from CF proxy").
+  - Boltzmann coloring uses CF proxy energies, not ensemble F.
+"""
     )
-    from .results_adapter import (
-        load_docking_results,
-        show_binding_mode,
-        color_mode_by_score,
-        show_mode_details,
-    )
-    from .entropy_heatmap import render_entropy_heatmap
-    from .mode_animation import animate_binding_modes
-    from .itc_comparison import (
-        plot_enthalpy_entropy_compensation,
-        plot_free_energy_comparison,
-    )
-    from .interactive_docking import dock_interactive, dock_cancel
+
+
+def _register_commands() -> None:
+    """Register PyMOL cmd.extend entry points (idempotent, lazy imports)."""
+    global _COMMANDS_REGISTERED
+    if not PYMOL_AVAILABLE or _COMMANDS_REGISTERED:
+        return
+
+    try:
+        from .visualization import (
+            load_binding_modes,
+            show_pose_ensemble,
+            color_by_boltzmann_weight,
+            show_thermodynamics,
+        )
+        from .results_adapter import (
+            load_docking_results,
+            show_binding_mode,
+            color_mode_by_score,
+            show_mode_details,
+            unload_results,
+        )
+        from .entropy_heatmap import render_entropy_heatmap
+        from .mode_animation import animate_binding_modes
+        from .itc_comparison import (
+            plot_enthalpy_entropy_compensation,
+            plot_free_energy_comparison,
+        )
+        from .interactive_docking import dock_interactive, dock_cancel
+        from .plugin_extras import (
+            flexaids_status,
+            publication_view,
+            show_cf_contacts,
+            show_rmsd_overlay,
+            temperature_scan,
+            show_cleft,
+            colorbar_legend,
+            recent_results,
+        )
+    except ImportError as exc:
+        print(f"FlexAID∆S Plugin: command registration incomplete: {exc}")
+        print("  Install the flexaidds package (pip install -e ./python) and retry.")
+        return
 
     cmd.extend("flexaids_load", load_binding_modes)
     cmd.extend("flexaids_show_ensemble", show_pose_ensemble)
     cmd.extend("flexaids_color_boltzmann", color_by_boltzmann_weight)
     cmd.extend("flexaids_thermo", show_thermodynamics)
-    cmd.extend("flexaids_load_results", load_docking_results)
+    cmd.extend("flexaids_load_results", load_docking_results)  # alias
     cmd.extend("flexaids_show_mode", show_binding_mode)
     cmd.extend("flexaids_color_mode", color_mode_by_score)
     cmd.extend("flexaids_mode_details", show_mode_details)
+    cmd.extend("flexaids_unload", unload_results)
     cmd.extend("flexaids_entropy_heatmap", render_entropy_heatmap)
     cmd.extend("flexaids_animate", animate_binding_modes)
     cmd.extend("flexaids_itc_plot", plot_enthalpy_entropy_compensation)
     cmd.extend("flexaids_itc_compare", plot_free_energy_comparison)
     cmd.extend("flexaids_dock", dock_interactive)
     cmd.extend("flexaids_dock_cancel", dock_cancel)
+    cmd.extend("flexaids_status", flexaids_status)
+    cmd.extend("flexaids_publication", publication_view)
+    cmd.extend("flexaids_cf_contacts", show_cf_contacts)
+    cmd.extend("flexaids_rmsd", show_rmsd_overlay)
+    cmd.extend("flexaids_tscan", temperature_scan)
+    cmd.extend("flexaids_cleft", show_cleft)
+    cmd.extend("flexaids_colorbar", colorbar_legend)
+    cmd.extend("flexaids_recent", recent_results)
+    cmd.extend("flexaids_help", flexaids_help)
+
+    _COMMANDS_REGISTERED = True
+    print(f"FlexAID∆S Plugin v{__version__} ready. Type 'flexaids_help' for commands.")
+
+
+# Auto-register when imported inside PyMOL (Plugin Manager also calls __init_plugin__)
+if PYMOL_AVAILABLE:
+    _register_commands()

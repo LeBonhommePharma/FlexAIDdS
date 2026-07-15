@@ -2,8 +2,11 @@
 #
 # Defines the flexaid_core OBJECT library containing all core C++ sources.
 # GPU-specific sources (CUDA, Metal, ROCm) are added conditionally.
+#
+# Source list is in a variable to make maintenance easier and support
+# future component splits (see audit monolith reduction).
 
-add_library(flexaid_core OBJECT
+set(FLEXAID_CORE_SOURCES
     fileio.cpp
     assign_shift.cpp
     buildic.cpp
@@ -127,6 +130,7 @@ add_library(flexaid_core OBJECT
     ChiralCenter/ChiralCenterGene.cpp
     # ── CleftDetector + Mol2Reader + SdfReader ──
     CleftDetector.cpp
+    DirectLigandIC.h
     Mol2Reader.cpp
     SdfReader.cpp
     # ── CavityDetect ──
@@ -169,6 +173,12 @@ add_library(flexaid_core OBJECT
     # ── Native-pose CF scoring diagnostic (DatasetRunner IdealPopulation) ──
     native_score.cpp
 )
+
+add_library(flexaid_core OBJECT ${FLEXAID_CORE_SOURCES})
+
+# Export the source list for use by parent scope / other modules if needed
+# (e.g. for documentation or future finer-grained components).
+set(FLEXAID_CORE_SOURCES "${FLEXAID_CORE_SOURCES}" PARENT_SCOPE)
 
 target_include_directories(flexaid_core PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}
@@ -218,6 +228,12 @@ if(FLEXAIDS_USE_MPI)
     target_compile_definitions(flexaid_core PUBLIC FLEXAIDS_USE_MPI)
 endif()
 
+# libm symbols must resolve on Linux, especially under LTO where the linker
+# does not auto-pull libm.
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    target_link_libraries(flexaid_core PUBLIC m)
+endif()
+
 # ─── Metal (optional) ───────────────────────────────────────────────────
 # Propagate FLEXAIDS_USE_METAL so hardware_detect.cpp and
 # UnifiedHardwareDispatch.cpp compile in their Metal detection paths.
@@ -229,3 +245,6 @@ endif()
 
 # ─── SIMD configuration ─────────────────────────────────────────────────
 flexaids_configure_simd(flexaid_core)
+
+# NOTE: FlexAID::Core alias is created in cmake/FlexAIDComponents.cmake (after subdir)
+# to avoid duplicate target definition.

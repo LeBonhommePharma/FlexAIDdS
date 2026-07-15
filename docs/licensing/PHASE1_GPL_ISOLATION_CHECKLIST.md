@@ -255,4 +255,4 @@ grep -i "find_package\|add_library" CMakeLists.txt | grep -v "#"
 ---
 
 **Reference:** docs/licensing/THIRD_PARTY_LICENSES.md  
-**Related:** docs/implementation/PHASE1_CORRECTED.md
+**Related:** docs/implementation/CONTINUOUS_TRAINING_METHODOLOGY.md, docs/licensing/clean-room-policy.md

@@ -26,6 +26,8 @@
 #include "CavityDetect/SpatialGrid.h"
 #include "native_score.h"
 #include "hbond_potential.h"
+#include "RngSeed.h"
+#include "ensemble_pipeline.h"
 
 #include <algorithm>
 #include <cmath>
@@ -393,6 +395,7 @@ static void print_usage(const char* progname) {
 
 int main(int argc, char **argv){
   try {
+	flexaids_rng::init_from_env();
 	int   i,j;
 	int   natm;
 
@@ -494,6 +497,10 @@ int main(int argc, char **argv){
 	FA->rotamer_permeability = 0.8;
 	FA->temperature = 0;
 	FA->beta = 0.0;
+	// Classic FlexAID entropy ranking is the product default when T>0
+	// (see config_parser / docs/classic_entropy_ranking.md). Explicit zero
+	// here so non-JSON paths never inherit garbage for the emission gate.
+	FA->force_cf_rank_emission = false;
 
 	FA->force_interaction=0;
 	FA->interaction_factor=5.0;
@@ -591,47 +598,91 @@ int main(int argc, char **argv){
 	FA->vcontacts_planedef = 'X';
 
 	// ── Determine base path from executable location ──
-	pch=strrchr(argv[0],'\\');
-	if(pch==NULL)
-	{
-		pch=strrchr(argv[0],'/');
-	}
-
+	// Prefer the real path of argv[0] so Homebrew/PATH symlinks still resolve
+	// to Cellar/.../bin (where runtime data is installed), not /opt/homebrew/bin.
 #ifndef _WIN32
-	if(pch!=NULL){
-		for(i=0;i<(int)(pch-argv[0]);i++){
-			FA->base_path[i]=argv[0][i];
-			FA->base_path[i+1]='\0';
+	{
+		char resolved[MAX_PATH__];
+		const char* src = argv[0];
+		char* rp = realpath(src, resolved);
+		if (rp != NULL) {
+			src = resolved;
 		}
-	}else{
-		strncpy(FA->base_path,".",MAX_PATH__-1); FA->base_path[MAX_PATH__-1]='\0';
+		// strrchr(const char*) returns const char* — keep a local const pointer
+		// instead of assigning into the legacy char* pch variable.
+		const char* slash = strrchr(src, '/');
+		if (slash != NULL) {
+			size_t n = (size_t)(slash - src);
+			if (n >= MAX_PATH__) n = MAX_PATH__ - 1;
+			memcpy(FA->base_path, src, n);
+			FA->base_path[n] = '\0';
+			pch = FA->base_path; // satisfy any later uses of pch
+		} else {
+			strncpy(FA->base_path, ".", MAX_PATH__ - 1);
+			FA->base_path[MAX_PATH__ - 1] = '\0';
+			pch = NULL;
+		}
 	}
 #else
-	strncpy(FA->base_path,".",MAX_PATH__-1); FA->base_path[MAX_PATH__-1]='\0';
+	pch = strrchr(argv[0], '\\');
+	if (pch == NULL) {
+		pch = strrchr(argv[0], '/');
+	}
+	if (pch != NULL) {
+		for (i = 0; i < (int)(pch - argv[0]); i++) {
+			FA->base_path[i] = argv[0][i];
+			FA->base_path[i + 1] = '\0';
+		}
+	} else {
+		strncpy(FA->base_path, ".", MAX_PATH__ - 1);
+		FA->base_path[MAX_PATH__ - 1] = '\0';
+	}
 #endif //_WIN32
 
 	printf("base path is '%s'\n", FA->base_path);
 
-		// ── Auto-detect WRK data directory ──────────────────────────────────
-		// If data files (MC_st0r5.2_6.dat, AMINO.def) are not in base_path,
-		// try base_path/../WRK/ as a fallback.  This allows the binary to live
-		// in build/ while data files stay in WRK/ without manual symlinks.
+		// ── Auto-detect data directory ──────────────────────────────────────
+		// Priority:
+		//   1. FLEXAIDDS_DATA_DIR env (Homebrew wrappers set this)
+		//   2. base_path itself (MC_st0r5.2_6.dat next to the binary)
+		//   3. base_path/../WRK (dev layout: binary in build/, data in WRK/)
+		//   4. base_path/../share/flexaidds (Homebrew share layout)
 		// The --data-dir flag (parsed below) overrides this auto-detection.
 		{
 			char probe[MAX_PATH__];
-			snprintf(probe, MAX_PATH__, "%s/MC_st0r5.2_6.dat", FA->base_path);
-			FILE* fp = fopen(probe, "r");
-			if (fp) {
-				fclose(fp);
-				// Data files found in base_path — nothing to do
-			} else {
-				// Try ../WRK/ relative to base_path
-				snprintf(probe, MAX_PATH__, "%s/../WRK/MC_st0r5.2_6.dat", FA->base_path);
-				fp = fopen(probe, "r");
+			int found = 0;
+			const char* env_dd = getenv("FLEXAIDDS_DATA_DIR");
+			if (env_dd != NULL && env_dd[0] != '\0') {
+				snprintf(probe, MAX_PATH__, "%s/MC_st0r5.2_6.dat", env_dd);
+				FILE* fp = fopen(probe, "r");
 				if (fp) {
 					fclose(fp);
-					snprintf(FA->dependencies_path, MAX_PATH__, "%s/../WRK", FA->base_path);
-					printf("auto-detected data directory: '%s'\n", FA->dependencies_path);
+					strncpy(FA->dependencies_path, env_dd, MAX_PATH__ - 1);
+					FA->dependencies_path[MAX_PATH__ - 1] = '\0';
+					printf("data directory from FLEXAIDDS_DATA_DIR: '%s'\n", FA->dependencies_path);
+					found = 1;
+				}
+			}
+			if (!found) {
+				snprintf(probe, MAX_PATH__, "%s/MC_st0r5.2_6.dat", FA->base_path);
+				FILE* fp = fopen(probe, "r");
+				if (fp) {
+					fclose(fp);
+					found = 1; // data co-located with binary
+				}
+			}
+			if (!found) {
+				const char* suffixes[] = { "/../WRK", "/../share/flexaidds", "/share/flexaidds" };
+				for (size_t si = 0; si < sizeof(suffixes) / sizeof(suffixes[0]); ++si) {
+					snprintf(probe, MAX_PATH__, "%s%s/MC_st0r5.2_6.dat", FA->base_path, suffixes[si]);
+					FILE* fp = fopen(probe, "r");
+					if (fp) {
+						fclose(fp);
+						snprintf(FA->dependencies_path, MAX_PATH__, "%s%s", FA->base_path, suffixes[si]);
+						printf("auto-detected data directory: '%s'\n", FA->dependencies_path);
+						found = 1;
+						break;
+					}
 				}
 			}
 		}
@@ -829,6 +880,9 @@ int main(int argc, char **argv){
 				config = json::merge(config, V(O{{"advanced", V(O{{"assume_folded", V(true)}})}}));
 			}
 			apply_config(config, FA, GB);
+			if (GB->seed != 0) {
+				flexaids_rng::set_master_seed(static_cast<std::uint64_t>(GB->seed));
+			}
 
 			// ── Strategy A: extract grid cache path from JSON "grid_file" key ──────
 			if (config.contains("grid_file")) {
@@ -837,11 +891,13 @@ int main(int argc, char **argv){
 					fprintf(stderr, "[GRID-CACHE] grid_file=%s\n", cached_grid_path.c_str());
 			}
 
-			printf("FlexAIDdS config: T=%uK, ligand_flex=%s, intramolecular=%s, scoring=%s\n",
+			printf("FlexAIDdS config: T=%uK, ligand_flex=%s, intramolecular=%s, "
+			       "scoring=%s, intermolecular_clash_ratio=%.3f\n",
 				FA->temperature,
 				FA->deelig_flex ? "ON" : "OFF",
 				FA->intramolecular ? "ON" : "OFF",
-				FA->complf);
+				FA->complf,
+				FA->intermolecular_clash_ratio);
 		}
 
 
@@ -1002,7 +1058,7 @@ int main(int argc, char **argv){
 			remove(tmpprotname);
 		}
 
-		residue[FA->res_cnt].latm[0] = FA->atm_cnt - 1;
+		residue[FA->res_cnt].latm[0] = FA->atm_cnt;
 		for (int k = 1; k <= FA->res_cnt; k++) {
 			FA->atm_cnt_real += residue[k].latm[0] - residue[k].fatm[0] + 1;
 		}
@@ -1510,8 +1566,8 @@ int main(int argc, char **argv){
 		// generate_grid() requires residue[last].gpa to be non-NULL and
 		// atoms[gpa[0]].dis/ang/dih to be computed (normally done by
 		// read_lig for legacy .inp/.ic format). For direct-mode ligands,
-		// we use the first three heavy atoms and set FA->ori to the
-		// ligand centroid so all IC frames are self-consistent.
+			// Direct readers normally provide a bonded, topology-derived GPA
+			// triad. The first-three fallback is retained only for legacy readers.
 		{
 			int lig_res = FA->res_cnt;
 			if (residue[lig_res].gpa == NULL) {
@@ -1632,6 +1688,55 @@ int main(int argc, char **argv){
 				}
 			}
 
+			auto initialize_direct_mif = [&](bool allow_grid_prune) {
+				if (!(FA->mif_enabled || FA->grid_prio_percent < 100.0f)) return;
+
+				std::vector<atom> protein_atoms(atoms, atoms + FA->atm_cnt_real);
+				cavity_detect::SpatialGrid sg;
+				sg.build(protein_atoms);
+				auto field = mif::compute_mif(cleftgrid, FA->num_grd,
+				                              atoms, FA->atm_cnt_real, sg);
+
+				free(FA->mif_energies);
+				free(FA->mif_sorted);
+				free(FA->mif_cdf);
+				FA->mif_count = static_cast<int>(field.sorted_indices.size());
+				FA->mif_energies = static_cast<float*>(
+				    malloc(field.energies.size() * sizeof(float)));
+				FA->mif_sorted = static_cast<int*>(
+				    malloc(field.sorted_indices.size() * sizeof(int)));
+				std::copy_n(field.energies.data(), field.energies.size(),
+				            FA->mif_energies);
+				std::copy_n(field.sorted_indices.data(), field.sorted_indices.size(),
+				            FA->mif_sorted);
+
+				mif::build_sampling_cdf(field, FA->mif_temperature);
+				FA->mif_cdf = static_cast<double*>(
+				    malloc(field.cdf.size() * sizeof(double)));
+				std::copy_n(field.cdf.data(), field.cdf.size(), FA->mif_cdf);
+
+				if (allow_grid_prune && FA->grid_prio_percent < 100.0f) {
+					auto kept = mif::prioritize_grid(field, FA->grid_prio_percent);
+					gridpoint* new_grid = nullptr;
+					int new_count = mif::rebuild_cleftgrid(
+					    cleftgrid, FA->num_grd, kept, &new_grid);
+					if (new_grid && new_count > 0) {
+						int old_count = FA->num_grd;
+						free(cleftgrid);
+						cleftgrid = new_grid;
+						FA->num_grd = new_count;
+						calc_cleftic(FA, cleftgrid);
+						printf("GRIDPRIO: kept %d/%d grid points (top %.0f%%)\n",
+						       new_count - 1, old_count - 1,
+						       FA->grid_prio_percent);
+					}
+				}
+
+				printf("MIF: computed for %d grid points (T=%.0fK%s)\n",
+				       FA->mif_count, FA->mif_temperature,
+				       grid_loaded_from_cache ? ", cached grid" : "");
+			};
+
 			if (!grid_loaded_from_cache) {
 			// Oracle mode: FLEXAIDDS_ORACLE_SITE env var points to a binding
 			// site PDB.  Parse for centroid only — SURFNET void-space detection
@@ -1701,6 +1806,13 @@ int main(int argc, char **argv){
 
 			cleftgrid = generate_grid(FA, spheres, atoms, residue);
 			calc_cleftic(FA, cleftgrid);
+
+			// Layer 2 reproducibility: capture cleft centroid/extent BEFORE free
+			// so explicit multi-cleft runs confine Ω to the sphere support
+			// (not whole-protein translation).
+			ensemble::CleftCentroid cleft_geom{};
+			const bool have_cleft_geom =
+				ensemble::cleft_centroid_extent(spheres, &cleft_geom);
 
 			// Free sphere linked list (oracle or SURFNET)
 			while (spheres) { sphere* p = spheres->prev; free(spheres); spheres = p; }
@@ -1830,65 +1942,60 @@ int main(int argc, char **argv){
 						       rcut, (int)keep.size(), FA->num_grd - 1);
 					}
 				}
-			} else {
-				printf("SITE-CONFINE: skipped for explicit multi-cleft sphere grid\n");
-			}
-
-			// ── MIF-weighted seeding (direct mode) ──────────────────────────
-			// The legacy read_input() path computes the Molecular Interaction
-			// Field here via compute_mif_and_reflig(); the direct-mode pipeline
-			// (used by DatasetRunner and all JSON-config runs) skipped it, so
-			// FA->mif_cdf stayed NULL and the GA's MIF seeding branch never
-			// fired — gene[0] fell back to reference-ligand / uniform seeding
-			// only.  Compute it here when enabled so chemical complementarity
-			// (LJ probe energy, Boltzmann-sampled at mif_temperature) informs
-			// the initial population.  Activation matches read_input():
-			//   FA->mif_enabled || FA->grid_prio_percent < 100.
-			if (FA->mif_enabled || FA->grid_prio_percent < 100.0f) {
-				std::vector<atom> protein_atoms(atoms, atoms + FA->atm_cnt_real);
-				cavity_detect::SpatialGrid sg;
-				sg.build(protein_atoms);
-
-				auto mif = mif::compute_mif(cleftgrid, FA->num_grd,
-				                            atoms, FA->atm_cnt_real, sg);
-
-				free(FA->mif_energies); free(FA->mif_sorted); free(FA->mif_cdf);
-				FA->mif_count    = static_cast<int>(mif.sorted_indices.size());
-				FA->mif_energies = static_cast<float*>(
-				    malloc(mif.energies.size() * sizeof(float)));
-				FA->mif_sorted   = static_cast<int*>(
-				    malloc(mif.sorted_indices.size() * sizeof(int)));
-				std::copy_n(mif.energies.data(), mif.energies.size(),
-				            FA->mif_energies);
-				std::copy_n(mif.sorted_indices.data(), mif.sorted_indices.size(),
-				            FA->mif_sorted);
-
-				mif::build_sampling_cdf(mif, FA->mif_temperature);
-				FA->mif_cdf = static_cast<double*>(
-				    malloc(mif.cdf.size() * sizeof(double)));
-				std::copy_n(mif.cdf.data(), mif.cdf.size(), FA->mif_cdf);
-
-				// Optional destructive prune to the top-K% densest points.
-				if (FA->grid_prio_percent < 100.0f) {
-					auto kept = mif::prioritize_grid(mif, FA->grid_prio_percent);
-					gridpoint* new_grid = nullptr;
+			} else if (have_cleft_geom && FA->num_grd > 1) {
+				// Explicit multi-cleft: confine translation to sphere support
+				// (reproducible Ω_cleft; not whole-protein).
+				const double cx = cleft_geom.cx, cy = cleft_geom.cy, cz = cleft_geom.cz;
+				const int    MIN_SITE_GRID = 500;
+				const double rcut_initial  = std::max(cleft_geom.extent_A, 4.0);
+				const double rcut_max      = 12.0;
+				const double rcut_step     = 2.0;
+				double rcut = rcut_initial;
+				std::vector<int> keep;
+				keep.reserve(static_cast<size_t>(FA->num_grd));
+				for (;;) {
+					keep.clear();
+					const double rcut2 = rcut * rcut;
+					for (int i = 1; i < FA->num_grd; ++i) {
+						const double dx = cleftgrid[i].coor[0] - cx;
+						const double dy = cleftgrid[i].coor[1] - cy;
+						const double dz = cleftgrid[i].coor[2] - cz;
+						if (dx * dx + dy * dy + dz * dz <= rcut2) keep.push_back(i);
+					}
+					if ((int)keep.size() >= MIN_SITE_GRID || rcut >= rcut_max) break;
+					rcut += rcut_step;
+				}
+				printf("SITE-CONFINE: cleft-centroid %.2f %.2f %.2f extent=%.1f A "
+				       "n_spheres=%d rcut=%.1f keep=%d/%d\n",
+				       cx, cy, cz, cleft_geom.extent_A, cleft_geom.n_spheres,
+				       rcut, (int)keep.size(), FA->num_grd - 1);
+				if (!keep.empty() && (int)keep.size() >= MIN_SITE_GRID
+				    && (int)keep.size() < FA->num_grd - 1) {
+					gridpoint* confined = nullptr;
 					int new_count = mif::rebuild_cleftgrid(
-					    cleftgrid, FA->num_grd, kept, &new_grid);
-					if (new_grid && new_count > 0) {
-						int old_count = FA->num_grd;
+						cleftgrid, FA->num_grd, keep, &confined);
+					if (confined && new_count > 0) {
+						const int old_count = FA->num_grd;
 						free(cleftgrid);
-						cleftgrid = new_grid;
+						cleftgrid = confined;
 						FA->num_grd = new_count;
 						calc_cleftic(FA, cleftgrid);
-						printf("GRIDPRIO: kept %d/%d grid points (top %.0f%%)\n",
-						       new_count - 1, old_count - 1,
-						       FA->grid_prio_percent);
+						printf("SITE-CONFINE: %d pts within %.1f A of cleft centroid "
+						       "(%d->%d grid pts)\n",
+						       new_count - 1, rcut, old_count - 1, new_count - 1);
 					}
+				} else {
+					printf("SITE-CONFINE: WARNING explicit-cleft full-grid fallback "
+					       "(keep=%d, total=%d)\n",
+					       (int)keep.size(), FA->num_grd - 1);
 				}
-
-				printf("MIF: computed for %d grid points (T=%.0fK)\n",
-				       FA->mif_count, FA->mif_temperature);
+			} else {
+				printf("SITE-CONFINE: skipped for explicit multi-cleft (no sphere geometry)\n");
 			}
+
+			// Cavity-only MIF is a legitimate known-site prior; it contains no
+			// reference-ligand coordinates.
+			initialize_direct_mif(true);
 
 			// Free spheres linked list
 			while (spheres != NULL) {
@@ -1930,11 +2037,15 @@ int main(int argc, char **argv){
 				}
 			}
 			} // end if (!grid_loaded_from_cache)
+			if (grid_loaded_from_cache) {
+				// The grid cache stores geometry, not MIF sampling arrays.
+				initialize_direct_mif(false);
+			}
 		}
 
-		// Direct-mode GA seeding: bias the initial population toward the
-		// loaded ligand anchor in the combined receptor+ligand frame.
-		{
+			// Direct-mode GA seeding is optional.  A loaded ligand must not become
+			// an implicit spatial reference when HETATM fallback is disabled.
+			if (FA->reflig_file[0] != '\0' || FA->reflig_hetatm_fallback) {
 			int lig_res = FA->res_cnt;
 			int fa = residue[lig_res].fatm[0];
 			int la = residue[lig_res].latm[0];
@@ -2496,71 +2607,67 @@ int main(int argc, char **argv){
       
 			/******************************************************************/
 
-			// ── Post-GA ensemble thermodynamic summary ──
-			if (FA->temperature > 0 && n_chrom_snapshot > 0) {
-				statmech::StatMechEngine post_engine(static_cast<double>(FA->temperature));
-				for (int si = 0; si < n_chrom_snapshot; si++) {
-					post_engine.add_sample(chrom_snapshot[si].evalue);
-				}
-				auto post_thermo = post_engine.compute();
-				printf("\n======= Post-GA Ensemble Thermodynamics (T=%uK) =======\n", FA->temperature);
-				printf("  Free energy F  = %10.4f kcal/mol\n", post_thermo.free_energy);
-				printf("  Mean energy <E>= %10.4f kcal/mol\n", post_thermo.mean_energy);
-				printf("  Entropy S      = %10.6f kcal/(mol*K)\n", post_thermo.entropy);
-				printf("  -TS            = %10.4f kcal/mol\n", -static_cast<double>(FA->temperature) * post_thermo.entropy);
-				printf("  Heat capacity  = %10.4f\n", post_thermo.heat_capacity);
-				printf("  Std energy     = %10.4f kcal/mol\n", post_thermo.std_energy);
-				printf("  Ensemble size  = %d\n", n_chrom_snapshot);
-				printf("========================================================\n\n");
-			}
-
-			// v58: H-bond rank-only — re-score snapshot chromosomes with the
-			// hbond term before cluster emission so REMARK CF reflects rank CF.
-			if (FA->use_hbond && FA->use_hbond_rank && !FA->use_hbond_search &&
-			    n_chrom_snapshot > 0) {
-				printf("Re-scoring %d snapshot chromosomes with H-bond rank term...\n",
-				       n_chrom_snapshot);
-				// buildcc processes the GPA triplet in order [GPA0, GPA1, GPA2]
-				// (the order buildlist emits them for bnum==0).  GPA2 uses only
-				// FA->ori (always correct), but GPA1 depends on the *previous
-				// call's* GPA2 coor, and GPA0 depends on the previous call's
-				// GPA1 and GPA2 coor.  After the GA the shared atoms[] carry
-				// state from a chromosome that is not the snapshot — convergence
-				// requires three sequential calls on the same genes:
-				//   call 1 (prime 1): GPA2 correctly placed
-				//   call 2 (prime 2): GPA1 correctly placed (using prime-1 GPA2)
-				//   call 3 (rescore): GPA0 correctly placed (using prime-2 GPA1/GPA2)
-				// We interleave per-snapshot to prevent cross-contamination between
-				// different snapshot geometries.
-				for (int si = 0; si < n_chrom_snapshot; ++si) {
-					FA->hbond_rank_rescore = 0;
-					eval_chromosome(FA, GB, VC, gene_lim, atoms, residue, cleftgrid,
-					    chrom_snapshot[si].genes, ic2cf);  // prime 1: GPA2 correct
-					eval_chromosome(FA, GB, VC, gene_lim, atoms, residue, cleftgrid,
-					    chrom_snapshot[si].genes, ic2cf);  // prime 2: GPA1 correct
-					FA->hbond_rank_rescore = 1;
-					cfstr rescore_cf = eval_chromosome(
-					    FA, GB, VC, gene_lim, atoms, residue, cleftgrid,
-					    chrom_snapshot[si].genes, ic2cf);  // real: GPA0 correct, hbond active
-					FA->hbond_rank_rescore = 0;
-					// Clash guard: if the H-bond re-score call hits a Vcontacts clash
-					// (rv==-2 → cf_clash.wal = penalty ~73M), keep the pre-rescore CF
-					// rather than poisoning app_evalue and the cluster/PF-NULL path.
-					static constexpr double HBOND_RESCORE_CLASH_GUARD = 1e5;
-					double rescore_app = get_apparent_cf_evalue(&rescore_cf);
-					if (std::abs(rescore_app) < HBOND_RESCORE_CLASH_GUARD) {
-						chrom_snapshot[si].cf        = rescore_cf;
-						chrom_snapshot[si].evalue    = get_cf_evalue(&chrom_snapshot[si].cf, FA);
-						chrom_snapshot[si].app_evalue = rescore_app;
-					} else {
-						printf("WARNING: H-bond re-score snapshot %d app_evalue=%.1f > guard (%.0f); "
-						       "retaining pre-rescore values.\n",
-						       si, rescore_app, HBOND_RESCORE_CLASH_GUARD);
+				// Independently rebuild and re-score every retained chromosome on the
+				// serial master state. Clustering, thermodynamics, and PDB emission must
+				// never inherit a stale score from an OpenMP worker or a prior geometry.
+				if (n_chrom_snapshot > 0) {
+					const bool rank_hbond = FA->use_hbond && FA->use_hbond_rank &&
+					                        !FA->use_hbond_search;
+					double max_score_delta = 0.0;
+					int inconsistent_scores = 0;
+					printf("Exact-pose re-scoring %d retained chromosomes%s...\n",
+					       n_chrom_snapshot,
+					       rank_hbond ? " with H-bond rank term" : "");
+					for (int si = 0; si < n_chrom_snapshot; ++si) {
+						if (FA->ring_flex_active) {
+							for (int s = 0; s < FA->ring_n_sugars && s < MAX_RING_FLEX; ++s)
+								FA->ring_cur_phases[s] = chrom_snapshot[si].ring_phases[s];
+						}
+						const double search_score = chrom_snapshot[si].evalue;
+						FA->hbond_rank_rescore = rank_hbond ? 1 : 0;
+						cfstr exact_cf = eval_chromosome(
+						    FA, GB, VC, gene_lim, atoms, residue, cleftgrid,
+						    chrom_snapshot[si].genes, ic2cf);
+						const double exact_score = get_cf_evalue(&exact_cf, FA);
+						const double delta = std::abs(exact_score - search_score);
+						max_score_delta = std::max(max_score_delta, delta);
+						if (!std::isfinite(exact_score) || delta > 1e-4) {
+							++inconsistent_scores;
+							if (inconsistent_scores <= 20) {
+								printf("WARNING: retained chromosome %d search CF=%.8f "
+								       "exact-pose CF=%.8f delta=%.8f\n",
+								       si, search_score, exact_score, delta);
+							}
+						}
+						// Fail closed: even a clash penalty is the score of the exact pose.
+						// Retaining the old value would reintroduce score/geometry mismatch.
+						chrom_snapshot[si].cf = exact_cf;
+						chrom_snapshot[si].evalue = exact_score;
+						chrom_snapshot[si].app_evalue = get_apparent_cf_evalue(&exact_cf);
 					}
+					FA->hbond_rank_rescore = 0;
+					QuickSort(chrom_snapshot, 0, n_chrom_snapshot - 1, true);
+					printf("Exact-pose score audit: inconsistent=%d/%d max_delta=%.8f\n",
+					       inconsistent_scores, n_chrom_snapshot, max_score_delta);
 				}
-				FA->hbond_rank_rescore = 0;
-				QuickSort(chrom_snapshot, 0, n_chrom_snapshot - 1, true);
-			}
+
+				// ── Post-GA ensemble thermodynamic summary ──
+				if (FA->temperature > 0 && n_chrom_snapshot > 0) {
+					statmech::StatMechEngine post_engine(static_cast<double>(FA->temperature));
+					for (int si = 0; si < n_chrom_snapshot; si++) {
+						post_engine.add_sample(chrom_snapshot[si].evalue);
+					}
+					auto post_thermo = post_engine.compute();
+					printf("\n======= Post-GA Ensemble Thermodynamics (T=%uK) =======\n", FA->temperature);
+					printf("  Free energy F  = %10.4f kcal/mol\n", post_thermo.free_energy);
+					printf("  Mean energy <E>= %10.4f kcal/mol\n", post_thermo.mean_energy);
+					printf("  Entropy S      = %10.6f kcal/(mol*K)\n", post_thermo.entropy);
+					printf("  -TS            = %10.4f kcal/mol\n", -static_cast<double>(FA->temperature) * post_thermo.entropy);
+					printf("  Heat capacity  = %10.4f\n", post_thermo.heat_capacity);
+					printf("  Std energy     = %10.4f kcal/mol\n", post_thermo.std_energy);
+					printf("  Ensemble size  = %d\n", n_chrom_snapshot);
+					printf("========================================================\n\n");
+				}
 
 			printf("clustering all individuals in GA...");
 			fflush(stdout);

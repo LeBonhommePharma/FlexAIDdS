@@ -615,6 +615,14 @@ void DensityPeak_cluster(FA_Global* FA, GB_Global* GB, VC_Global* VC, chromosome
 		snprintf(tmpremark,MAX_REMARK,"REMARK Cluster:%d Best CF in Cluster:%8.5f Cluster Center (CF):%8.5f Cluster Total CF:%8.5f Cluster Frequency:%d\n",
 				pCluster->ID, pCluster->Representative->Chromosome->app_evalue, pCluster->Center->Chromosome->app_evalue, pCluster->totCF, pCluster->Frequency);
 		safe_remark_cat(remark,tmpremark,&remark_len);
+		// Canonical identity keys for plugin load_results (thermo may be absent)
+		snprintf(tmpremark, MAX_REMARK, "REMARK binding_mode = %d\n", pCluster->ID);
+		safe_remark_cat(remark, tmpremark, &remark_len);
+		snprintf(tmpremark, MAX_REMARK, "REMARK pose_rank = 1\n");
+		safe_remark_cat(remark, tmpremark, &remark_len);
+		snprintf(tmpremark, MAX_REMARK, "REMARK temperature = %.2f\n",
+			(FA->temperature > 0) ? static_cast<double>(FA->temperature) : 300.0);
+		safe_remark_cat(remark, tmpremark, &remark_len);
 
 		for(j=0; j < FA->npar; ++j)
 		{

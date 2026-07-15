@@ -10,6 +10,8 @@ build/
 .eggs/
 *.so
 *.dylib
+# Staged by sdist only inside the release tree — never commit a local copy
+python/LIB/
 
 # C++ build artifacts
 build/
@@ -39,18 +41,100 @@ htmlcov/
 *.gcov
 *.gcda
 *.gcno
+*.profraw
+default_*.profraw
 
 # Distribution / packaging
 *.tar.gz
 *.zip
 MANIFEST
 
-# Local environment
+# Local environment / secrets (never commit)
 .env
+.env.*
+!.env.example
 .envrc
 *.local
 
-# Local persistent tool installs (Vina, rDock, Boltz, PoseBusters etc for astex_entropy etc benchmarks)
-# Never commit the large binaries or isolated Python venvs.
+# Local development tool environments and venvs
+# (Vina, rDock, Boltz, PoseBusters, custom benchmark tooling, etc.)
 .tools/
-.venv*/
+.venv/
+.venv-*/
+venv/
+env/
+
+# Local benchmark / experiment workspaces (not for commit)
+benchmarks/astex_entropy/
+benchmarks/results/
+results/local/
+wrk/
+/BIN/
+
+# Additional build and temp artifacts
+build*/
+out/
+tmp/
+*.log
+*.tmp
+*.bak
+
+# macOS / misc cruft (ensure recursive)
+**/.DS_Store
+**/.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Node / TS / Swift build (if experimental stubs)
+node_modules/
+.swiftpm/
+.build/
+swift/.build/
+
+# Local one-off experiment launchers / audit notes (never re-commit)
+/launch_v*.py
+/launch_v*.command
+/build_v*.sh
+/build_v*.command
+/*_audit.md
+/*_HANDOFF*.md
+/hvib_*.csv
+/v9_*.md
+/CODEX_*.md
+
+# Local virgin / scratch experiment trees
+.virgin_scratch/
+virgin_bench_fixes.diff
+election_cf.csv
+astex85_repro_final.png
+
+# Never commit staged engine binaries or local repro caches
+benchmarks/astex_repro/engine/
+benchmarks/astex_repro/**/FlexAIDdS
+benchmarks/astex_repro/**/benchmark_datasets
+benchmarks/astex_repro/**/*.bak
+benchmarks/astex_repro/full*.log
+benchmarks/astex_repro/cache/
+benchmarks/datasets-archive-report.json
+
+# Local apo/HEM experiment backups (not canonical dataset)
+benchmarks/astex_diverse/**/*_backup.pdb
+benchmarks/astex_diverse/**/*_preHEMfix.pdb
+benchmarks/astex_diverse/**/*_withHEM.pdb
+benchmarks/astex_diverse/**/*_full10chain.pdb
+
+benchmarks/astex_repro/full/
+benchmarks/astex_repro/smoke/
+benchmarks/astex_repro/**/stdout.log
+benchmarks/astex_repro/**/stderr.log
+
+# More local astex_repro campaign residue
+benchmarks/astex_repro/full_*/
+benchmarks/astex_repro/smoke_*/
+benchmarks/astex_repro/*.pid
+benchmarks/astex_repro/*.log
+benchmarks/astex_repro/**/*.bak
+benchmarks/astex_repro/spheres/

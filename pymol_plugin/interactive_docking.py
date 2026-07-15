@@ -1,8 +1,8 @@
 """Interactive docking workflow for FlexAID∆S (Phase 3, deliverable 3.2).
 
-Enables docking from within PyMOL using the ``flexaidds.docking.Docking``
-API.  Provides binding-site selection from PyMOL selection objects and
-real-time progress display.
+Drives the **modern** FlexAID CLI from PyMOL::
+
+    FlexAID <receptor.pdb> <ligand.mol2> -c dock_config.json -o <prefix>
 
 Usage:
     PyMOL> flexaids_dock receptor_obj, ligand.mol2
@@ -11,10 +11,13 @@ Usage:
 
 from __future__ import annotations
 
+import json
 import os
+import re
 import shutil
 import tempfile
 import threading
+from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
@@ -39,6 +42,29 @@ class DockingProgressCallback:
         self.best_cf: float = float("inf")
         self.running: bool = False
         self.cancelled: bool = False
+        self.work_dir: Optional[str] = None
+        self.proc = None  # subprocess.Popen handle when streaming
+
+    def on_log_line(self, line: str) -> None:
+        """Parse progress from engine log lines."""
+        # Match generation lines commonly printed by the GA
+        m = re.search(
+            r"(?:Gen(?:eration)?|GA)\s*[:=]?\s*(\d+).*?(?:CF|best|E)\s*[:=]?\s*([-+]?\d+\.?\d*)",
+            line,
+            re.IGNORECASE,
+        )
+        if m:
+            self.generation = int(m.group(1))
+            self.best_cf = float(m.group(2))
+            print(
+                f"  Gen {self.generation}: Best CF = {self.best_cf:.4f}  "
+                f"(CF/contact-function scoring proxy)"
+            )
+            return
+        # Surface other interesting status lines briefly
+        low = line.lower()
+        if any(k in low for k in ("binding mode", "cluster", "free energy", "metal", "done")):
+            print(f"  {line[:160]}")
 
     def on_generation(self, gen_num: int, best_cf: float, mean_entropy: float = 0.0) -> None:
         """Update progress after each GA generation."""
@@ -52,6 +78,11 @@ class DockingProgressCallback:
     def cancel(self) -> None:
         """Request cancellation of the running docking job."""
         self.cancelled = True
+        if self.proc is not None:
+            try:
+                self.proc.terminate()
+            except Exception:
+                pass
         print("Docking cancellation requested...")
 
 
@@ -119,47 +150,100 @@ def _save_receptor_pdb(obj_name: str, output_path: str) -> bool:
         return False
 
 
-def _write_minimal_config(
-    config_path: str,
-    receptor_pdb: str,
-    ligand_file: str,
+def _session_work_dir() -> Path:
+    """User-visible session folder under FLEXAIDDS_RESULTS or temp."""
+    base = os.environ.get("FLEXAIDDS_RESULTS") or os.environ.get("FLEXAIDDS_ICLOUD")
+    stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    if base:
+        d = Path(base) / "pymol_sessions" / f"dock_{stamp}"
+        d.mkdir(parents=True, exist_ok=True)
+        return d
+    return Path(tempfile.mkdtemp(prefix="flexaids_dock_"))
+
+
+def _write_modern_json(
+    config_path: Path,
+    temperature: int,
+    n_results: int,
     center: tuple,
     radius: float,
-    temperature: int = 300,
-    n_results: int = 10,
 ) -> None:
-    """Write a minimal FlexAID configuration file."""
-    with open(config_path, "w") as fh:
-        fh.write(f"PDBNAM {receptor_pdb}\n")
-        fh.write(f"INPLIG {ligand_file}\n")
-        fh.write(f"METOPT GA\n")
-        fh.write(f"TEMPER {temperature}\n")
-        fh.write(f"NRGOUT {n_results}\n")
-        fh.write(f"SPACER {radius:.1f}\n")
-        fh.write(f"COMPLF {center[0]:.3f} {center[1]:.3f} {center[2]:.3f}\n")
-        fh.write(f"CLRMSD 2.0\n")
-        fh.write(f"PERMEA 0.05\n")
+    """Write a minimal modern JSON config for interactive docking."""
+    cfg = {
+        "thermodynamics": {
+            "temperature": int(temperature),
+            "clustering_algorithm": "CF",
+            "cluster_rmsd": 2.0,
+        },
+        "output": {"max_results": int(n_results)},
+        "optimization": {"grid_spacing": 0.375},
+        "ga": {
+            "num_chromosomes": 500,
+            "num_generations": 800,
+            "fitness_model": "SMFREE",
+        },
+        # Site metadata for provenance (engine may auto-detect cleft)
+        "pymol_site": {
+            "center": [float(center[0]), float(center[1]), float(center[2])],
+            "radius_A": float(radius),
+        },
+    }
+    config_path.write_text(json.dumps(cfg, indent=2), encoding="utf-8")
+
+
+def _write_site_sphere_pdb(path: Path, center: tuple, radius: float) -> None:
+    """Write a single-sphere cleft PDB (B-factor = radius) for optional inspection."""
+    with open(path, "w", encoding="utf-8") as fh:
+        fh.write("REMARK FlexAID∆S PyMOL site sphere\n")
+        fh.write(
+            f"HETATM    1  C   SPH A   1    "
+            f"{center[0]:8.3f}{center[1]:8.3f}{center[2]:8.3f}"
+            f"  1.00{radius:6.2f}           C\n"
+        )
+        fh.write("END\n")
 
 
 def _run_docking_worker(
-    config_path: str,
+    receptor_pdb: str,
+    ligand_file: str,
+    config_json: str,
     work_dir: str,
     timeout: int,
     callback: DockingProgressCallback,
 ) -> None:
-    """Background worker that runs the docking engine.
-
-    Designed to be called from a ``threading.Thread`` so PyMOL's event
-    loop is not blocked.  Results are loaded into PyMOL on completion.
-    """
+    """Background worker that runs the modern docking CLI."""
     global _active_docking
-    cleanup_work_dir = True
+    cleanup_work_dir = False  # keep session folder visible by default
 
     try:
         from flexaidds.docking import Docking
 
-        docking = Docking(config_path)
-        population = docking.run(timeout=timeout)
+        # Minimal .inp shell so Docking can parse temperature/paths;
+        # actual invocation uses modern receptor+ligand CLI.
+        shell_inp = Path(work_dir) / "dock_shell.inp"
+        shell_inp.write_text(
+            f"PDBNAM {receptor_pdb}\n"
+            f"INPLIG {ligand_file}\n"
+            f"TEMPER {300}\n"
+            f"NRGOUT 10\n",
+            encoding="utf-8",
+        )
+
+        docking = Docking(str(shell_inp))
+
+        def _progress(line: str) -> None:
+            if callback.cancelled:
+                raise RuntimeError("Docking cancelled by user")
+            callback.on_log_line(line)
+
+        population = docking.run(
+            timeout=timeout,
+            receptor=receptor_pdb,
+            ligand=ligand_file,
+            config_json=config_json,
+            output_prefix="flexaid_out",
+            progress_callback=_progress,
+        )
 
         callback.running = False
 
@@ -169,6 +253,7 @@ def _run_docking_worker(
 
         n_modes = len(population)
         print(f"Docking complete: {n_modes} binding mode(s) found.")
+        print(f"  Session folder: {work_dir}")
 
         for mode_idx, mode in enumerate(population):
             thermo = mode.get_thermodynamics()
@@ -178,30 +263,27 @@ def _run_docking_worker(
                 f"n_poses={mode.n_poses}"
             )
 
-        pdb_files = sorted(Path(work_dir).glob("*_*.pdb"))
-        output_pdbs = [p for p in pdb_files if p.name != "receptor.pdb"]
-
-        if output_pdbs:
-            from . import results_adapter
-            results_adapter.load_docking_results(work_dir, prefix="dock")
-            cleanup_work_dir = False
-            print("Results loaded into PyMOL with prefix 'dock'.")
-        else:
-            print("No output PDB files generated.")
+        from . import results_adapter
+        results_adapter.load_docking_results(work_dir, prefix="dock")
+        print("Results loaded into PyMOL with prefix 'dock'.")
 
     except FileNotFoundError:
         print(
-            "ERROR: FlexAID binary not found. Build with:\n"
+            "ERROR: FlexAID binary not found. Set FLEXAIDDS_BINARY or build with:\n"
             "  cmake --build build --target FlexAID"
         )
+        cleanup_work_dir = True
     except RuntimeError as exc:
-        print(f"ERROR: Docking failed: {exc}")
+        if callback.cancelled:
+            print("Docking cancelled by user.")
+        else:
+            print(f"ERROR: Docking failed: {exc}")
     except Exception as exc:
         print(f"ERROR: Unexpected error: {exc}")
     finally:
         callback.running = False
         _active_docking = None
-        if cleanup_work_dir:
+        if cleanup_work_dir and work_dir:
             shutil.rmtree(work_dir, ignore_errors=True)
 
 
@@ -214,14 +296,14 @@ def dock_interactive(
     n_results: int = 10,
     async_mode: bool = True,
 ) -> None:
-    """Run FlexAID∆S docking from PyMOL using a loaded receptor and ligand.
+    """Run FlexAID∆S docking from PyMOL using the modern binary CLI.
 
     Workflow:
-    1. Export receptor from PyMOL object to temporary PDB
-    2. Determine binding site from PyMOL selection (or sphere center)
-    3. Generate FlexAID config file
-    4. Execute docking via ``flexaidds.docking.Docking``
-    5. Load results back into PyMOL
+    1. Export receptor from PyMOL object to session folder PDB
+    2. Determine binding site from PyMOL selection (COM + radius)
+    3. Write modern JSON config (+ site sphere for inspection)
+    4. Invoke ``FLEXAIDDS_BINARY`` with ``receptor ligand -c json -o prefix``
+    5. Stream log progress; auto-load results into PyMOL
 
     By default runs asynchronously in a background thread so PyMOL
     remains responsive.  Use ``flexaids_dock_cancel`` to abort.
@@ -284,44 +366,61 @@ def dock_interactive(
 
     radius = _get_selection_radius(site_selection)
 
-    work_dir = tempfile.mkdtemp(prefix="flexaids_dock_")
-    receptor_pdb = os.path.join(work_dir, "receptor.pdb")
-    config_path = os.path.join(work_dir, "dock.inp")
+    work_dir = _session_work_dir()
+    receptor_pdb = str(work_dir / "receptor.pdb")
+    ligand_copy = work_dir / ligand_path.name
+    try:
+        shutil.copy2(str(ligand_path.resolve()), str(ligand_copy))
+    except Exception:
+        ligand_copy = ligand_path  # use original path
+    config_json = work_dir / "dock_config.json"
+    sphere_pdb = work_dir / "site_sphere.pdb"
 
-    print("Preparing docking...")
+    print("Preparing docking (modern CLI)...")
     print(f"  Receptor: {receptor_obj}")
     print(f"  Ligand: {ligand_file}")
     print(f"  Binding site center: ({center[0]:.1f}, {center[1]:.1f}, {center[2]:.1f})")
     print(f"  Binding site radius: {radius:.1f} A")
     print(f"  Temperature: {temperature} K")
+    print(f"  Session folder: {work_dir}")
 
     if not _save_receptor_pdb(receptor_obj, receptor_pdb):
-        shutil.rmtree(work_dir, ignore_errors=True)
+        if str(work_dir).startswith(tempfile.gettempdir()):
+            shutil.rmtree(work_dir, ignore_errors=True)
         return
 
-    _write_minimal_config(
-        config_path, receptor_pdb, str(ligand_path.resolve()),
-        center, radius, temperature, n_results,
-    )
+    _write_modern_json(config_json, temperature, n_results, center, radius)
+    _write_site_sphere_pdb(sphere_pdb, center, radius)
 
     callback = DockingProgressCallback()
     callback.running = True
+    callback.work_dir = str(work_dir)
     _active_docking = callback
 
     print(f"Starting FlexAID∆S docking (timeout: {timeout}s, "
           f"async={async_mode})...")
+    print(f"  Binary: $FLEXAIDDS_BINARY or PATH (FlexAID / FlexAIDdS)")
+
+    args = (
+        receptor_pdb,
+        str(ligand_copy.resolve()),
+        str(config_json),
+        str(work_dir),
+        timeout,
+        callback,
+    )
 
     if async_mode:
         t = threading.Thread(
             target=_run_docking_worker,
-            args=(config_path, work_dir, timeout, callback),
+            args=args,
             daemon=True,
         )
         t.start()
         print("Docking running in background. PyMOL remains usable.")
         print("  Use 'flexaids_dock_cancel' to abort.")
     else:
-        _run_docking_worker(config_path, work_dir, timeout, callback)
+        _run_docking_worker(*args)
 
 
 def dock_cancel() -> None:
