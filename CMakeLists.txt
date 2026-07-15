@@ -2389,6 +2389,17 @@ flexaids_add_unit_test(test_protocol_config
         TEST_NAME BufferSafetyTests
     )
 
+    # test_hungarian_rmsd_bounds — post-cluster RMSDST Hungarian SEGV regression
+    # (cad_only_no_pose_pdb: atoms[k+l] walked past ligand into NULL coor_ref)
+    flexaids_add_unit_test(test_hungarian_rmsd_bounds
+        SOURCES
+            tests/test_hungarian_rmsd_bounds.cpp
+            tests/hungarian_rmsd_stubs.cpp
+            LIB/calc_rmsd.cpp
+            LIB/geometry.cpp
+        TEST_NAME HungarianRmsdBoundsTests
+    )
+
     # test_shell_exec — path-safe shell quoting / argv exec helpers
     flexaids_add_unit_test(test_shell_exec
         SOURCES tests/test_shell_exec.cpp
