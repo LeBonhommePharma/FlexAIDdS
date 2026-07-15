@@ -18,7 +18,7 @@ Under a **matched cognate-pocket, no native-seed** redocking protocol, and an **
 |--------|--------|-----------------|
 | **A** | FlexAID **2015-era** (JCIM paper lineage; CF/VCT, no BindingMode free-energy ranking) | Off (era default) |
 | **B0** | FlexAID **current master** | **Off** (`TEMPER 0` → CF clustering forced) |
-| **B** | FlexAID **current master** | **On** (`TEMPER 298`, BindingMode / colony entropy path) |
+| **B** | FlexAID **current master** | **On** (`TEMPER 21`, operator-optimized BindingMode/colony entropy; prior draft 298) |
 | **C0** | FlexAIDdS (pinned SHA) | **CF / consensus election only** (Shannon/tENCoM not used for election) |
 | **C** | FlexAIDdS (same SHA as C0) | Full stack available; **default claim path** = elected pose under standard DatasetRunner (document exact election); thermo ledger reported separately |
 
@@ -66,7 +66,7 @@ No matrix-swap ablation. No “default M6 vs MC_*” drift. Atom-type defs (`AMI
 | Native pose seed | **Forbidden** (`seed_fraction=0`, `pose_seed_enabled=false`, no `_INI` elitism) |
 | Crystal pose | **RMSD / PoseBusters reference only** |
 | Restarts | **5** independent, results pooled for election |
-| Temperature (thermo arms) | **298 K** |
+| Temperature (thermo arms) | C0/C: **298 K**; FlexAID B: **TEMPER 21** (locked) |
 | Softcore / VCT extras | Document in provenance; prefer identical where both engines support the knob |
 
 ### 1.3 Search budget (matched effort)
@@ -74,7 +74,7 @@ No matrix-swap ablation. No “default M6 vs MC_*” drift. Atom-type defs (`AMI
 | Parameter | Target | Notes |
 |-----------|--------|--------|
 | Population (**base**) | 1000 | Base chromosomes; **this is the modulated axis** for DoF (see below) |
-| Generations | **6000 fixed** | Do **not** inflate generations for flexible ligands |
+| Generations | **2000 fixed** (claim freeze 2026-07-15; prior draft used 6000) | Do **not** inflate generations for flexible ligands |
 | Restarts | 5 | Same RNG scheme: `SEED_BASE + stable_hash(pdb_id, restart_i)` |
 | Wall clock / job | ≤ 3 h per target×arm (queue default); fail and retry once | |
 
@@ -94,9 +94,9 @@ Hard ligands need more search **diversity**, not longer trajectories. DatasetRun
 **Correct reading of logs:**
 
 ```text
-[EVAL-SCALE]  … FIXED pop=1000 n_gen=6000     ← mode -1: NO dihedral pop-scale (wrong for claim path)
-[EVAL-SCALE]  … pop_base=1000 pop_effective=N n_gen=6000  ← mode 1: correct (gens fixed, pop grows with DoF)
-[EVAL-BUDGET] … budget_scale=S n_gen=6000 pop=P           ← final pop after high-DoF multiplier; n_gen must stay 6000
+[EVAL-SCALE]  … FIXED pop=1000 n_gen=2000     ← mode -1: NO dihedral pop-scale (wrong for claim path)
+[EVAL-SCALE]  … pop_base=1000 pop_effective=N n_gen=2000  ← mode 1: correct (gens fixed, pop grows with DoF)
+[EVAL-BUDGET] … budget_scale=S n_gen=2000 pop=P           ← final pop after high-DoF multiplier; n_gen must stay 2000
 ```
 
 If FlexAID-2015 cannot sustain large `pop_eff`, freeze a **budget ladder** in provenance and match **total CF evaluations** where possible — still prefer **pop** ladder over **gen** ladder:
@@ -165,7 +165,7 @@ Single generator script builds this tree once; all arms symlink it.
 
 ### 3.4 Arm B — FlexAID master, entropy on
 
-- **`TEMPER 298`**, clustering algorithm as master default for entropy (FO/DP/CF only when T>0).
+- **`TEMPER 21`** (locked claim freeze 2026-07-15; operator-optimized). Clustering: FO when T>0 (generator default).
 - BindingMode / colony entropy path active.
 - Election: free-energy / ACF ranking as master implements; dump `dG,dH,TdS` when present.
 
