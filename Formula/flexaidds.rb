@@ -7,8 +7,8 @@ class Flexaidds < Formula
   sha256 "11109a3eb6cac4185cee10390be7bf09be2520e89f13064a524e984be1366cc0"
   license "Apache-2.0"
   # HEAD carries the flexaid_core Metal OBJCXX link fix (stable v2.0.2 does not).
-  # Track this fix branch until it lands on master; after merge, flip back to master.
-  head "https://github.com/LeBonhommePharma/FlexAIDdS.git", branch: "fix/homebrew-metal-link"
+  # Default branch is main (Git 3.0 / repo rename); brew install -s --HEAD uses this.
+  head "https://github.com/LeBonhommePharma/FlexAIDdS.git", branch: "main"
 
   livecheck do
     url :stable

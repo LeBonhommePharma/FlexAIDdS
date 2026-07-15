@@ -140,8 +140,8 @@ brew install --HEAD lebonhommepharma/flexaidds/flexaidds
 
 # Update later
 brew update && brew reinstall lebonhommepharma/flexaidds/flexaidds
-# or, for HEAD builds:
-brew reinstall --HEAD lebonhommepharma/flexaidds/flexaidds
+# or, for HEAD builds (Homebrew 6+: --HEAD is install-only; reinstall --HEAD is invalid):
+brew install -s --HEAD lebonhommepharma/flexaidds/flexaidds
 ```
 
 This installs **native** tools only (`FlexAIDdS`, `tENCoM`, `FlexAID` + MC matrices / `AMINO.def`). The Python package is separate (see pip section below).
