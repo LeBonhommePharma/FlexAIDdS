@@ -53,6 +53,33 @@ This document explains how to contribute while keeping the codebase fast, scient
   - C++26 for the core engine.
   - Python for high-level workflows, analysis, and CLI tooling.
 
+- **Formatting & static analysis (scaffolding — no mass reformat)**
+
+  Style is historically mixed (tabs in legacy GA/scoring files; 4-space indent in newer modules such as `statmech` / `encom`). Configs exist to guide **new** code without rewriting the whole tree:
+
+  | File | Purpose |
+  |------|---------|
+  | `.clang-format` | C/C++ format (LLVM-based, 4 spaces, column 100) |
+  | `.clang-tidy` | Small advisory check set (nullptr, override, a few bugprone/performance) |
+  | `.pre-commit-config.yaml` | Optional local hooks (clang-format on staged files, YAML, large-file guard) |
+
+  ```bash
+  # Dry-run check on the default modern-module allowlist (never rewrites):
+  scripts/format_check.sh
+
+  # Check only untracked/modified C++ under LIB/, src/, tests/, python/bindings/:
+  scripts/format_check.sh --all-new
+
+  # Format a file you own in this PR (intentionally):
+  clang-format -i path/to/file.cpp
+
+  # Optional pre-commit (local):
+  pip install pre-commit && pre-commit install
+  pre-commit run
+  ```
+
+  **Do not** open a PR that only runs `clang-format` over all of `LIB/`. That explodes review and mixes style debt with functional changes.
+
 - **Performance**
 
   - Avoid unnecessary heap allocations, hidden O(n²) loops, or branches inside hot scoring paths.
@@ -66,6 +93,13 @@ This document explains how to contribute while keeping the codebase fast, scient
 
   - Return clear error codes in C++ or throw standard exceptions.
   - In Python, raise meaningful exceptions instead of silently failing.
+
+- **Astex / benchmark structures**
+
+  Canonical Astex Diverse tree: `benchmarks/astex_diverse/astex_diverse/`.
+  See `benchmarks/datasets/CANONICAL.md` and checksums in
+  `benchmarks/datasets/astex_diverse_sha256.csv`. Do not treat nested
+  `benchmarks/astex_diverse/data/astex_diverse/` as source of truth.
 
 ## 4. Dependencies
 

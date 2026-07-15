@@ -1,8 +1,14 @@
 # Astex Diverse Set — 85 protein-ligand complexes
 #
 # Expanded Verdonk/Gaudreault benchmark set used by DatasetRunner.cpp
-# (astex_diverse_codes()).  Structures are keyed by PDB code under
-# benchmark_data/astex_diverse/<PDB>/.
+# (astex_diverse_codes()).
+#
+# CANONICAL structure tree (repo):
+#   benchmarks/astex_diverse/astex_diverse/<PDB>/
+# Runtime cache (not source of truth):
+#   ~/.flexaidds/benchmarks/astex_diverse/<PDB>/
+# See benchmarks/datasets/CANONICAL.md and astex_diverse_sha256.csv.
+# Deprecated nested copy: benchmarks/astex_diverse/data/astex_diverse/
 #
 # Reference: Hartshorn et al. (2007) J. Med. Chem. 50(4):726-741
 #            https://doi.org/10.1021/jm061277y
@@ -14,6 +20,11 @@ description: >
   85 diverse, high-quality protein-ligand crystal structures for docking
   and scoring benchmark.  Covers all major drug target families with
   ligand-ready holo structures.
+
+# Canonical on-disk structures committed in this repository (not the runtime cache).
+canonical_data_root: benchmarks/astex_diverse/astex_diverse
+checksum_manifest: benchmarks/datasets/astex_diverse_sha256.csv
+canonical_doc: benchmarks/datasets/CANONICAL.md
 
 zenodo_doi: ""
 download_url: "https://www.ccdc.cam.ac.uk/community/freeprod/astex-diverse-set/"
