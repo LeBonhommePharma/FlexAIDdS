@@ -95,6 +95,19 @@ static int deterministic_ga_seed(const std::string& target_id, int restart,
     return 1 + static_cast<int>(stable_seed_hash(target_id, stream) % 2147483646ULL);
 }
 
+/// POSIX-shell single-quote escape for paths interpolated into `sh -c` strings.
+/// Turns `foo'bar` into `'foo'\''bar'`. Prefer argv/exec when no shell is needed.
+static std::string shell_quote(const std::string& s) {
+    std::string o = "'";
+    o.reserve(s.size() + 8);
+    for (char c : s) {
+        if (c == '\'') o += "'\\''";
+        else o += c;
+    }
+    o += "'";
+    return o;
+}
+
 // =============================================================================
 // Static pointers for async-signal-safe handler access.
 // Set just before sigaction(), cleared after signal restore on normal exit.
@@ -132,6 +145,8 @@ pid_t SubprocessGuard::fork_exec(const std::string& cmd) {
         ::signal(SIGTERM, SIG_DFL);
         ::signal(SIGINT, SIG_DFL);
 
+        // Shell remains for dock cmds that need env prefixes + redirection.
+        // All interpolated paths must pass through shell_quote().
         ::execl("/bin/sh", "sh", "-c", cmd.c_str(), nullptr);
         ::_exit(127);  // exec failed
     }
@@ -149,6 +164,42 @@ pid_t SubprocessGuard::fork_exec(const std::string& cmd) {
     // Real PID tracking not available on Windows.
     int ret = std::system(cmd.c_str());
     return ret;
+#endif
+}
+
+pid_t SubprocessGuard::fork_exec_argv(const std::vector<std::string>& argv) {
+#ifndef _MSC_VER
+    if (argv.empty() || argv[0].empty()) return -1;
+
+    pid_t pid = fork();
+    if (pid < 0) return -1;
+
+    if (pid == 0) {
+        ::setpgid(0, 0);
+        ::close(0);
+        ::open("/dev/null", O_RDONLY);
+        ::signal(SIGTERM, SIG_DFL);
+        ::signal(SIGINT, SIG_DFL);
+
+        std::vector<char*> c_argv;
+        c_argv.reserve(argv.size() + 1);
+        for (const auto& s : argv) {
+            c_argv.push_back(const_cast<char*>(s.c_str()));
+        }
+        c_argv.push_back(nullptr);
+        ::execvp(c_argv[0], c_argv.data());
+        ::_exit(127);
+    }
+
+    {
+        std::lock_guard<std::mutex> lock(mtx_);
+        pids_.insert(pid);
+    }
+    ::setpgid(pid, pid);
+    return pid;
+#else
+    (void)argv;
+    return -1;
 #endif
 }
 
@@ -4914,12 +4965,7 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
             }
             return tok;
         };
-        auto shell_quote = [](const std::string& s) {
-            std::string q = "'";
-            for (char c : s) { if (c == '\'') q += "'\\''"; else q += c; }
-            q += "'";
-            return q;
-        };
+        // shell_quote is file-scope (shell path hardening); reused for md5/sha.
         auto md5_of = [&](const std::string& path) -> std::string {
             if (path.empty() || !fs::exists(path)) return "";
             std::string t = cmd_token("md5 -q " + shell_quote(path) + " 2>/dev/null");
@@ -5739,6 +5785,8 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
 
             // Build FlexAIDdS command with --config
             // Resolve the runtime data directory with reproducible precedence.
+            // Paths are shell_quote'd: dock still uses /bin/sh -c for env
+            // prefixes + stdout/stderr redirection (fork_exec_argv cannot).
             std::string data_dir_arg;
             {
                 // FLEXAIDDS_DATA_DIR remains the explicit matrix-swap hook for
@@ -5748,8 +5796,8 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                 const std::string& dd_override = protocol_cfg_.data_dir;
                 if (!dd_override.empty() &&
                     fs::exists(dd_override + "/MC_st0r5.2_6.dat")) {
-                    data_dir_arg = " --data-dir '" +
-                                   fs::canonical(dd_override).string() + "' ";
+                    data_dir_arg = " --data-dir " +
+                                   shell_quote(fs::canonical(dd_override).string()) + " ";
                 } else {
                     std::string bin_dir = flexaidds_bin;
                     auto slash = bin_dir.rfind('/');
@@ -5757,11 +5805,11 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                     const std::string staged_candidate = bin_dir;
                     const std::string wrk_candidate = bin_dir + "/../WRK";
                     if (fs::exists(staged_candidate + "/MC_st0r5.2_6.dat")) {
-                        data_dir_arg = " --data-dir '" +
-                                       fs::canonical(staged_candidate).string() + "' ";
+                        data_dir_arg = " --data-dir " +
+                                       shell_quote(fs::canonical(staged_candidate).string()) + " ";
                     } else if (fs::exists(wrk_candidate + "/MC_st0r5.2_6.dat")) {
-                        data_dir_arg = " --data-dir '" +
-                                       fs::canonical(wrk_candidate).string() + "' ";
+                        data_dir_arg = " --data-dir " +
+                                       shell_quote(fs::canonical(wrk_candidate).string()) + " ";
                     }
                 }
             }
@@ -5927,7 +5975,8 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
 
             std::ostringstream cmd;
             if (!entry.cleft_sphere_path.empty() && fs::exists(entry.cleft_sphere_path)) {
-                cmd << "FLEXAIDDS_CLEFT_SPHERE_FILE='" << entry.cleft_sphere_path << "' ";
+                cmd << "FLEXAIDDS_CLEFT_SPHERE_FILE="
+                    << shell_quote(entry.cleft_sphere_path) << " ";
                 std::cerr << "  [MULTI-CLEFT] " << entry.pdb_id
                           << " using cleft sphere file: "
                           << entry.cleft_sphere_path << "\n";
@@ -5952,7 +6001,8 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
             if (entry.cleft_sphere_path.empty() &&
                 inject_oracle_site &&
                 !entry.binding_site_path.empty() && fs::exists(entry.binding_site_path)) {
-                cmd << "FLEXAIDDS_ORACLE_SITE='" << entry.binding_site_path << "' ";
+                cmd << "FLEXAIDDS_ORACLE_SITE="
+                    << shell_quote(entry.binding_site_path) << " ";
                 std::cerr << "  ["
                           << (config.mode == BenchmarkMode::AUTONOMOUS
                                   ? "COGNATE-REDOCK"
@@ -5973,17 +6023,17 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                  native_diag_requested) &&
                 !rmsd_reference_path.empty() && fs::exists(rmsd_reference_path)) {
                 cmd << "FLEXAIDDS_SCORE_NATIVE=1 "
-                    << "FLEXAIDDS_RMSDST='" << rmsd_reference_path << "' ";
+                    << "FLEXAIDDS_RMSDST=" << shell_quote(rmsd_reference_path) << " ";
             }
             cmd << "OMP_NUM_THREADS=" << omp_per_worker << " "
                 << "OMP_PLACES=cores "
                 << "OMP_PROC_BIND=spread "
                 << "OMP_WAIT_POLICY=passive "
-                << "'" << flexaidds_bin << "' "
+                << shell_quote(flexaidds_bin) << " "
                 << data_dir_arg
-                << "'" << effective_receptor << "' "
-                << "'" << dock_ligand_path << "' "
-                << "--config '" << config_path << "' ";
+                << shell_quote(effective_receptor) << " "
+                << shell_quote(dock_ligand_path) << " "
+                << "--config " << shell_quote(config_path) << " ";
 
             // ── Multi-cleft parallel docking (FLEXAIDDS_MULTI_CLEFT=N) ────────
             // When set, each FlexAIDdS invocation runs N independent GA instances
@@ -5998,9 +6048,9 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                 }
             }
 
-            cmd << "-o '" << ri_prefix << "' "
-                << "2>'" << ri_dir << "/stderr.log' "
-                << ">'" << ri_dir << "/stdout.log'";
+            cmd << "-o " << shell_quote(ri_prefix) << " "
+                << "2>" << shell_quote(ri_dir + "/stderr.log") << " "
+                << ">" << shell_quote(ri_dir + "/stdout.log");
 
             if (parallel_restarts) {
                 // ── Parallel mode: fork now, wait after all restarts launched ──
