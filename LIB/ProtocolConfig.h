@@ -36,7 +36,21 @@ struct ProtocolConfig {
     /// Boom inject fraction for legacy seed modes. nullopt → 1.0.
     std::optional<double> boom_frac;  ///< FLEXAIDDS_BOOM_FRAC
     int n_elite{1};                   ///< FLEXAIDDS_N_ELITE
+    /// True when FLEXAIDDS_N_ELITE was present (apply_config override gate).
+    bool n_elite_set{false};
+    /// True when FLEXAIDDS_VCT_ENTROPY_WEIGHT was present (apply_config gate).
+    bool vct_entropy_weight_set{false};
     bool use_shannon{false};          ///< FLEXAIDDS_USE_SHANNON (presence)
+
+    // ── Ranking / emission + GA ablation (config_parser / engine) ─────────
+    /// nullopt = env unset (keep JSON/default). true/false = explicit override.
+    std::optional<bool> force_cf_rank_emission;   ///< FLEXAIDDS_FORCE_CF_RANK_EMISSION
+    /// nullopt = unset. false forces CF emission (historical classic=0 path).
+    std::optional<bool> classic_entropy_ranking;  ///< FLEXAIDDS_CLASSIC_ENTROPY_RANKING
+    /// nullopt = unset → keep JSON ga.entropy_weight; else override.
+    std::optional<double> entropy_weight;         ///< FLEXAIDDS_ENTROPY_WEIGHT
+    /// nullopt = unset → keep JSON ga.diversity_monitoring; else override.
+    std::optional<bool> diversity_monitoring;     ///< FLEXAIDDS_DIVERSITY_MONITORING
 
     // ── Thermo engine (dock_config emission) ─────────────────────────────
     bool thermo_enabled{false};       ///< FLEXAIDDS_THERMO (presence)

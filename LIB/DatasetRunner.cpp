@@ -17,6 +17,7 @@
 #include "AsyncPipeline.h"
 #include "BenchmarkRunner.h"
 #include "ProtocolConfig.h"
+#include "RunReceipt.h"
 #include "statmech.h"
 #include "receptor_prep.h"
 #include "tENCoM/tencm.h"   // tencm::TorsionalENM — ligand Cartesian ANM for H(ω)
@@ -61,6 +62,11 @@
 #include <fcntl.h>
 #include <signal.h>
 #include <cerrno>
+#endif
+
+#if defined(__APPLE__)
+#include <mach-o/dyld.h>
+#include <cstdint>
 #endif
 
 #ifdef _OPENMP
@@ -4893,13 +4899,11 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
         std::cout << "[DatasetRunner] BenchmarkMode:    " << mode_label << "\n";
     }
 
-    // ── Fix 4: per-run provenance.json ────────────────────────────────────
-    // Record the exact scoring matrix, binary, and source revision used for
-    // this run so results are reproducible without relying on /tmp staging or
-    // file timestamps (which do not survive a reboot). Best-effort: any
-    // failure here is non-fatal and must not block docking.
+    // ── RUN_RECEIPT.json + legacy provenance.json ─────────────────────────
+    // Align with C0 iCloud launch scripts: matrix/binary hashes, GA knobs,
+    // mode, seed flags, and a full ProtocolConfig JSON snapshot. Best-effort:
+    // failure here must not block docking.
     {
-        // First non-empty whitespace token of a shell command's stdout, or "".
         auto cmd_token = [](const std::string& cmd) -> std::string {
             std::string out;
             FILE* p = popen(cmd.c_str(), "r");
@@ -4928,14 +4932,15 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
         };
         auto sha256_of = [&](const std::string& path) -> std::string {
             if (path.empty() || !fs::exists(path)) return "";
-            std::string t = cmd_token("shasum -a 256 " + shell_quote(path) + " 2>/dev/null");
-            if (t.empty()) t = cmd_token("sha256sum " + shell_quote(path) + " 2>/dev/null");
+            // Prefer in-process hasher when available (PoseBust); shell fallback.
+            std::string t = flexaids::posebust::sha256_file(path);
+            if (t.empty()) {
+                t = cmd_token("shasum -a 256 " + shell_quote(path) + " 2>/dev/null");
+                if (t.empty()) t = cmd_token("sha256sum " + shell_quote(path) + " 2>/dev/null");
+            }
             return t;
         };
 
-        // Resolve the scoring matrix with the same precedence as each child:
-        // explicit override, immutable data staged beside the binary, then the
-        // mutable source-tree WRK directory as a development fallback.
         std::string matrix_path;
         if (!protocol_cfg_.data_dir.empty()) {
             std::string cand = protocol_cfg_.data_dir + "/MC_st0r5.2_6.dat";
@@ -4951,43 +4956,73 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
             else if (fs::exists(source)) matrix_path = source;
         }
 
-        const char* oracle_env =
-            protocol_cfg_.oracle_site_dir.empty() ? nullptr
-                                                 : protocol_cfg_.oracle_site_dir.c_str();
-        std::string git_commit = cmd_token(
-            "git rev-parse HEAD 2>/dev/null");
+        const char* mode_label =
+            (config.mode == BenchmarkMode::ORACLE_CEILING)       ? "oracle-ceiling" :
+            (config.mode == BenchmarkMode::DEFINED_CLEFT_REDOCK) ? "defined-cleft-redock" :
+            (config.mode == BenchmarkMode::AUTONOMOUS)           ? "autonomous" :
+                                                                   "unset";
 
-        auto json_esc = [](const std::string& s) {
-            std::string r;
-            for (char c : s) {
-                if (c == '\\' || c == '"') { r += '\\'; r += c; }
-                else if (c == '\n') r += "\\n";
-                else r += c;
+        // Mode forces seed_elitism regardless of env for oracle vs production.
+        bool receipt_seed_elitism = protocol_cfg_.seed_elitism;
+        if (config.mode == BenchmarkMode::ORACLE_CEILING) receipt_seed_elitism = true;
+        if (config.mode == BenchmarkMode::DEFINED_CLEFT_REDOCK ||
+            config.mode == BenchmarkMode::AUTONOMOUS) {
+            receipt_seed_elitism = false;
+        }
+
+        flexaids::RunReceiptInput receipt;
+        receipt.run_id = report.dataset_name.empty()
+            ? fs::path(config.output_dir).filename().string()
+            : report.dataset_name;
+        if (receipt.run_id.empty()) receipt.run_id = "dataset_run";
+        receipt.started_utc = flexaids::utc_now_iso8601();
+        receipt.output = config.output_dir;
+        receipt.dataset = report.dataset_name;
+        receipt.mode = mode_label;
+        receipt.temperature_K = static_cast<double>(config.temperature);
+        receipt.pop = config.ga_population;
+        receipt.gen = config.ga_generations;
+        receipt.restarts = std::max(1, protocol_cfg_.restarts);
+        receipt.seed_base = protocol_cfg_.seed_base;
+        receipt.seed_elitism = receipt_seed_elitism;
+        receipt.matrix_path = matrix_path;
+        receipt.matrix_md5 = md5_of(matrix_path);
+        receipt.matrix_sha256 = sha256_of(matrix_path);
+        receipt.binary_path = flexaidds_bin;
+        receipt.binary_sha256 = sha256_of(flexaidds_bin);
+        receipt.git_commit = cmd_token("git rev-parse HEAD 2>/dev/null");
+        receipt.oracle_site_dir = protocol_cfg_.oracle_site_dir;
+        receipt.oracle_site_dir_set = !protocol_cfg_.oracle_site_dir.empty();
+        receipt.protocol = protocol_cfg_;
+
+        // Self-path for runner_sha256 when available (benchmark_datasets / host).
+#if defined(__APPLE__)
+        {
+            char self_path[4096];
+            uint32_t size = sizeof(self_path);
+            if (_NSGetExecutablePath(self_path, &size) == 0) {
+                receipt.runner_path = self_path;
+                receipt.runner_sha256 = sha256_of(receipt.runner_path);
             }
-            return r;
-        };
+        }
+#elif defined(__linux__)
+        {
+            std::error_code lec;
+            auto self = fs::read_symlink("/proc/self/exe", lec);
+            if (!lec) {
+                receipt.runner_path = self.string();
+                receipt.runner_sha256 = sha256_of(receipt.runner_path);
+            }
+        }
+#endif
 
-        std::error_code mk_ec;
-        fs::create_directories(config.output_dir, mk_ec);
-        std::string prov_path = config.output_dir + "/provenance.json";
-        std::ofstream pj(prov_path);
-        if (pj.is_open()) {
-            pj << "{\n"
-               << "  \"dataset\": \""        << json_esc(report.dataset_name)   << "\",\n"
-               << "  \"matrix_path\": \""    << json_esc(matrix_path)           << "\",\n"
-               << "  \"matrix_md5\": \""     << json_esc(md5_of(matrix_path))   << "\",\n"
-               << "  \"matrix_sha256\": \""  << json_esc(sha256_of(matrix_path)) << "\",\n"
-               << "  \"binary_path\": \""    << json_esc(flexaidds_bin)         << "\",\n"
-               << "  \"binary_sha256\": \""  << json_esc(sha256_of(flexaidds_bin)) << "\",\n"
-               << "  \"git_commit\": \""     << json_esc(git_commit)            << "\",\n"
-               << "  \"oracle_site_dir\": \""<< json_esc(oracle_env ? oracle_env : "") << "\",\n"
-               << "  \"oracle_site_dir_set\": " << (oracle_env && oracle_env[0] ? "true" : "false") << "\n"
-               << "}\n";
-            pj.close();
-            std::cout << "[DatasetRunner] Wrote provenance: " << prov_path << "\n";
+        if (flexaids::write_run_receipt(config.output_dir, receipt,
+                                        /*also_write_provenance_json=*/true)) {
+            std::cout << "[DatasetRunner] Wrote RUN_RECEIPT.json + provenance.json → "
+                      << config.output_dir << "\n";
         } else {
-            std::cerr << "[WARN] Could not write provenance.json to "
-                      << prov_path << "\n";
+            std::cerr << "[WARN] Could not write RUN_RECEIPT.json to "
+                      << config.output_dir << "\n";
         }
     }
 

@@ -1076,11 +1076,12 @@ if(BUILD_TESTING)
         TEST_NAME JsonConfigTests
     )
 
-    # test_protocol_config — typed ProtocolConfig env adapter + JSON round-trip
+    # test_protocol_config — typed ProtocolConfig env adapter + RUN_RECEIPT keys
     flexaids_add_unit_test(test_protocol_config
         SOURCES
             tests/test_protocol_config.cpp
             LIB/ProtocolConfig.cpp
+            LIB/RunReceipt.cpp
         TEST_NAME ProtocolConfigTests
     )
 

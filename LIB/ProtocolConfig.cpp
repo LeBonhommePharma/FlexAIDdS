@@ -109,15 +109,45 @@ ProtocolConfig ProtocolConfig::from_env() {
     cfg.vct_normalize_contacts = env_present("FLEXAIDDS_VCT_NORM");
     if (auto v = env_opt_double("FLEXAIDDS_VCT_ENTROPY_WEIGHT")) {
         cfg.vct_entropy_weight = *v;
+        cfg.vct_entropy_weight_set = true;
     }
 
     cfg.sharing_alpha = env_opt_double("FLEXAIDDS_SHARING_ALPHA");
     cfg.boom_frac = env_opt_double("FLEXAIDDS_BOOM_FRAC");
     if (auto n = env_opt_int("FLEXAIDDS_N_ELITE")) {
         cfg.n_elite = *n;
+        cfg.n_elite_set = true;
     }
     // Historical DatasetRunner: presence of FLEXAIDDS_USE_SHANNON enables.
     cfg.use_shannon = env_present("FLEXAIDDS_USE_SHANNON");
+
+    // Ranking / emission + GA ablation (config_parser historical getenv sites).
+    // Presence-only: unset keeps JSON/defaults; set applies override.
+    {
+        const char* e = env_raw("FLEXAIDDS_FORCE_CF_RANK_EMISSION");
+        if (e && e[0] != '\0') {
+            if (e[0] == '1' || e[0] == 't' || e[0] == 'T' || e[0] == 'y' || e[0] == 'Y')
+                cfg.force_cf_rank_emission = true;
+            else if (e[0] == '0' || e[0] == 'f' || e[0] == 'F' || e[0] == 'n' || e[0] == 'N')
+                cfg.force_cf_rank_emission = false;
+        }
+    }
+    {
+        const char* e = env_raw("FLEXAIDDS_CLASSIC_ENTROPY_RANKING");
+        if (e && e[0] != '\0') {
+            if (e[0] == '0' || e[0] == 'f' || e[0] == 'F' || e[0] == 'n' || e[0] == 'N')
+                cfg.classic_entropy_ranking = false;
+            else if (e[0] == '1' || e[0] == 't' || e[0] == 'T' || e[0] == 'y' || e[0] == 'Y')
+                cfg.classic_entropy_ranking = true;
+        }
+    }
+    cfg.entropy_weight = env_opt_double("FLEXAIDDS_ENTROPY_WEIGHT");
+    {
+        const char* e = env_raw("FLEXAIDDS_DIVERSITY_MONITORING");
+        if (e && e[0] != '\0') {
+            cfg.diversity_monitoring = (std::atoi(e) != 0);
+        }
+    }
 
     cfg.thermo_enabled = env_present("FLEXAIDDS_THERMO");
     if (auto v = env_opt_double("FLEXAIDDS_T_EFF")) {
@@ -242,6 +272,7 @@ std::string ProtocolConfig::to_json() const {
     o << "\"vct_r0\":" << vct_r0 << ',';
     json_bool(o, "vct_normalize_contacts", vct_normalize_contacts);
     o << "\"vct_entropy_weight\":" << vct_entropy_weight << ',';
+    json_bool(o, "vct_entropy_weight_set", vct_entropy_weight_set);
     if (sharing_alpha) {
         o << "\"sharing_alpha\":" << *sharing_alpha << ',';
     } else {
@@ -253,6 +284,27 @@ std::string ProtocolConfig::to_json() const {
         o << "\"boom_frac\":null,";
     }
     o << "\"n_elite\":" << n_elite << ',';
+    json_bool(o, "n_elite_set", n_elite_set);
+    if (force_cf_rank_emission) {
+        json_bool(o, "force_cf_rank_emission", *force_cf_rank_emission);
+    } else {
+        o << "\"force_cf_rank_emission\":null,";
+    }
+    if (classic_entropy_ranking) {
+        json_bool(o, "classic_entropy_ranking", *classic_entropy_ranking);
+    } else {
+        o << "\"classic_entropy_ranking\":null,";
+    }
+    if (entropy_weight) {
+        o << "\"entropy_weight\":" << *entropy_weight << ',';
+    } else {
+        o << "\"entropy_weight\":null,";
+    }
+    if (diversity_monitoring) {
+        json_bool(o, "diversity_monitoring", *diversity_monitoring);
+    } else {
+        o << "\"diversity_monitoring\":null,";
+    }
     json_bool(o, "use_shannon", use_shannon);
     json_bool(o, "thermo_enabled", thermo_enabled);
     o << "\"t_eff\":" << t_eff << ',';
@@ -309,14 +361,30 @@ ProtocolConfig ProtocolConfig::from_json(const std::string& json_text) {
         cfg.vct_r0 = root["vct_r0"].as_double(7.0);
     if (!root["vct_normalize_contacts"].is_null())
         cfg.vct_normalize_contacts = root["vct_normalize_contacts"].as_bool(false);
-    if (!root["vct_entropy_weight"].is_null())
+    if (!root["vct_entropy_weight"].is_null()) {
         cfg.vct_entropy_weight = root["vct_entropy_weight"].as_double(0.0);
+        cfg.vct_entropy_weight_set = true;
+    }
+    if (!root["vct_entropy_weight_set"].is_null())
+        cfg.vct_entropy_weight_set = root["vct_entropy_weight_set"].as_bool(false);
     if (!root["sharing_alpha"].is_null())
         cfg.sharing_alpha = root["sharing_alpha"].as_double(4.0);
     if (!root["boom_frac"].is_null())
         cfg.boom_frac = root["boom_frac"].as_double(1.0);
-    if (!root["n_elite"].is_null())
+    if (!root["n_elite"].is_null()) {
         cfg.n_elite = root["n_elite"].as_int(1);
+        cfg.n_elite_set = true;
+    }
+    if (!root["n_elite_set"].is_null())
+        cfg.n_elite_set = root["n_elite_set"].as_bool(false);
+    if (!root["force_cf_rank_emission"].is_null())
+        cfg.force_cf_rank_emission = root["force_cf_rank_emission"].as_bool(false);
+    if (!root["classic_entropy_ranking"].is_null())
+        cfg.classic_entropy_ranking = root["classic_entropy_ranking"].as_bool(true);
+    if (!root["entropy_weight"].is_null())
+        cfg.entropy_weight = root["entropy_weight"].as_double(0.5);
+    if (!root["diversity_monitoring"].is_null())
+        cfg.diversity_monitoring = root["diversity_monitoring"].as_bool(true);
     if (!root["use_shannon"].is_null())
         cfg.use_shannon = root["use_shannon"].as_bool(false);
     if (!root["thermo_enabled"].is_null())

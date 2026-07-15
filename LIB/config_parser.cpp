@@ -10,7 +10,6 @@
 #include "statmech.h"
 
 #include <cstring>
-#include <cstdlib>
 #include <stdexcept>
 
 // ─── Helper: safely get a value from section.key with fallback ───────────
@@ -43,7 +42,12 @@ json::Value load_config(const std::string& config_path) {
     return json::merge(defaults, user_config);
 }
 
-void apply_config(const json::Value& config, FA_Global* FA, GB_Global* GB) {
+void apply_config(const json::Value& config, FA_Global* FA, GB_Global* GB,
+                  const flexaids::ProtocolConfig* protocol) {
+    // Single snapshot at entry: avoids dual-protocol if env mutates mid-apply.
+    const flexaids::ProtocolConfig local_proto =
+        protocol ? flexaids::ProtocolConfig{} : flexaids::ProtocolConfig::from_env();
+    const flexaids::ProtocolConfig& proto = protocol ? *protocol : local_proto;
 
     // ── Scoring ──
     {
@@ -64,8 +68,8 @@ void apply_config(const json::Value& config, FA_Global* FA, GB_Global* GB) {
         // keeps the extensive score so existing arms stay byte-for-byte stable.
         FA->vct_normalize_contacts = jbool(config, "scoring", "vct_normalize_contacts", false) ? 1 : 0;
         FA->vct_entropy_weight = jdbl(config, "scoring", "vct_entropy_weight", 0.0);
-        if (const char* e = std::getenv("FLEXAIDDS_VCT_ENTROPY_WEIGHT"))
-            FA->vct_entropy_weight = std::atof(e);
+        if (proto.vct_entropy_weight_set)
+            FA->vct_entropy_weight = proto.vct_entropy_weight;
         FA->useacs          = jbool(config, "scoring", "accessible_surface", false) ? 1 : 0;
         FA->acsweight       = jflt(config, "scoring", "acs_weight", 1.0f);
         FA->solventterm     = jflt(config, "scoring", "solvent_penalty", 0.0f);
@@ -153,18 +157,13 @@ void apply_config(const json::Value& config, FA_Global* FA, GB_Global* GB) {
         if (!jbool(config, "thermodynamics", "classic_entropy_ranking", true)) {
             FA->force_cf_rank_emission = true;
         }
-        if (const char* e = std::getenv("FLEXAIDDS_FORCE_CF_RANK_EMISSION")) {
-            if (e[0] == '1' || e[0] == 't' || e[0] == 'T' || e[0] == 'y' || e[0] == 'Y')
-                FA->force_cf_rank_emission = true;
-            else if (e[0] == '0' || e[0] == 'f' || e[0] == 'F' || e[0] == 'n' || e[0] == 'N')
-                FA->force_cf_rank_emission = false;
+        // ProtocolConfig overrides (snapshot); nullopt = leave JSON-derived value.
+        if (proto.force_cf_rank_emission.has_value()) {
+            FA->force_cf_rank_emission = *proto.force_cf_rank_emission;
         }
-        if (const char* e = std::getenv("FLEXAIDDS_CLASSIC_ENTROPY_RANKING")) {
-            // 0/false → CF emission (rollback); 1/true → classic entropy (default)
-            if (e[0] == '0' || e[0] == 'f' || e[0] == 'F' || e[0] == 'n' || e[0] == 'N')
-                FA->force_cf_rank_emission = true;
-            else if (e[0] == '1' || e[0] == 't' || e[0] == 'T' || e[0] == 'y' || e[0] == 'Y')
-                FA->force_cf_rank_emission = false;
+        if (proto.classic_entropy_ranking.has_value()) {
+            // classic=false → CF emission; classic=true → entropy ranking (default).
+            FA->force_cf_rank_emission = !*proto.classic_entropy_ranking;
         }
         FA->use_tqcm  = jbool(config, "turboquant", "compressed_contact_matrix", false);
         FA->use_tqens = jbool(config, "turboquant", "ensemble_compression", false);
@@ -239,33 +238,21 @@ void apply_config(const json::Value& config, FA_Global* FA, GB_Global* GB) {
         // ── True GA elitism (v27) ──
         GB->n_elite                       = jint(config, "ga", "n_elite", 1);
 
-        // Env-var overrides for the three v27 GA-internal elitism knobs.  These
-        // win over the JSON config so a single benchmark binary can sweep them
-        // without re-emitting dock_config.json:
-        //   FLEXAIDDS_N_ELITE       — number of protected elites (GB->n_elite)
-        //   FLEXAIDDS_SHARING_ALPHA — niche-sharing exponent     (GB->alpha)
-        //   FLEXAIDDS_BOOM_FRAC     — boom-injection fraction     (GB->boom_inject_fraction)
-        if (const char* e = std::getenv("FLEXAIDDS_N_ELITE"))
-            GB->n_elite = std::atoi(e);
-        if (const char* e = std::getenv("FLEXAIDDS_SHARING_ALPHA"))
-            GB->alpha = std::atof(e);
-        if (const char* e = std::getenv("FLEXAIDDS_BOOM_FRAC"))
-            GB->boom_inject_fraction = std::atof(e);
+        // ProtocolConfig overrides for v27 GA-internal elitism knobs. These win
+        // over JSON so a single binary can sweep them without re-emitting
+        // dock_config.json (env adapter via ProtocolConfig::from_env).
+        if (proto.n_elite_set)
+            GB->n_elite = proto.n_elite;
+        if (proto.sharing_alpha.has_value())
+            GB->alpha = *proto.sharing_alpha;
+        if (proto.boom_frac.has_value())
+            GB->boom_inject_fraction = *proto.boom_frac;
 
-        // ── Entropy-ablation hooks (default-off: unset → byte-identical run) ──
-        // FLEXAIDDS_ENTROPY_WEIGHT — SMFREE Boltzmann/rank blend w∈[0,1]
-        //   (gaboom.cpp:2151). w=0 collapses SMFREE fitness to pure rank
-        //   selection (no thermodynamic free-energy bias) — ablates the
-        //   StatMech selection-entropy channel without changing β/T.
-        if (const char* e = std::getenv("FLEXAIDDS_ENTROPY_WEIGHT"))
-            GB->entropy_weight = std::atof(e);
-        // FLEXAIDDS_DIVERSITY_MONITORING — 0 disables the gene-space Shannon
-        //   diversity machinery: SEC termination reverts to energy-histogram
-        //   only (sec_may_terminate→true, gaboom.cpp:411) AND the
-        //   catastrophic-mutation rescue is switched off (gaboom.cpp:672).
-        //   Isolates the configurational-diversity (allele-entropy) channel.
-        if (const char* e = std::getenv("FLEXAIDDS_DIVERSITY_MONITORING"))
-            GB->diversity_monitoring = (std::atoi(e) != 0) ? 1 : 0;
+        // Entropy-ablation hooks (unset → byte-identical to JSON defaults).
+        if (proto.entropy_weight.has_value())
+            GB->entropy_weight = *proto.entropy_weight;
+        if (proto.diversity_monitoring.has_value())
+            GB->diversity_monitoring = *proto.diversity_monitoring ? 1 : 0;
     }
 
     // ── Output ──

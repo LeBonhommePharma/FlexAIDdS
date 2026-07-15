@@ -7,6 +7,7 @@
 // SPDX-License-Identifier: Apache-2.0
 #pragma once
 
+#include "ProtocolConfig.h"
 #include "json_value.h"
 #include <string>
 
@@ -21,4 +22,8 @@ typedef struct GB_Global_struct GB_Global;
 json::Value load_config(const std::string& config_path);
 
 // Apply merged JSON config to FA_Global and GB_Global structs.
-void apply_config(const json::Value& config, FA_Global* FA, GB_Global* GB);
+// Optional `protocol` is a pre-snapshotted ProtocolConfig (no mid-apply getenv).
+// When null, apply_config takes a single ProtocolConfig::from_env() snapshot at
+// entry so env overrides stay dual-protocol-safe for this apply path.
+void apply_config(const json::Value& config, FA_Global* FA, GB_Global* GB,
+                  const flexaids::ProtocolConfig* protocol = nullptr);
