@@ -14,7 +14,7 @@ Treat this skill as the shared benchmark contract. Any agent can work the benchm
 Before touching a live run:
 
 1. Read `AGENTS.md` (repo root).
-2. Read `CLAUDE_BENCHMARK_HANDOFF.md` if present and the task could overlap older v90-v94 campaign work.
+2. Read `.agents/skills/flexaidds-benchmarking/LIVE_QUEUE.md` (live three-engine / C0 full85 status). Also read root `CLAUDE_BENCHMARK_HANDOFF.md` if present (gitignored mirror).
 3. Resolve and pin the active C++ build (rejects stale `FLEXAIDDS_BUILD` paths):
 
 ```bash
@@ -37,7 +37,9 @@ Resolve everything from the git checkout root or documented env vars. Never comm
 |---------|----------|-----------------|
 | Repo / workspace root | `FLEXAIDDS_ROOT` | `git rev-parse --show-toplevel` |
 | Astex entropy module | (under root) | `benchmarks/astex_entropy` (local workspace; gitignored) |
-| Long-term iCloud results | `FLEXAIDDS_ICLOUD` | `~/Library/Mobile Documents/com~apple~CloudDocs/FlexAIDdS_benchmarks/astex_entropy` |
+| Long-term iCloud results | `FLEXAIDDS_ICLOUD` | `~/Library/Mobile Documents/com~apple~CloudDocs/FlexAIDdS_benchmarks` (campaigns under `results/campaigns/`; three-engine queue under `queues/`) |
+| Three-engine queue | `FLEXAIDDS_QUEUE_ROOT` | `$FLEXAIDDS_ICLOUD/queues/three_engine_entropy_q1` |
+| Live handoff (all agents) | (repo file) | `.agents/skills/flexaidds-benchmarking/LIVE_QUEUE.md` — **read before launch/resume** |
 | PoseBusters `bust` binary | `FLEXAIDDS_POSEBUSTERS_BIN` | `$FLEXAIDDS_ROOT/.venv-posebusters/bin/bust` |
 | tENCoM/Eigen diff binary | `FLEXAIDDS_TENCOM_BIN` | `$FLEXAIDDS_ROOT/build_lto/tencom_entropy_diff` |
 | Astex entropy venv | `FLEXAIDDS_ASTEX_VENV` | `$FLEXAIDDS_ROOT/.venv-astex-entropy` |

@@ -4,6 +4,16 @@ Optimized for Cursor, Windsurf, old Codex-style completions, or any AI code edit
 
 **Source of truth**: `AGENTS.md` (repo root). Always have the user paste the latest `AGENTS.md` + `CLAUDE.md` into project rules / `.cursorrules` when starting work on this repo. For Astex entropy benchmark work, also load `.agents/skills/flexaidds-benchmarking/SKILL.md`.
 
+## Live benchmark queue (read first)
+
+Before launching, killing, or re-running any docking/benchmark campaign, open and follow:
+
+- **`.agents/skills/flexaidds-benchmarking/LIVE_QUEUE.md`** (tracked) — live PIDs, iCloud paths, C0 full85 status, oracle-ceiling separation, dual-launch rules.
+- **`CLAUDE_BENCHMARK_HANDOFF.md`** (repo root, often gitignored mirror of the same content) if present.
+- **`$FLEXAIDDS_QUEUE_ROOT/STATUS.md`** after `source ~/.flexaidds_env` (or `scripts/use_icloud_benchmark_storage.sh`).
+
+**Current production launch (2026-07-15):** C0 full85 **defined-cleft-redock**, no native seed, N=85, T=298, outputs under **iCloud** `$FLEXAIDDS_RESULTS/campaigns/C0_full85_defined_cleft_nativeseed_forbidden/`. If that run’s PID is live → **monitor only; never dual-launch**.
+
 ## Repository Hygiene (from AGENTS.md)
 - Never commit `.env`, `.env.*`, or `.envrc` files.
 - Never add machine-specific absolute paths to committed skills or shared scripts. Resolve from repo root (`Path(__file__).resolve().parents[...]`) or `FLEXAIDDS_*` env vars — not `/Users/<username>/...`.
