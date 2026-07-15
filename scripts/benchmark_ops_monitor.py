@@ -5,8 +5,12 @@ Single entry point for:
   1) Live computing status (PIDs, RAM, campaign N/totals)
   2) Deep forensic analysis of newly finished result.csv targets
 
-Designed for scheduler / cron / agent loops. Never kills processes.
+Designed for scheduler / cron / agent loops. Never kills dock processes.
 Never dual-launches campaigns.
+
+**Anti-hang (production):** prefer ``~/flexaidds_results`` campaign trees.
+Never ``rglob`` / recursive ``find`` under CloudDocs. Optional iCloud status
+writes are best-effort with short timeouts via ``icloud_safe_io``.
 
 Usage:
   python3 scripts/benchmark_ops_monitor.py
@@ -15,7 +19,7 @@ Usage:
 
 Environment:
   FLEXAIDDS_ROOT, FLEXAIDDS_ICLOUD, FLEXAIDDS_RESULTS, FLEXAIDDS_QUEUE_ROOT
-  FLEXAIDDS_MONITOR_SCRATCH
+  FLEXAIDDS_LOCAL_ROOT, FLEXAIDDS_MONITOR_SCRATCH
 
 Copyright 2026 Le Bonhomme Pharma
 SPDX-License-Identifier: Apache-2.0
@@ -33,6 +37,15 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
+
+# scripts/ on sys.path for icloud_safe_io
+_SCRIPTS = Path(__file__).resolve().parent
+if str(_SCRIPTS) not in sys.path:
+    sys.path.insert(0, str(_SCRIPTS))
+try:
+    import icloud_safe_io as _icio
+except ImportError:  # pragma: no cover
+    _icio = None  # type: ignore
 
 
 # ─── paths ────────────────────────────────────────────────────────────────────
@@ -56,10 +69,17 @@ def repo_root() -> Path:
         return Path.cwd().resolve()
 
 
+def local_root() -> Path:
+    if _icio is not None:
+        return _icio.local_root()
+    env = os.environ.get("FLEXAIDDS_LOCAL_ROOT", "").strip()
+    return Path(env).expanduser() if env else Path.home() / "flexaidds_results"
+
+
 def icloud_root() -> Path:
     env = os.environ.get("FLEXAIDDS_ICLOUD")
-    if env and Path(env).expanduser().is_dir():
-        return Path(env).expanduser().resolve()
+    if env:
+        return Path(env).expanduser()
     return (
         Path.home()
         / "Library/Mobile Documents/com~apple~CloudDocs/FlexAIDdS_benchmarks"
@@ -67,27 +87,34 @@ def icloud_root() -> Path:
 
 
 def results_root() -> Path:
+    """iCloud durable results (may hang if scanned deeply — prefer local)."""
     env = os.environ.get("FLEXAIDDS_RESULTS")
     if env:
-        p = Path(env).expanduser()
-        if p.is_dir():
-            return p.resolve()
-    return (icloud_root() / "results").resolve()
+        return Path(env).expanduser()
+    return icloud_root() / "results"
+
+
+def local_campaigns_root() -> Path:
+    return local_root() / "campaigns"
 
 
 def queue_root() -> Path:
     env = os.environ.get("FLEXAIDDS_QUEUE_ROOT")
-    if env and Path(env).expanduser().is_dir():
-        return Path(env).expanduser().resolve()
-    return (icloud_root() / "queues/three_engine_entropy_q1").resolve()
+    if env:
+        return Path(env).expanduser()
+    # Prefer local queue staging for pid files / logs
+    local_q = local_root() / "three_engine_entropy_q1"
+    if (local_q / "logs").is_dir() or (local_q / "bin").is_dir():
+        return local_q
+    return icloud_root() / "queues/three_engine_entropy_q1"
 
 
 def default_scratch() -> Path:
     env = os.environ.get("FLEXAIDDS_MONITOR_SCRATCH")
     if env:
         return Path(env).expanduser()
-    return Path("/tmp/flexaidds_benchmark_monitor")
-
+    # Prefer local ops dir over /tmp that vanishes
+    return local_root() / "logs" / "ops_monitor"
 
 # ─── ops: memory + processes ──────────────────────────────────────────────────
 
@@ -191,8 +218,18 @@ def _hint(cmd: str) -> str:
 
 def current_dock_target(procs: List[Dict[str, Any]]) -> Optional[str]:
     for p in procs:
-        m = re.search(r"astex_diverse/([0-9A-Za-z]+)/", p["command"])
-        if m and "FlexAID" in p["command"]:
+        cmd = p["command"]
+        if "FlexAID" not in cmd and "FlexAIDdS" not in cmd:
+            continue
+        m = re.search(r"astex_diverse/([0-9A-Za-z]{4})/", cmd)
+        if m:
+            return m.group(1)
+        # local OUT: .../campaigns/.../1IA1/r4/1IA1 or .../1IA1/1IA1_dockin
+        m = re.search(r"/([0-9A-Za-z]{4})/(?:r\d+/)?(?:\1_|dock_config)", cmd)
+        if m:
+            return m.group(1)
+        m = re.search(r"/([0-9A-Za-z]{4})/[0-9A-Za-z]{4}_dockin", cmd)
+        if m:
             return m.group(1)
     return None
 
@@ -344,17 +381,38 @@ def classify(rec: Dict[str, Any]) -> List[str]:
 
 
 def scan_campaign(camp_id: str, root: Path, total: int) -> Dict[str, Any]:
-    if not root.is_dir():
-        return {
-            "id": camp_id,
-            "path": str(root),
-            "exists": False,
-            "N": 0,
-            "total": total,
-            "results": [],
-        }
+    """Scan one campaign. Uses one-level glob only (never rglob). CloudDocs-safe."""
+    empty = {
+        "id": camp_id,
+        "path": str(root),
+        "exists": False,
+        "N": 0,
+        "total": total,
+        "results": [],
+        "storage": "unknown",
+    }
+    try:
+        exists = root.is_dir()
+    except OSError:
+        return empty
+    if not exists:
+        return empty
+
+    storage = "clouddocs" if (_icio and _icio.is_clouddocs(root)) else "local"
+    if _icio is not None:
+        csv_paths = _icio.safe_glob_result_csvs(root, timeout_s=20.0)
+    else:
+        try:
+            csv_paths = [
+                p
+                for p in sorted(root.glob("*/result.csv"))
+                if "incomplete" not in p.parent.name
+            ]
+        except OSError:
+            csv_paths = []
+
     results: List[Dict[str, Any]] = []
-    for rc in sorted(root.glob("*/result.csv")):
+    for rc in csv_paths:
         try:
             results.append(parse_result_csv(rc))
         except Exception as e:
@@ -382,6 +440,7 @@ def scan_campaign(camp_id: str, root: Path, total: int) -> Dict[str, Any]:
         "S2_rate": (s2 / n) if n else None,
         "BCR_rate": (bcr / n) if n else None,
         "results": results,
+        "storage": storage,
     }
 
 
@@ -402,9 +461,18 @@ def save_state(path: Path, state: Dict[str, Any]) -> None:
 
 
 def dock_config_budget(target_dir: Path) -> Dict[str, Any]:
-    """Pull pop/gen from first dock_config.json under target if present."""
-    for p in target_dir.glob("**/dock_config.json"):
+    """Pull pop/gen from dock_config.json (shallow only — no **/ under CloudDocs)."""
+    # Prefer top-level then one restart subdir; never rglob.
+    candidates = [target_dir / "dock_config.json"]
+    try:
+        for sub in sorted(target_dir.glob("r*/dock_config.json"))[:5]:
+            candidates.append(sub)
+    except OSError:
+        pass
+    for p in candidates:
         try:
+            if not p.is_file():
+                continue
             d = json.loads(p.read_text())
             ga = d.get("ga") or d.get("genetic_algorithm") or {}
             return {
@@ -566,25 +634,57 @@ def main(argv: Optional[List[str]] = None) -> int:
     scratch = args.scratch or default_scratch()
     scratch.mkdir(parents=True, exist_ok=True)
 
-    # Prefer sourcing convention via env already set by wrapper
+    # Prefer local campaign trees; iCloud is durable mirror only.
     res = results_root()
+    local_camps = local_campaigns_root()
     q = queue_root()
+    local_log = local_root() / "logs" / "C0_claim"
 
     mem = mem_snapshot()
     procs = list_procs()
     cur = current_dock_target(procs)
+    # Pid files: local first, then queue (may be iCloud — only open single small files)
+    def _pid_prefer(*paths: Path) -> Dict[str, Any]:
+        for p in paths:
+            info = pid_file(p)
+            if info.get("exists"):
+                return info
+        return {"exists": False, "live": False, "pid": None}
+
     pid_files = {
-        "C0_claim": pid_file(q / "logs/C0_claim_clean.pid"),
-        "C0_legacy": pid_file(q / "logs/C0_full85.pid"),
-        "ab_chain": pid_file(q / "logs/run_AB_pilot8_chain.pid"),
-        "throughput": pid_file(q / "logs/throughput_maximizer.pid"),
+        "C0_claim": _pid_prefer(
+            local_log / "C0_claim_clean.pid",
+            q / "logs/C0_claim_clean.pid",
+        ),
+        "C0_legacy": _pid_prefer(q / "logs/C0_full85.pid"),
+        "ab_chain": _pid_prefer(q / "logs/run_AB_pilot8_chain.pid"),
+        "throughput": _pid_prefer(q / "logs/throughput_maximizer.pid"),
+        "sync_loop": _pid_prefer(local_log / "sync_ops_loop.pid"),
     }
 
     campaigns: List[Dict[str, Any]] = []
     for spec in CAMPAIGN_SPECS:
-        root = res / spec["rel"]
+        # Local campaign dir wins when present
+        camp_name = Path(spec["rel"]).name
+        local_root_c = local_camps / camp_name
+        icloud_root_c = res / spec["rel"]
+        try:
+            local_ok = local_root_c.is_dir()
+        except OSError:
+            local_ok = False
+        root = local_root_c if local_ok else icloud_root_c
         campaigns.append(scan_campaign(spec["id"], root, spec["total"]))
-
+    # Discover extra local campaigns (e.g. C0_v137_*) without walking iCloud
+    try:
+        known = {Path(s["rel"]).name for s in CAMPAIGN_SPECS}
+        if local_camps.is_dir():
+            for d in sorted(local_camps.iterdir()):
+                if not d.is_dir() or d.name in known:
+                    continue
+                if d.name.startswith(("C0_", "DPFO_", "three_engine")):
+                    campaigns.append(scan_campaign(d.name, d, 85))
+    except OSError:
+        pass
     state_path = scratch / "finished_run_analysis_state.json"
     state = load_state(state_path)
     new_items, state = analyze_new(campaigns, state)
@@ -614,11 +714,19 @@ def main(argv: Optional[List[str]] = None) -> int:
     (scratch / f"monitor_{hhmm}.txt").write_text(brief)
     (scratch / "monitor_latest.txt").write_text(brief)
 
-    # Also mirror brief to iCloud queue logs for durability
+    # Mirror brief to *local* ops log first (never block on CloudDocs).
     try:
-        qlog = q / "logs"
-        qlog.mkdir(parents=True, exist_ok=True)
-        (qlog / "benchmark_ops_latest.md").write_text(brief)
+        llog = local_root() / "logs" / "ops"
+        llog.mkdir(parents=True, exist_ok=True)
+        (llog / "benchmark_ops_latest.md").write_text(brief)
+    except OSError:
+        pass
+    # Optional thin iCloud write — best-effort only, no retry loops
+    try:
+        if _icio is None or not _icio.is_clouddocs(q):
+            qlog = q / "logs"
+            qlog.mkdir(parents=True, exist_ok=True)
+            (qlog / "benchmark_ops_latest.md").write_text(brief)
     except OSError:
         pass
 
@@ -643,7 +751,14 @@ def main(argv: Optional[List[str]] = None) -> int:
             }
             for i in new_items
         ],
-        "paths": {"results": str(res), "queue": str(q), "scratch": str(scratch)},
+        "paths": {
+            "results_icloud": str(res),
+            "campaigns_local": str(local_camps),
+            "queue": str(q),
+            "scratch": str(scratch),
+            "local_root": str(local_root()),
+        },
+        "anti_hang": "local_first_no_clouddocs_rglob",
     }
     (scratch / "monitor_latest.json").write_text(json.dumps(payload, indent=2) + "\n")
     if args.json_out:

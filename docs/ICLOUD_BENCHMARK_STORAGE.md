@@ -45,7 +45,41 @@ nohup bash "$FLEXAIDDS_ROOT/scripts/claim_icloud_sync_loop.sh" &
 1. DatasetRunner **re-pools** completed targets (Fix B / 3Dsig re-elect) by walking pose trees.  
 2. CloudDocs coordinates every open/stat; large pose dirs → **fileprovider stall**.  
 3. Parent `benchmark_datasets` sits at **0% CPU** with **no FlexAIDdS child** for hours.  
-4. Ops tools that `find` under CloudDocs also hang — use local logs + glob only.
+4. Ops tools that `find` / `rglob` / bulk `md5` under CloudDocs also hang — use local logs + glob only.
+
+## Production anti-hang toolkit (required for agents & cron)
+
+| Tool | Role |
+|------|------|
+| `scripts/icloud_safe_io.py` | Detect CloudDocs; **timeout-bounded** read/md5; **materialize** files to `~/flexaidds_results/pins/materialize/` before hashing |
+| `scripts/benchmark_ops_monitor.py` | **Local-first** campaign scan; one-level `*/result.csv` only; no `**/` rglob on CloudDocs |
+| `scripts/run_benchmark_ops_monitor.sh` | Wall-clock timeout (default 90s); optional `--reap-walkers` |
+| `scripts/reap_hung_icloud_walkers.sh` | Kill stuck `find`/`md5`/`rglob` on CloudDocs **only** — **never** FlexAIDdS / `benchmark_datasets` |
+| `scripts/claim_icloud_sync_loop.sh` | Thin local → iCloud mirror every N min |
+
+### Rules for AI agents (hard)
+
+1. **Never** `find ~` or `Path.rglob` under `Mobile Documents/`.  
+2. Hash CloudDocs files only via:  
+   `python3 scripts/icloud_safe_io.py md5 <path>` (materializes then hashes locally).  
+3. Prefer paths under `$FLEXAIDDS_LOCAL_ROOT` (`~/flexaidds_results`).  
+4. If ops cron stalls, run:  
+   `bash scripts/reap_hung_icloud_walkers.sh` then re-run the monitor.  
+5. Do **not** set `HOMEBREW_NO_REQUIRE_TAP_TRUST=1` as a hang “fix” — unrelated.
+
+### CLI examples
+
+```bash
+# Safe hash (works even if path is under CloudDocs)
+python3 scripts/icloud_safe_io.py md5 \
+  "$HOME/Documents/PhD/AtomTypes/MC_st0r5.2_6.dat"
+
+# Materialize a CloudDocs file into local pin-cache
+python3 scripts/icloud_safe_io.py materialize "/path/under/CloudDocs/file.dat"
+
+# Ops tick (scheduler)
+bash scripts/run_benchmark_ops_monitor.sh --reap-walkers
+```
 
 ## Enforcement
 
