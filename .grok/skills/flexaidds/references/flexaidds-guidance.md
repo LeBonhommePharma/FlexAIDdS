@@ -47,15 +47,31 @@ Prefer saying **cf_score** / **CF proxy** in new documentation while leaving CSV
 4. **XML / packaging hygiene** — any new skill, prompt pack, or Codex/OpenAI agent definition must be SKILL.md + YAML frontmatter (never raw XML with unescaped `&`, `∆`, or multi-root documents). The validator script enforces this.
 5. **Git discipline** — branch, commit, push only after validator + tests. Never force, never rewrite shared history without explicit `/confirm` from the human.
 
+## Softβ / FO / TEMPER (election vs sampling)
+
+| Name | What it is | Default / note |
+|------|------------|----------------|
+| Softβ \(\tilde G=\tilde H-T\tilde S\) | Soft free energy over **mode members** on **CF** (≡ ACF) | DatasetRunner S1: **OFF** (`FLEXAIDDS_SOFTBETA_ELECTION=0`) |
+| Engine TEMPER + CLUSTA FO | Arm B: density clustering + soft-T emission order | **Not** the same as DatasetRunner Softβ flag |
+| TEMPER value (e.g. 21) | Soft temperature β=1/T on CF a.u. | **Not** physical K or \(k_B T\) in kcal unless calibrated |
+
+Softβ **reorders** modes; it does **not** sample. If BCR=0 (no head ≤2 Å), Softβ cannot invent S1 success. Policy: `docs/implementation/softbeta_election_policy.md`.
+
 ## Common Pitfalls to Flag
 
 - Assuming a high Voronoi CF score == tight binder (ignores entropy).
 - Reporting "∆G = X kcal/mol" from a 300 K single-temperature GA run without the full ledger + concentration term.
+- Equating Softβ \(\tilde G\) with experimental ΔG or with FO@TEMPER21 pilot arm B.
+- Re-ranking BCR=0 ensembles with Softβ and claiming docking success.
+- Emitting `SHARESCL 0.20` in `ga.inp` (typo; production is **10**).
+- Using a binary that drops the last LIG.inp HETTYP atom (`latm = atm_cnt-1` bug) — integrity gate must fail closed.
+- Claiming ranking science when native CF oracle fails (crystal CF hundreds of units worse than best GA CF).
 - Editing `LIB/statmech.cpp`, `LIB/BindingMode.cpp`, `LIB/Vcontacts.cpp`, or `python/flexaidds/thermodynamics.py` without adding or updating the corresponding GoogleTest / pytest.
 - Treating the Grok share link body as authoritative when the fetch only returned the title "Grok Fixes FlexAID Skill XML" — always fall back to local files and the current prompt.
-- Using a legacy `AMINO8/12/26.def` with modern `MC_*.dat` matrices (different atom type numbering → wrong typing and scoring).
+- Using a legacy `AMINO8/12/26.def` with modern `MC_*.dat` matrices (different atom type numbering → wrong typing and scoring). `AMINO26.def` on disk is unused unless `DEFTYP` is set.
 - Forgetting that `FLEDIH` lines in `AMINO.def` are what actually enable side-chain sampling in the GA.
 - Missing Lovell_LIB.dat, rotobs.lst, or SYBYL_emat.dat — these are part of the complete runtime data pack required by the binary.
+- Baking `/Users/<name>/...` absolute paths into skills or scripts (forbidden; use `FLEXAIDDS_*` or repo-relative resolution).
 
 ## Definition Files (AMINO*.def / NUCLEOTIDES*.def) — Practical Notes
 

@@ -11,22 +11,49 @@ description: Coordinate FlexAIDdS and Astex entropy benchmarks across agents. Us
 
 Treat this skill as the shared benchmark contract. Any agent can work the benchmark, but it must leave artifacts and status clear enough that another agent can continue without asking LP which AI handled the prior step.
 
-**Primary live goal:** three-engine Astex Diverse 85 — FlexAID 2015 (A) vs master entropy off (B0) vs master entropy on (B) vs FlexAIDdS (C0/C). See `LIVE_QUEUE.md`.
+**Primary live goal:** three-engine **classic FlexAID** Astex Diverse red-pair — **A** (2015 CF) vs **B0** (master CF) vs **B** (master FO + TEMPER21). FlexAIDdS **C0/C** DatasetRunner is a **separate** packaging path until FO dual-suffix + Softβ policy are verified. Prefer `docs/implementation/3dsig_red_pair_protocol.md` over stale `LIVE_QUEUE.md` when they conflict.
+
+### Hard bans (misgiving prevention)
+
+| Do | Don't |
+|----|--------|
+| Serial **one** heavy arm at a time (A→B0→B) | Dual-launch A with B0/B or C0 on one Mac |
+| **SHARESCL 10** / SHAREPEK 5 in `ga.inp` | Reintroduce **SHARESCL 0.20** (pilot typo) |
+| Softβ DatasetRunner election **OFF** by default | Claim Softβ will fix **BCR=0** / re-rank pilot heads for ≤2 Å |
+| Call arm B **FO@TEMPER21** | Call arm B “Softβ S1 rescoring of CF ensembles” |
+| Fail-closed ligand integrity + native CF oracle | Claim ranking science when oracle fails (native CF ≫ decoy CF) |
+| Local-first OUT/work for classic arms | Write live GA traffic only to hanging iCloud paths |
+| Rebuild binary after `read_lig` latm fix | Run “fixed science” on old Mach-O that drops last HETTYP atom |
+
+### Metrics (be precise)
+
+- **3Dsig red-bar success:** **S_top10** (any of ranks 0..9 RMSD ≤ 2.0 Å), 10 sims × 2e6 evals, 10k bootstrap median. Deck Astex Diverse: FlexAID **~0.66**, FlexAIDdS **~0.69**.
+- **S1** = rank-0 only; **BCR** = min RMSD over cluster heads (diagnostic sampling ceiling). Softβ/FO election cannot raise S1 if BCR>2.
+- Modern packages: success for claims may also require PoseBusters — RMSD-only is not enough for PB claim tables.
 
 Before touching a live run:
 
 1. Read `AGENTS.md` (repo root).
-2. Read `CLAUDE_BENCHMARK_HANDOFF.md` if present and the task could overlap older v90-v94 campaign work.
+2. Read `docs/implementation/3dsig_red_pair_protocol.md` + `docs/implementation/softbeta_election_policy.md`.
 3. Resolve and pin the active C++ build (rejects stale `FLEXAIDDS_BUILD` paths):
 
 ```bash
 python3 .grok/skills/flexaidds/scripts/resolve_build.py --check
 ```
 
-4. Run the status script from the repo root:
+4. Ops snapshot (three_engine red-pair only):
 
 ```bash
+bash scripts/run_benchmark_ops_monitor.sh
+# optional older path:
 python3 .agents/skills/flexaidds-benchmarking/scripts/astex_entropy_status.py
+```
+
+5. Preflight canaries when prep changed:
+
+```bash
+bash scripts/run_pilot8_canary_gates.sh --arm B0 --pdb 1P62,1T40 \
+  --work-root "$FLEXAID_WORK_ROOT" --results-root "<OUT>"
 ```
 
 Do not launch duplicate benchmark work if a matching live process or current orchestrator run already exists. Monitor or resume the existing namespace instead.
@@ -108,14 +135,18 @@ Restart rules:
 
 ## Success Definition
 
-A pose is successful only when both are true:
+**3Dsig red-pair (classic A/B0/B) primary statistic:** S_top10 — any of top-10 ranked modes has RMSD ≤ 2.0 Å (deck contract). Report S1 and BCR as diagnostics; do not replace S_top10 with Softβ-only tables.
+
+**Modern / DatasetRunner claim packages:** a pose is claim-successful only when **both** are true:
 
 ```text
 RMSD <= 2.0 A
 PoseBusters passes
 ```
 
-RMSD alone is not success. PoseBusters failure means failure even if RMSD is good.
+RMSD alone is not full claim success. PoseBusters failure means failure even if RMSD is good.
+
+**Science gate after docking:** if S_top10 = 0/N and BCR = 0/N, report **DOCKING COMPLETE — SCIENCE GATE FAIL**. Do not start Softβ election experiments; fix prep/emission/sampling first (`read_lig` latm, SHARESCL 10, clean apo, native CF oracle).
 
 ## Reporting Contract
 

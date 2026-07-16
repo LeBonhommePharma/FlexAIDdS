@@ -32,9 +32,64 @@ metadata:
 
 # FlexAID / FlexAIDδS Skill
 
-**Source of truth:** `AGENTS.md` (repo root). This skill derives from `AGENTS.md` and defers to it when rules conflict. For Astex entropy benchmark launch/monitor/resume work, also read `.agents/skills/flexaidds-benchmarking/SKILL.md`.
+**Source of truth:** `AGENTS.md` (repo root). This skill derives from `AGENTS.md` and defers to it when rules conflict. For Astex entropy benchmark launch/monitor/resume work, also read `.agents/skills/flexaidds-benchmarking/SKILL.md`. For DatasetRunner campaigns, also use the `flexaidds-dataset-runner` skill (home `~/.grok/skills/…`) **only as a thin launcher pointer** — scientific policy lives here and in `AGENTS.md`, not in stale copies.
 
 **Repository hygiene:** Never commit `.env` / secret files. Never add machine-specific absolute paths (`/Users/...`) to committed skills or shared scripts — use repo-relative paths or `FLEXAIDDS_*` environment variables. Run `python3 scripts/check_repo_hygiene.py` before pushing skill changes.
+
+---
+
+## Science / ops contract (post pilot8 — DO NOT MISLEAD)
+
+These rules override any older “Softβ ON by default”, “entropy will lift S1”, or “SHARESCL 0.20” text elsewhere.
+
+### CF proxy vs Softβ vs true ΔG
+
+| Layer | Role | Default |
+|-------|------|---------|
+| **GA search** | Samples **CF/contact-function proxy** (Voronoi VCT) | Always CF search |
+| **Engine TEMPER + CLUSTA FO** (arm **B**) | Density modes + soft-T **ACF** emission when TEMPER>0 | Arm B protocol (`TEMPER 21`, **not** kcal \(k_BT\)) |
+| **DatasetRunner Softβ S1** | Optional election: \(\tilde G=\tilde H-T\tilde S\) over **already clustered** modes | **`FLEXAIDDS_SOFTBETA_ELECTION=0` (OFF)** |
+| **StatMech / tENCoM / solvent ledger** | True-ish thermo only when full path validated | Not implied by Softβ |
+
+- **Softβ ≠ FO@TEMPER21.** Pilot arm B was engine FO + TEMPER21, **not** DatasetRunner Softβ rescoring of CF heads. See `docs/implementation/softbeta_election_policy.md`.
+- **Softβ cannot create ≤2 Å poses if BCR=0** (no near-native among emitted heads). Never re-rank BCR=0 pilots expecting S1 success.
+- Prefer language: “CF soft-β ranking proxy \(\tilde G\)” — **never** “true binding free energy ΔG” unless full ledger is active and labeled.
+
+### Classic three-engine red-pair (A / B0 / B)
+
+| Arm | Engine | TEMPER | CLUSTA | Ranking story |
+|-----|--------|--------|--------|---------------|
+| **A** | FlexAID 2015-era pin | 0 | CF | CF red bar |
+| **B0** | master FlexAID | 0 | CF | CF control |
+| **B** | master FlexAID | **21** | **FO** (single literature MinPts) | Entropy arm = engine soft free energy on modes |
+| **C0** | FlexAIDdS DatasetRunner | separate | separate | Out of band until FO dual-suffix election verified |
+
+- **No dual-launch** of heavy GA on one Mac. Serial **A → B0 → B**. Local-first I/O (`scripts/use_local_first_benchmark_storage.sh`); sync iCloud later.
+- **Matrix pin:** `MC_st0r5.2_6.dat` MD5 **`72d7c7396702331d96ff12d18f831796`**.
+- **PSHARE:** production **`SHARESCL 10`**, **`SHAREPEK 5`**, **`SHAREALF 4`** (`scripts/generate_flexaid_inp.py`). **Never** ship `SHARESCL 0.20` (pilot typo; ~50× niche radius). Override only via `FLEXAIDDS_GA_SHARESCL` with receipt.
+- **AMINO.def** is the live type file from DEPSPA unless `DEFTYP` is set. `AMINO26.def` on disk ≠ used.
+- **Ligand emission:** `LIB/read_lig.cpp` must set **inclusive** `latm = atm_cnt` so last HETTYP atom is emitted (fix for missing 90017/90027). Rebuild binary after that fix; integrity gate catches regressions.
+
+### Fail-closed prep / science gates (before claims)
+
+```bash
+# Prep (wired into generate_flexaid_inp by default)
+python3 scripts/clean_target_apo.py          # strip HOH/metals for redock TARGET
+python3 scripts/validate_ligand_integrity.py --work <work> --max-bond 3.0
+# After FlexAID emits INI / poses:
+python3 scripts/validate_ligand_integrity.py --work <work> --require-ini
+python3 scripts/native_cf_oracle_gate.py --work <work> --results <out>/<pdb>
+# Canary driver
+bash scripts/run_pilot8_canary_gates.sh --arm B0 --pdb 1P62,1T40 ...
+```
+
+- **Native CF oracle:** FAIL (exit 1) when `CF_native > best_ga_cf + tol` → **ranking / Softβ / entropy claims forbidden**. Softβ does not repair a CF landscape that rejects the crystal.
+- **3Dsig success metric (red bars):** **S_top10** = any of ranks 0..9 RMSD ≤ 2.0 Å; median over 10k bootstrap; 10 sims × 2e6 evals. Deck targets ~**0.66 / 0.69** (FlexAID / FlexAIDdS) on Astex Diverse N=85 — **not** pilot8 rates.
+- Modern claim packages still need PoseBusters (+ tENCoM where required by benchmarking skill). RMSD-only is not full claim success.
+
+### Ops monitor scope
+
+`scripts/run_benchmark_ops_monitor.sh` / `benchmark_ops_monitor.py` track **three_engine red-pair only** (`A|B0|B` / `3dsig_r10`). Do **not** treat C0_claim/C0_legacy as the live red-pair science path unless explicitly re-scoped.
 
 **Primary invocations (documented aliases):**
 - `/flexaidds`
@@ -274,7 +329,10 @@ python3 -m flexaidds.dataset_runner --dataset casf2016 --tier 1 --dry-run
 - Always run `ensure_docking_data.py` first (or the inspector) — missing matrices or definition files will cause silent or noisy failures.
 - Use `--dry-run` liberally before committing large compute resources.
 - Respect the distinction between CF/contact-function scoring proxy (used during search) and the full thermodynamic ledger (computed afterward).
+- **Softβ S1 election defaults OFF** (`FLEXAIDDS_SOFTBETA_ELECTION=0` / `FLEXAIDDS_ELECTION_SHANNON_F=0`). Opt in only with explicit intent + log `[SOFTBETA-ELECT] Softβ S1 ON`. Never equate Softβ with true ΔG or with arm-B FO@TEMPER21.
+- Do **not** enable Softβ / ranking experiments when `native_cf_oracle_gate.py` fails on canaries (CF rejects native).
 - For any published benchmark results, **always** pass `--package` (or run the inspector with `--reproducibility`). The resulting `VALIDATION_SUMMARY.md` + manifest gives you complete, auditable provenance (binary + every data file hash + environment).
+- Classic FlexAID A/B0/B red-pair uses `scripts/run_flexaid_arm_pilot8.sh` + `generate_flexaid_inp.py` (not DatasetRunner alone). Pin matrix MD5 + binary SHA256 in `RUN_RECEIPT.json`.
 
 **Per-entry processing & Master Manager (new automation)**
 The DatasetRunner now automatically saves and resumes *individual entries* (one target + structural state = one work item). A `EntryTaskManager` master coordinator allocates these fine-grained tasks to workers.
