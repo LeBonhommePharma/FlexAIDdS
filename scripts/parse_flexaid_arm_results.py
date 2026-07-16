@@ -248,6 +248,52 @@ def success_s_top10(
     return 0
 
 
+def estimate_wall_s(out_dir: Path, pdb: str) -> Optional[float]:
+    """Estimate compute wall when launcher did not pass --wall-s.
+
+    Priority:
+      1. ``wall_s.txt`` / ``wall_timing.json`` written by arm launcher
+      2. max(mtime) − min(mtime) over ``{pdb}_r*_*.pdb`` (or ``{pdb}_*.pdb``)
+
+    Returns None if unavailable.
+    """
+    for name in ("wall_s.txt", "wall_timing.json"):
+        wp = out_dir / name
+        if not wp.is_file():
+            continue
+        try:
+            text = wp.read_text().strip()
+            if name.endswith(".json"):
+                import json
+
+                d = json.loads(text)
+                v = d.get("wall_s")
+                if v is not None:
+                    return float(v)
+            else:
+                return float(text.split()[0])
+        except (OSError, ValueError, TypeError, KeyError):
+            continue
+
+    pdb_u = pdb.upper()
+    mt: List[float] = []
+    for pat in (f"{pdb_u}_r*_*.pdb", f"{pdb_u}_*.pdb", f"{pdb.lower()}_r*_*.pdb"):
+        for p in out_dir.glob(pat):
+            try:
+                if p.is_file() and p.suffix.lower() == ".pdb":
+                    mt.append(p.stat().st_mtime)
+            except OSError:
+                continue
+        if len(mt) >= 2:
+            break
+    if len(mt) < 2:
+        return None
+    span = max(mt) - min(mt)
+    if span <= 0:
+        return None
+    return float(span)
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--arm", required=True)
@@ -256,6 +302,12 @@ def main() -> int:
     ap.add_argument("--work-dir", type=Path, default=None)
     ap.add_argument("--matrix-md5", default="")
     ap.add_argument("--binary", type=Path, default=None)
+    ap.add_argument(
+        "--wall-s",
+        type=float,
+        default=None,
+        help="Measured FlexAID wall seconds for this target (from launcher).",
+    )
     args = ap.parse_args()
 
     pdb = args.pdb.upper()
@@ -328,7 +380,7 @@ def main() -> int:
         "seed_echo": 0,
         "native_pose_seeded": 0,
         "protocol_claim_eligible": 1 if args.matrix_md5 else 0,
-        "wall_s": "",
+        "wall_s": "",  # filled below
         "restarts_finished": restarts_finished,
         "evals_actual": "",
         "budget_class": "full",
@@ -337,6 +389,15 @@ def main() -> int:
     }
     for i, v in enumerate(mode_rmsds):
         row[f"mode_rmsd_{i}"] = "" if v is None else f"{v:.4f}"
+
+    # Computational walltime: launcher measurement preferred, else pose-mtime proxy
+    wall: Optional[float] = None
+    if args.wall_s is not None and args.wall_s >= 0:
+        wall = float(args.wall_s)
+    else:
+        wall = estimate_wall_s(args.out_dir, pdb)
+    if wall is not None and wall >= 0:
+        row["wall_s"] = f"{wall:.1f}"
 
     # Stable column order: identity → top1/BCR → mode_rmsd_* → flags
     fieldnames = [
@@ -379,6 +440,7 @@ def main() -> int:
     print(
         f"wrote {out_csv} s1={success_s1} s_top10={s_top10} "
         f"rmsd_top1={row['rmsd_top1']} bcr={row['rmsd_bcr']} "
+        f"wall_s={row['wall_s'] or 'NA'} "
         f"modes={[row[f'mode_rmsd_{i}'] for i in range(TOP_N_MODES)]}"
     )
     return 0

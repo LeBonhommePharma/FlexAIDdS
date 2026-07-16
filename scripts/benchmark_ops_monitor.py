@@ -396,6 +396,11 @@ def parse_result_csv(path: Path) -> Dict[str, Any]:
     except ValueError:
         nposes_i = None
     cf = _ffloat(r.get("best_score") or r.get("elected_cf") or r.get("score_top1"))
+    wall = _ffloat(r.get("wall_time_s") or r.get("wall_s"))
+    wall_src = "csv" if wall is not None and wall > 0 else None
+    if wall is None or wall <= 0:
+        # Launcher file or pose-mtime proxy for historical empty wall_s cells
+        wall, wall_src = _wall_from_target_dir(path.parent, r.get("pdb_id") or path.parent.name)
     return {
         "path": str(path),
         "pdb_id": r.get("pdb_id") or path.parent.name,
@@ -415,13 +420,58 @@ def parse_result_csv(path: Path) -> Dict[str, Any]:
         "packaging_bug": int(bcr_neg or (nposes_i == 0 and path.parent.exists())),
         "best_score": cf,
         "num_poses": nposes_i,
-        "wall_time_s": _ffloat(r.get("wall_time_s") or r.get("wall_s")),
+        "wall_time_s": wall,
+        "wall_src": wall_src,
         "seed_echo": r.get("seed_echo"),
         "native_pose_seeded": r.get("native_pose_seeded"),
         "pb_backend": r.get("pb_backend"),
         "elected_pose_path": r.get("elected_pose_path") or r.get("elected_path"),
         "mtime": path.stat().st_mtime,
     }
+
+
+def _wall_from_target_dir(
+    target_dir: Path, pdb_id: str
+) -> Tuple[Optional[float], Optional[str]]:
+    """Recover wall seconds from wall_s.txt / wall_timing.json / pose mtimes."""
+    for name in ("wall_s.txt", "wall_timing.json"):
+        wp = target_dir / name
+        try:
+            if not wp.is_file():
+                continue
+            text = wp.read_text().strip()
+            if name.endswith(".json"):
+                d = json.loads(text)
+                v = _ffloat(d.get("wall_s"))
+                if v is not None and v > 0:
+                    return v, "launcher"
+            else:
+                v = _ffloat(text.split()[0] if text else None)
+                if v is not None and v > 0:
+                    return v, "launcher"
+        except (OSError, ValueError, TypeError, json.JSONDecodeError):
+            continue
+    pdb = str(pdb_id or target_dir.name).upper()
+    mt: List[float] = []
+    try:
+        for pat in (f"{pdb}_r*_*.pdb", f"{pdb}_*.pdb"):
+            for p in target_dir.glob(pat):
+                try:
+                    if p.is_file():
+                        mt.append(p.stat().st_mtime)
+                except OSError:
+                    continue
+            if len(mt) >= 2:
+                break
+    except OSError:
+        return None, None
+    if len(mt) < 2:
+        return None, None
+    span = max(mt) - min(mt)
+    # Reject absurd spans (bulk copy / iCloud re-touch); keep per-target docking-scale
+    if span <= 1.0 or span > 48 * 3600:
+        return None, None
+    return float(span), "mtime_proxy"
 
 
 def classify(rec: Dict[str, Any]) -> List[str]:
@@ -526,6 +576,26 @@ def scan_campaign(camp_id: str, root: Path, total: int) -> Dict[str, Any]:
         m = len(xs) // 2
         return float(xs[m]) if len(xs) % 2 else 0.5 * (xs[m - 1] + xs[m])
 
+    wall_vals = sorted(
+        float(r["wall_time_s"])
+        for r in results
+        if isinstance(r.get("wall_time_s"), (int, float))
+        and r["wall_time_s"] is not None
+        and r["wall_time_s"] > 0
+    )
+    wall_srcs = {
+        str(r.get("wall_src") or "?")
+        for r in results
+        if isinstance(r.get("wall_time_s"), (int, float)) and r.get("wall_time_s")
+    }
+    wall_sum = sum(wall_vals) if wall_vals else None
+    wall_med = _median(wall_vals)
+    wall_mean = (sum(wall_vals) / len(wall_vals)) if wall_vals else None
+    # Project remaining wall at median for unfinished campaign
+    wall_eta = None
+    if wall_med is not None and total > n:
+        wall_eta = wall_med * (total - n)
+
     return {
         "id": camp_id,
         "path": str(root),
@@ -546,6 +616,14 @@ def scan_campaign(camp_id: str, root: Path, total: int) -> Dict[str, Any]:
         "BCR_median": _median(bcr_vals),
         "top1_median": _median(top1_vals),
         "BCR_best": bcr_vals[0] if bcr_vals else None,
+        "wall_n": len(wall_vals),
+        "wall_sum_s": wall_sum,
+        "wall_median_s": wall_med,
+        "wall_mean_s": wall_mean,
+        "wall_min_s": wall_vals[0] if wall_vals else None,
+        "wall_max_s": wall_vals[-1] if wall_vals else None,
+        "wall_eta_remain_s": wall_eta,
+        "wall_src": "+".join(sorted(wall_srcs)) if wall_srcs else None,
         "results": results,
         "storage": storage,
     }
@@ -800,22 +878,31 @@ def _bucket_strip(buckets: Dict[str, int], n: int) -> str:
     return " ".join(parts)
 
 
-def _eta_str(results: List[Dict[str, Any]], n: int, total: int) -> str:
+def _eta_str(
+    results: List[Dict[str, Any]],
+    n: int,
+    total: int,
+    wall_median_s: Optional[float] = None,
+    wall_eta_remain_s: Optional[float] = None,
+) -> str:
     """Rough remaining wall-time from finished target wall_time_s medians."""
-    if n <= 0 or total <= 0 or n >= total:
-        return "—" if n < total else "done"
-    walls = sorted(
-        float(r["wall_time_s"])
-        for r in (results or [])
-        if isinstance(r.get("wall_time_s"), (int, float)) and r["wall_time_s"] > 0
-    )
-    if len(walls) < 2:
-        return "calc…"
-    med = walls[len(walls) // 2]
-    remain = (total - n) * med
-    if remain < 3600:
-        return f"~{remain / 60:.0f}m"
-    return f"~{remain / 3600:.1f}h"
+    if n <= 0 or total <= 0:
+        return "—"
+    if n >= total:
+        return "done"
+    if wall_eta_remain_s is not None:
+        return f"~{_fmt_wall(wall_eta_remain_s)}"
+    med = wall_median_s
+    if med is None:
+        walls = sorted(
+            float(r["wall_time_s"])
+            for r in (results or [])
+            if isinstance(r.get("wall_time_s"), (int, float)) and r["wall_time_s"] > 0
+        )
+        if len(walls) < 1:
+            return "calc…"
+        med = walls[len(walls) // 2]
+    return f"~{_fmt_wall(med * (total - n))}"
 
 
 def _proc_is_full85(p: Dict[str, Any]) -> bool:
@@ -939,6 +1026,25 @@ def _fmt_A(x: Optional[float]) -> str:
     if x is None:
         return "—"
     return f"{x:.2f}Å"
+
+
+def _fmt_wall(seconds: Optional[float]) -> str:
+    """Human walltime: 90s / 12.5m / 3.2h."""
+    if seconds is None:
+        return "—"
+    try:
+        s = float(seconds)
+    except (TypeError, ValueError):
+        return "—"
+    if s < 0:
+        return "—"
+    if s < 90:
+        return f"{s:.0f}s"
+    if s < 3600:
+        return f"{s / 60:.1f}m"
+    if s < 86400:
+        return f"{s / 3600:.2f}h"
+    return f"{s / 86400:.2f}d"
 
 
 def _normalize_campaigns(
@@ -1161,11 +1267,11 @@ def format_ops_brief(
         # main metrics table
         lines.append(
             "| Arm | Phase | Progress (▓=S10 hit) | S1 | **S_top10** | BCR≤2 | "
-            "med BCR | best BCR | med top1 | pack | ETA | stor |"
+            "med BCR | best BCR | pack | ETA | stor |"
         )
         lines.append(
             "|:---:|:------|:---------------------|:--:|:-----------:|:-----:|"
-            ":-------:|:--------:|:--------:|:----:|:---:|:----:|"
+            ":-------:|:--------:|:----:|:---:|:----:|"
         )
         for c in camps:
             n, tot = int(c.get("N") or 0), int(c.get("total") or 1)
@@ -1178,7 +1284,13 @@ def format_ops_brief(
             bcr = int(c.get("BCR_le2") or 0)
             pack = int(c.get("packaging_bug") or 0)
             stor = c.get("storage") or "?"
-            eta = _eta_str(c.get("results") or [], n, tot)
+            eta = _eta_str(
+                c.get("results") or [],
+                n,
+                tot,
+                wall_median_s=c.get("wall_median_s"),
+                wall_eta_remain_s=c.get("wall_eta_remain_s"),
+            )
             lines.append(
                 f"| **{arm}** | {phase} | `{bar}` **{n}/{tot}** ({pct:.0f}%) "
                 f"| {_count_badge(s1, n)} "
@@ -1186,10 +1298,41 @@ def format_ops_brief(
                 f"| {_count_badge(bcr, n)} "
                 f"| {_rmsd_badge(c.get('BCR_median'))} "
                 f"| {_rmsd_badge(c.get('BCR_best'))} "
-                f"| {_rmsd_badge(c.get('top1_median'))} "
                 f"| {'🔴 **' + str(pack) + '**' if pack else '🟢 0'} "
                 f"| {eta} "
                 f"| {stor} |"
+            )
+        lines.append("")
+
+        # computational walltime per method (primary ask for ops)
+        lines.append(
+            "**⏱ Compute walltime** (FlexAID CPU wall · not ΔG · "
+            "src: `launcher` measured · `csv` · `mtime_proxy` pose span)"
+        )
+        lines.append("")
+        lines.append(
+            "| Arm | method | N timed | **Σ wall** | med / target | mean | min | max | "
+            "proj remain | src |"
+        )
+        lines.append(
+            "|:---:|--------|--------:|-----------:|-------------:|-----:|----:|----:|"
+            "-----------:|-----|"
+        )
+        for c in camps:
+            arm = c.get("arm") or "?"
+            desc = (c.get("description") or "").split("·")[0].strip() or c.get("id", "")
+            wn = int(c.get("wall_n") or 0)
+            src = c.get("wall_src") or ("—" if wn == 0 else "?")
+            lines.append(
+                f"| **{arm}** | {desc} "
+                f"| {wn}/{int(c.get('N') or 0)} "
+                f"| **{_fmt_wall(c.get('wall_sum_s'))}** "
+                f"| {_fmt_wall(c.get('wall_median_s'))} "
+                f"| {_fmt_wall(c.get('wall_mean_s'))} "
+                f"| {_fmt_wall(c.get('wall_min_s'))} "
+                f"| {_fmt_wall(c.get('wall_max_s'))} "
+                f"| {_fmt_wall(c.get('wall_eta_remain_s'))} "
+                f"| `{src}` |"
             )
         lines.append("")
 
@@ -1212,6 +1355,8 @@ def format_ops_brief(
                 f"S1 {_rate_badge(c.get('S1_rate'))} · "
                 f"**S_top10 {_rate_badge(c.get('S_top10_rate'))}** · "
                 f"BCR {_rate_badge(c.get('BCR_rate'))} · "
+                f"Σwall {_fmt_wall(c.get('wall_sum_s'))} · "
+                f"med {_fmt_wall(c.get('wall_median_s'))}/tgt · "
                 f"gap={c.get('election_gap', 0)} neg1={c.get('bcr_neg1', 0)}"
             )
             lines.append(f"  - BCR hist: {_bucket_strip(buckets, n)}")

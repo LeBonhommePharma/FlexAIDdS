@@ -344,12 +344,17 @@ run_one() {
 
   local r=0
   local n_ok=0
+  # Computational walltime for this target (sum of FlexAID restart wall clocks)
+  local t0 t1 wall_s=0
+  t0=$(date +%s)
   while (( r < RESTARTS )); do
     local rdir="$wdir/restart_$r"
     local prefix="$odir/${pdb}_r${r}"
     echo "=== $ARM $pdb restart $r ==="
     # Staged A/B binaries are FlexAIDdS-unified CLI; classic 3-file mode needs --legacy
     echo "CMD: $BINARY --legacy $rdir/CONFIG.inp $rdir/ga.inp $prefix"
+    local rt0 rt1
+    rt0=$(date +%s)
     if ! (
       cd "$rdir"
       caffeinate -i -s "$BINARY" --legacy "$rdir/CONFIG.inp" "$rdir/ga.inp" "$prefix"
@@ -358,14 +363,23 @@ run_one() {
     else
       n_ok=$((n_ok + 1))
     fi
+    rt1=$(date +%s)
+    echo "WALL restart=$r ${pdb}: $((rt1 - rt0))s"
     r=$((r + 1))
   done
+  t1=$(date +%s)
+  wall_s=$((t1 - t0))
+  # Persist measured wall for parser / ops (authoritative over mtime proxy)
+  printf '%s\n' "$wall_s" >"$odir/wall_s.txt"
+  printf '{"pdb_id":"%s","arm":"%s","wall_s":%s,"restarts_ok":%s,"restarts":%s,"source":"launcher_date"}\n' \
+    "$pdb" "$ARM" "$wall_s" "$n_ok" "$RESTARTS" >"$odir/wall_timing.json"
+  echo "WALL $ARM/$pdb total=${wall_s}s restarts_ok=$n_ok/$RESTARTS"
 
   if [[ -f "$PARSE" ]]; then
     python3 "$PARSE" --arm "$ARM" --pdb "$pdb" --out-dir "$odir" --work-dir "$wdir" \
-      --matrix-md5 "$MATRIX_PIN" --binary "$BINARY" || true
+      --matrix-md5 "$MATRIX_PIN" --binary "$BINARY" --wall-s "$wall_s" || true
   fi
-  echo "DONE $ARM/$pdb restarts_ok=$n_ok/$RESTARTS"
+  echo "DONE $ARM/$pdb restarts_ok=$n_ok/$RESTARTS wall_s=$wall_s"
 }
 
 if [[ "${NOHUP:-0}" == "1" ]]; then
