@@ -152,8 +152,8 @@ def mem_snapshot() -> Dict[str, float]:
 
 PROC_RE = re.compile(
     r"bin/[ABC]/FlexAID(?:dS)?\b|/FlexAIDdS(\s|$)|benchmark_datasets\b|"
-    r"serial_AB_after_C0|throughput_maximizer|run_flexaid_arm_pilot8|"
-    r"C0_claim_clean|C0_full85"
+    r"run_flexaid_arm_pilot8|run_3dsig_red_pair_serial|"
+    r"throughput_maximizer"
 )
 
 
@@ -199,20 +199,21 @@ def list_procs() -> List[Dict[str, Any]]:
 
 
 def _hint(cmd: str) -> str:
-    if "claim_g2000" in cmd or "C0_claim" in cmd:
-        return "C0_claim"
-    if "C0_full85_defined_cleft" in cmd or "defined_cleft_nativeseed" in cmd:
-        return "C0_legacy"
-    if "three_engine/A" in cmd or "/bin/A/FlexAID" in cmd:
-        return "arm_A"
-    if "three_engine/B0" in cmd:
-        return "arm_B0"
-    if "three_engine/B/" in cmd or "TEMPER 21" in cmd:
-        return "arm_B"
+    """Process labels match campaign path IDs — no ad-hoc nicknames."""
+    if "three_engine/A/" in cmd or "/work/A/" in cmd or "/bin/A/FlexAID" in cmd:
+        return "three_engine/A"
+    if "three_engine/B0/" in cmd or "/work/B0/" in cmd:
+        return "three_engine/B0"
+    if "three_engine/B/" in cmd or "/work/B/" in cmd or "/bin/B/FlexAID" in cmd:
+        return "three_engine/B"
+    if "run_3dsig_red_pair_serial" in cmd:
+        return "three_engine/serial"
+    if "run_flexaid_arm_pilot8" in cmd:
+        return "three_engine/arm_launcher"
     if "FlexAIDdS" in cmd:
         return "FlexAIDdS"
     if "benchmark_datasets" in cmd:
-        return "runner"
+        return "benchmark_datasets"
     return "other"
 
 
@@ -221,6 +222,13 @@ def current_dock_target(procs: List[Dict[str, Any]]) -> Optional[str]:
         cmd = p["command"]
         if "FlexAID" not in cmd and "FlexAIDdS" not in cmd:
             continue
+        # three_engine OUT: .../3dsig_r10/1G9V/1G9V_r0
+        m = re.search(r"/3dsig_r10/([0-9A-Za-z]{4})/", cmd)
+        if m:
+            return m.group(1)
+        m = re.search(r"/work/(?:A|B0|B)/([0-9A-Za-z]{4})/", cmd)
+        if m:
+            return m.group(1)
         m = re.search(r"astex_diverse/([0-9A-Za-z]{4})/", cmd)
         if m:
             return m.group(1)
@@ -251,37 +259,31 @@ def pid_file(path: Path) -> Dict[str, Any]:
 
 
 # ─── campaign scan ────────────────────────────────────────────────────────────
+#
+# Live science: three_engine red-pair under campaigns/three_engine/{A,B0,B}/3dsig_r10
+# (docs/implementation/3dsig_red_pair_protocol.md).
+#
+# C0_claim / C0_legacy paths are REMOVED from ops — suspended; do not surface.
+# IDs are path-accurate (not nicknames like "A_pilot8").
 
 CAMPAIGN_SPECS = [
     {
-        "id": "C0_claim",
-        "rel": "campaigns/C0_full85_claim_g2000_popmod_20260715",
-        "total": 85,
-        "claim": True,
-    },
-    {
-        "id": "C0_legacy",
-        "rel": "campaigns/C0_full85_defined_cleft_nativeseed_forbidden",
-        "total": 85,
-        "claim": False,
-    },
-    {
-        "id": "A_pilot8",
-        "rel": "campaigns/three_engine/A/pilot8",
+        "id": "three_engine/A/3dsig_r10",
+        "rel": "three_engine/A/3dsig_r10",
         "total": 8,
-        "claim": True,
+        "description": "FlexAID TEMPER0 CLUSTA CF (arm A, 3Dsig red-pair)",
     },
     {
-        "id": "B_pilot8",
-        "rel": "campaigns/three_engine/B/pilot8",
+        "id": "three_engine/B0/3dsig_r10",
+        "rel": "three_engine/B0/3dsig_r10",
         "total": 8,
-        "claim": True,
+        "description": "FlexAID master TEMPER0 CLUSTA CF control (arm B0, 3Dsig red-pair)",
     },
     {
-        "id": "B0_pilot8",
-        "rel": "campaigns/three_engine/B0/pilot8",
+        "id": "three_engine/B/3dsig_r10",
+        "rel": "three_engine/B/3dsig_r10",
         "total": 8,
-        "claim": False,
+        "description": "FlexAID master TEMPER21 CLUSTA FO (arm B, 3Dsig red-pair)",
     },
 ]
 
@@ -295,19 +297,54 @@ def _ffloat(x: Any) -> Optional[float]:
         return None
 
 
+def _truthy_int(val: Any) -> Optional[int]:
+    """Parse 0/1 / true/false; None if absent."""
+    if val is None or val == "":
+        return None
+    s = str(val).strip().lower()
+    if s in ("1", "true", "yes"):
+        return 1
+    if s in ("0", "false", "no"):
+        return 0
+    try:
+        return 1 if int(float(s)) != 0 else 0
+    except (TypeError, ValueError):
+        return None
+
+
 def parse_result_csv(path: Path) -> Dict[str, Any]:
+    """Parse DatasetRunner or classic FlexAID parse_flexaid_arm_results result.csv."""
     with path.open(newline="") as f:
         rows = list(csv.DictReader(f))
     if not rows:
         return {"empty": True, "path": str(path)}
     r = rows[0]
-    rh = _ffloat(r.get("rmsd_hungarian"))
-    rtc = _ffloat(r.get("rmsd_to_crystal"))
-    bcr = _ffloat(r.get("best_cluster_rmsd"))
-    sr_raw = r.get("success_rmsd")
-    s1 = str(sr_raw).strip() in ("1", "True", "true")
-    if not s1 and rh is not None and 0 <= rh <= 2.0:
-        s1 = True
+    # RMSD fields: DatasetRunner + classic arm parser
+    rh = _ffloat(r.get("rmsd_hungarian") or r.get("rmsd_top1"))
+    rtc = _ffloat(r.get("rmsd_to_crystal") or r.get("rmsd_top1"))
+    bcr = _ffloat(r.get("best_cluster_rmsd") or r.get("rmsd_bcr"))
+    # S1: prefer explicit success_s1 / success_rmsd; else top1 ≤ 2.0 Å
+    s1_flag = _truthy_int(r.get("success_s1"))
+    if s1_flag is None:
+        s1_flag = _truthy_int(r.get("success_rmsd"))
+    if s1_flag is None:
+        s1_flag = int(rh is not None and 0 <= rh <= 2.0)
+    s1 = int(s1_flag)
+    # S_top10 (3Dsig red-pair primary when present)
+    s_top10_flag = _truthy_int(r.get("success_s_top10"))
+    if s_top10_flag is None:
+        # Derive from mode_rmsd_0..9 if columns exist
+        modes = [_ffloat(r.get(f"mode_rmsd_{i}")) for i in range(10)]
+        if any(m is not None for m in modes):
+            s_top10_flag = int(
+                any(m is not None and 0 <= m <= 2.0 for m in modes)
+            )
+        else:
+            s_top10_flag = 0
+    s_top10 = int(s_top10_flag)
+    s3_flag = _truthy_int(r.get("success_s3"))
+    if s3_flag is None:
+        s3_flag = int(bcr is not None and 0 <= bcr <= 2.0)
     pb = str(r.get("success_pb") or r.get("pb_pass") or "").strip() in (
         "1",
         "True",
@@ -315,21 +352,24 @@ def parse_result_csv(path: Path) -> Dict[str, Any]:
     )
     bcr_ok = bcr is not None and 0 <= bcr <= 2.0
     bcr_neg = bcr is not None and bcr < 0
-    nposes = r.get("num_poses")
+    nposes = r.get("num_poses") or r.get("n_poses")
     try:
         nposes_i = int(float(nposes)) if nposes not in (None, "") else None
     except ValueError:
         nposes_i = None
-    cf = _ffloat(r.get("best_score") or r.get("elected_cf"))
+    cf = _ffloat(r.get("best_score") or r.get("elected_cf") or r.get("score_top1"))
     return {
         "path": str(path),
         "pdb_id": r.get("pdb_id") or path.parent.name,
         "rmsd_hungarian": rh,
         "rmsd_to_crystal": rtc,
+        "rmsd_top1": _ffloat(r.get("rmsd_top1")) or rh,
         "best_cluster_rmsd": bcr,
-        "success_rmsd": sr_raw,
-        "s1": int(s1),
+        "success_rmsd": r.get("success_rmsd") or r.get("success_s1"),
+        "s1": s1,
+        "s_top10": s_top10,
         "s2": int(s1 and pb),
+        "s3": int(s3_flag),
         "pb_pass": pb,
         "bcr_le2": int(bcr_ok),
         "bcr_neg1": int(bcr_neg),
@@ -337,11 +377,11 @@ def parse_result_csv(path: Path) -> Dict[str, Any]:
         "packaging_bug": int(bcr_neg or (nposes_i == 0 and path.parent.exists())),
         "best_score": cf,
         "num_poses": nposes_i,
-        "wall_time_s": _ffloat(r.get("wall_time_s")),
+        "wall_time_s": _ffloat(r.get("wall_time_s") or r.get("wall_s")),
         "seed_echo": r.get("seed_echo"),
         "native_pose_seeded": r.get("native_pose_seeded"),
         "pb_backend": r.get("pb_backend"),
-        "elected_pose_path": r.get("elected_pose_path"),
+        "elected_pose_path": r.get("elected_pose_path") or r.get("elected_path"),
         "mtime": path.stat().st_mtime,
     }
 
@@ -422,6 +462,7 @@ def scan_campaign(camp_id: str, root: Path, total: int) -> Dict[str, Any]:
     n = len(results)
     s1 = sum(1 for r in results if r.get("s1"))
     s2 = sum(1 for r in results if r.get("s2"))
+    s_top10 = sum(1 for r in results if r.get("s_top10"))
     bcr = sum(1 for r in results if r.get("bcr_le2"))
     gap = sum(1 for r in results if r.get("election_gap"))
     neg = sum(1 for r in results if r.get("bcr_neg1"))
@@ -433,11 +474,13 @@ def scan_campaign(camp_id: str, root: Path, total: int) -> Dict[str, Any]:
         "total": total,
         "S1": s1,
         "S2": s2,
+        "S_top10": s_top10,
         "BCR_le2": bcr,
         "election_gap": gap,
         "bcr_neg1": neg,
         "S1_rate": (s1 / n) if n else None,
         "S2_rate": (s2 / n) if n else None,
+        "S_top10_rate": (s_top10 / n) if n else None,
         "BCR_rate": (bcr / n) if n else None,
         "results": results,
         "storage": storage,
@@ -549,13 +592,19 @@ def format_ops_brief(
             lines.append(f"- **{c['id']}**: missing/empty")
             continue
         rate = c.get("S1_rate")
-        rate_s = f"{100*rate:.1f}%" if rate is not None else "n/a"
+        rate_s = f"{100 * rate:.1f}%" if rate is not None else "n/a"
+        st = c.get("S_top10_rate")
+        st_s = f"{100 * st:.1f}%" if st is not None else "n/a"
         lines.append(
             f"- **{c['id']}**: N={c['N']}/{c['total']}  "
-            f"S1={c.get('S1',0)}/{c['N']} ({rate_s})  "
-            f"S2={c.get('S2',0)}  BCR≤2={c.get('BCR_le2',0)}  "
-            f"gap={c.get('election_gap',0)}  neg1={c.get('bcr_neg1',0)}"
+            f"S1={c.get('S1', 0)}/{c['N']} ({rate_s})  "
+            f"S_top10={c.get('S_top10', 0)}/{c['N']} ({st_s})  "
+            f"S2={c.get('S2', 0)}  BCR≤2={c.get('BCR_le2', 0)}  "
+            f"gap={c.get('election_gap', 0)}  neg1={c.get('bcr_neg1', 0)}"
         )
+        desc = c.get("description")
+        if desc:
+            lines.append(f"  _{desc}_")
     lines.append("")
     lines.append("## PID files")
     for k, v in pid_files.items():
@@ -570,26 +619,55 @@ def format_ops_brief(
             f"hint={p['hint']} etime={p['etime']}"
         )
     lines.append("")
-    # completion
-    claim = next((c for c in campaigns if c["id"] == "C0_claim"), None)
-    legacy = next((c for c in campaigns if c["id"] == "C0_legacy"), None)
-    a = next((c for c in campaigns if c["id"] == "A_pilot8"), None)
-    b = next((c for c in campaigns if c["id"] == "B_pilot8"), None)
-    claim_done = claim and claim["N"] >= claim["total"]
-    if claim_done and a and a["N"] >= 8 and b and b["N"] >= 8:
-        lines.append("**COMPLETE** claim path C0+A+B pilots.")
-    elif claim_done:
-        lines.append("**C0 claim COMPLETE** — next: A pilot8 → B@TEMPER21 (serial, iCloud).")
-    elif claim and claim["N"] == 0 and legacy and legacy["N"] > 0:
+    # Completion: three_engine red-pair only (C0 claim/legacy not tracked)
+    by_id = {c["id"]: c for c in campaigns}
+    a = by_id.get("three_engine/A/3dsig_r10")
+    b0 = by_id.get("three_engine/B0/3dsig_r10")
+    b = by_id.get("three_engine/B/3dsig_r10")
+    live_ga = any(
+        p.get("hint", "").startswith("three_engine/") and "FlexAID" in p.get("command", "")
+        for p in procs
+    ) or any(
+        "FlexAID" in p.get("command", "") for p in procs
+    )
+
+    def _arm_docked(c: Optional[Dict[str, Any]]) -> bool:
+        return bool(c and c.get("exists") and c.get("N", 0) >= c.get("total", 8))
+
+    if live_ga:
         lines.append(
-            "**NOT COMPLETE** — dirty legacy C0 still has results; "
-            "clean claim OUT empty (launch run_C0_claim_clean.sh if reboot intended)."
+            "**NOT COMPLETE** — FlexAID still running under three_engine."
         )
+    elif _arm_docked(b0) and _arm_docked(b):
+        st0 = b0.get("S_top10", 0) if b0 else 0
+        st1 = b.get("S_top10", 0) if b else 0
+        n0 = b0.get("N", 0) if b0 else 0
+        n1 = b.get("N", 0) if b else 0
+        if st0 == 0 and st1 == 0 and n0 > 0:
+            lines.append(
+                "**DOCKING COMPLETE — SCIENCE GATE FAIL** — "
+                f"three_engine/B0/3dsig_r10 and three_engine/B/3dsig_r10 finished "
+                f"(S_top10={st0}/{n0} and {st1}/{n1} at ≤2.0 Å). "
+                "three_engine/A/3dsig_r10 may still need fixed-binary re-run."
+            )
+        else:
+            lines.append(
+                "**DOCKING COMPLETE** — three_engine/B0/3dsig_r10 and "
+                "three_engine/B/3dsig_r10 have N≥8 result.csv rows. "
+                f"S_top10 three_engine/B0/3dsig_r10={st0}/{n0} "
+                f"three_engine/B/3dsig_r10={st1}/{n1}."
+            )
     else:
-        lines.append("**NOT COMPLETE** — campaigns still running or not started.")
+        lines.append(
+            "**NOT COMPLETE** — three_engine/{A,B0,B}/3dsig_r10 still short of "
+            "N=8 parsed result.csv (or missing)."
+        )
     lines.append("")
     lines.append(
-        "CF = scoring proxy. S1 = primary. BCR = diagnostic. No dual-launch. One heavy GA."
+        "CF = scoring proxy. S1 = top-1 CF election. "
+        "S_top10 = 3Dsig any of ranks 0..9 ≤2.0 Å. "
+        "BCR = diagnostic. No dual-launch. One heavy GA. "
+        "Monitor scope: three_engine red-pair only."
     )
     return "\n".join(lines) + "\n"
 
@@ -638,12 +716,12 @@ def main(argv: Optional[List[str]] = None) -> int:
     res = results_root()
     local_camps = local_campaigns_root()
     q = queue_root()
-    local_log = local_root() / "logs" / "C0_claim"
+    te_logs = local_root() / "logs" / "three_engine"
 
     mem = mem_snapshot()
     procs = list_procs()
     cur = current_dock_target(procs)
-    # Pid files: local first, then queue (may be iCloud — only open single small files)
+
     def _pid_prefer(*paths: Path) -> Dict[str, Any]:
         for p in paths:
             info = pid_file(p)
@@ -651,40 +729,46 @@ def main(argv: Optional[List[str]] = None) -> int:
                 return info
         return {"exists": False, "live": False, "pid": None}
 
+    # PID keys use path-accurate campaign names (no C0_claim/C0_legacy)
     pid_files = {
-        "C0_claim": _pid_prefer(
-            local_log / "C0_claim_clean.pid",
-            q / "logs/C0_claim_clean.pid",
+        "three_engine/serial": _pid_prefer(
+            te_logs / "run_3dsig_red_pair_serial.pid",
+            q / "logs/run_3dsig_red_pair_serial.pid",
+            q / "logs/run_AB_pilot8_chain.pid",
         ),
-        "C0_legacy": _pid_prefer(q / "logs/C0_full85.pid"),
-        "ab_chain": _pid_prefer(q / "logs/run_AB_pilot8_chain.pid"),
-        "throughput": _pid_prefer(q / "logs/throughput_maximizer.pid"),
-        "sync_loop": _pid_prefer(local_log / "sync_ops_loop.pid"),
+        "three_engine/A": _pid_prefer(te_logs / "run_A_pilot8.lock", te_logs / "run_A_pilot8.pid"),
+        "three_engine/B0": _pid_prefer(te_logs / "run_B0_pilot8.lock", te_logs / "run_B0_pilot8.pid"),
+        "three_engine/B": _pid_prefer(
+            te_logs / "run_B_pilot8.lock",
+            te_logs / "run_B_pilot8_launcher.pid",
+            te_logs / "run_B_pilot8.pid",
+        ),
+        "throughput_maximizer": _pid_prefer(q / "logs/throughput_maximizer.pid"),
     }
 
     campaigns: List[Dict[str, Any]] = []
     for spec in CAMPAIGN_SPECS:
-        # Local campaign dir wins when present
-        camp_name = Path(spec["rel"]).name
-        local_root_c = local_camps / camp_name
-        icloud_root_c = res / spec["rel"]
+        # rel is under campaigns/, e.g. three_engine/A/3dsig_r10
+        rel = Path(spec["rel"])
+        local_root_c = local_camps / rel
+        icloud_root_c = res / "campaigns" / rel
+        # Also allow FLEXAIDDS_RESULTS already pointing at .../campaigns
+        alt_icloud = res / rel
         try:
-            local_ok = local_root_c.is_dir()
+            if local_root_c.is_dir():
+                root = local_root_c
+            elif icloud_root_c.is_dir():
+                root = icloud_root_c
+            elif alt_icloud.is_dir():
+                root = alt_icloud
+            else:
+                root = local_root_c  # missing → scan reports empty
         except OSError:
-            local_ok = False
-        root = local_root_c if local_ok else icloud_root_c
-        campaigns.append(scan_campaign(spec["id"], root, spec["total"]))
-    # Discover extra local campaigns (e.g. C0_v137_*) without walking iCloud
-    try:
-        known = {Path(s["rel"]).name for s in CAMPAIGN_SPECS}
-        if local_camps.is_dir():
-            for d in sorted(local_camps.iterdir()):
-                if not d.is_dir() or d.name in known:
-                    continue
-                if d.name.startswith(("C0_", "DPFO_", "three_engine")):
-                    campaigns.append(scan_campaign(d.name, d, 85))
-    except OSError:
-        pass
+            root = local_root_c
+        camp = scan_campaign(spec["id"], root, spec["total"])
+        camp["description"] = spec.get("description", "")
+        campaigns.append(camp)
+    # Do NOT auto-discover C0_* or other trees — ops is three_engine red-pair only.
     state_path = scratch / "finished_run_analysis_state.json"
     state = load_state(state_path)
     new_items, state = analyze_new(campaigns, state)
