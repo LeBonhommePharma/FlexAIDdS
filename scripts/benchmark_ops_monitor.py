@@ -239,9 +239,9 @@ def current_dock_target(procs: List[Dict[str, Any]]) -> Optional[str]:
         if "FlexAID" not in cmd and "FlexAIDdS" not in cmd and "generate_flexaid" not in cmd:
             continue
         for pat in (
+            r"/3dsig_full85[^/]*/([0-9A-Za-z]{4})/",
             r"/3dsig_full85_r\d+/([0-9A-Za-z]{4})/",
-            r"/3dsig_r10/([0-9A-Za-z]{4})/",
-            r"/work/(?:A|B0|B)/([0-9A-Za-z]{4})/",
+            r"/work(?:_scratch_[^/]+)?/(?:A|B0|B|C)/([0-9A-Za-z]{4})/",
             r"astex_diverse/([0-9A-Za-z]{4})/",
             r"/([0-9A-Za-z]{4})/(?:r\d+/)?(?:\1_|dock_config)",
             r"/([0-9A-Za-z]{4})/[0-9A-Za-z]{4}_dockin",
@@ -270,60 +270,66 @@ def pid_file(path: Path) -> Dict[str, Any]:
 
 # ─── campaign scan ────────────────────────────────────────────────────────────
 #
-# Live science: three_engine red-pair (pilot 3dsig_r10 + full85 3dsig_full85_r1).
+# Live science: full85 red-pair ONLY (A → B0 → B serial). Pilot8 is not tracked.
+# Campaign id from FLEXAID_CAMPAIGN (default: latest scratch pin on disk).
 # C0_claim / C0_legacy paths are REMOVED from ops — suspended; do not surface.
-# IDs are path-accurate (not nicknames like "A_pilot8").
 
-CAMPAIGN_SPECS = [
-    {
-        "id": "three_engine/A/3dsig_r10",
-        "rel": "three_engine/A/3dsig_r10",
-        "total": 8,
-        "panel": "pilot8",
-        "arm": "A",
-        "description": "FlexAID TEMPER0 CLUSTA CF · pilot8",
-    },
-    {
-        "id": "three_engine/B0/3dsig_r10",
-        "rel": "three_engine/B0/3dsig_r10",
-        "total": 8,
-        "panel": "pilot8",
-        "arm": "B0",
-        "description": "master TEMPER0 CLUSTA CF · pilot8 control",
-    },
-    {
-        "id": "three_engine/B/3dsig_r10",
-        "rel": "three_engine/B/3dsig_r10",
-        "total": 8,
-        "panel": "pilot8",
-        "arm": "B",
-        "description": "master TEMPER21 CLUSTA FO · pilot8 entropy",
-    },
-    {
-        "id": "three_engine/A/3dsig_full85_r1",
-        "rel": "three_engine/A/3dsig_full85_r1",
-        "total": 85,
-        "panel": "full85",
-        "arm": "A",
-        "description": "FlexAID TEMPER0 CLUSTA CF · full85 R=1",
-    },
-    {
-        "id": "three_engine/B0/3dsig_full85_r1",
-        "rel": "three_engine/B0/3dsig_full85_r1",
-        "total": 85,
-        "panel": "full85",
-        "arm": "B0",
-        "description": "master TEMPER0 CLUSTA CF · full85 R=1",
-    },
-    {
-        "id": "three_engine/B/3dsig_full85_r1",
-        "rel": "three_engine/B/3dsig_full85_r1",
-        "total": 85,
-        "panel": "full85",
-        "arm": "B",
-        "description": "master TEMPER21 CLUSTA FO · full85 R=1",
-    },
-]
+
+def _active_full85_campaign() -> str:
+    env = os.environ.get("FLEXAIDDS_OPS_CAMPAIGN") or os.environ.get("FLEXAID_CAMPAIGN")
+    if env and env.strip():
+        return env.strip()
+    # Prefer newest three_engine/A/3dsig_full85_* with local results root
+    root = local_campaigns_root() / "three_engine" / "A"
+    try:
+        cands = sorted(
+            (
+                p
+                for p in root.iterdir()
+                if p.is_dir() and p.name.startswith("3dsig_full85")
+            ),
+            key=lambda p: p.stat().st_mtime,
+            reverse=True,
+        )
+        if cands:
+            return cands[0].name
+    except OSError:
+        pass
+    return "3dsig_full85_scratch_3b2fa57cc"
+
+
+def _full85_campaign_specs() -> List[Dict[str, Any]]:
+    camp = _active_full85_campaign()
+    return [
+        {
+            "id": f"three_engine/A/{camp}",
+            "rel": f"three_engine/A/{camp}",
+            "total": 85,
+            "panel": "full85",
+            "arm": "A",
+            "description": f"FlexAID TEMPER0 CLUSTA CF · {camp} R=1",
+        },
+        {
+            "id": f"three_engine/B0/{camp}",
+            "rel": f"three_engine/B0/{camp}",
+            "total": 85,
+            "panel": "full85",
+            "arm": "B0",
+            "description": f"master TEMPER0 CLUSTA CF · {camp} R=1",
+        },
+        {
+            "id": f"three_engine/B/{camp}",
+            "rel": f"three_engine/B/{camp}",
+            "total": 85,
+            "panel": "full85",
+            "arm": "B",
+            "description": f"master TEMPER21 CLUSTA FO · {camp} R=1",
+        },
+    ]
+
+
+# Evaluated at import for static tooling; main() rebinds via CAMPAIGN_SPECS =
+CAMPAIGN_SPECS = _full85_campaign_specs()
 
 
 def _ffloat(x: Any) -> Optional[float]:
@@ -1116,11 +1122,17 @@ def _headline_block(
     full85_partial = any(
         c.get("panel") == "full85" and int(c.get("N") or 0) > 0 for c in campaigns
     )
+    # Resolve A/B0/B by panel+arm (campaign name is dynamic)
+    def _arm(arm: str) -> Optional[Dict[str, Any]]:
+        for c in campaigns:
+            if c.get("panel") == "full85" and c.get("arm") == arm:
+                return c
+        return None
+
+    fa, fb0, fb = _arm("A"), _arm("B0"), _arm("B")
+    camp = _active_full85_campaign()
     lines: List[str] = []
-    if full85_active or full85_partial:
-        fa = by_id.get("three_engine/A/3dsig_full85_r1")
-        fb0 = by_id.get("three_engine/B0/3dsig_full85_r1")
-        fb = by_id.get("three_engine/B/3dsig_full85_r1")
+    if full85_active or full85_partial or fa or fb0 or fb:
         na, nb0, nb = (
             int((fa or {}).get("N") or 0),
             int((fb0 or {}).get("N") or 0),
@@ -1129,55 +1141,33 @@ def _headline_block(
         sta = int((fa or {}).get("S_top10") or 0)
         st0 = int((fb0 or {}).get("S_top10") or 0)
         st1 = int((fb or {}).get("S_top10") or 0)
-        if live_any:
+        if live_any or full85_active:
             lines.append(
                 f"> ### 🔵 NOT COMPLETE — full85 LIVE\n"
-                f"> **A** {na}/85 (S10={sta}) · **B0** {nb0}/85 (S10={st0}) · "
-                f"**B** {nb}/85 (S10={st1}) · target=`{cur or 'prep/queue'}`"
+                f"> campaign=`{camp}` · **A** {na}/85 (S10={sta}) · **B0** {nb0}/85 "
+                f"(S10={st0}) · **B** {nb}/85 (S10={st1}) · target=`{cur or 'prep/queue'}`"
             )
-        elif _arm_docked(fb0) and _arm_docked(fb):
-            if st0 == 0 and st1 == 0:
+        elif _arm_docked(fb0) and _arm_docked(fb) and _arm_docked(fa):
+            if st0 == 0 and st1 == 0 and sta == 0:
                 lines.append(
                     f"> ### 🔴 DOCKING COMPLETE — SCIENCE GATE FAIL (full85)\n"
-                    f"> S_top10 B0={st0}/{nb0} · B={st1}/{nb} · CF proxy only (not ΔG)"
+                    f"> `{camp}` S_top10 A={sta}/{na} B0={st0}/{nb0} B={st1}/{nb} · CF proxy ≠ ΔG"
                 )
             else:
                 lines.append(
                     f"> ### 🟢 DOCKING COMPLETE (full85)\n"
-                    f"> S_top10 B0={st0}/{nb0} · B={st1}/{nb}"
+                    f"> `{camp}` S_top10 A={sta}/{na} B0={st0}/{nb0} B={st1}/{nb}"
                 )
         else:
             lines.append(
                 f"> ### 🟡 NOT COMPLETE — full85 partial\n"
-                f"> A {na}/85 · B0 {nb0}/85 · B {nb}/85"
+                f"> `{camp}` A {na}/85 · B0 {nb0}/85 · B {nb}/85"
             )
     else:
-        b0 = by_id.get("three_engine/B0/3dsig_r10")
-        b = by_id.get("three_engine/B/3dsig_r10")
-        if live_any:
-            lines.append(
-                f"> ### 🔵 NOT COMPLETE — three_engine LIVE\n"
-                f"> target=`{cur or '—'}`"
-            )
-        elif _arm_docked(b0) and _arm_docked(b):
-            st0 = int((b0 or {}).get("S_top10") or 0)
-            st1 = int((b or {}).get("S_top10") or 0)
-            n0 = int((b0 or {}).get("N") or 0)
-            n1 = int((b or {}).get("N") or 0)
-            if st0 == 0 and st1 == 0 and n0 > 0:
-                lines.append(
-                    f"> ### 🔴 DOCKING COMPLETE — SCIENCE GATE FAIL (pilot8)\n"
-                    f"> S_top10 B0={st0}/{n0} · B={st1}/{n1} · A may need fixed-binary re-run"
-                )
-            else:
-                lines.append(
-                    f"> ### 🟢 DOCKING COMPLETE (pilot8)\n"
-                    f"> S_top10 B0={st0}/{n0} · B={st1}/{n1}"
-                )
-        else:
-            lines.append(
-                "> ### 🟡 NOT COMPLETE — pilot8 `{A,B0,B}/3dsig_r10` short of N=8 or missing"
-            )
+        lines.append(
+            f"> ### ⬛ IDLE — no full85 campaign activity\n"
+            f"> expected campaign=`{camp}` · serial A→B0→B · Softβ OFF"
+        )
     return lines
 
 
@@ -1245,11 +1235,8 @@ def format_ops_brief(
     # ── per-panel dashboards ──────────────────────────────────────────────
     for panel, camps in by_panel.items():
         if panel == "full85":
-            title = "🚀 Full Astex Diverse 85  ·  R=1  ·  **PRIMARY**"
-            sub = "serial A → B0 → B · Softβ election OFF · CF scoring proxy ≠ ΔG"
-        elif panel == "pilot8":
-            title = "🧪 Pilot8 red-pair  ·  N=8  ·  control"
-            sub = "reference rates · packaging/science baseline"
+            title = f"🚀 Full Astex Diverse 85  ·  R=1  ·  **PRIMARY**  ·  `{_active_full85_campaign()}`"
+            sub = "serial A → B0 → B · Softβ election OFF · CF scoring proxy ≠ ΔG · wall_s per target"
         else:
             title = f"📦 {panel}"
             sub = ""
@@ -1686,9 +1673,11 @@ def main(argv: Optional[List[str]] = None) -> int:
         "throughput_maximizer": _pid_prefer(q / "logs/throughput_maximizer.pid"),
     }
 
+    # Rebind specs at runtime (FLEXAID_CAMPAIGN / newest full85 dir)
+    campaign_specs = _full85_campaign_specs()
     campaigns: List[Dict[str, Any]] = []
-    for spec in CAMPAIGN_SPECS:
-        # rel is under campaigns/, e.g. three_engine/A/3dsig_r10
+    for spec in campaign_specs:
+        # rel is under campaigns/, e.g. three_engine/A/3dsig_full85_scratch_*
         rel = Path(spec["rel"])
         local_root_c = local_camps / rel
         icloud_root_c = res / "campaigns" / rel
