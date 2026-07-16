@@ -202,6 +202,9 @@ void read_input(FA_Global* FA,atom** atoms, resid** residue,rot** rotamer,gridpo
 		if(strcmp(field,"VINDEX") == 0){FA->vindex=1;}
 		if(strcmp(field,"HTPMOD") == 0){FA->htpmode=true;}
 		if(strcmp(field,"PERMEA") == 0){sscanf(buffer,"%s %f",field,&FA->permeability);}
+		// SOFTWA <Å>: soft-core wall cutoff for CF.wal (6-char classic keyword).
+		// 0 = legacy capped r^-12; >0 = v43 Hermite soft-core (default 0.40).
+		if(strcmp(field,"SOFTWA") == 0){sscanf(buffer,"%s %f",field,&FA->soft_wall_cutoff);}
 		if(strcmp(field,"INTRAF") == 0){sscanf(buffer,"%s %f",field,&FA->intrafraction);}
 		if(strcmp(field,"VARDIS") == 0){sscanf(buffer,"%s %lf",field,&FA->delta_angstron);}
 		if(strcmp(field,"VARANG") == 0){sscanf(buffer,"%s %lf",field,&FA->delta_angle);}

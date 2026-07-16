@@ -49,7 +49,7 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
-from typing import List, Optional, Sequence
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 # Local script imports (same directory) for P0 canary prep gates.
 _SCRIPTS_DIR = Path(__file__).resolve().parent
@@ -75,7 +75,8 @@ DEFAULT_GEN = 2000  # claim freeze 2026-07-15 (was 6000)
 DEFAULT_RESTARTS = 5
 DEFAULT_MAXRES = 50  # match FlexAIDdS cluster emit ceiling for fair S3/BCR
 MATRIX_NAME = "MC_st0r5.2_6.dat"
-MATRIX_MD5_PIN = "72d7c7396702331d96ff12d18f831796"
+# Repo / baseline-validated JCIM matrix (NOT the 72d7 campaign fork that sweetens 2–4 packing).
+MATRIX_MD5_PIN = "9dc93717dfed0698006d88dd6a9627bc"
 LIGAND_RESNUM = 9999
 ATOM_INDEX = 90000
 
@@ -102,19 +103,35 @@ PILOT8 = ["1G9V", "1GPK", "1MEH", "1P62", "1Q4G", "1R9O", "1T40", "2BYS"]
 # Engine chooses MinPts once in FastOPTICS_cluster.cpp — no multi-scale ladder in CONFIG.
 # See docs/implementation/fo_minpts_literature.md and 3dsig_red_pair_protocol.md §2.1.
 ARM_SPEC = {
-    "A": {"bin_arm": "A", "temper": 0, "clusta": "CF", "label": "FlexAID-2015 JCIM CF"},
+    "A": {
+        "bin_arm": "A",
+        "temper": 0,
+        "clusta": "CF",
+        "label": "FlexAID historical pin TEMPER0 CLUSTA CF (must differ SHA from master B)",
+    },
     "B0": {
         "bin_arm": "B",
         "temper": 0,
         "clusta": "CF",
-        "label": "FlexAID-master TEMPER 0 / CF (deferred)",
+        # Twin of A when bin A==B SHA — not an independent control. Prefer arm B for master.
+        "label": "master TEMPER0 CLUSTA CF (twin of A if same binary; not claim control)",
+        "science_control": False,
     },
     "B": {
         "bin_arm": "B",
         "temper": 21,
         "clusta": "FO",
         "fo_minpts_policy": "single_literature",
-        "label": "FlexAID-master TEMPER 21 / FO single-literature-MinPts entropy",
+        "label": "master TEMPER21 CLUSTA FO single-literature-MinPts",
+    },
+    # Arm C: FO @ 298K — only after panel native CF oracle PASS (claim gate).
+    "C": {
+        "bin_arm": "B",
+        "temper": 298,
+        "clusta": "FO",
+        "fo_minpts_policy": "single_literature",
+        "label": "master TEMPER298 CLUSTA FO (requires native CF oracle PASS)",
+        "requires_oracle_pass": True,
     },
 }
 
@@ -257,9 +274,98 @@ def convert_spheres_to_atom(src: Path, dst: Path) -> int:
     return n
 
 
+def _pdb_xyz(line: str) -> Optional[Tuple[float, float, float]]:
+    if len(line) < 54:
+        return None
+    try:
+        return (float(line[30:38]), float(line[38:46]), float(line[46:54]))
+    except ValueError:
+        return None
+
+
+def prune_spheres_near_ligand(
+    spheres_pdb: Path,
+    ligand_ref: Path,
+    *,
+    max_dist: float = 8.0,
+    max_spheres: int = 2500,
+) -> Dict[str, Any]:
+    """Keep LOCCLF spheres near LIG_ref; cap count for GA budget.
+
+    Oversized native-occupied GetCleft clouds (10k–25k spheres) dilute search
+    under R=1 budgets. Prune by distance to any LIG_ref heavy atom, then
+    nearest-first cap to ``max_spheres``.
+    """
+    import math
+
+    lig_xyz: List[Tuple[float, float, float]] = []
+    if ligand_ref.is_file():
+        for line in ligand_ref.read_text(errors="replace").splitlines():
+            if line.startswith(("ATOM  ", "HETATM")):
+                xyz = _pdb_xyz(line)
+                if xyz:
+                    lig_xyz.append(xyz)
+    if not lig_xyz:
+        return {"pruned": False, "reason": "no_ligand_coords", "n_in": 0, "n_out": 0}
+
+    header: List[str] = []
+    spheres: List[Tuple[float, str]] = []  # (min_dist, line)
+    n_in = 0
+    for line in spheres_pdb.read_text(errors="replace").splitlines():
+        if line.startswith(("ATOM  ", "HETATM")):
+            n_in += 1
+            xyz = _pdb_xyz(line)
+            if xyz is None:
+                continue
+            dmin = min(
+                math.sqrt(
+                    (xyz[0] - lx) ** 2 + (xyz[1] - ly) ** 2 + (xyz[2] - lz) ** 2
+                )
+                for lx, ly, lz in lig_xyz
+            )
+            if dmin <= max_dist:
+                # normalize to ATOM record for classic FlexAID
+                atom_line = ("ATOM  " + line[6:]) if line.startswith("HETATM") else line
+                spheres.append((dmin, atom_line))
+        else:
+            header.append(line)
+
+    spheres.sort(key=lambda t: t[0])
+    kept = spheres[: max(1, int(max_spheres))]
+    lines_out = header + [ln for _, ln in kept]
+    if not kept:
+        return {"pruned": False, "reason": "empty_after_prune", "n_in": n_in, "n_out": 0}
+    spheres_pdb.write_text("\n".join(lines_out) + "\n")
+    return {
+        "pruned": True,
+        "n_in": n_in,
+        "n_out": len(kept),
+        "max_dist": max_dist,
+        "max_spheres": max_spheres,
+        "max_kept_dist": kept[-1][0] if kept else None,
+    }
+
+
 def parse_fledih_count(ligand_inp: Path) -> int:
     text = ligand_inp.read_text(errors="replace")
     return sum(1 for line in text.splitlines() if line.startswith("FLEDIH"))
+
+
+def resolve_soft_wall_cutoff(explicit: Optional[float] = None) -> float:
+    """Soft-core wall cutoff (Å) for classic CONFIG SOFTWA.
+
+    Default 0.40 matches DatasetRunner / top.cpp. Set FLEXAIDDS_SOFT_WALL=0 for
+    legacy hard r^-12 (not recommended — CF.com overpacking pathology).
+    """
+    if explicit is not None:
+        return float(explicit)
+    env = os.environ.get("FLEXAIDDS_SOFT_WALL", "").strip()
+    if env:
+        try:
+            return float(env)
+        except ValueError:
+            pass
+    return 0.40
 
 
 def write_config(
@@ -276,7 +382,9 @@ def write_config(
     temper: int,
     n_flex: int,
     maxres: int = DEFAULT_MAXRES,
+    soft_wall_cutoff: Optional[float] = None,
 ) -> None:
+    soft_wa = resolve_soft_wall_cutoff(soft_wall_cutoff)
     lines: List[str] = [
         "# generated by scripts/generate_flexaid_inp.py",
         f"PDBNAM {target_pdb}",
@@ -296,6 +404,8 @@ def write_config(
         [
             f"IMATRX {matrix_path}",
             "PERMEA 0.9",
+            # SOFTWA: 6-char classic keyword → FA->soft_wall_cutoff (Å)
+            f"SOFTWA {soft_wa:.2f}",
             "VARANG 5.0",
             "VARDIH 5.0",
             "VARFLX 10.0",
@@ -424,6 +534,8 @@ def prepare_target(
     skip_clean_apo: bool = False,
     skip_ligand_gate: bool = False,
     max_bond: float = 3.0,
+    sphere_max: int = 0,
+    sphere_max_dist: float = 8.0,
 ) -> Path:
     if arm not in ARM_SPEC:
         raise ValueError(f"unknown arm {arm}; expected one of {list(ARM_SPEC)}")
@@ -528,6 +640,7 @@ def prepare_target(
                 apo_work,
                 keep_hoh=use_hoh,
                 keep_metals=use_metals,
+                ligand_ref=ligand_ref if ligand_ref.is_file() else None,
             )
             (work / "clean_apo_report.json").write_text(
                 json.dumps(clean_report.as_dict(), indent=2) + "\n",
@@ -536,6 +649,7 @@ def prepare_target(
             print(
                 f"  clean_apo {pdb}: waters={clean_report.waters_removed} "
                 f"metals={clean_report.metals_removed} "
+                f"metals_near_lig={getattr(clean_report, 'metals_kept_near_ligand', 0)} "
                 f"atoms {clean_report.atoms_in}->{clean_report.atoms_out} "
                 f"(keep_hoh={use_hoh} keep_metals={use_metals})"
             )
@@ -549,7 +663,11 @@ def prepare_target(
                 if not apo_raw.is_file():
                     shutil.copy2(apo, apo_raw)
                 clean_apo_file(
-                    apo_raw, apo_work, keep_hoh=use_hoh, keep_metals=use_metals
+                    apo_raw,
+                    apo_work,
+                    keep_hoh=use_hoh,
+                    keep_metals=use_metals,
+                    ligand_ref=ligand_ref if ligand_ref.is_file() else None,
                 )
             else:
                 shutil.copy2(apo, apo_work)
@@ -581,6 +699,33 @@ def prepare_target(
         convert_spheres_to_atom(sph_src, sph_dst)
         (work / "sphere_source.txt").write_text(str(sph_src) + "\n")
 
+    # Optional LOCCLF prune (arg or env): oversized native-occupied clouds dilute GA
+    sph_max = int(sphere_max or 0)
+    if sph_max <= 0:
+        sph_max = int(os.environ.get("FLEXAIDDS_SPHERE_MAX", "0") or "0")
+    sph_dist = float(sphere_max_dist)
+    env_dist = os.environ.get("FLEXAIDDS_SPHERE_MAX_DIST", "").strip()
+    if env_dist:
+        try:
+            sph_dist = float(env_dist)
+        except ValueError:
+            pass
+    if sph_max > 0 and ligand_ref.is_file():
+        prune_info = prune_spheres_near_ligand(
+            sph_dst,
+            ligand_ref,
+            max_dist=sph_dist,
+            max_spheres=sph_max,
+        )
+        (work / "sphere_prune.json").write_text(
+            json.dumps(prune_info, indent=2) + "\n"
+        )
+        if prune_info.get("pruned"):
+            print(
+                f"  sphere prune {pdb}: {prune_info['n_in']} → {prune_info['n_out']} "
+                f"(d≤{sph_dist}Å max={sph_max})"
+            )
+
     n_flex = parse_fledih_count(ligand_inp)
     temper = int(spec["temper"]) if temper_override is None else int(temper_override)
 
@@ -601,6 +746,7 @@ def prepare_target(
         rmsd_ref=ligand_ref.resolve() if ligand_ref.is_file() else None,
         temper=temper,
         n_flex=n_flex,
+        soft_wall_cutoff=resolve_soft_wall_cutoff(),
     )
 
     sharealf, sharepek, sharescl = resolve_pshare_knobs()
@@ -633,6 +779,7 @@ def prepare_target(
             rmsd_ref=ligand_ref.resolve() if ligand_ref.is_file() else None,
             temper=temper,
             n_flex=n_flex,
+            soft_wall_cutoff=resolve_soft_wall_cutoff(),
         )
         (rdir / "seed.txt").write_text(f"{seed}\n")
 
@@ -669,6 +816,11 @@ def prepare_target(
         ),
         "clean_apo": not skip_clean_apo,
         "ligand_integrity_gate": not skip_ligand_gate,
+        "soft_wall_cutoff": resolve_soft_wall_cutoff(),
+        "sphere_max": sph_max if sph_max > 0 else None,
+        "sphere_max_dist": sph_dist if sph_max > 0 else None,
+        "science_control": bool(spec.get("science_control", True)),
+        "requires_oracle_pass": bool(spec.get("requires_oracle_pass", False)),
         "post_ini_preflight": (
             "python3 scripts/validate_ligand_integrity.py "
             f"--work {work.resolve()} --require-ini"
@@ -761,6 +913,18 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         default=3.0,
         help="Max CONECT bond (Å) for ligand integrity gate (default 3.0)",
     )
+    ap.add_argument(
+        "--sphere-max",
+        type=int,
+        default=int(os.environ.get("FLEXAIDDS_SPHERE_MAX", "0") or "0"),
+        help="Prune LOCCLF to this many spheres near LIG_ref (0=off; env FLEXAIDDS_SPHERE_MAX)",
+    )
+    ap.add_argument(
+        "--sphere-max-dist",
+        type=float,
+        default=float(os.environ.get("FLEXAIDDS_SPHERE_MAX_DIST", "8.0") or "8.0"),
+        help="Max distance (Å) from LIG_ref for sphere keep (default 8; env FLEXAIDDS_SPHERE_MAX_DIST)",
+    )
     args = ap.parse_args(argv)
 
     if not args.queue_root:
@@ -821,6 +985,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                     skip_clean_apo=args.skip_clean_apo,
                     skip_ligand_gate=args.skip_ligand_gate,
                     max_bond=args.max_bond,
+                    sphere_max=args.sphere_max,
+                    sphere_max_dist=args.sphere_max_dist,
                 )
                 print(f"OK {arm}/{pdb} → {w}")
                 n_ok += 1

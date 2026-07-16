@@ -79,6 +79,23 @@ def test_keep_metals(cta):
     assert rep.waters_removed == 2
 
 
+def test_keep_metals_near_ligand(cta):
+    """Catalytic metals within 4 Å of ligand are kept; far metals still stripped."""
+    # Ligand heavy at (5.5, 5.0, 5.0) — near MG at (5,5,5), far from FE ion at (8,8,8)
+    lig = [(5.5, 5.0, 5.0)]
+    out, rep = cta.clean_apo_pdb(
+        TINY_PDB,
+        keep_hoh=False,
+        keep_metals=False,
+        lig_xyz=lig,
+        metal_near_ligand_a=4.0,
+    )
+    assert "MG" in out  # ~0.5 Å from lig
+    assert "FE A 404" not in out and "FE    FE" not in out  # far ion stripped
+    assert rep.metals_kept_near_ligand >= 1
+    assert rep.waters_removed == 2
+
+
 def test_file_roundtrip(cta, tmp_path: Path):
     src = tmp_path / "in.pdb"
     dst = tmp_path / "out.pdb"

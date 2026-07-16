@@ -508,6 +508,10 @@ int main(int argc, char **argv){
 
 	FA->force_interaction=0;
 	FA->interaction_factor=5.0;
+	// Classic CONFIG path never set soft_wall_cutoff (stayed 0 → hard r^-12 only).
+	// Default matches JSON/DatasetRunner (0.40 Å) so CF.wal competes with CF.com;
+	// override with SOFTWA 0.0 in CONFIG.inp for pure legacy hard wall.
+	FA->soft_wall_cutoff = 0.40f;
 	FA->atm_cnt=0;
 	FA->atm_cnt_real=0;
 	FA->res_cnt=0;
