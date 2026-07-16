@@ -17,6 +17,15 @@ ProcessLigand (processligand-py) produces ligand .inp/.ic and typed target PDB.
 Sphere files with HETATM records are rewritten as ATOM for classic FlexAID
 read_spheres (A/B binaries only accept ATOM in some builds).
 
+P0 canary prep gates (pilot8 failure recovery):
+  * Clean apo TARGET: strip HOH/WAT always; metals unless FLEXAIDDS_KEEP_METALS=1
+    (see scripts/clean_target_apo.py). Orphan CONECT cleaned.
+  * Ligand integrity after ProcessLigand on LIG_ref (heavy count + CONECT bonds).
+    INI is only available after FlexAID starts — post-INI preflight:
+      python3 scripts/validate_ligand_integrity.py --work <work> --require-ini
+  * Native CF oracle (after results exist) — ranking experiments forbidden until pass:
+      python3 scripts/native_cf_oracle_gate.py --work <work> --results <out>/<pdb>
+
 Seed note: staged FlexAID A/B binaries seed with time(0); STRTSEED is written
 into ga.inp for provenance / future binaries, but may be ignored by current
 Mach-O pins. Restarts are separate process invocations.
@@ -42,6 +51,23 @@ import sys
 from pathlib import Path
 from typing import List, Optional, Sequence
 
+# Local script imports (same directory) for P0 canary prep gates.
+_SCRIPTS_DIR = Path(__file__).resolve().parent
+if str(_SCRIPTS_DIR) not in sys.path:
+    sys.path.insert(0, str(_SCRIPTS_DIR))
+
+try:
+    from clean_target_apo import clean_apo_file, resolve_keep_flags
+except ImportError:  # pragma: no cover
+    clean_apo_file = None  # type: ignore[assignment]
+    resolve_keep_flags = None  # type: ignore[assignment]
+
+try:
+    from ligand_integrity import validate_ligand_integrity, format_result as _fmt_lig
+except ImportError:  # pragma: no cover
+    validate_ligand_integrity = None  # type: ignore[assignment]
+    _fmt_lig = None  # type: ignore[assignment]
+
 # Protocol defaults (three_engine_entropy_comparison.md)
 SEED_BASE = 20260714
 DEFAULT_POP = 1000
@@ -55,7 +81,14 @@ ATOM_INDEX = 90000
 
 PILOT8 = ["1G9V", "1GPK", "1MEH", "1P62", "1Q4G", "1R9O", "1T40", "2BYS"]
 
-# TEMPER for arm B default = 21 (LP-optimized entropy ranking temperature).
+# P0 canary prep: strip waters/metals for redock TARGET (see clean_target_apo.py).
+# Override with FLEXAIDDS_KEEP_HOH=1 / FLEXAIDDS_KEEP_METALS=1 or --keep-hoh/--keep-metals.
+# Ligand integrity after ProcessLigand; INI only exists after FlexAID start — see
+# scripts/validate_ligand_integrity.py --require-ini for post-INI preflight.
+
+# TEMPER for arm B default = 21 (LP-optimized engine soft-T for FO/ACF emission).
+# Soft-β here is FlexAID β=1/T on CF a.u. — not k_B·T kcal; not DatasetRunner Softβ S1.
+# Arm B FO + TEMPER ≠ Softβ rescoring of frozen CF ensembles (see softbeta_election_policy.md).
 # Override per run: --temper N  (applies to all listed arms that receive entropy).
 # Arm B: CLUSTA FO with exactly ONE literature MinPts (Ankerst[10-20]+Sander 2*dim+Ester floor).
 # Engine chooses MinPts once in FastOPTICS_cluster.cpp — no multi-scale ladder in CONFIG.
@@ -345,6 +378,11 @@ def prepare_target(
     processligand: Optional[Path] = None,
     force: bool = False,
     temper_override: Optional[int] = None,
+    keep_hoh: bool = False,
+    keep_metals: bool = False,
+    skip_clean_apo: bool = False,
+    skip_ligand_gate: bool = False,
+    max_bond: float = 3.0,
 ) -> Path:
     if arm not in ARM_SPEC:
         raise ValueError(f"unknown arm {arm}; expected one of {list(ARM_SPEC)}")
@@ -387,12 +425,95 @@ def prepare_target(
     if not ligand_ic.is_file():
         raise RuntimeError(f"ProcessLigand did not produce {ligand_ic}")
 
+    # ── P0 ligand integrity gate (post-ProcessLigand, pre-FlexAID) ──────────
+    # Self-check LIG_ref heavy atoms + CONECT bonds. INI is only available after
+    # FlexAID starts — document post-INI: validate_ligand_integrity.py --require-ini
+    if not skip_ligand_gate and validate_ligand_integrity is not None:
+        if not ligand_ref.is_file():
+            raise RuntimeError(
+                f"ProcessLigand did not produce {ligand_ref} "
+                "(required for ligand integrity gate)"
+            )
+        lig_res = validate_ligand_integrity(
+            ligand_ref,
+            None,
+            max_bond=max_bond,
+            check_bonds=True,
+        )
+        gate_path = work / "ligand_integrity_prep.json"
+        gate_path.write_text(
+            json.dumps(lig_res.as_dict(), indent=2) + "\n", encoding="utf-8"
+        )
+        if not lig_res.ok:
+            detail = _fmt_lig(lig_res) if _fmt_lig else lig_res.messages
+            raise RuntimeError(
+                f"ligand integrity gate failed for {pdb}:\n{detail}\n"
+                f"report: {gate_path}"
+            )
+        print(
+            f"  ligand_integrity OK {pdb} heavy={lig_res.ref_heavy} "
+            f"(INI post-flight: scripts/validate_ligand_integrity.py "
+            f"--work {work} --require-ini)"
+        )
+    elif not ligand_ref.is_file():
+        # Soft note only when gate skipped
+        print(f"  WARN: missing {ligand_ref} (RMSDST will be omitted)", file=sys.stderr)
+
+    # ── Clean apo for redock TARGET (waters always; metals default OFF) ─────
+    # Only rewrite apo_work when we will (re)run ProcessLigand -target, so
+    # TARGET.inp.pdb stays consistent with the cleaned apo on disk.
     apo_work = work / f"{pdb}_apo.pdb"
-    if not apo_work.exists() or force:
-        shutil.copy2(apo, apo_work)
+    apo_raw = work / f"{pdb}_apo.raw.pdb"
     tgt_prefix = work / "TARGET"
     target_pdb = work / "TARGET.inp.pdb"
-    if not target_pdb.is_file() or force:
+    need_target = force or not target_pdb.is_file()
+
+    if resolve_keep_flags is not None:
+        env_hoh, env_metals = resolve_keep_flags(
+            keep_hoh=True if keep_hoh else None,
+            keep_metals=True if keep_metals else None,
+        )
+        use_hoh = bool(keep_hoh) or bool(env_hoh)
+        use_metals = bool(keep_metals) or bool(env_metals)
+    else:
+        use_hoh, use_metals = keep_hoh, keep_metals
+
+    if need_target:
+        if not apo_raw.is_file() or force:
+            shutil.copy2(apo, apo_raw)
+        if not skip_clean_apo and clean_apo_file is not None:
+            clean_report = clean_apo_file(
+                apo_raw if apo_raw.is_file() else apo,
+                apo_work,
+                keep_hoh=use_hoh,
+                keep_metals=use_metals,
+            )
+            (work / "clean_apo_report.json").write_text(
+                json.dumps(clean_report.as_dict(), indent=2) + "\n",
+                encoding="utf-8",
+            )
+            print(
+                f"  clean_apo {pdb}: waters={clean_report.waters_removed} "
+                f"metals={clean_report.metals_removed} "
+                f"atoms {clean_report.atoms_in}->{clean_report.atoms_out} "
+                f"(keep_hoh={use_hoh} keep_metals={use_metals})"
+            )
+        else:
+            if not apo_work.exists() or force:
+                shutil.copy2(apo, apo_work)
+    else:
+        if not apo_work.exists():
+            # Recover missing apo_work without forcing target rebuild
+            if not skip_clean_apo and clean_apo_file is not None:
+                if not apo_raw.is_file():
+                    shutil.copy2(apo, apo_raw)
+                clean_apo_file(
+                    apo_raw, apo_work, keep_hoh=use_hoh, keep_metals=use_metals
+                )
+            else:
+                shutil.copy2(apo, apo_work)
+
+    if need_target:
         run_processligand(pl, apo_work, tgt_prefix, target=True)
     if not target_pdb.is_file():
         alt = work / f"{pdb}_apo.inp.pdb"
@@ -493,6 +614,20 @@ def prepare_target(
             "Staged A/B FlexAID binaries use time(0) srand; STRTSEED in ga.inp "
             "is provenance-only unless the binary implements it."
         ),
+        "clean_apo": not skip_clean_apo,
+        "ligand_integrity_gate": not skip_ligand_gate,
+        "post_ini_preflight": (
+            "python3 scripts/validate_ligand_integrity.py "
+            f"--work {work.resolve()} --require-ini"
+        ),
+        "native_cf_oracle": (
+            "python3 scripts/native_cf_oracle_gate.py "
+            f"--work {work.resolve()} --results <OUT>/{pdb}"
+        ),
+        "ranking_forbidden_until": (
+            "native_cf_oracle_gate.py exit 0 on canary "
+            "(CF_native <= best_ga_cf + tol); ranking experiments forbidden until then"
+        ),
     }
     (work / "meta.json").write_text(json.dumps(meta, indent=2) + "\n")
     return work
@@ -547,6 +682,32 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     )
     ap.add_argument("--force", action="store_true")
     ap.add_argument("--dry-run", action="store_true", help="Print plan only")
+    ap.add_argument(
+        "--keep-hoh",
+        action="store_true",
+        help="Keep waters in TARGET apo (default strip; or FLEXAIDDS_KEEP_HOH=1)",
+    )
+    ap.add_argument(
+        "--keep-metals",
+        action="store_true",
+        help="Keep metals in TARGET apo (default strip; or FLEXAIDDS_KEEP_METALS=1)",
+    )
+    ap.add_argument(
+        "--skip-clean-apo",
+        action="store_true",
+        help="Do not strip waters/metals from apo before ProcessLigand -target",
+    )
+    ap.add_argument(
+        "--skip-ligand-gate",
+        action="store_true",
+        help="Skip LIG_ref integrity gate after ProcessLigand",
+    )
+    ap.add_argument(
+        "--max-bond",
+        type=float,
+        default=3.0,
+        help="Max CONECT bond (Å) for ligand integrity gate (default 3.0)",
+    )
     args = ap.parse_args(argv)
 
     if not args.queue_root:
@@ -602,6 +763,11 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                     seed_base=args.seed_base,
                     processligand=pl,
                     force=args.force,
+                    keep_hoh=args.keep_hoh,
+                    keep_metals=args.keep_metals,
+                    skip_clean_apo=args.skip_clean_apo,
+                    skip_ligand_gate=args.skip_ligand_gate,
+                    max_bond=args.max_bond,
                 )
                 print(f"OK {arm}/{pdb} → {w}")
                 n_ok += 1
