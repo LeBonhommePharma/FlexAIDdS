@@ -20,16 +20,19 @@ Usage:
 Env:
   FLEXAIDDS_KEEP_HOH=1      keep waters
   FLEXAIDDS_KEEP_METALS=1   keep metal ions
+  FLEXAIDDS_KEEP_METALS_NEAR_LIGAND=<Å>  keep metals within this distance of
+      any ligand heavy atom (default 4.0 when ligand coords provided; 0=off)
 """
 
 from __future__ import annotations
 
 import argparse
+import math
 import os
 import sys
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import Iterable, List, Optional, Sequence, Set
+from typing import Iterable, List, Optional, Sequence, Set, Tuple
 
 WATER_RES = frozenset({"HOH", "WAT", "H2O", "DOD", "SOL", "TIP", "TIP3", "WAT2"})
 
@@ -100,11 +103,13 @@ class CleanReport:
     atoms_out: int = 0
     waters_removed: int = 0
     metals_removed: int = 0
+    metals_kept_near_ligand: int = 0
     other_removed: int = 0
     conect_removed: int = 0
     conect_rewritten: int = 0
     keep_hoh: bool = False
     keep_metals: bool = False
+    metal_near_ligand_a: float = 0.0
     removed_resnames: List[str] = field(default_factory=list)
     messages: List[str] = field(default_factory=list)
 
@@ -144,12 +149,52 @@ def _element(line: str) -> str:
     return ""
 
 
+def _xyz(line: str) -> Optional[Tuple[float, float, float]]:
+    if len(line) < 54:
+        return None
+    try:
+        return (float(line[30:38]), float(line[38:46]), float(line[46:54]))
+    except ValueError:
+        return None
+
+
+def load_ligand_heavy_xyz(ligand_path: Path) -> List[Tuple[float, float, float]]:
+    """Heavy-atom coords from LIG_ref / ligand PDB (or SDF-like PDB columns)."""
+    out: List[Tuple[float, float, float]] = []
+    if not ligand_path.is_file():
+        return out
+    for line in ligand_path.read_text(encoding="utf-8", errors="replace").splitlines():
+        if not (line.startswith("ATOM  ") or line.startswith("HETATM")):
+            continue
+        elem = _element(line)
+        if elem in {"H", "D"}:
+            continue
+        xyz = _xyz(line)
+        if xyz:
+            out.append(xyz)
+    return out
+
+
+def _min_dist_to_ligand(
+    line: str, lig_xyz: Sequence[Tuple[float, float, float]]
+) -> Optional[float]:
+    xyz = _xyz(line)
+    if xyz is None or not lig_xyz:
+        return None
+    return min(
+        math.sqrt((xyz[0] - lx) ** 2 + (xyz[1] - ly) ** 2 + (xyz[2] - lz) ** 2)
+        for lx, ly, lz in lig_xyz
+    )
+
+
 def should_strip_atom(
     line: str,
     *,
     keep_hoh: bool,
     keep_metals: bool,
     extra_strip_res: Optional[Set[str]] = None,
+    lig_xyz: Optional[Sequence[Tuple[float, float, float]]] = None,
+    metal_near_ligand_a: float = 0.0,
 ) -> str:
     """Return reason code if atom should be stripped, else empty string."""
     if not (line.startswith("ATOM  ") or line.startswith("HETATM")):
@@ -168,6 +213,11 @@ def should_strip_atom(
     if res in METAL_RES or (elem in METAL_RES and res in METAL_RES):
         if keep_metals:
             return ""
+        # Keep catalytic / structural metals that coordinate the crystal ligand.
+        if metal_near_ligand_a > 0.0 and lig_xyz:
+            d = _min_dist_to_ligand(line, lig_xyz)
+            if d is not None and d <= metal_near_ligand_a:
+                return ""
         return "metal"
 
     if res in extra:
@@ -215,12 +265,28 @@ def rewrite_conect(line: str, kept_serials: Set[int]) -> Optional[str]:
     return out + "\n" if line.endswith("\n") else out
 
 
+def resolve_metal_near_ligand_a(explicit: Optional[float] = None) -> float:
+    """Å cutoff for keeping metals near ligand; 0 disables. Default 4.0 via env/default."""
+    if explicit is not None:
+        return float(explicit)
+    env = os.environ.get("FLEXAIDDS_KEEP_METALS_NEAR_LIGAND", "").strip()
+    if env:
+        try:
+            return float(env)
+        except ValueError:
+            return 0.0
+    # Default ON at 4.0 Å when ligand coords are supplied by callers.
+    return 4.0
+
+
 def clean_apo_pdb(
     text: str,
     *,
     keep_hoh: bool = False,
     keep_metals: bool = False,
     extra_strip_res: Optional[Iterable[str]] = None,
+    lig_xyz: Optional[Sequence[Tuple[float, float, float]]] = None,
+    metal_near_ligand_a: float = 0.0,
 ) -> tuple[str, CleanReport]:
     """Clean PDB text; return (new_text, report)."""
     extra = {r.strip().upper() for r in (extra_strip_res or []) if r.strip()}
@@ -229,6 +295,7 @@ def clean_apo_pdb(
         output_path="",
         keep_hoh=keep_hoh,
         keep_metals=keep_metals,
+        metal_near_ligand_a=float(metal_near_ligand_a or 0.0),
     )
     lines = text.splitlines(keepends=True)
     kept_lines: List[str] = []
@@ -249,6 +316,8 @@ def clean_apo_pdb(
                 keep_hoh=keep_hoh,
                 keep_metals=keep_metals,
                 extra_strip_res=extra,
+                lig_xyz=lig_xyz,
+                metal_near_ligand_a=metal_near_ligand_a,
             )
             if reason:
                 res = _resname(line)
@@ -260,6 +329,18 @@ def clean_apo_pdb(
                 else:
                     report.other_removed += 1
                 continue
+            # Count metals kept only because they are ligand-proximal
+            res = _resname(line)
+            elem = _element(line)
+            if (
+                not keep_metals
+                and metal_near_ligand_a > 0
+                and lig_xyz
+                and (res in METAL_RES or elem in METAL_RES)
+            ):
+                d = _min_dist_to_ligand(line, lig_xyz)
+                if d is not None and d <= metal_near_ligand_a:
+                    report.metals_kept_near_ligand += 1
             ser = _serial(line)
             if ser is not None:
                 kept_serials.add(ser)
@@ -296,6 +377,7 @@ def clean_apo_pdb(
     report.removed_resnames = sorted(removed_res)
     report.messages.append(
         f"stripped waters={report.waters_removed} metals={report.metals_removed} "
+        f"metals_kept_near_lig={report.metals_kept_near_ligand} "
         f"other={report.other_removed}; atoms {atom_in}->{atom_out}; "
         f"conect_removed={report.conect_removed}"
     )
@@ -309,13 +391,22 @@ def clean_apo_file(
     keep_hoh: bool = False,
     keep_metals: bool = False,
     extra_strip_res: Optional[Iterable[str]] = None,
+    ligand_ref: Optional[Path] = None,
+    metal_near_ligand_a: Optional[float] = None,
 ) -> CleanReport:
     text = src.read_text(encoding="utf-8", errors="replace")
+    lig_xyz: List[Tuple[float, float, float]] = []
+    near_a = 0.0
+    if ligand_ref is not None and Path(ligand_ref).is_file():
+        lig_xyz = load_ligand_heavy_xyz(Path(ligand_ref))
+        near_a = resolve_metal_near_ligand_a(metal_near_ligand_a)
     out, report = clean_apo_pdb(
         text,
         keep_hoh=keep_hoh,
         keep_metals=keep_metals,
         extra_strip_res=extra_strip_res,
+        lig_xyz=lig_xyz or None,
+        metal_near_ligand_a=near_a,
     )
     report.input_path = str(src)
     report.output_path = str(dst)

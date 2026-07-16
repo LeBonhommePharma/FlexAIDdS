@@ -6,11 +6,12 @@
 #
 # Deck knobs (same as pilot8 3dsig_r10):
 #   pop=1000 gen=2000 (2e6 evals) restarts=10
-#   matrix MD5 72d7c7396702331d96ff12d18f831796
-#   CLI: FlexAID --legacy
-#   Arm order: A (CF) -> B0 (master CF) -> B (TEMPER 21 + single FO MinPts)
-# Live OUT namespace (separate from pilot8):
-#   $FLEXAIDDS_LOCAL_ROOT/campaigns/three_engine/{A,B0,B}/3dsig_full85_r10/
+#   matrix MD5 9dc93717dfed0698006d88dd6a9627bc (repo/baseline-validated)
+#   CLI: FlexAID --legacy + SOFTWA 0.40 + sphere prune + metal-near-ligand
+#   Arm order (default): A → B  (B0 skip unless FLEXAID_INCLUDE_B0=1)
+#   Arm C FO@298K only after native CF oracle PASS
+# Live OUT namespace:
+#   $FLEXAIDDS_LOCAL_ROOT/campaigns/three_engine/{A,B0,B,C}/$CAMPAIGN/
 #
 # Usage:
 #   bash scripts/run_3dsig_red_pair_full85.sh --dry-run   # plan only (safe while pilot8 live)
@@ -47,17 +48,80 @@ done
 
 export FLEXAID_POP="${FLEXAID_POP:-1000}"
 export FLEXAID_GEN="${FLEXAID_GEN:-2000}"
-export FLEXAID_RESTARTS="${FLEXAID_RESTARTS:-1}"  # first pass R=1; raise later to resume multi-restart
+# Claim-comparable default: R=10. Diagnostic R=1 only if FLEXAID_DIAGNOSTIC=1.
+# FLEXAID_CLAIM_MODE=1 adds hard gates (oracle PASS + A≠B binary split).
+CLAIM_MODE="${FLEXAID_CLAIM_MODE:-0}"
+DIAGNOSTIC="${FLEXAID_DIAGNOSTIC:-0}"
+if [[ "$DIAGNOSTIC" == "1" ]]; then
+  export FLEXAID_RESTARTS="${FLEXAID_RESTARTS:-1}"
+else
+  # Recovery / claim path: multi-restart
+  export FLEXAID_RESTARTS="${FLEXAID_RESTARTS:-10}"
+fi
 export OMP_NUM_THREADS="${OMP_NUM_THREADS:-1}"
 export FLEXAIDDS_PARALLEL_RESTARTS="${FLEXAIDDS_PARALLEL_RESTARTS:-0}"
+# Softβ always OFF unless operator explicitly overrides after oracle PASS
+export FLEXAIDDS_SOFTBETA_ELECTION="${FLEXAIDDS_SOFTBETA_ELECTION:-0}"
+# Soft-core wall on classic path (SOFTWA in CONFIG.inp)
+export FLEXAIDDS_SOFT_WALL="${FLEXAIDDS_SOFT_WALL:-0.40}"
+# Sphere prune default for new preps (oversized LOCCLF); 0 disables
+export FLEXAIDDS_SPHERE_MAX="${FLEXAIDDS_SPHERE_MAX:-2500}"
+export FLEXAIDDS_SPHERE_MAX_DIST="${FLEXAIDDS_SPHERE_MAX_DIST:-8.0}"
+# Keep catalytic metals within 4 Å of crystal ligand
+export FLEXAIDDS_KEEP_METALS_NEAR_LIGAND="${FLEXAIDDS_KEEP_METALS_NEAR_LIGAND:-4.0}"
 
-CAMPAIGN="${FLEXAID_CAMPAIGN:-3dsig_full85_r1}"
-MATRIX_PIN="72d7c7396702331d96ff12d18f831796"
+CAMPAIGN="${FLEXAID_CAMPAIGN:-3dsig_full85_r10_cf_fix}"
+MATRIX_PIN="9dc93717dfed0698006d88dd6a9627bc"
 MAT="$FLEXAIDDS_QUEUE_ROOT/data/MC_st0r5.2_6.dat"
 [[ -f "$MAT" ]] || MAT="$FLEXAIDDS_LOCAL_ROOT/three_engine_entropy_q1/data/MC_st0r5.2_6.dat"
 GOT=$(md5 -q "$MAT" 2>/dev/null || true)
 [[ "$GOT" == "$MATRIX_PIN" ]] || { echo "FAIL: matrix MD5 '$GOT' != $MATRIX_PIN" >&2; exit 90; }
 echo "OK: matrix md5=$GOT path=$MAT"
+
+# --- Claim / science gates (serial only; no dual-launch) ---------------------
+# B0 is NOT a scientific control when bin/A SHA == bin/B SHA (deterministic twin).
+BIN_ROOT="${FLEXAIDDS_LOCAL_ROOT}/three_engine_entropy_q1/bin"
+if [[ "$CLAIM_MODE" == "1" ]]; then
+  if (( FLEXAID_RESTARTS < 10 )); then
+    echo "FAIL: FLEXAID_CLAIM_MODE=1 requires FLEXAID_RESTARTS>=10 (got $FLEXAID_RESTARTS)" >&2
+    exit 93
+  fi
+  if ! python3 "$ROOT/scripts/stage_three_engine_bins.py" --check-claim-split --dest "$BIN_ROOT"; then
+    echo "FAIL: claim mode needs distinct historical A vs master B binaries" >&2
+    exit 94
+  fi
+  ORACLE_STATUS="${FLEXAID_ORACLE_STATUS:-$FLEXAIDDS_LOCAL_ROOT/campaigns/three_engine/${CAMPAIGN}_oracle_status.json}"
+  if [[ ! -f "$ORACLE_STATUS" ]]; then
+    echo "FAIL: claim mode needs native CF oracle status at $ORACLE_STATUS" >&2
+    echo "  Run: python3 scripts/run_panel_native_cf_oracle.py --out-dir ... --status-out $ORACLE_STATUS" >&2
+    exit 95
+  fi
+  if ! python3 -c 'import json,sys; s=json.load(open(sys.argv[1])); sys.exit(0 if s.get("ranking_allowed") else 1)' "$ORACLE_STATUS"; then
+    echo "FAIL: native CF oracle ranking_allowed=false — Softβ/arm-C/claim ranking FORBIDDEN" >&2
+    exit 96
+  fi
+  echo "OK: claim mode gates (R>=10, binary split, oracle PASS)"
+else
+  if [[ "$DIAGNOSTIC" == "1" ]]; then
+    echo "OK: diagnostic mode (R=$FLEXAID_RESTARTS) — not 3Dsig-claimable"
+  else
+    echo "OK: recovery path R=$FLEXAID_RESTARTS Softβ=OFF — set FLEXAID_CLAIM_MODE=1 after oracle PASS for claim gates"
+  fi
+  # Warn if A==B (B0 twin)
+  if [[ -x "$BIN_ROOT/A/FlexAID" && -x "$BIN_ROOT/B/FlexAID" ]]; then
+    if ! python3 "$ROOT/scripts/stage_three_engine_bins.py" --check-claim-split --dest "$BIN_ROOT" 2>/dev/null; then
+      echo "WARN: bin A SHA == bin B SHA → B0 is a deterministic twin of A (not science control)" >&2
+    fi
+  fi
+fi
+# Refuse Softβ unless oracle allows
+if [[ "${FLEXAIDDS_SOFTBETA_ELECTION}" != "0" && "${FLEXAIDDS_SOFTBETA_ELECTION}" != "false" ]]; then
+  ORACLE_STATUS="${FLEXAID_ORACLE_STATUS:-$FLEXAIDDS_LOCAL_ROOT/campaigns/three_engine/${CAMPAIGN}_oracle_status.json}"
+  if [[ ! -f "$ORACLE_STATUS" ]] || ! python3 -c 'import json,sys; s=json.load(open(sys.argv[1])); sys.exit(0 if s.get("softbeta_allowed") else 1)' "$ORACLE_STATUS" 2>/dev/null; then
+    echo "FAIL: Softβ election requested but oracle softbeta_allowed is false/missing" >&2
+    exit 97
+  fi
+fi
 
 # --- Input coverage (Astex Diverse N=85) via python (bash 3.2 safe) ----------
 INP_DIR="$FLEXAIDDS_QUEUE_ROOT/inputs/astex_diverse"
@@ -269,17 +333,49 @@ run_arm() {
   NOHUP=0 bash "$ROOT/scripts/run_flexaid_arm_pilot8.sh" "$arm" "${extra[@]}"
 }
 
-ARMS=(A B0 B)
-if [[ -n "$ONLY" ]]; then
+# Science chain (serial, no dual-launch):
+#   default: A (historical pin) → B (master TEMPER21 FO)
+#   B0: optional only — NOT a claim control when A≡B binary; set FLEXAID_INCLUDE_B0=1
+#   C: FO@298K only after native CF oracle PASS; set FLEXAID_INCLUDE_ARM_C=1
+#   FLEXAID_ARMS="A,B0,B,C" overrides (still enforces C oracle gate)
+INCLUDE_B0="${FLEXAID_INCLUDE_B0:-0}"
+INCLUDE_C="${FLEXAID_INCLUDE_ARM_C:-0}"
+ORACLE_STATUS="${FLEXAID_ORACLE_STATUS:-$FLEXAIDDS_LOCAL_ROOT/campaigns/three_engine/${CAMPAIGN}_oracle_status.json}"
+
+oracle_allows_c() {
+  [[ -f "$ORACLE_STATUS" ]] && python3 -c 'import json,sys; s=json.load(open(sys.argv[1])); sys.exit(0 if s.get("arm_c_fo298_allowed") else 1)' "$ORACLE_STATUS" 2>/dev/null
+}
+
+if [[ -n "${FLEXAID_ARMS:-}" ]]; then
+  IFS=',' read -r -a ARMS <<< "$FLEXAID_ARMS"
+elif [[ -n "$ONLY" ]]; then
   ARMS=("$ONLY")
 else
   case "$FROM" in
-    A) ARMS=(A B0 B) ;;
-    B0) ARMS=(B0 B) ;;
-    B) ARMS=(B) ;;
+    A)
+      ARMS=(A)
+      if [[ "$INCLUDE_B0" == "1" ]]; then ARMS+=(B0); fi
+      ARMS+=(B)
+      if [[ "$INCLUDE_C" == "1" ]]; then ARMS+=(C); fi
+      ;;
+    B0) ARMS=(B0 B); [[ "$INCLUDE_C" == "1" ]] && ARMS+=(C) ;;
+    B) ARMS=(B); [[ "$INCLUDE_C" == "1" ]] && ARMS+=(C) ;;
+    C) ARMS=(C) ;;
     *) echo "bad --from $FROM" >&2; exit 2 ;;
   esac
 fi
+
+# Enforce arm-C oracle gate whenever C is in the chain
+for _a in "${ARMS[@]}"; do
+  if [[ "$_a" == "C" ]]; then
+    if [[ "${FLEXAIDDS_ALLOW_ARM_C:-0}" != "1" ]] && ! oracle_allows_c; then
+      echo "FAIL: arm C requires oracle arm_c_fo298_allowed=true in $ORACLE_STATUS" >&2
+      echo "  (or FLEXAIDDS_ALLOW_ARM_C=1 diagnostic-only). Softβ/FO@298K blocked." >&2
+      exit 98
+    fi
+  fi
+done
+echo "OK: arm order ${ARMS[*]} (INCLUDE_B0=$INCLUDE_B0 INCLUDE_C=$INCLUDE_C CLAIM_MODE=$CLAIM_MODE R=$FLEXAID_RESTARTS SOFT_WALL=$FLEXAIDDS_SOFT_WALL)"
 
 CHAIN_LOG="$LOGDIR/run_3dsig_red_pair_full85.log"
 CHAIN_PID="$LOGDIR/run_3dsig_red_pair_full85.pid"

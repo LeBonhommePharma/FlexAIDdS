@@ -37,7 +37,7 @@ export FLEXAIDDS_QUEUE_ROOT="$Q"
 
 ARM="${1:-}"
 if [[ -z "$ARM" || "$ARM" == -* ]]; then
-  echo "Usage: $0 <A|B0|B> [--dry-run|--smoke|--full85|--pdb ID|--force|--no-prepare]" >&2
+  echo "Usage: $0 <A|B0|B|C> [--dry-run|--smoke|--full85|--pdb ID|--force|--no-prepare]" >&2
   exit 2
 fi
 shift || true
@@ -66,15 +66,32 @@ if (( SMOKE && FULL85 )); then
 fi
 
 case "$ARM" in
-  A|B0|B) ;;
-  *) echo "ERROR: arm must be A, B0, or B (got $ARM)" >&2; exit 2 ;;
+  A|B0|B|C) ;;
+  *) echo "ERROR: arm must be A, B0, B, or C (got $ARM)" >&2; exit 2 ;;
 esac
+
+# C (FO@298K) requires native CF oracle PASS unless diagnostic override
+if [[ "$ARM" == "C" && "${FLEXAIDDS_ALLOW_ARM_C:-0}" != "1" ]]; then
+  _orc="${FLEXAID_ORACLE_STATUS:-${FLEXAIDDS_LOCAL_ROOT:-$HOME/flexaidds_results}/campaigns/three_engine/${FLEXAID_CAMPAIGN:-3dsig_full85_r1}_oracle_status.json}"
+  if [[ ! -f "$_orc" ]] || ! python3 -c 'import json,sys; s=json.load(open(sys.argv[1])); sys.exit(0 if s.get("arm_c_fo298_allowed") else 1)' "$_orc" 2>/dev/null; then
+    echo "ERROR: arm C blocked until oracle arm_c_fo298_allowed=true ($_orc)" >&2
+    echo "  Or set FLEXAIDDS_ALLOW_ARM_C=1 for diagnostic-only runs." >&2
+    exit 98
+  fi
+fi
 
 BIN_ARM="B"
 [[ "$ARM" == "A" ]] && BIN_ARM="A"
+[[ "$ARM" == "C" ]] && BIN_ARM="C"
+# Fall back to B binary if C not staged
 BINARY="$Q/bin/$BIN_ARM/FlexAID"
+if [[ "$ARM" == "C" && ! -x "$BINARY" ]]; then
+  BIN_ARM="B"
+  BINARY="$Q/bin/B/FlexAID"
+fi
 MATRIX="$Q/data/MC_st0r5.2_6.dat"
-MATRIX_PIN="72d7c7396702331d96ff12d18f831796"
+# Repo/baseline-validated JCIM matrix (not the 72d7 packing-sweetened fork)
+MATRIX_PIN="9dc93717dfed0698006d88dd6a9627bc"
 
 REPO="${FLEXAIDDS_ROOT:-}"
 if [[ -z "$REPO" ]]; then
