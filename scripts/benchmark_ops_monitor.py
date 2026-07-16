@@ -200,6 +200,20 @@ def list_procs() -> List[Dict[str, Any]]:
 
 def _hint(cmd: str) -> str:
     """Process labels match campaign path IDs — no ad-hoc nicknames."""
+    if "run_3dsig_red_pair_full85" in cmd:
+        return "three_engine/full85_serial"
+    if "generate_flexaid_inp" in cmd:
+        return "three_engine/prep"
+    if "ProcessLigand" in cmd:
+        return "three_engine/ProcessLigand"
+    if "--full85" in cmd and "run_flexaid_arm" in cmd:
+        if " A " in f" {cmd} " or cmd.rstrip().endswith(" A") or "arms A" in cmd:
+            return "three_engine/A/full85"
+        if "B0" in cmd:
+            return "three_engine/B0/full85"
+        if re.search(r"\bB\b", cmd) and "B0" not in cmd:
+            return "three_engine/B/full85"
+        return "three_engine/full85_arm"
     if "three_engine/A/" in cmd or "/work/A/" in cmd or "/bin/A/FlexAID" in cmd:
         return "three_engine/A"
     if "three_engine/B0/" in cmd or "/work/B0/" in cmd:
@@ -220,25 +234,19 @@ def _hint(cmd: str) -> str:
 def current_dock_target(procs: List[Dict[str, Any]]) -> Optional[str]:
     for p in procs:
         cmd = p["command"]
-        if "FlexAID" not in cmd and "FlexAIDdS" not in cmd:
+        if "FlexAID" not in cmd and "FlexAIDdS" not in cmd and "generate_flexaid" not in cmd:
             continue
-        # three_engine OUT: .../3dsig_r10/1G9V/1G9V_r0
-        m = re.search(r"/3dsig_r10/([0-9A-Za-z]{4})/", cmd)
-        if m:
-            return m.group(1)
-        m = re.search(r"/work/(?:A|B0|B)/([0-9A-Za-z]{4})/", cmd)
-        if m:
-            return m.group(1)
-        m = re.search(r"astex_diverse/([0-9A-Za-z]{4})/", cmd)
-        if m:
-            return m.group(1)
-        # local OUT: .../campaigns/.../1IA1/r4/1IA1 or .../1IA1/1IA1_dockin
-        m = re.search(r"/([0-9A-Za-z]{4})/(?:r\d+/)?(?:\1_|dock_config)", cmd)
-        if m:
-            return m.group(1)
-        m = re.search(r"/([0-9A-Za-z]{4})/[0-9A-Za-z]{4}_dockin", cmd)
-        if m:
-            return m.group(1)
+        for pat in (
+            r"/3dsig_full85_r\d+/([0-9A-Za-z]{4})/",
+            r"/3dsig_r10/([0-9A-Za-z]{4})/",
+            r"/work/(?:A|B0|B)/([0-9A-Za-z]{4})/",
+            r"astex_diverse/([0-9A-Za-z]{4})/",
+            r"/([0-9A-Za-z]{4})/(?:r\d+/)?(?:\1_|dock_config)",
+            r"/([0-9A-Za-z]{4})/[0-9A-Za-z]{4}_dockin",
+        ):
+            m = re.search(pat, cmd)
+            if m:
+                return m.group(1)
     return None
 
 
@@ -260,9 +268,7 @@ def pid_file(path: Path) -> Dict[str, Any]:
 
 # ─── campaign scan ────────────────────────────────────────────────────────────
 #
-# Live science: three_engine red-pair under campaigns/three_engine/{A,B0,B}/3dsig_r10
-# (docs/implementation/3dsig_red_pair_protocol.md).
-#
+# Live science: three_engine red-pair (pilot 3dsig_r10 + full85 3dsig_full85_r1).
 # C0_claim / C0_legacy paths are REMOVED from ops — suspended; do not surface.
 # IDs are path-accurate (not nicknames like "A_pilot8").
 
@@ -271,19 +277,49 @@ CAMPAIGN_SPECS = [
         "id": "three_engine/A/3dsig_r10",
         "rel": "three_engine/A/3dsig_r10",
         "total": 8,
-        "description": "FlexAID TEMPER0 CLUSTA CF (arm A, 3Dsig red-pair)",
+        "panel": "pilot8",
+        "arm": "A",
+        "description": "FlexAID TEMPER0 CLUSTA CF · pilot8",
     },
     {
         "id": "three_engine/B0/3dsig_r10",
         "rel": "three_engine/B0/3dsig_r10",
         "total": 8,
-        "description": "FlexAID master TEMPER0 CLUSTA CF control (arm B0, 3Dsig red-pair)",
+        "panel": "pilot8",
+        "arm": "B0",
+        "description": "master TEMPER0 CLUSTA CF · pilot8 control",
     },
     {
         "id": "three_engine/B/3dsig_r10",
         "rel": "three_engine/B/3dsig_r10",
         "total": 8,
-        "description": "FlexAID master TEMPER21 CLUSTA FO (arm B, 3Dsig red-pair)",
+        "panel": "pilot8",
+        "arm": "B",
+        "description": "master TEMPER21 CLUSTA FO · pilot8 entropy",
+    },
+    {
+        "id": "three_engine/A/3dsig_full85_r1",
+        "rel": "three_engine/A/3dsig_full85_r1",
+        "total": 85,
+        "panel": "full85",
+        "arm": "A",
+        "description": "FlexAID TEMPER0 CLUSTA CF · full85 R=1",
+    },
+    {
+        "id": "three_engine/B0/3dsig_full85_r1",
+        "rel": "three_engine/B0/3dsig_full85_r1",
+        "total": 85,
+        "panel": "full85",
+        "arm": "B0",
+        "description": "master TEMPER0 CLUSTA CF · full85 R=1",
+    },
+    {
+        "id": "three_engine/B/3dsig_full85_r1",
+        "rel": "three_engine/B/3dsig_full85_r1",
+        "total": 85,
+        "panel": "full85",
+        "arm": "B",
+        "description": "master TEMPER21 CLUSTA FO · full85 R=1",
     },
 ]
 
@@ -466,6 +502,28 @@ def scan_campaign(camp_id: str, root: Path, total: int) -> Dict[str, Any]:
     bcr = sum(1 for r in results if r.get("bcr_le2"))
     gap = sum(1 for r in results if r.get("election_gap"))
     neg = sum(1 for r in results if r.get("bcr_neg1"))
+    pack = sum(1 for r in results if r.get("packaging_bug"))
+    bcr_vals = sorted(
+        r["best_cluster_rmsd"]
+        for r in results
+        if isinstance(r.get("best_cluster_rmsd"), (int, float))
+        and r["best_cluster_rmsd"] is not None
+        and r["best_cluster_rmsd"] >= 0
+    )
+    top1_vals = sorted(
+        r["rmsd_hungarian"]
+        for r in results
+        if isinstance(r.get("rmsd_hungarian"), (int, float))
+        and r["rmsd_hungarian"] is not None
+        and r["rmsd_hungarian"] >= 0
+    )
+
+    def _median(xs: List[float]) -> Optional[float]:
+        if not xs:
+            return None
+        m = len(xs) // 2
+        return float(xs[m]) if len(xs) % 2 else 0.5 * (xs[m - 1] + xs[m])
+
     return {
         "id": camp_id,
         "path": str(root),
@@ -478,10 +536,14 @@ def scan_campaign(camp_id: str, root: Path, total: int) -> Dict[str, Any]:
         "BCR_le2": bcr,
         "election_gap": gap,
         "bcr_neg1": neg,
+        "packaging_bug": pack,
         "S1_rate": (s1 / n) if n else None,
         "S2_rate": (s2 / n) if n else None,
         "S_top10_rate": (s_top10 / n) if n else None,
         "BCR_rate": (bcr / n) if n else None,
+        "BCR_median": _median(bcr_vals),
+        "top1_median": _median(top1_vals),
+        "BCR_best": bcr_vals[0] if bcr_vals else None,
         "results": results,
         "storage": storage,
     }
@@ -569,7 +631,130 @@ def analyze_new(
     return new_items, state
 
 
-# ─── reporting ────────────────────────────────────────────────────────────────
+# ─── reporting (color + dashboard) ────────────────────────────────────────────
+
+class _Ansi:
+    """Terminal colors (used when stdout is a TTY). Markdown gets emoji status."""
+
+    RESET = "\033[0m"
+    BOLD = "\033[1m"
+    DIM = "\033[2m"
+    RED = "\033[31m"
+    GREEN = "\033[32m"
+    YELLOW = "\033[33m"
+    BLUE = "\033[34m"
+    MAGENTA = "\033[35m"
+    CYAN = "\033[36m"
+    WHITE = "\033[37m"
+    BG_RED = "\033[41m"
+    BG_GREEN = "\033[42m"
+    BG_YELLOW = "\033[43m"
+    BG_BLUE = "\033[44m"
+
+    @classmethod
+    def enabled(cls) -> bool:
+        return bool(getattr(sys.stdout, "isatty", lambda: False)())
+
+    @classmethod
+    def paint(cls, text: str, *codes: str) -> str:
+        if not cls.enabled() or not codes:
+            return text
+        return "".join(codes) + text + cls.RESET
+
+
+def _progress_bar(n: int, total: int, width: int = 18) -> str:
+    total = max(int(total or 0), 1)
+    n = max(0, min(int(n or 0), total))
+    filled = int(round(width * n / total))
+    empty = width - filled
+    # Unicode block bar — readable in MD + terminal
+    return "█" * filled + "░" * empty
+
+
+def _rate_badge(rate: Optional[float], *, good: float = 0.5, ok: float = 0.2) -> str:
+    if rate is None:
+        return "⬜ n/a"
+    pct = 100.0 * rate
+    if rate >= good:
+        return f"🟢 {pct:.0f}%"
+    if rate >= ok:
+        return f"🟡 {pct:.0f}%"
+    if rate > 0:
+        return f"🟠 {pct:.0f}%"
+    return f"🔴 {pct:.0f}%"
+
+
+def _count_badge(hits: int, n: int, *, invert_zero_ok: bool = False) -> str:
+    if n <= 0:
+        return "⬜ —"
+    if hits <= 0:
+        return "🔴 0" if not invert_zero_ok else "🟢 0"
+    if hits >= n:
+        return f"🟢 {hits}/{n}"
+    return f"🟡 {hits}/{n}"
+
+
+def _ram_badge(free_g: float, avail_g: float) -> str:
+    if free_g < 0.5 or avail_g < 2.0:
+        return f"🔴 free={free_g:.2f}G avail≈{avail_g:.2f}G"
+    if free_g < 1.5 or avail_g < 4.0:
+        return f"🟡 free={free_g:.2f}G avail≈{avail_g:.2f}G"
+    return f"🟢 free={free_g:.2f}G avail≈{avail_g:.2f}G"
+
+
+def _campaign_phase(c: Dict[str, Any], procs: List[Dict[str, Any]]) -> str:
+    """RUNNING / PREP / DONE / EMPTY / FAIL-SCIENCE."""
+    cid = str(c.get("id") or "")
+    n, tot = int(c.get("N") or 0), int(c.get("total") or 0)
+    arm = str(c.get("arm") or (cid.split("/")[1] if "/" in cid else ""))
+    panel = str(c.get("panel") or ("full85" if "full85" in cid else "pilot8"))
+    is_full85 = "full85" in panel or "full85" in cid
+
+    prep = False
+    live = False
+    for p in procs:
+        h = str(p.get("hint") or "")
+        cmd = str(p.get("command") or "")
+        arm_hit = bool(arm) and (
+            f"/{arm}/" in h
+            or f" {arm} " in f" {cmd} "
+            or f"arms {arm}" in cmd
+            or f"--arms {arm}" in cmd
+            or re.search(rf"\b{re.escape(arm)}\b", cmd) is not None
+        )
+        full85_cmd = "full85" in cmd or "full85" in h
+        if is_full85 and "full85_serial" in h:
+            live = True
+        if arm_hit and is_full85 and full85_cmd:
+            live = True
+        if arm_hit and (not is_full85) and not full85_cmd:
+            live = True
+        if arm_hit and ("prep" in h or "generate_flexaid" in cmd or "ProcessLigand" in cmd):
+            prep = True
+        if arm_hit and "FlexAID" in cmd:
+            live = True
+
+    if prep and n < tot:
+        return "🟡 PREP"
+    if live:
+        return "🔵 RUNNING"
+    if not c.get("exists") and n == 0:
+        return "⬛ EMPTY"
+    if tot > 0 and n >= tot:
+        st = int(c.get("S_top10") or 0)
+        if st == 0:
+            return "🔴 DONE·SCI FAIL"
+        return "🟢 DONE"
+    if n > 0:
+        return "🟡 PARTIAL"
+    return "⬜ PENDING"
+
+
+def _fmt_A(x: Optional[float]) -> str:
+    if x is None:
+        return "—"
+    return f"{x:.2f}Å"
+
 
 def format_ops_brief(
     mem: Dict[str, float],
@@ -579,124 +764,276 @@ def format_ops_brief(
     new_n: int,
     cur: Optional[str],
 ) -> str:
-    lines = [
-        f"# Benchmark ops + results — {utc_now()}",
-        "",
-        f"RAM free={mem.get('free_GB', 0):.2f}G avail_est={mem.get('available_est_GB', 0):.2f}G",
-        f"Live processes={len(procs)} current_target={cur or 'none'} new_finishes={new_n}",
-        "",
-        "## Campaigns",
-    ]
-    for c in campaigns:
-        if not c.get("exists") and c["N"] == 0:
-            lines.append(f"- **{c['id']}**: missing/empty")
-            continue
-        rate = c.get("S1_rate")
-        rate_s = f"{100 * rate:.1f}%" if rate is not None else "n/a"
-        st = c.get("S_top10_rate")
-        st_s = f"{100 * st:.1f}%" if st is not None else "n/a"
-        lines.append(
-            f"- **{c['id']}**: N={c['N']}/{c['total']}  "
-            f"S1={c.get('S1', 0)}/{c['N']} ({rate_s})  "
-            f"S_top10={c.get('S_top10', 0)}/{c['N']} ({st_s})  "
-            f"S2={c.get('S2', 0)}  BCR≤2={c.get('BCR_le2', 0)}  "
-            f"gap={c.get('election_gap', 0)}  neg1={c.get('bcr_neg1', 0)}"
-        )
-        desc = c.get("description")
-        if desc:
-            lines.append(f"  _{desc}_")
+    free_g = float(mem.get("free_GB") or 0)
+    avail_g = float(mem.get("available_est_GB") or 0)
+    live_n = len(procs)
+    lines: List[str] = []
+
+    # ── header ────────────────────────────────────────────────────────────
+    lines.append(f"# 🧬 FlexAIDdS benchmark ops — `{utc_now()}`")
     lines.append("")
-    lines.append("## PID files")
-    for k, v in pid_files.items():
-        lines.append(f"- {k}: live={v.get('live')} pid={v.get('pid')}")
-    lines.append("")
-    lines.append("## Live workers")
-    if not procs:
-        lines.append("- (none)")
-    for p in procs[:8]:
-        lines.append(
-            f"- pid={p['pid']} rss={p['rss_mb']}MB cpu={p['pcpu']}% "
-            f"hint={p['hint']} etime={p['etime']}"
-        )
-    lines.append("")
-    # Completion: three_engine red-pair only (C0 claim/legacy not tracked)
-    by_id = {c["id"]: c for c in campaigns}
-    a = by_id.get("three_engine/A/3dsig_r10")
-    b0 = by_id.get("three_engine/B0/3dsig_r10")
-    b = by_id.get("three_engine/B/3dsig_r10")
-    live_ga = any(
-        p.get("hint", "").startswith("three_engine/") and "FlexAID" in p.get("command", "")
+    lines.append("| Resource | Status |")
+    lines.append("|----------|--------|")
+    lines.append(f"| **RAM** | {_ram_badge(free_g, avail_g)} |")
+    heavy_flex = sum(
+        1
         for p in procs
-    ) or any(
-        "FlexAID" in p.get("command", "") for p in procs
+        if "FlexAID" in (p.get("command") or "")
+        and "caffeinate" not in (p.get("command") or "")
+        and float(p.get("rss_mb") or 0) >= 80
+    )
+    if live_n == 0:
+        live_s = "⚪ 0 workers"
+    elif heavy_flex > 1:
+        live_s = f"🔴 **{live_n}** procs · **{heavy_flex} heavy FlexAID** dual-launch?"
+    else:
+        live_s = f"🔵 **{live_n}** proc(s) · heavy GA={heavy_flex} (serial OK)"
+    lines.append(f"| **Live processes** | {live_s} |")
+    lines.append(f"| **Current target** | `{cur or '—'}` |")
+    if new_n:
+        lines.append(f"| **New finishes** | 🆕 **{new_n}** |")
+    else:
+        lines.append("| **New finishes** | 0 |")
+    lines.append("")
+
+    # ── campaigns by panel ────────────────────────────────────────────────
+    by_panel: Dict[str, List[Dict[str, Any]]] = {}
+    for c in campaigns:
+        panel = c.get("panel") or ("full85" if "full85" in c.get("id", "") else "pilot8")
+        c = dict(c)
+        c["panel"] = panel
+        c["arm"] = c.get("arm") or c["id"].split("/")[1]
+        by_panel.setdefault(panel, []).append(c)
+
+    for panel, camps in by_panel.items():
+        title = "Full Astex Diverse 85 (R=1)" if panel == "full85" else "Pilot8 red-pair (N=8)"
+        icon = "🚀" if panel == "full85" else "🧪"
+        lines.append(f"## {icon} {title}")
+        lines.append("")
+        lines.append(
+            "| Arm | Phase | Progress | S1 | S_top10 | BCR≤2 | med BCR | best BCR | med top1 | pack | stor |"
+        )
+        lines.append(
+            "|-----|-------|----------|----|---------|-------|---------|----------|----------|------|------|"
+        )
+        for c in camps:
+            n, tot = int(c.get("N") or 0), int(c.get("total") or 1)
+            phase = _campaign_phase(c, procs)
+            bar = _progress_bar(n, tot)
+            pct = 100.0 * n / tot if tot else 0.0
+            arm = c.get("arm") or "?"
+            s1 = int(c.get("S1") or 0)
+            st = int(c.get("S_top10") or 0)
+            bcr = int(c.get("BCR_le2") or 0)
+            pack = int(c.get("packaging_bug") or 0)
+            stor = c.get("storage") or "?"
+            lines.append(
+                f"| **{arm}** | {phase} | `{bar}` {n}/{tot} ({pct:.0f}%) "
+                f"| {_count_badge(s1, n)} "
+                f"| {_count_badge(st, n)} "
+                f"| {_count_badge(bcr, n)} "
+                f"| {_fmt_A(c.get('BCR_median'))} "
+                f"| {_fmt_A(c.get('BCR_best'))} "
+                f"| {_fmt_A(c.get('top1_median'))} "
+                f"| {'🔴 '+str(pack) if pack else '🟢 0'} "
+                f"| {stor} |"
+            )
+            # rate line under table for clarity when N>0
+        lines.append("")
+        lines.append("<details><summary>Rate detail (S1 / S_top10 / BCR)</summary>")
+        lines.append("")
+        for c in camps:
+            n = int(c.get("N") or 0)
+            if n <= 0:
+                lines.append(
+                    f"- **{c.get('arm')}** `{c['id']}` — no `result.csv` yet · _{c.get('description','')}_"
+                )
+                continue
+            lines.append(
+                f"- **{c.get('arm')}** `{c['id']}` · "
+                f"S1 {_rate_badge(c.get('S1_rate'))} · "
+                f"S_top10 {_rate_badge(c.get('S_top10_rate'))} · "
+                f"BCR {_rate_badge(c.get('BCR_rate'))} · "
+                f"gap={c.get('election_gap', 0)} neg1={c.get('bcr_neg1', 0)}"
+            )
+            if c.get("description"):
+                lines.append(f"  - _{c['description']}_")
+        lines.append("")
+        lines.append("</details>")
+        lines.append("")
+
+    # ── PID locks ─────────────────────────────────────────────────────────
+    lines.append("## 🔒 PID / lock files")
+    lines.append("")
+    lines.append("| Lock | Live | PID |")
+    lines.append("|------|------|-----|")
+    for k, v in pid_files.items():
+        live = bool(v.get("live"))
+        badge = "🟢 LIVE" if live else ("⚪ dead" if v.get("exists") else "⬛ none")
+        pid = v.get("pid")
+        lines.append(f"| `{k}` | {badge} | `{pid if pid is not None else '—'}` |")
+    lines.append("")
+
+    # ── live workers ──────────────────────────────────────────────────────
+    lines.append("## ⚙️ Live workers")
+    lines.append("")
+    if not procs:
+        lines.append("_No matching FlexAID / chain / prep processes._")
+    else:
+        lines.append("| PID | Hint | CPU% | RSS | State | Etime | Command (trim) |")
+        lines.append("|-----|------|------|-----|-------|-------|----------------|")
+        for p in procs[:12]:
+            cpu = float(p.get("pcpu") or 0)
+            rss = float(p.get("rss_mb") or 0)
+            cpu_b = "🔴" if cpu > 80 else ("🟡" if cpu > 20 else "🟢")
+            rss_b = "🔴" if rss > 1500 else ("🟡" if rss > 400 else "🟢")
+            cmd = (p.get("command") or "")[:90].replace("|", "\\|")
+            lines.append(
+                f"| `{p['pid']}` | `{p.get('hint')}` | {cpu_b} {cpu:.1f} "
+                f"| {rss_b} {rss:.0f}MB | {p.get('state')} | `{p.get('etime')}` | `{cmd}` |"
+            )
+    lines.append("")
+
+    # ── headline status ───────────────────────────────────────────────────
+    by_id = {c["id"]: c for c in campaigns}
+    live_any = any(
+        "three_engine" in p.get("hint", "")
+        or "FlexAID" in p.get("command", "")
+        or "full85" in p.get("command", "")
+        or "generate_flexaid" in p.get("command", "")
+        for p in procs
     )
 
     def _arm_docked(c: Optional[Dict[str, Any]]) -> bool:
-        return bool(c and c.get("exists") and c.get("N", 0) >= c.get("total", 8))
+        return bool(c and c.get("exists") and c.get("N", 0) >= c.get("total", 1))
 
-    if live_ga:
-        lines.append(
-            "**NOT COMPLETE** — FlexAID still running under three_engine."
+    # Prefer full85 headline if any full85 activity or partial N
+    full85_active = any("full85" in p.get("hint", "") or "full85" in p.get("command", "") for p in procs)
+    full85_partial = any(
+        c.get("panel") == "full85" and int(c.get("N") or 0) > 0 for c in campaigns
+    )
+    lines.append("## 📢 Headline status")
+    lines.append("")
+    if full85_active or full85_partial:
+        fa = by_id.get("three_engine/A/3dsig_full85_r1")
+        fb0 = by_id.get("three_engine/B0/3dsig_full85_r1")
+        fb = by_id.get("three_engine/B/3dsig_full85_r1")
+        na, nb0, nb = (
+            int((fa or {}).get("N") or 0),
+            int((fb0 or {}).get("N") or 0),
+            int((fb or {}).get("N") or 0),
         )
-    elif _arm_docked(b0) and _arm_docked(b):
-        st0 = b0.get("S_top10", 0) if b0 else 0
-        st1 = b.get("S_top10", 0) if b else 0
-        n0 = b0.get("N", 0) if b0 else 0
-        n1 = b.get("N", 0) if b else 0
-        if st0 == 0 and st1 == 0 and n0 > 0:
+        if live_any:
             lines.append(
-                "**DOCKING COMPLETE — SCIENCE GATE FAIL** — "
-                f"three_engine/B0/3dsig_r10 and three_engine/B/3dsig_r10 finished "
-                f"(S_top10={st0}/{n0} and {st1}/{n1} at ≤2.0 Å). "
-                "three_engine/A/3dsig_r10 may still need fixed-binary re-run."
+                f"> **🔵 NOT COMPLETE — full85 LIVE** · "
+                f"A {na}/85 · B0 {nb0}/85 · B {nb}/85 · target=`{cur or 'prep/queue'}`"
             )
+        elif _arm_docked(fb0) and _arm_docked(fb):
+            st0 = int((fb0 or {}).get("S_top10") or 0)
+            st1 = int((fb or {}).get("S_top10") or 0)
+            if st0 == 0 and st1 == 0:
+                lines.append(
+                    f"> **🔴 DOCKING COMPLETE — SCIENCE GATE FAIL (full85)** · "
+                    f"S_top10 B0={st0}/{nb0} B={st1}/{nb}"
+                )
+            else:
+                lines.append(
+                    f"> **🟢 DOCKING COMPLETE (full85)** · "
+                    f"S_top10 B0={st0}/{nb0} B={st1}/{nb}"
+                )
         else:
             lines.append(
-                "**DOCKING COMPLETE** — three_engine/B0/3dsig_r10 and "
-                "three_engine/B/3dsig_r10 have N≥8 result.csv rows. "
-                f"S_top10 three_engine/B0/3dsig_r10={st0}/{n0} "
-                f"three_engine/B/3dsig_r10={st1}/{n1}."
+                f"> **🟡 NOT COMPLETE — full85 partial** · A {na}/85 · B0 {nb0}/85 · B {nb}/85"
             )
     else:
-        lines.append(
-            "**NOT COMPLETE** — three_engine/{A,B0,B}/3dsig_r10 still short of "
-            "N=8 parsed result.csv (or missing)."
-        )
+        b0 = by_id.get("three_engine/B0/3dsig_r10")
+        b = by_id.get("three_engine/B/3dsig_r10")
+        if live_any:
+            lines.append(
+                f"> **🔵 NOT COMPLETE** — FlexAID / three_engine still running · target=`{cur or '—'}`"
+            )
+        elif _arm_docked(b0) and _arm_docked(b):
+            st0 = int((b0 or {}).get("S_top10") or 0)
+            st1 = int((b or {}).get("S_top10") or 0)
+            n0 = int((b0 or {}).get("N") or 0)
+            n1 = int((b or {}).get("N") or 0)
+            if st0 == 0 and st1 == 0 and n0 > 0:
+                lines.append(
+                    f"> **🔴 DOCKING COMPLETE — SCIENCE GATE FAIL (pilot8)** · "
+                    f"S_top10 B0={st0}/{n0} B={st1}/{n1} · A may need fixed-binary re-run"
+                )
+            else:
+                lines.append(
+                    f"> **🟢 DOCKING COMPLETE (pilot8)** · "
+                    f"S_top10 B0={st0}/{n0} B={st1}/{n1}"
+                )
+        else:
+            lines.append(
+                "> **🟡 NOT COMPLETE** — pilot8 `{A,B0,B}/3dsig_r10` short of N=8 or missing"
+            )
+    lines.append("")
+    lines.append("---")
     lines.append("")
     lines.append(
-        "CF = scoring proxy. S1 = top-1 CF election. "
-        "S_top10 = 3Dsig any of ranks 0..9 ≤2.0 Å. "
-        "BCR = diagnostic. No dual-launch. One heavy GA. "
-        "Monitor scope: three_engine red-pair only."
+        "**Legend:** S1 = rank-0 ≤2 Å · **S_top10** = 3Dsig primary (ranks 0–9) · "
+        "BCR = best cluster head · CF = scoring proxy (not ΔG). "
+        "🟢 good · 🟡 partial · 🔴 fail/low · 🔵 running · ⬛ empty. "
+        "No dual-launch. Softβ election default OFF. Scope: three_engine only."
     )
-    return "\n".join(lines) + "\n"
+    lines.append("")
+    return "\n".join(lines)
 
 
 def format_new_targets_md(new_items: List[Dict[str, Any]]) -> str:
     if not new_items:
         return ""
-    lines = [f"## New finishes ({len(new_items)})", ""]
+    lines = [f"## 🆕 New finishes ({len(new_items)})", ""]
     for it in new_items:
-        tags = ",".join(it.get("tags") or [])
-        lines.append(
-            f"### {it.get('campaign')}/{it.get('pdb_id')}  `{tags}`"
+        tags = it.get("tags") or []
+        tag_s = " ".join(
+            (
+                f"`🟢{t}`"
+                if "HIT" in t or t == "BCR_OK"
+                else f"`🔴{t}`"
+                if "MISS" in t or "BUG" in t or "PATHOL" in t
+                else f"`🟡{t}`"
+            )
+            for t in tags
+        )
+        s1 = it.get("s1")
+        bcr = it.get("best_cluster_rmsd")
+        rh = it.get("rmsd_hungarian")
+        s1_b = "🟢" if s1 else "🔴"
+        bcr_b = (
+            "🟢"
+            if isinstance(bcr, (int, float)) and 0 <= float(bcr) <= 2.0
+            else "🔴"
         )
         lines.append(
-            f"- HUNG={it.get('rmsd_hungarian')} XTAL={it.get('rmsd_to_crystal')} "
-            f"BCR={it.get('best_cluster_rmsd')} CF={it.get('best_score')} "
-            f"poses={it.get('num_poses')} wall_s={it.get('wall_time_s')}"
+            f"### {s1_b} `{it.get('campaign')}/{it.get('pdb_id')}`  {tag_s}"
+        )
+        lines.append("")
+        lines.append("| Field | Value |")
+        lines.append("|-------|-------|")
+        lines.append(f"| RMSD top1 (HUNG) | {_fmt_A(rh if isinstance(rh, (int, float)) else None)} |")
+        lines.append(
+            f"| BCR {bcr_b} | {_fmt_A(bcr if isinstance(bcr, (int, float)) else None)} |"
+        )
+        lines.append(f"| CF (proxy) | `{it.get('best_score')}` |")
+        lines.append(f"| poses | `{it.get('num_poses')}` |")
+        lines.append(f"| wall_s | `{it.get('wall_time_s')}` |")
+        lines.append(
+            f"| S1 / S2 / PB | `{it.get('s1')}` / `{it.get('s2')}` / `{it.get('pb_pass')}` |"
         )
         lines.append(
-            f"- S1={it.get('s1')} S2={it.get('s2')} PB={it.get('pb_pass')} "
-            f"seed_echo={it.get('seed_echo')} native_seeded={it.get('native_pose_seeded')} "
-            f"backend={it.get('pb_backend')}"
+            f"| seed_echo / native_seeded | `{it.get('seed_echo')}` / `{it.get('native_pose_seeded')}` |"
         )
         b = it.get("budget") or {}
         if b:
             lines.append(
-                f"- dock_config: chroms={b.get('num_chromosomes')} "
+                f"| dock_config | chroms={b.get('num_chromosomes')} "
                 f"gen={b.get('num_generations')} T={b.get('temperature')} "
-                f"clust={b.get('clustering')}"
+                f"clust={b.get('clustering')} |"
             )
         lines.append("")
     return "\n".join(lines)
@@ -736,12 +1073,29 @@ def main(argv: Optional[List[str]] = None) -> int:
             q / "logs/run_3dsig_red_pair_serial.pid",
             q / "logs/run_AB_pilot8_chain.pid",
         ),
-        "three_engine/A": _pid_prefer(te_logs / "run_A_pilot8.lock", te_logs / "run_A_pilot8.pid"),
-        "three_engine/B0": _pid_prefer(te_logs / "run_B0_pilot8.lock", te_logs / "run_B0_pilot8.pid"),
-        "three_engine/B": _pid_prefer(
+        "three_engine/full85_serial": _pid_prefer(
+            te_logs / "run_3dsig_red_pair_full85.pid",
+            q / "logs/run_3dsig_red_pair_full85.pid",
+        ),
+        "three_engine/A/pilot8": _pid_prefer(
+            te_logs / "run_A_pilot8.lock", te_logs / "run_A_pilot8.pid"
+        ),
+        "three_engine/B0/pilot8": _pid_prefer(
+            te_logs / "run_B0_pilot8.lock", te_logs / "run_B0_pilot8.pid"
+        ),
+        "three_engine/B/pilot8": _pid_prefer(
             te_logs / "run_B_pilot8.lock",
             te_logs / "run_B_pilot8_launcher.pid",
             te_logs / "run_B_pilot8.pid",
+        ),
+        "three_engine/A/full85": _pid_prefer(
+            te_logs / "run_A_full85.lock", te_logs / "run_A_full85.pid"
+        ),
+        "three_engine/B0/full85": _pid_prefer(
+            te_logs / "run_B0_full85.lock", te_logs / "run_B0_full85.pid"
+        ),
+        "three_engine/B/full85": _pid_prefer(
+            te_logs / "run_B_full85.lock", te_logs / "run_B_full85.pid"
         ),
         "throughput_maximizer": _pid_prefer(q / "logs/throughput_maximizer.pid"),
     }
@@ -767,6 +1121,8 @@ def main(argv: Optional[List[str]] = None) -> int:
             root = local_root_c
         camp = scan_campaign(spec["id"], root, spec["total"])
         camp["description"] = spec.get("description", "")
+        camp["panel"] = spec.get("panel", "")
+        camp["arm"] = spec.get("arm", "")
         campaigns.append(camp)
     # Do NOT auto-discover C0_* or other trees — ops is three_engine red-pair only.
     state_path = scratch / "finished_run_analysis_state.json"
@@ -850,7 +1206,30 @@ def main(argv: Optional[List[str]] = None) -> int:
         args.json_out.write_text(json.dumps(payload, indent=2) + "\n")
 
     if not args.quiet:
-        print(brief)
+        # Colorize headline status for TTY while keeping emoji MD portable
+        out = brief
+        if _Ansi.enabled():
+            out = out.replace(
+                "**🔵 NOT COMPLETE",
+                _Ansi.paint("**🔵 NOT COMPLETE", _Ansi.BOLD, _Ansi.CYAN),
+            )
+            out = out.replace(
+                "**🟢 DOCKING COMPLETE",
+                _Ansi.paint("**🟢 DOCKING COMPLETE", _Ansi.BOLD, _Ansi.GREEN),
+            )
+            out = out.replace(
+                "**🔴 DOCKING COMPLETE — SCIENCE GATE FAIL",
+                _Ansi.paint(
+                    "**🔴 DOCKING COMPLETE — SCIENCE GATE FAIL",
+                    _Ansi.BOLD,
+                    _Ansi.RED,
+                ),
+            )
+            out = out.replace(
+                "**🟡 NOT COMPLETE",
+                _Ansi.paint("**🟡 NOT COMPLETE", _Ansi.BOLD, _Ansi.YELLOW),
+            )
+        print(out)
 
     heavy = sum(
         1
