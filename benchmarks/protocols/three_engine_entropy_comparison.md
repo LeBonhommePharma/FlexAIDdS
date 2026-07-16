@@ -18,8 +18,8 @@ Under a **matched cognate-pocket, no native-seed** redocking protocol, and an **
 |--------|--------|-----------------|
 | **A** | FlexAID **2015-era** (JCIM paper lineage; CF/VCT, no BindingMode free-energy ranking) | Off (era default) |
 | **B0** | FlexAID **current master** | **Off** (`TEMPER 0` → CF clustering forced) |
-| **B** | FlexAID **current master** | **On** (`TEMPER 21`, operator-optimized BindingMode/colony entropy; prior draft 298) |
-| **C0** | FlexAIDdS (pinned SHA) | **CF / consensus election only** (Shannon/tENCoM not used for election) |
+| **B** | FlexAID **current master** | **On** (`TEMPER 21` + FO clustering / engine ACF; **not** DatasetRunner Softβ S1 rescoring of CF ensembles) |
+| **C0** | FlexAIDdS (pinned SHA) | **CF / consensus election only** (DatasetRunner Softβ S1 default OFF; `FLEXAIDDS_SOFTBETA_ELECTION=0`) |
 | **C** | FlexAIDdS (same SHA as C0) | Full stack available; **default claim path** = elected pose under standard DatasetRunner (document exact election); thermo ledger reported separately |
 
 **Primary contrast for entropy *ranking*:** B0→B and C0→C on **shared ensembles** where possible.  

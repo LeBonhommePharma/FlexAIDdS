@@ -318,3 +318,70 @@ TEST_F(ClassicEntropyRankingTest, BindingModeMatchesSoftBetaLocal) {
     // vib=0, nat=0 → ranking energy == SoftBeta G
     EXPECT_NEAR(ranked.compute_energy(), fe.G, 1e-9);
 }
+
+// ─── Gated Softβ election (DatasetRunner S1 policy) ─────────────────────────
+// Softβ reorders already-clustered modes; flag OFF → CF rank-0; Softβ cannot
+// invent near-natives when BCR=0 (diagnostic gate is offline only).
+
+TEST(SoftBetaGatedElection, FlagOffElectsMinCF) {
+    using flexaids::soft_beta::ModeCandidate;
+    std::vector<ModeCandidate> modes = {
+        {-100.0, {-100.0}},           // deep singleton CF champion
+        {-72.0, std::vector<double>(20, -72.0)},  // dense middling basin
+    };
+    auto [idx, used] = flexaids::soft_beta::elect_gated(modes, 21.0, /*on=*/false);
+    EXPECT_FALSE(used);
+    EXPECT_EQ(idx, 0u);  // min CF
+}
+
+TEST(SoftBetaGatedElection, FlagOnElectsDenseBasinSoftBeta) {
+    using flexaids::soft_beta::ModeCandidate;
+    std::vector<double> dense(29, -72.0);
+    for (int i = 0; i < 29; ++i)
+        dense[static_cast<std::size_t>(i)] = -72.0 - 0.05 * (i % 7);
+    std::vector<ModeCandidate> modes = {
+        {-189.9, {-189.9}},  // deep false minimum
+        {-72.0, dense},      // dense basin — Softβ should prefer
+    };
+    auto [idx, used] = flexaids::soft_beta::elect_gated(modes, 300.0, /*on=*/true);
+    EXPECT_TRUE(used);
+    EXPECT_EQ(idx, 1u);
+    // Same decision via elect_softbeta
+    EXPECT_EQ(flexaids::soft_beta::elect_softbeta(modes, 300.0), 1u);
+    EXPECT_EQ(flexaids::soft_beta::elect_cf_rank0(modes), 0u);
+}
+
+TEST(SoftBetaGatedElection, ResolveSoftTPrefersEnvThenDockThenFallback) {
+    EXPECT_DOUBLE_EQ(flexaids::soft_beta::resolve_soft_T(21.0, 298.0, 298.0), 21.0);
+    EXPECT_DOUBLE_EQ(flexaids::soft_beta::resolve_soft_T(0.0, 21.0, 298.0), 21.0);
+    EXPECT_DOUBLE_EQ(flexaids::soft_beta::resolve_soft_T(0.0, 0.0, 298.0), 298.0);
+}
+
+TEST(SoftBetaGatedElection, DiagnosticNearNativeGateOfflineOnly) {
+    // BCR=0 ensemble: Softβ cannot help S1 success (offline guidance only).
+    EXPECT_FALSE(flexaids::soft_beta::diagnostic_softbeta_can_help_s1(
+        {3.1, 4.2, 5.0, 8.8}));
+    // Near-native present: Softβ *may* reorder toward it if CF diversity supports it.
+    EXPECT_TRUE(flexaids::soft_beta::diagnostic_softbeta_can_help_s1(
+        {3.1, 1.4, 5.0}));
+    EXPECT_TRUE(flexaids::soft_beta::diagnostic_near_native_present(
+        {2.0}, 2.0));
+}
+
+TEST(SoftBetaGatedElection, SoftBetaDoesNotInventEnergies) {
+    // Singleton-only modes → G̃ = CF; Softβ elects same as CF rank-0.
+    using flexaids::soft_beta::ModeCandidate;
+    std::vector<ModeCandidate> modes = {
+        {-50.0, {}},
+        {-40.0, {}},
+        {-60.0, {}},
+    };
+    auto [i_cf, used_off] =
+        flexaids::soft_beta::elect_gated(modes, 21.0, false);
+    auto [i_sb, used_on] =
+        flexaids::soft_beta::elect_gated(modes, 21.0, true);
+    EXPECT_FALSE(used_off);
+    EXPECT_TRUE(used_on);
+    EXPECT_EQ(i_cf, 2u);
+    EXPECT_EQ(i_sb, 2u);  // S=0 → Ĝ=CF for all singletons
+}

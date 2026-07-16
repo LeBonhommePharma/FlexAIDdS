@@ -83,16 +83,19 @@ struct ProtocolConfig {
     double election_score_tau{0.0};   ///< FLEXAIDDS_ELECTION_SCORE_TAU
     /// Include Frequency=1 heads in the election pool (helps BCR-like singletons).
     bool election_include_singletons{false}; ///< FLEXAIDDS_ELECTION_INCLUDE_SINGLETONS
-    /// Rank cluster heads by 3Dsig/Morency 2017 soft free energy
-    ///   G̃ = H̃ − T S̃,  H̃=Σ p_i CF_i,  S̃=−Σ p_i ln p_i,  p_i ∝ exp(−CF_i/T)
-    /// Default OFF until Astex pilot + SoftBeta identity validation.
-    /// Opt in: FLEXAIDDS_ELECTION_SHANNON_F=1. Force legacy ZH (already OFF path):
-    /// FLEXAIDDS_ELECTION_LEGACY_ZH=1. When both unset → Shannon OFF (legacy ZH /
-    /// pure CF path as coded for use_shannon_G=false).
-    bool election_shannon_free_energy{false}; ///< FLEXAIDDS_ELECTION_SHANNON_F (default OFF)
-    /// Soft-β temperature T for G̃ (same role as poster T). 0 → resolve at election:
+    /// Rank already-clustered heads by Softβ Ĝ = H̃ − T S̃ (3Dsig / SoftBetaFreeEnergy).
+    /// **Default OFF** for classic pilot and claim harness until explicitly opted in.
+    /// Softβ reorders modes only — not a sampling method; cannot fix BCR=0.
+    /// Opt in (either alias):
+    ///   FLEXAIDDS_SOFTBETA_ELECTION=1  (preferred clear name)
+    ///   FLEXAIDDS_ELECTION_SHANNON_F=1 (legacy alias, same bit)
+    /// Force OFF path: FLEXAIDDS_ELECTION_LEGACY_ZH=1.
+    /// When unset → Softβ S1 OFF (CF rank-0 / legacy ZH; no Softβ claim).
+    bool election_shannon_free_energy{false}; ///< Softβ S1 (SOFTBETA_ELECTION / SHANNON_F)
+    /// Soft-β temperature T for Ĝ. 0 → resolve at election:
     /// dock TEMPER / DockingConfig::temperature, else (legacy ZH) SCORE_TAU, else 298 K.
-    /// Units: CF is scoring-proxy a.u.; this is FlexAID soft-β (β=1/T), not k_B.
+    /// Units: CF is scoring-proxy a.u.; FlexAID soft-β (β=1/T), **not** k_B·T kcal.
+    /// TEMPER 21 on arm B is engine soft-T for FO/ACF, not physical kT.
     double election_soft_T{0.0};      ///< FLEXAIDDS_ELECTION_SOFT_T
     /// tENCoM/H(ω) validator; default ON, disable with FLEXAIDDS_HVIB=0.
     bool hvib_enabled{true};

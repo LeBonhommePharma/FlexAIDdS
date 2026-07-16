@@ -984,9 +984,14 @@ static std::pair<std::string,float> select_pose_freq_gated_pooled(
     // Soft-β convention: T is the dock temperature in K (β = 1/T), CF is the
     // contact-function scoring proxy in arbitrary units — same as classic
     // FlexAID BindingMode F and cluster ACF. NOT physical k_B·T (AGENTS.md).
+    // TEMPER 21 (arm B) is engine soft-T for FO/ACF emission — not kT in kcal.
+    //
+    // Softβ S1 election is **feature-flagged OFF by default**
+    // (FLEXAIDDS_SOFTBETA_ELECTION / FLEXAIDDS_ELECTION_SHANNON_F). Softβ only
+    // reorders already-clustered heads; it cannot create ≤2 Å poses if BCR=0.
     //
     // Rollback: FLEXAIDDS_ELECTION_LEGACY_ZH=1 uses the old Z·exp(−αH)·log1p(N)
-    // composite with τ=0.592 (≈ pure min-CF; Shannon inert).
+    // composite with τ=0.592 (≈ pure min-CF; Softβ inert).
     //
     // Member CFs: .mcf sidecar from cluster.cpp; else head CF only (S̃=0, G̃=CF).
     const bool use_shannon_G = proto.election_shannon_free_energy;
@@ -997,6 +1002,7 @@ static std::pair<std::string,float> select_pose_freq_gated_pooled(
     //   2. dock TEMPER / DockingConfig::temperature (same T as the dock)
     //   3. (legacy ZH only) FLEXAIDDS_ELECTION_SCORE_TAU
     //   4. 298 K fallback
+    // Shared resolve helper (SoftBetaFreeEnergy.h) for identity with unit tests.
     const char* soft_T_source = "fallback";
     double soft_T = 298.0;
     if (proto.election_soft_T > 0.0) {
@@ -1008,18 +1014,34 @@ static std::pair<std::string,float> select_pose_freq_gated_pooled(
     } else if (!use_shannon_G && proto.election_score_tau > 0.0) {
         soft_T = proto.election_score_tau;
         soft_T_source = "env";  // SCORE_TAU is also an env knob (legacy ZH only)
+    } else {
+        soft_T = flexaids::soft_beta::resolve_soft_T(
+            /*election_soft_T_env=*/0.0,
+            /*dock_temperature_K=*/0.0,
+            /*fallback_K=*/298.0);
+        soft_T_source = "fallback";
     }
     soft_T = std::max(soft_T, 1e-6);
 
     if (use_shannon_G) {
         fprintf(stderr,
-                "[3DSIG-RANK] elect by G̃=H̃−T·S̃ (Shannon on ranking path): "
+                "[SOFTBETA-ELECT] Softβ S1 ON: elect by Ĝ=H̃−T·S̃ over clustered "
+                "heads only (not sampling; cannot fix BCR=0): "
+                "T=%.4f source=%s (soft-β CF a.u., not k_B·T) include_singletons=%d\n",
+                soft_T, soft_T_source, include_singletons ? 1 : 0);
+        fprintf(stderr,
+                "[3DSIG-RANK] elect by G̃=H̃−T·S̃ (Softβ ranking path): "
                 "T=%.4f source=%s (soft-β, CF a.u.) include_singletons=%d\n",
                 soft_T, soft_T_source, include_singletons ? 1 : 0);
     } else {
         fprintf(stderr,
+                "[SOFTBETA-ELECT] Softβ S1 OFF (default): no Softβ claim; "
+                "fallback Z·exp(−αH)·log1p(N)/≈CF-rank τ=%.4f source=%s\n",
+                soft_T, soft_T_source);
+        fprintf(stderr,
                 "[Z+H-LEGACY] elect by Z·exp(−αH)·log1p(N) τ=%.4f source=%s "
-                "(Shannon NOT used for ranking — rollback path)\n",
+                "(Softβ NOT used for DatasetRunner S1 — opt in with "
+                "FLEXAIDDS_SOFTBETA_ELECTION=1)\n",
                 soft_T, soft_T_source);
     }
 

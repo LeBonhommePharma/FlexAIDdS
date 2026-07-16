@@ -199,19 +199,26 @@ ProtocolConfig ProtocolConfig::from_env() {
     cfg.election_include_singletons =
         env_truthy_int("FLEXAIDDS_ELECTION_INCLUDE_SINGLETONS",
                        /*default_value=*/cfg.election_v135);
-    // 3Dsig 2017 ranking: G̃ = H̃ − T S̃ with Shannon S̃ (default OFF until
-    // Astex pilot + SoftBeta identity). Opt in: FLEXAIDDS_ELECTION_SHANNON_F=1.
-    // FLEXAIDDS_ELECTION_LEGACY_ZH=1 forces legacy ZH (already the OFF path).
-    // When both unset → Shannon OFF (legacy ZH / pure CF for use_shannon_G=false).
+    // Softβ S1 election (DatasetRunner): Ĝ = H̃ − T S̃ over already-clustered
+    // heads. **Default OFF** — Softβ is reordering only, not sampling; pilot
+    // harness must not claim Softβ S1 unless explicitly opted in.
+    // Preferred: FLEXAIDDS_SOFTBETA_ELECTION=1
+    // Legacy alias: FLEXAIDDS_ELECTION_SHANNON_F=1 (same bit)
+    // Force OFF: FLEXAIDDS_ELECTION_LEGACY_ZH=1
+    // Either ON alias wins if set truthy; LEGACY_ZH always forces false.
     {
         const bool legacy_zh =
             env_truthy_int("FLEXAIDDS_ELECTION_LEGACY_ZH", /*default_value=*/false);
         if (legacy_zh) {
             cfg.election_shannon_free_energy = false;
         } else {
-            cfg.election_shannon_free_energy =
+            const bool softbeta =
+                env_truthy_int("FLEXAIDDS_SOFTBETA_ELECTION",
+                               /*default_value=*/false);
+            const bool shannon_f =
                 env_truthy_int("FLEXAIDDS_ELECTION_SHANNON_F",
                                /*default_value=*/false);
+            cfg.election_shannon_free_energy = softbeta || shannon_f;
         }
     }
     if (auto v = env_opt_double("FLEXAIDDS_ELECTION_SOFT_T")) {

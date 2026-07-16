@@ -94,9 +94,13 @@ export FLEXAIDDS_BUDGET_SCALE=1
 export FLEXAIDDS_NATIVE_SEED_FRAC=0
 export FLEXAIDDS_SEED_ELITISM=0
 export FLEXAIDDS_POSEBUSTERS_BIN="${FLEXAIDDS_POSEBUSTERS_BIN:-$ROOT/.venv-posebusters/bin/bust}"
-# 3Dsig Shannon ranking path (G̃=H̃−T·S̃) — engine default is OFF until Astex pilot;
-# this claim launch explicitly opts in. LEGACY_ZH=1 rolls back to legacy ZH / min-CF.
-export FLEXAIDDS_ELECTION_SHANNON_F="${FLEXAIDDS_ELECTION_SHANNON_F:-1}"
+# Softβ S1 election (Ĝ=H̃−T·S̃ over clustered heads) — **default OFF** after pilot8
+# Softβ postmortem: Softβ reorders modes only and cannot fix BCR=0. Opt in only
+# when the ensemble is known to contain competitive near-natives and you want
+# Softβ mode election: FLEXAIDDS_SOFTBETA_ELECTION=1 (or SHANNON_F=1).
+# Engine TEMPER Softβ ACF emission is independent of this DatasetRunner flag.
+export FLEXAIDDS_SOFTBETA_ELECTION="${FLEXAIDDS_SOFTBETA_ELECTION:-0}"
+export FLEXAIDDS_ELECTION_SHANNON_F="${FLEXAIDDS_ELECTION_SHANNON_F:-${FLEXAIDDS_SOFTBETA_ELECTION}}"
 export FLEXAIDDS_ELECTION_SOFT_T="${FLEXAIDDS_ELECTION_SOFT_T:-298}"
 unset FLEXAIDDS_FORCE_SEED 2>/dev/null || true
 unset FLEXAIDDS_ELECTION_LEGACY_ZH 2>/dev/null || true
@@ -115,7 +119,7 @@ echo "RUNNER=$RUNNER"
 echo "BINARY=$BINARY"
 echo "DATA_DIR=$DATA_DIR"
 echo "pop=$POP gen=$GEN T=$TEMP R=5 EVAL_SCALE=1 BUDGET_SCALE=1 seed=OFF"
-echo "election: SHANNON_F=${FLEXAIDDS_ELECTION_SHANNON_F} SOFT_T=${FLEXAIDDS_ELECTION_SOFT_T}"
+echo "election: SOFTBETA=${FLEXAIDDS_SOFTBETA_ELECTION} SHANNON_F=${FLEXAIDDS_ELECTION_SHANNON_F} SOFT_T=${FLEXAIDDS_ELECTION_SOFT_T}"
 echo "max_results (engine)=50 (kBenchmarkPoseLimit)"
 
 [[ -x "$RUNNER" ]] || { echo "FAIL: runner not executable: $RUNNER" >&2; exit 1; }
@@ -209,7 +213,8 @@ receipt = {
         "FLEXAIDDS_NATIVE_SEED_FRAC": "0",
         "FLEXAIDDS_SEED_ELITISM": "0",
         "FLEXAIDDS_PARALLEL_RESTARTS": "0",
-        "FLEXAIDDS_ELECTION_SHANNON_F": os.environ.get("FLEXAIDDS_ELECTION_SHANNON_F", "1"),
+        "FLEXAIDDS_SOFTBETA_ELECTION": os.environ.get("FLEXAIDDS_SOFTBETA_ELECTION", "0"),
+        "FLEXAIDDS_ELECTION_SHANNON_F": os.environ.get("FLEXAIDDS_ELECTION_SHANNON_F", "0"),
         "FLEXAIDDS_ELECTION_SOFT_T": os.environ.get("FLEXAIDDS_ELECTION_SOFT_T", "298"),
         "OMP_NUM_THREADS": "1",
     },
@@ -240,6 +245,7 @@ nohup caffeinate -i -s env \
   FLEXAIDDS_BUDGET_SCALE=1 \
   FLEXAIDDS_NATIVE_SEED_FRAC=0 \
   FLEXAIDDS_SEED_ELITISM=0 \
+  FLEXAIDDS_SOFTBETA_ELECTION="${FLEXAIDDS_SOFTBETA_ELECTION}" \
   FLEXAIDDS_ELECTION_SHANNON_F="${FLEXAIDDS_ELECTION_SHANNON_F}" \
   FLEXAIDDS_ELECTION_SOFT_T="${FLEXAIDDS_ELECTION_SOFT_T}" \
   OMP_NUM_THREADS=1 \

@@ -30,9 +30,10 @@ Optional modern columns (S1, S2, BCR) may be logged beside S_top10 but **must no
 | Deck label | Engine | Ranking | Three-engine map | TEMPER | Clustering |
 |------------|--------|---------|------------------|--------|------------|
 | **FlexAID** (red) | FlexAID JCIM 2015-era **or** master CF | CF / no entropy | **A** (primary) · **B0** (master CF control) | **0** | `CLUSTA CF` |
-| **FlexAIDdS** (red) | FlexAID + conformational entropy | soft-β \(\tilde G=\tilde H-T\tilde S\) on modes | **B** (entropy ON) | **21** (LP-optimized; override `--temper 298` only with receipt note) | **`CLUSTA FO` — single literature MinPts** |
+| **FlexAIDdS** (red) | FlexAID + conformational entropy | soft-β \(\tilde G=\tilde H-T\tilde S\) on modes (**engine** ACF when T>0) | **B** (entropy ON) | **21** (LP-optimized; override `--temper 298` only with receipt note) | **`CLUSTA FO` — single literature MinPts** |
 
 - Historical entropy clustering = **FO / density modes**, **not DP**.
+- **Arm B = TEMPER + FO engine path**, not DatasetRunner Softβ S1 rescoring of CF ensembles. Softβ DatasetRunner election is a separate flag (`FLEXAIDDS_SOFTBETA_ELECTION`, default OFF) — see `docs/implementation/softbeta_election_policy.md`.
 - C0 FlexAIDdS DatasetRunner packaging is **out of band** until FO dual-suffix election is verified; red-pair science uses **classic FlexAID A/B binaries** first (`--legacy` on staged unified CLI).
 - **Serial only** on this Mac (~18 GiB): never dual-launch A with B0/B or C0.
 

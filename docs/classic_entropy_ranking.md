@@ -13,9 +13,12 @@
 | β | `1/T` (not `1/(kB T)`) | same for configurational weights |
 | Cluster free energy (ACF) | soft-β cluster free energy | same; elects CF-path emission |
 | BindingMode F | `G̃ = H̃ − T·S̃` over **mode members** (≡ ACF) | `G̃ + (−T·S_vib) [+ NATURaL]` |
-| DatasetRunner S1 | — | same `G̃` over heads + `.mcf` members |
+| DatasetRunner S1 Softβ | — | same `G̃` over heads + `.mcf` **only if** `FLEXAIDDS_SOFTBETA_ELECTION=1` (**default OFF**) |
 | Shared math | — | `LIB/SoftBetaFreeEnergy.h` |
-| Rank-0 | lowest ACF / lowest F | same product role (elect lowest G̃) |
+| Rank-0 (engine) | lowest ACF / lowest F | same product role when T>0 |
+| Rank-0 (DatasetRunner) | — | Softβ S1 opt-in; else CF / legacy ZH (no Softβ claim) |
+
+See **`docs/implementation/softbeta_election_policy.md`** for Softβ vs sampling, TEMPER vs kT, and BCR=0 limits.
 
 | Layer | Elects rank-0? |
 |-------|----------------|

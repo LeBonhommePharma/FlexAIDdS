@@ -109,6 +109,7 @@ struct ClearProtocolEnv {
         , ent_w("FLEXAIDDS_ENTROPY_WEIGHT", nullptr)
         , div_m("FLEXAIDDS_DIVERSITY_MONITORING", nullptr)
         , elect_shannon("FLEXAIDDS_ELECTION_SHANNON_F", nullptr)
+        , elect_softbeta("FLEXAIDDS_SOFTBETA_ELECTION", nullptr)
         , elect_legacy_zh("FLEXAIDDS_ELECTION_LEGACY_ZH", nullptr)
         , elect_soft_t("FLEXAIDDS_ELECTION_SOFT_T", nullptr)
         , elect_v135("FLEXAIDDS_ELECTION_V135", nullptr)
@@ -122,8 +123,8 @@ struct ClearProtocolEnv {
               hvib, ring, eval_scale, budget, fine, multi, cognate, score_n,
               native_o, use_dp, ignore, thermo_csv, hbond, no_sec, bench,
               t_hot, instream, chain, smfree, force_cf, classic, ent_w, div_m,
-              elect_shannon, elect_legacy_zh, elect_soft_t, elect_v135,
-              elect_tau, elect_sing;
+              elect_shannon, elect_softbeta, elect_legacy_zh, elect_soft_t,
+              elect_v135, elect_tau, elect_sing;
 };
 
 }  // namespace
@@ -295,20 +296,40 @@ TEST(ProtocolConfig, ElectionV135TauOverride) {
     EXPECT_FALSE(cfg.election_include_singletons);
 }
 
-// Shannon S1 election default OFF; opt-in via FLEXAIDDS_ELECTION_SHANNON_F=1;
-// FLEXAIDDS_ELECTION_LEGACY_ZH=1 forces legacy ZH (false path).
+// Softβ S1 election default OFF; opt-in via FLEXAIDDS_SOFTBETA_ELECTION=1 or
+// FLEXAIDDS_ELECTION_SHANNON_F=1; LEGACY_ZH=1 forces OFF path.
 TEST(ProtocolConfig, ElectionShannonDefaultOffOptInAndLegacyZh) {
     {
         ClearProtocolEnv clear;
         const auto cfg = flexaids::ProtocolConfig::from_env();
         EXPECT_FALSE(cfg.election_shannon_free_energy);
-        EXPECT_FALSE(cfg.election_include_singletons);  // not forced when Shannon OFF
+        EXPECT_FALSE(cfg.election_include_singletons);  // not forced when Softβ OFF
     }
     {
         ClearProtocolEnv clear;
         ScopedEnv sh("FLEXAIDDS_ELECTION_SHANNON_F", "1");
         const auto cfg = flexaids::ProtocolConfig::from_env();
         EXPECT_TRUE(cfg.election_shannon_free_energy);
+    }
+    {
+        ClearProtocolEnv clear;
+        ScopedEnv sb("FLEXAIDDS_SOFTBETA_ELECTION", "1");
+        const auto cfg = flexaids::ProtocolConfig::from_env();
+        EXPECT_TRUE(cfg.election_shannon_free_energy);  // preferred alias
+    }
+    {
+        ClearProtocolEnv clear;
+        ScopedEnv sb("FLEXAIDDS_SOFTBETA_ELECTION", "0");
+        ScopedEnv sh("FLEXAIDDS_ELECTION_SHANNON_F", "1");
+        const auto cfg = flexaids::ProtocolConfig::from_env();
+        EXPECT_TRUE(cfg.election_shannon_free_energy);  // either ON alias wins
+    }
+    {
+        ClearProtocolEnv clear;
+        ScopedEnv sb("FLEXAIDDS_SOFTBETA_ELECTION", "1");
+        ScopedEnv zh("FLEXAIDDS_ELECTION_LEGACY_ZH", "1");
+        const auto cfg = flexaids::ProtocolConfig::from_env();
+        EXPECT_FALSE(cfg.election_shannon_free_energy);  // LEGACY_ZH wins
     }
     {
         ClearProtocolEnv clear;

@@ -46,12 +46,13 @@ p_i = \frac{e^{-\mathrm{CF}_i / T}}{Z}
 
 | Env | Default | Meaning |
 |-----|---------|---------|
-| `FLEXAIDDS_ELECTION_SHANNON_F` | **0 (OFF)** | Elect by \(\tilde G=H-TS\) when set to `1` |
-| `FLEXAIDDS_ELECTION_LEGACY_ZH` | 0 | Force legacy ZH / ≈ min-CF (not 3Dsig); same OFF path when Shannon unset |
+| **`FLEXAIDDS_SOFTBETA_ELECTION`** | **0 (OFF)** | Preferred: Softβ S1 elect by \(\tilde G=H-TS\) when `1` |
+| `FLEXAIDDS_ELECTION_SHANNON_F` | **0 (OFF)** | Legacy alias — same bit as Softβ S1 |
+| `FLEXAIDDS_ELECTION_LEGACY_ZH` | 0 | Force legacy ZH / ≈ min-CF (not 3Dsig); Softβ OFF |
 | `FLEXAIDDS_ELECTION_SOFT_T` | 0 → resolve below | Soft-β \(T\) in K (env override) |
 | `FLEXAIDDS_FORCE_CF_RANK_EMISSION` | 0 | Engine emits min-CF (rollback); classic SoftBeta path off |
 
-**Default OFF until Astex pilot + SoftBeta identity.** Shannon S1 election stays **off** when both env knobs are unset. Enable with `FLEXAIDDS_ELECTION_SHANNON_F=1` after validation (`LIB/SoftBetaFreeEnergy.h`). Claim / 3Dsig launchers that need Shannon ON export that env (e.g. `scripts/run_C0_claim_clean.sh`).
+**Default OFF (post pilot8 Softβ policy).** DatasetRunner Softβ S1 stays **off** unless explicitly opted in. Softβ reorders clustered heads only — **not sampling**; **cannot fix BCR=0**. See **`docs/implementation/softbeta_election_policy.md`**. Enable with `FLEXAIDDS_SOFTBETA_ELECTION=1` (or `FLEXAIDDS_ELECTION_SHANNON_F=1`) only when reordering is intentional. `scripts/run_C0_claim_clean.sh` defaults Softβ S1 to **0**.
 
 **Soft-β \(T\) resolution** in `select_pose_freq_gated_pooled` (DatasetRunner S1):
 
@@ -60,9 +61,11 @@ p_i = \frac{e^{-\mathrm{CF}_i / T}}{Z}
 3. else (legacy ZH only) `FLEXAIDDS_ELECTION_SCORE_TAU` if \(>0\) → log `source=env`
 4. else **298 K** → log `source=fallback`
 
-Log line: `[3DSIG-RANK] … T=… source=dock|env|fallback …`. Soft-β is \(\beta=1/T\) on the CF scoring proxy (not \(k_B\)).
+Log lines: `[SOFTBETA-ELECT] Softβ S1 ON|OFF …` and `[3DSIG-RANK] … T=… source=dock|env|fallback …`. Soft-β is \(\beta=1/T\) on the CF scoring proxy (not \(k_B\)). TEMPER 21 is engine soft-T, not physical kT in kcal.
 
-**FlexAIDdS engine and DatasetRunner must not invent different ranking objectives.** Search still optimizes CF; when Shannon ranking is enabled, ranking/election uses \(\tilde G\) via `LIB/SoftBetaFreeEnergy.h`. Engine ACF and DatasetRunner election must share the same dock \(T\). Unit gates: `SoftBetaIdentity::*` and `BindingModeMatchesSoftBetaLocal` in `tests/test_classic_entropy_ranking.cpp`.
+**Arm B FO ≠ DatasetRunner Softβ S1.** Live pilot B runs TEMPER21 + CLUSTA FO (engine path). That is **not** Softβ rescoring of frozen CF ensembles via DatasetRunner unless Softβ S1 is explicitly ON.
+
+**FlexAIDdS engine and DatasetRunner must not invent different ranking objectives.** Search still optimizes CF; when Softβ S1 is enabled, election uses \(\tilde G\) via `LIB/SoftBetaFreeEnergy.h`. Engine ACF and DatasetRunner Softβ must share the same dock \(T\). Unit gates: `SoftBetaIdentity::*`, `SoftBetaGatedElection::*`, and `BindingModeMatchesSoftBetaLocal` in `tests/test_classic_entropy_ranking.cpp`.
 
 ---
 
@@ -139,8 +142,9 @@ C0 packaging campaigns are **not** the 2017 red-bar path until FO dual-suffix el
 
 ## 6. Related docs
 
+- `docs/implementation/softbeta_election_policy.md` — **Softβ when/cannot, TEMPER honesty, flags**  
 - `docs/architecture/scoring_pipeline_schematic.md` — search vs score vs rank  
 - `docs/classic_entropy_ranking.md` — engine emission  
 - `docs/ensemble_pipeline.md` — 4-layer reproducibility  
-- `LIB/SoftBetaFreeEnergy.h` — shared \(\tilde G\) / ACF math  
-- `benchmarks/protocols/three_engine_entropy_comparison.md` — A/B0/B/C0 arms  
+- `LIB/SoftBetaFreeEnergy.h` — shared \(\tilde G\) / ACF math + gated election helpers  
+- `benchmarks/protocols/three_engine_entropy_comparison.md` — A/B0/B/C0 arms 
