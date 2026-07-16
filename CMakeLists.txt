@@ -2130,6 +2130,27 @@ flexaids_add_unit_test(test_protocol_config
         TEST_NAME Mol2SdfReaderTests
     )
 
+    # ── read_lig latm inclusive range (pilot8 missing last HETTYP atom) ───
+    # Uses real fileio.cpp (OpenFile_B / Terminate throws) — no stubs OpenFile.
+    flexaids_add_unit_test(test_read_lig_latm
+        SOURCES
+            tests/test_read_lig_latm.cpp
+            LIB/read_lig.cpp
+            LIB/fileio.cpp
+            LIB/read_conect.cpp
+            LIB/buildlist.cpp
+            LIB/assign_shift.cpp
+            LIB/bondedlist.cpp
+            LIB/update_bonded.cpp
+            LIB/shortest_path.cpp
+            LIB/assign_shortflex.cpp
+            LIB/buildcc.cpp
+            LIB/geometry.cpp
+        COMPILE_OPTIONS -std=c++26
+        GTEST_MAIN_ONLY
+        TEST_NAME ReadLigLatmTests
+    )
+
     # test_turboquant — TurboQuant quantisation library unit tests
     flexaids_add_unit_test(test_turboquant
         SOURCES

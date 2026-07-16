@@ -189,7 +189,39 @@ if (( NOPREP == 0 )); then
     PREP_ARGS+=(--pilot8)
   fi
   python3 "$GEN" "${PREP_ARGS[@]}"
+elif [[ "${FLEXAIDDS_ALLOW_SKIP_PREP:-0}" != "1" ]]; then
+  echo "FAIL: --no-prepare requires FLEXAIDDS_ALLOW_SKIP_PREP=1 (stale work may lack clean apo / integrity)" >&2
+  exit 93
 fi
+
+# Fail-closed work preflight (P0): ligand integrity + PSHARE production knobs + meta.
+VAL_LIG="$REPO/scripts/validate_ligand_integrity.py"
+for pdb in "${TARGETS[@]}"; do
+  wdir="$WORK_ROOT/$ARM/$pdb"
+  [[ -d "$wdir" ]] || { echo "FAIL: missing work dir $wdir" >&2; exit 1; }
+  [[ -f "$wdir/meta.json" ]] || { echo "FAIL: missing $wdir/meta.json" >&2; exit 1; }
+  # Ligand integrity on LIG_ref (prep-time; INI checked post-run by canary)
+  if [[ -f "$VAL_LIG" && -f "$wdir/LIG_ref.pdb" ]]; then
+    python3 "$VAL_LIG" --work "$wdir" --max-bond 3.0 \
+      || { echo "FAIL: ligand integrity gate $ARM/$pdb" >&2; exit 94; }
+  fi
+  # Refuse known-bad GA niching (SHARESCL 0.20 pilot bug) unless explicitly allowed
+  if [[ -f "$wdir/restart_0/ga.inp" ]]; then
+    scl=$(awk '/^SHARESCL/{print $2; exit}' "$wdir/restart_0/ga.inp" 2>/dev/null || true)
+    if [[ -n "$scl" ]]; then
+      # Compare as float: reject 0.20 class (typo) unless FLEXAIDDS_ALLOW_SHARESCL_LEGACY=1
+      if awk -v s="$scl" 'BEGIN{exit !(s>0 && s<1.0)}'; then
+        if [[ "${FLEXAIDDS_ALLOW_SHARESCL_LEGACY:-0}" != "1" ]]; then
+          echo "FAIL: $wdir/restart_0/ga.inp SHARESCL=$scl (<1) — production default is 10.0" >&2
+          echo "      Re-prep with generate_flexaid_inp.py (SHARESCL 10) or set FLEXAIDDS_ALLOW_SHARESCL_LEGACY=1" >&2
+          exit 95
+        fi
+        echo "WARN: allowing legacy SHARESCL=$scl (FLEXAIDDS_ALLOW_SHARESCL_LEGACY=1)"
+      fi
+    fi
+  fi
+done
+echo "OK: work preflight passed for ${#TARGETS[@]} target(s)"
 
 python3 - <<PY
 import hashlib, json, time

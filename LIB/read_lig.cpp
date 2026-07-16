@@ -203,7 +203,12 @@ void read_lig(FA_Global* FA,atom** atoms,resid** residue,char ligfile[]){
 
 				flag=1;
 			}
-			(*residue)[FA->res_cnt].latm[0] = FA->atm_cnt - 1;
+			// Inclusive latm: atm_cnt was just incremented and is the index of
+			// the atom currently being filled (same convention as Mol2/SDF
+			// readers and read_pdb terminal residues). Using atm_cnt-1 dropped
+			// the last HETTYP atom from fatm..latm → INI/pose emission N−1
+			// (1P62 missing 90017, 1T40 missing 90027; pilot8 integrity gate).
+			(*residue)[FA->res_cnt].latm[0] = FA->atm_cnt;
             
 			// dummy atom type by default
 			(*atoms)[FA->atm_cnt].type = FA->ntypes-1;
