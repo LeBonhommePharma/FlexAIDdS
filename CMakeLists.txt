@@ -2583,7 +2583,38 @@ flexaids_add_unit_test(test_protocol_config
             WILL_FAIL TRUE)
     endif()
 
-    message(STATUS "Unit tests enabled — build targets: test_statmech, test_hardware_dispatch, test_tencom_diff, test_target_validation, test_grand_partition, test_target_server, test_ga_context, test_nascent_chain_scheduler")
+    # test_process_ligand — ProcessLigand pipeline (must live under BUILD_TESTING,
+    # not BUILD_SWIFT_BRIDGE, or the target is never generated when Swift is OFF).
+    add_executable(test_process_ligand
+        tests/test_process_ligand.cpp
+        LIB/ProcessLigand/SmilesParser.cpp
+        LIB/ProcessLigand/RingPerception.cpp
+        LIB/ProcessLigand/Aromaticity.cpp
+        LIB/ProcessLigand/RotatableBonds.cpp
+        LIB/ProcessLigand/ValenceChecker.cpp
+        LIB/ProcessLigand/SybylTyper.cpp
+        LIB/ProcessLigand/CoordBuilder.cpp
+        LIB/ProcessLigand/FlexAIDWriter.cpp
+        LIB/ProcessLigand/ProcessLigand.cpp
+    )
+    target_include_directories(test_process_ligand PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/LIB
+        ${CMAKE_CURRENT_SOURCE_DIR}/LIB/ProcessLigand
+    )
+    target_link_libraries(test_process_ligand PRIVATE GTest::gtest_main)
+    if(MSVC)
+        target_compile_options(test_process_ligand PRIVATE /Od /Zi)
+        target_compile_definitions(test_process_ligand PRIVATE
+            _CRT_SECURE_NO_WARNINGS _USE_MATH_DEFINES NOMINMAX)
+    else()
+        target_compile_options(test_process_ligand PRIVATE -O0 -g3)
+    endif()
+    target_link_libraries(test_process_ligand PRIVATE Eigen3::Eigen)
+    target_compile_definitions(test_process_ligand PRIVATE FLEXAIDS_HAS_EIGEN)
+    flexaids_configure_msvc_test(test_process_ligand)
+    add_test(NAME ProcessLigandTests COMMAND test_process_ligand)
+
+    message(STATUS "Unit tests enabled — build targets: test_statmech, test_hardware_dispatch, test_tencom_diff, test_target_validation, test_grand_partition, test_target_server, test_ga_context, test_nascent_chain_scheduler, test_process_ligand")
 endif()
 
 # ─── Swift Bridge (macOS only) ────────────────────────────────────────────
@@ -2631,6 +2662,8 @@ if(BUILD_SWIFT_BRIDGE)
     message(STATUS "Swift bridge enabled — build target: FlexAIDCore (static library)")
 
     # test_coarse_screen — NRGRank CoarseScreen + TwoStageScreen unit tests
+    # (gated with Swift bridge historically; keep behind same flag)
+    if(BUILD_TESTING)
     add_executable(test_coarse_screen
         tests/test_coarse_screen.cpp
         LIB/CoarseScreen.cpp
@@ -2650,37 +2683,6 @@ if(BUILD_SWIFT_BRIDGE)
     endif()
     flexaids_configure_msvc_test(test_coarse_screen)
     add_test(NAME CoarseScreenTests COMMAND test_coarse_screen)
-
-    # test_process_ligand — ProcessLigand pipeline: SmilesParser, RingPerception,
-    # Aromaticity, RotatableBonds, ValenceChecker, SybylTyper
-    add_executable(test_process_ligand
-        tests/test_process_ligand.cpp
-        LIB/ProcessLigand/SmilesParser.cpp
-        LIB/ProcessLigand/RingPerception.cpp
-        LIB/ProcessLigand/Aromaticity.cpp
-        LIB/ProcessLigand/RotatableBonds.cpp
-        LIB/ProcessLigand/ValenceChecker.cpp
-        LIB/ProcessLigand/SybylTyper.cpp
-        LIB/ProcessLigand/CoordBuilder.cpp
-        LIB/ProcessLigand/FlexAIDWriter.cpp
-        LIB/ProcessLigand/ProcessLigand.cpp
-    )
-    target_include_directories(test_process_ligand PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/LIB
-        ${CMAKE_CURRENT_SOURCE_DIR}/LIB/ProcessLigand
-    )
-    target_link_libraries(test_process_ligand PRIVATE GTest::gtest_main)
-    if(MSVC)
-        target_compile_options(test_process_ligand PRIVATE /Od /Zi)
-        target_compile_definitions(test_process_ligand PRIVATE
-            _CRT_SECURE_NO_WARNINGS _USE_MATH_DEFINES NOMINMAX)
-    else()
-        target_compile_options(test_process_ligand PRIVATE -O0 -g3)
-    endif()
-    target_link_libraries(test_process_ligand PRIVATE Eigen3::Eigen)
-    target_compile_definitions(test_process_ligand PRIVATE FLEXAIDS_HAS_EIGEN)
-    flexaids_configure_msvc_test(test_process_ligand)
-    add_test(NAME ProcessLigandTests COMMAND test_process_ligand)
 
     # test_ligand_ring_flex — LigandRingFlex unified ring flexibility interface
     add_executable(test_ligand_ring_flex
@@ -2703,6 +2705,7 @@ if(BUILD_SWIFT_BRIDGE)
     target_compile_definitions(test_ligand_ring_flex PRIVATE FLEXAIDS_HAS_EIGEN)
     flexaids_configure_msvc_test(test_ligand_ring_flex)
     add_test(NAME LigandRingFlexTests COMMAND test_ligand_ring_flex)
+    endif() # BUILD_TESTING inside SWIFT bridge block
 
     # test_natural — RibosomeElongation, TransloconInsertion, NucleationSeedDetector
     # Guarded: an earlier block already defines this target with the same
