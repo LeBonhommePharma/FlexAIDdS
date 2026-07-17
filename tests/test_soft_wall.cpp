@@ -16,34 +16,52 @@ TEST(SoftWall, ModerateOverlapBelowClashThreshold) {
 	const float cutoff = 0.40f;
 
 	const double e_soft = soft_wall_fitness_energy(d, cr, cutoff);
-	// ~200 clashing contacts is realistic for a near-native pose; soft-core
-	// keeps the Vcontacts pre-filter sum under CLASH_THRESHOLD.
+	// ~200 clashing contacts is realistic for a near-native pose; a shallow
+	// ramp-region overlap must still keep the Vcontacts pre-filter sum
+	// under CLASH_THRESHOLD.
 	const double pose_clash_tally = 200.0 * e_soft;
 
 	EXPECT_LT(e_soft, CLASH_THRESHOLD);
 	EXPECT_LT(pose_clash_tally, CLASH_THRESHOLD);
-	EXPECT_LE(e_soft, WAL_CONTACT_CAP);
 }
 
-TEST(SoftWall, DeepOverlapAvoidsR12Explosion) {
+TEST(SoftWall, DeepOverlapIsUncappedQuadratic) {
+	// Regression guard for the flat-cap bug: min(E, WAL_CONTACT_CAP) on the
+	// soft-core branch flattened the wall past ~1 A overlap, zeroing the
+	// GA's gradient away from buried poses. The deep region must now grow
+	// as k_wal * o^2 with NO ceiling, while still staying below the raw
+	// (uncapped) r^-12 potential at the same depth.
 	const double cr = 3.0;
 	const double d  = 0.5;
 	const float cutoff = 0.40f;
 
 	const double e_soft = soft_wall_fitness_energy(d, cr, cutoff);
 	const double e_hard = KWALL * (std::pow(d, -12.0) - std::pow(cr, -12.0));
+	const double o = cr - d;
+	const double e_expected = K_WAL_STIFF_DEFAULT * o * o;
 
-	EXPECT_LT(e_soft, e_hard);
-	EXPECT_NEAR(e_soft, WAL_CONTACT_CAP, EPSILON);
+	EXPECT_GT(e_soft, WAL_CONTACT_CAP);       // must exceed the legacy cap
+	EXPECT_LT(e_soft, e_hard);                // but stay below raw r^-12
+	EXPECT_NEAR(e_soft, e_expected, 1e-6);    // pure quadratic, uncapped
 }
 
-TEST(SoftWall, PerContactCap) {
+TEST(SoftWall, ZeroAtNoOverlap) {
 	const double cr = 2.0;
-	const double d  = 0.5;   // deep overlap
+	const double d  = 2.5;   // no overlap: d > cr
 	const float cutoff = 0.40f;
 
-	const double e = soft_wall_fitness_energy(d, cr, cutoff);
-	EXPECT_NEAR(e, WAL_CONTACT_CAP, EPSILON);
+	EXPECT_NEAR(soft_wall_fitness_energy(d, cr, cutoff), 0.0, EPSILON);
+}
+
+TEST(SoftWall, MonotonicWithOverlapDepth) {
+	const double cr = 3.0;
+	const float cutoff = 0.40f;
+	double prev = -1.0;
+	for (double d = 3.0; d >= 0.2; d -= 0.1) {
+		const double e = soft_wall_fitness_energy(d, cr, cutoff);
+		EXPECT_GE(e, prev);
+		prev = e;
+	}
 }
 
 TEST(SoftWall, LegacyPathMatchesCappedR12) {

@@ -8,9 +8,37 @@
 #pragma once
 
 #include <cmath>
+#include <cstdlib>
 #include <string_view>
 
+// WAL_CONTACT_CAP applies ONLY to the legacy capped r^-12 branch
+// (soft_wall_cutoff == 0.0).  It is NOT applied to the soft-core overlap
+// branch below — capping that branch flattens the wall past ~1 A of
+// overlap, zeroing the fitness gradient and letting the GA bury the ligand
+// for unbounded attractive (CF.com) gain.  See tests/test_soft_wall.cpp
+// for the regression this guards against.
 constexpr double WAL_CONTACT_CAP = 50.0;
+
+// Soft-core wall stiffness (k_wal).  Decoupled from WAL_CONTACT_CAP: this is
+// a curvature parameter (energy grows as k_wal * overlap^2), not a ceiling.
+// Overridable via FLEXAID_KWAL for calibration sweeps; defaults to 50.0
+// (numerically the same magnitude as the legacy cap, but semantically
+// unrelated — the soft-core branch is uncapped).
+constexpr double K_WAL_STIFF_DEFAULT = 50.0;
+
+inline double k_wal_stiff()
+{
+	static const double k = []() -> double {
+		const char* env = std::getenv("FLEXAID_KWAL");
+		if (env) {
+			char* end = nullptr;
+			const double v = std::strtod(env, &end);
+			if (end != env && v > 0.0) return v;
+		}
+		return K_WAL_STIFF_DEFAULT;
+	}();
+	return k;
+}
 
 inline bool violates_relative_vdw_cutoff(double distance,
                                          double radius_sum,
@@ -72,22 +100,27 @@ inline double wall_energy_raw_r12(double d, double cr)
 // soft_wall_cutoff > 0 applies the v43 overlap Hermite cubic ramp:
 //   o <= o_soft: E = k_wal * o_soft^2 * t^2 * (3 - 2t),  t = o/o_soft
 //   o >  o_soft: E = k_wal * o_soft^2 + k_wal * (2*o_soft*delta + delta^2)
+// Soft-core branch is intentionally UNCAPPED (see k_wal_stiff / tests).
 inline double soft_wall_fitness_energy(double d, double cr, float soft_wall_cutoff)
 {
 	if (soft_wall_cutoff > 0.0f) {
-		const double o      = cr - d;
+		const double o = cr - d;
+		if (o <= 0.0) return 0.0;
 		const double o_soft = static_cast<double>(soft_wall_cutoff);
-		constexpr double k_wal = WAL_CONTACT_CAP;
-		double Ewall_sc;
+		const double k_wal  = k_wal_stiff();
 		if (o <= o_soft) {
 			const double t = o / o_soft;
-			Ewall_sc = k_wal * o_soft * o_soft * t * t * (3.0 - 2.0 * t);
-		} else {
-			const double base  = k_wal * o_soft * o_soft;
-			const double delta = o - o_soft;
-			Ewall_sc = base + k_wal * (2.0 * o_soft * delta + delta * delta);
+			return k_wal * o_soft * o_soft * t * t * (3.0 - 2.0 * t);
 		}
-		return (Ewall_sc > WAL_CONTACT_CAP) ? WAL_CONTACT_CAP : Ewall_sc;
+		// Deep region: base + k_wal*(2*o_soft*delta + delta^2) is the
+		// expanded form of k_wal*o^2 (delta = o - o_soft), kept in this
+		// shifted form for numerical continuity with the ramp at o_soft.
+		// UNCAPPED — the prior min(E, WAL_CONTACT_CAP) here flattened the
+		// wall past ~1 A overlap and killed the GA's gradient away from
+		// buried poses.
+		const double base  = k_wal * o_soft * o_soft;
+		const double delta = o - o_soft;
+		return base + k_wal * (2.0 * o_soft * delta + delta * delta);
 	}
 
 	const double Ewall_raw = wall_energy_raw_r12(d, cr);
