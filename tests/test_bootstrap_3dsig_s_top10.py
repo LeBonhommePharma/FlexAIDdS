@@ -58,7 +58,8 @@ def test_load_arm_dir_and_bootstrap(tmp_path: Path):
             row["success_s_top10"] = "1" if boot.s_top10(modes) else "0"
             w.writerow(row)
 
-    cases = boot.load_arm_dir(tmp_path)
+    cases, meta = boot.load_arm_dir(tmp_path)
+    assert meta["n_evaluable"] == 4
     assert cases["AAAA"] is True
     assert cases["BBBB"] is False
     assert cases["CCCC"] is True
@@ -70,6 +71,52 @@ def test_load_arm_dir_and_bootstrap(tmp_path: Path):
     assert summary["observed_rate"] == pytest.approx(0.5)
     assert summary["bcr_not_used_as_s_top10"] is True
     assert 0.0 <= summary["bootstrap"]["median"] <= 1.0
+
+
+def test_load_arm_dir_excludes_empty_and_low_restarts(tmp_path: Path):
+    # complete R=10 fail
+    d = tmp_path / "FULL"
+    d.mkdir()
+    fields = [f"mode_rmsd_{i}" for i in range(10)] + ["restarts_finished", "n_poses"]
+    with (d / "result.csv").open("w", newline="") as f:
+        w = csv.DictWriter(f, fieldnames=fields)
+        w.writeheader()
+        row = {f"mode_rmsd_{i}": "5.0" for i in range(10)}
+        row["restarts_finished"] = "10"
+        row["n_poses"] = "500"
+        w.writerow(row)
+    # empty modes stub rf=0
+    e = tmp_path / "EMPTY"
+    e.mkdir()
+    with (e / "result.csv").open("w", newline="") as f:
+        w = csv.DictWriter(f, fieldnames=fields)
+        w.writeheader()
+        row = {f"mode_rmsd_{i}": "" for i in range(10)}
+        row["restarts_finished"] = "0"
+        row["n_poses"] = "0"
+        w.writerow(row)
+    # partial rf=1
+    p = tmp_path / "PART"
+    p.mkdir()
+    with (p / "result.csv").open("w", newline="") as f:
+        w = csv.DictWriter(f, fieldnames=fields)
+        w.writeheader()
+        row = {f"mode_rmsd_{i}": "4.0" for i in range(10)}
+        row["restarts_finished"] = "1"
+        row["n_poses"] = "50"
+        w.writerow(row)
+
+    cases, meta = boot.load_arm_dir(
+        tmp_path, min_restarts=10, require_poses=True
+    )
+    assert set(cases.keys()) == {"FULL"}
+    assert cases["FULL"] is False
+    assert meta["n_result_csv"] == 3
+    assert meta["n_evaluable"] == 1
+    assert meta["n_incomplete"] == 2
+    reasons = {x["pdb_id"]: x["reason"] for x in meta["incomplete"]}
+    assert "EMPTY" in reasons
+    assert "PART" in reasons
 
 
 def test_main_arm_dir_json(tmp_path: Path, capsys):

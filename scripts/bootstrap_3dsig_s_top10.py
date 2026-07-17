@@ -115,12 +115,44 @@ def extract_mode_rmsds_from_row(
     return out
 
 
-def load_arm_dir(arm_dir: Path, thresh: float = DEFAULT_THRESH) -> Dict[str, bool]:
-    """Load per-pdb success flags from arm_dir/*/result.csv."""
+def _row_restarts_finished(row: dict) -> int:
+    for key in ("restarts_finished", "n_restarts_finished", "restarts"):
+        if key in row and row[key] not in (None, "", "NA"):
+            try:
+                return int(float(row[key]))
+            except (TypeError, ValueError):
+                pass
+    return 0
+
+
+def _row_n_poses(row: dict) -> int:
+    for key in ("n_poses", "n_modes"):
+        if key in row and row[key] not in (None, "", "NA"):
+            try:
+                return int(float(row[key]))
+            except (TypeError, ValueError):
+                pass
+    return 0
+
+
+def load_arm_dir(
+    arm_dir: Path,
+    thresh: float = DEFAULT_THRESH,
+    *,
+    min_restarts: int = 0,
+    require_poses: bool = False,
+) -> Tuple[Dict[str, bool], dict]:
+    """Load per-pdb success flags from arm_dir/*/result.csv.
+
+    Returns (cases, meta) where *cases* includes only evaluable (complete) PDBs.
+    Incomplete stubs (empty mode_rmsd, zero poses, or restarts_finished <
+    *min_restarts*) are listed in meta and **excluded** from S_top10 rates.
+    """
     arm_dir = Path(arm_dir)
     if not arm_dir.is_dir():
         raise FileNotFoundError(f"arm-dir not found: {arm_dir}")
     cases: Dict[str, bool] = {}
+    incomplete: List[dict] = []
     csvs = sorted(arm_dir.glob("*/result.csv"))
     if not csvs:
         raise FileNotFoundError(f"no result.csv under {arm_dir}")
@@ -129,13 +161,64 @@ def load_arm_dir(arm_dir: Path, thresh: float = DEFAULT_THRESH) -> Dict[str, boo
         with p.open(newline="") as f:
             rows = list(csv.DictReader(f))
         if not rows:
-            raise ValueError(f"empty result.csv: {p}")
+            incomplete.append({"pdb_id": pdb_id, "reason": "empty_csv"})
+            continue
         row = rows[0]
-        modes = extract_mode_rmsds_from_row(row, require_mode_columns=True)
-        # Prefer explicit success_s_top10 if present and consistent; always recompute from modes
-        ok = s_top10(modes, thresh=thresh)
-        cases[pdb_id] = ok
-    return cases
+        rf = _row_restarts_finished(row)
+        nposes = _row_n_poses(row)
+        try:
+            modes = extract_mode_rmsds_from_row(row, require_mode_columns=True)
+        except MissingModeRmsdError:
+            incomplete.append(
+                {
+                    "pdb_id": pdb_id,
+                    "reason": "missing_mode_rmsd",
+                    "restarts_finished": rf,
+                    "n_poses": nposes,
+                }
+            )
+            continue
+        finite_modes = sum(1 for m in modes if m is not None)
+        if finite_modes == 0:
+            incomplete.append(
+                {
+                    "pdb_id": pdb_id,
+                    "reason": "empty_mode_rmsd",
+                    "restarts_finished": rf,
+                    "n_poses": nposes,
+                }
+            )
+            continue
+        if min_restarts > 0 and rf < min_restarts:
+            incomplete.append(
+                {
+                    "pdb_id": pdb_id,
+                    "reason": f"restarts_finished<{min_restarts}",
+                    "restarts_finished": rf,
+                    "n_poses": nposes,
+                }
+            )
+            continue
+        if require_poses and nposes <= 0:
+            incomplete.append(
+                {
+                    "pdb_id": pdb_id,
+                    "reason": "n_poses==0",
+                    "restarts_finished": rf,
+                    "n_poses": nposes,
+                }
+            )
+            continue
+        cases[pdb_id] = s_top10(modes, thresh=thresh)
+    meta = {
+        "n_result_csv": len(csvs),
+        "n_evaluable": len(cases),
+        "n_incomplete": len(incomplete),
+        "min_restarts": min_restarts,
+        "require_poses": require_poses,
+        "incomplete": incomplete,
+    }
+    return cases, meta
 
 
 def load_rank_table(path: Path, thresh: float = DEFAULT_THRESH) -> Dict[str, bool]:
@@ -221,26 +304,30 @@ def summarize(
     seed: int,
     thresh: float,
     source: str,
+    completeness: Optional[dict] = None,
 ) -> dict:
     ids = sorted(cases.keys())
     succ = [cases[i] for i in ids]
     n = len(succ)
     hits = sum(1 for s in succ if s)
-    obs, med, rates = bootstrap_median_rate(succ, bootstraps=bootstraps, seed=seed)
+    if n == 0:
+        obs, med, rates = 0.0, None, []
+    else:
+        obs, med, rates = bootstrap_median_rate(succ, bootstraps=bootstraps, seed=seed)
     rates_sorted = sorted(rates)
     def pct(p: float) -> Optional[float]:
         if not rates_sorted:
             return None
         k = min(len(rates_sorted) - 1, max(0, int(round(p * (len(rates_sorted) - 1)))))
         return rates_sorted[k]
-    return {
+    out = {
         "metric": "S_top10",
         "threshold_A": thresh,
-        "definition": "any of ranks 0..9 RMSD <= threshold",
+        "definition": "any of ranks 0..9 RMSD <= threshold (evaluable cases only)",
         "source": source,
         "n_cases": n,
         "n_hits": hits,
-        "observed_rate": obs,
+        "observed_rate": obs if n else None,
         "bootstrap": {
             "n_resamples": bootstraps if n >= 2 else 0,
             "seed": seed,
@@ -253,6 +340,12 @@ def summarize(
         "case_ids": ids,
         "case_success": {i: cases[i] for i in ids},
     }
+    if completeness is not None:
+        out["completeness"] = completeness
+        out["n_result_csv"] = completeness.get("n_result_csv")
+        out["n_incomplete"] = completeness.get("n_incomplete")
+        out["n_evaluable"] = completeness.get("n_evaluable", n)
+    return out
 
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
@@ -264,13 +357,33 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     ap.add_argument("--bootstraps", type=int, default=DEFAULT_BOOTSTRAPS)
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--thresh", type=float, default=DEFAULT_THRESH)
+    ap.add_argument(
+        "--min-restarts",
+        type=int,
+        default=0,
+        help="Exclude cases with restarts_finished < N (e.g. 10 for claim R=10)",
+    )
+    ap.add_argument(
+        "--require-poses",
+        action="store_true",
+        help="Exclude cases with n_poses==0 / empty ensemble",
+    )
     ap.add_argument("--json-out", type=Path, default=None)
     args = ap.parse_args(argv)
 
+    completeness: Optional[dict] = None
     try:
         if args.arm_dir is not None:
-            cases = load_arm_dir(args.arm_dir, thresh=args.thresh)
-            source = f"arm-dir:{args.arm_dir}"
+            cases, completeness = load_arm_dir(
+                args.arm_dir,
+                thresh=args.thresh,
+                min_restarts=args.min_restarts,
+                require_poses=args.require_poses,
+            )
+            source = (
+                f"arm-dir:{args.arm_dir}"
+                f" min_restarts={args.min_restarts} require_poses={args.require_poses}"
+            )
         elif args.cases is not None:
             cases = load_cases_json(args.cases, thresh=args.thresh)
             source = f"cases:{args.cases}"
@@ -284,20 +397,54 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         print(f"FAIL: {e}", file=sys.stderr)
         return 1
 
+    if not cases:
+        print(
+            "FAIL: zero evaluable cases after completeness filters "
+            f"(result_csv={completeness.get('n_result_csv') if completeness else '?'} "
+            f"incomplete={completeness.get('n_incomplete') if completeness else '?'})",
+            file=sys.stderr,
+        )
+        if args.json_out and completeness is not None:
+            args.json_out.write_text(
+                json.dumps(
+                    {
+                        "n_cases": 0,
+                        "n_hits": 0,
+                        "observed_rate": None,
+                        "completeness": completeness,
+                        "status": "no_evaluable_cases",
+                    },
+                    indent=2,
+                )
+                + "\n"
+            )
+        return 1
+
     summary = summarize(
         cases,
         bootstraps=args.bootstraps,
         seed=args.seed,
         thresh=args.thresh,
         source=source,
+        completeness=completeness,
     )
     # Human-readable headline
+    med = summary["bootstrap"]["median"]
+    obs = summary["observed_rate"]
     print(
-        f"S_top10 N={summary['n_cases']} hits={summary['n_hits']} "
-        f"observed={summary['observed_rate']:.4f} "
-        f"bootstrap_median={summary['bootstrap']['median']:.4f} "
+        f"S_top10 N_evaluable={summary['n_cases']} hits={summary['n_hits']} "
+        f"observed={obs:.4f} "
+        f"bootstrap_median={med:.4f} "
         f"(B={summary['bootstrap']['n_resamples']}, seed={args.seed}, thresh={args.thresh}A)"
     )
+    if completeness is not None:
+        print(
+            f"  completeness: result_csv={completeness['n_result_csv']} "
+            f"evaluable={completeness['n_evaluable']} "
+            f"incomplete={completeness['n_incomplete']} "
+            f"(min_restarts={completeness['min_restarts']}, "
+            f"require_poses={completeness['require_poses']})"
+        )
     print(
         f"  p05={summary['bootstrap']['p05']} p95={summary['bootstrap']['p95']} "
         f"source={source}"
@@ -305,7 +452,6 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     print("  fail_closed=True  (mode_rmsd_* required; BCR not used as S_top10)")
     if args.json_out:
         args.json_out.parent.mkdir(parents=True, exist_ok=True)
-        # drop bulky case map optional — keep for audit
         args.json_out.write_text(json.dumps(summary, indent=2) + "\n")
         print(f"  wrote {args.json_out}")
     return 0
