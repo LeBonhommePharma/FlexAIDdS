@@ -1,0 +1,11 @@
+REMARK  Ligand-centered oracle site for 1IGJ
+REMARK  Centroid of 37 heavy atoms from 1IGJ_ligand.sdf
+REMARK  Radius ~5A — use instead of SURFNET 1IGJ_binding_site.pdb (266k-point grid)
+ATOM      1  CA  DUM A   1      35.282  37.821  71.883  1.00  0.00           C
+ATOM      2  CA  DUM A   2      39.282  37.821  71.883  1.00  0.00           C
+ATOM      3  CA  DUM A   3      31.282  37.821  71.883  1.00  0.00           C
+ATOM      4  CA  DUM A   4      35.282  41.821  71.883  1.00  0.00           C
+ATOM      5  CA  DUM A   5      35.282  33.821  71.883  1.00  0.00           C
+ATOM      6  CA  DUM A   6      35.282  37.821  75.883  1.00  0.00           C
+ATOM      7  CA  DUM A   7      35.282  37.821  67.883  1.00  0.00           C
+END
