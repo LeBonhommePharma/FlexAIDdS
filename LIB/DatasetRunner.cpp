@@ -586,31 +586,56 @@ static std::pair<float,float> compute_pose_ligand_rmsd(
     }
     if (pose_xyz.empty()) return {-1.0f, -1.0f};
 
-    const int count_delta = std::abs(static_cast<int>(crystal_xyz.size()) -
-                                     static_cast<int>(pose_xyz.size()));
-    if (count_delta > 2) {
+    // Fail-closed whole-ligand heavy-atom count: no ±2 truncation (audit P0 #2).
+    if (crystal_xyz.size() != pose_xyz.size()) {
         if (warn) {
             std::cerr << "  [WARN] RMSD atom count mismatch for " << pdb_id
                       << ": crystal=" << crystal_xyz.size()
                       << " pose(docked-ligand)=" << pose_xyz.size()
-                      << " — setting RMSD=-1\n";
+                      << " — setting RMSD=-1 (fail-closed; no truncation)\n";
+        }
+        return {-1.0f, -1.0f};
+    }
+    if (crystal_elem.size() != crystal_xyz.size() ||
+        pose_elem.size() != pose_xyz.size()) {
+        if (warn) {
+            std::cerr << "  [WARN] RMSD element vector length mismatch for "
+                      << pdb_id << " — setting RMSD=-1\n";
         }
         return {-1.0f, -1.0f};
     }
 
-    int n = static_cast<int>(std::min(crystal_xyz.size(), pose_xyz.size()));
-    double sum_sq = 0.0;
-    for (int k = 0; k < n; k++) {
-        double dx = pose_xyz[k][0] - crystal_xyz[k][0];
-        double dy = pose_xyz[k][1] - crystal_xyz[k][1];
-        double dz = pose_xyz[k][2] - crystal_xyz[k][2];
-        sum_sq += dx*dx + dy*dy + dz*dz;
+    const int n = static_cast<int>(crystal_xyz.size());
+    // Ordered direct RMSD requires per-index element identity (diagnostic path
+    // when serial order matches chemical identity). Graph-valid automorphisms
+    // remain a Python-side claim metric for SDF; C++ claim uses this fail-closed
+    // ordered metric only when element sequences align.
+    bool elements_aligned = true;
+    for (int k = 0; k < n; ++k) {
+        if (pose_elem[static_cast<size_t>(k)] !=
+            crystal_elem[static_cast<size_t>(k)]) {
+            elements_aligned = false;
+            break;
+        }
     }
-    float rc = static_cast<float>(std::sqrt(sum_sq / n));
+    float rc = -1.0f;
+    if (elements_aligned) {
+        double sum_sq = 0.0;
+        for (int k = 0; k < n; k++) {
+            double dx = pose_xyz[k][0] - crystal_xyz[k][0];
+            double dy = pose_xyz[k][1] - crystal_xyz[k][1];
+            double dz = pose_xyz[k][2] - crystal_xyz[k][2];
+            sum_sq += dx * dx + dy * dy + dz * dz;
+        }
+        rc = static_cast<float>(std::sqrt(sum_sq / n));
+    } else if (warn) {
+        std::cerr << "  [WARN] ordered RMSD element sequence mismatch for "
+                  << pdb_id << " — ordered RMSD=-1 (Hungarian diagnostic only)\n";
+    }
 
+    // Element-only Hungarian is diagnostic symmetry metric only — never success.
     float rh = -1.0f;
-    if (crystal_elem.size() == crystal_xyz.size() &&
-        pose_elem.size() == pose_xyz.size()) {
+    {
         std::vector<std::pair<std::string,std::array<float,3>>> catoms, datoms;
         catoms.reserve(crystal_xyz.size());
         datoms.reserve(pose_xyz.size());
@@ -6947,8 +6972,13 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                             const int pi = head.rank;
                             auto rp = compute_pose_ligand_rmsd(
                                 cand, crystal_xyz, crystal_elem, entry.pdb_id, false);
-                            if (result.best_cluster_rmsd < 0.0f || rp.second < result.best_cluster_rmsd) {
-                                result.best_cluster_rmsd = rp.second;
+                            // Pool ceiling uses ordered direct RMSD only (fail-closed).
+                            // Hungarian remains diagnostic; never drives ceiling or claims.
+                            const float ceiling_r = rp.first;
+                            if (ceiling_r >= 0.0f &&
+                                (result.best_cluster_rmsd < 0.0f ||
+                                 ceiling_r < result.best_cluster_rmsd)) {
+                                result.best_cluster_rmsd = ceiling_r;
                                 result.best_cluster_idx = pi;
                                 best_cluster_pfx = pfx;
                                 best_cluster_path = cand;
@@ -6958,7 +6988,7 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                             // Fix B: cluster member recovery for near-miss clusters.
                             // Members: <head_stem>_member<M>.pdb (single- and dual-suffix).
                             if (cluster_member_emit_ &&
-                                rp.second >= 2.0f && rp.second <= 4.0f) {
+                                ceiling_r >= 2.0f && ceiling_r <= 4.0f) {
                                 std::string head_stem = cand;
                                 if (head_stem.size() > 4 &&
                                     head_stem.compare(head_stem.size() - 4, 4, ".pdb") == 0)
@@ -6972,9 +7002,11 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                                     }
                                     auto mr = compute_pose_ligand_rmsd(
                                         mcand, crystal_xyz, crystal_elem, entry.pdb_id, false);
-                                    if (result.best_cluster_rmsd < 0.0f ||
-                                        mr.second < result.best_cluster_rmsd) {
-                                        result.best_cluster_rmsd = mr.second;
+                                    const float m_ceil = mr.first;
+                                    if (m_ceil >= 0.0f &&
+                                        (result.best_cluster_rmsd < 0.0f ||
+                                         m_ceil < result.best_cluster_rmsd)) {
+                                        result.best_cluster_rmsd = m_ceil;
                                         result.best_cluster_idx  = pi;
                                         best_cluster_pfx = pfx;
                                         best_cluster_path = mcand;
@@ -6982,7 +7014,8 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                                     }
                                     try {
                                         char rbuf[16];
-                                        std::snprintf(rbuf, sizeof(rbuf), "%.2f", mr.second);
+                                        std::snprintf(rbuf, sizeof(rbuf), "%.2f",
+                                                      mr.first >= 0.0f ? mr.first : mr.second);
                                         fs::path dst = fs::path(mcand).parent_path() /
                                             (entry.pdb_id + "_cluster" + std::to_string(pi) +
                                              "_member" + std::to_string(mi) +
@@ -7029,87 +7062,24 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                     }
                 }
 
-                // ── BCR-gate: known-site selector override ───────────────────────
-                // v50 correctly demoted this gate for AUTONOMOUS validation because
-                // the oracle-best cluster requires the crystal ligand to identify.
-                // In ORACLE_CEILING runs the binding site and crystal reference are
-                // already explicit protocol inputs, so the old v49 behavior is the
-                // reproducibility target: if the emitted cluster pool contains a
-                // sub-2 Å pose but the frequency/consensus selector reports a miss,
-                // report the actual BCR pose that achieved best_cluster_rmsd.
-                //
-                // No new physics or threshold is introduced here: 2 Å is the Astex
-                // success gate already used below; autonomous runs remain
-                // diagnostic-only.
-                // Claim / BCR-gate diagnostics use ordered direct RMSD only.
-                // Element-only Hungarian is never the success gate (fail-closed).
-                const bool bcr_gate_candidate =
-                    result.best_cluster_rmsd >= 0.0f &&
+                // ── BCR pool ceiling (diagnostic only; NEVER mutates top-1) ─────
+                // Audit P0 #1: crystal-RMSD override of the elected pose converts
+                // S_top1 into S_pool_ceiling (oracle). Knowing the site does not
+                // authorize crystal-RMSD selection. best_cluster_rmsd remains the
+                // any-pose sampling ceiling; success_rmsd uses the immutable
+                // elected artifact only.
+                if (result.best_cluster_rmsd >= 0.0f &&
                     result.best_cluster_rmsd <= 2.0f &&
-                    result.rmsd_to_crystal >= 2.0f;
-                const bool bcr_gate_enabled =
-                    config.mode == BenchmarkMode::ORACLE_CEILING &&
-                    !entry.binding_site_path.empty() &&
-                    fs::exists(entry.binding_site_path);
-
-                if (bcr_gate_candidate && bcr_gate_enabled &&
-                    !best_cluster_path.empty() && result.best_cluster_idx >= 0) {
-                    const float old_rmsd = result.rmsd_to_crystal;
-                    // Full path from dual-suffix-aware BCR scan (FO cannot rebuild from idx).
-                    const std::string& override_pdb = best_cluster_path;
-                    if (fs::exists(override_pdb)) {
-                        auto rov = compute_pose_ligand_rmsd(
-                            override_pdb, crystal_xyz, crystal_elem,
-                            entry.pdb_id, true);
-                        result.rmsd_to_crystal = rov.first;
-                        result.rmsd_hungarian  = rov.second;
-                        result.seed_echo = false;
-                        result.pose_source = "bcr_gate";
-                        best_pose_pdb = override_pdb;
-
-                        float override_cf = std::numeric_limits<float>::infinity();
-                        {
-                            std::ifstream pf(override_pdb);
-                            std::string pl;
-                            while (std::getline(pf, pl)) {
-                                if (pl.find("REMARK CF=") != std::string::npos) {
-                                    auto pos = pl.find("CF=");
-                                    if (pos != std::string::npos) {
-                                        try { override_cf = std::stof(pl.substr(pos + 3)); }
-                                        catch (...) {}
-                                    }
-                                    break;
-                                }
-                            }
-                        }
-                        if (std::isfinite(override_cf)) result.best_score = override_cf;
-
-                        std::cerr << "  [BCR-GATE] " << entry.pdb_id
-                                  << ": bcr=" << std::fixed << std::setprecision(3)
-                                  << result.best_cluster_rmsd
-                                  << "A sel_old=" << old_rmsd
-                                  << "A -> bcr_cluster ordered_rmsd="
-                                  << rov.first
-                                  << "A hungarian_diag=" << rov.second
-                                  << "A (idx=" << result.best_cluster_idx << ")\n";
-                    } else {
-                        std::cerr << "  [BCR-GATE-WARN] " << entry.pdb_id
-                                  << ": candidate pose missing path="
-                                  << best_cluster_path
-                                  << " pfx=" << best_cluster_pfx
-                                  << " idx=" << result.best_cluster_idx << "\n";
-                    }
-                } else if (bcr_gate_candidate) {
-                    const float kept = result.rmsd_to_crystal;
-                    std::cerr << "  [BCR-DIAGNOSTIC] " << entry.pdb_id
-                              << ": bcr=" << std::fixed << std::setprecision(2)
-                              << result.best_cluster_rmsd
-                              << "A (gate DISABLED for autonomous/legacy mode — ordered kept: "
-                              << kept << "A hungarian_diag=" << result.rmsd_hungarian
-                              << "A)"
-                              << " (idx=" << result.best_cluster_idx << ")\n";
+                    (result.rmsd_to_crystal < 0.0f || result.rmsd_to_crystal > 2.0f)) {
+                    std::cerr << "  [BCR-CEILING] " << entry.pdb_id
+                              << ": pool_ceiling_ordered=" << std::fixed
+                              << std::setprecision(3) << result.best_cluster_rmsd
+                              << "A elected_ordered="
+                              << result.rmsd_to_crystal
+                              << "A (ceiling recorded only; top-1 NOT replaced; "
+                                 "pose_source stays election, never bcr_gate)\n";
                 }
-                // Hoist elected path for PoseBust (after consensus / BCR mutations).
+                // Hoist elected path for PoseBust (immutable election identity).
                 elected_pose_pdb = best_pose_pdb;
             } else {
                 result.rmsd_to_crystal = -1.0f;
