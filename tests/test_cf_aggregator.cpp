@@ -83,3 +83,21 @@ TEST(CFAggregator, IsLinearSumOfIncludedTerms) {
     const double expected = 2.0 + 3.0 + 5.0 + 7.0 + 11.0 + 13.0 + 17.0 + 19.0 + 23.0;
     EXPECT_DOUBLE_EQ(eval(c), expected);
 }
+
+TEST(CFAggregator, ElecAndGistDesolvAreNotSilentZeros) {
+    // Regression: production ic2cf previously zeroed elec/gist_desolv then
+    // failed to sum them from optres. get_cf_evalue must still count them.
+    cfstr only_elec{};
+    only_elec.elec = 42.0;
+    EXPECT_DOUBLE_EQ(eval(only_elec), 42.0);
+
+    cfstr only_gist{};
+    only_gist.gist_desolv = -7.5;
+    EXPECT_DOUBLE_EQ(eval(only_gist), -7.5);
+
+    cfstr both{};
+    both.elec = 10.0;
+    both.gist_desolv = 5.0;
+    both.com = 1.0;
+    EXPECT_DOUBLE_EQ(eval(both), 16.0);
+}

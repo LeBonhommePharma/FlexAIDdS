@@ -373,6 +373,11 @@ cfstr ic2cf(FA_Global* FA,VC_Global* VC,atom* atoms,resid* residue,
 		cf.wal += FA->optres[i].cf.wal;
 		cf.sas += FA->optres[i].cf.sas;
 		cf.con += FA->optres[i].cf.con;
+		// Production aggregator must include every get_cf_evalue() term.
+		// Historical bug: elec and gist_desolv were zeroed above then never
+		// summed from optres, silently dropping electrostatics / GIST desolv.
+		cf.elec += FA->optres[i].cf.elec;
+		cf.gist_desolv += FA->optres[i].cf.gist_desolv;
 		cf.metal_coord += FA->optres[i].cf.metal_coord;
 		cf.hbond += FA->optres[i].cf.hbond;
 		cf.entropy += FA->optres[i].cf.entropy;
