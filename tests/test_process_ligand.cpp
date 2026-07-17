@@ -661,6 +661,8 @@ TEST(ProcessLigand, DetectFormatSmiles) {
 
 // ===========================================================================
 // Real Astex 1M2Z ligand regression (geometry invariants + rotor hygiene)
+// Historical multi-Å rupture does NOT reproduce on modern DirectLigandIC /
+// topology-derived GPA (max bond drift ~1e-5 A on main be049f8c). Expect PASS.
 // ===========================================================================
 
 TEST(ProcessLigand, Real1M2ZLigandGeometryAndRotors) {

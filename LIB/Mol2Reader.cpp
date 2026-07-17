@@ -198,7 +198,9 @@ int read_mol2_ligand(FA_Global* FA, atom** atoms, resid** residue,
                 if (!strcmp(btype, "2") || !strcmp(btype, "do")) b.type = 2;
                 if (!strcmp(btype, "3") || !strcmp(btype, "tr")) b.type = 3;
                 if (!strcmp(btype, "ar"))                        b.type = 4;
-                if (!strcmp(btype, "am"))                        b.type = 1; // amide→single
+                // Amide bond: preserve as order 10 so DirectLigandIC rejects
+                // resonance-locked C–N rotors (was collapsed to single=1).
+                if (!strcmp(btype, "am"))                        b.type = 10;
                 tmp_bonds.push_back(b);
             }
             break;

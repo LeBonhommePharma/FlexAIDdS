@@ -1,5 +1,6 @@
 #include "flexaid.h"
 #include <math.h>
+#include <cmath>
 /******************************************************************************
  * SUBROUTINE buildcc builds the cartesian coordinates of the tot atoms present
  * in array list according to the reconstruction data.
@@ -53,8 +54,12 @@ void buildcc(FA_Global* FA,atom* atoms,int tot,int list[]){
     a=y[1]*(z[2]-z[3])+y[2]*(z[3]-z[1])+y[3]*(z[1]-z[2]);
     b=z[1]*(x[2]-x[3])+z[2]*(x[3]-x[1])+z[3]*(x[1]-x[2]);
     c=x[1]*(y[2]-y[3])+x[2]*(y[3]-y[1])+x[3]*(y[1]-y[2]);
-    op=sqrt(a*a+b*b+c*c);
-    
+    op=sqrtf(a*a+b*b+c*c);
+    // Collinear / singular GPA frame: skip write so NaNs never bypass bounds.
+    if (!(op > 1e-12f) || !std::isfinite(op)) {
+      continue;
+    }
+
     /*
       d=x[1]*(y[3]*z[2]-y[2]*z[3])+
       y[1]*(x[2]*z[3]-x[3]*z[2])+
@@ -73,7 +78,11 @@ void buildcc(FA_Global* FA,atom* atoms,int tot,int list[]){
     b=y[2]-y[1];
     c=z[2]-z[1];
 
-    d=1.0f/sqrt(a*a+b*b+c*c);
+    const float ref_len = sqrtf(a*a+b*b+c*c);
+    if (!(ref_len > 1e-12f) || !std::isfinite(ref_len)) {
+      continue;
+    }
+    d=1.0f/ref_len;
     op=atoms[list[an]].dis*d;
     xn=a*op;
     yn=b*op;
@@ -124,6 +133,10 @@ void buildcc(FA_Global* FA,atom* atoms,int tot,int list[]){
     x[0]=(cx*cz*op-cy*st)*zk+((1.0f-a)*ct+a)*xk+(cx*cy*op+cz*st)*yk+x[1];
     y[0]=(cy*cx*op-cz*st)*xk+((1.0f-b)*ct+b)*yk+(cy*cz*op+cx*st)*zk+y[1];
     z[0]=(cz*cy*op-cx*st)*yk+((1.0f-c)*ct+c)*zk+(cz*cx*op+cy*st)*xk+z[1];
+
+    if (!std::isfinite(x[0]) || !std::isfinite(y[0]) || !std::isfinite(z[0])) {
+      continue;
+    }
     
     atoms[list[an]].coor[0]=x[0];
     atoms[list[an]].coor[1]=y[0];

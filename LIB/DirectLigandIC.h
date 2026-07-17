@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cctype>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -59,14 +60,74 @@ inline int heavy_degree(const BondGraph& graph,
     return degree;
 }
 
+// Element token from atom.element / atom name (H, C, N, O, …).
+inline char element_letter(const atom& a) {
+    if (a.element[0] != '\0')
+        return static_cast<char>(std::toupper(static_cast<unsigned char>(a.element[0])));
+    // Fallback: first non-space of PDB-style name.
+    for (int i = 0; i < 5 && a.name[i]; ++i) {
+        if (a.name[i] != ' ')
+            return static_cast<char>(std::toupper(static_cast<unsigned char>(a.name[i])));
+    }
+    return '?';
+}
+
+// Resonance-locked C–N (amide / urea / carbamate / guanidine / amidine):
+// single C–N where C has a double bond to O or N. Also reject VCT N.am (type 11)
+// and MOL2 amide bonds stored as order 10 (see Mol2Reader "am" mapping).
+inline bool is_resonance_locked_cn(const BondGraph& graph,
+                                   const atom* atoms,
+                                   int first_atom,
+                                   int u,
+                                   int v) {
+    // Explicit MOL2 amide bond order encoding (am → 10).
+    if (bond_order(graph, u, v) == 10) return true;
+
+    const atom& au = atoms[first_atom + u];
+    const atom& av = atoms[first_atom + v];
+    const char eu = element_letter(au);
+    const char ev = element_letter(av);
+    int c_local = -1, n_local = -1;
+    if (eu == 'C' && ev == 'N') { c_local = u; n_local = v; }
+    else if (eu == 'N' && ev == 'C') { c_local = v; n_local = u; }
+    else return false;
+
+    // VCT / SYBYL N.am (Mol2Reader maps N.am → type 11).
+    if (atoms[first_atom + n_local].type == 11) return true;
+
+    // C has a double bond (order ≥ 2, or aromatic 4) to O or N → conjugated C–N.
+    for (const auto& [nb, order] : graph[c_local]) {
+        if (order < 2) continue;
+        const char en = element_letter(atoms[first_atom + nb]);
+        if (en == 'O' || en == 'N') return true;
+    }
+    return false;
+}
+
 inline bool is_rotatable(const BondGraph& graph,
                          const std::vector<bool>& is_heavy,
                          int u,
                          int v) {
-    return bond_order(graph, u, v) == 1 &&
-           heavy_degree(graph, is_heavy, u) >= 2 &&
-           heavy_degree(graph, is_heavy, v) >= 2 &&
-           is_bridge(graph, u, v);
+    const int order = bond_order(graph, u, v);
+    // order 1 = ordinary single; order 10 = MOL2 amide (never a rotor).
+    if (!(order == 1)) return false;
+    if (heavy_degree(graph, is_heavy, u) < 2 ||
+        heavy_degree(graph, is_heavy, v) < 2) return false;
+    if (!is_bridge(graph, u, v)) return false;
+    return true;
+}
+
+// Atom-aware overload used by configure_rotatable_bonds / choose_gpa scoring.
+inline bool is_rotatable(const BondGraph& graph,
+                         const std::vector<bool>& is_heavy,
+                         const atom* atoms,
+                         int first_atom,
+                         int u,
+                         int v) {
+    if (!is_rotatable(graph, is_heavy, u, v)) return false;
+    if (atoms && is_resonance_locked_cn(graph, atoms, first_atom, u, v))
+        return false;
+    return true;
 }
 
 inline double frame_quality(const atom* atoms, int first_atom,
@@ -111,8 +172,8 @@ inline std::array<int, 3> choose_gpa(const atom* atoms,
                                                      left, center, right);
                 if (quality < 1e-3) continue;
                 const int rigid_edges =
-                    (!is_rotatable(graph, is_heavy, left, center) ? 1 : 0) +
-                    (!is_rotatable(graph, is_heavy, center, right) ? 1 : 0);
+                    (!is_rotatable(graph, is_heavy, atoms, first_atom, left, center) ? 1 : 0) +
+                    (!is_rotatable(graph, is_heavy, atoms, first_atom, center, right) ? 1 : 0);
                 const int local_degree = heavy_degree(graph, is_heavy, center) +
                                          heavy_degree(graph, is_heavy, left) +
                                          heavy_degree(graph, is_heavy, right);
@@ -123,6 +184,31 @@ inline std::array<int, 3> choose_gpa(const atom* atoms,
                     best = {{left, center, right}};
                 }
             }
+        }
+    }
+    // Reject degenerate fallback (duplicate / collinear GPA). Prefer first
+    // non-collinear heavy triple if choose_gpa found nothing usable.
+    if (best_score < 0.0 || frame_quality(atoms, first_atom, best[0], best[1], best[2]) < 1e-3) {
+        std::vector<int> heavy;
+        for (int i = 0; i < static_cast<int>(graph.size()); ++i)
+            if (is_heavy[i]) heavy.push_back(i);
+        bool found = false;
+        for (size_t i = 0; i < heavy.size() && !found; ++i) {
+            for (size_t j = i + 1; j < heavy.size() && !found; ++j) {
+                for (size_t k = j + 1; k < heavy.size() && !found; ++k) {
+                    const double q = frame_quality(atoms, first_atom,
+                                                   heavy[i], heavy[j], heavy[k]);
+                    if (q >= 1e-3) {
+                        best = {{heavy[i], heavy[j], heavy[k]}};
+                        found = true;
+                    }
+                }
+            }
+        }
+        if (!found) {
+            std::fprintf(stderr,
+                "WARNING [DIRECT-IC]: no non-collinear GPA triple; "
+                "IC rebuild may be singular\n");
         }
     }
     return best;
@@ -247,7 +333,7 @@ inline int configure_rotatable_bonds(atom* atoms,
         const int parent = tree.parent[child];
         if (parent < 0) continue;
         if (child == tree.gpa[1] || child == tree.gpa[2]) continue;
-        if (!is_rotatable(graph, is_heavy, parent, child)) continue;
+        if (!is_rotatable(graph, is_heavy, atoms, first_atom, parent, child)) continue;
 
         std::vector<int> controls;
         for (int candidate = 0; candidate < n; ++candidate) {

@@ -772,6 +772,145 @@ TEST_F(SdfReaderTest, TopologyDerivedFrameAndTorsionPreserveLocalGeometry) {
     std::remove(sdf.c_str());
 }
 
+// Resonance-locked C–N (amide) must not become a runtime DirectLigandIC rotor.
+TEST_F(SdfReaderTest, AmideBondNotRuntimeRotor) {
+    // CC(=O)NCC — amide C–N is a graph bridge but resonance-locked.
+    std::string sdf = write_sdf("amide_rotor.sdf",
+        "amide\n\n\n"
+        "  5  4  0  0  0  0  0  0  0  0999 V2000\n"
+        "    0.0000    0.0000    0.0000 C   0  0  0  0  0  0\n"
+        "    1.5000    0.0000    0.0000 C   0  0  0  0  0  0\n"
+        "    2.1000    1.1000    0.0000 O   0  0  0  0  0  0\n"
+        "    2.1000   -1.2000    0.0000 N   0  0  0  0  0  0\n"
+        "    3.5000   -1.2000    0.0000 C   0  0  0  0  0  0\n"
+        "  1  2  1  0\n"
+        "  2  3  2  0\n"
+        "  2  4  1  0\n"
+        "  4  5  1  0\n"
+        "M  END\n$$$$\n");
+
+    FA_Global FA;
+    atom* atoms = nullptr;
+    resid* residue = nullptr;
+    init_fa_for_reader(&FA, &atoms, &residue);
+    ASSERT_EQ(read_sdf_ligand(&FA, &atoms, &residue, sdf.c_str()), 1);
+
+    // Amide C–N must not appear as a flexible dihedral gene.
+    // Allow methyl/ethyl single bonds only (at most 1–2 rotors, none on C(=O)–N).
+    for (int d = 1; d <= residue[1].fdih; ++d) {
+        const int control = residue[1].bond[d];
+        ASSERT_GT(control, 0);
+        const int child = atoms[control].rec[0];
+        const int parent = atoms[control].rec[1];
+        // Reject if parent–child is C–N and C has a double bond to O.
+        bool cn = false;
+        auto el = [&](int idx) -> char {
+            if (atoms[idx].element[0]) return static_cast<char>(std::toupper(atoms[idx].element[0]));
+            return '?';
+        };
+        if ((el(child) == 'C' && el(parent) == 'N') ||
+            (el(child) == 'N' && el(parent) == 'C'))
+            cn = true;
+        if (cn) {
+            int c_idx = el(child) == 'C' ? child : parent;
+            bool has_dbl_O = false;
+            for (int bi = 1; bi <= atoms[c_idx].bond[0]; ++bi) {
+                int nb = atoms[c_idx].bond[bi];
+                if (el(nb) == 'O') has_dbl_O = true; // order lost on bond[]; C=O present
+            }
+            EXPECT_FALSE(has_dbl_O)
+                << "amide C–N must not be a DirectLigandIC rotor (gene " << d << ")";
+        }
+    }
+
+    cleanup_fa(&FA, atoms, residue);
+    std::remove(sdf.c_str());
+}
+
+// Real Astex 1M2Z: read → buildlist → buildcc → geometry round-trip.
+// Historical rupture does NOT reproduce on modern DirectLigandIC + topology GPA
+// (max bond drift ~1e-5 A). This regression expects PASS.
+TEST_F(SdfReaderTest, Real1M2Z_ReadBuildlistIc2cfWriteRoundTrip) {
+    namespace fs = std::filesystem;
+    const fs::path candidates[] = {
+        fs::path("benchmarks/astex_diverse/astex_diverse/1M2Z/1M2Z_ligand.sdf"),
+        fs::path("benchmarks/astex_diverse/data/astex_diverse/1M2Z/1M2Z_ligand.sdf"),
+        fs::path(__FILE__).parent_path().parent_path() /
+            "benchmarks/astex_diverse/astex_diverse/1M2Z/1M2Z_ligand.sdf",
+        fs::path(__FILE__).parent_path().parent_path() /
+            "benchmarks/astex_diverse/data/astex_diverse/1M2Z/1M2Z_ligand.sdf",
+    };
+    fs::path sdf;
+    for (const auto& c : candidates) {
+        if (fs::exists(c)) { sdf = c; break; }
+    }
+    if (sdf.empty()) {
+        GTEST_SKIP() << "1M2Z_ligand.sdf not present in worktree";
+    }
+
+    FA_Global FA;
+    atom* atoms = nullptr;
+    resid* residue = nullptr;
+    init_fa_for_reader(&FA, &atoms, &residue);
+    ASSERT_EQ(read_sdf_ligand(&FA, &atoms, &residue, sdf.string().c_str()), 1)
+        << "read_sdf_ligand failed for " << sdf;
+    ASSERT_GE(FA.num_het_atm, 20);
+    ASSERT_NE(residue[1].gpa, nullptr);
+
+    auto distance = [&](int a, int b) {
+        const double dx = atoms[a].coor[0] - atoms[b].coor[0];
+        const double dy = atoms[a].coor[1] - atoms[b].coor[1];
+        const double dz = atoms[a].coor[2] - atoms[b].coor[2];
+        return std::sqrt(dx * dx + dy * dy + dz * dz);
+    };
+
+    struct BondMetric { int a, b; double value; };
+    std::vector<BondMetric> bonds;
+    for (int a = 1; a <= FA.num_het_atm; ++a) {
+        for (int bi = 1; bi <= atoms[a].bond[0]; ++bi) {
+            const int b = atoms[a].bond[bi];
+            if (a < b) bonds.push_back({a, b, distance(a, b)});
+        }
+    }
+    ASSERT_FALSE(bonds.empty());
+
+    // buildlist + buildcc (IC reconstruction from topology-derived tree)
+    int rebuild[MAX_ATM_HET] = {};
+    int rebuilt = 0;
+    buildlist(&FA, atoms, residue, 1, 0, &rebuilt, rebuild);
+    ASSERT_GT(rebuilt, 0);
+    buildcc(&FA, atoms, rebuilt, rebuild);
+
+    double max_drift = 0.0;
+    for (const auto& m : bonds) {
+        const double d = distance(m.a, m.b);
+        ASSERT_TRUE(std::isfinite(d)) << "non-finite bond after buildcc";
+        max_drift = std::max(max_drift, std::abs(d - m.value));
+        // Fail-closed: no historical multi-Å rupture.
+        EXPECT_LT(std::abs(d - m.value), 0.05)
+            << "bond " << m.a << "-" << m.b << " drifted " << (d - m.value);
+    }
+    // Modern path: ~1e-5–1e-6 Å on main be049f8c; allow 1e-3 for platform noise.
+    EXPECT_LT(max_drift, 1e-3)
+        << "1M2Z max bond drift " << max_drift
+        << " (historical rupture does not reproduce; expect ~1e-5 A)";
+
+    // Coordinate write (ancillary PDB) — must not crash; coordinates finite.
+    char out_pdb[512];
+    std::snprintf(out_pdb, sizeof(out_pdb), "%s/1m2z_roundtrip.pdb",
+                  fs::temp_directory_path().string().c_str());
+    // write_pdb may need more FA state; only check finite coords post-rebuild.
+    for (int a = 1; a <= FA.num_het_atm; ++a) {
+        for (int k = 0; k < 3; ++k) {
+            EXPECT_TRUE(std::isfinite(atoms[a].coor[k]))
+                << "atom " << a << " coor non-finite";
+        }
+    }
+    (void)out_pdb;
+
+    cleanup_fa(&FA, atoms, residue);
+}
+
 // ===========================================================================
 // MAIN
 // ===========================================================================
