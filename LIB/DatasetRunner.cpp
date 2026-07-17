@@ -975,23 +975,20 @@ static std::pair<std::string,float> select_pose_freq_gated_pooled(
 
     // ── Cluster-head election (Morency / 3Dsig 2017 FlexAIDdS ranking) ─────
     //
-    //   Z  = Σ_i exp(−CF_i / T)
-    //   p_i = exp(−CF_i / T) / Z
-    //   H̃  = Σ_i p_i CF_i
-    //   S̃  = −Σ_i p_i ln p_i          (Shannon, nats)
-    //   G̃  = H̃ − T S̃                 (elect LOWEST G̃)
+    // Production arithmetic is ALWAYS log-domain SoftBeta free energy
+    // (SoftBetaFreeEnergy.h):
+    //   G̃ = E_min − T · ln Σ_i exp(−(E_i − E_min)/T)   == H̃ − T·S̃
+    // when FLEXAIDDS_SOFTBETA_ELECTION / FLEXAIDDS_ELECTION_SHANNON_F is ON.
     //
-    // Soft-β convention: T is the dock temperature in K (β = 1/T), CF is the
-    // contact-function scoring proxy in arbitrary units — same as classic
-    // FlexAID BindingMode F and cluster ACF. NOT physical k_B·T (AGENTS.md).
-    // TEMPER 21 (arm B) is engine soft-T for FO/ACF emission — not kT in kcal.
+    // When Softβ is OFF (default), elect pure CF rank-0 (min finite head CF).
+    // The legacy Z·exp(−αH)·log1p(N) composite with τ=0.592 is **removed** —
+    // it mixed unit scales and is not a free-energy ranking objective.
+    // Candidates with NaN/Inf CF or G̃ are rejected (fail-closed).
     //
-    // Softβ S1 election is **feature-flagged OFF by default**
-    // (FLEXAIDDS_SOFTBETA_ELECTION / FLEXAIDDS_ELECTION_SHANNON_F). Softβ only
-    // reorders already-clustered heads; it cannot create ≤2 Å poses if BCR=0.
-    //
-    // Rollback: FLEXAIDDS_ELECTION_LEGACY_ZH=1 uses the old Z·exp(−αH)·log1p(N)
-    // composite with τ=0.592 (≈ pure min-CF; Softβ inert).
+    // Soft-β convention: T is dock soft temperature (β = 1/T), CF is the
+    // contact-function scoring proxy in arbitrary units — NOT physical k_B·T.
+    // Softβ only reorders already-clustered heads; it cannot create ≤2 Å poses
+    // if BCR=0.
     //
     // Member CFs: .mcf sidecar from cluster.cpp; else head CF only (S̃=0, G̃=CF).
     const bool use_shannon_G = proto.election_shannon_free_energy;
@@ -1025,24 +1022,19 @@ static std::pair<std::string,float> select_pose_freq_gated_pooled(
 
     if (use_shannon_G) {
         fprintf(stderr,
-                "[SOFTBETA-ELECT] Softβ S1 ON: elect by Ĝ=H̃−T·S̃ over clustered "
-                "heads only (not sampling; cannot fix BCR=0): "
+                "[SOFTBETA-ELECT] Softβ S1 ON: elect by log-domain Ĝ=Emin−T·ln Z "
+                "over clustered heads (not sampling; cannot fix BCR=0): "
                 "T=%.4f source=%s (soft-β CF a.u., not k_B·T) include_singletons=%d\n",
                 soft_T, soft_T_source, include_singletons ? 1 : 0);
         fprintf(stderr,
-                "[3DSIG-RANK] elect by G̃=H̃−T·S̃ (Softβ ranking path): "
+                "[3DSIG-RANK] elect by G̃=H̃−T·S̃ (SoftBetaFreeEnergy.h): "
                 "T=%.4f source=%s (soft-β, CF a.u.) include_singletons=%d\n",
                 soft_T, soft_T_source, include_singletons ? 1 : 0);
     } else {
         fprintf(stderr,
-                "[SOFTBETA-ELECT] Softβ S1 OFF (default): no Softβ claim; "
-                "fallback Z·exp(−αH)·log1p(N)/≈CF-rank τ=%.4f source=%s\n",
-                soft_T, soft_T_source);
-        fprintf(stderr,
-                "[Z+H-LEGACY] elect by Z·exp(−αH)·log1p(N) τ=%.4f source=%s "
-                "(Softβ NOT used for DatasetRunner S1 — opt in with "
-                "FLEXAIDDS_SOFTBETA_ELECTION=1)\n",
-                soft_T, soft_T_source);
+                "[SOFTBETA-ELECT] Softβ S1 OFF (default): elect min finite head CF "
+                "(CF rank-0). Legacy exp(−CF/0.592) ZH composite is removed. "
+                "Opt in Softβ with FLEXAIDDS_SOFTBETA_ELECTION=1\n");
     }
 
     struct PoseInfo {
@@ -1099,7 +1091,13 @@ static std::pair<std::string,float> select_pose_freq_gated_pooled(
 
     // Soft-β free energy via shared SoftBetaFreeEnergy.h (≡ cluster ACF /
     // BindingMode classic G̃). G̃ lower is better — elect min G̃.
+    // Returns +∞ for NaN/Inf heads so they are rejected during election.
     auto soft_free_energy = [&](const PoseInfo& p, double& H_out, double& S_out) -> double {
+        H_out = std::numeric_limits<double>::quiet_NaN();
+        S_out = std::numeric_limits<double>::quiet_NaN();
+        if (!std::isfinite(p.cf)) {
+            return std::numeric_limits<double>::infinity();
+        }
         std::vector<double> energies;
         if (!p.member_cfs.empty()) {
             energies.reserve(p.member_cfs.size());
@@ -1111,32 +1109,19 @@ static std::pair<std::string,float> select_pose_freq_gated_pooled(
             energies.push_back(static_cast<double>(p.cf));
         }
         const auto fe = flexaids::soft_beta::free_energy(energies, soft_T);
+        if (!std::isfinite(fe.G)) {
+            return std::numeric_limits<double>::infinity();
+        }
         H_out = fe.H;
         S_out = fe.S;
         return fe.G;
     };
 
-    // Legacy Z+H composite (maximize). Only when election_shannon_free_energy=false.
-    auto score_composite_legacy_zh = [&](const PoseInfo& p) -> double {
-        const size_t n_members = p.member_cfs.empty()
-            ? static_cast<size_t>(std::max(1, p.freq))
-            : p.member_cfs.size();
-        const double pop_weight = std::log1p(static_cast<double>(n_members));
-        const double tau = soft_T;
-        if (p.member_cfs.empty()) {
-            return std::exp(-static_cast<double>(p.cf) / tau) * pop_weight;
-        }
-        double Z = 0.0;
-        for (float cf_i : p.member_cfs)
-            Z += std::exp(-static_cast<double>(cf_i) / tau);
-        if (Z <= 0.0)
-            return std::exp(-static_cast<double>(p.cf) / tau) * pop_weight;
-        double H_shannon = 0.0;
-        for (float cf_i : p.member_cfs) {
-            double pi = std::exp(-static_cast<double>(cf_i) / tau) / Z;
-            if (pi > 1e-300) H_shannon -= pi * std::log(pi);
-        }
-        return Z * std::exp(-1.0 * H_shannon) * pop_weight;
+    // CF rank-0 (Softβ OFF): lower finite head CF wins. NaN/Inf rejected.
+    auto score_cf_rank0 = [](const PoseInfo& p) -> double {
+        if (!std::isfinite(p.cf))
+            return std::numeric_limits<double>::infinity();
+        return static_cast<double>(p.cf);
     };
 
     std::vector<PoseInfo> poses;
@@ -1213,28 +1198,26 @@ static std::pair<std::string,float> select_pose_freq_gated_pooled(
             populated.empty() ? pool : populated;
 
         // ── Score + elect ────────────────────────────────────────────────────
-        // 3Dsig path: LOWEST G̃ = H̃ − T·S̃ wins (Shannon on ranking path).
-        // Legacy ZH:   HIGHEST Z·exp(−αH)·log1p(N) wins (≈ min-CF at small τ).
+        // Softβ ON:  LOWEST log-domain G̃ = Emin − T·ln Z wins.
+        // Softβ OFF: LOWEST finite head CF wins (CF rank-0).
+        // NaN/Inf scores are dropped (fail-closed).
         std::vector<std::pair<double, const PoseInfo*>> scored_chosen;
         scored_chosen.reserve(chosen.size());
         for (const auto* p : chosen) {
+            double score = std::numeric_limits<double>::infinity();
             if (use_shannon_G) {
                 double H_tmp = 0.0, S_tmp = 0.0;
-                const double G = soft_free_energy(*p, H_tmp, S_tmp);
-                scored_chosen.push_back({G, p});
+                score = soft_free_energy(*p, H_tmp, S_tmp);
             } else {
-                scored_chosen.push_back({score_composite_legacy_zh(*p), p});
+                score = score_cf_rank0(*p);
             }
+            if (!std::isfinite(score))
+                continue;
+            scored_chosen.push_back({score, p});
         }
-        if (use_shannon_G) {
-            // Ascending G̃ (best free energy first)
-            std::sort(scored_chosen.begin(), scored_chosen.end(),
-                      [](const auto& a, const auto& b){ return a.first < b.first; });
-        } else {
-            // Descending legacy composite
-            std::sort(scored_chosen.begin(), scored_chosen.end(),
-                      [](const auto& a, const auto& b){ return a.first > b.first; });
-        }
+        // Ascending (lower better) for both Softβ G̃ and CF rank-0.
+        std::sort(scored_chosen.begin(), scored_chosen.end(),
+                  [](const auto& a, const auto& b){ return a.first < b.first; });
         int log_n = std::min(3, static_cast<int>(scored_chosen.size()));
         for (int si = 0; si < log_n; ++si) {
             const auto* p = scored_chosen[si].second;
@@ -7058,10 +7041,12 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                 // No new physics or threshold is introduced here: 2 Å is the Astex
                 // success gate already used below; autonomous runs remain
                 // diagnostic-only.
+                // Claim / BCR-gate diagnostics use ordered direct RMSD only.
+                // Element-only Hungarian is never the success gate (fail-closed).
                 const bool bcr_gate_candidate =
                     result.best_cluster_rmsd >= 0.0f &&
                     result.best_cluster_rmsd <= 2.0f &&
-                    std::min(result.rmsd_to_crystal, result.rmsd_hungarian) >= 2.0f;
+                    result.rmsd_to_crystal >= 2.0f;
                 const bool bcr_gate_enabled =
                     config.mode == BenchmarkMode::ORACLE_CEILING &&
                     !entry.binding_site_path.empty() &&
@@ -7069,8 +7054,7 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
 
                 if (bcr_gate_candidate && bcr_gate_enabled &&
                     !best_cluster_path.empty() && result.best_cluster_idx >= 0) {
-                    const float old_rmsd = std::min(result.rmsd_to_crystal,
-                                                    result.rmsd_hungarian);
+                    const float old_rmsd = result.rmsd_to_crystal;
                     // Full path from dual-suffix-aware BCR scan (FO cannot rebuild from idx).
                     const std::string& override_pdb = best_cluster_path;
                     if (fs::exists(override_pdb)) {
@@ -7104,8 +7088,9 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                                   << ": bcr=" << std::fixed << std::setprecision(3)
                                   << result.best_cluster_rmsd
                                   << "A sel_old=" << old_rmsd
-                                  << "A -> bcr_cluster rmsd="
-                                  << std::min(rov.first, rov.second)
+                                  << "A -> bcr_cluster ordered_rmsd="
+                                  << rov.first
+                                  << "A hungarian_diag=" << rov.second
                                   << "A (idx=" << result.best_cluster_idx << ")\n";
                     } else {
                         std::cerr << "  [BCR-GATE-WARN] " << entry.pdb_id
@@ -7115,13 +7100,13 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                                   << " idx=" << result.best_cluster_idx << "\n";
                     }
                 } else if (bcr_gate_candidate) {
-                    const float kept = std::min(result.rmsd_to_crystal,
-                                                result.rmsd_hungarian);
+                    const float kept = result.rmsd_to_crystal;
                     std::cerr << "  [BCR-DIAGNOSTIC] " << entry.pdb_id
                               << ": bcr=" << std::fixed << std::setprecision(2)
                               << result.best_cluster_rmsd
-                              << "A (gate DISABLED for autonomous/legacy mode — result kept: "
-                              << kept << "A)"
+                              << "A (gate DISABLED for autonomous/legacy mode — ordered kept: "
+                              << kept << "A hungarian_diag=" << result.rmsd_hungarian
+                              << "A)"
                               << " (idx=" << result.best_cluster_idx << ")\n";
                 }
                 // Hoist elected path for PoseBust (after consensus / BCR mutations).
@@ -7225,14 +7210,16 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                 result.rmsd_pose_sha256 =
                     flexaids::posebust::sha256_file(result.elected_pose_path);
             }
-            const float rmsd_report =
-                std::min(result.rmsd_to_crystal, result.rmsd_hungarian);
+            // Fail-closed claim gate: ordered direct RMSD only.
+            // Element-only Hungarian (result.rmsd_hungarian) is diagnostic and
+            // must never set success_rmsd / success / success_pb.
+            const float rmsd_report = result.rmsd_to_crystal;
             result.success_rmsd =
                 docking_completed && rmsd_report >= 0.0f &&
                 rmsd_report <= 2.0f && !result.seed_echo &&
                 !result.pose_sha256.empty() &&
                 result.rmsd_pose_sha256 == result.pose_sha256;
-            // Legacy column remains exactly the same-pose RMSD gate.
+            // Legacy column remains exactly the same-pose ordered-RMSD gate.
             result.success = result.success_rmsd;
             std::cerr << "  [ELECTED-POSE] src=" << result.elected_pose_source
                       << " dst=" << result.elected_pose_path

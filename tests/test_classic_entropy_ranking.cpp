@@ -8,6 +8,7 @@
 #include "../LIB/statmech.h"
 #include "../LIB/gaboom.h"
 #include "../LIB/SoftBetaFreeEnergy.h"
+#include <limits>
 #include <cmath>
 #include <cstring>
 #include <vector>
@@ -248,6 +249,45 @@ TEST_F(ClassicEntropyRankingTest, ClassicRankingIncludesVibCorrectionTerm) {
 TEST(SoftBetaIdentity, EmptyIsInf) {
     auto fe = flexaids::soft_beta::free_energy({}, 300.0);
     EXPECT_TRUE(std::isinf(fe.G));
+}
+
+TEST(SoftBetaIdentity, RejectsNaNInfMembers) {
+    // Non-finite energies must be skipped; all-NaN → +∞ (fail-closed).
+    auto all_bad = flexaids::soft_beta::free_energy(
+        {std::numeric_limits<double>::quiet_NaN(),
+         std::numeric_limits<double>::infinity(),
+         -std::numeric_limits<double>::infinity()},
+        300.0);
+    EXPECT_TRUE(std::isinf(all_bad.G) || !std::isfinite(all_bad.G));
+
+    // Finite members remain usable; NaN is ignored.
+    auto mixed = flexaids::soft_beta::free_energy(
+        {-10.0, std::numeric_limits<double>::quiet_NaN(), -9.0},
+        300.0);
+    EXPECT_TRUE(std::isfinite(mixed.G));
+    EXPECT_LE(mixed.G, -9.0);  // G ≤ Emin of finite set
+    EXPECT_EQ(mixed.n, 2);
+}
+
+TEST(SoftBetaElection, ElectsMinGAndSkipsNonFinite) {
+    using flexaids::soft_beta::ModeCandidate;
+    std::vector<ModeCandidate> modes(3);
+    modes[0].cf = -50.0;
+    modes[0].member_cfs = {-50.0, -49.0};
+    modes[1].cf = std::numeric_limits<double>::quiet_NaN();  // reject
+    modes[2].cf = -40.0;
+    modes[2].member_cfs = {-40.0};
+
+    const auto soft = flexaids::soft_beta::elect_softbeta(modes, 298.0);
+    EXPECT_EQ(soft, 0u);  // denser / lower basin
+
+    const auto cf0 = flexaids::soft_beta::elect_cf_rank0(modes);
+    EXPECT_EQ(cf0, 0u);  // min finite CF is -50
+
+    // Softβ OFF path: CF rank-0
+    const auto gated_off = flexaids::soft_beta::elect_gated(modes, 298.0, false);
+    EXPECT_EQ(gated_off.first, 0u);
+    EXPECT_FALSE(gated_off.second);
 }
 
 TEST(SoftBetaIdentity, SingletonEqualsEnergy) {
