@@ -5,8 +5,10 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cerrno>
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
 #include <fstream>
 #include <set>
 #include <sstream>
@@ -66,10 +68,42 @@ bool parse_float_field(const std::string& s, float& out) {
     try {
         std::size_t idx = 0;
         out = std::stof(s, &idx);
-        return idx > 0;
+        // Require whole field consumption after trim so " -0.63-80.2" style
+        // compact spills fail here and are handled by span regex parser.
+        while (idx < s.size() && std::isspace(static_cast<unsigned char>(s[idx])))
+            ++idx;
+        return idx == s.size();
     } catch (...) {
         return false;
     }
+}
+
+// Shared with DatasetRunner RMSD path: FlexAID compact negative coordinates
+// such as " -0.635 -80.275-146.614" lose a sign under strict fixed columns.
+// Extract three signed floats from the 24-char XYZ span (cols 31–54, 0-based 30).
+bool parse_pdb_xyz_span_flexible(const std::string& line, float& x, float& y, float& z) {
+    if (line.size() < 54) return false;
+    const std::string span = line.substr(30, 24);
+    // Simple signed float scan (no <regex> dependency in this TU).
+    const char* p = span.c_str();
+    const char* end = p + span.size();
+    float vals[3] = {0.f, 0.f, 0.f};
+    int n = 0;
+    while (p < end && n < 3) {
+        while (p < end && std::isspace(static_cast<unsigned char>(*p))) ++p;
+        if (p >= end) break;
+        char* next = nullptr;
+        errno = 0;
+        const float v = std::strtof(p, &next);
+        if (next == p || errno == ERANGE) return false;
+        vals[n++] = v;
+        p = next;
+    }
+    if (n != 3) return false;
+    x = vals[0];
+    y = vals[1];
+    z = vals[2];
+    return true;
 }
 
 // Standard 20 amino acids + common protein placeholders.
@@ -245,10 +279,14 @@ bool parse_pdb_atom_line(const std::string& line, PdbAtomRec& rec) {
     if (!parse_int_field(field(line, 22, 4), rec.resseq)) {
         rec.resseq = 0;
     }
+    // Prefer strict fixed columns when well-formed; fall back to span scan for
+    // FlexAID compact negatives so RMSD and PoseBusters share geometry.
     if (!parse_float_field(field(line, 30, 8), rec.x) ||
         !parse_float_field(field(line, 38, 8), rec.y) ||
         !parse_float_field(field(line, 46, 8), rec.z)) {
-        return false;
+        if (!parse_pdb_xyz_span_flexible(line, rec.x, rec.y, rec.z)) {
+            return false;
+        }
     }
     // Element columns 77–78 (1-based) → 76–77 0-based; may be absent.
     rec.element = (line.size() >= 78) ? field(line, 76, 2) : std::string{};

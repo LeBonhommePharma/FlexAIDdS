@@ -204,19 +204,51 @@ BustCliResult run_upstream_bust(const std::string& pred_sdf,
 
     auto headers = split_csv_line(header_line);
     auto values  = split_csv_line(data_line);
-    if (values.size() < headers.size()) {
-        // pad
-        values.resize(headers.size());
+    // Fail-closed schema (audit P0 #17): no padding missing cells; column
+    // count must match. Blank / NaN / non-boolean check columns fail pb_pass.
+    if (values.size() != headers.size()) {
+        r.error = "bust CSV schema: header/value column count mismatch (" +
+                  std::to_string(headers.size()) + " vs " +
+                  std::to_string(values.size()) + ")";
+        r.pb_pass = false;
+        r.n_checks = 0;
+        r.n_pass = 0;
+        r.n_fail = 0;
+        r.failed_keys = "schema_column_count";
+        return r;
     }
+
+    auto is_nan_token = [](std::string_view v) -> bool {
+        if (v.empty()) return false;
+        std::string t(v);
+        for (char& c : t) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+        return t == "nan" || t == "na" || t == "none" || t == "null" ||
+               t == "inf" || t == "+inf" || t == "-inf";
+    };
 
     bool all_ok = true;
     std::string failed;
     for (std::size_t i = 0; i < headers.size(); ++i) {
         const std::string& h = headers[i];
-        const std::string& v = (i < values.size()) ? values[i] : "";
+        const std::string& v = values[i];
         if (is_excluded_from_pb_pass(h)) continue;
+
+        // Mandatory boolean check columns: blank, NaN, or unparsed → fail.
+        if (v.empty() || is_nan_token(v)) {
+            ++r.n_checks;
+            ++r.n_fail;
+            all_ok = false;
+            if (!failed.empty()) failed += ';';
+            failed += h + (v.empty() ? ":blank" : ":uncomputed");
+            continue;
+        }
         if (!parse_truthy(v) && !parse_falsey(v)) {
-            // non-boolean columns skipped
+            // Non-boolean in a non-excluded column is a schema failure.
+            ++r.n_checks;
+            ++r.n_fail;
+            all_ok = false;
+            if (!failed.empty()) failed += ';';
+            failed += h + ":non_boolean";
             continue;
         }
         ++r.n_checks;
@@ -229,12 +261,18 @@ BustCliResult run_upstream_bust(const std::string& pred_sdf,
             failed += h;
         }
     }
-    r.pb_pass = all_ok && r.n_checks > 0;
+    // Require a non-empty check set so a metadata-only row cannot pass.
+    r.pb_pass = all_ok && r.n_checks > 0 && r.n_fail == 0;
     r.failed_keys = failed;
     if (rc != 0) {
         if (!r.error.empty()) r.error += ";";
         r.error += "bust pclose_status=" + std::to_string(rc);
         r.pb_pass = false;
+    }
+    if (r.n_checks == 0) {
+        r.pb_pass = false;
+        if (r.error.empty()) r.error = "bust CSV: no boolean check columns";
+        if (r.failed_keys.empty()) r.failed_keys = "no_checks";
     }
 
     if (!sidecar_dir.empty()) {
