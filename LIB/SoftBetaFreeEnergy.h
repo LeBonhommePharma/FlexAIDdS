@@ -3,15 +3,21 @@
 // Soft-β free energy on the CF/contact-function scoring proxy (arbitrary units).
 // Mathematically identical formulations (local members only):
 //
-//   ACF  = E_min − T · ln Σ_i exp(−(E_i − E_min)/T)     [cluster.cpp]
-//   G̃   = H̃ − T · S̃
+//   ACF  = E_min − T_soft · ln Σ_i exp(−(E_i − E_min)/T_soft)   [legacy name]
+//   G̃   = H̃ − T_soft · S̃
 //        H̃ = Σ p_i E_i ,  S̃ = −Σ p_i ln p_i
-//        p_i = exp(−(E_i − E_min)/T) / Z
+//        p_i = exp(−(E_i − E_min)/T_soft) / Z
 //
-// Proof: G̃ = E_min − T ln Z = ACF.  β = 1/T (kelvin), NOT 1/(k_B T).
+// Proof: G̃ = E_min − T_soft ln Z = ACF.
+//
+// **T_soft is dimensionless in CF arbitrary units (CF_AU).** It is NOT physical
+// Kelvin and NOT 1/(k_B T). Historical labels "T_K" / "temperature_K" mean the
+// soft temperature scale on CF scores. Classic ACF is kept as a legacy alias
+// for diagnostics only; production strict re-ranking prefers
+// free_energy_strict() (duplicate-invariant).
 //
 // Used by:
-//   - LIB/cluster.cpp          (ACF emission order when TEMPER > 0)
+//   - LIB/cluster.cpp          (ACF emission order when TEMPER > 0 — legacy)
 //   - LIB/BindingMode.cpp      (mode F_conf; vib may be added on top)
 //   - LIB/DatasetRunner.cpp    (S1 election across restarts — **feature-flagged**)
 //
@@ -42,7 +48,7 @@ namespace flexaids {
 namespace soft_beta {
 
 struct FreeEnergy {
-    double G{0.0};  ///< H̃ − T·S̃  (lower is better) == ACF
+    double G{0.0};  ///< H̃ − T_soft·S̃  (lower is better) == ACF form
     double H{0.0};  ///< Σ p_i E_i
     double S{0.0};  ///< −Σ p_i ln p_i  (nats)
     double Z{0.0};  ///< partition sum in shifted frame (exp terms only)
@@ -50,25 +56,40 @@ struct FreeEnergy {
     int    n{0};
 };
 
+/// Soft temperature on CF arbitrary units (CF_AU). Not Kelvin.
+using SoftT = double;
+
 /// Soft-β free energy over a list of CF values (cluster members).
-/// Empty → G = +∞.  Single member → G = E, S = 0.
-inline FreeEnergy free_energy(const std::vector<double>& energies, double T_K) noexcept
+/// Emin is taken from **finite** entries only (NaN-first must not poison).
+/// Empty / no finite → G = +∞.  Single finite member → G = E, S = 0.
+///
+/// Parameter name: T_soft (CF_AU). Historical callers may still pass "T_K"
+/// variables — the value is always soft temperature, never physical Kelvin.
+inline FreeEnergy free_energy(const std::vector<double>& energies,
+                              SoftT T_soft) noexcept
 {
     FreeEnergy out;
     if (energies.empty()) {
         out.G = std::numeric_limits<double>::infinity();
         return out;
     }
-    const double T = (T_K > 1e-12) ? T_K : 1e-12;
-    double Emin = energies[0];
+    const double T = (T_soft > 1e-12) ? T_soft : 1e-12;
+
+    // Emin from finite entries only — never seed from energies[0] (may be NaN).
+    double Emin = std::numeric_limits<double>::infinity();
+    int n_finite = 0;
     for (double e : energies) {
-        if (std::isfinite(e) && e < Emin)
+        if (!std::isfinite(e))
+            continue;
+        ++n_finite;
+        if (e < Emin)
             Emin = e;
     }
-    if (!std::isfinite(Emin)) {
+    if (n_finite == 0 || !std::isfinite(Emin)) {
         out.G = std::numeric_limits<double>::infinity();
         return out;
     }
+
     double Z = 0.0;
     int n = 0;
     for (double e : energies) {
@@ -86,9 +107,8 @@ inline FreeEnergy free_energy(const std::vector<double>& energies, double T_K) n
         out.S = 0.0;
         return out;
     }
-    // ACF form (numerically stable)
+    // ACF form (numerically stable) — legacy identity; G̃ = Emin − T ln Z.
     out.G = Emin - T * std::log(Z);
-    // Explicit H̃, S̃ for logging / 3Dsig identity checks
     double H = 0.0;
     double S = 0.0;
     for (double e : energies) {
@@ -102,20 +122,90 @@ inline FreeEnergy free_energy(const std::vector<double>& energies, double T_K) n
     }
     out.H = H;
     out.S = S;
-    // Prefer ACF form for G (identical to H−TS analytically; more stable)
     return out;
 }
 
 /// Convenience: G only (lower better).
-inline double free_energy_G(const std::vector<double>& energies, double T_K) noexcept
+inline double free_energy_G(const std::vector<double>& energies,
+                            SoftT T_soft) noexcept
 {
-    return free_energy(energies, T_K).G;
+    return free_energy(energies, T_soft).G;
 }
 
-/// ACF alias (cluster.cpp naming).
-inline double acf(const std::vector<double>& energies, double T_K) noexcept
+/// Legacy ACF alias (cluster.cpp naming). Diagnostic only — prefer
+/// free_energy_strict() for claim re-ranking (duplicate-invariant).
+inline double acf(const std::vector<double>& energies, SoftT T_soft) noexcept
 {
-    return free_energy_G(energies, T_K);
+    return free_energy_G(energies, T_soft);
+}
+
+/// Strict re-rank modes for duplicate-invariant Softβ.
+enum class StrictRerankMode {
+    /// Collapse exact equal CF values then classic free_energy (default claim path).
+    /// Near-duplicates (dense basin with slight CF variation) still contribute to Z;
+    /// exact clones of the same CF do not inflate Softβ.
+    UniqueGeometry,
+    /// Log-mean-exp over unique finite energies (multiplicity-agnostic mean exp).
+    /// Prefer UniqueGeometry for mode election; LogMeanExp for diagnostics.
+    LogMeanExp,
+};
+
+/// Duplicate-invariant Softβ free energy.
+/// Exact CF duplicates (cloned members / re-emitted heads) must not deepen G̃
+/// via multiplicity inflation. Default UniqueGeometry: collapse exact equal CF
+/// then classic free_energy. LogMeanExp: G = Emin − T ln(mean exp) over unique.
+inline FreeEnergy free_energy_strict(
+    const std::vector<double>& energies,
+    SoftT T_soft,
+    StrictRerankMode mode = StrictRerankMode::UniqueGeometry) noexcept
+{
+    // Collect unique finite energies (exact equality; CF is discrete proxy).
+    std::vector<double> unique;
+    unique.reserve(energies.size());
+    for (double e : energies) {
+        if (!std::isfinite(e))
+            continue;
+        bool seen = false;
+        for (double u : unique) {
+            if (u == e) { seen = true; break; }
+        }
+        if (!seen)
+            unique.push_back(e);
+    }
+    if (unique.empty()) {
+        FreeEnergy out;
+        out.G = std::numeric_limits<double>::infinity();
+        return out;
+    }
+    if (mode == StrictRerankMode::UniqueGeometry) {
+        return free_energy(unique, T_soft);
+    }
+    // LogMeanExp: multiplicity-free mean of Boltzmann factors.
+    FreeEnergy out;
+    const double T = (T_soft > 1e-12) ? T_soft : 1e-12;
+    double Emin = unique[0];
+    for (double e : unique)
+        if (e < Emin) Emin = e;
+    double sum_exp = 0.0;
+    for (double e : unique)
+        sum_exp += std::exp(-(e - Emin) / T);
+    const double n = static_cast<double>(unique.size());
+    const double mean_exp = sum_exp / n;
+    out.n = static_cast<int>(unique.size());
+    out.Emin = Emin;
+    out.Z = mean_exp;  // store mean exp for diagnostics
+    out.G = Emin - T * std::log(mean_exp);
+    // H, S under uniform unique measure on the same Boltzmann weights (normalized).
+    double Z_u = sum_exp;
+    double H = 0.0, S = 0.0;
+    for (double e : unique) {
+        const double p = std::exp(-(e - Emin) / T) / Z_u;
+        H += p * e;
+        if (p > 0.0) S -= p * std::log(p);
+    }
+    out.H = H;
+    out.S = S;
+    return out;
 }
 
 // ── Gated Softβ election (DatasetRunner S1 / offline re-rank) ──────────────
@@ -134,15 +224,27 @@ struct ModeCandidate {
 };
 
 /// Soft-β free energy of one mode (local Z over members only).
-inline FreeEnergy mode_free_energy(const ModeCandidate& m, double T_K) noexcept
+/// Default uses free_energy_strict (duplicate-invariant LogMeanExp).
+/// Pass use_strict=false only for classic ACF diagnostic comparisons.
+inline FreeEnergy mode_free_energy(const ModeCandidate& m,
+                                   SoftT T_soft,
+                                   bool use_strict = true) noexcept
 {
-    if (!m.member_cfs.empty())
-        return free_energy(m.member_cfs, T_K);
-    if (std::isfinite(m.cf))
-        return free_energy(std::vector<double>{m.cf}, T_K);
-    FreeEnergy bad;
-    bad.G = std::numeric_limits<double>::infinity();
-    return bad;
+    const std::vector<double>* src = nullptr;
+    std::vector<double> singleton;
+    if (!m.member_cfs.empty()) {
+        src = &m.member_cfs;
+    } else if (std::isfinite(m.cf)) {
+        singleton = {m.cf};
+        src = &singleton;
+    } else {
+        FreeEnergy bad;
+        bad.G = std::numeric_limits<double>::infinity();
+        return bad;
+    }
+    if (use_strict)
+        return free_energy_strict(*src, T_soft, StrictRerankMode::UniqueGeometry);
+    return free_energy(*src, T_soft);  // legacy ACF diagnostic
 }
 
 /// Index of min head CF among finite candidates. Empty → npos.
@@ -161,14 +263,15 @@ inline std::size_t elect_cf_rank0(const std::vector<ModeCandidate>& modes) noexc
     return best;
 }
 
-/// Index of min Softβ G̃ among modes at soft temperature T_K. Empty → npos.
+/// Index of min Softβ G̃ among modes at soft temperature T_soft (CF_AU).
+/// Uses duplicate-invariant strict reranker. Empty → npos.
 inline std::size_t elect_softbeta(const std::vector<ModeCandidate>& modes,
-                                  double T_K) noexcept
+                                  SoftT T_soft) noexcept
 {
     std::size_t best = static_cast<std::size_t>(-1);
     double best_G = std::numeric_limits<double>::infinity();
     for (std::size_t i = 0; i < modes.size(); ++i) {
-        const double G = mode_free_energy(modes[i], T_K).G;
+        const double G = mode_free_energy(modes[i], T_soft, /*strict=*/true).G;
         if (!std::isfinite(G))
             continue;
         if (G < best_G) {
@@ -183,11 +286,11 @@ inline std::size_t elect_softbeta(const std::vector<ModeCandidate>& modes,
 /// Returns (index, used_softbeta). Index is npos if no finite candidate.
 inline std::pair<std::size_t, bool>
 elect_gated(const std::vector<ModeCandidate>& modes,
-            double T_K,
+            SoftT T_soft,
             bool softbeta_election_enabled) noexcept
 {
     if (softbeta_election_enabled) {
-        const std::size_t i = elect_softbeta(modes, T_K);
+        const std::size_t i = elect_softbeta(modes, T_soft);
         return {i, i != static_cast<std::size_t>(-1)};
     }
     return {elect_cf_rank0(modes), false};
@@ -217,17 +320,18 @@ inline bool diagnostic_softbeta_can_help_s1(
     return diagnostic_near_native_present(mode_rmsds, threshold_A);
 }
 
-/// Resolve soft-β T: env override > dock TEMPER > fallback (default 298).
-/// TEMPER is FlexAID soft temperature (β=1/T on CF a.u.), **not** k_B·T in kcal.
-inline double resolve_soft_T(double election_soft_T_env,
-                             double dock_temperature_K,
-                             double fallback_K = 298.0) noexcept
+/// Resolve soft-β T_soft (CF_AU): env override > dock TEMPER > fallback.
+/// TEMPER / historical "temperature_K" are soft temperature on CF a.u., **not**
+/// physical Kelvin and **not** k_B·T in kcal.
+inline SoftT resolve_soft_T(double election_soft_T_env,
+                            double dock_soft_T,
+                            SoftT fallback = 298.0) noexcept
 {
     if (election_soft_T_env > 0.0)
         return election_soft_T_env;
-    if (dock_temperature_K > 0.0)
-        return dock_temperature_K;
-    return (fallback_K > 1e-12) ? fallback_K : 298.0;
+    if (dock_soft_T > 0.0)
+        return dock_soft_T;
+    return (fallback > 1e-12) ? fallback : 298.0;
 }
 
 }  // namespace soft_beta

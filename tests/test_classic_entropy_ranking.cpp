@@ -269,6 +269,43 @@ TEST(SoftBetaIdentity, RejectsNaNInfMembers) {
     EXPECT_EQ(mixed.n, 2);
 }
 
+TEST(SoftBetaIdentity, FiniteAfterLeadingNaNFindsEmin) {
+    // Regression: Emin must be taken from finite entries only — seeding from
+    // energies[0] when it is NaN used to poison the whole Z sum.
+    const double nan = std::numeric_limits<double>::quiet_NaN();
+    auto fe = flexaids::soft_beta::free_energy({nan, nan, -12.5, -11.0}, 300.0);
+    EXPECT_TRUE(std::isfinite(fe.G));
+    EXPECT_NEAR(fe.Emin, -12.5, 1e-12);
+    EXPECT_EQ(fe.n, 2);
+    EXPECT_LE(fe.G, -11.0);
+}
+
+TEST(SoftBetaStrict, ExactDuplicateInvariance) {
+    // Exact CF clones must not deepen G̃ (UniqueGeometry / LogMeanExp).
+    const std::vector<double> once = {-50.0, -48.0, -45.0};
+    std::vector<double> cloned;
+    for (int k = 0; k < 10; ++k)
+        for (double e : once) cloned.push_back(e);
+    const double T = 250.0;
+    auto classic_once = flexaids::soft_beta::free_energy(once, T);
+    auto classic_clone = flexaids::soft_beta::free_energy(cloned, T);
+    // Classic ACF (legacy diagnostic) deepens with multiplicity.
+    EXPECT_LT(classic_clone.G, classic_once.G - 1.0);
+
+    auto strict_once = flexaids::soft_beta::free_energy_strict(
+        once, T, flexaids::soft_beta::StrictRerankMode::UniqueGeometry);
+    auto strict_clone = flexaids::soft_beta::free_energy_strict(
+        cloned, T, flexaids::soft_beta::StrictRerankMode::UniqueGeometry);
+    EXPECT_NEAR(strict_clone.G, strict_once.G, 1e-9);
+    EXPECT_NEAR(strict_clone.S, strict_once.S, 1e-9);
+
+    auto lme_once = flexaids::soft_beta::free_energy_strict(
+        once, T, flexaids::soft_beta::StrictRerankMode::LogMeanExp);
+    auto lme_clone = flexaids::soft_beta::free_energy_strict(
+        cloned, T, flexaids::soft_beta::StrictRerankMode::LogMeanExp);
+    EXPECT_NEAR(lme_clone.G, lme_once.G, 1e-9);
+}
+
 TEST(SoftBetaElection, ElectsMinGAndSkipsNonFinite) {
     using flexaids::soft_beta::ModeCandidate;
     std::vector<ModeCandidate> modes(3);

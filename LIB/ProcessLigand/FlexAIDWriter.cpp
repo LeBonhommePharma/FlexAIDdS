@@ -246,26 +246,42 @@ std::string FlexAIDWriter::check_geometry_invariants(
     // Valence angles (degrees)
     constexpr float kAngleMin = 50.0f;
     constexpr float kAngleMax = 170.0f;
-    // Ring-closure: bonded ring atoms must still land near covalent distance.
-    constexpr float kRingClosureMax = 2.60f;
+    // Ring-closure must be **tighter** than kBondMax so the check is reachable
+    // (previously kRingClosureMax=2.60 > kBondMax made ring branch dead code).
+    constexpr float kRingClosureMax = 2.20f;
 
     // 1) Bond lengths from topology + coordinates
     for (const auto& bond : mol.bonds) {
         const int i = bond.atom_i;
         const int j = bond.atom_j;
         if (!mol.has_coords(i) || !mol.has_coords(j)) continue;
-        const float d = (mol.coords.col(i) - mol.coords.col(j)).norm();
-        if (!std::isfinite(d) || d < kBondMin || d > kBondMax) {
+        const Eigen::Vector3f ci = mol.coords.col(i);
+        const Eigen::Vector3f cj = mol.coords.col(j);
+        if (!std::isfinite(ci.x()) || !std::isfinite(ci.y()) || !std::isfinite(ci.z()) ||
+            !std::isfinite(cj.x()) || !std::isfinite(cj.y()) || !std::isfinite(cj.z())) {
             std::ostringstream oss;
-            oss << "bond-length invariant failed atoms " << (i + 1) << "-"
-                << (j + 1) << " d=" << d << " A (allowed [" << kBondMin
-                << "," << kBondMax << "])";
+            oss << "non-finite coordinates atoms " << (i + 1) << "-" << (j + 1);
             return oss.str();
         }
-        if (bond.in_ring && d > kRingClosureMax) {
+        const float d = (ci - cj).norm();
+        if (!std::isfinite(d)) {
             std::ostringstream oss;
-            oss << "ring-closure invariant failed atoms " << (i + 1) << "-"
-                << (j + 1) << " d=" << d << " A";
+            oss << "non-finite bond distance atoms " << (i + 1) << "-" << (j + 1);
+            return oss.str();
+        }
+        // Ring bonds: tighter max (reachable independent of open-chain kBondMax).
+        const float dmax = bond.in_ring ? kRingClosureMax : kBondMax;
+        if (d < kBondMin || d > dmax) {
+            std::ostringstream oss;
+            if (bond.in_ring) {
+                oss << "ring-closure invariant failed atoms " << (i + 1) << "-"
+                    << (j + 1) << " d=" << d << " A (allowed [" << kBondMin
+                    << "," << kRingClosureMax << "])";
+            } else {
+                oss << "bond-length invariant failed atoms " << (i + 1) << "-"
+                    << (j + 1) << " d=" << d << " A (allowed [" << kBondMin
+                    << "," << kBondMax << "])";
+            }
             return oss.str();
         }
     }

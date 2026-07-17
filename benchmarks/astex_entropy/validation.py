@@ -89,21 +89,85 @@ def _ordered_identity_map(n: int) -> list[int]:
     return list(range(n))
 
 
-def _maps_via_substruct(pose: Chem.Mol, ref: Chem.Mol) -> list[list[int]]:
-    """Full-graph maps from RDKit isomorphism (capped)."""
+def _full_graph_bond_order_equal(pose: Chem.Mol, ref: Chem.Mol, mapping: Sequence[int]) -> bool:
+    """True iff mapping is a full bijection preserving every bond and bond order.
+
+    Requires both directions: every pose bond maps to a ref bond with the same
+    order key, and every ref bond is hit by some pose bond (no one-way subgraph).
+    """
     n = pose.GetNumAtoms()
+    if n != ref.GetNumAtoms() or len(mapping) != n:
+        return False
+    if len(set(int(x) for x in mapping)) != n:
+        return False
+    for pose_i, ref_i in enumerate(mapping):
+        ri = int(ref_i)
+        if ri < 0 or ri >= n:
+            return False
+        if pose.GetAtomWithIdx(pose_i).GetAtomicNum() != ref.GetAtomWithIdx(ri).GetAtomicNum():
+            return False
+
+    # Pose → ref bonds
+    pose_edges: set[tuple[int, int, int]] = set()
+    for bond in pose.GetBonds():
+        a, b = bond.GetBeginAtomIdx(), bond.GetEndAtomIdx()
+        ra, rb = int(mapping[a]), int(mapping[b])
+        lo, hi = (ra, rb) if ra < rb else (rb, ra)
+        po = _bond_order_key(pose, a, b)
+        if po is None:
+            return False
+        ro = _bond_order_key(ref, ra, rb)
+        if ro is None or ro != po:
+            return False
+        pose_edges.add((lo, hi, po))
+
+    # Ref → pose (reject one-directional subgraph matches)
+    inv = [-1] * n
+    for pi, ri in enumerate(mapping):
+        inv[int(ri)] = pi
+    for bond in ref.GetBonds():
+        a, b = bond.GetBeginAtomIdx(), bond.GetEndAtomIdx()
+        pa, pb = inv[a], inv[b]
+        if pa < 0 or pb < 0:
+            return False
+        ro = _bond_order_key(ref, a, b)
+        po = _bond_order_key(pose, pa, pb)
+        if ro is None or po is None or ro != po:
+            return False
+        lo, hi = (a, b) if a < b else (b, a)
+        if (lo, hi, ro) not in pose_edges:
+            # Pose mapped edge set must cover ref bond under mapping.
+            return False
+    if pose.GetNumBonds() != ref.GetNumBonds():
+        return False
+    return True
+
+
+def _maps_via_substruct(pose: Chem.Mol, ref: Chem.Mol) -> list[list[int]]:
+    """Full-graph mutual isomorphism maps (capped). Rejects one-way subgraphs."""
+    n = pose.GetNumAtoms()
+    if n != ref.GetNumAtoms():
+        return []
     maps: list[list[int]] = []
     try:
-        # uniquify=True keeps the first representative of each unique atom set;
-        # still enumerate a few for symmetry with maxMatches.
-        matches = ref.GetSubstructMatches(
+        # Require pose⊆ref AND ref⊆pose with equal size → true graph isomorphism.
+        forward = ref.GetSubstructMatches(
             pose, uniquify=False, maxMatches=_MAX_GRAPH_MAPS
         )
-        for m in matches:
-            if len(m) == n and len(set(m)) == n:
-                maps.append(list(m))
-                if len(maps) >= _MAX_GRAPH_MAPS:
-                    break
+        reverse = pose.GetSubstructMatches(
+            ref, uniquify=False, maxMatches=_MAX_GRAPH_MAPS
+        )
+        if not forward or not reverse:
+            return []
+        for m in forward:
+            if len(m) != n or len(set(m)) != n:
+                continue
+            mapping = list(m)
+            if not _full_graph_bond_order_equal(pose, ref, mapping):
+                continue
+            maps.append(mapping)
+            if len(maps) >= _MAX_GRAPH_MAPS:
+                break
     except Exception:
         return maps
     return maps
@@ -186,30 +250,37 @@ def _maps_via_backtrack(pose: Chem.Mol, ref: Chem.Mol) -> list[list[int]]:
 
 
 def _enumerate_full_graph_maps(pose: Chem.Mol, ref: Chem.Mol) -> list[list[int]]:
-    """Chemically valid full-graph pose→ref maps; never unbounded."""
+    """Chemically valid full-graph pose→ref maps; never unbounded.
+
+    Ordered identity is accepted **only** when full graph + bond-order equality
+    holds. One-directional subgraph matches are rejected.
+    """
     n = pose.GetNumAtoms()
     if n == 0 or n != ref.GetNumAtoms():
         return []
 
-    # Fast path: identical element order — always include ordered map first.
     maps: list[list[int]] = []
-    if _element_sequence(pose) == _element_sequence(ref):
-        maps.append(_ordered_identity_map(n))
 
-    # RDKit isomorphism (symmetry-aware). Cap matches.
+    # Ordered identity only with full graph/bond-order equality (not element-only).
+    if _element_sequence(pose) == _element_sequence(ref):
+        identity = _ordered_identity_map(n)
+        if _full_graph_bond_order_equal(pose, ref, identity):
+            maps.append(identity)
+
+    # RDKit mutual isomorphism (symmetry-aware). Cap matches.
     for m in _maps_via_substruct(pose, ref):
         if m not in maps:
             maps.append(m)
         if len(maps) >= _MAX_GRAPH_MAPS:
             return maps
 
-    # If we already have ≥1 full map, skip expensive backtracking unless
-    # symmetry search returned nothing beyond ordered (still OK for RMSD min).
     if maps:
         return maps
 
-    # No ordered map and no RDKit map: try bounded signature DFS.
+    # Bounded signature DFS; filter with full graph equality.
     for m in _maps_via_backtrack(pose, ref):
+        if not _full_graph_bond_order_equal(pose, ref, m):
+            continue
         if m not in maps:
             maps.append(m)
         if len(maps) >= _MAX_GRAPH_MAPS:

@@ -5804,9 +5804,9 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                    // entropy could not distinguish H-bond-satisfied poses from
                    // sterically-equivalent decoys.  Enabling them restores the
                    // enthalpic ΔH channel that the MEGA ΔG = ΔH − T·ΔS needs.
-                   // (GIST is intentionally NOT enabled here: it requires a
-                   //  per-target .dx desolvation grid that the Astex set lacks,
-                   //  and top.cpp silently disables it when no grid is present.)
+                   // GIST hard-disabled for strict claims until evaluator/grid
+                   // type confusion is repaired (config_parser also force-off).
+                   << "    \"gist_enabled\": false,\n"
                    // v123: re-enable hbond_search (was false in v122/v122b).
                    // Diagnosis: 1XOZ/1Y6R/1R55/1T46 all show best_score >> 0
                    // (clashed poses) because VCT-only CF(native) is too weak

@@ -67,7 +67,8 @@ cfstr ic2cf(FA_Global* FA,VC_Global* VC,atom* atoms,resid* residue,
 	int i,j,k;
 	int cat;    /* atom number constrained to the one considered */
 
-	cfstr cf;
+	// Value-initialize every CF field (never leave elec/gist_desolv/etc. garbage).
+	cfstr cf{};
 	
 	int rclash=0;
 
@@ -204,10 +205,26 @@ cfstr ic2cf(FA_Global* FA,VC_Global* VC,atom* atoms,resid* residue,
 			atoms, tmpl.sugar_ring_indices, phases, tmpl.sugar_types);
 	}
 
+	// Shared restore for any error path that mutated FA->ori / atoms / rotamers.
+	// Must run before return so the next evaluation cannot inherit contamination.
+	auto restore_ic2cf_baseline = [&]() {
+		FA->ori[0] = ori_save[0];
+		FA->ori[1] = ori_save[1];
+		FA->ori[2] = ori_save[2];
+		for (const auto& sa : saved_atoms) {
+			atoms[sa.idx] = sa.value;
+		}
+		for (const auto& sr : saved_res_rots) {
+			residue[sr.idx].rot = sr.rot;
+		}
+	};
+
 	/* rebuild cartesian coordinates of optimized residues*/
 	for(i=0;i<FA->nors;i++){ //number of optimized residues
 		if (!buildcc(FA,atoms,FA->nmov[i],FA->mov[i])) {
-			// Explicit reconstruction failure: do not score with stale coords.
+			// Explicit reconstruction failure: restore baseline, do not score
+			// with half-mutated FA / atom state (serial eval contamination).
+			restore_ic2cf_baseline();
 			cfstr cf_bad{};
 			cf_bad.wal = 1.0e12;
 			cf_bad.rclash = 1;
@@ -236,15 +253,7 @@ cfstr ic2cf(FA_Global* FA,VC_Global* VC,atom* atoms,resid* residue,
 			}
 		}
 		if (oob) {
-			FA->ori[0] = ori_save[0];
-			FA->ori[1] = ori_save[1];
-			FA->ori[2] = ori_save[2];
-			for (const auto& sa : saved_atoms) {
-				atoms[sa.idx] = sa.value;
-			}
-			for (const auto& sr : saved_res_rots) {
-				residue[sr.idx].rot = sr.rot;
-			}
+			restore_ic2cf_baseline();
 			cfstr cf_oob{};
 			cf_oob.com = 99999.0;
 			return cf_oob;
@@ -257,25 +266,18 @@ cfstr ic2cf(FA_Global* FA,VC_Global* VC,atom* atoms,resid* residue,
 	bool error;
 	double penalty = vcfunction(FA,VC,atoms,residue,intraclashes,&error);
 	if(error){
-		// Fix: named-field init — aggregate order was wrong (metal_coord=1, rclash=0).
-		// wal=penalty is the only nonzero energy field; rclash=1 marks it as a clash.
+		// Fail-closed: restore FA ori, moved atoms, and residue rotamers so a
+		// subsequent evaluation cannot see a contaminated pose from this call.
+		restore_ic2cf_baseline();
+		// wal=penalty is the only nonzero energy field; rclash=1 marks clash.
 		cfstr cf_clash{};
 		cf_clash.wal    = penalty;
 		cf_clash.rclash = 1;
 		return cf_clash;
 	}
 	
-	cf.com = 0.0;
-	cf.wal = 0.0;
-	cf.sas = 0.0;
-	cf.con = 0.0;
-	cf.elec = 0.0;
-	cf.hbond = 0.0;
-	cf.gist_desolv = 0.0;
-	cf.metal_coord = 0.0;
-	cf.h_rep = 0.0;
-	cf.entropy = 0.0;
-	cf.rclash = 0;
+	// cf already value-initialized; re-zero explicit energy accumulators.
+	cf = cfstr{};
     
 	for(i=0;i<FA->num_optres;i++){
     

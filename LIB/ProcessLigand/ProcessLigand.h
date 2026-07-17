@@ -70,6 +70,9 @@ struct ProcessOptions {
     bool         strict_valence = false; // fail on valence warnings (not just errors)
     bool         allow_macrocycles = false; // bypass macrocycle guard
     bool         allow_peptides    = false; // bypass peptide guard
+    /// Claim / production path: geometry invariants always enforced, including
+    /// CoordBuilder SMILES frames (generated SMILES may not bypass validation).
+    bool         claim_path = false;
 
     // Verbosity
     bool         verbose = false;

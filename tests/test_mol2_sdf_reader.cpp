@@ -772,9 +772,62 @@ TEST_F(SdfReaderTest, TopologyDerivedFrameAndTorsionPreserveLocalGeometry) {
     std::remove(sdf.c_str());
 }
 
+// Nonterminal secondary/tertiary alkyl-amine C–N must remain a rotor.
+// VCT type 11 is NOT amide proof (SDF generic N and MOL2 N.1/N.2/N.3 → type 11).
+// Chain C–C–N–C–C so both ends of each C–N have heavy degree ≥ 2 (nonterminal).
+TEST_F(SdfReaderTest, AlkylAmineCNRemainsRuntimeRotor) {
+    std::string sdf = write_sdf("alkyl_amine_rotor.sdf",
+        "amine\n\n\n"
+        "  5  4  0  0  0  0  0  0  0  0999 V2000\n"
+        "    0.0000    0.0000    0.0000 C   0  0  0  0  0  0\n"
+        "    1.5400    0.0000    0.0000 C   0  0  0  0  0  0\n"
+        "    2.2800    1.2600    0.0000 N   0  0  0  0  0  0\n"
+        "    3.7200    1.2600    0.0000 C   0  0  0  0  0  0\n"
+        "    4.4600    2.5200    0.0000 C   0  0  0  0  0  0\n"
+        "  1  2  1  0\n"
+        "  2  3  1  0\n"
+        "  3  4  1  0\n"
+        "  4  5  1  0\n"
+        "M  END\n$$$$\n");
+
+    FA_Global FA;
+    atom* atoms = nullptr;
+    resid* residue = nullptr;
+    init_fa_for_reader(&FA, &atoms, &residue);
+    ASSERT_EQ(read_sdf_ligand(&FA, &atoms, &residue, sdf.c_str()), 1);
+    // Type 11 on N is expected (SDF generic N → 11) but must NOT freeze rotors.
+    EXPECT_EQ(atoms[3].type, 11);
+
+    auto el = [&](int idx) -> char {
+        if (atoms[idx].element[0])
+            return static_cast<char>(std::toupper(
+                static_cast<unsigned char>(atoms[idx].element[0])));
+        return '?';
+    };
+    int cn_rotors = 0;
+    for (int d = 1; d <= residue[1].fdih; ++d) {
+        const int control = residue[1].bond[d];
+        ASSERT_GT(control, 0);
+        const int child = atoms[control].rec[0];
+        const int parent = atoms[control].rec[1];
+        const bool cn =
+            (el(child) == 'C' && el(parent) == 'N') ||
+            (el(child) == 'N' && el(parent) == 'C');
+        if (cn) ++cn_rotors;
+    }
+    EXPECT_GE(cn_rotors, 1)
+        << "secondary alkyl-amine C–N must remain DirectLigandIC rotatable "
+           "(type==11 must not freeze amine rotors); fdih="
+        << residue[1].fdih;
+
+    cleanup_fa(&FA, atoms, residue);
+    std::remove(sdf.c_str());
+}
+
 // Resonance-locked C–N (amide) must not become a runtime DirectLigandIC rotor.
 // Carbonyl C is identified as VCT type C.2 (SdfReader sets type=2 for C with
 // double bond) — not "any C bonded to O", which would false-flag carbinolamines.
+// Do NOT use atoms[n].type==11 as amide proof.
 TEST_F(SdfReaderTest, AmideBondNotRuntimeRotor) {
     // CC(=O)NCC — amide C–N is a graph bridge but resonance-locked.
     std::string sdf = write_sdf("amide_rotor.sdf",

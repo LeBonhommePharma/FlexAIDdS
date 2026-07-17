@@ -551,8 +551,10 @@ ProcessResult ProcessLigand::run(const ProcessOptions& opts) {
     }
 
     log("Stage 7: writing output");
-    StageResult s7 = stage_write(opts, mol, result.writer_result,
-                                 /*enforce_geometry_invariants=*/!used_coord_builder);
+    // Claim paths must never skip geometry validation for SMILES/CoordBuilder
+    // frames. Non-claim diagnostics may still soft-pass imperfect builder coords.
+    const bool enforce_geom = opts.claim_path || !used_coord_builder;
+    StageResult s7 = stage_write(opts, mol, result.writer_result, enforce_geom);
     result.stage_results.push_back(s7);
     if (!s7.ok) { result.error = s7.message; return result; }
 

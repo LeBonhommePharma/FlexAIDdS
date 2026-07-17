@@ -72,9 +72,13 @@ inline char element_letter(const atom& a) {
     return '?';
 }
 
-// Resonance-locked C–N (amide / urea / carbamate / guanidine / amidine):
-// single C–N where C has a double bond to O or N. Also reject VCT N.am (type 11)
-// and MOL2 amide bonds stored as order 10 (see Mol2Reader "am" mapping).
+// Resonance-locked C–N (amide / urea / carbamate / guanidine / amidine).
+//
+// MUST NOT use VCT type==11 as amide proof: SDF generic N and MOL2 N.1/N.2/N.3
+// all map to type 11 for matrix scoring, so type 11 freezes ordinary amine C–N.
+// Only:
+//   1) explicit MOL2 amide bond order 10 (am → 10 in Mol2Reader), or
+//   2) structural conjugation: C of the C–N has a double bond (order ≥ 2) to O or N.
 inline bool is_resonance_locked_cn(const BondGraph& graph,
                                    const atom* atoms,
                                    int first_atom,
@@ -87,15 +91,12 @@ inline bool is_resonance_locked_cn(const BondGraph& graph,
     const atom& av = atoms[first_atom + v];
     const char eu = element_letter(au);
     const char ev = element_letter(av);
-    int c_local = -1, n_local = -1;
-    if (eu == 'C' && ev == 'N') { c_local = u; n_local = v; }
-    else if (eu == 'N' && ev == 'C') { c_local = v; n_local = u; }
+    int c_local = -1;
+    if (eu == 'C' && ev == 'N') { c_local = u; }
+    else if (eu == 'N' && ev == 'C') { c_local = v; }
     else return false;
 
-    // VCT / SYBYL N.am (Mol2Reader maps N.am → type 11).
-    if (atoms[first_atom + n_local].type == 11) return true;
-
-    // C has a double bond (order ≥ 2, or aromatic 4) to O or N → conjugated C–N.
+    // Structural C(=O/N)–N conjugation only (not atom.type).
     for (const auto& [nb, order] : graph[c_local]) {
         if (order < 2) continue;
         const char en = element_letter(atoms[first_atom + nb]);
@@ -150,79 +151,134 @@ inline double frame_quality(const atom* atoms, int first_atom,
     return std::sqrt(cx * cx + cy * cy + cz * cz) / (un * vn);
 }
 
-// Returns false when fewer than 3 heavy atoms or every triple is collinear.
-// Never returns duplicate/default indices as a silent success.
+// Choose GPA frame for IC reconstruction.
+//
+// Preferred: ≥3 non-collinear **heavy** atoms (full flexible docking).
+// Safe rigid / virtual-frame path (parse + rigid docking preserved):
+//   - water / methane / 1–2 heavy: use all atoms including H for a non-collinear
+//     triple when possible (H₂O: O–H–H; CH₄: C–H–H);
+//   - single atom or collinear-only: rigid virtual frame with FA->ori grandparents
+//     (duplicate GPA slots allowed; build_tree already handles g1==g0 / g2==g*).
+// Empty molecule only is a hard fail. Never rejects parse of valid small ligands.
 inline bool choose_gpa(const atom* atoms,
                        int first_atom,
                        const BondGraph& graph,
                        const std::vector<bool>& is_heavy,
                        std::array<int, 3>& best) {
-    std::vector<int> heavy;
-    for (int i = 0; i < static_cast<int>(graph.size()); ++i)
-        if (is_heavy[i]) heavy.push_back(i);
-    if (heavy.size() < 3) {
-        std::fprintf(stderr,
-            "ERROR [DIRECT-IC]: need ≥3 heavy atoms for GPA (have %zu)\n",
-            heavy.size());
+    const int n = static_cast<int>(graph.size());
+    if (n <= 0) {
+        std::fprintf(stderr, "ERROR [DIRECT-IC]: empty ligand — no GPA\n");
         best = {{-1, -1, -1}};
         return false;
     }
 
-    best = {{heavy[0], heavy[1], heavy[2]}};
-    double best_score = -1.0;
+    std::vector<int> heavy;
+    std::vector<int> all;
+    heavy.reserve(static_cast<size_t>(n));
+    all.reserve(static_cast<size_t>(n));
+    for (int i = 0; i < n; ++i) {
+        all.push_back(i);
+        if (is_heavy[i]) heavy.push_back(i);
+    }
 
-    for (int center = 0; center < static_cast<int>(graph.size()); ++center) {
-        if (!is_heavy[center]) continue;
-        for (const auto& [left_raw, left_order] : graph[center]) {
-            (void)left_order;
-            if (!is_heavy[left_raw]) continue;
-            for (const auto& [right_raw, right_order] : graph[center]) {
-                (void)right_order;
-                if (left_raw >= right_raw || !is_heavy[right_raw]) continue;
-                const int left = left_raw;
-                const int right = right_raw;
-                const double quality = frame_quality(atoms, first_atom,
-                                                     left, center, right);
-                if (quality < 1e-3) continue;
-                const int rigid_edges =
-                    (!is_rotatable(graph, is_heavy, atoms, first_atom, left, center) ? 1 : 0) +
-                    (!is_rotatable(graph, is_heavy, atoms, first_atom, center, right) ? 1 : 0);
-                const int local_degree = heavy_degree(graph, is_heavy, center) +
-                                         heavy_degree(graph, is_heavy, left) +
-                                         heavy_degree(graph, is_heavy, right);
-                const double score = 10000.0 * rigid_edges +
-                                     100.0 * quality + local_degree;
-                if (score > best_score) {
-                    best_score = score;
-                    best = {{left, center, right}};
+    auto try_triple = [&](int a, int b, int c) -> bool {
+        if (a < 0 || b < 0 || c < 0) return false;
+        if (a == b || b == c || a == c) return false;
+        return frame_quality(atoms, first_atom, a, b, c) >= 1e-3;
+    };
+
+    // ── Phase 1: preferred bonded heavy GPA (docking-quality frame) ──────────
+    if (heavy.size() >= 3) {
+        best = {{heavy[0], heavy[1], heavy[2]}};
+        double best_score = -1.0;
+
+        for (int center = 0; center < n; ++center) {
+            if (!is_heavy[center]) continue;
+            for (const auto& [left_raw, left_order] : graph[center]) {
+                (void)left_order;
+                if (!is_heavy[left_raw]) continue;
+                for (const auto& [right_raw, right_order] : graph[center]) {
+                    (void)right_order;
+                    if (left_raw >= right_raw || !is_heavy[right_raw]) continue;
+                    const int left = left_raw;
+                    const int right = right_raw;
+                    const double quality = frame_quality(atoms, first_atom,
+                                                         left, center, right);
+                    if (quality < 1e-3) continue;
+                    const int rigid_edges =
+                        (!is_rotatable(graph, is_heavy, atoms, first_atom, left, center) ? 1 : 0) +
+                        (!is_rotatable(graph, is_heavy, atoms, first_atom, center, right) ? 1 : 0);
+                    const int local_degree = heavy_degree(graph, is_heavy, center) +
+                                             heavy_degree(graph, is_heavy, left) +
+                                             heavy_degree(graph, is_heavy, right);
+                    const double score = 10000.0 * rigid_edges +
+                                         100.0 * quality + local_degree;
+                    if (score > best_score) {
+                        best_score = score;
+                        best = {{left, center, right}};
+                    }
+                }
+            }
+        }
+        if (best_score >= 0.0 && try_triple(best[0], best[1], best[2])) {
+            return true;
+        }
+
+        // Unbonded / collinear bonded frames: any non-collinear heavy triple.
+        for (size_t i = 0; i < heavy.size(); ++i) {
+            for (size_t j = i + 1; j < heavy.size(); ++j) {
+                for (size_t k = j + 1; k < heavy.size(); ++k) {
+                    if (try_triple(heavy[i], heavy[j], heavy[k])) {
+                        best = {{heavy[i], heavy[j], heavy[k]}};
+                        return true;
+                    }
                 }
             }
         }
     }
-    if (best_score >= 0.0 &&
-        frame_quality(atoms, first_atom, best[0], best[1], best[2]) >= 1e-3 &&
-        best[0] != best[1] && best[1] != best[2] && best[0] != best[2]) {
-        return true;
-    }
 
-    // Unbonded / collinear bonded frames: any non-collinear heavy triple.
-    for (size_t i = 0; i < heavy.size(); ++i) {
-        for (size_t j = i + 1; j < heavy.size(); ++j) {
-            for (size_t k = j + 1; k < heavy.size(); ++k) {
-                const double q = frame_quality(atoms, first_atom,
-                                               heavy[i], heavy[j], heavy[k]);
-                if (q >= 1e-3) {
-                    best = {{heavy[i], heavy[j], heavy[k]}};
+    // ── Phase 2: rigid frame including H (water, methane, 1–2 heavy) ─────────
+    // Reader support is preserved; ligands with <3 non-collinear heavies dock as
+    // rigid bodies (fdih typically 0 — no bridge heavy–heavy rotors).
+    for (size_t i = 0; i < all.size(); ++i) {
+        for (size_t j = i + 1; j < all.size(); ++j) {
+            for (size_t k = j + 1; k < all.size(); ++k) {
+                if (try_triple(all[i], all[j], all[k])) {
+                    best = {{all[i], all[j], all[k]}};
+                    std::fprintf(stderr,
+                        "WARN [DIRECT-IC]: rigid/virtual-frame GPA (heavy=%zu total=%d) "
+                        "local=%d,%d,%d — parse OK; dock as rigid if fdih=0\n",
+                        heavy.size(), n, best[0] + 1, best[1] + 1, best[2] + 1);
                     return true;
                 }
             }
         }
     }
 
+    // ── Phase 3: virtual FA->ori frame for 1–2 atoms / fully collinear ────────
+    // build_tree uses rec=0 → FA->ori for missing grandparents. Allow duplicate
+    // GPA slots so single-atom (Xe) and diatomic (CO) parse and type cleanly.
+    if (n == 1) {
+        best = {{0, 0, 0}};
+        std::fprintf(stderr,
+            "WARN [DIRECT-IC]: single-atom rigid virtual-frame GPA (FA->ori)\n");
+        return true;
+    }
+    if (n == 2) {
+        best = {{0, 1, 0}};
+        std::fprintf(stderr,
+            "WARN [DIRECT-IC]: diatomic rigid virtual-frame GPA (FA->ori)\n");
+        return true;
+    }
+    // ≥3 collinear atoms: still assign first three (CoordBuilder/buildcc
+    // tolerate degenerate frames via perpendicular fallback).
+    best = {{0, 1, std::min(2, n - 1)}};
+    if (best[2] == best[1]) best[2] = 0;
     std::fprintf(stderr,
-        "ERROR [DIRECT-IC]: all heavy-atom GPA triples collinear — reject input\n");
-    best = {{-1, -1, -1}};
-    return false;
+        "WARN [DIRECT-IC]: collinear/degenerate rigid virtual-frame GPA "
+        "local=%d,%d,%d\n",
+        best[0] + 1, best[1] + 1, best[2] + 1);
+    return true;
 }
 
 // Returns false if GPA selection fails (ligand load must abort).
