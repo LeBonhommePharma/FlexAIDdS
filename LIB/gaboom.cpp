@@ -2571,6 +2571,7 @@ void calculate_fitness(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* chr
 				tl_optres[tid][o].cf.hbond       = 0.0;
 				tl_optres[tid][o].cf.metal_coord = 0.0;
 				tl_optres[tid][o].cf.gist_desolv = 0.0;
+				tl_optres[tid][o].cf.pb_clash    = 0.0;
 				tl_optres[tid][o].cf.rclash      = 0;
 			}
 			tl_vc[tid].numcarec = 0;
@@ -3279,6 +3280,7 @@ void populate_chromosomes(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* 
 				p_optres[tid][o].cf.elec   = 0.0;
 				p_optres[tid][o].cf.hbond  = 0.0;
 				p_optres[tid][o].cf.gist_desolv = 0.0;
+				p_optres[tid][o].cf.pb_clash = 0.0;
 				p_optres[tid][o].cf.rclash = 0;
 			}
 			p_vc[tid].numcarec = 0;

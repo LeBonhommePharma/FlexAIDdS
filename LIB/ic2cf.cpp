@@ -267,6 +267,7 @@ cfstr ic2cf(FA_Global* FA,VC_Global* VC,atom* atoms,resid* residue,
 	cf.hbond = 0.0;
 	cf.gist_desolv = 0.0;
 	cf.metal_coord = 0.0;
+	cf.pb_clash = 0.0;
 	cf.h_rep = 0.0;
 	cf.entropy = 0.0;
 	cf.rclash = 0;
@@ -376,6 +377,7 @@ cfstr ic2cf(FA_Global* FA,VC_Global* VC,atom* atoms,resid* residue,
 		cf.metal_coord += FA->optres[i].cf.metal_coord;
 		cf.hbond += FA->optres[i].cf.hbond;
 		cf.entropy += FA->optres[i].cf.entropy;
+		cf.pb_clash += FA->optres[i].cf.pb_clash;
 
 	}
 
@@ -543,7 +545,7 @@ double get_apparent_cf_evalue(cfstr* cf) {
 #else
 	double get_apparent_cf_evalue(cfstr* cf) {
 #endif
-		return cf->com + cf->wal + cf->sas + cf->elec + cf->hbond + cf->gist_desolv + cf->metal_coord + cf->entropy;
+		return cf->com + cf->wal + cf->sas + cf->elec + cf->hbond + cf->gist_desolv + cf->metal_coord + cf->entropy + cf->pb_clash;
 	}
 
 #ifdef _WIN32
@@ -552,7 +554,7 @@ double get_apparent_cf_evalue(cfstr* cf) {
 		double get_cf_evalue(cfstr* cf, FA_Global* FA) {
 #endif
 			double total = cf->com + cf->wal + cf->sas + cf->con + cf->elec
-			             + cf->hbond + cf->gist_desolv + cf->metal_coord + cf->entropy;
+			             + cf->hbond + cf->gist_desolv + cf->metal_coord + cf->entropy + cf->pb_clash;
 			if (FA && FA->tencom_weight > 0.0f) {
 				total += static_cast<double>(FA->tencom_weight) * cf->h_rep;
 			}

@@ -56,6 +56,7 @@ double vcfunction(FA_Global* FA,VC_Global* VC,atom* atoms,resid* residue, std::v
 		FA->optres[j].cf.gist_desolv=0.0;
 		FA->optres[j].cf.metal_coord=0.0;
 		FA->optres[j].cf.entropy=0.0;
+		FA->optres[j].cf.pb_clash=0.0;
 		FA->optres[j].cf.sas=0.0;
 		FA->optres[j].cf.totsas=0.0;
 	}
@@ -414,6 +415,23 @@ double vcfunction(FA_Global* FA,VC_Global* VC,atom* atoms,resid* residue, std::v
 			}
 
 			cfs->wal += Ewall_fitness;
+
+			// ── PoseBust physical-realism clash penalty (opt-in) ──────────────
+			// The wall term above is CAPPED (WAL_CONTACT_CAP), so it cannot
+			// overcome an UNBOUNDED CF.com overpacking reward (root cause of the
+			// arm-A 0%: elected decoys reach com~-1200 while wal maxes ~+150).
+			// This adds an uncapped, severity-scaled penalty on the SAME overlap
+			// o = cr - d already computed here (cr = permea*rAB = sum-of-radii at
+			// which the wall is zero), so a physically impossible interpenetration
+			// can always out-weigh the com reward. Smooth onset (o<=0 -> 0),
+			// steep tail (o^p, p~3). Reuses the hot-loop geometry — no PoseBust
+			// Molecule construction per evaluation. OFF unless pb_clash_weight>0.
+			if (FA->pb_clash_weight > 0.0) {
+				const double o = cr - d;   // overlap depth (Å); >0 means atoms closer than r_min
+				if (o > 0.0) {
+					cfs->pb_clash += FA->pb_clash_weight * std::pow(o, FA->pb_clash_exponent);
+				}
+			}
 
 #if DEBUG_LEVEL > 0
 				Ewall_atm += Ewall;

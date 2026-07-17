@@ -512,6 +512,15 @@ int main(int argc, char **argv){
 	// Default matches JSON/DatasetRunner (0.40 Å) so CF.wal competes with CF.com;
 	// override with SOFTWA 0.0 in CONFIG.inp for pure legacy hard wall.
 	FA->soft_wall_cutoff = 0.40f;
+	// PoseBust physical-realism clash penalty (opt-in, both legacy + JSON paths).
+	// UNCAPPED severity-scaled term added to CF.pb_clash in vcfunction.cpp; sums
+	// into the GA fitness (ic2cf.cpp get_apparent_cf_evalue). Fixes the arm-A 0%
+	// where capped CF.wal could not overcome unbounded CF.com overpacking.
+	// Env-set so the classic --legacy .inp path (no CONFIG keyword) can enable it.
+	FA->pb_clash_weight = 0.0;      // OFF by default
+	FA->pb_clash_exponent = 3.0;    // steep tail, smooth onset
+	if (const char* e = std::getenv("FLEXAIDDS_PB_CLASH_WEIGHT")) { FA->pb_clash_weight = atof(e); }
+	if (const char* e = std::getenv("FLEXAIDDS_PB_CLASH_EXP"))    { double v = atof(e); if (v > 0.0) FA->pb_clash_exponent = v; }
 	FA->atm_cnt=0;
 	FA->atm_cnt_real=0;
 	FA->res_cnt=0;
