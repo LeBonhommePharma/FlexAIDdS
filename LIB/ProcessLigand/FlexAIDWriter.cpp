@@ -233,6 +233,106 @@ std::vector<InternalCoord> FlexAIDWriter::compute_internal_coords(
 }
 
 // ---------------------------------------------------------------------------
+// Geometry invariants (bond / angle / ring-closure) for production IC path
+// ---------------------------------------------------------------------------
+
+std::string FlexAIDWriter::check_geometry_invariants(
+        const BonMol& mol,
+        const std::vector<InternalCoord>& ics) const {
+    // Covalent bond length bounds (Å) — generous to absorb crystal noise but
+    // tight enough to catch IC corruption / broken reconstruction.
+    constexpr float kBondMin = 0.70f;
+    constexpr float kBondMax = 2.40f;
+    // Valence angles (degrees)
+    constexpr float kAngleMin = 50.0f;
+    constexpr float kAngleMax = 170.0f;
+    // Ring-closure: bonded ring atoms must still land near covalent distance.
+    constexpr float kRingClosureMax = 2.60f;
+
+    // 1) Bond lengths from topology + coordinates
+    for (const auto& bond : mol.bonds) {
+        const int i = bond.atom_i;
+        const int j = bond.atom_j;
+        if (!mol.has_coords(i) || !mol.has_coords(j)) continue;
+        const float d = (mol.coords.col(i) - mol.coords.col(j)).norm();
+        if (!std::isfinite(d) || d < kBondMin || d > kBondMax) {
+            std::ostringstream oss;
+            oss << "bond-length invariant failed atoms " << (i + 1) << "-"
+                << (j + 1) << " d=" << d << " A (allowed [" << kBondMin
+                << "," << kBondMax << "])";
+            return oss.str();
+        }
+        if (bond.in_ring && d > kRingClosureMax) {
+            std::ostringstream oss;
+            oss << "ring-closure invariant failed atoms " << (i + 1) << "-"
+                << (j + 1) << " d=" << d << " A";
+            return oss.str();
+        }
+    }
+
+    // 2) IC bond lengths / angles produced for reconstruction
+    for (const auto& ic : ics) {
+        if (ic.ref1 >= 0) {
+            if (!std::isfinite(ic.bond_length) ||
+                ic.bond_length < kBondMin || ic.bond_length > kBondMax) {
+                // Root / partially defined atoms may legitimately have 0 length.
+                if (ic.bond_length > 1e-6f) {
+                    std::ostringstream oss;
+                    oss << "IC bond-length invariant failed atom "
+                        << (ic.atom_idx + 1) << " bl=" << ic.bond_length;
+                    return oss.str();
+                }
+            }
+        }
+        if (ic.ref1 >= 0 && ic.ref2 >= 0 && ic.bond_angle > 1e-3f) {
+            if (!std::isfinite(ic.bond_angle) ||
+                ic.bond_angle < kAngleMin || ic.bond_angle > kAngleMax) {
+                std::ostringstream oss;
+                oss << "IC bond-angle invariant failed atom "
+                    << (ic.atom_idx + 1) << " ang=" << ic.bond_angle;
+                return oss.str();
+            }
+        }
+        if (ic.ref1 >= 0 && ic.ref2 >= 0 && ic.ref3 >= 0) {
+            if (!std::isfinite(ic.dihedral)) {
+                std::ostringstream oss;
+                oss << "IC dihedral non-finite atom " << (ic.atom_idx + 1);
+                return oss.str();
+            }
+        }
+    }
+
+    // 3) Valence angles from Cartesian triples of bonded heavy atoms
+    for (int c = 0; c < mol.num_atoms(); ++c) {
+        if (mol.atoms[c].element == Element::H) continue;
+        if (!mol.has_coords(c)) continue;
+        const auto& nbrs = mol.adjacency[c];
+        for (size_t a = 0; a < nbrs.size(); ++a) {
+            for (size_t b = a + 1; b < nbrs.size(); ++b) {
+                const int i = nbrs[a];
+                const int j = nbrs[b];
+                if (mol.atoms[i].element == Element::H ||
+                    mol.atoms[j].element == Element::H) continue;
+                if (!mol.has_coords(i) || !mol.has_coords(j)) continue;
+                const float ang = bond_angle(mol.coords.col(i),
+                                             mol.coords.col(c),
+                                             mol.coords.col(j));
+                if (!std::isfinite(ang) || ang < kAngleMin || ang > kAngleMax) {
+                    // Linear sp centres can legitimately approach 180°; allow up to 180.
+                    if (ang > 170.0f && ang <= 180.5f) continue;
+                    std::ostringstream oss;
+                    oss << "valence-angle invariant failed centre atom "
+                        << (c + 1) << " ang=" << ang;
+                    return oss.str();
+                }
+            }
+        }
+    }
+
+    return {};
+}
+
+// ---------------------------------------------------------------------------
 // Dihedral gene construction from rotatable bonds
 // ---------------------------------------------------------------------------
 
@@ -465,6 +565,16 @@ FlexAIDWriterResult FlexAIDWriter::write(const BonMol& mol,
     // Build spanning tree and internal coordinates
     SpanningTree tree = build_spanning_tree(mol);
     result.internal_coords = compute_internal_coords(mol, tree);
+
+    // Fail-closed geometry invariants before emitting production .inp/.ga.
+    {
+        const std::string geom_err =
+            check_geometry_invariants(mol, result.internal_coords);
+        if (!geom_err.empty()) {
+            result.error = geom_err;
+            return result;
+        }
+    }
 
     // Dihedral genes
     result.dihedral_genes     = build_dihedral_genes(mol);

@@ -105,6 +105,13 @@ private:
     std::vector<InternalCoord> compute_internal_coords(
         const BonMol& mol, const SpanningTree& tree) const;
 
+    /// Production geometry invariants around IC reconstruction:
+    /// bond lengths, valence angles, and ring-closure distances.
+    /// Returns empty string on success, else a human-readable failure reason.
+    std::string check_geometry_invariants(
+        const BonMol& mol,
+        const std::vector<InternalCoord>& ics) const;
+
     // -----------------------------------------------------------------------
     // Dihedral gene construction
     // -----------------------------------------------------------------------

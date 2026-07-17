@@ -58,6 +58,11 @@ static bool adjacent_to_triple(const BonMol& mol, int atom_idx) {
     return false;
 }
 
+bool is_triple_adjacent_bond(const BonMol& mol, int bidx) {
+    const Bond& bond = mol.bonds[bidx];
+    return adjacent_to_triple(mol, bond.atom_i) || adjacent_to_triple(mol, bond.atom_j);
+}
+
 // ---------------------------------------------------------------------------
 // Check for aromatic C–N bond (partial double, should not rotate freely)
 // ---------------------------------------------------------------------------
@@ -74,6 +79,64 @@ static bool is_aromatic_cn(const BonMol& mol, int bidx) {
     // If the C atom is aromatic (part of aromatic ring), the C–N bond has
     // partial double-bond character (like aniline).
     return mol.atoms[c_idx].is_aromatic;
+}
+
+// ---------------------------------------------------------------------------
+// Conjugated C–N: amide, urea, guanidine, vinylogous amide, N.am SYBYL type
+// ---------------------------------------------------------------------------
+
+static bool carbon_has_double_to(const BonMol& mol, int c_idx, Element e) {
+    for (int nb_bidx : mol.bond_adj[c_idx]) {
+        const Bond& nb = mol.bonds[nb_bidx];
+        if (nb.order != BondOrder::DOUBLE) continue;
+        int other = (nb.atom_i == c_idx) ? nb.atom_j : nb.atom_i;
+        if (mol.atoms[other].element == e) return true;
+    }
+    return false;
+}
+
+static bool carbon_has_double_any(const BonMol& mol, int c_idx) {
+    for (int nb_bidx : mol.bond_adj[c_idx]) {
+        if (mol.bonds[nb_bidx].order == BondOrder::DOUBLE) return true;
+    }
+    return false;
+}
+
+bool is_conjugated_cn_bond(const BonMol& mol, int bidx) {
+    const Bond& bond = mol.bonds[bidx];
+    if (bond.order != BondOrder::SINGLE) return false;
+
+    int i = bond.atom_i;
+    int j = bond.atom_j;
+    int c_idx = -1, n_idx = -1;
+    if (mol.atoms[i].element == Element::C && mol.atoms[j].element == Element::N) {
+        c_idx = i; n_idx = j;
+    } else if (mol.atoms[j].element == Element::C && mol.atoms[i].element == Element::N) {
+        c_idx = j; n_idx = i;
+    } else {
+        return false;
+    }
+
+    // Preserve MOL2/SYBYL amide typing: N.am must never be a rotor endpoint.
+    // ProcessLigand SYBYL id 7 == N.am (see SybylTyper.cpp).
+    if (mol.atoms[n_idx].sybyl_type == 7) return true;
+
+    // Classic amide C(=O)–N
+    if (carbon_has_double_to(mol, c_idx, Element::O)) return true;
+
+    // Guanidine / amidine: C(=N)–N
+    if (carbon_has_double_to(mol, c_idx, Element::N)) return true;
+
+    // Urea: N–C(=O)–N already covered by double-to-O on C.
+
+    // Vinylogous / enamine-like conjugation: C has a double bond to any atom
+    // (typically C=C) so the attached single C–N has partial double character.
+    if (carbon_has_double_any(mol, c_idx)) return true;
+
+    // Aromatic C–N (aniline-like)
+    if (mol.atoms[c_idx].is_aromatic) return true;
+
+    return false;
 }
 
 // ---------------------------------------------------------------------------
@@ -109,9 +172,10 @@ RotatableBondsResult identify_rotatable_bonds(BonMol& mol) {
         if (is_disulfide_bond(mol, bidx)) continue;
 
         // Rule 6: not adjacent to triple bond
-        if (adjacent_to_triple(mol, i) || adjacent_to_triple(mol, j)) continue;
+        if (is_triple_adjacent_bond(mol, bidx)) continue;
 
-        // Rule 7: not aromatic C–N (partial double-bond character)
+        // Rule 7+8: not aromatic / conjugated C–N (includes N.am typing)
+        if (is_conjugated_cn_bond(mol, bidx)) continue;
         if (is_aromatic_cn(mol, bidx)) continue;
 
         // Passed all rules: mark as rotatable

@@ -11,6 +11,7 @@
 //   5. It is NOT an S-S disulfide bond
 //   6. It is NOT adjacent to a triple bond (propargylic bonds are often locked)
 //   7. It is NOT a C-N bond where C is aromatic (aniline-like bonds treated as partial double)
+//   8. It is NOT a conjugated C-N bond (urea, guanidine, vinylogous amide, N.am typed)
 //
 // Sets Bond::is_rotatable for all bonds in mol.
 // Returns a list of bond indices that are rotatable.
@@ -37,6 +38,13 @@ bool is_amide_bond(const BonMol& mol, int bidx);
 
 /// Check whether bond at index bidx is a disulfide bond (S-S).
 bool is_disulfide_bond(const BonMol& mol, int bidx);
+
+/// Conjugated / partial-double C–N (amide, urea, guanidine, vinylogous amide,
+/// aromatic C–N, or MOL2/SYBYL N.am typed nitrogen). These must never be GA rotors.
+bool is_conjugated_cn_bond(const BonMol& mol, int bidx);
+
+/// True if either endpoint of the bond is adjacent to a triple bond.
+bool is_triple_adjacent_bond(const BonMol& mol, int bidx);
 
 } // namespace rotatable_bonds
 } // namespace bonmol
