@@ -11,6 +11,7 @@
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
+#include <set>
 #include <sstream>
 #include <string>
 #include <string_view>
@@ -45,10 +46,34 @@ std::string sha256_via_openssl(const std::string& path) {
 
 // Columns that are metadata / optional, not part of official pb_pass dock gate.
 bool is_excluded_from_pb_pass(std::string_view col) {
-    if (col == "file" || col == "molecule" || col == "position") return true;
+    if (col == "file" || col == "molecule" || col == "position" ||
+        col == "mol_pred" || col == "mol_true" || col == "mol_cond") return true;
     // RMSD is success_rmsd, not pb_pass
     if (col.find("rmsd") != std::string_view::npos) return true;
     return false;
+}
+
+// Version-pinned canonical mandatory dock-suite check names (PoseBusters redock).
+// Missing/duplicate headers fail closed. Extend only with deliberate pin bumps.
+const std::vector<std::string>& mandatory_pb_check_columns() {
+    static const std::vector<std::string> k = {
+        "mol_pred_loaded",
+        "mol_cond_loaded",
+        "sanitization",
+        "inchi_convertible",
+        "all_atoms_connected",
+        "bond_lengths",
+        "bond_angles",
+        "internal_steric_clash",
+        "aromatic_ring_flatness",
+        "double_bond_flatness",
+        "internal_energy",
+        "protein-ligand_maximum_distance",
+        "minimum_distance_to_protein",
+        "no_protein_clashes",
+        "volume_overlap_with_protein",
+    };
+    return k;
 }
 
 bool parse_truthy(std::string_view v) {
@@ -172,40 +197,98 @@ BustCliResult run_upstream_bust(const std::string& pred_sdf,
     argv.push_back("--outfmt");
     argv.push_back("csv");
 
+    // Receipts: path, binary hash, argv, exit, raw hash (always filled when possible).
+    r.bust_path = bust;
+    r.bust_sha256 = sha256_via_openssl(bust);
+    {
+        std::ostringstream aj;
+        for (std::size_t i = 0; i < argv.size(); ++i) {
+            if (i) aj << ' ';
+            aj << argv[i];
+        }
+        r.argv_joined = aj.str();
+    }
+    // Best-effort version probe (non-fatal).
+    {
+        auto vcap = run_argv_capture({bust, "--version"}, /*discard_stderr=*/false);
+        if (vcap.ok && !vcap.stdout_text.empty()) {
+            r.bust_version = vcap.stdout_text;
+            while (!r.bust_version.empty() &&
+                   (r.bust_version.back() == '\n' || r.bust_version.back() == '\r'))
+                r.bust_version.pop_back();
+        }
+    }
+
     auto cap = run_argv_capture(argv, /*discard_stderr=*/true);
     if (!cap.ok) {
         r.error = "exec(bust) failed";
         r.backend = "error";
+        r.exit_status = -1;
         return r;
     }
     const int rc = cap.exit_code;
     const std::string& out = cap.stdout_text;
+    // Always preserve raw CSV before any schema return.
     r.raw_csv = out;
+    r.exit_status = rc;
     r.ran = true;
     r.backend = "bust_cli";
-
-    if (out.empty()) {
-        r.error = "bust produced empty CSV (exit_status=" + std::to_string(rc) + ")";
-        r.pb_pass = false;
-        return r;
+    if (!sidecar_dir.empty()) {
+        std::error_code ec;
+        fs::create_directories(sidecar_dir, ec);
+        const std::string raw_path =
+            (fs::path(sidecar_dir) / (stem + "_bust_raw.csv")).string();
+        std::ofstream raw_ofs(raw_path);
+        if (raw_ofs) raw_ofs << out;
+        r.csv_path = raw_path;
+        r.raw_csv_sha256 = sha256_via_openssl(raw_path);
+        if (r.raw_csv_sha256.empty() && !out.empty()) {
+            // Hash via temp if openssl path failed on empty write.
+            r.raw_csv_sha256 = sha256_via_openssl(raw_path);
+        }
     }
 
-    std::istringstream iss(out);
+    // Schema validation (raw_csv already preserved above).
+    apply_bust_csv_schema(out, r);
+    if (rc != 0) {
+        if (!r.error.empty()) r.error += ";";
+        r.error += "bust pclose_status=" + std::to_string(rc);
+        r.pb_pass = false;
+    }
+
+    if (!sidecar_dir.empty()) {
+        std::error_code ec;
+        fs::create_directories(sidecar_dir, ec);
+        r.csv_path = (fs::path(sidecar_dir) / (stem + "_bust.csv")).string();
+        std::ofstream ofs(r.csv_path);
+        if (ofs) ofs << out;
+    }
+    return r;
+}
+
+void apply_bust_csv_schema(const std::string& csv_body, BustCliResult& r) {
+    if (r.raw_csv.empty()) r.raw_csv = csv_body;
+
+    if (csv_body.empty()) {
+        r.error = "bust produced empty CSV";
+        r.pb_pass = false;
+        return;
+    }
+
+    std::istringstream iss(csv_body);
     std::string header_line, data_line;
     if (!std::getline(iss, header_line) || !std::getline(iss, data_line)) {
-        // single line?
         r.error = "bust CSV parse: need header+data";
         r.pb_pass = false;
-        return r;
+        return;
     }
-    // strip trailing blank
-    while (!data_line.empty() && (data_line.back() == '\n' || data_line.back() == '\r'))
+    while (!data_line.empty() &&
+           (data_line.back() == '\n' || data_line.back() == '\r'))
         data_line.pop_back();
 
     auto headers = split_csv_line(header_line);
     auto values  = split_csv_line(data_line);
-    // Fail-closed schema (audit P0 #17): no padding missing cells; column
-    // count must match. Blank / NaN / non-boolean check columns fail pb_pass.
+    // Fail-closed: no pad; column counts must match; no duplicate headers.
     if (values.size() != headers.size()) {
         r.error = "bust CSV schema: header/value column count mismatch (" +
                   std::to_string(headers.size()) + " vs " +
@@ -215,17 +298,49 @@ BustCliResult run_upstream_bust(const std::string& pred_sdf,
         r.n_pass = 0;
         r.n_fail = 0;
         r.failed_keys = "schema_column_count";
-        return r;
+        return;
+    }
+    {
+        std::set<std::string> seen;
+        for (const auto& h : headers) {
+            if (!seen.insert(h).second) {
+                r.error = "bust CSV schema: duplicate header '" + h + "'";
+                r.pb_pass = false;
+                r.failed_keys = "duplicate_header:" + h;
+                return;
+            }
+        }
+    }
+    // Version-pinned mandatory check-set: every listed column must be present.
+    {
+        std::set<std::string> header_set(headers.begin(), headers.end());
+        std::string missing;
+        for (const auto& need : mandatory_pb_check_columns()) {
+            if (header_set.count(need) == 0) {
+                if (!missing.empty()) missing += ';';
+                missing += need;
+            }
+        }
+        if (!missing.empty()) {
+            r.error = "bust CSV schema: missing mandatory check columns: " + missing;
+            r.pb_pass = false;
+            r.failed_keys = "mandatory_checks_missing:" + missing;
+            return;
+        }
     }
 
     auto is_nan_token = [](std::string_view v) -> bool {
         if (v.empty()) return false;
         std::string t(v);
-        for (char& c : t) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+        for (char& c : t)
+            c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
         return t == "nan" || t == "na" || t == "none" || t == "null" ||
                t == "inf" || t == "+inf" || t == "-inf";
     };
 
+    r.n_checks = 0;
+    r.n_pass = 0;
+    r.n_fail = 0;
     bool all_ok = true;
     std::string failed;
     for (std::size_t i = 0; i < headers.size(); ++i) {
@@ -233,7 +348,6 @@ BustCliResult run_upstream_bust(const std::string& pred_sdf,
         const std::string& v = values[i];
         if (is_excluded_from_pb_pass(h)) continue;
 
-        // Mandatory boolean check columns: blank, NaN, or unparsed → fail.
         if (v.empty() || is_nan_token(v)) {
             ++r.n_checks;
             ++r.n_fail;
@@ -243,7 +357,6 @@ BustCliResult run_upstream_bust(const std::string& pred_sdf,
             continue;
         }
         if (!parse_truthy(v) && !parse_falsey(v)) {
-            // Non-boolean in a non-excluded column is a schema failure.
             ++r.n_checks;
             ++r.n_fail;
             all_ok = false;
@@ -261,28 +374,13 @@ BustCliResult run_upstream_bust(const std::string& pred_sdf,
             failed += h;
         }
     }
-    // Require a non-empty check set so a metadata-only row cannot pass.
     r.pb_pass = all_ok && r.n_checks > 0 && r.n_fail == 0;
     r.failed_keys = failed;
-    if (rc != 0) {
-        if (!r.error.empty()) r.error += ";";
-        r.error += "bust pclose_status=" + std::to_string(rc);
-        r.pb_pass = false;
-    }
     if (r.n_checks == 0) {
         r.pb_pass = false;
         if (r.error.empty()) r.error = "bust CSV: no boolean check columns";
         if (r.failed_keys.empty()) r.failed_keys = "no_checks";
     }
-
-    if (!sidecar_dir.empty()) {
-        std::error_code ec;
-        fs::create_directories(sidecar_dir, ec);
-        r.csv_path = (fs::path(sidecar_dir) / (stem + "_bust.csv")).string();
-        std::ofstream ofs(r.csv_path);
-        if (ofs) ofs << out;
-    }
-    return r;
 }
 
 }  // namespace flexaids::posebust

@@ -13,8 +13,11 @@
 #include "PoseBust/BustCli.h"
 #include "PoseBust/Engine.h"
 #include "PoseBust/Loaders.h"
+#include "PoseBust/PdbCoords.h"
 #include "PoseBust/Types.h"
 
+#include <array>
+#include <cmath>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
@@ -112,6 +115,106 @@ std::map<std::string, bool> parse_bust_bools(const std::string& csv) {
 
 }  // namespace
 
+// ── Shared strict PDB coordinate decoder ────────────────────────────────────
+
+TEST(PdbCoords, CompactNegativeSpanParsesThreeFinite) {
+    // FlexAID compact negative: missing space before third signed number.
+    // PDB XYZ field is 24 chars (cols 31–54). Pad to full width.
+    std::string line(54, ' ');
+    line.replace(0, 6, "HETATM");
+    std::string span = " -0.635 -80.275-146.614";
+    while (span.size() < 24) span.push_back(' ');
+    ASSERT_EQ(span.size(), 24u);
+    line.replace(30, 24, span);
+    std::array<float, 3> xyz{};
+    ASSERT_TRUE(flexaids::pdb_coords::parse_xyz_span(line, xyz));
+    EXPECT_NEAR(xyz[0], -0.635f, 1e-4f);
+    EXPECT_NEAR(xyz[1], -80.275f, 1e-3f);
+    EXPECT_NEAR(xyz[2], -146.614f, 1e-3f);
+}
+
+TEST(PdbCoords, RejectsNonFiniteAndJunk) {
+    std::string line(54, ' ');
+    line.replace(0, 6, "HETATM");
+    line.replace(30, 24, "  1.000  2.000  3.000");
+    // Inject "nan" by rewriting span
+    line.replace(30, 24, "  nan    2.000  3.000");
+    std::array<float, 3> xyz{};
+    EXPECT_FALSE(flexaids::pdb_coords::parse_xyz_span(line, xyz));
+
+    line.replace(30, 24, "  1.000  2.000  3.0x0");
+    EXPECT_FALSE(flexaids::pdb_coords::parse_xyz_span(line, xyz));
+
+    // Too short
+    EXPECT_FALSE(flexaids::pdb_coords::parse_xyz_span("HETATM short", xyz));
+}
+
+// ── BustCli schema (raw preserved; mandatory set; duplicates) ────────────────
+
+namespace {
+
+std::string synthetic_full_pb_header() {
+    // Version-pinned mandatory set plus metadata columns.
+    return "molecule,mol_pred_loaded,mol_cond_loaded,sanitization,inchi_convertible,"
+           "all_atoms_connected,bond_lengths,bond_angles,internal_steric_clash,"
+           "aromatic_ring_flatness,double_bond_flatness,internal_energy,"
+           "protein-ligand_maximum_distance,minimum_distance_to_protein,"
+           "no_protein_clashes,volume_overlap_with_protein,rmsd_≤_2å";
+}
+
+std::string synthetic_full_pb_true_row() {
+    return "m1,True,True,True,True,True,True,True,True,True,True,True,"
+           "True,True,True,True,1.0";
+}
+
+}  // namespace
+
+TEST(BustCliSchema, PassesWithFullMandatorySet) {
+    BustCliResult r;
+    const std::string csv =
+        synthetic_full_pb_header() + "\n" + synthetic_full_pb_true_row() + "\n";
+    apply_bust_csv_schema(csv, r);
+    EXPECT_TRUE(r.pb_pass) << r.error << " failed=" << r.failed_keys;
+    EXPECT_EQ(r.raw_csv, csv);
+    EXPECT_GT(r.n_checks, 0);
+    EXPECT_EQ(r.n_fail, 0);
+}
+
+TEST(BustCliSchema, RejectsDuplicateHeaderPreservesRaw) {
+    BustCliResult r;
+    const std::string csv =
+        "molecule,mol_pred_loaded,mol_pred_loaded,sanitization\n"
+        "m1,True,True,True\n";
+    apply_bust_csv_schema(csv, r);
+    EXPECT_FALSE(r.pb_pass);
+    EXPECT_NE(r.failed_keys.find("duplicate_header"), std::string::npos)
+        << r.failed_keys;
+    EXPECT_EQ(r.raw_csv, csv);  // raw preserved before schema return
+}
+
+TEST(BustCliSchema, RejectsMissingMandatoryHeaderPreservesRaw) {
+    BustCliResult r;
+    const std::string csv =
+        "molecule,mol_pred_loaded,sanitization\n"
+        "m1,True,True\n";
+    apply_bust_csv_schema(csv, r);
+    EXPECT_FALSE(r.pb_pass);
+    EXPECT_NE(r.failed_keys.find("mandatory_checks_missing"), std::string::npos)
+        << r.failed_keys;
+    EXPECT_EQ(r.raw_csv, csv);
+}
+
+TEST(BustCliSchema, RejectsColumnCountMismatchPreservesRaw) {
+    BustCliResult r;
+    const std::string csv =
+        synthetic_full_pb_header() + "\n"
+        "m1,True,True\n";  // truncated values
+    apply_bust_csv_schema(csv, r);
+    EXPECT_FALSE(r.pb_pass);
+    EXPECT_EQ(r.failed_keys, "schema_column_count");
+    EXPECT_EQ(r.raw_csv, csv);
+}
+
 // P1: Cl recovered when atom name is Cl* but element column was shifted to "L".
 TEST(PoseBustLoaders, ClElementRecoveredFromMisalignedPdb) {
     const fs::path tmp = fs::temp_directory_path() / "flexaidds_cl_misalign.pdb";
@@ -167,10 +270,9 @@ TEST(PoseBustLoaders, DuHydrogenNotCountedAsHeavy) {
     fs::remove(tmp);
 }
 
-// P1: topology assign falls back to same-element nearest match when order differs.
-TEST(PoseBustLoaders, TopologyAssignPermutedOrder) {
+// Fail-closed: permuted element order without graph identity must be rejected.
+TEST(PoseBustLoaders, TopologyAssignPermutedOrderFailsClosed) {
     Molecule pred, ref;
-    // Triangle of C-N-O heavy atoms (same elements, different order).
     auto add = [](Molecule& m, const char* el, float x, float y, float z) {
         Atom a;
         a.element = el;
@@ -185,7 +287,7 @@ TEST(PoseBustLoaders, TopologyAssignPermutedOrder) {
     add(pred, "C", 0.f, 0.f, 0.f);
     add(pred, "N", 1.4f, 0.f, 0.f);
     add(pred, "O", 0.f, 1.4f, 0.f);
-    // Reference has O, N, C order with bonds O-N, N-C
+    // Reference has O, N, C order (element sequence differs).
     add(ref, "O", 0.05f, 1.35f, 0.f);
     add(ref, "N", 1.35f, 0.05f, 0.f);
     add(ref, "C", 0.05f, 0.05f, 0.f);
@@ -193,8 +295,56 @@ TEST(PoseBustLoaders, TopologyAssignPermutedOrder) {
     ref.bonds.push_back(Bond{1, 2, 1});
     ref.build_adjacency();
     std::string err;
+    EXPECT_FALSE(assign_topology_from_reference(pred, ref, &err));
+    EXPECT_FALSE(err.empty());
+}
+
+// Identity-order transfer succeeds and copies bonds.
+TEST(PoseBustLoaders, TopologyAssignIdentityOrder) {
+    Molecule pred, ref;
+    auto add = [](Molecule& m, const char* el, float x, float y, float z) {
+        Atom a;
+        a.element = el;
+        a.x = x;
+        a.y = y;
+        a.z = z;
+        a.atomic_num = atomic_number(el);
+        a.is_h = false;
+        a.id = static_cast<int>(m.atoms.size()) + 1;
+        m.atoms.push_back(a);
+    };
+    add(pred, "C", 0.f, 0.f, 0.f);
+    add(pred, "N", 1.4f, 0.f, 0.f);
+    add(pred, "O", 0.f, 1.4f, 0.f);
+    add(ref, "C", 0.05f, 0.05f, 0.f);
+    add(ref, "N", 1.35f, 0.05f, 0.f);
+    add(ref, "O", 0.05f, 1.35f, 0.f);
+    ref.bonds.push_back(Bond{0, 1, 1});
+    ref.bonds.push_back(Bond{0, 2, 1});
+    ref.build_adjacency();
+    std::string err;
     ASSERT_TRUE(assign_topology_from_reference(pred, ref, &err)) << err;
     EXPECT_EQ(pred.bonds.size(), 2u);
+}
+
+// Explicit H must not be orphaned: full atom counts must match.
+TEST(PoseBustLoaders, TopologyRejectsOrphanExplicitH) {
+    Molecule pred, ref;
+    auto add = [](Molecule& m, const char* el, float x, float y, float z, bool is_h) {
+        Atom a;
+        a.element = el;
+        a.x = x; a.y = y; a.z = z;
+        a.atomic_num = atomic_number(el);
+        a.is_h = is_h;
+        a.id = static_cast<int>(m.atoms.size()) + 1;
+        m.atoms.push_back(a);
+    };
+    add(pred, "C", 0.f, 0.f, 0.f, false);
+    add(pred, "H", 1.f, 0.f, 0.f, true);
+    add(ref, "C", 0.f, 0.f, 0.f, false);  // missing H
+    ref.bonds.push_back(Bond{0, 0, 1});
+    std::string err;
+    EXPECT_FALSE(assign_topology_from_reference(pred, ref, &err));
 }
 
 TEST(PoseBustLoaders, CrystalSdf1G9VLoads25Heavy) {

@@ -161,10 +161,9 @@ struct DockingResult {
     int   num_poses{0};               // number of binding modes found
     double wall_time_s{0.0};          // docking wall time
     // ── Success gates (fixed semantics; never remapped by env) ────────────
-    // success_rmsd : RMSD <= 2 Å (Hungarian preferred) && !seed_echo
-    // pb_pass      : selected pose-quality backend passes (RMSD is success_rmsd)
-    //                Default backend = official upstream PoseBusters `bust` CLI.
-    //                NativePoseQC remains available as a diagnostic backend.
+    // success_rmsd : ordered direct rmsd_to_crystal <= 2 Å && !seed_echo
+    //                (rmsd_hungarian is diagnostic only; never sets success)
+    // pb_pass      : official upstream PoseBusters `bust` CLI on elected pose
     // success_pb   : success_rmsd && pb_pass
     // claim_ready  : success_pb && validators complete && protocol_claim_eligible
     //                (validators must cite pose_sha256)
@@ -219,25 +218,28 @@ struct DockingResult {
     bool  stuck{false};               // true when clash_rate > 0.95 and F > 0
     // Native-pose CF diagnostic (scored before the GA via FLEXAIDDS_SCORE_NATIVE)
     float cf_native{0.0f};            // CF at crystal pose; 0.0 when not run
-    // P4: oracle best-of-N over emitted cluster poses (best achievable by selection)
-    float best_cluster_rmsd{-1.0f};   // min Hungarian RMSD across all emitted poses (Å); -1 = not computed/failed
-    int   best_cluster_idx{-1};       // pose index (0-19) achieving best_cluster_rmsd
-    // Election-gap diagnostic: CF (REMARK CF=) of the near-native pose that achieved
-    // best_cluster_rmsd. Paired with best_score (CF scoring proxy of selected rank-0)
-    // it quantifies why a sub-2 Å pose was not elected: cf_best_cluster - best_score
-    // is the CF penalty the selector paid for choosing the false minimum. NaN when
-    // no best-cluster pose was found or its CF could not be parsed.
+    // Conditional scanned-pool ceiling: min ordered direct RMSD over heads/members
+    // actually enumerated by the ceiling scan (not guaranteed any-pose / not full
+    // emission census unless every head+member file is present). Never mutates
+    // elected pose, seed_echo, or pose_source. CSV alias: best_cluster_rmsd.
+    float conditional_scanned_pool_ceiling{-1.0f};
+    float best_cluster_rmsd{-1.0f};   // == conditional_scanned_pool_ceiling (legacy column)
+    int   best_cluster_idx{-1};
     float cf_best_cluster{std::numeric_limits<float>::quiet_NaN()};
-    // Fix 2 (revised): seed-echo flag. true when the elected pose path ends in
-    // "_INI.pdb" — i.e. the crystal-seeded chromosome protected by seed_elitism
-    // was returned as rank-0 rather than a genuine GA-cluster pose.  Path-based
-    // detection is immune to CF drift (old ±0.01 tolerance missed 1SJ0: diff=0.17).
-    // Reported; does NOT change result.success — LP decides whether to exclude.
+    // seed_echo: true when elected path ends in "_INI.pdb". Immutable after set;
+    // pool ceiling must never clear it.
     bool  seed_echo{false};
-    // Pose provenance: "ini_elitism" when the elected path ends in _INI.pdb
-    // (seed_elitism crystal-pose shortcut); "ga_cluster" for a genuine GA pose;
-    // "" when docking did not complete or produced no poses.
+    // Pose provenance: "ini_elitism" | "ga_cluster" | "cf_rank0" | "softbeta" | ""
     std::string pose_source{""};
+    // Separate estimands: generator CF top-1 vs entropy/consensus reranked top-1
+    std::string cf_top1_pose_path;
+    std::string cf_top1_pose_sha256;
+    float       cf_top1_score{std::numeric_limits<float>::quiet_NaN()};
+    float       cf_top1_rmsd{-1.0f};
+    std::string entropy_top1_pose_path;
+    std::string entropy_top1_pose_sha256;
+    float       entropy_top1_score{std::numeric_limits<float>::quiet_NaN()};
+    float       entropy_top1_rmsd{-1.0f};
     // Level-3 H(ω) vibrational-entropy diagnostic. Enabled by default; set
     // FLEXAIDDS_HVIB=0 only for non-claim diagnostic runs. Shannon entropy over ligand ANM eigenvalue spectra of the
     // top-10 emitted cluster reps. See compute_target_hvib() in DatasetRunner.cpp.
