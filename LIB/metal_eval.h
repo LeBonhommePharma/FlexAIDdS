@@ -43,6 +43,7 @@ void metal_eval_get_capabilities(MetalCapabilities* out);
 //   lig_first      – 0-based index of first ligand atom
 //   lig_last       – 0-based index of last ligand atom
 //   perm           – van-der-Waals permeability (FA->permeability)
+//   soft wall    – configure via metal_eval_set_soft_wall (soft_wall.h parity)
 //   h_atom_xyz     – host atom coordinates   [n_atoms × 3, float]
 //   h_atom_type    – host atom type array    [n_atoms, int, 0-based]
 //   h_atom_radius  – host atom radii         [n_atoms, float]
@@ -79,6 +80,10 @@ void metal_eval_batch(MetalEvalCtx* ctx,
 
 // Free all Metal device resources.
 void metal_eval_shutdown(MetalEvalCtx* ctx);
+
+// Soft-core wall config (default cutoff=0.40, k_wal=50). Parity with soft_wall.h.
+void metal_eval_set_soft_wall(MetalEvalCtx* ctx, float soft_wall_cutoff, float k_wal);
+
 
 // ─── Multi-complex batched evaluation (GPU utilization maximization) ──────────
 //

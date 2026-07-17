@@ -6,6 +6,7 @@
 // Apache-2.0 © 2026 Le Bonhomme Pharma
 
 #include "cpu_eval.h"
+#include "soft_wall.h"
 #include <cmath>
 #include <cstdio>
 #include <cstring>
@@ -19,7 +20,6 @@
 // ─── constants (match GPU kernels exactly) ──────────────────────────────────
 static constexpr int   N_EMAT_SAMPLES = 128;
 static constexpr float Rw             = 1.4f;   // water probe radius (Å)
-static constexpr float KWALL_F        = 1.0e6f;
 static constexpr float PI_F           = 3.141592653589793f;
 static constexpr int   MAX_LIG_SAS    = 512;
 
@@ -37,6 +37,8 @@ struct CpuEvalCtx {
     int   lig_first;
     int   lig_last;
     float perm;
+    float soft_wall_cutoff = 0.40f;
+    float k_wal = 50.0f;
 };
 
 // ─── helper: interpolated energy-matrix lookup (matches GPU) ────────────────
@@ -133,12 +135,11 @@ static void eval_one_chromosome(
         const float yval = cpu_get_yval(emat, ti, tj, T, rel_area);
         local_com += yval * rel_area;
 
-        // WAL: repulsive wall energy when r < perm × (rA+rB)
+        // WAL: soft-core k·o² or legacy capped r^-12 (parity with vcfunction)
         const float clash_r = perm * rsum;
         if (r < clash_r) {
-            const float inv_r12  = 1.0f / std::pow(r,       12.0f);
-            const float inv_cr12 = 1.0f / std::pow(clash_r, 12.0f);
-            local_wal += KWALL_F * (inv_r12 - inv_cr12);
+            local_wal += soft_wall_fitness_energy_f(
+                r, clash_r, ctx->soft_wall_cutoff, ctx->k_wal);
         }
     }
 
@@ -183,6 +184,8 @@ CpuEvalCtx* cpu_eval_init(int   n_atoms,
     ctx->lig_first = lig_first;
     ctx->lig_last  = lig_last;
     ctx->perm      = perm;
+    ctx->soft_wall_cutoff = 0.40f;
+    ctx->k_wal            = 50.0f;
 
     ctx->atom_xyz.assign(h_atom_xyz, h_atom_xyz + n_atoms * 3);
     ctx->atom_type.assign(h_atom_type, h_atom_type + n_atoms);
@@ -229,6 +232,13 @@ void cpu_eval_batch(CpuEvalCtx*  ctx,
         eval_one_chromosome(ctx, c, n_genes, h_genes,
                             h_com_out[c], h_wal_out[c], h_sas_out[c]);
     }
+}
+
+void cpu_eval_set_soft_wall(CpuEvalCtx* ctx, float soft_wall_cutoff, float k_wal)
+{
+    if (!ctx) return;
+    ctx->soft_wall_cutoff = soft_wall_cutoff;
+    ctx->k_wal = (k_wal > 0.0f) ? k_wal : 50.0f;
 }
 
 void cpu_eval_shutdown(CpuEvalCtx* ctx)

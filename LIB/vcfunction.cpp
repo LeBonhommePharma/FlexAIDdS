@@ -363,7 +363,7 @@ double vcfunction(FA_Global* FA,VC_Global* VC,atom* atoms,resid* residue, std::v
 			// and the slope V'(r_softcrit) of the r^-12 form at the transition
 			// (no value jump, no kink) and levels off to a finite plateau as
 			// r->0 (parabola maximum sits at r=0). This is in ADDITION to the
-			// WAL_CONTACT_CAP overflow guard below, which still clamps fitness.
+			// soft_wall fitness path (soft_wall.h) when soft_wall_cutoff>0; this block only rewrites raw Ewall for DEE.
 			// softcore_wal / softcore_floor_frac are file-scope statics (hoisted).
 			if(softcore_wal){
 				const double r_softcrit = 0.7 * cr;
@@ -387,7 +387,7 @@ double vcfunction(FA_Global* FA,VC_Global* VC,atom* atoms,resid* residue, std::v
 						Ewall = V_sc + absVp * u
 						        - (absVp / (2.0 * r_softcrit)) * u * u;
 					}
-					// else: d < r_hardfloor — leave Ewall as hard r^-12; WAL_CONTACT_CAP=50 applies below
+					// else: d < r_hardfloor — leave Ewall as hard r^-12 (DEE path; fitness uses soft_wall.h)
 				}
 			}
 
@@ -408,7 +408,7 @@ double vcfunction(FA_Global* FA,VC_Global* VC,atom* atoms,resid* residue, std::v
 			// below still use the raw r^-12 Ewall.
 			double Ewall_fitness;
 			if (FA->soft_wall_cutoff > 0.0f) {
-				Ewall_fitness = soft_wall_fitness_energy(d, cr, FA->soft_wall_cutoff);
+				Ewall_fitness = soft_wall_fitness_energy(d, cr, FA->soft_wall_cutoff, FA->k_wal_stiff);
 			} else {
 				Ewall_fitness = (Ewall > WAL_CONTACT_CAP) ? WAL_CONTACT_CAP : Ewall;
 			}

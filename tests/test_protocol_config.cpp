@@ -114,7 +114,11 @@ struct ClearProtocolEnv {
         , elect_soft_t("FLEXAIDDS_ELECTION_SOFT_T", nullptr)
         , elect_v135("FLEXAIDDS_ELECTION_V135", nullptr)
         , elect_tau("FLEXAIDDS_ELECTION_SCORE_TAU", nullptr)
-        , elect_sing("FLEXAIDDS_ELECTION_INCLUDE_SINGLETONS", nullptr) {}
+        , elect_sing("FLEXAIDDS_ELECTION_INCLUDE_SINGLETONS", nullptr)
+        , soft_wall("FLEXAIDDS_SOFT_WALL", nullptr)
+        , soft_wall_co("FLEXAIDDS_SOFT_WALL_CUTOFF", nullptr)
+        , k_wal("FLEXAIDDS_K_WAL", nullptr)
+        , kwal("FLEXAID_KWAL", nullptr) {}
 
     ScopedEnv seed_base, restarts, parallel, vct_r0, vct_norm, vct_ew,
               sharing, boom, n_elite, shannon, thermo, t_eff, tencom,
@@ -124,7 +128,8 @@ struct ClearProtocolEnv {
               native_o, use_dp, ignore, thermo_csv, hbond, no_sec, bench,
               t_hot, instream, chain, smfree, force_cf, classic, ent_w, div_m,
               elect_shannon, elect_softbeta, elect_legacy_zh, elect_soft_t,
-              elect_v135, elect_tau, elect_sing;
+              elect_v135, elect_tau, elect_sing,
+              soft_wall, soft_wall_co, k_wal, kwal;
 };
 
 }  // namespace
@@ -182,6 +187,11 @@ TEST(ProtocolConfig, DefaultsMatchHistoricalFallbacks) {
     EXPECT_EQ(e.instream_interval, 0);
     EXPECT_FALSE(e.chain_norm);
     EXPECT_FALSE(e.smfree_require_t);
+
+    // Soft-wall uncap provenance
+    EXPECT_FLOAT_EQ(e.soft_wall_cutoff, 0.40f);
+    EXPECT_FLOAT_EQ(e.k_wal, 50.0f);
+    EXPECT_TRUE(e.soft_wall_uncapped);
 
     // Chunk 3 defaults (optional ranking/ablation knobs)
     EXPECT_FALSE(e.n_elite_set);
@@ -509,4 +519,22 @@ TEST(RunReceipt, WriteReceiptFiles) {
     EXPECT_NE(body.find("\"protocol_config\":"), std::string::npos);
 
     fs::remove_all(tmp);
+}
+
+TEST(ProtocolConfig, SoftWallKnobsInReceipt) {
+    ClearProtocolEnv clear;
+    setenv("FLEXAIDDS_SOFT_WALL", "0.0", 1);
+    setenv("FLEXAIDDS_K_WAL", "75", 1);
+    const auto cfg = flexaids::ProtocolConfig::from_env();
+    EXPECT_FLOAT_EQ(cfg.soft_wall_cutoff, 0.0f);
+    EXPECT_FLOAT_EQ(cfg.k_wal, 75.0f);
+    EXPECT_FALSE(cfg.soft_wall_uncapped);
+    const std::string j = cfg.to_json();
+    EXPECT_NE(j.find("soft_wall_cutoff"), std::string::npos);
+    EXPECT_NE(j.find("\"k_wal\""), std::string::npos);
+    EXPECT_NE(j.find("soft_wall_uncapped"), std::string::npos);
+    auto round = flexaids::ProtocolConfig::from_json(j);
+    EXPECT_FLOAT_EQ(round.soft_wall_cutoff, 0.0f);
+    EXPECT_FLOAT_EQ(round.k_wal, 75.0f);
+    EXPECT_FALSE(round.soft_wall_uncapped);
 }

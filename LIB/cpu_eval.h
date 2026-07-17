@@ -10,7 +10,7 @@
 //        a. Compute inter-atomic distance r.
 //        b. Normalised contact area via linear switching function.
 //        c. COM: energy-matrix lookup via linear interpolation.
-//        d. WAL: KWALL × (r⁻¹² − (perm·rAB)⁻¹²) for clashing pairs.
+//        d. WAL: soft_wall_fitness_energy_f (soft-core k·o² or legacy capped r⁻¹²).
 //        e. SAS: subtract contact area from per-ligand-atom SAS counter.
 //   3. SAS energy contribution from remaining exposed surface area.
 //
@@ -68,3 +68,8 @@ void cpu_eval_batch(CpuEvalCtx*  ctx,
 
 // Free CPU evaluation context.
 void cpu_eval_shutdown(CpuEvalCtx* ctx);
+
+// Configure soft-core wall (default soft_wall_cutoff=0.40, k_wal=50).
+// Must match FA->soft_wall_cutoff / FA->k_wal_stiff for parity with vcfunction.
+void cpu_eval_set_soft_wall(CpuEvalCtx* ctx, float soft_wall_cutoff, float k_wal);
+

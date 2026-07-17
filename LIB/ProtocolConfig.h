@@ -116,6 +116,13 @@ struct ProtocolConfig {
 
     // ── Engine init (top.cpp) ────────────────────────────────────────────
     double hbond_weight{-2.5};        ///< FLEXAIDDS_HBOND_WEIGHT
+    /// Soft-core enable threshold (>0 uses uncapped k·o²; 0 = legacy capped r^-12).
+    /// Default 0.40 matches top.cpp / DatasetRunner dock_config.
+    float soft_wall_cutoff{0.40f};    ///< FLEXAIDDS_SOFT_WALL / SOFTWA
+    /// Soft-core stiffness k_wal (uncapped quadratic). FLEXAIDDS_K_WAL / FLEXAID_KWAL.
+    float k_wal{50.0f};
+    /// True when soft_wall_cutoff > 0 (soft-core path uncapped as of soft-wall uncap).
+    bool soft_wall_uncapped{true};
 
     // ── GA engine (gaboom.cpp) ───────────────────────────────────────────
     bool no_sec{false};               ///< FLEXAIDDS_NO_SEC (presence)

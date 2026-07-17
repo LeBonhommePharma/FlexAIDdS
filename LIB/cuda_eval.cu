@@ -50,6 +50,30 @@ static constexpr int   N_EMAT_SAMPLES = 128;   // must match CUDA_EMAT_SAMPLES i
 static constexpr float Rw             = 1.4f;  // water probe radius (Å)
 static constexpr float KWALL_F        = 1.0e6f;
 
+// Soft-wall WAL (device) — matches LIB/soft_wall.h soft_wall_fitness_energy_f.
+__device__ __forceinline__ float soft_wall_wal_device(
+    float d, float cr, float soft_wall_cutoff, float k_wal)
+{
+    if (soft_wall_cutoff > 0.0f) {
+        const float o = cr - d;
+        if (o <= 0.0f) return 0.0f;
+        const float k = (k_wal > 0.0f) ? k_wal : 50.0f;
+        return k * o * o;
+    }
+    if (!(d > 0.0f) || !(cr > 0.0f)) return 50.0f;
+    const float r2  = d * d;
+    const float r4  = r2 * r2;
+    const float r6  = r4 * r2;
+    const float inv_r12  = 1.0f / (r6 * r6);
+    const float cr2 = cr * cr;
+    const float cr4 = cr2 * cr2;
+    const float cr6 = cr4 * cr2;
+    const float inv_cr12 = 1.0f / (cr6 * cr6);
+    const float raw = KWALL_F * (inv_r12 - inv_cr12);
+    return (raw > 50.0f) ? 50.0f : raw;
+}
+
+
 // Maximum ligand atoms handled in shared-memory SAS accumulator.
 // Ligands with more atoms fall back to zero SAS contribution.
 // 512 × 4 bytes = 2 KB shared memory per block (well within GPU limits).
@@ -79,6 +103,8 @@ struct CudaEvalCtx {
     int   lig_first;
     int   lig_last;
     float perm;
+    float soft_wall_cutoff;
+    float k_wal;
 };
 
 // ─── device helper: interpolated energy-matrix lookup ────────────────────────
@@ -107,7 +133,7 @@ __global__ void kernel_eval_cf_full(
     double*       __restrict__ wal_out,        // [pop]
     double*       __restrict__ sas_out,        // [pop]
     int N, int T, int n_genes,
-    int lig_first, int lig_last, float perm)
+    int lig_first, int lig_last, float perm, float soft_wall_cutoff, float k_wal)
 {
     const int chrom_id = blockIdx.x;
     const int tid      = threadIdx.x;
@@ -173,19 +199,10 @@ __global__ void kernel_eval_cf_full(
         const float yval = gpu_get_yval(emat_sampled, ti, tj, T, rel_area);
         local_com += yval * rel_area;
 
-        // WAL: repulsive wall energy when r < perm × (rA+rB).
-        // Uses multiplication chain instead of powf() for ~5× faster r⁻¹².
+        // WAL: soft-core k·o² or legacy capped r^-12 (soft_wall.h parity).
         const float clash_r = perm * rsum;
         if (r < clash_r) {
-            const float r2  = r * r;
-            const float r4  = r2 * r2;
-            const float r6  = r4 * r2;
-            const float inv_r12  = 1.0f / (r6 * r6);
-            const float cr2 = clash_r * clash_r;
-            const float cr4 = cr2 * cr2;
-            const float cr6 = cr4 * cr2;
-            const float inv_cr12 = 1.0f / (cr6 * cr6);
-            local_wal += KWALL_F * (inv_r12 - inv_cr12);
+            local_wal += soft_wall_wal_device(r, clash_r, soft_wall_cutoff, k_wal);
         }
     }
     // Pair loop done; ensure all atomicAdds to lig_sas are visible.
@@ -263,6 +280,8 @@ CudaEvalCtx* cuda_eval_init(int   n_atoms,
     ctx->lig_first = lig_first;
     ctx->lig_last  = lig_last;
     ctx->perm      = perm;
+    ctx->soft_wall_cutoff = 0.40f;
+    ctx->k_wal            = 50.0f;
 
     const size_t xyz_bytes  = (size_t)n_atoms * 3          * sizeof(float);
     const size_t type_bytes = (size_t)n_atoms               * sizeof(int);
@@ -351,7 +370,9 @@ void cuda_eval_batch(CudaEvalCtx*  ctx,
         n_genes,
         ctx->lig_first,
         ctx->lig_last,
-        ctx->perm);
+        ctx->perm,
+        ctx->soft_wall_cutoff,
+        ctx->k_wal);
 
     CUDA_CHECK(cudaGetLastError());
 
@@ -366,6 +387,13 @@ void cuda_eval_batch(CudaEvalCtx*  ctx,
     memcpy(h_com_out, ctx->h_cf_pinned,                   cf_bytes);
     memcpy(h_wal_out, ctx->h_cf_pinned + ctx->max_pop,    cf_bytes);
     memcpy(h_sas_out, ctx->h_cf_pinned + 2 * ctx->max_pop, cf_bytes);
+}
+
+void cuda_eval_set_soft_wall(CudaEvalCtx* ctx, float soft_wall_cutoff, float k_wal)
+{
+    if (!ctx) return;
+    ctx->soft_wall_cutoff = soft_wall_cutoff;
+    ctx->k_wal = (k_wal > 0.0f) ? k_wal : 50.0f;
 }
 
 void cuda_eval_shutdown(CudaEvalCtx* ctx)

@@ -75,6 +75,7 @@ inline json::Value flexaid_default_config() {
             {"use_flexdee",                 V(false)},  // dead-end elimination for sidechains
             {"dee_clash",                   V(0.5)},
             {"soft_wall_cutoff",            V(0.40)},   // overlap soft-core radius (Å); 0 = legacy hard r^-12
+            {"k_wal",                       V(50.0)},   // soft-core stiffness (uncapped quadratic)
             {"intermolecular_clash_ratio",  V(0.0)},    // hard d/(r_i+r_j) exclusion; 0 = disabled
             {"multi_model",                 V(false)},  // CCBM: multi-conformer receptor docking
         })},

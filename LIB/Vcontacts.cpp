@@ -62,7 +62,7 @@ int Vcontacts(FA_Global* FA,atom* atoms,resid* residue,VC_Global* VC,
 			get_contlist4(atoms,atomzero, VC->contlist, FA->atm_cnt_real, rado, VC->dim,
 					       VC->Calc, VC->Calclist, VC->box,VC->ca_rec, VC->ca_index,
 					       clash_value, (double)FA->permeability, FA->soft_wall_cutoff,
-					       FA->intermolecular_clash_ratio,
+					       FA->k_wal_stiff, FA->intermolecular_clash_ratio,
 					       residue, FA->num_atm);
 		}
 		if(*clash_value >= CLASH_THRESHOLD){ return(-2); }
@@ -133,7 +133,7 @@ int calc_region(FA_Global* FA,VC_Global* VC,atom* atoms,int atmcnt,bool non_scor
 		
 		NC = get_contlist4(atoms,atomzero, VC->contlist, atmcnt, rado, VC->dim,
 				   VC->Calc, VC->Calclist, VC->box,VC->ca_rec, VC->ca_index,
-				   NULL, 0.0, 0.0f, 0.0f, NULL, NULL);
+				   NULL, 0.0, 0.0f, 0.0f, 0.0f, NULL, NULL);
 		
 		// invalid write/read when NC = 0
 		// because planeA is negative subscript
@@ -1822,7 +1822,8 @@ int get_contlist4(atom* atoms,int atomzero, contactlist contlist[],
                   const int* Calclist, const atomindex* box, 
                   const ca_struct* ca_rec,const int* ca_index,
 		  double* clash_value, double permea, float soft_wall_cutoff,
-		  float intermolecular_clash_ratio,
+		  float k_wal_stiff,
+  float intermolecular_clash_ratio,
 		  resid* residue, int* num_atm) 
 {
 	double sqrdist;             // distance squared between two points
@@ -1896,7 +1897,7 @@ int get_contlist4(atom* atoms,int atomzero, contactlist contlist[],
 						contlist[NC].dist, posebusters_radius_sum,
 						intermolecular_clash_ratio);
 				if(hard_intermolecular_clash){
-					// Do not let capped soft-wall energy be outweighed by attraction.
+					// Hard intermolecular clash: force reject regardless of soft-wall energy.
 					*clash_value = CLASH_THRESHOLD;
 				}else if(contlist[NC].dist < cand_clashdist){
 					int fatm = residue[Calc[atomzero].atom->ofres].fatm[0];
@@ -1904,8 +1905,9 @@ int get_contlist4(atom* atoms,int atomzero, contactlist contlist[],
 					if(!intramolecular || rb == NULL ||
 					   rb[num_atm[Calc[atomzero].atom->number]-fatm][num_atm[Calc[cand_atomj].atom->number]-fatm] < 0){
 						*clash_value += soft_wall_fitness_energy(contlist[NC].dist,
-						                                       cand_clashdist,
-						                                       soft_wall_cutoff);
+                                       cand_clashdist,
+                                       soft_wall_cutoff,
+                                       k_wal_stiff);
 					}
 				}
 				Calc[atomzero].done = 'Y';

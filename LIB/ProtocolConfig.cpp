@@ -268,6 +268,18 @@ ProtocolConfig ProtocolConfig::from_env() {
     if (auto v = env_opt_double("FLEXAIDDS_HBOND_WEIGHT")) {
         cfg.hbond_weight = *v;
     }
+    if (auto v = env_opt_double("FLEXAIDDS_SOFT_WALL")) {
+        cfg.soft_wall_cutoff = static_cast<float>(*v);
+    } else if (auto v = env_opt_double("FLEXAIDDS_SOFT_WALL_CUTOFF")) {
+        cfg.soft_wall_cutoff = static_cast<float>(*v);
+    }
+    if (auto v = env_opt_double("FLEXAIDDS_K_WAL")) {
+        if (*v > 0.0) cfg.k_wal = static_cast<float>(*v);
+    } else if (auto v = env_opt_double("FLEXAID_KWAL")) {
+        if (*v > 0.0) cfg.k_wal = static_cast<float>(*v);
+    }
+    cfg.soft_wall_uncapped = (cfg.soft_wall_cutoff > 0.0f);
+
 
     // gaboom / GA
     cfg.no_sec = env_present_any("FLEXAIDDS_NO_SEC");
@@ -380,7 +392,10 @@ std::string ProtocolConfig::to_json() const {
     o << "\"t_hot\":" << t_hot << ',';
     o << "\"instream_interval\":" << instream_interval << ',';
     json_bool(o, "chain_norm", chain_norm);
-    json_bool(o, "smfree_require_t", smfree_require_t, /*trailing_comma=*/false);
+    json_bool(o, "smfree_require_t", smfree_require_t);
+    o << "\"soft_wall_cutoff\":" << soft_wall_cutoff << ',';
+    o << "\"k_wal\":" << k_wal << ',';
+    json_bool(o, "soft_wall_uncapped", soft_wall_uncapped, /*trailing_comma=*/false);
     o << '}';
     return o.str();
 }
@@ -508,6 +523,14 @@ ProtocolConfig ProtocolConfig::from_json(const std::string& json_text) {
         cfg.chain_norm = root["chain_norm"].as_bool(false);
     if (!root["smfree_require_t"].is_null())
         cfg.smfree_require_t = root["smfree_require_t"].as_bool(false);
+    if (!root["soft_wall_cutoff"].is_null())
+        cfg.soft_wall_cutoff = root["soft_wall_cutoff"].as_float(0.40f);
+    if (!root["k_wal"].is_null())
+        cfg.k_wal = root["k_wal"].as_float(50.0f);
+    if (!root["soft_wall_uncapped"].is_null())
+        cfg.soft_wall_uncapped = root["soft_wall_uncapped"].as_bool(true);
+    else
+        cfg.soft_wall_uncapped = (cfg.soft_wall_cutoff > 0.0f);
 
     return cfg;
 }

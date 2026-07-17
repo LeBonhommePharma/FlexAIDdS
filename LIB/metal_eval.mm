@@ -76,6 +76,21 @@ static void tg_atomic_sub_float(threadgroup float* ptr, float val)
 }
 
 // Params packed into one buffer for convenience.
+// Soft-wall WAL — matches LIB/soft_wall.h soft_wall_fitness_energy_f
+inline float soft_wall_wal_msl(float d, float cr, float soft_wall_cutoff, float k_wal) {
+    if (soft_wall_cutoff > 0.0f) {
+        const float o = cr - d;
+        if (o <= 0.0f) return 0.0f;
+        const float k = (k_wal > 0.0f) ? k_wal : 50.0f;
+        return k * o * o;
+    }
+    if (!(d > 0.0f) || !(cr > 0.0f)) return 50.0f;
+    const float inv_r12  = 1.0f / pow(d, 12.0f);
+    const float inv_cr12 = 1.0f / pow(cr, 12.0f);
+    const float raw = 1.0e6f * (inv_r12 - inv_cr12);
+    return (raw > 50.0f) ? 50.0f : raw;
+}
+
 struct EvalParams {
     int   N;           // total atom count
     int   T;           // atom type count
@@ -83,8 +98,8 @@ struct EvalParams {
     int   lig_first;
     int   lig_last;
     float perm;
-    int   pad0;
-    int   pad1;
+    float soft_wall_cutoff;
+    float k_wal;
 };
 
 // ─── Multi-complex kernel ─────────────────────────────────────────────────────
@@ -111,6 +126,8 @@ struct MultiParams {
     int   n_genes;
     int   T;              // n_types (energy matrix dimension)
     float perm;
+    float soft_wall_cutoff;
+    float k_wal;
 };
 
 kernel void kernel_eval_cf_multi(
@@ -190,9 +207,7 @@ kernel void kernel_eval_cf_multi(
 
         const float clash_r = mp.perm * rsum;
         if (r < clash_r && r > 0.0f) {
-            const float inv_r12  = 1.0f / pow(r,       12.0f);
-            const float inv_cr12 = 1.0f / pow(clash_r, 12.0f);
-            local_wal += 1.0e6f * (inv_r12 - inv_cr12);
+            local_wal += soft_wall_wal_msl(r, clash_r, mp.soft_wall_cutoff, mp.k_wal);
         }
     }
     threadgroup_barrier(mem_flags::mem_threadgroup);
@@ -293,12 +308,10 @@ kernel void kernel_eval_cf_full(
         const float yval = gpu_get_yval(emat_sampled, ti, tj, p.T, rel_area);
         local_com += yval * rel_area;
 
-        // WAL: repulsive wall energy when r < perm * (rA+rB).
+        // WAL: soft-core k·o² or legacy capped r^-12 (soft_wall.h parity).
         const float clash_r = p.perm * rsum;
         if (r < clash_r && r > 0.0f) {
-            const float inv_r12  = 1.0f / pow(r,       12.0f);
-            const float inv_cr12 = 1.0f / pow(clash_r, 12.0f);
-            local_wal += 1.0e6f * (inv_r12 - inv_cr12);
+            local_wal += soft_wall_wal_msl(r, clash_r, p.soft_wall_cutoff, p.k_wal);
         }
     }
     threadgroup_barrier(mem_flags::mem_threadgroup);
@@ -351,6 +364,8 @@ struct MetalEvalCtx {
     int lig_first;
     int lig_last;
     float perm;
+    float soft_wall_cutoff;
+    float k_wal;
 };
 
 // ─── host API ────────────────────────────────────────────────────────────────
@@ -417,6 +432,8 @@ MetalEvalCtx* metal_eval_init(int   n_atoms,
     ctx->lig_first = lig_first;
     ctx->lig_last  = lig_last;
     ctx->perm      = perm;
+    ctx->soft_wall_cutoff = 0.40f;
+    ctx->k_wal            = 50.0f;
 
     // Device & queue.
     ctx->device = MTLCreateSystemDefaultDevice();
@@ -512,14 +529,16 @@ void metal_eval_batch(MetalEvalCtx* ctx,
         for (int g = 0; g < n_genes; ++g)
             genes_f[c * n_genes + g] = (float)h_genes[c * n_genes + g];
 
-    // Build EvalParams.
+    // Build EvalParams (layout must match MSL EvalParams).
     struct EvalParams {
         int N, T, n_genes, lig_first, lig_last;
         float perm;
-        int pad0, pad1;
+        float soft_wall_cutoff;
+        float k_wal;
     };
     EvalParams ep = { ctx->n_atoms, ctx->n_types, n_genes,
-                      ctx->lig_first, ctx->lig_last, ctx->perm, 0, 0 };
+                      ctx->lig_first, ctx->lig_last, ctx->perm,
+                      ctx->soft_wall_cutoff, ctx->k_wal };
 
     id<MTLBuffer> buf_params = [ctx->device
         newBufferWithBytes:&ep
@@ -567,6 +586,13 @@ void metal_eval_batch(MetalEvalCtx* ctx,
         h_wal_out[c] = (double)wal_f[c];
         h_sas_out[c] = (double)sas_f[c];
     }
+}
+
+void metal_eval_set_soft_wall(MetalEvalCtx* ctx, float soft_wall_cutoff, float k_wal)
+{
+    if (!ctx) return;
+    ctx->soft_wall_cutoff = soft_wall_cutoff;
+    ctx->k_wal = (k_wal > 0.0f) ? k_wal : 50.0f;
 }
 
 void metal_eval_shutdown(MetalEvalCtx* ctx)
@@ -674,8 +700,15 @@ void metal_eval_batch_multi(MetalEvalCtx*              ctx,
 
     // MultiParams — all complexes must share the same n_genes, n_types, perm
     // (valid for same energy matrix and GA config across a benchmark dataset).
-    struct MultiParams { int pop_size, n_genes, T; float perm; };
-    MultiParams mp = { pop_size, n_genes, entries[0].n_types, entries[0].perm };
+    struct MultiParams {
+        int pop_size, n_genes, T;
+        float perm;
+        float soft_wall_cutoff;
+        float k_wal;
+    };
+    // Wall knobs: all complexes share soft-core config (dataset-uniform).
+    MultiParams mp = { pop_size, n_genes, entries[0].n_types, entries[0].perm,
+                       0.40f, 50.0f };
     id<MTLBuffer> buf_mp    = mk(&mp, sizeof(mp));
     id<MTLBuffer> buf_descs = mk(descs.data(), descs.size() * sizeof(ComplexDescHost));
 

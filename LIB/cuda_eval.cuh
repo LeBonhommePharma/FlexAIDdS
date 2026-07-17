@@ -7,7 +7,7 @@
 // Full-fidelity scoring (vs. the previous single-scalar energy table):
 //   – Energy matrix sampled at N_CUDA_EMAT_SAMPLES points per type-pair
 //     and interpolated on-device (gpu_get_yval).
-//   – WAL (clash) term: KWALL × (r⁻¹² − (perm·rAB)⁻¹²).
+//   – WAL (clash) term: soft-core k·o² or legacy capped r⁻¹² (soft_wall.h parity).
 //   – SAS contribution: per-ligand-atom remaining exposed surface area,
 //     accumulated via shared-memory atomic-add across protein contacts.
 //   – COM term: energy-matrix yval × normalised contact area.
@@ -73,5 +73,9 @@ void cuda_eval_batch(CudaEvalCtx*  ctx,
 
 // Free all device memory.
 void cuda_eval_shutdown(CudaEvalCtx* ctx);
+
+// Soft-core wall config (default cutoff=0.40, k_wal=50). Parity with soft_wall.h.
+void cuda_eval_set_soft_wall(CudaEvalCtx* ctx, float soft_wall_cutoff, float k_wal);
+
 
 #endif  // FLEXAIDS_USE_CUDA

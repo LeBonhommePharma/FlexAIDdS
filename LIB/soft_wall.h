@@ -1,7 +1,22 @@
-// soft_wall.h — Shared overlap-based soft-core clash potential (v43)
+// soft_wall.h — Shared overlap-based soft-core clash potential
 //
-// Used by Vcontacts pre-filter (get_contlist4 clash_value) and vcfunction
-// fitness WAL accumulation so both paths agree on clash tallies.
+// Used by Vcontacts pre-filter (get_contlist4 clash_value), vcfunction
+// fitness WAL accumulation, and CPU/CUDA/Metal batch eval paths so clash
+// tallies agree across backends.
+//
+// Soft-core (soft_wall_cutoff > 0):
+//   E = k_wal · max(o, 0)²   with o = cr − d
+//   Uncapped pure quadratic — C¹ (actually C∞) for o > 0, E'(0+)=0.
+//   Restores GA gradient for deep burials (o ≳ 1 Å) that the old
+//   min(E, WAL_CONTACT_CAP) path flattened to a dead zone.
+//   soft_wall_cutoff only selects soft-core vs legacy (value > 0 enables).
+//
+// Legacy (soft_wall_cutoff == 0):
+//   min(KWALL · (d⁻¹² − cr⁻¹²), WAL_CONTACT_CAP)
+//
+// Protocol / claim note: default soft_wall_cutoff=0.40 means production
+// CF/scoring-proxy paths use soft-core. Deep-clash CF ranking differs from
+// pre-uncap soft-core campaigns (o ≳ 1 Å). Stamp k_wal + cutoff in receipts.
 //
 // Copyright 2024-2026 Louis-Philippe Morency / NRGlab, Universite de Montreal
 // SPDX-License-Identifier: Apache-2.0
@@ -12,32 +27,35 @@
 #include <string_view>
 
 // WAL_CONTACT_CAP applies ONLY to the legacy capped r^-12 branch
-// (soft_wall_cutoff == 0.0).  It is NOT applied to the soft-core overlap
-// branch below — capping that branch flattens the wall past ~1 A of
-// overlap, zeroing the fitness gradient and letting the GA bury the ligand
-// for unbounded attractive (CF.com) gain.  See tests/test_soft_wall.cpp
-// for the regression this guards against.
+// (soft_wall_cutoff == 0.0). Soft-core is intentionally uncapped.
 constexpr double WAL_CONTACT_CAP = 50.0;
 
-// Soft-core wall stiffness (k_wal).  Decoupled from WAL_CONTACT_CAP: this is
-// a curvature parameter (energy grows as k_wal * overlap^2), not a ceiling.
-// Overridable via FLEXAID_KWAL for calibration sweeps; defaults to 50.0
-// (numerically the same magnitude as the legacy cap, but semantically
-// unrelated — the soft-core branch is uncapped).
+// Soft-core wall stiffness (k_wal). Curvature parameter: energy grows as
+// k_wal * overlap^2. Overridable via FLEXAID_KWAL / FLEXAIDDS_K_WAL env
+// (read each call — no process-static cache) or FA->k_wal_stiff.
 constexpr double K_WAL_STIFF_DEFAULT = 50.0;
 
-inline double k_wal_stiff()
+/// Resolve k_wal from explicit value, else FLEXAID_KWAL / FLEXAIDDS_K_WAL, else default.
+inline double resolve_k_wal(double k_explicit = 0.0) noexcept
 {
-	static const double k = []() -> double {
-		const char* env = std::getenv("FLEXAID_KWAL");
-		if (env) {
-			char* end = nullptr;
-			const double v = std::strtod(env, &end);
-			if (end != env && v > 0.0) return v;
-		}
-		return K_WAL_STIFF_DEFAULT;
-	}();
-	return k;
+	if (k_explicit > 0.0 && std::isfinite(k_explicit))
+		return k_explicit;
+	for (const char* name : {"FLEXAIDDS_K_WAL", "FLEXAID_KWAL"}) {
+		const char* env = std::getenv(name);
+		if (!env || !env[0])
+			continue;
+		char* end = nullptr;
+		const double v = std::strtod(env, &end);
+		if (end != env && v > 0.0 && std::isfinite(v))
+			return v;
+	}
+	return K_WAL_STIFF_DEFAULT;
+}
+
+/// Deprecated alias: prefer resolve_k_wal / explicit FA->k_wal_stiff.
+inline double k_wal_stiff() noexcept
+{
+	return resolve_k_wal(0.0);
 }
 
 inline bool violates_relative_vdw_cutoff(double distance,
@@ -96,33 +114,48 @@ inline double wall_energy_raw_r12(double d, double cr)
 }
 
 // Fitness wall energy for clash tally / CF.wal accumulation.
-// soft_wall_cutoff = 0.0 recovers legacy capped r^-12 (per-contact ceiling).
-// soft_wall_cutoff > 0 applies the v43 overlap Hermite cubic ramp:
-//   o <= o_soft: E = k_wal * o_soft^2 * t^2 * (3 - 2t),  t = o/o_soft
-//   o >  o_soft: E = k_wal * o_soft^2 + k_wal * (2*o_soft*delta + delta^2)
-// Soft-core branch is intentionally UNCAPPED (see k_wal_stiff / tests).
-inline double soft_wall_fitness_energy(double d, double cr, float soft_wall_cutoff)
+//
+// soft_wall_cutoff > 0: uncapped soft-core E = k_wal * max(cr-d, 0)^2
+//   (C¹ at o=0; pure quadratic — matches deep k·o² value and slope everywhere)
+// soft_wall_cutoff == 0: legacy capped r^-12
+//
+// k_wal_explicit <= 0 → resolve from env / default (see resolve_k_wal).
+inline double soft_wall_fitness_energy(double d, double cr, float soft_wall_cutoff,
+                                       double k_wal_explicit = 0.0)
 {
 	if (soft_wall_cutoff > 0.0f) {
 		const double o = cr - d;
 		if (o <= 0.0) return 0.0;
-		const double o_soft = static_cast<double>(soft_wall_cutoff);
-		const double k_wal  = k_wal_stiff();
-		if (o <= o_soft) {
-			const double t = o / o_soft;
-			return k_wal * o_soft * o_soft * t * t * (3.0 - 2.0 * t);
-		}
-		// Deep region: base + k_wal*(2*o_soft*delta + delta^2) is the
-		// expanded form of k_wal*o^2 (delta = o - o_soft), kept in this
-		// shifted form for numerical continuity with the ramp at o_soft.
-		// UNCAPPED — the prior min(E, WAL_CONTACT_CAP) here flattened the
-		// wall past ~1 A overlap and killed the GA's gradient away from
-		// buried poses.
-		const double base  = k_wal * o_soft * o_soft;
-		const double delta = o - o_soft;
-		return base + k_wal * (2.0 * o_soft * delta + delta * delta);
+		const double k_wal = resolve_k_wal(k_wal_explicit);
+		return k_wal * o * o;
 	}
 
 	const double Ewall_raw = wall_energy_raw_r12(d, cr);
 	return (Ewall_raw > WAL_CONTACT_CAP) ? WAL_CONTACT_CAP : Ewall_raw;
+}
+
+/// Float variant for CPU/GPU batch kernels (same physics).
+inline float soft_wall_fitness_energy_f(float d, float cr, float soft_wall_cutoff,
+                                        float k_wal)
+{
+	if (soft_wall_cutoff > 0.0f) {
+		const float o = cr - d;
+		if (o <= 0.0f) return 0.0f;
+		const float k = (k_wal > 0.0f) ? k_wal : static_cast<float>(K_WAL_STIFF_DEFAULT);
+		return k * o * o;
+	}
+	// Legacy capped r^-12
+	constexpr float KWALL_F = 1.0e6f;
+	constexpr float CAP = static_cast<float>(WAL_CONTACT_CAP);
+	if (!(d > 0.0f) || !(cr > 0.0f)) return CAP;
+	const float d2 = d * d;
+	const float d4 = d2 * d2;
+	const float d6 = d4 * d2;
+	const float inv_d12 = 1.0f / (d6 * d6);
+	const float cr2 = cr * cr;
+	const float cr4 = cr2 * cr2;
+	const float cr6 = cr4 * cr2;
+	const float inv_cr12 = 1.0f / (cr6 * cr6);
+	const float raw = KWALL_F * (inv_d12 - inv_cr12);
+	return (raw > CAP) ? CAP : raw;
 }

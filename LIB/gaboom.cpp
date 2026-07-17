@@ -2286,6 +2286,7 @@ void calculate_fitness(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* chr
 
 		std::vector<double> h_genes = pack_genes_batch(n_genes);
 		std::vector<double> h_com(pop_size), h_wal(pop_size), h_sas(pop_size);
+		cuda_eval_set_soft_wall(handle.ctx, FA->soft_wall_cutoff, FA->k_wal_stiff);
 		cuda_eval_batch(handle.ctx, pop_size, n_genes, h_genes.data(),
 		                h_com.data(), h_wal.data(), h_sas.data());
 		unpack_gpu_results(h_com, h_wal, h_sas);
@@ -2326,6 +2327,7 @@ void calculate_fitness(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* chr
 
 			if (batch_n <= 1) {
 				// Single-complex fast path — no batching overhead.
+				metal_eval_set_soft_wall(handle.ctx, FA->soft_wall_cutoff, FA->k_wal_stiff);
 				metal_eval_batch(handle.ctx, pop_size, n_genes, h_genes.data(),
 				                 h_com.data(), h_wal.data(), h_sas.data());
 			} else {

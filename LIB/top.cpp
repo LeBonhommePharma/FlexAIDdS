@@ -509,9 +509,24 @@ int main(int argc, char **argv){
 	FA->force_interaction=0;
 	FA->interaction_factor=5.0;
 	// Classic CONFIG path never set soft_wall_cutoff (stayed 0 → hard r^-12 only).
-	// Default matches JSON/DatasetRunner (0.40 Å) so CF.wal competes with CF.com;
-	// override with SOFTWA 0.0 in CONFIG.inp for pure legacy hard wall.
+	// Default matches JSON/DatasetRunner (0.40 A). Soft-core is uncapped k·o²
+	// (soft_wall.h). Override with SOFTWA 0.0 for pure legacy hard wall.
 	FA->soft_wall_cutoff = 0.40f;
+	FA->k_wal_stiff = 50.0f;
+	// Env override for calibration (also readable via resolve_k_wal).
+	if (const char* e = std::getenv("FLEXAIDDS_K_WAL")) {
+		char* end = nullptr;
+		const double v = std::strtod(e, &end);
+		if (end != e && v > 0.0) FA->k_wal_stiff = static_cast<float>(v);
+	} else if (const char* e = std::getenv("FLEXAID_KWAL")) {
+		char* end = nullptr;
+		const double v = std::strtod(e, &end);
+		if (end != e && v > 0.0) FA->k_wal_stiff = static_cast<float>(v);
+	}
+	fprintf(stderr,
+	        "[soft_wall] soft_wall_cutoff=%.3f A  k_wal=%.3f  soft_wall_uncapped=%s\n",
+	        FA->soft_wall_cutoff, FA->k_wal_stiff,
+	        (FA->soft_wall_cutoff > 0.0f) ? "true" : "false (legacy capped r^-12)");
 	FA->atm_cnt=0;
 	FA->atm_cnt_real=0;
 	FA->res_cnt=0;
