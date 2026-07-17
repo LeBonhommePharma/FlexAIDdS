@@ -206,7 +206,13 @@ cfstr ic2cf(FA_Global* FA,VC_Global* VC,atom* atoms,resid* residue,
 
 	/* rebuild cartesian coordinates of optimized residues*/
 	for(i=0;i<FA->nors;i++){ //number of optimized residues
-		buildcc(FA,atoms,FA->nmov[i],FA->mov[i]);
+		if (!buildcc(FA,atoms,FA->nmov[i],FA->mov[i])) {
+			// Explicit reconstruction failure: do not score with stale coords.
+			cfstr cf_bad{};
+			cf_bad.wal = 1.0e12;
+			cf_bad.rclash = 1;
+			return cf_bad;
+		}
 	}
 
 	// Out-of-bounds penalty: if any moved atom lands >200Å beyond the protein

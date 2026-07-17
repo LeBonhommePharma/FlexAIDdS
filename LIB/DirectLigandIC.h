@@ -150,12 +150,25 @@ inline double frame_quality(const atom* atoms, int first_atom,
     return std::sqrt(cx * cx + cy * cy + cz * cz) / (un * vn);
 }
 
-inline std::array<int, 3> choose_gpa(const atom* atoms,
-                                     int first_atom,
-                                     const BondGraph& graph,
-                                     const std::vector<bool>& is_heavy) {
-    const int last = std::max(0, static_cast<int>(graph.size()) - 1);
-    std::array<int, 3> best{{0, std::min(1, last), std::min(2, last)}};
+// Returns false when fewer than 3 heavy atoms or every triple is collinear.
+// Never returns duplicate/default indices as a silent success.
+inline bool choose_gpa(const atom* atoms,
+                       int first_atom,
+                       const BondGraph& graph,
+                       const std::vector<bool>& is_heavy,
+                       std::array<int, 3>& best) {
+    std::vector<int> heavy;
+    for (int i = 0; i < static_cast<int>(graph.size()); ++i)
+        if (is_heavy[i]) heavy.push_back(i);
+    if (heavy.size() < 3) {
+        std::fprintf(stderr,
+            "ERROR [DIRECT-IC]: need ≥3 heavy atoms for GPA (have %zu)\n",
+            heavy.size());
+        best = {{-1, -1, -1}};
+        return false;
+    }
+
+    best = {{heavy[0], heavy[1], heavy[2]}};
     double best_score = -1.0;
 
     for (int center = 0; center < static_cast<int>(graph.size()); ++center) {
@@ -186,44 +199,45 @@ inline std::array<int, 3> choose_gpa(const atom* atoms,
             }
         }
     }
-    // Reject degenerate fallback (duplicate / collinear GPA). Prefer first
-    // non-collinear heavy triple if choose_gpa found nothing usable.
-    if (best_score < 0.0 || frame_quality(atoms, first_atom, best[0], best[1], best[2]) < 1e-3) {
-        std::vector<int> heavy;
-        for (int i = 0; i < static_cast<int>(graph.size()); ++i)
-            if (is_heavy[i]) heavy.push_back(i);
-        bool found = false;
-        for (size_t i = 0; i < heavy.size() && !found; ++i) {
-            for (size_t j = i + 1; j < heavy.size() && !found; ++j) {
-                for (size_t k = j + 1; k < heavy.size() && !found; ++k) {
-                    const double q = frame_quality(atoms, first_atom,
-                                                   heavy[i], heavy[j], heavy[k]);
-                    if (q >= 1e-3) {
-                        best = {{heavy[i], heavy[j], heavy[k]}};
-                        found = true;
-                    }
+    if (best_score >= 0.0 &&
+        frame_quality(atoms, first_atom, best[0], best[1], best[2]) >= 1e-3 &&
+        best[0] != best[1] && best[1] != best[2] && best[0] != best[2]) {
+        return true;
+    }
+
+    // Unbonded / collinear bonded frames: any non-collinear heavy triple.
+    for (size_t i = 0; i < heavy.size(); ++i) {
+        for (size_t j = i + 1; j < heavy.size(); ++j) {
+            for (size_t k = j + 1; k < heavy.size(); ++k) {
+                const double q = frame_quality(atoms, first_atom,
+                                               heavy[i], heavy[j], heavy[k]);
+                if (q >= 1e-3) {
+                    best = {{heavy[i], heavy[j], heavy[k]}};
+                    return true;
                 }
             }
         }
-        if (!found) {
-            std::fprintf(stderr,
-                "WARNING [DIRECT-IC]: no non-collinear GPA triple; "
-                "IC rebuild may be singular\n");
-        }
     }
-    return best;
+
+    std::fprintf(stderr,
+        "ERROR [DIRECT-IC]: all heavy-atom GPA triples collinear — reject input\n");
+    best = {{-1, -1, -1}};
+    return false;
 }
 
-inline ReconstructionTree build_tree(atom* atoms,
-                                     resid& ligand,
-                                     int first_atom,
-                                     const BondGraph& graph,
-                                     const std::vector<bool>& is_heavy) {
-    ReconstructionTree tree;
+// Returns false if GPA selection fails (ligand load must abort).
+inline bool build_tree(atom* atoms,
+                       resid& ligand,
+                       int first_atom,
+                       const BondGraph& graph,
+                       const std::vector<bool>& is_heavy,
+                       ReconstructionTree& tree) {
     const int n = static_cast<int>(graph.size());
     tree.parent.assign(n, -1);
     tree.visited.assign(n, false);
-    tree.gpa = choose_gpa(atoms, first_atom, graph, is_heavy);
+    if (!choose_gpa(atoms, first_atom, graph, is_heavy, tree.gpa)) {
+        return false;
+    }
 
     if (!ligand.gpa) {
         ligand.gpa = static_cast<int*>(std::malloc(3 * sizeof(int)));
@@ -313,7 +327,7 @@ inline ReconstructionTree build_tree(atom* atoms,
                  atoms[ligand.gpa[1]].number,
                  atoms[ligand.gpa[2]].number,
                  g0 + 1, g1 + 1, g2 + 1);
-    return tree;
+    return true;
 }
 
 inline int configure_rotatable_bonds(atom* atoms,

@@ -5,6 +5,7 @@
 
 #include "ProcessLigand.h"
 #include "SmilesParser.h"
+#include "CoordBuilder.h"
 
 #include <algorithm>
 #include <cctype>
@@ -427,7 +428,8 @@ StageResult ProcessLigand::stage_typing(BonMol& mol) {
 // ---------------------------------------------------------------------------
 
 StageResult ProcessLigand::stage_write(const ProcessOptions& opts, const BonMol& mol,
-                                        writer::FlexAIDWriterResult& wr) {
+                                        writer::FlexAIDWriterResult& wr,
+                                        bool enforce_geometry_invariants) {
     StageResult r;
     r.stage = "write";
 
@@ -437,7 +439,7 @@ StageResult ProcessLigand::stage_write(const ProcessOptions& opts, const BonMol&
     }
 
     writer::FlexAIDWriter fw;
-    wr = fw.write(mol, opts.lig_name);
+    wr = fw.write(mol, opts.lig_name, enforce_geometry_invariants);
 
     if (!wr.success) {
         r.ok      = false;
@@ -490,39 +492,67 @@ ProcessResult ProcessLigand::run(const ProcessOptions& opts) {
     result.stage_results.push_back(s1);
     if (!s1.ok) { result.error = s1.message; return result; }
 
-    // Stage 2: Validate
-    log("Stage 2: validating structure");
-    StageResult s2 = stage_validate(opts, mol, result.valence_result);
+    // Rings + aromaticity BEFORE valence: aromatic bond-order sums (e.g. benzene
+    // C with BOS≈5 under kekule/aromatic flags) only validate after perception.
+    log("Stage 2: ring perception");
+    StageResult s2 = stage_rings(mol, result.ring_result);
     result.stage_results.push_back(s2);
     if (!s2.ok) { result.error = s2.message; return result; }
 
-    // Stage 3: Ring perception
-    log("Stage 3: ring perception");
-    StageResult s3 = stage_rings(mol, result.ring_result);
+    log("Stage 3: aromaticity");
+    StageResult s3 = stage_aromaticity(mol, result.arom_result);
     result.stage_results.push_back(s3);
     if (!s3.ok) { result.error = s3.message; return result; }
 
-    // Stage 4: Aromaticity
-    log("Stage 4: aromaticity");
-    StageResult s4 = stage_aromaticity(mol, result.arom_result);
+    // Recompute implicit H / MW after aromatic bond orders are known.
+    for (int i = 0; i < mol.num_atoms(); ++i) {
+        if (mol.atoms[i].element != Element::H)
+            mol.atoms[i].implicit_h_count = valence::compute_implicit_h(mol, i);
+    }
+    mol.finalize();
+
+    log("Stage 4: validating structure");
+    StageResult s4 = stage_validate(opts, mol, result.valence_result);
     result.stage_results.push_back(s4);
     if (!s4.ok) { result.error = s4.message; return result; }
 
-    // Stage 5: Rotatable bonds
     log("Stage 5: rotatable bonds");
     StageResult s5 = stage_rotatable(mol, result.rot_result);
     result.stage_results.push_back(s5);
     if (!s5.ok) { result.error = s5.message; return result; }
 
-    // Stage 6: SYBYL typing
     log("Stage 6: SYBYL typing");
     StageResult s6 = stage_typing(mol);
     result.stage_results.push_back(s6);
     if (!s6.ok) { result.error = s6.message; return result; }
 
-    // Stage 7: Write
+    // SMILES has no input coordinates — generate crude 3D before writer/IC.
+    // SDF/MOL2 already carry Cartesian coords. CoordBuilder is imperfect for
+    // rings (audit §8); skip writer geometry fail-closed for builder frames.
+    bool used_coord_builder = false;
+    {
+        bool any_3d = false;
+        for (int i = 0; i < mol.num_atoms(); ++i) {
+            if (mol.has_coords(i)) { any_3d = true; break; }
+        }
+        if (!any_3d && mol.num_atoms() > 0) {
+            log("Stage 6b: CoordBuilder (SMILES 3D)");
+            if (!build_3d_coords(mol)) {
+                result.error = "CoordBuilder failed to generate 3D coordinates";
+                StageResult sc;
+                sc.stage = "coord_builder";
+                sc.ok = false;
+                sc.message = result.error;
+                result.stage_results.push_back(sc);
+                return result;
+            }
+            used_coord_builder = true;
+        }
+    }
+
     log("Stage 7: writing output");
-    StageResult s7 = stage_write(opts, mol, result.writer_result);
+    StageResult s7 = stage_write(opts, mol, result.writer_result,
+                                 /*enforce_geometry_invariants=*/!used_coord_builder);
     result.stage_results.push_back(s7);
     if (!s7.ok) { result.error = s7.message; return result; }
 

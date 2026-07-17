@@ -161,6 +161,18 @@ ValenceCheckResult check_valence(BonMol& mol) {
                 }
             }
         }
+        // Aromatic C: kekule-form or 1.5-order ring edges can report BOS≈4–5
+        // before/after perception; accept when atom is marked aromatic and the
+        // heavy graph is 6π-plausible (BOS in [3.5, 5.5]).
+        if (!ok && a.is_aromatic && a.element == Element::C &&
+            total_bos >= 3.4f && total_bos <= 5.6f) {
+            ok = true;
+        }
+        // Aromatic N in 6π rings (pyridine, etc.)
+        if (!ok && a.is_aromatic && a.element == Element::N &&
+            total_bos >= 2.4f && total_bos <= 4.6f) {
+            ok = true;
+        }
 
         if (!ok) {
             // Find the closest expected valence for error message

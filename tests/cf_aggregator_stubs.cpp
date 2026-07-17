@@ -28,7 +28,7 @@ void TorsionalENM::build_from_ligand(const atom*, int, int, float, float) {}
 void alter_mode(atom*, resid*, float*, int, int) {}
 double vcfunction(FA_Global*, VC_Global*, atom*, resid*,
                   std::vector<std::pair<int,int>>&, bool*) { return 0.0; }
-void buildcc(FA_Global*, atom*, int, int[]) {}
+bool buildcc(FA_Global*, atom*, int, int[]) { return true; }
 void dee_first(psFlexDEE_Node, psFlexDEE_Node) {}
 void dee_last(psFlexDEE_Node, psFlexDEE_Node) {}
 int  dee_pivot(psFlexDEE_Node, psFlexDEE_Node*, int, int, int, int, int) { return 0; }

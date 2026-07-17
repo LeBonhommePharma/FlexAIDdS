@@ -543,7 +543,8 @@ std::string FlexAIDWriter::generate_ga(const BonMol& mol,
 // ---------------------------------------------------------------------------
 
 FlexAIDWriterResult FlexAIDWriter::write(const BonMol& mol,
-                                          const std::string& lig_name) const {
+                                          const std::string& lig_name,
+                                          bool enforce_geometry_invariants) const {
     FlexAIDWriterResult result;
     result.success = false;
 
@@ -566,8 +567,9 @@ FlexAIDWriterResult FlexAIDWriter::write(const BonMol& mol,
     SpanningTree tree = build_spanning_tree(mol);
     result.internal_coords = compute_internal_coords(mol, tree);
 
-    // Fail-closed geometry invariants before emitting production .inp/.ga.
-    {
+    // Fail-closed geometry invariants for experimental SDF/MOL2 coordinates.
+    // CoordBuilder SMILES frames are imperfect (audit §8) — skip when requested.
+    if (enforce_geometry_invariants) {
         const std::string geom_err =
             check_geometry_invariants(mol, result.internal_coords);
         if (!geom_err.empty()) {

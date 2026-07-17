@@ -371,8 +371,14 @@ int read_mol2_ligand(FA_Global* FA, atom** atoms, resid** residue,
             const char* sybyl = tmp_atoms[i].sybyl;
             is_heavy[i] = sybyl[0] != 'H' && sybyl[0] != 'D';
         }
-        auto tree = direct_ligand_ic::build_tree(
-            *atoms, (*residue)[FA->res_cnt], fa, nbr, is_heavy);
+        direct_ligand_ic::ReconstructionTree tree;
+        if (!direct_ligand_ic::build_tree(
+                *atoms, (*residue)[FA->res_cnt], fa, nbr, is_heavy, tree)) {
+            fprintf(stderr,
+                "ERROR [MOL2 %s]: DirectLigandIC GPA selection failed "
+                "(need ≥3 non-collinear heavy atoms)\n", mol2_file);
+            return 0;
+        }
 
         // Compute IC for all ligand atoms using buildic() which reads rec[]
         // and current coor[] to produce dis/ang/dih consistent with buildcc.

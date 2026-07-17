@@ -8,7 +8,7 @@
 #include <cstdlib>
 
 void alter_mode(atom*, resid*, float*, int, int) {}
-void buildcc(FA_Global*, atom*, int, int[]) {}
+bool buildcc(FA_Global*, atom*, int, int[]) { return true; }
 
 void Terminate(int status) {
     std::fprintf(stderr, "Terminate(%d) called from hungarian_rmsd test\n", status);

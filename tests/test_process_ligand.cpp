@@ -628,10 +628,10 @@ TEST(ProcessLigand, StageResultsPopulated) {
 }
 
 TEST(ProcessLigand, PeptideGuardTriggersOnMultipleAmides) {
-    // Tripeptide-like molecule with 3+ amide bonds
-    // NCC(=O)NCC(=O)NCC(=O)O
+    // Backbone-peptide detector requires ≥3 *linked* backbone amides
+    // (not isolated amides). Tetrapeptide-like: 3 backbone amide links.
     ProcessOptions opts;
-    opts.input        = "NCC(=O)NCC(=O)NCC(=O)O";
+    opts.input        = "NCC(=O)NCC(=O)NCC(=O)NCC(=O)O";
     opts.format       = InputFormat::SMILES;
     opts.validate_only = false;
     opts.allow_peptides = false;
@@ -639,18 +639,18 @@ TEST(ProcessLigand, PeptideGuardTriggersOnMultipleAmides) {
     ProcessLigand pl;
     auto result = pl.run(opts);
     // Should fail due to peptide guard
-    EXPECT_FALSE(result.success);
+    EXPECT_FALSE(result.success) << result.error;
 }
 
 TEST(ProcessLigand, PeptideGuardBypassable) {
     ProcessOptions opts;
-    opts.input          = "NCC(=O)NCC(=O)NCC(=O)O";
+    opts.input          = "NCC(=O)NCC(=O)NCC(=O)NCC(=O)O";
     opts.format         = InputFormat::SMILES;
     opts.allow_peptides = true;
 
     ProcessLigand pl;
     auto result = pl.run(opts);
-    EXPECT_TRUE(result.success);
+    EXPECT_TRUE(result.success) << result.error;
 }
 
 TEST(ProcessLigand, DetectFormatSmiles) {

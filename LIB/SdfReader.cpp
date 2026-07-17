@@ -586,8 +586,14 @@ int read_sdf_ligand(FA_Global* FA, atom** atoms, resid** residue,
         for (int i = 0; i < n; ++i)
             is_heavy[i] = strcmp(satoms[i].elem, "H") != 0 &&
                           strcmp(satoms[i].elem, "D") != 0;
-        auto tree = direct_ligand_ic::build_tree(
-            *atoms, (*residue)[FA->res_cnt], fa, nbr, is_heavy);
+        direct_ligand_ic::ReconstructionTree tree;
+        if (!direct_ligand_ic::build_tree(
+                *atoms, (*residue)[FA->res_cnt], fa, nbr, is_heavy, tree)) {
+            fprintf(stderr,
+                "ERROR [SDF %s]: DirectLigandIC GPA selection failed "
+                "(need ≥3 non-collinear heavy atoms)\n", sdf_file);
+            return 0;
+        }
 
         // Warn about disconnected atoms (missing bonds, salt forms, counterions)
         int unreached = 0;

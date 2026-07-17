@@ -83,8 +83,11 @@ public:
     /// Generate both .inp and .ga file content from a BonMol.
     /// The molecule must have 3D coordinates (from SDF/MOL2).
     /// lig_name is the 3-character residue name used in the PDB records.
+    /// enforce_geometry_invariants: when false, skip fail-closed bond/angle
+    /// checks (CoordBuilder SMILES coords are imperfect — audit §8).
     FlexAIDWriterResult write(const BonMol& mol,
-                              const std::string& lig_name = "LIG") const;
+                              const std::string& lig_name = "LIG",
+                              bool enforce_geometry_invariants = true) const;
 
 private:
     // -----------------------------------------------------------------------

@@ -747,7 +747,7 @@ TEST_F(SdfReaderTest, TopologyDerivedFrameAndTorsionPreserveLocalGeometry) {
     atoms[residue[1].gpa[1]].ang += 40.0f;
     atoms[residue[1].gpa[1]].dih -= 55.0f;
     atoms[residue[1].gpa[2]].dih += 70.0f;
-    buildcc(&FA, atoms, rebuilt, rebuild);
+    ASSERT_TRUE(buildcc(&FA, atoms, rebuilt, rebuild));
     expect_local_geometry();
 
     ASSERT_EQ(residue[1].fdih, 1);
@@ -765,7 +765,7 @@ TEST_F(SdfReaderTest, TopologyDerivedFrameAndTorsionPreserveLocalGeometry) {
     }
     rebuilt = 0;
     buildlist(&FA, atoms, residue, 1, 1, &rebuilt, rebuild);
-    buildcc(&FA, atoms, rebuilt, rebuild);
+    ASSERT_TRUE(buildcc(&FA, atoms, rebuilt, rebuild));
     expect_local_geometry();
 
     cleanup_fa(&FA, atoms, residue);
@@ -773,6 +773,8 @@ TEST_F(SdfReaderTest, TopologyDerivedFrameAndTorsionPreserveLocalGeometry) {
 }
 
 // Resonance-locked C–N (amide) must not become a runtime DirectLigandIC rotor.
+// Carbonyl C is identified as VCT type C.2 (SdfReader sets type=2 for C with
+// double bond) — not "any C bonded to O", which would false-flag carbinolamines.
 TEST_F(SdfReaderTest, AmideBondNotRuntimeRotor) {
     // CC(=O)NCC — amide C–N is a graph bridge but resonance-locked.
     std::string sdf = write_sdf("amide_rotor.sdf",
@@ -795,42 +797,36 @@ TEST_F(SdfReaderTest, AmideBondNotRuntimeRotor) {
     init_fa_for_reader(&FA, &atoms, &residue);
     ASSERT_EQ(read_sdf_ligand(&FA, &atoms, &residue, sdf.c_str()), 1);
 
-    // Amide C–N must not appear as a flexible dihedral gene.
-    // Allow methyl/ethyl single bonds only (at most 1–2 rotors, none on C(=O)–N).
+    auto el = [&](int idx) -> char {
+        if (atoms[idx].element[0])
+            return static_cast<char>(std::toupper(
+                static_cast<unsigned char>(atoms[idx].element[0])));
+        return '?';
+    };
     for (int d = 1; d <= residue[1].fdih; ++d) {
         const int control = residue[1].bond[d];
         ASSERT_GT(control, 0);
         const int child = atoms[control].rec[0];
         const int parent = atoms[control].rec[1];
-        // Reject if parent–child is C–N and C has a double bond to O.
-        bool cn = false;
-        auto el = [&](int idx) -> char {
-            if (atoms[idx].element[0]) return static_cast<char>(std::toupper(atoms[idx].element[0]));
-            return '?';
-        };
-        if ((el(child) == 'C' && el(parent) == 'N') ||
-            (el(child) == 'N' && el(parent) == 'C'))
-            cn = true;
-        if (cn) {
-            int c_idx = el(child) == 'C' ? child : parent;
-            bool has_dbl_O = false;
-            for (int bi = 1; bi <= atoms[c_idx].bond[0]; ++bi) {
-                int nb = atoms[c_idx].bond[bi];
-                if (el(nb) == 'O') has_dbl_O = true; // order lost on bond[]; C=O present
-            }
-            EXPECT_FALSE(has_dbl_O)
-                << "amide C–N must not be a DirectLigandIC rotor (gene " << d << ")";
-        }
+        const bool cn =
+            (el(child) == 'C' && el(parent) == 'N') ||
+            (el(child) == 'N' && el(parent) == 'C');
+        if (!cn) continue;
+        const int c_idx = el(child) == 'C' ? child : parent;
+        // C.2 (carbonyl/sp2) is the typed carbonyl from double-bond perception.
+        EXPECT_NE(atoms[c_idx].type, 2)
+            << "amide C(=O)–N must not be a DirectLigandIC rotor (gene " << d
+            << ", C type=" << atoms[c_idx].type << ")";
     }
 
     cleanup_fa(&FA, atoms, residue);
     std::remove(sdf.c_str());
 }
 
-// Real Astex 1M2Z: read → buildlist → buildcc → geometry round-trip.
-// Historical rupture does NOT reproduce on modern DirectLigandIC + topology GPA
-// (max bond drift ~1e-5 A). This regression expects PASS.
-TEST_F(SdfReaderTest, Real1M2Z_ReadBuildlistIc2cfWriteRoundTrip) {
+// Real Astex 1M2Z: SDF read → buildlist → buildcc geometry round-trip.
+// (Honest name: does not call ic2cf or pose writers — those need a full FA dock.)
+// Historical rupture does NOT reproduce on modern DirectLigandIC + topology GPA.
+TEST_F(SdfReaderTest, Real1M2Z_SdfReadBuildlistBuildccGeometryPreserved) {
     namespace fs = std::filesystem;
     const fs::path candidates[] = {
         fs::path("benchmarks/astex_diverse/astex_diverse/1M2Z/1M2Z_ligand.sdf"),
@@ -874,39 +870,33 @@ TEST_F(SdfReaderTest, Real1M2Z_ReadBuildlistIc2cfWriteRoundTrip) {
     }
     ASSERT_FALSE(bonds.empty());
 
-    // buildlist + buildcc (IC reconstruction from topology-derived tree)
+    // buildlist + buildcc (IC reconstruction from topology-derived tree).
+    // buildcc is fail-closed: false means NaNs were written / reconstruction failed.
     int rebuild[MAX_ATM_HET] = {};
     int rebuilt = 0;
     buildlist(&FA, atoms, residue, 1, 0, &rebuilt, rebuild);
     ASSERT_GT(rebuilt, 0);
-    buildcc(&FA, atoms, rebuilt, rebuild);
+    ASSERT_TRUE(buildcc(&FA, atoms, rebuilt, rebuild))
+        << "buildcc reconstruction failed (singular frame / non-finite)";
 
     double max_drift = 0.0;
     for (const auto& m : bonds) {
         const double d = distance(m.a, m.b);
         ASSERT_TRUE(std::isfinite(d)) << "non-finite bond after buildcc";
         max_drift = std::max(max_drift, std::abs(d - m.value));
-        // Fail-closed: no historical multi-Å rupture.
         EXPECT_LT(std::abs(d - m.value), 0.05)
             << "bond " << m.a << "-" << m.b << " drifted " << (d - m.value);
     }
-    // Modern path: ~1e-5–1e-6 Å on main be049f8c; allow 1e-3 for platform noise.
     EXPECT_LT(max_drift, 1e-3)
         << "1M2Z max bond drift " << max_drift
         << " (historical rupture does not reproduce; expect ~1e-5 A)";
 
-    // Coordinate write (ancillary PDB) — must not crash; coordinates finite.
-    char out_pdb[512];
-    std::snprintf(out_pdb, sizeof(out_pdb), "%s/1m2z_roundtrip.pdb",
-                  fs::temp_directory_path().string().c_str());
-    // write_pdb may need more FA state; only check finite coords post-rebuild.
     for (int a = 1; a <= FA.num_het_atm; ++a) {
         for (int k = 0; k < 3; ++k) {
             EXPECT_TRUE(std::isfinite(atoms[a].coor[k]))
                 << "atom " << a << " coor non-finite";
         }
     }
-    (void)out_pdb;
 
     cleanup_fa(&FA, atoms, residue);
 }

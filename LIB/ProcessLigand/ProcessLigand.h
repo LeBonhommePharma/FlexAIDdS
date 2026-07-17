@@ -156,7 +156,8 @@ private:
 
     /// Stage 7: Write output files
     StageResult stage_write(const ProcessOptions& opts, const BonMol& mol,
-                            writer::FlexAIDWriterResult& writer_result);
+                            writer::FlexAIDWriterResult& writer_result,
+                            bool enforce_geometry_invariants = true);
 
     // -----------------------------------------------------------------------
     // Helpers

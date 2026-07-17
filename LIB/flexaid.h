@@ -713,7 +713,10 @@ void   buildprob();                                        // build the rotamer 
 void   build_rotamers(FA_Global* FA,atom** atoms,resid* residue,rot* rotamer);         // build rotamer atoms in atoms structure
 void   calc_cleftic(FA_Global* FA,gridpoint* cleftgrid);                                      // calculates dis, ang and dih for each dot(sphere) of the binding site
 void   buildlist(FA_Global* FA,atom* atoms,resid* residue,int rnum, int bnum, int *tot, int lout[]);// creates list of atoms that need to be rebuilt
-void   buildcc(FA_Global* FA,atom* atoms,int tot,int list[]);                        // creates cartesian coordinates from internal coords.
+// Rebuild Cartesian coordinates from internal coordinates.
+// Returns true on full success. On singular/non-finite frames returns false and
+// leaves no silently-stale success path (failed atoms get NaN coordinates).
+bool   buildcc(FA_Global* FA,atom* atoms,int tot,int list[]);
 void   buildic(FA_Global* FA,atom* atoms,resid* residue,int rnum);                   // creates internal coordinates from cartesian.
 void   add2_optimiz_vec(FA_Global* FA,atom* atoms,resid* residue,int val[], char chain, const char* extras);            // adds atoms that need to be optimized
 void   realloc_par(FA_Global* FA, int* MIN_PAR); // reallocs memory for par in add2 function
