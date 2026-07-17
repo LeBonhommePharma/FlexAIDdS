@@ -143,3 +143,5 @@ LIB/VibEntropy.h
 LIB/coarse_init.h
 LIB/native_score.h
 LIB/receptor_prep.h
+LIB/PartitionFunctionBase.h
+LIB/GrandCanonicalEngine.h

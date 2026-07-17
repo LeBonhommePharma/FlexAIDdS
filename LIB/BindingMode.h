@@ -7,6 +7,9 @@
 #include "encom.h"     // ENCoM vibrational entropy (Phase 3)
 #include "ShannonThermoStack/ShannonThermoStack.h"  // Shannon configurational entropy
 
+#include <string>
+#include <stdexcept>
+
 //#define UNDEFINED_DIST FLT_MAX // Defined in FOPTICS as > than +INF
 #define UNDEFINED_DIST -0.1f // Defined in FOPTICS as > than +INF
 #define isUndefinedDist(a) ((a - UNDEFINED_DIST) <= FLT_EPSILON)
@@ -139,8 +142,9 @@ class BindingMode // aggregation of poses (Cluster)
 			///
 			/// Multi-ligand competitive mixing entropy (−T S_mix, ligand entropy
 			/// collapse, concentration titration) is NOT computed here — it lives
-			/// in target::GrandPartitionFunction (μVT). BindingMode is single-ligand
-			/// NVT ensemble analysis. See docs/theory.md.
+			/// in target::GrandPartitionFunction / flexaids::GrandCanonicalEngine
+			/// (μVT). BindingMode is single-ligand NVT ensemble analysis.
+			/// See docs/theory.md.
 			struct EntropyDecomposition {
 				double S_total;          // total configurational entropy
 				double S_ligand;         // marginal ligand pose entropy
@@ -149,6 +153,21 @@ class BindingMode // aggregation of poses (Cluster)
 				double S_vibrational;    // from ENCoM/tENCoM modes
 			};
 			EntropyDecomposition decompose_entropy() const;
+
+			// ═══ μVT concentration metadata (diagnostic / post-hoc only) ═══
+			// Thermodynamic: bath concentration of the ligand species that
+			// produced this NVT ensemble (used when feeding log_Z into Ξ).
+			// Does NOT reweight CF pose ranking inside the mode.
+			void set_ligand_concentration_M(double c_M);
+			[[nodiscard]] double ligand_concentration_M() const noexcept {
+				return ligand_concentration_M_;
+			}
+			void set_ligand_species_name(const std::string& name) {
+				ligand_species_name_ = name;
+			}
+			[[nodiscard]] const std::string& ligand_species_name() const noexcept {
+				return ligand_species_name_;
+			}
 
  	protected:
 		std::vector<Pose> Poses;
@@ -159,6 +178,10 @@ class BindingMode // aggregation of poses (Cluster)
 		mutable bool thermo_cache_valid_;          // track if engine_ matches current Poses
 		mutable double vib_correction_cache_;      // cached vibrational correction value
 		mutable bool   vib_cache_valid_;           // track if vib cache matches current state
+
+		// μVT metadata: concentration / species tag for competitive Ξ post-processing
+		double ligand_concentration_M_ = 1.0;  // M; c° = 1 M
+		std::string ligand_species_name_;
 
 		void	set_energy();                         // updates cached energy value
 		void	rebuild_engine() const;               // populates engine_ from Poses (called on-demand)

@@ -2294,6 +2294,39 @@ if(BUILD_TESTING)
     flexaids_configure_msvc_test(test_grand_partition)
     add_test(NAME GrandPartitionTests COMMAND test_grand_partition)
 
+    # ── GrandCanonicalEngine + PartitionFunctionBase (μVT v1) ───────────
+    # Flag: -DFLEXAIDS_ENABLE_MUVT=ON (default ON when BUILD_TESTING)
+    option(FLEXAIDS_ENABLE_MUVT
+        "Build grand-canonical μVT engine (GrandCanonicalEngine) and tests" ON)
+    if(FLEXAIDS_ENABLE_MUVT)
+        add_executable(test_grand_canonical_engine
+            tests/test_grand_canonical_engine.cpp
+            LIB/GrandCanonicalEngine.cpp
+            LIB/GrandPartitionFunction.cpp
+            LIB/statmech.cpp
+            LIB/UnifiedHardwareDispatch.cpp
+            LIB/hardware_detect.cpp
+        )
+        target_include_directories(test_grand_canonical_engine PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/LIB)
+        target_link_libraries(test_grand_canonical_engine PRIVATE GTest::gtest_main)
+        if(MSVC)
+            target_compile_options(test_grand_canonical_engine PRIVATE /O2)
+        else()
+            target_compile_options(test_grand_canonical_engine PRIVATE -O2)
+        endif()
+        flexaids_configure_simd(test_grand_canonical_engine)
+        if(FLEXAIDS_USE_OPENMP AND OpenMP_CXX_FOUND)
+            target_link_libraries(test_grand_canonical_engine PRIVATE OpenMP::OpenMP_CXX)
+        endif()
+        target_link_libraries(test_grand_canonical_engine PRIVATE Eigen3::Eigen)
+        target_compile_definitions(test_grand_canonical_engine PRIVATE
+            FLEXAIDS_HAS_EIGEN FLEXAIDS_ENABLE_MUVT=1)
+        flexaids_configure_msvc_test(test_grand_canonical_engine)
+        add_test(NAME GrandCanonicalEngineTests COMMAND test_grand_canonical_engine)
+        message(STATUS "μVT GrandCanonicalEngine tests: ON (FLEXAIDS_ENABLE_MUVT)")
+    endif()
+
     # ── TargetServer integration tests ────────────────────────────────────
     add_executable(test_target_server
         tests/test_target_server.cpp

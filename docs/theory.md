@@ -1,19 +1,27 @@
 # Theory: Canonical (NVT) vs Grand-Canonical (μVT) in FlexAIDdS
 
-> **Source of truth for code:** `LIB/GrandPartitionFunction.*` **is** the
-> single-site grand-canonical (μVT) competitive-binding engine. There is no
-> separate parallel `GrandCanonicalEngine` class. Canonical NVT lives in
-> `LIB/statmech.*` (`StatMechEngine`). Multi-site extensions use
-> `LIB/MultiSiteGPF.*`.
+```
+// ============================================================================
+//  MAKE COMPETITIVE BINDING GREAT AGAIN
+// ============================================================================
+```
+
+> **Code map**
+> - NVT \(Z\): `LIB/statmech.*` (`StatMechEngine`)
+> - Abstract surface: `LIB/PartitionFunctionBase.h`
+> - Multi-N + competitive μVT façade: `LIB/GrandCanonicalEngine.*`
+> - Single-site competitive Ξ (production): `LIB/GrandPartitionFunction.*`
+> - Multi-site: `LIB/MultiSiteGPF.*`
+> - Audit: `docs/audit/grand_canonical_muVT_phase0.md`
 
 ## One-paragraph summary
 
-Docking samples poses at fixed particle number (one ligand molecule in the
+Docking samples poses at fixed particle number (one ligand geometry in the
 site). That is a **canonical** ensemble problem: compute \(Z(N{=}1,V,T)\) from
 the GA pose energies. Competitive pharmacology needs **concentrations** and
 **multiple species**, which is a **grand-canonical** problem: form
-\(\Xi(\mu,V,T)\) from the per-ligand \(Z_i\) and fugacities
-\(z_i = c_i/c^\circ\).
+\(\Xi(\mu,V,T)\) from per-occupancy or per-ligand \(Z\) values and fugacities
+\(\lambda = e^{\beta\mu}\) (or \(z_i = c_i/c^\circ\)).
 
 ## Canonical NVT (what StatMechEngine does)
 
@@ -26,11 +34,34 @@ S = (\langle E\rangle - F)/T
 - Implementation: `statmech::StatMechEngine` (`LIB/statmech.h`).
 - Numerics: log-sum-exp via `flexaids::log_sum_exp_dispatch`
   (Shannon-stabilized kernel; AVX-512 / Metal / scalar).
+- Adapter: `flexaids::CanonicalPartitionAdapter` exposes the same
+  `PartitionFunctionBase` surface without changing `StatMechEngine` ABI.
 - Used by `BindingMode` for per-mode Helmholtz free energy and the
   thermodynamic ledger (`ThermodynamicBreakdown`).
 - **GA ranking** uses the CF/contact-function scoring proxy, not \(F\).
 
-## Grand-canonical μVT (what GrandPartitionFunction does)
+## Grand-canonical μVT
+
+### (A) Multi-N occupancy — `GrandCanonicalEngine`
+
+\[
+\Xi(\mu,V,T) = \sum_{N=0}^{N_{\max}} \lambda^{N}\, Z(N,V,T), \qquad
+\lambda = e^{\beta\mu}
+\]
+
+Observables:
+
+| Quantity | Formula | API |
+|----------|---------|-----|
+| \(\ln\Xi\) | \(\mathrm{lse}_N(N\ln\lambda + \ln Z_N)\) | `log_Xi_multiN()` |
+| \(\langle N\rangle\) | \((1/\beta)\,\partial\ln\Xi/\partial\mu\) | `mean_N_multiN()` |
+| \(\mathrm{Var}(N)\) | \(\langle N^2\rangle - \langle N\rangle^2\) | `var_N_multiN()` |
+| \(p(N)\) | \(\lambda^N Z_N / \Xi\) | `occupancy_probability(N)` |
+
+Outer \(N\) summation is OpenMP-parallel for large \(N_{\max}\); the log-sum-exp
+kernel is the same Shannon dispatch used for NVT \(Z\).
+
+### (B) Multi-species competitive binding — `GrandPartitionFunction`
 
 For a single site that is empty or occupied by one of \(M\) ligands:
 
@@ -39,15 +70,11 @@ For a single site that is empty or occupied by one of \(M\) ligands:
 z_i = \frac{c_i}{c^\circ},\quad c^\circ = 1\,\mathrm{M}
 \]
 
-Equivalently with chemical potentials (ideal solution,
-\(\mu_i = \mu_i^\circ + k_BT\ln(c_i/c^\circ)\)):
+Equivalently (\(\mu_i = k_BT\ln(c_i/c^\circ)\), \(\mu^\circ=0\)):
 
 \[
-\Xi(\boldsymbol{\mu},V,T) = 1 + \sum_i e^{\beta\mu_i} Z_i
-\quad(\mu^\circ=0\text{ convention in code}).
+\Xi(\boldsymbol{\mu},V,T) = 1 + \sum_i e^{\beta\mu_i} Z_i.
 \]
-
-Observables:
 
 | Quantity | Formula | API |
 |----------|---------|-----|
@@ -60,6 +87,9 @@ Observables:
 | Mixing entropy | \(-k_B\sum_\alpha p_\alpha\ln p_\alpha\) | `mixing_entropy()` |
 | Ligand entropy collapse | \(1 - S_\mathrm{lig}/\ln M\) | `ligand_entropy_collapse()` |
 
+`GrandCanonicalEngine` **composes** `GrandPartitionFunction` for channel (B)
+and does not reimplement that Ξ math.
+
 ### Analogy to Shannon entropy collapse
 
 When one ligand dominates the bound population, the Shannon mixing entropy
@@ -68,18 +98,18 @@ over species crashes toward zero — the same mathematical signature as:
 - GA diversity collapse (population entropy → 0 under premature convergence)
 - Binding-mode configurational entropy collapse when poses concentrate
 
-See also README “entropy dualism” notes. The metric
 `ligand_entropy_collapse()` is **diagnostic only** and never used for ranking.
 
-## What is *not* reimplemented
+## Architecture (v1)
 
-| Component | Role | Do not duplicate |
-|-----------|------|------------------|
-| `StatMechEngine` | Canonical \(Z\), \(F\), \(S\), \(C_v\) | — |
-| `GrandPartitionFunction` | Single-site \(\Xi\), concentrations, selectivity | No second GC engine |
-| `MultiSiteGPF` | Multiple sites + cooperativity \(\omega\) | — |
-| `TargetServer` | Owns receptor + live \(\Xi\) across ligands | — |
-| UnifiedHardwareDispatch LSE | Numerics for both NVT and μVT | — |
+```
+PartitionFunctionBase
+├── CanonicalPartitionAdapter   (NVT: wraps log_Z / StatMechEngine)
+└── GrandCanonicalEngine        (μVT)
+      ├── multi-N channel       Σ_N λ^N Z_N   [Shannon LSE + OpenMP]
+      └── competitive channel   GrandPartitionFunction
+            └── MultiSiteGPF / TargetServer (site registry)
+```
 
 ## NRGsuite / multi-ligand concentration API
 
@@ -93,34 +123,66 @@ set_concentration([L1, L2, ...])   # conceptual NRGsuite command
 C++:
 
 ```cpp
-target::GrandPartitionFunction& xi = server.grand_partition();
-xi.set_concentrations({"fentanyl", "naloxone"}, {1e-9, 1e-6});  // M
-// or:
+flexaids::GrandCanonicalEngine gce(310.0);
+gce.add_competitive_ligand("fentanyl", log_Z_f, 1e-9);
+gce.add_competitive_ligand("naloxone", log_Z_n, 1e-6);
+gce.set_competitive_concentrations({"fentanyl", "naloxone"}, {1e-9, 1e-4});
+// or TargetServer:
 server.set_concentration("naloxone", 1e-4);
 ```
 
-Python (pure helper; works without `_core` GC bindings):
+Python (pure helper always; C++ `_core` when built with μVT sources):
 
 ```python
-from flexaidds.grand_canonical import set_concentration, CompetitiveSite
-site = CompetitiveSite(T=310.0)
+from flexaidds.grand_canonical import set_concentration, CompetitiveSite, plot_occupancy_curve
+site = CompetitiveSite(temperature_K=310.0)
 site.add("fentanyl", log_Z=..., c_M=1e-9)
 site.add("naloxone", log_Z=..., c_M=1e-6)
 set_concentration(site, {"naloxone": 1e-4})
 print(site.binding_probability("naloxone"), site.mean_N())
+curve = site.occupancy_vs_concentration("naloxone", [1e-9, 1e-7, 1e-5, 1e-3])
+plot_occupancy_curve(curve, title="Naloxone titration (μVT)")
+```
+
+## Scoring-loop boundary (Phase 2)
+
+- `VoronoiCFBatch` / GA: **one ligand geometry per chromosome** (CF proxy).
+- Multi-ligand GA individuals may carry a `LigandVector` (names + concentrations)
+  as **metadata** for post-hoc Ξ; fugacity is **not** folded into CF scores
+  without an explicit feature flag + tests (`AGENTS.md`).
+- `BindingMode` can tag `ligand_concentration_M` / species name for ledger feed.
+
+## CMake
+
+```bash
+cmake -B build -DBUILD_TESTING=ON -DFLEXAIDS_ENABLE_MUVT=ON
+cmake --build build -j
+ctest --test-dir build -R 'Grand(Partition|Canonical)' --output-on-failure
 ```
 
 ## Ranking guardrail
 
 - **Search / pose order:** CF Voronoi proxy (`VoronoiCFBatch`, GA).
-- **Post-hoc ledger:** NVT `StatMechEngine` + μVT `GrandPartitionFunction`.
+- **Post-hoc ledger:** NVT `StatMechEngine` + μVT `GrandCanonicalEngine` / GPF.
 - Changing concentrations updates \(\Xi\) and \(p_i\), **not** the GA
   chromosome ranking, unless an experimental reweight path is explicitly
   enabled and tested.
 
+## Toy validation systems (synthetic log_Z)
+
+| System | Ligands | Test |
+|--------|---------|------|
+| MOR | fentanyl + naloxone | `GrandPartition.MORnaloxone_NVT_vs_muVT`, `GrandCanonicalEngine.Benchmark_MOR_*` |
+| 5-HT2A | 5-MeO-DMT + 5-HT | `GrandCanonicalEngine.Benchmark_5HT2A_*` |
+
+These use synthetic partition functions — **not** experimental \(K_i\) claims.
+Compare predicted \(\langle N\rangle\) / apparent \(K_i\) trends only after
+real docked \(\ln Z_i\) and calibration (`AffinityCalibration`).
+
 ## References in-repo
 
-- `LIB/GrandPartitionFunction.h` — API contract and thermodynamic comments
-- `tests/test_grand_partition.cpp` — analytic + MOR/naloxone toy NVT vs μVT
-- `docs/dev/thermo_source_map.md` — file map
-- `docs/dev/thermo_invariants.md` — numerical invariants
+- `LIB/PartitionFunctionBase.h` — abstract NVT/μVT surface
+- `LIB/GrandCanonicalEngine.h` — multi-N + competitive façade
+- `LIB/GrandPartitionFunction.h` — competitive single-site Ξ
+- `tests/test_grand_partition.cpp`, `tests/test_grand_canonical_engine.cpp`
+- `docs/dev/thermo_source_map.md`, `docs/audit/grand_canonical_muVT_phase0.md`

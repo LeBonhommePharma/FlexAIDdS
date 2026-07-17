@@ -240,8 +240,24 @@ BindingMode::BindingMode(BindingPopulation* pop)
 	  thermo_cache_valid_(false),
 	  vib_correction_cache_(0.0),
 	  vib_cache_valid_(false),
+	  ligand_concentration_M_(1.0),
 	  energy(0.0)
 {
+}
+
+
+void BindingMode::set_ligand_concentration_M(double c_M)
+{
+	// Thermodynamic: tags the bath concentration for post-hoc μVT Ξ assembly.
+	// Does NOT change NVT Z, CF ranking, or pose order inside this mode.
+	if (!(c_M > 0.0))
+		throw std::domain_error(
+			"BindingMode::set_ligand_concentration_M: c_M must be > 0");
+	if (c_M > 1e3)
+		throw std::invalid_argument(
+			"BindingMode::set_ligand_concentration_M: c_M > 1000 M — "
+			"convert µM/nM to M first");
+	ligand_concentration_M_ = c_M;
 }
 
 

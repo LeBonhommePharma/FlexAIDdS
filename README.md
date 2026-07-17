@@ -26,10 +26,13 @@ FlexAID∆S extends the [FlexAID](https://doi.org/10.1021/acs.jcim.5b00078) dock
 
 **Full thermodynamic documentation**: See [docs/thermodynamics.md](docs/thermodynamics.md) for the complete post-roadmap reference (G_config, H_eff, component averages, diagnostics, experimental features, and support classification).
 
+**NVT vs μVT (competitive binding):** See [docs/theory.md](docs/theory.md). Canonical \(Z\) lives in `StatMechEngine`; grand-canonical \(\Xi(\mu,V,T)\) is `GrandCanonicalEngine` (multi-N + competitive multi-species via `GrandPartitionFunction`). Retitrate without re-docking: `set_concentration([L1, L2, ...])` (NRGsuite / Python / C++). *Make competitive binding great again.*
+
 **Key capabilities:**
 - Genetic algorithm docking with Voronoi contact function scoring
 - Canonical ensemble partition function, free energy, entropy, and heat capacity
-- Grand canonical ensemble for competitive ligand binding, selectivity, and concentration-dependent occupancy
+- Grand-canonical (μVT) ensemble: multi-N occupancy, competitive multi-ligand \(\Xi\), \(\langle N\rangle\), selectivity, mixing entropy & ligand entropy collapse
+- Concentration-aware retitration (`set_concentration`) without re-docking
 - Torsional elastic network model (tENCoM) for backbone vibrational entropy
 - Full ligand flexibility: torsions, ring conformers, chiral center discrimination
 - Unified hardware dispatch (CUDA, Metal, AVX-512, AVX2, OpenMP)

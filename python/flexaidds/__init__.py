@@ -62,6 +62,18 @@ from .grand_canonical import (
     plot_occupancy_curve,
 )
 
+# Optional C++ μVT types when _core is built with GrandPartitionFunction sources
+try:
+    from ._core import GrandPartitionFunction as _CppGrandPartitionFunction  # type: ignore
+    from ._core import GrandCanonicalEngine as _CppGrandCanonicalEngine  # type: ignore
+    GrandPartitionFunction = _CppGrandPartitionFunction  # noqa: F811
+    GrandCanonicalEngine = _CppGrandCanonicalEngine  # noqa: F811
+    HAS_CPP_MUVT = True
+except Exception:  # pragma: no cover
+    GrandPartitionFunction = None  # type: ignore
+    GrandCanonicalEngine = None  # type: ignore
+    HAS_CPP_MUVT = False
+
 # entropy.help audit schema (A1.1) — pure Python, always available
 from .schemas.thermo_audit import (
     ThermodynamicOutput,
@@ -274,11 +286,14 @@ __all__ = [
     "Thermodynamics",
     "kB_kcal",
     "kB_SI",
-    # Grand-canonical competitive binding (pure-Python μVT helpers)
+    # Grand-canonical competitive binding (pure-Python μVT helpers + optional C++)
     "CompetitiveSite",
     "OccupancyPoint",
     "set_concentration",
     "plot_occupancy_curve",
+    "GrandPartitionFunction",
+    "GrandCanonicalEngine",
+    "HAS_CPP_MUVT",
     # Availability flag
     "HAS_CORE_BINDINGS",
     # Core types (C++ when available, pure-Python fallback otherwise)

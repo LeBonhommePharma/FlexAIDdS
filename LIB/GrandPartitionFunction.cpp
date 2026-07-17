@@ -4,10 +4,12 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include "GrandPartitionFunction.h"
+#include "UnifiedHardwareDispatch.h"
 
 #include <algorithm>
 #include <cmath>
 #include <limits>
+#include <vector>
 
 namespace target {
 
@@ -151,22 +153,22 @@ double GrandPartitionFunction::compute_log_Xi_fresh() const
     // Ξ = 1 + Σ_i z_i·Z_i = 1 + Σ_i exp(ln(z_i·Z_i))
     // ln Ξ = log_sum_exp(0, ln(z_1·Z_1), ln(z_2·Z_2), ...)
     //
-    // The "0" term is ln(1) for the empty site — it MUST be included
-    // in the max-search to anchor log-sum-exp correctly.
+    // Thermodynamic: the "0" term is ln(1) for the empty (apo) site — it MUST
+    // be included so Ξ ≥ 1 always (Hill, Statistical Thermodynamics §15).
+    //
+    // Numerics: reuse Shannon-stabilized log-sum-exp (AVX-512 / Metal /
+    // OpenMP / scalar) via UnifiedHardwareDispatch — same kernel as
+    // StatMechEngine::log_sum_exp for NVT Z.
 
     if (ligands_.empty()) return 0.0;
 
-    // Anchor: unoccupied state contributes log(1) = 0 to log-sum-exp.
-    // This ensures Ξ ≥ 1 always (receptor can always be empty).
-    // See: Hill, T.L. "An Introduction to Statistical Thermodynamics" §15.
-    double max_val = 0.0;
+    std::vector<double> terms;
+    terms.reserve(ligands_.size() + 1);
+    terms.push_back(0.0);  // empty site: ln(1) = 0
     for (const auto& [name, entry] : ligands_)
-        max_val = std::max(max_val, entry.log_zZ);
+        terms.push_back(entry.log_zZ);
 
-    double sum = std::exp(0.0 - max_val);  // empty site contribution
-    for (const auto& [name, entry] : ligands_)
-        sum += std::exp(entry.log_zZ - max_val);
-    return max_val + std::log(sum);
+    return flexaids::log_sum_exp_dispatch(terms);
 }
 
 double GrandPartitionFunction::log_Xi_cached() const

@@ -18,7 +18,10 @@ pybind11_add_module(_core
     ${CMAKE_SOURCE_DIR}/LIB/tENCoM/tencm.cpp
     ${CMAKE_SOURCE_DIR}/LIB/DiFT/DiFT.cpp
     ${CMAKE_SOURCE_DIR}/LIB/fast_optics.cpp
+    ${CMAKE_SOURCE_DIR}/LIB/GrandPartitionFunction.cpp
+    ${CMAKE_SOURCE_DIR}/LIB/GrandCanonicalEngine.cpp
 )
+target_compile_definitions(_core PRIVATE FLEXAIDS_ENABLE_MUVT=1)
 
 # Conditionally add 256x256 matrix bindings
 if(FLEXAIDS_USE_256_MATRIX)

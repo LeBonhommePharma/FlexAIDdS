@@ -18,6 +18,8 @@
 #include "../../LIB/fast_optics.hpp"
 #include "../../LIB/Spectrophore.h"
 #include "../../LIB/BindingResidues.h"
+#include "../../LIB/GrandPartitionFunction.h"
+#include "../../LIB/GrandCanonicalEngine.h"
 #include "dift_bindings.h"
 
 namespace py = pybind11;
@@ -563,6 +565,66 @@ PYBIND11_MODULE(_core, m) {
     // DiFT — Discrete Fourier Transform torsional parametrization
     // ──────────────────────────────────────────────────────────────────────
     register_dift_bindings(m);
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // MAKE COMPETITIVE BINDING GREAT AGAIN — μVT grand-canonical bindings
+    // ═══════════════════════════════════════════════════════════════════════
+    {
+        using target::GrandPartitionFunction;
+        py::class_<GrandPartitionFunction>(m, "GrandPartitionFunction",
+            "Single-site grand-canonical Ξ for competitive binding (μVT)")
+            .def(py::init<double>(), py::arg("temperature_K") = 300.0)
+            .def("add_ligand",
+                py::overload_cast<const std::string&, double, double>(
+                    &GrandPartitionFunction::add_ligand),
+                py::arg("name"), py::arg("log_Z"), py::arg("concentration_M") = 1.0)
+            .def("set_concentration", &GrandPartitionFunction::set_concentration,
+                py::arg("name"), py::arg("concentration_M"))
+            .def("set_concentrations", &GrandPartitionFunction::set_concentrations,
+                py::arg("names"), py::arg("concentrations_M"))
+            .def("log_Xi", &GrandPartitionFunction::log_Xi)
+            .def("binding_probability", &GrandPartitionFunction::binding_probability)
+            .def("empty_probability", &GrandPartitionFunction::empty_probability)
+            .def("mean_N", &GrandPartitionFunction::mean_N)
+            .def("apparent_Ki_M", &GrandPartitionFunction::apparent_Ki_M)
+            .def("selectivity", &GrandPartitionFunction::selectivity)
+            .def("log_intrinsic_selectivity",
+                &GrandPartitionFunction::log_intrinsic_selectivity)
+            .def("mixing_entropy", &GrandPartitionFunction::mixing_entropy)
+            .def("ligand_entropy_collapse",
+                &GrandPartitionFunction::ligand_entropy_collapse)
+            .def("F_bound", &GrandPartitionFunction::F_bound)
+            .def("num_ligands", &GrandPartitionFunction::num_ligands)
+            .def("temperature", &GrandPartitionFunction::temperature);
+
+        using flexaids::GrandCanonicalEngine;
+        py::class_<GrandCanonicalEngine>(m, "GrandCanonicalEngine",
+            "μVT engine: multi-N occupancy + competitive multi-species Ξ")
+            .def(py::init<double>(), py::arg("temperature_K") = 300.0)
+            .def("set_canonical_log_Z", &GrandCanonicalEngine::set_canonical_log_Z,
+                py::arg("N"), py::arg("log_Z_N"))
+            .def("set_fugacity", &GrandCanonicalEngine::set_fugacity)
+            .def("set_chemical_potential",
+                &GrandCanonicalEngine::set_chemical_potential)
+            .def("set_concentration_M", &GrandCanonicalEngine::set_concentration_M)
+            .def("log_Xi_multiN", &GrandCanonicalEngine::log_Xi_multiN)
+            .def("mean_N_multiN", &GrandCanonicalEngine::mean_N_multiN)
+            .def("add_competitive_ligand",
+                &GrandCanonicalEngine::add_competitive_ligand,
+                py::arg("name"), py::arg("log_Z"),
+                py::arg("concentration_M") = 1.0)
+            .def("set_competitive_concentration",
+                &GrandCanonicalEngine::set_competitive_concentration)
+            .def("log_Xi_competitive", &GrandCanonicalEngine::log_Xi_competitive)
+            .def("mean_N_competitive", &GrandCanonicalEngine::mean_N_competitive)
+            .def("selectivity", &GrandCanonicalEngine::selectivity)
+            .def("mixing_entropy", &GrandCanonicalEngine::mixing_entropy)
+            .def("ligand_entropy_collapse",
+                &GrandCanonicalEngine::ligand_entropy_collapse)
+            .def("log_partition", &GrandCanonicalEngine::log_partition)
+            .def("free_energy", &GrandCanonicalEngine::free_energy)
+            .def("temperature", &GrandCanonicalEngine::temperature);
+    }
 
 #ifdef FLEXAIDS_USE_256_MATRIX
     register_matrix_bindings(m);

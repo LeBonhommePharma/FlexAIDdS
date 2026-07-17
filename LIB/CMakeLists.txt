@@ -152,6 +152,7 @@ set(FLEXAID_CORE_SOURCES
     # ── TargetServer ──
     TargetValidation.cpp
     GrandPartitionFunction.cpp
+    GrandCanonicalEngine.cpp
     MultiSiteGPF.cpp
     TargetKnowledgeBase.cpp
     TargetServer.cpp

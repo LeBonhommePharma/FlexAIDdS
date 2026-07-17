@@ -91,8 +91,11 @@ _core_sources = [
     f"{_rel_lib}/ShannonThermoStack/ShannonThermoStack.cpp",
     f"{_rel_lib}/DiFT/DiFT.cpp",
     f"{_rel_lib}/fast_optics.cpp",
+    # μVT competitive binding (GrandCanonicalEngine composes GrandPartitionFunction)
+    f"{_rel_lib}/GrandPartitionFunction.cpp",
+    f"{_rel_lib}/GrandCanonicalEngine.cpp",
 ]
-_core_defs = [("FLEXAIDS_HAS_EIGEN", "1")]
+_core_defs = [("FLEXAIDS_HAS_EIGEN", "1"), ("FLEXAIDS_ENABLE_MUVT", "1")]
 
 # 256×256 soft contact matrix bindings (added when file exists)
 _matrix_bindings = Path("bindings/bindings_matrix.cpp")

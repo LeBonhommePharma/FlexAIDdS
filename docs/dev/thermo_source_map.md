@@ -26,12 +26,21 @@
 
 ## Grand Canonical And Selectivity
 
-> **`GrandPartitionFunction` is the single-site μVT engine.** Do not add a
-> parallel `GrandCanonicalEngine` that rewraps the same Ξ math. See `docs/theory.md`.
+> **Architecture (μVT v1):** `PartitionFunctionBase` is the shared abstract
+> surface. `GrandCanonicalEngine` owns (A) multi-N \(\sum_N \lambda^N Z_N\) and
+> (B) composes `GrandPartitionFunction` for multi-species competitive Ξ.
+> Do **not** reimplement competitive Ξ math a third time. See `docs/theory.md`.
 
+- `LIB/PartitionFunctionBase.h`
+  - `PartitionFunctionBase` — `log_partition()`, `free_energy()`, `temperature()`
+  - `CanonicalPartitionAdapter` — NVT adapter around log_Z / StatMechEngine
+- `LIB/GrandCanonicalEngine.h/.cpp`
+  - multi-N channel: `set_canonical_log_Z`, `log_Xi_multiN`, `mean_N_multiN`
+  - competitive channel: wraps `GrandPartitionFunction`
+  - `LigandVector` multi-ligand concentration metadata (not CF reweight)
 - `LIB/GrandPartitionFunction.h/.cpp`
   - `GrandPartitionFunction::add_ligand()`
-  - `GrandPartitionFunction::log_Xi()`
+  - `GrandPartitionFunction::log_Xi()` (Shannon `log_sum_exp_dispatch`)
   - `GrandPartitionFunction::binding_probability()`
   - `GrandPartitionFunction::empty_probability()`
   - `GrandPartitionFunction::mean_occupancy()` / `mean_N()`
@@ -44,6 +53,7 @@
 - `LIB/MultiSiteGPF.*` — multi-site + cooperativity (wraps per-site GPF)
 - `LIB/TargetServer.*` — owns live Ξ; `set_concentration` for NRGsuite retitration
 - `python/flexaidds/grand_canonical.py` — pure-Python mirror + `set_concentration()`
+- CMake: `-DFLEXAIDS_ENABLE_MUVT=ON` (default with tests)
 
 ## Vibrational, NATURaL, GIST, H-bond, And Strain Terms
 

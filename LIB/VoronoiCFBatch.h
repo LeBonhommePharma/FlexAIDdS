@@ -15,9 +15,16 @@
 // ─────────────────────────────────
 // VoronoiCFBatch scores ONE ligand geometry per chromosome (CF proxy, NVT
 // search). Competitive multi-ligand occupancy vs concentration is handled
-// post-hoc by target::GrandPartitionFunction (μVT Ξ), not inside this batch
-// CF loop. Do not fold fugacity into the CF score here — that would alter
-// GA ranking without an explicit feature flag + tests (AGENTS.md).
+// post-hoc by target::GrandPartitionFunction / flexaids::GrandCanonicalEngine
+// (μVT Ξ), not inside this batch CF loop.
+//
+// Multi-ligand GA mode: each individual may carry a species index / ligand
+// vector via flexaids::GrandCanonicalEngine::LigandVector (metadata). The
+// outer N / species summation for Ξ uses OpenMP + Shannon log-sum-exp kernels
+// in GrandCanonicalEngine — not CF batch eval.
+//
+// Do not fold fugacity into the CF score here — that would alter GA ranking
+// without an explicit feature flag + tests (AGENTS.md).
 //
 // Apache-2.0 © 2026 Le Bonhomme Pharma
 

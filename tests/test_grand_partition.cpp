@@ -651,8 +651,8 @@ TEST(GrandPartition, AllLogZAccessor) {
 
 // ════════════════════════════════════════════════════════════════════════
 // Additive μVT diagnostics (set_concentration, mixing entropy, collapse)
-// These extend the existing GrandPartitionFunction — they do NOT introduce
-// a parallel GrandCanonicalEngine (GPF already IS the μVT single-site engine).
+// GPF remains the single-site competitive Ξ kernel. Multi-N + polymorphic
+// surface live in GrandCanonicalEngine (see test_grand_canonical_engine.cpp).
 // ════════════════════════════════════════════════════════════════════════
 
 TEST(GrandPartition, SetConcentrationInPlace) {

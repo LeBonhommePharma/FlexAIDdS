@@ -72,7 +72,7 @@ message(STATUS "FlexAIDComponents: FlexAID::ENCoM ready")
 # Future components can follow the same pattern:
 #  - tENCoM
 #  - ShannonThermo
-#  - GrandCanonical
+#  - GrandCanonical (LIB/GrandCanonicalEngine + PartitionFunctionBase; μVT v1)
 #  - etc.
 
 # Export a variable so root / other modules know components were loaded
