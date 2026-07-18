@@ -420,14 +420,23 @@ double vcfunction(FA_Global* FA,VC_Global* VC,atom* atoms,resid* residue, std::v
 			// The wall term above is CAPPED (WAL_CONTACT_CAP), so it cannot
 			// overcome an UNBOUNDED CF.com overpacking reward (root cause of the
 			// arm-A 0%: elected decoys reach com~-1200 while wal maxes ~+150).
-			// This adds an uncapped, severity-scaled penalty on the SAME overlap
-			// o = cr - d already computed here (cr = permea*rAB = sum-of-radii at
-			// which the wall is zero), so a physically impossible interpenetration
-			// can always out-weigh the com reward. Smooth onset (o<=0 -> 0),
-			// steep tail (o^p, p~3). Reuses the hot-loop geometry — no PoseBust
-			// Molecule construction per evaluation. OFF unless pb_clash_weight>0.
+			// This adds an uncapped, severity-scaled penalty computed on the
+			// SAME PoseBusters intermolecular-clash geometry used by the native
+			// C++26 PoseBust checks: two non-bonded atoms clash when their
+			// separation d is below a fraction (pb_vdw_ratio, PoseBusters default
+			// 0.75 of the summed vdW radii) of the sum of element vdW radii
+			// (posebusters_vdw_radius(), soft_wall.h — RDKit periodic-table set).
+			// Radii come from the ELEMENT, not FlexAID typed radii, so this is a
+			// true PoseBust clash term, not a second soft-wall. Uncapped o^p so a
+			// physically impossible interpenetration always out-weighs com.
+			// Reuses the hot-loop distance d — no PoseBust Molecule construction
+			// per evaluation. OFF unless pb_clash_weight>0.
 			if (FA->pb_clash_weight > 0.0) {
-				const double o = cr - d;   // overlap depth (Å); >0 means atoms closer than r_min
+				const double vdw_z = posebusters_vdw_radius(atoms[atomzero].element, radA);
+				const double vdw_c = posebusters_vdw_radius(
+					VC->Calc[VC->ca_rec[currindex].atom].atom->element, radB);
+				const double cr_pb = FA->pb_clash_ratio * (vdw_z + vdw_c);
+				const double o = cr_pb - d;   // PB overlap depth (Å); >0 => atoms closer than PB clash cutoff
 				if (o > 0.0) {
 					cfs->pb_clash += FA->pb_clash_weight * std::pow(o, FA->pb_clash_exponent);
 				}

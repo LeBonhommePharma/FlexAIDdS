@@ -2214,6 +2214,7 @@ void calculate_fitness(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* chr
 				chrom[c].cf.con    = 0.0;
 				chrom[c].cf.gist   = 0.0;
 				chrom[c].cf.hbond  = 0.0;
+				chrom[c].cf.pb_clash = 0.0;  // coarse host-buffer restore (com/wal/sas only); PB clash not computed on this fast path — zero to avoid stale leak into get_cf_evalue
 				chrom[c].cf.totsas = 0.0;
 				chrom[c].cf.rclash = (h_wal[c] > CLASH_THRESHOLD) ? 1 : 0;
 				chrom[c].evalue     = get_cf_evalue(&chrom[c].cf, FA) / n_receptor_chains;

@@ -76,6 +76,7 @@ void apply_config(const json::Value& config, FA_Global* FA, GB_Global* GB,
         FA->sas_weight      = jdbl(config, "scoring", "sas_weight", 1.0);
         FA->pb_clash_weight   = jdbl(config, "scoring", "pb_clash_weight", 0.0);
         FA->pb_clash_exponent = jdbl(config, "scoring", "pb_clash_exponent", 3.0);
+        FA->pb_clash_ratio    = jdbl(config, "scoring", "pb_clash_ratio", 0.75);
 
         // Angular-dependent hydrogen bond potential
         const bool hbond_on = jbool(config, "scoring", "hbond_enabled", false);

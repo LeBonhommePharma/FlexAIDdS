@@ -519,8 +519,10 @@ int main(int argc, char **argv){
 	// Env-set so the classic --legacy .inp path (no CONFIG keyword) can enable it.
 	FA->pb_clash_weight = 0.0;      // OFF by default
 	FA->pb_clash_exponent = 3.0;    // steep tail, smooth onset
+	FA->pb_clash_ratio = 0.75;      // PoseBusters intermolecular clash default (fraction of summed vdW radii)
 	if (const char* e = std::getenv("FLEXAIDDS_PB_CLASH_WEIGHT")) { FA->pb_clash_weight = atof(e); }
 	if (const char* e = std::getenv("FLEXAIDDS_PB_CLASH_EXP"))    { double v = atof(e); if (v > 0.0) FA->pb_clash_exponent = v; }
+	if (const char* e = std::getenv("FLEXAIDDS_PB_CLASH_RATIO"))  { double v = atof(e); if (v > 0.0) FA->pb_clash_ratio = v; }
 	FA->atm_cnt=0;
 	FA->atm_cnt_real=0;
 	FA->res_cnt=0;
