@@ -221,6 +221,9 @@ struct atom_struct{  // atom structure
 
 	int    number;  // atom number according to PDB file
 	float  radius;  // atomic radius
+	double pb_vdw_radius; // cached PoseBusters vdW radius (posebusters_vdw_radius(element, radius));
+	                      // precomputed once in update_optres() so the pb_clash hot loop in
+	                      // Vcontacts.cpp reads it instead of the per-atom element string-compare.
 	int    type;    // atom type
 	int    bond[7]; // atom number (not according to PDB) of covalently bonded atoms, bond[0] gives the total
 	int    ofres;   // residue number to which an atom belongs.
