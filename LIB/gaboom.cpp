@@ -1907,10 +1907,15 @@ int reproduce(FA_Global* FA,GB_Global* GB,VC_Global* VC, chromosome* chrom, cons
 			}
 
 			if (parallel_reproduce_eval) {
-				// GA-PARALLEL-EVAL: leave status==' ' ("needs eval"). The
+				// GA-PARALLEL-EVAL: mark this offspring "needs eval" so the
 				// unconditional calculate_fitness() call at the end of this
-				// function evaluates every not-yet-'n' chromosome, including
-				// this offspring, across its existing OpenMP-parallel loop.
+				// function evaluates it in its OpenMP-parallel loop. The slot
+				// chrom[num_chrom+i] is REUSED memory from the previous
+				// generation (status likely 'n'); calculate_fitness's eval
+				// loop SKIPS status=='n', so we must clear it to ' ' here or
+				// the offspring keeps the prior occupant's stale CF (the
+				// FLEXAIDDS_PARALLEL_REPRODUCE defect fixed 2026-07-18).
+				chrom[GB->num_chrom+i].status=' ';
 			} else {
 				chrom[GB->num_chrom+i].cf=eval_chromosome(FA,GB,VC,gene_lim,atoms,residue,cleftgrid,
 									  chrom[GB->num_chrom+i].genes,target);
@@ -1946,7 +1951,9 @@ int reproduce(FA_Global* FA,GB_Global* GB,VC_Global* VC, chromosome* chrom, cons
 			}
 
 			if (parallel_reproduce_eval) {
-				// GA-PARALLEL-EVAL: see offspring #1 above.
+				// GA-PARALLEL-EVAL: see offspring #1 above — clear the reused
+				// slot's stale status so calculate_fitness re-evaluates it.
+				chrom[GB->num_chrom+i].status=' ';
 			} else {
 				chrom[GB->num_chrom+i].cf=eval_chromosome(FA,GB,VC,gene_lim,atoms,residue,cleftgrid,
 									  chrom[GB->num_chrom+i].genes,target);
