@@ -523,6 +523,13 @@ int main(int argc, char **argv){
 	if (const char* e = std::getenv("FLEXAIDDS_PB_CLASH_WEIGHT")) { FA->pb_clash_weight = atof(e); }
 	if (const char* e = std::getenv("FLEXAIDDS_PB_CLASH_EXP"))    { double v = atof(e); if (v > 0.0) FA->pb_clash_exponent = v; }
 	if (const char* e = std::getenv("FLEXAIDDS_PB_CLASH_RATIO"))  { double v = atof(e); if (v > 0.0) FA->pb_clash_ratio = v; }
+	// VCT com normalization (Lever 2): divide CF.com by contact count (intensive
+	// score) instead of the extensive sum, rescaled by VCT_NREF=100. Fixes the
+	// arm-A overpacking where a dense non-native pose out-scores native purely by
+	// burying more surface (more contacts). Read from env so the classic --legacy
+	// .inp path (no CONFIG "scoring" JSON block) can enable it; the JSON path sets
+	// it in config_parser.cpp:69. Default OFF (extensive) — unchanged legacy behavior.
+	FA->vct_normalize_contacts = std::getenv("FLEXAIDDS_VCT_NORM") ? 1 : 0;
 	FA->atm_cnt=0;
 	FA->atm_cnt_real=0;
 	FA->res_cnt=0;
