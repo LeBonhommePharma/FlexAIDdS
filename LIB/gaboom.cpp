@@ -1765,6 +1765,24 @@ int reproduce(FA_Global* FA,GB_Global* GB,VC_Global* VC, chromosome* chrom, cons
 
 	int i,j,k;
 
+	// ── GA-PARALLEL-EVAL (finding #1) ──────────────────────────────────────
+	// Default OFF: reproduce() behaves exactly as before (fully serial
+	// per-offspring eval_chromosome() calls). When FLEXAIDDS_PARALLEL_REPRODUCE
+	// is set (non-empty, not "0"), offspring CF evaluation is deferred: each
+	// new offspring's status is left as ' ' ("needs eval") instead of being
+	// evaluated inline here, and the pre-existing OpenMP-parallel loop inside
+	// calculate_fitness() -- already called unconditionally at the end of this
+	// function for both STEADY and BOOM -- evaluates every not-yet-'n'
+	// chromosome (including these offspring) across threads, each using its
+	// own per-thread FA/VC/atoms/residue workspace copy. No new parallel
+	// region and no change to eval_chromosome()/vcfunction() math: this flag
+	// only decides WHERE (serial reproduce() vs parallel calculate_fitness())
+	// the exact same function is called from.
+	static const bool parallel_reproduce_eval = [](){
+		const char* env = std::getenv("FLEXAIDDS_PARALLEL_REPRODUCE");
+		return env && env[0] != '\0' && env[0] != '0';
+	}();
+
 	// Multi-chain VCT normalisation (see GA() comment for rationale)
 	const int n_receptor_chains = count_receptor_chains(FA, residue);
 	int nnew,p1,p2;
@@ -1880,15 +1898,27 @@ int reproduce(FA_Global* FA,GB_Global* GB,VC_Global* VC, chromosome* chrom, cons
 				memcpy(chrom[GB->num_chrom+i].ring_phases, rc1.ring_phases, sizeof(rc1.ring_phases));
 				memcpy(chrom[GB->num_chrom+i].ring_six,    rc1.ring_six,    sizeof(rc1.ring_six));
 				memcpy(chrom[GB->num_chrom+i].ring_five,   rc1.ring_five,   sizeof(rc1.ring_five));
-				ring_load_chrom_to_fa(FA, &chrom[GB->num_chrom+i]);
+				// Deferred to calculate_fitness()'s per-thread FA copy when the
+				// eval itself is deferred (see parallel_reproduce_eval below):
+				// loading into the shared FA here would race with the other
+				// offspring evals still running serially in this while-loop.
+				if (!parallel_reproduce_eval)
+					ring_load_chrom_to_fa(FA, &chrom[GB->num_chrom+i]);
 			}
 
-			chrom[GB->num_chrom+i].cf=eval_chromosome(FA,GB,VC,gene_lim,atoms,residue,cleftgrid,
-								  chrom[GB->num_chrom+i].genes,target);
-			chrom[GB->num_chrom+i].evalue=get_cf_evalue(&chrom[GB->num_chrom+i].cf, FA) / n_receptor_chains;
-			chrom[GB->num_chrom+i].app_evalue=get_apparent_cf_evalue(&chrom[GB->num_chrom+i].cf) / n_receptor_chains;
-			ccbm_inject_strain(FA, chrom[GB->num_chrom+i], gene_lim);  // CCBM strain
-			chrom[GB->num_chrom+i].status='n';
+			if (parallel_reproduce_eval) {
+				// GA-PARALLEL-EVAL: leave status==' ' ("needs eval"). The
+				// unconditional calculate_fitness() call at the end of this
+				// function evaluates every not-yet-'n' chromosome, including
+				// this offspring, across its existing OpenMP-parallel loop.
+			} else {
+				chrom[GB->num_chrom+i].cf=eval_chromosome(FA,GB,VC,gene_lim,atoms,residue,cleftgrid,
+									  chrom[GB->num_chrom+i].genes,target);
+				chrom[GB->num_chrom+i].evalue=get_cf_evalue(&chrom[GB->num_chrom+i].cf, FA) / n_receptor_chains;
+				chrom[GB->num_chrom+i].app_evalue=get_apparent_cf_evalue(&chrom[GB->num_chrom+i].cf) / n_receptor_chains;
+				ccbm_inject_strain(FA, chrom[GB->num_chrom+i], gene_lim);  // CCBM strain
+				chrom[GB->num_chrom+i].status='n';
+			}
 
 			duplicates[sig1] = 1;
 			i++;
@@ -1910,15 +1940,21 @@ int reproduce(FA_Global* FA,GB_Global* GB,VC_Global* VC, chromosome* chrom, cons
 				memcpy(chrom[GB->num_chrom+i].ring_phases, rc2.ring_phases, sizeof(rc2.ring_phases));
 				memcpy(chrom[GB->num_chrom+i].ring_six,    rc2.ring_six,    sizeof(rc2.ring_six));
 				memcpy(chrom[GB->num_chrom+i].ring_five,   rc2.ring_five,   sizeof(rc2.ring_five));
-				ring_load_chrom_to_fa(FA, &chrom[GB->num_chrom+i]);
+				// See offspring #1 above: deferred under parallel_reproduce_eval.
+				if (!parallel_reproduce_eval)
+					ring_load_chrom_to_fa(FA, &chrom[GB->num_chrom+i]);
 			}
 
-			chrom[GB->num_chrom+i].cf=eval_chromosome(FA,GB,VC,gene_lim,atoms,residue,cleftgrid,
-								  chrom[GB->num_chrom+i].genes,target);
-			chrom[GB->num_chrom+i].evalue=get_cf_evalue(&chrom[GB->num_chrom+i].cf, FA) / n_receptor_chains;
-			chrom[GB->num_chrom+i].app_evalue=get_apparent_cf_evalue(&chrom[GB->num_chrom+i].cf) / n_receptor_chains;
-			ccbm_inject_strain(FA, chrom[GB->num_chrom+i], gene_lim);  // CCBM strain
-			chrom[GB->num_chrom+i].status='n';
+			if (parallel_reproduce_eval) {
+				// GA-PARALLEL-EVAL: see offspring #1 above.
+			} else {
+				chrom[GB->num_chrom+i].cf=eval_chromosome(FA,GB,VC,gene_lim,atoms,residue,cleftgrid,
+									  chrom[GB->num_chrom+i].genes,target);
+				chrom[GB->num_chrom+i].evalue=get_cf_evalue(&chrom[GB->num_chrom+i].cf, FA) / n_receptor_chains;
+				chrom[GB->num_chrom+i].app_evalue=get_apparent_cf_evalue(&chrom[GB->num_chrom+i].cf) / n_receptor_chains;
+				ccbm_inject_strain(FA, chrom[GB->num_chrom+i], gene_lim);  // CCBM strain
+				chrom[GB->num_chrom+i].status='n';
+			}
 
 			duplicates[sig2] = 1;
 			i++;
