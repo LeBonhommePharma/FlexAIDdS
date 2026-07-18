@@ -8,6 +8,7 @@
 #include <cmath>
 #include <cstdlib>
 #include <vector>
+#include <unordered_map>
 
 #define DEBUG_LEVEL 0
 
@@ -415,32 +416,13 @@ double vcfunction(FA_Global* FA,VC_Global* VC,atom* atoms,resid* residue, std::v
 			}
 
 			cfs->wal += Ewall_fitness;
-
-			// ── PoseBust physical-realism clash penalty (opt-in) ──────────────
-			// The wall term above is CAPPED (WAL_CONTACT_CAP), so it cannot
-			// overcome an UNBOUNDED CF.com overpacking reward (root cause of the
-			// arm-A 0%: elected decoys reach com~-1200 while wal maxes ~+150).
-			// This adds an uncapped, severity-scaled penalty computed on the
-			// SAME PoseBusters intermolecular-clash geometry used by the native
-			// C++26 PoseBust checks: two non-bonded atoms clash when their
-			// separation d is below a fraction (pb_vdw_ratio, PoseBusters default
-			// 0.75 of the summed vdW radii) of the sum of element vdW radii
-			// (posebusters_vdw_radius(), soft_wall.h — RDKit periodic-table set).
-			// Radii come from the ELEMENT, not FlexAID typed radii, so this is a
-			// true PoseBust clash term, not a second soft-wall. Uncapped o^p so a
-			// physically impossible interpenetration always out-weighs com.
-			// Reuses the hot-loop distance d — no PoseBust Molecule construction
-			// per evaluation. OFF unless pb_clash_weight>0.
-			if (FA->pb_clash_weight > 0.0) {
-				const double vdw_z = posebusters_vdw_radius(atoms[atomzero].element, radA);
-				const double vdw_c = posebusters_vdw_radius(
-					VC->Calc[VC->ca_rec[currindex].atom].atom->element, radB);
-				const double cr_pb = FA->pb_clash_ratio * (vdw_z + vdw_c);
-				const double o = cr_pb - d;   // PB overlap depth (Å); >0 => atoms closer than PB clash cutoff
-				if (o > 0.0) {
-					cfs->pb_clash += FA->pb_clash_weight * std::pow(o, FA->pb_clash_exponent);
-				}
-			}
+			// NOTE: PoseBust clash penalty is NOT computed here. The Vcontacts
+			// loop enumerates only Voronoi SURFACE-contact pairs; deep
+			// interpenetration pairs are geometrically occluded and never
+			// visited, undercounting the true clash ~23x (validated on 1SJ0).
+			// The PoseBust term is instead computed by an independent all-pairs
+			// cell-list scan once per evaluation (see pb_clash scan after the
+			// main loop), matching PoseBusters check_intermolecular_distance.
 
 #if DEBUG_LEVEL > 0
 				Ewall_atm += Ewall;
@@ -811,6 +793,102 @@ double vcfunction(FA_Global* FA,VC_Global* VC,atom* atoms,resid* residue, std::v
 			if(FA->optres[j].type == 1){
 				FA->optres[j].cf.gist += gist_score;
 				break;
+			}
+		}
+	}
+
+	// ── PoseBust physical-realism clash penalty — all-pairs cell-list scan ──
+	// Computed ONCE per pose evaluation (like GIST above), NOT inside the
+	// Vcontacts contact loop. The Vcontacts loop enumerates only Voronoi
+	// surface-contact pairs, so deep interpenetration (a ligand atom buried
+	// inside receptor atoms) is occluded and undercounts the clash ~23x
+	// (validated on 1SJ0: engine raw 3.01 vs all-pairs 70.79). This scan
+	// visits EVERY ligand-atom / receptor-atom pair within the max PB vdW-sum
+	// cutoff via a uniform spatial grid (cell-list), matching PoseBusters'
+	// check_intermolecular_distance semantics: a pair clashes when the
+	// interatomic distance d < pb_clash_ratio*(vdw_i+vdw_j) (element vdW radii
+	// from posebusters_vdw_radius(), soft_wall.h). Penalty is uncapped and
+	// severity-scaled: weight * sum(max(0, cr_pb - d)^p), so a physically
+	// impossible interpenetration always out-weighs the unbounded CF.com.
+	// OFF unless pb_clash_weight>0.
+	if (FA->pb_clash_weight > 0.0) {
+		// Partition atoms into rigid-receptor vs movable-ligand (optres != NULL).
+		// Ligand atoms are few (tens); receptor atoms are many (thousands) — so
+		// build the grid over RECEPTOR atoms and scan each ligand atom's cell nbhd.
+		const double PB_MAX_VDW = 2.10;               // max element vdW (I) in soft_wall.h table
+		const double cell = FA->pb_clash_ratio * 2.0 * PB_MAX_VDW; // cutoff = ratio*(vdw_i+vdw_j) <= this
+		const double inv_cell = 1.0 / cell;
+
+		// Collect receptor (rigid) and ligand (movable) atom indices.
+		std::vector<int> lig_idx;
+		lig_idx.reserve(64);
+		double rmin[3] = { 1e30, 1e30, 1e30}, rmax[3] = {-1e30,-1e30,-1e30};
+		std::vector<int> rec_idx;
+		rec_idx.reserve(4096);
+		for (int ai = 1; ai <= FA->atm_cnt; ++ai) {  // atoms[] is 1-based (see update_optres.cpp)
+			if (atoms[ai].optres != NULL) {           // movable ligand/flexible atom
+				lig_idx.push_back(ai);
+			} else {                                   // rigid receptor atom
+				rec_idx.push_back(ai);
+				for (int k=0;k<3;++k){ double c=atoms[ai].coor[k]; if(c<rmin[k])rmin[k]=c; if(c>rmax[k])rmax[k]=c; }
+			}
+		}
+		if (!lig_idx.empty() && !rec_idx.empty()) {
+			// Build a uniform grid over receptor atoms.
+			int dim[3];
+			for (int k=0;k<3;++k){ dim[k] = std::max(1, (int)((rmax[k]-rmin[k])*inv_cell) + 1); }
+			auto cidx = [&](int cx,int cy,int cz){ return (cx*dim[1]+cy)*dim[2]+cz; };
+			std::unordered_map<int, std::vector<int>> grid;
+			grid.reserve(rec_idx.size());
+			for (int ri : rec_idx) {
+				int cx=(int)((atoms[ri].coor[0]-rmin[0])*inv_cell);
+				int cy=(int)((atoms[ri].coor[1]-rmin[1])*inv_cell);
+				int cz=(int)((atoms[ri].coor[2]-rmin[2])*inv_cell);
+				if(cx<0)cx=0; if(cx>=dim[0])cx=dim[0]-1;
+				if(cy<0)cy=0; if(cy>=dim[1])cy=dim[1]-1;
+				if(cz<0)cz=0; if(cz>=dim[2])cz=dim[2]-1;
+				grid[cidx(cx,cy,cz)].push_back(ri);
+			}
+			// Scan each ligand atom against receptor atoms in its 27-cell neighborhood.
+			double pb_pen = 0.0;
+			long pb_nclash = 0;
+			for (int li : lig_idx) {
+				const double lx=atoms[li].coor[0], ly=atoms[li].coor[1], lz=atoms[li].coor[2];
+				const char* le_raw = get_element(atoms[li].type);
+				while (*le_raw == ' ') ++le_raw;  // get_element returns " C"/"Cl"/… — strip leading space
+				const double vdw_l = posebusters_vdw_radius(le_raw, atoms[li].radius);
+				int cx=(int)((lx-rmin[0])*inv_cell);
+				int cy=(int)((ly-rmin[1])*inv_cell);
+				int cz=(int)((lz-rmin[2])*inv_cell);
+				for(int dx=-1;dx<=1;++dx)for(int dy=-1;dy<=1;++dy)for(int dz=-1;dz<=1;++dz){
+					int nx=cx+dx,ny=cy+dy,nz=cz+dz;
+					if(nx<0||ny<0||nz<0||nx>=dim[0]||ny>=dim[1]||nz>=dim[2]) continue;
+					auto it=grid.find(cidx(nx,ny,nz));
+					if(it==grid.end()) continue;
+					for(int ri : it->second){
+						// skip covalently bonded / 1-2 neighbors (intra handled elsewhere)
+						const double ddx=lx-atoms[ri].coor[0];
+						const double ddy=ly-atoms[ri].coor[1];
+						const double ddz=lz-atoms[ri].coor[2];
+						const double d=std::sqrt(ddx*ddx+ddy*ddy+ddz*ddz);
+						if(d < 1.0e-6) continue;
+						const char* re_raw = get_element(atoms[ri].type);
+						while (*re_raw == ' ') ++re_raw;
+						const double vdw_r=posebusters_vdw_radius(re_raw, atoms[ri].radius);
+						const double cr_pb=FA->pb_clash_ratio*(vdw_l+vdw_r);
+						const double o=cr_pb-d;
+						if(o>0.0){ pb_pen += std::pow(o, FA->pb_clash_exponent); ++pb_nclash; }
+					}
+				}
+			}
+			if (std::getenv("FLEXAIDDS_PB_CLASH_DEBUG")) {
+				fprintf(stderr, "[PB_CLASH_DEBUG] lig_atoms=%zu rec_atoms=%zu nclash=%ld raw_pen=%.4f\n",
+					lig_idx.size(), rec_idx.size(), pb_nclash, pb_pen);
+			}
+			pb_pen *= FA->pb_clash_weight;
+			// Distribute to the first ligand optres (same convention as GIST).
+			for(int j=0;j<FA->num_optres;++j){
+				if(FA->optres[j].type == 1){ FA->optres[j].cf.pb_clash += pb_pen; break; }
 			}
 		}
 	}
