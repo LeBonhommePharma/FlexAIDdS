@@ -312,12 +312,35 @@ bool BindingMode::use_classic_entropy_ranking() const noexcept
 
 
 // Collect mode-member CF values for SoftBeta (3Dsig / DatasetRunner identity).
-static std::vector<double> soft_beta_mode_energies(const std::vector<Pose>& poses)
+// Election pb_clash re-weight (selection/search decoupling).
+// FLEXAIDDS_PB_CLASH_ELECT_WEIGHT, when set, re-ranks modes as if the pb_clash
+// penalty had been scored at the ELECTION weight instead of the SEARCH weight,
+// WITHOUT changing the GA search fitness (which stays at pb_clash_weight so the
+// near-native pose is still SAMPLED). Each member's stored CF already includes
+// pb_clash at the search weight (chrom->cf.pb_clash = search_w * raw). To lift it
+// to elect_w we add (elect_w/search_w - 1) * chrom->cf.pb_clash to the member
+// energy. Validated offline on 1SJ0: search w=100 samples 2.47A but elects 6.43A;
+// re-ranking at elect_w>=250 elects 2.67A (near-native). Default: no adjustment.
+static double election_pb_scale(const FA_Global* FA)
+{
+	const char* e = std::getenv("FLEXAIDDS_PB_CLASH_ELECT_WEIGHT");
+	if (!e || e[0] == '\0') return 0.0;               // 0.0 => disabled (no adjustment)
+	const double elect_w = atof(e);
+	const double search_w = (FA != nullptr) ? FA->pb_clash_weight : 0.0;
+	if (elect_w <= 0.0 || search_w <= 0.0) return 0.0; // need both weights active
+	return (elect_w / search_w) - 1.0;                 // additive factor on stored cf.pb_clash
+}
+
+static std::vector<double> soft_beta_mode_energies(const std::vector<Pose>& poses,
+                                                   double pb_elect_factor)
 {
 	std::vector<double> energies;
 	energies.reserve(poses.size());
 	for (const auto& pose : poses) {
-		const double e = static_cast<double>(pose.CF);
+		double e = static_cast<double>(pose.CF);
+		// Election re-weight: lift pb_clash from search weight to election weight.
+		if (pb_elect_factor != 0.0 && pose.chrom != nullptr)
+			e += pb_elect_factor * static_cast<double>(pose.chrom->cf.pb_clash);
 		if (std::isfinite(e))
 			energies.push_back(e);
 	}
@@ -337,7 +360,7 @@ double BindingMode::compute_enthalpy() const
 	if (!Population || Poses.empty())
 		return 0.0;
 	const double T = static_cast<double>(Population->Temperature);
-	return flexaids::soft_beta::free_energy(soft_beta_mode_energies(Poses), T).H;
+	return flexaids::soft_beta::free_energy(soft_beta_mode_energies(Poses, election_pb_scale(Population->FA)), T).H;
 }
 
 
@@ -352,7 +375,7 @@ double BindingMode::compute_entropy() const
 	if (!Population || Poses.empty())
 		return 0.0;
 	const double T = static_cast<double>(Population->Temperature);
-	return flexaids::soft_beta::free_energy(soft_beta_mode_energies(Poses), T).S;
+	return flexaids::soft_beta::free_energy(soft_beta_mode_energies(Poses, election_pb_scale(Population->FA)), T).S;
 }
 
 
@@ -372,7 +395,7 @@ double BindingMode::compute_energy() const
 	if (!Population)
 		return 0.0;
 	const double T = static_cast<double>(Population->Temperature);
-	const auto fe = flexaids::soft_beta::free_energy(soft_beta_mode_energies(Poses), T);
+	const auto fe = flexaids::soft_beta::free_energy(soft_beta_mode_energies(Poses, election_pb_scale(Population->FA)), T);
 	const double nat_dg =
 		(Population->FA) ? Population->FA->natural_deltaG : 0.0;
 	return fe.G + compute_vibrational_correction() + nat_dg;
