@@ -415,6 +415,7 @@ struct FA_Global_struct{
 	double sas_weight;                   // SAS desolvation penalty multiplier (default 1.0)
 	double pb_clash_weight;              // PoseBust physical-realism clash penalty weight (0.0=off,default). Severity-scaled + UNCAPPED so it can overcome unbounded CF.com overpacking, unlike WAL_CONTACT_CAP-bounded wall. FLEXAIDDS_PB_CLASH_WEIGHT.
 	double pb_clash_exponent;            // overlap penalty exponent p (default 3.0; steep tail, smooth onset). FLEXAIDDS_PB_CLASH_EXP.
+	double pb_clash_ratio;               // PoseBusters clash cutoff as fraction of summed element vdW radii (default 0.75 = PoseBusters intermolecular default). FLEXAIDDS_PB_CLASH_RATIO.
 	float intrafraction;                 // intramolecular fraction interaction
 
 	int   use_elec;                      // enable Coulomb electrostatic scoring
