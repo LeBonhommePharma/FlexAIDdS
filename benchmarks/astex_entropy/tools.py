@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+import csv
+import hashlib
 import json
 import math
 import os
-import csv
 import shutil
 from pathlib import Path
 from typing import Any, Iterable
@@ -11,6 +12,7 @@ from typing import Any, Iterable
 import yaml
 from rdkit import Chem
 from rdkit import RDLogger
+from rdkit.Geometry import Point3D
 
 from .io_utils import run_command, write_poses
 from .models import PoseRecord, TargetRecord
@@ -913,28 +915,153 @@ def _parse_flexaidds_pose_score(pdb_path: Path, result_row: dict[str, str]) -> s
     return result_row.get("best_score", "")
 
 
-def _extract_flexaidds_ligand_pdb(complex_pdb: Path, ligand_pdb: Path) -> bool:
-    ligand_lines: list[str] = []
-    ligand_serials: set[str] = set()
-    conect_lines: list[str] = []
-    for line in complex_pdb.read_text(errors="ignore").splitlines():
-        rec = line[:6].strip()
-        if rec == "HETATM":
-            resname = line[17:20].strip().upper() if len(line) >= 20 else ""
-            if resname in NON_LIGAND_HETATM:
-                continue
-            ligand_lines.append(line)
-            ligand_serials.add(line[6:11].strip())
-        elif rec == "CONECT":
-            conect_lines.append(line)
-    if not ligand_lines:
-        return False
-    kept_conect = [
-        line for line in conect_lines
-        if any(line[i:i + 5].strip() in ligand_serials for i in range(6, len(line), 5))
-    ]
-    ligand_pdb.write_text("\n".join(ligand_lines + kept_conect + ["END"]) + "\n")
-    return True
+def _file_sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for block in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(block)
+    return digest.hexdigest()
+
+
+def _conect_source_serials(lines: Iterable[str], pose_pdb: Path) -> set[int]:
+    serials: set[int] = set()
+    for line_number, line in enumerate(lines, start=1):
+        if line[:6].strip() != "CONECT":
+            continue
+        # FlexAID writes one row per ligand atom. Neighbour fields can reference
+        # non-ligand atoms, so only the row's source serial defines membership.
+        token = line[6:11].strip()
+        try:
+            serial = int(token)
+        except ValueError as exc:
+            raise RuntimeError(
+                f"Malformed CONECT source serial in {pose_pdb} at line {line_number}: {token!r}"
+            ) from exc
+        if serial <= 0:
+            raise RuntimeError(
+                f"Invalid CONECT source serial in {pose_pdb} at line {line_number}: {serial}"
+            )
+        serials.add(serial)
+    if not serials:
+        raise RuntimeError(f"FlexAIDdS pose contains no CONECT ligand membership: {pose_pdb}")
+    return serials
+
+
+def _pdb_atomic_number(line: str, pose_pdb: Path, line_number: int) -> int:
+    symbol = line[76:78].strip() if len(line) >= 78 else ""
+    if not symbol:
+        raise RuntimeError(
+            f"FlexAIDdS pose atom has no explicit PDB element in {pose_pdb} at line {line_number}"
+        )
+    try:
+        atomic_number = int(Chem.GetPeriodicTable().GetAtomicNumber(symbol.capitalize()))
+    except RuntimeError as exc:
+        raise RuntimeError(
+            f"Unknown explicit PDB element {symbol!r} in {pose_pdb} at line {line_number}"
+        ) from exc
+    if atomic_number <= 0:
+        raise RuntimeError(
+            f"Unknown explicit PDB element {symbol!r} in {pose_pdb} at line {line_number}"
+        )
+    return atomic_number
+
+
+def _flexaidds_pose_coordinates(pose_pdb: Path) -> tuple[list[Point3D], list[int]]:
+    lines = pose_pdb.read_text(errors="ignore").splitlines()
+    ligand_serials = _conect_source_serials(lines, pose_pdb)
+    coordinates: list[Point3D] = []
+    atomic_numbers: list[int] = []
+    found_serials: set[int] = set()
+
+    for line_number, line in enumerate(lines, start=1):
+        if line[:6].strip() not in {"ATOM", "HETATM"}:
+            continue
+        serial_token = line[6:11].strip()
+        try:
+            serial = int(serial_token)
+        except ValueError:
+            continue
+        if serial not in ligand_serials:
+            continue
+        if serial in found_serials:
+            raise RuntimeError(
+                f"Duplicate FlexAIDdS ligand atom serial {serial} in {pose_pdb} at line {line_number}"
+            )
+        try:
+            xyz = tuple(float(line[start:end]) for start, end in ((30, 38), (38, 46), (46, 54)))
+        except ValueError as exc:
+            raise RuntimeError(
+                f"Malformed FlexAIDdS ligand coordinates for serial {serial} in {pose_pdb} "
+                f"at line {line_number}"
+            ) from exc
+        if not all(math.isfinite(value) for value in xyz):
+            raise RuntimeError(
+                f"Non-finite FlexAIDdS ligand coordinates for serial {serial} in {pose_pdb} "
+                f"at line {line_number}"
+            )
+        coordinates.append(Point3D(*xyz))
+        atomic_numbers.append(_pdb_atomic_number(line, pose_pdb, line_number))
+        found_serials.add(serial)
+
+    missing_serials = sorted(ligand_serials - found_serials)
+    if missing_serials:
+        raise RuntimeError(
+            f"FlexAIDdS pose CONECT members have no emitted atom records in {pose_pdb}: "
+            f"{missing_serials}"
+        )
+    return coordinates, atomic_numbers
+
+
+def _write_pose_with_reference_topology(
+    pose_pdb: Path,
+    reference_sdf: str | Path,
+    output_sdf: Path,
+) -> None:
+    output_sdf.unlink(missing_ok=True)
+    reference = read_first_sdf_mol(reference_sdf, allow_unsanitized=True)
+    coordinates, pose_atomic_numbers = _flexaidds_pose_coordinates(pose_pdb)
+    reference_atomic_numbers = [atom.GetAtomicNum() for atom in reference.GetAtoms()]
+
+    if len(coordinates) != reference.GetNumAtoms():
+        raise RuntimeError(
+            f"FlexAIDdS pose/reference atom-count mismatch for {pose_pdb}: "
+            f"pose={len(coordinates)}, reference={reference.GetNumAtoms()}"
+        )
+    for index, (pose_number, reference_number) in enumerate(
+        zip(pose_atomic_numbers, reference_atomic_numbers, strict=True)
+    ):
+        if pose_number != reference_number:
+            raise RuntimeError(
+                f"FlexAIDdS pose/reference atomic-number mismatch for {pose_pdb} at index {index}: "
+                f"pose={pose_number}, reference={reference_number}"
+            )
+
+    # Preserve the reference graph and chemistry verbatim. The generated pose
+    # contributes coordinates only; no PDB bond perception or sanitisation runs.
+    pose = Chem.Mol(reference)
+    pose.RemoveAllConformers()
+    conformer = Chem.Conformer(pose.GetNumAtoms())
+    conformer.Set3D(True)
+    for index, point in enumerate(coordinates):
+        conformer.SetAtomPosition(index, point)
+    pose.AddConformer(conformer, assignId=True)
+
+    temporary_sdf = output_sdf.with_name(f".{output_sdf.name}.tmp")
+    temporary_sdf.unlink(missing_ok=True)
+    try:
+        writer = Chem.SDWriter(str(temporary_sdf))
+        if writer is None:
+            raise RuntimeError(f"Could not open topology-preserving pose SDF: {output_sdf}")
+        try:
+            writer.write(pose)
+        finally:
+            writer.close()
+        if not temporary_sdf.is_file() or temporary_sdf.stat().st_size == 0:
+            raise RuntimeError(f"Failed to write topology-preserving pose SDF: {output_sdf}")
+        temporary_sdf.replace(output_sdf)
+    except Exception:
+        temporary_sdf.unlink(missing_ok=True)
+        raise
 
 
 def _numeric_pose_key(path: Path) -> tuple[int, str]:
@@ -968,34 +1095,28 @@ def _collect_flexaidds_records(
                 continue
             pose_pdbs.append(path)
 
-        seen_pose_hashes: set[tuple[int, int]] = set()
+        seen_pose_hashes: set[str] = set()
         unique_pose_pdbs: list[Path] = []
         for path in pose_pdbs:
             try:
-                stat = path.stat()
+                digest = _file_sha256(path)
             except OSError:
                 continue
-            key = (stat.st_ino, stat.st_size)
-            if key in seen_pose_hashes:
+            if digest in seen_pose_hashes:
                 continue
-            seen_pose_hashes.add(key)
+            seen_pose_hashes.add(digest)
             unique_pose_pdbs.append(path)
 
         for idx, pdb_path in enumerate(unique_pose_pdbs, start=1):
             pose_id = f"{target.target_dir_name}_flexaidds_{idx:03d}"
             pose_dir = Path(cfg["work_dir"]) / "prepared" / mode / target.target_dir_name / "poses" / "flexaidds"
             pose_dir.mkdir(parents=True, exist_ok=True)
-            ligand_pdb = pose_dir / f"{pose_id}.ligand.pdb"
             pose_sdf = pose_dir / f"{pose_id}.sdf"
-            if not _extract_flexaidds_ligand_pdb(pdb_path, ligand_pdb):
-                continue
-            run_command(
-                [cfg["tools"]["obabel"], "-ipdb", str(ligand_pdb), "-osdf", "-O", str(pose_sdf)],
-                log_path=pose_sdf.with_suffix(".obabel.log"),
-                check=False,
+            _write_pose_with_reference_topology(
+                pdb_path,
+                target.reference_sdf,
+                pose_sdf,
             )
-            if not pose_sdf.exists():
-                continue
             records.append(
                 PoseRecord(
                     target_id=target.target_id,
