@@ -10,6 +10,7 @@
 #include "Types.h"
 
 #include <string>
+#include <vector>
 
 namespace flexaids::posebust {
 
@@ -22,15 +23,32 @@ struct BustCliResult {
     int         n_pass  = 0;
     int         n_fail  = 0;
     int         n_checks = 0;
-    std::string csv_path;          // written report if sidecar set
+    std::string csv_path;          // validated CSV report if sidecar set
     std::string raw_csv;           // full raw stdout (preserved before schema fail)
-    // Receipts (audit P1)
-    std::string bust_path;         // resolved binary
-    std::string bust_sha256;       // SHA-256 of binary when available
-    std::string bust_version;      // version string if probed
-    std::string argv_joined;       // full argv as single string
+    // Strict PoseBusters 0.6.5 redock contract + receipts.
+    std::string schema_id = "posebusters-0.6.5-redock-csv-v1";
+    std::string package_name = "posebusters";
+    std::string package_version;       // distribution version (must be 0.6.5)
+    std::string package_record_path;   // installed dist-info/RECORD manifest
+    std::string package_record_sha256;
+    std::string config_name = "redock";
+    std::string config_path;           // exact installed redock.yml consumed
+    std::string config_sha256;
+    std::string bust_path;             // resolved console-script launcher
+    std::string bust_sha256;           // launcher SHA-256 (not package identity)
+    std::string bust_version;          // raw `bust --version` output
+    std::vector<std::string> argv;     // exact argv passed to exec
+    std::string argv_joined;           // human-readable argv (legacy receipt)
     int         exit_status = -1;
-    std::string raw_csv_sha256;    // SHA-256 of raw_csv body
+    std::string pred_sdf_path;
+    std::string pred_sdf_sha256;
+    std::string protein_pdb_path;
+    std::string protein_pdb_sha256;
+    std::string crystal_sdf_path;
+    std::string crystal_sdf_sha256;
+    std::string raw_csv_path;
+    std::string raw_csv_sha256;        // SHA-256 of raw stdout sidecar
+    std::string csv_sha256;            // SHA-256 of validated CSV report
 };
 
 /// Resolve bust binary: FLEXAIDDS_POSEBUSTERS_BIN, else PATH, else
@@ -50,6 +68,10 @@ BustCliResult run_upstream_bust(const std::string& pred_sdf,
 /// Used by unit tests and by run_upstream_bust after raw_csv is preserved.
 /// raw_csv is set from `csv_body` when r.raw_csv is empty.
 void apply_bust_csv_schema(const std::string& csv_body, BustCliResult& r);
+
+/// Complete JSON receipt for package/version/config/command/input/output
+/// identity. The receipt is deterministic and contains no inferred hashes.
+[[nodiscard]] std::string format_bust_receipt_json(const BustCliResult& r);
 
 /// SHA-256 hex of a file (empty on failure).
 [[nodiscard]] std::string sha256_file(const std::string& path);

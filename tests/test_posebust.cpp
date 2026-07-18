@@ -18,14 +18,17 @@
 
 #include <array>
 #include <cmath>
+#include <cstddef>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
+#include <iterator>
 #include <map>
 #include <set>
 #include <sstream>
 #include <string>
 #include <unordered_set>
+#include <utility>
 #include <vector>
 
 namespace fs = std::filesystem;
@@ -153,66 +156,215 @@ TEST(PdbCoords, RejectsNonFiniteAndJunk) {
 
 namespace {
 
-std::string synthetic_full_pb_header() {
-    // Version-pinned mandatory set plus metadata columns.
-    return "molecule,mol_pred_loaded,mol_cond_loaded,sanitization,inchi_convertible,"
-           "all_atoms_connected,bond_lengths,bond_angles,internal_steric_clash,"
-           "aromatic_ring_flatness,double_bond_flatness,internal_energy,"
-           "protein-ligand_maximum_distance,minimum_distance_to_protein,"
-           "no_protein_clashes,volume_overlap_with_protein,rmsd_≤_2å";
+std::string fixture_text(const char* name) {
+    std::ifstream in(repo_root() / "tests" / "fixtures" / name);
+    return std::string(std::istreambuf_iterator<char>(in),
+                       std::istreambuf_iterator<char>());
 }
 
-std::string synthetic_full_pb_true_row() {
-    return "m1,True,True,True,True,True,True,True,True,True,True,True,"
-           "True,True,True,True,1.0";
+std::vector<std::string> split_fixture_row(const std::string& line) {
+    std::vector<std::string> cells;
+    std::istringstream in(line);
+    std::string cell;
+    while (std::getline(in, cell, ',')) cells.push_back(cell);
+    return cells;
+}
+
+std::string join_fixture_row(const std::vector<std::string>& cells) {
+    std::ostringstream out;
+    for (std::size_t i = 0; i < cells.size(); ++i) {
+        if (i) out << ',';
+        out << cells[i];
+    }
+    return out.str();
+}
+
+std::string replace_fixture_cell(const std::string& csv,
+                                 const std::string& column,
+                                 const std::string& value) {
+    std::istringstream in(csv);
+    std::string header_line, row_line;
+    std::getline(in, header_line);
+    std::getline(in, row_line);
+    auto headers = split_fixture_row(header_line);
+    auto values = split_fixture_row(row_line);
+    for (std::size_t i = 0; i < headers.size(); ++i) {
+        if (headers[i] == column) {
+            values[i] = value;
+            break;
+        }
+    }
+    return join_fixture_row(headers) + "\n" + join_fixture_row(values) + "\n";
+}
+
+std::string remove_fixture_column(const std::string& csv,
+                                  const std::string& column) {
+    std::istringstream in(csv);
+    std::string header_line, row_line;
+    std::getline(in, header_line);
+    std::getline(in, row_line);
+    auto headers = split_fixture_row(header_line);
+    auto values = split_fixture_row(row_line);
+    for (std::size_t i = 0; i < headers.size(); ++i) {
+        if (headers[i] == column) {
+            headers.erase(headers.begin() + static_cast<std::ptrdiff_t>(i));
+            values.erase(values.begin() + static_cast<std::ptrdiff_t>(i));
+            break;
+        }
+    }
+    return join_fixture_row(headers) + "\n" + join_fixture_row(values) + "\n";
+}
+
+BustCliResult parse_065_fixture(const std::string& csv) {
+    BustCliResult r;
+    r.package_version = "0.6.5";
+    apply_bust_csv_schema(csv, r);
+    return r;
 }
 
 }  // namespace
 
-TEST(BustCliSchema, PassesWithFullMandatorySet) {
-    BustCliResult r;
+TEST(BustCliSchema, AcceptsReal065Redock1of6StylePass) {
     const std::string csv =
-        synthetic_full_pb_header() + "\n" + synthetic_full_pb_true_row() + "\n";
-    apply_bust_csv_schema(csv, r);
+        fixture_text("posebusters_0_6_5_redock_1of6_pass.csv");
+    ASSERT_FALSE(csv.empty());
+    ASSERT_EQ(csv.find("no_protein_clashes"), std::string::npos)
+        << "fabricated column must not re-enter the upstream schema";
+    BustCliResult r = parse_065_fixture(csv);
     EXPECT_TRUE(r.pb_pass) << r.error << " failed=" << r.failed_keys;
     EXPECT_EQ(r.raw_csv, csv);
-    EXPECT_GT(r.n_checks, 0);
+    EXPECT_EQ(r.schema_id, "posebusters-0.6.5-redock-csv-v1");
+    EXPECT_EQ(r.n_checks, 27);
+    EXPECT_EQ(r.n_pass, 27);
     EXPECT_EQ(r.n_fail, 0);
 }
 
-TEST(BustCliSchema, RejectsDuplicateHeaderPreservesRaw) {
-    BustCliResult r;
+TEST(BustCliSchema, RejectsRepresentativeRequiredCheckFailure) {
     const std::string csv =
-        "molecule,mol_pred_loaded,mol_pred_loaded,sanitization\n"
-        "m1,True,True,True\n";
-    apply_bust_csv_schema(csv, r);
+        fixture_text("posebusters_0_6_5_redock_required_fail.csv");
+    ASSERT_FALSE(csv.empty());
+    BustCliResult r = parse_065_fixture(csv);
+    EXPECT_FALSE(r.pb_pass);
+    EXPECT_EQ(r.n_checks, 27);
+    EXPECT_EQ(r.n_pass, 26);
+    EXPECT_EQ(r.n_fail, 1);
+    EXPECT_EQ(r.failed_keys, "volume_overlap_with_protein");
+}
+
+TEST(BustCliSchema, RejectsDuplicateHeaderPreservesRaw) {
+    const std::string base =
+        fixture_text("posebusters_0_6_5_redock_1of6_pass.csv");
+    std::istringstream in(base);
+    std::string header, row;
+    std::getline(in, header);
+    std::getline(in, row);
+    auto headers = split_fixture_row(header);
+    headers[4] = "mol_pred_loaded";
+    const std::string duplicate_csv =
+        join_fixture_row(headers) + "\n" + row + "\n";
+    BustCliResult r = parse_065_fixture(duplicate_csv);
     EXPECT_FALSE(r.pb_pass);
     EXPECT_NE(r.failed_keys.find("duplicate_header"), std::string::npos)
         << r.failed_keys;
-    EXPECT_EQ(r.raw_csv, csv);  // raw preserved before schema return
+    EXPECT_EQ(r.raw_csv, duplicate_csv);  // preserved before schema return
 }
 
-TEST(BustCliSchema, RejectsMissingMandatoryHeaderPreservesRaw) {
-    BustCliResult r;
-    const std::string csv =
-        "molecule,mol_pred_loaded,sanitization\n"
-        "m1,True,True\n";
-    apply_bust_csv_schema(csv, r);
+TEST(BustCliSchema, RejectsMissingRequiredHeaderPreservesRaw) {
+    const std::string csv = remove_fixture_column(
+        fixture_text("posebusters_0_6_5_redock_1of6_pass.csv"),
+        "minimum_distance_to_waters");
+    BustCliResult r = parse_065_fixture(csv);
     EXPECT_FALSE(r.pb_pass);
-    EXPECT_NE(r.failed_keys.find("mandatory_checks_missing"), std::string::npos)
+    EXPECT_NE(r.failed_keys.find("required_checks_missing"), std::string::npos)
         << r.failed_keys;
     EXPECT_EQ(r.raw_csv, csv);
 }
 
 TEST(BustCliSchema, RejectsColumnCountMismatchPreservesRaw) {
-    BustCliResult r;
-    const std::string csv =
-        synthetic_full_pb_header() + "\n"
-        "m1,True,True\n";  // truncated values
-    apply_bust_csv_schema(csv, r);
+    const std::string base =
+        fixture_text("posebusters_0_6_5_redock_1of6_pass.csv");
+    const std::string csv = base.substr(0, base.find('\n') + 1) +
+                            "1of6_ligand.sdf,DTY,0,True\n";
+    BustCliResult r = parse_065_fixture(csv);
     EXPECT_FALSE(r.pb_pass);
     EXPECT_EQ(r.failed_keys, "schema_column_count");
     EXPECT_EQ(r.raw_csv, csv);
+}
+
+TEST(BustCliSchema, RejectsBlankNaNAndMalformedRequiredCells) {
+    const std::string base =
+        fixture_text("posebusters_0_6_5_redock_1of6_pass.csv");
+    for (const auto& [value, suffix] :
+         std::vector<std::pair<std::string, std::string>>{
+             {"", ":blank"}, {"NaN", ":uncomputed"}, {"yes", ":non_boolean"}}) {
+        const std::string csv =
+            replace_fixture_cell(base, "minimum_distance_to_protein", value);
+        BustCliResult r = parse_065_fixture(csv);
+        EXPECT_FALSE(r.pb_pass) << "value=" << value;
+        EXPECT_NE(r.failed_keys.find("minimum_distance_to_protein" + suffix),
+                  std::string::npos)
+            << "value=" << value << " failed=" << r.failed_keys;
+    }
+}
+
+TEST(BustCliSchema, RejectsUnpinnedOrUnknownPoseBustersVersion) {
+    const std::string csv =
+        fixture_text("posebusters_0_6_5_redock_1of6_pass.csv");
+    for (const char* version : {"", "0.6.4", "0.6.6"}) {
+        BustCliResult r;
+        r.package_version = version;
+        apply_bust_csv_schema(csv, r);
+        EXPECT_FALSE(r.pb_pass) << version;
+        EXPECT_EQ(r.failed_keys, "unsupported_posebusters_version") << version;
+    }
+}
+
+TEST(BustCliSchema, RejectsMultipleDataRows) {
+    const std::string base =
+        fixture_text("posebusters_0_6_5_redock_1of6_pass.csv");
+    const auto first_newline = base.find('\n');
+    const std::string row = base.substr(first_newline + 1);
+    BustCliResult r = parse_065_fixture(base + row);
+    EXPECT_FALSE(r.pb_pass);
+    EXPECT_EQ(r.failed_keys, "schema_row_count");
+}
+
+TEST(BustCliReceipt, PersistsPackageConfigCommandInputOutputIdentities) {
+    BustCliResult r;
+    r.ran = true;
+    r.pb_pass = true;
+    r.package_version = "0.6.5";
+    r.package_record_path = "/venv/posebusters-0.6.5.dist-info/RECORD";
+    r.package_record_sha256 = std::string(64, 'a');
+    r.config_path = "/venv/posebusters/config/redock.yml";
+    r.config_sha256 = std::string(64, 'b');
+    r.bust_path = "/venv/bin/bust";
+    r.bust_sha256 = std::string(64, 'c');
+    r.bust_version = "bust 0.6.5";
+    r.argv = {r.bust_path, "/work/pred ligand.sdf", "--config", r.config_path};
+    r.exit_status = 0;
+    r.pred_sdf_path = "/work/pred ligand.sdf";
+    r.pred_sdf_sha256 = std::string(64, 'd');
+    r.protein_pdb_path = "/work/protein.pdb";
+    r.protein_pdb_sha256 = std::string(64, 'e');
+    r.crystal_sdf_path = "/work/crystal.sdf";
+    r.crystal_sdf_sha256 = std::string(64, 'f');
+    r.raw_csv_path = "/work/raw.csv";
+    r.raw_csv_sha256 = std::string(64, '1');
+    r.csv_path = "/work/validated.csv";
+    r.csv_sha256 = std::string(64, '2');
+
+    const std::string json = format_bust_receipt_json(r);
+    for (const char* needle : {
+             "\"schema\":", "\"required_check_count\": 27",
+             "\"package\":", "\"version\": \"0.6.5\"",
+             "\"record_sha256\":", "\"config\":",
+             "\"name\": \"redock\"", "\"command\":",
+             "\"argv\": [", "\"inputs\":", "\"predicted_ligand\":",
+             "\"protein\":", "\"crystal_ligand\":", "\"outputs\":",
+             "\"raw_csv\":", "\"validated_csv\":"}) {
+        EXPECT_NE(json.find(needle), std::string::npos) << needle << "\n" << json;
+    }
 }
 
 // P1: Cl recovered when atom name is Cl* but element column was shifted to "L".
@@ -498,12 +650,33 @@ TEST(PoseBustParity, CrystalSelfDockAgreesWithUpstreamBust) {
     // Rewrite SDF for RDKit-compatible CTAB, run upstream bust
     const fs::path tmp =
         fs::temp_directory_path() / "flexaidds_parity_1G9V_crystal.sdf";
-    ASSERT_TRUE(write_sdf(lig, tmp.string(), &err)) << err;
-    auto br = run_upstream_bust(tmp.string(), protein.string(), tmp.string());
+    const fs::path receipt_dir =
+        fs::temp_directory_path() / "flexaidds_parity_1G9V_posebusters";
     std::error_code ec;
+    fs::remove_all(receipt_dir, ec);
+    ASSERT_TRUE(write_sdf(lig, tmp.string(), &err)) << err;
+    auto br = run_upstream_bust(tmp.string(), protein.string(), tmp.string(),
+                                receipt_dir.string(), "1G9V");
     fs::remove(tmp, ec);
     ASSERT_TRUE(br.ran) << br.error;
     ASSERT_FALSE(br.raw_csv.empty()) << br.error;
+    EXPECT_EQ(br.package_name, "posebusters");
+    EXPECT_EQ(br.package_version, "0.6.5");
+    EXPECT_EQ(br.bust_version, "bust 0.6.5");
+    EXPECT_EQ(br.config_name, "redock");
+    EXPECT_EQ(br.schema_id, "posebusters-0.6.5-redock-csv-v1");
+    EXPECT_EQ(br.package_record_sha256.size(), 64u);
+    EXPECT_EQ(br.config_sha256.size(), 64u);
+    EXPECT_EQ(br.pred_sdf_sha256.size(), 64u);
+    EXPECT_EQ(br.protein_pdb_sha256.size(), 64u);
+    EXPECT_EQ(br.crystal_sdf_sha256.size(), 64u);
+    EXPECT_EQ(br.raw_csv_sha256.size(), 64u);
+    EXPECT_EQ(br.csv_sha256.size(), 64u);
+    EXPECT_NE(br.argv_joined.find("--config " + br.config_path),
+              std::string::npos);
+    EXPECT_NE(br.argv_joined.find("--max-workers 0"), std::string::npos);
+    EXPECT_TRUE(fs::is_regular_file(br.raw_csv_path));
+    EXPECT_TRUE(fs::is_regular_file(br.csv_path));
 
     auto up = parse_bust_bools(br.raw_csv);
     ASSERT_FALSE(up.empty());
@@ -570,6 +743,7 @@ TEST(PoseBustParity, CrystalSelfDockAgreesWithUpstreamBust) {
     // Crystal self-dock should fully pass both
     EXPECT_TRUE(nrep.all_passed()) << "native failed: " << nrep.failed_keys_csv();
     EXPECT_TRUE(br.pb_pass) << "upstream failed: " << br.failed_keys;
+    fs::remove_all(receipt_dir, ec);
 }
 
 // DatasetRunner contract: Backend::Native maps pb_pass from full native suite.
