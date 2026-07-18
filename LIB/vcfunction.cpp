@@ -7,6 +7,7 @@
 #include "GISTGrid.h"
 #include <cmath>
 #include <cstdlib>
+#include <climits>
 #include <vector>
 #include <unordered_map>
 
@@ -36,13 +37,40 @@ static const float con_r0 = []() {
 }();
 static const bool no_sas = (std::getenv("FLEXAIDDS_NO_SAS") != nullptr);
 
+// FLEXAIDDS_CONTACTS_EPOCH: O(1) clear of FA->contacts (avoids a
+// MAX_ATOM_NUMBER-sized memset every eval; see below). Default off —
+// legacy memset-every-call behavior is unchanged unless this is set.
+static const bool contacts_epoch_mode =
+    (std::getenv("FLEXAIDDS_CONTACTS_EPOCH") != nullptr);
+
 double vcfunction(FA_Global* FA,VC_Global* VC,atom* atoms,resid* residue, std::vector<std::pair<int,int> > & intraclashes, bool* error)
 {
 	int    rnum=0;
 	int    type=1;
 	
 	// reset all values pointed
-	memset(FA->contacts,0,MAX_ATOM_NUMBER*sizeof(int));
+	// contacts[] is a per-atom "already visited this eval" flag, read via
+	// truthy check and written as 1 (see the two use sites below). In the
+	// default (legacy) path we still memset it to 0 every call — bit-identical
+	// to before. Under FLEXAIDDS_CONTACTS_EPOCH we instead stamp visited slots
+	// with a monotonically increasing per-eval epoch and treat any slot whose
+	// stamp != current epoch as unset, making the "clear" O(1) instead of an
+	// O(MAX_ATOM_NUMBER) memset. contacts_epoch lives in FA_Global (copied
+	// per-thread alongside the contacts pointer in gaboom.cpp/VoronoiCFBatch.h),
+	// so each thread's counter tracks only its own private contacts buffer.
+	if(contacts_epoch_mode){
+		// Wraparound guard: an int epoch could in principle repeat a stale
+		// stamp after ~2^31 evals (never reached in one restart, but this
+		// keeps arbitrarily long campaigns correct). Fall back to one real
+		// clear and restart the counter from 1.
+		if(FA->contacts_epoch >= INT_MAX - 1){
+			memset(FA->contacts,0,MAX_ATOM_NUMBER*sizeof(int));
+			FA->contacts_epoch = 0;
+		}
+		++FA->contacts_epoch;
+	} else {
+		memset(FA->contacts,0,MAX_ATOM_NUMBER*sizeof(int));
+	}
 	memset(FA->contributions,0,FA->ntypes*FA->ntypes*sizeof(float));
 	
 	// reset CF values
@@ -296,7 +324,9 @@ double vcfunction(FA_Global* FA,VC_Global* VC,atom* atoms,resid* residue, std::v
 				}
 			}
 			
-			if(FA->contacts[VC->Calc[VC->ca_rec[currindex].atom].atom->number]){
+			if(contacts_epoch_mode
+			   ? (FA->contacts[VC->Calc[VC->ca_rec[currindex].atom].atom->number] == FA->contacts_epoch)
+			   : (FA->contacts[VC->Calc[VC->ca_rec[currindex].atom].atom->number] != 0)){
 				//printf("%d already calculated\n",VC->Calc[VC->ca_rec[currindex].atom].atom->number );
 				currindex = VC->ca_rec[currindex].prev;
 				continue;
@@ -693,7 +723,8 @@ double vcfunction(FA_Global* FA,VC_Global* VC,atom* atoms,resid* residue, std::v
 		FA->contributions[(VC->Calc[i].atom->type-1)*FA->ntypes + (FA->ntypes-1)] += contribution;
 		FA->contributions[(FA->ntypes-1)*FA->ntypes + (VC->Calc[i].atom->type-1)] += contribution;
 		
-		FA->contacts[VC->Calc[i].atom->number] = 1;
+		FA->contacts[VC->Calc[i].atom->number] =
+			contacts_epoch_mode ? FA->contacts_epoch : 1;
 
 		// GIST desolvation: accumulate grid-based water displacement energy
 		if (FA->use_gist && FA->gist_evaluator != NULL) {

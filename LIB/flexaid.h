@@ -511,6 +511,10 @@ struct FA_Global_struct{
 	int   refstructure;                  // reference structure for rmsd calculation
   
 	int* contacts;                       // matrix used for not calculating the same interaction twice
+	int  contacts_epoch;                 // FLEXAIDDS_CONTACTS_EPOCH: monotonic per-eval stamp used to
+	                                     // O(1)-clear FA->contacts instead of memset(); see vcfunction.cpp.
+	                                     // Zero-initialized by FA_Global{} value-init; travels with the
+	                                     // contacts pointer on every FA_Global copy (per-thread workspaces).
 	struct energy_matrix* energy_matrix;        // potential energy parameters
 	int   ntypes;	                     // number of atom types
 	int   tspoints;                      // actual number of sphere points
