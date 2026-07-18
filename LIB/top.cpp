@@ -452,7 +452,12 @@ int main(int argc, char **argv){
 	FA->autoflex_enabled = 1;  // auto-flex key binding residues by default
 	FA->autoflex_max = 5;
 
-	FA->contacts = (int*)malloc(MAX_ATOM_NUMBER*sizeof(int));
+	// calloc (not malloc): FLEXAIDDS_CONTACTS_EPOCH mode never memsets this
+	// buffer between vcfunction() calls (see vcfunction.cpp), so it must start
+	// all-zero once here to match the epoch-0-means-"never touched" invariant.
+	// Legacy mode still memsets it every call, so the zero-fill costs nothing
+	// extra there (one-time, at startup, vs. the malloc it replaces).
+	FA->contacts = (int*)calloc(MAX_ATOM_NUMBER,sizeof(int));
 	if(FA->contacts == NULL){
 		fprintf(stderr,"ERROR: Could not allocate memory for contacts\n");
 		Terminate(2);
