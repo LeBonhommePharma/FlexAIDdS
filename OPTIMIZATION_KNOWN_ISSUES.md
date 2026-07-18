@@ -18,17 +18,34 @@ the prior occupant's stale CF. This produced wrong results even single-threaded
 
 ### Remaining (why the flag is still OFF)
 1. **parallel @1 thread is not yet BIT-identical to serial** (-33.61 vs -36.07). The deferred
-   batch-eval changes the order in which offspring reach `calculate_fitness`'s `QuickSort`,
-   altering tie-ordering and thus which chromosomes survive BOOM selection. Deterministic,
-   but not equal to the serial reference — so "bit-identical speedup" is not yet proven.
-2. **parallel @4 threads is non-reproducible** (run1 -60.9 vs run2 -45.8). A shared-state
-   write inside the `eval_chromosome`/`vcfunction`/Vcontacts hot path (NOT
-   `ccbm_inject_strain`, which is multi-model-only and read-only on FA here) races under
-   `schedule(dynamic)`. Needs the CF-eval shared-write audit (the same Vcontacts static
-   buffers the perf swarm flagged) before the flag can be enabled.
+   batch-eval uses the per-thread `tl_fa[0]` copy and defers `ring_load_chrom_to_fa`, a
+   different but valid GA trajectory. Deterministic, but not equal to the serial reference —
+   so "bit-identical speedup" is not yet proven.
+2. **parallel @>1 thread is non-reproducible — but this is PRE-EXISTING, not an Opt1 defect.**
+   Verified 2026-07-18 (1G9V, FLEXAID_SEED=12345): with the flag **OFF** (pure main behaviour),
+   a 4-thread dock already gives -30.23 vs -40.55 run-to-run. Opt1 only routes more work
+   through the parallel `calculate_fitness` path that main already ships and that is already
+   non-deterministic across threads.
 
-**Bottom line:** the headline GA speedup is NOT yet realized. One real bug fixed; two
-remaining before FLEXAIDDS_PARALLEL_REPRODUCE can be turned on.
+   **ThreadSanitizer (Debug, Metal OFF) result:** races appear ONLY in
+   `CleftDetector.cpp:87,129` (startup probe-merge); the GA CF-eval hot path
+   (`gaboom.cpp`/`vcfunction.cpp`/`Vcontacts.cpp`/`ic2cf.cpp`) is **race-clean**. The 4-thread
+   non-determinism is therefore **floating-point reduction/accumulation order** under
+   `schedule(dynamic)`, not a memory race. True >1-thread bit-reproducibility needs an
+   ordered/deterministic FP reduction (per-thread partials combined in fixed thread-index
+   order) in the parallel eval — the real remaining engineering task.
+
+   Ruled out this pass (all reverted): Voronoi degeneracy jitter reseed (the `edgenum>=200`
+   failsafe fires 0x on 1G9V), `schedule(static)` (did not restore reproducibility),
+   CleftDetector deterministic probe sort (helps cleft determinism but does not fix full-dock
+   4-thread reproducibility, and changes cleft output so it needs its own Astex-85 A/B).
+
+   Full write-up: `OPT1_RACE_INVESTIGATION.md` (artifact).
+
+**Bottom line:** the headline GA speedup is NOT yet realized. The stale-CF bug is fixed;
+1-thread bit-parity and a deterministic FP reduction for >1 thread remain before
+FLEXAIDDS_PARALLEL_REPRODUCE can be turned on. The >1-thread non-determinism is a
+pre-existing engine property, exposed — not caused — by Opt1.
 
 All other merged optimizations (contacts memset->epoch, hoist rigid index, precompute
 PoseBust vdW radius) are verified bit-identical to main with default flags (10/10 parity).
