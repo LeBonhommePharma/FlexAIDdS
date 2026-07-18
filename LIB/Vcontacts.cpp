@@ -1958,7 +1958,9 @@ int get_contlist4(atom* atoms,int atomzero, contactlist contlist[],
 	// Numerical note: the scalar reference path computes sqrdist in double;
 	// this path accumulates the squared distance in float32. Results match the
 	// scalar path only within float32 rounding. Set FLEXAIDS_SOA_ASSERT=1 in
-	// the environment (debug builds) to flag any divergence beyond tolerance.
+	// the environment (release or debug) to flag any divergence beyond
+	// tolerance — the check is compiled unconditionally but runs only when the
+	// env var is set, so the parity-off hot path pays nothing.
 	(void)sqrdist;
 	const float bx = Calc[atomzero].atom->coor[0];
 	const float by = Calc[atomzero].atom->coor[1];
@@ -1968,12 +1970,14 @@ int get_contlist4(atom* atoms,int atomzero, contactlist contlist[],
 	static thread_local std::vector<int>   cand_idx;
 	static thread_local std::vector<float> cand_x, cand_y, cand_z;
 
-#ifndef NDEBUG
+	// Parity self-check switch. Read once (thread-safe static init); off unless
+	// FLEXAIDS_SOA_ASSERT is set to a non-empty, non-"0" value. Compiled into
+	// release too so the integrator can validate the float32 SoA path against
+	// the double reference on the actual FAST/NDEBUG binary.
 	static const bool soa_assert = [](){
 		const char* e = getenv("FLEXAIDS_SOA_ASSERT");
 		return e && e[0] && e[0] != '0';
 	}();
-#endif
 
 	for(i=0; i<27; ++i) {
 		boxi = boxzero +dim2*((i/9)-1) + dim*(((i/3)%3)-1) +(i%3)-1;
@@ -2009,7 +2013,6 @@ int get_contlist4(atom* atoms,int atomzero, contactlist contlist[],
 			simd::distance2_1x4(&cand_x[k], &cand_y[k], &cand_z[k],
 			                    bx, by, bz, d2);
 			for(int l = 0; l < 4; ++l) {
-#ifndef NDEBUG
 				if(soa_assert) {
 					double dx = (double)Calc[cand_idx[k+l]].atom->coor[0]-bx;
 					double dy = (double)Calc[cand_idx[k+l]].atom->coor[1]-by;
@@ -2020,7 +2023,6 @@ int get_contlist4(atom* atoms,int atomzero, contactlist contlist[],
 						fprintf(stderr,"[FLEXAIDS_SOA_ASSERT] sqrdist mismatch atomj=%d soa=%.6f ref=%.6f\n",
 						        cand_idx[k+l],(double)d2[l],ref);
 				}
-#endif
 				process_candidate(cand_idx[k+l], (double)d2[l]);
 			}
 		}
