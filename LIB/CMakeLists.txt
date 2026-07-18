@@ -215,6 +215,20 @@ else()
     # SharedPosePool, GrandPartitionFunction, UnifiedHardwareDispatch, etc.
     target_compile_options(flexaid_core PRIVATE
         -Wall -O3 -ffast-math -fno-finite-math-only)
+
+    # -mcpu=native (opt-in, FLEXAIDS_MCPU_NATIVE — see cmake/FlexAIDOptions.cmake):
+    # tunes flexaid_core codegen for the exact build machine's CPU. Scoped to
+    # this OBJECT library only. Not portable across machines; may shift FP
+    # codegen (FMA contraction, vector width) under the -ffast-math already
+    # enabled above, so a build with this ON is not guaranteed bit-identical
+    # to one with it OFF. Default ON here matches local perf-tuning use;
+    # portable/reproducible builds should configure with
+    # -DFLEXAIDS_MCPU_NATIVE=OFF.
+    if(FLEXAIDS_MCPU_NATIVE)
+        target_compile_options(flexaid_core PRIVATE
+            $<$<AND:$<CXX_COMPILER_ID:AppleClang,Clang>,$<STREQUAL:${CMAKE_SYSTEM_PROCESSOR},arm64>>:-mcpu=native>)
+        message(STATUS "flexaid_core: -mcpu=native enabled (FLEXAIDS_MCPU_NATIVE=ON) — build is tuned for THIS machine and is not portable; use -DFLEXAIDS_MCPU_NATIVE=OFF for portable/reproducible builds")
+    endif()
 endif()
 
 # ─── Required dependencies ───────────────────────────────────────────────

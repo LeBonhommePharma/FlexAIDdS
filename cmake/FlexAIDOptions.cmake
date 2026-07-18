@@ -53,6 +53,20 @@ option(FLEXAIDS_USE_AVX2    "Enable AVX2 SIMD acceleration"       ON)
 option(FLEXAIDS_USE_AVX512  "Enable AVX-512 SIMD acceleration"    OFF)
 option(FLEXAIDS_USE_SOA_DISTANCES "Route Voronoi hot-path distances through AtomSoA float SoA arrays (C1)" OFF)
 
+# ─── Native CPU tuning for flexaid_core (perf vs. portability trade-off) ──
+# -mcpu=native (Apple/Clang, arm64) tunes instruction scheduling/selection
+# for the exact CPU that runs the build. flexaid_core already compiles with
+# -ffast-math; -mcpu=native can additionally shift FMA contraction and
+# vectorization choices relative to a generic-aarch64 build, so results are
+# NOT guaranteed bit-identical across CPU tunings even though this flag does
+# not itself relax IEEE semantics the way -ffast-math does. The resulting
+# binary is also NOT portable: it may refuse to run, or silently use a
+# codegen path unverified on a different Apple Silicon SKU. Default ON for
+# local performance work on the machine that will also run the binary; set
+# OFF for portable builds or when byte-for-byte parity with a reference
+# build (e.g. CI, another reviewer's machine) is required.
+option(FLEXAIDS_MCPU_NATIVE "Compile flexaid_core with -mcpu=native on Apple/Clang arm64 (perf; not portable across machines, may change FP codegen under -ffast-math)" ON)
+
 # Parallelism & core libs
 option(FLEXAIDS_USE_OPENMP  "Enable OpenMP thread parallelism"    ON)
 # Eigen3 is a hard requirement — no option to disable
