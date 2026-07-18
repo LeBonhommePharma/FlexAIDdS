@@ -7413,38 +7413,27 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                         if (!result.pb_failed_keys.empty()) result.pb_failed_keys += ';';
                         result.pb_failed_keys += br.error;
                     }
-                    // Persist BustCli receipts (path, SHA256, version, argv, exit, raw hash).
+                    // Persist the complete upstream identity chain: installed
+                    // package/version, exact redock config, argv, all three
+                    // inputs, and both CSV outputs. Launcher hash alone is not
+                    // a PoseBusters package identity.
+                    bool bust_receipt_written = false;
                     try {
                         const std::string receipt_path =
                             pb_dir + "/" + entry.pdb_id + "_bust_receipt.json";
                         std::ofstream rcpt(receipt_path);
                         if (rcpt) {
-                            auto jesc = [](const std::string& s) {
-                                std::string o;
-                                o.reserve(s.size());
-                                for (char c : s) {
-                                    if (c == '"' || c == '\\') o.push_back('\\');
-                                    if (c == '\n') { o += "\\n"; continue; }
-                                    if (c == '\r') continue;
-                                    o.push_back(c);
-                                }
-                                return o;
-                            };
-                            rcpt << "{\n"
-                                 << "  \"bust_path\": \"" << jesc(br.bust_path) << "\",\n"
-                                 << "  \"bust_sha256\": \"" << jesc(br.bust_sha256) << "\",\n"
-                                 << "  \"bust_version\": \"" << jesc(br.bust_version) << "\",\n"
-                                 << "  \"argv\": \"" << jesc(br.argv_joined) << "\",\n"
-                                 << "  \"exit_status\": " << br.exit_status << ",\n"
-                                 << "  \"raw_csv_sha256\": \"" << jesc(br.raw_csv_sha256)
-                                 << "\",\n"
-                                 << "  \"raw_csv_path\": \"" << jesc(br.csv_path) << "\",\n"
-                                 << "  \"pb_pass\": " << (br.pb_pass ? "true" : "false")
-                                 << ",\n"
-                                 << "  \"backend\": \"" << jesc(br.backend) << "\"\n"
-                                 << "}\n";
+                            rcpt << flexaids::posebust::format_bust_receipt_json(br);
+                            rcpt.close();
+                            bust_receipt_written = static_cast<bool>(rcpt);
                         }
                     } catch (...) {
+                    }
+                    if (!bust_receipt_written) {
+                        result.pb_pass = false;
+                        if (!result.pb_failed_keys.empty())
+                            result.pb_failed_keys += ';';
+                        result.pb_failed_keys += "validator_identity:receipt_write";
                     }
                     std::cerr << "  [POSEBUSTERS] backend=" << result.pb_backend
                               << " pb_pass=" << (result.pb_pass ? 1 : 0)
@@ -7453,6 +7442,9 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                               << " failed=[" << result.pb_failed_keys << "]"
                               << " pose_sha256=" << result.pose_sha256
                               << " bust_path=" << br.bust_path
+                              << " package=" << br.package_name << "=="
+                              << br.package_version
+                              << " config_sha256=" << br.config_sha256
                               << " raw_csv_sha256=" << br.raw_csv_sha256
                               << " exit=" << br.exit_status << "\n";
                 }
