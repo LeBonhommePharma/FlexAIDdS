@@ -1,19 +1,34 @@
 # Optimization branch — known issues
 
-## FLEXAIDDS_PARALLEL_REPRODUCE (Opt1, commit df8c87feb) — DEFECTIVE, DO NOT ENABLE
+## FLEXAIDDS_PARALLEL_REPRODUCE (Opt1) — partially fixed, still GATED OFF
 
-The GA offspring-CF-eval parallelization is **gated OFF by default** and must stay off.
+The GA offspring-CF-eval parallelization remains **OFF by default** and must stay off
+until the two remaining issues below are resolved.
 
-**Measured defect (1G9V, FLEXAID_SEED=12345):**
-- Serial / flag OFF: CF -51.9293 (bit-identical to main, 10/10 poses).
-- Flag ON @1 thread: CF -5.2330, 0/10 poses match serial — WRONG result even without
-  any thread concurrency, so the patch altered algorithm semantics, not just parallelism.
-- Flag ON @4 threads: non-reproducible (run1 -5.2330, run2 -12.1093).
+### Fixed (branch opt1/stale-status-fix, commit 9b514ca82)
+The deferred path left offspring `status` untouched, assuming it was `' '` ("needs eval").
+But `chrom[num_chrom+i]` is REUSED memory from the previous generation (status typically
+`'n'`), and `calculate_fitness`'s eval loop SKIPS `status=='n'` — so deferred offspring kept
+the prior occupant's stale CF. This produced wrong results even single-threaded
+(CF -5.23 vs serial -51.93). Fix: explicitly set `status=' '` on deferred offspring.
 
-**Status:** the offspring loop does not preserve serial GA semantics (RNG draw order and/or
-population-write ordering). Needs a correctness fix (per-offspring deterministic RNG stream
-keyed by offspring index, ordered reduction) before the flag can be enabled. Until then the
-headline GA speedup is NOT available.
+**Verified after fix (1G9V, FLEXAID_SEED=12345):**
+- parallel @1 thread is now run-to-run DETERMINISTIC (10/10 identical) and close to serial
+  (-33.61 vs -36.07). The stale-CF defect is gone.
 
-All other branch optimizations (contacts memset->epoch, hoist rigid index, precompute
-PoseBust vdW radius) are verified bit-identical to main with default flags.
+### Remaining (why the flag is still OFF)
+1. **parallel @1 thread is not yet BIT-identical to serial** (-33.61 vs -36.07). The deferred
+   batch-eval changes the order in which offspring reach `calculate_fitness`'s `QuickSort`,
+   altering tie-ordering and thus which chromosomes survive BOOM selection. Deterministic,
+   but not equal to the serial reference — so "bit-identical speedup" is not yet proven.
+2. **parallel @4 threads is non-reproducible** (run1 -60.9 vs run2 -45.8). A shared-state
+   write inside the `eval_chromosome`/`vcfunction`/Vcontacts hot path (NOT
+   `ccbm_inject_strain`, which is multi-model-only and read-only on FA here) races under
+   `schedule(dynamic)`. Needs the CF-eval shared-write audit (the same Vcontacts static
+   buffers the perf swarm flagged) before the flag can be enabled.
+
+**Bottom line:** the headline GA speedup is NOT yet realized. One real bug fixed; two
+remaining before FLEXAIDDS_PARALLEL_REPRODUCE can be turned on.
+
+All other merged optimizations (contacts memset->epoch, hoist rigid index, precompute
+PoseBust vdW radius) are verified bit-identical to main with default flags (10/10 parity).
