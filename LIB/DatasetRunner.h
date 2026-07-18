@@ -128,6 +128,29 @@ struct DatasetEntry {
     bool has_cleft_spheres() const { return !cleft_sphere_path.empty(); }
 };
 
+/// Immutable pose-selection record captured at an election boundary.
+struct PoseElectionSnapshot {
+    std::string path;
+    float selection_score{std::numeric_limits<float>::quiet_NaN()};
+    float cf_score{std::numeric_limits<float>::quiet_NaN()};
+};
+
+/// Generator CF and SoftBeta/entropy winners from the same GA-only candidate
+/// census, plus the selector's final winner after optional FREQSEL/seed layers.
+/// DatasetRunner records any still-later consensus boundary on DockingResult.
+struct PoseElectionBoundaries {
+    PoseElectionSnapshot generator_cf_top1;
+    PoseElectionSnapshot entropy_top1;
+    PoseElectionSnapshot final_top1;
+};
+
+PoseElectionBoundaries select_pose_election_boundaries(
+    const std::vector<std::string>& prefixes,
+    int seed_elitism_override,
+    bool cf_window_selector,
+    const flexaids::ProtocolConfig& protocol,
+    double dock_temperature_K);
+
 /// Result of docking a single entry.
 ///
 /// CSV column names (`best_score`, `predicted_dG`, …) are stable for live
@@ -229,9 +252,10 @@ struct DockingResult {
     // seed_echo: true when elected path ends in "_INI.pdb". Immutable after set;
     // pool ceiling must never clear it.
     bool  seed_echo{false};
-    // Pose provenance: "ini_elitism" | "ga_cluster" | "cf_rank0" | "softbeta" | ""
+    // Pose provenance: "ini_elitism" | "cf_rank0" | "softbeta" | "freqsel" |
+    //                  "consensus" | ""
     std::string pose_source{""};
-    // Separate estimands: generator CF top-1 vs entropy/consensus reranked top-1
+    // Separate immutable estimands captured at their actual election boundaries.
     std::string cf_top1_pose_path;
     std::string cf_top1_pose_sha256;
     float       cf_top1_score{std::numeric_limits<float>::quiet_NaN()};
@@ -240,6 +264,10 @@ struct DockingResult {
     std::string entropy_top1_pose_sha256;
     float       entropy_top1_score{std::numeric_limits<float>::quiet_NaN()};
     float       entropy_top1_rmsd{-1.0f};
+    std::string consensus_top1_pose_path;
+    std::string consensus_top1_pose_sha256;
+    float       consensus_top1_score{std::numeric_limits<float>::quiet_NaN()};
+    float       consensus_top1_rmsd{-1.0f};
     // Level-3 H(ω) vibrational-entropy diagnostic. Enabled by default; set
     // FLEXAIDDS_HVIB=0 only for non-claim diagnostic runs. Shannon entropy over ligand ANM eigenvalue spectra of the
     // top-10 emitted cluster reps. See compute_target_hvib() in DatasetRunner.cpp.
@@ -506,7 +534,7 @@ private:
 
     // ── Pose selector tuning ─────────────────────────────────────────
     /// CF-window gate (Fix A): when true the freq>1 gate in
-    /// select_pose_freq_gated_pooled() also admits singleton clusters whose
+    /// select_pose_election_boundaries() also admits singleton clusters whose
     /// CF is within 30 units of the pool minimum. Read once from
     /// FLEXAIDDS_CF_WINDOW_SELECTOR in the constructor (default off).
     bool cf_window_selector_ = false;

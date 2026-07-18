@@ -966,19 +966,14 @@ static std::pair<std::string,float> select_pose_freq_gated(const std::string& ou
 // benchmark pose.
 // under its own prefix; the combined pool is treated as a single ensemble — a
 // larger, more diverse set for Fix B to select from (v25 multi-restart pooling).
-static std::pair<std::string,float> select_pose_freq_gated_pooled(
+PoseElectionBoundaries select_pose_election_boundaries(
         const std::vector<std::string>& prefixes,
-        int seed_elitism_override = -1,  // -1=ProtocolConfig default, 0=force off, 1=force on
-        bool cf_window_selector = false, // Fix A: CF-window gate (see header member)
-        const flexaids::ProtocolConfig* protocol = nullptr,
-        double dock_temperature_K = 0.0)  // dock TEMPER / DockingConfig::temperature
+        int seed_elitism_override,  // -1=ProtocolConfig default, 0=force off, 1=force on
+        bool cf_window_selector, // Fix A: CF-window gate (see header member)
+        const flexaids::ProtocolConfig& protocol,
+        double dock_temperature_K)  // dock TEMPER / DockingConfig::temperature
 {
-    // Pose-selector knobs come from ProtocolConfig (env adapter). Prefer a
-    // caller-supplied snapshot (DatasetRunner::protocol_cfg_); fall back to a
-    // fresh from_env() for standalone / legacy call sites.
-    const flexaids::ProtocolConfig local_proto =
-        protocol ? flexaids::ProtocolConfig{} : flexaids::ProtocolConfig::from_env();
-    const flexaids::ProtocolConfig& proto = protocol ? *protocol : local_proto;
+    const flexaids::ProtocolConfig& proto = protocol;
 
     // ── Cluster-head election (Morency / 3Dsig 2017 FlexAIDdS ranking) ─────
     //
@@ -1174,10 +1169,14 @@ static std::pair<std::string,float> select_pose_freq_gated_pooled(
     }
 
     if (poses.empty() && seeds.empty())
-        return {std::string(), std::numeric_limits<float>::infinity()};
+        return {};
 
     // ── Freq-gated Z+H composite selection over GA-emitted poses ────────────
-    const PoseInfo* freq_best = nullptr;
+    const PoseInfo* entropy_best = nullptr;
+    const PoseInfo* final_best = nullptr;
+    const PoseInfo* generator_cf_best = nullptr;
+    double entropy_selection_score = std::numeric_limits<double>::infinity();
+    double final_selection_score = std::numeric_limits<double>::infinity();
     if (!poses.empty()) {
         // Drop degenerate (CF≈0, unscored) poses unless that empties the set.
         std::vector<const PoseInfo*> scored;
@@ -1203,6 +1202,14 @@ static std::pair<std::string,float> select_pose_freq_gated_pooled(
                 populated.push_back(p);
         const std::vector<const PoseInfo*>& chosen =
             populated.empty() ? pool : populated;
+
+        // Snapshot the generator's CF winner before any SoftBeta/FREQSEL layer.
+        // This remains a distinct estimand if a later election changes top-1.
+        for (const auto* p : chosen) {
+            if (!std::isfinite(p->cf)) continue;
+            if (generator_cf_best == nullptr || p->cf < generator_cf_best->cf)
+                generator_cf_best = p;
+        }
 
         // ── Score + elect ────────────────────────────────────────────────────
         // Softβ ON:  LOWEST log-domain G̃ = Emin − T·ln Z wins.
@@ -1247,8 +1254,15 @@ static std::pair<std::string,float> select_pose_freq_gated_pooled(
             }
         }
 
-        // Winner = best-ranked after sort above.
-        freq_best = scored_chosen.front().second;
+        // Freeze the SoftBeta/entropy boundary before FREQSEL or seed elitism.
+        // With SoftBeta disabled this is the same GA-only CF winner, but it is
+        // still captured here rather than reconstructed from the final state.
+        if (!scored_chosen.empty()) {
+            entropy_best = scored_chosen.front().second;
+            entropy_selection_score = scored_chosen.front().first;
+            final_best = entropy_best;
+            final_selection_score = entropy_selection_score;
+        }
 
         // ── v70: frequency-weighted macro-cluster selection ─────────────────
         // At small τ the composite collapses toward CF-rank-0, so a false
@@ -1310,17 +1324,18 @@ static std::pair<std::string,float> select_pose_freq_gated_pooled(
                 }
             }
             if (macro_best) {
-                if (macro_best != freq_best)
+                if (final_best != nullptr && macro_best != final_best)
                     fprintf(stderr, "[FREQSEL] macro-cluster override: nsup=%d "
-                            "CF=%.4f eff_CF=%.4f path=%s (CF rank-0 was CF=%.4f path=%s)\n",
+                            "CF=%.4f eff_CF=%.4f path=%s (pre-FREQSEL winner was CF=%.4f path=%s)\n",
                             best_nsup, macro_best->cf, best_eff,
-                            macro_best->path.c_str(), freq_best->cf,
-                            freq_best->path.c_str());
-                else
-                    fprintf(stderr, "[FREQSEL] consensus agrees with CF rank-0: "
+                            macro_best->path.c_str(), final_best->cf,
+                            final_best->path.c_str());
+                else if (final_best != nullptr)
+                    fprintf(stderr, "[FREQSEL] consensus agrees with pre-FREQSEL winner: "
                             "nsup=%d CF=%.4f path=%s\n",
                             best_nsup, macro_best->cf, macro_best->path.c_str());
-                freq_best = macro_best;
+                final_best = macro_best;
+                final_selection_score = best_eff;
             }
         }
     }
@@ -1331,21 +1346,44 @@ static std::pair<std::string,float> select_pose_freq_gated_pooled(
     // (e.g. 1XM6: crystal IC 2.60 Å vs GA 0.96 Å with ΔCF ≈ 5).
     // Env: FLEXAIDDS_SEED_ELITISM_DELTA_CF via ProtocolConfig (default 10.0).
     const double DELTA_CF = proto.seed_elitism_delta_cf;
-    const PoseInfo* best = freq_best;
+    const PoseInfo* best = final_best;
     for (const auto& s : seeds)
-        if (best == nullptr || s.cf < best->cf - DELTA_CF) best = &s;
+        if (best == nullptr || s.cf < best->cf - DELTA_CF) {
+            best = &s;
+            final_selection_score = s.cf;
+        }
 
     if (best == nullptr)
-        return {std::string(), std::numeric_limits<float>::infinity()};
+        return {};
     if (best->is_seed)
         fprintf(stderr, "[ELITISM] seed elected rank-0: CF=%.4f delta_cf=%.4f threshold=%.1f path=%s\n",
-                best->cf, (freq_best ? freq_best->cf - best->cf : 0.0),
+                best->cf, (final_best ? final_best->cf - best->cf : 0.0),
                 DELTA_CF, best->path.c_str());
-    else if (freq_best && !seeds.empty())
+    else if (final_best && !seeds.empty())
         fprintf(stderr, "[ELITISM] GA retained (seed CF=%.4f GA CF=%.4f delta=%.4f < threshold=%.1f)\n",
-                seeds.front().cf, freq_best->cf,
-                freq_best->cf - seeds.front().cf, DELTA_CF);
-    return {best->path, best->cf};
+                seeds.front().cf, final_best->cf,
+                final_best->cf - seeds.front().cf, DELTA_CF);
+    PoseElectionBoundaries boundaries;
+    if (generator_cf_best != nullptr) {
+        boundaries.generator_cf_top1.path = generator_cf_best->path;
+        boundaries.generator_cf_top1.selection_score = generator_cf_best->cf;
+        boundaries.generator_cf_top1.cf_score = generator_cf_best->cf;
+    }
+    if (entropy_best != nullptr) {
+        boundaries.entropy_top1.path = entropy_best->path;
+        boundaries.entropy_top1.selection_score =
+            std::isfinite(entropy_selection_score)
+                ? static_cast<float>(entropy_selection_score)
+                : entropy_best->cf;
+        boundaries.entropy_top1.cf_score = entropy_best->cf;
+    }
+    boundaries.final_top1.path = best->path;
+    boundaries.final_top1.selection_score =
+        std::isfinite(final_selection_score)
+            ? static_cast<float>(final_selection_score)
+            : best->cf;
+    boundaries.final_top1.cf_score = best->cf;
+    return boundaries;
 }
 
 // Statistical free functions live in DatasetRunnerStats.cpp (P0 leaf extract).
@@ -6554,6 +6592,26 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
              config.mode == BenchmarkMode::AUTONOMOUS ||
              config.mode == BenchmarkMode::DEFINED_CLEFT_REDOCK) ? 0 : -1;
 
+        // Capture the generator-CF and SoftBeta/entropy winners once, at the
+        // selector boundary. Consensus is a later, separate boundary and must
+        // never erase either snapshot.
+        const PoseElectionBoundaries election_boundaries =
+            select_pose_election_boundaries(
+                all_prefixes, sel_elitism_ovr, cf_window_selector_,
+                protocol_cfg_, static_cast<double>(config.temperature));
+        result.cf_top1_pose_path = election_boundaries.generator_cf_top1.path;
+        result.cf_top1_score = election_boundaries.generator_cf_top1.selection_score;
+        result.cf_top1_pose_sha256 = flexaids::posebust::sha256_file(
+            result.cf_top1_pose_path);
+        result.entropy_top1_pose_path = election_boundaries.entropy_top1.path;
+        result.entropy_top1_score = election_boundaries.entropy_top1.selection_score;
+        result.entropy_top1_pose_sha256 = flexaids::posebust::sha256_file(
+            result.entropy_top1_pose_path);
+        result.consensus_top1_pose_path = election_boundaries.final_top1.path;
+        result.consensus_top1_score = election_boundaries.final_top1.selection_score;
+        result.consensus_top1_pose_sha256 = flexaids::posebust::sha256_file(
+            result.consensus_top1_pose_path);
+
         // ── best_score: CF/contact-function scoring proxy of the EMITTED pose ──
         // CSV column `best_score` is the Voronoi CF of the elected pose (NOT free
         // energy / ΔG). Prefer the emitted REMARK CF, not the stdout-trace min:
@@ -6567,13 +6625,9 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
         // frequency-gated selector (Fix B) picks for the RMSD, so best_score and
         // rmsd_to_crystal always describe one pose. Fall back to the stdout-trace
         // min only if no emitted pose with a REMARK CF is found.
-        {
-            auto sel = select_pose_freq_gated_pooled(
-                all_prefixes, sel_elitism_ovr, cf_window_selector_,
-                &protocol_cfg_, static_cast<double>(config.temperature));
-            if (!sel.first.empty() && std::isfinite(sel.second))
-                best_cf = sel.second;
-        }
+        if (!election_boundaries.final_top1.path.empty() &&
+            std::isfinite(election_boundaries.final_top1.cf_score))
+            best_cf = election_boundaries.final_top1.cf_score;
 
         if (!std::isfinite(best_cf)) best_cf = 0.0f;
         result.num_poses = n_poses;
@@ -6667,9 +6721,8 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
             // clusters with Frequency>1, and returns the min-CF pose within that
             // pool (see helper definition near compute_pose_ligand_rmsd).
             // elected_pose_for_pb lives outside this block for PoseBust post-pass.
-            std::string best_pose_pdb = select_pose_freq_gated_pooled(
-                all_prefixes, sel_elitism_ovr, cf_window_selector_,
-                &protocol_cfg_, static_cast<double>(config.temperature)).first;
+            std::string best_pose_pdb = result.consensus_top1_pose_path;
+            bool consensus_reranked = false;
             // Fallback: no scored pose found — take first available pose file from any restart.
             if (best_pose_pdb.empty()) {
                 for (const auto& pfx : all_prefixes) {
@@ -6678,6 +6731,13 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                         best_pose_pdb = heads.front().path;
                         break;
                     }
+                }
+                if (!best_pose_pdb.empty()) {
+                    const std::string fallback_hash =
+                        flexaids::posebust::sha256_file(best_pose_pdb);
+                    result.consensus_top1_pose_path = best_pose_pdb;
+                    result.consensus_top1_score = result.best_score;
+                    result.consensus_top1_pose_sha256 = fallback_hash;
                 }
             }
 
@@ -6804,6 +6864,21 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                                 }
                             }
                         }
+                        float consensus_selection_score =
+                            std::numeric_limits<float>::quiet_NaN();
+                        if (best_i >= 0) {
+                            if (high_entropy_gate) {
+                                consensus_selection_score = static_cast<float>(
+                                    static_cast<double>(pool[best_i].cf) +
+                                    2.0 * static_cast<double>(pool[best_i].cf_wal) -
+                                    6.0 * static_cast<double>(consensus[best_i]));
+                            } else if (low_entropy_gate) {
+                                consensus_selection_score = pool[best_i].cf_com;
+                            } else {
+                                consensus_selection_score =
+                                    static_cast<float>(consensus[best_i]);
+                            }
+                        }
                         int sel_i = -1;
                         for (size_t i = 0; i < pool.size(); ++i)
                             if (pool[i].path == best_pose_pdb) { sel_i = static_cast<int>(i); break; }
@@ -6862,6 +6937,12 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                                               << pool[best_i].cf << ")\n";
                                 } else {
                                     best_pose_pdb = pool[best_i].path;
+                                    consensus_reranked = true;
+                                    result.consensus_top1_pose_path = best_pose_pdb;
+                                    result.consensus_top1_score =
+                                        consensus_selection_score;
+                                    result.consensus_top1_pose_sha256 =
+                                        flexaids::posebust::sha256_file(best_pose_pdb);
                                     // Keep best_score describing the SAME pose now reported.
                                     if (std::isfinite(pool[best_i].cf))
                                         result.best_score = pool[best_i].cf;
@@ -6873,18 +6954,28 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
             }
 
             if (!best_pose_pdb.empty()) {
-                // ── Fix 2 (revised): path-based seed-echo + pose_source ──────
-                // "_INI.pdb" suffix → crystal-seeded chromosome elected by
-                // seed_elitism; any other path → genuine GA-cluster pose.
-                // This is unambiguous and immune to CF drift / tolerance choices.
+                // Path proves seed echo; immutable boundary snapshots prove
+                // which non-oracle election layer selected the final pose.
                 {
                     const std::string ini_suffix = "_INI.pdb";
                     bool is_ini = (best_pose_pdb.size() >= ini_suffix.size() &&
                                    best_pose_pdb.compare(best_pose_pdb.size() -
                                        ini_suffix.size(), ini_suffix.size(),
                                        ini_suffix) == 0);
-                    result.seed_echo   = is_ini;
-                    result.pose_source = is_ini ? "ini_elitism" : "ga_cluster";
+                    result.seed_echo = is_ini;
+                    if (is_ini) {
+                        result.pose_source = "ini_elitism";
+                    } else if (consensus_reranked) {
+                        result.pose_source = "consensus";
+                    } else if (election_boundaries.final_top1.path !=
+                               result.entropy_top1_pose_path) {
+                        result.pose_source = "freqsel";
+                    } else if (result.entropy_top1_pose_path !=
+                               result.cf_top1_pose_path) {
+                        result.pose_source = "softbeta";
+                    } else {
+                        result.pose_source = "cf_rank0";
+                    }
                 }
                 // Read crystal ligand heavy-atom coords from SDF (lines with X Y Z elem)
                 {
@@ -6916,6 +7007,17 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                         if (atom_block > 0 && sline.find("M  END") != std::string::npos) break;
                     }
                 }
+
+                auto boundary_rmsd = [&](const std::string& path) -> float {
+                    if (path.empty() || !fs::exists(path)) return -1.0f;
+                    return compute_pose_ligand_rmsd(
+                        path, crystal_xyz, crystal_elem, entry.pdb_id, false).first;
+                };
+                result.cf_top1_rmsd = boundary_rmsd(result.cf_top1_pose_path);
+                result.entropy_top1_rmsd =
+                    boundary_rmsd(result.entropy_top1_pose_path);
+                result.consensus_top1_rmsd =
+                    boundary_rmsd(result.consensus_top1_pose_path);
 
                 // Rank-0 (reported) pose RMSD via the shared helper.  The docked
                 // ligand is selected by CONECT membership (a position-independent
@@ -7066,9 +7168,7 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
             result.rmsd_to_crystal = -1.0f;
             // Still try to elect a pose for PoseBust even without crystal RMSD ref.
             if (docking_completed) {
-                elected_pose_pdb = select_pose_freq_gated_pooled(
-                    all_prefixes, sel_elitism_ovr, cf_window_selector_,
-                    &protocol_cfg_, static_cast<double>(config.temperature)).first;
+                elected_pose_pdb = result.consensus_top1_pose_path;
             }
         }
 
@@ -7080,8 +7180,12 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
             config.mode != BenchmarkMode::DEFINED_CLEFT_REDOCK &&
             config.mode != BenchmarkMode::ORACLE_CEILING;
         result.native_pose_seed_fraction = result.native_pose_seeded ? 0.90f : 0.0f;
+        // Denominator eligibility is fixed by the preregistered protocol, never
+        // by docking success, validators, or which pose happened to be elected.
         result.protocol_claim_eligible =
-            !result.native_pose_seeded && !result.seed_echo;
+            (config.mode == BenchmarkMode::AUTONOMOUS ||
+             config.mode == BenchmarkMode::DEFINED_CLEFT_REDOCK) &&
+            protocol_cfg_.oracle_site_dir.empty();
         result.success_rmsd = false;
         result.success = false;
 
@@ -7170,67 +7274,6 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
             // Legacy column remains exactly the same-pose ordered-RMSD gate.
             result.success = result.success_rmsd;
 
-            // Persist dual estimands: CF top-1 and entropy/consensus top-1 as
-            // separate paths/scores/hashes/RMSDs. When Softβ election is OFF,
-            // both equal the elected pose. When Softβ is ON, elected is entropy
-            // top-1; CF top-1 is the min-head-CF among scanned prefixes.
-            {
-                const bool softbeta_on =
-                    protocol_cfg_.election_shannon_free_energy;
-                if (!softbeta_on || result.pose_source != "softbeta") {
-                    result.cf_top1_pose_path = result.elected_pose_path;
-                    result.cf_top1_score = result.elected_cf;
-                    result.cf_top1_rmsd = result.rmsd_to_crystal;
-                    result.cf_top1_pose_sha256 = result.pose_sha256;
-                    result.entropy_top1_pose_path = result.elected_pose_path;
-                    result.entropy_top1_score = result.elected_cf;
-                    result.entropy_top1_rmsd = result.rmsd_to_crystal;
-                    result.entropy_top1_pose_sha256 = result.pose_sha256;
-                } else {
-                    result.entropy_top1_pose_path = result.elected_pose_path;
-                    result.entropy_top1_score = result.elected_cf;
-                    result.entropy_top1_rmsd = result.rmsd_to_crystal;
-                    result.entropy_top1_pose_sha256 = result.pose_sha256;
-                    // CF rank-0 among scanned heads (independent estimand).
-                    auto read_cf = [](const std::string& path) -> float {
-                        float cf = std::numeric_limits<float>::quiet_NaN();
-                        std::ifstream pf(path);
-                        std::string pl;
-                        while (std::getline(pf, pl)) {
-                            auto p = pl.find("REMARK CF=");
-                            if (p == std::string::npos) continue;
-                            try {
-                                cf = std::stof(pl.substr(p + 10));
-                            } catch (...) {}
-                            break;
-                        }
-                        return cf;
-                    };
-                    float best_cf = std::numeric_limits<float>::infinity();
-                    std::string best_cf_path;
-                    for (const auto& pfx : all_prefixes) {
-                        for (const auto& head : enumerate_emitted_cluster_heads(pfx)) {
-                            const float cf = read_cf(head.path);
-                            if (std::isfinite(cf) && cf < best_cf) {
-                                best_cf = cf;
-                                best_cf_path = head.path;
-                            }
-                        }
-                    }
-                    if (!best_cf_path.empty()) {
-                        result.cf_top1_pose_path = best_cf_path;
-                        result.cf_top1_score = best_cf;
-                        result.cf_top1_pose_sha256 =
-                            flexaids::posebust::sha256_file(best_cf_path);
-                        if (!crystal_xyz.empty()) {
-                            auto rr = compute_pose_ligand_rmsd(
-                                best_cf_path, crystal_xyz, crystal_elem,
-                                entry.pdb_id, false);
-                            result.cf_top1_rmsd = rr.first;
-                        }
-                    }
-                }
-            }
             std::cerr << "  [ELECTED-POSE] src=" << result.elected_pose_source
                       << " dst=" << result.elected_pose_path
                       << " restart=" << result.elected_restart
@@ -7635,6 +7678,7 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                            "seed_echo,pose_source,"
                            "cf_top1_pose_path,cf_top1_score,cf_top1_rmsd,cf_top1_pose_sha256,"
                            "entropy_top1_pose_path,entropy_top1_score,entropy_top1_rmsd,entropy_top1_pose_sha256,"
+                           "consensus_top1_pose_path,consensus_top1_score,consensus_top1_rmsd,consensus_top1_pose_sha256,"
                            "H_rep_rank0,H_pop,H_rep_mean,D_vib,"
                            "G_bind,H_vct,H_vct_raw,n_heavy,TdS_shannon,TdS_vib,D_vib_thermo,"
                            "compensation_ratio,TdS_shannon_gen500,TdS_shannon_gen1000,"
@@ -7700,6 +7744,10 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                         << (std::isnan(result.entropy_top1_score) ? "NA" : std::to_string(result.entropy_top1_score)) << ","
                         << result.entropy_top1_rmsd << ","
                         << result.entropy_top1_pose_sha256 << ","
+                        << "\"" << result.consensus_top1_pose_path << "\","
+                        << (std::isnan(result.consensus_top1_score) ? "NA" : std::to_string(result.consensus_top1_score)) << ","
+                        << result.consensus_top1_rmsd << ","
+                        << result.consensus_top1_pose_sha256 << ","
                         << result.H_rep_rank0 << ","
                         << result.H_pop << ","
                         << result.H_rep_mean << ","
@@ -8043,6 +8091,7 @@ void DatasetRunner::write_report(const BenchmarkReport& report,
                "seed_echo,pose_source,"
                "cf_top1_pose_path,cf_top1_score,cf_top1_rmsd,cf_top1_pose_sha256,"
                "entropy_top1_pose_path,entropy_top1_score,entropy_top1_rmsd,entropy_top1_pose_sha256,"
+               "consensus_top1_pose_path,consensus_top1_score,consensus_top1_rmsd,consensus_top1_pose_sha256,"
                "H_rep_rank0,H_pop,H_rep_mean,D_vib";
         if (thermo_csv) {
             ofs << ",g_bind,h_vct,h_vct_raw,n_heavy,tds_shannon,tds_vib";
@@ -8096,6 +8145,10 @@ void DatasetRunner::write_report(const BenchmarkReport& report,
                 << (std::isnan(r.entropy_top1_score) ? "NA" : std::to_string(r.entropy_top1_score)) << ","
                 << r.entropy_top1_rmsd << ","
                 << r.entropy_top1_pose_sha256 << ","
+                << "\"" << r.consensus_top1_pose_path << "\","
+                << (std::isnan(r.consensus_top1_score) ? "NA" : std::to_string(r.consensus_top1_score)) << ","
+                << r.consensus_top1_rmsd << ","
+                << r.consensus_top1_pose_sha256 << ","
                 << r.H_rep_rank0 << ","
                 << r.H_pop << ","
                 << r.H_rep_mean << ","

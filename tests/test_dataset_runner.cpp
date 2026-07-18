@@ -27,6 +27,7 @@
 #include <cstring>
 #include <filesystem>
 #include <fstream>
+#include <iomanip>
 #include <numeric>
 #include <set>
 #include <sstream>
@@ -117,6 +118,77 @@ TEST(DatasetRunnerCodes, AstexNonNativeTargetCount) {
         total += 1 + t.alternative_pdbs.size(); // native + alternatives
     }
     EXPECT_GE(total, 500u) << "Expected at least 500 total structures in Astex Non-Native";
+}
+
+TEST(PoseElectionBoundaries, GaSnapshotsIgnoreFreqselAndLowerCfIni) {
+    const auto tmp = fs::temp_directory_path() /
+                     ("flexaidds_election_boundary_test_" +
+                      std::to_string(
+                          std::chrono::steady_clock::now().time_since_epoch().count()));
+    const std::string prefix0 = (tmp / "r0" / "POSE").string();
+    const std::string prefix1 = (tmp / "r1" / "POSE").string();
+    const std::string prefix2 = (tmp / "r2" / "POSE").string();
+    fs::create_directories(tmp / "r0");
+    fs::create_directories(tmp / "r1");
+    fs::create_directories(tmp / "r2");
+
+    auto write_pose = [](const fs::path& path, float cf, float x) {
+        std::ofstream out(path);
+        out << "REMARK CF=" << cf << "\nREMARK Frequency: 2\n"
+            << "HETATM    1  C1  LIG A   1    "
+            << std::fixed << std::setw(8) << std::setprecision(3) << x
+            << std::setw(8) << 0.0 << std::setw(8) << 0.0
+            << "  1.00  0.00           C\nCONECT    1\n";
+    };
+
+    const fs::path cf_pose = prefix0 + "_0.pdb";
+    const fs::path entropy_pose = prefix0 + "_1.pdb";
+    const fs::path freqsel_pose = prefix1 + "_0.pdb";
+    const fs::path freqsel_support = prefix2 + "_0.pdb";
+    const fs::path ini_pose = prefix0 + "_INI.pdb";
+    write_pose(cf_pose, -10.0f, 0.0f);
+    write_pose(entropy_pose, -9.0f, 10.0f);
+    write_pose(freqsel_pose, -8.0f, 20.0f);
+    write_pose(freqsel_support, -7.0f, 20.2f);
+    write_pose(ini_pose, -30.0f, 30.0f);
+    std::ofstream(prefix0 + "_0.mcf") << "-10.0\n";
+    {
+        std::ofstream members(prefix0 + "_1.mcf");
+        for (int i = 0; i < 20; ++i) members << "-9.0\n";
+    }
+    std::ofstream(prefix1 + "_0.mcf") << "-8.0\n";
+    std::ofstream(prefix2 + "_0.mcf") << "-7.0\n";
+
+    flexaids::ProtocolConfig protocol;
+    protocol.seed_elitism = true;
+    protocol.freqsel = true;
+    protocol.freqsel_alpha = 12.0;
+    protocol.freqsel_rmsd = 1.5f;
+    protocol.election_shannon_free_energy = true;
+    protocol.election_include_singletons = true;
+    protocol.election_soft_T = 1.0;
+
+    const std::vector<std::string> prefixes{prefix0, prefix1, prefix2};
+    const PoseElectionBoundaries no_seed = select_pose_election_boundaries(
+        prefixes, 0, false, protocol, 298.0);
+    ASSERT_EQ(no_seed.final_top1.path, freqsel_pose.string());
+
+    const PoseElectionBoundaries with_seed = select_pose_election_boundaries(
+        prefixes, 1, false, protocol, 298.0);
+    EXPECT_EQ(with_seed.final_top1.path, ini_pose.string());
+    EXPECT_FLOAT_EQ(with_seed.final_top1.cf_score, -30.0f);
+    EXPECT_EQ(with_seed.generator_cf_top1.path, cf_pose.string());
+    EXPECT_FLOAT_EQ(with_seed.generator_cf_top1.selection_score, -10.0f);
+    EXPECT_EQ(with_seed.entropy_top1.path, entropy_pose.string());
+    EXPECT_FLOAT_EQ(with_seed.entropy_top1.cf_score, -9.0f);
+    EXPECT_LT(with_seed.entropy_top1.selection_score, -11.0f);
+    EXPECT_EQ(with_seed.generator_cf_top1.path,
+              no_seed.generator_cf_top1.path);
+    EXPECT_EQ(with_seed.entropy_top1.path, no_seed.entropy_top1.path);
+    EXPECT_NE(with_seed.generator_cf_top1.path, ini_pose.string());
+    EXPECT_NE(with_seed.entropy_top1.path, ini_pose.string());
+
+    fs::remove_all(tmp);
 }
 
 // =============================================================================
