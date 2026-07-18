@@ -1618,6 +1618,20 @@ atomindex* index_protein(FA_Global* FA,atom* atoms,resid* residue,atomsas* Calc,
 	int   dim2,dim3;
 	atomindex* box;
 
+	// --- Optimization #6: hoist rigid-receptor spatial index across CF evals ---
+	// The receptor is RIGID between GA evaluations: only the ligand (optres
+	// type 1) and any flexible side-chain atoms (optres type 0) move, and those
+	// are exactly the atoms flagged score==true below. A rigid atom's box
+	// assignment (Calc[].boxnum) is therefore invariant as long as the Voronoi
+	// grid is unchanged, i.e. its origin (global_min) and dimension (dim) are the
+	// same — both are captured exactly by the dim signature `sig`. When enabled
+	// we skip the per-eval reset+recompute of boxnum for rigid atoms whenever the
+	// grid signature matches the previous eval. Gated OFF by default so main
+	// reproduces today's results bit-for-bit unless the flag is set.
+	static const bool hoist_receptor_index =
+		(std::getenv("FLEXAIDDS_HOIST_RECEPTOR_INDEX") != nullptr);
+	static thread_local std::string prev_sig;
+
 	rot=0;
 	i=0;
 	alter=0;
@@ -1656,7 +1670,10 @@ atomindex* index_protein(FA_Global* FA,atom* atoms,resid* residue,atomsas* Calc,
 			// fields must be cleared every time the protein is indexed.
 			Calc[i].atom = &atoms[atmi];
 			Calc[i].residue = &residue[resi];
-			Calc[i].boxnum = -1;
+			// boxnum is (re)assigned in the binning block below. When hoisting the
+			// rigid-receptor index we defer this reset so cached rigid boxes survive;
+			// the reset is then applied selectively (grid change or moving atom).
+			if(!hoist_receptor_index){ Calc[i].boxnum = -1; }
 			Calc[i].ca_index = -1;
 			Calc[i].done = 'N';
 			Calc[i].exposed = true;
@@ -1711,6 +1728,11 @@ atomindex* index_protein(FA_Global* FA,atom* atoms,resid* residue,atomsas* Calc,
 
 	
 	std::string sig = generate_dim_sig(global_min,(*dim));
+	// A cached rigid-atom box is valid only while the grid signature is stable.
+	// `sig` encodes (int)global_min[0..2] and dim; after the bounding-box
+	// normalization above global_min is integer-valued, so an unchanged sig means
+	// an identical grid origin and extent -> identical cell for any fixed atom.
+	const bool grid_changed = (sig != prev_sig);
 	std::map<std::string, atomindex*>::iterator it;
 	if(!FA->vindex){
 		box = (atomindex*)malloc(dim3*sizeof(atomindex));
@@ -1719,7 +1741,12 @@ atomindex* index_protein(FA_Global* FA,atom* atoms,resid* residue,atomsas* Calc,
 			Terminate(2);
 		}
 		for(atmi=0;atmi<atmcnt;++atmi){
-			Calc[atmi].boxnum = -1;
+			// Default: reset every atom (current behavior). When hoisting: keep a
+			// rigid atom's cached box while the grid is stable; always reset moving
+			// (score==true) atoms and reset everything if the grid changed.
+			if(!hoist_receptor_index || grid_changed || Calc[atmi].score){
+				Calc[atmi].boxnum = -1;
+			}
 		}
 	}else if((it=indexed.find(sig)) == indexed.end()){
 		box = (atomindex*)malloc(dim3*sizeof(atomindex));
@@ -1805,7 +1832,11 @@ atomindex* index_protein(FA_Global* FA,atom* atoms,resid* residue,atomsas* Calc,
 			++box[boxi].nument;
 		}
 	}
-	
+
+	// Remember this eval's grid signature so the next call can decide whether a
+	// cached rigid-atom box is still valid (see grid_changed above).
+	prev_sig = sig;
+
 	return box;
 }
 
