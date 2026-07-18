@@ -2,19 +2,23 @@ from __future__ import annotations
 
 import csv
 import json
+import math
 from pathlib import Path
 import shutil
 import shlex
-from typing import Any
+from typing import Any, Sequence
 
 from rdkit import Chem
 from rdkit import RDLogger
-from rdkit.Chem import rdMolAlign
 
 from .io_utils import run_command
 from .sdf_utils import normalise_v2000_counts_file, read_first_sdf_mol
 
 RDLogger.DisableLog("rdApp.error")
+
+# Hard caps: unbounded substructure / backtracking can hang on bad graphs.
+_MAX_GRAPH_MAPS = 64
+_MAX_DFS_NODES = 50_000
 
 
 def _read_first_sdf(path: str | Path, obabel: str | None = None) -> Chem.Mol:
@@ -30,7 +34,293 @@ def _remove_hs_for_rmsd(mol: Chem.Mol) -> Chem.Mol:
         return mol
 
 
+def _atom_signature(atom: Chem.Atom) -> tuple[int, int]:
+    """Element + heavy-atom degree (stable without full sanitization)."""
+    try:
+        heavy_deg = sum(1 for n in atom.GetNeighbors() if n.GetAtomicNum() > 1)
+    except Exception:
+        heavy_deg = atom.GetDegree()
+    return (int(atom.GetAtomicNum()), int(heavy_deg))
+
+
+def _element_sequence(mol: Chem.Mol) -> list[int]:
+    return [int(a.GetAtomicNum()) for a in mol.GetAtoms()]
+
+
+def _bond_order_key(mol: Chem.Mol, i: int, j: int) -> int | None:
+    bond = mol.GetBondBetweenAtoms(i, j)
+    if bond is None:
+        return None
+    try:
+        return int(round(bond.GetBondTypeAsDouble() * 2.0))
+    except Exception:
+        return 2  # single
+
+
+def _direct_rmsd_for_map(
+    pose: Chem.Mol,
+    ref: Chem.Mol,
+    mapping: Sequence[int],
+) -> float | None:
+    """Unaligned (direct-coordinate) RMSD for a full pose->ref atom map."""
+    if pose.GetNumConformers() == 0 or ref.GetNumConformers() == 0:
+        return None
+    n = pose.GetNumAtoms()
+    if n == 0 or len(mapping) != n:
+        return None
+    if len(set(int(x) for x in mapping)) != n:
+        return None
+    pose_conf = pose.GetConformer()
+    ref_conf = ref.GetConformer()
+    total = 0.0
+    for pose_i, ref_i in enumerate(mapping):
+        ri = int(ref_i)
+        if ri < 0 or ri >= ref.GetNumAtoms():
+            return None
+        if pose.GetAtomWithIdx(pose_i).GetAtomicNum() != ref.GetAtomWithIdx(ri).GetAtomicNum():
+            return None
+        p = pose_conf.GetAtomPosition(pose_i)
+        r = ref_conf.GetAtomPosition(ri)
+        total += (p.x - r.x) ** 2 + (p.y - r.y) ** 2 + (p.z - r.z) ** 2
+    return math.sqrt(total / n)
+
+
+def _ordered_identity_map(n: int) -> list[int]:
+    return list(range(n))
+
+
+def _full_graph_bond_order_equal(pose: Chem.Mol, ref: Chem.Mol, mapping: Sequence[int]) -> bool:
+    """True iff mapping is a full bijection preserving every bond and bond order.
+
+    Requires both directions: every pose bond maps to a ref bond with the same
+    order key, and every ref bond is hit by some pose bond (no one-way subgraph).
+    """
+    n = pose.GetNumAtoms()
+    if n != ref.GetNumAtoms() or len(mapping) != n:
+        return False
+    if len(set(int(x) for x in mapping)) != n:
+        return False
+    for pose_i, ref_i in enumerate(mapping):
+        ri = int(ref_i)
+        if ri < 0 or ri >= n:
+            return False
+        if pose.GetAtomWithIdx(pose_i).GetAtomicNum() != ref.GetAtomWithIdx(ri).GetAtomicNum():
+            return False
+
+    # Pose → ref bonds
+    pose_edges: set[tuple[int, int, int]] = set()
+    for bond in pose.GetBonds():
+        a, b = bond.GetBeginAtomIdx(), bond.GetEndAtomIdx()
+        ra, rb = int(mapping[a]), int(mapping[b])
+        lo, hi = (ra, rb) if ra < rb else (rb, ra)
+        po = _bond_order_key(pose, a, b)
+        if po is None:
+            return False
+        ro = _bond_order_key(ref, ra, rb)
+        if ro is None or ro != po:
+            return False
+        pose_edges.add((lo, hi, po))
+
+    # Ref → pose (reject one-directional subgraph matches)
+    inv = [-1] * n
+    for pi, ri in enumerate(mapping):
+        inv[int(ri)] = pi
+    for bond in ref.GetBonds():
+        a, b = bond.GetBeginAtomIdx(), bond.GetEndAtomIdx()
+        pa, pb = inv[a], inv[b]
+        if pa < 0 or pb < 0:
+            return False
+        ro = _bond_order_key(ref, a, b)
+        po = _bond_order_key(pose, pa, pb)
+        if ro is None or po is None or ro != po:
+            return False
+        lo, hi = (a, b) if a < b else (b, a)
+        if (lo, hi, ro) not in pose_edges:
+            # Pose mapped edge set must cover ref bond under mapping.
+            return False
+    if pose.GetNumBonds() != ref.GetNumBonds():
+        return False
+    return True
+
+
+def _maps_via_substruct(pose: Chem.Mol, ref: Chem.Mol) -> list[list[int]]:
+    """Full-graph mutual isomorphism maps (capped). Rejects one-way subgraphs."""
+    n = pose.GetNumAtoms()
+    if n != ref.GetNumAtoms():
+        return []
+    maps: list[list[int]] = []
+    try:
+        # Require pose⊆ref AND ref⊆pose with equal size → true graph isomorphism.
+        forward = ref.GetSubstructMatches(
+            pose, uniquify=False, maxMatches=_MAX_GRAPH_MAPS
+        )
+        reverse = pose.GetSubstructMatches(
+            ref, uniquify=False, maxMatches=_MAX_GRAPH_MAPS
+        )
+        if not forward or not reverse:
+            return []
+        for m in forward:
+            if len(m) != n or len(set(m)) != n:
+                continue
+            mapping = list(m)
+            if not _full_graph_bond_order_equal(pose, ref, mapping):
+                continue
+            maps.append(mapping)
+            if len(maps) >= _MAX_GRAPH_MAPS:
+                break
+    except Exception:
+        return maps
+    return maps
+
+
+def _maps_via_backtrack(pose: Chem.Mol, ref: Chem.Mol) -> list[list[int]]:
+    """
+    Bounded DFS for chemically valid full-graph bijections.
+
+    Uses element + heavy degree + bond-order consistency. Aborts after
+    _MAX_DFS_NODES expansions so graph-mismatch cases cannot hang.
+    """
+    n = pose.GetNumAtoms()
+    pose_sig = [_atom_signature(a) for a in pose.GetAtoms()]
+    ref_sig = [_atom_signature(a) for a in ref.GetAtoms()]
+
+    # Quick reject: multiset of signatures must match.
+    if sorted(pose_sig) != sorted(ref_sig):
+        return []
+
+    candidates: list[list[int]] = []
+    for i in range(n):
+        cands = [j for j in range(n) if pose_sig[i] == ref_sig[j]]
+        if not cands:
+            return []
+        candidates.append(cands)
+
+    # Fail fast when branching factor is combinatorial for large N.
+    product = 1
+    for c in candidates:
+        product *= len(c)
+        if product > 1_000_000 and n > 12:
+            # Fall back to ordered map only if elements align; else empty.
+            return []
+
+    order = sorted(range(n), key=lambda i: len(candidates[i]))
+    assignment = [-1] * n
+    used = [False] * n
+    maps: list[list[int]] = []
+    nodes = 0
+
+    def bonds_ok(pose_i: int, ref_j: int) -> bool:
+        for bond in pose.GetAtomWithIdx(pose_i).GetBonds():
+            other = bond.GetOtherAtomIdx(pose_i)
+            if assignment[other] < 0:
+                continue
+            ref_other = assignment[other]
+            po = _bond_order_key(pose, pose_i, other)
+            ro = _bond_order_key(ref, ref_j, ref_other)
+            if po is None or ro is None or po != ro:
+                return False
+        return True
+
+    def dfs(depth: int) -> None:
+        nonlocal nodes
+        if len(maps) >= _MAX_GRAPH_MAPS:
+            return
+        nodes += 1
+        if nodes > _MAX_DFS_NODES:
+            return
+        if depth == n:
+            maps.append(assignment.copy())
+            return
+        pose_i = order[depth]
+        for ref_j in candidates[pose_i]:
+            if used[ref_j]:
+                continue
+            if not bonds_ok(pose_i, ref_j):
+                continue
+            used[ref_j] = True
+            assignment[pose_i] = ref_j
+            dfs(depth + 1)
+            assignment[pose_i] = -1
+            used[ref_j] = False
+            if nodes > _MAX_DFS_NODES or len(maps) >= _MAX_GRAPH_MAPS:
+                return
+
+    dfs(0)
+    return maps
+
+
+def _enumerate_full_graph_maps(pose: Chem.Mol, ref: Chem.Mol) -> list[list[int]]:
+    """Chemically valid full-graph pose→ref maps; never unbounded.
+
+    Ordered identity is accepted **only** when full graph + bond-order equality
+    holds. One-directional subgraph matches are rejected.
+    """
+    n = pose.GetNumAtoms()
+    if n == 0 or n != ref.GetNumAtoms():
+        return []
+
+    maps: list[list[int]] = []
+
+    # Ordered identity only with full graph/bond-order equality (not element-only).
+    if _element_sequence(pose) == _element_sequence(ref):
+        identity = _ordered_identity_map(n)
+        if _full_graph_bond_order_equal(pose, ref, identity):
+            maps.append(identity)
+
+    # RDKit mutual isomorphism (symmetry-aware). Cap matches.
+    for m in _maps_via_substruct(pose, ref):
+        if m not in maps:
+            maps.append(m)
+        if len(maps) >= _MAX_GRAPH_MAPS:
+            return maps
+
+    if maps:
+        return maps
+
+    # Bounded signature DFS; filter with full graph equality.
+    for m in _maps_via_backtrack(pose, ref):
+        if not _full_graph_bond_order_equal(pose, ref, m):
+            continue
+        if m not in maps:
+            maps.append(m)
+        if len(maps) >= _MAX_GRAPH_MAPS:
+            break
+    return maps
+
+
+def direct_graph_rmsd(pose: Chem.Mol, ref: Chem.Mol) -> float | None:
+    """
+    Symmetry-aware whole-ligand RMSD without Kabsch/alignment.
+
+    Enumerates chemically valid full-graph atom mappings and returns the
+    minimum direct-coordinate RMSD. Returns None when no full-graph map exists
+    (count mismatch, graph mismatch, or missing conformers).
+    """
+    if pose is None or ref is None:
+        return None
+    if pose.GetNumAtoms() == 0 or ref.GetNumAtoms() == 0:
+        return None
+    if pose.GetNumAtoms() != ref.GetNumAtoms():
+        return None
+    if pose.GetNumConformers() == 0 or ref.GetNumConformers() == 0:
+        return None
+
+    maps = _enumerate_full_graph_maps(pose, ref)
+    if not maps:
+        return None
+
+    best: float | None = None
+    for m in maps:
+        val = _direct_rmsd_for_map(pose, ref, m)
+        if val is None or not math.isfinite(val):
+            continue
+        if best is None or val < best:
+            best = val
+    return best
+
+
 def _ordered_heavy_rmsd(pose: Chem.Mol, ref: Chem.Mol) -> float | None:
+    """Legacy ordered heavy-atom helper (diagnostics / tests)."""
     if pose.GetNumConformers() == 0 or ref.GetNumConformers() == 0:
         return None
     pose_conf = pose.GetConformer()
@@ -71,18 +361,16 @@ def rmsd_to_reference(
     *,
     obabel: str | None = None,
 ) -> float | None:
+    """
+    Direct-coordinate, chemically valid full-graph RMSD (no alignment).
+
+    Does **not** use RDKit GetBestRMS / Kabsch. A pure translation reports
+    non-zero RMSD. Graph-incompatible atom sets return None.
+    """
     try:
         pose = _remove_hs_for_rmsd(_read_first_sdf(pose_sdf, obabel))
         ref = _remove_hs_for_rmsd(_read_first_sdf(reference_sdf, obabel))
-        if pose.GetNumAtoms() != ref.GetNumAtoms():
-            return None
-        try:
-            return float(rdMolAlign.GetBestRMS(pose, ref))
-        except Exception:
-            try:
-                return float(rdMolAlign.CalcRMS(pose, ref))
-            except Exception:
-                return _ordered_heavy_rmsd(pose, ref)
+        return direct_graph_rmsd(pose, ref)
     except Exception:
         return None
 

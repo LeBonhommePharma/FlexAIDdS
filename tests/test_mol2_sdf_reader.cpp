@@ -747,7 +747,7 @@ TEST_F(SdfReaderTest, TopologyDerivedFrameAndTorsionPreserveLocalGeometry) {
     atoms[residue[1].gpa[1]].ang += 40.0f;
     atoms[residue[1].gpa[1]].dih -= 55.0f;
     atoms[residue[1].gpa[2]].dih += 70.0f;
-    buildcc(&FA, atoms, rebuilt, rebuild);
+    ASSERT_TRUE(buildcc(&FA, atoms, rebuilt, rebuild));
     expect_local_geometry();
 
     ASSERT_EQ(residue[1].fdih, 1);
@@ -765,11 +765,193 @@ TEST_F(SdfReaderTest, TopologyDerivedFrameAndTorsionPreserveLocalGeometry) {
     }
     rebuilt = 0;
     buildlist(&FA, atoms, residue, 1, 1, &rebuilt, rebuild);
-    buildcc(&FA, atoms, rebuilt, rebuild);
+    ASSERT_TRUE(buildcc(&FA, atoms, rebuilt, rebuild));
     expect_local_geometry();
 
     cleanup_fa(&FA, atoms, residue);
     std::remove(sdf.c_str());
+}
+
+// Nonterminal secondary/tertiary alkyl-amine C–N must remain a rotor.
+// VCT type 11 is NOT amide proof (SDF generic N and MOL2 N.1/N.2/N.3 → type 11).
+// Chain C–C–N–C–C so both ends of each C–N have heavy degree ≥ 2 (nonterminal).
+TEST_F(SdfReaderTest, AlkylAmineCNRemainsRuntimeRotor) {
+    std::string sdf = write_sdf("alkyl_amine_rotor.sdf",
+        "amine\n\n\n"
+        "  5  4  0  0  0  0  0  0  0  0999 V2000\n"
+        "    0.0000    0.0000    0.0000 C   0  0  0  0  0  0\n"
+        "    1.5400    0.0000    0.0000 C   0  0  0  0  0  0\n"
+        "    2.2800    1.2600    0.0000 N   0  0  0  0  0  0\n"
+        "    3.7200    1.2600    0.0000 C   0  0  0  0  0  0\n"
+        "    4.4600    2.5200    0.0000 C   0  0  0  0  0  0\n"
+        "  1  2  1  0\n"
+        "  2  3  1  0\n"
+        "  3  4  1  0\n"
+        "  4  5  1  0\n"
+        "M  END\n$$$$\n");
+
+    FA_Global FA;
+    atom* atoms = nullptr;
+    resid* residue = nullptr;
+    init_fa_for_reader(&FA, &atoms, &residue);
+    ASSERT_EQ(read_sdf_ligand(&FA, &atoms, &residue, sdf.c_str()), 1);
+    // Type 11 on N is expected (SDF generic N → 11) but must NOT freeze rotors.
+    EXPECT_EQ(atoms[3].type, 11);
+
+    auto el = [&](int idx) -> char {
+        if (atoms[idx].element[0])
+            return static_cast<char>(std::toupper(
+                static_cast<unsigned char>(atoms[idx].element[0])));
+        return '?';
+    };
+    int cn_rotors = 0;
+    for (int d = 1; d <= residue[1].fdih; ++d) {
+        const int control = residue[1].bond[d];
+        ASSERT_GT(control, 0);
+        const int child = atoms[control].rec[0];
+        const int parent = atoms[control].rec[1];
+        const bool cn =
+            (el(child) == 'C' && el(parent) == 'N') ||
+            (el(child) == 'N' && el(parent) == 'C');
+        if (cn) ++cn_rotors;
+    }
+    EXPECT_GE(cn_rotors, 1)
+        << "secondary alkyl-amine C–N must remain DirectLigandIC rotatable "
+           "(type==11 must not freeze amine rotors); fdih="
+        << residue[1].fdih;
+
+    cleanup_fa(&FA, atoms, residue);
+    std::remove(sdf.c_str());
+}
+
+// Resonance-locked C–N (amide) must not become a runtime DirectLigandIC rotor.
+// Carbonyl C is identified as VCT type C.2 (SdfReader sets type=2 for C with
+// double bond) — not "any C bonded to O", which would false-flag carbinolamines.
+// Do NOT use atoms[n].type==11 as amide proof.
+TEST_F(SdfReaderTest, AmideBondNotRuntimeRotor) {
+    // CC(=O)NCC — amide C–N is a graph bridge but resonance-locked.
+    std::string sdf = write_sdf("amide_rotor.sdf",
+        "amide\n\n\n"
+        "  5  4  0  0  0  0  0  0  0  0999 V2000\n"
+        "    0.0000    0.0000    0.0000 C   0  0  0  0  0  0\n"
+        "    1.5000    0.0000    0.0000 C   0  0  0  0  0  0\n"
+        "    2.1000    1.1000    0.0000 O   0  0  0  0  0  0\n"
+        "    2.1000   -1.2000    0.0000 N   0  0  0  0  0  0\n"
+        "    3.5000   -1.2000    0.0000 C   0  0  0  0  0  0\n"
+        "  1  2  1  0\n"
+        "  2  3  2  0\n"
+        "  2  4  1  0\n"
+        "  4  5  1  0\n"
+        "M  END\n$$$$\n");
+
+    FA_Global FA;
+    atom* atoms = nullptr;
+    resid* residue = nullptr;
+    init_fa_for_reader(&FA, &atoms, &residue);
+    ASSERT_EQ(read_sdf_ligand(&FA, &atoms, &residue, sdf.c_str()), 1);
+
+    auto el = [&](int idx) -> char {
+        if (atoms[idx].element[0])
+            return static_cast<char>(std::toupper(
+                static_cast<unsigned char>(atoms[idx].element[0])));
+        return '?';
+    };
+    for (int d = 1; d <= residue[1].fdih; ++d) {
+        const int control = residue[1].bond[d];
+        ASSERT_GT(control, 0);
+        const int child = atoms[control].rec[0];
+        const int parent = atoms[control].rec[1];
+        const bool cn =
+            (el(child) == 'C' && el(parent) == 'N') ||
+            (el(child) == 'N' && el(parent) == 'C');
+        if (!cn) continue;
+        const int c_idx = el(child) == 'C' ? child : parent;
+        // C.2 (carbonyl/sp2) is the typed carbonyl from double-bond perception.
+        EXPECT_NE(atoms[c_idx].type, 2)
+            << "amide C(=O)–N must not be a DirectLigandIC rotor (gene " << d
+            << ", C type=" << atoms[c_idx].type << ")";
+    }
+
+    cleanup_fa(&FA, atoms, residue);
+    std::remove(sdf.c_str());
+}
+
+// Real Astex 1M2Z: SDF read → buildlist → buildcc geometry round-trip.
+// (Honest name: does not call ic2cf or pose writers — those need a full FA dock.)
+// Historical rupture does NOT reproduce on modern DirectLigandIC + topology GPA.
+TEST_F(SdfReaderTest, Real1M2Z_SdfReadBuildlistBuildccGeometryPreserved) {
+    namespace fs = std::filesystem;
+    const fs::path candidates[] = {
+        fs::path("benchmarks/astex_diverse/astex_diverse/1M2Z/1M2Z_ligand.sdf"),
+        fs::path("benchmarks/astex_diverse/data/astex_diverse/1M2Z/1M2Z_ligand.sdf"),
+        fs::path(__FILE__).parent_path().parent_path() /
+            "benchmarks/astex_diverse/astex_diverse/1M2Z/1M2Z_ligand.sdf",
+        fs::path(__FILE__).parent_path().parent_path() /
+            "benchmarks/astex_diverse/data/astex_diverse/1M2Z/1M2Z_ligand.sdf",
+    };
+    fs::path sdf;
+    for (const auto& c : candidates) {
+        if (fs::exists(c)) { sdf = c; break; }
+    }
+    if (sdf.empty()) {
+        GTEST_SKIP() << "1M2Z_ligand.sdf not present in worktree";
+    }
+
+    FA_Global FA;
+    atom* atoms = nullptr;
+    resid* residue = nullptr;
+    init_fa_for_reader(&FA, &atoms, &residue);
+    ASSERT_EQ(read_sdf_ligand(&FA, &atoms, &residue, sdf.string().c_str()), 1)
+        << "read_sdf_ligand failed for " << sdf;
+    ASSERT_GE(FA.num_het_atm, 20);
+    ASSERT_NE(residue[1].gpa, nullptr);
+
+    auto distance = [&](int a, int b) {
+        const double dx = atoms[a].coor[0] - atoms[b].coor[0];
+        const double dy = atoms[a].coor[1] - atoms[b].coor[1];
+        const double dz = atoms[a].coor[2] - atoms[b].coor[2];
+        return std::sqrt(dx * dx + dy * dy + dz * dz);
+    };
+
+    struct BondMetric { int a, b; double value; };
+    std::vector<BondMetric> bonds;
+    for (int a = 1; a <= FA.num_het_atm; ++a) {
+        for (int bi = 1; bi <= atoms[a].bond[0]; ++bi) {
+            const int b = atoms[a].bond[bi];
+            if (a < b) bonds.push_back({a, b, distance(a, b)});
+        }
+    }
+    ASSERT_FALSE(bonds.empty());
+
+    // buildlist + buildcc (IC reconstruction from topology-derived tree).
+    // buildcc is fail-closed: false means NaNs were written / reconstruction failed.
+    int rebuild[MAX_ATM_HET] = {};
+    int rebuilt = 0;
+    buildlist(&FA, atoms, residue, 1, 0, &rebuilt, rebuild);
+    ASSERT_GT(rebuilt, 0);
+    ASSERT_TRUE(buildcc(&FA, atoms, rebuilt, rebuild))
+        << "buildcc reconstruction failed (singular frame / non-finite)";
+
+    double max_drift = 0.0;
+    for (const auto& m : bonds) {
+        const double d = distance(m.a, m.b);
+        ASSERT_TRUE(std::isfinite(d)) << "non-finite bond after buildcc";
+        max_drift = std::max(max_drift, std::abs(d - m.value));
+        EXPECT_LT(std::abs(d - m.value), 0.05)
+            << "bond " << m.a << "-" << m.b << " drifted " << (d - m.value);
+    }
+    EXPECT_LT(max_drift, 1e-3)
+        << "1M2Z max bond drift " << max_drift
+        << " (historical rupture does not reproduce; expect ~1e-5 A)";
+
+    for (int a = 1; a <= FA.num_het_atm; ++a) {
+        for (int k = 0; k < 3; ++k) {
+            EXPECT_TRUE(std::isfinite(atoms[a].coor[k]))
+                << "atom " << a << " coor non-finite";
+        }
+    }
+
+    cleanup_fa(&FA, atoms, residue);
 }
 
 // ===========================================================================

@@ -105,12 +105,20 @@ void apply_config(const json::Value& config, FA_Global* FA, GB_Global* GB,
             FA->tencom_weight = static_cast<float>(tw);
         }
 
-        // GIST desolvation grid
-        FA->use_gist    = jbool(config, "scoring", "gist_enabled", false) ? 1 : 0;
-        FA->gist_weight = jdbl(config, "scoring", "gist_weight", 1.0);
+        // GIST desolvation grid — HARD-DISABLED for all runs until the
+        // evaluator / grid-type confusion is repaired (audit 2026-07-17).
+        // Strict claims must not consume GIST scores; ignore JSON enable.
+        const bool gist_requested = jbool(config, "scoring", "gist_enabled", false);
+        FA->use_gist = 0;
+        FA->gist_weight = 0.0;
         FA->gist_evaluator = nullptr;
-        // Note: GIST grid loading is handled by the caller after apply_config()
-        // when FA->use_gist is enabled and gist_dx_file is non-empty.
+        if (gist_requested) {
+            fprintf(stderr,
+                "WARN [GIST]: gist_enabled requested but HARD-DISABLED until "
+                "evaluator/grid type confusion is repaired (strict claims)\n");
+        }
+        // Note: re-enable only behind a new validated gate + tests; never via
+        // gist_enabled alone until that repair lands.
     }
 
     // ── Optimization ──

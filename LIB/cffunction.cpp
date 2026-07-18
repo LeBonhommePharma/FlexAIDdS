@@ -36,7 +36,22 @@ cfstr cffunction(FA_Global* FA,atom* atoms,resid* residue,int num){
 
   Kwall=1.0e6;
   overlap=0.9;
-  cf.rclash=0;
+  // Explicit zero-init of every cfstr field (cffunction only fills com/nor/wal).
+  // Uninitialized elec / gist_desolv / hbond previously leaked into aggregates.
+  cf.com = 0.0;
+  cf.wal = 0.0;
+  cf.sas = 0.0;
+  cf.con = 0.0;
+  cf.nor = 0.0;
+  cf.elec = 0.0;
+  cf.hbond = 0.0;
+  cf.gist = 0.0;
+  cf.gist_desolv = 0.0;
+  cf.metal_coord = 0.0;
+  cf.h_rep = 0.0;
+  cf.entropy = 0.0;
+  cf.totsas = 0.0;
+  cf.rclash = 0;
 
   // type of calculation, a=includes intramolecular interactions
   //                      b=excludes intramolecular interactions  

@@ -2,11 +2,15 @@
 //
 // Apache-2.0. Implemented from first principles; no posebusters/RDKit code.
 #include "Loaders.h"
+#include "PdbCoords.h"
 
+#include <array>
 #include <algorithm>
 #include <cctype>
+#include <cerrno>
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
 #include <fstream>
 #include <set>
 #include <sstream>
@@ -66,7 +70,11 @@ bool parse_float_field(const std::string& s, float& out) {
     try {
         std::size_t idx = 0;
         out = std::stof(s, &idx);
-        return idx > 0;
+        // Require whole field consumption after trim so " -0.63-80.2" style
+        // compact spills fail here and are handled by span regex parser.
+        while (idx < s.size() && std::isspace(static_cast<unsigned char>(s[idx])))
+            ++idx;
+        return idx == s.size();
     } catch (...) {
         return false;
     }
@@ -245,10 +253,15 @@ bool parse_pdb_atom_line(const std::string& line, PdbAtomRec& rec) {
     if (!parse_int_field(field(line, 22, 4), rec.resseq)) {
         rec.resseq = 0;
     }
-    if (!parse_float_field(field(line, 30, 8), rec.x) ||
-        !parse_float_field(field(line, 38, 8), rec.y) ||
-        !parse_float_field(field(line, 46, 8), rec.z)) {
-        return false;
+    // Shared strict finite decoder (identical to DatasetRunner RMSD path).
+    {
+        std::array<float, 3> xyz{};
+        if (!flexaids::pdb_coords::parse_xyz_span(line, xyz)) {
+            return false;
+        }
+        rec.x = xyz[0];
+        rec.y = xyz[1];
+        rec.z = xyz[2];
     }
     // Element columns 77–78 (1-based) → 76–77 0-based; may be absent.
     rec.element = (line.size() >= 78) ? field(line, 76, 2) : std::string{};
@@ -715,19 +728,15 @@ bool load_pdb_flexaid_ligand(const std::string& path, Molecule& out, std::string
 
 bool assign_topology_from_reference(Molecule& pred, const Molecule& reference,
                                     std::string* err) {
-    // Match heavy atoms: prefer sequential element order; fall back to
-    // element-matched nearest-neighbour assignment when serial order differs
-    // (common when CONECT sort order ≠ crystal SDF atom block order).
-    std::vector<int> pred_h, ref_h;
-    for (std::size_t i = 0; i < pred.atoms.size(); ++i)
-        if (!pred.atoms[i].is_h) pred_h.push_back(static_cast<int>(i));
-    for (std::size_t i = 0; i < reference.atoms.size(); ++i)
-        if (!reference.atoms[i].is_h) ref_h.push_back(static_cast<int>(i));
-
-    if (pred_h.size() != ref_h.size() || pred_h.empty()) {
-        set_err(err, "assign_topology_from_reference: heavy-atom count mismatch (pred=" +
-                         std::to_string(pred_h.size()) + " ref=" +
-                         std::to_string(ref_h.size()) + ")");
+    // Graph-identity topology transfer only. Do NOT:
+    //  - orphan explicit H/Du atoms on either side (counts must match including H)
+    //  - accept repeated-element positional nearest-neighbour mapping without
+    //    element sequence identity (audit P1).
+    if (pred.atoms.size() != reference.atoms.size() || pred.atoms.empty()) {
+        set_err(err, "assign_topology_from_reference: atom-count mismatch (pred=" +
+                         std::to_string(pred.atoms.size()) + " ref=" +
+                         std::to_string(reference.atoms.size()) +
+                         ") — including explicit H/Du");
         return false;
     }
 
@@ -740,68 +749,28 @@ bool assign_topology_from_reference(Molecule& pred, const Molecule& reference,
         return to_upper(pa.element) == to_upper(ra.element);
     };
 
-    bool sequence_ok = true;
-    for (std::size_t k = 0; k < pred_h.size(); ++k) {
-        if (!elements_match(pred_h[k], ref_h[k])) {
-            sequence_ok = false;
-            break;
+    // Require full-atom element sequence identity (graph order).
+    for (std::size_t i = 0; i < pred.atoms.size(); ++i) {
+        if (!elements_match(static_cast<int>(i), static_cast<int>(i))) {
+            set_err(err,
+                    "assign_topology_from_reference: element sequence mismatch at "
+                    "atom " +
+                        std::to_string(i) + " (pred=" + pred.atoms[i].element +
+                        " ref=" + reference.atoms[i].element +
+                        ") — refuse positional remapping");
+            return false;
         }
     }
 
-    // Map reference atom index -> pred atom index
-    std::unordered_map<int, int> ref_to_pred;
-    if (sequence_ok) {
-        if (pred.atoms.size() == pred_h.size() &&
-            reference.atoms.size() >= ref_h.size()) {
-            for (std::size_t k = 0; k < ref_h.size(); ++k) {
-                ref_to_pred[ref_h[k]] = pred_h[k];
-            }
-        } else if (pred.atoms.size() == reference.atoms.size()) {
-            for (std::size_t i = 0; i < pred.atoms.size(); ++i) {
-                ref_to_pred[static_cast<int>(i)] = static_cast<int>(i);
-            }
-        } else {
-            for (std::size_t k = 0; k < ref_h.size(); ++k) {
-                ref_to_pred[ref_h[k]] = pred_h[k];
-            }
-        }
-    } else {
-        // Greedy nearest same-element matching (crystal-blind; coords only).
-        std::vector<char> used(pred_h.size(), 0);
-        for (std::size_t rk = 0; rk < ref_h.size(); ++rk) {
-            const Atom& ra = reference.atoms[static_cast<std::size_t>(ref_h[rk])];
-            int best = -1;
-            float best_d2 = 1.0e30f;
-            for (std::size_t pk = 0; pk < pred_h.size(); ++pk) {
-                if (used[pk]) continue;
-                if (!elements_match(pred_h[pk], ref_h[rk])) continue;
-                const Atom& pa = pred.atoms[static_cast<std::size_t>(pred_h[pk])];
-                const float dx = pa.x - ra.x, dy = pa.y - ra.y, dz = pa.z - ra.z;
-                const float d2 = dx * dx + dy * dy + dz * dz;
-                if (d2 < best_d2) {
-                    best_d2 = d2;
-                    best = static_cast<int>(pk);
-                }
-            }
-            if (best < 0) {
-                set_err(err,
-                        "assign_topology_from_reference: no same-element match for ref heavy " +
-                            std::to_string(rk) + " (" + ra.element + ")");
-                return false;
-            }
-            used[static_cast<std::size_t>(best)] = 1;
-            ref_to_pred[ref_h[rk]] = pred_h[static_cast<std::size_t>(best)];
-        }
-    }
-
+    // Identity map: same atom order + element sequence.
     std::vector<Bond> new_bonds;
     for (const Bond& b : reference.bonds) {
-        auto ia = ref_to_pred.find(b.a);
-        auto ib = ref_to_pred.find(b.b);
-        if (ia == ref_to_pred.end() || ib == ref_to_pred.end()) {
+        if (b.a < 0 || b.b < 0 ||
+            static_cast<std::size_t>(b.a) >= pred.atoms.size() ||
+            static_cast<std::size_t>(b.b) >= pred.atoms.size()) {
             continue;
         }
-        new_bonds.push_back(Bond{ia->second, ib->second, b.order});
+        new_bonds.push_back(Bond{b.a, b.b, b.order});
     }
     if (new_bonds.empty()) {
         set_err(err, "assign_topology_from_reference: no transferable bonds");

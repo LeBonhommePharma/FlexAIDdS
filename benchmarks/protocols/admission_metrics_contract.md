@@ -1,36 +1,38 @@
 # Admission + Metrics Contract (Normative)
 
 **Status:** Normative for claim-table aggregation and abstract / headline rates.  
-**Aligned with:** `benchmarks/protocols/three_engine_entropy_comparison.md` §1.4–§5, `AGENTS.md` scientific guardrails, `benchmarks/BENCHMARK_STANDARD.md` (no-seed, seed_echo).  
-**Enforcement:** `scripts/aggregate_claim_metrics.py` (fail-closed claim filters (missing seed columns fail); S3 never primary).
+**Aligned with:** `benchmarks/protocols/three_engine_entropy_comparison.md` §1.4–§5, `AGENTS.md`, audit 2026-07-17.  
+**Enforcement:** `scripts/aggregate_claim_metrics.py` (fail-closed).
 
 ---
 
-## 1. Success metrics (report all; headline uses S1)
+## 1. Success metrics (report all; headline is claim_ready)
 
 | ID | Definition | Role |
 |----|------------|------|
-| **S1** | Elected (top-1) pose RMSD ≤ 2.0 Å | **Primary / claim KPI** |
-| **S2** | S1 ∧ PoseBusters pass on elected pose | Modern secondary |
-| **S3** | Any emitted cluster pose RMSD ≤ 2.0 Å (BCR / sampling ceiling) | **Diagnostic only** |
+| **S1** | Elected pose **ordered direct** `rmsd_to_crystal` ≤ 2.0 Å and `seed_echo==0` | RMSD-only diagnostic of election |
+| **S2** | S1 ∧ `pb_pass` on the **same** elected pose (`success_pb`) | Intermediate (RMSD∧PB) |
+| **STRICT** / **claim_ready** | Engine `claim_ready==1`: S2 ∧ official PoseBusters ∧ tENCoM/Eigen complete on exact pose SHA-256 ∧ protocol eligibility ∧ score–pose consistency | **Primary / claim KPI** |
+| **S3** | `conditional_scanned_pool_ceiling` / `best_cluster_rmsd` ≤ 2.0 Å | **Diagnostic only** (scanned heads/members, **not** any-pose) |
 
 ### Field mapping (DatasetRunner `result.csv`)
 
-| Metric | Preferred fields (first hit) |
+| Metric | Required / preferred fields |
 |--------|------------------------------|
-| Elected RMSD | `rmsd_hungarian` → else `rmsd_to_crystal` |
-| S1 flag (optional) | `success_s1` → else recompute from elected RMSD ≤ 2.0 and `seed_echo==0` → else `success_rmsd` |
-| PoseBusters | `pb_pass` / `success_pb` (`success_pb` should equal S1 ∧ `pb_pass`) |
-| S3 / BCR | `best_cluster_rmsd` ≤ 2.0 Å |
-
-**Hungarian preferred** for S1 when present (symmetry-corrected elected pose vs crystal).  
-`rmsd_to_crystal` is serial-order and is a fallback / diagnostic, not the preferred claim RMSD.
+| Elected RMSD (S1) | **`rmsd_to_crystal` only** (ordered direct, whole-ligand). **Never** `rmsd_hungarian` for S1/admission |
+| Hungarian | `rmsd_hungarian` — diagnostic symmetry metric only |
+| PoseBusters | `pb_pass`, `success_pb`, `pb_backend==bust_cli` for claims |
+| Strict claim | **`claim_ready==1`** (and receipts: pose hashes, `tencom_status==ok`, `eigen_status==ok`) |
+| Pool ceiling (S3) | `conditional_scanned_pool_ceiling` → else `best_cluster_rmsd` (scanned emission pool only) |
 
 ### Hard rules
 
-1. **Never report S3 as abstract / headline success.** Always label S3 “diagnostic (BCR / any-pose ceiling).”
-2. **Always report S1, S2, and S3 separately** when aggregating claim rows.
-3. **Election gap** = targets with S3=1 and S1=0 (sampling found a near-native pose the elector missed). Report counts; do not fold into S1.
+1. **Headline claim rate = claim_ready only** (not S1, not S3).
+2. **S1 uses ordered direct RMSD only** — never Hungarian for claim S1.
+3. **Never report S3 as abstract / headline success.** Label as diagnostic conditional scanned-pool ceiling.
+4. **Always report S1, S2, STRICT (claim_ready), and S3 separately.**
+5. **Election gap** = S3=1 and S1=0 (scanned pool had ≤2 Å; elector missed). Diagnostic only.
+6. Generator **CF top-1** and **entropy/consensus reranked top-1** are separate estimands (paths, scores, hashes, RMSDs) when both are present.
 
 ---
 
@@ -40,91 +42,69 @@ A row is **claim-eligible** only if:
 
 | Check | Required value |
 |-------|----------------|
-| `seed_echo` | **0** |
-| `native_pose_seeded` | **0** |
-| `matrix_md5` | equals campaign **matrix pin** |
+| `seed_echo` | **0** (explicit; missing fails closed) |
+| `native_pose_seeded` | **0** (explicit; missing fails closed) |
+| `matrix_md5` | equals campaign matrix pin when present |
+| `protocol_claim_eligible` | true when column present |
+| **`claim_ready`** | **1** when column present (strict admission) |
+| Hash receipts (when present) | `rmsd_pose_sha256` / `posebusters_pose_sha256` / `tencom_pose_sha256` match `pose_sha256` |
+| Validator status (when present) | `tencom_status==ok`, `eigen_status==ok`, `pb_backend==bust_cli` |
 
-Optional column `protocol_claim_eligible` (engine) is treated as an additional gate when present: claim rows require it true **or** missing (missing → recompute from seed flags). Rows with `protocol_claim_eligible=0` are excluded from claim aggregates even if seed flags are clean, to honour runner metadata.
+Rows missing `claim_ready` but satisfying seed gates are admitted only for **legacy diagnostic** tables; they **must not** contribute to STRICT headline. The aggregator reports them under `N_legacy_no_claim_ready` and excludes them from STRICT rates.
 
 ### Default matrix pin
 
 | Field | Value |
 |-------|--------|
-| Canonical matrix | `MC_st0r5.2_6.dat` |
-| **Default MD5 pin** | `72d7c7396702331d96ff12d18f831796` |
-
-Override pin sources (first available):
-
-1. CLI `--matrix-md5`
-2. Campaign `RUN_RECEIPT.json` → `matrix_md5`
-3. Campaign `provenance.json` → `matrix_md5`
-4. Default pin above
-
-Per-row `matrix_md5` (if present) must match the pin. Campaign-level pin is applied when rows omit the column.
-
-**Seeded / oracle-ceiling campaigns** (native inheritance) are a **separate science track**. Do not mix their rates into three-engine or TIER-1 claim tables. Use `scripts/aggregate_oracle_ceiling.py` for that track only.
+| Canonical matrix | campaign-dependent (see RUN_RECEIPT) |
+| **Fallback MD5** | `9dc93717dfed0698006d88dd6a9627bc` (aggregator default; receipt wins) |
 
 ---
 
-## 3. Aggregator CLI (enforceable)
+## 3. Aggregator CLI
 
 ```bash
-# Default claim aggregation (S1 primary)
 python3 scripts/aggregate_claim_metrics.py <campaign_dir> [--json out.json]
-
-# C0 full85 via env (after source ~/.flexaidds_env)
 python3 scripts/aggregate_claim_metrics.py --c0-full85
-
-# Explicit pin / receipt
-python3 scripts/aggregate_claim_metrics.py <campaign_dir> --matrix-md5 72d7c7396702331d96ff12d18f831796
-
-# FAIL: S3 as headline without diagnostic-only
-python3 scripts/aggregate_claim_metrics.py <dir> --headline s3          # exit 2
-python3 scripts/aggregate_claim_metrics.py <dir> --headline s3 --diagnostic-only  # OK, still labels diagnostic
+python3 scripts/aggregate_claim_metrics.py <dir> --headline strict   # default
+python3 scripts/aggregate_claim_metrics.py <dir> --headline s1       # RMSD-only diagnostic
+python3 scripts/aggregate_claim_metrics.py <dir> --headline s3 --diagnostic-only
 ```
 
-Exit codes:
-
-| Code | Meaning |
-|------|---------|
-| 0 | Claim rows present; aggregation OK |
-| 1 | No claim-eligible rows (or empty campaign) |
-| 2 | Usage / contract violation (`--headline s3` without `--diagnostic-only`, bad path) |
+`--headline s3` requires `--diagnostic-only` or exit 2.
 
 ---
 
-## 4. C0 full85 path
+## 4. PoseBusters receipts (engine)
 
-After `source ~/.flexaidds_env`:
+Upstream `bust` results must preserve **raw CSV before schema failure returns**, and receipt
+(`<pdb>_bust_receipt.json` under the per-target PoseBusters sidecar):
 
-```text
-$FLEXAIDDS_RESULTS/campaigns/C0_full85_defined_cleft_nativeseed_forbidden
-```
+- resolved binary path, file SHA-256, version string (if available)
+- full argv, exit status, raw CSV SHA-256 / path
+- version-pinned mandatory check columns — **every** listed check header required;
+  duplicate headers and header/value column-count mismatches fail closed
 
-Expect per-target `<PDB>/result.csv`, plus `RUN_RECEIPT.json` / `provenance.json` with `matrix_md5`.
+Shared strict finite PDB coordinate decoder: `LIB/PoseBust/PdbCoords.h`
+(used by DatasetRunner RMSD and PoseBust loaders). Topology transfer is
+graph-identity only (element sequence + full atom counts including H/Du);
+positional remapping of repeated elements is rejected.
 
----
+## 5. Dual election estimands (DatasetRunner)
 
-## 5. What this contract does **not** change
+When Softβ / entropy election is active, persist **separately**:
 
-- Pose ranking, clustering, election, or docking engine code.
-- GA search or CF/contact-function scoring.
-- Seeded oracle-ceiling science (separate aggregator).
+| Estimand | Fields |
+|----------|--------|
+| Generator CF top-1 | `cf_top1_pose_path`, `cf_top1_score`, `cf_top1_rmsd`, `cf_top1_pose_sha256` |
+| Entropy/consensus top-1 | `entropy_top1_pose_path`, `entropy_top1_score`, `entropy_top1_rmsd`, `entropy_top1_pose_sha256` |
 
----
+Elected headline still uses the Softβ/consensus path; CF top-1 never silently
+overwrites `seed_echo` / elected provenance.
 
-## 6. Cross-references
+## 6. Pool ceiling naming
 
-| Doc | Role |
-|-----|------|
-| `benchmarks/protocols/three_engine_entropy_comparison.md` | Multi-arm protocol, schema, hypotheses |
-| `benchmarks/BENCHMARK_STANDARD.md` | Tiers, seed_echo, BCR computation notes |
-| `AGENTS.md` | Scientific guardrails (proxy vs thermo; no silent ranking change) |
-| `CLAUDE_BENCHMARK_HANDOFF.md` | Live C0 full85 ops handoff |
-| `scripts/aggregate_claim_metrics.py` | Enforcement implementation |
-| `scripts/aggregate_oracle_ceiling.py` | Seeded ceiling track only |
-
-
-### Fail-closed seed flags
-
-`seed_echo` and `native_pose_seeded` must be **explicitly** `0` (or `0.0`/`false`). Missing/blank columns fail admission.
+`conditional_scanned_pool_ceiling` (= legacy `best_cluster_rmsd`) is the min
+**ordered** RMSD over **actually enumerated** emitted cluster heads and
+existing `_member*` files. It is **not** any-pose / full emission census.
+Pool ceiling must never clear or mutate `seed_echo` or `pose_source`.

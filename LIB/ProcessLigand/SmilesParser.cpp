@@ -82,6 +82,15 @@ bool SmilesParser::at_end() const noexcept {
 
 SmilesParseResult SmilesParser::parse(const std::string& smiles) {
     reset();
+    // Fail closed on empty / whitespace-only input (tests + pipeline).
+    {
+        bool any = false;
+        for (char c : smiles) {
+            if (!std::isspace(static_cast<unsigned char>(c))) { any = true; break; }
+        }
+        if (!any)
+            throw SmilesParseError("empty SMILES string", 0);
+    }
     smiles_ = smiles;
     mol_.smiles = smiles;
 
@@ -97,6 +106,10 @@ SmilesParseResult SmilesParser::parse(const std::string& smiles) {
     // Verify branch stack is empty
     if (!branch_stack_.empty()) {
         throw SmilesParseError("unclosed branch '('", pos_);
+    }
+
+    if (mol_.num_atoms() == 0) {
+        throw SmilesParseError("no atoms parsed from SMILES", pos_);
     }
 
     // Compute implicit H for all atoms that don't have explicit brackets
@@ -226,11 +239,13 @@ bool SmilesParser::parse_token() {
         return true;
     }
 
-    // Unknown character — skip with warning
-    warnings_.push_back(std::string("unknown SMILES token '") + c +
-                        "' at position " + std::to_string(pos_) + " — skipped");
-    consume();
-    return true;
+    // Whitespace is ignorable; any other unknown token is a hard parse error
+    // (do not silently accept garbage like "not_a_smiles_!!!").
+    if (std::isspace(static_cast<unsigned char>(c))) {
+        consume();
+        return true;
+    }
+    throw SmilesParseError(std::string("unknown SMILES token '") + c + "'", pos_);
 }
 
 // ---------------------------------------------------------------------------

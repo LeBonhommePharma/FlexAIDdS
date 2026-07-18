@@ -1,23 +1,21 @@
 #!/usr/bin/env python3
-"""Aggregate claim-table metrics under the admission + S1/S2/S3 contract.
+"""Aggregate claim-table metrics under the admission + S1/S2/STRICT/S3 contract.
 
 Normative contract:
   benchmarks/protocols/admission_metrics_contract.md
-  benchmarks/protocols/three_engine_entropy_comparison.md §1.4–§5
 
-Claim admission (all required):
-  seed_echo == 0
-  native_pose_seeded == 0
-  matrix_md5 == PIN  (default 72d7c7396702331d96ff12d18f831796,
-                      or RUN_RECEIPT / provenance / --matrix-md5)
+Claim admission (fail-closed):
+  seed_echo == 0, native_pose_seeded == 0, matrix pin, protocol_claim_eligible
+  claim_ready == 1 (strict table) + PoseBusters/tENCoM/Eigen/hash receipts when present
 
-Metrics (always reported separately on claim rows):
-  S1  elected RMSD ≤ 2.0 Å          — primary / headline KPI
-  S2  S1 ∧ PoseBusters pass         — modern secondary
-  S3  best_cluster_rmsd ≤ 2.0 Å     — diagnostic only (BCR / any-pose)
+Metrics (always separate):
+  S1      ordered direct rmsd_to_crystal ≤ 2.0 Å  (RMSD-only diagnostic)
+  S2      S1 ∧ pb_pass / success_pb
+  STRICT  claim_ready == 1  ← primary headline
+  S3      conditional scanned-pool ceiling ≤ 2.0 Å (diagnostic only; never any-pose)
 
-Never treat S3 as abstract success. --headline s3 requires --diagnostic-only
-or the process exits nonzero.
+S1 MUST use rmsd_to_crystal only — never rmsd_hungarian.
+--headline s3 requires --diagnostic-only.
 
 Usage:
   python3 scripts/aggregate_claim_metrics.py <campaign_dir> [--json out.json]
@@ -180,22 +178,31 @@ def load_rows_from_csv(path: Path) -> list[dict[str, str]]:
 
 
 def elected_rmsd(row: dict[str, str]) -> float:
-    """Preferred elected RMSD: Hungarian → three-engine rmsd_top1 → crystal."""
-    return _f(row, "rmsd_hungarian", "rmsd_top1", "rmsd_to_crystal")
+    """Ordered direct elected RMSD only (audit P0).
+
+    Never use rmsd_hungarian for S1 / claim rates. Legacy three-engine
+    `rmsd_top1` is accepted only when it is the ordered top-1 serial metric
+    and `rmsd_to_crystal` is absent.
+    """
+    rc = _f(row, "rmsd_to_crystal")
+    if math.isfinite(rc):
+        return rc
+    # Legacy engines without rmsd_to_crystal may emit ordered rmsd_top1 only.
+    return _f(row, "rmsd_top1")
 
 
 def is_s1(row: dict[str, str]) -> bool:
-    """S1: elected pose RMSD ≤ 2.0 Å (not seed echo).
+    """S1: ordered direct elected RMSD ≤ 2.0 Å (RMSD-only diagnostic).
 
-    Finite elected RMSD always wins over success_s1 / success_rmsd flags so a
-    stale or wrong flag cannot admit a high-RMSD pose.
+    Finite ordered RMSD always wins over success_* flags so a stale flag
+    cannot admit a high-RMSD pose. Hungarian is never consulted.
     """
     if _truth(row, "seed_echo"):
         return False
     rh = elected_rmsd(row)
     if math.isfinite(rh):
         return 0.0 <= rh <= RMSD_SUCCESS_A
-    # No finite RMSD: fall back to engine flags only
+    # No finite ordered RMSD: fall back to engine flags only
     if "success_s1" in row and str(row.get("success_s1", "")).strip() != "":
         return _truth(row, "success_s1")
     if "success_rmsd" in row and str(row.get("success_rmsd", "")).strip() != "":
@@ -206,12 +213,10 @@ def is_s1(row: dict[str, str]) -> bool:
 
 
 def is_s2(row: dict[str, str], s1: bool) -> bool:
-    """S2: S1 ∧ PoseBusters pass."""
+    """S2: S1 ∧ PoseBusters pass on the same elected pose."""
     if not s1:
         return False
     if "success_pb" in row and str(row.get("success_pb", "")).strip() != "":
-        # success_pb is defined as success_rmsd && pb_pass in DatasetRunner;
-        # still require s1 so S2 never exceeds S1 under our S1 definition.
         return _truth(row, "success_pb") and s1
     if "pb_pass" in row and str(row.get("pb_pass", "")).strip() != "":
         return _truth(row, "pb_pass")
@@ -219,13 +224,62 @@ def is_s2(row: dict[str, str], s1: bool) -> bool:
 
 
 def is_s3(row: dict[str, str]) -> bool:
-    """S3: any-pose / BCR ceiling (diagnostic only). Finite BCR always wins over flags."""
-    bc = _f(row, "best_cluster_rmsd", "rmsd_bcr")
+    """S3: conditional scanned-pool ceiling (diagnostic only; not any-pose)."""
+    bc = _f(
+        row,
+        "conditional_scanned_pool_ceiling",
+        "best_cluster_rmsd",
+        "rmsd_bcr",
+    )
     if math.isfinite(bc):
         return 0.0 <= bc <= RMSD_SUCCESS_A
     if "success_s3" in row and str(row.get("success_s3", "")).strip() != "":
         return _truth(row, "success_s3")
     return False
+
+
+def _hash_receipts_ok(row: dict[str, str]) -> tuple[bool, list[str]]:
+    """When hash columns are present, require identity with pose_sha256."""
+    reasons: list[str] = []
+    pose = str(row.get("pose_sha256", "")).strip()
+    if not pose:
+        return True, reasons  # absent → not checked at row level
+    for key in (
+        "rmsd_pose_sha256",
+        "posebusters_pose_sha256",
+        "tencom_pose_sha256",
+    ):
+        if key not in row or str(row.get(key, "")).strip() == "":
+            continue
+        if str(row.get(key, "")).strip() != pose:
+            reasons.append(f"{key}_mismatch")
+    return (len(reasons) == 0, reasons)
+
+
+def is_claim_ready(row: dict[str, str]) -> bool:
+    """STRICT claim success: engine claim_ready when present."""
+    if "claim_ready" in row and str(row.get("claim_ready", "")).strip() != "":
+        return _truth(row, "claim_ready")
+    return False
+
+
+def is_strict_success(row: dict[str, str]) -> bool:
+    """STRICT: claim_ready with receipts when available."""
+    if not is_claim_ready(row):
+        return False
+    ok, _ = _hash_receipts_ok(row)
+    if not ok:
+        return False
+    if "tencom_status" in row and str(row.get("tencom_status", "")).strip() != "":
+        if str(row.get("tencom_status", "")).strip().lower() != "ok":
+            return False
+    if "eigen_status" in row and str(row.get("eigen_status", "")).strip() != "":
+        if str(row.get("eigen_status", "")).strip().lower() != "ok":
+            return False
+    if "pb_backend" in row and str(row.get("pb_backend", "")).strip() != "":
+        if str(row.get("pb_backend", "")).strip() != "bust_cli":
+            return False
+    return True
 
 
 def row_matrix_ok(row: dict[str, str], pin: str) -> bool:
@@ -236,7 +290,10 @@ def row_matrix_ok(row: dict[str, str], pin: str) -> bool:
 
 
 def is_claim_eligible(row: dict[str, str], matrix_pin: str) -> tuple[bool, list[str]]:
-    """Apply admission gates. Returns (ok, list of fail reasons)."""
+    """Admission gates for the claim table. Returns (ok, fail reasons).
+
+    Strict admission requires claim_ready==1 when the column is present.
+    """
     reasons: list[str] = []
     if not _flag0(row, "seed_echo"):
         reasons.append("seed_echo!=0")
@@ -246,12 +303,28 @@ def is_claim_eligible(row: dict[str, str], matrix_pin: str) -> tuple[bool, list[
         reasons.append(
             f"matrix_md5_mismatch(got={row.get('matrix_md5')!r}, pin={matrix_pin})"
         )
-    # Honour engine claim flag when present and false
     if "protocol_claim_eligible" in row and str(
         row.get("protocol_claim_eligible", "")
     ).strip() != "":
         if not _truth(row, "protocol_claim_eligible"):
             reasons.append("protocol_claim_eligible=0")
+    # Strict table: claim_ready required when column present
+    if "claim_ready" in row and str(row.get("claim_ready", "")).strip() != "":
+        if not _truth(row, "claim_ready"):
+            reasons.append("claim_ready=0")
+        else:
+            ok_h, h_reasons = _hash_receipts_ok(row)
+            if not ok_h:
+                reasons.extend(h_reasons)
+            if "tencom_status" in row and str(row.get("tencom_status", "")).strip() != "":
+                if str(row.get("tencom_status", "")).strip().lower() != "ok":
+                    reasons.append("tencom_status!=ok")
+            if "eigen_status" in row and str(row.get("eigen_status", "")).strip() != "":
+                if str(row.get("eigen_status", "")).strip().lower() != "ok":
+                    reasons.append("eigen_status!=ok")
+            if "pb_backend" in row and str(row.get("pb_backend", "")).strip() != "":
+                if str(row.get("pb_backend", "")).strip() != "bust_cli":
+                    reasons.append("pb_backend!=bust_cli")
     return (len(reasons) == 0, reasons)
 
 
@@ -275,21 +348,31 @@ def aggregate_rows(
     n = len(claim)
     s1_ids: list[str] = []
     s2_ids: list[str] = []
+    strict_ids: list[str] = []
     s3_ids: list[str] = []
     election_gap_ids: list[str] = []
     s1_fail_ids: list[str] = []
+    n_legacy = 0
+
+    for r in all_rows:
+        if "claim_ready" not in r or str(r.get("claim_ready", "")).strip() == "":
+            if _flag0(r, "seed_echo") and _flag0(r, "native_pose_seeded"):
+                n_legacy += 1
 
     for r in claim:
         pid = _pdb_id(r)
         s1 = is_s1(r)
         s2 = is_s2(r, s1)
         s3 = is_s3(r)
+        strict = is_strict_success(r)
         if s1:
             s1_ids.append(pid)
         else:
             s1_fail_ids.append(pid)
         if s2:
             s2_ids.append(pid)
+        if strict:
+            strict_ids.append(pid)
         if s3:
             s3_ids.append(pid)
         if s3 and not s1:
@@ -307,49 +390,64 @@ def aggregate_rows(
         "N_raw": len(all_rows),
         "N_claim": n,
         "N_dropped": len(dropped),
+        "N_legacy_no_claim_ready": n_legacy,
         "dropped_rows": dropped,
         "metrics": {
             "S1": {
-                "definition": "elected RMSD <= 2.0 A (Hungarian preferred)",
-                "role": "primary_headline",
+                "definition": "ordered direct rmsd_to_crystal <= 2.0 A (never hungarian)",
+                "role": "rmsd_only_diagnostic",
                 "n": len(s1_ids),
                 "rate": rate(len(s1_ids)),
                 "ids": s1_ids,
             },
             "S2": {
-                "definition": "S1 AND PoseBusters pass",
-                "role": "secondary",
+                "definition": "S1 AND PoseBusters pass on same elected pose",
+                "role": "rmsd_and_pb_diagnostic",
                 "n": len(s2_ids),
                 "rate": rate(len(s2_ids)),
                 "ids": s2_ids,
             },
+            "STRICT": {
+                "definition": "claim_ready==1 with PB + tENCoM/Eigen + hash receipts",
+                "role": "primary_headline",
+                "n": len(strict_ids),
+                "rate": rate(len(strict_ids)),
+                "ids": strict_ids,
+            },
             "S3": {
-                "definition": "best_cluster_rmsd <= 2.0 A (BCR / any-pose ceiling)",
+                "definition": (
+                    "conditional_scanned_pool_ceiling / best_cluster_rmsd <= 2.0 A "
+                    "(scanned heads/members only; NOT any-pose)"
+                ),
                 "role": "diagnostic_only",
                 "n": len(s3_ids),
                 "rate": rate(len(s3_ids)),
                 "ids": s3_ids,
-                "warning": "Do not report S3 as abstract / headline success.",
+                "warning": (
+                    "Do not report S3 as abstract / headline success. "
+                    "Ceiling is conditional on scanned emission pool."
+                ),
             },
         },
         "election_gap": {
-            "definition": "S3=1 and S1=0 (sampling found near-native; elector missed)",
+            "definition": "S3=1 and S1=0 (scanned pool had near-native; elector missed)",
             "n": len(election_gap_ids),
             "rate": rate(len(election_gap_ids)),
             "ids": election_gap_ids,
         },
         "S1_fail_ids": s1_fail_ids,
         "headline": {
-            "metric": "S1",
-            "n": len(s1_ids),
+            "metric": "STRICT",
+            "n": len(strict_ids),
             "N": n,
-            "rate": rate(len(s1_ids)),
-            "label": "S1 elected RMSD <= 2.0 A (claim-eligible only)",
+            "rate": rate(len(strict_ids)),
+            "label": "claim_ready strict success (claim-eligible only)",
         },
         "admission": {
             "seed_echo": 0,
             "native_pose_seeded": 0,
             "matrix_md5": matrix_pin,
+            "claim_ready": 1,
         },
     }
     return report
@@ -363,10 +461,13 @@ def format_text_report(report: dict[str, Any]) -> str:
         f"matrix_md5_pin: {report['matrix_md5_pin']} (source={report['matrix_md5_pin_source']})",
         f"N_raw={report['N_raw']}  N_claim={n}  N_dropped={report['N_dropped']}",
         "",
-        f"S1 (primary):     {m['S1']['n']}/{n} = {100.0 * m['S1']['rate']:.2f}%",
-        f"S2 (S1∧PB):       {m['S2']['n']}/{n} = {100.0 * m['S2']['rate']:.2f}%",
-        f"S3 (diagnostic):  {m['S3']['n']}/{n} = {100.0 * m['S3']['rate']:.2f}%  "
-        f"[NOT abstract success]",
+        f"STRICT (headline): {m['STRICT']['n']}/{n} = {100.0 * m['STRICT']['rate']:.2f}%  "
+        f"[claim_ready]",
+        f"S1 (RMSD-only):    {m['S1']['n']}/{n} = {100.0 * m['S1']['rate']:.2f}%  "
+        f"[diagnostic; ordered rmsd_to_crystal]",
+        f"S2 (S1∧PB):        {m['S2']['n']}/{n} = {100.0 * m['S2']['rate']:.2f}%",
+        f"S3 (pool ceiling): {m['S3']['n']}/{n} = {100.0 * m['S3']['rate']:.2f}%  "
+        f"[diagnostic; conditional scanned pool — NOT any-pose]",
         f"election_gap (S3∧¬S1): {report['election_gap']['n']}/{n} = "
         f"{100.0 * report['election_gap']['rate']:.2f}%",
     ]
@@ -391,30 +492,40 @@ def apply_headline(
 ) -> tuple[dict[str, Any], int | None]:
     """Mutate report headline; return (report, error_exit_code_or_None)."""
     h = headline.strip().lower()
-    if h not in ("s1", "s2", "s3"):
+    if h in ("strict", "claim_ready", "claim-ready"):
+        h = "strict"
+    if h not in ("s1", "s2", "s3", "strict"):
         return report, 2
     if h == "s3" and not diagnostic_only:
         print(
             "CONTRACT VIOLATION: --headline s3 is not allowed as primary without "
-            "--diagnostic-only. S3 is BCR/any-pose diagnostic only; use S1 for "
-            "abstract / claim success.",
+            "--diagnostic-only. S3 is conditional scanned-pool ceiling only; "
+            "use --headline strict (claim_ready) for claim success.",
             file=sys.stderr,
         )
         return report, 2
+    if h in ("s1", "s2") and not diagnostic_only:
+        # Allowed but must not be mistaken for claim success.
+        pass
 
-    m = report["metrics"][h.upper()]
+    key = "STRICT" if h == "strict" else h.upper()
+    m = report["metrics"][key]
     report["headline"] = {
-        "metric": h.upper(),
+        "metric": key,
         "n": m["n"],
         "N": report["N_claim"],
         "rate": m["rate"],
         "label": m["definition"],
         "role": m["role"],
-        "diagnostic_only": h == "s3" or diagnostic_only and h != "s1",
+        "diagnostic_only": h in ("s1", "s2", "s3") or diagnostic_only,
     }
     if h == "s3":
         report["headline"]["warning"] = (
-            "S3 is diagnostic only — do not quote as abstract success rate."
+            "S3 is diagnostic only — conditional scanned-pool ceiling, not any-pose."
+        )
+    if h in ("s1", "s2"):
+        report["headline"]["warning"] = (
+            f"{key} is not the claim headline; prefer STRICT (claim_ready)."
         )
     return report, None
 
@@ -451,14 +562,24 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument(
         "--headline",
         type=str,
-        default="s1",
-        choices=("s1", "s2", "s3", "S1", "S2", "S3"),
-        help="Primary headline metric (default s1). s3 requires --diagnostic-only.",
+        default="strict",
+        choices=(
+            "strict",
+            "STRICT",
+            "claim_ready",
+            "s1",
+            "s2",
+            "s3",
+            "S1",
+            "S2",
+            "S3",
+        ),
+        help="Primary headline (default strict/claim_ready). s3 requires --diagnostic-only.",
     )
     ap.add_argument(
         "--diagnostic-only",
         action="store_true",
-        help="Allow --headline s3 (still labelled diagnostic, never abstract success).",
+        help="Allow --headline s3/s1/s2 as diagnostic headline (never abstract claim success).",
     )
     ap.add_argument("--json", type=Path, default=None, help="Write full JSON report")
     ap.add_argument(

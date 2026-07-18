@@ -105,7 +105,9 @@ void apply_sugar_puckers(
         Eigen::Array<float,5,1> k_offsets;
         k_offsets << -2.0f, -1.0f, 0.0f, 1.0f, 2.0f;
         Eigen::Array<float,5,1> angles = P_rad + delta * k_offsets;
-        Eigen::Array<float,5,1> torsions = nu_max * angles.cos() * RAD2DEG;
+        // nu_max is already in degrees (≈38°). Do NOT multiply by RAD2DEG —
+        // that produced ~2177° torsions (audit geometry P1).
+        Eigen::Array<float,5,1> torsions = nu_max * angles.cos();
 
         for (int k = 0; k < 5; ++k)
             atoms[ring[k]].dih = torsions(k);

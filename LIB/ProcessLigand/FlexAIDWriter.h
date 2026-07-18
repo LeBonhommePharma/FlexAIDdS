@@ -83,8 +83,11 @@ public:
     /// Generate both .inp and .ga file content from a BonMol.
     /// The molecule must have 3D coordinates (from SDF/MOL2).
     /// lig_name is the 3-character residue name used in the PDB records.
+    /// enforce_geometry_invariants: when false, skip fail-closed bond/angle
+    /// checks (CoordBuilder SMILES coords are imperfect — audit §8).
     FlexAIDWriterResult write(const BonMol& mol,
-                              const std::string& lig_name = "LIG") const;
+                              const std::string& lig_name = "LIG",
+                              bool enforce_geometry_invariants = true) const;
 
 private:
     // -----------------------------------------------------------------------
@@ -104,6 +107,13 @@ private:
     /// Compute all internal coordinates from Cartesian coords and spanning tree.
     std::vector<InternalCoord> compute_internal_coords(
         const BonMol& mol, const SpanningTree& tree) const;
+
+    /// Production geometry invariants around IC reconstruction:
+    /// bond lengths, valence angles, and ring-closure distances.
+    /// Returns empty string on success, else a human-readable failure reason.
+    std::string check_geometry_invariants(
+        const BonMol& mol,
+        const std::vector<InternalCoord>& ics) const;
 
     // -----------------------------------------------------------------------
     // Dihedral gene construction

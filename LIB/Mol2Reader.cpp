@@ -198,7 +198,9 @@ int read_mol2_ligand(FA_Global* FA, atom** atoms, resid** residue,
                 if (!strcmp(btype, "2") || !strcmp(btype, "do")) b.type = 2;
                 if (!strcmp(btype, "3") || !strcmp(btype, "tr")) b.type = 3;
                 if (!strcmp(btype, "ar"))                        b.type = 4;
-                if (!strcmp(btype, "am"))                        b.type = 1; // amide→single
+                // Amide bond: preserve as order 10 so DirectLigandIC rejects
+                // resonance-locked C–N rotors (was collapsed to single=1).
+                if (!strcmp(btype, "am"))                        b.type = 10;
                 tmp_bonds.push_back(b);
             }
             break;
@@ -369,8 +371,14 @@ int read_mol2_ligand(FA_Global* FA, atom** atoms, resid** residue,
             const char* sybyl = tmp_atoms[i].sybyl;
             is_heavy[i] = sybyl[0] != 'H' && sybyl[0] != 'D';
         }
-        auto tree = direct_ligand_ic::build_tree(
-            *atoms, (*residue)[FA->res_cnt], fa, nbr, is_heavy);
+        direct_ligand_ic::ReconstructionTree tree;
+        if (!direct_ligand_ic::build_tree(
+                *atoms, (*residue)[FA->res_cnt], fa, nbr, is_heavy, tree)) {
+            fprintf(stderr,
+                "ERROR [MOL2 %s]: DirectLigandIC GPA selection failed "
+                "(need ≥3 non-collinear heavy atoms)\n", mol2_file);
+            return 0;
+        }
 
         // Compute IC for all ligand atoms using buildic() which reads rec[]
         // and current coor[] to produce dis/ang/dih consistent with buildcc.

@@ -17,6 +17,7 @@
 #include <cmath>
 #include <algorithm>
 #include <string>
+#include <filesystem>
 
 using namespace bonmol;
 
@@ -308,6 +309,14 @@ TEST(RotatableBonds, AmideBondNotRotatable) {
     for (int i = 0; i < mol.num_bonds(); ++i)
         if (rotatable_bonds::is_amide_bond(mol, i)) amide_found = true;
     EXPECT_TRUE(amide_found);
+    // Amide C–N must not be marked rotatable
+    for (int i = 0; i < mol.num_bonds(); ++i) {
+        if (rotatable_bonds::is_amide_bond(mol, i)) {
+            EXPECT_FALSE(mol.bonds[i].is_rotatable);
+        }
+    }
+    (void)res;
+    (void)bidx;
 }
 
 TEST(RotatableBonds, DisulfideBondNotRotatable) {
@@ -318,6 +327,43 @@ TEST(RotatableBonds, DisulfideBondNotRotatable) {
     for (int i = 0; i < mol.num_bonds(); ++i)
         if (rotatable_bonds::is_disulfide_bond(mol, i)) disulfide_found = true;
     EXPECT_TRUE(disulfide_found);
+    auto res = rotatable_bonds::identify_rotatable_bonds(mol);
+    for (int i = 0; i < mol.num_bonds(); ++i) {
+        if (rotatable_bonds::is_disulfide_bond(mol, i)) {
+            EXPECT_FALSE(mol.bonds[i].is_rotatable);
+        }
+    }
+    (void)res;
+}
+
+TEST(RotatableBonds, TripleAdjacentBondRejected) {
+    SmilesParser p;
+    // But-2-yne with a methyl: CC#CC — the C–C single adjacent to triple is locked.
+    BonMol mol = p.parse("CC#CC").mol;
+    ring_perception::perceive_rings(mol);
+    auto res = rotatable_bonds::identify_rotatable_bonds(mol);
+    for (int i = 0; i < mol.num_bonds(); ++i) {
+        if (rotatable_bonds::is_triple_adjacent_bond(mol, i) &&
+            mol.bonds[i].order == BondOrder::SINGLE) {
+            EXPECT_FALSE(mol.bonds[i].is_rotatable)
+                << "triple-adjacent single bond must not be a rotor";
+        }
+    }
+    (void)res;
+}
+
+TEST(RotatableBonds, ConjugatedUreaCNNotRotatable) {
+    SmilesParser p;
+    // Urea: NC(=O)N — both C–N bonds are conjugated/amide-like.
+    BonMol mol = p.parse("NC(=O)N").mol;
+    ring_perception::perceive_rings(mol);
+    auto res = rotatable_bonds::identify_rotatable_bonds(mol);
+    for (int i = 0; i < mol.num_bonds(); ++i) {
+        if (rotatable_bonds::is_conjugated_cn_bond(mol, i)) {
+            EXPECT_FALSE(mol.bonds[i].is_rotatable);
+        }
+    }
+    EXPECT_EQ(res.count, 0);
 }
 
 TEST(RotatableBonds, RingBondsNotRotatable) {
@@ -582,10 +628,10 @@ TEST(ProcessLigand, StageResultsPopulated) {
 }
 
 TEST(ProcessLigand, PeptideGuardTriggersOnMultipleAmides) {
-    // Tripeptide-like molecule with 3+ amide bonds
-    // NCC(=O)NCC(=O)NCC(=O)O
+    // Backbone-peptide detector requires ≥3 *linked* backbone amides
+    // (not isolated amides). Tetrapeptide-like: 3 backbone amide links.
     ProcessOptions opts;
-    opts.input        = "NCC(=O)NCC(=O)NCC(=O)O";
+    opts.input        = "NCC(=O)NCC(=O)NCC(=O)NCC(=O)O";
     opts.format       = InputFormat::SMILES;
     opts.validate_only = false;
     opts.allow_peptides = false;
@@ -593,24 +639,87 @@ TEST(ProcessLigand, PeptideGuardTriggersOnMultipleAmides) {
     ProcessLigand pl;
     auto result = pl.run(opts);
     // Should fail due to peptide guard
-    EXPECT_FALSE(result.success);
+    EXPECT_FALSE(result.success) << result.error;
 }
 
 TEST(ProcessLigand, PeptideGuardBypassable) {
     ProcessOptions opts;
-    opts.input          = "NCC(=O)NCC(=O)NCC(=O)O";
+    opts.input          = "NCC(=O)NCC(=O)NCC(=O)NCC(=O)O";
     opts.format         = InputFormat::SMILES;
     opts.allow_peptides = true;
 
     ProcessLigand pl;
     auto result = pl.run(opts);
-    EXPECT_TRUE(result.success);
+    EXPECT_TRUE(result.success) << result.error;
 }
 
 TEST(ProcessLigand, DetectFormatSmiles) {
     // No extension → can't detect; AUTO should try SMILES when no file
     EXPECT_EQ(detect_format("molecule.mol2"), InputFormat::MOL2);
     EXPECT_EQ(detect_format("molecule.sdf"),  InputFormat::SDF);
+}
+
+// ===========================================================================
+// Real Astex 1M2Z ligand regression (geometry invariants + rotor hygiene)
+// Historical multi-Å rupture does NOT reproduce on modern DirectLigandIC /
+// topology-derived GPA (max bond drift ~1e-5 A on main be049f8c). Expect PASS.
+// ===========================================================================
+
+TEST(ProcessLigand, Real1M2ZLigandGeometryAndRotors) {
+    // Locate Astex Diverse 1M2Z cognate ligand SDF relative to this source tree.
+    namespace fs = std::filesystem;
+    const fs::path candidates[] = {
+        fs::path("benchmarks/astex_diverse/astex_diverse/1M2Z/1M2Z_ligand.sdf"),
+        fs::path("benchmarks/astex_diverse/data/astex_diverse/1M2Z/1M2Z_ligand.sdf"),
+        fs::path(__FILE__).parent_path().parent_path() /
+            "benchmarks/astex_diverse/astex_diverse/1M2Z/1M2Z_ligand.sdf",
+        fs::path(__FILE__).parent_path().parent_path() /
+            "benchmarks/astex_diverse/data/astex_diverse/1M2Z/1M2Z_ligand.sdf",
+    };
+    fs::path sdf;
+    for (const auto& c : candidates) {
+        if (fs::exists(c)) { sdf = c; break; }
+    }
+    if (sdf.empty()) {
+        GTEST_SKIP() << "1M2Z_ligand.sdf not present in worktree";
+    }
+
+    ProcessOptions opts;
+    opts.input = sdf.string();
+    opts.format = InputFormat::SDF;
+    opts.lig_name = "DEX";
+    opts.validate_only = false;
+    opts.allow_peptides = true;  // steroid-like scaffold may trip peptide guard
+
+    ProcessLigand pl;
+    auto result = pl.run(opts);
+    ASSERT_TRUE(result.success) << result.error;
+    EXPECT_GT(result.num_atoms, 10);
+    // Geometry invariants must pass (writer fails closed on corruption).
+    ASSERT_TRUE(result.writer_result.success) << result.writer_result.error;
+    EXPECT_FALSE(result.writer_result.inp_content.empty());
+    EXPECT_FALSE(result.writer_result.ga_content.empty());
+    EXPECT_FALSE(result.writer_result.internal_coords.empty());
+
+    // Amide / conjugated C–N / disulfide / triple-adjacent must not be rotors.
+    for (int i = 0; i < result.mol.num_bonds(); ++i) {
+        if (rotatable_bonds::is_amide_bond(result.mol, i) ||
+            rotatable_bonds::is_conjugated_cn_bond(result.mol, i) ||
+            rotatable_bonds::is_disulfide_bond(result.mol, i) ||
+            rotatable_bonds::is_triple_adjacent_bond(result.mol, i)) {
+            EXPECT_FALSE(result.mol.bonds[i].is_rotatable)
+                << "forbidden rotor bond index " << i;
+        }
+    }
+    // Preserve MOL2/SYBYL N.am: any N.am (sybyl_type==7) must not sit on a rotor.
+    for (const auto& b : result.mol.bonds) {
+        if (!b.is_rotatable) continue;
+        const int sy_i = result.mol.atoms[b.atom_i].sybyl_type;
+        const int sy_j = result.mol.atoms[b.atom_j].sybyl_type;
+        EXPECT_NE(sy_i, 7) << "N.am endpoint marked rotatable";
+        EXPECT_NE(sy_j, 7) << "N.am endpoint marked rotatable";
+    }
+    EXPECT_GE(result.num_rot_bonds, 0);
 }
 
 // ===========================================================================

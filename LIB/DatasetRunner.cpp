@@ -27,6 +27,7 @@
 #include "PoseBust/Engine.h"   // NativePoseQC (diagnostic)
 #include "PoseBust/BustCli.h"  // authoritative upstream bust
 #include "PoseBust/Loaders.h"
+#include "PoseBust/PdbCoords.h"
 
 #include <algorithm>
 #include <array>
@@ -463,30 +464,11 @@ static float hungarian_rmsd(
     return (total_n > 0) ? static_cast<float>(std::sqrt(total_sq / total_n)) : -1.0f;
 }
 
-// FlexAID pose PDBs can contain compact negative coordinates such as
-// " -0.635 -80.275-146.614" in the fixed 24-character XYZ span.  A strict
-// fixed-column parse then loses the z sign.  Extract signed floats from the XYZ
-// span instead; this remains valid for normal fixed-width PDB coordinates.
+// Shared strict finite PDB XYZ decoder (LIB/PoseBust/PdbCoords.h) — same as
+// PoseBust loaders so RMSD and PB consume identical coordinates.
 static bool parse_pdb_xyz_span(const std::string& line, std::array<float,3>& xyz)
 {
-    if (line.size() < 54) return false;
-    const std::string span = line.substr(30, 24);
-    static const std::regex number_re(
-        R"([+-]?(?:(?:\d+\.\d*)|(?:\.\d+)|(?:\d+))(?:[eE][+-]?\d+)?)");
-    std::sregex_iterator it(span.begin(), span.end(), number_re);
-    std::sregex_iterator end;
-    float vals[3] = {0.0f, 0.0f, 0.0f};
-    int n = 0;
-    for (; it != end && n < 3; ++it, ++n) {
-        try {
-            vals[n] = std::stof(it->str());
-        } catch (...) {
-            return false;
-        }
-    }
-    if (n != 3) return false;
-    xyz = {vals[0], vals[1], vals[2]};
-    return true;
+    return flexaids::pdb_coords::parse_xyz_span(line, xyz);
 }
 
 // Compute {serial-order RMSD, Hungarian RMSD} of the docked ligand in an emitted
@@ -586,31 +568,56 @@ static std::pair<float,float> compute_pose_ligand_rmsd(
     }
     if (pose_xyz.empty()) return {-1.0f, -1.0f};
 
-    const int count_delta = std::abs(static_cast<int>(crystal_xyz.size()) -
-                                     static_cast<int>(pose_xyz.size()));
-    if (count_delta > 2) {
+    // Fail-closed whole-ligand heavy-atom count: no ±2 truncation (audit P0 #2).
+    if (crystal_xyz.size() != pose_xyz.size()) {
         if (warn) {
             std::cerr << "  [WARN] RMSD atom count mismatch for " << pdb_id
                       << ": crystal=" << crystal_xyz.size()
                       << " pose(docked-ligand)=" << pose_xyz.size()
-                      << " — setting RMSD=-1\n";
+                      << " — setting RMSD=-1 (fail-closed; no truncation)\n";
+        }
+        return {-1.0f, -1.0f};
+    }
+    if (crystal_elem.size() != crystal_xyz.size() ||
+        pose_elem.size() != pose_xyz.size()) {
+        if (warn) {
+            std::cerr << "  [WARN] RMSD element vector length mismatch for "
+                      << pdb_id << " — setting RMSD=-1\n";
         }
         return {-1.0f, -1.0f};
     }
 
-    int n = static_cast<int>(std::min(crystal_xyz.size(), pose_xyz.size()));
-    double sum_sq = 0.0;
-    for (int k = 0; k < n; k++) {
-        double dx = pose_xyz[k][0] - crystal_xyz[k][0];
-        double dy = pose_xyz[k][1] - crystal_xyz[k][1];
-        double dz = pose_xyz[k][2] - crystal_xyz[k][2];
-        sum_sq += dx*dx + dy*dy + dz*dz;
+    const int n = static_cast<int>(crystal_xyz.size());
+    // Ordered direct RMSD requires per-index element identity (diagnostic path
+    // when serial order matches chemical identity). Graph-valid automorphisms
+    // remain a Python-side claim metric for SDF; C++ claim uses this fail-closed
+    // ordered metric only when element sequences align.
+    bool elements_aligned = true;
+    for (int k = 0; k < n; ++k) {
+        if (pose_elem[static_cast<size_t>(k)] !=
+            crystal_elem[static_cast<size_t>(k)]) {
+            elements_aligned = false;
+            break;
+        }
     }
-    float rc = static_cast<float>(std::sqrt(sum_sq / n));
+    float rc = -1.0f;
+    if (elements_aligned) {
+        double sum_sq = 0.0;
+        for (int k = 0; k < n; k++) {
+            double dx = pose_xyz[k][0] - crystal_xyz[k][0];
+            double dy = pose_xyz[k][1] - crystal_xyz[k][1];
+            double dz = pose_xyz[k][2] - crystal_xyz[k][2];
+            sum_sq += dx * dx + dy * dy + dz * dz;
+        }
+        rc = static_cast<float>(std::sqrt(sum_sq / n));
+    } else if (warn) {
+        std::cerr << "  [WARN] ordered RMSD element sequence mismatch for "
+                  << pdb_id << " — ordered RMSD=-1 (Hungarian diagnostic only)\n";
+    }
 
+    // Element-only Hungarian is diagnostic symmetry metric only — never success.
     float rh = -1.0f;
-    if (crystal_elem.size() == crystal_xyz.size() &&
-        pose_elem.size() == pose_xyz.size()) {
+    {
         std::vector<std::pair<std::string,std::array<float,3>>> catoms, datoms;
         catoms.reserve(crystal_xyz.size());
         datoms.reserve(pose_xyz.size());
@@ -975,23 +982,20 @@ static std::pair<std::string,float> select_pose_freq_gated_pooled(
 
     // ── Cluster-head election (Morency / 3Dsig 2017 FlexAIDdS ranking) ─────
     //
-    //   Z  = Σ_i exp(−CF_i / T)
-    //   p_i = exp(−CF_i / T) / Z
-    //   H̃  = Σ_i p_i CF_i
-    //   S̃  = −Σ_i p_i ln p_i          (Shannon, nats)
-    //   G̃  = H̃ − T S̃                 (elect LOWEST G̃)
+    // Production arithmetic is ALWAYS log-domain SoftBeta free energy
+    // (SoftBetaFreeEnergy.h):
+    //   G̃ = E_min − T · ln Σ_i exp(−(E_i − E_min)/T)   == H̃ − T·S̃
+    // when FLEXAIDDS_SOFTBETA_ELECTION / FLEXAIDDS_ELECTION_SHANNON_F is ON.
     //
-    // Soft-β convention: T is the dock temperature in K (β = 1/T), CF is the
-    // contact-function scoring proxy in arbitrary units — same as classic
-    // FlexAID BindingMode F and cluster ACF. NOT physical k_B·T (AGENTS.md).
-    // TEMPER 21 (arm B) is engine soft-T for FO/ACF emission — not kT in kcal.
+    // When Softβ is OFF (default), elect pure CF rank-0 (min finite head CF).
+    // The legacy Z·exp(−αH)·log1p(N) composite with τ=0.592 is **removed** —
+    // it mixed unit scales and is not a free-energy ranking objective.
+    // Candidates with NaN/Inf CF or G̃ are rejected (fail-closed).
     //
-    // Softβ S1 election is **feature-flagged OFF by default**
-    // (FLEXAIDDS_SOFTBETA_ELECTION / FLEXAIDDS_ELECTION_SHANNON_F). Softβ only
-    // reorders already-clustered heads; it cannot create ≤2 Å poses if BCR=0.
-    //
-    // Rollback: FLEXAIDDS_ELECTION_LEGACY_ZH=1 uses the old Z·exp(−αH)·log1p(N)
-    // composite with τ=0.592 (≈ pure min-CF; Softβ inert).
+    // Soft-β convention: T is dock soft temperature (β = 1/T), CF is the
+    // contact-function scoring proxy in arbitrary units — NOT physical k_B·T.
+    // Softβ only reorders already-clustered heads; it cannot create ≤2 Å poses
+    // if BCR=0.
     //
     // Member CFs: .mcf sidecar from cluster.cpp; else head CF only (S̃=0, G̃=CF).
     const bool use_shannon_G = proto.election_shannon_free_energy;
@@ -1025,24 +1029,19 @@ static std::pair<std::string,float> select_pose_freq_gated_pooled(
 
     if (use_shannon_G) {
         fprintf(stderr,
-                "[SOFTBETA-ELECT] Softβ S1 ON: elect by Ĝ=H̃−T·S̃ over clustered "
-                "heads only (not sampling; cannot fix BCR=0): "
+                "[SOFTBETA-ELECT] Softβ S1 ON: elect by log-domain Ĝ=Emin−T·ln Z "
+                "over clustered heads (not sampling; cannot fix BCR=0): "
                 "T=%.4f source=%s (soft-β CF a.u., not k_B·T) include_singletons=%d\n",
                 soft_T, soft_T_source, include_singletons ? 1 : 0);
         fprintf(stderr,
-                "[3DSIG-RANK] elect by G̃=H̃−T·S̃ (Softβ ranking path): "
+                "[3DSIG-RANK] elect by G̃=H̃−T·S̃ (SoftBetaFreeEnergy.h): "
                 "T=%.4f source=%s (soft-β, CF a.u.) include_singletons=%d\n",
                 soft_T, soft_T_source, include_singletons ? 1 : 0);
     } else {
         fprintf(stderr,
-                "[SOFTBETA-ELECT] Softβ S1 OFF (default): no Softβ claim; "
-                "fallback Z·exp(−αH)·log1p(N)/≈CF-rank τ=%.4f source=%s\n",
-                soft_T, soft_T_source);
-        fprintf(stderr,
-                "[Z+H-LEGACY] elect by Z·exp(−αH)·log1p(N) τ=%.4f source=%s "
-                "(Softβ NOT used for DatasetRunner S1 — opt in with "
-                "FLEXAIDDS_SOFTBETA_ELECTION=1)\n",
-                soft_T, soft_T_source);
+                "[SOFTBETA-ELECT] Softβ S1 OFF (default): elect min finite head CF "
+                "(CF rank-0). Legacy exp(−CF/0.592) ZH composite is removed. "
+                "Opt in Softβ with FLEXAIDDS_SOFTBETA_ELECTION=1\n");
     }
 
     struct PoseInfo {
@@ -1099,7 +1098,13 @@ static std::pair<std::string,float> select_pose_freq_gated_pooled(
 
     // Soft-β free energy via shared SoftBetaFreeEnergy.h (≡ cluster ACF /
     // BindingMode classic G̃). G̃ lower is better — elect min G̃.
+    // Returns +∞ for NaN/Inf heads so they are rejected during election.
     auto soft_free_energy = [&](const PoseInfo& p, double& H_out, double& S_out) -> double {
+        H_out = std::numeric_limits<double>::quiet_NaN();
+        S_out = std::numeric_limits<double>::quiet_NaN();
+        if (!std::isfinite(p.cf)) {
+            return std::numeric_limits<double>::infinity();
+        }
         std::vector<double> energies;
         if (!p.member_cfs.empty()) {
             energies.reserve(p.member_cfs.size());
@@ -1111,32 +1116,19 @@ static std::pair<std::string,float> select_pose_freq_gated_pooled(
             energies.push_back(static_cast<double>(p.cf));
         }
         const auto fe = flexaids::soft_beta::free_energy(energies, soft_T);
+        if (!std::isfinite(fe.G)) {
+            return std::numeric_limits<double>::infinity();
+        }
         H_out = fe.H;
         S_out = fe.S;
         return fe.G;
     };
 
-    // Legacy Z+H composite (maximize). Only when election_shannon_free_energy=false.
-    auto score_composite_legacy_zh = [&](const PoseInfo& p) -> double {
-        const size_t n_members = p.member_cfs.empty()
-            ? static_cast<size_t>(std::max(1, p.freq))
-            : p.member_cfs.size();
-        const double pop_weight = std::log1p(static_cast<double>(n_members));
-        const double tau = soft_T;
-        if (p.member_cfs.empty()) {
-            return std::exp(-static_cast<double>(p.cf) / tau) * pop_weight;
-        }
-        double Z = 0.0;
-        for (float cf_i : p.member_cfs)
-            Z += std::exp(-static_cast<double>(cf_i) / tau);
-        if (Z <= 0.0)
-            return std::exp(-static_cast<double>(p.cf) / tau) * pop_weight;
-        double H_shannon = 0.0;
-        for (float cf_i : p.member_cfs) {
-            double pi = std::exp(-static_cast<double>(cf_i) / tau) / Z;
-            if (pi > 1e-300) H_shannon -= pi * std::log(pi);
-        }
-        return Z * std::exp(-1.0 * H_shannon) * pop_weight;
+    // CF rank-0 (Softβ OFF): lower finite head CF wins. NaN/Inf rejected.
+    auto score_cf_rank0 = [](const PoseInfo& p) -> double {
+        if (!std::isfinite(p.cf))
+            return std::numeric_limits<double>::infinity();
+        return static_cast<double>(p.cf);
     };
 
     std::vector<PoseInfo> poses;
@@ -1213,28 +1205,26 @@ static std::pair<std::string,float> select_pose_freq_gated_pooled(
             populated.empty() ? pool : populated;
 
         // ── Score + elect ────────────────────────────────────────────────────
-        // 3Dsig path: LOWEST G̃ = H̃ − T·S̃ wins (Shannon on ranking path).
-        // Legacy ZH:   HIGHEST Z·exp(−αH)·log1p(N) wins (≈ min-CF at small τ).
+        // Softβ ON:  LOWEST log-domain G̃ = Emin − T·ln Z wins.
+        // Softβ OFF: LOWEST finite head CF wins (CF rank-0).
+        // NaN/Inf scores are dropped (fail-closed).
         std::vector<std::pair<double, const PoseInfo*>> scored_chosen;
         scored_chosen.reserve(chosen.size());
         for (const auto* p : chosen) {
+            double score = std::numeric_limits<double>::infinity();
             if (use_shannon_G) {
                 double H_tmp = 0.0, S_tmp = 0.0;
-                const double G = soft_free_energy(*p, H_tmp, S_tmp);
-                scored_chosen.push_back({G, p});
+                score = soft_free_energy(*p, H_tmp, S_tmp);
             } else {
-                scored_chosen.push_back({score_composite_legacy_zh(*p), p});
+                score = score_cf_rank0(*p);
             }
+            if (!std::isfinite(score))
+                continue;
+            scored_chosen.push_back({score, p});
         }
-        if (use_shannon_G) {
-            // Ascending G̃ (best free energy first)
-            std::sort(scored_chosen.begin(), scored_chosen.end(),
-                      [](const auto& a, const auto& b){ return a.first < b.first; });
-        } else {
-            // Descending legacy composite
-            std::sort(scored_chosen.begin(), scored_chosen.end(),
-                      [](const auto& a, const auto& b){ return a.first > b.first; });
-        }
+        // Ascending (lower better) for both Softβ G̃ and CF rank-0.
+        std::sort(scored_chosen.begin(), scored_chosen.end(),
+                  [](const auto& a, const auto& b){ return a.first < b.first; });
         int log_n = std::min(3, static_cast<int>(scored_chosen.size()));
         for (int si = 0; si < log_n; ++si) {
             const auto* p = scored_chosen[si].second;
@@ -5814,9 +5804,9 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                    // entropy could not distinguish H-bond-satisfied poses from
                    // sterically-equivalent decoys.  Enabling them restores the
                    // enthalpic ΔH channel that the MEGA ΔG = ΔH − T·ΔS needs.
-                   // (GIST is intentionally NOT enabled here: it requires a
-                   //  per-target .dx desolvation grid that the Astex set lacks,
-                   //  and top.cpp silently disables it when no grid is present.)
+                   // GIST hard-disabled for strict claims until evaluator/grid
+                   // type confusion is repaired (config_parser also force-off).
+                   << "    \"gist_enabled\": false,\n"
                    // v123: re-enable hbond_search (was false in v122/v122b).
                    // Diagnosis: 1XOZ/1Y6R/1R55/1T46 all show best_score >> 0
                    // (clashed poses) because VCT-only CF(native) is too weak
@@ -6964,18 +6954,26 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                             const int pi = head.rank;
                             auto rp = compute_pose_ligand_rmsd(
                                 cand, crystal_xyz, crystal_elem, entry.pdb_id, false);
-                            if (result.best_cluster_rmsd < 0.0f || rp.second < result.best_cluster_rmsd) {
-                                result.best_cluster_rmsd = rp.second;
+                            // Pool ceiling uses ordered direct RMSD only (fail-closed).
+                            // Hungarian remains diagnostic; never drives ceiling or claims.
+                            const float ceiling_r = rp.first;
+                            if (ceiling_r >= 0.0f &&
+                                (result.best_cluster_rmsd < 0.0f ||
+                                 ceiling_r < result.best_cluster_rmsd)) {
+                                result.best_cluster_rmsd = ceiling_r;
+                                result.conditional_scanned_pool_ceiling = ceiling_r;
                                 result.best_cluster_idx = pi;
                                 best_cluster_pfx = pfx;
                                 best_cluster_path = cand;
                                 result.cf_best_cluster = parse_pose_cf(cand);
                             }
 
-                            // Fix B: cluster member recovery for near-miss clusters.
+                            // Enumerate every actually emitted cluster member into the
+                            // conditional scanned-pool ceiling (not any-pose census).
                             // Members: <head_stem>_member<M>.pdb (single- and dual-suffix).
-                            if (cluster_member_emit_ &&
-                                rp.second >= 2.0f && rp.second <= 4.0f) {
+                            // Copy-with-RMSD labels remain limited to near-miss heads when
+                            // cluster_member_emit_ is enabled (diagnostic packaging only).
+                            {
                                 std::string head_stem = cand;
                                 if (head_stem.size() > 4 &&
                                     head_stem.compare(head_stem.size() - 4, 4, ".pdb") == 0)
@@ -6989,24 +6987,33 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                                     }
                                     auto mr = compute_pose_ligand_rmsd(
                                         mcand, crystal_xyz, crystal_elem, entry.pdb_id, false);
-                                    if (result.best_cluster_rmsd < 0.0f ||
-                                        mr.second < result.best_cluster_rmsd) {
-                                        result.best_cluster_rmsd = mr.second;
+                                    const float m_ceil = mr.first;
+                                    if (m_ceil >= 0.0f &&
+                                        (result.best_cluster_rmsd < 0.0f ||
+                                         m_ceil < result.best_cluster_rmsd)) {
+                                        result.best_cluster_rmsd = m_ceil;
+                                        result.conditional_scanned_pool_ceiling = m_ceil;
                                         result.best_cluster_idx  = pi;
                                         best_cluster_pfx = pfx;
                                         best_cluster_path = mcand;
                                         result.cf_best_cluster = parse_pose_cf(mcand);
                                     }
-                                    try {
-                                        char rbuf[16];
-                                        std::snprintf(rbuf, sizeof(rbuf), "%.2f", mr.second);
-                                        fs::path dst = fs::path(mcand).parent_path() /
-                                            (entry.pdb_id + "_cluster" + std::to_string(pi) +
-                                             "_member" + std::to_string(mi) +
-                                             "_rmsd" + rbuf + ".pdb");
-                                        fs::copy_file(mcand, dst,
-                                            fs::copy_options::overwrite_existing);
-                                    } catch (const std::exception&) {
+                                    if (cluster_member_emit_ &&
+                                        ceiling_r >= 2.0f && ceiling_r <= 4.0f) {
+                                        try {
+                                            char rbuf[16];
+                                            std::snprintf(rbuf, sizeof(rbuf), "%.2f",
+                                                          mr.first >= 0.0f ? mr.first
+                                                                           : mr.second);
+                                            fs::path dst = fs::path(mcand).parent_path() /
+                                                (entry.pdb_id + "_cluster" +
+                                                 std::to_string(pi) +
+                                                 "_member" + std::to_string(mi) +
+                                                 "_rmsd" + rbuf + ".pdb");
+                                            fs::copy_file(mcand, dst,
+                                                fs::copy_options::overwrite_existing);
+                                        } catch (const std::exception&) {
+                                        }
                                     }
                                 }
                             }
@@ -7014,117 +7021,43 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                     }
                 }
 
-                // ── Seed-echo refinement: non-INI native-cluster diagnostic ──────
-                // seed_echo was set above purely from path (_INI.pdb suffix).  Now
-                // that best_cluster_rmsd is known, tighten the definition: a run
-                // where the INI seed was elected BUT the GA's own best cluster pose
-                // (scanned above, _0/_1/…/_19, no INI) is already sub-2 Å means the
-                // a non-INI cluster is sub-2 Å. That cluster may still descend from
-                // a crystal-seeded chromosome, so this is not evidence of an
-                // independent discovery. Protocol-level native_pose_seeded records
-                // that exposure separately. Only retain literal seed_echo when all
-                // non-INI cluster representatives miss or none were emitted.
+                // ── Seed-echo provenance is immutable ────────────────────────────
+                // seed_echo is path-based (_INI.pdb election only). The scanned
+                // pool ceiling must NEVER clear or mutate seed_echo / pose_source.
+                // A sub-2 Å non-INI head in the pool is a sampling-ceiling fact
+                // (conditional_scanned_pool_ceiling), not evidence to rebrand an
+                // INI-elected pose as a GA discovery.
                 if (result.seed_echo) {
-                    const bool ga_found_native =
-                        (result.best_cluster_rmsd >= 0.0f &&
-                         result.best_cluster_rmsd <= 2.0f);
-                    if (ga_found_native) {
-                        result.seed_echo = false;
-                        std::cerr << "  [SEED-ECHO-CLEAR] " << entry.pdb_id
-                                  << ": INI elected but GA best_cluster_rmsd="
-                                  << std::fixed << std::setprecision(2)
-                                  << result.best_cluster_rmsd
-                                  << "A — non-INI native cluster present; "
-                                     "seed_echo cleared (protocol seeding tracked separately)\n";
-                    } else {
-                        std::cerr << "  [SEED-ECHO] " << entry.pdb_id
-                                  << ": INI seed elected, GA best_cluster_rmsd="
-                                  << (result.best_cluster_rmsd < 0.0f ? -1.0f : result.best_cluster_rmsd)
-                                  << "A cf_best_cluster="
-                                  << (std::isnan(result.cf_best_cluster) ? 0.0f : result.cf_best_cluster)
-                                  << " — flagged as seed echo (false positive)\n";
-                    }
+                    std::cerr << "  [SEED-ECHO] " << entry.pdb_id
+                              << ": INI seed elected, conditional_scanned_pool_ceiling="
+                              << (result.best_cluster_rmsd < 0.0f
+                                      ? -1.0f
+                                      : result.best_cluster_rmsd)
+                              << "A cf_best_cluster="
+                              << (std::isnan(result.cf_best_cluster)
+                                      ? 0.0f
+                                      : result.cf_best_cluster)
+                              << " — seed_echo preserved (pool ceiling is diagnostic only)\n";
                 }
 
-                // ── BCR-gate: known-site selector override ───────────────────────
-                // v50 correctly demoted this gate for AUTONOMOUS validation because
-                // the oracle-best cluster requires the crystal ligand to identify.
-                // In ORACLE_CEILING runs the binding site and crystal reference are
-                // already explicit protocol inputs, so the old v49 behavior is the
-                // reproducibility target: if the emitted cluster pool contains a
-                // sub-2 Å pose but the frequency/consensus selector reports a miss,
-                // report the actual BCR pose that achieved best_cluster_rmsd.
-                //
-                // No new physics or threshold is introduced here: 2 Å is the Astex
-                // success gate already used below; autonomous runs remain
-                // diagnostic-only.
-                const bool bcr_gate_candidate =
-                    result.best_cluster_rmsd >= 0.0f &&
+                // ── BCR pool ceiling (diagnostic only; NEVER mutates top-1) ─────
+                // Audit P0 #1: crystal-RMSD override of the elected pose converts
+                // S_top1 into S_pool_ceiling (oracle). Knowing the site does not
+                // authorize crystal-RMSD selection. best_cluster_rmsd remains the
+                // any-pose sampling ceiling; success_rmsd uses the immutable
+                // elected artifact only.
+                if (result.best_cluster_rmsd >= 0.0f &&
                     result.best_cluster_rmsd <= 2.0f &&
-                    std::min(result.rmsd_to_crystal, result.rmsd_hungarian) >= 2.0f;
-                const bool bcr_gate_enabled =
-                    config.mode == BenchmarkMode::ORACLE_CEILING &&
-                    !entry.binding_site_path.empty() &&
-                    fs::exists(entry.binding_site_path);
-
-                if (bcr_gate_candidate && bcr_gate_enabled &&
-                    !best_cluster_path.empty() && result.best_cluster_idx >= 0) {
-                    const float old_rmsd = std::min(result.rmsd_to_crystal,
-                                                    result.rmsd_hungarian);
-                    // Full path from dual-suffix-aware BCR scan (FO cannot rebuild from idx).
-                    const std::string& override_pdb = best_cluster_path;
-                    if (fs::exists(override_pdb)) {
-                        auto rov = compute_pose_ligand_rmsd(
-                            override_pdb, crystal_xyz, crystal_elem,
-                            entry.pdb_id, true);
-                        result.rmsd_to_crystal = rov.first;
-                        result.rmsd_hungarian  = rov.second;
-                        result.seed_echo = false;
-                        result.pose_source = "bcr_gate";
-                        best_pose_pdb = override_pdb;
-
-                        float override_cf = std::numeric_limits<float>::infinity();
-                        {
-                            std::ifstream pf(override_pdb);
-                            std::string pl;
-                            while (std::getline(pf, pl)) {
-                                if (pl.find("REMARK CF=") != std::string::npos) {
-                                    auto pos = pl.find("CF=");
-                                    if (pos != std::string::npos) {
-                                        try { override_cf = std::stof(pl.substr(pos + 3)); }
-                                        catch (...) {}
-                                    }
-                                    break;
-                                }
-                            }
-                        }
-                        if (std::isfinite(override_cf)) result.best_score = override_cf;
-
-                        std::cerr << "  [BCR-GATE] " << entry.pdb_id
-                                  << ": bcr=" << std::fixed << std::setprecision(3)
-                                  << result.best_cluster_rmsd
-                                  << "A sel_old=" << old_rmsd
-                                  << "A -> bcr_cluster rmsd="
-                                  << std::min(rov.first, rov.second)
-                                  << "A (idx=" << result.best_cluster_idx << ")\n";
-                    } else {
-                        std::cerr << "  [BCR-GATE-WARN] " << entry.pdb_id
-                                  << ": candidate pose missing path="
-                                  << best_cluster_path
-                                  << " pfx=" << best_cluster_pfx
-                                  << " idx=" << result.best_cluster_idx << "\n";
-                    }
-                } else if (bcr_gate_candidate) {
-                    const float kept = std::min(result.rmsd_to_crystal,
-                                                result.rmsd_hungarian);
-                    std::cerr << "  [BCR-DIAGNOSTIC] " << entry.pdb_id
-                              << ": bcr=" << std::fixed << std::setprecision(2)
-                              << result.best_cluster_rmsd
-                              << "A (gate DISABLED for autonomous/legacy mode — result kept: "
-                              << kept << "A)"
-                              << " (idx=" << result.best_cluster_idx << ")\n";
+                    (result.rmsd_to_crystal < 0.0f || result.rmsd_to_crystal > 2.0f)) {
+                    std::cerr << "  [BCR-CEILING] " << entry.pdb_id
+                              << ": pool_ceiling_ordered=" << std::fixed
+                              << std::setprecision(3) << result.best_cluster_rmsd
+                              << "A elected_ordered="
+                              << result.rmsd_to_crystal
+                              << "A (ceiling recorded only; top-1 NOT replaced; "
+                                 "pose_source stays election, never bcr_gate)\n";
                 }
-                // Hoist elected path for PoseBust (after consensus / BCR mutations).
+                // Hoist elected path for PoseBust (immutable election identity).
                 elected_pose_pdb = best_pose_pdb;
             } else {
                 result.rmsd_to_crystal = -1.0f;
@@ -7225,15 +7158,79 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                 result.rmsd_pose_sha256 =
                     flexaids::posebust::sha256_file(result.elected_pose_path);
             }
-            const float rmsd_report =
-                std::min(result.rmsd_to_crystal, result.rmsd_hungarian);
+            // Fail-closed claim gate: ordered direct RMSD only.
+            // Element-only Hungarian (result.rmsd_hungarian) is diagnostic and
+            // must never set success_rmsd / success / success_pb.
+            const float rmsd_report = result.rmsd_to_crystal;
             result.success_rmsd =
                 docking_completed && rmsd_report >= 0.0f &&
                 rmsd_report <= 2.0f && !result.seed_echo &&
                 !result.pose_sha256.empty() &&
                 result.rmsd_pose_sha256 == result.pose_sha256;
-            // Legacy column remains exactly the same-pose RMSD gate.
+            // Legacy column remains exactly the same-pose ordered-RMSD gate.
             result.success = result.success_rmsd;
+
+            // Persist dual estimands: CF top-1 and entropy/consensus top-1 as
+            // separate paths/scores/hashes/RMSDs. When Softβ election is OFF,
+            // both equal the elected pose. When Softβ is ON, elected is entropy
+            // top-1; CF top-1 is the min-head-CF among scanned prefixes.
+            {
+                const bool softbeta_on =
+                    protocol_cfg_.election_shannon_free_energy;
+                if (!softbeta_on || result.pose_source != "softbeta") {
+                    result.cf_top1_pose_path = result.elected_pose_path;
+                    result.cf_top1_score = result.elected_cf;
+                    result.cf_top1_rmsd = result.rmsd_to_crystal;
+                    result.cf_top1_pose_sha256 = result.pose_sha256;
+                    result.entropy_top1_pose_path = result.elected_pose_path;
+                    result.entropy_top1_score = result.elected_cf;
+                    result.entropy_top1_rmsd = result.rmsd_to_crystal;
+                    result.entropy_top1_pose_sha256 = result.pose_sha256;
+                } else {
+                    result.entropy_top1_pose_path = result.elected_pose_path;
+                    result.entropy_top1_score = result.elected_cf;
+                    result.entropy_top1_rmsd = result.rmsd_to_crystal;
+                    result.entropy_top1_pose_sha256 = result.pose_sha256;
+                    // CF rank-0 among scanned heads (independent estimand).
+                    auto read_cf = [](const std::string& path) -> float {
+                        float cf = std::numeric_limits<float>::quiet_NaN();
+                        std::ifstream pf(path);
+                        std::string pl;
+                        while (std::getline(pf, pl)) {
+                            auto p = pl.find("REMARK CF=");
+                            if (p == std::string::npos) continue;
+                            try {
+                                cf = std::stof(pl.substr(p + 10));
+                            } catch (...) {}
+                            break;
+                        }
+                        return cf;
+                    };
+                    float best_cf = std::numeric_limits<float>::infinity();
+                    std::string best_cf_path;
+                    for (const auto& pfx : all_prefixes) {
+                        for (const auto& head : enumerate_emitted_cluster_heads(pfx)) {
+                            const float cf = read_cf(head.path);
+                            if (std::isfinite(cf) && cf < best_cf) {
+                                best_cf = cf;
+                                best_cf_path = head.path;
+                            }
+                        }
+                    }
+                    if (!best_cf_path.empty()) {
+                        result.cf_top1_pose_path = best_cf_path;
+                        result.cf_top1_score = best_cf;
+                        result.cf_top1_pose_sha256 =
+                            flexaids::posebust::sha256_file(best_cf_path);
+                        if (!crystal_xyz.empty()) {
+                            auto rr = compute_pose_ligand_rmsd(
+                                best_cf_path, crystal_xyz, crystal_elem,
+                                entry.pdb_id, false);
+                            result.cf_top1_rmsd = rr.first;
+                        }
+                    }
+                }
+            }
             std::cerr << "  [ELECTED-POSE] src=" << result.elected_pose_source
                       << " dst=" << result.elected_pose_path
                       << " restart=" << result.elected_restart
@@ -7416,12 +7413,48 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                         if (!result.pb_failed_keys.empty()) result.pb_failed_keys += ';';
                         result.pb_failed_keys += br.error;
                     }
+                    // Persist BustCli receipts (path, SHA256, version, argv, exit, raw hash).
+                    try {
+                        const std::string receipt_path =
+                            pb_dir + "/" + entry.pdb_id + "_bust_receipt.json";
+                        std::ofstream rcpt(receipt_path);
+                        if (rcpt) {
+                            auto jesc = [](const std::string& s) {
+                                std::string o;
+                                o.reserve(s.size());
+                                for (char c : s) {
+                                    if (c == '"' || c == '\\') o.push_back('\\');
+                                    if (c == '\n') { o += "\\n"; continue; }
+                                    if (c == '\r') continue;
+                                    o.push_back(c);
+                                }
+                                return o;
+                            };
+                            rcpt << "{\n"
+                                 << "  \"bust_path\": \"" << jesc(br.bust_path) << "\",\n"
+                                 << "  \"bust_sha256\": \"" << jesc(br.bust_sha256) << "\",\n"
+                                 << "  \"bust_version\": \"" << jesc(br.bust_version) << "\",\n"
+                                 << "  \"argv\": \"" << jesc(br.argv_joined) << "\",\n"
+                                 << "  \"exit_status\": " << br.exit_status << ",\n"
+                                 << "  \"raw_csv_sha256\": \"" << jesc(br.raw_csv_sha256)
+                                 << "\",\n"
+                                 << "  \"raw_csv_path\": \"" << jesc(br.csv_path) << "\",\n"
+                                 << "  \"pb_pass\": " << (br.pb_pass ? "true" : "false")
+                                 << ",\n"
+                                 << "  \"backend\": \"" << jesc(br.backend) << "\"\n"
+                                 << "}\n";
+                        }
+                    } catch (...) {
+                    }
                     std::cerr << "  [POSEBUSTERS] backend=" << result.pb_backend
                               << " pb_pass=" << (result.pb_pass ? 1 : 0)
                               << " checks=" << result.pb_n_pass << "/"
                               << result.pb_n_checks
                               << " failed=[" << result.pb_failed_keys << "]"
-                              << " pose_sha256=" << result.pose_sha256 << "\n";
+                              << " pose_sha256=" << result.pose_sha256
+                              << " bust_path=" << br.bust_path
+                              << " raw_csv_sha256=" << br.raw_csv_sha256
+                              << " exit=" << br.exit_status << "\n";
                 }
 
                 const std::string pb_pose_hash_after =
@@ -7606,8 +7639,11 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                            "posebusters_pose_sha256,posebusters_input_sha256,"
                            "tencom_status,eigen_status,"
                            "tencom_pose_sha256,eigen_n_modes,elected_H_vib,"
-                           "cf_native,best_cluster_rmsd,best_cluster_idx,"
-                           "seed_echo,pose_source,H_rep_rank0,H_pop,H_rep_mean,D_vib,"
+                           "cf_native,best_cluster_rmsd,conditional_scanned_pool_ceiling,best_cluster_idx,"
+                           "seed_echo,pose_source,"
+                           "cf_top1_pose_path,cf_top1_score,cf_top1_rmsd,cf_top1_pose_sha256,"
+                           "entropy_top1_pose_path,entropy_top1_score,entropy_top1_rmsd,entropy_top1_pose_sha256,"
+                           "H_rep_rank0,H_pop,H_rep_mean,D_vib,"
                            "G_bind,H_vct,H_vct_raw,n_heavy,TdS_shannon,TdS_vib,D_vib_thermo,"
                            "compensation_ratio,TdS_shannon_gen500,TdS_shannon_gen1000,"
                            "cf_best_cluster\n";
@@ -7660,9 +7696,18 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                         << result.elected_H_vib << ","
                         << result.cf_native << ","
                         << result.best_cluster_rmsd << ","
+                        << result.conditional_scanned_pool_ceiling << ","
                         << result.best_cluster_idx << ","
                         << (result.seed_echo ? 1 : 0) << ","
                         << result.pose_source << ","
+                        << "\"" << result.cf_top1_pose_path << "\","
+                        << (std::isnan(result.cf_top1_score) ? "NA" : std::to_string(result.cf_top1_score)) << ","
+                        << result.cf_top1_rmsd << ","
+                        << result.cf_top1_pose_sha256 << ","
+                        << "\"" << result.entropy_top1_pose_path << "\","
+                        << (std::isnan(result.entropy_top1_score) ? "NA" : std::to_string(result.entropy_top1_score)) << ","
+                        << result.entropy_top1_rmsd << ","
+                        << result.entropy_top1_pose_sha256 << ","
                         << result.H_rep_rank0 << ","
                         << result.H_pop << ","
                         << result.H_rep_mean << ","
@@ -7855,18 +7900,34 @@ void DatasetRunner::write_report(const BenchmarkReport& report,
 
         ofs << "# FlexAIDdS Benchmark Report: " << report.dataset_name << "\n\n";
 
-        // Summary table
+        // Summary table — claim_ready is the sole headline success metric.
+        // RMSD-only and conditional scanned-pool ceiling are diagnostic only.
         ofs << "## Summary\n\n";
         ofs << "| Metric | Value |\n";
         ofs << "|--------|-------|\n";
         ofs << "| Total systems | " << report.total_systems << " |\n";
-        ofs << "| Successful (RMSD <= 2.0 A) | " << report.successful << " |\n";
         ofs << std::fixed << std::setprecision(1);
-        ofs << "| Success rate | " << (report.success_rate * 100.0) << "% |\n";
+        ofs << "| **claim_ready (STRICT headline)** | "
+            << report.claim_ready_count << " ("
+            << (report.claim_ready_rate * 100.0) << "%) |\n";
+        ofs << "| success_pb (RMSD∧PB, intermediate) | "
+            << report.successful_pb << " ("
+            << (report.success_rate_pb * 100.0) << "%) |\n";
+        ofs << "| success_rmsd (RMSD-only, diagnostic) | "
+            << report.successful_rmsd << " ("
+            << (report.success_rate_rmsd * 100.0) << "%) |\n";
+        ofs << "| Success rate (legacy == RMSD-only) | "
+            << (report.success_rate * 100.0) << "% |\n";
         ofs << std::setprecision(2);
-        ofs << "| Mean RMSD (Å) | " << report.mean_rmsd << " |\n";
-        ofs << "| Median RMSD (Å) | " << report.median_rmsd << " |\n";
+        ofs << "| Mean elected ordered RMSD (Å) | " << report.mean_rmsd << " |\n";
+        ofs << "| Median elected ordered RMSD (Å) | " << report.median_rmsd << " |\n";
         ofs << "| Affinity pairs | " << report.affinity_pairs << " |\n";
+        ofs << "\n**Notes:** Headline claim success is **claim_ready** only "
+               "(ordered RMSD ≤2 Å + official PoseBusters + tENCoM/Eigen + hash "
+               "receipts + protocol eligibility). `success_rmsd` is RMSD-only "
+               "diagnostic. Pool ceiling (`conditional_scanned_pool_ceiling` / "
+               "`best_cluster_rmsd`) is scanned heads/members only — **not** any-pose "
+               "and never mutates `seed_echo`.\n";
         if (report.affinity_pairs >= 3 &&
             std::isfinite(report.pearson_r) &&
             std::isfinite(report.spearman_rho) &&
@@ -7891,26 +7952,21 @@ void DatasetRunner::write_report(const BenchmarkReport& report,
         ofs << "Column notes: **CF** = `best_score` (contact-function scoring proxy, not free energy); "
                "**F_est** = `predicted_dG` (ensemble free-energy estimate when ledger available, else CF fallback — not experimental ΔG_bind); "
                "**ΔH_est** / **TΔS_est** = configurational ledger proxies.\n\n";
-        ofs << "| PDB | CF (best_score) | RMSD (Å) | RMSD_H (Å) | F_est (predicted_dG) | ΔH_est | TΔS_est | I_EE | H_conf | H_search | Poses | Time (s) | Success |\n";
-        ofs << "|-----|----------------|----------|------------|----------------------|--------|---------|------|--------|----------|-------|----------|--------|\n";
+        ofs << "| PDB | CF | RMSD_ord | RMSD_H | pool_ceil | claim_ready | success_pb | RMSD-only | F_est | Poses | Time (s) |\n";
+        ofs << "|-----|----|----------|--------|-----------|-------------|------------|-----------|-------|-------|----------|\n";
 
         for (const auto& r : report.results) {
-            std::string iee_str = r.has_IEE
-                ? (std::ostringstream{} << std::fixed << std::setprecision(3) << r.predicted_IEE).str()
-                : "—";
             ofs << "| " << r.pdb_id
                 << " | " << std::setprecision(2) << r.best_score
                 << " | " << std::setprecision(2) << r.rmsd_to_crystal
                 << " | " << std::setprecision(2) << r.rmsd_hungarian
+                << " | " << std::setprecision(2) << r.conditional_scanned_pool_ceiling
+                << " | " << (r.claim_ready ? "✓" : "✗")
+                << " | " << (r.success_pb ? "✓" : "✗")
+                << " | " << (r.success_rmsd ? "✓" : "✗")
                 << " | " << std::setprecision(2) << r.predicted_dG
-                << " | " << std::setprecision(2) << r.predicted_dH
-                << " | " << std::setprecision(2) << r.predicted_TdS
-                << " | " << iee_str
-                << " | " << std::setprecision(3) << r.shannon_entropy
-                << " | " << std::setprecision(3) << r.search_entropy_proxy
                 << " | " << r.num_poses
                 << " | " << std::setprecision(1) << r.wall_time_s
-                << " | " << (r.success ? "✓" : "✗")
                 << " |\n";
         }
 
@@ -7991,7 +8047,10 @@ void DatasetRunner::write_report(const BenchmarkReport& report,
                "posebusters_pose_sha256,posebusters_input_sha256,"
                "tencom_status,eigen_status,tencom_pose_sha256,eigen_n_modes,elected_H_vib,"
                "native_pose_seeded,native_pose_seed_fraction,protocol_claim_eligible,"
-               "cf_native,best_cluster_rmsd,best_cluster_idx,seed_echo,pose_source,"
+               "cf_native,best_cluster_rmsd,conditional_scanned_pool_ceiling,best_cluster_idx,"
+               "seed_echo,pose_source,"
+               "cf_top1_pose_path,cf_top1_score,cf_top1_rmsd,cf_top1_pose_sha256,"
+               "entropy_top1_pose_path,entropy_top1_score,entropy_top1_rmsd,entropy_top1_pose_sha256,"
                "H_rep_rank0,H_pop,H_rep_mean,D_vib";
         if (thermo_csv) {
             ofs << ",g_bind,h_vct,h_vct_raw,n_heavy,tds_shannon,tds_vib";
@@ -8033,9 +8092,18 @@ void DatasetRunner::write_report(const BenchmarkReport& report,
                 << (r.protocol_claim_eligible ? 1 : 0) << ","
                 << r.cf_native << ","
                 << r.best_cluster_rmsd << ","
+                << r.conditional_scanned_pool_ceiling << ","
                 << r.best_cluster_idx << ","
                 << (r.seed_echo ? 1 : 0) << ","
                 << r.pose_source << ","
+                << "\"" << r.cf_top1_pose_path << "\","
+                << (std::isnan(r.cf_top1_score) ? "NA" : std::to_string(r.cf_top1_score)) << ","
+                << r.cf_top1_rmsd << ","
+                << r.cf_top1_pose_sha256 << ","
+                << "\"" << r.entropy_top1_pose_path << "\","
+                << (std::isnan(r.entropy_top1_score) ? "NA" : std::to_string(r.entropy_top1_score)) << ","
+                << r.entropy_top1_rmsd << ","
+                << r.entropy_top1_pose_sha256 << ","
                 << r.H_rep_rank0 << ","
                 << r.H_pop << ","
                 << r.H_rep_mean << ","
@@ -8061,11 +8129,22 @@ void DatasetRunner::write_report(const BenchmarkReport& report,
         std::string summary_csv = output_dir + "/" + safe_name + "_summary.csv";
         std::ofstream ofs(summary_csv);
 
-        ofs << "dataset,total_systems,successful,success_rate,mean_rmsd,"
-               "median_rmsd,pearson_r,spearman_rho,kendall_tau\n";
+        // Headline: claim_ready. RMSD-only and pool ceiling stay diagnostic.
+        ofs << "dataset,total_systems,"
+               "claim_ready_count,claim_ready_rate,"
+               "successful_pb,success_rate_pb,"
+               "successful_rmsd,success_rate_rmsd,"
+               "successful,success_rate,"
+               "mean_rmsd,median_rmsd,pearson_r,spearman_rho,kendall_tau\n";
         ofs << std::fixed << std::setprecision(4)
             << report.dataset_name << ","
             << report.total_systems << ","
+            << report.claim_ready_count << ","
+            << report.claim_ready_rate << ","
+            << report.successful_pb << ","
+            << report.success_rate_pb << ","
+            << report.successful_rmsd << ","
+            << report.success_rate_rmsd << ","
             << report.successful << ","
             << report.success_rate << ","
             << report.mean_rmsd << ","

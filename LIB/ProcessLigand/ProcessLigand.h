@@ -70,6 +70,9 @@ struct ProcessOptions {
     bool         strict_valence = false; // fail on valence warnings (not just errors)
     bool         allow_macrocycles = false; // bypass macrocycle guard
     bool         allow_peptides    = false; // bypass peptide guard
+    /// Claim / production path: geometry invariants always enforced, including
+    /// CoordBuilder SMILES frames (generated SMILES may not bypass validation).
+    bool         claim_path = false;
 
     // Verbosity
     bool         verbose = false;
@@ -156,7 +159,8 @@ private:
 
     /// Stage 7: Write output files
     StageResult stage_write(const ProcessOptions& opts, const BonMol& mol,
-                            writer::FlexAIDWriterResult& writer_result);
+                            writer::FlexAIDWriterResult& writer_result,
+                            bool enforce_geometry_invariants = true);
 
     // -----------------------------------------------------------------------
     // Helpers
