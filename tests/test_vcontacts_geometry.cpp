@@ -8,8 +8,15 @@
 #include <gtest/gtest.h>
 #include "../LIB/Vcontacts.h"
 
+#include <array>
+#include <bit>
 #include <cmath>
+#include <cstdint>
 #include <cstring>
+
+#ifdef _OPENMP
+#include <omp.h>
+#endif
 
 static constexpr double EPS = 1e-9;
 
@@ -34,6 +41,129 @@ static vertex make_vertex(double x, double y, double z,
     v.plane[0] = p0; v.plane[1] = p1; v.plane[2] = p2;
     return v;
 }
+
+namespace {
+
+constexpr int kDenseContactCount = MAX_CONT;
+
+struct DenseHullFixture {
+    std::array<atom, kDenseContactCount + 1> atoms{};
+    std::array<atomsas, kDenseContactCount + 1> calc{};
+    std::array<contactlist, kDenseContactCount> contacts{};
+    std::array<plane, kDenseContactCount + 4> planes{};
+    std::array<vertex, MAX_POLY> poly{};
+    std::array<vertex, MAX_CONT> centerpt{};
+    std::array<edgevector, MAX_POLY> edges{};
+    std::array<int, (kDenseContactCount + 1) * 3> seeds{};
+    VC_Global vc{};
+
+    explicit DenseHullFixture(bool recalc) {
+        atoms[0].coor[0] = 11.25f;
+        atoms[0].coor[1] = -7.5f;
+        atoms[0].coor[2] = 3.125f;
+        atoms[0].number = 900;
+        atoms[0].type = 7;
+        atoms[0].ofres = 23;
+        atoms[0].radius = 1.5f;
+
+        constexpr double golden_angle = 2.39996322972865332;
+        for(int i = 0; i < kDenseContactCount; ++i) {
+            const double z = 1.0 - 2.0 * (static_cast<double>(i) + 0.5)
+                / static_cast<double>(kDenseContactCount);
+            const double radial = std::sqrt(1.0 - z * z);
+            const double angle = golden_angle * static_cast<double>(i);
+            const int neighbor = i + 1;
+
+            atoms[neighbor].coor[0] = atoms[0].coor[0]
+                + static_cast<float>(4.0 * radial * std::cos(angle));
+            atoms[neighbor].coor[1] = atoms[0].coor[1]
+                + static_cast<float>(4.0 * radial * std::sin(angle));
+            atoms[neighbor].coor[2] = atoms[0].coor[2] + static_cast<float>(4.0 * z);
+            atoms[neighbor].number = 900 + neighbor;
+            atoms[neighbor].type = 7;
+            atoms[neighbor].ofres = 23;
+            atoms[neighbor].radius = 1.5f;
+
+            contacts[i].index = neighbor;
+            contacts[i].dist = 4.0;
+        }
+
+        for(std::size_t i = 0; i < calc.size(); ++i) {
+            calc[i].atom = &atoms[i];
+        }
+        seeds.fill(-1);
+        seeds[0] = 17;
+        seeds[1] = 41;
+        seeds[2] = 83;
+
+        vc.Calc = calc.data();
+        vc.contlist = contacts.data();
+        vc.centerpt = centerpt.data();
+        vc.poly = poly.data();
+        vc.cont = planes.data();
+        vc.vedge = edges.data();
+        vc.seed = seeds.data();
+        vc.planedef = 'B';
+        vc.recalc = recalc ? 1 : 0;
+    }
+
+    int run() {
+        return voronoi_poly2(&vc, 0, planes.data(), 3.0f,
+                             kDenseContactCount, contacts.data());
+    }
+
+    std::array<std::uint32_t, 3> coordinate_bits() const {
+        return {
+            std::bit_cast<std::uint32_t>(atoms[0].coor[0]),
+            std::bit_cast<std::uint32_t>(atoms[0].coor[1]),
+            std::bit_cast<std::uint32_t>(atoms[0].coor[2]),
+        };
+    }
+
+    std::array<int, 3> center_seed() const {
+        return {seeds[0], seeds[1], seeds[2]};
+    }
+};
+
+void expect_identical_planes(
+    const std::array<plane, kDenseContactCount + 4>& lhs,
+    const std::array<plane, kDenseContactCount + 4>& rhs)
+{
+    for(std::size_t i = 0; i < lhs.size(); ++i) {
+        for(int component = 0; component < 4; ++component) {
+            EXPECT_DOUBLE_EQ(lhs[i].Ai[component], rhs[i].Ai[component]) << "plane " << i;
+        }
+        EXPECT_DOUBLE_EQ(lhs[i].dist, rhs[i].dist) << "plane " << i;
+        EXPECT_EQ(lhs[i].index, rhs[i].index) << "plane " << i;
+        EXPECT_DOUBLE_EQ(lhs[i].area, rhs[i].area) << "plane " << i;
+        EXPECT_EQ(lhs[i].flag, rhs[i].flag) << "plane " << i;
+    }
+}
+
+struct DenseHullResult {
+    int vertex_count = 0;
+    bool coordinates_restored = false;
+    bool seed_restored = false;
+    std::array<std::uint32_t, 3> coordinates{};
+    std::array<int, 3> seed{};
+    std::array<plane, kDenseContactCount + 4> planes{};
+};
+
+DenseHullResult run_dense_hull() {
+    DenseHullFixture fixture(/*recalc=*/true);
+    DenseHullResult result;
+    const auto original_coordinates = fixture.coordinate_bits();
+    const auto original_seed = fixture.center_seed();
+    result.vertex_count = fixture.run();
+    result.coordinates = fixture.coordinate_bits();
+    result.seed = fixture.center_seed();
+    result.coordinates_restored = result.coordinates == original_coordinates;
+    result.seed_restored = result.seed == original_seed;
+    result.planes = fixture.planes;
+    return result;
+}
+
+} // namespace
 
 // ===========================================================================
 // test_point — checks whether a point lies inside all half-spaces
@@ -594,3 +724,62 @@ TEST(SaveSeeds, LargeSeedArray) {
     EXPECT_EQ(seed[901], 100);
     EXPECT_EQ(seed[902], 200);
 }
+
+// ===========================================================================
+// voronoi_poly2 degeneracy failsafe purity
+// ===========================================================================
+
+TEST(VoronoiFailsafe, ImmediateFailureRestoresCenterCoordinatesExactly) {
+    DenseHullFixture fixture(/*recalc=*/false);
+    const auto original_coordinates = fixture.coordinate_bits();
+    const auto original_seed = fixture.center_seed();
+
+    EXPECT_EQ(fixture.run(), -1);
+    EXPECT_EQ(fixture.coordinate_bits(), original_coordinates);
+    EXPECT_EQ(fixture.center_seed(), original_seed);
+}
+
+TEST(VoronoiFailsafe, RetryIsBoundedAndDeterministicAcrossRepeatedCalls) {
+    DenseHullFixture fixture(/*recalc=*/true);
+    const auto original_coordinates = fixture.coordinate_bits();
+    const auto original_seed = fixture.center_seed();
+
+    EXPECT_EQ(fixture.run(), -1);
+    EXPECT_EQ(fixture.coordinate_bits(), original_coordinates);
+    EXPECT_EQ(fixture.center_seed(), original_seed);
+    const auto first_planes = fixture.planes;
+
+    EXPECT_EQ(fixture.run(), -1);
+    EXPECT_EQ(fixture.coordinate_bits(), original_coordinates);
+    EXPECT_EQ(fixture.center_seed(), original_seed);
+    expect_identical_planes(first_planes, fixture.planes);
+}
+
+#ifdef _OPENMP
+TEST(VoronoiFailsafe, DeterministicAcrossOpenMPWorkerAssignments) {
+    if(omp_get_max_threads() < 2) {
+        GTEST_SKIP() << "OMP_NUM_THREADS limits this run to one worker";
+    }
+
+    std::array<DenseHullResult, 2> results{};
+    std::array<int, 2> worker_ids{{-1, -1}};
+    omp_set_dynamic(0);
+
+#pragma omp parallel for num_threads(2) schedule(static, 1)
+    for(int run = 0; run < 2; ++run) {
+        worker_ids[run] = omp_get_thread_num();
+        results[run] = run_dense_hull();
+    }
+
+    ASSERT_NE(worker_ids[0], worker_ids[1]);
+    EXPECT_EQ(results[0].vertex_count, -1);
+    EXPECT_EQ(results[1].vertex_count, results[0].vertex_count);
+    EXPECT_TRUE(results[0].coordinates_restored);
+    EXPECT_TRUE(results[1].coordinates_restored);
+    EXPECT_TRUE(results[0].seed_restored);
+    EXPECT_TRUE(results[1].seed_restored);
+    EXPECT_EQ(results[1].coordinates, results[0].coordinates);
+    EXPECT_EQ(results[1].seed, results[0].seed);
+    expect_identical_planes(results[0].planes, results[1].planes);
+}
+#endif
