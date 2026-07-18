@@ -49,6 +49,7 @@ int spfunction(FA_Global* FA,atom* atoms,resid* residue){
     FA->optres[i].cf.elec = 0.0;
     FA->optres[i].cf.hbond = 0.0;
     FA->optres[i].cf.gist_desolv = 0.0;
+    FA->optres[i].cf.pb_clash = 0.0;
   }
 
   for(i=1;i<=FA->res_cnt;i++){
