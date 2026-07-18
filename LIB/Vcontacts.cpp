@@ -1885,11 +1885,14 @@ int get_contlist4(atom* atoms,int atomzero, contactlist contlist[],
 					 residue[candidate_residue].type == 0) ||
 					(candidate_is_direct_ligand &&
 					 residue[atomzero_residue].type == 0);
+				// pb-vdw-precompute: read the per-atom PoseBusters vdW radius
+				// cached once in update_optres() instead of re-running the
+				// ~26-branch element string-compare here (twice per pair, ~2M
+				// CF evals/restart). Bit-identical: the cache stored exactly
+				// posebusters_vdw_radius(element, radius) for each atom.
 				const double posebusters_radius_sum =
-					posebusters_vdw_radius(Calc[atomzero].atom->element,
-					                         Calc[atomzero].atom->radius) +
-					posebusters_vdw_radius(Calc[cand_atomj].atom->element,
-					                         Calc[cand_atomj].atom->radius);
+					Calc[atomzero].atom->pb_vdw_radius +
+					Calc[cand_atomj].atom->pb_vdw_radius;
 				const bool hard_intermolecular_clash =
 					!intramolecular && protein_ligand_pair &&
 					violates_relative_vdw_cutoff(
