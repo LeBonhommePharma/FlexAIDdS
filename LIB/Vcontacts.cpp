@@ -1,14 +1,123 @@
 #include "Vcontacts.h"
 #include "soft_wall.h"
-#include "RngSeed.h"
 #include "fileio.h"
 #include <algorithm>
+#include <array>
+#include <bit>
+#include <cstdint>
 #include <cstdlib>
-#include <random>
 #ifdef FLEXAIDS_USE_SOA_DISTANCES
 #include "simd_distance.h"
 #include <cmath>     // fabs
 #endif
+
+namespace {
+
+constexpr int kMaxHullEdges = 200;
+constexpr int kMaxDegeneracyRetries = 1;
+
+class AtomCoordinateRestore final {
+public:
+	explicit AtomCoordinateRestore(atom* atom_ptr) noexcept
+		: atom_(atom_ptr), original_({atom_ptr->coor[0], atom_ptr->coor[1], atom_ptr->coor[2]}) {}
+
+	~AtomCoordinateRestore() noexcept
+	{
+		atom_->coor[0] = original_[0];
+		atom_->coor[1] = original_[1];
+		atom_->coor[2] = original_[2];
+	}
+
+	AtomCoordinateRestore(const AtomCoordinateRestore&) = delete;
+	AtomCoordinateRestore& operator=(const AtomCoordinateRestore&) = delete;
+
+	const std::array<float, 3>& original() const noexcept { return original_; }
+
+private:
+	atom* atom_;
+	std::array<float, 3> original_;
+};
+
+class RetrySeedTripletRestore final {
+public:
+	explicit RetrySeedTripletRestore(int* seed_triplet) noexcept
+		: seed_(seed_triplet),
+		  original_({seed_triplet[0], seed_triplet[1], seed_triplet[2]}) {}
+
+	~RetrySeedTripletRestore() noexcept
+	{
+		if(!invalidated_) return;
+		seed_[0] = original_[0];
+		seed_[1] = original_[1];
+		seed_[2] = original_[2];
+	}
+
+	RetrySeedTripletRestore(const RetrySeedTripletRestore&) = delete;
+	RetrySeedTripletRestore& operator=(const RetrySeedTripletRestore&) = delete;
+
+	void invalidate_for_retry() noexcept
+	{
+		invalidated_ = true;
+		seed_[0] = -1;
+		seed_[1] = -1;
+		seed_[2] = -1;
+	}
+
+private:
+	int* seed_;
+	std::array<int, 3> original_;
+	bool invalidated_ = false;
+};
+
+void hash_word(std::uint64_t& hash, std::uint64_t word) noexcept
+{
+	constexpr std::uint64_t fnv_prime = 1099511628211ULL;
+	for(int byte = 0; byte < 8; ++byte) {
+		hash ^= (word >> (byte * 8)) & 0xffULL;
+		hash *= fnv_prime;
+	}
+}
+
+std::uint64_t splitmix64(std::uint64_t value) noexcept
+{
+	value += 0x9e3779b97f4a7c15ULL;
+	value = (value ^ (value >> 30)) * 0xbf58476d1ce4e5b9ULL;
+	value = (value ^ (value >> 27)) * 0x94d049bb133111ebULL;
+	return value ^ (value >> 31);
+}
+
+std::array<float, 3> deterministic_degeneracy_perturbation(
+	const atom& center,
+	const std::array<float, 3>& original,
+	int atomzero,
+	int NC,
+	const contactlist* contlist) noexcept
+{
+	std::uint64_t hash = 1469598103934665603ULL;
+	hash_word(hash, static_cast<std::uint32_t>(atomzero));
+	hash_word(hash, static_cast<std::uint32_t>(center.number));
+	hash_word(hash, static_cast<std::uint32_t>(center.type));
+	hash_word(hash, static_cast<std::uint32_t>(center.ofres));
+	hash_word(hash, static_cast<std::uint32_t>(NC));
+	for(float coordinate : original) {
+		hash_word(hash, std::bit_cast<std::uint32_t>(coordinate));
+	}
+	for(int cai = 0; cai < NC; ++cai) {
+		hash_word(hash, static_cast<std::uint32_t>(contlist[cai].index));
+		hash_word(hash, std::bit_cast<std::uint64_t>(contlist[cai].dist));
+	}
+
+	std::array<float, 3> perturbation{};
+	constexpr double bucket_count = 1048576.0;
+	for(std::uint64_t axis = 0; axis < perturbation.size(); ++axis) {
+		const std::uint64_t sample = splitmix64(hash + axis);
+		const double unit = (static_cast<double>(sample & 0xfffffULL) + 0.5) / bucket_count;
+		perturbation[axis] = static_cast<float>((unit - 0.5) * 0.01);
+	}
+	return perturbation;
+}
+
+} // namespace
 
 // Vcontacts calculates the SAS only for the residue sent in argument
 int Vcontacts(FA_Global* FA,atom* atoms,resid* residue,VC_Global* VC,
@@ -196,20 +305,16 @@ int voronoi_poly2(VC_Global *VC,int atomzero, plane cont[], float rado,
 	double arcpt0[3], arcpt1[3];
 	int    testpA, testpB;
 	double testvalA, testvalB;
-    
-	// failsafe variables:
-	char   recalc;       // flag if hull is being recalculated (orig. unbounded)
-	float  origcoor[3];  // original pdb coordinates for atom. 
-    
-	recalc = 'N';
+
+	atom* const center_atom = VC->Calc[atomzero].atom;
+	AtomCoordinateRestore coordinate_restore(center_atom);
+	RetrySeedTripletRestore retry_seed_restore(&VC->seed[atomzero * 3]);
+	std::array<float, 3> perturbation{};
+	int degeneracy_retries = 0;
 RESTART:
 	planeA = -1;
 	planeB = -1;
 	planeC = -1;
-    
-	origcoor[0] = 0.0f;
-	origcoor[1] = 0.0f;
-	origcoor[2] = 0.0f;
     
 	/* generate planes of contact with D = planedist */
 	mindist = 9.9e+9;
@@ -399,36 +504,30 @@ RESTART:
 			++edgenum;
             
 			// ===== failsafe - if solution is not converging, perturb atom  =====
-			// ===== coordinates and recalculate.                            =====
-			if(edgenum >= 200) {
+			// ===== coordinates and recalculate once.                       =====
+			if(edgenum >= kMaxHullEdges) {
 				//printf("********* invalid solution for hull, recalculating *********\n");
-				VC->seed[atomzero*3] = -1;  // reset to no seed vertex
-				origcoor[0] = VC->Calc[atomzero].atom->coor[0];
-				origcoor[1] = VC->Calc[atomzero].atom->coor[1];
-				origcoor[2] = VC->Calc[atomzero].atom->coor[2];
-				
-				// perturb atom coordinates (deterministic when ga.seed/FLEXAID_SEED set)
-				thread_local std::uniform_real_distribution<float> vc_dist(-0.005f, 0.005f);
-				auto& vc_rng = flexaids_rng::lazy_thread_rng(0x0C0A11ULL);
-				VC->Calc[atomzero].atom->coor[0] += vc_dist(vc_rng);
-				VC->Calc[atomzero].atom->coor[1] += vc_dist(vc_rng);
-				VC->Calc[atomzero].atom->coor[2] += vc_dist(vc_rng);
-                
-				// *** NEW ***
-                
-				// Do not recalc
-				if (VC->recalc) {
-					recalc = 'Y';
-                    
-					// EXCEPT REFERENCE SOLUTION (FIRST CALL TO VCT)
-					// Never recalculate because solution that do not converge are clashing solutions
-					// Those individuals would not survive in evolution
-					goto RESTART;
+				// Reference calculations may retry once. Evolutionary scoring keeps
+				// treating a non-converging hull as a clashing solution immediately.
+				if(!VC->recalc || degeneracy_retries >= kMaxDegeneracyRetries) {
+					return -1;
 				}
-                
-				// Abort immediately Scoring
-                
-				return -1;
+
+				// Ignore the cached starting vertex only while retrying. The complete
+				// triplet is restored on every return or exception; cont/poly/vedge are
+				// caller-owned scratch outputs and intentionally remain outside rollback.
+				retry_seed_restore.invalidate_for_retry();
+
+				// The retry offset is a pure function of the immutable input pose and
+				// atom/contact identities. It therefore cannot depend on OpenMP worker
+				// assignment, scheduling, or prior RNG consumption.
+				perturbation = deterministic_degeneracy_perturbation(
+					*center_atom, coordinate_restore.original(), atomzero, NC, contlist);
+				center_atom->coor[0] = coordinate_restore.original()[0] + perturbation[0];
+				center_atom->coor[1] = coordinate_restore.original()[1] + perturbation[1];
+				center_atom->coor[2] = coordinate_restore.original()[2] + perturbation[2];
+				++degeneracy_retries;
+				goto RESTART;
 			}
 		}
 		++vn;
@@ -502,13 +601,8 @@ RESTART:
 		}
 	}
     
-	if(recalc == 'N') {
+	if(degeneracy_retries == 0) {
 		save_seeds(VC->seed,cont, VC->poly, vn, atomzero);
-	} else {
-		// reset atom coordinates to original values
-		VC->Calc[atomzero].atom->coor[0] = origcoor[0];
-		VC->Calc[atomzero].atom->coor[1] = origcoor[1];
-		VC->Calc[atomzero].atom->coor[2] = origcoor[2];
 	}
     
 	return(vn);
