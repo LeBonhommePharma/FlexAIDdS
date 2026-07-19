@@ -57,12 +57,14 @@ the prior occupant's stale CF. This produced wrong results even single-threaded
   `local` vectors merged in thread-arrival order under `omp critical`, and `cluster_probes()`
   is order-sensitive single-linkage. Candidate fix (`cleftdetector_deterministic_order.patch`,
   not committed): canonical geometric sort of probes; changes cleft output, needs Astex-85 A/B.
-- **FlexDEE shared linked list** (`ic2cf.cpp:461,526`): when `FA->psFlexDEENode != NULL`
-  (flexible-sidechain / DEE targets), the parallel eval walks and **splices/grows** a shared
-  linked list (`FlexDEE_Nodes++`, `->next`/`->prev` writes) via each thread's `tl_fa` pointer
-  copy that still aliases shared nodes — a genuine race. Inactive on 1G9V (DEE off), so not the
-  1G9V cause, but it WILL corrupt flexible-sidechain docks under Opt1. Must be per-thread or
-  serialized before Opt1 can be enabled for flexible-residue runs.
+- **FlexDEE shared linked list** (`ic2cf.cpp:456–535`): initially flagged as a latent race, but
+  on closer read it is **already mitigated** — the whole mutation block is guarded by
+  `FA->useflexdee > 0 && rclash && !omp_in_parallel()` (ic2cf.cpp:416), so it is **skipped under
+  Opt1's parallel eval**. Further, the DEE-list *consumer* in `gaboom.cpp:1889` is commented out
+  (dead code) and the parallel eval path never calls `check_clash`/consumes the list, so the
+  linked list is effectively write-only in the current engine. **No live race; no fix needed.**
+  (`check_clash.cpp:54` uses only the scalar `FA->dee_clash` threshold, not the list.) If DEE
+  pruning is ever re-enabled inside the parallel region, the list must be made per-thread first.
 
 **Bottom line:** the headline GA speedup is NOT yet realized. The stale-CF bug is fixed and makes
 Opt1 **1-thread** deterministic; **>1-thread** still has a narrow (≈0.2% of chromosomes) numeric
