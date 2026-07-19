@@ -6,6 +6,15 @@ Every other instruction file — `CLAUDE.md`, `.grok/skills/flexaidds/SKILL.md`,
 
 All agents are expected to internalize and strictly follow the rules below on every task.
 
+> **Methodology is separate and canonical.** This file governs *coding conduct*. HOW work is
+> **measured, validated, and gated** — build/energy-matrix/seed invariants, the parity gate,
+> multi-thread determinism checks, the Astex-85 accuracy A/B, ctest, branch/merge discipline, and
+> commit review — lives in **[`METHODOLOGY.md`](METHODOLOGY.md)** and is the single source of truth
+> for those procedures. When you run a benchmark, a determinism check, or prepare a commit for
+> merge, follow `METHODOLOGY.md` exactly and cite it by section (e.g. "parity per METHODOLOGY.md §1").
+> Do not restate or fork its numbers here or in any skill — reference it. If methodology must change,
+> change `METHODOLOGY.md` first.
+
 ---
 
 ## Core Workflow Rules (Non-Negotiable)
