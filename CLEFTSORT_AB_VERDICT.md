@@ -62,3 +62,16 @@ with the established CF-fix pattern (all fixes opt-in, defaults reproduce prior 
 - Baseline engine md5 `7f1f10a0f10b682b33a76622a40f1a60`; sorted md5 `b2dd05e347e5e859cd818632027942d1`.
 - Candidate patch: `cleftdetector_deterministic_order.patch` (artifact 80eceadd), NOT committed.
 - 1G9V scoring: `cleftsort_ab_1G9V.csv` (this run).
+
+## 7. CI / ctest record (this commit, engine 891fcc25)
+Clean reconfigure in /tmp/ctest_clean (BUILD_TESTING=ON). Tests exercising the changed code:
+- **CleftCavityTests: 16/16 PASSED** (incl. `CleftAnnotationTest.DeterministicOrdering`) ← direct coverage of `generate_probes`
+- **CavityDetectTests: PASSED**
+- **CFAggregatorTests: PASSED**
+- **FastOptics: built clean**
+- test_ga_core: link failure — PRE-EXISTING, unrelated (undefined `flexaids::ProtocolConfig::from_env()`
+  in that test's link list; not CleftDetector). My change does not touch GA core.
+
+Note: this repo's build dirs register 63 ctest names but map them to `test_*` build targets
+(e.g. CleftCavityTests -> test_cleft_cavity); several test targets have pre-existing link-wiring
+gaps independent of this change. The cleft-detection suite — the relevant coverage — is green.
