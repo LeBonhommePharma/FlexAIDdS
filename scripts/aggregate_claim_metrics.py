@@ -328,11 +328,36 @@ def is_claim_eligible(row: dict[str, str], matrix_pin: str) -> tuple[bool, list[
     return (len(reasons) == 0, reasons)
 
 
+def load_target_manifest() -> tuple[list[str], str] | tuple[None, None]:
+    """Load the frozen pre-registered Astex-85 denominator manifest.
+
+    Returns (sorted_upper_codes, sha256) or (None, None) if absent. When present,
+    claim rates use the FIXED manifest count as denominator: a preregistered target
+    that is absent from the campaign or dropped in admission counts as a FAILURE and
+    is NEVER removed from the denominator. This is the P0 anti-inflation invariant.
+    """
+    here = Path(__file__).resolve().parent
+    for cand in (
+        here.parent / "benchmarks" / "protocols" / "astex85_target_manifest.json",
+        here / "astex85_target_manifest.json",
+    ):
+        if cand.is_file():
+            try:
+                m = json.loads(cand.read_text())
+                codes = [str(c).strip().upper() for c in m.get("targets", [])]
+                if codes:
+                    return sorted(set(codes)), str(m.get("sha256_of_sorted_codes", ""))
+            except (ValueError, OSError):
+                pass
+    return None, None
+
+
 def aggregate_rows(
     rows: Iterable[dict[str, str]],
     matrix_pin: str,
     matrix_pin_source: str,
     campaign_dir: str | None = None,
+    fixed_denominator: bool = True,
 ) -> dict[str, Any]:
     all_rows = list(rows)
     claim: list[dict[str, str]] = []
@@ -346,6 +371,24 @@ def aggregate_rows(
             dropped.append({"pdb_id": _pdb_id(r), "reasons": reasons})
 
     n = len(claim)
+
+    # --- P0 fixed-denominator invariant ---------------------------------------
+    # Claim rates must be reported over a FROZEN pre-registered target count, not
+    # over the number of rows that happened to pass admission. Otherwise dropping
+    # or losing hard targets mechanically inflates the rate. The denominator is
+    # max(manifest N, observed distinct targets) so extra rows can never *shrink*
+    # it below the preregistered set either.
+    manifest_codes, manifest_sha = load_target_manifest()
+    observed_ids = {_pdb_id(r).upper() for r in all_rows if _pdb_id(r)}
+    if fixed_denominator and manifest_codes:
+        denom = len(manifest_codes)
+        missing_targets = sorted(set(manifest_codes) - observed_ids)
+        denom_source = f"frozen_manifest(N={denom},sha={manifest_sha[:12]})"
+    else:
+        denom = n
+        missing_targets = []
+        denom_source = "claim_eligible_rows(legacy)"
+
     s1_ids: list[str] = []
     s2_ids: list[str] = []
     strict_ids: list[str] = []
@@ -379,7 +422,7 @@ def aggregate_rows(
             election_gap_ids.append(pid)
 
     def rate(k: int) -> float:
-        return (k / n) if n else 0.0
+        return (k / denom) if denom else 0.0
 
     report: dict[str, Any] = {
         "contract": "admission_metrics_contract",
@@ -389,6 +432,10 @@ def aggregate_rows(
         "matrix_md5_pin_source": matrix_pin_source,
         "N_raw": len(all_rows),
         "N_claim": n,
+        "N_denominator": denom,
+        "N_denominator_source": denom_source,
+        "N_missing_from_manifest": len(missing_targets),
+        "missing_targets": missing_targets,
         "N_dropped": len(dropped),
         "N_legacy_no_claim_ready": n_legacy,
         "dropped_rows": dropped,
@@ -439,9 +486,9 @@ def aggregate_rows(
         "headline": {
             "metric": "STRICT",
             "n": len(strict_ids),
-            "N": n,
+            "N": denom,
             "rate": rate(len(strict_ids)),
-            "label": "claim_ready strict success (claim-eligible only)",
+            "label": "claim_ready strict success (rate over frozen 85-target denominator)",
         },
         "admission": {
             "seed_echo": 0,
@@ -455,11 +502,20 @@ def aggregate_rows(
 
 def format_text_report(report: dict[str, Any]) -> str:
     m = report["metrics"]
-    n = report["N_claim"]
+    n = report.get("N_denominator", report["N_claim"])
     lines = [
         f"campaign_dir: {report.get('campaign_dir')}",
         f"matrix_md5_pin: {report['matrix_md5_pin']} (source={report['matrix_md5_pin_source']})",
-        f"N_raw={report['N_raw']}  N_claim={n}  N_dropped={report['N_dropped']}",
+        f"N_raw={report['N_raw']}  N_claim={report['N_claim']}  "
+        f"N_denominator={n} ({report.get('N_denominator_source','')})  "
+        f"N_dropped={report['N_dropped']}",
+        (
+            f"MISSING from frozen manifest (counted as failures): "
+            f"{report['N_missing_from_manifest']} -> {', '.join(report['missing_targets'][:20])}"
+            + (" ..." if report["N_missing_from_manifest"] > 20 else "")
+        )
+        if report.get("N_missing_from_manifest")
+        else "all preregistered targets present",
         "",
         f"STRICT (headline): {m['STRICT']['n']}/{n} = {100.0 * m['STRICT']['rate']:.2f}%  "
         f"[claim_ready]",
@@ -513,7 +569,7 @@ def apply_headline(
     report["headline"] = {
         "metric": key,
         "n": m["n"],
-        "N": report["N_claim"],
+        "N": report.get("N_denominator", report["N_claim"]),
         "rate": m["rate"],
         "label": m["definition"],
         "role": m["role"],
