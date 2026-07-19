@@ -166,6 +166,29 @@ static std::vector<Probe> generate_probes(
     }
 #endif
 
+    // DETERMINISTIC ORDER (opt-in): OpenMP merges probes in thread-arrival order; the
+    // downstream single-linkage cluster_probes() is order-sensitive, so with
+    // --omp-threads > 1 the SURFNET cleft grid is non-deterministic run-to-run.
+    // Sorting by a canonical geometric key makes cleft detection
+    // thread-count/schedule-independent (and removes the TSan-flagged shared-vector
+    // merge races). GATED OFF BY DEFAULT: the sort reorders probe tie-breaks even in
+    // serial, which changes single-thread poses and would invalidate prior
+    // single-thread benchmark numbers (the canonical protocol is --omp-threads 1).
+    // Enable with FLEXAIDDS_CLEFT_SORT=1 when running multi-threaded cleft detection.
+    // See CLEFTSORT_AB_VERDICT.md.
+    {
+        const char* cs = std::getenv("FLEXAIDDS_CLEFT_SORT");
+        if (cs && cs[0] == '1') {
+            std::sort(probes.begin(), probes.end(),
+                      [](const Probe& a, const Probe& b) {
+                          if (a.center[0] != b.center[0]) return a.center[0] < b.center[0];
+                          if (a.center[1] != b.center[1]) return a.center[1] < b.center[1];
+                          if (a.center[2] != b.center[2]) return a.center[2] < b.center[2];
+                          return a.radius < b.radius;
+                      });
+        }
+    }
+
     return probes;
 }
 

@@ -1,0 +1,3 @@
+target,protocol,threads,engine,rank0_sym_rmsd_A,success_2A
+1G9V,autonomous/blind,1,baseline,5.128,False
+1G9V,autonomous/blind,1,sorted,7.535,False
