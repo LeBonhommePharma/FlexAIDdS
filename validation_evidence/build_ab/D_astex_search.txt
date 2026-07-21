@@ -1,0 +1,175 @@
+=== find prepared Astex inputs ===
+benchmarks/astex_repro
+benchmarks/astex_diverse
+benchmarks/astex_diverse/astex_diverse
+benchmarks/astex_diverse/data/astex_diverse
+benchmarks/astex_entropy
+benchmarks/astex_non_native
+benchmarks/astex_nonnative
+[0m[00;34m__init__.py[0m
+[00;34m__main__.py[0m
+[01;34mastex_diverse[0m
+[01;34mastex_entropy[0m
+astex_identities.json
+[01;34mastex_non_native[0m
+[01;34mastex_nonnative[0m
+[01;34mastex_repro[0m
+BENCHMARK_STANDARD.md
+[00;34mbuild_ocd_mini.py[0m
+[00;34mcalibrate_itc.py[0m
+[01;34mcasf2016_tier1[0m
+[00;34mcompute_ocd_rmsd.py[0m
+[00;34mDatasetRunner.py[0m
+[01;34mdatasets[0m
+datasets-archive-report.json
+[00;34mfetch_itc_data.py[0m
+[00;34mfind_pairs.py[0m
+[01;34mhap2[0m
+ITC_CALIBRATION.md
+[01;34mitc187_tier1[0m
+[00;34mligand_prep.py[0m
+[01;34mm3pro[0m
+[00;34mmetrics.py[0m
+[01;34mnextgen[0m
+[01;34mocd_mini[0m
+[00;34mparse_astex_proteins.py[0m
+[01;34mposex_cd[0m
+[00;34mprep_ocd_structure.py[0m
+[01;34mprotocols[0m
+total 2684
+drwxr-xr-x  49 lp.more staff    1568 Jul 17 19:13 [0m[01;34m.[0m
+drwxr-xr-x 215 lp.more staff    6880 Jul 21 15:34 [01;34m..[0m
+-rw-r--r--   1 lp.more staff     248 Jun 29 12:20 [00;33m.cron_milestones.log[0m
+-rw-r--r--   1 lp.more staff      21 Jun 29 12:20 .cron_notify_all_done
+-rw-r--r--   1 lp.more staff   14340 Jul  1 17:17 .DS_Store
+-rw-r--r--   1 lp.more staff      21 Jun 29 12:18 .monitor_notify_all_done
+drwxr-xr-x   4 lp.more staff     128 Jul  2 00:52 [01;34m5meo_naloxone_chum_calibrated_20260702_005235[0m
+drwxr-xr-x  10 lp.more staff     320 Jul  2 00:56 [01;34m5meo_naloxone_chum_calibrated_20260702_005420[0m
+-rw-r--r--   1 lp.more staff    5005 Jul 17 19:24 ARMA_0PCT_DIAGNOSIS.md
+./results/astex_jcim2015_fair_20260708_0002/1GM8/1GM8.rrg
+./results/astex_jcim2015_fair_20260708_0002/1G9V/1G9V.rrg
+./results/astex_jcim2015_fair_20260708_0002/1GPK/1GPK.rrg
+./results/astex_jcim2015_fair_20260708_0002/1HNN/1HNN.rrg
+./benchmarks/astex_repro/smoke/1G9V/r7/1G9V.rrg
+./benchmarks/astex_repro/smoke/1G9V/r9/1G9V.rrg
+./benchmarks/astex_repro/smoke/1G9V/1G9V.rrg
+./benchmarks/astex_repro/smoke/1G9V/r8/1G9V.rrg
+./benchmarks/astex_repro/smoke/1G9V/r1/1G9V.rrg
+./benchmarks/astex_repro/smoke/1G9V/r6/1G9V.rrg
+./benchmarks/astex_repro/smoke/1G9V/r3/1G9V.rrg
+./benchmarks/astex_repro/smoke/1G9V/r4/1G9V.rrg
+./benchmarks/astex_repro/smoke/1G9V/r5/1G9V.rrg
+./benchmarks/astex_repro/smoke/1G9V/r2/1G9V.rrg
+./benchmarks/astex_repro/full/1JD0/r7/1JD0.rrg
+./benchmarks/astex_repro/full/1JD0/r9/1JD0.rrg
+./benchmarks/astex_repro/full/1JD0/r8/1JD0.rrg
+./benchmarks/astex_repro/full/1JD0/r1/1JD0.rrg
+./benchmarks/astex_repro/full/1JD0/r6/1JD0.rrg
+./benchmarks/astex_repro/full/1JD0/1JD0.rrg
+./benchmarks/astex_repro/full/1JD0/r3/1JD0.rrg
+./benchmarks/astex_repro/full/1JD0/r4/1JD0.rrg
+./benchmarks/astex_repro/full/1JD0/r5/1JD0.rrg
+./benchmarks/astex_repro/full/1JD0/r2/1JD0.rrg
+./benchmarks/astex_repro/full/1HP0/r7/1HP0.rrg
+./benchmarks/astex_repro/full/1HP0/r9/1HP0.rrg
+./benchmarks/astex_repro/full/1HP0/r8/1HP0.rrg
+./benchmarks/astex_repro/full/1HP0/r1/1HP0.rrg
+./benchmarks/astex_repro/full/1HP0/r6/1HP0.rrg
+./benchmarks/astex_repro/full/1HP0/1HP0.rrg
+./benchmarks/astex_repro/full/1HP0/r3/1HP0.rrg
+./benchmarks/astex_repro/full/1HP0/r4/1HP0.rrg
+./benchmarks/astex_repro/full/1HP0/r5/1HP0.rrg
+./benchmarks/astex_repro/full/1HP0/r2/1HP0.rrg
+./benchmarks/astex_repro/full/1LPZ/r7/1LPZ.rrg
+./benchmarks/astex_repro/full/1LPZ/r9/1LPZ.rrg
+./benchmarks/astex_repro/full/1LPZ/r8/1LPZ.rrg
+./benchmarks/astex_repro/full/1LPZ/r1/1LPZ.rrg
+./benchmarks/astex_repro/full/1LPZ/1LPZ.rrg
+./benchmarks/astex_repro/full/1LPZ/r6/1LPZ.rrg
+AMINO.def
+AMINO12.def
+AMINO26.def
+AMINO8.def
+[0m[00mLovell_LIB.dat[0m
+[00mM6_cons_3.dat[0m
+[00mnrg_mat_BEST_011912.dat[0m
+[00mnrg_mat_BEST_012012.dat[0m
+NUCLEOTIDES.def
+NUCLEOTIDES12.def
+NUCLEOTIDES26.def
+NUCLEOTIDES8.def
+README.md
+rotobs.lst
+[00mscr_bin.dat[0m
+[00mscr_mat.dat[0m
+[00mSYBYL_emat.dat[0m
+astex_apo_strip_report.csv
+astex_apo_strip_summary.json
+astex_diverse_manifest.json
+astex_diverse_sha256.csv
+astex_diverse.yaml
+astex_nonnative.yaml
+benchmark_astex_native_85.json
+benchmark_crossdock_85_autonomous.json
+benchmark_crossdock_85.json
+benchmark_crossdock_ocd_mini.json
+benchmark_posex_cd_full_available.json
+benchmark_posex_cd_tier1.json
+benchmark_posex_cd.json
+CANONICAL.md
+casf2016.yaml
+crossdock_modern.yaml
+dude37.yaml
+erds_specificity.yaml
+hap2.yaml
+itc187.yaml
+# Astex Diverse Set — 85 protein-ligand complexes
+#
+# Expanded Verdonk/Gaudreault benchmark set used by DatasetRunner.cpp
+# (astex_diverse_codes()).
+#
+# CANONICAL structure tree (repo):
+#   benchmarks/astex_diverse/astex_diverse/<PDB>/
+# Runtime cache (not source of truth):
+#   ~/.flexaidds/benchmarks/astex_diverse/<PDB>/
+# See benchmarks/datasets/CANONICAL.md and astex_diverse_sha256.csv.
+# Deprecated nested copy: benchmarks/astex_diverse/data/astex_diverse/
+#
+# Reference: Hartshorn et al. (2007) J. Med. Chem. 50(4):726-741
+#            https://doi.org/10.1021/jm061277y
+
+slug: astex_diverse
+name: "Astex Diverse Set"
+benchmark_order: 1
+description: >
+  85 diverse, high-quality protein-ligand crystal structures for docking
+  and scoring benchmark.  Covers all major drug target families with
+  ligand-ready holo structures.
+
+# Canonical on-disk structures committed in this repository (not the runtime cache).
+canonical_data_root: benchmarks/astex_diverse/astex_diverse
+checksum_manifest: benchmarks/datasets/astex_diverse_sha256.csv
+canonical_doc: benchmarks/datasets/CANONICAL.md
+
+zenodo_doi: ""
+download_url: "https://www.ccdc.cam.ac.uk/community/freeprod/astex-diverse-set/"
+data_format: pdb
+tier: 2
+tier1_subset_size: 5
+
+structural_states:
+  - holo
+
+# Parity with LIB/DatasetRunner.cpp::astex_diverse_codes() (85 PDB IDs).
+# Tier-1 CI uses the first tier1_subset_size entries (confirmed on disk).
+targets:
+  - 1gpk
+  - 1mq6
+  - 1n2j
+  - 1t46
+  - 1t9b
+  - 1g9v
+  - 1gm8
+  - 1hnn
+  - 1hp0
+  - 1hq2

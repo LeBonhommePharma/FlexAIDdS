@@ -1,0 +1,5 @@
+=== A configure summary ===
+first_attempt: FLEXAIDS_USE_METAL default ON → FAIL (metallib missing)
+second_attempt: -DFLEXAIDS_USE_METAL=OFF → exit 0
+ValidateSources: ran; orphan warning non-fatal; NO cmaes TUs present to validate
+CMA-ES wiring: ABSENT (see A_inventory.txt, A_cmaes_absence_proof.txt)

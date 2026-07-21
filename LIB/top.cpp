@@ -22,6 +22,9 @@
 #include "ParallelDock.h"
 #include "ParallelCampaign.h"
 #include "GAContext.h"
+// FLEXAIDDS_CMAES_INCLUDE_BEGIN
+#include "cmaes_search.h"
+// FLEXAIDDS_CMAES_INCLUDE_END
 #include "MIFGrid.h"
 #include "CavityDetect/SpatialGrid.h"
 #include "native_score.h"
@@ -726,6 +729,8 @@ int main(int argc, char **argv){
 	bool use_folded = false;
 	bool use_screen = false;
 	int  screen_top_n = 100;
+	std::string screen_receptor_path;  // populated in auto-detect path for --screen
+	std::string screen_ligand_path;
 	bool use_parallel_dock = false;
 	int  parallel_dock_regions = 128;
 	bool use_campaign = false;
@@ -934,6 +939,10 @@ int main(int argc, char **argv){
 
 			printf("Receptor: %s\n", receptor_path.c_str());
 			printf("Ligand:   %s\n", ligand_path.c_str());
+			if (use_screen) {
+				screen_receptor_path = receptor_path;
+				screen_ligand_path   = ligand_path;
+			}
 		}
 
 		// ── Apply config ──
@@ -2633,17 +2642,201 @@ int main(int argc, char **argv){
 			nrgrank::CoarseScreener screener;
 			screener.set_config(scfg);
 
-			// Target preparation would use receptor data already loaded
-			// Ligand screening would use the ligand library
-			// For now, the screen() API is ready but requires target/ligand loading
-			// which depends on the specific file formats already parsed above
-			printf("CoarseScreen: target prepared, screening ligands...\n");
+			// Load target atoms from receptor MOL2
+			auto screen_target = nrgrank::parse_target_mol2(screen_receptor_path);
+			if (screen_target.empty()) {
+				fprintf(stderr, "[SCREEN] ERROR: could not parse target atoms from %s\n",
+				        screen_receptor_path.c_str());
+				fprintf(stderr, "[SCREEN]   --screen requires a receptor in MOL2 format.\n");
+				Terminate(1);
+			}
 
-			n_chrom_snapshot = 1;  // Signal success for downstream flow
+			// Locate binding site PDB: prefer FLEXAIDDS_ORACLE_SITE, then FLEXAIDDS_CLEFT_SPHERE_FILE
+			const flexaids::ProtocolConfig screen_proto = flexaids::ProtocolConfig::from_env();
+			std::string site_pdb_path = screen_proto.oracle_site;
+			if (site_pdb_path.empty()) site_pdb_path = screen_proto.cleft_sphere_file;
+			auto screen_spheres = site_pdb_path.empty()
+			    ? std::vector<nrgrank::BindingSiteSphere>{}
+			    : nrgrank::parse_binding_site_pdb(site_pdb_path);
+			if (screen_spheres.empty()) {
+				fprintf(stderr, "[SCREEN] WARNING: no binding site spheres loaded; "
+				        "set FLEXAIDDS_ORACLE_SITE or FLEXAIDDS_CLEFT_SPHERE_FILE.\n");
+			}
+
+			screener.prepare_target(screen_target, screen_spheres);
+			if (!screener.is_prepared()) {
+				fprintf(stderr, "[SCREEN] ERROR: target preparation failed.\n");
+				Terminate(1);
+			}
+			printf("[SCREEN] Target prepared: %d anchors\n",
+			       static_cast<int>(screener.num_anchors()));
+
+			// Load ligands from screen_ligand_path (SDF or MOL2)
+			std::vector<nrgrank::ScreenLigand> screen_ligands;
+			{
+				const std::string ext = [&]() {
+					auto p = screen_ligand_path.rfind('.');
+					return p != std::string::npos
+					    ? screen_ligand_path.substr(p)
+					    : std::string{};
+				}();
+				if (ext == ".sdf" || ext == ".mol")
+					screen_ligands = nrgrank::CoarseScreener::load_ligands_sdf(screen_ligand_path);
+				else
+					screen_ligands = nrgrank::CoarseScreener::load_ligands_mol2(screen_ligand_path);
+			}
+			if (screen_ligands.empty()) {
+				fprintf(stderr, "[SCREEN] ERROR: no ligands loaded from %s\n",
+				        screen_ligand_path.c_str());
+				Terminate(1);
+			}
+			printf("[SCREEN] Screening %d ligands...\n",
+			       static_cast<int>(screen_ligands.size()));
+
+			// Run coarse screen — returns top_n sorted by score (best first)
+			auto screen_results = screener.screen(screen_ligands);
+
+			// Print ranked results
+			printf("\n%-6s  %-10s  %s\n", "Rank", "Score", "Name");
+			printf("------  ----------  ----\n");
+			for (int i = 0; i < static_cast<int>(screen_results.size()); ++i) {
+				printf("%-6d  %-10.3f  %s\n", i + 1,
+				       screen_results[i].score,
+				       screen_results[i].name.c_str());
+			}
+
+			n_chrom_snapshot = static_cast<int>(screen_results.size());
 		} else {
-			// ── Standard single GA run ──
-			GAContext ga_ctx;
-			n_chrom_snapshot = GA(FA,GB,VC,&chrom,&chrom_snapshot,&gene_lim,atoms,residue,&cleftgrid,gainp,&memchrom,ic2cf, &ga_ctx);
+			// ── Standard single search run (GA default; CMA-ES opt-in) ──
+			// FLEXAIDDS_CMAES_BEGIN
+			// Opt-in CMA-ES search backend. Env FLEXAIDDS_SEARCH=cmaes (or CMAES)
+			// swaps the operator; scoring path (ic2cf / 5 seam fns) is unchanged.
+			// Eval budget: λ×gens ≡ pop×gens (claim 1000×2000 = 2e6). See CMAES_INTEGRATION.md.
+			// Allocation contract matches GA(): sets chrom, chrom_snapshot, gene_lim,
+			// memchrom so existing top.cpp free / ranking loops remain valid.
+			// ic2cf.cpp / gaboom.cpp are never modified by this branch.
+			const char* flexaidds_search = std::getenv("FLEXAIDDS_SEARCH");
+			const bool use_cmaes = flexaidds_search &&
+				(std::strcmp(flexaidds_search, "cmaes") == 0 ||
+				 std::strcmp(flexaidds_search, "CMAES") == 0);
+			if (use_cmaes) {
+				// Minimal GA-input plumbing so GB->num_chrom / max_generations / seed
+				// match the claim budget path (read_gainputs when a .inp is present).
+				GB->num_genes = FA->npar;
+				if (GB->num_genes <= 0) {
+					fprintf(stderr, "ERROR: CMA-ES: no parameters to optimize (FA->npar=0).\n");
+					Terminate(1);
+				}
+				if (gainp[0] != 0) {
+					int geninterval = 0, popszpartition = 0;
+					read_gainputs(FA, GB, &geninterval, &popszpartition, gainp);
+				}
+				if (GB->num_chrom <= 0) GB->num_chrom = 1000;
+				if (GB->max_generations <= 0) GB->max_generations = 2000;
+
+				gene_lim = (genlim*)malloc(static_cast<size_t>(GB->num_genes) * sizeof(genlim));
+				if (!gene_lim) {
+					fprintf(stderr, "ERROR: CMA-ES: gene_lim allocation failed.\n");
+					Terminate(1);
+				}
+
+				CmaesConfig cma_cfg;
+				cma_cfg.population = GB->num_chrom > 0 ? GB->num_chrom : 1000;
+				cma_cfg.max_evals = 0;
+				if (const char* me = std::getenv("FLEXAIDDS_CMAES_MAX_EVALS")) {
+					if (me[0] != 0) {
+						char* endp = nullptr;
+						const long long v = std::strtoll(me, &endp, 10);
+						if (endp != me && v > 0)
+							cma_cfg.max_evals = static_cast<std::int64_t>(v);
+					}
+				}
+				if (cma_cfg.max_evals <= 0) {
+					const long long budget =
+						static_cast<long long>(cma_cfg.population) *
+						static_cast<long long>(GB->max_generations);
+					cma_cfg.max_evals = budget > 0 ? budget : 2000000LL;
+				}
+				cma_cfg.seed = static_cast<std::uint32_t>(GB->seed != 0 ? GB->seed : 1);
+				cma_cfg.enable_entropy_trace = true;
+				if (!output_prefix.empty()) {
+					cma_cfg.write_trace = output_prefix + "_cmaes_entropy.csv";
+				}
+
+				CmaesResult cma_res;
+				std::vector<EntropyTraceSample> cma_trace;
+				const int cma_rc = cmaes_run_dock(
+					FA, GB, VC, gene_lim, atoms, residue, cleftgrid,
+					ic2cf, cma_cfg, &cma_res, &cma_trace);
+				if (cma_rc != 0) {
+					fprintf(stderr, "ERROR: cmaes_run_dock failed (rc=%d status=%d)\n",
+					        cma_rc, cma_res.status);
+					n_chrom_snapshot = 0;
+				} else {
+					if (!cma_cfg.write_trace.empty() && !cma_trace.empty()) {
+						cmaes_write_trace_csv(cma_cfg.write_trace, cma_trace);
+					}
+					// Archive size K — each chrom[i].genes / chrom_snapshot[i].genes
+					// is a separate malloc so top.cpp free loops stay correct.
+					const int arch_n = static_cast<int>(cma_res.archive_genes.size());
+					const int K = std::max(1, std::min(cma_cfg.archive_size,
+						arch_n > 0 ? arch_n : 1));
+					memchrom = K;
+					chrom = (chromosome*)calloc(static_cast<size_t>(K), sizeof(chromosome));
+					chrom_snapshot = (chromosome*)calloc(static_cast<size_t>(K), sizeof(chromosome));
+					// Temporary contiguous storage for cmaes_fill_chromosomes only;
+					// immediately re-homed into per-slot malloc buffers.
+					gene* tmp_storage = (gene*)calloc(
+						static_cast<size_t>(K) * static_cast<size_t>(GB->num_genes),
+						sizeof(gene));
+					if (!chrom || !chrom_snapshot || !tmp_storage) {
+						fprintf(stderr, "ERROR: CMA-ES: chromosome/snapshot allocation failed.\n");
+						n_chrom_snapshot = 0;
+					} else {
+						const int filled = cmaes_fill_chromosomes(
+							cma_res, GB->num_genes, chrom, K, tmp_storage);
+						n_chrom_snapshot = 0;
+						for (int i = 0; i < filled; ++i) {
+							gene* cgenes = (gene*)malloc(
+								static_cast<size_t>(GB->num_genes) * sizeof(gene));
+							gene* sgenes = (gene*)malloc(
+								static_cast<size_t>(GB->num_genes) * sizeof(gene));
+							if (!cgenes || !sgenes) {
+								fprintf(stderr, "ERROR: CMA-ES: gene buffer allocation failed.\n");
+								free(cgenes);
+								free(sgenes);
+								break;
+							}
+							std::memcpy(cgenes, chrom[i].genes,
+								static_cast<size_t>(GB->num_genes) * sizeof(gene));
+							std::memcpy(sgenes, chrom[i].genes,
+								static_cast<size_t>(GB->num_genes) * sizeof(gene));
+							chrom[i].genes = cgenes;
+							chrom_snapshot[i] = chrom[i];
+							chrom_snapshot[i].genes = sgenes;
+							++n_chrom_snapshot;
+						}
+						free(tmp_storage);
+						// Patch counters so free(chrom_snapshot) walks K slots, not
+						// num_chrom * max_generations (ParallelDock uses the same fix).
+						GB->num_chrom = std::max(1, n_chrom_snapshot);
+						GB->max_generations = 1;
+						printf("[SEARCH] backend=cmaes evals=%d n_snap=%d best_cf=%.6f "
+						       "lambda=%d max_evals=%lld\n",
+						       cma_res.n_evals, n_chrom_snapshot, cma_res.best_cf,
+						       cma_cfg.population,
+						       static_cast<long long>(cma_cfg.max_evals));
+						if (!cma_cfg.write_trace.empty()) {
+							printf("[SEARCH] cmaes entropy trace: %s\n",
+							       cma_cfg.write_trace.c_str());
+						}
+					}
+				}
+			} else {
+				GAContext ga_ctx;
+				n_chrom_snapshot = GA(FA,GB,VC,&chrom,&chrom_snapshot,&gene_lim,atoms,residue,&cleftgrid,gainp,&memchrom,ic2cf, &ga_ctx);
+			}
+			// FLEXAIDDS_CMAES_END
 		}
     
 		if(n_chrom_snapshot > 0){

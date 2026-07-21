@@ -1,0 +1,13 @@
+arm=CMAES
+complex=1G9V
+budget=FLEXAIDDS_CMAES_MAX_EVALS=5000 lambda=100 (from config num_chromosomes)
+exit=cmaes_exit=0
+evals=5000
+elected_CF=643.054551
+best_CF=643.054551
+RMSD_ordered_heavy_ligand=12.1294
+rmsd_ordered_heavy=12.1294
+n_pose=25 n_xtal=25 n_used=25
+pose=validation_evidence/build_ab/D_1G9V_dual/cmaes_short_0.pdb
+log=validation_evidence/build_ab/D_1G9V_dual/cmaes_run.log
+entropy_trace=validation_evidence/build_ab/D_1G9V_dual/cmaes_short_cmaes_entropy.csv

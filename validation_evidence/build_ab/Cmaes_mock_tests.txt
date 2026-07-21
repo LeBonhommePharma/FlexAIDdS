@@ -1,0 +1,4 @@
+standalone_mock_tests=PASS 4/4
+binary=.swarm/cmaes/orchestrator/test_cmaes_search_standalone
+log=.swarm/cmaes/orchestrator/ctest_cmaes.log
+ctest_g++16_homebrew_gtest=ABI_FAIL (documented)

@@ -1,0 +1,27 @@
+timestamp_utc=2026-07-21T19:29:51Z
+cwd=/Users/lp.more/Projects/FlexAIDdS
+branch=perf/pb-clash-grid-hoist
+head=9723f9de41da1d185725384c6b774eca87fcbc4e
+head_subject=wire CMA-ES search backend (opt-in FLEXAIDDS_SEARCH=cmaes)
+base_2a60f65_exists=commit
+gpp16=g++-16 (Homebrew GCC 16.1.0) 16.1.0
+cmake=cmake version 4.4.0
+apptainer=MISSING
+singularity=MISSING
+docker=/opt/homebrew/bin/docker
+absent=LIB/cmaes_search.cpp
+absent=LIB/cmaes_search.h
+absent=apply_integration.sh
+absent=CMAES_INTEGRATION.md
+absent=analysis/collapse_fingerprint.py
+absent=analysis
+rg_FLEXAIDDS_SEARCH_hits=0
+rg_cmaes_search_hits=0
+git_show_head_stat:
+9723f9de4 wire CMA-ES search backend (opt-in FLEXAIDDS_SEARCH=cmaes)
+ LIB/ThermoWhiteboard.h              | 158 ++++++++++++++++++++
+ cmake/FlexAIDWebGPU.cmake           |  57 ++++++++
+ src/backends/webgpu/cf_eval.wgsl    | 191 ++++++++++++++++++++++++
+ src/backends/webgpu/webgpu_eval.cpp | 281 ++++++++++++++++++++++++++++++++++++
+ src/backends/webgpu/webgpu_eval.h   |  70 +++++++++
+ 5 files changed, 757 insertions(+)

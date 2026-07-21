@@ -1,0 +1,11 @@
+arm=GA
+complex=1G9V
+budget=num_chromosomes=100 x num_generations=50 (5000 evals)
+exit=ga_exit=0
+elected_CF=-37.11991
+best_CF=-37.1199
+RMSD_ordered_heavy_ligand=10.1141
+rmsd_ordered_heavy=10.1141
+n_pose=25 n_xtal=25 n_used=25
+pose=validation_evidence/build_ab/D_1G9V_dual/ga_short_0.pdb
+log=validation_evidence/build_ab/D_1G9V_dual/ga_run.log
