@@ -1,0 +1,18 @@
+=== CMA-ES arm attempt ===
+date=2026-07-21T19:38:16Z
+env FLEXAIDDS_SEARCH=cmaes
+command: FLEXAIDDS_SEARCH=cmaes validation_evidence/build_ab/build_fast/FlexAIDdS /Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1G9V/1G9V_apo.pdb /Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_repro/smoke/1G9V/1G9V_dockin.sdf -c /Users/lp.more/Projects/FlexAIDdS/validation_evidence/build_ab/D_1G9V/dock_config_ga_short.json -o /Users/lp.more/Projects/FlexAIDdS/validation_evidence/build_ab/D_1G9V/cmaes_attempt
+expected: no CMA-ES backend in this tree; run will use GA if it runs at all
+
+=== binary symbol proof (no cmaes) ===
+nm: zero cmaes symbols
+strings: zero FLEXAIDDS_SEARCH/cmaes
+
+=== source proof ===
+LIB/cmaes_search.cpp exists? NO
+rg FLEXAIDDS_SEARCH hits in LIB/src: 0
+
+STATUS: CMA-ES arm NOT RUN — backend wiring absent from tree
+blocker=absent LIB/cmaes_search.cpp + zero FLEXAIDDS_SEARCH code hits + no binary symbols
+elected_RMSD=N/A
+best_CF=N/A

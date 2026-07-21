@@ -1,0 +1,11 @@
+timestamp_utc=2026-07-21T19:39:58Z
+script=analysis/collapse_fingerprint.py
+script_present=no
+blocker=analysis/collapse_fingerprint.py absent from tree
+cmaes_trace_search:
+validation_evidence/build_ab/D_cmaes_result.txt
+validation_evidence/build_ab/A_cmaes_absence_proof.txt
+validation_evidence/build_ab/F_entropy_trace_ga_partial.log
+validation_evidence/build_ab/F_entropy_trace.txt
+cmaes_trace_usable=no (D_cmaes_result is blocker file, not entropy series)
+/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/Resources/Python.app/Contents/MacOS/Python: can't open file '/Users/lp.more/Projects/FlexAIDdS/analysis/collapse_fingerprint.py': [Errno 2] No such file or directory

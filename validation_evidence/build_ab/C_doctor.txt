@@ -1,0 +1,112 @@
+=== env FLEXAIDDS_SEARCH ===
+(unset in environment)
+
+=== binary help / search flags ===
+base path is '/Users/lp.more/Projects/FlexAIDdS/validation_evidence/build_ab/build_fast'
+FlexAIDdS — Entropy-driven molecular docking
+
+Usage:
+  validation_evidence/build_ab/build_fast/FlexAIDdS <receptor> <ligand> [options]
+
+  Files can be in any order. FlexAIDdS auto-detects which is
+  the receptor and which is the ligand from file content.
+
+  Receptor: .pdb, .cif, .mmcif (protein/nucleic acid)
+  Ligand:   .mol2, .sdf, .mol, .pdb (small molecule)
+            or a SMILES string directly on the command line
+
+  validation_evidence/build_ab/build_fast/FlexAIDdS --legacy <config.inp> <ga.inp> <output_prefix>
+
+Options:
+  -c, --config <file.json>   JSON config (overrides defaults)
+  -o, --output <prefix>      Output prefix (default: flexaid_out)
+  --rigid                    Fast rigid-body screening
+  --screen                   NRGRank coarse-grained screening mode
+  --screen-top-n <N>         Return top N from coarse screen (default: 100)
+  --parallel-dock            Grid-decomposed parallel docking (ParallelDock)
+  --parallel-dock-regions <N> Number of spatial regions (default: 128)
+  --campaign                 Parallel virtual screening campaign mode
+  --folded                   Skip NATURaL chain growth
+  --legacy                   Legacy 3-file input mode
+  --benchmark <set>          Run benchmark dataset (astex, casf2016, etc.)
+  -h, --help                 Show this help
+
+Library input (virtual screening):
+  Ligand can be a multi-molecule SDF, a SMILES file (.smi),
+  or a directory of MOL2/SDF files. Each ligand is docked
+  independently against the receptor.
+
+Multi-model receptor (NMR / cryo-EM / MD):
+  PDB with MODEL/ENDMDL records or multi-model CIF.
+  Each model is used as a separate receptor conformer.
+  Results are combined via Boltzmann ensemble consensus
+  with reference entropy correction.
+
+Examples:
+  validation_evidence/build_ab/build_fast/FlexAIDdS receptor.pdb ligand.mol2
+  validation_evidence/build_ab/build_fast/FlexAIDdS ligand.sdf receptor.pdb          # order doesn't matter
+  validation_evidence/build_ab/build_fast/FlexAIDdS receptor.pdb 'c1ccccc1' --rigid  # SMILES input
+  validation_evidence/build_ab/build_fast/FlexAIDdS protein.pdb drug.sdf -c config.json -o results
+  validation_evidence/build_ab/build_fast/FlexAIDdS receptor.pdb library.sdf          # multi-molecule SDF
+  validation_evidence/build_ab/build_fast/FlexAIDdS receptor.pdb ligands/             # directory of files
+  validation_evidence/build_ab/build_fast/FlexAIDdS receptor.pdb compounds.smi        # SMILES file
+  validation_evidence/build_ab/build_fast/FlexAIDdS nmr_ensemble.pdb ligand.mol2      # NMR ensemble
+
+Defaults: T=300K, full flexibility, Voronoi contacts, intramolecular ON.
+---
+base path is '/Users/lp.more/Projects/FlexAIDdS/validation_evidence/build_ab/build_fast'
+FlexAIDdS — Entropy-driven molecular docking
+
+Usage:
+  validation_evidence/build_ab/build_fast/FlexAIDdS <receptor> <ligand> [options]
+
+  Files can be in any order. FlexAIDdS auto-detects which is
+  the receptor and which is the ligand from file content.
+
+  Receptor: .pdb, .cif, .mmcif (protein/nucleic acid)
+  Ligand:   .mol2, .sdf, .mol, .pdb (small molecule)
+            or a SMILES string directly on the command line
+
+  validation_evidence/build_ab/build_fast/FlexAIDdS --legacy <config.inp> <ga.inp> <output_prefix>
+
+Options:
+  -c, --config <file.json>   JSON config (overrides defaults)
+  -o, --output <prefix>      Output prefix (default: flexaid_out)
+  --rigid                    Fast rigid-body screening
+  --screen                   NRGRank coarse-grained screening mode
+  --screen-top-n <N>         Return top N from coarse screen (default: 100)
+  --parallel-dock            Grid-decomposed parallel docking (ParallelDock)
+  --parallel-dock-regions <N> Number of spatial regions (default: 128)
+  --campaign                 Parallel virtual screening campaign mode
+  --folded                   Skip NATURaL chain growth
+  --legacy                   Legacy 3-file input mode
+  --benchmark <set>          Run benchmark dataset (astex, casf2016, etc.)
+  -h, --help                 Show this help
+
+Library input (virtual screening):
+  Ligand can be a multi-molecule SDF, a SMILES file (.smi),
+  or a directory of MOL2/SDF files. Each ligand is docked
+  independently against the receptor.
+
+Multi-model receptor (NMR / cryo-EM / MD):
+  PDB with MODEL/ENDMDL records or multi-model CIF.
+  Each model is used as a separate receptor conformer.
+  Results are combined via Boltzmann ensemble consensus
+  with reference entropy correction.
+
+
+=== nm symbols matching cmaes / FLEXAIDDS_SEARCH ===
+NO cmaes symbols in global defined
+NO undefined cmaes symbols
+
+=== source code hits ===
+FLEXAIDDS_SEARCH code hits (excl validation_evidence):
+cmaes_search hits:
+VALIDATION.md:24:| P1 | Adapter compiles against the **real** engine headers (C++23) | `g++ -std=c++23 -Wall -Wextra -c LIB/cmaes_search.cpp` → exit 0, **0 warn / 0 err** |
+
+=== --search CLI ===
+
+=== C conclusion ===
+STATUS: OPEN
+blocker=FLEXAIDDS_SEARCH has 0 code hits; no cmaes_search TUs; binary has no cmaes symbols
+note: GA arm DID exercise real ic2cf path (live dock D) but item C requires CMA-ES adapter on real ic2cf

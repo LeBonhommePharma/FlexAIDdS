@@ -1,0 +1,72 @@
+-- Objective-C++ compiler found — Metal support enabled
+CMake Warning at CMakeLists.txt:41 (message):
+  Building from a DIRTY working tree — reproducibility metadata will be
+  flagged.
+
+
+-- FlexAIDOptions loaded — options + SIMD helpers ready
+-- Eigen3 found via pkg-config
+-- Metal acceleration available but disabled (use -DFLEXAIDS_USE_METAL=ON)
+-- FlexAIDDependencies loaded — external packages resolved
+-- flexaid_core: -mcpu=native enabled (FLEXAIDS_MCPU_NATIVE=ON) — build is tuned for THIS machine and is not portable; use -DFLEXAIDS_MCPU_NATIVE=OFF for portable/reproducible builds
+-- flexaid_core: ARM NEON enabled (baseline aarch64 ISA)
+-- FlexAIDComponents: FlexAID::Core alias created
+-- FlexAIDComponents: FlexAID::VoronoiCF INTERFACE target ready
+-- FlexAIDComponents: FlexAID::StatMech (thin alias to Core) ready
+-- FlexAIDComponents: FlexAID::ENCoM ready
+-- FlexAIDHelpers loaded — test and build helpers available
+-- FlexAID: ARM NEON enabled (baseline aarch64 ISA)
+-- tENCoM: ARM NEON enabled (baseline aarch64 ISA)
+-- tENCoM tool enabled — build target: tENCoM
+-- tencom_entropy_diff: ARM NEON enabled (baseline aarch64 ISA)
+-- Legacy tENCoM entropy diff tool enabled — build target: tencom_entropy_diff
+-- ligand_tencom_pose: ARM NEON enabled (baseline aarch64 ISA)
+-- Ligand tENCoM/Eigen pose validator enabled — build target: ligand_tencom_pose
+-- dift_torsion_fit: ARM NEON enabled (baseline aarch64 ISA)
+-- DiFT torsion fit tool enabled — build target: dift_torsion_fit
+-- FlexAIDdS: ARM NEON enabled (baseline aarch64 ISA)
+-- FlexAIDdS fast executable enabled
+-- dual_assembly: ARM NEON enabled (baseline aarch64 ISA)
+-- DualAssembly CLI enabled — build target: dual_assembly
+-- cavity_detect_cli: ARM NEON enabled (baseline aarch64 ISA)
+-- Native CavityDetector CLI enabled -- build target: cavity_detect_cli
+-- benchmark_datasets: ARM NEON enabled (baseline aarch64 ISA)
+-- Benchmark dataset runner enabled — build target: benchmark_datasets
+-- FlexAID 2015 benchmark targets: flexaid_bench_astex_diverse, flexaid_bench_astex_non_native, flexaid_bench_hap2
+-- Running FlexAID source validator (scripts/validate_sources.py)...
+-- WARNING: FlexAIDdS source guard found orphaned source files!
+
+  Scanned : 436 files
+  Orphans : 7
+  (Ignored: 123 via build_sources.ignore)
+
+Orphaned files (these exist on disk but are not referenced in any build file):
+
+  Compilable units (highest priority):
+    • src/backends/webgpu/webgpu_eval.cpp
+      Suggested fix: Add 'webgpu_eval.cpp' to the appropriate CMakeLists.txt or setup.py
+    • tools/metal_microbench_enhanced.cpp
+      Suggested fix: Add 'metal_microbench_enhanced.cpp' to the appropriate CMakeLists.txt or setup.py
+
+  Headers (often transitively included — lower priority):
+    • LIB/PoseBust/PdbCoords.h
+    • LIB/ProtocolConfig.h
+    • LIB/RunReceipt.h
+    • LIB/ThermoWhiteboard.h
+    • src/backends/webgpu/webgpu_eval.h
+      (Consider adding the corresponding .cpp/.cu to the module's CMakeLists.txt first)
+
+How to fix:
+  1. If this is a new module, create LIB/YourModule/CMakeLists.txt and list the files there.
+  2. Add one line `add_subdirectory(YourModule)` in LIB/CMakeLists.txt.
+  3. Or add the file to an existing module's CMakeLists.txt.
+  4. Re-run cmake (or pip install -e .).
+
+To temporarily allow an orphan (migration / legacy):
+  echo 'src/backends/webgpu/webgpu_eval.h' >> build_sources.ignore
+
+This is a non-fatal warning. Switch to --strict (or STRICT in CMake) once clean.
+-- Configuring done (15.1s)
+-- Generating done (0.1s)
+-- Build files have been written to: /Users/lp.more/Projects/FlexAIDdS/validation_evidence/build_ab/build_fast
+NOTE: final successful configure used -DFLEXAIDS_USE_METAL=OFF
