@@ -37,6 +37,40 @@ static const float con_r0 = []() {
 }();
 static const bool no_sas = (std::getenv("FLEXAIDDS_NO_SAS") != nullptr);
 
+// ── pb_clash receptor grid cache (Route A hoist) ─────────────────────────────
+// The receptor is rigid across all CF evals in one dock session. The cell-list
+// grid over receptor atoms (atoms where optres==NULL) is therefore loop-invariant
+// and can be built once per dock rather than once per eval.
+//
+// Invalidation key: (atm_cnt, pb_clash_ratio).  atm_cnt changes between docks;
+// pb_clash_ratio is a config value that only changes at dock-init time.
+// Within a single dock the receptor atom positions are fixed, so a matching key
+// guarantees a valid grid.
+//
+// Gated by FLEXAIDDS_PB_CLASH_GRID_HOIST (default OFF so legacy mode is
+// bit-identical when the env var is absent).  When ON, CF math is unchanged —
+// only the grid construction is skipped on evals 2…N.
+static const bool pb_clash_hoist =
+    (std::getenv("FLEXAIDDS_PB_CLASH_GRID_HOIST") != nullptr);
+
+struct PBClashGridCache {
+    // Invalidation key
+    int    atm_cnt   = -1;
+    double ratio     = -1.0;
+    // Cached grid data
+    double rmin[3]   = {};
+    int    dim[3]    = {};
+    double cell      = 0.0;
+    double inv_cell  = 0.0;
+    std::vector<int>    rec_idx;                        // rigid receptor atom indices
+    std::vector<double> rec_vdw;                        // precomputed vdW per rec atom (parallel to rec_idx)
+    std::unordered_map<int, std::vector<int>> grid;     // cell-list: flat cell key → rec_idx positions
+    bool valid = false;
+
+    bool matches(int a, double r) const { return valid && (a == atm_cnt) && (r == ratio); }
+};
+static thread_local PBClashGridCache pb_cache;
+
 // FLEXAIDDS_CONTACTS_EPOCH: O(1) clear of FA->contacts (avoids a
 // MAX_ATOM_NUMBER-sized memset every eval; see below). Default off —
 // legacy memset-every-call behavior is unchanged unless this is set.
@@ -847,65 +881,151 @@ double vcfunction(FA_Global* FA,VC_Global* VC,atom* atoms,resid* residue, std::v
 		// Ligand atoms are few (tens); receptor atoms are many (thousands) — so
 		// build the grid over RECEPTOR atoms and scan each ligand atom's cell nbhd.
 		const double PB_MAX_VDW = 2.10;               // max element vdW (I) in soft_wall.h table
-		const double cell = FA->pb_clash_ratio * 2.0 * PB_MAX_VDW; // cutoff = ratio*(vdw_i+vdw_j) <= this
-		const double inv_cell = 1.0 / cell;
+		const double PB_MAX_VDW = 2.10;               // max element vdW (I) in soft_wall.h table
+		// cell and inv_cell are derived from pb_clash_ratio, which is set once at dock init.
+		// They are the same across all evals in a dock session.
 
-		// Collect receptor (rigid) and ligand (movable) atom indices.
+		// ── Route A: hoist receptor grid construction out of the eval loop ────
+		// When FLEXAIDDS_PB_CLASH_GRID_HOIST is set, the receptor cell-list grid is
+		// built once per dock (keyed on atm_cnt + pb_clash_ratio) and reused across
+		// all evals.  The CF math is identical; only the grid *construction* moves.
+		// When the env var is absent, behaviour is bit-identical to the old code.
+		if (pb_clash_hoist && !pb_cache.matches(FA->atm_cnt, FA->pb_clash_ratio)) {
+			// Invalidate and rebuild.
+			pb_cache.valid   = false;
+			pb_cache.atm_cnt = FA->atm_cnt;
+			pb_cache.ratio   = FA->pb_clash_ratio;
+			pb_cache.cell    = FA->pb_clash_ratio * 2.0 * PB_MAX_VDW;
+			pb_cache.inv_cell= 1.0 / pb_cache.cell;
+
+			pb_cache.rec_idx.clear();
+			pb_cache.rec_vdw.clear();
+			double rmax[3] = {-1e30,-1e30,-1e30};
+			pb_cache.rmin[0]=pb_cache.rmin[1]=pb_cache.rmin[2]=1e30;
+
+			for (int ai = 1; ai <= FA->atm_cnt; ++ai) {
+				if (atoms[ai].optres == NULL) {
+					pb_cache.rec_idx.push_back(ai);
+					for (int k=0;k<3;++k){
+						double c=atoms[ai].coor[k];
+						if(c<pb_cache.rmin[k])pb_cache.rmin[k]=c;
+						if(c>rmax[k])rmax[k]=c;
+					}
+					// Precompute receptor vdW radius (avoids repeated get_element calls in inner loop).
+					const char* re_raw = get_element(atoms[ai].type);
+					while (*re_raw == ' ') ++re_raw;
+					pb_cache.rec_vdw.push_back(posebusters_vdw_radius(re_raw, atoms[ai].radius));
+				}
+			}
+			for (int k=0;k<3;++k){
+				pb_cache.dim[k] = std::max(1, (int)((rmax[k]-pb_cache.rmin[k])*pb_cache.inv_cell) + 1);
+			}
+			pb_cache.grid.clear();
+			pb_cache.grid.reserve(pb_cache.rec_idx.size());
+			auto cidx_build = [&](int cx,int cy,int cz){
+				return (cx*pb_cache.dim[1]+cy)*pb_cache.dim[2]+cz;
+			};
+			for (int i = 0; i < (int)pb_cache.rec_idx.size(); ++i) {
+				int ri = pb_cache.rec_idx[i];
+				int cx=(int)((atoms[ri].coor[0]-pb_cache.rmin[0])*pb_cache.inv_cell);
+				int cy=(int)((atoms[ri].coor[1]-pb_cache.rmin[1])*pb_cache.inv_cell);
+				int cz=(int)((atoms[ri].coor[2]-pb_cache.rmin[2])*pb_cache.inv_cell);
+				if(cx<0)cx=0; if(cx>=pb_cache.dim[0])cx=pb_cache.dim[0]-1;
+				if(cy<0)cy=0; if(cy>=pb_cache.dim[1])cy=pb_cache.dim[1]-1;
+				if(cz<0)cz=0; if(cz>=pb_cache.dim[2])cz=pb_cache.dim[2]-1;
+				pb_cache.grid[cidx_build(cx,cy,cz)].push_back(i); // store position in rec_idx, not atom index
+			}
+			pb_cache.valid = true;
+		}
+
+		// Determine whether we're using the cached path or the legacy per-eval path.
+		const bool use_cache = pb_clash_hoist && pb_cache.valid;
+
+		// Local grid variables: either point at the cache or build fresh (legacy).
+		double l_rmin[3]  = { 1e30, 1e30, 1e30};
+		double l_rmax[3]  = {-1e30,-1e30,-1e30};
+		int    l_dim[3]   = {};
+		double l_cell     = FA->pb_clash_ratio * 2.0 * PB_MAX_VDW;
+		double l_inv_cell = 1.0 / l_cell;
 		std::vector<int> lig_idx;
 		lig_idx.reserve(64);
-		double rmin[3] = { 1e30, 1e30, 1e30}, rmax[3] = {-1e30,-1e30,-1e30};
-		std::vector<int> rec_idx;
-		rec_idx.reserve(4096);
-		for (int ai = 1; ai <= FA->atm_cnt; ++ai) {  // atoms[] is 1-based (see update_optres.cpp)
-			if (atoms[ai].optres != NULL) {           // movable ligand/flexible atom
-				lig_idx.push_back(ai);
-			} else {                                   // rigid receptor atom
-				rec_idx.push_back(ai);
-				for (int k=0;k<3;++k){ double c=atoms[ai].coor[k]; if(c<rmin[k])rmin[k]=c; if(c>rmax[k])rmax[k]=c; }
+		// Legacy: also collect rec_idx and build grid locally when not using cache.
+		std::vector<int>    l_rec_idx;
+		std::unordered_map<int,std::vector<int>> l_grid;
+
+		if (!use_cache) {
+			// Legacy path: collect receptor atoms, bounding box, and grid (same as before).
+			l_rec_idx.reserve(4096);
+			for (int ai = 1; ai <= FA->atm_cnt; ++ai) {
+				if (atoms[ai].optres != NULL) {
+					lig_idx.push_back(ai);
+				} else {
+					l_rec_idx.push_back(ai);
+					for (int k=0;k<3;++k){ double c=atoms[ai].coor[k]; if(c<l_rmin[k])l_rmin[k]=c; if(c>l_rmax[k])l_rmax[k]=c; }
+				}
+			}
+			for (int k=0;k<3;++k){ l_dim[k] = std::max(1, (int)((l_rmax[k]-l_rmin[k])*l_inv_cell) + 1); }
+			auto cidx = [&](int cx,int cy,int cz){ return (cx*l_dim[1]+cy)*l_dim[2]+cz; };
+			l_grid.reserve(l_rec_idx.size());
+			for (int ri : l_rec_idx) {
+				int cx=(int)((atoms[ri].coor[0]-l_rmin[0])*l_inv_cell);
+				int cy=(int)((atoms[ri].coor[1]-l_rmin[1])*l_inv_cell);
+				int cz=(int)((atoms[ri].coor[2]-l_rmin[2])*l_inv_cell);
+				if(cx<0)cx=0; if(cx>=l_dim[0])cx=l_dim[0]-1;
+				if(cy<0)cy=0; if(cy>=l_dim[1])cy=l_dim[1]-1;
+				if(cz<0)cz=0; if(cz>=l_dim[2])cz=l_dim[2]-1;
+				l_grid[cidx(cx,cy,cz)].push_back(ri);
+			}
+		} else {
+			// Cached path: only need to collect ligand atoms.
+			for (int ai = 1; ai <= FA->atm_cnt; ++ai) {
+				if (atoms[ai].optres != NULL) lig_idx.push_back(ai);
 			}
 		}
-		if (!lig_idx.empty() && !rec_idx.empty()) {
-			// Build a uniform grid over receptor atoms.
-			int dim[3];
-			for (int k=0;k<3;++k){ dim[k] = std::max(1, (int)((rmax[k]-rmin[k])*inv_cell) + 1); }
+
+		// Select which grid/metadata to use for the scan.
+		const double* rmin       = use_cache ? pb_cache.rmin      : l_rmin;
+		const int*    dim        = use_cache ? pb_cache.dim        : l_dim;
+		const double  inv_cell_s = use_cache ? pb_cache.inv_cell   : l_inv_cell;
+		const std::unordered_map<int,std::vector<int>>& grid_ref =
+			use_cache ? pb_cache.grid : l_grid;
+
+		if (!lig_idx.empty() && (use_cache ? !pb_cache.rec_idx.empty() : !l_rec_idx.empty())) {
 			auto cidx = [&](int cx,int cy,int cz){ return (cx*dim[1]+cy)*dim[2]+cz; };
-			std::unordered_map<int, std::vector<int>> grid;
-			grid.reserve(rec_idx.size());
-			for (int ri : rec_idx) {
-				int cx=(int)((atoms[ri].coor[0]-rmin[0])*inv_cell);
-				int cy=(int)((atoms[ri].coor[1]-rmin[1])*inv_cell);
-				int cz=(int)((atoms[ri].coor[2]-rmin[2])*inv_cell);
-				if(cx<0)cx=0; if(cx>=dim[0])cx=dim[0]-1;
-				if(cy<0)cy=0; if(cy>=dim[1])cy=dim[1]-1;
-				if(cz<0)cz=0; if(cz>=dim[2])cz=dim[2]-1;
-				grid[cidx(cx,cy,cz)].push_back(ri);
-			}
-			// Scan each ligand atom against receptor atoms in its 27-cell neighborhood.
 			double pb_pen = 0.0;
 			long pb_nclash = 0;
 			for (int li : lig_idx) {
 				const double lx=atoms[li].coor[0], ly=atoms[li].coor[1], lz=atoms[li].coor[2];
 				const char* le_raw = get_element(atoms[li].type);
-				while (*le_raw == ' ') ++le_raw;  // get_element returns " C"/"Cl"/… — strip leading space
+				while (*le_raw == ' ') ++le_raw;
 				const double vdw_l = posebusters_vdw_radius(le_raw, atoms[li].radius);
-				int cx=(int)((lx-rmin[0])*inv_cell);
-				int cy=(int)((ly-rmin[1])*inv_cell);
-				int cz=(int)((lz-rmin[2])*inv_cell);
+				int cx=(int)((lx-rmin[0])*inv_cell_s);
+				int cy=(int)((ly-rmin[1])*inv_cell_s);
+				int cz=(int)((lz-rmin[2])*inv_cell_s);
 				for(int dx=-1;dx<=1;++dx)for(int dy=-1;dy<=1;++dy)for(int dz=-1;dz<=1;++dz){
 					int nx=cx+dx,ny=cy+dy,nz=cz+dz;
 					if(nx<0||ny<0||nz<0||nx>=dim[0]||ny>=dim[1]||nz>=dim[2]) continue;
-					auto it=grid.find(cidx(nx,ny,nz));
-					if(it==grid.end()) continue;
-					for(int ri : it->second){
-						// skip covalently bonded / 1-2 neighbors (intra handled elsewhere)
+					auto it=grid_ref.find(cidx(nx,ny,nz));
+					if(it==grid_ref.end()) continue;
+					for(int pos : it->second){
+						double vdw_r;
+						int ri;
+						if (use_cache) {
+							// pos is an index into rec_idx / rec_vdw
+							ri    = pb_cache.rec_idx[pos];
+							vdw_r = pb_cache.rec_vdw[pos];
+						} else {
+							// pos is the atom index directly (legacy path)
+							ri = pos;
+							const char* re_raw = get_element(atoms[ri].type);
+							while (*re_raw == ' ') ++re_raw;
+							vdw_r = posebusters_vdw_radius(re_raw, atoms[ri].radius);
+						}
 						const double ddx=lx-atoms[ri].coor[0];
 						const double ddy=ly-atoms[ri].coor[1];
 						const double ddz=lz-atoms[ri].coor[2];
 						const double d=std::sqrt(ddx*ddx+ddy*ddy+ddz*ddz);
 						if(d < 1.0e-6) continue;
-						const char* re_raw = get_element(atoms[ri].type);
-						while (*re_raw == ' ') ++re_raw;
-						const double vdw_r=posebusters_vdw_radius(re_raw, atoms[ri].radius);
 						const double cr_pb=FA->pb_clash_ratio*(vdw_l+vdw_r);
 						const double o=cr_pb-d;
 						if(o>0.0){ pb_pen += std::pow(o, FA->pb_clash_exponent); ++pb_nclash; }
@@ -913,8 +1033,10 @@ double vcfunction(FA_Global* FA,VC_Global* VC,atom* atoms,resid* residue, std::v
 				}
 			}
 			if (std::getenv("FLEXAIDDS_PB_CLASH_DEBUG")) {
-				fprintf(stderr, "[PB_CLASH_DEBUG] lig_atoms=%zu rec_atoms=%zu nclash=%ld raw_pen=%.4f\n",
-					lig_idx.size(), rec_idx.size(), pb_nclash, pb_pen);
+				fprintf(stderr, "[PB_CLASH_DEBUG] lig_atoms=%zu rec_atoms=%zu nclash=%ld raw_pen=%.4f cached=%d\n",
+					lig_idx.size(),
+					use_cache ? pb_cache.rec_idx.size() : l_rec_idx.size(),
+					pb_nclash, pb_pen, (int)use_cache);
 			}
 			pb_pen *= FA->pb_clash_weight;
 			// Distribute to the first ligand optres (same convention as GIST).
