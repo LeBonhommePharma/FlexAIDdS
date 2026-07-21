@@ -56,6 +56,13 @@ struct ProtocolConfig {
     bool thermo_enabled{false};       ///< FLEXAIDDS_THERMO (presence)
     float t_eff{0.596f};              ///< FLEXAIDDS_T_EFF
     float tencom_scale{1.0f};         ///< FLEXAIDDS_TENCOM_SCALE
+    /// Reporting-only temperature for the whiteboard diagnostics (I_ES, ΔS_j,
+    /// binding regime classifier, Boltzmann P_i) — ISMB 2017 calibration
+    /// (kT_ISMB in ThermoWhiteboard.h). Per the whiteboard, T=21 is baked
+    /// into the LEFT-hand quantity itself (ΔG₂₁, P_i(T=21)), not just
+    /// substituted on the RHS — this field is that named constant.
+    /// Independent of t_eff: never enters G_bind/CF scoring or GA selection.
+    float report_T{21.0f};            ///< FLEXAIDDS_REPORT_T / --temperature
 
     // ── Paths ────────────────────────────────────────────────────────────
     std::string data_dir;             ///< FLEXAIDDS_DATA_DIR (empty = unset)

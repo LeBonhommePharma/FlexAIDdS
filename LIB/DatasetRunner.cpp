@@ -6442,6 +6442,28 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                     result.thermo_compensation  = parse_tag("compensation=");
                     result.has_thermo           = true;
                 }
+                // "[THERMO2] report_T=X I_ES=X CF_r2s=X regime=STRING"
+                if (line.find("[THERMO2]") != std::string::npos) {
+                    auto parse_tag = [&](const char* tag) -> float {
+                        auto pos = line.find(tag);
+                        if (pos == std::string::npos) return 0.0f;
+                        pos += std::strlen(tag);
+                        try { return std::stof(line.substr(pos)); } catch (...) { return 0.0f; }
+                    };
+                    result.thermo_report_T = parse_tag("report_T=");
+                    result.thermo_I_ES     = parse_tag("I_ES=");
+                    result.thermo_CF_r2s   = parse_tag("CF_r2s=");
+                    {
+                        auto pos = line.find("regime=");
+                        if (pos != std::string::npos) {
+                            pos += std::strlen("regime=");
+                            auto end = line.find_first_of(" \t\r\n", pos);
+                            result.thermo_binding_regime =
+                                line.substr(pos, end == std::string::npos ? std::string::npos : end - pos);
+                        }
+                    }
+                    result.has_thermo2 = true;
+                }
                 // "[THERMO_SNAP gen=N] TdS_shannon=V"
                 if (line.find("[THERMO_SNAP") != std::string::npos) {
                     auto parse_snap_val = [&]() -> float {
@@ -7646,7 +7668,8 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                            "H_rep_rank0,H_pop,H_rep_mean,D_vib,"
                            "G_bind,H_vct,H_vct_raw,n_heavy,TdS_shannon,TdS_vib,D_vib_thermo,"
                            "compensation_ratio,TdS_shannon_gen500,TdS_shannon_gen1000,"
-                           "cf_best_cluster\n";
+                           "cf_best_cluster,"
+                           "report_T,I_ES,CF_r2s,binding_regime\n";
                     ofs << std::fixed << std::setprecision(4)
                         << result.pdb_id << ","
                         << result.best_score << ","
@@ -7722,7 +7745,11 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                         << result.thermo_compensation << ","
                         << (std::isnan(result.thermo_TdS_shannon_gen500)  ? "NA" : std::to_string(result.thermo_TdS_shannon_gen500))  << ","
                         << (std::isnan(result.thermo_TdS_shannon_gen1000) ? "NA" : std::to_string(result.thermo_TdS_shannon_gen1000)) << ","
-                        << (std::isnan(result.cf_best_cluster) ? "NA" : std::to_string(result.cf_best_cluster)) << "\n";
+                        << (std::isnan(result.cf_best_cluster) ? "NA" : std::to_string(result.cf_best_cluster)) << ","
+                        << result.thermo_report_T << ","
+                        << result.thermo_I_ES << ","
+                        << result.thermo_CF_r2s << ","
+                        << "\"" << result.thermo_binding_regime << "\"\n";
                 }
             } catch (...) {
                 // Per-complex CSV is best-effort; failures are non-fatal.
@@ -8054,6 +8081,7 @@ void DatasetRunner::write_report(const BenchmarkReport& report,
                "H_rep_rank0,H_pop,H_rep_mean,D_vib";
         if (thermo_csv) {
             ofs << ",g_bind,h_vct,h_vct_raw,n_heavy,tds_shannon,tds_vib";
+            ofs << ",report_T,i_es,cf_r2s,binding_regime";
         }
         ofs << "\n";
 
@@ -8114,7 +8142,11 @@ void DatasetRunner::write_report(const BenchmarkReport& report,
                     << "," << r.thermo_H_vct_raw
                     << "," << r.thermo_n_heavy
                     << "," << r.thermo_TdS_shannon
-                    << "," << r.thermo_TdS_vib;
+                    << "," << r.thermo_TdS_vib
+                    << "," << r.thermo_report_T
+                    << "," << r.thermo_I_ES
+                    << "," << r.thermo_CF_r2s
+                    << ",\"" << r.thermo_binding_regime << "\"";
             }
             ofs << "\n";
         }

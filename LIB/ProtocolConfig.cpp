@@ -156,6 +156,9 @@ ProtocolConfig ProtocolConfig::from_env() {
     if (auto v = env_opt_double("FLEXAIDDS_TENCOM_SCALE")) {
         cfg.tencom_scale = static_cast<float>(*v);
     }
+    if (auto v = env_opt_double("FLEXAIDDS_REPORT_T")) {
+        cfg.report_T = static_cast<float>(*v);
+    }
 
     if (const char* e = env_raw("FLEXAIDDS_DATA_DIR")) {
         if (e[0] != '\0') cfg.data_dir = e;

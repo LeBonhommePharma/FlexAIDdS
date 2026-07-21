@@ -40,6 +40,7 @@ enum class Backend : uint8_t {
     CUDA    = 5,
     ROCM    = 6,
     NEON    = 7,   // ARM NEON (aarch64 baseline; distance/RMSD CPU path)
+    WEBGPU  = 8,   // Dawn / wgpu-native compute backend (src/backends/webgpu)
     AUTO    = 255
 };
 

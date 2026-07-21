@@ -342,6 +342,10 @@ void apply_config(const json::Value& config, FA_Global* FA, GB_Global* GB,
         FA->thermo_engine_enabled = jbool(config, "thermo_engine", "enabled",      false);
         FA->thermo_T_eff          = jflt (config, "thermo_engine", "T_eff",        0.596f);
         FA->thermo_tencom_scale   = jflt (config, "thermo_engine", "tencom_scale", 1.0f);
+        // Reporting-only T for whiteboard diagnostics (I_ES/regime/CF_r2s); does
+        // NOT feed thermo_T_eff/G_bind. ISMB 2017 calibrated default = 21.0
+        // (kT_ISMB) — the LEFT-hand-defining constant behind ΔG₂₁/P_i(T=21).
+        FA->thermo_report_T       = jflt (config, "thermo_engine", "report_T",     21.0f);
         FA->H_rep_bound_complex   = 0.0f;
         FA->H_rep_receptor_ref    = 0.0f;
         FA->H_rep_ligand_ref      = 0.0f;

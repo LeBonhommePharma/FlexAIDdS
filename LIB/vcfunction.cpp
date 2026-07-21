@@ -37,6 +37,7 @@ static const float con_r0 = []() {
 }();
 static const bool no_sas = (std::getenv("FLEXAIDDS_NO_SAS") != nullptr);
 
+
 // ── pb_clash receptor grid cache (Route A hoist) ─────────────────────────────
 // The receptor is rigid across all CF evals in one dock session. The cell-list
 // grid over receptor atoms (atoms where optres==NULL) is therefore loop-invariant
@@ -85,6 +86,7 @@ static const double wal_stiff = [](){
     double v = strtod(s, nullptr);
     return (v > 0.0) ? v : 0.0;
 }();
+
 
 // FLEXAIDDS_CONTACTS_EPOCH: O(1) clear of FA->contacts (avoids a
 // MAX_ATOM_NUMBER-sized memset every eval; see below). Default off —

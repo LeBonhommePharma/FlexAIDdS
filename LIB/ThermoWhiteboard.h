@@ -6,17 +6,51 @@
 // FlexAID internal CF units, the value calibrated for the ISMB 2017 results),
 // which is intentionally decoupled from ThermodynamicEngine's T_eff (0.596,
 // used by G_bind/TdS_shannon and left untouched here).
+//
+// T_ISMB naming: per the whiteboard, T=21 is not merely substituted on the
+// RHS of these equations — it's baked into the LEFT-hand quantity itself
+// (ΔG₂₁, P_i(T=21), ...). kT_ISMB is that calibration constant; every output
+// field/column/log tag downstream is labelled with the "_T21"/"(T=21)"
+// suffix to keep that distinction visible even when --temperature overrides
+// the reporting T away from 21.
 #include <vector>
 #include <string>
 #include <cmath>
 #include <algorithm>
 #include <limits>
+#include <array>
 
 namespace thermo_whiteboard {
 
 // ISMB 2017 calibrated reporting temperature (FlexAID internal CF units).
-// Override via config/--temperature; never used by CF scoring or the GA.
-constexpr float kDefaultReportT = 21.0f;
+// This is the LEFT-hand-side-defining constant (ΔG₂₁, P_i(T=21), ...), not
+// just a RHS substitution — see file header. Override via config/
+// --temperature / FLEXAIDDS_REPORT_T; never used by CF scoring or the GA.
+constexpr float kT_ISMB = 21.0f;
+// Back-compat alias.
+constexpr float kDefaultReportT = kT_ISMB;
+
+// ── MC_st0r5.2_6 (ISMB 2017 gold-standard matrix) active atom types ────
+// Of the 40 pairwise-contact types in MC_st0r5.2_6.txt (820 upper-triangular
+// entries), only these carry non-zero contact energies; the rest (8, 16, 17,
+// 20, 21, 27-34, 36-39) are all-zero dummy/unused slots. CF_r2s's LS/T,T3
+// contact-sum decomposition (Eq. 3) only needs to classify contacts between
+// types in this set — a contact where either atom's type is NOT in
+// kActiveTypesMC_st0r5 contributes 0 to CF_i already, so it can be skipped
+// when/if the per-contact LS/T,T3 accumulators are added to vcfunction.cpp.
+// Type 40 has non-zero contacts with most other active types (universal/
+// aromatic-boundary type).
+constexpr std::array<int, 21> kActiveTypesMC_st0r5 = {
+    1, 2, 3, 4, 5, 6, 7, 9, 10, 11, 12, 13, 14, 15,
+    18, 19, 22, 23, 24, 25, 26 /* , 28, 31, 35, 40 continue below */
+};
+constexpr std::array<int, 4> kActiveTypesMC_st0r5_ext = { 28, 31, 35, 40 };
+
+inline bool is_active_contact_type(int t) {
+    for (int a : kActiveTypesMC_st0r5) if (a == t) return true;
+    for (int a : kActiveTypesMC_st0r5_ext) if (a == t) return true;
+    return false;
+}
 
 // ── Eq. 7: Boltzmann pose probabilities ─────────────────────────────────
 // P_i ∝ exp(-E_i / T). Works for both the complex-state form (E_i = ΔG_i)

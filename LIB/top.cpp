@@ -30,6 +30,7 @@
 #include "ensemble_pipeline.h"
 #include "ProtocolConfig.h"
 #include "shell_exec.h"
+#include "UnifiedHardwareDispatch.h"
 
 #include <algorithm>
 #include <cmath>
@@ -364,6 +365,7 @@ static void print_usage(const char* progname) {
 	printf("Options:\n");
 	printf("  -c, --config <file.json>   JSON config (overrides defaults)\n");
 	printf("  -o, --output <prefix>      Output prefix (default: flexaid_out)\n");
+	printf("  --backend <cpu|metal|webgpu>  GPU compute backend for CF scoring (default: cpu)\n");
 	printf("  --rigid                    Fast rigid-body screening\n");
 	printf("  --screen                   NRGRank coarse-grained screening mode\n");
 	printf("  --screen-top-n <N>         Return top N from coarse screen (default: 100)\n");
@@ -811,6 +813,34 @@ int main(int argc, char **argv){
 					FA->dependencies_path[MAX_PATH__-1] = '\0';
 				} else {
 					fprintf(stderr, "ERROR: --data-dir requires a directory path\n");
+					Terminate(1);
+				}
+				continue;
+			}
+			if (arg == "--backend") {
+				if (a + 1 < argc) {
+					std::string be = argv[++a];
+					hw::Backend requested;
+					if (be == "cpu") {
+						requested = hw::Backend::SCALAR;
+					} else if (be == "metal") {
+						requested = hw::Backend::METAL;
+					} else if (be == "webgpu") {
+						requested = hw::Backend::WEBGPU;
+					} else {
+						fprintf(stderr, "ERROR: --backend must be one of cpu|metal|webgpu (got '%s')\n", be.c_str());
+						Terminate(1);
+						continue;
+					}
+					if (requested != hw::Backend::SCALAR &&
+					    !hw::UnifiedHardwareDispatch::instance().is_available(requested)) {
+						fprintf(stderr, "WARNING: --backend %s requested but not available on this build/host; "
+						                "falling back to CPU.\n", be.c_str());
+						requested = hw::Backend::SCALAR;
+					}
+					hw::UnifiedHardwareDispatch::instance().set_override(requested);
+				} else {
+					fprintf(stderr, "ERROR: --backend requires an argument (cpu|metal|webgpu)\n");
 					Terminate(1);
 				}
 				continue;

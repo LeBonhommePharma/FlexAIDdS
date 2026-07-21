@@ -1305,7 +1305,8 @@ int GA(FA_Global* FA, GB_Global* GB,VC_Global* VC,chromosome** chrom,chromosome*
 		}
 
 		FA->thermo_result = FA->thermo_engine->compute(
-			gene_pop, cf_pop, FA->H_rep_bound_complex, thermo_n_heavy);
+			gene_pop, cf_pop, FA->H_rep_bound_complex, thermo_n_heavy,
+			FA->thermo_report_T);
 
 		printf("[THERMO] G_bind=%.6f H_vct=%.6f H_vct_raw=%.6f n_heavy=%d "
 		       "TdS_shannon=%.6f TdS_vib=%.6f D_vib=%.6f compensation=%.6f\n",
@@ -1317,6 +1318,17 @@ int GA(FA_Global* FA, GB_Global* GB,VC_Global* VC,chromosome** chrom,chromosome*
 		       FA->thermo_result.TdS_vib,
 		       FA->H_rep_bound_complex,
 		       FA->thermo_result.compensation);
+
+		// Reporting-only whiteboard diagnostics — computed at thermo_report_T
+		// (default 21.0 = kT_ISMB), independent of thermo_T_eff/G_bind above.
+		// Left-hand labelling per whiteboard: G_bind_T21/I_ES/CF_r2s/regime are
+		// all "(T=21)"-defined quantities, not RHS substitutions. Additive
+		// output only; nothing here is read back into scoring or GA state.
+		printf("[THERMO2] report_T=%.6f I_ES=%.6f CF_r2s=%.6f regime=%s\n",
+		       FA->thermo_result.report_T,
+		       FA->thermo_result.I_ES,
+		       FA->thermo_result.CF_r2s,
+		       FA->thermo_result.binding_regime.c_str());
 	}
 
 	snprintf(outfile,MAX_PATH__,"%s_par.res",FA->rrgfile);
