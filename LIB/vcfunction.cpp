@@ -37,6 +37,21 @@ static const float con_r0 = []() {
 }();
 static const bool no_sas = (std::getenv("FLEXAIDDS_NO_SAS") != nullptr);
 
+// FLEXAIDDS_WAL_COERCIVE: remove WAL_CONTACT_CAP ceiling on the soft-core
+// fitness wall so deep clashes can overcome unbounded CF.com overpacking.
+// Default OFF → bit-identical to current behaviour.
+static const bool wal_coercive =
+    (std::getenv("FLEXAIDDS_WAL_COERCIVE") != nullptr &&
+     std::getenv("FLEXAIDDS_WAL_COERCIVE")[0] != '0');
+// FLEXAIDDS_WAL_STIFF: override k_wal (default WAL_CONTACT_CAP=50) for
+// stiffness sweeps at benchmark time.  0 or unset → existing default.
+static const double wal_stiff = [](){
+    const char* s = std::getenv("FLEXAIDDS_WAL_STIFF");
+    if (!s) return 0.0;
+    double v = strtod(s, nullptr);
+    return (v > 0.0) ? v : 0.0;
+}();
+
 // FLEXAIDDS_CONTACTS_EPOCH: O(1) clear of FA->contacts (avoids a
 // MAX_ATOM_NUMBER-sized memset every eval; see below). Default off —
 // legacy memset-every-call behavior is unchanged unless this is set.
@@ -440,7 +455,8 @@ double vcfunction(FA_Global* FA,VC_Global* VC,atom* atoms,resid* residue, std::v
 			// below still use the raw r^-12 Ewall.
 			double Ewall_fitness;
 			if (FA->soft_wall_cutoff > 0.0f) {
-				Ewall_fitness = soft_wall_fitness_energy(d, cr, FA->soft_wall_cutoff);
+				Ewall_fitness = soft_wall_fitness_energy(
+				    d, cr, FA->soft_wall_cutoff, wal_coercive, wal_stiff);
 			} else {
 				Ewall_fitness = (Ewall > WAL_CONTACT_CAP) ? WAL_CONTACT_CAP : Ewall;
 			}
