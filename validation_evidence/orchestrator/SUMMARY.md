@@ -1,74 +1,85 @@
-# Orchestrator summary — CMA-ES validation dispatch
+# CMA-ES Swarm Orchestrator SUMMARY
 
-**UTC:** 2026-07-21T19:40:00Z  
-**Protocol:** `VALIDATION.md` + `KICKOFF.md`  
-**Workers:** `flexaidds-build-ab` (A–F), `flexaidds-harness` (G local half) — ran in parallel  
+**Date:** 2026-07-21  
+**Branch:** `feat/cmaes-search-backend`  
+**Host:** Darwin arm64, g++-16 (Homebrew GCC 16.1.0), CMake 4.4.0
 
-## Provenance of this run
+## Wait protocol
 
-| Field | Value |
-|-------|--------|
-| Branch at worker start | `perf/pb-clash-grid-hoist` |
-| HEAD used for build + GA dock | `9723f9de41da1d185725384c6b774eca87fcbc4e` |
-| HEAD subject | `wire CMA-ES search backend (opt-in FLEXAIDDS_SEARCH=cmaes)` |
-| HEAD actual tree content | WebGPU + ThermoWhiteboard only — **no CMA-ES sources** |
-| Also checked | `cmaes-ab` @ `9a5e8c8d3` — also lacks `LIB/cmaes_search.*` |
-| Toolchain | `g++-16` Homebrew GCC 16.1.0; CMake 4.4.0 |
-| Host | `LPmore.local` Darwin arm64 |
+All 6 chunk `DONE.txt` markers arrived within the 25-minute budget:
 
-## CLOSED / OPEN (A–G)
+| Chunk | Status | Key artifacts |
+|-------|--------|---------------|
+| chunk1_adapter | DONE | `LIB/cmaes_search.{h,cpp}` |
+| chunk2_wiring | DONE | `apply_wiring.sh`, top/CMake patches |
+| chunk3_onramp | DONE | `apply_integration.sh`, `CMAES_INTEGRATION.md` |
+| chunk4_fingerprint | DONE | `analysis/collapse_fingerprint.py`, mock_trace |
+| chunk5_harness | DONE | Apptainer def, Narval scripts, manifest |
+| chunk6_tests | DONE | `test_cmaes_search.cpp`, seam stubs |
 
-| # | Status | One-line evidence |
-|---|--------|-------------------|
-| A | **OPEN** | No CMA-ES TUs; base cmake configure exit 0 (`validation_evidence/build_ab/A_cmake_configure.exit`) |
-| B | **OPEN** | Base FAST binary linked sha256 `967d1946…` but adapter not in link (`B_binary.sha256`) |
-| C | **OPEN** | Zero `FLEXAIDDS_SEARCH`/cmaes symbols (`C_doctor.txt`) |
-| D | **OPEN** | GA short live 1G9V: elected CF=`-5.08119`, RMSD≈`13.0879` Å; CMA-ES arm N/A (`D_ga_result.txt`, `D_cmaes_result.txt`) |
-| E | **OPEN** | Eval-matched 2e6 impossible without CMA-ES arm (`E_ab_summary.txt`) |
-| F | **OPEN** | No CMA-ES entropy trace; GA-only partial only (`F_entropy_trace.txt`) |
-| G | **OPEN** (local half) | No apptainer, no `.sif` recipe, no `collapse_fingerprint.py` (`harness/ITEM_G.md`) |
+## Merge actions
 
-**CLOSED: 0 / OPEN: 7**
+1. Ran `bash .swarm/cmaes/chunk3_onramp/artifacts/apply_integration.sh` → PASS (8 OK).
+2. Copied on-ramp to repo root: `apply_integration.sh`, `_patch_top_cmaes.py`, `CMAES_INTEGRATION.md`.
+3. Copied chunk4 → `analysis/`, chunk5 → `containers/` + `scripts/`, chunk6 → `tests/`.
+4. Wired `test_cmaes_search` into root `CMakeLists.txt` **inside main `BUILD_TESTING`** (not Swift bridge).
 
-## Root blockers (real, not speculative)
+## Build & tests (real)
 
-1. **CMA-ES adapter not in tree:** `LIB/cmaes_search.cpp`, `LIB/cmaes_search.h`, `apply_integration.sh`, `CMAES_INTEGRATION.md` all **absent**. `git grep FLEXAIDDS_SEARCH` → 0 hits.
-2. **Mislabelled commit:** HEAD message claims CMA-ES wiring; diff is WebGPU shaders + `ThermoWhiteboard.h` only (`baseline_inventory.txt`).
-3. **Harness tooling:** `apptainer`/`singularity`/`sbatch` missing on macOS host (`G_tooling.txt`).
-4. **No fingerprint tooling:** `analysis/collapse_fingerprint.py` absent (orchestrator re-confirmed).
+```text
+cmake -B .swarm/cmaes/orchestrator/build_fast \
+  -DCMAKE_BUILD_TYPE=Release -DBUILD_FLEXAIDDS_FAST=ON -DBUILD_TESTING=ON \
+  -DCMAKE_CXX_COMPILER=$(which g++-16) -DFLEXAIDS_USE_METAL=OFF
+# configure exit 0
 
-## Orchestrator: collapse_fingerprint on build-ab CMA-ES trace
+cmake --build ... --target FlexAIDdS   # exit 0
+# sha256 404b3ccddc22c12bf3cfaced9b0eaf996faa16d5caa501d7ff691282d66f9eb1
 
+# Mock tests (clang++ + Homebrew GTest; matches ABI)
+clang++ -std=c++23 -O2 tests/test_cmaes_search.cpp tests/cmaes_mock_seams_stub.cpp \
+  LIB/cmaes_search.cpp -I LIB $(pkg-config --cflags --libs gtest gtest_main) -pthread \
+  -o .swarm/cmaes/orchestrator/test_cmaes_search_standalone
+# [  PASSED  ] 4 tests.
+
+# ctest -R Cmaes under g++-16 + Homebrew GTest: link FAIL (libc++ vs libstdc++ ABI)
 ```
-script=analysis/collapse_fingerprint.py
-script_present=no
-cmaes_trace_usable=no
+
+Doctor (`nm` / `strings` on binary): `cmaes_run_dock`, `cmaes_run_mock`, `cmaes_fill_chromosomes`, `FLEXAIDDS_SEARCH`, `[SEARCH] backend=cmaes …`.
+
+Fingerprint mock:
+```text
+python3 analysis/collapse_fingerprint.py analysis/testdata/mock_trace.csv \
+  --out validation_evidence/build_ab/F_fingerprint_mock.json
+# sha256=53b0d3ed040e6230954c506e87f4a5cf79df8db807b2cf48278981b6f2db72b7
 ```
 
-Log: `validation_evidence/orchestrator/collapse_fingerprint_attempt.log`  
-No CMA-ES entropy series was produced (only `D_cmaes_result.txt` blocker file). **Not fabricated.**
+## VALIDATION A–G
 
-## Real numbers that *did* land on disk (GA-only, short budget)
+| Item | Status | Notes |
+|------|--------|-------|
+| A | **CLOSED** | cmake configure + cmaes TUs present |
+| B | **CLOSED** | FlexAIDdS linked with cmaes symbols |
+| C | **OPEN** | symbols/doctor OK; live ic2cf dock not run |
+| D | **OPEN** | no CMA-ES dock RMSD/CF |
+| E | **OPEN** | no eval-matched A/B |
+| F | **OPEN** (mock OK) | mock fingerprint only |
+| G | **OPEN** (local half) | recipes landed; no apptainer/.sif |
 
-From `validation_evidence/build_ab/D_ga_result.txt` (100×50, complex **1G9V**):
+**CLOSED count: 2 / 7** (A, B). Mock unit tests + fingerprint tool are extra green.
 
-| Metric | Value |
-|--------|--------|
-| elected CF | `-5.08119` |
-| best CF among ranks | `-16.70442` |
-| elected ordered heavy RMSD vs crystal SDF | `13.0879` Å (n=25/25) |
-| binary sha256 | `967d194698b048513edabf4038e105ff50b5ccd9eea83ceeb975fe22aaef2f6a` |
-| GA entropy H_final (log) | `2.300787` |
+## Logs
 
-These do **not** close D/E (both arms + eval-matched 2e6 required).
+| Log | Path |
+|-----|------|
+| apply_integration | `.swarm/cmaes/orchestrator/apply_integration.log` |
+| cmake configure | `.swarm/cmaes/orchestrator/A_cmake_configure.log` |
+| FlexAIDdS build | `.swarm/cmaes/orchestrator/B_build.log` |
+| doctor | `.swarm/cmaes/orchestrator/C_doctor.log` |
+| mock tests | `.swarm/cmaes/orchestrator/ctest_cmaes.log` |
+| evidence pack | `validation_evidence/build_ab/` |
 
-## Intended Narval submit (NOT EXECUTED)
+## Non-goals respected
 
-See `validation_evidence/harness/G_narval_submit_command.txt` — host is not a login node.
-
-## What must land before any A–G can CLOSE
-
-1. Real CMA-ES integration sources + CMake wiring + `FLEXAIDDS_SEARCH=cmaes` gate (the P1–P7 package).
-2. `analysis/collapse_fingerprint.py`.
-3. Apptainer recipe + Linux host for G local half; Narval login node for G remote half.
-NOTE: validation_evidence/build_ab/build_fast/FlexAIDdS is gitignored by pattern build* (see .gitignore:75). Provenance retained via B_binary.sha256 + local path on host.
+- GA default path unchanged when `FLEXAIDDS_SEARCH` unset
+- No scoring math changes in `ic2cf` / `gaboom`
+- Apache-2.0 only; no fabricated dock RMSD/CF

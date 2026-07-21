@@ -1,96 +1,24 @@
-=== CMA-ES file inventory ===
-gls: cannot access 'LIB/cmaes_search.cpp': No such file or directory
-gls: cannot access 'LIB/cmaes_search.h': No such file or directory
-gls: cannot access 'apply_integration.sh': No such file or directory
-gls: cannot access 'CMAES_INTEGRATION.md': No such file or directory
+=== cmaes sources present ===
+-rwxr-xr-x 1 lp.more staff 11204 Jul 21 16:02 [0m[01;35mapply_integration.sh[0m
+-rw-r--r-- 1 lp.more staff 10986 Jul 21 16:02 CMAES_INTEGRATION.md
+-rw-r--r-- 1 lp.more staff 31471 Jul 21 16:02 [04;93mLIB/cmaes_search.cpp[0m
+-rw-r--r-- 1 lp.more staff  5209 Jul 21 16:02 [04;33mLIB/cmaes_search.h[0m
 
-=== git branches with cmaes ===
-  cmaes-ab
+=== LIB/CMakeLists.txt cmaes line ===
+44:    cmaes_search.cpp
 
-=== rg FLEXAIDDS_SEARCH / cmaes_search ===
-python/flexaidds/optimize.py:4:using scipy's differential_evolution (CMA-ES compatible). Users supply a
-hits_FLEXAIDDS_SEARCH=0
-hits_cmaes_search=1
+=== top.cpp markers ===
+25:// FLEXAIDDS_CMAES_INCLUDE_BEGIN
+27:// FLEXAIDDS_CMAES_INCLUDE_END
+2648:			// FLEXAIDDS_CMAES_BEGIN
+2649:			// Opt-in CMA-ES search backend. Env FLEXAIDDS_SEARCH=cmaes (or CMAES)
+2655:			const char* flexaidds_search = std::getenv("FLEXAIDDS_SEARCH");
+2683:				if (const char* me = std::getenv("FLEXAIDDS_CMAES_MAX_EVALS")) {
+2705:				const int cma_rc = cmaes_run_dock(
+2709:					fprintf(stderr, "ERROR: cmaes_run_dock failed (rc=%d status=%d)\n",
+2776:			// FLEXAIDDS_CMAES_END
 
-=== BUILD_FLEXAIDDS_FAST / FlexAIDdS target ===
-CMakeLists.txt:73:            "FlexAIDdS requires AppleClang ≥ 16 (Xcode 16) for C++23/26.")
-CMakeLists.txt:78:            "FlexAIDdS requires C++26 — found GCC "
-CMakeLists.txt:84:            "FlexAIDdS requires MSVC ≥ 19.40 (Visual Studio 2022 17.10+) for C++26 — "
-CMakeLists.txt:201:# FlexAIDdS target): the engine resolves MC_st0r5.2_6.dat / AMINO.def /
-CMakeLists.txt:276:# FlexAIDdS left undefined symbols under LTO / multi-target links (Homebrew
-CMakeLists.txt:289:    target_sources(flexaid_core PRIVATE ${_FLEXAIDS_METAL_BRIDGES})
-CMakeLists.txt:452:# Enabled by default. Same LTO + native optimisation as FlexAIDdS.
-CMakeLists.txt:652:# ─── FlexAIDdS: ultra-fast docking executable ─────────────────────────────
-CMakeLists.txt:657:option(BUILD_FLEXAIDDS_FAST "Build ultra-fast FlexAIDdS docking executable (LTO + native)" ON)
-CMakeLists.txt:663:    if(BUILD_FLEXAIDDS_FAST)
-CMakeLists.txt:664:        message(STATUS "Disabling BUILD_FLEXAIDDS_FAST (incompatible with coverage/sanitizer flags)")
-CMakeLists.txt:666:    set(BUILD_FLEXAIDDS_FAST OFF CACHE BOOL "Build ultra-fast FlexAIDdS docking executable (LTO + native)" FORCE)
-CMakeLists.txt:668:if(BUILD_FLEXAIDDS_FAST)
-CMakeLists.txt:669:    add_executable(FlexAIDdS LIB/top.cpp)
-CMakeLists.txt:670:    target_link_libraries(FlexAIDdS PRIVATE flexaid_core)
-CMakeLists.txt:672:        target_link_libraries(FlexAIDdS PRIVATE m)
-CMakeLists.txt:676:        target_compile_options(FlexAIDdS PRIVATE /O2 /GL /DNDEBUG /MT)
-CMakeLists.txt:677:        target_link_options(FlexAIDdS PRIVATE /LTCG)
-CMakeLists.txt:678:        target_compile_definitions(FlexAIDdS PRIVATE
-CMakeLists.txt:681:        target_compile_options(FlexAIDdS PRIVATE -O3 -ffast-math -fno-finite-math-only -flto -DNDEBUG
-CMakeLists.txt:685:            target_compile_options(FlexAIDdS PRIVATE -march=native)
-CMakeLists.txt:686:            target_link_options(FlexAIDdS PRIVATE -flto -s)
-CMakeLists.txt:688:            target_link_options(FlexAIDdS PRIVATE -flto)
-CMakeLists.txt:696:        # IPO on flexaid_core only — FlexAIDdS links with -flto. Do not enable IPO on
-CMakeLists.txt:699:        set_property(TARGET FlexAIDdS PROPERTY INTERPROCEDURAL_OPTIMIZATION ON)
-CMakeLists.txt:704:    flexaids_configure_simd(FlexAIDdS)
-CMakeLists.txt:706:    target_link_libraries(FlexAIDdS PRIVATE Eigen3::Eigen)
-CMakeLists.txt:709:    # next to the binary. FlexAID/FlexAIDdS resolve these relative to the
-CMakeLists.txt:712:    add_custom_command(TARGET FlexAIDdS POST_BUILD
-CMakeLists.txt:713:        COMMENT "Staging FlexAIDdS runtime data files next to the binary"
-CMakeLists.txt:718:            "$<TARGET_FILE_DIR:FlexAIDdS>")
-CMakeLists.txt:720:    target_compile_definitions(FlexAIDdS PRIVATE FLEXAIDS_HAS_EIGEN)
-CMakeLists.txt:723:        target_link_libraries(FlexAIDdS PRIVATE OpenMP::OpenMP_CXX)
-CMakeLists.txt:727:        target_compile_definitions(FlexAIDdS PRIVATE FLEXAIDS_USE_ROCM)
-CMakeLists.txt:728:        target_include_directories(FlexAIDdS PRIVATE ${hip_INCLUDE_DIRS})
-CMakeLists.txt:729:        target_link_libraries(FlexAIDdS PRIVATE hip::host hip::device)
-CMakeLists.txt:730:        set_property(TARGET FlexAIDdS PROPERTY HIP_ARCHITECTURES ${FLEXAIDS_HIP_ARCHITECTURES})
-CMakeLists.txt:736:        message(STATUS "FlexAIDdS: Metal GPU acceleration via flexaid_core")
-CMakeLists.txt:739:    message(STATUS "FlexAIDdS fast executable enabled")
-CMakeLists.txt:893:option(ENABLE_CAVITY_DETECT_CLI "Build native FlexAIDdS cavity detector CLI" ON)
+=== cmake configure exit ===
+0
 
-=== ValidateSources ===
-cmake/ValidateSources.cmake
-CMakeLists.txt:2848:include(cmake/ValidateSources.cmake)
-cmake/ValidateSources.cmake:1:# ValidateSources.cmake
-cmake/ValidateSources.cmake:18:#   include(cmake/ValidateSources.cmake)
-cmake/FlexAIDOptions.cmake:20:#   cmake/ValidateSources.cmake (already used)
-=== cmaes-ab branch content ===
-9a5e8c8d3 wire CMA-ES search backend (opt-in FLEXAIDDS_SEARCH=cmaes)
-66f154b17 feat: FLEXAIDDS_WAL_COERCIVE + FLEXAIDDS_WAL_STIFF flags (uncap soft-core wal)
-2a60f6513 docs: P0 claim-contract report (fixed denominator + PB fixtures; 97.65%->0.00% on seeded oracle)
-410e63cb7 P0: fixed 85-target denominator + PB0.6.5 fixtures gate (claim contract)
-52f83bd2c docs: CI record for cleft-sort gate — CleftCavityTests 16/16 pass (incl DeterministicOrdering); ga_core link failure pre-existing/unrelated
-
-
-=== diff current vs cmaes-ab for CMAES files ===
-fatal: path 'LIB/cmaes_search.cpp' does not exist in 'cmaes-ab'
-
-  cmaes-ab
-  feat/wal-coercive
-  main
-* perf/pb-clash-grid-hoist
-  remotes/origin/HEAD -> origin/main
-  remotes/origin/main
-=== show 2a60f65 ===
-2a60f6513 docs: P0 claim-contract report (fixed denominator + PB fixtures; 97.65%->0.00% on seeded oracle)
- P0_CLAIM_CONTRACT_REPORT.md | 44 ++++++++++++++++++++++++++++++++++++++++++++
- 1 file changed, 44 insertions(+)
-
-=== files at 2a60f65 matching cmaes ===
-
-=== post-configure notes ===
-FLEXAIDS_USE_METAL=OFF required (metallib missing beside Xcode metal)
-cmake_exit=
-cmaes_search.cpp present? NO
-ValidateSources: included from CMakeLists; no CMA-ES TUs in tree to validate
-no cmaes in CMakeCache
-27:-- FlexAIDdS: ARM NEON enabled (baseline aarch64 ISA)
-28:-- FlexAIDdS fast executable enabled
-37:-- WARNING: FlexAIDdS source guard found orphaned source files!
-71:-- Build files have been written to: /Users/lp.more/Projects/FlexAIDdS/validation_evidence/build_ab/build_fast
+Registered test_cmaes_search: yes (see A_cmake_configure.log)

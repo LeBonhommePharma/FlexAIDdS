@@ -1,0 +1,240 @@
+# =============================================================================
+# flexaidds_locked_x86_64.def — Locked-arch Apptainer recipe (VALIDATION G)
+#
+# Copyright 2026 Le Bonhomme Pharma
+# SPDX-License-Identifier: Apache-2.0
+#
+# Purpose
+#   Reproducible x86_64 Linux image with a pinned GCC≥14 + CMake≥3.28 toolchain
+#   and a BUILD_FLEXAIDDS_FAST FlexAIDdS binary for GA-vs-CMA-ES A/B docks.
+#
+# Source policy
+#   NO git clone and NO host-absolute paths inside this definition.
+#   Bind-mount the FlexAIDdS source tree at /opt/flexaidds/src when building:
+#
+#     apptainer build \
+#       --bind "${FLEXAIDDS_SRC:?}:/opt/flexaidds/src" \
+#       flexaidds_locked_x86_64.sif \
+#       flexaidds_locked_x86_64.def
+#
+#   Runtime: bind the repo (or data) again for inputs/outputs — see README_HARNESS.md.
+# =============================================================================
+
+Bootstrap: docker
+From: ubuntu:22.04
+
+%labels
+    Author LeBonhommePharma
+    Org "Le Bonhomme Pharma / FlexAIDdS"
+    Version 1.0.0
+    arch x86_64
+    toolchain "locked"
+    Description "Locked x86_64 FlexAIDdS FAST toolchain + binary (CMA-ES harness)"
+    License Apache-2.0
+    Maintainer "Le Bonhomme Pharma"
+    BuildHint "apptainer build --bind SRC:/opt/flexaidds/src flexaidds_locked_x86_64.sif flexaidds_locked_x86_64.def"
+
+%help
+    FlexAIDdS locked-arch (x86_64) container for VALIDATION G / CMA-ES A/B.
+
+    Build (source MUST be bind-mounted; no clone in %post):
+      export FLEXAIDDS_SRC=/path/to/FlexAIDdS   # host checkout only
+      apptainer build --bind "${FLEXAIDDS_SRC}:/opt/flexaidds/src" \
+          flexaidds_locked_x86_64.sif flexaidds_locked_x86_64.def
+
+    Smoke dock (bind repo as /work):
+      apptainer exec --bind "${FLEXAIDDS_SRC}:/work" flexaidds_locked_x86_64.sif \
+        FlexAIDdS \
+          /work/benchmarks/astex_diverse/astex_diverse/1G9V/1G9V_apo.pdb \
+          /work/benchmarks/astex_repro/smoke/1G9V/1G9V_dockin.sdf \
+          -c /work/path/to/dock_config.json \
+          -o /work/out/smoke_1G9V
+
+%environment
+    # Locked runtime paths (relative to container; no host absolutes).
+    export FLEXAIDDS_ROOT=/opt/flexaidds
+    export FLEXAIDDS_BIN=/opt/flexaidds/bin
+    export FLEXAIDDS_DATA_DIR=/opt/flexaidds/data
+    export PATH="/opt/flexaidds/bin:/usr/local/bin:${PATH}"
+    # Benchmark defaults (overridable by the job script / host env).
+    export FLEXAIDDS_NO_SEC="${FLEXAIDDS_NO_SEC:-1}"
+    export FLEXAID_SEED="${FLEXAID_SEED:-12345}"
+    export FLEXAIDDS_RESTARTS="${FLEXAIDDS_RESTARTS:-1}"
+    # Prefer the container toolchain when shells re-enter the image.
+    export CC="${CC:-gcc-14}"
+    export CXX="${CXX:-g++-14}"
+    export LC_ALL=C.UTF-8
+    export LANG=C.UTF-8
+
+%post
+    set -euo pipefail
+    export DEBIAN_FRONTEND=noninteractive
+    export LC_ALL=C.UTF-8
+    export LANG=C.UTF-8
+
+    echo "=== [locked-arch] base packages ==="
+    apt-get update -y
+    apt-get install -y --no-install-recommends \
+        ca-certificates \
+        curl \
+        gnupg \
+        software-properties-common \
+        wget \
+        git \
+        build-essential \
+        ninja-build \
+        pkg-config \
+        python3 \
+        python3-pip \
+        python3-venv \
+        libeigen3-dev \
+        libssl-dev \
+        libgomp1 \
+        zlib1g-dev \
+        file \
+        binutils
+
+    echo "=== [locked-arch] GCC ≥ 14 (ubuntu-toolchain-r) ==="
+    # Ubuntu 22.04 ships g++-12; project requires GCC ≥ 14 for C++26.
+    add-apt-repository -y ppa:ubuntu-toolchain-r/test
+    apt-get update -y
+    apt-get install -y --no-install-recommends g++-14 gcc-14 gfortran-14
+    update-alternatives --install /usr/bin/gcc  gcc  /usr/bin/gcc-14  140
+    update-alternatives --install /usr/bin/g++  g++  /usr/bin/g++-14  140
+    update-alternatives --install /usr/bin/gcov gcov /usr/bin/gcov-14 140
+    g++ --version | head -1
+
+    echo "=== [locked-arch] CMake ≥ 3.28 (Kitware apt) ==="
+    # Distro cmake on 22.04 is too old for cmake_minimum_required(3.28).
+    wget -qO - https://apt.kitware.com/keys/kitware-archive-latest.asc \
+        | gpg --dearmor -o /usr/share/keyrings/kitware-archive-keyring.gpg
+    echo "deb [signed-by=/usr/share/keyrings/kitware-archive-keyring.gpg] https://apt.kitware.com/ubuntu/ jammy main" \
+        > /etc/apt/sources.list.d/kitware.list
+    apt-get update -y
+    apt-get install -y --no-install-recommends cmake
+    cmake --version | head -1
+
+    # Layout inside the image
+    mkdir -p /opt/flexaidds/bin /opt/flexaidds/data /opt/flexaidds/src /opt/flexaidds/build
+    mkdir -p /opt/flexaidds/share
+
+    # Record locked toolchain provenance for G evidence packs.
+    {
+        echo "arch=$(uname -m)"
+        echo "expected_arch=x86_64"
+        echo "os=ubuntu:22.04"
+        echo "gcc=$(gcc -dumpfullversion 2>/dev/null || gcc -dumpversion)"
+        echo "gxx=$(g++ -dumpfullversion 2>/dev/null || g++ -dumpversion)"
+        echo "cmake=$(cmake --version | head -1)"
+        echo "python3=$(python3 --version 2>&1)"
+        echo "build_flexaidds_fast=ON"
+        echo "toolchain=locked"
+        date -u +'built_utc=%Y-%m-%dT%H:%M:%SZ'
+    } > /opt/flexaidds/share/TOOLCHAIN.txt
+
+    # ------------------------------------------------------------------
+    # Build FlexAIDdS when sources are bind-mounted at /opt/flexaidds/src
+    # (apptainer build --bind HOST_SRC:/opt/flexaidds/src …)
+    # No %files copy and no git clone — bind-mount only.
+    # ------------------------------------------------------------------
+    if [ -f /opt/flexaidds/src/CMakeLists.txt ]; then
+        echo "=== [locked-arch] sources found at /opt/flexaidds/src — building FAST ==="
+        SRC=/opt/flexaidds/src
+        BLD=/opt/flexaidds/build
+        rm -rf "${BLD}"
+        mkdir -p "${BLD}"
+
+        # Disable Metal/CUDA; keep OpenMP + Eigen; FAST LTO binary.
+        # -march=native is selected by CMake on Linux for FAST — build the
+        # SIF on an x86_64 host in the same CPU family as the run nodes
+        # (e.g. build on Narval login / matching cluster node).
+        cmake -S "${SRC}" -B "${BLD}" \
+            -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_C_COMPILER=gcc-14 \
+            -DCMAKE_CXX_COMPILER=g++-14 \
+            -DBUILD_FLEXAIDDS_FAST=ON \
+            -DBUILD_TESTING=OFF \
+            -DBUILD_PYTHON_BINDINGS=OFF \
+            -DFLEXAIDS_USE_METAL=OFF \
+            -DFLEXAIDS_USE_CUDA=OFF \
+            -DFLEXAIDS_USE_OPENMP=ON \
+            -DFLEXAIDS_USE_EIGEN=ON
+
+        cmake --build "${BLD}" --target FlexAIDdS -j "$(nproc)"
+
+        if [ ! -x "${BLD}/FlexAIDdS" ]; then
+            echo "ERROR: FlexAIDdS binary missing after build" >&2
+            exit 1
+        fi
+
+        install -m 0755 "${BLD}/FlexAIDdS" /opt/flexaidds/bin/FlexAIDdS
+
+        # Stage energy matrix + atom-type defs next to the binary AND under data/.
+        for f in MC_st0r5.2_6.dat AMINO.def NUCLEOTIDES.def; do
+            if [ -f "${BLD}/${f}" ]; then
+                cp -f "${BLD}/${f}" /opt/flexaidds/data/
+                cp -f "${BLD}/${f}" /opt/flexaidds/bin/
+            elif [ -f "${SRC}/${f}" ]; then
+                cp -f "${SRC}/${f}" /opt/flexaidds/data/
+                cp -f "${SRC}/${f}" /opt/flexaidds/bin/
+            else
+                echo "WARNING: missing runtime data file: ${f}" >&2
+            fi
+        done
+
+        # Drop the heavy build tree to keep the SIF lean (binary + data remain).
+        rm -rf "${BLD}"
+        # Do not bake host sources into the image layers beyond what was compiled.
+        # /opt/flexaidds/src is a bind mount at build time; leave an empty mount point.
+        find /opt/flexaidds/src -mindepth 1 -delete 2>/dev/null || true
+
+        {
+            echo "binary=/opt/flexaidds/bin/FlexAIDdS"
+            sha256sum /opt/flexaidds/bin/FlexAIDdS | awk '{print "sha256="$1}'
+            file /opt/flexaidds/bin/FlexAIDdS
+            ls -la /opt/flexaidds/data/ || true
+        } | tee /opt/flexaidds/share/BINARY.txt
+
+        echo "=== [locked-arch] FAST build OK ==="
+    else
+        echo "=== [locked-arch] NO sources at /opt/flexaidds/src ==="
+        echo "    Toolchain-only image. Rebuild with:"
+        echo "      apptainer build --bind HOST_SRC:/opt/flexaidds/src \\"
+        echo "          flexaidds_locked_x86_64.sif flexaidds_locked_x86_64.def"
+        # Still produce a stub so %runscript fails clearly rather than silently.
+        cat > /opt/flexaidds/bin/FlexAIDdS << 'EOF'
+#!/bin/sh
+echo "FlexAIDdS binary not baked into this SIF." >&2
+echo "Rebuild with --bind HOST_SRC:/opt/flexaidds/src (see README_HARNESS.md)." >&2
+exit 127
+EOF
+        chmod 0755 /opt/flexaidds/bin/FlexAIDdS
+    fi
+
+    # Lightweight cleanup
+    apt-get clean
+    rm -rf /var/lib/apt/lists/*
+
+%runscript
+    # Default entry: FlexAIDdS with all args. Env already sets FLEXAIDDS_DATA_DIR.
+    exec /opt/flexaidds/bin/FlexAIDdS "$@"
+
+%startscript
+    exec /opt/flexaidds/bin/FlexAIDdS "$@"
+
+%test
+    set -e
+    uname -m | grep -E 'x86_64|amd64'
+    test -f /opt/flexaidds/share/TOOLCHAIN.txt
+    command -v g++ >/dev/null
+    g++ -dumpversion | awk -F. '{ exit !($1>=14) }'
+    command -v cmake >/dev/null
+    command -v python3 >/dev/null
+    test -x /opt/flexaidds/bin/FlexAIDdS
+    # If a real binary was baked, check ELF arch.
+    if file /opt/flexaidds/bin/FlexAIDdS | grep -qi 'ELF'; then
+        file /opt/flexaidds/bin/FlexAIDdS | grep -E 'x86-64|x86_64|AMD64'
+        test -f /opt/flexaidds/data/MC_st0r5.2_6.dat
+    fi
+    echo "locked-arch self-test OK"

@@ -1,0 +1,101 @@
+# CMakeLists_cmaes.fragment — register CMA-ES mock unit tests (chunk 6)
+#
+# Paste / include this block inside the existing `if(BUILD_TESTING)` section of
+# the root CMakeLists.txt (or `include()` it after GoogleTest is available).
+#
+# Design goals:
+#   - Link ONLY cmaes_search.cpp + seam stubs + GTest
+#   - Do NOT link flexaid_core / full FlexAID
+#   - Discover individual GoogleTest cases via gtest_discover_tests
+#
+# Source path assumptions after landing chunks 1+6 into the tree:
+#   LIB/cmaes_search.cpp
+#   LIB/cmaes_search.h
+#   tests/test_cmaes_search.cpp
+#   tests/cmaes_mock_seams_stub.cpp
+#
+# While sources still live under .swarm staging, override:
+#   -DCMAES_SEARCH_SRC=...
+#   -DCMAES_TEST_SRC=...
+#   -DCMAES_SEAM_STUB_SRC=...
+
+include(GoogleTest)
+
+# Resolve sources (prefer tree-root paths; allow swarm staging overrides)
+if(NOT DEFINED CMAES_SEARCH_SRC)
+  set(CMAES_SEARCH_SRC "${CMAKE_SOURCE_DIR}/LIB/cmaes_search.cpp")
+endif()
+if(NOT DEFINED CMAES_TEST_SRC)
+  set(CMAES_TEST_SRC "${CMAKE_SOURCE_DIR}/tests/test_cmaes_search.cpp")
+endif()
+if(NOT DEFINED CMAES_SEAM_STUB_SRC)
+  set(CMAES_SEAM_STUB_SRC "${CMAKE_SOURCE_DIR}/tests/cmaes_mock_seams_stub.cpp")
+endif()
+
+# Optional: when chunk1 adds FLEXAIDS_CMAES_MOCK_ONLY (#if-out of cmaes_run_dock
+# and seam calls), set CMAES_USE_MOCK_ONLY=ON and drop the stub TU.
+option(CMAES_USE_MOCK_ONLY
+  "Compile cmaes_search.cpp with FLEXAIDS_CMAES_MOCK_ONLY (no seam stubs)"
+  OFF)
+
+set(_cmaes_test_sources
+  ${CMAES_TEST_SRC}
+  ${CMAES_SEARCH_SRC}
+)
+if(NOT CMAES_USE_MOCK_ONLY)
+  list(APPEND _cmaes_test_sources ${CMAES_SEAM_STUB_SRC})
+endif()
+
+add_executable(test_cmaes_search ${_cmaes_test_sources})
+
+target_include_directories(test_cmaes_search PRIVATE
+  ${CMAKE_SOURCE_DIR}/LIB
+)
+
+target_link_libraries(test_cmaes_search PRIVATE GTest::gtest_main)
+
+if(MSVC)
+  target_compile_options(test_cmaes_search PRIVATE /O2 /EHsc)
+  target_compile_definitions(test_cmaes_search PRIVATE
+    _CRT_SECURE_NO_WARNINGS
+    _USE_MATH_DEFINES
+    NOMINMAX
+  )
+else()
+  target_compile_options(test_cmaes_search PRIVATE -O2)
+endif()
+
+# C++23 matches chunk1 adapter compile gate (VALIDATION.md P1).
+set_target_properties(test_cmaes_search PROPERTIES
+  CXX_STANDARD 23
+  CXX_STANDARD_REQUIRED ON
+  CXX_EXTENSIONS OFF
+)
+
+if(CMAES_USE_MOCK_ONLY)
+  target_compile_definitions(test_cmaes_search PRIVATE FLEXAIDS_CMAES_MOCK_ONLY)
+endif()
+
+# Do not pull OpenMP / Eigen / Metal — mock path is pure std:: + small jacobi.
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+  target_link_libraries(test_cmaes_search PRIVATE m)
+endif()
+
+# Discover TEST(CmaesSearch, ...) cases as individual CTest entries.
+# DISCOVERY_MODE PRE_TEST avoids cross-compile / host-run issues.
+gtest_discover_tests(test_cmaes_search
+  TEST_PREFIX "CmaesSearch."
+  DISCOVERY_MODE PRE_TEST
+  PROPERTIES
+    LABELS "cmaes;unit;mock"
+    TIMEOUT 120
+)
+
+# Also keep a single aggregated test name for simple `ctest -R CmaesSearchMock`.
+add_test(NAME CmaesSearchMock COMMAND test_cmaes_search)
+set_tests_properties(CmaesSearchMock PROPERTIES
+  LABELS "cmaes;unit;mock"
+  TIMEOUT 120
+)
+
+message(STATUS "Registered test_cmaes_search (mock CMA-ES unit tests)")

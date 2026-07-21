@@ -1,0 +1,82 @@
+{
+  "schema_version": "1.0",
+  "name": "cmaes_ab_1G9V_2e6",
+  "description": "Eval-matched GA vs CMA-ES A/B on one Astex smoke complex (VALIDATION E/G harness).",
+  "license": "Apache-2.0",
+  "purpose": "locked-arch harness + eval-matched 2e6 budget",
+  "complex": {
+    "code": "1G9V",
+    "dataset": "astex_diverse",
+    "receptor": "benchmarks/astex_diverse/astex_diverse/1G9V/1G9V_apo.pdb",
+    "ligand": "benchmarks/astex_repro/smoke/1G9V/1G9V_dockin.sdf",
+    "reference_ligand": "benchmarks/astex_diverse/astex_diverse/1G9V/1G9V_ligand.sdf"
+  },
+  "eval_budget": {
+    "target_evals": 2000000,
+    "population": 1000,
+    "generations": 2000,
+    "formula": "population * generations",
+    "note": "λ=1000×2000 gen ≡ pop-1000×2000 gen = 2e6 evals per arm; keep generations fixed and scale population only for high-DoF (METHODOLOGY / AGENTS DoF budget rule)."
+  },
+  "arms": [
+    {
+      "id": "ga",
+      "search": "ga",
+      "array_task_id": 0,
+      "env": {
+        "FLEXAIDDS_SEARCH": "ga"
+      },
+      "output_prefix": "out/cmaes_ab/1G9V/ga_2e6"
+    },
+    {
+      "id": "cmaes",
+      "search": "cmaes",
+      "array_task_id": 1,
+      "env": {
+        "FLEXAIDDS_SEARCH": "cmaes"
+      },
+      "output_prefix": "out/cmaes_ab/1G9V/cmaes_2e6"
+    }
+  ],
+  "environment": {
+    "FLEXAID_SEED": "12345",
+    "FLEXAIDDS_NO_SEC": "1",
+    "FLEXAIDDS_RESTARTS": "1",
+    "FLEXAIDDS_DATA_DIR": "/opt/flexaidds/data",
+    "OMP_NUM_THREADS": "4"
+  },
+  "ga_config": {
+    "num_chromosomes": 1000,
+    "num_generations": 2000,
+    "crossover_rate": 0.8,
+    "mutation_rate": 0.03,
+    "n_elite": 1,
+    "fitness_model": "SMFREE",
+    "pose_seed_enabled": false,
+    "seed_fraction": 0
+  },
+  "container": {
+    "arch": "x86_64",
+    "toolchain": "locked",
+    "def": "containers/flexaidds_locked_x86_64.def",
+    "sif": "containers/flexaidds_locked_x86_64.sif",
+    "binary": "/opt/flexaidds/bin/FlexAIDdS",
+    "bind_src_mount": "/opt/flexaidds/src",
+    "bind_work_mount": "/work"
+  },
+  "slurm": {
+    "job_name": "flexaidds-cmaes-ab",
+    "account_env": "CC_ACCOUNT",
+    "array": "0-1",
+    "time": "08:00:00",
+    "cpus_per_task": 8,
+    "mem": "16G",
+    "script": "scripts/narval_cmaes_array.sh"
+  },
+  "metrics": [
+    "elected_rmsd_A",
+    "elected_cf",
+    "best_cf",
+    "total_evals"
+  ]
+}

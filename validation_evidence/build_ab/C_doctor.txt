@@ -1,12 +1,31 @@
-=== env FLEXAIDDS_SEARCH ===
-(unset in environment)
+=== binary ===
+-rwxr-xr-x 1 lp.more staff 2701864 Jul 21 16:05 [0m[01;35m.swarm/cmaes/orchestrator/build_fast/FlexAIDdS[0m
+404b3ccddc22c12bf3cfaced9b0eaf996faa16d5caa501d7ff691282d66f9eb1  .swarm/cmaes/orchestrator/build_fast/FlexAIDdS
 
-=== binary help / search flags ===
-base path is '/Users/lp.more/Projects/FlexAIDdS/validation_evidence/build_ab/build_fast'
+=== nm cmaes symbols (defined) ===
+00000001000626a4 T __Z14cmaes_run_dockP16FA_Global_structP16GB_Global_structP16VC_Global_structP17genelimits_structP11atom_structP14residue_structP17grid_point_structPF6cf_strS0_S4_S8_SA_SC_iPdERKN14flexaids_cmaes11CmaesConfigEPNSH_11CmaesResultEPSt6vectorINSH_18EntropyTraceSampleESaISO_EE
+0000000100062484 T __Z14cmaes_run_mockiRKN14flexaids_cmaes11CmaesConfigEPNS_11CmaesResultEPSt6vectorINS_18EntropyTraceSampleESaIS6_EE
+000000010005e2c0 T __Z20cmaes_mock_objectivePKdi
+000000010005f250 T __Z21cmaes_write_trace_csvRKNSt7__cxx1112basic_stringIcSt11char_traitsIcESaIcEEERKSt6vectorIN14flexaids_cmaes18EntropyTraceSampleESaIS9_EE
+000000010005e320 T __Z22cmaes_fill_chromosomesRKN14flexaids_cmaes11CmaesResultEiP17chromosome_structiP11gene_struct
+
+=== strings FLEXAIDDS_SEARCH / cmaes ===
+FLEXAIDDS_SEARCH
+ERROR: cmaes_run_dock failed (rc=%d status=%d)
+[SEARCH] backend=cmaes evals=%d n_snap=%d best_cf=%.6f lambda=%d max_evals=%lld
+[SEARCH] cmaes entropy trace: %s
+[cmaes_run_dock] exception: %s
+[cmaes_run_dock] unknown exception
+@*Z14cmaes_run_mockiRKN14flexaids_cmaes11CmaesConfigEPNS_11CmaesResultEPSt6vectorINS_18EntropyTraceSampleESaIS6_EEEUlPKdE_
+*Z14cmaes_run_dockP16FA_Global_structP16GB_Global_structP16VC_Global_structP17genelimits_structP11atom_structP14residue_structP17grid_point_structPF6cf_strS0_S4_S8_SA_SC_iPdERKN14flexaids_cmaes11CmaesConfigEPNSH_11CmaesResultEPSt6vectorINSH_18EntropyTraceSampleESaISO_EEEUlPKdE_
+*Z14cmaes_run_dockP16FA_Global_structP16GB_Global_structP16VC_Global_structP17genelimits_structP11atom_structP14residue_structP17grid_point_structPF6cf_strS0_S4_S8_SA_SC_iPdERKN14flexaids_cmaes11CmaesConfigEPNSH_11CmaesResultEPSt6vectorINSH_18EntropyTraceSampleESaISO_EEEUlvE_
+
+=== help / usage path (may exit non-zero without args) ===
+base path is '/Users/lp.more/Projects/FlexAIDdS/.swarm/cmaes/orchestrator/build_fast'
 FlexAIDdS — Entropy-driven molecular docking
 
 Usage:
-  validation_evidence/build_ab/build_fast/FlexAIDdS <receptor> <ligand> [options]
+  .swarm/cmaes/orchestrator/build_fast/FlexAIDdS <receptor> <ligand> [options]
 
   Files can be in any order. FlexAIDdS auto-detects which is
   the receptor and which is the ligand from file content.
@@ -15,11 +34,12 @@ Usage:
   Ligand:   .mol2, .sdf, .mol, .pdb (small molecule)
             or a SMILES string directly on the command line
 
-  validation_evidence/build_ab/build_fast/FlexAIDdS --legacy <config.inp> <ga.inp> <output_prefix>
+  .swarm/cmaes/orchestrator/build_fast/FlexAIDdS --legacy <config.inp> <ga.inp> <output_prefix>
 
 Options:
   -c, --config <file.json>   JSON config (overrides defaults)
   -o, --output <prefix>      Output prefix (default: flexaid_out)
+  --backend <cpu|metal|webgpu>  GPU compute backend for CF scoring (default: cpu)
   --rigid                    Fast rigid-body screening
   --screen                   NRGRank coarse-grained screening mode
   --screen-top-n <N>         Return top N from coarse screen (default: 100)
@@ -41,24 +61,12 @@ Multi-model receptor (NMR / cryo-EM / MD):
   Each model is used as a separate receptor conformer.
   Results are combined via Boltzmann ensemble consensus
   with reference entropy correction.
-
-Examples:
-  validation_evidence/build_ab/build_fast/FlexAIDdS receptor.pdb ligand.mol2
-  validation_evidence/build_ab/build_fast/FlexAIDdS ligand.sdf receptor.pdb          # order doesn't matter
-  validation_evidence/build_ab/build_fast/FlexAIDdS receptor.pdb 'c1ccccc1' --rigid  # SMILES input
-  validation_evidence/build_ab/build_fast/FlexAIDdS protein.pdb drug.sdf -c config.json -o results
-  validation_evidence/build_ab/build_fast/FlexAIDdS receptor.pdb library.sdf          # multi-molecule SDF
-  validation_evidence/build_ab/build_fast/FlexAIDdS receptor.pdb ligands/             # directory of files
-  validation_evidence/build_ab/build_fast/FlexAIDdS receptor.pdb compounds.smi        # SMILES file
-  validation_evidence/build_ab/build_fast/FlexAIDdS nmr_ensemble.pdb ligand.mol2      # NMR ensemble
-
-Defaults: T=300K, full flexibility, Voronoi contacts, intramolecular ON.
----
-base path is '/Users/lp.more/Projects/FlexAIDdS/validation_evidence/build_ab/build_fast'
+FlexAID Error: FlexAID terminated with exit code 1
+base path is '/Users/lp.more/Projects/FlexAIDdS/.swarm/cmaes/orchestrator/build_fast'
 FlexAIDdS — Entropy-driven molecular docking
 
 Usage:
-  validation_evidence/build_ab/build_fast/FlexAIDdS <receptor> <ligand> [options]
+  .swarm/cmaes/orchestrator/build_fast/FlexAIDdS <receptor> <ligand> [options]
 
   Files can be in any order. FlexAIDdS auto-detects which is
   the receptor and which is the ligand from file content.
@@ -67,46 +75,9 @@ Usage:
   Ligand:   .mol2, .sdf, .mol, .pdb (small molecule)
             or a SMILES string directly on the command line
 
-  validation_evidence/build_ab/build_fast/FlexAIDdS --legacy <config.inp> <ga.inp> <output_prefix>
+  .swarm/cmaes/orchestrator/build_fast/FlexAIDdS --legacy <config.inp> <ga.inp> <output_prefix>
 
 Options:
   -c, --config <file.json>   JSON config (overrides defaults)
   -o, --output <prefix>      Output prefix (default: flexaid_out)
-  --rigid                    Fast rigid-body screening
-  --screen                   NRGRank coarse-grained screening mode
-  --screen-top-n <N>         Return top N from coarse screen (default: 100)
-  --parallel-dock            Grid-decomposed parallel docking (ParallelDock)
-  --parallel-dock-regions <N> Number of spatial regions (default: 128)
-  --campaign                 Parallel virtual screening campaign mode
-  --folded                   Skip NATURaL chain growth
-  --legacy                   Legacy 3-file input mode
-  --benchmark <set>          Run benchmark dataset (astex, casf2016, etc.)
-  -h, --help                 Show this help
-
-Library input (virtual screening):
-  Ligand can be a multi-molecule SDF, a SMILES file (.smi),
-  or a directory of MOL2/SDF files. Each ligand is docked
-  independently against the receptor.
-
-Multi-model receptor (NMR / cryo-EM / MD):
-  PDB with MODEL/ENDMDL records or multi-model CIF.
-  Each model is used as a separate receptor conformer.
-  Results are combined via Boltzmann ensemble consensus
-  with reference entropy correction.
-
-
-=== nm symbols matching cmaes / FLEXAIDDS_SEARCH ===
-NO cmaes symbols in global defined
-NO undefined cmaes symbols
-
-=== source code hits ===
-FLEXAIDDS_SEARCH code hits (excl validation_evidence):
-cmaes_search hits:
-VALIDATION.md:24:| P1 | Adapter compiles against the **real** engine headers (C++23) | `g++ -std=c++23 -Wall -Wextra -c LIB/cmaes_search.cpp` → exit 0, **0 warn / 0 err** |
-
-=== --search CLI ===
-
-=== C conclusion ===
-STATUS: OPEN
-blocker=FLEXAIDDS_SEARCH has 0 code hits; no cmaes_search TUs; binary has no cmaes symbols
-note: GA arm DID exercise real ic2cf path (live dock D) but item C requires CMA-ES adapter on real ic2cf
+  --backend <cpu|metal|webgpu>  GPU compute backend for CF scoring (default: cpu)

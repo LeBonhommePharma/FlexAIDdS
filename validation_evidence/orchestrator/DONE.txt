@@ -1,0 +1,26 @@
+ORCHESTRATOR DONE — CMA-ES swarm merge
+timestamp=2026-07-21
+branch=feat/cmaes-search-backend
+
+CHUNKS: 6/6 DONE (no timeout blockers)
+
+VALIDATION A-G:
+  CLOSED: 2 (A, B)
+  OPEN:   5 (C, D, E, F-real, G-sif)
+  EXTRA:  mock tests 4/4 PASS; mock fingerprint PASS; harness recipes landed
+
+BINARY:
+  .swarm/cmaes/orchestrator/build_fast/FlexAIDdS
+  sha256=404b3ccddc22c12bf3cfaced9b0eaf996faa16d5caa501d7ff691282d66f9eb1
+  cmaes symbols: cmaes_run_dock, cmaes_run_mock, cmaes_fill_chromosomes present
+
+BLOCKERS (OPEN):
+  C — live dock against real ic2cf / snapshot fill not executed
+  D — no CMA-ES elected RMSD + CF on Astex complex
+  E — no eval-matched 2e6 A/B
+  F — no real-surface entropy trace (mock only)
+  G — apptainer MISSING on Darwin; no .sif build
+
+COMMIT_GATE: satisfied (linkable FlexAIDdS with cmaes symbols + mock tests pass)
+
+See SUMMARY.md for full detail.

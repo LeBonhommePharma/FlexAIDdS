@@ -1,0 +1,3 @@
+ctest -R Cmaes with g++-16 + Homebrew GTest: FAIL (ABI libc++ vs libstdc++)
+See B_test_cmaes_build.log for link errors
+Standalone clang++ + pkg-config gtest: PASS (log: ctest_cmaes.log)

@@ -33,18 +33,37 @@ CMake Warning at CMakeLists.txt:41 (message):
 -- benchmark_datasets: ARM NEON enabled (baseline aarch64 ISA)
 -- Benchmark dataset runner enabled — build target: benchmark_datasets
 -- FlexAID 2015 benchmark targets: flexaid_bench_astex_diverse, flexaid_bench_astex_non_native, flexaid_bench_hap2
+-- test_statmech: ARM NEON enabled (baseline aarch64 ISA)
+-- test_thermo_ledger: ARM NEON enabled (baseline aarch64 ISA)
+-- test_hardware_dispatch: ARM NEON enabled (baseline aarch64 ISA)
+-- test_hardware_detect_dispatch: ARM NEON enabled (baseline aarch64 ISA)
+-- test_unified_dispatch: ARM NEON enabled (baseline aarch64 ISA)
+-- test_tencom_diff: ARM NEON enabled (baseline aarch64 ISA)
+-- test_cavity_detect: ARM NEON enabled (baseline aarch64 ISA)
+-- test_mif_grid: ARM NEON enabled (baseline aarch64 ISA)
+-- test_binding_residues: ARM NEON enabled (baseline aarch64 ISA)
+-- test_parallel_dock: ARM NEON enabled (baseline aarch64 ISA)
+-- test_mol2_sdf_reader: ARM NEON enabled (baseline aarch64 ISA)
+-- test_tencom_entropy_diff: ARM NEON enabled (baseline aarch64 ISA)
+-- test_grand_partition: ARM NEON enabled (baseline aarch64 ISA)
+-- test_target_server: ARM NEON enabled (baseline aarch64 ISA)
+-- test_multi_site_gpf: ARM NEON enabled (baseline aarch64 ISA)
+-- Unit tests enabled — build targets: test_statmech, test_hardware_dispatch, test_tencom_diff, test_target_validation, test_grand_partition, test_target_server, test_multi_site_gpf
+-- test_soa_conversion: ARM NEON enabled (baseline aarch64 ISA)
+-- test_natural: ARM NEON enabled (baseline aarch64 ISA)
+-- test_nascent_chain_scheduler: ARM NEON enabled (baseline aarch64 ISA)
+-- Registered test_cmaes_search (mock CMA-ES unit tests)
+-- Unit tests enabled — build targets: test_statmech, test_hardware_dispatch, test_tencom_diff, test_target_validation, test_grand_partition, test_target_server, test_ga_context, test_nascent_chain_scheduler, test_process_ligand, test_cmaes_search
 -- Running FlexAID source validator (scripts/validate_sources.py)...
 -- WARNING: FlexAIDdS source guard found orphaned source files!
 
-  Scanned : 436 files
-  Orphans : 7
+  Scanned : 439 files
+  Orphans : 6
   (Ignored: 123 via build_sources.ignore)
 
 Orphaned files (these exist on disk but are not referenced in any build file):
 
   Compilable units (highest priority):
-    • src/backends/webgpu/webgpu_eval.cpp
-      Suggested fix: Add 'webgpu_eval.cpp' to the appropriate CMakeLists.txt or setup.py
     • tools/metal_microbench_enhanced.cpp
       Suggested fix: Add 'metal_microbench_enhanced.cpp' to the appropriate CMakeLists.txt or setup.py
 
@@ -52,7 +71,7 @@ Orphaned files (these exist on disk but are not referenced in any build file):
     • LIB/PoseBust/PdbCoords.h
     • LIB/ProtocolConfig.h
     • LIB/RunReceipt.h
-    • LIB/ThermoWhiteboard.h
+    • LIB/cmaes_search.h
     • src/backends/webgpu/webgpu_eval.h
       (Consider adding the corresponding .cpp/.cu to the module's CMakeLists.txt first)
 
@@ -66,7 +85,6 @@ To temporarily allow an orphan (migration / legacy):
   echo 'src/backends/webgpu/webgpu_eval.h' >> build_sources.ignore
 
 This is a non-fatal warning. Switch to --strict (or STRICT in CMake) once clean.
--- Configuring done (15.1s)
--- Generating done (0.1s)
--- Build files have been written to: /Users/lp.more/Projects/FlexAIDdS/validation_evidence/build_ab/build_fast
-NOTE: final successful configure used -DFLEXAIDS_USE_METAL=OFF
+-- Configuring done (5.6s)
+-- Generating done (0.3s)
+-- Build files have been written to: /Users/lp.more/Projects/FlexAIDdS/.swarm/cmaes/orchestrator/build_fast

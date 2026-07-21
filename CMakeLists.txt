@@ -2648,7 +2648,38 @@ flexaids_add_unit_test(test_protocol_config
     flexaids_configure_msvc_test(test_process_ligand)
     add_test(NAME ProcessLigandTests COMMAND test_process_ligand)
 
-    message(STATUS "Unit tests enabled — build targets: test_statmech, test_hardware_dispatch, test_tencom_diff, test_target_validation, test_grand_partition, test_target_server, test_ga_context, test_nascent_chain_scheduler, test_process_ligand")
+    # ── CMA-ES mock unit tests (opt-in search backend; no flexaid_core) ───────
+    # Links only LIB/cmaes_search.cpp + tests/cmaes_mock_seams_stub.cpp + GTest.
+    # See also tests/CMakeLists_cmaes.fragment for the standalone registration recipe.
+    if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/LIB/cmaes_search.cpp"
+       AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_cmaes_search.cpp")
+        include(GoogleTest)
+        set(_cmaes_test_sources
+            tests/test_cmaes_search.cpp
+            LIB/cmaes_search.cpp
+        )
+        if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/cmaes_mock_seams_stub.cpp")
+            list(APPEND _cmaes_test_sources tests/cmaes_mock_seams_stub.cpp)
+        endif()
+        add_executable(test_cmaes_search ${_cmaes_test_sources})
+        target_include_directories(test_cmaes_search PRIVATE ${CMAKE_SOURCE_DIR}/LIB)
+        target_link_libraries(test_cmaes_search PRIVATE GTest::gtest_main)
+        set_target_properties(test_cmaes_search PROPERTIES
+            CXX_STANDARD 23 CXX_STANDARD_REQUIRED ON CXX_EXTENSIONS OFF)
+        if(NOT MSVC)
+            target_compile_options(test_cmaes_search PRIVATE -O2)
+        endif()
+        gtest_discover_tests(test_cmaes_search
+            TEST_PREFIX "CmaesSearch."
+            DISCOVERY_MODE PRE_TEST
+            PROPERTIES LABELS "cmaes;unit;mock" TIMEOUT 120)
+        add_test(NAME CmaesSearchMock COMMAND test_cmaes_search)
+        set_tests_properties(CmaesSearchMock PROPERTIES LABELS "cmaes;unit;mock" TIMEOUT 120)
+        message(STATUS "Registered test_cmaes_search (mock CMA-ES unit tests)")
+        unset(_cmaes_test_sources)
+    endif()
+
+    message(STATUS "Unit tests enabled — build targets: test_statmech, test_hardware_dispatch, test_tencom_diff, test_target_validation, test_grand_partition, test_target_server, test_ga_context, test_nascent_chain_scheduler, test_process_ligand, test_cmaes_search")
 endif()
 
 # ─── Swift Bridge (macOS only) ────────────────────────────────────────────
