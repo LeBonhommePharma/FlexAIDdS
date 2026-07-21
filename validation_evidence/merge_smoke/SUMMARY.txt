@@ -1,0 +1,23 @@
+branch=merge/cmaes-into-main
+tip=41c9ed627
+base_main=528df320c
+conflict=CMakeLists.txt RESOLVED (both test_cmaes_search + test_coarse_screen)
+cmake_configure=OK (Registered test_cmaes_search + test_coarse_screen)
+FlexAIDdS_build=OK
+FlexAIDdS_sha256=1a79f6ae7b58085e6e92b3524ada9acdc9abf86eecb634988689fed5b19d56f4
+cmaes_symbols=cmaes_run_dock,cmaes_run_mock present
+test_cmaes_search_gpp16_gtest=FAIL (libstdc++ vs libc++ Homebrew GTest ABI)
+test_cmaes_search_clang_standalone=PASS 5/5
+PR_ready=yes
+
+# --- post-merge pin (2026-07-21, after PR #296 landed on main) ---
+# Full canary handoff: validation_evidence/merge_smoke/CANARY_HANDOFF.md
+merged_main_head=7c901a687
+active_pin_engine=build/FlexAIDdS
+active_pin_engine_sha256=8b85ba77a936d24e6b896598fc906a677d82cc018e90ae9a5559d7d0ffee535f
+active_pin_runner=build/benchmark_datasets
+active_pin_runner_sha256=d21af08953df778c01a7d3b482e7f6a418b4451d8077a75f88536a2dc2661d07
+active_pin_gates=FLEXAIDDS_PB_CLASH_GRID_HOIST,FLEXAIDDS_WAL_COERCIVE
+pin_machine_files=~/.flexaidds/active_build.json,~/.flexaidds_env
+relaunch_owner=Claude Science
+grok_scope=pin+handoff_only
