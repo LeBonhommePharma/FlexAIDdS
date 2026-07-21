@@ -679,6 +679,7 @@ struct FA_Global_struct{
 	float             H_rep_bound_complex;    // tENCoM of bound complex (written per pose)
 	float             H_rep_receptor_ref;     // receptor-only tENCoM reference
 	float             H_rep_ligand_ref;       // ligand-free tENCoM reference
+	float             thermo_report_T;        // reporting-only T for I_ES/regime/CF_r2s (default 21.0 = kT_ISMB, ISMB 2017 calibration); independent of thermo_T_eff, never feeds G_bind/CF scoring
 	ThermoResult      thermo_result;          // populated after GA when enabled
 	ThermodynamicEngine* thermo_engine;       // nullptr when disabled
 };

@@ -257,6 +257,16 @@ struct DockingResult {
     float thermo_D_vib{0.0f};        // H_rep_bound (raw bound-complex tENCoM entropy)
     float thermo_compensation{0.0f};
     bool  has_thermo{false};
+    // Reporting-only whiteboard diagnostics (parsed from [THERMO2]); computed
+    // at thermo_report_T (default 21.0 = kT_ISMB, ISMB 2017), independent of
+    // thermo_T_eff above — never affects thermo_G_bind/CF scoring/GA
+    // selection. Whiteboard convention: T=21 defines the LEFT-hand quantity
+    // (report_T is that constant, echoed for "(T=21)" labelling downstream).
+    float thermo_report_T{21.0f};
+    float thermo_I_ES{0.0f};
+    float thermo_CF_r2s{0.0f};
+    std::string thermo_binding_regime{};
+    bool  has_thermo2{false};
     // Mid-run H_shannon snapshots at fixed generations (causality test).
     // Populated when FLEXAIDDS_THERMO=1. NaN when that generation was not
     // reached (early exit) or when thermo is disabled.

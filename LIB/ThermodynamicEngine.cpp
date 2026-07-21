@@ -1,4 +1,5 @@
 #include "ThermodynamicEngine.h"
+#include "ThermoWhiteboard.h"
 #include <cmath>
 #include <numeric>
 #include <algorithm>
@@ -70,7 +71,10 @@ ThermoResult ThermodynamicEngine::compute(
         const std::vector<std::vector<float>>& final_pop,
         const std::vector<float>& cf_values,
         float H_rep_bound,
-        int n_heavy_atoms) const {
+        int n_heavy_atoms,
+        float report_T,
+        float sum_LS,
+        float sum_TT3) const {
 
     ThermoResult r{};
     float n_heavy    = (n_heavy_atoms > 0) ? static_cast<float>(n_heavy_atoms) : 1.0f;
@@ -114,5 +118,22 @@ ThermoResult ThermodynamicEngine::compute(
     r.G_bind         = T_eff_ * r.H_vct_raw - r.TdS_shannon + r.TdS_vib;  // ΔG = T·ΔH_vct − TΔS_conf + TΔS_vib: entropy costs (+TdS), vib gain stabilizes (−)
     float denom      = r.TdS_shannon + r.TdS_vib;
     r.compensation   = (std::abs(denom) > 1e-6f) ? r.H_vct / denom : 0.0f;
+
+    // ── Reporting-only whiteboard diagnostics (Eq. 1, 3, 6) ──
+    // ΔH = Σ P_i·CF_i, ΔS = −Σ P_i·ln P_i over Boltzmann pose weights at
+    // report_T (default kT_ISMB=21.0, ISMB 2017 calibration) — independent
+    // of T_eff_/G_bind above, so this cannot alter CF scoring or GA
+    // selection. Per the whiteboard, T=21 defines the LEFT-hand quantity
+    // (ΔG₂₁/P_i(T=21)); report_T is echoed on the result for that labelling.
+    {
+        using namespace thermo_whiteboard;
+        r.report_T = report_T;
+        std::vector<float> P = boltzmann_probabilities(cf_values, report_T);
+        float dH  = weighted_mean(P, cf_values);
+        float dS  = shannon_entropy_nats(P);
+        r.I_ES            = enthalpy_entropy_index(dH, report_T * dS);
+        r.CF_r2s           = cf_r2s(r.H_vct_raw, sum_LS, sum_TT3);
+        r.binding_regime  = classify_binding_regime(dH, dS, report_T);
+    }
     return r;
 }
