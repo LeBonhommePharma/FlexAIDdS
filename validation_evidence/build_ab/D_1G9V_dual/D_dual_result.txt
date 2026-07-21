@@ -1,0 +1,6 @@
+=== D dual-arm 1G9V SHORT (eval-matched 5000) ===
+GA:    CF=-37.11991  RMSD=10.1141
+CMAES: CF=643.054551  RMSD=12.1294  evals=5000
+delta_CF (CMAES-GA) = 680.174461
+delta_RMSD (CMAES-GA) = 2.0153
+note=same scoring path (ic2cf); search operator only differs

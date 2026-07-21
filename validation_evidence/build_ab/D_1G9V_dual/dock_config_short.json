@@ -1,0 +1,63 @@
+{
+  "flexibility": {
+    "force_rigid": false,
+    "intramolecular": true,
+    "permeability": 0.9,
+    "soft_wall_cutoff": 0.4,
+    "receptor_rotamer_prep": true
+  },
+  "optimization": {
+    "grid_spacing": 0.375
+  },
+  "scoring": {
+    "normalize_area": true,
+    "vct_dist_weight_r0": 7,
+    "vct_normalize_contacts": false,
+    "hbond_enabled": true,
+    "hbond_search_enabled": true,
+    "hbond_rank_enabled": false,
+    "metal_coord_enabled": true,
+    "sas_weight": 1.0,
+    "tencom_weight": 0.0,
+    "vct_entropy_weight": 0
+  },
+  "seeding": {
+    "mif_enabled": true
+  },
+  "reference_ligand": {
+    "file": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1G9V/1G9V_ligand.sdf",
+    "seed_fraction": 0,
+    "pose_seed_enabled": false,
+    "k_nearest": 10
+  },
+  "coarse_init": {
+    "enabled": true,
+    "grid_step": 3.0,
+    "n_seeds": 25,
+    "n_orientations": 16
+  },
+  "thermodynamics": {
+    "temperature": 300,
+    "clustering_algorithm": "CF",
+    "cluster_rmsd": 2.0
+  },
+  "ga": {
+    "num_chromosomes": 100,
+    "num_generations": 50,
+    "crossover_rate": 0.8,
+    "mutation_rate": 0.03,
+    "diversity_monitoring": true,
+    "adaptive": true,
+    "adaptive_k": [
+      0.95,
+      0.1,
+      1.0,
+      0.05
+    ],
+    "sharing_alpha": 4,
+    "boom_inject_interval": 100,
+    "boom_inject_fraction": 0,
+    "n_elite": 1,
+    "fitness_model": "SMFREE"
+  }
+}

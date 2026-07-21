@@ -1,0 +1,20 @@
+STATUS=PASS real_ic2cf
+complex=1G9V
+backend=cmaes
+evals=3000
+n_snap=32
+best_cf=457.536781
+lambda=40
+max_evals=3000
+num_genes_DOF=10
+entropy_trace=validation_evidence/build_ab/C_cmaes_smoke/cmaes_smoke_cmaes_entropy.csv
+pose=validation_evidence/build_ab/C_cmaes_smoke/cmaes_smoke_0.pdb
+rmsd_ordered_heavy=17.5547
+n_pose=4581 n_xtal=25 n_used=25
+exit=0
+no_exception=true
+snapshot_filled=true
+
+# ligand-only RMSD recompute
+rmsd_ordered_heavy=12.9405
+n_pose=25 n_xtal=25 n_used=25

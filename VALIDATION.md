@@ -31,27 +31,26 @@ You (a Claude Code subagent) close the OPEN items below. Rules, non-negotiable:
 
 ## OPEN / CLOSED — host validation dispatch (2026-07-21)
 
-**Workers:** CMA-ES swarm chunks 1–6 + orchestrator merge.  
-**Integration branch:** `feat/cmaes-search-backend`.  
-**Orchestrator build dir:** `.swarm/cmaes/orchestrator/build_fast`.  
-**Toolchain:** `g++-16` (Homebrew GCC 16.1.0), CMake 4.4.0, host Darwin arm64.  
-**Orchestrator summary:** `.swarm/cmaes/orchestrator/SUMMARY.md` (also `validation_evidence/orchestrator/SUMMARY.md`).
+**Workers:** CMA-ES swarm chunks 1–6 + orchestrator merge + live 1G9V docks.  
+**Integration branch:** `feat/cmaes-search-backend` @ `7a9e06de1`.  
+**Binary:** `.swarm/cmaes/orchestrator/build_fast/FlexAIDdS` sha256 `404b3ccddc22c12bf3cfaced9b0eaf996faa16d5caa501d7ff691282d66f9eb1`.  
+**Toolchain:** `g++-16` (Homebrew GCC 16.1.0), CMake 4.4.0, host Darwin arm64 (`LPmore.local`).  
+**Complex:** Astex **1G9V** (`1G9V_apo.pdb` + `1G9V_dockin.sdf`).
 
 | # | Acceptance item | Owner | Status | Evidence (path + one-line proof) |
 |---|---|---|---|---|
-| A | `cmake configure` accepts the wiring AND `cmake/ValidateSources.cmake` passes with the new TUs | orchestrator | **CLOSED** | exit 0 (`validation_evidence/build_ab/A_cmake_configure.exit`); `cmaes_search.cpp` in `LIB/CMakeLists.txt` FLEXAID_CORE_SOURCES; log `validation_evidence/build_ab/A_cmake_configure.log`; inventory `A_inventory.txt` |
-| B | Full engine + adapter **link** into one `FlexAIDdS` binary (`BUILD_FLEXAIDDS_FAST`) | orchestrator | **CLOSED** | link OK; binary `.swarm/cmaes/orchestrator/build_fast/FlexAIDdS` sha256 `404b3ccddc22c12bf3cfaced9b0eaf996faa16d5caa501d7ff691282d66f9eb1` (`B_binary.sha256`); build log `B_build.log` shows `cmaes_search.cpp.o` + `Built target FlexAIDdS` |
-| C | Adapter runs against the **real `ic2cf`** (not the mock) with no exception; snapshot fills for a real ligand's DOF count | orchestrator | **OPEN** | Doctor proves symbols linked (`C_doctor.txt`: `cmaes_run_dock`, `FLEXAIDDS_SEARCH`, `[SEARCH] backend=cmaes`); mock path 4/4 PASS (`ctest_cmaes.log` via clang++ standalone). **No live dock yet** — real-ic2cf snapshot fill not exercised |
-| D | Live dock on one Astex complex: elected-pose **RMSD** + best **CF**, both GA and CMA-ES arms | orchestrator | **OPEN** | Prior GA short 1G9V only (`D_ga_result.txt`); CMA-ES arm not run (`D_cmaes_result.txt`); no fabricated RMSD |
-| E | GA-vs-CMA-ES **A/B**, eval-matched at 2e6 | orchestrator | **OPEN** | Manifest ready (`scripts/cmaes_ab_manifest.json` budget 1000×2000=2e6 validated); both arms not executed — ΔRMSD/ΔCF = N/A |
-| F | Real entropy trace on the **rugged** real surface | orchestrator | **OPEN** (mock CLOSED) | Mock collapse fingerprint PASS → `validation_evidence/build_ab/F_fingerprint_mock.json` sha256 `53b0d3ed…db72b7`; real CMA-ES dock trace still absent |
-| G | Locked-arch `.sif` builds; in-container dock; collapse fingerprint INVARIANT | orchestrator | **OPEN** (local half advanced) | Recipe + scripts landed (`containers/flexaidds_locked_x86_64.def`, `scripts/narval_cmaes_array.sh`, `G_harness_local.txt`); apptainer **MISSING** on Darwin; no `.sif`; mock fingerprint INVARIANT as F |
+| A | `cmake configure` accepts the wiring AND `cmake/ValidateSources.cmake` passes with the new TUs | orchestrator | **CLOSED** | exit 0 (`validation_evidence/build_ab/A_cmake_configure.exit`); `cmaes_search.cpp` in `LIB/CMakeLists.txt`; log `A_cmake_configure.log` |
+| B | Full engine + adapter **link** into one `FlexAIDdS` binary (`BUILD_FLEXAIDDS_FAST`) | orchestrator | **CLOSED** | sha256 `404b3ccddc22c12bf3cfaced9b0eaf996faa16d5caa501d7ff691282d66f9eb1` (`B_binary.sha256`); `B_build.log` Built target FlexAIDdS |
+| C | Adapter runs against the **real `ic2cf`** (not the mock) with no exception; snapshot fills for a real ligand's DOF count | build-ab | **CLOSED** | Live CMA-ES 1G9V: exit 0, DOF=10, n_snap=32, evals=3000, best_cf=`457.536781` — `validation_evidence/build_ab/C_cmaes_smoke/C_result.txt` + `run.log` + pose `cmaes_smoke_0.pdb` |
+| D | Live dock on one Astex complex: elected-pose **RMSD** + best **CF**, both GA and CMA-ES arms | build-ab | **CLOSED** | Short dual 5000 evals: **GA** CF=`-37.11991` RMSD=`10.1141` Å; **CMA-ES** CF=`643.054551` RMSD=`12.1294` Å — `D_1G9V_dual/D_dual_result.txt`, `D_ga_result.txt`, `D_cmaes_result.txt` |
+| E | GA-vs-CMA-ES **A/B**, eval-matched at 2e6 | build-ab | **CLOSED** | Claim budget 1000×2000=2e6 each: **GA** CF=`-68.55885` RMSD=`5.5590` Å (355 s); **CMA-ES** evals=`2000000` CF=`-20.18888` RMSD=`6.5245` Å (526 s); ΔCF=`+48.37`, ΔRMSD=`+0.965` (CMA−GA) — `E_ab_2e6/E_ab_summary.txt` (UTC 20:14:33–20:23:42) |
+| F | Real entropy trace on the **rugged** real surface | build-ab | **CLOSED** | CMA-ES 2e6 entropy CSV 2000 gens: best_cf end=`-20.188879`, F_end=`-24.307`, H_energy 0.056→6.908; fingerprint sha256 `6b051f0d5671cde37309f063fecf804712e6298eb662cfbd9bfe00560f3a0cac` — `F_trace/F_result.txt`, `F_cmaes_2e6_fingerprint.json`, trace `E_ab_2e6/cmaes/cmaes_2e6_cmaes_entropy.csv` (note: H_search flat at ln(λ) in current adapter) |
+| G | Locked-arch `.sif` builds; in-container dock; collapse fingerprint INVARIANT | harness | **OPEN** (local half advanced) | Recipes + manifest OK (`containers/flexaidds_locked_x86_64.def`, `scripts/narval_cmaes_array.sh`, `G_harness/G_manifest_validate.txt` = schema OK 1000×2000); apptainer/sbatch **MISSING** on Darwin — no `.sif` (`G_harness/G_local.txt`); Narval submit print-only |
 
 ## Bottom line
-Host integration **landed and linked**: `LIB/cmaes_search.{cpp,h}`, `FLEXAIDDS_SEARCH=cmaes` branch in `top.cpp`, `apply_integration.sh`, fingerprint tool, harness recipes, mock unit tests (4/4). Closed **A, B** with on-disk proof. **C** has binary/doctor proof but needs a live dock for snapshot fill. **D/E/F(real)/G(.sif)** remain OPEN — no fabricated RMSD/CF. Mock tests pass; `ctest` under g++-16 + Homebrew GTest is ABI-blocked (use clang++ standalone or rebuild GTest with g++-16).
+Host validation closed **A–F (6/7)** with real on-disk docks on **1G9V**. Eval-matched 2e6 A/B: GA finds better elected CF (`-68.56` vs CMA-ES `-20.19`) and slightly better RMSD (`5.56` vs `6.52` Å) under identical scoring. **G** remains OPEN until Apptainer builds a locked `.sif` on Linux/Narval.
 
-### Unblock checklist (remaining)
-1. ~~Land the CMA-ES package~~ (done on `feat/cmaes-search-backend`).
-2. ~~Land `analysis/collapse_fingerprint.py`~~ (done).
-3. Live CMA-ES short dock on 1G9V → close C/D/F; full 2e6 A/B → close E.
-4. Build `.sif` on Linux x86_64 (Apptainer); in-container smoke + fingerprint → close G.
+### Remaining (G only)
+1. On Linux x86_64 with Apptainer: `apptainer build … flexaidds_locked_x86_64.sif`
+2. In-container smoke dock + `collapse_fingerprint.py` on smoke/2e6 traces → cross-arch INVARIANT
+3. `sbatch --account=${CC_ACCOUNT} scripts/narval_cmaes_array.sh` on a login node
