@@ -78,6 +78,11 @@ struct ProtocolConfig {
     bool freqsel{false};              ///< FLEXAIDDS_FREQSEL
     double freqsel_alpha{12.0};       ///< FLEXAIDDS_FREQSEL_ALPHA
     float freqsel_rmsd{1.5f};         ///< FLEXAIDDS_FREQSEL_RMSD
+    /// Spread guard: if the rank-0 elected head is ≥ this many Å from every
+    /// other top-4 scored candidate, it is a spatially isolated false minimum
+    /// and is demoted (rank-1 elected instead).  15 Å catches the 1SG0 32 Å
+    /// false-min without disturbing tight-cluster cases.  Set 0 to disable.
+    float cluster_spread_max{15.0f};  ///< FLEXAIDDS_CLUSTER_SPREAD_MAX
     bool consensus_scorer{false};     ///< FLEXAIDDS_CONSENSUS_SCORER
     /// v135 crystal-blind basin recovery election (BCR-proxy). Default OFF —
     /// preserves claim ranking (AGENTS.md). Master switch enables:

@@ -1247,8 +1247,44 @@ static std::pair<std::string,float> select_pose_freq_gated_pooled(
             }
         }
 
-        // Winner = best-ranked after sort above.
-        freq_best = scored_chosen.front().second;
+        // ── Spread guard (FLEXAIDDS_CLUSTER_SPREAD_MAX, default 15 Å) ────────
+        // If the rank-0 head is ≥ cluster_spread_max Å from EVERY other top-4
+        // scored head it is a spatially isolated false minimum (e.g. 1SG0 where
+        // the lowest-CF cluster is at 32 Å while the near-native cluster ranks
+        // 2nd by only 1 CF unit).  Demote rank-0 and elect rank-1 instead.
+        // Uses the same load_pose_ligand_coords / pose_pose_rmsd helpers as the
+        // freqsel macro-cluster block below.  Set 0 to disable.
+        if (proto.cluster_spread_max > 0.0f && scored_chosen.size() >= 2) {
+            const auto* rank0 = scored_chosen.front().second;
+            std::vector<std::array<float,3>> xyz0; std::vector<std::string> el0;
+            load_pose_ligand_coords(rank0->path, xyz0, el0);
+            if (!xyz0.empty()) {
+                bool isolated = true;
+                const int n_peers = std::min(4, static_cast<int>(scored_chosen.size()) - 1);
+                for (int si = 1; si <= n_peers && isolated; ++si) {
+                    std::vector<std::array<float,3>> xyz_s; std::vector<std::string> el_s;
+                    load_pose_ligand_coords(scored_chosen[si].second->path, xyz_s, el_s);
+                    if (!xyz_s.empty() &&
+                        pose_pose_rmsd(xyz0, el0, xyz_s, el_s) < proto.cluster_spread_max)
+                        isolated = false;
+                }
+                if (isolated) {
+                    fprintf(stderr,
+                        "[SPREAD-GUARD] rank-0 isolated (≥%.1fÅ from all top-%d peers) "
+                        "→ demoted: CF=%.4f freq=%d path=%s\n",
+                        proto.cluster_spread_max, n_peers,
+                        rank0->cf, rank0->freq, rank0->path.c_str());
+                    scored_chosen.erase(scored_chosen.begin());
+                }
+            }
+        }
+
+        // Winner = best-ranked after sort above (after optional spread-guard demotion).
+        if (scored_chosen.empty()) {
+            freq_best = nullptr;
+        } else {
+            freq_best = scored_chosen.front().second;
+        }
 
         // ── v70: frequency-weighted macro-cluster selection ─────────────────
         // At small τ the composite collapses toward CF-rank-0, so a false
