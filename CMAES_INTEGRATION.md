@@ -137,7 +137,11 @@ On a **mock / single-basin** objective the energy histogram can collapse to one
 occupied bin of width matching the population, so:
 
 - `H_energy → ln(λ)` (e.g. `ln(64) ≈ 4.1589` for λ=64) is expected, not a bug.
-- `H_search` may drop from ~`+0.95` nats toward large negative values as the
+- `H_search` is a diversity metric (0.5×softmax CF weights + 0.5×per-dim allele
+  histogram Shannon). Rank-only log-weights are intentionally **not** used
+  (they are generation-invariant). On a collapsing population, `H_search`
+  decreases (e.g. host smoke Δ≈1 nats over a short CMA run). It may drop from
+  ~`+0.95` nats toward smaller positive values as the
   search distribution concentrates (`→ −63.5` nats in the sandbox mock).
 - `F → −2.4641` was the sandbox free-energy endpoint on that mock.
 
