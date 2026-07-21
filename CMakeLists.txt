@@ -2679,7 +2679,28 @@ flexaids_add_unit_test(test_protocol_config
         unset(_cmaes_test_sources)
     endif()
 
-    message(STATUS "Unit tests enabled — build targets: test_statmech, test_hardware_dispatch, test_tencom_diff, test_target_validation, test_grand_partition, test_target_server, test_ga_context, test_nascent_chain_scheduler, test_process_ligand, test_cmaes_search")
+    # test_coarse_screen — NRGRank CoarseScreen + TwoStageScreen unit tests
+    add_executable(test_coarse_screen
+        tests/test_coarse_screen.cpp
+        LIB/CoarseScreen.cpp
+        LIB/TwoStageScreen.cpp
+    )
+    target_include_directories(test_coarse_screen PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/LIB)
+    target_link_libraries(test_coarse_screen PRIVATE GTest::gtest_main)
+    if(MSVC)
+        target_compile_options(test_coarse_screen PRIVATE /O2)
+    else()
+        target_compile_options(test_coarse_screen PRIVATE -O2)
+    endif()
+    flexaids_configure_simd(test_coarse_screen)
+    if(FLEXAIDS_USE_OPENMP AND OpenMP_CXX_FOUND)
+        target_link_libraries(test_coarse_screen PRIVATE OpenMP::OpenMP_CXX)
+    endif()
+    flexaids_configure_msvc_test(test_coarse_screen)
+    add_test(NAME CoarseScreenTests COMMAND test_coarse_screen)
+
+    message(STATUS "Unit tests enabled — build targets: test_statmech, test_hardware_dispatch, test_tencom_diff, test_target_validation, test_grand_partition, test_target_server, test_ga_context, test_nascent_chain_scheduler, test_process_ligand, test_cmaes_search, test_coarse_screen")
 endif()
 
 # ─── Swift Bridge (macOS only) ────────────────────────────────────────────
@@ -2726,29 +2747,7 @@ if(BUILD_SWIFT_BRIDGE)
 
     message(STATUS "Swift bridge enabled — build target: FlexAIDCore (static library)")
 
-    # test_coarse_screen — NRGRank CoarseScreen + TwoStageScreen unit tests
-    # (gated with Swift bridge historically; keep behind same flag)
     if(BUILD_TESTING)
-    add_executable(test_coarse_screen
-        tests/test_coarse_screen.cpp
-        LIB/CoarseScreen.cpp
-        LIB/TwoStageScreen.cpp
-    )
-    target_include_directories(test_coarse_screen PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/LIB)
-    target_link_libraries(test_coarse_screen PRIVATE GTest::gtest_main)
-    if(MSVC)
-        target_compile_options(test_coarse_screen PRIVATE /O2)
-    else()
-        target_compile_options(test_coarse_screen PRIVATE -O2)
-    endif()
-    flexaids_configure_simd(test_coarse_screen)
-    if(FLEXAIDS_USE_OPENMP AND OpenMP_CXX_FOUND)
-        target_link_libraries(test_coarse_screen PRIVATE OpenMP::OpenMP_CXX)
-    endif()
-    flexaids_configure_msvc_test(test_coarse_screen)
-    add_test(NAME CoarseScreenTests COMMAND test_coarse_screen)
-
     # test_ligand_ring_flex — LigandRingFlex unified ring flexibility interface
     add_executable(test_ligand_ring_flex
         tests/test_ligand_ring_flex.cpp
