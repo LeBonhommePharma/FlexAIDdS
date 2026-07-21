@@ -1,0 +1,51 @@
+# G_narval_submit_command.txt — exact intended Narval sbatch (NOT EXECUTED)
+#
+# Host verification (G_tooling.txt):
+#   hostname=LPmore.local (macOS arm64)
+#   hostname_matches_narval=no
+#   cvmfs=no ; slurm_conf=absent ; sbatch=MISSING
+# Therefore: PRINT ONLY. Never sbatch from this Mac.
+#
+# NOTE: No repo-provided CMA-ES harness array script exists (G_manifest_validate.txt).
+# The command below is best-effort from KICKOFF.md + nextgen SlurmExecutor patterns.
+# Replace DEF/SIF paths once locked-arch assets land in the tree.
+
+STATUS=NOT_EXECUTED
+REASON=host_is_not_compute_canada_login_node
+
+# --- intended submit (single smoke job; array form also shown) ---
+
+# Single-job form (smoke complex 1G9V inside locked .sif):
+# sbatch \
+#   --job-name=flexaidds-g-smoke \
+#   --account=${CC_ACCOUNT:?set Alliance account} \
+#   --partition=cpubase_bycore_b4 \
+#   --time=02:00:00 \
+#   --cpus-per-task=8 \
+#   --mem=16G \
+#   --output=validation_evidence/harness/narval_smoke_%j.out \
+#   --error=validation_evidence/harness/narval_smoke_%j.err \
+#   --wrap='module load apptainer; \
+#     apptainer exec \
+#       --bind $SCRATCH/FlexAIDdS:/work \
+#       $SCRATCH/FlexAIDdS/validation_evidence/harness/flexaidds_locked_x86_64.sif \
+#       /opt/flexaidds/bin/FlexAIDdS --search cmaes --complex 1G9V \
+#         --ga-population 1000 --ga-generations 10 \
+#         --out /work/validation_evidence/harness/smoke_1G9V_narval'
+
+# Array form (placeholder — no manifest of complexes committed for G):
+# sbatch \
+#   --job-name=flexaidds-g-array \
+#   --account=${CC_ACCOUNT:?set Alliance account} \
+#   --array=0-0 \
+#   --partition=cpubase_bycore_b4 \
+#   --time=04:00:00 \
+#   --cpus-per-task=8 \
+#   --mem=16G \
+#   --output=validation_evidence/harness/narval_array_%A_%a.out \
+#   --error=validation_evidence/harness/narval_array_%A_%a.err \
+#   scripts/narval_cmaes_array.sh
+# (scripts/narval_cmaes_array.sh does NOT exist in this tree — OPEN until authored.)
+
+# One-line printable submit (best-effort, still NOT EXECUTED):
+sbatch --job-name=flexaidds-g-smoke --account=${CC_ACCOUNT} --time=02:00:00 --cpus-per-task=8 --mem=16G --output=validation_evidence/harness/narval_smoke_%j.out --wrap='module load apptainer; apptainer exec --bind $SCRATCH/FlexAIDdS:/work $SCRATCH/FlexAIDdS/validation_evidence/harness/flexaidds_locked_x86_64.sif /opt/flexaidds/bin/FlexAIDdS --search cmaes --complex 1G9V --ga-population 1000 --ga-generations 10 --out /work/validation_evidence/harness/smoke_1G9V_narval'

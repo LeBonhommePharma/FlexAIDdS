@@ -1,0 +1,25 @@
+# G_smoke_dock_command.txt — intended in-container smoke dock (NOT EXECUTED)
+#
+# Prerequisites missing on this host:
+#   - validation_evidence/harness/*.sif does not exist (build skipped)
+#   - apptainer/singularity not on PATH
+#   - CMA-ES engine sources (LIB/cmaes_search.*) absent from tree
+#
+# Intended one-complex smoke (Astex-style) once .sif exists on Linux:
+
+# apptainer exec \
+#   --bind "$PWD:/work" \
+#   validation_evidence/harness/flexaidds_locked_x86_64.sif \
+#   /opt/flexaidds/bin/FlexAIDdS \
+#     --search cmaes \
+#     --complex 1G9V \
+#     --ga-population 1000 \
+#     --ga-generations 10 \
+#     --out /work/validation_evidence/harness/smoke_1G9V
+#
+# Capture RMSD/CF from smoke OUT into G_smoke_dock.log
+# (eval counts intentionally tiny for container smoke only; full A/B is item E).
+
+STATUS=NOT_EXECUTED
+BLOCKER=no_sif_and_no_apptainer
+SMOKE_TRACE=absent

@@ -1,0 +1,59 @@
+# G_tooling.txt — host tooling probe for item G
+# Real command output from flexaidds-harness on this machine.
+
+timestamp_utc=2026-07-21T19:30:48Z
+cwd=/Users/lp.more/Projects/FlexAIDdS
+
+=== hostname / OS ===
+hostname: LPmore.local
+uname: Darwin LPmore.local 27.0.0 Darwin Kernel Version 27.0.0: Mon Jun 29 21:25:11 PDT 2026; root:xnu-13432.0.50.501.3~1/RELEASE_ARM64_T6030 arm64
+
+=== Narval / Compute Canada login-node heuristics ===
+hostname_matches_narval=no
+cvmfs=no
+slurm_conf=/etc/slurm/slurm.conf → absent
+module command → not found (exit 127)
+VERDICT: NOT a Compute Canada / Alliance / Narval login node. Do NOT run sbatch here.
+
+=== command -v probes (with exit codes) ===
+command -v apptainer
+  path: (empty)
+  exit: 1
+  version: N/A (command not found)
+
+command -v singularity
+  path: (empty)
+  exit: 1
+  version: N/A (command not found)
+
+command -v sbatch
+  path: (empty)
+  exit: 1
+  version: N/A (command not found)
+
+command -v sinfo
+  path: (empty)
+  exit: 1
+  version: N/A (command not found)
+
+command -v hostname
+  path: /bin/hostname (system)
+  exit: 0
+  output: LPmore.local
+
+command -v docker
+  path: /opt/homebrew/bin/docker
+  exit: 0
+  version: Docker version 29.6.2, build dfc4efb1e2
+  note: Docker is present but item G requires locked-arch Apptainer/Singularity .sif,
+        and there is no FlexAIDdS Apptainer definition file to convert/build from.
+
+command -v podman
+  path: (empty)
+  exit: 1
+
+=== blocker summary ===
+BLOCKER_1: apptainer MISSING
+BLOCKER_2: singularity MISSING
+BLOCKER_3: sbatch/sinfo MISSING (expected on login node only)
+BLOCKER_4: host is macOS arm64 laptop, not Narval
