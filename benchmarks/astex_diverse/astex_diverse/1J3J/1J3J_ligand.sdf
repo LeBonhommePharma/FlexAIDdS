@@ -1,7 +1,7 @@
 CP6
   FlexAIDdS DatasetRunner
-  Extracted from structure HETATM records | FLEXAIDDS_LIGAND_EXTRACTOR_V4
- 17 18  0  0  0  0  0  0  0999 V2000
+  Extracted from structure HETATM/peptide records | FLEXAIDDS_LIGAND_EXTRACTOR_V5
+ 17 18  0  0  0  0  0  0  0  0999 V2000
    29.8760    4.1050   56.3530 N   0  0  0  0  0  0  0  0  0  0  0  0
    29.3430    5.0480   55.4730 C   0  0  0  0  0  0  0  0  0  0  0  0
    29.5330    4.1550   57.6870 C   0  0  0  0  0  0  0  0  0  0  0  0

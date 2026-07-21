@@ -1,7 +1,7 @@
 SOX
   FlexAIDdS DatasetRunner
-  Extracted from structure HETATM records | FLEXAIDDS_LIGAND_EXTRACTOR_V4
- 24 26  0  0  0  0  0  0  0999 V2000
+  Extracted from structure HETATM/peptide records | FLEXAIDDS_LIGAND_EXTRACTOR_V5
+ 24 26  0  0  0  0  0  0  0  0999 V2000
    11.7930   -2.1560    2.0530 O   0  0  0  0  0  0  0  0  0  0  0  0
    12.8370   -2.6800    2.3630 C   0  0  0  0  0  0  0  0  0  0  0  0
    13.1500   -3.9790    2.7790 N   0  0  0  0  0  0  0  0  0  0  0  0

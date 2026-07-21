@@ -1,7 +1,7 @@
 APC
   FlexAIDdS DatasetRunner
-  Extracted from structure HETATM records | FLEXAIDDS_LIGAND_EXTRACTOR_V4
- 31 33  0  0  0  0  0  0  0999 V2000
+  Extracted from structure HETATM/peptide records | FLEXAIDDS_LIGAND_EXTRACTOR_V5
+ 31 33  0  0  0  0  0  0  0  0999 V2000
    -7.0790    2.7500   21.8700 P   0  0  0  0  0  0  0  0  0  0  0  0
    -6.6160    1.3440   22.1520 O   0  0  0  0  0  0  0  0  0  0  0  0
    -8.2260    3.1920   22.7150 O   0  0  0  0  0  0  0  0  0  0  0  0

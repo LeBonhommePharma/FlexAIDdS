@@ -1,7 +1,7 @@
 TQ3
   FlexAIDdS DatasetRunner
-  Extracted from structure HETATM records | FLEXAIDDS_LIGAND_EXTRACTOR_V4
- 19 21  0  0  0  0  0  0  0999 V2000
+  Extracted from structure HETATM/peptide records | FLEXAIDDS_LIGAND_EXTRACTOR_V5
+ 19 21  0  0  0  0  0  0  0  0999 V2000
    29.4300   -2.6870   -0.1890 C   0  0  0  0  0  0  0  0  0  0  0  0
    29.6240   -2.5650    1.1880 C   0  0  0  0  0  0  0  0  0  0  0  0
    28.6600   -1.6800    1.9010 C   0  0  0  0  0  0  0  0  0  0  0  0

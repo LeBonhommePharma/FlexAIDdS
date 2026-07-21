@@ -1,7 +1,7 @@
 PGI
   FlexAIDdS DatasetRunner
-  Extracted from structure HETATM records | FLEXAIDDS_LIGAND_EXTRACTOR_V4
- 22 24  0  0  0  0  0  0  0999 V2000
+  Extracted from structure HETATM/peptide records | FLEXAIDDS_LIGAND_EXTRACTOR_V5
+ 22 24  0  0  0  0  0  0  0  0999 V2000
    -2.7750    8.0450    8.4800 O   0  0  0  0  0  0  0  0  0  0  0  0
    -3.2670    9.3630    8.2000 C   0  0  0  0  0  0  0  0  0  0  0  0
    -2.3130   10.4730    8.6290 C   0  0  0  0  0  0  0  0  0  0  0  0

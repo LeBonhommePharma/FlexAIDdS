@@ -1,7 +1,7 @@
 PM2
   FlexAIDdS DatasetRunner
-  Extracted from structure HETATM records | FLEXAIDDS_LIGAND_EXTRACTOR_V4
- 30 33  0  0  0  0  0  0  0999 V2000
+  Extracted from structure HETATM/peptide records | FLEXAIDDS_LIGAND_EXTRACTOR_V5
+ 30 33  0  0  0  0  0  0  0  0999 V2000
    21.9410   77.8570   84.3200 C   0  0  0  0  0  0  0  0  0  0  0  0
    21.5260   77.3880   83.0330 C   0  0  0  0  0  0  0  0  0  0  0  0
    20.9420   78.0630   85.3570 C   0  0  0  0  0  0  0  0  0  0  0  0

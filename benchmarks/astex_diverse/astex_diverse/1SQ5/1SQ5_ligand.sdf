@@ -1,7 +1,7 @@
 PAU
   FlexAIDdS DatasetRunner
-  Extracted from structure HETATM records | FLEXAIDDS_LIGAND_EXTRACTOR_V4
- 15 14  0  0  0  0  0  0  0999 V2000
+  Extracted from structure HETATM/peptide records | FLEXAIDDS_LIGAND_EXTRACTOR_V5
+ 15 14  0  0  0  0  0  0  0  0999 V2000
    56.4220    4.6030    8.5350 O   0  0  0  0  0  0  0  0  0  0  0  0
    54.2700    4.0680    7.3520 C   0  0  0  0  0  0  0  0  0  0  0  0
    55.4240    3.6040    8.3380 C   0  0  0  0  0  0  0  0  0  0  0  0

@@ -1,7 +1,7 @@
 1CS
   FlexAIDdS DatasetRunner
-  Extracted from structure HETATM records | FLEXAIDDS_LIGAND_EXTRACTOR_V4
- 23 24  0  0  0  0  0  0  0999 V2000
+  Extracted from structure HETATM/peptide records | FLEXAIDDS_LIGAND_EXTRACTOR_V5
+ 23 24  0  0  0  0  0  0  0  0999 V2000
    25.8790   30.1660  137.7790 C   0  0  0  0  0  0  0  0  0  0  0  0
    25.3140   28.8750  137.6340 O   0  0  0  0  0  0  0  0  0  0  0  0
    25.2060   28.2670  136.3270 C   0  0  0  0  0  0  0  0  0  0  0  0

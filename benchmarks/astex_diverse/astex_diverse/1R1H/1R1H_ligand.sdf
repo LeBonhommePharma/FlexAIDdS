@@ -1,7 +1,7 @@
 BIR
   FlexAIDdS DatasetRunner
-  Extracted from structure HETATM records | FLEXAIDDS_LIGAND_EXTRACTOR_V4
- 29 30  0  0  0  0  0  0  0999 V2000
+  Extracted from structure HETATM/peptide records | FLEXAIDDS_LIGAND_EXTRACTOR_V5
+ 29 30  0  0  0  0  0  0  0  0999 V2000
    27.8590   41.3560   29.9450 C   0  0  0  0  0  0  0  0  0  0  0  0
    27.7080   42.3620   31.0920 C   0  0  0  0  0  0  0  0  0  0  0  0
    26.4000   42.9990   31.0150 N   0  0  0  0  0  0  0  0  0  0  0  0

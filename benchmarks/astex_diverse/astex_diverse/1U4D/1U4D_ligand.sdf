@@ -1,7 +1,7 @@
 DBQ
   FlexAIDdS DatasetRunner
-  Extracted from structure HETATM records | FLEXAIDDS_LIGAND_EXTRACTOR_V4
- 18 20  0  0  0  0  0  0  0999 V2000
+  Extracted from structure HETATM/peptide records | FLEXAIDDS_LIGAND_EXTRACTOR_V5
+ 18 20  0  0  0  0  0  0  0  0999 V2000
    20.8090   18.6970   56.8370 O   0  0  0  0  0  0  0  0  0  0  0  0
    21.1220   17.5070   56.6270 C   0  0  0  0  0  0  0  0  0  0  0  0
    20.1460   16.5920   56.6840 N   0  0  0  0  0  0  0  0  0  0  0  0

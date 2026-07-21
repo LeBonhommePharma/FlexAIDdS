@@ -1,7 +1,7 @@
 PAF
   FlexAIDdS DatasetRunner
-  Extracted from structure HETATM records | FLEXAIDDS_LIGAND_EXTRACTOR_V4
- 10  9  0  0  0  0  0  0  0999 V2000
+  Extracted from structure HETATM/peptide records | FLEXAIDDS_LIGAND_EXTRACTOR_V5
+ 10  9  0  0  0  0  0  0  0  0999 V2000
    33.3200   33.2000   44.9730 O   0  0  0  0  0  0  0  0  0  0  0  0
    33.3260   34.2000   45.8110 C   0  0  0  0  0  0  0  0  0  0  0  0
    33.2480   35.3780   45.4420 O   0  0  0  0  0  0  0  0  0  0  0  0
