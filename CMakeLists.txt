@@ -152,6 +152,10 @@ if(APPLE AND FLEXAIDS_USE_METAL)
     message(STATUS "Metal module cache: ${FLEXAIDS_METAL_MODULE_CACHE}")
 endif()
 
+# Optional WebGPU (Dawn / wgpu-native) backend detection — additive, skips
+# gracefully when the dependency isn't present on this system.
+include(cmake/FlexAIDWebGPU.cmake)
+
 # ─── Core library (LIB/) ────────────────────────────────────────────────
 add_subdirectory(LIB)
 
@@ -302,7 +306,37 @@ if(FLEXAIDS_USE_METAL)
         FLEXAIDS_HAS_METAL_SHANNON
         FLEXAIDS_HAS_METAL_TENCM
     )
+endif()
 
+# ─── WebGPU sources (attach to flexaid_core once, additive/optional) ───────
+# Sibling of the Metal block above: same pattern (opt-in cache option,
+# graceful skip when the dependency is absent — see cmake/FlexAIDWebGPU.cmake),
+# targeting Dawn or wgpu-native via the vendor-neutral webgpu.h API so the
+# same src/backends/webgpu/webgpu_eval.cpp compiles against either.
+if(FLEXAIDS_USE_WEBGPU)
+    target_sources(flexaid_core PRIVATE src/backends/webgpu/webgpu_eval.cpp)
+    target_include_directories(flexaid_core PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/backends/webgpu
+        ${FLEXAIDS_WEBGPU_INCLUDE_DIRS}
+    )
+    target_link_libraries(flexaid_core PUBLIC ${FLEXAIDS_WEBGPU_LIBRARIES})
+    target_compile_definitions(flexaid_core PUBLIC FLEXAIDS_USE_WEBGPU)
+
+    # Stage the WGSL shader next to the FlexAID/FlexAIDdS binaries at build
+    # time, mirroring the runtime-data staging pattern used for
+    # MC_st0r5.2_6.dat etc. — webgpu_eval.cpp loads it via
+    # FLEXAIDDS_WEBGPU_SHADER_DIR or the binary's own working directory.
+    add_custom_target(flexaid_webgpu_shaders ALL
+        COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_BINARY_DIR}/webgpu_shaders"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${CMAKE_CURRENT_SOURCE_DIR}/src/backends/webgpu/cf_eval.wgsl"
+            "${CMAKE_BINARY_DIR}/webgpu_shaders/cf_eval.wgsl"
+        COMMENT "Staging WebGPU CF shader (cf_eval.wgsl)"
+    )
+    add_dependencies(flexaid_core flexaid_webgpu_shaders)
+endif()
+
+if(FLEXAIDS_USE_METAL)
     # ── Compile .metal shaders → .metallib (single shared set) ────────────
     set(CAVITY_METAL_SRC  "${CMAKE_CURRENT_SOURCE_DIR}/LIB/CavityDetect/CavityDetect.metal")
     set(CAVITY_AIR        "${CMAKE_CURRENT_BINARY_DIR}/CavityDetect.air")
