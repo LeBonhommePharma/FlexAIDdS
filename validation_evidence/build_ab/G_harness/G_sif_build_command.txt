@@ -1,0 +1,6 @@
+STATUS=NOT_EXECUTED
+REASON=apptainer_missing
+# On Linux x86_64:
+export FLEXAIDDS_SRC=/Users/lp.more/Projects/FlexAIDdS
+apptainer build --bind "${FLEXAIDDS_SRC}:/opt/flexaidds/src" \
+  /Users/lp.more/Projects/FlexAIDdS/validation_evidence/build_ab/G_harness/flexaidds_locked_x86_64.sif containers/flexaidds_locked_x86_64.def

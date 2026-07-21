@@ -1,0 +1,38 @@
+=== E eval-matched A/B 1G9V 2e6 ===
+budget_claim=lambda/pop=1000 x gens=2000 = 2000000 evals each
+start_utc=2026-07-21T20:14:33Z
+end_utc=2026-07-21T20:23:42Z
+binary=.swarm/cmaes/orchestrator/build_fast/FlexAIDdS
+sha256=404b3ccddc22c12bf3cfaced9b0eaf996faa16d5caa501d7ff691282d66f9eb1
+
+GA:
+  exit=ga_exit=0
+  elected_CF=-68.55885
+  best_CF_among_emitted=-68.5589
+  RMSD_ordered_heavy_ligand=5.559
+  rmsd_ordered_heavy=5.5590
+n_pose=25 n_xtal=25 n_used=25
+  computational_sec=355
+  pose=validation_evidence/build_ab/E_ab_2e6/ga/ga_2e6_0.pdb
+  log=validation_evidence/build_ab/E_ab_2e6/ga/run.log
+
+CMAES:
+  exit=cmaes_exit=0
+  evals=2000000
+  max_evals=2000000
+  lambda=1000
+  n_snap=32
+  best_cf=-20.188879
+  elected_CF=-20.18888
+  RMSD_ordered_heavy_ligand=6.5245
+  rmsd_ordered_heavy=6.5245
+n_pose=25 n_xtal=25 n_used=25
+  computational_sec=526
+  pose=validation_evidence/build_ab/E_ab_2e6/cmaes/cmaes_2e6_0.pdb
+  log=validation_evidence/build_ab/E_ab_2e6/cmaes/run.log
+  entropy_trace=validation_evidence/build_ab/E_ab_2e6/cmaes/cmaes_2e6_cmaes_entropy.csv
+
+DELTA (CMAES - GA):
+  delta_CF=48.36997000000001
+  delta_RMSD=0.9654999999999996
+  note=same scoring (ic2cf); only search operator differs

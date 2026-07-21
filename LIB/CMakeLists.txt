@@ -40,6 +40,9 @@ set(FLEXAID_CORE_SOURCES
     calc_cleftic.cpp
     write_pdb.cpp
     gaboom.cpp
+# FLEXAIDDS_CMAES_CMAKE_BEGIN
+    cmaes_search.cpp
+# FLEXAIDDS_CMAES_CMAKE_END
     GAContext.cpp
     calc_center.cpp
     ic_bounds.cpp

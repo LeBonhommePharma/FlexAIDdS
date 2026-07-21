@@ -1,0 +1,41 @@
+flexaidds-build-ab DONE
+timestamp_utc=2026-07-21T19:38:30Z
+
+git_HEAD_at_build=9723f9de41da1d185725384c6b774eca87fcbc4e
+git_branch_at_build=perf/pb-clash-grid-hoist
+git_HEAD_at_done=d038f61a64beb275bbd02dc6ce4e56bba771f006
+git_branch_at_done=feat/gpu-backends
+git_cmaes_ab_tip=9a5e8c8d3 (also lacks LIB/cmaes_search.cpp)
+note_build_provenance=binary + GA dock artifacts produced under HEAD 9723f9de on perf/pb-clash-grid-hoist; workspace later on feat/gpu-backends; CMA-ES still absent
+
+host_toolchain:
+  g++-16=/opt/homebrew/bin/g++-16 (Homebrew GCC 16.1.0) 16.1.0
+  cmake=cmake version 4.4.0
+  uname=Darwin arm64
+
+items:
+  A=OPEN  (CMA-ES wiring/TUs absent; base cmake configure OK with Metal OFF)
+  B=OPEN  (base FlexAIDdS FAST linked sha256=967d194698b048513edabf4038e105ff50b5ccd9eea83ceeb975fe22aaef2f6a; adapter not in link)
+  C=OPEN  (zero FLEXAIDDS_SEARCH / cmaes symbols)
+  D=OPEN  (GA short live 1G9V OK with real CF/RMSD; CMA-ES arm impossible)
+  E=OPEN  (eval-matched 2e6 A/B impossible without CMA-ES backend)
+  F=OPEN  (no CMA-ES entropy trace)
+
+CLOSED=0
+OPEN=6
+
+shared_blocker=LIB/cmaes_search.cpp and FLEXAIDDS_SEARCH opt-in not present on disk in this checkout (also missing on cmaes-ab)
+
+key_artifacts:
+  /Users/lp.more/Projects/FlexAIDdS/validation_evidence/build_ab/ITEMS_A_F.md
+  /Users/lp.more/Projects/FlexAIDdS/validation_evidence/build_ab/A_inventory.txt
+  /Users/lp.more/Projects/FlexAIDdS/validation_evidence/build_ab/A_cmake_configure.log
+  /Users/lp.more/Projects/FlexAIDdS/validation_evidence/build_ab/B_binary.sha256
+  /Users/lp.more/Projects/FlexAIDdS/validation_evidence/build_ab/build_fast/FlexAIDdS
+  /Users/lp.more/Projects/FlexAIDdS/validation_evidence/build_ab/C_doctor.txt
+  /Users/lp.more/Projects/FlexAIDdS/validation_evidence/build_ab/D_ga_result.txt
+  /Users/lp.more/Projects/FlexAIDdS/validation_evidence/build_ab/D_cmaes_result.txt
+  /Users/lp.more/Projects/FlexAIDdS/validation_evidence/build_ab/E_ab_summary.txt
+  /Users/lp.more/Projects/FlexAIDdS/validation_evidence/build_ab/F_entropy_trace.txt
+
+note=VALIDATION.md not rewritten (orchestrator owns that). PROVEN P1-P7 table not edited.

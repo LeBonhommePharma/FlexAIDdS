@@ -1,0 +1,2 @@
+CMA-ES live dock NOT run this orchestrator session
+blocker: time + optional short dock deferred; GA prior evidence may exist in D_ga_result.txt from earlier host dispatch

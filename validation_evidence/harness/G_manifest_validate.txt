@@ -1,0 +1,41 @@
+# G_manifest_validate.txt — locked-arch manifest + array script validation
+timestamp_utc=2026-07-21T19:32:30Z
+
+## Expected (item G / KICKOFF)
+- Locked-arch build manifest (image pin, arch, compiler, SHA of engine binary)
+- Slurm array / submit script with #SBATCH headers for Narval
+
+## On-disk search results
+
+### Locked-arch / container manifests
+ABSENT. No file matching *locked*arch*, *sif*manifest*, containers/*, apptainer/*
+under the repo (excl venv/build/.git).
+
+### Slurm array / #SBATCH job scripts
+ABSENT. rg '#SBATCH|sbatch ' (excl venv/tools/results) only hits:
+  benchmarks/nextgen/schedulers.py  — Python stub: submit_command = "sbatch"
+  benchmarks/nextgen/validation.py  — availability warning only
+No #SBATCH headers, no --array, no account/partition lines for Narval.
+
+### Benchmark manifests present but OUT OF SCOPE for item G
+These are dataset entry manifests, not image/array harness manifests:
+  /Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/manifest.yaml
+  /Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_nonnative/manifest.yaml
+  /Users/lp.more/Projects/FlexAIDdS/benchmarks/smoke/manifest.yaml
+  /Users/lp.more/Projects/FlexAIDdS/benchmarks/casf2016_tier1/manifest.yaml
+  /Users/lp.more/Projects/FlexAIDdS/benchmarks/itc187_tier1/manifest.yaml
+  /Users/lp.more/Projects/FlexAIDdS/benchmarks/datasets/astex_diverse_manifest.json
+  /Users/lp.more/Projects/FlexAIDdS/benchmarks/protocols/astex85_target_manifest.json
+
+### Generic SLURM executor stub (syntax-only note, not a G harness script)
+File: /Users/lp.more/Projects/FlexAIDdS/benchmarks/nextgen/schedulers.py
+  class SlurmExecutor(SchedulerExecutorBase):
+      name = "slurm"
+      submit_command = "sbatch"
+Script body generated at runtime is a plain bash python -m benchmarks.run_modern line
+— no #SBATCH, no apptainer exec, no CMA-ES env, no array index.
+
+## Validation result
+STATUS=OPEN
+BLOCKER=missing_locked_arch_manifest_and_missing_sbatch_array_script
+PROOF=G_inventory.txt (sections 1–4, 7)

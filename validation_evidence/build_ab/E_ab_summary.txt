@@ -1,0 +1,19 @@
+=== E eval-matched A/B at 2e6 ===
+target: λ=1000×2000 gen ≡ pop-1000×2000 gen = 2e6 evals each arm
+config_prepared=validation_evidence/build_ab/E_dock_config_2e6.json
+complex=1G9V
+GA_command:
+  validation_evidence/build_ab/build_fast/FlexAIDdS \
+    benchmarks/astex_diverse/astex_diverse/1G9V/1G9V_apo.pdb \
+    benchmarks/astex_repro/smoke/1G9V/1G9V_dockin.sdf \
+    -c validation_evidence/build_ab/E_dock_config_2e6.json \
+    -o validation_evidence/build_ab/E_1G9V/ga_2e6
+CMAES_command:
+  FLEXAIDDS_SEARCH=cmaes <same> -o .../cmaes_2e6
+
+STATUS: OPEN
+blocker_primary=CMA-ES backend absent (cannot run CMA-ES arm; ΔRMSD/ΔCF not attributable)
+blocker_secondary=full 2e6 GA not launched this session (would be hours; CMA-ES still impossible)
+partial: short GA live dock completed (D) with real CF/RMSD on disk; not eval-matched
+ΔRMSD=N/A (both arms required)
+ΔCF=N/A (both arms required)

@@ -1,0 +1,29 @@
+flexaidds-harness DONE — item G local half
+timestamp_utc=2026-07-21T19:33:00Z
+host=LPmore.local (Darwin arm64, NOT Narval)
+branch=perf/pb-clash-grid-hoist
+head=9723f9de41da1d185725384c6b774eca87fcbc4e
+
+STATUS=OPEN
+REASON=missing_apptainer + missing_container_definition + missing_sif + missing_collapse_fingerprint.py + missing_narval_array_script; sbatch not run (not login node)
+
+Artifact absolute paths:
+/Users/lp.more/Projects/FlexAIDdS/validation_evidence/harness/ITEM_G.md
+/Users/lp.more/Projects/FlexAIDdS/validation_evidence/harness/DONE.txt
+/Users/lp.more/Projects/FlexAIDdS/validation_evidence/harness/G_inventory.txt
+/Users/lp.more/Projects/FlexAIDdS/validation_evidence/harness/G_inventory_raw.txt
+/Users/lp.more/Projects/FlexAIDdS/validation_evidence/harness/G_tooling.txt
+/Users/lp.more/Projects/FlexAIDdS/validation_evidence/harness/G_sif_build.log
+/Users/lp.more/Projects/FlexAIDdS/validation_evidence/harness/G_sif_build_command.txt
+/Users/lp.more/Projects/FlexAIDdS/validation_evidence/harness/G_smoke_dock_command.txt
+/Users/lp.more/Projects/FlexAIDdS/validation_evidence/harness/G_manifest_validate.txt
+/Users/lp.more/Projects/FlexAIDdS/validation_evidence/harness/G_collapse_fingerprint.out
+/Users/lp.more/Projects/FlexAIDdS/validation_evidence/harness/G_narval_submit_command.txt
+
+Intentionally NOT created (no fabrications):
+  G_sif.sha256  (no .sif)
+  *.sif
+  smoke dock RMSD/CF logs from container
+
+Narval sbatch: printed in G_narval_submit_command.txt and ITEM_G.md — NOT EXECUTED.
+VALIDATION.md: not modified.

@@ -1,0 +1,601 @@
+[  0%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/fileio.cpp.o
+[  0%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/Vcontacts.cpp.o
+[  0%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/read_coor.cpp.o
+[  0%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/buildic.cpp.o
+[  0%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/vcfunction.cpp.o
+[  0%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/create_rebuild_list.cpp.o
+[  6%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/ic2cf.cpp.o
+[  6%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/assign_shift.cpp.o
+[  6%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/assign_constraint.cpp.o
+[  6%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/modify_pdb.cpp.o
+[  6%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/read_constraints.cpp.o
+[  6%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/update_constraint.cpp.o
+/Users/lp.more/Projects/FlexAIDdS/LIB/vcfunction.cpp: In function 'double vcfunction(FA_Global*, VC_Global*, atom*, resid*, std::vector<std::pair<int, int> >&, bool*)':
+/Users/lp.more/Projects/FlexAIDdS/LIB/vcfunction.cpp:878:33: warning: this 'if' clause does not guard... [-Wmisleading-indentation]
+  878 |                                 if(cx<0)cx=0; if(cx>=dim[0])cx=dim[0]-1;
+      |                                 ^~
+/Users/lp.more/Projects/FlexAIDdS/LIB/vcfunction.cpp:878:47: note: ...this statement, but the latter is misleadingly indented as if it were guarded by the 'if'
+  878 |                                 if(cx<0)cx=0; if(cx>=dim[0])cx=dim[0]-1;
+      |                                               ^~
+/Users/lp.more/Projects/FlexAIDdS/LIB/vcfunction.cpp:879:33: warning: this 'if' clause does not guard... [-Wmisleading-indentation]
+  879 |                                 if(cy<0)cy=0; if(cy>=dim[1])cy=dim[1]-1;
+      |                                 ^~
+/Users/lp.more/Projects/FlexAIDdS/LIB/vcfunction.cpp:879:47: note: ...this statement, but the latter is misleadingly indented as if it were guarded by the 'if'
+  879 |                                 if(cy<0)cy=0; if(cy>=dim[1])cy=dim[1]-1;
+      |                                               ^~
+/Users/lp.more/Projects/FlexAIDdS/LIB/vcfunction.cpp:880:33: warning: this 'if' clause does not guard... [-Wmisleading-indentation]
+  880 |                                 if(cz<0)cz=0; if(cz>=dim[2])cz=dim[2]-1;
+      |                                 ^~
+/Users/lp.more/Projects/FlexAIDdS/LIB/vcfunction.cpp:880:47: note: ...this statement, but the latter is misleadingly indented as if it were guarded by the 'if'
+  880 |                                 if(cz<0)cz=0; if(cz>=dim[2])cz=dim[2]-1;
+      |                                               ^~
+[  6%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/update_optres.cpp.o
+/Users/lp.more/Projects/FlexAIDdS/LIB/read_coor.cpp: In function 'void read_coor(FA_Global*, atom**, resid**, char*, char*)':
+/Users/lp.more/Projects/FlexAIDdS/LIB/read_coor.cpp:156:24: warning: 'char* strncpy(char*, const char*, size_t)' output may be truncated copying 4 bytes from a string of length 4 [-Wstringop-truncation]
+  156 |                 strncpy((*atoms)[FA->atm_cnt].name,atm_typ,sizeof((*atoms)[FA->atm_cnt].name)-1);
+      |                 ~~~~~~~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/Users/lp.more/Projects/FlexAIDdS/LIB/read_coor.cpp:178:37: warning: 'char* strncpy(char*, const char*, size_t)' output may be truncated copying 2 bytes from a string of length 2 [-Wstringop-truncation]
+  178 |                         std::strncpy((*atoms)[FA->atm_cnt].element, element,
+      |                         ~~~~~~~~~~~~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  179 |                                      sizeof((*atoms)[FA->atm_cnt].element) - 1);
+      |                                      ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/Users/lp.more/Projects/FlexAIDdS/LIB/modify_pdb.cpp: In function 'void rewrite_residue2(char (*)[100], int, int*, FILE*)':
+/Users/lp.more/Projects/FlexAIDdS/LIB/modify_pdb.cpp:227:43: warning: '%5d' directive output may be truncated writing between 5 and 11 bytes into a region of size 6 [-Wformat-truncation=]
+  227 |                 snprintf(&newline[6], 6, "%5d", ++(*wrote));
+      |                                           ^~~
+/Users/lp.more/Projects/FlexAIDdS/LIB/modify_pdb.cpp:227:42: note: directive argument in the range [-2147483647, 2147483647]
+  227 |                 snprintf(&newline[6], 6, "%5d", ++(*wrote));
+      |                                          ^~~~~
+/Users/lp.more/Projects/FlexAIDdS/LIB/modify_pdb.cpp:227:25: note: 'snprintf' output between 6 and 12 bytes into a destination of size 6
+  227 |                 snprintf(&newline[6], 6, "%5d", ++(*wrote));
+      |                 ~~~~~~~~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+[ 12%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/update_bonded.cpp.o
+[ 12%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/read_grid.cpp.o
+[ 12%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/read_input.cpp.o
+/Users/lp.more/Projects/FlexAIDdS/LIB/modify_pdb.cpp: In function 'void modify_pdb(char*, char*, int, int, int, int, int, float)':
+/Users/lp.more/Projects/FlexAIDdS/LIB/modify_pdb.cpp:86:32: warning: 'char* strncpy(char*, const char*, size_t)' output may be truncated copying 4 bytes from a string of length 99 [-Wstringop-truncation]
+   86 |                         strncpy(bufnul,&buffer[22],4);
+      |                         ~~~~~~~^~~~~~~~~~~~~~~~~~~~~~
+/Users/lp.more/Projects/FlexAIDdS/LIB/modify_pdb.cpp:133:56: warning: 'char* strncpy(char*, const char*, size_t)' output may be truncated copying 99 bytes from a string of length 99 [-Wstringop-truncation]
+  133 |                                                 strncpy(lines[nlines], buffer, sizeof(lines[0]) - 1);
+      |                                                 ~~~~~~~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/Users/lp.more/Projects/FlexAIDdS/LIB/modify_pdb.cpp:119:56: warning: 'char* strncpy(char*, const char*, size_t)' output may be truncated copying 99 bytes from a string of length 99 [-Wstringop-truncation]
+  119 |                                                 strncpy(lines[nlines], buffer, sizeof(lines[0]) - 1);
+      |                                                 ~~~~~~~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/Users/lp.more/Projects/FlexAIDdS/LIB/modify_pdb.cpp:99:56: warning: 'char* strncpy(char*, const char*, size_t)' output may be truncated copying 99 bytes from a string of length 99 [-Wstringop-truncation]
+   99 |                                                 strncpy(lines[nlines], buffer, sizeof(lines[0]) - 1);
+      |                                                 ~~~~~~~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+[ 12%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/read_lig.cpp.o
+[ 12%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/read_pdb.cpp.o
+[ 12%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/add2_optimiz_vec.cpp.o
+/Users/lp.more/Projects/FlexAIDdS/LIB/read_pdb.cpp: In function 'void read_pdb(FA_Global*, atom**, resid**, char*)':
+/Users/lp.more/Projects/FlexAIDdS/LIB/read_pdb.cpp:15:8: warning: variable 'resname' set but not used [-Wunused-but-set-variable=]
+   15 |   char resname[4];         /* residue name */
+      |        ^~~~~~~
+[ 12%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/assign_radius.cpp.o
+[ 12%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/assign_radii.cpp.o
+[ 12%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/assign_radii_types.cpp.o
+/Users/lp.more/Projects/FlexAIDdS/LIB/read_lig.cpp: In function 'void read_lig(FA_Global*, atom**, resid**, char*)':
+/Users/lp.more/Projects/FlexAIDdS/LIB/read_lig.cpp:140:32: warning: 'char* strncpy(char*, const char*, size_t)' output may be truncated copying 3 bytes from a string of length 3 [-Wstringop-truncation]
+  140 |                         strncpy((*residue)[FA->res_cnt].name,rnam,sizeof((*residue)[FA->res_cnt].name)-1);
+      |                         ~~~~~~~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+[ 18%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/assign_types.cpp.o
+[ 18%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/bondedlist.cpp.o
+[ 18%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/buildcc.cpp.o
+[ 18%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/buildlist.cpp.o
+[ 18%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/geometry.cpp.o
+[ 18%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/read_conect.cpp.o
+[ 18%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/residue_conect.cpp.o
+[ 18%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/wif083.cpp.o
+In file included from /Users/lp.more/Projects/FlexAIDdS/LIB/read_input.cpp:7:
+/Users/lp.more/Projects/FlexAIDdS/LIB/RefLigSeed.h: In function 'std::vector<reflig::RefLigAtom> reflig::parse_sdf_coords(const std::string&)':
+/Users/lp.more/Projects/FlexAIDdS/LIB/RefLigSeed.h:105:29: warning: 'char* strncpy(char*, const char*, size_t)' output may be truncated copying 3 bytes from a string of length 224 [-Wstringop-truncation]
+  105 |                 std::strncpy(elem_buf, line + 31, 3);
+      |                 ~~~~~~~~~~~~^~~~~~~~~~~~~~~~~~~~~~~~
+[ 18%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/calc_cleftic.cpp.o
+[ 25%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/write_pdb.cpp.o
+[ 25%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/gaboom.cpp.o
+[ 25%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/cmaes_search.cpp.o
+[ 25%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/GAContext.cpp.o
+[ 25%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/calc_center.cpp.o
+[ 25%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/ic_bounds.cpp.o
+[ 25%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/buildic_point.cpp.o
+[ 25%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/buildcc_point.cpp.o
+/Users/lp.more/Projects/FlexAIDdS/LIB/read_input.cpp: In function 'void read_input(FA_Global*, atom**, resid**, rot**, gridpoint**, char*)':
+/Users/lp.more/Projects/FlexAIDdS/LIB/read_input.cpp:295:24: warning: 'char* strncpy(char*, const char*, size_t)' output may be truncated copying 254 bytes from a string of length 254 [-Wstringop-truncation]
+  295 |                 strncpy(FA->temp_path,FA->base_path,MAX_PATH__-1);
+      |                 ~~~~~~~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/Users/lp.more/Projects/FlexAIDdS/LIB/read_input.cpp:316:45: warning: '/MC_st0r5.2_6.dat' directive output may be truncated writing 17 bytes into a region of size between 1 and 255 [-Wformat-truncation=]
+  316 |                 snprintf(emat,MAX_PATH__,"%s/MC_st0r5.2_6.dat",emat_base);
+      |                                             ^~~~~~~~~~~~~~~~~
+/Users/lp.more/Projects/FlexAIDdS/LIB/read_input.cpp:316:25: note: 'snprintf' output between 18 and 272 bytes into a destination of size 255
+  316 |                 snprintf(emat,MAX_PATH__,"%s/MC_st0r5.2_6.dat",emat_base);
+      |                 ~~~~~~~~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/Users/lp.more/Projects/FlexAIDdS/LIB/read_input.cpp:342:48: warning: '%s' directive output may be truncated writing between 9 and 15 bytes into a region of size between 0 and 254 [-Wformat-truncation=]
+  342 |                 snprintf(deftyp,MAX_PATH__,"%s/%s",deftyp_base,deftyp_file);
+      |                                                ^~
+/Users/lp.more/Projects/FlexAIDdS/LIB/read_input.cpp:342:25: note: 'snprintf' output between 11 and 271 bytes into a destination of size 255
+  342 |                 snprintf(deftyp,MAX_PATH__,"%s/%s",deftyp_base,deftyp_file);
+      |                 ~~~~~~~~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/Users/lp.more/Projects/FlexAIDdS/LIB/read_input.cpp:482:60: warning: '/Lovell_LIB.dat' directive output may be truncated writing 15 bytes into a region of size between 1 and 255 [-Wformat-truncation=]
+  482 |                         snprintf(rotlib_file,MAX_PATH__,"%s/Lovell_LIB.dat",rotlib_base);
+      |                                                            ^~~~~~~~~~~~~~~
+/Users/lp.more/Projects/FlexAIDdS/LIB/read_input.cpp:482:33: note: 'snprintf' output between 16 and 270 bytes into a destination of size 255
+  482 |                         snprintf(rotlib_file,MAX_PATH__,"%s/Lovell_LIB.dat",rotlib_base);
+      |                         ~~~~~~~~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/Users/lp.more/Projects/FlexAIDdS/LIB/read_input.cpp:470:60: warning: '/rotobs.lst' directive output may be truncated writing 11 bytes into a region of size between 1 and 255 [-Wformat-truncation=]
+  470 |                         snprintf(rotobs_file,MAX_PATH__,"%s/rotobs.lst",rotobs_base);
+      |                                                            ^~~~~~~~~~~
+/Users/lp.more/Projects/FlexAIDdS/LIB/read_input.cpp:470:33: note: 'snprintf' output between 12 and 266 bytes into a destination of size 255
+  470 |                         snprintf(rotobs_file,MAX_PATH__,"%s/rotobs.lst",rotobs_base);
+      |                         ~~~~~~~~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/Users/lp.more/Projects/FlexAIDdS/LIB/read_input.cpp:183:73: warning: 'char* strncpy(char*, const char*, size_t)' output may be truncated copying 254 bytes from a string of length 509 [-Wstringop-truncation]
+  183 |                 if(strcmp(field,"OPTIMZ") == 0){if(nopt<MAX_PAR){strncpy(optline[nopt],buffer,MAX_PATH__-1);optline[nopt][MAX_PATH__-1]='\0';nopt++;}}
+      |                                                                  ~~~~~~~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/Users/lp.more/Projects/FlexAIDdS/LIB/read_input.cpp:184:76: warning: 'char* strncpy(char*, const char*, size_t)' output may be truncated copying 254 bytes from a string of length 509 [-Wstringop-truncation]
+  184 |                 if(strcmp(field,"FLEXSC") == 0){if(nflexsc<MAX_PAR){strncpy(flexscline[nflexsc],buffer,MAX_PATH__-1);flexscline[nflexsc][MAX_PATH__-1]='\0';nflexsc++;}}
+      |                                                                     ~~~~~~~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/Users/lp.more/Projects/FlexAIDdS/LIB/read_input.cpp:186:56: warning: 'char* strncpy(char*, const char*, size_t)' output may be truncated copying 254 bytes from a string of length 509 [-Wstringop-truncation]
+  186 |                 if(strcmp(field,"DEFTYP") == 0){strncpy(deftyp_forced,&buffer[7],MAX_PATH__-1);deftyp_forced[MAX_PATH__-1]='\0';}
+      |                                                 ~~~~~~~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/Users/lp.more/Projects/FlexAIDdS/LIB/read_input.cpp:235:56: warning: 'char* strncpy(char*, const char*, size_t)' output may be truncated copying 254 bytes from a string of length 509 [-Wstringop-truncation]
+  235 |                 if(strcmp(field,"IMATRX") == 0){strncpy(emat_forced,&buffer[7],MAX_PATH__-1);emat_forced[MAX_PATH__-1]='\0';}
+      |                                                 ~~~~~~~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+[ 25%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/read_rmsdst.cpp.o
+[ 31%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/calc_rmsd_chrom.cpp.o
+[ 31%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/calc_rmsd.cpp.o
+[ 31%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/write_rrd.cpp.o
+[ 31%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/write_sphere.cpp.o
+[ 31%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/write_grid.cpp.o
+[ 31%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/write_rrg.cpp.o
+[ 31%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/read_rotlib.cpp.o
+In file included from /Users/lp.more/Projects/FlexAIDdS/LIB/GAContext.cpp:12:
+/Users/lp.more/Projects/FlexAIDdS/LIB/TurboQuant.h: In member function 'std::pair<double, double> turboquant::detail::XorShift64::next_gaussian_pair()':
+/Users/lp.more/Projects/FlexAIDdS/LIB/TurboQuant.h:524:60: note: parameter passing for argument of type 'std::pair<double, double>' when C++17 is enabled changed to match C++14 in GCC 10.1
+  524 |     std::pair<double,double> next_gaussian_pair() noexcept {
+      |                                                            ^
+[ 31%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/number_of_dihedrals.cpp.o
+In file included from /Users/lp.more/Projects/FlexAIDdS/LIB/gaboom.cpp:48:
+/Users/lp.more/Projects/FlexAIDdS/LIB/TurboQuant.h: In member function 'std::pair<double, double> turboquant::detail::XorShift64::next_gaussian_pair()':
+/Users/lp.more/Projects/FlexAIDdS/LIB/TurboQuant.h:524:60: note: parameter passing for argument of type 'std::pair<double, double>' when C++17 is enabled changed to match C++14 in GCC 10.1
+  524 |     std::pair<double,double> next_gaussian_pair() noexcept {
+      |                                                            ^
+/Users/lp.more/Projects/FlexAIDdS/LIB/TurboQuant.h: In function 'std::pair<float, float> turboquant::util::empirical_ip_bias(const turboquant::TurboQuantProd&, int, uint64_t)':
+/Users/lp.more/Projects/FlexAIDdS/LIB/TurboQuant.h:1365:77: note: parameter passing for argument of type 'std::pair<float, float>' when C++17 is enabled changed to match C++14 in GCC 10.1
+ 1365 |                                                   uint64_t seed = 0xDEADBEEF) {
+      |                                                                             ^
+/Users/lp.more/Projects/FlexAIDdS/LIB/TurboQuant.h: In function 'std::pair<float, float> turboquant::util::empirical_ip_bias(const turboquant::TurboQuantProd&, int, uint64_t)':
+/Users/lp.more/Projects/FlexAIDdS/LIB/TurboQuant.h:1365:77: note: parameter passing for argument of type 'std::pair<float, float>' when C++17 is enabled changed to match C++14 in GCC 10.1
+ 1365 |                                                   uint64_t seed = 0xDEADBEEF) {
+      |                                                                             ^
+[ 31%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/read_flexscfile.cpp.o
+[ 37%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/read_rotobs.cpp.o
+[ 37%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/set_intprob.cpp.o
+[ 37%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/build_rotamers.cpp.o
+[ 37%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/receptor_prep.cpp.o
+[ 37%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/check_clash.cpp.o
+[ 37%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/read_normalgrid.cpp.o
+[ 37%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/read_eigen.cpp.o
+/Users/lp.more/Projects/FlexAIDdS/LIB/read_flexscfile.cpp: In function 'void read_flexscfile(FA_Global*, resid*, rot**, char (*)[255], int, char*, char*)':
+/Users/lp.more/Projects/FlexAIDdS/LIB/read_flexscfile.cpp:64:26: warning: 'char* strncpy(char*, const char*, size_t)' output may be truncated copying 3 bytes from a string of length 3 [-Wstringop-truncation]
+   64 |                   strncpy(FA->flex_res[FA->nflxsc].name,resname,sizeof(FA->flex_res[FA->nflxsc].name)-1);
+      |                   ~~~~~~~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+[ 37%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/assign_eigen.cpp.o
+[ 37%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/print_surfmat.cpp.o
+[ 43%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/alter_mode.cpp.o
+[ 43%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/dee_pivot.cpp.o
+[ 43%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/read_emat.cpp.o
+[ 43%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/read_spheres.cpp.o
+[ 43%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/cluster.cpp.o
+[ 43%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/DensityPeak_Cluster.cpp.o
+[ 43%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/FastOPTICS_cluster.cpp.o
+[ 43%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/MinibatchSampler.cpp.o
+[ 43%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/FOPTICS.cpp.o
+/Users/lp.more/Projects/FlexAIDdS/LIB/read_spheres.cpp: In function 'sphere* read_spheres(char*)':
+/Users/lp.more/Projects/FlexAIDdS/LIB/read_spheres.cpp:12:14: warning: variable 'field' set but not used [-Wunused-but-set-variable=]
+   12 |         char field[7];              // 6 first character of the line
+      |              ^~~~~
+[ 50%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/fast_optics.cpp.o
+[ 50%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/BindingMode.cpp.o
+/Users/lp.more/Projects/FlexAIDdS/LIB/TurboQuant.h: In function 'void turboquant::detail::fill_normal(float*, int, int, uint64_t)':
+/Users/lp.more/Projects/FlexAIDdS/LIB/TurboQuant.h:542:48: note: parameter passing for argument of type 'std::pair<double, double>' when C++17 is enabled changed to match C++14 in GCC 10.1
+  542 |         auto [g1, g2] = rng.next_gaussian_pair();
+      |                                                ^
+[ 50%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/rna_structure.cpp.o
+/Users/lp.more/Projects/FlexAIDdS/LIB/DensityPeak_Cluster.cpp: In function 'void DensityPeak_cluster(FA_Global*, GB_Global*, VC_Global*, chromosome*, genlim*, atom*, resid*, gridpoint*, int, char*, char*, char*, char*)':
+/Users/lp.more/Projects/FlexAIDdS/LIB/DensityPeak_Cluster.cpp:163:31: warning: 'memset' used with length equal to number of elements without multiplication by element size [-Wmemset-elt-size]
+  163 |                         memset(pChrom->Coord, 0, 3*MAX_ATM_HET);
+      |                         ~~~~~~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/Users/lp.more/Projects/FlexAIDdS/LIB/DensityPeak_Cluster.cpp:275:36: warning: comparison of integer expressions of different signedness: 'int' and 'uint' {aka 'unsigned int'} [-Wsign-compare]
+  275 |                 if(iChrom->Density > maxDensity)
+      |                    ~~~~~~~~~~~~~~~~^~~~~~~~~~~~
+/Users/lp.more/Projects/FlexAIDdS/LIB/DensityPeak_Cluster.cpp:296:66: warning: comparison of integer expressions of different signedness: 'int' and 'uint' {aka 'unsigned int'} [-Wsign-compare]
+  296 |                         if(iChrom->DP == NULL && iChrom->Density == maxDensity)
+      |                                                  ~~~~~~~~~~~~~~~~^~~~~~~~~~~~~
+/Users/lp.more/Projects/FlexAIDdS/LIB/DensityPeak_Cluster.cpp:320:36: warning: comparison of integer expressions of different signedness: 'int' and 'uint' {aka 'unsigned int'} [-Wsign-compare]
+  320 |                 if(pChrom->Density == maxDensity) pChrom->Distance = maxDist;
+      |                    ~~~~~~~~~~~~~~~~^~~~~~~~~~~~~
+/Users/lp.more/Projects/FlexAIDdS/LIB/DensityPeak_Cluster.cpp:412:72: warning: comparison of integer expressions of different signedness: 'int' and 'uint' {aka 'unsigned int'} [-Wsign-compare]
+  412 |                                 if(iChrom->isBorder && iChrom->Density > maxDensity)
+      |                                                        ~~~~~~~~~~~~~~~~^~~~~~~~~~~~
+/Users/lp.more/Projects/FlexAIDdS/LIB/receptor_prep.cpp: In function 'std::vector<receptor_prep::PrepAtom> receptor_prep::parse_pdb(const std::string&, std::vector<std::__cxx11::basic_string<char> >&)':
+/Users/lp.more/Projects/FlexAIDdS/LIB/receptor_prep.cpp:143:21: warning: 'char* strncpy(char*, const char*, size_t)' output may be truncated copying 4 bytes from a string of length 15 [-Wstringop-truncation]
+  143 |         std::strncpy(a.name, aname.c_str(), 4);
+      |         ~~~~~~~~~~~~^~~~~~~~~~~~~~~~~~~~~~~~~~
+[ 50%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/shortest_path.cpp.o
+In file included from /Users/lp.more/Projects/FlexAIDdS/LIB/FOPTICS.h:13,
+                 from /Users/lp.more/Projects/FlexAIDdS/LIB/FastOPTICS_cluster.cpp:1:
+/Users/lp.more/Projects/FlexAIDdS/LIB/TurboQuant.h: In member function 'std::pair<double, double> turboquant::detail::XorShift64::next_gaussian_pair()':
+/Users/lp.more/Projects/FlexAIDdS/LIB/TurboQuant.h:524:60: note: parameter passing for argument of type 'std::pair<double, double>' when C++17 is enabled changed to match C++14 in GCC 10.1
+  524 |     std::pair<double,double> next_gaussian_pair() noexcept {
+      |                                                            ^
+In file included from /Users/lp.more/Projects/FlexAIDdS/LIB/FOPTICS.h:13,
+                 from /Users/lp.more/Projects/FlexAIDdS/LIB/FOPTICS.cpp:1:
+/Users/lp.more/Projects/FlexAIDdS/LIB/TurboQuant.h: In member function 'std::pair<double, double> turboquant::detail::XorShift64::next_gaussian_pair()':
+/Users/lp.more/Projects/FlexAIDdS/LIB/TurboQuant.h:524:60: note: parameter passing for argument of type 'std::pair<double, double>' when C++17 is enabled changed to match C++14 in GCC 10.1
+  524 |     std::pair<double,double> next_gaussian_pair() noexcept {
+      |                                                            ^
+/Users/lp.more/Projects/FlexAIDdS/LIB/TurboQuant.h: In function 'std::pair<float, float> turboquant::util::empirical_ip_bias(const turboquant::TurboQuantProd&, int, uint64_t)':
+/Users/lp.more/Projects/FlexAIDdS/LIB/TurboQuant.h:1365:77: note: parameter passing for argument of type 'std::pair<float, float>' when C++17 is enabled changed to match C++14 in GCC 10.1
+ 1365 |                                                   uint64_t seed = 0xDEADBEEF) {
+      |                                                                             ^
+[ 50%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/partition_grid.cpp.o
+[ 50%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/assign_shortflex.cpp.o
+[ 50%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/slice_grid.cpp.o
+/Users/lp.more/Projects/FlexAIDdS/LIB/TurboQuant.h: In function 'std::pair<float, float> turboquant::util::empirical_ip_bias(const turboquant::TurboQuantProd&, int, uint64_t)':
+/Users/lp.more/Projects/FlexAIDdS/LIB/TurboQuant.h:1365:77: note: parameter passing for argument of type 'std::pair<float, float>' when C++17 is enabled changed to match C++14 in GCC 10.1
+ 1365 |                                                   uint64_t seed = 0xDEADBEEF) {
+      |                                                                             ^
+/Users/lp.more/Projects/FlexAIDdS/LIB/FOPTICS.cpp: In constructor 'FastOPTICS::FastOPTICS(FA_Global*, GB_Global*, VC_Global*, chromosome*, genlim*, atom*, resid*, gridpoint*, int, BindingPopulation&, int)':
+/Users/lp.more/Projects/FlexAIDdS/LIB/FOPTICS.cpp:129:34: warning: comparison of integer expressions of different signedness: 'std::vector<float>::size_type' {aka 'long unsigned int'} and 'int' [-Wsign-compare]
+  129 |                 if(vChrom.size() == this->nDimensions)
+      |                    ~~~~~~~~~~~~~~^~~~~~~~~~~~~~~~~~~~
+/Users/lp.more/Projects/FlexAIDdS/LIB/FOPTICS.cpp: In member function 'void RandomProjectedNeighborsAndDensities::getInverseDensities(std::vector<float>&)':
+/Users/lp.more/Projects/FlexAIDdS/LIB/FOPTICS.cpp:869:22: warning: comparison of integer expressions of different signedness: 'int' and 'std::vector<std::vector<int> >::size_type' {aka 'long unsigned int'} [-Wsign-compare]
+  869 |     for(int i = 0; i < this->splitsets.size(); ++i)
+      |                    ~~^~~~~~~~~~~~~~~~~~~~~~~~
+[ 50%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/generate_grid.cpp.o
+[ 50%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/maps.cpp.o
+[ 56%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/tENCoM/tencm.cpp.o
+[ 56%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/statmech.cpp.o
+/Users/lp.more/Projects/FlexAIDdS/LIB/gaboom.cpp: In function 'FILE* _Z19get_update_file_ptrP16FA_Global_struct.part.0(FA_Global*)':
+/Users/lp.more/Projects/FlexAIDdS/LIB/gaboom.cpp:2848:43: warning: '/.update' directive output may be truncated writing 8 bytes into a region of size between 1 and 255 [-Wformat-truncation=]
+ 2848 |         snprintf(UPDATEFILE,MAX_PATH__,"%s/.update",FA->state_path);
+      |                                           ^~~~~~~~
+/Users/lp.more/Projects/FlexAIDdS/LIB/gaboom.cpp:2848:17: note: 'snprintf' output between 9 and 263 bytes into a destination of size 255
+ 2848 |         snprintf(UPDATEFILE,MAX_PATH__,"%s/.update",FA->state_path);
+      |         ~~~~~~~~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+[ 56%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/encom.cpp.o
+[ 56%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/VibEntropy.cpp.o
+[ 56%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/DiFT/DiFT.cpp.o
+[ 56%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/GISTEvaluator.cpp.o
+[ 56%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/HBondEvaluator.cpp.o
+[ 56%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/TurboQuant.cpp.o
+[ 56%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/ProcessLigand/ProcessLigand.cpp.o
+/Users/lp.more/Projects/FlexAIDdS/LIB/TurboQuant.h: In function 'void turboquant::detail::fill_normal(float*, int, int, uint64_t)':
+/Users/lp.more/Projects/FlexAIDdS/LIB/TurboQuant.h:542:48: note: parameter passing for argument of type 'std::pair<double, double>' when C++17 is enabled changed to match C++14 in GCC 10.1
+  542 |         auto [g1, g2] = rng.next_gaussian_pair();
+      |                                                ^
+[ 62%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/ProcessLigand/SmilesParser.cpp.o
+[ 62%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/ProcessLigand/RingPerception.cpp.o
+[ 62%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/ProcessLigand/Aromaticity.cpp.o
+/Users/lp.more/Projects/FlexAIDdS/LIB/encom.cpp: In static member function 'static std::vector<encom::NormalMode> encom::ENCoMEngine::load_modes(const std::string&, const std::string&)':
+/Users/lp.more/Projects/FlexAIDdS/LIB/encom.cpp:70:58: warning: comparison of integer expressions of different signedness: 'int' and 'std::vector<double>::size_type' {aka 'long unsigned int'} [-Wsign-compare]
+   70 |     while (std::getline(evec_stream, line) && mode_index <= eigenvalues.size()) {
+      |                                               ~~~~~~~~~~~^~~~~~~~~~~~~~~~~~~~~
+[ 62%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/ProcessLigand/RotatableBonds.cpp.o
+In file included from /Users/lp.more/Projects/FlexAIDdS/LIB/TurboQuant.cpp:8:
+/Users/lp.more/Projects/FlexAIDdS/LIB/TurboQuant.h: In member function 'std::pair<double, double> turboquant::detail::XorShift64::next_gaussian_pair()':
+/Users/lp.more/Projects/FlexAIDdS/LIB/TurboQuant.h:524:60: note: parameter passing for argument of type 'std::pair<double, double>' when C++17 is enabled changed to match C++14 in GCC 10.1
+  524 |     std::pair<double,double> next_gaussian_pair() noexcept {
+      |                                                            ^
+/Users/lp.more/Projects/FlexAIDdS/LIB/TurboQuant.h: In function 'std::pair<float, float> turboquant::util::empirical_ip_bias(const turboquant::TurboQuantProd&, int, uint64_t)':
+/Users/lp.more/Projects/FlexAIDdS/LIB/TurboQuant.h:1365:77: note: parameter passing for argument of type 'std::pair<float, float>' when C++17 is enabled changed to match C++14 in GCC 10.1
+ 1365 |                                                   uint64_t seed = 0xDEADBEEF) {
+      |                                                                             ^
+[ 62%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/ProcessLigand/ValenceChecker.cpp.o
+In file included from /Users/lp.more/Projects/FlexAIDdS/LIB/ProcessLigand/RingPerception.h:22,
+                 from /Users/lp.more/Projects/FlexAIDdS/LIB/ProcessLigand/RingPerception.cpp:6:
+/Users/lp.more/Projects/FlexAIDdS/LIB/ProcessLigand/BonMol.h: In member function 'Eigen::Vector3f bonmol::BonMol::centroid() const':
+/Users/lp.more/Projects/FlexAIDdS/LIB/ProcessLigand/BonMol.h:397:38: note: parameter passing for argument of type 'Eigen::Matrix<float, 3, 1>' when C++17 is enabled changed to match C++14 in GCC 10.1
+  397 |     Eigen::Vector3f centroid() const {
+      |                                      ^
+In file included from /Users/lp.more/Projects/FlexAIDdS/LIB/ProcessLigand/ProcessLigand.h:24,
+                 from /Users/lp.more/Projects/FlexAIDdS/LIB/ProcessLigand/ProcessLigand.cpp:6:
+/Users/lp.more/Projects/FlexAIDdS/LIB/ProcessLigand/BonMol.h: In member function 'Eigen::Vector3f bonmol::BonMol::centroid() const':
+/Users/lp.more/Projects/FlexAIDdS/LIB/ProcessLigand/BonMol.h:397:38: note: parameter passing for argument of type 'Eigen::Matrix<float, 3, 1>' when C++17 is enabled changed to match C++14 in GCC 10.1
+  397 |     Eigen::Vector3f centroid() const {
+      |                                      ^
+In file included from /Users/lp.more/Projects/FlexAIDdS/LIB/ProcessLigand/Aromaticity.h:27,
+                 from /Users/lp.more/Projects/FlexAIDdS/LIB/ProcessLigand/Aromaticity.cpp:6:
+/Users/lp.more/Projects/FlexAIDdS/LIB/ProcessLigand/BonMol.h: In member function 'Eigen::Vector3f bonmol::BonMol::centroid() const':
+/Users/lp.more/Projects/FlexAIDdS/LIB/ProcessLigand/BonMol.h:397:38: note: parameter passing for argument of type 'Eigen::Matrix<float, 3, 1>' when C++17 is enabled changed to match C++14 in GCC 10.1
+  397 |     Eigen::Vector3f centroid() const {
+      |                                      ^
+/Users/lp.more/Projects/FlexAIDdS/LIB/ProcessLigand/ProcessLigand.cpp: In lambda function:
+/Users/lp.more/Projects/FlexAIDdS/LIB/ProcessLigand/ProcessLigand.cpp:222:17: warning: this 'if' clause does not guard... [-Wmisleading-indentation]
+  222 |                 if (t == "C.3")   return 1;  if (t == "C.2")   return 2;
+      |                 ^~
+/Users/lp.more/Projects/FlexAIDdS/LIB/ProcessLigand/ProcessLigand.cpp:222:46: note: ...this statement, but the latter is misleadingly indented as if it were guarded by the 'if'
+  222 |                 if (t == "C.3")   return 1;  if (t == "C.2")   return 2;
+      |                                              ^~
+/Users/lp.more/Projects/FlexAIDdS/LIB/ProcessLigand/ProcessLigand.cpp:223:17: warning: this 'if' clause does not guard... [-Wmisleading-indentation]
+  223 |                 if (t == "C.ar")  return 3;  if (t == "C.1")   return 0;
+      |                 ^~
+/Users/lp.more/Projects/FlexAIDdS/LIB/ProcessLigand/ProcessLigand.cpp:223:46: note: ...this statement, but the latter is misleadingly indented as if it were guarded by the 'if'
+  223 |                 if (t == "C.ar")  return 3;  if (t == "C.1")   return 0;
+      |                                              ^~
+/Users/lp.more/Projects/FlexAIDdS/LIB/ProcessLigand/ProcessLigand.cpp:224:17: warning: this 'if' clause does not guard... [-Wmisleading-indentation]
+  224 |                 if (t == "N.3")   return 4;  if (t == "N.2")   return 5;
+      |                 ^~
+/Users/lp.more/Projects/FlexAIDdS/LIB/ProcessLigand/ProcessLigand.cpp:224:46: note: ...this statement, but the latter is misleadingly indented as if it were guarded by the 'if'
+  224 |                 if (t == "N.3")   return 4;  if (t == "N.2")   return 5;
+      |                                              ^~
+/Users/lp.more/Projects/FlexAIDdS/LIB/ProcessLigand/ProcessLigand.cpp:225:17: warning: this 'if' clause does not guard... [-Wmisleading-indentation]
+  225 |                 if (t == "N.ar")  return 6;  if (t == "N.am")  return 7;
+      |                 ^~
+/Users/lp.more/Projects/FlexAIDdS/LIB/ProcessLigand/ProcessLigand.cpp:225:46: note: ...this statement, but the latter is misleadingly indented as if it were guarded by the 'if'
+  225 |                 if (t == "N.ar")  return 6;  if (t == "N.am")  return 7;
+      |                                              ^~
+/Users/lp.more/Projects/FlexAIDdS/LIB/ProcessLigand/ProcessLigand.cpp:226:17: warning: this 'if' clause does not guard... [-Wmisleading-indentation]
+  226 |                 if (t == "N.pl3") return 8;  if (t == "N.4")   return 9;
+      |                 ^~
+/Users/lp.more/Projects/FlexAIDdS/LIB/ProcessLigand/ProcessLigand.cpp:226:46: note: ...this statement, but the latter is misleadingly indented as if it were guarded by the 'if'
+  226 |                 if (t == "N.pl3") return 8;  if (t == "N.4")   return 9;
+      |                                              ^~
+/Users/lp.more/Projects/FlexAIDdS/LIB/ProcessLigand/ProcessLigand.cpp:227:17: warning: this 'if' clause does not guard... [-Wmisleading-indentation]
+  227 |                 if (t == "O.3")   return 10; if (t == "O.2")   return 11;
+      |                 ^~
+/Users/lp.more/Projects/FlexAIDdS/LIB/ProcessLigand/ProcessLigand.cpp:227:46: note: ...this statement, but the latter is misleadingly indented as if it were guarded by the 'if'
+  227 |                 if (t == "O.3")   return 10; if (t == "O.2")   return 11;
+      |                                              ^~
+/Users/lp.more/Projects/FlexAIDdS/LIB/ProcessLigand/ProcessLigand.cpp:228:17: warning: this 'if' clause does not guard... [-Wmisleading-indentation]
+  228 |                 if (t == "O.co2") return 12; if (t == "F")     return 13;
+      |                 ^~
+/Users/lp.more/Projects/FlexAIDdS/LIB/ProcessLigand/ProcessLigand.cpp:228:46: note: ...this statement, but the latter is misleadingly indented as if it were guarded by the 'if'
+  228 |                 if (t == "O.co2") return 12; if (t == "F")     return 13;
+      |                                              ^~
+/Users/lp.more/Projects/FlexAIDdS/LIB/ProcessLigand/ProcessLigand.cpp:229:17: warning: this 'if' clause does not guard... [-Wmisleading-indentation]
+  229 |                 if (t == "Cl")    return 14; if (t == "Br")    return 15;
+      |                 ^~
+/Users/lp.more/Projects/FlexAIDdS/LIB/ProcessLigand/ProcessLigand.cpp:229:46: note: ...this statement, but the latter is misleadingly indented as if it were guarded by the 'if'
+  229 |                 if (t == "Cl")    return 14; if (t == "Br")    return 15;
+      |                                              ^~
+/Users/lp.more/Projects/FlexAIDdS/LIB/ProcessLigand/ProcessLigand.cpp:230:17: warning: this 'if' clause does not guard... [-Wmisleading-indentation]
+  230 |                 if (t == "S.3")   return 16; if (t == "S.2")   return 17;
+      |                 ^~
+/Users/lp.more/Projects/FlexAIDdS/LIB/ProcessLigand/ProcessLigand.cpp:230:46: note: ...this statement, but the latter is misleadingly indented as if it were guarded by the 'if'
+  230 |                 if (t == "S.3")   return 16; if (t == "S.2")   return 17;
+      |                                              ^~
+/Users/lp.more/Projects/FlexAIDdS/LIB/ProcessLigand/ProcessLigand.cpp:231:17: warning: this 'if' clause does not guard... [-Wmisleading-indentation]
+  231 |                 if (t == "S.O")   return 18; if (t == "S.O2")  return 19;
+      |                 ^~
+/Users/lp.more/Projects/FlexAIDdS/LIB/ProcessLigand/ProcessLigand.cpp:231:46: note: ...this statement, but the latter is misleadingly indented as if it were guarded by the 'if'
+  231 |                 if (t == "S.O")   return 18; if (t == "S.O2")  return 19;
+      |                                              ^~
+/Users/lp.more/Projects/FlexAIDdS/LIB/ProcessLigand/ProcessLigand.cpp:232:17: warning: this 'if' clause does not guard... [-Wmisleading-indentation]
+  232 |                 if (t == "P.3")   return 20; if (t == "I")     return 21;
+      |                 ^~
+/Users/lp.more/Projects/FlexAIDdS/LIB/ProcessLigand/ProcessLigand.cpp:232:46: note: ...this statement, but the latter is misleadingly indented as if it were guarded by the 'if'
+  232 |                 if (t == "P.3")   return 20; if (t == "I")     return 21;
+      |                                              ^~
+/Users/lp.more/Projects/FlexAIDdS/LIB/ProcessLigand/ProcessLigand.cpp:233:17: warning: this 'if' clause does not guard... [-Wmisleading-indentation]
+  233 |                 if (t == "H")     return 22; if (t == "Fe")    return 30;
+      |                 ^~
+/Users/lp.more/Projects/FlexAIDdS/LIB/ProcessLigand/ProcessLigand.cpp:233:46: note: ...this statement, but the latter is misleadingly indented as if it were guarded by the 'if'
+  233 |                 if (t == "H")     return 22; if (t == "Fe")    return 30;
+      |                                              ^~
+In file included from /Users/lp.more/Projects/FlexAIDdS/LIB/ProcessLigand/SmilesParser.h:23,
+                 from /Users/lp.more/Projects/FlexAIDdS/LIB/ProcessLigand/SmilesParser.cpp:6:
+/Users/lp.more/Projects/FlexAIDdS/LIB/ProcessLigand/BonMol.h: In member function 'Eigen::Vector3f bonmol::BonMol::centroid() const':
+/Users/lp.more/Projects/FlexAIDdS/LIB/ProcessLigand/BonMol.h:397:38: note: parameter passing for argument of type 'Eigen::Matrix<float, 3, 1>' when C++17 is enabled changed to match C++14 in GCC 10.1
+  397 |     Eigen::Vector3f centroid() const {
+      |                                      ^
+In file included from /Users/lp.more/Projects/FlexAIDdS/LIB/ProcessLigand/RotatableBonds.h:21,
+                 from /Users/lp.more/Projects/FlexAIDdS/LIB/ProcessLigand/RotatableBonds.cpp:6:
+/Users/lp.more/Projects/FlexAIDdS/LIB/ProcessLigand/BonMol.h: In member function 'Eigen::Vector3f bonmol::BonMol::centroid() const':
+/Users/lp.more/Projects/FlexAIDdS/LIB/ProcessLigand/BonMol.h:397:38: note: parameter passing for argument of type 'Eigen::Matrix<float, 3, 1>' when C++17 is enabled changed to match C++14 in GCC 10.1
+  397 |     Eigen::Vector3f centroid() const {
+      |                                      ^
+[ 62%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/ProcessLigand/SybylTyper.cpp.o
+[ 62%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/ProcessLigand/FlexAIDWriter.cpp.o
+[ 62%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/ProcessLigand/ROCmDispatch.cpp.o
+In file included from /Users/lp.more/Projects/FlexAIDdS/LIB/ProcessLigand/ValenceChecker.h:13,
+                 from /Users/lp.more/Projects/FlexAIDdS/LIB/ProcessLigand/ValenceChecker.cpp:6:
+/Users/lp.more/Projects/FlexAIDdS/LIB/ProcessLigand/BonMol.h: In member function 'Eigen::Vector3f bonmol::BonMol::centroid() const':
+/Users/lp.more/Projects/FlexAIDdS/LIB/ProcessLigand/BonMol.h:397:38: note: parameter passing for argument of type 'Eigen::Matrix<float, 3, 1>' when C++17 is enabled changed to match C++14 in GCC 10.1
+  397 |     Eigen::Vector3f centroid() const {
+      |                                      ^
+[ 62%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/ProcessLigand/CoordBuilder.cpp.o
+[ 68%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/CifReader.cpp.o
+[ 68%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/MultiModelDock.cpp.o
+[ 68%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/LibrarySplitter.cpp.o
+In file included from /Users/lp.more/Projects/FlexAIDdS/LIB/ProcessLigand/SybylTyper.h:27,
+                 from /Users/lp.more/Projects/FlexAIDdS/LIB/ProcessLigand/SybylTyper.cpp:9:
+/Users/lp.more/Projects/FlexAIDdS/LIB/ProcessLigand/BonMol.h: In member function 'Eigen::Vector3f bonmol::BonMol::centroid() const':
+/Users/lp.more/Projects/FlexAIDdS/LIB/ProcessLigand/BonMol.h:397:38: note: parameter passing for argument of type 'Eigen::Matrix<float, 3, 1>' when C++17 is enabled changed to match C++14 in GCC 10.1
+  397 |     Eigen::Vector3f centroid() const {
+      |                                      ^
+[ 68%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/ReferenceEntropy.cpp.o
+In file included from /Users/lp.more/Projects/FlexAIDdS/LIB/ProcessLigand/FlexAIDWriter.h:42,
+                 from /Users/lp.more/Projects/FlexAIDdS/LIB/ProcessLigand/FlexAIDWriter.cpp:6:
+/Users/lp.more/Projects/FlexAIDdS/LIB/ProcessLigand/BonMol.h: In member function 'Eigen::Vector3f bonmol::BonMol::centroid() const':
+/Users/lp.more/Projects/FlexAIDdS/LIB/ProcessLigand/BonMol.h:397:38: note: parameter passing for argument of type 'Eigen::Matrix<float, 3, 1>' when C++17 is enabled changed to match C++14 in GCC 10.1
+  397 |     Eigen::Vector3f centroid() const {
+      |                                      ^
+In file included from /Users/lp.more/Projects/FlexAIDdS/LIB/ProcessLigand/CoordBuilder.h:17,
+                 from /Users/lp.more/Projects/FlexAIDdS/LIB/ProcessLigand/CoordBuilder.cpp:16:
+/Users/lp.more/Projects/FlexAIDdS/LIB/ProcessLigand/BonMol.h: In member function 'Eigen::Vector3f bonmol::BonMol::centroid() const':
+/Users/lp.more/Projects/FlexAIDdS/LIB/ProcessLigand/BonMol.h:397:38: note: parameter passing for argument of type 'Eigen::Matrix<float, 3, 1>' when C++17 is enabled changed to match C++14 in GCC 10.1
+  397 |     Eigen::Vector3f centroid() const {
+      |                                      ^
+[ 68%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/ParallelCampaign.cpp.o
+[ 68%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/hardware_detect.cpp.o
+[ 68%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/UnifiedHardwareDispatch.cpp.o
+[ 68%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/ShannonThermoStack/ShannonThermoStack.cpp.o
+[ 68%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/shannon_ga.cpp.o
+/Users/lp.more/Projects/FlexAIDdS/LIB/gaboom.cpp: In function 'int GA(FA_Global*, GB_Global*, VC_Global*, chromosome**, chromosome**, genlim**, atom*, resid*, gridpoint**, char*, int*, cfstr (*)(FA_Global*, VC_Global*, atom*, resid*, gridpoint*, int, double*), GAContext*)':
+/Users/lp.more/Projects/FlexAIDdS/LIB/gaboom.cpp:273:42: warning: '/.pause' directive output may be truncated writing 7 bytes into a region of size between 1 and 255 [-Wformat-truncation=]
+  273 |         snprintf(PAUSEFILE,MAX_PATH__,"%s/.pause",FA->state_path);
+      |                                          ^~~~~~~
+/Users/lp.more/Projects/FlexAIDdS/LIB/gaboom.cpp:273:17: note: 'snprintf' output between 8 and 262 bytes into a destination of size 255
+  273 |         snprintf(PAUSEFILE,MAX_PATH__,"%s/.pause",FA->state_path);
+      |         ~~~~~~~~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/Users/lp.more/Projects/FlexAIDdS/LIB/gaboom.cpp:274:42: warning: '/.abort' directive output may be truncated writing 7 bytes into a region of size between 1 and 255 [-Wformat-truncation=]
+  274 |         snprintf(ABORTFILE,MAX_PATH__,"%s/.abort",FA->state_path);
+      |                                          ^~~~~~~
+/Users/lp.more/Projects/FlexAIDdS/LIB/gaboom.cpp:274:17: note: 'snprintf' output between 8 and 262 bytes into a destination of size 255
+  274 |         snprintf(ABORTFILE,MAX_PATH__,"%s/.abort",FA->state_path);
+      |         ~~~~~~~~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/Users/lp.more/Projects/FlexAIDdS/LIB/gaboom.cpp:275:41: warning: '/.stop' directive output may be truncated writing 6 bytes into a region of size between 1 and 255 [-Wformat-truncation=]
+  275 |         snprintf(STOPFILE,MAX_PATH__,"%s/.stop",FA->state_path);
+      |                                         ^~~~~~
+/Users/lp.more/Projects/FlexAIDdS/LIB/gaboom.cpp:275:17: note: 'snprintf' output between 7 and 261 bytes into a destination of size 255
+  275 |         snprintf(STOPFILE,MAX_PATH__,"%s/.stop",FA->state_path);
+      |         ~~~~~~~~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/Users/lp.more/Projects/FlexAIDdS/LIB/gaboom.cpp:713:65: warning: '/grid.' directive output may be truncated writing 6 bytes into a region of size between 1 and 255 [-Wformat-truncation=]
+  713 |                                 snprintf(gridfile,MAX_PATH__,"%s/grid.%d.prt.pdb",FA->temp_path,i+1);
+      |                                                                 ^~~~~~
+/Users/lp.more/Projects/FlexAIDdS/LIB/gaboom.cpp:713:62: note: directive argument in the range [1, 2147483647]
+  713 |                                 snprintf(gridfile,MAX_PATH__,"%s/grid.%d.prt.pdb",FA->temp_path,i+1);
+      |                                                              ^~~~~~~~~~~~~~~~~~~~
+/Users/lp.more/Projects/FlexAIDdS/LIB/gaboom.cpp:713:41: note: 'snprintf' output between 16 and 279 bytes into a destination of size 255
+  713 |                                 snprintf(gridfile,MAX_PATH__,"%s/grid.%d.prt.pdb",FA->temp_path,i+1);
+      |                                 ~~~~~~~~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/Users/lp.more/Projects/FlexAIDdS/LIB/gaboom.cpp:724:65: warning: '/grid.' directive output may be truncated writing 6 bytes into a region of size between 1 and 255 [-Wformat-truncation=]
+  724 |                                 snprintf(gridfile,MAX_PATH__,"%s/grid.%d.slc.pdb",FA->temp_path,i+1);
+      |                                                                 ^~~~~~
+/Users/lp.more/Projects/FlexAIDdS/LIB/gaboom.cpp:724:62: note: directive argument in the range [1, 2147483647]
+  724 |                                 snprintf(gridfile,MAX_PATH__,"%s/grid.%d.slc.pdb",FA->temp_path,i+1);
+      |                                                              ^~~~~~~~~~~~~~~~~~~~
+/Users/lp.more/Projects/FlexAIDdS/LIB/gaboom.cpp:724:41: note: 'snprintf' output between 16 and 279 bytes into a destination of size 255
+  724 |                                 snprintf(gridfile,MAX_PATH__,"%s/grid.%d.slc.pdb",FA->temp_path,i+1);
+      |                                 ~~~~~~~~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/Users/lp.more/Projects/FlexAIDdS/LIB/gaboom.cpp:1322:40: warning: '_par.res' directive output may be truncated writing 8 bytes into a region of size between 1 and 255 [-Wformat-truncation=]
+ 1322 |         snprintf(outfile,MAX_PATH__,"%s_par.res",FA->rrgfile);
+      |                                        ^~~~~~~~
+/Users/lp.more/Projects/FlexAIDdS/LIB/gaboom.cpp:1322:17: note: 'snprintf' output between 9 and 263 bytes into a destination of size 255
+ 1322 |         snprintf(outfile,MAX_PATH__,"%s_par.res",FA->rrgfile);
+      |         ~~~~~~~~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+[ 75%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/LigandRingFlex/RingConformerLibrary.cpp.o
+[ 75%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/LigandRingFlex/SugarPucker.cpp.o
+In file included from /Users/lp.more/Projects/FlexAIDdS/LIB/ProcessLigand/ProcessLigand.h:24,
+                 from /Users/lp.more/Projects/FlexAIDdS/LIB/ParallelCampaign.cpp:26:
+/Users/lp.more/Projects/FlexAIDdS/LIB/ProcessLigand/BonMol.h: In member function 'Eigen::Vector3f bonmol::BonMol::centroid() const':
+/Users/lp.more/Projects/FlexAIDdS/LIB/ProcessLigand/BonMol.h:397:38: note: parameter passing for argument of type 'Eigen::Matrix<float, 3, 1>' when C++17 is enabled changed to match C++14 in GCC 10.1
+  397 |     Eigen::Vector3f centroid() const {
+      |                                      ^
+[ 75%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/NATURaL/NATURaLDualAssembly.cpp.o
+[ 75%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/LigandRingFlex/LigandRingFlex.cpp.o
+[ 75%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/NATURaL/RibosomeElongation.cpp.o
+[ 75%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/NATURaL/TransloconInsertion.cpp.o
+[ 75%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/NATURaL/NucleationDetector.cpp.o
+[ 75%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/NATURaL/NascentChainScheduler.cpp.o
+[ 75%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/NATURaL/FibrilGrowthOracle.cpp.o
+[ 81%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/NATURaL/DualAssemblyRunner.cpp.o
+[ 81%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/ChiralCenter/ChiralCenterGene.cpp.o
+[ 81%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/CleftDetector.cpp.o
+[ 81%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/Mol2Reader.cpp.o
+[ 81%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/SdfReader.cpp.o
+[ 81%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/CavityDetect/CavityDetect.cpp.o
+[ 81%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/PTMAttachment/PTMAttachment.cpp.o
+[ 81%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/config_parser.cpp.o
+In file included from /opt/homebrew/Cellar/eigen/5.0.1/include/eigen3/Eigen/Geometry:36,
+                 from /opt/homebrew/Cellar/eigen/5.0.1/include/eigen3/Eigen/Dense:6,
+                 from /Users/lp.more/Projects/FlexAIDdS/LIB/ChiralCenter/ChiralCenterGene.cpp:9:
+/opt/homebrew/Cellar/eigen/5.0.1/include/eigen3/Eigen/src/Geometry/OrthoMethods.h: In instantiation of 'typename Eigen::internal::cross_impl<Derived, OtherDerived>::return_type Eigen::MatrixBase<Derived>::cross(const Eigen::MatrixBase<OtherDerived>&) const [with OtherDerived = Eigen::Matrix<float, 3, 1>; Derived = Eigen::Matrix<float, 3, 1>; typename Eigen::internal::cross_impl<Derived, OtherDerived>::return_type = Eigen::Matrix<float, 3, 1>; Base = Eigen::DenseBase<Eigen::Matrix<float, 3, 1> >]':
+/Users/lp.more/Projects/FlexAIDdS/LIB/ChiralCenter/ChiralCenterGene.cpp:152:31:   required from here
+  152 |         Vec3 normal = v1.cross(v2);
+      |                       ~~~~~~~~^~~~
+/opt/homebrew/Cellar/eigen/5.0.1/include/eigen3/Eigen/src/Geometry/OrthoMethods.h:91:1: note: parameter passing for argument of type 'Eigen::Matrix<float, 3, 1>' when C++17 is enabled changed to match C++14 in GCC 10.1
+   91 | MatrixBase<Derived>::cross(const MatrixBase<OtherDerived>& other) const {
+      | ^~~~~~~~~~~~~~~~~~~
+[ 81%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/ProtocolConfig.cpp.o
+[ 87%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/RunReceipt.cpp.o
+[ 87%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/ThermodynamicEngine.cpp.o
+[ 87%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/coarse_init.cpp.o
+[ 87%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/GridDecomposer.cpp.o
+/Users/lp.more/Projects/FlexAIDdS/LIB/CavityDetect/CavityDetect.cpp: In member function 'void cavity_detect::CavityDetector::load_from_pdb(const std::string&)':
+/Users/lp.more/Projects/FlexAIDdS/LIB/CavityDetect/CavityDetect.cpp:324:21: warning: 'char* strncpy(char*, const char*, size_t)' output may be truncated copying 4 bytes from a string of length 15 [-Wstringop-truncation]
+  324 |         std::strncpy(a.name, name_str.c_str(), 4);
+      |         ~~~~~~~~~~~~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+[ 87%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/SharedPosePool.cpp.o
+/Users/lp.more/Projects/FlexAIDdS/LIB/Mol2Reader.cpp: In function 'int read_mol2_ligand(FA_Global*, atom**, resid**, const char*)':
+/Users/lp.more/Projects/FlexAIDdS/LIB/Mol2Reader.cpp:259:12: warning: 'char* strncpy(char*, const char*, size_t)' output may be truncated copying 3 bytes from a string of length 63 [-Wstringop-truncation]
+  259 |     strncpy((*residue)[FA->res_cnt].name, mol_name, 3);
+      |     ~~~~~~~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+[ 87%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/ParallelDock.cpp.o
+[ 87%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/CoarseScreen.cpp.o
+[ 87%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/TwoStageScreen.cpp.o
+/Users/lp.more/Projects/FlexAIDdS/LIB/PTMAttachment/PTMAttachment.cpp: In function 'ptm::PTMSite ptm::attach_modification(FA_Global*, atom*, resid*, int, const PTMDefinition&)':
+/Users/lp.more/Projects/FlexAIDdS/LIB/PTMAttachment/PTMAttachment.cpp:389:21: warning: 'char* strncpy(char*, const char*, size_t)' output may be truncated copying 4 bytes from a string of length 4 [-Wstringop-truncation]
+  389 |         std::strncpy(atoms[idx].name, def.added_atoms[i].name, 4);
+      |         ~~~~~~~~~~~~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/Users/lp.more/Projects/FlexAIDdS/LIB/PTMAttachment/PTMAttachment.cpp:391:21: warning: 'char* strncpy(char*, const char*, size_t)' output may be truncated copying 2 bytes from a string of length 2 [-Wstringop-truncation]
+  391 |         std::strncpy(atoms[idx].element, def.added_atoms[i].element, 2);
+      |         ~~~~~~~~~~~~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/Users/lp.more/Projects/FlexAIDdS/LIB/PTMAttachment/PTMAttachment.cpp:389:21: warning: 'char* strncpy(char*, const char*, size_t)' output may be truncated copying 4 bytes from a string of length 4 [-Wstringop-truncation]
+  389 |         std::strncpy(atoms[idx].name, def.added_atoms[i].name, 4);
+      |         ~~~~~~~~~~~~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/Users/lp.more/Projects/FlexAIDdS/LIB/PTMAttachment/PTMAttachment.cpp:391:21: warning: 'char* strncpy(char*, const char*, size_t)' output may be truncated copying 2 bytes from a string of length 2 [-Wstringop-truncation]
+  391 |         std::strncpy(atoms[idx].element, def.added_atoms[i].element, 2);
+      |         ~~~~~~~~~~~~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/Users/lp.more/Projects/FlexAIDdS/LIB/SdfReader.cpp: In function 'int read_sdf_ligand(FA_Global*, atom**, resid**, const char*)':
+/Users/lp.more/Projects/FlexAIDdS/LIB/SdfReader.cpp:487:12: warning: 'char* strncpy(char*, const char*, size_t)' output may be truncated copying 3 bytes from a string of length 63 [-Wstringop-truncation]
+  487 |     strncpy((*residue)[FA->res_cnt].name, mol_name, 3);
+      |     ~~~~~~~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+[ 87%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/TargetValidation.cpp.o
+[ 93%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/GrandPartitionFunction.cpp.o
+[ 93%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/MultiSiteGPF.cpp.o
+[ 93%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/TargetKnowledgeBase.cpp.o
+[ 93%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/TargetServer.cpp.o
+[ 93%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/MPITransport.cpp.o
+[ 93%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/InStreamClustering.cpp.o
+[ 93%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/BinarySnapshot.cpp.o
+[ 93%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/build_close.cpp.o
+[ 93%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/cffunction.cpp.o
+[100%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/cpu_eval.cpp.o
+[100%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/cpu_fast_optics.cpp.o
+[100%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/dee_print.cpp.o
+[100%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/direct_input.cpp.o
+[100%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/spfunction.cpp.o
+[100%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/tENCoM/tencm_cpu_fallback.cpp.o
+[100%] Building CXX object LIB/CMakeFiles/flexaid_core.dir/native_score.cpp.o
+/Users/lp.more/Projects/FlexAIDdS/LIB/cffunction.cpp: In function 'cfstr cffunction(FA_Global*, atom*, resid*, int)':
+/Users/lp.more/Projects/FlexAIDdS/LIB/cffunction.cpp:7:21: warning: 'b' may be used uninitialized [-Wmaybe-uninitialized]
+    7 |   int   i,j,l,k,m,n,b,c;                    // dumb counters REMOVED s,p,k
+      |                     ^
+/Users/lp.more/Projects/FlexAIDdS/LIB/cffunction.cpp:7:21: note: 'b' was declared here
+    7 |   int   i,j,l,k,m,n,b,c;                    // dumb counters REMOVED s,p,k
+      |                     ^
+/Users/lp.more/Projects/FlexAIDdS/LIB/cffunction.cpp:7:23: warning: 'c' may be used uninitialized [-Wmaybe-uninitialized]
+    7 |   int   i,j,l,k,m,n,b,c;                    // dumb counters REMOVED s,p,k
+      |                       ^
+/Users/lp.more/Projects/FlexAIDdS/LIB/cffunction.cpp:195:9: warning: 'bond_flag' may be used uninitialized [-Wmaybe-uninitialized]
+  195 |         if(bond_flag == 0){
+      |         ^~
+/Users/lp.more/Projects/FlexAIDdS/LIB/cffunction.cpp:8:9: note: 'bond_flag' was declared here
+    8 |   int   bond_flag;                          // flag to test bonded atoms
+      |         ^~~~~~~~~
+In file included from /Users/lp.more/Projects/FlexAIDdS/LIB/FOPTICS.h:13,
+                 from /Users/lp.more/Projects/FlexAIDdS/LIB/cpu_fast_optics.h:9,
+                 from /Users/lp.more/Projects/FlexAIDdS/LIB/cpu_fast_optics.cpp:8:
+/Users/lp.more/Projects/FlexAIDdS/LIB/TurboQuant.h: In member function 'std::pair<double, double> turboquant::detail::XorShift64::next_gaussian_pair()':
+/Users/lp.more/Projects/FlexAIDdS/LIB/TurboQuant.h:524:60: note: parameter passing for argument of type 'std::pair<double, double>' when C++17 is enabled changed to match C++14 in GCC 10.1
+  524 |     std::pair<double,double> next_gaussian_pair() noexcept {
+      |                                                            ^
+/Users/lp.more/Projects/FlexAIDdS/LIB/TurboQuant.h: In function 'std::pair<float, float> turboquant::util::empirical_ip_bias(const turboquant::TurboQuantProd&, int, uint64_t)':
+/Users/lp.more/Projects/FlexAIDdS/LIB/TurboQuant.h:1365:77: note: parameter passing for argument of type 'std::pair<float, float>' when C++17 is enabled changed to match C++14 in GCC 10.1
+ 1365 |                                                   uint64_t seed = 0xDEADBEEF) {
+      |                                                                             ^
+[100%] Built target flexaid_core
+[100%] Building CXX object CMakeFiles/FlexAIDdS.dir/LIB/top.cpp.o
+In file included from /Users/lp.more/Projects/FlexAIDdS/LIB/ProcessLigand/ProcessLigand.h:24,
+                 from /Users/lp.more/Projects/FlexAIDdS/LIB/top.cpp:12:
+/Users/lp.more/Projects/FlexAIDdS/LIB/ProcessLigand/BonMol.h: In member function 'Eigen::Vector3f bonmol::BonMol::centroid() const':
+/Users/lp.more/Projects/FlexAIDdS/LIB/ProcessLigand/BonMol.h:397:38: note: parameter passing for argument of type 'Eigen::Matrix<float, 3, 1>' when C++17 is enabled changed to match C++14 in GCC 10.1
+  397 |     Eigen::Vector3f centroid() const {
+      |                                      ^
+[100%] Linking CXX executable FlexAIDdS
+Staging FlexAIDdS runtime data files next to the binary
+[100%] Built target FlexAIDdS

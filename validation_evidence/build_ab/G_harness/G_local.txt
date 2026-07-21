@@ -1,0 +1,11 @@
+timestamp=2026-07-21T20:16:10Z
+hostname=LPmore.local
+apptainer=MISSING
+singularity=MISSING
+sbatch=MISSING
+def=containers/flexaidds_locked_x86_64.def present=yes
+array=scripts/narval_cmaes_array.sh present=yes
+manifest_validate=OK: scripts/cmaes_ab_manifest.json schema_version=1.0 complex=1G9V budget=1000x2000=2000000 arms=2
+sif_build=SKIPPED (no apptainer on Darwin)
+submit_print_only:
+sbatch --account=${CC_ACCOUNT} scripts/narval_cmaes_array.sh

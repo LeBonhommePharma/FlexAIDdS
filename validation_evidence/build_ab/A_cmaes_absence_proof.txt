@@ -1,0 +1,63 @@
+=== cmaes-ab tip commit stat ===
+9a5e8c8d3 wire CMA-ES search backend (opt-in FLEXAIDDS_SEARCH=cmaes)
+ benchmarks/astex_repro/flexaidds_v135_wrapper.sh |  41 ++++
+ benchmarks/astex_repro/launch_v135.py            | 214 +++++++++++++++++++
+ benchmarks/astex_repro/launch_v135b.py           | 117 +++++++++++
+ benchmarks/astex_repro/launch_v136.py            | 254 +++++++++++++++++++++++
+ python/flexaidds/docking.py                      |  43 +++-
+ python/tests/test_docking.py                     |  68 +++++-
+ 6 files changed, 721 insertions(+), 16 deletions(-)
+
+=== search all branches for cmaes_search ===
+9723f9de4 wire CMA-ES search backend (opt-in FLEXAIDDS_SEARCH=cmaes)
+9a5e8c8d3 wire CMA-ES search backend (opt-in FLEXAIDDS_SEARCH=cmaes)
+
+=== stash/worktree for cmaes ===
+stash@{0}: WIP on cmaes-ab: 9a5e8c8d3 wire CMA-ES search backend (opt-in FLEXAIDDS_SEARCH=cmaes)
+stash@{1}: On main: bonhomme-wip-skill-edits
+stash@{2}: On feature/grand-canonical-muVT-v1: wip
+stash@{3}: On fix/cofactor-blacklist: wip-pre-v6-benchmark
+stash@{4}: WIP on master: a5072bd Add: ΔCp binding (finite-diff), Kirchhoff ΔG(T), I_EE index — 14 new tests, 92/92 passing
+stash@{5}: On feature/component-boltzmann-averages: WIP _core.cpp
+stash@{6}: On feature/component-boltzmann-averages: WIP changes before PR triage
+
+=== uncommitted? ===
+## perf/pb-clash-grid-hoist
+?? KICKOFF.md
+?? VALIDATION.md
+?? validation_evidence/
+
+=== any CMAES in docs or patches ===
+./validation_evidence/build_ab/A_cmaes_absence_proof.txt
+VALIDATION.md
+=== stash@{0} summary ===
+ CMakeLists.txt                  | 34 ++++++++++++++++++++++++++++++++++
+ LIB/DatasetRunner.cpp           | 38 +++++++++++++++++++++++++++++++++++---
+ LIB/DatasetRunner.h             |  8 ++++++++
+ LIB/ProtocolConfig.cpp          |  3 +++
+ LIB/ProtocolConfig.h            |  6 +++++-
+ LIB/ThermodynamicEngine.cpp     | 21 ++++++++++++++++++++-
+ LIB/ThermodynamicEngine.h       | 14 +++++++++++++-
+ LIB/UnifiedHardwareDispatch.cpp | 11 +++++++++++
+ LIB/UnifiedHardwareDispatch.h   |  1 +
+ LIB/config_parser.cpp           |  3 +++
+ LIB/flexaid.h                   |  1 +
+ LIB/gaboom.cpp                  | 12 +++++++++++-
+ LIB/top.cpp                     | 26 ++++++++++++++++++++++++++
+ 13 files changed, 171 insertions(+), 7 deletions(-)
+
+=== stash@{0} file list (cmaes related) ===
+
+CMakeLists.txt
+LIB/DatasetRunner.cpp
+LIB/DatasetRunner.h
+LIB/ProtocolConfig.cpp
+LIB/ProtocolConfig.h
+LIB/ThermodynamicEngine.cpp
+LIB/ThermodynamicEngine.h
+LIB/UnifiedHardwareDispatch.cpp
+LIB/UnifiedHardwareDispatch.h
+LIB/config_parser.cpp
+LIB/flexaid.h
+LIB/gaboom.cpp
+LIB/top.cpp

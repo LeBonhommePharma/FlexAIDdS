@@ -1,0 +1,177 @@
+[DIRECT-IC] GPA topology atoms=90005,90004,90006 local=5,4,6
+base path is '/Users/lp.more/Projects/FlexAIDdS/.swarm/cmaes/orchestrator/build_fast'
+data directory from FLEXAIDDS_DATA_DIR: '/Users/lp.more/Projects/FlexAIDdS/.swarm/cmaes/orchestrator/build_fast'
+Receptor: /Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1G9V/1G9V_apo.pdb
+Ligand:   /Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_repro/smoke/1G9V/1G9V_dockin.sdf
+FlexAIDdS config: T=300K, ligand_flex=ON, intramolecular=ON, scoring=VCT, intermolecular_clash_ratio=0.000
+interaction matrix is </Users/lp.more/Projects/FlexAIDdS/.swarm/cmaes/orchestrator/build_fast/MC_st0r5.2_6.dat>
+read 820 lines in </Users/lp.more/Projects/FlexAIDdS/.swarm/cmaes/orchestrator/build_fast/MC_st0r5.2_6.dat>
+number of atom types: 40
+definition of types is </Users/lp.more/Projects/FlexAIDdS/.swarm/cmaes/orchestrator/build_fast/AMINO.def>
+Protein PDB files are reordered
+Hydrogens are removed
+'A' alternate conformation ONLY is chosen
+heterogroups are not excluded
+water molecules will be removed
+number of ATOM lines read is 4384
+number of lines outputted is 4384
+globalmin[0]= -23.460	globalmax[0]=  44.150
+globalmin[1]= -14.826	globalmax[1]=  41.801
+globalmin[2]=  11.590	globalmax[2]=  68.701
+The residue ARG141A misses atoms: FATM=1058	LATM=1069
+The residue ARG541C misses atoms: FATM=3250	LATM=3261
+The residue HIS346B misses atoms: FATM=2182	LATM=2192
+The residue HIS746D misses atoms: FATM=4374	LATM=4384
+ProcessLigand: 25 atoms, 2 rings (2 aromatic), 5 rotatable bonds, MW=341.4
+read ligand SDF </Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_repro/smoke/1G9V/1G9V_dockin.sdf>
+read_sdf_ligand: reading </Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_repro/smoke/1G9V/1G9V_dockin.sdf>
+read_sdf_ligand: 25 atoms, 26 bonds (mol=RQ3)
+read_sdf_ligand: loaded 25 atoms into FlexAID structures
+[TYPING] atom 15 (O 15): element-only type 14 -> SYBYL O.2 -> canonical type 13
+ProcessLigand typing applied: 1/25 ligand atoms upgraded to SYBYL-based canonical VCT types
+radii are now assigned
+globalmin[0]= -23.460	globalmax[0]=  44.150
+globalmin[1]= -14.826	globalmax[1]=  41.801
+globalmin[2]=  11.590	globalmax[2]=  68.701
+Formal charges assigned: 520 side-chain, 574 backbone O, 546 backbone N, 0 metal/ion atoms
+[vH] type256 + virtual-H populated (N.am=VHG_AMIDE, N.3=SP3, O.3/S.3=HYDROXYL)
+SURFNET binding-site detection (CleftDetector) ...
+CleftDetector: scanning 4581 atoms for binding cavities ...
+CleftDetector: 5633 gap-spheres survived shrinking
+CleftDetector: cluster label=223 n=51 ligandable_score=111.689
+CleftDetector: cluster label=239 n=35 ligandable_score=98.413
+CleftDetector: cluster label=368 n=15 ligandable_score=37.773
+CleftDetector: cluster label=397 n=28 ligandable_score=102.917
+CleftDetector: cluster label=687 n=20 ligandable_score=61.634
+CleftDetector: cluster label=697 n=249 ligandable_score=382.307
+CleftDetector: cluster label=762 n=16 ligandable_score=45.676
+CleftDetector: cluster label=781 n=122 ligandable_score=127.814
+CleftDetector: cluster label=1018 n=13 ligandable_score=163.540
+CleftDetector: cluster label=1168 n=127 ligandable_score=255.873
+CleftDetector: cluster label=1238 n=289 ligandable_score=435.620
+CleftDetector: cluster label=1288 n=99 ligandable_score=55.277
+CleftDetector: cluster label=1381 n=48 ligandable_score=78.534
+CleftDetector: cluster label=1406 n=21 ligandable_score=77.665
+CleftDetector: cluster label=1421 n=91 ligandable_score=161.453
+CleftDetector: cluster label=1886 n=15 ligandable_score=25.091
+CleftDetector: cluster label=1965 n=29 ligandable_score=32.971
+CleftDetector: cluster label=1986 n=3809 ligandable_score=1291.885
+CleftDetector: cluster label=2073 n=38 ligandable_score=180.677
+CleftDetector: cluster label=2706 n=99 ligandable_score=182.682
+CleftDetector: cluster label=2753 n=53 ligandable_score=100.899
+CleftDetector: cluster label=2882 n=19 ligandable_score=66.666
+CleftDetector: cluster label=3102 n=134 ligandable_score=93.297
+CleftDetector: cluster label=3782 n=14 ligandable_score=83.348
+CleftDetector: cluster label=4614 n=16 ligandable_score=89.235
+CleftDetector: cluster label=5115[GRID-CACHE] Saved 15132 grid points → /Users/lp.more/Projects/FlexAIDdS/validation_evidence/build_ab/D_1G9V_dual/cmaes_short.rrg
+ n=10 ligandable_score=41.294
+CleftDetector: cluster label=5117 n=12 ligandable_score=21.160
+CleftDetector: keeping 5 ligandable cluster(s) (top_k=5, min_size=10; 4573 spheres total; largest cluster 3809)
+will build a grid with spacing 0.375
+built a grid with 315129 vertices
+SITE-CONFINE: reference ligand centroid override 16.97 16.62 41.74 from /Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1G9V/1G9V_ligand.sdf
+SITE-CONFINE: 15131 pts within 7.9 A of cognate centroid (expanded from 7.9 A, 315129->15131 grid pts)
+MIF: computed for 15131 grid points (T=300K)
+REFLIG: direct-mode reference seed (17.0, 16.6, 41.7), 10 nearest points
+Direct loading: receptor/ligand structures loaded, cleft detected
+npar=0 map_par[0].typ=-1 map_par[0].atm=90005 opt_par[0]=0.000000
+npar=1 map_par[1].typ=1 map_par[1].atm=90004 opt_par[1]=57.902100
+npar=2 map_par[2].typ=2 map_par[2].atm=90004 opt_par[2]=-172.229218
+npar=3 map_par[3].typ=2 map_par[3].atm=90006 opt_par[3]=-156.407761
+npar=4 map_par[4].typ=2 map_par[4].atm=90002 opt_par[4]=-86.065697
+npar=5 map_par[5].typ=2 map_par[5].atm=90008 opt_par[5]=-169.840698
+npar=6 map_par[6].typ=2 map_par[6].atm=90009 opt_par[6]=153.586029
+npar=7 map_par[7].typ=2 map_par[7].atm=90015 opt_par[7]=77.992104
+npar=8 map_par[8].typ=2 map_par[8].atm=90016 opt_par[8]=2.580286
+npar=9 map_par[9].typ=2 map_par[9].atm=90019 opt_par[9]=-39.177784
+Direct loading complete: 4581 atoms, 579 residues, 15132 grid points, 10 params
+Directional H-bond scoring enabled (weight=-2.50, search=on, rank=off)
+lout[0]= 90005
+lout[1]= 90004
+lout[2]= 90006
+lout[3]= 90001
+lout[4]= 90003
+lout[5]= 90007
+lout[6]= 90008
+lout[7]= 90009
+lout[8]= 90010
+lout[9]= 90011
+lout[10]= 90012
+lout[11]= 90013
+lout[12]= 90014
+lout[13]= 90015
+lout[14]= 90016
+lout[15]= 90017
+lout[16]= 90018
+lout[17]= 90019
+lout[18]= 90020
+lout[19]= 90021
+lout[20]= 90022
+lout[21]= 90023
+lout[22]= 90024
+lout[23]= 90025
+lout[24]= 90002
+mov[0][0]=4561
+mov[0][1]=4560
+mov[0][2]=4562
+mov[0][3]=4557
+mov[0][4]=4559
+mov[0][5]=4563
+mov[0][6]=4564
+mov[0][7]=4565
+mov[0][8]=4566
+mov[0][9]=4567
+mov[0][10]=4568
+mov[0][11]=4569
+mov[0][12]=4570
+mov[0][13]=4571
+mov[0][14]=4572
+mov[0][15]=4573
+mov[0][16]=4574
+mov[0][17]=4575
+mov[0][18]=4576
+mov[0][19]=4577
+mov[0][20]=4578
+mov[0][21]=4579
+mov[0][22]=4580
+mov[0][23]=4581
+mov[0][24]=4558
+[   0.000][  57.902][-172.229][-156.408][ -86.066][-169.841][ 153.586][  77.992][   2.580][ -39.178]=349.38483
+gene 0: min:       0.00 max:   15131.00 delta:       1.00 map: 1
+gene 1: min:    -180.00 max:     180.00 delta:       5.00 map: 0
+gene 2: min:    -180.00 max:     180.00 delta:       5.00 map: 0
+gene 3: min:    -180.00 max:     180.00 delta:       5.00 map: 0
+gene 4: min:    -180.00 max:     180.00 delta:      10.00 map: 0
+gene 5: min:    -180.00 max:     180.00 delta:      10.00 map: 0
+gene 6: min:    -180.00 max:     180.00 delta:      10.00 map: 0
+gene 7: min:    -180.00 max:     180.00 delta:      10.00 map: 0
+gene 8: min:    -180.00 max:     180.00 delta:      10.00 map: 0
+gene 9: min:    -180.00 max:     180.00 delta:      10.00 map: 0
+[SEARCH] backend=cmaes evals=5000 n_snap=32 best_cf=643.054551 lambda=100 max_evals=5000
+[SEARCH] cmaes entropy trace: /Users/lp.more/Projects/FlexAIDdS/validation_evidence/build_ab/D_1G9V_dual/cmaes_short_cmaes_entropy.csv
+GA:Start time =16:13:18
+GA:End time   =16:13:20
+GA Computational time 2 sec (0.03 min)
+atoms recalculated=0
+individuals skipped=21
+individuals clashed=0
+Exact-pose re-scoring 32 retained chromosomes...
+Exact-pose score audit: inconsistent=0/32 max_delta=0.00000000
+
+======= Post-GA Ensemble Thermodynamics (T=300K) =======
+  Free energy F  =   643.0545 kcal/mol
+  Mean energy <E>=   643.0549 kcal/mol
+  Entropy S      =   0.000001 kcal/(mol*K)
+  -TS            =    -0.0004 kcal/mol
+  Heat capacity  =     0.0000
+  Std energy     =     0.0457 kcal/mol
+  Ensemble size  = 32
+========================================================
+
+clustering all individuals in GA...n_chrom_snapshot=32
+using the Complementarity Function (CF) based clustering algorithm.
+[ENTROPY_RANK] classic FlexAID: rank-0 by ACF (ACF=-370.1666 CF=643.0546 freq=32); best_CF_among_emitted=643.0546 (CF re-sort off; set force_cf_rank_emission to restore P3b)
+num_of_clusters=1 num_of_results=1
+emitting ranked pose 1/1 (TOP chrom=0)...
+free-ing up memory
+Done.

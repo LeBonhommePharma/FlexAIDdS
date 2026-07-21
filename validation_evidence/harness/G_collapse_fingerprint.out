@@ -1,0 +1,17 @@
+# G_collapse_fingerprint.out — collapse fingerprint on smoke trace
+timestamp_utc=2026-07-21T19:33:00Z
+
+STATUS=OPEN
+BLOCKER_SCRIPT=analysis/collapse_fingerprint.py ABSENT
+  proof: ls analysis → No such file or directory
+  proof: git log --all -- '**/collapse_fingerprint*' → empty in this clone
+BLOCKER_TRACE=smoke dock trace ABSENT (no .sif → no in-container smoke)
+  proof: G_sif_build.log status=OPEN_BLOCKER; G_smoke_dock_command.txt STATUS=NOT_EXECUTED
+
+# Intended command once script + smoke entropy/trace exist:
+# python3 analysis/collapse_fingerprint.py \
+#   validation_evidence/harness/smoke_1G9V/entropy_trace.csv \
+#   | tee validation_evidence/harness/G_collapse_fingerprint.out
+
+# Cross-arch INVARIANT check (item G full) would compare this fingerprint to the
+# build-ab CMA-ES trace fingerprint on Narval vs local — cannot run without both.

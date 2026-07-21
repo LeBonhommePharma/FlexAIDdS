@@ -1,0 +1,24 @@
+=== cmaes sources present ===
+-rwxr-xr-x 1 lp.more staff 11204 Jul 21 16:02 [0m[01;35mapply_integration.sh[0m
+-rw-r--r-- 1 lp.more staff 10986 Jul 21 16:02 CMAES_INTEGRATION.md
+-rw-r--r-- 1 lp.more staff 31471 Jul 21 16:02 [04;93mLIB/cmaes_search.cpp[0m
+-rw-r--r-- 1 lp.more staff  5209 Jul 21 16:02 [04;33mLIB/cmaes_search.h[0m
+
+=== LIB/CMakeLists.txt cmaes line ===
+44:    cmaes_search.cpp
+
+=== top.cpp markers ===
+25:// FLEXAIDDS_CMAES_INCLUDE_BEGIN
+27:// FLEXAIDDS_CMAES_INCLUDE_END
+2648:			// FLEXAIDDS_CMAES_BEGIN
+2649:			// Opt-in CMA-ES search backend. Env FLEXAIDDS_SEARCH=cmaes (or CMAES)
+2655:			const char* flexaidds_search = std::getenv("FLEXAIDDS_SEARCH");
+2683:				if (const char* me = std::getenv("FLEXAIDDS_CMAES_MAX_EVALS")) {
+2705:				const int cma_rc = cmaes_run_dock(
+2709:					fprintf(stderr, "ERROR: cmaes_run_dock failed (rc=%d status=%d)\n",
+2776:			// FLEXAIDDS_CMAES_END
+
+=== cmake configure exit ===
+0
+
+Registered test_cmaes_search: yes (see A_cmake_configure.log)

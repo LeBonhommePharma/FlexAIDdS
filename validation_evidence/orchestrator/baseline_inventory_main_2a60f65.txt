@@ -1,0 +1,41 @@
+timestamp_utc=2026-07-21T19:42:50Z
+branch=feat/gpu-backends-clean
+head=323816cc9690fa617fb4a9fdddbea09062c707dd
+head_subject=Add --backend cpu|metal|webgpu CLI flag + WebGPU dispatch wiring
+matches_validation_base=no
+absent=LIB/cmaes_search.cpp
+absent=LIB/cmaes_search.h
+absent=apply_integration.sh
+absent=CMAES_INTEGRATION.md
+absent=analysis/collapse_fingerprint.py
+absent=analysis
+rg_FLEXAIDDS_SEARCH=9
+rg_cmaes_search=12
+gpp16=g++-16 (Homebrew GCC 16.1.0) 16.1.0
+cmake=cmake version 4.4.0
+apptainer=MISSING
+singularity=MISSING
+prior_dispatch_branch=docs/cmaes-validation-host-ag
+prior_dispatch_commit=251aa4ae9
+local_binary_sha256=967d194698b048513edabf4038e105ff50b5ccd9eea83ceeb975fe22aaef2f6a
+recorded_binary_sha256=967d194698b048513edabf4038e105ff50b5ccd9eea83ceeb975fe22aaef2f6a  validation_evidence/build_ab/build_fast/FlexAIDdS
+--- D_ga_result ---
+complex=1G9V
+arm=GA
+binary=validation_evidence/build_ab/build_fast/FlexAIDdS
+config=validation_evidence/build_ab/D_1G9V/dock_config_ga_short.json
+budget=num_chromosomes=100 x num_generations=50 (short live proof; not eval-matched 2e6)
+exit=0
+log=validation_evidence/build_ab/D_ga_run.log
+elected_pose=validation_evidence/build_ab/D_1G9V/ga_short_0.pdb
+elected_CF=-5.08119
+elected_RMSD_ordered_heavy_vs_1G9V_ligand_sdf=13.0879
+note_rmsd=ordered heavy-atom RMSD (not Hungarian); n_pose=25 n_xtal=25
+best_CF_among_ranks=-16.70442
+rank0_CF=-5.08119_RMSD_ordered=13.0879
+rank1_CF=-16.70442_RMSD_ordered=12.9612
+rank2_CF=-1.1225_RMSD_ordered=7.1840
+rank3_CF=49.11086_RMSD_ordered=5.3082
+entropy_H_final=2.300787 (from D_ga_run.log)
+best_CF_among_emitted_from_log=-16.7044
+rank0_ACF_CF_from_log=-5.0812

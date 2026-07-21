@@ -1,0 +1,17 @@
+Running main() from /private/tmp/googletest-20250910-5249-qce8ci/googletest-1.17.0/googletest/src/gtest_main.cc
+[==========] Running 4 tests from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 4 tests from CmaesSearch
+[ RUN      ] CmaesSearch.MockSeed12345Converges
+[       OK ] CmaesSearch.MockSeed12345Converges (7 ms)
+[ RUN      ] CmaesSearch.EntropyTraceNonEmpty
+[       OK ] CmaesSearch.EntropyTraceNonEmpty (5 ms)
+[ RUN      ] CmaesSearch.SnapshotDims
+[       OK ] CmaesSearch.SnapshotDims (3 ms)
+[ RUN      ] CmaesSearch.MockRejectsBadDim
+[       OK ] CmaesSearch.MockRejectsBadDim (0 ms)
+[----------] 4 tests from CmaesSearch (16 ms total)
+
+[----------] Global test environment tear-down
+[==========] 4 tests from 1 test suite ran. (16 ms total)
+[  PASSED  ] 4 tests.

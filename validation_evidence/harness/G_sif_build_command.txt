@@ -1,0 +1,34 @@
+# G_sif_build_command.txt — intended locked-arch .sif build (NOT EXECUTED)
+#
+# Reason not executed (real blockers, all verified on disk / PATH):
+#   1. apptainer: command not found (exit 1) — see G_tooling.txt
+#   2. singularity: command not found (exit 1)
+#   3. No Apptainer/Singularity definition file in the repo
+#      (*.def files are FlexAID AMINO/NUCLEOTIDES atom-type defs; see G_inventory.txt)
+#   4. Host is Darwin arm64, not a Linux node with Fakeroot/user-namespace build
+#
+# Expected definition path (per VALIDATION/KICKOFF item G — not present in tree):
+#   containers/flexaidds_locked.def   OR   apptainer/flexaidds_locked.def
+#   (neither path exists; git history has never added them in this clone)
+#
+# Intended command once def + tooling exist on a Linux builder:
+
+# --- preferred (Apptainer) ---
+# apptainer build \
+#   --fakeroot \
+#   validation_evidence/harness/flexaidds_locked_x86_64.sif \
+#   containers/flexaidds_locked.def
+#
+# --- alternate (Singularity) ---
+# singularity build \
+#   --fakeroot \
+#   validation_evidence/harness/flexaidds_locked_x86_64.sif \
+#   containers/flexaidds_locked.def
+#
+# Post-build (would write G_sif.sha256):
+# shasum -a 256 validation_evidence/harness/flexaidds_locked_x86_64.sif \
+#   | tee validation_evidence/harness/G_sif.sha256
+
+STATUS=NOT_EXECUTED
+BLOCKER=missing_apptainer_and_missing_definition_file
+HOST=LPmore.local (Darwin arm64)

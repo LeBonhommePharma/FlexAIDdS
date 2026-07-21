@@ -1,0 +1,1 @@
+OK: scripts/cmaes_ab_manifest.json schema_version=1.0 complex=1G9V budget=1000x2000=2000000 arms=2

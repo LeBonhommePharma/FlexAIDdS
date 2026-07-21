@@ -1,0 +1,10 @@
+=== F entropy trace on real surface ===
+STATUS: OPEN
+blocker=no CMA-ES run; no H_search/H_energy CMA-ES trace machinery in tree
+partial_GA_entropy_from_live_dock:
+  H_final=2.300787 (validation_evidence/build_ab/D_ga_run.log)
+787:H_final = 2.300787
+792:  Helmholtz free energy  F  =   -16.7049 kcal/mol
+800:  Shannon conf entropy    =     0.0069 nats
+
+note: GA H_final is NOT the CMA-ES H_search/H_energy collapse trace required by item F

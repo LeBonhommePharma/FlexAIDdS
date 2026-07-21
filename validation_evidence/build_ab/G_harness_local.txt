@@ -1,0 +1,12 @@
+=== harness local half ===
+-rw-r--r-- 1 lp.more staff 9540 Jul 21 16:02 containers/flexaidds_locked_x86_64.def
+-rw-r--r-- 1 lp.more staff 7060 Jul 21 16:02 containers/README_HARNESS.md
+-rw-r--r-- 1 lp.more staff  2316 Jul 21 16:02 scripts/cmaes_ab_manifest.json
+-rwxr-xr-x 1 lp.more staff  8590 Jul 21 16:02 [0m[01;35mscripts/narval_cmaes_array.sh[0m
+-rwxr-xr-x 1 lp.more staff 13465 Jul 21 16:02 [01;35mscripts/validate_cmaes_manifest.py[0m
+
+OK: scripts/cmaes_ab_manifest.json schema_version=1.0 complex=1G9V budget=1000x2000=2000000 arms=2
+
+apptainer: MISSING
+no .sif built on this Darwin host
+fingerprint mock: validation_evidence/build_ab/F_fingerprint_mock.json sha256=53b0d3ed040e6230954c506e87f4a5cf79df8db807b2cf48278981b6f2db72b7

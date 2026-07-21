@@ -1,0 +1,16 @@
+=== F real CMA-ES entropy fingerprint (2e6, 1G9V) ===
+n_rows=2000
+n_gens=2000
+H_search_start=5.798272
+H_search_end=5.798272
+H_energy_start=0.055549
+H_energy_end=6.907755
+H_energy_mean=6.686431
+F_end=-24.307015
+best_cf_end=-20.188879
+best_cf_min=-20.188879
+collapse_ratio=1.0
+sha256=6b051f0d5671cde37309f063fecf804712e6298eb662cfbd9bfe00560f3a0cac
+trace=validation_evidence/build_ab/E_ab_2e6/cmaes/cmaes_2e6_cmaes_entropy.csv
+fingerprint=validation_evidence/build_ab/F_trace/F_cmaes_2e6_fingerprint.json
+note=H_search constant ln(lambda) in adapter; H_energy + best_cf/F track rugged surface
