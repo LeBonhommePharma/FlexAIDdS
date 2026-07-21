@@ -727,7 +727,9 @@ ScreenResult CoarseScreener::screen_one_impl(const ScreenLigand& ligand,
                     const float* pose = all_rotated.data() +
                         static_cast<size_t>(ri) * n_atoms * 3;
                     float cf = score_fn(pose, n_atoms, anchor);
-                    if (cf < local_best) {
+                    if (cf < local_best ||
+                        (cf == local_best && ai < local_best_anc) ||
+                        (cf == local_best && ai == local_best_anc && ri < local_best_rot)) {
                         local_best     = cf;
                         local_best_rot = ri;
                         local_best_anc = ai;
@@ -737,7 +739,9 @@ ScreenResult CoarseScreener::screen_one_impl(const ScreenLigand& ligand,
 
             #pragma omp critical
             {
-                if (local_best < best_cf) {
+                if (local_best < best_cf ||
+                    (local_best == best_cf && local_best_anc < best_anc) ||
+                    (local_best == best_cf && local_best_anc == best_anc && local_best_rot < best_rot)) {
                     best_cf  = local_best;
                     best_rot = local_best_rot;
                     best_anc = local_best_anc;
@@ -756,7 +760,9 @@ ScreenResult CoarseScreener::screen_one_impl(const ScreenLigand& ligand,
                 const float* pose = all_rotated.data() +
                     static_cast<size_t>(ri) * n_atoms * 3;
                 float cf = score_fn(pose, n_atoms, anchor);
-                if (cf < best_cf) {
+                if (cf < best_cf ||
+                    (cf == best_cf && ai < best_anc) ||
+                    (cf == best_cf && ai == best_anc && ri < best_rot)) {
                     best_cf  = cf;
                     best_rot = ri;
                     best_anc = ai;
