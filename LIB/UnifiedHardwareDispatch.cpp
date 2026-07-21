@@ -8,6 +8,9 @@
 
 #include "UnifiedHardwareDispatch.h"
 #include "simd_distance.h"
+#ifdef FLEXAIDS_USE_WEBGPU
+#include "../src/backends/webgpu/webgpu_eval.h"
+#endif
 
 #include <algorithm>
 #include <cmath>
@@ -190,6 +193,12 @@ bool UnifiedHardwareDispatch::is_available(Backend b) const noexcept {
         case Backend::METAL:   return info_.has_metal;
         case Backend::CUDA:    return info_.has_cuda;
         case Backend::ROCM:    return info_.has_rocm;
+        case Backend::WEBGPU:
+#ifdef FLEXAIDS_USE_WEBGPU
+            return webgpu_eval_runtime_available();
+#else
+            return false;
+#endif
         case Backend::AUTO:    return true;
     }
     return false;
@@ -279,6 +288,7 @@ const char* UnifiedHardwareDispatch::backend_name(Backend b) noexcept {
         case Backend::METAL:   return "Metal";
         case Backend::CUDA:    return "CUDA";
         case Backend::ROCM:    return "ROCm";
+        case Backend::WEBGPU:  return "WebGPU";
         case Backend::AUTO:    return "auto";
     }
     return "unknown";
@@ -288,6 +298,7 @@ std::vector<Backend> UnifiedHardwareDispatch::available_backends() const {
     std::vector<Backend> result;
     if (is_available(Backend::CUDA))   result.push_back(Backend::CUDA);
     if (is_available(Backend::ROCM))   result.push_back(Backend::ROCM);
+    if (is_available(Backend::WEBGPU)) result.push_back(Backend::WEBGPU);
     if (is_available(Backend::METAL))  result.push_back(Backend::METAL);
     if (is_available(Backend::AVX512)) result.push_back(Backend::AVX512);
     if (is_available(Backend::AVX2))   result.push_back(Backend::AVX2);
