@@ -729,6 +729,8 @@ int main(int argc, char **argv){
 	bool use_folded = false;
 	bool use_screen = false;
 	int  screen_top_n = 100;
+	std::string screen_receptor_path;  // populated in auto-detect path for --screen
+	std::string screen_ligand_path;
 	bool use_parallel_dock = false;
 	int  parallel_dock_regions = 128;
 	bool use_campaign = false;
@@ -937,6 +939,10 @@ int main(int argc, char **argv){
 
 			printf("Receptor: %s\n", receptor_path.c_str());
 			printf("Ligand:   %s\n", ligand_path.c_str());
+			if (use_screen) {
+				screen_receptor_path = receptor_path;
+				screen_ligand_path   = ligand_path;
+			}
 		}
 
 		// ── Apply config ──
@@ -2636,13 +2642,70 @@ int main(int argc, char **argv){
 			nrgrank::CoarseScreener screener;
 			screener.set_config(scfg);
 
-			// Target preparation would use receptor data already loaded
-			// Ligand screening would use the ligand library
-			// For now, the screen() API is ready but requires target/ligand loading
-			// which depends on the specific file formats already parsed above
-			printf("CoarseScreen: target prepared, screening ligands...\n");
+			// Load target atoms from receptor MOL2
+			auto screen_target = nrgrank::parse_target_mol2(screen_receptor_path);
+			if (screen_target.empty()) {
+				fprintf(stderr, "[SCREEN] ERROR: could not parse target atoms from %s\n",
+				        screen_receptor_path.c_str());
+				fprintf(stderr, "[SCREEN]   --screen requires a receptor in MOL2 format.\n");
+				Terminate(1);
+			}
 
-			n_chrom_snapshot = 1;  // Signal success for downstream flow
+			// Locate binding site PDB: prefer FLEXAIDDS_ORACLE_SITE, then FLEXAIDDS_CLEFT_SPHERE_FILE
+			const flexaids::ProtocolConfig screen_proto = flexaids::ProtocolConfig::from_env();
+			std::string site_pdb_path = screen_proto.oracle_site;
+			if (site_pdb_path.empty()) site_pdb_path = screen_proto.cleft_sphere_file;
+			auto screen_spheres = site_pdb_path.empty()
+			    ? std::vector<nrgrank::BindingSiteSphere>{}
+			    : nrgrank::parse_binding_site_pdb(site_pdb_path);
+			if (screen_spheres.empty()) {
+				fprintf(stderr, "[SCREEN] WARNING: no binding site spheres loaded; "
+				        "set FLEXAIDDS_ORACLE_SITE or FLEXAIDDS_CLEFT_SPHERE_FILE.\n");
+			}
+
+			screener.prepare_target(screen_target, screen_spheres);
+			if (!screener.is_prepared()) {
+				fprintf(stderr, "[SCREEN] ERROR: target preparation failed.\n");
+				Terminate(1);
+			}
+			printf("[SCREEN] Target prepared: %d anchors\n",
+			       static_cast<int>(screener.num_anchors()));
+
+			// Load ligands from screen_ligand_path (SDF or MOL2)
+			std::vector<nrgrank::ScreenLigand> screen_ligands;
+			{
+				const std::string ext = [&]() {
+					auto p = screen_ligand_path.rfind('.');
+					return p != std::string::npos
+					    ? screen_ligand_path.substr(p)
+					    : std::string{};
+				}();
+				if (ext == ".sdf" || ext == ".mol")
+					screen_ligands = nrgrank::CoarseScreener::load_ligands_sdf(screen_ligand_path);
+				else
+					screen_ligands = nrgrank::CoarseScreener::load_ligands_mol2(screen_ligand_path);
+			}
+			if (screen_ligands.empty()) {
+				fprintf(stderr, "[SCREEN] ERROR: no ligands loaded from %s\n",
+				        screen_ligand_path.c_str());
+				Terminate(1);
+			}
+			printf("[SCREEN] Screening %d ligands...\n",
+			       static_cast<int>(screen_ligands.size()));
+
+			// Run coarse screen — returns top_n sorted by score (best first)
+			auto screen_results = screener.screen(screen_ligands);
+
+			// Print ranked results
+			printf("\n%-6s  %-10s  %s\n", "Rank", "Score", "Name");
+			printf("------  ----------  ----\n");
+			for (int i = 0; i < static_cast<int>(screen_results.size()); ++i) {
+				printf("%-6d  %-10.3f  %s\n", i + 1,
+				       screen_results[i].score,
+				       screen_results[i].name.c_str());
+			}
+
+			n_chrom_snapshot = static_cast<int>(screen_results.size());
 		} else {
 			// ── Standard single search run (GA default; CMA-ES opt-in) ──
 			// FLEXAIDDS_CMAES_BEGIN
