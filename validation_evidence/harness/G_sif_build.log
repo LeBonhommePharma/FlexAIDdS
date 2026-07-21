@@ -1,0 +1,21 @@
+# G_sif_build.log — locked-arch .sif build attempt log
+timestamp_utc=2026-07-21T19:32:00Z
+host=LPmore.local
+os=Darwin arm64
+
+=== preflight ===
+command -v apptainer → exit 1 (MISSING)
+command -v singularity → exit 1 (MISSING)
+find repo for Apptainer recipes (Bootstrap:|From:) → 0 matches
+find repo for *.sif → 0 matches
+*.def files present are FlexAID AMINO/NUCLEOTIDES atom-type definitions only
+
+=== build decision ===
+SKIPPED — cannot build without Apptainer/Singularity AND a container definition file.
+No .sif produced. No sha256 written (G_sif.sha256 intentionally absent — no binary to hash).
+
+=== intended command (not run) ===
+See G_sif_build_command.txt
+
+exit_code=skipped
+status=OPEN_BLOCKER

@@ -1,0 +1,25 @@
+=== stash@{0} including untracked ===
+CMakeLists.txt
+LIB/DatasetRunner.cpp
+LIB/DatasetRunner.h
+LIB/ProtocolConfig.cpp
+LIB/ProtocolConfig.h
+LIB/ThermodynamicEngine.cpp
+LIB/ThermodynamicEngine.h
+LIB/UnifiedHardwareDispatch.cpp
+LIB/UnifiedHardwareDispatch.h
+LIB/config_parser.cpp
+LIB/flexaid.h
+LIB/gaboom.cpp
+LIB/top.cpp
+
+
+=== search home for cmaes_search ===
+
+=== references in VALIDATION/KICKOFF ===
+total 0
+drwxr-xr-x   5 lp.more staff  160 Jul 21 15:29 [0m[01;34m.[0m
+drwxr-xr-x 109 lp.more staff 3488 Jul 21 15:29 [01;34m..[0m
+drwxr-xr-x   5 lp.more staff  160 Jul 21 15:31 [01;34mbuild_ab[0m
+drwxr-xr-x   4 lp.more staff  128 Jul 21 15:30 [01;34mharness[0m
+drwxr-xr-x   3 lp.more staff   96 Jul 21 15:29 [01;34morchestrator[0m
