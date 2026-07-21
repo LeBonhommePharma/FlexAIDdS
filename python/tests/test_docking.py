@@ -101,20 +101,68 @@ class TestParseRemarkPdb:
         pdb.write_text("ATOM      1  N   GLY A   1       1.0   2.0   3.0\nEND\n")
         assert Docking._parse_remark_pdb(pdb, temperature=300.0) is None
 
-    def test_boltzmann_weight_positive(self, tmp_path):
+    def test_boltzmann_weight_deferred_at_parse(self, tmp_path):
+        # A single PDB has no ensemble to normalise against, so the parse
+        # step must NOT assign a weight — it stays at the 0.0 default and is
+        # filled in later by BindingPopulation. (Previously the parser did
+        # exp(-beta*cf), which overflows on large-magnitude CF values.)
         pdb = tmp_path / "pose.pdb"
         pdb.write_text(REMARK_PDB_CONTENT)
         _, pose = Docking._parse_remark_pdb(pdb, temperature=300.0)
-        assert pose.boltzmann_weight > 0.0
+        assert pose.boltzmann_weight == 0.0
 
-    def test_boltzmann_weight_formula(self, tmp_path):
-        pdb = tmp_path / "pose.pdb"
-        pdb.write_text(REMARK_PDB_CONTENT)
-        _, pose = Docking._parse_remark_pdb(pdb, temperature=300.0)
-        kB = 0.001987206
-        beta = 1.0 / (kB * 300.0)
-        expected = math.exp(-beta * (-11.23))
-        assert abs(pose.boltzmann_weight - expected) < 1e-10
+    def test_parse_does_not_overflow_on_large_cf(self, tmp_path):
+        # Regression: real FlexAID CF values (~-1e5 kcal/mol) drove the old
+        # exp(-beta*cf) parser to OverflowError('math range error').
+        pdb = tmp_path / "big.pdb"
+        pdb.write_text(
+            "REMARK Binding Mode:1 Best CF in Binding Mode:-104597.31 "
+            "Binding Mode Frequency:1\n"
+            "ATOM      1  N   GLY A   1       1.000   2.000   3.000  1.00  0.00           N\n"
+            "END\n"
+        )
+        mode_idx, pose = Docking._parse_remark_pdb(pdb, temperature=300.0)
+        assert mode_idx == 1
+        assert abs(pose.energy - (-104597.31)) < 1e-2
+        assert math.isfinite(pose.boltzmann_weight)
+
+
+# ── BindingPopulation Boltzmann normalisation ────────────────────────────────
+
+class TestBoltzmannNormalisation:
+    def _mode(self, energy):
+        m = BindingMode(temperature=300.0)
+        m._poses.append(Pose(index=0, energy=energy))
+        return m
+
+    def test_weights_finite_and_sum_to_one(self):
+        # Overflow-regime energies: the old per-pose exp(-beta*cf) blew up here.
+        pop = BindingPopulation(
+            [self._mode(e) for e in (-104597.31, -87503.66, -78309.35, -104601.0)],
+            temperature=300.0,
+        )
+        weights = [p.boltzmann_weight for m in pop._modes for p in m._poses]
+        assert all(math.isfinite(w) for w in weights)
+        assert weights == pytest.approx([w for w in weights])  # no NaN
+        assert sum(weights) == pytest.approx(1.0, abs=1e-9)
+
+    def test_lowest_energy_pose_dominates(self):
+        pop = BindingPopulation(
+            [self._mode(e) for e in (-104597.31, -104601.0)], temperature=300.0
+        )
+        poses = [p for m in pop._modes for p in m._poses]
+        dominant = max(poses, key=lambda p: p.boltzmann_weight)
+        assert dominant.energy == pytest.approx(-104601.0)
+
+    def test_empty_population_is_noop(self):
+        pop = BindingPopulation([], temperature=300.0)
+        assert pop.n_modes == 0
+
+    def test_add_mode_renormalises(self):
+        pop = BindingPopulation([self._mode(-100.0)], temperature=300.0)
+        pop.add_mode(self._mode(-102.0))
+        weights = [p.boltzmann_weight for m in pop._modes for p in m._poses]
+        assert sum(weights) == pytest.approx(1.0, abs=1e-9)
 
 
 # ── Pose ──────────────────────────────────────────────────────────────────────

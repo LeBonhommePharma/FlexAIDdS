@@ -332,10 +332,37 @@ class BindingPopulation:
                  temperature: float = 300.0):
         self._modes: List[BindingMode] = list(modes) if modes else []
         self._temperature: float = temperature
-    
+        self._assign_boltzmann_weights()
+
+    def _assign_boltzmann_weights(self) -> None:
+        """Assign normalised Boltzmann weights to every pose in the ensemble.
+
+        p_i = exp(-beta * E_i) / Z, computed with a max-subtracted
+        log-sum-exp so large-magnitude CF energies never overflow. The
+        weights sum to 1 across all poses of all modes; an empty ensemble
+        is a no-op. This is the correct locus for the weight — unlike the
+        per-PDB parse, the whole ensemble is visible here, so normalisation
+        is well defined.
+        """
+        import math
+
+        poses = [pose for mode in self._modes for pose in mode._poses]
+        if not poses:
+            return
+
+        beta = 1.0 / (kB_kcal * self._temperature)
+        neg_beta_e = [-beta * pose.energy for pose in poses]
+        max_val = max(neg_beta_e)
+        log_Z = max_val + math.log(
+            sum(math.exp(v - max_val) for v in neg_beta_e)
+        )
+        for pose, v in zip(poses, neg_beta_e):
+            pose.boltzmann_weight = math.exp(v - log_Z)
+
     def add_mode(self, mode: BindingMode) -> None:
         """Add a binding mode to the population."""
         self._modes.append(mode)
+        self._assign_boltzmann_weights()
     
     def rank_by_free_energy(self) -> List[BindingMode]:
         """Return binding modes sorted by free energy (best first)."""
@@ -842,15 +869,19 @@ class Docking:
                 rmsd_val = float(v)
                 break
 
-        import math
-        beta = 1.0 / (0.001987206 * float(temperature))
-        bw = math.exp(-beta * cf_val)
-
+        # The Boltzmann weight is a *relative* ensemble quantity. Computing
+        # exp(-beta * cf) for a single pose in isolation is both meaningless
+        # (there is nothing to normalise against here) and numerically unsafe:
+        # FlexAID emits large-magnitude CF values, so -beta * cf can exceed
+        # +1e5 and math.exp overflows (OverflowError: math range error).
+        # The normalised weight is assigned later by BindingPopulation, which
+        # sees every pose across every mode and applies a stable, max-subtracted
+        # log-sum-exp. Store the raw energy; leave boltzmann_weight at its 0.0
+        # default until the population normaliser runs.
         pose = Pose(
             index=mode_idx,
             energy=cf_val,
             rmsd=rmsd_val,
-            boltzmann_weight=bw,
         )
         return mode_idx, pose
 
