@@ -881,7 +881,6 @@ double vcfunction(FA_Global* FA,VC_Global* VC,atom* atoms,resid* residue, std::v
 		// Ligand atoms are few (tens); receptor atoms are many (thousands) — so
 		// build the grid over RECEPTOR atoms and scan each ligand atom's cell nbhd.
 		const double PB_MAX_VDW = 2.10;               // max element vdW (I) in soft_wall.h table
-		const double PB_MAX_VDW = 2.10;               // max element vdW (I) in soft_wall.h table
 		// cell and inv_cell are derived from pb_clash_ratio, which is set once at dock init.
 		// They are the same across all evals in a dock session.
 
