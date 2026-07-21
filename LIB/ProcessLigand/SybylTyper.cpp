@@ -79,6 +79,37 @@ static int count_double_bonds_to(const BonMol& mol, int atom_idx, Element target
 }
 
 // ---------------------------------------------------------------------------
+// Helper: sulfonamide context detection (S(=O)(=O)–N pattern)
+// ---------------------------------------------------------------------------
+// Returns true when atom_idx is a sulfonyl sulfur with at least one N neighbor.
+// The NRGDock energy matrix has dead rows for both S.O2 (VCT 20) and N.3 (VCT 8):
+// all 40 entries are zero, so every contact involving these types scores zero.
+// For sulfonamide ligands (–S(=O)2–N–) this silences the entire scaffold.
+// We remap context-scoped:
+//   sulfonamide S  → S.3  (sybyl_type 16 → VCT 18, 20 non-zero entries)
+//   sulfonamide N  → N.am (sybyl_type  7 → VCT 11, 22 non-zero entries)
+// Non-sulfonamide S.O2 / N.3 keep their canonical assignment.
+
+static bool is_sulfonamide_sulfur(const BonMol& mol, int atom_idx) {
+    // Must be S with ≥2 double bonds to O AND ≥1 N neighbour.
+    if (mol.atoms[atom_idx].element != Element::S) return false;
+    if (count_double_bonds_to(mol, atom_idx, Element::O) < 2) return false;
+    for (int nb : mol.adjacency[atom_idx]) {
+        if (mol.atoms[nb].element == Element::N) return true;
+    }
+    return false;
+}
+
+static bool is_sulfonamide_nitrogen(const BonMol& mol, int atom_idx) {
+    // Must be N bonded to a sulfonyl sulfur (S with ≥2 =O and ≥1 N).
+    if (mol.atoms[atom_idx].element != Element::N) return false;
+    for (int nb : mol.adjacency[atom_idx]) {
+        if (is_sulfonamide_sulfur(mol, nb)) return true;
+    }
+    return false;
+}
+
+// ---------------------------------------------------------------------------
 // Helper: check if atom is part of a carboxylate/carboxamide group
 // ---------------------------------------------------------------------------
 
@@ -256,7 +287,13 @@ int assign_sybyl_type_single(const BonMol& mol, int atom_idx) {
             // N.2: sp2 N with double bond
             if (a.hybrid == Hybridization::SP) return 5; // treat sp N as N.2
 
-            return 4; // N.3 (default sp3 N)
+            // N.3 → VCT 8 is a dead row in FA_matrix_v1.dat (all zeros).
+            // Context-scoped remap: when this sp3 N is bonded to a sulfonyl S
+            // (sulfonamide N), substitute N.am (sybyl_type 7 → VCT 11, 22 live
+            // entries). All other sp3 N atoms keep N.3 so we don't perturb
+            // non-sulfonamide scaffolds (amines, protonated N, etc.).
+            if (is_sulfonamide_nitrogen(mol, atom_idx)) return 7; // N.am proxy
+            return 4; // N.3 (default sp3 N; VCT 8)
         }
 
         // ---- Oxygen ----
@@ -276,7 +313,16 @@ int assign_sybyl_type_single(const BonMol& mol, int atom_idx) {
         case Element::S: {
             if (in_aromatic_ring(mol, atom_idx) || a.is_aromatic) return 16; // S.3 (thiophene S)
             int dbo = count_double_bonds_to(mol, atom_idx, Element::O);
-            if (dbo >= 2) return 19; // S.O2
+            if (dbo >= 2) {
+                // S.O2 → VCT 20 is a dead row in FA_matrix_v1.dat (all zeros).
+                // Context-scoped remap: when this sulfonyl S carries an N neighbour
+                // (i.e., it is part of a sulfonamide –S(=O)2–N–), substitute S.3
+                // (sybyl_type 16 → VCT 18, 20 live entries) so contacts are scored.
+                // Non-sulfonamide S.O2 (e.g. DMSO, sulfone without N) keeps its
+                // canonical assignment and the zero-row treatment is intentional.
+                if (is_sulfonamide_sulfur(mol, atom_idx)) return 16; // S.3 proxy
+                return 19; // S.O2 (canonical; VCT 20)
+            }
             if (dbo == 1) return 18; // S.O
             if (a.hybrid == Hybridization::SP2) return 17; // S.2
             return 16; // S.3
