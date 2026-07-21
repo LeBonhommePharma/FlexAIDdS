@@ -405,28 +405,81 @@ double shannon_from_probs(const Vec& p) {
     return H;
 }
 
-// Shannon of normalized rank-μ selection weights over the λ sample.
-double H_search_from_fitness(const Vec& f, int mu) {
+// Shannon of softmax selection weights over the λ sample (fitness-dependent).
+// Rank-only log-weights are constant across generations (only depend on rank
+// index), so they cannot diagnose search collapse. Softmax over −f uses the
+// actual CF spread and shrinks toward 0 as the λ-cloud collapses to one basin.
+double H_search_from_fitness(const Vec& f, int /*mu*/) {
     const int lambda = static_cast<int>(f.size());
     if (lambda <= 0) return 0.0;
-    std::vector<int> order(static_cast<std::size_t>(lambda));
-    std::iota(order.begin(), order.end(), 0);
-    std::sort(order.begin(), order.end(), [&](int a, int b) {
-        return f[static_cast<std::size_t>(a)] < f[static_cast<std::size_t>(b)];
-    });
+    if (lambda == 1) return 0.0;
 
-    Vec w(static_cast<std::size_t>(lambda), 0.0);
-    double wsum = 0.0;
-    const int m = std::min(mu, lambda);
-    for (int r = 0; r < m; ++r) {
-        const double wi =
-            std::log(static_cast<double>(m) + 0.5) - std::log(static_cast<double>(r) + 1.0);
-        w[static_cast<std::size_t>(order[static_cast<std::size_t>(r)])] = wi;
-        wsum += wi;
+    const double fmin = *std::min_element(f.begin(), f.end());
+    const double fmax = *std::max_element(f.begin(), f.end());
+    // Adaptive temperature: fraction of fitness range (floor so uniform→max H).
+    const double span = std::max(fmax - fmin, 1e-12);
+    const double T = std::max(0.05 * span, 1e-9);
+
+    Vec p(static_cast<std::size_t>(lambda));
+    double Z = 0.0;
+    for (int i = 0; i < lambda; ++i) {
+        p[static_cast<std::size_t>(i)] =
+            std::exp(-(f[static_cast<std::size_t>(i)] - fmin) / T);
+        Z += p[static_cast<std::size_t>(i)];
     }
-    if (wsum <= 0.0) return 0.0;
-    for (double& v : w) v /= wsum;
-    return shannon_from_probs(w);
+    if (Z <= 0.0) return 0.0;
+    for (double& v : p) v /= Z;
+    return shannon_from_probs(p);
+}
+
+// Mean per-dimension allele-histogram Shannon entropy of the current sample.
+// Complements fitness softmax: pure geometric diversity of the search cloud.
+double H_search_from_population(const std::vector<Vec>& X, const Vec& lo, const Vec& hi,
+                                int n_bins = 16) {
+    if (X.empty() || lo.empty() || hi.empty()) return 0.0;
+    const int n = static_cast<int>(lo.size());
+    const int lambda = static_cast<int>(X.size());
+    if (n <= 0 || lambda <= 0) return 0.0;
+    n_bins = std::max(4, n_bins);
+
+    double H_sum = 0.0;
+    int dims_used = 0;
+    for (int d = 0; d < n; ++d) {
+        const double lo_d = lo[static_cast<std::size_t>(d)];
+        const double hi_d = hi[static_cast<std::size_t>(d)];
+        const double width = hi_d - lo_d;
+        if (!(width > 0.0)) continue;
+
+        std::vector<int> hist(static_cast<std::size_t>(n_bins), 0);
+        int counted = 0;
+        for (int k = 0; k < lambda; ++k) {
+            if (static_cast<int>(X[static_cast<std::size_t>(k)].size()) <= d) continue;
+            double x = X[static_cast<std::size_t>(k)][static_cast<std::size_t>(d)];
+            int b = static_cast<int>(((x - lo_d) / width) * n_bins);
+            if (b < 0) b = 0;
+            if (b >= n_bins) b = n_bins - 1;
+            ++hist[static_cast<std::size_t>(b)];
+            ++counted;
+        }
+        if (counted <= 0) continue;
+        Vec p(static_cast<std::size_t>(n_bins), 0.0);
+        for (int b = 0; b < n_bins; ++b)
+            p[static_cast<std::size_t>(b)] =
+                static_cast<double>(hist[static_cast<std::size_t>(b)]) /
+                static_cast<double>(counted);
+        H_sum += shannon_from_probs(p);
+        ++dims_used;
+    }
+    if (dims_used <= 0) return 0.0;
+    return H_sum / static_cast<double>(dims_used);
+}
+
+// Combined search entropy: 0.5 * H_soft + 0.5 * H_allele (both in nats).
+double H_search_combined(const Vec& f, const std::vector<Vec>& X, const Vec& lo,
+                         const Vec& hi, int mu) {
+    const double Hf = H_search_from_fitness(f, mu);
+    const double Hx = H_search_from_population(X, lo, hi);
+    return 0.5 * Hf + 0.5 * Hx;
 }
 
 // Boltzmann Shannon over sample energies (CF). T in energy units (kcal/mol).
@@ -598,7 +651,9 @@ int cma_optimize(int n, const Vec& lo, const Vec& hi, const CmaesConfig& config,
             if (config.enable_entropy_trace && optional_trace) {
                 EntropyTraceSample s;
                 s.gen = st.generation;
-                s.H_search = H_search_from_fitness(fit, mu_use);
+                // Diversity-aware H_search (softmax + allele histograms). Rank-only
+                // weights are generation-invariant and cannot show collapse.
+                s.H_search = H_search_combined(fit, X, lo, hi, mu_use);
                 s.H_energy = H_energy_boltzmann(fit, T_energy);
                 s.best_cf = result->best_cf;
                 s.F = result->best_cf - T_energy * s.H_energy;

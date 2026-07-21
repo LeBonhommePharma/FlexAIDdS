@@ -1,0 +1,67 @@
+# FlexAIDdS locked-arch Linux image (VALIDATION G Docker equivalent)
+# SPDX-License-Identifier: Apache-2.0
+#
+# Build (from repo root):
+#   docker build -f containers/Dockerfile.locked -t flexaidds:locked-x86_64 .
+#
+# Smoke (bind repo as /work):
+#   docker run --rm -v "$PWD:/work" -w /work flexaidds:locked-x86_64 \
+#     FlexAIDdS /work/benchmarks/.../1G9V_apo.pdb /work/benchmarks/.../1G9V_dockin.sdf \
+#     -c /work/validation_evidence/build_ab/E_ab_2e6/dock_config_2e6.json \
+#     -o /work/validation_evidence/build_ab/G_harness/docker_smoke
+#
+# Note: Apptainer .sif remains the Narval/Alliance artifact; this Dockerfile is
+# the portable Docker twin of containers/flexaidds_locked_x86_64.def.
+
+FROM ubuntu:22.04
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    LC_ALL=C.UTF-8 \
+    LANG=C.UTF-8 \
+    FLEXAIDDS_ROOT=/opt/flexaidds \
+    FLEXAIDDS_BIN=/opt/flexaidds/bin \
+    FLEXAIDDS_DATA_DIR=/opt/flexaidds/data \
+    PATH=/opt/flexaidds/bin:/usr/local/bin:${PATH} \
+    CC=gcc-14 \
+    CXX=g++-14
+
+RUN apt-get update -y && apt-get install -y --no-install-recommends \
+        ca-certificates curl gnupg software-properties-common wget \
+        build-essential ninja-build pkg-config \
+        python3 python3-pip python3-venv \
+        libeigen3-dev libssl-dev libgomp1 zlib1g-dev file binutils \
+    && add-apt-repository -y ppa:ubuntu-toolchain-r/test \
+    && apt-get update -y \
+    && apt-get install -y --no-install-recommends g++-14 gcc-14 \
+    && update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-14 140 \
+    && update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-14 140 \
+    && wget -qO - https://apt.kitware.com/keys/kitware-archive-latest.asc \
+        | gpg --dearmor -o /usr/share/keyrings/kitware-archive-keyring.gpg \
+    && echo "deb [signed-by=/usr/share/keyrings/kitware-archive-keyring.gpg] https://apt.kitware.com/ubuntu/ jammy main" \
+        > /etc/apt/sources.list.d/kitware.list \
+    && apt-get update -y \
+    && apt-get install -y --no-install-recommends cmake \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /opt/flexaidds/src
+# Source is expected at build context = repo root
+COPY . /opt/flexaidds/src
+
+RUN mkdir -p /opt/flexaidds/bin /opt/flexaidds/data /opt/flexaidds/build \
+    && cmake -S /opt/flexaidds/src -B /opt/flexaidds/build \
+         -DCMAKE_BUILD_TYPE=Release \
+         -DBUILD_FLEXAIDDS_FAST=ON \
+         -DBUILD_TESTING=OFF \
+         -DFLEXAIDS_USE_METAL=OFF \
+         -DCMAKE_CXX_COMPILER=g++-14 \
+         -DCMAKE_C_COMPILER=gcc-14 \
+    && cmake --build /opt/flexaidds/build -j"$(nproc)" --target FlexAIDdS \
+    && cp -f /opt/flexaidds/build/FlexAIDdS /opt/flexaidds/bin/FlexAIDdS \
+    && (cp -f /opt/flexaidds/build/*.def /opt/flexaidds/data/ 2>/dev/null || true) \
+    && (cp -f /opt/flexaidds/build/*.dat /opt/flexaidds/data/ 2>/dev/null || true) \
+    && (cp -f /opt/flexaidds/src/.grok/skills/flexaidds/data/* /opt/flexaidds/data/ 2>/dev/null || true) \
+    && chmod +x /opt/flexaidds/bin/FlexAIDdS
+
+LABEL arch="x86_64" toolchain="locked" org="LeBonhommePharma" license="Apache-2.0"
+
+ENTRYPOINT ["FlexAIDdS"]

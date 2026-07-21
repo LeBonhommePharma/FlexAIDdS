@@ -150,3 +150,28 @@ TEST(CmaesSearch, MockRejectsBadDim) {
     EXPECT_EQ(cmaes_run_mock(0, cfg, &res, nullptr), -1);
     EXPECT_EQ(res.status, -1);
 }
+
+// ── H_search varies as the population collapses on a smooth well ─────────────
+// Rank-only log-weights are generation-invariant (bug fixed). Softmax + allele
+// histograms must produce a non-constant H_search series on this objective.
+TEST(CmaesSearch, HSearchVariesWithCollapse) {
+    constexpr int kDim = 8;
+    CmaesConfig cfg = MakeMockConfig(/*max_evals=*/8000);
+    cfg.population = 30;
+    cfg.enable_entropy_trace = true;
+
+    CmaesResult res;
+    std::vector<EntropyTraceSample> trace;
+    ASSERT_EQ(cmaes_run_mock(kDim, cfg, &res, &trace), 0);
+    ASSERT_GE(trace.size(), 5u);
+
+    double h_min = trace.front().H_search;
+    double h_max = trace.front().H_search;
+    for (const auto& s : trace) {
+        ASSERT_TRUE(std::isfinite(s.H_search));
+        h_min = std::min(h_min, s.H_search);
+        h_max = std::max(h_max, s.H_search);
+    }
+    // Must not be a flat constant (the pre-fix pathology).
+    EXPECT_GT(h_max - h_min, 1e-6) << "H_search range=[" << h_min << "," << h_max << "]";
+}
