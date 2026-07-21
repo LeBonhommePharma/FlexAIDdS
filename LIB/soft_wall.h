@@ -72,12 +72,19 @@ inline double wall_energy_raw_r12(double d, double cr)
 // soft_wall_cutoff > 0 applies the v43 overlap Hermite cubic ramp:
 //   o <= o_soft: E = k_wal * o_soft^2 * t^2 * (3 - 2t),  t = o/o_soft
 //   o >  o_soft: E = k_wal * o_soft^2 + k_wal * (2*o_soft*delta + delta^2)
-inline double soft_wall_fitness_energy(double d, double cr, float soft_wall_cutoff)
+//
+// coercive=true  (FLEXAIDDS_WAL_COERCIVE): removes the WAL_CONTACT_CAP ceiling
+//   so the quadratic penalty can overcome unbounded CF.com overpacking.
+// k_wal_override > 0 (FLEXAIDDS_WAL_STIFF): replaces the welded k_wal=WAL_CONTACT_CAP
+//   with the supplied value, allowing stiffness sweeps at benchmark time.
+inline double soft_wall_fitness_energy(double d, double cr, float soft_wall_cutoff,
+                                       bool coercive = false,
+                                       double k_wal_override = 0.0)
 {
 	if (soft_wall_cutoff > 0.0f) {
 		const double o      = cr - d;
 		const double o_soft = static_cast<double>(soft_wall_cutoff);
-		constexpr double k_wal = WAL_CONTACT_CAP;
+		const double k_wal  = (k_wal_override > 0.0) ? k_wal_override : WAL_CONTACT_CAP;
 		double Ewall_sc;
 		if (o <= o_soft) {
 			const double t = o / o_soft;
@@ -87,7 +94,10 @@ inline double soft_wall_fitness_energy(double d, double cr, float soft_wall_cuto
 			const double delta = o - o_soft;
 			Ewall_sc = base + k_wal * (2.0 * o_soft * delta + delta * delta);
 		}
-		return (Ewall_sc > WAL_CONTACT_CAP) ? WAL_CONTACT_CAP : Ewall_sc;
+		// FLEXAIDDS_WAL_COERCIVE: skip the cap so deep clashes overwhelm CF.com.
+		// Default (coercive=false): preserve existing WAL_CONTACT_CAP ceiling.
+		if (!coercive && Ewall_sc > WAL_CONTACT_CAP) return WAL_CONTACT_CAP;
+		return Ewall_sc;
 	}
 
 	const double Ewall_raw = wall_energy_raw_r12(d, cr);
