@@ -189,6 +189,22 @@ ProtocolConfig ProtocolConfig::from_env() {
     if (auto v = env_opt_double("FLEXAIDDS_FREQSEL_RMSD")) {
         cfg.freqsel_rmsd = static_cast<float>(*v);
     }
+    // Two-gate spread guard (all default to a no-op; see ProtocolConfig.h).
+    if (auto v = env_opt_double("FLEXAIDDS_CLUSTER_SPREAD_MAX")) {
+        cfg.cluster_spread_max = static_cast<float>(*v);
+    }
+    if (auto v = env_opt_double("FLEXAIDDS_CLUSTER_POP_MIN_FRACTION")) {
+        cfg.cluster_pop_min_fraction = static_cast<float>(*v);
+    }
+    if (auto v = env_opt_double("FLEXAIDDS_CLUSTER_CONSENSUS_TAU")) {
+        cfg.cluster_consensus_tau = static_cast<float>(*v);
+    }
+    if (auto v = env_opt_int("FLEXAIDDS_CLUSTER_CONSENSUS_K")) {
+        cfg.cluster_consensus_k = *v;
+    }
+    if (auto v = env_opt_double("FLEXAIDDS_CLUSTER_POCKET_RADIUS")) {
+        cfg.cluster_pocket_radius = static_cast<float>(*v);
+    }
     cfg.consensus_scorer =
         env_truthy_int("FLEXAIDDS_CONSENSUS_SCORER", /*default_value=*/false);
     // v135 BCR-proxy election (default OFF — does not change claim ranking).
@@ -359,6 +375,11 @@ std::string ProtocolConfig::to_json() const {
     json_bool(o, "freqsel", freqsel);
     o << "\"freqsel_alpha\":" << freqsel_alpha << ',';
     o << "\"freqsel_rmsd\":" << freqsel_rmsd << ',';
+    o << "\"cluster_spread_max\":" << cluster_spread_max << ',';
+    o << "\"cluster_pop_min_fraction\":" << cluster_pop_min_fraction << ',';
+    o << "\"cluster_consensus_tau\":" << cluster_consensus_tau << ',';
+    o << "\"cluster_consensus_k\":" << cluster_consensus_k << ',';
+    o << "\"cluster_pocket_radius\":" << cluster_pocket_radius << ',';
     json_bool(o, "consensus_scorer", consensus_scorer);
     json_bool(o, "election_v135", election_v135);
     o << "\"election_score_tau\":" << election_score_tau << ',';
@@ -459,6 +480,16 @@ ProtocolConfig ProtocolConfig::from_json(const std::string& json_text) {
         cfg.freqsel_alpha = root["freqsel_alpha"].as_double(12.0);
     if (!root["freqsel_rmsd"].is_null())
         cfg.freqsel_rmsd = root["freqsel_rmsd"].as_float(1.5f);
+    if (!root["cluster_spread_max"].is_null())
+        cfg.cluster_spread_max = root["cluster_spread_max"].as_float(0.0f);
+    if (!root["cluster_pop_min_fraction"].is_null())
+        cfg.cluster_pop_min_fraction = root["cluster_pop_min_fraction"].as_float(0.35f);
+    if (!root["cluster_consensus_tau"].is_null())
+        cfg.cluster_consensus_tau = root["cluster_consensus_tau"].as_float(2.0f);
+    if (!root["cluster_consensus_k"].is_null())
+        cfg.cluster_consensus_k = root["cluster_consensus_k"].as_int(3);
+    if (!root["cluster_pocket_radius"].is_null())
+        cfg.cluster_pocket_radius = root["cluster_pocket_radius"].as_float(0.0f);
     if (!root["consensus_scorer"].is_null())
         cfg.consensus_scorer = root["consensus_scorer"].as_bool(false);
     if (!root["election_v135"].is_null())

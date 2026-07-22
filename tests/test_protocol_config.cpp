@@ -85,6 +85,11 @@ struct ClearProtocolEnv {
         , freq_a("FLEXAIDDS_FREQSEL_ALPHA", nullptr)
         , freq_r("FLEXAIDDS_FREQSEL_RMSD", nullptr)
         , consensus("FLEXAIDDS_CONSENSUS_SCORER", nullptr)
+        , cl_spread("FLEXAIDDS_CLUSTER_SPREAD_MAX", nullptr)
+        , cl_popfrac("FLEXAIDDS_CLUSTER_POP_MIN_FRACTION", nullptr)
+        , cl_ctau("FLEXAIDDS_CLUSTER_CONSENSUS_TAU", nullptr)
+        , cl_ck("FLEXAIDDS_CLUSTER_CONSENSUS_K", nullptr)
+        , cl_prad("FLEXAIDDS_CLUSTER_POCKET_RADIUS", nullptr)
         , hvib("FLEXAIDDS_HVIB", nullptr)
         , ring("FLEXAIDDS_RING_FLEX", nullptr)
         , eval_scale("FLEXAIDDS_EVAL_SCALE_DIHEDRAL", nullptr)
@@ -120,6 +125,7 @@ struct ClearProtocolEnv {
               sharing, boom, n_elite, shannon, thermo, t_eff, tencom,
               data_dir, oracle_dir, oracle_site, cleft, cf_win, cluster,
               seed_elit, seed_delta, freqsel, freq_a, freq_r, consensus,
+              cl_spread, cl_popfrac, cl_ctau, cl_ck, cl_prad,
               hvib, ring, eval_scale, budget, fine, multi, cognate, score_n,
               native_o, use_dp, ignore, thermo_csv, hbond, no_sec, bench,
               t_hot, instream, chain, smfree, force_cf, classic, ent_w, div_m,
@@ -158,6 +164,13 @@ TEST(ProtocolConfig, DefaultsMatchHistoricalFallbacks) {
     EXPECT_FALSE(e.freqsel);
     EXPECT_DOUBLE_EQ(e.freqsel_alpha, 12.0);
     EXPECT_FLOAT_EQ(e.freqsel_rmsd, 1.5f);
+    // Two-gate spread guard must default to a no-op: the single-gate version
+    // (d7ef67380) shipped a 15 Å default and cost 64/85 Astex targets.
+    EXPECT_FLOAT_EQ(e.cluster_spread_max, 0.0f);
+    EXPECT_FLOAT_EQ(e.cluster_pop_min_fraction, 0.35f);
+    EXPECT_FLOAT_EQ(e.cluster_consensus_tau, 2.0f);
+    EXPECT_EQ(e.cluster_consensus_k, 3);
+    EXPECT_FLOAT_EQ(e.cluster_pocket_radius, 0.0f);
     EXPECT_FALSE(e.consensus_scorer);
     EXPECT_FALSE(e.election_v135);
     EXPECT_DOUBLE_EQ(e.election_score_tau, 0.0);
@@ -410,6 +423,29 @@ TEST(ProtocolConfig, JsonRoundTrip) {
     EXPECT_EQ(b.data_dir, "/opt/share/flexaidds");
     EXPECT_DOUBLE_EQ(b.t_hot, 900.0);
     EXPECT_EQ(b.multi_cleft, 4);
+}
+
+TEST(ProtocolConfig, SpreadGuardEnvAndJsonRoundTrip) {
+    ClearProtocolEnv clear;
+    ScopedEnv smax("FLEXAIDDS_CLUSTER_SPREAD_MAX", "10.0");
+    ScopedEnv frac("FLEXAIDDS_CLUSTER_POP_MIN_FRACTION", "0.25");
+    ScopedEnv tau("FLEXAIDDS_CLUSTER_CONSENSUS_TAU", "1.5");
+    ScopedEnv k("FLEXAIDDS_CLUSTER_CONSENSUS_K", "4");
+    ScopedEnv rad("FLEXAIDDS_CLUSTER_POCKET_RADIUS", "12.0");
+
+    const auto a = flexaids::ProtocolConfig::from_env();
+    EXPECT_FLOAT_EQ(a.cluster_spread_max, 10.0f);
+    EXPECT_FLOAT_EQ(a.cluster_pop_min_fraction, 0.25f);
+    EXPECT_FLOAT_EQ(a.cluster_consensus_tau, 1.5f);
+    EXPECT_EQ(a.cluster_consensus_k, 4);
+    EXPECT_FLOAT_EQ(a.cluster_pocket_radius, 12.0f);
+
+    const auto b = flexaids::ProtocolConfig::from_json(a.to_json());
+    EXPECT_FLOAT_EQ(b.cluster_spread_max, 10.0f);
+    EXPECT_FLOAT_EQ(b.cluster_pop_min_fraction, 0.25f);
+    EXPECT_FLOAT_EQ(b.cluster_consensus_tau, 1.5f);
+    EXPECT_EQ(b.cluster_consensus_k, 4);
+    EXPECT_FLOAT_EQ(b.cluster_pocket_radius, 12.0f);
 }
 
 TEST(ProtocolConfig, Chunk3RankingAndAblationKnobs) {
