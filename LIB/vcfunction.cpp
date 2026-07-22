@@ -66,12 +66,23 @@ struct PBClashGridCache {
     double inv_cell  = 0.0;
     std::vector<int>    rec_idx;                        // rigid receptor atom indices
     std::vector<double> rec_vdw;                        // precomputed vdW per rec atom (parallel to rec_idx)
+    std::vector<char>   rec_metal;                      // 1 if rec atom is a coordinating metal (parallel to rec_idx)
     std::unordered_map<int, std::vector<int>> grid;     // cell-list: flat cell key → rec_idx positions
     bool valid = false;
 
     bool matches(int a, double r) const { return valid && (a == atm_cnt) && (r == ratio); }
 };
 static thread_local PBClashGridCache pb_cache;
+
+// FLEXAIDDS_PB_METAL_CARVEOUT (truthy, default OFF): exclude ligand/receptor
+// pairs in which either partner is a coordinating metal (Zn, Fe, Mg, Ca, Mn,
+// Co, Ni, Cu) from the pb_clash penalty. Genuine coordination bonds sit at
+// ~1.9-2.3 A, well inside pb_clash_ratio*(vdw_i+vdw_j), so without this they
+// are scored as hard clashes and fight the cf.metal_coord Morse reward.
+// Default OFF → the pair set is unchanged and CF is bit-identical.
+static const bool pb_metal_carveout =
+    (std::getenv("FLEXAIDDS_PB_METAL_CARVEOUT") != nullptr &&
+     std::getenv("FLEXAIDDS_PB_METAL_CARVEOUT")[0] != '0');
 
 // FLEXAIDDS_WAL_COERCIVE: remove WAL_CONTACT_CAP ceiling on the soft-core
 // fitness wall so deep clashes can overcome unbounded CF.com overpacking.
@@ -952,6 +963,7 @@ double vcfunction(FA_Global* FA,VC_Global* VC,atom* atoms,resid* residue, std::v
 
 			pb_cache.rec_idx.clear();
 			pb_cache.rec_vdw.clear();
+			pb_cache.rec_metal.clear();
 			double rmax[3] = {-1e30,-1e30,-1e30};
 			pb_cache.rmin[0]=pb_cache.rmin[1]=pb_cache.rmin[2]=1e30;
 
@@ -967,6 +979,8 @@ double vcfunction(FA_Global* FA,VC_Global* VC,atom* atoms,resid* residue, std::v
 					const char* re_raw = get_element(atoms[ai].type);
 					while (*re_raw == ' ') ++re_raw;
 					pb_cache.rec_vdw.push_back(posebusters_vdw_radius(re_raw, atoms[ai].radius));
+					pb_cache.rec_metal.push_back(
+						pb_metal_carveout && posebusters_is_coordinating_metal(re_raw) ? 1 : 0);
 				}
 			}
 			for (int k=0;k<3;++k){
@@ -1046,11 +1060,16 @@ double vcfunction(FA_Global* FA,VC_Global* VC,atom* atoms,resid* residue, std::v
 			auto cidx = [&](int cx,int cy,int cz){ return (cx*dim[1]+cy)*dim[2]+cz; };
 			double pb_pen = 0.0;
 			long pb_nclash = 0;
+			long pb_ncarved = 0;
 			for (int li : lig_idx) {
 				const double lx=atoms[li].coor[0], ly=atoms[li].coor[1], lz=atoms[li].coor[2];
 				const char* le_raw = get_element(atoms[li].type);
 				while (*le_raw == ' ') ++le_raw;
 				const double vdw_l = posebusters_vdw_radius(le_raw, atoms[li].radius);
+				// Metal carve-out, ligand side: when the ligand atom is itself a
+				// coordinating metal every pair it forms is carved out.
+				const bool lig_is_metal =
+					pb_metal_carveout && posebusters_is_coordinating_metal(le_raw);
 				int cx=(int)((lx-rmin[0])*inv_cell_s);
 				int cy=(int)((ly-rmin[1])*inv_cell_s);
 				int cz=(int)((lz-rmin[2])*inv_cell_s);
@@ -1062,17 +1081,25 @@ double vcfunction(FA_Global* FA,VC_Global* VC,atom* atoms,resid* residue, std::v
 					for(int pos : it->second){
 						double vdw_r;
 						int ri;
+						bool rec_is_metal;
 						if (use_cache) {
-							// pos is an index into rec_idx / rec_vdw
+							// pos is an index into rec_idx / rec_vdw / rec_metal
 							ri    = pb_cache.rec_idx[pos];
 							vdw_r = pb_cache.rec_vdw[pos];
+							rec_is_metal = (pb_cache.rec_metal[pos] != 0);
 						} else {
 							// pos is the atom index directly (legacy path)
 							ri = pos;
 							const char* re_raw = get_element(atoms[ri].type);
 							while (*re_raw == ' ') ++re_raw;
 							vdw_r = posebusters_vdw_radius(re_raw, atoms[ri].radius);
+							rec_is_metal =
+								pb_metal_carveout && posebusters_is_coordinating_metal(re_raw);
 						}
+						// Metal carve-out: skip the pair if EITHER partner is a
+						// coordinating metal. No-op when the carve-out is off, since
+						// both flags are then hard-false.
+						if (lig_is_metal || rec_is_metal) { ++pb_ncarved; continue; }
 						const double ddx=lx-atoms[ri].coor[0];
 						const double ddy=ly-atoms[ri].coor[1];
 						const double ddz=lz-atoms[ri].coor[2];
@@ -1085,10 +1112,11 @@ double vcfunction(FA_Global* FA,VC_Global* VC,atom* atoms,resid* residue, std::v
 				}
 			}
 			if (std::getenv("FLEXAIDDS_PB_CLASH_DEBUG")) {
-				fprintf(stderr, "[PB_CLASH_DEBUG] lig_atoms=%zu rec_atoms=%zu nclash=%ld raw_pen=%.4f cached=%d\n",
+				fprintf(stderr, "[PB_CLASH_DEBUG] lig_atoms=%zu rec_atoms=%zu nclash=%ld ncarved=%ld raw_pen=%.4f cached=%d metal_carveout=%d\n",
 					lig_idx.size(),
 					use_cache ? pb_cache.rec_idx.size() : l_rec_idx.size(),
-					pb_nclash, pb_pen, (int)use_cache);
+					pb_nclash, pb_ncarved, pb_pen, (int)use_cache,
+					(int)pb_metal_carveout);
 			}
 			pb_pen *= FA->pb_clash_weight;
 			// Distribute to the first ligand optres (same convention as GIST).

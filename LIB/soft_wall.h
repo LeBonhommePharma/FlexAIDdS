@@ -52,6 +52,25 @@ inline double posebusters_vdw_radius(std::string_view element, double fallback)
 	return fallback;
 }
 
+// Coordinating-metal carve-out set for the pb_clash intermolecular scan.
+//
+// A genuine ligand->metal coordination bond sits at ~1.9-2.3 A, which is far
+// below pb_clash_ratio*(vdw_lig + vdw_metal) (e.g. 0.75*(1.55+2.10) = 2.74 A for
+// an O donor to Zn). Without a carve-out the pb_clash penalty scores every real
+// coordination bond as a hard clash and fights the cf.metal_coord Morse reward
+// that is enabled in the generated benchmark configs.
+//
+// The set is the catalytic/structural transition metals and alkaline earths that
+// actually appear as coordinating centres in the benchmark receptors. Alkali
+// ions (Na, K) are deliberately NOT included: they are almost always spectator
+// ions at crystallographic distances that a clash term should still see.
+inline bool posebusters_is_coordinating_metal(std::string_view element)
+{
+	return element == "Zn" || element == "Fe" || element == "Mg" ||
+	       element == "Ca" || element == "Mn" || element == "Co" ||
+	       element == "Ni" || element == "Cu";
+}
+
 // Raw r^-12 wall energy: KWALL * (d^-12 - cr^-12).  Unbounded as d -> 0.
 inline double wall_energy_raw_r12(double d, double cr)
 {
