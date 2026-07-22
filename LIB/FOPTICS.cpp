@@ -1,6 +1,7 @@
 #include "FOPTICS.h"
 #include "gaboom.h"
 #include "RngSeed.h"
+#include "ga_constants.h"
 
 #include <random>
 #include <algorithm>
@@ -287,6 +288,32 @@ void FastOPTICS::Execute_FastOPTICS(char* end_strfile, char* tmp_end_strfile)
 	// (nDimensions = num_het_atm * 3), while cluster_rmsd is in RMSD units.
 	// Relationship: euclidean_dist = RMSD * sqrt(num_het_atm)
 	const float epsilon = this->FA->cluster_rmsd * sqrtf(static_cast<float>(this->FA->num_het_atm));
+
+	// Cluster emit threshold — decoupled from the OPTICS density minPoints.
+	//
+	// minPoints calibrates the density/neighbourhood pass (leaf size in the
+	// random-projection tree, core-distance estimation).  It is tuned for
+	// Ankerst/Sander recommendations and does NOT need to equal the minimum
+	// viable cluster size for output.
+	//
+	// At low eval budgets (e.g. pop=500×gen=500 = 250k evals) the GA is
+	// under-converged: conformations scatter widely, so the OPTICS ordering
+	// produces many small segments (5-15 poses) and none exceed the raw
+	// minPoints gate → zero cluster-head PDBs → [P1 DIAGNOSTIC].
+	//
+	// Fix: scale the emit threshold with N so the gate is always reachable:
+	//   min_cluster_size = clamp(N/50, GA_FOPTICS_MIN_POINTS, minPoints)
+	//
+	//   N=50   → 1  → floor → 4   (at least Ester floor)
+	//   N=500  → 10            ✓  (works at 250k-eval budget)
+	//   N=5000 → 100 → cap → minPoints (large budget: full-strength gate)
+	const int min_cluster_size = std::max(GA_FOPTICS_MIN_POINTS,
+	                                      std::min(this->minPoints,
+	                                               std::max(GA_FOPTICS_MIN_POINTS,
+	                                                        this->N / 50)));
+	printf("[FO-CLUSTER-EMIT] N=%d minPoints=%d min_cluster_size=%d epsilon=%.4f\n",
+	       this->N, this->minPoints, min_cluster_size, epsilon);
+
 	BindingMode Current(this->Population);
 	for(std::vector< Pose >::iterator it = this->OPTICS.begin(); it != this->OPTICS.end(); ++it)
 	{
@@ -295,7 +322,7 @@ void FastOPTICS::Execute_FastOPTICS(char* end_strfile, char* tmp_end_strfile)
 
 		if(isNewClusterStart)
 		{
-			if(Current.get_BindingMode_size() >= this->minPoints)
+			if(Current.get_BindingMode_size() >= min_cluster_size)
 			{
 				this->Population->add_BindingMode(Current);
 			}
@@ -305,7 +332,7 @@ void FastOPTICS::Execute_FastOPTICS(char* end_strfile, char* tmp_end_strfile)
 		Current.add_Pose(*it);
 	}
 	// Flush the last cluster
-	if(Current.get_BindingMode_size() >= this->minPoints)
+	if(Current.get_BindingMode_size() >= min_cluster_size)
 	{
 		this->Population->add_BindingMode(Current);
 	}

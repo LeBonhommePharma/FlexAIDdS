@@ -48,11 +48,12 @@ static const bool no_sas = (std::getenv("FLEXAIDDS_NO_SAS") != nullptr);
 // Within a single dock the receptor atom positions are fixed, so a matching key
 // guarantees a valid grid.
 //
-// Gated by FLEXAIDDS_PB_CLASH_GRID_HOIST (default OFF so legacy mode is
-// bit-identical when the env var is absent).  When ON, CF math is unchanged —
-// only the grid construction is skipped on evals 2…N.
-static const bool pb_clash_hoist =
-    (std::getenv("FLEXAIDDS_PB_CLASH_GRID_HOIST") != nullptr);
+// Always active whenever pb_clash_weight>0.  This was previously gated behind
+// FLEXAIDDS_PB_CLASH_GRID_HOIST (default OFF) as a caution during initial
+// testing; the hoist is verified bit-identical, and leaving it opt-in meant a
+// config that enabled pb_clash but forgot the env var silently reproduced the
+// v134 timeout.  CF math is unchanged — only grid *construction* is skipped on
+// evals 2…N.
 
 struct PBClashGridCache {
     // Invalidation key
@@ -65,12 +66,43 @@ struct PBClashGridCache {
     double inv_cell  = 0.0;
     std::vector<int>    rec_idx;                        // rigid receptor atom indices
     std::vector<double> rec_vdw;                        // precomputed vdW per rec atom (parallel to rec_idx)
+    std::vector<char>   rec_metal;                      // 1 if rec atom is a coordinating metal (parallel to rec_idx)
     std::unordered_map<int, std::vector<int>> grid;     // cell-list: flat cell key → rec_idx positions
     bool valid = false;
 
     bool matches(int a, double r) const { return valid && (a == atm_cnt) && (r == ratio); }
 };
 static thread_local PBClashGridCache pb_cache;
+
+// FLEXAIDDS_PB_METAL_CARVEOUT (truthy, default OFF): exclude ligand/receptor
+// pairs in which either partner is a coordinating metal (Zn, Fe, Mg, Ca, Mn,
+// Co, Ni, Cu) from the pb_clash penalty. Genuine coordination bonds sit at
+// ~1.9-2.3 A, well inside pb_clash_ratio*(vdw_i+vdw_j), so without this they
+// are scored as hard clashes and fight the cf.metal_coord Morse reward.
+// Default OFF → the pair set is unchanged and CF is bit-identical.
+static const bool pb_metal_carveout =
+    (std::getenv("FLEXAIDDS_PB_METAL_CARVEOUT") != nullptr &&
+     std::getenv("FLEXAIDDS_PB_METAL_CARVEOUT")[0] != '0');
+
+// FLEXAIDDS_PB_VDW_CACHED (truthy, default OFF): read the precomputed
+// atoms[].pb_vdw_radius (populated once in update_optres() from the structure
+// file's element column) instead of re-running posebusters_vdw_radius() on
+// get_element(atoms[].type) per ligand atom per eval. Vcontacts.cpp already
+// reads the cached field; this brings vcfunction.cpp onto the same source.
+//
+// NOT a pure perf swap — the two sources are NOT fully interchangeable, which is
+// why this is flag-gated rather than applied unconditionally. tests/
+// test_pb_vdw_parity.cpp enumerates every NRGDock type and pins the result:
+//   * types 1-38 (all heavy elements): identical on both paths.
+//   * type 39: get_element() returns "Du", which is absent from the PoseBusters
+//     table and falls back to the NRG contact radius, while the element column
+//     says "H" and yields the PoseBusters hydrogen radius 1.20.
+// So enabling this changes hydrogen handling — in the direction of PoseBusters'
+// own semantics, which do use H at 1.20, but it is a scoring change and must be
+// benchmarked before it becomes a default. Default OFF → bit-identical.
+static const bool pb_vdw_cached =
+    (std::getenv("FLEXAIDDS_PB_VDW_CACHED") != nullptr &&
+     std::getenv("FLEXAIDDS_PB_VDW_CACHED")[0] != '0');
 
 // FLEXAIDDS_WAL_COERCIVE: remove WAL_CONTACT_CAP ceiling on the soft-core
 // fitness wall so deep clashes can overcome unbounded CF.com overpacking.
@@ -814,6 +846,40 @@ double vcfunction(FA_Global* FA,VC_Global* VC,atom* atoms,resid* residue, std::v
 		}
 	}
 
+	// ── P3: soft lower clamp on the CF.com channel (FLEXAIDDS_COM_FLOOR) ────────
+	// Enabler, NOT a standalone accuracy fix (see commit message). The favorable
+	// (negative) com term is unbounded below: an overpacked non-native pose can
+	// drive com → −∞ and swamp every attractive term (H-bond, metal, elec), so a
+	// downstream orientation-aware rescorer (P1) can never out-vote it. This
+	// installs a *soft* floor at −F: a strictly monotone, bounded-below squashing
+	// of com so the runaway tail is capped while pose order by com is preserved.
+	//
+	//   softfloor(x) = −F + F·softplus((x + F)/F),   softplus(z)=max(z,0)+log1p(e^−|z|)
+	//     x ≫ −F  ⇒ softfloor(x) → x      (near-identity; ranking untouched)
+	//     x → −∞  ⇒ softfloor(x) → −F     (bounded; no term can swamp the sum)
+	//     softfloor′ ∈ (0,1]              (monotone ⇒ rank-preserving)
+	//
+	// Env-gated, DEFAULT-OFF: unset or F≤0 ⇒ skipped entirely ⇒ bit-identical.
+	// FLEXAIDDS_COM_FLOOR=F sets the floor magnitude (kcal/mol-equivalent CF units).
+	//
+	// NOTE (reconstruction): the detailed P3 work order was unavailable at
+	// implementation time; the soft-floor functional form here is the standard
+	// monotone-bounded (softplus) realization of the handoff's spec
+	// ("soft floor at −F, rank-preserving + bounding"). Confirm F and the exact
+	// squashing against the original work order before the OPS canary run.
+	if(const char* com_floor_env = std::getenv("FLEXAIDDS_COM_FLOOR")){
+		const double F = std::atof(com_floor_env);
+		if(F > 0.0){
+			for(int j=0; j<FA->num_optres; ++j){
+				double& com = FA->optres[j].cf.com;
+				const double z  = (com + F) / F;
+				const double az = (z < 0.0) ? -z : z;
+				const double softplus = (z > 0.0 ? z : 0.0) + std::log1p(std::exp(-az));
+				com = -F + F * softplus;
+			}
+		}
+	}
+
 	// Shannon entropy of contact-type distribution as VCT false-minimum penalty.
 	// H = -Σ p_ij log₂(p_ij) over pairwise atom-type contribution matrix.
 	// False minima have HIGH entropy (many diffuse type-pair contacts);
@@ -903,11 +969,11 @@ double vcfunction(FA_Global* FA,VC_Global* VC,atom* atoms,resid* residue, std::v
 		// They are the same across all evals in a dock session.
 
 		// ── Route A: hoist receptor grid construction out of the eval loop ────
-		// When FLEXAIDDS_PB_CLASH_GRID_HOIST is set, the receptor cell-list grid is
-		// built once per dock (keyed on atm_cnt + pb_clash_ratio) and reused across
-		// all evals.  The CF math is identical; only the grid *construction* moves.
-		// When the env var is absent, behaviour is bit-identical to the old code.
-		if (pb_clash_hoist && !pb_cache.matches(FA->atm_cnt, FA->pb_clash_ratio)) {
+		// The receptor cell-list grid is built once per dock (keyed on atm_cnt +
+		// pb_clash_ratio) and reused across all evals.  The CF math is identical;
+		// only the grid *construction* moves out of the eval loop.  This is
+		// unconditional whenever pb_clash_weight>0 — see the cache comment above.
+		if (!pb_cache.matches(FA->atm_cnt, FA->pb_clash_ratio)) {
 			// Invalidate and rebuild.
 			pb_cache.valid   = false;
 			pb_cache.atm_cnt = FA->atm_cnt;
@@ -917,6 +983,7 @@ double vcfunction(FA_Global* FA,VC_Global* VC,atom* atoms,resid* residue, std::v
 
 			pb_cache.rec_idx.clear();
 			pb_cache.rec_vdw.clear();
+			pb_cache.rec_metal.clear();
 			double rmax[3] = {-1e30,-1e30,-1e30};
 			pb_cache.rmin[0]=pb_cache.rmin[1]=pb_cache.rmin[2]=1e30;
 
@@ -929,9 +996,15 @@ double vcfunction(FA_Global* FA,VC_Global* VC,atom* atoms,resid* residue, std::v
 						if(c>rmax[k])rmax[k]=c;
 					}
 					// Precompute receptor vdW radius (avoids repeated get_element calls in inner loop).
+					// Both sides of a pair must draw from the same source, so the cached-field
+					// switch applies here too — see the pb_vdw_cached comment above.
 					const char* re_raw = get_element(atoms[ai].type);
 					while (*re_raw == ' ') ++re_raw;
-					pb_cache.rec_vdw.push_back(posebusters_vdw_radius(re_raw, atoms[ai].radius));
+					pb_cache.rec_vdw.push_back(
+						pb_vdw_cached ? atoms[ai].pb_vdw_radius
+						              : posebusters_vdw_radius(re_raw, atoms[ai].radius));
+					pb_cache.rec_metal.push_back(
+						pb_metal_carveout && posebusters_is_coordinating_metal(re_raw) ? 1 : 0);
 				}
 			}
 			for (int k=0;k<3;++k){
@@ -956,7 +1029,7 @@ double vcfunction(FA_Global* FA,VC_Global* VC,atom* atoms,resid* residue, std::v
 		}
 
 		// Determine whether we're using the cached path or the legacy per-eval path.
-		const bool use_cache = pb_clash_hoist && pb_cache.valid;
+		const bool use_cache = pb_cache.valid;
 
 		// Local grid variables: either point at the cache or build fresh (legacy).
 		double l_rmin[3]  = { 1e30, 1e30, 1e30};
@@ -1011,11 +1084,24 @@ double vcfunction(FA_Global* FA,VC_Global* VC,atom* atoms,resid* residue, std::v
 			auto cidx = [&](int cx,int cy,int cz){ return (cx*dim[1]+cy)*dim[2]+cz; };
 			double pb_pen = 0.0;
 			long pb_nclash = 0;
+			long pb_ncarved = 0;
 			for (int li : lig_idx) {
 				const double lx=atoms[li].coor[0], ly=atoms[li].coor[1], lz=atoms[li].coor[2];
-				const char* le_raw = get_element(atoms[li].type);
-				while (*le_raw == ' ') ++le_raw;
-				const double vdw_l = posebusters_vdw_radius(le_raw, atoms[li].radius);
+				// The element string is only needed for the table lookup and the metal
+				// test; when the cached radius is in use and the carve-out is off,
+				// skip the ~26-branch string compare entirely.
+				const char* le_raw = "";
+				if (!pb_vdw_cached || pb_metal_carveout) {
+					le_raw = get_element(atoms[li].type);
+					while (*le_raw == ' ') ++le_raw;
+				}
+				const double vdw_l = pb_vdw_cached
+					? atoms[li].pb_vdw_radius
+					: posebusters_vdw_radius(le_raw, atoms[li].radius);
+				// Metal carve-out, ligand side: when the ligand atom is itself a
+				// coordinating metal every pair it forms is carved out.
+				const bool lig_is_metal =
+					pb_metal_carveout && posebusters_is_coordinating_metal(le_raw);
 				int cx=(int)((lx-rmin[0])*inv_cell_s);
 				int cy=(int)((ly-rmin[1])*inv_cell_s);
 				int cz=(int)((lz-rmin[2])*inv_cell_s);
@@ -1027,17 +1113,27 @@ double vcfunction(FA_Global* FA,VC_Global* VC,atom* atoms,resid* residue, std::v
 					for(int pos : it->second){
 						double vdw_r;
 						int ri;
+						bool rec_is_metal;
 						if (use_cache) {
-							// pos is an index into rec_idx / rec_vdw
+							// pos is an index into rec_idx / rec_vdw / rec_metal
 							ri    = pb_cache.rec_idx[pos];
 							vdw_r = pb_cache.rec_vdw[pos];
+							rec_is_metal = (pb_cache.rec_metal[pos] != 0);
 						} else {
 							// pos is the atom index directly (legacy path)
 							ri = pos;
 							const char* re_raw = get_element(atoms[ri].type);
 							while (*re_raw == ' ') ++re_raw;
-							vdw_r = posebusters_vdw_radius(re_raw, atoms[ri].radius);
+							vdw_r = pb_vdw_cached
+								? atoms[ri].pb_vdw_radius
+								: posebusters_vdw_radius(re_raw, atoms[ri].radius);
+							rec_is_metal =
+								pb_metal_carveout && posebusters_is_coordinating_metal(re_raw);
 						}
+						// Metal carve-out: skip the pair if EITHER partner is a
+						// coordinating metal. No-op when the carve-out is off, since
+						// both flags are then hard-false.
+						if (lig_is_metal || rec_is_metal) { ++pb_ncarved; continue; }
 						const double ddx=lx-atoms[ri].coor[0];
 						const double ddy=ly-atoms[ri].coor[1];
 						const double ddz=lz-atoms[ri].coor[2];
@@ -1050,10 +1146,11 @@ double vcfunction(FA_Global* FA,VC_Global* VC,atom* atoms,resid* residue, std::v
 				}
 			}
 			if (std::getenv("FLEXAIDDS_PB_CLASH_DEBUG")) {
-				fprintf(stderr, "[PB_CLASH_DEBUG] lig_atoms=%zu rec_atoms=%zu nclash=%ld raw_pen=%.4f cached=%d\n",
+				fprintf(stderr, "[PB_CLASH_DEBUG] lig_atoms=%zu rec_atoms=%zu nclash=%ld ncarved=%ld raw_pen=%.4f cached=%d metal_carveout=%d\n",
 					lig_idx.size(),
 					use_cache ? pb_cache.rec_idx.size() : l_rec_idx.size(),
-					pb_nclash, pb_pen, (int)use_cache);
+					pb_nclash, pb_ncarved, pb_pen, (int)use_cache,
+					(int)pb_metal_carveout);
 			}
 			pb_pen *= FA->pb_clash_weight;
 			// Distribute to the first ligand optres (same convention as GIST).

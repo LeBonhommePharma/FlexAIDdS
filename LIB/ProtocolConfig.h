@@ -78,11 +78,23 @@ struct ProtocolConfig {
     bool freqsel{false};              ///< FLEXAIDDS_FREQSEL
     double freqsel_alpha{12.0};       ///< FLEXAIDDS_FREQSEL_ALPHA
     float freqsel_rmsd{1.5f};         ///< FLEXAIDDS_FREQSEL_RMSD
-    /// Spread guard: if the rank-0 elected head is ≥ this many Å from every
-    /// other top-4 scored candidate, it is a spatially isolated false minimum
-    /// and is demoted (rank-1 elected instead).  15 Å catches the 1SG0 32 Å
-    /// false-min without disturbing tight-cluster cases.  Set 0 to disable.
-    float cluster_spread_max{15.0f};  ///< FLEXAIDDS_CLUSTER_SPREAD_MAX
+    // ── Two-gate spread guard (opt-in; 0 = disabled) ─────────────────────
+    // Demotes a rank-0 cluster head only when it is BOTH spatially isolated
+    // from its top-4 peers AND holds a minority of the merged population, AND
+    // no quorum of restarts independently converges on it. The single-gate
+    // version (d7ef67380, reverted in 024ba8068) demoted on isolation alone and
+    // cost 64/85 Astex targets, so every field below defaults to a no-op.
+    float cluster_spread_max{0.0f};        ///< FLEXAIDDS_CLUSTER_SPREAD_MAX (0 = off)
+    /// Rank-0 must hold strictly less than this fraction of the merged
+    /// population to be eligible for demotion.
+    float cluster_pop_min_fraction{0.35f}; ///< FLEXAIDDS_CLUSTER_POP_MIN_FRACTION
+    /// Å — a restart head within this radius of rank-0 counts as agreeing.
+    float cluster_consensus_tau{2.0f};     ///< FLEXAIDDS_CLUSTER_CONSENSUS_TAU
+    /// Minimum agreeing restarts that veto demotion.
+    int   cluster_consensus_k{3};          ///< FLEXAIDDS_CLUSTER_CONSENSUS_K
+    /// Pocket radius in Å used for the isolation threshold θ = 0.70·r.
+    /// 0 = unknown → fall back to the population Q75 pairwise-RMSD spread.
+    float cluster_pocket_radius{0.0f};     ///< FLEXAIDDS_CLUSTER_POCKET_RADIUS
     bool consensus_scorer{false};     ///< FLEXAIDDS_CONSENSUS_SCORER
     /// v135 crystal-blind basin recovery election (BCR-proxy). Default OFF —
     /// preserves claim ranking (AGENTS.md). Master switch enables:
@@ -159,5 +171,12 @@ struct ProtocolConfig {
     /// no-seed benchmark modes; this returns the env/default for seed modes.
     [[nodiscard]] double effective_boom_frac() const;
 };
+
+/// FLEXAIDDS_THERMO_SCORE (truthy, default OFF): promote ΔG_eff = <CF> − T·H
+/// from a reported diagnostic to the ranking criterion, in place of min(CF).
+/// Read once on first use. Kept as a free function rather than a ProtocolConfig
+/// field because it is consulted from scoring/reporting paths that do not build
+/// a ProtocolConfig.
+bool thermo_score_enabled();
 
 }  // namespace flexaids

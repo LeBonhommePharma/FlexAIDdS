@@ -1,5 +1,7 @@
 #include "ThermodynamicEngine.h"
 #include "ThermoWhiteboard.h"
+#include "ProtocolConfig.h"
+#include <cstdio>
 #include <cmath>
 #include <numeric>
 #include <algorithm>
@@ -134,6 +136,54 @@ ThermoResult ThermodynamicEngine::compute(
         r.I_ES            = enthalpy_entropy_index(dH, report_T * dS);
         r.CF_r2s           = cf_r2s(r.H_vct_raw, sum_LS, sum_TT3);
         r.binding_regime  = classify_binding_regime(dH, dS, report_T);
+
+        // ── ΔG_eff = <CF> − T·H over the Boltzmann pose population ──
+        // The report_T pair reuses dH/dS just computed above; the T_eff pair
+        // needs its own P_i because T sets the distribution, not just the
+        // entropy prefactor. At T_eff=0.596 in CF units the distribution
+        // collapses toward a delta function (H→0, <CF>→min CF); at
+        // report_T=21 it is genuinely broad. Reporting both makes that
+        // calibration difference visible rather than hidden in one number.
+        r.mean_CF_T21 = dH;
+        r.H_pose_T21  = dS;
+        r.dG_eff_T21  = dH - report_T * dS;
+
+        std::vector<float> P_eff = boltzmann_probabilities(cf_values, T_eff_);
+        r.mean_CF     = weighted_mean(P_eff, cf_values);
+        r.H_pose      = shannon_entropy_nats(P_eff);
+        r.T_eff_used  = T_eff_;
+        r.dG_eff      = r.mean_CF - T_eff_ * r.H_pose;
+    }
+
+    // ── Thermodynamic impossibility gate (FLEXAIDDS_THERMO_SCORE=1 only) ──
+    // Zero-cost no-op in default mode: the flag is read once (function-local
+    // static) and short-circuits before any per-pose work.
+    r.thermo_impossible  = false;
+    r.n_impossible_poses = 0;
+    r.gate_dS_used       = 0.0f;
+    if (flexaids::thermo_score_enabled()) {
+        // ΔS sign source: vibrational entropy. The population Shannon entropy
+        // is ≥ 0 by construction and would make this gate unreachable.
+        const float dS = r.TdS_vib;
+        r.gate_dS_used = dS;
+
+        // Per-pose: ΔH_i is that pose's own CF.
+        for (size_t i = 0; i < cf_values.size(); ++i) {
+            const float dH_i = cf_values[i];
+            if (!std::isfinite(dH_i)) continue;
+            if (thermo_gate::is_impossible(dH_i, dS)) {
+                ++r.n_impossible_poses;
+                std::fprintf(stderr,
+                    "[THERMO_GATE] pose %d: dH=%.2f dS=%.4f → thermodynamically "
+                    "impossible, dG_eff penalised to +1000\n",
+                    static_cast<int>(i), dH_i, dS);
+            }
+        }
+
+        // Aggregate: penalise the reported ΔG_eff when the ensemble mean itself
+        // is impossible, so clustering can never rank it 0.
+        r.dG_eff = thermo_gate::apply_gate(r.dG_eff, r.mean_CF, dS,
+                                           &r.thermo_impossible);
     }
     return r;
 }

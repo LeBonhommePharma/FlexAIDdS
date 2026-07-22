@@ -24,6 +24,7 @@
 #include <unordered_map>
 #include <chrono>
 #include <cstdlib>
+#include <cstring>
 
 #ifdef _OPENMP
 #include <omp.h>
@@ -1329,6 +1330,33 @@ int GA(FA_Global* FA, GB_Global* GB,VC_Global* VC,chromosome** chrom,chromosome*
 		       FA->thermo_result.I_ES,
 		       FA->thermo_result.CF_r2s,
 		       FA->thermo_result.binding_regime.c_str());
+
+		// ΔG_eff = <CF> − T·H over the Boltzmann pose population, at both
+		// calibrations (T_eff and report_T). Reporting-only unless
+		// FLEXAIDDS_THERMO_SCORE=1, which promotes dG_eff to the ranking
+		// criterion in place of min(CF).
+		printf("[THERMO3] dG_eff=%.6f mean_CF=%.6f H=%.6f T_eff=%.6f | "
+		       "dG_eff_T21=%.6f mean_CF_T21=%.6f H_T21=%.6f report_T=%.6f | "
+		       "n_poses=%d thermo_score=%d\n",
+		       FA->thermo_result.dG_eff,
+		       FA->thermo_result.mean_CF,
+		       FA->thermo_result.H_pose,
+		       FA->thermo_result.T_eff_used,
+		       FA->thermo_result.dG_eff_T21,
+		       FA->thermo_result.mean_CF_T21,
+		       FA->thermo_result.H_pose_T21,
+		       FA->thermo_result.report_T,
+		       GB->num_chrom,
+		       flexaids::thermo_score_enabled() ? 1 : 0);
+
+		if (flexaids::thermo_score_enabled()) {
+			printf("[THERMO_GATE_SUMMARY] impossible=%d n_impossible_poses=%d "
+			       "gate_dS=%.4f dG_eff=%.6f\n",
+			       FA->thermo_result.thermo_impossible ? 1 : 0,
+			       FA->thermo_result.n_impossible_poses,
+			       FA->thermo_result.gate_dS_used,
+			       FA->thermo_result.dG_eff);
+		}
 	}
 
 	snprintf(outfile,MAX_PATH__,"%s_par.res",FA->rrgfile);
@@ -2303,13 +2331,44 @@ void calculate_fitness(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* chr
 #endif  // FLEXAIDS_USE_CUDA || FLEXAIDS_USE_METAL
 
 	// Log dispatch decision on first call.
-	[[maybe_unused]] const auto backend = flexaids::select_backend();
+	// FLEXAIDDS_FORCE_CPU (truthy, default unset): pin fitness evaluation to a CPU
+	// backend. Exists so a run that needs the PoseBust terms (pb_clash / pb_pocket),
+	// which are CPU-only, has a way to get them — see the divergence guard below.
+	// Unset → select_backend() exactly as before, bit-identical.
+	[[maybe_unused]] const auto backend = []() {
+		const char* fc = std::getenv("FLEXAIDDS_FORCE_CPU");
+		if (fc && fc[0] != '\0' && std::strcmp(fc, "0") != 0)
+			return flexaids::select_cpu_backend();
+		return flexaids::select_backend();
+	}();
 	if (!ctx.dispatch_logged) {
 		auto report = flexaids::get_dispatch_report();
 		fprintf(stderr, "[FlexAIDdS] Hardware dispatch: %s (%s)\n",
 		        flexaids::backend_name(static_cast<flexaids::HardwareBackend>(
 		            static_cast<uint8_t>(report.selected))), report.reason.c_str());
 		ctx.dispatch_logged = true;
+	}
+
+	// ── PB term / accelerated-path divergence guard ───────────────────────────
+	// The CUDA/Metal batch kernels compute only com/wal/sas; cf.pb_clash is zeroed
+	// in unpack_gpu_results() below to avoid a stale host buffer leaking into
+	// get_cf_evalue(). That is memory-safe, but it means a run with
+	// pb_clash_weight>0 scores DIFFERENT PHYSICS on an accelerated backend than on
+	// the CPU backend. Previously this was silent. Warn once per process so the
+	// divergence can never go unnoticed.
+	if ((backend == flexaids::HardwareBackend::CUDA ||
+	     backend == flexaids::HardwareBackend::METAL) &&
+	    FA->pb_clash_weight > 0.0) {
+		static bool pb_gpu_warned = false;
+		if (!pb_gpu_warned) {
+			pb_gpu_warned = true;
+			fprintf(stderr,
+			        "[PB_CLASH] WARNING: %s accelerated path detected — pb_clash "
+			        "(pb_clash_weight=%.4g) is NOT computed on this path and is zeroed for "
+			        "consistency. Scoring will DIVERGE from the CPU backend. Set "
+			        "FLEXAIDDS_FORCE_CPU=1 to enable pb_clash.\n",
+			        flexaids::backend_name(backend), FA->pb_clash_weight);
+		}
 	}
 
 	[[maybe_unused]] bool gpu_handled = false;

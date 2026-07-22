@@ -32,15 +32,15 @@
  */
 static int sybyl_to_flexaid_type(const char* sybyl_type) {
     // Carbon types
-    if (!strcmp(sybyl_type, "C.1"))   return 1;   // sp carbon
+    if (!strcmp(sybyl_type, "C.1"))   return 2;   // C.2 (C.1/type-1 has 10 live entries; sp C rare in PDB sites, C.2 better sampled)
     if (!strcmp(sybyl_type, "C.2"))   return 2;   // sp2 carbon
     if (!strcmp(sybyl_type, "C.3"))   return 3;   // sp3 carbon
     if (!strcmp(sybyl_type, "C.ar"))  return 4;   // aromatic carbon
     if (!strcmp(sybyl_type, "C.cat")) return 5;   // carbocation
 
     // Nitrogen types
-    if (!strcmp(sybyl_type, "N.1"))   return 11;  // N.am (N.1/type-6 dead in matrix)
-    if (!strcmp(sybyl_type, "N.2"))   return 11;  // N.am (N.2/type-7 dead in matrix)
+    if (!strcmp(sybyl_type, "N.1"))   return 6;   // N.1 — row 6 is sparse (5 entries) but live; N.am coercion discarded it
+    if (!strcmp(sybyl_type, "N.2"))   return 10;  // N.ar — sp2 imine is an acceptor; N.am (donor) reversed the H-bond sign
     if (!strcmp(sybyl_type, "N.3"))   return 11;  // N.am (N.3/type-8 dead in matrix)
     if (!strcmp(sybyl_type, "N.4"))   return 9;   // quaternary nitrogen
     if (!strcmp(sybyl_type, "N.ar"))  return 10;  // aromatic nitrogen
@@ -69,7 +69,7 @@ static int sybyl_to_flexaid_type(const char* sybyl_type) {
     if (!strcmp(sybyl_type, "F"))     return 23;
     if (!strcmp(sybyl_type, "Cl"))    return 24;
     if (!strcmp(sybyl_type, "Br"))    return 25;
-    if (!strcmp(sybyl_type, "I"))     return 26;
+    if (!strcmp(sybyl_type, "I"))     return 25;  // BR — iodo near-absent from PDB training; I/type-26 row has only 3 live entries
 
     // Selenium
     if (!strcmp(sybyl_type, "Se"))    return 27;

@@ -1091,6 +1091,12 @@ if(BUILD_TESTING)
         TEST_NAME StatMechTests
     )
 
+    # test_thermo_gate — thermodynamic impossibility gate (header-only, no deps)
+    flexaids_add_unit_test(test_thermo_gate
+        SOURCES tests/test_thermo_gate.cpp
+        TEST_NAME ThermoGateTests
+    )
+
     # test_thermo_ledger — Thermo ledger tests
     flexaids_add_unit_test(test_thermo_ledger
         SOURCES
@@ -1164,6 +1170,15 @@ flexaids_add_unit_test(test_protocol_config
             tests/cf_aggregator_stubs.cpp
             LIB/ic2cf.cpp
         TEST_NAME CFAggregatorTests
+    )
+
+    # test_pb_vdw_parity — pins get_element(type) vs atoms[].element as PoseBusters
+    # vdW radius sources (links write_pdb.cpp for the real get_element())
+    flexaids_add_unit_test(test_pb_vdw_parity
+        SOURCES
+            tests/test_pb_vdw_parity.cpp
+            LIB/write_pdb.cpp
+        TEST_NAME PbVdwParityTests
     )
 
     # test_formal_charges — PDB formal charge assignment tests (header-only)

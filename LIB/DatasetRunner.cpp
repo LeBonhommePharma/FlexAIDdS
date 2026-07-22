@@ -43,6 +43,7 @@
 #include <limits>
 #include <map>
 #include <numeric>
+#include <optional>
 #include <random>
 #include <cstdint>
 #include <functional>
@@ -1247,44 +1248,118 @@ static std::pair<std::string,float> select_pose_freq_gated_pooled(
             }
         }
 
-        // ── Spread guard (FLEXAIDDS_CLUSTER_SPREAD_MAX, default 15 Å) ────────
-        // If the rank-0 head is ≥ cluster_spread_max Å from EVERY other top-4
-        // scored head it is a spatially isolated false minimum (e.g. 1SG0 where
-        // the lowest-CF cluster is at 32 Å while the near-native cluster ranks
-        // 2nd by only 1 CF unit).  Demote rank-0 and elect rank-1 instead.
-        // Uses the same load_pose_ligand_coords / pose_pose_rmsd helpers as the
-        // freqsel macro-cluster block below.  Set 0 to disable.
-        if (proto.cluster_spread_max > 0.0f && scored_chosen.size() >= 2) {
-            const auto* rank0 = scored_chosen.front().second;
+        // ── Two-gate spread guard (FLEXAIDDS_CLUSTER_SPREAD_MAX, default off) ─
+        // Replaces the single-gate guard d7ef67380 (reverted in 024ba8068),
+        // which demoted rank-0 on spatial isolation alone and cost 64/85 Astex
+        // targets by punishing correct near-native heads. Demotion now needs
+        // BOTH gates:
+        //   Gate 1  rank-0 is ≥ θ Å from all top-4 peers AND holds < f_min of
+        //           the merged population (an isolated *minority* basin).
+        //   Gate 2  fewer than k restarts independently land within τ Å of it
+        //           (no cross-restart support).
+        // Either gate failing leaves the CF/Softβ ranking untouched.
+        const bool oracle_mode = !proto.oracle_site_dir.empty() ||
+                                 !proto.oracle_site.empty();
+        if (proto.cluster_spread_max > 0.0f && !oracle_mode &&
+            scored_chosen.size() >= 2) {
+            const PoseInfo* rank0 = scored_chosen.front().second;
             std::vector<std::array<float,3>> xyz0; std::vector<std::string> el0;
             load_pose_ligand_coords(rank0->path, xyz0, el0);
+
+            // Cached pairwise-RMSD 75th-percentile spread of the merged
+            // population — computed at most once per election.
+            std::optional<float> q75_cache;
+            auto population_q75_spread = [&]() -> float {
+                if (q75_cache) return *q75_cache;
+                std::vector<std::vector<std::array<float,3>>> xyz(chosen.size());
+                std::vector<std::vector<std::string>>         elem(chosen.size());
+                for (size_t i = 0; i < chosen.size(); ++i)
+                    load_pose_ligand_coords(chosen[i]->path, xyz[i], elem[i]);
+                std::vector<float> dists;
+                for (size_t i = 0; i < chosen.size(); ++i)
+                    for (size_t j = i + 1; j < chosen.size(); ++j) {
+                        if (xyz[i].empty() || xyz[j].empty()) continue;
+                        float r = pose_pose_rmsd(xyz[i], elem[i], xyz[j], elem[j]);
+                        if (r >= 0.0f) dists.push_back(r);
+                    }
+                if (dists.empty()) {
+                    // No usable pairs — an unreachable threshold keeps gate 1 shut.
+                    q75_cache = std::numeric_limits<float>::infinity();
+                    return *q75_cache;
+                }
+                size_t k = static_cast<size_t>(0.75 * (dists.size() - 1));
+                std::nth_element(dists.begin(), dists.begin() + k, dists.end());
+                q75_cache = dists[k];
+                return *q75_cache;
+            };
+
             if (!xyz0.empty()) {
-                bool isolated = true;
-                const int n_peers = std::min(4, static_cast<int>(scored_chosen.size()) - 1);
-                for (int si = 1; si <= n_peers && isolated; ++si) {
+                // Gate 1a: distance to the nearest of the top-4 peers.
+                const int n_peers =
+                    std::min(4, static_cast<int>(scored_chosen.size()) - 1);
+                float d_min = std::numeric_limits<float>::infinity();
+                for (int si = 1; si <= n_peers; ++si) {
                     std::vector<std::array<float,3>> xyz_s; std::vector<std::string> el_s;
                     load_pose_ligand_coords(scored_chosen[si].second->path, xyz_s, el_s);
-                    if (!xyz_s.empty() &&
-                        pose_pose_rmsd(xyz0, el0, xyz_s, el_s) < proto.cluster_spread_max)
-                        isolated = false;
+                    if (xyz_s.empty()) continue;
+                    float r = pose_pose_rmsd(xyz0, el0, xyz_s, el_s);
+                    if (r >= 0.0f) d_min = std::min(d_min, r);
                 }
-                if (isolated) {
+                const float theta = (proto.cluster_pocket_radius > 0.0f)
+                                      ? proto.cluster_pocket_radius * 0.70f
+                                      : population_q75_spread();
+
+                // Gate 1b: rank-0 must be a population minority.
+                long total_pop = 0;
+                for (const auto* p : chosen)
+                    total_pop += std::max(1, p->freq);
+                const float f0 = total_pop > 0
+                    ? static_cast<float>(std::max(1, rank0->freq)) /
+                      static_cast<float>(total_pop)
+                    : 1.0f;
+
+                const bool gate1 = std::isfinite(d_min) && d_min >= theta &&
+                                   f0 < proto.cluster_pop_min_fraction;
+
+                // Gate 2: cross-restart consensus. Each restart's own best head
+                // votes; ≥ k agreeing votes veto the demotion.
+                int consensus = 0;
+                if (gate1) {
+                    std::set<int> seen_restarts;
+                    for (const auto& sc : scored_chosen) {
+                        const PoseInfo* p = sc.second;
+                        if (p->restart < 0) continue;             // seeds do not vote
+                        if (!seen_restarts.insert(p->restart).second) continue;
+                        if (p == rank0) { ++consensus; continue; }
+                        std::vector<std::array<float,3>> xyz_r; std::vector<std::string> el_r;
+                        load_pose_ligand_coords(p->path, xyz_r, el_r);
+                        if (xyz_r.empty()) continue;
+                        float r = pose_pose_rmsd(xyz0, el0, xyz_r, el_r);
+                        if (r >= 0.0f && r < proto.cluster_consensus_tau) ++consensus;
+                    }
+                }
+                const bool gate2 = consensus < proto.cluster_consensus_k;
+
+                if (gate1 && gate2) {
+                    std::swap(scored_chosen[0], scored_chosen[1]);
                     fprintf(stderr,
-                        "[SPREAD-GUARD] rank-0 isolated (≥%.1fÅ from all top-%d peers) "
-                        "→ demoted: CF=%.4f freq=%d path=%s\n",
-                        proto.cluster_spread_max, n_peers,
+                        "[SPREAD-GUARD] demoted rank-0 (d_min=%.2f >= %.2f, "
+                        "f0=%.3f < %.3f, consensus=%d < %d): CF=%.4f freq=%d path=%s\n",
+                        d_min, theta, f0, proto.cluster_pop_min_fraction,
+                        consensus, proto.cluster_consensus_k,
                         rank0->cf, rank0->freq, rank0->path.c_str());
-                    scored_chosen.erase(scored_chosen.begin());
+                } else {
+                    fprintf(stderr,
+                        "[SPREAD-GUARD] kept rank-0 (d_min=%.2f vs theta=%.2f, "
+                        "f0=%.3f vs %.3f, consensus=%d vs k=%d)\n",
+                        d_min, theta, f0, proto.cluster_pop_min_fraction,
+                        consensus, proto.cluster_consensus_k);
                 }
             }
         }
 
-        // Winner = best-ranked after sort above (after optional spread-guard demotion).
-        if (scored_chosen.empty()) {
-            freq_best = nullptr;
-        } else {
-            freq_best = scored_chosen.front().second;
-        }
+        // Winner = best-ranked after sort above (post spread guard).
+        freq_best = scored_chosen.front().second;
 
         // ── v70: frequency-weighted macro-cluster selection ─────────────────
         // At small τ the composite collapses toward CF-rank-0, so a false
