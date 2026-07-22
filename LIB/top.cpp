@@ -76,7 +76,7 @@ static int sybyl_name_to_canonical_vct(const char* s) {
 	if (!strcmp(s, "C.cat")) return 5;
 	if (!strcmp(s, "N.1"))   return 6;
 	if (!strcmp(s, "N.2"))   return 10;  // N.ar — sp2 imine is an acceptor; N.am (donor) reversed the H-bond sign
-	if (!strcmp(s, "N.3"))   return 8;
+	if (!strcmp(s, "N.3"))   return 11;  // N.am — row 8 is all-zero in MC_st0r5.2_6.dat; matches Mol2Reader.cpp:44
 	if (!strcmp(s, "N.4"))   return 9;
 	if (!strcmp(s, "N.ar"))  return 10;
 	if (!strcmp(s, "N.am"))  return 11;
