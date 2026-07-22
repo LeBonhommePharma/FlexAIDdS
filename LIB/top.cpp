@@ -69,13 +69,13 @@
 // string→canonical mapping (identical to Mol2Reader::sybyl_to_flexaid_type).
 static constexpr int FA_TYPE_DUMMY = 39;
 static int sybyl_name_to_canonical_vct(const char* s) {
-	if (!strcmp(s, "C.1"))   return 1;
+	if (!strcmp(s, "C.1"))   return 2;   // C.2 — sp C rare in PDB sites, C.2 better sampled
 	if (!strcmp(s, "C.2"))   return 2;
 	if (!strcmp(s, "C.3"))   return 3;
 	if (!strcmp(s, "C.ar"))  return 4;
 	if (!strcmp(s, "C.cat")) return 5;
 	if (!strcmp(s, "N.1"))   return 6;
-	if (!strcmp(s, "N.2"))   return 7;
+	if (!strcmp(s, "N.2"))   return 10;  // N.ar — sp2 imine is an acceptor; N.am (donor) reversed the H-bond sign
 	if (!strcmp(s, "N.3"))   return 8;
 	if (!strcmp(s, "N.4"))   return 9;
 	if (!strcmp(s, "N.ar"))  return 10;
@@ -94,7 +94,7 @@ static int sybyl_name_to_canonical_vct(const char* s) {
 	if (!strcmp(s, "F"))     return 23;
 	if (!strcmp(s, "Cl"))    return 24;
 	if (!strcmp(s, "Br"))    return 25;
-	if (!strcmp(s, "I"))     return 26;
+	if (!strcmp(s, "I"))     return 25;  // BR — iodo near-absent from PDB training; I/type-26 row has only 3 live entries
 	if (!strcmp(s, "Se"))    return 27;
 	if (!strcmp(s, "Mg"))    return 28;
 	if (!strcmp(s, "Sr"))    return 29;

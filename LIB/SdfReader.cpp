@@ -72,7 +72,7 @@ static int element_to_flexaid_type(const char* elem) {
     if (!strcmp(elem, "F"))  return 23;  // F
     if (!strcmp(elem, "Cl")) return 24;  // CL
     if (!strcmp(elem, "Br")) return 25;  // BR
-    if (!strcmp(elem, "I"))  return 26;  // I
+    if (!strcmp(elem, "I"))  return 25;  // BR — iodo near-absent from PDB training; I/type-26 row has only 3 live entries
     if (!strcmp(elem, "Se")) return 27;  // SE
     if (!strcmp(elem, "Mg")) return 28;  // MG
     if (!strcmp(elem, "Sr")) return 29;  // SR
