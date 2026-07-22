@@ -5,8 +5,10 @@
 #include "hbond_potential.h"
 #include "metal_coordination.h"
 #include "GISTGrid.h"
+#include "ProtocolConfig.h"
 #include <cmath>
 #include <cstdlib>
+#include <cstring>
 #include <climits>
 #include <vector>
 #include <unordered_map>
@@ -67,6 +69,7 @@ struct PBClashGridCache {
     std::vector<int>    rec_idx;                        // rigid receptor atom indices
     std::vector<double> rec_vdw;                        // precomputed vdW per rec atom (parallel to rec_idx)
     std::vector<char>   rec_metal;                      // 1 if rec atom is a coordinating metal (parallel to rec_idx)
+    std::vector<char>   rec_heavy;                      // 1 if rec atom is a heavy (non-H) atom (parallel to rec_idx)
     std::unordered_map<int, std::vector<int>> grid;     // cell-list: flat cell key → rec_idx positions
     bool valid = false;
 
@@ -103,6 +106,10 @@ static const bool pb_metal_carveout =
 static const bool pb_vdw_cached =
     (std::getenv("FLEXAIDDS_PB_VDW_CACHED") != nullptr &&
      std::getenv("FLEXAIDDS_PB_VDW_CACHED")[0] != '0');
+
+// FLEXAIDDS_PB_POCKET_DEBUG: emit the per-eval [PB_POCKET] trace line.
+static const bool pb_pocket_debug =
+    (std::getenv("FLEXAIDDS_PB_POCKET_DEBUG") != nullptr);
 
 // FLEXAIDDS_WAL_COERCIVE: remove WAL_CONTACT_CAP ceiling on the soft-core
 // fitness wall so deep clashes can overcome unbounded CF.com overpacking.
@@ -960,7 +967,11 @@ double vcfunction(FA_Global* FA,VC_Global* VC,atom* atoms,resid* residue, std::v
 	// severity-scaled: weight * sum(max(0, cr_pb - d)^p), so a physically
 	// impossible interpenetration always out-weighs the unbounded CF.com.
 	// OFF unless pb_clash_weight>0.
-	if (FA->pb_clash_weight > 0.0) {
+	//
+	// The same receptor cell list also backs the pocket-presence penalty (P1), so
+	// the block runs when either term is enabled and each term is gated
+	// individually inside. OFF unless pb_clash_weight>0 or pb_pocket_weight>0.
+	if (FA->pb_clash_weight > 0.0 || flexaids::pb_pocket_enabled(FA->pb_pocket_weight)) {
 		// Partition atoms into rigid-receptor vs movable-ligand (optres != NULL).
 		// Ligand atoms are few (tens); receptor atoms are many (thousands) — so
 		// build the grid over RECEPTOR atoms and scan each ligand atom's cell nbhd.
@@ -984,6 +995,7 @@ double vcfunction(FA_Global* FA,VC_Global* VC,atom* atoms,resid* residue, std::v
 			pb_cache.rec_idx.clear();
 			pb_cache.rec_vdw.clear();
 			pb_cache.rec_metal.clear();
+			pb_cache.rec_heavy.clear();
 			double rmax[3] = {-1e30,-1e30,-1e30};
 			pb_cache.rmin[0]=pb_cache.rmin[1]=pb_cache.rmin[2]=1e30;
 
@@ -1005,6 +1017,10 @@ double vcfunction(FA_Global* FA,VC_Global* VC,atom* atoms,resid* residue, std::v
 						              : posebusters_vdw_radius(re_raw, atoms[ai].radius));
 					pb_cache.rec_metal.push_back(
 						pb_metal_carveout && posebusters_is_coordinating_metal(re_raw) ? 1 : 0);
+					// Heavy = not hydrogen. Type 39 ("Du") is FlexAID's dummy/hydrogen
+					// tag; "H" covers readers that type hydrogens explicitly.
+					pb_cache.rec_heavy.push_back(
+						(std::strcmp(re_raw, "H") == 0 || std::strcmp(re_raw, "Du") == 0) ? 0 : 1);
 				}
 			}
 			for (int k=0;k<3;++k){
@@ -1082,6 +1098,7 @@ double vcfunction(FA_Global* FA,VC_Global* VC,atom* atoms,resid* residue, std::v
 
 		if (!lig_idx.empty() && (use_cache ? !pb_cache.rec_idx.empty() : !l_rec_idx.empty())) {
 			auto cidx = [&](int cx,int cy,int cz){ return (cx*dim[1]+cy)*dim[2]+cz; };
+			if (FA->pb_clash_weight > 0.0) {
 			double pb_pen = 0.0;
 			long pb_nclash = 0;
 			long pb_ncarved = 0;
@@ -1156,6 +1173,103 @@ double vcfunction(FA_Global* FA,VC_Global* VC,atom* atoms,resid* residue, std::v
 			// Distribute to the first ligand optres (same convention as GIST).
 			for(int j=0;j<FA->num_optres;++j){
 				if(FA->optres[j].type == 1){ FA->optres[j].cf.pb_clash += pb_pen; break; }
+			}
+			}  // end pb_clash_weight > 0.0
+
+			// ── P1: pocket-presence soft penalty ──────────────────────────────
+			// Catches the "ligand left the pocket" false minimum — the dominant
+			// Astex failure class here (1SG0 elected a pose whose centroid sat
+			// 29.64 A from the true binding site). PoseBusters reports this
+			// post-dock as protein-ligand_maximum_distance; steering on it during
+			// the GA search is what stops the population settling there at all.
+			//
+			// Measure: distance from the ligand centroid to the nearest receptor
+			// HEAVY atom. Penalty: a soft quadratic ramp that is exactly zero
+			// while the centroid is within pb_pocket_radius, so shallow and
+			// surface binders are untouched and only real drift is charged.
+			//
+			// The nearest-atom search walks the already-hoisted cell list outward
+			// in Chebyshev shells and stops as soon as no unscanned cell can hold
+			// anything closer ((R-1)*cell >= d_best). For a ligand sitting in the
+			// pocket that terminates at shell 0 or 1 — O(1). A drifted pose costs
+			// more shells, but those are exactly the poses being penalized and are
+			// rare once the term is steering the population.
+			if (flexaids::pb_pocket_enabled(FA->pb_pocket_weight)) {
+				double sx = 0.0, sy = 0.0, sz = 0.0;
+				for (int li : lig_idx) {
+					sx += atoms[li].coor[0];
+					sy += atoms[li].coor[1];
+					sz += atoms[li].coor[2];
+				}
+				const double n_lig = (double)lig_idx.size();
+				const double gx = sx / n_lig, gy = sy / n_lig, gz = sz / n_lig;
+
+				const int ccx = (int)((gx-rmin[0])*inv_cell_s);
+				const int ccy = (int)((gy-rmin[1])*inv_cell_s);
+				const int ccz = (int)((gz-rmin[2])*inv_cell_s);
+
+				// Enough shells to reach every cell from any centroid, in or out of box.
+				const int max_shell = dim[0] + dim[1] + dim[2] +
+					std::abs(ccx) + std::abs(ccy) + std::abs(ccz) + 2;
+				const double cell_s = use_cache ? pb_cache.cell : l_cell;
+
+				double best_d2 = 1e30;
+				for (int R = 0; R <= max_shell; ++R) {
+					// No cell at Chebyshev radius R or beyond can beat best_d2 once
+					// the inner boundary of this shell is already further away.
+					if (best_d2 < 1e29) {
+						const double reach = (double)(R-1) * cell_s;
+						if (reach > 0.0 && reach*reach >= best_d2) break;
+					}
+					for(int dx=-R;dx<=R;++dx)for(int dy=-R;dy<=R;++dy)for(int dz=-R;dz<=R;++dz){
+						// Shell only — the interior was scanned at radius R-1.
+						if (R > 0 && std::abs(dx) != R && std::abs(dy) != R && std::abs(dz) != R)
+							continue;
+						const int nx=ccx+dx, ny=ccy+dy, nz=ccz+dz;
+						if(nx<0||ny<0||nz<0||nx>=dim[0]||ny>=dim[1]||nz>=dim[2]) continue;
+						auto it=grid_ref.find(cidx(nx,ny,nz));
+						if(it==grid_ref.end()) continue;
+						for(int pos : it->second){
+							int ri;
+							bool heavy;
+							if (use_cache) {
+								ri    = pb_cache.rec_idx[pos];
+								heavy = (pb_cache.rec_heavy[pos] != 0);
+							} else {
+								ri = pos;
+								const char* re_raw = get_element(atoms[ri].type);
+								while (*re_raw == ' ') ++re_raw;
+								heavy = !(std::strcmp(re_raw,"H")==0 || std::strcmp(re_raw,"Du")==0);
+							}
+							if (!heavy) continue;
+							const double ddx=gx-atoms[ri].coor[0];
+							const double ddy=gy-atoms[ri].coor[1];
+							const double ddz=gz-atoms[ri].coor[2];
+							const double d2=ddx*ddx+ddy*ddy+ddz*ddz;
+							if(d2 < best_d2) best_d2 = d2;
+						}
+					}
+				}
+
+				double pocket_pen = 0.0;
+				double centroid_d = 0.0;
+				if (best_d2 < 1e29) {
+					centroid_d = std::sqrt(best_d2);
+					const double over = centroid_d - FA->pb_pocket_radius;
+					if (over > 0.0) pocket_pen = FA->pb_pocket_weight * over * over;
+				}
+
+				if (pb_pocket_debug) {
+					fprintf(stderr, "[PB_POCKET] centroid_dist=%.2f pocket_radius=%.2f penalty=%.2f\n",
+						centroid_d, FA->pb_pocket_radius, pocket_pen);
+				}
+
+				if (pocket_pen != 0.0) {
+					// Same attribution convention as pb_clash / GIST: first ligand optres.
+					for(int j=0;j<FA->num_optres;++j){
+						if(FA->optres[j].type == 1){ FA->optres[j].cf.pb_clash += pocket_pen; break; }
+					}
+				}
 			}
 		}
 	}

@@ -77,6 +77,19 @@ void apply_config(const json::Value& config, FA_Global* FA, GB_Global* GB,
         FA->pb_clash_weight   = jdbl(config, "scoring", "pb_clash_weight", 0.0);
         FA->pb_clash_exponent = jdbl(config, "scoring", "pb_clash_exponent", 3.0);
         FA->pb_clash_ratio    = jdbl(config, "scoring", "pb_clash_ratio", 0.75);
+        FA->pb_pocket_weight  = jdbl(config, "scoring", "pb_pocket_weight", 0.0);
+        FA->pb_pocket_radius  = jdbl(config, "scoring", "pb_pocket_radius", 6.0);
+        // Env overrides, applied after the JSON read and in the same order and with
+        // the same validity rules as the legacy .inp path (top.cpp). Without these
+        // the JSON path silently clobbered the env values with its own defaults, so
+        // exporting FLEXAIDDS_PB_CLASH_WEIGHT into a DatasetRunner campaign — the
+        // ONLY documented way to enable pb_clash, since the generated config omits
+        // the key — was a no-op. Unset env leaves the JSON/default value untouched.
+        if (const char* e = std::getenv("FLEXAIDDS_PB_CLASH_WEIGHT"))  { FA->pb_clash_weight = atof(e); }
+        if (const char* e = std::getenv("FLEXAIDDS_PB_CLASH_EXP"))     { double v = atof(e); if (v > 0.0) FA->pb_clash_exponent = v; }
+        if (const char* e = std::getenv("FLEXAIDDS_PB_CLASH_RATIO"))   { double v = atof(e); if (v > 0.0) FA->pb_clash_ratio = v; }
+        if (const char* e = std::getenv("FLEXAIDDS_PB_POCKET_WEIGHT")) { FA->pb_pocket_weight = atof(e); }
+        if (const char* e = std::getenv("FLEXAIDDS_PB_POCKET_RADIUS")) { double v = atof(e); if (v > 0.0) FA->pb_pocket_radius = v; }
 
         // Angular-dependent hydrogen bond potential
         const bool hbond_on = jbool(config, "scoring", "hbond_enabled", false);
