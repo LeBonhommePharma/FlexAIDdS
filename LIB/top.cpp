@@ -533,6 +533,14 @@ int main(int argc, char **argv){
 	if (const char* e = std::getenv("FLEXAIDDS_PB_CLASH_WEIGHT")) { FA->pb_clash_weight = atof(e); }
 	if (const char* e = std::getenv("FLEXAIDDS_PB_CLASH_EXP"))    { double v = atof(e); if (v > 0.0) FA->pb_clash_exponent = v; }
 	if (const char* e = std::getenv("FLEXAIDDS_PB_CLASH_RATIO"))  { double v = atof(e); if (v > 0.0) FA->pb_clash_ratio = v; }
+	// PoseBust pocket-presence penalty (opt-in). Soft quadratic ramp on the ligand
+	// centroid's distance to the nearest receptor heavy atom, so a pose that drifts
+	// out of the pocket is steered against during the GA search rather than merely
+	// reported afterwards by the post-dock `bust` gate.
+	FA->pb_pocket_weight = 0.0;     // OFF by default
+	FA->pb_pocket_radius = 6.0;     // free radius (A) — no penalty inside it
+	if (const char* e = std::getenv("FLEXAIDDS_PB_POCKET_WEIGHT")) { FA->pb_pocket_weight = atof(e); }
+	if (const char* e = std::getenv("FLEXAIDDS_PB_POCKET_RADIUS")) { double v = atof(e); if (v > 0.0) FA->pb_pocket_radius = v; }
 	// VCT com normalization (Lever 2): divide CF.com by contact count (intensive
 	// score) instead of the extensive sum, rescaled by VCT_NREF=100. Fixes the
 	// arm-A overpacking where a dense non-native pose out-scores native purely by

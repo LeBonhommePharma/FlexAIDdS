@@ -2352,22 +2352,24 @@ void calculate_fitness(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* chr
 	// ── PB term / accelerated-path divergence guard ───────────────────────────
 	// The CUDA/Metal batch kernels compute only com/wal/sas; cf.pb_clash is zeroed
 	// in unpack_gpu_results() below to avoid a stale host buffer leaking into
-	// get_cf_evalue(). That is memory-safe, but it means a run with
-	// pb_clash_weight>0 scores DIFFERENT PHYSICS on an accelerated backend than on
-	// the CPU backend. Previously this was silent. Warn once per process so the
-	// divergence can never go unnoticed.
+	// get_cf_evalue(). cf.pb_clash carries BOTH PoseBust terms (the pb_clash
+	// penalty and the pb_pocket penalty), so both vanish on this path. That is
+	// memory-safe, but it means a run with either weight > 0 scores DIFFERENT
+	// PHYSICS on an accelerated backend than on the CPU backend. Previously this
+	// was silent. Warn once per process so the divergence can never go unnoticed.
 	if ((backend == flexaids::HardwareBackend::CUDA ||
 	     backend == flexaids::HardwareBackend::METAL) &&
-	    FA->pb_clash_weight > 0.0) {
+	    (FA->pb_clash_weight > 0.0 || FA->pb_pocket_weight > 0.0)) {
 		static bool pb_gpu_warned = false;
 		if (!pb_gpu_warned) {
 			pb_gpu_warned = true;
 			fprintf(stderr,
-			        "[PB_CLASH] WARNING: %s accelerated path detected — pb_clash "
-			        "(pb_clash_weight=%.4g) is NOT computed on this path and is zeroed for "
-			        "consistency. Scoring will DIVERGE from the CPU backend. Set "
-			        "FLEXAIDDS_FORCE_CPU=1 to enable pb_clash.\n",
-			        flexaids::backend_name(backend), FA->pb_clash_weight);
+			        "[PB_CLASH] WARNING: %s accelerated path detected — PoseBust terms "
+			        "(pb_clash_weight=%.4g, pb_pocket_weight=%.4g) are NOT computed on this "
+			        "path and are zeroed for consistency. Scoring will DIVERGE from the CPU "
+			        "backend. Set FLEXAIDDS_FORCE_CPU=1 to enable them.\n",
+			        flexaids::backend_name(backend),
+			        FA->pb_clash_weight, FA->pb_pocket_weight);
 		}
 	}
 

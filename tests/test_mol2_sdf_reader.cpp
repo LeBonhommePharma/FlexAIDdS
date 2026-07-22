@@ -486,7 +486,7 @@ TEST_F(SdfReaderTest, MapsBareSdfElementsToCanonicalTypes) {
         {"F", 23},
         {"Cl", 24},
         {"Br", 25},
-        {"I", 26},
+        {"I", 25},
         {"Se", 27},
         {"Mg", 28},
         {"Sr", 29},

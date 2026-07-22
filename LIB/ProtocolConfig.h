@@ -179,4 +179,18 @@ struct ProtocolConfig {
 /// a ProtocolConfig.
 bool thermo_score_enabled();
 
+/// True when the PoseBust pocket-presence penalty is configured to run.
+///
+/// The single source of truth is FA->pb_pocket_weight, which top.cpp populates
+/// from FLEXAIDDS_PB_POCKET_WEIGHT and config_parser.cpp from the JSON key
+/// scoring.pb_pocket_weight. Deliberately NOT a getenv() of its own: reading the
+/// env independently would reproduce the FLEXAIDDS_PB_CLASH_ELECT_WEIGHT footgun
+/// where the config path and the env path disagree and the term silently no-ops
+/// for a JSON-only campaign.
+///
+/// Inline and branch-only so the hot path pays nothing when the term is off.
+[[nodiscard]] inline bool pb_pocket_enabled(double pb_pocket_weight) noexcept {
+    return pb_pocket_weight > 0.0;
+}
+
 }  // namespace flexaids

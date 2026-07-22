@@ -419,6 +419,8 @@ struct FA_Global_struct{
 	double pb_clash_weight;              // PoseBust physical-realism clash penalty weight (0.0=off,default). Severity-scaled + UNCAPPED so it can overcome unbounded CF.com overpacking, unlike WAL_CONTACT_CAP-bounded wall. FLEXAIDDS_PB_CLASH_WEIGHT.
 	double pb_clash_exponent;            // overlap penalty exponent p (default 3.0; steep tail, smooth onset). FLEXAIDDS_PB_CLASH_EXP.
 	double pb_clash_ratio;               // PoseBusters clash cutoff as fraction of summed element vdW radii (default 0.75 = PoseBusters intermolecular default). FLEXAIDDS_PB_CLASH_RATIO.
+	double pb_pocket_weight;             // PoseBust pocket-presence penalty weight (0.0=off,default). Soft quadratic ramp on the ligand centroid's distance to the nearest receptor heavy atom, penalizing "the ligand left the pocket" false minima (1SG0 elected a pose 29.64 A from the true site). FLEXAIDDS_PB_POCKET_WEIGHT.
+	double pb_pocket_radius;             // Pocket-presence free radius in A (default 6.0). No penalty while the centroid is within this distance of the receptor; beyond it the penalty grows as weight*(d-radius)^2. FLEXAIDDS_PB_POCKET_RADIUS.
 	float intrafraction;                 // intramolecular fraction interaction
 
 	int   use_elec;                      // enable Coulomb electrostatic scoring
