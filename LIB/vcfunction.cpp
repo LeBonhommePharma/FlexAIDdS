@@ -94,15 +94,22 @@ static const bool pb_metal_carveout =
 // reads the cached field; this brings vcfunction.cpp onto the same source.
 //
 // NOT a pure perf swap — the two sources are NOT fully interchangeable, which is
-// why this is flag-gated rather than applied unconditionally. tests/
-// test_pb_vdw_parity.cpp enumerates every NRGDock type and pins the result:
-//   * types 1-38 (all heavy elements): identical on both paths.
-//   * type 39: get_element() returns "Du", which is absent from the PoseBusters
-//     table and falls back to the NRG contact radius, while the element column
-//     says "H" and yields the PoseBusters hydrogen radius 1.20.
-// So enabling this changes hydrogen handling — in the direction of PoseBusters'
-// own semantics, which do use H at 1.20, but it is a scoring change and must be
-// benchmarked before it becomes a default. Default OFF → bit-identical.
+// why this is flag-gated rather than applied unconditionally. The cause is the
+// READER tables, not the PoseBusters table: `element` records the true element,
+// while `type` is a VCT slot, and the readers deliberately map some elements
+// onto a different element's slot or onto DUMMY. type -> element via
+// get_element() therefore loses the true element for exactly those atoms.
+// tests/test_pb_vdw_parity.cpp encodes the reader tables and pins the result:
+//   * every element mapped onto its OWN row: identical on both paths (no-op).
+//   * iodine: readers assign the BROMINE row (type 25) on purpose, so the type
+//     path gives 1.90 while the element path gives the true iodine 2.10.
+//   * Na / K: no row in the 40-type table, so they land in DUMMY and the type
+//     path falls back to the NRG radius 1.70, against 2.40 / 2.80 by element.
+//   * hydrogen: lands in DUMMY too, but the readers give H an NRG radius of
+//     exactly 1.20, which IS the PoseBusters H radius — so H does NOT diverge.
+// Enabling this widens the clash cutoff for I/Na/K toward the chemically correct
+// radius, but it is a scoring change and must be benchmarked before it becomes a
+// default. Default OFF → bit-identical.
 static const bool pb_vdw_cached =
     (std::getenv("FLEXAIDDS_PB_VDW_CACHED") != nullptr &&
      std::getenv("FLEXAIDDS_PB_VDW_CACHED")[0] != '0');

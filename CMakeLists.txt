@@ -156,6 +156,39 @@ endif()
 # gracefully when the dependency isn't present on this system.
 include(cmake/FlexAIDWebGPU.cmake)
 
+# ─── PoseBusters CLI auto-detection (optional) ─────────────────────────────
+# The upstream PoseBusters `bust` CLI is an OPTIONAL validation bridge used by
+# LIB/PoseBust/BustCli.cpp. Everything builds and runs without it; when it is
+# absent the bridge simply reports backend "bust_cli_missing" and the native
+# Apache-2.0 NativePoseQC path is used instead.
+#
+# At runtime the binary resolves `bust` in this order (BustCli.cpp):
+#   1. $FLEXAIDDS_POSEBUSTERS_BIN
+#   2. PATH
+#   3. $FLEXAIDDS_ROOT/.venv-posebusters/bin/bust
+#   4. ./.venv-posebusters/bin/bust or ../.venv-posebusters/bin/bust
+#   5. the compile-time default baked in below, if configure found one
+#
+# Manual install (if the detection below reports NOT found):
+#   python3 -m venv .venv-posebusters
+#   .venv-posebusters/bin/pip install posebusters
+# then either re-run cmake, or export the path explicitly:
+#   export FLEXAIDDS_POSEBUSTERS_BIN=/abs/path/to/bust
+find_program(POSEBUSTERS_BIN
+    NAMES bust
+    HINTS "${CMAKE_CURRENT_SOURCE_DIR}/.venv-posebusters/bin"
+    PATHS ENV PATH
+)
+if(POSEBUSTERS_BIN)
+    message(STATUS "PoseBusters CLI found: ${POSEBUSTERS_BIN}")
+    add_compile_definitions(FLEXAIDDS_POSEBUSTERS_BIN_DEFAULT="${POSEBUSTERS_BIN}")
+else()
+    message(STATUS "PoseBusters CLI not found (optional) — upstream bust bridge "
+                   "will report 'bust_cli_missing'. To enable: "
+                   "python3 -m venv .venv-posebusters && "
+                   ".venv-posebusters/bin/pip install posebusters, then re-run cmake.")
+endif()
+
 # ─── Core library (LIB/) ────────────────────────────────────────────────
 add_subdirectory(LIB)
 

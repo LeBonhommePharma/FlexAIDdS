@@ -137,6 +137,11 @@ std::string resolve_bust_binary() {
                             "../.venv-posebusters/bin/bust"}) {
         if (file_executable(rel)) return fs::absolute(rel).string();
     }
+#ifdef FLEXAIDDS_POSEBUSTERS_BIN_DEFAULT
+    // Baked in by CMake's find_program(POSEBUSTERS_BIN ...) at configure time.
+    if (file_executable(FLEXAIDDS_POSEBUSTERS_BIN_DEFAULT))
+        return FLEXAIDDS_POSEBUSTERS_BIN_DEFAULT;
+#endif
     return {};
 }
 
