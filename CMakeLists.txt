@@ -1091,6 +1091,12 @@ if(BUILD_TESTING)
         TEST_NAME StatMechTests
     )
 
+    # test_thermo_gate — thermodynamic impossibility gate (header-only, no deps)
+    flexaids_add_unit_test(test_thermo_gate
+        SOURCES tests/test_thermo_gate.cpp
+        TEST_NAME ThermoGateTests
+    )
+
     # test_thermo_ledger — Thermo ledger tests
     flexaids_add_unit_test(test_thermo_ledger
         SOURCES

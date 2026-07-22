@@ -1329,6 +1329,33 @@ int GA(FA_Global* FA, GB_Global* GB,VC_Global* VC,chromosome** chrom,chromosome*
 		       FA->thermo_result.I_ES,
 		       FA->thermo_result.CF_r2s,
 		       FA->thermo_result.binding_regime.c_str());
+
+		// ΔG_eff = <CF> − T·H over the Boltzmann pose population, at both
+		// calibrations (T_eff and report_T). Reporting-only unless
+		// FLEXAIDDS_THERMO_SCORE=1, which promotes dG_eff to the ranking
+		// criterion in place of min(CF).
+		printf("[THERMO3] dG_eff=%.6f mean_CF=%.6f H=%.6f T_eff=%.6f | "
+		       "dG_eff_T21=%.6f mean_CF_T21=%.6f H_T21=%.6f report_T=%.6f | "
+		       "n_poses=%d thermo_score=%d\n",
+		       FA->thermo_result.dG_eff,
+		       FA->thermo_result.mean_CF,
+		       FA->thermo_result.H_pose,
+		       FA->thermo_result.T_eff_used,
+		       FA->thermo_result.dG_eff_T21,
+		       FA->thermo_result.mean_CF_T21,
+		       FA->thermo_result.H_pose_T21,
+		       FA->thermo_result.report_T,
+		       GB->num_chrom,
+		       flexaids::thermo_score_enabled() ? 1 : 0);
+
+		if (flexaids::thermo_score_enabled()) {
+			printf("[THERMO_GATE_SUMMARY] impossible=%d n_impossible_poses=%d "
+			       "gate_dS=%.4f dG_eff=%.6f\n",
+			       FA->thermo_result.thermo_impossible ? 1 : 0,
+			       FA->thermo_result.n_impossible_poses,
+			       FA->thermo_result.gate_dS_used,
+			       FA->thermo_result.dG_eff);
+		}
 	}
 
 	snprintf(outfile,MAX_PATH__,"%s_par.res",FA->rrgfile);

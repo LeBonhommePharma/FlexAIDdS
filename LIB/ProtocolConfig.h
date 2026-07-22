@@ -172,4 +172,11 @@ struct ProtocolConfig {
     [[nodiscard]] double effective_boom_frac() const;
 };
 
+/// FLEXAIDDS_THERMO_SCORE (truthy, default OFF): promote ΔG_eff = <CF> − T·H
+/// from a reported diagnostic to the ranking criterion, in place of min(CF).
+/// Read once on first use. Kept as a free function rather than a ProtocolConfig
+/// field because it is consulted from scoring/reporting paths that do not build
+/// a ProtocolConfig.
+bool thermo_score_enabled();
+
 }  // namespace flexaids

@@ -306,6 +306,14 @@ ProtocolConfig ProtocolConfig::from_env() {
     return cfg;
 }
 
+bool thermo_score_enabled() {
+    static const bool enabled = [] {
+        const char* e = env_raw("FLEXAIDDS_THERMO_SCORE");
+        return e && e[0] != '\0' && std::strcmp(e, "0") != 0;
+    }();
+    return enabled;
+}
+
 double ProtocolConfig::effective_sharing_alpha(int pop_base, int pop_scaled) const {
     if (sharing_alpha.has_value()) return *sharing_alpha;
     if (pop_scaled <= 0) return 4.0;
