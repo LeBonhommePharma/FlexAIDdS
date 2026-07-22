@@ -1211,6 +1211,7 @@ flexaids_add_unit_test(test_protocol_config
         SOURCES
             tests/test_pb_vdw_parity.cpp
             LIB/write_pdb.cpp
+            LIB/fileio.cpp
         TEST_NAME PbVdwParityTests
     )
 
@@ -1356,6 +1357,7 @@ flexaids_add_unit_test(test_protocol_config
         LIB/LigandRingFlex/SugarPucker.cpp
         LIB/UnifiedHardwareDispatch.cpp
         LIB/hardware_detect.cpp
+        LIB/ProtocolConfig.cpp
     )
     target_include_directories(test_gaboom PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/LIB
@@ -1413,6 +1415,7 @@ flexaids_add_unit_test(test_protocol_config
         LIB/LigandRingFlex/SugarPucker.cpp
         LIB/UnifiedHardwareDispatch.cpp
         LIB/hardware_detect.cpp
+        LIB/ProtocolConfig.cpp
     )
     target_include_directories(test_shannon_ga PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/LIB
@@ -1622,6 +1625,7 @@ flexaids_add_unit_test(test_protocol_config
         LIB/NATURaL/DualAssemblyRunner.cpp
         LIB/UnifiedHardwareDispatch.cpp
         LIB/hardware_detect.cpp
+        LIB/ProtocolConfig.cpp
     )
     target_include_directories(test_binding_mode_statmech PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/LIB
@@ -1732,6 +1736,7 @@ flexaids_add_unit_test(test_protocol_config
         LIB/NATURaL/DualAssemblyRunner.cpp
         LIB/UnifiedHardwareDispatch.cpp
         LIB/hardware_detect.cpp
+        LIB/ProtocolConfig.cpp
     )
     target_include_directories(test_ccbm PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/LIB
@@ -1843,6 +1848,7 @@ flexaids_add_unit_test(test_protocol_config
         LIB/UnifiedHardwareDispatch.cpp
         LIB/hardware_detect.cpp
         LIB/InStreamClustering.cpp
+        LIB/ProtocolConfig.cpp
     )
     target_include_directories(test_ga_core PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/LIB
@@ -1898,6 +1904,7 @@ flexaids_add_unit_test(test_protocol_config
         LIB/UnifiedHardwareDispatch.cpp
         LIB/hardware_detect.cpp
         LIB/InStreamClustering.cpp
+        LIB/ProtocolConfig.cpp
     )
     target_include_directories(test_ga_validation PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/LIB
@@ -1954,6 +1961,7 @@ flexaids_add_unit_test(test_protocol_config
         LIB/UnifiedHardwareDispatch.cpp
         LIB/hardware_detect.cpp
         LIB/InStreamClustering.cpp
+        LIB/ProtocolConfig.cpp
     )
     target_include_directories(test_ga_operators PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/LIB
@@ -2008,6 +2016,7 @@ flexaids_add_unit_test(test_protocol_config
         LIB/UnifiedHardwareDispatch.cpp
         LIB/hardware_detect.cpp
         LIB/InStreamClustering.cpp
+        LIB/ProtocolConfig.cpp
     )
     target_include_directories(test_binding_mode_comparison PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/LIB
@@ -2132,6 +2141,7 @@ flexaids_add_unit_test(test_protocol_config
         LIB/NATURaL/DualAssemblyRunner.cpp
         LIB/UnifiedHardwareDispatch.cpp
         LIB/hardware_detect.cpp
+        LIB/ProtocolConfig.cpp
     )
     target_include_directories(test_entropy_ga PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/LIB
@@ -2332,6 +2342,7 @@ flexaids_add_unit_test(test_protocol_config
         LIB/NATURaL/DualAssemblyRunner.cpp
         LIB/UnifiedHardwareDispatch.cpp
         LIB/hardware_detect.cpp
+        LIB/ProtocolConfig.cpp
     )
     target_include_directories(test_binding_mode_vibrational PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/LIB
