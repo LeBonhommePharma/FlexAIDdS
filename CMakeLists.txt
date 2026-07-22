@@ -1172,6 +1172,15 @@ flexaids_add_unit_test(test_protocol_config
         TEST_NAME CFAggregatorTests
     )
 
+    # test_pb_vdw_parity — pins get_element(type) vs atoms[].element as PoseBusters
+    # vdW radius sources (links write_pdb.cpp for the real get_element())
+    flexaids_add_unit_test(test_pb_vdw_parity
+        SOURCES
+            tests/test_pb_vdw_parity.cpp
+            LIB/write_pdb.cpp
+        TEST_NAME PbVdwParityTests
+    )
+
     # test_formal_charges — PDB formal charge assignment tests (header-only)
     flexaids_add_unit_test(test_formal_charges
         SOURCES tests/test_formal_charges.cpp

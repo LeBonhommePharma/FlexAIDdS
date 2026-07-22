@@ -84,6 +84,26 @@ static const bool pb_metal_carveout =
     (std::getenv("FLEXAIDDS_PB_METAL_CARVEOUT") != nullptr &&
      std::getenv("FLEXAIDDS_PB_METAL_CARVEOUT")[0] != '0');
 
+// FLEXAIDDS_PB_VDW_CACHED (truthy, default OFF): read the precomputed
+// atoms[].pb_vdw_radius (populated once in update_optres() from the structure
+// file's element column) instead of re-running posebusters_vdw_radius() on
+// get_element(atoms[].type) per ligand atom per eval. Vcontacts.cpp already
+// reads the cached field; this brings vcfunction.cpp onto the same source.
+//
+// NOT a pure perf swap — the two sources are NOT fully interchangeable, which is
+// why this is flag-gated rather than applied unconditionally. tests/
+// test_pb_vdw_parity.cpp enumerates every NRGDock type and pins the result:
+//   * types 1-38 (all heavy elements): identical on both paths.
+//   * type 39: get_element() returns "Du", which is absent from the PoseBusters
+//     table and falls back to the NRG contact radius, while the element column
+//     says "H" and yields the PoseBusters hydrogen radius 1.20.
+// So enabling this changes hydrogen handling — in the direction of PoseBusters'
+// own semantics, which do use H at 1.20, but it is a scoring change and must be
+// benchmarked before it becomes a default. Default OFF → bit-identical.
+static const bool pb_vdw_cached =
+    (std::getenv("FLEXAIDDS_PB_VDW_CACHED") != nullptr &&
+     std::getenv("FLEXAIDDS_PB_VDW_CACHED")[0] != '0');
+
 // FLEXAIDDS_WAL_COERCIVE: remove WAL_CONTACT_CAP ceiling on the soft-core
 // fitness wall so deep clashes can overcome unbounded CF.com overpacking.
 // Default OFF → bit-identical to current behaviour.
@@ -976,9 +996,13 @@ double vcfunction(FA_Global* FA,VC_Global* VC,atom* atoms,resid* residue, std::v
 						if(c>rmax[k])rmax[k]=c;
 					}
 					// Precompute receptor vdW radius (avoids repeated get_element calls in inner loop).
+					// Both sides of a pair must draw from the same source, so the cached-field
+					// switch applies here too — see the pb_vdw_cached comment above.
 					const char* re_raw = get_element(atoms[ai].type);
 					while (*re_raw == ' ') ++re_raw;
-					pb_cache.rec_vdw.push_back(posebusters_vdw_radius(re_raw, atoms[ai].radius));
+					pb_cache.rec_vdw.push_back(
+						pb_vdw_cached ? atoms[ai].pb_vdw_radius
+						              : posebusters_vdw_radius(re_raw, atoms[ai].radius));
 					pb_cache.rec_metal.push_back(
 						pb_metal_carveout && posebusters_is_coordinating_metal(re_raw) ? 1 : 0);
 				}
@@ -1063,9 +1087,17 @@ double vcfunction(FA_Global* FA,VC_Global* VC,atom* atoms,resid* residue, std::v
 			long pb_ncarved = 0;
 			for (int li : lig_idx) {
 				const double lx=atoms[li].coor[0], ly=atoms[li].coor[1], lz=atoms[li].coor[2];
-				const char* le_raw = get_element(atoms[li].type);
-				while (*le_raw == ' ') ++le_raw;
-				const double vdw_l = posebusters_vdw_radius(le_raw, atoms[li].radius);
+				// The element string is only needed for the table lookup and the metal
+				// test; when the cached radius is in use and the carve-out is off,
+				// skip the ~26-branch string compare entirely.
+				const char* le_raw = "";
+				if (!pb_vdw_cached || pb_metal_carveout) {
+					le_raw = get_element(atoms[li].type);
+					while (*le_raw == ' ') ++le_raw;
+				}
+				const double vdw_l = pb_vdw_cached
+					? atoms[li].pb_vdw_radius
+					: posebusters_vdw_radius(le_raw, atoms[li].radius);
 				// Metal carve-out, ligand side: when the ligand atom is itself a
 				// coordinating metal every pair it forms is carved out.
 				const bool lig_is_metal =
@@ -1092,7 +1124,9 @@ double vcfunction(FA_Global* FA,VC_Global* VC,atom* atoms,resid* residue, std::v
 							ri = pos;
 							const char* re_raw = get_element(atoms[ri].type);
 							while (*re_raw == ' ') ++re_raw;
-							vdw_r = posebusters_vdw_radius(re_raw, atoms[ri].radius);
+							vdw_r = pb_vdw_cached
+								? atoms[ri].pb_vdw_radius
+								: posebusters_vdw_radius(re_raw, atoms[ri].radius);
 							rec_is_metal =
 								pb_metal_carveout && posebusters_is_coordinating_metal(re_raw);
 						}
