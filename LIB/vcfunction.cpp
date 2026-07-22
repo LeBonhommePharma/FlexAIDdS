@@ -48,11 +48,12 @@ static const bool no_sas = (std::getenv("FLEXAIDDS_NO_SAS") != nullptr);
 // Within a single dock the receptor atom positions are fixed, so a matching key
 // guarantees a valid grid.
 //
-// Gated by FLEXAIDDS_PB_CLASH_GRID_HOIST (default OFF so legacy mode is
-// bit-identical when the env var is absent).  When ON, CF math is unchanged —
-// only the grid construction is skipped on evals 2…N.
-static const bool pb_clash_hoist =
-    (std::getenv("FLEXAIDDS_PB_CLASH_GRID_HOIST") != nullptr);
+// Always active whenever pb_clash_weight>0.  This was previously gated behind
+// FLEXAIDDS_PB_CLASH_GRID_HOIST (default OFF) as a caution during initial
+// testing; the hoist is verified bit-identical, and leaving it opt-in meant a
+// config that enabled pb_clash but forgot the env var silently reproduced the
+// v134 timeout.  CF math is unchanged — only grid *construction* is skipped on
+// evals 2…N.
 
 struct PBClashGridCache {
     // Invalidation key
@@ -937,11 +938,11 @@ double vcfunction(FA_Global* FA,VC_Global* VC,atom* atoms,resid* residue, std::v
 		// They are the same across all evals in a dock session.
 
 		// ── Route A: hoist receptor grid construction out of the eval loop ────
-		// When FLEXAIDDS_PB_CLASH_GRID_HOIST is set, the receptor cell-list grid is
-		// built once per dock (keyed on atm_cnt + pb_clash_ratio) and reused across
-		// all evals.  The CF math is identical; only the grid *construction* moves.
-		// When the env var is absent, behaviour is bit-identical to the old code.
-		if (pb_clash_hoist && !pb_cache.matches(FA->atm_cnt, FA->pb_clash_ratio)) {
+		// The receptor cell-list grid is built once per dock (keyed on atm_cnt +
+		// pb_clash_ratio) and reused across all evals.  The CF math is identical;
+		// only the grid *construction* moves out of the eval loop.  This is
+		// unconditional whenever pb_clash_weight>0 — see the cache comment above.
+		if (!pb_cache.matches(FA->atm_cnt, FA->pb_clash_ratio)) {
 			// Invalidate and rebuild.
 			pb_cache.valid   = false;
 			pb_cache.atm_cnt = FA->atm_cnt;
@@ -990,7 +991,7 @@ double vcfunction(FA_Global* FA,VC_Global* VC,atom* atoms,resid* residue, std::v
 		}
 
 		// Determine whether we're using the cached path or the legacy per-eval path.
-		const bool use_cache = pb_clash_hoist && pb_cache.valid;
+		const bool use_cache = pb_cache.valid;
 
 		// Local grid variables: either point at the cache or build fresh (legacy).
 		double l_rmin[3]  = { 1e30, 1e30, 1e30};
