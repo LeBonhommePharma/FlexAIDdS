@@ -187,6 +187,122 @@ void cluster(FA_Global* FA, GB_Global* GB, VC_Global* VC, chromosome* chrom, gen
 	// when num_chrom < FA->max_results (e.g. entropy-collapsed run with 2 poses).
 	if(num_of_clusters < num_of_results){num_of_results=num_of_clusters;}
 
+	// ── CF-weighted medoid refinement ─────────────────────────────────────────
+	// The greedy head (Clus_TOP[cl]) is always the best-CF (lowest evalue)
+	// chromosome — the seed that spawned the cluster.  It may be geometrically
+	// peripheral: e.g. a tight, high-probability basin of 30 poses where the
+	// one true minimum sits at RMSD 1.8 Å from the centroid while the cluster's
+	// dense core sits at 0.3 Å.  The emitted PDB for that cluster is the
+	// peripheral head, not the representative core pose.
+	//
+	// Fix: replace the head with the Boltzmann-weighted geometric medoid —
+	// the cluster member that minimises the Boltzmann-weighted sum of squared
+	// RMSD to all other members:
+	//
+	//   medoid = argmin_m  Σ_n  w_n · ‖x_m − x_n‖²
+	//   w_n = exp(−β·(E_n − E_min)) / Z   (soft-β Boltzmann, dimensionless)
+	//
+	// This selects the pose most central to the thermally-relevant part of the
+	// cluster — closer to the crystal pose when the native mode forms a dense
+	// basin around a population-weighted centroid.
+	//
+	// Uses coord_cache already built above (no extra geometry rebuilds).
+	// Runs only when temperature>0 and cluster has ≥2 members.
+	// Disable with FLEXAIDDS_MEDOID_REFINE=0.
+	{
+		const bool medoid_refine = []() {
+			const char* v = std::getenv("FLEXAIDDS_MEDOID_REFINE");
+			return (v == nullptr) || (std::atoi(v) != 0);
+		}();
+
+		if (medoid_refine && FA->temperature > 0 && FA->beta > 0.0) {
+			int n_refined = 0;
+			for (int cl = 0; cl < num_of_clusters; ++cl) {
+				if (Clus_FRE[cl] < 2) continue;  // single-member: head already optimal
+
+				const int old_head = Clus_TOP[cl];
+
+				// Collect all member indices: Clus_GAPOP[k] == old_head for head
+				// and every chromosome absorbed into this cluster.
+				std::vector<int> members;
+				members.reserve(static_cast<size_t>(Clus_FRE[cl]));
+				for (int k = 0; k < num_chrom; ++k) {
+					if (Clus_GAPOP[k] == old_head)
+						members.push_back(k);
+				}
+				if (members.size() < 2) continue;
+
+				// Boltzmann weights w_k = exp(−β·(E_k − E_min)) / Z.
+				// Use evalue (search score) not app_evalue for physical consistency.
+				double E_min = std::numeric_limits<double>::infinity();
+				for (int k : members) {
+					const double e = static_cast<double>(chrom[k].evalue);
+					if (std::isfinite(e)) E_min = std::min(E_min, e);
+				}
+				if (!std::isfinite(E_min)) continue;
+
+				std::vector<double> weights(members.size(), 0.0);
+				double Z = 0.0;
+				for (size_t mi = 0; mi < members.size(); ++mi) {
+					const double e = static_cast<double>(chrom[members[mi]].evalue);
+					if (!std::isfinite(e)) continue;
+					const double w = std::exp(-FA->beta * (e - E_min));
+					weights[mi] = w;
+					Z += w;
+				}
+				if (Z <= 0.0) continue;
+				for (double& w : weights) w /= Z;
+
+				// Find medoid: argmin_candidate Σ_n w_n · sqRMSD(candidate, n).
+				// Work in squared-distance units (skip sqrt — monotone with RMSD).
+				double best_cost   = std::numeric_limits<double>::max();
+				int    best_member = old_head;
+				for (size_t mi = 0; mi < members.size(); ++mi) {
+					const float* cand = &coord_cache[members[mi] * coord_stride];
+					double cost = 0.0;
+					for (size_t ni = 0; ni < members.size(); ++ni) {
+						if (ni == mi) continue;
+						const float* other = &coord_cache[members[ni] * coord_stride];
+						const float sq = flexaids::sum_sq_distances_f(cand, other, coord_stride);
+						cost += weights[ni] * static_cast<double>(sq);
+					}
+					if (cost < best_cost) {
+						best_cost   = cost;
+						best_member = members[mi];
+					}
+				}
+
+				if (best_member == old_head) continue;  // head already optimal
+
+				// Remap Clus_GAPOP: all old_head references → best_member.
+				// Covers old_head itself (Clus_GAPOP[old_head] == old_head).
+				for (int k = 0; k < num_chrom; ++k) {
+					if (Clus_GAPOP[k] == old_head)
+						Clus_GAPOP[k] = best_member;
+				}
+				Clus_GAPOP[best_member] = best_member;  // new head is self-referential
+
+				// Update cluster tables (ACF unchanged — computed from all members).
+				Clus_TOP[cl] = best_member;
+				Clus_TCF[cl] = chrom[best_member].app_evalue;
+
+				// Weighted cost is in Å² units (sq / nAtoms).
+				const double cost_angstrom2 = best_cost / static_cast<double>(nAtoms_clus);
+				fprintf(stdout,
+				        "[MEDOID_REFINE] cluster %d: head %d→%d "
+				        "(CF %.4f→%.4f, freq=%d, wRMSD²=%.4f Å²)\n",
+				        cl, old_head, best_member,
+				        chrom[old_head].evalue, chrom[best_member].evalue,
+				        Clus_FRE[cl], cost_angstrom2);
+				++n_refined;
+			}
+			if (n_refined > 0)
+				fprintf(stdout,
+				        "[MEDOID_REFINE] %d/%d clusters refined to Boltzmann-weighted medoid\n",
+				        n_refined, num_of_clusters);
+		}
+	}
+
 	if(FA->temperature)
 	{
 		// Reordering the clusters properly by lowest ACF values first (after considering cluster's entropy !)

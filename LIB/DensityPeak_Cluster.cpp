@@ -16,12 +16,15 @@
 #define NEIGHBORRATELOW 0.01
 #define NEIGHBORRATEHIGH 0.02
 #define EXCLUDE_HALO false
-// Output the density-peak (highest-density) member as the cluster
-// representative, not the lowest-CF member. Hardcoded true: the whole point of
-// Density Peak clustering is to elect the density center; with this false the
-// peak was computed and discarded, making the output identical to the CF
-// algorithm. (Runtime wiring would belong in config_parser, which is off-limits.)
-#define OUTPUT_CLUSTER_CENTER true
+// Output the lowest-CF member as the cluster representative, not the density-peak
+// center.  With false (correct for benchmark scoring), rank-0 = the pose with the
+// globally lowest contact-function score.  The density-peak center is still
+// computed and logged in the .cad file and used for inter-cluster RMSD; it is
+// simply not the elected pose written to the output PDB.
+// Setting this true re-enables the old behaviour (density center as elected pose)
+// which caused score_pose_consistent=0 because the density peak is rarely the
+// best CF scorer.
+#define OUTPUT_CLUSTER_CENTER false
 
 void DensityPeak_cluster(FA_Global* FA, GB_Global* GB, VC_Global* VC, chromosome* chrom, genlim* gene_lim, atom* atoms, resid* residue, gridpoint* cleftgrid, int num_chrom, char* end_strfile, char* tmp_end_strfile, char* dockinp, char* gainp)
 {
@@ -572,11 +575,18 @@ void DensityPeak_cluster(FA_Global* FA, GB_Global* GB, VC_Global* VC, chromosome
 		for(k=0; k<GB->num_genes ; ++k) FA->opt_par[k] = pChrom->Chromosome->genes[k].to_ic;
 		
 		// Rebuild coordinates for output + populate per-optres CF breakdown.
-		// Returned re-score is discarded for the REMARK CF line: at emission
-		// Vcontacts can early-return a raw uncapped clash penalty that bypasses
-		// the per-contact wall cap and blows up the reported CF. Report the
-		// stored chromosome evalue — what the GA actually optimized.
+		// Use the emitted-pose CF (re-scored via ic2cf) for REMARK CF=, mirroring
+		// cluster.cpp; also emit CF.pose_score_consistent so the benchmark runner
+		// can audit whether the elected pose's CF matches the stored chromosome evalue.
 		CF = ic2cf(FA, VC, atoms, residue, cleftgrid, GB->num_genes, FA->opt_par);
+		const double emitted_cf = get_cf_evalue(&CF, FA);
+		const double score_delta = std::abs(emitted_cf - pChrom->Chromosome->evalue);
+		const bool score_pose_consistent = std::isfinite(emitted_cf) && score_delta <= 1e-4;
+		if (!score_pose_consistent) {
+			fprintf(stderr,
+			        "WARNING: DP cluster %d stored CF=%.8f emitted-pose CF=%.8f delta=%.8f\n",
+			        i, pChrom->Chromosome->evalue, emitted_cf, score_delta);
+		}
 
 		size_t remark_len = 0;
 		remark[0] = '\0';
@@ -584,7 +594,13 @@ void DensityPeak_cluster(FA_Global* FA, GB_Global* GB, VC_Global* VC, chromosome
 		snprintf(tmpremark,MAX_REMARK,"REMARK Density Peak clustering algorithm used to output %s as cluster representatives\n", (OUTPUT_CLUSTER_CENTER == true ? "the center of highest density" : "the lowest CF"));
 		safe_remark_cat(remark,tmpremark,&remark_len);
 
-		snprintf(tmpremark,MAX_REMARK,"REMARK CF=%8.5f\n",pChrom->Chromosome->evalue);
+		snprintf(tmpremark,MAX_REMARK,"REMARK CF=%8.5f\n",emitted_cf);
+		safe_remark_cat(remark,tmpremark,&remark_len);
+		snprintf(tmpremark,MAX_REMARK,"REMARK CF.search=%8.5f\n",pChrom->Chromosome->evalue);
+		safe_remark_cat(remark,tmpremark,&remark_len);
+		snprintf(tmpremark,MAX_REMARK,"REMARK CF.pose_score_delta=%.8f\n",score_delta);
+		safe_remark_cat(remark,tmpremark,&remark_len);
+		snprintf(tmpremark,MAX_REMARK,"REMARK CF.pose_score_consistent=%s\n",score_pose_consistent ? "true" : "false");
 		safe_remark_cat(remark,tmpremark,&remark_len);
 		snprintf(tmpremark,MAX_REMARK,"REMARK CF.app=%8.5f\n",pChrom->Chromosome->app_evalue);
 		safe_remark_cat(remark,tmpremark,&remark_len);
