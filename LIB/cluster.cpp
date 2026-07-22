@@ -3,7 +3,9 @@
 #include "simd_distance.h"
 #include "statmech.h"
 #include "SoftBetaFreeEnergy.h"
+#include "ClusterRepMode.h"
 #include <cmath>
+#include <cstdlib>
 #include <limits>
 #include <vector>
 #ifdef _OPENMP
@@ -187,74 +189,79 @@ void cluster(FA_Global* FA, GB_Global* GB, VC_Global* VC, chromosome* chrom, gen
 	// when num_chrom < FA->max_results (e.g. entropy-collapsed run with 2 poses).
 	if(num_of_clusters < num_of_results){num_of_results=num_of_clusters;}
 
-	// ── CF-weighted medoid refinement ─────────────────────────────────────────
-	// The greedy head (Clus_TOP[cl]) is always the best-CF (lowest evalue)
-	// chromosome — the seed that spawned the cluster.  It may be geometrically
-	// peripheral: e.g. a tight, high-probability basin of 30 poses where the
-	// one true minimum sits at RMSD 1.8 Å from the centroid while the cluster's
-	// dense core sits at 0.3 Å.  The emitted PDB for that cluster is the
-	// peripheral head, not the representative core pose.
+	// ── Within-cluster representative election (P2) ────────────────────────────
+	// FLEXAIDDS_CLUSTER_REP gate (see ClusterRepMode.h). This SUPERSEDES the
+	// default-ON, Boltzmann-CF-weighted medoid committed at HEAD 3e674479c, which
+	// violated two hard constraints: (1) it was DEFAULT-ON, so the unset default
+	// no longer reproduced prior behavior; (2) it re-injected the CF signal
+	// (Boltzmann weights) into a selector whose entire premise is CF-independence
+	// (within-target Spearman(CF,RMSD) ≈ 0 — CF is orthogonal to pose correctness).
 	//
-	// Fix: replace the head with the Boltzmann-weighted geometric medoid —
-	// the cluster member that minimises the Boltzmann-weighted sum of squared
-	// RMSD to all other members:
+	//   unset|lowcf → greedy lowest-CF head kept as-is (DEFAULT; bit-identical)
+	//   medoid      → pure UNWEIGHTED geometric medoid (the fix; CF plays no role):
+	//                    medoid = argmin_m  Σ_{n≠m} ‖x_m − x_n‖²      (≥3 members)
+	//   bmedoid     → Boltzmann-CF-weighted medoid (HEAD variant; ablation only):
+	//                    w_n = exp(−β·(E_n − E_min))/Z                 (≥2 members)
+	//   center      → n/a for CF/leader backend (no density center) ⇒ treated as lowcf
 	//
-	//   medoid = argmin_m  Σ_n  w_n · ‖x_m − x_n‖²
-	//   w_n = exp(−β·(E_n − E_min)) / Z   (soft-β Boltzmann, dimensionless)
-	//
-	// This selects the pose most central to the thermally-relevant part of the
-	// cluster — closer to the crystal pose when the native mode forms a dense
-	// basin around a population-weighted centroid.
-	//
-	// Uses coord_cache already built above (no extra geometry rebuilds).
-	// Runs only when temperature>0 and cluster has ≥2 members.
-	// Disable with FLEXAIDDS_MEDOID_REFINE=0.
-	{
-		const bool medoid_refine = []() {
-			const char* v = std::getenv("FLEXAIDDS_MEDOID_REFINE");
-			return (v == nullptr) || (std::atoi(v) != 0);
-		}();
+	// Reuses coord_cache (no geometry rebuilds). Never touches Clus_ACF — the
+	// between-cluster ranking is representative-independent, so this only changes
+	// WHICH member is emitted per cluster, not cluster order.
+	const flexaids::ClusterRepMode rep_mode = flexaids::cluster_rep_mode();
+	// Provenance keyed by chromosome index (survives the QuickSort_Clusters
+	// permutation below): rep_shift_src[new_head] = old_head when a pick moved.
+	std::vector<int> rep_shift_src(static_cast<size_t>(num_chrom), -1);
 
-		if (medoid_refine && FA->temperature > 0 && FA->beta > 0.0) {
+	if (rep_mode == flexaids::ClusterRepMode::MEDOID ||
+	    rep_mode == flexaids::ClusterRepMode::BMEDOID)
+	{
+		const bool boltzmann  = (rep_mode == flexaids::ClusterRepMode::BMEDOID);
+		// bmedoid weights need a temperature/β; the pure medoid is geometry-only.
+		const bool weights_ok = !boltzmann || (FA->temperature > 0 && FA->beta > 0.0);
+		// medoid: ≥3 members (a 2-member medoid is degenerate). bmedoid: ≥2 (HEAD).
+		const int  min_members = boltzmann ? 2 : 3;
+
+		if (weights_ok) {
 			int n_refined = 0;
 			for (int cl = 0; cl < num_of_clusters; ++cl) {
-				if (Clus_FRE[cl] < 2) continue;  // single-member: head already optimal
+				if (Clus_FRE[cl] < min_members) continue;
 
 				const int old_head = Clus_TOP[cl];
 
-				// Collect all member indices: Clus_GAPOP[k] == old_head for head
-				// and every chromosome absorbed into this cluster.
+				// Members: Clus_GAPOP[k] == old_head for the head and every
+				// chromosome absorbed into this cluster.
 				std::vector<int> members;
 				members.reserve(static_cast<size_t>(Clus_FRE[cl]));
 				for (int k = 0; k < num_chrom; ++k) {
 					if (Clus_GAPOP[k] == old_head)
 						members.push_back(k);
 				}
-				if (members.size() < 2) continue;
+				if (static_cast<int>(members.size()) < min_members) continue;
 
-				// Boltzmann weights w_k = exp(−β·(E_k − E_min)) / Z.
-				// Use evalue (search score) not app_evalue for physical consistency.
-				double E_min = std::numeric_limits<double>::infinity();
-				for (int k : members) {
-					const double e = static_cast<double>(chrom[k].evalue);
-					if (std::isfinite(e)) E_min = std::min(E_min, e);
+				// Weights: uniform (pure medoid) or Boltzmann (bmedoid ablation).
+				std::vector<double> weights(members.size(), 1.0);
+				if (boltzmann) {
+					double E_min = std::numeric_limits<double>::infinity();
+					for (int k : members) {
+						const double e = static_cast<double>(chrom[k].evalue);
+						if (std::isfinite(e)) E_min = std::min(E_min, e);
+					}
+					if (!std::isfinite(E_min)) continue;
+					double Z = 0.0;
+					for (size_t mi = 0; mi < members.size(); ++mi) {
+						const double e = static_cast<double>(chrom[members[mi]].evalue);
+						const double w = std::isfinite(e)
+						               ? std::exp(-FA->beta * (e - E_min)) : 0.0;
+						weights[mi] = w;
+						Z += w;
+					}
+					if (Z <= 0.0) continue;
+					for (double& w : weights) w /= Z;
 				}
-				if (!std::isfinite(E_min)) continue;
 
-				std::vector<double> weights(members.size(), 0.0);
-				double Z = 0.0;
-				for (size_t mi = 0; mi < members.size(); ++mi) {
-					const double e = static_cast<double>(chrom[members[mi]].evalue);
-					if (!std::isfinite(e)) continue;
-					const double w = std::exp(-FA->beta * (e - E_min));
-					weights[mi] = w;
-					Z += w;
-				}
-				if (Z <= 0.0) continue;
-				for (double& w : weights) w /= Z;
-
-				// Find medoid: argmin_candidate Σ_n w_n · sqRMSD(candidate, n).
-				// Work in squared-distance units (skip sqrt — monotone with RMSD).
+				// argmin_candidate Σ_n w_n · sqRMSD(candidate, n). Squared units
+				// (skip sqrt — monotone, argmin identical). Strict < keeps the
+				// lowest array index on ties (deterministic, seed-independent).
 				double best_cost   = std::numeric_limits<double>::max();
 				int    best_member = old_head;
 				for (size_t mi = 0; mi < members.size(); ++mi) {
@@ -274,23 +281,22 @@ void cluster(FA_Global* FA, GB_Global* GB, VC_Global* VC, chromosome* chrom, gen
 
 				if (best_member == old_head) continue;  // head already optimal
 
-				// Remap Clus_GAPOP: all old_head references → best_member.
-				// Covers old_head itself (Clus_GAPOP[old_head] == old_head).
+				// Remap Clus_GAPOP old_head→best_member (covers old_head itself);
+				// update head tables. Leave Clus_ACF untouched (ranking invariant).
 				for (int k = 0; k < num_chrom; ++k) {
 					if (Clus_GAPOP[k] == old_head)
 						Clus_GAPOP[k] = best_member;
 				}
 				Clus_GAPOP[best_member] = best_member;  // new head is self-referential
-
-				// Update cluster tables (ACF unchanged — computed from all members).
 				Clus_TOP[cl] = best_member;
 				Clus_TCF[cl] = chrom[best_member].app_evalue;
+				rep_shift_src[best_member] = old_head;   // provenance for REMARK
 
-				// Weighted cost is in Å² units (sq / nAtoms).
 				const double cost_angstrom2 = best_cost / static_cast<double>(nAtoms_clus);
 				fprintf(stdout,
-				        "[MEDOID_REFINE] cluster %d: head %d→%d "
+				        "[MEDOID_REFINE] mode=%s cluster %d: head %d→%d "
 				        "(CF %.4f→%.4f, freq=%d, wRMSD²=%.4f Å²)\n",
+				        flexaids::cluster_rep_mode_name(rep_mode),
 				        cl, old_head, best_member,
 				        chrom[old_head].evalue, chrom[best_member].evalue,
 				        Clus_FRE[cl], cost_angstrom2);
@@ -298,8 +304,9 @@ void cluster(FA_Global* FA, GB_Global* GB, VC_Global* VC, chromosome* chrom, gen
 			}
 			if (n_refined > 0)
 				fprintf(stdout,
-				        "[MEDOID_REFINE] %d/%d clusters refined to Boltzmann-weighted medoid\n",
-				        n_refined, num_of_clusters);
+				        "[MEDOID_REFINE] %d/%d clusters refined (mode=%s)\n",
+				        n_refined, num_of_clusters,
+				        flexaids::cluster_rep_mode_name(rep_mode));
 		}
 	}
 
@@ -444,6 +451,21 @@ void cluster(FA_Global* FA, GB_Global* GB, VC_Global* VC, chromosome* chrom, gen
 		snprintf(tmpremark, MAX_REMARK, "REMARK CF.app=%8.5f\n",chrom[Clus_TOP[j]].app_evalue);
 		safe_remark_cat(remark, tmpremark, &remark_len);
 
+		// P2 provenance — emitted ONLY for non-default modes so the default
+		// (lowcf) PDB stays byte-identical to pre-medoid HEAD (acceptance gate #1).
+		if (rep_mode != flexaids::ClusterRepMode::LOWCF) {
+			snprintf(tmpremark, MAX_REMARK, "REMARK cluster_rep_mode=%s\n",
+			         flexaids::cluster_rep_mode_name(rep_mode));
+			safe_remark_cat(remark, tmpremark, &remark_len);
+			const int head_idx = Clus_TOP[j];
+			if (head_idx >= 0 && head_idx < num_chrom && rep_shift_src[head_idx] >= 0) {
+				snprintf(tmpremark, MAX_REMARK,
+				         "REMARK cluster_rep_shifted=1 head_cf=%8.5f rep_cf=%8.5f\n",
+				         chrom[rep_shift_src[head_idx]].evalue, chrom[head_idx].evalue);
+				safe_remark_cat(remark, tmpremark, &remark_len);
+			}
+		}
+
 		for(i=0;i<FA->num_optres;++i)
 		{
 	  
@@ -564,6 +586,62 @@ void cluster(FA_Global* FA, GB_Global* GB, VC_Global* VC, chromosome* chrom, gen
       
         // print the RMSD between each chrom. and the reference structure if there is one.
 	if(FA->refstructure == 1){write_rrd(FA,GB,chrom,gene_lim,atoms,residue,cleftgrid,Clus_GAPOP,Clus_RMSDT,end_strfile); }
+
+	// ── IP-5: opt-in full-population audit dump (.pop.tsv) ──────────────────────
+	// Sibling to the fixed-width .rrd, adding the columns the .rrd lacks: CF
+	// components (com/wal) and the elected-representative join (pose_id / is_elected)
+	// so selection experiments become measurable ("was the near-native population
+	// pose the one elected?"). Gated on refstructure==1 (native available for RMSD)
+	// AND FLEXAIDDS_DUMP_POP=1 so DEFAULT artifacts (.pdb/.cad/.mcf/.rrd) are
+	// byte-unchanged. The per-chromosome ic2cf re-score here is audit-only (never
+	// on the benchmark hot path). Runs last: only frees follow, so mutating
+	// FA->opt_par / FA->optres is safe.
+	if (FA->refstructure == 1) {
+		const char* dump_env = std::getenv("FLEXAIDDS_DUMP_POP");
+		if (dump_env && std::atoi(dump_env) != 0) {
+			std::vector<int> elected_rank(static_cast<size_t>(num_chrom), -1);
+			for (int r = 0; r < num_of_results; ++r) {
+				const int t = Clus_TOP[r];
+				if (t >= 0 && t < num_chrom) elected_rank[t] = r;
+			}
+			char pop_path[MAX_PATH__];
+			snprintf(pop_path, MAX_PATH__, "%s.pop.tsv", end_strfile);
+			FILE* pf = fopen(pop_path, "w");
+			if (pf) {
+				fprintf(pf, "idx\tcluster\trmsd_to_head\trmsd_raw\trmsd_sym\t"
+				            "cf_total\tcf_com\tcf_wal\tpose_id\tis_elected\n");
+				bool Hung;
+				for (int c = 0; c < num_chrom; ++c) {
+					for (int g = 0; g < GB->num_genes; ++g)
+						FA->opt_par[g] = chrom[c].genes[g].to_ic;
+					Hung = false;
+					const double rr = calc_rmsd(FA,atoms,residue,cleftgrid,
+					                            FA->npar,FA->opt_par,Hung);
+					Hung = true;
+					const double rs = calc_rmsd(FA,atoms,residue,cleftgrid,
+					                            FA->npar,FA->opt_par,Hung);
+					cfstr cc = ic2cf(FA,VC,atoms,residue,cleftgrid,
+					                 GB->num_genes,FA->opt_par);
+					(void)cc;  // side effect: populates FA->optres[].cf components
+					double com_sum = 0.0, wal_sum = 0.0;
+					for (int r = 0; r < FA->num_optres; ++r) {
+						com_sum += FA->optres[r].cf.com;
+						wal_sum += FA->optres[r].cf.wal;
+					}
+					fprintf(pf, "%d\t%d\t%.5f\t%.5f\t%.5f\t%.5f\t%.5f\t%.5f\t%d\t%d\n",
+					        c, Clus_GAPOP[c], Clus_RMSDT[c], rr, rs,
+					        chrom[c].evalue, com_sum, wal_sum,
+					        elected_rank[c], elected_rank[c] >= 0 ? 1 : 0);
+				}
+				fclose(pf);
+				fprintf(stdout, "[DUMP_POP] wrote %s (%d population rows)\n",
+				        pop_path, num_chrom);
+			} else {
+				fprintf(stderr, "WARNING: [DUMP_POP] could not open %s for write\n",
+				        pop_path);
+			}
+		}
+	}
 
 
 	// Clusters memory de-allocation

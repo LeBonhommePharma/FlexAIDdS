@@ -1,6 +1,7 @@
 #include "gaboom.h"
 #include "fileio.h"
 #include "MinibatchSampler.h"
+#include "ClusterRepMode.h"
 #include <cmath>
 #include <limits>
 #ifdef _OPENMP
@@ -16,19 +17,21 @@
 #define NEIGHBORRATELOW 0.01
 #define NEIGHBORRATEHIGH 0.02
 #define EXCLUDE_HALO false
-// Output the lowest-CF member as the cluster representative, not the density-peak
-// center.  With false (correct for benchmark scoring), rank-0 = the pose with the
-// globally lowest contact-function score.  The density-peak center is still
-// computed and logged in the .cad file and used for inter-cluster RMSD; it is
-// simply not the elected pose written to the output PDB.
-// Setting this true re-enables the old behaviour (density center as elected pose)
-// which caused score_pose_consistent=0 because the density peak is rarely the
-// best CF scorer.
-#define OUTPUT_CLUSTER_CENTER false
+// Cluster-representative election is now a RUNTIME gate (P2), not a compile-time
+// #define. The DP backend still elects the lowest-CF member (Representative) by
+// DEFAULT — bit-identical to prior behavior — and only elects the density-peak
+// Center when FLEXAIDDS_CLUSTER_REP=center. The per-function boolean
+// `output_cluster_center` (derived from flexaids::cluster_rep_mode()) replaces
+// the old `OUTPUT_CLUSTER_CENTER` macro throughout DensityPeak_cluster().
+// The density Center is always computed and logged in .cad regardless.
 
 void DensityPeak_cluster(FA_Global* FA, GB_Global* GB, VC_Global* VC, chromosome* chrom, genlim* gene_lim, atom* atoms, resid* residue, gridpoint* cleftgrid, int num_chrom, char* end_strfile, char* tmp_end_strfile, char* dockinp, char* gainp)
 {
 	// Density Peak Clustering variables declaration
+	// P2 runtime representative gate: elect density Center only for CLUSTER_REP=center;
+	// default (lowcf / medoid / bmedoid) keeps the lowest-CF Representative here.
+	const bool output_cluster_center =
+		(flexaids::cluster_rep_mode() == flexaids::ClusterRepMode::CENTER);
 	int i,j,k;
 	bool Hungarian = false;
 	int sizeChrom =  ((num_chrom * num_chrom)-num_chrom)*0.5; // sizeChrom is defined to be the size of the upper-triangular matrix without the main diagonale
@@ -538,12 +541,12 @@ void DensityPeak_cluster(FA_Global* FA, GB_Global* GB, VC_Global* VC, chromosome
 			for(i=0, iClust = NULL; i < nResults && i < FA->max_results; ++i)
 			{
 				iClust = &Clust[i];
-                if(!Clust[i].Representative || (OUTPUT_CLUSTER_CENTER && !Clust[i].Center) ) continue;
+                if(!Clust[i].Representative || (output_cluster_center && !Clust[i].Center) ) continue;
 				for(j=i+1; j < nResults; ++j)
 				{
 					jClust = &Clust[j];
-                    if(!Clust[j].Representative || (OUTPUT_CLUSTER_CENTER && !Clust[j].Center) ) continue;
-					if(OUTPUT_CLUSTER_CENTER==true) fprintf(outfile_ptr,"rmsd(%d,%d)=%f\n",i+1,j+1,RMSD[K(iClust->Center->index, jClust->Center->index, num_chrom)]);
+                    if(!Clust[j].Representative || (output_cluster_center && !Clust[j].Center) ) continue;
+					if(output_cluster_center==true) fprintf(outfile_ptr,"rmsd(%d,%d)=%f\n",i+1,j+1,RMSD[K(iClust->Center->index, jClust->Center->index, num_chrom)]);
 					else fprintf(outfile_ptr,"rmsd(%d,%d)=%f\n",i+1,j+1,RMSD[K(iClust->Representative->index, jClust->Representative->index, num_chrom)]);
 				}
 			} 
@@ -564,7 +567,7 @@ void DensityPeak_cluster(FA_Global* FA, GB_Global* GB, VC_Global* VC, chromosome
 		pCluster = &Clust[i];
 		// printf("i:%d\tCluster:%d\tFreq:%d\ttotCF:%g\n",i,pCluster->ID, pCluster->Frequency, pCluster->totCF);
 		// setting pChrom to either Representative or ClusterCenter
-        if(OUTPUT_CLUSTER_CENTER) 	{ pChrom = pCluster->Center;}// if(!pChrom) pChrom = pCluster->Representative; }
+        if(output_cluster_center) 	{ pChrom = pCluster->Center;}// if(!pChrom) pChrom = pCluster->Representative; }
         else 						{ pChrom = pCluster->Representative;}// if(!pChrom) pChrom = pCluster->Center; }
         
 		if(!pChrom) continue;
@@ -591,7 +594,7 @@ void DensityPeak_cluster(FA_Global* FA, GB_Global* GB, VC_Global* VC, chromosome
 		size_t remark_len = 0;
 		remark[0] = '\0';
 		safe_remark_cat(remark, "REMARK optimized structure\n", &remark_len);
-		snprintf(tmpremark,MAX_REMARK,"REMARK Density Peak clustering algorithm used to output %s as cluster representatives\n", (OUTPUT_CLUSTER_CENTER == true ? "the center of highest density" : "the lowest CF"));
+		snprintf(tmpremark,MAX_REMARK,"REMARK Density Peak clustering algorithm used to output %s as cluster representatives\n", (output_cluster_center == true ? "the center of highest density" : "the lowest CF"));
 		safe_remark_cat(remark,tmpremark,&remark_len);
 
 		snprintf(tmpremark,MAX_REMARK,"REMARK CF=%8.5f\n",emitted_cf);
