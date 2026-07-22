@@ -814,6 +814,40 @@ double vcfunction(FA_Global* FA,VC_Global* VC,atom* atoms,resid* residue, std::v
 		}
 	}
 
+	// ── P3: soft lower clamp on the CF.com channel (FLEXAIDDS_COM_FLOOR) ────────
+	// Enabler, NOT a standalone accuracy fix (see commit message). The favorable
+	// (negative) com term is unbounded below: an overpacked non-native pose can
+	// drive com → −∞ and swamp every attractive term (H-bond, metal, elec), so a
+	// downstream orientation-aware rescorer (P1) can never out-vote it. This
+	// installs a *soft* floor at −F: a strictly monotone, bounded-below squashing
+	// of com so the runaway tail is capped while pose order by com is preserved.
+	//
+	//   softfloor(x) = −F + F·softplus((x + F)/F),   softplus(z)=max(z,0)+log1p(e^−|z|)
+	//     x ≫ −F  ⇒ softfloor(x) → x      (near-identity; ranking untouched)
+	//     x → −∞  ⇒ softfloor(x) → −F     (bounded; no term can swamp the sum)
+	//     softfloor′ ∈ (0,1]              (monotone ⇒ rank-preserving)
+	//
+	// Env-gated, DEFAULT-OFF: unset or F≤0 ⇒ skipped entirely ⇒ bit-identical.
+	// FLEXAIDDS_COM_FLOOR=F sets the floor magnitude (kcal/mol-equivalent CF units).
+	//
+	// NOTE (reconstruction): the detailed P3 work order was unavailable at
+	// implementation time; the soft-floor functional form here is the standard
+	// monotone-bounded (softplus) realization of the handoff's spec
+	// ("soft floor at −F, rank-preserving + bounding"). Confirm F and the exact
+	// squashing against the original work order before the OPS canary run.
+	if(const char* com_floor_env = std::getenv("FLEXAIDDS_COM_FLOOR")){
+		const double F = std::atof(com_floor_env);
+		if(F > 0.0){
+			for(int j=0; j<FA->num_optres; ++j){
+				double& com = FA->optres[j].cf.com;
+				const double z  = (com + F) / F;
+				const double az = (z < 0.0) ? -z : z;
+				const double softplus = (z > 0.0 ? z : 0.0) + std::log1p(std::exp(-az));
+				com = -F + F * softplus;
+			}
+		}
+	}
+
 	// Shannon entropy of contact-type distribution as VCT false-minimum penalty.
 	// H = -Σ p_ij log₂(p_ij) over pairwise atom-type contribution matrix.
 	// False minima have HIGH entropy (many diffuse type-pair contacts);
