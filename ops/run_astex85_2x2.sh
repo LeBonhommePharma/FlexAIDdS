@@ -1,5 +1,16 @@
 #!/usr/bin/env bash
 # =============================================================================
+# OWNERSHIP — this campaign is run by Claude Science, not by hand.
+#
+# Do not launch this script manually. Claude Science owns the run: it starts the
+# campaign, watches it to completion, and is responsible for the results.
+#
+# Reporting is also Science's job, and goes through the flexaidds Python metrics
+# pipeline against the DatasetRunner output under each cell directory — not
+# through hand-read logs. The success rate this script prints in its own summary
+# table is an at-a-glance sanity check during the run; the reported numbers are
+# the ones the Python pipeline produces.
+# =============================================================================
 # run_astex85_2x2.sh — Astex-85 2x2 factorial campaign
 #
 # Replaces the three-arm design in run_astex85_twoarm.sh, which confounded its
