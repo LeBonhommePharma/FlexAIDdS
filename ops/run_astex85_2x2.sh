@@ -59,9 +59,23 @@ ENGINE="${REPO}/build/FlexAIDdS"
 RUNNER="${REPO}/build/benchmark_datasets"
 CACHE="${HOME}/.flexaidds/benchmarks"
 ORACLE_DIR="${REPO}/benchmarks/astex_diverse/astex_diverse"
-WORKERS=25
+# WORKERS: 18 GB box. 25 concurrent FlexAIDdS (~1.5 GB each) = ~37 GB >> 18 GB → thrash/OOM.
+# Capped to 6 (~9 GB peak) to fit physical RAM with headroom on a shared machine. — OPS 2026-07-23
+WORKERS="${FLEXAIDDS_CAMPAIGN_WORKERS:-6}"
 JOB_TIMEOUT=3600
 RMSD_CUTOFF=2.0
+
+# FIX (OPS 2026-07-23): caffeinate aborts in restricted/sandboxed contexts
+# ("Failed to create PreventUserIdleSystemSleep assertion" → rc=134), killing the
+# cell. Use it only if present AND able to create an assertion; otherwise run bare.
+CAFF=()
+if command -v caffeinate >/dev/null 2>&1 && caffeinate -i true >/dev/null 2>&1; then
+    CAFF=(caffeinate -i)
+fi
+# FIX (OPS 2026-07-23): allow resume. Default keeps --force (clean run, as intended);
+# FLEXAIDDS_CAMPAIGN_RESUME=1 drops it so an interrupted campaign skips finished targets.
+FORCE_FLAG="--force"
+[ "${FLEXAIDDS_CAMPAIGN_RESUME:-0}" = "1" ] && FORCE_FLAG=""
 
 STAMP="$(date +%Y%m%d_%H%M%S)"
 ROOT="${HOME}/flexaidds_results/campaign_2x2_${STAMP}"
@@ -157,7 +171,23 @@ com_summary() {
         sas="$(awk '/^REMARK CF\.sas=/{split($0,a,"="); print a[2]; exit}' "${pose}")"
         wal="$(awk '/^REMARK CF\.wal=/{split($0,a,"="); print a[2]; exit}' "${pose}")"
         tot="$(awk -F= '/^REMARK CF=/{print $2; exit}' "${pose}")"
-        dom="$(awk 'BEGIN{best=0; line=""} /^REMARK contact /{v=$NF; a=v<0?-v:v; if(a>best){best=a; line=$3" "$NF}} END{if(line!="")print line}' "${pose}")"
+        # FIX (OPS 2026-07-23): the previous pattern /^REMARK contact / never matched.
+        # Real REMARK format is:  REMARK   1:  <A>-<B> with energy of <VALUE>
+        # under the "Most important POSITIVE" header. Take the first (rank-1 = largest
+        # magnitude) contact: dtype=the "A-B" atom-type-index pair, dval=its energy.
+        # FIX (OPS 2026-07-23): the previous pattern /^REMARK contact / never matched.
+        # Real format under the "Most important POSITIVE" header:
+        #   REMARK   1:  <A>-<B> with energy of <VALUE>
+        # The A-B pair may be spaced ("1- 4") or not ("1-14"); normalise by stripping
+        # the "REMARK  N:" prefix and all spaces from the "A-B" token. Take rank-1
+        # (largest-magnitude contact). dtype = "A-B" indices, dval = energy.
+        dom="$(awk '/Most important POSITIVE/{p=1; next}
+                    p && /with energy of/{
+                        e=$NF;
+                        s=$0; sub(/^REMARK[[:space:]]+[0-9]+:[[:space:]]*/,"",s);
+                        sub(/[[:space:]]+with energy of.*/,"",s); gsub(/[[:space:]]/,"",s);
+                        print s, e; exit
+                    }' "${pose}")"
         dtype="$(awk '{print $1}' <<< "${dom}")"
         dval="$(awk '{print $2}' <<< "${dom}")"
         echo "${pdb},${com:-NA},${sas:-NA},${wal:-NA},${tot:-NA},${dtype:-NA},${dval:-NA}" >> "${csv}"
@@ -176,14 +206,14 @@ run_cell() {
     env | grep -E '^FLEXAIDDS_(SMART_WATER|STRIP_ALL_WATERS|COM_FLOOR|VCT_NORM)=' | sort || true
 
     local rc=0
-    caffeinate -i "${RUNNER}" \
+    "${CAFF[@]}" "${RUNNER}" \
         --benchmark astex \
         --output "${out}" \
         --cache  "${CACHE}" \
         --threads "${WORKERS}" \
         --omp-threads 1 \
         --job-timeout-seconds "${JOB_TIMEOUT}" \
-        --force \
+        ${FORCE_FLAG} \
         >"${ROOT}/cell_${name}.log" 2>"${ROOT}/cell_${name}.err" || rc=$?
 
     echo "=== CELL ${name} finished rc=${rc} $(date -u +%FT%TZ) ==="
