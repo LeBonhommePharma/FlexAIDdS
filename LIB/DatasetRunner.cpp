@@ -7254,6 +7254,40 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
         result.success_rmsd = false;
         result.success = false;
 
+        // ── Election-persist safety net (regression guard) ─────────────────
+        // The crystal-RMSD branch (outer if at "rmsd_reference_path exists")
+        // only assigns elected_pose_pdb when best_pose_pdb is non-empty; its
+        // inner else leaves elected_pose_pdb empty, and the no-crystal-ref
+        // fallback election lives under a *different* outer else, so it is
+        // never reached from that path.  Result: a target that docked cleanly
+        // and emitted poses to disk could still skip persistence, dropping
+        // elected_pose.pdb and forcing rmsd_to_crystal=-1 / cf_top1=NA plus a
+        // "[TENCOM-EIGEN] elected pose or SHA-256 missing" failure.  Election
+        // is branch-independent: if docking completed but no pose was elected
+        // above, elect one now from the same pooled selector, falling back to
+        // the first emitted cluster head across all restart prefixes.
+        if (docking_completed && elected_pose_pdb.empty()) {
+            elected_pose_pdb = select_pose_freq_gated_pooled(
+                all_prefixes, sel_elitism_ovr, cf_window_selector_,
+                &protocol_cfg_, static_cast<double>(config.temperature)).first;
+            if (elected_pose_pdb.empty() || !fs::exists(elected_pose_pdb)) {
+                for (const auto& pfx : all_prefixes) {
+                    auto heads = enumerate_emitted_cluster_heads(pfx);
+                    if (!heads.empty()) {
+                        elected_pose_pdb = heads.front().path;
+                        break;
+                    }
+                }
+            }
+            if (!elected_pose_pdb.empty()) {
+                std::cerr << "  [ELECT-SAFETY] " << entry.pdb_id
+                          << ": elected pose recovered from emitted pool ("
+                          << fs::path(elected_pose_pdb).filename().string()
+                          << ") — persist path was left empty by the crystal-RMSD"
+                             " branch\n";
+            }
+        }
+
         // ── Persist elected pose + SHA256 (audit P0) ───────────────────────
         // Downstream validators must cite this hash, not root <pdb>_0.pdb.
         if (docking_completed && !elected_pose_pdb.empty() && fs::exists(elected_pose_pdb)) {
