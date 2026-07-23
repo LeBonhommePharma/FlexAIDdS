@@ -172,8 +172,11 @@ struct ProtocolConfig {
     [[nodiscard]] double effective_boom_frac() const;
 };
 
-/// FLEXAIDDS_THERMO_SCORE (truthy, default OFF): promote ΔG_eff = <CF> − T·H
-/// from a reported diagnostic to the ranking criterion, in place of min(CF).
+/// FLEXAIDDS_THERMO_SCORE (truthy, default OFF): enable the thermodynamic
+/// impossibility gate over the reported ΔG_eff = <CF> − T·H, plus its
+/// [THERMO_GATE] logging. Despite the name this does NOT promote ΔG_eff to the
+/// ranking criterion — min(CF) still decides selection in every configuration.
+/// ΔG_eff remains diagnostic-only; see ThermodynamicEngine.h.
 /// Read once on first use. Kept as a free function rather than a ProtocolConfig
 /// field because it is consulted from scoring/reporting paths that do not build
 /// a ProtocolConfig.

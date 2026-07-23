@@ -1332,9 +1332,11 @@ int GA(FA_Global* FA, GB_Global* GB,VC_Global* VC,chromosome** chrom,chromosome*
 		       FA->thermo_result.binding_regime.c_str());
 
 		// ΔG_eff = <CF> − T·H over the Boltzmann pose population, at both
-		// calibrations (T_eff and report_T). Reporting-only unless
-		// FLEXAIDDS_THERMO_SCORE=1, which promotes dG_eff to the ranking
-		// criterion in place of min(CF).
+		// calibrations (T_eff and report_T). Reporting-only in all
+		// configurations: this printf is the only consumer, and it runs after
+		// the QuickSort above that fixes the ranking. FLEXAIDDS_THERMO_SCORE=1
+		// enables the impossibility gate over the reported dG_eff; it does NOT
+		// promote dG_eff to the ranking criterion in place of min(CF).
 		printf("[THERMO3] dG_eff=%.6f mean_CF=%.6f H=%.6f T_eff=%.6f | "
 		       "dG_eff_T21=%.6f mean_CF_T21=%.6f H_T21=%.6f report_T=%.6f | "
 		       "n_poses=%d thermo_score=%d\n",

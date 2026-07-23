@@ -7,7 +7,11 @@
 // ΔG = ΔH − TΔS. When ΔH > 0 and ΔS < 0 simultaneously, −TΔS > 0 for every
 // T > 0, so ΔG is strictly positive at all temperatures: there is no
 // temperature at which such a pose binds spontaneously. Such poses are given a
-// large positive sentinel so downstream clustering can never select them rank-0.
+// large positive sentinel.
+//
+// NOT WIRED IN: the sentinel currently lands only in the reported
+// ThermoResult::dG_eff. No clustering, ranking or selection path reads it, so
+// the gate cannot presently demote a pose. See the ΔG_eff block below.
 //
 // Header-only so unit tests need no extra translation unit.
 //
@@ -54,7 +58,15 @@ struct ThermoResult {
     // minimum (low H). Computed at BOTH calibrations because T sets the P_i
     // distribution itself, not just the entropy prefactor: T_eff (scoring
     // temperature, default 0.596) and report_T (ISMB 2017, default 21.0).
-    // Reporting-only unless FLEXAIDDS_THERMO_SCORE=1 (see thermo_score_enabled).
+    //
+// DIAGNOSTIC ONLY — dG_eff does not affect pose selection, at any flag setting.
+// FLEXAIDDS_THERMO_SCORE=1 only enables the impossibility gate that rewrites
+// this field; it does not promote dG_eff to a ranking criterion. The sole
+// consumer is the [THERMO3] printf in gaboom.cpp, which runs after the
+// QuickSort that establishes the ranking. Note also that dG_eff is a single
+// ensemble-level scalar over the whole population, not a per-pose quantity, so
+// using it as a ranking key would require a per-pose reformulation first —
+// not merely re-ordering the existing calls.
     float dG_eff;        // <CF> − T_eff·H      at T_eff
     float mean_CF;       // <CF> = Σ P_i·CF_i   at T_eff
     float H_pose;        // H    = −Σ P_i·ln P_i at T_eff (nats)
@@ -64,7 +76,7 @@ struct ThermoResult {
     float H_pose_T21;    // H    = −Σ P_i·ln P_i at report_T (nats)
 
     // ── Impossibility gate (only populated when FLEXAIDDS_THERMO_SCORE=1) ──
-    bool  thermo_impossible;   // aggregate verdict; dG_eff forced to +1000 when true
+    bool  thermo_impossible;   // aggregate verdict; reported dG_eff forced to +1000 when true (diagnostic only — nothing ranks on it)
     int   n_impossible_poses;  // per-pose violations (ΔH_i = CF_i > 0 with ΔS < 0)
     float gate_dS_used;        // ΔS value the gate tested (TdS_vib)
 
