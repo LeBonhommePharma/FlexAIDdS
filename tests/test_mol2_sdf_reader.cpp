@@ -487,7 +487,11 @@ TEST_F(SdfReaderTest, MapsBareSdfElementsToCanonicalTypes) {
         {"Cl", 24},
         {"Br", 25},
         {"I", 25},
-        {"Se", 27},
+        // Se is scored on the S.3 row: canonical row 27 (SE) has no non-zero
+        // entry in MC_st0r5.2_6.dat, so typing Se as 27 made selenomethionine
+        // invisible to the contact scorer. See the dead-row substitution table
+        // in top.cpp:sybyl_name_to_canonical_vct.
+        {"Se", 18},
         {"Mg", 28},
         {"Sr", 29},
         {"Cu", 30},

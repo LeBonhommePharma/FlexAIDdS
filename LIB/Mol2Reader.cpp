@@ -51,7 +51,9 @@ static int sybyl_to_flexaid_type(const char* sybyl_type) {
     if (!strcmp(sybyl_type, "O.2"))   return 13;  // sp2 oxygen
     if (!strcmp(sybyl_type, "O.3"))   return 14;  // sp3 oxygen
     if (!strcmp(sybyl_type, "O.co2")) return 15;  // carboxylate oxygen
-    if (!strcmp(sybyl_type, "O.ar"))  return 16;  // aromatic oxygen
+    // O.ar -> O.3: row 16 is all-zero in MC_st0r5.2_6.dat, so furan/oxazole
+    // oxygen scored nothing. Ring O is divalent, no labile H -> ether-like.
+    if (!strcmp(sybyl_type, "O.ar"))  return 14;  // aromatic oxygen -> O.3 (row 16 dead)
     if (!strcmp(sybyl_type, "O.spc")) return 14;  // water oxygen → O.3
     if (!strcmp(sybyl_type, "O.t3p")) return 14;  // water oxygen → O.3
 
@@ -59,8 +61,12 @@ static int sybyl_to_flexaid_type(const char* sybyl_type) {
     if (!strcmp(sybyl_type, "S.2"))   return 17;
     if (!strcmp(sybyl_type, "S.3"))   return 18;
     if (!strcmp(sybyl_type, "S.O") || !strcmp(sybyl_type, "S.o"))   return 19;
-    if (!strcmp(sybyl_type, "S.O2") || !strcmp(sybyl_type, "S.o2")) return 20;
-    if (!strcmp(sybyl_type, "S.ar"))  return 21;
+    // S.O2 -> S.O: row 20 is all-zero, so every sulfone/sulfonamide S was
+    // invisible to the scorer. Row 19 is the nearest live oxidised-S row.
+    if (!strcmp(sybyl_type, "S.O2") || !strcmp(sybyl_type, "S.o2")) return 19;  // sulfone -> S.O (row 20 dead)
+    // S.ar -> S.3: row 21 is all-zero; thiophene/thiazole S is a divalent
+    // thioether by geometry. Must stay identical to top.cpp.
+    if (!strcmp(sybyl_type, "S.ar"))  return 18;  // aromatic sulfur -> S.3 (row 21 dead)
 
     // Phosphorus
     if (!strcmp(sybyl_type, "P.3"))   return 22;
@@ -72,7 +78,9 @@ static int sybyl_to_flexaid_type(const char* sybyl_type) {
     if (!strcmp(sybyl_type, "I"))     return 25;  // BR — iodo near-absent from PDB training; I/type-26 row has only 3 live entries
 
     // Selenium
-    if (!strcmp(sybyl_type, "Se"))    return 27;
+    // Se -> S.3: row 27 is all-zero; Se arrives as selenomethionine, a Met
+    // surrogate, so the thioether row reproduces the chemistry it stands for.
+    if (!strcmp(sybyl_type, "Se"))    return 18;  // SE -> S.3 (row 27 dead)
 
     // Metals
     if (!strcmp(sybyl_type, "Mg"))    return 28;

@@ -54,8 +54,14 @@ int canonical_vct_type_for_element(const char element[3], int ntypes)
 	else if (!std::strcmp(element, "F"))  type = 23;
 	else if (!std::strcmp(element, "Cl")) type = 24;
 	else if (!std::strcmp(element, "Br")) type = 25;
-	else if (!std::strcmp(element, "I"))  type = 26;
-	else if (!std::strcmp(element, "Se")) type = 27;
+	// Iodine and selenium must alias exactly as the ligand readers do, otherwise
+	// the same element scores differently depending on which side of the complex
+	// it sits on. I → Br (row 26 has only 3 live entries); Se → S.3 (row 27 is
+	// all-zero, and Se reaches the receptor as selenomethionine, a Met surrogate).
+	// Keep in lockstep with Mol2Reader::sybyl_to_flexaid_type,
+	// SdfReader::element_to_flexaid_type and top.cpp:sybyl_name_to_canonical_vct.
+	else if (!std::strcmp(element, "I"))  type = 25;
+	else if (!std::strcmp(element, "Se")) type = 18;
 	else if (!std::strcmp(element, "Mg")) type = 28;
 	else if (!std::strcmp(element, "Sr")) type = 29;
 	else if (!std::strcmp(element, "Cu")) type = 30;
