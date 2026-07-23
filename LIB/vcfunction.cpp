@@ -886,7 +886,14 @@ double vcfunction(FA_Global* FA,VC_Global* VC,atom* atoms,resid* residue, std::v
 		if(F > 0.0){
 			for(int j=0; j<FA->num_optres; ++j){
 				double& com = FA->optres[j].cf.com;
-				com = -F + std::log1p(std::exp(com + F));
+				// Numerically stable soft-floor at −F.
+				// Naive log1p(exp(z)) overflows for z > ~709; use stable form:
+				//   z > 0:  z + log1p(exp(−z))  (exp(−z) ∈ (0,1], safe)
+				//   z ≤ 0:  log1p(exp(z))        (exp(z) ∈ (0,1], safe)
+				const double z = com + F;
+				com = -F + (z > 0.0
+				            ? z + std::log1p(std::exp(-z))
+				            : std::log1p(std::exp(z)));
 			}
 		}
 	}
