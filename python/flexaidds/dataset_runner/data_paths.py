@@ -20,6 +20,12 @@ _CF_REMARK_RE = re.compile(r"REMARK\s+CF=([+-]?(?:\d+(?:\.\d*)?|\.\d+))", re.IGN
 _CF_APP_REMARK_RE = re.compile(
     r"REMARK\s+CF\.app=([+-]?(?:\d+(?:\.\d*)?|\.\d+))", re.IGNORECASE
 )
+_CF_COM_REMARK_RE = re.compile(
+    r"REMARK\s+CF\.com=([+-]?(?:\d+(?:\.\d*)?|\.\d+))", re.IGNORECASE
+)
+_CF_WAL_REMARK_RE = re.compile(
+    r"REMARK\s+CF\.wal=([+-]?(?:\d+(?:\.\d*)?|\.\d+))", re.IGNORECASE
+)
 
 
 def _first_existing(paths: List[Path]) -> Optional[Path]:

@@ -27,7 +27,7 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional
+from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 import numpy as np
 from dataclasses import dataclass, field
@@ -167,6 +167,41 @@ _RMSD_PROSE_RE = re.compile(
 
 # Strip PDB remark class numbers: "REMARK  99  Free Energy: -8.5"
 _REMARK_NUMBER_RE = re.compile(r"^\d{1,3}\s+")
+
+# ── Per-pose CF component parsers ─────────────────────────────────────────────
+# Matches "REMARK Most important POSITIVE (favourable) interaction contributions to binding"
+_POSITIVE_SECTION_RE = re.compile(
+    r"REMARK[^\n]*Most important POSITIVE[^\n]*contributions to binding",
+    re.IGNORECASE,
+)
+# Matches "REMARK   1:  3- 4 with energy of -43.404" (first-ranked contact entry)
+_TOP_CONTACT_RE = re.compile(
+    r"^REMARK\s+1:\s*(\d+)\s*-\s*(\d+)\s+with energy of\s+"
+    r"([-+]?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)",
+    re.MULTILINE | re.IGNORECASE,
+)
+
+
+def _parse_top_contact(text: str) -> Tuple[Optional[str], Optional[float]]:
+    """Return (pair, energy) for the rank-1 favourable contact in *text*.
+
+    Scans only the text after the "Most important POSITIVE … contributions to
+    binding" header so spurious ``REMARK   1:`` lines elsewhere are ignored.
+
+    Returns:
+        ``("A-B", energy_kcal)`` e.g. ``("3-4", -43.404)``, or
+        ``(None, None)`` when the section or first entry is absent.
+    """
+    m = _POSITIVE_SECTION_RE.search(text)
+    if not m:
+        return None, None
+    remainder = text[m.end():]
+    m2 = _TOP_CONTACT_RE.search(remainder)
+    if not m2:
+        return None, None
+    pair = f"{m2.group(1)}-{m2.group(2)}"
+    energy = float(m2.group(3))
+    return pair, energy
 
 
 def _strip_remark_payload(line: str) -> str:
@@ -454,12 +489,18 @@ def parse_pose_result(path: Path) -> PoseResult:
     if cf is None:
         cf = cf_app
 
+    top_contact_pair, top_contact_energy = _parse_top_contact(text)
+
     return PoseResult(
         path=path,
         mode_id=mode_id,
         pose_rank=pose_rank,
         cf=cf,
         cf_app=cf_app,
+        cf_com=_first_float(remarks, "cf_com"),
+        cf_wal=_first_float(remarks, "cf_wal"),
+        top_contact_pair=top_contact_pair,
+        top_contact_energy=top_contact_energy,
         rmsd_raw=_first_float(remarks, "rmsd_raw", "rmsd", "rmsd_unsym"),
         rmsd_sym=_first_float(remarks, "rmsd_sym", "rmsd_symmetric", "sym_rmsd"),
         free_energy=_first_float(remarks, "free_energy", "f"),

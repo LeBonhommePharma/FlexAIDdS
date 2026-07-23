@@ -67,6 +67,10 @@ class PoseResult:
     pose_rank: int
     cf: Optional[float] = None
     cf_app: Optional[float] = None
+    cf_com: Optional[float] = None
+    cf_wal: Optional[float] = None
+    top_contact_pair: Optional[str] = None
+    top_contact_energy: Optional[float] = None
     rmsd_raw: Optional[float] = None
     rmsd_sym: Optional[float] = None
     free_energy: Optional[float] = None
@@ -115,6 +119,10 @@ class PoseResult:
             pose_rank=data.get("pose_rank", 0),
             cf=data.get("cf"),
             cf_app=data.get("cf_app"),
+            cf_com=data.get("cf_com"),
+            cf_wal=data.get("cf_wal"),
+            top_contact_pair=data.get("top_contact_pair"),
+            top_contact_energy=data.get("top_contact_energy"),
             rmsd_raw=data.get("rmsd_raw"),
             rmsd_sym=data.get("rmsd_sym"),
             free_energy=data.get("free_energy"),
@@ -166,6 +174,11 @@ class BindingModeResult:
     heat_capacity: Optional[float] = None
     std_energy: Optional[float] = None
     best_cf: Optional[float] = None
+    # CF component fields from the elected (best) pose.
+    cf_com: Optional[float] = None
+    cf_wal: Optional[float] = None
+    top_contact_pair: Optional[str] = None
+    top_contact_energy: Optional[float] = None
     frequency: Optional[int] = None
     temperature: Optional[float] = None
     # Full audited ledger (rich dataclass when available from engine or pure fallback).
@@ -250,6 +263,10 @@ class BindingModeResult:
             heat_capacity=data.get("heat_capacity"),
             std_energy=data.get("std_energy"),
             best_cf=data.get("best_cf"),
+            cf_com=data.get("cf_com"),
+            cf_wal=data.get("cf_wal"),
+            top_contact_pair=data.get("top_contact_pair"),
+            top_contact_energy=data.get("top_contact_energy"),
             frequency=data.get("frequency"),
             temperature=data.get("temperature"),
             metadata=data.get("metadata", {}),
@@ -386,6 +403,10 @@ class DockingResult:
                     "heat_capacity": mode.heat_capacity,
                     "std_energy": mode.std_energy,
                     "best_cf": mode.best_cf,
+                    "cf_com": mode.cf_com,
+                    "cf_wal": mode.cf_wal,
+                    "top_contact_pair": mode.top_contact_pair,
+                    "top_contact_energy": mode.top_contact_energy,
                     "temperature": mode.temperature,
                     "thermodynamics": mode.thermodynamics,
                     "best_pose_path": str(best_pose.path) if best_pose else None,
@@ -407,6 +428,10 @@ class DockingResult:
             "heat_capacity": mode.heat_capacity,
             "std_energy": mode.std_energy,
             "best_cf": mode.best_cf,
+            "cf_com": mode.cf_com,
+            "cf_wal": mode.cf_wal,
+            "top_contact_pair": mode.top_contact_pair,
+            "top_contact_energy": mode.top_contact_energy,
             "temperature": mode.temperature,
             "best_pose_path": str(best_pose.path) if best_pose else None,
         }
@@ -533,6 +558,10 @@ class DockingResult:
                         mode_id=rec["mode_id"],
                         pose_rank=1,
                         cf=rec.get("best_cf"),
+                        cf_com=rec.get("cf_com"),
+                        cf_wal=rec.get("cf_wal"),
+                        top_contact_pair=rec.get("top_contact_pair"),
+                        top_contact_energy=rec.get("top_contact_energy"),
                         free_energy=rec.get("free_energy"),
                         enthalpy=rec.get("enthalpy"),
                         entropy=rec.get("entropy"),
@@ -552,6 +581,10 @@ class DockingResult:
                     heat_capacity=rec.get("heat_capacity"),
                     std_energy=rec.get("std_energy"),
                     best_cf=rec.get("best_cf"),
+                    cf_com=rec.get("cf_com"),
+                    cf_wal=rec.get("cf_wal"),
+                    top_contact_pair=rec.get("top_contact_pair"),
+                    top_contact_energy=rec.get("top_contact_energy"),
                     temperature=rec.get("temperature"),
                     thermodynamics=thermodynamics,
                 )
@@ -658,7 +691,8 @@ class DockingResult:
                 return value
         _float_keys = {
             "free_energy", "enthalpy", "entropy", "heat_capacity",
-            "std_energy", "best_cf", "temperature",
+            "std_energy", "best_cf", "cf_com", "cf_wal",
+            "top_contact_energy", "temperature",
         }
         if key in _float_keys:
             try:

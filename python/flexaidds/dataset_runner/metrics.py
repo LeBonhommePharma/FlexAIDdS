@@ -58,6 +58,11 @@ class PoseScore:
     total_score: float
     is_active: bool
     exp_affinity: Optional[float] = None
+    # CF component fields for the elected (best) pose — diagnostic per-target data.
+    cf_com: Optional[float] = None
+    cf_wal: Optional[float] = None
+    top_contact_pair: Optional[str] = None
+    top_contact_energy: Optional[float] = None
     structural_state: str = "holo"
 
 

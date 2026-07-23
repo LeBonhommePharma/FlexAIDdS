@@ -59,10 +59,13 @@ import numpy as np
 
 from .data_paths import (
     _CF_APP_REMARK_RE,
+    _CF_COM_REMARK_RE,
     _CF_REMARK_RE,
+    _CF_WAL_REMARK_RE,
     _RMSD_REMARK_RE,
     resolve_benchmark_paths,
 )
+from ..io import _parse_top_contact
 from .metrics import (
     PoseScore,
     bootstrap_ci,
@@ -1226,9 +1229,12 @@ class DatasetRunner:
             total_score = 0.0
             is_active = False
             exp_affinity: Optional[float] = None
+            cf_com: Optional[float] = None
+            cf_wal: Optional[float] = None
 
             try:
-                lines = pdb_path.read_text().splitlines()
+                text = pdb_path.read_text()
+                lines = text.splitlines()
                 for line in lines:
                     if not line.startswith("REMARK"):
                         continue
@@ -1254,6 +1260,14 @@ class DatasetRunner:
                         m = _CF_APP_REMARK_RE.search(line)
                         if m and enthalpy_score == 0.0:
                             enthalpy_score = float(m.group(1))
+                        m = _CF_COM_REMARK_RE.search(line)
+                        if m:
+                            cf_com = float(m.group(1))
+                        m = _CF_WAL_REMARK_RE.search(line)
+                        if m:
+                            cf_wal = float(m.group(1))
+
+                top_contact_pair, top_contact_energy = _parse_top_contact(text)
 
                 if rmsd < 0.0 and ref_coords is not None:
                     rmsd = _pose_rmsd_vs_reference(pdb_path, ref_coords)
@@ -1276,6 +1290,10 @@ class DatasetRunner:
                     total_score=total_score,
                     is_active=is_active,
                     exp_affinity=exp_affinity,
+                    cf_com=cf_com,
+                    cf_wal=cf_wal,
+                    top_contact_pair=top_contact_pair,
+                    top_contact_energy=top_contact_energy,
                     structural_state=structural_state,
                 )
             )
