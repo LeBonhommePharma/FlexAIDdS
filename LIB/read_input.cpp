@@ -396,7 +396,9 @@ void read_input(FA_Global* FA,atom** atoms, resid** residue,rot** rotamer,gridpo
 	         tmpdir.c_str(), random_num);
 
 	modify_pdb(pdb_name,tmpprotname,FA->exclude_het,FA->remove_water,FA->is_protein,
-	           FA->keep_ions,FA->keep_structural_waters,FA->structural_water_bfactor_max);
+	           FA->keep_ions,FA->keep_structural_waters,FA->structural_water_bfactor_max,
+	           FA->binding_site_water_radius,FA->binding_site_water_hbond_required,
+	           FA->reflig_file);
 	read_pdb(FA,atoms,residue,tmpprotname);
 	remove(tmpprotname);
 

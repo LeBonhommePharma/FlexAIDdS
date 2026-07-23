@@ -302,6 +302,14 @@ void apply_config(const json::Value& config, FA_Global* FA, GB_Global* GB,
             jbool(config, "protein", "keep_structural_waters", true) ? 1 : 0;
         FA->structural_water_bfactor_max =
             jflt(config, "protein", "structural_water_bfactor_max", 20.0f);
+        // Selective retention: only crystallographic waters inside the binding
+        // cavity (within this radius of a crystal-ligand heavy atom) and, when
+        // required, H-bonded to the protein are kept.  0.0 disables the filter
+        // and restores the previous keep-all-low-B-factor behaviour.
+        FA->binding_site_water_radius =
+            jflt(config, "protein", "binding_site_water_radius", 0.0f);
+        FA->binding_site_water_hbond_required =
+            jbool(config, "protein", "binding_site_water_hbond_required", true) ? 1 : 0;
         FA->omit_buried  = jbool(config, "protein", "omit_buried", false) ? 1 : 0;
     }
 

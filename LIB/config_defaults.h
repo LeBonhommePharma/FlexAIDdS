@@ -159,6 +159,8 @@ inline json::Value flexaid_default_config() {
             {"keep_ions",                   V(true)},
             {"keep_structural_waters",      V(true)},
             {"structural_water_bfactor_max",V(20.0f)},
+            {"binding_site_water_radius",   V(0.0f)},
+            {"binding_site_water_hbond_required", V(true)},
             {"omit_buried",                 V(false)},
         })},
 

@@ -5838,6 +5838,25 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
             const double vct_r0 = protocol_cfg_.vct_r0;
             const bool vct_norm = protocol_cfg_.vct_normalize_contacts;
             const double vct_entropy_w = protocol_cfg_.vct_entropy_weight;
+            // Selective crystallographic water retention (arm C).  The default
+            // keep_structural_waters:true retains every low-B-factor HOH as a
+            // receptor atom; for water-rich targets (1JD0 retains 156) the GA
+            // buries the ligand inside the solvent shell and harvests unbounded
+            // CF.com from ~0.01 Å ligand-O ⋯ HOH-O contacts (CF = -4269 against
+            // an expected ~-50).  FLEXAIDDS_SMART_WATER=1 restricts retention to
+            // waters that bridge the crystal ligand and the protein.  Radius and
+            // H-bond requirement are individually overridable.
+            const char* smart_water_env = std::getenv("FLEXAIDDS_SMART_WATER");
+            const bool smart_water = (smart_water_env != nullptr &&
+                                      std::string(smart_water_env) == "1");
+            double bs_water_radius = smart_water ? 4.5 : 0.0;
+            if(const char* r = std::getenv("FLEXAIDDS_BS_WATER_RADIUS")) {
+                try { bs_water_radius = std::stod(r); } catch(...) {}
+            }
+            bool bs_water_hbond = true;
+            if(const char* h = std::getenv("FLEXAIDDS_BS_WATER_HBOND")) {
+                bs_water_hbond = (std::string(h) != "0");
+            }
             {
                 std::ofstream jf(config_path);
                 jf << "{\n"
@@ -5944,6 +5963,13 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                    // so the full cleft search space is preserved.
                    << "  \"seeding\": {\n"
                    << "    \"mif_enabled\": true\n"
+                   << "  },\n"
+                   // binding_site_water_radius = 0.0 leaves the historical
+                   // keep-all-low-B-factor behaviour untouched (arms A and B).
+                   << "  \"protein\": {\n"
+                   << "    \"binding_site_water_radius\": " << bs_water_radius << ",\n"
+                   << "    \"binding_site_water_hbond_required\": "
+                   << (bs_water_hbond ? "true" : "false") << "\n"
                    << "  },\n"
                    // Crystal coordinates must NOT enter the GA as pose seeds.
                    // RMSD/PoseBusters use a separate post-dock reference path

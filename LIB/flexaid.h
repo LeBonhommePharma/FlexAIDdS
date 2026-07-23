@@ -477,6 +477,8 @@ struct FA_Global_struct{
 	int   keep_ions;                     // retain metal ions even when exclude_het=1
 	int   keep_structural_waters;        // retain low-B-factor crystallographic waters
 	float structural_water_bfactor_max;  // B-factor cutoff for structural waters (Å²)
+	float binding_site_water_radius;     // max dist. crystal-ligand heavy atom → HOH-O (Å); 0 = off
+	int   binding_site_water_hbond_required; // HOH must also H-bond a protein N/O/S
 	int   output_range;                  // outputs Sphere or Grid file(s)
 
 	int     bloops;                      // exclude interactions with atoms n bloops away (exclude dis-ang preferably)
@@ -797,7 +799,10 @@ double GetValueFromGaussian(double x,double max,double zero);
 
 void modify_pdb(char* infile, char* outfile, int exclude_het, int remove_water, int is_protein,
                 int keep_ions=1, int keep_structural_waters=1,
-                float structural_water_bfactor_max=20.0f); // reorder protein atoms in PDB file
+                float structural_water_bfactor_max=20.0f,
+                float binding_site_water_radius=0.0f,
+                int binding_site_water_hbond_required=1,
+                const char* oracle_ligand_path=nullptr); // reorder protein atoms in PDB file
 int rna_structure(char* infile);
 int get_NextLine(char lines[][100], int nlines);
 int is_rna_structure(char* infile);

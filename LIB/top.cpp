@@ -1138,7 +1138,9 @@ int main(int argc, char **argv){
 			         tmpdir.c_str(), random_num);
 
 			modify_pdb(const_cast<char*>(receptor_file), tmpprotname, FA->exclude_het, FA->remove_water, FA->is_protein,
-			           FA->keep_ions, FA->keep_structural_waters, FA->structural_water_bfactor_max);
+			           FA->keep_ions, FA->keep_structural_waters, FA->structural_water_bfactor_max,
+			           FA->binding_site_water_radius, FA->binding_site_water_hbond_required,
+			           FA->reflig_file);
 			read_pdb(FA, &atoms, &residue, tmpprotname);
 			remove(tmpprotname);
 		}
