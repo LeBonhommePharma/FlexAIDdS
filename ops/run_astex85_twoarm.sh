@@ -58,6 +58,12 @@ ROOT="${HOME}/flexaidds_benchmark_results/astex85_threearm_${STAMP}"
 CACHE="${HOME}/.flexaidds/benchmarks"
 LOG="${ROOT}/campaign.log"
 
+# ── Single-instance guard (atomic flock — must run BEFORE mkdir/exec) ─────────
+LOCKFILE="/tmp/flexaidds_benchmark.lock"
+exec 9>"${LOCKFILE}"
+flock -n 9 || { echo "[ABORT] another campaign holds the lock: ${LOCKFILE}" >&2; exit 1; }
+trap 'flock -u 9' EXIT
+
 # Survive session teardown (v7 multi-worker SIGTERM kill). setsid puts us in our
 # own process group; only HUP is ignored so the campaign stays deliberately killable.
 trap '' HUP
@@ -73,12 +79,6 @@ echo "engine : ${ENGINE}"
 echo "sha256 : $(shasum -a 256 "${ENGINE}" | cut -d' ' -f1)"
 echo "commit : $(cd "${REPO}" && git rev-parse HEAD)"
 echo "root   : ${ROOT}"
-
-# Single-instance guard.
-if pgrep -f "benchmark_datasets --benchmark" >/dev/null 2>&1; then
-    echo "[ABORT] a benchmark_datasets run is already active — refusing to share the cache"
-    exit 1
-fi
 
 # ── Reproducibility / protocol env common to every arm ────────────────────────
 export OMP_NUM_THREADS=1
@@ -102,26 +102,21 @@ com_summary() {
     for pose in "${out}"/*/elected_pose.pdb; do
         [ -f "${pose}" ] || continue
         local pdb; pdb="$(basename "$(dirname "${pose}")")"
-        local com sas wal tot
-        com="$(awk '/^REMARK CF.com=/{print $2}' "${pose}" | sed 's/.*=//' | head -1)"
-        sas="$(awk '/^REMARK CF.sas=/{print $2}' "${pose}" | sed 's/.*=//' | head -1)"
-        wal="$(awk '/^REMARK CF.wal=/{print $2}' "${pose}" | sed 's/.*=//' | head -1)"
-        tot="$(awk -F= '/^REMARK CF=/{print $2}' "${pose}" | head -1)"
-        # Dominant contact-type pair, if the engine emitted per-pair REMARKs.
-        # Format: "REMARK contact <t1>-<t2> ... <value>". Pick the row whose
-        # last field has the largest magnitude.
-        local dom
-        dom="$(awk '/^REMARK contact /{v=$NF; a=v<0?-v:v; if(a>best){best=a; line=$3" "$NF}} END{if(line!="")print line}' "${pose}")"
-        local dtype dval
-        dtype="$(echo "${dom}" | awk '{print $1}')"
-        dval="$(echo "${dom}" | awk '{print $2}')"
+        local com sas wal tot dom dtype dval
+        com="$(awk '/^REMARK CF\.com=/{split($0,a,"="); print a[2]; exit}' "${pose}")"
+        sas="$(awk '/^REMARK CF\.sas=/{split($0,a,"="); print a[2]; exit}' "${pose}")"
+        wal="$(awk '/^REMARK CF\.wal=/{split($0,a,"="); print a[2]; exit}' "${pose}")"
+        tot="$(awk -F= '/^REMARK CF=/{print $2; exit}' "${pose}")"
+        dom="$(awk 'BEGIN{best=0; line=""} /^REMARK contact /{v=$NF; a=v<0?-v:v; if(a>best){best=a; line=$3" "$NF}} END{if(line!="")print line}' "${pose}")"
+        dtype="$(awk '{print $1}' <<< "${dom}")"
+        dval="$(awk '{print $2}' <<< "${dom}")"
         echo "${pdb},${com:-NA},${sas:-NA},${wal:-NA},${tot:-NA},${dtype:-NA},${dval:-NA}" >> "${csv}"
     done
     echo "  [MECHANISM] wrote $(wc -l < "${csv}") rows → ${csv}"
 }
 
 run_arm() {
-    local name="$1"; shift
+    local name="$1"
     local out="${ROOT}/${name}"
     mkdir -p "${out}"
     echo ""
@@ -135,21 +130,26 @@ run_arm() {
         --omp-threads 1 \
         --job-timeout-seconds 3600 \
         --force
-    echo "=== ARM ${name} finished rc=$? $(date -u +%FT%TZ) ==="
+    local rc=$?
+    echo "=== ARM ${name} finished rc=${rc} $(date -u +%FT%TZ) ==="
     com_summary "${out}"
 }
 
-# ── Arm A: smart water ON, raw extensive com (Codex water-only hypothesis) ─────
+# ── Arm A: smart water ON, raw extensive com (Codex water-only hypothesis) ────
 (
-  unset FLEXAIDDS_THERMO_SCORE FLEXAIDDS_T_EFF FLEXAIDDS_SOFTBETA_ELECTION
-  unset FLEXAIDDS_VCT_NORM FLEXAIDDS_COM_FLOOR FLEXAIDDS_STRIP_ALL_WATERS
+  unset FLEXAIDDS_THERMO_SCORE 2>/dev/null || true
+  unset FLEXAIDDS_T_EFF 2>/dev/null || true
+  unset FLEXAIDDS_SOFTBETA_ELECTION 2>/dev/null || true
+  unset FLEXAIDDS_VCT_NORM 2>/dev/null || true
+  unset FLEXAIDDS_COM_FLOOR 2>/dev/null || true
+  unset FLEXAIDDS_STRIP_ALL_WATERS 2>/dev/null || true
   export FLEXAIDDS_SMART_WATER=1
   run_arm "armA_smartwater_rawcom"
-)
+) || { echo "[WARN] ARM A failed rc=$?, continuing to next arm" | tee -a "${LOG}"; }
 
-# ── Arm B: PRODUCTION — smart water + com fix + thermodynamics ─────────────────
+# ── Arm B: PRODUCTION — smart water + com fix + thermodynamics ────────────────
 (
-  unset FLEXAIDDS_STRIP_ALL_WATERS
+  unset FLEXAIDDS_STRIP_ALL_WATERS 2>/dev/null || true
   export FLEXAIDDS_SMART_WATER=1
   export FLEXAIDDS_VCT_NORM=1
   export FLEXAIDDS_COM_FLOOR=500
@@ -157,16 +157,19 @@ run_arm() {
   export FLEXAIDDS_T_EFF=0.596
   export FLEXAIDDS_SOFTBETA_ELECTION=1
   run_arm "armB_production"
-)
+) || { echo "[WARN] ARM B failed rc=$?, continuing to next arm" | tee -a "${LOG}"; }
 
-# ── Arm C: strip ALL waters + com fix, no thermo (com-taming hypothesis) ───────
+# ── Arm C: strip ALL waters + com fix, no thermo (com-taming hypothesis) ──────
 (
-  unset FLEXAIDDS_THERMO_SCORE FLEXAIDDS_T_EFF FLEXAIDDS_SOFTBETA_ELECTION FLEXAIDDS_SMART_WATER
+  unset FLEXAIDDS_THERMO_SCORE 2>/dev/null || true
+  unset FLEXAIDDS_T_EFF 2>/dev/null || true
+  unset FLEXAIDDS_SOFTBETA_ELECTION 2>/dev/null || true
+  unset FLEXAIDDS_SMART_WATER 2>/dev/null || true
   export FLEXAIDDS_STRIP_ALL_WATERS=1
   export FLEXAIDDS_VCT_NORM=1
   export FLEXAIDDS_COM_FLOOR=500
   run_arm "armC_stripwater_comfix"
-)
+) || { echo "[WARN] ARM C failed rc=$?, continuing to next arm" | tee -a "${LOG}"; }
 
 echo ""
 echo "=== CAMPAIGN COMPLETE $(date -u +%FT%TZ) ==="
