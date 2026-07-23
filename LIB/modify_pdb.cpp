@@ -53,8 +53,8 @@ static float pdb_bfactor(const char* buf) {
 //
 // Criterion 1 (cavity):  d(HOH-O, nearest crystal-ligand heavy atom) ≤ radius
 // Criterion 2 (H-bond):  2.4 Å ≤ d(HOH-O, protein N/O/S) ≤ 3.5 Å
-// Criterion 3 (order):   B-factor ≤ structural_water_bfactor_max (applied by
-//                        the existing filter in the streaming pass).
+// Criterion 3 (order):   B-factor ≤ structural_water_bfactor_max (the existing
+//                        parameter, unchanged).
 //
 // Hydrogens are absent from these coordinates, so criterion 2 uses the
 // standard heavy-atom donor/acceptor distance window rather than a D–H⋯A
@@ -161,6 +161,7 @@ std::set<int> select_binding_site_waters(const char* receptor_pdb,
                                          const std::string& ligand_path,
                                          float radius,
                                          int hbond_required,
+                                         float bfactor_max,
                                          int* n_total_out,
                                          int* n_lig_out)
 {
@@ -174,6 +175,7 @@ std::set<int> select_binding_site_waters(const char* receptor_pdb,
     if(!in) return keep;
 
     std::vector<WaterVec3> water;
+    std::vector<float>     water_bf;
     std::vector<WaterVec3> protein_polar;   // N/O/S of the protein
 
     for(std::string l; std::getline(in, l); ) {
@@ -189,6 +191,7 @@ std::set<int> select_binding_site_waters(const char* receptor_pdb,
             // Every HOH HETATM line is recorded, parseable or not, so that the
             // ordinals here line up one-for-one with the streaming pass below.
             water.push_back(have_xyz ? v : WaterVec3{1e30, 1e30, 1e30});
+            water_bf.push_back(l.size() >= 66 ? pdb_bfactor(l.c_str()) : 1e30f);
             continue;
         }
         if(is_atom && have_xyz) {
@@ -204,6 +207,9 @@ std::set<int> select_binding_site_waters(const char* receptor_pdb,
     const double hb_min2 = kHBondMin * kHBondMin, hb_max2 = kHBondMax * kHBondMax;
 
     for(size_t w = 0; w < water.size(); ++w) {
+        // Mirror the streaming pass's B-factor cutoff so the reported count is
+        // the number of waters that actually reach the receptor model.
+        if(water_bf[w] > bfactor_max) continue;
         bool in_cavity = false;
         for(const auto& a : lig)
             if(sq_dist(water[w], a) <= r2) { in_cavity = true; break; }
@@ -276,6 +282,7 @@ void modify_pdb(char* infile, char* outfile, int exclude_het, int remove_water, 
 		bs_water_keep = select_binding_site_waters(infile, oracle_lig,
 		                                           binding_site_water_radius,
 		                                           binding_site_water_hbond_required,
+		                                           structural_water_bfactor_max,
 		                                           &n_total, &n_lig);
 		const std::string target = std::filesystem::path(infile).stem().string();
 		if(n_lig == 0) {
