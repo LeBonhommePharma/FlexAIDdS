@@ -5857,6 +5857,14 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
             if(const char* h = std::getenv("FLEXAIDDS_BS_WATER_HBOND")) {
                 bs_water_hbond = (std::string(h) != "0");
             }
+            // FLEXAIDDS_STRIP_ALL_WATERS=1 forces keep_structural_waters:false —
+            // every HOH is removed, no bridging waters retained.  This is the
+            // com-taming ablation (arm C): it isolates the VCT_NORM/COM_FLOOR
+            // fix from any water-prep effect.  When set it dominates the smart
+            // filter (radius is moot with no waters left to keep).
+            const char* strip_env = std::getenv("FLEXAIDDS_STRIP_ALL_WATERS");
+            const bool strip_all_waters = (strip_env != nullptr &&
+                                           std::string(strip_env) == "1");
             {
                 std::ofstream jf(config_path);
                 jf << "{\n"
@@ -5967,6 +5975,8 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                    // binding_site_water_radius = 0.0 leaves the historical
                    // keep-all-low-B-factor behaviour untouched (arms A and B).
                    << "  \"protein\": {\n"
+                   << "    \"keep_structural_waters\": "
+                   << (strip_all_waters ? "false" : "true") << ",\n"
                    << "    \"binding_site_water_radius\": " << bs_water_radius << ",\n"
                    << "    \"binding_site_water_hbond_required\": "
                    << (bs_water_hbond ? "true" : "false") << "\n"
