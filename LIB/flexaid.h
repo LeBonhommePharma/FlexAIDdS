@@ -239,6 +239,16 @@ struct atom_struct{  // atom structure
 	int    graph;   // id of graph atom belongs to (ligands only)
 	uint8_t type256; // 256-class atom type (atom_typing_256.h encoding)
 
+	// Pre-substitution canonical VCT row, recorded only where the scoring type
+	// had to be aliased onto a different row because the chemically correct row
+	// is dead (all-zero) in MC_st0r5.2_6.dat. 0 = no substitution (type is the
+	// perceived chemistry). Currently the only such case is N.3 (row 8, dead)
+	// aliased onto N.am (row 11): the matrix must see row 11, but H-bond
+	// geometry must still see an sp3 amine, not a planar amide. Consumed by
+	// hbond_potential.h:assign_virtual_h_geometry and top.cpp:
+	// conservative_implicit_h_count. Never index the energy matrix with this.
+	uint8_t sybyl_orig;
+
 	optmap* par;    // if this atom defines a variable (translational/rotational or dihedrals)
 	constraint** cons; // points to constraint , if NULL no constraint to atom
 	OptRes* optres;  // pointer to optimised residue list

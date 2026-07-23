@@ -223,7 +223,14 @@ inline void assign_virtual_h_geometry(atom_struct* atoms, int i,
         hidx[nheavy++] = nb;
     }
 
-    switch (a.type) {
+    // N.3 is aliased onto N.am (row 11) for scoring because matrix row 8 is
+    // all-zero, so a.type never holds 8 at this point. Geometry must still
+    // follow the real sp3 chemistry: dispatch on the recorded original row so
+    // an aliphatic amine gets pyramidal SP3 geometry (and, for a primary
+    // amine, two virtual H) rather than the planar amide bisector.
+    const int geom_type = (a.sybyl_orig != 0) ? a.sybyl_orig : a.type;
+
+    switch (geom_type) {
     case 7: // N.2 — sp2 imine/enamine; donor when 1 heavy bond
         if (heavy_bonds<=1 && nheavy>=1) {
             a.vH_kind=VHG_SP2_1NBR; a.vH_n=1; a.vH_nbr[0]=hidx[0];

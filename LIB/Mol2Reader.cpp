@@ -313,6 +313,9 @@ int read_mol2_ligand(FA_Global* FA, atom** atoms, resid** residue,
         a.element[2] = '\0';
 
         a.type = sybyl_to_flexaid_type(tmp_atoms[ai].sybyl);
+        // N.3 is scored on the N.am row (8 is dead in the matrix); keep the
+        // real sp3 identity for H-bond geometry. See atom_struct::sybyl_orig.
+        a.sybyl_orig = !strcmp(tmp_atoms[ai].sybyl, "N.3") ? 8 : 0;
         a.radius = sybyl_radius(tmp_atoms[ai].sybyl);
         a.charge = tmp_atoms[ai].charge; // propagate MOL2 partial charge
 

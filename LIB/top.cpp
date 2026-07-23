@@ -1428,6 +1428,12 @@ int main(int argc, char **argv){
 							// otherwise silently downgrade C.ar->C.3 / N.ar->N.am
 							// / O.co2->O.3. Preserve the reader's topology type
 							// in that case instead of letting BonMol overwrite it.
+							// Record the pre-substitution row for the one alias that
+							// loses chemistry: N.3 (row 8, dead in the matrix) is
+							// scored as N.am (row 11), but H-bond geometry and
+							// implicit-H counting must still see an sp3 amine.
+							if (sname && !strcmp(sname, "N.3"))
+								atoms[fa_idx].sybyl_orig = 8;
 							const bool reader_perceived_hybrid =
 							    (old_t == 4  /*C.ar */ ||
 							     old_t == 10 /*N.ar */ ||
@@ -1520,7 +1526,13 @@ int main(int argc, char **argv){
 				if (explicit_h > 0) return 0;
 				const atom& a = atoms[atom_idx];
 				const int heavy_bonds = heavy_neighbor_count(atom_idx);
-				switch (a.type) {
+				// N.3 is aliased onto N.am (row 11) because matrix row 8 is dead,
+				// so a.type never holds 8 here. Count implicit H from the real
+				// sp3 chemistry: a primary aliphatic amine carries 2 H (valence
+				// 3 - 1 heavy bond), which the N.am branch below would report as
+				// 1, and a protonated amine carries 3. See atom_struct::sybyl_orig.
+				const int h_type = (a.sybyl_orig != 0) ? a.sybyl_orig : a.type;
+				switch (h_type) {
 					case 7:  // N.2
 						return heavy_bonds <= 1 ? 1 : 0;
 					case 8: { // N.3
