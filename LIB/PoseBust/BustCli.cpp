@@ -70,7 +70,6 @@ const std::vector<std::string>& mandatory_pb_check_columns() {
         "internal_energy",
         "protein-ligand_maximum_distance",
         "minimum_distance_to_protein",
-        "no_protein_clashes",
         "volume_overlap_with_protein",
     };
     return k;
