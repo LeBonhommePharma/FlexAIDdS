@@ -75,7 +75,14 @@ static int sybyl_name_to_canonical_vct(const char* s) {
 	if (!strcmp(s, "C.ar"))  return 4;
 	if (!strcmp(s, "C.cat")) return 5;
 	if (!strcmp(s, "N.1"))   return 6;
-	if (!strcmp(s, "N.2"))   return 10;  // N.ar — sp2 imine is an acceptor; N.am (donor) reversed the H-bond sign
+	// N.2 keeps its own canonical row 7. It is NOT remapped to N.ar (10):
+	// aromaticity is already perceived upstream — SybylTyper.cpp tests
+	// in_aromatic_ring() first and emits N.ar for any N in an aromatic ring —
+	// so an atom that reaches this branch has been judged non-aromatic, and an
+	// "only when aromatic" guard here would be unreachable. Row 7 is also live
+	// in MC_st0r5.2_6.dat (13 non-zero entries), so the dead-row argument that
+	// justifies the N.3→N.am substitution below does not apply.
+	if (!strcmp(s, "N.2"))   return 7;
 	if (!strcmp(s, "N.3"))   return 11;  // N.am — row 8 is all-zero in MC_st0r5.2_6.dat; matches Mol2Reader.cpp:44
 	if (!strcmp(s, "N.4"))   return 9;
 	if (!strcmp(s, "N.ar"))  return 10;
