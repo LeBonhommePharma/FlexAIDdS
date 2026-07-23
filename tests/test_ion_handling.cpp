@@ -234,7 +234,14 @@ TEST(IonTypeTest, FallbackWhenNtypesSmall) {
     free_residue_arrays(residue);
 }
 
-TEST(IonTypeTest, WaterGetsHydrophilic) {
+// Water oxygen must be typed O.3 (canonical VCT row 14), the same row as
+// SER-OG / THR-OG1 / TYR-OH. This previously asserted type 1, which under the
+// canonical numbering is C.1 — *sp carbon*, whose 1-13 (-198.3) and 1-14
+// (-180.8) cells are the most attractive in MC_st0r5.2_6.dat. Every retained
+// crystallographic water therefore radiated a large spurious attraction to
+// ligand and protein oxygen. Row 40 (SOLVENT) is not an alternative: it is the
+// reserved bulk-solvent/SAS pseudo-type and carries strongly repulsive entries.
+TEST(IonTypeTest, WaterOxygenGetsO3) {
     FA_Global fa = make_fa(40);
     atom  atoms[2]; resid residue[2];
     make_ion_residue(atoms, residue, "HOH", " O  ");
@@ -244,7 +251,44 @@ TEST(IonTypeTest, WaterGetsHydrophilic) {
     assign_types(&fa, atoms, residue, const_cast<char*>(aminofile.c_str()));
     std::remove(aminofile.c_str());
 
-    EXPECT_EQ(atoms[1].type, 1);  // hydrophilic
+    EXPECT_EQ(atoms[1].type, 14);  // O.3
+    EXPECT_NE(atoms[1].type, 1);   // never C.1 — sp carbon
+    free_residue_arrays(residue);
+}
+
+// A "WAT" water must be typed identically to an "HOH" water. Before the fix
+// only the literal "HOH" was special-cased, so the two spellings took
+// different paths through typing.
+TEST(IonTypeTest, WaterResidueAliasesAgreeWithHOH) {
+    for (const char* rname : {"WAT", "H2O", "DOD", "OHX"}) {
+        FA_Global fa = make_fa(40);
+        atom  atoms[2]; resid residue[2];
+        make_ion_residue(atoms, residue, rname, " O  ");
+        atoms[1].type = 39;
+
+        std::string aminofile = write_empty_aminodef();
+        assign_types(&fa, atoms, residue, const_cast<char*>(aminofile.c_str()));
+        std::remove(aminofile.c_str());
+
+        EXPECT_EQ(atoms[1].type, 14) << "water residue " << rname;
+        free_residue_arrays(residue);
+    }
+}
+
+// Water hydrogen (and deuterium, in neutron structures) must stay DUMMY —
+// hydrogen is not scored against the VCT matrix.
+TEST(IonTypeTest, WaterHydrogenStaysDummy) {
+    FA_Global fa = make_fa(40);
+    atom  atoms[2]; resid residue[2];
+    make_ion_residue(atoms, residue, "HOH", " H1 ");
+    atoms[1].type = 39;
+    strncpy(atoms[1].element, "H", sizeof(atoms[1].element) - 1);
+
+    std::string aminofile = write_empty_aminodef();
+    assign_types(&fa, atoms, residue, const_cast<char*>(aminofile.c_str()));
+    std::remove(aminofile.c_str());
+
+    EXPECT_EQ(atoms[1].type, 39);  // DUMMY, untouched
     free_residue_arrays(residue);
 }
 

@@ -158,9 +158,14 @@ void assign_types(FA_Global* FA,atom* atoms,resid* residue,char aminofile[]){
 		}
 	}
 
-	// Assign SYBYL atom types for metal ions by residue name (bounded by FA->ntypes)
-	// SYBYL numbering from atom_typing_256.h: MG=28, CU=30, MN=31, HG=32, CD=33,
-	// NI=34, ZN=35, CA=36, FE=37.  Fall back to dummy (ntypes-1) if matrix is smaller.
+	// Assign atom types for metal ions by residue name (bounded by FA->ntypes).
+	// These are *canonical VCT rows* (the table above), NOT the base-class enum
+	// in atom_typing_256.h — that enum numbers metals differently (Metal_Mn=36,
+	// Metal_Hg=37, …) and reconciling the two tables would mis-index the energy
+	// matrix.  MG=28, CU=30, MN=31, HG=32, CD=33, NI=34, ZN=35, CA=36, FE=37.
+	// Note rows 32 (Hg) and 33 (Cd) are near-dead in MC_st0r5.2_6.dat (0 and 1
+	// non-zero entries): those ions are effectively steric-only.  Fall back to
+	// dummy (ntypes-1) if the matrix is smaller.
 	{
 		static const struct { const char* rnam; int sybyl; } ion_types[] = {
 			{"MG ", 28}, {"CU ", 30}, {"CU1", 30}, {"CU2", 30},

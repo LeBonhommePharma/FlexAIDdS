@@ -67,6 +67,42 @@
 // We bridge via the canonical SYBYL string name produced by
 // bonmol::sybyl::sybyl_type_name(), keeping a single source of truth for the
 // string→canonical mapping (identical to Mol2Reader::sybyl_to_flexaid_type).
+//
+// ── Row liveness in MC_st0r5.2_6.dat, and every substitution ────────────────
+// A row with no non-zero entries makes the atom *invisible* to the contact
+// scorer: it still occupies volume (wall/clash) but contributes nothing to CF.
+// Any perceived type landing on a dead row must therefore be aliased onto the
+// nearest live row that reproduces its chemistry. Dead/near-dead rows:
+//
+//   row  8 N.3    0 entries → alias N.3  → 11 (N.am)  sp3 amine
+//   row 16 O.ar   0 entries → alias O.ar → 14 (O.3)   furan / oxazole O
+//   row 20 S.O2   0 entries → alias S.O2 → 19 (S.O)   sulfone / sulfonamide S
+//   row 21 S.ar   0 entries → alias S.ar → 18 (S.3)   thiophene / thiazole S
+//   row 27 Se     0 entries → alias Se   → 18 (S.3)   selenomethionine
+//   row 26 I      3 entries → alias I    → 25 (Br)    heavy halogen
+//   row  1 C.1   10 entries → alias C.1  →  2 (C.2)   judgement call, not dead:
+//                 sp C is rare in the training set and row 1 carries extreme,
+//                 poorly-sampled values (1-13 = -198.3, the matrix maximum).
+//   rows 32 Hg, 38 Co.oh, 39 DUMMY: 0 entries; 29 Sr, 33 Cd: 1 entry. Left as
+//                 is — these are steric-only by construction (DUMMY) or too
+//                 rare to be worth a surrogate.
+//
+// Rows deliberately NOT substituted: 7 (N.2, 13 entries) and 6 (N.1, 5
+// entries) are live; coercing them to N.ar/N.am discards real chemistry.
+//
+// An alias changes only the *scoring* row. Where it would also discard H-bond
+// chemistry, the pre-substitution row is recorded in atom_struct::sybyl_orig
+// and the geometry consumers dispatch on that instead — currently N.3, whose
+// sp3 virtual-H geometry differs from N.am's planar amide bisector. The O.ar /
+// S.ar / Se aliases need no such record: their geometry recipes and implicit-H
+// counts are gated on heavy_bonds<=1, and a ring or chain heteroatom taking
+// those aliases always has 2 heavy neighbours, so donor status is unchanged.
+//
+// Any change here MUST be mirrored in Mol2Reader::sybyl_to_flexaid_type,
+// SdfReader::element_to_flexaid_type and read_coor.cpp:
+// canonical_vct_type_for_element, or the same element will score differently
+// depending on which file format it arrived in and which side of the complex
+// it sits on.
 static constexpr int FA_TYPE_DUMMY = 39;
 static int sybyl_name_to_canonical_vct(const char* s) {
 	if (!strcmp(s, "C.1"))   return 2;   // C.2 — sp C rare in PDB sites, C.2 better sampled
@@ -91,18 +127,35 @@ static int sybyl_name_to_canonical_vct(const char* s) {
 	if (!strcmp(s, "O.2"))   return 13;
 	if (!strcmp(s, "O.3"))   return 14;
 	if (!strcmp(s, "O.co2")) return 15;
-	if (!strcmp(s, "O.ar"))  return 16;
+	// O.ar → O.3. Row 16 is all-zero in MC_st0r5.2_6.dat, so a furan / oxazole /
+	// benzofuran oxygen scored exactly nothing against every partner. An
+	// aromatic ring oxygen is divalent with no labile H — ether-like — so O.3
+	// (row 14, 22 live entries) is the correct live surrogate, not the carbonyl
+	// row O.2. Geometry is unaffected: both the vH recipe and the implicit-H
+	// count for row 14 are gated on heavy_bonds<=1, and a ring O always has 2.
+	if (!strcmp(s, "O.ar"))  return 14;
 	if (!strcmp(s, "S.2"))   return 17;
 	if (!strcmp(s, "S.3"))   return 18;
 	if (!strcmp(s, "S.O") || !strcmp(s, "S.o"))   return 19;
-	if (!strcmp(s, "S.O2") || !strcmp(s, "S.o2")) return 20;
-	if (!strcmp(s, "S.ar"))  return 21;
+	// S.O2 → S.O. Row 20 is all-zero, so every sulfone and sulfonamide sulfur —
+	// one of the most common motifs in drug-like ligands — was invisible to the
+	// scorer. S.O (row 19, 12 live entries) is the nearest live chemistry:
+	// oxidised, tetrahedral, strongly polarised S=O.
+	if (!strcmp(s, "S.O2") || !strcmp(s, "S.o2")) return 19;
+	// S.ar → S.3. Row 21 is all-zero; a thiophene / thiazole sulfur is divalent
+	// with no labile H, so the thioether row 18 (20 live entries) is the correct
+	// live surrogate. Same heavy_bonds<=1 geometry gate as O.ar above.
+	if (!strcmp(s, "S.ar"))  return 18;
 	if (!strcmp(s, "P.3"))   return 22;
 	if (!strcmp(s, "F"))     return 23;
 	if (!strcmp(s, "Cl"))    return 24;
 	if (!strcmp(s, "Br"))    return 25;
 	if (!strcmp(s, "I"))     return 25;  // BR — iodo near-absent from PDB training; I/type-26 row has only 3 live entries
-	if (!strcmp(s, "Se"))    return 27;
+	// Se → S.3. Row 27 is all-zero. Selenium reaches the scorer almost entirely
+	// as selenomethionine (MSE), a methionine surrogate used for phasing, so
+	// scoring it on the thioether row reproduces the chemistry it stands in for
+	// instead of making the side chain invisible.
+	if (!strcmp(s, "Se"))    return 18;
 	if (!strcmp(s, "Mg"))    return 28;
 	if (!strcmp(s, "Sr"))    return 29;
 	if (!strcmp(s, "Cu"))    return 30;
@@ -282,8 +335,12 @@ static int bonmol_atom_to_canonical_vct(const bonmol::Atom& a, const char** out_
 		switch (a.element) {
 			case bonmol::Element::C: if (out_name) *out_name = "C.ar"; return 4;
 			case bonmol::Element::N: if (out_name) *out_name = "N.ar"; return 10;
-			case bonmol::Element::O: if (out_name) *out_name = "O.ar"; return 16;
-			case bonmol::Element::S: if (out_name) *out_name = "S.ar"; return 21;
+			// O.ar/S.ar rows (16/21) are all-zero in the matrix; route to the
+			// live ether/thioether surrogates. See sybyl_name_to_canonical_vct.
+			// Without this, BonMol's aromatic perception actively *downgraded*
+			// SdfReader's already-correct 14/18 to a zero-scoring row.
+			case bonmol::Element::O: if (out_name) *out_name = "O.ar"; return 14;
+			case bonmol::Element::S: if (out_name) *out_name = "S.ar"; return 18;
 			default: break;
 		}
 	}
