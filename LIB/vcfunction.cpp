@@ -851,11 +851,21 @@ double vcfunction(FA_Global* FA,VC_Global* VC,atom* atoms,resid* residue, std::v
 	// per-contact complementarity instead; the VCT_NREF rescale keeps the term's
 	// magnitude comparable to the SAS/wall channels (a bare 1/N collapses com
 	// into the noise floor and lets the orientation-independent SAS baseline win).
+	//
+	// The multiplier is clamped to ≤1 so this can only ever *attenuate* com. The
+	// unclamped VCT_NREF/N form ran the correction backwards: com is negative
+	// (favorable), so any multiplier >1 makes an already-favorable score more
+	// favorable. A buried pose resolves into few, large Voronoi facets, so it has
+	// the smallest N and therefore drew the largest amplifier (N=10 → ×10),
+	// boosting exactly the poses the intensive rescale was meant to demote. With
+	// the clamp, high-contact-count poses are divided down toward the per-contact
+	// mean and low-count poses are left untouched.
 	if(FA->vct_normalize_contacts){
 		constexpr double VCT_NREF = 100.0;
 		for(int j=0; j<FA->num_optres; ++j){
 			if(vct_ncon[j] > 0){
-				FA->optres[j].cf.com *= VCT_NREF / (double)vct_ncon[j];
+				const double scale = VCT_NREF / (double)vct_ncon[j];
+				FA->optres[j].cf.com *= (scale < 1.0 ? scale : 1.0);
 			}
 		}
 	}
