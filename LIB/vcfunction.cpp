@@ -886,10 +886,7 @@ double vcfunction(FA_Global* FA,VC_Global* VC,atom* atoms,resid* residue, std::v
 		if(F > 0.0){
 			for(int j=0; j<FA->num_optres; ++j){
 				double& com = FA->optres[j].cf.com;
-				const double z  = (com + F) / F;
-				const double az = (z < 0.0) ? -z : z;
-				const double softplus = (z > 0.0 ? z : 0.0) + std::log1p(std::exp(-az));
-				com = -F + F * softplus;
+				com = -F + std::log1p(std::exp(com + F));
 			}
 		}
 	}
