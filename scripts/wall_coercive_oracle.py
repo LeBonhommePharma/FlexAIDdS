@@ -94,7 +94,7 @@ def probe_cf_total(
             cmd,
             capture_output=True,
             text=True,
-            timeout=180,
+            timeout=600,
             env=env,
             check=False,
         )

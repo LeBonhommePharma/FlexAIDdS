@@ -381,18 +381,26 @@ void apply_config(const json::Value& config, FA_Global* FA, GB_Global* GB,
         FA->coarse_seeds_count    = 0;
     }
 
-    // Wave 3.4 memetic: refuse enable unless wall gate file present.
-    // FLEXAIDDS_MEMETIC=1 alone is a no-op without FLEXAIDDS_WALL_PILOT_PASS=1
-    // (set only after W2 wall oracle PASS). Prevents burial walk-away before wall fix.
-    if (const char* e = std::getenv("FLEXAIDDS_MEMETIC")) {
-        if (e[0] != '\0' && std::atoi(e) != 0) {
-            const char* wall_ok = std::getenv("FLEXAIDDS_WALL_PILOT_PASS");
-            if (!(wall_ok && wall_ok[0] != '\0' && std::atoi(wall_ok) != 0)) {
-                fprintf(stderr,
-                    "WARN [MEMETIC]: FLEXAIDDS_MEMETIC=1 ignored — set "
-                    "FLEXAIDDS_WALL_PILOT_PASS=1 only after W2 wall oracle PASS "
-                    "(see FORWARD_SUCCESS_RATE_PLAN Wave 3.4)\n");
-            }
+    // Wave 3.4 memetic: real enable flag FA->use_memetic (default 0).
+    // Requires BOTH FLEXAIDDS_MEMETIC=1 AND FLEXAIDDS_WALL_PILOT_PASS=1.
+    // MEMETIC alone cannot arm the feature (burial walk-away risk before wall fix).
+    FA->use_memetic = 0;
+    {
+        const char* e = std::getenv("FLEXAIDDS_MEMETIC");
+        const bool want = e != nullptr && e[0] != '\0' && std::atoi(e) != 0;
+        const char* wall_ok = std::getenv("FLEXAIDDS_WALL_PILOT_PASS");
+        const bool wall_pass =
+            wall_ok != nullptr && wall_ok[0] != '\0' && std::atoi(wall_ok) != 0;
+        if (want && wall_pass) {
+            FA->use_memetic = 1;
+            fprintf(stderr,
+                "[MEMETIC] enabled (FLEXAIDDS_MEMETIC=1 and WALL_PILOT_PASS=1)\n");
+        } else if (want && !wall_pass) {
+            FA->use_memetic = 0;
+            fprintf(stderr,
+                "WARN [MEMETIC]: FLEXAIDDS_MEMETIC=1 ignored — set "
+                "FLEXAIDDS_WALL_PILOT_PASS=1 only after W2 wall oracle PASS "
+                "(see FORWARD_SUCCESS_RATE_PLAN Wave 3.4); use_memetic=0\n");
         }
     }
 

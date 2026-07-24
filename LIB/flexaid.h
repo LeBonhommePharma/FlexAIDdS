@@ -426,6 +426,11 @@ struct FA_Global_struct{
 	int   use_elec;                      // enable Coulomb electrostatic scoring
 	float dielectric;                    // distance-dependent dielectric constant (default 4.0)
 
+	// Wave 3.4 memetic local refine (default 0). Only set when BOTH
+	// FLEXAIDDS_MEMETIC=1 and FLEXAIDDS_WALL_PILOT_PASS=1 (after W2 wall oracle PASS).
+	// Consumers must check use_memetic before any post-GA local CF minimization.
+	int   use_memetic;
+
 	// P9: VCT distance-weighted contacts. Each contact's matrix complementarity
 	// score is multiplied by exp(-r/r0) before accumulation, so distal contacts
 	// (e.g. a halogen arm at ~12 Å) contribute far less than proximal ones (~3.5

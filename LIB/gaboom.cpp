@@ -1225,6 +1225,15 @@ int GA(FA_Global* FA, GB_Global* GB,VC_Global* VC,chromosome** chrom,chromosome*
 	if (ga_stagnant)
 		printf("GA terminated early by fitness stagnation\n");
 
+	// Wave 3.4: consume FA->use_memetic (set only when MEMETIC+WALL_PILOT_PASS).
+	// Full local-refine kernel not shipped yet — log arm status so the flag is
+	// not a dead warn-only gate. When use_memetic==1, future post-GA refine hooks here.
+	if (FA->use_memetic) {
+		fprintf(stderr,
+		        "[MEMETIC] use_memetic=1: post-GA local refine ARMED "
+		        "(implementation deferred until wall PASS + E5 design)\n");
+	}
+
 	// Print H_final for two-pass benchmark script parsing
 	{
 		std::vector<double> hfinal_energies(GB->num_chrom);
