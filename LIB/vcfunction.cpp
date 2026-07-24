@@ -191,6 +191,40 @@ static const double wal_stiff = [](){
 static const bool contacts_epoch_mode =
     (std::getenv("FLEXAIDDS_CONTACTS_EPOCH") != nullptr);
 
+// FLEXAIDDS_SIGMA_HOLE: directional σ-hole angular correction for halogen
+// atoms (Cl type 24, Br type 25, I type 26).
+//
+// Halogens carry an anisotropic electron-density distribution: along the
+// C-X bond extension (σ-hole axis, C-X···Y = 180°) the halogen is
+// electron-depleted and behaves as a weak Lewis acid; in the equatorial
+// belt (C-X···Y ≈ 90°) the lone-pair density is high, making contacts with
+// Lewis bases and even hydrophobic partners less favourable than the current
+// isotropic VCT matrix assumes.
+//
+// When enabled the complementarity contribution is scaled by:
+//   f(θ) = max(SIGMA_FLOOR, ½(1 – cos θ))
+// where θ is the C-X···Contact angle at the halogen, computed from the
+// Cl→C and Cl→Contact unit vectors:
+//   cos θ = (Cl→C)·(Cl→Contact)
+//   θ = 180° / cos = –1  → f = 1.0  (σ-hole axis, no penalty)
+//   θ =  90° / cos =  0  → f = 0.5  (equatorial, ½ attraction)
+//   θ =   0° / cos = +1  → f = 0.0→FLOOR  (back face)
+// SIGMA_FLOOR = 0.20 retains a base hydrophobic residual at all angles.
+// The correction only fires for attractive contacts (contribution < 0)
+// and for halogen-bearing ligand atoms that have at least one bond
+// neighbour recorded in bond[].
+//
+// Root cause for 1LPZ: the dichlorophenyl arm has two Cl atoms (SDF atoms
+// 29, 30) that in the false minimum pose make equatorial C.sp2 contacts
+// (matrix 2-24 = –193.7 CF_AU) absent or unfavoured in the crystal pose.
+// The isotropic matrix over-rewards them, producing a false-min CF of –228
+// vs. crystal –220 (8 CF_AU gap).  The σ-hole correction reduces equatorial
+// Cl-C.sp2 attraction and narrows the gap.
+//
+// Default OFF → bit-identical to prior CF.
+static const bool sigma_hole_scale =
+    (std::getenv("FLEXAIDDS_SIGMA_HOLE") != nullptr);
+
 double vcfunction(FA_Global* FA,VC_Global* VC,atom* atoms,resid* residue, std::vector<std::pair<int,int> > & intraclashes, bool* error)
 {
 	int    rnum=0;
@@ -684,6 +718,55 @@ double vcfunction(FA_Global* FA,VC_Global* VC,atom* atoms,resid* residue, std::v
 					// native CF entirely (cf_native(1JD0) collapsed from ~-50 to +0.5).
 					// The Gaussian H-bond bonus in compute_hbond_energy() (below) handles
 					// directionality correctly and is left intact. This block is a no-op.
+
+					// ── Halogen σ-hole angular correction (FLEXAIDDS_SIGMA_HOLE) ─────
+					// Applies only to attractive contributions (< 0) from Cl/Br/I
+					// ligand atoms (types 24/25/26). For each such contact, the C-X
+					// bond direction is recovered from bond[1] (a direct atom-array
+					// index) and used to compute the C-X···Contact angle θ at the
+					// halogen. Contacts on the σ-hole axis (θ = 180°) receive full
+					// weight; equatorial contacts (θ ≈ 90°) are attenuated by ½;
+					// contacts from the back face are floored at 0.20 (retains a base
+					// hydrophobic residual). See header comment for root-cause details.
+					if (sigma_hole_scale && contribution < 0.0) {
+						const int hal_type = atoms[atomzero].type;
+						if ((hal_type == 24 || hal_type == 25 || hal_type == 26) &&
+						     atoms[atomzero].bond[0] >= 1) {
+							// bond[1] is a direct atom-array index (top.cpp usage confirms).
+							const int c_idx = atoms[atomzero].bond[1];
+							if (c_idx >= 0 && c_idx < FA->atm_cnt_real) {
+								// Cl→C unit vector
+								float cx = atoms[c_idx].coor[0] - atoms[atomzero].coor[0];
+								float cy = atoms[c_idx].coor[1] - atoms[atomzero].coor[1];
+								float cz = atoms[c_idx].coor[2] - atoms[atomzero].coor[2];
+								const float cn2 = cx*cx + cy*cy + cz*cz;
+								if (cn2 > 1e-4f) {
+									const float inv_cn = 1.0f / sqrtf(cn2);
+									cx *= inv_cn; cy *= inv_cn; cz *= inv_cn;
+									// Cl→Contact unit vector (live coords track GA moves)
+									const float* cont_coor =
+									    VC->Calc[VC->ca_rec[currindex].atom].atom->coor;
+									float dx = cont_coor[0] - atoms[atomzero].coor[0];
+									float dy = cont_coor[1] - atoms[atomzero].coor[1];
+									float dz = cont_coor[2] - atoms[atomzero].coor[2];
+									const float dn2 = dx*dx + dy*dy + dz*dz;
+									if (dn2 > 1e-4f) {
+										const float inv_dn = 1.0f / sqrtf(dn2);
+										dx *= inv_dn; dy *= inv_dn; dz *= inv_dn;
+										// cos θ = (Cl→C)·(Cl→Contact)
+										//   -1 → σ-hole axis  → scale = 1.0
+										//    0 → equatorial   → scale = 0.5
+										//   +1 → back face    → scale = FLOOR
+										const float cos_theta = cx*dx + cy*dy + cz*dz;
+										constexpr float SIGMA_FLOOR = 0.20f;
+										float scale = 0.5f * (1.0f - cos_theta);
+										if (scale < SIGMA_FLOOR) scale = SIGMA_FLOOR;
+										contribution *= scale;
+									}
+								}
+							}
+						}
+					}
 
 					cfs->com += contribution;
 
