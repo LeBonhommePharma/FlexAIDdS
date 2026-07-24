@@ -94,7 +94,30 @@ void run_coarse_pocket_scan(
         return;
 
     const int n_genes   = GB->num_genes;
-    const int n_orient  = std::max(1, FA->coarse_init_n_orient);
+
+    // Orientation/torsion samples per grid point. The default preserves the
+    // configured value (config "coarse_init.n_orientations", default 64) so the
+    // scan is bit-identical when the override is unset. FLEXAIDDS_COARSE_ORIENTATIONS
+    // raises the systematic low-discrepancy coverage (up to a defensive ceiling)
+    // for tight pockets where the default count finds too few non-clashing
+    // placements (e.g. 1OF1 → 0 seeds → 0 poses). This stays BLIND: every sample
+    // is drawn from the scrambled Halton sequence over the cleft-defined gene
+    // limits (isotropic via uniform-cos(theta) on the polar IC), never from the
+    // crystal ligand pose.
+    int n_orient = std::max(1, FA->coarse_init_n_orient);
+    if (const char* e = std::getenv("FLEXAIDDS_COARSE_ORIENTATIONS")) {
+        const int requested = std::atoi(e);
+        if (requested > 0) {
+            constexpr int kMaxCoarseOrient = 4096; // guard against runaway scans
+            const int clamped = std::min(requested, kMaxCoarseOrient);
+            if (clamped != n_orient) {
+                printf("[COARSE-INIT] FLEXAIDDS_COARSE_ORIENTATIONS override: "
+                       "%d -> %d systematic orientations per grid point (blind)\n",
+                       n_orient, clamped);
+            }
+            n_orient = clamped;
+        }
+    }
     const int n_seeds   = std::max(1, FA->coarse_init_n_seeds);
     const float step    = (FA->coarse_init_grid_step > 0.0f)
                           ? FA->coarse_init_grid_step : 3.0f;
