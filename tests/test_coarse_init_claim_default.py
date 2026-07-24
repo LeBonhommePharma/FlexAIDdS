@@ -66,9 +66,25 @@ def test_hard_clash_is_not_flat_assignment():
     assert "8000.0 * o * o" in vct
 
 
+def test_coarse_init_seed_filter_not_absolute_cf_negative():
+    """Coarse seeds must inject on relative CF rank, not CF < 0.
+
+    polar105 canary (2026-07-23): with FLEXAIDDS_POLAR_DESOLV_WEIGHT=105 all
+    three targets printed "No contact-forming placements found (best CF=+N)"
+    and skipped seed injection, collapsing search (1J3J best_cluster 22A).
+    Absolute CF < 0 is invalid once SAS/polar shift the zero-point positive.
+    """
+    src = (ROOT / "LIB" / "coarse_init.cpp").read_text()
+    # Must not gate keep_n on cf_val < 0.0 (the old absolute-sign filter).
+    assert "cf_val < 0.0" not in src
+    assert "cf_val < CLASH_THRESHOLD" in src
+    assert "absolute CF sign not required" in src or "relative CF rank" in src
+
+
 if __name__ == "__main__":
     test_coarse_init_enabled_unconditionally()
     test_boom_frac_hard_zero_on_claim_path()
     test_unset_mode_forces_seed_elitism_off()
     test_hard_clash_is_not_flat_assignment()
+    test_coarse_init_seed_filter_not_absolute_cf_negative()
     print("ALL PASS")
