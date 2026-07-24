@@ -6,7 +6,7 @@
 #
 # Deck knobs (same as pilot8 3dsig_r10):
 #   pop=1000 gen=2000 (2e6 evals) restarts=10
-#   matrix MD5 9dc93717dfed0698006d88dd6a9627bc (repo/baseline-validated)
+#   matrix MD5 72d7c7396702331d96ff12d18f831796 (lab production pin; re-pinned post-df2f36c58)
 #   CLI: FlexAID --legacy + SOFTWA 0.40 + sphere prune + metal-near-ligand
 #   Arm order (default): A → B  (B0 skip unless FLEXAID_INCLUDE_B0=1)
 #   Arm C FO@298K only after native CF oracle PASS
@@ -71,7 +71,7 @@ export FLEXAIDDS_SPHERE_MAX_DIST="${FLEXAIDDS_SPHERE_MAX_DIST:-8.0}"
 export FLEXAIDDS_KEEP_METALS_NEAR_LIGAND="${FLEXAIDDS_KEEP_METALS_NEAR_LIGAND:-4.0}"
 
 CAMPAIGN="${FLEXAID_CAMPAIGN:-3dsig_full85_r10_cf_fix}"
-MATRIX_PIN="9dc93717dfed0698006d88dd6a9627bc"
+MATRIX_PIN="72d7c7396702331d96ff12d18f831796"
 MAT="$FLEXAIDDS_QUEUE_ROOT/data/MC_st0r5.2_6.dat"
 [[ -f "$MAT" ]] || MAT="$FLEXAIDDS_LOCAL_ROOT/three_engine_entropy_q1/data/MC_st0r5.2_6.dat"
 GOT=$(md5 -q "$MAT" 2>/dev/null || true)

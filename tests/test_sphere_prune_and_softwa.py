@@ -31,7 +31,7 @@ def gen():
 
 
 def test_matrix_pin_is_repo_validated(gen):
-    assert gen.MATRIX_MD5_PIN == "9dc93717dfed0698006d88dd6a9627bc"
+    assert gen.MATRIX_MD5_PIN == "72d7c7396702331d96ff12d18f831796"
 
 
 def test_soft_wall_default_and_config_keyword(gen, tmp_path, monkeypatch):

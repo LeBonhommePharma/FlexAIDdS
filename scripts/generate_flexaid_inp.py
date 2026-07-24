@@ -75,8 +75,9 @@ DEFAULT_GEN = 2000  # claim freeze 2026-07-15 (was 6000)
 DEFAULT_RESTARTS = 5
 DEFAULT_MAXRES = 50  # match FlexAIDdS cluster emit ceiling for fair S3/BCR
 MATRIX_NAME = "MC_st0r5.2_6.dat"
-# Repo / baseline-validated JCIM matrix (NOT the 72d7 campaign fork that sweetens 2–4 packing).
-MATRIX_MD5_PIN = "9dc93717dfed0698006d88dd6a9627bc"
+# Lab production pin (v119-era claim / three-engine). Re-pinned after df2f36c58
+# matrix-value regression (9dc9) inverted CF.com ranking; see ROOTCAUSE 2026-07-23.
+MATRIX_MD5_PIN = "72d7c7396702331d96ff12d18f831796"
 LIGAND_RESNUM = 9999
 ATOM_INDEX = 90000
 

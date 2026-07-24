@@ -16,7 +16,7 @@
 | Budget / sim | **2 000 000** energy evaluations (`pop × gen = 1000 × 2000`) |
 | Headline | **Median** success rate over **10 000** bootstrap resamples of N cases |
 | Seed | **Off** for claim-style fair redock (no native pose seed) |
-| Matrix | `MC_st0r5.2_6.dat` MD5 **`9dc93717dfed0698006d88dd6a9627bc`** (repo/baseline-validated; not the 72d7 packing fork) |
+| Matrix | `MC_st0r5.2_6.dat` MD5 **`72d7c7396702331d96ff12d18f831796`** (lab production pin; re-pinned after `df2f36c58` 9dc9 regression) |
 | Primary N | Astex Diverse **85** (pilot gate: pilot8 first) |
 
 **Do not report as 3Dsig success:** S1 alone, BCR, S2/PoseBusters, CF=10000 packaging, RMSD −1 sentinels.
