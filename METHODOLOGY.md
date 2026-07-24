@@ -78,10 +78,10 @@ Purpose: prove a determinism/perf change does not regress docking accuracy.
 - **Acceptance:** candidate within noise of baseline; **no target flips success→fail** attributable
   to the change. A full landing decision uses the full 85 × 10-restart protocol; a fast pre-check
   may use a documented subset.
-- **Published anchors (for context, not gates):** FlexAID-2015 Astex native FLRP top-1 = 45.2%
-  (Gaudreault & Najmanovich 2015 JCIM, top-10 over 10 runs); Morency 2017 poster FlexAID 66% /
-  entropy 69%. Report the protocol next to any number — top-1-single-run and top-10-over-10-runs are
-  not comparable.
+- **Published anchors (for context, not gates):** Gaudreault & Najmanovich 2015 JCIM **Table 2**
+  Astex native FLRP: **top-1 = 45.2%**, **top-10 = 66.7%** (do not swap labels). Morency 2017
+  3Dsig/poster FlexAID ~66% / entropy ~69% are **S_top10-family** medians — not the JCIM top-1
+  figure. Report the protocol next to any number; never mix top-1, top-10, and S_top10 without labels.
 
 ---
 

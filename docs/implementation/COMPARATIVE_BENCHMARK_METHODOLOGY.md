@@ -105,13 +105,19 @@ These axes are **identical** for A, B, and C. Only the science variables in §3 
 
 ### 4.1 Published anchors — protocol labels only
 
+JCIM 2015 (Gaudreault & Najmanovich, Table 2 — Astex native **FLRP**): report **each row with its own metric**. Do not swap labels.
+
 | Anchor | Value | Protocol label (required when citing) |
 |--------|-------|----------------------------------------|
-| JCIM 2015 Astex native FLRP | **45.2%** | **Top-10 over 10 runs** (Gaudreault & Najmanovich 2015); **not** single-run top-1 |
-| 3Dsig 2017 Astex Diverse red bars | FlexAID **~0.66** / FlexAIDdS **~0.69** | **S_top10-style** median success over bootstrapped cases (deck) |
-| Morency poster (context) | FlexAID 66% / entropy 69% | Same family as 3Dsig red; cite as deck/poster, not raw S1 |
+| JCIM 2015 Astex native FLRP **top-1** (rank-1) | **45.2%** | **Top-1** success among published multi-run / ranking protocol in Table 2 — **not** top-10 |
+| JCIM 2015 Astex native FLRP **top-10** | **66.7%** | **Top-10** success (Table 2) — **not** top-1 |
+| 3Dsig 2017 Astex Diverse red bars | FlexAID **~0.66** / FlexAIDdS **~0.69** | **S_top10-style** median success over **10 000** bootstrap resamples of cases (deck); same family as top-10-ish rates, **not** JCIM top-1 45.2% |
+| Morency poster (context) | FlexAID 66% / entropy 69% | Deck/poster S_top10-family; cite as such, not as JCIM top-1 |
 
-**Forbidden:** comparing **top-1 single-run** (or S1-only modern claims) to **top-10-over-10-runs** or 3Dsig S_top10 medians as if they were the same number.
+**Forbidden:**
+- Labeling **45.2%** as top-10 (it is **top-1** in Table 2).
+- Labeling **66.7%** as top-1 (it is **top-10** in Table 2).
+- Comparing modern **S1 single-run** claims to **JCIM top-10 (66.7%)** or **3Dsig S_top10 medians (~0.66)** without stating they are different contracts from **JCIM top-1 (45.2%)**.
 
 ---
 
@@ -161,7 +167,7 @@ Arm **C** (current FlexAIDdS) uses the same bootstrap entry point on a result tr
 |-----------|-------------------------------------|
 | 72d7 matrix vs 9dc9 | Different VCT landscape (packing fork) |
 | Softβ + COM_BURIAL_CAP + autonomous as “entropy” | Multiple science variables |
-| S1 single-run vs JCIM top-10/10-runs | Different success contracts |
+| S1 / JCIM top-1 (45.2%) vs JCIM top-10 (66.7%) or 3Dsig S_top10 (~0.66) | Different success contracts (Table 2 + deck) |
 | Softβ S1 DatasetRunner alone as arm B | Reorders heads only; **≠** engine TEMPER+FO sampling/election path unless documented |
 | Physical StatMech / tENCoM ΔG vs soft-β \(\tilde G\) | Different physics claims |
 | Seed-echo / INI RMSD as success | Violates claim seed-off |
