@@ -4,10 +4,15 @@
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 OUT_ROOT="${1:-$HOME/flexaidds_results/workorders/wave_pilots_$(date +%Y%m%d_%H%M%S)}"
+export OUT_ROOT
 BASELINE="${FLEXAIDDS_BASELINE_OUT:-$HOME/flexaidds_results/v_autonomous_20260724_160919}"
 POLL_SEC="${POLL_SEC:-180}"
 LOG="$OUT_ROOT/waiter.log"
 mkdir -p "$OUT_ROOT"
+# Optional GOAL_SCRATCH for post-pilot copy; export so nested Python sees it.
+if [[ -n "${GOAL_SCRATCH:-}" ]]; then
+  export GOAL_SCRATCH
+fi
 
 baseline_live() {
   # True if any process command line references the baseline OUT path.
