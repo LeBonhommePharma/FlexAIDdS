@@ -138,3 +138,4 @@ benchmarks/astex_repro/*.pid
 benchmarks/astex_repro/*.log
 benchmarks/astex_repro/**/*.bak
 benchmarks/astex_repro/spheres/
+flexaid_out.rrg
