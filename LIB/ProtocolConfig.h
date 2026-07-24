@@ -130,6 +130,18 @@ struct ProtocolConfig {
     int eval_scale_dihedral{1};       ///< FLEXAIDDS_EVAL_SCALE_DIHEDRAL
     bool budget_scale{true};          ///< FLEXAIDDS_BUDGET_SCALE (default ON)
     bool fine_grid{false};            ///< FLEXAIDDS_FINE_GRID (presence)
+    /// P3 finer-grid lever (Å): override of the cleft grid spacer length.
+    /// 0 = unset → keep JSON/default (optimization.grid_spacing, 0.375 Å).
+    /// Consumed engine-side in generate_grid.cpp via getenv; mirrored here for
+    /// audit / provenance serialization only (dual-path adapter pattern).
+    float grid_spacing_override{0.0f}; ///< FLEXAIDDS_GRID_SPACING (0 = unset)
+    /// P3 DoF-scaled generation-depth multiplier strength k. 0 = OFF (default-
+    /// preserving; num_generations stays at base). k>0 scales the GENERATION
+    /// budget by 1 + k*(n_genes/4 − 1) so high-rotatable-bond ligands get
+    /// deeper trajectories. Prototype search-coverage lever for A/B — pair with
+    /// anti-collapse (P1); it is the DEPTH axis, orthogonal to the default
+    /// population-scaling claim contract (eval_scale_dihedral=1).
+    double dof_budget_scale{0.0};     ///< FLEXAIDDS_DOF_BUDGET_SCALE (0 = OFF)
     int multi_cleft{0};               ///< FLEXAIDDS_MULTI_CLEFT (0 = off)
     bool cognate_site{false};         ///< FLEXAIDDS_COGNATE_SITE (presence)
     bool score_native{false};         ///< FLEXAIDDS_SCORE_NATIVE (truthy)

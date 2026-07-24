@@ -5776,8 +5776,41 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                 pop_scaled = static_cast<int>(
                     std::lround(static_cast<double>(pop_scaled) * budget_scale_factor));
             }
-            fprintf(stderr, "[EVAL-BUDGET] %s: fdih=%d ring_dof=%d n_genes=%d budget_scale=%.3f n_gen=%d pop=%d\n",
-                    entry.pdb_id.c_str(), fdih_est, ring_dof_est, n_genes, budget_scale_factor, n_gen_scaled, pop_scaled);
+
+            // ── P3 DoF-scaled generation-depth lever (FLEXAIDDS_DOF_BUDGET_SCALE) ──
+            // Prototype search-coverage knob. Default OFF (dof_budget_scale==0 →
+            // multiplier 1.0 → n_gen_scaled untouched → byte-stable with history).
+            // When k>0, scale the GENERATION budget (trajectory depth) by degrees
+            // of freedom so high-rotatable-bond ligands (rot>=8 → n_genes>=12) are
+            // not starved at a fixed n_gen. This is the DEPTH axis and is
+            // intentionally orthogonal to the default POPULATION-scaling contract
+            // above (eval_scale_dihedral=1): it is a research lever for A/B and MUST
+            // be paired with anti-collapse (P1) — extra generations alone regress to
+            // "more restarts" if the GA collapses at gen ~10.
+            //   dof_factor = max(1, n_genes/4)        (rigid=1; 8 rot bonds → 3)
+            //   mult       = 1 + k*(dof_factor − 1)   (k=0 → 1; k=1 → full factor)
+            //   clamped to [1, 8] to bound wall-clock.
+            // Composes on the current n_gen_scaled so the legacy gen-scale path
+            // (eval_scale_dihedral=0) is not clobbered if a user stacks both.
+            double dof_budget_mult = 1.0;
+            if (protocol_cfg_.dof_budget_scale > 0.0) {
+                const double dof_factor =
+                    std::max(1.0, static_cast<double>(n_genes) / 4.0);
+                dof_budget_mult =
+                    1.0 + protocol_cfg_.dof_budget_scale * (dof_factor - 1.0);
+                dof_budget_mult = std::min(std::max(dof_budget_mult, 1.0), 8.0);
+                const int n_gen_pre = n_gen_scaled;
+                n_gen_scaled = static_cast<int>(
+                    std::lround(static_cast<double>(n_gen_pre) * dof_budget_mult));
+                fprintf(stderr,
+                        "[DOF-BUDGET] %s: k=%.3f n_genes=%d dof_factor=%.3f mult=%.3f "
+                        "n_gen %d -> %d\n",
+                        entry.pdb_id.c_str(), protocol_cfg_.dof_budget_scale,
+                        n_genes, dof_factor, dof_budget_mult, n_gen_pre, n_gen_scaled);
+            }
+
+            fprintf(stderr, "[EVAL-BUDGET] %s: fdih=%d ring_dof=%d n_genes=%d budget_scale=%.3f dof_budget=%.3f n_gen=%d pop=%d\n",
+                    entry.pdb_id.c_str(), fdih_est, ring_dof_est, n_genes, budget_scale_factor, dof_budget_mult, n_gen_scaled, pop_scaled);
 
             // ── Multi-restart loop ──────────────────────────────────────────
             // Restart 0 uses the canonical out_dir/out_prefix.  Restarts 1+

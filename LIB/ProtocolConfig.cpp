@@ -264,6 +264,13 @@ ProtocolConfig ProtocolConfig::from_env() {
     }
     cfg.budget_scale = env_truthy_int("FLEXAIDDS_BUDGET_SCALE", /*default_value=*/true);
     cfg.fine_grid = env_present_any("FLEXAIDDS_FINE_GRID");
+    // P3 levers (default-preserving: unset → 0 → no effect).
+    if (auto v = env_opt_double("FLEXAIDDS_GRID_SPACING")) {
+        cfg.grid_spacing_override = static_cast<float>(*v);
+    }
+    if (auto v = env_opt_double("FLEXAIDDS_DOF_BUDGET_SCALE")) {
+        cfg.dof_budget_scale = *v;
+    }
     if (auto n = env_opt_int("FLEXAIDDS_MULTI_CLEFT")) {
         cfg.multi_cleft = *n;
     }
@@ -399,6 +406,8 @@ std::string ProtocolConfig::to_json() const {
     o << "\"eval_scale_dihedral\":" << eval_scale_dihedral << ',';
     json_bool(o, "budget_scale", budget_scale);
     json_bool(o, "fine_grid", fine_grid);
+    o << "\"grid_spacing_override\":" << grid_spacing_override << ',';
+    o << "\"dof_budget_scale\":" << dof_budget_scale << ',';
     o << "\"multi_cleft\":" << multi_cleft << ',';
     json_bool(o, "cognate_site", cognate_site);
     json_bool(o, "score_native", score_native);
@@ -522,6 +531,10 @@ ProtocolConfig ProtocolConfig::from_json(const std::string& json_text) {
         cfg.budget_scale = root["budget_scale"].as_bool(true);
     if (!root["fine_grid"].is_null())
         cfg.fine_grid = root["fine_grid"].as_bool(false);
+    if (!root["grid_spacing_override"].is_null())
+        cfg.grid_spacing_override = root["grid_spacing_override"].as_float(0.0f);
+    if (!root["dof_budget_scale"].is_null())
+        cfg.dof_budget_scale = root["dof_budget_scale"].as_double(0.0);
     if (!root["multi_cleft"].is_null())
         cfg.multi_cleft = root["multi_cleft"].as_int(0);
     if (!root["cognate_site"].is_null())
