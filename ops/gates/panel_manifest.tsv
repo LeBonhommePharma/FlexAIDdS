@@ -1,0 +1,19 @@
+# CF scoring-regression gate — 8-target panel manifest
+# Format (tab-separated): pdb <TAB> receptor.pdb <TAB> native_pose.sdf <TAB> decoy_pose.pdb
+# Receptor: prepared apo PDB (from astex_diverse/astex_diverse/)
+# Native:   crystal ligand SDF (same source)
+# Decoy:    best-CF non-native pose from diagnostic/refs/ (falsemin_armA = arm-A false-minimum pose)
+# Commented rows (#) have no archived decoy; populate from next full benchmark run output.
+#
+# NOTE: paths are absolute to the local repo at /Users/lp.more/Projects/FlexAIDdS.
+#       Update REPO prefix if repo is cloned elsewhere, or switch to relative paths via $REPO.
+#
+# pdb	receptor.pdb	native_pose.sdf	decoy_pose.pdb
+1G9V	/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1G9V/1G9V_apo.pdb	/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1G9V/1G9V_ligand.sdf	/Users/lp.more/Projects/FlexAIDdS/diagnostic/refs/1G9V/falsemin_armA.pdb
+1J3J	/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1J3J/1J3J_apo.pdb	/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1J3J/1J3J_ligand.sdf	/Users/lp.more/Projects/FlexAIDdS/diagnostic/refs/1J3J/falsemin_armA.pdb
+1K3U	/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1K3U/1K3U_apo.pdb	/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1K3U/1K3U_ligand.sdf	/Users/lp.more/Projects/FlexAIDdS/diagnostic/refs/1K3U/falsemin_armA.pdb
+1L7F	/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1L7F/1L7F_apo.pdb	/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1L7F/1L7F_ligand.sdf	/Users/lp.more/Projects/FlexAIDdS/diagnostic/refs/1L7F/falsemin_armA.pdb
+1N1M	/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1N1M/1N1M_apo.pdb	/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1N1M/1N1M_ligand.sdf	/Users/lp.more/Projects/FlexAIDdS/diagnostic/refs/1N1M/falsemin_armA.pdb
+1M2Z	/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1M2Z/1M2Z_apo.pdb	/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1M2Z/1M2Z_ligand.sdf	/Users/lp.more/Projects/FlexAIDdS/diagnostic/refs/1M2Z/falsemin_armA.pdb
+# 1LPZ	/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1LPZ/1LPZ_apo.pdb	/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1LPZ/1LPZ_ligand.sdf	PLACEHOLDER_no_archived_decoy__populate_from_benchmark_run
+# 2GBP	/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/2GBP/2GBP_apo.pdb	/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/2GBP/2GBP_ligand.sdf	PLACEHOLDER_no_archived_decoy__populate_from_benchmark_run
