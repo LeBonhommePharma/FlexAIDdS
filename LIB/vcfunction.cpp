@@ -39,6 +39,43 @@ static const float con_r0 = []() {
 }();
 static const bool no_sas = (std::getenv("FLEXAIDDS_NO_SAS") != nullptr);
 
+// FLEXAIDDS_POLAR_DESOLV_WEIGHT (float >= 0, default 0.0 = OFF): per-ligand-atom
+// polar-burial desolvation penalty, folded into the cfs->sas channel (which
+// ic2cf already sums into the CF total, so no new struct field / no ic2cf edit
+// is needed). Scoped fix for the com-over-burial CF-inversion (1G9V): a polar
+// ligand atom that gets buried on binding WITHOUT forming a compensating
+// H-bond / salt-bridge / metal coordination pays a desolvation cost. Well
+// satisfied polar atoms (s_i -> 1) pay ~0, so deep, H-bonded natives are
+// protected. Default 0.0 -> the block is skipped entirely (zero overhead,
+// bit-identical). Read once (magic static, thread-safe) — never in the loop.
+//   penalty_i = w * P(type_i) * b_i * (1 - s_i)   (>= 0, added to cfs->sas)
+//     b_i = 1 - SAS/surfA          buried fraction, clamped to [0,1]
+//     s_i = min(1, (|E_hb_i|+|E_elec_i|+|E_mc_i|) / E_ref),  E_ref = 2.5
+static const double polar_desolv_weight = [](){
+    const char* s = std::getenv("FLEXAIDDS_POLAR_DESOLV_WEIGHT");
+    double v = 0.0;
+    if(s){ double p = strtod(s, nullptr); if(p > 0.0) v = p; }
+    return v;
+}();
+// Reference satisfaction energy (kcal-scale) that saturates s_i to 1.
+static const double polar_desolv_eref = 2.5;
+// P(type_i): polar propensity by VCT row (atoms[].type).
+//   0.0  C rows 1-5, S rows 17-21, halogens 23-26, DUMMY 39 (and any other)
+//   1.0  neutral polar N/O: rows 6-8, 10-14, 16
+//   1.75 charged: N.4 (row 9), O.co2 (row 15), P.3 (row 22)
+static inline double polar_desolv_ptype(int t){
+    switch(t){
+        case 9:  case 15: case 22:
+            return 1.75;
+        case 6:  case 7:  case 8:
+        case 10: case 11: case 12: case 13: case 14:
+        case 16:
+            return 1.0;
+        default:
+            return 0.0;
+    }
+}
+
 
 // ── pb_clash receptor grid cache (Route A hoist) ─────────────────────────────
 // The receptor is rigid across all CF evals in one dock session. The cell-list
@@ -345,6 +382,11 @@ double vcfunction(FA_Global* FA,VC_Global* VC,atom* atoms,resid* residue, std::v
 
 	[[maybe_unused]] int contnum = 0;  // number of contacts (excluding bloops away atoms)
 		int metal_cn_count = 0;  // coordination number counter for metal atoms
+		// Per-ligand-atom satisfaction accumulators for the polar-burial
+		// desolvation penalty (FLEXAIDDS_POLAR_DESOLV_WEIGHT). Signed sums over
+		// this atom's contacts; |.| taken when forming s_i near cfs->sas below.
+		// Only touched when the term is enabled (weight != 0) — zero overhead OFF.
+		double pd_hb = 0.0, pd_elec = 0.0, pd_mc = 0.0;
 		int currindex = VC->ca_index[i];
 		
 		while(currindex != -1) {
@@ -654,6 +696,7 @@ double vcfunction(FA_Global* FA,VC_Global* VC,atom* atoms,resid* residue, std::v
 								// distance-dependent dielectric: eps = dielectric * r
 								double E_elec = KCOULOMB * qA * qB / (FA->dielectric * dist * dist);
 								cfs->elec += E_elec;
+								if(polar_desolv_weight != 0.0){ pd_elec += E_elec; }
 							}
 						}
 					}
@@ -671,6 +714,7 @@ double vcfunction(FA_Global* FA,VC_Global* VC,atom* atoms,resid* residue, std::v
 							FA->hbond_sigma_dist, FA->hbond_sigma_angle,
 							FA->hbond_weight, FA->hbond_salt_bridge_weight);
 						cfs->hbond += E_hb;
+						if(polar_desolv_weight != 0.0){ pd_hb += E_hb; }
 					}
 
 					// Metal ion coordination potential (Gaussian well)
@@ -693,6 +737,7 @@ double vcfunction(FA_Global* FA,VC_Global* VC,atom* atoms,resid* residue, std::v
 							atoms, atomzero, atomcont, dist,
 							mc_weight, FA->metal_coord_sigma);
 						cfs->metal_coord += E_mc;
+						if(polar_desolv_weight != 0.0){ pd_mc += E_mc; }
 						// Track coordination number for CN penalty
 						if (E_mc != 0.0) {
 							int ta = atoms[atomzero].type;
@@ -817,6 +862,26 @@ double vcfunction(FA_Global* FA,VC_Global* VC,atom* atoms,resid* residue, std::v
 		if(no_sas){ contribution = 0.0; }
 
 		cfs->sas += FA->sas_weight * contribution;
+
+		// ── Polar-burial desolvation penalty (FLEXAIDDS_POLAR_DESOLV_WEIGHT) ──
+		// Scoped fix for the com-over-burial CF-inversion. A polar LIGAND atom
+		// (type==1 optres) that gets buried without a compensating H-bond /
+		// salt-bridge / metal contact pays a desolvation cost, added (>=0) to
+		// the SAS channel. H-bond-satisfied polar atoms have s_i -> 1 so the
+		// penalty vanishes, protecting deep well-satisfied natives. Skipped
+		// entirely when the weight is 0 (default) -> zero behaviour change.
+		if(polar_desolv_weight != 0.0 && type == 1){
+			double Ptype = polar_desolv_ptype(atoms[atomzero].type);
+			if(Ptype > 0.0){
+				double b_i = 1.0 - (SAS / surfA);          // buried fraction
+				if(b_i < 0.0) b_i = 0.0; else if(b_i > 1.0) b_i = 1.0;
+				double sat = (std::fabs(pd_hb) + std::fabs(pd_elec) +
+				              std::fabs(pd_mc)) / polar_desolv_eref;
+				double s_i = (sat < 1.0) ? sat : 1.0;      // satisfaction, [0,1]
+				double penalty = polar_desolv_weight * Ptype * b_i * (1.0 - s_i);
+				cfs->sas += penalty;                       // positive = cost
+			}
+		}
 
 		FA->contributions[(VC->Calc[i].atom->type-1)*FA->ntypes + (FA->ntypes-1)] += contribution;
 		FA->contributions[(FA->ntypes-1)*FA->ntypes + (VC->Calc[i].atom->type-1)] += contribution;

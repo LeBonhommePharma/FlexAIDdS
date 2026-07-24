@@ -268,18 +268,22 @@ void run_coarse_pocket_scan(
 
     const int actual_n = std::min(n_seeds, static_cast<int>(results.size()));
 
-    // Filter: only keep results with CF < 0 (at least some contacts).
-    // CF≥0 means the placement has no binding contacts — not useful as a seed.
+    // Keep top-N by relative CF rank (already sorted ascending). Absolute CF < 0
+    // is NOT a valid "has contacts" test: SAS weight / FLEXAIDDS_POLAR_DESOLV_WEIGHT
+    // can shift the zero-point positive while the placement still has real
+    // VCT contacts (canary polar105: best CF≈+500, all seeds skipped → search
+    // coverage collapse on 1J3J/1M2Z). Still drop hard-clash sentinels
+    // (CF ≥ CLASH_THRESHOLD) which are not useful gen-0 chromosomes.
     int keep_n = 0;
     for (int k = 0; k < actual_n; k++) {
-        if (results[static_cast<std::size_t>(k)].cf_val < 0.0)
+        if (results[static_cast<std::size_t>(k)].cf_val < CLASH_THRESHOLD)
             keep_n++;
         else
-            break; // sorted, so all subsequent are ≥0
+            break; // sorted ascending; rest are clash-scale or worse
     }
 
     if (keep_n == 0) {
-        printf("[COARSE-INIT] No contact-forming placements found (best CF=%.2f), "
+        printf("[COARSE-INIT] No non-clash placements found (best CF=%.2f ≥ CLASH_THRESHOLD), "
                "skipping seed injection\n",
                results[0].cf_val);
         return;
@@ -313,8 +317,8 @@ void run_coarse_pocket_scan(
     }
     FA->coarse_seeds_count = keep_n;
 
-    printf("[COARSE-INIT] %d contact-forming seeds ready "
-           "(best CF=%.2f, worst CF=%.2f)\n",
+    printf("[COARSE-INIT] %d ranked seeds ready "
+           "(best CF=%.2f, worst CF=%.2f; absolute CF sign not required)\n",
            keep_n,
            results[0].cf_val,
            results[static_cast<std::size_t>(keep_n - 1)].cf_val);

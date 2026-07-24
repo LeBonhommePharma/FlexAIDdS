@@ -105,11 +105,56 @@ void assign_types(FA_Global* FA,atom* atoms,resid* residue,char aminofile[]){
 	}
 	CloseFile_B(&infile_ptr,"r");
 
-	// Set a Hydrophilic type to water molecules
-	for(k=1;k<=FA->res_cnt;k++){
-		rot=residue[k].rot;
-		for(i=residue[k].fatm[rot];i<=residue[k].latm[rot];i++){
-			if(strcmp(residue[atoms[i].ofres].name,"HOH") == 0){atoms[i].type = 1;}
+	// ── Retained crystallographic water ────────────────────────────────────────
+	// Canonical VCT row numbering (identical in AMINO.def, MC_st0r5.2_6.dat,
+	// read_coor.cpp:canonical_vct_type_for_element, Mol2Reader.cpp:
+	// sybyl_to_flexaid_type and top.cpp:sybyl_name_to_canonical_vct):
+	//    1=C.1   2=C.2   3=C.3   4=C.ar  5=C.cat
+	//    6=N.1   7=N.2   8=N.3   9=N.4  10=N.ar 11=N.am 12=N.pl3
+	//   13=O.2  14=O.3  15=O.co2 16=O.ar
+	//   17=S.2  18=S.3  19=S.O  20=S.O2 21=S.ar
+	//   22=P.3  23=F    24=Cl   25=Br   26=I    27=Se
+	//   28=Mg 29=Sr 30=Cu 31=Mn 32=Hg 33=Cd 34=Ni 35=Zn 36=Ca 37=Fe 38=Co.oh
+	//   39=DUMMY  40=SOLVENT
+	//
+	// Water oxygen is an sp3 oxygen bearing two hydrogens, i.e. chemically an
+	// O.3 (row 14) — the same row SER-OG / THR-OG1 / TYR-OH occupy above, and
+	// the row read_coor.cpp already derives from the element for any retained
+	// HETATM.  This loop used to overwrite that correct value with type 1
+	// ("Set a Hydrophilic type"), which under the canonical numbering is C.1,
+	// *sp carbon*.  Row 1's two strongest partners are 1-13 (C.1 x O.2) =
+	// -198.3 and 1-14 (C.1 x O.3) = -180.8 — the most attractive cells in the
+	// entire matrix — so every retained water radiated a large spurious
+	// attraction to ligand and protein oxygen.  That is the source of the
+	// CF.com blow-up documented in DatasetRunner.cpp (~-4269 from sub-Angstrom
+	// ligand-O ... HOH-O contacts): the "C x O.3" dominant contact was water.
+	//
+	// Row 40 (SOLVENT) is NOT a valid alternative: it is a reserved pseudo-type
+	// for the bulk-solvent / SAS desolvation channel, indexed as (ntypes-1) in
+	// vcfunction.cpp, and it is neither empty nor neutral — it carries 20
+	// non-zero, overwhelmingly repulsive entries (10-40 = +198.3, 24-40 =
+	// +198.8).  Typing explicit waters as 40 would both double-count the
+	// desolvation channel and make every structural water strongly repulsive.
+	//
+	// All water residue aliases are normalised here so a "WAT"/"H2O" water is
+	// scored identically to an "HOH" water.  Water hydrogens (and deuterium in
+	// neutron structures) stay DUMMY, as canonical_vct_type_for_element gives.
+	{
+		static const char* water_res[] = {"HOH","WAT","H2O","DOD","OHX",nullptr};
+		for(k=1;k<=FA->res_cnt;k++){
+			const char* rname = residue[k].name;
+			bool is_water = false;
+			for(int n=0; water_res[n]; ++n)
+				if(!strncmp(rname, water_res[n], 3)){ is_water = true; break; }
+			if(!is_water) continue;
+
+			rot=residue[k].rot;
+			for(i=residue[k].fatm[rot];i<=residue[k].latm[rot];i++){
+				const char* el = atoms[i].element;
+				if(el[0]=='H' && el[1]=='\0') continue;         // H / D stays DUMMY
+				if(el[0]=='D' && el[1]=='\0') continue;
+				if(14 <= FA->ntypes) atoms[i].type = 14;        // O.3
+			}
 		}
 	}
 
