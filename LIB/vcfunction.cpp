@@ -76,6 +76,51 @@ static inline double polar_desolv_ptype(int t){
     }
 }
 
+// ── P4: com over-burial desolvation counter-term ─────────────────────────────
+// FLEXAIDDS_COM_DESOLV_WEIGHT (float >= 0, default 0.0 = OFF, bit-identical when
+// unset): a GEOMETRIC, polarity-INDEPENDENT differential-burial desolvation
+// penalty folded into the cfs->sas channel (already summed into CF by ic2cf, so
+// no new struct field / no ic2cf edit).  Targets the com-over-burial CF-inversion
+// pathology (1G9V: an over-buried decoy drives the UNBOUNDED cf.com more negative
+// than the native and wins) that the two prior scoped levers cannot address:
+//   • a naive com magnitude cap fails — a legit deep native (1K3U com ~ -242)
+//     overlaps the decoy's com (~ -196), so magnitude does not separate them;
+//   • the polar-only desolvation lever (FLEXAIDDS_POLAR_DESOLV_WEIGHT) is NULL
+//     here — the 1G9V decoy over-buries mostly NON-POLAR surface, Ptype=0.
+// The discriminator is therefore SPECIFICITY / DIFFERENTIAL BURIAL, not
+// magnitude and not polarity: each LIGAND atom is scored on how far its buried
+// fraction b_i exceeds a solvent-exposed REFERENCE fraction b_ref.  A physical
+// bound pose keeps every heavy atom partly solvent-facing (b_i <~ b_ref); an
+// over-buried decoy jams atoms to b_i -> 1 (fully surrounded).  Only the EXCESS
+// burial above the reference is penalized, super-linearly (exponent p, default
+// quadratic) and scaled by the atom surface so the cost tracks real over-buried
+// area (Å²) and is commensurate with the com channel:
+//   penalty_i = w * max(0, b_i - b_ref)^p * surfA      (>= 0, added to cfs->sas)
+//     b_i    = 1 - SAS/surfA        buried fraction, clamped to [0,1]
+//     b_ref  = FLEXAIDDS_COM_DESOLV_BREF   (default 0.75) reference exposure
+//     p      = FLEXAIDDS_COM_DESOLV_EXP    (default 2.0)  super-linearity
+// Normally-buried atoms (b_i <= b_ref) pay 0, so deep BUT specific natives are
+// protected while indiscriminate over-burial is charged.  Read once (magic
+// static, thread-safe) — never getenv() in the hot loop.
+static const double com_desolv_weight = [](){
+    const char* s = std::getenv("FLEXAIDDS_COM_DESOLV_WEIGHT");
+    double v = 0.0;
+    if(s){ double p = strtod(s, nullptr); if(p > 0.0) v = p; }
+    return v;
+}();
+static const double com_desolv_bref = [](){
+    const char* s = std::getenv("FLEXAIDDS_COM_DESOLV_BREF");
+    double v = 0.75;
+    if(s){ double p = strtod(s, nullptr); if(p > 0.0 && p < 1.0) v = p; }
+    return v;
+}();
+static const double com_desolv_exp = [](){
+    const char* s = std::getenv("FLEXAIDDS_COM_DESOLV_EXP");
+    double v = 2.0;
+    if(s){ double p = strtod(s, nullptr); if(p > 0.0) v = p; }
+    return v;
+}();
+
 
 // ── pb_clash receptor grid cache (Route A hoist) ─────────────────────────────
 // The receptor is rigid across all CF evals in one dock session. The cell-list
@@ -879,6 +924,24 @@ double vcfunction(FA_Global* FA,VC_Global* VC,atom* atoms,resid* residue, std::v
 				              std::fabs(pd_mc)) / polar_desolv_eref;
 				double s_i = (sat < 1.0) ? sat : 1.0;      // satisfaction, [0,1]
 				double penalty = polar_desolv_weight * Ptype * b_i * (1.0 - s_i);
+				cfs->sas += penalty;                       // positive = cost
+			}
+		}
+
+		// ── P4: com over-burial desolvation counter-term (FLEXAIDDS_COM_DESOLV_*)
+		// GEOMETRIC, polarity-INDEPENDENT differential-burial penalty. Every
+		// LIGAND atom (type==1) whose buried fraction b_i exceeds the reference
+		// exposure b_ref pays a super-linear cost on the EXCESS burial, scaled by
+		// the atom surface (~ over-buried area in Å²). Fights the unbounded cf.com
+		// burial reward without a magnitude cap and without a polar gate. Skipped
+		// entirely at weight 0 (default) -> bit-identical.  See the header block.
+		if(com_desolv_weight != 0.0 && type == 1){
+			double b_i = 1.0 - (SAS / surfA);              // buried fraction
+			if(b_i < 0.0) b_i = 0.0; else if(b_i > 1.0) b_i = 1.0;
+			double excess = b_i - com_desolv_bref;         // over-burial above ref
+			if(excess > 0.0){
+				double penalty = com_desolv_weight *
+				                 std::pow(excess, com_desolv_exp) * surfA;
 				cfs->sas += penalty;                       // positive = cost
 			}
 		}
