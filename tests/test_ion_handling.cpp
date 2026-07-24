@@ -234,17 +234,36 @@ TEST(IonTypeTest, FallbackWhenNtypesSmall) {
     free_residue_arrays(residue);
 }
 
-TEST(IonTypeTest, WaterGetsHydrophilic) {
+// Water O is O.3 (row 14), NOT C.1 (row 1).  The old "hydrophilic" overwrite
+// to type=1 made every retained water radiate C.1×O.x attraction (−180..−198)
+// and drove CF.com blow-ups.  See c01ebc12f / assign_types.cpp water block.
+TEST(IonTypeTest, WaterOxygenIsO3NotC1) {
     FA_Global fa = make_fa(40);
     atom  atoms[2]; resid residue[2];
     make_ion_residue(atoms, residue, "HOH", " O  ");
+    strncpy(atoms[1].element, "O", 1); atoms[1].element[1] = '\0';
     atoms[1].type = 39;
 
     std::string aminofile = write_empty_aminodef();
     assign_types(&fa, atoms, residue, const_cast<char*>(aminofile.c_str()));
     std::remove(aminofile.c_str());
 
-    EXPECT_EQ(atoms[1].type, 1);  // hydrophilic
+    EXPECT_EQ(atoms[1].type, 14);  // O.3 — not C.1 (1)
+    free_residue_arrays(residue);
+}
+
+TEST(IonTypeTest, WatAliasAlsoMapsToO3) {
+    FA_Global fa = make_fa(40);
+    atom  atoms[2]; resid residue[2];
+    make_ion_residue(atoms, residue, "WAT", " O  ");
+    strncpy(atoms[1].element, "O", 1); atoms[1].element[1] = '\0';
+    atoms[1].type = 39;
+
+    std::string aminofile = write_empty_aminodef();
+    assign_types(&fa, atoms, residue, const_cast<char*>(aminofile.c_str()));
+    std::remove(aminofile.c_str());
+
+    EXPECT_EQ(atoms[1].type, 14);
     free_residue_arrays(residue);
 }
 
