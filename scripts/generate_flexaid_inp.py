@@ -644,6 +644,7 @@ def prepare_target(
                 keep_hoh=use_hoh,
                 keep_metals=use_metals,
                 ligand_ref=ligand_ref if ligand_ref.is_file() else None,
+                pdb_id=pdb,
             )
             (work / "clean_apo_report.json").write_text(
                 json.dumps(clean_report.as_dict(), indent=2) + "\n",

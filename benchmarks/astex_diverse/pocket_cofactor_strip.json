@@ -1,0 +1,6 @@
+{
+  "_comment": "Pocket-resident cofactors to strip during apo prep, ONLY for targets where the cofactor sits IN the ligand pocket (verified <6 A from the cognate inhibitor heavy atoms) and would otherwise be scored as ligand-pocket occupancy. clean_target_apo.py reads this by uppercased PDB id and adds the resnames to extra_strip_res, so the strip is reproduced on every apo regeneration (idempotent) rather than hand-edited into output files (42061613 hand-stripped -> b562ff4c clobbered). The default keep-HEM in clean_target_apo.py (KEEP_COFACTOR_RES) correctly retains STRUCTURAL heme for hemoglobin/heme-as-structure targets.",
+  "_enrollment_evidence": "min HEM-to-ligand distance measured 2026-07-24: 1P2Y=2.2A (pocket), 1R9O=3.9A (pocket). EXCLUDED as distal/structural (strip has zero CF effect, verified byte-identical probe_cf A/B on 1G9V): 1G9V=11.2A (deoxyhemoglobin), 1Q4G=8.6A.",
+  "1P2Y": ["HEM"],
+  "1R9O": ["HEM"]
+}

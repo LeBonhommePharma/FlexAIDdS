@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import argparse
 import math
+import json
 import os
 import sys
 from dataclasses import asdict, dataclass, field
@@ -120,6 +121,38 @@ class CleanReport:
 def _env_truthy(name: str) -> bool:
     v = os.environ.get(name, "").strip().lower()
     return v in {"1", "true", "yes", "on"}
+
+
+# Pocket-resident cofactors to strip per target (P450/heme enzymes where HEM sits IN the
+# ligand pocket and drives CF.com over-burial). This is committed DATA, read at prep time,
+# so the strip is reproduced on every apo regeneration (idempotent) instead of being
+# hand-edited into output files — which commit 42061613 did and b562ff4c then clobbered.
+# Default keep-HEM (KEEP_COFACTOR_RES) still applies to hemoglobin / heme-as-structure targets.
+POCKET_COFACTOR_STRIP_MANIFEST = (
+    Path(__file__).resolve().parent.parent
+    / "benchmarks"
+    / "astex_diverse"
+    / "pocket_cofactor_strip.json"
+)
+
+
+def pocket_cofactor_strip_res(pdb_id: Optional[str]) -> Set[str]:
+    """Resnames to strip for this target per the committed manifest (empty if none/absent).
+
+    Lookup is case-insensitive by PDB id. Missing manifest or unlisted target -> empty set,
+    so behavior is unchanged for every target not explicitly enrolled.
+    """
+    if not pdb_id:
+        return set()
+    try:
+        data = json.loads(POCKET_COFACTOR_STRIP_MANIFEST.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return set()
+    key = str(pdb_id).strip().upper()
+    entry = data.get(key)
+    if not isinstance(entry, list):
+        return set()
+    return {str(r).strip().upper() for r in entry if str(r).strip()}
 
 
 def _resname(line: str) -> str:
@@ -393,7 +426,14 @@ def clean_apo_file(
     extra_strip_res: Optional[Iterable[str]] = None,
     ligand_ref: Optional[Path] = None,
     metal_near_ligand_a: Optional[float] = None,
+    pdb_id: Optional[str] = None,
 ) -> CleanReport:
+    # Enroll pocket-resident cofactors (e.g. HEM for P450/heme-enzyme targets) from the
+    # committed manifest, so the strip survives apo regeneration. Union with any caller-
+    # supplied extra_strip_res; targets not in the manifest are unaffected.
+    extra_set = {r.strip().upper() for r in (extra_strip_res or []) if str(r).strip()}
+    extra_set |= pocket_cofactor_strip_res(pdb_id)
+    extra_strip_res = sorted(extra_set) if extra_set else None
     text = src.read_text(encoding="utf-8", errors="replace")
     lig_xyz: List[Tuple[float, float, float]] = []
     near_a = 0.0
@@ -452,6 +492,12 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         default="",
         help="Comma-separated extra residue names to strip",
     )
+    ap.add_argument(
+        "--pdb-id",
+        default="",
+        help="PDB id; enrolls pocket-cofactor strips from "
+        "benchmarks/astex_diverse/pocket_cofactor_strip.json (e.g. HEM for P450 targets)",
+    )
     ap.add_argument("--dry-run", action="store_true", help="Report only, no write")
     ap.add_argument("-q", "--quiet", action="store_true")
     args = ap.parse_args(argv)
@@ -481,6 +527,10 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         keep_metals = True
 
     extra = [r for r in args.strip_res.split(",") if r.strip()]
+    extra = sorted(
+        {r.strip().upper() for r in extra if r.strip()}
+        | pocket_cofactor_strip_res(args.pdb_id)
+    )
 
     text = src.read_text(encoding="utf-8", errors="replace")
     out, report = clean_apo_pdb(
