@@ -166,17 +166,42 @@ void cluster(FA_Global* FA, GB_Global* GB, VC_Global* VC, chromosome* chrom, gen
 		// Basin score: cluster-local soft-β free energy G̃ = H̃ − T·S̃ ≡ ACF.
 		// Shared identity with BindingMode classic ranking and DatasetRunner S1
 		// (LIB/SoftBetaFreeEnergy.h). Soft-β: β = 1/T (FA->beta), not 1/(k_B T).
+		//
+		// Election uses the DUPLICATE-INVARIANT strict variant. The legacy
+		// soft_beta::acf() is marked "Diagnostic only — prefer
+		// free_energy_strict() for claim re-ranking" by its own header
+		// (SoftBetaFreeEnergy.h:135-136), yet it was driving the shipped
+		// election. Because G̃ = Emin − T·ln Z with Z summed over MEMBERS,
+		// multiplicity alone lowers G̃: at T=300 every population doubling buys
+		// ~300·ln2 ≈ 208 CF units, which exceeds the entire CF spread on 72/85
+		// Astex targets — i.e. the election degenerates into a popularity
+		// contest (agrees with largest-cluster 82/85 but lowest-CF only 29/85).
+		// free_energy_strict(UniqueGeometry) collapses exact-CF duplicates
+		// before the same free energy, so cloned/re-emitted members can no
+		// longer inflate a basin. Same units, same T; ranking only changes
+		// where multiplicity was the deciding term.
+		//
+		// Set FLEXAIDDS_ELECT_LEGACY_ACF=1 to restore the legacy diagnostic
+		// path bit-identically (A/B control against pre-fix baselines).
 		Clus_TCF[num_of_clusters] = chrom[j].app_evalue;
 		Clus_ACF[num_of_clusters] = chrom[j].app_evalue;
 		if (FA->temperature > 0 && FA->beta > 0.0) {
+			static const bool legacy_acf = [] {
+				const char* e = std::getenv("FLEXAIDDS_ELECT_LEGACY_ACF");
+				return e && std::atoi(e) != 0;
+			}();
 			std::vector<double> member_energies;
 			member_energies.reserve(static_cast<size_t>(num_chrom));
 			for (int k = 0; k < num_chrom; ++k) {
 				if (Clus_GAPOP[k] == j && std::isfinite(chrom[k].app_evalue))
 					member_energies.push_back(chrom[k].app_evalue);
 			}
-			Clus_ACF[num_of_clusters] = flexaids::soft_beta::acf(
-				member_energies, static_cast<double>(FA->temperature));
+			const double T_soft = static_cast<double>(FA->temperature);
+			Clus_ACF[num_of_clusters] =
+				legacy_acf
+					? flexaids::soft_beta::acf(member_energies, T_soft)
+					: flexaids::soft_beta::free_energy_strict(member_energies,
+					                                          T_soft).G;
 		}
 		num_of_clusters++;
 
