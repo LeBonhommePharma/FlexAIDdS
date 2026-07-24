@@ -5256,10 +5256,13 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
 
 
         // Mode forces seed_elitism regardless of env for oracle vs production.
+        // UNSET is the CLI default for claim canaries (seed_fraction always 0.0
+        // above): leave seed_elitism ON and INI-election confounds genuine RMSD.
         bool receipt_seed_elitism = protocol_cfg_.seed_elitism;
         if (config.mode == BenchmarkMode::ORACLE_CEILING) receipt_seed_elitism = true;
         if (config.mode == BenchmarkMode::DEFINED_CLEFT_REDOCK ||
-            config.mode == BenchmarkMode::AUTONOMOUS) {
+            config.mode == BenchmarkMode::AUTONOMOUS ||
+            config.mode == BenchmarkMode::UNSET) {
             receipt_seed_elitism = false;
         }
 
@@ -5838,6 +5841,34 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
             const double vct_r0 = protocol_cfg_.vct_r0;
             const bool vct_norm = protocol_cfg_.vct_normalize_contacts;
             const double vct_entropy_w = protocol_cfg_.vct_entropy_weight;
+            // v136: sas_weight / hbond_rank restored to the pre-v122 values
+            // (0.40 / true).  The v122 flip to 1.0 / false (152426c59) collapsed
+            // genuine top-1 from 52.2% to 6%: at sas_weight=1.0 the SAS penalty
+            // dominates CF, so the crystal pose scores worse than shallow decoys
+            // (native CF.sas 100-190 vs 25-65 for the elected GA pose) and the
+            // GA is driven out of the native basin.  Env-overridable so a future
+            // sweep cannot silently re-regress this without leaving a trace.
+            double sas_weight = 0.40;
+            if (const char* env_sas = std::getenv("FLEXAIDDS_SAS_WEIGHT")) {
+                sas_weight = std::atof(env_sas);
+                std::cout << "[DatasetRunner] FLEXAIDDS_SAS_WEIGHT=" << sas_weight
+                          << " (default 0.40)\n";
+            }
+            bool hbond_rank = true;
+            if (const char* env_hbr = std::getenv("FLEXAIDDS_HBOND_RANK")) {
+                hbond_rank = (std::atoi(env_hbr) != 0);
+                std::cout << "[DatasetRunner] FLEXAIDDS_HBOND_RANK="
+                          << (hbond_rank ? "1" : "0") << " (default 1)\n";
+            }
+            // Coarse-init grid resolution (Å). Configurable per-target via env so
+            // tight/deep pockets (e.g. 1K3U) can use a finer scan without touching
+            // other targets. Floor at 0.5 Å to bound the scan cost.
+            float grid_step = 3.0f;
+            if (const char* gs_env = std::getenv("FLEXAIDDS_COARSE_GRID_STEP")) {
+                grid_step = std::max(0.5f, static_cast<float>(std::atof(gs_env)));
+                std::cout << "[DatasetRunner] FLEXAIDDS_COARSE_GRID_STEP=" << grid_step
+                          << " (default 3.0)\n";
+            }
             {
                 std::ofstream jf(config_path);
                 jf << "{\n"
@@ -5925,13 +5956,14 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                    // directional discriminator for these targets. In v119
                    // (PSHARE+hbond), 1Y6R reached 2.00 Å; with SMFREE's
                    // softer Boltzmann selection the false-minimum amplification
-                   // risk is substantially reduced. hbond_rank=false kept to
-                   // avoid rescore-mode interference; sas_weight=1.0 preserved.
+                   // risk is substantially reduced. v136: hbond_rank restored to
+                   // true and sas_weight to 0.40 (see the override block above).
                    << "    \"hbond_enabled\": true,\n"
                    << "    \"hbond_search_enabled\": true,\n"
-                   << "    \"hbond_rank_enabled\": false,\n"
+                   << "    \"hbond_rank_enabled\": "
+                   << (hbond_rank ? "true" : "false") << ",\n"
                    << "    \"metal_coord_enabled\": true,\n"
-                   << "    \"sas_weight\": 1.0,\n"
+                   << "    \"sas_weight\": " << sas_weight << ",\n"
                    << "    \"tencom_weight\": 0.0,\n"
                    << "    \"vct_entropy_weight\": " << vct_entropy_w << "\n"
                    << "  },\n"
@@ -5961,14 +5993,14 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                    // Coarse pocket scan: pre-screen a grid over the binding cleft
                    // with random orientations before the GA loop so gen-0 starts with
                    // VCT-scored contact-forming placements instead of blind randoms.
-                   // Required whenever crystal IC seeds are not injected.
+                   // Required whenever crystal IC seeds are not injected (seed_fraction
+                   // is always 0.0 above). Mode UNSET used to leave this false, which
+                   // left tight pockets (e.g. 1M2Z) with every random orientation at
+                   // the Vcontacts CLASH_THRESHOLD=1e4 floor (CF=10000 all gen-0).
+                   // Always ON — blind random gen-0 is not a viable search start.
                    << "  \"coarse_init\": {\n"
-                   << "    \"enabled\": "
-                   << ((config.mode == BenchmarkMode::AUTONOMOUS ||
-                        config.mode == BenchmarkMode::DEFINED_CLEFT_REDOCK ||
-                        config.mode == BenchmarkMode::ORACLE_CEILING) ? "true" : "false")
-                   << ",\n"
-                   << "    \"grid_step\": 3.0,\n"
+                   << "    \"enabled\": true,\n"
+                   << "    \"grid_step\": " << grid_step << ",\n"
                    << "    \"n_seeds\": 25,\n"
                    << "    \"n_orientations\": 64\n"
                    << "  },\n"
@@ -6019,12 +6051,11 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                    // the first injection.  In blind mode it is catastrophic — the GA
                    // terminates at gen 300 by fitness stagnation with CF≈0 (no
                    // contacts found) because every 100-gen run gets reset.
-                   // Fix: disable boom injection in all no-seed modes entirely.
-                   << ((config.mode == BenchmarkMode::AUTONOMOUS ||
-                        config.mode == BenchmarkMode::DEFINED_CLEFT_REDOCK ||
-                        config.mode == BenchmarkMode::ORACLE_CEILING)
-                         ? 0.0
-                         : protocol_cfg_.effective_boom_frac())
+                   // Fix: disable boom injection whenever crystal IC seeds are off
+                   // (seed_fraction always 0.0 above) — includes mode UNSET, which
+                   // previously fell through to effective_boom_frac()=1.0 and wiped
+                   // 1M2Z-style all-clash gen-0 populations every 100 gens.
+                   << 0.0
                    << ",\n"
                    // v27: true GA elitism — protect n_elite lowest-CF individuals
                    // from boom injection + niche-sharing (engine-side env override
@@ -6681,11 +6712,13 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
         }
 
         // Layer 1: pre-compute seed_elitism_override for both pose-selection calls.
-        // Matches oracle_direct_active logic above; keeps the two controls in sync.
+        // Matches receipt_seed_elitism above: force OFF for all claim modes
+        // including UNSET (CLI default). Only ORACLE_CEILING keeps seed elitism.
         const int sel_elitism_ovr =
-            (config.mode == BenchmarkMode::ORACLE_CEILING ||
-             config.mode == BenchmarkMode::AUTONOMOUS ||
-             config.mode == BenchmarkMode::DEFINED_CLEFT_REDOCK) ? 0 : -1;
+            (config.mode == BenchmarkMode::ORACLE_CEILING) ? 1 :
+            (config.mode == BenchmarkMode::AUTONOMOUS ||
+             config.mode == BenchmarkMode::DEFINED_CLEFT_REDOCK ||
+             config.mode == BenchmarkMode::UNSET) ? 0 : -1;
 
         // ── best_score: CF/contact-function scoring proxy of the EMITTED pose ──
         // CSV column `best_score` is the Voronoi CF of the elected pose (NOT free
