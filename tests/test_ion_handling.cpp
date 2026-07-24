@@ -245,6 +245,7 @@ TEST(IonTypeTest, WaterOxygenGetsO3) {
     FA_Global fa = make_fa(40);
     atom  atoms[2]; resid residue[2];
     make_ion_residue(atoms, residue, "HOH", " O  ");
+    strncpy(atoms[1].element, "O", 1); atoms[1].element[1] = '\0';
     atoms[1].type = 39;
 
     std::string aminofile = write_empty_aminodef();

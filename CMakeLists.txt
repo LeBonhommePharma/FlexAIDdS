@@ -2959,6 +2959,24 @@ elseif(FLEXAIDS_PGO_USE)
     target_link_options(FlexAIDdS PRIVATE -fprofile-use=${FLEXAIDS_PGO_USE})
 endif()
 
+# ─── probe_cf: frozen-pose CF scoring diagnostic ─────────────────────────────
+# Standalone driver that scores a receptor + frozen ligand pose through the
+# engine's own score_native_pose()/vcfunction() path (no GA) and emits a
+# decomposed CF breakdown as JSON. It drives the FlexAIDdS binary in
+# FLEXAIDDS_SCORE_NATIVE + FLEXAIDDS_NATIVE_ONLY mode (see tools/probe_cf.cpp),
+# so it needs no link against flexaid_core and cannot diverge from the engine.
+option(ENABLE_PROBE_CF "Build the probe_cf frozen-pose CF diagnostic" ON)
+# probe_cf uses POSIX-only <unistd.h>/getpid/popen — gate off on MSVC.
+if(ENABLE_PROBE_CF AND NOT MSVC)
+    add_executable(probe_cf tools/probe_cf.cpp)
+    set_target_properties(probe_cf PROPERTIES
+        CXX_STANDARD ${CMAKE_CXX_STANDARD} CXX_STANDARD_REQUIRED ON CXX_EXTENSIONS OFF)
+    if(MSVC)
+        target_compile_definitions(probe_cf PRIVATE _CRT_SECURE_NO_WARNINGS)
+    endif()
+    message(STATUS "probe_cf frozen-pose CF diagnostic enabled — build target: probe_cf")
+endif()
+
 # FlexAID source validator guard (MUST be the last thing in this file)
 # =============================================================================
 #
