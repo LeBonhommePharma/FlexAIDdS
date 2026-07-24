@@ -85,6 +85,14 @@ export FLEXAIDDS_SOFTBETA_ELECTION=1
 
 `scripts/run_C0_claim_clean.sh` defaults Softβ S1 to **0** (explicit opt-in required).
 
+### Engine cluster ACF emission (E1b — Wave 0)
+
+| Env | Default | Meaning |
+|-----|---------|---------|
+| **`FLEXAIDDS_ACF_STRICT`** | **0 (OFF)** | When `1`, `LIB/cluster.cpp` uses `soft_beta::free_energy_strict` (UniqueGeometry) for `Clus_ACF` instead of legacy `soft_beta::acf`. Exact-CF-duplicate members no longer deepen \(\tilde G\) via \(T\ln N\) multiplicity. |
+
+Default OFF is **bit-identical** to the pre-E1b product path. Opt in only for pilots measuring election-gap targets (e.g. BCR≤2.5 Å with elected RMSD>2). See `docs/implementation/FORWARD_SUCCESS_RATE_PLAN.md` Wave 0–1.
+
 ---
 
 ## 5. Layers that must not be conflated

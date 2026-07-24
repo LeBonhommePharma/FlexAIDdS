@@ -175,8 +175,25 @@ void cluster(FA_Global* FA, GB_Global* GB, VC_Global* VC, chromosome* chrom, gen
 				if (Clus_GAPOP[k] == j && std::isfinite(chrom[k].app_evalue))
 					member_energies.push_back(chrom[k].app_evalue);
 			}
-			Clus_ACF[num_of_clusters] = flexaids::soft_beta::acf(
-				member_energies, static_cast<double>(FA->temperature));
+			// Default: legacy soft_beta::acf (multiplicity-sensitive; diagnostic).
+			// Opt-in FLEXAIDDS_ACF_STRICT=1 → free_energy_strict (exact-CF-dup
+			// invariant; kills Emin−T ln N size inflation from clones).
+			// Default OFF = bit-identical to pre-E1b product path.
+			const char* acf_strict = std::getenv("FLEXAIDDS_ACF_STRICT");
+			const bool use_strict =
+			    acf_strict != nullptr && acf_strict[0] != '\0' &&
+			    std::atoi(acf_strict) != 0;
+			const double Tsoft = static_cast<double>(FA->temperature);
+			if (use_strict) {
+				Clus_ACF[num_of_clusters] =
+				    flexaids::soft_beta::free_energy_strict(
+				        member_energies, Tsoft,
+				        flexaids::soft_beta::StrictRerankMode::UniqueGeometry)
+				        .G;
+			} else {
+				Clus_ACF[num_of_clusters] =
+				    flexaids::soft_beta::acf(member_energies, Tsoft);
+			}
 		}
 		num_of_clusters++;
 
