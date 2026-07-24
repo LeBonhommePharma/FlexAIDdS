@@ -1,4 +1,4 @@
-# CF scoring-regression gate — 8-target panel manifest
+# CF scoring-regression gate — panel manifest (5 clean probes active; 1G9V dropped — see below)
 # Format (tab-separated): pdb <TAB> receptor.pdb <TAB> native_pose.sdf <TAB> decoy_pose.pdb
 # Receptor: prepared apo PDB (from astex_diverse/astex_diverse/)
 # Native:   crystal ligand SDF (same source)
@@ -9,7 +9,12 @@
 #       Update REPO prefix if repo is cloned elsewhere, or switch to relative paths via $REPO.
 #
 # pdb	receptor.pdb	native_pose.sdf	decoy_pose.pdb
-1G9V	/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1G9V/1G9V_apo.pdb	/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1G9V/1G9V_ligand.sdf	/Users/lp.more/Projects/FlexAIDdS/diagnostic/refs/1G9V/falsemin_armA.pdb
+# 1G9V DROPPED from the scoring gate (2026-07-24): its apo receptor still has 172 un-stripped
+#   HEM atoms 11.2A from the ligand (prep bug) -> probe_cf returns non-physical cf_total=-6165
+#   (com=-15196) vs validated native -49.6, which would mis-fire the gate. 1G9V is also a
+#   search-dominant chain-control (near-native basin sampled at freq=1, only 3.17A), not a clean
+#   scoring probe. The 5 clean probes below (1J3J 1K3U 1L7F 1N1M 1M2Z) are sufficient.
+# 1G9V	/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1G9V/1G9V_apo.pdb	/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1G9V/1G9V_ligand.sdf	/Users/lp.more/Projects/FlexAIDdS/diagnostic/refs/1G9V/falsemin_armA.pdb
 1J3J	/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1J3J/1J3J_apo.pdb	/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1J3J/1J3J_ligand.sdf	/Users/lp.more/Projects/FlexAIDdS/diagnostic/refs/1J3J/falsemin_armA.pdb
 1K3U	/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1K3U/1K3U_apo.pdb	/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1K3U/1K3U_ligand.sdf	/Users/lp.more/Projects/FlexAIDdS/diagnostic/refs/1K3U/falsemin_armA.pdb
 1L7F	/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1L7F/1L7F_apo.pdb	/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/1L7F/1L7F_ligand.sdf	/Users/lp.more/Projects/FlexAIDdS/diagnostic/refs/1L7F/falsemin_armA.pdb
