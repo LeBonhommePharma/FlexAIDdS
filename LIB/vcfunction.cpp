@@ -884,12 +884,15 @@ double vcfunction(FA_Global* FA,VC_Global* VC,atom* atoms,resid* residue, std::v
 	if(const char* com_floor_env = std::getenv("FLEXAIDDS_COM_FLOOR")){
 		const double F = std::atof(com_floor_env);
 		if(F > 0.0){
+			// Floor at −F; transition scale S << F so near-identity for com >> −F.
+			// With S=5: near-identity for com > −120, hard floor for com < −140.
+			const double S = 5.0;
 			for(int j=0; j<FA->num_optres; ++j){
 				double& com = FA->optres[j].cf.com;
-				const double z  = (com + F) / F;
+				const double z  = (com + F) / S;
 				const double az = (z < 0.0) ? -z : z;
 				const double softplus = (z > 0.0 ? z : 0.0) + std::log1p(std::exp(-az));
-				com = -F + F * softplus;
+				com = -F + S * softplus;
 			}
 		}
 	}
