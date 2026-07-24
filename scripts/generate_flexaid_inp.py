@@ -75,9 +75,11 @@ DEFAULT_GEN = 2000  # claim freeze 2026-07-15 (was 6000)
 DEFAULT_RESTARTS = 5
 DEFAULT_MAXRES = 50  # match FlexAIDdS cluster emit ceiling for fair S3/BCR
 MATRIX_NAME = "MC_st0r5.2_6.dat"
-# Lab production pin (v119-era claim / three-engine). Re-pinned after df2f36c58
-# matrix-value regression (9dc9) inverted CF.com ranking; see ROOTCAUSE 2026-07-23.
-MATRIX_MD5_PIN = "72d7c7396702331d96ff12d18f831796"
+# Baseline-validated JCIM matrix pin (this is what the engine loads on disk).
+# NOTE: df2f36c58 was a SOFTWA/soft-wall change, NOT a matrix-value regression —
+# MC_st0r5.2_6.dat is 9dc9 at every commit. The 72d7 "fork" was a packing-sweetened
+# artifact from a fleet repinning and was reverted 2026-07-23.
+MATRIX_MD5_PIN = "9dc93717dfed0698006d88dd6a9627bc"
 LIGAND_RESNUM = 9999
 ATOM_INDEX = 90000
 

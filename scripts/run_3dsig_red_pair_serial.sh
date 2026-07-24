@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Serial 3Dsig red-pair: A → B0 → B  (LOCAL-FIRST; sync iCloud later)
 #
-# Deck knobs: pop=1000 gen=2000 (2e6) restarts=10 · matrix 72d7c739…
+# Deck knobs: pop=1000 gen=2000 (2e6) restarts=10 · matrix 9dc93717…
 # Live I/O: ~/flexaidds_results (APFS). No CloudDocs during prepare/dock.
 # Later: bash scripts/sync_three_engine_local_to_icloud.sh
 #
@@ -36,7 +36,7 @@ export FLEXAID_RESTARTS="${FLEXAID_RESTARTS:-10}"
 export OMP_NUM_THREADS="${OMP_NUM_THREADS:-1}"
 export FLEXAIDDS_PARALLEL_RESTARTS="${FLEXAIDDS_PARALLEL_RESTARTS:-0}"
 
-MATRIX_PIN="72d7c7396702331d96ff12d18f831796"
+MATRIX_PIN="9dc93717dfed0698006d88dd6a9627bc"
 MAT="$FLEXAIDDS_QUEUE_ROOT/data/MC_st0r5.2_6.dat"
 [[ -f "$MAT" ]] || MAT="$FLEXAIDDS_LOCAL_ROOT/three_engine_entropy_q1/data/MC_st0r5.2_6.dat"
 GOT=$(md5 -q "$MAT" 2>/dev/null || true)

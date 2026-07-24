@@ -43,7 +43,7 @@ Under a **matched cognate-pocket, no native-seed** redocking protocol, and an **
 |-------|--------|
 | Canonical file name | `MC_st0r5.2_6.dat` (or lab-standard alias if identical bytes) |
 | **Pinned MD5** | **Record at submit time** with `md5 -q <matrix>`; must match on every node and every data dir |
-| Known local copies (verify, do not assume) | e.g. `FlexAIDdS/WRK/MC_st0r5.2_6.dat` → `72d7c739…` *or* `9dc93717…` depending on tree — **pick one MD5 and copy that file into every arm’s `DEPSPA` / data dir** |
+| Known local copies (verify, do not assume) | e.g. `FlexAIDdS/WRK/MC_st0r5.2_6.dat` → `9dc93717…` (baseline-validated JCIM matrix — the MD5 the engine loads on disk); a stray `72d7c739…` packing-sweetened fork may exist in some trees, do **not** use it — **copy the 9dc9 file into every arm’s `DEPSPA` / data dir** |
 
 **Preflight (every job):**
 
@@ -264,7 +264,7 @@ python3 scripts/aggregate_claim_metrics.py --c0-full85
 # FAIL: python3 scripts/aggregate_claim_metrics.py <dir> --headline s3   # needs --diagnostic-only
 ```
 
-Default matrix pin: `72d7c7396702331d96ff12d18f831796` (or `RUN_RECEIPT.json` / `provenance.json`).  
+Default matrix pin: `9dc93717dfed0698006d88dd6a9627bc` (or `RUN_RECEIPT.json` / `provenance.json`).  
 Full contract: `benchmarks/protocols/admission_metrics_contract.md`.
 
 ---
@@ -388,7 +388,7 @@ We compare FlexAID (2015-era CF docking), FlexAID (current master with and witho
 | Decision | Default if unset |
 |----------|------------------|
 | Exact FlexAID-2015 commit/binary | **Block submit** until pinned |
-| Matrix MD5 choice among local copies | Prefer lab production pin used in recent restore (`72d7c739…` if that is the intended production matrix); **copy that file** to all arms |
+| Matrix MD5 choice among local copies | Use the baseline-validated JCIM matrix (`9dc93717…`, the MD5 the engine loads on disk); ignore any stray `72d7c739…` packing-sweetened fork; **copy that file** to all arms |
 | FlexAIDdS mode name (`oracle-ceiling` no-seed vs `defined-cleft-redock`) | Prefer **defined-cleft-redock** or no-seed oracle with pose-blind — same site file either way |
 | Parallel vs serial restarts | Serial restarts in-job |
 | Run B/C as re-rank only? | **Yes** if ensembles portable |

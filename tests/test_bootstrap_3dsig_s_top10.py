@@ -358,7 +358,7 @@ def test_parse_cli_writes_mode_rmsd_columns(tmp_path: Path):
             "--out-dir",
             str(out),
             "--matrix-md5",
-            "72d7c7396702331d96ff12d18f831796",
+            "9dc93717dfed0698006d88dd6a9627bc",
         ],
         capture_output=True,
         text=True,

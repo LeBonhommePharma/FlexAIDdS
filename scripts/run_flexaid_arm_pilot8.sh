@@ -90,8 +90,8 @@ if [[ "$ARM" == "C" && ! -x "$BINARY" ]]; then
   BINARY="$Q/bin/B/FlexAID"
 fi
 MATRIX="$Q/data/MC_st0r5.2_6.dat"
-# Repo/baseline-validated JCIM matrix (not the 72d7 packing-sweetened fork)
-MATRIX_PIN="72d7c7396702331d96ff12d18f831796"
+# Repo/baseline-validated JCIM matrix 9dc9 (not the 72d7 packing-sweetened fork)
+MATRIX_PIN="9dc93717dfed0698006d88dd6a9627bc"
 
 REPO="${FLEXAIDDS_ROOT:-}"
 if [[ -z "$REPO" ]]; then

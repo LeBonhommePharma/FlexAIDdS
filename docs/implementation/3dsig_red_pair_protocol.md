@@ -16,7 +16,7 @@
 | Budget / sim | **2 000 000** energy evaluations (`pop × gen = 1000 × 2000`) |
 | Headline | **Median** success rate over **10 000** bootstrap resamples of N cases |
 | Seed | **Off** for claim-style fair redock (no native pose seed) |
-| Matrix | `MC_st0r5.2_6.dat` MD5 **`72d7c7396702331d96ff12d18f831796`** (lab production pin; re-pinned after `df2f36c58` 9dc9 regression) |
+| Matrix | `MC_st0r5.2_6.dat` MD5 **`9dc93717dfed0698006d88dd6a9627bc`** (baseline-validated JCIM pin; the engine loads this on disk. `df2f36c58` was a SOFTWA/soft-wall change, not a matrix-value regression) |
 | Primary N | Astex Diverse **85** (pilot gate: pilot8 first) |
 
 **Do not report as 3Dsig success:** S1 alone, BCR, S2/PoseBusters, CF=10000 packaging, RMSD −1 sentinels.
@@ -117,7 +117,7 @@ python3 scripts/bootstrap_3dsig_s_top10.py \
 ## 6. Checklist
 
 - [x] Metric frozen (this file)
-- [x] Matrix pin 72d7 verified on queue data/
+- [x] Matrix pin **9dc9** (production JCIM) verified — do **not** use 72d7 packing-sweetened fork
 - [x] Arm B FO = **single literature MinPts** only (no ladder; fo_minpts_literature.md)
 - [ ] C0 processes dead; stale locks removed
 - [ ] Arm A 3dsig_r10 running or complete

@@ -57,7 +57,7 @@ Rows missing `claim_ready` but satisfying seed gates are admitted only for **leg
 | Field | Value |
 |-------|--------|
 | Canonical matrix | campaign-dependent (see RUN_RECEIPT) |
-| **Fallback MD5** | `72d7c7396702331d96ff12d18f831796` (aggregator default; receipt wins) |
+| **Fallback MD5** | `9dc93717dfed0698006d88dd6a9627bc` (aggregator default; receipt wins) |
 
 ---
 

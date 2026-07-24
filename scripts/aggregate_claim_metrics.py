@@ -40,7 +40,7 @@ from pathlib import Path
 from typing import Any, Iterable
 
 # Production matrix pin used by three-engine / C0 full85 (see RUN_RECEIPT).
-DEFAULT_MATRIX_MD5 = "72d7c7396702331d96ff12d18f831796"
+DEFAULT_MATRIX_MD5 = "9dc93717dfed0698006d88dd6a9627bc"
 RMSD_SUCCESS_A = 2.0
 C0_FULL85_REL = "campaigns/C0_full85_defined_cleft_nativeseed_forbidden"
 
