@@ -356,6 +356,34 @@ void cluster(FA_Global* FA, GB_Global* GB, VC_Global* VC, chromosome* chrom, gen
 			Clus_ACF[0], chrom[Clus_TOP[0]].evalue, Clus_FRE[0], best_cf);
 	}
 
+	// ── Population-weight between-cluster election (diagnostic probe) ─────────
+	// FLEXAIDDS_ELECT_BY_POPULATION=1: ignore CF/ACF; elect the cluster with the
+	// highest member count (Clus_FRE). Default-OFF — does NOT change scoring, only
+	// between-cluster ordering. Designed to test whether population alone fixes
+	// false-minimum election (e.g. 1G9V: near-native freq=1666 vs false-min
+	// freq=133). Supersedes all prior sorting (ACF, CF-rank) when active.
+	{
+		const char* ep_env = std::getenv("FLEXAIDDS_ELECT_BY_POPULATION");
+		if (ep_env && std::atoi(ep_env) != 0 && num_of_results > 1) {
+			// Selection sort: descending Clus_FRE (highest population = rank-0).
+			for (int a = 0; a < num_of_results - 1; ++a) {
+				int best_idx = a;
+				for (int b = a + 1; b < num_of_results; ++b) {
+					if (Clus_FRE[b] > Clus_FRE[best_idx]) best_idx = b;
+				}
+				if (best_idx != a)
+					swap_clusters(&Clus_TOP[a], &Clus_FRE[a], &Clus_TCF[a], &Clus_ACF[a],
+					              &Clus_TOP[best_idx], &Clus_FRE[best_idx],
+					              &Clus_TCF[best_idx], &Clus_ACF[best_idx]);
+			}
+			fprintf(stdout,
+			        "[ELECT_BY_POP] population-weight election active: "
+			        "rank-0 cluster freq=%d CF=%.4f ACF=%.4f "
+			        "(CF-independent probe; default-OFF)\n",
+			        Clus_FRE[0], chrom[Clus_TOP[0]].evalue, Clus_ACF[0]);
+		}
+	}
+
 	// print cluster information
 	snprintf(tmp_end_strfile, MAX_PATH__, "%s.cad", end_strfile);
 	if (FA->htpmode == false)

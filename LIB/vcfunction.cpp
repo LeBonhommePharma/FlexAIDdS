@@ -10,6 +10,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <climits>
+#include <limits>
 #include <vector>
 #include <unordered_map>
 
@@ -38,6 +39,19 @@ static const float con_r0 = []() {
     return v;
 }();
 static const bool no_sas = (std::getenv("FLEXAIDDS_NO_SAS") != nullptr);
+
+// FLEXAIDDS_COM_BURIAL_CAP (float, default = no cap): hard upper bound on the
+// (negative) per-optres CF.com burial reward. cf.com is negative (burial =
+// reward), so the cap is a MAXIMUM value on com — std::max(com, cap) prevents an
+// over-buried decoy from driving com arbitrarily negative and beating a correct
+// binding mode. Scoped fix for the 1G9V com-over-burial CF inversion (native
+// com ~ -129 vs false-min ~ -196; com dominates ~89% of the gap). Applied once
+// per evaluation in the CF.com finalization region, AFTER the soft COM_FLOOR.
+// Unset ⇒ lowest() ⇒ skipped entirely ⇒ bit-identical to prior behavior.
+static const double com_burial_cap = []() -> double {
+    const char* e = std::getenv("FLEXAIDDS_COM_BURIAL_CAP");
+    return e ? std::atof(e) : std::numeric_limits<double>::lowest();
+}();
 
 // FLEXAIDDS_POLAR_DESOLV_WEIGHT (float >= 0, default 0.0 = OFF): per-ligand-atom
 // polar-burial desolvation penalty, folded into the cfs->sas channel (which
@@ -956,6 +970,21 @@ double vcfunction(FA_Global* FA,VC_Global* VC,atom* atoms,resid* residue, std::v
 				const double softplus = (z > 0.0 ? z : 0.0) + std::log1p(std::exp(-az));
 				com = -F + F * softplus;
 			}
+		}
+	}
+
+	// ── Hard cap on the CF.com burial reward (FLEXAIDDS_COM_BURIAL_CAP) ──────────
+	// A/B lever for the 1G9V com-over-burial CF inversion. cf.com is negative
+	// (burial = reward), so the cap is an UPPER bound: com = max(com, cap). This
+	// clamps how deeply an over-buried decoy can drive com below the native, so a
+	// correct binding mode is no longer out-voted purely by surface burial.
+	// Applied AFTER the soft floor so the hard clamp is the final word on com
+	// magnitude. Default (unset) ⇒ com_burial_cap == lowest() ⇒ block skipped ⇒
+	// bit-identical. Tune the cap between native (~ -129) and false-min (~ -196).
+	if(com_burial_cap > std::numeric_limits<double>::lowest()){
+		for(int j=0; j<FA->num_optres; ++j){
+			double& com = FA->optres[j].cf.com;
+			if(com < com_burial_cap) com = com_burial_cap;
 		}
 	}
 
