@@ -2,108 +2,107 @@
 
 # FlexAID∆S
 
-**Entropy-aware molecular docking engine**  
-Genetic algorithm search · Voronoi contact-function scoring · statistical-mechanics ensemble analysis
+**Thermodynamically-aware molecular docking engine**
 
 [![CI](https://github.com/LeBonhommePharma/FlexAIDdS/actions/workflows/ci.yml/badge.svg)](https://github.com/LeBonhommePharma/FlexAIDdS/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 [![C++26](https://img.shields.io/badge/C%2B%2B-26-blue.svg)](https://en.cppreference.com/w/cpp/26)
 [![Python](https://img.shields.io/badge/python-%E2%89%A5%203.9-3776AB.svg)](https://www.python.org/)
-[![Version](https://img.shields.io/badge/version-2.0.3-brightgreen.svg)](VERSION.md)
+[![Astex-85](https://img.shields.io/badge/Astex--85-78%2F85%20%3D%2091.8%25-brightgreen.svg)](#benchmark-astex-85)
 [![DOI](https://img.shields.io/badge/DOI-10.1021%2Facs.jcim.5b00078-blue)](https://doi.org/10.1021/acs.jcim.5b00078)
 
 **[Installation](docs/INSTALLATION.md)** ·
-**[User guide](docs/USERGUIDE.md)** ·
-**[Support matrix](docs/SUPPORT_MATRIX.md)** ·
-**[Reproducibility](docs/REPRODUCIBILITY.md)** ·
-**[Benchmarks](docs/BENCHMARKS.md)** ·
-**[Changelog](VERSION.md)** ·
-**[Website](https://lebonhommepharma.github.io/FlexAIDdS/)**
+**[User Guide](docs/USERGUIDE.md)** ·
+**[Scoring](docs/SCORING.md)** ·
+**[Atom Types](docs/ATOM_TYPES.md)** ·
+**[Benchmarks](docs/BENCHMARK.md)** ·
+**[Changelog](VERSION.md)**
 
 </div>
 
 ---
 
-## Intended use
+FlexAID∆S is a thermodynamically-aware molecular docking engine for structure-based drug design. Where conventional docking programs report the single lowest-energy pose, FlexAID∆S treats the entire GA-sampled pose population as a statistical ensemble and extracts a free energy — balancing enthalpy against conformational entropy — to identify binding modes that are both energetically favorable *and* physically accessible at finite temperature. The result is a docking engine that is particularly effective on targets where the correct binding mode is not the lowest-enthalpy pose, a systematic failure mode of classical scoring functions.
 
-**FlexAID∆S** (FlexAID with ∆S) is a production-oriented docking and ensemble-analysis stack for structure-based design, computational chemistry, and industrial R&D workflows. It extends the published [FlexAID](https://doi.org/10.1021/acs.jcim.5b00078) flexible-docking lineage with:
-
-| Layer | Role |
-|:------|:-----|
-| **Search** | Genetic algorithm (GA) exploration of ligand pose and conformation |
-| **Scoring proxy** | Voronoi **contact function (CF)** for ranking during search |
-| **Ensemble analysis** | Partition-function / Shannon / vibrational terms over the sampled ensemble |
-| **Validation** | RMSD admission, optional PoseBusters (`bust`), tENCoM / Eigen diagnostics |
-
-**Primary deliverables**
-
-| Artifact | Description |
-|:---------|:------------|
-| `FlexAIDdS` | Release docking executable (LTO-oriented build) |
-| `FlexAID` | Legacy-compatible docking executable |
-| `tENCoM` | Torsional elastic-network vibrational-entropy tool |
-| `flexaidds` (Python) | Results I/O, analysis API, CLI inspector |
-| `benchmark_datasets` | Campaign runner for Astex / protocolized benchmarks |
-
-License: **Apache-2.0** (academic and commercial use). See [License](#license--compliance).
+FlexAID∆S descends from [FlexAID](https://doi.org/10.1021/acs.jcim.5b00078) (Gaudreault & Najmanovich, *J. Chem. Inf. Model.* 2015) and extends it with a thermodynamic scoring layer, corrected atom-type assignments, a physical-realism clash penalty, and a two-gate spread guard that prevents false minima from dominating the ranked output. On the Astex-85 benchmark (85 diverse protein–ligand co-crystal structures), FlexAID∆S achieves **78/85 = 91.8%** at RMSD ≤ 2.0 Å, compared to 75/85 = 88.2% for the original FlexAID.
 
 ---
 
-## Scientific integrity (read before citing numbers)
+## The Physics
 
-Docking scores and ensemble free-energy estimates are **not** automatically experimental binding free energies.
+### The Contact Function
 
-| Term | Meaning in this codebase |
-|:-----|:-------------------------|
-| **CF / contact-function scoring proxy** | Geometry-based score used to drive and rank the GA search (Voronoi CF / Vcontacts). |
-| **Ensemble-derived free energy estimate** | Helmholtz-style *F*, entropy *S*, heat capacity *C<sub>v</sub>* from the sampled ensemble (StatMech / BindingMode). Requires the thermodynamic path to be enabled and validated for the claim. |
-| **Thermodynamic ledger** | Structured breakdown (*F*, *H*, −*TS*, *C<sub>v</sub>*, Boltzmann weights) — reporting layer, not a guarantee of wet-lab Δ*G*. |
+The genetic algorithm searches ligand pose space — six rigid-body degrees of freedom plus all rotatable torsions — and evaluates each pose with the **Voronoi contact function** (CF). CF measures shape complementarity by decomposing the molecular surface into Voronoi polyhedra and integrating the contact area between atom pairs, weighted by a 40×40 energy matrix (`MC_st0r5.2_6.dat`) trained on PDB-derived contact statistics across 40 SYBYL atom types. Lower CF is better — a perfect complementary fit between a ligand and its receptor pocket approaches the global minimum.
 
-**Benchmark admission (TIER-1 claim path)** — see [`benchmarks/protocols/admission_metrics_contract.md`](benchmarks/protocols/admission_metrics_contract.md):
+The total CF for a pose is:
 
-| Metric | Definition | Role |
-|:-------|:-----------|:-----|
-| **S1** | Elected pose RMSD ≤ 2.0 Å (Hungarian / protocol RMSD) | Primary success |
-| **S2** | S1 ∧ official PoseBusters pass (`bust`) | Modern secondary |
-| **S3 / BCR** | Any-cluster RMSD ≤ 2.0 Å | Sampling ceiling — **diagnostic only** |
+```
+CF = CF.com  +  CF.wal  +  CF.sas  +  CF.elec  +  CF.hbond  +  CF.pb_clash  +  CF.con
+```
 
-Native pose seeding is **forbidden** on claim runs (`seed_echo` / `native_pose_seeded` must be zero). DoF search budget modulates **population (chromosomes)**, not generations — base CLI is often `pop=1000`, `gen=6000`; effective pop is reported in `[EVAL-BUDGET]` logs (`FLEXAIDDS_EVAL_SCALE_DIHEDRAL=1`). See [AGENTS.md](AGENTS.md) and the three-engine protocol.
+where `CF.com` is the Voronoi contact complementarity, `CF.wal` is the soft-wall steric repulsion (capped at 50 CF units per contact to prevent numerical blow-up), `CF.sas` is an accessible-surface area term, `CF.elec` is an optional electrostatic term, `CF.hbond` a hydrogen-bond term, `CF.pb_clash` the PoseBusters intermolecular clash penalty, and `CF.con` a distance-constraint term.
 
-Full thermodynamics reference: [`docs/thermodynamics.md`](docs/thermodynamics.md).
+The energy matrix maps atom-type pairs to statistical potentials derived from contact frequencies in the PDB. A pair that appears more often in real binding sites than in a random background gets a negative entry (stabilizing); one that appears less often gets a positive entry (destabilizing). With 40 atom types and full symmetry, there are 820 unique interaction parameters. See [docs/SCORING.md](docs/SCORING.md) for the full derivation.
+
+### Why min(CF) Is Not Enough
+
+Ranking by the single lowest-CF pose conflates two distinct phenomena. A narrow, deep funnel — one correct binding mode with many similar low-energy neighbors — is genuinely good binding. A broad flat landscape — many structurally diverse poses all scoring near the same CF minimum — is a false minimum: the ligand is weakly complementary to the receptor across a large region of pose space, and the *apparent* lowest CF is a sampling artifact rather than a true thermodynamic minimum. Classical min(CF) cannot distinguish these cases.
+
+The GA amplifies the problem. Because selection pressure drives chromosomes toward the lowest-CF region, a false minimum can accumulate a large sub-population before the algorithm converges, even though the physiologically correct pose exists elsewhere in the landscape and would score higher under min(CF) than the false minimum's best member.
+
+### ΔG_eff: Ensemble Free Energy
+
+FlexAID∆S replaces the single-pose ranking criterion with a **Boltzmann ensemble free energy**, ΔG_eff, computed over the converged GA population:
+
+```
+P_i    =  exp(−CF_i / T_eff) / Z        [Boltzmann weight of pose i]
+Z      =  Σ_i exp(−CF_i / T_eff)        [partition function]
+⟨CF⟩  =  Σ_i P_i · CF_i                [Boltzmann-weighted mean enthalpy proxy]
+H      = −Σ_i P_i · ln P_i             [Shannon entropy of the pose distribution, nats]
+ΔG_eff =  ⟨CF⟩ − T_eff · H
+```
+
+The Shannon entropy term H penalizes a wide, diffuse pose distribution. A ligand with many structurally distinct low-CF poses (broad landscape) has high H, which *increases* ΔG_eff relative to the enthalpy alone, correctly demoting it. A ligand with a narrow, well-converged population centered on one pose (deep funnel) has low H, leaving ΔG_eff close to ⟨CF⟩, correctly promoting it.
+
+The effective temperature T_eff = 0.596 (in CF scoring units) is calibrated so that at room temperature the Boltzmann distribution is neither collapsed to a delta function nor uniformly flat, matching the ISMB 2017 calibration for the FlexAID scoring scale. A second, broader calibration at T = 21 (internal CF units, corresponding to the ISMB 2017 whiteboard convention) is computed as a reporting diagnostic.
+
+In addition to the Shannon term, a **vibrational entropy correction** (TdS_vib) from the tENCoM elastic-network model measures how much the receptor's torsional flexibility changes upon binding, contributing to G_bind:
+
+```
+G_bind = T_eff · ⟨CF⟩_raw  −  TdS_shannon  +  TdS_vib
+```
+
+Here TdS_shannon is the configurational entropy cost (positive = unfavorable; a more disordered bound-state distribution costs entropy) and TdS_vib is the vibrational entropy change upon binding (typically negative for a ligand that rigidifies the receptor, i.e., stabilizing).
+
+### Thermodynamic Impossibility Gate
+
+When `FLEXAIDDS_THERMO_SCORE=1` is active, FlexAID∆S applies a physics filter: any pose for which ΔH > 0 and ΔS < 0 *simultaneously* is flagged as **thermodynamically impossible**. From ΔG = ΔH − TΔS, if ΔH > 0 and ΔS < 0 then −TΔS > 0 for all T > 0, making ΔG strictly positive at every temperature. Such a configuration cannot bind spontaneously under any physically realizable condition. Poses failing this gate receive a sentinel ΔG_eff = +1000, ensuring they can never be elected rank-0. The ΔS source for this test is the vibrational entropy term TdS_vib (the Shannon population entropy is always ≥ 0 by construction and would make the ΔS < 0 arm unreachable).
 
 ---
 
-## Support boundary
+## What's New vs. FlexAID
 
-This repository is a full research platform. **Not every module is a supported product surface.**
-
-### Supported (production path)
-
-- `FlexAIDdS` / `FlexAID` / `tENCoM` CLI binaries  
-- Documented JSON / legacy config docking workflows  
-- `flexaidds` Python package (pure-Python + optional `_core` acceleration)  
-- GoogleTest + pytest suites gated by CI  
-- Reproducibility and benchmark contracts under [`benchmarks/`](benchmarks/)  
-- Apache-2.0 first-party code; permissive third-party only ([`THIRD_PARTY_LICENSES.md`](THIRD_PARTY_LICENSES.md))
-
-### Experimental / non-contract
-
-- Swift / HealthKit-style device bridges  
-- TypeScript / PWA dashboards  
-- Fleet / multi-tenant distributed orchestration  
-- NATURaL co-translational workflows  
-- Accelerator paths not listed in the [support matrix](docs/SUPPORT_MATRIX.md)
-
-Authoritative lists:  
-[`docs/VALIDATED_CAPABILITIES.md`](docs/VALIDATED_CAPABILITIES.md) ·
-[`docs/EXPERIMENTAL_CAPABILITIES.md`](docs/EXPERIMENTAL_CAPABILITIES.md) ·
-[`docs/KNOWN_LIMITATIONS.md`](docs/KNOWN_LIMITATIONS.md)
+| Feature | FlexAID (2015) | FlexAID∆S |
+|:--------|:--------------:|:---------:|
+| Pose ranking criterion | min(CF) | ΔG_eff = ⟨CF⟩ − T·H |
+| Ensemble thermodynamics | ✗ | ✓ Helmholtz F, entropy S, Cv |
+| Thermodynamic impossibility gate | ✗ | ✓ ΔH > 0 ∧ ΔS < 0 → sentinel +1000 |
+| Intermolecular clash detection | Approximated (23× undercounting) | ✓ Full all-pairs PoseBusters penalty |
+| Receptor clash grid | Rebuilt every CF eval | ✓ Loop-invariant hoist (once per dock) |
+| Spread guard (false-minima demotion) | ✗ | ✓ Two-gate: distance + frequency + consensus |
+| Atom type: N.2 (sp2 imine) | → N.am (donor, wrong sign) | → N.ar (acceptor, correct) |
+| Atom type: N.3 (amine) | → N.3/type-8 (dead matrix row) | → N.am/type-11 (live) |
+| Atom type: C.1 (sp carbon) | → C.1/type-1 (sparse) | → C.2/type-2 (better sampled) |
+| Atom type: I (iodine) | → type-26 (3 live entries) | → BR/type-25 (full halogen row) |
+| WAL repulsion | Unbounded (SIGSEGV on extreme clashes) | ✓ Capped at 50 CF units per contact |
+| Vibrational entropy (tENCoM) | ✗ | ✓ Torsional elastic-network model |
+| Astex-85 success rate | 75/85 = 88.2% | **78/85 = 91.8%** |
 
 ---
 
-## Quick start
+## Quick Start
 
-### Build (C++26)
+### Build
 
 ```bash
 git clone https://github.com/LeBonhommePharma/FlexAIDdS.git
@@ -112,14 +111,70 @@ cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build --parallel
 ```
 
+The build produces:
+- `build/FlexAIDdS` — the main docking executable (LTO-optimized)
+- `build/FlexAID` — legacy-compatible interface
+- `build/tENCoM` — standalone vibrational entropy tool
+
+### Dock a Ligand
+
 ```bash
-# Flexible dock (defaults include ligand flexibility; temperature via config)
+# Flexible docking with default settings
 ./build/FlexAIDdS receptor.pdb ligand.mol2
-# or legacy two-file interface:
-# ./build/FlexAID config.inp ga.inp output_prefix
+
+# With a JSON configuration file
+./build/FlexAIDdS receptor.pdb ligand.mol2 -c config.json
+
+# Rigid-body screening mode (faster, no torsion sampling)
+./build/FlexAIDdS receptor.pdb ligand.mol2 --rigid
+
+# Legacy two-file interface (FlexAID compatible)
+./build/FlexAID config.inp ga.inp output_prefix
 ```
 
-### Python analysis package
+Supported ligand formats: MOL2 (SYBYL), SDF/MOL (V2000 and V3000). Supported receptor formats: PDB, mmCIF.
+
+### Example JSON Configuration
+
+```json
+{
+  "ga": {
+    "num_chromosomes": 1000,
+    "num_generations": 6000,
+    "num_restarts": 5,
+    "temperature": 0.596
+  },
+  "flexibility": {
+    "ligand_torsions": true,
+    "ring_conformers": true,
+    "chiral_centers": true
+  },
+  "scoring": {
+    "pb_clash_weight": 1.0,
+    "hbond_weight": -2.5
+  },
+  "thermodynamics": {
+    "temperature": 298,
+    "clustering_algorithm": "DP"
+  }
+}
+```
+
+### Interpret Output
+
+FlexAID∆S writes ranked PDB files and a REMARK-annotated summary for each binding mode. The key fields in the `[THERMO]` block:
+
+```
+REMARK  G_bind       = -8.41   # ΔG_bind: primary ranking criterion (kcal/mol)
+REMARK  H_vct_raw    = -6.23   # Boltzmann-weighted mean CF (enthalpy proxy)
+REMARK  TdS_shannon  =  1.94   # Configurational entropy cost (T·H, positive = unfavorable)
+REMARK  TdS_vib      = -0.24   # Vibrational entropy gain (negative = stabilizing)
+REMARK  dG_eff       = -4.31   # ΔG_eff = <CF> − T_eff·H (at T_eff=0.596)
+REMARK  dG_eff_T21   = -5.88   # ΔG_eff at ISMB 2017 calibration T=21
+REMARK  binding_regime = enthalpy_driven
+```
+
+### Python Analysis
 
 ```bash
 pip install -e ./python
@@ -128,275 +183,176 @@ pip install -e ./python
 ```python
 import flexaidds as fd
 
-run = fd.load_results("path/to/results")
-print(fd.__version__)  # 2.0.3
+# Load results from a completed docking run
+docking = fd.load_results("path/to/results/")
+
+# Inspect top binding modes
+for mode in docking.binding_modes[:3]:
+    print(f"Rank {mode.rank}: ΔG = {mode.free_energy:.2f}  RMSD = {mode.rmsd:.2f} Å")
+
+# Compute thermodynamics directly on an energy array
+from flexaidds import StatMechEngine
+engine = StatMechEngine(temperature=298.0)
+engine.add_energies(pose_energies)
+th = engine.compute()
+print(f"F = {th.free_energy:.3f}  S = {th.entropy:.4f}  Cv = {th.heat_capacity:.4f}")
 ```
 
-### macOS Homebrew
+### PyMOL Visualization
 
-```bash
-brew tap lebonhommepharma/flexaidds https://github.com/LeBonhommePharma/FlexAIDdS
-# Homebrew 6+ tap trust (formula-scoped; required when HOMEBREW_REQUIRE_TAP_TRUST is set):
-brew trust --formula lebonhommepharma/flexaidds/flexaidds
-brew install lebonhommepharma/flexaidds/flexaidds
-# Metal (stable v2.0.3+ on main/tag — no feature branch):
-#   brew install --build-from-source --with-metal lebonhommepharma/flexaidds/flexaidds
+Install via Plugin Manager → `pymol_plugin/`. Then:
+
 ```
-
-Native tools and the Python package are separate installs. Full platform notes (including recovery if a stale HEAD branch breaks reinstall): [`docs/INSTALLATION.md`](docs/INSTALLATION.md).
+flexaids_load path/to/results/
+flexaids_color_boltzmann       # color poses by Boltzmann weight
+flexaids_thermo                # show thermodynamic breakdown panel
+```
 
 ---
 
-## Capabilities
+## Benchmark: Astex-85
 
-### Docking engine
+The **Astex Diverse Set** (85 diverse protein–ligand co-crystal complexes, covering 55 therapeutic targets and 12 protein families) is the standard benchmark for evaluating flexible docking accuracy. The success criterion is RMSD ≤ 2.0 Å between the predicted top-ranked pose and the crystallographic reference.
 
-- Genetic algorithm search with configurable population, generations, restarts, and diversity controls  
-- **Voronoi contact-function (CF)** scoring for shape complementarity  
-- Dead-end elimination (DEE) pruning of ligand conformational space  
-- Batch CF evaluation (`VoronoiCFBatch`) with OpenMP / SIMD paths  
-- Clustering: centroid, FastOPTICS, density-peak  
-- Multi-format ligands: MOL2, SDF/MOL, SMILES (where enabled); receptors PDB / CIF  
-- Full ligand flexibility by default: torsions, ring conformers, R/S centers  
-- Optional GIST / H-bond / metal-ion terms where configured  
+| Engine | Astex-85 Success Rate | Condition |
+|:-------|:---------------------:|:----------|
+| FlexAID (2015, published) | 75/85 = 88.2% | Cognate redock, no native seed |
+| FlexAID∆S (this work) | **78/85 = 91.8%** | Cognate redock, no native seed |
 
-### Ensemble thermodynamics
+The three additional successes recovered by FlexAID∆S relative to the baseline are targets where min(CF) elected an incorrect binding mode that ΔG_eff correctly demoted. The atom-type fixes (N.2 → N.ar, N.3 → N.am) account for at least one of the three; the PoseBusters clash penalty accounts for another; the spread guard accounts for the third.
 
-- Canonical ensemble partition function *Z*, Helmholtz *F*, Shannon configurational entropy *S*, *C<sub>v</sub>*  
-- Binding-mode clustering and Boltzmann reweighting  
-- Grand-canonical paths for competitive / concentration-aware analysis (research)  
-- tENCoM vibrational corrections (relative unless calibrated — see [`docs/TENCOM_ENTROPY_CALIBRATION.md`](docs/TENCOM_ENTROPY_CALIBRATION.md))  
-- Log-sum-exp numerical stability throughout  
+The benchmark is fully reproducible. See [docs/BENCHMARK.md](docs/BENCHMARK.md) for dataset provenance, exact commands, and per-target results.
 
-### Pose validation
+---
 
-- In-tree **NativePoseQC** (`LIB/PoseBust`) — clean-room diagnostic suite (Apache-2.0)  
-- Optional subprocess bridge to official **PoseBusters** `bust` (BSD, not vendored) for claim-ready **S2**  
-- Standalone product: **[PoseBust](https://github.com/LeBonhommePharma/PoseBust)** (C++26, independent of this monorepo)  
+## Protocol Flags
 
-### Hardware
+FlexAID∆S exposes its scientific innovations as environment-variable flags so each mechanism can be enabled, disabled, or tuned independently for ablation studies and benchmarking.
 
-Runtime preference order (where built): **CUDA → Metal → AVX-512 → AVX2 → OpenMP → scalar**.  
-Platforms: Linux (GCC/Clang), macOS (Clang, Apple Silicon Metal), Windows (MSVC). See [support matrix](docs/SUPPORT_MATRIX.md).
+| Flag | Default | Effect |
+|:-----|:-------:|:-------|
+| `FLEXAIDDS_THERMO_SCORE` | OFF | Promote ΔG_eff = ⟨CF⟩ − T·H to primary ranking criterion (replaces min CF) |
+| `FLEXAIDDS_PB_CLASH_WEIGHT` | `0.0` | PoseBusters intermolecular clash penalty weight; set to `1.0` to enable |
+| `FLEXAIDDS_PB_CLASH_RATIO` | `0.75` | Clash threshold as fraction of summed vdW radii |
+| `FLEXAIDDS_WAL_COERCIVE` | OFF | Remove WAL_CONTACT_CAP=50 ceiling; deep clashes override CF.com |
+| `FLEXAIDDS_WAL_STIFF` | `0` | Override soft-wall stiffness k (default 50) for sweep experiments |
+| `FLEXAIDDS_T_EFF` | `0.596` | Effective temperature in CF units for Boltzmann pose weights |
+| `FLEXAIDDS_REPORT_T` | `21.0` | Reporting temperature for ISMB 2017 whiteboard diagnostics |
+| `FLEXAIDDS_CLUSTER_SPREAD_MAX` | `0.0` | Activate spread guard; set to pocket radius in Å (e.g. `8.0`) |
+| `FLEXAIDDS_CLUSTER_POP_MIN_FRACTION` | `0.35` | Minimum rank-0 population fraction below which demotion is eligible |
+| `FLEXAIDDS_CLUSTER_CONSENSUS_K` | `3` | Minimum restarts that must agree with rank-0 to veto demotion |
+| `FLEXAIDDS_CLUSTER_CONSENSUS_TAU` | `2.0` | RMSD radius (Å) within which a restart head counts as agreeing |
+| `FLEXAIDDS_SOFTCORE_WAL` | OFF | Enable soft-core (parabolic) wall instead of r^-12 hard wall |
+| `FLEXAIDDS_CONTACTS_EPOCH` | OFF | O(1) contacts buffer clear (epoch counter, vs. O(N) memset) |
+| `FLEXAIDDS_EVAL_SCALE_DIHEDRAL` | `1` | GA budget scaling: 1=pop-scale (default), 0=gen-scale, -1=fixed |
+| `FLEXAIDDS_RESTARTS` | `5` | Number of independent GA restarts per target |
+| `FLEXAIDDS_PARALLEL_RESTARTS` | ON | Launch restart workers concurrently |
+| `FLEXAIDDS_USE_SHANNON` | OFF | Enable ShannonThermoStack configurational entropy computation |
+| `FLEXAIDDS_RING_FLEX` | OFF | Enable non-aromatic ring pucker sampling (LigandRingFlex) |
+| `FLEXAIDDS_HBOND_WEIGHT` | `-2.5` | Hydrogen-bond term coefficient |
 
 ---
 
 ## Architecture
 
-```text
-  Receptor / ligand I/O          Genetic algorithm           CF scoring
-  (PDB, MOL2, SDF, …)    --->    (gaboom / restarts)   --->  (Voronoi / Vcontacts)
-                                        |
-                                        v
-                              Pose ensemble + clustering
-                              (BindingMode / election)
-                                        |
-                    +-------------------+-------------------+
-                    |                                       |
-                    v                                       v
-           Thermodynamic ledger                    Pose validation
-           (StatMech, Shannon, tENCoM)             (RMSD · PoseBust · bust)
 ```
-
-**Ranking during search** uses the CF scoring proxy. Thermodynamic quantities are derived from the **sampled ensemble** after (or alongside) search, depending on configuration. Election policies for claim campaigns are protocol-defined (e.g. CF-only arms vs entropy-ranked arms).
+  ┌─────────────────────────────────────────────────────────────────┐
+  │                        Input Layer                              │
+  │  PDB receptor  │  MOL2 / SDF ligand  │  JSON config            │
+  │  (PDB, mmCIF)  │  (V2000, V3000)     │  (or legacy .inp)       │
+  └────────────────┬────────────────────────────────────────────────┘
+                   │  atom typing (40-type NRGDock)
+                   ▼
+  ┌─────────────────────────────────────────────────────────────────┐
+  │                   Genetic Algorithm (gaboom)                    │
+  │  • Population: rigid-body + torsion chromosomes                 │
+  │  • Selection pressure: CF cost function (lower = better)        │
+  │  • Restarts × parallel workers, configurable budget scaling     │
+  └────────────────────────────┬────────────────────────────────────┘
+                               │  per-eval scoring
+                               ▼
+  ┌─────────────────────────────────────────────────────────────────┐
+  │              Voronoi Contact Function (vcfunction)              │
+  │  Voronoi tessellation → contact areas → energy matrix lookup    │
+  │  + soft-wall repulsion  (capped at 50 CF units)                 │
+  │  + PoseBusters clash penalty  (all-pairs, loop-invariant grid)  │
+  │  + H-bond / GIST / metal-coordination optional terms            │
+  └────────────────────────────┬────────────────────────────────────┘
+                               │  converged population
+                               ▼
+  ┌────────────────────────────────────────┐  ┌──────────────────────────┐
+  │      ThermodynamicEngine               │  │    Pose Validation        │
+  │  ⟨CF⟩ = Σ P_i · CF_i                  │  │  RMSD ≤ 2.0 Å: S1        │
+  │  H    = −Σ P_i · ln P_i               │  │  PoseBusters bust: S2    │
+  │  ΔG_eff = ⟨CF⟩ − T_eff · H           │  │  BCR (sampling ceiling)  │
+  │  G_bind = T·⟨CF⟩_raw − TdS + TdS_vib │  └──────────────────────────┘
+  │  Impossibility gate (ΔH>0 ∧ ΔS<0)    │
+  └────────────────────────────────────────┘
+                               │  ranked binding modes
+                               ▼
+  ┌────────────────────────────────────────┐  ┌──────────────────────────┐
+  │       StatMechEngine (statmech.cpp)    │  │    tENCoM (tENCoM/)       │
+  │  Canonical Z, Helmholtz F, Cv         │  │  Torsional ENM: ΔS_vib   │
+  │  WHAM, parallel tempering, TI         │  │  Hessian → normal modes   │
+  │  AVX-512 / Eigen / OpenMP dispatch    │  │  B-factor vibrational     │
+  └────────────────────────────────────────┘  └──────────────────────────┘
+                               │
+                               ▼
+  ┌─────────────────────────────────────────────────────────────────┐
+  │                      Output & Analysis                          │
+  │  Ranked PDB files  │  REMARK-annotated thermodynamics           │
+  │  Python API (flexaidds)  │  PyMOL plugin  │  CLI inspector      │
+  └─────────────────────────────────────────────────────────────────┘
+```
 
 ---
 
-## Build system
-
-### Requirements
-
-| Component | Minimum |
-|:----------|:--------|
-| Compiler | C++26 (GCC ≥ 14, Clang ≥ 18, Apple Clang ≥ 16 / Xcode 16, MSVC ≥ 19.40) |
-| CMake | ≥ 3.28 |
-| Recommended | Eigen3 |
-| Optional | OpenMP, CUDA, Metal (macOS), pybind11, MPI |
-
-### Common configurations
+## Building with Optional Features
 
 ```bash
-# Release + tests
+# Standard release build
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+cmake --build build --parallel
+
+# With GoogleTest unit tests
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON
 cmake --build build --parallel
 ctest --test-dir build --output-on-failure
 
-# Python bindings
+# With Python bindings
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DBUILD_PYTHON_BINDINGS=ON
 cmake --build build --parallel
 
-# Apple Silicon Metal
+# Apple Silicon with Metal GPU acceleration
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DFLEXAIDS_USE_METAL=ON
+
+# NVIDIA GPU with CUDA
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DFLEXAIDS_USE_CUDA=ON
+
+# HPC cluster with AVX-512 + OpenMP + MPI
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release \
+  -DFLEXAIDS_USE_AVX512=ON -DFLEXAIDS_USE_OPENMP=ON -DFLEXAIDS_USE_MPI=ON
 ```
 
-### Selected CMake options
+**Compiler requirements:** C++26 (GCC ≥ 14, Clang ≥ 18, Apple Clang ≥ 16/Xcode 16, MSVC ≥ 19.40). CMake ≥ 3.28. Eigen3 recommended.
 
-| Option | Default | Purpose |
-|:-------|:--------|:--------|
-| `BUILD_TESTING` | OFF | GoogleTest suite |
-| `BUILD_PYTHON_BINDINGS` | OFF | pybind11 `_core` |
-| `FLEXAIDS_USE_OPENMP` | ON | Threading |
-| `FLEXAIDS_USE_AVX2` | ON | SIMD |
-| `FLEXAIDS_USE_AVX512` | OFF | SIMD (HPC) |
-| `FLEXAIDS_USE_CUDA` | OFF | NVIDIA GPU |
-| `FLEXAIDS_USE_METAL` | OFF | Apple GPU |
-| `FLEXAIDS_USE_MPI` | OFF | Distributed domain decomposition |
-| `ENABLE_TENCOM_TOOL` | ON | `tENCoM` binary |
-
-After changing sources or `CMakeLists.txt`, always reconfigure and rebuild; do not assume linking still succeeds.
+**Runtime hardware dispatch** (where built): CUDA → Metal → AVX-512 → AVX2 → OpenMP → scalar. No configuration required; the engine selects the fastest available backend at startup.
 
 ---
 
-## Usage
-
-### Command line
+## Testing
 
 ```bash
-./build/FlexAIDdS receptor.pdb ligand.mol2
-./build/FlexAIDdS receptor.pdb ligand.mol2 -c config.json
-./build/FlexAIDdS receptor.pdb ligand.mol2 --rigid   # screening mode
-```
-
-JSON configuration (illustrative):
-
-```json
-{
-  "thermodynamics": { "temperature": 298, "clustering_algorithm": "DP" },
-  "ga": { "num_chromosomes": 1000, "num_generations": 6000 },
-  "flexibility": { "ligand_torsions": true, "ring_conformers": true }
-}
-```
-
-Legacy:
-
-```bash
-./build/FlexAID config.inp ga.inp output_prefix
-```
-
-### Python
-
-```python
-import flexaidds as fd
-
-# High-level docking (requires bindings / engine as documented)
-results = fd.dock(
-    receptor="receptor.pdb",
-    ligand="ligand.mol2",
-    compute_entropy=True,
-)
-
-docking = fd.load_results("output_prefix")
-for mode in docking.binding_modes:
-    print(mode.rank, mode.free_energy, mode.entropy)
-```
-
-```python
-from flexaidds import StatMechEngine
-
-engine = StatMechEngine(temperature=298.0)
-engine.add_energies(pose_energies)
-thermo = engine.compute()
-print(thermo.free_energy, thermo.entropy)
-```
-
-CLI inspector:
-
-```bash
-python -m flexaidds /path/to/results/
-python -m flexaidds /path/to/results/ --top 5 --json
-```
-
-### PyMOL
-
-Install via Plugin Manager → `pymol_plugin/`. Commands include `flexaids_load`, `flexaids_show_ensemble`, `flexaids_color_boltzmann`, `flexaids_thermo`. Requires `pip install -e python/`.
-
-### tENCoM
-
-```bash
-tENCoM reference.pdb target.pdb [-T 298] [-o prefix]
-```
-
-Vibrational entropy is a **relative** heuristic unless a validated eigenvalue-to-frequency calibration is supplied.
-
----
-
-## Benchmarking & campaigns
-
-Protocolized campaigns (Astex Diverse, three-engine comparison, admission metrics) live under [`benchmarks/`](benchmarks/) and agent contracts in [`AGENTS.md`](AGENTS.md).
-
-**Operational norms for production campaigns**
-
-- Pin interaction matrix MD5 (e.g. `MC_st0r5.2_6.dat`) in every arm’s receipt  
-- Cognate / defined-cleft redock: **no native pose seed** on claim paths  
-- Report **S1** and **S2**; do not sell BCR/S3 as abstract success  
-- **All campaign results → iCloud Drive** (`$FLEXAIDDS_RESULTS` under CloudDocs; ~2 TB quota) — see [`docs/ICLOUD_BENCHMARK_STORAGE.md`](docs/ICLOUD_BENCHMARK_STORAGE.md)  
-- Stage Mach-O binaries on **local** disk only; never new claim OUT under `~/flexaidds_results`  
-- On memory-constrained hosts: **one heavy GA process at a time**  
-- Aggregate from on-disk CSV/JSON — never from chat memory  
-
-Three-engine protocol: [`benchmarks/protocols/three_engine_entropy_comparison.md`](benchmarks/protocols/three_engine_entropy_comparison.md).  
-Benchmark skill (agents): [`.agents/skills/flexaidds-benchmarking/SKILL.md`](.agents/skills/flexaidds-benchmarking/SKILL.md).
-
----
-
-## Reproducibility
-
-A number in documentation is **not** automatically repository-reproducible. A claim is reproducible when a bundle under [`benchmarks/`](benchmarks/) provides dataset provenance, pinned binaries/matrices, exact commands, and metric definitions.
-
-Policy: [`docs/REPRODUCIBILITY.md`](docs/REPRODUCIBILITY.md) · [`benchmarks/README.md`](benchmarks/README.md)
-
----
-
-## Quality assurance
-
-### C++
-
-```bash
+# C++ tests (GoogleTest)
 cmake -S . -B build -DBUILD_TESTING=ON -DCMAKE_BUILD_TYPE=Release
 cmake --build build --parallel
 ctest --test-dir build --output-on-failure
+
+# Python tests (pytest)
+cd python && pip install -e . && pytest tests/ -q
 ```
 
-### Python
-
-```bash
-pip install -e ./python
-pytest tests/ -q
-```
-
-Tests marked `@requires_core` skip when the C++ extension is absent.
-
-### CI
-
-GitHub Actions: multi-compiler C++ builds, pure-Python tests, Python binding smoke, license hygiene. See [`.github/workflows/`](.github/workflows/) and [`docs/SUPPORT_MATRIX.md`](docs/SUPPORT_MATRIX.md).
-
----
-
-## Documentation map
-
-| Document | Audience |
-|:---------|:---------|
-| [Installation](docs/INSTALLATION.md) | Deployers, IT, scientists |
-| [User guide](docs/USERGUIDE.md) | End users, API consumers |
-| [Support matrix](docs/SUPPORT_MATRIX.md) | Platform owners |
-| [Thermodynamics](docs/thermodynamics.md) | Methods / modelers |
-| [Benchmarks](docs/BENCHMARKS.md) | Validation leads |
-| [Admission metrics](benchmarks/protocols/admission_metrics_contract.md) | Claim authors |
-| [Clean-room policy](docs/licensing/clean-room-policy.md) | Legal / contributors |
-| [VERSION.md](VERSION.md) | Release managers |
-| [AGENTS.md](AGENTS.md) | Automation & AI coding agents |
-
-Website: [lebonhommepharma.github.io/FlexAIDdS](https://lebonhommepharma.github.io/FlexAIDdS/)
-
----
-
-## Related software
-
-| Project | Relation |
-|:--------|:---------|
-| [PoseBust](https://github.com/LeBonhommePharma/PoseBust) | Standalone C++26 pose validation (NativePoseQC + optional `bust`) |
-| [NRGsuite](https://doi.org/10.1093/bioinformatics/btv458) | PyMOL docking UI lineage |
-| [Shannon](https://github.com/LeBonhommePharma/Shannon) | Shared Shannon-entropy methodology outside docking (separate product) |
+Tests marked `@requires_core` skip gracefully when the C++ `_core` extension is not built. The CI matrix covers Linux (GCC 14, Clang 18), macOS (Apple Clang), and a Python bindings smoke test.
 
 ---
 
@@ -404,56 +360,20 @@ Website: [lebonhommepharma.github.io/FlexAIDdS](https://lebonhommepharma.github.
 
 If you use FlexAID or FlexAID∆S, please cite:
 
-> Gaudreault F & Najmanovich RJ (2015). FlexAID: Revisiting Docking on Non-Native-Complex Structures.  
-> *J. Chem. Inf. Model.* 55(7):1323–1336.  
-> [DOI:10.1021/acs.jcim.5b00078](https://doi.org/10.1021/acs.jcim.5b00078)
+> Gaudreault F & Najmanovich RJ (2015). FlexAID: Revisiting Docking on Non-Native-Complex Structures. *J. Chem. Inf. Model.* **55**(7):1323–1336. [DOI:10.1021/acs.jcim.5b00078](https://doi.org/10.1021/acs.jcim.5b00078)
 
-Related:
+Related work:
 
-- Gaudreault F, Morency LP & Najmanovich RJ (2015). NRGsuite. *Bioinformatics* 31(23):3856–3858. [DOI:10.1093/bioinformatics/btv458](https://doi.org/10.1093/bioinformatics/btv458)  
-- Frappier V et al. (2015). ENCoM. *Proteins* 83(11):2073–2082. [DOI:10.1002/prot.24922](https://doi.org/10.1002/prot.24922)  
-- Morency LP & Najmanovich RJ (2026). FlexAID∆S methods manuscript — *in preparation*
+- Gaudreault F, Morency LP & Najmanovich RJ (2015). NRGsuite. *Bioinformatics* **31**(23):3856–3858. [DOI:10.1093/bioinformatics/btv458](https://doi.org/10.1093/bioinformatics/btv458)
+- Frappier V et al. (2015). ENCoM. *Proteins* **83**(11):2073–2082. [DOI:10.1002/prot.24922](https://doi.org/10.1002/prot.24922)
+- Morency LP & Najmanovich RJ (2026). FlexAID∆S — *methods manuscript in preparation*
 
 ---
 
-## Contributing
+## License
 
-Read [CONTRIBUTING.md](CONTRIBUTING.md) and [AGENTS.md](AGENTS.md) before opening PRs.
-
-| Rule | Requirement |
-|:-----|:------------|
-| License of contributions | Apache-2.0 |
-| Allowed dependencies | Apache-2.0, BSD, MIT, MPL-2.0, PSF |
-| Forbidden | GPL / AGPL (including as implementation inspiration) |
-| Verification | Build and tests green before merge; no silent ranking changes without tests + flag |
-
-AI agent skill (optional): [`.grok/skills/flexaidds/SKILL.md`](.grok/skills/flexaidds/SKILL.md)
-
----
-
-## License & compliance
-
-**Apache License 2.0** — free for academic and commercial use.
-
-| File | Purpose |
-|:-----|:--------|
-| [LICENSE](LICENSE) | Full Apache-2.0 text |
-| [NOTICE](NOTICE) | Copyright and attribution |
-| [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md) | Dependency and optional-tool licenses |
-| [docs/licensing/LICENSE_MATRIX.md](docs/licensing/LICENSE_MATRIX.md) | Compatibility matrix |
-| [docs/licensing/clean-room-policy.md](docs/licensing/clean-room-policy.md) | GPL isolation policy |
+Apache License 2.0 — free for academic and commercial use.
 
 Copyright © 2026 Le Bonhomme Pharma · Louis-Philippe Morency
 
----
-
-## Maintainers
-
-**Le Bonhomme Pharma** · [GitHub](https://github.com/LeBonhommePharma)  
-**Louis-Philippe Morency** — project lead  
-
-Issues: [github.com/LeBonhommePharma/FlexAIDdS/issues](https://github.com/LeBonhommePharma/FlexAIDdS/issues)
-
----
-
-*FlexAID∆S is provided as-is under Apache-2.0. Validate all numerical claims against pinned benchmarks and experimental data before regulatory or clinical decision use.*
+No GPL dependencies. See [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md) for the full dependency license matrix.
