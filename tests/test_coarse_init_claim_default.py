@@ -48,8 +48,21 @@ def test_unset_mode_forces_seed_elitism_off():
     )
 
 
+def test_hard_clash_is_not_flat_assignment():
+    """Vcontacts must not `*clash_value = CLASH_THRESHOLD` (flat 1e4).
+
+    That assignment made every hard-clashed pose score exactly CF=10000,
+    killing GA gradient on 1M2Z. Severity-scaled accumulation is required.
+    """
+    vct = (ROOT / "LIB" / "Vcontacts.cpp").read_text()
+    assert "*clash_value = CLASH_THRESHOLD" not in vct
+    assert "*clash_value += 2000.0" in vct or "*clash_value +=" in vct
+    assert "severity" in vct.lower() or "8000.0 * o * o" in vct
+
+
 if __name__ == "__main__":
     test_coarse_init_enabled_unconditionally()
     test_boom_frac_hard_zero_on_claim_path()
     test_unset_mode_forces_seed_elitism_off()
+    test_hard_clash_is_not_flat_assignment()
     print("ALL PASS")
