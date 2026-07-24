@@ -295,16 +295,26 @@ def docking_power(
     poses: Sequence[PoseScore],
     rmsd_threshold: float = 2.0,
     top_n: int = 1,
+    n_targets: Optional[int] = None,
 ) -> float:
     """Fraction of targets where the top-N poses contain a near-native pose.
 
     A target is a "success" if *any* of its top-``top_n`` ranked poses (by
-    ``total_score``) has ``rmsd < rmsd_threshold``.
+    ``total_score``) has ``0.0 <= rmsd < rmsd_threshold``.  Sentinel RMSD
+    values (-1 = not computed, 999 = no pose emitted) are never successes.
+
+    The denominator is the number of targets *attempted*, not the number that
+    produced a usable pose: a target that timed out or emitted nothing is a
+    failed docking, not an excluded sample.  Pass ``n_targets`` to pin it to
+    the full dataset size (e.g. 85 for Astex Diverse) so that targets missing
+    from ``poses`` entirely still count against the rate.
 
     Args:
         poses:          All poses across all targets.
         rmsd_threshold: RMSD cut-off for near-native (Å).
         top_n:          Number of top poses considered.
+        n_targets:      Fixed denominator; defaults to the number of distinct
+                        targets present in ``poses``.
 
     Returns:
         Success rate in [0, 1].
@@ -316,17 +326,15 @@ def docking_power(
         by_target[p.target_id].append(p)
 
     n_success = 0
-    n_valid = 0
     for target_poses in by_target.values():
-        valid = [p for p in target_poses if p.rmsd >= 0]
-        if not valid:
-            continue
-        n_valid += 1
-        ranked = sorted(valid, key=lambda p: p.total_score)[:top_n]
-        if any(p.rmsd < rmsd_threshold for p in ranked):
+        # Rank over every emitted pose. Filtering the sentinels out first would
+        # promote a worse-scoring pose into the top-N and inflate the rate.
+        ranked = sorted(target_poses, key=lambda p: p.total_score)[:top_n]
+        if any(0.0 <= p.rmsd < rmsd_threshold for p in ranked):
             n_success += 1
 
-    return n_success / n_valid if n_valid > 0 else 0.0
+    denom = n_targets if n_targets is not None else len(by_target)
+    return n_success / denom if denom > 0 else 0.0
 
 
 # ---------------------------------------------------------------------------
@@ -449,6 +457,7 @@ def compute_all_metrics(
     requested: Optional[Sequence[str]] = None,
     bootstrap: bool = False,
     n_resamples: int = 5_000,
+    n_targets: Optional[int] = None,
 ) -> dict[str, float]:
     """Compute a standard suite of benchmark metrics from a pose list.
 
@@ -457,6 +466,7 @@ def compute_all_metrics(
         requested:  Metric names to compute; ``None`` = compute all.
         bootstrap:  Whether to compute 95% bootstrap CIs (slow).
         n_resamples: Bootstrap sample count when ``bootstrap=True``.
+        n_targets:  Fixed docking-power denominator (full dataset size).
 
     Returns:
         Dict of ``{metric_name: value}`` (and ``{metric_name + "_ci_lo/hi"}``
@@ -487,10 +497,12 @@ def compute_all_metrics(
         results["entropy_rescue_rate"] = entropy_rescue_rate(poses)
 
     if "docking_power_top1" in to_compute:
-        results["docking_power_top1"] = docking_power(poses, top_n=1)
+        results["docking_power_top1"] = docking_power(
+            poses, top_n=1, n_targets=n_targets)
 
     if "docking_power_top3" in to_compute:
-        results["docking_power_top3"] = docking_power(poses, top_n=3)
+        results["docking_power_top3"] = docking_power(
+            poses, top_n=3, n_targets=n_targets)
 
     # Virtual-screening metrics require active/decoy labels and scores
     all_scores = [p.total_score for p in poses]
