@@ -303,6 +303,12 @@ ProtocolConfig ProtocolConfig::from_env() {
     }
     cfg.smfree_require_t = env_present("FLEXAIDDS_SMFREE_REQUIRE_T");
 
+    // P1 anti-collapse search-coverage knobs (unset → byte-identical defaults).
+    cfg.boom_interval = env_opt_int("FLEXAIDDS_BOOM_INTERVAL");
+    if (auto v = env_opt_double("FLEXAIDDS_SIGMA_SCALE")) {
+        cfg.sigma_scale = *v;
+    }
+
     return cfg;
 }
 
@@ -411,6 +417,12 @@ std::string ProtocolConfig::to_json() const {
     json_bool(o, "benchmark_mode", benchmark_mode);
     o << "\"t_hot\":" << t_hot << ',';
     o << "\"instream_interval\":" << instream_interval << ',';
+    if (boom_interval) {
+        o << "\"boom_interval\":" << *boom_interval << ',';
+    } else {
+        o << "\"boom_interval\":null,";
+    }
+    o << "\"sigma_scale\":" << sigma_scale << ',';
     json_bool(o, "chain_norm", chain_norm);
     json_bool(o, "smfree_require_t", smfree_require_t, /*trailing_comma=*/false);
     o << '}';
@@ -546,6 +558,10 @@ ProtocolConfig ProtocolConfig::from_json(const std::string& json_text) {
         cfg.t_hot = root["t_hot"].as_double(0.0);
     if (!root["instream_interval"].is_null())
         cfg.instream_interval = root["instream_interval"].as_int(0);
+    if (!root["boom_interval"].is_null())
+        cfg.boom_interval = root["boom_interval"].as_int(100);
+    if (!root["sigma_scale"].is_null())
+        cfg.sigma_scale = root["sigma_scale"].as_double(1.0);
     if (!root["chain_norm"].is_null())
         cfg.chain_norm = root["chain_norm"].as_bool(false);
     if (!root["smfree_require_t"].is_null())

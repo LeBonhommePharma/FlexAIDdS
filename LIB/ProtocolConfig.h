@@ -149,6 +149,21 @@ struct ProtocolConfig {
     int instream_interval{0};         ///< FLEXAIDDS_INSTREAM_INTERVAL
     bool chain_norm{false};           ///< FLEXAIDDS_CHAIN_NORM
     bool smfree_require_t{false};     ///< FLEXAIDDS_SMFREE_REQUIRE_T
+    // ── P1 anti-collapse search-coverage knobs (default = current behavior) ──
+    /// Override the periodic BOOM random-injection cadence
+    /// (GB->boom_inject_interval). nullopt = keep JSON/default (100 gens).
+    /// Smaller = inject fresh random individuals more often → more per-run
+    /// basin exploration; larger/0 = fewer/no injections. Mirrors boom_frac.
+    /// NOTE: this is the diversity-injection cadence, NOT `geninterval` (which
+    /// only re-partitions the search grid when OPTGRD is active).
+    std::optional<int> boom_interval; ///< FLEXAIDDS_BOOM_INTERVAL
+    /// Multiplier applied to the niche-sharing radius GB->sig_share AFTER it is
+    /// derived from gene limits / GB->scale. 1.0 = byte-identical to current
+    /// behavior. >1 widens niches (more neighbors counted → stronger crowding
+    /// penalty → population spreads); <1 tightens them. sig_share is a mixed
+    /// IC-parameter metric (translation Å + rotation/dihedral degrees), so this
+    /// is the lever to re-scale niching to the effective basin size.
+    double sigma_scale{1.0};          ///< FLEXAIDDS_SIGMA_SCALE
 
     /// Built-in defaults (no env consultation).
     static ProtocolConfig defaults();

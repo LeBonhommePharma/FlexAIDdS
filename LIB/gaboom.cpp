@@ -480,6 +480,17 @@ int GA(FA_Global* FA, GB_Global* GB,VC_Global* VC,chromosome** chrom,chromosome*
 	}
 	GB->sig_share = sqrt(GB->sig_share/(double)GB->num_genes)/(2.0*pow(GB->peaks,(1.0/(double)GB->num_genes)));
 	GB->sig_share /= GB->scale;
+	// ── P1 anti-collapse: re-scale the niche-sharing radius ──────────────────
+	// FLEXAIDDS_SIGMA_SCALE (proto.sigma_scale, default 1.0 → byte-identical).
+	// sig_share above is a mixed IC-parameter radius (translation Å blended with
+	// rotation/dihedral degrees); >1 widens niches so more crowded neighbours
+	// are counted (stronger anti-crowding pressure → population spreads across
+	// basins), <1 tightens them. Applied to both PSHARE and SMFREE sharing.
+	if (proto.sigma_scale != 1.0) {
+		GB->sig_share *= proto.sigma_scale;
+		fprintf(stderr, "[SIGMA] FLEXAIDDS_SIGMA_SCALE=%.4f applied: "
+		        "sig_share re-scaled to %.6f\n", proto.sigma_scale, GB->sig_share);
+	}
 	printf("SIGMA_SHARE=%f\n",GB->sig_share);
 	fflush(stdout);
 

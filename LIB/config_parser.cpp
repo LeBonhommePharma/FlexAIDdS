@@ -271,6 +271,11 @@ void apply_config(const json::Value& config, FA_Global* FA, GB_Global* GB,
             GB->alpha = *proto.sharing_alpha;
         if (proto.boom_frac.has_value())
             GB->boom_inject_fraction = *proto.boom_frac;
+        // P1 anti-collapse: override the periodic BOOM injection cadence.
+        // Unset → keep JSON/default (100). This is the diversity-injection
+        // interval, distinct from `geninterval` (grid re-partition cadence).
+        if (proto.boom_interval.has_value())
+            GB->boom_inject_interval = *proto.boom_interval;
 
         // Entropy-ablation hooks (unset → byte-identical to JSON defaults).
         if (proto.entropy_weight.has_value())
