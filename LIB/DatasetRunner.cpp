@@ -1040,9 +1040,9 @@ static std::pair<std::string,float> select_pose_freq_gated_pooled(
                 soft_T, soft_T_source, include_singletons ? 1 : 0);
     } else {
         fprintf(stderr,
-                "[SOFTBETA-ELECT] Softβ S1 OFF (default): elect min finite head CF "
+                "[SOFTBETA-ELECT] Softβ S1 OFF (opt-out): elect min finite head CF "
                 "(CF rank-0). Legacy exp(−CF/0.592) ZH composite is removed. "
-                "Opt in Softβ with FLEXAIDDS_SOFTBETA_ELECTION=1\n");
+                "Opt back in with FLEXAIDDS_ELECTION_ENTROPY=1 (or unset=default ON).\n");
     }
 
     struct PoseInfo {

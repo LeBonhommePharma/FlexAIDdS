@@ -108,14 +108,16 @@ struct ProtocolConfig {
     /// Include Frequency=1 heads in the election pool (helps BCR-like singletons).
     bool election_include_singletons{false}; ///< FLEXAIDDS_ELECTION_INCLUDE_SINGLETONS
     /// Rank already-clustered heads by Softβ Ĝ = H̃ − T S̃ (3Dsig / SoftBetaFreeEnergy).
-    /// **Default OFF** for classic pilot and claim harness until explicitly opted in.
+    /// **Default ON** — Softβ ACF entropy-aware ranking is the default election path.
     /// Softβ reorders modes only — not a sampling method; cannot fix BCR=0.
-    /// Opt in (either alias):
-    ///   FLEXAIDDS_SOFTBETA_ELECTION=1  (preferred clear name)
-    ///   FLEXAIDDS_ELECTION_SHANNON_F=1 (legacy alias, same bit)
-    /// Force OFF path: FLEXAIDDS_ELECTION_LEGACY_ZH=1.
-    /// When unset → Softβ S1 OFF (CF rank-0 / legacy ZH; no Softβ claim).
-    bool election_shannon_free_energy{false}; ///< Softβ S1 (SOFTBETA_ELECTION / SHANNON_F)
+    /// Opt out (CF rank-0 / legacy path):
+    ///   FLEXAIDDS_ELECTION_ENTROPY=0   (preferred explicit opt-out)
+    ///   FLEXAIDDS_ELECTION_LEGACY_ZH=1 (alias; forces CF rank-0)
+    /// Opt in explicitly (now redundant — default is ON):
+    ///   FLEXAIDDS_ELECTION_ENTROPY=1
+    ///   FLEXAIDDS_SOFTBETA_ELECTION=1  (legacy alias, now redundant)
+    ///   FLEXAIDDS_ELECTION_SHANNON_F=1 (legacy alias, now redundant)
+    bool election_shannon_free_energy{true}; ///< Softβ S1 (ELECTION_ENTROPY / SOFTBETA_ELECTION / SHANNON_F)
     /// Soft-β temperature T for Ĝ. 0 → resolve at election:
     /// dock TEMPER / DockingConfig::temperature, else (legacy ZH) SCORE_TAU, else 298 K.
     /// Units: CF is scoring-proxy a.u.; FlexAID soft-β (β=1/T), **not** k_B·T kcal.

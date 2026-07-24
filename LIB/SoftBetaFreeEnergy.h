@@ -210,10 +210,10 @@ inline FreeEnergy free_energy_strict(
 
 // ── Gated Softβ election (DatasetRunner S1 / offline re-rank) ──────────────
 //
-// Production path never consults crystal RMSD. Softβ is enabled only by an
-// explicit feature flag (ProtocolConfig::election_shannon_free_energy /
-// FLEXAIDDS_SOFTBETA_ELECTION / FLEXAIDDS_ELECTION_SHANNON_F). When OFF,
-// electors must fall back to CF rank-0 and must not claim Softβ improvement.
+// Production path never consults crystal RMSD. Softβ is ON by default
+// (ProtocolConfig::election_shannon_free_energy / FLEXAIDDS_ELECTION_ENTROPY).
+// Opt out with FLEXAIDDS_ELECTION_ENTROPY=0 or FLEXAIDDS_ELECTION_LEGACY_ZH=1;
+// when OFF, electors fall back to CF rank-0 and must not claim Softβ improvement.
 //
 // Crystal / native-CF oracles are diagnostics only (offline ablation tables).
 

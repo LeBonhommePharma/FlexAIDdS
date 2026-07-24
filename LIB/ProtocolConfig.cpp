@@ -219,25 +219,22 @@ ProtocolConfig ProtocolConfig::from_env() {
         env_truthy_int("FLEXAIDDS_ELECTION_INCLUDE_SINGLETONS",
                        /*default_value=*/cfg.election_v135);
     // Softβ S1 election (DatasetRunner): Ĝ = H̃ − T S̃ over already-clustered
-    // heads. **Default OFF** — Softβ is reordering only, not sampling; pilot
-    // harness must not claim Softβ S1 unless explicitly opted in.
-    // Preferred: FLEXAIDDS_SOFTBETA_ELECTION=1
-    // Legacy alias: FLEXAIDDS_ELECTION_SHANNON_F=1 (same bit)
-    // Force OFF: FLEXAIDDS_ELECTION_LEGACY_ZH=1
-    // Either ON alias wins if set truthy; LEGACY_ZH always forces false.
+    // heads. **Default ON** — Softβ ACF entropy-aware ranking is the default
+    // election path. CF rank-0 (legacy) is the opt-out.
+    // Primary control: FLEXAIDDS_ELECTION_ENTROPY=1 (ON) / =0 (opt-out).
+    // Force OFF (legacy aliases): FLEXAIDDS_ELECTION_LEGACY_ZH=1.
+    // Legacy opt-in aliases (now redundant — default is ON):
+    //   FLEXAIDDS_SOFTBETA_ELECTION=1, FLEXAIDDS_ELECTION_SHANNON_F=1
     {
         const bool legacy_zh =
             env_truthy_int("FLEXAIDDS_ELECTION_LEGACY_ZH", /*default_value=*/false);
         if (legacy_zh) {
             cfg.election_shannon_free_energy = false;
         } else {
-            const bool softbeta =
-                env_truthy_int("FLEXAIDDS_SOFTBETA_ELECTION",
-                               /*default_value=*/false);
-            const bool shannon_f =
-                env_truthy_int("FLEXAIDDS_ELECTION_SHANNON_F",
-                               /*default_value=*/false);
-            cfg.election_shannon_free_energy = softbeta || shannon_f;
+            // New default ON. FLEXAIDDS_ELECTION_ENTROPY=0 opts out to CF rank-0.
+            // Legacy SOFTBETA_ELECTION / SHANNON_F are now redundant (default ON).
+            cfg.election_shannon_free_energy =
+                env_truthy_int("FLEXAIDDS_ELECTION_ENTROPY", /*default_value=*/true);
         }
     }
     if (auto v = env_opt_double("FLEXAIDDS_ELECTION_SOFT_T")) {
