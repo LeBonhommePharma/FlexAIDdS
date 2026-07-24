@@ -29,6 +29,7 @@ fi
 
 STAMP=$(date +%Y%m%d_%H%M%S)
 OUT="${HOME}/flexaidds_results/pilot_acf_strict_${ARM}_${STAMP}"
+export OUT
 mkdir -p "$OUT"
 export OMP_NUM_THREADS=1
 export FLEXAIDDS_PARALLEL_RESTARTS=0
