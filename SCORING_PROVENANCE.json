@@ -1,0 +1,13 @@
+{
+  "matrix_md5": "9dc93717dfed0698006d88dd6a9627bc",
+  "matrix_file": "MC_st0r5.2_6.dat",
+  "sas_weight": null,
+  "hbond_flags": {},
+  "r0": null,
+  "soft_wall_cutoff": null,
+  "wal_cap_state": "unchanged",
+  "git_commit": "b1f38ba2ff56486d5b2062474e22665cfc310c5e",
+  "binary_sha256": "2171a495b73c37e549ff4d7d43343d78d1c553ebc09f2268ac1e418b93116012",
+  "timestamp": "2026-07-24T22:32:17Z",
+  "notes": "Functional scoring change is commit b1f38ba2 (COM_FLOOR softplus S=5, default-OFF). Ops canaries + comment reconcile are follow-up commits on the same PR branch. Matrix and default CF path bit-identical when FLEXAIDDS_COM_FLOOR is unset. PoseBustParity upstream bust failure is independent of COM_FLOOR; 80/81 other tests pass."
+}

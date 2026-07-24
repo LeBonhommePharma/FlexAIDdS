@@ -933,19 +933,18 @@ double vcfunction(FA_Global* FA,VC_Global* VC,atom* atoms,resid* residue, std::v
 	// installs a *soft* floor at −F: a strictly monotone, bounded-below squashing
 	// of com so the runaway tail is capped while pose order by com is preserved.
 	//
-	//   softfloor(x) = −F + F·softplus((x + F)/F),   softplus(z)=max(z,0)+log1p(e^−|z|)
+	// Transition scale S is fixed at 5 (not F). Using F as the softplus width made
+	// the floor perturb healthy com values far above −F (e.g. F=130 rewrote com=0
+	// to ~+41). With S=5 the map is near-identity for com ≳ −120 and hard-floors
+	// the over-burial tail below ~−140 when F=130.
+	//
+	//   softfloor(x) = −F + S·softplus((x + F)/S),  softplus(z)=max(z,0)+log1p(e^−|z|)
 	//     x ≫ −F  ⇒ softfloor(x) → x      (near-identity; ranking untouched)
 	//     x → −∞  ⇒ softfloor(x) → −F     (bounded; no term can swamp the sum)
 	//     softfloor′ ∈ (0,1]              (monotone ⇒ rank-preserving)
 	//
 	// Env-gated, DEFAULT-OFF: unset or F≤0 ⇒ skipped entirely ⇒ bit-identical.
 	// FLEXAIDDS_COM_FLOOR=F sets the floor magnitude (kcal/mol-equivalent CF units).
-	//
-	// NOTE (reconstruction): the detailed P3 work order was unavailable at
-	// implementation time; the soft-floor functional form here is the standard
-	// monotone-bounded (softplus) realization of the handoff's spec
-	// ("soft floor at −F, rank-preserving + bounding"). Confirm F and the exact
-	// squashing against the original work order before the OPS canary run.
 	if(const char* com_floor_env = std::getenv("FLEXAIDDS_COM_FLOOR")){
 		const double F = std::atof(com_floor_env);
 		if(F > 0.0){
