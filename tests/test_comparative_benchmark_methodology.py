@@ -45,9 +45,24 @@ def test_methodology_document_exists_and_names_three_arms():
     assert MATRIX_PIN[:8] in text
     assert "S_top10" in text
     assert "10 000" in text or "10000" in text
-    # Metric non-mixing
-    assert "top-1 single-run" in text.lower() or "top-1 single-run" in text
-    assert "not comparable" in text.lower() or "Forbidden" in text
+    # Metric non-mixing + correct JCIM Table 2 labels (skeptic-verified)
+    # top-1 = 45.2%, top-10 = 66.7% — never inverted
+    assert "45.2%" in text and "66.7%" in text
+    # 45.2% must appear with top-1 context, not only as top-10
+    assert re.search(
+        r"top-1[^\n]{0,80}45\.2%|45\.2%[^\n]{0,80}[Tt]op-1",
+        text,
+    ), "45.2% must be labeled as JCIM top-1 (Table 2)"
+    assert re.search(
+        r"top-10[^\n]{0,80}66\.7%|66\.7%[^\n]{0,80}[Tt]op-10",
+        text,
+    ), "66.7% must be labeled as JCIM top-10 (Table 2)"
+    # Forbidden inverted protocol (historical bug)
+    assert not re.search(
+        r"45\.2%[^\n]{0,60}[Tt]op-10 over 10",
+        text,
+    ), "do not label 45.2% as top-10-over-10-runs"
+    assert "Forbidden" in text
     # Arm B entropy definition
     assert "SoftBetaFreeEnergy" in text or "soft_beta" in text
     assert "TEMPER" in text and "FO" in text
