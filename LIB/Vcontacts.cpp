@@ -1930,8 +1930,29 @@ int get_contlist4(atom* atoms,int atomzero, contactlist contlist[],
 						contlist[NC].dist, posebusters_radius_sum,
 						intermolecular_clash_ratio);
 				if(hard_intermolecular_clash){
-					// Do not let capped soft-wall energy be outweighed by attraction.
-					*clash_value = CLASH_THRESHOLD;
+					// Hard intermolecular clash (d < ratio*(vdW_i+vdW_j)).
+					//
+					// OLD BUG (fixed 2026-07-24): `*clash_value = CLASH_THRESHOLD`
+					// ASSIGNED a flat 1e4, so every pose with ≥1 hard pair scored
+					// exactly CF=10000.  Tight pockets (Astex 1M2Z) then had the
+					// entire random/coarse-init gen-0 population at the same
+					// sentinel — zero GA gradient — while SCORE_NATIVE (crystal
+					// coords, no hard pairs) still scored ~−195.  Assignment also
+					// wiped any prior soft-wall accumulation.
+					//
+					// NEW: accumulate a base floor (dominates attractive CF.com
+					// of a few hundred) plus a severity term so deeper / multi-
+					// pair hard clashes rank worse.  Early-exit at
+					// clash_value >= CLASH_THRESHOLD still skips expensive SAS
+					// once the pose is clearly non-competitive.
+					const double cr_hard = intermolecular_clash_ratio *
+					                       posebusters_radius_sum;
+					const double o = (cr_hard > 1e-12)
+						? std::max(0.0, (cr_hard - contlist[NC].dist) / cr_hard)
+						: 1.0;
+					// One hard pair ≈ 2000 + up to 8000 by severity²; several
+					// pairs accumulate. Soft-wall attraction cannot outrank this.
+					*clash_value += 2000.0 + 8000.0 * o * o;
 				}else if(contlist[NC].dist < cand_clashdist){
 					int fatm = residue[Calc[atomzero].atom->ofres].fatm[0];
 					int** rb = residue[Calc[atomzero].atom->ofres].bonded;
