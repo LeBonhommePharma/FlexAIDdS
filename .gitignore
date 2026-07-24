@@ -138,3 +138,10 @@ benchmarks/astex_repro/*.pid
 benchmarks/astex_repro/*.log
 benchmarks/astex_repro/**/*.bak
 benchmarks/astex_repro/spheres/
+
+# CTest run artifacts (regenerable build output — never source)
+Testing/
+
+# Compiled test binaries accidentally captured under validation evidence
+validation_evidence/**/test_cmaes_search_clang
+validation_evidence/**/*.o
