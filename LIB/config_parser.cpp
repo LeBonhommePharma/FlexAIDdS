@@ -111,6 +111,16 @@ void apply_config(const json::Value& config, FA_Global* FA, GB_Global* GB,
         FA->metal_coord_sigma    = jdbl(config, "scoring", "metal_coord_sigma", 0.45);
         FA->metal_coord_cn_weight = jdbl(config, "scoring", "metal_coord_cn_weight", 0.5);
 
+        // Coulomb electrostatics (E7 / Wave 1.2). Default OFF — USEELC legacy
+        // keyword still enables; modern JSON was unreachable before this key.
+        // Env FLEXAIDDS_USE_ELEC=1 forces ON; =0 forces OFF after JSON.
+        FA->use_elec = jbool(config, "scoring", "electrostatics_enabled", false) ? 1 : 0;
+        if (jbool(config, "scoring", "use_elec", false))
+            FA->use_elec = 1;
+        if (const char* e = std::getenv("FLEXAIDDS_USE_ELEC")) {
+            FA->use_elec = (e[0] != '\0' && std::atoi(e) != 0) ? 1 : 0;
+        }
+
         {
             double tw = jdbl(config, "scoring", "tencom_weight", 0.0);
             if (tw < 0.0) tw = 0.0;
@@ -258,6 +268,22 @@ void apply_config(const json::Value& config, FA_Global* FA, GB_Global* GB,
         GB->boom_inject_interval          = jint(config, "ga", "boom_inject_interval", 100);
         GB->boom_inject_fraction          = jdbl(config, "ga", "boom_inject_fraction", 1.0);
         GB->boom_inject_count             = 0;
+        // Wave 3 / P1 anti-collapse: env overrides (default OFF = leave JSON).
+        // FLEXAIDDS_BOOM_INTERVAL=<gens>  (0 disables periodic injection)
+        // FLEXAIDDS_BOOM_FRAC=<0..1>
+        // FLEXAIDDS_SIGMA_SCALE=<k> multiplies GB->scale (niche radius control)
+        if (const char* e = std::getenv("FLEXAIDDS_BOOM_INTERVAL")) {
+            int v = std::atoi(e);
+            if (v >= 0) GB->boom_inject_interval = v;
+        }
+        if (const char* e = std::getenv("FLEXAIDDS_BOOM_FRAC")) {
+            double v = std::atof(e);
+            if (v >= 0.0 && v <= 1.0) GB->boom_inject_fraction = v;
+        }
+        if (const char* e = std::getenv("FLEXAIDDS_SIGMA_SCALE")) {
+            double v = std::atof(e);
+            if (v > 0.0) GB->scale *= v;
+        }
 
         // ── True GA elitism (v27) ──
         GB->n_elite                       = jint(config, "ga", "n_elite", 1);
@@ -344,10 +370,30 @@ void apply_config(const json::Value& config, FA_Global* FA, GB_Global* GB,
         FA->coarse_init_grid_step = jflt (config, "coarse_init", "grid_step",     3.0f);
         FA->coarse_init_n_seeds   = jint (config, "coarse_init", "n_seeds",       25);
         FA->coarse_init_n_orient  = jint (config, "coarse_init", "n_orientations",64);
+        // Wave 3: FLEXAIDDS_COARSE_ORIENTATIONS overrides n_orientations (pilot A/B).
+        if (const char* e = std::getenv("FLEXAIDDS_COARSE_ORIENTATIONS")) {
+            int v = std::atoi(e);
+            if (v > 0 && v <= 4096) FA->coarse_init_n_orient = v;
+        }
         // coarse_seeds_* arrays are populated at runtime by run_coarse_pocket_scan()
         FA->coarse_seeds_grid     = nullptr;
         FA->coarse_seeds_genes    = nullptr;
         FA->coarse_seeds_count    = 0;
+    }
+
+    // Wave 3.4 memetic: refuse enable unless wall gate file present.
+    // FLEXAIDDS_MEMETIC=1 alone is a no-op without FLEXAIDDS_WALL_PILOT_PASS=1
+    // (set only after W2 wall oracle PASS). Prevents burial walk-away before wall fix.
+    if (const char* e = std::getenv("FLEXAIDDS_MEMETIC")) {
+        if (e[0] != '\0' && std::atoi(e) != 0) {
+            const char* wall_ok = std::getenv("FLEXAIDDS_WALL_PILOT_PASS");
+            if (!(wall_ok && wall_ok[0] != '\0' && std::atoi(wall_ok) != 0)) {
+                fprintf(stderr,
+                    "WARN [MEMETIC]: FLEXAIDDS_MEMETIC=1 ignored — set "
+                    "FLEXAIDDS_WALL_PILOT_PASS=1 only after W2 wall oracle PASS "
+                    "(see FORWARD_SUCCESS_RATE_PLAN Wave 3.4)\n");
+            }
+        }
     }
 
     // ── ThermodynamicEngine ──
