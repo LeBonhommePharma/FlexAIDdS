@@ -75,7 +75,7 @@ pdb_id,ligand_id,resolution_A,rmsd_threshold_A,reference
 2bm2,LIG,2.0,2.0,converted
 2br1,LIG,2.0,2.0,converted
 2bsm,LIG,2.0,2.0,converted
-2bys,LIG,2.0,2.0,converted
+2bys,LOB,2.0,2.0,converted
 2c3i,LIG,2.0,2.0,converted
 2cet,LIG,2.0,2.0,converted
 2cgr,LIG,2.0,2.0,converted
