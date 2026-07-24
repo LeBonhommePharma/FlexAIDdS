@@ -23,7 +23,7 @@ namespace sugar_pucker {
 
 static constexpr float PI_F = 3.14159265f;
 static constexpr float DEG2RAD = PI_F / 180.0f;
-static constexpr float RAD2DEG = 180.0f / PI_F;
+[[maybe_unused]] static constexpr float RAD2DEG = 180.0f / PI_F;
 
 // ─── detect_sugar_type ───────────────────────────────────────────────────────
 SugarType detect_sugar_type(const atom* atoms,
