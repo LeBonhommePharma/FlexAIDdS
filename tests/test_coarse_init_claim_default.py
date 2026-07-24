@@ -55,9 +55,15 @@ def test_hard_clash_is_not_flat_assignment():
     killing GA gradient on 1M2Z. Severity-scaled accumulation is required.
     """
     vct = (ROOT / "LIB" / "Vcontacts.cpp").read_text()
-    assert "*clash_value = CLASH_THRESHOLD" not in vct
-    assert "*clash_value += 2000.0" in vct or "*clash_value +=" in vct
-    assert "severity" in vct.lower() or "8000.0 * o * o" in vct
+    # Live code must accumulate (+=), not assign (= CLASH_THRESHOLD).
+    # Comments may still mention the old assignment for archaeology.
+    live = "\n".join(
+        ln for ln in vct.splitlines()
+        if not ln.lstrip().startswith("//") and "*clash_value" in ln
+    )
+    assert "*clash_value = CLASH_THRESHOLD" not in live
+    assert "*clash_value += 2000.0" in vct
+    assert "8000.0 * o * o" in vct
 
 
 if __name__ == "__main__":
