@@ -472,15 +472,21 @@ int GA(FA_Global* FA, GB_Global* GB,VC_Global* VC,chromosome** chrom,chromosome*
 
 	// S1 search-coverage remediation (default OFF): denser BOOM + wider niche.
 	// FLEXAIDDS_SEARCH_COVERAGE=1 and/or FLEXAIDDS_BOOM_INTERVAL=<N>.
+	// Also restores boom_inject_fraction when campaign configs left it at 0
+	// (otherwise interval changes are a complete no-op — gaboom requires both).
 	{
 		const int boom_before = GB->boom_inject_interval;
 		const double scale_before = GB->scale;
+		const double frac_before = GB->boom_inject_fraction;
 		if (flexaids::search_coverage::apply_from_env(GB->boom_inject_interval,
-		                                              GB->scale)) {
+		                                              GB->scale,
+		                                              GB->boom_inject_fraction)) {
 			fprintf(stderr,
-			        "[SEARCH-COVERAGE] boom_interval %d→%d  sharing_scale %.4f→%.4f "
+			        "[SEARCH-COVERAGE] boom_interval %d→%d  boom_fraction %.3f→%.3f  "
+			        "sharing_scale %.4f→%.4f "
 			        "(FLEXAIDDS_SEARCH_COVERAGE / BOOM_INTERVAL)\n",
 			        boom_before, GB->boom_inject_interval,
+			        frac_before, GB->boom_inject_fraction,
 			        scale_before, GB->scale);
 		}
 	}
