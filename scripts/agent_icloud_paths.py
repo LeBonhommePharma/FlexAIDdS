@@ -26,6 +26,7 @@ from typing import Iterable, Sequence
 
 # Subdirectory under FLEXAIDDS_ICLOUD for the live agent-home mirror (not archive).
 AGENT_HOMES_SUBDIR = "agent_homes"
+HOME_DOTS_SUBDIR = "home_dots"
 ARCHIVED_FROM_SSD_SUBDIR = "archived_from_ssd"
 
 # Remote directory names match the 2026-07-25 archive_batch layout so restore
@@ -35,6 +36,93 @@ REMOTE_APP_SUPPORT_CLAUDE = "Application_Support_Claude"
 REMOTE_DOT_CLAUDE_SCIENCE = "dot_claude_science"
 REMOTE_DOT_CODEX = "dot_codex"
 REMOTE_DOT_GROK = "dot_grok"
+
+# Named paths the user asked about (must be PRESENT or explicit SKIP).
+NAMED_HOME_PATHS: tuple[str, ...] = (
+    ".claude",
+    ".codex",
+    ".grok",
+    ".venv",
+    ".env",
+)
+
+# Meaningful home-dot files/dirs to mirror under home_dots/ (not ephemeral noise).
+# Agent trees are handled separately under agent_homes/.
+HOME_DOT_ALLOWLIST: tuple[str, ...] = (
+    ".cursor",
+    ".flexaidds_env",
+    ".flexaidds_env.bak",
+    ".gitconfig",
+    ".zshrc",
+    ".zprofile",
+    ".bash_profile",
+    ".alias_profile",
+    ".npmrc",
+    ".condarc",
+    ".nanorc",
+    ".claude.json",
+    ".claude.json.backup",
+    ".tcshrc",
+    ".xonshrc",
+)
+
+# Ephemeral / skip prefixes under $HOME (never required durable mirrors).
+HOME_DOT_SKIP_PREFIXES: tuple[str, ...] = (
+    ".zcompdump",
+    ".DS_Store",
+    ".CFUserTextEncoding",
+    ".bash_history",
+    ".zsh_history",
+    ".zhistory",
+    ".lesshst",
+    ".python_history",
+    ".viminfo",
+    ".wget-hsts",
+    ".pymoltimestamp",
+    ".flexaidds_campaign.pid",
+    ".flexaidds_campaign.pids",
+    ".passport_contact_sheet",
+    ".ElvUI",
+    ".elvui",
+)
+
+# Regenerable cache-like subpaths under live agent homes. Free only after the
+# durable config mirror exists AND the path is listed as freeable (not the
+# whole live home). These are intentionally NOT required on iCloud (thin
+# backup excludes them); free is allowed only when the parent agent mirror
+# verified OK and --free-regenerable is used, or when archive already holds
+# an equivalent durable tree for that agent.
+REGENERABLE_FREE_CANDIDATES: tuple[tuple[str, str], ...] = (
+    # (agent_id, relative path under local home of that agent)
+    ("claude", "cache"),
+    ("claude", "telemetry"),
+    ("claude", "debug"),
+    ("claude", "shell-snapshots"),
+    ("claude", "paste-cache"),
+    ("claude", "file-history"),
+    ("codex", "cache"),
+    ("codex", "log"),
+    ("codex", "node_repl"),
+    ("codex", "browser"),
+    ("codex", "attachments"),
+    ("codex", "generated_images"),
+    ("codex", "tmp"),
+    ("grok", "logs"),
+    ("grok", "marketplace-cache"),
+    ("grok", "downloads"),
+    ("grok", "upload_queue"),
+    ("grok", "vendor"),
+    ("grok", "bin"),
+    ("grok", "migration"),
+    ("claude_app", "Cache"),
+    ("claude_app", "Code Cache"),
+    ("claude_app", "GPUCache"),
+    ("claude_app", "Crashpad"),
+    ("claude_app", "DawnGraphiteCache"),
+    ("claude_app", "DawnWebGPUCache"),
+    ("claude_app", "blob_storage"),
+    ("claude_app", "logs"),
+)
 
 # Thin excludes (rsync --exclude patterns). Default backup omits caches,
 # reinstallable runtimes, and huge VM/blob trees. Secrets stay local unless
@@ -145,6 +233,12 @@ def agent_homes_mirror_root(icloud: Path | None = None) -> Path:
     return root / AGENT_HOMES_SUBDIR
 
 
+def home_dots_mirror_root(icloud: Path | None = None) -> Path:
+    """Durable local→iCloud home-dot mirror root (shell/config files)."""
+    root = icloud if icloud is not None else default_icloud_root()
+    return root / HOME_DOTS_SUBDIR
+
+
 def archive_batch_root(icloud: Path | None = None, batch: str | None = None) -> Path:
     """Path to archived_from_ssd[/batch] under iCloud."""
     root = icloud if icloud is not None else default_icloud_root()
@@ -152,6 +246,232 @@ def archive_batch_root(icloud: Path | None = None, batch: str | None = None) -> 
     if batch:
         return base / batch
     return base
+
+
+@dataclass(frozen=True)
+class NamedPathStatus:
+    """PRESENT / MISSING / SKIP status for a named or allowlisted home path."""
+
+    name: str
+    local: Path
+    status: str  # PRESENT | MISSING | SKIP
+    reason: str
+    kind: str  # file | dir | missing
+    remote_name: str | None = None
+
+
+def inventory_named_home_paths(home: Path | None = None) -> list[NamedPathStatus]:
+    """Status for user-named paths (.claude, .codex, .grok, .venv, .env)."""
+    h = home if home is not None else Path.home()
+    out: list[NamedPathStatus] = []
+    for name in NAMED_HOME_PATHS:
+        p = h / name
+        if not p.exists():
+            out.append(
+                NamedPathStatus(
+                    name=name,
+                    local=p,
+                    status="MISSING",
+                    reason="absent locally; nothing to mirror",
+                    kind="missing",
+                    remote_name=_remote_name_for_home_dot(name),
+                )
+            )
+            continue
+        kind = "dir" if p.is_dir() else "file"
+        out.append(
+            NamedPathStatus(
+                name=name,
+                local=p,
+                status="PRESENT",
+                reason="exists locally",
+                kind=kind,
+                remote_name=_remote_name_for_home_dot(name),
+            )
+        )
+    return out
+
+
+def _remote_name_for_home_dot(name: str) -> str | None:
+    mapping = {
+        ".claude": REMOTE_DOT_CLAUDE,
+        ".codex": REMOTE_DOT_CODEX,
+        ".grok": REMOTE_DOT_GROK,
+        ".venv": "dot_venv",
+        ".env": "dot_env",
+    }
+    return mapping.get(name)
+
+
+def _should_skip_home_dot(name: str) -> str | None:
+    """Return skip reason if name is ephemeral noise, else None."""
+    if name in (".", ".."):
+        return "dot self"
+    if name in {".claude", ".codex", ".grok", ".claude-science"}:
+        return "handled by agent_homes (not home_dots)"
+    for prefix in HOME_DOT_SKIP_PREFIXES:
+        if name == prefix or name.startswith(prefix):
+            return f"ephemeral skip prefix {prefix}"
+    if name.endswith(".zwc"):
+        return "zsh compiled dump"
+    return None
+
+
+def inventory_home_dots(home: Path | None = None) -> list[NamedPathStatus]:
+    """Inventory allowlisted home dots + named missing; skip ephemeral noise.
+
+    Does not walk beyond one-level names under $HOME (no recursive find).
+    """
+    h = home if home is not None else Path.home()
+    out: list[NamedPathStatus] = []
+    seen: set[str] = set()
+
+    # Named paths first (including MISSING .venv/.env)
+    for row in inventory_named_home_paths(home=h):
+        out.append(row)
+        seen.add(row.name)
+
+    # Allowlisted configs
+    for name in HOME_DOT_ALLOWLIST:
+        if name in seen:
+            continue
+        seen.add(name)
+        p = h / name
+        remote = f"dot_{name[1:]}" if name.startswith(".") else name
+        if not p.exists():
+            out.append(
+                NamedPathStatus(
+                    name=name,
+                    local=p,
+                    status="MISSING",
+                    reason="allowlisted but absent",
+                    kind="missing",
+                    remote_name=remote,
+                )
+            )
+            continue
+        kind = "dir" if p.is_dir() else "file"
+        out.append(
+            NamedPathStatus(
+                name=name,
+                local=p,
+                status="PRESENT",
+                reason="allowlisted config",
+                kind=kind,
+                remote_name=remote,
+            )
+        )
+
+    # Other one-level dots: classify as SKIP with reason (honest accounting)
+    try:
+        names = sorted(os.listdir(h))
+    except OSError as exc:
+        out.append(
+            NamedPathStatus(
+                name=".",
+                local=h,
+                status="SKIP",
+                reason=f"cannot list home: {exc}",
+                kind="missing",
+            )
+        )
+        return out
+
+    for name in names:
+        if not name.startswith(".") or name in seen:
+            continue
+        seen.add(name)
+        skip = _should_skip_home_dot(name)
+        if skip is None and name not in HOME_DOT_ALLOWLIST:
+            # Unknown extra dot — skip by default (not force-upload)
+            skip = "not in allowlist (not force-uploaded)"
+        if skip is None:
+            continue
+        p = h / name
+        kind = "dir" if p.is_dir() else "file" if p.exists() else "missing"
+        out.append(
+            NamedPathStatus(
+                name=name,
+                local=p,
+                status="SKIP",
+                reason=skip,
+                kind=kind,
+            )
+        )
+    return out
+
+
+def build_home_dot_mirrors(
+    home: Path | None = None,
+    include_missing: bool = False,
+) -> list[AgentMirror]:
+    """Mirror specs for PRESENT allowlisted home dots (files or dirs).
+
+    Missing named paths (.venv, .env) are not included unless include_missing
+    (they still appear in inventory as MISSING — never invent empty uploads).
+    """
+    h = home if home is not None else Path.home()
+    mirrors: list[AgentMirror] = []
+    for name in HOME_DOT_ALLOWLIST:
+        p = h / name
+        if not p.exists():
+            if include_missing:
+                mirrors.append(
+                    AgentMirror(
+                        agent_id=f"home_{name.lstrip('.')}",
+                        label=f"home dot {name} (missing)",
+                        local=p,
+                        remote_name=f"dot_{name[1:]}" if name.startswith(".") else name,
+                        excludes=(),
+                    )
+                )
+            continue
+        mirrors.append(
+            AgentMirror(
+                agent_id=f"home_{name.lstrip('.')}",
+                label=f"home dot {name}",
+                local=p,
+                remote_name=f"dot_{name[1:]}" if name.startswith(".") else name,
+                excludes=(),
+            )
+        )
+    return mirrors
+
+
+def freeable_regenerable_paths(
+    home: Path | None = None,
+    agents: Sequence[str] | None = None,
+) -> list[dict[str, str]]:
+    """Local regenerable cache paths that may be freed after mirror verify.
+
+    Does not free whole live agent roots. Returns dicts with agent_id, local,
+    relative path — caller must verify durable agent mirror exists first.
+    """
+    mirrors = {
+        m.agent_id: m
+        for m in build_agent_mirrors(home=home, agents=agents, full=False)
+    }
+    wanted = set(mirrors.keys()) if agents is None else {
+        a.strip().lower().replace("-", "_") for a in agents
+    }
+    rows: list[dict[str, str]] = []
+    for agent_id, rel in REGENERABLE_FREE_CANDIDATES:
+        if agent_id not in wanted:
+            continue
+        m = mirrors.get(agent_id)
+        if m is None:
+            continue
+        local = m.local / rel
+        rows.append(
+            {
+                "agent_id": agent_id,
+                "relative": rel,
+                "local": str(local),
+                "agent_local_root": str(m.local),
+                "remote_name": m.remote_name,
+            }
+        )
+    return rows
 
 
 def build_agent_mirrors(
@@ -235,7 +555,7 @@ def print_map(
                 "source": str(src),
                 "dest": str(dst),
                 "excludes": list(m.excludes),
-                "source_exists": src.is_dir() if mode == "backup" else None,
+                "source_exists": src.exists() if mode == "backup" else None,
             }
         )
     return rows
@@ -312,6 +632,21 @@ def main(argv: Sequence[str] | None = None) -> int:
         help="Print default thin excludes for one agent_id.",
     )
     p.add_argument(
+        "--print-inventory",
+        action="store_true",
+        help="Print named + home-dot PRESENT/MISSING/SKIP inventory as JSON.",
+    )
+    p.add_argument(
+        "--print-home-dots-map",
+        action="store_true",
+        help="Print JSON source/dest pairs for allowlisted home dots.",
+    )
+    p.add_argument(
+        "--print-freeable",
+        action="store_true",
+        help="Print regenerable free candidates (verify mirror before free).",
+    )
+    p.add_argument(
         "--mode",
         choices=("backup", "restore"),
         default="backup",
@@ -362,6 +697,70 @@ def main(argv: Sequence[str] | None = None) -> int:
             return 2
         for ex in DEFAULT_EXCLUDES[key]:
             print(ex)
+        return 0
+
+    if args.print_inventory:
+        rows = inventory_home_dots(home=home)
+        print(
+            json.dumps(
+                {
+                    "home": str(home),
+                    "icloud": str(icloud),
+                    "items": [
+                        {
+                            "name": r.name,
+                            "local": str(r.local),
+                            "status": r.status,
+                            "reason": r.reason,
+                            "kind": r.kind,
+                            "remote_name": r.remote_name,
+                        }
+                        for r in rows
+                    ],
+                },
+                indent=2,
+            )
+        )
+        return 0
+
+    if args.print_home_dots_map:
+        dest = (
+            Path(args.dest_root)
+            if args.dest_root
+            else home_dots_mirror_root(icloud)
+        )
+        mirrors = build_home_dot_mirrors(home=home)
+        rows = print_map(mirrors, dest_root=dest, mode="backup")
+        # Files use source path without trailing slash semantics in rsync
+        print(
+            json.dumps(
+                {
+                    "mode": "backup",
+                    "dest_root": str(dest),
+                    "icloud": str(icloud),
+                    "pairs": rows,
+                },
+                indent=2,
+            )
+        )
+        return 0
+
+    if args.print_freeable:
+        print(
+            json.dumps(
+                {
+                    "freeable": freeable_regenerable_paths(
+                        home=home, agents=agent_list
+                    ),
+                    "note": (
+                        "Free only after durable agent_homes mirror for "
+                        "that agent is verified non-empty; never free whole "
+                        "live agent roots."
+                    ),
+                },
+                indent=2,
+            )
+        )
         return 0
 
     # Resolve dest / archive root

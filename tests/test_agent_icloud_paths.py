@@ -186,3 +186,58 @@ def test_sync_script_exists_and_is_executable():
     # Safety: no find over CloudDocs
     assert "find " not in text or "Never" in text
     assert "gtimeout" in text or "timeout" in text
+
+
+def test_inventory_named_paths_missing_venv_env(tmp_path: Path):
+    (tmp_path / ".claude").mkdir()
+    (tmp_path / ".codex").mkdir()
+    (tmp_path / ".grok").mkdir()
+    # no .venv / .env
+    rows = {r.name: r for r in aip.inventory_named_home_paths(home=tmp_path)}
+    assert rows[".claude"].status == "PRESENT"
+    assert rows[".codex"].status == "PRESENT"
+    assert rows[".grok"].status == "PRESENT"
+    assert rows[".venv"].status == "MISSING"
+    assert rows[".env"].status == "MISSING"
+    assert "nothing to mirror" in rows[".venv"].reason
+
+
+def test_home_dot_allowlist_mirrors_and_skips_zcompdump(tmp_path: Path):
+    (tmp_path / ".zshrc").write_text("export X=1\n")
+    (tmp_path / ".flexaidds_env").write_text("FLEXAIDDS_ROOT=/x\n")
+    (tmp_path / ".zcompdump-foo").write_text("noise\n")
+    (tmp_path / ".cursor").mkdir()
+    mirrors = aip.build_home_dot_mirrors(home=tmp_path)
+    names = {m.local.name for m in mirrors}
+    assert ".zshrc" in names
+    assert ".flexaidds_env" in names
+    assert ".cursor" in names
+    assert ".zcompdump-foo" not in names
+    inv = aip.inventory_home_dots(home=tmp_path)
+    skips = [r for r in inv if r.status == "SKIP" and "zcompdump" in r.name]
+    assert skips
+    dest = tmp_path / "icloud" / "home_dots"
+    rows = aip.print_map(mirrors, dest_root=dest, mode="backup")
+    assert any(r["dest"].endswith("dot_zshrc") for r in rows)
+
+
+def test_freeable_never_includes_agent_root(tmp_path: Path):
+    (tmp_path / ".claude" / "cache").mkdir(parents=True)
+    (tmp_path / ".codex" / "cache").mkdir(parents=True)
+    rows = aip.freeable_regenerable_paths(home=tmp_path, agents=["claude", "codex"])
+    for row in rows:
+        assert row["local"] != row["agent_local_root"]
+        assert row["local"].startswith(row["agent_local_root"])
+    assert any(r["relative"] == "cache" and r["agent_id"] == "claude" for r in rows)
+
+
+def test_home_dots_and_safe_free_scripts_exist():
+    for name in (
+        "sync_home_dots_to_icloud.sh",
+        "safe_free_verified_icloud_duplicates.sh",
+    ):
+        script = SCRIPTS / name
+        assert script.is_file(), name
+        text = script.read_text(encoding="utf-8")
+        assert "FLEXAIDDS_ICLOUD" in text
+        assert "dry-run" in text or "--dry-run" in text
