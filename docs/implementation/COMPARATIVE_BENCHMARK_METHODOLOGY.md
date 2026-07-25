@@ -49,10 +49,12 @@ These axes are **identical** for A, B, and C. Only the science variables in §3 
 | Field | Specification |
 |-------|----------------|
 | **Intent** | CF-only docking / ranking as in FlexAID 2015 comparative design |
+| **Source repo** | `$HOME/Projects/FlexAID` branch **`master`** |
+| **Source commit (pin)** | **`f766a14e256c4b0ca45df77f28db2bfcad82a3b2`** (2015-12-16) — ensures TEMPER=0 + CF clustering works. Alternate: `53771bd` (2016-01-05 last scientific master). Reject `9aa7995` (README-only) |
 | **TEMPER** | **0** |
 | **Clustering** | `CLUSTA CF` |
 | **Election** | Lowest CF / CF-path emission (no soft-β \(\tilde G\)) |
-| **Binary preference** | Historical FlexAID pin under `three_engine_entropy_q1/bin/A/FlexAID` (SHA **must differ** from master B when claiming independent A) |
+| **Binary preference** | Built from pin → `$FLEXAIDDS_LOCAL_ROOT/three_engine_entropy_q1/bin/A/FlexAID` (SHA **must differ** from arm B) |
 | **CONFIG generators** | `scripts/generate_flexaid_inp.py` arm `A` (`ARM_SPEC["A"]`) |
 | **Launcher** | `scripts/run_flexaid_arm_pilot8.sh A` → `scripts/run_3dsig_red_pair_serial.sh --only A` |
 | **Protocol-equivalent reconstruction** (if binary A missing) | Same matrix/budget/seed-off; CONFIG `TEMPER 0` + `CLUSTA CF`; current master binary as **B0-style CF control only** — label as **“CF reconstruction, not historical A SHA”** and do not claim byte-identical 2015 executable |
@@ -62,13 +64,15 @@ These axes are **identical** for A, B, and C. Only the science variables in §3 
 | Field | Specification |
 |-------|----------------|
 | **Intent** | **First entropy-in-election** concept as in 3Dsig 2017 / FlexAID lineage: soft-β free energy on the **CF scoring proxy**, not ShannonThermoStack physical ΔG |
+| **Source repo** | `$HOME/Projects/FlexAID` branch **`entropy`** (`origin/Entropy`) |
+| **Source commit (pin)** | **`1a6ae0b074084eadbaeee5c2c7973777a5cacf5e`** (2020-04-29 tip). Entropy machinery birth: `f7e18d4` (2014-09-04 TEMPER) |
 | **Ranking objective** | \(\displaystyle \tilde G=\tilde H-T\tilde S,\quad p_i\propto e^{-\mathrm{CF}_i/T},\quad \tilde G\equiv E_{\min}-T\ln Z_{\mathrm{local}}\) (cluster **ACF**) |
-| **Implementation pin** | Single math: `LIB/SoftBetaFreeEnergy.h` (`flexaids::soft_beta::free_energy` / `acf`). Shared by `cluster.cpp` ACF, BindingMode classic F, and (only if flagged) DatasetRunner Softβ S1 |
-| **First shared SoftBeta identity commit (repo)** | `ee7c3203` — *Add: SoftBeta ranking identity (G̃=H̃−T·S̃ ≡ ACF)*; DatasetRunner Shannon elect earlier at `c82e6fc2` |
+| **Implementation pin (FlexAIDdS modern port)** | Single math: `LIB/SoftBetaFreeEnergy.h` when running on FlexAIDdS tree; historical arm B binary uses FlexAID entropy-branch FO/BindingMode path |
+| **First shared SoftBeta identity commit (FlexAIDdS)** | `ee7c3203` — identity with ACF; DatasetRunner Shannon elect earlier at `c82e6fc2` |
 | **TEMPER** | **21** (LP-optimized engine soft-T for FO/ACF; **not** physical \(k_B T\) kcal). Override `--temper 298` only with receipt note |
 | **Clustering** | **`CLUSTA FO`**, **exactly one** literature MinPts pass (`fo_choose_minpts`) — **not** DP, not triple MinPts ladder |
 | **Election path** | **Engine** ACF / soft-β emission when \(T>0\) (red-pair science path). DatasetRunner `FLEXAIDDS_SOFTBETA_ELECTION` is a **separate** S1 rescoring flag (default **OFF**) and is **not** required for arm B engine path |
-| **Binary preference** | Master FlexAID / FlexAIDdS entropy-capable binary under `bin/B/FlexAID` (or staged equivalent) |
+| **Binary preference** | Built from pin → `$FLEXAIDDS_LOCAL_ROOT/three_engine_entropy_q1/bin/B/FlexAID` |
 | **CONFIG** | `scripts/generate_flexaid_inp.py` arm `B` |
 | **Forbidden confounds** | Do not package arm B as Softβ + COM_BURIAL_CAP + 72d7 + autonomous multi-knob “entropy” |
 
@@ -174,17 +178,49 @@ Arm **C** (current FlexAIDdS) uses the same bootstrap entry point on a result tr
 
 ---
 
-## 7. Binary / commit pins (fill at run time)
+## 7. Binary / commit pins (source-pinned)
 
-See companion machine-readable map: campaign receipts + `{scratch}/arm_pins.json` template fields below.
+**Machine-readable map (authoritative SHAs):** [`arm_pins.json`](arm_pins.json)  
+**Campaign status:** [`CAMPAIGN_STATUS_2026-07-25.md`](CAMPAIGN_STATUS_2026-07-25.md)
 
-| Arm | Preferred binary path | Commit / identity | Status if missing |
-|-----|----------------------|-------------------|-------------------|
-| A | `$FLEXAIDDS_LOCAL_ROOT/three_engine_entropy_q1/bin/A/FlexAID` | Historical pin SHA (must ≠ B when claiming independent A) | **Protocol-equivalent reconstruction** (§3.1) |
-| B | `…/bin/B/FlexAID` or entropy-capable master | Soft-β identity ≥ `ee7c3203` / FO single MinPts | Reconstruct TEMPER21+FO on current tree; label reconstruction |
-| C | `FlexAIDdS` + `benchmark_datasets` (baseline_engine or `build/`) | `git rev-parse` of **binary build** + `binary_sha256` | Always available from current tree |
+**Source repo (A/B):** `$HOME/Projects/FlexAID` → `https://github.com/LeBonhommePharma/FlexAID.git`  
+**Source repo (C):** this tree (`FlexAIDdS`).
 
-**Receipt fields (every arm):** `matrix_md5`, `binary_sha256`, `git_commit` (of binary), `pop`, `gen`, `restarts`, `seed_elitism`, `temper`, `clusta`, `mode` (defined-cleft vs autonomous).
+| Arm | Preferred binary path | Source commit / identity | Status if missing |
+|-----|----------------------|--------------------------|-------------------|
+| **A** | `$FLEXAIDDS_LOCAL_ROOT/three_engine_entropy_q1/bin/A/FlexAID` | FlexAID **`master` @ `f766a14e256c4b0ca45df77f28db2bfcad82a3b2`** (2015-12-16; TEMPER0 CF clustering fix). Alternate code tip: `53771bd` (2016-01-05). **Do not** pin master tip `9aa7995` (README-only 2026). Binary SHA **must ≠ B** | **Protocol-equivalent reconstruction** (§3.1) labeled *not historical A SHA* |
+| **B** | `$FLEXAIDDS_LOCAL_ROOT/three_engine_entropy_q1/bin/B/FlexAID` | FlexAID **`entropy` / `origin/Entropy` @ `1a6ae0b074084eadbaeee5c2c7973777a5cacf5e`** (2020-04-29 tip). Entropy birth: `f7e18d4` (2014-09-04 TEMPER). Run as TEMPER **21** + CLUSTA **FO** (single literature MinPts) | Reconstruct TEMPER21+FO on current FlexAIDdS `--legacy` only if labeled *reconstruction, not first-entropy SHA* |
+| **B0** | same Mach-O as **B** | Control only (TEMPER0 CF); not a third science arm | Skip if A SHA already equals B |
+| **C** | `$FLEXAIDDS_LOCAL_ROOT/three_engine_entropy_q1/bin/C/FlexAIDdS` (+ `benchmark_datasets`) | FlexAIDdS **build commit** + `binary_sha256` at install time | Build from current tree; `resolve_build.py --check` |
+
+**Matrix pin (all arms):** `MC_st0r5.2_6.dat` MD5 **`9dc93717dfed0698006d88dd6a9627bc`**  
+(local default: `$FLEXAIDDS_LOCAL_ROOT/three_engine_entropy_q1/data/MC_st0r5.2_6.dat`).
+
+**Receipt fields (every arm):** `matrix_md5`, `binary_sha256`, `git_commit` (of binary), `source_repo`, `pop`, `gen`, `restarts`, `seed_elitism`, `temper`, `clusta`, `mode` (defined-cleft vs autonomous), `campaign_id`.
+
+### 7.1 iCloud Drive layout (load / save benchmarks)
+
+Live compute is **local APFS only**. iCloud is a **thin durable mirror**. Full rules: `docs/ICLOUD_BENCHMARK_STORAGE.md`.
+
+| Layer | Variable | Default |
+|-------|----------|---------|
+| Live work | `FLEXAIDDS_LOCAL_ROOT` | `~/flexaidds_results` |
+| iCloud root | `FLEXAIDDS_ICLOUD` | `~/Library/Mobile Documents/com~apple~CloudDocs/FlexAIDdS_benchmarks` |
+| Thin results | `FLEXAIDDS_RESULTS` | `$FLEXAIDDS_ICLOUD/results` |
+
+```text
+$FLEXAIDDS_LOCAL_ROOT/
+  three_engine_entropy_q1/bin/{A,B,C}/     # binaries + matrix data/
+  campaigns/three_engine/{A,B0,B,C}/<id>/  # live GA OUT
+  logs/  pins/materialize/
+
+$FLEXAIDDS_ICLOUD/
+  results/campaigns/three_engine/{A,B0,B,C}/<id>/   # result.csv, RUN_RECEIPT, bootstrap JSON
+  pins/  archived_from_ssd/
+```
+
+Sync after arm completion: `bash scripts/sync_three_engine_local_to_icloud.sh --campaign <id>`.  
+**Never** write live GA under `Mobile Documents/`; never `find`/`rglob` CloudDocs; hash via `scripts/icloud_safe_io.py`.
 
 ---
 
@@ -209,17 +245,33 @@ Arm C is launched separately with the same matrix/budget/seed-off and must emit 
 
 ---
 
-## 9. Non-goals
+## 9. Gates before N=85 three-arm (Science order)
+
+Do **not** launch full Astex-85 comparative until **all** hold:
+
+1. **A and B binaries exist** at pinned paths with recorded `binary_sha256` (from FlexAID commits in §7).  
+2. **Matrix MD5** on live path = `9dc93717dfed0698006d88dd6a9627bc`.  
+3. **Native CF oracle** panel PASS on ≥2 pilot targets (fail-closed if native CF ≫ decoy fails systematically).  
+4. **Serial pilot8** A → B completes with `mode_rmsd_0..9` schema; BCR and S_top10 reported (even if zero).  
+5. Prior pilot BCR=0 on **both** CF and FO with wrong matrix is **not** a green light — re-run pilot under §2 axes after binary pin.  
+6. No dual full85 / no concurrent C0 claim thrash.
+
+**Single next step (2026-07-25):** build A@`f766a14` + B@`1a6ae0b` → 2-target oracle → pilot8 serial. See `CAMPAIGN_STATUS_2026-07-25.md` §6.
+
+---
+
+## 10. Non-goals
 
 - Claiming restored docking rates without running this protocol end-to-end.
 - Full dual-campaign thrash on 18 GiB hosts.
 - Equating modern physical free-energy ledgers with 2017 soft-β CF ranking without labels.
 - Changing production Softβ S1 defaults on `main` as part of this methodology.
+- Launching N=85 before §9 gates.
 
 ---
 
-## 10. References
+## 11. References
 
 1. Gaudreault F, Najmanovich RJ. FlexAID: Revisiting Docking on Non-Native-Complex Structures. *J. Chem. Inf. Model.* 2015;55(7):1323–1336. doi:10.1021/acs.jcim.5b00078  
 2. Morency L-P. The Impact of Conformational Entropy on the Accuracy of FlexAID in Binding Mode Prediction. 3Dsig / ISMB-ECCB 2017.  
-3. In-repo: `METHODOLOGY.md`; `docs/implementation/3dsig_red_pair_protocol.md`; `docs/implementation/3dsig_shannon_ranking.md`; `scripts/bootstrap_3dsig_s_top10.py`; `scripts/generate_flexaid_inp.py` (`ARM_SPEC`).
+3. In-repo: `METHODOLOGY.md`; `docs/implementation/3dsig_red_pair_protocol.md`; `docs/implementation/3dsig_shannon_ranking.md`; `docs/implementation/arm_pins.json`; `docs/implementation/CAMPAIGN_STATUS_2026-07-25.md`; `docs/ICLOUD_BENCHMARK_STORAGE.md`; `scripts/bootstrap_3dsig_s_top10.py`; `scripts/generate_flexaid_inp.py` (`ARM_SPEC`).
