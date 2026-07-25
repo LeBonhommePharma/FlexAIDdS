@@ -15,6 +15,7 @@
 #   NRGlab internal dataset compilation
 
 slug: itc187
+docking_mode: affinity_scoring  # validated by validate_dataset_semantics.py
 name: "ITC-187 Calorimetry Gold Standard"
 description: >
   187 protein-ligand complexes with experimental ITC thermodynamic decomposition

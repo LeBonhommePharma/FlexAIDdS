@@ -19,6 +19,7 @@
 # Dataset DOI/access: https://lsd.docking.org/ (requires academic registration)
 
 slug: lsd_docking
+docking_mode: self_docking  # validated by validate_dataset_semantics.py
 name: "lsd.docking.org 11-Target Subset"
 description: >
   Eleven ultra-large library docking targets from published Shoichet-lab

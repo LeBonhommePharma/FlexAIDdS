@@ -1,5 +1,6 @@
 # BindingDB ITC subset (Kd/ITC filtered)
 slug: bindingdb_itc
+docking_mode: affinity_scoring  # validated by validate_dataset_semantics.py
 name: "BindingDB ITC Subset (Kd/ITC filtered)"
 description: >
   ITC-enriched subset from BindingDB with full thermo data (ΔG, ΔH, ΔS).

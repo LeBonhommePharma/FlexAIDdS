@@ -15,6 +15,7 @@
 # Experimental data: Ki/Kd from ChEMBL + Ki Database + primary ITC measurements
 
 slug: psychopharm23
+docking_mode: specialized  # validated by validate_dataset_semantics.py
 name: "NRGlab Psychopharmacology 23-Target Dataset"
 description: >
   23 CNS drug targets curated by NRGlab for psychopharmacology-focused docking

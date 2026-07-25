@@ -32,7 +32,7 @@ metadata:
 
 # FlexAID / FlexAIDδS Skill
 
-**Source of truth:** `AGENTS.md` (repo root). This skill derives from `AGENTS.md` and defers to it when rules conflict. For Astex entropy benchmark launch/monitor/resume work, also read `.agents/skills/flexaidds-benchmarking/SKILL.md`. For DatasetRunner campaigns, also use the `flexaidds-dataset-runner` skill (home `~/.grok/skills/…`) **only as a thin launcher pointer** — scientific policy lives here and in `AGENTS.md`, not in stale copies.
+**Source of truth:** `AGENTS.md` (repo root). This skill derives from `AGENTS.md` and defers to it when rules conflict. For Astex entropy benchmark launch/monitor/resume work, also read `.agents/skills/flexaidds-benchmarking/SKILL.md`. For DatasetRunner campaigns, use `.grok/skills/flexaidds-dataset-runner/SKILL.md` (in-repo thin launcher; home `~/.grok/skills/flexaidds-dataset-runner` is a mirror). `/flexaid-docking` is a **thin alias** (`.grok/skills/flexaid-docking/`) that redirects here — never treat a stale home fork as policy.
 
 **Repository hygiene:** Never commit `.env` / secret files. Never add machine-specific absolute paths (`/Users/...`) to committed skills or shared scripts — use repo-relative paths or `FLEXAIDDS_*` environment variables. Run `python3 scripts/check_repo_hygiene.py` before pushing skill changes.
 
@@ -86,6 +86,35 @@ bash scripts/run_pilot8_canary_gates.sh --arm B0 --pdb 1P62,1T40 ...
 - **Native CF oracle:** FAIL (exit 1) when `CF_native > best_ga_cf + tol` → **ranking / Softβ / entropy claims forbidden**. Softβ does not repair a CF landscape that rejects the crystal.
 - **3Dsig success metric (red bars):** **S_top10** = any of ranks 0..9 RMSD ≤ 2.0 Å; median over 10k bootstrap; 10 sims × 2e6 evals. Deck targets ~**0.66 / 0.69** (FlexAID / FlexAIDdS) on Astex Diverse N=85 — **not** pilot8 rates.
 - Modern claim packages still need PoseBusters (+ tENCoM where required by benchmarking skill). RMSD-only is not full claim success.
+
+### Deception-proof claim contract (normative — refuse without evidence)
+
+**Refuse** all “docking success”, “recognition success”, “claim-ready”, “benchmark pass”, or numerical success-rate language unless **every** applicable gate below is satisfied from **on-disk artifacts** in the current session. Memory, chat history, and log fragments alone are never enough.
+
+| Gate | Required evidence | Applies to |
+|------|-------------------|------------|
+| **Real execution** | Engine process ran; binary SHA256 matches `resolve_build.py --check` / pin | All docks & claims |
+| **Runtime data** | `ensure_docking_data.py --check` OK (matrix + defs next to binary) | All docks |
+| **Durable receipt** | `result.csv` present for DatasetRunner / modern packages; `RUN_RECEIPT` (or `.json`) with binary SHA256 + matrix MD5 for classic red-pair | Campaigns / claims |
+| **Geometry + physics (modern)** | Rank-0 (or elected) **RMSD ≤ 2.0 Å** **and** PoseBusters pass on that same pose | Modern / DatasetRunner / PB claim tables |
+| **STRICT / claim_ready** | Plus official `bust_cli`, tENCoM/Eigen on exact pose SHA-256, protocol eligibility, score–pose consistency — see `benchmarks/protocols/admission_metrics_contract.md` | STRICT packages |
+| **Classic 3Dsig primary** | Report **S_top10** (any of ranks 0..9 RMSD ≤ 2.0 Å); S1/BCR diagnostic only | Classic A/B0/B arms |
+| **Science gate** | If S_top10=0/N and BCR=0/N → **DOCKING COMPLETE — SCIENCE GATE FAIL**; no Softβ/ranking science claims | All |
+| **Native CF oracle** | `native_cf_oracle_gate.py` must not fail when ranking/Softβ/entropy claims are made | Ranking claims |
+| **Terminology** | CF/`best_score` = scoring proxy only; ledger F/H/−TS/Cv = ensemble estimates; never “true experimental ΔG” without full validated path | All prose |
+| **DoF budget** | Claim runs: **fixed generations**, scale **population** via `FLEXAIDDS_EVAL_SCALE_DIHEDRAL=1` (optional `FLEXAIDDS_BUDGET_SCALE`); never freeze base 1000×6000 as if it were the effective budget — read `[EVAL-BUDGET]` logs | Claim campaigns |
+| **Docking semantics** | Self-docking vs cross-docking confirmed (orchestrator `native` vs `non_native`); never mix rates without labeling | Benchmarks |
+| **Methodology** | Cite `METHODOLOGY.md` §N for parity / determinism / Astex-85 / ctest — **do not restate or fork numbers** in skills | Validation handoffs |
+
+**Hard refuse phrases when evidence is missing:**
+- “Success rate = …” without reading `result.csv` / success_pb / admission metrics for that exact OUT.
+- “PoseBusters passed” without a PB receipt on the elected pose.
+- “tENCoM validated” without Eigen/diff output tied to the pose SHA-256.
+- “Local-first complete” when live GA wrote only to CloudDocs without local staging.
+
+**Build pin discipline:** Before any real dock or claim, run `python3 .grok/skills/flexaidds/scripts/resolve_build.py --check`. For fail-closed CI/agent sessions set `FLEXAIDDS_REQUIRE_BUILD=1` so missing/stale builds are hard errors, not WARN.
+
+**Storage:** Live GA/OUT/logs/binaries → **local** `$FLEXAIDDS_LOCAL_ROOT` (default `~/flexaidds_results`). iCloud is a **thin durable mirror** (`result.csv`, RUN_RECEIPT, thin OPS) only — see `docs/ICLOUD_BENCHMARK_STORAGE.md` and `AGENTS.md` § Benchmark storage. Never claim from iCloud-only live GA trees that hang FileProvider.
 
 ### Ops monitor scope
 
@@ -175,22 +204,25 @@ The skill itself is packaged under:
 ├── SKILL.md
 ├── scripts/
 │   ├── validate_skill.py
+│   ├── validate_dataset_semantics.py           # fail-closed self vs cross-docking YAML gate
 │   ├── ensure_docking_data.py                  # unified runtime data (matrices + *.def files) + --source
-│   ├── dataset_runner.py                       # high-quality wrapper for FlexAIDδS DatasetRunner (benchmarks, distributed runs, reports)
-│   └── update_skill.py                         # built-in autoupdate for the skill + all sub-components
-                                                #   (dry-run by default, --source, --yes, auto-validator)
+│   ├── resolve_build.py                        # SHA pin; --sync-env --write-pin re-pins rebuilt binaries
+│   ├── dock_any.py                             # any target/ligand (local files or RCSB self-dock)
+│   ├── dataset_runner.py                       # DatasetRunner campaigns (local-first + pin + semantics)
+│   └── update_skill.py                         # autoupdate (dry-run by default)
 ├── data/
-│   └── README.md                  # Documents MC_*.dat matrices + all AMINO*.def / NUCLEOTIDES*.def files
+│   └── README.md
 ├── references/
 │   └── flexaidds-guidance.md
-└── assets/ (optional)
+└── bin/  # shell wrappers (not symlinks into scripts/)
 ```
 
 **Local validation commands (run these before any claim of "done"):**
 ```bash
 python3 .grok/skills/flexaidds/scripts/validate_skill.py
 python3 .grok/skills/flexaidds/scripts/resolve_build.py --check
-python3 -m pytest tests/test_flexaid_skill.py -q --tb=line
+python3 .grok/skills/flexaidds/scripts/validate_dataset_semantics.py
+python3 -m pytest tests/test_flexaid_skill.py tests/test_dataset_semantics.py -q --tb=line
 ```
 
 **Production build resolution (autonomous, SHA-pinned):**
@@ -315,8 +347,8 @@ python3 .grok/skills/flexaidds/scripts/ensure_docking_data.py
 # Run a single well-known dataset (Tier 1 for speed)
 python3 -m flexaidds.dataset_runner --dataset astex_diverse --tier 1
 
-# Full campaign with reports (defaults to iCloud $FLEXAIDDS_ICLOUD/results/working/... when env set)
-python3 -m flexaidds.dataset_runner --all --tier 2 --results-dir results/benchmarks_2026
+# Full campaign with reports (prefer local results under $FLEXAIDDS_LOCAL_ROOT; thin-mirror later)
+python3 -m flexaidds.dataset_runner --all --tier 2 --results-dir "${FLEXAIDDS_LOCAL_ROOT:-$HOME/flexaidds_results}/benchmarks_$(date +%Y%m%d)"
 
 # Distributed run (launch with mpirun)
 mpirun -n 8 python -m flexaidds.dataset_runner --all --tier 2 --distributed
@@ -357,7 +389,8 @@ See `examples/small_real_benchmark_1stp.sh` for a minimal real-world-style examp
 # Recommended for anything you intend to share or publish
 python3 .grok/skills/flexaidds/scripts/dataset_runner.py \
     --all --tier 2 --package
-# Note: iCloud results/working/ is now default when FLEXAIDDS_ICLOUD present (active run safety); promote with safe_archive_to_icoud.py to archived/
+# Note: prefer local OUT ($FLEXAIDDS_LOCAL_ROOT); thin-mirror result.csv/RUN_RECEIPT to iCloud after success.
+# Legacy iCloud-only active trees are deprecated (FileProvider hang risk).
 
 # For manual redocking or one-off work, capture a snapshot at inspection time
 python3 .grok/skills/flexaidds/scripts/inspect_definition_files.py --reproducibility
@@ -376,32 +409,43 @@ python -m flexaidds.dataset_runner --help
 
 Detailed dataset configurations live in `python/flexaidds/dataset_runner/datasets/`.
 
-## M3 Pro iCloud Canonical Best-BindingMode Protocol (exact 298 K / 310 K full runs)
+## Canonical full BindingMode protocol (298 K / 310 K) — **local-first**
 
-**This is the production, zero-friction path to the exact requested answer: the best BindingMode (lowest free_energy after full thermo ledger + entropy corrections) from FlexAIDdS for a target+ligand molecular recognition event at precise temperature.**
+**Goal:** best BindingMode (lowest ensemble free_energy after full thermo ledger + entropy corrections) for target+ligand molecular recognition at a stated temperature.
 
-Only this path is supported for the 4 canonical full first runs (Astex Diverse self-docking + Astex Non-Native cross-docking at 298 K and 310 K).
+**Storage policy (overrides any older “iCloud-only live results” wording):**
+| Layer | Where |
+|-------|--------|
+| Live GA / OUT / logs / binaries | **Local** `$FLEXAIDDS_LOCAL_ROOT` (default `~/flexaidds_results`) via `scripts/ensure_local_first_layout.sh` + `scripts/claim_local_staging_paths.sh` |
+| Durable thin mirror | iCloud `$FLEXAIDDS_ICLOUD` / `$FLEXAIDDS_RESULTS` — **only** `result.csv`, RUN_RECEIPT, thin OPS (sync after local success) |
+| CloudDocs I/O | **Must** use `scripts/icloud_safe_io.py`; never raw `find`/`rglob` under Mobile Documents |
+
+See `AGENTS.md` § Benchmark storage and `docs/ICLOUD_BENCHMARK_STORAGE.md`. Agents that write live GA traffic only to CloudDocs are **out of contract**.
 
 ### Mandatory ritual (every time)
 ```bash
 git status
-find . -maxdepth 4 -iname '*skill*' -o -iname 'SKILL.md' -o -iname 'AGENTS.md'
-python3 .grok/skills/flexaidds/scripts/validate_skill.py   # must PASS
+python3 .grok/skills/flexaidds/scripts/validate_skill.py
+python3 .grok/skills/flexaidds/scripts/resolve_build.py --check
+python3 .grok/skills/flexaidds/scripts/ensure_docking_data.py --check
+# Prefer hard-fail in agent sessions:
+# export FLEXAIDDS_REQUIRE_BUILD=1
 ```
 
-### 1. Close hogs + space (iCloud green-lit)
-User-confirmed: only ~325 GB occupied out of 2 TB iCloud. No aggressive cleanup in results/ needed.
-- Close/pause Codex + openclaw etc (frees CPU/GPU for GA + Metal kernels in Shannon/tENCoM etc).
-- Local tmp only: rm stale /private/tmp/flexaidds* and /tmp/flexaidds* (protect any active benchmark's omp-build/campaign dirs).
+### 1. Local layout + free resources
+```bash
+bash scripts/ensure_local_first_layout.sh
+source scripts/use_local_first_benchmark_storage.sh 2>/dev/null || true
+# Close competing heavy agents if needed; clear only stale /tmp/flexaidds* (not active OUT).
+```
 
-### 2. Re-ensure (full, no --quick)
+### 2. Re-ensure runtime data (full, no --quick)
 ```bash
 python3 .grok/skills/flexaidds/scripts/ensure_docking_data.py
-# Heavy Non-Native will require+verify Lovell_LIB.dat rotobs.lst SYBYL_emat.dat etc.
 ```
 
-### 3. Launch the 4 canonical (exact command; iCloud-only results + Metal pre-flight enforced)
-All output exclusively under $FLEXAIDDS_RESULTS (iCloud preferred via FLEXAIDDS_ICLOUD/results , using working/<ts> for active runs). See safer-than-safe pattern in dataset_runner.py / launchers + safe_archive_to_icoud.py for promotion to archived/.
+### 3. Launch the 4 canonical campaigns (local OUT; Metal pre-flight still required)
+Confirm self-docking (`astex_diverse` / native) vs cross-docking (`astex_nonnative` / non_native) **before** launch. Softβ remains **OFF** unless explicitly opted in.
 
 ```bash
 # 298 K
@@ -413,77 +457,34 @@ bash .grok/skills/flexaidds/scripts/launch_full_benchmark.sh astex_diverse 310 a
 bash .grok/skills/flexaidds/scripts/launch_full_benchmark.sh astex_nonnative 310 astex_nonnative_310K
 ```
 
-The launcher (inside):
-- Sources ~/.flexaidds_env (iCloud BUILD + RESULTS + BINARY).
-- export PATH=... ; validate_skill + ensure (full).
-- Metal pre-flight (counts .metallib (7+), system_profiler Metal 4 on M3 Pro, otool links Metal.framework, prints the exact grep for logs).
-- Heavy dataset guard + symlinks for Non-Native.
-- Early run_status.json (status, exact temperature, pids, iCloud output_dir/binary, command).
-- nohup + disown portable detach (macOS-safe, separate stderr.log).
-- Prints the 4 OUT_DIRs (full-298K-...-TS etc on iCloud), tail cmds, post-verify cmds, and "safely log out".
+Launcher expectations:
+- Sources `~/.flexaidds_env` when present; pin engine with `resolve_build.py --sync-env` after rebuilds.
+- `validate_skill` + `ensure_docking_data` + Metal pre-flight (`.metallib`, Metal framework link).
+- Early `run_status.json` (temperature, pids, **local** `output_dir`, binary path, command).
+- Detach with nohup/disown; keep `binary.log` + `stderr.log` on **local** OUT.
+- After success: thin-sync receipts to iCloud (`scripts/sync_claim_local_to_icloud.sh` / campaign archive helpers).
 
-Example created (all iCloud):
-- full-298K-astex_diverse_298K-1780383769
-- full-310K-astex_diverse_310K-1780383775
-- full-298K-astex_nonnative_298K-1780383775
-- full-310K-astex_nonnative_310K-1780383775
-
-### 4. Analyze along the way + valid results only
-Live (monitors or):
+### 4. Analyze only valid local results
 ```bash
-# The 4 binary.logs (iCloud)
-tail -f $OUT_DIR/binary.log
-tail -f $OUT_DIR/stderr.log
-cat $OUT_DIR/run_status.json   # temperature exact, status, returncode when done
+tail -f "$OUT_DIR/binary.log"
+cat "$OUT_DIR/run_status.json"
+python3 .grok/skills/flexaidds/scripts/summarize_campaign.py "$OUT_DIR" --verbose --extract-best-mode
+# Accept only: real RMSD (not 999 placeholders), modes/poses > 0, temp == requested,
+# returncode 0 (or still running), free_energy from ledger — not CF proxy alone.
 ```
 
-Use the skill helper (Metal + health + validity + extract):
-```bash
-python3 .grok/skills/flexaidds/scripts/summarize_campaign.py $OUT_DIR --verbose --extract-best-mode
-# Strict heuristic: real RMSD > placeholder, modes/prepared signals >0, temp==requested, returncode 0 or running, has subdir.
-# --extract-best-mode: scans for rank-1 / lowest free_energy BindingMode (thermo ledger) + prints REMARKs + pointers to the PDB/JSON.
-# (Full power: python -c 'from flexaidds.results import load_results; r=load_results(str(p)); print(r.top_mode())' — sorts by free_energy.)
-```
-
-Grep for the science (in any of the 4 logs):
-```bash
-grep -iE 'metal|backend|dispatch|shannon|using metal|success rate|RMSD|Binding Mode|Prepared|GA:|temperature|free energy|entropy' $OUT_DIR/binary.log | tail -30
-```
-
-iCloud FS green-light (no fuckup):
-```bash
-python benchmarks/re-dock/icloud_fs_check.py --path $OUT_DIR
-# All tests (json, churn, executable, nested, bit persist) must PASS.
-```
-
-Post-finish full verify (ritual + only keep valid):
+Post-finish verify:
 ```bash
 python3 .grok/skills/flexaidds/scripts/validate_skill.py
-python benchmarks/re-dock/icloud_fs_check.py --path $OUT_DIR
-python3 .grok/skills/flexaidds/scripts/summarize_campaign.py $OUT_DIR --extract-best-mode
-# Inspect the surfaced best BindingMode: exact T, lowest F from full ledger (partition + vib + Shannon config), real RMSD <<2 where success, >0 modes/poses, Metal dispatch lines for entropy kernels, returncode 0.
-# Quarantine or discard anything with 999 placeholders, 0 modes, temp drift, high bogus energies, or no Metal when build had metallibs.
+python3 .grok/skills/flexaidds/scripts/summarize_campaign.py "$OUT_DIR" --extract-best-mode
+# Require deception-proof gates above before any success language.
+# Quarantine 999 placeholders, 0 modes, temp drift, or missing result.csv / RUN_RECEIPT.
 ```
 
-### 5. The "exact requested answer"
-Once a dir passes the above (✅ from summarize, fs green, best mode extract shows sane thermo at exact T), that is the best BindingMode for that target+ligand at that T from the full FlexAIDdS entropy-driven simulation.
+### 5. The exact requested answer
+Only after summarize + receipt gates pass: report the best BindingMode at the requested T (ensemble free_energy sort from the full ledger). Label docking mode (self vs cross) and never mix CF scores into “ΔG” language.
 
-The 4 canonicals (launched 2026-06-02) are the reference full runs.
-
-Monitors (persistent filtered tails on the 4 iCloud binary.logs) stream events for metal/dispatch/success/RMSD/temp/prepared/binding/entropy as they progress.
-
-All large results, logs, status, configs, outputs live exclusively on iCloud (325 GB / 2 TB per user; fs_check + launcher + summarize enforce the paths).
-
-### Why this eliminates friction for the best BindingMode
-- Single canonical launcher (PATH, ritual, ensure, Metal preflight, temp fidelity in config+status, iCloud-only, detachable, early status).
-- Early diagnosis (run_status, monitors, summarize health).
-- Validity gate before accepting "this is the answer" (no more 999-as-success, 0-mode silent, temp 300, no Metal, premature tables).
-- Best surfaced explicitly (free_energy sort from full thermo ledger, not CF proxy).
-- Reproducible + auditable (skill validate, fs_check, manifests, git/binary/data hashes via ensure/package).
-
-See also the launched dirs' run_status.json + binary.log for live proof.
-
-(Protocol added/expanded after the 4 canonical 298/310 launches succeeded with all iCloud/Metal/T pre-flights green.)
+Historical note: older text described exclusive iCloud live trees; that path is **deprecated** because CloudDocs FileProvider hangs. Local-first + thin mirror is mandatory.
 
 
 ## Workflow for Typical Tasks
@@ -512,11 +513,59 @@ For ergonomics, the skill provides executable shell wrappers in `bin/` (never sy
 
 **Important:** These shortcuts are for convenience only. They never replace running the actual FlexAIDδS binary, the full validator, or any scientific analysis. No scientific claim is ever valid without executing the real code.
 
+## Any target / any ligand (fast + strict)
+
+Flexible inputs; **strict** preflight (build pin, runtime data, Softβ OFF, local-first OUT).
+
+```bash
+# 1) Pin engine after rebuilds (re-pin ignores stale SHA automatically)
+python3 .grok/skills/flexaidds/scripts/resolve_build.py --sync-env --write-pin
+export FLEXAIDDS_REQUIRE_BUILD=1
+
+# 2a) Arbitrary local receptor + ligand (protein/RNA/DNA PDB + MOL2/SDF/PDB)
+python3 .grok/skills/flexaidds/scripts/dock_any.py \
+  --receptor /path/to/target.pdb \
+  --ligand /path/to/ligand.mol2 \
+  --temperature 298.15
+
+# 2b) Self-docking from RCSB (cognate HET residue)
+python3 .grok/skills/flexaidds/scripts/dock_any.py \
+  --pdb 1STP --ligand-res BTN --dry-run   # preflight + prepare
+python3 .grok/skills/flexaidds/scripts/dock_any.py \
+  --pdb 1STP --ligand-res BTN --temperature 298.15
+
+# Cross-docking: pass the *non-native* receptor PDB + cognate ligand files to 2a
+# and label docking_mode=cross_docking in any YAML/campaign you package.
+```
+
+Shortcuts: `.grok/skills/flexaidds/bin/dock-any`, `.grok/skills/flexaidds/bin/validate-dataset-semantics`.
+
+**Speed knobs (accuracy tradeoffs — never silent):** lower GA pop/gen only for exploratory docks; claim runs keep generations fixed and scale population via `FLEXAIDDS_EVAL_SCALE_DIHEDRAL=1` (see AGENTS.md). Use Metal/CUDA builds when available; local OUT avoids CloudDocs I/O stalls.
+
+**Accuracy gates:** CF ranks search poses; success claims need RMSD≤2.0 Å + PoseBusters (modern) or S_top10 (classic 3Dsig) plus receipts — see *Deception-proof claim contract*.
+
+### Dataset YAML semantics (self vs cross)
+
+Every `benchmarks/datasets/*.yaml` must set `docking_mode`. Contradictions fail closed:
+
+```bash
+python3 .grok/skills/flexaidds/scripts/validate_dataset_semantics.py
+```
+
+| Mode | Meaning |
+|------|---------|
+| `self_docking` | Cognate ligand → native holo receptor |
+| `cross_docking` | Cognate ligand → non-native / apo / alternative receptor |
+| `affinity_scoring` | Score/rank vs experimental affinity |
+| `virtual_screening` | Actives/decoys enrichment |
+| `specialized` | Custom protocols (must not claim crossdock metrics without cross states) |
+
 ## Quickstart for Actual Docking + Thermodynamics
 
 For users who want to run real FlexAIDδS jobs (not just review code), start here:
 
 → **[QUICKSTART.md](QUICKSTART.md)** — End-to-end guide for preparing inputs, running docking, and computing the thermodynamic ledger.
+
 
 ## Publication-Quality Figure & Animation Generation (Imagine Integration + Gate 6)
 

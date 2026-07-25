@@ -14,6 +14,7 @@
 #            https://doi.org/10.1021/jm061277y
 
 slug: astex_diverse
+docking_mode: self_docking  # validated by validate_dataset_semantics.py
 name: "Astex Diverse Set"
 benchmark_order: 1
 description: >

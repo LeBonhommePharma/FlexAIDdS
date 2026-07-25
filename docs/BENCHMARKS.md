@@ -1,6 +1,16 @@
 # Benchmarks
 
-Performance and accuracy benchmarks for FlexAID∆S. Results below are from ongoing validation work — full analysis will be published in the forthcoming manuscript (Morency & Najmanovich, in preparation).
+Performance and accuracy benchmarks for FlexAID∆S.
+
+**Claim maturity** follows `docs/REPRODUCIBILITY.md`:
+
+| Label | Meaning |
+|-------|---------|
+| **Repository-reproducible** | Replayable bundle + commands + artifacts in-repo |
+| **Published external** | Peer-reviewed literature (e.g. FlexAID JCIM 2015) |
+| **Preliminary / target** | Appears in docs or design notes but **not** backed by a current claim receipt in this checkout |
+
+Agents and skills **must not** present preliminary numbers as measured campaign success. CF/`best_score` is a scoring proxy; ensemble F is not experimental ΔG unless the full ledger path is active and validated.
 
 ---
 
@@ -11,61 +21,43 @@ Performance and accuracy benchmarks for FlexAID∆S. Results below are from ongo
 The packaged benchmark dataset order starts with the three validation sets
 used by Gaudreault & Najmanovich in the original FlexAID JCIM 2015 paper:
 
-1. **Astex Diverse Set** (`astex_diverse`) — 85 native holo complexes.
-2. **Astex Non-Native Set** (`astex_nonnative`) — 65 targets / 1112 structures for non-native receptor cross-docking.
-3. **HAP2** (`hap2`) — holo/apo protein-pair validation for docking into non-native conformations.
+1. **Astex Diverse Set** (`astex_diverse`, `docking_mode: self_docking`) — 85 native holo complexes.
+2. **Astex Non-Native Set** (`astex_nonnative`, `docking_mode: cross_docking`) — 65 targets / ~1112 structures for non-native receptor cross-docking.
+3. **HAP2** (`hap2`, `docking_mode: cross_docking`) — holo/apo protein-pair validation for docking into non-native conformations.
 
-These YAML configs are shipped both under `benchmarks/datasets/` and inside
-the Python package default dataset directory, so `flexaidds-benchmark --all`
-runs them first before the broader validation suites.
+These YAML configs ship under `benchmarks/datasets/` (and the Python package mirror). Every YAML declares an explicit `docking_mode`; `validate_dataset_semantics.py` fails closed on contradictions.
 
-### ITC-187 Calorimetry Benchmark
+**Published external (FlexAID 2015 JCIM, FLRP ideal subset, top-1)** — cite the paper, not as FlexAIDdS live rates:
 
-Direct comparison of predicted vs. experimentally measured binding thermodynamics from isothermal titration calorimetry across 187 protein–ligand complexes.
+| Set | Published top-1 (FLRP) | Source field in YAML |
+|-----|------------------------|----------------------|
+| Astex native | ~0.45 | `astex_diverse.yaml` → `published_baselines` |
+| Astex non-native | ~0.39 | `astex_nonnative.yaml` |
+| HAP2 | ~0.22 | `hap2.yaml` |
 
-| Metric | FlexAID∆S | AutoDock Vina | Glide (SP) |
-|:-------|:---------:|:-------------:|:----------:|
-| ΔG Pearson *r* | **0.93** | 0.64 | 0.69 |
-| RMSE (kcal/mol) | **1.4** | 3.1 | 2.9 |
-| Ranking power | **78%** | 58% | 64% |
+Live FlexAIDdS / classic three-engine **claim** rates require on-disk `result.csv` / `RUN_RECEIPT` + RMSD/PoseBusters gates (see skill deception-proof contract). Do not overwrite published FlexAID numbers with unreceipted memory.
 
-FlexAID∆S achieves a 0.93 Pearson correlation with experimental ΔG values — a direct consequence of computing the Helmholtz free energy *F* = *H* − *TS* from the full canonical ensemble rather than ranking by enthalpy alone.
+### ITC-187 Calorimetry Benchmark — **PRELIMINARY / TARGET**
 
-### CASF-2016 (Comparative Assessment of Scoring Functions)
+Design target for entropy-aware affinity correlation (see `benchmarks/datasets/itc187.yaml` comments). **Not** repository-reproducible from a full claim receipt in this tree as of the 2026-07 skill audit.
 
-The standard benchmark for docking scoring functions, evaluating scoring power, docking power, and virtual screening enrichment.
+| Metric | FlexAID∆S (target / preliminary) | Notes |
+|:-------|:--------------------------------:|:------|
+| ΔG Pearson *r* | **0.93 (target)** | Training/gate threshold language in tooling; not a live claim without ITC receipt package |
+| RMSE (kcal/mol) | **1.4 (target)** | Same |
+| Ranking power | **78% (target)** | Same |
 
-| Power | FlexAID∆S | AutoDock Vina | Glide (SP) | rDock |
-|:------|:---------:|:-------------:|:----------:|:-----:|
-| Scoring (Pearson *r*) | **0.88** | 0.73 | 0.78 | 0.71 |
-| Docking (% ≤ 2Å RMSD) | **81%** | 76% | 79% | 73% |
-| Screening (EF 1%) | **15.3** | 11.2 | 13.1 | 10.8 |
+Comparator columns previously listed for Vina/Glide are **literature context only**, not a head-to-head receipt in this repository.
 
-### DUD-E (Directory of Useful Decoys — Enhanced)
+Do **not** say “FlexAID∆S achieves 0.93 Pearson” in claim language until a `REPRODUCIBILITY_MANIFEST` + affinity table for ITC-187 is produced under the admission contract.
 
-Virtual screening enrichment across diverse protein targets.
+### CASF-2016 — **PRELIMINARY / TARGET**
 
-| Metric | FlexAID∆S | AutoDock Vina | Glide (SP) |
-|:-------|:---------:|:-------------:|:----------:|
-| Mean AUC | **0.89** | 0.72 | 0.78 |
-| Mean EF 1% | **28.4** | 16.1 | 21.3 |
+Scoring / docking / screening powers in older drafts (r≈0.88, docking ~81%, EF1% ~15) are **preliminary targets**, not repository-reproducible FlexAIDdS claim packages. CASF YAML is `docking_mode: affinity_scoring` for scoring-power framing; pose success still needs RMSD+PoseBusters when pose claims are made.
 
-### Neurological Targets (23 GPCR, Ion Channels, Transporters)
+### DUD-E / neurological vignettes — **PRELIMINARY**
 
-Validation on therapeutically relevant neurological targets where conformational entropy is critical for correct binding mode identification.
-
-| Metric | Value |
-|:-------|:------|
-| Pose rescue rate | **92%** — entropy recovers the correct binding mode when enthalpy-only scoring fails |
-| Average Shannon's Entropy correction | **+3.02 kcal/mol** |
-
-**Example** — mu-opioid receptor + fentanyl:
-
-| Scoring | ΔG (kcal/mol) | RMSD (Å) | Correct? |
-|:--------|:-------------:|:---------:|:--------:|
-| Enthalpy-only | −14.2 | 8.3 | No (wrong pocket) |
-| With Shannon's Entropy | −10.8 | 1.2 | Yes |
-| Experimental | −11.1 | — | — |
+Mean AUC / EF and mu-opioid narrative tables in prior docs are illustrative or design-stage. Treat as experimental until a benchmark bundle exists under `benchmarks/` with expected outputs.
 
 ---
 
@@ -73,24 +65,26 @@ Validation on therapeutically relevant neurological targets where conformational
 
 ### Hardware Acceleration — Shannon Entropy Computation
 
-Speedup measured on Shannon entropy histogram computation (ShannonThermoStack) over the single-threaded CPU baseline.
+Speedup measured on Shannon entropy histogram computation (ShannonThermoStack) over the single-threaded CPU baseline. Treat as **hardware microbench** (not docking success rates).
 
-| Backend | Hardware | Speedup | Throughput |
-|:--------|:---------|--------:|:-----------|
-| **CUDA** | NVIDIA A100 (80 GB) | **3,575×** | — |
-| **CUDA** | NVIDIA RTX 4090 | **2,890×** | — |
-| **Metal** | Apple M2 Ultra (76-core GPU) | **412×** | — |
-| **Metal** | Apple M3 Max (40-core GPU) | **298×** | — |
-| **AVX-512 + OpenMP** | Dual Xeon 8380 (80 cores) | **187×** | — |
-| **AVX2 + OpenMP** | AMD EPYC 7763 (64 cores) | **142×** | — |
-| **OpenMP** | Intel i9-13900K (24 cores) | **18×** | — |
-| **Scalar** | Single core baseline | 1× | — |
+| Backend | Hardware | Speedup (reported) |
+|:--------|:---------|--------:|
+| **CUDA** | NVIDIA A100 (80 GB) | **3,575×** |
+| **CUDA** | NVIDIA RTX 4090 | **2,890×** |
+| **Metal** | Apple M2 Ultra (76-core GPU) | **412×** |
+| **Metal** | Apple M3 Max (40-core GPU) | **298×** |
+| **AVX-512 + OpenMP** | Dual Xeon 8380 (80 cores) | **187×** |
+| **AVX2 + OpenMP** | AMD EPYC 7763 (64 cores) | **142×** |
+| **OpenMP** | Intel i9-13900K (24 cores) | **18×** |
+| **Scalar** | Single core baseline | 1× |
+
+Re-run `./build/benchmark_dispatch` (or Shannon unit benches) on the current machine before quoting new hardware numbers.
 
 ### Unified Hardware Dispatch
 
-The runtime automatically selects the fastest available backend: CUDA → Metal → AVX-512 → AVX2 → OpenMP → scalar. No configuration needed — build with the desired backends enabled and `HardwareDispatch` handles selection.
+The runtime selects among built backends: CUDA → Metal → AVX-512 → AVX2 → OpenMP → scalar when enabled at compile time.
 
-### tENCoM Vibrational Entropy
+### tENCoM Vibrational Entropy (order-of-magnitude)
 
 | Operation | Time | Notes |
 |:----------|:-----|:------|
@@ -108,19 +102,9 @@ The runtime automatically selects the fastest available backend: CUDA → Metal 
 
 ---
 
-## Entropy Impact Analysis
+## Entropy Impact Analysis — **ILLUSTRATIVE**
 
-The key innovation of FlexAID∆S is computing free energy from the full canonical ensemble. This table shows how Shannon's Entropy changes rankings:
-
-| System | Enthalpy rank | Free energy rank | Rank change | ΔΔG_entropy (kcal/mol) |
-|:-------|:------------:|:----------------:|:-----------:|:----------------------:|
-| HIV-1 protease + darunavir | 3 | **1** | +2 | −2.8 |
-| CDK2 + dinaciclib | 5 | **1** | +4 | −4.1 |
-| BACE1 + verubecestat | 2 | **1** | +1 | −1.7 |
-| Mu-opioid + fentanyl | 7 | **1** | +6 | −3.4 |
-| Thrombin + dabigatran | 1 | **1** | 0 | −0.3 |
-
-In the majority of cases, Shannon's Entropy corrections rescue the correct binding mode from lower enthalpy-only rankings to the top-ranked free energy pose.
+Historical ranking-change vignettes (HIV-PR, CDK2, etc.) are **not** substitute for Astex claim packages. Prefer ensemble ledger language (F, H, −TS) over “true ΔG”.
 
 ---
 
@@ -129,36 +113,54 @@ In the majority of cases, Shannon's Entropy corrections rescue the correct bindi
 ### Build with Benchmarking
 
 ```bash
-cmake .. -DCMAKE_BUILD_TYPE=Release \
+cmake -B build -DCMAKE_BUILD_TYPE=Release \
     -DENABLE_TENCOM_BENCHMARK=ON \
     -DENABLE_VCFBATCH_BENCHMARK=ON
-cmake --build . -j $(nproc)
+cmake --build build -j "$(sysctl -n hw.ncpu 2>/dev/null || nproc)"
+python3 .grok/skills/flexaidds/scripts/resolve_build.py --sync-env --write-pin
+export FLEXAIDDS_REQUIRE_BUILD=1
 ```
 
-### Run Benchmark Binaries
+### Dataset semantics + skill preflight
 
 ```bash
-./build/benchmark_tencom     # tENCoM performance
-./build/benchmark_vcfbatch   # VoronoiCFBatch scoring performance
-./build/benchmark_dispatch   # Hardware dispatch throughput
+python3 .grok/skills/flexaidds/scripts/validate_dataset_semantics.py
+python3 .grok/skills/flexaidds/scripts/validate_skill.py
+python3 .grok/skills/flexaidds/scripts/ensure_docking_data.py --check
+```
+
+### Any target / any ligand (fast path)
+
+```bash
+# Local files
+python3 .grok/skills/flexaidds/scripts/dock_any.py \
+  --receptor receptor.pdb --ligand ligand.mol2 --temperature 298.15
+
+# Self-docking from RCSB (HET residue code)
+python3 .grok/skills/flexaidds/scripts/dock_any.py \
+  --pdb 1STP --ligand-res BTN --dry-run
+```
+
+### Campaigns
+
+```bash
+# Dry-run first
+python3 .grok/skills/flexaidds/scripts/dataset_runner.py \
+  --dataset astex_diverse --tier 1 --dry-run --resume --package
+
+# Local OUT (never claim from iCloud-only live GA trees)
+python3 .grok/skills/flexaidds/scripts/dataset_runner.py \
+  --dataset astex_diverse --tier 2 --resume --package \
+  --results-dir "${FLEXAIDDS_LOCAL_ROOT:-$HOME/flexaidds_results}/benchmarks"
 ```
 
 ### Test Suite (Validation)
 
 ```bash
-# C++ validation tests
-cmake -DBUILD_TESTING=ON .. && cmake --build . -j $(nproc)
+cmake -B build -DBUILD_TESTING=ON -DCMAKE_BUILD_TYPE=Release
+cmake --build build -j "$(sysctl -n hw.ncpu 2>/dev/null || nproc)"
 ctest --test-dir build --output-on-failure
-
-# Python validation
-cd python && pytest tests/ -q
+python3 -m pytest tests/test_flexaid_skill.py tests/test_dataset_semantics.py -q
 ```
 
----
-
-## References
-
-- Gaudreault F & Najmanovich RJ (2015). FlexAID: Revisiting Docking on Non-Native-Complex Structures. *J. Chem. Inf. Model.* 55(7):1323-36. [DOI:10.1021/acs.jcim.5b00078](https://doi.org/10.1021/acs.jcim.5b00078)
-- Su M et al. (2019). Comparative Assessment of Scoring Functions: The CASF-2016 Update. *J. Chem. Inf. Model.* 59(2):895-913.
-- Mysinger MM et al. (2012). Directory of Useful Decoys, Enhanced (DUD-E). *J. Med. Chem.* 55(14):6582-94.
-- Morency LP & Najmanovich RJ (2026). FlexAID∆S: Information-Theoretic Entropy Improves Molecular Docking Accuracy and Binding Mode Prediction. *Manuscript in preparation.*
+See also: `METHODOLOGY.md`, `AGENTS.md` § Benchmark storage, `.grok/skills/flexaidds/SKILL.md` § Deception-proof claim contract.

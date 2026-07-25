@@ -145,11 +145,28 @@ The canonical agent skill lives at `.grok/skills/flexaidds/SKILL.md` (single dir
 **Validation commands (run before claiming "done" on any skill change):**
 ```bash
 python3 .grok/skills/flexaidds/scripts/validate_skill.py
-python3 -m pytest tests/test_flexaid_skill.py -q --tb=line
+python3 .grok/skills/flexaidds/scripts/validate_dataset_semantics.py
+python3 -m pytest tests/test_flexaid_skill.py tests/test_dataset_semantics.py -q --tb=line
 python3 .grok/skills/flexaidds/scripts/ensure_docking_data.py --check
+python3 .grok/skills/flexaidds/scripts/resolve_build.py --check
+# After C++ rebuilds: re-pin + sync (ignores stale pin automatically)
+python3 .grok/skills/flexaidds/scripts/resolve_build.py --sync-env --write-pin
+export FLEXAIDDS_REQUIRE_BUILD=1   # hard-fail missing/stale builds in claim sessions
 ```
 
-The skill is self-contained: `scripts/` (validator, data-ensure, dataset runner, updater), `data/` (matrices + `*.def` runtime files), `references/flexaidds-guidance.md` (terminology contract), `examples/`, and `bin/` convenience symlinks.
+**Any target / any ligand (strict preflight, local-first OUT):**
+```bash
+python3 .grok/skills/flexaidds/scripts/dock_any.py --receptor target.pdb --ligand ligand.mol2
+python3 .grok/skills/flexaidds/scripts/dock_any.py --pdb 1STP --ligand-res BTN --dry-run
+```
+
+The skill is self-contained: `scripts/` (validator, data-ensure, dataset runner, updater), `data/` (matrices + `*.def` runtime files), `references/flexaidds-guidance.md` (terminology contract), `examples/`, and `bin/` convenience wrappers.
+
+**Thin aliases (no second science source):**
+- `.grok/skills/flexaid-docking/SKILL.md` → redirects to `/flexaidds`
+- `.grok/skills/flexaidds-dataset-runner/SKILL.md` → DatasetRunner/classic red-pair launcher; defers policy here and to `AGENTS.md`
+
+**Deception-proof claims:** refuse docking-success language without real engine execution + on-disk `result.csv` / `RUN_RECEIPT` + (modern) RMSD≤2.0 Å **and** PoseBusters; STRICT also requires tENCoM/Eigen. Live OUT is **local-first** (`$FLEXAIDDS_LOCAL_ROOT`); iCloud is thin mirror only. Full table: `.grok/skills/flexaidds/SKILL.md` § *Deception-proof claim contract*.
 
 ### Astex Entropy / Benchmark Orchestration Skill
 
