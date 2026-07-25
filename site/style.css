@@ -1,3 +1,5 @@
+@import url("/interaction.css");  /* canonical hover / focus / active spec */
+
 /* ============================================================
    Le Bonhomme Pharma — FlexAID∆S Homepage Stylesheet
    Design system: dark #0a0e14, teal #22D3EE, gold #FBBF24, terra #A78BFA
@@ -72,7 +74,7 @@ body {
   overflow-x: hidden;
 }
 a { color: var(--color-accent); text-decoration: none; }
-a:hover { text-decoration: underline; }
+a:hover { text-decoration: none; }
 code { font-family: var(--font-mono); font-size: 0.88em; }
 ul { list-style: none; }
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; }
@@ -101,10 +103,10 @@ ul { list-style: none; }
   color: var(--color-text-muted); padding: 6px 10px;
   border-radius: var(--r-sm); transition: color 0.15s, background 0.15s;
 }
-.main-nav a:hover { color: var(--color-text); background: rgba(255,255,255,0.05); text-decoration: none; }
+.main-nav a:hover { color: #22D3EE; background: transparent; text-decoration: none; }
 .header-actions { display: flex; align-items: center; gap: 8px; margin-left: auto; }
 .gh-link { color: var(--color-text-muted); display: flex; align-items: center; transition: color 0.15s; }
-.gh-link:hover { color: var(--color-text); }
+.gh-link:hover { color: #22D3EE; border-color: #22D3EE; }
 /* Theme toggle component lives in theme.css (canonical). */
 .mobile-menu-toggle { display: none; }
 
@@ -246,9 +248,12 @@ ul { list-style: none; }
 }
 .btn:hover { text-decoration: none; }
 .btn-primary { background: var(--color-accent); color: #0a0e14; border-color: var(--color-accent); }
-.btn-primary:hover { background: #67E8F9; box-shadow: 0 0 22px rgba(34,211,238,0.4); }
-.btn-secondary { background: transparent; color: var(--color-text); border-color: rgba(34,211,238,0.25); }
-.btn-secondary:hover { border-color: var(--color-accent); color: var(--color-accent); }
+.btn-primary { box-shadow: 0 0 26px color-mix(in srgb, #A78BFA 32%, transparent); }
+.btn-primary:hover { filter: brightness(1.06); transform: translateY(-1px); box-shadow: 0 0 24px color-mix(in srgb, #A78BFA 50%, transparent); }
+.btn-primary:active { transform: translateY(0); }
+.btn-secondary { background: transparent; color: var(--color-text); border-width: 1.5px; border-color: rgba(34,211,238,0.25); }
+.btn-secondary:hover { border-color: #22D3EE; color: #22D3EE; transform: translateY(-1px); filter: brightness(1.06); box-shadow: 0 0 18px color-mix(in srgb, #22D3EE 30%, transparent); }
+.btn-secondary:active { transform: translateY(0); }
 
 /* ── SECTIONS ────────────────────────────────────────────── */
 section { padding: 5rem 0; }
@@ -276,7 +281,7 @@ h2 {
   border-radius: var(--r-lg); padding: 1.5rem;
   transition: border-color 0.2s, transform 0.2s;
 }
-.feature-card:hover { border-color: rgba(34,211,238,0.28); transform: translateY(-2px); }
+.feature-card:hover { border-color: var(--cc, #22D3EE); transform: translateY(-4px); box-shadow: 0 14px 40px -14px var(--cc, #22D3EE); }
 .feature-card-large { grid-column: span 2; }
 .feature-card-wide  { grid-column: span 2; }
 .feature-icon { width: 44px; height: 44px; margin-bottom: 1rem; }
@@ -368,7 +373,7 @@ h2 {
 /* Usage */
 .usage-tabs { display: flex; gap: 4px; margin-bottom: 1rem; flex-wrap: wrap; }
 .tab-btn { font-family: var(--font-mono); font-size: 12px; padding: 6px 14px; border: 1px solid var(--color-border); border-radius: var(--r-sm); background: transparent; color: var(--color-text-muted); cursor: pointer; transition: all 0.15s; }
-.tab-btn:hover { background: rgba(34,211,238,0.05); }
+.tab-btn:hover { background: rgba(34,211,238,0.05); color: #22D3EE; border-color: #22D3EE; transform: translateY(-1px); }
 .tab-btn.active { background: rgba(34,211,238,0.10); border-color: rgba(34,211,238,0.35); color: var(--color-accent); }
 .tab-panel.hidden { display: none; }
 
@@ -410,7 +415,7 @@ h2 {
 /* Modules */
 .modules-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; }
 .module-card { background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--r-md); padding: 1rem 1.25rem; transition: border-color 0.2s; }
-.module-card:hover { border-color: rgba(34,211,238,0.28); }
+.module-card:hover { border-color: var(--cc, #22D3EE); transform: translateY(-4px); box-shadow: 0 14px 40px -14px var(--cc, #22D3EE); }
 .module-card code { display: block; font-family: var(--font-mono); font-size: 0.9rem; font-weight: 600; color: var(--color-accent); margin-bottom: 4px; }
 .module-card span { font-size: 0.85rem; color: var(--color-text-muted); }
 
@@ -443,15 +448,15 @@ h2 {
   transition: border-color 0.2s, transform 0.2s;
   text-decoration: none; display: flex; flex-direction: column; gap: 4px;
 }
-.eco-card:hover { border-color: var(--color-border-h); transform: translateY(-2px); text-decoration: none; }
+.eco-card:hover { border-color: var(--cc, #22D3EE); transform: translateY(-4px); box-shadow: 0 14px 40px -14px var(--cc, #22D3EE); text-decoration: none; }
 .eco-label { font-family: var(--font-mono); font-size: 12px; font-weight: 600; color: var(--color-accent); }
 .eco-desc { font-size: 12px; color: var(--color-text-muted); line-height: 1.45; }
 .eco-card.gold-card { border-color: rgba(251,191,36,0.15); }
 .eco-card.gold-card .eco-label { color: var(--color-gold); }
-.eco-card.gold-card:hover { border-color: rgba(251,191,36,0.4); }
+.eco-card.gold-card { --cc: #FBBF24; }
 .eco-card.terra-card { border-color: rgba(167,139,250,0.15); }
 .eco-card.terra-card .eco-label { color: var(--color-terra); }
-.eco-card.terra-card:hover { border-color: rgba(167,139,250,0.4); }
+.eco-card.terra-card { --cc: #A78BFA; }
 
 /* Footer */
 .site-footer { background: var(--color-surface-2); border-top: 1px solid var(--color-border); padding: 3rem 0 2rem; }
@@ -460,7 +465,7 @@ h2 {
 .footer-brand p { font-size: 12px; color: var(--color-text-muted); margin-top: 6px; font-family: var(--font-mono); }
 .footer-links { display: flex; gap: 1.5rem; flex-wrap: wrap; }
 .footer-links a { font-size: 13px; color: var(--color-text-muted); transition: color 0.15s; }
-.footer-links a:hover { color: var(--color-text); text-decoration: none; }
+.footer-links a:hover { color: #22D3EE; border-color: #22D3EE; transform: translateX(4px); text-decoration: none; }
 .footer-bottom { border-top: 1px solid var(--color-border); padding-top: 1.5rem; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem; }
 .footer-eq { font-family: var(--font-mono); font-size: 11px; color: var(--color-text-muted); }
 .footer-eq .gold { color: var(--color-gold); }
@@ -578,7 +583,8 @@ h2 {
 }
 
 .slogan-attribution a:hover {
-  text-decoration: underline;
+  color: #22D3EE;
+  filter: brightness(1.15);
 }
 
 /* ── Gold hero stat variant ─────────────────────────────────────────── */

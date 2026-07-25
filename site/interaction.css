@@ -1,0 +1,224 @@
+/* ==========================================================================
+   Canonical interaction spec — thebonhomme.com
+   Single source of truth for hover / focus / active / disabled states.
+
+   Loaded by every page: <link rel="stylesheet" href="/interaction.css">
+   (bundled pages inline this same text, and style.css @imports it).
+
+   Interaction colours are pinned to the triad here rather than to each
+   page's local --teal/--violet/--gold, because a few pages carry an older
+   palette (e.g. /entropy-driven/ has --teal:#20808D). Pinning is what makes
+   the highlight identical everywhere. Resting colours are untouched.
+
+   Dark-first. Triad only: teal #22D3EE, violet #A78BFA, gold #FBBF24.
+   ========================================================================== */
+
+:root {
+  --ix-teal: #22D3EE;
+  --ix-violet: #A78BFA;
+  --ix-gold: #FBBF24;
+  --ix-ease: cubic-bezier(.16, 1, .3, 1);
+}
+
+/* --- Transitions: explicit on every interactive element ------------------ */
+a,
+button,
+.btn, .btn-primary, .btn-secondary, .btn-outline,
+.card, .feature-card, .eco-card, .module-card, .mech-card, .audit-card,
+.drug-card, .drug-card-featured,
+.link-chip, .module-chip, .footer-links a, .flinks a,
+.nav-links a, .nav-gh, .gh-link, .nav-back, .footer-back,
+.tg-btn, .nav-burger, .copy-btn,
+.install-tab, .tab-btn, .binding-phase-btn, .binding-play-btn, .ngl-btn,
+[data-ix-btn], [data-ix-btn-secondary], [data-ix-card], [data-ix-chip] {
+  /* !important: theme.css animates a broad `.theme-anim *` transition that
+     would otherwise drop transform/filter from the transition list. */
+  transition:
+    color .18s var(--ix-ease),
+    border-color .18s var(--ix-ease),
+    background-color .18s var(--ix-ease),
+    filter .18s var(--ix-ease),
+    transform .25s var(--ix-ease),
+    box-shadow .25s var(--ix-ease) !important;
+}
+
+/* --- 1. Primary button (filled / gradient CTA) -------------------------- */
+.btn-primary,
+[data-ix-btn] {
+  box-shadow: 0 0 26px color-mix(in srgb, var(--ix-violet) 32%, transparent);
+}
+
+.btn-primary:hover,
+[data-ix-btn]:hover {
+  transform: translateY(-1px);
+  filter: brightness(1.06);
+  box-shadow: 0 0 24px color-mix(in srgb, var(--ix-violet) 50%, transparent);
+}
+
+/* --- 2. Secondary / outline button --------------------------------------- */
+.btn-secondary,
+.btn-outline,
+[data-ix-btn-secondary] {
+  border-width: 1.5px;
+  background: transparent;
+  color: var(--text, #d4dced);
+}
+
+.btn-secondary:hover,
+.btn-outline:hover,
+[data-ix-btn-secondary]:hover,
+.install-tab:hover,
+.tab-btn:hover,
+.binding-phase-btn:hover,
+.binding-play-btn:hover,
+.ngl-btn:hover {
+  transform: translateY(-1px);
+  filter: brightness(1.06);
+  box-shadow: 0 0 18px color-mix(in srgb, var(--ix-teal) 30%, transparent);
+  border-color: var(--ix-teal);
+  color: var(--ix-teal);
+}
+
+/* --- 1 + 2. Active: settle back, never scale down ----------------------- */
+button:active,
+.btn:active, .btn-primary:active, .btn-secondary:active, .btn-outline:active,
+.install-tab:active, .tab-btn:active,
+.binding-phase-btn:active, .binding-play-btn:active, .ngl-btn:active,
+[data-ix-btn]:active, [data-ix-btn-secondary]:active {
+  transform: translateY(0);
+}
+
+/* --- 3. Chrome / icon button: colour only, no lift ---------------------- */
+.nav-gh:hover,
+.gh-link:hover,
+.tg-btn:hover,
+.nav-burger:hover,
+.copy-btn:hover,
+.nav-back:hover,
+[data-ix-chrome]:hover {
+  border-color: var(--ix-teal);
+  color: var(--ix-teal);
+  transform: none;
+  filter: none;
+  opacity: 1;
+  text-decoration: none;
+}
+
+/* --- 4. Nav link -------------------------------------------------------- */
+.nav-links a:hover,
+.nav-links button:hover,
+.nav-mobile-menu a:hover,
+.nav-right a:hover,
+[data-ix-nav]:hover {
+  color: var(--ix-teal);
+  text-decoration: none;
+  transform: none;
+  background: transparent;
+}
+
+/* Nav link that already rests in an accent colour: brighten, don't recolour. */
+.nav-links a[data-ix-accent]:hover,
+.nav-mobile-menu a[data-ix-accent]:hover,
+[data-ix-accent]:hover {
+  filter: brightness(1.2);
+  color: inherit;
+}
+
+/* --- 5. Card / clickable tile ------------------------------------------- */
+.card:hover,
+.feature-card:hover,
+.eco-card:hover,
+.module-card:hover,
+.mech-card:hover,
+.audit-card:hover,
+.drug-card:hover,
+.drug-card-featured:hover,
+[data-ix-card]:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 14px 40px -14px var(--cc, var(--ix-teal));
+  border-color: var(--cc, var(--ix-teal));
+  text-decoration: none;
+}
+
+/* --- 6. Link chip / list row -------------------------------------------- */
+.link-chip:hover,
+.module-chip:hover,
+.footer-links a:hover,
+.flinks a:hover,
+[data-ix-chip]:hover {
+  border-color: var(--cc, var(--ix-teal));
+  background: color-mix(in srgb, var(--cc, var(--ix-teal)) 8%, transparent);
+  transform: translateX(4px);
+  color: var(--ix-teal);
+  text-decoration: none;
+}
+
+/* --- 7. Inline text link ------------------------------------------------ */
+/* Container-ish anchors (cards, buttons, chrome) are excluded so a card's
+   whole body doesn't recolour on hover. */
+a:hover:not(.btn):not(.btn-primary):not(.btn-secondary):not(.btn-outline):not(.card):not(.feature-card):not(.eco-card):not(.module-card):not(.mech-card):not(.audit-card):not(.drug-card):not(.drug-card-featured):not(.nav-gh):not(.gh-link):not(.nav-back):not(.footer-back):not([data-ix-btn]):not([data-ix-btn-secondary]):not([data-ix-card]):not([data-ix-chrome]):not([data-ix-accent]) {
+  color: #22D3EE;
+  filter: brightness(1.15);
+  text-decoration: none;
+}
+
+/* CV / résumé resting colours are inline, so the hover has to outrank them. */
+.doc-page a:hover,
+[data-ix-doc] a:hover {
+  color: #22D3EE !important;
+}
+
+/* --- 8. Keyboard focus -------------------------------------------------- */
+a:focus-visible,
+button:focus-visible,
+summary:focus-visible,
+[tabindex]:focus-visible {
+  outline: 2px solid var(--ix-teal);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+/* --- 9. Disabled -------------------------------------------------------- */
+[disabled],
+.disabled,
+[aria-disabled="true"] {
+  opacity: .45;
+  cursor: not-allowed;
+}
+
+[disabled]:hover,
+.disabled:hover,
+[aria-disabled="true"]:hover {
+  transform: none;
+  filter: none;
+  box-shadow: none;
+}
+
+/* --- 10. Reduced motion: keep colour, drop movement --------------------- */
+@media (prefers-reduced-motion: reduce) {
+  a, button,
+  .btn, .btn-primary, .btn-secondary, .btn-outline,
+  .card, .feature-card, .eco-card, .module-card, .mech-card, .audit-card,
+  .drug-card, .drug-card-featured,
+  .link-chip, .module-chip, .footer-links a, .flinks a,
+  .install-tab, .tab-btn, .binding-phase-btn, .binding-play-btn, .ngl-btn,
+  [data-ix-btn], [data-ix-btn-secondary], [data-ix-card], [data-ix-chip],
+  a:hover, button:hover,
+  .card:hover, .feature-card:hover, .eco-card:hover, .module-card:hover,
+  .drug-card:hover, .drug-card-featured:hover,
+  .link-chip:hover, .module-chip:hover, .footer-links a:hover, .flinks a:hover,
+  [data-ix-btn]:hover, [data-ix-btn-secondary]:hover,
+  [data-ix-card]:hover, [data-ix-chip]:hover {
+    transform: none;
+  }
+}
+
+/* --- Print: hover treatments must not bleed into printed output --------- */
+@media print {
+  a:hover {
+    filter: none;
+    color: inherit;
+    box-shadow: none;
+    transform: none;
+  }
+}

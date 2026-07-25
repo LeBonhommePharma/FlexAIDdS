@@ -46,8 +46,9 @@
   -webkit-tap-highlight-color: transparent;
 }
 .lbp-theme-toggle:focus-visible {
-  outline: 2px solid var(--lbp-accent);
-  outline-offset: 3px;
+  /* canonical focus ring — see interaction.css */
+  outline: 2px solid #22D3EE;
+  outline-offset: 2px;
 }
 
 .lbp-theme-toggle__track {
