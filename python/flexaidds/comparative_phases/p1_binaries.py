@@ -337,6 +337,44 @@ def pin_arm_binaries(
     return summary
 
 
+def run_p1(
+    local_root_path: Optional[str] = None,
+    *,
+    allow_reconstruction: bool = False,
+    arms: Optional[Sequence[str]] = None,
+) -> Dict[str, Any]:
+    """Pipeline adapter: map pin_arm_binaries → {phase, status, reason, receipts}."""
+    summary = pin_arm_binaries(
+        local_root=Path(local_root_path) if local_root_path else None,
+        allow_reconstruction=allow_reconstruction,
+        arms=tuple(arms) if arms is not None else SCIENCE_ARMS,
+    )
+    exit_code = int(summary.get("exit_code", 2))
+    if exit_code == 0:
+        status = "pass"
+        reason = (
+            "A/B present with distinct SHAs"
+            if summary.get("claim_binary_split_ok")
+            else "reconstruction receipts labeled"
+        )
+    elif exit_code == 1:
+        status = "fail"
+        reason = "arm A and B binary_sha256 identical"
+    else:
+        status = "fail"
+        reason = "SOURCE_PINNED_BINARY_MISSING (use --allow-reconstruction to label)"
+    return {
+        "phase": "P1",
+        "status": status,
+        "reason": reason,
+        "receipts": summary.get("arms") or {},
+        "local_root": summary.get("local_root"),
+        "exit_code": exit_code,
+        "messages": summary.get("messages") or [],
+        "raw": summary,
+    }
+
+
 def main(argv: Optional[Sequence[str]] = None) -> int:
     """CLI entry for Phase 1 binary pin/receipt helper."""
     import argparse
