@@ -145,8 +145,19 @@ The canonical agent skill lives at `.grok/skills/flexaidds/SKILL.md` (single dir
 **Validation commands (run before claiming "done" on any skill change):**
 ```bash
 python3 .grok/skills/flexaidds/scripts/validate_skill.py
-python3 -m pytest tests/test_flexaid_skill.py -q --tb=line
+python3 .grok/skills/flexaidds/scripts/validate_dataset_semantics.py
+python3 -m pytest tests/test_flexaid_skill.py tests/test_dataset_semantics.py -q --tb=line
 python3 .grok/skills/flexaidds/scripts/ensure_docking_data.py --check
+python3 .grok/skills/flexaidds/scripts/resolve_build.py --check
+# After C++ rebuilds: re-pin + sync (ignores stale pin automatically)
+python3 .grok/skills/flexaidds/scripts/resolve_build.py --sync-env --write-pin
+export FLEXAIDDS_REQUIRE_BUILD=1   # hard-fail missing/stale builds in claim sessions
+```
+
+**Any target / any ligand (strict preflight, local-first OUT):**
+```bash
+python3 .grok/skills/flexaidds/scripts/dock_any.py --receptor target.pdb --ligand ligand.mol2
+python3 .grok/skills/flexaidds/scripts/dock_any.py --pdb 1STP --ligand-res BTN --dry-run
 ```
 
 The skill is self-contained: `scripts/` (validator, data-ensure, dataset runner, updater), `data/` (matrices + `*.def` runtime files), `references/flexaidds-guidance.md` (terminology contract), `examples/`, and `bin/` convenience wrappers.

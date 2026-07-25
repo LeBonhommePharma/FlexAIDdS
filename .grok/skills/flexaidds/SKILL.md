@@ -204,22 +204,25 @@ The skill itself is packaged under:
 ├── SKILL.md
 ├── scripts/
 │   ├── validate_skill.py
+│   ├── validate_dataset_semantics.py           # fail-closed self vs cross-docking YAML gate
 │   ├── ensure_docking_data.py                  # unified runtime data (matrices + *.def files) + --source
-│   ├── dataset_runner.py                       # high-quality wrapper for FlexAIDδS DatasetRunner (benchmarks, distributed runs, reports)
-│   └── update_skill.py                         # built-in autoupdate for the skill + all sub-components
-                                                #   (dry-run by default, --source, --yes, auto-validator)
+│   ├── resolve_build.py                        # SHA pin; --sync-env --write-pin re-pins rebuilt binaries
+│   ├── dock_any.py                             # any target/ligand (local files or RCSB self-dock)
+│   ├── dataset_runner.py                       # DatasetRunner campaigns (local-first + pin + semantics)
+│   └── update_skill.py                         # autoupdate (dry-run by default)
 ├── data/
-│   └── README.md                  # Documents MC_*.dat matrices + all AMINO*.def / NUCLEOTIDES*.def files
+│   └── README.md
 ├── references/
 │   └── flexaidds-guidance.md
-└── assets/ (optional)
+└── bin/  # shell wrappers (not symlinks into scripts/)
 ```
 
 **Local validation commands (run these before any claim of "done"):**
 ```bash
 python3 .grok/skills/flexaidds/scripts/validate_skill.py
 python3 .grok/skills/flexaidds/scripts/resolve_build.py --check
-python3 -m pytest tests/test_flexaid_skill.py -q --tb=line
+python3 .grok/skills/flexaidds/scripts/validate_dataset_semantics.py
+python3 -m pytest tests/test_flexaid_skill.py tests/test_dataset_semantics.py -q --tb=line
 ```
 
 **Production build resolution (autonomous, SHA-pinned):**
@@ -510,11 +513,59 @@ For ergonomics, the skill provides executable shell wrappers in `bin/` (never sy
 
 **Important:** These shortcuts are for convenience only. They never replace running the actual FlexAIDδS binary, the full validator, or any scientific analysis. No scientific claim is ever valid without executing the real code.
 
+## Any target / any ligand (fast + strict)
+
+Flexible inputs; **strict** preflight (build pin, runtime data, Softβ OFF, local-first OUT).
+
+```bash
+# 1) Pin engine after rebuilds (re-pin ignores stale SHA automatically)
+python3 .grok/skills/flexaidds/scripts/resolve_build.py --sync-env --write-pin
+export FLEXAIDDS_REQUIRE_BUILD=1
+
+# 2a) Arbitrary local receptor + ligand (protein/RNA/DNA PDB + MOL2/SDF/PDB)
+python3 .grok/skills/flexaidds/scripts/dock_any.py \
+  --receptor /path/to/target.pdb \
+  --ligand /path/to/ligand.mol2 \
+  --temperature 298.15
+
+# 2b) Self-docking from RCSB (cognate HET residue)
+python3 .grok/skills/flexaidds/scripts/dock_any.py \
+  --pdb 1STP --ligand-res BTN --dry-run   # preflight + prepare
+python3 .grok/skills/flexaidds/scripts/dock_any.py \
+  --pdb 1STP --ligand-res BTN --temperature 298.15
+
+# Cross-docking: pass the *non-native* receptor PDB + cognate ligand files to 2a
+# and label docking_mode=cross_docking in any YAML/campaign you package.
+```
+
+Shortcuts: `.grok/skills/flexaidds/bin/dock-any`, `.grok/skills/flexaidds/bin/validate-dataset-semantics`.
+
+**Speed knobs (accuracy tradeoffs — never silent):** lower GA pop/gen only for exploratory docks; claim runs keep generations fixed and scale population via `FLEXAIDDS_EVAL_SCALE_DIHEDRAL=1` (see AGENTS.md). Use Metal/CUDA builds when available; local OUT avoids CloudDocs I/O stalls.
+
+**Accuracy gates:** CF ranks search poses; success claims need RMSD≤2.0 Å + PoseBusters (modern) or S_top10 (classic 3Dsig) plus receipts — see *Deception-proof claim contract*.
+
+### Dataset YAML semantics (self vs cross)
+
+Every `benchmarks/datasets/*.yaml` must set `docking_mode`. Contradictions fail closed:
+
+```bash
+python3 .grok/skills/flexaidds/scripts/validate_dataset_semantics.py
+```
+
+| Mode | Meaning |
+|------|---------|
+| `self_docking` | Cognate ligand → native holo receptor |
+| `cross_docking` | Cognate ligand → non-native / apo / alternative receptor |
+| `affinity_scoring` | Score/rank vs experimental affinity |
+| `virtual_screening` | Actives/decoys enrichment |
+| `specialized` | Custom protocols (must not claim crossdock metrics without cross states) |
+
 ## Quickstart for Actual Docking + Thermodynamics
 
 For users who want to run real FlexAIDδS jobs (not just review code), start here:
 
 → **[QUICKSTART.md](QUICKSTART.md)** — End-to-end guide for preparing inputs, running docking, and computing the thermodynamic ledger.
+
 
 ## Publication-Quality Figure & Animation Generation (Imagine Integration + Gate 6)
 

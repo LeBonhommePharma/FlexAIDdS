@@ -1,5 +1,6 @@
 # SCORPIO ITC (ITC-enriched)
 slug: scorpio
+docking_mode: affinity_scoring  # validated by validate_dataset_semantics.py
 name: "SCORPIO ITC (ITC-enriched)"
 description: >
   ITC-enriched set focused on entropy/enthalpy decomposition.

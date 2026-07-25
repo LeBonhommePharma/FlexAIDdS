@@ -1,4 +1,5 @@
 slug: posex_cd
+docking_mode: cross_docking  # validated by validate_dataset_semantics.py
 name: "PoseX Cross-Docking (1312)"
 benchmark_order: 10
 description: >

@@ -11,6 +11,7 @@
 #            https://doi.org/10.1021/acs.jcim.8b00545
 
 slug: casf2016
+docking_mode: affinity_scoring  # validated by validate_dataset_semantics.py
 name: "CASF-2016"
 description: >
   PDBbind Core Set 2016: 285 protein-ligand complexes with experimental binding

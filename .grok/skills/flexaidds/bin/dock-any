@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+set -euo pipefail
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+REPO_ROOT="$(cd "$ROOT/../../.." && pwd)"
+export FLEXAIDDS_ROOT="${FLEXAIDDS_ROOT:-$REPO_ROOT}"
+exec python3 "$ROOT/scripts/dock_any.py" "$@"

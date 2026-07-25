@@ -17,6 +17,7 @@
 # AF2 structures: UniProt-mapped AlphaFold DB v4
 
 slug: dude37
+docking_mode: virtual_screening  # validated by validate_dataset_semantics.py
 name: "DUD-E 37-Target Cross-Docking"
 description: >
   37-target subset of DUD-E with holo, apo, and AlphaFold2 receptor structures

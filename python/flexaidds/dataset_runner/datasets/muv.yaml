@@ -15,6 +15,7 @@
 # Dataset access: https://www.pharmvip.com/ or https://chemdb.ucsd.edu/muv/
 
 slug: muv
+docking_mode: virtual_screening  # validated by validate_dataset_semantics.py
 name: "Maximum Unbiased Validation (MUV)"
 description: >
   17-target benchmark designed without property-based biases between actives

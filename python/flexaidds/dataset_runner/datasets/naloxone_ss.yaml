@@ -2,6 +2,7 @@
 # Mirrors benchmarks/datasets/naloxone_ss.yaml for the flexaidds DatasetRunner / campaigns.
 
 slug: naloxone_ss
+docking_mode: specialized  # validated by validate_dataset_semantics.py
 name: "Naloxone SS Repurposing"
 description: >
   5-HT focused repurposing set for Naloxone ideas in Serotonin Syndrome.

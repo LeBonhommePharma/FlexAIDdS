@@ -187,6 +187,8 @@ def check_bin_wrappers() -> bool:
         "update-skill",
         "dataset-runner",
         "resolve-build",
+        "dock-any",
+        "validate-dataset-semantics",
     )
     missing = [name for name in expected if not (bin_dir / name).exists()]
     if missing:

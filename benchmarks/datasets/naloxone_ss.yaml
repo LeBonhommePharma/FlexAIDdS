@@ -23,6 +23,7 @@
 # Receptors: Use high-quality PDBs/holo or AF2 models from psychopharm collection.
 
 slug: naloxone_ss
+docking_mode: specialized  # validated by validate_dataset_semantics.py
 name: "Naloxone for Serotonin Syndrome Repurposing"
 description: >
   Targeted docking set for Naloxone repurposing ideas in Serotonin Syndrome.

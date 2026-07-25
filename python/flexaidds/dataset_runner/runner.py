@@ -155,6 +155,8 @@ class DatasetConfig:
         benchmark_order:       Stable run/display order; lower values run first.
         targets:               Full list of target identifiers.
         structural_states:     Receptor states available (``holo``, ``apo``, ``af2``).
+        docking_mode:          Normative semantics: self_docking | cross_docking |
+                               affinity_scoring | virtual_screening | specialized.
         metrics:               Names of metrics to compute (must exist in metrics.py).
         expected_baselines:    ``{metric: value}`` reference values for regression checks.
         published_baselines:   ``{metric: value}`` published reference values for comparisons.
@@ -175,6 +177,7 @@ class DatasetConfig:
     benchmark_order: int = 1000
     targets: List[str] = field(default_factory=list)
     structural_states: List[str] = field(default_factory=lambda: ["holo"])
+    docking_mode: str = "self_docking"
     metrics: List[str] = field(default_factory=list)
     expected_baselines: Dict[str, float] = field(default_factory=dict)
     published_baselines: Dict[str, float] = field(default_factory=dict)
@@ -194,7 +197,44 @@ class DatasetConfig:
         with open(yaml_path) as fh:
             raw: dict = yaml.safe_load(fh)
 
+        # Fail closed on self vs cross-docking contradictions before scheduling work.
+        # parents: runner.py → dataset_runner → flexaidds → python → repo root
+        skill_validator = (
+            Path(__file__).resolve().parents[3]
+            / ".grok"
+            / "skills"
+            / "flexaidds"
+            / "scripts"
+            / "validate_dataset_semantics.py"
+        )
+        if skill_validator.is_file():
+            import importlib.util
+
+            spec = importlib.util.spec_from_file_location(
+                "validate_dataset_semantics", skill_validator
+            )
+            if spec and spec.loader:
+                mod = importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(mod)
+                sem_errs = mod.validate_config(dict(raw), path=yaml_path)
+                if sem_errs:
+                    raise ValueError(
+                        "Dataset docking_mode semantics failed:\n  - "
+                        + "\n  - ".join(sem_errs)
+                    )
+
         data_dir_raw = raw.pop("data_dir", None)
+        # Extra YAML metadata keys are allowed; ignore unknown fields not on DatasetConfig.
+        for extra in (
+            "canonical_data_root",
+            "checksum_manifest",
+            "canonical_doc",
+            "structure_recovery_policy",
+            "claude_reevaluated_baselines",
+            "claude_reevaluated_rationale",
+        ):
+            raw.pop(extra, None)
+        docking_mode = str(raw.pop("docking_mode", "self_docking")).strip().lower()
         config = cls(
             slug=raw.pop("slug", yaml_path.stem),
             name=raw.pop("name", yaml_path.stem),
@@ -206,6 +246,7 @@ class DatasetConfig:
             benchmark_order=int(raw.pop("benchmark_order", 1000)),
             targets=list(raw.pop("targets", [])),
             structural_states=list(raw.pop("structural_states", ["holo"])),
+            docking_mode=docking_mode,
             metrics=list(raw.pop("metrics", [])),
             expected_baselines=dict(raw.pop("expected_baselines", {})),
             published_baselines=dict(raw.pop("published_baselines", {})),

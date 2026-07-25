@@ -557,35 +557,59 @@ def main() -> int:
     parser = build_parser()
     args = parser.parse_args()
 
-    # Resolve --results-dir default preferring FLEXAIDDS_ICLOUD (then FLEXAIDDS_RESULTS).
-    # For active runs: place under working/<timestamped-run> to be "safer than safe".
-    # iCloud Drive risks during active writes: sync lag, .icloud placeholders, "conflicted copy",
-    # partial visibility. Always prefer working/ for in-flight; use scripts/safe_archive_to_icoud.py
-    # for final promotion to archived/ after verification (SHA tree + manifest, never delete unverified).
-    # --results-dir on CLI always wins (full override compatibility).
+    # Softβ OFF unless user already opted in; claim campaigns must not silent-enable.
+    if os.environ.get("FLEXAIDDS_SOFTBETA_ELECTION", "").strip() not in ("1", "true", "yes"):
+        os.environ["FLEXAIDDS_SOFTBETA_ELECTION"] = "0"
+    if os.environ.get("FLEXAIDDS_ELECTION_SHANNON_F", "").strip() not in ("1", "true", "yes"):
+        os.environ["FLEXAIDDS_ELECTION_SHANNON_F"] = "0"
+
+    # Real (non dry-run) campaigns hard-require a pinned build.
+    if not args.dry_run:
+        os.environ["FLEXAIDDS_REQUIRE_BUILD"] = "1"
+
+    # Resolve --results-dir: local-first (AGENTS.md). iCloud is thin mirror after success.
+    # --results-dir on CLI always wins.
     if not getattr(args, "results_dir", None):
-        icloud = os.environ.get("FLEXAIDDS_ICLOUD")
-        results_env = os.environ.get("FLEXAIDDS_RESULTS")
         ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-        if icloud:
-            base = Path(icloud).expanduser() / "results" / "working"
+        local_root = os.environ.get("FLEXAIDDS_LOCAL_ROOT", "").strip()
+        results_env = os.environ.get("FLEXAIDDS_RESULTS", "").strip()
+        if local_root:
+            base = Path(local_root).expanduser() / "results" / "working"
             args.results_dir = str(base / f"dataset_runner_{ts}")
-        elif results_env:
+        elif results_env and "Mobile Documents" not in results_env:
             base = Path(results_env).expanduser() / "working"
             args.results_dir = str(base / f"dataset_runner_{ts}")
         else:
-            args.results_dir = "results/benchmarks"
-        # Ensure the dir exists for active run (mirrors launchers)
+            base = Path.home() / "flexaidds_results" / "results" / "working"
+            args.results_dir = str(base / f"dataset_runner_{ts}")
         Path(args.results_dir).mkdir(parents=True, exist_ok=True)
 
     print_skill_banner(verbose=args.verbose)
+
+    repo_root = Path(__file__).resolve().parents[4]
+
+    # Fail-closed docking_mode semantics (self vs cross-docking).
+    sem = Path(__file__).parent / "validate_dataset_semantics.py"
+    if sem.is_file():
+        print("\n[Skill] Validating dataset docking_mode semantics...")
+        sem_proc = subprocess.run(
+            [sys.executable, str(sem)],
+            cwd=str(repo_root),
+            check=False,
+        )
+        if sem_proc.returncode != 0:
+            print(
+                "[Skill] FATAL: dataset YAML docking_mode semantics failed. "
+                "Fix benchmarks/datasets/*.yaml before campaigns.",
+                file=sys.stderr,
+            )
+            return 1
 
     if args.ensure_data:
         print("\n[Skill] Ensuring all critical runtime data is present before benchmarking...")
         ensure_script = Path(__file__).parent / "ensure_docking_data.py"
         subprocess.run([sys.executable, str(ensure_script)], check=False)
 
-    repo_root = Path(__file__).resolve().parents[4]
     resolved_binary = args.binary
     if not args.dry_run and not args.binary:
         resolve_script = Path(__file__).parent / "resolve_build.py"
@@ -614,7 +638,7 @@ def main() -> int:
                 file=sys.stderr,
             )
             print(
-                "        Run: python3 .grok/skills/flexaidds/scripts/resolve_build.py --sync-env",
+                "        Run: python3 .grok/skills/flexaidds/scripts/resolve_build.py --sync-env --write-pin",
                 file=sys.stderr,
             )
             if isinstance(exc, subprocess.CalledProcessError) and exc.stderr:

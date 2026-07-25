@@ -1,11 +1,12 @@
 slug: crossdock
+docking_mode: cross_docking  # validated by validate_dataset_semantics.py
 name: CrossDock
 description: Cross-docking benchmark dataset for unified modern runner.
 data_format: pdb
 tier: 2
 tier1_subset_size: 5
 structural_states:
-  - holo
+  - crossdock
 targets:
   - xdock1
   - xdock2

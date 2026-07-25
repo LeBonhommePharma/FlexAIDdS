@@ -18,6 +18,7 @@
 #   ERDS description: Lyu et al. (2023) Nature 621:198-206
 
 slug: erds_specificity
+docking_mode: specialized  # validated by validate_dataset_semantics.py
 name: "Enamine REAL Diversity Subset — Specificity Z-Score"
 description: >
   Evaluates target specificity by scoring known binders against a property-matched
