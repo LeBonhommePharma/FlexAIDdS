@@ -230,6 +230,12 @@ def check_guardrails() -> bool:
         "source of truth",
         "agents.md",
         "repository hygiene",
+        # Deception-proof / production gates (post deep-research hardening)
+        "local-first",
+        "result.csv",
+        "deception-proof",
+        "posebusters",
+        "resolve_build",
     ]
     missing = [p for p in required_phrases if p not in content]
     if missing:

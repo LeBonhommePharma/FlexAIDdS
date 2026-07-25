@@ -135,7 +135,7 @@ Restart rules:
 
 ## Success Definition
 
-**3Dsig red-pair (classic A/B0/B) primary statistic:** S_top10 — any of top-10 ranked modes has RMSD ≤ 2.0 Å (deck contract). Report S1 and BCR as diagnostics; do not replace S_top10 with Softβ-only tables.
+**3Dsig red-pair (classic A/B0/B) primary statistic:** S_top10 — any of top-10 ranked modes has RMSD ≤ 2.0 Å (deck contract). Report S1 and BCR as diagnostics; do not replace S_top10 with Softβ-only tables. Pin binary SHA256 + matrix MD5 in `RUN_RECEIPT.json`.
 
 **Modern / DatasetRunner claim packages:** a pose is claim-successful only when **both** are true:
 
@@ -144,24 +144,44 @@ RMSD <= 2.0 A
 PoseBusters passes
 ```
 
-RMSD alone is not full claim success. PoseBusters failure means failure even if RMSD is good.
+RMSD alone is not full claim success. PoseBusters failure means failure even if RMSD is good. On-disk `result.csv` is required for campaign rates.
+
+**STRICT / claim_ready:** additionally require official PoseBusters (`bust_cli`), complete tENCoM/Eigen on the exact pose SHA-256, protocol eligibility, and score–pose consistency (`benchmarks/protocols/admission_metrics_contract.md`). Fail-closed: missing validators → **no claim**.
 
 **Science gate after docking:** if S_top10 = 0/N and BCR = 0/N, report **DOCKING COMPLETE — SCIENCE GATE FAIL**. Do not start Softβ election experiments; fix prep/emission/sampling first (`read_lig` latm, SHARESCL 10, clean apo, native CF oracle).
+
+### Deception-proof refuse rules
+
+**Refuse** docking-success / recognition-success / claim-ready language when any of these hold:
+
+| Missing / wrong | Agent must say |
+|-----------------|----------------|
+| No real engine run this session | “No docking claim — engine not executed” |
+| No `result.csv` (modern) or no `RUN_RECEIPT` (classic) | “No claim — durable receipt missing” |
+| No PoseBusters receipt on elected pose | “No modern claim — PB missing” |
+| No tENCoM/Eigen for STRICT packages | “No STRICT claim — Eigen/tENCoM missing” |
+| Rates from chat/memory only | “Re-read CSV/summary before any rate” |
+| Self vs cross-docking unlabeled / mixed | “Semantics unclear — refuse mixed rates” |
+| Live OUT only under CloudDocs | “Out of contract — use local-first staging” |
+| Stale / unpinned binary | “Run resolve_build.py --check; set FLEXAIDDS_REQUIRE_BUILD=1” |
+
+Cite `METHODOLOGY.md` §N for parity / determinism / Astex-85 / ctest. Do not fork methodology numbers into this skill.
 
 ## Reporting Contract
 
 Every closeout or handoff must include:
 
 - Exact command launched or resumed.
-- Modes and tools.
-- iCloud work dir and orchestrator run ID.
+- Modes and tools (**native** = self-docking vs **non_native** = cross-docking, labeled).
+- **Local** work/OUT dir first; iCloud path only as thin mirror + orchestrator run ID if used.
 - PoseBusters path and tENCoM/Eigen path verified by preflight.
 - Active PIDs if any process remains running.
-- Pose CSV and rescored CSV paths.
-- Success rates from `success_pb`, not RMSD-only counts.
+- Pose CSV and rescored CSV paths; `result.csv` / `RUN_RECEIPT` paths.
+- Success rates from `success_pb` / admission metrics, not RMSD-only counts.
+- Binary SHA256 + matrix MD5 from pin/receipt.
 - Any missing validators, failed tools, interrupted jobs, or partial outputs.
 
-Never report benchmark numbers from memory or logs alone when CSV artifacts exist. Read the CSV or summary JSON.
+Never report benchmark numbers from memory or logs alone when CSV artifacts exist. Read the CSV or summary JSON. If neither CSV nor receipt exists for a campaign path, **refuse success-rate language** entirely.
 
 ## Repository Hygiene
 

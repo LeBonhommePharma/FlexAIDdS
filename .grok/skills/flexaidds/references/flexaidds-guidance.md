@@ -57,6 +57,21 @@ Prefer saying **cf_score** / **CF proxy** in new documentation while leaving CSV
 
 Softβ **reorders** modes; it does **not** sample. If BCR=0 (no head ≤2 Å), Softβ cannot invent S1 success. Policy: `docs/implementation/softbeta_election_policy.md`.
 
+## Deception-proof claim rules (molecular recognition success)
+
+Molecular recognition is **searched** with the GA + CF proxy and **validated** with geometry + physical-realism gates — not with CF or ledger scores alone.
+
+| Success language | Minimum evidence |
+|------------------|------------------|
+| Modern claim / DatasetRunner success | Elected pose RMSD ≤ 2.0 Å **and** PoseBusters pass on that pose; on-disk `result.csv` |
+| STRICT / `claim_ready` | Plus official PoseBusters (`bust_cli`), tENCoM/Eigen on pose SHA-256, admission contract fields |
+| Classic 3Dsig red-pair primary | **S_top10** (any of ranks 0..9 RMSD ≤ 2.0 Å); pin binary SHA256 + matrix MD5 in `RUN_RECEIPT` |
+| “True ΔG_bind” | Forbidden unless full Z + vib (tENCoM) + solvent/concentration path active **and** validated |
+
+**Refuse** docking-success prose if `result.csv` / `RUN_RECEIPT` is missing for campaign paths, if validators were skipped, or if the engine was not actually run. See SKILL.md section *Deception-proof claim contract*.
+
+**Local-first:** live GA/OUT under `$FLEXAIDDS_LOCAL_ROOT`; iCloud is thin mirror only. Never treat CloudDocs-only live trees as production.
+
 ## Common Pitfalls to Flag
 
 - Assuming a high Voronoi CF score == tight binder (ignores entropy).
@@ -66,6 +81,11 @@ Softβ **reorders** modes; it does **not** sample. If BCR=0 (no head ≤2 Å), S
 - Emitting `SHARESCL 0.20` in `ga.inp` (typo; production is **10**).
 - Using a binary that drops the last LIG.inp HETTYP atom (`latm = atm_cnt-1` bug) — integrity gate must fail closed.
 - Claiming ranking science when native CF oracle fails (crystal CF hundreds of units worse than best GA CF).
+- Claiming success rates from memory/logs without reading `result.csv` / admission metrics.
+- Writing live GA traffic only to iCloud CloudDocs (hang risk) instead of local-first staging.
+- Freezing claim budgets at base 1000×6000 without applying dihedral/pop scale (`[EVAL-BUDGET]`).
+- Confusing self-docking (native redock) with cross-docking (non_native) in reported rates.
+- Restating methodology numbers in skills instead of citing `METHODOLOGY.md` §N.
 - Editing `LIB/statmech.cpp`, `LIB/BindingMode.cpp`, `LIB/Vcontacts.cpp`, or `python/flexaidds/thermodynamics.py` without adding or updating the corresponding GoogleTest / pytest.
 - Treating the Grok share link body as authoritative when the fetch only returned the title "Grok Fixes FlexAID Skill XML" — always fall back to local files and the current prompt.
 - Using a legacy `AMINO8/12/26.def` with modern `MC_*.dat` matrices (different atom type numbering → wrong typing and scoring). `AMINO26.def` on disk is unused unless `DEFTYP` is set.

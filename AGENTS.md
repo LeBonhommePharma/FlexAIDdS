@@ -149,7 +149,13 @@ python3 -m pytest tests/test_flexaid_skill.py -q --tb=line
 python3 .grok/skills/flexaidds/scripts/ensure_docking_data.py --check
 ```
 
-The skill is self-contained: `scripts/` (validator, data-ensure, dataset runner, updater), `data/` (matrices + `*.def` runtime files), `references/flexaidds-guidance.md` (terminology contract), `examples/`, and `bin/` convenience symlinks.
+The skill is self-contained: `scripts/` (validator, data-ensure, dataset runner, updater), `data/` (matrices + `*.def` runtime files), `references/flexaidds-guidance.md` (terminology contract), `examples/`, and `bin/` convenience wrappers.
+
+**Thin aliases (no second science source):**
+- `.grok/skills/flexaid-docking/SKILL.md` → redirects to `/flexaidds`
+- `.grok/skills/flexaidds-dataset-runner/SKILL.md` → DatasetRunner/classic red-pair launcher; defers policy here and to `AGENTS.md`
+
+**Deception-proof claims:** refuse docking-success language without real engine execution + on-disk `result.csv` / `RUN_RECEIPT` + (modern) RMSD≤2.0 Å **and** PoseBusters; STRICT also requires tENCoM/Eigen. Live OUT is **local-first** (`$FLEXAIDDS_LOCAL_ROOT`); iCloud is thin mirror only. Full table: `.grok/skills/flexaidds/SKILL.md` § *Deception-proof claim contract*.
 
 ### Astex Entropy / Benchmark Orchestration Skill
 
