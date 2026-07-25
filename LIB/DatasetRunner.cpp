@@ -6817,6 +6817,8 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
 
         // Runtime completion is tracked separately from benchmark success.
         // The latter is only true once we have a valid pose RMSD under 2 Å.
+        // 1KZK-class fail-closed: also require election inputs (poses + not stuck).
+        // has_pose_path is refined after election; initial gate uses n_poses only.
         const bool docking_completed = (ret == 0 && n_poses > 0 && !result.stuck);
 
         // If FlexAIDdS ran but produced no output, check stderr for clues
@@ -6833,6 +6835,17 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                     err_lines++;
                 }
             }
+            // Explicit empty-election pathology tag (1KZK-class).
+            if (result.thermo_binding_regime.empty())
+                result.thermo_binding_regime = "empty_or_sentinel_rmsd";
+            std::cerr << "  [EMISSION-GUARD] " << entry.pdb_id
+                      << ": empty election inputs (n_poses=0"
+                      << (result.stuck ? ", stuck" : "")
+                      << ") tag="
+                      << flexaids::emission::pathology_tag(
+                             flexaids::emission::report_elected_rmsd(-1.0f),
+                             static_cast<double>(result.best_score))
+                      << "\n";
         }
 
         // RMSD: compute from best-pose PDB vs crystal ligand SDF coordinates.
@@ -7245,7 +7258,21 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                                  "pose_source stays election, never bcr_gate)\n";
                 }
                 // Hoist elected path for PoseBust (immutable election identity).
-                elected_pose_pdb = best_pose_pdb;
+                // choose_elected_path: primary first; then restart-prefix fallbacks
+                // so 1KZK-class empty primary can still pick an emitted head.
+                {
+                    std::vector<std::string> elect_fallbacks;
+                    elect_fallbacks.reserve(all_prefixes.size() * 2);
+                    for (const auto& pfx : all_prefixes) {
+                        for (const auto& head :
+                             enumerate_emitted_cluster_heads(pfx)) {
+                            if (!head.path.empty())
+                                elect_fallbacks.push_back(head.path);
+                        }
+                    }
+                    elected_pose_pdb = flexaids::emission::choose_elected_path(
+                        best_pose_pdb, elect_fallbacks);
+                }
             } else {
                 result.rmsd_to_crystal = -1.0f;
             }
@@ -7253,9 +7280,48 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
             result.rmsd_to_crystal = -1.0f;
             // Still try to elect a pose for PoseBust even without crystal RMSD ref.
             if (docking_completed) {
-                elected_pose_pdb = select_pose_freq_gated_pooled(
+                const std::string primary = select_pose_freq_gated_pooled(
                     all_prefixes, sel_elitism_ovr, cf_window_selector_,
                     &protocol_cfg_, static_cast<double>(config.temperature)).first;
+                std::vector<std::string> elect_fallbacks;
+                for (const auto& pfx : all_prefixes) {
+                    for (const auto& head :
+                         enumerate_emitted_cluster_heads(pfx)) {
+                        if (!head.path.empty())
+                            elect_fallbacks.push_back(head.path);
+                    }
+                }
+                elected_pose_pdb = flexaids::emission::choose_elected_path(
+                    primary, elect_fallbacks);
+            }
+        }
+
+        // Fail-closed election completeness after path selection (1KZK-class).
+        {
+            const bool has_pose_path =
+                !elected_pose_pdb.empty() && fs::exists(elected_pose_pdb);
+            if (!flexaids::emission::election_inputs_ok(
+                    n_poses, result.stuck, has_pose_path)) {
+                std::cerr << "  [EMISSION-GUARD] " << entry.pdb_id
+                          << ": election_inputs_ok=false n_poses=" << n_poses
+                          << " stuck=" << (result.stuck ? 1 : 0)
+                          << " has_pose_path=" << (has_pose_path ? 1 : 0)
+                          << " tag="
+                          << flexaids::emission::pathology_tag(
+                                 flexaids::emission::report_elected_rmsd(
+                                     result.rmsd_to_crystal),
+                                 static_cast<double>(result.best_score))
+                          << "\n";
+                if (result.thermo_binding_regime.empty()) {
+                    result.thermo_binding_regime =
+                        has_pose_path ? "election_incomplete"
+                                      : "empty_or_sentinel_rmsd";
+                }
+                // No usable elected path → sentinel RMSD (never invent success).
+                if (!has_pose_path) {
+                    result.rmsd_to_crystal = -1.0f;
+                    result.rmsd_hungarian = -1.0f;
+                }
             }
         }
 

@@ -215,19 +215,22 @@ inline FreeEnergy free_energy_strict(
 // free_energy_strict collapses exact-CF duplicates so multiplicity alone
 // cannot elect a large wrong basin over a better CF singleton (rank_miss).
 //
-// Env (parity-safe default = legacy acf / pre-E1b campaign baseline):
-//   FLEXAIDDS_ACF_STRICT=1         → free_energy_strict (E1b ON)
-//   unset / FLEXAIDDS_ACF_STRICT=0 → legacy acf (default OFF = bit-parity)
-//   FLEXAIDDS_ELECT_LEGACY_ACF=1   → force legacy acf even if ACF_STRICT=1
+// Env (product path = free_energy_strict ON; campaign A/B via LEGACY opt-out):
+//   unset / FLEXAIDDS_ACF_STRICT=1  → free_energy_strict (default ON, E1b)
+//   FLEXAIDDS_ELECT_LEGACY_ACF=1    → legacy multiplicity-inflated acf
+//   FLEXAIDDS_ACF_STRICT=0         → legacy acf (explicit opt-out alias)
 
-/// True when cluster emission should use free_energy_strict (default OFF).
+/// True when cluster emission should use free_energy_strict (default ON).
 inline bool cluster_use_free_energy_strict_from_env() noexcept
 {
     const char* legacy = std::getenv("FLEXAIDDS_ELECT_LEGACY_ACF");
     if (legacy != nullptr && std::atoi(legacy) != 0)
         return false;
     const char* strict = std::getenv("FLEXAIDDS_ACF_STRICT");
-    return strict != nullptr && std::atoi(strict) != 0;
+    if (strict != nullptr && std::atoi(strict) == 0)
+        return false;
+    // unset or ACF_STRICT!=0 → strict (product default after E1b)
+    return true;
 }
 
 /// Cluster-local basin score for emission order (lower better).
