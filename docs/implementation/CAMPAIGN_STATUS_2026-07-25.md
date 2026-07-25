@@ -1,10 +1,24 @@
 # Campaign status — comparative FlexAID / FlexAIDdS (2026-07-25)
 
 **Status:** **NO LIVE SCIENCE DOCK.** Comparative N=85 three-arm is **blocked** until pre-gates pass.  
-**FlexAIDdS HEAD:** `99d17e4f` (`main`)  
+**FlexAIDdS HEAD:** `99d17e4f` (`main`) · pipeline branch `feat/comparative-p0-p5-pipeline`  
 **Goal design (phases G1–G9):** [`COMPARATIVE_GOAL_METHODOLOGY.md`](COMPARATIVE_GOAL_METHODOLOGY.md)  
 **Arm specs:** [`COMPARATIVE_BENCHMARK_METHODOLOGY.md`](COMPARATIVE_BENCHMARK_METHODOLOGY.md) · pins [`arm_pins.json`](arm_pins.json)  
+**Clean genuine baseline:** [`BASELINE_GENUINE_2026-07-24.md`](BASELINE_GENUINE_2026-07-24.md) — **25.3%** (20/79), BCR 27.8%, seed-echo 0  
 **Parents:** `3dsig_red_pair_protocol.md`, `METHODOLOGY.md`, Claude Science audit stack, `docs/ICLOUD_BENCHMARK_STORAGE.md`
+
+### Pipeline gate snapshot (Science-verified 2026-07-25)
+
+| Phase | Status | Note |
+|-------|--------|------|
+| P0–P1 | pass (layout + reconstruction receipts if bins empty) | Matrix **9dc9** |
+| **P2** | **HOLD** — live blocker | Empty/deferred oracle until real `native_cf_oracle_gate` JSON fed |
+| P3–P4 | pending behind P2 | Fail-closed serial |
+| P5 | scaffolding OK | Needs arm result.csv for real S_top10 |
+| Unit tests | **17/17** | `test_comparative_phases.py` |
+
+CLI: `scripts/run_comparative_phases.py --pipeline-dry` (not `--dry-run`).  
+Env: conda `python` for numpy; `cpp-python-core` for pytest.
 
 ---
 

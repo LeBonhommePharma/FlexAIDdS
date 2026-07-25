@@ -12,11 +12,14 @@
 
 | Tree | Genuine (seed_echo=0, rmsd_h≤2) | Label |
 |------|----------------------------------|--------|
+| **`v_autonomous_20260724_160919` (80/85 scored)** | **20/79 = 25.3%** | **Best clean full-ish baseline** — seed-echo **0**; BCR 22/79=27.8%; election gap **2** targets. Pre-merge vs later PRs. See `BASELINE_GENUINE_2026-07-24.md` |
 | C0@9dc9 v4 (partial ~17) | **6/17 (~35%)** | Best partial **defined-cleft** signal; **not** full-85 |
 | C0@9dc9 v6 (partial ~11) | 3/11 (~27%) | Same binary as v4 on overlap — **sampling artifact**, not regression |
 | control noentropy (partial 17) | 4/17 (~24%) | 9dc9 |
 | softβ+CAP@72d7 autonomous (83) | 12/83 (~15%) | **Confounded** (matrix+mode+multi-knob) |
 | com-cap fixed CAP=-130 (10 finished) | 1/10 (10%) | **UNCITABLE** — OOM dead run |
+
+**2026-07-25 Science conclusion (load-bearing):** election/`free_energy_strict` gap is **closed** on this baseline (BCR≈genuine). **Sampling is the wall** (ceiling ~28%). Route to Wave 3 BCR raisers; wall oracle before memetic remains pacing. Do not re-open Softβ S1 as the primary rate lever.
 
 **Targets (fair claim methodology):**  
 - Headline comparative: **S_top10** median over 10k bootstraps (3Dsig family).  
