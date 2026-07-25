@@ -10,6 +10,7 @@
 #include "../LIB/SoftBetaFreeEnergy.h"
 #include <limits>
 #include <cmath>
+#include <cstdlib>
 #include <cstring>
 #include <vector>
 #include <algorithm>
