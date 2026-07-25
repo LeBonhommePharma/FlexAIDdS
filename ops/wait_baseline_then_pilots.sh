@@ -188,6 +188,13 @@ else
   echo "WARN: no runner $FLEXAIDDS_RUNNER" | tee -a "$LOG"
 fi
 
+echo "=== W3 BCR one-variable pilot (1J3J/1K3U) ===" | tee -a "$LOG"
+export W3_BCR_OUT="$OUT_ROOT/w3_bcr_pilot"
+bash "$ROOT/ops/launch_w3_bcr_pilot.sh" 2>&1 | tee "$OUT_ROOT/w3_bcr_pilot.log" || true
+if [[ -f "$OUT_ROOT/w3_bcr_pilot/w3_bcr_summary.md" ]]; then
+  cp -f "$OUT_ROOT/w3_bcr_pilot/w3_bcr_summary."* "$OUT_ROOT/" 2>/dev/null || true
+fi
+
 echo "=== W3 E10 snapshot on completed baseline ===" | tee -a "$LOG"
 python3 "$ROOT/scripts/e10_election_vs_scoring.py" \
   --campaign-dir "$BASELINE" \
@@ -202,6 +209,9 @@ if [[ -n "${GOAL_SCRATCH:-}" && -d "${GOAL_SCRATCH}" ]]; then
   cp -f "$OUT_ROOT/w1_elec/"* "$GOAL_SCRATCH/w1_elec/" 2>/dev/null || true
   cp -f "$OUT_ROOT/w3_baseline_e10."* "$GOAL_SCRATCH/w3_sampling/" 2>/dev/null || true
   cp -f "$OUT_ROOT/w1_acf_ab_summary."* "$GOAL_SCRATCH/w1_acf_strict_pilot/" 2>/dev/null || true
+  mkdir -p "$GOAL_SCRATCH/w3_sampling"
+  cp -f "$OUT_ROOT/w3_bcr_pilot/w3_bcr_summary."* "$GOAL_SCRATCH/w3_sampling/" 2>/dev/null || true
+  cp -f "$OUT_ROOT/w3_baseline_e10."* "$GOAL_SCRATCH/w3_sampling/" 2>/dev/null || true
   cp -f "$OUT_ROOT/"*.log "$GOAL_SCRATCH/" 2>/dev/null || true
   # summarize pilots
   python3 - <<'PY' || true
@@ -223,6 +233,10 @@ if aj.is_file():
     d = json.loads(aj.read_text())
     lines.append(f"- acf goods_non_regression: {d.get('goods_non_regression')} flips={d.get('goods_success_to_fail')}\n")
     lines.append(f"- acf off/on targets: {d.get('n_off')}/{d.get('n_on')}\n")
+bj = root / "w3_bcr_pilot" / "w3_bcr_summary.json"
+if bj.is_file():
+    d = json.loads(bj.read_text())
+    lines.append(f"- w3_bcr pairs: {len(d.get('pairs') or [])}\n")
 (sc / "PILOTS_DONE.md").write_text("".join(lines))
 print("".join(lines))
 PY
