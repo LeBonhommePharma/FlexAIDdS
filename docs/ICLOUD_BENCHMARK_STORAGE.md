@@ -211,7 +211,10 @@ Restore never makes live `$HOME` agent dirs depend on CloudDocs for runtime.
 6. Never dual-launch two claim workers on the same campaign.  
 7. Periodically: `bash scripts/sync_agent_homes_to_icloud.sh --backup` for agent configs/sessions.  
 8. Home-dot configs: `bash scripts/sync_home_dots_to_icloud.sh` → `$FLEXAIDDS_ICLOUD/home_dots/`.  
-9. After verify, free regenerable caches only:  
+9. After **path-level** verify, free cache dups only (same relative path must exist
+   non-empty under `agent_homes/` or `archive_batch/`; never frees `bin`/`vendor`/
+   `attachments`/`generated_images`/`blob_storage`):  
+   `bash scripts/safe_free_verified_icloud_duplicates.sh --dry-run --free-regenerable`  
    `bash scripts/safe_free_verified_icloud_duplicates.sh --execute --free-regenerable`  
 
 ## Note on local disk pressure

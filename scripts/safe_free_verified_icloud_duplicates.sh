@@ -8,10 +8,11 @@
 #   4) No recursive find over Mobile Documents.
 #   5) Default is --dry-run; pass --execute to actually delete freeable paths.
 #
-# Modes of free (both require agent_homes mirror verify for that agent):
-#   --free-regenerable   free regenerable cache subdirs (thin backup excludes them;
-#                        live config remains; parent agent mirror must be non-empty
-#                        OR archive_batch already holds complete agent tree)
+# Modes of free (path-level proof required — parent-only is NOT enough):
+#   --free-regenerable   free cache subdirs ONLY when the same relative path is
+#                        non-empty under agent_homes/<remote>/<rel> OR
+#                        archive_batch/<remote>/<rel>. Never free bin/vendor/
+#                        attachments/generated_images/blob_storage.
 #   --free-flexaidds-dup free local flexaidds_results campaign/result trees only when
 #                        the matching archive/iCloud path has result.csv (one-level)
 #
@@ -80,23 +81,28 @@ remote_name_for() {
     2>/dev/null || true
 }
 
-agent_mirror_ok() {
-  local aid="$1"
-  local rname remote archive_remote
-  rname=$(remote_name_for "$aid")
-  [[ -n "$rname" ]] || return 1
-  remote="$AGENT_ROOT/$rname"
-  archive_remote="$ARCHIVE_BATCH/$rname"
-  if verify_remote_nonempty "$remote"; then
-    echo "VERIFY_OK agent=$aid remote=$remote"
-    return 0
-  fi
-  # Archive batch complete copy counts as durable proof (claude case)
-  if verify_remote_nonempty "$archive_remote"; then
-    echo "VERIFY_OK agent=$aid archive=$archive_remote"
-    return 0
-  fi
-  echo "VERIFY_FAIL agent=$aid remote=$remote archive=$archive_remote"
+# Path-level proof: same relative path non-empty under agent_homes OR archive.
+# Parent-only non-empty is NOT sufficient (AC3 / verify-then-free).
+path_level_proof() {
+  local remote_name="$1" relative="$2"
+  local p
+  for p in \
+    "$AGENT_ROOT/$remote_name/$relative" \
+    "$ARCHIVE_BATCH/$remote_name/$relative"
+  do
+    if [[ -f "$p" ]]; then
+      echo "$p"
+      return 0
+    fi
+    if [[ -d "$p" ]]; then
+      local n
+      n=$(ls -1A "$p" 2>/dev/null | wc -l | tr -d ' ')
+      if [[ "${n:-0}" -ge 1 ]]; then
+        echo "$p"
+        return 0
+      fi
+    fi
+  done
   return 1
 }
 
@@ -105,8 +111,11 @@ skipped=0
 bytes_note=""
 
 if (( FREE_REGEN )); then
-  echo "--- regenerable free candidates ---"
-  free_json=$(python3 "$PATHS_PY" --print-freeable --agents "$AGENTS" --icloud "$FLEXAIDDS_ICLOUD")
+  echo "--- free candidates (path-level iCloud/archive proof required) ---"
+  free_json=$(
+    python3 "$PATHS_PY" --print-freeable --agents "$AGENTS" \
+      --icloud "$FLEXAIDDS_ICLOUD" --archive-batch "$ARCHIVE_BATCH"
+  )
   while IFS=$'\t' read -r agent_id relative local agent_root remote_name; do
     [[ -n "$agent_id" ]] || continue
     # Never free the agent root itself
@@ -115,13 +124,22 @@ if (( FREE_REGEN )); then
       skipped=$((skipped + 1))
       continue
     fi
-    if ! agent_mirror_ok "$agent_id"; then
-      echo "SKIP no durable proof for $agent_id — not freeing $local"
+    # Hard blocklist for unique install/user trees
+    case "$relative" in
+      bin|vendor|attachments|generated_images|blob_storage|node_repl|browser|migration|sessions|projects|jobs|agents|skills)
+        echo "REFUSE never-free relative=$relative local=$local"
+        skipped=$((skipped + 1))
+        continue
+        ;;
+    esac
+    proof=""
+    if ! proof=$(path_level_proof "$remote_name" "$relative"); then
+      echo "SKIP no path-level duplicate for $local (remote_name=$remote_name rel=$relative)"
       skipped=$((skipped + 1))
       continue
     fi
     if [[ ! -e "$local" ]]; then
-      echo "SKIP absent: $local"
+      echo "SKIP absent local (already free): $local proof=$proof"
       skipped=$((skipped + 1))
       continue
     fi
@@ -136,7 +154,6 @@ if (( FREE_REGEN )); then
           ;;
       esac
     fi
-    proof="agent_homes_or_archive non-empty for $agent_id (remote_name=$remote_name)"
     if (( DRY )); then
       echo "WOULD_FREE local=$local proof=$proof"
       freed=$((freed + 1))

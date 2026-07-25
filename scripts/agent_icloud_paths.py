@@ -86,14 +86,14 @@ HOME_DOT_SKIP_PREFIXES: tuple[str, ...] = (
     ".elvui",
 )
 
-# Regenerable cache-like subpaths under live agent homes. Free only after the
-# durable config mirror exists AND the path is listed as freeable (not the
-# whole live home). These are intentionally NOT required on iCloud (thin
-# backup excludes them); free is allowed only when the parent agent mirror
-# verified OK and --free-regenerable is used, or when archive already holds
-# an equivalent durable tree for that agent.
-REGENERABLE_FREE_CANDIDATES: tuple[tuple[str, str], ...] = (
-    # (agent_id, relative path under local home of that agent)
+# Subpaths that may be freed ONLY when the same relative path exists as a
+# non-empty duplicate under agent_homes/<remote_name>/<rel> OR
+# archive_batch/<remote_name>/<rel>. Never free unique trees that thin-backup
+# excludes without a remote copy (bin, vendor, attachments, generated_images,
+# blob_storage, etc.).
+#
+# Keep this list to true cache/ephemeral dirs — not install trees or user data.
+FREEABLE_IF_MIRRORED: tuple[tuple[str, str], ...] = (
     ("claude", "cache"),
     ("claude", "telemetry"),
     ("claude", "debug"),
@@ -102,27 +102,43 @@ REGENERABLE_FREE_CANDIDATES: tuple[tuple[str, str], ...] = (
     ("claude", "file-history"),
     ("codex", "cache"),
     ("codex", "log"),
-    ("codex", "node_repl"),
-    ("codex", "browser"),
-    ("codex", "attachments"),
-    ("codex", "generated_images"),
     ("codex", "tmp"),
     ("grok", "logs"),
     ("grok", "marketplace-cache"),
     ("grok", "downloads"),
     ("grok", "upload_queue"),
-    ("grok", "vendor"),
-    ("grok", "bin"),
-    ("grok", "migration"),
     ("claude_app", "Cache"),
     ("claude_app", "Code Cache"),
     ("claude_app", "GPUCache"),
     ("claude_app", "Crashpad"),
     ("claude_app", "DawnGraphiteCache"),
     ("claude_app", "DawnWebGPUCache"),
-    ("claude_app", "blob_storage"),
-    ("claude_app", "logs"),
 )
+
+# Hard blocklist: never free these relative paths even if listed elsewhere.
+NEVER_FREE_RELATIVE: frozenset[str] = frozenset(
+    {
+        "bin",
+        "vendor",
+        "attachments",
+        "generated_images",
+        "blob_storage",
+        "node_repl",
+        "browser",
+        "migration",
+        "sessions",
+        "projects",
+        "jobs",
+        "agents",
+        "skills",
+        "auth.json",
+        "config.toml",
+        "settings.json",
+    }
+)
+
+# Back-compat alias (tests / callers)
+REGENERABLE_FREE_CANDIDATES = FREEABLE_IF_MIRRORED
 
 # Thin excludes (rsync --exclude patterns). Default backup omits caches,
 # reinstallable runtimes, and huge VM/blob trees. Secrets stay local unless
@@ -438,14 +454,70 @@ def build_home_dot_mirrors(
     return mirrors
 
 
+def is_never_free_relative(relative: str) -> bool:
+    """True if this relative path must never be freed (install/user data)."""
+    rel = relative.strip().strip("/")
+    if not rel or rel in (".", ".."):
+        return True
+    top = rel.split("/", 1)[0]
+    return top in NEVER_FREE_RELATIVE or rel in NEVER_FREE_RELATIVE
+
+
+def path_nonempty_shallow(path: Path) -> bool:
+    """True if path is a non-empty file or a directory with ≥1 top-level entry.
+
+    Uses one-level listdir only (no recursive walk / no CloudDocs find).
+    """
+    try:
+        if path.is_file():
+            return True
+        if path.is_dir():
+            return any(True for _ in path.iterdir())
+    except OSError:
+        return False
+    return False
+
+
+def resolve_free_proof(
+    relative: str,
+    remote_name: str,
+    agent_homes_root: Path,
+    archive_root: Path | None = None,
+) -> Path | None:
+    """Return first non-empty remote path proving local is a durable duplicate.
+
+    Checks (in order):
+      agent_homes_root / remote_name / relative
+      archive_root / remote_name / relative  (if archive_root given)
+
+    Returns None if neither side has a non-empty copy — caller must NOT free.
+    """
+    if is_never_free_relative(relative):
+        return None
+    candidates: list[Path] = [agent_homes_root / remote_name / relative]
+    if archive_root is not None:
+        candidates.append(archive_root / remote_name / relative)
+    for cand in candidates:
+        if path_nonempty_shallow(cand):
+            return cand
+    return None
+
+
 def freeable_regenerable_paths(
     home: Path | None = None,
     agents: Sequence[str] | None = None,
+    agent_homes_root: Path | None = None,
+    archive_root: Path | None = None,
+    require_remote_proof: bool = False,
 ) -> list[dict[str, str]]:
-    """Local regenerable cache paths that may be freed after mirror verify.
+    """Cache subpaths that may be freed only with path-level iCloud/archive proof.
 
-    Does not free whole live agent roots. Returns dicts with agent_id, local,
-    relative path — caller must verify durable agent mirror exists first.
+    Does not free whole live agent roots. Never includes NEVER_FREE_RELATIVE
+    (bin, vendor, attachments, generated_images, blob_storage, …).
+
+    When require_remote_proof=True, only rows with a non-empty remote proof
+    path are returned (safe free set). When False, returns candidates with
+    proof_path empty or filled if roots provided — for listing.
     """
     mirrors = {
         m.agent_id: m
@@ -455,13 +527,25 @@ def freeable_regenerable_paths(
         a.strip().lower().replace("-", "_") for a in agents
     }
     rows: list[dict[str, str]] = []
-    for agent_id, rel in REGENERABLE_FREE_CANDIDATES:
+    for agent_id, rel in FREEABLE_IF_MIRRORED:
         if agent_id not in wanted:
+            continue
+        if is_never_free_relative(rel):
             continue
         m = mirrors.get(agent_id)
         if m is None:
             continue
         local = m.local / rel
+        proof: Path | None = None
+        if agent_homes_root is not None:
+            proof = resolve_free_proof(
+                relative=rel,
+                remote_name=m.remote_name,
+                agent_homes_root=agent_homes_root,
+                archive_root=archive_root,
+            )
+        if require_remote_proof and proof is None:
+            continue
         rows.append(
             {
                 "agent_id": agent_id,
@@ -469,6 +553,7 @@ def freeable_regenerable_paths(
                 "local": str(local),
                 "agent_local_root": str(m.local),
                 "remote_name": m.remote_name,
+                "proof_path": str(proof) if proof is not None else "",
             }
         )
     return rows
@@ -746,17 +831,28 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 0
 
     if args.print_freeable:
+        ah = agent_homes_mirror_root(icloud)
+        ar: Path | None = None
+        if args.archive_batch:
+            ab = Path(args.archive_batch)
+            ar = ab if ab.is_absolute() else archive_batch_root(icloud, batch=str(ab))
         print(
             json.dumps(
                 {
                     "freeable": freeable_regenerable_paths(
-                        home=home, agents=agent_list
+                        home=home,
+                        agents=agent_list,
+                        agent_homes_root=ah,
+                        archive_root=ar,
+                        require_remote_proof=False,
                     ),
                     "note": (
-                        "Free only after durable agent_homes mirror for "
-                        "that agent is verified non-empty; never free whole "
-                        "live agent roots."
+                        "Free only when proof_path is non-empty (same relative "
+                        "path non-empty under agent_homes or archive). Never "
+                        "free bin/vendor/attachments/generated_images/"
+                        "blob_storage or whole live agent roots."
                     ),
+                    "never_free": sorted(NEVER_FREE_RELATIVE),
                 },
                 indent=2,
             )

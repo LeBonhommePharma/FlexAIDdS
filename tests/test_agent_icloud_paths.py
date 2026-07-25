@@ -231,6 +231,99 @@ def test_freeable_never_includes_agent_root(tmp_path: Path):
     assert any(r["relative"] == "cache" and r["agent_id"] == "claude" for r in rows)
 
 
+def test_freeable_excludes_unique_install_and_user_trees(tmp_path: Path):
+    """bin/vendor/attachments/generated_images/blob_storage must never be freeable."""
+    for agent, sub in (
+        (".grok", "bin"),
+        (".grok", "vendor"),
+        (".codex", "attachments"),
+        (".codex", "generated_images"),
+        (".claude", "cache"),
+    ):
+        (tmp_path / agent / sub).mkdir(parents=True, exist_ok=True)
+    rows = aip.freeable_regenerable_paths(
+        home=tmp_path, agents=["claude", "codex", "grok"]
+    )
+    relatives = {(r["agent_id"], r["relative"]) for r in rows}
+    assert ("grok", "bin") not in relatives
+    assert ("grok", "vendor") not in relatives
+    assert ("codex", "attachments") not in relatives
+    assert ("codex", "generated_images") not in relatives
+    assert ("claude", "cache") in relatives
+    for bad in aip.NEVER_FREE_RELATIVE:
+        assert aip.is_never_free_relative(bad)
+
+
+def test_resolve_free_proof_requires_path_level_duplicate(tmp_path: Path):
+    """Parent agent_homes non-empty is not enough — relative path must exist."""
+    homes = tmp_path / "agent_homes"
+    arch = tmp_path / "archive"
+    # Parent has other files but NOT cache/
+    (homes / "dot_claude" / "settings.json").parent.mkdir(parents=True)
+    (homes / "dot_claude" / "settings.json").write_text("{}")
+    assert (
+        aip.resolve_free_proof(
+            "cache", "dot_claude", agent_homes_root=homes, archive_root=arch
+        )
+        is None
+    )
+    # Path-level proof on agent_homes
+    (homes / "dot_claude" / "cache").mkdir()
+    (homes / "dot_claude" / "cache" / "x").write_text("1")
+    proof = aip.resolve_free_proof(
+        "cache", "dot_claude", agent_homes_root=homes, archive_root=arch
+    )
+    assert proof is not None
+    assert proof == homes / "dot_claude" / "cache"
+    # Never free bin even if remote has it
+    (homes / "dot_grok" / "bin").mkdir(parents=True)
+    (homes / "dot_grok" / "bin" / "x").write_text("1")
+    assert (
+        aip.resolve_free_proof(
+            "bin", "dot_grok", agent_homes_root=homes, archive_root=None
+        )
+        is None
+    )
+
+
+def test_freeable_require_remote_proof_filters(tmp_path: Path):
+    home = tmp_path / "home"
+    (home / ".claude" / "cache").mkdir(parents=True)
+    (home / ".codex" / "cache").mkdir(parents=True)
+    homes = tmp_path / "agent_homes"
+    # Only claude/cache mirrored
+    (homes / "dot_claude" / "cache").mkdir(parents=True)
+    (homes / "dot_claude" / "cache" / "a").write_text("1")
+    rows = aip.freeable_regenerable_paths(
+        home=home,
+        agents=["claude", "codex"],
+        agent_homes_root=homes,
+        archive_root=tmp_path / "empty_arch",
+        require_remote_proof=True,
+    )
+    assert len(rows) == 1
+    assert rows[0]["agent_id"] == "claude"
+    assert rows[0]["relative"] == "cache"
+    assert rows[0]["proof_path"].endswith("dot_claude/cache")
+
+
+def test_freeable_archive_proof_counts(tmp_path: Path):
+    home = tmp_path / "home"
+    (home / ".claude" / "telemetry").mkdir(parents=True)
+    homes = tmp_path / "agent_homes"
+    homes.mkdir()
+    arch = tmp_path / "archive"
+    (arch / "dot_claude" / "telemetry").mkdir(parents=True)
+    (arch / "dot_claude" / "telemetry" / "t").write_text("t")
+    proof = aip.resolve_free_proof(
+        "telemetry",
+        "dot_claude",
+        agent_homes_root=homes,
+        archive_root=arch,
+    )
+    assert proof == arch / "dot_claude" / "telemetry"
+
+
 def test_home_dots_and_safe_free_scripts_exist():
     for name in (
         "sync_home_dots_to_icloud.sh",
@@ -241,3 +334,9 @@ def test_home_dots_and_safe_free_scripts_exist():
         text = script.read_text(encoding="utf-8")
         assert "FLEXAIDDS_ICLOUD" in text
         assert "dry-run" in text or "--dry-run" in text
+    free_sh = (SCRIPTS / "safe_free_verified_icloud_duplicates.sh").read_text(
+        encoding="utf-8"
+    )
+    assert "path_level_proof" in free_sh
+    assert "never-free" in free_sh or "REFUSE never-free" in free_sh
+    assert "bin|vendor|attachments" in free_sh
