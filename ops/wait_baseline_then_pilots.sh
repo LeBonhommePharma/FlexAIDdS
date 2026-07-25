@@ -213,8 +213,12 @@ if [[ -n "${GOAL_SCRATCH:-}" && -d "${GOAL_SCRATCH}" ]]; then
   cp -f "$OUT_ROOT/w1_elec/"* "$GOAL_SCRATCH/w1_elec/" 2>/dev/null || true
   cp -f "$OUT_ROOT/w3_baseline_e10."* "$GOAL_SCRATCH/w3_sampling/" 2>/dev/null || true
   cp -f "$OUT_ROOT/w1_acf_ab_summary."* "$GOAL_SCRATCH/w1_acf_strict_pilot/" 2>/dev/null || true
+  # Evaluator / flip gate also looks at GOAL_SCRATCH root for these names
+  cp -f "$OUT_ROOT/w1_acf_ab_summary."* "$GOAL_SCRATCH/" 2>/dev/null || true
   mkdir -p "$GOAL_SCRATCH/w3_sampling"
   cp -f "$OUT_ROOT/w3_bcr_pilot/w3_bcr_summary."* "$GOAL_SCRATCH/w3_sampling/" 2>/dev/null || true
+  cp -f "$OUT_ROOT/w3_bcr_pilot/w3_bcr_summary."* "$GOAL_SCRATCH/" 2>/dev/null || true
+  cp -f "$OUT_ROOT/w3_bcr_summary."* "$GOAL_SCRATCH/" 2>/dev/null || true
   cp -f "$OUT_ROOT/w3_baseline_e10."* "$GOAL_SCRATCH/w3_sampling/" 2>/dev/null || true
   cp -f "$OUT_ROOT/"*.log "$GOAL_SCRATCH/" 2>/dev/null || true
   # summarize pilots
