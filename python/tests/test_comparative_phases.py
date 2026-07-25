@@ -50,6 +50,90 @@ def test_evaluate_p2_oracle_pass_hold_fail():
     assert evaluate_p2_oracle({"n_targets": 2, "deferred": False})[0] == "fail"
 
 
+def _load_oracle_gate_module():
+    """Import shipped scripts/native_cf_oracle_gate.py (not a reimplementation)."""
+    import importlib.util
+
+    path = REPO / "scripts" / "native_cf_oracle_gate.py"
+    name = "native_cf_oracle_gate"
+    if name in sys.modules:
+        return sys.modules[name]
+    spec = importlib.util.spec_from_file_location(name, path)
+    assert spec and spec.loader
+    mod = importlib.util.module_from_spec(spec)
+    # Required so @dataclass can resolve cls.__module__ on Python 3.14+
+    sys.modules[name] = mod
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def test_p2_accepts_oracle_gate_result_as_dict_pass_and_pathology():
+    """Production OracleGateResult.as_dict() must open/close P2 correctly."""
+    mod = _load_oracle_gate_module()
+    OracleGateResult = mod.OracleGateResult
+
+    pass_res = OracleGateResult(
+        ok=True,
+        exit_code=mod.EXIT_PASS,
+        cf_native=-50.0,
+        best_ga_cf=-48.0,
+        gap=2.0,
+        ranking_forbidden=False,
+        messages=["PASS: native competitive"],
+    )
+    v, reason = evaluate_p2_oracle(pass_res.as_dict())
+    assert v == "pass", reason
+    assert "ok=true" in reason or "exit_code=0" in reason
+
+    patho = OracleGateResult(
+        ok=False,
+        exit_code=mod.EXIT_FAIL_PATHOLOGY,
+        cf_native=-40.0,
+        best_ga_cf=-120.0,
+        gap=-80.0,
+        ranking_forbidden=True,
+        messages=["FAIL: decoy better"],
+    )
+    v, reason = evaluate_p2_oracle(patho.as_dict())
+    assert v == "hold", reason
+    assert "ranking_forbidden" in reason or "pathology" in reason
+
+    missing = OracleGateResult(
+        ok=False,
+        exit_code=mod.EXIT_MISSING_NATIVE,
+        cf_native=None,
+        ranking_forbidden=True,
+        messages=["CF_native missing"],
+    )
+    v, reason = evaluate_p2_oracle(missing.as_dict())
+    assert v == "hold", reason
+
+    usage = OracleGateResult(
+        ok=False,
+        exit_code=mod.EXIT_USAGE,
+        cf_native=-50.0,
+        best_ga_cf=None,
+        ranking_forbidden=True,
+        messages=["no poses"],
+    )
+    v, reason = evaluate_p2_oracle(usage.as_dict())
+    assert v == "fail", reason
+
+
+def test_p2_oracle_gate_pass_opens_p3():
+    mod = _load_oracle_gate_module()
+    d = mod.OracleGateResult(
+        ok=True,
+        exit_code=0,
+        cf_native=-10.0,
+        best_ga_cf=-9.0,
+        ranking_forbidden=False,
+    ).as_dict()
+    assert evaluate_p2_oracle(d)[0] == "pass"
+    st = {"P2": evaluate_p2_oracle(d)[0]}
+    assert can_run_p3(st) is True
+
+
 def test_evaluate_p3_pilot_schema_and_zero_hold():
     assert (
         evaluate_p3_pilot(
@@ -180,6 +264,37 @@ def test_p5_dry_run_writes_table(tmp_path: Path):
     text = Path(out["table_path"]).read_text()
     assert "S_top10_median" in text
     assert "| A |" in text
+
+
+def test_p5_fails_when_bootstrap_nonzero_on_result_csv(tmp_path: Path, monkeypatch):
+    """Ship fail-closed: present result.csv + bootstrap exit≠0 ⇒ phase status=fail."""
+    from flexaidds.comparative_phases import p5_analyze as p5mod
+
+    campaign = "bad_boot"
+    arm_dir = tmp_path / "campaigns" / "three_engine" / "A" / campaign
+    arm_dir.mkdir(parents=True)
+    # Minimal result.csv so P5 attempts bootstrap (schema may still fail → exit≠0)
+    (arm_dir / "result.csv").write_text(
+        "pdb_id,rmsd_top1,best_score\n1P62,1.5,-10\n", encoding="utf-8"
+    )
+    run_p0(str(tmp_path), call_shell_layout=False)
+    run_p1(str(tmp_path), allow_reconstruction=True)
+
+    def _fake_bootstrap(root, arm_dir, json_out, *, bootstraps=10000):
+        return {
+            "cmd": ["bootstrap"],
+            "returncode": 2,
+            "stdout": "",
+            "stderr": "MissingModeRmsdError: no mode_rmsd_*",
+            "json_out": str(json_out),
+            "bootstrap": None,
+        }
+
+    monkeypatch.setattr(p5mod, "run_bootstrap", _fake_bootstrap)
+    out = run_p5(campaign, local_root_path=str(tmp_path), dry_run=False, arms=["A"])
+    assert out["status"] == "fail", out
+    assert out.get("bootstrap_failures")
+    assert any("A" in f for f in out["bootstrap_failures"])
 
 
 def test_cli_pipeline_dry_and_gate_script(tmp_path: Path):

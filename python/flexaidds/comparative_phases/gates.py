@@ -185,16 +185,22 @@ def _truthy_hold_flag(oracle_status: Mapping[str, Any]) -> bool:
     return False
 
 
-def _is_deferred_empty(oracle_status: Mapping[str, Any]) -> bool:
-    """Empty or explicitly deferred status: do not hard-fail for missing keys."""
-    if not oracle_status:
-        return True
-    if oracle_status.get("deferred") is True:
-        return True
-    if str(oracle_status.get("status", "")).strip().upper() == "DEFERRED":
-        return True
-    # Only bookkeeping keys, no evaluation signal.
-    signal_keys = {
+# Production native_cf_oracle_gate.py OracleGateResult.as_dict() keys.
+_ORACLE_GATE_RESULT_KEYS = frozenset(
+    {
+        "ok",
+        "exit_code",
+        "ranking_forbidden",
+        "cf_native",
+        "best_ga_cf",
+        "gap",
+        "n_poses_scored",
+    }
+)
+
+# Panel / legacy status keys (also count as evaluation signal).
+_P2_SIGNAL_KEYS = frozenset(
+    {
         "ranking_allowed",
         "status",
         "native_cf_oracle",
@@ -203,19 +209,103 @@ def _is_deferred_empty(oracle_status: Mapping[str, Any]) -> bool:
         "n_pass",
         "n_fail_pathology",
         "pass_rate",
+        "ok",
+        "exit_code",
+        "ranking_forbidden",
     }
-    present_signals = [k for k in signal_keys if k in oracle_status]
+)
+
+
+def _is_oracle_gate_result_payload(oracle_status: Mapping[str, Any]) -> bool:
+    """True when payload looks like native_cf_oracle_gate.OracleGateResult.as_dict()."""
+    return "ok" in oracle_status and (
+        "exit_code" in oracle_status or "ranking_forbidden" in oracle_status
+    )
+
+
+def _is_deferred_empty(oracle_status: Mapping[str, Any]) -> bool:
+    """Empty or explicitly deferred status: do not hard-fail for missing keys."""
+    if not oracle_status:
+        return True
+    if oracle_status.get("deferred") is True:
+        return True
+    if str(oracle_status.get("status", "")).strip().upper() == "DEFERRED":
+        return True
+    # Production oracle JSON is never "empty deferred" once ok/exit_code present.
+    if _is_oracle_gate_result_payload(oracle_status):
+        return False
+    present_signals = [k for k in _P2_SIGNAL_KEYS if k in oracle_status]
     if not present_signals and oracle_status.get("deferred") is not False:
-        # Treat as deferred/empty when no evaluation signal present.
         return True
     return False
 
 
 def _has_p2_required_keys(oracle_status: Mapping[str, Any]) -> bool:
     """At least one primary oracle signal key must be present."""
-    return any(
-        k in oracle_status
-        for k in ("ranking_allowed", "status", "native_cf_oracle")
+    return any(k in oracle_status for k in _P2_SIGNAL_KEYS)
+
+
+def _evaluate_p2_oracle_gate_result(
+    oracle_status: Mapping[str, Any],
+) -> Tuple[str, str]:
+    """Map scripts/native_cf_oracle_gate.OracleGateResult.as_dict() → phase verdict.
+
+    Contract (scripts/native_cf_oracle_gate.py):
+      exit 0 + ok=True + ranking_forbidden=False → PASS (native competitive)
+      exit 1 + ranking_forbidden=True → pathology HOLD (ranking forbidden)
+      exit 3 + ranking_forbidden=True → missing/sentinel native HOLD
+      exit 2 → usage/incomplete FAIL (cannot evaluate fairness)
+    """
+    ok = oracle_status.get("ok")
+    ranking_forbidden = oracle_status.get("ranking_forbidden")
+    try:
+        exit_code = int(oracle_status["exit_code"]) if "exit_code" in oracle_status else None
+    except (TypeError, ValueError):
+        exit_code = None
+
+    # Explicit allow: native competitive under CF proxy.
+    if ok is True and ranking_forbidden is not True and (
+        exit_code is None or exit_code == 0
+    ):
+        return (
+            "pass",
+            "OracleGateResult ok=true ranking_forbidden=false "
+            f"exit_code={exit_code if exit_code is not None else 0}",
+        )
+
+    # Pathology / missing native → SCIENCE HOLD (do not advance ranking).
+    if ranking_forbidden is True or ok is False:
+        if exit_code == 1:
+            return (
+                "hold",
+                "OracleGateResult pathology (exit_code=1): ranking_forbidden — "
+                "native CF not competitive",
+            )
+        if exit_code == 3:
+            return (
+                "hold",
+                "OracleGateResult missing/sentinel CF_native (exit_code=3) — "
+                "ranking forbidden",
+            )
+        if exit_code == 2:
+            return (
+                "fail",
+                "OracleGateResult usage/incomplete (exit_code=2) — "
+                "cannot evaluate fairness",
+            )
+        return (
+            "hold",
+            f"OracleGateResult ranking_forbidden={ranking_forbidden} ok={ok} "
+            f"exit_code={exit_code}",
+        )
+
+    if exit_code == 0 and ok is not False:
+        return "pass", "OracleGateResult exit_code=0"
+
+    return (
+        "fail",
+        f"OracleGateResult unparseable combination ok={ok} "
+        f"ranking_forbidden={ranking_forbidden} exit_code={exit_code}",
     )
 
 
@@ -228,12 +318,16 @@ def evaluate_p2_oracle(oracle_status: dict) -> Tuple[str, str]:
 
     Rules (fail-closed)
     -------------------
-    * **pass** if ``ranking_allowed is True`` OR ``status == "PASS"`` OR
-      ``native_cf_oracle == "PASS"`` (and not SCIENCE_HOLD).
-    * **hold** if SCIENCE_HOLD, or ``ranking_allowed is False``, or
-      ``status == "HOLD"`` (or deferred empty).
-    * **fail** if required signal keys are missing and the payload is not
-      an empty/deferred deferral.
+    * **Production schema** (``scripts/native_cf_oracle_gate.py``
+      ``OracleGateResult.as_dict()``): ``ok`` / ``ranking_forbidden`` /
+      ``exit_code`` — see ``_evaluate_p2_oracle_gate_result``.
+    * **Legacy panel schema**: ``ranking_allowed`` / ``status`` /
+      ``native_cf_oracle``.
+    * **pass** if production ok or ranking_allowed True or status/native PASS.
+    * **hold** if SCIENCE_HOLD, ranking_forbidden, ranking_allowed False,
+      pathology/missing native, or deferred empty.
+    * **fail** if required signal keys are missing and not deferred, or
+      usage/incomplete oracle (exit_code=2).
     """
     if not isinstance(oracle_status, Mapping):
         return "fail", "oracle_status must be a mapping"
@@ -241,6 +335,10 @@ def evaluate_p2_oracle(oracle_status: dict) -> Tuple[str, str]:
     # SCIENCE_HOLD always blocks ranking experiments.
     if _truthy_hold_flag(oracle_status):
         return "hold", "SCIENCE_HOLD asserted — ranking / pilot advancement blocked"
+
+    # Prefer production native_cf_oracle_gate JSON (ok / exit_code / ranking_forbidden).
+    if _is_oracle_gate_result_payload(oracle_status):
+        return _evaluate_p2_oracle_gate_result(oracle_status)
 
     ranking = oracle_status.get("ranking_allowed", None)
     if ranking is False:
@@ -255,7 +353,7 @@ def evaluate_p2_oracle(oracle_status: dict) -> Tuple[str, str]:
     native = oracle_status.get("native_cf_oracle")
     native_u = str(native).strip().upper() if native is not None else ""
 
-    # Pass conditions (explicit allow signals).
+    # Pass conditions (explicit allow signals — legacy panel schema).
     if ranking is True:
         return "pass", "ranking_allowed=true"
     if status_u == "PASS":
@@ -270,14 +368,15 @@ def evaluate_p2_oracle(oracle_status: dict) -> Tuple[str, str]:
     if not _has_p2_required_keys(oracle_status):
         return (
             "fail",
-            "missing required keys (need ranking_allowed and/or status "
-            "and/or native_cf_oracle); not deferred",
+            "missing required keys (need OracleGateResult ok/exit_code/"
+            "ranking_forbidden and/or ranking_allowed/status/native_cf_oracle); "
+            "not deferred",
         )
 
     # Keys present but no positive allow signal → fail-closed.
     return (
         "fail",
-        "no pass signal (ranking_allowed/status/native_cf_oracle) and not HOLD",
+        "no pass signal (ok/ranking_allowed/status/native_cf_oracle) and not HOLD",
     )
 
 
@@ -444,13 +543,31 @@ def self_test() -> List[str]:
         if not cond:
             errors.append(msg)
 
-    # P2 pass signals
+    # P2 pass signals (legacy panel)
     v, _ = evaluate_p2_oracle({"ranking_allowed": True})
     _check(v == "pass", f"P2 ranking_allowed True → pass, got {v}")
     v, _ = evaluate_p2_oracle({"status": "PASS"})
     _check(v == "pass", f"P2 status PASS → pass, got {v}")
     v, _ = evaluate_p2_oracle({"native_cf_oracle": "PASS"})
     _check(v == "pass", f"P2 native_cf_oracle PASS → pass, got {v}")
+
+    # P2 production OracleGateResult.as_dict() schema
+    v, _ = evaluate_p2_oracle(
+        {"ok": True, "exit_code": 0, "ranking_forbidden": False, "cf_native": -50.0}
+    )
+    _check(v == "pass", f"P2 OracleGateResult PASS → pass, got {v}")
+    v, _ = evaluate_p2_oracle(
+        {"ok": False, "exit_code": 1, "ranking_forbidden": True, "cf_native": -40.0}
+    )
+    _check(v == "hold", f"P2 OracleGateResult pathology → hold, got {v}")
+    v, _ = evaluate_p2_oracle(
+        {"ok": False, "exit_code": 3, "ranking_forbidden": True, "cf_native": None}
+    )
+    _check(v == "hold", f"P2 OracleGateResult missing native → hold, got {v}")
+    v, _ = evaluate_p2_oracle(
+        {"ok": False, "exit_code": 2, "ranking_forbidden": True}
+    )
+    _check(v == "fail", f"P2 OracleGateResult usage → fail, got {v}")
 
     # P2 hold
     v, _ = evaluate_p2_oracle({"ranking_allowed": False})

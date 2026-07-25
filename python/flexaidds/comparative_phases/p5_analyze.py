@@ -506,13 +506,35 @@ def run_p5(
             )
         }
 
-    status = "pass"
-    reason = f"table written dry_run={dry_run} path={table_path}"
+    # Fail-closed: if any arm had result.csv and bootstrap returned non-zero
+    # (or S_top10_median is error:*), phase status is fail — not a silent pass.
+    bootstrap_failures: List[str] = []
+    for arm, br in boot_results.items():
+        rc = br.get("returncode")
+        if rc is not None and int(rc) != 0:
+            bootstrap_failures.append(f"{arm}:bootstrap_exit={rc}")
+    for row in rows:
+        med = str(row.get("S_top10_median") or "")
+        if med.startswith("error:"):
+            arm = str(row.get("arm") or "?")
+            if not any(arm in f for f in bootstrap_failures):
+                bootstrap_failures.append(f"{arm}:{med}")
+
+    if bootstrap_failures and not dry_run:
+        status = "fail"
+        reason = (
+            "bootstrap failed on arm(s) with result data: "
+            + "; ".join(bootstrap_failures)
+        )
+    else:
+        status = "pass"
+        reason = f"table written dry_run={dry_run} path={table_path}"
 
     return {
         "phase": "P5",
         "status": status,
         "reason": reason,
+        "bootstrap_failures": bootstrap_failures,
         "campaign": campaign,
         "local_root": str(local),
         "table_path": str(table_path),
