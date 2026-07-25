@@ -11,6 +11,13 @@ via the real engine CF path (`vcfunction()` / `score_native_pose()`), computes
 `ΔCF = cf_total(native) − cf_total(decoy)`, and fails if the inverted fraction
 (ΔCF > tol) exceeds MAX_INV_FRAC (default 1/8).
 
+**GATEFIX v2 (mandatory):** every score call must pass production-equivalent
+`--config` (per-target `ops/gates/configs/<PDB>_dock_config.json`) and PDB
+decoys must pass `--ligand` (manifest field 3, crystal SDF). Without `--ligand`,
+PDB poses exit with empty `cf_total` and the gate silently skips. Without
+`--config`, whole-receptor optres inflates CF ~200× (tens of thousands instead of
+tens–low-hundreds) — those absolute numbers are void.
+
 ### Running the gate
 
 ```bash
@@ -19,7 +26,7 @@ cmake --build build --target probe_cf
 
 # Run the gate
 bash ops/gates/cf_gate_probe_cf.sh ops/gates/panel_manifest.tsv
-# Exit 0 = PASS, 1 = FAIL (inverted fraction too high), 2 = no data
+# Exit 0 = PASS, 1 = FAIL (inverted fraction too high), 2 = no data / missing config
 ```
 
 ### CI trigger paths
@@ -38,10 +45,31 @@ data/MC_st0r5.2_6.dat
 
 ### Panel manifest
 
-`ops/gates/panel_manifest.tsv` is tab-separated: `pdb <TAB> receptor.pdb <TAB> native_pose.sdf <TAB> decoy_pose.pdb`
+`ops/gates/panel_manifest.tsv` is tab-separated (5 fields):
+
+```
+pdb <TAB> receptor.pdb <TAB> native_pose.sdf <TAB> decoy_pose.pdb <TAB> dock_config.json
+```
+
+| Field | Role |
+|-------|------|
+| 1 `pdb` | Target ID (label) |
+| 2 `receptor.pdb` | Prepared apo receptor |
+| 3 `native_pose.sdf` | Crystal ligand SDF — scored as native pose **and** used as `--ligand` topology for PDB decoys |
+| 4 `decoy_pose.pdb` | Best-CF non-native pose (`diagnostic/refs/<PDB>/falsemin_armA.pdb`) |
+| 5 `dock_config.json` | Production-equivalent config (`ops/gates/configs/<PDB>_dock_config.json`) passed as `--config` on **both** native and decoy calls |
+
+Paths may be absolute or repo-relative (the gate resolves relative paths against the repo root).
 
 Commented rows (`#`) have no archived decoy yet — populate from the next full
 benchmark run output (`best-CF non-native pose per target`).
+
+### Per-target configs
+
+Canonical gate configs live under `ops/gates/configs/`. They are production
+`dock_config.json` snapshots (scoring / flexibility / normalize_area / hbond knobs)
+with machine paths scrubbed and `ga.seed` pinned to 0 (native-only scoring; seed
+irrelevant). Do not score the gate without them.
 
 ---
 
