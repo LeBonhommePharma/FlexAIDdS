@@ -104,9 +104,102 @@ bash scripts/run_benchmark_ops_monitor.sh --reap-walkers
 - `scripts/run_C0_claim_clean.sh` — **default `FLEXAIDDS_CLAIM_LOCAL=1`** (local OUT). Use `--icloud-out` only for experiments.  
 - `scripts/sync_claim_local_to_icloud.sh` — thin rsync of `*/result.csv` (+ optional extras), timeout-bound.  
 - `scripts/claim_icloud_sync_loop.sh` — every N min: sync + hang-safe ops status (no deep iCloud find).  
+- `scripts/sync_three_engine_local_to_icloud.sh` — thin A/B0/B OUT mirror (timeout-bound).  
 - `scripts/require_icloud_out.sh` — still used for pure-iCloud arms / legacy `--icloud-out`.  
-- Unit tests: `tests/test_icloud_safe_io.py` (`python3 -m pytest tests/test_icloud_safe_io.py -q`).  
+- `scripts/sync_agent_homes_to_icloud.sh` + `scripts/agent_icloud_paths.py` — agent-home backup/restore (below).  
+- Unit tests: `tests/test_icloud_safe_io.py`, `tests/test_agent_icloud_paths.py`.  
 
+## Save benchmarks to iCloud (local → durable mirror)
+
+Live claim / three-engine OUT stays under `$FLEXAIDDS_LOCAL_ROOT`. Push thin artifacts to CloudDocs:
+
+```bash
+# Claim campaign (result.csv + receipts; hang-safe)
+bash scripts/sync_claim_local_to_icloud.sh --dry-run
+bash scripts/sync_claim_local_to_icloud.sh
+
+# Optional periodic loop (every N min)
+nohup bash scripts/claim_icloud_sync_loop.sh &
+
+# Three-engine A/B0/B arms
+bash scripts/sync_three_engine_local_to_icloud.sh --dry-run
+bash scripts/sync_three_engine_local_to_icloud.sh
+```
+
+Resolved paths (from `claim_local_staging_paths.sh` / `use_local_first_benchmark_storage.sh`):
+
+| Role | Path |
+|------|------|
+| LOCAL claim OUT | `$FLEXAIDDS_LOCAL_ROOT/campaigns/<C0_CAMPAIGN_ID>` |
+| REMOTE claim mirror | `$FLEXAIDDS_ICLOUD/results/campaigns/<C0_CAMPAIGN_ID>` |
+| LOCAL three-engine | `$FLEXAIDDS_LOCAL_ROOT/campaigns/three_engine/…` |
+| REMOTE three-engine | `$FLEXAIDDS_ICLOUD/results/campaigns/three_engine/…` |
+
+Never run live GA with OUT on CloudDocs. Full pose trees on iCloud only with `--with-poses`.
+
+## Agent homes → iCloud (Claude, Claude Science, Codex, Grok)
+
+**Live agent homes stay on local APFS** (`~/.claude`, Application Support Claude, `~/.claude-science`, `~/.codex`, `~/.grok`).  
+**iCloud holds a durable mirror only** under `$FLEXAIDDS_ICLOUD/agent_homes/` — never replace homes with CloudDocs symlinks.
+
+| Agent | Local source | Remote name under `agent_homes/` |
+|-------|--------------|----------------------------------|
+| Claude Code | `~/.claude` | `dot_claude` |
+| Claude Desktop | `~/Library/Application Support/Claude` | `Application_Support_Claude` |
+| Claude Science | `~/.claude-science` (selective) | `dot_claude_science` |
+| Codex | `~/.codex` | `dot_codex` |
+| Grok | `~/.grok` | `dot_grok` |
+
+Default backup is **thin**: excludes caches, `vm_bundles/`, full `conda/` / `runtime/` under Claude Science (~11G reinstallable), large lock/sqlite-wal noise. Use `--full` only when you intentionally want a heavy archive.
+
+```bash
+# Map + dry-run (no I/O to CloudDocs)
+bash scripts/sync_agent_homes_to_icloud.sh --dry-run
+bash scripts/sync_agent_homes_to_icloud.sh --print-map
+
+# Backup local → iCloud (timeout-wrapped rsync)
+bash scripts/sync_agent_homes_to_icloud.sh --backup
+bash scripts/sync_agent_homes_to_icloud.sh --backup --agents claude,codex,grok
+
+# Pure path helpers (testable)
+python3 scripts/agent_icloud_paths.py --print-map
+python3 scripts/agent_icloud_paths.py --print-excludes claude_science
+```
+
+### Restore (iCloud archive → local) — seed rsync direction
+
+Archive batches under  
+`$FLEXAIDDS_ICLOUD/archived_from_ssd/archive_batch_<UTC>/`  
+use the same remote names (`dot_claude`, `Application_Support_Claude`, …).
+
+**Seed pattern (Claude only)** — matches the operator restore used after SSD archive:
+
+```bash
+A="$HOME/Library/Mobile Documents/com~apple~CloudDocs/FlexAIDdS_benchmarks/archived_from_ssd/archive_batch_20260725T095624Z"
+rsync -a "$A/dot_claude/" "$HOME/.claude/"
+rsync -a "$A/Application_Support_Claude/" "$HOME/Library/Application Support/Claude/"
+```
+
+**Shipped restore helpers** (print or run):
+
+```bash
+# Print exact seed block
+bash scripts/sync_agent_homes_to_icloud.sh --print-seed-restore \
+  --archive-batch "$FLEXAIDDS_ICLOUD/archived_from_ssd/archive_batch_20260725T095624Z"
+
+# Print rsync lines for all agents in a batch
+bash scripts/sync_agent_homes_to_icloud.sh --print-restore-cmds \
+  --archive-batch "$FLEXAIDDS_ICLOUD/archived_from_ssd/archive_batch_20260725T095624Z"
+
+# Execute restore (timeout-wrapped; does not --delete local extras)
+bash scripts/sync_agent_homes_to_icloud.sh --restore --dry-run \
+  --archive-batch "$FLEXAIDDS_ICLOUD/archived_from_ssd/archive_batch_20260725T095624Z"
+bash scripts/sync_agent_homes_to_icloud.sh --restore \
+  --archive-batch "$FLEXAIDDS_ICLOUD/archived_from_ssd/archive_batch_20260725T095624Z" \
+  --agents claude,claude_app
+```
+
+Restore never makes live `$HOME` agent dirs depend on CloudDocs for runtime.
 
 ## Operator checklist (claim C0)
 
@@ -116,6 +209,7 @@ bash scripts/run_benchmark_ops_monitor.sh --reap-walkers
 4. Confirm FlexAIDdS child **CPU ≫ 0** within ~30 s.  
 5. Keep `claim_icloud_sync_loop.sh` running for durable mirror.  
 6. Never dual-launch two claim workers on the same campaign.  
+7. Periodically: `bash scripts/sync_agent_homes_to_icloud.sh --backup` for agent configs/sessions.  
 
 ## Note on local disk pressure
 
