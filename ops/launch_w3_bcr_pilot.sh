@@ -10,8 +10,12 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 
 # Refuse while autonomous full85 still holds the box (path-based on macOS).
+# Match only real FlexAIDdS/benchmark_datasets; monitors that mention the path are OK.
 BASELINE="${FLEXAIDDS_BASELINE_OUT:-$HOME/flexaidds_results/v_autonomous_20260724_160919}"
-if ps -axo command= 2>/dev/null | grep -F -- "$BASELINE" | grep -v grep | grep -v wait_baseline | grep -v wave_pilots | grep -v pilot_ >/dev/null 2>&1; then
+if ps -axo command= 2>/dev/null | grep -F -- "$BASELINE" \
+    | grep -v grep | grep -v wait_baseline | grep -v wave_pilots \
+    | grep -v manual_pilot | grep -v force_pilots | grep -v pilot_ \
+    | grep -E 'FlexAIDdS|benchmark_datasets' >/dev/null 2>&1; then
   echo "REFUSE: baseline still running at $BASELINE" >&2
   exit 92
 fi

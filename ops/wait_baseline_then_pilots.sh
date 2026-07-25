@@ -15,9 +15,13 @@ if [[ -n "${GOAL_SCRATCH:-}" ]]; then
 fi
 
 baseline_live() {
-  # True if any process command line references the baseline OUT path.
-  # Uses ps (macOS pgrep -a is PID-only and breaks path greps).
-  ps -axo command= 2>/dev/null | grep -F -- "$BASELINE" | grep -v grep | grep -v wait_baseline | grep -v wave_pilots >/dev/null 2>&1
+  # True only if a real dock engine/runner still holds the baseline OUT path.
+  # Monitors/waiters that merely mention the path must NOT keep us blocked.
+  # macOS: ps argv matching (pgrep -a is PID-only here).
+  ps -axo command= 2>/dev/null | grep -F -- "$BASELINE" \
+    | grep -v grep | grep -v wait_baseline | grep -v wave_pilots \
+    | grep -v manual_pilot | grep -v force_pilots | grep -v baseline_wait \
+    | grep -E 'FlexAIDdS|benchmark_datasets' >/dev/null 2>&1
 }
 
 {
