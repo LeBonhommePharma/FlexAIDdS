@@ -36,10 +36,17 @@ def test_acf_strict_math_matches_softbeta_contract():
 
 
 def test_cluster_cpp_has_acf_strict_gate():
+    """Product path: free_energy_strict default; legacy ACF via FLEXAIDDS_ELECT_LEGACY_ACF.
+
+    Wave0 branch used opt-in FLEXAIDDS_ACF_STRICT; main merge kept free_energy_strict
+    as default with LEGACY escape hatch (see SoftBetaFreeEnergy.h / cluster.cpp).
+    """
     text = (ROOT / "LIB" / "cluster.cpp").read_text(encoding="utf-8", errors="replace")
-    assert "FLEXAIDDS_ACF_STRICT" in text
     assert "free_energy_strict" in text
     assert "soft_beta::acf" in text
+    assert (
+        "FLEXAIDDS_ELECT_LEGACY_ACF" in text or "FLEXAIDDS_ACF_STRICT" in text
+    ), "need opt-in legacy ACF or ACF_STRICT env gate"
 
 
 def test_config_parser_elec_and_wave3_knobs():
