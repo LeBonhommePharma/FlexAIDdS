@@ -1,33 +1,42 @@
-# STEP 3 W1 pilot gate — IN PROGRESS
+# STEP 3 W1 pilot gate — FAIL
 
 **Phase:** STEP 3 W1 serial pilot  
 **One variable:** `FLEXAIDDS_BOOM_INTERVAL=50` (SIGMA unset; memetic OFF; WALL_PILOT_PASS OFF)  
-**Panel:** 1J3J,1K3U,1L7F,1N1M,1M2Z,1OQ5,1SQ5,1YGC  
-**Workers:** 2 · OMP=1 · seed OFF · matrix **9dc9** · **restarts=5**  
 **OUT:** `/Users/lp.more/flexaidds_results/pilot_w1_boom_interval_20260725_134740`  
-**Git at launch:** `05e1fa21` · binary sha256 `a8204fb7…`  
-**R5 addendum:** `…/STEP3_PROVENANCE_ADDENDUM.json` (records BOOM=50 from live worker env)
+**Baseline source:** E10 offline extract of `v_autonomous_20260724_160919` (same campaign; thin result.csv leaf was lost mid-session)  
+**Written:** 2026-07-25T21:53:46.665053+00:00  
 
-## Status
+**Verdict:** **FAIL** — clean-probe regression: [('1N1M', 'rmsd', 3.3796999999999997)]
 
-Detached `benchmark_datasets` PID active. Confirmed in logs:
+## Panel metrics (genuine = seed_echo=0 AND rmsd_hungarian < 2)
 
-- `[SEARCH-COVERAGE] boom_interval 100→50` on both 1J3J and 1K3U
-- 1K3U finished first restart (pose PDBs written) and started **r1**
-- 1J3J still on first restart (large multi-cleft grid)
+| Metric | Pilot (BOOM=50) | Baseline (frozen) |
+|--------|----------------:|------------------:|
+| Genuine top-1 | 1/8 | 0/8 |
+| BCR < 2 Å | 3/8 | 3/8 |
+| Election gap (BCR<2, not genuine) | 2/8 | 3/8 |
+| Mean Δ elected RMSD (pilot−base) | +0.303 | — |
+| Mean Δ BCR | +0.479 | — |
 
-**Not yet PASS/FAIL** — need all 8 `result.csv` then `aggregate_step3_pilot.py`.
+## Per-target
 
-Watcher: `STEP3_WATCHER.log` in OUT; on completion writes this file + `step3_pilot_gate.json`.
+| PDB | class | elect RMSD P/B | BCR P/B | genuine P/B | ΔRMSD | ΔBCR |
+|-----|-------|---------------:|--------:|:-----------:|------:|-----:|
+| 1J3J | clean | 62.22/62.31 | 22.96/21.35 | N/N | -0.09 | +1.60 |
+| 1K3U | clean | 11.47/12.70 | 11.78/11.94 | N/N | -1.23 | -0.16 |
+| 1L7F | clean | 3.92/4.22 | 3.96/3.98 | N/N | -0.29 | -0.02 |
+| 1N1M | clean | 5.66/2.28 | 4.04/4.08 | N/N | +3.38 | -0.03 |
+| 1M2Z | clean | 13.79/11.69 | 13.04/11.49 | N/N | +2.10 | +1.55 |
+| 1OQ5 | gap | 3.95/3.78 | 1.65/1.06 | N/N | +0.16 | +0.59 |
+| 1SQ5 | gap | 5.10/5.10 | 1.65/1.12 | N/N | -0.01 | +0.53 |
+| 1YGC | gap | 1.75/3.34 | 1.01/1.24 | Y/N | -1.59 | -0.23 |
 
-## ACCEPT (when complete)
+## Cadence
 
-1. No clean-probe regression vs frozen baseline  
-2. Directional BCR or elected RMSD effect from BOOM alone  
-3. Report genuine / BCR / election-gap on panel only (pilot ≠ claim)
+- Phase: STEP 3  
+- One variable: BOOM_INTERVAL=50  
+- Genuine: 1/8; BCR: 3/8; election gap: 2  
+- **FAIL**  
 
-## Next after gate
-
-- **PASS or FAIL** for this knob — do **not** auto-launch full-85  
-- STEP 4a memetic still **blocked** (wall un-cap efficacy FAIL)  
-- If FAIL: next one-variable W1 knob (e.g. coarse-init / diversity), not dual knobs  
+Pilot only — not a full-85 claim. STEP 4a memetic still **blocked** by wall efficacy FAIL.
+STEP 5 full-85 **not** authorized.
