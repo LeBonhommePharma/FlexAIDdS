@@ -10,7 +10,7 @@
 | 1 | E10 offline (frozen archive) | n/a | N=**85**; elected proxy 21/85=24.7%; BCR 24/85=28.2%; election-gap **16/85=18.8%**; sampling still primary | **PASS** (continue) |
 | 2a | Wall WAL_COERCIVE (prod LOCCLF configs) | `FLEXAIDDS_WAL_COERCIVE` | 1M2Z native CF=**−117.74**; falsemin 4/5 OFF≡ON | **FAIL** (efficacy) |
 | 2b | Saturating burial panel (`cf_wal`≥45) | same | 5/5 native CF-min OFF≡ON; rescued=0 | scoring competitiveness **PASS**; wall un-cap efficacy **FAIL** |
-| 3 | W1 serial pilot | `FLEXAIDDS_BOOM_INTERVAL=50` only | OUT `~/flexaidds_results/pilot_w1_boom_interval_20260725_134740`; workers=2; matrix 9dc9; live log shows `boom_interval 100→50` | **IN PROGRESS** (not PASS/FAIL yet) |
+| 3 | W1 serial pilot | `FLEXAIDDS_BOOM_INTERVAL=50` only | OUT `~/flexaidds_results/pilot_w1_boom_interval_20260725_134740`; workers=2; **R=5** restarts; matrix 9dc9; live log shows `boom_interval 100→50`; 1K3U entered r1 while 1J3J still on r0 (~hours wall-clock) | **IN PROGRESS** (not PASS/FAIL yet) |
 | 4a | Memetic | — | Blocked: needs `WALL_PILOT_PASS` after Step 2 efficacy PASS | **NOT RUN** |
 | 4b/c | Niche / coarse-init | — | After Step 3 PASS/FAIL | **NOT RUN** |
 | 5 | Full-85 claim | — | Blocked until Steps 1–4 gates | **NOT RUN** |
