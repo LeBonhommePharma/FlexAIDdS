@@ -15,9 +15,15 @@ if [[ "$ARM" != "on" && "$ARM" != "off" ]]; then
   exit 2
 fi
 
-# Refuse if live autonomous campaign still holds the shared box
-if pgrep -f 'v_autonomous_20260724' >/dev/null 2>&1; then
-  echo "REFUSE: v_autonomous still running — do not start pilot docks" >&2
+# Refuse if live autonomous campaign still holds the shared box.
+# macOS: match process command lines on the OUT path; exclude waiters/triggers
+# that only *mention* the path in their own scripts.
+BASELINE_OUT="${FLEXAIDDS_BASELINE_OUT:-$HOME/flexaidds_results/v_autonomous_20260724_160919}"
+if ps -axo command= 2>/dev/null | grep -F -- "$BASELINE_OUT" \
+    | grep -v grep | grep -v wait_baseline | grep -v wave_pilots \
+    | grep -v manual_pilot | grep -v pilot_acf | grep -v pilot_w3 \
+    | grep -E 'FlexAIDdS|benchmark_datasets' >/dev/null 2>&1; then
+  echo "REFUSE: v_autonomous still running at $BASELINE_OUT — do not start pilot docks" >&2
   exit 92
 fi
 
