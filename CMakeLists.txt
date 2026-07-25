@@ -1189,6 +1189,12 @@ flexaids_add_unit_test(test_protocol_config
         TEST_NAME SoftWallTests
     )
 
+    # test_memetic_gate — Wave 3.4 FLEXAIDDS_MEMETIC + WALL_PILOT_PASS (header-only)
+    flexaids_add_unit_test(test_memetic_gate
+        SOURCES tests/test_memetic_gate.cpp
+        TEST_NAME MemeticGateTests
+    )
+
     # test_metal_coordination — Metal ion coordination potential tests (header-only)
     flexaids_add_unit_test(test_metal_coordination
         SOURCES tests/test_metal_coordination.cpp

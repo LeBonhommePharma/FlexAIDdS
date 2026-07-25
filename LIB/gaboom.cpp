@@ -1226,12 +1226,20 @@ int GA(FA_Global* FA, GB_Global* GB,VC_Global* VC,chromosome** chrom,chromosome*
 		printf("GA terminated early by fitness stagnation\n");
 
 	// Wave 3.4: consume FA->use_memetic (set only when MEMETIC+WALL_PILOT_PASS).
-	// Full local-refine kernel not shipped yet — log arm status so the flag is
-	// not a dead warn-only gate. When use_memetic==1, future post-GA refine hooks here.
+	// Full burial-safe local-refine kernel is E5 and stays off until wall PASS.
+	// When armed, record a durable post-GA marker on FA (observable by receipts /
+	// diagnostics) so the gate is not warn-only — refine kernel hooks here later.
 	if (FA->use_memetic) {
+		// Sticky arm marker: non-zero means the GA path actually read use_memetic.
+		// Value records max_generations budget (diagnostics only; not a refine step).
+		FA->memetic_armed_at_gen =
+		    GB->max_generations > 0 ? GB->max_generations : 1;
 		fprintf(stderr,
-		        "[MEMETIC] use_memetic=1: post-GA local refine ARMED "
-		        "(implementation deferred until wall PASS + E5 design)\n");
+		        "[MEMETIC] use_memetic=1 armed_at_gen=%d: post-GA local refine "
+		        "ARMED (kernel deferred until wall PASS + E5 design)\n",
+		        FA->memetic_armed_at_gen);
+	} else {
+		FA->memetic_armed_at_gen = 0;
 	}
 
 	// Print H_final for two-pass benchmark script parsing

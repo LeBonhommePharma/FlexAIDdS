@@ -7,6 +7,7 @@
 #include "config_defaults.h"
 #include "flexaid.h"
 #include "gaboom.h"
+#include "memetic_gate.h"
 #include "statmech.h"
 
 #include <cstring>
@@ -384,19 +385,17 @@ void apply_config(const json::Value& config, FA_Global* FA, GB_Global* GB,
     // Wave 3.4 memetic: real enable flag FA->use_memetic (default 0).
     // Requires BOTH FLEXAIDDS_MEMETIC=1 AND FLEXAIDDS_WALL_PILOT_PASS=1.
     // MEMETIC alone cannot arm the feature (burial walk-away risk before wall fix).
-    FA->use_memetic = 0;
+    // Logic lives in memetic_gate.h so unit tests drive the shipped gate.
     {
         const char* e = std::getenv("FLEXAIDDS_MEMETIC");
         const bool want = e != nullptr && e[0] != '\0' && std::atoi(e) != 0;
-        const char* wall_ok = std::getenv("FLEXAIDDS_WALL_PILOT_PASS");
-        const bool wall_pass =
-            wall_ok != nullptr && wall_ok[0] != '\0' && std::atoi(wall_ok) != 0;
-        if (want && wall_pass) {
-            FA->use_memetic = 1;
+        FA->use_memetic = flexaids::resolve_use_memetic_from_env();
+        if (FA->use_memetic) {
             fprintf(stderr,
-                "[MEMETIC] enabled (FLEXAIDDS_MEMETIC=1 and WALL_PILOT_PASS=1)\n");
-        } else if (want && !wall_pass) {
-            FA->use_memetic = 0;
+                "[MEMETIC] enabled (FLEXAIDDS_MEMETIC=1 and WALL_PILOT_PASS=1) "
+                "use_memetic=%d\n",
+                FA->use_memetic);
+        } else if (want) {
             fprintf(stderr,
                 "WARN [MEMETIC]: FLEXAIDDS_MEMETIC=1 ignored — set "
                 "FLEXAIDDS_WALL_PILOT_PASS=1 only after W2 wall oracle PASS "

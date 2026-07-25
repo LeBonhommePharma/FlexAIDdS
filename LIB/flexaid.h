@@ -430,6 +430,9 @@ struct FA_Global_struct{
 	// FLEXAIDDS_MEMETIC=1 and FLEXAIDDS_WALL_PILOT_PASS=1 (after W2 wall oracle PASS).
 	// Consumers must check use_memetic before any post-GA local CF minimization.
 	int   use_memetic;
+	// Set by gaboom after GA when use_memetic==1 (0 if never armed). Proves the
+	// real enable flag was read on the GA path (not warn-only theater).
+	int   memetic_armed_at_gen;
 
 	// P9: VCT distance-weighted contacts. Each contact's matrix complementarity
 	// score is multiplied by exp(-r/r0) before accumulation, so distal contacts
