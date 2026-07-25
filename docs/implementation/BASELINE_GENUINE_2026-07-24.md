@@ -28,8 +28,8 @@
 ## Scientific interpretation (Science + forward plan)
 
 1. **Clean multi-target number.** Zero seed-echo; usable as a **pre-merge** genuine baseline under autonomous blind.  
-2. **Election gap collapsed.** Only ~2 targets sample sub-2 Å but elect worse (BCR 27.8% vs genuine 25.3%). Consistent with `free_energy_strict` / ACF-strict election work removing largest-cluster popularity bias.  
-3. **Bottleneck is sampling.** Ceiling **27.8%** — GA finds a sub-2 Å head on 22/79. Election/scoring alone cannot exceed BCR.  
+2. **Election gap is small on this run** (~2 targets). **However this binary predates the measured `free_energy_strict` product default** — do **not** cite 25.3% as proof the election fix worked (OPS campaign methodology). Run E10 + a post-fix A/B for that claim.  
+3. **Sampling ceiling ~27.8%** remains the dominant room under this metric if election stays ~tight.   
 4. **Route:** FORWARD plan **Wave 3 (sampling / BCR raisers)**; wall oracle / wall-before-memetic remains pacing for refine levers.  
 5. **Caveats:** 80/85 not full 85; run **predates** PR #300/#301 merges — re-baseline after claim binary pin if citing post-merge rates.
 
