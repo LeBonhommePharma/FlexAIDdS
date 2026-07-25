@@ -112,3 +112,10 @@ python3 scripts/check_repo_hygiene.py
 python3 .grok/skills/flexaidds/scripts/validate_skill.py
 python3 -m pytest tests/test_flexaid_skill.py -q --tb=line
 ```
+
+## Any target / any ligand
+
+```bash
+python3 .grok/skills/flexaidds/scripts/dock_any.py --receptor r.pdb --ligand l.mol2
+python3 .grok/skills/flexaidds/scripts/validate_dataset_semantics.py
+```
