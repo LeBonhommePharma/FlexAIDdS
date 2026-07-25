@@ -279,6 +279,46 @@ TEST_F(Mol2ReaderTest, FailsOnEmptyAtomBlock) {
     std::remove(mol2.c_str());
 }
 
+// Science audit: N.2 must keep VCT row 7 (not remap to N.ar/10). Aromatic N
+// arrives as N.ar already; remapping leaked into virtual-H case 7 and swapped
+// live matrix partners. N.ar still maps to 10.
+TEST_F(Mol2ReaderTest, N2KeepsCanonicalRow7NotNar) {
+    std::string mol2_n2 = write_mol2("imine_n2.mol2",
+        "@<TRIPOS>MOLECULE\n"
+        "imine\n"
+        "1 0 0 0 0\n"
+        "SMALL\n"
+        "NO_CHARGES\n"
+        "\n"
+        "@<TRIPOS>ATOM\n"
+        "1 N1 0.000 0.000 0.000 N.2 1 LIG 0.000\n"
+        "@<TRIPOS>BOND\n");
+    FA_Global FA;
+    atom* atoms = nullptr;
+    resid* residue = nullptr;
+    init_fa_for_reader(&FA, &atoms, &residue);
+    ASSERT_EQ(read_mol2_ligand(&FA, &atoms, &residue, mol2_n2.c_str()), 1);
+    ASSERT_GE(FA.atm_cnt, 1);
+    EXPECT_EQ(atoms[1].type, 7) << "N.2 must be VCT row 7 (not N.ar=10)";
+    cleanup_fa(&FA, atoms, residue);
+
+    std::string mol2_nar = write_mol2("pyridine_nar.mol2",
+        "@<TRIPOS>MOLECULE\n"
+        "pyr\n"
+        "1 0 0 0 0\n"
+        "SMALL\n"
+        "NO_CHARGES\n"
+        "\n"
+        "@<TRIPOS>ATOM\n"
+        "1 N1 0.000 0.000 0.000 N.ar 1 LIG 0.000\n"
+        "@<TRIPOS>BOND\n");
+    init_fa_for_reader(&FA, &atoms, &residue);
+    ASSERT_EQ(read_mol2_ligand(&FA, &atoms, &residue, mol2_nar.c_str()), 1);
+    ASSERT_GE(FA.atm_cnt, 1);
+    EXPECT_EQ(atoms[1].type, 10) << "N.ar must remain VCT row 10";
+    cleanup_fa(&FA, atoms, residue);
+}
+
 TEST_F(Mol2ReaderTest, HandlesUnknownAtomType) {
     std::string mol2 = write_mol2("unknown.mol2",
         "@<TRIPOS>MOLECULE\n"

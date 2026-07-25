@@ -40,7 +40,10 @@ static int sybyl_to_flexaid_type(const char* sybyl_type) {
 
     // Nitrogen types
     if (!strcmp(sybyl_type, "N.1"))   return 6;   // N.1 — row 6 is sparse (5 entries) but live; N.am coercion discarded it
-    if (!strcmp(sybyl_type, "N.2"))   return 10;  // N.ar — sp2 imine is an acceptor; N.am (donor) reversed the H-bond sign
+    // N.2 → row 7 (not N.ar/10). Aromatic N already arrives as N.ar; remapping
+    // N.2→10 broke virtual-H case 7 and swapped a live matrix row. Must match
+    // top.cpp::sybyl_name_to_canonical_vct.
+    if (!strcmp(sybyl_type, "N.2"))   return 7;
     if (!strcmp(sybyl_type, "N.3"))   return 11;  // N.am (N.3/type-8 dead in matrix)
     if (!strcmp(sybyl_type, "N.4"))   return 9;   // quaternary nitrogen
     if (!strcmp(sybyl_type, "N.ar"))  return 10;  // aromatic nitrogen

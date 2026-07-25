@@ -1973,7 +1973,12 @@ def _extract_ligand_coords_from_sdf(sdf_path: Path):
 
 
 def _pose_rmsd_vs_reference(pose_pdb: Path, ref_coords) -> float:
-    """RMSD between docked pose ligand heavy atoms and reference coordinates."""
+    """RMSD between docked pose ligand heavy atoms and reference coordinates.
+
+    Fail-closed on atom-count mismatch: never prefix-truncate pred/ref arrays.
+    A shape mismatch returns ``-1.0`` (sentinel = not computed) so the target
+    cannot be counted as a silent success/failure under a meaningless RMSD.
+    """
     from flexaidds.benchmark import compute_rmsd, extract_ligand_coords_from_pdb
 
     try:
@@ -1981,14 +1986,15 @@ def _pose_rmsd_vs_reference(pose_pdb: Path, ref_coords) -> float:
     except ValueError:
         return -1.0
     if pred.shape != ref_coords.shape:
-        n = min(len(pred), len(ref_coords))
-        if n < 3:
-            return -1.0
-        pred = pred[:n]
-        ref = ref_coords[:n]
-    else:
-        ref = ref_coords
+        logger.warning(
+            "RMSD atom-count mismatch for %s: pred=%s ref=%s — returning -1.0 "
+            "(no prefix truncation)",
+            pose_pdb,
+            pred.shape,
+            getattr(ref_coords, "shape", type(ref_coords)),
+        )
+        return -1.0
     try:
-        return compute_rmsd(pred, ref)
+        return compute_rmsd(pred, ref_coords)
     except ValueError:
         return -1.0
