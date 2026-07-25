@@ -1,0 +1,72 @@
+{
+  "flexibility": {
+    "force_rigid": false,
+    "intramolecular": true,
+    "permeability": 0.9,
+    "soft_wall_cutoff": 0.4,
+    "intermolecular_clash_ratio": 0.75,
+    "receptor_rotamer_prep": true
+  },
+  "optimization": {
+    "grid_spacing": 0.375
+  },
+  "output": {
+    "max_results": 50
+  },
+  "scoring": {
+    "normalize_area": true,
+    "vct_dist_weight_r0": 4,
+    "vct_normalize_contacts": false,
+    "gist_enabled": false,
+    "hbond_enabled": true,
+    "hbond_search_enabled": true,
+    "hbond_rank_enabled": false,
+    "metal_coord_enabled": true,
+    "sas_weight": 1.0,
+    "tencom_weight": 0.0,
+    "vct_entropy_weight": 0
+  },
+  "seeding": {
+    "mif_enabled": true
+  },
+  "reference_ligand": {
+    "file": "",
+    "seed_fraction": 0.0,
+    "pose_seed_enabled": false,
+    "k_nearest": 10,
+    "hetatm_fallback": false
+  },
+  "coarse_init": {
+    "enabled": true,
+    "grid_step": 3.0,
+    "n_seeds": 25,
+    "n_orientations": 64
+  },
+  "thermodynamics": {
+    "temperature": 300,
+    "clustering_algorithm": "CF",
+    "cluster_rmsd": 2.0,
+    "classic_entropy_ranking": true,
+    "force_cf_rank_emission": false
+  },
+  "ga": {
+    "num_chromosomes": 2250,
+    "num_generations": 2000,
+    "crossover_rate": 0.8,
+    "mutation_rate": 0.03,
+    "diversity_monitoring": true,
+    "adaptive": true,
+    "adaptive_k": [
+      0.95,
+      0.1,
+      1.0,
+      0.05
+    ],
+    "sharing_alpha": 1.77778,
+    "boom_inject_interval": 100,
+    "boom_inject_fraction": 0,
+    "n_elite": 1,
+    "fitness_model": "SMFREE",
+    "seed": 0
+  }
+}
