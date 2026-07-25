@@ -219,6 +219,8 @@ inline FreeEnergy free_energy_strict(
 //   unset / FLEXAIDDS_ACF_STRICT=1  → free_energy_strict (default ON, E1b)
 //   FLEXAIDDS_ELECT_LEGACY_ACF=1    → legacy multiplicity-inflated acf
 //   FLEXAIDDS_ACF_STRICT=0         → legacy acf (explicit opt-out alias)
+//
+// Rank_miss remedy: exact-CF multiplicity must not elect large wrong basins.
 
 /// True when cluster emission should use free_energy_strict (default ON).
 inline bool cluster_use_free_energy_strict_from_env() noexcept
