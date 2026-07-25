@@ -181,7 +181,9 @@ void cluster(FA_Global* FA, GB_Global* GB, VC_Global* VC, chromosome* chrom, gen
 		// longer inflate a basin. Same units, same T; ranking only changes
 		// where multiplicity was the deciding term.
 		//
-		// E1b: free_energy_strict by default (SoftBetaFreeEnergy.h
+		// E1b is OPT-IN (parity-safe default = legacy acf). Set
+// FLEXAIDDS_ACF_STRICT=1 for free_energy_strict (rank_miss pilot).
+// FLEXAIDDS_ELECT_LEGACY_ACF=1 forces legacy even when ACF_STRICT=1.
 		// cluster_basin_score*). FLEXAIDDS_ELECT_LEGACY_ACF=1 or
 		// FLEXAIDDS_ACF_STRICT=0 restores multiplicity-inflated acf for A/B.
 		Clus_TCF[num_of_clusters] = chrom[j].app_evalue;
