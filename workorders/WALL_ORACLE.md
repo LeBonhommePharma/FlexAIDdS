@@ -1,42 +1,52 @@
-# Wall coercive oracle (score-only, production configs)
+# Wall coercive oracle — STEP 2
 
-Binary: `/Users/lp.more/Projects/FlexAIDdS/build/FlexAIDdS`
-probe_cf: `/Users/lp.more/Projects/FlexAIDdS/build/probe_cf`
-Manifest/config policy: **ops/gates/configs/{PDB}_dock_config.json** (not diagnostic/probe_config.json)
-Panel scored ok: **5**
-Native wins OFF: **4/5**
-Native wins ON: **4/5**
-Rescued (fail OFF → pass ON): **0**
-Need ≥ ceil(7n/8) = **5**
-Regressed already-min: **0**
-**VERDICT: FAIL**
+## Skeptic fix: production configs
 
-| PDB | config | cf_nat_off | cf_dec_off | dCF_off | dCF_on | win_off | win_on |
-|-----|--------|-----------:|-----------:|-------:|------:|:-------:|:------:|
-| 1J3J | `1J3J_dock_config.json` | -47.932918 | -47.66979 | -0.2631280000000018 | -0.2631280000000018 | True | True |
-| 1K3U | `1K3U_dock_config.json` | -139.958755 | -140.635856 | 0.6771009999999933 | 0.6771009999999933 | False | False |
-| 1L7F | `1L7F_dock_config.json` | -107.245341 | -105.54911 | -1.6962309999999974 | -1.6962309999999974 | True | True |
-| 1N1M | `1N1M_dock_config.json` | -51.4955 | -51.461836 | -0.03366400000000169 | -0.03366400000000169 | True | True |
-| 1M2Z | `1M2Z_dock_config.json` | -117.744882 | -117.136094 | -0.6087880000000041 | -0.6087880000000041 | True | True |
+`scripts/wall_coercive_oracle.py` uses **`ops/gates/configs/{PDB}_dock_config.json`** via `panel_manifest.tsv` (not `diagnostic/probe_config.json`).
 
-## Cadence
+**Spot-check:** 1M2Z native CF = **−117.74** (matches methodology production LOCCLF).
 
-- Phase: STEP 2 wall oracle
-- One variable: FLEXAIDDS_WAL_COERCIVE
-- PASS/FAIL: **FAIL**
+## A. Production falsemin decoys (arm-A false minima)
 
-**STOP before memetic / WALL_PILOT_PASS.** Re-diagnose wall / panel.
+| Metric | Value |
+|--------|------:|
+| n | 5 |
+| native wins OFF | 4/5 |
+| native wins ON | 4/5 |
+| OFF≡ON | yes |
+| **VERDICT** | **FAIL** (cannot demonstrate wall un-cap; 2 targets still inverted) |
 
-## Spot-check (methodology)
+## B. Saturating burial decoys (redesign)
 
-| Check | Value | Expected |
-|-------|------:|----------|
-| 1M2Z native cf_total (OFF) | **-117.7449** | ~**-117.74** (production LOCCLF) |
-| Non-production diagnostic CF | n/a | ~-187 was wrong |
+Falsemin translated toward receptor COM until `cf_wal` ≥ 45 (`scripts/wall_saturating_panel.py`).
 
-Production CF match: **YES**
+| Metric | Value |
+|--------|------:|
+| n | 5 |
+| native wins OFF | 5/5 |
+| native wins ON | 5/5 |
+| rescued | 0 |
+| OFF≡ON identical CF | **yes (all 5)** |
+| Scoring competitiveness (≥5/5 native CF-min vs buried decoy) | **PASS** |
+| **WAL_COERCIVE efficacy** (OFF≠ON or rescued>0) | **FAIL** |
 
-## Gate consequence
+| PDB | dCF_off | dCF_on | identical |
+|-----|--------:|-------:|:---------:|
+| 1J3J | -29.451502 | -29.451502 | True |
+| 1K3U | -17.693798 | -17.693798 | True |
+| 1L7F | -39.567561 | -39.567561 | True |
+| 1N1M | -106.111734 | -106.111734 | True |
+| 1M2Z | -27.49011 | -27.49011 | True |
 
-**VERDICT:** **FAIL**
-Steps 3–5 blocked if FAIL. Do not set WALL_PILOT_PASS.
+## Cadence / gate consequence
+
+- **Do NOT** set `FLEXAIDDS_WALL_PILOT_PASS=1` (WAL_COERCIVE does not change CF even when `cf_wal`>CAP — probe path may clamp before env, or cap is not the active limiter on summed wal).
+- **Memetic (STEP 4a) blocked.**
+- **W1 non-memetic sampling knobs (BOOM/coarse) allowed** for STEP 3 under methodology (STOP is for memetic after wall fail of un-cap efficacy).
+- Production CF policy: **PASS** (configs correct).
+
+## Files
+
+- Falsemin prod run: `~/flexaidds_results/workorders/wall_oracle_prod_*`
+- Saturating panel: `~/flexaidds_results/workorders/wall_sat_panel_*`
+- Saturating A/B: `~/flexaidds_results/workorders/wall_oracle_sat_*`

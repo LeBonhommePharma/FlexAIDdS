@@ -3,53 +3,41 @@
 **Date:** 2026-07-25  
 **Phase:** W0.1 / E10 offline (no re-dock)  
 **Script:** `scripts/e10_election_vs_scoring.py`  
-**Campaign:** `~/flexaidds_results/v_autonomous_20260724_160919` (named rsync from archive batch 20260725T095624Z; materialize **in progress** during first cut)
+**Campaign:** `~/flexaidds_results/v_autonomous_20260724_160919`  
+**Materialize:** named rsync + thin result.csv copy → **85** `result.csv`; rank-0 PDBs still partial (~10) so size-bias uses REMARK when present.
 
-## One variable
-
-None (offline diagnostic on frozen heads).
-
-## Results (first cut — partial materialize)
+## Results (full result.csv set)
 
 | Metric | Value |
 |--------|------:|
-| Targets analyzed | **8** (partial local tree; full 79–85 still rsyncing) |
-| Election-gap (BCR≤2.5 Å, elected>2.0, seed_echo=0) | **1 / 8** |
-| Size-bias suspects (soft_β_G ≪ CF, high freq) | **8 / 8** |
+| Targets analyzed | **85** |
+| seed_echo=0 | **85** |
+| Elected RMSD < 2.0 (proxy genuine) | **21/85 = 24.7%** |
+| BCR < 2.0 | **24/85 = 28.2%** |
+| Election-gap (BCR≤2.5, elected>2.0, seed_echo=0) | **16/85 = 18.8%** |
+| Size-bias suspects (REMARK soft_β when PDBs present) | **10** (only targets with local pose PDBs) |
 
-Machine outputs: see implementer scratch `e10/e10.json`, `e10/e10.csv`, `e10/e10.md`.
+Reference baseline (OPS doc): genuine **20/79=25.3%**, BCR **22/79=27.8%**. E10 elected-rmsd rate on full 85 may differ if seed_echo / sentinel columns differ — use for **gap structure**, not to re-derive 25.3% without `aggregate_claim_metrics`.
 
-### Per-target (partial)
+## Interpretation
 
-| PDB | rmsd | BCR | gap? | size_bias? |
-|-----|-----:|----:|:----:|:----------:|
-| 1G9V | 4.50 | 2.06 | Y | Y |
-| 1GM8 | 3.58 | 3.41 | n | Y |
-| 1GPK | 3.21 | 3.45 | n | Y |
-| 1HNN | 1.58 | 1.42 | n | Y |
-| 1HP0 | 3.84 | 3.80 | n | Y |
-| 1HQ2 | 1.51 | 1.94 | n | Y |
-| 1IA1 | 2.65 | 2.76 | n | Y |
-| 1IGJ | 74.08 | 29.67 | n | Y |
+- Election-gap fraction **18.8%** — material but **not** "election is the whole wall"; many failures have BCR≫2 (sampling).
+- Size-bias on materialized heads confirms **legacy ACF multiplicity** on this frozen run (soft_β_G ≪ CF with high freq). **Do not** cite this campaign as post-`free_energy_strict` proof.
+- **Independent scorer prefers near-native head over elected:** uncommon in notes; election gap often = BCR near-native pool not electing rank-0, not necessarily a better-CF head.
 
-## Interpretation (gate)
-
-- **Independent CF-better-than-elected near-native heads:** rare in this slice (at most 1 head note on 1IA1); **election_gap fraction = 1/8 = 12.5%** among analyzed — **not** a large election-dominated failure mode.
-- **Size-bias_suspect = 8/8** confirms this frozen run used **multiplicity-sensitive ACF** (`soft_beta_G` hundreds of units below pose CF with high `freq`) — consistent with OPS note that the 25.3% baseline **predates** measured `free_energy_strict` product default. **Do not** cite 25.3% as proof election fix worked.
-- **Sampling still dominant** when BCR≫2 (1IGJ, 1GM8, 1GPK, 1HP0).
-
-## ACCEPT vs methodology STEP 1
+## ACCEPT vs STEP 1
 
 | Criterion | Result |
 |-----------|--------|
-| E10 script on science branch | PASS |
-| Run on local baseline leaf (no CloudDocs find) | PASS (partial N=8 while rsync continues) |
-| Fraction independent scorer prefers near-native over elected | **Small** (election not primary wall) |
-| STOP before sampling? | **NO** — proceed to STEP 2 wall oracle; re-run E10 when full materialize completes |
+| E10 on local leaf | PASS (N=85) |
+| Large election-dominated failure? | **NO** (~19% gap; sampling still primary for BCR≪2 failures) |
+| STOP before sampling? | **NO** — continue; wall STEP 2 already FAIL on production panel |
 
-## Reporting cadence
+## Cadence
 
-- **Phase:** STEP 1 E10  
-- **One variable:** n/a (offline)  
-- **Genuine / BCR / gap:** deferred to full materialize; partial election_gap **1/8**  
-- **PASS/FAIL:** **PASS** to continue (small election fraction; size-bias documents legacy ACF)
+- Phase: STEP 1 E10  
+- One variable: n/a  
+- Genuine proxy: 21/85; BCR: 24/85; election gap: 16  
+- **PASS** (continue to wall redesign / sampling diagnosis)
+
+Machine: implementer `e10/e10.{json,csv,md}`
