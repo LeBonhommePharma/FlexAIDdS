@@ -1,0 +1,148 @@
+{
+  "schema_version": 1,
+  "updated": "2026-07-25",
+  "goal_methodology": "docs/implementation/COMPARATIVE_GOAL_METHODOLOGY.md",
+  "campaign_family": "comparative_jcim2015_vs_first_entropy_vs_flexaidds",
+  "matrix": {
+    "name": "MC_st0r5.2_6.dat",
+    "md5": "9dc93717dfed0698006d88dd6a9627bc",
+    "local_path_default": "$FLEXAIDDS_LOCAL_ROOT/three_engine_entropy_q1/data/MC_st0r5.2_6.dat",
+    "repo_path": "MC_st0r5.2_6.dat",
+    "forbidden_fork_note": "Do not use the 72d7 packing-sweetened fork for claim comparative arms"
+  },
+  "fairness_axes": {
+    "dataset": "Astex Diverse N=85 native cognate-pocket redock",
+    "sims_per_case": 10,
+    "pop": 1000,
+    "gen": 2000,
+    "evals_per_sim": 2000000,
+    "seed_elitism": 0,
+    "rmsd_cutoff_A": 2.0,
+    "headline_metric": "S_top10 median over 10000 bootstrap resamples",
+    "sharescl": 10.0,
+    "sharepek": 5.0
+  },
+  "source_repos": {
+    "FlexAID": {
+      "path_default": "$HOME/Projects/FlexAID",
+      "remote": "https://github.com/LeBonhommePharma/FlexAID.git",
+      "branches": {
+        "master": "JCIM-era CF lineage (pre-entropy tip on master is f766a14 / 53771bd)",
+        "entropy": "First FlexAID entropy implementation (local + origin/Entropy)"
+      }
+    },
+    "FlexAIDdS": {
+      "path_default": "$HOME/Projects/FlexAIDdS",
+      "remote": "https://github.com/LeBonhommePharma/FlexAIDdS.git"
+    }
+  },
+  "arms": {
+    "A": {
+      "science_identity": "FlexAID JCIM 2015-era CF-only",
+      "source_repo": "FlexAID",
+      "source_branch": "master",
+      "source_commit": "f766a14e256c4b0ca45df77f28db2bfcad82a3b2",
+      "source_commit_short": "f766a14",
+      "source_date": "2015-12-16",
+      "source_subject": "read_input did not allowed appropriate CF clustering with a temperature = 0. This has been fixed.",
+      "alternate_code_tip": {
+        "commit": "53771bdef0a6e086b29642daed0115bbb074ddf8",
+        "short": "53771bd",
+        "date": "2016-01-05",
+        "note": "Last scientific master commit before jekyll/README-only noise; still CF+TEMPER0 path"
+      },
+      "do_not_use_as_science_binary": {
+        "commit": "9aa79951be1fb27bfb6a851554c5cc2850010dce",
+        "note": "2026 README-only tip of master — not a docking binary pin"
+      },
+      "temper": 0,
+      "clusta": "CF",
+      "election": "min CF / CF cluster emission",
+      "binary_install_path": "$FLEXAIDDS_LOCAL_ROOT/three_engine_entropy_q1/bin/A/FlexAID",
+      "binary_sha256": null,
+      "status": "SOURCE_PINNED_BINARY_MISSING",
+      "reconstruction_label_if_missing": "CF reconstruction on current FlexAIDdS --legacy TEMPER0 CLUSTA CF — not historical A SHA"
+    },
+    "B": {
+      "science_identity": "First FlexAID Shannon/soft-beta entropy (3Dsig lineage)",
+      "source_repo": "FlexAID",
+      "source_branch": "entropy",
+      "source_commit": "1a6ae0b074084eadbaeee5c2c7973777a5cacf5e",
+      "source_commit_short": "1a6ae0b",
+      "source_date": "2020-04-29",
+      "source_subject": "Actually added useful HOW-TO for dummies to compile FlexAID",
+      "entropy_birth_commit": {
+        "commit": "f7e18d46b2bc9b9375bcb3e0971005181637ac03",
+        "short": "f7e18d4",
+        "date": "2014-09-04",
+        "subject": "TEMPER + entropic cluster terms (first entropy machinery)"
+      },
+      "remote_branch": "origin/Entropy",
+      "temper": 21,
+      "clusta": "FO",
+      "fo_minpts_policy": "single_literature",
+      "election": "engine soft-beta / ACF on CF when T>0 (not DatasetRunner Softbeta S1)",
+      "binary_install_path": "$FLEXAIDDS_LOCAL_ROOT/three_engine_entropy_q1/bin/B/FlexAID",
+      "binary_sha256": null,
+      "status": "SOURCE_PINNED_BINARY_MISSING",
+      "forbidden_confounds": [
+        "COM_BURIAL_CAP",
+        "matrix 72d7 fork",
+        "Softbeta DatasetRunner S1 as sole entropy claim",
+        "triple MinPts ladder"
+      ]
+    },
+    "B0": {
+      "science_identity": "Optional binary-control (same binary as B, TEMPER0 CF)",
+      "science_control": false,
+      "uses_binary_of": "B",
+      "temper": 0,
+      "clusta": "CF",
+      "note": "Skip as independent control when bin A SHA equals bin B SHA"
+    },
+    "C": {
+      "science_identity": "Current FlexAIDdS under same fairness axes",
+      "source_repo": "FlexAIDdS",
+      "source_commit_at_doc": "99d17e4fbfda71877f282408999b6336338922a3",
+      "source_commit_short_at_doc": "99d17e4f",
+      "temper": 21,
+      "clusta": "FO",
+      "entropy_path": "engine TEMPER+FO soft-beta on CF (Softbeta S1 DatasetRunner default OFF)",
+      "binary_install_path": "$FLEXAIDDS_LOCAL_ROOT/three_engine_entropy_q1/bin/C/FlexAIDdS",
+      "binary_sha256": null,
+      "status": "BUILD_FROM_CURRENT_TREE",
+      "modern_optional_columns": ["S1", "S2_PoseBusters", "BCR", "genuine"],
+      "headline_still": "S_top10"
+    }
+  },
+  "icloud": {
+    "root_var": "FLEXAIDDS_ICLOUD",
+    "root_default": "$HOME/Library/Mobile Documents/com~apple~CloudDocs/FlexAIDdS_benchmarks",
+    "local_live_var": "FLEXAIDDS_LOCAL_ROOT",
+    "local_live_default": "$HOME/flexaidds_results",
+    "layout": {
+      "live_ga_out": "$FLEXAIDDS_LOCAL_ROOT/campaigns/three_engine/{A,B0,B,C}/<campaign_id>/",
+      "live_bins": "$FLEXAIDDS_LOCAL_ROOT/three_engine_entropy_q1/bin/{A,B,C}/",
+      "live_matrix": "$FLEXAIDDS_LOCAL_ROOT/three_engine_entropy_q1/data/MC_st0r5.2_6.dat",
+      "live_logs": "$FLEXAIDDS_LOCAL_ROOT/logs/",
+      "thin_mirror_results": "$FLEXAIDDS_ICLOUD/results/campaigns/three_engine/{A,B0,B,C}/<campaign_id>/",
+      "thin_mirror_contents": ["result.csv", "RUN_RECEIPT*", "*oracle_status.json", "*MANIFEST*", "bootstrap/*.json"],
+      "pins_mirror": "$FLEXAIDDS_ICLOUD/pins/",
+      "archived_ssd": "$FLEXAIDDS_ICLOUD/archived_from_ssd/",
+      "sync_script": "scripts/sync_three_engine_local_to_icloud.sh"
+    },
+    "rules": [
+      "Live GA never writes under Mobile Documents/",
+      "No find/rglob under CloudDocs",
+      "Hash CloudDocs only via scripts/icloud_safe_io.py",
+      "Thin sync result.csv + receipts only by default"
+    ]
+  },
+  "gates_before_full85": [
+    "Binary A and B built from pinned FlexAID commits; SHA256 recorded",
+    "Matrix MD5 == 9dc93717dfed0698006d88dd6a9627bc on live path",
+    "Native CF oracle panel PASS (or SCIENCE HOLD with documented fail)",
+    "pilot8 A then B serial with mode_rmsd_0..9 schema",
+    "S_top10 bootstrap path works; no dual full85 launch"
+  ]
+}

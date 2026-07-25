@@ -83,6 +83,20 @@ Purpose: prove a determinism/perf change does not regress docking accuracy.
   3Dsig/poster FlexAID ~66% / entropy ~69% are **S_top10-family** medians — not the JCIM top-1
   figure. Report the protocol next to any number; never mix top-1, top-10, and S_top10 without labels.
 
+### 3.1 Comparative three-arm goal (JCIM FlexAID vs first entropy vs FlexAIDdS)
+
+For **fair comparison** of (A) JCIM-era CF FlexAID, (B) first entropy FlexAID, and (C) current
+FlexAIDdS under frozen fairness axes, do **not** invent a parallel protocol here. Execute:
+
+- **Goal design / phases / G1–G9 fulfillment:** `docs/implementation/COMPARATIVE_GOAL_METHODOLOGY.md`
+- **Arm specs + confound checklist:** `docs/implementation/COMPARATIVE_BENCHMARK_METHODOLOGY.md`
+- **Source commits / paths:** `docs/implementation/arm_pins.json`
+- **Deck knobs / FO MinPts:** `docs/implementation/3dsig_red_pair_protocol.md`
+
+Primary comparative statistic for that goal is **S_top10** (10k bootstrap median), not the §3
+autonomous S1 gate used for merge-time accuracy A/B. Serial arms only; local-first + thin iCloud
+mirror (`docs/ICLOUD_BENCHMARK_STORAGE.md`).
+
 ---
 
 ## 4. ctest
