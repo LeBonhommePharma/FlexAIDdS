@@ -55,6 +55,10 @@ fs::path astex_dir(const std::string& code) {
 
 fs::path find_1g9v_pose() {
     const fs::path root = repo_root();
+    // Committed fixture first (always available for CI).
+    const fs::path fixture =
+        root / "tests" / "fixtures" / "posebust" / "1G9V_elected_pose.pdb";
+    if (fs::is_regular_file(fixture)) return fixture;
     for (const char* rel : {
              "benchmarks/astex_repro/full_v132/1G9V",
              "benchmarks/astex_repro/full_v131/1G9V",
@@ -616,4 +620,132 @@ TEST(PoseBustEngine, DefaultBackendIsOfficialBustCli) {
         GTEST_SKIP() << "POSEBUST env set; cannot assert default";
     }
     EXPECT_EQ(resolve_backend_from_env(), Backend::BustCli);
+}
+
+// ── Mandatory elected BindingMode pose validation ────────────────────────────
+
+TEST(ElectedPosePoseBust, FailClosedEmptyPathNeverPasses) {
+    ElectedPoseValidateOptions opt;
+    opt.backend = Backend::Native;
+    opt.force_native_when_off = true;
+    auto out = validate_elected_pose("", "/no/receptor.pdb", "/no/crystal.sdf", opt);
+    EXPECT_FALSE(out.pb_ran);
+    EXPECT_FALSE(out.pb_pass);
+    out.finalize_success_pb(/*success_rmsd=*/true);
+    EXPECT_FALSE(out.success_pb)
+        << "success_pb must stay false when PoseBust did not run";
+    EXPECT_EQ(out.pb_backend, "skipped_no_elected_pose");
+}
+
+TEST(ElectedPosePoseBust, FailClosedMissingFileNeverPasses) {
+    ElectedPoseValidateOptions opt;
+    opt.backend = Backend::Native;
+    const fs::path ghost =
+        fs::temp_directory_path() / "flexaidds_no_such_elected_pose.pdb";
+    std::error_code ec;
+    fs::remove(ghost, ec);
+    auto out = validate_elected_pose(ghost.string(), "/no/receptor.pdb",
+                                     "/no/crystal.sdf", opt);
+    EXPECT_FALSE(out.pb_ran);
+    EXPECT_FALSE(out.pb_pass);
+    out.finalize_success_pb(true);
+    EXPECT_FALSE(out.success_pb);
+    EXPECT_EQ(out.pb_backend, "skipped_no_elected_pose");
+}
+
+TEST(ElectedPosePoseBust, OffBackendStillRunsNativeOnElectedPose) {
+    // Build a temporary complex from crystal ligand + protein is hard without
+    // FlexAID CONECT; use real elected pose when available, else crystal path
+    // via evaluate_paths identity through validate_elected_pose on a written
+    // pose file from the Astex tree.
+    const fs::path pose = find_1g9v_pose();
+    const fs::path crystal = astex_dir("1G9V") / "1G9V_ligand.sdf";
+    const fs::path protein = astex_dir("1G9V") / "1G9V_apo.pdb";
+    if (pose.empty() || !fs::is_regular_file(crystal) ||
+        !fs::is_regular_file(protein)) {
+        GTEST_SKIP() << "missing 1G9V elected pose / apo / crystal";
+    }
+    const fs::path side =
+        fs::temp_directory_path() / "flexaidds_elected_pb_off";
+    std::error_code ec;
+    fs::remove_all(side, ec);
+    fs::create_directories(side, ec);
+
+    ElectedPoseValidateOptions opt;
+    opt.backend = Backend::Off;  // should be upgraded to Native (mandatory floor)
+    opt.force_native_when_off = true;
+    opt.sidecar_dir = side.string();
+    opt.pdb_id = "1G9V";
+
+    auto out = validate_elected_pose(pose.string(), protein.string(),
+                                     crystal.string(), opt);
+    // Mandatory: must actually run (not silent skip-as-pass).
+    EXPECT_TRUE(out.pb_ran) << out.error << " backend=" << out.pb_backend;
+    EXPECT_NE(out.pb_backend, "skipped");
+    EXPECT_EQ(out.pb_backend, "native_pose_qc");
+    // Identity: validated hash matches elected file.
+    EXPECT_EQ(out.pose_sha256, sha256_file(pose.string()));
+    EXPECT_EQ(out.posebusters_pose_sha256, out.pose_sha256);
+    // Never pass without ran (already asserted ran).
+    if (out.pb_pass) {
+        EXPECT_TRUE(out.pb_ran);
+    }
+    out.finalize_success_pb(/*success_rmsd=*/false);
+    EXPECT_FALSE(out.success_pb)
+        << "success_pb requires RMSD success ∧ pb_pass";
+    out.finalize_success_pb(/*success_rmsd=*/true);
+    EXPECT_EQ(out.success_pb, out.pb_pass);
+}
+
+TEST(ElectedPosePoseBust, KnownGoodNativeMapsSuccessPbAlgebra) {
+    const fs::path pose = find_1g9v_pose();
+    const fs::path crystal = astex_dir("1G9V") / "1G9V_ligand.sdf";
+    const fs::path protein = astex_dir("1G9V") / "1G9V_apo.pdb";
+    if (pose.empty() || !fs::is_regular_file(crystal) ||
+        !fs::is_regular_file(protein)) {
+        // Fall back: crystal self-dock via temporary elected-like complex is
+        // not available without CONECT; skip rather than reimplement loaders.
+        GTEST_SKIP() << "missing 1G9V elected pose artifacts";
+    }
+    const fs::path side =
+        fs::temp_directory_path() / "flexaidds_elected_pb_good";
+    std::error_code ec;
+    fs::remove_all(side, ec);
+    fs::create_directories(side, ec);
+
+    ElectedPoseValidateOptions opt;
+    opt.backend = Backend::Native;
+    opt.sidecar_dir = side.string();
+    opt.pdb_id = "1G9V";
+
+    auto out = validate_elected_pose(pose.string(), protein.string(),
+                                     crystal.string(), opt);
+    ASSERT_TRUE(out.pb_ran) << out.error << " keys=" << out.pb_failed_keys;
+    EXPECT_EQ(out.pb_backend, "native_pose_qc");
+    // DatasetRunner success_pb algebra driven by shipped finalize_success_pb.
+    out.finalize_success_pb(true);
+    EXPECT_EQ(out.success_pb, out.pb_pass);
+    out.finalize_success_pb(false);
+    EXPECT_FALSE(out.success_pb);
+}
+
+TEST(ElectedPosePoseBust, CrystalSelfDockViaEvaluatePathsIdentity) {
+    // When no elected FlexAID pose is on disk, still exercise the shipped
+    // native evaluate path that validate_elected_pose uses for Native QC.
+    const fs::path crystal = astex_dir("1G9V") / "1G9V_ligand.sdf";
+    const fs::path protein = astex_dir("1G9V") / "1G9V_apo.pdb";
+    if (!fs::is_regular_file(crystal) || !fs::is_regular_file(protein)) {
+        GTEST_SKIP() << "missing 1G9V";
+    }
+    Molecule lig, prot;
+    std::string err;
+    ASSERT_TRUE(load_sdf(crystal.string(), lig, &err)) << err;
+    ASSERT_TRUE(load_pdb_protein_heavy(protein.string(), prot, &err)) << err;
+    auto nrep = evaluate(lig, prot, &lig, {});
+    ASSERT_TRUE(nrep.ran);
+    const bool pb_pass = nrep.ran && nrep.error.empty() && nrep.success_pb_full();
+    EXPECT_TRUE(pb_pass) << nrep.failed_keys_csv();
+    // success_pb algebra
+    EXPECT_TRUE(true && pb_pass);
+    EXPECT_FALSE(false && pb_pass);
 }

@@ -7456,186 +7456,72 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
             }
         }
 
-        // ── Authoritative PoseBusters = upstream `bust` (audit P0) ─────────
-        // NativePoseQC is diagnostic only. success_pb := success_rmsd && pb_pass.
+        // ── Mandatory PoseBust on elected BindingMode pose ─────────────────
+        // Single entry: flexaids::posebust::validate_elected_pose.
+        // success_pb := success_rmsd && pb_pass; never imply pass without pb_ran.
         {
-            using flexaids::posebust::Backend;
-            using flexaids::posebust::EvaluateOptions;
-            using flexaids::posebust::Suite;
-            const Backend backend = flexaids::posebust::resolve_backend_from_env();
             result.pb_pass = false;
             result.pb_ran  = false;
+            result.success_pb = false;
 
-            if (backend == Backend::Off || !docking_completed ||
-                result.elected_pose_path.empty()) {
-                result.pb_backend = "skipped";
+            if (!docking_completed) {
+                result.pb_backend = "skipped_docking_incomplete";
+                result.pb_failed_keys = "docking_incomplete";
             } else {
                 const std::string crystal =
-                    !rmsd_reference_path.empty() ? rmsd_reference_path : entry.ligand_path;
+                    !rmsd_reference_path.empty() ? rmsd_reference_path
+                                                 : entry.ligand_path;
                 const std::string pb_dir = out_dir + "/posebust";
                 fs::create_directories(pb_dir);
 
-                // Extract ligand SDF via FlexAID CONECT + crystal topology (fail-closed).
-                flexaids::posebust::Molecule lig;
-                std::string lig_err;
-                result.posebusters_pose_sha256 =
-                    flexaids::posebust::sha256_file(result.elected_pose_path);
-                bool lig_ok =
-                    !result.posebusters_pose_sha256.empty() &&
-                    result.posebusters_pose_sha256 == result.pose_sha256;
-                if (lig_ok) {
-                    lig_ok = flexaids::posebust::load_pdb_flexaid_ligand(
-                        result.elected_pose_path, lig, &lig_err);
-                } else {
-                    lig_err = "elected pose hash mismatch before PoseBusters";
-                }
-                flexaids::posebust::Molecule crystal_mol;
-                if (lig_ok && !crystal.empty() && fs::exists(crystal)) {
-                    std::string e2;
-                    if (flexaids::posebust::load_sdf(crystal, crystal_mol, &e2)) {
-                        if (!flexaids::posebust::assign_topology_from_reference(
-                                lig, crystal_mol, &e2)) {
-                            lig_ok = false;
-                            lig_err = e2;
-                        }
-                    } else {
-                        lig_ok = false;
-                        lig_err = e2;
-                    }
-                } else if (lig_ok) {
-                    lig_ok = false;
-                    lig_err = "crystal SDF required for authoritative PB extract";
-                }
-                const std::string pred_sdf = pb_dir + "/" + entry.pdb_id +
-                    (result.pose_sha256.empty() ? "_ligand.sdf"
-                                                : ("_" + result.pose_sha256.substr(0, 12) +
-                                                   "_ligand.sdf"));
-                if (lig_ok) {
-                    std::string werr;
-                    lig_ok = flexaids::posebust::write_sdf(lig, pred_sdf, &werr);
-                    if (!lig_ok) lig_err = werr;
-                    else result.posebusters_input_sha256 =
-                        flexaids::posebust::sha256_file(pred_sdf);
-                }
+                flexaids::posebust::ElectedPoseValidateOptions pb_opt;
+                pb_opt.backend = flexaids::posebust::resolve_backend_from_env();
+                pb_opt.sidecar_dir = pb_dir;
+                pb_opt.pdb_id = entry.pdb_id;
+                // Mandatory: Off → Native floor; missing bust → native fallback.
+                pb_opt.force_native_when_off = true;
+                pb_opt.native_fallback_if_bust_missing = true;
 
-                // --- NativePoseQC full dock suite (parity diagnostic) ---
-                flexaids::posebust::PoseBustReport nrep;
-                {
-                    EvaluateOptions nopt;
-                    nopt.suite = Suite::Dock;
-                    nopt.sidecar_dir = pb_dir + "/native_qc";
-                    nopt.pdb_id = entry.pdb_id +
-                        (result.pose_sha256.empty() ? ""
-                                                    : ("_" + result.pose_sha256.substr(0, 12)));
-                    nrep = flexaids::posebust::evaluate_paths(
-                        result.elected_pose_path, entry.receptor_path, crystal, nopt);
-                    result.native_qc_ran = nrep.ran && nrep.error.empty();
-                    result.native_qc_pass = nrep.success_pb_full();
-                    result.native_qc_failed_keys = nrep.failed_keys_csv();
-                    result.pb_min_lig_prot_dist = nrep.min_lig_prot_dist;
-                    result.pb_volume_overlap = nrep.volume_overlap;
-                    std::cerr << "  [NATIVE-POSE-QC] " << entry.pdb_id
-                              << " pass=" << (result.native_qc_pass ? 1 : 0)
-                              << " failed=[" << result.native_qc_failed_keys << "]"
-                              << " (full dock suite; parity diagnostic)\n";
-                }
+                auto pb = flexaids::posebust::validate_elected_pose(
+                    result.elected_pose_path, entry.receptor_path, crystal,
+                    pb_opt);
+                pb.finalize_success_pb(result.success_rmsd);
 
-                // --- pb_pass from selected backend ---
-                // Official upstream PoseBusters is the default claim backend.
-                if (!lig_ok) {
-                    result.pb_backend = "error";
-                    result.pb_failed_keys = "ligand_extract:" + lig_err;
-                    std::cerr << "  [POSEBUSTERS] extract failed: " << lig_err << "\n";
-                } else if (backend == Backend::Native) {
-                    // Clean-room PoseBusters: full native suite → pb_pass
-                    result.pb_backend = "native_pose_qc";
-                    result.pb_ran = result.native_qc_ran;
-                    result.pb_pass = result.native_qc_pass;  // success_pb_full()
-                    result.pb_failed_keys = result.native_qc_failed_keys;
-                    result.pb_n_checks = nrep.n_checks();
-                    result.pb_n_pass = nrep.n_pass();
-                    result.pb_n_fail = nrep.n_fail();
-                    std::cerr << "  [POSEBUSTERS] backend=native_pose_qc"
-                              << " pb_pass=" << (result.pb_pass ? 1 : 0)
-                              << " checks=" << result.pb_n_pass << "/"
-                              << result.pb_n_checks
-                              << " failed=[" << result.pb_failed_keys << "]"
-                              << " pose_sha256=" << result.pose_sha256 << "\n";
-                } else {
-                    // Official upstream PoseBusters CLI.
-                    auto br = flexaids::posebust::run_upstream_bust(
-                        pred_sdf, entry.receptor_path, crystal, pb_dir,
-                        entry.pdb_id + (result.pose_sha256.empty()
-                                            ? ""
-                                            : ("_" + result.pose_sha256.substr(0, 12))));
-                    result.pb_ran = br.ran;
-                    result.pb_pass = br.pb_pass;
-                    result.pb_n_pass = br.n_pass;
-                    result.pb_n_fail = br.n_fail;
-                    result.pb_n_checks = br.n_checks;
-                    result.pb_failed_keys = br.failed_keys;
-                    result.pb_backend = br.backend;
-                    if (!br.error.empty() && !br.pb_pass) {
-                        if (!result.pb_failed_keys.empty()) result.pb_failed_keys += ';';
-                        result.pb_failed_keys += br.error;
-                    }
-                    // Persist BustCli receipts (path, SHA256, version, argv, exit, raw hash).
-                    try {
-                        const std::string receipt_path =
-                            pb_dir + "/" + entry.pdb_id + "_bust_receipt.json";
-                        std::ofstream rcpt(receipt_path);
-                        if (rcpt) {
-                            auto jesc = [](const std::string& s) {
-                                std::string o;
-                                o.reserve(s.size());
-                                for (char c : s) {
-                                    if (c == '"' || c == '\\') o.push_back('\\');
-                                    if (c == '\n') { o += "\\n"; continue; }
-                                    if (c == '\r') continue;
-                                    o.push_back(c);
-                                }
-                                return o;
-                            };
-                            rcpt << "{\n"
-                                 << "  \"bust_path\": \"" << jesc(br.bust_path) << "\",\n"
-                                 << "  \"bust_sha256\": \"" << jesc(br.bust_sha256) << "\",\n"
-                                 << "  \"bust_version\": \"" << jesc(br.bust_version) << "\",\n"
-                                 << "  \"argv\": \"" << jesc(br.argv_joined) << "\",\n"
-                                 << "  \"exit_status\": " << br.exit_status << ",\n"
-                                 << "  \"raw_csv_sha256\": \"" << jesc(br.raw_csv_sha256)
-                                 << "\",\n"
-                                 << "  \"raw_csv_path\": \"" << jesc(br.csv_path) << "\",\n"
-                                 << "  \"pb_pass\": " << (br.pb_pass ? "true" : "false")
-                                 << ",\n"
-                                 << "  \"backend\": \"" << jesc(br.backend) << "\"\n"
-                                 << "}\n";
-                        }
-                    } catch (...) {
-                    }
-                    std::cerr << "  [POSEBUSTERS] backend=" << result.pb_backend
-                              << " pb_pass=" << (result.pb_pass ? 1 : 0)
-                              << " checks=" << result.pb_n_pass << "/"
-                              << result.pb_n_checks
-                              << " failed=[" << result.pb_failed_keys << "]"
-                              << " pose_sha256=" << result.pose_sha256
-                              << " bust_path=" << br.bust_path
-                              << " raw_csv_sha256=" << br.raw_csv_sha256
-                              << " exit=" << br.exit_status << "\n";
-                }
+                result.pb_ran = pb.pb_ran;
+                result.pb_pass = pb.pb_pass;
+                result.success_pb = pb.success_pb;
+                result.pb_backend = pb.pb_backend;
+                result.pb_failed_keys = pb.pb_failed_keys;
+                result.pb_n_pass = pb.pb_n_pass;
+                result.pb_n_fail = pb.pb_n_fail;
+                result.pb_n_checks = pb.pb_n_checks;
+                result.native_qc_ran = pb.native_qc_ran;
+                result.native_qc_pass = pb.native_qc_pass;
+                result.native_qc_failed_keys = pb.native_qc_failed_keys;
+                result.pb_min_lig_prot_dist = pb.pb_min_lig_prot_dist;
+                result.pb_volume_overlap = pb.pb_volume_overlap;
+                if (!pb.posebusters_pose_sha256.empty())
+                    result.posebusters_pose_sha256 = pb.posebusters_pose_sha256;
+                if (!pb.posebusters_input_sha256.empty())
+                    result.posebusters_input_sha256 = pb.posebusters_input_sha256;
+                // Keep result.pose_sha256 from election; do not overwrite unless empty.
+                if (result.pose_sha256.empty() && !pb.pose_sha256.empty())
+                    result.pose_sha256 = pb.pose_sha256;
 
-                const std::string pb_pose_hash_after =
-                    flexaids::posebust::sha256_file(result.elected_pose_path);
-                if (pb_pose_hash_after != result.posebusters_pose_sha256 ||
-                    result.posebusters_pose_sha256 != result.pose_sha256 ||
-                    result.posebusters_input_sha256.empty()) {
-                    result.pb_pass = false;
-                    if (!result.pb_failed_keys.empty()) result.pb_failed_keys += ';';
-                    result.pb_failed_keys += "validator_input_provenance";
-                }
+                std::cerr << "  [NATIVE-POSE-QC] " << entry.pdb_id
+                          << " pass=" << (result.native_qc_pass ? 1 : 0)
+                          << " failed=[" << result.native_qc_failed_keys << "]"
+                          << " (full dock suite; parity diagnostic)\n";
+                std::cerr << "  [POSEBUSTERS] backend=" << result.pb_backend
+                          << " pb_ran=" << (result.pb_ran ? 1 : 0)
+                          << " pb_pass=" << (result.pb_pass ? 1 : 0)
+                          << " success_pb=" << (result.success_pb ? 1 : 0)
+                          << " checks=" << result.pb_n_pass << "/"
+                          << result.pb_n_checks
+                          << " failed=[" << result.pb_failed_keys << "]"
+                          << " pose_sha256=" << result.pose_sha256 << "\n";
             }
 
-            // Contract: success_pb = RMSD∧PoseBusters (not PB alone).
-            result.success_pb = result.success_rmsd && result.pb_pass;
             // tENCoM/Eigen is mandatory for benchmark claims and is computed
             // below from the exact immutable elected-pose artifact.
             result.tencom_status = "not_run";
