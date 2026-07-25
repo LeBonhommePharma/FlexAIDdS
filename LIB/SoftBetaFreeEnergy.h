@@ -40,6 +40,7 @@
 
 #include <cmath>
 #include <cstddef>
+#include <cstdlib>
 #include <limits>
 #include <utility>
 #include <vector>
@@ -206,6 +207,49 @@ inline FreeEnergy free_energy_strict(
     out.H = H;
     out.S = S;
     return out;
+}
+
+// ── Cluster emission basin score (E1b / rank_miss remediation) ──────────────
+//
+// Between-cluster ranking in cluster.cpp uses this score (lower better).
+// free_energy_strict collapses exact-CF duplicates so multiplicity alone
+// cannot elect a large wrong basin over a better CF singleton (rank_miss).
+//
+// Env (parity-safe default = legacy acf / pre-E1b campaign baseline):
+//   FLEXAIDDS_ACF_STRICT=1         → free_energy_strict (E1b ON)
+//   unset / FLEXAIDDS_ACF_STRICT=0 → legacy acf (default OFF = bit-parity)
+//   FLEXAIDDS_ELECT_LEGACY_ACF=1   → force legacy acf even if ACF_STRICT=1
+
+/// True when cluster emission should use free_energy_strict (default OFF).
+inline bool cluster_use_free_energy_strict_from_env() noexcept
+{
+    const char* legacy = std::getenv("FLEXAIDDS_ELECT_LEGACY_ACF");
+    if (legacy != nullptr && std::atoi(legacy) != 0)
+        return false;
+    const char* strict = std::getenv("FLEXAIDDS_ACF_STRICT");
+    return strict != nullptr && std::atoi(strict) != 0;
+}
+
+/// Cluster-local basin score for emission order (lower better).
+/// Pure function — unit-testable without linking cluster.cpp.
+inline double cluster_basin_score(const std::vector<double>& member_energies,
+                                  SoftT T_soft,
+                                  bool use_strict) noexcept
+{
+    if (use_strict)
+        return free_energy_strict(member_energies, T_soft,
+                                  StrictRerankMode::UniqueGeometry)
+            .G;
+    return acf(member_energies, T_soft);
+}
+
+/// Env-gated cluster basin score (production cluster.cpp path).
+inline double cluster_basin_score_from_env(
+    const std::vector<double>& member_energies,
+    SoftT T_soft) noexcept
+{
+    return cluster_basin_score(member_energies, T_soft,
+                               cluster_use_free_energy_strict_from_env());
 }
 
 // ── Gated Softβ election (DatasetRunner S1 / offline re-rank) ──────────────

@@ -18,6 +18,7 @@
 #include "BenchmarkRunner.h"
 #include "ProtocolConfig.h"
 #include "SoftBetaFreeEnergy.h"
+#include "emission_guards.h"
 #include "shell_exec.h"
 #include "RunReceipt.h"
 #include "statmech.h"
@@ -6469,6 +6470,26 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
             }
         } catch (...) {}
 
+        // 1KZK-class: root dir may lack _mode_/_cluster_ names while restart
+        // prefixes already emitted heads (enumerate_emitted_cluster_heads).
+        // Recover pose count so docking_completed/election can proceed.
+        {
+            int enumerated_heads = 0;
+            for (const auto& pfx : all_prefixes) {
+                enumerated_heads += static_cast<int>(
+                    enumerate_emitted_cluster_heads(pfx).size());
+            }
+            const int recovered =
+                flexaids::emission::recover_pose_count(n_poses, enumerated_heads);
+            if (recovered > n_poses) {
+                std::cerr << "  [EMISSION-GUARD] " << entry.pdb_id
+                          << ": recovered pose count " << n_poses << "→"
+                          << recovered << " from emitted cluster heads ("
+                          << all_prefixes.size() << " prefix(es))\n";
+                n_poses = recovered;
+            }
+        }
+
         // Parse stdout for n_chrom_snapshot, CF scores, and clash diagnostics
         std::ifstream stdout_file(stdout_path);  // stdout_path declared above
         long clashed_count = 0, total_evals = 0;
@@ -7327,6 +7348,24 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
             // Fail-closed claim gate: ordered direct RMSD only.
             // Element-only Hungarian (result.rmsd_hungarian) is diagnostic and
             // must never set success_rmsd / success / success_pb.
+            // Fail-closed absurd/sentinel reporting (1J3J/1IGJ/1KZK-class).
+            {
+                const auto rr = flexaids::emission::report_elected_rmsd(
+                    result.rmsd_to_crystal);
+                if (rr.is_sentinel) {
+                    std::cerr << "  [EMISSION-GUARD] " << entry.pdb_id
+                              << ": sentinel RMSD (pose missing or uncomputable)\n";
+                    if (result.thermo_binding_regime.empty())
+                        result.thermo_binding_regime = "empty_or_sentinel_rmsd";
+                } else if (rr.is_absurd) {
+                    std::cerr << "  [EMISSION-GUARD] " << entry.pdb_id
+                              << ": absurd elected RMSD "
+                              << result.rmsd_to_crystal
+                              << " A (≫ pocket scale; not a local docking miss)\n";
+                    if (result.thermo_binding_regime.empty())
+                        result.thermo_binding_regime = "absurd_rmsd";
+                }
+            }
             const float rmsd_report = result.rmsd_to_crystal;
             result.success_rmsd =
                 docking_completed && rmsd_report >= 0.0f &&

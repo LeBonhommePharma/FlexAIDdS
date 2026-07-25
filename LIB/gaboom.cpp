@@ -10,6 +10,7 @@
 #include "RngSeed.h"
 #include "ensemble_pipeline.h"
 #include "ProtocolConfig.h"
+#include "SearchCoverage.h"
 
 #include <random>
 #include <functional>
@@ -467,6 +468,21 @@ int GA(FA_Global* FA, GB_Global* GB,VC_Global* VC,chromosome** chrom,chromosome*
 		memset((*chrom_snapshot)[snap_i].ring_phases, 0, sizeof((*chrom_snapshot)[snap_i].ring_phases));
 		memset((*chrom_snapshot)[snap_i].ring_six,    0, sizeof((*chrom_snapshot)[snap_i].ring_six));
 		memset((*chrom_snapshot)[snap_i].ring_five,   0, sizeof((*chrom_snapshot)[snap_i].ring_five));
+	}
+
+	// S1 search-coverage remediation (default OFF): denser BOOM + wider niche.
+	// FLEXAIDDS_SEARCH_COVERAGE=1 and/or FLEXAIDDS_BOOM_INTERVAL=<N>.
+	{
+		const int boom_before = GB->boom_inject_interval;
+		const double scale_before = GB->scale;
+		if (flexaids::search_coverage::apply_from_env(GB->boom_inject_interval,
+		                                              GB->scale)) {
+			fprintf(stderr,
+			        "[SEARCH-COVERAGE] boom_interval %d→%d  sharing_scale %.4f→%.4f "
+			        "(FLEXAIDDS_SEARCH_COVERAGE / BOOM_INTERVAL)\n",
+			        boom_before, GB->boom_inject_interval,
+			        scale_before, GB->scale);
+		}
 	}
 
 	printf("alpha %lf peaks %lf scale %lf\n",GB->alpha,GB->peaks,GB->scale);

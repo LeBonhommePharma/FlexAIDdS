@@ -3,9 +3,11 @@
 // Apache-2.0 © 2026 Le Bonhomme Pharma / NRGlab, Université de Montréal
 
 #include "coarse_init.h"
+#include "sampling_coverage.h"
 #include "Vcontacts.h"   // ic2cf declaration
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstdlib>
 #include <cstring>
@@ -94,8 +96,15 @@ void run_coarse_pocket_scan(
         return;
 
     const int n_genes   = GB->num_genes;
-    const int n_orient  = std::max(1, FA->coarse_init_n_orient);
-    const int n_seeds   = std::max(1, FA->coarse_init_n_seeds);
+    // Flag-gated coverage boost (FLEXAIDDS_SAMPLE_COVERAGE_BOOST=1, default OFF).
+    const auto cov = flexaids::sampling::apply_coverage_boost(
+        FA->coarse_init_n_orient, FA->coarse_init_n_seeds);
+    const int n_orient  = cov.n_orient;
+    const int n_seeds   = cov.n_seeds;
+    if (cov.boost_applied) {
+        printf("[COARSE-INIT] SAMPLE_COVERAGE_BOOST on → n_orient=%d n_seeds=%d\n",
+               n_orient, n_seeds);
+    }
     const float step    = (FA->coarse_init_grid_step > 0.0f)
                           ? FA->coarse_init_grid_step : 3.0f;
     const float thresh2 = (step * 1.5f) * (step * 1.5f);
@@ -258,36 +267,63 @@ void run_coarse_pocket_scan(
         return;
     }
 
-    // ── 4. Sort by CF ascending (most negative = best contacts first) ─────
-    std::partial_sort(results.begin(),
-                      results.begin() + std::min(n_seeds, static_cast<int>(results.size())),
-                      results.end(),
-                      [](const ScanResult& a, const ScanResult& b) {
-                          return a.cf_val < b.cf_val;
-                      });
+    // ── 4. Rank by CF and select seeds (shared pure helper) ───────────────
+    // Absolute CF < 0 is NOT a valid "has contacts" test: SAS weight /
+    // FLEXAIDDS_POLAR_DESOLV_WEIGHT can shift the zero-point positive while the
+    // placement still has real VCT contacts. Hard-clash sentinels
+    // (CF ≥ CLASH_THRESHOLD) are dropped unless FLEXAIDDS_COARSE_INIT_FORCE_RANKED=1
+    // (1M2Z-class: inject least-bad ranks so gen-0 is not empty).
+    std::vector<double> cf_vals;
+    cf_vals.reserve(results.size());
+    for (const auto& r : results) cf_vals.push_back(r.cf_val);
 
-    const int actual_n = std::min(n_seeds, static_cast<int>(results.size()));
+    const bool force_ranked = flexaids::sampling::force_ranked_seeds_enabled();
+    auto keep_idx = flexaids::sampling::select_ranked_seed_indices(
+        cf_vals, n_seeds, static_cast<double>(CLASH_THRESHOLD), force_ranked);
 
-    // Keep top-N by relative CF rank (already sorted ascending). Absolute CF < 0
-    // is NOT a valid "has contacts" test: SAS weight / FLEXAIDDS_POLAR_DESOLV_WEIGHT
-    // can shift the zero-point positive while the placement still has real
-    // VCT contacts (canary polar105: best CF≈+500, all seeds skipped → search
-    // coverage collapse on 1J3J/1M2Z). Still drop hard-clash sentinels
-    // (CF ≥ CLASH_THRESHOLD) which are not useful gen-0 chromosomes.
-    int keep_n = 0;
-    for (int k = 0; k < actual_n; k++) {
-        if (results[static_cast<std::size_t>(k)].cf_val < CLASH_THRESHOLD)
-            keep_n++;
-        else
-            break; // sorted ascending; rest are clash-scale or worse
+    // Optional spatial diversity when coverage boost is on (spread seeds across
+    // the cleft rather than stacking near-identical grid points).
+    if (cov.boost_applied && !keep_idx.empty()) {
+        std::vector<std::array<double, 3>> coords(results.size());
+        for (std::size_t i = 0; i < results.size(); ++i) {
+            const int gi = results[i].grid_idx;
+            if (gi >= 1 && gi < FA->num_grd) {
+                coords[i] = {cleftgrid[gi].coor[0],
+                             cleftgrid[gi].coor[1],
+                             cleftgrid[gi].coor[2]};
+            }
+        }
+        const auto ranked_all = flexaids::sampling::rank_indices_by_cf_asc(cf_vals);
+        // Prefer diverse picks among the non-clash (or force-ranked) pool.
+        keep_idx = flexaids::sampling::diversify_by_min_distance(
+            keep_idx.empty() ? ranked_all : keep_idx,
+            &coords, n_seeds, /*min_dist_A=*/step);
+        // Re-filter clash unless force_ranked.
+        if (!force_ranked) {
+            std::vector<std::size_t> filtered;
+            for (std::size_t i : keep_idx) {
+                if (cf_vals[i] < static_cast<double>(CLASH_THRESHOLD))
+                    filtered.push_back(i);
+            }
+            keep_idx.swap(filtered);
+        }
     }
 
-    if (keep_n == 0) {
+    if (keep_idx.empty()) {
         printf("[COARSE-INIT] No non-clash placements found (best CF=%.2f ≥ CLASH_THRESHOLD), "
-               "skipping seed injection\n",
-               results[0].cf_val);
+               "skipping seed injection%s\n",
+               results[flexaids::sampling::rank_indices_by_cf_asc(cf_vals).front()].cf_val,
+               force_ranked ? " (FORCE_RANKED on but no finite CF)" : " (set FLEXAIDDS_COARSE_INIT_FORCE_RANKED=1 to inject least-bad ranks)");
         return;
     }
+
+    if (force_ranked && cf_vals[keep_idx.front()] >= static_cast<double>(CLASH_THRESHOLD)) {
+        printf("[COARSE-INIT] FORCE_RANKED: injecting %zu clash-scale seeds "
+               "(best CF=%.2f) so gen-0 is non-empty\n",
+               keep_idx.size(), cf_vals[keep_idx.front()]);
+    }
+
+    const int keep_n = static_cast<int>(keep_idx.size());
 
     // ── 5. Allocate and fill FA coarse-seed arrays ────────────────────────
     free(FA->coarse_seeds_grid);
@@ -309,7 +345,7 @@ void run_coarse_pocket_scan(
     }
 
     for (int k = 0; k < keep_n; k++) {
-        const auto& r = results[static_cast<std::size_t>(k)];
+        const auto& r = results[keep_idx[static_cast<std::size_t>(k)]];
         FA->coarse_seeds_grid[k] = r.grid_idx;
         const int ic_stride = k * (n_genes - 1);
         for (int g = 0; g < n_genes - 1; g++)
@@ -320,6 +356,6 @@ void run_coarse_pocket_scan(
     printf("[COARSE-INIT] %d ranked seeds ready "
            "(best CF=%.2f, worst CF=%.2f; absolute CF sign not required)\n",
            keep_n,
-           results[0].cf_val,
-           results[static_cast<std::size_t>(keep_n - 1)].cf_val);
+           cf_vals[keep_idx.front()],
+           cf_vals[keep_idx.back()]);
 }

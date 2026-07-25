@@ -306,6 +306,77 @@ TEST(SoftBetaStrict, ExactDuplicateInvariance) {
     EXPECT_NEAR(lme_clone.G, lme_once.G, 1e-9);
 }
 
+// E1b / rank_miss: popular worse-CF basin must not beat a better singleton
+// under free_energy_strict; legacy acf elects the large decoy.
+TEST(ClusterBasinScore, StrictPrefersBetterCFOverPopularDecoy) {
+    const double T = 300.0;
+    // Near-native-like singleton (better CF).
+    const std::vector<double> native_like = {-80.0};
+    // Large over-burial decoy cluster: worse min CF, many exact clones.
+    std::vector<double> popular_decoy;
+    popular_decoy.reserve(64);
+    for (int i = 0; i < 64; ++i)
+        popular_decoy.push_back(-60.0);
+
+    const double G_native_strict =
+        flexaids::soft_beta::cluster_basin_score(native_like, T, /*strict=*/true);
+    const double G_decoy_strict =
+        flexaids::soft_beta::cluster_basin_score(popular_decoy, T, /*strict=*/true);
+    EXPECT_LT(G_native_strict, G_decoy_strict);
+
+    const double G_native_legacy =
+        flexaids::soft_beta::cluster_basin_score(native_like, T, /*strict=*/false);
+    const double G_decoy_legacy =
+        flexaids::soft_beta::cluster_basin_score(popular_decoy, T, /*strict=*/false);
+    // Multiplicity inflation at T=300: 64 clones deepen acf by ~T ln 64 ≈ 1240.
+    EXPECT_LT(G_decoy_legacy, G_native_legacy);
+}
+
+TEST(ClusterBasinScore, StrictEqualsLegacyOnSingleton) {
+    const std::vector<double> one = {-42.0};
+    const double T = 298.0;
+    EXPECT_NEAR(
+        flexaids::soft_beta::cluster_basin_score(one, T, true),
+        flexaids::soft_beta::cluster_basin_score(one, T, false),
+        1e-12);
+}
+
+// Default-OFF parity: without FLEXAIDDS_ACF_STRICT, env gate uses legacy acf
+// (multiplicity can deepen G̃). With ACF_STRICT=1, exact dups do not deepen.
+TEST(ClusterBasinScore, EnvDefaultOffIsLegacyParity) {
+    const char* prev_strict = std::getenv("FLEXAIDDS_ACF_STRICT");
+    const char* prev_legacy = std::getenv("FLEXAIDDS_ELECT_LEGACY_ACF");
+    ::unsetenv("FLEXAIDDS_ACF_STRICT");
+    ::unsetenv("FLEXAIDDS_ELECT_LEGACY_ACF");
+
+    EXPECT_FALSE(flexaids::soft_beta::cluster_use_free_energy_strict_from_env());
+
+    const std::vector<double> once = {-50.0, -48.0};
+    std::vector<double> cloned;
+    for (int k = 0; k < 8; ++k)
+        for (double e : once) cloned.push_back(e);
+    const double T = 300.0;
+    const double G_once =
+        flexaids::soft_beta::cluster_basin_score_from_env(once, T);
+    const double G_clone =
+        flexaids::soft_beta::cluster_basin_score_from_env(cloned, T);
+    // Legacy acf: clones deepen free energy.
+    EXPECT_LT(G_clone, G_once - 1.0);
+
+    ::setenv("FLEXAIDDS_ACF_STRICT", "1", 1);
+    EXPECT_TRUE(flexaids::soft_beta::cluster_use_free_energy_strict_from_env());
+    const double Gs_once =
+        flexaids::soft_beta::cluster_basin_score_from_env(once, T);
+    const double Gs_clone =
+        flexaids::soft_beta::cluster_basin_score_from_env(cloned, T);
+    EXPECT_NEAR(Gs_once, Gs_clone, 1e-9);
+
+    if (prev_strict) ::setenv("FLEXAIDDS_ACF_STRICT", prev_strict, 1);
+    else ::unsetenv("FLEXAIDDS_ACF_STRICT");
+    if (prev_legacy) ::setenv("FLEXAIDDS_ELECT_LEGACY_ACF", prev_legacy, 1);
+    else ::unsetenv("FLEXAIDDS_ELECT_LEGACY_ACF");
+}
+
 TEST(SoftBetaElection, ElectsMinGAndSkipsNonFinite) {
     using flexaids::soft_beta::ModeCandidate;
     std::vector<ModeCandidate> modes(3);

@@ -181,15 +181,12 @@ void cluster(FA_Global* FA, GB_Global* GB, VC_Global* VC, chromosome* chrom, gen
 		// longer inflate a basin. Same units, same T; ranking only changes
 		// where multiplicity was the deciding term.
 		//
-		// Set FLEXAIDDS_ELECT_LEGACY_ACF=1 to restore the legacy diagnostic
-		// path bit-identically (A/B control against pre-fix baselines).
+		// E1b opt-in: FLEXAIDDS_ACF_STRICT=1 → free_energy_strict emission.
+		// Default OFF keeps legacy acf (campaign / pre-E1b bit-parity).
 		Clus_TCF[num_of_clusters] = chrom[j].app_evalue;
 		Clus_ACF[num_of_clusters] = chrom[j].app_evalue;
 		if (FA->temperature > 0 && FA->beta > 0.0) {
-			static const bool legacy_acf = [] {
-				const char* e = std::getenv("FLEXAIDDS_ELECT_LEGACY_ACF");
-				return e && std::atoi(e) != 0;
-			}();
+			// cluster_basin_score_from_env (SoftBetaFreeEnergy.h).
 			std::vector<double> member_energies;
 			member_energies.reserve(static_cast<size_t>(num_chrom));
 			for (int k = 0; k < num_chrom; ++k) {
@@ -198,10 +195,8 @@ void cluster(FA_Global* FA, GB_Global* GB, VC_Global* VC, chromosome* chrom, gen
 			}
 			const double T_soft = static_cast<double>(FA->temperature);
 			Clus_ACF[num_of_clusters] =
-				legacy_acf
-					? flexaids::soft_beta::acf(member_energies, T_soft)
-					: flexaids::soft_beta::free_energy_strict(member_energies,
-					                                          T_soft).G;
+				flexaids::soft_beta::cluster_basin_score_from_env(
+					member_energies, T_soft);
 		}
 		num_of_clusters++;
 

@@ -1189,6 +1189,24 @@ flexaids_add_unit_test(test_protocol_config
         TEST_NAME SoftWallTests
     )
 
+    # test_search_coverage — S1 FLEXAIDDS_SEARCH_COVERAGE knobs (header-only)
+    flexaids_add_unit_test(test_search_coverage
+        SOURCES tests/test_search_coverage.cpp
+        TEST_NAME SearchCoverageTests
+    )
+
+    # test_sampling_coverage — coarse-init seed ranking / coverage boost (header-only)
+    flexaids_add_unit_test(test_sampling_coverage
+        SOURCES tests/test_sampling_coverage.cpp
+        TEST_NAME SamplingCoverageTests
+    )
+
+    # test_emission_guards — pathological emission/RMSD fail-closed (header-only)
+    flexaids_add_unit_test(test_emission_guards
+        SOURCES tests/test_emission_guards.cpp
+        TEST_NAME EmissionGuardsTests
+    )
+
     # test_metal_coordination — Metal ion coordination potential tests (header-only)
     flexaids_add_unit_test(test_metal_coordination
         SOURCES tests/test_metal_coordination.cpp
