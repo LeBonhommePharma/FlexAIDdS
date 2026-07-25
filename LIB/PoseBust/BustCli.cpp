@@ -54,6 +54,9 @@ bool is_excluded_from_pb_pass(std::string_view col) {
 }
 
 // Version-pinned canonical mandatory dock-suite check names (PoseBusters redock).
+// Pin matches bust 0.6.5 `bust --outfmt csv` headers (see redock.yml + captured
+// campaign CSVs). Protein clash is gated by minimum_distance_to_protein and
+// volume_overlap_with_protein — there is NO column named no_protein_clashes.
 // Missing/duplicate headers fail closed. Extend only with deliberate pin bumps.
 const std::vector<std::string>& mandatory_pb_check_columns() {
     static const std::vector<std::string> k = {
@@ -70,7 +73,6 @@ const std::vector<std::string>& mandatory_pb_check_columns() {
         "internal_energy",
         "protein-ligand_maximum_distance",
         "minimum_distance_to_protein",
-        "no_protein_clashes",
         "volume_overlap_with_protein",
     };
     return k;
@@ -224,9 +226,14 @@ BustCliResult run_upstream_bust(const std::string& pred_sdf,
         }
     }
 
-    auto cap = run_argv_capture(argv, /*discard_stderr=*/true);
+    // Keep stderr: empty stdout often means RDKit load/kekulize failure; without
+    // stderr the gate is uninterpretable (silent empty CSV).
+    auto cap = run_argv_capture(argv, /*discard_stderr=*/false);
     if (!cap.ok) {
         r.error = "exec(bust) failed";
+        if (!cap.stderr_text.empty()) {
+            r.error += ";stderr=" + cap.stderr_text.substr(0, 500);
+        }
         r.backend = "error";
         r.exit_status = -1;
         return r;
@@ -251,10 +258,31 @@ BustCliResult run_upstream_bust(const std::string& pred_sdf,
             // Hash via temp if openssl path failed on empty write.
             r.raw_csv_sha256 = sha256_via_openssl(raw_path);
         }
+        // Persist stderr sidecar when present (empty-CSV diagnosis).
+        if (!cap.stderr_text.empty()) {
+            const std::string err_path =
+                (fs::path(sidecar_dir) / (stem + "_bust_stderr.txt")).string();
+            std::ofstream eofs(err_path);
+            if (eofs) eofs << cap.stderr_text;
+        }
     }
 
     // Schema validation (raw_csv already preserved above).
     apply_bust_csv_schema(out, r);
+    if (out.empty() && !cap.stderr_text.empty()) {
+        // apply_bust_csv_schema sets "bust produced empty CSV"; attach stderr.
+        std::string snip = cap.stderr_text;
+        // Collapse newlines for single-line failed_keys/error fields.
+        for (char& c : snip) {
+            if (c == '\n' || c == '\r') c = ' ';
+        }
+        if (snip.size() > 400) snip.resize(400);
+        if (!r.error.empty()) r.error += ";";
+        r.error += "stderr=" + snip;
+        if (!r.failed_keys.empty()) r.failed_keys += ';';
+        r.failed_keys += "empty_csv_with_stderr";
+        r.pb_pass = false;
+    }
     if (rc != 0) {
         if (!r.error.empty()) r.error += ";";
         r.error += "bust pclose_status=" + std::to_string(rc);

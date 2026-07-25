@@ -25,6 +25,7 @@
 
 #ifndef _WIN32
 #include <fcntl.h>
+#include <sys/select.h>
 #include <sys/wait.h>
 #include <unistd.h>
 #endif
@@ -106,16 +107,18 @@ shell_quote_checked(std::string_view path) {
     return shell_quote_raw(path);
 }
 
-/// Result of capturing a child process stdout (no shell).
+/// Result of capturing a child process stdout/stderr (no shell).
 struct CapturedOutput {
     int         exit_code = -1;
     std::string stdout_text;
+    std::string stderr_text;  // filled when discard_stderr=false
     bool        ok = false;  // true if process started and exited normally
 };
 
-/// Run argv via fork+execvp with no shell. Captures stdout; stderr is
-/// inherited (or discarded if discard_stderr). Returns empty-ok=false on
-/// fork/exec failure. On Windows, returns ok=false (not implemented).
+/// Run argv via fork+execvp with no shell. Captures stdout always.
+/// If discard_stderr=true, child stderr → /dev/null.
+/// If discard_stderr=false, child stderr is captured into stderr_text.
+/// Returns empty-ok=false on fork/exec failure. On Windows, returns ok=false.
 [[nodiscard]] inline CapturedOutput
 run_argv_capture(const std::vector<std::string>& argv,
                  bool discard_stderr = true) {
@@ -125,25 +128,41 @@ run_argv_capture(const std::vector<std::string>& argv,
         if (validate_exec_path(a) != PathReject::Ok) return out;
     }
 #ifndef _WIN32
-    int pipefd[2];
-    if (::pipe(pipefd) != 0) return out;
+    int out_pipe[2];
+    int err_pipe[2] = {-1, -1};
+    if (::pipe(out_pipe) != 0) return out;
+    if (!discard_stderr) {
+        if (::pipe(err_pipe) != 0) {
+            ::close(out_pipe[0]);
+            ::close(out_pipe[1]);
+            return out;
+        }
+    }
 
     pid_t pid = ::fork();
     if (pid < 0) {
-        ::close(pipefd[0]);
-        ::close(pipefd[1]);
+        ::close(out_pipe[0]);
+        ::close(out_pipe[1]);
+        if (!discard_stderr) {
+            ::close(err_pipe[0]);
+            ::close(err_pipe[1]);
+        }
         return out;
     }
     if (pid == 0) {
-        ::close(pipefd[0]);
-        ::dup2(pipefd[1], STDOUT_FILENO);
-        ::close(pipefd[1]);
+        ::close(out_pipe[0]);
+        ::dup2(out_pipe[1], STDOUT_FILENO);
+        ::close(out_pipe[1]);
         if (discard_stderr) {
             int devnull = ::open("/dev/null", O_WRONLY);
             if (devnull >= 0) {
                 ::dup2(devnull, STDERR_FILENO);
                 ::close(devnull);
             }
+        } else {
+            ::close(err_pipe[0]);
+            ::dup2(err_pipe[1], STDERR_FILENO);
+            ::close(err_pipe[1]);
         }
         ::close(STDIN_FILENO);
         int devnull_in = ::open("/dev/null", O_RDONLY);
@@ -162,13 +181,49 @@ run_argv_capture(const std::vector<std::string>& argv,
         ::_exit(127);
     }
 
-    ::close(pipefd[1]);
+    ::close(out_pipe[1]);
+    if (!discard_stderr) ::close(err_pipe[1]);
+
+    // Drain both pipes to avoid child blocking on a full stderr pipe.
     char buf[4096];
-    ssize_t n;
-    while ((n = ::read(pipefd[0], buf, sizeof(buf))) > 0) {
-        out.stdout_text.append(buf, static_cast<size_t>(n));
+    bool out_open = true;
+    bool err_open = !discard_stderr;
+    while (out_open || err_open) {
+        fd_set rfds;
+        FD_ZERO(&rfds);
+        int maxfd = -1;
+        if (out_open) {
+            FD_SET(out_pipe[0], &rfds);
+            maxfd = out_pipe[0];
+        }
+        if (err_open) {
+            FD_SET(err_pipe[0], &rfds);
+            if (err_pipe[0] > maxfd) maxfd = err_pipe[0];
+        }
+        int sel = ::select(maxfd + 1, &rfds, nullptr, nullptr, nullptr);
+        if (sel < 0) {
+            if (errno == EINTR) continue;
+            break;
+        }
+        if (out_open && FD_ISSET(out_pipe[0], &rfds)) {
+            ssize_t n = ::read(out_pipe[0], buf, sizeof(buf));
+            if (n > 0) {
+                out.stdout_text.append(buf, static_cast<size_t>(n));
+            } else {
+                out_open = false;
+            }
+        }
+        if (err_open && FD_ISSET(err_pipe[0], &rfds)) {
+            ssize_t n = ::read(err_pipe[0], buf, sizeof(buf));
+            if (n > 0) {
+                out.stderr_text.append(buf, static_cast<size_t>(n));
+            } else {
+                err_open = false;
+            }
+        }
     }
-    ::close(pipefd[0]);
+    ::close(out_pipe[0]);
+    if (!discard_stderr) ::close(err_pipe[0]);
 
     int status = 0;
     while (::waitpid(pid, &status, 0) == -1) {

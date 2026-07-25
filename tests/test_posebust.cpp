@@ -154,17 +154,20 @@ TEST(PdbCoords, RejectsNonFiniteAndJunk) {
 namespace {
 
 std::string synthetic_full_pb_header() {
-    // Version-pinned mandatory set plus metadata columns.
+    // Version-pinned mandatory set (bust 0.6.5 redock CSV) plus metadata.
+    // Protein clash columns: minimum_distance_to_protein + volume_overlap_with_protein.
+    // There is no no_protein_clashes column in real bust output.
     return "molecule,mol_pred_loaded,mol_cond_loaded,sanitization,inchi_convertible,"
            "all_atoms_connected,bond_lengths,bond_angles,internal_steric_clash,"
            "aromatic_ring_flatness,double_bond_flatness,internal_energy,"
            "protein-ligand_maximum_distance,minimum_distance_to_protein,"
-           "no_protein_clashes,volume_overlap_with_protein,rmsd_≤_2å";
+           "volume_overlap_with_protein,rmsd_≤_2å";
 }
 
 std::string synthetic_full_pb_true_row() {
+    // 1 molecule + 14 mandatory booleans + rmsd (excluded from pb_pass) = 16 fields
     return "m1,True,True,True,True,True,True,True,True,True,True,True,"
-           "True,True,True,True,1.0";
+           "True,True,True,1.0";
 }
 
 }  // namespace
@@ -178,6 +181,73 @@ TEST(BustCliSchema, PassesWithFullMandatorySet) {
     EXPECT_EQ(r.raw_csv, csv);
     EXPECT_GT(r.n_checks, 0);
     EXPECT_EQ(r.n_fail, 0);
+    EXPECT_EQ(r.failed_keys.find("no_protein_clashes"), std::string::npos);
+}
+
+// Real bust 0.6.5 redock header (captured from pinned .venv-posebusters).
+// Must schema-accept without the fictional no_protein_clashes column.
+TEST(BustCliSchema, AcceptsRealBust065HeaderAllTrue) {
+    const std::string header =
+        "file,molecule,position,mol_pred_loaded,mol_true_loaded,mol_cond_loaded,"
+        "sanitization,inchi_convertible,all_atoms_connected,no_radicals,"
+        "molecular_formula,molecular_bonds,double_bond_stereochemistry,"
+        "tetrahedral_chirality,bond_lengths,bond_angles,internal_steric_clash,"
+        "aromatic_ring_flatness,non-aromatic_ring_non-flatness,double_bond_flatness,"
+        "internal_energy,protein-ligand_maximum_distance,minimum_distance_to_protein,"
+        "minimum_distance_to_organic_cofactors,minimum_distance_to_inorganic_cofactors,"
+        "minimum_distance_to_waters,volume_overlap_with_protein,"
+        "volume_overlap_with_organic_cofactors,volume_overlap_with_inorganic_cofactors,"
+        "volume_overlap_with_waters,rmsd_≤_2å";
+    // 3 meta + 27 booleans + rmsd excluded = 31 cols; all checks True, rmsd 1.0
+    const std::string row =
+        "pred.sdf,m1,0,"
+        "True,True,True,True,True,True,True,True,True,True,True,"
+        "True,True,True,True,True,True,True,True,True,True,True,True,"
+        "True,True,True,True,1.0";
+    const std::string csv = header + "\n" + row + "\n";
+    ASSERT_EQ(header.find("no_protein_clashes"), std::string::npos);
+    ASSERT_NE(header.find("minimum_distance_to_protein"), std::string::npos);
+    ASSERT_NE(header.find("volume_overlap_with_protein"), std::string::npos);
+
+    BustCliResult r;
+    apply_bust_csv_schema(csv, r);
+    EXPECT_TRUE(r.pb_pass) << r.error << " failed=" << r.failed_keys;
+    EXPECT_EQ(r.failed_keys.find("mandatory_checks_missing"), std::string::npos)
+        << r.failed_keys;
+    EXPECT_GT(r.n_checks, 0);
+    EXPECT_EQ(r.n_fail, 0);
+}
+
+TEST(BustCliSchema, RealHeaderFalseChemistryFailsClosed) {
+    const std::string header =
+        "file,molecule,position,mol_pred_loaded,mol_true_loaded,mol_cond_loaded,"
+        "sanitization,inchi_convertible,all_atoms_connected,no_radicals,"
+        "molecular_formula,molecular_bonds,double_bond_stereochemistry,"
+        "tetrahedral_chirality,bond_lengths,bond_angles,internal_steric_clash,"
+        "aromatic_ring_flatness,non-aromatic_ring_non-flatness,double_bond_flatness,"
+        "internal_energy,protein-ligand_maximum_distance,minimum_distance_to_protein,"
+        "minimum_distance_to_organic_cofactors,minimum_distance_to_inorganic_cofactors,"
+        "minimum_distance_to_waters,volume_overlap_with_protein,"
+        "volume_overlap_with_organic_cofactors,volume_overlap_with_inorganic_cofactors,"
+        "volume_overlap_with_waters,rmsd_≤_2å";
+    // bond_angles=False; rest True
+    const std::string row =
+        "pred.sdf,m1,0,"
+        "True,True,True,True,True,True,True,True,True,True,True,"
+        "True,False,True,True,True,True,True,True,True,True,True,True,"
+        "True,True,True,True,1.0";
+    BustCliResult r;
+    apply_bust_csv_schema(header + "\n" + row + "\n", r);
+    EXPECT_FALSE(r.pb_pass);
+    EXPECT_NE(r.failed_keys.find("bond_angles"), std::string::npos) << r.failed_keys;
+    EXPECT_EQ(r.failed_keys.find("mandatory_checks_missing"), std::string::npos);
+}
+
+TEST(BustCliSchema, EmptyCsvFailsClosed) {
+    BustCliResult r;
+    apply_bust_csv_schema("", r);
+    EXPECT_FALSE(r.pb_pass);
+    EXPECT_NE(r.error.find("empty"), std::string::npos) << r.error;
 }
 
 TEST(BustCliSchema, RejectsDuplicateHeaderPreservesRaw) {
