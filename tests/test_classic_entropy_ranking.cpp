@@ -342,15 +342,15 @@ TEST(ClusterBasinScore, StrictEqualsLegacyOnSingleton) {
         1e-12);
 }
 
-// Parity-safe default OFF: unset env uses legacy acf (multiplicity inflation).
-// FLEXAIDDS_ACF_STRICT=1 enables E1b free_energy_strict for rank_miss pilot.
-TEST(ClusterBasinScore, EnvDefaultOffIsLegacyParity) {
+// Product default ON: unset env uses free_energy_strict (no multiplicity
+// inflation). LEGACY_ACF=1 restores pre-E1b acf for campaign A/B.
+TEST(ClusterBasinScore, EnvDefaultOnIsStrictNoMultiplicityInflation) {
     const char* prev_strict = std::getenv("FLEXAIDDS_ACF_STRICT");
     const char* prev_legacy = std::getenv("FLEXAIDDS_ELECT_LEGACY_ACF");
     ::unsetenv("FLEXAIDDS_ACF_STRICT");
     ::unsetenv("FLEXAIDDS_ELECT_LEGACY_ACF");
 
-    EXPECT_FALSE(flexaids::soft_beta::cluster_use_free_energy_strict_from_env());
+    EXPECT_TRUE(flexaids::soft_beta::cluster_use_free_energy_strict_from_env());
 
     const std::vector<double> once = {-50.0, -48.0};
     std::vector<double> cloned;
@@ -361,21 +361,17 @@ TEST(ClusterBasinScore, EnvDefaultOffIsLegacyParity) {
         flexaids::soft_beta::cluster_basin_score_from_env(once, T);
     const double G_clone =
         flexaids::soft_beta::cluster_basin_score_from_env(cloned, T);
-    // Legacy default: exact CF clones deepen G̃ (multiplicity inflation).
-    EXPECT_LT(G_clone, G_once - 1.0);
+    // Strict default: exact CF clones do not deepen G̃.
+    EXPECT_NEAR(G_once, G_clone, 1e-9);
 
-    ::setenv("FLEXAIDDS_ACF_STRICT", "1", 1);
-    EXPECT_TRUE(flexaids::soft_beta::cluster_use_free_energy_strict_from_env());
-    const double Gs_once =
-        flexaids::soft_beta::cluster_basin_score_from_env(once, T);
-    const double Gs_clone =
-        flexaids::soft_beta::cluster_basin_score_from_env(cloned, T);
-    // E1b opt-in: no multiplicity inflation.
-    EXPECT_NEAR(Gs_once, Gs_clone, 1e-9);
-
-    // LEGACY_ACF forces legacy even when ACF_STRICT=1.
     ::setenv("FLEXAIDDS_ELECT_LEGACY_ACF", "1", 1);
     EXPECT_FALSE(flexaids::soft_beta::cluster_use_free_energy_strict_from_env());
+    const double Gl_once =
+        flexaids::soft_beta::cluster_basin_score_from_env(once, T);
+    const double Gl_clone =
+        flexaids::soft_beta::cluster_basin_score_from_env(cloned, T);
+    // Legacy opt-out: multiplicity deepens free energy.
+    EXPECT_LT(Gl_clone, Gl_once - 1.0);
 
     if (prev_strict) ::setenv("FLEXAIDDS_ACF_STRICT", prev_strict, 1);
     else ::unsetenv("FLEXAIDDS_ACF_STRICT");
