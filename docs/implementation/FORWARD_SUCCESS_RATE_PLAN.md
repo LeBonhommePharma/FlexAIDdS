@@ -21,7 +21,7 @@
 | softβ+CAP@72d7 autonomous (83) | 12/83 (~15%) | **Confounded** (matrix+mode+multi-knob) |
 | com-cap fixed CAP=-130 (10 finished) | 1/10 (10%) | **UNCITABLE** — OOM dead run |
 
-**2026-07-25 Science conclusion (load-bearing):** election/`free_energy_strict` gap is **closed** on this baseline (BCR≈genuine). **Sampling is the wall** (ceiling ~28%). Route to Wave 3 BCR raisers; wall oracle before memetic remains pacing. Do not re-open Softβ S1 as the primary rate lever.
+**2026-07-25 load-bearing notes:** Baseline shows BCR≈genuine (gap ~2 targets) and a **sampling ceiling ~28%**. Per OPS campaign methodology, this run **predates** `free_energy_strict` as the measured product default — **do not** cite 25.3% as proof the election fix worked; that remains **unmeasured** until a post-fix A/B. Route: E10 offline, wall oracle, then Wave 3 BCR. Softβ S1 is not the primary rate lever.
 
 **Targets (fair claim methodology):**  
 - Headline comparative: **S_top10** median over 10k bootstraps (3Dsig family).  

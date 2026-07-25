@@ -145,3 +145,4 @@ Testing/
 # Compiled test binaries accidentally captured under validation evidence
 validation_evidence/**/test_cmaes_search_clang
 validation_evidence/**/*.o
+flexaid_out.rrg

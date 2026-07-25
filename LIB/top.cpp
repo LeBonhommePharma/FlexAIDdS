@@ -658,6 +658,8 @@ int main(int argc, char **argv){
 	FA->intramolecular=1;
 	FA->solventterm=0.0f;
 	FA->use_elec=0;
+	FA->use_memetic=0;
+	FA->memetic_armed_at_gen=0;
 	FA->dielectric=4.0f;
 
 	FA->use_gist=0;
