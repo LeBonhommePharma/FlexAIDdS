@@ -1,6 +1,7 @@
 # iCloud benchmark storage (production)
 
-> **Source of truth:** `AGENTS.md` § *Benchmark storage (Non-Negotiable) — local-first / thin-iCloud*. This page expands paths and operator runbooks.
+> **Source of truth:** `AGENTS.md` § *Benchmark storage (Non-Negotiable) — local-first / thin-iCloud*. This page expands paths and operator runbooks.  
+> **Comparative science hub:** [`implementation/COMPARATIVE_SCIENCE_README.md`](implementation/COMPARATIVE_SCIENCE_README.md).
 
 **Architecture (enforced default):**
 

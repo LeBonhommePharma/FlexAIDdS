@@ -1,6 +1,7 @@
 {
   "schema_version": 1,
   "updated": "2026-07-25",
+  "hub": "docs/implementation/COMPARATIVE_SCIENCE_README.md",
   "goal_methodology": "docs/implementation/COMPARATIVE_GOAL_METHODOLOGY.md",
   "campaign_family": "comparative_jcim2015_vs_first_entropy_vs_flexaidds",
   "matrix": {

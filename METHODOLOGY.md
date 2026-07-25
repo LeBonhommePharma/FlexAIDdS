@@ -8,6 +8,9 @@ procedure here changes, it changes here first and everything else re-reads it. T
 **agent-independence**: the same task run by any agent produces the same result because all of
 them execute the identical procedure below.
 
+**Comparative / baseline science entry point (A/B/C, genuine rates, pipeline):**  
+`docs/implementation/COMPARATIVE_SCIENCE_README.md` (does not replace this file’s gates).
+
 Status of this document is authoritative as of the commit that carries it. Do not fork the
 numbers into other files — reference `METHODOLOGY.md §N`.
 

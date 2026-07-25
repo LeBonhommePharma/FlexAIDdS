@@ -1,10 +1,14 @@
 # Post-merge genuine baseline re-aggregation attempt (2026-07-25)
 
-**Status:** **PROCEDURE ONLY** — re-aggregation **did not run** (local result trees absent).  
-**data_missing:** `true`  
+> **PROCEDURE ONLY — no measured post-merge rates.**  
+> `data_missing=true` · `reaggregate_ran=false` · Do **not** invent N / genuine % / BCR from this file.
+
+**Hub:** [`COMPARATIVE_SCIENCE_README.md`](COMPARATIVE_SCIENCE_README.md)  
 **Compared against:** pre-merge genuine baseline in [`BASELINE_GENUINE_2026-07-24.md`](BASELINE_GENUINE_2026-07-24.md)  
 **Campaign baseline id:** `v_autonomous_20260724_160919`  
 **Matrix pin (claim comparisons):** **`9dc93717dfed0698006d88dd6a9627bc`** (9dc9)
+
+This document records **how** to re-aggregate once campaign trees are local. It is **not** a results table.
 
 ---
 
@@ -253,8 +257,9 @@ Fill and promote this section (replace procedure-only status):
 
 ## Relation to comparative pipeline
 
+- Hub: [`COMPARATIVE_SCIENCE_README.md`](COMPARATIVE_SCIENCE_README.md).  
 - This genuine table is **not** the three-engine **S_top10** comparative table (P5).  
-- Comparative gates remain in `CAMPAIGN_STATUS_2026-07-25.md` (P2 hold on oracle).  
+- Comparative gates remain in [`CAMPAIGN_STATUS_2026-07-25.md`](CAMPAIGN_STATUS_2026-07-25.md) (P2 hold on oracle).  
 - Matrix for claim/genuine comparisons stays **9dc9**; do not compare to **72d7** packing-fork rates without labeling confounds.
 
 ---

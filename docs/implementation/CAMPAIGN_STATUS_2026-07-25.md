@@ -1,10 +1,12 @@
 # Campaign status — comparative FlexAID / FlexAIDdS (2026-07-25)
 
 **Status:** **NO LIVE SCIENCE DOCK.** Comparative N=85 three-arm is **blocked** until pre-gates pass.  
-**FlexAIDdS HEAD:** `99d17e4f` (`main`) · pipeline branch `feat/comparative-p0-p5-pipeline`  
+**Hub (entry point):** [`COMPARATIVE_SCIENCE_README.md`](COMPARATIVE_SCIENCE_README.md)  
+**FlexAIDdS HEAD (doc snapshot):** `99d17e4f` (`main`) · pipeline branch `feat/comparative-p0-p5-pipeline`  
 **Goal design (phases G1–G9):** [`COMPARATIVE_GOAL_METHODOLOGY.md`](COMPARATIVE_GOAL_METHODOLOGY.md)  
 **Arm specs:** [`COMPARATIVE_BENCHMARK_METHODOLOGY.md`](COMPARATIVE_BENCHMARK_METHODOLOGY.md) · pins [`arm_pins.json`](arm_pins.json)  
 **Clean genuine baseline:** [`BASELINE_GENUINE_2026-07-24.md`](BASELINE_GENUINE_2026-07-24.md) — **25.3%** (20/79), BCR 27.8%, seed-echo 0  
+**Post-merge re-agg:** [`BASELINE_GENUINE_POSTMERGE_ATTEMPT.md`](BASELINE_GENUINE_POSTMERGE_ATTEMPT.md) — procedure-only (`data_missing=true`)  
 **Parents:** `3dsig_red_pair_protocol.md`, `METHODOLOGY.md`, Claude Science audit stack, `docs/ICLOUD_BENCHMARK_STORAGE.md`
 
 ### Pipeline gate snapshot (Science-verified 2026-07-25)
@@ -49,7 +51,7 @@ Do **not** mix top-1 with top-10 / S_top10 without labels.
 
 ## 2. Comparative arm pin (source of truth)
 
-Repo: **`/Users/lp.more/Projects/FlexAID`** (`https://github.com/LeBonhommePharma/FlexAID.git`)
+Repo: **`$HOME/Projects/FlexAID`** (`https://github.com/LeBonhommePharma/FlexAID.git`)
 
 | Arm | Science identity | Source | Commit (full) | TEMPER | CLUSTA | Binary path (local live) |
 |-----|------------------|--------|---------------|--------|--------|---------------------------|
@@ -184,9 +186,10 @@ Claude Science methodology: **mechanism / measurement / binary identity before c
 
 ## 8. References
 
+- **Hub:** [`COMPARATIVE_SCIENCE_README.md`](COMPARATIVE_SCIENCE_README.md)  
 - Gaudreault & Najmanovich, *JCIM* 2015, 55:1323–1336  
 - Morency, 3Dsig 2017  
-- `docs/implementation/COMPARATIVE_BENCHMARK_METHODOLOGY.md`  
-- `docs/implementation/3dsig_red_pair_protocol.md`  
+- [`COMPARATIVE_BENCHMARK_METHODOLOGY.md`](COMPARATIVE_BENCHMARK_METHODOLOGY.md)  
+- [`3dsig_red_pair_protocol.md`](3dsig_red_pair_protocol.md)  
 - `docs/ICLOUD_BENCHMARK_STORAGE.md`  
 - Archive notes: pilot8 analysis (BCR=0), SCIENCE_HOLD, C0_SUSPENDED  

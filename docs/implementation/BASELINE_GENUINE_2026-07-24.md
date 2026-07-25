@@ -1,5 +1,6 @@
 # Genuine Astex baseline — autonomous blind (2026-07-24 run)
 
+**Hub:** [`COMPARATIVE_SCIENCE_README.md`](COMPARATIVE_SCIENCE_README.md)  
 **Status:** recorded reference (pre-merge vs later PRs; not a 3Dsig S_top10 claim table).  
 **Recorded from:** Claude Science relay (2026-07-25); operator confirmation of completed 80/85 archive.  
 **Campaign id:** `v_autonomous_20260724_160919`  
@@ -42,7 +43,7 @@ Near-miss BCR heads worth inspection (election-gap class, not the main 20-point 
 |------|--------|
 | Pipeline gates | Wired; 17 unit tests; `--pipeline-dry` |
 | Live blocker | **P2** — needs real `native_cf_oracle_gate` JSON (`ok` / `exit_code` / `ranking_forbidden`), not empty/deferred |
-| Matrix for claim | **9dc9** (`9dc93717dfed0698006d88dd6a9627bc`) — same as this baseline era pin; do not confusewith 72d7 packing fork |
+| Matrix for claim | **9dc9** (`9dc93717dfed0698006d88dd6a9627bc`) — same as this baseline era pin; do not confuse with 72d7 packing fork |
 | This 25.3% figure | **Genuine S1-style**, autonomous — **not** a substitute for arm A/B **S_top10** comparative table |
 
 ---

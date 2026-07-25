@@ -1,5 +1,6 @@
 # Admission + Metrics Contract (Normative)
 
+**Comparative science hub:** `docs/implementation/COMPARATIVE_SCIENCE_README.md`  
 **Status:** Normative for claim-table aggregation and abstract / headline rates.  
 **Aligned with:** `benchmarks/protocols/three_engine_entropy_comparison.md` §1.4–§5, `AGENTS.md`, audit 2026-07-17.  
 **Enforcement:** `scripts/aggregate_claim_metrics.py` (fail-closed).

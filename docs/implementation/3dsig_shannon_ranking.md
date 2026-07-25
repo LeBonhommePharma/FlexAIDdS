@@ -1,7 +1,7 @@
 # 3Dsig 2017 comparative methodology — reproduction contract
 
-**Primary source (authoritative):**  
-`/Users/lp.more/Downloads/Morency_LP_3Dsig_2017.pdf`  
+**Comparative science hub:** [`COMPARATIVE_SCIENCE_README.md`](COMPARATIVE_SCIENCE_README.md)  
+**Primary source (authoritative):** `Morency_LP_3Dsig_2017.pdf` (local operator copy; not path-pinned in-repo)  
 L.-P. Morency, *The Impact of Conformational Entropy on the Accuracy of FlexAID in Binding Mode Prediction*, ISMB/ECCB 2017 — 3Dsig.
 
 **Non-negotiable:** claim / comparative ranking and success statistics for “FlexAID vs FlexAID+entropy (FlexAIDdS)” must **reproduce this deck**, not invent a parallel protocol.

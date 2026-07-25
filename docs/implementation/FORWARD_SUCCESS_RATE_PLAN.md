@@ -2,17 +2,19 @@
 
 **Status:** normative sequencing for OPS / Grok / Claude Code (analysis + next implementation order).  
 **Does not claim restored rates.** Incomplete runs are mechanism evidence only when labeled incomplete.  
-**Parents:** `METHODOLOGY.md`; `docs/implementation/COMPARATIVE_BENCHMARK_METHODOLOGY.md`;  
-`~/flexaidds_results/workorders/SYNTHESIS_opus5_audit_and_comcap_verdict_2026-07-24.md`;  
+**Hub (start here):** [`COMPARATIVE_SCIENCE_README.md`](COMPARATIVE_SCIENCE_README.md).  
+**Authoritative genuine baseline:** [`BASELINE_GENUINE_2026-07-24.md`](BASELINE_GENUINE_2026-07-24.md) — **20/79 = 25.3%**, BCR 27.8%, seed_echo 0.  
+**Parents:** `METHODOLOGY.md`; [`COMPARATIVE_BENCHMARK_METHODOLOGY.md`](COMPARATIVE_BENCHMARK_METHODOLOGY.md);  
+`$FLEXAIDDS_LOCAL_ROOT/workorders/SYNTHESIS_opus5_audit_and_comcap_verdict_2026-07-24.md` (when present);  
 `CAUSAL_ANALYSIS_rate_regression_2026-07-24.md`; `ROOTCAUSE_CORRECTED_2026-07-24.md`; Opus/Science handoffs.
 
 ---
 
 ## 0. Where we are (honest snapshot — incomplete trees)
 
-| Tree | Genuine (seed_echo=0, rmsd_h≤2) | Label |
+| Tree | Genuine (seed_echo=0, rank-0 ≤2 Å) | Label |
 |------|----------------------------------|--------|
-| **`v_autonomous_20260724_160919` (80/85 scored)** | **20/79 = 25.3%** | **Best clean full-ish baseline** — seed-echo **0**; BCR 22/79=27.8%; election gap **2** targets. Pre-merge vs later PRs. See `BASELINE_GENUINE_2026-07-24.md` |
+| **`v_autonomous_20260724_160919` (80/85 scored)** | **20/79 = 25.3%** | **Best clean full-ish baseline** — seed-echo **0**; BCR 22/79=27.8%; election gap **2** targets. Pre-merge vs later PRs. See [`BASELINE_GENUINE_2026-07-24.md`](BASELINE_GENUINE_2026-07-24.md) · hub [`COMPARATIVE_SCIENCE_README.md`](COMPARATIVE_SCIENCE_README.md) |
 | C0@9dc9 v4 (partial ~17) | **6/17 (~35%)** | Best partial **defined-cleft** signal; **not** full-85 |
 | C0@9dc9 v6 (partial ~11) | 3/11 (~27%) | Same binary as v4 on overlap — **sampling artifact**, not regression |
 | control noentropy (partial 17) | 4/17 (~24%) | 9dc9 |

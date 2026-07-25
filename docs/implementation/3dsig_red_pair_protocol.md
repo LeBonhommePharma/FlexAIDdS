@@ -1,5 +1,6 @@
 # 3Dsig red-pair reproduction protocol
 
+**Comparative science hub:** [`COMPARATIVE_SCIENCE_README.md`](COMPARATIVE_SCIENCE_README.md)  
 **Source deck:** `Morency_LP_3Dsig_2017.pdf` (ISMB/ECCB 2017 — 3Dsig)  
 **Contract parent:** `docs/implementation/3dsig_shannon_ranking.md`  
 **Goal:** Reproduce the **red** FlexAID vs FlexAID+entropy (FlexAIDdS) success rates only.  

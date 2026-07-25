@@ -1,10 +1,12 @@
 # Comparative goal methodology — how we fairly compare FlexAID (JCIM 2015), first entropy FlexAID, and FlexAIDdS
 
+**Hub (start here):** [`COMPARATIVE_SCIENCE_README.md`](COMPARATIVE_SCIENCE_README.md)  
 **Status:** normative **goal-fulfillment design** (methodology only; does not claim new rates).  
 **Audience:** every agent (Claude Science, Claude Code, Grok, Codex) and human operators.  
-**Parents:** `METHODOLOGY.md` §0/§3; `COMPARATIVE_BENCHMARK_METHODOLOGY.md`; `3dsig_red_pair_protocol.md`; `softbeta_election_policy.md`; `docs/ICLOUD_BENCHMARK_STORAGE.md`.  
+**Parents:** `METHODOLOGY.md` §0/§3; [`COMPARATIVE_BENCHMARK_METHODOLOGY.md`](COMPARATIVE_BENCHMARK_METHODOLOGY.md); `3dsig_red_pair_protocol.md`; `softbeta_election_policy.md`; `docs/ICLOUD_BENCHMARK_STORAGE.md`.  
 **Machine pins:** [`arm_pins.json`](arm_pins.json).  
-**Live status:** [`CAMPAIGN_STATUS_2026-07-25.md`](CAMPAIGN_STATUS_2026-07-25.md).
+**Live status:** [`CAMPAIGN_STATUS_2026-07-25.md`](CAMPAIGN_STATUS_2026-07-25.md).  
+**Genuine baseline:** [`BASELINE_GENUINE_2026-07-24.md`](BASELINE_GENUINE_2026-07-24.md) (20/79 = 25.3%).
 
 This document answers: *What does “done” mean for the comparative goal, and what procedure guarantees the comparison is scientifically valid?*
 

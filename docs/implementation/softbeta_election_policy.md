@@ -1,5 +1,6 @@
 # Softβ election policy (post pilot8)
 
+**Comparative science hub:** [`COMPARATIVE_SCIENCE_README.md`](COMPARATIVE_SCIENCE_README.md)  
 **Status:** production DatasetRunner Softβ S1 is **feature-flagged OFF by default**.  
 **Shared math:** `LIB/SoftBetaFreeEnergy.h`  
 **Parent contracts:** `docs/classic_entropy_ranking.md`, `docs/implementation/3dsig_shannon_ranking.md`

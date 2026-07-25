@@ -1,7 +1,8 @@
 # Comparative benchmarking methodology — FlexAID 2015 vs first Shannon/soft-β entropy vs FlexAIDdS
 
+**Hub (entry point):** [`COMPARATIVE_SCIENCE_README.md`](COMPARATIVE_SCIENCE_README.md)  
 **Status:** normative protocol for fair, objective three-arm comparison (methodology only; does not claim new dock rates).  
-**Goal-fulfillment design (phases, G1–G9 acceptance, decision tree):** [`COMPARATIVE_GOAL_METHODOLOGY.md`](COMPARATIVE_GOAL_METHODOLOGY.md) — **start there** for how we ensure the comparison is valid end-to-end.  
+**Goal-fulfillment design (phases, G1–G9 acceptance, decision tree):** [`COMPARATIVE_GOAL_METHODOLOGY.md`](COMPARATIVE_GOAL_METHODOLOGY.md) — how we ensure the comparison is valid end-to-end.  
 **Machine pins:** [`arm_pins.json`](arm_pins.json). **Live status:** [`CAMPAIGN_STATUS_2026-07-25.md`](CAMPAIGN_STATUS_2026-07-25.md).  
 **Parents:** `METHODOLOGY.md` §0/§3; `docs/implementation/3dsig_red_pair_protocol.md` §§1–2; `docs/implementation/3dsig_shannon_ranking.md` §§1–2; `docs/implementation/softbeta_election_policy.md`; `docs/classic_entropy_ranking.md`.  
 **Published anchors:** Gaudreault & Najmanovich, *J. Chem. Inf. Model.* **55**, 1323–1336 (2015), doi:10.1021/acs.jcim.5b00078; Morency, 3Dsig/ISMB-ECCB 2017 deck (`Morency_LP_3Dsig_2017.pdf`).  
