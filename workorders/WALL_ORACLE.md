@@ -38,3 +38,8 @@
 ## Gate consequence
 
 **STOP before memetic / W3 sampling that depends on wall un-cap.** Re-diagnose wall term; do not set FLEXAIDDS_WALL_PILOT_PASS=1.
+
+## Follow-up (rebuild retest)
+
+Rebuilt `probe_cf` and re-scored 1K3U decoy OFF vs ON: **identical** `cf_total` and `cf_wal=32.148` (below `WAL_CONTACT_CAP=50`). So on these falsemin poses the wall is **not saturating**; un-capping cannot change dCF. Flag is wired in `vcfunction.cpp` but **ineffective on this panel**. Methodology STOP stands: do not enable memetic / WALL_PILOT_PASS until a panel with saturating wall contacts is designed or wall physics is re-diagnosed.
+
