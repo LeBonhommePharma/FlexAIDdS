@@ -83,6 +83,19 @@ using it voids the claim).
   disagrees and shows a large election gap, STOP and reconcile before touching sampling.
 
 ### STEP 2 — W2 wall oracle: decide the steric-wall un-cap (SCORE-ONLY, no dock)
+
+> **2026-07-25 correction (B3):** `FLEXAIDDS_WAL_COERCIVE` is **structurally unpassable**
+> as a Voronoi-wall un-cap (per-pair cap; deep clashes not Voronoi-visible). Do **not**
+> re-run WAL_COERCIVE expecting OFF≠ON. **Replacement burial/steric oracle:** one-variable
+> `FLEXAIDDS_PB_CLASH_WEIGHT` via `scripts/pb_clash_burial_oracle.py` (production LOCCLF
+> configs). See `workorders/PB_CLASH_ORACLE.md` and `WALL_ORACLE_FAIL_EXPLAINED.md`.
+> Memetic / `WALL_PILOT_PASS` remain blocked until a **strong** burial oracle (non-trivial
+> `cf_clash`) PASSes — not micro-ΔdCF alone.
+>
+> **STEP 3 BOOM note (B1):** claim path emits `boom_inject_fraction: 0.0` deliberately;
+> inject requires `interval>0 && fraction>0`. Interval-only pilots are invalid BOOM tests.
+> Env `FLEXAIDDS_BOOM_FRAC` overrides JSON (use 0.05–0.2 only; never 1.0 blind).
+
   WHY FIRST: WAL_CONTACT_CAP=50.0 (soft_wall.h:13) makes the wall SATURATE at exactly 1.000 A
   overlap while CF.com is unbounded below (per-atom floor -198.9) -> past 1 A, deeper burial is FREE.
   Memetic refinement is INTERLOCKED behind this (FLEXAIDDS_MEMETIC=1 is a no-op without
