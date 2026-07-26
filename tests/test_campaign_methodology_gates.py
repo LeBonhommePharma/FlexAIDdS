@@ -91,6 +91,20 @@ def test_pb_clash_oracle_workorder_present():
     assert "PASS" in t or "FAIL" in t
 
 
+def test_inversion_map_script_and_workorder():
+    script = REPO / "scripts" / "native_elected_cf_inversion_map.py"
+    assert script.is_file()
+    text = script.read_text(encoding="utf-8")
+    assert "SCORING-LOCKED" in text and "SEARCH-MISS" in text
+    assert "probe_cf" in text and "dock_config" in text
+    wo = REPO / "workorders" / "INVERSION_MAP.md"
+    assert wo.is_file()
+    wt = wo.read_text(encoding="utf-8")
+    assert "SEARCH-MISS" in wt
+    # must not claim full-85
+    assert "full-85" in wt.lower() or "Full-85" in wt or "not claimed" in wt.lower()
+
+
 def test_next_campaign_step_is_single_lever_and_blocks_exhausted_paths():
     """NEXT_CAMPAIGN_STEP must name one primary experiment and ban closed gates."""
     p = REPO / "workorders" / "NEXT_CAMPAIGN_STEP.md"
