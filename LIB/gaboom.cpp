@@ -10,6 +10,7 @@
 #include "RngSeed.h"
 #include "ensemble_pipeline.h"
 #include "ProtocolConfig.h"
+#include "niche_distance.h"
 
 #include <random>
 #include <functional>
@@ -481,24 +482,16 @@ int GA(FA_Global* FA, GB_Global* GB,VC_Global* VC,chromosome** chrom,chromosome*
 	GB->sig_share = sqrt(GB->sig_share/(double)GB->num_genes)/(2.0*pow(GB->peaks,(1.0/(double)GB->num_genes)));
 	GB->sig_share /= GB->scale;
 	printf("SIGMA_SHARE=%f\n",GB->sig_share);
-	// G4.2: Cartesian ligand heavy-atom niche (env-OFF default). Gene-space calc_rmsp
-	// mixes cleft-grid ordinal (gene 0) with angular genes in one RMSP — structural
-	// defect (PHASE4_GATES_ACTUALIZED). When FLEXAIDDS_NICHE_CARTESIAN=1, replace
-	// sigma_share with Angstrom radius (default 2.0; FLEXAIDDS_NICHE_SIGMA_ANG).
-	if (const char* e = std::getenv("FLEXAIDDS_NICHE_CARTESIAN")) {
-		if (e[0] != '\0' && std::atoi(e) != 0) {
-			double ang = 2.0;
-			if (const char* s = std::getenv("FLEXAIDDS_NICHE_SIGMA_ANG")) {
-				const double v = std::atof(s);
-				if (v > 0.0) ang = v;
-			}
-			GB->sig_share = ang;
-			fprintf(stderr,
-			        "[NICHE-CART] enabled: sigma_share=%.4f A (ligand heavy-atom RMSD); "
-			        "gene-space RMSP niche OFF\n",
-			        GB->sig_share);
-			printf("[NICHE-CART] SIGMA_SHARE=%.4f A (Cartesian ligand RMSD)\n", GB->sig_share);
-		}
+	// G4.2: Cartesian ligand heavy-atom niche (env-OFF default). Gate lives in
+	// niche_distance.h (unit-tested). Gene-space calc_rmsp mixes cleft-grid
+	// ordinal (gene 0) with angular genes — PHASE4_GATES_ACTUALIZED defect.
+	if (flexaids::niche_cartesian_env_enabled()) {
+		GB->sig_share = flexaids::niche_cartesian_sigma_ang(2.0);
+		fprintf(stderr,
+		        "[NICHE-CART] enabled: sigma_share=%.4f A (ligand heavy-atom RMSD); "
+		        "gene-space RMSP niche OFF\n",
+		        GB->sig_share);
+		printf("[NICHE-CART] SIGMA_SHARE=%.4f A (Cartesian ligand RMSD)\n", GB->sig_share);
 	}
 	fflush(stdout);
 
@@ -2765,10 +2758,8 @@ void calculate_fitness(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* chr
 		   and is parallelised with OpenMP.
 		*/
 		// G4.2: optional Cartesian ligand RMSD niche (precompute coords once).
-		const bool niche_cart = []() {
-			const char* e = std::getenv("FLEXAIDDS_NICHE_CARTESIAN");
-			return e != nullptr && e[0] != '\0' && std::atoi(e) != 0;
-		}();
+		// Distance math: flexaids::niche_* in niche_distance.h (unit-tested).
+		const bool niche_cart = flexaids::niche_cartesian_env_enabled();
 		constexpr int kCoordStride = MAX_ATM_HET * 3;
 		std::vector<float> lig_xyz;
 		int n_lig_atoms = 0;
@@ -2797,14 +2788,7 @@ void calculate_fitness(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* chr
 				if (niche_cart) {
 					const float* a = &lig_xyz[static_cast<size_t>(pi) * kCoordStride];
 					const float* b = &lig_xyz[static_cast<size_t>(pj) * kCoordStride];
-					double s = 0.0;
-					for (int t = 0; t < n_lig_atoms; ++t) {
-						const double dx = static_cast<double>(a[t * 3 + 0] - b[t * 3 + 0]);
-						const double dy = static_cast<double>(a[t * 3 + 1] - b[t * 3 + 1]);
-						const double dz = static_cast<double>(a[t * 3 + 2] - b[t * 3 + 2]);
-						s += dx * dx + dy * dy + dz * dz;
-					}
-					prmsp = std::sqrt(s / static_cast<double>(n_lig_atoms));
+					prmsp = flexaids::niche_cartesian_rmsd(a, b, n_lig_atoms);
 				} else {
 					prmsp = calc_rmsp(GB->num_genes,
 					                 chrom[pi].genes, chrom[pj].genes,
@@ -2884,10 +2868,7 @@ void calculate_fitness(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* chr
 
 			const double w = GB->entropy_weight;
 
-			const bool niche_cart = []() {
-				const char* e = std::getenv("FLEXAIDDS_NICHE_CARTESIAN");
-				return e != nullptr && e[0] != '\0' && std::atoi(e) != 0;
-			}();
+			const bool niche_cart = flexaids::niche_cartesian_env_enabled();
 			constexpr int kCoordStride = MAX_ATM_HET * 3;
 			std::vector<float> lig_xyz;
 			int n_lig_atoms = 0;
@@ -2911,21 +2892,14 @@ void calculate_fitness(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* chr
 	shared(chrom, GB, FA, cleftgrid, max_bw, w, niche_cart, lig_xyz, n_lig_atoms, pshare_out)
 #endif
 			for (int pi = 0; pi < GB->num_chrom; pi++) {
-				// Niche sharing (PSHARE path or G4.2 Cartesian).
+				// Niche sharing via flexaids::niche_* (gene RMSP or Cartesian RMSD).
 				double pshare = 0.0;
 				for (int pj = 0; pj < GB->num_chrom; pj++) {
 					double prmsp = 0.0;
 					if (niche_cart) {
 						const float* a = &lig_xyz[static_cast<size_t>(pi) * kCoordStride];
 						const float* b = &lig_xyz[static_cast<size_t>(pj) * kCoordStride];
-						double s = 0.0;
-						for (int t = 0; t < n_lig_atoms; ++t) {
-							const double dx = static_cast<double>(a[t * 3 + 0] - b[t * 3 + 0]);
-							const double dy = static_cast<double>(a[t * 3 + 1] - b[t * 3 + 1]);
-							const double dz = static_cast<double>(a[t * 3 + 2] - b[t * 3 + 2]);
-							s += dx * dx + dy * dy + dz * dz;
-						}
-						prmsp = std::sqrt(s / static_cast<double>(n_lig_atoms));
+						prmsp = flexaids::niche_cartesian_rmsd(a, b, n_lig_atoms);
 					} else {
 						prmsp = calc_rmsp(GB->num_genes,
 						                 chrom[pi].genes, chrom[pj].genes,

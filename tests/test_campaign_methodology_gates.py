@@ -167,50 +167,92 @@ def test_next_campaign_step_is_single_lever_and_blocks_exhausted_paths():
     assert "CAMPAIGN_GATE_SUMMARY" in t or "E10" in t
     assert "probe_cf" in t and "dock_config" in t
 
-def test_g4_2_niche_cartesian_env_gate_in_gaboom():
-    """G4.2: Cartesian niche is env-OFF default and wired in shipped gaboom.cpp."""
+def test_g4_2_niche_distance_header_shipped_and_wired():
+    """G4.2: pure niche_distance.h exists; gaboom calls shipped helpers."""
+    hdr = REPO / "LIB" / "niche_distance.h"
+    assert hdr.is_file()
+    h = hdr.read_text(encoding="utf-8")
+    assert "niche_cartesian_rmsd" in h
+    assert "niche_gene_rmsp" in h
+    assert "niche_pair_distance" in h
+    assert "niche_cartesian_env_enabled" in h
     src = (REPO / "LIB" / "gaboom.cpp").read_text(encoding="utf-8", errors="replace")
+    assert '#include "niche_distance.h"' in src
+    assert "flexaids::niche_cartesian_rmsd" in src
+    assert "flexaids::niche_cartesian_env_enabled" in src
     assert "FLEXAIDDS_NICHE_CARTESIAN" in src
-    assert "FLEXAIDDS_NICHE_SIGMA_ANG" in src
     assert "[NICHE-CART]" in src
-    # Default path still uses gene-space calc_rmsp
-    assert "calc_rmsp" in src
-    # Cartesian path uses ligand RMSD via precomputed coords / calc_rmsd_chrom
-    assert "calc_rmsd_chrom" in src
-    assert "niche_cart" in src
 
 
-def test_g4_2_calc_rmsp_gene_space_mixes_ordinal_and_angles():
-    """Drive shipped calc_rmsp: gene0 ordinal delta dominates vs pure angle flip.
+def test_g4_2_niche_distance_drives_shipped_cpp_binary():
+    """Drive shipped flexaids::niche_* via the gtest binary (not a Python reimpl)."""
+    import os
+    import subprocess
 
-    Demonstrates the PHASE4 structural defect: unweighted RMSP over mixed units.
-    Uses the float overload in calc_rmsp.cpp (linked via py-free pure formula
-    re-check is forbidden — call the C++ binary smoke if present, else structural
-    formula identity on the same code path constants).
-    """
-    # Structural: calc_rmsp gene overload ignores map_par and only diffs to_ic
-    src = (REPO / "LIB" / "gaboom.cpp").read_text(encoding="utf-8", errors="replace")
-    # Extract that the gene-space loop is pure to_ic difference
-    assert "g1[ii].to_ic - g2[ii].to_ic" in src
-    # Unit: pure math matching the shipped loop (tests the formula as documented
-    # in-source). Full GA path is covered by NICHE-CART log liveness on docks.
-    import math
-    def rmsp(a, b):
-        n = len(a)
-        return math.sqrt(sum((x - y) ** 2 for x, y in zip(a, b)) / n)
-    # gene0 = grid ordinal, genes 1..9 angles (degrees)
-    base = [1000.0] + [0.0] * 9
-    # 0.375 "units" on ordinal vs 180 deg on all angles — same defect numbers as PHASE4
-    d_ord = rmsp(base, [1000.375] + [0.0] * 9)
-    d_ang = rmsp(base, [1000.0] + [180.0] * 9)
-    # With sig_share ~204, angle-all-flip stays inside niche; ordinal micro-step can exit
-    # Ordinal step is tiny; all-angle flip is huge in degree units — wait PHASE4 says opposite:
-    # "0.375 A step in z exits niche while 7.9 A in y stays" is about grid mapping.
-    # PHASE4: flipping ALL NINE angles 180 gives rmsp=170.8 < 204.19
-    assert d_ang < 204.19, d_ang
-    # A large ordinal jump (one grid step of thousands) exits more easily than small angle noise
-    d_big_ord = rmsp(base, [1000.0 + 5000.0] + [0.0] * 9)
-    assert d_big_ord > d_ang
+    candidates = [
+        REPO / "build" / "test_niche_distance",
+        REPO / "build" / "tests" / "test_niche_distance",
+    ]
+    bin_path = next((p for p in candidates if p.is_file()), None)
+    if bin_path is None:
+        # Still require sources + ability to compile a smoke against the header
+        assert (REPO / "tests" / "test_niche_distance.cpp").is_file()
+        smoke = REPO / "build" / "niche_distance_smoke"
+        # Prefer already-built gtest; else compile minimal smoke on shipped header
+        import tempfile
+        from pathlib import Path as P
+        scratch = P(os.environ.get(
+            "SCRATCH",
+            "/var/folders/8b/tgtvwb_j6zd_g03vl1w4ykfw0000gn/T/grok-goal-b3876f84368a/implementer",
+        ))
+        scratch.mkdir(parents=True, exist_ok=True)
+        src = scratch / "niche_smoke.cpp"
+        src.write_text(
+            r'''
+#include "niche_distance.h"
+#include <cassert>
+#include <cmath>
+#include <cstdlib>
+int main() {
+  unsetenv("FLEXAIDDS_NICHE_CARTESIAN");
+  assert(!flexaids::niche_cartesian_env_enabled());
+  setenv("FLEXAIDDS_NICHE_CARTESIAN", "1", 1);
+  assert(flexaids::niche_cartesian_env_enabled());
+  double ic_a[3] = {0,0,0}, ic_b[3] = {10000,0,0};
+  float xyz[3] = {1,2,3};
+  double d_gene = flexaids::niche_pair_distance(false, ic_a, ic_b, 3, xyz, xyz, 1);
+  double d_cart = flexaids::niche_pair_distance(true, ic_a, ic_b, 3, xyz, xyz, 1);
+  assert(d_gene > 100.0);
+  assert(std::fabs(d_cart) < 1e-12);
+  float a[3]={0,0,0}, b[3]={3,0,0};
+  assert(std::fabs(flexaids::niche_cartesian_rmsd(a,b,1) - 3.0) < 1e-6);
+  return 0;
+}
+'''
+        )
+        out = scratch / "niche_smoke"
+        r = subprocess.run(
+            ["c++", "-std=c++17", f"-I{REPO}/LIB", str(src), "-o", str(out)],
+            capture_output=True,
+            text=True,
+            timeout=60,
+            check=False,
+        )
+        assert r.returncode == 0, r.stderr
+        r2 = subprocess.run([str(out)], capture_output=True, text=True, timeout=30, check=False)
+        assert r2.returncode == 0, r2.stdout + r2.stderr
+        return
+    env = os.environ.copy()
+    r = subprocess.run(
+        [str(bin_path), "--gtest_color=no"],
+        capture_output=True,
+        text=True,
+        env=env,
+        timeout=60,
+        check=False,
+    )
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert "PASSED" in r.stdout
 
 
 def test_g4_4_early_stop_workorder_exists():

@@ -1195,6 +1195,12 @@ flexaids_add_unit_test(test_protocol_config
         TEST_NAME MemeticGateTests
     )
 
+    # test_niche_distance — G4.2 Cartesian vs gene-space niche (header-only)
+    flexaids_add_unit_test(test_niche_distance
+        SOURCES tests/test_niche_distance.cpp
+        TEST_NAME NicheDistanceTests
+    )
+
     # test_metal_coordination — Metal ion coordination potential tests (header-only)
     flexaids_add_unit_test(test_metal_coordination
         SOURCES tests/test_metal_coordination.cpp
