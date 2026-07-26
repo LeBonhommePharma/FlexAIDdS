@@ -30,7 +30,7 @@ import sys
 import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Callable, Optional
+from typing import Any, Callable, Optional
 
 EXIT_OK = 0
 EXIT_HOLD = 78
@@ -109,6 +109,79 @@ class LockInfo:
     created_utc: str
     out_dir: str = ""
     note: str = ""
+    # Background dock PID (e.g. nohup claim runner). Lock outlives the launcher
+    # while dock_pid is live; second sessions refuse dual-dock for the whole run.
+    dock_pid: int = 0
+
+
+def pid_alive(pid: int) -> bool:
+    if pid is None or int(pid) <= 0:
+        return False
+    try:
+        os.kill(int(pid), 0)
+        return True
+    except OSError:
+        return False
+
+
+def read_lock_owner(lock_dir: Path) -> dict[str, Any]:
+    meta = Path(lock_dir) / "owner.json"
+    if not meta.is_file():
+        return {}
+    try:
+        data = json.loads(meta.read_text(encoding="utf-8"))
+        return data if isinstance(data, dict) else {}
+    except (OSError, json.JSONDecodeError, TypeError, ValueError):
+        return {}
+
+
+def lock_holder_alive(lock_dir: Path) -> tuple[bool, str]:
+    """True if launcher pid or dock_pid recorded in the lock is still live."""
+    data = read_lock_owner(lock_dir)
+    if not data:
+        return False, "no owner.json"
+    owner_pid = int(data.get("pid") or 0)
+    dock_pid = int(data.get("dock_pid") or 0)
+    if pid_alive(owner_pid):
+        return True, f"launcher pid={owner_pid} live"
+    if pid_alive(dock_pid):
+        return True, f"dock_pid={dock_pid} live"
+    return False, "owner and dock_pid dead or unset"
+
+
+def write_lock_owner(lock_dir: Path, data: dict[str, Any]) -> None:
+    path = Path(lock_dir)
+    path.mkdir(parents=True, exist_ok=True)
+    (path / "owner.json").write_text(
+        json.dumps(data, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+
+
+def set_dock_pid(
+    lock_dir: Optional[Path] = None,
+    *,
+    dock_pid: int,
+) -> tuple[bool, str]:
+    """Record the long-lived dock process so lock outlives the launcher."""
+    path = Path(lock_dir) if lock_dir is not None else default_lock_dir()
+    if not path.is_dir():
+        return False, f"No dock lock at {path}"
+    data = read_lock_owner(path)
+    if not data:
+        data = {
+            "lock_dir": str(path),
+            "pid": os.getpid(),
+            "owner": os.environ.get("USER", "unknown"),
+            "created_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        }
+    data["dock_pid"] = int(dock_pid)
+    data["dock_pid_set_utc"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+    try:
+        write_lock_owner(path, data)
+    except OSError as exc:
+        return False, f"Failed to write dock_pid: {exc}"
+    return True, f"Recorded dock_pid={dock_pid} in {path}/owner.json"
 
 
 def try_acquire_lock(
@@ -122,25 +195,34 @@ def try_acquire_lock(
     """Acquire exclusive dock ownership via mkdir (atomic on APFS/POSIX).
 
     Returns (ok, lock_dir, message). On success the caller owns the lock until
-    release_lock(). On failure another session holds the box — go offline.
+    release_lock() *and* any recorded dock_pid has exited. Stale locks (no live
+    launcher pid and no live dock_pid) are reclaimed automatically.
     """
     path = Path(lock_dir) if lock_dir is not None else default_lock_dir()
     path.parent.mkdir(parents=True, exist_ok=True)
     try:
         path.mkdir(exist_ok=False)
     except FileExistsError:
-        holder = ""
-        meta = path / "owner.json"
-        if meta.is_file():
-            try:
-                holder = meta.read_text(encoding="utf-8", errors="replace")[:400]
-            except OSError:
-                holder = "(owner.json unreadable)"
-        return (
-            False,
-            path,
-            f"Dock lock already held at {path}. Dual-dock refused.\n{holder}",
-        )
+        alive, reason = lock_holder_alive(path)
+        if alive:
+            holder = ""
+            meta = path / "owner.json"
+            if meta.is_file():
+                try:
+                    holder = meta.read_text(encoding="utf-8", errors="replace")[:400]
+                except OSError:
+                    holder = "(owner.json unreadable)"
+            return (
+                False,
+                path,
+                f"Dock lock already held at {path} ({reason}). Dual-dock refused.\n{holder}",
+            )
+        # Stale lock: reclaim.
+        try:
+            shutil.rmtree(path)
+            path.mkdir(exist_ok=False)
+        except OSError as exc:
+            return False, path, f"Stale dock lock reclaim failed at {path}: {exc}"
     except OSError as exc:
         return False, path, f"Dock lock mkdir failed at {path}: {exc}"
 
@@ -151,14 +233,11 @@ def try_acquire_lock(
         created_utc=time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         out_dir=out_dir,
         note=note,
+        dock_pid=0,
     )
     try:
-        (path / "owner.json").write_text(
-            json.dumps(asdict(info), indent=2, sort_keys=True) + "\n",
-            encoding="utf-8",
-        )
+        write_lock_owner(path, asdict(info))
     except OSError as exc:
-        # Best-effort cleanup if we cannot record ownership.
         try:
             shutil.rmtree(path, ignore_errors=True)
         except OSError:
@@ -171,32 +250,28 @@ def release_lock(lock_dir: Optional[Path] = None, *, force: bool = False) -> tup
     path = Path(lock_dir) if lock_dir is not None else default_lock_dir()
     if not path.exists():
         return True, f"No lock present at {path}"
-    meta = path / "owner.json"
-    if meta.is_file() and not force:
-        try:
-            data = json.loads(meta.read_text(encoding="utf-8"))
-            owner_pid = int(data.get("pid", -1))
-            if owner_pid not in (-1, os.getpid()):
-                # Stale-PID cleanup: if process is gone, allow release.
-                try:
-                    os.kill(owner_pid, 0)
-                    alive = True
-                except OSError:
-                    alive = False
-                if alive:
-                    return (
-                        False,
-                        f"Refuse release of lock owned by live pid={owner_pid} "
-                        f"(use force=True only for explicit ops recovery)",
-                    )
-        except (OSError, json.JSONDecodeError, TypeError, ValueError):
-            pass
+    if not force:
+        data = read_lock_owner(path)
+        owner_pid = int(data.get("pid") or 0)
+        dock_pid = int(data.get("dock_pid") or 0)
+        # Long-lived dock must keep the lock even after the launcher exits.
+        if pid_alive(dock_pid):
+            return (
+                False,
+                f"Refuse release: dock_pid={dock_pid} still live "
+                f"(lock outlives launcher; use force only for ops recovery)",
+            )
+        if owner_pid not in (0, -1, os.getpid()) and pid_alive(owner_pid):
+            return (
+                False,
+                f"Refuse release of lock owned by live pid={owner_pid} "
+                f"(use force=True only for explicit ops recovery)",
+            )
     try:
         shutil.rmtree(path)
     except OSError as exc:
         return False, f"Failed to remove lock {path}: {exc}"
     return True, f"Dock lock released: {path}"
-
 
 def free_disk_gib(path: Path, *, statvfs: Optional[Callable[[str], os.statvfs_result]] = None) -> float:
     """Return free space in GiB for the filesystem containing path."""
@@ -279,6 +354,7 @@ def copy_binary_to_run_namespace(
     pin = {
         "source": str(src),
         "dest": str(dest),
+        "name": name,
         "sha256": digest,
         "bytes": str(dest.stat().st_size),
         "copied_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
@@ -287,6 +363,57 @@ def copy_binary_to_run_namespace(
     pin_path.write_text(json.dumps(pin, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     (bin_dir / f"{name}.SHA256").write_text(digest + "\n", encoding="utf-8")
     return pin
+
+
+def write_pins_manifest(run_dir: Path, pins: list[dict[str, str]]) -> Path:
+    """Write run_dir/bin/dock_session_pins.json for launch rebinding."""
+    bin_dir = Path(run_dir) / "bin"
+    bin_dir.mkdir(parents=True, exist_ok=True)
+    path = bin_dir / "dock_session_pins.json"
+    payload = {
+        "schema_version": 1,
+        "pins": pins,
+        "by_name": {p.get("name") or Path(p["dest"]).name: p for p in pins},
+    }
+    path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    return path
+
+
+def pinned_binary_path(run_dir: Path, name: str) -> Optional[Path]:
+    """Return isolated run-namespace binary path if present and executable."""
+    dest = Path(run_dir) / "bin" / name
+    if dest.is_file() and os.access(dest, os.X_OK):
+        return dest
+    pins = Path(run_dir) / "bin" / "dock_session_pins.json"
+    if pins.is_file():
+        try:
+            data = json.loads(pins.read_text(encoding="utf-8"))
+            by_name = data.get("by_name") or {}
+            entry = by_name.get(name)
+            if entry and Path(entry["dest"]).is_file():
+                return Path(entry["dest"])
+        except (OSError, json.JSONDecodeError, KeyError, TypeError):
+            pass
+    return None
+
+
+def resolve_launch_binaries(
+    run_dir: Path,
+    *,
+    engine_name: str = "FlexAIDdS",
+    runner_name: str = "benchmark_datasets",
+) -> dict[str, str]:
+    """Map logical roles to isolated pin paths for export by launch scripts."""
+    out: dict[str, str] = {}
+    eng = pinned_binary_path(run_dir, engine_name)
+    run = pinned_binary_path(run_dir, runner_name)
+    if eng is not None:
+        out["FLEXAIDDS_BINARY"] = str(eng)
+        out["FLEXAIDDS_BIN"] = str(eng)
+    if run is not None:
+        out["FLEXAIDDS_RUNNER"] = str(run)
+        out["BENCHMARK_DATASETS"] = str(run)
+    return out
 
 
 @dataclass
@@ -298,12 +425,15 @@ class PreflightResult:
     lock_dir: str = ""
     free_gib: float = -1.0
     binary_pin: Optional[dict[str, str]] = None
+    binary_pins: Optional[list[dict[str, str]]] = None
+    launch_env: Optional[dict[str, str]] = None
 
 
 def preflight_dock(
     *,
     out_dir: Path,
     binary: Optional[Path] = None,
+    binaries: Optional[list[Path]] = None,
     workers: int = 1,
     acquire_lock: bool = True,
     copy_binary: bool = True,
@@ -356,13 +486,31 @@ def preflight_dock(
                 free_gib=avail,
             )
 
-    pin: Optional[dict[str, str]] = None
-    if copy_binary and binary is not None:
+    sources: list[Path] = []
+    if binaries:
+        sources.extend(Path(p) for p in binaries)
+    if binary is not None:
+        sources.append(Path(binary))
+    # de-dupe while preserving order
+    seen: set[str] = set()
+    unique_sources: list[Path] = []
+    for src in sources:
+        key = str(src.resolve()) if src.exists() else str(src)
+        if key in seen:
+            continue
+        seen.add(key)
+        unique_sources.append(src)
+
+    pins: list[dict[str, str]] = []
+    if copy_binary and unique_sources:
         try:
-            pin = copy_binary_to_run_namespace(Path(binary), Path(out_dir))
-            messages.append(
-                f"Binary isolated: {pin['dest']} sha256={pin['sha256'][:16]}…"
-            )
+            for src in unique_sources:
+                pin = copy_binary_to_run_namespace(src, Path(out_dir))
+                pins.append(pin)
+                messages.append(
+                    f"Binary isolated: {pin['dest']} sha256={pin['sha256'][:16]}…"
+                )
+            write_pins_manifest(Path(out_dir), pins)
         except (OSError, FileNotFoundError) as exc:
             if acquire_lock:
                 release_lock(lock_path, force=True)
@@ -374,13 +522,16 @@ def preflight_dock(
                 free_gib=avail,
             )
 
+    launch_env = resolve_launch_binaries(Path(out_dir)) if pins else {}
     return PreflightResult(
         ok=True,
         exit_code=EXIT_OK,
         messages=messages + ["Preflight OK — exclusive dock ownership granted."],
         lock_dir=str(lock_path) if acquire_lock else "",
         free_gib=avail,
-        binary_pin=pin,
+        binary_pin=pins[0] if pins else None,
+        binary_pins=pins or None,
+        launch_env=launch_env or None,
     )
 
 
@@ -396,12 +547,14 @@ def _cmd_check_hold(args: argparse.Namespace) -> int:
 
 
 def _cmd_preflight(args: argparse.Namespace) -> int:
+    bin_args = list(args.binary or [])
+    binaries = [Path(b) for b in bin_args if b]
     result = preflight_dock(
         out_dir=Path(args.out_dir),
-        binary=Path(args.binary) if args.binary else None,
+        binaries=binaries or None,
         workers=int(args.workers),
         acquire_lock=not args.no_lock,
-        copy_binary=bool(args.binary) and not args.no_copy_binary,
+        copy_binary=bool(binaries) and not args.no_copy_binary,
         repo_root=Path(args.repo_root) if args.repo_root else None,
         lock_dir=Path(args.lock_dir) if args.lock_dir else None,
         min_free_gb=float(args.min_free_gb) if args.min_free_gb is not None else None,
@@ -411,8 +564,22 @@ def _cmd_preflight(args: argparse.Namespace) -> int:
     )
     for line in result.messages:
         print(line, file=sys.stderr if not result.ok else sys.stdout)
-    if result.ok and result.binary_pin:
-        print(json.dumps({"binary_pin": result.binary_pin}, indent=2))
+    if result.ok:
+        payload = {
+            "binary_pin": result.binary_pin,
+            "binary_pins": result.binary_pins,
+            "launch_env": result.launch_env,
+            "lock_dir": result.lock_dir,
+        }
+        print(json.dumps(payload, indent=2))
+        # Machine-readable exports for shell launchers (rebind before exec).
+        env = result.launch_env or {}
+        if env.get("FLEXAIDDS_BINARY"):
+            print(f"EXPORT_FLEXAIDDS_BINARY={env['FLEXAIDDS_BINARY']}")
+        if env.get("FLEXAIDDS_RUNNER"):
+            print(f"EXPORT_FLEXAIDDS_RUNNER={env['FLEXAIDDS_RUNNER']}")
+        if result.lock_dir:
+            print(f"EXPORT_DOCK_LOCK_DIR={result.lock_dir}")
     return result.exit_code
 
 
@@ -420,6 +587,15 @@ def _cmd_release(args: argparse.Namespace) -> int:
     ok, msg = release_lock(
         Path(args.lock_dir) if args.lock_dir else None,
         force=bool(args.force),
+    )
+    print(msg, file=sys.stdout if ok else sys.stderr)
+    return EXIT_OK if ok else EXIT_LOCK
+
+
+def _cmd_set_dock_pid(args: argparse.Namespace) -> int:
+    ok, msg = set_dock_pid(
+        Path(args.lock_dir) if args.lock_dir else None,
+        dock_pid=int(args.pid),
     )
     print(msg, file=sys.stdout if ok else sys.stderr)
     return EXIT_OK if ok else EXIT_LOCK
@@ -435,7 +611,12 @@ def build_parser() -> argparse.ArgumentParser:
 
     pf = sub.add_parser("preflight", help="Hold + lock + disk + workers + binary copy")
     pf.add_argument("--out-dir", required=True)
-    pf.add_argument("--binary", default="")
+    pf.add_argument(
+        "--binary",
+        action="append",
+        default=[],
+        help="Engine/runner path to isolate (repeatable: FlexAIDdS, benchmark_datasets)",
+    )
     pf.add_argument("--workers", type=int, default=1)
     pf.add_argument("--repo-root", default="")
     pf.add_argument("--lock-dir", default="")
@@ -451,6 +632,14 @@ def build_parser() -> argparse.ArgumentParser:
     rl.add_argument("--lock-dir", default="")
     rl.add_argument("--force", action="store_true")
     rl.set_defaults(func=_cmd_release)
+
+    sp = sub.add_parser(
+        "set-dock-pid",
+        help="Record background dock PID so lock outlives the launcher",
+    )
+    sp.add_argument("--pid", type=int, required=True)
+    sp.add_argument("--lock-dir", default="")
+    sp.set_defaults(func=_cmd_set_dock_pid)
     return p
 
 

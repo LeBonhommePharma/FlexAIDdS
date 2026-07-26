@@ -345,42 +345,58 @@ preflight() {
     # 0. Sol #9 multi-session guard (hold + mkdir lock + disk + workers + binary pin)
     info "0. Dock session guard (Sol #9)"
     local guard="${REPO_ROOT}/scripts/dock_session_guard.py"
+    if [[ ! -f "${guard}" ]]; then
+        fail "   dock_session_guard.py missing at ${guard} (Sol #9 fail-closed)"
+        exit 77
+    fi
     local binary_candidate="${FLEXAIDDS_BINARY:-${BUILD_DIR}/FlexAIDdS}"
     if [[ ! -x "${binary_candidate}" ]]; then
         binary_candidate="${BUILD_DIR}/FlexAIDdS"
     fi
-    if [[ -f "${guard}" ]]; then
-        local guard_args=(
-            preflight
-            --out-dir "${RESULTS_DIR}"
-            --workers "${N_THREADS}"
-            --repo-root "${REPO_ROOT}"
-            --max-workers 4
-            --min-free-gb "${MIN_FREE_GB}"
-            --owner "run_benchmark_production"
-            --note "production benchmark preflight"
-        )
-        if [[ -x "${binary_candidate}" ]]; then
-            guard_args+=(--binary "${binary_candidate}")
-        else
-            guard_args+=(--no-copy-binary)
-        fi
-        if [[ "${DRY_RUN}" == true ]]; then
-            guard_args+=(--no-lock)
-        fi
-        if ! python3 "${guard}" "${guard_args[@]}"; then
-            fail "   dock_session_guard refused launch (hold/lock/disk/workers/binary)"
-            n_fail=$((n_fail + 1))
-            # Hold/lock are hard stops even in dry-run.
-            exit 78
-        fi
-        ok "   hold/lock/disk/workers preflight accepted"
-        if [[ "${DRY_RUN}" != true ]]; then
-            # Release exclusive dock lock when this script exits.
-            trap 'python3 "'"${guard}"'" release-lock --force 2>/dev/null || true; on_exit $?' EXIT
-        fi
+    local guard_args=(
+        preflight
+        --out-dir "${RESULTS_DIR}"
+        --workers "${N_THREADS}"
+        --repo-root "${REPO_ROOT}"
+        --max-workers 4
+        --min-free-gb "${MIN_FREE_GB}"
+        --owner "run_benchmark_production"
+        --note "production benchmark preflight"
+    )
+    if [[ -x "${binary_candidate}" ]]; then
+        guard_args+=(--binary "${binary_candidate}")
     else
-        warn "   dock_session_guard.py missing — multi-session dual-dock unprotected"
+        # Still require guard; fail if engine cannot be pinned for a real run.
+        if [[ "${DRY_RUN}" != true ]]; then
+            fail "   no executable binary to pin at ${binary_candidate}"
+            exit 77
+        fi
+        guard_args+=(--no-copy-binary)
+    fi
+    if [[ "${DRY_RUN}" == true ]]; then
+        guard_args+=(--no-lock)
+    fi
+    if ! python3 "${guard}" "${guard_args[@]}"; then
+        fail "   dock_session_guard refused launch (hold/lock/disk/workers/binary)"
+        # Hold/lock are hard stops even in dry-run.
+        exit 78
+    fi
+    ok "   hold/lock/disk/workers preflight accepted"
+    # Rebind to run-namespace pin so rebuild of shared build/ cannot hit live exec.
+    local pinned_engine="${RESULTS_DIR}/bin/$(basename "${binary_candidate}")"
+    if [[ -x "${pinned_engine}" ]]; then
+        FLEXAIDDS_BIN="${pinned_engine}"
+        export FLEXAIDDS_BINARY="${pinned_engine}"
+        export FLEXAIDDS_BIN="${pinned_engine}"
+        ok "   rebound FLEXAIDDS_BIN -> ${pinned_engine}"
+    elif [[ "${DRY_RUN}" != true ]]; then
+        fail "   pinned engine missing after preflight: ${pinned_engine}"
+        exit 77
+    fi
+    if [[ "${DRY_RUN}" != true ]]; then
+        # Foreground production waits for docks; release lock only after they finish.
+        # Do NOT force-release while a recorded dock_pid is live.
+        trap 'python3 "'"${guard}"'" release-lock 2>/dev/null || true; on_exit $?' EXIT
     fi
 
     # 1. Git state

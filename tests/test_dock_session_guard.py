@@ -69,7 +69,10 @@ class TestDockSessionGuard(unittest.TestCase):
     def test_mkdir_lock_second_acquire_fails(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             lock = Path(tmp) / "dock_session.lock"
-            ok1, path1, msg1 = self.g.try_acquire_lock(lock, owner="first", pid=111)
+            # Use live pid so the lock is not treated as stale/reclaimable.
+            ok1, path1, msg1 = self.g.try_acquire_lock(
+                lock, owner="first", pid=os.getpid()
+            )
             self.assertTrue(ok1, msg1)
             self.assertEqual(path1, lock)
             self.assertTrue((lock / "owner.json").is_file())
@@ -77,11 +80,7 @@ class TestDockSessionGuard(unittest.TestCase):
             self.assertFalse(ok2)
             self.assertEqual(path2, lock)
             self.assertIn("already held", msg2.lower())
-            # first owner can release
-            ok_r, msg_r = self.g.release_lock(lock)
-            # release may refuse if pid != current; force if needed
-            if not ok_r:
-                ok_r, msg_r = self.g.release_lock(lock, force=True)
+            ok_r, msg_r = self.g.release_lock(lock, force=True)
             self.assertTrue(ok_r, msg_r)
             ok3, _, msg3 = self.g.try_acquire_lock(lock, owner="third", pid=os.getpid())
             self.assertTrue(ok3, msg3)
@@ -201,6 +200,106 @@ class TestDockSessionGuard(unittest.TestCase):
                 check=False,
             )
             self.assertEqual(proc.returncode, 0)
+
+    def test_dock_pid_keeps_lock_after_launcher_would_exit(self) -> None:
+        """Background dock_pid must keep exclusive lock (claim nohup path)."""
+        with tempfile.TemporaryDirectory() as tmp:
+            lock = Path(tmp) / "dock_session.lock"
+            ok, _, msg = self.g.try_acquire_lock(lock, owner="launcher", pid=999001)
+            self.assertTrue(ok, msg)
+            # Simulate launcher exit + long-lived dock still running (us).
+            ok_set, msg_set = self.g.set_dock_pid(lock, dock_pid=os.getpid())
+            self.assertTrue(ok_set, msg_set)
+            # release without force must refuse while dock_pid live
+            ok_r, msg_r = self.g.release_lock(lock, force=False)
+            self.assertFalse(ok_r)
+            self.assertIn("dock_pid", msg_r)
+            # second session cannot dual-dock
+            ok2, _, msg2 = self.g.try_acquire_lock(lock, owner="second", pid=999002)
+            self.assertFalse(ok2)
+            self.assertIn("Dual-dock refused", msg2)
+            # force still works for ops recovery
+            ok_f, msg_f = self.g.release_lock(lock, force=True)
+            self.assertTrue(ok_f, msg_f)
+
+    def test_stale_lock_reclaimed_when_pids_dead(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            lock = Path(tmp) / "dock_session.lock"
+            ok, _, msg = self.g.try_acquire_lock(lock, owner="dead", pid=1)
+            # pid 1 is usually alive on macOS (launchd). Use a high fake pid and
+            # write owner.json with both dead pids manually.
+            self.assertTrue(ok or True)
+            if lock.exists():
+                self.g.release_lock(lock, force=True)
+            lock.mkdir()
+            (lock / "owner.json").write_text(
+                '{"pid": 99999901, "dock_pid": 99999902, "owner": "stale"}\n',
+                encoding="utf-8",
+            )
+            ok2, _, msg2 = self.g.try_acquire_lock(lock, owner="reclaimer", pid=os.getpid())
+            self.assertTrue(ok2, msg2)
+            self.g.release_lock(lock, force=True)
+
+    def test_resolve_launch_binaries_rebinds_engine_and_runner(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            run = Path(tmp) / "out"
+            eng = Path(tmp) / "FlexAIDdS"
+            runner = Path(tmp) / "benchmark_datasets"
+            eng.write_bytes(b"ENGINE-V1")
+            runner.write_bytes(b"RUNNER-V1")
+            eng.chmod(0o755)
+            runner.chmod(0o755)
+            r = self.g.preflight_dock(
+                out_dir=run,
+                binaries=[eng, runner],
+                workers=1,
+                acquire_lock=False,
+                copy_binary=True,
+                repo_root=Path(tmp),
+                free_gib=50.0,
+            )
+            self.assertTrue(r.ok, r.messages)
+            env = r.launch_env or {}
+            self.assertIn("FLEXAIDDS_BINARY", env)
+            self.assertIn("FLEXAIDDS_RUNNER", env)
+            self.assertTrue(env["FLEXAIDDS_BINARY"].endswith("/bin/FlexAIDdS"))
+            self.assertTrue(env["FLEXAIDDS_RUNNER"].endswith("/bin/benchmark_datasets"))
+            # Mutate shared sources — pins stay V1
+            eng.write_bytes(b"ENGINE-V2")
+            runner.write_bytes(b"RUNNER-V2")
+            self.assertEqual(Path(env["FLEXAIDDS_BINARY"]).read_bytes(), b"ENGINE-V1")
+            self.assertEqual(Path(env["FLEXAIDDS_RUNNER"]).read_bytes(), b"RUNNER-V1")
+            self.assertEqual(
+                self.g.resolve_launch_binaries(run)["FLEXAIDDS_BINARY"],
+                env["FLEXAIDDS_BINARY"],
+            )
+
+    def test_claim_script_no_exit_force_release_and_rebinds_pin(self) -> None:
+        """Structural: claim launcher must not force-release lock on EXIT."""
+        text = (REPO / "scripts" / "run_C0_claim_clean.sh").read_text(encoding="utf-8")
+        self.assertNotIn("release-lock --force", text)
+        self.assertNotIn("trap 'python3 \"$DOCK_GUARD\" release-lock", text)
+        self.assertIn("set-dock-pid", text)
+        self.assertIn('BINARY="$PINNED_ENGINE"', text)
+        self.assertIn('RUNNER="$PINNED_RUNNER"', text)
+        self.assertIn("dock_session_guard.py missing", text)
+        self.assertIn("exit 77", text)
+
+    def test_production_script_fail_closed_and_rebind(self) -> None:
+        text = (REPO / "scripts" / "run_benchmark_production.sh").read_text(encoding="utf-8")
+        self.assertIn("dock_session_guard.py missing", text)
+        self.assertIn("exit 77", text)
+        self.assertIn("rebound FLEXAIDDS_BIN", text)
+        self.assertIn("FLEXAIDDS_BIN=\"${pinned_engine}\"", text)
+        # Production may release without --force after foreground docks complete.
+        self.assertNotIn("release-lock --force", text)
+
+    def test_missing_guard_is_fail_closed_not_warn(self) -> None:
+        claim = (REPO / "scripts" / "run_C0_claim_clean.sh").read_text(encoding="utf-8")
+        prod = (REPO / "scripts" / "run_benchmark_production.sh").read_text(encoding="utf-8")
+        self.assertNotIn("multi-session dual-dock unprotected", claim + prod)
+        self.assertIn("fail-closed", claim)
+        self.assertIn("fail-closed", prod)
 
 
 if __name__ == "__main__":

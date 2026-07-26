@@ -77,29 +77,58 @@ mkdir -p "$OUT" "$LOGDIR"
 
 # Sol #9 multi-session preflight: hold + mkdir dock lock + 20 GiB disk + binary pin.
 # Dual-dock with another Grok session is refused. WORKERS capped at 4 on 18 GB box.
+# Lock OUTLIVES this launcher: after nohup we record dock_pid and do NOT release
+# on EXIT (that was the dual-dock hole for backgrounded claims).
 DOCK_GUARD="$ROOT/scripts/dock_session_guard.py"
-if [[ -f "$DOCK_GUARD" ]]; then
-  if (( DRY )); then
-    python3 "$DOCK_GUARD" check-hold --repo-root "$ROOT" || exit $?
-    python3 "$DOCK_GUARD" preflight \
-      --out-dir "$OUT" \
-      --binary "$BINARY" \
-      --workers "${FLEXAIDDS_CLAIM_WORKERS:-1}" \
-      --repo-root "$ROOT" \
-      --max-workers 4 \
-      --no-lock \
-      --owner "run_C0_claim_clean" \
-      --note "dry-run" || exit $?
+if [[ ! -f "$DOCK_GUARD" ]]; then
+  echo "FAIL: dock_session_guard.py missing at $DOCK_GUARD (Sol #9 fail-closed)" >&2
+  exit 77
+fi
+DOCK_LOCK_DIR="${FLEXAIDDS_DOCK_LOCK_DIR:-${FLEXAIDDS_LOCAL_ROOT:-$HOME/flexaidds_results}/dock_session.lock}"
+export FLEXAIDDS_DOCK_LOCK_DIR="$DOCK_LOCK_DIR"
+if (( DRY )); then
+  python3 "$DOCK_GUARD" check-hold --repo-root "$ROOT" || exit $?
+  python3 "$DOCK_GUARD" preflight \
+    --out-dir "$OUT" \
+    --binary "$BINARY" \
+    --binary "$RUNNER" \
+    --workers "${FLEXAIDDS_CLAIM_WORKERS:-1}" \
+    --repo-root "$ROOT" \
+    --max-workers 4 \
+    --no-lock \
+    --owner "run_C0_claim_clean" \
+    --note "dry-run" || exit $?
+else
+  # Capture pin paths; do not release dock lock when this launcher exits.
+  PREFLIGHT_OUT="$(python3 "$DOCK_GUARD" preflight \
+    --out-dir "$OUT" \
+    --binary "$BINARY" \
+    --binary "$RUNNER" \
+    --workers "${FLEXAIDDS_CLAIM_WORKERS:-1}" \
+    --repo-root "$ROOT" \
+    --lock-dir "$DOCK_LOCK_DIR" \
+    --max-workers 4 \
+    --owner "run_C0_claim_clean" \
+    --note "C0 claim clean launch" 2>&1)" || {
+      echo "$PREFLIGHT_OUT" >&2
+      exit 78
+    }
+  echo "$PREFLIGHT_OUT"
+  # Rebind to run-namespace pins so a rebuild of the shared build tree cannot
+  # rewrite the live exec path mid-run.
+  PINNED_ENGINE="$OUT/bin/$(basename "$BINARY")"
+  PINNED_RUNNER="$OUT/bin/$(basename "$RUNNER")"
+  if [[ -x "$PINNED_ENGINE" ]]; then
+    BINARY="$PINNED_ENGINE"
   else
-    python3 "$DOCK_GUARD" preflight \
-      --out-dir "$OUT" \
-      --binary "$BINARY" \
-      --workers "${FLEXAIDDS_CLAIM_WORKERS:-1}" \
-      --repo-root "$ROOT" \
-      --max-workers 4 \
-      --owner "run_C0_claim_clean" \
-      --note "C0 claim clean launch" || exit $?
-    trap 'python3 "$DOCK_GUARD" release-lock --force 2>/dev/null || true' EXIT
+    echo "FAIL: pinned engine missing after preflight: $PINNED_ENGINE" >&2
+    exit 77
+  fi
+  if [[ -x "$PINNED_RUNNER" ]]; then
+    RUNNER="$PINNED_RUNNER"
+  else
+    echo "FAIL: pinned runner missing after preflight: $PINNED_RUNNER" >&2
+    exit 77
   fi
 fi
 
@@ -108,7 +137,7 @@ if (( USE_LOCAL )) && [[ ! -d "$DATA_DIR" ]]; then
   DATA_DIR="${Q}/data"
 fi
 
-# Claim knobs (publish freeze)
+# Claim knobs (publish freeze) — BINARY/RUNNER already rebound to OUT/bin pins.
 export FLEXAIDDS_BINARY="$BINARY"
 export FLEXAIDDS_DATA_DIR="$DATA_DIR"
 export FLEXAIDDS_RESTARTS=5
@@ -290,6 +319,14 @@ nohup caffeinate -i -s env \
   --job-timeout-seconds 10800 \
   >>"$LOG" 2>&1 &
 echo $! | tee "$LOCK" > "$PIDF"
+
+# Sol #9: lock outlives this launcher — record dock_pid; never force-release on EXIT.
+python3 "$DOCK_GUARD" set-dock-pid --pid "$(cat "$PIDF")" --lock-dir "$DOCK_LOCK_DIR" || {
+  echo "WARN: failed to record dock_pid in session lock" >&2
+}
+echo "DOCK_LOCK_DIR=$DOCK_LOCK_DIR (held until dock_pid exits; no EXIT release)"
+echo "PINNED_BINARY=$BINARY"
+echo "PINNED_RUNNER=$RUNNER"
 
 # Mirror pid to iCloud queue logs only if quick (non-blocking best-effort)
 {

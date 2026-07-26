@@ -115,31 +115,37 @@ def preflight_dock_session_guard(
     sys.modules[name] = mod
     spec.loader.exec_module(mod)
 
-    binary = Path(
-        str(
-            cfg.get("entropy", {}).get("flexaidds_binary")
-            or cfg.get("tools", {}).get("flexaidds", {}).get("benchmark_datasets")
-            or ""
-        )
-    )
+    entropy_cfg = cfg.setdefault("entropy", {})
+    flex_cfg = cfg.setdefault("tools", {}).setdefault("flexaidds", {})
+    engine = Path(str(entropy_cfg.get("flexaidds_binary") or ""))
+    runner = Path(str(flex_cfg.get("benchmark_datasets") or ""))
+    sources = [p for p in (engine, runner) if p.is_file()]
     out_dir = Path(cfg["work_dir"])
     result = mod.preflight_dock(
         out_dir=out_dir,
-        binary=binary if binary.is_file() else None,
+        binaries=sources or None,
         workers=int(workers),
         acquire_lock=not dry_run,
-        copy_binary=binary.is_file() and not dry_run,
+        copy_binary=bool(sources) and not dry_run,
         repo_root=repo_root,
         owner="astex_entropy.orchestrate",
         note="astex_entropy orchestrator",
     )
     if not result.ok:
         raise RuntimeError("; ".join(result.messages))
+    # Rebind config to isolated pins so tool launch uses run-namespace binaries.
+    launch_env = result.launch_env or {}
+    if launch_env.get("FLEXAIDDS_BINARY"):
+        entropy_cfg["flexaidds_binary"] = launch_env["FLEXAIDDS_BINARY"]
+    if launch_env.get("FLEXAIDDS_RUNNER"):
+        flex_cfg["benchmark_datasets"] = launch_env["FLEXAIDDS_RUNNER"]
     return {
         "messages": list(result.messages),
         "lock_dir": result.lock_dir,
         "free_gib": result.free_gib,
         "binary_pin": result.binary_pin or {},
+        "binary_pins": result.binary_pins or [],
+        "launch_env": launch_env,
     }
 
 
