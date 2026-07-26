@@ -85,3 +85,20 @@ python3 scripts/aggregate_claim_metrics.py "$FLEXAIDDS_RESULTS/campaigns/three_e
 ## Agent operating rule
 
 When in doubt: **advance three-engine Astex 85 (A / B0 / B / C0)** with correct matrix pin, no seed, S1/S2 reporting, and RAM-safe serialization. Everything else waits.
+
+---
+
+## Multi-session dock coordination (Sol #9 — mandatory)
+
+Two agents **cannot** honor “one owner” by convention. **Mechanical gates:**
+
+| Mechanism | Path / command |
+|-----------|----------------|
+| Hold (operator freeze) | `~/flexaidds_results/BENCHMARK_HOLD.json` |
+| Atomic dock lock | `~/flexaidds_results/BENCHMARK_DOCK_LOCK/` (`mkdir`) |
+| Preflight CLI | `python3 scripts/benchmark_coord.py status\|preflight\|release` |
+| Offline role queue | `workorders/OFFLINE_BENCHMARKS_QUEUE.md` |
+
+**Dock owner:** WORKERS≤4, stamp binary into OUT, never rebuild while peer run is live.  
+**Other session:** **offline only** until lock/hold free — full-pop ceiling, CF decomp, matrix pin, crystal PB.  
+**Always:** `git log -8` of the other session’s commits before re-deriving analysis.

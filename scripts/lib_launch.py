@@ -3,6 +3,7 @@
 #
 # Import from any launch_vN.py:
 #   from lib_launch import priority_from_prev_run, priority_for_fix
+#   from lib_launch import dock_preflight  # Sol #9 fail-closed gate
 #
 # Copyright 2026 Le Bonhomme Pharma. Apache-2.0.
 
@@ -12,6 +13,24 @@ import json
 import os
 import signal
 import subprocess
+import sys
+
+# Fail-closed multi-session dock gate (benchmark_coord.py)
+_SCRIPTS = os.path.dirname(os.path.abspath(__file__))
+if _SCRIPTS not in sys.path:
+    sys.path.insert(0, _SCRIPTS)
+try:
+    from benchmark_coord import (  # noqa: E402
+        MAX_WORKERS,
+        preflight as dock_preflight,
+        release_lock as dock_release_lock,
+        status as dock_status,
+    )
+except ImportError:  # pragma: no cover
+    dock_preflight = None  # type: ignore
+    dock_release_lock = None  # type: ignore
+    dock_status = None  # type: ignore
+    MAX_WORKERS = 4
 
 
 def priority_from_prev_run(prev_result_dir, lo=1.8, hi=2.5):

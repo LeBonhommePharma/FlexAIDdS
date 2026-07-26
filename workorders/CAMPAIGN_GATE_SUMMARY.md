@@ -41,7 +41,7 @@ Do **not** cite 25.3% as proof election fix worked.
 | 4.1 | COARSE matched 64 vs 256 (SEARCH-MISS) | COARSE_ORIENTATIONS only | L4 5/5 both; genuine 0/5 both; mean ΔRMSD +0.12; mean ΔBCR +3.44 | **FAIL** (matched; no directional gain) |
 | **G4.4** | Early-stop audit | offline gens-reached on pilot/matched/boom logs | 45/45 truncated vs 2000-gen budget | **PASS audit** — truncation **common**; Phase 4 docks require `FLEXAIDDS_NO_SEC=1` |
 | **G4.2** | Cartesian niche matched A/B | `FLEXAIDDS_NICHE_CARTESIAN` OFF vs ON (σ=2.0 Å); both `NO_SEC=1` | L4 cart B only; genuine 0/5 both; mean ΔBCR **−0.441** Å; 0 elect reg | **FAIL** (misses ≤−0.5 floor; directional only) |
-| G4.1 | BOOM_FRAC panel {0.05,0.1,0.2} | — | — | **DEFERRED** (not run this session) |
+| G4.1 | BOOM_FRAC panel {0.05,0.1,0.2} | SEARCH-MISS; NO_SEC=1; R=2 | OUT `g4_1_boom_frac_20260726_101238` | **IN PROGRESS** |
 | G4.3 | Mutation granularity | — | — | **NOT RUN** (separate arm later) |
 | 5 | Full-85 claim | — | blocked | **NOT RUN** |
 
@@ -104,4 +104,13 @@ Matched control `~/flexaidds_results/coarse_ab_matched_20260725_222652`: **FAIL*
 - **Burial retired** · **Memetic (a)** · Order G4.4 → G4.2 → G4.1 → G4.3  
 - **G4.4 PASS audit** (truncation common → `NO_SEC=1` for Phase 4 docks)  
 - **G4.2 FAIL** science (L4 OK; magnitude floor missed)  
-- **G4.1 DEFERRED** — not completed  
+- **G4.1 DEFERRED** — not completed
+
+## Multi-session dock coordination (Sol #9)
+
+- **Hold:** `~/flexaidds_results/BENCHMARK_HOLD.json` — any presence refuses new docks.
+- **Lock:** `~/flexaidds_results/BENCHMARK_DOCK_LOCK/` — atomic `mkdir`; one owner.
+- **CLI:** `python3 scripts/benchmark_coord.py status|preflight|release`
+- **Offline queue:** `workorders/OFFLINE_BENCHMARKS_QUEUE.md`
+- **WORKERS≤4** hard refuse; disk floor **20 GiB** (override only with `FLEXAIDDS_DISK_FLOOR_OVERRIDE=1`).
+- Live G4.1 may already hold the lock; do not steal ownership.
