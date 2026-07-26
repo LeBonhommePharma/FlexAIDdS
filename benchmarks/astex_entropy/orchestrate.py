@@ -87,6 +87,62 @@ def preflight_required_validators(cfg: dict[str, Any]) -> dict[str, str]:
     }
 
 
+def preflight_dock_session_guard(
+    cfg: dict[str, Any],
+    *,
+    dry_run: bool,
+    workers: int = 1,
+) -> dict[str, Any]:
+    """Sol #9 multi-session guard: hold, mkdir lock, disk floor, binary pin.
+
+    Import path is repo-relative so unit tests can load the same helper used by
+    bash launchers. Dry-run still enforces hold + disk + workers but skips the
+    exclusive lock so offline analysis cannot strand a lock.
+    """
+    import importlib.util
+    import sys
+
+    repo_root = Path(cfg.get("repo_root") or Path(__file__).resolve().parents[2])
+    guard_path = repo_root / "scripts" / "dock_session_guard.py"
+    if not guard_path.is_file():
+        raise RuntimeError(f"dock_session_guard.py missing at {guard_path}")
+
+    name = "dock_session_guard"
+    spec = importlib.util.spec_from_file_location(name, guard_path)
+    if spec is None or spec.loader is None:
+        raise RuntimeError(f"Cannot load {guard_path}")
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules[name] = mod
+    spec.loader.exec_module(mod)
+
+    binary = Path(
+        str(
+            cfg.get("entropy", {}).get("flexaidds_binary")
+            or cfg.get("tools", {}).get("flexaidds", {}).get("benchmark_datasets")
+            or ""
+        )
+    )
+    out_dir = Path(cfg["work_dir"])
+    result = mod.preflight_dock(
+        out_dir=out_dir,
+        binary=binary if binary.is_file() else None,
+        workers=int(workers),
+        acquire_lock=not dry_run,
+        copy_binary=binary.is_file() and not dry_run,
+        repo_root=repo_root,
+        owner="astex_entropy.orchestrate",
+        note="astex_entropy orchestrator",
+    )
+    if not result.ok:
+        raise RuntimeError("; ".join(result.messages))
+    return {
+        "messages": list(result.messages),
+        "lock_dir": result.lock_dir,
+        "free_gib": result.free_gib,
+        "binary_pin": result.binary_pin or {},
+    }
+
+
 def _write_summary(summary: dict[str, Any], out_dir: Path) -> None:
     out_dir.mkdir(parents=True, exist_ok=True)
     (out_dir / "orchestrator_summary.json").write_text(json.dumps(summary, indent=2, sort_keys=True) + "\n")
@@ -144,7 +200,13 @@ def orchestrate(
         from benchmarks.astex_entropy.tools import run_pose_generators
 
     cfg = load_config(config_path)
+    # Multi-session dual-dock refusal before any prep/tool work.
+    flex_workers = int(cfg.get("tools", {}).get("flexaidds", {}).get("threads", 1) or 1)
+    session_guard = preflight_dock_session_guard(
+        cfg, dry_run=dry_run, workers=flex_workers
+    )
     preflight = preflight_required_validators(cfg)
+    preflight["session_guard"] = session_guard
     run_id = _run_id()
     summary: dict[str, Any] = {
         "run_id": run_id,

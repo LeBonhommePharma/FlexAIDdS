@@ -75,6 +75,34 @@ LOG="$LOGDIR/C0_claim_clean.log"
 
 mkdir -p "$OUT" "$LOGDIR"
 
+# Sol #9 multi-session preflight: hold + mkdir dock lock + 20 GiB disk + binary pin.
+# Dual-dock with another Grok session is refused. WORKERS capped at 4 on 18 GB box.
+DOCK_GUARD="$ROOT/scripts/dock_session_guard.py"
+if [[ -f "$DOCK_GUARD" ]]; then
+  if (( DRY )); then
+    python3 "$DOCK_GUARD" check-hold --repo-root "$ROOT" || exit $?
+    python3 "$DOCK_GUARD" preflight \
+      --out-dir "$OUT" \
+      --binary "$BINARY" \
+      --workers "${FLEXAIDDS_CLAIM_WORKERS:-1}" \
+      --repo-root "$ROOT" \
+      --max-workers 4 \
+      --no-lock \
+      --owner "run_C0_claim_clean" \
+      --note "dry-run" || exit $?
+  else
+    python3 "$DOCK_GUARD" preflight \
+      --out-dir "$OUT" \
+      --binary "$BINARY" \
+      --workers "${FLEXAIDDS_CLAIM_WORKERS:-1}" \
+      --repo-root "$ROOT" \
+      --max-workers 4 \
+      --owner "run_C0_claim_clean" \
+      --note "C0 claim clean launch" || exit $?
+    trap 'python3 "$DOCK_GUARD" release-lock --force 2>/dev/null || true' EXIT
+  fi
+fi
+
 # Prefer local data if present when local mode
 if (( USE_LOCAL )) && [[ ! -d "$DATA_DIR" ]]; then
   DATA_DIR="${Q}/data"

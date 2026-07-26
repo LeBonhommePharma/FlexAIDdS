@@ -78,7 +78,8 @@ ASTEX_DATA="${REPO_ROOT}/benchmarks/astex_diverse/data"
 SUMMARY_CSV="${RESULTS_DIR}/summary.csv"
 PILOT_WALL_MIN=300   # 5 min — lower bound acceptable pilot wall clock
 PILOT_WALL_MAX=600   # 10 min — upper bound acceptable pilot wall clock
-MIN_FREE_GB="${FLEXAIDDS_MIN_FREE_GB:-5}"  # hard stop only if the machine is truly close to full
+# Sol #9 / 18 GB box: 20 GiB free floor (fail closed). Override only with LP approval.
+MIN_FREE_GB="${FLEXAIDDS_MIN_FREE_GB:-20}"
 
 # ─── Colours ─────────────────────────────────────────────────────────────────
 
@@ -103,8 +104,8 @@ TWO_PASS=false
 BENCHMARK=""
 OUTPUT_OVERRIDE=""
 SEED=42
-N_THREADS=6          # concurrent FlexAIDdS workers
-OMP_PER_WORKER=2     # OMP threads per worker (6 workers × 2 = 12 threads ≤ 11 P-cores ≈ ok)
+N_THREADS=4          # concurrent FlexAIDdS workers (18 GB cap: WORKERS≤4)
+OMP_PER_WORKER=2     # OMP threads per worker (4 workers × 2 = 8 threads)
 
 # Two-pass parameters
 PASS1_NCHROM=250
@@ -340,6 +341,47 @@ find_structure_files() {
 preflight() {
     phase "PRE-FLIGHT CHECKLIST"
     local n_fail=0
+
+    # 0. Sol #9 multi-session guard (hold + mkdir lock + disk + workers + binary pin)
+    info "0. Dock session guard (Sol #9)"
+    local guard="${REPO_ROOT}/scripts/dock_session_guard.py"
+    local binary_candidate="${FLEXAIDDS_BINARY:-${BUILD_DIR}/FlexAIDdS}"
+    if [[ ! -x "${binary_candidate}" ]]; then
+        binary_candidate="${BUILD_DIR}/FlexAIDdS"
+    fi
+    if [[ -f "${guard}" ]]; then
+        local guard_args=(
+            preflight
+            --out-dir "${RESULTS_DIR}"
+            --workers "${N_THREADS}"
+            --repo-root "${REPO_ROOT}"
+            --max-workers 4
+            --min-free-gb "${MIN_FREE_GB}"
+            --owner "run_benchmark_production"
+            --note "production benchmark preflight"
+        )
+        if [[ -x "${binary_candidate}" ]]; then
+            guard_args+=(--binary "${binary_candidate}")
+        else
+            guard_args+=(--no-copy-binary)
+        fi
+        if [[ "${DRY_RUN}" == true ]]; then
+            guard_args+=(--no-lock)
+        fi
+        if ! python3 "${guard}" "${guard_args[@]}"; then
+            fail "   dock_session_guard refused launch (hold/lock/disk/workers/binary)"
+            n_fail=$((n_fail + 1))
+            # Hold/lock are hard stops even in dry-run.
+            exit 78
+        fi
+        ok "   hold/lock/disk/workers preflight accepted"
+        if [[ "${DRY_RUN}" != true ]]; then
+            # Release exclusive dock lock when this script exits.
+            trap 'python3 "'"${guard}"'" release-lock --force 2>/dev/null || true; on_exit $?' EXIT
+        fi
+    else
+        warn "   dock_session_guard.py missing — multi-session dual-dock unprotected"
+    fi
 
     # 1. Git state
     info "1. Git state"
