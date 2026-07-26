@@ -1,0 +1,4 @@
+idx	cluster	rmsd_to_head	rmsd_raw	rmsd_sym	cf_total	cf_com	cf_wal	pose_id	is_elected
+0	0	0.00000	4.50000	4.20000	-10.0	-8.0	-2.0	0	1
+1	0	1.10000	3.10000	2.80000	-9.0	-7.0	-2.0	-1	0
+2	1	0.00000	5.00000	4.90000	-12.0	-10.0	-2.0	1	1
