@@ -86,6 +86,9 @@ if [[ ! -f "$DOCK_GUARD" ]]; then
 fi
 DOCK_LOCK_DIR="${FLEXAIDDS_DOCK_LOCK_DIR:-${FLEXAIDDS_LOCAL_ROOT:-$HOME/flexaidds_results}/dock_session.lock}"
 export FLEXAIDDS_DOCK_LOCK_DIR="$DOCK_LOCK_DIR"
+# Shell $$ is the long-lived owner for the exclusive window (not the short
+# python preflight child). After nohup, set-dock-pid extends ownership.
+SHELL_OWNER_PID="$$"
 if (( DRY )); then
   python3 "$DOCK_GUARD" check-hold --repo-root "$ROOT" || exit $?
   python3 "$DOCK_GUARD" preflight \
@@ -96,6 +99,7 @@ if (( DRY )); then
     --repo-root "$ROOT" \
     --max-workers 4 \
     --no-lock \
+    --owner-pid "$SHELL_OWNER_PID" \
     --owner "run_C0_claim_clean" \
     --note "dry-run" || exit $?
 else
@@ -108,12 +112,16 @@ else
     --repo-root "$ROOT" \
     --lock-dir "$DOCK_LOCK_DIR" \
     --max-workers 4 \
+    --owner-pid "$SHELL_OWNER_PID" \
     --owner "run_C0_claim_clean" \
     --note "C0 claim clean launch" 2>&1)" || {
       echo "$PREFLIGHT_OUT" >&2
       exit 78
     }
   echo "$PREFLIGHT_OUT"
+  # Immediately bind ownership to this shell so setup minutes cannot be reclaimed
+  # if anyone mis-reads a dead python preflight pid.
+  python3 "$DOCK_GUARD" set-dock-pid --pid "$SHELL_OWNER_PID" --lock-dir "$DOCK_LOCK_DIR" || true
   # Rebind to run-namespace pins so a rebuild of the shared build tree cannot
   # rewrite the live exec path mid-run.
   PINNED_ENGINE="$OUT/bin/$(basename "$BINARY")"
@@ -320,11 +328,12 @@ nohup caffeinate -i -s env \
   >>"$LOG" 2>&1 &
 echo $! | tee "$LOCK" > "$PIDF"
 
-# Sol #9: lock outlives this launcher — record dock_pid; never force-release on EXIT.
+# Sol #9: lock outlives this launcher — overwrite dock_pid with nohup child;
+# never force-release on EXIT (shell may die; dock_pid keeps exclusivity).
 python3 "$DOCK_GUARD" set-dock-pid --pid "$(cat "$PIDF")" --lock-dir "$DOCK_LOCK_DIR" || {
   echo "WARN: failed to record dock_pid in session lock" >&2
 }
-echo "DOCK_LOCK_DIR=$DOCK_LOCK_DIR (held until dock_pid exits; no EXIT release)"
+echo "DOCK_LOCK_DIR=$DOCK_LOCK_DIR owner_shell=$SHELL_OWNER_PID dock_pid=$(cat "$PIDF") (no EXIT release)"
 echo "PINNED_BINARY=$BINARY"
 echo "PINNED_RUNNER=$RUNNER"
 

@@ -353,6 +353,8 @@ preflight() {
     if [[ ! -x "${binary_candidate}" ]]; then
         binary_candidate="${BUILD_DIR}/FlexAIDdS"
     fi
+    # Bash $$ is the long-lived owner (not the short-lived python preflight).
+    local shell_owner_pid="$$"
     local guard_args=(
         preflight
         --out-dir "${RESULTS_DIR}"
@@ -360,6 +362,7 @@ preflight() {
         --repo-root "${REPO_ROOT}"
         --max-workers 4
         --min-free-gb "${MIN_FREE_GB}"
+        --owner-pid "${shell_owner_pid}"
         --owner "run_benchmark_production"
         --note "production benchmark preflight"
     )
@@ -381,7 +384,12 @@ preflight() {
         # Hold/lock are hard stops even in dry-run.
         exit 78
     fi
-    ok "   hold/lock/disk/workers preflight accepted"
+    ok "   hold/lock/disk/workers preflight accepted (owner_pid=${shell_owner_pid})"
+    # Bind exclusivity to this shell for the full foreground run window.
+    if [[ "${DRY_RUN}" != true ]]; then
+        python3 "${guard}" set-dock-pid --pid "${shell_owner_pid}" \
+            ${FLEXAIDDS_DOCK_LOCK_DIR:+--lock-dir "${FLEXAIDDS_DOCK_LOCK_DIR}"} 2>/dev/null || true
+    fi
     # Rebind to run-namespace pin so rebuild of shared build/ cannot hit live exec.
     local pinned_engine="${RESULTS_DIR}/bin/$(basename "${binary_candidate}")"
     if [[ -x "${pinned_engine}" ]]; then
@@ -394,9 +402,9 @@ preflight() {
         exit 77
     fi
     if [[ "${DRY_RUN}" != true ]]; then
-        # Foreground production waits for docks; release lock only after they finish.
-        # Do NOT force-release while a recorded dock_pid is live.
-        trap 'python3 "'"${guard}"'" release-lock 2>/dev/null || true; on_exit $?' EXIT
+        # Foreground production waits for docks; owning shell may release after finish.
+        # Pass --owner-pid $$ so release_lock recognizes this shell as the requester.
+        trap 'python3 "'"${guard}"'" release-lock --owner-pid "'"${shell_owner_pid}"'" 2>/dev/null || true; on_exit $?' EXIT
     fi
 
     # 1. Git state

@@ -124,6 +124,25 @@ def pid_alive(pid: int) -> bool:
         return False
 
 
+def default_owner_pid() -> int:
+    """PID that must stay live for exclusive dock ownership.
+
+    Prefer the **parent** process (bash launcher / shell). The short-lived
+    ``python3 dock_session_guard.py preflight`` child exits immediately after
+    preflight; recording *its* pid made the lock look stale and allowed a
+    second session to reclaim (dual-dock hole). Parent shell ``$$`` stays
+    alive for the whole claim/production script.
+    """
+    try:
+        parent = int(os.getppid())
+    except (OSError, TypeError, ValueError):
+        parent = 0
+    # getppid()==1 (or 0) means no meaningful parent — fall back to self.
+    if parent > 1 and pid_alive(parent):
+        return parent
+    return int(os.getpid())
+
+
 def read_lock_owner(lock_dir: Path) -> dict[str, Any]:
     meta = Path(lock_dir) / "owner.json"
     if not meta.is_file():
@@ -171,7 +190,7 @@ def set_dock_pid(
     if not data:
         data = {
             "lock_dir": str(path),
-            "pid": os.getpid(),
+            "pid": default_owner_pid(),
             "owner": os.environ.get("USER", "unknown"),
             "created_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         }
@@ -226,9 +245,10 @@ def try_acquire_lock(
     except OSError as exc:
         return False, path, f"Dock lock mkdir failed at {path}: {exc}"
 
+    owner_pid = int(pid) if pid is not None else default_owner_pid()
     info = LockInfo(
         lock_dir=str(path),
-        pid=int(pid if pid is not None else os.getpid()),
+        pid=owner_pid,
         owner=owner or os.environ.get("USER", "unknown"),
         created_utc=time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         out_dir=out_dir,
@@ -243,13 +263,29 @@ def try_acquire_lock(
         except OSError:
             pass
         return False, path, f"Dock lock acquired but owner.json write failed: {exc}"
-    return True, path, f"Dock lock acquired: {path}"
+    return (
+        True,
+        path,
+        f"Dock lock acquired: {path} (owner_pid={owner_pid})",
+    )
 
 
-def release_lock(lock_dir: Optional[Path] = None, *, force: bool = False) -> tuple[bool, str]:
+def release_lock(
+    lock_dir: Optional[Path] = None,
+    *,
+    force: bool = False,
+    requester_pid: Optional[int] = None,
+) -> tuple[bool, str]:
+    """Release dock lock.
+
+    ``requester_pid`` defaults to the parent shell (getppid), matching how
+    ownership is recorded. The owning shell may release its own lock without
+    ``force``; a foreign live owner or live dock_pid still refuses.
+    """
     path = Path(lock_dir) if lock_dir is not None else default_lock_dir()
     if not path.exists():
         return True, f"No lock present at {path}"
+    requester = int(requester_pid) if requester_pid is not None else default_owner_pid()
     if not force:
         data = read_lock_owner(path)
         owner_pid = int(data.get("pid") or 0)
@@ -261,18 +297,21 @@ def release_lock(lock_dir: Optional[Path] = None, *, force: bool = False) -> tup
                 f"Refuse release: dock_pid={dock_pid} still live "
                 f"(lock outlives launcher; use force only for ops recovery)",
             )
-        if owner_pid not in (0, -1, os.getpid()) and pid_alive(owner_pid):
+        # Owning shell (requester == owner_pid) may release after docks finish.
+        if (
+            owner_pid not in (0, -1, requester)
+            and pid_alive(owner_pid)
+        ):
             return (
                 False,
                 f"Refuse release of lock owned by live pid={owner_pid} "
-                f"(use force=True only for explicit ops recovery)",
+                f"(requester={requester}; use force=True only for ops recovery)",
             )
     try:
         shutil.rmtree(path)
     except OSError as exc:
         return False, f"Failed to remove lock {path}: {exc}"
     return True, f"Dock lock released: {path}"
-
 def free_disk_gib(path: Path, *, statvfs: Optional[Callable[[str], os.statvfs_result]] = None) -> float:
     """Return free space in GiB for the filesystem containing path."""
     probe = Path(path)
@@ -444,8 +483,13 @@ def preflight_dock(
     free_gib: Optional[float] = None,
     owner: str = "",
     note: str = "",
+    owner_pid: Optional[int] = None,
 ) -> PreflightResult:
-    """Single entry used by launch scripts and unit tests."""
+    """Single entry used by launch scripts and unit tests.
+
+    ``owner_pid`` must be a process that stays alive for the exclusive window
+    (bash ``$$``). Defaults to parent shell via :func:`default_owner_pid`.
+    """
     messages: list[str] = []
     blocked, hold_msg = hold_blocks_launch(repo_root)
     if blocked:
@@ -475,6 +519,7 @@ def preflight_dock(
             owner=owner,
             out_dir=str(out_dir),
             note=note,
+            pid=owner_pid,
         )
         messages.append(msg_l)
         if not ok_l:
@@ -549,6 +594,7 @@ def _cmd_check_hold(args: argparse.Namespace) -> int:
 def _cmd_preflight(args: argparse.Namespace) -> int:
     bin_args = list(args.binary or [])
     binaries = [Path(b) for b in bin_args if b]
+    owner_pid = int(args.owner_pid) if args.owner_pid is not None else None
     result = preflight_dock(
         out_dir=Path(args.out_dir),
         binaries=binaries or None,
@@ -561,6 +607,7 @@ def _cmd_preflight(args: argparse.Namespace) -> int:
         max_workers=int(args.max_workers) if args.max_workers is not None else None,
         owner=args.owner or "",
         note=args.note or "",
+        owner_pid=owner_pid,
     )
     for line in result.messages:
         print(line, file=sys.stderr if not result.ok else sys.stdout)
@@ -584,9 +631,11 @@ def _cmd_preflight(args: argparse.Namespace) -> int:
 
 
 def _cmd_release(args: argparse.Namespace) -> int:
+    requester = int(args.owner_pid) if args.owner_pid is not None else None
     ok, msg = release_lock(
         Path(args.lock_dir) if args.lock_dir else None,
         force=bool(args.force),
+        requester_pid=requester,
     )
     print(msg, file=sys.stdout if ok else sys.stderr)
     return EXIT_OK if ok else EXIT_LOCK
@@ -626,11 +675,23 @@ def build_parser() -> argparse.ArgumentParser:
     pf.add_argument("--no-copy-binary", action="store_true")
     pf.add_argument("--owner", default="")
     pf.add_argument("--note", default="")
+    pf.add_argument(
+        "--owner-pid",
+        type=int,
+        default=None,
+        help="Long-lived owner PID (bash $$). Default: parent shell via getppid().",
+    )
     pf.set_defaults(func=_cmd_preflight)
 
     rl = sub.add_parser("release-lock", help="Release mkdir dock lock")
     rl.add_argument("--lock-dir", default="")
     rl.add_argument("--force", action="store_true")
+    rl.add_argument(
+        "--owner-pid",
+        type=int,
+        default=None,
+        help="Requester PID allowed to release (bash $$). Default: parent shell.",
+    )
     rl.set_defaults(func=_cmd_release)
 
     sp = sub.add_parser(
