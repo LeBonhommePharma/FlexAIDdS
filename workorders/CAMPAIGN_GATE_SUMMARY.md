@@ -36,7 +36,7 @@ Do **not** cite 25.3% as proof election fix worked.
 | 2b | pb_clash burial | `PB_CLASH_WEIGHT=1.0` | 5/5 micro ΔdCF; cf_clash≈0 | **PASS formal**; **not** memetic unlock |
 | 3′ | BOOM small frac | `BOOM_FRAC=0.1` | live inject; no wipe; same false-min elect | **PASS liveness** |
 | 3 | BOOM interval pilot | interval only | void under L2 | **INVALID** |
-| 4.1 | COARSE_ORIENTATIONS=256 SEARCH-MISS | COARSE_ORIENTATIONS | live 5/5; genuine 0/5; BCR 0/5; mean ΔRMSD +0.29 | **FAIL** (no directional gain) |
+| 4.1 | COARSE matched 64 vs 256 (SEARCH-MISS) | COARSE_ORIENTATIONS only | L4 5/5 both; genuine 0/5 both; mean ΔRMSD +0.12; mean ΔBCR +3.44 | **FAIL** (matched; no directional gain) |
 | 5 | Full-85 claim | — | blocked | **NOT RUN** |
 
 ## Explicit blocks
@@ -60,12 +60,23 @@ Do **not** cite 25.3% as proof election fix worked.
 | Audit B1–B3 | `DOCKING_BUG_AUDIT_2026-07-25.md` |
 | Inversion script | `scripts/native_elected_cf_inversion_map.py` |
 
-## Next allowed (after inversion map)
+## Next allowed (after matched COARSE FAIL)
 
-1. If **SEARCH-MISS** dominates clean probes → one-var `FLEXAIDDS_COARSE_ORIENTATIONS=256` W1 (matrix 9dc9, WORKERS≤2).  
-2. If **SCORING-LOCKED** dominates gap targets → strong burial decoys / scoring (not BOOM thrash).  
-3. Full-85 only after Phase 4 sampling gates.
+1. ~~COARSE_ORIENTATIONS=256~~ — **matched FAIL** (see MATCHED_AB_GATE). Do not re-run same lever.  
+2. Next **one-var** sampling levers on SEARCH-MISS: niche Cartesian (flagged), or `FLEXAIDDS_NO_SEC` budget honesty.  
+3. SCORING-LOCKED (1OQ5/1SQ5/1YGC): strong burial decoys / scoring — not BOOM thrash.  
+4. Full-85 only after Phase 4 sampling gates pass.
 
 ## Post-COARSE status
 
-COARSE_ORIENTATIONS=256 **FAIL**ed directional ACCEPT on SEARCH-MISS panel (liveness OK). Next single levers: niche Cartesian distance (code+flag), or `FLEXAIDDS_NO_SEC` budget honesty, or strong burial decoys for SCORING-LOCKED. Full-85 still blocked.
+Prior multi-var COARSE=256 vs pilot_w1 is **VOID** (skeptic). Matched control
+`~/flexaidds_results/coarse_ab_matched_20260725_222652` (same binary `7f05640a…`,
+git `25b21216`, R=2, BOOM unset): **FAIL** — genuine 0/5 both arms; mean Δ elect
+RMSD **+0.12** Å; mean Δ BCR **+3.44** Å (worse under 256 on 1J3J BCR). L1–L4 PASS
+both arms (`[COARSE-INIT] … 64/256 orientations` ×5).
+
+**Workorders:** `MATCHED_AB_GATE.md`, expanded `COARSE_ORIENT_W1_PILOT.md`.
+
+Next single levers (still one variable): niche Cartesian distance (code+flag),
+`FLEXAIDDS_NO_SEC` budget honesty, or strong burial decoys for SCORING-LOCKED.
+Full-85 still blocked.

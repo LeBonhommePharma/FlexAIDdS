@@ -1,0 +1,455 @@
+{
+  "schema": "matched_coarse_ab_gate/v1",
+  "written_utc": "2026-07-26T03:40:13.703171+00:00",
+  "root": "/Users/lp.more/flexaidds_results/coarse_ab_matched_20260725_222652",
+  "verdict": "FAIL",
+  "one_variable": "FLEXAIDDS_COARSE_ORIENTATIONS (64 vs 256)",
+  "skeptic_fix": "matched control same binary/git/R=2 BOOM unset",
+  "provenance": {
+    "schema": "coarse_orient_matched_ab/v1",
+    "written_utc": "2026-07-26T02:26:52.688648+00:00",
+    "skeptic_fix": "matched control: same binary, git, R=2, BOOM unset; only COARSE_ORIENTATIONS 64 vs 256",
+    "one_variable": "FLEXAIDDS_COARSE_ORIENTATIONS (64 vs 256)",
+    "panel": [
+      "1J3J",
+      "1K3U",
+      "1L7F",
+      "1N1M",
+      "1M2Z"
+    ],
+    "protocol": {
+      "mode": "autonomous",
+      "restarts": 2,
+      "workers": 2,
+      "omp": 1,
+      "ga_pop": 1000,
+      "ga_gen": 2000,
+      "seed_elitism": 0,
+      "BOOM_FRAC": null,
+      "BOOM_INTERVAL": null,
+      "matrix_md5": "9dc93717dfed0698006d88dd6a9627bc"
+    },
+    "binary_sha256": "7f05640a2a5723a18fa170ee58072897688a5e7659a29616df3bf68f1bc386ac",
+    "runner_sha256": "d1c3fb5564c9b2c42d7560a909ab0dd17e8625a387baffa2bac2be6ab99af14f",
+    "matrix_md5": "9dc93717dfed0698006d88dd6a9627bc",
+    "git": "25b2121696fa8548035c9ef4619129bc5d4d13f8",
+    "branch": "main",
+    "arms": {
+      "A": {
+        "FLEXAIDDS_COARSE_ORIENTATIONS": "64",
+        "out": "/Users/lp.more/flexaidds_results/coarse_ab_matched_20260725_222652/armA_orient64"
+      },
+      "B": {
+        "FLEXAIDDS_COARSE_ORIENTATIONS": "256",
+        "out": "/Users/lp.more/flexaidds_results/coarse_ab_matched_20260725_222652/armB_orient256"
+      }
+    },
+    "invalidates_prior": "coarse_orient256_search_miss_20260725_214924 vs pilot_w1 (different binary/R/BOOM)",
+    "binary_sha256_live": "7f05640a2a5723a18fa170ee58072897688a5e7659a29616df3bf68f1bc386ac",
+    "matrix_md5_live": "9dc93717dfed0698006d88dd6a9627bc",
+    "boom_env_clean": true,
+    "one_var_ok": true
+  },
+  "M2": {
+    "A64": {
+      "genuine": "0/5",
+      "BCR": "0/5",
+      "election_gap": "0/5"
+    },
+    "B256": {
+      "genuine": "0/5",
+      "BCR": "0/5",
+      "election_gap": "0/5"
+    }
+  },
+  "mean_delta_elect_rmsd_BminusA": 0.11747999999999977,
+  "mean_delta_bcr_BminusA": 3.43544,
+  "deltas": [
+    {
+      "pdb": "1J3J",
+      "elect_A": 62.2229,
+      "elect_B": 62.2229,
+      "bcr_A": 24.6207,
+      "bcr_B": 42.8544,
+      "d_elect": 0.0,
+      "d_bcr": 18.2337,
+      "gen_A": false,
+      "gen_B": false
+    },
+    {
+      "pdb": "1K3U",
+      "elect_A": 11.9556,
+      "elect_B": 12.5526,
+      "bcr_A": 12.2111,
+      "bcr_B": 12.0096,
+      "d_elect": 0.5969999999999995,
+      "d_bcr": -0.20149999999999935,
+      "gen_A": false,
+      "gen_B": false
+    },
+    {
+      "pdb": "1L7F",
+      "elect_A": 4.3158,
+      "elect_B": 4.3062,
+      "bcr_A": 4.086,
+      "bcr_B": 3.9778,
+      "d_elect": -0.009600000000000719,
+      "d_bcr": -0.10820000000000052,
+      "gen_A": false,
+      "gen_B": false
+    },
+    {
+      "pdb": "1N1M",
+      "elect_A": 5.6602,
+      "elect_B": 5.6602,
+      "bcr_A": 4.5515,
+      "bcr_B": 3.7882,
+      "d_elect": 0.0,
+      "d_bcr": -0.7633000000000001,
+      "gen_A": false,
+      "gen_B": false
+    },
+    {
+      "pdb": "1M2Z",
+      "elect_A": 13.7872,
+      "elect_B": 13.7872,
+      "bcr_A": 13.0393,
+      "bcr_B": 13.0558,
+      "d_elect": 0.0,
+      "d_bcr": 0.01649999999999885,
+      "gen_A": false,
+      "gen_B": false
+    }
+  ],
+  "arm_A": {
+    "arm": "A64",
+    "out": "/Users/lp.more/flexaidds_results/coarse_ab_matched_20260725_222652/armA_orient64",
+    "n_results": 5,
+    "genuine": "0/5",
+    "genuine_n": 0,
+    "bcr": "0/5",
+    "bcr_n": 0,
+    "election_gap": "0/5",
+    "election_gap_n": 0,
+    "per_target": [
+      {
+        "pdb": "1J3J",
+        "status": "ok",
+        "rmsd_hungarian": 62.2229,
+        "best_cluster_rmsd": 24.6207,
+        "elected_cf": -102.914658,
+        "seed_echo": "0",
+        "genuine": false,
+        "bcr_ok": false,
+        "election_gap": false,
+        "wall_time_s": 617.2503
+      },
+      {
+        "pdb": "1K3U",
+        "status": "ok",
+        "rmsd_hungarian": 11.9556,
+        "best_cluster_rmsd": 12.2111,
+        "elected_cf": -106.963242,
+        "seed_echo": "0",
+        "genuine": false,
+        "bcr_ok": false,
+        "election_gap": false,
+        "wall_time_s": 651.7566
+      },
+      {
+        "pdb": "1L7F",
+        "status": "ok",
+        "rmsd_hungarian": 4.3158,
+        "best_cluster_rmsd": 4.086,
+        "elected_cf": -148.95871,
+        "seed_echo": "0",
+        "genuine": false,
+        "bcr_ok": false,
+        "election_gap": false,
+        "wall_time_s": 595.0537
+      },
+      {
+        "pdb": "1N1M",
+        "status": "ok",
+        "rmsd_hungarian": 5.6602,
+        "best_cluster_rmsd": 4.5515,
+        "elected_cf": -99.314072,
+        "seed_echo": "0",
+        "genuine": false,
+        "bcr_ok": false,
+        "election_gap": false,
+        "wall_time_s": 1036.5377
+      },
+      {
+        "pdb": "1M2Z",
+        "status": "ok",
+        "rmsd_hungarian": 13.7872,
+        "best_cluster_rmsd": 13.0393,
+        "elected_cf": -0.42333,
+        "seed_echo": "0",
+        "genuine": false,
+        "bcr_ok": false,
+        "election_gap": false,
+        "wall_time_s": 173.1982
+      }
+    ],
+    "liveness": {
+      "expect_orientations": 64,
+      "coarse_init_log_hits": [
+        {
+          "pdb": "1J3J",
+          "log": "stdout.log",
+          "n": 64,
+          "line": "[COARSE-INIT] Scanning 2194 candidate grid points \u00d7 64 orientations"
+        },
+        {
+          "pdb": "1K3U",
+          "log": "stdout.log",
+          "n": 64,
+          "line": "[COARSE-INIT] Scanning 16 candidate grid points \u00d7 64 orientations"
+        },
+        {
+          "pdb": "1L7F",
+          "log": "stdout.log",
+          "n": 64,
+          "line": "[COARSE-INIT] Scanning 16 candidate grid points \u00d7 64 orientations"
+        },
+        {
+          "pdb": "1N1M",
+          "log": "stdout.log",
+          "n": 64,
+          "line": "[COARSE-INIT] Scanning 28 candidate grid points \u00d7 64 orientations"
+        },
+        {
+          "pdb": "1M2Z",
+          "log": "stdout.log",
+          "n": 64,
+          "line": "[COARSE-INIT] Scanning 31 candidate grid points \u00d7 64 orientations"
+        }
+      ],
+      "n_hits_matching_expect": 5,
+      "dock_configs": [
+        {
+          "pdb": "1J3J",
+          "n_orientations_json": 64,
+          "boom_inject_fraction": 0,
+          "boom_inject_interval": 100,
+          "dock_config_sha256": "31eeb168d978aedc226d920ef84476bf76835751e88e8bc1b3fec9982735456d"
+        },
+        {
+          "pdb": "1K3U",
+          "n_orientations_json": 64,
+          "boom_inject_fraction": 0,
+          "boom_inject_interval": 100,
+          "dock_config_sha256": "0f0e1fb7da0a381721917830dda13cde76b5832700f96293a7da13ffdae12376"
+        },
+        {
+          "pdb": "1L7F",
+          "n_orientations_json": 64,
+          "boom_inject_fraction": 0,
+          "boom_inject_interval": 100,
+          "dock_config_sha256": "a0210f410916923b780676cb72120c1014bf538426afdea7054c9af93b5696f9"
+        },
+        {
+          "pdb": "1N1M",
+          "n_orientations_json": 64,
+          "boom_inject_fraction": 0,
+          "boom_inject_interval": 100,
+          "dock_config_sha256": "637e5649d4e26f18b7dc56ee254354620e2a68a05384fca19aa6bc60398ecca9"
+        },
+        {
+          "pdb": "1M2Z",
+          "n_orientations_json": 64,
+          "boom_inject_fraction": 0,
+          "boom_inject_interval": 100,
+          "dock_config_sha256": "6f5adb6a61f884047e4a4b943ad98e761c07f3000cc17d66b80fb4f4497b0a3f"
+        }
+      ],
+      "L1_knob_read": true,
+      "L2_env_overrides_json": true,
+      "L3_physically_able": true,
+      "L4_log_observable": true
+    },
+    "arm_env": {
+      "FLEXAIDDS_BINARY": "/Users/lp.more/Projects/FlexAIDdS/build/FlexAIDdS",
+      "FLEXAIDDS_BUILD": "/Users/lp.more/Projects/FlexAIDdS/build",
+      "FLEXAIDDS_COARSE_ORIENTATIONS": "64",
+      "FLEXAIDDS_ENGINE_SHA256": "a8204fb7411232a1dad1565ee979bdd913670328e021f1a0949f227d9c7e4607",
+      "FLEXAIDDS_PARALLEL_RESTARTS": "0",
+      "FLEXAIDDS_RESTARTS": "2",
+      "FLEXAIDDS_RESULTS": "/Users/lp.more/flexaidds_results/results",
+      "FLEXAIDDS_RUNNER": "/Users/lp.more/Projects/FlexAIDdS/build/benchmark_datasets",
+      "FLEXAIDDS_RUNNER_SHA256": "d1c3fb5564c9b2c42d7560a909ab0dd17e8625a387baffa2bac2be6ab99af14f",
+      "FLEXAIDDS_SEED_ELITISM": "0"
+    }
+  },
+  "arm_B": {
+    "arm": "B256",
+    "out": "/Users/lp.more/flexaidds_results/coarse_ab_matched_20260725_222652/armB_orient256",
+    "n_results": 5,
+    "genuine": "0/5",
+    "genuine_n": 0,
+    "bcr": "0/5",
+    "bcr_n": 0,
+    "election_gap": "0/5",
+    "election_gap_n": 0,
+    "per_target": [
+      {
+        "pdb": "1J3J",
+        "status": "ok",
+        "rmsd_hungarian": 62.2229,
+        "best_cluster_rmsd": 42.8544,
+        "elected_cf": -102.914703,
+        "seed_echo": "0",
+        "genuine": false,
+        "bcr_ok": false,
+        "election_gap": false,
+        "wall_time_s": 936.3896
+      },
+      {
+        "pdb": "1K3U",
+        "status": "ok",
+        "rmsd_hungarian": 12.5526,
+        "best_cluster_rmsd": 12.0096,
+        "elected_cf": -98.612297,
+        "seed_echo": "0",
+        "genuine": false,
+        "bcr_ok": false,
+        "election_gap": false,
+        "wall_time_s": 576.1263
+      },
+      {
+        "pdb": "1L7F",
+        "status": "ok",
+        "rmsd_hungarian": 4.3062,
+        "best_cluster_rmsd": 3.9778,
+        "elected_cf": -147.849777,
+        "seed_echo": "0",
+        "genuine": false,
+        "bcr_ok": false,
+        "election_gap": false,
+        "wall_time_s": 448.2788
+      },
+      {
+        "pdb": "1N1M",
+        "status": "ok",
+        "rmsd_hungarian": 5.6602,
+        "best_cluster_rmsd": 3.7882,
+        "elected_cf": -99.314072,
+        "seed_echo": "0",
+        "genuine": false,
+        "bcr_ok": false,
+        "election_gap": false,
+        "wall_time_s": 893.135
+      },
+      {
+        "pdb": "1M2Z",
+        "status": "ok",
+        "rmsd_hungarian": 13.7872,
+        "best_cluster_rmsd": 13.0558,
+        "elected_cf": -0.42333,
+        "seed_echo": "0",
+        "genuine": false,
+        "bcr_ok": false,
+        "election_gap": false,
+        "wall_time_s": 184.242
+      }
+    ],
+    "liveness": {
+      "expect_orientations": 256,
+      "coarse_init_log_hits": [
+        {
+          "pdb": "1J3J",
+          "log": "stdout.log",
+          "n": 256,
+          "line": "[COARSE-INIT] Scanning 2194 candidate grid points \u00d7 256 orientations"
+        },
+        {
+          "pdb": "1K3U",
+          "log": "stdout.log",
+          "n": 256,
+          "line": "[COARSE-INIT] Scanning 16 candidate grid points \u00d7 256 orientations"
+        },
+        {
+          "pdb": "1L7F",
+          "log": "stdout.log",
+          "n": 256,
+          "line": "[COARSE-INIT] Scanning 16 candidate grid points \u00d7 256 orientations"
+        },
+        {
+          "pdb": "1N1M",
+          "log": "stdout.log",
+          "n": 256,
+          "line": "[COARSE-INIT] Scanning 28 candidate grid points \u00d7 256 orientations"
+        },
+        {
+          "pdb": "1M2Z",
+          "log": "stdout.log",
+          "n": 256,
+          "line": "[COARSE-INIT] Scanning 31 candidate grid points \u00d7 256 orientations"
+        }
+      ],
+      "n_hits_matching_expect": 5,
+      "dock_configs": [
+        {
+          "pdb": "1J3J",
+          "n_orientations_json": 64,
+          "boom_inject_fraction": 0,
+          "boom_inject_interval": 100,
+          "dock_config_sha256": "31eeb168d978aedc226d920ef84476bf76835751e88e8bc1b3fec9982735456d"
+        },
+        {
+          "pdb": "1K3U",
+          "n_orientations_json": 64,
+          "boom_inject_fraction": 0,
+          "boom_inject_interval": 100,
+          "dock_config_sha256": "0f0e1fb7da0a381721917830dda13cde76b5832700f96293a7da13ffdae12376"
+        },
+        {
+          "pdb": "1L7F",
+          "n_orientations_json": 64,
+          "boom_inject_fraction": 0,
+          "boom_inject_interval": 100,
+          "dock_config_sha256": "a0210f410916923b780676cb72120c1014bf538426afdea7054c9af93b5696f9"
+        },
+        {
+          "pdb": "1N1M",
+          "n_orientations_json": 64,
+          "boom_inject_fraction": 0,
+          "boom_inject_interval": 100,
+          "dock_config_sha256": "637e5649d4e26f18b7dc56ee254354620e2a68a05384fca19aa6bc60398ecca9"
+        },
+        {
+          "pdb": "1M2Z",
+          "n_orientations_json": 64,
+          "boom_inject_fraction": 0,
+          "boom_inject_interval": 100,
+          "dock_config_sha256": "6f5adb6a61f884047e4a4b943ad98e761c07f3000cc17d66b80fb4f4497b0a3f"
+        }
+      ],
+      "L1_knob_read": true,
+      "L2_env_overrides_json": true,
+      "L3_physically_able": true,
+      "L4_log_observable": true
+    },
+    "arm_env": {
+      "FLEXAIDDS_BINARY": "/Users/lp.more/Projects/FlexAIDdS/build/FlexAIDdS",
+      "FLEXAIDDS_BUILD": "/Users/lp.more/Projects/FlexAIDdS/build",
+      "FLEXAIDDS_COARSE_ORIENTATIONS": "256",
+      "FLEXAIDDS_ENGINE_SHA256": "a8204fb7411232a1dad1565ee979bdd913670328e021f1a0949f227d9c7e4607",
+      "FLEXAIDDS_PARALLEL_RESTARTS": "0",
+      "FLEXAIDDS_RESTARTS": "2",
+      "FLEXAIDDS_RESULTS": "/Users/lp.more/flexaidds_results/results",
+      "FLEXAIDDS_RUNNER": "/Users/lp.more/Projects/FlexAIDdS/build/benchmark_datasets",
+      "FLEXAIDDS_RUNNER_SHA256": "d1c3fb5564c9b2c42d7560a909ab0dd17e8625a387baffa2bac2be6ab99af14f",
+      "FLEXAIDDS_SEED_ELITISM": "0"
+    }
+  },
+  "ACCEPT_criteria": {
+    "liveness_L4_both": true,
+    "directional_bcr_or_elect": false,
+    "no_genuine_regression": true,
+    "one_variable": true,
+    "boom_unset": true
+  }
+}
