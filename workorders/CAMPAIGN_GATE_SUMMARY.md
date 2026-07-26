@@ -33,7 +33,8 @@ Do **not** cite 25.3% as proof election fix worked.
 | 1 | E10 + M2 triple | offline | sampling-limited | **PASS** |
 | 1.5 | Native–Elected CF inversion | pose role (fixed LOCCLF) | 8/8; **SEARCH-MISS=5** clean; **SCORING-LOCKED=3** gap | **PASS** |
 | 2a | WAL wall | WAL_COERCIVE | structural no-op | **VOID / withdrawn** |
-| 2b | pb_clash burial | `PB_CLASH_WEIGHT=1.0` | 5/5 micro ΔdCF; cf_clash≈0 | **PASS formal**; **not** memetic unlock |
+| 2b | pb_clash SEARCH-MISS (legacy) | `PB_CLASH_WEIGHT=1.0` | ΔdCF 1e-4..0.02; wrong panel | **VOID** (ROADMAP_v2) |
+| 2b′ | pb_clash SCORING-LOCKED | weight 1/5/10; elected decoys | 0 sign flips; max decrease 4.55 @w=10 | **FAIL** (magnitude floor) |
 | 3′ | BOOM small frac | `BOOM_FRAC=0.1` | live inject; no wipe; same false-min elect | **PASS liveness** |
 | 3 | BOOM interval pilot | interval only | void under L2 | **INVALID** |
 | 4.1 | COARSE matched 64 vs 256 (SEARCH-MISS) | COARSE_ORIENTATIONS only | L4 5/5 both; genuine 0/5 both; mean ΔRMSD +0.12; mean ΔBCR +3.44 | **FAIL** (matched; no directional gain) |
@@ -56,7 +57,9 @@ Do **not** cite 25.3% as proof election fix worked.
 | Inversion map | `workorders/INVERSION_MAP.md` |
 | Next-step design | `workorders/NEXT_CAMPAIGN_STEP.md` |
 | BOOM | `BOOM_FRAC_LIVENESS.md`, `BOOM_FRAC_AB.md` |
-| pb_clash | `PB_CLASH_ORACLE.md`, `scripts/pb_clash_burial_oracle.py` |
+| pb_clash VOID | `PB_CLASH_ORACLE.md` |
+| pb_clash 2b′ | `PB_CLASH_SCORING_LOCKED.md`, `scripts/pb_clash_burial_oracle.py --mode scoring-locked` |
+| ROADMAP_v2 | `ROADMAP_v2_PANEL_CORRECTION.md` |
 | Audit B1–B3 | `DOCKING_BUG_AUDIT_2026-07-25.md` |
 | Inversion script | `scripts/native_elected_cf_inversion_map.py` |
 
@@ -80,3 +83,12 @@ both arms (`[COARSE-INIT] … 64/256 orientations` ×5).
 Next single levers (still one variable): niche Cartesian distance (code+flag),
 `FLEXAIDDS_NO_SEC` budget honesty, or strong burial decoys for SCORING-LOCKED.
 Full-85 still blocked.
+
+## ROADMAP_v2 Phase 2 correction (2026-07-26)
+
+- Prior SEARCH-MISS pb_clash **VOID** (wrong panel + no magnitude floor).
+- Class-matched rule: sampling → SEARCH-MISS only; scoring → SCORING-LOCKED only.
+- Magnitude floor: scoring-oracle PASS requires **≥1.0 kcal** dCF decrease **and** sign flip on **≥2/3** inverted targets.
+- Revised 2b′ on 1OQ5/1SQ5/1YGC elected decoys: **FAIL** (ladder w=1/5/10; 0 sign flips).
+- Memetic re-keyed to `FLEXAIDDS_PB_CLASH_PHASE2_PASS` (or legacy WALL); **still OFF** until 2b′ PASS.
+- Full-85 still blocked.

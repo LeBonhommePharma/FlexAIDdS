@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Structural test: use_memetic is a real FA field gated by WALL_PILOT_PASS."""
+"""Structural test: use_memetic gated by Phase2 pb_clash PASS or legacy WALL."""
 
 from pathlib import Path
 
@@ -13,6 +13,7 @@ def test_use_memetic_field_and_gate_in_parser():
     cpp = (ROOT / "LIB" / "config_parser.cpp").read_text(encoding="utf-8", errors="replace")
     assert "FA->use_memetic" in cpp
     assert "FLEXAIDDS_WALL_PILOT_PASS" in cpp
+    assert "FLEXAIDDS_PB_CLASH_PHASE2_PASS" in cpp
     assert "memetic_gate.h" in cpp
     assert "resolve_use_memetic_from_env" in cpp
     gab = (ROOT / "LIB" / "gaboom.cpp").read_text(encoding="utf-8", errors="replace")
@@ -20,12 +21,14 @@ def test_use_memetic_field_and_gate_in_parser():
     assert "memetic_armed_at_gen" in gab  # durable arm marker on GA path
     gate = (ROOT / "LIB" / "memetic_gate.h").read_text(encoding="utf-8", errors="replace")
     assert "resolve_use_memetic_from_env" in gate
+    assert "FLEXAIDDS_PB_CLASH_PHASE2_PASS" in gate
+    assert "FLEXAIDDS_WALL_PILOT_PASS" in gate
 
 
 def test_memetic_gate_header_logic_via_subprocess_cpp():
     """Drive shipped resolve_use_memetic_from_env through the C++ unit binary if built."""
-    import subprocess
     import os
+    import subprocess
 
     bin_path = ROOT / "build_wave0" / "test_memetic_gate"
     if not bin_path.is_file():

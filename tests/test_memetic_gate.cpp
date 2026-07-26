@@ -28,10 +28,12 @@ protected:
     void SetUp() override {
         clear_env("FLEXAIDDS_MEMETIC");
         clear_env("FLEXAIDDS_WALL_PILOT_PASS");
+        clear_env("FLEXAIDDS_PB_CLASH_PHASE2_PASS");
     }
     void TearDown() override {
         clear_env("FLEXAIDDS_MEMETIC");
         clear_env("FLEXAIDDS_WALL_PILOT_PASS");
+        clear_env("FLEXAIDDS_PB_CLASH_PHASE2_PASS");
     }
 };
 
@@ -51,14 +53,25 @@ TEST_F(MemeticGateEnv, WallPassAloneDoesNotEnable) {
     EXPECT_EQ(flexaids::resolve_use_memetic_from_env(), 0);
 }
 
-TEST_F(MemeticGateEnv, BothEnables) {
+TEST_F(MemeticGateEnv, Phase2PassAloneDoesNotEnable) {
+    set_env("FLEXAIDDS_PB_CLASH_PHASE2_PASS", "1");
+    EXPECT_EQ(flexaids::resolve_use_memetic_from_env(), 0);
+}
+
+TEST_F(MemeticGateEnv, BothLegacyWallEnables) {
     set_env("FLEXAIDDS_MEMETIC", "1");
     set_env("FLEXAIDDS_WALL_PILOT_PASS", "1");
     EXPECT_EQ(flexaids::resolve_use_memetic_from_env(), 1);
 }
 
+TEST_F(MemeticGateEnv, MemeticPlusPhase2Enables) {
+    set_env("FLEXAIDDS_MEMETIC", "1");
+    set_env("FLEXAIDDS_PB_CLASH_PHASE2_PASS", "1");
+    EXPECT_EQ(flexaids::resolve_use_memetic_from_env(), 1);
+}
+
 TEST_F(MemeticGateEnv, ZeroMeansOff) {
     set_env("FLEXAIDDS_MEMETIC", "0");
-    set_env("FLEXAIDDS_WALL_PILOT_PASS", "1");
+    set_env("FLEXAIDDS_PB_CLASH_PHASE2_PASS", "1");
     EXPECT_EQ(flexaids::resolve_use_memetic_from_env(), 0);
 }

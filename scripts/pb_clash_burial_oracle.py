@@ -1,35 +1,31 @@
 #!/usr/bin/env python3
-"""STEP 2 replacement: one-variable pb_clash burial score-only oracle.
+"""pb_clash burial / scoring oracle (score-only).
 
-Replaces the structurally unpassable WAL_COERCIVE Voronoi-wall gate (B3).
-pb_clash is an all-pairs cell-list term (uncapped by design) that *can* see deep
-interpenetration — see workorders WALL_ORACLE_FAIL_EXPLAINED / DOCKING_BUG_AUDIT B3.
+ROADMAP_v2 (2026-07-25) voids the SEARCH-MISS "clean probe" PASS: ΔdCF 1e-4..0.02
+is noise; those targets already have native CF-min. Revised Phase 2:
 
-**One variable:** FLEXAIDDS_PB_CLASH_WEIGHT (default OFF = 0.0 vs a single ON weight).
+  Panel: SCORING-LOCKED 1OQ5 1SQ5 1YGC
+  Decoy: each target's actual elected pose (false-min attractor)
+  One variable: FLEXAIDDS_PB_CLASH_WEIGHT (OFF=0 vs ON weight; ladder = one arm each)
+  ACCEPT (magnitude floor):
+    dCF decreases by ≥1.0 kcal AND flips sign on ≥2/3 inverted targets,
+    AND no SEARCH-MISS probe regresses (native stays CF-min on all 5).
 
-Uses production LOCCLF configs under ops/gates/configs/{PDB}_dock_config.json.
-Never diagnostic/probe_config.json.
-
-Panel: methodology clean probes 1J3J 1K3U 1L7F 1N1M 1M2Z.
-Decoys: diagnostic/refs/*/falsemin_armA.pdb, or --decoy-dir of prebuilt buried poses.
-
-ACCEPT (OPS-revised STEP 2):
-  dCF = cf_native - cf_decoy moves toward/below 0 with weight ON vs OFF on ≥4/5,
-  and no clean probe whose native is already CF-min OFF regresses under ON.
+Legacy --mode search-miss keeps the old panel for historical re-runs only; its
+PASS must not unlock memetic (workorder VOID).
 
 Usage:
   python3 scripts/pb_clash_burial_oracle.py \\
-    --probe-cf build/probe_cf --binary build/FlexAIDdS --data-dir . \\
+    --mode scoring-locked \\
+    --elected-leaf ~/flexaidds_results/pilot_w1_boom_interval_20260725_134740 \\
     --weight 1.0 \\
-    --out-dir ~/flexaidds_results/workorders/pb_clash_oracle
-
-Optional: build deeper burial decoys first with --build-buried (translate falsemin
-toward receptor COM until cf_clash rises, write poses under out-dir/buried/).
+    --out-dir ~/flexaidds_results/workorders/pb_clash_scoring_locked
 """
 from __future__ import annotations
 
 import argparse
 import csv
+import hashlib
 import json
 import os
 import subprocess
@@ -38,7 +34,15 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
-CLEAN_PANEL = ("1J3J", "1K3U", "1L7F", "1N1M", "1M2Z")
+# SEARCH-MISS: native already CF-better; sampling only (never judge scoring here).
+SEARCH_MISS_PANEL = ("1J3J", "1K3U", "1L7F", "1N1M", "1M2Z")
+# SCORING-LOCKED: elected beats crystal while BCR≤2; scoring only.
+SCORING_LOCKED_PANEL = ("1OQ5", "1SQ5", "1YGC")
+# Alias kept for older callers / tests
+CLEAN_PANEL = SEARCH_MISS_PANEL
+
+MAGNITUDE_FLOOR_KCAL = 1.0
+SIGN_FLIP_MIN_FRAC = 2  # of 3 SCORING-LOCKED
 
 
 def find_repo_root() -> Path:
@@ -48,9 +52,25 @@ def find_repo_root() -> Path:
     return Path.cwd()
 
 
-def resolve_dock_config(repo: Path, pdb: str) -> Optional[Path]:
+def sha256_file(p: Path) -> str:
+    h = hashlib.sha256()
+    with p.open("rb") as fh:
+        for chunk in iter(lambda: fh.read(1 << 20), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def resolve_dock_config(
+    repo: Path, pdb: str, elected_leaf: Optional[Path]
+) -> Optional[Path]:
     c = repo / "ops" / "gates" / "configs" / f"{pdb}_dock_config.json"
-    return c if c.is_file() else None
+    if c.is_file():
+        return c
+    if elected_leaf is not None:
+        p = elected_leaf / pdb / "dock_config.json"
+        if p.is_file():
+            return p
+    return None
 
 
 def resolve_receptor(repo: Path, pdb: str) -> Optional[Path]:
@@ -76,12 +96,30 @@ def resolve_native(repo: Path, pdb: str) -> Optional[Path]:
     return None
 
 
-def resolve_decoy(repo: Path, pdb: str, decoy_dir: Optional[Path]) -> Optional[Path]:
-    if decoy_dir is not None:
-        for name in (f"{pdb}_buried.pdb", f"{pdb}_falsemin.pdb", f"{pdb}.pdb"):
-            p = decoy_dir / name
+def resolve_decoy(
+    repo: Path,
+    pdb: str,
+    decoy_dir: Optional[Path],
+    elected_leaf: Optional[Path],
+) -> Optional[Path]:
+    if elected_leaf is not None:
+        for name in ("elected_pose.pdb", f"{pdb}_elected.pdb"):
+            p = elected_leaf / pdb / name
             if p.is_file():
                 return p
+    if decoy_dir is not None:
+        for name in (
+            f"{pdb}_buried.pdb",
+            f"{pdb}_falsemin.pdb",
+            f"{pdb}.pdb",
+            "elected_pose.pdb",
+        ):
+            p = decoy_dir / pdb / name if (decoy_dir / pdb).is_dir() else decoy_dir / name
+            if p.is_file():
+                return p
+            p2 = decoy_dir / name
+            if p2.is_file():
+                return p2
     d = repo / "diagnostic" / "refs" / pdb / "falsemin_armA.pdb"
     return d if d.is_file() else None
 
@@ -140,9 +178,7 @@ def probe_json(
         print(f"  refuse non-production config {config}", file=sys.stderr)
         return None
     env = os.environ.copy()
-    # Explicit OFF vs ON for the single variable
     env["FLEXAIDDS_PB_CLASH_WEIGHT"] = str(pb_clash_weight)
-    # Keep wall coercive off; do not touch other knobs
     env["FLEXAIDDS_WAL_COERCIVE"] = "0"
     env.pop("FLEXAIDDS_COM_BURIAL_CAP", None)
     cmd = [
@@ -201,10 +237,59 @@ def fnum(obj: Optional[dict], key: str) -> Optional[float]:
         return None
 
 
+def score_pair(
+    probe: Path,
+    *,
+    rec: Path,
+    nat: Path,
+    dec: Path,
+    cfg: Path,
+    binary: Path,
+    data_dir: Path,
+    pdb: str,
+    weight: float,
+) -> Optional[Dict[str, Any]]:
+    nat_j = probe_json(
+        probe,
+        receptor=rec,
+        pose=nat,
+        ligand=nat,
+        binary=binary,
+        data_dir=data_dir,
+        config=cfg,
+        label=f"{pdb}_nat_w{weight}",
+        pb_clash_weight=weight,
+    )
+    dec_j = probe_json(
+        probe,
+        receptor=rec,
+        pose=dec,
+        ligand=nat,
+        binary=binary,
+        data_dir=data_dir,
+        config=cfg,
+        label=f"{pdb}_dec_w{weight}",
+        pb_clash_weight=weight,
+    )
+    if not nat_j or not dec_j:
+        return None
+    cn = fnum(nat_j, "cf_total")
+    cd = fnum(dec_j, "cf_total")
+    if cn is None or cd is None:
+        return None
+    return {
+        "cf_native": cn,
+        "cf_decoy": cd,
+        "dCF": cn - cd,  # positive => decoy better (scoring-locked fingerprint)
+        "clash_native": fnum(nat_j, "cf_clash"),
+        "clash_decoy": fnum(dec_j, "cf_clash"),
+        "native_min": cn <= cd,
+    }
+
+
 def build_buried_decoy(
     probe: Path,
     *,
-    repo: Path,
     pdb: str,
     rec: Path,
     nat: Path,
@@ -255,6 +340,80 @@ def build_buried_decoy(
     return best_pose if best_clash > 0 else best_pose
 
 
+def verdict_search_miss_legacy(ok: List[Dict[str, Any]]) -> Tuple[str, str]:
+    """Historical sign-only ACCEPT — VOID for science (ROADMAP_v2)."""
+    n = len(ok)
+    n_moved = sum(1 for r in ok if r.get("moved_toward_native"))
+    n_regressed = sum(
+        1 for r in ok if r.get("native_regressed") or r.get("native_min_lost")
+    )
+    n_identical = sum(1 for r in ok if r.get("identical_off_on"))
+    accept_move = n_moved >= 4 if n >= 5 else (n_moved >= max(1, n - 1) if n else False)
+    if n == 0:
+        return "FAIL", "no scored targets"
+    if n_identical == n:
+        return "FAIL", "OFF≡ON on all targets"
+    if accept_move and n_regressed == 0:
+        return (
+            "VOID_LEGACY_PASS",
+            f"sign-only move {n_moved}/{n} — VOID under ROADMAP_v2 (no magnitude floor; SEARCH-MISS panel)",
+        )
+    return (
+        "FAIL",
+        f"moved={n_moved}/{n}; regressed={n_regressed}",
+    )
+
+
+def verdict_scoring_locked(
+    ok: List[Dict[str, Any]],
+    floor: float,
+    min_flips: int,
+) -> Tuple[str, str, Dict[str, Any]]:
+    """ROADMAP_v2 ACCEPT: ΔdCF decrease ≥floor AND sign flip on ≥min_flips/3."""
+    n = len(ok)
+    stats = {
+        "n_scored": n,
+        "n_decrease_ge_floor": 0,
+        "n_sign_flip": 0,
+        "n_both": 0,
+        "magnitude_floor": floor,
+        "min_sign_flips": min_flips,
+    }
+    if n == 0:
+        return "FAIL", "no scored SCORING-LOCKED targets", stats
+
+    for r in ok:
+        d0 = float(r["dCF_off"])
+        d1 = float(r["dCF_on"])
+        decrease = d0 - d1  # positive if dCF fell (moved toward/past native-better)
+        ge_floor = decrease >= floor - 1e-12
+        # Sign flip on inverted targets: OFF has elected better (dCF>0), ON native better (dCF<0)
+        flipped = d0 > 0.0 and d1 < 0.0
+        r["decrease"] = decrease
+        r["ge_floor"] = ge_floor
+        r["sign_flip"] = flipped
+        r["both_accept"] = ge_floor and flipped
+        if ge_floor:
+            stats["n_decrease_ge_floor"] += 1
+        if flipped:
+            stats["n_sign_flip"] += 1
+        if ge_floor and flipped:
+            stats["n_both"] += 1
+
+    if stats["n_both"] >= min_flips:
+        return (
+            "PASS",
+            f"dCF decrease≥{floor} and sign flip on {stats['n_both']}/{n} (need ≥{min_flips})",
+            stats,
+        )
+    return (
+        "FAIL",
+        f"both floor+flip on {stats['n_both']}/{n} (need ≥{min_flips}); "
+        f"ge_floor={stats['n_decrease_ge_floor']} flips={stats['n_sign_flip']}",
+        stats,
+    )
+
+
 def main(argv: Optional[Sequence[str]] = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     repo = find_repo_root()
@@ -262,6 +421,12 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     ap.add_argument("--probe-cf", type=Path, default=None)
     ap.add_argument("--binary", type=Path, default=None)
     ap.add_argument("--data-dir", type=Path, default=None)
+    ap.add_argument(
+        "--mode",
+        choices=("scoring-locked", "search-miss"),
+        default="scoring-locked",
+        help="scoring-locked = ROADMAP_v2 Phase 2; search-miss = legacy VOID panel",
+    )
     ap.add_argument("--panel", nargs="*", default=None)
     ap.add_argument(
         "--weight",
@@ -269,11 +434,28 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         default=1.0,
         help="Single ON value for FLEXAIDDS_PB_CLASH_WEIGHT (OFF is always 0)",
     )
+    ap.add_argument(
+        "--magnitude-floor",
+        type=float,
+        default=MAGNITUDE_FLOOR_KCAL,
+        help="Min dCF decrease (kcal) for SCORING-LOCKED ACCEPT (default 1.0)",
+    )
     ap.add_argument("--decoy-dir", type=Path, default=None)
+    ap.add_argument(
+        "--elected-leaf",
+        type=Path,
+        default=None,
+        help="Leaf with {PDB}/elected_pose.pdb and dock_config.json",
+    )
     ap.add_argument(
         "--build-buried",
         action="store_true",
-        help="Translate falsemin toward receptor COM to raise cf_clash before A/B",
+        help="(search-miss only) translate falsemin toward receptor COM",
+    )
+    ap.add_argument(
+        "--skip-search-miss-check",
+        action="store_true",
+        help="Skip SEARCH-MISS no-regression recheck (not for claim runs)",
     )
     ap.add_argument("--out-dir", type=Path, required=True)
     args = ap.parse_args(list(argv) if argv is not None else None)
@@ -304,17 +486,34 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         print("error: --weight must be > 0 (OFF arm is always 0)", file=sys.stderr)
         return 2
 
-    panel = list(args.panel) if args.panel else list(CLEAN_PANEL)
+    elected_leaf = args.elected_leaf
+    if elected_leaf is not None:
+        elected_leaf = elected_leaf.expanduser().resolve()
+    if args.mode == "scoring-locked" and elected_leaf is None:
+        # Default pilot leaf used by inversion map
+        cand = (
+            Path.home()
+            / "flexaidds_results"
+            / "pilot_w1_boom_interval_20260725_134740"
+        )
+        if cand.is_dir():
+            elected_leaf = cand
+
+    if args.mode == "scoring-locked":
+        panel = list(args.panel) if args.panel else list(SCORING_LOCKED_PANEL)
+    else:
+        panel = list(args.panel) if args.panel else list(SEARCH_MISS_PANEL)
+
     buried_dir = out_dir / "buried"
     if args.build_buried:
         buried_dir.mkdir(parents=True, exist_ok=True)
 
     rows: List[Dict[str, Any]] = []
     for pdb in panel:
-        cfg = resolve_dock_config(repo, pdb)
+        cfg = resolve_dock_config(repo, pdb, elected_leaf)
         rec = resolve_receptor(repo, pdb)
         nat = resolve_native(repo, pdb)
-        dec = resolve_decoy(repo, pdb, args.decoy_dir)
+        dec = resolve_decoy(repo, pdb, args.decoy_dir, elected_leaf)
         if not cfg or not rec or not nat:
             rows.append(
                 {
@@ -328,7 +527,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             rows.append({"pdb": pdb, "status": "fail_nonproduction_config"})
             continue
 
-        if args.build_buried:
+        if args.build_buried and args.mode == "search-miss":
             if not dec or not Path(dec).is_file():
                 rows.append({"pdb": pdb, "status": "skip_missing_decoy_for_bury"})
                 continue
@@ -336,7 +535,6 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             print(f"[{pdb}] building buried decoy…")
             built = build_buried_decoy(
                 Path(probe),
-                repo=repo,
                 pdb=pdb,
                 rec=Path(rec),
                 nat=Path(nat),
@@ -352,68 +550,43 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             rows.append({"pdb": pdb, "status": "skip_missing_decoy"})
             continue
 
-        print(f"[{pdb}] production config={cfg} decoy={dec} weight_on={weight_on}")
-        nat_off = probe_json(
+        print(
+            f"[{pdb}] mode={args.mode} config={cfg} decoy={dec} weight_on={weight_on}"
+        )
+        off = score_pair(
             Path(probe),
-            receptor=Path(rec),
-            pose=Path(nat),
-            ligand=Path(nat),
+            rec=Path(rec),
+            nat=Path(nat),
+            dec=Path(dec),
+            cfg=Path(cfg),
             binary=Path(binary),
             data_dir=Path(data_dir),
-            config=Path(cfg),
-            label=f"{pdb}_nat_w0",
-            pb_clash_weight=0.0,
+            pdb=pdb,
+            weight=0.0,
         )
-        dec_off = probe_json(
+        on = score_pair(
             Path(probe),
-            receptor=Path(rec),
-            pose=Path(dec),
-            ligand=Path(nat),
+            rec=Path(rec),
+            nat=Path(nat),
+            dec=Path(dec),
+            cfg=Path(cfg),
             binary=Path(binary),
             data_dir=Path(data_dir),
-            config=Path(cfg),
-            label=f"{pdb}_dec_w0",
-            pb_clash_weight=0.0,
+            pdb=pdb,
+            weight=weight_on,
         )
-        nat_on = probe_json(
-            Path(probe),
-            receptor=Path(rec),
-            pose=Path(nat),
-            ligand=Path(nat),
-            binary=Path(binary),
-            data_dir=Path(data_dir),
-            config=Path(cfg),
-            label=f"{pdb}_nat_w{weight_on}",
-            pb_clash_weight=weight_on,
-        )
-        dec_on = probe_json(
-            Path(probe),
-            receptor=Path(rec),
-            pose=Path(dec),
-            ligand=Path(nat),
-            binary=Path(binary),
-            data_dir=Path(data_dir),
-            config=Path(cfg),
-            label=f"{pdb}_dec_w{weight_on}",
-            pb_clash_weight=weight_on,
-        )
-        if not all((nat_off, dec_off, nat_on, dec_on)):
+        if not off or not on:
             rows.append({"pdb": pdb, "status": "probe_fail"})
             continue
 
-        cn0 = fnum(nat_off, "cf_total")
-        cd0 = fnum(dec_off, "cf_total")
-        cn1 = fnum(nat_on, "cf_total")
-        cd1 = fnum(dec_on, "cf_total")
-        assert cn0 is not None and cd0 is not None and cn1 is not None and cd1 is not None
-        dcf0 = cn0 - cd0  # negative => native better (lower CF)
-        dcf1 = cn1 - cd1
-        native_min_off = cn0 <= cd0
-        native_min_on = cn1 <= cd1
-        # "moves toward/below 0": dCF decreases (more negative or less positive)
+        dcf0 = off["dCF"]
+        dcf1 = on["dCF"]
+        native_min_off = off["native_min"]
+        native_min_on = on["native_min"]
         moved_toward_native = dcf1 < dcf0 - 1e-9
-        native_regressed = native_min_off and (cn1 > cn0 + 1e-6)  # native CF worse under ON
-        # stronger: native was min and loses under ON
+        native_regressed = native_min_off and (
+            on["cf_native"] > off["cf_native"] + 1e-6
+        )
         native_min_lost = native_min_off and not native_min_on
 
         rows.append(
@@ -423,79 +596,122 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 "config": str(cfg),
                 "decoy": str(dec),
                 "weight_on": weight_on,
-                "cf_native_off": cn0,
-                "cf_decoy_off": cd0,
-                "cf_native_on": cn1,
-                "cf_decoy_on": cd1,
+                "cf_native_off": off["cf_native"],
+                "cf_decoy_off": off["cf_decoy"],
+                "cf_native_on": on["cf_native"],
+                "cf_decoy_on": on["cf_decoy"],
                 "dCF_off": dcf0,
                 "dCF_on": dcf1,
                 "delta_dCF": dcf1 - dcf0,
-                "clash_native_off": fnum(nat_off, "cf_clash"),
-                "clash_decoy_off": fnum(dec_off, "cf_clash"),
-                "clash_native_on": fnum(nat_on, "cf_clash"),
-                "clash_decoy_on": fnum(dec_on, "cf_clash"),
+                "clash_native_off": off["clash_native"],
+                "clash_decoy_off": off["clash_decoy"],
+                "clash_native_on": on["clash_native"],
+                "clash_decoy_on": on["clash_decoy"],
                 "native_min_off": native_min_off,
                 "native_min_on": native_min_on,
                 "moved_toward_native": moved_toward_native,
                 "native_regressed": native_regressed,
                 "native_min_lost": native_min_lost,
                 "identical_off_on": (
-                    abs(cn0 - cn1) < 1e-9
-                    and abs(cd0 - cd1) < 1e-9
+                    abs(off["cf_native"] - on["cf_native"]) < 1e-9
+                    and abs(off["cf_decoy"] - on["cf_decoy"]) < 1e-9
                 ),
             }
         )
 
     ok = [r for r in rows if r.get("status") == "ok"]
-    n = len(ok)
-    n_moved = sum(1 for r in ok if r.get("moved_toward_native"))
-    n_native_min_on = sum(1 for r in ok if r.get("native_min_on"))
-    n_regressed = sum(1 for r in ok if r.get("native_regressed") or r.get("native_min_lost"))
-    n_identical = sum(1 for r in ok if r.get("identical_off_on"))
-    n_effect = n - n_identical
-
-    # ACCEPT: dCF moves toward native on ≥4/5 AND no native-min regression
-    accept_move = n_moved >= 4 if n >= 5 else (n_moved >= max(1, n - 1) if n else False)
-    accept_no_regress = n_regressed == 0
-    if n == 0:
-        verdict, reason = "FAIL", "no scored targets"
-    elif n_identical == n:
-        verdict, reason = (
-            "FAIL",
-            "OFF≡ON on all targets (panel may lack deep clashes; use --build-buried)",
-        )
-    elif accept_move and accept_no_regress:
-        verdict, reason = (
-            "PASS",
-            f"dCF moved toward native on {n_moved}/{n}; no native CF-min regression",
+    accept_stats: Dict[str, Any] = {}
+    if args.mode == "scoring-locked":
+        verdict, reason, accept_stats = verdict_scoring_locked(
+            ok, float(args.magnitude_floor), SIGN_FLIP_MIN_FRAC
         )
     else:
-        verdict, reason = (
-            "FAIL",
-            f"moved={n_moved}/{n} (need ≥4/5); regressed={n_regressed}; effect_targets={n_effect}",
-        )
+        verdict, reason = verdict_search_miss_legacy(ok)
+
+    # SEARCH-MISS no-regression under ON weight (required for scoring-locked claim)
+    sm_rows: List[Dict[str, Any]] = []
+    sm_regress = 0
+    if args.mode == "scoring-locked" and not args.skip_search_miss_check:
+        for pdb in SEARCH_MISS_PANEL:
+            cfg = resolve_dock_config(repo, pdb, elected_leaf)
+            rec = resolve_receptor(repo, pdb)
+            nat = resolve_native(repo, pdb)
+            dec = resolve_decoy(repo, pdb, args.decoy_dir, elected_leaf)
+            if not all((cfg, rec, nat, dec)):
+                sm_rows.append({"pdb": pdb, "status": "skip_missing"})
+                continue
+            on = score_pair(
+                Path(probe),
+                rec=Path(rec),  # type: ignore[arg-type]
+                nat=Path(nat),  # type: ignore[arg-type]
+                dec=Path(dec),  # type: ignore[arg-type]
+                cfg=Path(cfg),  # type: ignore[arg-type]
+                binary=Path(binary),
+                data_dir=Path(data_dir),
+                pdb=pdb,
+                weight=weight_on,
+            )
+            if not on:
+                sm_rows.append({"pdb": pdb, "status": "probe_fail"})
+                continue
+            reg = not on["native_min"]
+            if reg:
+                sm_regress += 1
+            sm_rows.append(
+                {
+                    "pdb": pdb,
+                    "status": "ok",
+                    "dCF_on": on["dCF"],
+                    "native_min_on": on["native_min"],
+                    "regressed": reg,
+                    "cf_native_on": on["cf_native"],
+                    "cf_decoy_on": on["cf_decoy"],
+                }
+            )
+        if sm_regress > 0 and verdict == "PASS":
+            verdict = "FAIL"
+            reason = f"{reason}; SEARCH-MISS native CF-min lost on {sm_regress}/5"
+        elif sm_regress > 0:
+            reason = f"{reason}; SEARCH-MISS regress={sm_regress}/5"
 
     written = datetime.now(timezone.utc).isoformat()
+    bin_sha = sha256_file(Path(binary))
+    try:
+        git = subprocess.check_output(
+            ["git", "-C", str(repo), "rev-parse", "HEAD"],
+            text=True,
+        ).strip()
+    except (OSError, subprocess.CalledProcessError):
+        git = "unknown"
+
     summary = {
-        "schema": "pb_clash_burial_oracle/v1",
+        "schema": "pb_clash_burial_oracle/v2",
         "written_utc": written,
+        "mode": args.mode,
+        "roadmap": "ROADMAP_v2_PANEL_CORRECTION",
         "one_variable": f"FLEXAIDDS_PB_CLASH_WEIGHT={weight_on} (OFF=0)",
-        "replaces": "WAL_COERCIVE wall STEP 2 (structurally unpassable B3)",
         "panel": panel,
-        "n_scored": n,
-        "n_moved_toward_native": n_moved,
-        "n_native_min_on": n_native_min_on,
-        "n_regressed": n_regressed,
-        "n_identical_off_on": n_identical,
+        "class": "SCORING-LOCKED" if args.mode == "scoring-locked" else "SEARCH-MISS",
+        "magnitude_floor_kcal": float(args.magnitude_floor)
+        if args.mode == "scoring-locked"
+        else None,
+        "accept_stats": accept_stats,
+        "n_scored": len(ok),
         "verdict": verdict,
         "reason": reason,
         "rows": rows,
-        "matrix_note": "score-only probe_cf; matrix not used",
+        "search_miss_no_regress": sm_rows,
+        "search_miss_regress_count": sm_regress,
         "binary": str(binary),
+        "binary_sha256": bin_sha,
         "probe_cf": str(probe),
+        "git": git,
+        "elected_leaf": str(elected_leaf) if elected_leaf else None,
+        "memetic_unlock": verdict == "PASS" and args.mode == "scoring-locked",
+        "memetic_env_if_pass": "FLEXAIDDS_PB_CLASH_PHASE2_PASS=1",
+        "prior_search_miss_oracle": "VOID (wrong panel + no magnitude floor)",
     }
 
-    # CSV
     csv_path = out_dir / "pb_clash_oracle.csv"
     fields = [
         "pdb",
@@ -507,6 +723,10 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         "dCF_off",
         "dCF_on",
         "delta_dCF",
+        "decrease",
+        "ge_floor",
+        "sign_flip",
+        "both_accept",
         "clash_decoy_off",
         "clash_decoy_on",
         "native_min_off",
@@ -522,61 +742,104 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             w.writerow(r)
 
     (out_dir / "pb_clash_oracle.json").write_text(json.dumps(summary, indent=2) + "\n")
+    if sm_rows:
+        (out_dir / "search_miss_no_regress.json").write_text(
+            json.dumps(sm_rows, indent=2) + "\n"
+        )
 
     lines = [
-        f"# pb_clash burial oracle — {verdict}",
+        f"# pb_clash oracle ({args.mode}) — {verdict}",
         "",
         f"**Written:** {written}  ",
+        f"**Mode:** `{args.mode}` (ROADMAP_v2)  ",
         f"**One variable:** `FLEXAIDDS_PB_CLASH_WEIGHT={weight_on}` (OFF arm = 0)  ",
-        f"**Replaces:** WAL_COERCIVE STEP 2 (B3 structural no-op)  ",
-        f"**Configs:** `ops/gates/configs/{{PDB}}_dock_config.json` (production LOCCLF)  ",
         f"**Panel:** {', '.join(panel)}  ",
         f"**OUT:** `{out_dir}`  ",
+        f"**Binary sha256:** `{bin_sha}`  ",
+        f"**Git:** `{git}`  ",
         "",
         f"**Verdict:** **{verdict}** — {reason}",
         "",
-        "## Metrics",
+    ]
+    if args.mode == "scoring-locked":
+        lines += [
+            "## ACCEPT (ROADMAP_v2 magnitude floor)",
+            "",
+            f"- dCF decreases by **≥ {args.magnitude_floor} kcal** AND **sign flip** "
+            f"(OFF dCF>0 → ON dCF<0) on **≥{SIGN_FLIP_MIN_FRAC}/3** SCORING-LOCKED targets",
+            "- No SEARCH-MISS native CF-min regression under ON weight",
+            f"- Memetic unlock env if PASS: `FLEXAIDDS_PB_CLASH_PHASE2_PASS=1` "
+            f"(still requires `FLEXAIDDS_MEMETIC=1`; claim default stays OFF)",
+            "",
+            f"| Metric | Value |",
+            f"|--------|------:|",
+            f"| Scored | {len(ok)} |",
+            f"| decrease ≥ floor | {accept_stats.get('n_decrease_ge_floor', 0)} |",
+            f"| sign flip | {accept_stats.get('n_sign_flip', 0)} |",
+            f"| both | {accept_stats.get('n_both', 0)} |",
+            f"| SEARCH-MISS regress | {sm_regress} |",
+            "",
+        ]
+    else:
+        lines += [
+            "## VOID note",
+            "",
+            "Legacy SEARCH-MISS panel + sign-only ACCEPT is **VOID** under ROADMAP_v2.",
+            "Do not unlock memetic from this path.",
+            "",
+        ]
+
+    lines += [
+        "## Per-target (primary panel)",
         "",
-        f"| Metric | Value |",
-        f"|--------|------:|",
-        f"| Scored | {n} |",
-        f"| dCF moved toward native (ON vs OFF) | {n_moved}/{n} |",
-        f"| Native CF-min under ON | {n_native_min_on}/{n} |",
-        f"| Native regressions | {n_regressed} |",
-        f"| OFF≡ON identical | {n_identical}/{n} |",
-        "",
-        "## Per-target",
-        "",
-        "| PDB | dCF_off | dCF_on | ΔdCF | clash_dec OFF/ON | nat_min OFF/ON | moved |",
-        "|-----|--------:|-------:|-----:|-----------------:|:--------------:|:-----:|",
+        "| PDB | dCF_off | dCF_on | ΔdCF | decrease | ge_floor | sign_flip | clash_dec OFF/ON |",
+        "|-----|--------:|-------:|-----:|---------:|:--------:|:---------:|-----------------:|",
     ]
     for r in ok:
+        decr = r.get("decrease", r["dCF_off"] - r["dCF_on"])
         lines.append(
             f"| {r['pdb']} | {r['dCF_off']:+.4f} | {r['dCF_on']:+.4f} | "
-            f"{r['delta_dCF']:+.4f} | "
-            f"{r.get('clash_decoy_off')}/{r.get('clash_decoy_on')} | "
-            f"{'Y' if r['native_min_off'] else 'N'}/{'Y' if r['native_min_on'] else 'N'} | "
-            f"{'Y' if r['moved_toward_native'] else 'N'} |"
+            f"{r['delta_dCF']:+.4f} | {decr:+.4f} | "
+            f"{'Y' if r.get('ge_floor') else 'N'} | "
+            f"{'Y' if r.get('sign_flip') else 'N'} | "
+            f"{r.get('clash_decoy_off')}/{r.get('clash_decoy_on')} |"
         )
+
+    if sm_rows:
+        lines += [
+            "",
+            "## SEARCH-MISS no-regression (ON weight)",
+            "",
+            "| PDB | dCF_on | native_min | regressed |",
+            "|-----|-------:|:----------:|:---------:|",
+        ]
+        for r in sm_rows:
+            if r.get("status") != "ok":
+                lines.append(f"| {r['pdb']} | — | — | {r.get('status')} |")
+            else:
+                lines.append(
+                    f"| {r['pdb']} | {r['dCF_on']:+.4f} | "
+                    f"{'Y' if r['native_min_on'] else 'N'} | "
+                    f"{'Y' if r['regressed'] else 'N'} |"
+                )
+
     lines += [
-        "",
-        "## ACCEPT (revised STEP 2)",
-        "",
-        "dCF moves toward/below 0 with weight ON vs OFF on ≥4/5; no clean native CF-min regression.",
         "",
         "## Cadence",
         "",
-        "- Phase: STEP 2 replacement (pb_clash burial)  ",
-        f"- One variable: PB_CLASH_WEIGHT={weight_on}  ",
-        f"- **{verdict}**  ",
-        "- Do **not** set WALL_PILOT_PASS from WAL_COERCIVE evidence  ",
-        "- Memetic still blocked until a burial/steric oracle PASSes  ",
+        f"- Phase: 2b′ SCORING-LOCKED pb_clash (ROADMAP_v2)"
+        if args.mode == "scoring-locked"
+        else "- Phase: legacy SEARCH-MISS (VOID)",
+        f"- One variable: PB_CLASH_WEIGHT={weight_on}",
+        f"- **{verdict}**",
+        "- Class-matched: scoring levers only on SCORING-LOCKED; sampling only on SEARCH-MISS",
         "",
     ]
     md_path = out_dir / "pb_clash_oracle.md"
     md_path.write_text("\n".join(lines) + "\n")
     print("\n".join(lines))
     print(f"\nWrote {csv_path}, {out_dir / 'pb_clash_oracle.json'}, {md_path}")
+    # Exit 0 for PASS only; VOID_LEGACY_PASS and FAIL are non-zero for CI honesty
     return 0 if verdict == "PASS" else 1
 
 

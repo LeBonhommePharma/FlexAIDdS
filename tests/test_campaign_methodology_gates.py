@@ -59,9 +59,43 @@ def test_pb_clash_burial_oracle_script_exists_and_one_variable():
     text = script.read_text(encoding="utf-8")
     assert "FLEXAIDDS_PB_CLASH_WEIGHT" in text
     assert "diagnostic/probe_config" in text  # refuse non-production
-    assert "CLEAN_PANEL" in text
+    assert "CLEAN_PANEL" in text or "SEARCH_MISS_PANEL" in text
+    assert "SCORING_LOCKED_PANEL" in text
+    assert "scoring-locked" in text
+    assert "MAGNITUDE_FLOOR_KCAL" in text
+    assert "1.0" in text  # floor constant / default
     # parseable python
     ast.parse(text)
+
+
+def test_pb_clash_oracle_verdict_scoring_locked_magnitude_floor_is_real():
+    """Drive shipped verdict_scoring_locked — not a reimplementation."""
+    import importlib.util
+
+    path = REPO / "scripts" / "pb_clash_burial_oracle.py"
+    spec = importlib.util.spec_from_file_location("pb_clash_burial_oracle", path)
+    assert spec and spec.loader
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    # Inverted targets with tiny noise → FAIL
+    tiny = [
+        {"dCF_off": 20.0, "dCF_on": 19.99},
+        {"dCF_off": 30.0, "dCF_on": 29.99},
+        {"dCF_off": 70.0, "dCF_on": 69.99},
+    ]
+    v, reason, st = mod.verdict_scoring_locked(tiny, 1.0, 2)
+    assert v == "FAIL"
+    assert st["n_both"] == 0
+    # Real flip on 2/3 with ≥1.0 decrease → PASS
+    good = [
+        {"dCF_off": 18.0, "dCF_on": -2.0},  # decrease 20, flip
+        {"dCF_off": 29.0, "dCF_on": -1.5},  # decrease 30.5, flip
+        {"dCF_off": 70.0, "dCF_on": 69.5},  # no flip
+    ]
+    v2, reason2, st2 = mod.verdict_scoring_locked(good, 1.0, 2)
+    assert v2 == "PASS", reason2
+    assert st2["n_both"] == 2
+    assert st2["n_sign_flip"] == 2
 
 
 def test_campaign_gate_summary_labels_b1_b3_instrumentation():
@@ -88,7 +122,17 @@ def test_pb_clash_oracle_workorder_present():
     assert p.is_file()
     t = p.read_text(encoding="utf-8")
     assert "FLEXAIDDS_PB_CLASH_WEIGHT" in t
-    assert "PASS" in t or "FAIL" in t
+    # ROADMAP_v2: prior SEARCH-MISS result must be labeled VOID
+    assert "VOID" in t
+    assert "magnitude" in t.lower() or "1.0" in t
+
+
+def test_memetic_gate_accepts_phase2_unlock_env():
+    gate = (REPO / "LIB" / "memetic_gate.h").read_text(encoding="utf-8")
+    assert "FLEXAIDDS_PB_CLASH_PHASE2_PASS" in gate
+    assert "FLEXAIDDS_MEMETIC" in gate
+    # still does not enable on MEMETIC alone (logic: want && unlock)
+    assert "phase2_pass" in gate or "PB_CLASH_PHASE2" in gate
 
 
 def test_inversion_map_script_and_workorder():

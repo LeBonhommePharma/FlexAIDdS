@@ -383,23 +383,26 @@ void apply_config(const json::Value& config, FA_Global* FA, GB_Global* GB,
     }
 
     // Wave 3.4 memetic: real enable flag FA->use_memetic (default 0).
-    // Requires BOTH FLEXAIDDS_MEMETIC=1 AND FLEXAIDDS_WALL_PILOT_PASS=1.
-    // MEMETIC alone cannot arm the feature (burial walk-away risk before wall fix).
-    // Logic lives in memetic_gate.h so unit tests drive the shipped gate.
+    // Requires FLEXAIDDS_MEMETIC=1 AND a pilot unlock:
+    //   preferred: FLEXAIDDS_PB_CLASH_PHASE2_PASS=1 (ROADMAP_v2 SCORING-LOCKED
+    //              magnitude-floor PASS), or
+    //   legacy:    FLEXAIDDS_WALL_PILOT_PASS=1 (structurally unpassable; do not set).
+    // MEMETIC alone cannot arm the feature. Logic in memetic_gate.h (unit-tested).
     {
         const char* e = std::getenv("FLEXAIDDS_MEMETIC");
         const bool want = e != nullptr && e[0] != '\0' && std::atoi(e) != 0;
         FA->use_memetic = flexaids::resolve_use_memetic_from_env();
         if (FA->use_memetic) {
             fprintf(stderr,
-                "[MEMETIC] enabled (FLEXAIDDS_MEMETIC=1 and WALL_PILOT_PASS=1) "
-                "use_memetic=%d\n",
+                "[MEMETIC] enabled (FLEXAIDDS_MEMETIC=1 and "
+                "PB_CLASH_PHASE2_PASS or WALL_PILOT_PASS) use_memetic=%d\n",
                 FA->use_memetic);
         } else if (want) {
             fprintf(stderr,
                 "WARN [MEMETIC]: FLEXAIDDS_MEMETIC=1 ignored — set "
-                "FLEXAIDDS_WALL_PILOT_PASS=1 only after W2 wall oracle PASS "
-                "(see FORWARD_SUCCESS_RATE_PLAN Wave 3.4); use_memetic=0\n");
+                "FLEXAIDDS_PB_CLASH_PHASE2_PASS=1 only after revised Phase 2 "
+                "SCORING-LOCKED pb_clash oracle PASS (magnitude floor ≥1.0 kcal "
+                "+ sign flip ≥2/3; ROADMAP_v2); use_memetic=0\n");
         }
     }
 
