@@ -43,6 +43,43 @@ DEFAULT_DATASET = os.path.join(REPO, "benchmarks", "astex_diverse", "astex_diver
 # Hydrogen-like element tokens FlexAID may emit (H tagged "Du" per pose conventions).
 H_TOKENS = {"H", "D", "DU"}
 
+def discover_pose_pdbs(tdir: str, code: str, *, recursive: bool = False, max_depth: int = 3):
+    """Return persisted emission pose PDBs for *code* under *tdir*.
+
+    Default (recursive=False): top-level CODE_[0-9]*.pdb only (legacy).
+    recursive=True: rglob CODE_*.pdb up to max_depth under tdir, exclude INI,
+    include elected_pose.pdb, dedupe by content SHA256.
+    """
+    import hashlib
+    tdir_p = Path if False else __import__("pathlib").Path(tdir)
+    if not recursive:
+        poses = sorted(
+            glob.glob(os.path.join(tdir, f"{code}_[0-9].pdb"))
+            + glob.glob(os.path.join(tdir, f"{code}_[0-9][0-9].pdb"))
+            + glob.glob(os.path.join(tdir, f"{code}_[0-9][0-9][0-9].pdb"))
+        )
+        return poses
+    found = []
+    for p in tdir_p.rglob(f"{code}_*.pdb"):
+        try:
+            rel = p.relative_to(tdir_p)
+        except ValueError:
+            continue
+        if len(rel.parts) > max_depth:
+            continue
+        if "INI" in p.name.upper():
+            continue
+        found.append(p)
+    ep = tdir_p / "elected_pose.pdb"
+    if ep.is_file():
+        found.append(ep)
+    by_hash = {}
+    for p in sorted(found, key=lambda x: str(x)):
+        h = hashlib.sha256(p.read_bytes()).hexdigest()
+        by_hash.setdefault(h, str(p))
+    return list(by_hash.values())
+
+
 
 def parse_pdb_ligand(path):
     """Return (coords Nx3 float, elements list[str]) for the DOCKED ligand heavy atoms.
@@ -137,6 +174,10 @@ def main():
     ap.add_argument("results_dir", nargs="?", default=DEFAULT_RESULTS)
     ap.add_argument("dataset_dir", nargs="?", default=DEFAULT_DATASET)
     ap.add_argument("--csv", default=None)
+    ap.add_argument("--recursive", action="store_true",
+                    help="include r*/ restart trees (depth<=3), excl INI, sha256-dedupe")
+    ap.add_argument("--only-codes", default="",
+                    help="comma-separated PDB codes to analyze (default: all)")
     args = ap.parse_args()
 
     results_dir = os.path.expanduser(args.results_dir)
@@ -146,6 +187,9 @@ def main():
         d for d in os.listdir(results_dir)
         if os.path.isdir(os.path.join(results_dir, d)) and d[0].isdigit()
     )
+    if args.only_codes.strip():
+        allow = {c.strip().upper() for c in args.only_codes.split(",") if c.strip()}
+        codes = [c for c in codes if c.upper() in allow]
 
     rows = []
     for code in codes:
@@ -155,10 +199,7 @@ def main():
             rows.append((code, None, None, None, "no_crystal_sdf"))
             continue
         cC, cE = parse_sdf_ligand(crystal)
-        poses = sorted(
-            glob.glob(os.path.join(tdir, f"{code}_[0-9].pdb"))
-            + glob.glob(os.path.join(tdir, f"{code}_[0-9][0-9].pdb"))
-        )
+        poses = discover_pose_pdbs(tdir, code, recursive=args.recursive)
         if not poses:
             rows.append((code, None, None, len(cC), "no_poses"))
             continue
