@@ -36,7 +36,7 @@ Do **not** cite 25.3% as proof election fix worked.
 | 2b | pb_clash burial | `PB_CLASH_WEIGHT=1.0` | 5/5 micro ΔdCF; cf_clash≈0 | **PASS formal**; **not** memetic unlock |
 | 3′ | BOOM small frac | `BOOM_FRAC=0.1` | live inject; no wipe; same false-min elect | **PASS liveness** |
 | 3 | BOOM interval pilot | interval only | void under L2 | **INVALID** |
-| 4 | Sampling levers | coarse / niche / … | not yet | **PENDING** |
+| 4.1 | COARSE_ORIENTATIONS=256 SEARCH-MISS | COARSE_ORIENTATIONS | live 5/5; genuine 0/5; BCR 0/5; mean ΔRMSD +0.29 | **FAIL** (no directional gain) |
 | 5 | Full-85 claim | — | blocked | **NOT RUN** |
 
 ## Explicit blocks
@@ -64,4 +64,8 @@ Do **not** cite 25.3% as proof election fix worked.
 
 1. If **SEARCH-MISS** dominates clean probes → one-var `FLEXAIDDS_COARSE_ORIENTATIONS=256` W1 (matrix 9dc9, WORKERS≤2).  
 2. If **SCORING-LOCKED** dominates gap targets → strong burial decoys / scoring (not BOOM thrash).  
-3. Full-85 only after Phase 4 sampling gates.  
+3. Full-85 only after Phase 4 sampling gates.
+
+## Post-COARSE status
+
+COARSE_ORIENTATIONS=256 **FAIL**ed directional ACCEPT on SEARCH-MISS panel (liveness OK). Next single levers: niche Cartesian distance (code+flag), or `FLEXAIDDS_NO_SEC` budget honesty, or strong burial decoys for SCORING-LOCKED. Full-85 still blocked.

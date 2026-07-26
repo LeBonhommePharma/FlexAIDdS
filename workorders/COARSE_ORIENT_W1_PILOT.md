@@ -1,36 +1,24 @@
-# Phase 4 W1 pilot — COARSE_ORIENTATIONS=256 (SEARCH-MISS only)
+# COARSE_ORIENTATIONS=256 W1 pilot — FAIL
 
-**Status:** LAUNCHED (2026-07-25)  
-**OUT:** `~/flexaidds_results/coarse_orient256_search_miss_20260725_214924`  
-**One variable:** `FLEXAIDDS_COARSE_ORIENTATIONS=256` (JSON still emits 64; env overrides)
+**One variable:** COARSE_ORIENTATIONS=256  
 
-## Liveness (L1–L4) — PRECHECK PASS
+**Verdict:** **FAIL** — no directional BCR/RMSD improvement vs baseline pilot
 
-Smoke: `~/flexaidds_results/coarse_orient_liveness_20260725_214424`
+| Metric | Pilot 256 | Baseline pilot |
+|--------|----------:|---------------:|
+| Genuine | 0/5 | 0/5 |
+| BCR<2 | 0/5 | 0/5 |
+| Mean Δ elect RMSD | +0.294 | — |
+| Mean Δ BCR | +3.980 | — |
+| Liveness 256 | 5/5 | — |
 
-| Check | Evidence |
-|-------|----------|
-| L1 read | `LIB/config_parser.cpp` `FLEXAIDDS_COARSE_ORIENTATIONS` |
-| L2 not stuck at JSON | dock_config `n_orientations: 64` but log `× 256 orientations` |
-| L3 acts | `[COARSE-INIT] Injected 25 pre-screened seeds into gen-0` |
-| L4 log | `Scanning … × 256 orientations` |
+| PDB | elect P/B | BCR P/B | ΔRMSD | ΔBCR | gen P/B |
+|-----|----------:|--------:|------:|-----:|:-------:|
+| 1J3J | 62.22/62.22 | 42.85/22.96 | +0.00 | +19.90 | N/N |
+| 1K3U | 12.55/11.47 | 12.01/11.78 | +1.08 | +0.23 | N/N |
+| 1L7F | 4.31/3.92 | 3.98/3.96 | +0.38 | +0.01 | N/N |
+| 1N1M | 5.66/5.66 | 3.79/4.04 | +0.00 | -0.25 | N/N |
+| 1M2Z | 13.79/13.79 | 13.06/13.04 | +0.00 | +0.02 | N/N |
 
-## Panel (from inversion map SEARCH-MISS)
+Pilot only — not full-85 claim.
 
-`1J3J 1K3U 1L7F 1N1M 1M2Z` — **exclude** SCORING-LOCKED `1OQ5 1SQ5 1YGC`
-
-## Protocol
-
-- autonomous · R=2 · workers=2 · OMP=1 · GA 1000×2000 · seed OFF  
-- matrix **9dc9** · BOOM_FRAC unset  
-
-## ACCEPT (when complete)
-
-1. Log shows 256 orientations / coarse inject on each target  
-2. No elect-RMSD regression vs `pilot_w1_boom_interval_20260725_134740` on same codes  
-3. Directional BCR or elect RMSD improvement  
-4. Panel M2-style counts only (pilot ≠ claim)
-
-## Blocks
-
-No full-85 · no memetic · no WAL re-panel · SCORING-LOCKED not in this pilot  
