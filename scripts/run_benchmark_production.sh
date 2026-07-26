@@ -335,21 +335,20 @@ find_structure_files() {
     echo "${receptor}:${ligand}"
 }
 
-# ─── Pre-flight checks ────────────────────────────────────────────────────────
+# ─── Sol #9 multi-session dock gate (ALL production dock paths) ───────────────
+# Fail-closed hold / mkdir lock / disk floor / WORKERS≤4 / binary stamp.
+# Called once from main() BEFORE casf / non-native / Astex branches so no path
+# can spawn a dock without coordination. Always exit 93 on refuse.
 
-preflight() {
-    phase "PRE-FLIGHT CHECKLIST"
-    local n_fail=0
-
-    # 0. Sol #9 multi-session dock coordination (hold / lock / disk / WORKERS≤4 / stamp)
-    # Fail-closed: always exit 1 on refuse (not soft-skipped by --skip-pilot / dry-run continue).
-    info "0. Sol #9 dock coordination (benchmark_coord preflight)"
+sol9_dock_preflight() {
+    phase "SOL #9 DOCK COORDINATION"
+    info "benchmark_coord preflight (hold / lock / disk / workers≤4 / stamp)"
     if [[ "${N_THREADS}" -gt 4 ]]; then
-        fail "   workers=${N_THREADS} exceeds Sol #9 MAX_WORKERS=4 — refuse"
+        fail "workers=${N_THREADS} exceeds Sol #9 MAX_WORKERS=4 — refuse"
         exit 93
     fi
     if ! locate_binary; then
-        fail "   binary required before Sol #9 preflight"
+        fail "binary required before Sol #9 preflight"
         exit 93
     fi
     local coord_json
@@ -359,10 +358,10 @@ preflight() {
         python3 "${SCRIPT_DIR}/benchmark_coord.py" status >"${coord_json}" 2>&1 || true
         if python3 -c "import json,sys; d=json.load(open(sys.argv[1])); sys.exit(0 if d.get('may_dock') else 1)" \
             "${coord_json}" 2>/dev/null; then
-            ok "   dry-run: may_dock=true (hold/lock clear, disk ok)"
+            ok "dry-run: may_dock=true (hold/lock clear, disk ok)"
         else
-            fail "   dry-run: may_dock=false — hold or dock lock active (or disk floor)"
-            cat "${coord_json}" | sed 's/^/       /' || true
+            fail "dry-run: may_dock=false — hold or dock lock active (or disk floor)"
+            sed 's/^/       /' "${coord_json}" 2>/dev/null || true
             rm -f "${coord_json}"
             exit 93
         fi
@@ -374,14 +373,14 @@ preflight() {
             --owner "run_benchmark_production" \
             --purpose "production_benchmark" \
             >"${coord_json}" 2>&1; then
-            ok "   Sol #9 preflight ok"
+            ok "Sol #9 preflight ok"
             local stamped token
             stamped="$(python3 -c "import json,sys; d=json.load(open(sys.argv[1])); print(d.get('stamped_binary') or '')" "${coord_json}" 2>/dev/null || true)"
             token="$(python3 -c "import json,sys; d=json.load(open(sys.argv[1])); print(d.get('lock_token') or '')" "${coord_json}" 2>/dev/null || true)"
             if [[ -n "${stamped}" && -x "${stamped}" ]]; then
                 FLEXAIDDS_BIN="${stamped}"
                 export FLEXAIDDS_BINARY="${stamped}"
-                ok "   stamped binary → ${FLEXAIDDS_BIN}"
+                ok "stamped binary → ${FLEXAIDDS_BIN}"
             fi
             if [[ -n "${token}" ]]; then
                 mkdir -p "${RESULTS_DIR}"
@@ -389,13 +388,20 @@ preflight() {
             fi
             cp "${coord_json}" "${RESULTS_DIR}/DOCK_PREFLIGHT.json" 2>/dev/null || true
         else
-            fail "   Sol #9 preflight refused"
-            cat "${coord_json}" | sed 's/^/       /' || true
+            fail "Sol #9 preflight refused"
+            sed 's/^/       /' "${coord_json}" 2>/dev/null || true
             rm -f "${coord_json}"
             exit 93
         fi
     fi
     rm -f "${coord_json}"
+}
+
+# ─── Pre-flight checks (Astex Diverse default path) ───────────────────────────
+
+preflight() {
+    phase "PRE-FLIGHT CHECKLIST"
+    local n_fail=0
 
     # 1. Git state
     info "1. Git state"
@@ -1263,9 +1269,12 @@ main() {
         } > "${RESULTS_DIR}/run_metadata.txt"
     fi
 
+    # Sol #9 BEFORE any dock branch (casf / non-native / Astex) — fail-closed.
+    sol9_dock_preflight
+
     # ── Route benchmark-specific runs (casf, astex_non_native) ──
     if [[ "${BENCHMARK}" == "casf" || "${BENCHMARK}" == "casf2016" ]]; then
-        locate_binary
+        # binary already resolved + stamped by sol9_dock_preflight
         locate_dataset_runner
         info "Running CASF-2016 benchmark (two_pass=${TWO_PASS})"
         export FLEXAIDDS_BINARY="${FLEXAIDDS_BIN}"
@@ -1285,7 +1294,6 @@ main() {
     fi
 
     if [[ "${BENCHMARK}" == "astex_non_native" || "${BENCHMARK}" == "astex_nonnative" ]]; then
-        locate_binary
         locate_dataset_runner
         info "Running Astex Non-Native benchmark (two_pass=${TWO_PASS})"
         export FLEXAIDDS_BINARY="${FLEXAIDDS_BIN}"

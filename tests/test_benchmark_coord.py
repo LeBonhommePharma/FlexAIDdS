@@ -297,6 +297,29 @@ def test_lib_launch_import_requires_coord():
     assert mod.MAX_WORKERS == 4
 
 
+def test_production_script_sol9_before_all_dock_branches():
+    """CASF / non-native must not bypass Sol #9 (skeptic: early-return paths)."""
+    path = REPO / "scripts" / "run_benchmark_production.sh"
+    lines = path.read_text(encoding="utf-8").splitlines()
+    sol9_call = casf = nonnative = None
+    for i, line in enumerate(lines, 1):
+        if line.strip() == "sol9_dock_preflight":
+            sol9_call = i
+        if 'BENCHMARK}" == "casf"' in line or 'BENCHMARK}" == "casf2016"' in line:
+            casf = casf or i
+        if "astex_non_native" in line and "BENCHMARK" in line:
+            nonnative = nonnative or i
+    assert sol9_call is not None, "main() must call sol9_dock_preflight"
+    assert casf is not None and nonnative is not None
+    assert sol9_call < casf, "Sol #9 must run before casf early-return branch"
+    assert sol9_call < nonnative, "Sol #9 must run before non-native early-return"
+    # function definition exists and is fail-closed (exit 93)
+    body = path.read_text(encoding="utf-8")
+    assert "sol9_dock_preflight()" in body
+    assert "exit 93" in body
+    assert "benchmark_coord.py" in body
+
+
 def test_launch_session_isolated_refuses_on_hold(tmp_path, monkeypatch):
     """Shipped launch path: hold present → RuntimeError before any dock child."""
     root = tmp_path / "results"
