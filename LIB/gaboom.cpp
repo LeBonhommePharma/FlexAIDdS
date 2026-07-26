@@ -481,6 +481,25 @@ int GA(FA_Global* FA, GB_Global* GB,VC_Global* VC,chromosome** chrom,chromosome*
 	GB->sig_share = sqrt(GB->sig_share/(double)GB->num_genes)/(2.0*pow(GB->peaks,(1.0/(double)GB->num_genes)));
 	GB->sig_share /= GB->scale;
 	printf("SIGMA_SHARE=%f\n",GB->sig_share);
+	// G4.2: Cartesian ligand heavy-atom niche (env-OFF default). Gene-space calc_rmsp
+	// mixes cleft-grid ordinal (gene 0) with angular genes in one RMSP — structural
+	// defect (PHASE4_GATES_ACTUALIZED). When FLEXAIDDS_NICHE_CARTESIAN=1, replace
+	// sigma_share with Angstrom radius (default 2.0; FLEXAIDDS_NICHE_SIGMA_ANG).
+	if (const char* e = std::getenv("FLEXAIDDS_NICHE_CARTESIAN")) {
+		if (e[0] != '\0' && std::atoi(e) != 0) {
+			double ang = 2.0;
+			if (const char* s = std::getenv("FLEXAIDDS_NICHE_SIGMA_ANG")) {
+				const double v = std::atof(s);
+				if (v > 0.0) ang = v;
+			}
+			GB->sig_share = ang;
+			fprintf(stderr,
+			        "[NICHE-CART] enabled: sigma_share=%.4f A (ligand heavy-atom RMSD); "
+			        "gene-space RMSP niche OFF\n",
+			        GB->sig_share);
+			printf("[NICHE-CART] SIGMA_SHARE=%.4f A (Cartesian ligand RMSD)\n", GB->sig_share);
+		}
+	}
 	fflush(stdout);
 
 	// for(i=0;i<GB->num_genes;i++) {
@@ -2745,21 +2764,58 @@ void calculate_fitness(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* chr
 		   The outer loop is data-race free (each i writes only chrom[i].fitnes)
 		   and is parallelised with OpenMP.
 		*/
+		// G4.2: optional Cartesian ligand RMSD niche (precompute coords once).
+		const bool niche_cart = []() {
+			const char* e = std::getenv("FLEXAIDDS_NICHE_CARTESIAN");
+			return e != nullptr && e[0] != '\0' && std::atoi(e) != 0;
+		}();
+		constexpr int kCoordStride = MAX_ATM_HET * 3;
+		std::vector<float> lig_xyz;
+		int n_lig_atoms = 0;
+		if (niche_cart) {
+			lig_xyz.assign(static_cast<size_t>(GB->num_chrom) * kCoordStride, 0.0f);
+			for (int c = 0; c < GB->num_chrom; ++c) {
+				calc_rmsd_chrom(FA, GB, chrom, gene_lim, atoms, residue, cleftgrid,
+				                GB->num_genes, c, c,
+				                &lig_xyz[static_cast<size_t>(c) * kCoordStride],
+				                nullptr, false);
+			}
+			const int lres = atoms[FA->map_par[0].atm].ofres;
+			const int rot = residue[lres].rot;
+			n_lig_atoms = residue[lres].latm[rot] - residue[lres].fatm[rot] + 1;
+			if (n_lig_atoms < 1) n_lig_atoms = 1;
+		}
+		std::vector<double> pshare_out(static_cast<size_t>(GB->num_chrom), 1.0);
 #ifdef _OPENMP
 #pragma omp parallel for schedule(dynamic) default(none) \
-	shared(chrom, GB, FA, cleftgrid)
+	shared(chrom, GB, FA, cleftgrid, niche_cart, lig_xyz, n_lig_atoms, pshare_out)
 #endif
 		for(int pi=0; pi<GB->num_chrom; pi++){
 			double pshare = 0.0;
 			for(int pj=0; pj<GB->num_chrom; pj++){
-				double prmsp = calc_rmsp(GB->num_genes,
-				                         chrom[pi].genes, chrom[pj].genes,
-				                         FA->map_par, cleftgrid,
-				                         GB->sig_share * GB->sig_share);  // A4b early exit
+				double prmsp = 0.0;
+				if (niche_cart) {
+					const float* a = &lig_xyz[static_cast<size_t>(pi) * kCoordStride];
+					const float* b = &lig_xyz[static_cast<size_t>(pj) * kCoordStride];
+					double s = 0.0;
+					for (int t = 0; t < n_lig_atoms; ++t) {
+						const double dx = static_cast<double>(a[t * 3 + 0] - b[t * 3 + 0]);
+						const double dy = static_cast<double>(a[t * 3 + 1] - b[t * 3 + 1]);
+						const double dz = static_cast<double>(a[t * 3 + 2] - b[t * 3 + 2]);
+						s += dx * dx + dy * dy + dz * dz;
+					}
+					prmsp = std::sqrt(s / static_cast<double>(n_lig_atoms));
+				} else {
+					prmsp = calc_rmsp(GB->num_genes,
+					                 chrom[pi].genes, chrom[pj].genes,
+					                 FA->map_par, cleftgrid,
+					                 GB->sig_share * GB->sig_share);  // A4b early exit
+				}
 				if(prmsp <= GB->sig_share){
 					pshare += (1.0 - pow((prmsp/GB->sig_share), GB->alpha));
 				}
 			}
+			pshare_out[static_cast<size_t>(pi)] = pshare;
 			// Assign fitness AFTER accumulating the full niche count.
 			// v27 elitism: the top n_elite (lowest evalue → smallest pi after the
 			// ascending QuickSort above) are exempt from the sharing reduction so
@@ -2769,13 +2825,29 @@ void calculate_fitness(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* chr
 			else
 				chrom[pi].fitnes = (double)(GB->num_chrom - pi) / pshare;
 		}
+		if (niche_cart && (gen_id % 50 == 0)) {
+			double sum_ps = 0.0;
+			int n_lonely = 0;
+			for (int pi = 0; pi < GB->num_chrom; ++pi) {
+				const double ps = pshare_out[static_cast<size_t>(pi)];
+				sum_ps += ps;
+				if (ps <= 1.0 + 1e-9) ++n_lonely;
+			}
+			const double mean_ps = sum_ps / std::max(1, GB->num_chrom);
+			// n_niches proxy: chromosomes that are alone in their niche (pshare≈1)
+			// plus a soft count of crowded niches via mean share.
+			fprintf(stderr,
+			        "[NICHE-CART] gen=%d n_lonely=%d/%d mean_pshare=%.3f sigma=%.3fA n_lig=%d\n",
+			        gen_id, n_lonely, GB->num_chrom, mean_ps, GB->sig_share, n_lig_atoms);
+		}
 	}
 
 	if(strcmp(method,"SMFREE")==0){
 		/* SMFREE — soft-β CF sampling with niche sharing (ensemble layer 3).
 		   Selection uses β_sel = 1/T (same as ACF clustering), NOT physical
-		   1/(kB·T). Niche share is gene-space calc_rmsp. Physical StatMech
-		   compute() is diagnostic only. Reproducibility: same β as election.
+		   1/(kB·T). Niche share is gene-space calc_rmsp unless FLEXAIDDS_NICHE_CARTESIAN=1
+		   (G4.2 Cartesian ligand heavy-atom RMSD). Physical StatMech compute() is
+		   diagnostic only. Reproducibility: same β as election.
 		*/
 		if (FA->temperature > 0) {
 			const double T = static_cast<double>(FA->temperature);
@@ -2812,22 +2884,59 @@ void calculate_fitness(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* chr
 
 			const double w = GB->entropy_weight;
 
+			const bool niche_cart = []() {
+				const char* e = std::getenv("FLEXAIDDS_NICHE_CARTESIAN");
+				return e != nullptr && e[0] != '\0' && std::atoi(e) != 0;
+			}();
+			constexpr int kCoordStride = MAX_ATM_HET * 3;
+			std::vector<float> lig_xyz;
+			int n_lig_atoms = 0;
+			if (niche_cart) {
+				lig_xyz.assign(static_cast<size_t>(GB->num_chrom) * kCoordStride, 0.0f);
+				for (int c = 0; c < GB->num_chrom; ++c) {
+					calc_rmsd_chrom(FA, GB, chrom, gene_lim, atoms, residue, cleftgrid,
+					                GB->num_genes, c, c,
+					                &lig_xyz[static_cast<size_t>(c) * kCoordStride],
+					                nullptr, false);
+				}
+				const int lres = atoms[FA->map_par[0].atm].ofres;
+				const int rot = residue[lres].rot;
+				n_lig_atoms = residue[lres].latm[rot] - residue[lres].fatm[rot] + 1;
+				if (n_lig_atoms < 1) n_lig_atoms = 1;
+			}
+			std::vector<double> pshare_out(static_cast<size_t>(GB->num_chrom), 1.0);
+
 #ifdef _OPENMP
 #pragma omp parallel for schedule(dynamic) default(none) \
-	shared(chrom, GB, FA, cleftgrid, max_bw, w)
+	shared(chrom, GB, FA, cleftgrid, max_bw, w, niche_cart, lig_xyz, n_lig_atoms, pshare_out)
 #endif
 			for (int pi = 0; pi < GB->num_chrom; pi++) {
-				// Niche sharing (same as PSHARE).
+				// Niche sharing (PSHARE path or G4.2 Cartesian).
 				double pshare = 0.0;
 				for (int pj = 0; pj < GB->num_chrom; pj++) {
-					double prmsp = calc_rmsp(GB->num_genes,
-					                         chrom[pi].genes, chrom[pj].genes,
-					                         FA->map_par, cleftgrid,
-					                         GB->sig_share * GB->sig_share);  // A4b early exit
+					double prmsp = 0.0;
+					if (niche_cart) {
+						const float* a = &lig_xyz[static_cast<size_t>(pi) * kCoordStride];
+						const float* b = &lig_xyz[static_cast<size_t>(pj) * kCoordStride];
+						double s = 0.0;
+						for (int t = 0; t < n_lig_atoms; ++t) {
+							const double dx = static_cast<double>(a[t * 3 + 0] - b[t * 3 + 0]);
+							const double dy = static_cast<double>(a[t * 3 + 1] - b[t * 3 + 1]);
+							const double dz = static_cast<double>(a[t * 3 + 2] - b[t * 3 + 2]);
+							s += dx * dx + dy * dy + dz * dz;
+						}
+						prmsp = std::sqrt(s / static_cast<double>(n_lig_atoms));
+					} else {
+						prmsp = calc_rmsp(GB->num_genes,
+						                 chrom[pi].genes, chrom[pj].genes,
+						                 FA->map_par, cleftgrid,
+						                 GB->sig_share * GB->sig_share);  // A4b early exit
+					}
 					if (prmsp <= GB->sig_share) {
 						pshare += (1.0 - pow((prmsp / GB->sig_share), GB->alpha));
 					}
 				}
+				pshare_out[static_cast<size_t>(pi)] = pshare;
 
 				// Rank component: normalised to [0, 1].
 				double rank_component = static_cast<double>(GB->num_chrom - pi) /
@@ -2844,6 +2953,20 @@ void calculate_fitness(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* chr
 					chrom[pi].fitnes = blended * static_cast<double>(GB->num_chrom);
 				else
 					chrom[pi].fitnes = blended * static_cast<double>(GB->num_chrom) / pshare;
+			}
+
+			if (niche_cart && (gen_id % 50 == 0)) {
+				double sum_ps = 0.0;
+				int n_lonely = 0;
+				for (int pi = 0; pi < GB->num_chrom; ++pi) {
+					const double ps = pshare_out[static_cast<size_t>(pi)];
+					sum_ps += ps;
+					if (ps <= 1.0 + 1e-9) ++n_lonely;
+				}
+				fprintf(stderr,
+				        "[NICHE-CART] gen=%d n_lonely=%d/%d mean_pshare=%.3f sigma=%.3fA n_lig=%d (SMFREE)\n",
+				        gen_id, n_lonely, GB->num_chrom,
+				        sum_ps / std::max(1, GB->num_chrom), GB->sig_share, n_lig_atoms);
 			}
 
 			// Log selection β + thermo periodically (greppable reproducibility audit).

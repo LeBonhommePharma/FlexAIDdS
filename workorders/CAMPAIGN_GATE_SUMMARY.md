@@ -92,3 +92,12 @@ Full-85 still blocked.
 - Revised 2b′ on 1OQ5/1SQ5/1YGC elected decoys: **FAIL** (ladder w=1/5/10; 0 sign flips).
 - Memetic re-keyed to `FLEXAIDDS_PB_CLASH_PHASE2_PASS` (or legacy WALL); **still OFF** until 2b′ PASS.
 - Full-85 still blocked.
+
+## Phase 4 actualized (PHASE4_GATES_ACTUALIZED.md)
+
+- **Burial retired:** SCORING-LOCKED false mins are clash-free; pb_clash weight window empty (FAIL honest).
+- **Memetic:** option **(a)** — remain locked; do not set PHASE2/WALL from burial data.
+- **Order:** G4.4 early-stop → G4.2 Cartesian niche → G4.1 BOOM_FRAC → G4.3 mutation (separate arms).
+- **Panel:** SEARCH-MISS only for sampling. Magnitude floor: mean dBCR ≤ −0.5 Å or ≥1 BCR&lt;2.
+- **G4.4:** truncation **common** → Phase 4 docks use `FLEXAIDDS_NO_SEC=1` for full budget.
+- **G4.2:** `FLEXAIDDS_NICHE_CARTESIAN=1` (env-OFF default), `FLEXAIDDS_NICHE_SIGMA_ANG` default 2.0 Å.
