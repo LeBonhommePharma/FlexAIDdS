@@ -23,7 +23,7 @@ Do **not** cite 25.3% as proof election fix worked.
 | Gate | Label | Why |
 |------|--------|-----|
 | **STEP 2 WAL_COERCIVE** | **Structurally unpassable (B3)** | Per-pair cap; Voronoi never sees deep burial. OFF≡ON expected. |
-| **STEP 3 BOOM_INTERVAL only** | **Invalid BOOM test (B1)** | Claim JSON `boom_inject_fraction: 0.0`; inject needs fraction>0. |
+| **STEP 3 BOOM_INTERVAL only** | **Scientifically invalid as BOOM (B1)** | Claim JSON `boom_inject_fraction: 0.0`; inject needs fraction>0. INVALID as BOOM efficacy. |
 
 ## Gate table (BENCHMARKING_ROADMAP phases)
 
