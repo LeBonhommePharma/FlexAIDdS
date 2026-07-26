@@ -2,7 +2,7 @@
 # =============================================================================
 # run_benchmark_production.sh — FlexAIDdS Production Benchmark Runner
 #
-# MacBook Pro M3 Pro 18 GB · macOS 14+ · --workers 6 --omp-threads 2
+# MacBook Pro M3 Pro 18 GB · macOS 14+ · --workers ≤4 --omp-threads 2 (Sol #9)
 #
 # Execution order:
 #   0. Pre-flight: build freshness, constants, ulimits, disk space
@@ -103,8 +103,8 @@ TWO_PASS=false
 BENCHMARK=""
 OUTPUT_OVERRIDE=""
 SEED=42
-N_THREADS=6          # concurrent FlexAIDdS workers
-OMP_PER_WORKER=2     # OMP threads per worker (6 workers × 2 = 12 threads ≤ 11 P-cores ≈ ok)
+N_THREADS=4          # concurrent FlexAIDdS workers (Sol #9 hard cap WORKERS≤4)
+OMP_PER_WORKER=2     # OMP threads per worker (4 workers × 2 = 8 threads on M3 Pro)
 
 # Two-pass parameters
 PASS1_NCHROM=250
@@ -340,6 +340,62 @@ find_structure_files() {
 preflight() {
     phase "PRE-FLIGHT CHECKLIST"
     local n_fail=0
+
+    # 0. Sol #9 multi-session dock coordination (hold / lock / disk / WORKERS≤4 / stamp)
+    # Fail-closed: always exit 1 on refuse (not soft-skipped by --skip-pilot / dry-run continue).
+    info "0. Sol #9 dock coordination (benchmark_coord preflight)"
+    if [[ "${N_THREADS}" -gt 4 ]]; then
+        fail "   workers=${N_THREADS} exceeds Sol #9 MAX_WORKERS=4 — refuse"
+        exit 93
+    fi
+    if ! locate_binary; then
+        fail "   binary required before Sol #9 preflight"
+        exit 93
+    fi
+    local coord_json
+    coord_json="$(mktemp "${TMPDIR:-/tmp}/prod_coord.XXXXXX")"
+    if [[ "${DRY_RUN}" == true ]]; then
+        # Check gates without acquiring lock / stamping
+        python3 "${SCRIPT_DIR}/benchmark_coord.py" status >"${coord_json}" 2>&1 || true
+        if python3 -c "import json,sys; d=json.load(open(sys.argv[1])); sys.exit(0 if d.get('may_dock') else 1)" \
+            "${coord_json}" 2>/dev/null; then
+            ok "   dry-run: may_dock=true (hold/lock clear, disk ok)"
+        else
+            fail "   dry-run: may_dock=false — hold or dock lock active (or disk floor)"
+            cat "${coord_json}" | sed 's/^/       /' || true
+            rm -f "${coord_json}"
+            exit 93
+        fi
+    else
+        if python3 "${SCRIPT_DIR}/benchmark_coord.py" preflight \
+            --out "${RESULTS_DIR}" \
+            --workers "${N_THREADS}" \
+            --binary "${FLEXAIDDS_BIN}" \
+            --owner "run_benchmark_production" \
+            --purpose "production_benchmark" \
+            >"${coord_json}" 2>&1; then
+            ok "   Sol #9 preflight ok"
+            local stamped token
+            stamped="$(python3 -c "import json,sys; d=json.load(open(sys.argv[1])); print(d.get('stamped_binary') or '')" "${coord_json}" 2>/dev/null || true)"
+            token="$(python3 -c "import json,sys; d=json.load(open(sys.argv[1])); print(d.get('lock_token') or '')" "${coord_json}" 2>/dev/null || true)"
+            if [[ -n "${stamped}" && -x "${stamped}" ]]; then
+                FLEXAIDDS_BIN="${stamped}"
+                export FLEXAIDDS_BINARY="${stamped}"
+                ok "   stamped binary → ${FLEXAIDDS_BIN}"
+            fi
+            if [[ -n "${token}" ]]; then
+                mkdir -p "${RESULTS_DIR}"
+                printf '%s\n' "${token}" >"${RESULTS_DIR}/BENCHMARK_DOCK_LOCK_TOKEN"
+            fi
+            cp "${coord_json}" "${RESULTS_DIR}/DOCK_PREFLIGHT.json" 2>/dev/null || true
+        else
+            fail "   Sol #9 preflight refused"
+            cat "${coord_json}" | sed 's/^/       /' || true
+            rm -f "${coord_json}"
+            exit 93
+        fi
+    fi
+    rm -f "${coord_json}"
 
     # 1. Git state
     info "1. Git state"

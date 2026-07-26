@@ -160,6 +160,33 @@ if (( DRY )); then
   exit 0
 fi
 
+# ── Sol #9 fail-closed multi-session dock preflight (hold / lock / disk / stamp)
+# WORKERS=1 matches --threads 1 below. Refuses if another session holds the box.
+COORD_JSON="$(mktemp "${TMPDIR:-/tmp}/c0_coord.XXXXXX")"
+if ! python3 "$ROOT/scripts/benchmark_coord.py" preflight \
+    --out "$OUT" \
+    --workers 1 \
+    --binary "$BINARY" \
+    --owner "c0_claim_clean" \
+    --purpose "c0_claim" >"$COORD_JSON" 2>&1; then
+  echo "FAIL: Sol #9 dock preflight refused (see $COORD_JSON)" >&2
+  cat "$COORD_JSON" >&2 || true
+  exit 93
+fi
+# Prefer stamped binary so mid-run rebuilds cannot replace the live image
+STAMPED="$(python3 -c "import json,sys; d=json.load(open(sys.argv[1])); print(d.get('stamped_binary') or '')" "$COORD_JSON" 2>/dev/null || true)"
+LOCK_TOKEN="$(python3 -c "import json,sys; d=json.load(open(sys.argv[1])); print(d.get('lock_token') or '')" "$COORD_JSON" 2>/dev/null || true)"
+if [[ -n "$STAMPED" && -x "$STAMPED" ]]; then
+  BINARY="$STAMPED"
+  echo "Sol #9 stamped binary=$BINARY"
+fi
+if [[ -n "$LOCK_TOKEN" ]]; then
+  mkdir -p "$OUT"
+  printf '%s\n' "$LOCK_TOKEN" >"$OUT/BENCHMARK_DOCK_LOCK_TOKEN"
+fi
+cp "$COORD_JSON" "$OUT/DOCK_PREFLIGHT.json" 2>/dev/null || true
+rm -f "$COORD_JSON"
+
 # Clear stale (dead) locks so we can relaunch
 rm -f "$LOCK" "$PIDF" 2>/dev/null || true
 rm -f "${Q}/logs/C0_claim_clean.lock" "${Q}/logs/C0_claim_clean.pid" \

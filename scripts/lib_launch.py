@@ -15,7 +15,8 @@ import signal
 import subprocess
 import sys
 
-# Fail-closed multi-session dock gate (benchmark_coord.py)
+# Fail-closed multi-session dock gate (benchmark_coord.py) — hard-required.
+# Soft-missing the module would let every launch_v*.py skip Sol #9.
 _SCRIPTS = os.path.dirname(os.path.abspath(__file__))
 if _SCRIPTS not in sys.path:
     sys.path.insert(0, _SCRIPTS)
@@ -26,11 +27,11 @@ try:
         release_lock as dock_release_lock,
         status as dock_status,
     )
-except ImportError:  # pragma: no cover
-    dock_preflight = None  # type: ignore
-    dock_release_lock = None  # type: ignore
-    dock_status = None  # type: ignore
-    MAX_WORKERS = 4
+except ImportError as _coord_imp_err:  # pragma: no cover
+    raise ImportError(
+        "Sol #9 dock coordination requires scripts/benchmark_coord.py — "
+        "fail-closed (cannot soft-disable). Fix the import or PYTHONPATH."
+    ) from _coord_imp_err
 
 
 def priority_from_prev_run(prev_result_dir, lo=1.8, hi=2.5):
@@ -168,6 +169,50 @@ def priority_for_fix(result_dir, fix_types, max_targets=10):
     return ",".join(top)
 
 
+def _infer_workers(cmd, env, workers):
+    """Resolve worker count for Sol #9 preflight (default 1 if unknown)."""
+    if workers is not None:
+        return int(workers)
+    if env:
+        for key in ("FLEXAIDDS_BENCH_THREADS", "BENCH_THREADS"):
+            raw = env.get(key)
+            if raw:
+                try:
+                    return int(raw)
+                except (TypeError, ValueError):
+                    pass
+    if cmd:
+        for i, arg in enumerate(cmd):
+            if arg in ("--threads", "--workers") and i + 1 < len(cmd):
+                try:
+                    return int(cmd[i + 1])
+                except (TypeError, ValueError):
+                    pass
+    return 1
+
+
+def _infer_binary(cmd, env, binary):
+    """Resolve engine binary path for stamp + preflight."""
+    if binary:
+        return binary
+    if env and env.get("FLEXAIDDS_BINARY"):
+        return env["FLEXAIDDS_BINARY"]
+    if cmd:
+        for arg in cmd:
+            if not arg or arg.startswith("-"):
+                continue
+            # skip known wrappers
+            base = os.path.basename(arg)
+            if base in ("caffeinate", "env", "nice", "nohup", "time"):
+                continue
+            if os.path.isfile(arg) and os.access(arg, os.X_OK):
+                return arg
+    raise RuntimeError(
+        "launch_session_isolated: cannot resolve FLEXAIDDS_BINARY for Sol #9 "
+        "preflight (pass binary= or set env FLEXAIDDS_BINARY)"
+    )
+
+
 def launch_session_isolated(
     cmd,
     env,
@@ -176,6 +221,11 @@ def launch_session_isolated(
     stdout_log=None,
     stderr_log=None,
     cwd=None,
+    workers=None,
+    binary=None,
+    owner=None,
+    skip_dock_preflight=False,
+    purpose="dock",
 ):
     """Launch *cmd* as a fully detached daemon — SIGHUP-immune, isolated session.
 
@@ -183,6 +233,13 @@ def launch_session_isolated(
     calling terminal.  The grandchild inherits *env*, runs in *cwd* (defaults
     to *output_dir*), and logs to *stdout_log* / *stderr_log* (defaults:
     ``{output_dir}/stdout.log`` and ``{output_dir}/stderr.log``).
+
+    **Sol #9:** Before any fork, runs fail-closed ``dock_preflight`` (hold,
+    mkdir lock, disk floor, WORKERS≤4, binary stamp into *output_dir*). On
+    success, ``env['FLEXAIDDS_BINARY']`` is rewritten to the stamped path when
+    a stamp is produced. Lock token is written to
+    ``{output_dir}/BENCHMARK_DOCK_LOCK_TOKEN`` for later ``dock_release_lock``.
+    Pass ``skip_dock_preflight=True`` only for unit tests that mock the gate.
 
     Fix B: subprocess.Popen is called with ``start_new_session=True`` so the
     worker is placed in its own process group *and* POSIX session — it cannot
@@ -199,15 +256,67 @@ def launch_session_isolated(
         stdout_log:  Path for stdout capture (default: output_dir/stdout.log).
         stderr_log:  Path for stderr capture (default: output_dir/stderr.log).
         cwd:         Working directory for the daemon (default: output_dir).
+        workers:     Optional explicit worker count (else inferred).
+        binary:      Optional engine binary path (else FLEXAIDDS_BINARY / cmd).
+        owner:       Lock owner label (default: launch_session_isolated).
+        skip_dock_preflight: Emergency/test-only bypass (default False).
+        purpose:     Lock purpose metadata.
 
     Returns:
         int — PID of the spawned benchmark_datasets subprocess.
 
     Raises:
-        RuntimeError if the pipe IPC handshake fails (PID never received).
+        RuntimeError if Sol #9 preflight refuses or the pipe IPC handshake fails.
     """
+    from pathlib import Path
+
     output_dir = os.path.expanduser(output_dir)
     os.makedirs(output_dir, exist_ok=True)
+
+    # ── Sol #9 fail-closed gate (before any fork / dock child) ──────────────
+    if not skip_dock_preflight:
+        if dock_preflight is None:  # pragma: no cover — import hard-fails above
+            raise RuntimeError(
+                "launch_session_isolated: dock_preflight unavailable (Sol #9)"
+            )
+        n_workers = _infer_workers(cmd, env, workers)
+        bin_path = _infer_binary(cmd, env, binary)
+        pf = dock_preflight(
+            out=Path(output_dir),
+            workers=n_workers,
+            binary=Path(bin_path),
+            owner=owner or "launch_session_isolated",
+            purpose=purpose,
+            acquire=True,
+            stamp=True,
+        )
+        if not pf.ok:
+            raise RuntimeError(
+                f"Sol #9 dock preflight refused: {pf.reason}"
+            )
+        # Persist token for orderly release; point engine at stamped binary.
+        token_path = os.path.join(output_dir, "BENCHMARK_DOCK_LOCK_TOKEN")
+        if pf.lock_token:
+            with open(token_path, "w", encoding="utf-8") as tf:
+                tf.write(pf.lock_token + "\n")
+        if env is not None and pf.stamped_binary:
+            env = dict(env)
+            env["FLEXAIDDS_BINARY"] = pf.stamped_binary
+        receipt = {
+            "ok": True,
+            "reason": pf.reason,
+            "lock_token": pf.lock_token,
+            "stamped_binary": pf.stamped_binary,
+            "workers": n_workers,
+            "owner": owner or "launch_session_isolated",
+        }
+        with open(
+            os.path.join(output_dir, "DOCK_PREFLIGHT.json"),
+            "w",
+            encoding="utf-8",
+        ) as rf:
+            json.dump(receipt, rf, indent=2)
+            rf.write("\n")
 
     pid_file   = os.path.join(output_dir, "benchmark.pid")
     stdout_log = stdout_log or os.path.join(output_dir, "stdout.log")
