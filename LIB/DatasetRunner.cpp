@@ -6329,15 +6329,28 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
             // Native-pose CF diagnostic: score crystal pose before GA, append
             // [NATIVE_CF] to stderr.log.  Pass the unblinded crystal SDF so the
             // scorer sees the correct reference pose, not the blinded input.
-            // Skip in AUTONOMOUS mode so blind runs have no native/reference
-            // scoring channel in the child process environment.
+            // Skip SCORE_NATIVE in AUTONOMOUS so blind runs have no native CF
+            // scoring channel.  DUMP_POP audit is separate: it needs RMSDST only
+            // (refstructure/coor_ref for .pop.tsv), never SCORE_NATIVE or seeds.
             const bool native_diag_requested = protocol_cfg_.score_native;
+            const char* dump_pop_env = std::getenv("FLEXAIDDS_DUMP_POP");
+            const bool dump_pop_on =
+                dump_pop_env && dump_pop_env[0] != '\0' &&
+                std::strcmp(dump_pop_env, "0") != 0;
             if (config.mode != BenchmarkMode::AUTONOMOUS &&
                 (config.mode != BenchmarkMode::DEFINED_CLEFT_REDOCK ||
                  native_diag_requested) &&
                 !rmsd_reference_path.empty() && fs::exists(rmsd_reference_path)) {
                 cmd << "FLEXAIDDS_SCORE_NATIVE=1 "
                     << "FLEXAIDDS_RMSDST=" << shell_quote(rmsd_reference_path) << " ";
+            } else if (dump_pop_on &&
+                       !rmsd_reference_path.empty() &&
+                       fs::exists(rmsd_reference_path)) {
+                // AUTONOMOUS-safe audit: crystal SDF for RMSD dump only.
+                cmd << "FLEXAIDDS_RMSDST=" << shell_quote(rmsd_reference_path) << " ";
+                std::cerr << "  [DUMP_POP] " << entry.pdb_id
+                          << " injecting FLEXAIDDS_RMSDST for .pop.tsv audit "
+                          << "(no SCORE_NATIVE, no pose seed)\n";
             }
             cmd << "OMP_NUM_THREADS=" << omp_per_worker << " "
                 << "OMP_PLACES=cores "

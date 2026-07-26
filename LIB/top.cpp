@@ -2472,7 +2472,12 @@ int main(int argc, char **argv){
 	//for(i=0;i<FA->npar;i++){printf("[%8.3f]",FA->opt_par[i]);}
 	//printf("=%8.5f\n",cf);
 
-	// ── Native-pose CF diagnostic (FLEXAIDDS_SCORE_NATIVE=1) ─────────────────
+	// ── DUMP_POP audit refstructure (FLEXAIDDS_DUMP_POP + FLEXAIDDS_RMSDST) ──
+// Enable calc_rmsd / .rrd / .pop.tsv without seeding the GA (coor[] unchanged).
+// No-op unless FLEXAIDDS_DUMP_POP is truthy. Safe for AUTONOMOUS audit docks.
+(void)load_dump_pop_refstructure(FA, atoms, residue);
+
+// ── Native-pose CF diagnostic (FLEXAIDDS_SCORE_NATIVE=1) ─────────────────
 	// Score the crystal/reference pose with the CF before the GA runs.
 	// Answers: "Is the scorer broken for this ligand?" (cf<<0 means scorer works).
 	// DatasetRunner sets FLEXAIDDS_SCORE_NATIVE=1 + FLEXAIDDS_RMSDST=<crystal.sdf>
