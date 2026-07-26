@@ -6,6 +6,7 @@
 
 #include "Types.h"
 
+#include <limits>
 #include <string>
 
 namespace flexaids::posebust {
@@ -48,5 +49,67 @@ bool write_report_json(const PoseBustReport& report, const std::string& path,
 ///   default                           → BustCli (official PoseBusters)
 /// DatasetRunner.pb_pass is filled from the selected backend's full dock suite.
 [[nodiscard]] Backend resolve_backend_from_env();
+
+// ─── Mandatory elected-pose validation (BindingMode rank-0 / elected) ────────
+
+/// Durable outcome of PoseBust on the elected BindingMode pose.
+/// Contract: pb_pass is never true unless pb_ran is true and validation completed
+/// without hard error. success_pb is always success_rmsd && pb_pass after
+/// finalize_success_pb().
+struct ElectedPoseBustOutcome {
+    bool        pb_ran  = false;
+    bool        pb_pass = false;
+    bool        success_pb = false;
+    std::string pb_backend;  // bust_cli | native_pose_qc | native_pose_qc_fallback | error | skipped_*
+    std::string pb_failed_keys;
+    int         pb_n_pass   = 0;
+    int         pb_n_fail   = 0;
+    int         pb_n_checks = 0;
+    bool        native_qc_ran  = false;
+    bool        native_qc_pass = false;
+    std::string native_qc_failed_keys;
+    float       pb_min_lig_prot_dist =
+        std::numeric_limits<float>::quiet_NaN();
+    float       pb_volume_overlap =
+        std::numeric_limits<float>::quiet_NaN();
+    std::string elected_pose_path;
+    std::string pose_sha256;
+    std::string posebusters_pose_sha256;
+    std::string posebusters_input_sha256;
+    std::string error;
+
+    /// success_pb := success_rmsd ∧ pb_pass; never implies pass without pb_ran.
+    void finalize_success_pb(bool success_rmsd) noexcept {
+        if (!pb_ran) {
+            pb_pass = false;
+        }
+        success_pb = success_rmsd && pb_pass;
+    }
+};
+
+/// Options for mandatory elected-pose validation.
+struct ElectedPoseValidateOptions {
+    Backend     backend = Backend::BustCli;
+    std::string sidecar_dir;
+    std::string pdb_id;
+    /// When true (default), Backend::Off with a non-empty elected path still
+    /// runs NativePoseQC (mandatory floor). Claim-ready still requires bust_cli.
+    bool force_native_when_off = true;
+    /// When BustCli is selected but `bust` is missing/fails to start, fall back
+    /// to NativePoseQC so pb_ran can still be true (fail-closed on missing CLI
+    /// only for STRICT claim_ready via pb_backend).
+    bool native_fallback_if_bust_missing = true;
+};
+
+/// Validate the elected BindingMode pose (rank-0 / elected_pose.pdb).
+///
+/// This is the single post-election entry point used by DatasetRunner (and
+/// callable from tests). Empty elected path → fail-closed (pb_pass=false).
+/// Never returns pb_pass=true without a real backend run that passed.
+[[nodiscard]] ElectedPoseBustOutcome validate_elected_pose(
+    const std::string& elected_pose_path,
+    const std::string& receptor_path,
+    const std::string& crystal_sdf,
+    const ElectedPoseValidateOptions& opt = {});
 
 }  // namespace flexaids::posebust

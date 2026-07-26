@@ -8,6 +8,7 @@
 
 #include "Engine.h"
 
+#include "BustCli.h"
 #include "ChecksChemistry.h"
 #include "ChecksGeometry.h"
 #include "ChecksProtein.h"
@@ -451,6 +452,207 @@ Backend resolve_backend_from_env() {
     // Benchmark claims require the official upstream PoseBusters implementation.
     // NativePoseQC remains available explicitly for fast parity diagnostics.
     return Backend::BustCli;
+}
+
+ElectedPoseBustOutcome validate_elected_pose(
+    const std::string& elected_pose_path,
+    const std::string& receptor_path,
+    const std::string& crystal_sdf,
+    const ElectedPoseValidateOptions& opt) {
+    ElectedPoseBustOutcome out;
+    out.elected_pose_path = elected_pose_path;
+
+    // ── Fail-closed: no elected BindingMode pose ──────────────────────────
+    if (elected_pose_path.empty() || !fs::is_regular_file(elected_pose_path)) {
+        out.pb_backend = "skipped_no_elected_pose";
+        out.pb_failed_keys = "no_elected_pose";
+        out.error = elected_pose_path.empty()
+                        ? "elected pose path empty"
+                        : "elected pose file missing";
+        out.pb_ran = false;
+        out.pb_pass = false;
+        return out;
+    }
+
+    out.pose_sha256 = sha256_file(elected_pose_path);
+    if (out.pose_sha256.empty()) {
+        out.pb_backend = "error";
+        out.pb_failed_keys = "pose_sha256_failed";
+        out.error = "could not hash elected pose";
+        out.pb_ran = false;
+        out.pb_pass = false;
+        return out;
+    }
+
+    Backend backend = opt.backend;
+    // Mandatory floor: Off with a real elected pose still runs NativePoseQC.
+    // Claim-ready (STRICT) still requires pb_backend == bust_cli.
+    if (backend == Backend::Off) {
+        if (opt.force_native_when_off) {
+            backend = Backend::Native;
+        } else {
+            out.pb_backend = "skipped";
+            out.pb_failed_keys = "backend_off";
+            out.pb_ran = false;
+            out.pb_pass = false;
+            out.error = "PoseBust backend Off (mandatory validation skipped)";
+            return out;
+        }
+    }
+
+    const std::string pb_dir =
+        opt.sidecar_dir.empty()
+            ? (fs::temp_directory_path() / "flexaidds_elected_pb").string()
+            : opt.sidecar_dir;
+    std::error_code ec;
+    fs::create_directories(pb_dir, ec);
+
+    // Extract predicted ligand SDF from elected complex (CONECT + crystal topo).
+    Molecule lig;
+    std::string lig_err;
+    out.posebusters_pose_sha256 = sha256_file(elected_pose_path);
+    bool lig_ok = !out.posebusters_pose_sha256.empty() &&
+                  out.posebusters_pose_sha256 == out.pose_sha256;
+    if (lig_ok) {
+        lig_ok = load_pdb_flexaid_ligand(elected_pose_path, lig, &lig_err);
+    } else {
+        lig_err = "elected pose hash mismatch before PoseBust";
+    }
+    Molecule crystal_mol;
+    if (lig_ok && !crystal_sdf.empty() && fs::is_regular_file(crystal_sdf)) {
+        std::string e2;
+        if (load_sdf(crystal_sdf, crystal_mol, &e2)) {
+            if (!assign_topology_from_reference(lig, crystal_mol, &e2)) {
+                lig_ok = false;
+                lig_err = e2;
+            }
+        } else {
+            lig_ok = false;
+            lig_err = e2;
+        }
+    } else if (lig_ok) {
+        lig_ok = false;
+        lig_err = "crystal SDF required for authoritative PB extract";
+    }
+
+    const std::string stem =
+        opt.pdb_id.empty()
+            ? "elected"
+            : (opt.pdb_id +
+               (out.pose_sha256.empty() ? ""
+                                        : ("_" + out.pose_sha256.substr(0, 12))));
+    const std::string pred_sdf =
+        (fs::path(pb_dir) / (stem + "_ligand.sdf")).string();
+    if (lig_ok) {
+        std::string werr;
+        lig_ok = write_sdf(lig, pred_sdf, &werr);
+        if (!lig_ok) {
+            lig_err = werr;
+        } else {
+            out.posebusters_input_sha256 = sha256_file(pred_sdf);
+        }
+    }
+
+    // NativePoseQC always (parity diagnostic + mandatory floor / fallback).
+    EvaluateOptions nopt;
+    nopt.suite = Suite::Dock;
+    nopt.sidecar_dir = (fs::path(pb_dir) / "native_qc").string();
+    nopt.pdb_id = stem;
+    const auto nrep =
+        evaluate_paths(elected_pose_path, receptor_path, crystal_sdf, nopt);
+    out.native_qc_ran = nrep.ran && nrep.error.empty();
+    out.native_qc_pass = nrep.success_pb_full();
+    out.native_qc_failed_keys = nrep.failed_keys_csv();
+    out.pb_min_lig_prot_dist = nrep.min_lig_prot_dist;
+    out.pb_volume_overlap = nrep.volume_overlap;
+
+    if (!lig_ok) {
+        out.pb_backend = "error";
+        out.pb_failed_keys = "ligand_extract:" + lig_err;
+        out.error = lig_err;
+        out.pb_ran = false;
+        out.pb_pass = false;
+        return out;
+    }
+
+    auto fill_from_native = [&](const char* backend_label) {
+        out.pb_backend = backend_label;
+        out.pb_ran = out.native_qc_ran;
+        out.pb_pass = out.native_qc_pass;
+        out.pb_failed_keys = out.native_qc_failed_keys;
+        out.pb_n_checks = nrep.n_checks();
+        out.pb_n_pass = nrep.n_pass();
+        out.pb_n_fail = nrep.n_fail();
+        if (!out.pb_ran) {
+            out.pb_pass = false;
+            if (out.error.empty()) out.error = nrep.error;
+        }
+    };
+
+    if (backend == Backend::Native) {
+        fill_from_native("native_pose_qc");
+    } else {
+        // Official upstream PoseBusters CLI (default claim backend).
+        auto br = run_upstream_bust(pred_sdf, receptor_path, crystal_sdf, pb_dir,
+                                    stem);
+        if ((!br.ran || br.backend == "bust_cli_missing") &&
+            opt.native_fallback_if_bust_missing) {
+            fill_from_native("native_pose_qc_fallback");
+            if (!br.error.empty()) {
+                if (!out.pb_failed_keys.empty()) out.pb_failed_keys += ';';
+                out.pb_failed_keys += "bust_missing:" + br.error;
+            }
+        } else {
+            out.pb_ran = br.ran;
+            out.pb_pass = br.pb_pass;
+            out.pb_n_pass = br.n_pass;
+            out.pb_n_fail = br.n_fail;
+            out.pb_n_checks = br.n_checks;
+            out.pb_failed_keys = br.failed_keys;
+            out.pb_backend = br.backend.empty() ? "bust_cli" : br.backend;
+            if (!br.error.empty() && !br.pb_pass) {
+                if (!out.pb_failed_keys.empty()) out.pb_failed_keys += ';';
+                out.pb_failed_keys += br.error;
+            }
+            if (!out.pb_ran) out.pb_pass = false;
+            if (!pb_dir.empty()) {
+                try {
+                    const std::string receipt_path =
+                        (fs::path(pb_dir) / (stem + "_bust_receipt.json")).string();
+                    std::ofstream rcpt(receipt_path);
+                    if (rcpt) {
+                        rcpt << "{\n"
+                             << "  \"bust_path\": \"" << json_escape(br.bust_path)
+                             << "\",\n"
+                             << "  \"bust_sha256\": \""
+                             << json_escape(br.bust_sha256) << "\",\n"
+                             << "  \"pb_pass\": "
+                             << (br.pb_pass ? "true" : "false") << ",\n"
+                             << "  \"backend\": \"" << json_escape(br.backend)
+                             << "\",\n"
+                             << "  \"elected_pose_sha256\": \""
+                             << json_escape(out.pose_sha256) << "\"\n"
+                             << "}\n";
+                    }
+                } catch (...) {
+                }
+            }
+        }
+    }
+
+    // Provenance: elected bytes must match hash consumed by validator.
+    const std::string pb_pose_hash_after = sha256_file(elected_pose_path);
+    if (pb_pose_hash_after != out.posebusters_pose_sha256 ||
+        out.posebusters_pose_sha256 != out.pose_sha256 ||
+        out.posebusters_input_sha256.empty()) {
+        out.pb_pass = false;
+        if (!out.pb_failed_keys.empty()) out.pb_failed_keys += ';';
+        out.pb_failed_keys += "validator_input_provenance";
+    }
+
+    // Absolute: never claim pass without a completed run.
+    if (!out.pb_ran) out.pb_pass = false;
+    return out;
 }
 
 }  // namespace flexaids::posebust
