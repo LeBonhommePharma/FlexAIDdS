@@ -120,3 +120,15 @@ bash scripts/run_benchmark_ops_monitor.sh --reap-walkers
 ## Note on local disk pressure
 
 If local Data volume is nearly full, free space before claim-scale GA (pose trees are large). Prefer thin iCloud mirror (result.csv only) rather than full dual trees.
+
+## Agent cell hangs (FileProvider / 600s spawn cap)
+
+If Claude Science or Dispatch cells hang at the tool timeout **before** a short local command runs, the sandbox likely **grants** `CloudDocs/FlexAIDdS_benchmarks` and FileProvider is materializing that tree.
+
+**Local control plane check (no CloudDocs walk):**
+```bash
+bash scripts/local_control_plane_probe.sh
+```
+PASS means git + `$HOME/.claude` listing finish under 45s on local APFS. FileProvider CPU may still be high — that does not fail the local probe.
+
+**Do not** `find` / `rglob` under `Mobile Documents/` to “debug” the hang. Reap agent walkers only: `bash scripts/reap_hung_icloud_walkers.sh`. Never kill FlexAIDdS claim workers.
