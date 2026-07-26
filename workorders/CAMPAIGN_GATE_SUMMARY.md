@@ -54,7 +54,10 @@ Claim `boom_inject_fraction: 0.0` is a **deliberate** anti-collapse fix (frac=1.
 
 ## Next allowed
 
-1. **Stronger deep-interpenetration decoys** (one construction variable) so `cf_clash` is non-trivial — required before re-keying memetic interlock / `WALL_PILOT_PASS`. Formal pb_clash PASS is env+sign only (micro ΔdCF).  
-2. Optional W1 sampling levers **other than** unwired interval-only BOOM, one at a time (small `BOOM_FRAC` is live if needed).  
+**Primary (recommended):** score-only **Native–Elected CF inversion map** — see [`NEXT_CAMPAIGN_STEP.md`](NEXT_CAMPAIGN_STEP.md). Classifies SCORING-LOCKED vs SEARCH-MISS before another GA pilot.
+
+Then (one variable each, after map):
+1. SEARCH-MISS heavy → `FLEXAIDDS_COARSE_ORIENTATIONS=256` W1 pilot (matrix 9dc9).  
+2. SCORING-LOCKED heavy → stronger deep-interpenetration decoys for pb_clash (micro formal PASS is not memetic unlock).  
 3. Full-85 only after remaining cheap gates pass.  
-4. Product decision: re-key memetic interlock from WAL_COERCIVE to a **strong** pb_clash (or equivalent) burial oracle — do not auto-enable.
+4. Product decision: re-key memetic interlock from WAL to a **strong** burial oracle — do not auto-enable.

@@ -89,3 +89,22 @@ def test_pb_clash_oracle_workorder_present():
     t = p.read_text(encoding="utf-8")
     assert "FLEXAIDDS_PB_CLASH_WEIGHT" in t
     assert "PASS" in t or "FAIL" in t
+
+
+def test_next_campaign_step_is_single_lever_and_blocks_exhausted_paths():
+    """NEXT_CAMPAIGN_STEP must name one primary experiment and ban closed gates."""
+    p = REPO / "workorders" / "NEXT_CAMPAIGN_STEP.md"
+    assert p.is_file(), "missing workorders/NEXT_CAMPAIGN_STEP.md"
+    t = p.read_text(encoding="utf-8")
+    assert "inversion" in t.lower() or "Native–Elected" in t or "Native-Elected" in t
+    assert "SCORING-LOCKED" in t and "SEARCH-MISS" in t
+    # one primary, not full-85 / WAL re-run / interval-only BOOM
+    assert "full-85" in t.lower() or "Full-85" in t
+    assert "Rejected" in t or "rejected" in t
+    assert "WAL_COERCIVE" in t or "WAL" in t
+    assert "BOOM_INTERVAL" in t or "interval-only" in t.lower()
+    # separates liveness / docking claims
+    assert "Not claimed" in t or "not claimed" in t.lower() or "Instrumentation" in t
+    # grounds in existing workorders
+    assert "CAMPAIGN_GATE_SUMMARY" in t or "E10" in t
+    assert "probe_cf" in t and "dock_config" in t
