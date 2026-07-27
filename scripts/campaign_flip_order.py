@@ -211,24 +211,31 @@ def main(argv: list[str] | None = None) -> int:
                 "action": "prioritize_election_fix_then_G4.3",
                 "priority_order": ["1N1M_election_fix", "G4.3_mutation", "new_search_arch"],
             }
-        print(
+        human = (
             f"accept={rec['accept_g4_1']} best={rec['best_treatment']} "
             f"mean_dBCR={rec['treatments'][rec['best_treatment']]['mean_dBCR_vs_control']:+.4f} "
             f"flip={rec['flip_order']['rule']}"
         )
         if args.json:
+            # Pure JSON on stdout for machine consumers; human line on stderr.
+            print(human, file=sys.stderr)
             print(json.dumps(rec, indent=2))
+        else:
+            print(human)
         return 0 if rec["accept_g4_1"] else 1
 
     if args.cmd == "election_offline":
         rec = evaluate_election_offline(args.pop_tsv, args.result_csv)
-        print(
+        human = (
             f"pop_best={rec['pop_best_rmsd_sym']:.4f} actual_elect={rec['actual_elect_rmsd']:.4f} "
             f"oracle_near={rec['oracle_cf_rank_among_near_rmsd']:.4f} "
             f"flip_election_P0={rec['would_flip_to_election_P0']}"
         )
         if args.json:
+            print(human, file=sys.stderr)
             print(json.dumps(rec, indent=2))
+        else:
+            print(human)
         return 0
 
     if args.cmd == "flip_summary":

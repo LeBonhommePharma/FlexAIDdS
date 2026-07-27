@@ -1,0 +1,22 @@
+{
+  "pop_best_rmsd_sym": 2.36374,
+  "emitted_best_rmsd_sym": 2.41177,
+  "actual_elect_rmsd": 6.4072,
+  "oracle_cf_rank_among_near_rmsd": 3.48084,
+  "oracle_cf": -76.84033,
+  "would_flip_to_election_P0": true,
+  "flip_order": {
+    "rule": "1N1M_elect_fixable_offline",
+    "action": "Selection_lever_becomes_P0_for_bellwether",
+    "priority_order": [
+      "election_fix_P0",
+      "G4.1_BOOM_secondary_or_parallel",
+      "G4.3_later"
+    ],
+    "pool_near_rmsd": 2.36374,
+    "emitted_best": 2.41177,
+    "oracle_cf_near_rmsd": 3.48084,
+    "actual_elect": 6.4072,
+    "pop_best": 2.36374
+  }
+}

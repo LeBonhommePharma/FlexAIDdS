@@ -1,0 +1,37 @@
+{
+  "experiment": "ELECTION_V135_1N1M_near_miss",
+  "status": "LAUNCHED",
+  "trigger": "G4.1 BOOM null AND election_offline.would_flip_to_election_P0=true",
+  "one_variable": "FLEXAIDDS_ELECTION_V135=1 (+ defaults SCORE_TAU=25, INCLUDE_SINGLETONS) vs control unset",
+  "panel_class": "NEAR_MISS_election_gap",
+  "codes": [
+    "1N1M",
+    "1L7F"
+  ],
+  "note_1L7F": "neg control: election_offline flip_P0=False (pool not near enough); report tiers separately",
+  "magnitude_floor": "1N1M elect_rmsd <= 2.5 OR (actual_elect - pool_near) reduced by >= 1.0 A; no wipeout (elect not worse by >0.5 on both)",
+  "matched_control": true,
+  "matrix_pin": "9dc93717dfed0698006d88dd6a9627bc",
+  "no_sec": true,
+  "sol9": true,
+  "workers": 2,
+  "restarts": 5,
+  "ga_population": 1000,
+  "ga_generations": 2000,
+  "l1_l4_plan": "L1 env FLEXAIDDS_ELECTION_V135; L4 election path logs / elected_pose_source change; offline optional DUMP_POP",
+  "forbid": [
+    "crystal_rmsd_in_election",
+    "silent_CF_rewrite",
+    "dual_dock",
+    "average_gross_miss",
+    "BOOM_bundled"
+  ],
+  "defers_to": [
+    "METHODOLOGY.md",
+    "workorders/BENCHMARK_SELF_EVAL_CONTRACT.md",
+    "scripts/campaign_flip_order.py"
+  ],
+  "out": "/Users/lp.more/flexaidds_results/election_v135_near_miss_20260726_225823",
+  "triggered_by": "G4.1 null + election_offline P0",
+  "g4_1_out": "/Users/lp.more/flexaidds_results/g4_1_boom_near_miss_20260726_200953"
+}

@@ -1,0 +1,33 @@
+# G4.1 BOOM near-miss FINAL flip decision
+# OUT: /Users/lp.more/flexaidds_results/g4_1_boom_near_miss_20260726_200953
+# evaluated: 2026-07-27T02:57:26Z
+
+## L4 BOOM
+control: 0 markers (PASS)
+frac005/010/020: 158 (1L7F) + 78 (1N1M) markers each (LIVE)
+
+## Magnitude (BCR elect / best_cluster)
+arm       1L7F     1N1M     mean_dBCR
+control   3.9907   4.5515   —
+frac005   4.0834   4.5515   +0.0464
+frac010   3.9523   4.5515   -0.0192   ← best, still null
+frac020   4.0834   4.5515   +0.0464
+
+Floor: mean_dBCR <= -0.5 OR any BCR < 2 → FAIL (null magnitude)
+
+## accept_g4_1 = False
+## flip rule = G4.1_null_or_l4_fail (magnitude null; L4 OK)
+
+## Merged flip_summary (with 1N1M election_offline)
+final_flip_order.rule = 1N1M_elect_fixable_offline
+priority:
+  1. election_fix_P0
+  2. G4.1_BOOM_secondary_or_parallel
+  3. G4.3_later
+
+Evidence offline 1N1M:
+  pop_best=2.36 emit=2.41 elect=6.41 CF-oracle-near=3.48
+  pure CF prefers elect (~-99) over near-native (~-77)
+
+## Next experiment
+ELECTION_V135 matched A/B on 1N1M+1L7F (see ELECTION_V135_APRIORI.json)
