@@ -82,15 +82,37 @@ def result_metrics(out: Path, codes: list[str]) -> dict[str, dict]:
     return m
 
 
+def iter_engine_logs(out: Path):
+    """Yield engine log paths under an arm OUT.
+
+    Production FlexAIDdS writes [BOOM] and other L4 markers to **stderr.log**
+    (often only there). Restarts land under ``r0/``, ``r1/``, …  Scanning
+    only top-level stdout.log false-negatives real G4.1 OUTs.
+    """
+    if not out.is_dir():
+        return
+    # Prefer explicit names, then any *.log (covers r*/stderr.log etc.)
+    seen: set[Path] = set()
+    for name in ("stderr.log", "stdout.log", "driver.log"):
+        for log in out.rglob(name):
+            if log.is_file() and log not in seen:
+                seen.add(log)
+                yield log
+    for log in out.rglob("*.log"):
+        if log.is_file() and log not in seen:
+            seen.add(log)
+            yield log
+
+
 def count_marker(out: Path, marker: str) -> int:
     n = 0
-    for log in out.rglob("stdout.log"):
+    for log in iter_engine_logs(out):
         n += log.read_text(errors="replace").count(marker)
     return n
 
 
 def wipeout_signature(out: Path) -> bool:
-    for log in out.rglob("stdout.log"):
+    for log in iter_engine_logs(out):
         t = log.read_text(errors="replace")
         if re.search(r"wipeout|CF\s*[=~]\s*0\.0+", t, re.I):
             return True
@@ -199,12 +221,15 @@ def main(argv: list[str] | None = None) -> int:
         rec = posteriori_g4_1_style(
             args.control, treatments, codes, marker=args.marker
         )
-        print(
+        human = (
             f"status={rec['status']} accept={rec['accept_magnitude']} "
             f"best={rec['best_treatment']} ctrl_markers={rec['control_markers']}"
         )
         if args.json:
+            print(human, file=sys.stderr)
             print(json.dumps(rec, indent=2))
+        else:
+            print(human)
         return 0 if rec["status"] == "PASS" else 1
 
     if args.cmd == "validate-contract-doc":

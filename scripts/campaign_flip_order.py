@@ -38,11 +38,31 @@ def collect_arm(out: Path, codes: list[str]) -> dict[str, dict]:
     return arm
 
 
+def iter_engine_logs(out: Path):
+    """Yield engine logs under arm OUT (stderr first — production BOOM path).
+
+    Live FlexAIDdS writes ``[BOOM]`` to stderr.log (and r*/stderr.log).
+    stdout-only scans false-negative finished G4.1 OUTs.
+    """
+    if not out.is_dir():
+        return
+    seen: set[Path] = set()
+    for name in ("stderr.log", "stdout.log", "driver.log"):
+        for log in out.rglob(name):
+            if log.is_file() and log not in seen:
+                seen.add(log)
+                yield log
+    for log in out.rglob("*.log"):
+        if log.is_file() and log not in seen:
+            seen.add(log)
+            yield log
+
+
 def boom_l4(out: Path) -> dict:
     """Count [BOOM] markers; detect wipeout signature CF≈0 early stop if present."""
     n_boom = 0
     wipeout = False
-    for log in out.rglob("stdout.log"):
+    for log in iter_engine_logs(out):
         text = log.read_text(errors="replace")
         n_boom += len(re.findall(r"\[BOOM\]", text))
         if re.search(r"wipeout|CF\s*[=~]\s*0\.0+\b", text, re.I):
