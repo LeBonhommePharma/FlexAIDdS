@@ -33,5 +33,6 @@
   ],
   "out": "/Users/lp.more/flexaidds_results/election_v135_near_miss_20260726_225823",
   "triggered_by": "G4.1 null + election_offline P0",
-  "g4_1_out": "/Users/lp.more/flexaidds_results/g4_1_boom_near_miss_20260726_200953"
+  "g4_1_out": "/Users/lp.more/flexaidds_results/g4_1_boom_near_miss_20260726_200953",
+  "report_tiers_separately": true
 }
