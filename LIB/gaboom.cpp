@@ -1043,6 +1043,27 @@ int GA(FA_Global* FA, GB_Global* GB,VC_Global* VC,chromosome** chrom,chromosome*
 			}
 		}
 
+		// G4.3: FLEXAIDDS_MUTATION_GRANULAR uses phenotype-live ±1-bin steps.
+		// hash_genes() keys the lifetime `duplicates` map on to_ic (phenotype).
+		// Local steps exhaust the neighborhood; reproduce() then stalls in
+		// rejection sampling (~0.08 gen/s observed on 1L7F after gen ~4100).
+		// Clear once per generation under granular mode so uniqueness is
+		// within-gen only. Classic (env off) keeps lifetime uniqueness.
+		{
+			const char* gran_e = std::getenv("FLEXAIDDS_MUTATION_GRANULAR");
+			if (gran_e && (gran_e[0] == '1' || gran_e[0] == 'y' || gran_e[0] == 'Y' ||
+			               gran_e[0] == 't' || gran_e[0] == 'T')) {
+				duplicates.clear();
+				static bool s_dup_clear_logged = false;
+				if (!s_dup_clear_logged) {
+					s_dup_clear_logged = true;
+					std::fprintf(stderr,
+					             "[MUT-GRAN] per-generation phenotype-duplicate clear "
+					             "(lifetime map incompatible with ±1-bin local search)\n");
+				}
+			}
+		}
+
 		nrejected = reproduce(FA,GB,VC,(*chrom),(*gene_lim),atoms,residue,(*cleftgrid),
 				      GB->rep_model,GB->mut_rate,GB->cross_rate,print,dice,duplicates,target,*ctx);
 
@@ -3983,10 +4004,14 @@ void mutate(gene *john,int num_genes,double mut_rate,const genlim* gene_lim){
 	   gene is selected for mutation, apply a ±1-bin step in gene integer
 	   space (phenotype-changing small move). L4: one-shot [MUT-GRAN] on stderr.
 	*/
-	// Re-read env each call so tests/process can toggle; log L4 once.
-	const char* e = std::getenv("FLEXAIDDS_MUTATION_GRANULAR");
-	const bool env_on =
-	    e && (e[0] == '1' || e[0] == 'y' || e[0] == 'Y' || e[0] == 't' || e[0] == 'T');
+	// Env is process-lifetime for dock runs. Tests setenv before first mutate.
+	// Skip getenv when gene_lim is null (classic overload path).
+	bool env_on = false;
+	if (gene_lim != nullptr) {
+		const char* e = std::getenv("FLEXAIDDS_MUTATION_GRANULAR");
+		env_on = e && (e[0] == '1' || e[0] == 'y' || e[0] == 'Y' || e[0] == 't' ||
+		               e[0] == 'T');
+	}
 	const bool use_granular = env_on && (gene_lim != nullptr);
 	if (use_granular) {
 		static bool s_logged = false;
