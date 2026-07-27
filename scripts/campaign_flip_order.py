@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Apply campaign 'what would flip the order' rules to G4.1 / election / scoring results.
+"""Apply campaign 'what would flip the order' rules to G4.1 / G4.3 / election results.
 
 Does not reimplement docking — reads result.csv BCR/elect columns and optional
-BOOM log markers. Encodes ACCEPT floors from PHASE4 + forward_plan_confidence.
+BOOM / MUT-GRAN log markers. Encodes ACCEPT floors from PHASE4 + forward_plan_confidence.
 """
 from __future__ import annotations
 
@@ -68,6 +68,85 @@ def boom_l4(out: Path) -> dict:
         if re.search(r"wipeout|CF\s*[=~]\s*0\.0+\b", text, re.I):
             wipeout = True
     return {"n_boom_markers": n_boom, "wipeout_flag": wipeout}
+
+
+def mut_gran_l4(out: Path) -> dict:
+    """Count [MUT-GRAN] L4 markers (stderr/restart logs)."""
+    n = 0
+    for log in iter_engine_logs(out):
+        n += log.read_text(errors="replace").count("[MUT-GRAN]")
+    return {"n_mut_gran_markers": n}
+
+
+def evaluate_g4_3(
+    control: dict[str, dict],
+    treatment: dict[str, dict],
+    *,
+    codes: list[str],
+    l4_ctrl: int,
+    l4_tx: int,
+) -> dict:
+    """G4.3 MUTATION_GRANULAR matched A/B on near-miss panel."""
+    deltas = []
+    elect_ok = []
+    sub2 = []
+    wipe = False
+    per = {}
+    for c in codes:
+        db = treatment[c]["bcr"] - control[c]["bcr"]
+        deltas.append(db)
+        sub2.append(treatment[c]["bcr"] <= SUB2)
+        elect_ok.append(treatment[c]["elect"] <= 2.5)
+        if treatment[c]["elect"] < 0 or control[c]["elect"] < 0:
+            wipe = True
+        per[c] = {
+            "control_elect": control[c]["elect"],
+            "control_bcr": control[c]["bcr"],
+            "tx_elect": treatment[c]["elect"],
+            "tx_bcr": treatment[c]["bcr"],
+            "dBCR": db,
+        }
+    mean_db = sum(deltas) / len(deltas)
+    mag = mean_db <= MAGNITUDE_FLOOR or any(sub2) or any(elect_ok)
+    l4_ok = l4_tx > 0 and l4_ctrl == 0
+    accept = bool(mag and l4_ok and not wipe)
+    if wipe:
+        status = "INVALID"
+    elif accept:
+        status = "PASS"
+    elif l4_ok and not mag:
+        status = "PASS_LIVENESS"
+    else:
+        status = "FAIL"
+    if accept:
+        flip = {
+            "rule": "G4.3_mutation_hits_magnitude",
+            "action": "PROMOTE_MUTATION_GRANULAR_to_claim_recipe",
+            "priority_order": ["MUTATION_GRANULAR_in_claim", "full85_candidate"],
+        }
+    else:
+        flip = {
+            "rule": "G4.3_null_phase4_sampling_exhausted",
+            "action": "Phase4_sampling_stack_null; residual_new_search_arch_or_scoring_locked_work",
+            "priority_order": [
+                "new_search_arch",
+                "scoring_locked_decoy_work",
+                "full85_still_blocked",
+            ],
+        }
+    return {
+        "accept_g4_3": accept,
+        "status": status,
+        "mean_dBCR_vs_control": mean_db,
+        "per_target": per,
+        "n_bcr_sub2": sum(1 for x in sub2 if x),
+        "n_elect_le_2p5": sum(1 for x in elect_ok if x),
+        "l4_ok": l4_ok,
+        "l4_control": l4_ctrl,
+        "l4_treatment": l4_tx,
+        "wipeout_incomplete": wipe,
+        "flip_order": flip,
+    }
 
 
 def evaluate_g4_1(
@@ -190,6 +269,12 @@ def main(argv: list[str] | None = None) -> int:
     g.add_argument("--codes", default="1N1M,1L7F")
     g.add_argument("--json", action="store_true")
 
+    g3 = sub.add_parser("g4_3", help="Score G4.3 MUTATION_GRANULAR matched A/B")
+    g3.add_argument("--control", type=Path, required=True)
+    g3.add_argument("--treatment", type=Path, required=True)
+    g3.add_argument("--codes", default="1N1M,1L7F")
+    g3.add_argument("--json", action="store_true")
+
     e = sub.add_parser("election_offline", help="1N1M-style election gap offline")
     e.add_argument("--pop-tsv", type=Path, required=True)
     e.add_argument("--result-csv", type=Path, required=True)
@@ -201,6 +286,25 @@ def main(argv: list[str] | None = None) -> int:
     f.add_argument("--json", action="store_true")
 
     args = ap.parse_args(argv)
+    if args.cmd == "g4_3":
+        codes = [c.strip() for c in args.codes.split(",") if c.strip()]
+        control = collect_arm(args.control, codes)
+        treatment = collect_arm(args.treatment, codes)
+        l4c = mut_gran_l4(args.control)["n_mut_gran_markers"]
+        l4t = mut_gran_l4(args.treatment)["n_mut_gran_markers"]
+        rec = evaluate_g4_3(control, treatment, codes=codes, l4_ctrl=l4c, l4_tx=l4t)
+        human = (
+            f"accept={rec['accept_g4_3']} status={rec['status']} "
+            f"mean_dBCR={rec['mean_dBCR_vs_control']:+.4f} "
+            f"l4_ctrl={l4c} l4_tx={l4t} flip={rec['flip_order']['rule']}"
+        )
+        if args.json:
+            print(human, file=sys.stderr)
+            print(json.dumps(rec, indent=2))
+        else:
+            print(human)
+        return 0 if rec["accept_g4_3"] else 1
+
     if args.cmd == "g4_1":
         codes = [c.strip() for c in args.codes.split(",") if c.strip()]
         control = collect_arm(args.control, codes)

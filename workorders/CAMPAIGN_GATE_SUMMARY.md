@@ -41,9 +41,10 @@ Do **not** cite 25.3% as proof election fix worked.
 | 4.1 | COARSE matched 64 vs 256 (SEARCH-MISS) | COARSE_ORIENTATIONS only | L4 5/5 both; genuine 0/5 both; mean ΔRMSD +0.12; mean ΔBCR +3.44 | **FAIL** (matched; no directional gain) |
 | **G4.4** | Early-stop audit | offline gens-reached on pilot/matched/boom logs | 45/45 truncated vs 2000-gen budget | **PASS audit** — truncation **common**; Phase 4 docks require `FLEXAIDDS_NO_SEC=1` |
 | **G4.2** | Cartesian niche matched A/B | `FLEXAIDDS_NICHE_CARTESIAN` OFF vs ON (σ=2.0 Å); both `NO_SEC=1` | L4 cart B only; genuine 0/5 both; mean ΔBCR **−0.441** Å; 0 elect reg | **FAIL** (misses ≤−0.5 floor; directional only) |
-| G4.1 | BOOM_FRAC panel {0.05,0.1,0.2} | SEARCH-MISS; NO_SEC=1; R=2 | OUT `g4_1_boom_frac_20260726_101238` | **IN PROGRESS** |
-| G4.3 | Mutation granularity | — | — | **NOT RUN** (separate arm later) |
-| 5 | Full-85 claim | — | blocked | **NOT RUN** |
+| G4.1 | BOOM_FRAC near-miss {0.05,0.1,0.2} | SEARCH-MISS; NO_SEC=1; R=2 | L4 PASS; best mean_dBCR −0.019 | **FAIL (null mag)** |
+| ELECTION_V135 | election_v135 + τ=25 | R=5 near-miss | elect identical 6.40/3.99 | **FAIL (null mag)** |
+| G4.3 | MUTATION_GRANULAR ±1-bin | near-miss; NO_SEC=1; R=2 | L4 PASS (8); mean_dBCR **+0.118** | **PASS_LIVENESS / null mag** |
+| 5 | Full-85 claim | — | Phase-4 sampling stack null | **BLOCKED** |
 
 ### G4.2 OUT / provenance
 

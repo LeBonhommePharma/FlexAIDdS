@@ -1,6 +1,6 @@
 {
   "experiment": "G4.3_MUTATION_near_miss",
-  "status": "LAUNCHING",
+  "status": "CLOSED_PASS_LIVENESS_NULL_MAG",
   "trigger": "G4.1 BOOM null AND ELECTION_V135 null",
   "one_variable": "FLEXAIDDS_MUTATION_GRANULAR=1 (+ gene_lim-aware \u00b11-bin mutate) vs control unset",
   "panel_class": "NEAR_MISS",
