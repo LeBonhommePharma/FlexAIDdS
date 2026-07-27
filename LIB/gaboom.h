@@ -216,6 +216,10 @@ void  QuickSort_Clusters(int*, int*, double*, double*, int, int);
 void  swap_clusters(int*, int*, double*, double*, int*, int*, double*, double*);
 void  crossover(gene *john,gene *mary,int num_genes, int intragenes);
 void  mutate(gene *john,int num_genes,double mut_rate);
+/// G4.3: when gene_lim is non-null and FLEXAIDDS_MUTATION_GRANULAR=1, use
+/// bin-aware small steps (±1 bin in gene integer space) instead of only
+/// flipping mostly-dead low-order bits (see PHASE4_GATES_ACTUALIZED.md).
+void  mutate(gene *john,int num_genes,double mut_rate,const genlim* gene_lim);
 void  bin_print(int dec,int len);
 void  read_gainputs(FA_Global* FA,GB_Global* GB,int*,int*,char file[]);
 int   deelig_search(struct deelig_node_struct* root_node, int* deelig_list, int fdih);
