@@ -5,12 +5,16 @@
 **Contract:** `workorders/G4_1_NEAR_MISS_APRIORI.json` + `BENCHMARK_SELF_EVAL_CONTRACT.md`
 
 ## L4 BOOM injection
-| arm | 1L7F | 1N1M |
-|-----|------|------|
-| control | 0 | 0 |
-| frac005/010/020 | 158 | 78 |
+| arm | n_boom_markers (stderr+r*) |
+|-----|----------------------------|
+| control | **0** |
+| frac005 / frac010 / frac020 | **236 each** |
 
-Control zero + treatment live → L4 **PASS**.
+Engine writes `[BOOM]` to **stderr.log** (not stdout). Scanners in
+`benchmark_self_eval.count_marker` / `campaign_flip_order.boom_l4` must walk
+`stderr.log` + restart logs; stdout-only scans false-negative this OUT.
+
+Control zero + treatment live → L4 **PASS** (after scanner fix).
 
 ## Magnitude (best_cluster_rmsd / elect)
 | arm | 1L7F BCR | 1N1M BCR | mean ΔBCR |
