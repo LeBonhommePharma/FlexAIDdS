@@ -125,3 +125,13 @@ Matched control `~/flexaidds_results/coarse_ab_matched_20260725_222652`: **FAIL*
 - Flip: **election_fix_P0** (1N1M offline pool 2.36 / elect 6.41)
 - Next: `election_v135_near_miss_20260726_225823` (R=5, V135 vs control)
 - Evidence: `workorders/g4_1_evidence/`, `workorders/G4_1_NEAR_MISS_POSTERIORI.md`
+
+
+## ELECTION_V135 near-miss (2026-07-27 FINAL)
+
+- OUT: `election_v135_near_miss_20260726_225823`
+- One var: `FLEXAIDDS_ELECTION_V135=1` (tau=25) vs control; R=5; matrix 9dc9; NO_SEC
+- Result: **NULL** — elect identical (1N1M 6.40 / 1L7F 3.99 both arms)
+- accept: **False**
+- Next: **G4.3 mutation** a priori draft `workorders/G4_3_MUTATION_APRIORI.json`
+- Evidence: `workorders/ELECTION_V135_POSTERIORI.md`

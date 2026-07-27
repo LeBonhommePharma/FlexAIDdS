@@ -1,0 +1,19 @@
+{
+  "experiment": "G4.3_MUTATION_near_miss",
+  "status": "DRAFT_ready_after_election_null",
+  "trigger": "G4.1 BOOM null AND ELECTION_V135 null",
+  "one_variable": "mutation granularity / G4.3 lever (document exact env from PHASE4) vs control",
+  "panel_class": "NEAR_MISS",
+  "codes": ["1N1M", "1L7F"],
+  "magnitude_floor": "mean_dBCR <= -0.5 A or >=1 BCR<2 or 1N1M elect<=2.5; no wipeout",
+  "matched_control": true,
+  "matrix_pin": "9dc93717dfed0698006d88dd6a9627bc",
+  "no_sec": true,
+  "sol9": true,
+  "workers": 2,
+  "restarts": 2,
+  "report_tiers_separately": true,
+  "l1_l4_plan": "L1 env for mutation knob; L4 mutation log markers; control zero",
+  "forbid": ["dual_dock", "average_gross_miss", "burial_repanel", "silent_rerun", "BOOM_bundled", "election_bundled"],
+  "defers_to": ["METHODOLOGY.md", "workorders/PHASE4_GATES_ACTUALIZED.md", "workorders/BENCHMARK_SELF_EVAL_CONTRACT.md"]
+}
