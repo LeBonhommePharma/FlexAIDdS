@@ -114,3 +114,14 @@ Matched control `~/flexaidds_results/coarse_ab_matched_20260725_222652`: **FAIL*
 - **Offline queue:** `workorders/OFFLINE_BENCHMARKS_QUEUE.md`
 - **WORKERS≤4** hard refuse; disk floor **20 GiB** (override only with `FLEXAIDDS_DISK_FLOOR_OVERRIDE=1`).
 - Live G4.1 may already hold the lock; do not steal ownership.
+
+
+## G4.1 BOOM near-miss (2026-07-27 FINAL)
+
+- OUT: `g4_1_boom_near_miss_20260726_200953`
+- L4 BOOM: LIVE on treatments; control zero
+- Magnitude: **NULL** (best mean_dBCR=−0.0192 at frac010; floor −0.5)
+- accept_g4_1: **False**
+- Flip: **election_fix_P0** (1N1M offline pool 2.36 / elect 6.41)
+- Next: `election_v135_near_miss_20260726_225823` (R=5, V135 vs control)
+- Evidence: `workorders/g4_1_evidence/`, `workorders/G4_1_NEAR_MISS_POSTERIORI.md`
