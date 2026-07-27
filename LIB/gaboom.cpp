@@ -1902,23 +1902,25 @@ int reproduce(FA_Global* FA,GB_Global* GB,VC_Global* VC, chromosome* chrom, cons
 		/************************************/
 		num_genes_wo_sc = GB->num_genes-FA->nflxsc_real;
 
-		mutate(chrop1_gen,GB->num_genes-FA->nflxsc_real,mutprob);
+		mutate(chrop1_gen,GB->num_genes-FA->nflxsc_real,mutprob,gene_lim);
 		k=0;
 		for(j=0;j<FA->nflxsc;j++){
 			if(residue[FA->flex_res[j].inum].trot != 0){
 				if(RandomDouble() < FA->flex_res[j].prob){
-					mutate(&chrop1_gen[num_genes_wo_sc+k],1,mutprob);
+					mutate(&chrop1_gen[num_genes_wo_sc+k],1,mutprob,
+					       gene_lim ? &gene_lim[num_genes_wo_sc+k] : nullptr);
 				}
 				k++;
 			}
 		}
 
-		mutate(chrop2_gen,GB->num_genes-FA->nflxsc_real,mutprob);
+		mutate(chrop2_gen,GB->num_genes-FA->nflxsc_real,mutprob,gene_lim);
 		k=0;
 		for(j=0;j<FA->nflxsc;j++){
 			if(residue[FA->flex_res[j].inum].trot != 0){
 				if(RandomDouble() < FA->flex_res[j].prob){
-					mutate(&chrop2_gen[num_genes_wo_sc+k],1,mutprob);
+					mutate(&chrop2_gen[num_genes_wo_sc+k],1,mutprob,
+					       gene_lim ? &gene_lim[num_genes_wo_sc+k] : nullptr);
 				}
 				k++;
 			}
@@ -3965,26 +3967,67 @@ void crossover(gene *john,gene *mary,int num_genes, int intragenes){
 /* 1         2         3         4         5         6         7*/
 /***********************************************************************/
 void mutate(gene *john,int num_genes,double mut_rate){
+	mutate(john, num_genes, mut_rate, /*gene_lim=*/nullptr);
+}
+
+void mutate(gene *john,int num_genes,double mut_rate,const genlim* gene_lim){
 	/* creates an operator with 1's with rate= mut_rate
 	   uses it to mutate john.
-	*/
-	int i,j;
-	unsigned int optr;
-	unsigned int test;
 
-	for(j=0;j<num_genes;j++){
-		optr=0u;
-		test=1u;
-		for(i=0;i<32;i++){
-			if(RandomDouble() < mut_rate){
+	   Default (gene_lim null or FLEXAIDDS_MUTATION_GRANULAR unset): classic
+	   per-bit flip across all 32 bits.  Low-order bits are often "dead" for
+	   decoding: genetoic bins by gene/2^31, so flips below ~2^31/nbin do not
+	   change the IC phenotype (PHASE4 G4.3).
+
+	   G4.3 mode (FLEXAIDDS_MUTATION_GRANULAR=1 and gene_lim provided): when a
+	   gene is selected for mutation, apply a ±1-bin step in gene integer
+	   space (phenotype-changing small move). L4: one-shot [MUT-GRAN] on stderr.
+	*/
+	// Re-read env each call so tests/process can toggle; log L4 once.
+	const char* e = std::getenv("FLEXAIDDS_MUTATION_GRANULAR");
+	const bool env_on =
+	    e && (e[0] == '1' || e[0] == 'y' || e[0] == 'Y' || e[0] == 't' || e[0] == 'T');
+	const bool use_granular = env_on && (gene_lim != nullptr);
+	if (use_granular) {
+		static bool s_logged = false;
+		if (!s_logged) {
+			s_logged = true;
+			std::fprintf(stderr,
+			             "[MUT-GRAN] FLEXAIDDS_MUTATION_GRANULAR=1: bin-aware ±1-bin gene steps "
+			             "(phenotype-live mutations; classic dead low bits avoided)\n");
+		}
+	}
+
+	for (int j = 0; j < num_genes; j++) {
+		if (use_granular) {
+			// Gate once per gene at mut_rate (not per bit).
+			if (RandomDouble() >= mut_rate) continue;
+			const double nbin = gene_lim[j].nbin > 1.0 ? gene_lim[j].nbin : 2.0;
+			const int32_t step = static_cast<int32_t>(std::max(
+			    1.0, std::floor((static_cast<double>(MAX_RANDOM_VALUE) + 1.0) / nbin)));
+			// ±1 bin; occasional ±2 for slightly larger local moves (still small).
+			int k = 1;
+			if (RandomDouble() < 0.25) k = 2;
+			const int sign = (RandomDouble() < 0.5) ? 1 : -1;
+			int64_t ng = static_cast<int64_t>(john[j].to_int32) +
+			             static_cast<int64_t>(sign) * static_cast<int64_t>(step) * k;
+			if (ng < 0) ng = 0;
+			if (ng > static_cast<int64_t>(MAX_RANDOM_VALUE))
+				ng = static_cast<int64_t>(MAX_RANDOM_VALUE);
+			john[j].to_int32 = static_cast<int32_t>(ng);
+			continue;
+		}
+
+		unsigned int optr = 0u;
+		unsigned int test = 1u;
+		for (int i = 0; i < 32; i++) {
+			if (RandomDouble() < mut_rate) {
 				optr |= test;
 			}
 			test <<= 1;
 		}
 		john[j].to_int32 ^= static_cast<int32_t>(optr);
 	}
-
-	return;
 }
 /***********************************************************************/
 /* 1         2         3         4         5         6          */

@@ -1,8 +1,8 @@
 {
   "experiment": "G4.3_MUTATION_near_miss",
-  "status": "DRAFT_requires_code_arm_then_matched_AB",
+  "status": "LAUNCHING",
   "trigger": "G4.1 BOOM null AND ELECTION_V135 null",
-  "one_variable": "mutation granularity / G4.3 lever (document exact env from PHASE4) vs control",
+  "one_variable": "FLEXAIDDS_MUTATION_GRANULAR=1 (+ gene_lim-aware \u00b11-bin mutate) vs control unset",
   "panel_class": "NEAR_MISS",
   "codes": [
     "1N1M",
@@ -16,7 +16,7 @@
   "workers": 2,
   "restarts": 2,
   "report_tiers_separately": true,
-  "l1_l4_plan": "L1 env for mutation knob; L4 mutation log markers; control zero",
+  "l1_l4_plan": "L1 env FLEXAIDDS_MUTATION_GRANULAR; L2 stamped binary with gaboom mutate overload; L4 [MUT-GRAN] stderr once; control zero",
   "forbid": [
     "dual_dock",
     "average_gross_miss",
