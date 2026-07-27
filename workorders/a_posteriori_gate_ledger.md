@@ -17,6 +17,7 @@ Source of floors: `METHODOLOGY.md`, `workorders/PHASE4_GATES_ACTUALIZED.md`, `wo
 | DUMP_POP ceiling | **MEASURED** | 1N1M pop≈2.36 elect≈6.41 | `dump_pop_search_miss_20260726_172356` |
 | G4.1 BOOM near-miss | **FAIL (null mag); L4 PASS** | BOOM_FRAC 0.05/0.1/0.2 | `g4_1_boom_near_miss_20260726_200953` |
 | **ELECTION_V135** | **FAIL (null mag)** | V135=1 vs control; R=5; elect Δ=0 | `election_v135_near_miss_20260726_225823` |
+| **G4.3 MUTATION_GRANULAR** | **PASS_LIVENESS; null mag** | MUT_GRAN=1 vs control; R=2; mean_dBCR **+0.118** | `g4_3_mut_gran_near_miss_20260727_122215` |
 
 ## ELECTION_V135 detail (CLOSED 2026-07-27)
 
@@ -25,6 +26,17 @@ Source of floors: `METHODOLOGY.md`, `workorders/PHASE4_GATES_ACTUALIZED.md`, `wo
 - Floor elect≤2.5 or gap shrink ≥1.0: **FAIL**
 - Flip next: **G4.3 mutation** (or new selection architecture)
 
+## G4.3 detail (CLOSED 2026-07-27)
+
+- One var: `FLEXAIDDS_MUTATION_GRANULAR=1` (+ gene_lim ±1-bin mutate; per-gen phenotype-dup clear)
+- L4: control **0** / mut_gran **8** `[MUT-GRAN]` → **PASS**
+- 1L7F elect 3.9907→**6.2458** (regression); BCR 3.9907→4.1128
+- 1N1M elect 6.3999→6.0053; BCR 4.1954→4.3088
+- mean_dBCR **+0.118** (null; floor ≤−0.5 or BCR&lt;2 or elect≤2.5)
+- status **PASS_LIVENESS**; `ACCEPT_G4_3=False`
+- Flip residual: **`new_search_arch`** / scoring-locked decoy work; full-85 still blocked
+- Workorder: `G4_3_MUTATION_POSTERIORI.md`
+
 ## Full-85 block
 
-Phase-4 sampling ACCEPT still not met (BOOM null + election null).
+Phase-4 sampling ACCEPT still not met (BOOM null + election null + mutation null).
