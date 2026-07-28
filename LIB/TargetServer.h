@@ -32,6 +32,7 @@ namespace target {
 struct TargetConfig {
     double temperature_K = 300.0;
     int    n_models = 1;         // set > 1 for multi-model receptor
+    double default_conc_M = 1.0; // P3: for grand canonical fugacity z = c/1M
 };
 
 // ── Per-ligand docking session ─────────────────────────────────────────
@@ -42,6 +43,7 @@ struct DockingSession {
     double      log_Z = 0.0;     // set after docking completes
     bool        completed = false;
     int         n_poses = 0;
+    double      conc_M = 1.0;  // P3: concentration for fugacity
 
     // CCBM conformer populations (empty if single model)
     std::vector<double> conformer_populations;
@@ -67,6 +69,7 @@ public:
     // ── Configuration ──────────────────────────────────────────────────
     double temperature() const noexcept { return config_.temperature_K; }
     int    n_models() const noexcept { return config_.n_models; }
+    double default_conc_M() const noexcept { return config_.default_conc_M; }  // P3
 
     // ── Validation ─────────────────────────────────────────────────────
     /// Validate a target structure given its FA_Global and atom arrays.

@@ -1,0 +1,170 @@
+# Grand Canonical Competition / Selectivity Example Dataset (P4)
+#
+# Purpose: Curated examples for validating GrandPartitionFunction (Ξ)
+# observables: binding probabilities p_bind, mean_occupancy, selectivity
+# (apparent + intrinsic), log_Xi against analytical ground truth and/or
+# literature competition data.
+#
+# This is PREP data (no C++ wiring required yet). Fixtures will pair with
+# synthetic exact solutions (see benchmarks/grand_synthetic/) and later
+# seeded small-system GA runs.
+#
+# Key semantics (from GrandPartitionFunction):
+#   z_i = c_i / 1M   (fugacity)
+#   Ξ = 1 + Σ z_i * Z_i
+#   p_i = (z_i * Z_i) / Ξ
+#   intrinsic selectivity lnS(A/B) = ln(Z_A / Z_B)
+#   apparent (conc-weighted) lnS(A/B) = ln(Z_A/Z_B) + ln(c_A/c_B)
+#   occupancy = 1 - p(empty)
+#
+# Literature Ki ratios → ΔΔG at 298 K:
+#   ΔΔG (kcal/mol) = RT ln(Ki_B / Ki_A)   with RT ≈ 0.592 kcal/mol
+#   (positive ΔΔG means A is tighter binder than B)
+#
+# Reproducibility: all entries record literature source or analytical
+# derivation. Use with fixed T=298 K unless noted. Concentrations chosen
+# to span nM–uM range typical for ITC / competition assays.
+#
+# See also: benchmarks/itc187.yaml (single-ligand thermo), erds_specificity.yaml
+# (Z-score specificity), BENCHMARK_STANDARD.md (add grand section), GPF report.
+
+slug: competition_example
+name: "Grand Canonical Competition / Selectivity Examples"
+description: >
+  Dual- and multi-ligand sets for competitive binding validation.
+  Includes literature-derived Ki ratios converted to relative free energies
+  at known concentrations, plus analytical reference cases for exact
+  p_bind / selectivity / occupancy. Intended for grand canonical harness
+  (calibrate/selectivity extensions) and future end-to-end campaigns.
+  Tier-1 suitable for fast synthetic validation; Tier-2 for real structures.
+
+zenodo_doi: ""
+download_url: ""
+data_format: mixed   # yaml manifest + fixtures (PDB/MOL2 later)
+tier: 1
+tier1_subset_size: 3
+
+structural_states:
+  - holo
+  - apo   # for p(empty) checks
+
+metrics:
+  - grand_log_xi
+  - p_bind
+  - mean_occupancy
+  - apparent_selectivity
+  - intrinsic_selectivity
+  - occupancy_vs_conc_curve
+  - delta_delta_g_match   # agreement of derived ΔΔG with literature Ki ratio
+
+expected_baselines:
+  # For synthetic exact cases (Z known analytically), tolerance is machine eps.
+  # For literature, use experimental variance.
+  p_bind_agreement_rmse: 0.01
+  selectivity_log_error: 0.05
+  occupancy_agreement: 0.02
+  delta_delta_g_rmse_kcal: 0.2
+
+baseline_tolerance: 0.05
+
+# ─────────────────────────────────────────────────────────────────────────────
+# DUAL-LIGAND LITERATURE-INSPIRED EXAMPLE (convert Ki ratio to ΔΔG)
+# Hypothetical but representative of common kinase or protease pairs.
+# Ki_A = 5 nM, Ki_B = 50 nM → ratio 10 → ΔΔG_{A better} ≈ +1.364 kcal/mol
+# (at 298K, R=0.001987, T=298 → RT ln(10) ≈ 1.364)
+# At equal [ ] = 1 μM, pA should be ~10x pB (modulo Z normalization).
+# ─────────────────────────────────────────────────────────────────────────────
+competition_sets:
+  - receptor_id: "example_kinase_A"   # placeholder; map to real PDB e.g. 1H1Q later
+    temperature_K: 298.0
+    ligands:
+      - ligand_id: "ligA_tight"
+        Ki_nM: 5.0
+        source: "literature_competition_assay (representative)"
+        conc_M: 1.0e-6
+        notes: "tighter binder; reference for ΔΔG"
+      - ligand_id: "ligB_weak"
+        Ki_nM: 50.0
+        source: "literature_competition_assay (representative)"
+        conc_M: 1.0e-6
+        notes: "10x weaker; expected intrinsic ΔΔG_A-B ≈ +1.364 kcal/mol"
+    # Derived analytical relations (for validation harness):
+    # ΔΔG_lit = RT * ln(KiB/KiA) ≈ +1.364 kcal/mol (A preferred)
+    # When full Z_i known from ensemble, check intrinsic lnS ≈ ln(ZA/ZB) matches
+    # ΔΔG / -RT
+    expected:
+      conc_ratio: 1.0
+      delta_delta_g_kcal_ref: 1.364
+      approx_p_ratio_at_equal_conc: 10.0   # when Z ratio follows Ki inverse
+
+  # Dose-response variant: vary conc to check occupancy and p curves
+  - receptor_id: "example_kinase_A"
+    temperature_K: 298.0
+    ligands:
+      - ligand_id: "ligA_tight"
+        Ki_nM: 5.0
+        source: "literature_competition_assay (representative)"
+        conc_M: 1.0e-9   # 1 nM — low occ expected if Z modest
+      - ligand_id: "ligB_weak"
+        Ki_nM: 50.0
+        source: "literature_competition_assay (representative)"
+        conc_M: 1.0e-6
+    expected:
+      delta_delta_g_kcal_ref: 1.364
+      # At these concs, pB may dominate despite weaker Ki due to 1000x higher c
+      # Harness must compute exactly from provided Z (or ensemble log_Z)
+
+# ─────────────────────────────────────────────────────────────────────────────
+# MULTI-LIGAND (3+) for matrix selectivity + empty site checks
+# ─────────────────────────────────────────────────────────────────────────────
+  - receptor_id: "example_protease_multi"
+    temperature_K: 298.0
+    ligands:
+      - ligand_id: "inhib1"
+        Ki_nM: 2.0
+        source: "ITC+competition (rep)"
+        conc_M: 5.0e-7
+      - ligand_id: "inhib2"
+        Ki_nM: 20.0
+        source: "ITC+competition (rep)"
+        conc_M: 5.0e-7
+      - ligand_id: "inhib3"
+        Ki_nM: 200.0
+        source: "ITC+competition (rep)"
+        conc_M: 5.0e-7
+    expected:
+      delta_delta_g_inhib1_vs_3_ref: 2.728   # RT ln(100)
+      p_empty_at_low_conc_ref: 0.05   # approximate; exact depends on absolute Z
+
+# ─────────────────────────────────────────────────────────────────────────────
+# NOTES FOR EXTENSION (P4 scope: manifest + fixtures)
+# - Add real PDB receptor + SDF ligands under benchmarks/competition_example/
+#   once structures curated (use itc187_tier1/download.sh pattern).
+# - Pair each set with a .json sidecar of per-ligand log_Z (from StatMechEngine
+#   or synthetic) + exact expected {Xi, p_*, selectivity, occupancy}.
+# - Future harness (grand_calibrate or extended validate) will load this YAML,
+#   compute GPF observables, compare vs expected + literature ΔΔG.
+# - For ITC competition assays (rare but exist), extend fetch/calibrate to
+#   parse p(c) or fraction-bound vs total ligand.
+# - Repro: every use must record engine SHA, seed (for GA), exact concs, T,
+#   manifest hash. Use with --manifest benchmarks/datasets/competition_example.yaml
+#
+# Analytical ground truth example (use in synthetic fixtures):
+#   Given Z_A=1e8, Z_B=1e7, cA=cB=1e-6 M:
+#     zA=zB=1e-6
+#     zZA=100, zZB=10
+#     Xi = 1 + 100 + 10 = 111
+#     pA = 100/111 ≈ 0.9009
+#     pB = 10/111 ≈ 0.0901
+#     p_empty=1/111≈0.009
+#     occupancy≈0.991
+#     app_sel_A/B = (zZA / zZB) = 10 ; intrinsic = ZA/ZB = 10
+#   Harness must match to 1e-9 relative or documented tol.
+# ─────────────────────────────────────────────────────────────────────────────
+
+# References / conversion
+# RT(298K) = 0.592 kcal/mol approx (kB=0.001987206, *298)
+# Ki ratio to relative binding affinity: ΔΔG = RT ln(Ki_weak / Ki_tight)
+# See docs/GrandPartitionFunction_Report.md for full GPF observables.
+# Aligns with AGENTS.md: "verify semantics (self-docking vs cross-docking)"
+# and scientific guardrails for selectivity claims.

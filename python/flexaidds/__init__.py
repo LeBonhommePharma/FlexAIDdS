@@ -108,6 +108,18 @@ except ImportError:
     kB_SI = 1.380649e-23    # J K⁻¹
     HAS_CORE_BINDINGS = False
 
+# ── Grand canonical (Ξ) exposure (P2 parallel track, additive, pure-Py first) ──
+# Pure-Python fallback (grand_canonical.py) always present.
+# HAS_GRAND_BINDINGS becomes True only after explicit C++ _core wiring (future).
+HAS_GRAND_BINDINGS = False
+from .grand_canonical import (
+    GrandPartitionFunction,
+    _PyGrandPartitionFunction,
+    LigandSpec,
+    LigandRank,
+    compute_grand_partition,
+)
+
 # GA hyperparameter optimizer
 from .optimize import GAOptimizer, OptimizationResult
 
@@ -355,4 +367,11 @@ __all__ = [
     "FeatureBuilder",
     "ThermoFeatures",
     "MLRescorer",
+    # Grand canonical (additive P2)
+    "GrandPartitionFunction",
+    "_PyGrandPartitionFunction",
+    "LigandSpec",
+    "LigandRank",
+    "compute_grand_partition",
+    "HAS_GRAND_BINDINGS",
 ]

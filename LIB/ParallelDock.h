@@ -11,8 +11,10 @@
 #include "statmech.h"
 #include "GridDecomposer.h"
 #include "SharedPosePool.h"
+#include "TargetServer.h"
 #include <vector>
 #include <functional>
+#include <string>
 
 struct ParallelDockConfig {
     int target_regions       = 128;   // number of spatial regions
@@ -63,7 +65,9 @@ public:
         gridpoint* cleftgrid,
         const ParallelDockConfig& config,
         genlim* parent_gene_lim = nullptr,
-        int     parent_num_genes = 0
+        int     parent_num_genes = 0,
+        target::TargetServer* ts = nullptr,
+        const std::string& ligand_name = ""
     );
 
     // Phase 1: Decompose grid into octree regions
@@ -115,6 +119,10 @@ private:
     std::vector<GridRegion> regions_;
     std::vector<RegionResult> results_;
     SharedPosePool pool_;
+
+    // P1 grand canonical wiring
+    target::TargetServer* ts_ = nullptr;
+    std::string ligand_name_;
 
     // Run a single region's GA and return its result
     RegionResult run_region(

@@ -111,6 +111,14 @@ def _build_parser() -> argparse.ArgumentParser:
             "Override via FLEXAIDDS_OMP_THREADS env var."
         ),
     )
+    p.add_argument(
+        "--conc", "--concentration",
+        type=float,
+        default=1.0,
+        metavar="M",
+        dest="default_conc_M",
+        help="Default concentration in M for grand canonical (P3; per-ligand from dataset yaml overrides).",
+    )
 
     # --- I/O ---
     p.add_argument(
@@ -278,6 +286,7 @@ def main(argv: list[str] | None = None) -> int:
         dry_run=args.dry_run,
         resume=args.resume,
         command_line=full_command,
+        default_conc_M=getattr(args, 'default_conc_M', 1.0),
     )
     if args.datasets_dir is not None:
         runner_kwargs["datasets_dir"] = args.datasets_dir

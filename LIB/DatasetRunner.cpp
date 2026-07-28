@@ -3957,6 +3957,7 @@ DatasetEntry DatasetRunner::prepare_pdb_entry(const std::string& pdb_id,
     entry.experimental_affinity = affinity;
     entry.experimental_dH  = dH;
     entry.experimental_TdS = dS;
+    entry.conc_M = 1.0; // P3 default; override from dataset yaml later
 
     // Download structure, preferring mmCIF over legacy PDB.
     if (download_structure(upper_id, entry_dir, receptor_path)) {
@@ -4065,6 +4066,7 @@ std::vector<DatasetEntry> DatasetRunner::fetch_astex() {
     int oracle_count = 0;
     for (const auto& pdb : codes) {
         auto entry = prepare_pdb_entry(pdb, "astex_diverse");
+        entry.conc_M = 1.0; // P3 explicit
 
         // Locate oracle binding site PDB for LOCCLF mode.
         // Primary: adjacent to the receptor in the cache entry directory.
@@ -4335,6 +4337,7 @@ std::vector<DatasetEntry> DatasetRunner::fetch_astex_nonnative() {
                 : "Astex Non-Native (ligand donor " + ligand_source + ")";
             entry.receptor_path = alt_structure;
             entry.ligand_path = native_lig;
+            entry.conc_M = 1.0; // P3 default; from dataset yaml for custom
             entries.push_back(std::move(entry));
         }
     }
@@ -4374,6 +4377,7 @@ std::vector<DatasetEntry> DatasetRunner::fetch_hap2() {
 
     for (const auto& pdb : codes) {
         auto entry = prepare_pdb_entry(pdb, "hap2");
+        entry.conc_M = 1.0; // P3 explicit; override from yaml for custom conc
         entries.push_back(std::move(entry));
     }
 
@@ -4443,6 +4447,7 @@ std::vector<DatasetEntry> DatasetRunner::fetch_casf2016() {
 
     for (const auto& pdb : codes) {
         auto entry = prepare_pdb_entry(pdb, "casf2016");
+        entry.conc_M = 1.0; // P3 explicit; from dataset yaml later
         entries.push_back(std::move(entry));
     }
 
@@ -5407,6 +5412,7 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
     {
         target::TargetConfig tcfg;
         tcfg.temperature_K = static_cast<double>(config.temperature);
+        tcfg.default_conc_M = 1.0; // P3 default; per-ligand conc_M from yaml later
 
         for (const auto& entry : entries) {
             if (entry.receptor_path.empty()) continue;
@@ -5533,6 +5539,7 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
         auto ts_it = target_servers_.find(entry.receptor_path);
         if (ts_it != target_servers_.end()) {
             session = ts_it->second->create_session(entry.pdb_id);
+            session.conc_M = entry.conc_M;  // P3: per-ligand conc from entry (yaml or hardcoded)
         }
         sessions[idx] = session;
 
@@ -6646,6 +6653,14 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                     }
                     result.has_thermo2 = true;
                 }
+                // P1: [GRAND] log_Z=... from BindingPopulation ensemble (emitted by top/cluster hook)
+                if (line.find("[GRAND]") != std::string::npos && line.find("log_Z=") != std::string::npos) {
+                    auto pos = line.find("log_Z=");
+                    if (pos != std::string::npos) {
+                        pos += 6;
+                        try { result.ensemble_log_Z = std::stod(line.substr(pos)); } catch (...) {}
+                    }
+                }
                 // "[THERMO_SNAP gen=N] TdS_shannon=V"
                 if (line.find("[THERMO_SNAP") != std::string::npos) {
                     auto parse_snap_val = [&]() -> float {
@@ -7685,14 +7700,16 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                 // best_energy / log_Z use predicted_dG (ensemble F estimate, or CF
                 // fallback when the ledger is absent) — not experimental ΔG_bind.
                 sess.best_energy = static_cast<double>(result.predicted_dG);
-                // log_Z = -F_est / (kT)  — grand-PF contribution from session energy
-                sess.log_Z = -static_cast<double>(result.predicted_dG) /
-                             (statmech::kB_kcal * static_cast<double>(config.temperature));
-                // TODO: best_center requires pose CoM from BindingMode clustering
-                //       — populate when MultiModelDock surfaces per-mode centroids to DockingResult
-                // TODO: conformer_populations requires per-cluster counts from FOPTICS/DP
-                //       — populate when cluster stats surface to DockingResult
-                ts_it2->second->register_result(sess);
+                sess.conc_M = entry.conc_M; // P3: per-ligand
+                // P1: use real ensemble_log_Z if emitted by binary (from BindingPop.get_log_Z() via cluster hook)
+                // else fallback to approx. This replaces the dG/kT proxy when available.
+                if (result.ensemble_log_Z != 0.0) {
+                    sess.log_Z = result.ensemble_log_Z;
+                } else {
+                    sess.log_Z = -static_cast<double>(result.predicted_dG) /
+                                 (statmech::kB_kcal * static_cast<double>(config.temperature));
+                }
+                // TODO: best_center / conformer_populations from actual BindingMode data                ts_it2->second->register_result(sess);
             }
         }
 
@@ -7739,7 +7756,7 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                            "G_bind,H_vct,H_vct_raw,n_heavy,TdS_shannon,TdS_vib,D_vib_thermo,"
                            "compensation_ratio,TdS_shannon_gen500,TdS_shannon_gen1000,"
                            "cf_best_cluster,"
-                           "report_T,I_ES,CF_r2s,binding_regime\n";
+                           "report_T,I_ES,CF_r2s,binding_regime,ensemble_log_Z\n";
                     ofs << std::fixed << std::setprecision(4)
                         << result.pdb_id << ","
                         << result.best_score << ","
@@ -7819,7 +7836,8 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                         << result.thermo_report_T << ","
                         << result.thermo_I_ES << ","
                         << result.thermo_CF_r2s << ","
-                        << "\"" << result.thermo_binding_regime << "\"\n";
+                        << "\"" << result.thermo_binding_regime << "\","
+                        << result.ensemble_log_Z << "\n";
                 }
             } catch (...) {
                 // Per-complex CSV is best-effort; failures are non-fatal.

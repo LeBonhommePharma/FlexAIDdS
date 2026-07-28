@@ -1,0 +1,10 @@
+case_id,ligand_name,log_Z,conc_M,expected_log_Xi,expected_p_bind,expected_p_empty,expected_occupancy,expected_sel_app_A_over_B,notes
+dual_equal_1uM,A,18.420680743952367,1e-06,4.709530201312337,0.9009009009009007,0.009009009009008986,0.990990990990991,10.0,"equal 1uM; sel=10 intrinsic+app"
+dual_equal_1uM,B,16.11809565095832,1e-06,4.709530201312337,0.09009009009008997,0.009009009009008986,0.990990990990991,10.0,"equal 1uM; sel=10 intrinsic+app"
+dual_conc_sweep_A_high_B_low,A,18.420680743952367,1e-06,4.615219521841095,0.9900009900009896,0.0099009802950495,0.9900990197049505,10000.0,"A 1uM B 1nM; app sel boosted"
+dual_conc_sweep_A_high_B_low,B,16.11809565095832,1e-09,4.615219521841095,9.900009900009897e-05,0.0099009802950495,0.9900990197049505,10000.0,"A 1uM B 1nM; app sel boosted"
+dual_empty_dominated,A,18.420680743952367,1e-12,0.00010000500033334732,9.99900009999e-05,0.9999000050003333,0.0000999949996667,1000.0,"p_empty ~1"
+dual_empty_dominated,B,16.11809565095832,1e-12,0.00010000500033334732,9.99900009999e-08,0.9999000050003333,0.0000999949996667,1000.0,"p_empty ~1"
+# Add more rows/cases as harness develops. Use for CSV-based validation of p_bind etc.
+# All values pre-computed with log-space identical to GPF (see dual_ligand_exact.json for full per-case expected dicts).
+# Load and group by case_id for multi-ligand per case.

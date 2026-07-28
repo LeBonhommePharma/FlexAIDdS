@@ -1,0 +1,140 @@
+{
+  "schema_version": "1.0",
+  "description": "Synthetic exact grand canonical fixtures for dual-ligand competition. Analytical ground truth.",
+  "temperature_K": 298.0,
+  "standard_conc_M": 1.0,
+  "cases": [
+    {
+      "case_id": "dual_equal_1uM",
+      "ligands": [
+        {
+          "name": "A",
+          "log_Z": 18.420680743952367,
+          "conc_M": 1e-06
+        },
+        {
+          "name": "B",
+          "log_Z": 16.11809565095832,
+          "conc_M": 1e-06
+        }
+      ],
+      "expected": {
+        "log_Xi": 4.709530201312337,
+        "Xi": 111.00000000000027,
+        "p_empty": 0.009009009009008986,
+        "p_bind": {
+          "A": 0.9009009009009007,
+          "B": 0.09009009009008997
+        },
+        "mean_occupancy": 0.990990990990991,
+        "selectivity": {
+          "A_over_B": {
+            "apparent": 10.00000000000001,
+            "intrinsic": 10.00000000000001,
+            "log_apparent": 2.302585092994047,
+            "log_intrinsic": 2.302585092994047
+          },
+          "B_over_A": {
+            "apparent": 0.0999999999999999,
+            "intrinsic": 0.0999999999999999,
+            "log_apparent": -2.302585092994047,
+            "log_intrinsic": -2.302585092994047
+          }
+        },
+        "notes": "equal 1uM; sel=10"
+      },
+      "tolerance": {
+        "log_rel": 1e-09,
+        "prob_abs": 1e-12
+      }
+    },
+    {
+      "case_id": "dual_conc_sweep_A_high_B_low",
+      "ligands": [
+        {
+          "name": "A",
+          "log_Z": 18.420680743952367,
+          "conc_M": 1e-06
+        },
+        {
+          "name": "B",
+          "log_Z": 16.11809565095832,
+          "conc_M": 1e-09
+        }
+      ],
+      "expected": {
+        "log_Xi": 4.615219521841095,
+        "Xi": 101.01000000000026,
+        "p_empty": 0.009900009900009873,
+        "p_bind": {
+          "A": 0.9900009900009896,
+          "B": 9.900009900009897e-05
+        },
+        "mean_occupancy": 0.9900999900999902,
+        "selectivity": {
+          "A_over_B": {
+            "apparent": 10000.00000000001,
+            "intrinsic": 10.00000000000001,
+            "log_apparent": 9.210340371976184,
+            "log_intrinsic": 2.302585092994047
+          },
+          "B_over_A": {
+            "apparent": 9.999999999999991e-05,
+            "intrinsic": 0.0999999999999999,
+            "log_apparent": -9.210340371976184,
+            "log_intrinsic": -2.302585092994047
+          }
+        },
+        "notes": "A@1uM B@1nM; app sel *1000"
+      },
+      "tolerance": {
+        "log_rel": 1e-09,
+        "prob_abs": 1e-12
+      }
+    },
+    {
+      "case_id": "dual_empty_dominated",
+      "ligands": [
+        {
+          "name": "A",
+          "log_Z": 18.420680743952367,
+          "conc_M": 1e-12
+        },
+        {
+          "name": "B",
+          "log_Z": 16.11809565095832,
+          "conc_M": 1e-12
+        }
+      ],
+      "expected": {
+        "log_Xi": 0.00010999395044368456,
+        "Xi": 1.00011,
+        "p_empty": 0.9998900120986691,
+        "p_bind": {
+          "A": 9.998900120986716e-05,
+          "B": 9.998900120986705e-06
+        },
+        "mean_occupancy": 0.00010998790133087688,
+        "selectivity": {
+          "A_over_B": {
+            "apparent": 10.00000000000001,
+            "intrinsic": 10.00000000000001,
+            "log_apparent": 2.302585092994047,
+            "log_intrinsic": 2.302585092994047
+          },
+          "B_over_A": {
+            "apparent": 0.0999999999999999,
+            "intrinsic": 0.0999999999999999,
+            "log_apparent": -2.302585092994047,
+            "log_intrinsic": -2.302585092994047
+          }
+        },
+        "notes": "p_empty ~1; sel=10"
+      },
+      "tolerance": {
+        "log_rel": 1e-09,
+        "prob_abs": 1e-12
+      }
+    }
+  ]
+}

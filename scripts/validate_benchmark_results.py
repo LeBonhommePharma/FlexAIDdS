@@ -11,6 +11,10 @@ Reads the summary CSV produced by run_benchmark_production.sh and performs:
   6. Plots: wall-clock dist, score vs RMSD scatter, Shannon H convergence curves
   7. PASS / FAIL verdict against manifest baselines when provided
 
+P4+ (grand canonical prep): also accepts manifests with grand metrics
+  (competition_example.yaml style) for future selectivity / p_bind / occupancy
+  validation. Core logic remains in grand_calibrate.py for now.
+
 Usage:
     python3 scripts/validate_benchmark_results.py <summary.csv> [options]
 

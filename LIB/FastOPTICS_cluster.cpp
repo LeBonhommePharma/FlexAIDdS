@@ -2,11 +2,13 @@
 #include "fast_optics.hpp"
 #include "MinibatchSampler.h"
 #include "ga_constants.h"
+#include "TargetServer.h"
 
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
 #include <set>
+#include <string>
 #include <vector>
 
 namespace {
@@ -94,7 +96,7 @@ int fo_choose_minpts(const FA_Global* FA, const GB_Global* GB,
 
 } // namespace
 
-void FastOPTICS_cluster(FA_Global* FA, GB_Global* GB, VC_Global* VC, chromosome* chrom, genlim* gene_lim, atom* atoms, resid* residue, gridpoint* cleftgrid, int nChrom, char* end_strfile, char* tmp_end_strfile, char* dockinp, char* gainp)
+void FastOPTICS_cluster(FA_Global* FA, GB_Global* GB, VC_Global* VC, chromosome* chrom, genlim* gene_lim, atom* atoms, resid* residue, gridpoint* cleftgrid, int nChrom, char* end_strfile, char* tmp_end_strfile, char* dockinp, char* gainp, target::TargetServer* ts, const std::string& ligand_name)
 {
     double diversity_ratio = 0.0;
     if (nChrom > 0) {
@@ -225,5 +227,17 @@ void FastOPTICS_cluster(FA_Global* FA, GB_Global* GB, VC_Global* VC, chromosome*
 
     population.output_Population(FA->max_results, end_strfile, tmp_end_strfile, dockinp, gainp,
                                  algo.get_minPoints());
+
+    // P1 cluster hook: if TargetServer provided, register real log_Z from BindingPopulation
+    if (ts && !ligand_name.empty()) {
+        auto sess = ts->create_session(ligand_name);
+        sess.completed = true;
+        sess.n_poses = population.get_Population_size();
+        sess.conc_M = ts->default_conc_M(); // P3: from ts config
+        sess.log_Z = population.get_log_Z();  // P1: full ensemble, not dG approx
+        ts->register_result(sess);
+        printf("[GRAND] log_Z=%.6g ligand=%s n_modes=%d conc=%.6g\n",
+               sess.log_Z, ligand_name.c_str(), population.get_Population_size(), sess.conc_M);
+    }
     printf("-- end of FastOPTICS_cluster --\n");
 }
