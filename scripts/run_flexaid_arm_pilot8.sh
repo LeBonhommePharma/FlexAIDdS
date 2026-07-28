@@ -184,7 +184,8 @@ fi
 
 PILOT8=(1G9V 1GPK 1MEH 1P62 1Q4G 1R9O 1T40 2BYS)
 if [[ -n "$ONLY_PDB" ]]; then
-  TARGETS=("${ONLY_PDB^^}")
+  # Portable uppercase (macOS /bin/bash 3.2 lacks ${var^^})
+  TARGETS=("$(printf '%s' "$ONLY_PDB" | tr '[:lower:]' '[:upper:]')")
 elif (( SMOKE )); then
   TARGETS=(1GPK)
 elif (( FULL85 )); then
