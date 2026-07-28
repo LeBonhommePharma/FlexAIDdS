@@ -1,0 +1,21 @@
+{
+  "experiment": "S4_PHENOTYPE_UNIQUE_near_miss",
+  "status": "IN_FLIGHT",
+  "one_variable": "FLEXAIDDS_PHENOTYPE_UNIQUE=1 vs control unset",
+  "panel_class": "NEAR_MISS",
+  "codes": ["1N1M", "1L7F"],
+  "magnitude_floor": "mean_dBCR <= -0.5 A or >=1 BCR<2 or 1N1M elect<=2.5; no wipeout",
+  "matched_control": true,
+  "matrix_pin": "9dc93717dfed0698006d88dd6a9627bc",
+  "no_sec": true,
+  "sol9": true,
+  "workers": 2,
+  "restarts": 2,
+  "report_tiers_separately": true,
+  "l1_l4_plan": "L4 [NEW-SEARCH-ARCH] phenotype_unique on treatment stderr only; control zero",
+  "out": "/Users/lp.more/flexaidds_results/s4_pheno_unique_near_miss_20260727_211213",
+  "binary_sha256": "afd5cf42d8cb726de5b92fb66431095360f6161a088945eba110299cd09e4f57",
+  "git_tip": "9569df16",
+  "forbid": ["full_85", "BOOM_bundled", "election_bundled", "MUTATION_GRANULAR_bundled", "basin_reinject_bundled"],
+  "defers_to": ["workorders/NEW_SEARCH_ARCH_APRIORI.md", "METHODOLOGY.md"]
+}
