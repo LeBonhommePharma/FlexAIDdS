@@ -45,7 +45,6 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
-#include <cctype>
 #include <cerrno>
 #include <string>
 #include <vector>
