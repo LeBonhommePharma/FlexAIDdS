@@ -1,6 +1,6 @@
 {
   "experiment": "S4_PHENOTYPE_UNIQUE_near_miss",
-  "status": "IN_FLIGHT",
+  "status": "CLOSED_PASS_LIVENESS_NULL_MAG",
   "one_variable": "FLEXAIDDS_PHENOTYPE_UNIQUE=1 vs control unset",
   "panel_class": "NEAR_MISS",
   "codes": ["1N1M", "1L7F"],

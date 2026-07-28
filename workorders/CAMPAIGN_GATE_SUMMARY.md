@@ -49,6 +49,8 @@ Do **not** cite 25.3% as proof election fix worked.
 | S3 | SCORING-LOCKED SI package | offline class split | `SCORING_LOCKED_SI_PACKAGE.md` | **PACKAGED** |
 | S4 | new_search_arch A+B | env-gated code | `new_search_arch.h` + a priori | **CODE IN; NO DOCK** |
 | S5 | Claim language freeze | CF proxy vs STRICT ΔG | `CLAIM_LANGUAGE_FREEZE.md` | **FREEZE** |
+| S4 A pilot | PHENOTYPE_UNIQUE near-miss | mean_dBCR −0.057; L4 PASS | `S4_PHENOTYPE_UNIQUE_POSTERIORI.md` | **PASS_LIVENESS** |
+| Pre-gate triage | P2 + A/B/C bins | P2 HOLD; A/B reconstruction | `PUB_PREGATE_TRIAGE.md` | **TRIAGED** |
 
 ### G4.2 OUT / provenance
 
