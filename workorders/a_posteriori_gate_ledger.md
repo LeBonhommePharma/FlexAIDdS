@@ -44,4 +44,13 @@ Phase-4 sampling ACCEPT still not met (BOOM null + election null + mutation null
 ## Publication freeze (offline)
 
 Near-miss Phase-4 null stack table (SI/Methods ready):  
-**[`PHASE4_NEAR_MISS_NULL_STACK.md`](PHASE4_NEAR_MISS_NULL_STACK.md)** — freezes G4.1 / ELECTION_V135 / G4.3 statuses, OUTs, and flip residual. Next methodology steps: null-stack freeze (done) → reproducibility pack pins → SCORING-LOCKED packaging → `new_search_arch` a priori (no full-85).
+**[`PHASE4_NEAR_MISS_NULL_STACK.md`](PHASE4_NEAR_MISS_NULL_STACK.md)** — freezes G4.1 / ELECTION_V135 / G4.3 statuses, OUTs, and flip residual.
+
+| Residual step | Artifact | Status |
+|---------------|----------|--------|
+| S1 null-stack freeze | `PHASE4_NEAR_MISS_NULL_STACK.md` | **done** |
+| S2 pin schema (`accept.txt` + per-arm SHA) | `benchmark_self_eval.py validate-pins` + contract S2 | **done** |
+| S3 SCORING-LOCKED SI | `SCORING_LOCKED_SI_PACKAGE.md` | **done** |
+| S4 new_search_arch a priori | `NEW_SEARCH_ARCH_APRIORI.json` / `.md` | **APRIORI_ONLY_NO_LAUNCH** |
+| S5 CF-proxy claim language | `CLAIM_LANGUAGE_FREEZE.md` | **done** |
+| Full-85 | — | **blocked** |
