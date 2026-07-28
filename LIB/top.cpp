@@ -3168,13 +3168,13 @@ int main(int argc, char **argv){
 			}
 
 			// P1/P5: augment output with grand canonical info if ts active (per-ligand p_bind, Xi etc.)
+			// LigandRank fields: name, log_Z, dG, p_bound (see GrandPartitionFunction.h).
 			if (active_ts) {
 				printf("[GRAND] sessions=%d\n", active_ts->completed_sessions());
 				auto ranks = active_ts->rank_ligands();
 				for (const auto& r : ranks) {
-					double p = active_ts->binding_probability(r.name);
-					printf("[GRAND] %s: log_zZ=%.6g p_bind=%.6g log_intr=%.6g\n",
-					       r.name.c_str(), r.log_zZ, p, r.log_intrinsic_selectivity);
+					printf("[GRAND] %s: log_Z=%.6g p_bind=%.6g dG=%.6g\n",
+					       r.name.c_str(), r.log_Z, r.p_bound, r.dG);
 				}
 				// P5: write sidecar .grand.txt for richer output (Xi, p_bind per ligand)
 				char grandfile[512];
@@ -3183,16 +3183,16 @@ int main(int argc, char **argv){
 				if (gf) {
 					fprintf(gf, "# Grand canonical summary (P3/P5)\n");
 					for (const auto& r : ranks) {
-						double p = active_ts->binding_probability(r.name);
-						fprintf(gf, "ligand=%s log_zZ=%.6g p_bind=%.6g log_intr=%.6g\n", r.name.c_str(), r.log_zZ, p, r.log_intrinsic_selectivity);
+						fprintf(gf, "ligand=%s log_Z=%.6g p_bind=%.6g dG=%.6g\n",
+						        r.name.c_str(), r.log_Z, r.p_bound, r.dG);
 					}
 					fclose(gf);
 				}
 				// P5: also emit as REMARK GRAND for parsers (per plan)
 				printf("REMARK GRAND_SESSIONS %d\n", active_ts->completed_sessions());
 				for (const auto& r : ranks) {
-					double p = active_ts->binding_probability(r.name);
-					printf("REMARK GRAND %s log_zZ=%.6g p_bind=%.6g log_intr=%.6g\n", r.name.c_str(), r.log_zZ, p, r.log_intrinsic_selectivity);
+					printf("REMARK GRAND %s log_Z=%.6g p_bind=%.6g dG=%.6g\n",
+					       r.name.c_str(), r.log_Z, r.p_bound, r.dG);
 				}
 			}
 

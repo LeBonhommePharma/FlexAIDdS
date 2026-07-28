@@ -741,6 +741,7 @@ TEST(GrandPartition, BenchmarkStress) {
     EXPECT_LT(t_add, 500.0);
     EXPECT_LT(t_rank, 200.0);
     EXPECT_LT(t_cached, 50.0);
+}
 
 // P0 extensions: additional analytical concentration/fugacity, edge ratios,
 // log-space stability, merge behavior, and HW-parity smoke.

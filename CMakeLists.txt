@@ -2481,66 +2481,63 @@ flexaids_add_unit_test(test_protocol_config
         target_link_libraries(test_grand_partition PRIVATE OpenMP::OpenMP_CXX)
     endif()
     target_link_libraries(test_grand_partition PRIVATE Eigen3::Eigen)
+    target_compile_definitions(test_grand_partition PRIVATE FLEXAIDS_HAS_EIGEN)
+    flexaids_configure_msvc_test(test_grand_partition)
+    add_test(NAME GrandPartitionTests COMMAND test_grand_partition)
 
-        target_compile_definitions(test_grand_partition PRIVATE FLEXAIDS_HAS_EIGEN)
-        flexaids_configure_msvc_test(test_grand_partition)
-        add_test(NAME GrandPartitionTests COMMAND test_grand_partition)
+    # ── TargetServer integration tests ────────────────────────────────────
+    add_executable(test_target_server
+        tests/test_target_server.cpp
+        LIB/TargetServer.cpp
+        LIB/TargetValidation.cpp
+        LIB/GrandPartitionFunction.cpp
+        LIB/TargetKnowledgeBase.cpp
+        LIB/statmech.cpp
+        LIB/UnifiedHardwareDispatch.cpp
+        LIB/hardware_detect.cpp
+    )
+    target_include_directories(test_target_server PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/LIB)
+    target_link_libraries(test_target_server PRIVATE GTest::gtest_main)
+    if(MSVC)
+        target_compile_options(test_target_server PRIVATE /O2)
+    else()
+        target_compile_options(test_target_server PRIVATE -O2)
+    endif()
+    flexaids_configure_simd(test_target_server)
+    if(FLEXAIDS_USE_OPENMP AND OpenMP_CXX_FOUND)
+        target_link_libraries(test_target_server PRIVATE OpenMP::OpenMP_CXX)
+    endif()
+    target_link_libraries(test_target_server PRIVATE Eigen3::Eigen)
+    target_compile_definitions(test_target_server PRIVATE FLEXAIDS_HAS_EIGEN)
+    flexaids_configure_msvc_test(test_target_server)
+    add_test(NAME TargetServerTests COMMAND test_target_server)
 
-        # ── TargetServer integration tests ────────────────────────────────────
-        add_executable(test_target_server
-            tests/test_target_server.cpp
-            LIB/TargetServer.cpp
-            LIB/TargetValidation.cpp
-            LIB/GrandPartitionFunction.cpp
-            LIB/TargetKnowledgeBase.cpp
-            LIB/statmech.cpp
-            LIB/UnifiedHardwareDispatch.cpp
-            LIB/hardware_detect.cpp
-        )
-        target_include_directories(test_target_server PRIVATE
-            ${CMAKE_CURRENT_SOURCE_DIR}/LIB)
-        target_link_libraries(test_target_server PRIVATE GTest::gtest_main)
-        if(MSVC)
-            target_compile_options(test_target_server PRIVATE /O2)
-        else()
-            target_compile_options(test_target_server PRIVATE -O2)
-        endif()
-        flexaids_configure_simd(test_target_server)
-        if(FLEXAIDS_USE_OPENMP AND OpenMP_CXX_FOUND)
-            target_link_libraries(test_target_server PRIVATE OpenMP::OpenMP_CXX)
-        endif()
-        target_link_libraries(test_target_server PRIVATE Eigen3::Eigen)
-
-        target_compile_definitions(test_target_server PRIVATE FLEXAIDS_HAS_EIGEN)
-        flexaids_configure_msvc_test(test_target_server)
-        add_test(NAME TargetServerTests COMMAND test_target_server)
-
-        # ── MultiSiteGPF tests ──────────────────────────────────────────────
-        add_executable(test_multi_site_gpf
-            tests/test_multi_site_gpf.cpp
-            LIB/MultiSiteGPF.cpp
-            LIB/GrandPartitionFunction.cpp
-            LIB/statmech.cpp
-            LIB/UnifiedHardwareDispatch.cpp
-            LIB/hardware_detect.cpp
-        )
-        target_include_directories(test_multi_site_gpf PRIVATE
-            ${CMAKE_CURRENT_SOURCE_DIR}/LIB)
-        target_link_libraries(test_multi_site_gpf PRIVATE GTest::gtest_main)
-        if(MSVC)
-            target_compile_options(test_multi_site_gpf PRIVATE /O2)
-        else()
-            target_compile_options(test_multi_site_gpf PRIVATE -O2)
-        endif()
-        flexaids_configure_simd(test_multi_site_gpf)
-        if(FLEXAIDS_USE_OPENMP AND OpenMP_CXX_FOUND)
-            target_link_libraries(test_multi_site_gpf PRIVATE OpenMP::OpenMP_CXX)
-        endif()
-        target_link_libraries(test_multi_site_gpf PRIVATE Eigen3::Eigen)
-        target_compile_definitions(test_multi_site_gpf PRIVATE FLEXAIDS_HAS_EIGEN)
-        flexaids_configure_msvc_test(test_multi_site_gpf)
-        add_test(NAME MultiSiteGPFTests COMMAND test_multi_site_gpf)
-    endif()  # FLEXAIDS_GRAND_CANONICAL (forced under BUILD_TESTING)
+    # ── MultiSiteGPF tests ──────────────────────────────────────────────
+    add_executable(test_multi_site_gpf
+        tests/test_multi_site_gpf.cpp
+        LIB/MultiSiteGPF.cpp
+        LIB/GrandPartitionFunction.cpp
+        LIB/statmech.cpp
+        LIB/UnifiedHardwareDispatch.cpp
+        LIB/hardware_detect.cpp
+    )
+    target_include_directories(test_multi_site_gpf PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/LIB)
+    target_link_libraries(test_multi_site_gpf PRIVATE GTest::gtest_main)
+    if(MSVC)
+        target_compile_options(test_multi_site_gpf PRIVATE /O2)
+    else()
+        target_compile_options(test_multi_site_gpf PRIVATE -O2)
+    endif()
+    flexaids_configure_simd(test_multi_site_gpf)
+    if(FLEXAIDS_USE_OPENMP AND OpenMP_CXX_FOUND)
+        target_link_libraries(test_multi_site_gpf PRIVATE OpenMP::OpenMP_CXX)
+    endif()
+    target_link_libraries(test_multi_site_gpf PRIVATE Eigen3::Eigen)
+    target_compile_definitions(test_multi_site_gpf PRIVATE FLEXAIDS_HAS_EIGEN)
+    flexaids_configure_msvc_test(test_multi_site_gpf)
+    add_test(NAME MultiSiteGPFTests COMMAND test_multi_site_gpf)
 
     # test_gist_hbond — GIST evaluator + directional H-bond scoring
     flexaids_add_unit_test(test_gist_hbond
