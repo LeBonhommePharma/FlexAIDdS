@@ -35,6 +35,12 @@ double vcfunction(FA_Global*, VC_Global*, atom*, resid*,
 int write_pdb(FA_Global*, atom*, resid*, char[], char[]) { return 0; }
 int write_MODEL_pdb(bool, bool, int, FA_Global*, atom*, resid*, char[], char[]) { return 0; }
 float calc_rmsd(FA_Global*, atom*, resid*, gridpoint*, int, const double*, bool) { return 0.0f; }
+// Referenced from gaboom basin_reinject / niche precompute paths.
+float calc_rmsd_chrom(FA_Global*, GB_Global*, const chromosome*, const genlim*,
+                      atom*, resid*, gridpoint*, int, int, int, float*, float*,
+                      bool) {
+    return 0.0f;
+}
 double get_cf_evalue(cfstr* cf, FA_Global* /*FA*/) {
     return cf ? cf->com + cf->wal + cf->sas + cf->con + cf->elec : 0.0;
 }
