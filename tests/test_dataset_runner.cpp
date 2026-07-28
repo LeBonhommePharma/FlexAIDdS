@@ -1383,6 +1383,76 @@ TEST(DatasetRunnerConstruction, CustomCacheDir) {
 }
 
 // =============================================================================
+// --redock path: prepare_pdb_entry under dataset_name "redock" (CLI contract)
+// Offline: pre-seed cache with a mini holo PDB so no RCSB download is needed.
+// =============================================================================
+
+TEST(RedockCLI, PreparePdbEntryPublicRedockLayout) {
+    // Mirrors FlexAIDdS --redock cache layout:
+    //   <cache>/redock/<PDBID>/{PDBID.pdb, PDBID_ligand.sdf, PDBID_apo.pdb}
+    // Use a non-RCSB id so companion CIF download cannot overwrite fixtures.
+    const std::string test_dir = "/tmp/flexaidds_test_redock_cli_layout";
+    const std::string cache_dir = test_dir + "/cache";
+    const std::string entry_dir = cache_dir + "/redock/XRED";
+    fs::remove_all(test_dir);
+    fs::create_directories(entry_dir);
+
+    const std::string pdb_path = entry_dir + "/XRED.pdb";
+    {
+        std::ofstream ofs(pdb_path);
+        ofs << "HEADER    REDOCK CLI CONTRACT\n";
+        // Padding so valid_cached_pdb_file size checks pass.
+        for (int i = 0; i < 40; ++i) {
+            ofs << "REMARK    PADDING LINE " << i
+                << " ............................................................\n";
+        }
+        // Minimal protein scaffolding
+        ofs << "ATOM      1  N   ALA A   1       0.000   0.000   0.000  1.00 10.00           N\n";
+        ofs << "ATOM      2  CA  ALA A   1       1.500   0.000   0.000  1.00 10.00           C\n";
+        ofs << "ATOM      3  C   ALA A   1       2.000   1.400   0.000  1.00 10.00           C\n";
+        ofs << "ATOM      4  O   ALA A   1       1.500   2.400   0.000  1.00 10.00           O\n";
+        // Cognate ligand (biotin stub — soft cofactor kept when sole organic HETATM)
+        ofs << "HETATM   10  C1  BTN A 100      10.000   0.000   0.000  1.00 20.00           C\n";
+        ofs << "HETATM   11  C2  BTN A 100      11.500   0.000   0.000  1.00 20.00           C\n";
+        ofs << "HETATM   12  N1  BTN A 100      13.000   0.000   0.000  1.00 20.00           N\n";
+        ofs << "HETATM   13  O1  BTN A 100      14.500   0.000   0.000  1.00 20.00           O\n";
+        ofs << "END\n";
+    }
+
+    DatasetRunner runner(cache_dir);
+    auto entry = runner.prepare_pdb_entry("xred", "redock");
+
+    EXPECT_EQ(entry.pdb_id, "XRED");
+    EXPECT_EQ(entry.source, "redock");
+    ASSERT_FALSE(entry.ligand_path.empty());
+    ASSERT_FALSE(entry.receptor_path.empty());
+    EXPECT_TRUE(fs::exists(entry.ligand_path));
+    EXPECT_TRUE(fs::exists(entry.receptor_path));
+    EXPECT_NE(entry.ligand_path.find("XRED_ligand.sdf"), std::string::npos);
+    EXPECT_NE(entry.receptor_path.find("XRED_apo.pdb"), std::string::npos);
+
+    // Apo must not retain cognate BTN coordinates.
+    {
+        std::ifstream apo(entry.receptor_path);
+        ASSERT_TRUE(apo.good());
+        std::string apo_txt((std::istreambuf_iterator<char>(apo)),
+                            std::istreambuf_iterator<char>());
+        EXPECT_EQ(apo_txt.find("BTN"), std::string::npos)
+            << "apo receptor must strip cognate ligand residue BTN";
+    }
+    // Ligand SDF must be BTN
+    {
+        std::ifstream lig(entry.ligand_path);
+        ASSERT_TRUE(lig.good());
+        std::string title;
+        std::getline(lig, title);
+        EXPECT_EQ(title, "BTN");
+    }
+
+    fs::remove_all(test_dir);
+}
+
+// =============================================================================
 // Additional statistical tests for edge cases
 // =============================================================================
 

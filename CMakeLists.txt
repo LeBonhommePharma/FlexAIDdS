@@ -733,10 +733,34 @@ if(FLEXAIDS_ENABLE_COVERAGE
     set(BUILD_FLEXAIDDS_FAST OFF CACHE BOOL "Build ultra-fast FlexAIDdS docking executable (LTO + native)" FORCE)
 endif()
 if(BUILD_FLEXAIDDS_FAST)
-    add_executable(FlexAIDdS LIB/top.cpp)
+    # --redock <PDBid> reuses DatasetRunner cognate prep (download + ligand SDF +
+    # apo strip). Same supporting sources as test_dataset_runner / benchmark_datasets.
+    set(FLEXAIDDS_REDOCK_SOURCES
+        LIB/DatasetRunner.cpp
+        LIB/DatasetRunnerStats.cpp
+        LIB/DatasetRunnerProvenance.cpp
+        LIB/AsyncPipeline.cpp
+        LIB/PoseBust/Loaders.cpp
+        LIB/PoseBust/ChecksChemistry.cpp
+        LIB/PoseBust/ChecksGeometry.cpp
+        LIB/PoseBust/ChecksProtein.cpp
+        LIB/PoseBust/Engine.cpp
+        LIB/PoseBust/BustCli.cpp
+    )
+    add_executable(FlexAIDdS LIB/top.cpp ${FLEXAIDDS_REDOCK_SOURCES})
     target_link_libraries(FlexAIDdS PRIVATE flexaid_core)
+    target_include_directories(FlexAIDdS PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/LIB
+        ${CMAKE_CURRENT_SOURCE_DIR}/LIB/PoseBust
+    )
+    # Gate DatasetRunner-backed --redock path in top.cpp (shared with FlexAID).
+    target_compile_definitions(FlexAIDdS PRIVATE FLEXAIDDS_ENABLE_REDOCK=1)
     if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
         target_link_libraries(FlexAIDdS PRIVATE m)
+    endif()
+    if(CURL_FOUND)
+        target_link_libraries(FlexAIDdS PRIVATE CURL::libcurl)
+        target_compile_definitions(FlexAIDdS PRIVATE FLEXAIDS_HAS_LIBCURL)
     endif()
 
     if(MSVC)
@@ -803,7 +827,7 @@ if(BUILD_FLEXAIDDS_FAST)
         message(STATUS "FlexAIDdS: Metal GPU acceleration via flexaid_core")
     endif()
 
-    message(STATUS "FlexAIDdS fast executable enabled")
+    message(STATUS "FlexAIDdS fast executable enabled (with --redock RCSB cognate prep)")
 endif()
 
 # Attach Metal dispatch runtime to targets that compile hardware_detect /

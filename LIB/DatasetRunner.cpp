@@ -1953,8 +1953,9 @@ const std::set<std::string>& DatasetRunner::excluded_residues() {
         "OAC", "PAL", "MAL", "FAL",
         // Thiamine di/mono phosphate
         "TPP", "TDP", "TMP",
-        // Biotin
-        "BTN", "BTB",
+        // Biotin (BTN/BTB) is NOT hard-excluded here: it is often the cognate
+        // ligand (1STP streptavidin–biotin). Soft-deprioritised in extract_ligand
+        // so a co-crystallised drug wins when both are present; sole-BTN kept.
         // Retinal / retinol / retinoic acid
         "RET", "REA", "RBF",
         // Iron-sulfur clusters
@@ -2061,6 +2062,16 @@ static const std::set<std::string>& glycan_residues() {
         "BDP", "GCU", "IDS", "IDR", "ADA", "MAV", "FRU", "TAG", "SOR",
     };
     return gl;
+}
+
+// Soft cofactors: legitimate cognate ligands in some complexes (1STP→BTN) but
+// prosthetic/coenzyme in others. Soft-deprioritised like glycans — dropped only
+// when a non-soft organic candidate also exists.
+static const std::set<std::string>& soft_cofactor_residues() {
+    static const std::set<std::string> sc = {
+        "BTN", "BTB",  // biotin / biocytin (streptavidin–biotin = classic redock)
+    };
+    return sc;
 }
 
 // =============================================================================
@@ -3298,19 +3309,24 @@ bool DatasetRunner::extract_ligand(const std::string& structure_path,
     const auto& blacklist = cofactor_blacklist();
     const auto& glycans   = glycan_residues();
 
-    // Soft glycan deprioritisation (see glycan_residues()).  A glycan is the
-    // ligand ONLY when no real (non-sugar) candidate exists; otherwise the
-    // linked sugar tree would outrank the drug.  Pre-scan to learn whether any
-    // non-glycan, non-cofactor, non-buffer HETATM residue is present.
-    bool has_nonglycan_candidate = false;
+    // Soft glycan / soft-cofactor deprioritisation (see glycan_residues() and
+    // soft_cofactor_residues()).  A glycan or biotin is the ligand ONLY when no
+    // harder organic candidate exists; otherwise a co-crystallised drug wins.
+    // Pre-scan for any non-glycan, non-soft-cofactor, non-cofactor, non-buffer
+    // HETATM residue.
+    const auto& soft_cofactors = soft_cofactor_residues();
+    bool has_hard_organic_candidate = false;
     for (const auto& atom : hetatm_atoms) {
         if (atom.altLoc != " " && atom.altLoc != "" && atom.altLoc != "A") continue;
         if (blacklist.count(atom.resName)) continue;
         if (excl.count(atom.resName))      continue;
         if (glycans.count(atom.resName))   continue;
-        has_nonglycan_candidate = true;
+        if (soft_cofactors.count(atom.resName)) continue;
+        has_hard_organic_candidate = true;
         break;
     }
+    // Alias kept for glycan branch readability (same predicate).
+    const bool has_nonglycan_candidate = has_hard_organic_candidate;
 
     // Tally blacklisted cofactor residues that we skip, keyed by resName, so the
     // fallback chain (e.g. "SAH(26) → SKF(28)") can be reported once the real
@@ -3319,6 +3335,8 @@ bool DatasetRunner::extract_ligand(const std::string& structure_path,
     std::vector<std::string>    skipped_cofactor_order;  // first-seen order
     std::map<std::string, int> skipped_glycans;         // resName -> heavy-atom count
     std::vector<std::string>    skipped_glycan_order;    // first-seen order
+    std::map<std::string, int> skipped_soft_cofactors;  // resName -> heavy-atom count
+    std::vector<std::string>    skipped_soft_order;
 
     for (const auto& atom : hetatm_atoms) {
         // Skip alternate conformers (keep only first)
@@ -3339,7 +3357,16 @@ bool DatasetRunner::extract_ligand(const std::string& structure_path,
             skipped_glycans[atom.resName]++;
             continue;
         }
-        // Skip excluded residues (water, ions, buffers)
+        // Soft cofactors (BTN biotin): drop only when a harder organic candidate
+        // coexists (prosthetic biotin + drug); keep when sole organic HETATM
+        // (1STP cognate redock).
+        if (has_hard_organic_candidate && soft_cofactors.count(atom.resName)) {
+            if (skipped_soft_cofactors.find(atom.resName) == skipped_soft_cofactors.end())
+                skipped_soft_order.push_back(atom.resName);
+            skipped_soft_cofactors[atom.resName]++;
+            continue;
+        }
+        // Skip excluded residues (water, ions, buffers, hard enzyme cofactors)
         if (excl.count(atom.resName)) continue;
 
         ResidueKey key{atom.resName, atom.chainID, atom.resSeq};

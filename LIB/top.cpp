@@ -34,8 +34,12 @@
 #include "ProtocolConfig.h"
 #include "shell_exec.h"
 #include "UnifiedHardwareDispatch.h"
+#if defined(FLEXAIDDS_ENABLE_REDOCK)
+#include "DatasetRunner.h"
+#endif
 
 #include <algorithm>
+#include <cctype>
 #include <cmath>
 #include <cstring>
 #include <cstdint>
@@ -412,6 +416,75 @@ static std::string detect_file_role(const std::string& path) {
 	return "unknown";
 }
 
+/// Validate an RCSB PDB ID (classic 4-char alphanumeric; allow longer alphanumeric
+/// accession-style codes used by some modern deposits, 4–8 chars).
+static bool is_valid_pdb_id(const std::string& id) {
+	if (id.size() < 4 || id.size() > 8) return false;
+	for (unsigned char c : id) {
+		if (!std::isalnum(c)) return false;
+	}
+	return true;
+}
+
+/// Download RCSB entry, extract cognate ligand, strip apo receptor.
+/// Returns true and fills paths on success. Cache under FLEXAIDDS_REDOCK_CACHE
+/// or ~/.flexaidds/benchmarks/redock/<PDBID>/.
+/// Built only into the FlexAIDdS target (FLEXAIDDS_ENABLE_REDOCK).
+static bool prepare_redock_from_rcsb(const std::string& pdb_id,
+                                     std::string& receptor_path,
+                                     std::string& ligand_path,
+                                     std::string& out_pdb_id) {
+#if !defined(FLEXAIDDS_ENABLE_REDOCK)
+	(void)pdb_id;
+	(void)receptor_path;
+	(void)ligand_path;
+	(void)out_pdb_id;
+	fprintf(stderr,
+	        "ERROR: --redock is only available in the FlexAIDdS binary "
+	        "(this build is FlexAID without DatasetRunner cognate prep).\n");
+	return false;
+#else
+	std::string upper = pdb_id;
+	std::transform(upper.begin(), upper.end(), upper.begin(),
+	               [](unsigned char c) { return static_cast<char>(std::toupper(c)); });
+	if (!is_valid_pdb_id(upper)) {
+		fprintf(stderr,
+		        "ERROR: --redock requires a valid RCSB PDB ID (4–8 alphanumeric), got '%s'\n",
+		        pdb_id.c_str());
+		return false;
+	}
+
+	std::string cache_dir;
+	if (const char* env = std::getenv("FLEXAIDDS_REDOCK_CACHE")) {
+		if (env[0] != '\0') cache_dir = env;
+	}
+	dataset::DatasetRunner runner(cache_dir);
+	printf("[REDOCK] Preparing cognate redock for %s (RCSB download + ligand extract + apo strip)\n",
+	       upper.c_str());
+	dataset::DatasetEntry entry = runner.prepare_pdb_entry(upper, "redock");
+	if (entry.receptor_path.empty() || !std::filesystem::exists(entry.receptor_path)) {
+		fprintf(stderr, "ERROR: --redock %s failed to prepare apo receptor from RCSB\n",
+		        upper.c_str());
+		return false;
+	}
+	if (entry.ligand_path.empty() || !std::filesystem::exists(entry.ligand_path)) {
+		fprintf(stderr,
+		        "ERROR: --redock %s failed to extract a cognate ligand "
+		        "(no non-water/ion HETATM after cofactor filters)\n",
+		        upper.c_str());
+		return false;
+	}
+	receptor_path = entry.receptor_path;
+	ligand_path = entry.ligand_path;
+	out_pdb_id = entry.pdb_id.empty() ? upper : entry.pdb_id;
+	printf("[REDOCK] PDB %s\n", out_pdb_id.c_str());
+	printf("[REDOCK] Apo receptor: %s\n", receptor_path.c_str());
+	printf("[REDOCK] Cognate ligand: %s\n", ligand_path.c_str());
+	printf("[REDOCK] docking_mode: self_docking (cognate ligand → native holo-derived apo)\n");
+	return true;
+#endif
+}
+
 static void print_usage(const char* progname) {
 	printf("FlexAIDdS — Entropy-driven molecular docking\n\n");
 	printf("Usage:\n");
@@ -421,10 +494,14 @@ static void print_usage(const char* progname) {
 	printf("  Receptor: .pdb, .cif, .mmcif (protein/nucleic acid)\n");
 	printf("  Ligand:   .mol2, .sdf, .mol, .pdb (small molecule)\n");
 	printf("            or a SMILES string directly on the command line\n\n");
+	printf("  %s --redock <PDBid> [options]\n", progname);
+	printf("      Download RCSB entry <PDBid>, extract the cognate ligand,\n");
+	printf("      strip it from the target (apo), and redock automatically.\n\n");
 	printf("  %s --legacy <config.inp> <ga.inp> <output_prefix>\n\n", progname);
 	printf("Options:\n");
 	printf("  -c, --config <file.json>   JSON config (overrides defaults)\n");
-	printf("  -o, --output <prefix>      Output prefix (default: flexaid_out)\n");
+	printf("  -o, --output <prefix>      Output prefix (default: flexaid_out;\n");
+	printf("                             default <PDBid>_redock with --redock)\n");
 	printf("  --backend <cpu|metal|webgpu>  GPU compute backend for CF scoring (default: cpu)\n");
 	printf("  --rigid                    Fast rigid-body screening\n");
 	printf("  --screen                   NRGRank coarse-grained screening mode\n");
@@ -434,6 +511,7 @@ static void print_usage(const char* progname) {
 	printf("  --campaign                 Parallel virtual screening campaign mode\n");
 	printf("  --folded                   Skip NATURaL chain growth\n");
 	printf("  --legacy                   Legacy 3-file input mode\n");
+	printf("  --redock <PDBid>           Cognate redock from RCSB PDB ID\n");
 	printf("  --benchmark <set>          Run benchmark dataset (astex, casf2016, etc.)\n");
 	printf("  -h, --help                 Show this help\n\n");
 	printf("Library input (virtual screening):\n");
@@ -449,12 +527,15 @@ static void print_usage(const char* progname) {
 	printf("  %s receptor.pdb ligand.mol2\n", progname);
 	printf("  %s ligand.sdf receptor.pdb          # order doesn't matter\n", progname);
 	printf("  %s receptor.pdb 'c1ccccc1' --rigid  # SMILES input\n", progname);
+	printf("  %s --redock 1STP                   # cognate biotin redock from RCSB\n", progname);
+	printf("  %s --redock 1GPK -o results/1gpk   # redock with custom output prefix\n", progname);
 	printf("  %s protein.pdb drug.sdf -c config.json -o results\n", progname);
 	printf("  %s receptor.pdb library.sdf          # multi-molecule SDF\n", progname);
 	printf("  %s receptor.pdb ligands/             # directory of files\n", progname);
 	printf("  %s receptor.pdb compounds.smi        # SMILES file\n", progname);
 	printf("  %s nmr_ensemble.pdb ligand.mol2      # NMR ensemble\n\n", progname);
 	printf("Defaults: T=300K, full flexibility, Voronoi contacts, intramolecular ON.\n");
+	printf("Redock cache: $FLEXAIDDS_REDOCK_CACHE or ~/.flexaidds/benchmarks/redock/<PDBid>/\n");
 }
 
 int main(int argc, char **argv){
@@ -865,6 +946,8 @@ int main(int argc, char **argv){
 		// ── Auto-detect mode: scan ALL arguments, classify each ──
 		std::string receptor_path;
 		std::string ligand_path;
+		std::string redock_pdb_id;
+		bool user_set_output = false;
 		std::vector<std::string> legacy_files;
 
 		for (int a = 1; a < argc; a++) {
@@ -876,7 +959,10 @@ int main(int argc, char **argv){
 				continue;
 			}
 			if (arg == "-o" || arg == "--output") {
-				if (a + 1 < argc) output_prefix = argv[++a];
+				if (a + 1 < argc) {
+					output_prefix = argv[++a];
+					user_set_output = true;
+				}
 				continue;
 			}
 			if (arg == "--data-dir") {
@@ -887,6 +973,18 @@ int main(int argc, char **argv){
 					fprintf(stderr, "ERROR: --data-dir requires a directory path\n");
 					Terminate(1);
 				}
+				continue;
+			}
+			if (arg == "--redock") {
+				if (a + 1 >= argc) {
+					fprintf(stderr, "ERROR: --redock requires a RCSB PDB ID (e.g. --redock 1STP)\n");
+					Terminate(1);
+				}
+				if (!redock_pdb_id.empty()) {
+					fprintf(stderr, "ERROR: --redock specified more than once\n");
+					Terminate(1);
+				}
+				redock_pdb_id = argv[++a];
 				continue;
 			}
 			if (arg == "--backend") {
@@ -968,6 +1066,28 @@ int main(int argc, char **argv){
 			}
 		}
 
+		// ── Cognate redock from RCSB (--redock PDBid) ─────────────────────
+		// Downloads the deposit, extracts the cognate ligand, writes an apo
+		// receptor with that ligand stripped, then continues in direct mode.
+		if (!redock_pdb_id.empty()) {
+			if (!receptor_path.empty() || !ligand_path.empty()) {
+				fprintf(stderr,
+				        "ERROR: --redock cannot be combined with explicit receptor/ligand files\n");
+				Terminate(1);
+			}
+			if (!legacy_files.empty()) {
+				fprintf(stderr, "ERROR: --redock cannot be combined with legacy .inp inputs\n");
+				Terminate(1);
+			}
+			std::string prepared_id;
+			if (!prepare_redock_from_rcsb(redock_pdb_id, receptor_path, ligand_path, prepared_id)) {
+				Terminate(1);
+			}
+			if (!user_set_output) {
+				output_prefix = prepared_id + "_redock";
+			}
+		}
+
 		// Legacy auto-detect: if we got legacy .inp files instead of PDB/MOL2
 		if (!legacy_files.empty() && receptor_path.empty() && ligand_path.empty()) {
 			if (legacy_files.size() >= 2) {
@@ -992,14 +1112,15 @@ int main(int argc, char **argv){
 		if (!legacy_mode) {
 			if (receptor_path.empty()) {
 				fprintf(stderr, "ERROR: No receptor file detected.\n");
-				fprintf(stderr, "  Provide a .pdb or .cif file containing a protein or nucleic acid.\n\n");
+				fprintf(stderr, "  Provide a .pdb or .cif file containing a protein or nucleic acid,\n");
+				fprintf(stderr, "  or use --redock <PDBid> for automatic cognate redocking from RCSB.\n\n");
 				print_usage(argv[0]);
 				Terminate(1);
 			}
 			if (ligand_path.empty()) {
 				fprintf(stderr, "ERROR: No ligand input detected.\n");
 				fprintf(stderr, "  Provide a .mol2, .sdf, .mol, or .pdb ligand file,\n");
-				fprintf(stderr, "  or pass a SMILES string directly.\n\n");
+				fprintf(stderr, "  pass a SMILES string directly, or use --redock <PDBid>.\n\n");
 				print_usage(argv[0]);
 				Terminate(1);
 			}
