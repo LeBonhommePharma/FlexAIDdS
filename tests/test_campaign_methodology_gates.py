@@ -269,3 +269,17 @@ def test_phase4_actualized_in_workorders():
     t = p.read_text(encoding="utf-8")
     assert "SEARCH-MISS" in t and "G4.2" in t
     assert "empty weight window" in t.lower() or "clash-free" in t.lower()
+
+
+def test_g4_1_boom_frac_workorder_and_phase4_contract():
+    """G4.1 workorder exists with SEARCH-MISS panel + magnitude floor language."""
+    p = REPO / "workorders" / "G4_1_BOOM_FRAC.md"
+    assert p.is_file()
+    text = p.read_text(encoding="utf-8")
+    assert "BOOM_FRAC" in text or "boom_frac" in text.lower()
+    assert "SEARCH-MISS" in text or "1J3J" in text
+    assert "NO_SEC" in text or "no_sec" in text
+    # must not pretend prior 1N1M-only liveness is G4.1 science without disclaimer
+    assert "liveness" in text.lower() or "PASS" in text or "FAIL" in text
+    hub = (REPO / "workorders" / "CAMPAIGN_GATE_SUMMARY.md").read_text(encoding="utf-8")
+    assert "G4.1" in hub
