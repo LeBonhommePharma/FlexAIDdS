@@ -45,6 +45,10 @@ Do **not** cite 25.3% as proof election fix worked.
 | ELECTION_V135 | election_v135 + τ=25 | R=5 near-miss | elect identical 6.40/3.99 | **FAIL (null mag)** |
 | G4.3 | MUTATION_GRANULAR ±1-bin | near-miss; NO_SEC=1; R=2 | L4 PASS (8); mean_dBCR **+0.118** | **PASS_LIVENESS / null mag** |
 | 5 | Full-85 claim | — | Phase-4 sampling stack null | **BLOCKED** |
+| S2 | Closed-gate pins | `validate-pins` accept.txt + per-arm SHA | live G4.1/election/G4.3 PINS_OK | **PASS tooling** |
+| S3 | SCORING-LOCKED SI package | offline class split | `SCORING_LOCKED_SI_PACKAGE.md` | **PACKAGED** |
+| S4 | new_search_arch | a priori only | `NEW_SEARCH_ARCH_APRIORI.*` | **NO LAUNCH** |
+| S5 | Claim language freeze | CF proxy vs STRICT ΔG | `CLAIM_LANGUAGE_FREEZE.md` | **FREEZE** |
 
 ### G4.2 OUT / provenance
 
