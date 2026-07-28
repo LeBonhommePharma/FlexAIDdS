@@ -65,12 +65,42 @@ Copy into OUT as `APRIORI.json` (or fill via `scripts/benchmark_self_eval.py pre
 | Field | Rule |
 |-------|------|
 | `status` | Enum above from on-disk OUT only |
-| `l4_evidence` | Paths + counts of log markers (`[BOOM]`, `[NICHE-CART]`, …) |
+| `l4_evidence` | Paths + counts of log markers (`[BOOM]`, `[NICHE-CART]`, …) on **stderr + r\*** (not stdout-only) |
 | `per_target_metrics` | BCR, S3, elect RMSD, gens_reached if available |
 | `delta_vs_control` | mean ΔBCR (treatment − control) on **same codes** |
 | `wipeout` | false unless gen~300 + CF≈0 signature |
 | `verdict_reason` | One line: scientific FAIL vs instrument VOID |
 | `flip_order_applied` | Path to `campaign_flip_order.py` output if used |
+
+### S2 closed-gate pin pack (required for publication audit)
+
+Every **closed** OUT root must pass:
+
+```bash
+python3 scripts/benchmark_self_eval.py validate-pins --out OUT
+```
+
+| Pin | Rule |
+|-----|------|
+| `evidence/accept.txt` | Non-empty; machine-readable accept/status lines (`ACCEPT_*=True/False`, `status=…`) |
+| Per-arm **binary_sha256** | `evidence/arm_pins.json` with `arms.<name>.binary_sha256`, **or** hashable `arm_<name>/bin/FlexAIDdS.stamped` |
+| Matrix | Prefer `arm_pins.json` `matrix_pin` = **9dc9** / full md5 |
+| Shared binary | If all arms share one stamp, set `"shared_binary": true` in `arm_pins.json` and still list each arm’s SHA |
+
+`arm_pins.json` schema (minimal):
+
+```json
+{
+  "matrix_pin": "9dc93717dfed0698006d88dd6a9627bc",
+  "shared_binary": true,
+  "arms": {
+    "control": {"binary_sha256": "<64 hex>", "git_tip": optional},
+    "mut_gran": {"binary_sha256": "<64 hex>", "git_tip": optional}
+  }
+}
+```
+
+Missing accept.txt or any arm SHA → **PINS_FAIL** (exit 2). Does not re-dock or rewrite scientific status.
 
 ---
 
@@ -86,8 +116,9 @@ Copy into OUT as `APRIORI.json` (or fill via `scripts/benchmark_self_eval.py pre
 ## Agent enforcement
 
 ```bash
-python3 scripts/benchmark_self_eval.py preflight --apriori APRIORI.json --out OUT
+python3 scripts/benchmark_self_eval.py preflight --apriori APRIORI.json --write-out OUT
 # after dock:
-python3 scripts/benchmark_self_eval.py posteriori --out OUT --control CTRL_OUT [--treatment NAME:PATH ...]
-python3 scripts/campaign_flip_order.py g4_1 ...
+python3 scripts/benchmark_self_eval.py posteriori --control CTRL_OUT --treatment NAME PATH ...
+python3 scripts/benchmark_self_eval.py validate-pins --out OUT
+python3 scripts/campaign_flip_order.py g4_1 ...   # or g4_3
 ```

@@ -38,9 +38,166 @@ VALID_STATUS = {
 
 MATRIX_9DC9 = "9dc93717dfed0698006d88dd6a9627bc"
 
+# S2 closed-gate pin pack (publication / audit trail)
+# evidence/accept.txt + per-arm binary SHA256 (arm_pins.json or resolvable stamp).
+SHA256_HEX_RE = re.compile(r"\b([0-9a-fA-F]{64})\b")
+
 
 def load_apriori(path: Path) -> dict:
     return json.loads(path.read_text())
+
+
+def _first_sha256_hex(text: str) -> str | None:
+    m = SHA256_HEX_RE.search(text or "")
+    return m.group(1).lower() if m else None
+
+
+def discover_arm_names(out: Path) -> list[str]:
+    """Arm directory basenames under OUT (arm_control → control)."""
+    names: list[str] = []
+    if not out.is_dir():
+        return names
+    for p in sorted(out.glob("arm_*")):
+        if p.is_dir():
+            names.append(p.name.removeprefix("arm_"))
+    return names
+
+
+def resolve_arm_binary_sha256(out: Path, arm: str) -> str | None:
+    """Resolve per-arm binary SHA256 from pin files or stamped binary hash.
+
+    Precedence:
+    1. evidence/arm_pins.json → arms[arm].binary_sha256
+    2. evidence/binary_<arm>.sha256 or evidence/<arm>.sha256
+    3. arm_<arm>/binary.sha256 or arm_<arm>/bin/*.sha256 text
+    4. sha256 of arm_<arm>/bin/FlexAIDdS.stamped (or OUT/bin if shared)
+    5. OUT/binary.sha256 / evidence/binary_after_dup_fix.sha256 (shared stamp;
+       only accepted when a single arm is being validated, or arm_pins maps it)
+    """
+    import hashlib
+
+    pins = out / "evidence" / "arm_pins.json"
+    if pins.is_file():
+        try:
+            data = json.loads(pins.read_text())
+            arms = data.get("arms") or {}
+            ent = arms.get(arm) or arms.get(f"arm_{arm}")
+            if isinstance(ent, dict):
+                h = ent.get("binary_sha256") or ent.get("sha256")
+                if h and _first_sha256_hex(str(h)):
+                    return _first_sha256_hex(str(h))
+            elif isinstance(ent, str) and _first_sha256_hex(ent):
+                return _first_sha256_hex(ent)
+        except (json.JSONDecodeError, OSError):
+            pass
+
+    for cand in (
+        out / "evidence" / f"binary_{arm}.sha256",
+        out / "evidence" / f"{arm}.sha256",
+        out / f"arm_{arm}" / "binary.sha256",
+        out / f"arm_{arm}" / "bin" / "binary.sha256",
+    ):
+        if cand.is_file():
+            h = _first_sha256_hex(cand.read_text(errors="replace"))
+            if h:
+                return h
+
+    for bin_path in (
+        out / f"arm_{arm}" / "bin" / "FlexAIDdS.stamped",
+        out / f"arm_{arm}" / "FlexAIDdS.stamped",
+        out / "bin" / "FlexAIDdS.stamped",
+    ):
+        if bin_path.is_file():
+            h = hashlib.sha256(bin_path.read_bytes()).hexdigest()
+            return h
+
+    # Shared OUT-level sha files: use only as last resort when pins file
+    # explicitly sets "shared_binary": true, or when discovering single arm.
+    for cand in (
+        out / "binary.sha256",
+        out / "evidence" / "binary_after_dup_fix.sha256",
+        out / "evidence" / "binary.sha256",
+    ):
+        if cand.is_file():
+            h = _first_sha256_hex(cand.read_text(errors="replace"))
+            if h:
+                # Only valid if arm_pins declares shared, or only one arm.
+                if pins.is_file():
+                    try:
+                        data = json.loads(pins.read_text())
+                        if data.get("shared_binary") is True:
+                            return h
+                    except (json.JSONDecodeError, OSError):
+                        pass
+                if len(discover_arm_names(out)) <= 1:
+                    return h
+    return None
+
+
+def validate_closed_gate_pins(
+    out: Path,
+    *,
+    arms: list[str] | None = None,
+    require_accept: bool = True,
+    require_arm_sha: bool = True,
+) -> list[str]:
+    """Validate closed-gate publication pin pack under OUT.
+
+    Required (S2):
+    - evidence/accept.txt exists and is non-empty
+    - each arm has a resolvable binary SHA256 (see resolve_arm_binary_sha256)
+
+    Returns a list of human-readable error strings (empty ⇒ pass).
+    """
+    errs: list[str] = []
+    if not out.is_dir():
+        return [f"OUT is not a directory: {out}"]
+
+    if require_accept:
+        accept = out / "evidence" / "accept.txt"
+        if not accept.is_file():
+            errs.append("missing evidence/accept.txt")
+        else:
+            body = accept.read_text(errors="replace").strip()
+            if not body:
+                errs.append("evidence/accept.txt is empty")
+
+    if require_arm_sha:
+        arm_list = list(arms) if arms is not None else discover_arm_names(out)
+        if not arm_list:
+            errs.append("no arm_* directories found and --arms not provided")
+        for arm in arm_list:
+            sha = resolve_arm_binary_sha256(out, arm)
+            if not sha:
+                errs.append(
+                    f"missing per-arm binary SHA256 for arm={arm!r} "
+                    f"(need evidence/arm_pins.json arms.{arm}.binary_sha256 "
+                    f"or arm_{arm}/bin/FlexAIDdS.stamped)"
+                )
+    return errs
+
+
+def validate_pins_report(
+    out: Path,
+    *,
+    arms: list[str] | None = None,
+) -> dict:
+    """Machine-readable pin validation result for CLI / tests."""
+    arm_list = list(arms) if arms is not None else discover_arm_names(out)
+    errs = validate_closed_gate_pins(out, arms=arm_list)
+    resolved = {a: resolve_arm_binary_sha256(out, a) for a in arm_list}
+    accept_path = out / "evidence" / "accept.txt"
+    return {
+        "ok": len(errs) == 0,
+        "out": str(out),
+        "errors": errs,
+        "accept_present": accept_path.is_file()
+        and bool(accept_path.read_text(errors="replace").strip())
+        if accept_path.is_file()
+        else False,
+        "arms": arm_list,
+        "arm_sha256": resolved,
+    }
 
 
 def validate_apriori(ap: dict) -> list[str]:
@@ -199,6 +356,18 @@ def main(argv: list[str] | None = None) -> int:
     v = sub.add_parser("validate-contract-doc")
     v.add_argument("--path", type=Path, default=Path("workorders/BENCHMARK_SELF_EVAL_CONTRACT.md"))
 
+    pins = sub.add_parser(
+        "validate-pins",
+        help="S2: require evidence/accept.txt + per-arm binary SHA256 under OUT",
+    )
+    pins.add_argument("--out", type=Path, required=True, help="Campaign OUT root")
+    pins.add_argument(
+        "--arms",
+        default="",
+        help="Comma-separated arm names (default: discover arm_* dirs)",
+    )
+    pins.add_argument("--json", action="store_true")
+
     args = ap.parse_args(argv)
 
     if args.cmd == "preflight":
@@ -232,6 +401,22 @@ def main(argv: list[str] | None = None) -> int:
             print(human)
         return 0 if rec["status"] == "PASS" else 1
 
+    if args.cmd == "validate-pins":
+        arm_arg = [a.strip() for a in args.arms.split(",") if a.strip()] or None
+        rep = validate_pins_report(args.out, arms=arm_arg)
+        if args.json:
+            print(json.dumps(rep, indent=2))
+        else:
+            if rep["ok"]:
+                print("PINS_OK", args.out)
+                for a, h in (rep.get("arm_sha256") or {}).items():
+                    print(f"  arm={a} sha256={h}")
+            else:
+                print("PINS_FAIL", args.out)
+                for e in rep["errors"]:
+                    print(" ", e)
+        return 0 if rep["ok"] else 2
+
     if args.cmd == "validate-contract-doc":
         text = args.path.read_text()
         need = [
@@ -243,9 +428,10 @@ def main(argv: list[str] | None = None) -> int:
             "NEAR_MISS",
             "Sol #9",
             "9dc9",
+            "accept.txt",
+            "binary_sha256",
+            "arm_pins",
         ]
-        missing = [n for n in need if n.lower() not in text.lower() and n not in text]
-        # METHODOLOGY.md might be found; case for a priori
         missing = []
         for n in need:
             if n not in text and n.lower() not in text.lower():
