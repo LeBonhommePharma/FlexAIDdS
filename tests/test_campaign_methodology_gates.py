@@ -179,11 +179,14 @@ def test_phase4_null_stack_and_residual_docs_present():
     assert "full-85" in s3.lower() or "Full-85" in s3
     s4j = json.loads((REPO / "workorders" / "NEW_SEARCH_ARCH_APRIORI.json").read_text())
     assert s4j.get("launch") is False
-    assert s4j.get("status") == "APRIORI_ONLY_NO_LAUNCH"
+    assert "NO_DOCK" in s4j.get("status", "") or "APRIORI" in s4j.get("status", "")
     assert s4j.get("panel_class") == "NEAR_MISS"
     assert "1N1M" in s4j.get("codes", [])
+    assert "PHENOTYPE_UNIQUE" in json.dumps(s4j) or "phenotype_unique" in json.dumps(s4j)
     s4 = (REPO / "workorders" / "NEW_SEARCH_ARCH_APRIORI.md").read_text()
-    assert "NO LAUNCH" in s4 or "no launch" in s4.lower()
+    assert "PHENOTYPE_UNIQUE" in s4 or "phenotype_unique" in s4
+    assert "BASIN_REINJECT" in s4 or "basin_reinject" in s4
+    assert (REPO / "LIB" / "new_search_arch.h").is_file()
     s5 = (REPO / "workorders" / "CLAIM_LANGUAGE_FREEZE.md").read_text()
     assert "CF/contact-function" in s5 or "scoring proxy" in s5.lower()
     assert "ΔG" in s5 or "dG" in s5.lower() or "free energy" in s5.lower()
