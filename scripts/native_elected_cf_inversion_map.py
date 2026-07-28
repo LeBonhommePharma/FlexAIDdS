@@ -18,6 +18,16 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence
 
 PANEL = ("1J3J", "1K3U", "1L7F", "1N1M", "1M2Z", "1OQ5", "1SQ5", "1YGC")
+PILOT8_PANEL = (
+    "1G9V",
+    "1GPK",
+    "1MEH",
+    "1P62",
+    "1Q4G",
+    "1R9O",
+    "1T40",
+    "2BYS",
+)
 EPS_DEFAULT = 0.5
 
 
@@ -26,15 +36,55 @@ def repo_root() -> Path:
     return p if (p / "AGENTS.md").exists() else Path.cwd()
 
 
-def resolve_config(repo: Path, pdb: str, pilot: Optional[Path] = None) -> Optional[Path]:
+def _as_path(raw: str) -> Optional[Path]:
+    """Resolve a path string; tolerate missing ``.pdb`` suffix on elected_path."""
+    if not raw or not str(raw).strip():
+        return None
+    p = Path(str(raw).strip())
+    if p.is_file():
+        return p
+    # pilot8 parse may drop extension
+    if not p.suffix:
+        for ext in (".pdb", ".PDB"):
+            cand = Path(str(p) + ext)
+            if cand.is_file():
+                return cand
+    # relative to cwd
+    if p.name and Path(p.name).is_file():
+        return Path(p.name).resolve()
+    return None
+
+
+def resolve_config(
+    repo: Path,
+    pdb: str,
+    pilot: Optional[Path] = None,
+    *,
+    config_template: Optional[Path] = None,
+) -> Optional[Path]:
     candidates = [
         repo / "ops" / "gates" / "configs" / f"{pdb}_dock_config.json",
     ]
     if pilot is not None:
-        candidates.append(pilot / pdb / "dock_config.json")
+        candidates.extend(
+            [
+                pilot / pdb / "dock_config.json",
+                pilot / "configs" / f"{pdb}_dock_config.json",
+                pilot / "dock_configs" / f"{pdb}_dock_config.json",
+            ]
+        )
     for c in candidates:
         if c.is_file():
             return c
+    # Materialize from production template when per-PDB ops config is absent
+    # (pilot8 dual-zero panel). Prefer leaf S4-style production knobs.
+    if config_template is not None and config_template.is_file() and pilot is not None:
+        dest_dir = pilot / "dock_configs"
+        dest_dir.mkdir(parents=True, exist_ok=True)
+        dest = dest_dir / f"{pdb}_dock_config.json"
+        if not dest.is_file():
+            dest.write_text(config_template.read_text(encoding="utf-8"), encoding="utf-8")
+        return dest
     return None
 
 
@@ -61,21 +111,27 @@ def resolve_receptor(repo: Path, pdb: str) -> Optional[Path]:
 
 
 def resolve_elected(pilot: Path, pdb: str) -> Optional[Path]:
-    for c in (
-        pilot / pdb / "elected_pose.pdb",
-        pilot / pdb / f"{pdb}_elected.pdb",
-    ):
-        if c.is_file():
-            return c
-    # result.csv elected_pose_path
+    # Prefer pilot8 result.csv elected_path (rank-0 elect), then explicit names,
+    # then r0_0 only as last-resort fallback.
     rc = pilot / pdb / "result.csv"
     if rc.is_file():
         with rc.open() as f:
             row = next(csv.DictReader(f), None)
-        if row and row.get("elected_pose_path"):
-            p = Path(row["elected_pose_path"])
-            if p.is_file():
-                return p
+        if row:
+            for key in ("elected_path", "elected_pose_path", "cf_top1_pose_path"):
+                raw = row.get(key)
+                if not raw:
+                    continue
+                p = _as_path(str(raw))
+                if p is not None:
+                    return p
+    for c in (
+        pilot / pdb / "elected_pose.pdb",
+        pilot / pdb / f"{pdb}_elected.pdb",
+        pilot / pdb / f"{pdb}_r0_0.pdb",
+    ):
+        if c.is_file():
+            return c
     return None
 
 
@@ -88,18 +144,25 @@ def load_result_metrics(pilot: Path, pdb: str) -> Dict[str, Any]:
     if not row:
         return {}
     out: Dict[str, Any] = {}
-    for k in (
-        "rmsd_hungarian",
-        "best_cluster_rmsd",
-        "seed_echo",
-        "elected_cf",
-        "elected_pose_path",
-    ):
-        if k in row and row[k] not in (None, ""):
+    # Normalize pilot8 + classic column names into a stable set.
+    aliases = {
+        "rmsd_hungarian": ("rmsd_hungarian", "rmsd_top1"),
+        "best_cluster_rmsd": ("best_cluster_rmsd", "rmsd_bcr"),
+        "seed_echo": ("seed_echo",),
+        "elected_cf": ("elected_cf", "score_top1", "best_score"),
+        "elected_pose_path": ("elected_pose_path", "elected_path"),
+    }
+    for dest, keys in aliases.items():
+        for k in keys:
+            if k not in row or row[k] in (None, ""):
+                continue
             try:
-                out[k] = float(row[k]) if k != "elected_pose_path" else row[k]
+                out[dest] = (
+                    float(row[k]) if dest != "elected_pose_path" else row[k]
+                )
             except ValueError:
-                out[k] = row[k]
+                out[dest] = row[k]
+            break
     return out
 
 
@@ -191,6 +254,17 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     ap.add_argument("--binary", type=Path, default=None)
     ap.add_argument("--data-dir", type=Path, default=None)
     ap.add_argument("--panel", nargs="*", default=None)
+    ap.add_argument(
+        "--pilot8",
+        action="store_true",
+        help="Use dual-zero pilot8 panel (1G9V…2BYS)",
+    )
+    ap.add_argument(
+        "--config-template",
+        type=Path,
+        default=None,
+        help="Production dock_config.json template when per-PDB ops config is missing",
+    )
     ap.add_argument("--eps", type=float, default=EPS_DEFAULT)
     ap.add_argument("--out-dir", type=Path, required=True)
     args = ap.parse_args(list(argv) if argv is not None else None)
@@ -203,13 +277,30 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     binary = args.binary or (repo / "build" / "FlexAIDdS")
     data_dir = args.data_dir or repo
     if not probe.is_file() or not binary.is_file():
-        print("missing probe_cf or FlexAIDdS", file=sys.stderr)
+        print(f"missing probe_cf or FlexAIDdS: probe={probe} binary={binary}", file=sys.stderr)
         return 2
 
-    panel = list(args.panel) if args.panel else list(PANEL)
+    cfg_template = args.config_template.expanduser().resolve() if args.config_template else None
+    if cfg_template is None:
+        # Prefer leaf production axes (S4-style LOCCLF) over sparse ops/gates set.
+        for cand in (
+            Path.home()
+            / "flexaidds_results/s4_pheno_unique_near_miss_20260727_211213/arm_control/1L7F/dock_config.json",
+            repo / "ops" / "gates" / "configs" / "1L7F_dock_config.json",
+        ):
+            if cand.is_file():
+                cfg_template = cand
+                break
+
+    if args.panel:
+        panel = list(args.panel)
+    elif args.pilot8:
+        panel = list(PILOT8_PANEL)
+    else:
+        panel = list(PANEL)
     rows: List[Dict[str, Any]] = []
     for pdb in panel:
-        cfg = resolve_config(repo, pdb, pilot)
+        cfg = resolve_config(repo, pdb, pilot, config_template=cfg_template)
         rec = resolve_receptor(repo, pdb)
         nat = resolve_native(repo, pdb)
         ele = resolve_elected(pilot, pdb)
@@ -220,8 +311,15 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                     "pdb": pdb,
                     "status": "skip_missing",
                     "config": str(cfg) if cfg else "",
+                    "receptor": str(rec) if rec else "",
+                    "native": str(nat) if nat else "",
                     "elected": str(ele) if ele else "",
                 }
+            )
+            print(
+                f"[{pdb}] skip_missing cfg={bool(cfg)} rec={bool(rec)} "
+                f"nat={bool(nat)} ele={bool(ele)}",
+                file=sys.stderr,
             )
             continue
         print(f"[{pdb}] native + elected …")
@@ -247,7 +345,14 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         )
         cn, ce = fnum(nobj), fnum(eobj)
         if cn is None or ce is None:
-            rows.append({"pdb": pdb, "status": "probe_fail"})
+            rows.append(
+                {
+                    "pdb": pdb,
+                    "status": "probe_fail",
+                    "config": str(cfg),
+                    "elected_path": str(ele),
+                }
+            )
             continue
         cls = classify(cn, ce, args.eps)
         dcf = cn - ce  # negative => native better
@@ -279,7 +384,12 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 "seed_echo": meta.get("seed_echo"),
                 "result_elected_cf": meta.get("elected_cf"),
                 "elected_path": str(ele),
+                "native_path": str(nat),
+                "receptor_path": str(rec),
                 "config": str(cfg),
+                "config_template": str(cfg_template) if cfg_template else "",
+                "binary": str(binary),
+                "data_dir": str(data_dir),
             }
         )
         print(f"  {pdb}: {cls} cn={cn:.3f} ce={ce:.3f} dCF={dcf:+.3f} sub={sub}")
@@ -309,6 +419,15 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         next_lever = "mixed → dock coarse-orient only on SEARCH-MISS codes"
 
     written = datetime.now(timezone.utc).isoformat()
+    # Binary identity (reconstruction labels if present beside binary)
+    bin_id = ""
+    for idp in (
+        Path(binary).parent / "IDENTITY.txt",
+        Path(binary).with_name("IDENTITY.txt"),
+    ):
+        if idp.is_file():
+            bin_id = idp.read_text(encoding="utf-8", errors="ignore").strip()
+            break
     payload = {
         "schema": "native_elected_cf_inversion_map/v1",
         "written_utc": written,
@@ -323,13 +442,22 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         "n_election_pool": n_elect,
         "next_lever": next_lever,
         "pilot_dir": str(pilot),
+        "probe_cf": str(probe),
+        "binary": str(binary),
+        "binary_identity": bin_id,
+        "data_dir": str(data_dir),
+        "config_template": str(cfg_template) if cfg_template else "",
+        "dCF_sign": "CF_native - CF_elected (negative ⇒ native better on CF proxy)",
         "rows": rows,
         "one_variable": "pose_role under fixed production LOCCLF (native vs elected)",
+        "claim_success_rates": False,
+        "full85_authorized": False,
         "blocks": [
             "no full-85",
             "no memetic",
             "no WAL_COERCIVE re-panel",
             "no interval-only BOOM",
+            "does not claim docking success rates",
         ],
     }
     (out_dir / "inversion_map.json").write_text(json.dumps(payload, indent=2) + "\n")
@@ -358,11 +486,16 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         f"**Pilot poses:** `{pilot}`  ",
         f"**One variable:** pose role under fixed production LOCCLF (native vs elected)  ",
         f"**ε:** {args.eps} CF units  ",
+        f"**dCF sign:** CF_native − CF_elected (negative ⇒ native better)  ",
+        f"**Binary:** `{binary}`  ",
+        f"**Config template:** `{cfg_template}`  ",
         f"**OUT:** `{out_dir}`  ",
         "",
         f"**Verdict:** **{verdict}** — {reason}",
         "",
         f"**Next lever (guided):** {next_lever}",
+        "",
+        "**Does not claim docking success rates; does not authorize full-85.**",
         "",
         "## Counts",
         "",
