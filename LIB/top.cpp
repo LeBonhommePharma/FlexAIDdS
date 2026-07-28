@@ -9,6 +9,7 @@
 #include "CifReader.h"
 #include "CleftDetector.h"
 #include "statmech.h"
+#include "TargetServer.h"  // P1: for grand canonical TargetServer context in cluster paths
 #include "ProcessLigand/ProcessLigand.h"
 #include "ProcessLigand/CoordBuilder.h"
 #include "LibrarySplitter.h"
@@ -884,6 +885,7 @@ int main(int argc, char **argv){
 	std::string config_path;
 	std::string output_prefix = "flexaid_out";
 	std::string cached_grid_path;  // Strategy A: .rrg grid cache path from "grid_file" JSON key
+	double user_conc_M = 1.0;  // P3: per-run concentration for grand canonical (default 1M)
 
 	if (argc < 2) {
 		print_usage(argv[0]);
@@ -1027,6 +1029,10 @@ int main(int argc, char **argv){
 			}
 			if (arg == "--campaign") { use_campaign = true; continue; }
 			if (arg == "--folded") { use_folded = true; continue; }
+			if (arg == "--conc" || arg == "--concentration") {
+				if (a + 1 < argc) user_conc_M = std::atof(argv[++a]);
+				continue;
+			}
 			if (arg == "-h" || arg == "--help") { print_usage(argv[0]); Terminate(0); }
 
 			// Classify this positional argument
@@ -2711,6 +2717,17 @@ int main(int argc, char **argv){
 
 		int n_chrom_snapshot = 0;
 
+		// P1: create local TargetServer for this GA run (P1 wiring; default 1M conc, later from config)
+		std::unique_ptr<target::TargetServer> local_ts;
+		target::TargetServer* active_ts = nullptr;
+		{
+			target::TargetConfig tcfg;
+			tcfg.temperature_K = static_cast<double>(FA->temperature);
+			tcfg.default_conc_M = user_conc_M; // P3: from --conc or default
+			local_ts = std::make_unique<target::TargetServer>(tcfg);
+			active_ts = local_ts.get();
+		}
+
 		if (use_parallel_dock) {
 			// ── ParallelDock: grid-decomposed parallel GA instances ──
 			printf("=== ParallelDock mode: %d spatial regions ===\n", parallel_dock_regions);
@@ -2721,7 +2738,7 @@ int main(int argc, char **argv){
 			// and rotation gene limits (genes 1..N-1).  Previously these were
 			// uninitialized, producing physically nonsensical conformations.
 			ParallelDockManager pdm(FA, GB, VC, atoms, residue, cleftgrid, pdcfg,
-			                        gene_lim, GB->num_genes);
+			                        gene_lim, GB->num_genes, active_ts, "parallel-dock");
 			pdm.decompose();
 			pdm.run(ic2cf);
 			auto global_thermo = pdm.aggregate();
@@ -2814,6 +2831,7 @@ int main(int argc, char **argv){
 				output_prefix.empty() ? "campaign" : output_prefix,
 				use_rigid, use_folded
 			);
+			ccfg.default_conc_M = user_conc_M;  // P3: forward --conc for grand canonical in campaign path
 			auto summary = campaign::run_campaign(ccfg,
 				[](int done, int total, const campaign::LigandResult& lr) {
 					printf("\r  [%d/%d] %s: dG=%.2f kcal/mol (%.1fs)",
@@ -3136,18 +3154,48 @@ int main(int argc, char **argv){
 			if( strcmp(FA->clustering_algorithm,"FO") == 0 )
 			{
 				printf("using the Fast OPTICS (FO) density based clustering algorithm.\n");
-				FastOPTICS_cluster(FA,GB,VC,chrom_snapshot,gene_lim,atoms,residue,cleftgrid,n_chrom_snapshot,end_strfile,tmp_end_strfile,dockinp,gainp);
+				FastOPTICS_cluster(FA,GB,VC,chrom_snapshot,gene_lim,atoms,residue,cleftgrid,n_chrom_snapshot,end_strfile,tmp_end_strfile,dockinp,gainp, active_ts, "ga-ligand");
 			}
 			else if( strcmp(FA->clustering_algorithm,"DP") == 0 )
 			{
 				printf("using the Density Peak (DP) based clustering algorithm.\n");
-				DensityPeak_cluster(FA,GB,VC,chrom_snapshot,gene_lim,atoms,residue,cleftgrid,n_chrom_snapshot,end_strfile,tmp_end_strfile,dockinp,gainp);
+				DensityPeak_cluster(FA,GB,VC,chrom_snapshot,gene_lim,atoms,residue,cleftgrid,n_chrom_snapshot,end_strfile,tmp_end_strfile,dockinp,gainp, active_ts, "ga-ligand");
 			}
 			else
 			{
 				printf("using the Complementarity Function (CF) based clustering algorithm.\n");
-				cluster(FA,GB,VC,chrom_snapshot,gene_lim,atoms,residue,cleftgrid,n_chrom_snapshot,end_strfile,tmp_end_strfile,dockinp,gainp);
+				cluster(FA,GB,VC,chrom_snapshot,gene_lim,atoms,residue,cleftgrid,n_chrom_snapshot,end_strfile,tmp_end_strfile,dockinp,gainp, active_ts, "ga-ligand");
 			}
+
+			// P1/P5: augment output with grand canonical info if ts active (per-ligand p_bind, Xi etc.)
+			// LigandRank fields: name, log_Z, dG, p_bound (see GrandPartitionFunction.h).
+			if (active_ts) {
+				printf("[GRAND] sessions=%d\n", active_ts->completed_sessions());
+				auto ranks = active_ts->rank_ligands();
+				for (const auto& r : ranks) {
+					printf("[GRAND] %s: log_Z=%.6g p_bind=%.6g dG=%.6g\n",
+					       r.name.c_str(), r.log_Z, r.p_bound, r.dG);
+				}
+				// P5: write sidecar .grand.txt for richer output (Xi, p_bind per ligand)
+				char grandfile[512];
+				snprintf(grandfile, sizeof(grandfile), "%s.grand.txt", end_strfile ? end_strfile : "flexaid");
+				FILE* gf = fopen(grandfile, "w");
+				if (gf) {
+					fprintf(gf, "# Grand canonical summary (P3/P5)\n");
+					for (const auto& r : ranks) {
+						fprintf(gf, "ligand=%s log_Z=%.6g p_bind=%.6g dG=%.6g\n",
+						        r.name.c_str(), r.log_Z, r.p_bound, r.dG);
+					}
+					fclose(gf);
+				}
+				// P5: also emit as REMARK GRAND for parsers (per plan)
+				printf("REMARK GRAND_SESSIONS %d\n", active_ts->completed_sessions());
+				for (const auto& r : ranks) {
+					printf("REMARK GRAND %s log_Z=%.6g p_bind=%.6g dG=%.6g\n",
+					       r.name.c_str(), r.log_Z, r.p_bound, r.dG);
+				}
+			}
+
 			//////////////////////////////////////////
 			// Looking at cleftgrid chrom's density //
 			//////////////////////////////////////////

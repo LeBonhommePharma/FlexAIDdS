@@ -36,6 +36,7 @@ from __future__ import annotations
 
 import datetime
 import json
+import csv
 import logging
 import os
 import socket
@@ -186,6 +187,8 @@ class DatasetConfig:
     data_dir: Optional[Path] = None
     data_format: str = "pdb"
     active_label_field: str = "is_active"
+    default_conc_M: float = 1.0  # P3: for grand canonical per-ligand or default
+    ligand_concs: Dict[str, float] = field(default_factory=dict)  # P3: per-ligand_id -> conc_M from yaml
 
     @classmethod
     def from_yaml(cls, yaml_path: Path) -> "DatasetConfig":
@@ -254,6 +257,8 @@ class DatasetConfig:
             baseline_tolerance=float(raw.pop("baseline_tolerance", 0.05)),
             data_format=str(raw.pop("data_format", "pdb")),
             active_label_field=str(raw.pop("active_label_field", "is_active")),
+            default_conc_M=float(raw.pop("default_conc_M", 1.0)),
+            ligand_concs=DatasetConfig._parse_ligand_concs(raw),
         )
         if data_dir_raw:
             config.data_dir = Path(data_dir_raw)
@@ -302,6 +307,25 @@ class DatasetConfig:
             return KNOWN_LARGE_DATASETS[self.slug]
         return len(self.scheduled_work_items(tier))
 
+    @staticmethod
+    def _parse_ligand_concs(raw: dict) -> Dict[str, float]:
+        """P3: parse per-ligand conc_M from 'ligands' list or competition_sets in yaml."""
+        concs: Dict[str, float] = {}
+        # direct 'ligands': [{ligand_id: , conc_M: }, ...]
+        for lig in raw.get("ligands", []) or []:
+            if isinstance(lig, dict):
+                lid = lig.get("ligand_id") or lig.get("name")
+                if lid and "conc_M" in lig:
+                    concs[str(lid)] = float(lig["conc_M"])
+        # competition_sets style from example yamls
+        for cs in raw.get("competition_sets", []) or []:
+            for lig in cs.get("ligands", []) or []:
+                if isinstance(lig, dict):
+                    lid = lig.get("ligand_id") or lig.get("name")
+                    if lid and "conc_M" in lig:
+                        concs[str(lid)] = float(lig["conc_M"])
+        return concs
+
 
 def load_large_dataset_catalog(
     slug: str,
@@ -340,6 +364,9 @@ class TargetResult:
     poses: List[PoseScore]
     duration_seconds: float = 0.0
     error: str = ""
+    grand_log_Z: Optional[float] = None  # P3: ensemble log_Z for this ligand (for grand Xi)
+    conc_M: float = 1.0  # P3: the conc used for this ligand
+    grand_xi: Optional[float] = None  # P3: computed log_Xi if grand_log_Z present
 
     @property
     def success(self) -> bool:
@@ -363,6 +390,7 @@ class DatasetResult:
         timestamp:          ISO-8601 timestamp of run completion.
         git_sha:            Git commit SHA of the FlexAIDdS repo at run time.
         host:               Hostname of the machine that ran this dataset.
+        grand_summary:      P3: per-ligand grand info (log_Z, conc, Xi, p_bind etc) for grand canonical emission.
     """
 
     config: DatasetConfig
@@ -377,6 +405,7 @@ class DatasetResult:
     timestamp: str = ""
     git_sha: str = ""
     host: str = ""
+    grand_summary: Dict[str, Dict[str, float]] = field(default_factory=dict)  # P3 grand
     binary: str = ""
     temperature: float = 300.0
     full_command: str = ""
@@ -427,6 +456,7 @@ class DatasetResult:
             "published_baselines": self.config.published_baselines,
             "published_source": self.config.published_source,
             "dry_run": self.dry_run,
+            "grand_summary": self.grand_summary,  # P3
         }
         if self.metrics_note:
             payload["metrics_note"] = self.metrics_note
@@ -555,6 +585,14 @@ class BenchmarkReport:
                 "",
             ]
 
+        # P3: grand canonical summary emission (Ξ, p_bind etc) if present
+        if dr.grand_summary:
+            lines += ["### Grand Canonical Summary (P3)", ""]
+            lines += ["| Ligand | log_Z | conc_M | log_Xi | p_bind |", "|--------|-------|--------|--------|--------|"]
+            for lid, info in sorted(dr.grand_summary.items()):
+                lines.append(f"| {lid} | {info.get('log_Z', 0):.4f} | {info.get('conc_M', 1):.2e} | {info.get('log_Xi', 0):.4f} | {info.get('p_bind', 0):.4f} |")
+            lines.append("")
+
         if dr.targets_failed:
             lines += [
                 f"**Failed targets** ({len(dr.targets_failed)}): "
@@ -642,6 +680,7 @@ class BenchmarkReport:
                 duration_seconds=d.get("duration_seconds", 0.0),
                 dry_run=bool(d.get("dry_run", False)),
                 metrics_note=str(d.get("metrics_note", "") or ""),
+                grand_summary=d.get("grand_summary", {}) or {},
             )
             ds_results.append(dr)
         return cls(
@@ -1024,6 +1063,7 @@ class DatasetRunner:
         repo_root: Optional[Union[str, Path]] = None,
         resume: bool = False,
         command_line: Optional[str] = None,
+        default_conc_M: float = 1.0,  # P3
     ) -> None:
         _default_datasets = Path(__file__).resolve().parent / "datasets"
         self.datasets_dir = Path(datasets_dir) if datasets_dir is not None else _default_datasets
@@ -1046,6 +1086,7 @@ class DatasetRunner:
         self.repo_root = Path(repo_root) if repo_root else Path.cwd()
         self.resume = bool(resume)
         self.command_line = command_line
+        self.default_conc_M = float(default_conc_M)
 
         self.results_dir.mkdir(parents=True, exist_ok=True)
 
@@ -1149,6 +1190,7 @@ class DatasetRunner:
         ligand_paths: List[Path],
         structural_state: str = "holo",
         with_entropy: bool = True,
+        conc_M: float = 1.0,  # P3
     ) -> List[PoseScore]:
         """Run FlexAIDdS on one target and return scored poses.
 
@@ -1174,6 +1216,7 @@ class DatasetRunner:
                 ligand_paths,
                 structural_state,
                 with_entropy,
+                conc_M=conc_M,
             )
         except Exception as exc:
             logger.error("Docking failed for %s: %s", target_id, exc)
@@ -1186,6 +1229,7 @@ class DatasetRunner:
         ligand_paths: List[Path],
         structural_state: str,
         with_entropy: bool,
+        conc_M: float = 1.0,  # P3
     ) -> List[PoseScore]:
         """Invoke the FlexAID binary and parse output poses."""
         poses: List[PoseScore] = []
@@ -1209,7 +1253,7 @@ class DatasetRunner:
                     # Direct CLI: <receptor> <ligand> -o prefix  (binary auto-detects files)
                     # Write outputs as flexaid_*.pdb so parser glob *.pdb catches them.
                     result = subprocess.run(
-                        [self.binary, str(receptor_path), str(ligand_path), "-o", "flexaid"],
+                        [self.binary, str(receptor_path), str(ligand_path), "-o", "flexaid", "--conc", str(conc_M)],
                         capture_output=True,
                         text=True,
                         timeout=3600,
@@ -1230,6 +1274,18 @@ class DatasetRunner:
                         structural_state,
                         reference_ligand=ligand_path,
                     )
+                    # P3: capture grand log_Z from [GRAND] stdout (emitted by C++ cluster hook when --conc used)
+                    grand_log_z = None
+                    if result.stdout:
+                        for line in result.stdout.splitlines():
+                            if '[GRAND]' in line and 'log_Z=' in line:
+                                try:
+                                    grand_log_z = float(line.split('log_Z=')[1].split()[0])
+                                except Exception:
+                                    pass
+                    if grand_log_z is not None:
+                        for p in parsed:
+                            p.ensemble_log_Z = grand_log_z
                     poses.extend(parsed)
                 except subprocess.TimeoutExpired:
                     logger.error("Docking timed out: %s/%s", target_id, ligand_id)
@@ -1285,6 +1341,11 @@ class DatasetRunner:
                         exp_affinity = _parse_remark_float(line, "EXP_AFFINITY:")
                     elif "ACTIVE:1" in line:
                         is_active = True
+                    elif "ENSEMBLE_LOG_Z:" in line or "GRAND_LOG_Z:" in line:
+                        try:
+                            grand_log_z = float( line.split(":")[-1].strip() )
+                        except:
+                            pass
                     else:
                         m = _RMSD_REMARK_RE.search(line)
                         if m:
@@ -1352,6 +1413,7 @@ class DatasetRunner:
                         total_score=total,
                         is_active=rng.random() < 0.3,
                         exp_affinity=rng.uniform(-12, -6),
+                        ensemble_log_Z = rng.uniform(5, 15),  # synthetic for grand test
                         structural_state=structural_state,
                     )
                 )
@@ -1523,11 +1585,17 @@ class DatasetRunner:
                         error = f"No ligand found for {target_id}/{state}"
                         return target_id, state, [], time.monotonic() - t_start, error
 
+                # P3: per-ligand conc from config.ligand_concs if present (from yaml)
+                eff_conc = getattr(config, 'default_conc_M', self.default_conc_M)
+                if ligands:
+                    lid = ligands[0].stem
+                    eff_conc = getattr(config, 'ligand_concs', {}).get(lid, eff_conc)
                 poses = self._dock_target(
                     target_id,
                     receptor or Path("/dev/null"),
                     ligands or [Path(f"{target_id}.mol2")],
                     structural_state=state,
+                    conc_M=eff_conc,
                 )
 
                 elapsed = time.monotonic() - t_start
@@ -1539,7 +1607,16 @@ class DatasetRunner:
                     poses=poses,
                     duration_seconds=elapsed,
                     error=error,
+                    conc_M=eff_conc,
                 )
+                if poses and getattr(poses[0], 'ensemble_log_Z', None) is not None:
+                    tr.grand_log_Z = poses[0].ensemble_log_Z
+                    try:
+                        from ..grand_canonical import compute_grand_partition
+                        g = compute_grand_partition([(target_id, tr.grand_log_Z, tr.conc_M)], temperature_K=298.0)
+                        tr.grand_xi = g.log_Xi
+                    except Exception as e:
+                        logger.debug("P3 grand compute: %s", e)
                 try:
                     saved_path = self._save_target_result(tr, config, tier, cost_cpu=cost_cpu)
                     logger.debug(
@@ -1576,6 +1653,30 @@ class DatasetRunner:
                 "Entry %s/%s: %d poses in %.1fs",
                 target_id, state, len(poses), elapsed,
             )
+
+        # P3: emit grand canonical summary for ligands that have grand_log_Z (e.g. from multi-ligand on receptor or grand datasets)
+        # Group by target (ligand), use conc from config, compute Xi, p etc using the module.
+        grand_summary: Dict[str, Dict[str, float]] = {}
+        for target_id, state, poses, elapsed, error in results:
+            if not error and poses:
+                logz = getattr(poses[0], 'ensemble_log_Z', None)
+                if logz is not None:
+                    conc = getattr(config, 'ligand_concs', {}).get(target_id, getattr(config, 'default_conc_M', 1.0))
+                    try:
+                        from ..grand_canonical import compute_grand_partition
+                        g = compute_grand_partition([(target_id, logz, conc)], temperature_K=298.0)
+                        p_bind = g.binding_probability(target_id) if hasattr(g, 'binding_probability') else (math.exp(logz + math.log(conc)) / math.exp(g.log_Xi) if conc > 0 else 0)
+                        grand_summary[target_id] = {
+                            'log_Z': logz,
+                            'conc_M': conc,
+                            'log_Xi': g.log_Xi,
+                            'p_bind': p_bind,
+                        }
+                    except Exception as e:
+                        logger.debug("P3 grand summary compute skip for %s: %s", target_id, e)
+        if grand_summary:
+            dr.grand_summary = grand_summary
+            logger.info("P3: emitted grand summary for %d ligands", len(grand_summary))
 
         completed = sorted(completed_targets)
         failed = sorted(failed_targets)
@@ -1739,10 +1840,28 @@ class DatasetRunner:
         return report
 
     def _save_dataset_result(self, dr: DatasetResult) -> None:
-        """Write a per-dataset JSON result file as soon as it's ready."""
+        """Write a per-dataset JSON result file as soon as it's ready.
+        P3: also emit grand_summary.csv when grand canonical data present (Ξ, p_bind, concs etc).
+        """
         out_path = self.results_dir / f"{dr.config.slug}_tier{dr.tier}.json"
         out_path.write_text(json.dumps(dr.to_dict(), indent=2))
         logger.info("Dataset result saved: %s", out_path)
+        if getattr(dr, "grand_summary", None):
+            csv_path = self.results_dir / f"{dr.config.slug}_tier{dr.tier}_grand_summary.csv"
+            try:
+                rows = []
+                for lid, info in sorted(dr.grand_summary.items()):
+                    row = {"ligand": lid}
+                    row.update({k: info.get(k) for k in ("log_Z", "conc_M", "log_Xi", "p_bind") if k in info})
+                    rows.append(row)
+                if rows:
+                    with open(csv_path, "w", newline="") as fh:
+                        w = csv.DictWriter(fh, fieldnames=rows[0].keys())
+                        w.writeheader()
+                        w.writerows(rows)
+                    logger.info("P3 grand CSV saved: %s", csv_path)
+            except Exception as e:
+                logger.debug("P3 grand CSV emission skipped: %s", e)
 
     # ------------------------------------------------------------------
     # Per-entry (per-target) persistence — the new automated model
@@ -1774,6 +1893,9 @@ class DatasetRunner:
             "error": tr.error,
             "poses": [p.to_dict() if hasattr(p, "to_dict") else p.__dict__ for p in tr.poses],
             "success": tr.success,
+            "grand_log_Z": getattr(tr, 'grand_log_Z', None),
+            "grand_xi": getattr(tr, 'grand_xi', None),
+            "conc_M": getattr(tr, 'conc_M', 1.0),
             "timestamp": datetime.datetime.utcnow().isoformat() + "Z",
         }
         tmp.write_text(json.dumps(payload, indent=2))
@@ -1804,6 +1926,9 @@ class DatasetRunner:
                 poses=poses,
                 duration_seconds=data.get("duration_seconds", 0.0),
                 error=data.get("error", ""),
+                grand_log_Z=data.get("grand_log_Z"),
+                conc_M=data.get("conc_M", 1.0),
+                grand_xi=data.get("grand_xi"),
             )
         except Exception as e:
             logger.warning("Corrupt target result %s — will re-run: %s", path, e)

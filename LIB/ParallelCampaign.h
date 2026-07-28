@@ -64,6 +64,9 @@ struct CampaignConfig {
     // Output
     bool stream_results       = true;  // write results as they complete
     std::string results_csv;           // path to results CSV (auto-generated)
+
+    // P3 grand canonical: default concentration forwarded for TargetServer/GPF when multi-ligand campaign uses grand paths
+    double default_conc_M     = 1.0;
 };
 
 // ─── Per-ligand result ──────────────────────────────────────────────────────

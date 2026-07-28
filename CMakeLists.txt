@@ -1116,6 +1116,13 @@ endif()
 # ─── Unit Tests (GoogleTest) ───────────────────────────────────────────────
 option(BUILD_TESTING "Build unit tests (requires GoogleTest)" OFF)
 if(BUILD_TESTING)
+    # P0 wiring: ensure GPF sources (GrandPartitionFunction, TargetServer, MultiSiteGPF)
+    # are ALWAYS compiled for test coverage, regardless of user option.
+    # This + default=ON in FlexAIDOptions + conditional in LIB/CMakeLists.txt
+    # guarantees the modules are present for ctest -R 'Grand|Target|...'
+    set(FLEXAIDS_GRAND_CANONICAL ON CACHE BOOL "Force GPF modules for BUILD_TESTING (P0 gate: always compile Grand/Target/MultiSite)" FORCE)
+    message(STATUS "BUILD_TESTING=ON → FLEXAIDS_GRAND_CANONICAL forced ON to guarantee GrandPartitionFunction/TargetServer/MultiSiteGPF compilation and tests")
+
     find_package(GTest QUIET)
     if(NOT GTest_FOUND)
         include(FetchContent)
@@ -2474,7 +2481,6 @@ flexaids_add_unit_test(test_protocol_config
         target_link_libraries(test_grand_partition PRIVATE OpenMP::OpenMP_CXX)
     endif()
     target_link_libraries(test_grand_partition PRIVATE Eigen3::Eigen)
-
     target_compile_definitions(test_grand_partition PRIVATE FLEXAIDS_HAS_EIGEN)
     flexaids_configure_msvc_test(test_grand_partition)
     add_test(NAME GrandPartitionTests COMMAND test_grand_partition)
@@ -2503,7 +2509,6 @@ flexaids_add_unit_test(test_protocol_config
         target_link_libraries(test_target_server PRIVATE OpenMP::OpenMP_CXX)
     endif()
     target_link_libraries(test_target_server PRIVATE Eigen3::Eigen)
-
     target_compile_definitions(test_target_server PRIVATE FLEXAIDS_HAS_EIGEN)
     flexaids_configure_msvc_test(test_target_server)
     add_test(NAME TargetServerTests COMMAND test_target_server)

@@ -4,15 +4,17 @@
 #include "statmech.h"
 #include "SoftBetaFreeEnergy.h"
 #include "ClusterRepMode.h"
+#include "TargetServer.h"
 #include <cmath>
 #include <cstdlib>
 #include <limits>
 #include <vector>
+#include <string>
 #ifdef _OPENMP
 #include <omp.h>
 #endif
 
-void cluster(FA_Global* FA, GB_Global* GB, VC_Global* VC, chromosome* chrom, genlim* gene_lim, atom* atoms, resid* residue, gridpoint* cleftgrid, int num_chrom, char* end_strfile, char* tmp_end_strfile, char* dockinp, char* gainp)
+void cluster(FA_Global* FA, GB_Global* GB, VC_Global* VC, chromosome* chrom, genlim* gene_lim, atom* atoms, resid* residue, gridpoint* cleftgrid, int num_chrom, char* end_strfile, char* tmp_end_strfile, char* dockinp, char* gainp, target::TargetServer* ts, const std::string& ligand_name)
 {
 	bool Hungarian = false;
 	int i,j;

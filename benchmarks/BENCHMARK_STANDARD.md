@@ -449,3 +449,57 @@ Is receptor the ligand's own crystal (apo)?
 
 If `seed_echo` is non-zero anywhere, the run belongs to **no tier** — it is
 invalid and may not be quoted.
+
+## 7. Grand canonical / competitive validation (P4+ extension)
+
+This section defines sanctioned reporting for concentration-dependent
+competitive binding using the GrandPartitionFunction (Ξ).
+
+**Scope**: multi-ligand per-receptor campaigns where observables are
+p_bind (occupancy probability per ligand at given c), mean_occupancy,
+log_Xi, apparent + intrinsic selectivity, derived ΔΔG from Ki ratios.
+
+**Not a replacement for docking-power BCR**. Grand validation augments
+thermodynamic accuracy on top of pose correctness (PoseBusters + RMSD ≤2.0 Å
+still required for any "successful" binding mode feeding the ensemble Z).
+
+### Data
+- Use `benchmarks/datasets/competition_example.yaml` (or derived real sets).
+- Pair with per-ligand ensemble log_Z (from StatMechEngine on GA poses).
+- Synthetic exact fixtures: `benchmarks/grand_synthetic/*.json` (analytical
+  ground truth, Z + c supplied, expected p/Ξ/sel known to 1e-12).
+- Literature: Ki ratios → ΔΔG = RT ln(Ki_weak/Ki_tight) at 298 K for
+  selectivity checks (see yaml for conversion notes).
+
+### Metrics (must name "grand canonical")
+- p_bind agreement (RMSE or max abs err vs analytical/literature at stated concs)
+- selectivity error (log units; intrinsic vs apparent distinguished)
+- occupancy curve match (vary c, check p(empty) and total occ)
+- ΔΔG recovery from selectivity (within experimental variance)
+- Repro: full manifest + concentrations + engine SHA + seed in every report
+
+### Harness
+- `python3 scripts/grand_calibrate.py --synthetic ...` (pure-Py reference impl)
+- Extended `scripts/validate_benchmark_results.py --manifest competition_example.yaml`
+- Future: load_results() + grand post-processing in Python package.
+
+### Reproducibility (in addition to §6 checklist)
+- Record exact per-ligand concentrations (M) and T.
+- Record provenance of every log_Z (run id, binding mode indices, whether
+  CCBM / vib corrections active).
+- HW parity: identical grand quantities (within tol) across scalar / Metal /
+  CUDA builds when fed identical input log_Z (see GPF_IMPLEMENTATION_PLAN.md
+  P4 HW notes).
+- Two runs with same seed + manifest + concs → bitwise-identical grand summary
+  or documented fp tolerance.
+
+### Example reporting sentence
+"Grand canonical validation on competition_example tier-1 synthetic fixtures
+(n=3 cases) + literature Ki-ratio dual-ligand set: p_bind RMSE < 0.01,
+intrinsic selectivity error < 0.05 log units; HW parity (Metal vs scalar)
+held to 1e-9 rel on log_Xi. All using RngSeed=1234, T=298 K."
+
+**Current status (P4)**: data + harness prep complete; integration with
+docking outputs pending P1–P3. See GPF_IMPLEMENTATION_PLAN.md and
+docs/GrandPartitionFunction_Report.md for observables and theory.
+

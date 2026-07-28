@@ -126,6 +126,7 @@ struct DatasetEntry {
     bool has_entropy()     const { return experimental_TdS != 0.0f; }
     bool has_oracle_site() const { return !binding_site_path.empty(); }
     bool has_cleft_spheres() const { return !cleft_sphere_path.empty(); }
+    double conc_M = 1.0;  // P3: ligand concentration for grand canonical
 };
 
 /// Result of docking a single entry.
@@ -268,6 +269,8 @@ struct DockingResult {
     float thermo_CF_r2s{0.0f};
     std::string thermo_binding_regime{};
     bool  has_thermo2{false};
+// P1: real ensemble log_Z from BindingPopulation.get_log_Z() (preferred over -dG/kT)
+    double ensemble_log_Z{0.0};
     // Mid-run H_shannon snapshots at fixed generations (causality test).
     // Populated when FLEXAIDDS_THERMO=1. NaN when that generation was not
     // reached (early exit) or when thermo is disabled.

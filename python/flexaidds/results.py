@@ -15,9 +15,10 @@ Typical usage::
 
 from __future__ import annotations
 
+import json
 from collections import defaultdict
 from pathlib import Path
-from typing import Dict, Iterable, List, Optional, Sequence, Tuple
+from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
 from .io import parse_pose_result
 from .models import BindingModeResult, DockingResult, PoseResult
@@ -142,6 +143,50 @@ def _recompute_thermo_from_cf(
         float(td.std_energy),
     )
 
+def _try_load_grand_sidecar(root: Path) -> Dict[str, Any]:
+    """Look for optional grand.json sidecar (or combined manifest) next to results.
+
+    Supports:
+      - <root>/grand.json
+      - <root>/results_grand.json
+    Returns dict of grand fields (grand_log_xi, ligand_occupancies, ...) or {}.
+    Non-fatal on missing / malformed (for legacy single-ligand dirs).
+    Multi-ligand manifest layout hint: presence of per-ligand subdirs can be
+    detected by caller; sidecar can carry the unified Ξ summary.
+    """
+    candidates = [
+        root / "grand.json",
+        root / "results_grand.json",
+        root / "grand_canonical.json",
+    ]
+    for cand in candidates:
+        if cand.is_file():
+            try:
+                data = json.loads(cand.read_text(encoding="utf-8"))
+                # Accept either flat grand payload or {"grand": {...}}
+                if isinstance(data, dict):
+                    if "grand" in data and isinstance(data["grand"], dict):
+                        data = data["grand"]
+                    # whitelist known grand keys for safety
+                    grand_keys = {
+                        "grand_log_xi", "ligand_occupancies", "selectivities",
+                        "per_ligand_results", "empty_probability", "mean_occupancy",
+                        "log_xi", "occupancies", "probabilities"
+                    }
+                    filtered = {k: v for k, v in data.items() if k in grand_keys or k in ("log_Xi",)}
+                    # normalize aliases
+                    if "log_xi" in filtered and "grand_log_xi" not in filtered:
+                        filtered["grand_log_xi"] = filtered.pop("log_xi")
+                    if "log_Xi" in filtered and "grand_log_xi" not in filtered:
+                        filtered["grand_log_xi"] = filtered.pop("log_Xi")
+                    if "occupancies" in filtered and not filtered.get("ligand_occupancies"):
+                        filtered["ligand_occupancies"] = filtered.pop("occupancies")
+                    return filtered
+            except Exception:
+                # tolerate bad sidecar for non-breaking legacy load
+                return {}
+    return {}
+
 
 def _build_mode(mode_id: int, poses: Sequence[PoseResult], rank: int = 1) -> BindingModeResult:
     """Construct a :class:`BindingModeResult` from a flat list of poses.
@@ -247,11 +292,18 @@ def load_results(path: str | Path) -> DockingResult:
 
     pose_files = _collect_pose_files(root)
     if not pose_files:
+        grand_side = _try_load_grand_sidecar(root)
         return DockingResult(
             source_dir=root,
             binding_modes=[],
             temperature=None,
-            metadata={"n_pose_files": 0},
+            metadata={"n_pose_files": 0, **({"grand_sidecar": True} if grand_side else {})},
+            grand_log_xi=grand_side.get("grand_log_xi"),
+            ligand_occupancies=grand_side.get("ligand_occupancies", {}) or {},
+            selectivities=grand_side.get("selectivities", {}) or {},
+            per_ligand_results=grand_side.get("per_ligand_results", {}) or {},
+            empty_probability=grand_side.get("empty_probability"),
+            mean_occupancy=grand_side.get("mean_occupancy"),
         )
 
     grouped: Dict[int, List[PoseResult]] = defaultdict(list)
@@ -289,9 +341,20 @@ def load_results(path: str | Path) -> DockingResult:
 
     temperature = next((m.temperature for m in modes_with_ranks if m.temperature is not None), None)
 
+    grand_side = _try_load_grand_sidecar(root)
+    meta = {"n_pose_files": len(pose_files)}
+    if grand_side:
+        meta["grand_sidecar"] = True
+
     return DockingResult(
         source_dir=root,
         binding_modes=modes_with_ranks,
         temperature=temperature,
-        metadata={"n_pose_files": len(pose_files)},
+        metadata=meta,
+        grand_log_xi=grand_side.get("grand_log_xi"),
+        ligand_occupancies=grand_side.get("ligand_occupancies", {}) or {},
+        selectivities=grand_side.get("selectivities", {}) or {},
+        per_ligand_results=grand_side.get("per_ligand_results", {}) or {},
+        empty_probability=grand_side.get("empty_probability"),
+        mean_occupancy=grand_side.get("mean_occupancy"),
     )

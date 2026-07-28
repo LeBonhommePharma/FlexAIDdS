@@ -33,6 +33,10 @@
   - `GrandPartitionFunction::empty_probability()`
   - `GrandPartitionFunction::selectivity()` apparent concentration-aware selectivity
   - `GrandPartitionFunction::log_intrinsic_selectivity()` concentration-independent selectivity
+  - `TargetServer` / sessions carry conc_M (P3); per-receptor Ξ computation from ensemble log_Z
+- Emission (P3+): DatasetRunner emits `grand_summary` (dict) → `*_grand_summary.csv` (ligand,log_Z,conc_M,log_Xi,p_bind) + JSON; C++ --conc wires default_conc_M; competition_example.yaml provides per-ligand conc_M
+- Python: `flexaidds.grand_canonical.compute_grand_partition`, `_PyGrandPartitionFunction`, `LigandRank`; roundtrips in test_grand_canonical + grand_synthetic fixtures (exact 3L cases verified)
+- MultiSiteGPF: product of per-site GPFs + cooperativity (tested in test_multi_site_gpf.cpp); non-breaking, documented for future multi-cleft integration (no auto-wiring from CavityDetect yet)
 
 ## Vibrational, NATURaL, GIST, H-bond, And Strain Terms
 

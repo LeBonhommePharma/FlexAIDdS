@@ -30,6 +30,10 @@
 // Forward declaration for re-entrant GA context
 struct GAContext;
 
+// P1: optional TargetServer context for grand canonical registration (non-breaking defaults)
+#include <string>
+namespace target { class TargetServer; }
+
 #define MAX_NUM_GENES 100
 #define MAX_NUM_CHROM 1000
 #define MAX_GEN_LENGTH 32                         // in number of bits
@@ -273,9 +277,9 @@ int   	cmp_chrom2pop_int(const chromosome* chrom,const gene* genes, int num_gene
 int   	cmp_chrom2rotlist(psFlexDEE_Node psFlexDEE_INI_Node, const chromosome* chrom, const genlim* gene_lim,int gene_offset, int num_genes, int tot, int num_nodes);
 int   	cmp_chrom2pop(const chromosome* chrom,const gene* genes, int num_genes,int start, int last);
 void  	save_snapshot(chromosome* chrom_snapshot, const chromosome* chrom, int num_chrom, int num_genes);
-void  	cluster(FA_Global* FA, GB_Global* GB, VC_Global* VC,chromosome* chrom, genlim* gene_lim, atom* atoms, resid* residue,gridpoint* cleftgrid, int memchrom, char* end_strfile, char* tmp_end_strfile, char* dockinp, char* gainp);
-void  	DensityPeak_cluster(FA_Global* FA, GB_Global* GB, VC_Global* VC, chromosome* chrom, genlim* gen_lim, atom* atoms, resid* residue, gridpoint* cleftgrid, int memchrom, char* end_strfile, char* tmp_end_strfile, char* dockinp, char* gainp);
-void 	FastOPTICS_cluster(FA_Global* FA, GB_Global* GB, VC_Global* VC, chromosome* chrom, genlim* gene_lim, atom* atoms, resid* residue, gridpoint* cleftgrid, int nChrom, char* end_strfile, char* tmp_end_strfile, char* dockinp, char* gainp);
+void  	cluster(FA_Global* FA, GB_Global* GB, VC_Global* VC,chromosome* chrom, genlim* gene_lim, atom* atoms, resid* residue,gridpoint* cleftgrid, int memchrom, char* end_strfile, char* tmp_end_strfile, char* dockinp, char* gainp, target::TargetServer* ts = nullptr, const std::string& ligand_name = "");
+void  	DensityPeak_cluster(FA_Global* FA, GB_Global* GB, VC_Global* VC, chromosome* chrom, genlim* gen_lim, atom* atoms, resid* residue, gridpoint* cleftgrid, int memchrom, char* end_strfile, char* tmp_end_strfile, char* dockinp, char* gainp, target::TargetServer* ts = nullptr, const std::string& ligand_name = "");
+void 	FastOPTICS_cluster(FA_Global* FA, GB_Global* GB, VC_Global* VC, chromosome* chrom, genlim* gene_lim, atom* atoms, resid* residue, gridpoint* cleftgrid, int nChrom, char* end_strfile, char* tmp_end_strfile, char* dockinp, char* gainp, target::TargetServer* ts = nullptr, const std::string& ligand_name = "");
 //long long time_seed();
 /* A4b: early_exit_sq = sig_share² to prune distant pairs; 0.0 = full compute */
 double 	calc_rmsp(int npar, const gene* g1, const gene* g2, const optmap* map_par, gridpoint* cleftgrid, double early_exit_sq = 0.0);
