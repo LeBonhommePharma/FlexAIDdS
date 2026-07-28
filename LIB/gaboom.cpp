@@ -11,6 +11,7 @@
 #include "ensemble_pipeline.h"
 #include "ProtocolConfig.h"
 #include "niche_distance.h"
+#include "new_search_arch.h"
 
 #include <random>
 #include <functional>
@@ -945,14 +946,90 @@ int GA(FA_Global* FA, GB_Global* GB,VC_Global* VC,chromosome** chrom,chromosome*
 				GB->diversity_collapse_threshold);
 			if (dm.collapse_detected && (i + 1) < GB->max_generations / 2) {
 				// Only trigger catastrophic mutation in the first half of generations
-				ga_diversity::catastrophic_mutation(
-					*chrom, GB->num_chrom, GB->num_genes, *gene_lim,
-					GB->catastrophic_mutation_fraction, rng);
-				GB->catastrophic_mutation_count++;
-				fprintf(stderr, "[DIVERSITY] Catastrophic mutation #%d at gen %d "
-				        "(H_allele=%.3f, min_gene=%.3f)\n",
-				        GB->catastrophic_mutation_count, i + 1,
-				        dm.allele_entropy, dm.min_gene_entropy);
+				if (flexaids::new_search::basin_reinject_enabled()) {
+					// B: basin-aware reinject — re-randomize worst fraction until
+					// Cartesian ligand RMSD vs current best exceeds sigma (default 2 Å).
+					static bool s_basin_logged = false;
+					if (!s_basin_logged) {
+						s_basin_logged = true;
+						std::fprintf(stderr,
+						             "[NEW-SEARCH-ARCH] basin_reinject=1: catastrophic "
+						             "reinject prefers Cartesian RMSD > sigma vs best "
+						             "(FLEXAIDDS_BASIN_SIGMA_ANG, default 2.0)\n");
+					}
+					const double sigma = flexaids::new_search::basin_sigma_ang(2.0);
+					const int n_chrom = GB->num_chrom;
+					const int n_genes = GB->num_genes;
+					int n_mutate = static_cast<int>(
+					    std::ceil(GB->catastrophic_mutation_fraction * n_chrom));
+					if (n_mutate > n_chrom) n_mutate = n_chrom;
+					// Sort indices by evalue ascending (best first).
+					std::vector<int> order(static_cast<size_t>(n_chrom));
+					for (int q = 0; q < n_chrom; ++q) order[static_cast<size_t>(q)] = q;
+					std::sort(order.begin(), order.end(), [&](int a, int b) {
+						return (*chrom)[a].evalue < (*chrom)[b].evalue;
+					});
+					const int best_i = order[0];
+					// Coords for current best.
+					constexpr int kCoordStride = MAX_ATM_HET * 3;
+					std::vector<float> best_xyz(static_cast<size_t>(kCoordStride), 0.0f);
+					std::vector<float> trial_xyz(static_cast<size_t>(kCoordStride), 0.0f);
+					calc_rmsd_chrom(FA, GB, *chrom, *gene_lim, atoms, residue, *cleftgrid,
+					                n_genes, best_i, best_i, best_xyz.data(), nullptr, false);
+					const int lres = atoms[FA->map_par[0].atm].ofres;
+					const int rot = residue[lres].rot;
+					int n_lig = residue[lres].latm[rot] - residue[lres].fatm[rot] + 1;
+					if (n_lig < 1) n_lig = 1;
+					int n_accepted = 0;
+					for (int k = 0; k < n_mutate; ++k) {
+						const int ci = order[static_cast<size_t>(n_chrom - 1 - k)];
+						bool ok = false;
+						for (int attempt = 0; attempt < 24; ++attempt) {
+							generate_random_individual(FA, GB, atoms, (*chrom)[ci].genes,
+							                           *gene_lim, dice, 0, n_genes);
+							for (int g = 0; g < n_genes; ++g)
+								(*chrom)[ci].genes[g].to_ic =
+								    genetoic(&(*gene_lim)[g], (*chrom)[ci].genes[g].to_int32);
+							calc_rmsd_chrom(FA, GB, *chrom, *gene_lim, atoms, residue,
+							                *cleftgrid, n_genes, ci, ci, trial_xyz.data(),
+							                nullptr, false);
+							const double rmsd = flexaids::niche_cartesian_rmsd(
+							    best_xyz.data(), trial_xyz.data(), n_lig);
+							if (flexaids::new_search::outside_basin(rmsd, sigma) ||
+							    attempt == 23) {
+								ok = flexaids::new_search::outside_basin(rmsd, sigma);
+								break;
+							}
+						}
+						if (ok) ++n_accepted;
+						ring_randomise_chrom(FA, &(*chrom)[ci]);
+						ring_load_chrom_to_fa(FA, &(*chrom)[ci]);
+						(*chrom)[ci].cf = eval_chromosome(FA, GB, VC, *gene_lim, atoms,
+						                                  residue, *cleftgrid,
+						                                  (*chrom)[ci].genes, target);
+						(*chrom)[ci].evalue =
+						    get_cf_evalue(&(*chrom)[ci].cf, FA) / n_receptor_chains;
+						(*chrom)[ci].app_evalue =
+						    get_apparent_cf_evalue(&(*chrom)[ci].cf) / n_receptor_chains;
+						ccbm_inject_strain(FA, (*chrom)[ci], *gene_lim);
+						(*chrom)[ci].status = 'n';
+					}
+					GB->catastrophic_mutation_count++;
+					fprintf(stderr,
+					        "[BASIN-REINJECT] #%d gen %d n=%d outside_basin=%d "
+					        "sigma=%.2fA (H_allele=%.3f min_gene=%.3f)\n",
+					        GB->catastrophic_mutation_count, i + 1, n_mutate, n_accepted,
+					        sigma, dm.allele_entropy, dm.min_gene_entropy);
+				} else {
+					ga_diversity::catastrophic_mutation(
+						*chrom, GB->num_chrom, GB->num_genes, *gene_lim,
+						GB->catastrophic_mutation_fraction, rng);
+					GB->catastrophic_mutation_count++;
+					fprintf(stderr, "[DIVERSITY] Catastrophic mutation #%d at gen %d "
+					        "(H_allele=%.3f, min_gene=%.3f)\n",
+					        GB->catastrophic_mutation_count, i + 1,
+					        dm.allele_entropy, dm.min_gene_entropy);
+				}
 			}
 		}
 
@@ -1040,6 +1117,27 @@ int GA(FA_Global* FA, GB_Global* GB,VC_Global* VC,chromosome** chrom,chromosome*
 			if (i % 200 == 0) {
 				fprintf(stderr, "[ANNEAL] gen=%4d  T=%7.1f K  α=%.4f\n",
 				        i + 1, T_now, alpha);
+			}
+		}
+
+		// G4.3: FLEXAIDDS_MUTATION_GRANULAR uses phenotype-live ±1-bin steps.
+		// hash_genes() keys the lifetime `duplicates` map on to_ic (phenotype).
+		// Local steps exhaust the neighborhood; reproduce() then stalls in
+		// rejection sampling (~0.08 gen/s observed on 1L7F after gen ~4100).
+		// Clear once per generation under granular mode so uniqueness is
+		// within-gen only. Classic (env off) keeps lifetime uniqueness.
+		{
+			const char* gran_e = std::getenv("FLEXAIDDS_MUTATION_GRANULAR");
+			if (gran_e && (gran_e[0] == '1' || gran_e[0] == 'y' || gran_e[0] == 'Y' ||
+			               gran_e[0] == 't' || gran_e[0] == 'T')) {
+				duplicates.clear();
+				static bool s_dup_clear_logged = false;
+				if (!s_dup_clear_logged) {
+					s_dup_clear_logged = true;
+					std::fprintf(stderr,
+					             "[MUT-GRAN] per-generation phenotype-duplicate clear "
+					             "(lifetime map incompatible with ±1-bin local search)\n");
+				}
 			}
 		}
 
@@ -1902,23 +2000,25 @@ int reproduce(FA_Global* FA,GB_Global* GB,VC_Global* VC, chromosome* chrom, cons
 		/************************************/
 		num_genes_wo_sc = GB->num_genes-FA->nflxsc_real;
 
-		mutate(chrop1_gen,GB->num_genes-FA->nflxsc_real,mutprob);
+		mutate(chrop1_gen,GB->num_genes-FA->nflxsc_real,mutprob,gene_lim);
 		k=0;
 		for(j=0;j<FA->nflxsc;j++){
 			if(residue[FA->flex_res[j].inum].trot != 0){
 				if(RandomDouble() < FA->flex_res[j].prob){
-					mutate(&chrop1_gen[num_genes_wo_sc+k],1,mutprob);
+					mutate(&chrop1_gen[num_genes_wo_sc+k],1,mutprob,
+					       gene_lim ? &gene_lim[num_genes_wo_sc+k] : nullptr);
 				}
 				k++;
 			}
 		}
 
-		mutate(chrop2_gen,GB->num_genes-FA->nflxsc_real,mutprob);
+		mutate(chrop2_gen,GB->num_genes-FA->nflxsc_real,mutprob,gene_lim);
 		k=0;
 		for(j=0;j<FA->nflxsc;j++){
 			if(residue[FA->flex_res[j].inum].trot != 0){
 				if(RandomDouble() < FA->flex_res[j].prob){
-					mutate(&chrop2_gen[num_genes_wo_sc+k],1,mutprob);
+					mutate(&chrop2_gen[num_genes_wo_sc+k],1,mutprob,
+					       gene_lim ? &gene_lim[num_genes_wo_sc+k] : nullptr);
 				}
 				k++;
 			}
@@ -1946,8 +2046,17 @@ int reproduce(FA_Global* FA,GB_Global* GB,VC_Global* VC, chromosome* chrom, cons
 			ring_mutate_chrom(FA, &rc2);
 		}
 
-		size_t sig1 = hash_genes(chrop1_gen,GB->num_genes);
-		size_t sig2 = hash_genes(chrop2_gen,GB->num_genes);
+		// A: phenotype-bin uniqueness when enabled (classic path); default keeps
+		// historical hash_genes on rounded to_ic.
+		const bool pheno_unique = flexaids::new_search::phenotype_unique_enabled();
+		size_t sig1 = pheno_unique && gene_lim
+		                  ? flexaids::new_search::hash_phenotype_bins(
+		                        chrop1_gen, GB->num_genes, gene_lim)
+		                  : hash_genes(chrop1_gen, GB->num_genes);
+		size_t sig2 = pheno_unique && gene_lim
+		                  ? flexaids::new_search::hash_phenotype_bins(
+		                        chrop2_gen, GB->num_genes, gene_lim)
+		                  : hash_genes(chrop2_gen, GB->num_genes);
 
 		/************************************/
 		/****** CHECK DUPLICATION  ********/
@@ -3965,18 +4074,85 @@ void crossover(gene *john,gene *mary,int num_genes, int intragenes){
 /* 1         2         3         4         5         6         7*/
 /***********************************************************************/
 void mutate(gene *john,int num_genes,double mut_rate){
+	mutate(john, num_genes, mut_rate, /*gene_lim=*/nullptr);
+}
+
+void mutate(gene *john,int num_genes,double mut_rate,const genlim* gene_lim){
 	/* creates an operator with 1's with rate= mut_rate
 	   uses it to mutate john.
-	*/
-	int i,j;
-	unsigned int optr;
-	unsigned int test;
 
-	for(j=0;j<num_genes;j++){
-		optr=0u;
-		test=1u;
-		for(i=0;i<32;i++){
-			if(RandomDouble() < mut_rate){
+	   Default (gene_lim null or FLEXAIDDS_MUTATION_GRANULAR unset): classic
+	   per-bit flip across all 32 bits.  Low-order bits are often "dead" for
+	   decoding: genetoic bins by gene/2^31, so flips below ~2^31/nbin do not
+	   change the IC phenotype (PHASE4 G4.3).
+
+	   G4.3 mode (FLEXAIDDS_MUTATION_GRANULAR=1 and gene_lim provided): when a
+	   gene is selected for mutation, apply a ±1-bin step in gene integer
+	   space (phenotype-changing small move). L4: one-shot [MUT-GRAN] on stderr.
+
+	   S4-A FLEXAIDDS_PHENOTYPE_UNIQUE=1 (classic path only): if classic bit-flips
+	   leave phenotype bins unchanged, force one ±1-bin phenotype step.
+	*/
+	// Env is process-lifetime for dock runs. Tests setenv before first mutate.
+	// Skip getenv when gene_lim is null (classic overload path).
+	bool env_on = false;
+	if (gene_lim != nullptr) {
+		const char* e = std::getenv("FLEXAIDDS_MUTATION_GRANULAR");
+		env_on = e && (e[0] == '1' || e[0] == 'y' || e[0] == 'Y' || e[0] == 't' ||
+		               e[0] == 'T');
+	}
+	const bool use_granular = env_on && (gene_lim != nullptr);
+	if (use_granular) {
+		static bool s_logged = false;
+		if (!s_logged) {
+			s_logged = true;
+			std::fprintf(stderr,
+			             "[MUT-GRAN] FLEXAIDDS_MUTATION_GRANULAR=1: bin-aware ±1-bin gene steps "
+			             "(phenotype-live mutations; classic dead low bits avoided)\n");
+		}
+	}
+
+	const bool force_pheno =
+	    (gene_lim != nullptr) && !use_granular &&
+	    flexaids::new_search::phenotype_unique_enabled();
+	std::size_t h_before = 0;
+	if (force_pheno) {
+		static bool s_pheno_logged = false;
+		if (!s_pheno_logged) {
+			s_pheno_logged = true;
+			std::fprintf(stderr,
+			             "[NEW-SEARCH-ARCH] phenotype_unique=1: classic mutate forces "
+			             "±1-bin phenotype step when bit-flips leave bins unchanged\n");
+		}
+		for (int j = 0; j < num_genes; ++j)
+			john[j].to_ic = genetoic(&gene_lim[j], john[j].to_int32);
+		h_before = flexaids::new_search::hash_phenotype_bins(john, num_genes, gene_lim);
+	}
+
+	for (int j = 0; j < num_genes; j++) {
+		if (use_granular) {
+			// Gate once per gene at mut_rate (not per bit).
+			if (RandomDouble() >= mut_rate) continue;
+			const double nbin = gene_lim[j].nbin > 1.0 ? gene_lim[j].nbin : 2.0;
+			const int32_t step = static_cast<int32_t>(std::max(
+			    1.0, std::floor((static_cast<double>(MAX_RANDOM_VALUE) + 1.0) / nbin)));
+			// ±1 bin; occasional ±2 for slightly larger local moves (still small).
+			int k = 1;
+			if (RandomDouble() < 0.25) k = 2;
+			const int sign = (RandomDouble() < 0.5) ? 1 : -1;
+			int64_t ng = static_cast<int64_t>(john[j].to_int32) +
+			             static_cast<int64_t>(sign) * static_cast<int64_t>(step) * k;
+			if (ng < 0) ng = 0;
+			if (ng > static_cast<int64_t>(MAX_RANDOM_VALUE))
+				ng = static_cast<int64_t>(MAX_RANDOM_VALUE);
+			john[j].to_int32 = static_cast<int32_t>(ng);
+			continue;
+		}
+
+		unsigned int optr = 0u;
+		unsigned int test = 1u;
+		for (int i = 0; i < 32; i++) {
+			if (RandomDouble() < mut_rate) {
 				optr |= test;
 			}
 			test <<= 1;
@@ -3984,7 +4160,22 @@ void mutate(gene *john,int num_genes,double mut_rate){
 		john[j].to_int32 ^= static_cast<int32_t>(optr);
 	}
 
-	return;
+	if (force_pheno) {
+		for (int j = 0; j < num_genes; ++j)
+			john[j].to_ic = genetoic(&gene_lim[j], john[j].to_int32);
+		const std::size_t h_after =
+		    flexaids::new_search::hash_phenotype_bins(john, num_genes, gene_lim);
+		if (h_after == h_before && num_genes > 0) {
+			const int j = static_cast<int>(RandomDouble() * static_cast<double>(num_genes)) %
+			              num_genes;
+			const double nbin = gene_lim[j].nbin > 1.0 ? gene_lim[j].nbin : 2.0;
+			const int sign = (RandomDouble() < 0.5) ? 1 : -1;
+			const int k = (RandomDouble() < 0.25) ? 2 : 1;
+			flexaids::new_search::apply_phenotype_bin_step(
+			    &john[j], nbin, sign, k, MAX_RANDOM_VALUE);
+			john[j].to_ic = genetoic(&gene_lim[j], john[j].to_int32);
+		}
+	}
 }
 /***********************************************************************/
 /* 1         2         3         4         5         6          */

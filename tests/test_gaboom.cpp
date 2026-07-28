@@ -11,6 +11,7 @@
 #include "../LIB/gaboom.h"
 
 #include <cmath>
+#include <cstdlib>
 #include <cstring>
 #include <vector>
 #include <algorithm>
@@ -128,6 +129,62 @@ TEST_F(GeneEncodingTest, BoundaryMaxIC) {
     // Round-trip should land within the gene limits range
     EXPECT_GE(ic2, gl.min - EPSILON);
     EXPECT_LE(ic2, gl.max + EPSILON);
+}
+
+TEST_F(GeneEncodingTest, OneBinGeneStepChangesDecodedIC) {
+    // G4.3 premise: step of size ~2^31/nbin in gene int space moves phenotype.
+    const int32_t g0 = ictogene(&gl, 5.0);
+    const int32_t step = static_cast<int32_t>(std::max(
+        1.0, std::floor((static_cast<double>(MAX_RANDOM_VALUE) + 1.0) / gl.nbin)));
+    int32_t g1 = g0 + step;
+    if (g1 > MAX_RANDOM_VALUE) g1 = g0 - step;
+    ASSERT_NE(g0, g1);
+    const double ic0 = genetoic(&gl, g0);
+    const double ic1 = genetoic(&gl, g1);
+    EXPECT_NE(ic0, ic1);
+}
+
+TEST(MutationGranular, EnvOnWithGeneLimAppliesBinStep) {
+    // Drive shipped mutate(..., gene_lim) with FLEXAIDDS_MUTATION_GRANULAR=1.
+    // High mut_rate so gene is almost always selected; mid-range gene so ±step stays in range.
+    ASSERT_EQ(setenv("FLEXAIDDS_MUTATION_GRANULAR", "1", 1), 0);
+    genlim gl{};
+    gl.min = 0.0;
+    gl.max = 10.0;
+    gl.del = 1.0;
+    gl.nbin = 11.0;
+    gl.bin = 1.0 / 11.0;
+    gl.map = 0;
+
+    gene g{};
+    g.to_int32 = ictogene(&gl, 5.0);
+    const int32_t before = g.to_int32;
+    const double ic_before = genetoic(&gl, before);
+
+    // Force many attempts; mut_rate=1.0 always fires.
+    bool changed = false;
+    for (int trial = 0; trial < 20; ++trial) {
+        g.to_int32 = before;
+        mutate(&g, 1, /*mut_rate=*/1.0, &gl);
+        if (g.to_int32 != before) {
+            changed = true;
+            const double ic_after = genetoic(&gl, g.to_int32);
+            // Phenotype must move by at least one bin width (allow float noise).
+            EXPECT_GE(std::fabs(ic_after - ic_before), gl.del - 1e-6);
+            break;
+        }
+    }
+    EXPECT_TRUE(changed) << "granular mutate with mut_rate=1 never changed gene";
+    unsetenv("FLEXAIDDS_MUTATION_GRANULAR");
+}
+
+TEST(MutationGranular, EnvOffKeepsClassicBitflipApi) {
+    unsetenv("FLEXAIDDS_MUTATION_GRANULAR");
+    gene g{};
+    g.to_int32 = 123456789;
+    // Classic path (null gene_lim) must still compile and run.
+    mutate(&g, 1, 0.0, nullptr);
+    EXPECT_EQ(g.to_int32, 123456789);
 }
 
 // ===========================================================================

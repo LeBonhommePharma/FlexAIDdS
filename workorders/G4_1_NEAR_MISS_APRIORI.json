@@ -1,0 +1,28 @@
+{
+  "experiment": "G4.1_BOOM_FRAC_near_miss",
+  "one_variable": "FLEXAIDDS_BOOM_FRAC in {unset, 0.05, 0.1, 0.2}; interval 100",
+  "panel_class": "NEAR_MISS",
+  "codes": [
+    "1N1M",
+    "1L7F"
+  ],
+  "l1_l4_plan": "L1 env FLEXAIDDS_BOOM_FRAC; L2 must inject despite claim JSON frac 0; L4 [BOOM] lines; control zero",
+  "magnitude_floor": "mean_dBCR <= -0.5 A or >=1 BCR<2; no wipeout",
+  "matched_control": true,
+  "matrix_pin": "9dc93717dfed0698006d88dd6a9627bc",
+  "no_sec": true,
+  "sol9": true,
+  "workers": 2,
+  "restarts": 2,
+  "report_tiers_separately": true,
+  "forbid": [
+    "dual_dock",
+    "average_gross_miss",
+    "burial_repanel",
+    "silent_rerun"
+  ],
+  "defers_to": [
+    "METHODOLOGY.md",
+    "workorders/PHASE4_GATES_ACTUALIZED.md"
+  ]
+}

@@ -1,0 +1,4 @@
+control: [BOOM]=0
+frac005: [BOOM]=236
+frac010: [BOOM]=236
+frac020: [BOOM]=236

@@ -42,3 +42,15 @@
 /// @param cleftgrid  cleft grid-point array  (length FA->num_grd)
 void score_native_pose(FA_Global* FA, VC_Global* VC, atom* atoms,
                        resid* residue, gridpoint* cleftgrid);
+
+/// Populate atoms[].coor_ref from FLEXAIDDS_RMSDST (crystal SDF) and set
+/// FA->refstructure=1 when FLEXAIDDS_DUMP_POP is truthy.
+///
+/// Audit-only: does NOT inject crystal coordinates into the GA search
+/// (atoms[].coor, seeds, reference_ligand.file remain unchanged). Required
+/// for .rrd / .pop.tsv gates in cluster.cpp that need calc_rmsd vs native.
+///
+/// Returns true if refstructure is active after the call (already set, or newly
+/// loaded). Returns false if DUMP_POP is off, RMSDST missing, or load failed.
+bool load_dump_pop_refstructure(FA_Global* FA, atom* atoms, resid* residue);
+

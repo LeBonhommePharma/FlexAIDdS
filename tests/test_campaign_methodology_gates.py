@@ -167,6 +167,32 @@ def test_next_campaign_step_is_single_lever_and_blocks_exhausted_paths():
     assert "CAMPAIGN_GATE_SUMMARY" in t or "E10" in t
     assert "probe_cf" in t and "dock_config" in t
 
+def test_phase4_null_stack_and_residual_docs_present():
+    """S1–S5 residual packaging must exist and not authorize full-85 launch."""
+    freeze = (REPO / "workorders" / "PHASE4_NEAR_MISS_NULL_STACK.md").read_text()
+    assert "G4.3" in freeze and "BLOCKED" in freeze.upper() or "blocked" in freeze.lower()
+    assert "9dc9" in freeze or "9dc93717" in freeze
+    s3 = (REPO / "workorders" / "SCORING_LOCKED_SI_PACKAGE.md").read_text()
+    assert "SCORING-LOCKED" in s3
+    assert "1OQ5" in s3 and "1SQ5" in s3 and "1YGC" in s3
+    assert "burial" in s3.lower() and ("forbid" in s3.lower() or "do not" in s3.lower())
+    assert "full-85" in s3.lower() or "Full-85" in s3
+    s4j = json.loads((REPO / "workorders" / "NEW_SEARCH_ARCH_APRIORI.json").read_text())
+    assert s4j.get("launch") is False
+    assert "NO_DOCK" in s4j.get("status", "") or "APRIORI" in s4j.get("status", "")
+    assert s4j.get("panel_class") == "NEAR_MISS"
+    assert "1N1M" in s4j.get("codes", [])
+    assert "PHENOTYPE_UNIQUE" in json.dumps(s4j) or "phenotype_unique" in json.dumps(s4j)
+    s4 = (REPO / "workorders" / "NEW_SEARCH_ARCH_APRIORI.md").read_text()
+    assert "PHENOTYPE_UNIQUE" in s4 or "phenotype_unique" in s4
+    assert "BASIN_REINJECT" in s4 or "basin_reinject" in s4
+    assert (REPO / "LIB" / "new_search_arch.h").is_file()
+    s5 = (REPO / "workorders" / "CLAIM_LANGUAGE_FREEZE.md").read_text()
+    assert "CF/contact-function" in s5 or "scoring proxy" in s5.lower()
+    assert "ΔG" in s5 or "dG" in s5.lower() or "free energy" in s5.lower()
+    assert "STRICT" in s5
+
+
 def test_g4_2_niche_distance_header_shipped_and_wired():
     """G4.2: pure niche_distance.h exists; gaboom calls shipped helpers."""
     hdr = REPO / "LIB" / "niche_distance.h"

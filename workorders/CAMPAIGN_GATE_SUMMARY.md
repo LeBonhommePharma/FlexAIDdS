@@ -41,9 +41,16 @@ Do **not** cite 25.3% as proof election fix worked.
 | 4.1 | COARSE matched 64 vs 256 (SEARCH-MISS) | COARSE_ORIENTATIONS only | L4 5/5 both; genuine 0/5 both; mean ΔRMSD +0.12; mean ΔBCR +3.44 | **FAIL** (matched; no directional gain) |
 | **G4.4** | Early-stop audit | offline gens-reached on pilot/matched/boom logs | 45/45 truncated vs 2000-gen budget | **PASS audit** — truncation **common**; Phase 4 docks require `FLEXAIDDS_NO_SEC=1` |
 | **G4.2** | Cartesian niche matched A/B | `FLEXAIDDS_NICHE_CARTESIAN` OFF vs ON (σ=2.0 Å); both `NO_SEC=1` | L4 cart B only; genuine 0/5 both; mean ΔBCR **−0.441** Å; 0 elect reg | **FAIL** (misses ≤−0.5 floor; directional only) |
-| G4.1 | BOOM_FRAC panel {0.05,0.1,0.2} | SEARCH-MISS; NO_SEC=1; R=2 | OUT `g4_1_boom_frac_20260726_101238` | **IN PROGRESS** |
-| G4.3 | Mutation granularity | — | — | **NOT RUN** (separate arm later) |
-| 5 | Full-85 claim | — | blocked | **NOT RUN** |
+| G4.1 | BOOM_FRAC near-miss {0.05,0.1,0.2} | SEARCH-MISS; NO_SEC=1; R=2 | L4 PASS; best mean_dBCR −0.019 | **FAIL (null mag)** |
+| ELECTION_V135 | election_v135 + τ=25 | R=5 near-miss | elect identical 6.40/3.99 | **FAIL (null mag)** |
+| G4.3 | MUTATION_GRANULAR ±1-bin | near-miss; NO_SEC=1; R=2 | L4 PASS (8); mean_dBCR **+0.118** | **PASS_LIVENESS / null mag** |
+| 5 | Full-85 claim | — | Phase-4 sampling stack null | **BLOCKED** |
+| S2 | Closed-gate pins | `validate-pins` accept.txt + per-arm SHA | live G4.1/election/G4.3 PINS_OK | **PASS tooling** |
+| S3 | SCORING-LOCKED SI package | offline class split | `SCORING_LOCKED_SI_PACKAGE.md` | **PACKAGED** |
+| S4 | new_search_arch A+B | env-gated code | `new_search_arch.h` + a priori | **CODE IN; NO DOCK** |
+| S5 | Claim language freeze | CF proxy vs STRICT ΔG | `CLAIM_LANGUAGE_FREEZE.md` | **FREEZE** |
+| S4 A pilot | PHENOTYPE_UNIQUE near-miss | mean_dBCR −0.057; L4 PASS | `S4_PHENOTYPE_UNIQUE_POSTERIORI.md` | **PASS_LIVENESS** |
+| Pre-gate triage | P2 + A/B/C bins | P2 HOLD; A/B reconstruction | `PUB_PREGATE_TRIAGE.md` | **TRIAGED** |
 
 ### G4.2 OUT / provenance
 
@@ -114,3 +121,24 @@ Matched control `~/flexaidds_results/coarse_ab_matched_20260725_222652`: **FAIL*
 - **Offline queue:** `workorders/OFFLINE_BENCHMARKS_QUEUE.md`
 - **WORKERS≤4** hard refuse; disk floor **20 GiB** (override only with `FLEXAIDDS_DISK_FLOOR_OVERRIDE=1`).
 - Live G4.1 may already hold the lock; do not steal ownership.
+
+
+## G4.1 BOOM near-miss (2026-07-27 FINAL)
+
+- OUT: `g4_1_boom_near_miss_20260726_200953`
+- L4 BOOM: LIVE on treatments; control zero
+- Magnitude: **NULL** (best mean_dBCR=−0.0192 at frac010; floor −0.5)
+- accept_g4_1: **False**
+- Flip: **election_fix_P0** (1N1M offline pool 2.36 / elect 6.41)
+- Next: `election_v135_near_miss_20260726_225823` (R=5, V135 vs control)
+- Evidence: `workorders/g4_1_evidence/`, `workorders/G4_1_NEAR_MISS_POSTERIORI.md`
+
+
+## ELECTION_V135 near-miss (2026-07-27 FINAL)
+
+- OUT: `election_v135_near_miss_20260726_225823`
+- One var: `FLEXAIDDS_ELECTION_V135=1` (tau=25) vs control; R=5; matrix 9dc9; NO_SEC
+- Result: **NULL** — elect identical (1N1M 6.40 / 1L7F 3.99 both arms)
+- accept: **False**
+- Next: **G4.3 mutation** a priori draft `workorders/G4_3_MUTATION_APRIORI.json`
+- Evidence: `workorders/ELECTION_V135_POSTERIORI.md`

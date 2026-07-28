@@ -1,0 +1,52 @@
+{
+  "experiment": "new_search_arch_near_miss",
+  "status": "IMPLEMENTED_A_B_NO_DOCK_YET",
+  "trigger": "G4.3_null_phase4_sampling_exhausted after G4.1 + ELECTION_V135 null",
+  "defers_to": [
+    "METHODOLOGY.md",
+    "workorders/PHASE4_NEAR_MISS_NULL_STACK.md",
+    "workorders/BENCHMARK_SELF_EVAL_CONTRACT.md",
+    "workorders/PHASE4_GATES_ACTUALIZED.md"
+  ],
+  "panel_class": "NEAR_MISS",
+  "codes": ["1N1M", "1L7F"],
+  "one_variable": "For matched pilot pick ONE: (A) FLEXAIDDS_PHENOTYPE_UNIQUE=1 OR (B) FLEXAIDDS_BASIN_REINJECT=1. Convenience FLEXAIDDS_NEW_SEARCH_ARCH=1 enables A+B (dev only — not one-var). Never bundle BOOM+election+mutation+arch.",
+  "implemented": {
+    "A_phenotype_unique": "FLEXAIDDS_PHENOTYPE_UNIQUE=1 or NEW_SEARCH_ARCH token phenotype_unique — classic mutate forces ±1-bin if phenotype bins unchanged; reproduce uses phenotype-bin hash",
+    "B_basin_reinject": "FLEXAIDDS_BASIN_REINJECT=1 or token basin_reinject — diversity collapse reinjects worst chroms preferring Cartesian RMSD > FLEXAIDDS_BASIN_SIGMA_ANG (default 2.0) vs best",
+    "C_selection": "NOT IMPLEMENTED"
+  },
+  "env_gate": "FLEXAIDDS_PHENOTYPE_UNIQUE / FLEXAIDDS_BASIN_REINJECT / FLEXAIDDS_NEW_SEARCH_ARCH; default OFF; control unset",
+  "l4_markers": ["[NEW-SEARCH-ARCH] phenotype_unique=1 ...", "[NEW-SEARCH-ARCH] basin_reinject=1 ...", "[BASIN-REINJECT] #n gen ..."],
+  "matched_control": true,
+  "matrix_pin": "9dc93717dfed0698006d88dd6a9627bc",
+  "no_sec": true,
+  "sol9": true,
+  "workers": 2,
+  "restarts": 2,
+  "report_tiers_separately": true,
+  "magnitude_floor": "mean_dBCR <= -0.5 A or >=1 BCR<2 or 1N1M elect<=2.5; no wipeout; no clean-probe elect regression",
+  "l1_l4_plan": "L1: env read once at GA start; L2: not overridden by dock JSON; L3: can change selection/uniqueness/reinject path; L4: one-shot stderr marker e.g. [NEW-SEARCH-ARCH] with control zero",
+  "forbid": [
+    "full_85",
+    "dual_dock",
+    "silent_rerun",
+    "BOOM_bundled",
+    "election_bundled",
+    "MUTATION_GRANULAR_bundled",
+    "burial_repanel",
+    "WAL_COERCIVE",
+    "memetic_unlock",
+    "SCORING_LOCKED_panel"
+  ],
+  "launch": false,
+  "launch_blockers": [
+    "S1 null-stack freeze present (PHASE4_NEAR_MISS_NULL_STACK.md)",
+    "S2 validate-pins green on closed OUTs",
+    "S3 SCORING_LOCKED_SI_PACKAGE acknowledged — this arm is NEAR_MISS only",
+    "design review picks exactly one of A/B/C and names the env",
+    "same binary SHA for control and treatment"
+  ],
+  "hypothesis": "Phase-4 inject/election/granular-mutation nulls leave room for a structural search/selection defect (lifetime phenotype uniqueness vs local steps, bit-allele diversity catastrophe, or selection pressure). A single env-gated architecture change may recover elect/BCR on 1N1M/1L7F without reopening VOID scoring levers.",
+  "publication_product": "SI pre-registration of residual architecture; Methods: not claimed until a posteriori PASS"
+}

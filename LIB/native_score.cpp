@@ -39,6 +39,7 @@
 #include <cmath>
 #include <cstdio>
 #include <vector>
+#include <cstdlib>
 #include <utility>
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -346,4 +347,77 @@ void score_native_pose(FA_Global* FA, VC_Global* VC, atom* atoms,
         static_cast<double>(cf.con),
         static_cast<double>(cf.hbond),
         static_cast<double>(cf.pb_clash));
+}
+
+
+// =============================================================================
+// DUMP_POP refstructure loader — audit RMSD without pose seeding
+// =============================================================================
+// cluster.cpp DUMP_POP (.pop.tsv) and write_rrd require FA->refstructure==1 and
+// atoms[].coor_ref. Classic RMSDST (read_rmsdst PDB match) is not set on the
+// modern JSON/direct path. This loader fills coor_ref from the crystal SDF
+// (same atom order as the docked ligand) when FLEXAIDDS_DUMP_POP is on.
+// Does NOT modify atoms[].coor (blinded GA coords stay blinded).
+bool load_dump_pop_refstructure(FA_Global* FA, atom* atoms, resid* residue)
+{
+    if (FA == nullptr || atoms == nullptr || residue == nullptr)
+        return false;
+    if (FA->refstructure == 1)
+        return true;
+
+    const char* dump_env = std::getenv("FLEXAIDDS_DUMP_POP");
+    if (!dump_env || dump_env[0] == '\0' || std::atoi(dump_env) == 0)
+        return false;
+
+    const char* rmsdst = std::getenv("FLEXAIDDS_RMSDST");
+    if (!rmsdst || rmsdst[0] == '\0') {
+        std::fprintf(stderr,
+            "[DUMP_POP] WARN: FLEXAIDDS_DUMP_POP set but FLEXAIDDS_RMSDST empty "
+            "— refstructure stays 0; .pop.tsv will not be written\n");
+        return false;
+    }
+
+    const int lig_res = FA->res_cnt;
+    if (lig_res < 1)
+        return false;
+    const int fa = residue[lig_res].fatm[0];
+    const int la = residue[lig_res].latm[0];
+    const int n_lig = la - fa + 1;
+    if (n_lig <= 0) {
+        std::fprintf(stderr, "[DUMP_POP] WARN: no ligand atoms for refstructure\n");
+        return false;
+    }
+
+    std::vector<float> crystal(static_cast<size_t>(n_lig) * 3u);
+    if (!load_crystal_coor_from_sdf(rmsdst, n_lig, crystal.data())) {
+        std::fprintf(stderr,
+            "[DUMP_POP] WARN: could not load crystal SDF %s "
+            "(open fail or atom-count mismatch vs n_lig=%d)\n",
+            rmsdst, n_lig);
+        return false;
+    }
+
+    int loaded = 0;
+    for (int i = fa; i <= la; ++i) {
+        if (atoms[i].coor_ref == nullptr) {
+            atoms[i].coor_ref = static_cast<float*>(std::malloc(3 * sizeof(float)));
+            if (atoms[i].coor_ref == nullptr) {
+                std::fprintf(stderr,
+                    "[DUMP_POP] ERROR: malloc coor_ref failed at atom %d\n", i);
+                return false;
+            }
+        }
+        const int k = (i - fa) * 3;
+        atoms[i].coor_ref[0] = crystal[static_cast<size_t>(k + 0)];
+        atoms[i].coor_ref[1] = crystal[static_cast<size_t>(k + 1)];
+        atoms[i].coor_ref[2] = crystal[static_cast<size_t>(k + 2)];
+        ++loaded;
+    }
+
+    FA->refstructure = 1;
+    std::fprintf(stdout,
+        "[DUMP_POP] refstructure=1 from FLEXAIDDS_RMSDST=%s (%d ligand atoms; "
+        "audit only — no GA seed)\n",
+        rmsdst, loaded);
+    return true;
 }

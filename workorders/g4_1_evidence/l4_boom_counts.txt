@@ -1,0 +1,8 @@
+control/1L7F: [BOOM]=0
+control/1N1M: [BOOM]=0
+frac005/1L7F: [BOOM]=158
+frac005/1N1M: [BOOM]=78
+frac010/1L7F: [BOOM]=158
+frac010/1N1M: [BOOM]=78
+frac020/1L7F: [BOOM]=158
+frac020/1N1M: [BOOM]=78

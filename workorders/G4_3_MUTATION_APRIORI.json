@@ -1,0 +1,34 @@
+{
+  "experiment": "G4.3_MUTATION_near_miss",
+  "status": "CLOSED_PASS_LIVENESS_NULL_MAG",
+  "trigger": "G4.1 BOOM null AND ELECTION_V135 null",
+  "one_variable": "FLEXAIDDS_MUTATION_GRANULAR=1 (+ gene_lim-aware \u00b11-bin mutate) vs control unset",
+  "panel_class": "NEAR_MISS",
+  "codes": [
+    "1N1M",
+    "1L7F"
+  ],
+  "magnitude_floor": "mean_dBCR <= -0.5 A or >=1 BCR<2 or 1N1M elect<=2.5; no wipeout",
+  "matched_control": true,
+  "matrix_pin": "9dc93717dfed0698006d88dd6a9627bc",
+  "no_sec": true,
+  "sol9": true,
+  "workers": 2,
+  "restarts": 2,
+  "report_tiers_separately": true,
+  "l1_l4_plan": "L1 env FLEXAIDDS_MUTATION_GRANULAR; L2 stamped binary with gaboom mutate overload; L4 [MUT-GRAN] stderr once; control zero",
+  "forbid": [
+    "dual_dock",
+    "average_gross_miss",
+    "burial_repanel",
+    "silent_rerun",
+    "BOOM_bundled",
+    "election_bundled"
+  ],
+  "defers_to": [
+    "METHODOLOGY.md",
+    "workorders/PHASE4_GATES_ACTUALIZED.md",
+    "workorders/BENCHMARK_SELF_EVAL_CONTRACT.md"
+  ],
+  "phase4_note": "PHASE4: ~71 gene bits live (weight floor 2^31/nbin); small moves impossible; near-native chromosome unimprovable. Separate A/B from G4.2; never bundle. Requires code change to mutation/gene-bit weights, not only env."
+}
