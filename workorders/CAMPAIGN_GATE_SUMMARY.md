@@ -47,7 +47,7 @@ Do **not** cite 25.3% as proof election fix worked.
 | 5 | Full-85 claim | — | Phase-4 sampling stack null | **BLOCKED** |
 | S2 | Closed-gate pins | `validate-pins` accept.txt + per-arm SHA | live G4.1/election/G4.3 PINS_OK | **PASS tooling** |
 | S3 | SCORING-LOCKED SI package | offline class split | `SCORING_LOCKED_SI_PACKAGE.md` | **PACKAGED** |
-| S4 | new_search_arch | a priori only | `NEW_SEARCH_ARCH_APRIORI.*` | **NO LAUNCH** |
+| S4 | new_search_arch A+B | env-gated code | `new_search_arch.h` + a priori | **CODE IN; NO DOCK** |
 | S5 | Claim language freeze | CF proxy vs STRICT ΔG | `CLAIM_LANGUAGE_FREEZE.md` | **FREEZE** |
 
 ### G4.2 OUT / provenance

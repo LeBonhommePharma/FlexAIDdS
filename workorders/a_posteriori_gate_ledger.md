@@ -51,6 +51,6 @@ Near-miss Phase-4 null stack table (SI/Methods ready):
 | S1 null-stack freeze | `PHASE4_NEAR_MISS_NULL_STACK.md` | **done** |
 | S2 pin schema (`accept.txt` + per-arm SHA) | `benchmark_self_eval.py validate-pins` + contract S2 | **done** |
 | S3 SCORING-LOCKED SI | `SCORING_LOCKED_SI_PACKAGE.md` | **done** |
-| S4 new_search_arch a priori | `NEW_SEARCH_ARCH_APRIORI.json` / `.md` | **APRIORI_ONLY_NO_LAUNCH** |
+| S4 new_search_arch A+B code | `LIB/new_search_arch.h` + gaboom; a priori | **IMPLEMENTED_A_B_NO_DOCK_YET** |
 | S5 CF-proxy claim language | `CLAIM_LANGUAGE_FREEZE.md` | **done** |
 | Full-85 | — | **blocked** |

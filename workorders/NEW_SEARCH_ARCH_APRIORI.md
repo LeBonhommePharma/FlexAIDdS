@@ -1,41 +1,28 @@
-# new_search_arch — a priori only (NO LAUNCH)
+# new_search_arch — A+B implemented (NO DOCK LAUNCH yet)
 
-**Status:** `APRIORI_ONLY_NO_LAUNCH`  
+**Status:** `IMPLEMENTED_A_B_NO_DOCK_YET`  
 **Machine JSON:** [`NEW_SEARCH_ARCH_APRIORI.json`](NEW_SEARCH_ARCH_APRIORI.json)  
-**Trigger:** Flip residual after Phase-4 near-miss null stack  
-(`G4.3_null_phase4_sampling_exhausted` → `new_search_arch`).
+**Code:** `LIB/new_search_arch.h` + wiring in `LIB/gaboom.cpp`  
+**Trigger:** Flip residual after Phase-4 near-miss null stack.
 
-## What this is
+## Implemented gates (default OFF)
 
-A **pre-registration** of the residual sampling architecture experiment.  
-It does **not** authorize a dock, claim recipe change, or full-85.
+| Option | Env | Behavior | L4 |
+|--------|-----|----------|-----|
+| **A** | `FLEXAIDDS_PHENOTYPE_UNIQUE=1` or `FLEXAIDDS_NEW_SEARCH_ARCH=phenotype_unique` | Classic mutate: if bit-flips leave phenotype bins unchanged, force ±1-bin step; reproduce uniqueness uses phenotype-bin hash | `[NEW-SEARCH-ARCH] phenotype_unique=1 …` |
+| **B** | `FLEXAIDDS_BASIN_REINJECT=1` or `…=basin_reinject` | On diversity collapse (first half gens), reinject worst fraction preferring Cartesian ligand RMSD &gt; `FLEXAIDDS_BASIN_SIGMA_ANG` (default 2.0) vs best | `[NEW-SEARCH-ARCH] basin_reinject=1 …` + `[BASIN-REINJECT]` |
+| Convenience | `FLEXAIDDS_NEW_SEARCH_ARCH=1` | Enables **both** A and B (dev only; **not** one-var for claim pilot) | both markers |
+| **C** | — | Not implemented | — |
 
-## Panel
+## Matched pilot (future — one variable only)
 
-- Class: **NEAR_MISS** only — `1N1M`, `1L7F`  
-- Not SCORING-LOCKED (1OQ5/1SQ5/1YGC) — see `SCORING_LOCKED_SI_PACKAGE.md`
+- Panel: NEAR_MISS `1N1M,1L7F`; R=2; matrix 9dc9; NO_SEC=1; Sol #9  
+- Treatment: **either** PHENOTYPE_UNIQUE=1 **or** BASIN_REINJECT=1 (not both for claim)  
+- Control: both unset; **same binary SHA**  
+- Floors: mean ΔBCR ≤ −0.5 or BCR&lt;2 or 1N1M elect≤2.5; L4 control zero  
 
-## One variable (choose before any future launch)
+## Explicit non-claims
 
-Exactly **one** env-gated change vs matched control (env unset):
-
-| Option | Sketch | Env (example) |
-|--------|--------|----------------|
-| A | Phenotype uniqueness policy isolated from granular mut | `FLEXAIDDS_NEW_SEARCH_ARCH=phenotype_unique` |
-| B | Basin-aware reinject on Cartesian ligand RMSD | `FLEXAIDDS_NEW_SEARCH_ARCH=basin_reinject` |
-| C | Selection architecture change | `FLEXAIDDS_NEW_SEARCH_ARCH=selection_v2` |
-
-Default in product builds: **OFF**. Never bundle BOOM + election + mutation.
-
-## Floors
-
-- L1–L4: env read; not JSON-stuck; acts; stderr marker `[NEW-SEARCH-ARCH]` control zero  
-- Magnitude: mean ΔBCR ≤ −0.5 Å **or** ≥1 BCR&lt;2 **or** 1N1M elect ≤2.5; no wipeout  
-- Pins: matrix **9dc9**, same binary SHA both arms, NO_SEC=1, Sol #9, `validate-pins`
-
-## Explicit non-launch
-
-- No OUT path claiming a new run  
-- No full-85  
-- No memetic / WAL / burial reopen  
-- Implementation of engine code is a **separate** goal after design picks A/B/C
+- No dock has been launched under this workorder yet  
+- No full-85; no claim-recipe default ON  
+- Do not bundle with BOOM / election / MUTATION_GRANULAR in one arm  

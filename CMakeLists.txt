@@ -1201,6 +1201,12 @@ flexaids_add_unit_test(test_protocol_config
         TEST_NAME NicheDistanceTests
     )
 
+    # test_new_search_arch — S4 A+B phenotype_unique + basin_reinject (header-only)
+    flexaids_add_unit_test(test_new_search_arch
+        SOURCES tests/test_new_search_arch.cpp
+        TEST_NAME NewSearchArchTests
+    )
+
     # test_metal_coordination — Metal ion coordination potential tests (header-only)
     flexaids_add_unit_test(test_metal_coordination
         SOURCES tests/test_metal_coordination.cpp

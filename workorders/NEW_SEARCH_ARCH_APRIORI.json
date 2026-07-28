@@ -1,6 +1,6 @@
 {
   "experiment": "new_search_arch_near_miss",
-  "status": "APRIORI_ONLY_NO_LAUNCH",
+  "status": "IMPLEMENTED_A_B_NO_DOCK_YET",
   "trigger": "G4.3_null_phase4_sampling_exhausted after G4.1 + ELECTION_V135 null",
   "defers_to": [
     "METHODOLOGY.md",
@@ -10,8 +10,14 @@
   ],
   "panel_class": "NEAR_MISS",
   "codes": ["1N1M", "1L7F"],
-  "one_variable": "TBD single env-gated structural change — choose ONE before launch: (A) phenotype-aware uniqueness policy for classic mutate path only when MUTATION_GRANULAR=0, (B) basin-aware catastrophic reinject keyed on Cartesian ligand RMSD not gene bits, (C) selection architecture change behind FLEXAIDDS_NEW_SEARCH_ARCH=1. Never bundle BOOM+election+mutation.",
-  "env_gate": "FLEXAIDDS_NEW_SEARCH_ARCH=1 (or chosen name); default OFF; control has env unset",
+  "one_variable": "For matched pilot pick ONE: (A) FLEXAIDDS_PHENOTYPE_UNIQUE=1 OR (B) FLEXAIDDS_BASIN_REINJECT=1. Convenience FLEXAIDDS_NEW_SEARCH_ARCH=1 enables A+B (dev only — not one-var). Never bundle BOOM+election+mutation+arch.",
+  "implemented": {
+    "A_phenotype_unique": "FLEXAIDDS_PHENOTYPE_UNIQUE=1 or NEW_SEARCH_ARCH token phenotype_unique — classic mutate forces ±1-bin if phenotype bins unchanged; reproduce uses phenotype-bin hash",
+    "B_basin_reinject": "FLEXAIDDS_BASIN_REINJECT=1 or token basin_reinject — diversity collapse reinjects worst chroms preferring Cartesian RMSD > FLEXAIDDS_BASIN_SIGMA_ANG (default 2.0) vs best",
+    "C_selection": "NOT IMPLEMENTED"
+  },
+  "env_gate": "FLEXAIDDS_PHENOTYPE_UNIQUE / FLEXAIDDS_BASIN_REINJECT / FLEXAIDDS_NEW_SEARCH_ARCH; default OFF; control unset",
+  "l4_markers": ["[NEW-SEARCH-ARCH] phenotype_unique=1 ...", "[NEW-SEARCH-ARCH] basin_reinject=1 ...", "[BASIN-REINJECT] #n gen ..."],
   "matched_control": true,
   "matrix_pin": "9dc93717dfed0698006d88dd6a9627bc",
   "no_sec": true,
