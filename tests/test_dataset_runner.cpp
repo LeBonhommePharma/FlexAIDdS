@@ -628,8 +628,9 @@ TEST(PDBParsing, ExtractPeptideLigandFallback) {
             "ATOM   1520  CG2 ILE C   4      74.383  62.711  17.841  1.00 11.57           C\n"
             "ATOM   1521  CD1 ILE C   4      76.443  63.841  19.889  1.00  9.00           C\n";
         ofs << avpi;
-        // Blacklisted HETATM only: buffer + metal ions.
-        ofs << "HETATM 1566  C1  BTB B 331      69.509  48.419  59.696  1.00 33.71           C\n";
+        // Hard-excluded HETATM only: buffer + metal ions (not soft cofactors
+        // BTN/BTB — those are legitimate cognate ligands when sole organics).
+        ofs << "HETATM 1566  C1  MES B 331      69.509  48.419  59.696  1.00 33.71           C\n";
         ofs << "HETATM 9001 ZN    ZN B 401      70.000  50.000  60.000  1.00  5.00          ZN\n";
         ofs << "HETATM 9002  O   HOH B 500      30.000  30.000  30.000  1.00  5.00           O\n";
         ofs << "END\n";
@@ -802,8 +803,8 @@ TEST(PDBParsing, ExtractPeptideLigandFallbackMMCIF) {
                 id++, a.el, a.nm, a.res, a.seq, a.x, a.y, a.z);
             ofs << buf;
         }
-        // Blacklisted HETATM only.
-        ofs << "HETATM " << id++ << " C C1 . BTB B 331 69.509 48.419 59.696 1.00 33.71\n";
+        // Hard-excluded HETATM only (MES buffer; not soft-cofactor BTB/BTN).
+        ofs << "HETATM " << id++ << " C C1 . MES B 331 69.509 48.419 59.696 1.00 33.71\n";
         ofs << "HETATM " << id++ << " ZN ZN . ZN B 401 70.000 50.000 60.000 1.00 5.00\n";
         ofs << "#\n";
     }
