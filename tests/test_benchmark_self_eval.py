@@ -123,3 +123,92 @@ def test_live_g4_1_l4_markers_on_stderr():
 def test_cli_validate_contract():
     m = _mod()
     assert m.main(["validate-contract-doc", "--path", str(CONTRACT)]) == 0
+
+
+def test_validate_pins_fails_without_accept(tmp_path: Path):
+    """S2: missing evidence/accept.txt must fail the shipped checker."""
+    m = _mod()
+    out = tmp_path / "out"
+    arm = out / "arm_control"
+    (arm / "bin").mkdir(parents=True)
+    # Stamped binary present so SHA alone is not enough
+    blob = b"fake-flexaidds-binary-for-pin-test-control"
+    (arm / "bin" / "FlexAIDdS.stamped").write_bytes(blob)
+    rep = m.validate_pins_report(out)
+    assert rep["ok"] is False
+    assert any("accept.txt" in e for e in rep["errors"])
+    rc = m.main(["validate-pins", "--out", str(out)])
+    assert rc == 2
+
+
+def test_validate_pins_fails_without_arm_sha(tmp_path: Path):
+    """S2: accept present but no per-arm SHA / stamped binary → fail."""
+    m = _mod()
+    out = tmp_path / "out"
+    (out / "arm_control").mkdir(parents=True)
+    (out / "evidence").mkdir(parents=True)
+    (out / "evidence" / "accept.txt").write_text("ACCEPT_X=False\nstatus=FAIL\n")
+    # No bin, no arm_pins.json
+    rep = m.validate_pins_report(out, arms=["control"])
+    assert rep["ok"] is False
+    assert any("binary SHA256" in e for e in rep["errors"])
+    assert m.main(["validate-pins", "--out", str(out), "--arms", "control"]) == 2
+
+
+def test_validate_pins_ok_with_accept_and_arm_pins(tmp_path: Path):
+    """S2: complete pin pack (accept + arm_pins SHA) passes shipped entry point."""
+    m = _mod()
+    out = tmp_path / "out"
+    (out / "arm_control").mkdir(parents=True)
+    (out / "arm_tx").mkdir(parents=True)
+    (out / "evidence").mkdir(parents=True)
+    (out / "evidence" / "accept.txt").write_text(
+        "ACCEPT_DEMO=False\nstatus=PASS_LIVENESS\n"
+    )
+    sha_c = "a" * 64
+    sha_t = "b" * 64
+    pins = {
+        "matrix_pin": "9dc93717dfed0698006d88dd6a9627bc",
+        "shared_binary": False,
+        "arms": {
+            "control": {"binary_sha256": sha_c, "git_tip": "deadbeef"},
+            "tx": {"binary_sha256": sha_t},
+        },
+    }
+    (out / "evidence" / "arm_pins.json").write_text(json.dumps(pins, indent=2))
+    rep = m.validate_pins_report(out)
+    assert rep["ok"] is True, rep["errors"]
+    assert rep["arm_sha256"]["control"] == sha_c
+    assert rep["arm_sha256"]["tx"] == sha_t
+    assert m.main(["validate-pins", "--out", str(out)]) == 0
+    # CLI JSON path also drives shipped report
+    assert m.main(["validate-pins", "--out", str(out), "--json"]) == 0
+
+
+def test_validate_pins_ok_from_stamped_binary_hash(tmp_path: Path):
+    """S2: hashing arm_*/bin/FlexAIDdS.stamped satisfies per-arm SHA."""
+    import hashlib
+
+    m = _mod()
+    out = tmp_path / "out"
+    (out / "evidence").mkdir(parents=True)
+    (out / "evidence" / "accept.txt").write_text("ACCEPT_Y=True\nstatus=PASS\n")
+    blob = b"stamped-binary-content-xyz"
+    for arm in ("control", "mut_gran"):
+        d = out / f"arm_{arm}" / "bin"
+        d.mkdir(parents=True)
+        (d / "FlexAIDdS.stamped").write_bytes(blob)
+    expect = hashlib.sha256(blob).hexdigest()
+    rep = m.validate_pins_report(out)
+    assert rep["ok"] is True, rep["errors"]
+    assert rep["arm_sha256"]["control"] == expect
+    assert rep["arm_sha256"]["mut_gran"] == expect
+    assert m.main(["validate-pins", "--out", str(out)]) == 0
+
+
+def test_contract_doc_mentions_s2_pin_pack():
+    text = CONTRACT.read_text()
+    assert "accept.txt" in text
+    assert "binary_sha256" in text
+    assert "arm_pins" in text
+    assert "validate-pins" in text
