@@ -494,6 +494,15 @@ public:
     /// Parse PDB HETATM records into atom structures
     std::vector<PDBAtom> parse_pdb_hetatm(const std::string& pdb_path);
 
+    /// Prepare a single RCSB entry for cognate redocking:
+    /// download structure → extract cognate ligand SDF → apo receptor (ligand stripped).
+    /// Used by `FlexAIDdS --redock <PDBid>` and by benchmark fetchers.
+    /// Cache layout: <cache_dir>/<dataset_name>/<PDBID>/{PDBID.pdb, PDBID_ligand.sdf, PDBID_apo.pdb}
+    DatasetEntry prepare_pdb_entry(const std::string& pdb_id,
+                                   const std::string& dataset_name,
+                                   float affinity = -1.0f,
+                                   float dH = 0.0f, float dS = 0.0f);
+
     /// Get the Astex Diverse 85 PDB codes
     static std::vector<std::string> astex_diverse_codes();
 
@@ -595,17 +604,11 @@ private:
     std::string expand_home(const std::string& path);
 
     /// Download the preferred RCSB coordinate format for a structure.
-    /// mmCIF is attempted first because legacy PDB files are lossy or absent
-    /// for some benchmark codes; PDB remains only a last-resort fallback.
+    /// Prefers PDB for fixed-column coordinate parsing; CIF fallback when PDB
+    /// is unavailable (large structures / withdrawn formats).
     bool download_structure(const std::string& pdb_id,
                             const std::string& entry_dir,
                             std::string& out_path);
-
-    /// Prepare a single RCSB entry: download structure + extract ligand
-    DatasetEntry prepare_pdb_entry(const std::string& pdb_id,
-                                   const std::string& dataset_name,
-                                   float affinity = -1.0f,
-                                   float dH = 0.0f, float dS = 0.0f);
 
     /// Common ligand residue exclusion set (water, ions, buffers)
     static const std::set<std::string>& excluded_residues();
