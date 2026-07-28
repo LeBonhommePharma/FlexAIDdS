@@ -19,6 +19,7 @@ Phase-4 docks: **NO_SEC=1**. Full-85: **BLOCKED** until sampling ACCEPT.
 | G4.1 BOOM | `BOOM_FRAC` ∈ {0.05,0.1,0.2} vs unset | 2 | **FAIL (null mag)** | best mean_dBCR **−0.019** (frac010); floor ≤−0.5 or BCR&lt;2 | control 0 / tx 236 [BOOM] **PASS** | `~/flexaidds_results/g4_1_boom_near_miss_20260726_200953` | `G4_1_NEAR_MISS_POSTERIORI.md` |
 | ELECTION_V135 | `ELECTION_V135=1` (τ=25) vs unset | 5 | **FAIL (null mag)** | elect identical 6.3999 / 3.9907; gap shrink 0 | protocol markers live both arms | `~/flexaidds_results/election_v135_near_miss_20260726_225823` | `ELECTION_V135_POSTERIORI.md` |
 | G4.3 MUTATION | `MUTATION_GRANULAR=1` vs unset | 2 | **PASS_LIVENESS** | mean_dBCR **+0.118**; 1L7F elect 3.99→6.25 | control 0 / tx 8 [MUT-GRAN] **PASS** | `~/flexaidds_results/g4_3_mut_gran_near_miss_20260727_122215` | `G4_3_MUTATION_POSTERIORI.md` |
+| S4 A PHENO_UNIQUE | `PHENOTYPE_UNIQUE=1` vs unset | 2 | **PASS_LIVENESS** | mean_dBCR **−0.057**; 1N1M elect still 6.40 | control 0 / tx 4 [NEW-SEARCH-ARCH] **PASS** | `~/flexaidds_results/s4_pheno_unique_near_miss_20260727_211213` | `S4_PHENOTYPE_UNIQUE_POSTERIORI.md` |
 
 ### G4.1 best arm detail (from OUT flip_order_decision)
 

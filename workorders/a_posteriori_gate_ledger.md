@@ -18,6 +18,7 @@ Source of floors: `METHODOLOGY.md`, `workorders/PHASE4_GATES_ACTUALIZED.md`, `wo
 | G4.1 BOOM near-miss | **FAIL (null mag); L4 PASS** | BOOM_FRAC 0.05/0.1/0.2 | `g4_1_boom_near_miss_20260726_200953` |
 | **ELECTION_V135** | **FAIL (null mag)** | V135=1 vs control; R=5; elect Δ=0 | `election_v135_near_miss_20260726_225823` |
 | **G4.3 MUTATION_GRANULAR** | **PASS_LIVENESS; null mag** | MUT_GRAN=1 vs control; R=2; mean_dBCR **+0.118** | `g4_3_mut_gran_near_miss_20260727_122215` |
+| **S4 PHENOTYPE_UNIQUE** | **PASS_LIVENESS; null mag** | PHENO_UNIQUE=1 vs control; R=2; mean_dBCR **−0.057** | `s4_pheno_unique_near_miss_20260727_211213` |
 
 ## ELECTION_V135 detail (CLOSED 2026-07-27)
 
@@ -51,6 +52,7 @@ Near-miss Phase-4 null stack table (SI/Methods ready):
 | S1 null-stack freeze | `PHASE4_NEAR_MISS_NULL_STACK.md` | **done** |
 | S2 pin schema (`accept.txt` + per-arm SHA) | `benchmark_self_eval.py validate-pins` + contract S2 | **done** |
 | S3 SCORING-LOCKED SI | `SCORING_LOCKED_SI_PACKAGE.md` | **done** |
-| S4 new_search_arch A+B code | `LIB/new_search_arch.h` + gaboom; a priori | **IMPLEMENTED_A_B_NO_DOCK_YET** |
+| S4 new_search_arch A+B code | `LIB/new_search_arch.h` + gaboom | **code in** |
+| S4 A pilot (PHENOTYPE_UNIQUE) | matched near-miss | **CLOSED PASS_LIVENESS** (`S4_PHENOTYPE_UNIQUE_POSTERIORI.md`) |
 | S5 CF-proxy claim language | `CLAIM_LANGUAGE_FREEZE.md` | **done** |
 | Full-85 | — | **blocked** |
