@@ -30,9 +30,16 @@ void update_bonded(resid* residue, int tot, int nlist, int* list, int* nbr)
   /*******     allocate memory for matrix ***********/
   /**************************************************/
   
+  // The guard covers both allocation levels, so a second call on the same
+  // residue reuses rows sized by the FIRST call's tot. That is safe only
+  // because tot is the same expression at every call site --
+  // latm[0]-fatm[0]+1, rot-independent -- at read_lig.cpp:464,
+  // build_rotamers.cpp:337 (the genuine re-entry, on protein residues),
+  // Mol2Reader.cpp:422 and SdfReader.cpp:752. If a caller ever passes a
+  // larger tot, the loops below walk past the previous allocation.
   if(residue->bonded == NULL)
     {
-      
+
       residue->bonded = (int**)malloc(tot*sizeof(int*));
       
       if(residue->bonded == NULL)
