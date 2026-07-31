@@ -2809,16 +2809,24 @@ flexaids_add_unit_test(test_protocol_config
     # ─── C1: FlexAID --help error-path leak probe ─────────────────────────
     # Shipping binary only. --help takes Terminate(0) and skips the entire
     # teardown (throw from fileio.cpp, catch after free block in top.cpp).
-    # Process path is always checked. On Linux ASan builds the criterion is
-    # inverted: an LSan report is PASS (the finding). Structural prediction:
-    # 9 objects = 3 DIRECT (FA/GB/VC) + 6 INDIRECT (contacts + 5 VC arrays).
-    # Bytes are NOT asserted (macOS size classes ≠ glibc). Does NOT cover
-    # teardown — only C2 can. See tests/cmake/c1_help_error_path_probe.cmake.
+    # Process path is always checked. On Linux *Address*Sanitizer builds the
+    # criterion is inverted: an LSan report is PASS (the finding). Structural
+    # prediction: 9 objects = 3 DIRECT (FA/GB/VC) + 6 INDIRECT (contacts + 5
+    # VC arrays). Bytes are NOT asserted (macOS size classes ≠ glibc).
+    # Does NOT cover teardown — only C2 can.
+    # Gate MUST match the sanitizer, not the flag family: -fsanitize=thread
+    # contains "fsanitize" but ships no LSan; a bare "fsanitize" match arms
+    # EXPECT_LEAK under TSan and the inverted criterion fails a clean TSan
+    # run (Honey, 2026-07-31). Match address specifically so ASan+UBSan still
+    # arms and TSan demotes to process-path-only.
+    # See tests/cmake/c1_help_error_path_probe.cmake.
     if(TARGET FlexAID)
         string(CONCAT _c1_san_flags
             "${CMAKE_CXX_FLAGS}" "${CMAKE_C_FLAGS}" "${CMAKE_EXE_LINKER_FLAGS}")
         set(_c1_expect_leak OFF)
-        if(UNIX AND NOT APPLE AND _c1_san_flags MATCHES "fsanitize")
+        # Match -fsanitize=address and -fsanitize=undefined,address etc.
+        # Do NOT match -fsanitize=thread (TSan has no LSan).
+        if(UNIX AND NOT APPLE AND _c1_san_flags MATCHES "fsanitize=[a-z,]*address")
             set(_c1_expect_leak ON)
         endif()
         add_test(
@@ -2835,11 +2843,27 @@ flexaids_add_unit_test(test_protocol_config
         if(_c1_expect_leak)
             set_property(TEST FlexAID_C1_HelpErrorPathProbe APPEND PROPERTY
                 ENVIRONMENT "ASAN_OPTIONS=detect_leaks=1:halt_on_error=0:strict_string_checks=1")
-            message(STATUS "C1 --help probe: Linux sanitizer build — inverted LSan 3/6 criterion ON")
+            # PASS_REGULAR_EXPRESSION: green is not enough — output must prove
+            # which arm ran. If the gate silently demotes, this string is
+            # absent and ctest fails (Honey: check that disarms itself).
+            # Note: when PASS_REGULAR_EXPRESSION is set, CMake ignores the
+            # process exit code; FAIL lines must not match the PASS pattern
+            # (they use C1_RESULT=FAIL).
+            set_property(TEST FlexAID_C1_HelpErrorPathProbe APPEND PROPERTY
+                PASS_REGULAR_EXPRESSION "C1_RESULT=PASS ARM=lsan_inverted")
+            message(STATUS
+                "C1 --help probe ARM=lsan_inverted "
+                "(Linux + -fsanitize=*address* — 3/6/9 LSan criterion ON)")
         else()
-            message(STATUS "C1 --help probe: process path only (not Linux+fsanitize)")
+            set_property(TEST FlexAID_C1_HelpErrorPathProbe APPEND PROPERTY
+                PASS_REGULAR_EXPRESSION "C1_RESULT=PASS ARM=process_path_only")
+            message(STATUS
+                "C1 --help probe ARM=process_path_only "
+                "(not Linux+address; TSan/macOS/Release demote here — "
+                "ctest green on this arm does NOT mean LSan ran)")
         endif()
     endif()
+
 
     message(STATUS "Unit tests enabled — build targets: test_statmech, test_hardware_dispatch, test_tencom_diff, test_target_validation, test_grand_partition, test_target_server, test_ga_context, test_nascent_chain_scheduler, test_process_ligand, test_cmaes_search, test_coarse_screen, FlexAID_C1_HelpErrorPathProbe")
 endif()

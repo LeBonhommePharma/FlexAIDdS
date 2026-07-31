@@ -86,19 +86,29 @@ if(NOT _out_txt MATCHES "Usage:" AND NOT _out_txt MATCHES "--help")
 endif()
 
 if(NOT EXPECT_LEAK)
-  # Non-instrumented / non-Linux: process path only — must be clean exit 0.
+  # Non-instrumented / non-Linux / TSan: process path only — must be clean exit 0.
+  # Machine line C1_RESULT=… is what PASS_REGULAR_EXPRESSION keys on so a
+  # silent demotion cannot share the green signature of the LSan arm
+  # (Honey: "the check that disarms itself").
   if(NOT _rc EQUAL 0)
     message(FATAL_ERROR
+      "C1_RESULT=FAIL ARM=process_path_only\n"
       "C1 probe: --help expected exit 0, got ${_rc}\n"
       "stdout:\n${_out_txt}\nstderr:\n${_err_txt}")
   endif()
-  message(STATUS "C1 probe: process path OK (exit 0, usage present); leak assertion not required on this config")
+  # Single-line machine receipt first (ctest PASS_REGULAR_EXPRESSION).
+  message(STATUS "C1_RESULT=PASS ARM=process_path_only")
+  message(STATUS
+    "C1 probe ARM=process_path_only: PASS (exit 0, usage present). "
+    "LSan inverted arm NOT armed on this config — do not read this green "
+    "as 'leaks measured' (TSan / macOS / non-ASan demote here).")
   return()
 endif()
 
 # ─── Inverted LSan arm ─────────────────────────────────────────────────────
 # Leak report is the expected finding today. LSan typically exits non-zero when
 # it reports; that is still a probe PASS if the structure matches prediction.
+message(STATUS "C1 probe ARM=lsan_inverted: requiring LeakSanitizer 3 direct / 6 indirect / 9 total")
 
 set(_saw_leak FALSE)
 if(_err_txt MATCHES "LeakSanitizer" OR _err_txt MATCHES "detected memory leaks")
@@ -106,42 +116,93 @@ if(_err_txt MATCHES "LeakSanitizer" OR _err_txt MATCHES "detected memory leaks")
 endif()
 
 if(NOT _saw_leak)
+  # Two clean causes (Bumble, 2026-07-31) — not equally informative:
+  #   (1) teardown actually ran / prologue freed  -> falsifies unwind read
+  #   (2) stale-root false negative (conservative stack scan keeps FA/GB/VC
+  #       "still reachable") -> instrument artefact, not ownership model
+  # Only total-9 with wrong split falsifies Bumble's ownership graph.
+  # Read the log: nine "still reachable" = stale-root signature; nine absent
+  # entirely is not. Do not collapse those into one narrative.
   message(FATAL_ERROR
-    "C1 probe UNEXPECTED: Linux ASan+LSan run of --help reported no leaks.\n"
-    "Either the Terminate-unwind source model is wrong, prologue allocs are freed "
-    "before throw, or LSan did not run. Investigate before claiming C1 green "
-    "as anything other than this surprising clean result.\n"
+    "C1_RESULT=FAIL ARM=lsan_inverted\n"
+    "C1 probe: Linux ASan+LSan --help reported no definitely-lost leaks.\n"
+    "Disambiguate before blaming the ownership model:\n"
+    "  - still-reachable count ~9 under LSAN_OPTIONS=report_objects=1 "
+    "    -> stale-root false negative (measurability, not wrong model)\n"
+    "  - nothing still-reachable and no leaks "
+    "    -> Terminate-unwind / free-before-throw / LSan-not-running "
+    "    (interesting finding about top.cpp)\n"
+    "  - total 9 with split != 3/6 "
+    "    -> ownership graph wrong (Bumble's read fails)\n"
     "exit=${_rc}\nstderr:\n${_err_txt}")
 endif()
 
-# Count Direct / Indirect report headers (one per leaked object at distinct sites).
-# macOS leaks reports a single total of 9; LSan splits reachability — the board
-# prediction is 3 direct roots (FA/GB/VC) + 6 indirect (contacts + 5 VC arrays).
-string(REGEX MATCHALL "Direct leak of" _direct_hits "${_err_txt}")
-string(REGEX MATCHALL "Indirect leak of" _indirect_hits "${_err_txt}")
-list(LENGTH _direct_hits _n_direct)
-list(LENGTH _indirect_hits _n_indirect)
+# Sum object counts from Direct/Indirect lines — not header counts alone.
+# Real LSan (board samples): "Direct leak of N byte(s) in M object(s)"
+# Coalesced stacks produce one header with M>1; counting headers only would
+# report 1/1 on a correct 3/6 ownership graph and fail a healthy binary.
+# That is the inverted vacuous shape Bumble/Honey called out for "expected 9"
+# against the Direct block alone.
+#
+# Prediction (Bumble, source + LSan reachability — unmeasured until Linux CI):
+#   3 direct roots (FA/GB/VC) + 6 indirect (contacts + 5 VC arrays) = 9.
+set(_n_direct 0)
+string(REGEX MATCHALL
+  "Direct leak of [0-9]+ byte\\(s\\) in [0-9]+ object\\(s\\)?"
+  _direct_lines "${_err_txt}")
+foreach(_line IN LISTS _direct_lines)
+  if(_line MATCHES "in ([0-9]+) object")
+    math(EXPR _n_direct "${_n_direct} + ${CMAKE_MATCH_1}")
+  endif()
+endforeach()
+
+set(_n_indirect 0)
+string(REGEX MATCHALL
+  "Indirect leak of [0-9]+ byte\\(s\\) in [0-9]+ object\\(s\\)?"
+  _indirect_lines "${_err_txt}")
+foreach(_line IN LISTS _indirect_lines)
+  if(_line MATCHES "in ([0-9]+) object")
+    math(EXPR _n_indirect "${_n_indirect} + ${CMAKE_MATCH_1}")
+  endif()
+endforeach()
+
 math(EXPR _n_sum "${_n_direct} + ${_n_indirect}")
 
-# Prefer SUMMARY allocation count when present (allocator-independent object total).
+# SUMMARY allocation count when present (must reconcile with Direct+Indirect).
 set(_summary_n "")
 if(_err_txt MATCHES "leaked in ([0-9]+) allocation")
   set(_summary_n "${CMAKE_MATCH_1}")
 endif()
 
-set(_total_ok FALSE)
-if(_summary_n STREQUAL "9")
-  set(_total_ok TRUE)
-elseif(_n_sum EQUAL 9)
-  set(_total_ok TRUE)
-endif()
-
+# Require a parsed split. SUMMARY-only is not enough — it can pass for the
+# wrong ownership graph (9/0, 4/5) and fails the handoff Honey just fixed.
 set(_split_ok FALSE)
 if(_n_direct EQUAL 3 AND _n_indirect EQUAL 6)
   set(_split_ok TRUE)
 endif()
 
-if(_total_ok AND _split_ok)
+set(_total_ok FALSE)
+if(_n_sum EQUAL 9)
+  set(_total_ok TRUE)
+endif()
+if(NOT _summary_n STREQUAL "" AND _summary_n STREQUAL "9")
+  set(_total_ok TRUE)
+endif()
+
+if(_split_ok AND _total_ok)
+  # Cross-check SUMMARY against the split when both are present.
+  if(NOT _summary_n STREQUAL "" AND NOT _summary_n STREQUAL "${_n_sum}")
+    message(FATAL_ERROR
+      "C1_RESULT=FAIL ARM=lsan_inverted\n"
+      "C1 probe: SUMMARY allocation count (${_summary_n}) != "
+      "Direct+Indirect (${_n_sum}=${_n_direct}+${_n_indirect}).\n"
+      "Parser or LSan format disagreement — fix before trusting either number.\n"
+      "exit=${_rc}\nstderr:\n${_err_txt}")
+  endif()
+  # Machine receipt first — ctest PASS_REGULAR_EXPRESSION requires this line.
+  message(STATUS
+    "C1_RESULT=PASS ARM=lsan_inverted direct=${_n_direct} indirect=${_n_indirect} "
+    "summary_allocs=${_summary_n}")
   message(STATUS
     "C1 probe FINDING (expected under current source model): "
     "--help under LSan: ${_n_direct} direct / ${_n_indirect} indirect "
@@ -154,18 +215,34 @@ endif()
 # Total 9 but wrong split: ownership graph is not what the source says.
 if(_total_ok AND NOT _split_ok)
   message(FATAL_ERROR
+    "C1_RESULT=FAIL ARM=lsan_inverted\n"
     "C1 probe: LSan object total is 9 but Direct/Indirect split is "
     "${_n_direct}/${_n_indirect} (expected 3/6).\n"
     "Reachability/ownership graph differs from FA/GB/VC roots + 6 children. "
-    "Do not silence this — it is a real finding about the source model.\n"
+    "Do not silence this — it is a real finding about the source model "
+    "(9/0 or 4/5 falsifies who owns what).\n"
     "summary_allocs=${_summary_n} exit=${_rc}\nstderr:\n${_err_txt}")
 endif()
 
-# Anything else: wrong total or unparseable.
+# Unparseable split (0/0) with only SUMMARY: refuse — that hands off a test
+# that cannot distinguish Direct-only from Direct+Indirect.
+if(_n_direct EQUAL 0 AND _n_indirect EQUAL 0)
+  message(FATAL_ERROR
+    "C1_RESULT=FAIL ARM=lsan_inverted\n"
+    "C1 probe: LSan reported leaks but Direct/Indirect object counts could "
+    "not be parsed (summary_allocs=${_summary_n}).\n"
+    "Refusing SUMMARY-only pass — that is the shape that fails on correct "
+    "behaviour if the assertion ever reads the Direct line alone.\n"
+    "Fix the parser against real LSan output; do not drop the 3/6 assertion.\n"
+    "exit=${_rc}\nstderr:\n${_err_txt}")
+endif()
+
+# Anything else: wrong total or wrong split.
 message(FATAL_ERROR
+  "C1_RESULT=FAIL ARM=lsan_inverted\n"
   "C1 probe: LSan reported leaks but not the predicted 9 objects (3 direct / 6 indirect).\n"
   "parsed: direct=${_n_direct} indirect=${_n_indirect} sum=${_n_sum} "
   "summary_allocs=${_summary_n} (expected total 9, split 3/6).\n"
-  "If summary is empty, LSan output format may have changed — fix the parser, "
-  "do not drop the structural assertion.\n"
+  "Frozen in PLANS/C2_ACCEPTANCE_CRITERION.md: MUST report LSan block; "
+  "MUST sum Direct+Indirect to 9; MUST split 3/6; bytes DO NOT compare.\n"
   "exit=${_rc}\nstderr:\n${_err_txt}")
