@@ -785,6 +785,14 @@ void   update_constraint(atom* atoms, int index, constraint* cons);             
 void   shortest_path(resid* residue, int tot, atom* atoms);
 void   assign_shortflex(resid* residue, int tot, int fdih, atom* atoms);
 void   update_bonded(resid* residue, int tot, int nlist, int* list, int* nbr);   // update bonded matrix for residue
+// Teardown for the three resid-owned matrices allocated above. Each takes the
+// same tot its allocator received (natm, i.e. latm[0]-fatm[0]+1) and is safe on
+// a NULL residue or an already-freed member. Not called from the docking path
+// yet: read_lig allocates these per residue and nothing released them, which is
+// the whole 193896-byte LeakSanitizer report on linux-gcc-asan / clang-asan.
+void   free_shortpath(resid* residue, int tot);
+void   free_shortflex(resid* residue, int tot);
+void   free_bonded(resid* residue, int tot);
 void   update_optres(atom* atoms, resid* residue, int atm_cnt, OptRes* optres_ptr,int num_optres); // update atoms structure with optres pointers
 void   set_intprob(flxsc* flex_res);                                         // sets internal probability for rotamer change
 int    number_of_dihedrals(char res[]);                      // determines number of dihedral bonds for residues

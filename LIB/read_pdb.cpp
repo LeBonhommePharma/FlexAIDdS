@@ -45,6 +45,10 @@ void read_pdb(FA_Global* FA,atom** atoms,resid** residue, char* pdb_name){
   
   (*residue)[0].bond = NULL;
   (*residue)[0].bonded = NULL;
+  // See read_coor.cpp: the top.cpp teardown walks every residue and guards on
+  // != NULL, so these must be set even though protein residues never allocate them.
+  (*residue)[0].shortpath = NULL;
+  (*residue)[0].shortflex = NULL;
 
   strcpy((*residue)[0].name,"   ");
   

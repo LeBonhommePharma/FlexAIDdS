@@ -5,6 +5,21 @@
 // the matrix starts at [0,0] with residue[ires].fatm
 // works/available for rotamers also
 
+// Releases residue->bonded allocated by update_bonded().
+// tot must be the same value passed to the matching call.
+
+void free_bonded(resid* residue, int tot)
+{
+  if(residue == nullptr || residue->bonded == nullptr){ return; }
+
+  for(int i=0; i<tot; i++)
+    {
+      free(residue->bonded[i]);
+    }
+  free(residue->bonded);
+  residue->bonded = nullptr;
+}
+
 void update_bonded(resid* residue, int tot, int nlist, int* list, int* nbr)
 {
 

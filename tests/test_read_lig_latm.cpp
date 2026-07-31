@@ -41,6 +41,18 @@ static void init_fa(FA_Global* FA, atom** atoms, resid** residue) {
 
 static void cleanup_fa(FA_Global* FA, atom* atoms, resid* residue) {
     for (int r = 0; r <= FA->res_cnt; ++r) {
+        // read_lig allocates bonded / shortpath / shortflex per residue via
+        // update_bonded / shortest_path / assign_shortflex. Nothing in LIB
+        // released them, so the process exited dirty and LeakSanitizer
+        // reported 193896 B in 2360 allocations on linux-gcc-asan and
+        // linux-clang-asan. Freed before fatm/latm because the dimension the
+        // allocators used is read back out of them.
+        if (residue[r].fatm != nullptr && residue[r].latm != nullptr) {
+            const int natm = residue[r].latm[0] - residue[r].fatm[0] + 1;
+            free_bonded(&residue[r], natm);
+            free_shortpath(&residue[r], natm);
+            free_shortflex(&residue[r], natm);
+        }
         free(residue[r].fatm);
         free(residue[r].latm);
         free(residue[r].bond);

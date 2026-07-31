@@ -7,19 +7,40 @@
 /* atoms of the same residue               */
 /*******************************************/
 
+/*******************************************/
+/* Releases residue->shortpath allocated by */
+/* shortest_path(). tot must be the same    */
+/* value passed to the matching call.       */
+/*******************************************/
+
+void free_shortpath(resid* residue, int tot)
+{
+	if(residue == nullptr || residue->shortpath == nullptr){ return; }
+
+	for(int i=0; i<tot; i++){
+		if(residue->shortpath[i] == nullptr){ continue; }
+		for(int j=0; j<tot; j++){
+			free(residue->shortpath[i][j]);
+		}
+		free(residue->shortpath[i]);
+	}
+	free(residue->shortpath);
+	residue->shortpath = nullptr;
+}
+
 void shortest_path(resid* residue, int tot, atom* atoms)
-{	
+{
 	int fatm = residue->fatm[0];
 	//int latm = residue->latm[0];
 	
-	if(residue->shortpath == NULL){
+	if(residue->shortpath == nullptr){
 		residue->shortpath = (char***)malloc(tot*sizeof(char**));
 		if(!residue->shortpath){
 			fprintf(stderr,"ERROR: Could not allocate memory for residue->shortpath\n");
 			Terminate(2);
 		}
 	}
-	
+
 	for(int i=0; i<tot; i++){
 		residue->shortpath[i] = (char**)malloc(tot*sizeof(char*));
 		if(!residue->shortpath[i]){
