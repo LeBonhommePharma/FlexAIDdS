@@ -27,7 +27,12 @@ void read_pdb(FA_Global* FA,atom** atoms,resid** residue, char* pdb_name){
   }
   
   memset((*atoms),0,FA->MIN_NUM_ATOM*sizeof(atom));
-  memset((*residue),0,FA->MIN_NUM_ATOM*sizeof(residue));
+  // Was MIN_NUM_ATOM*sizeof(residue): wrong count AND sizeof of a resid** (8 B)
+  // rather than of the struct (96 B), so it cleared 8000 of the 24000 allocated
+  // bytes and left ~2/3 of the residues as uninitialised heap. Under-zeroing,
+  // not overflow -- but the teardown in top.cpp guards on != NULL, and an
+  // uninitialised field is not NULL.
+  memset((*residue),0,FA->MIN_NUM_RESIDUE*sizeof(resid));
   memset(FA->num_atm,0,100000*sizeof(int));
   
   (*atoms)[0].eigen = NULL;
