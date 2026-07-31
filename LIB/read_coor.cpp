@@ -255,7 +255,11 @@ void read_coor(FA_Global* FA,atom** atoms,resid** residue,char line[], char res_
 					fprintf(stderr,"ERROR: memory allocation error for residue.\n");
 					Terminate(2);
 				}
-				memset(&(*residue)[FA->MIN_NUM_RESIDUE/2],0,FA->MIN_NUM_RESIDUE/2*sizeof(residue));
+				// sizeof(resid), not sizeof(residue): the latter is the resid**
+				// parameter (8 B), so this cleared 1/12 of the newly grown half
+				// and left the rest as raw heap. Same defect as read_pdb.cpp:30;
+				// the realloc directly above already had it right.
+				memset(&(*residue)[FA->MIN_NUM_RESIDUE/2],0,FA->MIN_NUM_RESIDUE/2*sizeof(resid));
 				//printf("memory re-allocated for residue\n");
 			}
 
