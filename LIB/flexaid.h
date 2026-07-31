@@ -793,6 +793,10 @@ void   update_bonded(resid* residue, int tot, int nlist, int* list, int* nbr);  
 void   free_shortpath(resid* residue, int tot);
 void   free_shortflex(resid* residue, int tot);
 void   free_bonded(resid* residue, int tot);
+// Sole owner of the per-residue teardown order (LIB/free_resid.cpp). Safe on a
+// slot with only fatm/latm allocated, so callers loop from 0 with no special
+// case. Derives natm from fatm/latm, so it must run before those are freed.
+void   free_resid(resid* residue);
 void   update_optres(atom* atoms, resid* residue, int atm_cnt, OptRes* optres_ptr,int num_optres); // update atoms structure with optres pointers
 void   set_intprob(flxsc* flex_res);                                         // sets internal probability for rotamer change
 int    number_of_dihedrals(char res[]);                      // determines number of dihedral bonds for residues

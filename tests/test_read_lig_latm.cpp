@@ -40,23 +40,12 @@ static void init_fa(FA_Global* FA, atom** atoms, resid** residue) {
 }
 
 static void cleanup_fa(FA_Global* FA, atom* atoms, resid* residue) {
+    // Same call the production teardown makes (top.cpp, inside the residue
+    // cleanup loop). This used to be a byte-identical copy of that sequence
+    // with nothing tying the two together; free_resid is now the sole owner,
+    // so this test exercises the real teardown rather than a replica of it.
     for (int r = 0; r <= FA->res_cnt; ++r) {
-        // read_lig allocates bonded / shortpath / shortflex per residue via
-        // update_bonded / shortest_path / assign_shortflex. Nothing in LIB
-        // released them, so the process exited dirty and LeakSanitizer
-        // reported 193896 B in 2360 allocations on linux-gcc-asan and
-        // linux-clang-asan. Freed before fatm/latm because the dimension the
-        // allocators used is read back out of them.
-        if (residue[r].fatm != nullptr && residue[r].latm != nullptr) {
-            const int natm = residue[r].latm[0] - residue[r].fatm[0] + 1;
-            free_bonded(&residue[r], natm);
-            free_shortpath(&residue[r], natm);
-            free_shortflex(&residue[r], natm);
-        }
-        free(residue[r].fatm);
-        free(residue[r].latm);
-        free(residue[r].bond);
-        free(residue[r].gpa);
+        free_resid(&residue[r]);
     }
     free(FA->optres);
     free(FA->num_atm);
@@ -190,17 +179,14 @@ TEST(ReadLigLatm, OneT40Style28Atoms) {
 }
 
 // The residue[0] shape read_pdb.cpp:42-56 builds: fatm/latm allocated, every
-// other pointer explicitly NULL. top.cpp frees that slot after its i=1 loop,
-// and top.cpp is compiled into no test target — so this pins the contract the
-// three helpers must honour there: no-op on NULL members, leaving the caller
-// free to release fatm/latm afterwards.
+// other pointer explicitly NULL. top.cpp is compiled into no test target, so
+// its call site still runs under no instrument — but the function it calls is
+// now the same one this test calls, which is what free_resid was extracted to
+// achieve. Before the extraction this test could only pin a replica.
 //
-// cleanup_fa above does not cover it. Its r=0 iteration sees the calloc'd
-// residue[0] from init_fa, where fatm and latm are NULL and the guard skips
-// the whole body. This is the only place the allocated-slot-0 shape is built.
-//
-// natm is derived exactly as top.cpp:3308 derives it — latm[0]-fatm[0]+1 —
-// so a change to either copy of that expression shows up here.
+// cleanup_fa above does not reach this shape. Its r=0 iteration sees the
+// calloc'd residue[0] from init_fa, where every pointer is NULL. This is the
+// only place the allocated-slot-0 shape is built.
 TEST(ResidTeardown, Slot0ShapeFreesCleanlyWithOnlyFatmLatmAllocated) {
     resid r{};
     r.fatm = static_cast<int*>(malloc(sizeof(int)));
@@ -215,17 +201,47 @@ TEST(ResidTeardown, Slot0ShapeFreesCleanlyWithOnlyFatmLatmAllocated) {
     r.shortpath = nullptr;
     r.shortflex = nullptr;
 
-    const int natm = r.latm[0] - r.fatm[0] + 1;
-    EXPECT_EQ(natm, 1);
+    free_resid(&r);
 
-    free_bonded(&r, natm);
-    free_shortpath(&r, natm);
-    free_shortflex(&r, natm);
-
+    EXPECT_EQ(r.fatm, nullptr);
+    EXPECT_EQ(r.latm, nullptr);
     EXPECT_EQ(r.bonded, nullptr);
     EXPECT_EQ(r.shortpath, nullptr);
     EXPECT_EQ(r.shortflex, nullptr);
+}
 
-    free(r.fatm);
-    free(r.latm);
+// The guard that lets both callers loop from 0. free_resid must not touch
+// fatm[0] when the trio is absent: on slot 0 that value is never written, so
+// deriving natm there reads uninitialised memory. Nothing observable
+// distinguishes the two paths at runtime -- no sanitizer flags a read of
+// uninitialised heap that is then discarded -- so this pins it structurally by
+// leaving fatm[0] deliberately unset and requiring a clean teardown anyway.
+TEST(ResidTeardown, NatmNotDerivedWhenTrioAbsent) {
+    resid r{};
+    r.fatm = static_cast<int*>(malloc(sizeof(int)));
+    r.latm = static_cast<int*>(malloc(sizeof(int)));
+    ASSERT_NE(r.fatm, nullptr);
+    ASSERT_NE(r.latm, nullptr);
+    // fatm[0] intentionally left unwritten -- the read_pdb slot-0 shape.
+    r.latm[0] = 0;
+    r.gpa = nullptr;
+    r.bond = nullptr;
+    r.bonded = nullptr;
+    r.shortpath = nullptr;
+    r.shortflex = nullptr;
+
+    free_resid(&r);
+
+    EXPECT_EQ(r.fatm, nullptr);
+    EXPECT_EQ(r.latm, nullptr);
+}
+
+// free_resid is the teardown every caller uses, so it must tolerate the empty
+// slot the calloc'd array is full of -- otherwise looping from 0 over
+// MIN_NUM_RESIDUE entries would fault on the first untouched one.
+TEST(ResidTeardown, AllNullSlotIsANoOp) {
+    resid r{};
+    free_resid(&r);
+    EXPECT_EQ(r.fatm, nullptr);
+    EXPECT_EQ(r.bonded, nullptr);
 }

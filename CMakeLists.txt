@@ -2285,6 +2285,7 @@ flexaids_add_unit_test(test_protocol_config
             LIB/update_bonded.cpp
             LIB/shortest_path.cpp
             LIB/assign_shortflex.cpp
+            LIB/free_resid.cpp
             LIB/buildcc.cpp
             LIB/geometry.cpp
         COMPILE_OPTIONS -std=c++26
