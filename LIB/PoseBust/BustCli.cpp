@@ -11,6 +11,7 @@
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
+#include <map>
 #include <set>
 #include <sstream>
 #include <string>
@@ -44,34 +45,73 @@ std::string sha256_via_openssl(const std::string& path) {
     return hex;
 }
 
-// Columns that are metadata / optional, not part of official pb_pass dock gate.
-bool is_excluded_from_pb_pass(std::string_view col) {
-    if (col == "file" || col == "molecule" || col == "position" ||
-        col == "mol_pred" || col == "mol_true" || col == "mol_cond") return true;
-    // RMSD is success_rmsd, not pb_pass
-    if (col.find("rmsd") != std::string_view::npos) return true;
-    return false;
+// The four literal non-scored columns a PoseBusters 0.6.5 redock CSV emits.
+// Deliberately an exact-name list, NOT substring matching: if membership were
+// decided by `col.find("rmsd")`, a future column such as
+// `rmsd_reference_source` would be silently subtracted from the canonical set
+// and set equality below would be computed against a set that quietly shrank.
+// Substring matching one layer down is still substring matching deciding the
+// gate. 31 real header columns minus these four is exactly the canonical 27.
+bool is_metadata_column(std::string_view col) {
+    return col == "file" || col == "molecule" || col == "position" ||
+           col == "rmsd_\u2264_2\u00e5";
 }
 
-// Version-pinned canonical mandatory dock-suite check names (PoseBusters redock).
-// Missing/duplicate headers fail closed. Extend only with deliberate pin bumps.
+// THE canonical PoseBusters 0.6.5 redock gate: the full set of 27 scored
+// boolean checks, and the single authority for what pb_pass means.
+//
+// This list is authoritative in BOTH roles:
+//   1. schema — the CSV's scored columns must equal this set exactly
+//   2. scoring — pb_pass iterates this list, not the CSV's headers
+// Consequently a schema change in either direction fails closed and demands a
+// deliberate pin bump. A future column cannot silently strengthen the gate; an
+// omitted column cannot silently weaken it. Gate membership is never decided
+// by substring matching.
+//
+// Pin bump 2026-07-31: dropped "no_protein_clashes" — upstream 0.6.5 emits no
+// such column, so every real bust run failed closed on schema and the campaign
+// silently fell back to native_pose_qc. Filled out to the full 27 at the same
+// time; a partial pin was itself an arbitrary subset.
+//
+// Water is deliberately IN. Upstream redock.yml selects both water checks, so
+// removing them would produce a custom metric, not "PoseBusters pass" — even
+// though water dominates observed failures (see the campaign note). Any
+// non-water variant belongs beside pb_pass as a separately named diagnostic,
+// never as a mutation of it.
+//
+// Verified against 34 real 0.6.5 bust CSVs (2 further files empty) under
+// flexaidds_benchmark_results/: one single header layout, all 27 present in
+// every file, no extras. Keep in CSV emission order so diffs against a real
+// header are trivial to eyeball.
 const std::vector<std::string>& mandatory_pb_check_columns() {
     static const std::vector<std::string> k = {
         "mol_pred_loaded",
+        "mol_true_loaded",
         "mol_cond_loaded",
         "sanitization",
         "inchi_convertible",
         "all_atoms_connected",
+        "no_radicals",
+        "molecular_formula",
+        "molecular_bonds",
+        "double_bond_stereochemistry",
+        "tetrahedral_chirality",
         "bond_lengths",
         "bond_angles",
         "internal_steric_clash",
         "aromatic_ring_flatness",
+        "non-aromatic_ring_non-flatness",
         "double_bond_flatness",
         "internal_energy",
         "protein-ligand_maximum_distance",
         "minimum_distance_to_protein",
-        "no_protein_clashes",
+        "minimum_distance_to_organic_cofactors",
+        "minimum_distance_to_inorganic_cofactors",
+        "minimum_distance_to_waters",
         "volume_overlap_with_protein",
+        "volume_overlap_with_organic_cofactors",
+        "volume_overlap_with_inorganic_cofactors",
+        "volume_overlap_with_waters",
     };
     return k;
 }
@@ -316,7 +356,11 @@ void apply_bust_csv_schema(const std::string& csv_body, BustCliResult& r) {
             }
         }
     }
-    // Version-pinned mandatory check-set: every listed column must be present.
+    // Version-pinned canonical check-set: enforce SET EQUALITY, not mere
+    // presence. Drift in either direction fails closed and demands a
+    // deliberate pin bump:
+    //   missing canonical column  -> a future CSV cannot silently weaken pb_pass
+    //   unexpected scored column  -> a future CSV cannot silently strengthen it
     {
         std::set<std::string> header_set(headers.begin(), headers.end());
         std::string missing;
@@ -330,6 +374,23 @@ void apply_bust_csv_schema(const std::string& csv_body, BustCliResult& r) {
             r.error = "bust CSV schema: missing mandatory check columns: " + missing;
             r.pb_pass = false;
             r.failed_keys = "mandatory_checks_missing:" + missing;
+            return;
+        }
+        const auto& canon = mandatory_pb_check_columns();
+        std::set<std::string> canon_set(canon.begin(), canon.end());
+        std::string unexpected;
+        for (const auto& h : headers) {
+            if (is_metadata_column(h)) continue;
+            if (canon_set.count(h) == 0) {
+                if (!unexpected.empty()) unexpected += ';';
+                unexpected += h;
+            }
+        }
+        if (!unexpected.empty()) {
+            r.error = "bust CSV schema: unexpected scored columns (pin bump "
+                      "required): " + unexpected;
+            r.pb_pass = false;
+            r.failed_keys = "unexpected_scored_columns:" + unexpected;
             return;
         }
     }
@@ -348,10 +409,14 @@ void apply_bust_csv_schema(const std::string& csv_body, BustCliResult& r) {
     r.n_fail = 0;
     bool all_ok = true;
     std::string failed;
-    for (std::size_t i = 0; i < headers.size(); ++i) {
-        const std::string& h = headers[i];
-        const std::string& v = values[i];
-        if (is_excluded_from_pb_pass(h)) continue;
+    // Iterate the CANONICAL list, not the CSV's headers. Set equality was
+    // enforced above, so every canonical column is present exactly once and no
+    // extra scored column exists — but driving the loop from the pin is what
+    // makes that guarantee load-bearing rather than incidental.
+    std::map<std::string, std::string> row;
+    for (std::size_t i = 0; i < headers.size(); ++i) row[headers[i]] = values[i];
+    for (const auto& h : mandatory_pb_check_columns()) {
+        const std::string& v = row[h];
 
         if (v.empty() || is_nan_token(v)) {
             ++r.n_checks;

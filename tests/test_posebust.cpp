@@ -158,17 +158,35 @@ TEST(PdbCoords, RejectsNonFiniteAndJunk) {
 namespace {
 
 std::string synthetic_full_pb_header() {
-    // Version-pinned mandatory set plus metadata columns.
-    return "molecule,mol_pred_loaded,mol_cond_loaded,sanitization,inchi_convertible,"
-           "all_atoms_connected,bond_lengths,bond_angles,internal_steric_clash,"
-           "aromatic_ring_flatness,double_bond_flatness,internal_energy,"
-           "protein-ligand_maximum_distance,minimum_distance_to_protein,"
-           "no_protein_clashes,volume_overlap_with_protein,rmsd_≤_2å";
+    // Mirrors a REAL PoseBusters 0.6.5 redock header: 3 metadata columns,
+    // all 27 scored booleans in emission order, then rmsd. Kept identical to
+    // mandatory_pb_check_columns() so schema pin and test parity cannot drift.
+    return "file,molecule,position,"
+           "mol_pred_loaded,mol_true_loaded,mol_cond_loaded,"
+           "sanitization,inchi_convertible,all_atoms_connected,"
+           "no_radicals,molecular_formula,molecular_bonds,"
+           "double_bond_stereochemistry,tetrahedral_chirality,bond_lengths,"
+           "bond_angles,internal_steric_clash,aromatic_ring_flatness,"
+           "non-aromatic_ring_non-flatness,double_bond_flatness,internal_energy,"
+           "protein-ligand_maximum_distance,minimum_distance_to_protein,minimum_distance_to_organic_cofactors,"
+           "minimum_distance_to_inorganic_cofactors,minimum_distance_to_waters,volume_overlap_with_protein,"
+           "volume_overlap_with_organic_cofactors,volume_overlap_with_inorganic_cofactors,volume_overlap_with_waters,"
+           "rmsd_≤_2å";
 }
 
 std::string synthetic_full_pb_true_row() {
-    return "m1,True,True,True,True,True,True,True,True,True,True,True,"
-           "True,True,True,True,1.0";
+    // 3 metadata + 27 True booleans + rmsd, matching the header above.
+    return "f1,m1,0,"
+           "True,True,True,"
+           "True,True,True,"
+           "True,True,True,"
+           "True,True,True,"
+           "True,True,True,"
+           "True,True,True,"
+           "True,True,True,"
+           "True,True,True,"
+           "True,True,True,"
+           "1.0";
 }
 
 }  // namespace
@@ -180,8 +198,95 @@ TEST(BustCliSchema, PassesWithFullMandatorySet) {
     apply_bust_csv_schema(csv, r);
     EXPECT_TRUE(r.pb_pass) << r.error << " failed=" << r.failed_keys;
     EXPECT_EQ(r.raw_csv, csv);
-    EXPECT_GT(r.n_checks, 0);
+    // All 27 scored 0.6.5 booleans must be counted — locks schema pin and
+    // test parity to the same number so they cannot drift apart.
+    EXPECT_EQ(r.n_checks, 27);
     EXPECT_EQ(r.n_fail, 0);
+}
+
+TEST(BustCliSchema, RejectsUnexpectedScoredColumnRequiringPinBump) {
+    // Drift in the ADDING direction: a future PoseBusters emits a new scored
+    // column. It must fail closed and demand a deliberate pin bump rather than
+    // being silently ANDed into pb_pass on every pose.
+    BustCliResult r;
+    const std::string csv =
+        synthetic_full_pb_header() + ",brand_new_0_7_check\n" +
+        synthetic_full_pb_true_row() + ",True\n";
+    apply_bust_csv_schema(csv, r);
+    EXPECT_FALSE(r.pb_pass);
+    EXPECT_NE(r.failed_keys.find("unexpected_scored_columns"), std::string::npos)
+        << r.failed_keys;
+    EXPECT_NE(r.failed_keys.find("brand_new_0_7_check"), std::string::npos)
+        << r.failed_keys;
+    EXPECT_EQ(r.raw_csv, csv);  // rejected schema stays diagnosable
+}
+
+TEST(BustCliSchema, ExtraRmsdVariantColumnAlsoRequiresPinBump) {
+    // Deliberately strict, and this test was originally written asserting the
+    // OPPOSITE. The metadata predicate matched "rmsd" by substring, so an extra
+    // rmsd-ish column was silently subtracted from the canonical set and set
+    // equality was computed against a set that had quietly shrunk — substring
+    // matching still deciding gate membership, one layer down. Only the four
+    // literal metadata names are exempt now; any other new column, rmsd-named
+    // or not, fails closed and demands a deliberate pin bump.
+    BustCliResult r;
+    const std::string csv =
+        synthetic_full_pb_header() + ",rmsd_reference_source\n" +
+        synthetic_full_pb_true_row() + ",xtal\n";
+    apply_bust_csv_schema(csv, r);
+    EXPECT_FALSE(r.pb_pass);
+    EXPECT_NE(r.failed_keys.find("unexpected_scored_columns"), std::string::npos)
+        << r.failed_keys;
+    EXPECT_NE(r.failed_keys.find("rmsd_reference_source"), std::string::npos)
+        << r.failed_keys;
+}
+
+TEST(BustCliSchema, NormalChemistryFalseFailsWithoutSchemaError) {
+    // A real chemistry False must fail pb_pass but must NOT look like a schema
+    // problem — this is the distinction the whole no_protein_clashes bug blurred.
+    BustCliResult r;
+    std::string row = synthetic_full_pb_true_row();
+    const std::string needle = "True,True,True,";  // last boolean triple
+    const auto pos = row.rfind(needle);
+    ASSERT_NE(pos, std::string::npos);
+    row.replace(pos, needle.size(), "True,True,False,");
+    const std::string csv = synthetic_full_pb_header() + "\n" + row + "\n";
+    apply_bust_csv_schema(csv, r);
+    EXPECT_FALSE(r.pb_pass);
+    EXPECT_EQ(r.n_checks, 27);
+    EXPECT_EQ(r.n_fail, 1);
+    EXPECT_EQ(r.failed_keys, "volume_overlap_with_waters");
+    EXPECT_TRUE(r.error.empty()) << r.error;
+}
+
+TEST(BustCliSchema, NanCellFailsClosedAsUncomputed) {
+    BustCliResult r;
+    std::string row = synthetic_full_pb_true_row();
+    auto pos = row.find("True");
+    ASSERT_NE(pos, std::string::npos);
+    row.replace(pos, 4, "nan");
+    const std::string csv = synthetic_full_pb_header() + "\n" + row + "\n";
+    apply_bust_csv_schema(csv, r);
+    EXPECT_FALSE(r.pb_pass);
+    EXPECT_NE(r.failed_keys.find(":uncomputed"), std::string::npos)
+        << r.failed_keys;
+}
+
+TEST(BustCliSchema, BlankCellFailsClosedAsBlank) {
+    // Split out from the NaN case: the original test claimed blank/NaN
+    // coverage but only ever exercised "nan". They take different branches
+    // and produce different failed_keys suffixes, so one does not stand in
+    // for the other.
+    BustCliResult r;
+    std::string row = synthetic_full_pb_true_row();
+    auto pos = row.find("True");
+    ASSERT_NE(pos, std::string::npos);
+    row.replace(pos, 5, ",");  // "True," -> "," leaving an empty cell
+    const std::string csv = synthetic_full_pb_header() + "\n" + row + "\n";
+    apply_bust_csv_schema(csv, r);
+    EXPECT_FALSE(r.pb_pass);
+    EXPECT_NE(r.failed_keys.find(":blank"), std::string::npos)
+        << r.failed_keys;
 }
 
 TEST(BustCliSchema, RejectsDuplicateHeaderPreservesRaw) {
