@@ -45,16 +45,16 @@ std::string sha256_via_openssl(const std::string& path) {
     return hex;
 }
 
-// Metadata / RMSD columns. These are NOT gate logic: after the set-equality
-// check below, gate membership is decided solely by mandatory_pb_check_columns().
-// This predicate only says "not a scored check", so an unexpected column is
-// recognised as unexpected rather than silently ignored.
+// The four literal non-scored columns a PoseBusters 0.6.5 redock CSV emits.
+// Deliberately an exact-name list, NOT substring matching: if membership were
+// decided by `col.find("rmsd")`, a future column such as
+// `rmsd_reference_source` would be silently subtracted from the canonical set
+// and set equality below would be computed against a set that quietly shrank.
+// Substring matching one layer down is still substring matching deciding the
+// gate. 31 real header columns minus these four is exactly the canonical 27.
 bool is_metadata_column(std::string_view col) {
-    if (col == "file" || col == "molecule" || col == "position" ||
-        col == "mol_pred" || col == "mol_true" || col == "mol_cond") return true;
-    // RMSD is success_rmsd, not pb_pass
-    if (col.find("rmsd") != std::string_view::npos) return true;
-    return false;
+    return col == "file" || col == "molecule" || col == "position" ||
+           col == "rmsd_\u2264_2\u00e5";
 }
 
 // THE canonical PoseBusters 0.6.5 redock gate: the full set of 27 scored

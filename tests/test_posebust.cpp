@@ -221,16 +221,24 @@ TEST(BustCliSchema, RejectsUnexpectedScoredColumnRequiringPinBump) {
     EXPECT_EQ(r.raw_csv, csv);  // rejected schema stays diagnosable
 }
 
-TEST(BustCliSchema, ExtraMetadataOrRmsdColumnIsNotUnexpected) {
-    // Metadata/RMSD columns are not gate members, so an extra one must NOT
-    // trip the pin-bump guard — only scored columns do.
+TEST(BustCliSchema, ExtraRmsdVariantColumnAlsoRequiresPinBump) {
+    // Deliberately strict, and this test was originally written asserting the
+    // OPPOSITE. The metadata predicate matched "rmsd" by substring, so an extra
+    // rmsd-ish column was silently subtracted from the canonical set and set
+    // equality was computed against a set that had quietly shrunk — substring
+    // matching still deciding gate membership, one layer down. Only the four
+    // literal metadata names are exempt now; any other new column, rmsd-named
+    // or not, fails closed and demands a deliberate pin bump.
     BustCliResult r;
     const std::string csv =
-        synthetic_full_pb_header() + ",rmsd_≤_5å\n" +
-        synthetic_full_pb_true_row() + ",2.5\n";
+        synthetic_full_pb_header() + ",rmsd_reference_source\n" +
+        synthetic_full_pb_true_row() + ",xtal\n";
     apply_bust_csv_schema(csv, r);
-    EXPECT_TRUE(r.pb_pass) << r.error << " failed=" << r.failed_keys;
-    EXPECT_EQ(r.n_checks, 27);
+    EXPECT_FALSE(r.pb_pass);
+    EXPECT_NE(r.failed_keys.find("unexpected_scored_columns"), std::string::npos)
+        << r.failed_keys;
+    EXPECT_NE(r.failed_keys.find("rmsd_reference_source"), std::string::npos)
+        << r.failed_keys;
 }
 
 TEST(BustCliSchema, NormalChemistryFalseFailsWithoutSchemaError) {
