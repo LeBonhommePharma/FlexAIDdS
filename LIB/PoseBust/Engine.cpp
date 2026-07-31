@@ -20,6 +20,7 @@
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
+#include <iostream>
 #include <limits>
 #include <sstream>
 #include <string>
@@ -438,6 +439,43 @@ bool write_report_json(const PoseBustReport& report, const std::string& path,
     return true;
 }
 
+/// Opt-in strict mode: treat a missing/failed upstream `bust` CLI as a hard
+/// error instead of silently degrading to NativePoseQC. Campaigns that intend
+/// to produce claim_ready rows should set this, because claim_ready requires
+/// pb_backend == "bust_cli" and is otherwise unreachable.
+bool require_bust_cli_from_env() {
+    const char* v = std::getenv("FLEXAIDDS_POSEBUSTERS_REQUIRE_CLI");
+    return v && v[0] && std::string_view(v) != "0";
+}
+
+/// The claim gate degrading is a provenance event, not a routine log line.
+/// Emit it as an unmissable banner so it cannot be read past mid-line the way
+/// the buried `bust_missing:` key was.
+void warn_bust_unavailable(const std::string& stem, const std::string& err,
+                           bool strict) {
+    std::cerr
+        << "\n"
+        << "  ******************************************************************\n"
+        << "  * [POSEBUSTERS] " << (strict ? "ERROR" : "WARNING")
+        << ": upstream `bust` CLI UNAVAILABLE\n"
+        << "  *   target      : " << stem << "\n"
+        << "  *   reason      : " << (err.empty() ? "not found" : err) << "\n";
+    if (strict) {
+        std::cerr
+            << "  *   effect      : pb_ran=0 pb_pass=0 (fail-closed, strict mode)\n";
+    } else {
+        std::cerr
+            << "  *   effect      : fell back to NativePoseQC.\n"
+            << "  *                 pb_pass here is the in-house reimplementation,\n"
+            << "  *                 NOT upstream PoseBusters. claim_ready is\n"
+            << "  *                 UNREACHABLE for this run (needs bust_cli).\n";
+    }
+    std::cerr
+        << "  *   fix         : export FLEXAIDDS_POSEBUSTERS_BIN=/abs/path/to/bust\n"
+        << "  *                 (or put `bust` on PATH before launching)\n"
+        << "  ******************************************************************\n\n";
+}
+
 Backend resolve_backend_from_env() {
     if (const char* v = std::getenv("FLEXAIDDS_POSEBUST")) {
         if (std::string_view(v) == "0") return Backend::Off;
@@ -595,13 +633,30 @@ ElectedPoseBustOutcome validate_elected_pose(
         // Official upstream PoseBusters CLI (default claim backend).
         auto br = run_upstream_bust(pred_sdf, receptor_path, crystal_sdf, pb_dir,
                                     stem);
-        if ((!br.ran || br.backend == "bust_cli_missing") &&
-            opt.native_fallback_if_bust_missing) {
+        const bool bust_unavailable =
+            (!br.ran || br.backend == "bust_cli_missing");
+        if (bust_unavailable && require_bust_cli_from_env()) {
+            // Strict mode: refuse to silently degrade the claim gate. The
+            // native suite still ran above as a diagnostic, but pb_* stays
+            // fail-closed so no downstream table can mistake this for a
+            // chemistry verdict.
+            out.pb_backend = "bust_cli_missing";
+            out.pb_ran = false;
+            out.pb_pass = false;
+            out.pb_failed_keys =
+                "bust_missing:" + (br.error.empty() ? std::string("bust CLI unavailable")
+                                                    : br.error);
+            out.error = out.pb_failed_keys;
+            warn_bust_unavailable(stem, br.error, /*strict=*/true);
+            return out;
+        }
+        if (bust_unavailable && opt.native_fallback_if_bust_missing) {
             fill_from_native("native_pose_qc_fallback");
             if (!br.error.empty()) {
                 if (!out.pb_failed_keys.empty()) out.pb_failed_keys += ';';
                 out.pb_failed_keys += "bust_missing:" + br.error;
             }
+            warn_bust_unavailable(stem, br.error, /*strict=*/false);
         } else {
             out.pb_ran = br.ran;
             out.pb_pass = br.pb_pass;
