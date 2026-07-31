@@ -28,7 +28,11 @@ void shortest_path(resid* residue, int tot, atom* atoms)
 		}else{
 			for(int j=0; j<tot; j++){
 				// 90001-90002
-				residue->shortpath[i][j] = (char*)malloc(MAX_SHORTEST_PATH*6*sizeof(char));
+				// calloc, not malloc: cells left unwritten by the BFS below (any
+				// atom pair unreachable in residue->bonded, e.g. FA->bloops == 0)
+				// are later read as C strings by assign_shortflex(); an
+				// uninitialised buffer has no NUL and strlen walks past it.
+				residue->shortpath[i][j] = (char*)calloc(MAX_SHORTEST_PATH*6, sizeof(char));
 				if(!residue->shortpath[i][j]){
 					fprintf(stderr,
 						"ERROR: Could not allocate memory for residue->shortpath[%d][%d]\n", i,j);
