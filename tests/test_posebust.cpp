@@ -259,7 +259,7 @@ TEST(BustCliSchema, NormalChemistryFalseFailsWithoutSchemaError) {
     EXPECT_TRUE(r.error.empty()) << r.error;
 }
 
-TEST(BustCliSchema, BlankAndNanCellsFailClosed) {
+TEST(BustCliSchema, NanCellFailsClosedAsUncomputed) {
     BustCliResult r;
     std::string row = synthetic_full_pb_true_row();
     auto pos = row.find("True");
@@ -269,6 +269,23 @@ TEST(BustCliSchema, BlankAndNanCellsFailClosed) {
     apply_bust_csv_schema(csv, r);
     EXPECT_FALSE(r.pb_pass);
     EXPECT_NE(r.failed_keys.find(":uncomputed"), std::string::npos)
+        << r.failed_keys;
+}
+
+TEST(BustCliSchema, BlankCellFailsClosedAsBlank) {
+    // Split out from the NaN case: the original test claimed blank/NaN
+    // coverage but only ever exercised "nan". They take different branches
+    // and produce different failed_keys suffixes, so one does not stand in
+    // for the other.
+    BustCliResult r;
+    std::string row = synthetic_full_pb_true_row();
+    auto pos = row.find("True");
+    ASSERT_NE(pos, std::string::npos);
+    row.replace(pos, 5, ",");  // "True," -> "," leaving an empty cell
+    const std::string csv = synthetic_full_pb_header() + "\n" + row + "\n";
+    apply_bust_csv_schema(csv, r);
+    EXPECT_FALSE(r.pb_pass);
+    EXPECT_NE(r.failed_keys.find(":blank"), std::string::npos)
         << r.failed_keys;
 }
 
