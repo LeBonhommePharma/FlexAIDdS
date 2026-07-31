@@ -46,6 +46,14 @@ static void init_fa_for_reader(FA_Global* FA, atom** atoms, resid** residue) {
 }
 
 static void cleanup_fa(FA_Global* FA, atom* atoms, resid* residue) {
+    // NOTE: bonded / shortpath / shortflex are deliberately NOT freed here.
+    // This target links tests/stubs.cpp, whose update_bonded / shortest_path /
+    // assign_shortflex are empty bodies, so Mol2Reader and SdfReader call them
+    // and nothing is allocated. If those stubs are ever replaced by the real
+    // LIB/ allocators in this target's SOURCES, this function must also call
+    // free_bonded / free_shortpath / free_shortflex -- omitting them is what
+    // made test_read_lig_latm leak 2360 objects under LeakSanitizer.
+    //
     // Free residue sub-allocations created by the readers
     for (int r = 1; r <= FA->res_cnt; ++r) {
         free(residue[r].fatm);

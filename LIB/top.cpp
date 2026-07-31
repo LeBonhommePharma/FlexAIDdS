@@ -3317,6 +3317,17 @@ int main(int argc, char **argv){
 			if(residue[i].bond != NULL) free(residue[i].bond);
 		}
 
+		// residue[0] is allocated by read_pdb.cpp:44-45 (and twice more in
+		// python_bindings.cpp) but the loop above starts at 1, so its fatm/latm
+		// were never released -- 16 bytes on every run since the code was written.
+		// Freed here rather than by widening the loop to i=0: slot 0's fatm[0]
+		// and latm[0] are never written, so the natm expression above would read
+		// uninitialised memory on that slot even though the free_* helpers would
+		// ignore the result. Every other pointer on slot 0 is explicitly NULL
+		// (read_pdb.cpp:42,51,52,55,56), so there is nothing else there to free.
+		if(residue[0].fatm != NULL) free(residue[0].fatm);
+		if(residue[0].latm != NULL) free(residue[0].latm);
+
 		free(residue);
 	}
 
@@ -3368,7 +3379,7 @@ int main(int argc, char **argv){
 	// RMSD
 	for(i=0;i<FA->num_het;i++){
 	if(FA->res_rmsd[i].fatm != NULL) free(FA->res_rmsd[i].fatm);
-	if(FA->res_rmsd[i].latm != NULL) free(FA->res_rmsd[i].fatm);
+	if(FA->res_rmsd[i].latm != NULL) free(FA->res_rmsd[i].latm);  // was .fatm: double-free + leaked .latm
 	}
 	//if(FA->atoms_rmsd != NULL) free(FA->atoms_rmsd);
 	*/
