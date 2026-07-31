@@ -22,6 +22,7 @@ set(FLEXAID_CORE_SOURCES
     update_optres.cpp
     update_bonded.cpp
     top_helpers.cpp
+    top_helpers.h
     read_grid.cpp
     read_input.cpp
     read_lig.cpp
