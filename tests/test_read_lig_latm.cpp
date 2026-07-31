@@ -188,3 +188,44 @@ TEST(ReadLigLatm, OneT40Style28Atoms) {
     cleanup_fa(&FA, atoms, residue);
     fs::remove_all(tmp);
 }
+
+// The residue[0] shape read_pdb.cpp:42-56 builds: fatm/latm allocated, every
+// other pointer explicitly NULL. top.cpp frees that slot after its i=1 loop,
+// and top.cpp is compiled into no test target — so this pins the contract the
+// three helpers must honour there: no-op on NULL members, leaving the caller
+// free to release fatm/latm afterwards.
+//
+// cleanup_fa above does not cover it. Its r=0 iteration sees the calloc'd
+// residue[0] from init_fa, where fatm and latm are NULL and the guard skips
+// the whole body. This is the only place the allocated-slot-0 shape is built.
+//
+// natm is derived exactly as top.cpp:3308 derives it — latm[0]-fatm[0]+1 —
+// so a change to either copy of that expression shows up here.
+TEST(ResidTeardown, Slot0ShapeFreesCleanlyWithOnlyFatmLatmAllocated) {
+    resid r{};
+    r.fatm = static_cast<int*>(malloc(sizeof(int)));
+    r.latm = static_cast<int*>(malloc(sizeof(int)));
+    ASSERT_NE(r.fatm, nullptr);
+    ASSERT_NE(r.latm, nullptr);
+    r.fatm[0] = 0;
+    r.latm[0] = 0;
+    r.gpa = nullptr;
+    r.bond = nullptr;
+    r.bonded = nullptr;
+    r.shortpath = nullptr;
+    r.shortflex = nullptr;
+
+    const int natm = r.latm[0] - r.fatm[0] + 1;
+    EXPECT_EQ(natm, 1);
+
+    free_bonded(&r, natm);
+    free_shortpath(&r, natm);
+    free_shortflex(&r, natm);
+
+    EXPECT_EQ(r.bonded, nullptr);
+    EXPECT_EQ(r.shortpath, nullptr);
+    EXPECT_EQ(r.shortflex, nullptr);
+
+    free(r.fatm);
+    free(r.latm);
+}
