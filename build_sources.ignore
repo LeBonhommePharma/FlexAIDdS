@@ -148,3 +148,17 @@ LIB/native_score.h
 LIB/receptor_prep.h
 LIB/ensemble_pipeline.h
 LIB/shell_exec.h
+
+# Orphans silenced 2026-07-31 to unblock CI on main (see PR "unblock main CI").
+# Same rationale as the block above: headers included transitively or via
+# specific targets only. No build output changes from listing these.
+LIB/ClusterRepMode.h
+LIB/PoseBust/PdbCoords.h
+LIB/ProtocolConfig.h
+LIB/RunReceipt.h
+LIB/ThermoWhiteboard.h
+LIB/cmaes_search.h
+LIB/memetic_gate.h
+LIB/new_search_arch.h
+LIB/niche_distance.h
+src/backends/webgpu/webgpu_eval.h

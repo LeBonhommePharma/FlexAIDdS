@@ -28,6 +28,8 @@
 # See also: benchmarks/itc187.yaml (single-ligand thermo), erds_specificity.yaml
 # (Z-score specificity), BENCHMARK_STANDARD.md (add grand section), GPF report.
 
+docking_mode: specialized  # validated by validate_dataset_semantics.py
+
 slug: competition_example
 name: "Grand Canonical Competition / Selectivity Examples"
 description: >
