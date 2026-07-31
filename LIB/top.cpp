@@ -3298,12 +3298,19 @@ int main(int argc, char **argv){
 		for(i=1;i<=FA->res_cnt;i++){
 			//printf("Residue[%d]\n",i);
 
-			if(residue[i].bonded != NULL){
+			// bonded / shortpath / shortflex are three sibling matrices sized by
+			// the same natm, recovered here from the residue's own atom bounds
+			// exactly as the bonded teardown already did. Only bonded was freed
+			// before; the other two were released nowhere in the tree, which is
+			// the 193896 B / 2360 allocations LeakSanitizer reports on
+			// linux-gcc-asan and linux-clang-asan.
+			if(residue[i].fatm != NULL && residue[i].latm != NULL){
 				natm = residue[i].latm[0]-residue[i].fatm[0]+1;
-				for(j=0;j<natm;j++){ free(residue[i].bonded[j]); }
-				free(residue[i].bonded);
+				free_bonded(&residue[i], natm);
+				free_shortpath(&residue[i], natm);
+				free_shortflex(&residue[i], natm);
 			}
-		  
+
 			if(residue[i].gpa != NULL) free(residue[i].gpa);
 			if(residue[i].fatm != NULL) free(residue[i].fatm);
 			if(residue[i].latm != NULL) free(residue[i].latm);

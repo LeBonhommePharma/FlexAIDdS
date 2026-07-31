@@ -255,7 +255,11 @@ void read_coor(FA_Global* FA,atom** atoms,resid** residue,char line[], char res_
 					fprintf(stderr,"ERROR: memory allocation error for residue.\n");
 					Terminate(2);
 				}
-				memset(&(*residue)[FA->MIN_NUM_RESIDUE/2],0,FA->MIN_NUM_RESIDUE/2*sizeof(residue));
+				// sizeof(resid), not sizeof(residue): the latter is the resid**
+				// parameter (8 B), so this cleared 1/12 of the newly grown half
+				// and left the rest as raw heap. Same defect as read_pdb.cpp:30;
+				// the realloc directly above already had it right.
+				memset(&(*residue)[FA->MIN_NUM_RESIDUE/2],0,FA->MIN_NUM_RESIDUE/2*sizeof(resid));
 				//printf("memory re-allocated for residue\n");
 			}
 
@@ -286,7 +290,12 @@ void read_coor(FA_Global* FA,atom** atoms,resid** residue,char line[], char res_
 			(*residue)[FA->res_cnt].trot = 0;
 			(*residue)[FA->res_cnt].gpa=NULL;
 			(*residue)[FA->res_cnt].bonded=NULL;
-			(*residue)[FA->res_cnt].fatm[0]=FA->atm_cnt;     
+			// Protein residues never reach shortest_path()/assign_shortflex(), but
+			// the teardown in top.cpp walks every residue and guards on != NULL.
+			// Without these the guard reads indeterminate pointers and wild-frees.
+			(*residue)[FA->res_cnt].shortpath=NULL;
+			(*residue)[FA->res_cnt].shortflex=NULL;
+			(*residue)[FA->res_cnt].fatm[0]=FA->atm_cnt;
 			(*residue)[FA->res_cnt-1].latm[0]=FA->atm_cnt-1;
 			(*residue)[FA->res_cnt].chn=line[21];
 			(*residue)[FA->res_cnt].ins=line[26];

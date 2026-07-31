@@ -26,6 +26,27 @@ std::vector<std::string> split_string(const std::string& str, char delimiter) {
     return tokens;
 }
 
+/****************************************/
+/* Releases residue->shortflex allocated */
+/* by assign_shortflex(). tot must be the
+   same value passed to the matching call.*/
+/****************************************/
+
+void free_shortflex(resid* residue, int tot)
+{
+	if(residue == nullptr || residue->shortflex == nullptr){ return; }
+
+	for(int i=0; i<tot; i++){
+		if(residue->shortflex[i] == nullptr){ continue; }
+		for(int j=0; j<tot; j++){
+			free(residue->shortflex[i][j]);
+		}
+		free(residue->shortflex[i]);
+	}
+	free(residue->shortflex);
+	residue->shortflex = nullptr;
+}
+
 void assign_shortflex(resid* residue, int tot, int fdih, atom* atoms)
 {
 	residue->shortflex = (int***)malloc(tot*sizeof(int**));

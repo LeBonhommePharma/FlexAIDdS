@@ -27,7 +27,12 @@ void read_pdb(FA_Global* FA,atom** atoms,resid** residue, char* pdb_name){
   }
   
   memset((*atoms),0,FA->MIN_NUM_ATOM*sizeof(atom));
-  memset((*residue),0,FA->MIN_NUM_ATOM*sizeof(residue));
+  // Was MIN_NUM_ATOM*sizeof(residue): wrong count AND sizeof of a resid** (8 B)
+  // rather than of the struct (96 B), so it cleared 8000 of the 24000 allocated
+  // bytes and left ~2/3 of the residues as uninitialised heap. Under-zeroing,
+  // not overflow -- but the teardown in top.cpp guards on != NULL, and an
+  // uninitialised field is not NULL.
+  memset((*residue),0,FA->MIN_NUM_RESIDUE*sizeof(resid));
   memset(FA->num_atm,0,100000*sizeof(int));
   
   (*atoms)[0].eigen = NULL;
@@ -45,6 +50,10 @@ void read_pdb(FA_Global* FA,atom** atoms,resid** residue, char* pdb_name){
   
   (*residue)[0].bond = NULL;
   (*residue)[0].bonded = NULL;
+  // See read_coor.cpp: the top.cpp teardown walks every residue and guards on
+  // != NULL, so these must be set even though protein residues never allocate them.
+  (*residue)[0].shortpath = NULL;
+  (*residue)[0].shortflex = NULL;
 
   strcpy((*residue)[0].name,"   ");
   

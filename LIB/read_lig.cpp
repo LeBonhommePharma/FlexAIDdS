@@ -111,7 +111,11 @@ void read_lig(FA_Global* FA,atom** atoms,resid** residue,char ligfile[]){
 					Terminate(2);
 				}
 
-				memset(&(*residue)[FA->MIN_NUM_RESIDUE-1],0,sizeof(residue));
+				// sizeof(resid), not sizeof(residue): the latter is the resid**
+				// parameter, so this zeroed 8 of the struct's 96 bytes and left
+				// every pointer field (fatm at offset 16 onward) as raw heap.
+				// Third site of the same typo; see read_pdb.cpp:30, read_coor.cpp:258.
+				memset(&(*residue)[FA->MIN_NUM_RESIDUE-1],0,sizeof(resid));
 				//printf("memory reallocated for residue\n");
 			}
       
