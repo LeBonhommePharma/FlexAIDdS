@@ -12,6 +12,412 @@ Phase-4 docks: **NO_SEC=1**. Full-85: **BLOCKED** until sampling ACCEPT.
 
 ---
 
+**SUPERSEDED 2026-07-31.** The next-step order recorded in this file
+(`new_search_arch` first, `scoring_locked_decoy_work` behind it) was
+**reversed** by decision in the Buzz channel *Benchmarking FlexAIDdS*
+(`716e79b1-6a4f-4cde-8851-22836ba8738c`), authorized by Bonhomme.
+
+**Current order:** instrument fix → frozen-gate replication → scoring-locked
+decoy work → `new_search_arch` *(deferred, not cancelled)*.
+
+**Rationale.** The sampling hypothesis is a closed null: six one-variable
+gates, best magnitude −0.019 Å against a −0.5 Å floor. Nothing came close.
+The burden of proof therefore sits on `new_search_arch` and it has not met
+it. Scoring-locked decoy work probes the other candidate wall
+(discrimination) at a fraction of the cost.
+
+`new_search_arch` gets budget only if the decoy work fails to move the
+needle. Deferred is not cancelled — do not delete it from this stack.
+
+Provenance: see `PLANS/FLEXAIDDS_PHASE5_DECISION_RECORD.md` for the cited
+event IDs.
+
+---
+
+## ⚠ `pb_pass` is dominated by water compatibility — reporting rules
+
+Measured over all 36 real PoseBusters 0.6.5 CSVs in
+`/Users/lp.more/flexaidds_benchmark_results/` (34 scored poses). Computed
+independently by Bumble and by Opus, with separate reimplementations of the
+evaluator; every cell agreed.
+
+| | |
+|---|---|
+| `pb_pass` TRUE as the gate stands | **10/34 — 29%** |
+| `pb_pass` TRUE with the two water columns excluded | **24/34 — 71%** |
+| Poses failing on water **and nothing else** | **14 — 41% of the panel** |
+
+Failing columns, most frequent first: `minimum_distance_to_waters` 22/34,
+`volume_overlap_with_waters` 12/34, `minimum_distance_to_protein` 6/34,
+`internal_steric_clash` 3/34, `minimum_distance_to_inorganic_cofactors` 1/34,
+`internal_energy` 1/34. Zero NaN/blank cells — this is not uncomputed-value
+poisoning, it is the gate doing what it was built to do.
+
+**Every non-excluded column is ANDed into `pb_pass`.** So 41% of scored poses
+are chemically clean against protein, cofactors, internal geometry and energy,
+and fail the claim gate solely because they displace crystallographic water.
+
+### ⚠ SCOPE — this is a property of the receptor tier, not of the docking
+
+All 36 bust receipts record a runtime-cache receptor. Exact audit over the
+31 unique targets:
+
+```
+receipts using ~/.flexaidds runtime cache       36/36
+cache receptor == repository canonical           0/31
+cache receptor contains HOH                     30/31
+repository-canonical receptor contains HOH       0/31
+cache receptor == deprecated tracked prep       24/31 unique targets
+cache receptor is a THIRD, unidentified variant  7/31 unique targets
+```
+
+**Under the canonical preparation these columns cannot fail** — there are no
+crystallographic waters to displace, so both water checks are vacuous by
+construction.
+
+### State the interaction precisely — an earlier draft of this block did not
+
+It is **wrong** to say "an artifact of the receptor tier, not a property of
+the docking." Receptor preparation makes a water failure *representable*; the
+elected pose determines whether it *actually occurs*. The correct statement is
+a **protocol-tier × pose interaction**: the legacy tier defines a
+water-sensitive endpoint, and the docking output supplies the outcome.
+
+### Frozen boundaries
+
+- 29% → 71% is valid **for the legacy / noncanonical runtime-cache protocol
+  only.**
+- It is **not** an independent finding from receptor identity.
+- It does **not** estimate the canonical-prep strict pass rate.
+- **Do not claim all runtime-cache receptors are the deprecated tracked prep.**
+  Seven targets — `1GPK, 1HQ2, 1L7F, 1MEH, 1N1M, 1N2J, 1OPK` — are a third
+  variant whose provenance is **unresolved**. (`1GPK` appears in both arms, so
+  28/36 *receipts* match the deprecated tree exactly, not 36/36.)
+
+Every strict `pb_pass` figure the campaign produced is a figure against a
+noncanonical receptor tier that the repository does not sanction for new work.
+Codex's reporting semantics above are unaffected and still correct.
+
+### Why this outranks the pre/post-fix boundary
+
+The boundary in Block 2 separates two eras. **This one applies to both of
+them.** Pinning never changed what is scored (the pinned list is a presence
+assertion on the header; the evaluator walks every non-excluded column
+regardless). So the water dominance predates #310 entirely and is unaffected
+by it. Any `claim_ready` figure from any era is a water-displacement-filtered
+figure.
+
+### Water is a treatment-sensitive mediator, NOT a confound
+
+The two arms in this tree are `armA_mincf` and `armA_smartwater_rawcom`. One
+of them varies **water handling**, so water compatibility sits *downstream* of
+the treatment.
+
+```
+armA_mincf              n=29  pass=9   pass_if_water_excluded=21
+armA_smartwater_rawcom  n=5   pass=1   pass_if_water_excluded=3
+```
+
+**Terminology matters here and an earlier draft of this note got it wrong.**
+A confound is a *pre-treatment* variable correlated with both treatment and
+outcome. Water compatibility is not that: the smart-water arm changes water
+handling, so water compatibility is a **treatment-sensitive outcome/mediator.**
+It becomes **selection bias** only if we filter on full `pb_pass` and then
+compare pose accuracy among the survivors. That is a narrower and more
+accurate hazard than "confound," and it points at a different remedy —
+do not subset, rather than do not measure.
+
+**No arm effect is claimed and none can be** — n=5 on one side supports
+nothing.
+
+### The scientific call — DECIDED, with upstream basis
+
+**Should displacing a crystallographic water fail a redock claim? Yes — in
+the strict endpoint.** Not by default and not by accident: PoseBusters 0.6.5
+`redock.yml` explicitly selects both `minimum_distance_to_waters` and
+`volume_overlap_with_waters` (`redock.yml:199-215, 268-283`). Full upstream
+`pb_pass` includes retained-water compatibility **by definition.** Dropping
+those fields would not repair the metric; it would create a custom metric that
+is no longer "PoseBusters pass."
+
+The 29% → 71% counterfactual does not show the upstream check is wrong. It
+shows that **water compatibility dominates this dataset and protocol** — and
+that the campaign had been calling a composite environment-compatibility
+endpoint "chemistry."
+
+### Locked reporting semantics
+
+1. **Strict headline.** Fixed denominator, identical elected pose, direct
+   whole-ligand RMSD ≤2 Å **and every upstream 0.6.5 redock boolean including
+   water.** The names `pb_pass` / "strict" are reserved for exactly this
+   endpoint.
+2. **Diagnostic decomposition**, on the same fixed denominator: report
+   `pb_pass_nonwater`, `water_distance_pass`, `water_overlap_pass`, and
+   `water_only_failure` alongside it. **Never promote the 71% non-water rate
+   to the strict headline.**
+3. **Arm comparison.** Report each endpoint over the same predeclared target
+   denominator. **Do not subset to `pb_pass==1` before comparing arms** — that
+   subsetting is the selection bias.
+4. **Protocol changes.** Stripping waters, marking waters displaceable, or
+   using a custom PoseBusters config is a **new protocol tier and its own
+   comparability boundary** — not a silent repair of historical numbers.
+
+Decided by Codex, 2026-07-31, on upstream `redock.yml` evidence.
+
+### Scope of this caveat — audited, not assumed
+
+It applies to anything gated on `pb_pass` / `claim_ready`. It does **not**
+reach the Phase-4 sampling conclusions.
+
+**This was checked, not inferred.** At `main` `11ce273c`, these eight
+workorder documents contain zero occurrences of `pb_pass` or `claim_ready`:
+
+```
+workorders/PHASE4_GATES_ACTUALIZED.md    pb_pass=0  claim_ready=0
+workorders/CAMPAIGN_GATE_SUMMARY.md      pb_pass=0  claim_ready=0
+workorders/a_posteriori_gate_ledger.md   pb_pass=0  claim_ready=0
+workorders/G4_2_NICHE_CART.md            pb_pass=0  claim_ready=0
+workorders/G4_4_EARLY_STOP.md            pb_pass=0  claim_ready=0
+workorders/NEW_SEARCH_ARCH_APRIORI.md    pb_pass=0  claim_ready=0
+workorders/INVERSION_MAP.md              pb_pass=0  claim_ready=0
+workorders/COARSE_ORIENT_MATCHED_AB.md   pb_pass=0  claim_ready=0
+```
+
+Every Phase-4 acceptance criterion in `PHASE4_GATES_ACTUALIZED.md` is stated
+in RMSD/BCR terms — `mean dRMSD <= 0 on >=4/5 SEARCH-MISS`,
+`mean dBCR <= -0.5 A or >=1 target crosses BCR<2 A`, `n_niches occupied must
+increase`, generations-reached distribution. **No Phase-4 gate reads
+`pb_pass`.** The sampling null therefore stands independent of everything in
+this block.
+
+One artifact mentions `pb_pass` — `S4_PHENOTYPE_UNIQUE_STATUS_REPORT.md` —
+as a reported side column carrying its own warning not to promote it to a
+STRICT claim without a full receipt and bust_cli audit, and it lists any
+`claim_ready` implication as out of scope. The exception confirms the rule.
+
+**Scope limit on this audit itself:** it covers the eight documents named
+above at commit `11ce273c`. It is not a claim about every artifact in the
+repository. Audited by Opus, 2026-07-31, static read.
+
+Provenance: Opus and Bumble, 2026-07-31, static analysis over existing
+campaign outputs. No docking or rebuild was run to produce these numbers.
+
+## ⚠ Comparability boundary — 2026-07-31
+
+**Numbers produced before this date are not comparable to numbers produced
+after it.** The discontinuity has **two independent axes**, and a reader who
+knows about only one of them will still draw a wrong conclusion.
+
+| Axis | Before | After |
+|---|---|---|
+| **Backend** | `native_pose_qc_fallback` — a silently degraded fallback | real PoseBusters 0.6.5 |
+| **Check definition** | pinned `no_protein_clashes` — a column upstream 0.6.5 **never emitted** | the **canonical 27** PoseBusters 0.6.5 redock booleans, water included |
+| **Gate authority** | scoring iterated *the CSV's* headers; the pin only asserted presence | scoring iterates **the pinned list**; set equality enforced in both directions |
+
+The third axis is new as of PR #310 (`0af9fe82`, refined at `3734ee7d`) and
+was **verified a no-op on today's data** before the semantics changed — 34
+CSVs, one header layout, exactly the 27, no extras, identical verdicts. So it
+introduces no numeric discontinuity on 2026-07-31. It changes what the metric
+*is* going forward: a schema change in either direction now fails closed and
+demands a deliberate pin bump, where previously an added column would have
+been silently ANDed in and a removed one silently dropped.
+
+Gate membership is decided by a **literal four-name metadata exclusion** —
+`file`, `molecule`, `position`, `rmsd_≤_2å` — not by substring match. 31
+columns minus those four is exactly the 27.
+
+**VERIFIED against upstream — no sharp edge.** The RMSD column name is a
+literal string in the 0.6.5 config, not computed from the threshold:
+
+```yaml
+# posebusters/config/redock.yml:286-292
+function: rmsd
+rmsd_threshold: 2.0
+rmsd_within_threshold: "RMSD ≤ 2Å"
+```
+
+Under stock upstream 0.6.5 the name is fixed and cannot drift. It changes
+only if someone edits that label in a custom config — which is already a new
+protocol tier requiring its own comparability boundary. Failing closed there
+is the guard working, not a false alarm.
+
+**Incidental finding, recorded because it is a trap.** `rmsd_threshold` and
+the display label are **independent fields**. Setting `rmsd_threshold: 5.0`
+without editing the string emits a column still labelled `RMSD ≤ 2Å` carrying
+a 5 Å verdict. Nothing consumes that column today, so it cannot reach a
+number — but **the label is not evidence of the threshold**, and anything
+that starts consuming it must read `rmsd_threshold`, not the header.
+
+
+
+Either axis alone changes what `claim_ready` means. Together they mean a
+pre-fix `pb_pass` and a post-fix `pb_pass` are **different measurements that
+share a name.**
+
+**Rule:** no table, plot, or claim may place a pre-fix and a post-fix number
+in the same column without carrying this note. If the two must appear
+together, label the axis explicitly per row.
+
+**Additional caution — the fallback failed silently.** It degraded and went
+unnoticed for an entire campaign. That is the specific failure mode this
+boundary exists to prevent recurring: not a wrong number, but a wrong number
+that looked fine.
+
+**Why the old pin was worse than a wrong name.** `no_protein_clashes` was not
+a check that changed — it was a column upstream never emitted. The parser
+fails closed on a missing mandatory header, so every real bust run returned
+`pb_pass=0` for a *schema* reason and the campaign silently fell back to
+`native_pose_qc_fallback`. Pre-fix `pb_pass` therefore does not encode a
+chemistry verdict at all. Do not read pre-fix values as weak evidence; read
+them as no evidence.
+
+Provenance: PR #310, commit `5a5b7a55`. Column evidence re-derived from a real
+0.6.5 bust CSV (`astex85_threearm_20260722_224149/.../1IA1_..._bust.csv`).
+
+### RESOLVED — the pre-fix era is five bands, not one regime
+
+This note marks where the pre-fix era *stops*. It does not follow that the
+pre-fix era was internally uniform, and it was not: `main` accumulated the
+four stacked CI failures over **17 days**, not all at once.
+
+A failure becomes reachable at `max(defect introduced, checker introduced)` —
+a defect with no checker is inert; a checker with no defect is silent.
+
+| Failure | Defect | Checker | **First reachable** |
+|---|---|---|---|
+| bare `g.log_Xi` | `0da7c25a` 2026-07-08 | `6e3d17bd` 2026-07-08 | **2026-07-08** |
+| stale `test_palette_cycles` | `2fb4eb76` 2026-07-09 | predates | **2026-07-09** |
+| orphan `metal_microbench_enhanced.cpp` | `69aa0fab` 2026-07-14 | `17ae1d15` 2026-05-25 | **2026-07-14** |
+| `competition_example.yaml` no `docking_mode` | `b27889c0` 2026-07-08 | `2fffe6fe` 2026-07-25 | **2026-07-25** |
+
+Two asymmetries defeat a naive "when was the bug written" reading, in
+opposite directions. The YAML file was written 2026-07-08 and sat harmless
+for 17 days — it became a failure only when the validator turned fail-closed
+on 2026-07-25, making the oldest file the newest failure. Conversely the
+orphan guard existed from 2026-05-25, seven weeks before anything tripped it.
+
+**The five bands:**
+
+```
+before 2026-07-08   0 of 4 present
+2026-07-08          1 of 4   (log_Xi)
+2026-07-09          2 of 4   (+ palette)
+2026-07-14          3 of 4   (+ orphan guard)
+2026-07-25          4 of 4   (+ docking_mode)   <- the state diagnosed in #311
+```
+
+**Rule: two pre-fix numbers are comparable to each other only if they fall in
+the same band.** Check the date before comparing.
+
+**Read this as narrowing, not widening.** Before this was dated, "unknown
+internal structure" meant *any* two pre-fix numbers might be incomparable.
+Now it means four specific dates, and most pairs are fine. The era is
+tractable.
+
+**Two limits on the dating itself:**
+
+1. These are dates of **reachability derived from code history** — when each
+   failure *could* fire. They are **not** a reconstruction of observed CI
+   history. Nobody has established which days CI actually ran red, and per
+   the stacked-failure lesson a red matrix reports only the first failure, so
+   the observed record would understate the count regardless.
+2. Scoped to **these four failures** — the ones enumerated in #311 — at
+   `11ce273c`. No search was made for a fifth.
+
+All commits verified as ancestors of `main` at `11ce273c`
+(`git merge-base --is-ancestor`, all yes). Archaeology by Opus, 2026-07-31.
+
+---
+
+## Baseline provenance requirement
+
+A frozen number is only frozen if it is regenerable. Every pinned baseline
+must cite `{commit SHA, binary SHA, config path}` **and every one of those
+must be tracked in git.** A baseline bound to an untracked config is not
+reproducible from the state it names.
+
+This is not hypothetical: the deletion of a pilot leaf is what made the
+Phase-4 SCORING-LOCKED `cf_native` values unreproducible, and the
+replacement configs were themselves untracked when the re-pin began.
+
+### Input identity matters as much as config identity
+
+The SCORING-LOCKED baseline exists in **two protocol tiers that are not
+interchangeable**, and the difference is chemically material.
+
+| Tier | Receptor prep | 1OQ5 | 1SQ5 | 1YGC |
+|---|---|---|---|---|
+| **Repository-canonical Astex** | `benchmarks/astex_diverse/astex_diverse/{PDB}/{PDB}_apo.pdb` | `-34.229803` | `-73.790961` | `+7.303774` |
+| **Legacy production-runtime** | `benchmarks/astex_diverse/data/astex_diverse/{PDB}/` — a **deprecated historical second prep** | `-34.229803` | `-73.413683` | `-0.871396` |
+
+The legacy tier is what the runtime cache (`~/.flexaidds/benchmarks/...`)
+holds, byte-identical, and it is what reproduces the historical workorder
+numbers. **It is not canonical.** `benchmarks/datasets/CANONICAL.md` and
+`benchmarks/astex_diverse/README.md` define the canonical tree and classify
+`data/astex_diverse/` as deprecated — "do not use for new work."
+
+Immutable snapshots of the deprecated prep are retained at
+`ops/gates/configs/legacy_runtime_receptors/`. They are **snapshots of a
+deprecated prep, not canonical inputs**, and the directory name says so.
+
+**Why the numbers move:** the deprecated prep **retains waters** —
+233 / 885 / 260 across the three targets — plus Zn/Ca where present. The
+canonical apo copies do not. That is the mechanism behind the 1YGC sign flip
+from `-0.871396` to `+7.303774`.
+
+Ligand hashes matched throughout. Only the receptors differed, which is why
+this hid until hash-level inspection.
+
+**Rule:** any baseline citing SCORING-LOCKED numbers must name its tier.
+A figure reproducing the historical workorder is a *legacy production-runtime*
+figure, not a canonical one, and the two must never share a column.
+
+### RESOLVED — the receptor tier *causes* the water dominance
+
+This was raised as "the two may be entangled." They are not merely entangled.
+**They are cause and effect**, and the causal direction runs from this block
+to Block 4.
+
+Every bust run records its own argv. All 36 receipts name a runtime-cache
+receptor:
+
+```
+36/36  -p /Users/lp.more/.flexaidds/benchmarks/astex_diverse/<PDB>/<PDB>_apo.pdb
+```
+
+**The cache is not a single tier.** Across 31 unique targets: 24 are
+byte-identical to the deprecated tracked prep; **7 are a third variant**
+(`1GPK, 1HQ2, 1L7F, 1MEH, 1N1M, 1N2J, 1OPK`) matching neither canonical nor
+deprecated, **provenance unresolved and unowned.** None match canonical.
+
+Water content across the full evidence set:
+
+```
+runtime cache        : 30 of 31 receptors carry waters (28-931 HOH; 1IGJ has 0)
+repository-canonical : 31 of 31 carry ZERO waters
+```
+
+**The water columns can only ever fail against the deprecated prep.** Under
+the canonical preparation there are no crystallographic waters to displace, so
+`minimum_distance_to_waters` and `volume_overlap_with_waters` are trivially
+satisfied. The 29% → 71% gap is **an artifact of the receptor tier, not a
+property of the docking.**
+
+The claim rests on the mechanism — zero waters means no water clash is
+representable — plus 31/31 canonical receptors having zero waters. The one
+natural experiment in the data (1IGJ, water-free, 1 pose, 0 water failures)
+is **n=1 and proves nothing on its own**; it is consistent, not load-bearing.
+
+**KNOWN GAP — the binary is not commit-stamped.** The receipt records the
+binary SHA256 and its build date (2026-07-28) but **not** the source commit,
+because the build did not capture one (`source_commit: null`). Do not assume
+it corresponds to `11ce273c`. So the baseline is replayable only while a
+binary matching the recorded SHA is retained: **its inputs are tracked; it is
+not source-regenerable from tracked state.** Closing this needs a rebuild
+with commit stamping.
+
+---
+
 ## Stack table
 
 | Gate | One variable | R | Status | Magnitude | L4 | OUT | Workorder |
