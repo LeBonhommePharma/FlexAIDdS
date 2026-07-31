@@ -165,12 +165,14 @@ std::string synthetic_full_pb_header() {
            "protein-ligand_maximum_distance,minimum_distance_to_protein,"
            "minimum_distance_to_organic_cofactors,"
            "minimum_distance_to_inorganic_cofactors,minimum_distance_to_waters,"
-           "volume_overlap_with_protein,rmsd_≤_2å";
+           "volume_overlap_with_protein,volume_overlap_with_organic_cofactors,"
+           "volume_overlap_with_inorganic_cofactors,volume_overlap_with_waters,"
+           "rmsd_≤_2å";
 }
 
 std::string synthetic_full_pb_true_row() {
     return "m1,True,True,True,True,True,True,True,True,True,True,True,"
-           "True,True,True,True,True,True,1.0";
+           "True,True,True,True,True,True,True,True,True,1.0";
 }
 
 }  // namespace

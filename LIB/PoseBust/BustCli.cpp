@@ -55,11 +55,18 @@ bool is_excluded_from_pb_pass(std::string_view col) {
 
 // Version-pinned canonical mandatory dock-suite check names (PoseBusters redock).
 // Missing/duplicate headers fail closed. Extend only with deliberate pin bumps.
+// This list is a PRESENCE assertion on the CSV header, and nothing more. It does
+// not select what gets scored: pb_pass is computed over every non-excluded header
+// in the file (see the scoring loop below), pinned or not. So adding a column here
+// widens what fails closed on schema; it never widens what chemistry is checked.
+//
 // Pin bump 2026-07-31: dropped "no_protein_clashes" — upstream PoseBusters 0.6.5
 // emits no such column, so every real bust run failed closed on schema and the
-// campaign silently fell back to native_pose_qc. Replaced by the cofactor/water
-// minimum-distance columns 0.6.5 does emit, which keep a mandatory
-// "no clashes with the modeled environment" guarantee.
+// campaign silently fell back to native_pose_qc. Added the six cofactor/water
+// columns 0.6.5 does emit. Both shapes of check are pinned for each partner
+// (proximity + overlap), matching how protein is already treated; pinning only
+// the proximity half would make the set an inconsistent statement of intent.
+// These six were already being scored into pb_pass before this change.
 const std::vector<std::string>& mandatory_pb_check_columns() {
     static const std::vector<std::string> k = {
         "mol_pred_loaded",
@@ -79,6 +86,9 @@ const std::vector<std::string>& mandatory_pb_check_columns() {
         "minimum_distance_to_inorganic_cofactors",
         "minimum_distance_to_waters",
         "volume_overlap_with_protein",
+        "volume_overlap_with_organic_cofactors",
+        "volume_overlap_with_inorganic_cofactors",
+        "volume_overlap_with_waters",
     };
     return k;
 }
