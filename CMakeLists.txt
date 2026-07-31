@@ -2810,8 +2810,10 @@ flexaids_add_unit_test(test_protocol_config
     # Shipping binary only. --help takes Terminate(0) and skips the entire
     # teardown (throw from fileio.cpp, catch after free block in top.cpp).
     # Process path is always checked. On Linux ASan builds the criterion is
-    # inverted: an LSan report is PASS (the finding). Does NOT cover teardown.
-    # See tests/cmake/c1_help_error_path_probe.cmake and board C1 design.
+    # inverted: an LSan report is PASS (the finding). Structural prediction:
+    # 9 objects = 3 DIRECT (FA/GB/VC) + 6 INDIRECT (contacts + 5 VC arrays).
+    # Bytes are NOT asserted (macOS size classes ≠ glibc). Does NOT cover
+    # teardown — only C2 can. See tests/cmake/c1_help_error_path_probe.cmake.
     if(TARGET FlexAID)
         string(CONCAT _c1_san_flags
             "${CMAKE_CXX_FLAGS}" "${CMAKE_C_FLAGS}" "${CMAKE_EXE_LINKER_FLAGS}")
@@ -2833,7 +2835,7 @@ flexaids_add_unit_test(test_protocol_config
         if(_c1_expect_leak)
             set_property(TEST FlexAID_C1_HelpErrorPathProbe APPEND PROPERTY
                 ENVIRONMENT "ASAN_OPTIONS=detect_leaks=1:halt_on_error=0:strict_string_checks=1")
-            message(STATUS "C1 --help probe: Linux sanitizer build — inverted LSan criterion ON")
+            message(STATUS "C1 --help probe: Linux sanitizer build — inverted LSan 3/6 criterion ON")
         else()
             message(STATUS "C1 --help probe: process path only (not Linux+fsanitize)")
         endif()
