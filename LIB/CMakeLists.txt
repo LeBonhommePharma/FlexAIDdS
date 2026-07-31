@@ -21,6 +21,7 @@ set(FLEXAID_CORE_SOURCES
     update_constraint.cpp
     update_optres.cpp
     update_bonded.cpp
+    free_resid.cpp
     top_helpers.cpp
     top_helpers.h
     read_grid.cpp
