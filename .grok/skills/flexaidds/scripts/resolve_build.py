@@ -296,11 +296,48 @@ def export_shell(resolution: BuildResolution) -> str:
         f"export FLEXAIDDS_RUNNER_SHA256={_shell_quote(resolution.runner_sha256)}",
         f"export PATH={_shell_quote(build + os.pathsep + os.environ.get('PATH', ''))}",
     ]
+    bust = resolve_posebusters_bin(build)
+    if bust:
+        lines.insert(-1, f"export FLEXAIDDS_POSEBUSTERS_BIN={_shell_quote(bust)}")
     return "\n".join(lines)
 
 
 def _shell_quote(value: str) -> str:
     return "'" + value.replace("'", "'\"'\"'") + "'"
+
+
+def resolve_posebusters_bin(build_dir: str) -> str | None:
+    """Locate the upstream PoseBusters `bust` CLI.
+
+    claim_ready requires pb_backend == "bust_cli"; when `bust` cannot be found
+    the engine falls back to the in-house NativePoseQC suite and claim_ready
+    becomes unreachable. Exporting the resolved path here keeps runners from
+    depending on whichever PATH the launcher happened to inherit.
+
+    Mirrors the C++ lookup order in LIB/PoseBust/BustCli.cpp:resolve_bust_binary.
+    """
+    env = os.environ.get("FLEXAIDDS_POSEBUSTERS_BIN", "").strip()
+    if env and os.access(env, os.X_OK):
+        return env
+
+    found = shutil.which("bust")
+    if found:
+        return found
+
+    # The repo-local venv is the conventional install site for this project.
+    candidates = []
+    root = os.environ.get("FLEXAIDDS_ROOT", "").strip()
+    if root:
+        candidates.append(Path(root) / ".venv-posebusters" / "bin" / "bust")
+    # build_dir is normally <repo>/build; walk up to the repo root.
+    build_path = Path(build_dir)
+    for parent in (build_path.parent, build_path.parent.parent):
+        candidates.append(parent / ".venv-posebusters" / "bin" / "bust")
+
+    for cand in candidates:
+        if cand.is_file() and os.access(cand, os.X_OK):
+            return str(cand)
+    return None
 
 
 def _parse_env_value(text: str, key: str) -> str | None:
@@ -353,6 +390,13 @@ def sync_flexaidds_env(resolution: BuildResolution) -> Path:
         f"export FLEXAIDDS_ENGINE_SHA256={_shell_quote(resolution.engine_sha256)}",
         f"export FLEXAIDDS_RUNNER_SHA256={_shell_quote(resolution.runner_sha256)}",
         f"export FLEXAIDDS_RESULTS={_shell_quote(results)}",
+        # claim_ready needs pb_backend == bust_cli; pin the CLI so campaigns do
+        # not silently degrade to NativePoseQC when PATH lacks it.
+        *(
+            [f"export FLEXAIDDS_POSEBUSTERS_BIN={_shell_quote(bust)}"]
+            if (bust := resolve_posebusters_bin(resolution.build_dir))
+            else []
+        ),
         # Quote only the build dir; leave :$PATH unquoted so the shell expands PATH.
         # Quoting '…:$PATH' freezes the literal string and wipes /usr/bin from PATH.
         f"export PATH={_shell_quote(resolution.build_dir)}:$PATH",
