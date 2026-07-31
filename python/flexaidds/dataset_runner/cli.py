@@ -217,6 +217,50 @@ def _build_parser() -> argparse.ArgumentParser:
     return p
 
 
+def _benchmark_inconclusive_reasons(datasets) -> list[str]:
+    """Gates 1-3 of the #326 benchmark verdict (liveness, productivity,
+    completeness).
+
+    Returns a list of human-readable reasons the run is INCONCLUSIVE — the
+    binary did not run, produced nothing, or left baseline metrics unmeasured.
+    An empty list means gates 1-3 passed and only the quality/regression gate
+    remains. Kept separate from ``main`` so it is unit-testable without docking.
+
+    Targets that legitimately yield nothing can be allowlisted via
+    ``FLEXAIDDS_BENCH_ALLOW_EMPTY`` (comma-separated dataset slugs) rather than
+    by weakening the gate globally.
+    """
+    allow_empty = {
+        s.strip()
+        for s in os.environ.get("FLEXAIDDS_BENCH_ALLOW_EMPTY", "").split(",")
+        if s.strip()
+    }
+    reasons: list[str] = []
+    for dr in datasets:
+        slug = dr.config.slug
+        attempted = len(dr.targets_completed) + len(dr.targets_failed)
+        # 1. Liveness — every FlexAID invocation must exit 0.
+        if dr.flexaid_crashes > 0:
+            codes = ", ".join(
+                f"{k}={v}" for k, v in list(dr.entry_exit_codes.items())[:5]
+            )
+            reasons.append(
+                f"{slug}: liveness — {dr.flexaid_crashes} FlexAID non-zero exit(s) [{codes}]"
+            )
+        # 2. Productivity — the run must produce at least one pose.
+        if attempted > 0 and dr.total_poses == 0 and slug not in allow_empty:
+            reasons.append(
+                f"{slug}: productivity — 0 poses across {attempted} attempted target(s)"
+            )
+        # 3. Completeness — every declared baseline must actually be measured.
+        if dr.inconclusive_metrics:
+            reasons.append(
+                f"{slug}: completeness — baselines never measured: "
+                + ", ".join(dr.inconclusive_metrics)
+            )
+    return reasons
+
+
 def main(argv: list[str] | None = None) -> int:
     """Entry point.  Returns 0 on success, non-zero on failure/regression."""
     parser = _build_parser()
@@ -342,7 +386,25 @@ def main(argv: list[str] | None = None) -> int:
     # Print markdown summary to stdout
     print(report.to_markdown())
 
-    # Return non-zero if any regressions detected
+    # ----- Benchmark verdict: PASS / FAIL / INCONCLUSIVE (#326) -----
+    # Gates 1-3 (liveness, productivity, completeness) run before the
+    # regression check (gate 4). A run where the binary crashed, produced no
+    # poses, or left baseline metrics unmeasured is INCONCLUSIVE — it must not
+    # read as "no regression". Skipped under --dry-run (synthetic poses).
+    # Targets that legitimately yield nothing can be allowlisted via
+    # FLEXAIDDS_BENCH_ALLOW_EMPTY (comma-separated dataset slugs) rather than
+    # by weakening the gate globally.
+    if not runner.dry_run:
+        inconclusive = _benchmark_inconclusive_reasons(report.datasets)
+        if inconclusive:
+            logging.error(
+                "BENCHMARK INCONCLUSIVE — the run did not run, produce, or measure. "
+                "This is a hard failure, not 'no regression':\n  - "
+                + "\n  - ".join(inconclusive)
+            )
+            return 3
+
+    # Return non-zero if any regressions detected (gate 4: quality)
     any_regression = any(
         any(dr.regression_flags.values())
         for dr in report.datasets
