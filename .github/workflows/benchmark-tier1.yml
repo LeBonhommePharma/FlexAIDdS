@@ -24,7 +24,7 @@ on:
       dataset:
         description: "Dataset slug to benchmark"
         required: false
-        default: "casf2016"
+        default: "astex_diverse"
       tier1_subset_size:
         description: "Number of targets (overrides YAML default)"
         required: false
@@ -36,7 +36,7 @@ concurrency:
 
 jobs:
   tier1-benchmark:
-    name: Tier-1 Benchmark (${{ inputs.dataset || 'casf2016' }})
+    name: Tier-1 Benchmark (${{ inputs.dataset || 'astex_diverse' }})
     runs-on: ubuntu-latest
     timeout-minutes: 35
     permissions:
