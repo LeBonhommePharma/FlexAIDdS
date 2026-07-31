@@ -199,3 +199,42 @@ def test_log_Xi_is_a_method_not_a_property():
     assert not isinstance(attr, property), "log_Xi became a property — audit all call sites"
     assert callable(g.log_Xi)
     assert isinstance(g.log_Xi(), float)
+
+
+def test_no_bare_log_Xi_attribute_in_production_runner():
+    """Source-bound guard: every production `log_Xi` must be a CALL.
+
+    Codex's point on the two tests above: both still pass if runner.py:1617 is
+    reverted to `tr.grand_xi = g.log_Xi`, so they document the contract but do
+    not lock the bug. This one fails on exactly that regression.
+
+    AST rather than grep: `.log_Xi` inside a string or comment should not trip
+    it, and `g.log_Xi()` must be distinguished from `g.log_Xi` structurally,
+    which a regex cannot do reliably.
+    """
+    import ast
+    import pathlib
+
+    import flexaidds.dataset_runner.runner as runner_mod
+
+    src_path = pathlib.Path(runner_mod.__file__)
+    tree = ast.parse(src_path.read_text())
+
+    called = {
+        id(node.func)
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+    }
+    bare = [
+        node.lineno
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Attribute)
+        and node.attr == "log_Xi"
+        and id(node) not in called
+    ]
+    assert not bare, (
+        f"bare `.log_Xi` attribute access (missing parens) at "
+        f"{src_path.name} line(s) {bare} — log_Xi is a method, so this assigns "
+        f"a bound method that fails to JSON-serialize, quietly, inside an "
+        f"except-and-debug-log block"
+    )
