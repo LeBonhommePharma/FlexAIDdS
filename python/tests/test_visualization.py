@@ -193,11 +193,14 @@ class TestLoadPopulation:
 
             # 3 modes × 1 file each = 3 load calls
             assert mock_cmd.load.call_count == 3
-            # First mode gets red, second blue, third red (wraps)
+            # First mode gets red, second blue, third red (wraps).
+            # Object naming is `{prefix}_mode{id}_pose{rank}` since 2fb4eb76
+            # ("mode identity"), which changed load_population but left these
+            # assertions on the old `mode_NN_NNN` form.
             color_calls = mock_cmd.color.call_args_list
-            assert color_calls[0] == call("red", "mode_01_000")
-            assert color_calls[1] == call("blue", "mode_02_000")
-            assert color_calls[2] == call("red", "mode_03_000")
+            assert color_calls[0] == call("red", "flexaids_mode1_pose1")
+            assert color_calls[1] == call("blue", "flexaids_mode2_pose1")
+            assert color_calls[2] == call("red", "flexaids_mode3_pose1")
         finally:
             viz._PYMOL_AVAILABLE = original_available
             if original_cmd is not None:
