@@ -1,0 +1,22 @@
+{
+  "protocol_tier": "legacy_production_runtime",
+  "receptor_prep": "deprecated_historical_second_prep_waters_retained",
+  "receptor_origin_tracked": "benchmarks/astex_diverse/data/astex_diverse/{PDB}/{PDB}_apo.pdb",
+  "receptor_snapshot_committed": "ops/gates/configs/legacy_runtime_receptors/{PDB}_apo.pdb",
+  "receptor_runtime_cache_equivalent": "~/.flexaidds/benchmarks/astex_diverse/{PDB}/{PDB}_apo.pdb",
+  "repository_canonical_prep": "benchmarks/astex_diverse/astex_diverse/{PDB}/{PDB}_apo.pdb (waters stripped, DIFFERENT protocol, different CF)",
+  "scope": "config-provenance-repair + legacy-surface reconstruction; NOT canonical baseline; NOT historical root-cause",
+  "regenerable_from_tracked_state": "inputs only; numeric baseline replayable only while a binary matching recorded SHA is retained; source_commit null => NOT source-regenerable (KNOWN GAP)",
+  "tolerance": 0.0,
+  "binaries": {
+    "FlexAIDdS": {"sha256": "968377d1fbd59948896c2199886d940afb25097a5b1f405862153b304bfd7c14", "built": "2026-07-28T01:56", "source_commit": null},
+    "probe_cf":  {"sha256": "90b3ebf25a0ad2ba12a5fcfa15aa34a8b83b4aeccc59d5cfc9b077063eddcaa7", "built": "2026-07-28T01:55", "source_commit": null}
+  },
+  "config_sha256_all_three": "2f75f024952806990ae683eb35afe2e29ee5def08c2177b305ef7ebe0f39b713",
+  "targets": {
+    "1OQ5": {"receptor": "ops/gates/configs/legacy_runtime_receptors/1OQ5_apo.pdb", "receptor_sha256": "8452399c2354bf0fb380b9e04f42791e7ca2f2398751cb3bac407bdd982eaeb6", "pose": "benchmarks/astex_diverse/astex_diverse/1OQ5/1OQ5_ligand.sdf", "pose_sha256": "c064f28cfa5d0d289e952e6bdb55b547a9bc3c6b240e5942a7f6315fb51f0481", "config": "ops/gates/configs/1OQ5_dock_config.json", "expected_cf_total": -34.229803, "reps": 3},
+    "1SQ5": {"receptor": "ops/gates/configs/legacy_runtime_receptors/1SQ5_apo.pdb", "receptor_sha256": "9a8d26f19cd00e3410ebc7f3a8baeadea311008afc3d016843b957673cd41312", "pose": "benchmarks/astex_diverse/astex_diverse/1SQ5/1SQ5_ligand.sdf", "pose_sha256": "6e074aa266d0fad08b829807170aab7943fad99d76f5b5321f5f7759f4c0186d", "config": "ops/gates/configs/1SQ5_dock_config.json", "expected_cf_total": -73.413683, "reps": 3},
+    "1YGC": {"receptor": "ops/gates/configs/legacy_runtime_receptors/1YGC_apo.pdb", "receptor_sha256": "cae9d69093cb684a8ea60417cfaf4553e349fd063bd47e3ff5c1fa69d427a721", "pose": "benchmarks/astex_diverse/astex_diverse/1YGC/1YGC_ligand.sdf", "pose_sha256": "6f92986cbc23a42fe9cf50d1878b850eb30198d93dd4a335e203f58707b00b05", "config": "ops/gates/configs/1YGC_dock_config.json", "expected_cf_total": -0.871396, "reps": 2}
+  },
+  "repo_canonical_prep_cf_for_reference": {"1OQ5": -34.229803, "1SQ5": -73.790961, "1YGC": 7.303774}
+}
