@@ -160,3 +160,42 @@ def test_dry_run_default_all_metrics_still_strips_docking_power(tmp_path):
     assert dr.dry_run is True
     assert not any(k.startswith("docking_power_") for k in dr.metrics)
     assert not any(k.startswith("docking_power_") for k in dr.ci_95)
+
+
+# ── grand_xi serialization regression (PR #311, Codex review) ────────────────
+#
+# tr.grand_xi = g.log_Xi (bare, no parens) assigned a BOUND METHOD, which then
+# failed to JSON-serialize in _save_target_result. That path is wrapped in
+# `except Exception: logger.debug`, so it failed *quietly* — no red CI, no
+# raised error, just a silently missing number. The full suite did not catch
+# it; Grok found it by reading. These tests lock that path.
+
+def test_grand_xi_serializes_as_number_through_save_path(tmp_path):
+    """The exact quiet-failure path: grand_xi must reach JSON as a number."""
+    import json
+    from flexaidds.grand_canonical import compute_grand_partition
+
+    g = compute_grand_partition([("lig1", -12.5, 1e-6)], temperature_K=298.0)
+
+    # Computed exactly as dataset_runner does at the production call site.
+    grand_xi = g.log_Xi()
+
+    payload = {"target_id": "lig1", "grand_xi": grand_xi}
+    text = json.dumps(payload)  # would raise TypeError on a bound method
+    assert isinstance(json.loads(text)["grand_xi"], (int, float))
+
+
+def test_log_Xi_is_a_method_not_a_property():
+    """Pins the upstream contract the bug depended on.
+
+    If GrandPartitionFunction.log_Xi ever becomes a @property, bare-attribute
+    access starts being correct and this test flips — which is the signal to
+    revisit every `log_Xi()` call site rather than discovering it in a receipt.
+    """
+    from flexaidds.grand_canonical import compute_grand_partition
+
+    g = compute_grand_partition([("lig1", -12.5, 1e-6)], temperature_K=298.0)
+    attr = type(g).__dict__.get("log_Xi")
+    assert not isinstance(attr, property), "log_Xi became a property — audit all call sites"
+    assert callable(g.log_Xi)
+    assert isinstance(g.log_Xi(), float)
