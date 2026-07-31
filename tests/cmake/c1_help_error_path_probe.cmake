@@ -189,6 +189,20 @@ if(NOT _summary_n STREQUAL "" AND _summary_n STREQUAL "9")
   set(_total_ok TRUE)
 endif()
 
+# Unparseable first — even when SUMMARY says 9. Must not land in wrong-split
+# (that would look like an ownership finding when the defect is the parser).
+if(_n_direct EQUAL 0 AND _n_indirect EQUAL 0)
+  message(FATAL_ERROR
+    "C1_RESULT=FAIL ARM=lsan_inverted\n"
+    "C1 probe: LSan reported leaks but Direct/Indirect object counts could "
+    "not be parsed (summary_allocs=${_summary_n}).\n"
+    "Refusing SUMMARY-only pass — that is the shape that fails on correct "
+    "behaviour if the assertion ever reads the Direct line alone, and the "
+    "shape that cannot distinguish 3/6 from 9/0.\n"
+    "Fix the parser against real LSan output; do not drop the 3/6 assertion.\n"
+    "exit=${_rc}\nstderr:\n${_err_txt}")
+endif()
+
 if(_split_ok AND _total_ok)
   # Cross-check SUMMARY against the split when both are present.
   if(NOT _summary_n STREQUAL "" AND NOT _summary_n STREQUAL "${_n_sum}")
@@ -204,7 +218,7 @@ if(_split_ok AND _total_ok)
     "C1_RESULT=PASS ARM=lsan_inverted direct=${_n_direct} indirect=${_n_indirect} "
     "summary_allocs=${_summary_n}")
   message(STATUS
-    "C1 probe FINDING (expected under current source model): "
+    "C1 probe ARM=lsan_inverted FINDING (expected under current source model): "
     "--help under LSan: ${_n_direct} direct / ${_n_indirect} indirect "
     "(summary_allocs=${_summary_n}, exit=${_rc}). "
     "Teardown skipped via Terminate. NOT production-teardown coverage. "
@@ -213,6 +227,7 @@ if(_split_ok AND _total_ok)
 endif()
 
 # Total 9 but wrong split: ownership graph is not what the source says.
+# Only this arm falsifies Bumble's FA/GB/VC root model (9/0 or 4/5).
 if(_total_ok AND NOT _split_ok)
   message(FATAL_ERROR
     "C1_RESULT=FAIL ARM=lsan_inverted\n"
@@ -222,19 +237,6 @@ if(_total_ok AND NOT _split_ok)
     "Do not silence this — it is a real finding about the source model "
     "(9/0 or 4/5 falsifies who owns what).\n"
     "summary_allocs=${_summary_n} exit=${_rc}\nstderr:\n${_err_txt}")
-endif()
-
-# Unparseable split (0/0) with only SUMMARY: refuse — that hands off a test
-# that cannot distinguish Direct-only from Direct+Indirect.
-if(_n_direct EQUAL 0 AND _n_indirect EQUAL 0)
-  message(FATAL_ERROR
-    "C1_RESULT=FAIL ARM=lsan_inverted\n"
-    "C1 probe: LSan reported leaks but Direct/Indirect object counts could "
-    "not be parsed (summary_allocs=${_summary_n}).\n"
-    "Refusing SUMMARY-only pass — that is the shape that fails on correct "
-    "behaviour if the assertion ever reads the Direct line alone.\n"
-    "Fix the parser against real LSan output; do not drop the 3/6 assertion.\n"
-    "exit=${_rc}\nstderr:\n${_err_txt}")
 endif()
 
 # Anything else: wrong total or wrong split.
