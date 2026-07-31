@@ -787,10 +787,13 @@ int main(int argc, char **argv){
 #ifndef _WIN32
 	{
 		// Resolve argv[0] with a glibc-allocated buffer (second arg NULL) rather
-		// than a fixed MAX_PATH__ stack buffer: a resolved path can be up to
-		// PATH_MAX (4096) bytes, and _FORTIFY_SOURCE aborts realpath() into an
-		// undersized buffer ("buffer overflow detected") whenever the deploy
-		// path exceeds MAX_PATH__ — e.g. CI runner paths. Falls back to argv[0].
+		// than a fixed MAX_PATH__ stack buffer. _FORTIFY_SOURCE rejects any
+		// realpath() destination smaller than PATH_MAX (4096): __realpath_chk
+		// calls __chk_fail() when resolvedlen < PATH_MAX, before resolving —
+		// so a MAX_PATH__ (255) buffer aborts ("buffer overflow detected")
+		// UNCONDITIONALLY on fortified glibc builds, every invocation, any
+		// path length. Passing NULL makes glibc size the buffer itself.
+		// Do not reintroduce a fixed-size destination here. Falls back to argv[0].
 		char* rp = realpath(argv[0], NULL);
 		const char* src = (rp != NULL) ? rp : argv[0];
 		// strrchr(const char*) returns const char* — keep a local const pointer
