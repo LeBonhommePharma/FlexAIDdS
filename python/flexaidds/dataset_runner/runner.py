@@ -1665,11 +1665,11 @@ class DatasetRunner:
                     try:
                         from ..grand_canonical import compute_grand_partition
                         g = compute_grand_partition([(target_id, logz, conc)], temperature_K=298.0)
-                        p_bind = g.binding_probability(target_id) if hasattr(g, 'binding_probability') else (math.exp(logz + math.log(conc)) / math.exp(g.log_Xi) if conc > 0 else 0)
+                        p_bind = g.binding_probability(target_id) if hasattr(g, 'binding_probability') else (math.exp(logz + math.log(conc)) / math.exp(g.log_Xi()) if conc > 0 else 0)
                         grand_summary[target_id] = {
                             'log_Z': logz,
                             'conc_M': conc,
-                            'log_Xi': g.log_Xi,
+                            'log_Xi': g.log_Xi(),
                             'p_bind': p_bind,
                         }
                     except Exception as e:
