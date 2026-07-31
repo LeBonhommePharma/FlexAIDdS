@@ -2271,6 +2271,16 @@ flexaids_add_unit_test(test_protocol_config
         TEST_NAME Mol2SdfReaderTests
     )
 
+    # ── top.cpp helpers (seam A: logic lifted out of the main() TU) ───────
+    flexaids_add_unit_test(test_top_helpers
+        SOURCES
+            tests/test_top_helpers.cpp
+            LIB/top_helpers.cpp
+        COMPILE_OPTIONS -std=c++26
+        GTEST_MAIN_ONLY
+        TEST_NAME TopHelpersTests
+    )
+
     # ── read_lig latm inclusive range (pilot8 missing last HETTYP atom) ───
     # Uses real fileio.cpp (OpenFile_B / Terminate throws) — no stubs OpenFile.
     flexaids_add_unit_test(test_read_lig_latm
