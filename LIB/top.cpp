@@ -542,7 +542,6 @@ int main(int argc, char **argv){
   try {
 	flexaids_rng::init_from_env();
 	int   i,j;
-	int   natm;
 
 	char remark[MAX_REMARK];
 	char tmpremark[MAX_REMARK];
@@ -787,12 +786,16 @@ int main(int argc, char **argv){
 	// to Cellar/.../bin (where runtime data is installed), not /opt/homebrew/bin.
 #ifndef _WIN32
 	{
-		char resolved[MAX_PATH__];
-		const char* src = argv[0];
-		char* rp = realpath(src, resolved);
-		if (rp != NULL) {
-			src = resolved;
-		}
+		// Resolve argv[0] with a glibc-allocated buffer (second arg NULL) rather
+		// than a fixed MAX_PATH__ stack buffer. _FORTIFY_SOURCE rejects any
+		// realpath() destination smaller than PATH_MAX (4096): __realpath_chk
+		// calls __chk_fail() when resolvedlen < PATH_MAX, before resolving —
+		// so a MAX_PATH__ (255) buffer aborts ("buffer overflow detected")
+		// UNCONDITIONALLY on fortified glibc builds, every invocation, any
+		// path length. Passing NULL makes glibc size the buffer itself.
+		// Do not reintroduce a fixed-size destination here. Falls back to argv[0].
+		char* rp = realpath(argv[0], NULL);
+		const char* src = (rp != NULL) ? rp : argv[0];
 		// strrchr(const char*) returns const char* — keep a local const pointer
 		// instead of assigning into the legacy char* pch variable.
 		const char* slash = strrchr(src, '/');
@@ -805,6 +808,7 @@ int main(int argc, char **argv){
 			strncpy(FA->base_path, ".", MAX_PATH__ - 1);
 			FA->base_path[MAX_PATH__ - 1] = '\0';
 		}
+		free(rp);  // free(NULL) is a no-op
 	}
 #else
 	pch = strrchr(argv[0], '\\');
@@ -3295,41 +3299,14 @@ int main(int argc, char **argv){
 
 	// Residues
 	if(residue != NULL) {
-		for(i=1;i<=FA->res_cnt;i++){
-			//printf("Residue[%d]\n",i);
-
-			// bonded / shortpath / shortflex are three sibling matrices sized by
-			// the same natm, recovered here from the residue's own atom bounds
-			// exactly as the bonded teardown already did. Only bonded was freed
-			// before; the other two were released nowhere in the tree, which is
-			// the 193896 B / 2360 allocations LeakSanitizer reports on
-			// linux-gcc-asan and linux-clang-asan.
-			if(residue[i].fatm != NULL && residue[i].latm != NULL){
-				natm = residue[i].latm[0]-residue[i].fatm[0]+1;
-				free_bonded(&residue[i], natm);
-				free_shortpath(&residue[i], natm);
-				free_shortflex(&residue[i], natm);
-			}
-
-			if(residue[i].gpa != NULL) free(residue[i].gpa);
-			if(residue[i].fatm != NULL) free(residue[i].fatm);
-			if(residue[i].latm != NULL) free(residue[i].latm);
-			if(residue[i].bond != NULL) free(residue[i].bond);
+		// From 0, not 1: slot 0 is allocated by read_pdb.cpp:44-45 and its
+		// fatm/latm went unreleased for as long as the loop started at 1.
+		// free_resid guards the natm derivation on the trio, so the slot that
+		// has only fatm/latm needs no special case here -- the reason that
+		// guard exists is documented at LIB/free_resid.cpp:22.
+		for(i=0;i<=FA->res_cnt;i++){
+			free_resid(&residue[i]);
 		}
-
-		// residue[0] is allocated by read_pdb.cpp:44-45 (and twice more in
-		// python_bindings.cpp) but the loop above starts at 1, so its fatm/latm
-		// were never released -- 16 bytes on every run since the code was written.
-		// Freed here rather than by widening the loop to i=0: slot 0's fatm[0] is
-		// never written by anything, so the natm expression above would read
-		// uninitialised memory on that slot even though the free_* helpers would
-		// ignore the result. latm[0] IS written -- read_coor.cpp:299 stores
-		// through residue[res_cnt-1] and res_cnt is 1 on the first residue, which
-		// is exactly why the read_pdb.cpp:44-45 allocation must stay. Every other
-		// pointer on slot 0 is explicitly NULL (read_pdb.cpp:42,51,52,55,56), so
-		// there is nothing else there to free.
-		if(residue[0].fatm != NULL) free(residue[0].fatm);
-		if(residue[0].latm != NULL) free(residue[0].latm);
 
 		free(residue);
 	}
