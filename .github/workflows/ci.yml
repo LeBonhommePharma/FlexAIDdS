@@ -129,6 +129,40 @@ jobs:
           cmake "${CMAKE_ARGS[@]}"
       - name: Build
         run: cmake --build build --parallel
+      # Smoke: execute the shipping binary. Until this step existed, no CI job
+      # ever ran FlexAID itself — only unit tests linked against LIB/. That gap
+      # let a startup abort live in main and still show a green matrix: the
+      # 255-byte realpath() destination at LIB/top.cpp tripped glibc
+      # _FORTIFY_SOURCE (__realpath_chk fails when the destination is smaller
+      # than PATH_MAX, before resolving anything), so every fortified gcc build
+      # died before parsing argv. --help is the cheapest invocation that proves
+      # the binary starts, so this is deliberately a liveness gate and not a
+      # behaviour test.
+      #
+      # detect_leaks=0 on purpose: this asserts the binary starts, not that it
+      # frees. Error-path leaks are a separate concern with its own probe, and
+      # letting LSan fail this step would conflate "dead on arrival" with
+      # "exits dirty".
+      - name: Smoke — shipping binary starts (--help)
+        if: matrix.name == 'linux-gcc' || matrix.name == 'linux-clang' || matrix.name == 'linux-gcc-mpi' || matrix.name == 'linux-gcc-asan'
+        env:
+          ASAN_OPTIONS: detect_leaks=0
+        run: |
+          set -euo pipefail
+          test -x build/FlexAID || { echo "::error::build/FlexAID missing or not executable"; exit 1; }
+          build/FlexAID --help > help.out 2> help.err || {
+            echo "::error::FlexAID --help exited $? — the shipping binary does not start"
+            echo "--- stdout ---"; cat help.out
+            echo "--- stderr ---"; cat help.err
+            exit 1
+          }
+          grep -q "Usage:" help.out || {
+            echo "::error::FlexAID --help exited 0 but printed no usage text"
+            echo "--- stdout ---"; cat help.out
+            echo "--- stderr ---"; cat help.err
+            exit 1
+          }
+          echo "FlexAID --help: exit 0, usage text present"
       - name: Test
         if: matrix.name == 'linux-gcc' || matrix.name == 'linux-clang' || matrix.name == 'linux-gcc-mpi' || matrix.name == 'linux-gcc-asan'
         run: ctest --test-dir build --output-on-failure
