@@ -163,12 +163,14 @@ std::string synthetic_full_pb_header() {
            "all_atoms_connected,bond_lengths,bond_angles,internal_steric_clash,"
            "aromatic_ring_flatness,double_bond_flatness,internal_energy,"
            "protein-ligand_maximum_distance,minimum_distance_to_protein,"
-           "no_protein_clashes,volume_overlap_with_protein,rmsd_≤_2å";
+           "minimum_distance_to_organic_cofactors,"
+           "minimum_distance_to_inorganic_cofactors,minimum_distance_to_waters,"
+           "volume_overlap_with_protein,rmsd_≤_2å";
 }
 
 std::string synthetic_full_pb_true_row() {
     return "m1,True,True,True,True,True,True,True,True,True,True,True,"
-           "True,True,True,True,1.0";
+           "True,True,True,True,True,True,1.0";
 }
 
 }  // namespace
