@@ -1614,7 +1614,7 @@ class DatasetRunner:
                     try:
                         from ..grand_canonical import compute_grand_partition
                         g = compute_grand_partition([(target_id, tr.grand_log_Z, tr.conc_M)], temperature_K=298.0)
-                        tr.grand_xi = g.log_Xi
+                        tr.grand_xi = g.log_Xi()
                     except Exception as e:
                         logger.debug("P3 grand compute: %s", e)
                 try:
