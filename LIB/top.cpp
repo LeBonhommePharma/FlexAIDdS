@@ -786,12 +786,13 @@ int main(int argc, char **argv){
 	// to Cellar/.../bin (where runtime data is installed), not /opt/homebrew/bin.
 #ifndef _WIN32
 	{
-		char resolved[MAX_PATH__];
-		const char* src = argv[0];
-		char* rp = realpath(src, resolved);
-		if (rp != NULL) {
-			src = resolved;
-		}
+		// Resolve argv[0] with a glibc-allocated buffer (second arg NULL) rather
+		// than a fixed MAX_PATH__ stack buffer: a resolved path can be up to
+		// PATH_MAX (4096) bytes, and _FORTIFY_SOURCE aborts realpath() into an
+		// undersized buffer ("buffer overflow detected") whenever the deploy
+		// path exceeds MAX_PATH__ — e.g. CI runner paths. Falls back to argv[0].
+		char* rp = realpath(argv[0], NULL);
+		const char* src = (rp != NULL) ? rp : argv[0];
 		// strrchr(const char*) returns const char* — keep a local const pointer
 		// instead of assigning into the legacy char* pch variable.
 		const char* slash = strrchr(src, '/');
@@ -804,6 +805,7 @@ int main(int argc, char **argv){
 			strncpy(FA->base_path, ".", MAX_PATH__ - 1);
 			FA->base_path[MAX_PATH__ - 1] = '\0';
 		}
+		free(rp);  // free(NULL) is a no-op
 	}
 #else
 	pch = strrchr(argv[0], '\\');
