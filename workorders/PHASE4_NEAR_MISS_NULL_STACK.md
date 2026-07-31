@@ -57,7 +57,7 @@ poisoning, it is the gate doing what it was built to do.
 are chemically clean against protein, cofactors, internal geometry and energy,
 and fail the claim gate solely because they displace crystallographic water.
 
-### ⚠ SCOPE — this is a property of the receptor tier, not of the docking
+### ⚠ SCOPE — protocol-tier × pose interaction
 
 All 36 bust receipts record a runtime-cache receptor. Exact audit over the
 31 unique targets:
@@ -440,8 +440,8 @@ interchangeable**, and the difference is chemically material.
 | **Repository-canonical Astex** | `benchmarks/astex_diverse/astex_diverse/{PDB}/{PDB}_apo.pdb` | `-34.229803` | `-73.790961` | `+7.303774` |
 | **Legacy production-runtime** | `benchmarks/astex_diverse/data/astex_diverse/{PDB}/` — a **deprecated historical second prep** | `-34.229803` | `-73.413683` | `-0.871396` |
 
-The legacy tier is what the runtime cache (`~/.flexaidds/benchmarks/...`)
-holds, byte-identical, and it is what reproduces the historical workorder
+For these three targets (`1OQ5`/`1SQ5`/`1YGC`), the legacy tier is what the
+runtime cache (`~/.flexaidds/benchmarks/...`) holds, byte-identical, and it is what reproduces the historical workorder
 numbers. **It is not canonical.** `benchmarks/datasets/CANONICAL.md` and
 `benchmarks/astex_diverse/README.md` define the canonical tree and classify
 `data/astex_diverse/` as deprecated — "do not use for new work."
