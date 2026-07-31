@@ -94,6 +94,54 @@ water-sensitive endpoint, and the docking output supplies the outcome.
   variant whose provenance is **unresolved**. (`1GPK` appears in both arms, so
   28/36 *receipts* match the deprecated tree exactly, not 36/36.)
 
+### The vacuity is not limited to water — generalize the caveat
+
+The seven third-variant targets keep **every water** but have their non-water
+heteroatoms stripped:
+
+```
+       non-water HETATM   stripped relative to deprecated prep
+1GPK   cache 0 / dep 56    NAG
+1HQ2   cache 2 / dep 17    CL, MG, PH2
+1L7F   cache 2 / dep 127   CA, BMA, MAN, NAG
+1MEH   cache 1 / dep 8     K, CSO
+1N1M   cache 0 / dep 403   HG, BMA, FUC, MAN, NAG, NDG
+1N2J   cache 0 / dep 12    BAL
+1OPK   cache 0 / dep 16    MYR
+```
+
+**The vacuity here is asymmetric, and saying "all four cofactor columns on
+all seven" would overstate it.** Checked against PoseBusters 0.6.5's own
+element classification (`posebusters/tools/protein.py`), which counts Mg, Ca
+and K as inorganic-cofactor elements:
+
+- both **organic**-cofactor checks are vacuous on **all seven**;
+- both **inorganic**-cofactor checks are vacuous on **four of seven**
+  (`1GPK, 1N1M, 1N2J, 1OPK`);
+- `1HQ2` (2 × MG), `1L7F` (2 × CA) and `1MEH` (1 × K) retain inorganic
+  cofactors, so those checks remain representable there.
+
+The mechanism is the same as for water: a receptor stripped of a species
+makes a clash with that species unrepresentable.
+
+**Scale, so this is not over-read:** 8 of 34 scored poses come from these
+seven targets, and the one cofactor failure in the whole set (`1JJE`) is not
+among them. **This changes no number today.**
+
+**The general rule it establishes, which is the durable part:** the strict
+endpoint is **vacuous on different column subsets for different target
+subsets**, depending on what each receptor preparation retained.
+
+`pb_pass` itself remains **formally well-defined** — it is the same AND over
+27 booleans regardless of target. What varies is the *opportunity profile*:
+which components were capable of failing at all. So: **aggregate `pb_pass` is
+well-defined only relative to the exact fixed receptor-preparation manifest,
+and it is not transportable or comparable across receptor tiers/manifests
+without reporting which checks were non-vacuous per target.** The evaluator is
+not undefined; the aggregate is not portable.
+
+The evidence set contains **at least three receptor tiers**, not two.
+
 Every strict `pb_pass` figure the campaign produced is a figure against a
 noncanonical receptor tier that the repository does not sanction for new work.
 Codex's reporting semantics above are unaffected and still correct.
@@ -201,6 +249,8 @@ repository. Audited by Opus, 2026-07-31, static read.
 
 Provenance: Opus and Bumble, 2026-07-31, static analysis over existing
 campaign outputs. No docking or rebuild was run to produce these numbers.
+
+---
 
 ## ⚠ Comparability boundary — 2026-07-31
 
@@ -323,9 +373,49 @@ tractable.
    the observed record would understate the count regardless.
 2. Scoped to **these four failures** — the ones enumerated in #311 — at
    `11ce273c`. No search was made for a fifth.
+3. The orphan-guard date is scoped to **the 11 orphans that were silenced**,
+   not to the guard's whole life. No one has shown that no other orphan
+   existed between 2026-05-25 and 2026-07-14 and was later resolved.
+
+### Two different durations wear the same units — say which one you have
+
+Birth order was **log_Xi (07-08) → palette (07-09) → orphan guard (07-14) →
+docking_mode (07-25)**. Discovery order was almost exactly inverted: the
+orphan guard and the dataset-schema failure were found first, the two
+~3-week-old Python defects last.
+
+The reason is mechanical. The C++ configure failure and the schema failure
+**abort their jobs before the Python defects are reached at all.** A red
+matrix does not surface its oldest defect first; it surfaces its
+**earliest-aborting** one.
+
+**Rule: a duration read off CI is a lower bound on defect age, never an
+estimate of it.** The durations in the table above are **ages**, derived from
+each defect's introducing commit — they are citable as ages precisely because
+they were not read off CI.
+
+The two quantities wear the same units and are not the same thing:
+
+| Quantity | Source | What it is |
+|---|---|---|
+| "`main` has been red for N days" | observed CI | a **floor** — masking hides everything behind the earliest-aborting job |
+| "this defect has been in `main` for N days" | introducing commit | an **age** — knowable only after the archaeology |
+
+They coincide here only because the birth commits were found. Before that work
+existed, all anyone had was the floor.
+
+This is the same family as the `ctest` count and the column names, but a
+distinct member of it. A name can be wrong (`no_protein_clashes`) or
+overstated (a test name, the `RMSD ≤ 2Å` label). A duration is neither: it is
+**true, and misleading relative to a question it cannot answer.** So the
+discipline is not "distrust the number" — it is **state which question the
+number answers.** Both durations above are correct; only one of them answers
+"how old is this bug."
 
 All commits verified as ancestors of `main` at `11ce273c`
-(`git merge-base --is-ancestor`, all yes). Archaeology by Opus, 2026-07-31.
+(`git merge-base --is-ancestor`, all yes). Archaeology by Opus, 2026-07-31;
+full detail including all 11 orphan dates in
+`RESEARCH/MAIN_CI_FOUR_STACKED_FAILURES_ARCHAEOLOGY.md`.
 
 ---
 
@@ -397,16 +487,17 @@ runtime cache        : 30 of 31 receptors carry waters (28-931 HOH; 1IGJ has 0)
 repository-canonical : 31 of 31 carry ZERO waters
 ```
 
-**The water columns can only ever fail against the deprecated prep.** Under
-the canonical preparation there are no crystallographic waters to displace, so
-`minimum_distance_to_waters` and `volume_overlap_with_waters` are trivially
-satisfied. The 29% → 71% gap is **an artifact of the receptor tier, not a
-property of the docking.**
+**The water columns cannot fail against a water-free receptor.** Under the
+repository-canonical preparation there are no crystallographic waters to
+displace, so `minimum_distance_to_waters` and `volume_overlap_with_waters` are
+vacuous by construction.
 
-The claim rests on the mechanism — zero waters means no water clash is
-representable — plus 31/31 canonical receptors having zero waters. The one
-natural experiment in the data (1IGJ, water-free, 1 pose, 0 water failures)
-is **n=1 and proves nothing on its own**; it is consistent, not load-bearing.
+**What this does to the 29% → 71% figure is stated once, in Block 4, and is
+not restated here.** See "SCOPE — protocol-tier × pose interaction" and the
+frozen boundaries beneath it. Do not paraphrase that framing into this block:
+an earlier draft carried its own copy, Block 4's copy was corrected and this
+one was not, and the document contradicted itself for one commit. **One
+claim, one home.**
 
 **KNOWN GAP — the binary is not commit-stamped.** The receipt records the
 binary SHA256 and its build date (2026-07-28) but **not** the source commit,
