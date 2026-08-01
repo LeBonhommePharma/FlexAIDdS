@@ -1244,6 +1244,11 @@ class DatasetRunner:
         # int = a real process exit/return code; None = the engine never
         # executed (exec failure), which no completed subprocess.run can produce.
         self._entry_exit_codes: Dict[str, Optional[int]] = {}
+        # Poses whose element list disagreed with the reference's.  Per
+        # instance and reset per dataset, like the crash tally above it: a
+        # process-global would report the previous dataset's refusals as
+        # this one's, which is the misattribution this PR exists to close.
+        self._element_mismatches: List[str] = []
 
     def _effective_temperature(self, slug: str) -> float:
         """Auto-force 298 K for ITC/thermo datasets (handoff requirement).
@@ -1462,6 +1467,7 @@ class DatasetRunner:
                     ligand_id,
                     structural_state,
                     reference_ligand=ligand_path,
+                    mismatches=self._element_mismatches,
                 )
                 # Copy the coordinates out BEFORE the with-block closes and
                 # takes them.  Deliberately after the parse, so a preservation
@@ -1539,6 +1545,7 @@ class DatasetRunner:
         ligand_id: str,
         structural_state: str,
         reference_ligand: Optional[Path] = None,
+        mismatches: Optional[List[str]] = None,
     ) -> List[PoseScore]:
         """Parse FlexAIDdS result PDB files from a completed docking run.
 
@@ -1608,7 +1615,7 @@ class DatasetRunner:
 
                 if rmsd < 0.0 and ref_coords is not None:
                     rmsd = _pose_rmsd_vs_reference(
-                        pdb_path, ref_coords, ref_elements)
+                        pdb_path, ref_coords, ref_elements, mismatches)
 
             except Exception as exc:
                 logger.debug("Error parsing %s: %s", pdb_path, exc)
@@ -1816,6 +1823,7 @@ class DatasetRunner:
         with self._crash_lock:
             self._flexaid_crashes = 0
             self._entry_exit_codes = {}
+            self._element_mismatches = []
 
         def _process_one_item(item: Tuple[str, str]) -> Tuple[str, str, List[PoseScore], float, str]:
             """Process a single (target_id, structural_state) entry.
@@ -1948,13 +1956,14 @@ class DatasetRunner:
 
         # Element-order refusals are scored as misses, so they must be visible
         # or a correspondence bug reads as bad docking.
-        if _ELEMENT_MISMATCHES:
+        if self._element_mismatches:
             logger.warning(
                 "%d pose(s) had an element list disagreeing with their "
                 "reference and were scored as misses: %s%s",
-                len(_ELEMENT_MISMATCHES),
-                ", ".join(Path(p).name for p in _ELEMENT_MISMATCHES[:5]),
-                " ..." if len(_ELEMENT_MISMATCHES) > 5 else "",
+                len(self._element_mismatches),
+                ", ".join(
+                    Path(p).name for p in self._element_mismatches[:5]),
+                " ..." if len(self._element_mismatches) > 5 else "",
             )
 
         # MPI gather (still works at target granularity for final aggregation)
@@ -2478,13 +2487,9 @@ def _extract_ligand_coords_from_sdf(sdf_path: Path):
     return _extract_ligand_atoms_from_sdf(sdf_path)[0]
 
 
-# Poses whose element list disagreed with the reference's.  Each one is
-# scored as a docking failure, so the count belongs in the run summary --
-# otherwise a correspondence bug is indistinguishable from bad docking.
-_ELEMENT_MISMATCHES: "list[str]" = []
-
-
-def _pose_rmsd_vs_reference(pose_pdb: Path, ref_coords, ref_elements=None) -> float:
+def _pose_rmsd_vs_reference(
+    pose_pdb: Path, ref_coords, ref_elements=None, mismatches=None
+) -> float:
     """RMSD between docked pose ligand heavy atoms and reference coordinates."""
     from flexaidds.benchmark import compute_rmsd, extract_ligand_atoms_from_pdb
 
@@ -2525,7 +2530,8 @@ def _pose_rmsd_vs_reference(pose_pdb: Path, ref_coords, ref_elements=None) -> fl
                 "summary.",
                 pose_pdb.name, list(ref_elements)[:6], list(pred_elements)[:6],
             )
-            _ELEMENT_MISMATCHES.append(str(pose_pdb))
+            if mismatches is not None:
+                mismatches.append(str(pose_pdb))
             return -1.0
         return compute_rmsd(pred, ref_coords, pred_elements)
     except ValueError:
