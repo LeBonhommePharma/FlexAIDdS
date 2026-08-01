@@ -1,12 +1,24 @@
 name: FlexAID CI
 
 on:
+  # push is restricted to main: an unrestricted `push:` made every commit on a
+  # PR branch run this whole matrix TWICE (once per event) on the same SHA.
+  # The concurrency group below cannot dedupe those two, because github.ref is
+  # refs/heads/<branch> on push and refs/pull/<n>/merge on pull_request -- two
+  # different groups by construction. Every other workflow in this repo that
+  # has both triggers already scopes push to main; this one and license-scan
+  # were the exceptions. See #338.
   push:
+    branches: [main]
   pull_request:
   workflow_dispatch:
 
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.ref }}
+  # head_ref (the source branch, set only on pull_request) before ref, so a PR
+  # and any future push-triggered run for the same branch share one group.
+  # Defence in depth: the branches filter above is what actually removes the
+  # duplicate; this stops it recurring if push is ever widened again.
+  group: ci-${{ github.workflow }}-${{ github.head_ref || github.ref }}
   cancel-in-progress: true
 
 jobs:
