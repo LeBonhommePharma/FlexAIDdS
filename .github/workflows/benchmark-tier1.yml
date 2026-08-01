@@ -41,6 +41,10 @@ on:
         description: "FLEXAIDDS_PB_CLASH_WEIGHT (P1 clash steer; empty/0 = off)"
         required: false
         default: ""
+      seed:
+        description: "FLEXAID_SEED (single-D; fixed GA seed for determinism). Empty = time(0)."
+        required: false
+        default: ""
 
 concurrency:
   # Include the sweep inputs so distinct (F, pocket, clash) points run in
@@ -53,7 +57,8 @@ jobs:
   tier1-benchmark:
     name: Tier-1 Benchmark (${{ inputs.dataset || 'astex_diverse' }})
     runs-on: ubuntu-latest
-    timeout-minutes: 35
+    # Clean build (~20 min, no cache) + 2 targets x ~17 min docking + overhead.
+    timeout-minutes: 70
     permissions:
       contents: read
       pull-requests: write   # required by marocchino/sticky-pull-request-comment
@@ -104,18 +109,14 @@ jobs:
           echo "CC=gcc-14" >> "$GITHUB_ENV"
           echo "CXX=g++-14" >> "$GITHUB_ENV"
 
-      - name: Cache build
-        id: cache-build
-        uses: actions/cache@v6
-        with:
-          path: build
-          key: tier1-build-${{ runner.os }}-${{ hashFiles('CMakeLists.txt', 'LIB/**/*.cpp', 'LIB/**/*.h') }}
-          restore-keys: |
-            tier1-build-${{ runner.os }}-
-
-      - name: Build FlexAIDdS (fast profile)
-        if: steps.cache-build.outputs.cache-hit != 'true'
+      # NO build cache on this experiment branch. The restore-keys prefix
+      # fallback restored a stale build/ and incremental cmake --build did not
+      # recompile changed sources -- proven this run (CF.pb_clash absent though
+      # the writer emits it unconditionally). A correctness experiment must
+      # compile from clean, so the cache step is removed and the build always runs.
+      - name: Build FlexAIDdS (fast profile, clean)
         run: |
+          rm -rf build
           cmake -S . -B build -G Ninja \
             -DCMAKE_BUILD_TYPE=Release \
             -DFLEXAIDS_USE_CUDA=OFF \
@@ -149,17 +150,25 @@ jobs:
       # FLEXAIDDS_BENCHMARK_DATA env var above points the runner there.
 
       - name: Run tier-1 benchmark
-        timeout-minutes: 25
+        # 2 targets x ~17 min each; give headroom over the ~34 min floor.
+        timeout-minutes: 45
         env:
           PYTHONPATH: ${{ github.workspace }}/python
           # Scoring switches forwarded from workflow_dispatch inputs. All read at
           # RUNTIME via std::getenv (vcfunction.cpp:948, top.cpp:534/543), so no
-          # rebuild is needed and the ccache/cache hazard does not apply. Empty
-          # string => COM_FLOOR F<=0 skipped, weights atof("")=0 off => the
-          # engine is bit-identical to a run with these unset (default behaviour).
+          # rebuild is needed. Empty string => COM_FLOOR F<=0 skipped, weights
+          # atof("")=0 off => the engine is bit-identical to a run with these unset.
           FLEXAIDDS_COM_FLOOR: ${{ inputs.com_floor }}
           FLEXAIDDS_PB_POCKET_WEIGHT: ${{ inputs.pb_pocket_w }}
           FLEXAIDDS_PB_CLASH_WEIGHT: ${{ inputs.pb_clash_w }}
+          # Determinism (ops/launch_comfloor.sh). A fixed seed + single-thread +
+          # no parallel restarts/elitism makes every cell a matched comparison and
+          # makes G3' (a repeat is bit-identical) testable. FLEXAID_SEED is single-D
+          # (RngSeed.h:28); empty => time(0) fallback (gaboom.cpp:337).
+          FLEXAID_SEED: ${{ inputs.seed }}
+          OMP_NUM_THREADS: "1"
+          FLEXAIDDS_PARALLEL_RESTARTS: "0"
+          FLEXAIDDS_SEED_ELITISM: "0"
         run: |
           # Provenance sidecar: record exactly which switches this run used, next
           # to the artifacts it produced. The run manifest records omp_threads but
@@ -173,6 +182,10 @@ jobs:
             "com_floor": "${{ inputs.com_floor }}",
             "pb_pocket_weight": "${{ inputs.pb_pocket_w }}",
             "pb_clash_weight": "${{ inputs.pb_clash_w }}",
+            "flexaid_seed": "${{ inputs.seed }}",
+            "omp_num_threads": "1",
+            "parallel_restarts": "0",
+            "seed_elitism": "0",
             "tier1_subset_size_input": "${{ inputs.tier1_subset_size }}",
             "dataset": "${{ env.DATASET }}"
           }
