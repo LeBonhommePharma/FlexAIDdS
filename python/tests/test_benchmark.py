@@ -17,6 +17,7 @@ from flexaidds.benchmark import (
     MethodResult,
     SystemBenchmarkResult,
     compute_rmsd,
+    compute_rmsd_superposed,
     enrichment_factor,
     extract_ligand_coords_from_mmcif,
     extract_ligand_coords_from_pdb,
@@ -171,10 +172,25 @@ class TestExtractPDB:
     def test_basic(self, sample_system):
         coords = extract_ligand_coords_from_pdb(sample_system.reference_pose_pdb_path)
         assert coords.shape == (3, 3)
-        # Sorted by atom name: C1, N1, O1
+        # File order (not name-sorted): C1, N1, O1 as written
         np.testing.assert_allclose(coords[0], [1.0, 2.0, 3.0])
         np.testing.assert_allclose(coords[1], [4.0, 5.0, 6.0])
         np.testing.assert_allclose(coords[2], [7.0, 8.0, 9.0])
+
+    def test_preserves_file_order_not_lexicographic_atom_names(self, tmp_path):
+        """FlexAID-style names must stay in write order, not C/O/N lex sort."""
+        # File order: O then C then N. Lex sort by name would be C, N, O.
+        pdb = tmp_path / "flexaid_style.pdb"
+        pdb.write_text(
+            "HETATM90001 O  1 HUP     1       1.000   0.000   0.000  1.00  0.00           O\n"
+            "HETATM90002 C  0 HUP     1       2.000   0.000   0.000  1.00  0.00           C\n"
+            "HETATM90003 N  2 HUP     1       3.000   0.000   0.000  1.00  0.00           N\n"
+            "END\n"
+        )
+        coords = extract_ligand_coords_from_pdb(pdb)
+        np.testing.assert_allclose(coords[0], [1.0, 0.0, 0.0])
+        np.testing.assert_allclose(coords[1], [2.0, 0.0, 0.0])
+        np.testing.assert_allclose(coords[2], [3.0, 0.0, 0.0])
 
     def test_empty_raises(self, tmp_path):
         empty = tmp_path / "empty.pdb"
@@ -219,37 +235,63 @@ class TestExtractMmcif:
 
 
 class TestComputeRmsd:
+    """Docking RMSD is in-place (no superposition). Placement is the signal."""
+
     def test_identity(self):
         coords = np.array([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]])
         assert compute_rmsd(coords, coords) == pytest.approx(0.0, abs=1e-10)
 
-    def test_translation(self):
+    def test_translation_is_the_error(self):
         ref = np.array([[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]])
-        # Pure translation → Kabsch should align → RMSD = 0
-        pred = ref + np.array([10.0, 20.0, 30.0])
-        assert compute_rmsd(pred, ref) == pytest.approx(0.0, abs=1e-8)
+        # Pure +5 Å translation: docking error is 5 Å, not 0.
+        pred = ref + np.array([5.0, 0.0, 0.0])
+        assert compute_rmsd(pred, ref) == pytest.approx(5.0, abs=1e-8)
+        # Superposed form still reports ~0 (shape match) — different question.
+        assert compute_rmsd_superposed(pred, ref) == pytest.approx(0.0, abs=1e-8)
 
-    def test_rotation(self):
+    def test_rotation_is_the_error(self):
         ref = np.array([[1.0, 0.0, 0.0], [-1.0, 0.0, 0.0], [0.0, 1.0, 0.0]])
-        # 90-degree rotation about Z
         R = np.array([[0.0, -1.0, 0.0], [1.0, 0.0, 0.0], [0.0, 0.0, 1.0]])
-        pred = (ref @ R.T)
-        assert compute_rmsd(pred, ref) == pytest.approx(0.0, abs=1e-8)
+        pred = ref @ R.T
+        # In-place: non-zero. Superposed: ~0.
+        assert compute_rmsd(pred, ref) > 0.5
+        assert compute_rmsd_superposed(pred, ref) == pytest.approx(0.0, abs=1e-8)
 
-    def test_known_rmsd(self):
+    def test_known_single_atom(self):
         ref = np.array([[0.0, 0.0, 0.0]])
         pred = np.array([[1.0, 0.0, 0.0]])
-        # Single point: no rotation effect, RMSD = 1.0
-        # But with centering both are at origin → RMSD = 0
-        # (both single-point arrays center to origin)
-        assert compute_rmsd(pred, ref) == pytest.approx(0.0, abs=1e-10)
+        assert compute_rmsd(pred, ref) == pytest.approx(1.0, abs=1e-10)
 
     def test_two_points_known(self):
         ref = np.array([[0.0, 0.0, 0.0], [2.0, 0.0, 0.0]])
         pred = np.array([[0.0, 0.0, 0.0], [2.0, 1.0, 0.0]])  # 1Å offset on one atom
-        rmsd = compute_rmsd(pred, ref)
-        # After Kabsch alignment this should be < 1.0
-        assert rmsd < 1.0
+        # In-place: sqrt((0 + 1)/2) = sqrt(0.5)
+        assert compute_rmsd(pred, ref) == pytest.approx(math.sqrt(0.5), abs=1e-10)
+
+    def test_kabsch_would_hide_pocket_miss(self):
+        """Regression: superposed RMSD collapsed every 1gpk pose to ~3.156 Å.
+
+        A rigid translation of a multi-atom ligand must stay visible to
+        ``compute_rmsd`` and invisible to ``compute_rmsd_superposed``.
+        """
+        ref = np.array(
+            [
+                [0.0, 0.0, 0.0],
+                [1.0, 0.0, 0.0],
+                [0.0, 1.0, 0.0],
+                [0.0, 0.0, 1.0],
+            ],
+            dtype=np.float64,
+        )
+        miss = ref + np.array([6.5, 0.0, 0.0])  # ligand left the pocket
+        hit = ref + np.array([0.1, 0.0, 0.0])  # near-native
+        assert compute_rmsd(miss, ref) == pytest.approx(6.5, abs=1e-8)
+        assert compute_rmsd(hit, ref) == pytest.approx(0.1, abs=1e-8)
+        # Superposed: both look like "same shape" → both ~0 (the old bug).
+        assert compute_rmsd_superposed(miss, ref) == pytest.approx(0.0, abs=1e-8)
+        assert compute_rmsd_superposed(hit, ref) == pytest.approx(0.0, abs=1e-8)
+        # The discriminator the gate needs: miss >> hit.
+        assert compute_rmsd(miss, ref) > 10 * compute_rmsd(hit, ref)
 
     def test_shape_mismatch(self):
         a = np.array([[1.0, 2.0, 3.0]])
