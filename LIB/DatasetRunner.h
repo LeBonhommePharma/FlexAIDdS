@@ -233,6 +233,23 @@ struct DockingResult {
     bool  seed_echo{false};
     // Pose provenance: "ini_elitism" | "ga_cluster" | "cf_rank0" | "softbeta" | ""
     std::string pose_source{""};
+    // ── Pose-election outcome ────────────────────────────────────────────
+    // Which rule actually elected the reported pose, and what the cross-restart
+    // consensus vote was.  These were previously emitted only to std::cerr
+    // (the "[CONSENSUS]" line), so a successful run -- whose stderr CI discards
+    // -- kept the elected RMSD but discarded the rule that produced it.  Two
+    // runs with identical configs can elect different poses; without these the
+    // artifact cannot say why.  Recorded beside rmsd_to_crystal for that reason.
+    //
+    // Note the election rule is not independent of FLEXAIDDS_RESTARTS: the
+    // consensus veto needs cluster_consensus_k (default 3) distinct restarts to
+    // vote, so at restarts < k it can never fire.  Comparing runs across restart
+    // counts therefore varies the rule as well as the search budget, which is
+    // exactly what these fields make visible.
+    // "" when no election ran (single candidate / election block skipped).
+    std::string election_mode{""};   // "consensus" | "entropy-midwall" | "entropy-contact"
+    int  consensus_count{-1};        // votes for the elected pose; -1 = not elected
+    bool rank0_demoted{false};       // true when the elected pose is not CF rank-0
     // Separate estimands: generator CF top-1 vs entropy/consensus reranked top-1
     std::string cf_top1_pose_path;
     std::string cf_top1_pose_sha256;

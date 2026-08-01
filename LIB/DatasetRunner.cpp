@@ -7032,6 +7032,23 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                             auto s = p.find_last_of('/');
                             return s == std::string::npos ? p : p.substr(s + 1);
                         };
+                        // Record the election outcome in the result row, beside the
+                        // RMSD it explains.  Same values the [CONSENSUS] line below
+                        // prints; that line is stderr-only, and CI discards stderr on
+                        // success, so the log cannot be the system of record.
+                        result.election_mode = high_entropy_gate ? "entropy-midwall"
+                                             : low_entropy_gate  ? "entropy-contact"
+                                                                 : "consensus";
+                        result.consensus_count = (sel_i >= 0) ? consensus[sel_i] : -1;
+                        // Demoted == the elected pose is not the CF-best candidate in
+                        // the pool.  Defined against min-CF rather than pool order so
+                        // it does not depend on how the pool happens to be sorted.
+                        int cf_best_i = -1;
+                        for (size_t i = 0; i < pool.size(); ++i)
+                            if (cf_best_i < 0 || pool[i].cf < pool[cf_best_i].cf)
+                                cf_best_i = static_cast<int>(i);
+                        result.rank0_demoted =
+                            (sel_i >= 0 && cf_best_i >= 0 && sel_i != cf_best_i);
                         std::cerr << "  [CONSENSUS] " << entry.pdb_id
                                   << ": mode="
                                   << (high_entropy_gate ? "entropy-midwall" :
@@ -7750,6 +7767,7 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                            "tencom_pose_sha256,eigen_n_modes,elected_H_vib,"
                            "cf_native,best_cluster_rmsd,conditional_scanned_pool_ceiling,best_cluster_idx,"
                            "seed_echo,pose_source,"
+                           "election_mode,consensus_count,rank0_demoted,"
                            "cf_top1_pose_path,cf_top1_score,cf_top1_rmsd,cf_top1_pose_sha256,"
                            "entropy_top1_pose_path,entropy_top1_score,entropy_top1_rmsd,entropy_top1_pose_sha256,"
                            "H_rep_rank0,H_pop,H_rep_mean,D_vib,"
@@ -7810,6 +7828,9 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                         << result.best_cluster_idx << ","
                         << (result.seed_echo ? 1 : 0) << ","
                         << result.pose_source << ","
+                        << result.election_mode << ","
+                        << result.consensus_count << ","
+                        << (result.rank0_demoted ? 1 : 0) << ","
                         << "\"" << result.cf_top1_pose_path << "\","
                         << (std::isnan(result.cf_top1_score) ? "NA" : std::to_string(result.cf_top1_score)) << ","
                         << result.cf_top1_rmsd << ","
@@ -8212,6 +8233,9 @@ void DatasetRunner::write_report(const BenchmarkReport& report,
                 << r.best_cluster_idx << ","
                 << (r.seed_echo ? 1 : 0) << ","
                 << r.pose_source << ","
+                << r.election_mode << ","
+                << r.consensus_count << ","
+                << (r.rank0_demoted ? 1 : 0) << ","
                 << "\"" << r.cf_top1_pose_path << "\","
                 << (std::isnan(r.cf_top1_score) ? "NA" : std::to_string(r.cf_top1_score)) << ","
                 << r.cf_top1_rmsd << ","
