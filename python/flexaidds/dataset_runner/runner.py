@@ -1557,7 +1557,22 @@ class DatasetRunner:
                 p for p in work_dir.glob("*.pdb") if not _is_initial_pose_file(p)
             )
 
-        ref_coords = _reference_ligand_coords(reference_ligand) if reference_ligand else None
+        # A contaminated reference is a refusal, not a docking failure, and it
+        # must not reach the caller's broad `except Exception` looking like one.
+        # Without this the raise escapes the per-file try below, degrades to
+        # "this target produced nothing", and is indistinguishable from bad
+        # docking -- the exact shape this PR exists to remove.
+        ref_coords = None
+        if reference_ligand:
+            try:
+                ref_coords = _reference_ligand_coords(reference_ligand)
+            except ValueError as exc:
+                logger.warning(
+                    "Reference ligand refused for %s/%s: %s  No RMSD will be "
+                    "computed for this target; it is scored as a miss.  This "
+                    "is a REFERENCE FILE problem, not a docking result.",
+                    target_id, ligand_id, exc,
+                )
 
         for rank, pdb_path in enumerate(pdb_files, start=1):
             rmsd = -1.0
