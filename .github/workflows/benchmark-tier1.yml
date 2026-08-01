@@ -46,6 +46,14 @@ jobs:
     env:
       DATASET: ${{ inputs.dataset || 'astex_diverse' }}
       RESULTS_DIR: results/tier1
+      # Keep the engine's pose PDBs. Without this the runner deletes them with
+      # the per-ligand temp dir it docks in (runner.py _run_flexaid), so the
+      # upload step below has only ever collected JSON: every question that
+      # needs coordinates rather than scalars was unanswerable from CI, and no
+      # change to the `path:` list could have fixed it. The copy destination is
+      # under RESULTS_DIR by construction (DatasetRunner.pose_pdb_dir), which
+      # is what makes the existing upload reach them.
+      FLEXAIDDS_KEEP_POSES: "1"
       # NOTE: this MUST stay an absolute path. The "Verify binary exists" step
       # below now hard-fails when the binary is absent (no more dry-run
       # fallback), and it tests this exact string with `-x` from the repo root
