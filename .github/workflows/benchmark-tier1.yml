@@ -98,9 +98,18 @@ jobs:
 
       - name: Verify binary exists
         run: |
+          # A Tier-1 benchmark exists to exercise the real engine. If the build
+          # did not produce a binary, FAIL loudly — do NOT fall back to
+          # --dry-run. The old fallback composed into an inverted gate: a
+          # missing binary set --dry-run, and the #327 completeness/liveness
+          # gate skips on dry-run (cli.py: `if not runner.dry_run`), so a run
+          # with no engine exited 0 GREEN — the exact fake-green that gate
+          # exists to prevent, and the shape that produced the 0.5s greens
+          # before #323. Tier-2 has never had this fallback and is honest by
+          # its absence; this makes Tier-1 match it.
           if [ ! -f "$FLEXAIDDS_BINARY" ]; then
-            echo "::warning::FlexAID binary not found at $FLEXAIDDS_BINARY — running in dry-run mode"
-            echo "DRY_RUN=--dry-run" >> "$GITHUB_ENV"
+            echo "::error::FlexAID binary not found at $FLEXAIDDS_BINARY — the build did not produce it. Failing rather than silently dry-running (a dry-run would skip the #327 gate and report a missing engine as a pass)."
+            exit 1
           fi
 
       # No dataset download step needed: Astex Diverse data lives in the repo
@@ -117,8 +126,7 @@ jobs:
             --tier 1 \
             --results-dir "$RESULTS_DIR" \
             --datasets-dir benchmarks/datasets \
-            --verbose \
-            ${{ env.DRY_RUN }}
+            --verbose
 
       - name: Upload benchmark results
         if: always()
