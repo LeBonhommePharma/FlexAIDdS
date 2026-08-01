@@ -262,7 +262,12 @@ class DatasetConfig:
             ligand_concs=DatasetConfig._parse_ligand_concs(raw),
         )
         if data_dir_raw:
-            config.data_dir = Path(data_dir_raw)
+            # Absolute at construction: the engine runs with cwd=<per-entry tmp
+            # dir> (DatasetRunner._run_flexaid), so a relative data_dir resolves
+            # against that tmp dir for the child and finds nothing. It is never
+            # correct to hand a subprocess a relative directory, regardless of
+            # where the runner itself was invoked from.
+            config.data_dir = Path(data_dir_raw).expanduser().resolve()
         return config
 
     def tier1_targets(self) -> List[str]:
@@ -1156,6 +1161,14 @@ class DatasetRunner:
         self.datasets_dir = Path(datasets_dir) if datasets_dir is not None else _default_datasets
         self.results_dir = Path(results_dir)
         self.binary = binary or os.environ.get("FLEXAIDDS_BINARY") or "FlexAID"
+        # _resolve_binary already existed and was correct -- but it was wired
+        # only into the *report* (provenance), while the actual invocation used
+        # the raw string. Resolve once here so the engine and the report agree.
+        # It deliberately does NOT blanket-absolutise: a bare name is left for
+        # PATH (subprocess ignores cwd for those), a name containing a separator
+        # is made absolute, and an unfindable name is left alone so subprocess
+        # raises and the liveness gate counts it.
+        self.binary = self._resolve_binary()
         self.temperature = temperature
         self.n_workers = max(1, int(n_workers))
         # OMP threads per worker: explicit > env > auto (aim for 2 on M3 Pro's 5 P-cores).
@@ -1164,9 +1177,12 @@ class DatasetRunner:
             omp_threads = int(env_val) if env_val else max(1, 2 if self.n_workers > 1 else 4)
         self.omp_threads = max(1, int(omp_threads))
         self.use_mpi = use_mpi
+        # Same reason as DatasetConfig.data_dir: this root is joined into paths
+        # handed to a subprocess running in a tmp dir. Note the fallback literal
+        # is relative, so the *default* is the trap, not just a bad override.
         self.cache_dir = Path(
             cache_dir or os.environ.get("FLEXAIDDS_BENCHMARK_DATA", "benchmark_data")
-        )
+        ).expanduser().resolve()
         self.do_bootstrap = bootstrap_ci
         self.n_bootstrap = n_bootstrap
         self.dry_run = dry_run
