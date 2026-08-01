@@ -46,6 +46,13 @@ jobs:
     env:
       DATASET: ${{ inputs.dataset || 'astex_diverse' }}
       RESULTS_DIR: results/tier1
+      # NOTE: this MUST stay an absolute path. The "Verify binary exists" step
+      # below now hard-fails when the binary is absent (no more dry-run
+      # fallback), and it tests this exact string with `-x` from the repo root
+      # while FlexAID runs from a per-entry tmp dir. An absolute path means the
+      # guard and the subprocess resolve to the same file; making this
+      # overridable with a relative/bare value would reintroduce the CWD-mismatch
+      # class and could turn a PATH-resolvable binary into a hard failure.
       FLEXAIDDS_BINARY: ${{ github.workspace }}/build/FlexAID
       # Astex Diverse data lives in the repo under benchmarks/astex_diverse/.
       # Setting FLEXAIDDS_BENCHMARK_DATA makes the runner look at
@@ -107,8 +114,10 @@ jobs:
           # exists to prevent, and the shape that produced the 0.5s greens
           # before #323. Tier-2 has never had this fallback and is honest by
           # its absence; this makes Tier-1 match it.
-          if [ ! -f "$FLEXAIDDS_BINARY" ]; then
-            echo "::error::FlexAID binary not found at $FLEXAIDDS_BINARY — the build did not produce it. Failing rather than silently dry-running (a dry-run would skip the #327 gate and report a missing engine as a pass)."
+          # -x, not -f: a present-but-non-executable binary must also fail here,
+          # with this clear message, rather than at the opaque exec later.
+          if [ ! -x "$FLEXAIDDS_BINARY" ]; then
+            echo "::error::FlexAID binary not found or not executable at $FLEXAIDDS_BINARY — the build did not produce a runnable binary. Failing rather than silently dry-running (a dry-run would skip the #327 gate and report a missing engine as a pass)."
             exit 1
           fi
 
