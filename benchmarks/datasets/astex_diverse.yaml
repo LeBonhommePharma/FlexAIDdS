@@ -31,7 +31,7 @@ zenodo_doi: ""
 download_url: "https://www.ccdc.cam.ac.uk/community/freeprod/astex-diverse-set/"
 data_format: pdb
 tier: 2
-tier1_subset_size: 1
+tier1_subset_size: 2
 
 structural_states:
   - holo
