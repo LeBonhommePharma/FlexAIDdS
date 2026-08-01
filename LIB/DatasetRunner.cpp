@@ -431,7 +431,9 @@ static std::vector<int> munkres_solve(std::vector<std::vector<double>> a) {
 // Symmetry-corrected RMSD: find optimal element-type-grouped bijection between
 // the docked pose and the crystal reference, then compute RMSD over that assignment.
 // crystal / docked: element-labelled heavy-atom XYZ vectors.
-static float hungarian_rmsd(
+// Exposed (non-static, declared in DatasetRunnerStats.h) so unit tests exercise
+// the EXACT production symmetry metric rather than a duplicate.
+float hungarian_rmsd(
     const std::vector<std::pair<std::string,std::array<float,3>>>& crystal,
     const std::vector<std::pair<std::string,std::array<float,3>>>& docked)
 {
