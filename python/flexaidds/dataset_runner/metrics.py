@@ -482,6 +482,8 @@ def compute_all_metrics(
         "entropy_rescue_rate",
         "docking_power_top1",
         "docking_power_top3",
+        "mean_rmsd",
+        "median_rmsd",
         "ef_1pct",
         "ef_5pct",
         "log_auc",
@@ -504,6 +506,45 @@ def compute_all_metrics(
     if "docking_power_top3" in to_compute:
         results["docking_power_top3"] = docking_power(
             poses, top_n=3, n_targets=n_targets)
+
+    # Pose-accuracy aggregates: per-target best-pose RMSD, then mean/median
+    # across targets — mirrors benchmark.BenchmarkSummary's median-of-best-pose
+    # definition.  Sentinel RMSDs (< 0 = not computed, 999 = no pose) are
+    # excluded, so a target that produced no usable pose contributes NOTHING to
+    # the aggregate.  This is a deliberate asymmetry with docking_power(), whose
+    # denominator counts an empty target as a FAILURE: a success *rate* is
+    # defined over attempts, but you cannot average a distance that does not
+    # exist.  The risk of that asymmetry is that a mostly-failed multi-target
+    # run reports a clean mean over its few survivors — so the coverage count is
+    # emitted alongside (``mean_rmsd_n_targets``) to put the denominator in the
+    # report rather than leave it inferred.  When no target yields a valid
+    # best-pose RMSD the metric is left ABSENT so the #326 completeness gate
+    # reports it unmeasured rather than emitting a misleading 0.0.
+    if "mean_rmsd" in to_compute or "median_rmsd" in to_compute:
+        from collections import defaultdict as _defaultdict
+        _rmsd_by_target: dict[str, list[float]] = _defaultdict(list)
+        for p in poses:
+            # Exclude both sentinels: -1 (not computed) and 999 (no pose
+            # emitted).  Averaging 999 would silently poison the aggregate,
+            # unlike docking_power where the rmsd < 2.0 threshold neutralises it.
+            if 0.0 <= p.rmsd < 999.0:
+                _rmsd_by_target[p.target_id].append(p.rmsd)
+        best_rmsds = sorted(min(v) for v in _rmsd_by_target.values() if v)
+        if best_rmsds:
+            n = len(best_rmsds)
+            # Coverage: number of targets the aggregate is actually over, so a
+            # reader sees "3.16 over 5 targets" rather than a clean-looking mean.
+            # Informational only — not a declared baseline, so it is neither
+            # gated by completeness nor direction-checked by check_regressions.
+            results["mean_rmsd_n_targets"] = float(n)
+            if "mean_rmsd" in to_compute:
+                results["mean_rmsd"] = sum(best_rmsds) / n
+            if "median_rmsd" in to_compute:
+                mid = n // 2
+                results["median_rmsd"] = (
+                    best_rmsds[mid] if n % 2 == 1
+                    else (best_rmsds[mid - 1] + best_rmsds[mid]) / 2.0
+                )
 
     # Virtual-screening metrics require active/decoy labels and scores
     all_scores = [p.total_score for p in poses]
