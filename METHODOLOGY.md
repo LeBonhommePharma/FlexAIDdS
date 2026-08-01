@@ -38,20 +38,30 @@ numbers into other files — reference `METHODOLOGY.md §N`.
   / `_INI.pdb` RMSD as the result. In-place is what the engine does (`LIB/calc_rmsd.cpp:92-102`,
   and the same in the original FlexAID); a superposed value measures shape, not placement, and
   is not the quantity the 2.0 Å criterion is defined on.
-- **RMSD engine — read this before quoting a number.** There are TWO instruments and they are
-  not interchangeable:
-  - **In-repo metric** (`python/flexaidds/benchmark.py::compute_rmsd`, used by
-    `dataset_runner` and by every CI tier). In-place since #354. Ligand selected by residue
-    against the reference atom count since #363/#366 — *not* by unioning every non-water
-    HETATM, which merges cofactors into the ligand. **Symmetry correction is being added in
-    #365; until it lands this metric is positional and systematically overstates error on
-    symmetric ligands.**
-  - **Offline reference scorer** (`benchmarks/astex_repro/score_reference.py`): spyrmsd
-    graph-isomorphism, element-blocked Hungarian fallback when spyrmsd raises (logged).
-    **No workflow and no gate invokes it** — it is run by hand, after the fact.
-  - Consequence: a number produced by the gate and a number produced by
-    `score_reference.py` are different measurements. State which one you used. The two have
-    been observed to flip individual success calls (`docs/audit/26h-swarm/9971dff7e.md`).
+- **RMSD engine — read this before quoting a number.** There are **THREE** instruments in this
+  tree and they are not interchangeable. An unlabelled RMSD is not reportable:
+  1. **In-repo metric** — `python/flexaidds/benchmark.py::compute_rmsd`, used by
+     `dataset_runner` and by **every CI tier**. This is the gate. In-place since #354. Ligand
+     selected by residue against the reference atom count since #363/#366 — *not* by unioning
+     every non-water HETATM, which merges cofactors into the ligand. Symmetry correction added
+     in #365 (element-blocked assignment, `scipy`); **before #365 this metric was positional
+     and systematically overstated error on symmetric ligands.**
+  2. **Offline reference scorer** — `benchmarks/astex_repro/score_reference.py`: spyrmsd
+     graph-isomorphism, heavy atoms, pose selection on PDB serial ≥ 90000, element-blocked
+     Hungarian fallback only when spyrmsd raises (logged). Treat this as the strongest
+     instrument.
+  3. **Offline permissive scorer** — `benchmarks/astex_repro/score_offline.py`: element-blocked
+     Hungarian, no graph isomorphism. **The repo's own audit records it as over-permissive:
+     1HP0 reads success under `score_offline.py` and failure under `score_reference.py`**
+     (`docs/audit/26h-swarm/9971dff7e.md`). Do not quote it as a docking-power number.
+  - **Neither offline scorer is wired into anything.** Searched: `.github/workflows/`,
+    `benchmarks/` (including `run.py`), and `python/`. The only invocation recorded anywhere is
+    a manual one — `benchmarks/astex_repro/MONITORING.md:8` says "SCORING: python3
+    score_reference.py". So the strongest instrument is the one nothing runs, and the gate runs
+    the one no document described until this section.
+  - `score_offline.py`'s partial `poster_metric_results.csv` is still in-tree beside
+    `score_reference.py`'s. The audit's standing recommendation is to deprecate the permissive
+    one; until that happens, **check which CSV you are reading.**
 
 ---
 
@@ -69,7 +79,7 @@ simply different runs, and a number from one does not transfer to the other.
 | `intermolecular_clash_ratio` | 0.0 | 0.75 |
 | `coarse_init.enabled` | **OFF** | ON (hardcoded, `DatasetRunner.cpp:6036`) |
 | `mif_enabled` | **OFF** | ON (hardcoded, `DatasetRunner.cpp:6012`) |
-| retained poses | 10 | 51 per restart |
+| retained poses | 10 | 51 per restart *(OBSERVED, not cited: counted from two artifacts, no configuring parameter identified — do not treat as a configured divergence until one is)* |
 
 **The consequence that matters:** with `mif_enabled = 0` and `grid_prio_percent = 100.0`, the
 guard at `top.cpp:1836` makes `initialize_direct_mif` return immediately. **The gate docks
