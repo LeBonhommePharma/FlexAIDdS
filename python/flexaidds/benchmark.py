@@ -93,8 +93,17 @@ def pic50_to_dg(pic50: float, temperature_K: float = 298.15) -> float:
 def extract_ligand_coords_from_pdb(pdb_path: Path) -> np.ndarray:
     """Extract ligand heavy-atom coordinates from a PDB file.
 
-    Selects HETATM records excluding HOH, returns (N, 3) array sorted
-    by atom name for deterministic ordering.
+    Selects HETATM records excluding HOH.  Returns an (N, 3) array in
+    **file order** — not sorted by atom name.
+
+    File order is load-bearing for docking RMSD.  FlexAID writes the
+    optimizable residue's HETATM block in the same topology order as the
+    input ligand (SDF/MOL2), and the benchmark reference is also read in
+    file order.  Sorting by atom name breaks that correspondence: FlexAID
+    names atoms ``C 0``, ``O 1``, … while the crystal PDB uses ``C1``,
+    ``O1``, …, and lexicographic sort reorders both differently.  On 1gpk
+    that alone turned a true ~1.6 Å pose into a ~4.7 Å number even after
+    the Kabsch bug was removed.
     """
     atoms = []
     with open(pdb_path) as fh:
@@ -107,18 +116,15 @@ def extract_ligand_coords_from_pdb(pdb_path: Path) -> np.ndarray:
             element = line[76:78].strip() if len(line) > 77 else ""
             if element == "H":
                 continue
-            atom_name = line[12:16].strip()
             x = float(line[30:38])
             y = float(line[38:46])
             z = float(line[46:54])
-            atoms.append((atom_name, x, y, z))
+            atoms.append((x, y, z))
 
     if not atoms:
         raise ValueError(f"No ligand heavy atoms found in {pdb_path}")
 
-    atoms.sort(key=lambda a: a[0])
-    coords = np.array([[a[1], a[2], a[3]] for a in atoms], dtype=np.float64)
-    return coords
+    return np.array(atoms, dtype=np.float64)
 
 
 def extract_ligand_coords_from_mmcif(mmcif_string: str, ligand_id: str = "") -> np.ndarray:
@@ -232,9 +238,46 @@ def _tokenize_mmcif_line(line: str) -> List[str]:
 
 
 def compute_rmsd(coords_pred: np.ndarray, coords_ref: np.ndarray) -> float:
-    """Compute RMSD after optimal Kabsch alignment.
+    """Docking RMSD: in-place, in the receptor frame, NO superposition.
 
-    Both arrays must be (N, 3).  Returns RMSD in Angstrom.
+    This is the quantity the 2.0 A redocking criterion is defined on.  Both
+    poses are already expressed in the same (receptor) coordinate frame, so
+    the displacement between them *is* the error and must not be removed.
+
+    Do NOT superpose here.  Superposing before measuring discards exactly the
+    translation and rotation that docking is being scored on: a ligand placed
+    5 A outside the pocket and one placed on the crystal position differ only
+    by a rigid motion, so an aligned RMSD reports them as equally good.  That
+    bug shipped in this function and reported ~3.156 A for every pose of every
+    sweep cell on 1gpk -- for a 6.5 A miss and a ~1.3 A hit alike -- because
+    the ligand's internal conformation barely changes while its placement
+    changes by Angstroms.  See :func:`compute_rmsd_superposed` for the
+    conformer-shape comparison, which is a different question.
+
+    Both arrays must be (N, 3) with row i of each referring to the same atom.
+    Returns RMSD in Angstrom.
+    """
+    if coords_pred.shape != coords_ref.shape:
+        raise ValueError(
+            f"Shape mismatch: predicted {coords_pred.shape} vs "
+            f"reference {coords_ref.shape}."
+        )
+    n = coords_pred.shape[0]
+    if n == 0:
+        return 0.0
+
+    diff = coords_pred - coords_ref
+    return float(np.sqrt((diff * diff).sum() / n))
+
+
+def compute_rmsd_superposed(coords_pred: np.ndarray, coords_ref: np.ndarray) -> float:
+    """Shape-only RMSD after optimal Kabsch superposition.
+
+    Measures how well two conformers match *once placement is discarded*.
+    This answers "is it the same shape?", never "is it docked correctly?" --
+    use :func:`compute_rmsd` for the latter.  Note the result is not a metric
+    (it can violate the triangle inequality), so it must not be compared
+    against geometric bounds such as centre-of-mass separation.
     """
     if coords_pred.shape != coords_ref.shape:
         raise ValueError(
