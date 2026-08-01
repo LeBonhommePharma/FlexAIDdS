@@ -668,6 +668,13 @@ void BindingMode::output_BindingMode(int num_result, char* end_strfile, char* tm
 	// after resolving GB->seed / FLEXAID_SEED / time(0), so this reports the
 	// value actually used, including the time(0) fallback that is otherwise
 	// impossible to recover.
+	//
+	// KEEP THIS LINE NEAR THE HEAD OF THE BLOCK.  safe_remark_cat() appends
+	// sequentially and every call after the buffer is exhausted is a silent
+	// no-op, so truncation removes a contiguous TAIL.  A line near the head is
+	// therefore in the only region truncation cannot reach first -- which is
+	// where the line identifying the whole file belongs.  Moving it down would
+	// make the provenance the first thing lost on a REMARK-heavy target.
 	snprintf(tmpremark, MAX_REMARK,
 		"REMARK FLEXAID.commit=%s FLEXAID.dirty=%d FLEXAID.seed=%llu\n",
 		FLEXAIDS_GIT_COMMIT,
