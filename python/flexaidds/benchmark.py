@@ -19,6 +19,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
+from collections import OrderedDict
+
 import numpy as np
 
 
@@ -90,7 +92,9 @@ def pic50_to_dg(pic50: float, temperature_K: float = 298.15) -> float:
 # ---------------------------------------------------------------------------
 
 
-def extract_ligand_coords_from_pdb(pdb_path: Path) -> np.ndarray:
+def extract_ligand_coords_from_pdb(
+    pdb_path: Path, expected_n_atoms: int | None = None
+) -> np.ndarray:
     """Extract ligand heavy-atom coordinates from a PDB file.
 
     Selects HETATM records excluding HOH.  Returns an (N, 3) array in
@@ -105,7 +109,17 @@ def extract_ligand_coords_from_pdb(pdb_path: Path) -> np.ndarray:
     that alone turned a true ~1.6 Å pose into a ~4.7 Å number even after
     the Kabsch bug was removed.
     """
-    atoms = []
+    # Group by residue.  A pose PDB is not ligand-only: FlexAID writes the
+    # receptor alongside it, and 36 of the 85 Astex receptors carry a
+    # non-water HETATM cofactor -- ions (CA, ZN, MG), and in four cases a
+    # 172-atom HEM.  "HETATM and not HOH" therefore collects the cofactor
+    # too.  On 1mq6 that produced 37 atoms against a 36-atom reference,
+    # with a calcium at index 0 shifting every subsequent atom by one.
+    #
+    # Selecting the LARGEST residue does not work either: HEM (172 atoms)
+    # would beat the 25-atom ligand on 1g9v.  The reference atom count is
+    # the only reliable discriminator, so callers that have it pass it.
+    residues: "OrderedDict[tuple, List[tuple]]" = OrderedDict()
     with open(pdb_path) as fh:
         for line in fh:
             if not line.startswith("HETATM"):
@@ -116,15 +130,32 @@ def extract_ligand_coords_from_pdb(pdb_path: Path) -> np.ndarray:
             element = line[76:78].strip() if len(line) > 77 else ""
             if element == "H":
                 continue
-            x = float(line[30:38])
-            y = float(line[38:46])
-            z = float(line[46:54])
-            atoms.append((x, y, z))
+            key = (resname, line[21:22], line[22:27].strip())
+            residues.setdefault(key, []).append(
+                (float(line[30:38]), float(line[38:46]), float(line[46:54]))
+            )
 
-    if not atoms:
+    if not residues:
         raise ValueError(f"No ligand heavy atoms found in {pdb_path}")
 
-    return np.array(atoms, dtype=np.float64)
+    if expected_n_atoms is None:
+        # Backwards-compatible path, used where no reference is available.
+        # Still excludes nothing, so it keeps the historical behaviour rather
+        # than silently guessing which residue is the ligand.
+        atoms = [xyz for group in residues.values() for xyz in group]
+        return np.array(atoms, dtype=np.float64)
+
+    matches = [g for g in residues.values() if len(g) == expected_n_atoms]
+    if len(matches) == 1:
+        return np.array(matches[0], dtype=np.float64)
+
+    counts = {f"{k[0]}/{k[1]}{k[2]}": len(v) for k, v in residues.items()}
+    raise ValueError(
+        f"Cannot identify the ligand in {pdb_path}: expected a residue with "
+        f"{expected_n_atoms} heavy atoms, found {len(matches)} candidates "
+        f"among {counts}.  Refusing to guess -- a wrong residue silently "
+        f"produces a plausible RMSD on a shifted atom correspondence."
+    )
 
 
 def extract_ligand_coords_from_mmcif(mmcif_string: str, ligand_id: str = "") -> np.ndarray:
