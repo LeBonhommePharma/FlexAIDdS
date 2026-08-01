@@ -27,15 +27,6 @@ canonical_data_root: benchmarks/astex_diverse/astex_diverse
 checksum_manifest: benchmarks/datasets/astex_diverse_sha256.csv
 canonical_doc: benchmarks/datasets/CANONICAL.md
 
-# Resolved dataset root. WITHOUT this key the runner falls back to
-# <FLEXAIDDS_BENCHMARK_DATA>/<slug> (runner.py:1182,1195) -- which is
-# benchmark_data/astex_diverse for Tier-2, an empty directory, because the
-# Zenodo record map at benchmark-tier2.yml:181 is entirely commented out.
-# Tier-1 works only because its workflow sets the env var to the in-repo path.
-# This value is the same one canonical_data_root already declares above;
-# canonical_data_root is discarded by the parser (runner.py:233), data_dir is not.
-# Relative to the repo root, which is the CWD for both benchmark workflows.
-data_dir: benchmarks/astex_diverse/astex_diverse
 
 zenodo_doi: ""
 download_url: "https://www.ccdc.cam.ac.uk/community/freeprod/astex-diverse-set/"
