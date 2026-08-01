@@ -129,6 +129,50 @@ jobs:
           cmake "${CMAKE_ARGS[@]}"
       - name: Build
         run: cmake --build build --parallel
+      # Smoke: assert the shipping binary starts. Until this step existed, no
+      # job in this workflow ran FlexAID at all — only unit tests linked
+      # against LIB/. Tier-1 (benchmark-tier1.yml) did run it, but treated a
+      # non-zero exit as a logger.warning and reported a pass anyway, so a
+      # binary that aborted on all five entries and produced zero poses still
+      # went green in 0.4s. Nothing anywhere failed on "the binary did not
+      # run."
+      #
+      # That is how a startup abort lived in main under a green matrix: the
+      # 255-byte realpath() destination at LIB/top.cpp tripped glibc
+      # _FORTIFY_SOURCE (__realpath_chk fails when the destination is smaller
+      # than PATH_MAX, before resolving anything), so every fortified gcc build
+      # died before parsing argv. --help is the cheapest invocation that proves
+      # the binary starts, so this is deliberately a liveness gate and not a
+      # behaviour test.
+      #
+      # Scope: this catches a binary that cannot start. It does NOT catch a
+      # binary that starts and then silently produces nothing — that is the
+      # benchmark's own gate to fix, not this one's.
+      #
+      # detect_leaks=0 on purpose: this asserts the binary starts, not that it
+      # frees. Error-path leaks are a separate concern with its own probe, and
+      # letting LSan fail this step would conflate "dead on arrival" with
+      # "exits dirty".
+      - name: Smoke — shipping binary starts (--help)
+        if: matrix.name == 'linux-gcc' || matrix.name == 'linux-clang' || matrix.name == 'linux-gcc-mpi' || matrix.name == 'linux-gcc-asan'
+        env:
+          ASAN_OPTIONS: detect_leaks=0
+        run: |
+          set -euo pipefail
+          test -x build/FlexAID || { echo "::error::build/FlexAID missing or not executable"; exit 1; }
+          build/FlexAID --help > help.out 2> help.err || {
+            echo "::error::FlexAID --help exited $? — the shipping binary does not start"
+            echo "--- stdout ---"; cat help.out
+            echo "--- stderr ---"; cat help.err
+            exit 1
+          }
+          grep -q "Usage:" help.out || {
+            echo "::error::FlexAID --help exited 0 but printed no usage text"
+            echo "--- stdout ---"; cat help.out
+            echo "--- stderr ---"; cat help.err
+            exit 1
+          }
+          echo "FlexAID --help: exit 0, usage text present"
       - name: Test
         if: matrix.name == 'linux-gcc' || matrix.name == 'linux-clang' || matrix.name == 'linux-gcc-mpi' || matrix.name == 'linux-gcc-asan'
         run: ctest --test-dir build --output-on-failure
