@@ -500,8 +500,26 @@ class DatasetResult:
             # Direction is looked up, never inferred from the name. See
             # _LOWER_IS_BETTER: substring-sniffing silently inverted
             # mean_rmsd/median_rmsd because "rmsd" is not "rmse".
+            # Tolerance is ADDITIVE slack around the baseline, not a scaling
+            # of it.  `baseline * (1 + tol)` happens to equal
+            # `baseline + abs(baseline) * tol` for every POSITIVE baseline, so
+            # the scaling form was correct until a negative one appeared:
+            # erds_specificity declares target_specificity_zscore: -2.50, and
+            # scaling moves a negative baseline AWAY from zero -- demanding
+            # -2.625, stricter than the target itself, so exactly-on-baseline
+            # flagged as a regression.  The additive form is sign-correct in
+            # both directions and byte-identical on all 143 positive baselines
+            # currently in the repo.
+            #
+            # Degenerate case, stated so the next person finds it rather than
+            # discovers it: at baseline == 0 the slack is abs(0) * tol == 0, so
+            # ANY non-zero measurement flags.  Arguably correct -- 5% of zero is
+            # zero -- but "additive slack" stops being slack there.  The scaling
+            # form has the identical hole; no dataset declares a zero baseline
+            # today (checked across both trees).
+            slack = abs(baseline) * tol
             if metric in _LOWER_IS_BETTER:
-                threshold = baseline * (1 + tol)
+                threshold = baseline + slack
                 flags[metric] = bool(measured > threshold)
             else:
                 if metric not in _HIGHER_IS_BETTER:
@@ -512,7 +530,7 @@ class DatasetResult:
                         "regression verdict.",
                         metric,
                     )
-                threshold = baseline * (1 - tol)
+                threshold = baseline - slack
                 flags[metric] = bool(measured < threshold)
         self.regression_flags = flags
         self.inconclusive_metrics = missing
