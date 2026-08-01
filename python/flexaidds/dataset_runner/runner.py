@@ -419,6 +419,10 @@ class DatasetResult:
     total_poses: int = 0
     entry_exit_codes: Dict[str, int] = field(default_factory=dict)
     inconclusive_metrics: List[str] = field(default_factory=list)
+    # Targets actually executed this run (excludes --resume checkpoints, whose
+    # poses are not reloaded into all_poses). Gates 2-3 only judge a run that
+    # did fresh work — a pure resume/package-regen run must not false-fail.
+    newly_executed: int = 0
 
     def check_regressions(self) -> Dict[str, bool]:
         """Flag metrics that regressed below baseline − tolerance.
@@ -476,6 +480,7 @@ class DatasetResult:
             "total_poses": self.total_poses,
             "entry_exit_codes": self.entry_exit_codes,
             "inconclusive_metrics": self.inconclusive_metrics,
+            "newly_executed": self.newly_executed,
         }
         if self.metrics_note:
             payload["metrics_note"] = self.metrics_note
@@ -1720,15 +1725,19 @@ class DatasetRunner:
         completed = sorted(completed_targets)
         failed = sorted(failed_targets)
 
-        # #326: snapshot this rank's FlexAID crash tally for gather/finalize.
+        # #326: snapshot this rank's FlexAID crash tally + count of targets
+        # actually executed this run. `results` is the dispatched work list,
+        # which excludes --resume checkpoints (skipped before dispatch), so it
+        # is exactly "fresh work" — the denominator gates 2-3 should judge.
         with self._crash_lock:
             crashes = self._flexaid_crashes
             exit_codes = dict(self._entry_exit_codes)
+        newly = len(results)
 
         # MPI gather (still works at target granularity for final aggregation)
         if self._mpi_comm is not None:
             all_results_by_rank = self._mpi_comm.gather(
-                (all_poses, completed, failed, crashes, exit_codes), root=0
+                (all_poses, completed, failed, crashes, exit_codes, newly), root=0
             )
             if self._mpi_root:
                 all_poses = []
@@ -1736,12 +1745,14 @@ class DatasetRunner:
                 failed = []
                 crashes = 0
                 exit_codes = {}
-                for poses_i, comp_i, fail_i, crash_i, codes_i in (all_results_by_rank or []):
+                newly = 0
+                for poses_i, comp_i, fail_i, crash_i, codes_i, newly_i in (all_results_by_rank or []):
                     all_poses.extend(poses_i)
                     completed.extend(comp_i)
                     failed.extend(fail_i)
                     crashes += crash_i
                     exit_codes.update(codes_i)
+                    newly += newly_i
 
         # Root finalizes
         if self._mpi_root:
@@ -1750,6 +1761,7 @@ class DatasetRunner:
             dr.flexaid_crashes = crashes
             dr.entry_exit_codes = exit_codes
             dr.total_poses = len(all_poses)
+            dr.newly_executed = newly
 
             if all_poses:
                 metrics = compute_all_metrics(all_poses, requested=requested_metrics)

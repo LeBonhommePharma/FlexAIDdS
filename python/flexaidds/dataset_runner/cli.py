@@ -238,7 +238,15 @@ def _benchmark_inconclusive_reasons(datasets) -> list[str]:
     reasons: list[str] = []
     for dr in datasets:
         slug = dr.config.slug
-        attempted = len(dr.targets_completed) + len(dr.targets_failed)
+        # Gates 2-3 judge only fresh work. A pure --resume / package-regen run
+        # executes no new targets (its poses are loaded from checkpoints, not
+        # recomputed into all_poses), so 0 poses and unmeasured baselines there
+        # mean "nothing ran this session", not "the binary is dead" — judging
+        # it would re-invert the gate. Liveness still applies unconditionally:
+        # a non-zero exit can only have come from a target that did run.
+        executed = getattr(dr, "newly_executed", None)
+        if executed is None:  # tolerate objects predating the field
+            executed = len(dr.targets_completed) + len(dr.targets_failed)
         # 1. Liveness — every FlexAID invocation must exit 0.
         if dr.flexaid_crashes > 0:
             codes = ", ".join(
@@ -247,17 +255,18 @@ def _benchmark_inconclusive_reasons(datasets) -> list[str]:
             reasons.append(
                 f"{slug}: liveness — {dr.flexaid_crashes} FlexAID non-zero exit(s) [{codes}]"
             )
-        # 2. Productivity — the run must produce at least one pose.
-        if attempted > 0 and dr.total_poses == 0 and slug not in allow_empty:
-            reasons.append(
-                f"{slug}: productivity — 0 poses across {attempted} attempted target(s)"
-            )
-        # 3. Completeness — every declared baseline must actually be measured.
-        if dr.inconclusive_metrics:
-            reasons.append(
-                f"{slug}: completeness — baselines never measured: "
-                + ", ".join(dr.inconclusive_metrics)
-            )
+        if executed > 0:
+            # 2. Productivity — a run that did work must produce ≥1 pose.
+            if dr.total_poses == 0 and slug not in allow_empty:
+                reasons.append(
+                    f"{slug}: productivity — 0 poses across {executed} executed target(s)"
+                )
+            # 3. Completeness — every declared baseline must be measured.
+            if dr.inconclusive_metrics:
+                reasons.append(
+                    f"{slug}: completeness — baselines never measured: "
+                    + ", ".join(dr.inconclusive_metrics)
+                )
     return reasons
 
 

@@ -16,16 +16,25 @@ from flexaidds.dataset_runner.cli import _benchmark_inconclusive_reasons
 
 
 def _dr(slug, *, completed=(), failed=(), crashes=0, total_poses=0,
-        exit_codes=None, missing_metrics=()):
-    """Build a minimal DatasetResult-shaped object for the gate helper."""
+        exit_codes=None, missing_metrics=(), newly_executed=None):
+    """Build a minimal DatasetResult-shaped object for the gate helper.
+
+    ``newly_executed`` defaults to attempted (a fresh run); pass 0 to model a
+    pure --resume run where every target came from a checkpoint.
+    """
+    completed = list(completed)
+    failed = list(failed)
+    if newly_executed is None:
+        newly_executed = len(completed) + len(failed)
     return types.SimpleNamespace(
         config=types.SimpleNamespace(slug=slug),
-        targets_completed=list(completed),
-        targets_failed=list(failed),
+        targets_completed=completed,
+        targets_failed=failed,
         flexaid_crashes=crashes,
         total_poses=total_poses,
         entry_exit_codes=exit_codes or {},
         inconclusive_metrics=list(missing_metrics),
+        newly_executed=newly_executed,
     )
 
 
@@ -69,6 +78,35 @@ def test_no_attempts_is_not_flagged_productivity():
     # An empty dataset (nothing attempted) is not a productivity failure.
     dr = _dr("empty", completed=[], failed=[], total_poses=0)
     assert _benchmark_inconclusive_reasons([dr]) == []
+
+
+def test_fully_resumed_run_is_not_inconclusive():
+    # Regression for the review finding (Bumble + Honey): a pure --resume run
+    # executes no fresh targets — its poses come from checkpoints, not all_poses
+    # — so 0 poses + unmeasured metrics must NOT read as a dead binary.
+    dr = _dr(
+        "astex_diverse",
+        completed=["a", "b", "c"],   # all seeded from already_completed
+        newly_executed=0,            # nothing dispatched this run
+        total_poses=0,               # checkpoint poses not reloaded
+        missing_metrics=["docking_power_top1", "mean_rmsd"],
+    )
+    assert _benchmark_inconclusive_reasons([dr]) == []
+
+
+def test_partial_resume_still_judges_fresh_work():
+    # Some targets resumed, some freshly run and crashed → still INCONCLUSIVE.
+    dr = _dr(
+        "astex_diverse",
+        completed=["resumed_a", "resumed_b"],
+        failed=["fresh_c"],
+        newly_executed=1,            # one fresh target ran
+        crashes=1,
+        total_poses=0,
+        exit_codes={"fresh_c/lig": -6},
+    )
+    reasons = _benchmark_inconclusive_reasons([dr])
+    assert any("liveness" in r for r in reasons)
 
 
 def test_allowlist_bypasses_productivity(monkeypatch):
