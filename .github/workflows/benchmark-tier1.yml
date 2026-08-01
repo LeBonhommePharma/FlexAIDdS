@@ -45,12 +45,16 @@ on:
         description: "FLEXAID_SEED (single-D; fixed GA seed for determinism). Empty = time(0)."
         required: false
         default: ""
+      tag:
+        description: "Free label to distinguish otherwise-identical cells (e.g. the G3' determinism repeat). Does not reach the engine."
+        required: false
+        default: ""
 
 concurrency:
-  # Include the sweep inputs so distinct (F, pocket, clash) points run in
-  # parallel instead of cancelling each other; a re-dispatch of the SAME point
-  # still supersedes its stale run.
-  group: bench-tier1-${{ github.workflow }}-${{ github.ref }}-${{ inputs.com_floor }}-${{ inputs.pb_pocket_w }}-${{ inputs.pb_clash_w }}
+  # Include the sweep inputs + tag so distinct cells run in parallel instead of
+  # cancelling each other; a re-dispatch of the SAME cell still supersedes its
+  # stale run. `tag` lets two identical-env cells (the G3' repeat) coexist.
+  group: bench-tier1-${{ github.workflow }}-${{ github.ref }}-${{ inputs.com_floor }}-${{ inputs.pb_pocket_w }}-${{ inputs.pb_clash_w }}-${{ inputs.tag }}
   cancel-in-progress: true
 
 jobs:
