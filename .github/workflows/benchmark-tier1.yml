@@ -110,7 +110,7 @@ jobs:
           bash scripts/ci/apt_get_update.sh
           # gcc-14 is required for C++26 support (see CMakeLists.txt compiler gate).
           sudo apt-get install -y --no-install-recommends \
-            cmake ninja-build libeigen3-dev libomp-dev gcc-14 g++-14 ccache
+            cmake ninja-build libeigen3-dev libomp-dev gcc-14 g++-14 ccache time
           echo "CC=gcc-14" >> "$GITHUB_ENV"
           echo "CXX=g++-14" >> "$GITHUB_ENV"
 
@@ -239,7 +239,19 @@ jobs:
           WORKERS=$(( NPROC < 5 ? NPROC : 5 ))
           [ "$WORKERS" -lt 1 ] && WORKERS=1
           echo "nproc=$NPROC -> --workers $WORKERS --omp-threads 1"
+          # Measure REAL CPU time, not a modelled one. The report's
+          # cost_cpu_seconds is computed as duration x omp_threads
+          # (runner.py:1602) -- dividing it by wall time just returns
+          # omp_threads, so it cannot tell 2 cores from 64, and reading it as
+          # an observation is how a derived value gets quoted as a
+          # measurement. /usr/bin/time -v reports user+sys from the kernel,
+          # which is the number that actually answers "did the threads run".
+          # `time` is installed above; guard anyway so a missing binary degrades
+          # to "no CPU figure" instead of failing the benchmark itself.
+          TIME_WRAP=""
+          [ -x /usr/bin/time ] && TIME_WRAP="/usr/bin/time -v -o /tmp/tier1_time.txt"
           SECONDS=0
+          $TIME_WRAP \
           python -m benchmarks.run \
             --dataset "$DATASET" \
             --tier 1 \
@@ -249,12 +261,20 @@ jobs:
             --omp-threads 1 \
             --verbose
           echo "tier1_wall_clock_seconds=$SECONDS"
+          USER_S=$(awk -F': ' '/User time/{print $2}' /tmp/tier1_time.txt 2>/dev/null || echo "")
+          SYS_S=$(awk -F': ' '/System time/{print $2}' /tmp/tier1_time.txt 2>/dev/null || echo "")
+          MAXRSS=$(awk -F': ' '/Maximum resident/{print $2}' /tmp/tier1_time.txt 2>/dev/null || echo "")
+          echo "tier1_cpu_user_seconds=$USER_S tier1_cpu_sys_seconds=$SYS_S"
           {
             echo "### Tier-1 throughput"
             echo ""
-            echo "| runner cores | workers | omp threads | wall clock |"
-            echo "|---|---|---|---|"
-            echo "| $NPROC | $WORKERS | 1 | ${SECONDS}s |"
+            echo "| runner cores | workers | omp threads | wall clock | CPU user (measured) | CPU sys (measured) | max RSS kB |"
+            echo "|---|---|---|---|---|---|---|"
+            echo "| $NPROC | $WORKERS | 1 | ${SECONDS}s | ${USER_S:-n/a} | ${SYS_S:-n/a} | ${MAXRSS:-n/a} |"
+            echo ""
+            echo "CPU figures above are from \`/usr/bin/time -v\` (kernel-reported user+sys)."
+            echo "They are NOT the report's \`cost_cpu_seconds\`, which is \`duration x omp_threads\`"
+            echo "(runner.py:1602) and therefore carries no information about achieved parallelism."
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload benchmark results
