@@ -62,6 +62,7 @@ import numpy as np
 from .data_paths import (
     _CF_APP_REMARK_RE,
     _CF_REMARK_RE,
+    _ENTROPY_REMARK_RE,
     _RMSD_REMARK_RE,
     resolve_benchmark_paths,
 )
@@ -1512,6 +1513,9 @@ class DatasetRunner:
                         m = _CF_APP_REMARK_RE.search(line)
                         if m and enthalpy_score == 0.0:
                             enthalpy_score = float(m.group(1))
+                        m = _ENTROPY_REMARK_RE.search(line)
+                        if m and entropy_correction == 0.0:
+                            entropy_correction = float(m.group(1))
 
                 if rmsd < 0.0 and ref_coords is not None:
                     rmsd = _pose_rmsd_vs_reference(pdb_path, ref_coords)
