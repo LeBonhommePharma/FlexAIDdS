@@ -43,6 +43,7 @@ import socket
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -411,6 +412,21 @@ class DatasetResult:
     full_command: str = ""
     dry_run: bool = False
     metrics_note: str = ""
+    # Benchmark liveness/productivity gate (#326): a run where the binary
+    # crashed or produced nothing must not read as "no regression". These
+    # fields let cli.main distinguish PASS / FAIL / INCONCLUSIVE.
+    flexaid_crashes: int = 0
+    total_poses: int = 0
+    entry_exit_codes: Dict[str, int] = field(default_factory=dict)
+    inconclusive_metrics: List[str] = field(default_factory=list)
+    # Targets actually executed this run (excludes --resume checkpoints, whose
+    # poses are not reloaded into all_poses). Gates 2-3 only judge a run that
+    # did fresh work — a pure resume/package-regen run must not false-fail.
+    newly_executed: int = 0
+    # Targets loaded from --resume checkpoints (not re-executed). Distinguishes
+    # a legitimate resume (skip gates 2-3) from a run that scheduled nothing at
+    # all (newly==0 AND resumed==0 → still INCONCLUSIVE, not a silent pass).
+    resumed: int = 0
 
     def check_regressions(self) -> Dict[str, bool]:
         """Flag metrics that regressed below baseline − tolerance.
@@ -418,10 +434,15 @@ class DatasetResult:
         Returns dict of ``{metric: True}`` for regressed metrics.
         """
         flags: Dict[str, bool] = {}
+        missing: List[str] = []
         tol = self.config.baseline_tolerance
         for metric, baseline in self.config.expected_baselines.items():
             measured = self.metrics.get(metric)
             if measured is None or np.isnan(measured):
+                # Completeness gate (#326): a metric that was never measured is
+                # NOT "no regression" — it is an inconclusive run. Record it so
+                # cli.main can fail the run rather than silently pass it.
+                missing.append(metric)
                 continue
             # For error/RMSE metrics lower is better — allow increase
             if "rmse" in metric or "mae" in metric:
@@ -432,6 +453,7 @@ class DatasetResult:
                 threshold = baseline * (1 - tol)
                 flags[metric] = bool(measured < threshold)
         self.regression_flags = flags
+        self.inconclusive_metrics = missing
         return flags
 
     def to_dict(self) -> dict:
@@ -457,6 +479,13 @@ class DatasetResult:
             "published_source": self.config.published_source,
             "dry_run": self.dry_run,
             "grand_summary": self.grand_summary,  # P3
+            # #326 gate provenance
+            "flexaid_crashes": self.flexaid_crashes,
+            "total_poses": self.total_poses,
+            "entry_exit_codes": self.entry_exit_codes,
+            "inconclusive_metrics": self.inconclusive_metrics,
+            "newly_executed": self.newly_executed,
+            "resumed": self.resumed,
         }
         if self.metrics_note:
             payload["metrics_note"] = self.metrics_note
@@ -1103,6 +1132,13 @@ class DatasetRunner:
         self._requested_temperature = temperature
         self.command_line: Optional[str] = None  # set by CLI for full provenance
 
+        # #326 liveness gate: FlexAID non-zero exits are recorded here (under a
+        # lock, since entries dispatch across a local thread pool) so a crashed
+        # binary can never read as "no regression". Reset per dataset run.
+        self._crash_lock = threading.Lock()
+        self._flexaid_crashes = 0
+        self._entry_exit_codes: Dict[str, int] = {}
+
     def _effective_temperature(self, slug: str) -> float:
         """Auto-force 298 K for ITC/thermo datasets (handoff requirement).
 
@@ -1261,9 +1297,17 @@ class DatasetRunner:
                         env=sub_env,
                     )
                     if result.returncode != 0:
+                        # #326 liveness: a non-zero exit is a gate failure, not
+                        # a debug aside. Record it so the run is scored
+                        # INCONCLUSIVE instead of silently passing on 0 poses.
+                        stderr_head = (result.stderr or "").strip().splitlines()
+                        stderr_head = stderr_head[0][:200] if stderr_head else ""
+                        with self._crash_lock:
+                            self._flexaid_crashes += 1
+                            self._entry_exit_codes[f"{target_id}/{ligand_id}"] = result.returncode
                         logger.warning(
-                            "FlexAID returned %d for %s/%s",
-                            result.returncode, target_id, ligand_id,
+                            "FlexAID non-zero exit %d for %s/%s: %s",
+                            result.returncode, target_id, ligand_id, stderr_head,
                         )
                         if result.stderr:
                             logger.debug("stderr: %s", result.stderr[:500])
@@ -1562,6 +1606,11 @@ class DatasetRunner:
         completed_targets: set[str] = set(already_completed)
         failed_targets: set[str] = set()
 
+        # #326: reset per-dataset FlexAID crash tally before this run's entries.
+        with self._crash_lock:
+            self._flexaid_crashes = 0
+            self._entry_exit_codes = {}
+
         def _process_one_item(item: Tuple[str, str]) -> Tuple[str, str, List[PoseScore], float, str]:
             """Process a single (target_id, structural_state) entry.
 
@@ -1681,24 +1730,55 @@ class DatasetRunner:
         completed = sorted(completed_targets)
         failed = sorted(failed_targets)
 
+        # #326: snapshot this rank's FlexAID crash tally + count of targets
+        # actually executed this run. `results` is the dispatched work list,
+        # which excludes --resume checkpoints (skipped before dispatch), so it
+        # is exactly "fresh work" — the denominator gates 2-3 should judge.
+        with self._crash_lock:
+            crashes = self._flexaid_crashes
+            exit_codes = dict(self._entry_exit_codes)
+        newly = len(results)
+        resumed = len(already_completed)
+
         # MPI gather (still works at target granularity for final aggregation)
         if self._mpi_comm is not None:
             all_results_by_rank = self._mpi_comm.gather(
-                (all_poses, completed, failed), root=0
+                (all_poses, completed, failed, crashes, exit_codes, newly, resumed), root=0
             )
             if self._mpi_root:
                 all_poses = []
                 completed = []
                 failed = []
-                for poses_i, comp_i, fail_i in (all_results_by_rank or []):
+                crashes = 0
+                exit_codes = {}
+                newly = 0
+                resumed = 0
+                for poses_i, comp_i, fail_i, crash_i, codes_i, newly_i, resumed_i in (all_results_by_rank or []):
                     all_poses.extend(poses_i)
                     completed.extend(comp_i)
                     failed.extend(fail_i)
+                    crashes += crash_i
+                    exit_codes.update(codes_i)
+                    newly += newly_i
+                    # `resumed` is REPLICATED, not partitioned: every rank runs
+                    # _discover_completed_targets over the same shared disk, so
+                    # each reports the same count. Summing would give
+                    # resumed × n_ranks. Take the common value (max == that
+                    # value) so the report-JSON provenance stays honest. The
+                    # gate only asks `resumed == 0`, which summing preserved,
+                    # but a wrong number in the artifact is the exact thing this
+                    # whole change exists to prevent.
+                    resumed = max(resumed, resumed_i)
 
         # Root finalizes
         if self._mpi_root:
             dr.targets_completed = completed
             dr.targets_failed = failed
+            dr.flexaid_crashes = crashes
+            dr.entry_exit_codes = exit_codes
+            dr.total_poses = len(all_poses)
+            dr.newly_executed = newly
+            dr.resumed = resumed
 
             if all_poses:
                 metrics = compute_all_metrics(all_poses, requested=requested_metrics)
