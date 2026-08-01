@@ -1557,7 +1557,10 @@ class DatasetRunner:
                 p for p in work_dir.glob("*.pdb") if not _is_initial_pose_file(p)
             )
 
-        ref_coords = _reference_ligand_coords(reference_ligand) if reference_ligand else None
+        if reference_ligand:
+            ref_coords, ref_elements = _reference_ligand_atoms(reference_ligand)
+        else:
+            ref_coords, ref_elements = None, None
 
         for rank, pdb_path in enumerate(pdb_files, start=1):
             rmsd = -1.0
@@ -1604,7 +1607,8 @@ class DatasetRunner:
                             entropy_correction = float(m.group(1))
 
                 if rmsd < 0.0 and ref_coords is not None:
-                    rmsd = _pose_rmsd_vs_reference(pdb_path, ref_coords)
+                    rmsd = _pose_rmsd_vs_reference(
+                        pdb_path, ref_coords, ref_elements)
 
             except Exception as exc:
                 logger.debug("Error parsing %s: %s", pdb_path, exc)
@@ -2395,15 +2399,21 @@ def _is_initial_pose_file(pdb_path: Path) -> bool:
     return pdb_path.stem.upper().endswith("_INI")
 
 
-def _reference_ligand_coords(ligand_path: Path):
-    """Heavy-atom coordinates from a reference ligand file (SDF/MOL2/PDB)."""
-    from flexaidds.benchmark import extract_ligand_coords_from_pdb
+def _reference_ligand_atoms(ligand_path: Path):
+    """Heavy-atom coordinates AND elements from a reference ligand file.
+
+    The elements are needed to type the symmetry-corrected RMSD.  Typing the
+    reference with the *pose's* element list would assume the two files list
+    atoms in the same order -- and #354 exists precisely because FlexAID pose
+    order and SDF file order are not guaranteed to agree.
+    """
+    from flexaidds.benchmark import extract_ligand_atoms_from_pdb
 
     suffix = ligand_path.suffix.lower()
     if suffix == ".pdb":
-        return extract_ligand_coords_from_pdb(ligand_path)
+        return extract_ligand_atoms_from_pdb(ligand_path)
     if suffix in {".sdf", ".mol"}:
-        return _extract_ligand_coords_from_sdf(ligand_path)
+        return _extract_ligand_atoms_from_sdf(ligand_path)
     if suffix == ".mol2":
         from flexaidds.dataset_adapters import parse_mol2_atoms
 
@@ -2412,12 +2422,18 @@ def _reference_ligand_coords(ligand_path: Path):
             raise ValueError(f"No atoms in {ligand_path}")
         import numpy as np
 
-        return np.array([[a.x, a.y, a.z] for a in atoms], dtype=np.float64)
+        return (np.array([[a.x, a.y, a.z] for a in atoms], dtype=np.float64),
+                [str(getattr(a, "element", "") or "").upper() for a in atoms])
     raise ValueError(f"Unsupported reference ligand format: {ligand_path}")
 
 
-def _extract_ligand_coords_from_sdf(sdf_path: Path):
-    """Parse heavy-atom XYZ rows from a V2000 SD file."""
+def _reference_ligand_coords(ligand_path: Path):
+    """Coordinates only.  See :func:`_reference_ligand_atoms`."""
+    return _reference_ligand_atoms(ligand_path)[0]
+
+
+def _extract_ligand_atoms_from_sdf(sdf_path: Path):
+    """Parse heavy-atom XYZ rows and element symbols from a V2000 SD file."""
     import numpy as np
 
     lines = sdf_path.read_text().splitlines()
@@ -2431,6 +2447,7 @@ def _extract_ligand_coords_from_sdf(sdf_path: Path):
 
     n_atoms = int(lines[counts_line][0:3].strip())
     coords = []
+    elements = []
     for line in lines[counts_line + 1: counts_line + 1 + n_atoms]:
         parts = line.split()
         if len(parts) < 4:
@@ -2439,12 +2456,18 @@ def _extract_ligand_coords_from_sdf(sdf_path: Path):
         if element.upper() == "H":
             continue
         coords.append((float(parts[0]), float(parts[1]), float(parts[2])))
+        elements.append(element.upper())
     if not coords:
         raise ValueError(f"No heavy atoms in {sdf_path}")
-    return np.array(coords, dtype=np.float64)
+    return np.array(coords, dtype=np.float64), elements
 
 
-def _pose_rmsd_vs_reference(pose_pdb: Path, ref_coords) -> float:
+def _extract_ligand_coords_from_sdf(sdf_path: Path):
+    """Coordinates only.  See :func:`_extract_ligand_atoms_from_sdf`."""
+    return _extract_ligand_atoms_from_sdf(sdf_path)[0]
+
+
+def _pose_rmsd_vs_reference(pose_pdb: Path, ref_coords, ref_elements=None) -> float:
     """RMSD between docked pose ligand heavy atoms and reference coordinates."""
     from flexaidds.benchmark import compute_rmsd, extract_ligand_atoms_from_pdb
 
@@ -2463,9 +2486,15 @@ def _pose_rmsd_vs_reference(pose_pdb: Path, ref_coords) -> float:
         # here is a bug in selection, not a condition to work around.
         return -1.0
     try:
-        # Symmetry-corrected, as FlexAID's calc_rmsd Hungarian branch.  The
-        # pose and the reference are the same molecule in the same topology
-        # order, so the pose's own element list types both sides.
+        # Symmetry-corrected, as FlexAID's calc_rmsd Hungarian branch.
+        #
+        # Both element lists are read from their own file.  If they disagree,
+        # the two files do not list the same atoms in the same order -- the
+        # #354 correspondence bug, resurfacing on a new pair -- and every
+        # number downstream is measured against a shifted correspondence.
+        # Report the sentinel rather than a plausible RMSD.
+        if ref_elements is not None and list(ref_elements) != list(pred_elements):
+            return -1.0
         return compute_rmsd(pred, ref_coords, pred_elements)
     except ValueError:
         return -1.0

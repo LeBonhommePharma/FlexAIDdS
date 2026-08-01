@@ -104,3 +104,62 @@ def test_element_count_mismatch_raises():
     ref = _square_ring(0)
     with pytest.raises(ValueError, match="elements has"):
         compute_rmsd(ref, ref, ["C", "C"])
+
+
+# ---------------------------------------------------------------------------
+# The element FALLBACK parser.  Every test above hand-writes its element list,
+# so none of them exercises the one line that infers elements from a PDB atom
+# name -- which is where the first review found a live bug: a one-letter
+# truncation typed CHLORINE as CARBON and let it into the carbon bucket, where
+# the assignment could pair it with a carbon.  These run the parser itself.
+# ---------------------------------------------------------------------------
+
+from flexaidds.benchmark import _element_from_atom_name, extract_ligand_atoms_from_pdb
+
+
+@pytest.mark.parametrize(
+    "name_field,expected",
+    [
+        ("C 0 ", "C"),    # FlexAID pose naming
+        ("O 4 ", "O"),
+        ("CL3 ", "CL"),   # two-letter, left-justified -> chlorine
+        ("BR12", "BR"),
+        ("FE  ", "FE"),
+        ("CA  ", "CA"),   # calcium: two-letter, starts column 13
+        (" CA ", "C"),    # carbon-alpha: one-letter, starts column 14
+        (" N  ", "N"),
+        (" C1 ", "C"),
+    ],
+)
+def test_element_inference_from_atom_name(name_field, expected):
+    assert _element_from_atom_name(name_field) == expected
+
+
+def test_halogen_is_not_typed_as_carbon_end_to_end(tmp_path):
+    """The regression that matters: Cl must not enter the carbon bucket.
+
+    Written through the PDB reader rather than a hand-made element list,
+    because the hand-made lists are exactly what hid this.
+    """
+    pdb = tmp_path / "halogenated.pdb"
+    pdb.write_text(
+        'HETATM    1 C 0 LIG A   1       0.000   0.000   0.000  1.00  0.00\nHETATM    2 C 1 LIG A   1       1.500   0.000   0.000  1.00  0.00\nHETATM    3 CL2 LIG A   1       3.000   0.000   0.000  1.00  0.00\nEND\n'
+    )
+    _, elements = extract_ligand_atoms_from_pdb(pdb)
+    assert elements == ["C", "C", "CL"], (
+        "chlorine was typed as carbon -- it can now swap with one"
+    )
+
+
+def test_a_chlorine_cannot_be_paired_with_a_carbon(tmp_path):
+    """The consequence, measured.
+
+    Pose and reference hold a C and a Cl at swapped positions.  A type-blind
+    assignment reports 0.0; correct typing keeps the real 3 A error.
+    """
+    ref = np.array([[0.0, 0.0, 0.0], [3.0, 0.0, 0.0]], dtype=np.float64)
+    pred = np.array([[3.0, 0.0, 0.0], [0.0, 0.0, 0.0]], dtype=np.float64)
+
+    assert compute_rmsd(pred, ref, ["C", "CL"]) == pytest.approx(3.0, abs=1e-9)
+    # and the bug's behaviour, for contrast: truncating CL to C would give 0.0
+    assert compute_rmsd(pred, ref, ["C", "C"]) == pytest.approx(0.0, abs=1e-9)

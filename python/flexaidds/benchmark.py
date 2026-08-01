@@ -92,6 +92,34 @@ def pic50_to_dg(pic50: float, temperature_K: float = 298.15) -> float:
 # ---------------------------------------------------------------------------
 
 
+# Two-letter elements that occur in ligands and cofactors.  A one-letter
+# truncation types CL as C and lets a chlorine into the carbon bucket, where
+# the assignment may pair it with a carbon and lower the RMSD across
+# chemically different atoms -- the exact failure the per-type constraint
+# exists to prevent.  Halogenated ligands are common in Astex.
+_TWO_LETTER_ELEMENTS = frozenset({
+    "CL", "BR", "SI", "SE", "FE", "ZN", "MG", "MN", "NA", "CA", "CU",
+    "NI", "CO", "CD", "HG", "PT", "AS", "AL", "LI", "BA", "SR", "SN",
+})
+
+
+def _element_from_atom_name(name_field: str) -> str:
+    """Infer the element from a PDB atom-name field, columns 13-16.
+
+    FlexAID pose PDBs carry no element columns (77-78), so the name is the
+    only source.  The PDB convention puts a two-letter element left-justified
+    in columns 13-14 and a one-letter element in column 14, which makes
+    ``name[0:2]`` the candidate and ``name[1]`` the one-letter reading.
+    Names like ``C 0`` and ``CL3`` are both handled: the first has a space in
+    column 14 and cannot be two-letter, the second is CL.
+    """
+    raw = name_field[:2].strip().upper()
+    if len(raw) == 2 and raw in _TWO_LETTER_ELEMENTS:
+        return raw
+    stripped = name_field.strip().upper()
+    return stripped[:1] if stripped else ""
+
+
 def extract_ligand_atoms_from_pdb(
     pdb_path: Path, expected_n_atoms: int | None = None
 ) -> "tuple[np.ndarray, list[str]]":
@@ -131,9 +159,7 @@ def extract_ligand_atoms_from_pdb(
             if element == "H":
                 continue
             if not element:
-                # Fall back to the atom-name field when columns 77-78 are
-                # absent (FlexAID pose PDBs are written without them).
-                element = line[12:16].strip()[:1]
+                element = _element_from_atom_name(line[12:16])
             key = (resname, line[21:22], line[22:27].strip())
             residues.setdefault(key, []).append(
                 (float(line[30:38]), float(line[38:46]), float(line[46:54]),
