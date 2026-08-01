@@ -431,7 +431,9 @@ static std::vector<int> munkres_solve(std::vector<std::vector<double>> a) {
 // Symmetry-corrected RMSD: find optimal element-type-grouped bijection between
 // the docked pose and the crystal reference, then compute RMSD over that assignment.
 // crystal / docked: element-labelled heavy-atom XYZ vectors.
-static float hungarian_rmsd(
+// Exposed (non-static, declared in DatasetRunnerStats.h) so unit tests exercise
+// the EXACT production symmetry metric rather than a duplicate.
+float hungarian_rmsd(
     const std::vector<std::pair<std::string,std::array<float,3>>>& crystal,
     const std::vector<std::pair<std::string,std::array<float,3>>>& docked)
 {
@@ -7061,6 +7063,16 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                             // winner's CF is thermodynamically worse than the INI's
                             // CF, protect the INI from the override.
                             {
+                                // CF-best candidate in the pool, for rank0_demoted.
+                                // Defined against min-CF rather than pool order so the
+                                // field does not change meaning if the pool is re-sorted.
+                                // Ties resolve to the first index, so an elected pose
+                                // tied on CF reads as demoted -- rare, and documented
+                                // rather than special-cased.
+                                int cf_best_i = -1;
+                                for (size_t i = 0; i < pool.size(); ++i)
+                                    if (cf_best_i < 0 || pool[i].cf < pool[cf_best_i].cf)
+                                        cf_best_i = static_cast<int>(i);
                                 const std::string ini_sfx = "_INI.pdb";
                                 const bool elected_is_ini =
                                     best_pose_pdb.size() >= ini_sfx.size() &&
@@ -7081,11 +7093,30 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                                                                     : "consensus")
                                               << " override (winner CF="
                                               << pool[best_i].cf << ")\n";
+                                    // The override was VETOED: the reported pose is the
+                                    // protected INI seed, not pool[best_i].  Recording
+                                    // the gate mode here would name a rule that did not
+                                    // decide this pose.
+                                    result.election_mode   = "guard-protected";
+                                    result.consensus_count = -1;  // INI is not in the pool
+                                    result.rank0_demoted   = false;
                                 } else {
                                     best_pose_pdb = pool[best_i].path;
                                     // Keep best_score describing the SAME pose now reported.
                                     if (std::isfinite(pool[best_i].cf))
                                         result.best_score = pool[best_i].cf;
+                                    // Record against the ELECTED pose (best_i), not the
+                                    // incumbent it replaced (sel_i).  The stderr line
+                                    // above prints both deliberately -- consensus= for
+                                    // the winner, sel_consensus= for the incumbent -- and
+                                    // these fields describe the pose whose RMSD lands on
+                                    // this row.
+                                    result.election_mode = high_entropy_gate ? "entropy-midwall"
+                                                         : low_entropy_gate  ? "entropy-contact"
+                                                                             : "consensus";
+                                    result.consensus_count = consensus[best_i];
+                                    result.rank0_demoted =
+                                        (cf_best_i >= 0 && best_i != cf_best_i);
                                 }
                             }
                         }
@@ -7750,6 +7781,7 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                            "tencom_pose_sha256,eigen_n_modes,elected_H_vib,"
                            "cf_native,best_cluster_rmsd,conditional_scanned_pool_ceiling,best_cluster_idx,"
                            "seed_echo,pose_source,"
+                           "election_mode,consensus_count,rank0_demoted,"
                            "cf_top1_pose_path,cf_top1_score,cf_top1_rmsd,cf_top1_pose_sha256,"
                            "entropy_top1_pose_path,entropy_top1_score,entropy_top1_rmsd,entropy_top1_pose_sha256,"
                            "H_rep_rank0,H_pop,H_rep_mean,D_vib,"
@@ -7810,6 +7842,9 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                         << result.best_cluster_idx << ","
                         << (result.seed_echo ? 1 : 0) << ","
                         << result.pose_source << ","
+                        << result.election_mode << ","
+                        << result.consensus_count << ","
+                        << (result.rank0_demoted ? 1 : 0) << ","
                         << "\"" << result.cf_top1_pose_path << "\","
                         << (std::isnan(result.cf_top1_score) ? "NA" : std::to_string(result.cf_top1_score)) << ","
                         << result.cf_top1_rmsd << ","
@@ -8212,6 +8247,9 @@ void DatasetRunner::write_report(const BenchmarkReport& report,
                 << r.best_cluster_idx << ","
                 << (r.seed_echo ? 1 : 0) << ","
                 << r.pose_source << ","
+                << r.election_mode << ","
+                << r.consensus_count << ","
+                << (r.rank0_demoted ? 1 : 0) << ","
                 << "\"" << r.cf_top1_pose_path << "\","
                 << (std::isnan(r.cf_top1_score) ? "NA" : std::to_string(r.cf_top1_score)) << ","
                 << r.cf_top1_rmsd << ","

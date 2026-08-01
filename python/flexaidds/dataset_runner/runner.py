@@ -1564,10 +1564,24 @@ class DatasetRunner:
                 p for p in work_dir.glob("*.pdb") if not _is_initial_pose_file(p)
             )
 
+        # A contaminated reference is a refusal, not a docking failure, and it
+        # must not reach the caller's broad `except Exception` looking like one.
+        # Without this the raise escapes the per-file try below, degrades to
+        # "this target produced nothing", and is indistinguishable from bad
+        # docking -- the exact shape #366 exists to remove.
+        ref_coords = None
+        ref_elements = None
         if reference_ligand:
-            ref_coords, ref_elements = _reference_ligand_atoms(reference_ligand)
-        else:
-            ref_coords, ref_elements = None, None
+            try:
+                ref_coords, ref_elements = _reference_ligand_atoms(
+                    reference_ligand)
+            except ValueError as exc:
+                logger.warning(
+                    "Reference ligand refused for %s/%s: %s  No RMSD will be "
+                    "computed for this target; it is scored as a miss.  This "
+                    "is a REFERENCE FILE problem, not a docking result.",
+                    target_id, ligand_id, exc,
+                )
 
         for rank, pdb_path in enumerate(pdb_files, start=1):
             rmsd = -1.0
@@ -2431,6 +2445,9 @@ def _reference_ligand_atoms(ligand_path: Path):
 
     suffix = ligand_path.suffix.lower()
     if suffix == ".pdb":
+        # Reference PDBs can carry cofactors too.  No count is available here
+        # (this IS the count source), so the extractor must refuse to union
+        # rather than silently merge a cofactor into the reference (#366).
         return extract_ligand_atoms_from_pdb(ligand_path)
     if suffix in {".sdf", ".mol"}:
         return _extract_ligand_atoms_from_sdf(ligand_path)
