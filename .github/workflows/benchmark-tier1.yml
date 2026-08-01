@@ -239,6 +239,7 @@ jobs:
           WORKERS=$(( NPROC < 5 ? NPROC : 5 ))
           [ "$WORKERS" -lt 1 ] && WORKERS=1
           echo "nproc=$NPROC -> --workers $WORKERS --omp-threads 1"
+          echo "WORKERS=$WORKERS" >> "$GITHUB_ENV"
           # Measure REAL CPU time, not a modelled one. The report's
           # cost_cpu_seconds is computed as duration x omp_threads
           # (runner.py:1602) -- dividing it by wall time just returns
@@ -261,20 +262,29 @@ jobs:
             --omp-threads 1 \
             --verbose
           echo "tier1_wall_clock_seconds=$SECONDS"
+          echo "TIER1_WALL=$SECONDS" >> "$GITHUB_ENV"
+
+      # Emitting from inside the timed step would never run on a run that times
+      # out -- and every Tier-1 run so far has. An instrument that only reports
+      # once the problem is already solved is not an instrument. Separate step,
+      # if: always(), so a killed run still records its configuration.
+      - name: Report Tier-1 throughput
+        if: always()
+        run: |
           USER_S=$(awk -F': ' '/User time/{print $2}' /tmp/tier1_time.txt 2>/dev/null || echo "")
           SYS_S=$(awk -F': ' '/System time/{print $2}' /tmp/tier1_time.txt 2>/dev/null || echo "")
           MAXRSS=$(awk -F': ' '/Maximum resident/{print $2}' /tmp/tier1_time.txt 2>/dev/null || echo "")
-          echo "tier1_cpu_user_seconds=$USER_S tier1_cpu_sys_seconds=$SYS_S"
           {
             echo "### Tier-1 throughput"
             echo ""
             echo "| runner cores | workers | omp threads | wall clock | CPU user (measured) | CPU sys (measured) | max RSS kB |"
             echo "|---|---|---|---|---|---|---|"
-            echo "| $NPROC | $WORKERS | 1 | ${SECONDS}s | ${USER_S:-n/a} | ${SYS_S:-n/a} | ${MAXRSS:-n/a} |"
+            echo "| ${NPROC:-n/a} | ${WORKERS:-n/a} | 1 | ${TIER1_WALL:-n/a} | ${USER_S:-n/a} | ${SYS_S:-n/a} | ${MAXRSS:-n/a} |"
             echo ""
-            echo "CPU figures above are from \`/usr/bin/time -v\` (kernel-reported user+sys)."
-            echo "They are NOT the report's \`cost_cpu_seconds\`, which is \`duration x omp_threads\`"
-            echo "(runner.py:1602) and therefore carries no information about achieved parallelism."
+            echo "CPU figures are from \`/usr/bin/time -v\` (kernel user+sys), NOT the report's"
+            echo "\`cost_cpu_seconds\`, which is \`duration x omp_threads\` (runner.py:1602) and says"
+            echo "nothing about achieved parallelism. \`n/a\` = the run was killed before that"
+            echo "figure was written."
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload benchmark results
