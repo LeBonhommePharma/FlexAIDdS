@@ -389,23 +389,25 @@ class TargetResult:
 # the metric, not of its spelling: declare it here, beside nothing else.
 #
 # Every metric named in any benchmarks/datasets/*.yaml expected_baselines block
-# must appear in exactly one of these sets. An unlisted metric logs a warning
-# and falls back to higher-is-better rather than failing the run.
+# AND produced by compute_all_metrics must appear in exactly one of these sets.
+# An unlisted metric logs a warning and falls back to higher-is-better rather
+# than failing the run.
+#
+# A direction is only registered for a metric something can PRODUCE. A metric
+# that nothing computes has no behaviour to contradict its entry, so an entry
+# for it is not a record -- it is an instruction: the next person to implement
+# the metric reads the registry and writes code to match, and the guess becomes
+# true by recruiting the person who could have falsified it. Eleven such names
+# were removed here (they remain declared in dataset YAMLs and will be
+# re-registered by whoever dispatches them, in the same diff as the producer,
+# where the sign convention and the assignment are visible together).
 _LOWER_IS_BETTER = frozenset({
-    "crossdock_mean_rmsd",
-    "crossdock_median_rmsd",
-    "delta_delta_g_rmse_kcal",
     "mean_rmsd",
     "median_rmsd",
-    "p_bind_agreement_rmse",
-    "scoring_power_mae",
     "scoring_power_rmse",
-    "selectivity_log_error",
 })
 
 _HIGHER_IS_BETTER = frozenset({
-    "crossdock_success_rate_2A",
-    "crossdock_success_rate_3A",
     "docking_power_top1",
     "docking_power_top3",
     "ef_1pct",
@@ -413,11 +415,8 @@ _HIGHER_IS_BETTER = frozenset({
     "entropy_rescue_rate",
     "hit_rate_top10",
     "log_auc",
-    "occupancy_agreement",
-    "posebusters_pass_rate",
     "scoring_power_pearson_r",
     "scoring_power_spearman_r",
-    "target_specificity_zscore",
 })
 
 # Deliberately in NEITHER set: shannon_energy_collapse. Its preferred direction
