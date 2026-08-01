@@ -374,6 +374,53 @@ class TargetResult:
         return not self.error and bool(self.poses)
 
 
+# ---------------------------------------------------------------------------
+# Regression direction registry
+# ---------------------------------------------------------------------------
+# check_regressions used to infer "lower is better" from the substring "rmse"
+# or "mae". That silently inverted every distance metric whose name is spelled
+# differently -- mean_rmsd, median_rmsd, crossdock_*_rmsd, selectivity_log_error
+# -- so a 37% WORSE RMSD scored as "no regression". Direction is a property of
+# the metric, not of its spelling: declare it here, beside nothing else.
+#
+# Every metric named in any benchmarks/datasets/*.yaml expected_baselines block
+# must appear in exactly one of these sets. An unlisted metric logs a warning
+# and falls back to higher-is-better rather than failing the run.
+_LOWER_IS_BETTER = frozenset({
+    "crossdock_mean_rmsd",
+    "crossdock_median_rmsd",
+    "delta_delta_g_rmse_kcal",
+    "mean_rmsd",
+    "median_rmsd",
+    "p_bind_agreement_rmse",
+    "scoring_power_mae",
+    "scoring_power_rmse",
+    "selectivity_log_error",
+})
+
+_HIGHER_IS_BETTER = frozenset({
+    "crossdock_success_rate_2A",
+    "crossdock_success_rate_3A",
+    "docking_power_top1",
+    "docking_power_top3",
+    "ef_1pct",
+    "ef_5pct",
+    "entropy_rescue_rate",
+    "hit_rate_top10",
+    "log_auc",
+    "occupancy_agreement",
+    "posebusters_pass_rate",
+    "scoring_power_pearson_r",
+    "scoring_power_spearman_r",
+    "target_specificity_zscore",
+})
+
+# Deliberately in NEITHER set: shannon_energy_collapse. Its preferred direction
+# is not determinable from the name or from any docstring in this repo, so it
+# warns rather than silently taking a side. Declare it once someone who knows
+# the physics says which way is better.
+
+
 @dataclass
 class DatasetResult:
     """Aggregated results for one complete dataset run.
@@ -444,12 +491,21 @@ class DatasetResult:
                 # cli.main can fail the run rather than silently pass it.
                 missing.append(metric)
                 continue
-            # For error/RMSE metrics lower is better — allow increase
-            if "rmse" in metric or "mae" in metric:
+            # Direction is looked up, never inferred from the name. See
+            # _LOWER_IS_BETTER: substring-sniffing silently inverted
+            # mean_rmsd/median_rmsd because "rmsd" is not "rmse".
+            if metric in _LOWER_IS_BETTER:
                 threshold = baseline * (1 + tol)
                 flags[metric] = bool(measured > threshold)
             else:
-                # For all other metrics higher is better
+                if metric not in _HIGHER_IS_BETTER:
+                    logger.warning(
+                        "Metric %r has no declared direction in "
+                        "_LOWER_IS_BETTER/_HIGHER_IS_BETTER; assuming "
+                        "higher-is-better. Declare it before trusting this "
+                        "regression verdict.",
+                        metric,
+                    )
                 threshold = baseline * (1 - tol)
                 flags[metric] = bool(measured < threshold)
         self.regression_flags = flags
