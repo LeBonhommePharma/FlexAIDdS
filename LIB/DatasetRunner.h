@@ -256,8 +256,15 @@ struct DockingResult {
     // this pose.
     std::string election_mode{""};   // "consensus" | "entropy-midwall" | "entropy-contact"
                                      // | "guard-protected" | ""
-    int  consensus_count{-1};        // cross-restart votes for the ELECTED pose;
-                                     // -1 = no election, or elected pose not in the pool
+    // consensus_count == -1 is AMBIGUOUS ON ITS OWN and must be read together
+    // with election_mode:
+    //     election_mode ""                -> no election ran (pool < 2 candidates)
+    //     election_mode "guard-protected" -> election ran and was VETOED; the
+    //                                        elected INI seed is not in the pool,
+    //                                        so it has no vote count
+    // Reading this column alone cannot distinguish "nothing happened" from
+    // "an override was overruled".
+    int  consensus_count{-1};        // cross-restart votes for the ELECTED pose
     bool rank0_demoted{false};       // true when the elected pose is not the min-CF one
     // Separate estimands: generator CF top-1 vs entropy/consensus reranked top-1
     std::string cf_top1_pose_path;
