@@ -464,7 +464,9 @@ class DatasetResult:
     # fields let cli.main distinguish PASS / FAIL / INCONCLUSIVE.
     flexaid_crashes: int = 0
     total_poses: int = 0
-    entry_exit_codes: Dict[str, int] = field(default_factory=dict)
+    # value is a real exit/return code, or None when the engine never executed
+    # (exec failure) — mirrors DatasetRunner._entry_exit_codes.
+    entry_exit_codes: Dict[str, Optional[int]] = field(default_factory=dict)
     inconclusive_metrics: List[str] = field(default_factory=list)
     # Targets actually executed this run (excludes --resume checkpoints, whose
     # poses are not reloaded into all_poses). Gates 2-3 only judge a run that
@@ -1193,7 +1195,9 @@ class DatasetRunner:
         # binary can never read as "no regression". Reset per dataset run.
         self._crash_lock = threading.Lock()
         self._flexaid_crashes = 0
-        self._entry_exit_codes: Dict[str, int] = {}
+        # int = a real process exit/return code; None = the engine never
+        # executed (exec failure), which no completed subprocess.run can produce.
+        self._entry_exit_codes: Dict[str, Optional[int]] = {}
 
     def _effective_temperature(self, slug: str) -> float:
         """Auto-force 298 K for ITC/thermo datasets (handoff requirement).
@@ -1341,6 +1345,11 @@ class DatasetRunner:
                 sub_env["FLEXAIDDS_NO_SEC"] = "1"
                 # Signal to core that this is a benchmark run needing equal search effort
                 sub_env["FLEXAIDDS_BENCHMARK"] = "1"
+                # Wrap ONLY the subprocess call: the exceptions here (timeout,
+                # exec failure) are properties of *running the engine*. Pose
+                # parsing lives below, deliberately outside this try, so an
+                # OSError while reading result files is never miscounted as a
+                # liveness crash — the engine ran; only the read failed.
                 try:
                     # Direct CLI: <receptor> <ligand> -o prefix  (binary auto-detects files)
                     # Write outputs as flexaid_*.pdb so parser glob *.pdb catches them.
@@ -1352,43 +1361,75 @@ class DatasetRunner:
                         cwd=tmp_path,
                         env=sub_env,
                     )
-                    if result.returncode != 0:
-                        # #326 liveness: a non-zero exit is a gate failure, not
-                        # a debug aside. Record it so the run is scored
-                        # INCONCLUSIVE instead of silently passing on 0 poses.
-                        stderr_head = (result.stderr or "").strip().splitlines()
-                        stderr_head = stderr_head[0][:200] if stderr_head else ""
-                        with self._crash_lock:
-                            self._flexaid_crashes += 1
-                            self._entry_exit_codes[f"{target_id}/{ligand_id}"] = result.returncode
-                        logger.warning(
-                            "FlexAID non-zero exit %d for %s/%s: %s",
-                            result.returncode, target_id, ligand_id, stderr_head,
-                        )
-                        if result.stderr:
-                            logger.debug("stderr: %s", result.stderr[:500])
-                    parsed = self._parse_flexaid_output(
-                        tmp_path,
-                        target_id,
-                        ligand_id,
-                        structural_state,
-                        reference_ligand=ligand_path,
-                    )
-                    # P3: capture grand log_Z from [GRAND] stdout (emitted by C++ cluster hook when --conc used)
-                    grand_log_z = None
-                    if result.stdout:
-                        for line in result.stdout.splitlines():
-                            if '[GRAND]' in line and 'log_Z=' in line:
-                                try:
-                                    grand_log_z = float(line.split('log_Z=')[1].split()[0])
-                                except Exception:
-                                    pass
-                    if grand_log_z is not None:
-                        for p in parsed:
-                            p.ensemble_log_Z = grand_log_z
-                    poses.extend(parsed)
                 except subprocess.TimeoutExpired:
                     logger.error("Docking timed out: %s/%s", target_id, ligand_id)
+                    continue
+                except OSError as exc:
+                    # #326 liveness: subprocess.run itself raising (the binary is
+                    # missing or not executable -> FileNotFoundError; permission
+                    # denied -> PermissionError; both OSError) means the engine
+                    # NEVER RAN. That is exactly the case the liveness gate is
+                    # named for, yet the returncode-based counter below never
+                    # sees it — the exception would otherwise be swallowed
+                    # per-entry by _process_one_item and the run would look like
+                    # "executed, 0 poses" (productivity) rather than "engine did
+                    # not run" (liveness). Record it as a crash so gate 1 fires
+                    # even when productivity is relaxed (FLEXAIDDS_BENCH_ALLOW_EMPTY)
+                    # or vacuous (a dataset declaring 0 baselines). Record None,
+                    # not a numeric sentinel: the engine produced no exit code at
+                    # all. A value like -1 would be ambiguous — subprocess encodes
+                    # signal death as a negative returncode (SIGHUP -> -1), so -1
+                    # already means "ran, killed by signal 1" in the returncode
+                    # branch above. None is a value no completed subprocess.run
+                    # can yield, so in entry_exit_codes it means "did not execute"
+                    # and only that.
+                    with self._crash_lock:
+                        self._flexaid_crashes += 1
+                        self._entry_exit_codes[f"{target_id}/{ligand_id}"] = None
+                    logger.error(
+                        "FlexAID failed to execute for %s/%s: %s",
+                        target_id, ligand_id, exc,
+                    )
+                    continue
+
+                # The engine ran (exec succeeded); everything below is parsing
+                # and is NOT under the exec try — a read error here is not a
+                # liveness crash.
+                if result.returncode != 0:
+                    # #326 liveness: a non-zero exit is a gate failure, not
+                    # a debug aside. Record it so the run is scored
+                    # INCONCLUSIVE instead of silently passing on 0 poses.
+                    stderr_head = (result.stderr or "").strip().splitlines()
+                    stderr_head = stderr_head[0][:200] if stderr_head else ""
+                    with self._crash_lock:
+                        self._flexaid_crashes += 1
+                        self._entry_exit_codes[f"{target_id}/{ligand_id}"] = result.returncode
+                    logger.warning(
+                        "FlexAID non-zero exit %d for %s/%s: %s",
+                        result.returncode, target_id, ligand_id, stderr_head,
+                    )
+                    if result.stderr:
+                        logger.debug("stderr: %s", result.stderr[:500])
+                parsed = self._parse_flexaid_output(
+                    tmp_path,
+                    target_id,
+                    ligand_id,
+                    structural_state,
+                    reference_ligand=ligand_path,
+                )
+                # P3: capture grand log_Z from [GRAND] stdout (emitted by C++ cluster hook when --conc used)
+                grand_log_z = None
+                if result.stdout:
+                    for line in result.stdout.splitlines():
+                        if '[GRAND]' in line and 'log_Z=' in line:
+                            try:
+                                grand_log_z = float(line.split('log_Z=')[1].split()[0])
+                            except Exception:
+                                pass
+                if grand_log_z is not None:
+                    for p in parsed:
+                        p.ensemble_log_Z = grand_log_z
+                poses.extend(parsed)
 
         return poses
 
