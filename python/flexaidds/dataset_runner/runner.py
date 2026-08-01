@@ -1333,6 +1333,27 @@ class DatasetRunner:
                     poses.extend(parsed)
                 except subprocess.TimeoutExpired:
                     logger.error("Docking timed out: %s/%s", target_id, ligand_id)
+                except OSError as exc:
+                    # #326 liveness: subprocess.run itself raising (the binary is
+                    # missing or not executable -> FileNotFoundError; permission
+                    # denied -> PermissionError; both OSError) means the engine
+                    # NEVER RAN. That is exactly the case the liveness gate is
+                    # named for, yet the returncode-based counter above never
+                    # sees it — the exception would otherwise be swallowed
+                    # per-entry by _process_one_item and the run would look like
+                    # "executed, 0 poses" (productivity) rather than "engine did
+                    # not run" (liveness). Record it as a crash so gate 1 fires
+                    # even when productivity is relaxed (FLEXAIDDS_BENCH_ALLOW_EMPTY)
+                    # or vacuous (a dataset declaring 0 baselines). -1 is a "did
+                    # not execute" sentinel, distinct from any real process exit
+                    # code, disambiguated by the log line.
+                    with self._crash_lock:
+                        self._flexaid_crashes += 1
+                        self._entry_exit_codes[f"{target_id}/{ligand_id}"] = -1
+                    logger.error(
+                        "FlexAID failed to execute for %s/%s: %s",
+                        target_id, ligand_id, exc,
+                    )
 
         return poses
 
