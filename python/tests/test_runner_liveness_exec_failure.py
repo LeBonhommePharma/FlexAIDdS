@@ -62,6 +62,37 @@ def test_non_executable_binary_is_recorded_as_a_crash(tmp_path):
     assert runner._entry_exit_codes["T2/lig"] == -1
 
 
+def test_parse_time_oserror_is_NOT_a_liveness_crash(tmp_path):
+    # The engine ran fine (exit 0); an OSError while READING pose files must not
+    # be miscounted as "the engine never ran". The exec try wraps only
+    # subprocess.run, so a parse-time OSError propagates instead of touching the
+    # crash counter. (Bumble's #346 review note.)
+    import shutil
+
+    true_bin = shutil.which("true")
+    if not true_bin:
+        import pytest as _pt
+        _pt.skip("no `true` binary available to stand in for a successful exec")
+    runner = _runner(tmp_path, binary=true_bin)  # real binary, exits 0
+    receptor = tmp_path / "rec.pdb"
+    receptor.write_text("")
+    ligand = tmp_path / "lig.mol2"
+    ligand.write_text("")
+
+    def _boom(*a, **k):
+        raise OSError("disk read error while parsing poses")
+
+    runner._parse_flexaid_output = _boom  # type: ignore[method-assign]
+
+    import pytest
+
+    with pytest.raises(OSError):
+        runner._run_flexaid("T4", receptor, [ligand], "holo", with_entropy=False)
+
+    # The engine executed successfully -> liveness must stay clean.
+    assert runner._flexaid_crashes == 0
+
+
 def test_every_missing_ligand_entry_counts(tmp_path):
     # Two ligands, both hitting a missing binary -> two independent crashes,
     # so the counter reflects the true number of dead invocations.
