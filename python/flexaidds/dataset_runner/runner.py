@@ -1760,7 +1760,15 @@ class DatasetRunner:
                     crashes += crash_i
                     exit_codes.update(codes_i)
                     newly += newly_i
-                    resumed += resumed_i
+                    # `resumed` is REPLICATED, not partitioned: every rank runs
+                    # _discover_completed_targets over the same shared disk, so
+                    # each reports the same count. Summing would give
+                    # resumed × n_ranks. Take the common value (max == that
+                    # value) so the report-JSON provenance stays honest. The
+                    # gate only asks `resumed == 0`, which summing preserved,
+                    # but a wrong number in the artifact is the exact thing this
+                    # whole change exists to prevent.
+                    resumed = max(resumed, resumed_i)
 
         # Root finalizes
         if self._mpi_root:
