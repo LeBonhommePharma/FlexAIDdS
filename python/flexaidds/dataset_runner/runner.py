@@ -1946,6 +1946,17 @@ class DatasetRunner:
         newly = len(results)
         resumed = len(already_completed)
 
+        # Element-order refusals are scored as misses, so they must be visible
+        # or a correspondence bug reads as bad docking.
+        if _ELEMENT_MISMATCHES:
+            logger.warning(
+                "%d pose(s) had an element list disagreeing with their "
+                "reference and were scored as misses: %s%s",
+                len(_ELEMENT_MISMATCHES),
+                ", ".join(Path(p).name for p in _ELEMENT_MISMATCHES[:5]),
+                " ..." if len(_ELEMENT_MISMATCHES) > 5 else "",
+            )
+
         # MPI gather (still works at target granularity for final aggregation)
         if self._mpi_comm is not None:
             all_results_by_rank = self._mpi_comm.gather(
@@ -2467,6 +2478,12 @@ def _extract_ligand_coords_from_sdf(sdf_path: Path):
     return _extract_ligand_atoms_from_sdf(sdf_path)[0]
 
 
+# Poses whose element list disagreed with the reference's.  Each one is
+# scored as a docking failure, so the count belongs in the run summary --
+# otherwise a correspondence bug is indistinguishable from bad docking.
+_ELEMENT_MISMATCHES: "list[str]" = []
+
+
 def _pose_rmsd_vs_reference(pose_pdb: Path, ref_coords, ref_elements=None) -> float:
     """RMSD between docked pose ligand heavy atoms and reference coordinates."""
     from flexaidds.benchmark import compute_rmsd, extract_ligand_atoms_from_pdb
@@ -2494,6 +2511,21 @@ def _pose_rmsd_vs_reference(pose_pdb: Path, ref_coords, ref_elements=None) -> fl
         # number downstream is measured against a shifted correspondence.
         # Report the sentinel rather than a plausible RMSD.
         if ref_elements is not None and list(ref_elements) != list(pred_elements):
+            # Fail closed, but LOUDLY.  -1.0 is the same sentinel a genuine
+            # miss produces, and metrics.docking_power keeps the target in the
+            # denominator either way -- so a systematic element-order
+            # divergence would silently depress reported docking power with no
+            # diagnostic anywhere.  A refusal nobody can see has the same shape
+            # as the bug it replaced.
+            logger.warning(
+                "RMSD refused for %s: reference and pose list different "
+                "elements (ref %s..., pose %s...).  The two files do not "
+                "describe the same atoms in the same order; this target is "
+                "scored as a miss and the count is reported in the run "
+                "summary.",
+                pose_pdb.name, list(ref_elements)[:6], list(pred_elements)[:6],
+            )
+            _ELEMENT_MISMATCHES.append(str(pose_pdb))
             return -1.0
         return compute_rmsd(pred, ref_coords, pred_elements)
     except ValueError:

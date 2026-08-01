@@ -163,3 +163,37 @@ def test_a_chlorine_cannot_be_paired_with_a_carbon(tmp_path):
     assert compute_rmsd(pred, ref, ["C", "CL"]) == pytest.approx(3.0, abs=1e-9)
     # and the bug's behaviour, for contrast: truncating CL to C would give 0.0
     assert compute_rmsd(pred, ref, ["C", "C"]) == pytest.approx(0.0, abs=1e-9)
+
+
+# ---------------------------------------------------------------------------
+# Hydrogen exclusion.  The element must be derived BEFORE the H test, or on
+# files with no element columns -- which is exactly the files the fallback
+# exists for -- the test compares against an empty string and excludes
+# nothing.  Digit-prefixed names ("1HB") are hydrogens by PDB convention and
+# would otherwise be typed as element "1" and get their own swappable bucket.
+# ---------------------------------------------------------------------------
+
+
+def _hetatm(serial: int, name: str, x: float) -> str:
+    assert len(name) == 4, name
+    return (f"HETATM{serial:>5} {name}LIG A   1    "
+            f"{x:8.3f}{0.0:8.3f}{0.0:8.3f}  1.00  0.00\n")
+
+
+def test_hydrogens_excluded_without_element_columns(tmp_path):
+    pdb = tmp_path / "with_h.pdb"
+    pdb.write_text(
+        _hetatm(1, "C 0 ", 0.0)
+        + _hetatm(2, "H12 ", 1.0)
+        + _hetatm(3, "1HB ", 2.0)
+        + _hetatm(4, "O 1 ", 3.0)
+        + "END\n"
+    )
+    coords, elements = extract_ligand_atoms_from_pdb(pdb)
+    assert elements == ["C", "O"], f"hydrogens leaked through: {elements}"
+    assert coords.shape == (2, 3)
+
+
+@pytest.mark.parametrize("name_field", ["1HB ", "2HG1", "3HD2"])
+def test_digit_prefixed_names_are_hydrogen(name_field):
+    assert _element_from_atom_name(name_field) == "H"

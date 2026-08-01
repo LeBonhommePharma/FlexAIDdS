@@ -117,7 +117,15 @@ def _element_from_atom_name(name_field: str) -> str:
     if len(raw) == 2 and raw in _TWO_LETTER_ELEMENTS:
         return raw
     stripped = name_field.strip().upper()
-    return stripped[:1] if stripped else ""
+    if not stripped:
+        return ""
+    if stripped[0].isdigit():
+        # PDB convention: a leading digit is a branch index on a hydrogen
+        # ("1HB", "2HG1").  Typed by first character it becomes element "1"
+        # and gets its own swappable bucket.
+        rest = stripped.lstrip("0123456789")
+        return rest[:1] if rest else ""
+    return stripped[:1]
 
 
 def extract_ligand_atoms_from_pdb(
@@ -155,11 +163,15 @@ def extract_ligand_atoms_from_pdb(
             resname = line[17:20].strip()
             if resname == "HOH":
                 continue
-            element = line[76:78].strip() if len(line) > 77 else ""
+            element = line[76:78].strip().upper() if len(line) > 77 else ""
+            if not element:
+                # FlexAID pose PDBs carry no element columns, which is the
+                # whole reason this fallback exists -- so the hydrogen test
+                # has to come AFTER it, or on exactly those files it compares
+                # against an empty string and excludes nothing.
+                element = _element_from_atom_name(line[12:16])
             if element == "H":
                 continue
-            if not element:
-                element = _element_from_atom_name(line[12:16])
             key = (resname, line[21:22], line[22:27].strip())
             residues.setdefault(key, []).append(
                 (float(line[30:38]), float(line[38:46]), float(line[46:54]),
