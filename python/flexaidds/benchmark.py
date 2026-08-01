@@ -92,9 +92,9 @@ def pic50_to_dg(pic50: float, temperature_K: float = 298.15) -> float:
 # ---------------------------------------------------------------------------
 
 
-def extract_ligand_coords_from_pdb(
+def extract_ligand_atoms_from_pdb(
     pdb_path: Path, expected_n_atoms: int | None = None
-) -> np.ndarray:
+) -> "tuple[np.ndarray, list[str]]":
     """Extract ligand heavy-atom coordinates from a PDB file.
 
     Selects HETATM records excluding HOH.  Returns an (N, 3) array in
@@ -130,9 +130,14 @@ def extract_ligand_coords_from_pdb(
             element = line[76:78].strip() if len(line) > 77 else ""
             if element == "H":
                 continue
+            if not element:
+                # Fall back to the atom-name field when columns 77-78 are
+                # absent (FlexAID pose PDBs are written without them).
+                element = line[12:16].strip()[:1]
             key = (resname, line[21:22], line[22:27].strip())
             residues.setdefault(key, []).append(
-                (float(line[30:38]), float(line[38:46]), float(line[46:54]))
+                (float(line[30:38]), float(line[38:46]), float(line[46:54]),
+                 element.upper())
             )
 
     if not residues:
@@ -142,12 +147,14 @@ def extract_ligand_coords_from_pdb(
         # Backwards-compatible path, used where no reference is available.
         # Still excludes nothing, so it keeps the historical behaviour rather
         # than silently guessing which residue is the ligand.
-        atoms = [xyz for group in residues.values() for xyz in group]
-        return np.array(atoms, dtype=np.float64)
+        atoms = [a for group in residues.values() for a in group]
+        return (np.array([a[:3] for a in atoms], dtype=np.float64),
+                [a[3] for a in atoms])
 
     matches = [g for g in residues.values() if len(g) == expected_n_atoms]
     if len(matches) == 1:
-        return np.array(matches[0], dtype=np.float64)
+        return (np.array([a[:3] for a in matches[0]], dtype=np.float64),
+                [a[3] for a in matches[0]])
 
     counts = {f"{k[0]}/{k[1]}{k[2]}": len(v) for k, v in residues.items()}
     raise ValueError(
@@ -268,7 +275,55 @@ def _tokenize_mmcif_line(line: str) -> List[str]:
 # ---------------------------------------------------------------------------
 
 
-def compute_rmsd(coords_pred: np.ndarray, coords_ref: np.ndarray) -> float:
+def extract_ligand_coords_from_pdb(
+    pdb_path: Path, expected_n_atoms: int | None = None
+) -> np.ndarray:
+    """Coordinates only.  See :func:`extract_ligand_atoms_from_pdb`."""
+    return extract_ligand_atoms_from_pdb(pdb_path, expected_n_atoms)[0]
+
+
+def _symmetry_permutation(
+    coords_pred: np.ndarray,
+    coords_ref: np.ndarray,
+    elements: "list[str]",
+) -> np.ndarray:
+    """Optimal within-element atom assignment, as FlexAID's Hungarian branch.
+
+    ``LIB/calc_rmsd.c::calc_Hungarian_RMSD`` builds one cost matrix per atom
+    TYPE and solves the assignment problem inside each type, so a symmetric
+    ligand is not penalised for an equivalent relabelling.  A benzene flipped
+    180 degrees is the same pose; paired positionally it reads as a large
+    RMSD.  This reproduces that, one element at a time.
+
+    Only atoms of the same element may swap -- carbon never pairs with oxygen
+    -- so the assignment can never lower the RMSD by matching chemically
+    different atoms.  Returns an index array ``perm`` such that
+    ``coords_ref[perm]`` is the correspondence that minimises the RMSD.
+    """
+    from scipy.optimize import linear_sum_assignment
+
+    perm = np.arange(len(elements))
+    by_element: dict = {}
+    for i, el in enumerate(elements):
+        by_element.setdefault(el, []).append(i)
+
+    for idx in by_element.values():
+        if len(idx) < 2:
+            continue
+        idx_arr = np.asarray(idx)
+        # cost[i][j] = squared distance from pred atom i to ref atom j
+        diff = coords_pred[idx_arr][:, None, :] - coords_ref[idx_arr][None, :, :]
+        cost = (diff * diff).sum(axis=2)
+        rows, cols = linear_sum_assignment(cost)
+        perm[idx_arr[rows]] = idx_arr[cols]
+    return perm
+
+
+def compute_rmsd(
+    coords_pred: np.ndarray,
+    coords_ref: np.ndarray,
+    elements: "list[str] | None" = None,
+) -> float:
     """Docking RMSD: in-place, in the receptor frame, NO superposition.
 
     This is the quantity the 2.0 A redocking criterion is defined on.  Both
@@ -296,6 +351,14 @@ def compute_rmsd(coords_pred: np.ndarray, coords_ref: np.ndarray) -> float:
     n = coords_pred.shape[0]
     if n == 0:
         return 0.0
+
+    if elements is not None:
+        if len(elements) != n:
+            raise ValueError(
+                f"elements has {len(elements)} entries for {n} atoms."
+            )
+        coords_ref = coords_ref[_symmetry_permutation(
+            coords_pred, coords_ref, elements)]
 
     diff = coords_pred - coords_ref
     return float(np.sqrt((diff * diff).sum() / n))
@@ -963,14 +1026,16 @@ def run_flexaidds(
     # RMSD: use the best-energy pose coordinates vs reference
     rmsd_val = None
     try:
-        ref_coords = extract_ligand_coords_from_pdb(system.reference_pose_pdb_path)
+        ref_coords, ref_elements = extract_ligand_atoms_from_pdb(
+            system.reference_pose_pdb_path)
         # Find best pose RMSD among top mode poses
         best_rmsd = float("inf")
         for pose in top._poses:
             if pose.coordinates is not None:
                 pred_coords = pose.coordinates
                 if pred_coords.shape == ref_coords.shape:
-                    r = compute_rmsd(pred_coords, ref_coords)
+                    r = compute_rmsd(
+                        pred_coords, ref_coords, ref_elements)
                     if r < best_rmsd:
                         best_rmsd = r
         if best_rmsd < float("inf"):
@@ -1019,13 +1084,15 @@ def run_boltz2(
     # Extract RMSD from best structure sample
     rmsd_val = None
     try:
-        ref_coords = extract_ligand_coords_from_pdb(system.reference_pose_pdb_path)
+        ref_coords, ref_elements = extract_ligand_atoms_from_pdb(
+            system.reference_pose_pdb_path)
         best_rmsd = float("inf")
         for struct in result.structures:
             try:
                 pred_coords = extract_ligand_coords_from_mmcif(struct)
                 if pred_coords.shape == ref_coords.shape:
-                    r = compute_rmsd(pred_coords, ref_coords)
+                    r = compute_rmsd(
+                        pred_coords, ref_coords, ref_elements)
                     if r < best_rmsd:
                         best_rmsd = r
             except (ValueError, IndexError):

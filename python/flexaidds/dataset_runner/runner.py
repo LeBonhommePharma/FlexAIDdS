@@ -2446,10 +2446,11 @@ def _extract_ligand_coords_from_sdf(sdf_path: Path):
 
 def _pose_rmsd_vs_reference(pose_pdb: Path, ref_coords) -> float:
     """RMSD between docked pose ligand heavy atoms and reference coordinates."""
-    from flexaidds.benchmark import compute_rmsd, extract_ligand_coords_from_pdb
+    from flexaidds.benchmark import compute_rmsd, extract_ligand_atoms_from_pdb
 
     try:
-        pred = extract_ligand_coords_from_pdb(pose_pdb, expected_n_atoms=len(ref_coords))
+        pred, pred_elements = extract_ligand_atoms_from_pdb(
+            pose_pdb, expected_n_atoms=len(ref_coords))
     except ValueError:
         return -1.0
     if pred.shape != ref_coords.shape:
@@ -2462,6 +2463,9 @@ def _pose_rmsd_vs_reference(pose_pdb: Path, ref_coords) -> float:
         # here is a bug in selection, not a condition to work around.
         return -1.0
     try:
-        return compute_rmsd(pred, ref_coords)
+        # Symmetry-corrected, as FlexAID's calc_rmsd Hungarian branch.  The
+        # pose and the reference are the same molecule in the same topology
+        # order, so the pose's own element list types both sides.
+        return compute_rmsd(pred, ref_coords, pred_elements)
     except ValueError:
         return -1.0
