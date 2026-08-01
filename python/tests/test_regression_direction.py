@@ -67,13 +67,24 @@ def test_every_declared_baseline_has_a_direction():
     warns at runtime rather than silently assuming.
     """
     known_gap = {"shannon_energy_collapse"}
-    root = Path(__file__).resolve().parents[2] / "benchmarks" / "datasets"
-    if not root.is_dir():
-        return  # package-only checkout
+    repo = Path(__file__).resolve().parents[2]
+    # BOTH dataset trees. benchmarks/datasets is canonical (CANONICAL.md), but
+    # the package copy is a declared mirror that has drifted in 10 of 12 shared
+    # pairs (#337) -- reading only one tree would pass by luck of the drift not
+    # currently being in metric names.
+    roots = [
+        repo / "benchmarks" / "datasets",
+        repo / "python" / "flexaidds" / "dataset_runner" / "datasets",
+    ]
+    roots = [r for r in roots if r.is_dir()]
+    assert roots, "no dataset directory found in either tree"
     undeclared = set()
-    for f in sorted(root.glob("*.yaml")):
-        raw = yaml.safe_load(f.read_text()) or {}
-        for metric in (raw.get("expected_baselines") or {}):
-            if metric not in _LOWER_IS_BETTER and metric not in _HIGHER_IS_BETTER:
-                undeclared.add(metric)
-    assert undeclared <= known_gap, f"metrics with no declared direction: {sorted(undeclared)}"
+    for root in roots:
+        for f in sorted(root.glob("*.yaml")):
+            raw = yaml.safe_load(f.read_text()) or {}
+            for metric in (raw.get("expected_baselines") or {}):
+                if metric not in _LOWER_IS_BETTER and metric not in _HIGHER_IS_BETTER:
+                    undeclared.add(f"{metric} ({root.name} tree)")
+    assert not (
+        {u.split(" (")[0] for u in undeclared} - known_gap
+    ), f"metrics with no declared direction: {sorted(undeclared)}"
