@@ -1,7 +1,10 @@
 name: License Compliance
 
 on:
+  # Restricted to main for the same reason as ci.yml: an unrestricted `push:`
+  # alongside `pull_request:` runs this twice per commit on a PR branch. See #338.
   push:
+    branches: [main]
   pull_request:
 
 jobs:
