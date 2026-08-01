@@ -62,6 +62,11 @@ def test_bare_binary_name_is_NOT_absolutised(tmp_path):
     not exist -- turning a working PATH lookup into a hard FileNotFoundError.
     A bare name must survive untouched unless PATH can actually resolve it.
     """
+    # NB: deliberately not "FlexAID". A developer machine with FlexAID installed
+    # has it on PATH (`shutil.which("FlexAID") -> /opt/homebrew/bin/FlexAID`), so
+    # that spelling would pass in CI and fail locally -- a test whose correctness
+    # depends on what the reader happens to have installed. The name below cannot
+    # be on anyone's PATH.
     r = _runner(tmp_path, binary="definitely-not-on-path-xyzzy")
     assert r.binary == "definitely-not-on-path-xyzzy"
     assert not os.path.isabs(r.binary)
