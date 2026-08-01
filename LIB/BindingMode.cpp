@@ -1,6 +1,18 @@
 #include "BindingMode.h"
 #include "fast_optics.hpp"
 #include "SoftBetaFreeEnergy.h"
+#include "RngSeed.h"
+
+// Build provenance, normally injected by CMakeLists.txt via
+// add_compile_definitions().  Defaulted here so a build outside CMake (or one
+// where git was unavailable and the rev-parse produced nothing) still compiles
+// and still emits an honest, obviously-unknown value rather than failing.
+#ifndef FLEXAIDS_GIT_COMMIT
+#define FLEXAIDS_GIT_COMMIT "unknown"
+#endif
+#ifndef FLEXAIDS_GIT_DIRTY
+#define FLEXAIDS_GIT_DIRTY 0
+#endif
 
 #include <algorithm>
 #include <cfloat>
@@ -638,6 +650,32 @@ void BindingMode::output_BindingMode(int num_result, char* end_strfile, char* tm
 	size_t remark_len = 0;
 	remark[0] = '\0';
 	safe_remark_cat(remark, "REMARK optimized structure\n", &remark_len);
+
+	// Provenance: which binary, and which random draw, produced this pose.
+	//
+	// This has to live in the REMARK block, not on stdout.  The benchmark
+	// runner invokes FlexAID with subprocess.run(capture_output=True) and
+	// discards stdout on success, so anything printed there is unrecoverable
+	// afterwards.  gaboom.cpp already prints "srand=%u" and the seed was still
+	// unreadable from every artifact of a 341-run campaign -- the pose files
+	// are what actually gets preserved and uploaded.
+	//
+	// FLEXAIDS_GIT_COMMIT / _DIRTY come from CMakeLists.txt.  Referencing them
+	// here is also what puts the commit string into the binary at all: an
+	// unused -D macro is never emitted, so nothing could read it before.
+	//
+	// The seed is the EFFECTIVE one: gaboom.cpp calls set_master_seed(tt)
+	// after resolving GB->seed / FLEXAID_SEED / time(0), so this reports the
+	// value actually used, including the time(0) fallback that is otherwise
+	// impossible to recover.
+	snprintf(tmpremark, MAX_REMARK,
+		"REMARK FLEXAID.commit=%s FLEXAID.dirty=%d FLEXAID.seed=%llu\n",
+		FLEXAIDS_GIT_COMMIT,
+		FLEXAIDS_GIT_DIRTY,
+		flexaids_rng::has_master_seed()
+			? static_cast<unsigned long long>(flexaids_rng::master_seed())
+			: 0ULL);
+	safe_remark_cat(remark, tmpremark, &remark_len);
 
 	if (pb_promotion) {
 		snprintf(tmpremark, MAX_REMARK,
