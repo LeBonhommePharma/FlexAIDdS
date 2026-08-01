@@ -39,6 +39,8 @@ import json
 import csv
 import logging
 import os
+import re
+import shutil
 import socket
 import subprocess
 import sys
@@ -1207,6 +1209,16 @@ class DatasetRunner:
         self.resume = bool(resume)
         self.command_line = command_line
         self.default_conc_M = float(default_conc_M)
+        # Pose PDBs are written by the engine into a per-ligand TemporaryDirectory
+        # and destroyed when that ligand's iteration ends -- before the target
+        # finishes, let alone the job.  Every question that needs coordinates
+        # rather than scalars (was the search collapsed, do these poses share a
+        # conformer, what ΔS did the engine actually compute) is unanswerable
+        # from a run's output for that reason alone, and no workflow change can
+        # fix it: the CI upload step names RESULTS_DIR, which never held a PDB.
+        # Opt-in, because keeping them costs disk on every entry and the default
+        # behaviour of every existing run must not change.
+        self.keep_poses = os.environ.get("FLEXAIDDS_KEEP_POSES", "").strip() not in ("", "0")
 
         self.results_dir.mkdir(parents=True, exist_ok=True)
 
@@ -1450,6 +1462,13 @@ class DatasetRunner:
                     structural_state,
                     reference_ligand=ligand_path,
                 )
+                # Copy the coordinates out BEFORE the with-block closes and
+                # takes them.  Deliberately after the parse, so a preservation
+                # failure can never cost us the scalars we already have.
+                if self.keep_poses:
+                    self._preserve_pose_pdbs(
+                        tmp_path, target_id, ligand_id, structural_state
+                    )
                 # P3: capture grand log_Z from [GRAND] stdout (emitted by C++ cluster hook when --conc used)
                 grand_log_z = None
                 if result.stdout:
@@ -1465,6 +1484,52 @@ class DatasetRunner:
                 poses.extend(parsed)
 
         return poses
+
+    def pose_pdb_dir(self, target_id: str, ligand_id: str, structural_state: str) -> Path:
+        """Destination for preserved pose PDBs, ALWAYS under ``results_dir``.
+
+        The destination root is not a detail.  ``benchmark-tier1.yml`` uploads
+        exactly ``${{ env.RESULTS_DIR }}/``, so files preserved anywhere else
+        survive the run, satisfy any local check, and still reach nobody --
+        the same empty-artifact outcome, relocated one step later and harder to
+        see.  Tests assert against this method rather than a literal path so
+        that "it persists" and "CI can reach it" cannot drift apart.
+        """
+        safe_target = re.sub(r"[^A-Za-z0-9_.-]", "_", target_id)
+        safe_ligand = re.sub(r"[^A-Za-z0-9_.-]", "_", ligand_id)
+        safe_state = re.sub(r"[^A-Za-z0-9_.-]", "_", structural_state)
+        return self.results_dir / "poses" / safe_target / f"{safe_ligand}_{safe_state}"
+
+    def _preserve_pose_pdbs(
+        self,
+        work_dir: Path,
+        target_id: str,
+        ligand_id: str,
+        structural_state: str,
+    ) -> List[Path]:
+        """Copy pose PDBs out of the engine's temp dir into ``results_dir``.
+
+        Returns the files written.  Never raises: preserving coordinates is a
+        diagnostic convenience, and it must not be able to fail a docking run
+        that has already produced its scores.
+        """
+        copied: List[Path] = []
+        try:
+            sources = sorted(work_dir.glob("*.pdb"))
+            if not sources:
+                return copied
+            dest_dir = self.pose_pdb_dir(target_id, ligand_id, structural_state)
+            dest_dir.mkdir(parents=True, exist_ok=True)
+            for src in sources:
+                dest = dest_dir / src.name
+                shutil.copy2(src, dest)
+                copied.append(dest)
+        except OSError as exc:
+            logger.warning(
+                "Could not preserve pose PDBs for %s/%s: %s",
+                target_id, ligand_id, exc,
+            )
+        return copied
 
     @staticmethod
     def _parse_flexaid_output(
