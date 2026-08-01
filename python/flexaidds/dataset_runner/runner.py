@@ -1137,7 +1137,9 @@ class DatasetRunner:
         # binary can never read as "no regression". Reset per dataset run.
         self._crash_lock = threading.Lock()
         self._flexaid_crashes = 0
-        self._entry_exit_codes: Dict[str, int] = {}
+        # int = a real process exit/return code; None = the engine never
+        # executed (exec failure), which no completed subprocess.run can produce.
+        self._entry_exit_codes: Dict[str, Optional[int]] = {}
 
     def _effective_temperature(self, slug: str) -> float:
         """Auto-force 298 K for ITC/thermo datasets (handoff requirement).
@@ -1315,12 +1317,17 @@ class DatasetRunner:
                     # "executed, 0 poses" (productivity) rather than "engine did
                     # not run" (liveness). Record it as a crash so gate 1 fires
                     # even when productivity is relaxed (FLEXAIDDS_BENCH_ALLOW_EMPTY)
-                    # or vacuous (a dataset declaring 0 baselines). -1 is a "did
-                    # not execute" sentinel, distinct from any real process exit
-                    # code, disambiguated by the log line.
+                    # or vacuous (a dataset declaring 0 baselines). Record None,
+                    # not a numeric sentinel: the engine produced no exit code at
+                    # all. A value like -1 would be ambiguous — subprocess encodes
+                    # signal death as a negative returncode (SIGHUP -> -1), so -1
+                    # already means "ran, killed by signal 1" in the returncode
+                    # branch above. None is a value no completed subprocess.run
+                    # can yield, so in entry_exit_codes it means "did not execute"
+                    # and only that.
                     with self._crash_lock:
                         self._flexaid_crashes += 1
-                        self._entry_exit_codes[f"{target_id}/{ligand_id}"] = -1
+                        self._entry_exit_codes[f"{target_id}/{ligand_id}"] = None
                     logger.error(
                         "FlexAID failed to execute for %s/%s: %s",
                         target_id, ligand_id, exc,

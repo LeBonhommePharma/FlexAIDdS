@@ -38,8 +38,9 @@ def test_missing_binary_is_recorded_as_a_crash(tmp_path):
 
     assert poses == []                        # no synthetic poses invented
     assert runner._flexaid_crashes == 1       # liveness gate will fire
-    # -1 sentinel marks "did not execute", distinct from any real exit code.
-    assert runner._entry_exit_codes["T1/lig"] == -1
+    # None marks "did not execute" — a value no completed subprocess.run can
+    # produce, so it never collides with a real (incl. signal-death) exit code.
+    assert runner._entry_exit_codes["T1/lig"] is None
 
 
 def test_non_executable_binary_is_recorded_as_a_crash(tmp_path):
@@ -59,7 +60,7 @@ def test_non_executable_binary_is_recorded_as_a_crash(tmp_path):
 
     assert poses == []
     assert runner._flexaid_crashes == 1
-    assert runner._entry_exit_codes["T2/lig"] == -1
+    assert runner._entry_exit_codes["T2/lig"] is None
 
 
 def test_parse_time_oserror_is_NOT_a_liveness_crash(tmp_path):
