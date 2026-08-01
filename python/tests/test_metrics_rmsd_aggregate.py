@@ -62,11 +62,35 @@ def test_sentinel_rmsds_are_excluded_from_the_aggregate():
 
 def test_no_valid_rmsd_leaves_metrics_absent_for_the_gate():
     # Every pose has a sentinel RMSD -> the completeness gate must see the
-    # metric as unmeasured (absent), NOT as 0.0.
+    # metric as unmeasured (absent), NOT as 0.0.  The coverage count is absent
+    # too — there is no denominator to report.
     poses = [_pose("A", -1.0), _pose("B", 999.0)]
     r = compute_all_metrics(poses, requested=_RMSD_KEYS)
     assert "mean_rmsd" not in r
     assert "median_rmsd" not in r
+    assert "mean_rmsd_n_targets" not in r
+
+
+def test_coverage_count_reports_contributing_target_total():
+    poses = [_pose("A", 1.0), _pose("B", 2.0), _pose("C", 3.0)]
+    r = compute_all_metrics(poses, requested=_RMSD_KEYS)
+    assert r["mean_rmsd_n_targets"] == 3.0
+
+
+def test_partial_valid_targets_average_over_valid_and_expose_the_denominator():
+    # Honey's failure mode: some targets produce a valid pose, others are
+    # all-sentinel.  The aggregate is over the valid targets only (you cannot
+    # average a distance that does not exist — the deliberate asymmetry with
+    # docking_power, whose denominator counts empty targets as failures), and
+    # the coverage count makes the shrunken denominator visible rather than
+    # letting a clean-looking mean hide it.
+    poses = [
+        _pose("valid1", 1.0), _pose("valid2", 3.0),
+        _pose("empty1", -1.0), _pose("empty2", 999.0),
+    ]
+    r = compute_all_metrics(poses, requested=_RMSD_KEYS)
+    assert r["mean_rmsd"] == 2.0            # over valid1, valid2 only
+    assert r["mean_rmsd_n_targets"] == 2.0  # not 4 — the two empties dropped out
 
 
 def test_single_target_reproduces_the_1gpk_run():
