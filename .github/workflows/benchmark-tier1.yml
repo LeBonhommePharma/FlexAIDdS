@@ -29,9 +29,24 @@ on:
         description: "Number of targets (overrides YAML default)"
         required: false
         default: "5"
+      com_floor:
+        description: "FLEXAIDDS_COM_FLOOR F (soft floor on CF.com; empty/0 = off, unchanged)"
+        required: false
+        default: ""
+      pb_pocket_w:
+        description: "FLEXAIDDS_PB_POCKET_WEIGHT (P1 pocket steer; empty/0 = off)"
+        required: false
+        default: ""
+      pb_clash_w:
+        description: "FLEXAIDDS_PB_CLASH_WEIGHT (P1 clash steer; empty/0 = off)"
+        required: false
+        default: ""
 
 concurrency:
-  group: bench-tier1-${{ github.workflow }}-${{ github.ref }}
+  # Include the sweep inputs so distinct (F, pocket, clash) points run in
+  # parallel instead of cancelling each other; a re-dispatch of the SAME point
+  # still supersedes its stale run.
+  group: bench-tier1-${{ github.workflow }}-${{ github.ref }}-${{ inputs.com_floor }}-${{ inputs.pb_pocket_w }}-${{ inputs.pb_clash_w }}
   cancel-in-progress: true
 
 jobs:
@@ -137,7 +152,31 @@ jobs:
         timeout-minutes: 25
         env:
           PYTHONPATH: ${{ github.workspace }}/python
+          # Scoring switches forwarded from workflow_dispatch inputs. All read at
+          # RUNTIME via std::getenv (vcfunction.cpp:948, top.cpp:534/543), so no
+          # rebuild is needed and the ccache/cache hazard does not apply. Empty
+          # string => COM_FLOOR F<=0 skipped, weights atof("")=0 off => the
+          # engine is bit-identical to a run with these unset (default behaviour).
+          FLEXAIDDS_COM_FLOOR: ${{ inputs.com_floor }}
+          FLEXAIDDS_PB_POCKET_WEIGHT: ${{ inputs.pb_pocket_w }}
+          FLEXAIDDS_PB_CLASH_WEIGHT: ${{ inputs.pb_clash_w }}
         run: |
+          # Provenance sidecar: record exactly which switches this run used, next
+          # to the artifacts it produced. The run manifest records omp_threads but
+          # nothing about scoring config; without this, N sweep artifacts are
+          # indistinguishable except by run id. Uploaded with the results below.
+          mkdir -p "$RESULTS_DIR"
+          cat > "$RESULTS_DIR/_sweep_config.json" <<JSON
+          {
+            "git_sha": "${{ github.sha }}",
+            "run_id": "${{ github.run_id }}",
+            "com_floor": "${{ inputs.com_floor }}",
+            "pb_pocket_weight": "${{ inputs.pb_pocket_w }}",
+            "pb_clash_weight": "${{ inputs.pb_clash_w }}",
+            "tier1_subset_size_input": "${{ inputs.tier1_subset_size }}",
+            "dataset": "${{ env.DATASET }}"
+          }
+          JSON
           python -m benchmarks.run \
             --dataset "$DATASET" \
             --tier 1 \
@@ -152,6 +191,11 @@ jobs:
           name: tier1-results-${{ env.DATASET }}-${{ github.run_id }}
           path: |
             ${{ env.RESULTS_DIR }}/
+          # A green upload that delivered zero files is a green lie: fail loudly
+          # instead. The _sweep_config.json sidecar guarantees >=1 file even when
+          # the docking loop is killed at the cap, so this fires only on a real
+          # collection failure, not on an expected cap-kill.
+          if-no-files-found: error
           retention-days: 30
 
       - name: Parse report for PR comment
