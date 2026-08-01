@@ -417,7 +417,9 @@ class DatasetResult:
     # fields let cli.main distinguish PASS / FAIL / INCONCLUSIVE.
     flexaid_crashes: int = 0
     total_poses: int = 0
-    entry_exit_codes: Dict[str, int] = field(default_factory=dict)
+    # value is a real exit/return code, or None when the engine never executed
+    # (exec failure) — mirrors DatasetRunner._entry_exit_codes.
+    entry_exit_codes: Dict[str, Optional[int]] = field(default_factory=dict)
     inconclusive_metrics: List[str] = field(default_factory=list)
     # Targets actually executed this run (excludes --resume checkpoints, whose
     # poses are not reloaded into all_poses). Gates 2-3 only judge a run that
