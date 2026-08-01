@@ -33,11 +33,78 @@ numbers into other files — reference `METHODOLOGY.md §N`.
 - **Security channel off for benchmarks:** `FLEXAIDDS_NO_SEC=1`.
 - **Thread rule:** workers × omp-threads ≤ physical P-cores. On this host use `--threads 1
   --omp-threads 4` (or 6). Never oversubscribe.
-- **RMSD reporting:** report **rank-0 elected pose RMSD** (the elected `_0.pdb`), symmetry-corrected,
-  heavy-atom, 2.0 Å cutoff. NEVER report seed-elitism / `_INI.pdb` RMSD as the result.
-- **RMSD engine:** spyrmsd 0.9.0 in the `python` conda env
-  (`/Users/lp.more/.claude-science/conda/envs/python/bin/python`). Fallback: element-blocked
-  Hungarian only if spyrmsd raises (must be logged).
+- **RMSD reporting:** report **rank-0 elected pose RMSD** (the elected `_0.pdb`), heavy-atom,
+  2.0 Å cutoff, **in-place in the receptor frame — never superposed**. NEVER report seed-elitism
+  / `_INI.pdb` RMSD as the result. In-place is what the engine does (`LIB/calc_rmsd.cpp:92-102`,
+  and the same in the original FlexAID); a superposed value measures shape, not placement, and
+  is not the quantity the 2.0 Å criterion is defined on.
+- **RMSD engine — read this before quoting a number.** There are TWO instruments and they are
+  not interchangeable:
+  - **In-repo metric** (`python/flexaidds/benchmark.py::compute_rmsd`, used by
+    `dataset_runner` and by every CI tier). In-place since #354. Ligand selected by residue
+    against the reference atom count since #363/#366 — *not* by unioning every non-water
+    HETATM, which merges cofactors into the ligand. **Symmetry correction is being added in
+    #365; until it lands this metric is positional and systematically overstates error on
+    symmetric ligands.**
+  - **Offline reference scorer** (`benchmarks/astex_repro/score_reference.py`): spyrmsd
+    graph-isomorphism, element-blocked Hungarian fallback when spyrmsd raises (logged).
+    **No workflow and no gate invokes it** — it is run by hand, after the fact.
+  - Consequence: a number produced by the gate and a number produced by
+    `score_reference.py` are different measurements. State which one you used. The two have
+    been observed to flip individual success calls (`docs/audit/26h-swarm/9971dff7e.md`).
+
+---
+
+## 0.1 The CI gate and the campaign path are NOT the same experiment
+
+Two harnesses invoke the same engine with different configuration. Neither is wrong; they are
+simply different runs, and a number from one does not transfer to the other.
+
+| | **CI / tier1 gate** | **Campaign** |
+|---|---|---|
+| entry point | `python -m benchmarks.run` (`.github/workflows/benchmark-tier1.yml`) | `benchmark_datasets` → `DatasetRunner` |
+| config file | **none** — the engine takes its compiled-in defaults | writes `dock_config.json` |
+| `permeability` | 1.0 (`top.cpp:601`) | 0.9 |
+| `normalize_area` | 0 (`top.cpp:585`) | true |
+| `intermolecular_clash_ratio` | 0.0 | 0.75 |
+| `coarse_init.enabled` | **OFF** | ON (hardcoded, `DatasetRunner.cpp:6036`) |
+| `mif_enabled` | **OFF** | ON (hardcoded, `DatasetRunner.cpp:6012`) |
+| retained poses | 10 | 51 per restart |
+
+**The consequence that matters:** with `mif_enabled = 0` and `grid_prio_percent = 100.0`, the
+guard at `top.cpp:1836` makes `initialize_direct_mif` return immediately. **The gate docks
+without ever building its pocket field.** Every green tier1 tick to date passed under that
+configuration.
+
+Rules that follow:
+
+- **Never compare an RMSD from one path against an RMSD from the other** without stating the
+  divergences above. On 1mq6 the two paths differ by 7.5 Å and the cause is not yet isolated —
+  four of the six divergences can move a centroid.
+- A cross-path result is not evidence until the divergence responsible has been ablated.
+- Changing either harness's defaults is a methodology change: it lands here first.
+
+## 0.2 Provenance — what a receipt must capture
+
+Three tiers, by how a parameter can be recovered after the fact:
+
+| tier | example | recoverable from |
+|---|---|---|
+| **FIXED** | anything written to `dock_config.json` | the artifact |
+| **VARIABLE** | the COM floor, via `CF.com` in the pose | the poses themselves |
+| **LOST** | `permeability`, `pb_pocket_weight`, `pb_clash_weight` | **nothing** |
+
+**The rule, in one line: anything that goes through `getenv` and nowhere else is gone the moment
+the shell exits.** Those three are read from the environment and never written to any config or
+receipt, so a completed run cannot be told apart from one at different weights.
+
+- **Every run MUST emit its `getenv`-only scoring environment beside its results** (sidecar or
+  `RUN_RECEIPT`). This blocked two separate investigations that had the artifacts in hand.
+- The two harnesses currently capture **disjoint** provenance fields, so cross-path comparison
+  has no common provenance even where both wrote something.
+- `ops/reference_config.env` pins `FLEXAIDDS_PARALLEL_RESTARTS=0` but **not**
+  `FLEXAIDDS_RESTARTS` — a campaign run against it silently takes the compiled-in default of 5,
+  not the published Astex 10. Pin it explicitly in any run you intend to publish.
 
 ---
 
@@ -77,7 +144,8 @@ Purpose: prove a determinism/perf change does not regress docking accuracy.
 - **Engine selection:** `FLEXAIDDS_BINARY=<engine>`; `benchmark_datasets --benchmark astex
   --only-codes <list>` subsets targets. (Direct-CLI per-target is acceptable when the harness's
   oracle-site guard blocks a blind run — document which was used.)
-- **Metric:** top-1 rank-0 RMSD, spyrmsd, 2.0 Å. Report per-target and aggregate success.
+- **Metric:** top-1 rank-0 RMSD, 2.0 Å, in-place. Name the instrument (§0: in-repo metric vs
+  `score_reference.py`) — an unlabelled RMSD is not reportable.
 - **Acceptance:** candidate within noise of baseline; **no target flips success→fail** attributable
   to the change. A full landing decision uses the full 85 × 10-restart protocol; a fast pre-check
   may use a documented subset.
