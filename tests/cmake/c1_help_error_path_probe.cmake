@@ -224,9 +224,20 @@ else()
   # finding this probe exists to pin. The split is recorded, not judged.
   set(_split_ok TRUE)
   set(_total_ok TRUE)
-  message(STATUS
-    "C1_MEASURED direct=${_n_direct} indirect=${_n_indirect} total=${_n_sum} "
-    "summary_allocs=${_summary_n}")
+  set(_measured
+    "C1_MEASURED direct=${_n_direct} indirect=${_n_indirect} total=${_n_sum} summary_allocs=${_summary_n}")
+  message(STATUS "${_measured}")
+  # ctest swallows message(STATUS) on a PASSING test, so the measurement this
+  # arm exists to produce was invisible in CI: the probe measured the number
+  # and then discarded it. Persist it where a human can actually read it —
+  # a file beside the captured output, and the GitHub step summary when we are
+  # running under Actions. A measurement nobody can read is ceremony, which is
+  # the same criticism that got the 3/6/9 assertion removed.
+  file(WRITE "${_out_dir}/c1_measured.txt" "${_measured}\n")
+  if(DEFINED ENV{GITHUB_STEP_SUMMARY})
+    file(APPEND "$ENV{GITHUB_STEP_SUMMARY}"
+      "### C1 --help LSan probe\n\n```\n${_measured}\n```\n")
+  endif()
   message(STATUS
     "C1 probe: no expected split configured — reporting measured counts "
     "instead of asserting an unmeasured prediction. Bumble predicted 3/6/9 "

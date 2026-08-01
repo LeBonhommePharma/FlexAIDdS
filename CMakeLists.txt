@@ -2854,7 +2854,10 @@ flexaids_add_unit_test(test_protocol_config
                 PASS_REGULAR_EXPRESSION "C1_RESULT=PASS ARM=lsan_inverted")
             message(STATUS
                 "C1 --help probe ARM=lsan_inverted "
-                "(Linux + -fsanitize=*address* — 3/6/9 LSan criterion ON)")
+                "(Linux + -fsanitize=*address* — an LSan report is required; "
+                "the direct/indirect split is asserted only when "
+                "C1_EXPECT_DIRECT/C1_EXPECT_INDIRECT are set, otherwise "
+                "measured and reported)")
         else()
             set_property(TEST FlexAID_C1_HelpErrorPathProbe APPEND PROPERTY
                 PASS_REGULAR_EXPRESSION "C1_RESULT=PASS ARM=process_path_only")
