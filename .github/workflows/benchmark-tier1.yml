@@ -1,8 +1,16 @@
 name: Benchmark Tier 1 (PR Sanity)
 
 # Lightweight benchmark gate on every PR to main.
-# Runs 5 CASF-2016 targets with a 10-minute hard timeout.
+# Runs 5 Astex Diverse targets.
 # Posts results as a PR comment via a workflow summary + comment action.
+#
+# Timeout budget: the original 10-minute job cap was set when every FlexAID
+# invocation aborted instantly (fortified-glibc realpath overflow, fixed in
+# #323) and a whole "run" cost 0.4s. With a binary that actually docks, 5
+# targets did not finish in the ~7 minutes left after a cache-miss rebuild.
+# The job cap now covers build + benchmark with headroom, and the benchmark
+# step has its own cap so a genuine hang still fails fast instead of eating
+# the whole job budget.
 #
 # Failures: non-zero exit (metric regression) sets the check to "failure"
 # so merges can be gated on this job.
@@ -16,7 +24,7 @@ on:
       dataset:
         description: "Dataset slug to benchmark"
         required: false
-        default: "casf2016"
+        default: "astex_diverse"
       tier1_subset_size:
         description: "Number of targets (overrides YAML default)"
         required: false
@@ -28,9 +36,9 @@ concurrency:
 
 jobs:
   tier1-benchmark:
-    name: Tier-1 Benchmark (${{ inputs.dataset || 'casf2016' }})
+    name: Tier-1 Benchmark (${{ inputs.dataset || 'astex_diverse' }})
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 35
     permissions:
       contents: read
       pull-requests: write   # required by marocchino/sticky-pull-request-comment
@@ -100,7 +108,7 @@ jobs:
       # FLEXAIDDS_BENCHMARK_DATA env var above points the runner there.
 
       - name: Run tier-1 benchmark
-        timeout-minutes: 9
+        timeout-minutes: 25
         env:
           PYTHONPATH: ${{ github.workspace }}/python
         run: |
