@@ -32,7 +32,17 @@ export FLEXAIDDS_BINARY="${ENGINE}"
 export FLEXAIDDS_VCT_R0=4.0
 export FLEXAIDDS_ELECTION_ENTROPY=0
 export FLEXAIDDS_SEED_ELITISM=0
-export FLEXAIDDS_COM_FLOOR=130   # softplus floor at -130, S=5 transition in binary
+
+# Promoted reference config (COM floor + the P1 pocket/clash steer it enables,
+# plus the determinism knobs).  Sourced rather than duplicated so this campaign
+# cannot drift from the configuration that was actually measured.
+#
+# NOTE: this script previously set FLEXAIDDS_COM_FLOOR=130 alone.  That is only
+# half the configuration -- the 2026-08-01 sweep shows the floor WITHOUT the P1
+# weights, and P1 without the floor, both score docking_power_top1 = 0.000.
+set -a
+. "${REPO}/ops/reference_config.env"
+set +a
 
 echo ""
 echo "active FLEXAIDDS_* :"
