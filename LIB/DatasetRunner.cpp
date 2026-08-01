@@ -7032,23 +7032,6 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                             auto s = p.find_last_of('/');
                             return s == std::string::npos ? p : p.substr(s + 1);
                         };
-                        // Record the election outcome in the result row, beside the
-                        // RMSD it explains.  Same values the [CONSENSUS] line below
-                        // prints; that line is stderr-only, and CI discards stderr on
-                        // success, so the log cannot be the system of record.
-                        result.election_mode = high_entropy_gate ? "entropy-midwall"
-                                             : low_entropy_gate  ? "entropy-contact"
-                                                                 : "consensus";
-                        result.consensus_count = (sel_i >= 0) ? consensus[sel_i] : -1;
-                        // Demoted == the elected pose is not the CF-best candidate in
-                        // the pool.  Defined against min-CF rather than pool order so
-                        // it does not depend on how the pool happens to be sorted.
-                        int cf_best_i = -1;
-                        for (size_t i = 0; i < pool.size(); ++i)
-                            if (cf_best_i < 0 || pool[i].cf < pool[cf_best_i].cf)
-                                cf_best_i = static_cast<int>(i);
-                        result.rank0_demoted =
-                            (sel_i >= 0 && cf_best_i >= 0 && sel_i != cf_best_i);
                         std::cerr << "  [CONSENSUS] " << entry.pdb_id
                                   << ": mode="
                                   << (high_entropy_gate ? "entropy-midwall" :
@@ -7078,6 +7061,16 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                             // winner's CF is thermodynamically worse than the INI's
                             // CF, protect the INI from the override.
                             {
+                                // CF-best candidate in the pool, for rank0_demoted.
+                                // Defined against min-CF rather than pool order so the
+                                // field does not change meaning if the pool is re-sorted.
+                                // Ties resolve to the first index, so an elected pose
+                                // tied on CF reads as demoted -- rare, and documented
+                                // rather than special-cased.
+                                int cf_best_i = -1;
+                                for (size_t i = 0; i < pool.size(); ++i)
+                                    if (cf_best_i < 0 || pool[i].cf < pool[cf_best_i].cf)
+                                        cf_best_i = static_cast<int>(i);
                                 const std::string ini_sfx = "_INI.pdb";
                                 const bool elected_is_ini =
                                     best_pose_pdb.size() >= ini_sfx.size() &&
@@ -7098,11 +7091,30 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                                                                     : "consensus")
                                               << " override (winner CF="
                                               << pool[best_i].cf << ")\n";
+                                    // The override was VETOED: the reported pose is the
+                                    // protected INI seed, not pool[best_i].  Recording
+                                    // the gate mode here would name a rule that did not
+                                    // decide this pose.
+                                    result.election_mode   = "guard-protected";
+                                    result.consensus_count = -1;  // INI is not in the pool
+                                    result.rank0_demoted   = false;
                                 } else {
                                     best_pose_pdb = pool[best_i].path;
                                     // Keep best_score describing the SAME pose now reported.
                                     if (std::isfinite(pool[best_i].cf))
                                         result.best_score = pool[best_i].cf;
+                                    // Record against the ELECTED pose (best_i), not the
+                                    // incumbent it replaced (sel_i).  The stderr line
+                                    // above prints both deliberately -- consensus= for
+                                    // the winner, sel_consensus= for the incumbent -- and
+                                    // these fields describe the pose whose RMSD lands on
+                                    // this row.
+                                    result.election_mode = high_entropy_gate ? "entropy-midwall"
+                                                         : low_entropy_gate  ? "entropy-contact"
+                                                                             : "consensus";
+                                    result.consensus_count = consensus[best_i];
+                                    result.rank0_demoted =
+                                        (cf_best_i >= 0 && best_i != cf_best_i);
                                 }
                             }
                         }

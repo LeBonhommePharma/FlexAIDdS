@@ -246,10 +246,19 @@ struct DockingResult {
     // vote, so at restarts < k it can never fire.  Comparing runs across restart
     // counts therefore varies the rule as well as the search budget, which is
     // exactly what these fields make visible.
+    // These describe the pose actually REPORTED, so they are set where the
+    // election applies its result -- after the v124 guard resolves, not before.
+    // Recording them earlier names the incumbent pose the election replaced.
+    //
     // "" when no election ran (single candidate / election block skipped).
+    // "guard-protected" when the v124 guard VETOED the override and kept the INI
+    // seed: naming the gate mode there would credit a rule that did not decide
+    // this pose.
     std::string election_mode{""};   // "consensus" | "entropy-midwall" | "entropy-contact"
-    int  consensus_count{-1};        // votes for the elected pose; -1 = not elected
-    bool rank0_demoted{false};       // true when the elected pose is not CF rank-0
+                                     // | "guard-protected" | ""
+    int  consensus_count{-1};        // cross-restart votes for the ELECTED pose;
+                                     // -1 = no election, or elected pose not in the pool
+    bool rank0_demoted{false};       // true when the elected pose is not the min-CF one
     // Separate estimands: generator CF top-1 vs entropy/consensus reranked top-1
     std::string cf_top1_pose_path;
     std::string cf_top1_pose_sha256;
