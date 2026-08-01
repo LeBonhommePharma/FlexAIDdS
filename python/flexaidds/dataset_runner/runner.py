@@ -2401,6 +2401,9 @@ def _reference_ligand_coords(ligand_path: Path):
 
     suffix = ligand_path.suffix.lower()
     if suffix == ".pdb":
+        # Reference PDBs can carry cofactors too.  No count is available here
+        # (this IS the count source), so the extractor must refuse to union
+        # rather than silently merge a cofactor into the reference.
         return extract_ligand_coords_from_pdb(ligand_path)
     if suffix in {".sdf", ".mol"}:
         return _extract_ligand_coords_from_sdf(ligand_path)
