@@ -27,6 +27,7 @@ canonical_data_root: benchmarks/astex_diverse/astex_diverse
 checksum_manifest: benchmarks/datasets/astex_diverse_sha256.csv
 canonical_doc: benchmarks/datasets/CANONICAL.md
 
+
 zenodo_doi: ""
 download_url: "https://www.ccdc.cam.ac.uk/community/freeprod/astex-diverse-set/"
 data_format: pdb
@@ -128,8 +129,6 @@ targets:
 metrics:
   - docking_power_top1
   - docking_power_top3
-  - scoring_power_pearson_r
-  - scoring_power_rmse
   - mean_rmsd
   - median_rmsd
   - entropy_rescue_rate
@@ -137,8 +136,11 @@ metrics:
 expected_baselines:
   docking_power_top1: 0.70
   docking_power_top3: 0.85
-  scoring_power_pearson_r: 0.65
-  scoring_power_rmse: 2.10
+  # scoring_power_* removed: metrics.py:524-526 needs >=2 poses carrying
+  # exp_affinity, and astex_diverse is a pose-reproduction set whose poses
+  # carry none (verified: all 11 poses in run 30680006724 have
+  # exp_affinity=null). The baseline was unmeasurable at ANY subset size,
+  # so the completeness gate failed the run for a config error. See #337.
   mean_rmsd: 2.30
   median_rmsd: 1.95
   entropy_rescue_rate: 0.30
