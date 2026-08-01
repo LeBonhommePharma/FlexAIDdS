@@ -280,6 +280,71 @@ TEST(RMSDComputation, MismatchedSize) {
 }
 
 // =============================================================================
+// Symmetry-corrected (Hungarian) RMSD — the ACTUAL production symmetry metric
+// (dataset::hungarian_rmsd, shared by compute_pose_ligand_rmsd / pose_pose_rmsd).
+// These lock the two ways a symmetry correction can silently cheat:
+//   (1) rescuing a genuine displacement, and
+//   (2) pairing atoms across element types (e.g. Cl<->C — the halogen-typing
+//       failure mode). A symmetry correction can only ever LOWER an RMSD, so a
+//       cross-element pairing would flatter every number; these forbid it.
+// =============================================================================
+namespace {
+using ElemXYZ = std::vector<std::pair<std::string, std::array<float, 3>>>;
+ElemXYZ mk_elem_xyz(
+    std::initializer_list<std::pair<const char*, std::array<float, 3>>> in) {
+    ElemXYZ v;
+    for (const auto& p : in) v.push_back({std::string(p.first), p.second});
+    return v;
+}
+} // namespace
+
+TEST(HungarianRMSD, IdenticalIsZero) {
+    ElemXYZ m = mk_elem_xyz({{"C", {0, 0, 0}}, {"N", {1, 0, 0}}, {"O", {0, 1, 0}}});
+    EXPECT_NEAR(dataset::hungarian_rmsd(m, m), 0.0f, 1e-5f);
+}
+
+TEST(HungarianRMSD, GenuineDisplacementNotRescued) {
+    // A rigid 3 A translation must stay 3 A — symmetry cannot hide it.
+    ElemXYZ a = mk_elem_xyz({{"C", {0, 0, 0}}, {"N", {1, 0, 0}}, {"O", {2, 0, 0}}});
+    ElemXYZ b = mk_elem_xyz({{"C", {3, 0, 0}}, {"N", {4, 0, 0}}, {"O", {5, 0, 0}}});
+    EXPECT_NEAR(dataset::hungarian_rmsd(a, b), 3.0f, 1e-4f);
+}
+
+TEST(HungarianRMSD, SymmetricRelabellingIsRescued) {
+    // Two equivalent carbons swapped in the docked list — the same pose, so the
+    // optimal within-element assignment must recover RMSD 0. Positional pairing
+    // would have reported sqrt((25+25)/3) ~ 4.08 here.
+    ElemXYZ crystal = mk_elem_xyz({{"C", {0, 0, 0}}, {"C", {5, 0, 0}}, {"O", {0, 3, 0}}});
+    ElemXYZ docked  = mk_elem_xyz({{"C", {5, 0, 0}}, {"C", {0, 0, 0}}, {"O", {0, 3, 0}}});
+    EXPECT_NEAR(dataset::hungarian_rmsd(crystal, docked), 0.0f, 1e-5f);
+}
+
+TEST(HungarianRMSD, CarbonOxygenNeverSwap) {
+    // A C/O position swap is NOT a symmetry; each element bucket has one atom,
+    // so the pairing is forced and the RMSD stays 5 A.
+    ElemXYZ crystal = mk_elem_xyz({{"C", {0, 0, 0}}, {"O", {5, 0, 0}}});
+    ElemXYZ docked  = mk_elem_xyz({{"C", {5, 0, 0}}, {"O", {0, 0, 0}}});
+    EXPECT_NEAR(dataset::hungarian_rmsd(crystal, docked), 5.0f, 1e-4f);
+}
+
+TEST(HungarianRMSD, HalogenNeverPairsWithCarbon) {
+    // The C++ analogue of the halogen-typing bug: a chlorine typed correctly as
+    // "Cl" stays in its own bucket, so the swap that would zero the RMSD if it
+    // were mistyped as carbon is forbidden. hungarian_rmsd respects the element
+    // token it is given; DatasetRunner's get_elem_token preserves the full
+    // two-letter symbol ("CL" -> "Cl") rather than truncating to one char.
+    ElemXYZ crystal = mk_elem_xyz({{"C", {0, 0, 0}}, {"Cl", {5, 0, 0}}});
+    ElemXYZ docked  = mk_elem_xyz({{"C", {5, 0, 0}}, {"Cl", {0, 0, 0}}});
+    EXPECT_NEAR(dataset::hungarian_rmsd(crystal, docked), 5.0f, 1e-4f);
+}
+
+TEST(HungarianRMSD, EmptyIsSentinel) {
+    ElemXYZ empty;
+    ElemXYZ m = mk_elem_xyz({{"C", {0, 0, 0}}});
+    EXPECT_EQ(dataset::hungarian_rmsd(empty, m), -1.0f);
+}
+
+// =============================================================================
 // Provenance JSON writer tests (P1 leaf — DatasetRunnerProvenance)
 // No network, no docking; temp-dir only.
 // =============================================================================
