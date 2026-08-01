@@ -139,11 +139,28 @@ def extract_ligand_coords_from_pdb(
         raise ValueError(f"No ligand heavy atoms found in {pdb_path}")
 
     if expected_n_atoms is None:
-        # Backwards-compatible path, used where no reference is available.
-        # Still excludes nothing, so it keeps the historical behaviour rather
-        # than silently guessing which residue is the ligand.
-        atoms = [xyz for group in residues.values() for xyz in group]
-        return np.array(atoms, dtype=np.float64)
+        # No reference count available.  FlexAID itself never unions residues:
+        # calc_rmsd walks ONE optimizable residue (LIB/calc_rmsd.cpp:92-102),
+        # so "every non-water HETATM" was never the engine's definition of the
+        # ligand -- it was this module's.
+        #
+        # One residue is unambiguous, so return it.  More than one cannot be
+        # resolved without a count, and unioning them is the calcium bug: on
+        # 1mq6 it produced 37 atoms against a 36-atom ligand and shifted every
+        # subsequent atom by one.  #363 fixed that for callers that pass a
+        # count; this refuses to reintroduce it for callers that cannot.
+        if len(residues) == 1:
+            return np.array(next(iter(residues.values())), dtype=np.float64)
+
+        counts = {f"{k[0]}/{k[1]}{k[2]}": len(v) for k, v in residues.items()}
+        raise ValueError(
+            f"Cannot identify the ligand in {pdb_path}: {len(residues)} "
+            f"non-water HETATM residues present {counts} and no "
+            f"expected_n_atoms was supplied to discriminate.  Refusing to "
+            f"concatenate them -- a cofactor merged into the ligand shifts "
+            f"the atom correspondence and yields a plausible RMSD against "
+            f"the wrong pairing.  Pass expected_n_atoms=len(reference)."
+        )
 
     matches = [g for g in residues.values() if len(g) == expected_n_atoms]
     if len(matches) == 1:
