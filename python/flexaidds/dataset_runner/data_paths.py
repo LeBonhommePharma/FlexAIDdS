@@ -20,6 +20,14 @@ _CF_REMARK_RE = re.compile(r"REMARK\s+CF=([+-]?(?:\d+(?:\.\d*)?|\.\d+))", re.IGN
 _CF_APP_REMARK_RE = re.compile(
     r"REMARK\s+CF\.app=([+-]?(?:\d+(?:\.\d*)?|\.\d+))", re.IGNORECASE
 )
+# The engine writes ``REMARK entropy = <value>`` (lowercase, space-equals; see
+# LIB/BindingMode.cpp, LIB/cluster.cpp). The explicit ``ENTROPY:`` token the
+# parser tests for is never emitted, so without this fallback every pose's
+# entropy_correction silently keeps its 0.0 initialiser -- a parse failure that
+# looks like a measurement. This pattern rescues the value the writer emits.
+_ENTROPY_REMARK_RE = re.compile(
+    r"REMARK\s+entropy\s*=\s*([+-]?(?:\d+(?:\.\d*)?|\.\d+))", re.IGNORECASE
+)
 
 
 def _first_existing(paths: List[Path]) -> Optional[Path]:
