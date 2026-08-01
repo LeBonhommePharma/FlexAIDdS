@@ -79,7 +79,7 @@ simply different runs, and a number from one does not transfer to the other.
 | `intermolecular_clash_ratio` | 0.0 | 0.75 |
 | `coarse_init.enabled` | **OFF** | ON (hardcoded, `DatasetRunner.cpp:6036`) |
 | `mif_enabled` | **OFF** | ON (hardcoded, `DatasetRunner.cpp:6012`) |
-| retained poses | 10 | 51 per restart *(OBSERVED, not cited: counted from two artifacts, no configuring parameter identified — do not treat as a configured divergence until one is)* |
+| retained poses | 10 (`ga_constants.h:16` `GA_DEFAULT_NUM_PRINT`, applied `gaboom.cpp:315`) | 50 per restart (`DatasetRunner.cpp:86` `kBenchmarkPoseLimit`, emitted as `max_results` at `:5959`) |
 
 **The consequence that matters:** with `mif_enabled = 0` and `grid_prio_percent = 100.0`, the
 guard at `top.cpp:1836` makes `initialize_direct_mif` return immediately. **The gate docks
