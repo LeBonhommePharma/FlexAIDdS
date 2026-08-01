@@ -1549,10 +1549,13 @@ class DatasetRunner:
         poses: List[PoseScore] = []
         pdb_files = sorted(
             p for p in work_dir.glob("*.pdb")
-            if p.name.startswith("flexaid") or p.name.startswith("FlexAID")
+            if (p.name.startswith("flexaid") or p.name.startswith("FlexAID"))
+            and not _is_initial_pose_file(p)
         )
         if not pdb_files:
-            pdb_files = sorted(work_dir.glob("*.pdb"))
+            pdb_files = sorted(
+                p for p in work_dir.glob("*.pdb") if not _is_initial_pose_file(p)
+            )
 
         ref_coords = _reference_ligand_coords(reference_ligand) if reference_ligand else None
 
@@ -2366,6 +2369,30 @@ def _parse_remark_float(line: str, key: str) -> float:
         return float(line[idx:].split()[0])
     except (ValueError, IndexError):
         return 0.0
+
+
+def _is_initial_pose_file(pdb_path: Path) -> bool:
+    """True for FlexAID's ``flexaid_INI.pdb`` starting structure.
+
+    FlexAID writes the *input* ligand placement alongside the docked results as
+    ``flexaid_INI.pdb`` (``REMARK initial structure``).  It is not a docking
+    result and must never enter the pose list.
+
+    On a self-docking benchmark the input IS the crystal pose, so this file
+    scores ~0 A RMSD against the reference — measured at 0.0320 A on 1gpk, and
+    identical in every sweep cell because it never depends on the search.  Two
+    consequences if it is globbed in:
+
+    * it silently drags ``mean_rmsd``/``median_rmsd`` down (1gpk F=130:
+      3.841 A over the ten real poses vs 3.495 A once the 0.032 A input is
+      counted as an eleventh), and the pollution is constant across cells, so
+      the aggregate looks frozen while ``docking_power`` moves;
+    * more seriously it is a latent FALSE POSITIVE for ``docking_power`` — a
+      near-0 A entry that counts as a success whenever its score ranks inside
+      top-N.  It stayed out of top-N in the runs measured so far only because
+      its CF was worse than the docked poses, which is luck, not a guarantee.
+    """
+    return pdb_path.stem.upper().endswith("_INI")
 
 
 def _reference_ligand_coords(ligand_path: Path):
