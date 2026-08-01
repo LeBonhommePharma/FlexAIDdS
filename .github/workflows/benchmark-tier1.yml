@@ -110,27 +110,57 @@ jobs:
           bash scripts/ci/apt_get_update.sh
           # gcc-14 is required for C++26 support (see CMakeLists.txt compiler gate).
           sudo apt-get install -y --no-install-recommends \
-            cmake ninja-build libeigen3-dev libomp-dev gcc-14 g++-14
+            cmake ninja-build libeigen3-dev libomp-dev gcc-14 g++-14 ccache
           echo "CC=gcc-14" >> "$GITHUB_ENV"
           echo "CXX=g++-14" >> "$GITHUB_ENV"
 
-      # NO build cache on this experiment branch. The restore-keys prefix
-      # fallback restored a stale build/ and incremental cmake --build did not
-      # recompile changed sources -- proven this run (CF.pb_clash absent though
-      # the writer emits it unconditionally). A correctness experiment must
-      # compile from clean, so the cache step is removed and the build always runs.
+      # Report the machine we actually got — decides the --workers/--omp-threads
+      # split below; nproc here had never been recorded.
+      - name: Report runner capacity
+        run: |
+          NPROC=$(nproc)
+          echo "nproc=$NPROC"
+          echo "NPROC=$NPROC" >> "$GITHUB_ENV"
+          grep -m1 'model name' /proc/cpuinfo || true
+
+      # ccache is content-addressed (keyed on preprocessed source + flags), so a
+      # changed source cannot hit a stale object. That is a different mechanism
+      # from the build/ dir cache whose restore-keys prefix fallback restored a
+      # stale binary this run — that cache is intentionally NOT reintroduced.
+      # ccache is safe alongside the clean `rm -rf build`: it only makes the
+      # recompile cheaper, never skips one.
+      - name: Cache ccache objects
+        uses: actions/cache@v6
+        with:
+          path: ~/.ccache
+          key: tier1-ccache-${{ runner.os }}-${{ github.sha }}
+          restore-keys: |
+            tier1-ccache-${{ runner.os }}-
+
+      # NO build-dir cache. The restore-keys prefix fallback restored a stale
+      # build/ and incremental cmake --build did not recompile changed sources —
+      # proven this run (CF.pb_clash absent though the writer emits it
+      # unconditionally). A correctness experiment compiles from clean.
       - name: Build FlexAIDdS (fast profile, clean)
         run: |
           rm -rf build
+          # AVX-512 pinned OFF. Deriving it from /proc/cpuinfo makes the same
+          # commit compile differently per runner, silently reintroducing the
+          # variable the seed + single-thread + no-restart determinism setup
+          # exists to remove. AVX2 only.
           cmake -S . -B build -G Ninja \
             -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_C_COMPILER_LAUNCHER=ccache \
+            -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
             -DFLEXAIDS_USE_CUDA=OFF \
             -DFLEXAIDS_USE_METAL=OFF \
             -DFLEXAIDS_USE_AVX2=ON \
+            -DFLEXAIDS_USE_AVX512=OFF \
             -DFLEXAIDS_USE_OPENMP=ON \
             -DBUILD_TESTING=OFF \
             -DBUILD_PYTHON_BINDINGS=OFF
           cmake --build build --parallel --target FlexAID
+          ccache --show-stats || true
 
       - name: Verify binary exists
         run: |
@@ -196,12 +226,36 @@ jobs:
             "dataset": "${{ env.DATASET }}"
           }
           JSON
+          # Target-level parallelism. The runner previously used the CLI
+          # defaults --workers 1 / --omp-threads 4: five targets docked
+          # strictly one after another, while each one asked for four OpenMP
+          # threads. On a 2-core runner that is simultaneously serial across
+          # targets AND oversubscribed within one — the one combination nobody
+          # would pick deliberately.
+          #
+          # Derive both from the machine instead of hardcoding either, since
+          # nproc here had never actually been recorded. One thread per core,
+          # no oversubscription, capped at the number of targets.
+          WORKERS=$(( NPROC < 5 ? NPROC : 5 ))
+          [ "$WORKERS" -lt 1 ] && WORKERS=1
+          echo "nproc=$NPROC -> --workers $WORKERS --omp-threads 1"
+          SECONDS=0
           python -m benchmarks.run \
             --dataset "$DATASET" \
             --tier 1 \
             --results-dir "$RESULTS_DIR" \
             --datasets-dir benchmarks/datasets \
+            --workers "$WORKERS" \
+            --omp-threads 1 \
             --verbose
+          echo "tier1_wall_clock_seconds=$SECONDS"
+          {
+            echo "### Tier-1 throughput"
+            echo ""
+            echo "| runner cores | workers | omp threads | wall clock |"
+            echo "|---|---|---|---|"
+            echo "| $NPROC | $WORKERS | 1 | ${SECONDS}s |"
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload benchmark results
         if: always()
