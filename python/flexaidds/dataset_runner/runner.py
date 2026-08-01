@@ -2449,18 +2449,19 @@ def _pose_rmsd_vs_reference(pose_pdb: Path, ref_coords) -> float:
     from flexaidds.benchmark import compute_rmsd, extract_ligand_coords_from_pdb
 
     try:
-        pred = extract_ligand_coords_from_pdb(pose_pdb)
+        pred = extract_ligand_coords_from_pdb(pose_pdb, expected_n_atoms=len(ref_coords))
     except ValueError:
         return -1.0
     if pred.shape != ref_coords.shape:
-        n = min(len(pred), len(ref_coords))
-        if n < 3:
-            return -1.0
-        pred = pred[:n]
-        ref = ref_coords[:n]
-    else:
-        ref = ref_coords
+        # Do NOT truncate.  The previous behaviour trimmed both arrays to the
+        # shorter length and computed an RMSD anyway, which silently compared
+        # atom i of one molecule against atom i+1 of the other whenever the
+        # extra atom sat at the front.  On 1mq6 that reported 6.49 A where the
+        # true best-of-10 is 7.18 A -- a plausible number, in the optimistic
+        # direction, indistinguishable from a measurement.  A count mismatch
+        # here is a bug in selection, not a condition to work around.
+        return -1.0
     try:
-        return compute_rmsd(pred, ref)
+        return compute_rmsd(pred, ref_coords)
     except ValueError:
         return -1.0
