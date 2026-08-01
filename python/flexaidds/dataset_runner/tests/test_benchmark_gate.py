@@ -16,11 +16,13 @@ from flexaidds.dataset_runner.cli import _benchmark_inconclusive_reasons
 
 
 def _dr(slug, *, completed=(), failed=(), crashes=0, total_poses=0,
-        exit_codes=None, missing_metrics=(), newly_executed=None):
+        exit_codes=None, missing_metrics=(), newly_executed=None, resumed=0):
     """Build a minimal DatasetResult-shaped object for the gate helper.
 
     ``newly_executed`` defaults to attempted (a fresh run); pass 0 to model a
-    pure --resume run where every target came from a checkpoint.
+    run that ran nothing this session. ``resumed`` is the count of targets
+    loaded from --resume checkpoints — the field that separates a legitimate
+    resume from a run that scheduled nothing at all.
     """
     completed = list(completed)
     failed = list(failed)
@@ -35,6 +37,7 @@ def _dr(slug, *, completed=(), failed=(), crashes=0, total_poses=0,
         entry_exit_codes=exit_codes or {},
         inconclusive_metrics=list(missing_metrics),
         newly_executed=newly_executed,
+        resumed=resumed,
     )
 
 
@@ -88,10 +91,27 @@ def test_fully_resumed_run_is_not_inconclusive():
         "astex_diverse",
         completed=["a", "b", "c"],   # all seeded from already_completed
         newly_executed=0,            # nothing dispatched this run
+        resumed=3,                   # ...but three came from checkpoints
         total_poses=0,               # checkpoint poses not reloaded
         missing_metrics=["docking_power_top1", "mean_rmsd"],
     )
     assert _benchmark_inconclusive_reasons([dr]) == []
+
+
+def test_run_that_scheduled_nothing_is_inconclusive():
+    # Bumble's re-review finding: newly_executed==0 AND resumed==0 means the run
+    # scheduled no work at all (empty tier / bad filter). Zero output there IS
+    # meaningful — it must not pass silently, the same inversion one size down.
+    dr = _dr(
+        "astex_diverse",
+        completed=[],
+        newly_executed=0,
+        resumed=0,
+        total_poses=0,
+        missing_metrics=["docking_power_top1", "mean_rmsd"],
+    )
+    reasons = _benchmark_inconclusive_reasons([dr])
+    assert reasons and any("completeness" in r for r in reasons)
 
 
 def test_partial_resume_still_judges_fresh_work():

@@ -423,6 +423,10 @@ class DatasetResult:
     # poses are not reloaded into all_poses). Gates 2-3 only judge a run that
     # did fresh work — a pure resume/package-regen run must not false-fail.
     newly_executed: int = 0
+    # Targets loaded from --resume checkpoints (not re-executed). Distinguishes
+    # a legitimate resume (skip gates 2-3) from a run that scheduled nothing at
+    # all (newly==0 AND resumed==0 → still INCONCLUSIVE, not a silent pass).
+    resumed: int = 0
 
     def check_regressions(self) -> Dict[str, bool]:
         """Flag metrics that regressed below baseline − tolerance.
@@ -481,6 +485,7 @@ class DatasetResult:
             "entry_exit_codes": self.entry_exit_codes,
             "inconclusive_metrics": self.inconclusive_metrics,
             "newly_executed": self.newly_executed,
+            "resumed": self.resumed,
         }
         if self.metrics_note:
             payload["metrics_note"] = self.metrics_note
@@ -1733,11 +1738,12 @@ class DatasetRunner:
             crashes = self._flexaid_crashes
             exit_codes = dict(self._entry_exit_codes)
         newly = len(results)
+        resumed = len(already_completed)
 
         # MPI gather (still works at target granularity for final aggregation)
         if self._mpi_comm is not None:
             all_results_by_rank = self._mpi_comm.gather(
-                (all_poses, completed, failed, crashes, exit_codes, newly), root=0
+                (all_poses, completed, failed, crashes, exit_codes, newly, resumed), root=0
             )
             if self._mpi_root:
                 all_poses = []
@@ -1746,13 +1752,15 @@ class DatasetRunner:
                 crashes = 0
                 exit_codes = {}
                 newly = 0
-                for poses_i, comp_i, fail_i, crash_i, codes_i, newly_i in (all_results_by_rank or []):
+                resumed = 0
+                for poses_i, comp_i, fail_i, crash_i, codes_i, newly_i, resumed_i in (all_results_by_rank or []):
                     all_poses.extend(poses_i)
                     completed.extend(comp_i)
                     failed.extend(fail_i)
                     crashes += crash_i
                     exit_codes.update(codes_i)
                     newly += newly_i
+                    resumed += resumed_i
 
         # Root finalizes
         if self._mpi_root:
@@ -1762,6 +1770,7 @@ class DatasetRunner:
             dr.entry_exit_codes = exit_codes
             dr.total_poses = len(all_poses)
             dr.newly_executed = newly
+            dr.resumed = resumed
 
             if all_poses:
                 metrics = compute_all_metrics(all_poses, requested=requested_metrics)

@@ -238,15 +238,21 @@ def _benchmark_inconclusive_reasons(datasets) -> list[str]:
     reasons: list[str] = []
     for dr in datasets:
         slug = dr.config.slug
-        # Gates 2-3 judge only fresh work. A pure --resume / package-regen run
-        # executes no new targets (its poses are loaded from checkpoints, not
-        # recomputed into all_poses), so 0 poses and unmeasured baselines there
-        # mean "nothing ran this session", not "the binary is dead" — judging
-        # it would re-invert the gate. Liveness still applies unconditionally:
-        # a non-zero exit can only have come from a target that did run.
+        # Gates 2-3 judge only a run whose empty output is meaningful. Three
+        # cases (executed = targets run this session, resumed = checkpoints):
+        #   executed > 0             → fresh work; judge it.
+        #   executed == 0, resumed>0 → pure --resume/package-regen; poses live in
+        #                              checkpoints not all_poses, so skip — else
+        #                              a successful resume re-inverts the gate.
+        #   executed == 0, resumed==0→ the run scheduled NOTHING (empty tier, bad
+        #                              filter). Zero poses is meaningful: judge it,
+        #                              so a no-op cannot pass silently.
+        # Liveness still applies unconditionally — a non-zero exit can only have
+        # come from a target that did run.
         executed = getattr(dr, "newly_executed", None)
         if executed is None:  # tolerate objects predating the field
             executed = len(dr.targets_completed) + len(dr.targets_failed)
+        resumed = getattr(dr, "resumed", 0)
         # 1. Liveness — every FlexAID invocation must exit 0.
         if dr.flexaid_crashes > 0:
             codes = ", ".join(
@@ -255,18 +261,20 @@ def _benchmark_inconclusive_reasons(datasets) -> list[str]:
             reasons.append(
                 f"{slug}: liveness — {dr.flexaid_crashes} FlexAID non-zero exit(s) [{codes}]"
             )
-        if executed > 0:
-            # 2. Productivity — a run that did work must produce ≥1 pose.
-            if dr.total_poses == 0 and slug not in allow_empty:
-                reasons.append(
-                    f"{slug}: productivity — 0 poses across {executed} executed target(s)"
-                )
-            # 3. Completeness — every declared baseline must be measured.
-            if dr.inconclusive_metrics:
-                reasons.append(
-                    f"{slug}: completeness — baselines never measured: "
-                    + ", ".join(dr.inconclusive_metrics)
-                )
+        # 2. Productivity — only a run that executed targets can be faulted for
+        #    producing no poses (a resume/no-op executed nothing this session).
+        if executed > 0 and dr.total_poses == 0 and slug not in allow_empty:
+            reasons.append(
+                f"{slug}: productivity — 0 poses across {executed} executed target(s)"
+            )
+        # 3. Completeness — declared baselines left unmeasured fail, UNLESS this
+        #    was a legitimate resume (executed==0 but resumed>0), where the
+        #    metrics live in checkpoints rather than this session's output.
+        if (executed > 0 or resumed == 0) and dr.inconclusive_metrics:
+            reasons.append(
+                f"{slug}: completeness — baselines never measured: "
+                + ", ".join(dr.inconclusive_metrics)
+            )
     return reasons
 
 
