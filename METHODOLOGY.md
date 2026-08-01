@@ -43,9 +43,11 @@ numbers into other files — reference `METHODOLOGY.md §N`.
   1. **In-repo metric** — `python/flexaidds/benchmark.py::compute_rmsd`, used by
      `dataset_runner` and by **every CI tier**. This is the gate. In-place since #354. Ligand
      selected by residue against the reference atom count since #363/#366 — *not* by unioning
-     every non-water HETATM, which merges cofactors into the ligand. Symmetry correction added
-     in #365 (element-blocked assignment, `scipy`); **before #365 this metric was positional
-     and systematically overstated error on symmetric ligands.**
+     every non-water HETATM, which merges cofactors into the ligand. **NOT symmetry-corrected as of this
+     commit.** #365 adds element-blocked assignment but is still open; until it merges this
+     metric pairs atoms positionally and systematically OVERSTATES error on symmetric ligands
+     (measured on real 1gpk poses: up to 1.66 Å, enough to move a pose across the 2.0 Å bar).
+     Do not describe a gate number as symmetry-corrected before #365 lands.
   2. **Offline reference scorer** — `benchmarks/astex_repro/score_reference.py`: spyrmsd
      graph-isomorphism, heavy atoms, pose selection on PDB serial ≥ 90000, element-blocked
      Hungarian fallback only when spyrmsd raises (logged). Treat this as the strongest
