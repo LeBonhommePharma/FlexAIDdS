@@ -99,6 +99,17 @@ if(POLICY CMP0167)
     cmake_policy(SET CMP0167 NEW)
 endif()
 
+# Did the caller ASK for Metal, or is it only on because FlexAIDOptions.cmake
+# defaults it ON for Apple?  A -D on the command line defines the variable
+# before option() runs, so this distinguishes "the user wants Metal" from "this
+# is a Mac".  Used below to decide whether a missing Metal toolchain is a hard
+# error or a degrade-to-OFF.
+if(DEFINED FLEXAIDS_USE_METAL)
+    set(_FLEXAIDS_METAL_EXPLICIT TRUE)
+else()
+    set(_FLEXAIDS_METAL_EXPLICIT FALSE)
+endif()
+
 # ─── Centralized options + platform + SIMD helpers ─────────────────────────
 # Extracted to cmake/FlexAIDOptions.cmake to fight monolith growth.
 # All FLEXAIDS_* toggles, architecture detection, flexaids_configure_simd(),
@@ -135,12 +146,44 @@ if(APPLE AND FLEXAIDS_USE_METAL)
         )
     endif()
 
+    # A missing Metal toolchain is only a hard error when Metal was ASKED for.
+    #
+    # FlexAIDOptions.cmake:45 defaults FLEXAIDS_USE_METAL to ON for any Apple
+    # host with an Objective-C++ compiler, so before this change a plain
+    # `cmake -S . -B build` on a Mac whose Xcode lacks the (separately
+    # downloaded) Metal toolchain component FAILED TO CONFIGURE -- reproduced on
+    # Xcode-beta 21, which ships clang and objc++ but no `metal`.  Nothing about
+    # that machine wants GPU acceleration; it was opted in by being a Mac and
+    # then failed for a component it never asked for.
+    #
+    # This mirrors the OBJCXX fallback at the top of this file, which already
+    # degrades gracefully rather than demanding a toolchain: same platform, same
+    # class of optional compiler, now the same handling.
+    set(_FLEXAIDS_METAL_MISSING "")
     if(NOT FLEXAIDS_METALC OR NOT EXISTS "${FLEXAIDS_METALC}")
-        message(FATAL_ERROR "FLEXAIDS_USE_METAL=ON but no executable Metal compiler was found. Run: xcodebuild -downloadComponent MetalToolchain")
+        set(_FLEXAIDS_METAL_MISSING "no executable Metal compiler was found")
+    elseif(NOT FLEXAIDS_METALLIB OR NOT EXISTS "${FLEXAIDS_METALLIB}")
+        set(_FLEXAIDS_METAL_MISSING "metallib was not found beside ${FLEXAIDS_METALC}")
     endif()
-    if(NOT FLEXAIDS_METALLIB OR NOT EXISTS "${FLEXAIDS_METALLIB}")
-        message(FATAL_ERROR "FLEXAIDS_USE_METAL=ON but metallib was not found beside ${FLEXAIDS_METALC}. Run: xcodebuild -downloadComponent MetalToolchain")
+
+    if(_FLEXAIDS_METAL_MISSING)
+        if(_FLEXAIDS_METAL_EXPLICIT)
+            # -DFLEXAIDS_USE_METAL=ON was passed: honour it and fail loudly.
+            message(FATAL_ERROR
+                "FLEXAIDS_USE_METAL=ON but ${_FLEXAIDS_METAL_MISSING}. "
+                "Run: xcodebuild -downloadComponent MetalToolchain")
+        endif()
+        message(WARNING
+            "Metal acceleration disabled: ${_FLEXAIDS_METAL_MISSING}. "
+            "FLEXAIDS_USE_METAL defaults ON for Apple hosts; it is being turned "
+            "OFF for this configure because the toolchain is absent. "
+            "To use Metal, run: xcodebuild -downloadComponent MetalToolchain. "
+            "To make this a hard error instead, pass -DFLEXAIDS_USE_METAL=ON.")
+        set(FLEXAIDS_USE_METAL OFF CACHE BOOL "Enable Metal GPU acceleration" FORCE)
     endif()
+endif()
+
+if(APPLE AND FLEXAIDS_USE_METAL)
 
     set(FLEXAIDS_METAL_MODULE_CACHE
         "${CMAKE_BINARY_DIR}/metal_module_cache"
