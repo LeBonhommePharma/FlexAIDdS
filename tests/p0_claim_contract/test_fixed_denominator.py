@@ -80,4 +80,14 @@ check("denominator stays 85 with an off-manifest extra row",
       rep3["N_denominator"] == 85)
 
 print(f"\n{'ALL PASS' if not failures else f'{len(failures)} FAILURES: {failures}'}")
-sys.exit(1 if failures else 0)
+
+# Only exit the interpreter when run as a script. Under pytest this module is
+# imported during collection, and a module-level sys.exit() aborts the whole
+# session with INTERNALERROR before any test runs -- see the guard below.
+if __name__ == "__main__":
+    sys.exit(1 if failures else 0)
+
+
+def test_fixed_denominator_invariants():
+    """Expose the script's checks to pytest so a failure is reported, not exited."""
+    assert not failures, f"{len(failures)} failures: {failures}"

@@ -7,9 +7,22 @@ returns PASS on a valid molecule and FAIL on a physically broken one.
 Run: python tests/p0_claim_contract/test_posebusters_fixtures.py
 """
 import sys
-from rdkit import Chem
-from rdkit.Chem import AllChem
-from posebusters import PoseBusters
+
+# rdkit and posebusters are optional at collection time. Importing them
+# unguarded aborts the ENTIRE pytest session with a collection error, not just
+# this module. As a script this still raises normally; under pytest the module
+# is skipped when the dependency is absent.
+try:
+    from rdkit import Chem
+    from rdkit.Chem import AllChem
+    from posebusters import PoseBusters
+except ImportError as _exc:  # pragma: no cover - environment-dependent
+    if __name__ == "__main__":
+        raise
+    import pytest
+    pytest.skip(
+        f"optional dependency unavailable: {_exc.name}", allow_module_level=True
+    )
 
 failures = []
 def check(name, cond):
@@ -52,4 +65,14 @@ if bad_pass < ok_total:
     print(f"  broken pose failed: {failed_checks}")
 
 print(f"\n{'ALL PASS' if not failures else f'{len(failures)} FAILURES: {failures}'}")
-sys.exit(1 if failures else 0)
+
+# Only exit the interpreter when run as a script. Under pytest this module is
+# imported during collection, and a module-level sys.exit() aborts the whole
+# session with INTERNALERROR before any test runs -- see the guard below.
+if __name__ == "__main__":
+    sys.exit(1 if failures else 0)
+
+
+def test_posebusters_fixtures():
+    """Expose the script's checks to pytest so a failure is reported, not exited."""
+    assert not failures, f"{len(failures)} failures: {failures}"
