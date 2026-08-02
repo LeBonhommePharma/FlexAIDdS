@@ -126,6 +126,7 @@ simply different runs, and a number from one does not transfer to the other.
 | `coarse_init.enabled` | **OFF** | ON (hardcoded, `DatasetRunner.cpp:6036`) |
 | `mif_enabled` | **OFF** | ON (hardcoded, `DatasetRunner.cpp:6012`) |
 | retained poses | 10 (`ga_constants.h:16` `GA_DEFAULT_NUM_PRINT`, applied `gaboom.cpp:315`) | 50 per restart (`DatasetRunner.cpp:86` `kBenchmarkPoseLimit`, emitted as `max_results` at `:5959`) |
+| GA population | **not DoF-scaled** — the scaling code lives only in `DatasetRunner.cpp`, which this path does not use | base 1000 (`DatasetRunner.h:340`) **× max(1, n_flex_bonds/4)** (`DatasetRunner.cpp:5774-5806`), on by default (`ProtocolConfig.h:130` `eval_scale_dihedral{1}`) — 1mq6 runs at pop 5000 |
 
 **The consequence that matters:** with `mif_enabled = 0` and `grid_prio_percent = 100.0`, the
 guard at `top.cpp:1836` makes `initialize_direct_mif` return immediately. **The gate docks
@@ -168,6 +169,14 @@ receipt, so a completed run cannot be told apart from one at different weights.
   `RUN_RECEIPT`). This blocked two separate investigations that had the artifacts in hand.
 - The two harnesses currently capture **disjoint** provenance fields, so cross-path comparison
   has no common provenance even where both wrote something.
+- 🔴 **A seven-variable env denylist already exists, and the benchmark path does not use it.**
+  `benchmarks/run_multicleft_astex.py::sanitized_env` strips `FLEXAIDDS_MULTI_CLEFT`,
+  `ORACLE_SITE`, `ORACLE_SITE_DIR`, `THERMO`, `T_EFF`, `TENCOM_SCALE` and `GRID_CACHE_DIR`
+  from the environment before docking, then sets `BINARY`/`RESTARTS` explicitly. Every one of
+  those is a silent scoring or search modifier that leaves no trace in `dock_config.json`.
+  **`DatasetRunner` inherits the ambient shell whole.** The discipline was written once and
+  never lifted into the path we actually benchmark with — adopt that denylist there, or state
+  in each receipt that the ambient environment was not controlled. (Found by Honey.)
 - 🔴 **`_sweep_config.json` records one field that is not a setting.** The tier-1 workflow
   offers a `tier1_subset_size` dispatch input (default `"5"`) and writes it into the provenance
   sidecar as `tier1_subset_size_input` (`benchmark-tier1.yml:225`). **Nothing consumes it** —
