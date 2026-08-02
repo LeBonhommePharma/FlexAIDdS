@@ -38,14 +38,18 @@ numbers into other files — reference `METHODOLOGY.md §N`.
   / `_INI.pdb` RMSD as the result. In-place is what the engine does (`LIB/calc_rmsd.cpp:92-102`,
   and the same in the original FlexAID); a superposed value measures shape, not placement, and
   is not the quantity the 2.0 Å criterion is defined on.
-- **RMSD engine — read this before quoting a number.** There are **THREE** instruments in this
-  tree and they are not interchangeable. An unlabelled RMSD is not reportable:
+- **RMSD engine — read this before quoting a number.** There are **FIVE** RMSD implementations
+  in this tree and they are not interchangeable. An unlabelled RMSD is not reportable.
+  **Two of the five are C++ and both are live on the campaign path** — see the warning after
+  the list:
   1. **In-repo metric** — `python/flexaidds/benchmark.py::compute_rmsd`, used by
      `dataset_runner` and by **every CI tier**. This is the gate. In-place since #354. Ligand
      selected by residue against the reference atom count since #363/#366 — *not* by unioning
-     every non-water HETATM, which merges cofactors into the ligand. Symmetry correction added
-     in #365 (element-blocked assignment, `scipy`); **before #365 this metric was positional
-     and systematically overstated error on symmetric ligands.**
+     every non-water HETATM, which merges cofactors into the ligand. **NOT symmetry-corrected as of this
+     commit.** #365 adds element-blocked assignment but is still open; until it merges this
+     metric pairs atoms positionally and systematically OVERSTATES error on symmetric ligands
+     (measured on real 1gpk poses: up to 1.66 Å, enough to move a pose across the 2.0 Å bar).
+     Do not describe a gate number as symmetry-corrected before #365 lands.
   2. **Offline reference scorer** — `benchmarks/astex_repro/score_reference.py`: spyrmsd
      graph-isomorphism, heavy atoms, pose selection on PDB serial ≥ 90000, element-blocked
      Hungarian fallback only when spyrmsd raises (logged). Treat this as the strongest
@@ -62,6 +66,18 @@ numbers into other files — reference `METHODOLOGY.md §N`.
   - `score_offline.py`'s partial `poster_metric_results.csv` is still in-tree beside
     `score_reference.py`'s. The audit's standing recommendation is to deprecate the permissive
     one; until that happens, **check which CSV you are reading.**
+  4. **Engine Hungarian** — `LIB/calc_rmsd.cpp::calc_Hungarian_RMSD`, its own assignment
+     implementation. Called via `calc_rmsd(..., Hungarian)` from `BindingMode.cpp:779,785,922,928`.
+     **This is what writes the `REMARK RMSD` line inside every pose PDB.**
+  5. **DatasetRunner Hungarian** — `LIB/DatasetRunner.cpp:436 dataset::hungarian_rmsd`, a
+     SEPARATE implementation with its own solver (`munkres_solve`, `:397`). Feeds
+     `compute_pose_ligand_rmsd` / `pose_pose_rmsd`. **This is what `result.csv` carries.**
+  - 🔴 **4 and 5 are two independent implementations of the same algorithm, each with its own
+    test file (`tests/test_hungarian_rmsd_bounds.cpp` and `tests/test_dataset_runner.cpp`), and
+    NO test compares them to each other.** A pose PDB can therefore carry a `REMARK RMSD` from
+    one while the `result.csv` row beside it carries a number from the other. Until a
+    cross-check exists, **never mix a REMARK RMSD and a CSV RMSD in the same table**, and say
+    which file a quoted number came from.
 
 ---
 
@@ -79,7 +95,7 @@ simply different runs, and a number from one does not transfer to the other.
 | `intermolecular_clash_ratio` | 0.0 | 0.75 |
 | `coarse_init.enabled` | **OFF** | ON (hardcoded, `DatasetRunner.cpp:6036`) |
 | `mif_enabled` | **OFF** | ON (hardcoded, `DatasetRunner.cpp:6012`) |
-| retained poses | 10 | 51 per restart *(OBSERVED, not cited: counted from two artifacts, no configuring parameter identified — do not treat as a configured divergence until one is)* |
+| retained poses | 10 (`ga_constants.h:16` `GA_DEFAULT_NUM_PRINT`, applied `gaboom.cpp:315`) | 50 per restart (`DatasetRunner.cpp:86` `kBenchmarkPoseLimit`, emitted as `max_results` at `:5959`) |
 
 **The consequence that matters:** with `mif_enabled = 0` and `grid_prio_percent = 100.0`, the
 guard at `top.cpp:1836` makes `initialize_direct_mif` return immediately. **The gate docks
