@@ -20,6 +20,7 @@
 #include "DatasetRunner.h"
 #include "DatasetRunnerStats.h"  // P0 leaf: pure stats must compile standalone
 #include "DatasetRunnerProvenance.h"  // P1 leaf: provenance.json writer
+#include "rmsd_crosscheck_engine.h"   // engine calc_Hungarian_RMSD, for the cross-check
 #undef private
 #include <cctype>
 #include <cmath>
@@ -342,6 +343,77 @@ TEST(HungarianRMSD, EmptyIsSentinel) {
     ElemXYZ empty;
     ElemXYZ m = mk_elem_xyz({{"C", {0, 0, 0}}});
     EXPECT_EQ(dataset::hungarian_rmsd(empty, m), -1.0f);
+}
+
+// =============================================================================
+// RMSD cross-check: engine calc_Hungarian_RMSD (groups by FlexAID/SYBYL atom
+// TYPE; writes the pose PDB REMARK) vs dataset::hungarian_rmsd (groups by ELEMENT
+// symbol; writes result.csv). The two are separate implementations of the same
+// algorithm over DIFFERENT equivalence classes, so a pose's REMARK RMSD and its
+// result.csv RMSD can legitimately differ. These pin exactly WHEN:
+//   1. one type per element      -> the partitions coincide, they MUST agree
+//   2. split type within element -> element relaxes type,  dataset <= engine
+//   3. one type spans elements   -> element refines type,  engine  <= dataset
+// Cases 2/3 show the partitions CROSS: neither dominates unconditionally. A
+// naive "assert they are equal" guard would fail on correct code (Honey/Bumble).
+// =============================================================================
+namespace {
+using crosscheck::AtomSpec;
+std::vector<std::pair<std::string, std::array<float, 3>>> cc_ref(
+    const std::vector<AtomSpec>& v) {
+    std::vector<std::pair<std::string, std::array<float, 3>>> o;
+    for (const auto& s : v) o.push_back({s.element, s.coor_ref});
+    return o;
+}
+std::vector<std::pair<std::string, std::array<float, 3>>> cc_pose(
+    const std::vector<AtomSpec>& v) {
+    std::vector<std::pair<std::string, std::array<float, 3>>> o;
+    for (const auto& s : v) o.push_back({s.element, s.coor});
+    return o;
+}
+constexpr int DUMMY_TYPE = 39;  // read_lig.cpp: FA->ntypes-1, one row spanning all elements
+}  // namespace
+
+TEST(RmsdCrossCheck, AlignedTypingImplementationsAgree) {
+    // Each element carries exactly one type -> type-blocking == element-blocking.
+    std::vector<AtomSpec> a = {
+        {1, "C", {0, 0, 0}, {1, 0, 0}},
+        {2, "N", {5, 0, 0}, {5, 0, 0}},
+        {3, "O", {0, 5, 0}, {0, 5, 0}},
+    };
+    const float eng = crosscheck::engine_hungarian_rmsd(a);
+    const float dat = dataset::hungarian_rmsd(cc_ref(a), cc_pose(a));
+    EXPECT_NEAR(eng, dat, 1e-4f);
+    EXPECT_NEAR(dat, std::sqrt(1.0f / 3.0f), 1e-4f);  // one 1 A miss over 3 atoms
+}
+
+TEST(RmsdCrossCheck, SplitTypeWithinElement_DatasetRelaxesEngine) {
+    // Two carbons at swapped positions vs their refs, but DIFFERENT force-field
+    // types. Element-blocking allows the swap (RMSD 0); type-blocking forbids it.
+    std::vector<AtomSpec> a = {
+        {1, "C", {10, 0, 0}, {0, 0, 0}},  // C.ar
+        {2, "C", {0, 0, 0}, {10, 0, 0}},  // C.3
+    };
+    const float eng = crosscheck::engine_hungarian_rmsd(a);
+    const float dat = dataset::hungarian_rmsd(cc_ref(a), cc_pose(a));
+    EXPECT_NEAR(eng, 10.0f, 1e-3f);
+    EXPECT_NEAR(dat, 0.0f, 1e-3f);
+    EXPECT_LE(dat, eng + 1e-4f);  // property 2 holds under the no-shared-type precondition
+}
+
+TEST(RmsdCrossCheck, OneTypeSpansElements_InvertsTheInequality) {
+    // The DUMMY / aliasing case: N and O share one type, so the ENGINE permits a
+    // cross-element swap that element-blocking forbids -> engine < dataset. Pins
+    // that dataset <= engine is NOT unconditional; the partitions cross.
+    std::vector<AtomSpec> a = {
+        {DUMMY_TYPE, "N", {10, 0, 0}, {0, 0, 0}},
+        {DUMMY_TYPE, "O", {0, 0, 0}, {10, 0, 0}},
+    };
+    const float eng = crosscheck::engine_hungarian_rmsd(a);
+    const float dat = dataset::hungarian_rmsd(cc_ref(a), cc_pose(a));
+    EXPECT_NEAR(eng, 0.0f, 1e-3f);
+    EXPECT_NEAR(dat, 10.0f, 1e-3f);
+    EXPECT_LT(eng, dat);  // inversion: a shared type flatters the engine, not the dataset metric
 }
 
 // =============================================================================
