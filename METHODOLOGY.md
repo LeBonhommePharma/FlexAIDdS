@@ -90,15 +90,24 @@ numbers into other files — reference `METHODOLOGY.md §N`.
     bucket spanning every element, so the engine may pair N with O and report a *flattered*
     RMSD. `check_types_assigned` (`TargetValidation.cpp:145`) would detect this but **nothing
     calls it**, and `read_lig.cpp:227`'s stderr warning is discarded because the run succeeds.
-  - **Deliberate aliasing.** `I → 25 (Br)` and `Se → 18 (S.3)`, identically in both
-    `SdfReader.cpp:78,83` and `Mol2Reader.cpp:78,83` — the I and Se matrix rows are near-empty,
-    so this is intentional. But an iodine is then indistinguishable from a bromine downstream:
+  - **Deliberate aliasing.** `I → 25 (Br)` and `Se → 18 (S.3)`, identically in all THREE
+    typing sites — `SdfReader.cpp:78,83`, `Mol2Reader.cpp:78,83` and the receptor path
+    `read_coor.cpp:63,64`. The canonical table reserves `26=I` and `27=Se`; **no site emits
+    either**, so the substitution is total and symmetric across ligand and receptor. It is a
+    modelling choice, not a bug — the I and Se matrix rows are near-empty. But an iodine is then indistinguishable from a bromine downstream:
     no diagnostic can catch it, and I/Br in one ligand share a type bucket.
   - **Scope, checked:** 187 `*.sdf`/`*.mol2` under `benchmarks/` contain **no** I, Se, B, Si,
     As, Pt or Ru, and every element present maps to a real VCT row (`normalize_element` fixes
     the `CL`→`Cl` case before the lookup). **These are reachable trapdoors with no current
     input that opens them** — they become live the day a halogen series or a metal-organic
     ligand is benchmarked, and they will be silent when they do.
+
+- **Why a reported number needs a discrepancy, not an agreement.** Every defect found in the
+  RMSD work of 2026-08-01 came from someone declining to round off a mismatch: a suite count
+  that differed by nine, a pose count that differed by one, an inequality that held in one
+  direction and not the other, a `strcmp` against an input nobody had traced. **None came from
+  a review that agreed.** When two people's numbers differ, the difference is the finding —
+  reconcile it in the open before either number is published.
 
 ---
 
