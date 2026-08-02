@@ -2004,10 +2004,16 @@ int reproduce(FA_Global* FA,GB_Global* GB,VC_Global* VC, chromosome* chrom, cons
 	// The CI A/B reproducibility mode is FLEXAID_DETERMINISTIC (see
 	// calculate_fitness()), which pins a serial-equivalent reduction order for
 	// the parallel eval loop rather than disabling the deferred path here.
+	// Default OFF per METHODOLOGY §1: this flag was gated off for reproducibility
+	// (the ~0.2% multi-thread chromosome divergence in OPTIMIZATION_KNOWN_ISSUES.md),
+	// and §1 requires an intended behaviour change to be opt-in behind a flag that
+	// defaults OFF with parity holding when it is OFF. The drift allowance that
+	// would unblock it is a maintainer decision, not one this change can grant
+	// itself. Set FLEXAIDDS_PARALLEL_REPRODUCE=1 to opt in and benchmark it.
 	static const bool parallel_reproduce_eval = [](){
 		const char* env = std::getenv("FLEXAIDDS_PARALLEL_REPRODUCE");
 		if (env && env[0] != '\0') return env[0] != '0';  // explicit override
-		return true;                                       // default ON (P3)
+		return false;                                      // default OFF (§1)
 	}();
 
 	// Multi-chain VCT normalisation (see GA() comment for rationale)

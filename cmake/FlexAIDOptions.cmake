@@ -51,7 +51,16 @@ endif()
 # SIMD
 option(FLEXAIDS_USE_AVX2    "Enable AVX2 SIMD acceleration"       ON)
 option(FLEXAIDS_USE_AVX512  "Enable AVX-512 SIMD acceleration"    OFF)
-option(FLEXAIDS_USE_SOA_DISTANCES "Route Voronoi hot-path distances through AtomSoA float SoA arrays (C1)" ON)
+# Default OFF per METHODOLOGY §1 ("any intended behavior change must be opt-in
+# behind a flag that defaults OFF, and parity must hold with the flag OFF").
+# This path is ranking-affecting, not merely faster: float32 squared distances
+# perturb contlist.dist and the near/clash cutoffs, hence Voronoi topology.
+# It also could not compile on production x86 until this PR added
+# atom_soa::distance2_1x4 (simd::distance2_1x4 is absent from the AVX2 and
+# AVX-512 branches of simd_distance.h), so defaulting it ON would ship a code
+# path no prior CI on those machines has ever executed. Turn ON explicitly to
+# benchmark it, and run the Astex-85 A/B before proposing it as the default.
+option(FLEXAIDS_USE_SOA_DISTANCES "Route Voronoi hot-path distances through AtomSoA float SoA arrays (C1)" OFF)
 
 # ─── Native CPU tuning for flexaid_core (perf vs. portability trade-off) ──
 # -mcpu=native (Apple/Clang, arm64) tunes instruction scheduling/selection
@@ -95,7 +104,16 @@ endif()
 # -DNDEBUG + strip); the classic FlexAID target shipped with only -O3 -ffast-math.
 # BUILD_FLEXAID_FAST mirrors BUILD_FLEXAIDDS_FAST and lifts that same block onto
 # the classic FlexAID target (applied via flexaids_apply_fast_optimization()).
-option(BUILD_FLEXAID_FAST "Apply the FlexAIDdS LTO + native-arch + NDEBUG optimization block to the classic FlexAID target" ON)
+# Default OFF per METHODOLOGY §1. The block includes -march=native, which makes
+# the emitted binary a function of the build host's CPU: two correct builds of
+# identical source on different runners produce different md5s, so §1 step 1
+# ("record both md5s") and the recorded reference md5 at METHODOLOGY.md:131
+# cannot be compared across machines. On top of the existing -ffast-math this
+# also permits per-host FMA contraction and reassociation, so the numerical
+# output moves too — not just the binary. Turn ON explicitly for local perf
+# work. (Note: BUILD_FLEXAIDDS_FAST carries the same hazard for the FlexAIDdS
+# target and predates this PR; that is a separate fix, not this one's to make.)
+option(BUILD_FLEXAID_FAST "Apply the FlexAIDdS LTO + native-arch + NDEBUG optimization block to the classic FlexAID target" OFF)
 
 # Profile-Guided Optimization for the classic FlexAID target. Values:
 #   off      — no PGO instrumentation (default)
