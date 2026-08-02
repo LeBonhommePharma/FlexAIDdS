@@ -55,11 +55,15 @@ option(FLEXAIDS_USE_AVX512  "Enable AVX-512 SIMD acceleration"    OFF)
 # behind a flag that defaults OFF, and parity must hold with the flag OFF").
 # This path is ranking-affecting, not merely faster: float32 squared distances
 # perturb contlist.dist and the near/clash cutoffs, hence Voronoi topology.
-# It also could not compile on production x86 until this PR added
-# atom_soa::distance2_1x4 (simd::distance2_1x4 is absent from the AVX2 and
-# AVX-512 branches of simd_distance.h), so defaulting it ON would ship a code
-# path no prior CI on those machines has ever executed. Turn ON explicitly to
-# benchmark it, and run the Astex-85 A/B before proposing it as the default.
+# It also could not compile on production x86 until this PR: simd::distance2_1x4
+# was defined only in the SSE4.2/NEON/scalar branches of simd_distance.h and was
+# missing from the AVX2 and AVX-512 branches. That is now fixed at source (see
+# the 4-wide overload added after the ISA branches in simd_distance.h), with
+# atom_soa::distance2_1x4 kept as the ISA-portable call site. The reasoning for
+# defaulting OFF is unchanged and does not depend on the compile break: enabling
+# it would ship a code path no prior CI on those machines has ever executed.
+# Turn ON explicitly to benchmark it, and run the Astex-85 A/B before proposing
+# it as the default.
 option(FLEXAIDS_USE_SOA_DISTANCES "Route Voronoi hot-path distances through AtomSoA float SoA arrays (C1)" OFF)
 
 # ─── Native CPU tuning for flexaid_core (perf vs. portability trade-off) ──
