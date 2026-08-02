@@ -261,6 +261,15 @@ def test_budget_witness_required_by_default(tmp_path: Path):
         mod.load_arm_dir(arm, strict=True)
 
 
+@pytest.mark.parametrize("raw", ["0", "-1", "nan", "inf", "not-a-number"])
+def test_budget_witness_must_be_finite_and_positive(tmp_path: Path, raw: str):
+    mod = _load("bootstrap_3dsig_s_top10", BOOT)
+    arm = tmp_path / "arm"
+    _write_case_with_budget(arm, "1ABC", [5.0] * 10, evals_actual=raw)
+    with pytest.raises(mod.BudgetWitnessError):
+        mod.load_arm_dir(arm, strict=True)
+
+
 def test_protocol_claim_eligible_is_not_accepted_as_a_witness(tmp_path: Path):
     """The fixture sets protocol_claim_eligible=1; it must not rescue the row."""
     mod = _load("bootstrap_3dsig_s_top10", BOOT)
@@ -300,6 +309,49 @@ def test_proportional_gate_is_opt_in_and_tunable(tmp_path: Path):
         arm, strict=True, intended_evals=2_000_000, min_budget_fraction=0.05
     )
     assert set(cases) == {"1ABC"}
+
+
+def test_proportional_gate_refuses_unwitnessed_even_with_escape_hatch(
+    tmp_path: Path,
+):
+    """An explicit denominator cannot be checked against an unknown numerator."""
+    mod = _load("bootstrap_3dsig_s_top10", BOOT)
+    arm = tmp_path / "arm"
+    _write_case_with_budget(arm, "1ABC", [5.0] * 10, evals_actual="")
+    with pytest.raises(mod.BudgetWitnessError):
+        mod.load_arm_dir(
+            arm,
+            strict=True,
+            allow_unwitnessed_budget=True,
+            intended_evals=2_000_000,
+        )
+
+
+@pytest.mark.parametrize("intended", [0.0, -1.0, float("nan"), float("inf")])
+def test_proportional_gate_rejects_invalid_intended_budget(
+    tmp_path: Path, intended: float
+):
+    mod = _load("bootstrap_3dsig_s_top10", BOOT)
+    arm = tmp_path / "arm"
+    _write_case_with_budget(arm, "1ABC", [5.0] * 10, evals_actual="100")
+    with pytest.raises(mod.BudgetWitnessError):
+        mod.load_arm_dir(arm, strict=True, intended_evals=intended)
+
+
+@pytest.mark.parametrize("fraction", [0.0, -0.1, 1.1, float("nan"), float("inf")])
+def test_proportional_gate_rejects_invalid_fraction(
+    tmp_path: Path, fraction: float
+):
+    mod = _load("bootstrap_3dsig_s_top10", BOOT)
+    arm = tmp_path / "arm"
+    _write_case_with_budget(arm, "1ABC", [5.0] * 10, evals_actual="100")
+    with pytest.raises(mod.BudgetWitnessError):
+        mod.load_arm_dir(
+            arm,
+            strict=True,
+            intended_evals=100.0,
+            min_budget_fraction=fraction,
+        )
 
 
 def test_cli_budget_witness_fail_closed(tmp_path: Path):

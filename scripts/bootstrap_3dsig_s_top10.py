@@ -86,7 +86,7 @@ DEFAULT_MIN_BUDGET_FRACTION = 0.9
 
 
 def has_budget_witness(row: dict) -> bool:
-    """True when ``evals_actual`` is populated with a finite non-negative number.
+    """True when ``evals_actual`` is populated with a finite positive number.
 
     Exact, not proportional: the column is either a witness or it is not.
     ``protocol_claim_eligible`` asserts compliance without establishing it and
@@ -103,7 +103,7 @@ def has_budget_witness(row: dict) -> bool:
         evals = float(raw)
     except ValueError:
         return False
-    return math.isfinite(evals) and evals >= 0.0
+    return math.isfinite(evals) and evals > 0.0
 
 
 def budget_shortfall(row: dict, intended_evals: float) -> Optional[float]:
@@ -127,6 +127,26 @@ def budget_shortfall(row: dict, intended_evals: float) -> Optional[float]:
     if not math.isfinite(evals) or evals < 0.0 or intended_evals <= 0.0:
         return None
     return evals / intended_evals
+
+
+def validate_budget_gate(
+    intended_evals: Optional[float], min_budget_fraction: float
+) -> None:
+    """Reject nonsensical proportional-gate parameters before reading rows."""
+    if intended_evals is None:
+        return
+    if not math.isfinite(intended_evals) or intended_evals <= 0.0:
+        raise BudgetWitnessError(
+            "--intended-evals must be a finite positive number"
+        )
+    if (
+        not math.isfinite(min_budget_fraction)
+        or min_budget_fraction <= 0.0
+        or min_budget_fraction > 1.0
+    ):
+        raise BudgetWitnessError(
+            "--min-budget-fraction must be finite and in the interval (0, 1]"
+        )
 
 
 def row_never_ran(row: dict, rmsds: Sequence[Optional[float]]) -> bool:
@@ -288,6 +308,8 @@ def load_arm_dir(
     *allow_unrun* to drop them with a warning instead — they are never
     scored as misses either way.
     """
+    validate_budget_gate(intended_evals, min_budget_fraction)
+
     out: Dict[str, List[Optional[float]]] = {}
     unrun: List[str] = []
     unrun_detail: List[str] = []
@@ -323,15 +345,24 @@ def load_arm_dir(
             continue
         # Budget spend must be WITNESSED. This is exact — the column is either
         # populated or it is not — and refuses by default.
-        if not allow_unwitnessed_budget and not has_budget_witness(row):
-            unwitnessed.append(pdb)
-            continue
+        witnessed = has_budget_witness(row)
+        if not witnessed:
+            # An explicitly requested proportional gate always fails closed on
+            # an unknown numerator.  The escape hatch only applies when no
+            # intended budget was supplied.
+            if intended_evals is not None or not allow_unwitnessed_budget:
+                unwitnessed.append(pdb)
+                continue
         # The proportional gate is separate and OPT-IN: the expected
         # evals_actual denominator has not had its semantics established, so no
         # percentage threshold is applied unless a caller supplies one.
         if intended_evals is not None:
             frac = budget_shortfall(row, intended_evals)
-            if frac is not None and frac < min_budget_fraction:
+            # Reaching here guarantees a positive, finite witness.
+            if frac is None:
+                unwitnessed.append(pdb)
+                continue
+            if frac < min_budget_fraction:
                 short.append(f"{pdb} ({frac:.1%} of intended)")
                 continue
         # Keep case even if all mode slots empty (counts as S_top10 fail)
@@ -370,7 +401,8 @@ def load_arm_dir(
             f"spent >= {min_budget_fraction:.0%} of the intended "
             f"{intended_evals:,.0f} evaluations. S_top10 is a rate at a FIXED "
             "search effort; scoring a truncated case redefines the statistic. "
-            "Re-run them, or drop --intended-evals to score without the check. "
+            "Re-run or re-parse them with a same-unit budget witness; do not "
+            "report S_top10 from the truncated rows. "
             f"First: {short[0]}"
         )
 
@@ -501,9 +533,10 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         type=float,
         default=None,
         help=(
-            "Intended energy evaluations per case (deck protocol: 2000000). "
-            "When set, a case must witness >= --min-budget-fraction of it via "
-            "evals_actual or scoring fails closed. Off by default."
+            "Expected evals_actual for each result.csv row, expressed in the "
+            "same counting unit and restart aggregation as evals_actual. When "
+            "set, a case must witness >= --min-budget-fraction of it or scoring "
+            "fails closed. No protocol-specific value is assumed. Off by default."
         ),
     )
     ap.add_argument(
