@@ -665,6 +665,38 @@ if(ENABLE_TENCOM_TOOL)
     message(STATUS "Ligand tENCoM/Eigen pose validator enabled — build target: ligand_tencom_pose")
 endif()
 
+# ─── P5: NRGRank two-stage screening driver (flexaid_screen) ───────────────────
+# Standalone CLI that runs the rigid NRGRank coarse screen (CoarseScreen /
+# TwoStageScreen) as a pre-filter in front of the expensive GA. Reuses the same
+# classes exercised by test_coarse_screen; no coupling to the GA/top.cpp engine.
+option(ENABLE_TWO_STAGE_SCREEN "Build the NRGRank two-stage screening CLI (flexaid_screen)" ON)
+if(ENABLE_TWO_STAGE_SCREEN
+   AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/LIB/two_stage_screen_main.cpp"
+   AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/LIB/CoarseScreen.cpp"
+   AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/LIB/TwoStageScreen.cpp")
+    add_executable(flexaid_screen
+        LIB/two_stage_screen_main.cpp
+        LIB/CoarseScreen.cpp
+        LIB/TwoStageScreen.cpp
+    )
+    target_include_directories(flexaid_screen PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/LIB)
+    set_target_properties(flexaid_screen PROPERTIES
+        CXX_STANDARD 23 CXX_STANDARD_REQUIRED ON CXX_EXTENSIONS OFF)
+    if(MSVC)
+        target_compile_options(flexaid_screen PRIVATE /O2)
+        target_compile_definitions(flexaid_screen PRIVATE
+            _CRT_SECURE_NO_WARNINGS _USE_MATH_DEFINES NOMINMAX)
+    else()
+        target_compile_options(flexaid_screen PRIVATE -O3)
+    endif()
+    flexaids_configure_simd(flexaid_screen)
+    if(FLEXAIDS_USE_OPENMP AND OpenMP_CXX_FOUND)
+        target_link_libraries(flexaid_screen PRIVATE OpenMP::OpenMP_CXX)
+    endif()
+    message(STATUS "Two-stage screening CLI enabled — build target: flexaid_screen")
+endif()
+
 # ─── VoronoiCFBatch benchmark (Task 2.3) ───────────────────────────────────────
 # VoronoiCFBatch.h is header-only; the benchmark binary exercises the std::span
 # batch interface and prints a serial-vs-OpenMP speedup table.

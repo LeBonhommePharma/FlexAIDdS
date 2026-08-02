@@ -536,6 +536,36 @@ int GA(FA_Global* FA, GB_Global* GB,VC_Global* VC,chromosome** chrom,chromosome*
 	int    stagnation_count  = 0;
 	bool   ga_stagnant = false;
 
+	// ── [P5-ADAPTIVE-GEN] Adaptive-generation early convergence state (BEGIN) ──
+	// Off by default. Opt in with FLEXAIDDS_ADAPTIVE_GENERATIONS=<K> (patience in
+	// generations); the GA stops once best-CF improves by < eps for K consecutive
+	// generations instead of always running max_generations. Independent of the
+	// SMFREE/entropy termination paths above (no sec_may_terminate gate) so it
+	// works for the classic CF-only fast-docking mode. Purely a wall-clock lever;
+	// ranking/poses are unchanged when the flag is unset.
+	int    ag_patience   = 0;       // 0 = disabled
+	double ag_eps        = 1.0;     // kcal/mol improvement threshold (best-CF)
+	double ag_prev_best  = 1e30;    // best CF observed at previous check
+	int    ag_plateau    = 0;       // consecutive plateau generations
+	{
+		const char* ag_e = std::getenv("FLEXAIDDS_ADAPTIVE_GENERATIONS");
+		if (ag_e && *ag_e) {
+			ag_patience = std::atoi(ag_e);
+			if (ag_patience < 0) ag_patience = 0;
+		}
+		const char* ag_eps_e = std::getenv("FLEXAIDDS_ADAPTIVE_EPS");
+		if (ag_eps_e && *ag_eps_e) {
+			const double v = std::atof(ag_eps_e);
+			if (v > 0.0) ag_eps = v;
+		}
+		if (ag_patience > 0) {
+			printf("[P5-ADAPTIVE-GEN] adaptive generations ON: patience=%d gens, "
+			       "eps=%.4f kcal/mol (best-CF plateau early stop)\n",
+			       ag_patience, ag_eps);
+		}
+	}
+	// ── [P5-ADAPTIVE-GEN] state (END) ──
+
 	// ── Always-on H plateau early exit: ring buffer over last 20 checks ─────
 	// Fires independently of GB->entropy_convergence (that flag controls the
 	// soft/hard/plateau checks above).  ε = 0.001 nats matches the thermal noise
@@ -854,6 +884,28 @@ int GA(FA_Global* FA, GB_Global* GB,VC_Global* VC,chromosome** chrom,chromosome*
 			}
 			prev_best_evalue = _cur;  // always update (was conditional on _ps)
 		}
+
+		// ── [P5-ADAPTIVE-GEN] Best-CF plateau early stop (BEGIN) ────────────
+		// Localized generation-loop convergence check. Guarded by ag_patience>0
+		// (FLEXAIDDS_ADAPTIVE_GENERATIONS); when disabled this is a single
+		// predictable branch and behavior is identical to legacy. Uses the
+		// elitism-guaranteed best chromosome (*chrom)[0].evalue (CF, lower=better).
+		if (ag_patience > 0 && i > 0) {
+			const double ag_cur = (*chrom)[0].evalue;
+			if ((ag_prev_best - ag_cur) < ag_eps) {
+				if (++ag_plateau >= ag_patience) {
+					printf("[P5-ADAPTIVE-GEN] GA converged: best-CF plateau for %d "
+					       "gens (best_CF=%.4f) at gen %d — early stop "
+					       "(max_generations=%d)\n",
+					       ag_plateau, ag_cur, i + 1, GB->max_generations);
+					break;
+				}
+			} else {
+				ag_plateau = 0;
+			}
+			ag_prev_best = ag_cur;
+		}
+		// ── [P5-ADAPTIVE-GEN] Best-CF plateau early stop (END) ──────────────
 
 		// ── Always-on H plateau early exit ─────────────────────────────────
 		// Every entropy_check_interval generations, sample H of the current
