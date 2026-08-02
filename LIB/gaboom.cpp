@@ -2478,19 +2478,37 @@ void calculate_fitness(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* chr
 		return h_genes;
 	};
 
-	// Helper lambda: unpack GPU batch results into chromosome CF structures.
+	// Helper lambda: unpack full-fidelity GPU batch results (P4) into chromosome
+	// CF structures. The GPU now fills every scoring channel that feeds
+	// get_cf_evalue(): com/wal/sas/con/elec/hbond/gist_desolv/pb_clash. On the
+	// Metal MULTI (screening) path only com/wal/sas are populated — the other
+	// vectors are left zero by the caller, which is the documented reduced
+	// fidelity for that path. Channels with NO GPU implementation (cf.gist is the
+	// non-scoring diagnostic channel; metal_coord/entropy/h_rep) are zeroed here
+	// so a stale host-buffer value can never leak into get_cf_evalue().
 	auto unpack_gpu_results = [&](const std::vector<double>& h_com,
 	                              const std::vector<double>& h_wal,
-	                              const std::vector<double>& h_sas) {
+	                              const std::vector<double>& h_sas,
+	                              const std::vector<double>& h_con,
+	                              const std::vector<double>& h_elec,
+	                              const std::vector<double>& h_hbond,
+	                              const std::vector<double>& h_gist,
+	                              const std::vector<double>& h_pb) {
 		for (int c = 0; c < pop_size; ++c) {
 			if (chrom[c].status != 'n') {
-				chrom[c].cf.com    = h_com[c];
-				chrom[c].cf.wal    = h_wal[c];
-				chrom[c].cf.sas    = h_sas[c];
-				chrom[c].cf.con    = 0.0;
-				chrom[c].cf.gist   = 0.0;
-				chrom[c].cf.hbond  = 0.0;
-				chrom[c].cf.pb_clash = 0.0;  // coarse host-buffer restore (com/wal/sas only); PB clash not computed on this fast path — zero to avoid stale leak into get_cf_evalue
+				chrom[c].cf.com         = h_com[c];
+				chrom[c].cf.wal         = h_wal[c];
+				chrom[c].cf.sas         = h_sas[c];
+				chrom[c].cf.con         = h_con[c];
+				chrom[c].cf.elec        = h_elec[c];
+				chrom[c].cf.hbond       = h_hbond[c];
+				chrom[c].cf.gist_desolv = h_gist[c];   // scoring GIST channel (get_cf_evalue sums gist_desolv, not cf.gist)
+				chrom[c].cf.pb_clash    = h_pb[c];
+				// Terms with no GPU implementation — zeroed (see divergence guard).
+				chrom[c].cf.gist        = 0.0;
+				chrom[c].cf.metal_coord = 0.0;
+				chrom[c].cf.entropy     = 0.0;
+				chrom[c].cf.h_rep       = 0.0;
 				chrom[c].cf.totsas = 0.0;
 				chrom[c].cf.rclash = (h_wal[c] > CLASH_THRESHOLD) ? 1 : 0;
 				chrom[c].evalue     = get_cf_evalue(&chrom[c].cf, FA) / n_receptor_chains;
@@ -2528,6 +2546,103 @@ void calculate_fitness(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* chr
 		            ? FA->resligand->latm[0] : 0;
 		return d;
 	};
+
+	// Build the per-batch full-fidelity CF scalar params from FA (+ the CPU env
+	// gates it mirrors), so the GPU CF assembly matches get_cf_evalue().
+	auto build_gpu_params = [&]() -> GpuCfParams {
+		GpuCfParams P; std::memset(&P, 0, sizeof(P));
+		// Distance weighting: mirror vcfunction's resolution exactly.
+		double dw = 0.0;
+		if (std::getenv("FLEXAIDDS_DIST_WEIGHT_CON") != nullptr) {
+			float r0 = 3.5f;
+			if (const char* s = std::getenv("FLEXAIDDS_CON_R0")) {
+				float pr = strtof(s, nullptr); if (pr > 0.0f) r0 = pr;
+			}
+			dw = r0;
+		} else if (FA->vct_dist_weight_r0 > 0.0) {
+			dw = FA->vct_dist_weight_r0;
+		}
+		P.dw_r0       = (float)dw;
+		P.elec_on     = FA->use_elec ? 1 : 0;
+		P.dielectric  = FA->dielectric;
+		// H-bond enters GA fitness only under the same gate as vcfunction.cpp.
+		const bool hb_on = FA->use_hbond && FA->use_hbond_search && !FA->hbond_rank_rescore;
+		P.hbond_weight      = hb_on ? (float)FA->hbond_weight : 0.0f;
+		P.hbond_salt_weight = hb_on ? (float)FA->hbond_salt_bridge_weight : 0.0f;
+		P.hbond_opt_dist    = (float)FA->hbond_optimal_dist;
+		P.hbond_sigma_dist  = (float)FA->hbond_sigma_dist;
+		// Representative angle term (drift model — the GPU omits the true
+		// virtual-H directionality; see cuda_eval.cuh error note).
+		P.hbond_angle_repr  = 0.7f;
+		P.pb_clash_weight   = (float)FA->pb_clash_weight;
+		P.pb_clash_ratio    = (float)FA->pb_clash_ratio;
+		P.pb_clash_exponent = (float)FA->pb_clash_exponent;
+		P.pb_pocket_weight  = (float)FA->pb_pocket_weight;
+		P.pb_pocket_radius  = (float)FA->pb_pocket_radius;
+		P.kdist       = (float)KDIST;
+		P.sas_weight  = (float)FA->sas_weight;
+		P.solvent_flat= (FA->solventterm != 0.0f) ? 1 : 0;
+		P.solventterm = (float)FA->solventterm;
+		return P;
+	};
+
+	// Build the rigid full-fidelity static device inputs (pb-vdw radii, charges,
+	// H-bond donor/acceptor+heavy flags, covalent constraints). GIST grid upload
+	// is intentionally left unwired (GISTGrid exposes no grid accessors) so GPU
+	// gist_desolv stays 0 — covered by the divergence guard. Same atom indexing
+	// convention as prepare_gpu_atoms (atoms[a], a in [0, atm_cnt_real)).
+	struct GPUExtraData {
+		std::vector<float> pbvdw, charge;
+		std::vector<int>   hflags;
+		std::vector<int>   cons_i, cons_j;
+		std::vector<float> cons_bl, cons_md;
+		GpuCfExtraStatic   extra;
+	};
+	auto prepare_gpu_extra = [&]() -> GPUExtraData {
+		const int n_atoms = FA->atm_cnt_real;
+		GPUExtraData d;
+		d.pbvdw.resize(n_atoms);
+		d.charge.resize(n_atoms);
+		d.hflags.resize(n_atoms);
+		for (int a = 0; a < n_atoms; ++a) {
+			d.pbvdw[a]  = (float)atoms[a].pb_vdw_radius;
+			d.charge[a] = atoms[a].has_resp ? atoms[a].resp_charge : atoms[a].charge;
+			// type256 bit layout (atom_typing_256.h): bit7 = H-bond donor,
+			// bit6 = H-bond acceptor. bit2 (local) = heavy (non-hydrogen).
+			int f = 0;
+			const uint8_t t256 = atoms[a].type256;
+			if ((t256 >> 7) & 0x1) f |= 0x1;   // donor
+			if ((t256 >> 6) & 0x1) f |= 0x2;   // acceptor
+			const bool is_h = (atoms[a].element[0] == 'H') ||
+			                  (atoms[a].element[0] == ' ' && atoms[a].element[1] == 'H');
+			if (!is_h) f |= 0x4;               // heavy
+			d.hflags[a] = f;
+		}
+		// Covalent (type-1) constraints only; use internal atom indices (inum).
+		for (int c = 0; c < FA->num_constraints; ++c) {
+			if (FA->constraints[c].type != 1) continue;
+			const int i = FA->constraints[c].inum1;
+			const int j = FA->constraints[c].inum2;
+			if (i < 0 || i >= n_atoms || j < 0 || j >= n_atoms) continue;
+			d.cons_i.push_back(i);
+			d.cons_j.push_back(j);
+			d.cons_bl.push_back(FA->constraints[c].bond_len);
+			d.cons_md.push_back(FA->constraints[c].max_dist);
+		}
+		std::memset(&d.extra, 0, sizeof(d.extra));
+		d.extra.atom_pbvdw  = d.pbvdw.data();
+		d.extra.atom_charge = d.charge.data();
+		d.extra.atom_hflags = d.hflags.data();
+		d.extra.n_cons = (int)d.cons_i.size();
+		if (d.extra.n_cons > 0) {
+			d.extra.cons_i       = d.cons_i.data();
+			d.extra.cons_j       = d.cons_j.data();
+			d.extra.cons_bondlen = d.cons_bl.data();
+			d.extra.cons_maxdist = d.cons_md.data();
+		}
+		d.extra.gist_nx = 0;   // GPU GIST upload not wired (see comment above)
+		return d;
+	};
 #endif  // FLEXAIDS_USE_CUDA || FLEXAIDS_USE_METAL
 
 	// Log dispatch decision on first call.
@@ -2549,27 +2664,34 @@ void calculate_fitness(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* chr
 		ctx.dispatch_logged = true;
 	}
 
-	// ── PB term / accelerated-path divergence guard ───────────────────────────
-	// The CUDA/Metal batch kernels compute only com/wal/sas; cf.pb_clash is zeroed
-	// in unpack_gpu_results() below to avoid a stale host buffer leaking into
-	// get_cf_evalue(). cf.pb_clash carries BOTH PoseBust terms (the pb_clash
-	// penalty and the pb_pocket penalty), so both vanish on this path. That is
-	// memory-safe, but it means a run with either weight > 0 scores DIFFERENT
-	// PHYSICS on an accelerated backend than on the CPU backend. Previously this
-	// was silent. Warn once per process so the divergence can never go unnoticed.
-	if ((backend == flexaids::HardwareBackend::CUDA ||
-	     backend == flexaids::HardwareBackend::METAL) &&
-	    (FA->pb_clash_weight > 0.0 || FA->pb_pocket_weight > 0.0)) {
-		static bool pb_gpu_warned = false;
-		if (!pb_gpu_warned) {
-			pb_gpu_warned = true;
+	// ── Accelerated-path divergence guard (P4) ────────────────────────────────
+	// The GPU CF now reproduces com/wal/sas/con/elec/hbond/gist_desolv/pb_clash
+	// (PoseBust clash + pocket now INCLUDED) within the ranking-preserving drift
+	// tolerance. A few CPU terms still have NO GPU implementation and are zeroed
+	// in unpack_gpu_results() so no stale value leaks into get_cf_evalue():
+	//   • cf.metal_coord   (Gaussian metal-coordination Morse term)
+	//   • cf.entropy       (Shannon contact-type vct-entropy penalty)
+	//   • cf.h_rep         (tENCoM vibrational Shannon entropy, tencom_weight)
+	//   • cf.gist_desolv   when use_gist is set: the GPU GIST grid upload is not
+	//                       yet wired (GISTGrid has no grid accessors) → 0.
+	// Additionally the Metal MULTI (screening) path computes only com/wal/sas.
+	// Warn once if any active weight would make the accelerated score diverge.
+	if (backend == flexaids::HardwareBackend::CUDA ||
+	    backend == flexaids::HardwareBackend::METAL) {
+		static bool gpu_div_warned = false;
+		const bool metal_c = FA->use_metal_coord != 0;
+		const bool entropy = FA->vct_entropy_weight > 0.0;
+		const bool tencom  = FA->tencom_weight > 0.0f;
+		const bool gist    = FA->use_gist != 0;   // GPU GIST upload not wired yet
+		if (!gpu_div_warned && (metal_c || entropy || tencom || gist)) {
+			gpu_div_warned = true;
 			fprintf(stderr,
-			        "[PB_CLASH] WARNING: %s accelerated path detected — PoseBust terms "
-			        "(pb_clash_weight=%.4g, pb_pocket_weight=%.4g) are NOT computed on this "
-			        "path and are zeroed for consistency. Scoring will DIVERGE from the CPU "
-			        "backend. Set FLEXAIDDS_FORCE_CPU=1 to enable them.\n",
+			        "[GPU_CF] WARNING: %s accelerated path does not compute "
+			        "metal_coord=%d vct_entropy(w=%.4g) tENCoM(w=%.4g) gist=%d; these "
+			        "are zeroed and scoring will DIVERGE from the CPU backend. Set "
+			        "FLEXAIDDS_FORCE_CPU=1 to score them on CPU.\n",
 			        flexaids::backend_name(backend),
-			        FA->pb_clash_weight, FA->pb_pocket_weight);
+			        (int)metal_c, FA->vct_entropy_weight, FA->tencom_weight, (int)gist);
 		}
 	}
 
@@ -2587,18 +2709,28 @@ void calculate_fitness(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* chr
 		auto handle = pool.acquire_cuda(n_atoms, n_types, [&]() {
 			auto ad = prepare_gpu_atoms();
 			std::vector<float> h_emat = build_emat_sampled(n_types, ns);
-			return cuda_eval_init(n_atoms, n_types, MAX_NUM_CHROM,
+			CudaEvalCtx* c = cuda_eval_init(n_atoms, n_types, MAX_NUM_CHROM,
 			                     n_genes, ad.lig_first, ad.lig_last,
 			                     FA->permeability,
 			                     ad.xyz.data(), ad.type.data(),
 			                     ad.radius.data(), h_emat.data());
+			// Upload the rigid full-fidelity static arrays once per context.
+			auto ex = prepare_gpu_extra();
+			cuda_eval_set_extra(c, &ex.extra);
+			return c;
 		});
 
 		std::vector<double> h_genes = pack_genes_batch(n_genes);
-		std::vector<double> h_com(pop_size), h_wal(pop_size), h_sas(pop_size);
-		cuda_eval_batch(handle.ctx, pop_size, n_genes, h_genes.data(),
-		                h_com.data(), h_wal.data(), h_sas.data());
-		unpack_gpu_results(h_com, h_wal, h_sas);
+		std::vector<double> h_com(pop_size), h_wal(pop_size), h_sas(pop_size),
+		                    h_con(pop_size), h_elec(pop_size), h_hbond(pop_size),
+		                    h_gist(pop_size), h_pb(pop_size);
+		GpuCfParams  params = build_gpu_params();
+		GpuCfResults res;
+		res.com = h_com.data(); res.wal = h_wal.data(); res.sas = h_sas.data();
+		res.con = h_con.data(); res.elec = h_elec.data(); res.hbond = h_hbond.data();
+		res.gist_desolv = h_gist.data(); res.pb_clash = h_pb.data();
+		cuda_eval_batch(handle.ctx, pop_size, n_genes, h_genes.data(), &params, &res);
+		unpack_gpu_results(h_com, h_wal, h_sas, h_con, h_elec, h_hbond, h_gist, h_pb);
 		pool.release_cuda(handle);
 		gpu_handled = true;
 	}
@@ -2623,26 +2755,43 @@ void calculate_fitness(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* chr
 		auto handle = pool.acquire_metal(n_atoms, n_types, ctx_max_pop, [&]() {
 			auto ad = prepare_gpu_atoms();
 			std::vector<float> h_emat = build_emat_sampled(n_types, ns);
-			return metal_eval_init(n_atoms, n_types, ctx_max_pop,
+			MetalEvalCtx* c = metal_eval_init(n_atoms, n_types, ctx_max_pop,
 			                      ad.lig_first, ad.lig_last,
 			                      FA->permeability,
 			                      ad.xyz.data(), ad.type.data(),
 			                      ad.radius.data(), h_emat.data(), ns);
+			// Upload the rigid full-fidelity static arrays once per context.
+			if (c) { auto ex = prepare_gpu_extra(); metal_eval_set_extra(c, &ex.extra); }
+			return c;
 		});
 
 		if (handle.ctx) {
 			std::vector<double> h_genes = pack_genes_batch(n_genes);
-			std::vector<double> h_com(pop_size), h_wal(pop_size), h_sas(pop_size);
+			// All eight channels are zero-initialised; the multi (screening) path
+			// fills only com/wal/sas, leaving the rest 0 (its documented fidelity).
+			std::vector<double> h_com(pop_size), h_wal(pop_size), h_sas(pop_size),
+			                    h_con(pop_size, 0.0), h_elec(pop_size, 0.0),
+			                    h_hbond(pop_size, 0.0), h_gist(pop_size, 0.0),
+			                    h_pb(pop_size, 0.0);
+			GpuCfParams params = build_gpu_params();
+			// Stash params so the multi-complex kernel (fixed GPUContextPool API)
+			// can read dw_r0/sas_weight/solvent for its com/wal/sas evaluation.
+			metal_eval_set_params(handle.ctx, &params);
 
 			if (batch_n <= 1) {
-				// Single-complex fast path — no batching overhead.
+				// Single-complex fast path — full-fidelity CF.
+				GpuCfResults res;
+				res.com = h_com.data(); res.wal = h_wal.data(); res.sas = h_sas.data();
+				res.con = h_con.data(); res.elec = h_elec.data(); res.hbond = h_hbond.data();
+				res.gist_desolv = h_gist.data(); res.pb_clash = h_pb.data();
 				metal_eval_batch(handle.ctx, pop_size, n_genes, h_genes.data(),
-				                 h_com.data(), h_wal.data(), h_sas.data());
+				                 &params, &res);
 			} else {
 				// Multi-complex path: pack per-complex atom data and queue for
 				// batched dispatch.  When N concurrent workers all reach this
 				// point in the same generation, they share one GPU kernel launch
-				// (N × pop_size chromosomes per dispatch).
+				// (N × pop_size chromosomes per dispatch). Screening pre-filter:
+				// only com/wal/sas are returned (see metal_eval.h).
 				auto ad = prepare_gpu_atoms();
 				MetalMultiBatchEntry entry;
 				entry.h_genes      = h_genes.data();
@@ -2661,7 +2810,7 @@ void calculate_fitness(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* chr
 				                              entry, batch_n);
 			}
 
-			unpack_gpu_results(h_com, h_wal, h_sas);
+			unpack_gpu_results(h_com, h_wal, h_sas, h_con, h_elec, h_hbond, h_gist, h_pb);
 			gpu_handled = true;
 		} else {
 			fprintf(stderr,
