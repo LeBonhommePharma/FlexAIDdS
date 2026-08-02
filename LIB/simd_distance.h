@@ -849,6 +849,29 @@ inline void dot3_batch(const float* a, const float* b, float* out, int N) noexce
 
 #endif  // FLEXAIDS_HAS_AVX512 / FLEXAIDS_HAS_AVX2 / FLEXAIDS_HAS_SSE42
 
+// ─── missing 4-wide overload on the AVX2 / AVX-512 branches ──────────────────
+// distance2_1x4 is defined by the SSE4.2, NEON and scalar branches, but NOT by
+// the AVX-512 branch (which supplies 1x16 / 1x8) or the AVX2 branch (1x8 only).
+// Any call site using the 4-wide form therefore failed to compile under
+// -mavx2 / -mavx512f — i.e. on exactly the production x86 configurations —
+// while compiling fine on SSE-only, NEON and scalar builds. Supplied here, after
+// all ISA branches have closed, so no existing branch is disturbed. SSE
+// intrinsics are architecturally available whenever AVX2 or AVX-512 is.
+#if FLEXAIDS_HAS_AVX512 || FLEXAIDS_HAS_AVX2
+inline void distance2_1x4(const float* FLEXAIDS_RESTRICT ax,
+                           const float* FLEXAIDS_RESTRICT ay,
+                           const float* FLEXAIDS_RESTRICT az,
+                           float bx, float by, float bz,
+                           float* FLEXAIDS_RESTRICT out) noexcept {
+    __m128 dx = _mm_sub_ps(_mm_loadu_ps(ax), _mm_set1_ps(bx));
+    __m128 dy = _mm_sub_ps(_mm_loadu_ps(ay), _mm_set1_ps(by));
+    __m128 dz = _mm_sub_ps(_mm_loadu_ps(az), _mm_set1_ps(bz));
+    _mm_storeu_ps(out, _mm_add_ps(_mm_mul_ps(dx, dx),
+                       _mm_add_ps(_mm_mul_ps(dy, dy),
+                                  _mm_mul_ps(dz, dz))));
+}
+#endif
+
 // ─── dispatch helper: compile-time dispatch to best available ────────────────
 
 // RMSD between two coordinate arrays (N atoms, interleaved xyz)

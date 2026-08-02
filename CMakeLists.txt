@@ -234,6 +234,18 @@ else()
 endif()
 flexaids_configure_simd(FlexAID)
 
+# ─── P0 build-level wins: lift the FlexAIDdS LTO/native/NDEBUG block onto FlexAID ─
+# The classic FlexAID target historically shipped with only -O3 -ffast-math (above)
+# while the FlexAIDdS target carried an aggressive LTO + INTERPROCEDURAL_OPTIMIZATION
+# + -march=native/-mcpu=native + -DNDEBUG + strip block. flexaids_apply_fast_optimization
+# lifts that same block onto FlexAID, guarded by BUILD_FLEXAID_FAST (default OFF per
+# METHODOLOGY §1 — see the rationale at its option() site; also
+# force-disabled under coverage/sanitizer builds by the SAME guard used for
+# BUILD_FLEXAIDDS_FAST — see cmake/FlexAIDOptions.cmake). FLEXAID_PGO adds optional
+# profile-generate/profile-use instrumentation. Both are no-ops when disabled.
+flexaids_apply_fast_optimization(FlexAID)
+flexaids_apply_pgo(FlexAID)
+
 # Stage runtime data files next to the FlexAID binary (see note on the
 # FlexAIDdS target): the engine resolves MC_st0r5.2_6.dat / AMINO.def /
 # NUCLEOTIDES.def relative to the executable's own directory.
@@ -652,6 +664,38 @@ if(ENABLE_TENCOM_TOOL)
             ${METAL_LIBRARY} ${FOUNDATION_LIBRARY} ${METALKIT_LIBRARY})
     endif()
     message(STATUS "Ligand tENCoM/Eigen pose validator enabled — build target: ligand_tencom_pose")
+endif()
+
+# ─── P5: NRGRank two-stage screening driver (flexaid_screen) ───────────────────
+# Standalone CLI that runs the rigid NRGRank coarse screen (CoarseScreen /
+# TwoStageScreen) as a pre-filter in front of the expensive GA. Reuses the same
+# classes exercised by test_coarse_screen; no coupling to the GA/top.cpp engine.
+option(ENABLE_TWO_STAGE_SCREEN "Build the NRGRank two-stage screening CLI (flexaid_screen)" ON)
+if(ENABLE_TWO_STAGE_SCREEN
+   AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/LIB/two_stage_screen_main.cpp"
+   AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/LIB/CoarseScreen.cpp"
+   AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/LIB/TwoStageScreen.cpp")
+    add_executable(flexaid_screen
+        LIB/two_stage_screen_main.cpp
+        LIB/CoarseScreen.cpp
+        LIB/TwoStageScreen.cpp
+    )
+    target_include_directories(flexaid_screen PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/LIB)
+    set_target_properties(flexaid_screen PROPERTIES
+        CXX_STANDARD 23 CXX_STANDARD_REQUIRED ON CXX_EXTENSIONS OFF)
+    if(MSVC)
+        target_compile_options(flexaid_screen PRIVATE /O2)
+        target_compile_definitions(flexaid_screen PRIVATE
+            _CRT_SECURE_NO_WARNINGS _USE_MATH_DEFINES NOMINMAX)
+    else()
+        target_compile_options(flexaid_screen PRIVATE -O3)
+    endif()
+    flexaids_configure_simd(flexaid_screen)
+    if(FLEXAIDS_USE_OPENMP AND OpenMP_CXX_FOUND)
+        target_link_libraries(flexaid_screen PRIVATE OpenMP::OpenMP_CXX)
+    endif()
+    message(STATUS "Two-stage screening CLI enabled — build target: flexaid_screen")
 endif()
 
 # ─── VoronoiCFBatch benchmark (Task 2.3) ───────────────────────────────────────
@@ -1529,6 +1573,21 @@ flexaids_add_unit_test(test_protocol_config
     endif()
     flexaids_configure_msvc_test(test_vcontacts_geometry)
     add_test(NAME VcontactsGeometryTests COMMAND test_vcontacts_geometry)
+
+    # test_vcontacts_calc_areas_degenerate — degenerate-face tripwire for the
+    # PR#370 float spherical-excess area path (self-contained numerical check,
+    # no engine linkage).  See the file header for rationale.
+    add_executable(test_vcontacts_calc_areas_degenerate
+        tests/test_vcontacts_calc_areas_degenerate.cpp
+    )
+    target_link_libraries(test_vcontacts_calc_areas_degenerate PRIVATE GTest::gtest_main)
+    if(MSVC)
+        target_compile_options(test_vcontacts_calc_areas_degenerate PRIVATE /O2)
+    else()
+        target_compile_options(test_vcontacts_calc_areas_degenerate PRIVATE -O2)
+    endif()
+    flexaids_configure_msvc_test(test_vcontacts_calc_areas_degenerate)
+    add_test(NAME VcontactsCalcAreasDegenerateTests COMMAND test_vcontacts_calc_areas_degenerate)
 
     # test_cleft_cavity — CleftDetector + CavityDetect unit tests
     add_executable(test_cleft_cavity

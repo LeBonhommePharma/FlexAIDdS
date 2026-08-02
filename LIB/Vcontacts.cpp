@@ -4,9 +4,13 @@
 #include "fileio.h"
 #include <algorithm>
 #include <cstdlib>
+#include <cstdint>
+#include <cmath>
+#include <vector>
 #include <random>
 #ifdef FLEXAIDS_USE_SOA_DISTANCES
 #include "simd_distance.h"
+#include "AtomSoA.h"  // atom_soa::distance2_1x4 (ISA-portable 4-wide kernel)
 #include <cmath>     // fabs
 #endif
 
@@ -883,14 +887,24 @@ void calc_areas(vertex poly[], const vertex* centerpt, float rado, int NC, int N
 	double maxSAS;          // maximum solvent exposed surface, no atoms other than engulfing.
 	vertex ptB, ptC; // arc point intersections
 	int    currpt, nextpt;
-	double cosNN1[MAX_CONT];      // angle between vertex N and vertex N+1 
-	double cosNzero[MAX_CONT];    // angle between vertex N and vertex N+1 
-	double tanprod;         // product of tangents
+	double cosNN1[MAX_CONT];      // angle between vertex N and vertex N+1
+	double cosNzero[MAX_CONT];    // angle between vertex N and vertex N+1
 	int    v0, va, vb;      // vertices for arc calculation
-    
-	double U,V,W,X;
-	double tansqrS, tansqrSA, tansqrSB, tansqrSC;
-    
+	// P2.1/P2.3: the per-triangle tangent-formula scratch (U,V,W,X, the four
+	// tansqr terms and tanprod) is now computed in float — see the triangle
+	// loop below. Halves the width of the 5x sqrt + atan(sqrt) transcendental
+	// chain and lets the compiler pack the four U/V/W/X roots into one SIMD
+	// sqrt. Ranking-affecting float drift (allowed); accumulator `area` and the
+	// cosine inputs stay double to bound the error.
+
+	// P1.4: hoist sphere-area invariants out of the per-face loop. All are
+	// bit-identical to the original inline expressions (2.0f==2.0/4.0f==4.0 as
+	// doubles, left-to-right association preserved), just computed once.
+	const double two_pi_rado   = 2.0f*PI*rado;        // 2*pi*r     (cap terms)
+	const double two_pi_rado2  = two_pi_rado*rado;    // 2*pi*r^2
+	const double four_pi_rado2 = 4.0f*PI*rado*rado;   // 4*pi*r^2
+	const double four_rado2    = 4.0*rado*rado;       // 4*r^2      (triangle)
+
 	engflag = 'N';
 	epi = 0;
     
@@ -926,12 +940,12 @@ void calc_areas(vertex poly[], const vertex* centerpt, float rado, int NC, int N
 		// if there are no points on a valid contact, area is spherical cap
 		if(NP == 0) {
 			if(test_point(centerpt[planeX].xi, cont, NC, rado, planeX, -1, -1) == 'Y') {
-				cont[planeX].area = 2.0f*PI*rado*(rado-centerpt[planeX].dist);
+				cont[planeX].area = two_pi_rado*(rado-centerpt[planeX].dist);
 			}
 		} else if(NP == 2) {  // only two contact points, check which part of arc
 			if(test_point(centerpt[planeX].xi, cont, NC, rado, planeX, -1, -1) == 'Y') { // area is (cap - arc)
-				cont[planeX].area = 2.0f*PI*rado*(rado-centerpt[planeX].dist)
-					- spherical_arc(&centerpt[planeX], &poly[ptorder[planeX].pt[0]], 
+				cont[planeX].area = two_pi_rado*(rado-centerpt[planeX].dist)
+					- spherical_arc(&centerpt[planeX], &poly[ptorder[planeX].pt[0]],
 							&poly[ptorder[planeX].pt[1]], rado);
 			} else {            // area is arc.
 				cont[planeX].area = spherical_arc(&centerpt[planeX], &poly[ptorder[planeX].pt[0]], 
@@ -957,18 +971,32 @@ void calc_areas(vertex poly[], const vertex* centerpt, float rado, int NC, int N
 			}
             
 			// ----- calculate area of triangles in face -----
+			// P2.1/P2.3: float tangent-formula math. The four spherical-excess
+			// roots U,V,W,X are independent and packed into one array so the
+			// compiler emits a single 4-wide sqrt (SSE/AVX) or vsqrt (NEON); the
+			// remaining tanprod sqrt and the atan run in float. 0.125f == 1/8
+			// exactly, so replacing /8.0 costs no extra rounding. Inputs cast
+			// from the double cosines; `area` accumulates in double.
 			for(vi=1; vi<(NP-1); ++vi) {
-				U = sqrt((1+cosNzero[vi])*(1+cosNN1[vi])*(1+cosNzero[vi+1])/8.0);
-				V = sqrt((1-cosNzero[vi])*(1-cosNN1[vi])*(1+cosNzero[vi+1])/8.0);
-				W = sqrt((1-cosNzero[vi])*(1+cosNN1[vi])*(1-cosNzero[vi+1])/8.0);
-				X = sqrt((1+cosNzero[vi])*(1-cosNN1[vi])*(1-cosNzero[vi+1])/8.0);
-				tansqrS  = (1-U+V+W+X)/(1+U-V-W-X);
-				tansqrSA = (1-U-V-W+X)/(1+U+V+W-X);
-				tansqrSB = (1-U-V+W-X)/(1+U+V-W+X);
-				tansqrSC = (1-U+V-W-X)/(1+U-V+W+X);
-				tanprod = sqrt(tansqrS*tansqrSA*tansqrSB*tansqrSC);
-				if(tanprod > 0.0) {
-					area += 4.0*rado*rado*atan(sqrt(tanprod));
+				const float c0 = (float)cosNzero[vi];
+				const float c1 = (float)cosNN1[vi];
+				const float c2 = (float)cosNzero[vi+1];
+				float rad4[4] = {
+					(1.0f+c0)*(1.0f+c1)*(1.0f+c2)*0.125f,
+					(1.0f-c0)*(1.0f-c1)*(1.0f+c2)*0.125f,
+					(1.0f-c0)*(1.0f+c1)*(1.0f-c2)*0.125f,
+					(1.0f+c0)*(1.0f-c1)*(1.0f-c2)*0.125f
+				};
+				float root4[4];
+				for(int q=0; q<4; ++q) root4[q] = std::sqrt(rad4[q]);
+				const float U = root4[0], V = root4[1], W = root4[2], X = root4[3];
+				const float tansqrS  = (1.0f-U+V+W+X)/(1.0f+U-V-W-X);
+				const float tansqrSA = (1.0f-U-V-W+X)/(1.0f+U+V+W-X);
+				const float tansqrSB = (1.0f-U-V+W-X)/(1.0f+U+V-W+X);
+				const float tansqrSC = (1.0f-U+V-W-X)/(1.0f+U-V+W+X);
+				const float tanprod = std::sqrt(tansqrS*tansqrSA*tansqrSB*tansqrSC);
+				if(tanprod > 0.0f) {
+					area += four_rado2*std::atan(std::sqrt(tanprod));
 				}
 			}
             
@@ -1041,8 +1069,8 @@ void calc_areas(vertex poly[], const vertex* centerpt, float rado, int NC, int N
 		// optimizable
         
 		if(epi == 1) {
-			cont[engplane[0]].area = 2.0f*PI*rado*(rado+cont[engplane[0]].dist);
-		}else if(epi == 2) { 
+			cont[engplane[0]].area = two_pi_rado*(rado+cont[engplane[0]].dist);
+		}else if(epi == 2) {
             
 			//printf("engplane[0]=%d engplane[1]=%d\n",engplane[0],engplane[1]);
 			//printf("cont[engplane[0]] Ai[0]=%.3f Ai[1]=%.3f Ai[2]=%.3f Ai[3]=%.3f\n",cont[engplane[0]].Ai[0],cont[engplane[0]].Ai[1],cont[engplane[0]].Ai[2],cont[engplane[0]].Ai[3]);
@@ -1052,21 +1080,21 @@ void calc_areas(vertex poly[], const vertex* centerpt, float rado, int NC, int N
 			//printf("cont[engplane[1]] area=%.3f dist=%.3f\n",cont[engplane[1]].area,cont[engplane[1]].dist);
             
 			if(solve_2xS(&cont[engplane[0]],&cont[engplane[1]], rado, ptB.xi, ptC.xi)== -1) {
-				cont[engplane[0]].area = 2.0f*PI*rado*rado;
-				cont[engplane[1]].area = 2.0f*PI*rado*rado;
+				cont[engplane[0]].area = two_pi_rado2;
+				cont[engplane[1]].area = two_pi_rado2;
 			}else {
 				ptB.dist = rado;
 				ptC.dist = rado;
 				maxSAS = spherical_arc(&centerpt[engplane[0]], &ptB, &ptC, rado);
 				maxSAS += spherical_arc(&centerpt[engplane[1]], &ptB, &ptC, rado);
-				cont[engplane[0]].area = 2.0f*PI*rado*rado - 0.5*maxSAS;
-				cont[engplane[1]].area = 2.0f*PI*rado*rado - 0.5*maxSAS;
+				cont[engplane[0]].area = two_pi_rado2 - 0.5*maxSAS;
+				cont[engplane[1]].area = two_pi_rado2 - 0.5*maxSAS;
 			}
 		} else if(epi>=3) {
 			// no exposed surface if there are three or more engulfing contacts 
 			for(planeX=0; planeX<NC; ++planeX) {
 				if(cont[planeX].flag == 'E') {
-					cont[planeX].area = 4.0f*PI*rado*rado/epi;
+					cont[planeX].area = four_pi_rado2/epi;
 				} else {
 					cont[planeX].area = 0.0f;
 				}
@@ -1770,7 +1798,26 @@ atomindex* index_protein(FA_Global* FA,atom* atoms,resid* residue,atomsas* Calc,
 			}
 		}
 	}
-	memset(box,0,dim3*sizeof(atomindex));
+	// ── P1.1: box zeroing via epoch stamp instead of a full per-call memset ──
+	// The old `memset(box,0,dim3*sizeof(atomindex))` cleared BOTH fields of all
+	// dim3 boxes on every Vcontacts call (millions of calls/dock). But of the
+	// two fields only `nument` actually needs pre-zeroing before the counting
+	// loop below: `first` is unconditionally rewritten by the prefix-sum loop,
+	// and `nument` is reset to 0 for ALL boxes by the "clear array for
+	// recounting" loop before the fill loop (so downstream get_contlist4 still
+	// sees nument==0 for empty neighbour boxes — unchanged).
+	//
+	// We therefore zero `nument` lazily: only the ~calc_cnt boxes an atom maps
+	// to are touched (a per-thread epoch stamp marks "zeroed this call"), and
+	// the O(dim3) prefix-sum reads a box's count as 0 unless it was stamped.
+	// This removes the 8*dim3-byte memset in exchange for ~calc_cnt stamp
+	// writes — a win on the typical sparse grid, neutral when dense, and
+	// bit-identical box assignment (no numeric change).
+	static thread_local std::vector<uint32_t> box_stamp;
+	static thread_local uint32_t box_epoch = 0;
+	if((int)box_stamp.size() < dim3){ box_stamp.assign(dim3, 0u); }
+	if(++box_epoch == 0u){ std::fill(box_stamp.begin(), box_stamp.end(), 0u); box_epoch = 1u; }
+	const uint32_t _ep = box_epoch;
 
 	int calc_cnt = i;  // Use actual count of initialized atoms, not total atmcnt
 	if(calc_count_out != NULL){
@@ -1808,6 +1855,9 @@ atomindex* index_protein(FA_Global* FA,atom* atoms,resid* residue,atomsas* Calc,
 		// retained as defence in depth (and mirrors the fill loop below).
 		const int _boxnum = Calc[atmi].boxnum;
 		if (_boxnum >= 0 && _boxnum < dim3) {
+			// Lazy zero: first touch of this box this epoch resets its (stale)
+			// count before we start accumulating into it.
+			if(box_stamp[_boxnum] != _ep){ box[_boxnum].nument = 0; box_stamp[_boxnum] = _ep; }
 			++box[_boxnum].nument;
 		}
 	}
@@ -1816,7 +1866,9 @@ atomindex* index_protein(FA_Global* FA,atom* atoms,resid* residue,atomsas* Calc,
 	startind = 0;
 	for (boxi=0; boxi<dim3; ++boxi) {
 		box[boxi].first = startind;
-		startind += box[boxi].nument;
+		// Unstamped boxes were never touched this epoch, so their `nument` is
+		// stale (no memset) — treat it as 0 for the prefix sum.
+		startind += (box_stamp[boxi] == _ep) ? box[boxi].nument : 0;
 	}
     
 	// clear array (needed for recounting index)
@@ -2031,7 +2083,10 @@ int get_contlist4(atom* atoms,int atomzero, contactlist contlist[],
 		float d2[4];
 		int k = 0;
 		for(; k + 4 <= ncand; k += 4) {
-			simd::distance2_1x4(&cand_x[k], &cand_y[k], &cand_z[k],
+			// atom_soa::distance2_1x4 is ISA-portable (see AtomSoA.h): the
+			// simd:: 4-wide kernel is undefined under AVX2/AVX-512, which is
+			// what blocked this path from building on x86. Same float32 math.
+			atom_soa::distance2_1x4(&cand_x[k], &cand_y[k], &cand_z[k],
 			                    bx, by, bz, d2);
 			for(int l = 0; l < 4; ++l) {
 				if(soa_assert) {
