@@ -137,9 +137,10 @@ P0 is a self-contained, low-risk PR: lift the `FlexAIDdS` LTO/native/NDEBUG flag
 
 ## 8. Implementation status (measured, not estimated)
 
-Phases P0, P1+P2, P3 and P5 were implemented in parallel isolated worktrees and integrated onto
-`claude/flexaid-optimization-docking-t2h83d`. **What follows is actual recorded evidence.**
-Anything not listed as verified is explicitly *not* claimed.
+All six phases (P0, P1+P2, P3, P4, P5) were implemented in parallel isolated worktrees and
+integrated onto `claude/flexaid-optimization-docking-t2h83d`. **What follows is actual recorded
+evidence.** Anything not listed as verified is explicitly *not* claimed — in particular P4's GPU
+code paths, which cannot be compiled in a CPU-only Linux container.
 
 ### Verified in this environment
 
@@ -154,6 +155,11 @@ configuration.
 | Binary sanity | `./FlexAID`, `./flexaid_screen --help` | both run; `FlexAID` is `ELF … stripped` (confirms `-flto -s`) |
 | Full test build | `ninja` (all targets) | **1907 steps, exit 0** |
 | Test suite | `ctest --output-on-failure` | **86/86 passed, 0 failed** (2.41 s) |
+| Re-verify after P4 merge | `ninja FlexAID flexaid_screen` → `ninja` → `ctest` | **exit 0 / exit 0 / 86-86 passed, 0 failed** |
+
+The final row matters: P4 edits `gaboom.cpp`, so the whole engine was rebuilt and re-tested after
+that merge. It confirms only that the **default GPU-off build** is unaffected — it says nothing
+about whether the CUDA/Metal kernels themselves are correct (see below).
 
 Per-phase implementation summary:
 
@@ -177,6 +183,22 @@ Per-phase implementation summary:
   rigid NRGRank pre-filter (`--two-stage`, `--coarse-topN`), emitting `coarse_screen.csv` +
   `stage1_topN.txt`; plus best-CF plateau early-stop in the GA loop, **default off**, opt-in via
   `FLEXAIDDS_ADAPTIVE_GENERATIONS`. Stage-2 GA coupling is left as an unset callback hook.
+- **P4** — CUDA and Metal single-complex batch kernels extended from com/wal/sas to the full CF
+  channel set feeding `get_cf_evalue()`: **con** (covalent-constraint Gaussian), **elec**
+  (distance-dielectric Coulomb), **hbond** (distance-Gaussian × representative angle with
+  donor/acceptor + salt gating), **gist_desolv** (trilinear grid lookup, kernel-side only),
+  **pb_clash + pocket**, and the VCT `exp(-r/r0)` distance weighting on com. Static
+  receptor/emat/vdW/charge/constraint arrays are device-resident via new
+  `cuda_eval_set_extra` / `metal_eval_set_extra`. Contact areas use a **drift-tolerant C0 linear
+  switching model** (`rel_area = 1` for r ≤ rA+rB, ramping to 0 at r = rA+rB+2·Rw) rather than a
+  port of the branchy analytic Voronoi — one pair per thread, no polyhedron clipping. Expected
+  error is a smooth ≈15–20% per-face over/under-estimate that is strongly correlated across
+  poses, so it should largely cancel in pose *ranking*; that cancellation is the admissibility
+  claim and **it is exactly what the Astex-85 A/B must confirm.**
+  - Also fixes a **latent Metal correctness bug**: the kernels reduced with `simd_sum()` (a single
+    32-lane SIMD group) over 256-thread threadgroups, silently discarding 7/8 of all
+    contributions. Replaced with a full threadgroup tree reduction. This is a correctness fix
+    independent of the performance work.
 
 ### NOT verified — required before any performance or accuracy claim
 
@@ -193,9 +215,21 @@ Per-phase implementation summary:
 3. **P3 runtime reproducibility is unretested.** Only syntax/compile was checked. The
    ≈0.2% multi-thread chromosome divergence documented in `OPTIMIZATION_KNOWN_ISSUES.md` is
    *accepted* under the drift policy, not *fixed* — confirm the A/B success rate holds.
-4. **P4 (GPU) is excluded from this integration.** It cannot be compiled here: no CUDA toolkit,
-   and Metal is macOS-only. It must be staged separately and verified with a real CUDA build +
-   GPU run and a macOS Metal build before the GPU path is enabled by default.
+4. **P4's GPU kernels were never compiled or run.** The container has no CUDA toolkit and Metal
+   is macOS-only, so neither backend was built. The merged code is self-reviewed only (struct
+   host/MSL layout parity, kernel↔launch argument order, buffer indices, null guards, barrier
+   uniformity). Before the GPU path is enabled by default it needs: a CUDA build
+   (`-DFLEXAIDS_USE_CUDA=ON`) + real GPU run, a macOS Metal build (`-DFLEXAIDS_USE_METAL=ON`),
+   and the Astex-85 A/B against the CPU backend — which is also what tunes `hbond_angle_repr`
+   (currently 0.7, an unvalidated placeholder). Known remaining gaps, all guarded so the CPU path
+   is unaffected:
+   - The Metal **multi-complex screening** path (`metal_eval_batch_multi`) is still com/wal/sas
+     only; full fidelity needs `GPUContextPool.h` to forward per-complex extra arrays.
+   - **GIST host upload is not wired** — `GISTGrid.h` exposes no grid accessors, so `gist_nx=0`
+     and the term evaluates to 0 (the divergence guard warns when `use_gist` is set).
+   - `metal_coord`, `vct_entropy` and tENCoM `h_rep` are zeroed on the GPU path (guard warns).
+   - The kernels reuse the existing **translation-only gene decode** (first 3 genes); full
+     `buildcc` pose geometry remains a gap that caps angular-term fidelity.
 
 ### Deliberately deferred (flagged, not silently skipped)
 
