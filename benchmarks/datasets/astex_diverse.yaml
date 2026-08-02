@@ -176,3 +176,28 @@ baseline_tolerance: 0.05
 published_baselines:
   docking_power_top1: 0.452
 published_source: "Gaudreault & Najmanovich 2015 JCIM Table 2 (Astex native FLRP, ideal subset, top-1)"
+
+# Second published reference: Morency & Najmanovich, 3Dsig 2017 deck
+# (Morency_LP_3Dsig_2017.pdf, slide 16). DIFFERENT STATISTIC from the 0.452
+# above -- do not compare the two directly, and do not compare either to a
+# top-1 single-run number from this harness.
+#
+# Protocol (slide 14): N=85 self-docking, 10 repeats per case,
+# 2,000,000 energy evaluations per repeat, success = RMSD < 2.0 A among the
+# 10 BEST results, reported as the median over 10,000 bootstrap iterations
+# resampling N cases.
+deck_2017_baselines:
+  protocol: "10 repeats x 2e6 evals; success = RMSD<2.0A in top 10; bootstrap median, 10k iters"
+  success_rate_top10:
+    flexaid: 0.66
+    flexaid_ds: 0.69
+    flexx: 0.78
+    vina: 0.82
+    rdock: 0.88
+deck_2017_source: "Morency & Najmanovich, 3Dsig 2017, slides 14 and 16 (Astex Diverse, N=85)"
+
+# NOTE on expected_baselines.docking_power_top1 (0.70): this value is ABOVE
+# both FlexAID (0.66) and FlexAID_dS (0.69) on the benchmark it names, and it
+# has no cited source. It is a gate threshold, not a published figure. It is
+# left unchanged here deliberately -- changing a gate threshold is a separate
+# decision from recording what the literature actually says.
