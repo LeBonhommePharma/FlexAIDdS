@@ -158,6 +158,15 @@ receipt, so a completed run cannot be told apart from one at different weights.
   `RUN_RECEIPT`). This blocked two separate investigations that had the artifacts in hand.
 - The two harnesses currently capture **disjoint** provenance fields, so cross-path comparison
   has no common provenance even where both wrote something.
+- 🔴 **`_sweep_config.json` records one field that is not a setting.** The tier-1 workflow
+  offers a `tier1_subset_size` dispatch input (default `"5"`) and writes it into the provenance
+  sidecar as `tier1_subset_size_input` (`benchmark-tier1.yml:225`). **Nothing consumes it** —
+  `benchmarks.run` has no subset flag, and the size actually used comes from the dataset YAML
+  (`astex_diverse.yaml:35` → `2`, read at `runner.py:252`). So dispatching a run with `5`
+  docks 2 targets and writes a sidecar claiming 5. The sidecar's own comment says it records
+  "exactly which switches this run used"; this field records a switch that was not used, which
+  is worse than not recording it. Until it is wired or removed, **do not read
+  `tier1_subset_size_input` as provenance** — count the entries in the run log instead.
 - `ops/reference_config.env` pins `FLEXAIDDS_PARALLEL_RESTARTS=0` but **not**
   `FLEXAIDDS_RESTARTS` — a campaign run against it silently takes the compiled-in default of 5,
   not the published Astex 10. Pin it explicitly in any run you intend to publish.
