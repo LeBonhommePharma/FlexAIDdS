@@ -112,4 +112,32 @@ inline float distance2(const AtomArrays& a, int i, const AtomArrays& b, int j) {
     return dx * dx + dy * dy + dz * dz;
 }
 
+// Portable 4-wide squared distance between one point (bx,by,bz) and four
+// atoms stored as SoA float arrays ax[4]/ay[4]/az[4].  Result -> out[4].
+//
+// Why this lives here (P1/P2 scoring track):  the Voronoi hot-path SoA route
+// in get_contlist4() needs a 4-lane squared-distance kernel on *every* target
+// ISA.  simd_distance.h only exposes a 4-wide `distance2_1x4` in its SSE4.2 /
+// NEON / scalar branches — the AVX2 and AVX-512 branches provide 1x8 / 1x16
+// only, so `simd::distance2_1x4` is undefined precisely under -mavx2/-mavx512
+// (the x86 production configs).  That undefined symbol is what kept
+// FLEXAIDS_USE_SOA_DISTANCES from compiling (hence "experimental / OFF").
+// This plain-loop helper is trivially auto-vectorised by the compiler under
+// -O3 and is ISA-portable, so the SoA path builds and can be defaulted ON
+// without touching simd_distance.h (out of the scoring track's file scope).
+//
+// Numerics: identical float32 arithmetic to the scalar SoA tail
+// (dx*dx+dy*dy+dz*dz per lane) — no reassociation beyond what the scalar
+// path already does, so this introduces no drift relative to the existing
+// FLEXAIDS_USE_SOA_DISTANCES float path.
+inline void distance2_1x4(const float* ax, const float* ay, const float* az,
+                          float bx, float by, float bz, float* out) noexcept {
+    for (int k = 0; k < 4; ++k) {
+        const float dx = ax[k] - bx;
+        const float dy = ay[k] - by;
+        const float dz = az[k] - bz;
+        out[k] = dx * dx + dy * dy + dz * dz;
+    }
+}
+
 } // namespace atom_soa

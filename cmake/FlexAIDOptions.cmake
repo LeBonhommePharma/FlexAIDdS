@@ -51,7 +51,7 @@ endif()
 # SIMD
 option(FLEXAIDS_USE_AVX2    "Enable AVX2 SIMD acceleration"       ON)
 option(FLEXAIDS_USE_AVX512  "Enable AVX-512 SIMD acceleration"    OFF)
-option(FLEXAIDS_USE_SOA_DISTANCES "Route Voronoi hot-path distances through AtomSoA float SoA arrays (C1)" OFF)
+option(FLEXAIDS_USE_SOA_DISTANCES "Route Voronoi hot-path distances through AtomSoA float SoA arrays (C1)" ON)
 
 # ─── Native CPU tuning for flexaid_core (perf vs. portability trade-off) ──
 # -mcpu=native (Apple/Clang, arm64) tunes instruction scheduling/selection
