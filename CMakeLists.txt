@@ -234,6 +234,17 @@ else()
 endif()
 flexaids_configure_simd(FlexAID)
 
+# ─── P0 build-level wins: lift the FlexAIDdS LTO/native/NDEBUG block onto FlexAID ─
+# The classic FlexAID target historically shipped with only -O3 -ffast-math (above)
+# while the FlexAIDdS target carried an aggressive LTO + INTERPROCEDURAL_OPTIMIZATION
+# + -march=native/-mcpu=native + -DNDEBUG + strip block. flexaids_apply_fast_optimization
+# lifts that same block onto FlexAID, guarded by BUILD_FLEXAID_FAST (default ON, but
+# force-disabled under coverage/sanitizer builds by the SAME guard used for
+# BUILD_FLEXAIDDS_FAST — see cmake/FlexAIDOptions.cmake). FLEXAID_PGO adds optional
+# profile-generate/profile-use instrumentation. Both are no-ops when disabled.
+flexaids_apply_fast_optimization(FlexAID)
+flexaids_apply_pgo(FlexAID)
+
 # Stage runtime data files next to the FlexAID binary (see note on the
 # FlexAIDdS target): the engine resolves MC_st0r5.2_6.dat / AMINO.def /
 # NUCLEOTIDES.def relative to the executable's own directory.

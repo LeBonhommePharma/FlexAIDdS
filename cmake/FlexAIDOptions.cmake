@@ -88,6 +88,40 @@ if(FLEXAIDS_GRAND_CANONICAL)
 endif()
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Classic FlexAID target: P0 build-level optimization (LTO/native/NDEBUG + PGO)
+# ─────────────────────────────────────────────────────────────────────────────
+# Historically only the FlexAIDdS target carried the aggressive optimization
+# flag block (LTO + INTERPROCEDURAL_OPTIMIZATION + -march=native / -mcpu=native +
+# -DNDEBUG + strip); the classic FlexAID target shipped with only -O3 -ffast-math.
+# BUILD_FLEXAID_FAST mirrors BUILD_FLEXAIDDS_FAST and lifts that same block onto
+# the classic FlexAID target (applied via flexaids_apply_fast_optimization()).
+option(BUILD_FLEXAID_FAST "Apply the FlexAIDdS LTO + native-arch + NDEBUG optimization block to the classic FlexAID target" ON)
+
+# Profile-Guided Optimization for the classic FlexAID target. Values:
+#   off      — no PGO instrumentation (default)
+#   generate — instrumented build (-fprofile-generate); run a representative dock
+#              (e.g. 1G9V, fixed FLEXAID_SEED) to emit profile data, then
+#              reconfigure with -DFLEXAID_PGO=use and rebuild.
+#   use      — optimized build consuming the profile
+#              (-fprofile-use [-fprofile-correction on GCC])
+set(FLEXAID_PGO "off" CACHE STRING "FlexAID Profile-Guided Optimization mode: off | generate | use")
+set_property(CACHE FLEXAID_PGO PROPERTY STRINGS off generate use)
+
+# LTO/native codegen is incompatible with gcov coverage and with ASan/TSan/UBSan
+# instrumented builds. Reuse the SAME incompatibility guard the
+# BUILD_FLEXAIDDS_FAST block uses (see root CMakeLists.txt) so an instrumented
+# build silently drops the fast flags instead of failing to link.
+if(FLEXAIDS_ENABLE_COVERAGE
+   OR CMAKE_CXX_FLAGS MATCHES "-fsanitize"
+   OR CMAKE_C_FLAGS MATCHES "-fsanitize"
+   OR CMAKE_EXE_LINKER_FLAGS MATCHES "-fsanitize")
+    if(BUILD_FLEXAID_FAST)
+        message(STATUS "Disabling BUILD_FLEXAID_FAST (incompatible with coverage/sanitizer flags)")
+    endif()
+    set(BUILD_FLEXAID_FAST OFF CACHE BOOL "Apply the FlexAIDdS LTO + native-arch + NDEBUG optimization block to the classic FlexAID target" FORCE)
+endif()
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Platform / architecture detection
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -180,6 +214,81 @@ function(flexaids_configure_simd target_name)
     if(FLEXAIDS_USE_SOA_DISTANCES)
         target_compile_definitions(${target_name} PRIVATE FLEXAIDS_USE_SOA_DISTANCES)
         message(STATUS "${target_name}: SoA distance routing enabled (FLEXAIDS_USE_SOA_DISTANCES)")
+    endif()
+endfunction()
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Helper: lift the FlexAIDdS optimization flag block onto an arbitrary target
+# ─────────────────────────────────────────────────────────────────────────────
+# Mirrors the flag block applied to the FlexAIDdS target in root CMakeLists.txt
+# (the BUILD_FLEXAIDDS_FAST branch): -flto + INTERPROCEDURAL_OPTIMIZATION +
+# -march=native / -mcpu=native + -DNDEBUG + link-time strip (-s), or /GL /LTCG on
+# MSVC. It ADDS to (does not replace) the target's existing -O3 -ffast-math flags.
+#
+# No-op unless BUILD_FLEXAID_FAST is ON (the coverage/sanitizer guard above
+# force-disables that option so instrumented builds stay linkable).
+#
+# LTO/OBJECT-library caveat (see root CMakeLists.txt notes): flexaid_core is
+# compiled WITHOUT IPO so that non-LTO consumers (tests) can still link its .o
+# files. We enable IPO only on the leaf executable and add -flto to its own
+# compile/link, exactly as the proven FlexAIDdS target does — mixed LTO/non-LTO
+# object linking is handled by the compiler driver.
+function(flexaids_apply_fast_optimization target_name)
+    if(NOT BUILD_FLEXAID_FAST)
+        return()
+    endif()
+    if(MSVC)
+        target_compile_options(${target_name} PRIVATE /GL /DNDEBUG)
+        target_link_options(${target_name} PRIVATE /LTCG)
+    else()
+        target_compile_options(${target_name} PRIVATE -flto -DNDEBUG
+            $<$<AND:$<CXX_COMPILER_ID:AppleClang,Clang>,$<STREQUAL:${CMAKE_SYSTEM_PROCESSOR},arm64>>:-mcpu=native>
+        )
+        if(NOT APPLE)
+            target_compile_options(${target_name} PRIVATE -march=native)
+            target_link_options(${target_name} PRIVATE -flto -s)
+        else()
+            target_link_options(${target_name} PRIVATE -flto)
+        endif()
+    endif()
+
+    include(CheckIPOSupported)
+    check_ipo_supported(RESULT _flexaid_ipo_ok OUTPUT _flexaid_ipo_err)
+    if(_flexaid_ipo_ok)
+        set_property(TARGET ${target_name} PROPERTY INTERPROCEDURAL_OPTIMIZATION ON)
+    else()
+        message(WARNING "IPO not supported for ${target_name}: ${_flexaid_ipo_err}")
+    endif()
+    message(STATUS "${target_name}: fast-optimization block enabled (LTO/IPO + native + NDEBUG)")
+endfunction()
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Helper: apply Profile-Guided Optimization flags (FLEXAID_PGO) to a target
+# ─────────────────────────────────────────────────────────────────────────────
+# generate → -fprofile-generate ; use → -fprofile-use (+ -fprofile-correction on
+# GCC). -fprofile-correction is GCC-only (tolerates inconsistent counters from a
+# multi-threaded instrumented run); it is gated to GNU so Clang does not error.
+function(flexaids_apply_pgo target_name)
+    if(FLEXAID_PGO STREQUAL "off")
+        return()
+    endif()
+    if(MSVC)
+        message(WARNING "FLEXAID_PGO=${FLEXAID_PGO} is not wired for MSVC (use /GENPROFILE|/USEPROFILE manually); ignoring")
+        return()
+    endif()
+    if(FLEXAID_PGO STREQUAL "generate")
+        target_compile_options(${target_name} PRIVATE -fprofile-generate)
+        target_link_options(${target_name} PRIVATE -fprofile-generate)
+        message(STATUS "${target_name}: PGO instrumentation build (-fprofile-generate) — "
+                       "run a representative dock, then reconfigure with -DFLEXAID_PGO=use")
+    elseif(FLEXAID_PGO STREQUAL "use")
+        target_compile_options(${target_name} PRIVATE
+            -fprofile-use $<$<CXX_COMPILER_ID:GNU>:-fprofile-correction>)
+        target_link_options(${target_name} PRIVATE
+            -fprofile-use $<$<CXX_COMPILER_ID:GNU>:-fprofile-correction>)
+        message(STATUS "${target_name}: PGO optimized build (-fprofile-use)")
+    else()
+        message(FATAL_ERROR "FLEXAID_PGO must be one of: off | generate | use (got '${FLEXAID_PGO}')")
     endif()
 endfunction()
 
