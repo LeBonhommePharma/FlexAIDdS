@@ -14,6 +14,12 @@ Input formats (auto-detected):
 **Fail-closed:** arm-dir result.csv without mode_rmsd_* (or equivalent rank
 columns) is rejected. Do **not** silently treat rmsd_top1 / rmsd_bcr as S_top10.
 
+**Also fail-closed:** a case that never executed (``n_poses`` /
+``restarts_finished`` present and zero, with no mode RMSDs) is a FAILED RUN,
+not a miss. Scoring it as a miss fabricates a success rate — an arm that never
+started would otherwise report a clean ``0.0000`` indistinguishable from a zero
+the engine earned. Pass ``--allow-unrun-cases`` to drop them from N instead.
+
 Usage:
   python3 scripts/bootstrap_3dsig_s_top10.py --cases cases.json --bootstraps 10000
   python3 scripts/bootstrap_3dsig_s_top10.py --arm-dir path/to/3dsig_r10
@@ -50,6 +56,45 @@ MODE_RMSD_KEYS = (
 
 class MissingModeRmsdError(ValueError):
     """Raised when result.csv lacks mode_rmsd_* (fail-closed for S_top10)."""
+
+
+class UnrunCaseError(ValueError):
+    """Raised when a case never executed (fail-closed for S_top10).
+
+    A row with no poses and no finished restarts is a FAILED RUN, not a miss.
+    Counting it as a miss silently deflates the success rate — a zero from an
+    arm that never started is indistinguishable from a zero the engine earned.
+    """
+
+
+# Columns that witness whether the run actually executed. Absent columns are
+# not evidence of anything, so an unrun verdict requires a present zero.
+_EXECUTION_WITNESS_KEYS = ("n_poses", "restarts_finished")
+
+
+def row_never_ran(row: dict, rmsds: Sequence[Optional[float]]) -> bool:
+    """True when the row has no usable RMSD and a witness proves it never ran.
+
+    Requires BOTH: every mode slot empty, and at least one execution witness
+    column present and equal to zero. A row whose modes are merely empty is
+    left alone — only a positive witness of non-execution disqualifies it.
+    """
+    if any(r is not None for r in rmsds):
+        return False
+    keys_lower = {k.lower(): k for k in row}
+    for key in _EXECUTION_WITNESS_KEYS:
+        col = keys_lower.get(key)
+        if col is None:
+            continue
+        raw = (row.get(col) or "").strip()
+        if not raw:
+            continue
+        try:
+            if float(raw) == 0.0:
+                return True
+        except ValueError:
+            continue
+    return False
 
 
 def _finite_rmsd(value: object) -> Optional[float]:
@@ -168,14 +213,24 @@ def load_rank_table(path: Path) -> Dict[str, List[Optional[float]]]:
 
 
 def load_arm_dir(
-    arm_dir: Path, *, strict: bool = True
+    arm_dir: Path,
+    *,
+    strict: bool = True,
+    allow_unrun: bool = False,
 ) -> Dict[str, List[Optional[float]]]:
     """Scan result.csv under arm_dir for mode_rmsd_0..9.
 
     Fail-closed when *strict* (default): missing mode columns → error, not
     silent rmsd_top1 / rmsd_bcr substitution.
+
+    Also fail-closed on cases that never executed (``n_poses``/
+    ``restarts_finished`` present and zero, all mode slots empty). Pass
+    *allow_unrun* to drop them with a warning instead — they are never
+    scored as misses either way.
     """
     out: Dict[str, List[Optional[float]]] = {}
+    unrun: List[str] = []
+    unrun_detail: List[str] = []
     csv_paths = sorted(arm_dir.rglob("result.csv"))
     if not csv_paths:
         raise FileNotFoundError(f"no result.csv under {arm_dir}")
@@ -199,8 +254,28 @@ def load_arm_dir(
         except MissingModeRmsdError as e:
             errors.append(f"{csv_path}: {e}")
             continue
+        if row_never_ran(row, rmsds):
+            # NOT a miss: the run never executed. Never score it as failure.
+            unrun.append(pdb)
+            unrun_detail.append(f"{pdb} ({csv_path})")
+            continue
         # Keep case even if all mode slots empty (counts as S_top10 fail)
         out[pdb] = rmsds
+
+    if unrun and not allow_unrun:
+        raise UnrunCaseError(
+            f"S_top10 fail-closed: {len(unrun)} case(s) never executed "
+            "(n_poses/restarts_finished = 0 with no mode RMSDs). Scoring them "
+            "as misses would fabricate a success rate. Re-run those targets, "
+            "or pass --allow-unrun-cases to exclude them from N. "
+            f"First: {unrun_detail[0]}"
+        )
+    if unrun:
+        print(
+            f"warning: excluded {len(unrun)} never-executed case(s) from N: "
+            + ", ".join(sorted(unrun)),
+            file=sys.stderr,
+        )
 
     if errors and strict:
         msg = (
@@ -308,6 +383,14 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         action="store_true",
         help="Do not fail when mode_rmsd_* missing (still never uses BCR as S_top10)",
     )
+    ap.add_argument(
+        "--allow-unrun-cases",
+        action="store_true",
+        help=(
+            "Exclude never-executed cases (n_poses/restarts_finished = 0) from N "
+            "with a warning, instead of failing. They are never scored as misses."
+        ),
+    )
     ap.add_argument("--json-out", type=Path, default=None)
     args = ap.parse_args(argv)
 
@@ -318,9 +401,17 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             cases = load_rank_table(args.rank_table)
         else:
             cases = load_arm_dir(
-                args.arm_dir, strict=not args.allow_missing_modes
+                args.arm_dir,
+                strict=not args.allow_missing_modes,
+                allow_unrun=args.allow_unrun_cases,
             )
-    except (MissingModeRmsdError, FileNotFoundError, OSError, json.JSONDecodeError) as e:
+    except (
+        MissingModeRmsdError,
+        UnrunCaseError,
+        FileNotFoundError,
+        OSError,
+        json.JSONDecodeError,
+    ) as e:
         print(f"error: {e}", file=sys.stderr)
         return 2
 
