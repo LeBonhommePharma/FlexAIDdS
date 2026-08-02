@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import io as _io
 import json
+import logging
 import math
 import os
 import re
@@ -126,6 +127,9 @@ def _element_from_atom_name(name_field: str) -> str:
         rest = stripped.lstrip("0123456789")
         return rest[:1] if rest else ""
     return stripped[:1]
+
+
+logger = logging.getLogger(__name__)
 
 
 def extract_ligand_atoms_from_pdb(
@@ -1096,8 +1100,21 @@ def run_flexaidds(
                         best_rmsd = r
         if best_rmsd < float("inf"):
             rmsd_val = best_rmsd
-    except (ValueError, FileNotFoundError, OSError):
-        pass
+    except (FileNotFoundError, OSError) as exc:
+        logger.warning(
+            "%s: reference pose unreadable (%s).  No RMSD reported.",
+            system.system_id, exc,
+        )
+    except ValueError as exc:
+        # #366 refuses a multi-residue reference rather than unioning it.  That
+        # refusal is deliberate and must not arrive as a silent None: without
+        # this line the MethodResult simply carries no RMSD, which reads as
+        # "the method did not produce one" rather than "the reference file is
+        # ambiguous and we declined to guess."
+        logger.warning(
+            "%s: RMSD refused -- %s  This is a REFERENCE FILE problem, not a "
+            "docking result.", system.system_id, exc,
+        )
 
     return MethodResult(
         method="flexaidds",
@@ -1155,8 +1172,21 @@ def run_boltz2(
                 continue
         if best_rmsd < float("inf"):
             rmsd_val = best_rmsd
-    except (ValueError, FileNotFoundError, OSError):
-        pass
+    except (FileNotFoundError, OSError) as exc:
+        logger.warning(
+            "%s: reference pose unreadable (%s).  No RMSD reported.",
+            system.system_id, exc,
+        )
+    except ValueError as exc:
+        # #366 refuses a multi-residue reference rather than unioning it.  That
+        # refusal is deliberate and must not arrive as a silent None: without
+        # this line the MethodResult simply carries no RMSD, which reads as
+        # "the method did not produce one" rather than "the reference file is
+        # ambiguous and we declined to guess."
+        logger.warning(
+            "%s: RMSD refused -- %s  This is a REFERENCE FILE problem, not a "
+            "docking result.", system.system_id, exc,
+        )
 
     # Extract affinity
     predicted_dg = None
