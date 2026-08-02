@@ -67,9 +67,45 @@ class UnrunCaseError(ValueError):
     """
 
 
+class BudgetWitnessError(ValueError):
+    """Raised when a case cannot be shown to have spent its search budget.
+
+    S_top10 is defined by the 2017 deck as a rate at a FIXED search effort
+    (2e6 energy evaluations per simulation). A case that spent a fraction of
+    that effort is not the method scoring zero — it is a different method.
+    Averaging it into the rate silently redefines the statistic.
+    """
+
+
 # Columns that witness whether the run actually executed. Absent columns are
 # not evidence of anything, so an unrun verdict requires a present zero.
 _EXECUTION_WITNESS_KEYS = ("n_poses", "restarts_finished")
+
+# Fraction of the intended budget a case must witness to be scored.
+DEFAULT_MIN_BUDGET_FRACTION = 0.9
+
+
+def budget_shortfall(row: dict, intended_evals: float) -> Optional[float]:
+    """Return the witnessed evals/intended ratio, or None if unwitnessed.
+
+    ``evals_actual`` is the only column that witnesses spend.
+    ``protocol_claim_eligible`` asserts compliance without establishing it and
+    is deliberately NOT consulted here.
+    """
+    keys_lower = {k.lower(): k for k in row}
+    col = keys_lower.get("evals_actual")
+    if col is None:
+        return None
+    raw = (row.get(col) or "").strip()
+    if not raw:
+        return None
+    try:
+        evals = float(raw)
+    except ValueError:
+        return None
+    if not math.isfinite(evals) or evals < 0.0 or intended_evals <= 0.0:
+        return None
+    return evals / intended_evals
 
 
 def row_never_ran(row: dict, rmsds: Sequence[Optional[float]]) -> bool:
@@ -217,6 +253,8 @@ def load_arm_dir(
     *,
     strict: bool = True,
     allow_unrun: bool = False,
+    intended_evals: Optional[float] = None,
+    min_budget_fraction: float = DEFAULT_MIN_BUDGET_FRACTION,
 ) -> Dict[str, List[Optional[float]]]:
     """Scan result.csv under arm_dir for mode_rmsd_0..9.
 
@@ -231,6 +269,7 @@ def load_arm_dir(
     out: Dict[str, List[Optional[float]]] = {}
     unrun: List[str] = []
     unrun_detail: List[str] = []
+    short: List[str] = []
     csv_paths = sorted(arm_dir.rglob("result.csv"))
     if not csv_paths:
         raise FileNotFoundError(f"no result.csv under {arm_dir}")
@@ -259,6 +298,14 @@ def load_arm_dir(
             unrun.append(pdb)
             unrun_detail.append(f"{pdb} ({csv_path})")
             continue
+        if intended_evals is not None:
+            frac = budget_shortfall(row, intended_evals)
+            if frac is None:
+                short.append(f"{pdb} (evals_actual unwitnessed)")
+                continue
+            if frac < min_budget_fraction:
+                short.append(f"{pdb} ({frac:.1%} of intended)")
+                continue
         # Keep case even if all mode slots empty (counts as S_top10 fail)
         out[pdb] = rmsds
 
@@ -275,6 +322,16 @@ def load_arm_dir(
             f"warning: excluded {len(unrun)} never-executed case(s) from N: "
             + ", ".join(sorted(unrun)),
             file=sys.stderr,
+        )
+
+    if short:
+        raise BudgetWitnessError(
+            f"S_top10 fail-closed: {len(short)} case(s) cannot be shown to have "
+            f"spent >= {min_budget_fraction:.0%} of the intended "
+            f"{intended_evals:,.0f} evaluations. S_top10 is a rate at a FIXED "
+            "search effort; scoring a truncated case redefines the statistic. "
+            "Re-run them, or drop --intended-evals to score without the check. "
+            f"First: {short[0]}"
         )
 
     if errors and strict:
@@ -391,6 +448,25 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             "with a warning, instead of failing. They are never scored as misses."
         ),
     )
+    ap.add_argument(
+        "--intended-evals",
+        type=float,
+        default=None,
+        help=(
+            "Intended energy evaluations per case (deck protocol: 2000000). "
+            "When set, a case must witness >= --min-budget-fraction of it via "
+            "evals_actual or scoring fails closed. Off by default."
+        ),
+    )
+    ap.add_argument(
+        "--min-budget-fraction",
+        type=float,
+        default=DEFAULT_MIN_BUDGET_FRACTION,
+        help=(
+            "Fraction of --intended-evals a case must witness "
+            f"(default {DEFAULT_MIN_BUDGET_FRACTION})"
+        ),
+    )
     ap.add_argument("--json-out", type=Path, default=None)
     args = ap.parse_args(argv)
 
@@ -404,10 +480,13 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 args.arm_dir,
                 strict=not args.allow_missing_modes,
                 allow_unrun=args.allow_unrun_cases,
+                intended_evals=args.intended_evals,
+                min_budget_fraction=args.min_budget_fraction,
             )
     except (
         MissingModeRmsdError,
         UnrunCaseError,
+        BudgetWitnessError,
         FileNotFoundError,
         OSError,
         json.JSONDecodeError,

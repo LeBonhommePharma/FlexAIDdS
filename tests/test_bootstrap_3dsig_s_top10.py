@@ -219,6 +219,103 @@ def test_cli_arm_dir_fail_closed_on_unrun(tmp_path: Path):
     assert "0.0000" not in proc.stdout
 
 
+def _write_case_with_budget(
+    arm: Path, pdb: str, rmsds, *, evals_actual: str
+) -> None:
+    d = arm / pdb
+    d.mkdir(parents=True)
+    fields = (
+        ["pdb_id"]
+        + [f"mode_rmsd_{i}" for i in range(10)]
+        + ["n_poses", "restarts_finished", "evals_actual", "protocol_claim_eligible"]
+    )
+    row = {
+        "pdb_id": pdb,
+        "n_poses": "500",
+        "restarts_finished": "10",
+        "evals_actual": evals_actual,
+        # Deliberately asserts compliance; the guard must NOT trust it.
+        "protocol_claim_eligible": "1",
+    }
+    for i, v in enumerate(rmsds):
+        row[f"mode_rmsd_{i}"] = "" if v is None else f"{v:.4f}"
+    with (d / "result.csv").open("w", newline="") as f:
+        w = csv.DictWriter(f, fieldnames=fields)
+        w.writeheader()
+        w.writerow(row)
+
+
+def test_budget_guard_off_by_default(tmp_path: Path):
+    """No --intended-evals → unchanged behaviour, empty evals_actual scores."""
+    mod = _load("bootstrap_3dsig_s_top10", BOOT)
+    arm = tmp_path / "arm"
+    _write_case_with_budget(arm, "1ABC", [5.0] * 10, evals_actual="")
+    cases = mod.load_arm_dir(arm, strict=True)
+    assert set(cases) == {"1ABC"}
+
+
+def test_budget_guard_refuses_unwitnessed_spend(tmp_path: Path):
+    """evals_actual empty is not evidence of compliance, whatever the flag says."""
+    mod = _load("bootstrap_3dsig_s_top10", BOOT)
+    arm = tmp_path / "arm"
+    _write_case_with_budget(arm, "1ABC", [5.0] * 10, evals_actual="")
+    with pytest.raises(mod.BudgetWitnessError):
+        mod.load_arm_dir(arm, strict=True, intended_evals=2_000_000)
+
+
+def test_budget_guard_refuses_truncated_run(tmp_path: Path):
+    """The 8.25%-of-budget case measured on arm A must not be scored."""
+    mod = _load("bootstrap_3dsig_s_top10", BOOT)
+    arm = tmp_path / "arm"
+    _write_case_with_budget(arm, "1ABC", [5.0] * 10, evals_actual="165000")
+    with pytest.raises(mod.BudgetWitnessError) as exc:
+        mod.load_arm_dir(arm, strict=True, intended_evals=2_000_000)
+    assert "8.2%" in str(exc.value)
+
+
+def test_budget_guard_accepts_full_spend(tmp_path: Path):
+    mod = _load("bootstrap_3dsig_s_top10", BOOT)
+    arm = tmp_path / "arm"
+    _write_case_with_budget(arm, "1ABC", [1.5] + [9.0] * 9, evals_actual="2000000")
+    cases = mod.load_arm_dir(arm, strict=True, intended_evals=2_000_000)
+    assert mod.s_top10(cases["1ABC"]) is True
+
+
+def test_budget_fraction_is_tunable(tmp_path: Path):
+    """The 90% line is a knob, not a constant baked into the metric."""
+    mod = _load("bootstrap_3dsig_s_top10", BOOT)
+    arm = tmp_path / "arm"
+    _write_case_with_budget(arm, "1ABC", [5.0] * 10, evals_actual="1000000")
+    with pytest.raises(mod.BudgetWitnessError):
+        mod.load_arm_dir(arm, strict=True, intended_evals=2_000_000)
+    cases = mod.load_arm_dir(
+        arm, strict=True, intended_evals=2_000_000, min_budget_fraction=0.5
+    )
+    assert set(cases) == {"1ABC"}
+
+
+def test_cli_budget_guard_fail_closed(tmp_path: Path):
+    arm = tmp_path / "arm"
+    _write_case_with_budget(arm, "1ABC", [5.0] * 10, evals_actual="165000")
+    proc = subprocess.run(
+        [
+            sys.executable,
+            str(BOOT),
+            "--arm-dir",
+            str(arm),
+            "--bootstraps",
+            "10",
+            "--intended-evals",
+            "2000000",
+        ],
+        capture_output=True,
+        text=True,
+    )
+    assert proc.returncode == 2
+    assert "FIXED search effort" in proc.stderr
+    assert "0.0000" not in proc.stdout
+
+
 def test_bootstrap_median_deterministic():
     mod = _load("bootstrap_3dsig_s_top10", BOOT)
     # 2/4 success → point 0.5
