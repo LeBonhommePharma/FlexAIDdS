@@ -132,3 +132,80 @@ Since drift is allowed globally, the cleanest packaging is to **optimize the `Fl
 ## 7. First concrete step
 
 P0 is a self-contained, low-risk PR: lift the `FlexAIDdS` LTO/native/NDEBUG flag block onto the `FlexAID` target, add the PGO CMake option, and stand up the Astex-85 speedup+parity harness as the CI gate that all later phases report against.
+
+---
+
+## 8. Implementation status (measured, not estimated)
+
+Phases P0, P1+P2, P3 and P5 were implemented in parallel isolated worktrees and integrated onto
+`claude/flexaid-optimization-docking-t2h83d`. **What follows is actual recorded evidence.**
+Anything not listed as verified is explicitly *not* claimed.
+
+### Verified in this environment
+
+Toolchain note: the container ships GCC 13.3 (below the repo's C++26 gate — `-std=c++26` is
+rejected outright), so the authoritative build used **Clang 18.1.3** with the `linux-clang`
+configuration.
+
+| Check | Command | Result |
+|---|---|---|
+| Integrated configure | `cmake -G Ninja -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON -DBUILD_FLEXAID_FAST=ON` (CC/CXX=clang) | success; log confirms `SoA distance routing enabled` |
+| Engine + screener build | `ninja FlexAID flexaid_screen` | **309/309 steps, 0 errors** |
+| Binary sanity | `./FlexAID`, `./flexaid_screen --help` | both run; `FlexAID` is `ELF … stripped` (confirms `-flto -s`) |
+| Full test build | `ninja` (all targets) | **1907 steps, exit 0** |
+| Test suite | `ctest --output-on-failure` | **86/86 passed, 0 failed** (2.41 s) |
+
+Per-phase implementation summary:
+
+- **P0** — `BUILD_FLEXAID_FAST` (default ON) applies LTO/IPO + `-march=native` + `-DNDEBUG` +
+  `-flto -s` to the classic `FlexAID` target, reusing the existing sanitizer/coverage guard
+  (verified to force-disable under `FLEXAIDS_ENABLE_COVERAGE`). Adds `FLEXAID_PGO`
+  (off/generate/use) and `scripts/bench_flexaid_fast.sh`. IPO is applied to the leaf executable
+  only; `flexaid_core` stays non-LTO so tests still link its objects.
+- **P1+P2** — per-call box `memset` replaced by a per-thread **epoch stamp**; sphere-area
+  invariants hoisted out of the `calc_areas` face loop (both **bit-identical by construction**);
+  `calc_areas` triangle math moved to `float` with the four independent roots packed for a
+  4-wide `sqrt`. The SoA distance path was found to be disabled because it called
+  `simd::distance2_1x4`, **which does not exist in the AVX2/AVX-512 branches** of
+  `simd_distance.h` — a latent hard compile break on x86 production configs. Fixed with an
+  ISA-portable `atom_soa::distance2_1x4`, and `FLEXAIDS_USE_SOA_DISTANCES` flipped to default ON.
+- **P3** — `FLEXAIDDS_PARALLEL_REPRODUCE` default-ON with the stale-status fix applied to both
+  deferred branches; the per-generation full workspace clone replaced by a shape-keyed resident
+  cache (O(generations × threads × natoms) copy → one-time O(threads × natoms)); new
+  `FLEXAID_DETERMINISTIC` macro/env pins single-thread serial-equivalent evaluation for CI A/B.
+- **P5** — new `flexaid_screen` CLI driving the existing `TwoStageScreener`/`CoarseScreener` as a
+  rigid NRGRank pre-filter (`--two-stage`, `--coarse-topN`), emitting `coarse_screen.csv` +
+  `stage1_topN.txt`; plus best-CF plateau early-stop in the GA loop, **default off**, opt-in via
+  `FLEXAIDDS_ADAPTIVE_GENERATIONS`. Stage-2 GA coupling is left as an unset callback hook.
+
+### NOT verified — required before any performance or accuracy claim
+
+1. **No speedup number exists.** No dock was run in this environment: the repo ships no runnable
+   receptor+cognate-ligand pair and RCSB fetches are proxy-blocked (HTTP 403). Every figure in
+   §6 remains an unmeasured hypothesis. Run `scripts/bench_flexaid_fast.sh` (or the Tier-1
+   benchmark workflow) on a host with real inputs to replace them.
+2. **No Astex-85 parity run.** This is the gate that matters most, because two P1+P2 changes are
+   genuinely **ranking-affecting**: (a) `FLEXAIDS_USE_SOA_DISTANCES=ON` computes squared
+   distances in float32 versus the double reference, perturbing `contlist.dist`, the near/clash
+   cutoffs, and therefore Voronoi topology; (b) the float `calc_areas` math perturbs contact
+   areas. The in-repo `FLEXAIDS_SOA_ASSERT=1` harness validates (a) against the double reference
+   on a real binary and should be run first.
+3. **P3 runtime reproducibility is unretested.** Only syntax/compile was checked. The
+   ≈0.2% multi-thread chromosome divergence documented in `OPTIMIZATION_KNOWN_ISSUES.md` is
+   *accepted* under the drift policy, not *fixed* — confirm the A/B success rate holds.
+4. **P4 (GPU) is excluded from this integration.** It cannot be compiled here: no CUDA toolkit,
+   and Metal is macOS-only. It must be staged separately and verified with a real CUDA build +
+   GPU run and a macOS Metal build before the GPU path is enabled by default.
+
+### Deliberately deferred (flagged, not silently skipped)
+
+- **P2.2 — flattening the `ca_rec` linked list** into a per-atom SoA array (`vcfunction.cpp:392`).
+  The accumulation loop carries ~10 branches (constraints, bonded-skip, contact epoch, hbond,
+  elec, metal), so SIMD payoff is marginal while the layout change to `save_areas` + `vcfunction`
+  is high correctness risk and cannot be validated by compile-check alone. Left for a
+  runtime-verified pass.
+- **Full struct-level `double`→`float` of the Voronoi hull** (`plane.Ai` / `vertex.xi` plus ~15
+  helper signatures in `Vcontacts.h`) — deferred in favour of converting the hot transcendental
+  math only.
+- **Aggressive `rsqrt`+Newton / polynomial-`atan`** variants (versus the `std::sqrt`/`std::atan`
+  float used) — an additional speedup gated behind the same parity table.
