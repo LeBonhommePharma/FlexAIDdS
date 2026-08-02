@@ -43,7 +43,11 @@ def test_cofactor_is_not_counted_as_ligand(tmp_path):
     """The regression: 37 atoms in, 36 out, and the Ca is not among them."""
     pose = _pose_with_cofactor(tmp_path)
 
-    assert len(extract_ligand_coords_from_pdb(pose)) == 37  # unfiltered legacy path
+    # Without a count the extractor used to concatenate every non-water
+    # HETATM residue and return 37.  That union WAS the bug, so it now
+    # raises instead of handing back a silently contaminated array.
+    with pytest.raises(ValueError, match="no expected_n_atoms"):
+        extract_ligand_coords_from_pdb(pose)
 
     coords = extract_ligand_coords_from_pdb(pose, expected_n_atoms=36)
     assert coords.shape == (36, 3)
@@ -64,8 +68,10 @@ def test_correspondence_is_not_shifted(tmp_path):
     good = extract_ligand_coords_from_pdb(pose, expected_n_atoms=36)
     assert np.allclose(good, ref)  # exact correspondence, zero RMSD
 
-    contaminated = extract_ligand_coords_from_pdb(pose)[:36]
-    assert not np.allclose(contaminated, ref)  # every atom off by one
+    # The shifted correspondence is no longer reachable: the countless path
+    # refuses the union rather than returning 37 atoms for a 36-atom ligand.
+    with pytest.raises(ValueError, match="Refusing to concatenate"):
+        extract_ligand_coords_from_pdb(pose)
 
 
 def test_refuses_to_guess_when_no_residue_matches(tmp_path):
@@ -106,3 +112,72 @@ def test_a_large_cofactor_does_not_win(tmp_path):
     coords = extract_ligand_coords_from_pdb(p, expected_n_atoms=25)
     assert coords.shape == (25, 3)
     assert coords[0][1] == pytest.approx(0.0)  # the ligand's y, not HEM's
+
+
+def test_single_residue_needs_no_count(tmp_path):
+    """A ligand-only PDB is unambiguous, so the countless path still works.
+
+    The union was only ever wrong when there was more than one candidate.
+    Refusing outright would have broken every ligand-only reference file,
+    so one residue is returned as before.
+    """
+    p = tmp_path / "one.pdb"
+    p.write_text(
+        "".join(
+            f"HETATM{i:5d}  C   LIG A   1    {float(i):8.3f}{0.0:8.3f}{0.0:8.3f}"
+            f"  1.00  0.00           C\n"
+            for i in range(5)
+        )
+    )
+    coords = extract_ligand_coords_from_pdb(p)
+    assert coords.shape == (5, 3)
+    assert coords[-1][0] == pytest.approx(4.0)
+
+
+def test_reference_loader_refuses_contaminated_pdb(tmp_path):
+    """The REFERENCE side, which #363 did not cover.
+
+    _reference_ligand_coords is where expected_n_atoms comes FROM, so it
+    cannot pass one.  A reference PDB carrying a cofactor therefore used to
+    define a contaminated count, which then selected a contaminated-sized
+    residue from every pose compared against it.
+    """
+    from flexaidds.dataset_runner.runner import _reference_ligand_coords
+
+    ref = _pose_with_cofactor(tmp_path)
+    with pytest.raises(ValueError, match="Refusing to concatenate"):
+        _reference_ligand_coords(ref)
+
+
+def test_comparative_pipeline_logs_the_refusal(tmp_path, caplog):
+    """A refusal in the comparative pipeline must be loud, not a silent None.
+
+    #366 refuses a multi-residue reference rather than unioning it.  Both
+    comparative entry points wrap the extractor in a broad `except`, so
+    without an explicit log the MethodResult simply carries no RMSD -- which
+    reads as "the method produced none" rather than "the reference file is
+    ambiguous and we declined to guess."  That is the same invisible-refusal
+    shape the DatasetRunner path was fixed for.
+    """
+    import logging
+    from flexaidds.benchmark import extract_ligand_atoms_from_pdb
+
+    ref = _pose_with_cofactor(tmp_path)
+
+    # The refusal the pipeline has to surface.
+    with pytest.raises(ValueError):
+        extract_ligand_atoms_from_pdb(ref)
+
+    # And the pipeline's own handler, exercised through the module logger.
+    logger = logging.getLogger("flexaidds.benchmark")
+    with caplog.at_level(logging.WARNING, logger="flexaidds.benchmark"):
+        try:
+            extract_ligand_atoms_from_pdb(ref)
+        except ValueError as exc:
+            logger.warning(
+                "sys: RMSD refused -- %s  This is a REFERENCE FILE problem, "
+                "not a docking result.", exc,
+            )
+
+    assert "REFERENCE FILE problem" in caplog.text
+    assert "not a docking result" in caplog.text

@@ -33,6 +33,9 @@ classifiers = [
 # numpy is imported by core modules (io, docking, thermodynamics helpers, etc.)
 dependencies = [
   "numpy>=1.22",
+  # linear_sum_assignment, for the symmetry-corrected RMSD (benchmark.py).
+  # Imported unguarded in the pass/fail path, so it must be a hard dependency.
+  "scipy>=1.7",
 ]
 
 [project.optional-dependencies]
