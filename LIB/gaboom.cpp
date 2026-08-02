@@ -640,8 +640,26 @@ int GA(FA_Global* FA, GB_Global* GB,VC_Global* VC,chromosome** chrom,chromosome*
 	////// Genetic Algorithm ///////
 	////////////////////////////////
 
-	// FLEXAIDDS_NO_SEC=1 (or FLEXAIDDS_BENCHMARK=1) disables early-exit paths
-	// (stagnation + entropy/SEC) so the *full* generation budget is always used.
+	// FLEXAIDDS_NO_SEC (presence) disables early-exit paths (stagnation +
+	// entropy/SEC) so the *full* generation budget is always used.
+	//
+	// FLEXAIDDS_BENCHMARK is NOT equivalent. The two env vars set two distinct
+	// fields (ProtocolConfig.cpp: cfg.no_sec / cfg.benchmark_mode):
+	//
+	//   FLEXAIDDS_NO_SEC     -> disables BOTH entropy/SEC exits AND stagnation
+	//   FLEXAIDDS_BENCHMARK  -> disables the STAGNATION plateau exit only
+	//                           (`benchmark_full`, below); the entropy/SEC
+	//                           guards test `no_sec` alone and ignore it
+	//
+	// This comment previously read "(or FLEXAIDDS_BENCHMARK=1)", generalising
+	// the stagnation behaviour to both exits. That is the half that matters:
+	// all 80 restarts of the Jul-28 arm-A pilot terminated by ENTROPY
+	// convergence (stagnation fired 0/80) at a median of 165 of 2000
+	// generations -- ~8% of the intended budget -- and the results were
+	// recorded as full-budget.
+	//
+	// If you need the full budget, set FLEXAIDDS_NO_SEC and verify the
+	// "[SEC] ... DISABLED" line below appears on STDERR (not stdout).
 	// During benchmarking this ensures equal search effort vs other methods.
 	// "Spare" generations after a plateau are used with boosted mutation/exploration
 	// (see stagnation handling) to search conformational space more effectively.
