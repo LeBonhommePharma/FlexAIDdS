@@ -295,6 +295,16 @@ int GA(FA_Global* FA, GB_Global* GB,VC_Global* VC,chromosome** chrom,chromosome*
 	}
 
 	printf("num_genes=%d\n",GB->num_genes);
+	// The search budget determines the result and, until this line, left no
+	// witness on a SUCCESSFUL run: num_chrom appeared only in the
+	// chrom_snapshot-overflow fprintf below, which fires solely when the value
+	// is <= 0.  So "what population did this run use?" was answerable from the
+	// source (whichever of config_defaults.h / a gainp NUMCHROM / DatasetRunner's
+	// DoF scaling supplied it) but never from the run's own output — and the two
+	// harnesses supply it differently (gate 1000, campaign 1000 x ceil(n_genes/4)).
+	// One line, stdout, unconditional, so any log answers it directly.
+	printf("num_chrom=%d max_generations=%d\n",
+	       GB->num_chrom, GB->max_generations);
 
 	printf("file in GA is <%s>\n",gainpfile);
 
