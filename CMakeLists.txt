@@ -239,6 +239,7 @@ flexaids_configure_simd(FlexAID)
 # while the FlexAIDdS target carried an aggressive LTO + INTERPROCEDURAL_OPTIMIZATION
 # + -march=native/-mcpu=native + -DNDEBUG + strip block. flexaids_apply_fast_optimization
 # lifts that same block onto FlexAID, guarded by BUILD_FLEXAID_FAST (default OFF per
+# METHODOLOGY §1 — see the rationale at its option() site; also
 # force-disabled under coverage/sanitizer builds by the SAME guard used for
 # BUILD_FLEXAIDDS_FAST — see cmake/FlexAIDOptions.cmake). FLEXAID_PGO adds optional
 # profile-generate/profile-use instrumentation. Both are no-ops when disabled.

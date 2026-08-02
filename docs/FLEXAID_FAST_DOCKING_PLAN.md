@@ -42,7 +42,7 @@ main()                         LIB/top.cpp:405
 |---|---|---|
 | `flexaids_configure_simd()` + AVX2/512/NEON (`cmake/FlexAIDOptions.cmake`) | Applied to all targets | Reuse as-is |
 | `simd_distance.h` (920 lines, mature AVX-512/AVX2/NEON kernels) | Used only in clustering/RMSD/tENCoM — **not** CF scoring | Extend into scoring core |
-| SoA Voronoi path (`FLEXAIDS_USE_SOA_DISTANCES`, `VoronoiCFBatch_SoA.h`, `AtomSoA.h`) | Built but **default OFF**, experimental (`Vcontacts.cpp:1972`) | Finish + default ON |
+| SoA Voronoi path (`FLEXAIDS_USE_SOA_DISTANCES`, `VoronoiCFBatch_SoA.h`, `AtomSoA.h`) | Built but **default OFF**, experimental (`Vcontacts.cpp:1972`) | Finish; stays **default OFF** per METHODOLOGY §1 until an Astex-85 A/B and a degenerate-face test justify flipping it |
 | `VoronoiCFBatch.h` span batch | Standalone, stub-CF benchmark only, dormant | Wire real `ic2cf` batch into GA |
 | CUDA/Metal batch eval (`cuda_eval.cu`, `metal_eval.mm`, `GPUContextPool`) | Dispatch-connected but **reduced fidelity** (com/wal/sas only; zeros clash/con/hbond/gist — `gaboom.cpp:2428-2432`) | Bring to full CF parity |
 | OpenMP GA population parallelism | **Real, default ON** (`gaboom.cpp:2773`) | Reduce per-thread copy cost |
@@ -163,7 +163,7 @@ about whether the CUDA/Metal kernels themselves are correct (see below).
 
 Per-phase implementation summary:
 
-- **P0** — `BUILD_FLEXAID_FAST` (default ON) applies LTO/IPO + `-march=native` + `-DNDEBUG` +
+- **P0** — `BUILD_FLEXAID_FAST` (**default OFF** per METHODOLOGY §1; `-march=native` makes the binary host-dependent, so the §1 md5 comparison cannot cross machines) applies LTO/IPO + `-march=native` + `-DNDEBUG` +
   `-flto -s` to the classic `FlexAID` target, reusing the existing sanitizer/coverage guard
   (verified to force-disable under `FLEXAIDS_ENABLE_COVERAGE`). Adds `FLEXAID_PGO`
   (off/generate/use) and `scripts/bench_flexaid_fast.sh`. IPO is applied to the leaf executable
@@ -174,8 +174,8 @@ Per-phase implementation summary:
   4-wide `sqrt`. The SoA distance path was found to be disabled because it called
   `simd::distance2_1x4`, **which does not exist in the AVX2/AVX-512 branches** of
   `simd_distance.h` — a latent hard compile break on x86 production configs. Fixed with an
-  ISA-portable `atom_soa::distance2_1x4`, and `FLEXAIDS_USE_SOA_DISTANCES` flipped to default ON.
-- **P3** — `FLEXAIDDS_PARALLEL_REPRODUCE` default-ON with the stale-status fix applied to both
+  ISA-portable `atom_soa::distance2_1x4`, and `FLEXAIDS_USE_SOA_DISTANCES` remains **default OFF** per METHODOLOGY §1 — it is ranking-affecting and had never compiled on production x86 before this fix.
+- **P3** — `FLEXAIDDS_PARALLEL_REPRODUCE` **default OFF** per METHODOLOGY §1 (the drift allowance that would unblock it is a maintainer decision, not this change's to grant) with the stale-status fix applied to both
   deferred branches; the per-generation full workspace clone replaced by a shape-keyed resident
   cache (O(generations × threads × natoms) copy → one-time O(threads × natoms)); new
   `FLEXAID_DETERMINISTIC` macro/env pins single-thread serial-equivalent evaluation for CI A/B.
