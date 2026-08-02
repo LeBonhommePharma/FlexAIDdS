@@ -146,3 +146,6 @@ Testing/
 validation_evidence/**/test_cmaes_search_clang
 validation_evidence/**/*.o
 flexaid_out.rrg
+
+# Claude Code agent worktrees (ephemeral, per-session)
+.claude/
