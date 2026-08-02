@@ -151,6 +151,34 @@ Rules that follow:
 - A cross-path result is not evidence until the divergence responsible has been ablated.
 - Changing either harness's defaults is a methodology change: it lands here first.
 
+## 0.1.1 OPEN DECISION — how to close the harness divergence
+
+§0.1 documents that the gate and the campaign are different experiments. Closing that gap is a
+**scientific decision, not a patch**, and four options exist:
+
+| | change | cost |
+|---|---|---|
+| **A** | add `seeding{mif_enabled:true}` to `config_defaults.h` | changes the engine default for **every** caller. §1 forbids it (behaviour change must be opt-in, flag OFF by default) — and `parity.json` carries no `seeding` block, so the new default would survive `json::merge` and alter the elected poses. |
+| **B** | stop the campaign writing `seeding` | aligns **downward**; loses the feature the campaign was built to use. |
+| **C** | document them as two configurations | honest, changes nothing, keeps the numbers incomparable. |
+| **D** | give the **gate** a config file (`runner.py` currently passes none) | engine defaults untouched, so §1 parity holds by construction; the gate's configuration becomes a diffable artifact (the §0.2 fix). |
+
+**If D is chosen, two constraints are load-bearing:**
+
+1. **Stage it — one key at a time.** `dock_config.json` carries ~35 keys. Handing the gate all
+   of them changes every divergence at once, and a green tier-1 would then be unattributable.
+   `config_parser.cpp:43` merges user config over defaults, so a config containing only the key
+   under test leaves the other ~34 at their defaults — staging is free.
+2. **Keep a default-path canary.** `benchmark-tier1.yml` and `benchmark-tier2.yml` are the
+   **only** CI jobs that dock (`ci.yml` is `--dry-run`; `coverage`/`metal`/`release` only build).
+   Both currently run unconfigured. Configure them both and **nothing in CI ever exercises the
+   engine's default configuration again** — and the §1 parity gate that would otherwise catch a
+   default regression **has no CI job**. Leave one target unconfigured, or land §1 as a job first.
+
+🔴 **§1–§4 are procedures, not checks.** `grep -rln parity .github/workflows/` returns nothing.
+No job builds a baseline engine, asserts byte-identical poses, or verifies `.rrg` determinism.
+Every gate in this document currently depends on a human remembering it exists.
+
 ## 0.2 Provenance — what a receipt must capture
 
 Three tiers, by how a parameter can be recovered after the fact:
