@@ -85,6 +85,27 @@ _EXECUTION_WITNESS_KEYS = ("n_poses", "restarts_finished")
 DEFAULT_MIN_BUDGET_FRACTION = 0.9
 
 
+def has_budget_witness(row: dict) -> bool:
+    """True when ``evals_actual`` is populated with a finite non-negative number.
+
+    Exact, not proportional: the column is either a witness or it is not.
+    ``protocol_claim_eligible`` asserts compliance without establishing it and
+    is deliberately NOT consulted.
+    """
+    keys_lower = {k.lower(): k for k in row}
+    col = keys_lower.get("evals_actual")
+    if col is None:
+        return False
+    raw = (row.get(col) or "").strip()
+    if not raw:
+        return False
+    try:
+        evals = float(raw)
+    except ValueError:
+        return False
+    return math.isfinite(evals) and evals >= 0.0
+
+
 def budget_shortfall(row: dict, intended_evals: float) -> Optional[float]:
     """Return the witnessed evals/intended ratio, or None if unwitnessed.
 
@@ -253,6 +274,7 @@ def load_arm_dir(
     *,
     strict: bool = True,
     allow_unrun: bool = False,
+    allow_unwitnessed_budget: bool = False,
     intended_evals: Optional[float] = None,
     min_budget_fraction: float = DEFAULT_MIN_BUDGET_FRACTION,
 ) -> Dict[str, List[Optional[float]]]:
@@ -270,6 +292,7 @@ def load_arm_dir(
     unrun: List[str] = []
     unrun_detail: List[str] = []
     short: List[str] = []
+    unwitnessed: List[str] = []
     csv_paths = sorted(arm_dir.rglob("result.csv"))
     if not csv_paths:
         raise FileNotFoundError(f"no result.csv under {arm_dir}")
@@ -298,12 +321,17 @@ def load_arm_dir(
             unrun.append(pdb)
             unrun_detail.append(f"{pdb} ({csv_path})")
             continue
+        # Budget spend must be WITNESSED. This is exact — the column is either
+        # populated or it is not — and refuses by default.
+        if not allow_unwitnessed_budget and not has_budget_witness(row):
+            unwitnessed.append(pdb)
+            continue
+        # The proportional gate is separate and OPT-IN: the expected
+        # evals_actual denominator has not had its semantics established, so no
+        # percentage threshold is applied unless a caller supplies one.
         if intended_evals is not None:
             frac = budget_shortfall(row, intended_evals)
-            if frac is None:
-                short.append(f"{pdb} (evals_actual unwitnessed)")
-                continue
-            if frac < min_budget_fraction:
+            if frac is not None and frac < min_budget_fraction:
                 short.append(f"{pdb} ({frac:.1%} of intended)")
                 continue
         # Keep case even if all mode slots empty (counts as S_top10 fail)
@@ -322,6 +350,18 @@ def load_arm_dir(
             f"warning: excluded {len(unrun)} never-executed case(s) from N: "
             + ", ".join(sorted(unrun)),
             file=sys.stderr,
+        )
+
+    if unwitnessed:
+        raise BudgetWitnessError(
+            f"S_top10 fail-closed: {len(unwitnessed)} case(s) have no "
+            "`evals_actual` witness, so their search effort is unknown. "
+            "S_top10 is a rate at a FIXED search effort; a case that cannot be "
+            "shown to have spent it is not a datapoint. "
+            "`protocol_claim_eligible` is not accepted as a substitute. "
+            "Re-run with the witness recorded, or pass "
+            "--allow-unwitnessed-budget to score anyway. "
+            f"Cases: {', '.join(sorted(unwitnessed))}"
         )
 
     if short:
@@ -449,6 +489,14 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         ),
     )
     ap.add_argument(
+        "--allow-unwitnessed-budget",
+        action="store_true",
+        help=(
+            "Score cases whose `evals_actual` is empty. Off by default: an "
+            "unwitnessed search effort is not a datapoint."
+        ),
+    )
+    ap.add_argument(
         "--intended-evals",
         type=float,
         default=None,
@@ -480,6 +528,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 args.arm_dir,
                 strict=not args.allow_missing_modes,
                 allow_unrun=args.allow_unrun_cases,
+                allow_unwitnessed_budget=args.allow_unwitnessed_budget,
                 intended_evals=args.intended_evals,
                 min_budget_fraction=args.min_budget_fraction,
             )

@@ -136,7 +136,10 @@ def test_load_arm_dir_reads_mode_rmsd(tmp_path: Path):
         w = csv.DictWriter(f, fieldnames=fields)
         w.writeheader()
         w.writerow(row)
-    cases = mod.load_arm_dir(tmp_path / "arm", strict=True)
+    # Fixture predates the evals_actual column; this test is about mode parsing.
+    cases = mod.load_arm_dir(
+        tmp_path / "arm", strict=True, allow_unwitnessed_budget=True
+    )
     assert "1ABC" in cases
     assert cases["1ABC"][3] == pytest.approx(1.5)
     assert mod.s_top10(cases["1ABC"]) is True
@@ -179,7 +182,9 @@ def test_load_arm_dir_allow_unrun_excludes_rather_than_fails(tmp_path: Path):
     arm = tmp_path / "arm"
     _write_case(arm, "1ABC", [1.5] + [9.0] * 9)
     _write_case(arm, "1XYZ", [None] * 10, n_poses="0", restarts="0")
-    cases = mod.load_arm_dir(arm, strict=True, allow_unrun=True)
+    cases = mod.load_arm_dir(
+        arm, strict=True, allow_unrun=True, allow_unwitnessed_budget=True
+    )
     # Excluded from N entirely — not counted as a failure.
     assert set(cases) == {"1ABC"}
     stats = mod.compute_s_top10_stats(cases, n_boot=64)
@@ -200,7 +205,9 @@ def test_empty_modes_without_execution_witness_still_counts_as_miss(tmp_path: Pa
         w = csv.DictWriter(f, fieldnames=fields)
         w.writeheader()
         w.writerow(row)
-    cases = mod.load_arm_dir(tmp_path / "arm", strict=True)
+    cases = mod.load_arm_dir(
+        tmp_path / "arm", strict=True, allow_unwitnessed_budget=True
+    )
     assert cases["1ABC"] == [None] * 10
     assert mod.s_top10(cases["1ABC"]) is False
 
@@ -245,74 +252,66 @@ def _write_case_with_budget(
         w.writerow(row)
 
 
-def test_budget_guard_off_by_default(tmp_path: Path):
-    """No --intended-evals → unchanged behaviour, empty evals_actual scores."""
-    mod = _load("bootstrap_3dsig_s_top10", BOOT)
-    arm = tmp_path / "arm"
-    _write_case_with_budget(arm, "1ABC", [5.0] * 10, evals_actual="")
-    cases = mod.load_arm_dir(arm, strict=True)
-    assert set(cases) == {"1ABC"}
-
-
-def test_budget_guard_refuses_unwitnessed_spend(tmp_path: Path):
-    """evals_actual empty is not evidence of compliance, whatever the flag says."""
+def test_budget_witness_required_by_default(tmp_path: Path):
+    """Empty evals_actual refuses with no flags at all — the exact check."""
     mod = _load("bootstrap_3dsig_s_top10", BOOT)
     arm = tmp_path / "arm"
     _write_case_with_budget(arm, "1ABC", [5.0] * 10, evals_actual="")
     with pytest.raises(mod.BudgetWitnessError):
-        mod.load_arm_dir(arm, strict=True, intended_evals=2_000_000)
+        mod.load_arm_dir(arm, strict=True)
 
 
-def test_budget_guard_refuses_truncated_run(tmp_path: Path):
-    """The 8.25%-of-budget case measured on arm A must not be scored."""
+def test_protocol_claim_eligible_is_not_accepted_as_a_witness(tmp_path: Path):
+    """The fixture sets protocol_claim_eligible=1; it must not rescue the row."""
+    mod = _load("bootstrap_3dsig_s_top10", BOOT)
+    arm = tmp_path / "arm"
+    _write_case_with_budget(arm, "1ABC", [5.0] * 10, evals_actual="")
+    with pytest.raises(mod.BudgetWitnessError) as exc:
+        mod.load_arm_dir(arm, strict=True)
+    assert "protocol_claim_eligible" in str(exc.value)
+
+
+def test_allow_unwitnessed_budget_escape_hatch(tmp_path: Path):
+    mod = _load("bootstrap_3dsig_s_top10", BOOT)
+    arm = tmp_path / "arm"
+    _write_case_with_budget(arm, "1ABC", [1.5] + [9.0] * 9, evals_actual="")
+    cases = mod.load_arm_dir(arm, strict=True, allow_unwitnessed_budget=True)
+    assert mod.s_top10(cases["1ABC"]) is True
+
+
+def test_witnessed_spend_scores_without_a_percentage_gate(tmp_path: Path):
+    """No ratified threshold: a witnessed number alone is enough by default."""
+    mod = _load("bootstrap_3dsig_s_top10", BOOT)
+    arm = tmp_path / "arm"
+    _write_case_with_budget(arm, "1ABC", [5.0] * 10, evals_actual="165000")
+    cases = mod.load_arm_dir(arm, strict=True)
+    assert set(cases) == {"1ABC"}
+
+
+def test_proportional_gate_is_opt_in_and_tunable(tmp_path: Path):
+    """--intended-evals is the only thing that activates a percentage line."""
     mod = _load("bootstrap_3dsig_s_top10", BOOT)
     arm = tmp_path / "arm"
     _write_case_with_budget(arm, "1ABC", [5.0] * 10, evals_actual="165000")
     with pytest.raises(mod.BudgetWitnessError) as exc:
         mod.load_arm_dir(arm, strict=True, intended_evals=2_000_000)
     assert "8.2%" in str(exc.value)
-
-
-def test_budget_guard_accepts_full_spend(tmp_path: Path):
-    mod = _load("bootstrap_3dsig_s_top10", BOOT)
-    arm = tmp_path / "arm"
-    _write_case_with_budget(arm, "1ABC", [1.5] + [9.0] * 9, evals_actual="2000000")
-    cases = mod.load_arm_dir(arm, strict=True, intended_evals=2_000_000)
-    assert mod.s_top10(cases["1ABC"]) is True
-
-
-def test_budget_fraction_is_tunable(tmp_path: Path):
-    """The 90% line is a knob, not a constant baked into the metric."""
-    mod = _load("bootstrap_3dsig_s_top10", BOOT)
-    arm = tmp_path / "arm"
-    _write_case_with_budget(arm, "1ABC", [5.0] * 10, evals_actual="1000000")
-    with pytest.raises(mod.BudgetWitnessError):
-        mod.load_arm_dir(arm, strict=True, intended_evals=2_000_000)
     cases = mod.load_arm_dir(
-        arm, strict=True, intended_evals=2_000_000, min_budget_fraction=0.5
+        arm, strict=True, intended_evals=2_000_000, min_budget_fraction=0.05
     )
     assert set(cases) == {"1ABC"}
 
 
-def test_cli_budget_guard_fail_closed(tmp_path: Path):
+def test_cli_budget_witness_fail_closed(tmp_path: Path):
     arm = tmp_path / "arm"
-    _write_case_with_budget(arm, "1ABC", [5.0] * 10, evals_actual="165000")
+    _write_case_with_budget(arm, "1ABC", [5.0] * 10, evals_actual="")
     proc = subprocess.run(
-        [
-            sys.executable,
-            str(BOOT),
-            "--arm-dir",
-            str(arm),
-            "--bootstraps",
-            "10",
-            "--intended-evals",
-            "2000000",
-        ],
+        [sys.executable, str(BOOT), "--arm-dir", str(arm), "--bootstraps", "10"],
         capture_output=True,
         text=True,
     )
     assert proc.returncode == 2
-    assert "FIXED search effort" in proc.stderr
+    assert "no `evals_actual` witness" in proc.stderr
     assert "0.0000" not in proc.stdout
 
 
@@ -553,7 +552,8 @@ def test_parse_cli_writes_mode_rmsd_columns(tmp_path: Path):
 
     # Bootstrap must accept this arm dir
     boot = _load("bootstrap_3dsig_s_top10", BOOT)
-    cases = boot.load_arm_dir(tmp_path, strict=True)
+    # parse_flexaid_arm_results.py leaves evals_actual empty (see PR body).
+    cases = boot.load_arm_dir(tmp_path, strict=True, allow_unwitnessed_budget=True)
     assert "1HNN" in cases
     assert boot.s_top10(cases["1HNN"]) is True
 
