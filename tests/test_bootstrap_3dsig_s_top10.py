@@ -144,6 +144,81 @@ def test_load_arm_dir_reads_mode_rmsd(tmp_path: Path):
     assert cases["1ABC"][0] == pytest.approx(3.0)
 
 
+def _write_case(
+    arm: Path, pdb: str, rmsds, *, n_poses: str = "500", restarts: str = "10"
+) -> None:
+    """Write one per-target result.csv. ``rmsds`` entries may be None → empty."""
+    d = arm / pdb
+    d.mkdir(parents=True)
+    fields = (
+        ["pdb_id"]
+        + [f"mode_rmsd_{i}" for i in range(10)]
+        + ["n_poses", "restarts_finished"]
+    )
+    row = {"pdb_id": pdb, "n_poses": n_poses, "restarts_finished": restarts}
+    for i, v in enumerate(rmsds):
+        row[f"mode_rmsd_{i}"] = "" if v is None else f"{v:.4f}"
+    with (d / "result.csv").open("w", newline="") as f:
+        w = csv.DictWriter(f, fieldnames=fields)
+        w.writeheader()
+        w.writerow(row)
+
+
+def test_load_arm_dir_fail_closed_on_never_executed_case(tmp_path: Path):
+    """A row that never ran must not be scored as an S_top10 miss."""
+    mod = _load("bootstrap_3dsig_s_top10", BOOT)
+    arm = tmp_path / "arm"
+    _write_case(arm, "1ABC", [3.0] * 10)
+    _write_case(arm, "1XYZ", [None] * 10, n_poses="0", restarts="0")
+    with pytest.raises(mod.UnrunCaseError):
+        mod.load_arm_dir(arm, strict=True)
+
+
+def test_load_arm_dir_allow_unrun_excludes_rather_than_fails(tmp_path: Path):
+    mod = _load("bootstrap_3dsig_s_top10", BOOT)
+    arm = tmp_path / "arm"
+    _write_case(arm, "1ABC", [1.5] + [9.0] * 9)
+    _write_case(arm, "1XYZ", [None] * 10, n_poses="0", restarts="0")
+    cases = mod.load_arm_dir(arm, strict=True, allow_unrun=True)
+    # Excluded from N entirely — not counted as a failure.
+    assert set(cases) == {"1ABC"}
+    stats = mod.compute_s_top10_stats(cases, n_boot=64)
+    assert stats["n_cases"] == 1
+    assert stats["point"] == pytest.approx(1.0)
+
+
+def test_empty_modes_without_execution_witness_still_counts_as_miss(tmp_path: Path):
+    """Absent witness columns are not evidence the run failed to start."""
+    mod = _load("bootstrap_3dsig_s_top10", BOOT)
+    arm = tmp_path / "arm" / "1ABC"
+    arm.mkdir(parents=True)
+    fields = ["pdb_id"] + [f"mode_rmsd_{i}" for i in range(10)]
+    row = {"pdb_id": "1ABC"}
+    for i in range(10):
+        row[f"mode_rmsd_{i}"] = ""
+    with (arm / "result.csv").open("w", newline="") as f:
+        w = csv.DictWriter(f, fieldnames=fields)
+        w.writeheader()
+        w.writerow(row)
+    cases = mod.load_arm_dir(tmp_path / "arm", strict=True)
+    assert cases["1ABC"] == [None] * 10
+    assert mod.s_top10(cases["1ABC"]) is False
+
+
+def test_cli_arm_dir_fail_closed_on_unrun(tmp_path: Path):
+    """The CLI must refuse to print 0.0000 for an arm that never executed."""
+    arm = tmp_path / "arm"
+    _write_case(arm, "1ABC", [None] * 10, n_poses="0", restarts="0")
+    proc = subprocess.run(
+        [sys.executable, str(BOOT), "--arm-dir", str(arm), "--bootstraps", "10"],
+        capture_output=True,
+        text=True,
+    )
+    assert proc.returncode == 2
+    assert "never executed" in proc.stderr
+    assert "0.0000" not in proc.stdout
+
+
 def test_bootstrap_median_deterministic():
     mod = _load("bootstrap_3dsig_s_top10", BOOT)
     # 2/4 success → point 0.5
