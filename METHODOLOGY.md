@@ -26,8 +26,13 @@ numbers into other files — reference `METHODOLOGY.md §N`.
   empty matrix silently corrupts scoring. Verify the run log shows the matrix loaded.
 - **Deterministic seed:** `FLEXAID_SEED=12345`. This is the ONLY determinism seed. Do **not** use
   `FLEXAIDDS_SEED_BASE` for determinism (it offsets per-restart seeds).
-- **Benchmark GA budget:** **2000 generations, population 1000** (the FlexAID/FlexAIDdS norm =
-  2,000,000 evals/restart). Do not change for accuracy runs.
+- **Benchmark GA budget:** **2000 generations, population 1000** (= 2,000,000 evals/restart).
+  This describes the **CI path exactly** — it passes no GA arguments and lands on the
+  `top.cpp:2812-2813` rescue guards. The **campaign path multiplies the population by ligand
+  flexibility** (see §0.1), so a campaign run is NOT at this budget: 1mq6 runs at pop 5000.
+  Quote the effective budget, not this line, when reporting a campaign number.
+  Note also `python/flexaidds/docking.py:643` hardcodes `500 × 500` for the `dock()` Python
+  API — **not** the benchmark path, but a fourth declared budget in the tree.
 - **Restarts:** `FLEXAIDDS_RESTARTS=<n>`. Published Astex protocol = 10 restarts; a fast A/B may
   use 1–3 but MUST state it.
 - **Security channel off for benchmarks:** `FLEXAIDDS_NO_SEC=1`.
@@ -126,7 +131,7 @@ simply different runs, and a number from one does not transfer to the other.
 | `coarse_init.enabled` | **OFF** | ON (hardcoded, `DatasetRunner.cpp:6036`) |
 | `mif_enabled` | **OFF** | ON (hardcoded, `DatasetRunner.cpp:6012`) |
 | retained poses | 10 (`ga_constants.h:16` `GA_DEFAULT_NUM_PRINT`, applied `gaboom.cpp:315`) | 50 per restart (`DatasetRunner.cpp:86` `kBenchmarkPoseLimit`, emitted as `max_results` at `:5959`) |
-| GA population | **not DoF-scaled** — the scaling code lives only in `DatasetRunner.cpp`, which this path does not use | base 1000 (`DatasetRunner.h:340`) **× max(1, n_flex_bonds/4)** (`DatasetRunner.cpp:5774-5806`), on by default (`ProtocolConfig.h:130` `eval_scale_dihedral{1}`) — 1mq6 runs at pop 5000 |
+| GA budget | **pop 1000 × gen 2000** — the CI command (`runner.py:1403`) passes NO GA arguments, so `GB_Global{}` leaves both at 0 and the rescue guards at `top.cpp:2812-2813` set 1000/2000. **This is exactly the budget §0 documents.** | base 1000 (`DatasetRunner.h:340`) **× max(1, n_flex_bonds/4)** (`DatasetRunner.cpp:5774-5806`), on by default (`ProtocolConfig.h:130` `eval_scale_dihedral{1}`) — 1mq6 runs at pop **5000**, i.e. 5× the gate |
 
 **The consequence that matters:** with `mif_enabled = 0` and `grid_prio_percent = 100.0`, the
 guard at `top.cpp:1836` makes `initialize_direct_mif` return immediately. **The gate docks
