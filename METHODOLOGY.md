@@ -96,6 +96,16 @@ simply different runs, and a number from one does not transfer to the other.
 | `coarse_init.enabled` | **OFF** | ON (hardcoded, `DatasetRunner.cpp:6036`) |
 | `mif_enabled` | **OFF** | ON (hardcoded, `DatasetRunner.cpp:6012`) |
 | retained poses | 10 (`ga_constants.h:16` `GA_DEFAULT_NUM_PRINT`, applied `gaboom.cpp:315`) | 50 per restart (`DatasetRunner.cpp:86` `kBenchmarkPoseLimit`, emitted as `max_results` at `:5959`) |
+| **what a timed-out dock records** | **nothing.** `runner.py:1415` logs and `continue`s without touching the crash count or the exit-code map, so a timeout is indistinguishable **in the artifact** from "ran and found nothing". The only witness is one `logger.error("Docking timed out")` line in the CI job log. | **three places.** `wait_with_timeout` returns `-1` (`DatasetRunner.cpp:335`) → `docking_completed=false` (`:6856`) → every scoring stage skipped and `result.pb_failed_keys = "docking_incomplete"` written (`:7553-7555`), plus `[TIMEOUT]` in the captured `stderr.log`. |
+
+🔴 **The last row is a divergence of a different kind.** The other rows are about what the engine
+*computes*; that one is about what the harness *admits went wrong*. It matters because
+`#326`'s liveness gate exists precisely to distinguish "the engine did not run" from "the engine
+ran and produced nothing" — and on the gate path a timeout is the former reported as the latter.
+The `OSError` handler three lines below (`runner.py:1418`) does record both, with a comment
+explaining that omitting it would make the run "look like 'executed, 0 poses' (productivity)
+rather than 'engine did not run' (liveness)." That reasoning applies verbatim to
+`TimeoutExpired` and was not applied to it. (Found by Honey; campaign side traced by both of us.)
 
 **The consequence that matters:** with `mif_enabled = 0` and `grid_prio_percent = 100.0`, the
 guard at `top.cpp:1836` makes `initialize_direct_mif` return immediately. **The gate docks
