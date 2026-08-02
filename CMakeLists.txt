@@ -238,7 +238,7 @@ flexaids_configure_simd(FlexAID)
 # The classic FlexAID target historically shipped with only -O3 -ffast-math (above)
 # while the FlexAIDdS target carried an aggressive LTO + INTERPROCEDURAL_OPTIMIZATION
 # + -march=native/-mcpu=native + -DNDEBUG + strip block. flexaids_apply_fast_optimization
-# lifts that same block onto FlexAID, guarded by BUILD_FLEXAID_FAST (default ON, but
+# lifts that same block onto FlexAID, guarded by BUILD_FLEXAID_FAST (default OFF per
 # force-disabled under coverage/sanitizer builds by the SAME guard used for
 # BUILD_FLEXAIDDS_FAST — see cmake/FlexAIDOptions.cmake). FLEXAID_PGO adds optional
 # profile-generate/profile-use instrumentation. Both are no-ops when disabled.
@@ -1572,6 +1572,21 @@ flexaids_add_unit_test(test_protocol_config
     endif()
     flexaids_configure_msvc_test(test_vcontacts_geometry)
     add_test(NAME VcontactsGeometryTests COMMAND test_vcontacts_geometry)
+
+    # test_vcontacts_calc_areas_degenerate — degenerate-face tripwire for the
+    # PR#370 float spherical-excess area path (self-contained numerical check,
+    # no engine linkage).  See the file header for rationale.
+    add_executable(test_vcontacts_calc_areas_degenerate
+        tests/test_vcontacts_calc_areas_degenerate.cpp
+    )
+    target_link_libraries(test_vcontacts_calc_areas_degenerate PRIVATE GTest::gtest_main)
+    if(MSVC)
+        target_compile_options(test_vcontacts_calc_areas_degenerate PRIVATE /O2)
+    else()
+        target_compile_options(test_vcontacts_calc_areas_degenerate PRIVATE -O2)
+    endif()
+    flexaids_configure_msvc_test(test_vcontacts_calc_areas_degenerate)
+    add_test(NAME VcontactsCalcAreasDegenerateTests COMMAND test_vcontacts_calc_areas_degenerate)
 
     # test_cleft_cavity — CleftDetector + CavityDetect unit tests
     add_executable(test_cleft_cavity
