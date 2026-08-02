@@ -258,8 +258,14 @@ def _benchmark_inconclusive_reasons(datasets) -> list[str]:
             codes = ", ".join(
                 f"{k}={v}" for k, v in list(dr.entry_exit_codes.items())[:5]
             )
+            # "did not complete" rather than "non-zero exit": entry_exit_codes
+            # records None for an invocation that produced no exit code at all —
+            # an exec failure (OSError) or a timeout. Calling that a non-zero
+            # exit sends the reader hunting for a code that was never produced.
             reasons.append(
-                f"{slug}: liveness — {dr.flexaid_crashes} FlexAID non-zero exit(s) [{codes}]"
+                f"{slug}: liveness — {dr.flexaid_crashes} FlexAID invocation(s) "
+                f"did not complete successfully (None = no exit code produced: "
+                f"exec failure or timeout) [{codes}]"
             )
         # 2. Productivity — only a run that executed targets can be faulted for
         #    producing no poses (a resume/no-op executed nothing this session).

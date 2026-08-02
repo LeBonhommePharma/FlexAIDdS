@@ -295,16 +295,6 @@ int GA(FA_Global* FA, GB_Global* GB,VC_Global* VC,chromosome** chrom,chromosome*
 	}
 
 	printf("num_genes=%d\n",GB->num_genes);
-	// The search budget determines the result and, until this line, left no
-	// witness on a SUCCESSFUL run: num_chrom appeared only in the
-	// chrom_snapshot-overflow fprintf below, which fires solely when the value
-	// is <= 0.  So "what population did this run use?" was answerable from the
-	// source (whichever of config_defaults.h / a gainp NUMCHROM / DatasetRunner's
-	// DoF scaling supplied it) but never from the run's own output — and the two
-	// harnesses supply it differently (gate 1000, campaign 1000 x ceil(n_genes/4)).
-	// One line, stdout, unconditional, so any log answers it directly.
-	printf("num_chrom=%d max_generations=%d\n",
-	       GB->num_chrom, GB->max_generations);
 
 	printf("file in GA is <%s>\n",gainpfile);
 
@@ -332,6 +322,22 @@ int GA(FA_Global* FA, GB_Global* GB,VC_Global* VC,chromosome** chrom,chromosome*
 	} else {
 		printf("No GA input file — using pre-configured parameters\n");
 	}
+
+	// The search budget determines the result and, until this line, left no
+	// witness on a SUCCESSFUL run: num_chrom appeared only in the
+	// chrom_snapshot-overflow fprintf below, which fires solely when the value
+	// is <= 0.  So "what population did this run use?" was answerable from the
+	// source but never from the run's own output — and the three suppliers
+	// disagree: the gate takes config_defaults.h's 1000, the campaign multiplies
+	// by ceil(n_genes/4), and the legacy path reads NUMCHROM/NUMGENER from gainp.
+	//
+	// Placed AFTER the gainp block deliberately.  Printed before it, this line
+	// would report the pre-file value on the legacy `./FlexAID cfg.inp ga.inp`
+	// path — right for the two harnesses we benchmark and silently wrong for the
+	// third, which is precisely the stale-witness failure this PR exists to
+	// remove.  Here it reports what the GA actually runs with, on every path.
+	printf("num_chrom=%d max_generations=%d\n",
+	       GB->num_chrom, GB->max_generations);
 
 	// Defensive clamp: a zero (or negative) check interval reaches three
 	// integer division / modulo sites in the generation loop below and would
