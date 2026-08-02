@@ -374,17 +374,21 @@ std::vector<std::pair<std::string, std::array<float, 3>>> cc_pose(
 constexpr int DUMMY_TYPE = 39;  // read_lig.cpp: FA->ntypes-1, one row spanning all elements
 }  // namespace
 
-TEST(RmsdCrossCheck, AlignedTypingImplementationsAgree) {
-    // Each element carries exactly one type -> type-blocking == element-blocking.
+TEST(RmsdCrossCheck, AlignedTyping_SolversAgreeOnASharedAssignment) {
+    // Two carbons: ONE element and ONE type, so a single bucket of two under BOTH
+    // partitions -- and a real assignment to search, unlike three distinct atoms
+    // where the identity is the only option and nothing is tested (Bumble, #371).
+    // They are swapped vs their refs, so the optimal assignment is the non-identity
+    // swap (RMSD 0); the identity would give sqrt(200/2) = 10. If the two Munkres
+    // implementations disagreed on the assignment, this is where it would show.
     std::vector<AtomSpec> a = {
-        {1, "C", {0, 0, 0}, {1, 0, 0}},
-        {2, "N", {5, 0, 0}, {5, 0, 0}},
-        {3, "O", {0, 5, 0}, {0, 5, 0}},
+        {4, "C", {10, 0, 0}, {0, 0, 0}},
+        {4, "C", {0, 0, 0}, {10, 0, 0}},
     };
     const float eng = crosscheck::engine_hungarian_rmsd(a);
     const float dat = dataset::hungarian_rmsd(cc_ref(a), cc_pose(a));
-    EXPECT_NEAR(eng, dat, 1e-4f);
-    EXPECT_NEAR(dat, std::sqrt(1.0f / 3.0f), 1e-4f);  // one 1 A miss over 3 atoms
+    EXPECT_NEAR(eng, dat, 1e-4f);   // same bucket both sides -> must agree
+    EXPECT_NEAR(dat, 0.0f, 1e-3f);  // both solvers must find the swap; identity would be 10
 }
 
 TEST(RmsdCrossCheck, SplitTypeWithinElement_DatasetRelaxesEngine) {

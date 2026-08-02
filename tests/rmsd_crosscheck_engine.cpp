@@ -5,7 +5,6 @@
 
 #include "flexaid.h"
 
-#include <cstring>
 #include <vector>
 
 // Defined in LIB/calc_rmsd.cpp (linked via flexaid_core).
@@ -18,8 +17,11 @@ float engine_hungarian_rmsd(const std::vector<AtomSpec>& specs) {
     const int n = static_cast<int>(specs.size());
     if (n <= 0) return 0.0f;
 
+    // Value-init: POD members zeroed, and the two std::vector members
+    // (model_coords / model_strain) properly constructed empty. Do NOT memset
+    // over this — that overwrites the vectors' internal pointers and is UB
+    // (Honey, #371 review).
     FA_Global FA{};
-    std::memset(static_cast<void*>(&FA), 0, sizeof(FA));
     FA.num_het = 1;
     FA.num_het_atm = n;
     FA.res_cnt = 1;
