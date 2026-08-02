@@ -213,7 +213,7 @@ pytest tests/
 | Option | Default | Description |
 |--------|---------|-------------|
 | `FLEXAIDS_USE_CUDA` | OFF | CUDA GPU evaluation |
-| `FLEXAIDS_USE_METAL` | OFF | Metal acceleration (macOS) |
+| `FLEXAIDS_USE_METAL` | **ON** on Apple hosts with an Objective-C++ compiler, OFF elsewhere | Metal acceleration (macOS). See `cmake/FlexAIDOptions.cmake:45` — this option is host-conditional, not a flat `OFF`. |
 | `FLEXAIDS_USE_AVX2` | ON | AVX2 SIMD acceleration |
 | `FLEXAIDS_USE_AVX512` | OFF | AVX-512 SIMD |
 | `FLEXAIDS_USE_OPENMP` | ON | OpenMP parallelism |
