@@ -1413,6 +1413,24 @@ class DatasetRunner:
                         env=sub_env,
                     )
                 except subprocess.TimeoutExpired:
+                    # #326 liveness: a timeout is the same class as the OSError
+                    # below — the engine produced no result — and the rationale
+                    # written there applies verbatim: without recording it, "the
+                    # run would look like 'executed, 0 poses' (productivity)
+                    # rather than 'engine did not run' (liveness)."  That fix was
+                    # applied to the OSError sibling and not to this one, so a
+                    # timed-out dock left NOTHING in the artifact: no crash count,
+                    # no exit code, only this log line.  Record it the same way.
+                    #
+                    # None, not a numeric sentinel, for the same reason the
+                    # OSError branch gives: subprocess encodes signal death as a
+                    # negative returncode, so -1 already means "ran, killed by
+                    # signal 1".  None is a value no completed subprocess.run can
+                    # yield, so in entry_exit_codes it means "did not complete"
+                    # and only that.
+                    with self._crash_lock:
+                        self._flexaid_crashes += 1
+                        self._entry_exit_codes[f"{target_id}/{ligand_id}"] = None
                     logger.error("Docking timed out: %s/%s", target_id, ligand_id)
                     continue
                 except OSError as exc:

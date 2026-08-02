@@ -6855,15 +6855,24 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
         // The latter is only true once we have a valid pose RMSD under 2 Å.
         const bool docking_completed = (ret == 0 && n_poses > 0 && !result.stuck);
 
-        // If FlexAIDdS ran but produced no output, check stderr for clues
-        if (ret == 0 && n_poses == 0) {
+        // If the dock produced no output, surface stderr for clues.
+        //
+        // This used to be gated on `ret == 0`, which skipped the no-poses case
+        // most in need of explaining: a TIMEOUT returns -1 from
+        // SubprocessGuard::wait_with_timeout and also yields zero poses, so the
+        // one diagnostic written to explain "no poses" declined to run exactly
+        // when the [TIMEOUT] line it would have surfaced was sitting in
+        // stderr.log.  Widened to any zero-pose outcome, with the exit code
+        // named so the two cases stay distinguishable in the console output.
+        if (n_poses == 0) {
             std::string stderr_path = out_dir + "/stderr.log";
             std::ifstream stderr_file(stderr_path);
             if (stderr_file.is_open()) {
                 std::string err_line;
                 int err_lines = 0;
                 std::cerr << "  [WARN] " << entry.pdb_id
-                          << " exited 0 but produced no output poses. stderr:\n";
+                          << " produced no output poses (exit " << ret
+                          << "). stderr:\n";
                 while (std::getline(stderr_file, err_line) && err_lines < 5) {
                     std::cerr << "    " << err_line << "\n";
                     err_lines++;
