@@ -91,6 +91,31 @@ inline json::Value flexaid_default_config() {
             {"force_cf_rank_emission",    V(false)},
         })},
 
+        // ── GA seeding (MIF pocket field) ─────────────────────────
+        // The engine reads seeding.mif_enabled at config_parser.cpp:352 with a
+        // `false` fallback.  This section did not exist, so apply_config wrote
+        // mif_enabled=0 on every path that supplies no --config -- including the
+        // tier-1/tier-2 CI gate, which is the only automated docking we run.
+        // top.cpp:1836 then returns immediately from initialize_direct_mif and
+        // the pocket field is never built.
+        //
+        // Measured cost of that omission (Fizz, 1MQ6, campaign path, single
+        // factor, same binary, both arms verified single-GA):
+        //     mif ON  -> rank-1 RMSD 2.6966 A, CF -48.1021
+        //     mif OFF -> rank-1 RMSD 7.3169 A, CF -23.3408
+        // i.e. a near-hit becomes a clear miss and the score halves.
+        //
+        // Turning this on by default is a deliberate behaviour change to the
+        // engine default and therefore a METHODOLOGY §1 exception: it will
+        // change the elected poses of every previously-unconfigured run, so
+        // §1 parity against a pre-#372 baseline WILL fail, by design.
+        // Authorised by Bonhomme, 2026-08-02: "seeding.mif_enabled is totally
+        // accepted and legal."  Do not extend this section to other seeding
+        // keys without a separate authorisation and a separate measurement.
+        {"seeding", V(O{
+            {"mif_enabled",          V(true)},
+        })},
+
         // ── Genetic Algorithm ────────────────────────────────────
         {"ga", V(O{
             {"num_chromosomes",      V(1000)},
