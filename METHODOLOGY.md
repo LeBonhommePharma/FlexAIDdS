@@ -74,10 +74,31 @@ numbers into other files — reference `METHODOLOGY.md §N`.
      `compute_pose_ligand_rmsd` / `pose_pose_rmsd`. **This is what `result.csv` carries.**
   - 🔴 **4 and 5 are two independent implementations of the same algorithm, each with its own
     test file (`tests/test_hungarian_rmsd_bounds.cpp` and `tests/test_dataset_runner.cpp`), and
-    NO test compares them to each other.** A pose PDB can therefore carry a `REMARK RMSD` from
+    NO test compares them to each other.**
+    They also partition atoms differently — 4 blocks by SYBYL **type**, 5 by **element** — so
+    they are not required to agree, and neither dominates the other: type refines element for
+    typed atoms but COARSENS it for atoms sharing one type across elements (see the DUMMY and
+    aliasing notes below). Two "correct" numbers can differ in either direction. A pose PDB can therefore carry a `REMARK RMSD` from
     one while the `result.csv` row beside it carries a number from the other. Until a
     cross-check exists, **never mix a REMARK RMSD and a CSV RMSD in the same table**, and say
     which file a quoted number came from.
+
+- **Known element-typing limitations (affect scoring, not only RMSD).** `atom.type` is used
+  directly as a row/column index into the VCT energy matrix, so a mistyped atom is *scored*
+  against the wrong element, and it also changes which atoms the engine's Hungarian may swap:
+  - **Unknown elements → DUMMY (39).** `SdfReader.cpp:88` / `read_lig.cpp:218`. DUMMY is one
+    bucket spanning every element, so the engine may pair N with O and report a *flattered*
+    RMSD. `check_types_assigned` (`TargetValidation.cpp:145`) would detect this but **nothing
+    calls it**, and `read_lig.cpp:227`'s stderr warning is discarded because the run succeeds.
+  - **Deliberate aliasing.** `I → 25 (Br)` and `Se → 18 (S.3)`, identically in both
+    `SdfReader.cpp:78,83` and `Mol2Reader.cpp:78,83` — the I and Se matrix rows are near-empty,
+    so this is intentional. But an iodine is then indistinguishable from a bromine downstream:
+    no diagnostic can catch it, and I/Br in one ligand share a type bucket.
+  - **Scope, checked:** 187 `*.sdf`/`*.mol2` under `benchmarks/` contain **no** I, Se, B, Si,
+    As, Pt or Ru, and every element present maps to a real VCT row (`normalize_element` fixes
+    the `CL`→`Cl` case before the lookup). **These are reachable trapdoors with no current
+    input that opens them** — they become live the day a halogen series or a metal-organic
+    ligand is benchmarked, and they will be silent when they do.
 
 ---
 
