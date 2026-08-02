@@ -1932,22 +1932,30 @@ int reproduce(FA_Global* FA,GB_Global* GB,VC_Global* VC, chromosome* chrom, cons
 
 	int i,j,k;
 
-	// ── GA-PARALLEL-EVAL (finding #1) ──────────────────────────────────────
-	// Default OFF: reproduce() behaves exactly as before (fully serial
-	// per-offspring eval_chromosome() calls). When FLEXAIDDS_PARALLEL_REPRODUCE
-	// is set (non-empty, not "0"), offspring CF evaluation is deferred: each
-	// new offspring's status is left as ' ' ("needs eval") instead of being
-	// evaluated inline here, and the pre-existing OpenMP-parallel loop inside
-	// calculate_fitness() -- already called unconditionally at the end of this
-	// function for both STEADY and BOOM -- evaluates every not-yet-'n'
-	// chromosome (including these offspring) across threads, each using its
-	// own per-thread FA/VC/atoms/residue workspace copy. No new parallel
-	// region and no change to eval_chromosome()/vcfunction() math: this flag
-	// only decides WHERE (serial reproduce() vs parallel calculate_fitness())
-	// the exact same function is called from.
+	// ── GA-PARALLEL-EVAL (P3, finding #1) ──────────────────────────────────
+	// Default ON (drift allowed — see docs/FLEXAID_FAST_DOCKING_PLAN.md §P3 and
+	// OPTIMIZATION_KNOWN_ISSUES.md): offspring CF evaluation is deferred so that
+	// BOTH parents and offspring are scored in the single OpenMP-parallel loop
+	// inside calculate_fitness() (called unconditionally at the end of this
+	// function for both STEADY and BOOM). Each new offspring's status is set to
+	// ' ' ("needs eval") — the STALE-STATUS FIX — because chrom[num_chrom+i] is
+	// REUSED memory whose status is typically 'n' from the previous generation,
+	// and calculate_fitness()'s eval loop SKIPS status=='n'. Without the explicit
+	// reset the deferred offspring would keep the prior occupant's stale CF
+	// (the CF -5.23 vs serial -51.93 defect documented in OPTIMIZATION_KNOWN_ISSUES.md).
+	// No new parallel region and no change to eval_chromosome()/vcfunction()
+	// math: this flag only decides WHERE (serial reproduce() vs parallel
+	// calculate_fitness()) the exact same eval is called from.
+	//
+	// Override: FLEXAIDDS_PARALLEL_REPRODUCE=0 forces the legacy serial inline
+	// path (bit-reproducible reference); any other explicit value keeps it ON.
+	// The CI A/B reproducibility mode is FLEXAID_DETERMINISTIC (see
+	// calculate_fitness()), which pins a serial-equivalent reduction order for
+	// the parallel eval loop rather than disabling the deferred path here.
 	static const bool parallel_reproduce_eval = [](){
 		const char* env = std::getenv("FLEXAIDDS_PARALLEL_REPRODUCE");
-		return env && env[0] != '\0' && env[0] != '0';
+		if (env && env[0] != '\0') return env[0] != '0';  // explicit override
+		return true;                                       // default ON (P3)
 	}();
 
 	// Multi-chain VCT normalisation (see GA() comment for rationale)
@@ -2085,10 +2093,11 @@ int reproduce(FA_Global* FA,GB_Global* GB,VC_Global* VC, chromosome* chrom, cons
 			}
 
 			if (parallel_reproduce_eval) {
-				// GA-PARALLEL-EVAL: leave status==' ' ("needs eval"). The
-				// unconditional calculate_fitness() call at the end of this
-				// function evaluates every not-yet-'n' chromosome, including
-				// this offspring, across its existing OpenMP-parallel loop.
+				// GA-PARALLEL-EVAL: defer CF eval to calculate_fitness()'s
+				// OpenMP loop. STALE-STATUS FIX — explicitly mark this reused
+				// slot as ' ' ("needs eval"); it typically holds 'n' from the
+				// previous generation, which the eval loop skips.
+				chrom[GB->num_chrom+i].status=' ';
 			} else {
 				chrom[GB->num_chrom+i].cf=eval_chromosome(FA,GB,VC,gene_lim,atoms,residue,cleftgrid,
 									  chrom[GB->num_chrom+i].genes,target);
@@ -2124,7 +2133,8 @@ int reproduce(FA_Global* FA,GB_Global* GB,VC_Global* VC, chromosome* chrom, cons
 			}
 
 			if (parallel_reproduce_eval) {
-				// GA-PARALLEL-EVAL: see offspring #1 above.
+				// GA-PARALLEL-EVAL: see offspring #1 above. STALE-STATUS FIX.
+				chrom[GB->num_chrom+i].status=' ';
 			} else {
 				chrom[GB->num_chrom+i].cf=eval_chromosome(FA,GB,VC,gene_lim,atoms,residue,cleftgrid,
 									  chrom[GB->num_chrom+i].genes,target);
@@ -2699,46 +2709,106 @@ void calculate_fitness(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* chr
 		const int n_dirty_atm = static_cast<int>(dirty_atm.size());
 		const int n_dirty_res = static_cast<int>(dirty_res_idx.size());
 
-		// Per-thread mutable atom arrays.
-		std::vector<std::vector<atom>>  tl_atoms(n_thr,
-		    std::vector<atom>(atoms, atoms + natm + 1));
-		// Per-thread residue arrays (pointer fields shared read-only; .rot private).
-		std::vector<std::vector<resid>> tl_res(n_thr,
-		    std::vector<resid>(residue, residue + nres + 1));
-		// Per-thread FA copies with redirected mutable scratch buffers.
-		std::vector<FA_Global>           tl_fa(n_thr, *FA);
-		std::vector<std::vector<int>>    tl_contacts(n_thr, std::vector<int>(MAX_ATOM_NUMBER, 0));
-		std::vector<std::vector<float>>  tl_contrib(n_thr, std::vector<float>(nctb, 0.0f));
-		std::vector<std::vector<OptRes>> tl_optres(n_thr,
-		    std::vector<OptRes>(FA->optres, FA->optres + nopt));
-		// Per-thread VC workspace (Vcontacts writes all these each call).
-		std::vector<VC_Global>               tl_vc(n_thr, *VC);
-		std::vector<std::vector<atomsas>>    tl_calc(n_thr, std::vector<atomsas>(natmr));
-		std::vector<std::vector<int>>        tl_calclist(n_thr, std::vector<int>(natmr));
-		std::vector<std::vector<int>>        tl_caidx(n_thr, std::vector<int>(natmr, -1));
-		std::vector<std::vector<ca_struct>>  tl_carec(n_thr,
-		    std::vector<ca_struct>(VC->ca_recsize));
-		std::vector<std::vector<int>>        tl_seed(n_thr,
-		    std::vector<int>(3 * natmr));
-		std::vector<std::vector<contactlist>> tl_contlist(n_thr,
-		    std::vector<contactlist>(GA_CONTLIST_SIZE));
-		std::vector<std::vector<ptindex>>    tl_ptorder(n_thr,
-		    std::vector<ptindex>(MAX_PT));
-		std::vector<std::vector<vertex>>     tl_centerpt(n_thr,
-		    std::vector<vertex>(MAX_PT));
-		std::vector<std::vector<vertex>>     tl_poly(n_thr,
-		    std::vector<vertex>(MAX_POLY));
-		std::vector<std::vector<plane>>      tl_cont(n_thr,
-		    std::vector<plane>(MAX_PT));
-		std::vector<std::vector<edgevector>> tl_vedge(n_thr,
-		    std::vector<edgevector>(MAX_POLY));
+		// ── P3: resident per-thread workspace (lean receptor copy) ───────────
+		// The receptor is READ-ONLY during scoring, so rather than re-cloning
+		// the full atom/residue arrays and every Voronoi scratch buffer on each
+		// generation (the dominant memory-bandwidth cost of the OpenMP path —
+		// O(generations × threads × natm)), we allocate them ONCE and keep them
+		// resident across calculate_fitness() calls. The resident receptor atoms
+		// stay valid because a rigid receptor never moves and flexible side-chain
+		// atoms are always in the per-chromosome dirty set restored below; only
+		// the small mutable ligand/pose/flex state is refreshed each generation.
+		// The cheap live snapshots (FA/VC scalars, optres records) are re-synced
+		// each call so nothing goes stale. The cache is fully rebuilt whenever
+		// the problem shape or any base pointer changes, so multiple sequential
+		// docks in one process are safe. Vcontacts/vcfunction already reset their
+		// scratch per eval (contacts is epoch-stamped, ca_index re-seeded, etc.),
+		// so carrying those buffers across calls matches the existing across-eval
+		// reuse within a single call — no behavioural change to the CF math.
+		struct ParEvalWS {
+			int n_thr=0, natm=-1, nres=-1, natmr=-1, nopt=-1, nctb=-1, ca_recsize=-1;
+			const void *fa=nullptr,*vc=nullptr,*atoms=nullptr,*res=nullptr,*optres=nullptr;
+			std::vector<std::vector<atom>>        tl_atoms;
+			std::vector<std::vector<resid>>       tl_res;
+			std::vector<FA_Global>                tl_fa;
+			std::vector<std::vector<int>>         tl_contacts;
+			std::vector<std::vector<float>>       tl_contrib;
+			std::vector<std::vector<OptRes>>      tl_optres;
+			std::vector<VC_Global>                tl_vc;
+			std::vector<std::vector<atomsas>>     tl_calc;
+			std::vector<std::vector<int>>         tl_calclist;
+			std::vector<std::vector<int>>         tl_caidx;
+			std::vector<std::vector<ca_struct>>   tl_carec;
+			std::vector<std::vector<int>>         tl_seed;
+			std::vector<std::vector<contactlist>> tl_contlist;
+			std::vector<std::vector<ptindex>>     tl_ptorder;
+			std::vector<std::vector<vertex>>      tl_centerpt;
+			std::vector<std::vector<vertex>>      tl_poly;
+			std::vector<std::vector<plane>>       tl_cont;
+			std::vector<std::vector<edgevector>>  tl_vedge;
+		};
+		static ParEvalWS ws;   // resident across generations (serial init: GA
+		                       // parallelism lives strictly inside this loop).
+
+		const bool ws_valid =
+			ws.n_thr == n_thr && ws.natm == natm && ws.nres == nres &&
+			ws.natmr == natmr && ws.nopt == nopt && ws.nctb == nctb &&
+			ws.ca_recsize == VC->ca_recsize &&
+			ws.fa == (const void*)FA && ws.vc == (const void*)VC &&
+			ws.atoms == (const void*)atoms && ws.res == (const void*)residue &&
+			ws.optres == (const void*)FA->optres;
+
+		if (!ws_valid) {
+			// Full (re)allocation — the receptor is cloned exactly once per shape.
+			ws = ParEvalWS{};
+			ws.n_thr = n_thr; ws.natm = natm; ws.nres = nres; ws.natmr = natmr;
+			ws.nopt = nopt;   ws.nctb = nctb; ws.ca_recsize = VC->ca_recsize;
+			ws.fa = FA; ws.vc = VC; ws.atoms = atoms; ws.res = residue;
+			ws.optres = FA->optres;
+			ws.tl_atoms.assign(n_thr, std::vector<atom>(atoms, atoms + natm + 1));
+			ws.tl_res.assign(n_thr, std::vector<resid>(residue, residue + nres + 1));
+			ws.tl_fa.assign(n_thr, *FA);
+			ws.tl_contacts.assign(n_thr, std::vector<int>(MAX_ATOM_NUMBER, 0));
+			ws.tl_contrib.assign(n_thr, std::vector<float>(nctb, 0.0f));
+			ws.tl_optres.assign(n_thr, std::vector<OptRes>(FA->optres, FA->optres + nopt));
+			ws.tl_vc.assign(n_thr, *VC);
+			ws.tl_calc.assign(n_thr, std::vector<atomsas>(natmr));
+			ws.tl_calclist.assign(n_thr, std::vector<int>(natmr));
+			ws.tl_caidx.assign(n_thr, std::vector<int>(natmr, -1));
+			ws.tl_carec.assign(n_thr, std::vector<ca_struct>(VC->ca_recsize));
+			ws.tl_seed.assign(n_thr, std::vector<int>(3 * natmr));
+			ws.tl_contlist.assign(n_thr, std::vector<contactlist>(GA_CONTLIST_SIZE));
+			ws.tl_ptorder.assign(n_thr, std::vector<ptindex>(MAX_PT));
+			ws.tl_centerpt.assign(n_thr, std::vector<vertex>(MAX_PT));
+			ws.tl_poly.assign(n_thr, std::vector<vertex>(MAX_POLY));
+			ws.tl_cont.assign(n_thr, std::vector<plane>(MAX_PT));
+			ws.tl_vedge.assign(n_thr, std::vector<edgevector>(MAX_POLY));
+		}
+
+		// Aliases keep the eval loop below identical to the previous per-call form.
+		auto& tl_atoms   = ws.tl_atoms;    auto& tl_res      = ws.tl_res;
+		auto& tl_fa      = ws.tl_fa;       auto& tl_contacts = ws.tl_contacts;
+		auto& tl_contrib = ws.tl_contrib;  auto& tl_optres   = ws.tl_optres;
+		auto& tl_vc      = ws.tl_vc;       auto& tl_calc     = ws.tl_calc;
+		auto& tl_calclist= ws.tl_calclist; auto& tl_caidx    = ws.tl_caidx;
+		auto& tl_carec   = ws.tl_carec;    auto& tl_seed     = ws.tl_seed;
+		auto& tl_contlist= ws.tl_contlist; auto& tl_ptorder  = ws.tl_ptorder;
+		auto& tl_centerpt= ws.tl_centerpt; auto& tl_poly     = ws.tl_poly;
+		auto& tl_cont    = ws.tl_cont;     auto& tl_vedge    = ws.tl_vedge;
 
 		for (int t = 0; t < n_thr; ++t) {
-			// Redirect FA mutable scratch to per-thread buffers.
+			// Refresh the cheap live FA snapshot each generation (scalar state may
+			// change between generations), then redirect FA scratch to the
+			// resident per-thread buffers.
+			tl_fa[t] = *FA;
 			tl_fa[t].contacts      = tl_contacts[t].data();
 			tl_fa[t].contributions = tl_contrib[t].data();
 			tl_fa[t].optres        = tl_optres[t].data();
-			// Redirect VC mutable workspace to per-thread buffers.
+			// Keep optres non-cf fields in sync with the reference (cf fields are
+			// cleared per-chromosome in the eval loop below).
+			std::copy(FA->optres, FA->optres + nopt, tl_optres[t].begin());
+			// Refresh the cheap live VC snapshot, then redirect VC scratch.
+			tl_vc[t] = *VC;
 			tl_vc[t].Calc      = tl_calc[t].data();
 			tl_vc[t].Calclist  = tl_calclist[t].data();
 			tl_vc[t].ca_index  = tl_caidx[t].data();
@@ -2769,10 +2839,31 @@ void calculate_fitness(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* chr
 		}
 		const int n_optres_atoms = (int)optres_atom_list.size();
 
+		// ── FLEXAID_DETERMINISTIC (P3 · CI A/B reproducibility) ──────────────
+		// When set, the parallel CF-eval loop runs on a single thread so its
+		// reduction order is serial-equivalent and bit-reproducible run-to-run
+		// (each chromosome writes only its own chrom[ii].cf, so 1-thread ==
+		// deterministic order). Unset (default) uses the fast multi-thread path,
+		// where the ~0.2% chromosome-level numeric drift documented in
+		// OPTIMIZATION_KNOWN_ISSUES.md is accepted (see FLEXAID_FAST_DOCKING_PLAN
+		// §P3/§4.3). Enabled by the compile-time macro -DFLEXAID_DETERMINISTIC
+		// OR by the env var FLEXAID_DETERMINISTIC=<non-empty, not "0">.
+		static const bool deterministic_eval = [](){
+#ifdef FLEXAID_DETERMINISTIC
+			return true;
+#else
+			const char* env = std::getenv("FLEXAID_DETERMINISTIC");
+			return env && env[0] != '\0' && env[0] != '0';
+#endif
+		}();
 #ifdef _OPENMP
-#pragma omp parallel for schedule(dynamic) default(none) \
+		const int eval_threads = deterministic_eval ? 1 : n_thr;
+#endif
+
+#ifdef _OPENMP
+#pragma omp parallel for schedule(dynamic) num_threads(eval_threads) default(none) \
 	shared(chrom, pop_size, GB, gene_lim, cleftgrid, target, \
-	       atoms, residue, FA, VC, \
+	       atoms, residue, FA, VC, eval_threads, \
 	       tl_atoms, tl_res, tl_fa, tl_optres, tl_vc, \
 	       natm, nres, nopt, n_receptor_chains, \
 	       use_selective, dirty_atm, dirty_res_idx, n_dirty_atm, n_dirty_res, \
