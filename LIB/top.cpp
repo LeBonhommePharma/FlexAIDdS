@@ -2588,12 +2588,29 @@ int main(int argc, char **argv){
 		// P1: create local TargetServer for this GA run (P1 wiring; default 1M conc, later from config)
 		std::unique_ptr<target::TargetServer> local_ts;
 		target::TargetServer* active_ts = nullptr;
-		{
+		// TEMPER 0 is a SUPPORTED legacy configuration, not an error: read_input.cpp
+		// detects it and deliberately forces clustering to CF, printing "does not
+		// allow the consideration of conformational entropy". The grand-canonical
+		// machinery is therefore already excluded by the user's own config.
+		//
+		// TargetServer holds a GrandPartitionFunction by value, whose constructor
+		// throws on temperature <= 0. Constructing it unconditionally turned that
+		// supported config into a hard fatal ("Fatal error: Temperature must be
+		// positive") before the GA could start. Guard the construction instead of
+		// relaxing the positive-temperature invariant in the thermodynamic classes,
+		// which is correct and should stay.
+		//
+		// Leaving active_ts null is safe on this path: cluster() accepts the pointer
+		// but never dereferences it, and the post-run [GRAND] reporting block below
+		// is already wrapped in `if (active_ts)`.
+		if (FA->temperature > 0) {
 			target::TargetConfig tcfg;
 			tcfg.temperature_K = static_cast<double>(FA->temperature);
 			tcfg.default_conc_M = user_conc_M; // P3: from --conc or default
 			local_ts = std::make_unique<target::TargetServer>(tcfg);
 			active_ts = local_ts.get();
+		} else {
+			printf("[GRAND] disabled: TEMPER=0 (legacy CF-only mode)\n");
 		}
 
 		if (use_parallel_dock) {
