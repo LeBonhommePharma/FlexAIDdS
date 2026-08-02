@@ -2375,6 +2375,7 @@ flexaids_add_unit_test(test_protocol_config
     # test_dataset_runner — benchmark dataset runner tests
     add_executable(test_dataset_runner
         tests/test_dataset_runner.cpp
+        tests/rmsd_crosscheck_engine.cpp
         LIB/DatasetRunner.cpp
         LIB/DatasetRunnerStats.cpp
         LIB/DatasetRunnerProvenance.cpp
