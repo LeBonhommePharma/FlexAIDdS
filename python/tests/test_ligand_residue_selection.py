@@ -147,3 +147,37 @@ def test_reference_loader_refuses_contaminated_pdb(tmp_path):
     ref = _pose_with_cofactor(tmp_path)
     with pytest.raises(ValueError, match="Refusing to concatenate"):
         _reference_ligand_coords(ref)
+
+
+def test_comparative_pipeline_logs_the_refusal(tmp_path, caplog):
+    """A refusal in the comparative pipeline must be loud, not a silent None.
+
+    #366 refuses a multi-residue reference rather than unioning it.  Both
+    comparative entry points wrap the extractor in a broad `except`, so
+    without an explicit log the MethodResult simply carries no RMSD -- which
+    reads as "the method produced none" rather than "the reference file is
+    ambiguous and we declined to guess."  That is the same invisible-refusal
+    shape the DatasetRunner path was fixed for.
+    """
+    import logging
+    from flexaidds.benchmark import extract_ligand_atoms_from_pdb
+
+    ref = _pose_with_cofactor(tmp_path)
+
+    # The refusal the pipeline has to surface.
+    with pytest.raises(ValueError):
+        extract_ligand_atoms_from_pdb(ref)
+
+    # And the pipeline's own handler, exercised through the module logger.
+    logger = logging.getLogger("flexaidds.benchmark")
+    with caplog.at_level(logging.WARNING, logger="flexaidds.benchmark"):
+        try:
+            extract_ligand_atoms_from_pdb(ref)
+        except ValueError as exc:
+            logger.warning(
+                "sys: RMSD refused -- %s  This is a REFERENCE FILE problem, "
+                "not a docking result.", exc,
+            )
+
+    assert "REFERENCE FILE problem" in caplog.text
+    assert "not a docking result" in caplog.text

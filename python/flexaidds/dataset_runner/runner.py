@@ -1244,6 +1244,11 @@ class DatasetRunner:
         # int = a real process exit/return code; None = the engine never
         # executed (exec failure), which no completed subprocess.run can produce.
         self._entry_exit_codes: Dict[str, Optional[int]] = {}
+        # Poses whose element list disagreed with the reference's.  Per
+        # instance and reset per dataset, like the crash tally above it: a
+        # process-global would report the previous dataset's refusals as
+        # this one's, which is the misattribution this PR exists to close.
+        self._element_mismatches: List[str] = []
 
     def _effective_temperature(self, slug: str) -> float:
         """Auto-force 298 K for ITC/thermo datasets (handoff requirement).
@@ -1462,6 +1467,7 @@ class DatasetRunner:
                     ligand_id,
                     structural_state,
                     reference_ligand=ligand_path,
+                    mismatches=self._element_mismatches,
                 )
                 # Copy the coordinates out BEFORE the with-block closes and
                 # takes them.  Deliberately after the parse, so a preservation
@@ -1539,6 +1545,7 @@ class DatasetRunner:
         ligand_id: str,
         structural_state: str,
         reference_ligand: Optional[Path] = None,
+        mismatches: Optional[List[str]] = None,
     ) -> List[PoseScore]:
         """Parse FlexAIDdS result PDB files from a completed docking run.
 
@@ -1561,11 +1568,13 @@ class DatasetRunner:
         # must not reach the caller's broad `except Exception` looking like one.
         # Without this the raise escapes the per-file try below, degrades to
         # "this target produced nothing", and is indistinguishable from bad
-        # docking -- the exact shape this PR exists to remove.
+        # docking -- the exact shape #366 exists to remove.
         ref_coords = None
+        ref_elements = None
         if reference_ligand:
             try:
-                ref_coords = _reference_ligand_coords(reference_ligand)
+                ref_coords, ref_elements = _reference_ligand_atoms(
+                    reference_ligand)
             except ValueError as exc:
                 logger.warning(
                     "Reference ligand refused for %s/%s: %s  No RMSD will be "
@@ -1619,7 +1628,8 @@ class DatasetRunner:
                             entropy_correction = float(m.group(1))
 
                 if rmsd < 0.0 and ref_coords is not None:
-                    rmsd = _pose_rmsd_vs_reference(pdb_path, ref_coords)
+                    rmsd = _pose_rmsd_vs_reference(
+                        pdb_path, ref_coords, ref_elements, mismatches)
 
             except Exception as exc:
                 logger.debug("Error parsing %s: %s", pdb_path, exc)
@@ -1827,6 +1837,7 @@ class DatasetRunner:
         with self._crash_lock:
             self._flexaid_crashes = 0
             self._entry_exit_codes = {}
+            self._element_mismatches = []
 
         def _process_one_item(item: Tuple[str, str]) -> Tuple[str, str, List[PoseScore], float, str]:
             """Process a single (target_id, structural_state) entry.
@@ -1956,6 +1967,18 @@ class DatasetRunner:
             exit_codes = dict(self._entry_exit_codes)
         newly = len(results)
         resumed = len(already_completed)
+
+        # Element-order refusals are scored as misses, so they must be visible
+        # or a correspondence bug reads as bad docking.
+        if self._element_mismatches:
+            logger.warning(
+                "%d pose(s) had an element list disagreeing with their "
+                "reference and were scored as misses: %s%s",
+                len(self._element_mismatches),
+                ", ".join(
+                    Path(p).name for p in self._element_mismatches[:5]),
+                " ..." if len(self._element_mismatches) > 5 else "",
+            )
 
         # MPI gather (still works at target granularity for final aggregation)
         if self._mpi_comm is not None:
@@ -2410,18 +2433,24 @@ def _is_initial_pose_file(pdb_path: Path) -> bool:
     return pdb_path.stem.upper().endswith("_INI")
 
 
-def _reference_ligand_coords(ligand_path: Path):
-    """Heavy-atom coordinates from a reference ligand file (SDF/MOL2/PDB)."""
-    from flexaidds.benchmark import extract_ligand_coords_from_pdb
+def _reference_ligand_atoms(ligand_path: Path):
+    """Heavy-atom coordinates AND elements from a reference ligand file.
+
+    The elements are needed to type the symmetry-corrected RMSD.  Typing the
+    reference with the *pose's* element list would assume the two files list
+    atoms in the same order -- and #354 exists precisely because FlexAID pose
+    order and SDF file order are not guaranteed to agree.
+    """
+    from flexaidds.benchmark import extract_ligand_atoms_from_pdb
 
     suffix = ligand_path.suffix.lower()
     if suffix == ".pdb":
         # Reference PDBs can carry cofactors too.  No count is available here
         # (this IS the count source), so the extractor must refuse to union
-        # rather than silently merge a cofactor into the reference.
-        return extract_ligand_coords_from_pdb(ligand_path)
+        # rather than silently merge a cofactor into the reference (#366).
+        return extract_ligand_atoms_from_pdb(ligand_path)
     if suffix in {".sdf", ".mol"}:
-        return _extract_ligand_coords_from_sdf(ligand_path)
+        return _extract_ligand_atoms_from_sdf(ligand_path)
     if suffix == ".mol2":
         from flexaidds.dataset_adapters import parse_mol2_atoms
 
@@ -2430,12 +2459,18 @@ def _reference_ligand_coords(ligand_path: Path):
             raise ValueError(f"No atoms in {ligand_path}")
         import numpy as np
 
-        return np.array([[a.x, a.y, a.z] for a in atoms], dtype=np.float64)
+        return (np.array([[a.x, a.y, a.z] for a in atoms], dtype=np.float64),
+                [str(getattr(a, "element", "") or "").upper() for a in atoms])
     raise ValueError(f"Unsupported reference ligand format: {ligand_path}")
 
 
-def _extract_ligand_coords_from_sdf(sdf_path: Path):
-    """Parse heavy-atom XYZ rows from a V2000 SD file."""
+def _reference_ligand_coords(ligand_path: Path):
+    """Coordinates only.  See :func:`_reference_ligand_atoms`."""
+    return _reference_ligand_atoms(ligand_path)[0]
+
+
+def _extract_ligand_atoms_from_sdf(sdf_path: Path):
+    """Parse heavy-atom XYZ rows and element symbols from a V2000 SD file."""
     import numpy as np
 
     lines = sdf_path.read_text().splitlines()
@@ -2449,6 +2484,7 @@ def _extract_ligand_coords_from_sdf(sdf_path: Path):
 
     n_atoms = int(lines[counts_line][0:3].strip())
     coords = []
+    elements = []
     for line in lines[counts_line + 1: counts_line + 1 + n_atoms]:
         parts = line.split()
         if len(parts) < 4:
@@ -2457,17 +2493,26 @@ def _extract_ligand_coords_from_sdf(sdf_path: Path):
         if element.upper() == "H":
             continue
         coords.append((float(parts[0]), float(parts[1]), float(parts[2])))
+        elements.append(element.upper())
     if not coords:
         raise ValueError(f"No heavy atoms in {sdf_path}")
-    return np.array(coords, dtype=np.float64)
+    return np.array(coords, dtype=np.float64), elements
 
 
-def _pose_rmsd_vs_reference(pose_pdb: Path, ref_coords) -> float:
+def _extract_ligand_coords_from_sdf(sdf_path: Path):
+    """Coordinates only.  See :func:`_extract_ligand_atoms_from_sdf`."""
+    return _extract_ligand_atoms_from_sdf(sdf_path)[0]
+
+
+def _pose_rmsd_vs_reference(
+    pose_pdb: Path, ref_coords, ref_elements=None, mismatches=None
+) -> float:
     """RMSD between docked pose ligand heavy atoms and reference coordinates."""
-    from flexaidds.benchmark import compute_rmsd, extract_ligand_coords_from_pdb
+    from flexaidds.benchmark import compute_rmsd, extract_ligand_atoms_from_pdb
 
     try:
-        pred = extract_ligand_coords_from_pdb(pose_pdb, expected_n_atoms=len(ref_coords))
+        pred, pred_elements = extract_ligand_atoms_from_pdb(
+            pose_pdb, expected_n_atoms=len(ref_coords))
     except ValueError:
         return -1.0
     if pred.shape != ref_coords.shape:
@@ -2480,6 +2525,31 @@ def _pose_rmsd_vs_reference(pose_pdb: Path, ref_coords) -> float:
         # here is a bug in selection, not a condition to work around.
         return -1.0
     try:
-        return compute_rmsd(pred, ref_coords)
+        # Symmetry-corrected, as FlexAID's calc_rmsd Hungarian branch.
+        #
+        # Both element lists are read from their own file.  If they disagree,
+        # the two files do not list the same atoms in the same order -- the
+        # #354 correspondence bug, resurfacing on a new pair -- and every
+        # number downstream is measured against a shifted correspondence.
+        # Report the sentinel rather than a plausible RMSD.
+        if ref_elements is not None and list(ref_elements) != list(pred_elements):
+            # Fail closed, but LOUDLY.  -1.0 is the same sentinel a genuine
+            # miss produces, and metrics.docking_power keeps the target in the
+            # denominator either way -- so a systematic element-order
+            # divergence would silently depress reported docking power with no
+            # diagnostic anywhere.  A refusal nobody can see has the same shape
+            # as the bug it replaced.
+            logger.warning(
+                "RMSD refused for %s: reference and pose list different "
+                "elements (ref %s..., pose %s...).  The two files do not "
+                "describe the same atoms in the same order; this target is "
+                "scored as a miss and the count is reported in the run "
+                "summary.",
+                pose_pdb.name, list(ref_elements)[:6], list(pred_elements)[:6],
+            )
+            if mismatches is not None:
+                mismatches.append(str(pose_pdb))
+            return -1.0
+        return compute_rmsd(pred, ref_coords, pred_elements)
     except ValueError:
         return -1.0

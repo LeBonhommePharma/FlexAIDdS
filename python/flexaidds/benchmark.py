@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import io as _io
 import json
+import logging
 import math
 import os
 import re
@@ -92,9 +93,48 @@ def pic50_to_dg(pic50: float, temperature_K: float = 298.15) -> float:
 # ---------------------------------------------------------------------------
 
 
-def extract_ligand_coords_from_pdb(
+# Two-letter elements that occur in ligands and cofactors.  A one-letter
+# truncation types CL as C and lets a chlorine into the carbon bucket, where
+# the assignment may pair it with a carbon and lower the RMSD across
+# chemically different atoms -- the exact failure the per-type constraint
+# exists to prevent.  Halogenated ligands are common in Astex.
+_TWO_LETTER_ELEMENTS = frozenset({
+    "CL", "BR", "SI", "SE", "FE", "ZN", "MG", "MN", "NA", "CA", "CU",
+    "NI", "CO", "CD", "HG", "PT", "AS", "AL", "LI", "BA", "SR", "SN",
+})
+
+
+def _element_from_atom_name(name_field: str) -> str:
+    """Infer the element from a PDB atom-name field, columns 13-16.
+
+    FlexAID pose PDBs carry no element columns (77-78), so the name is the
+    only source.  The PDB convention puts a two-letter element left-justified
+    in columns 13-14 and a one-letter element in column 14, which makes
+    ``name[0:2]`` the candidate and ``name[1]`` the one-letter reading.
+    Names like ``C 0`` and ``CL3`` are both handled: the first has a space in
+    column 14 and cannot be two-letter, the second is CL.
+    """
+    raw = name_field[:2].strip().upper()
+    if len(raw) == 2 and raw in _TWO_LETTER_ELEMENTS:
+        return raw
+    stripped = name_field.strip().upper()
+    if not stripped:
+        return ""
+    if stripped[0].isdigit():
+        # PDB convention: a leading digit is a branch index on a hydrogen
+        # ("1HB", "2HG1").  Typed by first character it becomes element "1"
+        # and gets its own swappable bucket.
+        rest = stripped.lstrip("0123456789")
+        return rest[:1] if rest else ""
+    return stripped[:1]
+
+
+logger = logging.getLogger(__name__)
+
+
+def extract_ligand_atoms_from_pdb(
     pdb_path: Path, expected_n_atoms: int | None = None
-) -> np.ndarray:
+) -> "tuple[np.ndarray, list[str]]":
     """Extract ligand heavy-atom coordinates from a PDB file.
 
     Selects HETATM records excluding HOH.  Returns an (N, 3) array in
@@ -127,12 +167,19 @@ def extract_ligand_coords_from_pdb(
             resname = line[17:20].strip()
             if resname == "HOH":
                 continue
-            element = line[76:78].strip() if len(line) > 77 else ""
+            element = line[76:78].strip().upper() if len(line) > 77 else ""
+            if not element:
+                # FlexAID pose PDBs carry no element columns, which is the
+                # whole reason this fallback exists -- so the hydrogen test
+                # has to come AFTER it, or on exactly those files it compares
+                # against an empty string and excludes nothing.
+                element = _element_from_atom_name(line[12:16])
             if element == "H":
                 continue
             key = (resname, line[21:22], line[22:27].strip())
             residues.setdefault(key, []).append(
-                (float(line[30:38]), float(line[38:46]), float(line[46:54]))
+                (float(line[30:38]), float(line[38:46]), float(line[46:54]),
+                 element.upper())
             )
 
     if not residues:
@@ -148,9 +195,11 @@ def extract_ligand_coords_from_pdb(
         # resolved without a count, and unioning them is the calcium bug: on
         # 1mq6 it produced 37 atoms against a 36-atom ligand and shifted every
         # subsequent atom by one.  #363 fixed that for callers that pass a
-        # count; this refuses to reintroduce it for callers that cannot.
+        # count; #366 refuses to reintroduce it for callers that cannot.
         if len(residues) == 1:
-            return np.array(next(iter(residues.values())), dtype=np.float64)
+            group = next(iter(residues.values()))
+            return (np.array([a[:3] for a in group], dtype=np.float64),
+                    [a[3] for a in group])
 
         counts = {f"{k[0]}/{k[1]}{k[2]}": len(v) for k, v in residues.items()}
         raise ValueError(
@@ -164,7 +213,8 @@ def extract_ligand_coords_from_pdb(
 
     matches = [g for g in residues.values() if len(g) == expected_n_atoms]
     if len(matches) == 1:
-        return np.array(matches[0], dtype=np.float64)
+        return (np.array([a[:3] for a in matches[0]], dtype=np.float64),
+                [a[3] for a in matches[0]])
 
     counts = {f"{k[0]}/{k[1]}{k[2]}": len(v) for k, v in residues.items()}
     raise ValueError(
@@ -285,7 +335,55 @@ def _tokenize_mmcif_line(line: str) -> List[str]:
 # ---------------------------------------------------------------------------
 
 
-def compute_rmsd(coords_pred: np.ndarray, coords_ref: np.ndarray) -> float:
+def extract_ligand_coords_from_pdb(
+    pdb_path: Path, expected_n_atoms: int | None = None
+) -> np.ndarray:
+    """Coordinates only.  See :func:`extract_ligand_atoms_from_pdb`."""
+    return extract_ligand_atoms_from_pdb(pdb_path, expected_n_atoms)[0]
+
+
+def _symmetry_permutation(
+    coords_pred: np.ndarray,
+    coords_ref: np.ndarray,
+    elements: "list[str]",
+) -> np.ndarray:
+    """Optimal within-element atom assignment, as FlexAID's Hungarian branch.
+
+    ``LIB/calc_rmsd.c::calc_Hungarian_RMSD`` builds one cost matrix per atom
+    TYPE and solves the assignment problem inside each type, so a symmetric
+    ligand is not penalised for an equivalent relabelling.  A benzene flipped
+    180 degrees is the same pose; paired positionally it reads as a large
+    RMSD.  This reproduces that, one element at a time.
+
+    Only atoms of the same element may swap -- carbon never pairs with oxygen
+    -- so the assignment can never lower the RMSD by matching chemically
+    different atoms.  Returns an index array ``perm`` such that
+    ``coords_ref[perm]`` is the correspondence that minimises the RMSD.
+    """
+    from scipy.optimize import linear_sum_assignment
+
+    perm = np.arange(len(elements))
+    by_element: dict = {}
+    for i, el in enumerate(elements):
+        by_element.setdefault(el, []).append(i)
+
+    for idx in by_element.values():
+        if len(idx) < 2:
+            continue
+        idx_arr = np.asarray(idx)
+        # cost[i][j] = squared distance from pred atom i to ref atom j
+        diff = coords_pred[idx_arr][:, None, :] - coords_ref[idx_arr][None, :, :]
+        cost = (diff * diff).sum(axis=2)
+        rows, cols = linear_sum_assignment(cost)
+        perm[idx_arr[rows]] = idx_arr[cols]
+    return perm
+
+
+def compute_rmsd(
+    coords_pred: np.ndarray,
+    coords_ref: np.ndarray,
+    elements: "list[str] | None" = None,
+) -> float:
     """Docking RMSD: in-place, in the receptor frame, NO superposition.
 
     This is the quantity the 2.0 A redocking criterion is defined on.  Both
@@ -313,6 +411,14 @@ def compute_rmsd(coords_pred: np.ndarray, coords_ref: np.ndarray) -> float:
     n = coords_pred.shape[0]
     if n == 0:
         return 0.0
+
+    if elements is not None:
+        if len(elements) != n:
+            raise ValueError(
+                f"elements has {len(elements)} entries for {n} atoms."
+            )
+        coords_ref = coords_ref[_symmetry_permutation(
+            coords_pred, coords_ref, elements)]
 
     diff = coords_pred - coords_ref
     return float(np.sqrt((diff * diff).sum() / n))
@@ -980,20 +1086,35 @@ def run_flexaidds(
     # RMSD: use the best-energy pose coordinates vs reference
     rmsd_val = None
     try:
-        ref_coords = extract_ligand_coords_from_pdb(system.reference_pose_pdb_path)
+        ref_coords, ref_elements = extract_ligand_atoms_from_pdb(
+            system.reference_pose_pdb_path)
         # Find best pose RMSD among top mode poses
         best_rmsd = float("inf")
         for pose in top._poses:
             if pose.coordinates is not None:
                 pred_coords = pose.coordinates
                 if pred_coords.shape == ref_coords.shape:
-                    r = compute_rmsd(pred_coords, ref_coords)
+                    r = compute_rmsd(
+                        pred_coords, ref_coords, ref_elements)
                     if r < best_rmsd:
                         best_rmsd = r
         if best_rmsd < float("inf"):
             rmsd_val = best_rmsd
-    except (ValueError, FileNotFoundError, OSError):
-        pass
+    except (FileNotFoundError, OSError) as exc:
+        logger.warning(
+            "%s: reference pose unreadable (%s).  No RMSD reported.",
+            system.system_id, exc,
+        )
+    except ValueError as exc:
+        # #366 refuses a multi-residue reference rather than unioning it.  That
+        # refusal is deliberate and must not arrive as a silent None: without
+        # this line the MethodResult simply carries no RMSD, which reads as
+        # "the method did not produce one" rather than "the reference file is
+        # ambiguous and we declined to guess."
+        logger.warning(
+            "%s: RMSD refused -- %s  This is a REFERENCE FILE problem, not a "
+            "docking result.", system.system_id, exc,
+        )
 
     return MethodResult(
         method="flexaidds",
@@ -1036,21 +1157,36 @@ def run_boltz2(
     # Extract RMSD from best structure sample
     rmsd_val = None
     try:
-        ref_coords = extract_ligand_coords_from_pdb(system.reference_pose_pdb_path)
+        ref_coords, ref_elements = extract_ligand_atoms_from_pdb(
+            system.reference_pose_pdb_path)
         best_rmsd = float("inf")
         for struct in result.structures:
             try:
                 pred_coords = extract_ligand_coords_from_mmcif(struct)
                 if pred_coords.shape == ref_coords.shape:
-                    r = compute_rmsd(pred_coords, ref_coords)
+                    r = compute_rmsd(
+                        pred_coords, ref_coords, ref_elements)
                     if r < best_rmsd:
                         best_rmsd = r
             except (ValueError, IndexError):
                 continue
         if best_rmsd < float("inf"):
             rmsd_val = best_rmsd
-    except (ValueError, FileNotFoundError, OSError):
-        pass
+    except (FileNotFoundError, OSError) as exc:
+        logger.warning(
+            "%s: reference pose unreadable (%s).  No RMSD reported.",
+            system.system_id, exc,
+        )
+    except ValueError as exc:
+        # #366 refuses a multi-residue reference rather than unioning it.  That
+        # refusal is deliberate and must not arrive as a silent None: without
+        # this line the MethodResult simply carries no RMSD, which reads as
+        # "the method did not produce one" rather than "the reference file is
+        # ambiguous and we declined to guess."
+        logger.warning(
+            "%s: RMSD refused -- %s  This is a REFERENCE FILE problem, not a "
+            "docking result.", system.system_id, exc,
+        )
 
     # Extract affinity
     predicted_dg = None
