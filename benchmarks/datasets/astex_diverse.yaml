@@ -133,6 +133,32 @@ metrics:
   - median_rmsd
   - entropy_rescue_rate
 
+# PROVENANCE of the five values below.  They are not measurements and they are
+# not guesses: every one of them is a re-estimate recorded in this file on
+# 2026-04-19 (50aebaee) in a labelled `claude_reevaluated_baselines:` block,
+# which c414e814 (2026-06-19, "stabilize benchmark thermodynamics and
+# diagnostics") promoted into `expected_baselines` while deleting the label and
+# the reasoning in the same diff.  The numbers survived; their justification did
+# not, and a bare 0.70 has read as an unsourced target ever since.  Restored
+# verbatim from 50aebaee so the threshold carries its own argument:
+#
+#   claude_reevaluated_by: "Claude Opus 4.6 — 2026-04-19"
+#
+#   docking_power_top1: 0.70   # was 0.80 — above all published; 0.70 is still SOTA-tier
+#   docking_power_top3: 0.85   # was 0.90 — follows top-1 adjustment
+#   mean_rmsd:          2.30   # was 2.10 — slight increase for realism
+#   median_rmsd:        1.95   # was 1.80 — follows mean adjustment
+#   entropy_rescue_rate 0.30   # unchanged; conservative and defensible
+#
+#   rationale: "Docking power 0.80→0.70: no published method exceeds 74% top-1
+#   on Astex Diverse (Glide SP).  FlexAIDdS with entropy correction at 70% would
+#   be competitive with Glide XP and above Vina. ... Entropy rescue rate
+#   unchanged at 0.30 — this is the honest conservative estimate for a general
+#   set."
+#
+# Read that alongside `published_baselines` below (0.452, Gaudreault &
+# Najmanovich): these are ASPIRATIONAL targets for FlexAIDdS, not the measured
+# state of the field, and the gate compares against the aspiration.
 expected_baselines:
   docking_power_top1: 0.70
   docking_power_top3: 0.85
