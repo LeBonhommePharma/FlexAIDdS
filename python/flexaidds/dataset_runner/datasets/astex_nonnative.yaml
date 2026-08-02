@@ -57,6 +57,28 @@ metrics:
   - docking_power_top3
   - entropy_rescue_rate
 
+# PROVENANCE of the values below.  Restored verbatim from 50aebaee (2026-04-19),
+# where they lived in a labelled `claude_reevaluated_baselines:` block.
+# c414e814 (2026-06-19) promoted the numbers into `expected_baselines` and
+# deleted the label and the rationale in the same diff -- here, in hap2.yaml and
+# in astex_diverse.yaml.
+#
+#   claude_reevaluated_by: "Claude Opus 4.6 - 2026-04-19"
+#
+#   crossdock_success_rate_2A: 0.32  # was 0.40 - top of published; 0.32 still excellent
+#   crossdock_success_rate_3A: 0.52  # was 0.60 - follows 2A adjustment
+#   crossdock_mean_rmsd:       3.10  # was 2.90 - consistent with 32% under 2A
+#   crossdock_median_rmsd:     2.65  # was 2.40 - follows mean
+#   docking_power_top1:        0.38  # was 0.45 - cross-docking is hard; 0.38 competitive
+#   docking_power_top3:        0.55  # was 0.60 - follows top-1
+#   entropy_rescue_rate:       0.22  # was 0.20 - cross-docking benefits most
+#
+#   rationale: "Cross-docking baselines adjusted down to reflect published
+#   performance.  Original 40% under 2A is at the very top of published range
+#   (Glide: 30-40%).  32% is still excellent and defensible. ... Entropy rescue
+#   rate raised slightly from 0.20->0.22: cross-docking is the scenario where
+#   entropy corrections should matter most (induced-fit conformational
+#   entropy)."
 expected_baselines:
   crossdock_success_rate_2A: 0.32
   crossdock_success_rate_3A: 0.52

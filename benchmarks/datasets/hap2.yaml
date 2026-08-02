@@ -104,6 +104,34 @@ metrics:
 
 # Based on FlexAID JCIM 2015 reported performance on HAP2 holo/apo pairs,
 # with entropy correction expected to improve non-native receptor docking.
+# PROVENANCE of the values below.  Restored verbatim from 50aebaee (2026-04-19),
+# where they lived in a labelled `claude_reevaluated_baselines:` block.
+# c414e814 (2026-06-19, "stabilize benchmark thermodynamics and diagnostics")
+# promoted the numbers into `expected_baselines` and deleted the label, the
+# per-value notes and the rationale in the same diff -- in this file and in
+# astex_diverse.yaml and astex_nonnative.yaml.  The numbers survived; their
+# justification did not.
+#
+#   claude_reevaluated_by: "Claude Opus 4.6 - 2026-04-19"
+#
+#   docking_power_top1: 0.60   # was 0.62 - essentially unchanged; FlexAID published ~0.56
+#   docking_power_top3: 0.76   # was 0.78 - follows top-1
+#   mean_rmsd:          2.55   # was 2.50 - consistent with ~60% under 2A
+#   median_rmsd:        2.15   # was 2.10 - follows mean
+#   entropy_rescue_rate 0.30   # was 0.28 - HAP2 has many flexible targets
+#   scoring_power_pearson_r 0.55  # was 0.58 - no published r for FlexAID
+#   scoring_power_rmse  2.30   # was 2.20 - consistent with r~0.55
+#
+#   rationale: "HAP2 is the most credible dataset because it has published
+#   FlexAID baselines from the JCIM 2015 paper.  Original FlexAID achieved ~56%
+#   top-1 on holo; with entropy correction, ~60% is realistic and defensible.
+#   ... This is the only dataset where original baselines are grounded in
+#   published data."
+#
+# That last sentence is the most load-bearing provenance claim in the suite:
+# HAP2 is the one dataset whose targets descend from measured FlexAID numbers
+# rather than from field-wide comparison.  It existed only in git history
+# between 2026-06-19 and this commit.
 expected_baselines:
   docking_power_top1: 0.60
   docking_power_top3: 0.76
