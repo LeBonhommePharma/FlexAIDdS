@@ -148,10 +148,20 @@ Three tiers, by how a parameter can be recovered after the fact:
 |---|---|---|
 | **FIXED** | anything written to `dock_config.json` | the artifact |
 | **VARIABLE** | the COM floor, via `CF.com` in the pose | the poses themselves |
-| **LOST** | `permeability`, `pb_pocket_weight`, `pb_clash_weight` | **nothing** |
+| **LOST** | `permeability`, `pb_pocket_weight`, `pb_clash_weight`, `FLEXAIDDS_MULTI_CLEFT` | **nothing** |
 
 **The rule, in one line: anything that goes through `getenv` and nowhere else is gone the moment
-the shell exits.** Those three are read from the environment and never written to any config or
+the shell exits.**
+
+  🔴 `FLEXAIDDS_MULTI_CLEFT` is the sharpest instance, because it silently changes the SCIENCE
+  rather than a weight: `>1` routes docking through `ParallelDock`, whose subregion setup
+  **unconditionally forces `mif_enabled = false` and `coarse_init_enabled = false`**
+  (`ParallelDock.cpp:213-216`) regardless of what `dock_config.json` requested. A MIF ablation
+  run with it set compares OFF against OFF and returns a null that reads as "MIF is not the
+  cause." It defaults to `0` (`ProtocolConfig.h:133`) and is set nowhere in `ops/` or
+  `.github/workflows/` — but nothing in any artifact records whether it was on. **The only
+  witness is the `=== ParallelDock mode: N spatial regions ===` line on stderr
+  (`top.cpp:2601`); grep for it before believing any single-factor seeding result.** Those three are read from the environment and never written to any config or
 receipt, so a completed run cannot be told apart from one at different weights.
 
 - **Every run MUST emit its `getenv`-only scoring environment beside its results** (sidecar or
