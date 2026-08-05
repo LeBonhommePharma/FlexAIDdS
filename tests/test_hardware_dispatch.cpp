@@ -774,7 +774,9 @@ TEST(ShannonThermoStackEdge, WideEnergySpread) {
 // --- Torsional vibrational entropy: single valid mode ---
 
 TEST(TorsionalVibEntropyEdge, SingleValidMode) {
-    // 7 modes: first 6 skipped, only mode[6] counted
+    // Internal-coordinate torsional modes are NOT positionally skipped: every
+    // mode above the eigenvalue threshold contributes (no rigid-body zero-mode
+    // manifold in dihedral space).
     std::vector<tencm::NormalMode> modes(7);
     for (int i = 0; i < 7; ++i)
         modes[i].eigenvalue = 1.0;
@@ -782,6 +784,17 @@ TEST(TorsionalVibEntropyEdge, SingleValidMode) {
     double S = compute_torsional_vibrational_entropy(modes, 298.15);
     EXPECT_GT(S, 0.0);
     EXPECT_TRUE(std::isfinite(S));
+
+    // Regression pin for the internal-coordinate fix: with exactly 6 equal modes
+    // the old "skip first 6" logic left the eigenvalue buffer empty and returned
+    // 0. All 6 must now count, and (all equal) S must be exactly 6x a single mode.
+    std::vector<tencm::NormalMode> six(6);
+    for (auto& m : six) m.eigenvalue = 1.0;
+    std::vector<tencm::NormalMode> one(1, tencm::NormalMode{1.0, {}});
+    double S6 = compute_torsional_vibrational_entropy(six, 298.15);
+    double S1 = compute_torsional_vibrational_entropy(one, 298.15);
+    EXPECT_GT(S6, 0.0);
+    EXPECT_NEAR(S6, 6.0 * S1, 1e-9);
 }
 
 // --- Torsional vibrational entropy: mixed valid/invalid modes ---
@@ -794,8 +807,13 @@ TEST(TorsionalVibEntropyEdge, MixedValidInvalidModes) {
 
     double S = compute_torsional_vibrational_entropy(modes, 298.15);
     EXPECT_TRUE(std::isfinite(S));
-    // Only 3 valid modes (indices 7, 9, 11) should contribute
+    // No positional skip: all 6 odd-index modes (1,3,5,7,9,11) contribute; the 6
+    // sub-threshold even-index modes are dropped by the eigenvalue guard. (Under
+    // the old skip-first-6 logic only indices 7,9,11 counted.)
     EXPECT_GT(S, 0.0);
+    std::vector<tencm::NormalMode> one(1, tencm::NormalMode{1.0, {}});
+    double S1 = compute_torsional_vibrational_entropy(one, 298.15);
+    EXPECT_NEAR(S, 6.0 * S1, 1e-9);
 }
 
 // ===========================================================================
