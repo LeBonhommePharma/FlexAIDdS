@@ -64,7 +64,7 @@ static encom::VibrationalEntropy tencom_svib(
     double T,
     const encom::FrequencyCalibration& calibration =
         encom::FrequencyCalibration::model_scale(),
-    int skip = 6)
+    int skip = 0)  // internal (torsional) coords have no rigid-body modes to skip
 {
     std::vector<encom::NormalMode> em;
     for (int m = skip; m < static_cast<int>(modes.size()); ++m) {

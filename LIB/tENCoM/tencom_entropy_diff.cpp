@@ -81,9 +81,12 @@ static encom::VibrationalEntropy tencom_vibrational_entropy(
     const std::vector<tencm::NormalMode>& modes,
     double temperature_K,
     const encom::FrequencyCalibration& calibration,
-    int skip_rigid = 6)
+    int skip_rigid = 0)
 {
-    // Convert tencm::NormalMode → encom::NormalMode for entropy computation
+    // Convert tencm::NormalMode → encom::NormalMode for entropy computation.
+    // TENCoM modes are in INTERNAL (torsional) coordinates, which have no
+    // rigid-body zero-mode manifold, so skip_rigid defaults to 0. The λ < 1e-8
+    // guard drops numerically singular modes.
     std::vector<encom::NormalMode> encom_modes;
     for (int m = skip_rigid; m < static_cast<int>(modes.size()); ++m) {
         if (modes[m].eigenvalue < 1e-8) continue;
@@ -145,8 +148,9 @@ static FlexibilityMode compute_flexibility_mode(
     fm.n_matched = std::min(static_cast<int>(ref_modes.size()),
                             static_cast<int>(tgt_modes.size()));
 
-    // Eigenvalue differentials and eigenvector overlaps
-    const int SKIP = 6; // skip rigid-body modes
+    // Eigenvalue differentials and eigenvector overlaps.
+    // Internal (torsional) coordinates have no rigid-body modes to skip.
+    const int SKIP = 0;
     for (int m = SKIP; m < fm.n_matched; ++m) {
         fm.ref_eigenvalues.push_back(ref_modes[m].eigenvalue);
         fm.tgt_eigenvalues.push_back(tgt_modes[m].eigenvalue);
@@ -201,7 +205,7 @@ static void output_flexibility_mode(const FlexibilityMode& fm,
     os << "  Reference : " << ref_label << "\n"
        << "  Target    : " << fm.label  << "\n"
        << "  Residues  : " << fm.n_residues << "\n"
-       << "  Modes cmp : " << fm.n_matched << " (excl. 6 rigid-body)\n"
+       << "  Modes cmp : " << fm.n_matched << " (internal torsional DOFs; no rigid-body modes)\n"
        << "  Temperature: " << std::fixed << std::setprecision(1) << fm.temperature << " K\n"
        << "  Frequency calibration: " << fm.frequency_calibration.status()
        << " (" << fm.frequency_calibration.label
@@ -237,7 +241,7 @@ static void output_flexibility_mode(const FlexibilityMode& fm,
     // ── Top eigenvalue differentials ──
     int n_show = std::min(static_cast<int>(fm.delta_eigenvalues.size()), 20);
     if (n_show > 0) {
-        os << "  Eigenvalue Differentials (lowest " << n_show << " non-rigid modes):\n"
+        os << "  Eigenvalue Differentials (lowest " << n_show << " torsional modes):\n"
            << "  " << std::left
            << std::setw(8)  << "Mode"
            << std::setw(16) << "λ_ref"
@@ -248,7 +252,7 @@ static void output_flexibility_mode(const FlexibilityMode& fm,
            << "  " << std::string(68, '-') << "\n";
 
         for (int i = 0; i < n_show; ++i) {
-            os << "  " << std::left << std::setw(8) << (i + 7) // mode 7+ (after 6 rigid)
+            os << "  " << std::left << std::setw(8) << (i + 1) // 1-based mode index (no rigid-body skip)
                << std::right << std::scientific << std::setprecision(4)
                << std::setw(14) << fm.ref_eigenvalues[i] << "  "
                << std::setw(14) << fm.tgt_eigenvalues[i] << "  "
