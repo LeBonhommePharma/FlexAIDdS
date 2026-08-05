@@ -288,10 +288,17 @@ double compute_torsional_vibrational_entropy(
 {
     if (modes.empty()) return 0.0;
 
-    // Collect valid eigenvalues into Eigen array, then vectorise
+    // Collect valid eigenvalues into Eigen array, then vectorise.
+    // These modes come from the INTERNAL-coordinate torsional Hessian
+    // (TorsionalENM::build/build_from_ca), which has no rigid-body zero-mode
+    // manifold — so do NOT positionally skip the first 6 (that discarded the 6
+    // softest real torsions, which carry the largest per-mode entropy). The
+    // eigenvalue > 1e-6 guard drops numerically singular modes, consistent with
+    // how the Cartesian ANM consumers (ic2cf.cpp, ligand_tencom_pose.cpp) filter
+    // their own rigid-body modes by cutoff rather than by position.
     std::vector<double> ev_buf;
     ev_buf.reserve(modes.size());
-    for (size_t m = 6; m < modes.size(); ++m)
+    for (size_t m = 0; m < modes.size(); ++m)
         if (modes[m].eigenvalue > 1e-6) ev_buf.push_back(modes[m].eigenvalue);
     if (ev_buf.empty()) return 0.0;
 
