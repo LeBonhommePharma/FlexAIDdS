@@ -299,6 +299,16 @@ jobs:
           choco install ninja eigen -y
           python -m pip install --upgrade pip
           python -m pip install "pybind11[global]" pytest numpy
+      # Sets up the MSVC toolchain (cl, link, headers) once and exports it to
+      # PATH for all subsequent steps in this job. Replaces the per-step
+      # hardcoded vcvars64.bat calls, whose Enterprise-edition path no longer
+      # resolves on the windows-latest image (cl was never on PATH -> build
+      # failed with "cl is not a full path and was not found in the PATH").
+      - name: Set up MSVC developer environment (Windows)
+        if: runner.os == 'Windows'
+        uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1
+        with:
+          arch: x64
       - name: Configure Python bindings (Linux)
         if: runner.os == 'Linux'
         run: |
@@ -314,7 +324,6 @@ jobs:
         if: runner.os == 'Windows'
         shell: cmd
         run: |
-          call "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
           cmake -S . -B build-python -G Ninja ^
             -DCMAKE_BUILD_TYPE=Release ^
             -DCMAKE_C_COMPILER=cl ^
@@ -332,7 +341,6 @@ jobs:
         if: runner.os == 'Windows'
         shell: cmd
         run: |
-          call "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
           cmake --build build-python --parallel --target _core
       - name: Run Python binding tests
         env:
