@@ -4,7 +4,8 @@ Scope: full-tree review of the current `main`/`claude/codebase-review-gs804p` st
 ~107 K lines C++, ~91 K lines Python, plus CUDA/Metal/HIP GPU code. Seven parallel
 review passes (statmech core, scoring/entropy, GA & memory safety, Python package,
 build/CI, tests & validation methodology, GPU/concurrency), each finding cross-checked
-against the source. No files were modified.
+against the source. No engine, source, build, or benchmark files were modified — this
+review document is the only addition.
 
 ---
 
@@ -61,8 +62,25 @@ Hungarian RMSD (name the instrument, METHODOLOGY §0):
 - Use the repo's own METHODOLOGY §1 parity harness (byte-identical elected poses when the
   flag is OFF) as the instrument.
 
-**Fastest first probe (no rebuild):** run your regressed subset with a config that sets
-`seeding.mif_enabled: false`. If accuracy returns, you've confirmed #372 and can stop.
+**Control for nondeterminism first — a single seed is not enough here.** This same review
+documents that the float partition-function/LSE reductions are thread-count- and
+vectorization-dependent (§3), that region seeds are assigned in thread-arrival order
+(`ParallelDock.cpp:117`), and that `FLEXAIDS_PARALLEL_REPRODUCE` defaults ON with "drift
+allowed". So a fixed `FLEXAID_SEED` does **not** by itself make one A-vs-baseline pose a clean
+single-factor comparison. Before attributing any success→fail flip to #372 or #370: pin the
+run deterministic (`OMP_NUM_THREADS=1`, `FLEXAIDS_PARALLEL_REPRODUCE=0`, single backend), and
+**repeat each matrix cell ≥3× per target**. Treat a flip as caused by the toggled factor only
+if it exceeds the run-to-run variance of the fixed cells; a target that flips between repeats
+of the *same* configuration is noise, not signal.
+
+**Fastest first probe (no rebuild):** run your regressed subset with a config setting
+`seeding.mif_enabled: false` **and confirm the engine actually honored it** — echo the
+effective runtime value from the run log or a `RUN_RECEIPT`, because `DatasetRunner` hardcodes
+`mif_enabled: true` on the campaign path (see the Attribution caveat above) and will override
+a config `false`. This probe
+only tests #372 on the **unconfigured / tier-1-gate** path (or a campaign build with the
+hardcode removed). If accuracy returns there — across repeats, per the variance rule above —
+you've confirmed #372.
 
 ---
 
@@ -254,7 +272,9 @@ Hungarian RMSD (name the instrument, METHODOLOGY §0):
 ## 5. Suggested priority order
 
 1. **Regression:** run the §0 3-run matrix on your regressed subset (start with the no-rebuild
-   `mif_enabled:false` probe). Decide #372 vs #370.
+   `mif_enabled:false` probe, verifying the effective runtime flag). Pin the runs deterministic
+   and repeat each cell ≥3× to establish run-to-run variance *first* — only a flip that exceeds
+   that variance is attributable to #372 vs #370.
 2. **Restate the headline** unseeded (CRITICAL); fix the ±3 % self-confirmation and the silent-pass
    oracle tests (HIGH).
 3. **Fix the license gate** (schema + pin scancode + drop `|| true`) — it's currently blind.
