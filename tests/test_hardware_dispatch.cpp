@@ -262,14 +262,17 @@ TEST(TorsionalVibEntropy, EmptyModesReturnsZero) {
     EXPECT_DOUBLE_EQ(compute_torsional_vibrational_entropy(empty), 0.0);
 }
 
-TEST(TorsionalVibEntropy, SkipsFirstSixModes) {
-    // First 6 modes (translation+rotation) should be skipped
-    // If we provide exactly 6 modes, result is 0
+TEST(TorsionalVibEntropy, InternalModesAreNotSkipped) {
+    // Internal (torsional) coordinates carry no rigid-body translation/rotation,
+    // so there is no 6-fold zero-mode manifold to skip. With 6 modes above the
+    // eigenvalue threshold, entropy is POSITIVE — previously this incorrectly
+    // returned 0 because the first 6 modes (the softest real torsions) were
+    // positionally skipped.
     std::vector<tencm::NormalMode> modes(6);
     for (int i = 0; i < 6; ++i)
         modes[i].eigenvalue = 1.0;  // non-trivial eigenvalues
 
-    EXPECT_DOUBLE_EQ(compute_torsional_vibrational_entropy(modes), 0.0);
+    EXPECT_GT(compute_torsional_vibrational_entropy(modes, 298.15), 0.0);
 }
 
 TEST(TorsionalVibEntropy, SkipsNearZeroEigenvalues) {
@@ -282,7 +285,7 @@ TEST(TorsionalVibEntropy, SkipsNearZeroEigenvalues) {
 }
 
 TEST(TorsionalVibEntropy, ValidModesProducePositiveEntropy) {
-    // Modes 6+ with reasonable eigenvalues should give S > 0
+    // All modes above the eigenvalue threshold contribute (no positional skip)
     std::vector<tencm::NormalMode> modes(12);
     for (int i = 0; i < 12; ++i)
         modes[i].eigenvalue = 0.5 + 0.1 * i;
