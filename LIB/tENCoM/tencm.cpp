@@ -18,7 +18,11 @@
 //    → Jacobi fallback otherwise
 //
 //  Boltzmann sampling at temperature T:
-//    σ_m² = kB T / λ_m  (equipartition per mode, skip m=0..5 ≈ rigid-body)
+//    σ_m² = kB T / λ_m  (equipartition per mode). NOTE: the torsional Hessian is
+//    built in INTERNAL (dihedral) coordinates, which carry no rigid-body
+//    translation/rotation, so there is NO 6-fold zero-mode manifold to skip here
+//    (unlike a Cartesian 3N ANM). Only the near-zero-λ guard drops numerically
+//    singular modes; the 6 softest torsions are real and must be kept.
 //    δθ   = Σ_{m≥6} σ_m * z_m * v_m,   z_m ~ N(0,1)
 //
 //  Perturbed Cα: r_i' = r_i + Σ_k J_k(i) δθ_k
@@ -842,8 +846,10 @@ Conformer TorsionalENM::sample(float temperature, std::mt19937& rng) const
     Conformer conf;
     conf.delta_theta.assign(static_cast<std::size_t>(M), 0.0f);
 
-    // Skip first 6 modes (rigid-body; eigenvalue ≈ 0)
-    const int SKIP = std::min(6, M);
+    // Internal (torsional) coordinates have no rigid-body zero modes, so do NOT
+    // positionally skip 6 (that dropped the 6 softest real torsions). Genuinely
+    // near-zero numerical modes are handled by the λ < 1e-8 guard in the loop.
+    const int SKIP = 0;
     const double kBT = static_cast<double>(kB_kcal) * temperature;
 
     // Eigen path: accumulate Σ σ_m * z_m * v_m as vector operation
@@ -940,7 +946,10 @@ std::vector<float> TorsionalENM::bfactors(float temperature) const
     const int Np = n_protein_ca_;                  // protein nodes only (output)
     const int M  = static_cast<int>(bonds_.size());
     const double kBT = static_cast<double>(kB_kcal) * temperature;
-    const int SKIP = std::min(6, M);
+    // Internal (torsional) coordinates have no rigid-body zero modes: keep all
+    // modes and let the λ >= 1e-8 guard drop numerically singular ones. (Skipping
+    // 6 here dropped the 6 softest real backbone torsions.)
+    const int SKIP = 0;
     const int M_end = std::min(M, SKIP + N_MODES);
     const double BF_SCALE = 8.0 * std::numbers::pi * std::numbers::pi / 3.0;
 

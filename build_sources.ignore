@@ -162,3 +162,10 @@ LIB/memetic_gate.h
 LIB/new_search_arch.h
 LIB/niche_distance.h
 src/backends/webgpu/webgpu_eval.h
+
+# Orphan silenced 2026-08-05 to unblock C++ CI on main (blocks all C++ jobs at
+# cmake configure via ValidateSources.cmake). tests/rmsd_crosscheck_engine.h is a
+# test helper included transitively by tests/rmsd_crosscheck_engine.cpp, which is
+# already listed in the test_dataset_runner target (CMakeLists.txt). Header-only
+# orphan; no build output changes from listing it. Introduced by #371.
+tests/rmsd_crosscheck_engine.h
