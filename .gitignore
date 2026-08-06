@@ -67,7 +67,12 @@ env/
 # Local benchmark / experiment workspaces (not for commit)
 benchmarks/astex_entropy/
 benchmarks/results/
-results/local/
+# Benchmark output. Was `results/local/`, which missed the paths the repo's own
+# documented runs actually use: benchmark-tier1.yml writes RESULTS_DIR=results/tier1
+# and benchmark-tier2.yml writes results/tier2, so running either locally left an
+# untracked tree. Nothing under results/ is tracked; it is all regenerable engine
+# output (pose PDBs, per-entry JSON, reports).
+results/
 wrk/
 /BIN/
 
