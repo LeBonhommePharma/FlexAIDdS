@@ -64,10 +64,25 @@ FITNESS = "GA terminated early by fitness stagnation\n"
 
 
 def test_clean_run_is_not_flagged():
-    out = parse_early_termination("Generation:     1\nGeneration:  2000\ndone\n")
+    out = parse_early_termination("Generation:     0\nGeneration:  1999\ndone\n")
     assert out["terminated_early"] is False
     assert out["reason"] is None
     assert out["last_generation"] == 2000
+
+
+def test_last_generation_is_normalised_to_the_1_based_convention():
+    """The engine prints two conventions; the record must expose only one.
+
+    The progress line prints ``gen_id`` 0-based -- a complete 2000-generation run
+    ends at "Generation:  1999" (verified against a full 1gpk run). Every exit
+    message prints ``i + 1``. Reporting both raw would make a run that finished
+    its budget look one generation short of ``max_generations``: a fabricated
+    truncation, the exact false positive this tracking exists to avoid.
+    """
+    full = "".join(f"Generation: {i:5d}\n" for i in range(2000))
+    out = parse_early_termination(full)
+    assert out["terminated_early"] is False
+    assert out["last_generation"] == 2000, "0-based print leaked into the record"
 
 
 def test_empty_stdout_is_not_flagged():
@@ -116,7 +131,7 @@ def test_bare_termination_messages_are_parsed(text, reason):
 def test_last_generation_takes_the_final_occurrence():
     """Progress lines repeat; the truncation point is the last one seen."""
     text = "".join(f"Generation: {i:5d}\n" for i in (1, 2, 3, 154))
-    assert parse_early_termination(text)["last_generation"] == 154
+    assert parse_early_termination(text)["last_generation"] == 155  # 1-based
 
 
 def test_termination_is_found_amid_ordinary_engine_chatter():
@@ -256,7 +271,7 @@ def test_one_truncated_ligand_marks_the_whole_entry(tmp_path):
     enough to make the entry's numbers incomparable."""
     r = _runner(tmp_path)
     key = "1gpk/holo"
-    r._record_early_termination(key, "ligA", parse_early_termination("Generation:  2000\n"))
+    r._record_early_termination(key, "ligA", parse_early_termination("Generation:  1999\n"))
     r._record_early_termination(key, "ligB", parse_early_termination(ADAPTIVE))
 
     rec = r._entry_early_termination[key]
@@ -271,7 +286,7 @@ def test_entry_record_keeps_the_furthest_generation_seen(tmp_path):
     r = _runner(tmp_path)
     key = "t/holo"
     r._record_early_termination(key, "a", parse_early_termination("Generation:   154\n"))
-    r._record_early_termination(key, "b", parse_early_termination("Generation:  1900\n"))
+    r._record_early_termination(key, "b", parse_early_termination("Generation:  1899\n"))
     r._record_early_termination(key, "c", parse_early_termination("Generation:   300\n"))
     assert r._entry_early_termination[key]["last_generation"] == 1900
 
@@ -279,7 +294,7 @@ def test_entry_record_keeps_the_furthest_generation_seen(tmp_path):
 def test_entries_are_tracked_independently(tmp_path):
     r = _runner(tmp_path)
     r._record_early_termination("a/holo", "l", parse_early_termination(ADAPTIVE))
-    r._record_early_termination("b/holo", "l", parse_early_termination("Generation: 2000\n"))
+    r._record_early_termination("b/holo", "l", parse_early_termination("Generation: 1999\n"))
     assert r._early_termination_for("a", "holo")["early_termination"]["terminated_early"]
     assert not r._early_termination_for("b", "holo")["early_termination"]["terminated_early"]
 

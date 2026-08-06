@@ -1244,6 +1244,12 @@ _TERMINATION_PATTERNS: Tuple[Tuple[str, "re.Pattern[str]"], ...] = (
     ("fitness_stagnation", re.compile(r"GA terminated early by fitness stagnation")),
 )
 
+# The progress line prints `gen_id` 0-based -- a complete 2000-generation run
+# emits "Generation: 0" through "Generation: 1999" (verified on a full 1gpk run).
+# Every exit message above instead prints `i + 1`, i.e. 1-based. Reporting both
+# conventions in one dict would make `last_generation` look one short of
+# `max_generations` on a run that finished, which is precisely the false positive
+# this tracking must not manufacture, so the parser normalises to 1-based.
 _LAST_GENERATION_RE = re.compile(r"Generation:\s*(\d+)")
 
 
@@ -1253,7 +1259,8 @@ def parse_early_termination(stdout: str) -> Dict[str, Any]:
     Returns ``{"terminated_early": bool, "reason": str|None, ...}``.  ``reason`` is
     None when the GA ran its full budget.  ``last_generation`` is reported either
     way so a silent truncation is visible even if a future exit path forgets to
-    announce itself.
+    announce itself, and is 1-based like ``generation``/``max_generations`` so the
+    three are directly comparable.
     """
     out: Dict[str, Any] = {"terminated_early": False, "reason": None}
     if not stdout:
@@ -1271,7 +1278,7 @@ def parse_early_termination(stdout: str) -> Dict[str, Any]:
             break
     gens = _LAST_GENERATION_RE.findall(stdout)
     if gens:
-        out["last_generation"] = int(gens[-1])
+        out["last_generation"] = int(gens[-1]) + 1  # 0-based print -> 1-based
     return out
 
 
