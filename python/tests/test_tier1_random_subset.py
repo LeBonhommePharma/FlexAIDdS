@@ -108,5 +108,156 @@ def test_astex_diverse_yaml_uses_random_selection():
             pytest.skip(f"{p} not present")
         d = yaml.safe_load(p.read_text())
         seen.append((d.get("tier1_selection"), d.get("tier1_subset_size")))
-    assert seen[0] == ("random", 2)
+    # 4 = the free-coverage point: one batch of 4 workers, same wall as 2.
+    assert seen[0] == ("random", 4)
     assert seen[0] == seen[1], f"astex_diverse copies disagree: {seen}"
+
+
+# --------------------------------------------------------------------------
+# Tier-2 subsetting + CI time-budget sizing
+# --------------------------------------------------------------------------
+
+def test_tier2_defaults_to_every_target():
+    """size 0 means all -- tier-2's historical behaviour must be the default."""
+    cfg = _cfg()
+    assert cfg.tier2_subset_size == 0
+    assert cfg.tier_targets(2) == CODES
+
+
+def test_tier2_random_subset_is_seeded_and_reproducible(monkeypatch):
+    monkeypatch.delenv("FLEXAIDDS_TIER2_SEED", raising=False)
+    a = _cfg(tier2_selection="random", tier2_subset_size=12, tier2_seed=5)
+    b = _cfg(tier2_selection="random", tier2_subset_size=12, tier2_seed=5)
+    assert len(a.tier_targets(2)) == 12
+    assert a.tier_targets(2) == b.tier_targets(2)
+    assert a.tier_targets(2) != _cfg(
+        tier2_selection="random", tier2_subset_size=12, tier2_seed=6
+    ).tier_targets(2)
+
+
+def test_tier_seeds_are_independent(monkeypatch):
+    """TIER1 env must not silently steer the tier-2 draw."""
+    monkeypatch.setenv("FLEXAIDDS_TIER1_SEED", "111")
+    monkeypatch.delenv("FLEXAIDDS_TIER2_SEED", raising=False)
+    cfg = _cfg(tier2_selection="random", tier2_subset_size=6, tier2_seed=222)
+    assert cfg.resolve_tier_seed(1) == 111
+    assert cfg.resolve_tier_seed(2) == 222
+
+
+def test_random_with_size_at_or_above_total_returns_all(monkeypatch):
+    monkeypatch.delenv("FLEXAIDDS_TIER2_SEED", raising=False)
+    cfg = _cfg(tier2_selection="random", tier2_subset_size=len(CODES) + 10)
+    assert cfg.tier_targets(2) == CODES
+
+
+def test_wall_estimate_matches_batch_model(monkeypatch):
+    """ceil(n/workers)*per_target -- the model used to size against the CI cap."""
+    monkeypatch.delenv("FLEXAIDDS_TIER1_SEED", raising=False)
+    cfg = _cfg(tier1_subset_size=4, tier1_selection="fixed")
+    # 4 targets on 4 workers is one batch: same wall as 2 targets would be.
+    assert cfg.estimate_tier_wall_minutes(1, 4, per_target_minutes=26.9) == pytest.approx(26.9)
+    assert cfg.estimate_tier_wall_minutes(1, 2, per_target_minutes=26.9) == pytest.approx(53.8)
+
+
+def test_full_tier2_would_exceed_the_ci_cap(monkeypatch):
+    """Pins the reason tier-2 is subset: the full set does not fit in 360 min."""
+    monkeypatch.delenv("FLEXAIDDS_TIER2_SEED", raising=False)
+    full = _cfg()  # tier2_subset_size=0 -> all 85
+    assert full.estimate_tier_wall_minutes(2, 4, per_target_minutes=26.9) > 360
+    sized = _cfg(tier2_selection="random", tier2_subset_size=12, tier2_seed=1)
+    assert sized.estimate_tier_wall_minutes(2, 4, per_target_minutes=26.9) <= 360
+
+
+def test_astex_yaml_tier_sizes_fit_their_ci_budgets():
+    """The shipped sizes must actually fit the caps in the workflows."""
+    import pathlib
+
+    import yaml
+    from flexaidds.dataset_runner.runner import DatasetConfig
+
+    root = pathlib.Path(__file__).resolve().parents[2]
+    for rel in ("benchmarks/datasets/astex_diverse.yaml",
+                "python/flexaidds/dataset_runner/datasets/astex_diverse.yaml"):
+        p = root / rel
+        if not p.exists():
+            pytest.skip(f"{rel} not present")
+        cfg = DatasetConfig.from_yaml(p)
+        assert cfg.tier1_selection == "random" and cfg.tier2_selection == "random"
+        # tier-1 docking step cap is 105 min; tier-2 job cap is 360 min.
+        assert cfg.estimate_tier_wall_minutes(1, 4) <= 105
+        assert cfg.estimate_tier_wall_minutes(2, 4) <= 360
+
+
+# --------------------------------------------------------------------------
+# Anchor targets: a fixed, comparable core inside a rotating draw
+# --------------------------------------------------------------------------
+
+def test_anchors_appear_in_every_draw(monkeypatch):
+    monkeypatch.delenv("FLEXAIDDS_TIER1_SEED", raising=False)
+    anchors = [CODES[0], CODES[1]]
+    for s in range(30):
+        cfg = _cfg(tier1_selection="random", tier1_subset_size=4,
+                   tier1_seed=s, anchor_targets=list(anchors))
+        got = cfg.tier_targets(1)
+        assert set(anchors) <= set(got), f"anchors dropped at seed {s}: {got}"
+        assert len(got) == 4
+        assert len(set(got)) == 4
+
+
+def test_anchors_do_not_freeze_the_rotation(monkeypatch):
+    """The non-anchor slots must still rotate, or anchoring defeats coverage."""
+    monkeypatch.delenv("FLEXAIDDS_TIER1_SEED", raising=False)
+    anchors = [CODES[0], CODES[1]]
+    tails = {
+        tuple(t for t in _cfg(tier1_selection="random", tier1_subset_size=4,
+                              tier1_seed=s, anchor_targets=list(anchors)).tier_targets(1)
+              if t not in anchors)
+        for s in range(30)
+    }
+    assert len(tails) > 1
+
+
+def test_anchors_are_never_duplicated_by_the_draw(monkeypatch):
+    """An anchor must not also be sampled from the pool."""
+    monkeypatch.delenv("FLEXAIDDS_TIER2_SEED", raising=False)
+    anchors = [CODES[0], CODES[1], CODES[2]]
+    cfg = _cfg(tier2_selection="random", tier2_subset_size=6,
+               tier2_seed=3, anchor_targets=list(anchors))
+    got = cfg.tier_targets(2)
+    assert len(got) == len(set(got)) == 6
+    assert set(anchors) <= set(got)
+
+
+def test_tier_anchor_targets_reports_scheduled_anchors(monkeypatch):
+    monkeypatch.delenv("FLEXAIDDS_TIER1_SEED", raising=False)
+    anchors = [CODES[0], CODES[1]]
+    cfg = _cfg(tier1_selection="random", tier1_subset_size=4,
+               tier1_seed=11, anchor_targets=list(anchors))
+    assert cfg.tier_anchor_targets(1) == anchors
+
+
+def test_more_anchors_than_slots_is_truncated_not_overflowed(monkeypatch):
+    monkeypatch.delenv("FLEXAIDDS_TIER1_SEED", raising=False)
+    cfg = _cfg(tier1_selection="random", tier1_subset_size=2,
+               tier1_seed=1, anchor_targets=CODES[:5])
+    got = cfg.tier_targets(1)
+    assert len(got) == 2
+    assert set(got) <= set(CODES[:5])
+
+
+def test_astex_anchors_are_the_historical_pair():
+    """1gpk/1mq6 are the codes every pre-#400 run used -- the comparable baseline."""
+    import pathlib
+
+    from flexaidds.dataset_runner.runner import DatasetConfig
+
+    root = pathlib.Path(__file__).resolve().parents[2]
+    for rel in ("benchmarks/datasets/astex_diverse.yaml",
+                "python/flexaidds/dataset_runner/datasets/astex_diverse.yaml"):
+        p = root / rel
+        if not p.exists():
+            pytest.skip(f"{rel} not present")
+        cfg = DatasetConfig.from_yaml(p)
+        assert cfg.anchor_targets == ["1gpk", "1mq6"], rel
+        for tier in (1, 2):
+            assert set(cfg.anchor_targets) <= set(cfg.tier_targets(tier)), (rel, tier)
