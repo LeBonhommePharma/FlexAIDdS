@@ -53,6 +53,17 @@ tier1_subset_size: 4
 # is not evidence on its own. Compare only runs reporting the same seed.
 tier1_selection: random
 
+# Anchor targets: pinned into EVERY draw, so a fixed core of each run stays
+# directly comparable run-to-run while the remaining slots rotate for coverage.
+# 1gpk and 1mq6 are the historical pair (every Tier-1 run before #400 used exactly
+# these two), so their numbers are the ones with prior art to compare against.
+# Metrics restricted to the anchors are comparable across runs; metrics over the
+# full draw are NOT -- see the comparability note above.
+anchor_targets:
+  - 1gpk
+  - 1mq6
+
+
 # Tier-2 (weekly, job cap 360 min, N_WORKERS=4, and it runs EVERY dataset in one
 # job). The full 85 targets would need ceil(85/4)*26.9 = 592 min -- over the cap on
 # this dataset alone, before the other 13 datasets get any time at all. 12 targets

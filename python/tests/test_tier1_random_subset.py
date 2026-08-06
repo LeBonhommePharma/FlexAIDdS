@@ -186,3 +186,78 @@ def test_astex_yaml_tier_sizes_fit_their_ci_budgets():
         # tier-1 docking step cap is 105 min; tier-2 job cap is 360 min.
         assert cfg.estimate_tier_wall_minutes(1, 4) <= 105
         assert cfg.estimate_tier_wall_minutes(2, 4) <= 360
+
+
+# --------------------------------------------------------------------------
+# Anchor targets: a fixed, comparable core inside a rotating draw
+# --------------------------------------------------------------------------
+
+def test_anchors_appear_in_every_draw(monkeypatch):
+    monkeypatch.delenv("FLEXAIDDS_TIER1_SEED", raising=False)
+    anchors = [CODES[0], CODES[1]]
+    for s in range(30):
+        cfg = _cfg(tier1_selection="random", tier1_subset_size=4,
+                   tier1_seed=s, anchor_targets=list(anchors))
+        got = cfg.tier_targets(1)
+        assert set(anchors) <= set(got), f"anchors dropped at seed {s}: {got}"
+        assert len(got) == 4
+        assert len(set(got)) == 4
+
+
+def test_anchors_do_not_freeze_the_rotation(monkeypatch):
+    """The non-anchor slots must still rotate, or anchoring defeats coverage."""
+    monkeypatch.delenv("FLEXAIDDS_TIER1_SEED", raising=False)
+    anchors = [CODES[0], CODES[1]]
+    tails = {
+        tuple(t for t in _cfg(tier1_selection="random", tier1_subset_size=4,
+                              tier1_seed=s, anchor_targets=list(anchors)).tier_targets(1)
+              if t not in anchors)
+        for s in range(30)
+    }
+    assert len(tails) > 1
+
+
+def test_anchors_are_never_duplicated_by_the_draw(monkeypatch):
+    """An anchor must not also be sampled from the pool."""
+    monkeypatch.delenv("FLEXAIDDS_TIER2_SEED", raising=False)
+    anchors = [CODES[0], CODES[1], CODES[2]]
+    cfg = _cfg(tier2_selection="random", tier2_subset_size=6,
+               tier2_seed=3, anchor_targets=list(anchors))
+    got = cfg.tier_targets(2)
+    assert len(got) == len(set(got)) == 6
+    assert set(anchors) <= set(got)
+
+
+def test_tier_anchor_targets_reports_scheduled_anchors(monkeypatch):
+    monkeypatch.delenv("FLEXAIDDS_TIER1_SEED", raising=False)
+    anchors = [CODES[0], CODES[1]]
+    cfg = _cfg(tier1_selection="random", tier1_subset_size=4,
+               tier1_seed=11, anchor_targets=list(anchors))
+    assert cfg.tier_anchor_targets(1) == anchors
+
+
+def test_more_anchors_than_slots_is_truncated_not_overflowed(monkeypatch):
+    monkeypatch.delenv("FLEXAIDDS_TIER1_SEED", raising=False)
+    cfg = _cfg(tier1_selection="random", tier1_subset_size=2,
+               tier1_seed=1, anchor_targets=CODES[:5])
+    got = cfg.tier_targets(1)
+    assert len(got) == 2
+    assert set(got) <= set(CODES[:5])
+
+
+def test_astex_anchors_are_the_historical_pair():
+    """1gpk/1mq6 are the codes every pre-#400 run used -- the comparable baseline."""
+    import pathlib
+
+    from flexaidds.dataset_runner.runner import DatasetConfig
+
+    root = pathlib.Path(__file__).resolve().parents[2]
+    for rel in ("benchmarks/datasets/astex_diverse.yaml",
+                "python/flexaidds/dataset_runner/datasets/astex_diverse.yaml"):
+        p = root / rel
+        if not p.exists():
+            pytest.skip(f"{rel} not present")
+        cfg = DatasetConfig.from_yaml(p)
+        assert cfg.anchor_targets == ["1gpk", "1mq6"], rel
+        for tier in (1, 2):
+            assert set(cfg.anchor_targets) <= set(cfg.tier_targets(tier)), (rel, tier)

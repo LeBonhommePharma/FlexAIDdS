@@ -196,6 +196,9 @@ class DatasetConfig:
     tier2_subset_size: int = 0  # 0 = every target (historical tier-2 behaviour)
     tier2_selection: str = "fixed"
     tier2_seed: Optional[int] = None
+    # Targets pinned into every random draw. They make a fixed core of the run
+    # comparable across runs even while the remaining slots rotate.
+    anchor_targets: List[str] = field(default_factory=list)
     benchmark_order: int = 1000
     targets: List[str] = field(default_factory=list)
     structural_states: List[str] = field(default_factory=lambda: ["holo"])
@@ -269,6 +272,7 @@ class DatasetConfig:
             tier1_subset_size=int(raw.pop("tier1_subset_size", 5)),
             tier1_selection=str(raw.pop("tier1_selection", "fixed")).strip().lower(),
             tier1_seed=(lambda v: None if v is None else int(v))(raw.pop("tier1_seed", None)),
+            anchor_targets=list(raw.pop("anchor_targets", [])),
             tier2_subset_size=int(raw.pop("tier2_subset_size", 0)),
             tier2_selection=str(raw.pop("tier2_selection", "fixed")).strip().lower(),
             tier2_seed=(lambda v: None if v is None else int(v))(raw.pop("tier2_seed", None)),
@@ -379,15 +383,32 @@ class DatasetConfig:
         if k >= len(self.targets):
             return list(self.targets)  # nothing to sample; keep dataset order
         seed = self.resolve_tier_seed(tier)
-        picked = random.Random(seed).sample(list(self.targets), k)
+        # Anchors are pinned into every draw so a fixed core of the run stays
+        # directly comparable across runs; only the remaining slots rotate.
+        anchors = [t for t in self.targets if t in set(self.anchor_targets)][:k]
+        pool = [t for t in self.targets if t not in set(anchors)]
+        n_draw = max(0, k - len(anchors))
+        drawn = random.Random(seed).sample(pool, min(n_draw, len(pool)))
+        picked = anchors + drawn
         # Restore dataset order within the draw so run/display order is stable.
         picked.sort(key=self.targets.index)
         logger.info(
-            "tier-%d random subset: seed=%d k=%d of %d targets=%s "
+            "tier-%d subset: seed=%d k=%d of %d | anchors=%s | drawn=%s "
             "(replay this exact draw with FLEXAIDDS_TIER%d_SEED=%d)",
-            tier, seed, k, len(self.targets), ",".join(picked), tier, seed,
+            tier, seed, k, len(self.targets),
+            ",".join(anchors) or "-", ",".join(sorted(drawn, key=self.targets.index)) or "-",
+            tier, seed,
         )
         return picked
+
+    def tier_anchor_targets(self, tier: int) -> List[str]:
+        """Anchors actually scheduled for ``tier`` (dataset order).
+
+        Metrics restricted to these are comparable run-to-run even when the rest
+        of the subset rotates; metrics over the full draw are not.
+        """
+        scheduled = set(self.tier_targets(tier))
+        return [t for t in self.targets if t in set(self.anchor_targets) and t in scheduled]
 
     def tier1_targets(self) -> List[str]:
         """Back-compat alias for :meth:`tier_targets` at tier 1."""
