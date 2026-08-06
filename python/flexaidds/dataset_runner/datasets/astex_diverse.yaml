@@ -33,12 +33,22 @@ download_url: "https://www.ccdc.cam.ac.uk/community/freeprod/astex-diverse-set/"
 data_format: pdb
 tier: 2
 tier1_subset_size: 2
+# Tier-1 samples a RANDOM subset of `tier1_subset_size` targets rather than always
+# the first N, so coverage rotates instead of leaving 83 of the 85 codes untested.
+# The draw is seeded and logged: re-run with FLEXAIDDS_TIER1_SEED=<logged seed> to
+# reproduce a draw exactly. Seed precedence: FLEXAIDDS_TIER1_SEED > tier1_seed >
+# UTC date (YYYYMMDD), so the set rotates daily but is stable within a run.
+#
+# CONSEQUENCE: metrics below are target-dependent, so two runs with DIFFERENT
+# seeds are not comparable to each other and a regression flag from a fresh draw
+# is not evidence on its own. Compare only runs reporting the same seed.
+tier1_selection: random
 
 structural_states:
   - holo
 
 # Parity with LIB/DatasetRunner.cpp::astex_diverse_codes() (85 PDB IDs).
-# Tier-1 CI uses the first tier1_subset_size entries (confirmed on disk).
+# Tier-1 CI uses tier1_subset_size entries drawn per tier1_selection above.
 targets:
   - 1gpk
   - 1mq6
