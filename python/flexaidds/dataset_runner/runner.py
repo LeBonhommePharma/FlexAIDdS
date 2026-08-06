@@ -38,6 +38,7 @@ import datetime
 import json
 import csv
 import logging
+import math
 import os
 import random
 import re
@@ -78,6 +79,12 @@ from .metrics import (
 )
 
 logger = logging.getLogger(__name__)
+
+# Worst per-target docking wall time measured on a 4-core ubuntu-latest runner at
+# --omp-threads 1 (Tier-1 CI run 31052481958: 1gpk 1056.7s, 1mq6 1614.0s). Used
+# only to size a subset against a CI cap; override per call when the real cost
+# history says otherwise.
+DEFAULT_TARGET_MINUTES = 1614.0 / 60.0
 
 # Tier-2 full-N datasets use committed entry catalogs (C++ parity).
 KNOWN_LARGE_DATASETS: Dict[str, int] = {
@@ -186,6 +193,9 @@ class DatasetConfig:
     tier1_subset_size: int = 5
     tier1_selection: str = "fixed"
     tier1_seed: Optional[int] = None
+    tier2_subset_size: int = 0  # 0 = every target (historical tier-2 behaviour)
+    tier2_selection: str = "fixed"
+    tier2_seed: Optional[int] = None
     benchmark_order: int = 1000
     targets: List[str] = field(default_factory=list)
     structural_states: List[str] = field(default_factory=lambda: ["holo"])
@@ -259,6 +269,9 @@ class DatasetConfig:
             tier1_subset_size=int(raw.pop("tier1_subset_size", 5)),
             tier1_selection=str(raw.pop("tier1_selection", "fixed")).strip().lower(),
             tier1_seed=(lambda v: None if v is None else int(v))(raw.pop("tier1_seed", None)),
+            tier2_subset_size=int(raw.pop("tier2_subset_size", 0)),
+            tier2_selection=str(raw.pop("tier2_selection", "fixed")).strip().lower(),
+            tier2_seed=(lambda v: None if v is None else int(v))(raw.pop("tier2_seed", None)),
             benchmark_order=int(raw.pop("benchmark_order", 1000)),
             targets=list(raw.pop("targets", [])),
             structural_states=list(raw.pop("structural_states", ["holo"])),
@@ -282,10 +295,16 @@ class DatasetConfig:
             config.data_dir = Path(data_dir_raw).expanduser().resolve()
         return config
 
-    def resolve_tier1_seed(self) -> int:
-        """Resolve the RNG seed used by ``tier1_selection: random``.
+    def _tier_selection_params(self, tier: int) -> Tuple[int, str, Optional[int]]:
+        """(subset_size, selection_mode, yaml_seed) for a tier. size 0/negative = all."""
+        if tier == 1:
+            return int(self.tier1_subset_size), self.tier1_selection, self.tier1_seed
+        return int(self.tier2_subset_size), self.tier2_selection, self.tier2_seed
 
-        Precedence: ``FLEXAIDDS_TIER1_SEED`` env > yaml ``tier1_seed`` > the UTC
+    def resolve_tier_seed(self, tier: int) -> int:
+        """Resolve the RNG seed used by ``tier{N}_selection: random``.
+
+        Precedence: ``FLEXAIDDS_TIER{N}_SEED`` env > yaml ``tier{N}_seed`` > the UTC
         date as ``YYYYMMDD``.  The date default rotates the sampled targets daily
         while keeping every run within a day identical; any run is replayable
         exactly by exporting the seed recorded in its log.
@@ -293,54 +312,86 @@ class DatasetConfig:
         A non-integer env value is an error rather than a silent fallback: a
         mistyped seed must not quietly produce a different draw than intended.
         """
-        env = os.environ.get("FLEXAIDDS_TIER1_SEED", "").strip()
+        var = f"FLEXAIDDS_TIER{int(tier)}_SEED"
+        env = os.environ.get(var, "").strip()
         if env:
             try:
                 return int(env)
             except ValueError as exc:
-                raise ValueError(
-                    f"FLEXAIDDS_TIER1_SEED must be an integer, got {env!r}"
-                ) from exc
-        if self.tier1_seed is not None:
-            return int(self.tier1_seed)
+                raise ValueError(f"{var} must be an integer, got {env!r}") from exc
+        _, _, yaml_seed = self._tier_selection_params(tier)
+        if yaml_seed is not None:
+            return int(yaml_seed)
         return int(datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%d"))
 
-    def tier1_targets(self) -> List[str]:
-        """Return the subset of targets used for tier-1 (fast) runs.
+    def resolve_tier1_seed(self) -> int:
+        """Back-compat alias for :meth:`resolve_tier_seed` at tier 1."""
+        return self.resolve_tier_seed(1)
 
-        ``tier1_selection: fixed`` (default) takes the first N targets.  Stable,
-        but every target after the Nth is then never exercised -- on astex_diverse
-        that left 83 of 85 codes untested by the gate.
+    def estimate_tier_wall_minutes(
+        self,
+        tier: int,
+        n_workers: int,
+        per_target_minutes: float = DEFAULT_TARGET_MINUTES,
+    ) -> float:
+        """Estimate wall-clock minutes for a tier at a given worker count.
 
-        ``tier1_selection: random`` samples N targets without replacement from a
-        seeded RNG, so coverage rotates across runs while a single run stays
-        exactly reproducible.  The seed is logged; re-run with
-        ``FLEXAIDDS_TIER1_SEED=<logged seed>`` to reproduce a draw.
+        ``ceil(n / workers) * per_target`` -- targets run in batches of ``workers``,
+        so wall time is floored by the slowest single target no matter how small the
+        subset is.  That is why dropping tier-1 from 4 targets to 2 saves nothing:
+        both fit one batch.  Use it to size a subset against a CI cap rather than
+        guessing.
+        """
+        n = len(self.scheduled_targets(tier))
+        w = max(1, int(n_workers))
+        return math.ceil(n / w) * float(per_target_minutes)
+
+    def tier_targets(self, tier: int) -> List[str]:
+        """Return the subset of targets scheduled for ``tier``.
+
+        ``tier{N}_selection: fixed`` takes the first N targets.  Stable, but every
+        target after the Nth is then never exercised -- on astex_diverse that left
+        83 of 85 codes untested by the tier-1 gate.
+
+        ``tier{N}_selection: random`` samples without replacement from a seeded
+        RNG, so coverage rotates across runs while a single run stays exactly
+        reproducible.  The seed is logged; re-run with
+        ``FLEXAIDDS_TIER{N}_SEED=<logged seed>`` to reproduce a draw.
+
+        A subset size of 0 (or negative) means *every* target, which is the
+        historical tier-2 behaviour and remains the tier-2 default.
 
         COMPARABILITY WARNING: under ``random`` the sampled set differs between
         runs, so target-dependent aggregates (``mean_rmsd``, ``docking_power_*``)
         are NOT comparable run-to-run and must not be diffed against a baseline
         calibrated on a different draw.  Only compare runs reporting the same seed.
         """
-        k = max(0, min(int(self.tier1_subset_size), len(self.targets)))
-        mode = (self.tier1_selection or "fixed").strip().lower()
+        size, selection, _ = self._tier_selection_params(tier)
+        mode = (selection or "fixed").strip().lower()
+        # size <= 0 means "all targets" -- subsetting is opt-in per tier.
+        k = len(self.targets) if size <= 0 else min(size, len(self.targets))
         if mode == "fixed":
             return self.targets[:k]
         if mode != "random":
             raise ValueError(
-                "tier1_selection must be 'fixed' or 'random', got "
-                f"{self.tier1_selection!r}"
+                f"tier{tier}_selection must be 'fixed' or 'random', got {selection!r}"
             )
-        seed = self.resolve_tier1_seed()
+        if k >= len(self.targets):
+            return list(self.targets)  # nothing to sample; keep dataset order
+        seed = self.resolve_tier_seed(tier)
         picked = random.Random(seed).sample(list(self.targets), k)
         # Restore dataset order within the draw so run/display order is stable.
         picked.sort(key=self.targets.index)
         logger.info(
-            "tier-1 random subset: seed=%d k=%d targets=%s "
-            "(replay this exact draw with FLEXAIDDS_TIER1_SEED=%d)",
-            seed, k, ",".join(picked), seed,
+            "tier-%d random subset: seed=%d k=%d of %d targets=%s "
+            "(replay this exact draw with FLEXAIDDS_TIER%d_SEED=%d)",
+            tier, seed, k, len(self.targets), ",".join(picked), tier, seed,
         )
         return picked
+
+    def tier1_targets(self) -> List[str]:
+        """Back-compat alias for :meth:`tier_targets` at tier 1."""
+        return self.tier_targets(1)
 
     def _uses_crossdock_catalog(self, tier: int) -> bool:
         """Full-N crossdock catalog applies only when YAML requests crossdock state."""
@@ -354,7 +405,7 @@ class DatasetConfig:
         """Targets actually scheduled for this tier."""
         if self._uses_crossdock_catalog(tier):
             return [e["entry_id"] for e in load_large_dataset_catalog(self.slug)]
-        return self.tier1_targets() if tier == 1 else self.targets
+        return self.tier_targets(tier)
 
     def scheduled_work_items(self, tier: int) -> List[Tuple[str, str]]:
         """(entry_id, state) pairs scheduled for this tier."""

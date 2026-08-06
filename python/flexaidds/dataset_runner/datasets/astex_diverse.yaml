@@ -32,7 +32,16 @@ zenodo_doi: ""
 download_url: "https://www.ccdc.cam.ac.uk/community/freeprod/astex-diverse-set/"
 data_format: pdb
 tier: 2
-tier1_subset_size: 2
+# CI TIME BUDGET (measured, not guessed). Worst per-target docking wall time on a
+# 4-core ubuntu-latest runner at --omp-threads 1 is 1614 s = 26.9 min (Tier-1 run
+# 31052481958: 1gpk 1056.7 s, 1mq6 1614.0 s). Targets run in batches of `workers`,
+# so wall ~= ceil(n / workers) * 26.9 min.
+#
+# Tier-1 uses workers = min(nproc, 5) = 4 and its docking step is capped at 105 min:
+#   n=2 -> 26.9 min   n=4 -> 26.9 min   n=8 -> 53.8 min   n=16 -> 107.6 min (OVER)
+# n=4 costs the SAME wall as n=2 (both are one batch of 4) while doubling coverage,
+# so 4 is the free-coverage point. Raising it further does cost real minutes.
+tier1_subset_size: 4
 # Tier-1 samples a RANDOM subset of `tier1_subset_size` targets rather than always
 # the first N, so coverage rotates instead of leaving 83 of the 85 codes untested.
 # The draw is seeded and logged: re-run with FLEXAIDDS_TIER1_SEED=<logged seed> to
@@ -43,6 +52,14 @@ tier1_subset_size: 2
 # seeds are not comparable to each other and a regression flag from a fresh draw
 # is not evidence on its own. Compare only runs reporting the same seed.
 tier1_selection: random
+
+# Tier-2 (weekly, job cap 360 min, N_WORKERS=4, and it runs EVERY dataset in one
+# job). The full 85 targets would need ceil(85/4)*26.9 = 592 min -- over the cap on
+# this dataset alone, before the other 13 datasets get any time at all. 12 targets
+# is ceil(12/4)*26.9 = 80.7 min, ~22% of the budget, leaving room for the rest.
+# Random selection means the full 85 are still covered, in ~7 weekly runs.
+tier2_subset_size: 12
+tier2_selection: random
 
 structural_states:
   - holo
