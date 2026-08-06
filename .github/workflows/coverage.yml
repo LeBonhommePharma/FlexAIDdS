@@ -12,6 +12,15 @@ jobs:
     name: Coverage Analysis (Linux/Clang)
     runs-on: ubuntu-latest
 
+    # Least-privilege grant. `pull-requests: write` is what the final
+    # "Comment PR with coverage" step needs to call issues.createComment; without
+    # any permissions block the default GITHUB_TOKEN for pull_request events is
+    # read-only, so that POST returned "403 Resource not accessible by
+    # integration" and (being an unhandled rejection) failed the whole job.
+    permissions:
+      contents: read
+      pull-requests: write
+
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
         with:
@@ -61,10 +70,21 @@ jobs:
             GCOV_TOOL=/tmp/llvm-gcov.sh
           fi
 
-          # Broad ignore set: clang+llvm-gcov routinely emits inconsistent
-          # function-end / line mismatches (e.g. ShannonThermoStack.h dtors).
-          LCOV_IGNORE=mismatch,unused,negative,gcov,version,inconsistent,empty,corrupt,category,format,path,count,parallel,unsupported
+          # Ignore only categories the installed lcov actually knows. lcov 2.x
+          # (ubuntu-latest) hard-errors on an unknown --ignore-errors token —
+          # "lcov: ERROR: unknown argument for --ignore-errors: 'category'",
+          # exit 255 — which is what aborted the `lcov --extract` below, left
+          # core.info uncreated, and made the whole percentage undefined. The
+          # tokens kept here are the ones this lcov accepted in the failing run
+          # (proven from its log) and cover the clang+llvm-gcov noise we see
+          # (inconsistent/mismatch/unused/empty). Bogus tokens dropped:
+          # category, format, path, count, parallel, unsupported.
+          LCOV_IGNORE=mismatch,unused,negative,gcov,version,inconsistent,empty,corrupt
 
+          # Do not let an lcov hiccup abort the job. A genuinely unusable
+          # measurement is reported as "unavailable" (a ::warning::) by the
+          # Calculate step below, never as a hard failure — but a REAL measured
+          # coverage under threshold still fails there.
           lcov --directory . \
                --capture \
                --output-file coverage/coverage.info \
@@ -73,31 +93,72 @@ jobs:
                --exclude '*/_deps/*' \
                --exclude '*/tests/*' \
                --exclude '*/python/*' \
-               --exclude '*/benchmarks/*'
+               --exclude '*/benchmarks/*' \
+            || echo "::warning::lcov --capture reported errors; downstream steps will treat coverage as best-effort."
 
           lcov --extract coverage/coverage.info '*/LIB/*' \
                --output-file coverage/core.info \
-               --ignore-errors "$LCOV_IGNORE"
+               --ignore-errors "$LCOV_IGNORE" \
+            || echo "::warning::lcov --extract reported errors; core.info may be incomplete."
 
           genhtml coverage/core.info \
                   --output-directory coverage/html \
                   --title "FlexAIDdS Code Coverage" \
-                  --ignore-errors source,unmapped,inconsistent,empty
+                  --ignore-errors source,unmapped,inconsistent,empty \
+            || echo "::warning::genhtml reported errors; the HTML report may be partial."
 
       - name: Calculate coverage percentage
+        # always() so a resilient "unavailable" result is still reported even if
+        # an earlier step degraded; a REAL measured value under threshold still
+        # exits non-zero here and fails the job.
+        if: always()
         run: |
-          cd build/coverage
-          COVERAGE=$(lcov --summary core.info 2>&1 | grep "lines" | awk '{print $4}' | sed 's/%//')
-          echo "COVERAGE=${COVERAGE}" >> $GITHUB_ENV
-          echo "### Code Coverage: ${COVERAGE}%" >> $GITHUB_STEP_SUMMARY
-
+          set -uo pipefail
+          INFO=build/coverage/core.info
           THRESHOLD=50
-          if (( $(echo "$COVERAGE < $THRESHOLD" | bc -l) )); then
+
+          emit_unavailable() {
+            echo "::warning::$1"
+            echo "COVERAGE=unavailable" >> "$GITHUB_ENV"
+            echo "### Code Coverage: unavailable" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          }
+
+          [ -s "$INFO" ] || emit_unavailable "Coverage tracefile $INFO is missing or empty — coverage measurement unavailable this run."
+
+          # Derive line coverage directly from the tracefile's LH/LF records
+          # (lines-hit / lines-found summed over all files). This is independent
+          # of the installed lcov's --summary output format: lcov 2.x prints
+          # "lines.......: NN.N% (h of f lines)", so the old `awk '{print $4}'`
+          # grabbed the word "of", yielding an empty COVERAGE and the
+          # "undefined%" report plus a `bc` crash. LH/LF is version-proof.
+          COVERAGE=$(awk -F: '
+            /^LF:/ { f += $2 }
+            /^LH:/ { h += $2 }
+            END { if (f > 0) printf "%.1f", (h / f) * 100 }
+          ' "$INFO")
+
+          # Fallback: if for any reason the tracefile carried no LF/LH records,
+          # parse the first percentage lcov --summary prints, robustly.
+          if [ -z "$COVERAGE" ]; then
+            COVERAGE=$(lcov --summary "$INFO" 2>&1 \
+                       | grep -iE 'lines' \
+                       | grep -oE '[0-9]+(\.[0-9]+)?%' \
+                       | head -1 | tr -d '%')
+          fi
+
+          [ -n "$COVERAGE" ] || emit_unavailable "Could not derive a line-coverage percentage from $INFO — reporting unavailable."
+
+          echo "COVERAGE=${COVERAGE}" >> "$GITHUB_ENV"
+          echo "### Code Coverage: ${COVERAGE}%" >> "$GITHUB_STEP_SUMMARY"
+
+          # awk comparison, not bc: bc is not guaranteed present and crashes on
+          # an empty operand. A real measured value below threshold fails.
+          if awk -v c="$COVERAGE" -v t="$THRESHOLD" 'BEGIN { exit !(c < t) }'; then
             echo "Coverage ${COVERAGE}% is below threshold ${THRESHOLD}%"
             exit 1
-          else
-            echo "Coverage ${COVERAGE}% meets threshold ${THRESHOLD}%"
           fi
+          echo "Coverage ${COVERAGE}% meets threshold ${THRESHOLD}%"
 
       - name: Upload coverage artifacts
         if: always()
@@ -112,20 +173,33 @@ jobs:
         with:
           script: |
             const coverage = process.env.COVERAGE;
+            const available =
+              coverage !== undefined && coverage !== '' && coverage !== 'unavailable';
             const pct = Number(coverage);
-            const pass = Number.isFinite(pct) && pct >= 50;
+            const pass = available && Number.isFinite(pct) && pct >= 50;
+            const coverageText = available
+              ? `${coverage}%`
+              : 'unavailable (measurement could not be produced this run)';
+            const status = !available ? 'UNAVAILABLE' : pass ? 'PASS' : 'FAIL';
             const lines = [
               '## Code Coverage Report',
               '',
-              `Core coverage: ${coverage}%`,
+              `Core coverage: ${coverageText}`,
               'Target: >= 50%',
-              `Status: ${pass ? 'PASS' : 'FAIL'}`,
+              `Status: ${status}`,
               '',
               'Generated by Code Coverage workflow',
             ];
-            github.rest.issues.createComment({
-              issue_number: context.issue.number,
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              body: lines.join('\n'),
-            });
+            // Posting the comment is informational: wrap it so a post failure
+            // (e.g. a 403 on a fork PR where the token is read-only) can never
+            // fail the job.
+            try {
+              await github.rest.issues.createComment({
+                issue_number: context.issue.number,
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                body: lines.join('\n'),
+              });
+            } catch (error) {
+              core.warning(`Could not post coverage comment: ${error.message}`);
+            }

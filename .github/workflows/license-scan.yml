@@ -19,7 +19,11 @@ jobs:
           python-version: '3.11'
 
       - name: Install scancode-toolkit
-        run: pip install scancode-toolkit
+        # Pin to the v32 line: its JSON schema (detected_license_expression /
+        # license_detections) is what scripts/check_licenses.py parses. An
+        # unpinned install can jump to a schema the checker does not understand,
+        # silently yielding zero findings.
+        run: pip install 'scancode-toolkit>=32,<33'
 
       - name: Run license scan
         run: |
