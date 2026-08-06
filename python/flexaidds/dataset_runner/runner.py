@@ -39,6 +39,7 @@ import json
 import csv
 import logging
 import os
+import random
 import re
 import shutil
 import socket
@@ -157,6 +158,10 @@ class DatasetConfig:
         download_url:          Alternative download URL.
         tier:                  Minimum tier required to run the full dataset (1 or 2).
         tier1_subset_size:     Number of targets to use for tier-1 (PR sanity) runs.
+        tier1_selection:       ``fixed`` (first N targets) or ``random`` (seeded
+                               sample of N, so coverage rotates across runs).
+        tier1_seed:            Explicit seed for ``random`` selection. Overridden by
+                               ``FLEXAIDDS_TIER1_SEED``; defaults to the UTC date.
         benchmark_order:       Stable run/display order; lower values run first.
         targets:               Full list of target identifiers.
         structural_states:     Receptor states available (``holo``, ``apo``, ``af2``).
@@ -179,6 +184,8 @@ class DatasetConfig:
     download_url: str = ""
     tier: int = 2
     tier1_subset_size: int = 5
+    tier1_selection: str = "fixed"
+    tier1_seed: Optional[int] = None
     benchmark_order: int = 1000
     targets: List[str] = field(default_factory=list)
     structural_states: List[str] = field(default_factory=lambda: ["holo"])
@@ -250,6 +257,8 @@ class DatasetConfig:
             download_url=raw.pop("download_url", ""),
             tier=int(raw.pop("tier", 2)),
             tier1_subset_size=int(raw.pop("tier1_subset_size", 5)),
+            tier1_selection=str(raw.pop("tier1_selection", "fixed")).strip().lower(),
+            tier1_seed=(lambda v: None if v is None else int(v))(raw.pop("tier1_seed", None)),
             benchmark_order=int(raw.pop("benchmark_order", 1000)),
             targets=list(raw.pop("targets", [])),
             structural_states=list(raw.pop("structural_states", ["holo"])),
@@ -273,9 +282,65 @@ class DatasetConfig:
             config.data_dir = Path(data_dir_raw).expanduser().resolve()
         return config
 
+    def resolve_tier1_seed(self) -> int:
+        """Resolve the RNG seed used by ``tier1_selection: random``.
+
+        Precedence: ``FLEXAIDDS_TIER1_SEED`` env > yaml ``tier1_seed`` > the UTC
+        date as ``YYYYMMDD``.  The date default rotates the sampled targets daily
+        while keeping every run within a day identical; any run is replayable
+        exactly by exporting the seed recorded in its log.
+
+        A non-integer env value is an error rather than a silent fallback: a
+        mistyped seed must not quietly produce a different draw than intended.
+        """
+        env = os.environ.get("FLEXAIDDS_TIER1_SEED", "").strip()
+        if env:
+            try:
+                return int(env)
+            except ValueError as exc:
+                raise ValueError(
+                    f"FLEXAIDDS_TIER1_SEED must be an integer, got {env!r}"
+                ) from exc
+        if self.tier1_seed is not None:
+            return int(self.tier1_seed)
+        return int(datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%d"))
+
     def tier1_targets(self) -> List[str]:
-        """Return the subset of targets used for tier-1 (fast) runs."""
-        return self.targets[: self.tier1_subset_size]
+        """Return the subset of targets used for tier-1 (fast) runs.
+
+        ``tier1_selection: fixed`` (default) takes the first N targets.  Stable,
+        but every target after the Nth is then never exercised -- on astex_diverse
+        that left 83 of 85 codes untested by the gate.
+
+        ``tier1_selection: random`` samples N targets without replacement from a
+        seeded RNG, so coverage rotates across runs while a single run stays
+        exactly reproducible.  The seed is logged; re-run with
+        ``FLEXAIDDS_TIER1_SEED=<logged seed>`` to reproduce a draw.
+
+        COMPARABILITY WARNING: under ``random`` the sampled set differs between
+        runs, so target-dependent aggregates (``mean_rmsd``, ``docking_power_*``)
+        are NOT comparable run-to-run and must not be diffed against a baseline
+        calibrated on a different draw.  Only compare runs reporting the same seed.
+        """
+        k = max(0, min(int(self.tier1_subset_size), len(self.targets)))
+        mode = (self.tier1_selection or "fixed").strip().lower()
+        if mode == "fixed":
+            return self.targets[:k]
+        if mode != "random":
+            raise ValueError(
+                "tier1_selection must be 'fixed' or 'random', got "
+                f"{self.tier1_selection!r}"
+            )
+        seed = self.resolve_tier1_seed()
+        picked = random.Random(seed).sample(list(self.targets), k)
+        # Restore dataset order within the draw so run/display order is stable.
+        picked.sort(key=self.targets.index)
+        logger.info(
+            "tier-1 random subset: seed=%d k=%d targets=%s "
+            "(replay this exact draw with FLEXAIDDS_TIER1_SEED=%d)",
+            seed, k, ",".join(picked), seed,
+        )
+        return picked
 
     def _uses_crossdock_catalog(self, tier: int) -> bool:
         """Full-N crossdock catalog applies only when YAML requests crossdock state."""
