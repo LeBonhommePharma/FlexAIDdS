@@ -513,6 +513,10 @@ class TargetResult:
     grand_log_Z: Optional[float] = None  # P3: ensemble log_Z for this ligand (for grand Xi)
     conc_M: float = 1.0  # P3: the conc used for this ligand
     grand_xi: Optional[float] = None  # P3: computed log_Xi if grand_log_Z present
+    # Early-termination evidence. Without this a run that stopped at 14% of its
+    # generation budget is indistinguishable in the artifact from a full one.
+    early_termination: Dict[str, Any] = field(default_factory=dict)
+    early_exit_params: Dict[str, Any] = field(default_factory=dict)
 
     @property
     def success(self) -> bool:
@@ -611,6 +615,15 @@ class DatasetResult:
     # value is a real exit/return code, or None when the engine never executed
     # (exec failure) — mirrors DatasetRunner._entry_exit_codes.
     entry_exit_codes: Dict[str, Optional[int]] = field(default_factory=dict)
+    # "target/state" -> early-termination record for entries whose GA stopped
+    # before its configured budget. Keyed per entry like entry_exit_codes above,
+    # so an MPI merge is a dict update rather than a sum. Empty is the normal
+    # case; a non-empty map means this run's numbers came from less search than
+    # the configuration asked for, and are not comparable run-to-run.
+    early_terminations: Dict[str, Dict[str, Any]] = field(default_factory=dict)
+    # The governing knobs, as the engine actually saw them (one entry sampled;
+    # they are process-level and identical across entries of a run).
+    early_exit_params: Dict[str, Any] = field(default_factory=dict)
     inconclusive_metrics: List[str] = field(default_factory=list)
     # Targets actually executed this run (excludes --resume checkpoints, whose
     # poses are not reloaded into all_poses). Gates 2-3 only judge a run that
@@ -703,6 +716,8 @@ class DatasetResult:
             "flexaid_crashes": self.flexaid_crashes,
             "total_poses": self.total_poses,
             "entry_exit_codes": self.entry_exit_codes,
+            "early_terminations": self.early_terminations,
+            "early_exit_params": self.early_exit_params,
             "inconclusive_metrics": self.inconclusive_metrics,
             "newly_executed": self.newly_executed,
             "resumed": self.resumed,
@@ -1266,6 +1281,105 @@ class CostHistory:
         return cls(history_path)
 
 
+
+# ---------------------------------------------------------------------------
+# Early-termination tracking
+# ---------------------------------------------------------------------------
+# The GA can stop before its configured generation budget through several
+# independent paths.  The engine announces each on stdout, but the runner used to
+# scan stdout only for "[GRAND]" and discard the rest -- so a run that stopped at
+# 14% of budget was indistinguishable in the artifact from one that ran to 2000
+# generations, while METHODOLOGY §0 pins the budget at 2000 x 1000.
+#
+# Guard status (LIB/gaboom.cpp) -- this is the part that matters:
+#   * stagnation, entropy-convergence, SEC and the H-plateau exits are all
+#     guarded by `!no_sec`, and this runner sets FLEXAIDDS_NO_SEC=1 on every
+#     benchmark subprocess, so they are OFF on the benchmark path.
+#   * the [P5-ADAPTIVE-GEN] best-CF plateau exit is guarded ONLY by
+#     `ag_patience > 0` (gaboom.cpp:927) -- it does NOT check `no_sec`, so
+#     FLEXAIDDS_ADAPTIVE_GENERATIONS still fires on a benchmark run and silently
+#     shortens the budget the NO_SEC switch is there to guarantee.
+# Recording both the event and the governing parameters makes that visible in the
+# artifact instead of only in a discarded log.
+_TERMINATION_PATTERNS: Tuple[Tuple[str, "re.Pattern[str]"], ...] = (
+    ("adaptive_cf_plateau", re.compile(
+        r"\[P5-ADAPTIVE-GEN\] GA converged: best-CF plateau for (?P<plateau>\d+) gens "
+        r"\(best_CF=(?P<best_cf>[-\d.eE+]+)\) at gen (?P<generation>\d+) .*?"
+        r"max_generations=(?P<max_generations>\d+)")),
+    ("h_plateau", re.compile(
+        r"Early exit at gen (?P<generation>\d+): H plateau < (?P<eps>[-\d.eE+]+) "
+        r"\(H_now=(?P<h_now>[-\d.eE+]+) nats, delta=(?P<delta>[-\d.eE+]+) nats\)")),
+    ("cf_stagnant_gene_collapsed", re.compile(
+        r"GA terminated: CF stagnant for (?P<plateau>\d+) gens "
+        r"\(best_CF=(?P<best_cf>[-\d.eE+]+)\)")),
+    ("entropy_convergence", re.compile(r"GA terminated early by entropy convergence")),
+    ("fitness_stagnation", re.compile(r"GA terminated early by fitness stagnation")),
+)
+
+# The progress line prints `gen_id` 0-based -- a complete 2000-generation run
+# emits "Generation: 0" through "Generation: 1999" (verified on a full 1gpk run).
+# Every exit message above instead prints `i + 1`, i.e. 1-based. Reporting both
+# conventions in one dict would make `last_generation` look one short of
+# `max_generations` on a run that finished, which is precisely the false positive
+# this tracking must not manufacture, so the parser normalises to 1-based.
+_LAST_GENERATION_RE = re.compile(r"Generation:\s*(\d+)")
+
+
+def parse_early_termination(stdout: str) -> Dict[str, Any]:
+    """Extract early-termination evidence from engine stdout.
+
+    Returns ``{"terminated_early": bool, "reason": str|None, ...}``.  ``reason`` is
+    None when the GA ran its full budget.  ``last_generation`` is reported either
+    way so a silent truncation is visible even if a future exit path forgets to
+    announce itself, and is 1-based like ``generation``/``max_generations`` so the
+    three are directly comparable.
+    """
+    out: Dict[str, Any] = {"terminated_early": False, "reason": None}
+    if not stdout:
+        return out
+    for reason, pat in _TERMINATION_PATTERNS:
+        m = pat.search(stdout)
+        if m:
+            out["terminated_early"] = True
+            out["reason"] = reason
+            for k, v in (m.groupdict() or {}).items():
+                try:
+                    out[k] = float(v) if "." in v or "e" in v.lower() else int(v)
+                except (TypeError, ValueError):
+                    out[k] = v
+            break
+    gens = _LAST_GENERATION_RE.findall(stdout)
+    if gens:
+        out["last_generation"] = int(gens[-1]) + 1  # 0-based print -> 1-based
+    return out
+
+
+def early_exit_parameters(env: Optional[Dict[str, str]] = None) -> Dict[str, Any]:
+    """Governing early-termination settings, as actually seen by the engine.
+
+    These are ``getenv``-only knobs; METHODOLOGY §0.2 classes anything read from
+    the environment and written nowhere as LOST after the shell exits.  Recording
+    them beside the result is what makes a completed run distinguishable from one
+    that ran under different termination settings.
+    """
+    e = os.environ if env is None else env
+    adaptive = (e.get("FLEXAIDDS_ADAPTIVE_GENERATIONS") or "").strip()
+    return {
+        # master switch: disables stagnation / entropy / SEC / H-plateau exits
+        "FLEXAIDDS_NO_SEC": e.get("FLEXAIDDS_NO_SEC"),
+        "FLEXAIDDS_BENCHMARK": e.get("FLEXAIDDS_BENCHMARK"),
+        # NOT covered by NO_SEC -- see the note above
+        "FLEXAIDDS_ADAPTIVE_GENERATIONS": adaptive or None,
+        "FLEXAIDDS_ADAPTIVE_EPS": (e.get("FLEXAIDDS_ADAPTIVE_EPS") or "").strip() or None,
+        "adaptive_bypasses_no_sec": bool(adaptive and adaptive not in ("0", "")),
+        # compiled-in thresholds, recorded so the artifact is self-describing
+        "compiled_stagnation_limit": 300,          # gaboom.cpp:548 STAGNATION_LIMIT
+        "compiled_entropy_check_interval": 10,     # ga_constants.h:21
+        "compiled_h_plateau_window": 20,           # gaboom.cpp:589 kHPlateauWindow
+        "compiled_h_plateau_eps_nats": 0.001,      # gaboom.cpp:590 kHPlateauEps
+    }
+
+
 # ---------------------------------------------------------------------------
 # DatasetRunner
 # ---------------------------------------------------------------------------
@@ -1381,6 +1495,14 @@ class DatasetRunner:
         # int = a real process exit/return code; None = the engine never
         # executed (exec failure), which no completed subprocess.run can produce.
         self._entry_exit_codes: Dict[str, Optional[int]] = {}
+        # Early-termination evidence, keyed "target/state", recorded by
+        # _run_flexaid and consumed by run_dataset when it builds the
+        # TargetResult.  Routed through instance state under the same lock as
+        # the crash tally for the same reason: _run_flexaid returns only poses,
+        # and entries dispatch across a thread pool, so there is no other way
+        # for the per-entry evidence to reach the artifact.
+        self._entry_early_termination: Dict[str, Dict[str, Any]] = {}
+        self._entry_early_exit_params: Dict[str, Dict[str, Any]] = {}
         # Poses whose element list disagreed with the reference's.  Per
         # instance and reset per dataset, like the crash tally above it: a
         # process-global would report the previous dataset's refusals as
@@ -1533,6 +1655,13 @@ class DatasetRunner:
                 sub_env["FLEXAIDDS_NO_SEC"] = "1"
                 # Signal to core that this is a benchmark run needing equal search effort
                 sub_env["FLEXAIDDS_BENCHMARK"] = "1"
+                # Record the governing knobs BEFORE the engine runs: a timeout or
+                # exec failure below returns without ever reaching the stdout
+                # parse, and those are exactly the runs whose settings we most
+                # want on record.
+                entry_key = f"{target_id}/{structural_state}"
+                with self._crash_lock:
+                    self._entry_early_exit_params[entry_key] = early_exit_parameters(sub_env)
                 # Wrap ONLY the subprocess call: the exceptions here (timeout,
                 # exec failure) are properties of *running the engine*. Pose
                 # parsing lives below, deliberately outside this try, so an
@@ -1633,6 +1762,18 @@ class DatasetRunner:
                     )
                 # P3: capture grand log_Z from [GRAND] stdout (emitted by C++ cluster hook when --conc used)
                 grand_log_z = None
+                # Early-termination evidence from engine stdout (otherwise discarded).
+                early_term = parse_early_termination(result.stdout or "")
+                with self._crash_lock:
+                    self._record_early_termination(entry_key, ligand_id, early_term)
+                if early_term.get("terminated_early"):
+                    logger.warning(
+                        "%s/%s: GA stopped early (%s) at generation %s -- the "
+                        "configured budget was NOT consumed; see early_termination "
+                        "in the entry artifact",
+                        target_id, ligand_id, early_term.get("reason"),
+                        early_term.get("generation") or early_term.get("last_generation"),
+                    )
                 if result.stdout:
                     for line in result.stdout.splitlines():
                         if '[GRAND]' in line and 'log_Z=' in line:
@@ -1646,6 +1787,46 @@ class DatasetRunner:
                 poses.extend(parsed)
 
         return poses
+
+    def _early_termination_for(
+        self, target_id: str, structural_state: str
+    ) -> Dict[str, Dict[str, Any]]:
+        """TargetResult kwargs carrying this entry's early-termination record.
+
+        Empty dicts when nothing was recorded (dry runs, and any path where the
+        engine was never invoked) -- an absent record and a clean full-budget
+        run must not look alike, so nothing is synthesised here.
+        """
+        key = f"{target_id}/{structural_state}"
+        with self._crash_lock:
+            return {
+                "early_termination": dict(self._entry_early_termination.get(key) or {}),
+                "early_exit_params": dict(self._entry_early_exit_params.get(key) or {}),
+            }
+
+    def _record_early_termination(
+        self, entry_key: str, ligand_id: str, early_term: Dict[str, Any]
+    ) -> None:
+        """Merge one ligand's termination evidence into the entry's record.
+
+        Caller must hold ``self._crash_lock``.  An entry is reported as
+        terminated early if ANY of its ligands did: the entry's scores are
+        pooled across ligands, so one truncated ligand is enough to make the
+        entry's numbers incomparable with a full-budget run.  Per-ligand detail
+        is kept alongside so which one it was stays recoverable.
+        """
+        rec = self._entry_early_termination.setdefault(
+            entry_key, {"terminated_early": False, "reason": None, "per_ligand": {}}
+        )
+        rec["per_ligand"][ligand_id] = early_term
+        if early_term.get("terminated_early") and not rec["terminated_early"]:
+            rec["terminated_early"] = True
+            rec["reason"] = early_term.get("reason")
+            if early_term.get("generation") is not None:
+                rec["generation"] = early_term["generation"]
+        last = early_term.get("last_generation")
+        if isinstance(last, int):
+            rec["last_generation"] = max(last, rec.get("last_generation", 0))
 
     def pose_pdb_dir(self, target_id: str, ligand_id: str, structural_state: str) -> Path:
         """Destination for preserved pose PDBs, ALWAYS under ``results_dir``.
@@ -1992,6 +2173,8 @@ class DatasetRunner:
         with self._crash_lock:
             self._flexaid_crashes = 0
             self._entry_exit_codes = {}
+            self._entry_early_termination = {}
+            self._entry_early_exit_params = {}
             self._element_mismatches = []
 
         def _process_one_item(item: Tuple[str, str]) -> Tuple[str, str, List[PoseScore], float, str]:
@@ -2040,6 +2223,7 @@ class DatasetRunner:
                     duration_seconds=elapsed,
                     error=error,
                     conc_M=eff_conc,
+                    **self._early_termination_for(target_id, state),
                 )
                 if poses and getattr(poses[0], 'ensemble_log_Z', None) is not None:
                     tr.grand_log_Z = poses[0].ensemble_log_Z
@@ -2120,6 +2304,13 @@ class DatasetRunner:
         with self._crash_lock:
             crashes = self._flexaid_crashes
             exit_codes = dict(self._entry_exit_codes)
+            early_terms = {
+                k: dict(v) for k, v in self._entry_early_termination.items()
+                if v.get("terminated_early")
+            }
+            early_params = next(
+                (dict(v) for v in self._entry_early_exit_params.values()), {}
+            )
         newly = len(results)
         resumed = len(already_completed)
 
@@ -2135,10 +2326,28 @@ class DatasetRunner:
                 " ..." if len(self._element_mismatches) > 5 else "",
             )
 
+        if early_terms:
+            logger.warning(
+                "%d entr%s stopped before the configured generation budget "
+                "(reasons: %s). These numbers came from less search than "
+                "configured and are NOT comparable with a full-budget run.",
+                len(early_terms), "y" if len(early_terms) == 1 else "ies",
+                ", ".join(sorted({str(v.get("reason")) for v in early_terms.values()})),
+            )
+            if early_params.get("adaptive_bypasses_no_sec"):
+                logger.warning(
+                    "FLEXAIDDS_ADAPTIVE_GENERATIONS=%s is set: the adaptive "
+                    "best-CF plateau exit is NOT covered by FLEXAIDDS_NO_SEC "
+                    "(gaboom.cpp:927), so the no-early-exit guarantee this "
+                    "runner relies on does not hold for this run.",
+                    early_params.get("FLEXAIDDS_ADAPTIVE_GENERATIONS"),
+                )
+
         # MPI gather (still works at target granularity for final aggregation)
         if self._mpi_comm is not None:
             all_results_by_rank = self._mpi_comm.gather(
-                (all_poses, completed, failed, crashes, exit_codes, newly, resumed), root=0
+                (all_poses, completed, failed, crashes, exit_codes, newly, resumed,
+                 early_terms, early_params), root=0
             )
             if self._mpi_root:
                 all_poses = []
@@ -2148,12 +2357,19 @@ class DatasetRunner:
                 exit_codes = {}
                 newly = 0
                 resumed = 0
-                for poses_i, comp_i, fail_i, crash_i, codes_i, newly_i, resumed_i in (all_results_by_rank or []):
+                merged_early_terms: Dict[str, Dict[str, Any]] = {}
+                merged_early_params: Dict[str, Any] = {}
+                for (poses_i, comp_i, fail_i, crash_i, codes_i, newly_i, resumed_i,
+                     early_i, params_i) in (all_results_by_rank or []):
                     all_poses.extend(poses_i)
                     completed.extend(comp_i)
                     failed.extend(fail_i)
                     crashes += crash_i
                     exit_codes.update(codes_i)
+                    # Keyed per entry and partitioned across ranks, like
+                    # exit_codes: a dict update merges without double-counting.
+                    merged_early_terms.update(early_i or {})
+                    merged_early_params = merged_early_params or (params_i or {})
                     newly += newly_i
                     # `resumed` is REPLICATED, not partitioned: every rank runs
                     # _discover_completed_targets over the same shared disk, so
@@ -2164,6 +2380,8 @@ class DatasetRunner:
                     # but a wrong number in the artifact is the exact thing this
                     # whole change exists to prevent.
                     resumed = max(resumed, resumed_i)
+                early_terms = merged_early_terms
+                early_params = early_params or merged_early_params
 
         # Root finalizes
         if self._mpi_root:
@@ -2171,6 +2389,8 @@ class DatasetRunner:
             dr.targets_failed = failed
             dr.flexaid_crashes = crashes
             dr.entry_exit_codes = exit_codes
+            dr.early_terminations = early_terms
+            dr.early_exit_params = early_params
             dr.total_poses = len(all_poses)
             dr.newly_executed = newly
             dr.resumed = resumed
@@ -2371,6 +2591,10 @@ class DatasetRunner:
             "grand_log_Z": getattr(tr, 'grand_log_Z', None),
             "grand_xi": getattr(tr, 'grand_xi', None),
             "conc_M": getattr(tr, 'conc_M', 1.0),
+            # Was the configured generation budget actually consumed? Recorded so a
+            # truncated run cannot be mistaken for a complete one.
+            "early_termination": getattr(tr, 'early_termination', {}) or {},
+            "early_exit_params": getattr(tr, 'early_exit_params', {}) or {},
             "timestamp": datetime.datetime.utcnow().isoformat() + "Z",
         }
         tmp.write_text(json.dumps(payload, indent=2))
@@ -2404,6 +2628,12 @@ class DatasetRunner:
                 grand_log_Z=data.get("grand_log_Z"),
                 conc_M=data.get("conc_M", 1.0),
                 grand_xi=data.get("grand_xi"),
+                # Carried across resume: an entry reloaded from cache that lost
+                # its termination record would read as "no record", which is the
+                # exact conflation with a full-budget run this tracking exists
+                # to prevent.
+                early_termination=data.get("early_termination") or {},
+                early_exit_params=data.get("early_exit_params") or {},
             )
         except Exception as e:
             logger.warning("Corrupt target result %s — will re-run: %s", path, e)
