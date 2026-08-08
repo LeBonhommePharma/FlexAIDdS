@@ -206,19 +206,28 @@ class TorsionalENM:
             try:
                 self._cpp_engine = _core.TorsionalENM()
                 self._cpp_engine.build_from_pdb(pdb_path, cutoff, k0)
-                if self._cpp_engine.is_built:
+                # is_built/n_residues/n_bonds/modes are bound as METHODS
+                # (_core.cpp: .def(...), not .def_property_readonly), so they
+                # must be called. Reading them as attributes yielded a bound
+                # method object, which is always truthy — the build was
+                # reported successful even when it had failed, and iterating
+                # the "modes" attribute then raised TypeError.
+                if self._cpp_engine.is_built():
                     self._built = True
-                    self._n_residues = self._cpp_engine.n_residues
-                    self._n_bonds = self._cpp_engine.n_bonds
+                    self._n_residues = self._cpp_engine.n_residues()
+                    self._n_bonds = self._cpp_engine.n_bonds()
                     self._modes = [
                         TorsionalNormalMode(
                             eigenvalue=m.eigenvalue,
                             eigenvector=list(m.eigenvector),
                         )
-                        for m in self._cpp_engine.modes
+                        for m in self._cpp_engine.modes()
                     ]
                     return
-            except (AttributeError, RuntimeError):
+            except (AttributeError, RuntimeError, TypeError):
+                # TypeError included so a future binding-signature drift
+                # degrades to the pure-Python fallback below instead of
+                # propagating out of a build call.
                 self._cpp_engine = None
 
         # Pure-Python fallback
