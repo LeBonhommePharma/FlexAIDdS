@@ -32,6 +32,7 @@ static bool           s_cuda_ready = false;
 
 #include <algorithm>
 #include <cmath>
+#include <cstddef>
 #include <numeric>
 #include <vector>
 
@@ -179,6 +180,64 @@ static void histogram_avx512(const double* values, int n,
 }
 #endif // __AVX512F__
 
+// ─── robust histogram support ────────────────────────────────────────────────
+//
+// The histogram support is normally the sample's own [min, max]. That makes a
+// single extreme value rescale every bin: one clash/wall pose (evalue ~1e4) in
+// an otherwise diverse population pushes every real sample into bin 0, so H
+// reads ~0.08 bits and the caller's collapse gate fires on a population that
+// has not collapsed at all.
+//
+// When the raw range is pathologically wider than the bulk of the sample, the
+// support is instead taken from a Tukey far-out fence around the interquartile
+// range. Values outside the fence are not discarded: every histogram path
+// clamps the bin index, so they land in the edge bins and still carry their
+// probability mass.
+//
+// The trigger is deliberately conservative. For any distribution whose range is
+// a small multiple of its IQR — uniform (range = 2·IQR), Gaussian (~4-6·IQR for
+// realistic n), and every well-behaved population — the fence never engages and
+// the estimator is bit-identical to the previous behaviour.
+namespace {
+
+constexpr std::size_t kRobustMinSamples  = 8;    // below this, quartiles are meaningless
+constexpr double      kRobustTriggerIQR  = 20.0; // engage only on true pathology
+constexpr double      kRobustFenceIQR    = 3.0;  // Tukey "far out" fence
+
+// Returns true (and fills lo/hi) when a robust support should replace [min,max].
+bool robust_support(const std::vector<double>& values,
+                    double raw_min, double raw_max,
+                    double& lo, double& hi)
+{
+    const std::size_t n = values.size();
+    if (n < kRobustMinSamples) return false;
+
+    std::vector<double> scratch(values);
+    auto quantile = [&scratch, n](double f) {
+        const std::size_t idx =
+            static_cast<std::size_t>(f * static_cast<double>(n - 1));
+        // nth_element is valid on any permutation, so successive calls on the
+        // same (partially reordered) buffer still return the correct element.
+        std::nth_element(scratch.begin(),
+                         scratch.begin() + static_cast<std::ptrdiff_t>(idx),
+                         scratch.end());
+        return scratch[idx];
+    };
+
+    const double q1  = quantile(0.25);
+    const double q3  = quantile(0.75);
+    const double iqr = q3 - q1;
+    if (!(iqr > 0.0) || !std::isfinite(iqr)) return false;
+
+    if ((raw_max - raw_min) <= kRobustTriggerIQR * iqr) return false;
+
+    lo = q1 - kRobustFenceIQR * iqr;
+    hi = q3 + kRobustFenceIQR * iqr;
+    return (hi - lo) > 1e-12;
+}
+
+}  // namespace
+
 // ─── compute_shannon_entropy ─────────────────────────────────────────────────
 
 double compute_shannon_entropy(const std::vector<double>& values, int num_bins) {
@@ -189,6 +248,15 @@ double compute_shannon_entropy(const std::vector<double>& values, int num_bins) 
     double min_v = *it_min;
     double max_v = *it_max;
     if (max_v - min_v < 1e-12) return 0.0;
+
+    // Outlier-robust support; see robust_support() above.
+    double rob_lo = 0.0, rob_hi = 0.0;
+    const bool robust = robust_support(values, min_v, max_v, rob_lo, rob_hi);
+    if (robust) {
+        min_v = rob_lo;
+        max_v = rob_hi;
+    }
+
     double bin_width = (max_v - min_v) / num_bins + 1e-10;
     double inv_bw    = 1.0 / bin_width;
     int    n         = static_cast<int>(values.size());
@@ -216,7 +284,12 @@ if (n > GPU_DISPATCH_THRESHOLD) {
 
 // ── 2. Metal ──────────────────────────────────────────────────────────────────
 #ifdef FLEXAIDS_HAS_METAL_SHANNON
-    return ShannonMetalBridge::compute_shannon_entropy_metal(values, num_bins);
+    // The Metal bridge derives the histogram support internally from the raw
+    // sample, so it cannot honour a robust fence. When one is active, fall
+    // through to the CPU paths rather than silently returning the
+    // outlier-dominated value the fence exists to prevent.
+    if (!robust)
+        return ShannonMetalBridge::compute_shannon_entropy_metal(values, num_bins);
 #endif
 } // GPU_DISPATCH_THRESHOLD
 
@@ -229,8 +302,15 @@ if (n > GPU_DISPATCH_THRESHOLD) {
         Eigen::MatrixXi t_bins = Eigen::MatrixXi::Zero(n_threads, num_bins);
         #pragma omp parallel
         {
+            // Chunking must use the team size actually granted, not
+            // omp_get_max_threads(). When the runtime hands out fewer threads
+            // than the maximum (nested regions, dynamic teams, an active
+            // num_threads clause), a max-derived chunk leaves the tail of the
+            // sample unvisited while the normalisation below still divides by
+            // the full count — silently dropping samples from the histogram.
+            const int nt = omp_get_num_threads();
             int tid    = omp_get_thread_num();
-            int chunk  = (n + n_threads - 1) / n_threads;
+            int chunk  = (n + nt - 1) / nt;
             int start  = tid * chunk;
             int end_i  = std::min(start + chunk, n);
             if (start < end_i) {
@@ -359,11 +439,28 @@ FullThermoResult run_shannon_thermo_stack(
     double S_vib        = tencm_model.is_built()
                           ? compute_torsional_vibrational_entropy(tencm_model.modes(), temperature_K)
                           : 0.0;
-    // Shannon H is in nats (natural log). Convert to physical units:
+    // Shannon H is in nats (natural log). Converting to physical units:
     //     S_conf [kcal/(mol·K)] = k_B · H [nats]
+    //
+    // ⚠ That unit label is only earned when the weights w_i came from a
+    // calibrated physical energy scale. The engine's provenance is the
+    // authority, and a CF/contact-function optimizer ensemble is proxy-only:
+    // its weights are a softmax over arbitrary units, so k_B is dimensionally
+    // meaningless here and -T·k_B·H is not a kcal/mol free-energy term.
+    //
+    // The numbers below are deliberately left unchanged. This branch's
+    // provenance contract (statmech.h) is explicit that the metadata "never
+    // participates in energy evaluation, weighting, ranking, or sorting", and
+    // this ΔG is consumed by the GA. Gating the arithmetic on provenance would
+    // silently drop an entropy term from production docking output — a
+    // science-affecting change that belongs in a benchmarked A/B, not in a
+    // labeling fix. The calibration status is surfaced in the report instead,
+    // so a reader can tell whether "kcal/mol" is a claim or a placeholder.
+    const bool calibrated =
+        stat_engine.provenance().allows_canonical_physical_claim();
     double S_conf_phys  = S_conf_nats * kB_kcal;
 
-    // The torsional ENCoM path is currently model-scale only. Keep S_vib in
+    // The torsional ENCoM path is separately model-scale only. Keep S_vib in
     // the result/report as a relative flexibility diagnostic, but do not fold it
     // into kcal/mol free-energy terms until a calibrated frequency path reaches
     // this stack.
@@ -388,7 +485,10 @@ FullThermoResult run_shannon_thermo_stack(
         std::string("ShannonThermoStack[") + hw +
         "+Eigen"
         "]: S_conf=" + std::to_string(S_conf_nats) +
-        " nats, S_vib_heuristic=" + std::to_string(S_vib) +
+        (calibrated
+             ? " nats (calibrated energy scale; -T·S is kcal/mol)"
+             : " nats (proxy-only ensemble; -T·S in CF a.u., kcal/mol label unearned)") +
+        ", S_vib_heuristic=" + std::to_string(S_vib) +
         " kcal/mol/K (model-scale heuristic; excluded from dG), ΔG=" +
         std::to_string(final_dG) + " kcal/mol";
 

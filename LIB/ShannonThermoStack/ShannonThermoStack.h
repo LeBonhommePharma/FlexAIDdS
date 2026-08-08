@@ -45,6 +45,30 @@ inline constexpr double kHSC_hard_bits = 1.0;
 inline constexpr double kHSC_soft_nats = kHSC_soft_bits * 0.6931471805599453; // 2 × ln(2)
 inline constexpr double kHSC_hard_nats = kHSC_hard_bits * 0.6931471805599453; // 1 × ln(2)
 
+// ⚠ SUPPORT-SIZE CAVEAT — the absolute thresholds above were derived against
+// the SHANNON_BINS = 256 "mega-cluster" discretisation described at the top of
+// this header (ceiling H_max = ln 256 = 8 bits), but every live caller computes
+// H with DEFAULT_HIST_BINS = 20 (ceiling H_max = ln 20 = 4.32 bits). As
+// fractions of the reachable maximum the intended 25% / 12.5% lines therefore
+// land at 46% / 23%, i.e. both gates are considerably more eager than their
+// derivation implies.
+//
+// The constants are left at their shipped values because they gate GA
+// termination and changing them moves docking results — that belongs in a
+// benchmarked A/B, not a drive-by edit. New code that wants a gate which means
+// the same thing at any bin count should use collapse_threshold_nats() below.
+inline constexpr double kHSC_soft_frac_of_max = 0.25;  // "support < 1/4 of bins"
+inline constexpr double kHSC_hard_frac_of_max = 0.125; // "one bin dominates"
+
+// Collapse threshold scaled to the support actually used by the estimator:
+// returns frac_of_max × ln(num_bins) nats. Bin-count independent by
+// construction, unlike the absolute kHSC_*_nats constants above.
+inline double collapse_threshold_nats(int num_bins,
+                                      double frac_of_max = kHSC_soft_frac_of_max) noexcept {
+    if (num_bins <= 1) return 0.0;
+    return frac_of_max * std::log(static_cast<double>(num_bins));
+}
+
 // ─── result struct ───────────────────────────────────────────────────────────
 struct FullThermoResult {
     double deltaG;              // base ΔG plus calibrated entropy terms (kcal/mol)
