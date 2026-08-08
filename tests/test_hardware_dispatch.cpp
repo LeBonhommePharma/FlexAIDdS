@@ -945,6 +945,189 @@ TEST(GPUThreshold, ResultConsistencyAcrossSizes) {
 }
 
 // ===========================================================================
+// OUTLIER-ROBUST HISTOGRAM SUPPORT
+//
+// The histogram support is normally the sample's own [min, max], which lets a
+// single extreme value rescale every bin. These tests pin both halves of the
+// contract: the robust fence must neutralise a lone pathological sample, and
+// it must stay out of the way for well-behaved data.
+// ===========================================================================
+
+TEST(RobustBinning, SingleClashPoseDoesNotFakeCollapse) {
+    // A diverse population plus one clash/wall pose. Without a robust support
+    // every real sample lands in bin 0 and H reads ~0.056 nats (0.08 bits),
+    // far below the hard-collapse line — a GA gate reading this would stop a
+    // population that has not collapsed at all.
+    std::vector<double> energies;
+    energies.reserve(100);
+    for (int i = 0; i < 99; ++i)
+        energies.push_back(-100.0 + 0.5 * static_cast<double>(i));  // spread over [-100,-51]
+    energies.push_back(1.0e4);                                      // clash pose
+
+    const double H = compute_shannon_entropy(energies, DEFAULT_HIST_BINS);
+
+    EXPECT_GT(H, kHSC_soft_nats)
+        << "One outlier collapsed the histogram support: H=" << H
+        << " nats <= soft gate " << kHSC_soft_nats;
+    EXPECT_GT(H, kHSC_hard_nats);
+}
+
+TEST(RobustBinning, UniformDataIsUnaffectedByTheFence) {
+    // Range = 2*IQR for a uniform sample, far below the trigger, so the fence
+    // must not engage and H must still saturate at ln(num_bins).
+    std::vector<double> values(2000);
+    for (std::size_t i = 0; i < values.size(); ++i)
+        values[i] = static_cast<double>(i) / static_cast<double>(values.size());
+
+    const int bins = 20;
+    const double H = compute_shannon_entropy(values, bins);
+    EXPECT_NEAR(H, std::log(static_cast<double>(bins)), 1e-9);
+}
+
+TEST(RobustBinning, GaussianDataIsUnaffectedByTheFence) {
+    // A Gaussian's range is only a few IQR, so results must be bit-identical
+    // to the pre-fence estimator. Computed here against the same data run
+    // through an explicit min/max histogram.
+    std::mt19937 rng(12345);
+    std::normal_distribution<double> dist(0.0, 1.0);
+    std::vector<double> values(1000);
+    for (auto& v : values) v = dist(rng);
+
+    const int bins = 20;
+    const double H = compute_shannon_entropy(values, bins);
+
+    // Reference: plain min/max binning, no fence.
+    const auto [it_min, it_max] = std::minmax_element(values.begin(), values.end());
+    const double bw = (*it_max - *it_min) / bins + 1e-10;
+    std::vector<int> counts(bins, 0);
+    for (double v : values) {
+        int b = static_cast<int>((v - *it_min) / bw);
+        counts[std::min(std::max(b, 0), bins - 1)]++;
+    }
+    double H_ref = 0.0;
+    for (int c : counts) {
+        if (c > 0) {
+            const double p = static_cast<double>(c) / static_cast<double>(values.size());
+            H_ref -= p * std::log(p);
+        }
+    }
+    EXPECT_NEAR(H, H_ref, 1e-12);
+}
+
+TEST(RobustBinning, DegenerateAndTinySamplesUnchanged) {
+    // All-identical input still has exactly zero entropy.
+    EXPECT_DOUBLE_EQ(compute_shannon_entropy(std::vector<double>(50, 7.0), 20), 0.0);
+    // Below the quartile-sanity floor the fence never engages; a 2-sample
+    // input must not throw or produce NaN.
+    const double H = compute_shannon_entropy({0.0, 1.0e6}, 20);
+    EXPECT_TRUE(std::isfinite(H));
+    EXPECT_GE(H, 0.0);
+}
+
+TEST(RobustBinning, CollapseThresholdScalesWithSupport) {
+    // The absolute kHSC_* constants were derived for 256 bins but are applied
+    // to a 20-bin estimator; the helper expresses the same intent at any bin
+    // count. ln(256)/4 = 1.386 nats (= 2 bits) recovers the original line.
+    EXPECT_NEAR(collapse_threshold_nats(256, kHSC_soft_frac_of_max),
+                kHSC_soft_nats, 1e-12);
+    EXPECT_NEAR(collapse_threshold_nats(256, kHSC_hard_frac_of_max),
+                kHSC_hard_nats, 1e-12);
+    // At the bin count actually used, the scale-correct gate is stricter than
+    // the shipped absolute constant.
+    EXPECT_LT(collapse_threshold_nats(DEFAULT_HIST_BINS, kHSC_soft_frac_of_max),
+              kHSC_soft_nats);
+    EXPECT_DOUBLE_EQ(collapse_threshold_nats(1), 0.0);
+}
+
+// ===========================================================================
+// TORSIONAL ENM HESSIAN — DIRECTIONAL PROJECTION
+//
+// The elastic-network potential is a sum of springs ALONG each contact
+// vector, V = ½ Σ k_ij [û_ij·(δr_i − δr_j)]². Projecting onto û_ij is what
+// makes the model rotationally invariant, so motions that do not change any
+// contact LENGTH must cost no energy.
+// ===========================================================================
+
+TEST(TorsionalHessian, SpectrumIsPhysicallyAdmissible) {
+    tencm::TorsionalENM model = make_built_tencm_model(30);
+    ASSERT_TRUE(model.is_built());
+    ASSERT_FALSE(model.modes().empty());
+
+    for (const auto& m : model.modes()) {
+        EXPECT_TRUE(std::isfinite(m.eigenvalue));
+        // A sum of k·(p⊗p) outer products is positive semi-definite; small
+        // negative values are numerical noise only.
+        EXPECT_GT(m.eigenvalue, -1e-6);
+    }
+}
+
+TEST(TorsionalHessian, RigidFragmentRotationCostsNothing) {
+    // Decisive test of the directional projection.
+    //
+    // Rotating about the FIRST pseudo-bond turns the entire downstream
+    // fragment as a rigid body. If the first residue is placed beyond the
+    // contact cutoff from every other residue, that rotation changes no
+    // contact LENGTH anywhere in the structure, so its true elastic energy is
+    // exactly zero and the Hessian must be singular.
+    //
+    // Algebraically: for a contact whose two atoms are both downstream of bond
+    // k, ΔJ_k = e_k × r_ij, and û_ij·(e_k × r_ij) ≡ 0. The projected form
+    // scores exactly zero; the unprojected |ΔJ|² form scores |e_k × r_ij|²,
+    // which is large and positive — it charges energy for a pure rotation.
+    std::vector<std::array<float, 3>> ca;
+    // Residue 0 parked far away: no contacts within the 9 Å default cutoff.
+    ca.push_back({0.0f, 0.0f, -500.0f});
+    // A compact helical chain for the remaining residues.
+    for (int i = 0; i < 24; ++i) {
+        ca.push_back({
+            2.3f * std::cos(static_cast<float>(i) * 1.74532925f),
+            2.3f * std::sin(static_cast<float>(i) * 1.74532925f),
+            1.5f * static_cast<float>(i)
+        });
+    }
+
+    tencm::TorsionalENM model;
+    model.build_from_ca(ca);
+    ASSERT_TRUE(model.is_built());
+    ASSERT_GE(model.modes().size(), 2u);
+
+    // Every contact here is between two atoms that are both downstream of bond
+    // 0, and residue 0 has no contacts of its own. With the projection, bond
+    // 0's entire row of the Hessian is exactly zero, so its diagonal stiffness
+    // H_00 — the energy cost of rotating about bond 0 alone — must vanish.
+    // Without the projection, bond 0 instead picks up |e_0 × r_ij|² from every
+    // one of those contacts.
+    //
+    // H is private, but the spectral decomposition recovers any element:
+    //     H_kk = Σ_m λ_m · v_m[k]²
+    // The null space here is multi-dimensional, so this diagonal form is used
+    // rather than inspecting a single (basis-arbitrary) null eigenvector.
+    ASSERT_FALSE(model.modes().front().eigenvector.empty())
+        << "build_from_ca must populate eigenvectors for this check";
+
+    const int M = model.n_bonds();
+    std::vector<double> diag(static_cast<std::size_t>(M), 0.0);
+    for (const auto& m : model.modes()) {
+        if (static_cast<int>(m.eigenvector.size()) < M) continue;
+        for (int k = 0; k < M; ++k)
+            diag[static_cast<std::size_t>(k)] +=
+                m.eigenvalue * m.eigenvector[static_cast<std::size_t>(k)] *
+                m.eigenvector[static_cast<std::size_t>(k)];
+    }
+
+    double max_diag = 0.0;
+    for (double d : diag) max_diag = std::max(max_diag, std::abs(d));
+    ASSERT_GT(max_diag, 0.0) << "degenerate Hessian — test structure is wrong";
+
+    EXPECT_LT(std::abs(diag[0]) / max_diag, 1e-9)
+        << "H_00=" << diag[0] << " (max diagonal " << max_diag
+        << ") — rotating about bond 0 turns an isolated fragment rigidly and"
+           " changes no contact length, so it must cost exactly zero energy."
+           " A nonzero H_00 is the signature of a Hessian missing the û_ij"
+           " projection.";
+}
+
+// ===========================================================================
 // MAIN
 // ===========================================================================
 
