@@ -1,26 +1,24 @@
 {
-  "version": 1,
-  "last_updated": "2026-05-27T14:10:00Z",
+  "version": 2,
+  "last_updated": "2026-08-08",
+  "registry_status": "PRE_PUBLICATION",
+  "claim_policy": "Planned and unverified records contain no quantitative results. Complete, published, or reproducible status requires repository-local report_json, report_markdown, and provenance artifacts.",
   "audits": [
     {
       "id": "AUD-2026-001",
-      "target": "μ-Opioid receptor + fentanyl",
-      "f_config_kcal_mol": -11.21,
-      "s_config_kcal_mol_K": 0.01113,
-      "verdict": "REPRODUCIBLE_WITH_CORRECTION",
-      "json_url": "AUD-2026-001_fentanyl_muOR.json",
-      "md_url": "AUD-2026-001_fentanyl_muOR.md",
-      "notes": "Classic entropy rescue case. Enthalpy-only selected decoy (RMSD 8.3 Å)."
+      "target": "mu-Opioid receptor + fentanyl",
+      "status": "PLANNED_UNVERIFIED",
+      "artifact_status": "NOT_DEPOSITED",
+      "claim": "No result claimed.",
+      "notes": "Candidate psychopharmacology case; the repository contains no sampled ensemble or audit artifact package."
     },
     {
       "id": "AUD-2026-002",
-      "target": "Thrombin + dabigatran (negative control)",
-      "f_config_kcal_mol": -8.73,
-      "s_config_kcal_mol_K": 0.0013,
-      "verdict": "REPRODUCIBLE_NO_CORRECTION_NEEDED",
-      "json_url": "AUD-2026-002_thrombin_dabigatran.json",
-      "md_url": "AUD-2026-002_thrombin_dabigatran.md",
-      "notes": "Negative control. Rank unchanged — framework does not invent entropy."
+      "target": "Thrombin + dabigatran",
+      "status": "PLANNED_UNVERIFIED",
+      "artifact_status": "NOT_DEPOSITED",
+      "claim": "No result claimed.",
+      "notes": "Candidate negative-control case; the repository contains no sampled ensemble or audit artifact package."
     }
   ]
 }

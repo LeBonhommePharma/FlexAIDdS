@@ -16,15 +16,44 @@ extern "C" {
 
 // ─── Thermodynamics (mirrors statmech::Thermodynamics) ─────────────────────
 
+// Stable C-ABI values matching statmech.h. Keep these explicit: Swift must not
+// depend on C++ enum layout or infer a scientific domain from numeric values.
+#define FX_ENERGY_DOMAIN_UNCLASSIFIED 0
+#define FX_ENERGY_DOMAIN_CF_ARBITRARY_UNITS 1
+#define FX_ENERGY_DOMAIN_CALIBRATED_KCAL_PER_MOL 2
+#define FX_ENERGY_DOMAIN_MODEL_SCALE 3
+
+#define FX_ENSEMBLE_MEASURE_UNCLASSIFIED 0
+#define FX_ENSEMBLE_MEASURE_OPTIMIZER_SAMPLES 1
+#define FX_ENSEMBLE_MEASURE_ENUMERATED_MICROSTATES 2
+#define FX_ENSEMBLE_MEASURE_WEIGHTED_QUADRATURE 3
+
+#define FX_REFERENCE_STATE_NONE 0
+#define FX_REFERENCE_STATE_BOUND_ONLY 1
+#define FX_REFERENCE_STATE_MATCHED_ASSOCIATION_CYCLE 2
+
+#define FX_PROVENANCE_TEXT_CAPACITY 256
+
+typedef struct {
+    int32_t schema_version;
+    int32_t energy_domain;
+    int32_t ensemble_measure;
+    int32_t reference_state;
+    char energy_provenance[FX_PROVENANCE_TEXT_CAPACITY];
+    char measure_provenance[FX_PROVENANCE_TEXT_CAPACITY];
+    char reference_provenance[FX_PROVENANCE_TEXT_CAPACITY];
+} FXScientificProvenance;
+
 typedef struct {
     double temperature;       // K
     double log_Z;             // ln(Z) — stored for numerical stability
-    double free_energy;       // Helmholtz F = -kT ln Z (kcal/mol)
-    double mean_energy;       // <E> (kcal/mol)
+    double free_energy;       // -kT ln Z in declared energy domain
+    double mean_energy;       // <E> in declared energy domain
     double mean_energy_sq;    // <E^2>
     double heat_capacity;     // C_v = (<E^2> - <E>^2) / (kT^2)
-    double entropy;           // S = (<E> - F) / T (kcal mol^-1 K^-1)
-    double std_energy;        // sigma_E = sqrt(C_v * kT^2) (kcal/mol)
+    double entropy;           // S = (<E> - F) / T in declared domain/K
+    double std_energy;        // sigma_E in declared energy domain
+    FXScientificProvenance scientific_provenance;
 } FXThermodynamics;
 
 // ─── Vibrational entropy (mirrors encom::VibrationalEntropy) ────────────────
@@ -87,9 +116,16 @@ typedef struct {
 
 typedef struct {
     double shannon_entropy;         // Configurational entropy (nats)
-    double torsional_vib_entropy;   // Vibrational entropy (kcal/mol/K)
-    double entropy_contribution;    // -T*S term (kcal/mol)
-    double delta_G;                 // Total free energy (kcal/mol)
+    double torsional_vib_entropy;   // Vibrational entropy in declared domain/K
+    double entropy_contribution;    // -T*S term in the declared energy domain
+    double delta_G;                 // Aggregate ledger value in declared domain
+
+    // Evidence governing delta_G. Copied from the C++ ensemble that produced
+    // this record (never synthesized on the Swift side) and downgraded to a
+    // default-constructed, proxy-only record whenever an unreceipted entropy
+    // correction was folded into delta_G — the same rule as
+    // statmech.cpp's provenance_for_breakdown. Numeric fields are untouched.
+    FXScientificProvenance scientific_provenance;
 
     // Convergence diagnostics
     int    is_converged;            // 1 if entropy plateau reached, 0 otherwise

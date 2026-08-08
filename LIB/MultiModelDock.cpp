@@ -208,17 +208,36 @@ void MultiModelDock::print_report(const CCBMReport& report) {
     printf("Receptor:    %s\n", report.receptor_file.c_str());
     printf("Models:      %d\n", report.n_models);
     printf("Total poses: %d\n", report.n_total_poses);
-    printf("\n── Global Ensemble Thermodynamics ──\n");
-    printf("  F (free energy):   %10.4f kcal/mol\n", report.thermo.F);
-    printf("  <E> (enthalpy):    %10.4f kcal/mol\n", report.thermo.H);
-    printf("  S (entropy):       %10.6f kcal/mol/K\n", report.thermo.S);
-    printf("  Cv (heat cap):     %10.6f kcal/mol/K\n", report.thermo.Cv);
-    printf("\n── Entropy Decomposition ──\n");
-    printf("  S_total:       %10.6f kcal/mol/K\n", report.entropy_decomp.S_total);
-    printf("  S_ligand:      %10.6f kcal/mol/K\n", report.entropy_decomp.S_ligand);
-    printf("  S_receptor:    %10.6f kcal/mol/K\n", report.entropy_decomp.S_receptor);
-    printf("  I(L;R):        %10.6f kcal/mol/K\n", report.entropy_decomp.I_mutual);
-    printf("  S_vibrational: %10.6f kcal/mol/K\n", report.entropy_decomp.S_vibrational);
+    // Claim firewall + log-parser firewall.
+    //
+    // These numbers come from a contact-function optimizer ensemble, so they are
+    // proxy_only diagnostics; they are never a calibrated kcal/mol thermodynamic
+    // quantity (see LIB/statmech.h ScientificProvenance).
+    //
+    // The label text below is ALSO load-bearing. LIB/DatasetThermoLog.h scrapes
+    // this same stdout stream and only gaboom's post-GA ensemble block may reach
+    // result.csv. Its predicates are:
+    //   free energy : "F-like proxy" AND "F~"   (or "Helmholtz free energy")
+    //   mean energy : "Mean CF"                 (or "Mean energy")
+    //   entropy     : "S-like diagnostic"       (or "Entropy (conf)")
+    // and a matched line is only consumed if it also contains '='.
+    // CCBM must stay out of result.csv, so these lines deliberately
+    //   (a) omit the "F~" marker, the "Mean CF" stem and the "S-like diagnostic"
+    //       spelling, and
+    //   (b) use ':' rather than '=' as the separator.
+    // Do not "tidy" either property without re-reading DatasetThermoLog.h.
+    printf("\n── Global CF-proxy ensemble diagnostics ──\n");
+    printf("  claim_validity:      proxy_only\n");
+    printf("  F-like proxy:        %10.4f [legacy transform]\n", report.thermo.F);
+    printf("  CF-proxy mean <CF>:  %10.4f [CF units]\n", report.thermo.H);
+    printf("  S-like proxy:        %10.6f [proxy scale/K]\n", report.thermo.S);
+    printf("  C_v-like proxy:      %10.6f [proxy scale/K]\n", report.thermo.Cv);
+    printf("\n── Model-scale decomposition (diagnostic) ──\n");
+    printf("  S_total:       %10.6f [model scale]\n", report.entropy_decomp.S_total);
+    printf("  S_ligand:      %10.6f [model scale]\n", report.entropy_decomp.S_ligand);
+    printf("  S_receptor:    %10.6f [model scale]\n", report.entropy_decomp.S_receptor);
+    printf("  I(L;R):        %10.6f [model scale]\n", report.entropy_decomp.I_mutual);
+    printf("  S_vibrational: %10.6f [model scale]\n", report.entropy_decomp.S_vibrational);
     printf("\n── Per-Model Results ──\n");
     printf("  Model | Poses | Best Score | Population\n");
     printf("  ------|-------|------------|----------\n");
@@ -242,7 +261,13 @@ void MultiModelDock::write_report(const CCBMReport& report, const std::string& o
     fprintf(fp, "receptor: %s\n", report.receptor_file.c_str());
     fprintf(fp, "n_models: %d\n", report.n_models);
     fprintf(fp, "n_total_poses: %d\n", report.n_total_poses);
-    fprintf(fp, "\n# Global Thermodynamics\n");
+    // Same firewall as print_report: CF-proxy optimizer samples carry no
+    // calibrated energy domain, so the record is stamped proxy_only and the
+    // F/H/S/Cv fields below are diagnostics, not kcal/mol thermodynamics.
+    fprintf(fp, "\n# Global CF-proxy ensemble diagnostics\n");
+    fprintf(fp, "claim_validity: proxy_only\n");
+    fprintf(fp, "energy_domain: cf_arbitrary_units\n");
+    fprintf(fp, "ensemble_measure: optimizer_samples\n");
     fprintf(fp, "F: %.6f\n", report.thermo.F);
     fprintf(fp, "H: %.6f\n", report.thermo.H);
     fprintf(fp, "S: %.8f\n", report.thermo.S);

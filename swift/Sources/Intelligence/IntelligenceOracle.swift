@@ -10,6 +10,8 @@
 
 import Foundation
 import FlexAIDdS
+import FlexAIDCore
+import HealthIntegration
 
 // MARK: - Oracle Result
 
@@ -33,6 +35,7 @@ public struct AnalysisBullet: Sendable, Codable {
         case modification  // PTM / glycan effects
         case fleet         // Fleet compute recommendation
         case trend         // Historical comparison
+        case provenance    // Scientific-domain / reference-state validity
     }
 
     public init(text: String, confidence: AnalysisConfidence, category: BulletCategory) {
@@ -178,6 +181,7 @@ import FoundationModels
 public actor IntelligenceOracle {
     private let session: LanguageModelSession
     private var analysisCount: Int = 0
+    private var latestClaimValidity: ClaimValidity = .proxyOnly
 
     /// System instructions that ground the model as a statistical mechanics referee.
     private static let systemInstructions = """
@@ -197,11 +201,16 @@ public actor IntelligenceOracle {
     2. Entropy collapse (S_conf near zero) — single dominant mode, check for trapping
     3. Vibrational dominance (S_vib >> S_conf) — protein flexibility dominates, \
        ligand conformational space under-explored
-    4. Enthalpy-entropy compensation (large |F| with large S) — net deltaG may mislead
+    4. Enthalpy-entropy compensation (large |F| with large S) — net deltaG may mislead, \
+       but only when claim validity is binding_physical
     5. Sparse histograms (occupied bins < 50% of total) — energy landscape poorly sampled
     6. Per-mode entropy imbalance — one mode absorbing most conformational diversity
 
-    Use kcal/mol for energies, kcal/mol/K for entropy, nats for Shannon H. \
+    Assess binding affinity, net deltaG, or molecular optimization only when claim validity \
+    is binding_physical. For canonical_physical, discuss calibrated canonical-ensemble properties \
+    but state that binding outputs are unavailable. For proxy_only, discuss only input-scale \
+    sampling diagnostics. Use kcal/mol for physically authorized energies, \
+    kcal/mol/K for physical entropy, and nats for Shannon H. \
     Be concise, quantitative, and actionable. Prioritize warnings over descriptions.
     """
 
@@ -222,6 +231,20 @@ public actor IntelligenceOracle {
         entropyScore: BindingEntropyScore? = nil,
         campaignKey: String? = nil
     ) async throws -> OracleAnalysis {
+        latestClaimValidity = thermodynamics.claimValidity
+        if !thermodynamics.allowsBindingClaims {
+            let analysis = RuleBasedOracle().analyze(
+                thermodynamics: thermodynamics,
+                entropyScore: entropyScore,
+                campaignKey: campaignKey
+            )
+            if let key = campaignKey {
+                await AnalysisHistory.shared.record(key: key, analysis: analysis, source: "text")
+            }
+            analysisCount += 1
+            return analysis
+        }
+
         let prompt = buildPrompt(thermodynamics: thermodynamics, entropyScore: entropyScore)
         let response = try await session.respond(to: prompt)
         let bullets = parseBullets(from: response.content)
@@ -281,6 +304,7 @@ public actor IntelligenceOracle {
         config: RefereeConfiguration = RefereeConfiguration(),
         campaignKey: String? = nil
     ) async throws -> RefereeVerdict {
+        latestClaimValidity = thermodynamics.claimValidity
         let referee = try await ThermoReferee(
             config: config,
             gaContext: gaContext,
@@ -296,6 +320,11 @@ public actor IntelligenceOracle {
     /// Ask a follow-up question using the existing session context.
     /// The FoundationModels session retains prior conversation turns.
     public func askFollowUp(_ question: String) async throws -> String {
+        if latestClaimValidity != .bindingPhysical {
+            return latestClaimValidity == .canonicalPhysical
+                ? "Binding affinity, net ΔG, and molecular-optimization guidance are unavailable for the current canonical-ensemble result because it lacks a matched association cycle."
+                : "Binding affinity, net ΔG, and molecular-optimization guidance are unavailable for the current proxy-only result. Only input-scale sampling and convergence diagnostics are supported."
+        }
         let response = try await session.respond(to: question)
         return response.content
     }
@@ -308,6 +337,30 @@ public actor IntelligenceOracle {
         let deltaF = current.freeEnergy - previous.freeEnergy
         let deltaS = current.entropy - previous.entropy
         let deltaCv = current.heatCapacity - previous.heatCapacity
+
+        if !current.allowsBindingClaims || !previous.allowsBindingClaims {
+            let bothCanonical = current.allowsCanonicalClaims && previous.allowsCanonicalClaims
+            return OracleAnalysis(
+                structuredBullets: [
+                    AnalysisBullet(
+                        text: "Binding-affinity, net ΔG, and molecular-optimization comparisons are unavailable because both runs must carry binding_physical provenance.",
+                        confidence: .high,
+                        category: .provenance
+                    ),
+                    AnalysisBullet(
+                        text: bothCanonical
+                            ? "Canonical-ensemble change: ΔF = \(String(format: "%.3f", deltaF)) kcal/mol, ΔS = \(String(format: "%.6f", deltaS)) kcal/mol/K, ΔCv = \(String(format: "%.6f", deltaCv)); this is not a binding-affinity difference."
+                            : "Input-scale diagnostic change: ΔproxyF = \(String(format: "%.3f", deltaF)), ΔproxyS = \(String(format: "%.6f", deltaS)), ΔproxyCv = \(String(format: "%.6f", deltaCv)).",
+                        confidence: .moderate,
+                        category: .trend
+                    ),
+                ],
+                inputSummary: bothCanonical
+                    ? "ΔcanonicalF=\(String(format: "%.2f", deltaF)) kcal/mol [binding unavailable]"
+                    : "ΔproxyF=\(String(format: "%.2f", deltaF)) input-scale [binding unavailable]",
+                overallConfidence: .moderate
+            )
+        }
 
         let prompt = """
         Compare these two docking campaigns. Respond with exactly 3 concise bullet points.
@@ -351,6 +404,7 @@ public actor IntelligenceOracle {
         prioritize warnings and actionable recommendations over descriptions.
 
         Thermodynamics:
+        - Claim validity: \(thermodynamics.claimValidity.rawValue)
         - Temperature: \(thermodynamics.temperature) K
         - Free energy F: \(String(format: "%.3f", thermodynamics.freeEnergy)) kcal/mol
         - Mean energy <E>: \(String(format: "%.3f", thermodynamics.meanEnergy)) kcal/mol
@@ -360,7 +414,9 @@ public actor IntelligenceOracle {
         """
 
         // Enthalpy-entropy compensation detection
-        if thermodynamics.freeEnergy < -5 && thermodynamics.entropy > 0.01 {
+        if thermodynamics.allowsBindingClaims
+            && thermodynamics.freeEnergy < -5
+            && thermodynamics.entropy > 0.01 {
             prompt += "\n- FLAG: Enthalpy-entropy compensation (large |F| with significant S)"
         }
 
@@ -557,10 +613,17 @@ public struct RuleBasedOracle: Sendable {
 
         let isConverged = entropyScore?.isConverged ?? false
 
-        // Bullet 1: Free energy assessment — gate confidence on convergence
+        // Bullet 1: Free-energy interpretation is gated on scientific provenance.
         let energyStable = thermodynamics.stdEnergy < abs(thermodynamics.freeEnergy) * 0.5
         let fConfidence: AnalysisConfidence = energyStable && isConverged ? .high : (energyStable ? .moderate : .low)
-        if thermodynamics.freeEnergy < -10 {
+        if !thermodynamics.allowsBindingClaims {
+            structured.append(AnalysisBullet(
+                text: thermodynamics.allowsCanonicalClaims
+                    ? "Binding affinity unavailable: canonical-ensemble thermodynamics lack a matched association cycle."
+                    : "Binding affinity unavailable: this is a proxy-only input-scale ensemble diagnostic without a calibrated matched association cycle.",
+                confidence: .high, category: .provenance
+            ))
+        } else if thermodynamics.freeEnergy < -10 {
             structured.append(AnalysisBullet(
                 text: "Strong binding affinity (F = \(String(format: "%.1f", thermodynamics.freeEnergy)) kcal/mol)\(isConverged ? "" : " — but entropy has NOT converged, F may shift with more sampling").",
                 confidence: fConfidence, category: .binding
@@ -582,7 +645,11 @@ public struct RuleBasedOracle: Sendable {
             // Convergence check is the primary referee concern
             if !decomp.isConverged {
                 structured.append(AnalysisBullet(
-                    text: "Entropy NOT converged (rate = \(String(format: "%.4f", decomp.convergenceRate))). Increase GA generations or population size before trusting thermodynamic values.",
+                    text: thermodynamics.allowsBindingClaims
+                        ? "Entropy NOT converged (rate = \(String(format: "%.4f", decomp.convergenceRate))). Increase GA generations or population size before trusting thermodynamic values."
+                        : thermodynamics.allowsCanonicalClaims
+                            ? "Entropy NOT converged (rate = \(String(format: "%.4f", decomp.convergenceRate))). Increase sampling before trusting canonical thermodynamic values; binding affinity remains unavailable."
+                            : "Entropy NOT converged (rate = \(String(format: "%.4f", decomp.convergenceRate))). Increase GA generations or population size before using this proxy sampling diagnostic; binding affinity remains unavailable.",
                     confidence: .high, category: .entropy
                 ))
             }
@@ -632,7 +699,11 @@ public struct RuleBasedOracle: Sendable {
             let sConfidence: AnalysisConfidence = score.bindingModeCount >= 3 ? .moderate : .low
             if score.isCollapsed {
                 structured.append(AnalysisBullet(
-                    text: "Entropy collapsed to \(score.bindingModeCount) mode(s) — high specificity but check for enthalpy-entropy compensation.",
+                    text: thermodynamics.allowsBindingClaims
+                        ? "Entropy collapsed to \(score.bindingModeCount) mode(s) — high specificity but check for enthalpy-entropy compensation."
+                        : thermodynamics.allowsCanonicalClaims
+                            ? "Entropy collapsed to \(score.bindingModeCount) mode(s) in the canonical ensemble — check for sampling collapse; binding affinity remains unavailable."
+                            : "Entropy collapsed to \(score.bindingModeCount) mode(s) in the optimizer diagnostic — check for sampling collapse; affinity remains unavailable.",
                     confidence: sConfidence, category: .entropy
                 ))
             } else if score.shannonS > 0.5 {
@@ -648,13 +719,17 @@ public struct RuleBasedOracle: Sendable {
             }
         } else {
             structured.append(AnalysisBullet(
-                text: "Entropy S = \(String(format: "%.4f", thermodynamics.entropy)) kcal/mol/K with Cv = \(String(format: "%.4f", thermodynamics.heatCapacity)). No decomposition available — enable ShannonThermoStack for referee analysis.",
+                text: thermodynamics.allowsCanonicalClaims
+                    ? "Entropy S = \(String(format: "%.4f", thermodynamics.entropy)) kcal/mol/K with Cv = \(String(format: "%.4f", thermodynamics.heatCapacity)). No decomposition available — enable ShannonThermoStack for referee analysis."
+                    : "Proxy entropy-like diagnostic S = \(String(format: "%.4f", thermodynamics.entropy)) input-scale/K with Cv = \(String(format: "%.4f", thermodynamics.heatCapacity)). No decomposition available — enable ShannonThermoStack for sampling diagnostics.",
                 confidence: .low, category: .entropy
             ))
         }
 
         // Bullet 3: Enthalpy-entropy compensation detection
-        if thermodynamics.freeEnergy < -5 && thermodynamics.entropy > 0.01 {
+        if thermodynamics.allowsBindingClaims
+            && thermodynamics.freeEnergy < -5
+            && thermodynamics.entropy > 0.01 {
             structured.append(AnalysisBullet(
                 text: "Enthalpy-entropy compensation: strong binding (F = \(String(format: "%.1f", thermodynamics.freeEnergy))) offset by conformational flexibility (S = \(String(format: "%.4f", thermodynamics.entropy))). Net ΔG may be less favorable than F alone suggests.",
                 confidence: .moderate, category: .binding
@@ -687,7 +762,14 @@ public struct RuleBasedOracle: Sendable {
         }
 
         let overall = computeOverallConfidence(structured)
-        var inputSummary = "T=\(thermodynamics.temperature)K, F=\(String(format: "%.2f", thermodynamics.freeEnergy)) kcal/mol"
+        var inputSummary: String
+        if thermodynamics.allowsBindingClaims {
+            inputSummary = "T=\(thermodynamics.temperature)K, F=\(String(format: "%.2f", thermodynamics.freeEnergy)) kcal/mol"
+        } else if thermodynamics.allowsCanonicalClaims {
+            inputSummary = "T=\(thermodynamics.temperature)K, canonical_F=\(String(format: "%.2f", thermodynamics.freeEnergy)) kcal/mol [binding unavailable]"
+        } else {
+            inputSummary = "T=\(thermodynamics.temperature)K, proxy_F=\(String(format: "%.2f", thermodynamics.freeEnergy)) input-scale [binding unavailable]"
+        }
         if let decomp = entropyScore?.shannonDecomposition {
             inputSummary += ", S_conf=\(String(format: "%.4f", decomp.configurational))nats, S_vib=\(String(format: "%.6f", decomp.vibrational))kcal/mol/K"
             inputSummary += decomp.isConverged ? " [converged]" : " [not converged]"

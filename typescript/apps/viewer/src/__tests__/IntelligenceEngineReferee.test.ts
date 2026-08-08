@@ -7,15 +7,26 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, it, expect } from 'vitest';
-import { RuleBasedReferee } from '../IntelligenceEngine.js';
+import { IntelligenceEngine, RuleBasedReferee } from '../IntelligenceEngine.js';
 import type {
   BindingPopulation,
   Thermodynamics,
   HealthCorrelation,
+  ScientificProvenance,
   ShannonEntropyDecomposition,
 } from '@bonhomme/shared';
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
+
+const BINDING_PHYSICAL_PROVENANCE: ScientificProvenance = {
+  schemaVersion: 2,
+  energyDomain: 'calibrated_kcal_per_mol',
+  ensembleMeasure: 'enumerated_microstates',
+  referenceState: 'matched_association_cycle',
+  energyProvenance: 'sha256:4692da7b40da99a82a86a6c30e33e4bedead9a2dbcc4b28d977e675fd0761993',
+  measureProvenance: 'sha256:aa1c1b96e5831c2c2d8ffe1060b43301e622c4255bc5e4f08765243e55265353',
+  referenceProvenance: 'sha256:4d28b0f5a589c9d228295118cbf17d810b54fca40a2cdb6159cec35788971050',
+};
 
 function makeThermo(overrides: Partial<Thermodynamics> = {}): Thermodynamics {
   return {
@@ -102,7 +113,11 @@ describe('RuleBasedReferee', () => {
 
     it('passes trust when converged with good histogram', () => {
       const decomp = makeDecomp({ isConverged: true, occupiedBins: 18, totalBins: 20 });
-      const thermo = makeThermo({ freeEnergy: -12.0 });
+      const thermo = makeThermo({
+        freeEnergy: -12.0,
+        available: true,
+        scientificProvenance: BINDING_PHYSICAL_PROVENANCE,
+      });
       const pop = makePopulation(thermo);
       const health = makeHealth(decomp);
 
@@ -179,7 +194,12 @@ describe('RuleBasedReferee', () => {
   describe('Enthalpy-entropy compensation', () => {
     it('flags advisory when F < -5 and S > 0.01', () => {
       const decomp = makeDecomp();
-      const thermo = makeThermo({ freeEnergy: -12.0, entropy: 0.02 });
+      const thermo = makeThermo({
+        freeEnergy: -12.0,
+        entropy: 0.02,
+        available: true,
+        scientificProvenance: BINDING_PHYSICAL_PROVENANCE,
+      });
       const pop = makePopulation(thermo);
       const health = makeHealth(decomp);
 
@@ -208,7 +228,11 @@ describe('RuleBasedReferee', () => {
   describe('Binding affinity', () => {
     it('reports strong affinity as pass when converged', () => {
       const decomp = makeDecomp({ isConverged: true });
-      const thermo = makeThermo({ freeEnergy: -15.0 });
+      const thermo = makeThermo({
+        freeEnergy: -15.0,
+        available: true,
+        scientificProvenance: BINDING_PHYSICAL_PROVENANCE,
+      });
       const pop = makePopulation(thermo);
       const health = makeHealth(decomp);
 
@@ -222,7 +246,11 @@ describe('RuleBasedReferee', () => {
 
     it('reports weak affinity as warning', () => {
       const decomp = makeDecomp({ isConverged: true });
-      const thermo = makeThermo({ freeEnergy: -2.0 });
+      const thermo = makeThermo({
+        freeEnergy: -2.0,
+        available: true,
+        scientificProvenance: BINDING_PHYSICAL_PROVENANCE,
+      });
       const pop = makePopulation(thermo);
       const health = makeHealth(decomp);
 
@@ -238,7 +266,10 @@ describe('RuleBasedReferee', () => {
   describe('Recommendations', () => {
     it('recommends against trusting when not trustworthy', () => {
       const decomp = makeDecomp({ isConverged: false });
-      const thermo = makeThermo();
+      const thermo = makeThermo({
+        available: true,
+        scientificProvenance: BINDING_PHYSICAL_PROVENANCE,
+      });
       const pop = makePopulation(thermo);
       const health = makeHealth(decomp);
 
@@ -249,7 +280,11 @@ describe('RuleBasedReferee', () => {
 
     it('recommends proceeding when reliable', () => {
       const decomp = makeDecomp({ isConverged: true });
-      const thermo = makeThermo({ freeEnergy: -8.0 });
+      const thermo = makeThermo({
+        freeEnergy: -8.0,
+        available: true,
+        scientificProvenance: BINDING_PHYSICAL_PROVENANCE,
+      });
       const pop = makePopulation(thermo);
       const health = makeHealth(decomp);
 
@@ -276,6 +311,102 @@ describe('RuleBasedReferee', () => {
       expect(parsed.recommendedAction).toBe(verdict.recommendedAction);
       expect(parsed.findings[0].title).toBe(verdict.findings[0].title);
       expect(parsed.findings[0].severity).toBe(verdict.findings[0].severity);
+    });
+  });
+
+  describe('Scientific claim firewall', () => {
+    it('defaults missing metadata to an ensemble/CF diagnostic', () => {
+      const verdict = RuleBasedReferee.referee(
+        makePopulation(makeThermo({ freeEnergy: -15.0 })),
+        makeHealth(makeDecomp()),
+      );
+
+      const affinity = verdict.findings.find((finding) => finding.category === 'affinity');
+      expect(verdict.overallTrustworthy).toBe(false);
+      expect(affinity?.title).toBe('Physical affinity unavailable');
+      expect(affinity?.detail).toContain('Ensemble/CF diagnostic');
+      expect(affinity?.detail).not.toContain('kcal/mol');
+      expect(verdict.recommendedAction).toContain('Physical affinity unavailable');
+    });
+
+    it('fails closed when a physical-looking record is explicitly unavailable', () => {
+      const verdict = RuleBasedReferee.referee(
+        makePopulation(makeThermo({
+          available: false,
+          freeEnergy: -15.0,
+          scientificProvenance: BINDING_PHYSICAL_PROVENANCE,
+        })),
+        makeHealth(makeDecomp()),
+      );
+
+      expect(verdict.overallTrustworthy).toBe(false);
+      expect(verdict.findings.find((finding) => finding.category === 'affinity')?.title)
+        .toBe('Physical affinity unavailable');
+    });
+
+    it('fails closed for every non-true availability encoding', () => {
+      const hostile: readonly unknown[] = [
+        undefined, null, false, 0, 1, 'true', 'false', '', [], {}, [true], { value: true },
+      ];
+      for (const available of hostile) {
+        const verdict = RuleBasedReferee.referee(
+          makePopulation(makeThermo({
+            available,
+            freeEnergy: -15.0,
+            scientificProvenance: BINDING_PHYSICAL_PROVENANCE,
+          } as unknown as Partial<Thermodynamics>)),
+          makeHealth(makeDecomp()),
+        );
+        expect(verdict.overallTrustworthy).toBe(false);
+        expect(verdict.findings.find((finding) => finding.category === 'affinity')?.title)
+          .toBe('Physical affinity unavailable');
+      }
+    });
+
+    it('keeps proxy oracle output free of physical energy labels', async () => {
+      const analysis = await IntelligenceEngine.analyze(
+        makePopulation(makeThermo({ freeEnergy: -15.0, entropy: 0.02 })),
+        makeHealth(makeDecomp({ vibrational: 0.02 })),
+      );
+      const output = `${analysis.bullets.join('\n')}\n${analysis.inputSummary}`;
+
+      expect(analysis.claimValidity).toBe('proxy_only');
+      expect(output).toContain('Ensemble/CF diagnostic');
+      expect(output).toContain('physical affinity unavailable');
+      expect(output).not.toContain('kcal/mol');
+      expect(output).not.toMatch(/(?:Strong|Moderate|Weak) binding affinity/);
+    });
+
+    it('allows physical labels only for an available binding-physical record', async () => {
+      const analysis = await IntelligenceEngine.analyze(
+        makePopulation(makeThermo({
+          freeEnergy: -15.0,
+          available: true,
+          scientificProvenance: BINDING_PHYSICAL_PROVENANCE,
+        })),
+        makeHealth(makeDecomp()),
+      );
+
+      expect(analysis.claimValidity).toBe('binding_physical');
+      expect(analysis.bullets[0]).toContain('Strong binding affinity');
+      expect(analysis.bullets[0]).toContain('kcal/mol');
+    });
+
+    it('keeps cross-run proxy trends diagnostic without changing the delta', async () => {
+      const campaignKey = 'claim-firewall-proxy-trend';
+      await IntelligenceEngine.analyze(
+        makePopulation(makeThermo({ freeEnergy: -8.0 })),
+        undefined,
+        campaignKey,
+      );
+      const current = await IntelligenceEngine.analyze(
+        makePopulation(makeThermo({ freeEnergy: -10.5 })),
+      );
+
+      const trend = IntelligenceEngine.compareTrend(campaignKey, current);
+      expect(trend?.text).toContain('ensemble/CF diagnostic shift = -2.50 source units');
+      expect(trend?.text).toContain('physical affinity unavailable');
+      expect(trend?.text).not.toContain('kcal/mol');
     });
   });
 });

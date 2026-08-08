@@ -20,6 +20,7 @@
 #include "DatasetRunner.h"
 #include "DatasetRunnerStats.h"  // P0 leaf: pure stats must compile standalone
 #include "DatasetRunnerProvenance.h"  // P1 leaf: provenance.json writer
+#include "DatasetThermoLog.h"
 #include "rmsd_crosscheck_engine.h"   // engine calc_Hungarian_RMSD, for the cross-check
 #undef private
 #include <cctype>
@@ -35,6 +36,97 @@
 
 namespace fs = std::filesystem;
 using namespace dataset;
+
+TEST(DatasetThermoLog, ParsesCurrentProxyLabelsExactly) {
+    DatasetThermoLog parsed;
+    parsed.consume("  F-like proxy          F~  =   -12.3456 [legacy transform]");
+    parsed.consume("  Mean CF proxy       <CF>  =    -9.5000 [CF units]");
+    parsed.consume("  S-like diagnostic         =     0.009543 [proxy scale/K]");
+
+    EXPECT_TRUE(parsed.have_free_energy);
+    EXPECT_TRUE(parsed.have_mean_energy);
+    EXPECT_TRUE(parsed.have_configurational_entropy);
+    EXPECT_FLOAT_EQ(parsed.free_energy, -12.3456f);
+    EXPECT_FLOAT_EQ(parsed.mean_energy, -9.5f);
+    EXPECT_FLOAT_EQ(parsed.configurational_entropy, 0.009543f);
+}
+
+TEST(DatasetThermoLog, RetainsLegacyLabelCompatibility) {
+    DatasetThermoLog parsed;
+    parsed.consume("  Helmholtz free energy  F  = -8.25 kcal/mol");
+    parsed.consume("  Mean energy          <E>  = -7.00 kcal/mol");
+    parsed.consume("  Entropy (conf)        S   = 0.0042 kcal/(mol*K)");
+
+    EXPECT_TRUE(parsed.have_free_energy);
+    EXPECT_TRUE(parsed.have_mean_energy);
+    EXPECT_TRUE(parsed.have_configurational_entropy);
+    EXPECT_FLOAT_EQ(parsed.free_energy, -8.25f);
+    EXPECT_FLOAT_EQ(parsed.mean_energy, -7.0f);
+    EXPECT_FLOAT_EQ(parsed.configurational_entropy, 0.0042f);
+}
+
+TEST(DatasetThermoLog, IgnoresTopLevelPostGaBlockExactlyAsBeforeRelabel) {
+    // Two producers write an ensemble summary to the same stdout stream. Before
+    // the schema-v2 relabel, DatasetRunner's inline parser matched only
+    // gaboom's spellings: top.cpp's "Free energy F" and "Entropy S" did not
+    // contain "Helmholtz free energy" or "Entropy (conf)". Matching the shared
+    // "F-like proxy" / "S-like" stems would newly admit top.cpp's block and
+    // move result.csv numbers, so those two fields must stay gaboom-only.
+    DatasetThermoLog parsed;
+    parsed.consume("  F-like proxy   =   -99.0000 [legacy transform]");   // top.cpp
+    parsed.consume("  S-like value  =     0.999999 [proxy scale/K]");     // top.cpp
+
+    EXPECT_FALSE(parsed.have_free_energy);
+    EXPECT_FALSE(parsed.have_configurational_entropy);
+
+    // gaboom's block, which carries the distinctive F~ marker, still parses.
+    parsed.consume("  F-like proxy          F~  =   -12.3456 [legacy transform]");
+    parsed.consume("  S-like diagnostic         =     0.009543 [proxy scale/K]");
+
+    EXPECT_TRUE(parsed.have_free_energy);
+    EXPECT_TRUE(parsed.have_configurational_entropy);
+    EXPECT_FLOAT_EQ(parsed.free_energy, -12.3456f);
+    EXPECT_FLOAT_EQ(parsed.configurational_entropy, 0.009543f);
+
+    // Mean energy is intentionally NOT narrowed: both producers matched the
+    // "Mean energy" substring at HEAD, so both must keep matching.
+    DatasetThermoLog means;
+    means.consume("  Mean CF       =    -3.2500 [CF units]");             // top.cpp
+    EXPECT_TRUE(means.have_mean_energy);
+    EXPECT_FLOAT_EQ(means.mean_energy, -3.25f);
+}
+
+TEST(DatasetThermoLog, MalformedLineCannotRevokeAnEarlierGoodParse) {
+    // The inline parsers this helper replaced only set their flag inside a
+    // successful try, so a later unparsable line left the earlier value intact.
+    DatasetThermoLog parsed;
+    parsed.consume("  F-like proxy          F~  =   -12.3456 [legacy transform]");
+    parsed.consume("  Mean CF proxy       <CF>  =    -9.5000 [CF units]");
+    parsed.consume("  S-like diagnostic         =     0.009543 [proxy scale/K]");
+    ASSERT_TRUE(parsed.have_free_energy);
+
+    parsed.consume("  F-like proxy          F~  = unavailable");
+    parsed.consume("  Mean CF proxy       <CF>  = n/a");
+    parsed.consume("  S-like diagnostic         = ?");
+
+    EXPECT_TRUE(parsed.have_free_energy);
+    EXPECT_TRUE(parsed.have_mean_energy);
+    EXPECT_TRUE(parsed.have_configurational_entropy);
+    EXPECT_FLOAT_EQ(parsed.free_energy, -12.3456f);
+    EXPECT_FLOAT_EQ(parsed.mean_energy, -9.5f);
+    EXPECT_FLOAT_EQ(parsed.configurational_entropy, 0.009543f);
+}
+
+TEST(DatasetThermoLog, MalformedValuesFailClosed) {
+    DatasetThermoLog parsed;
+    parsed.consume("  F-like proxy F~ = unavailable");
+    parsed.consume("  Mean CF proxy <CF> = nope");
+    parsed.consume("  S-like diagnostic = ?");
+
+    EXPECT_FALSE(parsed.have_free_energy);
+    EXPECT_FALSE(parsed.have_mean_energy);
+    EXPECT_FALSE(parsed.have_configurational_entropy);
+}
 
 // =============================================================================
 // PDB code list validity tests
@@ -1494,9 +1586,11 @@ TEST(ReportGeneration, MissingAffinityCorrelationShowsNA) {
     std::string markdown((std::istreambuf_iterator<char>(md)),
                          std::istreambuf_iterator<char>());
     EXPECT_TRUE(markdown.find("| Affinity pairs | 0 |") != std::string::npos);
-    EXPECT_TRUE(markdown.find("| Pearson r | NA |") != std::string::npos);
-    EXPECT_TRUE(markdown.find("| Spearman ρ | NA |") != std::string::npos);
-    EXPECT_TRUE(markdown.find("| Kendall τ | NA |") != std::string::npos);
+    // The row labels carry an explicit "(proxy vs experiment)" qualifier: the
+    // correlated quantity is the CF-proxy predicted_dG, not a calibrated pKd.
+    EXPECT_TRUE(markdown.find("| Pearson r (proxy vs experiment) | NA |") != std::string::npos);
+    EXPECT_TRUE(markdown.find("| Spearman ρ (proxy vs experiment) | NA |") != std::string::npos);
+    EXPECT_TRUE(markdown.find("| Kendall τ (proxy vs experiment) | NA |") != std::string::npos);
 
     fs::remove_all(test_dir);
 }

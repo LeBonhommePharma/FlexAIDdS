@@ -114,7 +114,7 @@ public actor FleetExplainerActor {
             )
             prompt = buildPrompt(context: truncated)
         }
-        return try await session.respond(to: prompt, generating: FleetExplanation.self)
+        return try await session.respond(to: prompt, generating: FleetExplanation.self).content
     }
 
     private func estimateTokenCount(_ text: String) -> Int {

@@ -23,6 +23,20 @@ typedef struct FXStatMechEngineImpl* FXStatMechEngineRef;
 FXStatMechEngineRef fx_statmech_create(double temperature_K);
 void fx_statmech_destroy(FXStatMechEngineRef engine);
 
+// Explicitly declare scientific provenance for subsequently computed results.
+// The default created engine remains unclassified; no domain is inferred from
+// numeric values. Unknown enum values are mapped to fail-closed defaults.
+void fx_statmech_set_scientific_provenance(
+    FXStatMechEngineRef engine,
+    int32_t schema_version,
+    int32_t energy_domain,
+    int32_t ensemble_measure,
+    int32_t reference_state,
+    const char* energy_provenance,
+    const char* measure_provenance,
+    const char* reference_provenance
+);
+
 // ─── Sample management ──────────────────────────────────────────────────────
 
 void fx_statmech_add_sample(FXStatMechEngineRef engine, double energy, int multiplicity);

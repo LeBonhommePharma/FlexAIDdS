@@ -19,6 +19,8 @@
 #include <span>
 #include <random>
 #include <stdexcept>
+#include <limits>
+#include <string>
 
 namespace statmech {
 
@@ -26,22 +28,112 @@ namespace statmech {
 inline constexpr double kB_kcal = 0.001987206;   // kcal mol⁻¹ K⁻¹
 inline constexpr double kB_SI   = 1.380649e-23;  // J K⁻¹
 
+// ─── scientific-domain and claim-validity contract ──────────────────────────
+//
+// Numeric thermodynamic identities can be evaluated for any finite scalar
+// energy list, but that does not by itself make the result a physical
+// thermodynamic claim.  The provenance below records the two additional pieces
+// required to interpret the sum as a canonical partition function:
+//
+//   1. a calibrated physical energy scale; and
+//   2. a defined state-space measure (enumeration or weighted quadrature).
+//
+// Binding claims require a third, independent witness: a matched association
+// cycle containing the bound and corresponding unbound/reference states.
+// Defaults are deliberately unclassified and therefore proxy-only.
+
+inline constexpr int kScientificProvenanceSchemaVersion = 2;
+
+enum class EnergyDomain {
+    Unclassified,
+    ContactFunctionArbitraryUnits,
+    CalibratedKcalPerMol,
+    ModelScale
+};
+
+enum class EnsembleMeasure {
+    Unclassified,
+    OptimizerSamples,
+    EnumeratedMicrostates,
+    WeightedQuadrature
+};
+
+enum class ReferenceState {
+    None,
+    BoundOnly,
+    MatchedAssociationCycle
+};
+
+enum class ClaimValidity {
+    ProxyOnly,
+    CanonicalPhysical,
+    BindingPhysical
+};
+
+struct ScientificProvenance {
+    int schema_version = kScientificProvenanceSchemaVersion;
+    EnergyDomain energy_domain = EnergyDomain::Unclassified;
+    EnsembleMeasure ensemble_measure = EnsembleMeasure::Unclassified;
+    ReferenceState reference_state = ReferenceState::None;
+
+    // Structured artifact identities for the calibration, ensemble measure,
+    // and matched cycle. A witness must be exactly `sha256:<64 hex>`;
+    // trivial/known filler digests are rejected. This is a syntactic gate:
+    // publication must additionally verify and deposit the named artifacts.
+    std::string energy_provenance;
+    std::string measure_provenance;
+    std::string reference_provenance;
+
+    [[nodiscard]] bool allows_canonical_physical_claim() const noexcept;
+    [[nodiscard]] bool allows_binding_physical_claim() const noexcept;
+    [[nodiscard]] bool is_proxy_only() const noexcept;
+    [[nodiscard]] ClaimValidity claim_validity() const noexcept;
+
+    bool operator==(const ScientificProvenance&) const = default;
+};
+
+// Canonical metadata for FlexAID pose ensembles built from CF/contact-function
+// optimizer records. The descriptive strings are deliberately not physical
+// calibration receipts, so this factory always remains proxy-only.
+[[nodiscard]] ScientificProvenance make_contact_function_optimizer_provenance(
+    ReferenceState reference_state = ReferenceState::BoundOnly);
+
 // ─── data structures ─────────────────────────────────────────────────────────
 
 struct State {
-    double energy;     // CF value (kcal/mol; negative = favourable)
+    double energy;     // energy-like scalar; domain/units are declared by ScientificProvenance
     double count;      // degeneracy / sampling multiplicity (double so Boltzmann weights pass without truncation)
 };
 
 struct Thermodynamics {
+    // Legacy numeric surface. The arithmetic is unchanged; kcal/mol and Kelvin
+    // are physically claimable only when allows_canonical_physical_claim() is
+    // true. Otherwise these values are proxy diagnostics in their input scale.
     double temperature;       // K
     double log_Z;             // ln Z  (for numerical stability we store the log)
-    double free_energy;       // F = −kT ln Z  (kcal/mol)
+    double free_energy;       // F = −kT ln Z; kcal/mol only for calibrated provenance
     double mean_energy;       // ⟨E⟩
     double mean_energy_sq;    // ⟨E²⟩
-    double heat_capacity;     // C_v = (⟨E²⟩ − ⟨E⟩²) / (kT²)
-    double entropy;           // S = (⟨E⟩ − F) / T  (kcal mol⁻¹ K⁻¹)
+    double heat_capacity;     // C_v = (⟨E²⟩ − ⟨E⟩²) / (kT²); units gated
+    double entropy;           // S = (⟨E⟩ − F) / T; physical units gated
     double std_energy;        // σ_E = sqrt(C_v kT²)
+
+    // Scientific interpretation of the numeric fields above.  This metadata
+    // never participates in energy evaluation, weighting, ranking, or sorting.
+    ScientificProvenance provenance{};
+
+    [[nodiscard]] bool allows_canonical_physical_claim() const noexcept {
+        return provenance.allows_canonical_physical_claim();
+    }
+    [[nodiscard]] bool allows_binding_physical_claim() const noexcept {
+        return provenance.allows_binding_physical_claim();
+    }
+    [[nodiscard]] bool is_proxy_only() const noexcept {
+        return provenance.is_proxy_only();
+    }
+    [[nodiscard]] ClaimValidity claim_validity() const noexcept {
+        return provenance.claim_validity();
+    }
 };
 
 // ─── THERMODYNAMIC LEDGER (Task 1 — auditable breakdown) ─────────────────────
@@ -148,6 +240,25 @@ struct ThermodynamicBreakdown {
     bool   components_complete = false;  // true only if every significant term was tracked
     ComponentAverages components;         // legacy BindingMode component diagnostic surface
     bool   has_components = false;
+
+    // Aggregate-ledger claim witness. With no corrections this is carried from
+    // the source Thermodynamics. Any correction supplied without an independent
+    // artifact receipt downgrades this aggregate witness to proxy-only while
+    // leaving every numeric field unchanged.
+    ScientificProvenance provenance{};
+
+    [[nodiscard]] bool allows_canonical_physical_claim() const noexcept {
+        return provenance.allows_canonical_physical_claim();
+    }
+    [[nodiscard]] bool allows_binding_physical_claim() const noexcept {
+        return provenance.allows_binding_physical_claim();
+    }
+    [[nodiscard]] bool is_proxy_only() const noexcept {
+        return provenance.is_proxy_only();
+    }
+    [[nodiscard]] ClaimValidity claim_validity() const noexcept {
+        return provenance.claim_validity();
+    }
 
     // ─── Enthalpy-Entropy Index (Williams et al. 2017, Drug Discov. Today) ────
     // I_EE = (ΔH + T·ΔS) / ΔG
@@ -317,6 +428,17 @@ struct TIPoint {
 class StatMechEngine {
 public:
     explicit StatMechEngine(double temperature_K = 300.0);
+    StatMechEngine(double temperature_K, ScientificProvenance provenance);
+
+    // Provenance is descriptive only: setting it cannot change numeric
+    // thermodynamics or any ranking path.  Callers must supply auditable
+    // evidence; the engine never infers physical validity from score values.
+    void set_provenance(const ScientificProvenance& provenance) {
+        provenance_ = provenance;
+    }
+    [[nodiscard]] const ScientificProvenance& provenance() const noexcept {
+        return provenance_;
+    }
 
     // Add a sampled configuration.
     // multiplicity is double so Boltzmann weights (0.0–1.0) can be passed directly
@@ -491,6 +613,7 @@ private:
     double beta_;            // physical β = 1/(kB·T) — thermodynamics
     double beta_selection_;  // selection β = 1/T — GA/cluster softmax (P1)
     std::vector<State> ensemble_;
+    ScientificProvenance provenance_{};
 
     // Numerically stable log(Σ exp(x_i))
     static double log_sum_exp(std::span<const double> x);

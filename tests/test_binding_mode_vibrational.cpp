@@ -101,14 +101,26 @@ protected:
         return p;
     }
 
-    // Set up mock eigenvalues on atoms[0] to simulate ENCoM modes
-    void setup_mock_eigenvalues(int n_modes, double base_eigenvalue = 1.0) {
+    // Reproduce the INVALID atom-0 layout these tests used to depend on.
+    //
+    // This layout does not exist in production and never did:
+    //   * `atom::eigen` holds normal-mode eigenVECTORS, not eigenvalues.
+    //     assign_eigen.cpp allocates eigen[m] as THREE floats (the x/y/z
+    //     displacement components), whereas this helper allocates one.
+    //   * assign_eigen.cpp only populates real atoms — its residue loop starts
+    //     at index 1 — and read_pdb.cpp:38 explicitly sets atoms[0].eigen to
+    //     NULL, so the sentinel atom never carries mode data at all.
+    //
+    // The helper is retained precisely so the tests below can prove that
+    // BindingMode REFUSES to read this fabricated channel. Treating
+    // eigen[m][0] as an eigenvalue would manufacture a vibrational entropy the
+    // elastic-network model never produced.
+    void setup_invalid_atom0_eigen_layout(int n_modes, double base_value = 1.0) {
         mock_fa->normal_modes = n_modes;
         mock_atoms[0].eigen = new float*[n_modes];
         for (int m = 0; m < n_modes; ++m) {
             mock_atoms[0].eigen[m] = new float[1];
-            // Eigenvalues increase linearly: 1.0, 2.0, 3.0, ...
-            mock_atoms[0].eigen[m][0] = static_cast<float>(base_eigenvalue * (m + 1));
+            mock_atoms[0].eigen[m][0] = static_cast<float>(base_value * (m + 1));
         }
     }
 };
@@ -134,9 +146,9 @@ TEST_F(BindingModeVibrationalTest, NoModesZeroCorrection) {
     EXPECT_NEAR(energy_no_vib, thermo.free_energy, EPSILON);
 }
 
-TEST_F(BindingModeVibrationalTest, WithModesNonzeroCorrection) {
-    // Set up eigenvalues to produce a vibrational correction
-    setup_mock_eigenvalues(5, 0.5);
+TEST_F(BindingModeVibrationalTest, InvalidAtomZeroEigenLayoutIsIgnored) {
+    // The fabricated atom-0 "eigenvalue" channel must NOT be consumed.
+    setup_invalid_atom0_eigen_layout(5, 0.5);
 
     TestableBindingMode mode(test_population);
     Pose p = create_mock_pose(-10.0, 0);
@@ -144,14 +156,14 @@ TEST_F(BindingModeVibrationalTest, WithModesNonzeroCorrection) {
 
     double correction = mode.compute_vibrational_correction();
 
-    // Correction should be -T * S_vib, which is negative (adds stability)
-    // S_vib > 0, so correction < 0
-    EXPECT_LT(correction, 0.0);
+    // Fail closed: no valid eigenvalue channel exists, so there is no
+    // vibrational correction to report.
     EXPECT_TRUE(std::isfinite(correction));
+    EXPECT_NEAR(correction, 0.0, EPSILON);
 }
 
-TEST_F(BindingModeVibrationalTest, CorrectionIncludedInFreeEnergy) {
-    setup_mock_eigenvalues(5, 0.5);
+TEST_F(BindingModeVibrationalTest, ThermodynamicsLedgerStaysInternallyCoherent) {
+    setup_invalid_atom0_eigen_layout(5, 0.5);
 
     TestableBindingMode mode(test_population);
     for (int i = 0; i < 3; ++i) {
@@ -160,41 +172,45 @@ TEST_F(BindingModeVibrationalTest, CorrectionIncludedInFreeEnergy) {
     }
 
     double correction = mode.compute_vibrational_correction();
+    EXPECT_NEAR(correction, 0.0, EPSILON);
+
+    // get_thermodynamics() must return the configurational ensemble unmodified,
+    // so the struct satisfies its own identity F = H - T*S. Shifting F alone
+    // (the previous behaviour) silently violated this.
     auto thermo = mode.get_thermodynamics();
+    ASSERT_GT(thermo.temperature, 0.0);
+    EXPECT_NEAR(thermo.free_energy,
+                thermo.mean_energy - thermo.temperature * thermo.entropy,
+                1e-9);
 
-    // get_thermodynamics() should include the vibrational correction
-    // thermo.free_energy = statmech_F + correction
-    // We verify by checking that free_energy != statmech_F when correction != 0
-    EXPECT_NE(correction, 0.0);
-
-    // compute_energy() should also include correction
-    double total_energy = mode.compute_energy();
-    EXPECT_NEAR(total_energy, thermo.free_energy, EPSILON);
+    // A CF/contact-function ensemble is never promotable to a physical claim.
+    EXPECT_TRUE(thermo.is_proxy_only());
 }
 
-TEST_F(BindingModeVibrationalTest, MoreModesLargerCorrection) {
-    // With more modes, S_vib should be larger → correction more negative
-    setup_mock_eigenvalues(3, 0.5);
+TEST_F(BindingModeVibrationalTest, ModeCountCannotResurrectTheDisabledCorrection) {
+    // Previously "more modes -> more negative correction". With the invalid
+    // channel disabled, the declared mode count is irrelevant: both are zero.
+    setup_invalid_atom0_eigen_layout(3, 0.5);
 
     TestableBindingMode mode_few(test_population);
     Pose p1 = create_mock_pose(-10.0, 0);
     mode_few.add_Pose(p1);
     double correction_few = mode_few.compute_vibrational_correction();
 
-    // Clean up and set more modes
     for (int m = 0; m < 3; ++m) delete[] mock_atoms[0].eigen[m];
     delete[] mock_atoms[0].eigen;
     mock_atoms[0].eigen = nullptr;
 
-    setup_mock_eigenvalues(10, 0.5);
+    setup_invalid_atom0_eigen_layout(10, 0.5);
 
     TestableBindingMode mode_many(test_population);
     Pose p2 = create_mock_pose(-10.0, 0);
     mode_many.add_Pose(p2);
     double correction_many = mode_many.compute_vibrational_correction();
 
-    // More modes → more negative correction (larger magnitude)
-    EXPECT_LT(correction_many, correction_few);
+    EXPECT_NEAR(correction_few, 0.0, EPSILON);
+    EXPECT_NEAR(correction_many, 0.0, EPSILON);
+    EXPECT_NEAR(correction_many, correction_few, EPSILON);
 }
 
 TEST_F(BindingModeVibrationalTest, NullEigenReturnsZero) {
@@ -210,8 +226,8 @@ TEST_F(BindingModeVibrationalTest, NullEigenReturnsZero) {
     EXPECT_NEAR(correction, 0.0, EPSILON);
 }
 
-TEST_F(BindingModeVibrationalTest, CorrectionScalesWithTemperature) {
-    setup_mock_eigenvalues(5, 0.5);
+TEST_F(BindingModeVibrationalTest, TemperatureCannotResurrectTheDisabledCorrection) {
+    setup_invalid_atom0_eigen_layout(5, 0.5);
 
     // Test at 300K
     TestableBindingMode mode_300(test_population);
@@ -228,8 +244,10 @@ TEST_F(BindingModeVibrationalTest, CorrectionScalesWithTemperature) {
     mode_600.add_Pose(p2);
     double correction_600 = mode_600.compute_vibrational_correction();
 
-    // At higher T, -T*S_vib should be more negative (larger magnitude)
-    EXPECT_LT(correction_600, correction_300);
+    // -T*S_vib scaled with T only because S_vib was fabricated. With the
+    // channel disabled the correction is identically zero at every T.
+    EXPECT_NEAR(correction_300, 0.0, EPSILON);
+    EXPECT_NEAR(correction_600, 0.0, EPSILON);
 
     // Restore
     mock_fa->temperature = static_cast<uint>(TEST_TEMPERATURE);
@@ -257,10 +275,10 @@ TEST_F(BindingModeVibrationalTest, ZeroPosesFreeEnergyThrows) {
 // EDGE CASES — EXTREME EIGENVALUES
 // ===========================================================================
 
-TEST_F(BindingModeVibrationalTest, VeryLargeEigenvaluesStiff) {
-    // Stiff modes (large λ): S_vib ~ k_B * sum ln(λ_i) is large and positive.
-    // The vibrational correction is a large negative number (strongly stabilising).
-    setup_mock_eigenvalues(5, 1e6);
+TEST_F(BindingModeVibrationalTest, ExtremeStiffValuesStillProduceNoCorrection) {
+    // A huge fabricated value must not be laundered into a large "stabilising"
+    // free-energy term. Magnitude is irrelevant when the channel is invalid.
+    setup_invalid_atom0_eigen_layout(5, 1e6);
 
     TestableBindingMode mode(test_population);
     Pose p = create_mock_pose(-10.0, 0);
@@ -268,14 +286,11 @@ TEST_F(BindingModeVibrationalTest, VeryLargeEigenvaluesStiff) {
 
     double correction = mode.compute_vibrational_correction();
     EXPECT_TRUE(std::isfinite(correction));
-    // For very stiff modes, correction is large negative (stabilising)
-    EXPECT_LT(correction, -10.0);
+    EXPECT_NEAR(correction, 0.0, EPSILON);
 }
 
-TEST_F(BindingModeVibrationalTest, VerySmallEigenvaluesFloppy) {
-    // Floppy modes (tiny λ) contribute large vibrational entropy
-    // Correction should be a large negative number (stabilising)
-    setup_mock_eigenvalues(5, 1e-4);
+TEST_F(BindingModeVibrationalTest, ExtremeFloppyValuesStillProduceNoCorrection) {
+    setup_invalid_atom0_eigen_layout(5, 1e-4);
 
     TestableBindingMode mode(test_population);
     Pose p = create_mock_pose(-10.0, 0);
@@ -283,11 +298,12 @@ TEST_F(BindingModeVibrationalTest, VerySmallEigenvaluesFloppy) {
 
     double correction = mode.compute_vibrational_correction();
     EXPECT_TRUE(std::isfinite(correction));
-    EXPECT_LT(correction, 0.0);
+    EXPECT_NEAR(correction, 0.0, EPSILON);
 }
 
-TEST_F(BindingModeVibrationalTest, EigenvalueZeroHandledSafely) {
-    // A zero eigenvalue (translational/rotational mode) must not cause log(0) NaN
+TEST_F(BindingModeVibrationalTest, ZeroValuedEntryHandledSafely) {
+    // A zero entry must not produce log(0) NaN. It cannot: the channel is
+    // never read at all.
     mock_fa->normal_modes = 3;
     mock_atoms[0].eigen = new float*[3];
     mock_atoms[0].eigen[0] = new float[1]; mock_atoms[0].eigen[0][0] = 0.0f; // zero!
@@ -300,27 +316,27 @@ TEST_F(BindingModeVibrationalTest, EigenvalueZeroHandledSafely) {
 
     double correction = mode.compute_vibrational_correction();
     EXPECT_TRUE(std::isfinite(correction));
+    EXPECT_NEAR(correction, 0.0, EPSILON);
 }
 
 // ===========================================================================
 // EDGE CASES — SINGLE POSE
 // ===========================================================================
 
-TEST_F(BindingModeVibrationalTest, SinglePoseVibrationalCorrectionApplied) {
-    setup_mock_eigenvalues(5, 0.5);
+TEST_F(BindingModeVibrationalTest, SinglePoseGetsNoFabricatedCorrection) {
+    setup_invalid_atom0_eigen_layout(5, 0.5);
 
     TestableBindingMode mode(test_population);
     Pose p = create_mock_pose(-12.0, 0);
     mode.add_Pose(p);
 
     double correction = mode.compute_vibrational_correction();
-    // Even with a single pose, vibrational correction must be applied
     EXPECT_TRUE(std::isfinite(correction));
-    EXPECT_NE(correction, 0.0);
+    EXPECT_NEAR(correction, 0.0, EPSILON);
 }
 
-TEST_F(BindingModeVibrationalTest, SinglePoseFreeEnergyEqualsEPlusCorrection) {
-    setup_mock_eigenvalues(5, 0.5);
+TEST_F(BindingModeVibrationalTest, SinglePoseFreeEnergyEqualsPoseEnergy) {
+    setup_invalid_atom0_eigen_layout(5, 0.5);
 
     TestableBindingMode mode(test_population);
     Pose p = create_mock_pose(-12.0, 0);
@@ -328,8 +344,10 @@ TEST_F(BindingModeVibrationalTest, SinglePoseFreeEnergyEqualsEPlusCorrection) {
 
     double correction = mode.compute_vibrational_correction();
     double total      = mode.compute_energy();
-    // For a single state, statmech F = E → total = E + correction
-    EXPECT_NEAR(total, -12.0 + correction, EPSILON);
+    // For a single state statmech F = E, and the disabled correction adds
+    // nothing, so the ranking energy is exactly the pose energy.
+    EXPECT_NEAR(correction, 0.0, EPSILON);
+    EXPECT_NEAR(total, -12.0, EPSILON);
 }
 
 // ===========================================================================
@@ -339,7 +357,7 @@ TEST_F(BindingModeVibrationalTest, SinglePoseFreeEnergyEqualsEPlusCorrection) {
 TEST_F(BindingModeVibrationalTest, RankingPreservedWhenBothModesHaveSameModes) {
     // If both modes see the same eigenvalue set, the mode with lower CF
     // should still have lower total free energy after correction.
-    setup_mock_eigenvalues(5, 0.5);
+    setup_invalid_atom0_eigen_layout(5, 0.5);
 
     TestableBindingMode stable(test_population), weak(test_population);
     Pose ps = create_mock_pose(-15.0, 0);
@@ -353,7 +371,7 @@ TEST_F(BindingModeVibrationalTest, RankingPreservedWhenBothModesHaveSameModes) {
 }
 
 TEST_F(BindingModeVibrationalTest, DeltaGRelativeToAnotherModeConsistent) {
-    setup_mock_eigenvalues(4, 0.5);
+    setup_invalid_atom0_eigen_layout(4, 0.5);
 
     TestableBindingMode mode_a(test_population), mode_b(test_population);
     for (double e : {-14.0, -13.0, -12.0}) {
@@ -378,7 +396,7 @@ TEST_F(BindingModeVibrationalTest, DeltaGRelativeToAnotherModeConsistent) {
 // ===========================================================================
 
 TEST_F(BindingModeVibrationalTest, ManyPosesVibrationalCorrectionFinite) {
-    setup_mock_eigenvalues(8, 0.3);
+    setup_invalid_atom0_eigen_layout(8, 0.3);
 
     TestableBindingMode mode(test_population);
     for (int i = 0; i < 8; ++i) {
@@ -388,7 +406,7 @@ TEST_F(BindingModeVibrationalTest, ManyPosesVibrationalCorrectionFinite) {
 
     double correction = mode.compute_vibrational_correction();
     EXPECT_TRUE(std::isfinite(correction));
-    EXPECT_LT(correction, 0.0); // always stabilising
+    EXPECT_NEAR(correction, 0.0, EPSILON);
 }
 
 // ===========================================================================

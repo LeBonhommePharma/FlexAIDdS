@@ -12,6 +12,7 @@ import { deserializePopulation } from '@bonhomme/shared';
 import { IntelligenceEngine } from './IntelligenceEngine';
 import { FleetDashboard } from './FleetDashboard';
 import { MolstarViewer as MolstarViewerComponent, populationColorHex } from './MolstarViewer';
+import { populationAllowsPhysicalAffinity } from './claimPresentation';
 
 type View = 'population' | 'fleet' | 'health';
 
@@ -31,7 +32,7 @@ export function App() {
       setPopulation(pop);
       // Auto-analyze with oracle
       const analysis = await IntelligenceEngine.analyze(pop, health ?? undefined);
-      setOracleAnalysis(analysis);
+      setOracleAnalysis(analysis.bullets);
     } catch {
       console.error('Failed to parse population file');
     }
@@ -52,7 +53,9 @@ export function App() {
             Health
           </button>
         </nav>
-        <input type="file" accept=".json,.rrd" onChange={handleFileLoad} />
+        {/* JSON only: the viewer has no .rrd parser, and advertising one
+            would invite users to load a file it cannot interpret. */}
+        <input type="file" accept=".json" onChange={handleFileLoad} />
       </header>
 
       {view === 'population' && population && (
@@ -78,15 +81,32 @@ function PopulationView({ population, oracleAnalysis }: {
   population: BindingPopulation;
   oracleAnalysis: string[];
 }) {
+  const bindingPhysical = populationAllowsPhysicalAffinity(population);
+
   return (
     <div>
       <section>
-        <h2>Global Thermodynamics</h2>
+        <h2>{bindingPhysical ? 'Global Thermodynamics' : 'Ensemble / CF Diagnostics'}</h2>
         <table>
           <tbody>
             <tr><td>Temperature</td><td>{population.temperature} K</td></tr>
-            <tr><td>Free Energy</td><td>{population.globalThermodynamics.freeEnergy.toFixed(3)} kcal/mol</td></tr>
-            <tr><td>Shannon S</td><td>{population.shannonS.toFixed(6)} kcal/mol/K</td></tr>
+            <tr>
+              <td>{bindingPhysical ? 'Free Energy' : 'Ensemble/CF diagnostic'}</td>
+              <td>
+                {population.globalThermodynamics.freeEnergy.toFixed(3)}{' '}
+                {bindingPhysical ? 'kcal/mol' : 'source units'}
+              </td>
+            </tr>
+            <tr>
+              <td>{bindingPhysical ? 'Shannon S' : 'Shannon diagnostic'}</td>
+              <td>
+                {population.shannonS.toFixed(6)}{' '}
+                {bindingPhysical ? 'kcal/mol/K' : 'source units'}
+              </td>
+            </tr>
+            {!bindingPhysical && (
+              <tr><td>Claim status</td><td>Physical affinity unavailable</td></tr>
+            )}
             <tr><td>Entropy Collapsed</td><td>{population.isCollapsed ? 'YES' : 'No'}</td></tr>
             <tr><td>Binding Modes</td><td>{population.modes.length}</td></tr>
             <tr><td>Total Poses</td><td>{population.totalPoses}</td></tr>
@@ -112,8 +132,8 @@ function PopulationView({ population, oracleAnalysis }: {
             <tr>
               <th>#</th>
               <th>Poses</th>
-              <th>F (kcal/mol)</th>
-              <th>S (kcal/mol/K)</th>
+              <th>{bindingPhysical ? 'F (kcal/mol)' : 'Ensemble/CF diagnostic (source units)'}</th>
+              <th>{bindingPhysical ? 'S (kcal/mol/K)' : 'Entropy diagnostic (source units)'}</th>
               <th>Cv</th>
               <th>Probability</th>
             </tr>
@@ -143,7 +163,9 @@ function PopulationView({ population, oracleAnalysis }: {
               <li key={i}>
                 {mod.type} at {mod.residueName}{mod.residueNumber} (chain {mod.chainID})
                 {mod.composition && ` — ${mod.composition}`}
-                {mod.effect && ` — ΔF=${mod.effect.deltaFreeEnergy.toFixed(2)}, ΔS=${mod.effect.deltaEntropy.toFixed(4)}`}
+                {mod.effect && (bindingPhysical
+                  ? ` — ΔF=${mod.effect.deltaFreeEnergy.toFixed(2)} kcal/mol, ΔS=${mod.effect.deltaEntropy.toFixed(4)} kcal/mol/K`
+                  : ` — ensemble/CF diagnostic shift=${mod.effect.deltaFreeEnergy.toFixed(2)}, entropy diagnostic=${mod.effect.deltaEntropy.toFixed(4)} (source units); physical affinity unavailable`)}
               </li>
             ))}
           </ul>

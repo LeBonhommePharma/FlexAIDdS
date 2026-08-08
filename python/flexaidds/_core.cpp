@@ -41,9 +41,48 @@ PYBIND11_MODULE(_core, m) {
     // Thermodynamics data structures
     // ═══════════════════════════════════════════════════════════════════════
 
+    py::enum_<EnergyDomain>(m, "EnergyDomain")
+        .value("UNCLASSIFIED", EnergyDomain::Unclassified)
+        .value("CF_ARBITRARY_UNITS", EnergyDomain::ContactFunctionArbitraryUnits)
+        .value("CALIBRATED_KCAL_PER_MOL", EnergyDomain::CalibratedKcalPerMol)
+        .value("MODEL_SCALE", EnergyDomain::ModelScale);
+
+    py::enum_<EnsembleMeasure>(m, "EnsembleMeasure")
+        .value("UNCLASSIFIED", EnsembleMeasure::Unclassified)
+        .value("OPTIMIZER_SAMPLES", EnsembleMeasure::OptimizerSamples)
+        .value("ENUMERATED_MICROSTATES", EnsembleMeasure::EnumeratedMicrostates)
+        .value("WEIGHTED_QUADRATURE", EnsembleMeasure::WeightedQuadrature);
+
+    py::enum_<ReferenceState>(m, "ReferenceState")
+        .value("NONE", ReferenceState::None)
+        .value("BOUND_ONLY", ReferenceState::BoundOnly)
+        .value("MATCHED_ASSOCIATION_CYCLE", ReferenceState::MatchedAssociationCycle);
+
+    py::enum_<ClaimValidity>(m, "ClaimValidity")
+        .value("PROXY_ONLY", ClaimValidity::ProxyOnly)
+        .value("CANONICAL_PHYSICAL", ClaimValidity::CanonicalPhysical)
+        .value("BINDING_PHYSICAL", ClaimValidity::BindingPhysical);
+
+    py::class_<ScientificProvenance>(m, "ScientificProvenance",
+        "Fail-closed scientific-domain and reference-state provenance")
+        .def(py::init<>())
+        .def_readwrite("schema_version", &ScientificProvenance::schema_version)
+        .def_readwrite("energy_domain", &ScientificProvenance::energy_domain)
+        .def_readwrite("ensemble_measure", &ScientificProvenance::ensemble_measure)
+        .def_readwrite("reference_state", &ScientificProvenance::reference_state)
+        .def_readwrite("energy_provenance", &ScientificProvenance::energy_provenance)
+        .def_readwrite("measure_provenance", &ScientificProvenance::measure_provenance)
+        .def_readwrite("reference_provenance", &ScientificProvenance::reference_provenance)
+        .def_property_readonly("claim_validity", &ScientificProvenance::claim_validity)
+        .def("allows_canonical_claims", &ScientificProvenance::allows_canonical_physical_claim)
+        .def("allows_binding_claims", &ScientificProvenance::allows_binding_physical_claim)
+        .def("allows_canonical_physical_claim", &ScientificProvenance::allows_canonical_physical_claim)
+        .def("allows_binding_physical_claim", &ScientificProvenance::allows_binding_physical_claim)
+        .def("is_proxy_only", &ScientificProvenance::is_proxy_only);
+
     py::class_<State>(m, "State", "Microstate with energy and degeneracy")
         .def(py::init<>())
-        .def_readwrite("energy", &State::energy, "Energy in kcal/mol")
+        .def_readwrite("energy", &State::energy, "Energy value; units are declared by provenance")
         .def_readwrite("count",  &State::count,  "Degeneracy/multiplicity")
         .def("__repr__", [](const State& s) {
             return "<State energy=" + std::to_string(s.energy) +
@@ -51,16 +90,23 @@ PYBIND11_MODULE(_core, m) {
         });
 
     py::class_<Thermodynamics>(m, "Thermodynamics",
-        "Complete thermodynamic properties of an ensemble")
+        "Ensemble statistics whose physical interpretation is gated by provenance")
         .def(py::init<>())
         .def_readwrite("temperature",    &Thermodynamics::temperature,    "K")
         .def_readwrite("log_Z",          &Thermodynamics::log_Z,          "ln(partition function)")
-        .def_readwrite("free_energy",    &Thermodynamics::free_energy,    "Helmholtz F (kcal/mol)")
-        .def_readwrite("mean_energy",    &Thermodynamics::mean_energy,    "<E> (kcal/mol)")
+        .def_readwrite("free_energy",    &Thermodynamics::free_energy,    "F-like value in the declared energy domain")
+        .def_readwrite("mean_energy",    &Thermodynamics::mean_energy,    "<E> in the declared energy domain")
         .def_readwrite("mean_energy_sq", &Thermodynamics::mean_energy_sq, "<E^2>")
-        .def_readwrite("heat_capacity",  &Thermodynamics::heat_capacity,  "Cv (kcal/mol/K^2)")
-        .def_readwrite("entropy",        &Thermodynamics::entropy,        "S (kcal/mol/K)")
-        .def_readwrite("std_energy",     &Thermodynamics::std_energy,     "sigma_E (kcal/mol)")
+        .def_readwrite("heat_capacity",  &Thermodynamics::heat_capacity,  "Cv-like value; physical units require calibrated provenance")
+        .def_readwrite("entropy",        &Thermodynamics::entropy,        "S-like value; physical units require calibrated provenance")
+        .def_readwrite("std_energy",     &Thermodynamics::std_energy,     "Energy spread in the declared energy domain")
+        .def_readwrite("provenance",     &Thermodynamics::provenance)
+        .def_property_readonly("claim_validity", &Thermodynamics::claim_validity)
+        .def("allows_canonical_claims", &Thermodynamics::allows_canonical_physical_claim)
+        .def("allows_binding_claims", &Thermodynamics::allows_binding_physical_claim)
+        .def("allows_canonical_physical_claim", &Thermodynamics::allows_canonical_physical_claim)
+        .def("allows_binding_physical_claim", &Thermodynamics::allows_binding_physical_claim)
+        .def("is_proxy_only", &Thermodynamics::is_proxy_only)
         .def("__repr__", [](const Thermodynamics& t) {
             char buf[256];
             snprintf(buf, sizeof(buf),
@@ -71,7 +117,7 @@ PYBIND11_MODULE(_core, m) {
         });
 
     py::class_<ThermodynamicBreakdown>(m, "ThermodynamicBreakdown",
-        "Auditable thermodynamic ledger with explicit units")
+        "Auditable ensemble ledger whose units are gated by provenance")
         .def(py::init<>())
         .def_readwrite("temperature_K", &ThermodynamicBreakdown::temperature_K)
         .def_readwrite("logZ_config", &ThermodynamicBreakdown::logZ_config)
@@ -87,7 +133,14 @@ PYBIND11_MODULE(_core, m) {
         .def_readwrite("G_total_kcal_mol", &ThermodynamicBreakdown::G_total_kcal_mol)
         .def_readwrite("has_vib", &ThermodynamicBreakdown::has_vib)
         .def_readwrite("has_natural", &ThermodynamicBreakdown::has_natural)
-        .def_readwrite("has_other", &ThermodynamicBreakdown::has_other);
+        .def_readwrite("has_other", &ThermodynamicBreakdown::has_other)
+        .def_readwrite("provenance", &ThermodynamicBreakdown::provenance)
+        .def_property_readonly("claim_validity", &ThermodynamicBreakdown::claim_validity)
+        .def("allows_canonical_claims", &ThermodynamicBreakdown::allows_canonical_physical_claim)
+        .def("allows_binding_claims", &ThermodynamicBreakdown::allows_binding_physical_claim)
+        .def("allows_canonical_physical_claim", &ThermodynamicBreakdown::allows_canonical_physical_claim)
+        .def("allows_binding_physical_claim", &ThermodynamicBreakdown::allows_binding_physical_claim)
+        .def("is_proxy_only", &ThermodynamicBreakdown::is_proxy_only);
 
     py::class_<Replica>(m, "Replica", "Parallel tempering replica")
         .def(py::init<>())
@@ -117,16 +170,23 @@ PYBIND11_MODULE(_core, m) {
         .def(py::init<double>(),
             py::arg("temperature_K") = 300.0,
             "Initialize engine at given temperature (default 300K)")
+        .def(py::init<double, ScientificProvenance>(),
+            py::arg("temperature_K"), py::arg("provenance"),
+            "Initialize with explicit scientific provenance")
+        .def("set_provenance", &StatMechEngine::set_provenance,
+            py::arg("provenance"))
+        .def_property_readonly("provenance", &StatMechEngine::provenance,
+            py::return_value_policy::reference_internal)
 
         // ─── Ensemble construction ───
         .def("add_sample", &StatMechEngine::add_sample,
             py::arg("energy"), py::arg("multiplicity") = 1,
-            "Add a sampled configuration with energy (kcal/mol) and multiplicity")
+            "Add a sampled configuration in the declared energy domain")
         .def("clear", &StatMechEngine::clear, "Remove all samples")
 
         // ─── Thermodynamic analysis ───
         .def("compute", &StatMechEngine::compute,
-            "Compute full thermodynamics (F, S, H, Cv, etc.)",
+            "Compute ensemble statistics; inspect provenance before physical interpretation",
             py::call_guard<py::gil_scoped_release>())
         .def("compute_breakdown", &StatMechEngine::compute_breakdown,
             py::arg("G_vib_kcal_mol") = 0.0,

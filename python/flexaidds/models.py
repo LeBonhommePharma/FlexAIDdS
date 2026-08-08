@@ -14,6 +14,7 @@ across threads and used as dictionary keys.
 
 from __future__ import annotations
 
+import ast
 import csv
 import io
 import json
@@ -21,7 +22,11 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 
-from .thermodynamics import ThermodynamicBreakdown
+from .thermodynamics import (
+    ClaimValidity,
+    ScientificProvenance,
+    ThermodynamicBreakdown,
+)
 
 # Grand-canonical / competitive models (P2 additive, behind HAS_GRAND_BINDINGS in __init__)
 # LigandSpec describes inputs for multi-ligand grand canonical calculations.
@@ -37,6 +42,15 @@ def _as_breakdown(value):
     if isinstance(value, dict):
         return ThermodynamicBreakdown.from_dict(value)
     return value
+
+
+def _as_provenance(value: Any) -> ScientificProvenance:
+    """Coerce serialized provenance without trusting claimed validity."""
+    if isinstance(value, ScientificProvenance):
+        return value
+    if isinstance(value, dict):
+        return ScientificProvenance.from_dict(value)
+    return ScientificProvenance()
 
 
 @dataclass(frozen=True)
@@ -78,15 +92,16 @@ class PoseResult:
         cf_app: Apparent CF scoring proxy after grid-approximation correction.
         rmsd_raw: RMSD to reference structure without symmetry correction (Å).
         rmsd_sym: Symmetry-corrected RMSD to reference structure (Å).
-        free_energy: Ensemble Helmholtz free energy estimate F = H − TS (kcal/mol),
-            if present in the PDB REMARK section. Not experimental ΔG_bind unless
-            the full validated ledger path applies.
-        enthalpy: Boltzmann-weighted average energy ⟨E⟩ (kcal/mol).
-        entropy: Configurational entropy S = (⟨E⟩ − F) / T
-            (kcal mol⁻¹ K⁻¹).
-        heat_capacity: Ensemble heat capacity Cv = (⟨E²⟩ − ⟨E⟩²) / (kT²)
-            (kcal mol⁻¹ K⁻²).
-        std_energy: Standard deviation of ensemble energies σ_E (kcal/mol).
+        free_energy: Legacy ensemble transform. Its units and interpretation
+            are determined exclusively by ``scientific_provenance``; current
+            docking output is a CF-domain proxy, not experimental ΔG_bind.
+        proxy_free_energy: Explicit schema-v2 name for the CF-domain transform.
+        soft_beta_G: Mode-election objective emitted by the docking engine.
+        enthalpy: Ensemble mean in the declared energy domain.
+        entropy: Ensemble S-like diagnostic in the declared domain per kelvin.
+        heat_capacity: Ensemble Cv-like diagnostic in the declared domain.
+        std_energy: Standard deviation of ensemble energies σ_E in the
+            declared energy domain (kcal/mol only under calibrated provenance).
         temperature: Simulation temperature (K) parsed from REMARK section.
         remarks: Raw key→value mapping of all ``REMARK`` fields parsed from the
             PDB header.
@@ -100,12 +115,22 @@ class PoseResult:
     rmsd_raw: Optional[float] = None
     rmsd_sym: Optional[float] = None
     free_energy: Optional[float] = None
+    proxy_free_energy: Optional[float] = None
+    soft_beta_G: Optional[float] = None
     enthalpy: Optional[float] = None
     entropy: Optional[float] = None
     heat_capacity: Optional[float] = None
     std_energy: Optional[float] = None
     temperature: Optional[float] = None
+    scientific_provenance: ScientificProvenance = field(
+        default_factory=ScientificProvenance
+    )
     remarks: Dict[str, Any] = field(default_factory=dict)
+
+    @property
+    def claim_validity(self) -> ClaimValidity:
+        """Strongest interpretation authorized by parsed evidence."""
+        return self.scientific_provenance.claim_validity
 
     def __repr__(self) -> str:
         score = self.cf if self.cf is not None else self.cf_app
@@ -148,11 +173,16 @@ class PoseResult:
             rmsd_raw=data.get("rmsd_raw"),
             rmsd_sym=data.get("rmsd_sym"),
             free_energy=data.get("free_energy"),
+            proxy_free_energy=data.get("proxy_free_energy"),
+            soft_beta_G=data.get("soft_beta_G"),
             enthalpy=data.get("enthalpy"),
             entropy=data.get("entropy"),
             heat_capacity=data.get("heat_capacity"),
             std_energy=data.get("std_energy"),
             temperature=data.get("temperature"),
+            scientific_provenance=_as_provenance(
+                data.get("scientific_provenance")
+            ),
             remarks=data.get("remarks", {}),
         )
 
@@ -171,13 +201,15 @@ class BindingModeResult:
         mode_id: Unique integer identifier for this binding mode.
         rank: Rank of this mode among all modes (1 = best ensemble F estimate).
         poses: Ordered list of individual poses belonging to this mode.
-        free_energy: Ensemble Helmholtz free energy estimate F (kcal/mol) for the
-            mode ensemble — not experimental binding free energy ΔG unless the
-            full validated ledger path applies.
-        enthalpy: Boltzmann-weighted mean energy ⟨E⟩ (kcal/mol; CF-proxy ensemble).
-        entropy: Configurational entropy S (kcal mol⁻¹ K⁻¹).
-        heat_capacity: Ensemble heat capacity Cv (kcal mol⁻¹ K⁻²).
-        std_energy: Standard deviation of ensemble energies σ_E (kcal/mol).
+        free_energy: Legacy ensemble transform in the domain declared by
+            ``scientific_provenance``. Current docking output is proxy-only.
+        proxy_free_energy: Explicit schema-v2 CF-domain ensemble transform.
+        soft_beta_G: Engine-emitted mode-election objective; lower ranks first.
+        enthalpy: Ensemble mean in the declared energy domain.
+        entropy: S-like diagnostic in the declared domain per kelvin.
+        heat_capacity: Cv-like diagnostic in the declared domain.
+        std_energy: Standard deviation of ensemble energies σ_E in the
+            declared energy domain (kcal/mol only under calibrated provenance).
         best_cf: Lowest (most favourable) individual CF/contact-function scoring
             proxy within the mode (not free energy).
         frequency: Number of GA chromosomes assigned to this mode; proportional
@@ -191,6 +223,8 @@ class BindingModeResult:
     rank: int
     poses: List[PoseResult]
     free_energy: Optional[float] = None
+    proxy_free_energy: Optional[float] = None
+    soft_beta_G: Optional[float] = None
     enthalpy: Optional[float] = None
     entropy: Optional[float] = None
     heat_capacity: Optional[float] = None
@@ -198,6 +232,9 @@ class BindingModeResult:
     best_cf: Optional[float] = None
     frequency: Optional[int] = None
     temperature: Optional[float] = None
+    scientific_provenance: ScientificProvenance = field(
+        default_factory=ScientificProvenance
+    )
     # Full audited ledger (rich dataclass when available from engine or pure fallback).
     # Legacy scalar fields above preserved for backward compat.
     metadata: Dict[str, Any] = field(default_factory=dict)
@@ -205,6 +242,11 @@ class BindingModeResult:
     # Format: "RESNAME:CHAIN:RESNUM" (e.g. "MG:A:101", "ZN:B:202").
     cofactors: List[str] = field(default_factory=list)
     thermodynamics: Optional[ThermodynamicBreakdown] = None
+
+    @property
+    def claim_validity(self) -> ClaimValidity:
+        """Strongest interpretation authorized by mode-level evidence."""
+        return self.scientific_provenance.claim_validity
 
     @property
     def n_poses(self) -> int:
@@ -241,7 +283,9 @@ class BindingModeResult:
         return f"<BindingModeResult {' '.join(parts)}>"
 
     def __lt__(self, other: "BindingModeResult") -> bool:
-        """Sort by free energy (lower is better), fall back to rank."""
+        """Sort by emitted election objective, then legacy transform/rank."""
+        if self.soft_beta_G is not None and other.soft_beta_G is not None:
+            return self.soft_beta_G < other.soft_beta_G
         if self.free_energy is not None and other.free_energy is not None:
             return self.free_energy < other.free_energy
         return self.rank < other.rank
@@ -275,6 +319,8 @@ class BindingModeResult:
             rank=data.get("rank", 0),
             poses=poses,
             free_energy=data.get("free_energy"),
+            proxy_free_energy=data.get("proxy_free_energy"),
+            soft_beta_G=data.get("soft_beta_G"),
             enthalpy=data.get("enthalpy"),
             entropy=data.get("entropy"),
             heat_capacity=data.get("heat_capacity"),
@@ -282,6 +328,9 @@ class BindingModeResult:
             best_cf=data.get("best_cf"),
             frequency=data.get("frequency"),
             temperature=data.get("temperature"),
+            scientific_provenance=_as_provenance(
+                data.get("scientific_provenance")
+            ),
             metadata=data.get("metadata", {}),
             cofactors=data.get("cofactors", []),
             thermodynamics=thermodynamics,
@@ -347,12 +396,17 @@ class DockingResult:
                     rank=m.get("rank", i + 1),
                     poses=[],
                     free_energy=m.get("free_energy"),
+                    proxy_free_energy=m.get("proxy_free_energy"),
+                    soft_beta_G=m.get("soft_beta_G"),
                     enthalpy=m.get("enthalpy"),
                     entropy=m.get("entropy"),
                     heat_capacity=m.get("heat_capacity"),
                     std_energy=m.get("std_energy"),
                     best_cf=m.get("best_cf"),
                     temperature=m.get("temperature"),
+                    scientific_provenance=_as_provenance(
+                        m.get("scientific_provenance")
+                    ),
                     thermodynamics=_as_breakdown(m.get("thermodynamics")),
                 ))
         return cls(
@@ -382,26 +436,36 @@ class DockingResult:
         return f"<DockingResult {' '.join(parts)}>"
 
     def top_mode(self) -> Optional[BindingModeResult]:
-        """Return the binding mode with the lowest free energy.
+        """Return the binding mode with the lowest emitted election objective.
 
-        Falls back to the mode with the lowest :attr:`~BindingModeResult.rank`
-        when no free-energy values are available. Prefers modes with n_poses>0
-        and (if known) matching temperature for the exact best BindingMode.
+        Falls back to the legacy ensemble transform and then stored rank when
+        schema-v2 ``soft_beta_G`` is absent.
 
         Returns:
             Best :class:`BindingModeResult`, or ``None`` if there are no modes.
         """
         if not self.binding_modes:
             return None
-        # Prefer sane modes (has free_energy, >0 poses, temp match if present on result)
+        # Prefer the engine-emitted objective; old results retain their former
+        # free-energy/rank behavior.
         def _score(m):
+            election = m.soft_beta_G
             fe = m.free_energy if m.free_energy is not None else float('inf')
             npos = m.n_poses if m.n_poses > 0 else 0
             tmatch = 0
             if getattr(self, 'temperature', None) and m.temperature:
                 tmatch = 1 if abs(m.temperature - self.temperature) < 0.1 else -1
-            return (fe, -npos, -tmatch, m.rank)
-        sane = [m for m in self.binding_modes if m.n_poses > 0 or m.free_energy is not None]
+            return (
+                0 if election is not None else 1,
+                election if election is not None else fe,
+                -npos,
+                -tmatch,
+                m.rank,
+            )
+        sane = [
+            m for m in self.binding_modes
+            if m.n_poses > 0 or m.free_energy is not None or m.soft_beta_G is not None
+        ]
         if sane:
             return min(sane, key=_score)
         return min(self.binding_modes, key=lambda m: m.rank)
@@ -416,8 +480,12 @@ class DockingResult:
         Returns:
             List of dictionaries, one per binding mode, with keys:
             ``mode_id``, ``rank``, ``n_poses``, ``free_energy``,
-            ``enthalpy``, ``entropy``, ``heat_capacity``, ``std_energy``,
-            ``best_cf``, ``temperature``, ``best_pose_path``.
+            ``proxy_free_energy``, ``soft_beta_G``, ``enthalpy``, ``entropy``,
+            ``heat_capacity``, ``std_energy``, ``best_cf``, ``temperature``,
+            ``scientific_provenance``, ``thermodynamics``, ``best_pose_path``.
+
+            Every value is JSON/CSV-serialisable: the provenance and ledger
+            objects are emitted as plain mappings, never as dataclass objects.
         """
         records: List[Dict[str, Any]] = []
         for mode in self.binding_modes:
@@ -428,13 +496,22 @@ class DockingResult:
                     "rank": mode.rank,
                     "n_poses": mode.n_poses,
                     "free_energy": mode.free_energy,
+                    "proxy_free_energy": mode.proxy_free_energy,
+                    "soft_beta_G": mode.soft_beta_G,
                     "enthalpy": mode.enthalpy,
                     "entropy": mode.entropy,
                     "heat_capacity": mode.heat_capacity,
                     "std_energy": mode.std_energy,
                     "best_cf": mode.best_cf,
                     "temperature": mode.temperature,
-                    "thermodynamics": mode.thermodynamics,
+                    "scientific_provenance": mode.scientific_provenance.to_dict(),
+                    # Serialisable mapping, not the dataclass object: records
+                    # feed JSON/CSV/pandas and must not leak live objects.
+                    "thermodynamics": (
+                        mode.thermodynamics.to_dict()
+                        if mode.thermodynamics is not None
+                        else None
+                    ),
                     "best_pose_path": str(best_pose.path) if best_pose else None,
                 }
             )
@@ -449,12 +526,15 @@ class DockingResult:
             "rank": mode.rank,
             "n_poses": mode.n_poses,
             "free_energy": mode.free_energy,
+            "proxy_free_energy": mode.proxy_free_energy,
+            "soft_beta_G": mode.soft_beta_G,
             "enthalpy": mode.enthalpy,
             "entropy": mode.entropy,
             "heat_capacity": mode.heat_capacity,
             "std_energy": mode.std_energy,
             "best_cf": mode.best_cf,
             "temperature": mode.temperature,
+            "scientific_provenance": mode.scientific_provenance.to_dict(),
             "best_pose_path": str(best_pose.path) if best_pose else None,
         }
         if mode.thermodynamics is not None:
@@ -579,6 +659,9 @@ class DockingResult:
                 if isinstance(thermo_data, dict)
                 else None
             )
+            # Rebuilt from the record's own evidence fields; a serialized
+            # ``claim_validity`` is discarded by _as_provenance.
+            provenance = _as_provenance(rec.get("scientific_provenance"))
             poses: List[PoseResult] = []
             if best_path is not None:
                 poses.append(
@@ -588,11 +671,14 @@ class DockingResult:
                         pose_rank=1,
                         cf=rec.get("best_cf"),
                         free_energy=rec.get("free_energy"),
+                        proxy_free_energy=rec.get("proxy_free_energy"),
+                        soft_beta_G=rec.get("soft_beta_G"),
                         enthalpy=rec.get("enthalpy"),
                         entropy=rec.get("entropy"),
                         heat_capacity=rec.get("heat_capacity"),
                         std_energy=rec.get("std_energy"),
                         temperature=rec.get("temperature"),
+                        scientific_provenance=provenance,
                     )
                 )
             modes.append(
@@ -601,12 +687,15 @@ class DockingResult:
                     rank=rec["rank"],
                     poses=poses,
                     free_energy=rec.get("free_energy"),
+                    proxy_free_energy=rec.get("proxy_free_energy"),
+                    soft_beta_G=rec.get("soft_beta_G"),
                     enthalpy=rec.get("enthalpy"),
                     entropy=rec.get("entropy"),
                     heat_capacity=rec.get("heat_capacity"),
                     std_energy=rec.get("std_energy"),
                     best_cf=rec.get("best_cf"),
                     temperature=rec.get("temperature"),
+                    scientific_provenance=provenance,
                     thermodynamics=thermodynamics,
                 )
             )
@@ -670,12 +759,22 @@ class DockingResult:
         Returns:
             A new :class:`DockingResult` instance.
         """
-        path = Path(source) if not isinstance(source, Path) else source
-        if path.exists():
-            with open(path, encoding="utf-8") as fh:
-                text = fh.read()
+        # Path-vs-content detection must not call Path().exists() on raw CSV
+        # text: a serialized provenance/ledger column easily exceeds the OS
+        # path-component limit and raises ENAMETOOLONG (see from_json).
+        if isinstance(source, Path):
+            text = source.read_text(encoding="utf-8") if source.is_file() else str(source)
         else:
-            text = str(source)
+            raw = str(source)
+            looks_like_csv_text = "\n" in raw or "\r" in raw or len(raw) > 200
+            text = raw
+            if not looks_like_csv_text:
+                try:
+                    candidate = Path(raw)
+                    if candidate.is_file():
+                        text = candidate.read_text(encoding="utf-8")
+                except (OSError, ValueError):
+                    text = raw
 
         reader = csv.DictReader(io.StringIO(text))
         records = []
@@ -692,12 +791,19 @@ class DockingResult:
                 rank=rec.get("rank", i + 1),
                 poses=[],
                 free_energy=rec.get("free_energy"),
+                proxy_free_energy=rec.get("proxy_free_energy"),
+                soft_beta_G=rec.get("soft_beta_G"),
                 enthalpy=rec.get("enthalpy"),
                 entropy=rec.get("entropy"),
                 heat_capacity=rec.get("heat_capacity"),
                 std_energy=rec.get("std_energy"),
                 best_cf=rec.get("best_cf"),
                 temperature=rec.get("temperature"),
+                # _as_provenance re-derives validity from the evidence fields;
+                # a ``claim_validity`` column can never authorize a claim.
+                scientific_provenance=_as_provenance(
+                    rec.get("scientific_provenance")
+                ),
                 thermodynamics=_as_breakdown(rec.get("thermodynamics")),
             ))
 
@@ -718,7 +824,8 @@ class DockingResult:
             except (ValueError, TypeError):
                 return value
         _float_keys = {
-            "free_energy", "enthalpy", "entropy", "heat_capacity",
+            "free_energy", "proxy_free_energy", "soft_beta_G",
+            "enthalpy", "entropy", "heat_capacity",
             "std_energy", "best_cf", "temperature",
         }
         if key in _float_keys:
@@ -726,4 +833,18 @@ class DockingResult:
                 return float(value)
             except (ValueError, TypeError):
                 return value
+        _mapping_keys = {"scientific_provenance", "thermodynamics"}
+        if key in _mapping_keys:
+            # csv stores these columns as a repr/JSON blob. Parse with a
+            # literal-only evaluator (never eval) and accept a mapping only;
+            # anything else falls through and is rejected downstream.
+            for parse in (ast.literal_eval, json.loads):
+                try:
+                    parsed = parse(value)
+                except (ValueError, SyntaxError, TypeError, MemoryError,
+                        RecursionError):
+                    continue
+                if isinstance(parsed, dict):
+                    return parsed
+            return None
         return value

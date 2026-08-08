@@ -257,7 +257,9 @@ RegionResult ParallelDockManager::run_region(
     int n_snap = ws.gb.num_chrom;  // snapshot from last generation
     result.best_energy = 1e30;
 
-    statmech::StatMechEngine regional_engine(ws.fa.temperature);
+    statmech::StatMechEngine regional_engine(
+        ws.fa.temperature,
+        statmech::make_contact_function_optimizer_provenance());
     for (int i = 0; i < n_snap; i++) {
         double e = chrom[i].evalue;
         regional_engine.add_sample(e);
@@ -387,7 +389,9 @@ bool ParallelDockManager::get_best_chromosome(chromosome& out_chrom,
 // ============================================================================
 
 statmech::StatMechEngine ParallelDockManager::get_global_engine() const {
-    statmech::StatMechEngine global(FA_->temperature);
+    statmech::StatMechEngine global(
+        FA_->temperature,
+        statmech::make_contact_function_optimizer_provenance());
 
     for (const auto& r : results_) {
         if (r.energies.empty()) continue;
@@ -406,6 +410,7 @@ statmech::Thermodynamics ParallelDockManager::aggregate() const {
     if (engine.size() == 0) {
         statmech::Thermodynamics td{};
         td.temperature = FA_->temperature;
+        td.provenance = statmech::make_contact_function_optimizer_provenance();
         return td;
     }
 
@@ -413,7 +418,7 @@ statmech::Thermodynamics ParallelDockManager::aggregate() const {
 
     printf("ParallelDock aggregate: %zu total samples across %d regions\n",
            engine.size(), (int)results_.size());
-    printf("  F = %.4f kcal/mol, <E> = %.4f, S = %.6f kcal/mol/K\n",
+    printf("  claim_validity=proxy_only F_like=%.4f mean_CF=%.4f S_like=%.6f [CF proxy scale]\n",
            td.free_energy, td.mean_energy, td.entropy);
 
     return td;

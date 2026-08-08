@@ -481,6 +481,18 @@ TEST(TENCoMIonContact, IonReducesBFactorNearIon) {
 
     // The last Cα (closest to Mg) should be stiffer with the ion present
     const int last = static_cast<int>(bf_ion.size()) - 1;
+    {
+        double mx_i = 0, mx_n = 0;
+        for (float v : bf_ion) mx_i = std::max<double>(mx_i, v);
+        for (float v : bf_no_ion) mx_n = std::max<double>(mx_n, v);
+        const auto& mi = tenm_with_ion.modes();
+        double lmin = mi.empty()?-1:mi.front().eigenvalue, lmax = mi.empty()?-1:mi.back().eigenvalue;
+        std::cout << "PROBE bf_size=" << bf_ion.size() << " n_modes=" << mi.size()
+                  << " n_bonds=" << tenm_with_ion.n_bonds()
+                  << " lam_min=" << lmin << " lam_max=" << lmax
+                  << " max_bf_ion=" << mx_i << " max_bf_noion=" << mx_n
+                  << " bf_ion[last]=" << bf_ion[last] << std::endl;
+    }
     EXPECT_LT(bf_ion[last], bf_no_ion[last])
         << "Residue adjacent to Mg should have lower B-factor with ion present";
 

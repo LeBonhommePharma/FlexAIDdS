@@ -43,6 +43,8 @@ public struct ModeProfile: Sendable, Codable {
 
 /// All mode data pre-computed on CPU before prompting.
 public struct PreComputedModeContext: Sendable, Codable {
+    /// Evidence governing whether mode statistics support binding/SAR claims.
+    public let scientificProvenance: ScientificProvenance?
     public let temperature: Double
     public let totalModes: Int
     public let totalPoses: Int
@@ -50,6 +52,30 @@ public struct PreComputedModeContext: Sendable, Codable {
     public let modes: [ModeProfile]  // top 3 by free energy
     public let entropyImbalance: Double  // max/min ratio
     public let dominantModeIndex: Int    // mode absorbing most Boltzmann weight
+
+    public var claimValidity: ClaimValidity {
+        scientificProvenance?.claimValidity ?? .proxyOnly
+    }
+
+    public init(
+        temperature: Double,
+        totalModes: Int,
+        totalPoses: Int,
+        globalFreeEnergy: Double,
+        modes: [ModeProfile],
+        entropyImbalance: Double,
+        dominantModeIndex: Int,
+        scientificProvenance: ScientificProvenance? = nil
+    ) {
+        self.scientificProvenance = scientificProvenance
+        self.temperature = temperature
+        self.totalModes = totalModes
+        self.totalPoses = totalPoses
+        self.globalFreeEnergy = globalFreeEnergy
+        self.modes = modes
+        self.entropyImbalance = entropyImbalance
+        self.dominantModeIndex = dominantModeIndex
+    }
 }
 
 // MARK: - Output Types
@@ -84,13 +110,15 @@ public struct BindingModeNarrative: Sendable, Codable {
 @available(macOS 26.0, iOS 26.0, *)
 public actor BindingModeNarrator {
     private let session: LanguageModelSession
+    private var latestClaimValidity: ClaimValidity = .proxyOnly
 
     private static let instructions = """
         You are a medicinal chemistry advisor interpreting molecular docking binding modes. \
         All thermodynamic values are pre-computed — DO NOT perform arithmetic. \
         Explain each binding mode in plain English: what drives its stability \
         (enthalpy vs entropy), how tight/loose it is, and what a chemist should \
-        optimize. Be concise and actionable.
+        optimize. Binding affinity and molecular/SAR optimization are permitted \
+        only for binding_physical provenance. Be concise and actionable.
         """
 
     public init() {
@@ -99,15 +127,34 @@ public actor BindingModeNarrator {
 
     /// Generate narratives for the top binding modes.
     public func narrate(context: PreComputedModeContext) async throws -> BindingModeNarrative {
+        latestClaimValidity = context.claimValidity
+        if context.claimValidity != .bindingPhysical {
+            let domain = context.claimValidity == .canonicalPhysical
+                ? "canonical-ensemble"
+                : "optimizer/input-scale"
+            return BindingModeNarrative(
+                modeDescriptions: context.modes.map { mode in
+                    ModeDescription(
+                        characterization: "Mode \(mode.index + 1): \(domain) cluster diagnostic with \(mode.poseCount) poses.",
+                        optimizationHint: "Molecular and SAR optimization unavailable without a calibrated matched association cycle."
+                    )
+                },
+                selectivityInsight: "Binding-mode prioritization for lead optimization is unavailable; use these clusters only as \(domain) diagnostics.",
+                confidence: 1.0
+            )
+        }
         var prompt = buildPrompt(context: context)
         if estimateTokenCount(prompt) > 3800 {
             prompt = buildTruncatedPrompt(context: context)
         }
-        return try await session.respond(to: prompt, generating: BindingModeNarrative.self)
+        return try await session.respond(to: prompt, generating: BindingModeNarrative.self).content
     }
 
     /// Follow-up question about the binding modes.
     public func followUp(_ question: String) async throws -> String {
+        if latestClaimValidity != .bindingPhysical {
+            return "Binding affinity, selectivity, and molecular/SAR optimization are unavailable without binding_physical provenance."
+        }
         let response = try await session.respond(to: question)
         return response.content
     }
@@ -122,7 +169,8 @@ public actor BindingModeNarrator {
             temperature: context.temperature, totalModes: context.totalModes,
             totalPoses: context.totalPoses, globalFreeEnergy: context.globalFreeEnergy,
             modes: Array(context.modes.prefix(2)), entropyImbalance: context.entropyImbalance,
-            dominantModeIndex: context.dominantModeIndex
+            dominantModeIndex: context.dominantModeIndex,
+            scientificProvenance: context.scientificProvenance
         )
         return buildPrompt(context: truncatedContext)
     }
@@ -220,13 +268,26 @@ public struct RuleBasedModeNarrator: Sendable {
             globalFreeEnergy: result.globalThermodynamics.freeEnergy,
             modes: profiles,
             entropyImbalance: imbalance,
-            dominantModeIndex: dominantIdx
+            dominantModeIndex: dominantIdx,
+            scientificProvenance: result.globalThermodynamics.scientificProvenance
         )
     }
 
     /// Generate deterministic mode narrative.
     public func narrate(context: PreComputedModeContext) -> CrossPlatformModeNarrative {
+        let bindingPhysical = context.claimValidity == .bindingPhysical
+        let canonicalPhysical = context.claimValidity == .canonicalPhysical
         let descriptions = context.modes.map { mode -> CrossPlatformModeDescription in
+            if !bindingPhysical {
+                let characterization = canonicalPhysical
+                    ? "Mode \(mode.index + 1): canonical-ensemble cluster with \(mode.poseCount) poses, F = \(String(format: "%.1f", mode.freeEnergy)) kcal/mol. This is not a binding-affinity claim."
+                    : "Mode \(mode.index + 1): optimizer cluster diagnostic with \(mode.poseCount) poses and input score \(String(format: "%.1f", mode.freeEnergy))."
+                return CrossPlatformModeDescription(
+                    characterization: characterization,
+                    optimizationHint: "Molecular and SAR optimization unavailable without binding_physical provenance."
+                )
+            }
+
             let driving: String
             if mode.isEntropyDriven {
                 driving = "entropy-driven (conformational flexibility stabilizes this geometry)"
@@ -255,8 +316,9 @@ public struct RuleBasedModeNarrator: Sendable {
         let dominant = context.modes[safe: context.dominantModeIndex]
         let insight: String
         if let dom = dominant {
-            insight = "Mode \(dom.index + 1) dominates (\(String(format: "%.0f", dom.boltzmannWeight * 100))% weight). " +
-                "Focus SAR optimization on this binding geometry."
+            insight = bindingPhysical
+                ? "Mode \(dom.index + 1) dominates (\(String(format: "%.0f", dom.boltzmannWeight * 100))% weight). Focus SAR optimization on this binding geometry."
+                : "Mode \(dom.index + 1) dominates the diagnostic weight (\(String(format: "%.0f", dom.boltzmannWeight * 100))%). Binding-mode and SAR prioritization are unavailable."
         } else {
             insight = "No dominant mode — population is diverse across geometries."
         }

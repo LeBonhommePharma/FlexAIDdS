@@ -248,10 +248,10 @@ export function FleetDashboard({
                   <div>{device.availableMemoryGB.toFixed(0)} GB RAM</div>
                   <div>Weight: {(device.computeWeight * 100).toFixed(0)}%</div>
                   <div>Thermal: {device.thermalState}</div>
-                  {(device as Record<string, unknown>).batteryLevel !== undefined && (
+                  {(device as unknown as Record<string, unknown>).batteryLevel !== undefined && (
                     <div>Battery: {batteryIcon(
-                      (device as Record<string, unknown>).batteryLevel as number,
-                      (device as Record<string, unknown>).isCharging as boolean,
+                      (device as unknown as Record<string, unknown>).batteryLevel as number,
+                      (device as unknown as Record<string, unknown>).isCharging as boolean,
                     )}</div>
                   )}
                 </div>
@@ -319,17 +319,18 @@ export function FleetDashboard({
             </thead>
             <tbody>
               {fleet.activeChunks.map((chunk) => {
-                const chunkAny = chunk as Record<string, unknown>;
-                const statusColor = chunk.status === 'completed' ? '#4ade80'
-                  : chunk.status === 'running' ? '#60a5fa'
-                  : chunk.status === 'failed' || chunk.status === 'permanentlyFailed' ? '#ef4444'
-                  : chunk.status === 'orphaned' ? '#f97316'
+                const chunkAny = chunk as unknown as Record<string, unknown>;
+                const status = chunkAny.status as string;
+                const statusColor = status === 'completed' ? '#4ade80'
+                  : status === 'running' ? '#60a5fa'
+                  : status === 'failed' || status === 'permanentlyFailed' ? '#ef4444'
+                  : status === 'orphaned' ? '#f97316'
                   : '#999';
 
                 return (
                   <tr key={chunk.id} style={{ borderBottom: '1px solid #222' }}>
                     <td style={{ padding: '0.5rem' }}>{chunk.index + 1}/{chunk.totalChunks}</td>
-                    <td style={{ padding: '0.5rem', color: statusColor }}>{chunk.status}</td>
+                    <td style={{ padding: '0.5rem', color: statusColor }}>{status}</td>
                     <td style={{ padding: '0.5rem' }}>{chunk.claimedBy ?? '\u2014'}</td>
                     <td style={{ padding: '0.5rem', textAlign: 'right' }}>{chunk.gaParameters.numChromosomes}</td>
                     <td style={{ padding: '0.5rem', textAlign: 'right' }}>{(chunkAny.retryCount as number) ?? 0}</td>

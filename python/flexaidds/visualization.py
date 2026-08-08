@@ -135,7 +135,8 @@ def color_by_energy(
 
     Args:
         obj_name: PyMOL object name.
-        energies: Energy value for each state (kcal/mol).
+        energies: Energy value for each state, in whatever domain the caller
+            supplies (CF proxy units unless calibrated).
         low_color: Ignored (kept for API compat). Uses burgundy red.
         high_color: Ignored (kept for API compat). Uses purple blue.
     """

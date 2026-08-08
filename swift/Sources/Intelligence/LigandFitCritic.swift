@@ -16,7 +16,8 @@ import FlexAIDdS
 public struct PoseProfile: Sendable, Codable {
     /// Rank within the binding mode (0 = best)
     public let rank: Int
-    /// Complementarity function score (kcal/mol, negative = favorable)
+    /// Complementarity-function score in the declared energy domain
+    /// (arbitrary CF units unless the context provenance says otherwise).
     public let cfScore: Double
     /// Boltzmann weight (fraction, 0.0-1.0)
     public let boltzmannWeight: Double
@@ -33,6 +34,24 @@ public struct PoseProfile: Sendable, Codable {
 
 /// Full pose quality context for a binding mode.
 public struct PoseQualityContext: Sendable, Codable {
+    /// Evidence governing whether these pose statistics may be presented as
+    /// physical energies or used for medicinal-chemistry decisions.
+    public let scientificProvenance: ScientificProvenance?
+
+    /// Strongest claim supported by the declared provenance. Missing evidence
+    /// fails closed to proxy-only.
+    public var claimValidity: ClaimValidity {
+        scientificProvenance?.claimValidity ?? .proxyOnly
+    }
+
+    /// Unit label for `cfScore` / `modeFreeEnergy`. kcal/mol is spoken only
+    /// when a calibrated, measure-receipted ensemble authorizes it.
+    public var energyUnitLabel: String {
+        claimValidity == .proxyOnly
+            ? "CF arbitrary units"
+            : "kcal/mol"
+    }
+
     /// Binding mode index
     public let modeIndex: Int
     /// Top poses (up to 5), sorted by Boltzmann weight descending
@@ -49,11 +68,13 @@ public struct PoseQualityContext: Sendable, Codable {
     public let scoreWeightAligned: Bool
     /// Spearman rank correlation between CF score and Boltzmann weight (top 5)
     public let scoreWeightCorrelation: Double
-    /// Mode free energy (kcal/mol)
+    /// Mode ensemble free-energy-like value in the declared energy domain.
     public let modeFreeEnergy: Double
 
     public init(modeIndex: Int, topPoses: [PoseProfile], totalPoses: Int,
-                modeFreeEnergy: Double) {
+                modeFreeEnergy: Double,
+                scientificProvenance: ScientificProvenance? = nil) {
+        self.scientificProvenance = scientificProvenance
         self.modeIndex = modeIndex
         self.topPoses = topPoses
         self.totalPoses = totalPoses
@@ -127,7 +148,9 @@ public actor LigandFitCriticActor {
         Assess whether the top-ranked pose is reliable enough for medicinal chemistry \
         decisions. Consider Boltzmann weight dominance, CF score agreement, \
         RMSD spread, and pose consensus. Provide practical advice for synthesis \
-        prioritization. Be concise and honest about uncertainty.
+        prioritization only for binding_physical inputs; otherwise report \
+        sampling diagnostics and state that affinity guidance is unavailable. \
+        Be concise and honest about uncertainty.
         """
 
     public init() {
@@ -135,17 +158,34 @@ public actor LigandFitCriticActor {
     }
 
     /// Evaluate pose quality for a binding mode.
+    ///
+    /// Synthesis prioritization and structure-based design are binding claims,
+    /// so the model is only consulted for `binding_physical` provenance. Every
+    /// other case returns a deterministic sampling diagnostic.
     public func evaluate(context: PoseQualityContext) async throws -> PoseQualityReport {
+        guard context.claimValidity == .bindingPhysical else {
+            let domain = context.claimValidity == .canonicalPhysical
+                ? "canonical-ensemble"
+                : "optimizer/input-scale"
+            return PoseQualityReport(
+                topPoseSummary: "Mode \(context.modeIndex + 1): \(domain) pose-clustering diagnostic over \(context.totalPoses) poses; pose scores are not binding affinities.",
+                poseConsensus: context.hasDominantPose ? "dominant-sample" : "distributed-samples",
+                scoreWeightAlignment: "Score/weight agreement is reported as a sampling diagnostic only.",
+                confidenceInTopPose: 0.0,
+                medicinalChemistryNote: "Medicinal-chemistry, synthesis-prioritization and structure-based-design guidance are unavailable without a calibrated matched association cycle."
+            )
+        }
         var prompt = buildPrompt(context: context)
         if estimateTokenCount(prompt) > 3800 {
             prompt = buildPrompt(context: PoseQualityContext(
                 modeIndex: context.modeIndex,
                 topPoses: Array(context.topPoses.prefix(3)),
                 totalPoses: context.totalPoses,
-                modeFreeEnergy: context.modeFreeEnergy
+                modeFreeEnergy: context.modeFreeEnergy,
+                scientificProvenance: context.scientificProvenance
             ))
         }
-        return try await session.respond(to: prompt, generating: PoseQualityReport.self)
+        return try await session.respond(to: prompt, generating: PoseQualityReport.self).content
     }
 
     private func estimateTokenCount(_ text: String) -> Int {
@@ -153,8 +193,10 @@ public actor LigandFitCriticActor {
     }
 
     private func buildPrompt(context: PoseQualityContext) -> String {
+        let units = context.energyUnitLabel
         var p = "Evaluate pose quality for mode \(context.modeIndex + 1). Produce a PoseQualityReport.\n"
-        p += "Mode F=\(String(format: "%.2f", context.modeFreeEnergy))kcal/mol, \(context.totalPoses) poses total\n"
+        p += "Claim validity: \(context.claimValidity.rawValue)\n"
+        p += "Mode F=\(String(format: "%.2f", context.modeFreeEnergy)) \(units), \(context.totalPoses) poses total\n"
         p += "RMSD spread: \(String(format: "%.1f", context.rmsdSpread))Å\n"
         p += "Score-weight correlation: \(String(format: "%.2f", context.scoreWeightCorrelation))\n"
         p += "Score-weight aligned: \(context.scoreWeightAligned ? "YES" : "NO")\n"
@@ -166,7 +208,7 @@ public actor LigandFitCriticActor {
 
         p += "\nTop poses:"
         for pose in context.topPoses {
-            p += "\n  Rank \(pose.rank + 1): CF=\(String(format: "%.1f", pose.cfScore))kcal/mol, "
+            p += "\n  Rank \(pose.rank + 1): CF=\(String(format: "%.1f", pose.cfScore)) \(units), "
             p += "w=\(String(format: "%.1f", pose.boltzmannWeight * 100))%, "
             p += "RMSD=\(String(format: "%.1f", pose.rmsdToCentroid))Å"
         }
@@ -254,7 +296,10 @@ public struct RuleBasedLigandFitCritic: Sendable {
             modeIndex: modeIndex,
             topPoses: topProfiles,
             totalPoses: poses.count,
-            modeFreeEnergy: mode.freeEnergy
+            modeFreeEnergy: mode.freeEnergy,
+            // Carry the mode's own evidence; a mode without thermodynamics
+            // fails closed to proxy-only rather than borrowing a default.
+            scientificProvenance: mode.thermodynamics?.scientificProvenance
         )
     }
 
@@ -270,11 +315,15 @@ public struct RuleBasedLigandFitCritic: Sendable {
             )
         }
         let top = context.topPoses.first
+        // Medicinal-chemistry and structure-based-design advice are binding
+        // claims; kcal/mol requires at least a canonical-physical record.
+        let bindingPhysical = context.claimValidity == .bindingPhysical
+        let units = context.energyUnitLabel
 
         // Top pose summary
         let topSummary: String
         if let pose = top {
-            topSummary = "Pose \(pose.rank + 1) (CF = \(String(format: "%.1f", pose.cfScore)) kcal/mol) carries \(String(format: "%.0f", pose.boltzmannWeight * 100))% Boltzmann weight at RMSD \(String(format: "%.1f", pose.rmsdToCentroid)) Å from mode centroid."
+            topSummary = "Pose \(pose.rank + 1) (CF = \(String(format: "%.1f", pose.cfScore)) \(units)) carries \(String(format: "%.0f", pose.boltzmannWeight * 100))% Boltzmann weight at RMSD \(String(format: "%.1f", pose.rmsdToCentroid)) Å from mode centroid."
         } else {
             topSummary = "No poses available for this binding mode."
         }
@@ -311,7 +360,11 @@ public struct RuleBasedLigandFitCritic: Sendable {
 
         // Medicinal chemistry note
         let note: String
-        if consensus == "strong" && context.scoreWeightAligned {
+        if !bindingPhysical {
+            // No calibrated matched association cycle: the ensemble supports
+            // sampling diagnostics, never synthesis or SAR prioritization.
+            note = "Medicinal-chemistry guidance is unavailable (claim_validity=\(context.claimValidity.rawValue)). These clusters are sampling diagnostics in \(units); they are not binding affinities and must not drive synthesis or structure-based design."
+        } else if consensus == "strong" && context.scoreWeightAligned {
             note = "High-confidence binding pose. The predicted geometry is suitable for structure-based design and interaction analysis."
         } else if consensus == "ambiguous" {
             note = "Multiple competing poses with similar weights. Consider whether the ligand has internal symmetry or if the binding site accommodates multiple orientations. Validate with experimental data before committing to a single geometry."

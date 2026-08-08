@@ -6,7 +6,12 @@ Complete reference for using FlexAID∆S — from zero-config docking to advance
 
 ## Overview
 
-FlexAID∆S is an entropy-driven molecular docking engine. It extends the FlexAID genetic algorithm with canonical ensemble thermodynamics, computing the Helmholtz free energy *F* = *H* − *TS* from the full conformational ensemble.
+FlexAID∆S is an entropy-aware molecular docking engine. It extends the
+FlexAID genetic algorithm with ensemble diagnostics and a schema-v2 scientific
+provenance gate. Standard docking uses arbitrary-unit CF scores and
+optimizer-selected samples, so its thermodynamic-looking fields are
+`proxy_only` unless an explicit calibrated energy domain and ensemble measure
+are supplied.
 
 **Design philosophy**: All parameters have sensible defaults. A typical docking run requires only a receptor and a ligand — no configuration needed. Arguments are auto-detected from file content, so order doesn't matter.
 
@@ -24,8 +29,8 @@ FlexAID∆S is an entropy-driven molecular docking engine. It extends the FlexAI
 This single command:
 1. Detects binding site automatically (SURFNET cavity detection)
 2. Runs genetic algorithm with full ligand flexibility
-3. Computes configurational + vibrational entropy via ShannonThermoStack
-4. Clusters poses and ranks binding modes by Helmholtz free energy
+3. Computes score-space Shannon and optional model-scale tENCoM diagnostics
+4. Clusters poses and ranks them on the configured CF/election path
 5. Outputs ranked binding modes as PDB files
 
 ### Python
@@ -37,8 +42,8 @@ results = fd.dock(
     receptor='receptor.pdb',
     ligand='ligand.mol2',
 )
-for mode in results.rank_by_free_energy():
-    print(f"Mode {mode.rank}: ΔG={mode.free_energy:.2f} kcal/mol")
+for mode in results.rank_by_free_energy():  # legacy method name
+    print(f"Mode {mode.rank}: ensemble proxy={mode.free_energy:.2f}")
 ```
 
 ---
@@ -373,9 +378,12 @@ results = fd.dock(
     compute_entropy=True,
 )
 
-for mode in results.binding_modes:
-    print(f"Mode {mode.rank}: ΔG={mode.free_energy:.2f} kcal/mol, "
-          f"S={mode.entropy:.3f} kcal/(mol·K)")
+# fd.dock() returns a BindingPopulation: iterate it directly (there is no
+# .binding_modes attribute on it). free_energy / entropy are CF-domain ensemble
+# diagnostics, not kcal/mol.
+for rank, mode in enumerate(results.rank_by_free_energy()):
+    print(f"Mode {rank}: proxy F={mode.free_energy:.2f} "
+          f"S={mode.entropy:.5f} [CF-domain units]")
 ```
 
 ### Loading Existing Results
@@ -383,21 +391,29 @@ for mode in results.binding_modes:
 ```python
 docking = fd.load_results('output_prefix')
 for mode in docking.binding_modes:
-    print(f"Mode {mode.rank}: ΔG={mode.free_energy:.2f}")
+    # soft_beta_G is the value the engine actually ranked this mode by.
+    print(f"Mode {mode.rank}: soft_beta_G={mode.soft_beta_G}")
 ```
 
 ### StatMechEngine
 
+The constructor keyword is `temperature_K`, and samples are supplied with
+`add_sample()` / `add_samples()`. The returned values carry the domain of the
+values you fed in; with CF scores they are arbitrary-unit diagnostics, which is
+why `claim_validity` reads `proxy_only` until calibrated-energy provenance with a
+sha256 receipt is attached.
+
 ```python
 from flexaidds import StatMechEngine
 
-engine = StatMechEngine(temperature=300)
-engine.add_energies(pose_energies)
+engine = StatMechEngine(temperature_K=300.0)
+engine.add_samples(pose_scores)
 thermo = engine.compute()
 
-print(f"F  = {thermo.free_energy:.2f} kcal/mol")
-print(f"S  = {thermo.entropy:.4f} kcal/(mol·K)")
-print(f"Cv = {thermo.heat_capacity:.4f} kcal/(mol·K²)")
+print(f"F  = {thermo.free_energy:.2f} [input-domain units]")
+print(f"S  = {thermo.entropy:.4f} [input-domain units / K]")
+print(f"Cv = {thermo.heat_capacity:.4f} [input-domain units / K]")
+print(thermo.claim_validity.value)   # proxy_only for CF scores
 ```
 
 ### Vibrational Entropy
@@ -408,17 +424,20 @@ from flexaidds import ENCoMEngine, TorsionalENM, run_shannon_thermo_stack
 # ENCoM: apo vs holo comparison
 delta_s = ENCoMEngine.compute_delta_s('apo.pdb', 'holo.pdb')
 
-# Full entropy pipeline
+# Full entropy pipeline.
+# base_deltaG is an input you supply; the result inherits its domain. Feeding a
+# CF-derived score in does not produce kcal/mol out, and the combination is not a
+# matched association cycle, so the output is not a binding free energy.
 tenm = TorsionalENM()
 tenm.build_from_pdb('receptor.pdb')
 result = run_shannon_thermo_stack(
-    energies=pose_energies,
+    energies=pose_scores,
     tencm_model=tenm,
-    base_deltaG=-12.5,
+    base_deltaG=base_offset,   # same domain as `energies`
     temperature_K=300.0,
 )
-print(f"ΔG = {result.deltaG:.4f} kcal/mol")
-print(f"S_vib = {result.torsionalVibEntropy:.6f} kcal/(mol·K)")
+print(f"combined transform = {result.deltaG:.4f} [input-domain units]")
+print(f"S_vib (model scale) = {result.torsionalVibEntropy:.6f}")
 ```
 
 ### Module Index
@@ -500,7 +519,9 @@ TypeScript PWA remain experimental clients of this file contract.
 ### Accuracy
 
 - **Always use entropy** — the `--rigid` flag is for quick screening only; entropy recovers correct binding modes that enthalpy-only scoring misses
-- **Keep structural waters** — ordered waters contribute 0.4–3 kcal/mol to binding thermodynamics
+- **Keep structural waters** — ordered waters mediate real contacts, and removing them changes the
+  pocket shape the contact function sees. FlexAID∆S makes no calibrated kcal/mol claim about their
+  energetic contribution
 - **Keep metal ions** — critical for metalloprotein binding geometry
 - **Density Peak clustering** (`"DP"`) produces more distinct binding modes than centroid-first
 

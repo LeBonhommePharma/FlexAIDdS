@@ -14,13 +14,30 @@ import FlexAIDdS
 
 /// Snapshot of GA generational progress for LLM interpretation.
 public struct GAProgressSnapshot: Sendable, Codable {
+    /// Evidence governing the energy domain of the fitness values below.
+    /// GA fitness is a raw optimizer objective, so this fails closed to
+    /// proxy-only unless a calibrated ensemble record is supplied.
+    public let scientificProvenance: ScientificProvenance?
+
+    /// Strongest claim supported by the declared provenance.
+    public var claimValidity: ClaimValidity {
+        scientificProvenance?.claimValidity ?? .proxyOnly
+    }
+
+    /// Unit label for the fitness values. GA fitness is a contact-function
+    /// score; kcal/mol is spoken only for calibrated, receipted ensembles.
+    public var fitnessUnitLabel: String {
+        claimValidity == .proxyOnly ? "CF arbitrary units" : "kcal/mol"
+    }
+
     /// Current generation number
     public let currentGeneration: Int
     /// Maximum generations configured
     public let maxGenerations: Int
-    /// Best fitness (CF score, negative = better) at current generation
+    /// Best fitness (CF score, negative = better) at current generation,
+    /// expressed in the declared energy domain.
     public let bestFitness: Double
-    /// Mean fitness of current population
+    /// Mean fitness of current population in the declared energy domain.
     public let meanFitness: Double
     /// Population diversity (Shannon entropy of fitness distribution)
     public let populationDiversity: Double
@@ -41,7 +58,9 @@ public struct GAProgressSnapshot: Sendable, Codable {
                 meanFitness: Double, populationDiversity: Double,
                 generationsSinceImprovement: Int, fitnessTrajectory: [Double],
                 diversityTrajectory: [Double], isImproving: Bool,
-                isDiversityCollapsed: Bool, populationSize: Int) {
+                isDiversityCollapsed: Bool, populationSize: Int,
+                scientificProvenance: ScientificProvenance? = nil) {
+        self.scientificProvenance = scientificProvenance
         self.currentGeneration = currentGeneration
         self.maxGenerations = maxGenerations
         self.bestFitness = bestFitness
@@ -121,11 +140,12 @@ public actor ConvergenceCoachActor {
                 diversityTrajectory: Array(snapshot.diversityTrajectory.suffix(5)),
                 isImproving: snapshot.isImproving,
                 isDiversityCollapsed: snapshot.isDiversityCollapsed,
-                populationSize: snapshot.populationSize
+                populationSize: snapshot.populationSize,
+                scientificProvenance: snapshot.scientificProvenance
             )
             prompt = buildPrompt(snapshot: truncated)
         }
-        return try await session.respond(to: prompt, generating: ConvergenceCoaching.self)
+        return try await session.respond(to: prompt, generating: ConvergenceCoaching.self).content
     }
 
     private func estimateTokenCount(_ text: String) -> Int {
@@ -133,10 +153,14 @@ public actor ConvergenceCoachActor {
     }
 
     private func buildPrompt(snapshot: GAProgressSnapshot) -> String {
+        // GA fitness is the raw optimizer objective. Never label it kcal/mol
+        // unless the supplied provenance authorizes a calibrated energy scale.
+        let units = snapshot.fitnessUnitLabel
         var p = "Assess this GA run. Produce ConvergenceCoaching.\n"
+        p += "Claim validity: \(snapshot.claimValidity.rawValue) (fitness is an optimizer objective, not an affinity)\n"
         p += "Generation: \(snapshot.currentGeneration)/\(snapshot.maxGenerations)\n"
-        p += "Best fitness: \(String(format: "%.2f", snapshot.bestFitness)) kcal/mol\n"
-        p += "Mean fitness: \(String(format: "%.2f", snapshot.meanFitness)) kcal/mol\n"
+        p += "Best fitness: \(String(format: "%.2f", snapshot.bestFitness)) \(units)\n"
+        p += "Mean fitness: \(String(format: "%.2f", snapshot.meanFitness)) \(units)\n"
         p += "Population: \(snapshot.populationSize) chromosomes\n"
         p += "Diversity: \(String(format: "%.3f", snapshot.populationDiversity))"
         p += snapshot.isDiversityCollapsed ? " [COLLAPSED]" : ""
@@ -192,6 +216,9 @@ public struct RuleBasedConvergenceCoach: Sendable {
 
     /// Assess GA convergence using threshold logic.
     public func coach(snapshot: GAProgressSnapshot) -> CrossPlatformConvergenceCoaching {
+        // Same gate as the model path: the fitness number keeps its value, but
+        // its unit label is only physical when the provenance says so.
+        let units = snapshot.fitnessUnitLabel
         let progress = Double(snapshot.currentGeneration) / Double(max(snapshot.maxGenerations, 1))
         let stagnationRatio = Double(snapshot.generationsSinceImprovement) / Double(max(snapshot.maxGenerations, 1))
 
@@ -227,7 +254,7 @@ public struct RuleBasedConvergenceCoach: Sendable {
         if stagnationRatio > 0.25 && !snapshot.isImproving {
             return CrossPlatformConvergenceCoaching(
                 advice: .stopEarly,
-                reasoning: "No improvement for \(snapshot.generationsSinceImprovement) generations (\(String(format: "%.0f", stagnationRatio * 100))% of run). Best fitness \(String(format: "%.2f", snapshot.bestFitness)) kcal/mol is likely the global optimum.",
+                reasoning: "No improvement for \(snapshot.generationsSinceImprovement) generations (\(String(format: "%.0f", stagnationRatio * 100))% of run). Best fitness \(String(format: "%.2f", snapshot.bestFitness)) \(units) is likely the search optimum.",
                 estimatedGenerationsRemaining: 0,
                 confidence: 0.85
             )
@@ -238,7 +265,7 @@ public struct RuleBasedConvergenceCoach: Sendable {
             let remaining = snapshot.maxGenerations - snapshot.currentGeneration
             return CrossPlatformConvergenceCoaching(
                 advice: .continueRun,
-                reasoning: "Fitness still improving. Best: \(String(format: "%.2f", snapshot.bestFitness)) kcal/mol. \(remaining) generations remaining.",
+                reasoning: "Fitness still improving. Best: \(String(format: "%.2f", snapshot.bestFitness)) \(units). \(remaining) generations remaining.",
                 estimatedGenerationsRemaining: remaining,
                 confidence: 0.8
             )

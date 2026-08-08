@@ -12,13 +12,38 @@ import { CleftAnalyzer } from '../intelligence/CleftAnalyzer.js';
 import { ConvergenceAnalyzer } from '../intelligence/ConvergenceAnalyzer.js';
 import { SelectivityAnalyzer } from '../intelligence/SelectivityAnalyzer.js';
 import { PoseQualityAnalyzer } from '../intelligence/PoseQualityAnalyzer.js';
-import type { BindingPopulation, BindingMode } from '@bonhomme/shared';
+import type {
+  BindingPopulation,
+  BindingMode,
+  ScientificProvenance,
+  ThermodynamicClaimSource,
+} from '@bonhomme/shared';
 import type { CleftFeatures } from '@bonhomme/shared';
 import type { GAProgressSnapshot } from '@bonhomme/shared';
 import type { SelectivityContext, TargetDockingSummary } from '@bonhomme/shared';
 import type { PoseQualityContext, PoseProfile } from '@bonhomme/shared';
 
 // ─── Factories ──────────────────────────────────────────────────────────────
+
+const BINDING_PHYSICAL_PROVENANCE: ScientificProvenance = {
+  schemaVersion: 2,
+  energyDomain: 'calibrated_kcal_per_mol',
+  ensembleMeasure: 'weighted_quadrature',
+  referenceState: 'matched_association_cycle',
+  energyProvenance: 'sha256:4692da7b40da99a82a86a6c30e33e4bedead9a2dbcc4b28d977e675fd0761993',
+  measureProvenance: 'sha256:aa1c1b96e5831c2c2d8ffe1060b43301e622c4255bc5e4f08765243e55265353',
+  referenceProvenance: 'sha256:4d28b0f5a589c9d228295118cbf17d810b54fca40a2cdb6159cec35788971050',
+};
+
+const BINDING_PHYSICAL_SOURCE: ThermodynamicClaimSource = {
+  available: true,
+  scientificProvenance: BINDING_PHYSICAL_PROVENANCE,
+};
+
+/** Every non-`true` availability encoding a producer might emit. */
+const HOSTILE_AVAILABILITY_VALUES: readonly unknown[] = [
+  undefined, null, false, 0, 1, 'true', 'false', '', [], {}, [true], { value: true },
+];
 
 function makeMode(overrides: Partial<BindingMode> = {}): BindingMode {
   return {
@@ -107,7 +132,9 @@ function makeSelectivityContext(overrides: Partial<SelectivityContext> = {}): Se
   return {
     ligandName: 'LSD',
     targets,
-    deltaDeltas: [{ targetA: targets[0].targetName, targetB: targets[1].targetName, ddg: targets[0].bestFreeEnergy - targets[1].bestFreeEnergy }],
+    deltaDeltas: targets.length >= 2
+      ? [{ targetA: targets[0].targetName, targetB: targets[1].targetName, ddg: targets[0].bestFreeEnergy - targets[1].bestFreeEnergy }]
+      : [],
     ...overrides,
   };
 }
@@ -149,12 +176,17 @@ describe('BindingModeAnalyzer', () => {
     expect(result.modeDescriptions).toHaveLength(2);
     expect(result.confidence).toBe(0.8);
     expect(result.selectivityInsight).toContain('Mode');
+    expect(result.modeDescriptions[0].characterization).toContain('ensemble/CF diagnostic');
+    expect(result.modeDescriptions[0].characterization).not.toContain('kcal/mol');
+    expect(result.selectivityInsight).toContain('Physical affinity unavailable');
   });
 
   it('should classify enthalpy-driven mode', () => {
     const pop = makePopulation({
       modes: [makeMode({ enthalpy: -15.0, entropy: 0.001 })],
     });
+    pop.globalThermodynamics.available = true;
+    pop.globalThermodynamics.scientificProvenance = BINDING_PHYSICAL_PROVENANCE;
     const result = BindingModeAnalyzer.analyze(pop);
     expect(result.modeDescriptions[0].characterization).toContain('enthalpy-driven');
     expect(result.confidence).toBe(0.5); // single mode
@@ -164,6 +196,8 @@ describe('BindingModeAnalyzer', () => {
     const pop = makePopulation({
       modes: [makeMode({ enthalpy: -2.0, entropy: 0.05 })],
     });
+    pop.globalThermodynamics.available = true;
+    pop.globalThermodynamics.scientificProvenance = BINDING_PHYSICAL_PROVENANCE;
     const result = BindingModeAnalyzer.analyze(pop);
     expect(result.modeDescriptions[0].characterization).toContain('entropy-driven');
   });
@@ -201,13 +235,43 @@ describe('CleftAnalyzer', () => {
   });
 
   it('should suggest lipophilic compounds for hydrophobic pocket', () => {
-    const result = CleftAnalyzer.assess(makeCleftFeatures({ hydrophobicFraction: 0.85 }));
+    const result = CleftAnalyzer.assess(
+      makeCleftFeatures({ hydrophobicFraction: 0.85 }),
+      BINDING_PHYSICAL_SOURCE,
+    );
     expect(result.suggestedLigandProperties).toContain('Lipophilic');
+    expect(result.claimValidity).toBe('binding_physical');
   });
 
   it('should suggest polar compounds for hydrophilic pocket', () => {
-    const result = CleftAnalyzer.assess(makeCleftFeatures({ hydrophobicFraction: 0.2 }));
+    const result = CleftAnalyzer.assess(
+      makeCleftFeatures({ hydrophobicFraction: 0.2 }),
+      BINDING_PHYSICAL_SOURCE,
+    );
     expect(result.suggestedLigandProperties).toContain('Polar');
+  });
+
+  it('withholds druggability and ligand-property prose for proxy pockets', () => {
+    const result = CleftAnalyzer.assess(makeCleftFeatures({ hydrophobicFraction: 0.85 }));
+
+    // Geometry score is unchanged; only the language is gated.
+    expect(result.druggability).toBe('high');
+    expect(result.claimValidity).toBe('proxy_only');
+    expect(result.summary).toContain('Geometric enclosure score');
+    expect(result.summary).not.toContain('Druggability: high');
+    expect(result.suggestedLigandProperties).toContain('Unavailable');
+    expect(result.suggestedLigandProperties).not.toContain('LogP');
+  });
+
+  it('fails druggability prose closed when availability is not a literal true', () => {
+    for (const available of HOSTILE_AVAILABILITY_VALUES) {
+      const result = CleftAnalyzer.assess(makeCleftFeatures(), {
+        available,
+        scientificProvenance: BINDING_PHYSICAL_PROVENANCE,
+      } as unknown as ThermodynamicClaimSource);
+      expect(result.claimValidity).toBe('proxy_only');
+      expect(result.suggestedLigandProperties).toContain('Unavailable');
+    }
   });
 });
 
@@ -228,6 +292,8 @@ describe('ConvergenceAnalyzer', () => {
     }));
     expect(result.advice).toBe('stopEarly');
     expect(result.confidence).toBe(0.85);
+    expect(result.reasoning).toContain('ensemble/CF diagnostic');
+    expect(result.reasoning).not.toContain('kcal/mol');
   });
 
   it('should advise increase population on diversity collapse with small pop', () => {
@@ -263,11 +329,42 @@ describe('ConvergenceAnalyzer', () => {
 // ─── SelectivityAnalyzer ────────────────────────────────────────────────────
 
 describe('SelectivityAnalyzer', () => {
-  it('should detect enthalpic driver for large DDG', () => {
+  it('publishes an inconclusive driver for proxy targets despite a large DDG', () => {
     const result = SelectivityAnalyzer.analyze(makeSelectivityContext());
     expect(result.preferredTarget).toBe('5HT2A');
-    expect(result.driver).toBe('enthalpic');
+    // A thermodynamic driver is an association claim; proxy CF data cannot
+    // support one even though the internal thresholds say "enthalpic".
+    expect(result.driver).toBe('inconclusive');
     expect(result.deltaG).toBeCloseTo(-3.3, 1);
+    expect(result.claimValidity).toBe('proxy_only');
+    expect(result.explanation).toContain('Ensemble/CF diagnostic');
+    expect(result.explanation).toContain('Physical affinity unavailable');
+    expect(result.explanation).not.toContain('kcal/mol');
+  });
+
+  it('uses physical selectivity language only when both targets are binding-physical', () => {
+    const result = SelectivityAnalyzer.analyze(makeSelectivityContext({
+      targets: [
+        makeTarget({
+          targetName: '5HT2A',
+          bestFreeEnergy: -9.5,
+          sConf: 1.8,
+          thermodynamicsAvailable: true,
+          scientificProvenance: BINDING_PHYSICAL_PROVENANCE,
+        }),
+        makeTarget({
+          targetName: 'D2R',
+          bestFreeEnergy: -6.2,
+          sConf: 1.2,
+          thermodynamicsAvailable: true,
+          scientificProvenance: BINDING_PHYSICAL_PROVENANCE,
+        }),
+      ],
+    }));
+
+    expect(result.claimValidity).toBe('binding_physical');
+    expect(result.explanation).toContain('kcal/mol');
+    expect(result.explanation).toContain('Selectivity is enthalpy-driven');
   });
 
   it('should detect inconclusive for single target', () => {
@@ -306,7 +403,10 @@ describe('SelectivityAnalyzer', () => {
 
 describe('PoseQualityAnalyzer', () => {
   it('should report strong consensus for dominant aligned pose', () => {
-    const result = PoseQualityAnalyzer.evaluate(makePoseQualityContext());
+    const result = PoseQualityAnalyzer.evaluate(makePoseQualityContext({
+      thermodynamicsAvailable: true,
+      scientificProvenance: BINDING_PHYSICAL_PROVENANCE,
+    }));
     expect(result.poseConsensus).toBe('strong');
     expect(result.confidenceInTopPose).toBeGreaterThan(0.8);
     expect(result.medicinalChemistryNote).toContain('High-confidence');
@@ -341,6 +441,8 @@ describe('PoseQualityAnalyzer', () => {
     const result = PoseQualityAnalyzer.evaluate(makePoseQualityContext({
       scoreWeightAligned: false,
       scoreWeightCorrelation: 0.2,
+      thermodynamicsAvailable: true,
+      scientificProvenance: BINDING_PHYSICAL_PROVENANCE,
     }));
     expect(result.scoreWeightAlignment).toContain('Misaligned');
     expect(result.medicinalChemistryNote).toContain('entropy');
@@ -354,5 +456,31 @@ describe('PoseQualityAnalyzer', () => {
       totalPoses: 100,
     }));
     expect(result.confidenceInTopPose).toBeLessThanOrEqual(0.95);
+  });
+
+  it('keeps CF-only pose quality language diagnostic and unit-safe', () => {
+    const result = PoseQualityAnalyzer.evaluate(makePoseQualityContext());
+    const output = [
+      result.topPoseSummary,
+      result.scoreWeightAlignment,
+      result.medicinalChemistryNote,
+    ].join('\n');
+
+    expect(output).toContain('ensemble/CF diagnostic');
+    expect(output).toContain('Physical affinity unavailable');
+    expect(output).not.toContain('kcal/mol');
+    expect(result.poseConsensus).toBe('strong');
+    expect(result.confidenceInTopPose).toBeGreaterThan(0.8);
+  });
+
+  it('fails pose claims closed when thermodynamic moments are unavailable', () => {
+    const result = PoseQualityAnalyzer.evaluate(makePoseQualityContext({
+      thermodynamicsAvailable: false,
+      scientificProvenance: BINDING_PHYSICAL_PROVENANCE,
+    }));
+
+    expect(result.topPoseSummary).toContain('ensemble/CF diagnostic');
+    expect(result.topPoseSummary).toContain('physical affinity unavailable');
+    expect(result.topPoseSummary).not.toContain('kcal/mol');
   });
 });

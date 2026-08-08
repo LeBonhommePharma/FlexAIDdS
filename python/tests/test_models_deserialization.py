@@ -347,3 +347,259 @@ class TestDockingResultFromCsv:
 
         restored = DockingResult.from_csv(csv_text)
         assert restored.n_modes == 0
+
+
+# ===========================================================================
+# Chunk 0 — claim firewall survives every serialization round trip
+# ===========================================================================
+
+from flexaidds.thermodynamics import (  # noqa: E402
+    ClaimValidity,
+    EnergyDomain,
+    EnsembleMeasure,
+    ReferenceState,
+    ScientificProvenance,
+    ThermodynamicBreakdown,
+)
+
+_ENERGY_RECEIPT = "sha256:" + "1a2b3c4d5e6f7089" * 4
+_MEASURE_RECEIPT = "sha256:" + "9f8e7d6c5b4a3021" * 4
+_REFERENCE_RECEIPT = "sha256:" + "0badc0de1234abcd" * 4
+
+
+def _physical_provenance() -> ScientificProvenance:
+    return ScientificProvenance(
+        schema_version=2,
+        energy_domain=EnergyDomain.CALIBRATED_KCAL_PER_MOL,
+        ensemble_measure=EnsembleMeasure.ENUMERATED_MICROSTATES,
+        reference_state=ReferenceState.MATCHED_ASSOCIATION_CYCLE,
+        energy_provenance=_ENERGY_RECEIPT,
+        measure_provenance=_MEASURE_RECEIPT,
+        reference_provenance=_REFERENCE_RECEIPT,
+    )
+
+
+def _result_with(provenance: ScientificProvenance) -> DockingResult:
+    mode = BindingModeResult(
+        mode_id=1,
+        rank=1,
+        poses=[PoseResult(path=Path("p1.pdb"), mode_id=1, pose_rank=1, cf=-10.0)],
+        free_energy=-9.8,
+        proxy_free_energy=-9.8,
+        soft_beta_G=-3.25,
+        best_cf=-10.0,
+        temperature=300.0,
+        scientific_provenance=provenance,
+    )
+    return DockingResult(source_dir=Path("/tmp"), binding_modes=[mode])
+
+
+class TestFirewallFieldsSurviveRoundTrips:
+    def test_json_round_trip_keeps_election_and_provenance(self):
+        original = _result_with(_physical_provenance())
+
+        restored = DockingResult.from_json(original.to_json())
+        mode = restored.binding_modes[0]
+
+        assert mode.soft_beta_G == pytest.approx(-3.25)
+        assert mode.proxy_free_energy == pytest.approx(-9.8)
+        assert mode.scientific_provenance == _physical_provenance()
+        assert mode.claim_validity is ClaimValidity.BINDING_PHYSICAL
+        # The placeholder pose inherits the same evidence, not a blank default.
+        assert mode.poses[0].soft_beta_G == pytest.approx(-3.25)
+        assert mode.poses[0].claim_validity is ClaimValidity.BINDING_PHYSICAL
+
+    def test_csv_round_trip_keeps_election_and_provenance(self):
+        original = _result_with(_physical_provenance())
+
+        restored = DockingResult.from_csv(original.to_csv())
+        mode = restored.binding_modes[0]
+
+        assert mode.soft_beta_G == pytest.approx(-3.25)
+        assert mode.proxy_free_energy == pytest.approx(-9.8)
+        assert mode.scientific_provenance == _physical_provenance()
+
+    def test_from_dict_flat_record_keeps_election_and_provenance(self):
+        original = _result_with(_physical_provenance())
+        payload = {
+            "source_dir": "/tmp",
+            "binding_modes": original.to_records(),
+        }
+
+        restored = DockingResult.from_dict(payload)
+        mode = restored.binding_modes[0]
+
+        assert mode.soft_beta_G == pytest.approx(-3.25)
+        assert mode.scientific_provenance == _physical_provenance()
+
+    def test_records_are_json_serialisable(self):
+        records = _result_with(_physical_provenance()).to_records()
+        # Would raise TypeError if a dataclass object leaked into a record.
+        json.dumps(records)
+
+
+class TestHostileDeserialization:
+    @pytest.mark.parametrize(
+        "provenance_payload",
+        [
+            # Serialized validity trying to self-authorize with no evidence.
+            {"schema_version": 2, "claim_validity": "binding_physical"},
+            # Right vocabulary, wrong schema version.
+            {
+                "schema_version": 1,
+                "energy_domain": "calibrated_kcal_per_mol",
+                "ensemble_measure": "enumerated_microstates",
+                "reference_state": "matched_association_cycle",
+                "energy_provenance": _ENERGY_RECEIPT,
+                "measure_provenance": _MEASURE_RECEIPT,
+                "reference_provenance": _REFERENCE_RECEIPT,
+                "claim_validity": "binding_physical",
+            },
+            # Non-string receipts.
+            {
+                "schema_version": 2,
+                "energy_domain": "calibrated_kcal_per_mol",
+                "ensemble_measure": "enumerated_microstates",
+                "reference_state": "matched_association_cycle",
+                "energy_provenance": 1,
+                "measure_provenance": True,
+                "reference_provenance": [_REFERENCE_RECEIPT],
+                "claim_validity": "binding_physical",
+            },
+            # Known-bad digests (empty content + historical filler).
+            {
+                "schema_version": 2,
+                "energy_domain": "calibrated_kcal_per_mol",
+                "ensemble_measure": "enumerated_microstates",
+                "reference_state": "matched_association_cycle",
+                "energy_provenance": "sha256:e3b0c44298fc1c149afbf4c8996fb924"
+                "27ae41e4649b934ca495991b7852b855",
+                "measure_provenance": "sha256:3f7a9c2b1e4d5f6a7b8c9d0e1f2a3b4c"
+                "5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a",
+                "reference_provenance": _REFERENCE_RECEIPT,
+            },
+            # Low-entropy filler digest.
+            {
+                "schema_version": 2,
+                "energy_domain": "calibrated_kcal_per_mol",
+                "ensemble_measure": "weighted_quadrature",
+                "reference_state": "matched_association_cycle",
+                "energy_provenance": "sha256:" + "a" * 64,
+                "measure_provenance": _MEASURE_RECEIPT,
+                "reference_provenance": _REFERENCE_RECEIPT,
+            },
+            # Whitespace-padded receipt: no trimming is performed.
+            {
+                "schema_version": 2,
+                "energy_domain": "calibrated_kcal_per_mol",
+                "ensemble_measure": "enumerated_microstates",
+                "reference_state": "matched_association_cycle",
+                "energy_provenance": " " + _ENERGY_RECEIPT,
+                "measure_provenance": _MEASURE_RECEIPT + "\n",
+                "reference_provenance": _REFERENCE_RECEIPT,
+            },
+            # Upper-case scheme prefix is not the literal "sha256:".
+            {
+                "schema_version": 2,
+                "energy_domain": "calibrated_kcal_per_mol",
+                "ensemble_measure": "enumerated_microstates",
+                "reference_state": "matched_association_cycle",
+                "energy_provenance": _ENERGY_RECEIPT.replace("sha256:", "SHA256:"),
+                "measure_provenance": _MEASURE_RECEIPT,
+                "reference_provenance": _REFERENCE_RECEIPT,
+            },
+            # Hostile availability-shaped values in place of the whole block.
+            {"schema_version": 2, "energy_domain": True},
+            {"schema_version": 2, "energy_domain": 1},
+            {"schema_version": 2, "energy_domain": None},
+            {"schema_version": 2, "energy_domain": []},
+            {"schema_version": "2", "energy_domain": "calibrated_kcal_per_mol"},
+        ],
+    )
+    def test_json_payload_cannot_self_authorize(self, provenance_payload):
+        payload = {
+            "source_dir": "/tmp",
+            "binding_modes": [
+                {
+                    "mode_id": 1,
+                    "rank": 1,
+                    "free_energy": -9.8,
+                    "best_pose_path": "p1.pdb",
+                    "scientific_provenance": provenance_payload,
+                }
+            ],
+        }
+
+        restored = DockingResult.from_json(json.dumps(payload))
+        mode = restored.binding_modes[0]
+
+        assert mode.claim_validity is ClaimValidity.PROXY_ONLY
+        assert not mode.scientific_provenance.allows_canonical_claims()
+        assert not mode.scientific_provenance.allows_binding_claims()
+        assert mode.poses[0].claim_validity is ClaimValidity.PROXY_ONLY
+
+    @pytest.mark.parametrize(
+        "raw", [True, False, 1, 0, None, [], "true", "not-a-dict", ""]
+    )
+    def test_non_mapping_provenance_falls_closed(self, raw):
+        """Availability-shaped junk (true/1/null/[]/"true") is never a witness."""
+        payload = {
+            "source_dir": "/tmp",
+            "binding_modes": [
+                {
+                    "mode_id": 1,
+                    "rank": 1,
+                    "best_pose_path": "p1.pdb",
+                    "scientific_provenance": raw,
+                }
+            ],
+        }
+
+        mode = DockingResult.from_json(json.dumps(payload)).binding_modes[0]
+
+        assert mode.scientific_provenance == ScientificProvenance()
+        assert mode.claim_validity is ClaimValidity.PROXY_ONLY
+
+    def test_csv_claim_validity_column_cannot_self_authorize(self):
+        original = _result_with(ScientificProvenance())
+        csv_text = original.to_csv().replace("proxy_only", "binding_physical")
+
+        mode = DockingResult.from_csv(csv_text).binding_modes[0]
+
+        assert mode.claim_validity is ClaimValidity.PROXY_ONLY
+
+    def test_provenance_is_immutable_after_construction(self):
+        provenance = ScientificProvenance()
+
+        with pytest.raises(Exception):
+            provenance.energy_domain = EnergyDomain.CALIBRATED_KCAL_PER_MOL
+        with pytest.raises(Exception):
+            provenance.energy_provenance = _ENERGY_RECEIPT
+
+        assert provenance.claim_validity is ClaimValidity.PROXY_ONLY
+
+    def test_breakdown_correction_downgrades_ledger_like_cpp(self):
+        """Mirror of C++ provenance_for_breakdown: corrections force proxy-only."""
+        clean = ThermodynamicBreakdown(
+            G_config_kcal_mol=-9.8, provenance=_physical_provenance()
+        )
+        assert clean.claim_validity is ClaimValidity.BINDING_PHYSICAL
+
+        for kwargs in (
+            {"has_vib": True},
+            {"has_natural": True},
+            {"has_other": True},
+            {"G_vib_kcal_mol": -0.5},
+            {"G_natural_kcal_mol": 0.25},
+            {"G_other_kcal_mol": 1e-9},
+        ):
+            corrected = ThermodynamicBreakdown(
+                G_config_kcal_mol=-9.8,
+                provenance=_physical_provenance(),
+                **kwargs,
+            )
+            assert corrected.claim_validity is ClaimValidity.PROXY_ONLY
+            # Numerics are untouched by the downgrade.
+            assert corrected.G_config_kcal_mol == pytest.approx(-9.8)
+            for key, value in kwargs.items():
+                assert getattr(corrected, key) == value

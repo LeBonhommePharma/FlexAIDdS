@@ -526,19 +526,34 @@ void cluster(FA_Global* FA, GB_Global* GB, VC_Global* VC, chromosome* chrom, gen
 		snprintf(tmpremark, MAX_REMARK, "REMARK Cluster %d: Rank (top):%d Average CF:%8.5f Frequency:%d\n",
 			j,Clus_TOP[j],Clus_ACF[j],Clus_FRE[j]);
 		safe_remark_cat(remark, tmpremark, &remark_len);
-		// Canonical ledger from cluster member CF ensemble (display / plugin only;
-		// does not change GA ranking or cluster selection).
+		// CF-proxy ledger from cluster-member optimizer records (display/plugin
+		// only; does not change GA ranking or cluster selection).
 		{
 			const double T = (FA->temperature > 0)
 				? static_cast<double>(FA->temperature) : 300.0;
-			statmech::StatMechEngine engine(T);
+			statmech::StatMechEngine engine(
+				T, statmech::make_contact_function_optimizer_provenance());
 			engine.add_sample(static_cast<double>(chrom[Clus_TOP[j]].app_evalue));
 			for (int k = 0; k < num_chrom; ++k) {
 				if (k != Clus_TOP[j] && Clus_GAPOP[k] == Clus_TOP[j])
 					engine.add_sample(static_cast<double>(chrom[k].app_evalue));
 			}
 			const statmech::Thermodynamics td = engine.compute();
-			// Physical StatMech ledger (diagnostic). Ranking objective is soft_beta_G = ACF.
+			// Explicit metadata prevents legacy numeric keys from being promoted to
+			// physical thermodynamic claims. Ranking remains soft_beta_G = ACF.
+			snprintf(tmpremark, MAX_REMARK, "REMARK thermo_schema_version = 2\n");
+			safe_remark_cat(remark, tmpremark, &remark_len);
+			snprintf(tmpremark, MAX_REMARK, "REMARK thermo_claim_validity = proxy_only\n");
+			safe_remark_cat(remark, tmpremark, &remark_len);
+			snprintf(tmpremark, MAX_REMARK, "REMARK thermo_energy_domain = cf_arbitrary_units\n");
+			safe_remark_cat(remark, tmpremark, &remark_len);
+			snprintf(tmpremark, MAX_REMARK, "REMARK thermo_ensemble_measure = optimizer_samples\n");
+			safe_remark_cat(remark, tmpremark, &remark_len);
+			snprintf(tmpremark, MAX_REMARK, "REMARK thermo_reference_state = bound_only\n");
+			safe_remark_cat(remark, tmpremark, &remark_len);
+			snprintf(tmpremark, MAX_REMARK, "REMARK proxy_free_energy = %.6f\n", td.free_energy);
+			safe_remark_cat(remark, tmpremark, &remark_len);
+			// Deprecated compatibility key; see thermo_claim_validity above.
 			snprintf(tmpremark, MAX_REMARK, "REMARK free_energy = %.6f\n", td.free_energy);
 			safe_remark_cat(remark, tmpremark, &remark_len);
 			snprintf(tmpremark, MAX_REMARK, "REMARK soft_beta_G = %.6f\n", Clus_ACF[j]);

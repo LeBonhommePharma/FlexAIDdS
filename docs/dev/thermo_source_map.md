@@ -5,7 +5,8 @@
 - `LIB/statmech.h/.cpp`
   - `statmech::kB_kcal`, `statmech::kB_SI`
   - `statmech::State`
-  - `statmech::Thermodynamics` legacy output
+  - `statmech::ScientificProvenance` fail-closed energy/measure/reference witness
+  - `statmech::Thermodynamics` legacy numeric output plus derived claim validity
   - `statmech::ThermodynamicBreakdown` explicit ledger
   - `statmech::StatMechEngine::compute()` canonical ensemble foundation
   - `statmech::StatMechEngine::compute_breakdown()` ledger adapter
@@ -73,7 +74,7 @@
 
 ## Core Versus Experimental Status
 
-- Core: canonical ensemble in `StatMechEngine`, `ThermodynamicBreakdown` after tests pass.
+- Core numeric kernel: canonical formulas in `StatMechEngine`; physical claims require calibrated energy and measure provenance.
 - Core diagnostic: component averages once component completeness metadata exists.
 - Diagnostic only: compensation metrics.
 - Experimental: joint receptor-ligand ensemble, affinity calibration until benchmarked, temperature scan, model-derived DeltaCp, cleft annotation.

@@ -100,7 +100,7 @@ protected:
         return p;
     }
 
-    // Physical per-mode StatMech ranking path (pre-classic-entropy product).
+    // Legacy physical-beta numeric path (still CF-proxy without provenance).
     void enable_force_cf_ranking() {
         mock_fa->force_cf_rank_emission = true;
     }
@@ -134,8 +134,29 @@ TEST_F(BindingModeStatMechTest, LazyEngineRebuild) {
     EXPECT_NE(thermo1.free_energy, thermo3.free_energy);
 }
 
+TEST_F(BindingModeStatMechTest, LiveBindingModeIsExplicitlyCFProxyOnly) {
+    BindingMode mode(test_population);
+    Pose pose = create_mock_pose(-10.0, 0);
+    mode.add_Pose(pose);
+
+    const auto thermo = mode.get_thermodynamics();
+    const auto ledger = mode.get_thermodynamic_breakdown();
+
+    EXPECT_EQ(thermo.provenance.energy_domain,
+              statmech::EnergyDomain::ContactFunctionArbitraryUnits);
+    EXPECT_EQ(thermo.provenance.ensemble_measure,
+              statmech::EnsembleMeasure::OptimizerSamples);
+    EXPECT_EQ(thermo.provenance.reference_state,
+              statmech::ReferenceState::BoundOnly);
+    EXPECT_EQ(thermo.claim_validity(), statmech::ClaimValidity::ProxyOnly);
+    EXPECT_FALSE(thermo.allows_canonical_physical_claim());
+    EXPECT_FALSE(thermo.allows_binding_physical_claim());
+    EXPECT_EQ(ledger.provenance, thermo.provenance);
+    EXPECT_TRUE(ledger.is_proxy_only());
+}
+
 TEST_F(BindingModeStatMechTest, ConsistencyWithLegacy) {
-    // Physical ranking path: ranking F must match StatMech ledger.
+    // Legacy physical-beta numeric path: ranking F must match the proxy ledger.
     // Classic path intentionally diverges (soft-β global Z vs kB per-mode).
     enable_force_cf_ranking();
     BindingMode mode(test_population);
@@ -161,7 +182,8 @@ TEST_F(BindingModeStatMechTest, ConsistencyWithLegacy) {
 }
 
 TEST_F(BindingModeStatMechTest, ThermodynamicBreakdownPreservesLegacyRankingEnergy) {
-    // Breakdown ledger is physical-kB; ranking under force_cf matches it.
+    // Breakdown uses physical beta numerically but remains CF-proxy; ranking
+    // under force_cf matches the numeric ledger.
     enable_force_cf_ranking();
     BindingMode mode(test_population);
 
@@ -176,12 +198,31 @@ TEST_F(BindingModeStatMechTest, ThermodynamicBreakdownPreservesLegacyRankingEner
     const auto legacy = mode.get_thermodynamics();
     const auto ledger = mode.get_thermodynamic_breakdown();
 
+    // The ranking energy is unchanged: it still carries the NATURaL correction.
     EXPECT_NEAR(ledger.G_total_kcal_mol, legacy_energy, EPSILON);
-    EXPECT_NEAR(ledger.G_total_kcal_mol, legacy.free_energy, EPSILON);
+
+    // But get_thermodynamics() now returns the configurational ensemble
+    // UNMODIFIED. It used to add the correction to free_energy alone, which
+    // broke the struct's own identity (entropy is defined as
+    // (mean_energy - free_energy)/T, so shifting F without shifting H or S
+    // left F != H - T*S). The correction lives in the ledger's dedicated
+    // G_natural_kcal_mol field instead.
+    EXPECT_NEAR(legacy.free_energy, ledger.G_config_kcal_mol, EPSILON);
+    EXPECT_NEAR(ledger.G_total_kcal_mol, legacy.free_energy + ledger.G_natural_kcal_mol,
+                EPSILON);
+    ASSERT_GT(legacy.temperature, 0.0);
+    EXPECT_NEAR(legacy.free_energy,
+                legacy.mean_energy - legacy.temperature * legacy.entropy,
+                EPSILON);
+
     EXPECT_NEAR(ledger.G_config_kcal_mol + ledger.G_natural_kcal_mol + ledger.G_vib_kcal_mol,
                 ledger.G_total_kcal_mol, EPSILON);
     EXPECT_TRUE(ledger.has_natural);
     EXPECT_FALSE(ledger.has_other);
+
+    // An unreceipted correction downgrades the aggregate ledger witness even
+    // though the scalar configurational ledger keeps its CF-proxy metadata.
+    EXPECT_TRUE(ledger.is_proxy_only());
 }
 
 TEST_F(BindingModeStatMechTest, BoltzmannWeightsNormalization) {

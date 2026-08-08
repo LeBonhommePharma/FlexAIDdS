@@ -2628,7 +2628,7 @@ int main(int argc, char **argv){
 			pdm.run(ic2cf);
 			auto global_thermo = pdm.aggregate();
 
-			printf("ParallelDock: F = %.4f kcal/mol, -TdS = %.4f kcal/mol\n",
+			printf("ParallelDock: claim_validity=proxy_only F_like=%.4f minus_T_S_like=%.4f [CF proxy scale]\n",
 			       global_thermo.free_energy, -FA->temperature * global_thermo.entropy);
 			printf("ParallelDock: %zu regions completed\n", pdm.region_results().size());
 
@@ -2719,7 +2719,7 @@ int main(int argc, char **argv){
 			ccfg.default_conc_M = user_conc_M;  // P3: forward --conc for grand canonical in campaign path
 			auto summary = campaign::run_campaign(ccfg,
 				[](int done, int total, const campaign::LigandResult& lr) {
-					printf("\r  [%d/%d] %s: dG=%.2f kcal/mol (%.1fs)",
+					printf("\r  [%d/%d] %s: score_proxy=%.2f (%.1fs)",
 					       done, total, lr.name.c_str(), lr.dG_corrected, lr.dock_time_sec);
 					fflush(stdout);
 				}
@@ -3014,18 +3014,21 @@ int main(int argc, char **argv){
 
 				// ── Post-GA ensemble thermodynamic summary ──
 				if (FA->temperature > 0 && n_chrom_snapshot > 0) {
-					statmech::StatMechEngine post_engine(static_cast<double>(FA->temperature));
+					statmech::StatMechEngine post_engine(
+						static_cast<double>(FA->temperature),
+						statmech::make_contact_function_optimizer_provenance());
 					for (int si = 0; si < n_chrom_snapshot; si++) {
 						post_engine.add_sample(chrom_snapshot[si].evalue);
 					}
 					auto post_thermo = post_engine.compute();
-					printf("\n======= Post-GA Ensemble Thermodynamics (T=%uK) =======\n", FA->temperature);
-					printf("  Free energy F  = %10.4f kcal/mol\n", post_thermo.free_energy);
-					printf("  Mean energy <E>= %10.4f kcal/mol\n", post_thermo.mean_energy);
-					printf("  Entropy S      = %10.6f kcal/(mol*K)\n", post_thermo.entropy);
-					printf("  -TS            = %10.4f kcal/mol\n", -static_cast<double>(FA->temperature) * post_thermo.entropy);
+					printf("\n======= Post-GA CF-proxy ensemble diagnostics (T parameter=%uK) =======\n", FA->temperature);
+					printf("  claim_validity = proxy_only\n");
+					printf("  F-like proxy   = %10.4f [legacy transform]\n", post_thermo.free_energy);
+					printf("  Mean CF       = %10.4f [CF units]\n", post_thermo.mean_energy);
+					printf("  S-like value  = %10.6f [proxy scale/K]\n", post_thermo.entropy);
+					printf("  -T*S-like     = %10.4f [proxy scale]\n", -static_cast<double>(FA->temperature) * post_thermo.entropy);
 					printf("  Heat capacity  = %10.4f\n", post_thermo.heat_capacity);
-					printf("  Std energy     = %10.4f kcal/mol\n", post_thermo.std_energy);
+					printf("  CF std dev     = %10.4f [CF units]\n", post_thermo.std_energy);
 					printf("  Ensemble size  = %d\n", n_chrom_snapshot);
 					printf("========================================================\n\n");
 				}

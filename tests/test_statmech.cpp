@@ -18,6 +18,12 @@ using namespace statmech;
 
 static constexpr double EPSILON = 1e-6;
 static constexpr double TEMPERATURE = 300.0;  // Kelvin
+static constexpr const char* ENERGY_RECEIPT =
+    "sha256:6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b";
+static constexpr const char* MEASURE_RECEIPT =
+    "sha256:d4735e3a265e16eee03f59718b9b5d03019c07d8b6c51f90da3a666eec13ab35";
+static constexpr const char* REFERENCE_RECEIPT =
+    "sha256:4e07408562bedb8b60ce05c1decfe3ad16b72230967de01f640b7e4729b49fce";
 
 // ===========================================================================
 // TEST FIXTURE
@@ -62,6 +68,441 @@ TEST_F(StatMechEngineTest, ClearResetsSize) {
     engine.add_sample(-8.0);
     engine.clear();
     EXPECT_EQ(engine.size(), 0u);
+}
+
+// ===========================================================================
+// SCIENTIFIC PROVENANCE AND FAIL-CLOSED CLAIM VALIDITY
+// ===========================================================================
+
+TEST(ScientificProvenanceTest, DefaultUnclassifiedResultIsProxyOnly) {
+    StatMechEngine eng(TEMPERATURE);
+    eng.add_sample(-10.0);
+
+    const auto th = eng.compute();
+    EXPECT_EQ(th.provenance.schema_version,
+              kScientificProvenanceSchemaVersion);
+    EXPECT_EQ(th.provenance.energy_domain, EnergyDomain::Unclassified);
+    EXPECT_EQ(th.provenance.ensemble_measure, EnsembleMeasure::Unclassified);
+    EXPECT_EQ(th.provenance.reference_state, ReferenceState::None);
+    EXPECT_EQ(th.claim_validity(), ClaimValidity::ProxyOnly);
+    EXPECT_TRUE(th.is_proxy_only());
+    EXPECT_FALSE(th.allows_canonical_physical_claim());
+    EXPECT_FALSE(th.allows_binding_physical_claim());
+}
+
+TEST(ScientificProvenanceTest, ContactFunctionOptimizerSamplesRemainProxyOnly) {
+    const ScientificProvenance provenance =
+        make_contact_function_optimizer_provenance();
+    EXPECT_EQ(provenance.energy_domain,
+              EnergyDomain::ContactFunctionArbitraryUnits);
+    EXPECT_EQ(provenance.ensemble_measure, EnsembleMeasure::OptimizerSamples);
+    EXPECT_EQ(provenance.reference_state, ReferenceState::BoundOnly);
+    EXPECT_FALSE(provenance.energy_provenance.empty());
+    EXPECT_FALSE(provenance.measure_provenance.empty());
+    EXPECT_FALSE(provenance.reference_provenance.empty());
+
+    StatMechEngine eng(TEMPERATURE, provenance);
+    eng.add_sample(-10.0);
+    eng.add_sample(-8.0);
+
+    const auto th = eng.compute();
+    EXPECT_EQ(th.claim_validity(), ClaimValidity::ProxyOnly);
+    EXPECT_TRUE(th.is_proxy_only());
+    EXPECT_FALSE(th.allows_canonical_physical_claim());
+    EXPECT_FALSE(th.allows_binding_physical_claim());
+}
+
+TEST(ScientificProvenanceTest, CalibratedEnumeratedAllowsCanonicalNotBinding) {
+    ScientificProvenance provenance;
+    provenance.energy_domain = EnergyDomain::CalibratedKcalPerMol;
+    provenance.ensemble_measure = EnsembleMeasure::EnumeratedMicrostates;
+    provenance.reference_state = ReferenceState::BoundOnly;
+    provenance.energy_provenance = ENERGY_RECEIPT;
+    provenance.measure_provenance = MEASURE_RECEIPT;
+    provenance.reference_provenance = REFERENCE_RECEIPT;
+
+    StatMechEngine eng(TEMPERATURE, provenance);
+    eng.add_sample(-10.0);
+    eng.add_sample(-8.0);
+
+    const auto th = eng.compute();
+    EXPECT_EQ(th.claim_validity(), ClaimValidity::CanonicalPhysical);
+    EXPECT_TRUE(th.allows_canonical_physical_claim());
+    EXPECT_FALSE(th.allows_binding_physical_claim());
+    EXPECT_FALSE(th.is_proxy_only());
+
+    const auto breakdown = eng.compute_breakdown();
+    EXPECT_EQ(breakdown.provenance, provenance);
+    EXPECT_EQ(breakdown.claim_validity(), ClaimValidity::CanonicalPhysical);
+    EXPECT_TRUE(breakdown.allows_canonical_physical_claim());
+    EXPECT_FALSE(breakdown.allows_binding_physical_claim());
+
+    provenance.ensemble_measure = EnsembleMeasure::WeightedQuadrature;
+    provenance.measure_provenance = REFERENCE_RECEIPT;
+    eng.set_provenance(provenance);
+    EXPECT_TRUE(eng.compute_at_temperature(310.0)
+                    .allows_canonical_physical_claim());
+}
+
+TEST(ScientificProvenanceTest, MatchedAssociationCycleAllowsBindingClaim) {
+    ScientificProvenance provenance;
+    provenance.energy_domain = EnergyDomain::CalibratedKcalPerMol;
+    provenance.ensemble_measure = EnsembleMeasure::WeightedQuadrature;
+    provenance.reference_state = ReferenceState::MatchedAssociationCycle;
+    provenance.energy_provenance = ENERGY_RECEIPT;
+    provenance.measure_provenance = MEASURE_RECEIPT;
+    provenance.reference_provenance = REFERENCE_RECEIPT;
+
+    StatMechEngine eng(TEMPERATURE);
+    eng.set_provenance(provenance);
+    eng.add_sample(-10.0);
+
+    const auto th = eng.compute();
+    EXPECT_EQ(th.provenance, provenance);
+    EXPECT_EQ(th.claim_validity(), ClaimValidity::BindingPhysical);
+    EXPECT_TRUE(th.allows_canonical_physical_claim());
+    EXPECT_TRUE(th.allows_binding_physical_claim());
+    EXPECT_FALSE(th.is_proxy_only());
+}
+
+TEST(ScientificProvenanceTest, MissingEvidenceStringsFailClosed) {
+    ScientificProvenance provenance;
+    provenance.energy_domain = EnergyDomain::CalibratedKcalPerMol;
+    provenance.ensemble_measure = EnsembleMeasure::EnumeratedMicrostates;
+    provenance.reference_state = ReferenceState::MatchedAssociationCycle;
+
+    EXPECT_EQ(provenance.claim_validity(), ClaimValidity::ProxyOnly);
+    EXPECT_FALSE(provenance.allows_canonical_physical_claim());
+    EXPECT_FALSE(provenance.allows_binding_physical_claim());
+
+    provenance.energy_provenance = ENERGY_RECEIPT;
+    provenance.measure_provenance = MEASURE_RECEIPT;
+    EXPECT_EQ(provenance.claim_validity(), ClaimValidity::CanonicalPhysical);
+    EXPECT_TRUE(provenance.allows_canonical_physical_claim());
+    EXPECT_FALSE(provenance.allows_binding_physical_claim());
+
+    provenance.reference_provenance = REFERENCE_RECEIPT;
+    EXPECT_EQ(provenance.claim_validity(), ClaimValidity::BindingPhysical);
+
+    provenance.schema_version = 1;
+    EXPECT_EQ(provenance.claim_validity(), ClaimValidity::ProxyOnly);
+}
+
+TEST(ScientificProvenanceTest, MalformedArtifactEvidenceFailsClosed) {
+    ScientificProvenance provenance;
+    provenance.energy_domain = EnergyDomain::CalibratedKcalPerMol;
+    provenance.ensemble_measure = EnsembleMeasure::EnumeratedMicrostates;
+    provenance.reference_state = ReferenceState::MatchedAssociationCycle;
+    provenance.energy_provenance = " \t\n\r\f\v";
+    provenance.measure_provenance = MEASURE_RECEIPT;
+    provenance.reference_provenance = REFERENCE_RECEIPT;
+
+    EXPECT_EQ(provenance.claim_validity(), ClaimValidity::ProxyOnly);
+    EXPECT_FALSE(provenance.allows_canonical_physical_claim());
+    EXPECT_FALSE(provenance.allows_binding_physical_claim());
+
+    provenance.energy_provenance = ENERGY_RECEIPT;
+    provenance.measure_provenance = "\t \r\n";
+    EXPECT_EQ(provenance.claim_validity(), ClaimValidity::ProxyOnly);
+
+    provenance.measure_provenance = MEASURE_RECEIPT;
+    provenance.reference_provenance = "\v\f ";
+    EXPECT_EQ(provenance.claim_validity(), ClaimValidity::CanonicalPhysical);
+    EXPECT_TRUE(provenance.allows_canonical_physical_claim());
+    EXPECT_FALSE(provenance.allows_binding_physical_claim());
+
+    provenance.reference_provenance = REFERENCE_RECEIPT;
+    EXPECT_EQ(provenance.claim_validity(), ClaimValidity::BindingPhysical);
+    EXPECT_TRUE(provenance.allows_binding_physical_claim());
+}
+
+TEST(ScientificProvenanceTest, UnicodeWhitespaceOnlyEvidenceFailsClosed) {
+    ScientificProvenance provenance;
+    provenance.energy_domain = EnergyDomain::CalibratedKcalPerMol;
+    provenance.ensemble_measure = EnsembleMeasure::EnumeratedMicrostates;
+    provenance.reference_state = ReferenceState::MatchedAssociationCycle;
+    provenance.energy_provenance = "\xC2\xA0";       // UTF-8 NO-BREAK SPACE
+    provenance.measure_provenance = MEASURE_RECEIPT;
+    provenance.reference_provenance = REFERENCE_RECEIPT;
+
+    EXPECT_EQ(provenance.claim_validity(), ClaimValidity::ProxyOnly);
+    EXPECT_FALSE(provenance.allows_canonical_physical_claim());
+
+    provenance.energy_provenance = ENERGY_RECEIPT;
+    provenance.measure_provenance = "\xE2\x80\x83"; // UTF-8 EM SPACE
+    EXPECT_EQ(provenance.claim_validity(), ClaimValidity::ProxyOnly);
+
+    provenance.measure_provenance = MEASURE_RECEIPT;
+    provenance.reference_provenance = "\xC2\xA0\xE2\x80\x83";
+    EXPECT_EQ(provenance.claim_validity(), ClaimValidity::CanonicalPhysical);
+    EXPECT_FALSE(provenance.allows_binding_physical_claim());
+
+    provenance.reference_provenance = REFERENCE_RECEIPT;
+    EXPECT_EQ(provenance.claim_validity(), ClaimValidity::BindingPhysical);
+    EXPECT_TRUE(provenance.allows_binding_physical_claim());
+}
+
+TEST(ScientificProvenanceTest, TrivialAndKnownFakeDigestsFailClosed) {
+    ScientificProvenance provenance;
+    provenance.energy_domain = EnergyDomain::CalibratedKcalPerMol;
+    provenance.ensemble_measure = EnsembleMeasure::EnumeratedMicrostates;
+    provenance.reference_state = ReferenceState::MatchedAssociationCycle;
+    provenance.measure_provenance = MEASURE_RECEIPT;
+    provenance.reference_provenance = REFERENCE_RECEIPT;
+
+    provenance.energy_provenance =
+        "sha256:0000000000000000000000000000000000000000000000000000000000000000";
+    EXPECT_EQ(provenance.claim_validity(), ClaimValidity::ProxyOnly);
+
+    provenance.energy_provenance =
+        "sha256:abababababababababababababababababababababababababababababababab";
+    EXPECT_EQ(provenance.claim_validity(), ClaimValidity::ProxyOnly);
+
+    provenance.energy_provenance =
+        "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
+    EXPECT_EQ(provenance.claim_validity(), ClaimValidity::ProxyOnly);
+
+    provenance.energy_provenance =
+        "sha256:3f7a9c2b1e4d5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a";
+    EXPECT_EQ(provenance.claim_validity(), ClaimValidity::ProxyOnly);
+
+    provenance.energy_provenance = ENERGY_RECEIPT;
+    EXPECT_EQ(provenance.claim_validity(), ClaimValidity::BindingPhysical);
+}
+
+TEST(ScientificProvenanceTest, MetadataDoesNotChangeNumericThermodynamics) {
+    StatMechEngine unclassified(TEMPERATURE);
+
+    ScientificProvenance provenance;
+    provenance.energy_domain = EnergyDomain::CalibratedKcalPerMol;
+    provenance.ensemble_measure = EnsembleMeasure::EnumeratedMicrostates;
+    provenance.reference_state = ReferenceState::MatchedAssociationCycle;
+    provenance.energy_provenance = ENERGY_RECEIPT;
+    provenance.measure_provenance = MEASURE_RECEIPT;
+    provenance.reference_provenance = REFERENCE_RECEIPT;
+    StatMechEngine classified(TEMPERATURE, provenance);
+
+    for (const double energy : {-12.0, -9.0, -7.5}) {
+        unclassified.add_sample(energy);
+        classified.add_sample(energy);
+    }
+
+    const auto proxy = unclassified.compute();
+    const auto physical = classified.compute();
+    EXPECT_DOUBLE_EQ(proxy.temperature, physical.temperature);
+    EXPECT_DOUBLE_EQ(proxy.log_Z, physical.log_Z);
+    EXPECT_DOUBLE_EQ(proxy.free_energy, physical.free_energy);
+    EXPECT_DOUBLE_EQ(proxy.mean_energy, physical.mean_energy);
+    EXPECT_DOUBLE_EQ(proxy.mean_energy_sq, physical.mean_energy_sq);
+    EXPECT_DOUBLE_EQ(proxy.heat_capacity, physical.heat_capacity);
+    EXPECT_DOUBLE_EQ(proxy.entropy, physical.entropy);
+    EXPECT_DOUBLE_EQ(proxy.std_energy, physical.std_energy);
+}
+
+TEST(ScientificProvenanceTest, MergingDifferentWitnessesDowngradesClaimOnly) {
+    ScientificProvenance provenance;
+    provenance.energy_domain = EnergyDomain::CalibratedKcalPerMol;
+    provenance.ensemble_measure = EnsembleMeasure::EnumeratedMicrostates;
+    provenance.energy_provenance = ENERGY_RECEIPT;
+    provenance.measure_provenance = MEASURE_RECEIPT;
+
+    StatMechEngine classified(TEMPERATURE, provenance);
+    classified.add_sample(-10.0);
+    StatMechEngine unclassified(TEMPERATURE);
+    unclassified.add_sample(-8.0);
+
+    classified.merge(unclassified);
+    ASSERT_EQ(classified.size(), 2u); // numeric merge is unchanged
+    const auto th = classified.compute();
+    EXPECT_EQ(th.claim_validity(), ClaimValidity::ProxyOnly);
+    EXPECT_FALSE(th.allows_canonical_physical_claim());
+    EXPECT_FALSE(th.allows_binding_physical_claim());
+}
+
+// ---------------------------------------------------------------------------
+// Fail-closed ledger contract
+//
+// A ThermodynamicBreakdown must never present an authorized ledger that the
+// underlying ensemble does not support. Two ways that could happen:
+//   1. an empty engine silently yielding an all-zero "valid" ledger; and
+//   2. an additive correction with no artifact receipt riding on the
+//      configurational ensemble's physical provenance.
+// Both must fail closed, and neither guard may perturb any numeric field.
+// ---------------------------------------------------------------------------
+
+namespace {
+
+// A fully-receipted canonical-physical witness, so any downgrade observed in
+// the tests below is attributable to the correction and nothing else.
+ScientificProvenance canonical_physical_witness() {
+    ScientificProvenance provenance;
+    provenance.energy_domain = EnergyDomain::CalibratedKcalPerMol;
+    provenance.ensemble_measure = EnsembleMeasure::EnumeratedMicrostates;
+    provenance.reference_state = ReferenceState::BoundOnly;
+    provenance.energy_provenance = ENERGY_RECEIPT;
+    provenance.measure_provenance = MEASURE_RECEIPT;
+    provenance.reference_provenance = REFERENCE_RECEIPT;
+    return provenance;
+}
+
+}  // namespace
+
+TEST(ScientificProvenanceTest, EmptyPhysicalMakeBreakdownThrows) {
+    // An engine carrying impeccable provenance but no samples still has no
+    // thermodynamic moments. make_breakdown() must reach compute() and fail
+    // rather than hand back a zero-filled ledger that reads as authorized.
+    StatMechEngine empty(TEMPERATURE, canonical_physical_witness());
+    ASSERT_EQ(empty.size(), 0u);
+
+    EXPECT_THROW((void)StatMechEngine::make_breakdown(empty), std::runtime_error);
+    EXPECT_THROW((void)empty.compute_breakdown(), std::runtime_error);
+
+    // The same must hold for the component-averaging overload.
+    const std::vector<EnergyComponents> no_components;
+    EXPECT_THROW(
+        (void)StatMechEngine::make_breakdown_with_components(empty, no_components),
+        std::runtime_error);
+
+    // And for a default (proxy-only) engine, so the guard is not
+    // provenance-conditional.
+    StatMechEngine empty_proxy(TEMPERATURE);
+    EXPECT_THROW((void)StatMechEngine::make_breakdown(empty_proxy), std::runtime_error);
+}
+
+TEST(ScientificProvenanceTest, UnreceiptedCorrectionFlagDowngradesLedger) {
+    const auto witness = canonical_physical_witness();
+    StatMechEngine engine(TEMPERATURE, witness);
+    engine.add_sample(-10.0);
+    engine.add_sample(-8.0);
+
+    // Baseline: no corrections, so the ledger keeps the ensemble's witness.
+    const auto clean = StatMechEngine::make_breakdown(engine);
+    ASSERT_EQ(clean.provenance, witness);
+    ASSERT_EQ(clean.claim_validity(), ClaimValidity::CanonicalPhysical);
+
+    // A has_* flag alone is enough to downgrade, even at value 0.0: the flag
+    // asserts a correction was intentionally supplied, and no correction
+    // carries an independent artifact receipt.
+    for (int which = 0; which < 3; ++which) {
+        const auto downgraded = StatMechEngine::make_breakdown(
+            engine,
+            0.0, which == 0,   // vib
+            0.0, which == 1,   // natural
+            0.0, which == 2);  // other
+
+        EXPECT_EQ(downgraded.claim_validity(), ClaimValidity::ProxyOnly) << "which=" << which;
+        EXPECT_TRUE(downgraded.is_proxy_only()) << "which=" << which;
+        EXPECT_FALSE(downgraded.allows_canonical_physical_claim()) << "which=" << which;
+        EXPECT_FALSE(downgraded.allows_binding_physical_claim()) << "which=" << which;
+
+        // Every numeric field is untouched by the metadata downgrade.
+        EXPECT_DOUBLE_EQ(downgraded.logZ_config, clean.logZ_config) << "which=" << which;
+        EXPECT_DOUBLE_EQ(downgraded.G_config_kcal_mol, clean.G_config_kcal_mol) << "which=" << which;
+        EXPECT_DOUBLE_EQ(downgraded.H_eff_kcal_mol, clean.H_eff_kcal_mol) << "which=" << which;
+        EXPECT_DOUBLE_EQ(downgraded.S_config_kcal_mol_K, clean.S_config_kcal_mol_K) << "which=" << which;
+        EXPECT_DOUBLE_EQ(downgraded.minus_T_S_config_kcal_mol, clean.minus_T_S_config_kcal_mol) << "which=" << which;
+        EXPECT_DOUBLE_EQ(downgraded.Cv_kcal_mol_K, clean.Cv_kcal_mol_K) << "which=" << which;
+        EXPECT_DOUBLE_EQ(downgraded.sigma_E_kcal_mol, clean.sigma_E_kcal_mol) << "which=" << which;
+        EXPECT_DOUBLE_EQ(downgraded.G_total_kcal_mol, clean.G_total_kcal_mol) << "which=" << which;
+    }
+}
+
+TEST(ScientificProvenanceTest, NonzeroUnreceiptedCorrectionValueDowngradesLedger) {
+    const auto witness = canonical_physical_witness();
+    StatMechEngine engine(TEMPERATURE, witness);
+    engine.add_sample(-10.0);
+    engine.add_sample(-8.0);
+
+    const auto clean = StatMechEngine::make_breakdown(engine);
+    ASSERT_EQ(clean.claim_validity(), ClaimValidity::CanonicalPhysical);
+
+    // A nonzero value downgrades even when the caller forgot to set has_*.
+    // Otherwise an unflagged correction would silently ride on the
+    // configurational ensemble's physical witness.
+    const double kCorrection = -1.25;
+    for (int which = 0; which < 3; ++which) {
+        const auto downgraded = StatMechEngine::make_breakdown(
+            engine,
+            which == 0 ? kCorrection : 0.0, false,
+            which == 1 ? kCorrection : 0.0, false,
+            which == 2 ? kCorrection : 0.0, false);
+
+        EXPECT_EQ(downgraded.claim_validity(), ClaimValidity::ProxyOnly) << "which=" << which;
+        EXPECT_FALSE(downgraded.allows_canonical_physical_claim()) << "which=" << which;
+
+        // The has_* flags still report exactly what the caller passed: the
+        // downgrade changes interpretation, never the recorded inputs.
+        EXPECT_FALSE(downgraded.has_vib) << "which=" << which;
+        EXPECT_FALSE(downgraded.has_natural) << "which=" << which;
+        EXPECT_FALSE(downgraded.has_other) << "which=" << which;
+
+        // Numerics: the configurational part is identical and G_total still
+        // sums the parts exactly.
+        EXPECT_DOUBLE_EQ(downgraded.G_config_kcal_mol, clean.G_config_kcal_mol) << "which=" << which;
+        EXPECT_DOUBLE_EQ(downgraded.H_eff_kcal_mol, clean.H_eff_kcal_mol) << "which=" << which;
+        EXPECT_DOUBLE_EQ(downgraded.S_config_kcal_mol_K, clean.S_config_kcal_mol_K) << "which=" << which;
+        EXPECT_DOUBLE_EQ(
+            downgraded.G_total_kcal_mol,
+            downgraded.G_config_kcal_mol + downgraded.G_vib_kcal_mol +
+                downgraded.G_natural_kcal_mol + downgraded.G_other_kcal_mol)
+            << "which=" << which;
+        EXPECT_DOUBLE_EQ(downgraded.G_total_kcal_mol, clean.G_config_kcal_mol + kCorrection)
+            << "which=" << which;
+    }
+
+    // compute_breakdown() shares the same guard.
+    const auto member = engine.compute_breakdown(kCorrection, 0.0, 0.0, false, false, false);
+    EXPECT_EQ(member.claim_validity(), ClaimValidity::ProxyOnly);
+    EXPECT_DOUBLE_EQ(member.G_config_kcal_mol, clean.G_config_kcal_mol);
+}
+
+TEST(ScientificProvenanceTest, ProxyLedgerStaysProxyWithAndWithoutCorrections) {
+    // Symmetry check: the downgrade never *upgrades* anything, and a
+    // contact-function ensemble is proxy-only in both directions.
+    StatMechEngine engine(TEMPERATURE, make_contact_function_optimizer_provenance());
+    engine.add_sample(-10.0);
+    engine.add_sample(-8.0);
+
+    EXPECT_EQ(StatMechEngine::make_breakdown(engine).claim_validity(), ClaimValidity::ProxyOnly);
+    EXPECT_EQ(StatMechEngine::make_breakdown(engine, -1.0, true).claim_validity(),
+              ClaimValidity::ProxyOnly);
+}
+
+TEST(ScientificProvenanceTest, MergeSamplesCannotSmuggleUnattestedEnergies) {
+    // merge(const StatMechEngine&) compares two witnesses. merge_samples()
+    // receives bare arrays over a transport that carries no witness at all, so
+    // it must not let unattested energies inherit an authorizing one.
+    const auto witness = canonical_physical_witness();
+    StatMechEngine physical(TEMPERATURE, witness);
+    physical.add_sample(-10.0);
+    ASSERT_EQ(physical.compute().claim_validity(), ClaimValidity::CanonicalPhysical);
+
+    const std::vector<double> energies{-4.0, -3.0};
+    const std::vector<double> multiplicities{1.0, 1.0};
+    physical.merge_samples(energies, multiplicities);
+
+    // Numeric merge is unchanged...
+    ASSERT_EQ(physical.size(), 3u);
+    EXPECT_DOUBLE_EQ(physical.ensemble()[1].energy, -4.0);
+    EXPECT_DOUBLE_EQ(physical.ensemble()[2].energy, -3.0);
+    // ...but the claim is gone.
+    EXPECT_EQ(physical.compute().claim_validity(), ClaimValidity::ProxyOnly);
+    EXPECT_FALSE(physical.compute().allows_canonical_physical_claim());
+
+    // An empty transport is a no-op and must not disturb a valid witness.
+    StatMechEngine untouched(TEMPERATURE, witness);
+    untouched.add_sample(-10.0);
+    untouched.merge_samples({}, {});
+    EXPECT_EQ(untouched.compute().claim_validity(), ClaimValidity::CanonicalPhysical);
+
+    // A proxy engine keeps its descriptive domain/measure strings verbatim, so
+    // existing CF aggregation paths emit identical metadata.
+    const auto cf = make_contact_function_optimizer_provenance();
+    StatMechEngine proxy(TEMPERATURE, cf);
+    proxy.add_sample(-10.0);
+    proxy.merge_samples(energies, multiplicities);
+    EXPECT_EQ(proxy.provenance(), cf);
+    EXPECT_EQ(proxy.compute().claim_validity(), ClaimValidity::ProxyOnly);
 }
 
 // ===========================================================================

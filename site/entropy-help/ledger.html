@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>entropy.help — Public Audit Ledger</title>
+  <title>entropy.help — Audit Registry Preview</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <style>
     body { font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
@@ -17,17 +17,18 @@
       <div>
         <div class="flex items-center gap-x-3">
           <div class="font-semibold text-2xl tracking-tight">entropy.help</div>
-          <div class="text-xs px-2 py-0.5 rounded bg-emerald-100 text-emerald-700 font-mono">PUBLIC LEDGER v0</div>
+          <div class="text-xs px-2 py-0.5 rounded bg-amber-100 text-amber-700 font-mono">PRE-PUBLICATION REGISTRY</div>
         </div>
-        <div class="text-slate-600 text-sm">Transparent thermodynamic audits for molecular docking</div>
+        <div class="text-slate-600 text-sm">Planned provenance-backed consistency audits for molecular docking</div>
       </div>
       <a href="index.html" class="text-sm text-blue-600 hover:underline">← Back to landing</a>
       <a href="request.html" class="text-sm text-emerald-600 hover:underline ml-4">Request new audit →</a>
       <span class="text-xs text-emerald-600 ml-4">Domain: entropy.help (pending registration)</span>
     </div>
 
-    <h1 class="text-3xl font-semibold tracking-tight mb-2">Public Audit Ledger</h1>
-    <p class="text-slate-600 max-w-2xl mb-8">All audits are computed from the raw TotalSampledPartitionFunction over the complete conformational ensemble. Every report includes full provenance and Gate 5/6 verification.</p>
+    <h1 class="text-3xl font-semibold tracking-tight mb-2">Audit Registry Preview</h1>
+    <p class="text-slate-600 max-w-2xl mb-3">This registry currently contains planned, unverified candidates only. No record is complete, published, or reproducible until its on-disk JSON report, Markdown summary, and provenance record pass <code>scripts/validate_thermo_claims.py</code>.</p>
+    <p class="text-slate-500 max-w-2xl mb-8 text-sm">Any future numerical ledger must declare whether its inputs are physical energies or CF/contact-function scoring proxies. A finite-sample partition calculation alone is not experimental binding ΔG.</p>
 
     <div id="ledger-container" class="bg-white border border-slate-200 rounded-xl overflow-hidden">
       <table class="w-full text-sm">
@@ -35,10 +36,10 @@
           <tr class="bg-slate-100 text-left">
             <th class="px-6 py-3 font-medium">Audit ID</th>
             <th class="px-6 py-3 font-medium">Target</th>
-            <th class="px-6 py-3 font-medium">F_config (kcal/mol)</th>
-            <th class="px-6 py-3 font-medium">S_config (kcal/mol/K)</th>
-            <th class="px-6 py-3 font-medium">Verdict</th>
-            <th class="px-6 py-3 font-medium">Links</th>
+            <th class="px-6 py-3 font-medium">Status</th>
+            <th class="px-6 py-3 font-medium">Artifact status</th>
+            <th class="px-6 py-3 font-medium">Claim</th>
+            <th class="px-6 py-3 font-medium">Evidence</th>
           </tr>
         </thead>
         <tbody id="audits-tbody">
@@ -48,8 +49,7 @@
     </div>
 
     <div class="mt-6 text-xs text-slate-500">
-      More audits will be added automatically when new reports are published. 
-      <a href="https://github.com/LeBonhommePharma/FlexAIDdS/tree/feature/thermo-totalsampled-a21/docs/entropy-help/audits" class="underline" target="_blank">Browse full audit directory on GitHub</a>.
+      Candidate records may be added before execution, but they must remain explicitly unverified and carry no result values. Publication status is conditional on deposited evidence.
     </div>
   </div>
 
@@ -57,8 +57,15 @@
     async function loadAudits() {
       const tbody = document.getElementById('audits-tbody');
       try {
-        // Relative path works when served from the same directory structure
-        const response = await fetch('../docs/entropy-help/audits/audits.json');
+        // Use the repository registry until a deployment bundles it with the site.
+        // Pinned to the default branch (`main`), which is where the registry
+        // lives today. Consequences to keep in mind: this page renders the
+        // registry from `main`, not from the commit the site was built at, so a
+        // registry edit on a feature branch is invisible here until it merges;
+        // and if the default branch is ever renamed the fetch 404s. The catch
+        // below is the fail-closed path for that case — it must keep rendering
+        // "no audit result should be inferred", never a stale cached table.
+        const response = await fetch('https://raw.githubusercontent.com/LeBonhommePharma/FlexAIDdS/main/docs/entropy-help/audits/audits.json');
         if (!response.ok) throw new Error('Failed to load audits.json');
         
         const data = await response.json();
@@ -67,31 +74,35 @@
         tbody.innerHTML = '';
 
         if (audits.length === 0) {
-          tbody.innerHTML = '<tr><td colspan="6" class="px-6 py-8 text-center text-slate-500">No audits published yet.</td></tr>';
+          tbody.innerHTML = '<tr><td colspan="6" class="px-6 py-8 text-center text-slate-500">No audit candidates registered yet.</td></tr>';
           return;
         }
 
         audits.forEach(audit => {
           const row = document.createElement('tr');
+          const status = audit.status || 'UNVERIFIED';
+          const artifactStatus = audit.artifact_status || 'not deposited';
+          const artifacts = audit.artifacts || {};
+          const artifactLinks = [];
+          if (artifacts.report_json) artifactLinks.push(`<a href="${artifacts.report_json}" class="text-blue-600 hover:underline" target="_blank">JSON</a>`);
+          if (artifacts.report_markdown) artifactLinks.push(`<a href="${artifacts.report_markdown}" class="text-blue-600 hover:underline" target="_blank">MD</a>`);
+          if (artifacts.provenance) artifactLinks.push(`<a href="${artifacts.provenance}" class="text-blue-600 hover:underline" target="_blank">Provenance</a>`);
           row.innerHTML = `
             <td class="px-6 py-4 font-mono text-xs">${audit.id}</td>
             <td class="px-6 py-4">${audit.target}</td>
-            <td class="px-6 py-4 font-medium text-emerald-700">${audit.f_config_kcal_mol}</td>
-            <td class="px-6 py-4">${audit.s_config_kcal_mol_K}</td>
             <td class="px-6 py-4">
-              <span class="text-xs px-2 py-0.5 rounded ${audit.verdict.includes('CORRECTION') ? 'bg-emerald-100 text-emerald-700' : 'bg-blue-100 text-blue-700'}">
-                ${audit.verdict}
+              <span class="text-xs px-2 py-0.5 rounded bg-amber-100 text-amber-700">
+                ${status}
               </span>
             </td>
-            <td class="px-6 py-4 text-xs space-x-2">
-              <a href="${audit.json_url}" class="text-blue-600 hover:underline" target="_blank">JSON</a>
-              <a href="${audit.md_url}" class="text-blue-600 hover:underline" target="_blank">MD</a>
-            </td>
+            <td class="px-6 py-4">${artifactStatus}</td>
+            <td class="px-6 py-4">${audit.claim || 'No result claimed.'}</td>
+            <td class="px-6 py-4 text-xs space-x-2">${artifactLinks.join(' ') || 'None deposited'}</td>
           `;
           tbody.appendChild(row);
         });
       } catch (err) {
-        tbody.innerHTML = `<tr><td colspan="6" class="px-6 py-8 text-center text-red-500">Failed to load audits: ${err.message}. <a href="https://github.com/LeBonhommePharma/FlexAIDdS/tree/feature/thermo-totalsampled-a21/docs/entropy-help/audits" class="underline">View on GitHub</a></td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="6" class="px-6 py-8 text-center text-red-500">Failed to load the planning registry: ${err.message}. No audit result should be inferred from this page.</td></tr>`;
       }
     }
 

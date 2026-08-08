@@ -14,6 +14,21 @@ import FlexAIDdS
 
 /// Summary of a detected binding cleft for LLM interpretation.
 public struct CleftFeatures: Sendable, Codable {
+    /// Evidence governing whether these geometric features may be turned into
+    /// druggability / ligand-design claims. Geometry alone never authorizes a
+    /// potency statement, so this fails closed to proxy-only.
+    public let scientificProvenance: ScientificProvenance?
+
+    /// Strongest claim supported by the declared provenance.
+    public var claimValidity: ClaimValidity {
+        scientificProvenance?.claimValidity ?? .proxyOnly
+    }
+
+    /// Druggability and ligand-property prescriptions are binding claims.
+    public var allowsDrugDesignClaims: Bool {
+        claimValidity == .bindingPhysical
+    }
+
     /// Volume in cubic Angstroms
     public let volume: Double
     /// Effective pocket depth (Angstroms)
@@ -33,7 +48,9 @@ public struct CleftFeatures: Sendable, Codable {
 
     public init(volume: Double, depth: Double, sphereCount: Int,
                 maxSphereRadius: Double, hydrophobicFraction: Double,
-                anchorResidueCount: Int, elongation: Double, solventExposure: Double) {
+                anchorResidueCount: Int, elongation: Double, solventExposure: Double,
+                scientificProvenance: ScientificProvenance? = nil) {
+        self.scientificProvenance = scientificProvenance
         self.volume = volume
         self.depth = depth
         self.sphereCount = sphereCount
@@ -58,6 +75,9 @@ public enum DruggabilityTier: String, Sendable, Codable {
     case moderate
     case low
     case undruggable
+    /// No druggability verdict may be issued for this record. Distinct from
+    /// `undruggable`, which is itself a drug-design claim.
+    case unavailable
 }
 
 /// Assessment of a binding site's druggability.
@@ -85,7 +105,9 @@ public actor CleftDruggabilityAssessor {
         All geometric values are pre-computed — DO NOT perform calculations. \
         Assess whether the pocket can accommodate a drug-like small molecule. \
         Consider volume (200-1000 ų is drug-like), hydrophobicity, depth, \
-        anchor residues, and solvent exposure. Be concise and actionable.
+        anchor residues, and solvent exposure. Emit druggability tiers and \
+        ligand-property prescriptions only for binding_physical inputs. \
+        Be concise and actionable.
         """
 
     public init() {
@@ -93,13 +115,28 @@ public actor CleftDruggabilityAssessor {
     }
 
     /// Assess druggability of a binding cleft.
+    ///
+    /// Druggability tiers and ligand-property prescriptions are drug-design
+    /// claims. Without a calibrated matched association cycle the pocket can
+    /// only be described geometrically, so the model is not consulted.
     public func assess(cleft: CleftFeatures) async throws -> CleftAssessment {
+        guard cleft.allowsDrugDesignClaims else {
+            let shape = cleft.elongation < 0.3 ? "spherical"
+                : cleft.elongation < 0.7 ? "oval" : "elongated"
+            return CleftAssessment(
+                druggability: .unavailable,
+                summary: "Geometry-only cavity descriptor: \(String(format: "%.0f", cleft.volume)) ų \(shape) pocket, \(String(format: "%.1f", cleft.depth)) Å deep, \(String(format: "%.0f", cleft.hydrophobicFraction * 100))% hydrophobic surface. No druggability tier is assigned (claim_validity=\(cleft.claimValidity.rawValue)).",
+                suggestedLigandProperties: "Ligand-property prescriptions are unavailable without binding_physical provenance.",
+                warnings: ["Druggability, affinity and potency claims are unavailable; this record is a cavity-geometry diagnostic only."]
+            )
+        }
         let prompt = buildPrompt(cleft: cleft)
-        return try await session.respond(to: prompt, generating: CleftAssessment.self)
+        return try await session.respond(to: prompt, generating: CleftAssessment.self).content
     }
 
     private func buildPrompt(cleft: CleftFeatures) -> String {
         var p = "Assess this binding pocket. Produce a CleftAssessment.\n"
+        p += "Claim validity: \(cleft.claimValidity.rawValue)\n"
         p += "Volume: \(String(format: "%.0f", cleft.volume)) ų\n"
         p += "Depth: \(String(format: "%.1f", cleft.depth)) Å\n"
         p += "Shape: \(cleft.elongation < 0.3 ? "spherical" : cleft.elongation < 0.7 ? "oval" : "elongated") (index \(String(format: "%.2f", cleft.elongation)))\n"
@@ -123,6 +160,8 @@ public actor CleftDruggabilityAssessor {
 /// Platform-independent druggability tier.
 public enum CrossPlatformDruggabilityTier: String, Sendable, Codable {
     case high, moderate, low, undruggable
+    /// No druggability verdict may be issued for this record.
+    case unavailable
 }
 
 /// Platform-independent cleft assessment.
@@ -149,7 +188,22 @@ public struct RuleBasedCleftAssessor: Sendable {
     public init() {}
 
     /// Assess druggability using geometric thresholds.
+    ///
+    /// Cavity geometry can be reported at any provenance level, but a
+    /// druggability tier and a ligand-property prescription are drug-design
+    /// claims and require `binding_physical` evidence.
     public func assess(cleft: CleftFeatures) -> CrossPlatformCleftAssessment {
+        guard cleft.allowsDrugDesignClaims else {
+            let shape = cleft.elongation < 0.3 ? "spherical"
+                : cleft.elongation < 0.7 ? "oval" : "elongated"
+            return CrossPlatformCleftAssessment(
+                druggability: .unavailable,
+                summary: "Geometry-only cavity descriptor: \(String(format: "%.0f", cleft.volume)) ų \(shape) pocket, \(String(format: "%.1f", cleft.depth)) Å deep, \(String(format: "%.0f", cleft.hydrophobicFraction * 100))% hydrophobic surface, \(cleft.anchorResidueCount) lining residues. No druggability tier is assigned (claim_validity=\(cleft.claimValidity.rawValue)).",
+                suggestedLigandProperties: "Ligand-property prescriptions are unavailable without binding_physical provenance.",
+                warnings: ["Druggability, affinity and potency claims are unavailable; this record is a cavity-geometry diagnostic only."]
+            )
+        }
+
         var warnings: [String] = []
         var score = 0.0
 

@@ -347,7 +347,27 @@ jobs:
           PYTHONPATH: python
         run: |
           python -m pip install scipy
-          pytest -q python/tests/test_statmech_smoke.py python/tests/test_statmech.py python/tests/test_thermodynamics.py python/tests/test_encom.py python/tests/test_energy_matrix.py python/tests/test_train_256x256.py
+          pytest -q python/tests/test_statmech_smoke.py python/tests/test_statmech.py python/tests/test_thermodynamics.py python/tests/test_thermodynamics_dataclass.py python/tests/test_import_fallback.py python/tests/test_encom.py python/tests/test_energy_matrix.py python/tests/test_train_256x256.py
+
+  typescript_claim_firewall:
+    name: TypeScript thermodynamic claim firewall
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: typescript/package-lock.json
+      - name: Install TypeScript workspace
+        working-directory: typescript
+        run: npm ci
+      - name: Typecheck TypeScript consumers
+        working-directory: typescript
+        run: npm run typecheck
+      - name: Test TypeScript claim firewall
+        working-directory: typescript
+        run: npm test
 
   repo_hygiene:
     name: Repository hygiene (env + agent paths)
@@ -361,6 +381,10 @@ jobs:
         run: python -m pip install --upgrade pip pytest pyyaml numpy
       - name: Check tracked secrets and hardcoded agent paths
         run: python3 scripts/check_repo_hygiene.py
+      - name: Validate public thermodynamic claims and provenance firewall
+        run: |
+          python3 scripts/validate_thermo_claims.py
+          python3 -m pytest tests/test_thermo_claim_firewall.py -q
       - name: Validate flexaidds skill packaging
         env:
           FLEXAIDDS_REQUIRE_BUILD: '0'

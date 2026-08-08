@@ -7,6 +7,40 @@
 // Copyright 2024-2026 Louis-Philippe Morency / NRGlab, Universite de Montreal
 // SPDX-License-Identifier: Apache-2.0
 
+// The provenance vocabulary and the claim predicates live in exactly one
+// module (./scientificProvenance.ts) so the shared model, the SDK and the
+// viewer cannot drift apart. They are re-exported here for source
+// compatibility with existing importers.
+import {
+  PROXY_ONLY_PROVENANCE,
+  normalizeScientificProvenance,
+  type ScientificProvenance,
+} from './scientificProvenance.js';
+import { normalizeAvailability } from './wireNormalization.js';
+
+export {
+  SCIENTIFIC_PROVENANCE_SCHEMA_VERSION,
+  PROXY_ONLY_PROVENANCE,
+  hasArtifactSha256,
+  hasStrictAvailability,
+  normalizeScientificProvenance,
+  deriveClaimValidity,
+  claimValidityForRecord,
+  allowsCanonicalClaims,
+  allowsBindingClaims,
+} from './scientificProvenance.js';
+
+export type {
+  EnergyDomain,
+  EnsembleMeasure,
+  ReferenceState,
+  ClaimValidity,
+  ScientificProvenance,
+  ThermodynamicClaimSource,
+} from './scientificProvenance.js';
+
+type UnknownRecord = Record<string, unknown>;
+
 /** Global binding population — the ensemble of all binding modes. */
 export interface BindingPopulation {
   /** All binding modes, sorted by free energy */
@@ -45,13 +79,13 @@ export interface BindingMode {
   /** Number of poses in this mode */
   size: number;
 
-  /** Helmholtz free energy F (kcal/mol) */
+  /** Legacy ensemble score; physical Helmholtz F only with supporting provenance. */
   freeEnergy: number;
 
-  /** Conformational entropy S (kcal mol^-1 K^-1) */
+  /** Legacy entropy slot; physical units only with supporting provenance. */
   entropy: number;
 
-  /** Boltzmann-weighted mean energy <E> (kcal/mol) */
+  /** Legacy mean-energy slot; physical units only with supporting provenance. */
   enthalpy: number;
 
   /** Heat capacity C_v */
@@ -75,7 +109,7 @@ export interface Pose {
   /** OPTICS clustering order */
   order: number;
 
-  /** Complementarity function score (kcal/mol) */
+  /** Complementarity-function score in arbitrary CF units. */
   cf: number;
 
   /** Boltzmann weight within the binding mode */
@@ -87,6 +121,12 @@ export interface Pose {
 
 /** Thermodynamic properties of an ensemble. */
 export interface Thermodynamics {
+  /** Whether the source supplied thermodynamic moments. */
+  available?: boolean;
+  /** Machine-readable reason when physical thermodynamics are unavailable. */
+  unavailableReason?: string;
+  /** Scientific provenance; absent legacy metadata is proxy-only. */
+  scientificProvenance?: ScientificProvenance;
   /** Temperature (K) */
   temperature: number;
   /** ln(Z) */
@@ -178,10 +218,46 @@ export interface HealthCorrelation {
 
 /** Serialize a BindingPopulation to JSON (matching Swift Codable format). */
 export function serializePopulation(pop: BindingPopulation): string {
-  return JSON.stringify(pop, null, 2);
+  return JSON.stringify(withNormalizedProvenance(pop), null, 2);
+}
+
+/**
+ * Attach normalized provenance and a deliberate availability flag.
+ *
+ * Numeric fields and mode order are passed through untouched — this only
+ * rewrites interpretation metadata. Availability is resolved through the one
+ * shared wire normalizer so a record that never declared it can never be
+ * presented as physical.
+ */
+function withNormalizedMetadata(thermo: Thermodynamics | undefined): Thermodynamics {
+  const raw = (thermo ?? {}) as Thermodynamics & UnknownRecord;
+  const availability = normalizeAvailability(raw);
+  const normalized: Thermodynamics = {
+    ...raw,
+    available: availability.available,
+    scientificProvenance: normalizeScientificProvenance(
+      raw.scientificProvenance ?? raw.scientific_provenance,
+    ),
+  };
+  if (!availability.available && normalized.unavailableReason === undefined) {
+    normalized.unavailableReason = availability.unavailableReason;
+  }
+  delete (normalized as Thermodynamics & UnknownRecord).scientific_provenance;
+  return normalized;
+}
+
+function withNormalizedProvenance(population: BindingPopulation): BindingPopulation {
+  const globalThermodynamics = withNormalizedMetadata(population.globalThermodynamics);
+
+  const modes = (population.modes ?? []).map((mode) => {
+    if (!mode.thermodynamics) return mode;
+    return { ...mode, thermodynamics: withNormalizedMetadata(mode.thermodynamics) };
+  });
+
+  return { ...population, globalThermodynamics, modes };
 }
 
 /** Deserialize a BindingPopulation from JSON. */
 export function deserializePopulation(json: string): BindingPopulation {
-  return JSON.parse(json) as BindingPopulation;
+  return withNormalizedProvenance(JSON.parse(json) as BindingPopulation);
 }

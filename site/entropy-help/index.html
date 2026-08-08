@@ -3,8 +3,8 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>entropy.help — Public thermodynamic audits for molecular docking</title>
-  <meta name="description" content="Independent validation of F_config, S_config, and TotalSampledPartitionFunction for molecular docking results. Public thermodynamic audits from the FlexAIDdS project.">
+  <title>entropy.help — Planned thermodynamic consistency audits for molecular docking</title>
+  <meta name="description" content="Draft framework for provenance-backed consistency audits of molecular-docking ensemble summaries. No completed entropy.help audits are published in this repository yet.">
   <meta name="robots" content="index,follow">
   <script src="https://cdn.tailwindcss.com"></script>
   <script>
@@ -36,12 +36,12 @@
     <div class="max-w-5xl mx-auto px-6 py-4 flex items-center justify-between">
       <div class="flex items-center gap-x-3">
         <div class="font-semibold text-xl tracking-tight">entropy.help</div>
-        <div class="text-[10px] font-mono px-1.5 py-0.5 rounded bg-slate-100 text-slate-500 tracking-[0.5px]">PUBLIC AUDITS</div>
+        <div class="text-[10px] font-mono px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 tracking-[0.5px]">AUDIT FRAMEWORK — PREVIEW</div>
       </div>
       <nav class="flex items-center gap-x-6 text-sm">
         <a href="#what" class="text-slate-600 hover:text-slate-900 transition-colors">What is an audit?</a>
         <a href="#gap" class="text-slate-600 hover:text-slate-900 transition-colors">The entropy gap</a>
-        <a href="#audits" class="text-slate-600 hover:text-slate-900 transition-colors">Reference audits</a>
+        <a href="#audits" class="text-slate-600 hover:text-slate-900 transition-colors">Planned cases</a>
         <a href="#request" class="text-slate-600 hover:text-slate-900 transition-colors">Request</a>
         <a href="https://github.com/LeBonhommePharma/FlexAIDdS/issues/219" target="_blank" rel="noopener" class="text-slate-500 hover:text-slate-700 font-medium">Coordination #219</a>
       </nav>
@@ -52,10 +52,10 @@
   <section class="max-w-5xl mx-auto px-6 pt-16 pb-12 text-center">
     <div class="max-w-3xl mx-auto">
       <h1 class="text-5xl md:text-6xl font-semibold tracking-[-0.025em] leading-none text-balance">
-        entropy.help — Public thermodynamic audits for molecular docking
+        entropy.help — Planned consistency audits for molecular docking
       </h1>
       <p class="mt-6 text-2xl text-slate-600 tracking-[-0.01em]">
-        Independent validation of F_config, S_config, and TotalSampledPartitionFunction
+        A draft, provenance-first protocol for inspecting sampled-ensemble calculations
       </p>
       <div class="mt-8 text-sm text-slate-500">
         A transparent service of the <a href="https://github.com/LeBonhommePharma/FlexAIDdS" target="_blank" rel="noopener" class="underline hover:text-slate-700">FlexAIDdS</a> project<br>
@@ -70,31 +70,32 @@
     <section id="what">
       <h2 class="section-head text-2xl font-semibold tracking-tight mb-4">What is an Entropy Audit?</h2>
       <div class="prose-custom max-w-3xl text-[15.2px] text-slate-700">
-        <p>An entropy audit independently recomputes the configurational thermodynamic quantities reported by a docking engine from the underlying pose ensemble.</p>
-        <p>The core quantities audited are:</p>
+        <p>The proposed entropy.help workflow would independently recompute finite-sample ensemble summaries from deposited docking outputs and compare them with the originating engine.</p>
+        <p>The planned checks include:</p>
         <ul class="list-disc pl-5 space-y-1.5 my-4 text-[15px]">
-          <li><strong class="font-medium text-slate-800">F_config</strong> — configurational free energy derived from the sampled partition function</li>
-          <li><strong class="font-medium text-slate-800">S_config</strong> — configurational entropy</li>
-          <li><strong class="font-medium text-slate-800">TotalSampledPartitionFunction</strong> — the finite-sample partition function used in the original analysis</li>
+          <li><strong class="font-medium text-slate-800">Energy provenance</strong> — whether inputs are physical energies or CF/contact-function scoring proxies</li>
+          <li><strong class="font-medium text-slate-800">Finite-sample ledger</strong> — log Z, mean score/energy, and Shannon terms under the explicitly declared weighting convention</li>
+          <li><strong class="font-medium text-slate-800">Reproducibility evidence</strong> — source revision, binary/input digests, command, seed, and deposited ensemble</li>
         </ul>
-        <p>Audits are performed using the same statistical mechanics formalism implemented in the reference engine (see statmech.cpp and BindingMode.cpp) but executed as an independent verification step on deposited or publicly archived pose data. Results and full methodology are published for community scrutiny.</p>
+        <p>A result will not be called physical binding free energy merely because a Boltzmann formula was applied. FlexAIDdS GA scores are CF/contact-function proxies unless an explicit, validated energy calibration and reference-state treatment says otherwise.</p>
+        <p><strong>Current status:</strong> no completed entropy.help audit artifact package is present in this repository. The material below is planning documentation, not validation evidence.</p>
       </div>
     </section>
 
     <!-- Why it matters (the entropy gap) -->
     <section id="gap">
-      <h2 class="section-head text-2xl font-semibold tracking-tight mb-4">Why it matters (the entropy gap)</h2>
+      <h2 class="section-head text-2xl font-semibold tracking-tight mb-4">Why provenance matters</h2>
       <div class="prose-custom max-w-3xl text-[15.2px] text-slate-700">
-        <p>Conventional docking scoring functions routinely neglect or approximate the configurational entropy term. This produces a systematic bias that favors rigid, enthalpically dominated poses and under-ranks binding modes in which entropy makes a substantial contribution.</p>
-        <p>The result is an “entropy gap” between the quantities reported by the docking tool and the true thermodynamic profile of the system. Independent public audits close this gap by supplying reproducible, engine-agnostic values for F_config, S_config, and the partition function against which original reports can be compared.</p>
-        <p>These audits do not replace the original docking campaign; they provide an external consistency check required for credible use of docking results in downstream decision-making, especially in psychopharmacology and structure-based design.</p>
+        <p>Docking scores can omit configurational, vibrational, solvent, concentration, and reference-state contributions. They also may use arbitrary score units. A partition sum over those scores can be useful for checking software consistency, but it does not by itself recover a physical binding free energy.</p>
+        <p>The planned audit layer is therefore narrower and falsifiable: it will state exactly which ensemble was used, preserve its sampling and multiplicity policy, recompute the declared quantities, and publish the artifacts needed to reproduce that check.</p>
+        <p>Experimental-affinity or true-ΔG claims remain out of scope unless their additional physical assumptions and validation evidence are deposited explicitly.</p>
       </div>
     </section>
 
-    <!-- First reference audits -->
+    <!-- Planned reference cases -->
     <section id="audits">
-      <h2 class="section-head text-2xl font-semibold tracking-tight mb-4">Published Reference Audits</h2>
-      <p class="text-slate-600 text-[15px] max-w-3xl mb-5">The following audits have been computed using the raw TotalSampledPartitionFunction over complete conformational ensembles. Each includes full provenance, Gate 5/6 results, and reproducible thermodynamic tables.</p>
+      <h2 class="section-head text-2xl font-semibold tracking-tight mb-4">Planned Audit Candidates — Unverified</h2>
+      <p class="text-slate-600 text-[15px] max-w-3xl mb-5">These are candidate case studies only. No numerical result, successful correction, or reproducibility verdict is claimed until a JSON report, Markdown summary, and separate provenance record are deposited and pass the repository claim validator.</p>
 
       <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div class="audit-card border border-slate-200 bg-white rounded-lg p-5">
@@ -103,18 +104,9 @@
               <div class="font-semibold">AUD-2026-001</div>
               <div class="text-sm text-slate-600">μ-Opioid receptor + fentanyl</div>
             </div>
-            <div class="text-xs px-2 py-0.5 rounded bg-emerald-100 text-emerald-700">REPRODUCIBLE_WITH_CORRECTION</div>
+            <div class="text-xs px-2 py-0.5 rounded bg-amber-100 text-amber-700">PLANNED_UNVERIFIED</div>
           </div>
-          <div class="mt-3 text-sm space-y-1">
-            <div><span class="font-medium">F_config:</span> -11.21 kcal/mol</div>
-            <div><span class="font-medium">S_config:</span> +0.01113 kcal mol⁻¹ K⁻¹</div>
-            <div><span class="font-medium">Entropy contribution:</span> ~3.34 kcal/mol (decisive)</div>
-          </div>
-          <div class="mt-3 text-xs">
-            <a href="https://github.com/LeBonhommePharma/FlexAIDdS/blob/feature/thermo-totalsampled-a21/docs/entropy-help/audits/AUD-2026-001_fentanyl_muOR.json" class="text-blue-600 hover:underline" target="_blank">Full JSON report</a> · 
-            <a href="https://github.com/LeBonhommePharma/FlexAIDdS/blob/feature/thermo-totalsampled-a21/docs/entropy-help/audits/AUD-2026-001_fentanyl_muOR.md" class="text-blue-600 hover:underline" target="_blank">Summary</a>
-          </div>
-          <div class="mt-1 text-[10px] text-slate-500">Classic entropy rescue case. Enthalpy-only selected decoy (RMSD 8.3 Å).</div>
+          <div class="mt-3 text-sm text-slate-600">Candidate psychopharmacology case. No deposited ensemble or audited result is present; no outcome is claimed.</div>
         </div>
 
         <div class="audit-card border border-slate-200 bg-white rounded-lg p-5">
@@ -123,24 +115,14 @@
               <div class="font-semibold">AUD-2026-002</div>
               <div class="text-sm text-slate-600">Thrombin + dabigatran (negative control)</div>
             </div>
-            <div class="text-xs px-2 py-0.5 rounded bg-blue-100 text-blue-700">REPRODUCIBLE_NO_CORRECTION_NEEDED</div>
+            <div class="text-xs px-2 py-0.5 rounded bg-amber-100 text-amber-700">PLANNED_UNVERIFIED</div>
           </div>
-          <div class="mt-3 text-sm space-y-1">
-            <div><span class="font-medium">F_config:</span> -8.73 kcal/mol</div>
-            <div><span class="font-medium">S_config:</span> +0.0013 kcal mol⁻¹ K⁻¹</div>
-            <div><span class="font-medium">Entropy contribution:</span> ~0.39 kcal/mol (minimal)</div>
-          </div>
-          <div class="mt-3 text-xs">
-            <a href="https://github.com/LeBonhommePharma/FlexAIDdS/blob/feature/thermo-totalsampled-a21/docs/entropy-help/audits/AUD-2026-002_thrombin_dabigatran.json" class="text-blue-600 hover:underline" target="_blank">Full JSON report</a> · 
-            <a href="https://github.com/LeBonhommePharma/FlexAIDdS/blob/feature/thermo-totalsampled-a21/docs/entropy-help/audits/AUD-2026-002_thrombin_dabigatran.md" class="text-blue-600 hover:underline" target="_blank">Summary</a>
-          </div>
-          <div class="mt-1 text-[10px] text-slate-500">Negative control. Rank unchanged — framework does not invent entropy.</div>
+          <div class="mt-3 text-sm text-slate-600">Candidate negative-control case. No deposited ensemble or audited result is present; no outcome is claimed.</div>
         </div>
       </div>
 
       <div class="mt-4 text-xs text-slate-500">
-        All audits computed with the raw <strong>TotalSampledPartitionFunction</strong> (pre-clustering) + Gate 5/6 verification. 
-        <a href="https://github.com/LeBonhommePharma/FlexAIDdS/tree/feature/thermo-totalsampled-a21/docs/entropy-help/audits" class="underline" target="_blank">Browse all audits on GitHub</a>.
+        Registry status is fail-closed: planned records carry no thermodynamic values or result links. A future status upgrade requires repository-local artifacts and provenance.
       </div>
     </section>
 
@@ -148,7 +130,7 @@
     <section id="request">
       <h2 class="section-head text-2xl font-semibold tracking-tight mb-4">Request an Entropy Audit</h2>
       <div class="prose-custom max-w-3xl text-[15.2px] text-slate-700">
-        <p>Submit a docking results directory (or individual complex) for independent thermodynamic validation using the TotalSampledPartitionFunction.</p>
+        <p>Submit a docking results directory (or individual complex) as a candidate for a future consistency audit. Submission is not validation and does not create a published result.</p>
         <p class="mt-3">
           <a href="request.html" class="inline-block px-4 py-2 bg-slate-900 text-white rounded text-sm font-medium hover:bg-black">Request an Audit (simple form)</a>
           <span class="text-xs ml-2 text-slate-500">or <a href="https://github.com/LeBonhommePharma/FlexAIDdS/issues/219" target="_blank" class="underline">open directly on GitHub #219</a></span>
@@ -159,8 +141,8 @@
   </div>
 
   <footer class="border-t border-slate-200 py-8 text-center text-xs text-slate-500">
-    <div>entropy.help is an independent public good seeded by the FlexAIDdS project.</div>
-    <div class="mt-1">Manifesto · <a href="https://github.com/LeBonhommePharma/FlexAIDdS/blob/feature/thermo-totalsampled-a21/docs/entropy-help/MANIFESTO.md" target="_blank">Read the manifesto</a> · Coordination <a href="https://github.com/LeBonhommePharma/FlexAIDdS/issues/219" target="_blank" class="underline">#219</a></div>
+    <div>entropy.help is a draft open-science initiative seeded by the FlexAIDdS project.</div>
+    <div class="mt-1">Concept note · <a href="https://github.com/LeBonhommePharma/FlexAIDdS/blob/main/docs/entropy-help/MANIFESTO.md" target="_blank">Read the current draft</a> · Coordination <a href="https://github.com/LeBonhommePharma/FlexAIDdS/issues/219" target="_blank" class="underline">#219</a></div>
   </footer>
 </body>
 </html>

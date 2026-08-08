@@ -40,6 +40,8 @@ public struct NormalModeSummary: Sendable, Codable {
 
 /// Full vibrational analysis context.
 public struct VibrationalContext: Sendable, Codable {
+    /// Evidence governing physical binding and design interpretation.
+    public let scientificProvenance: ScientificProvenance?
     /// Total vibrational entropy S_vib (kcal/mol/K)
     public let totalSVib: Double
     /// Configurational entropy S_conf (nats)
@@ -57,7 +59,9 @@ public struct VibrationalContext: Sendable, Codable {
 
     public init(totalSVib: Double, totalSConf: Double, vibrationalDominance: Double,
                 temperature: Double, topModes: [NormalModeSummary], totalModeCount: Int,
-                bindingRestrictsMotion: Bool) {
+                bindingRestrictsMotion: Bool,
+                scientificProvenance: ScientificProvenance? = nil) {
+        self.scientificProvenance = scientificProvenance
         self.totalSVib = totalSVib
         self.totalSConf = totalSConf
         self.vibrationalDominance = vibrationalDominance
@@ -98,7 +102,8 @@ public actor VibrationalInterpreterActor {
         vibrations and their impact on ligand binding. All frequencies and entropy \
         values are pre-computed — DO NOT calculate. Explain which motions matter \
         for binding, whether ligand binding restricts important dynamics, and \
-        what this means for drug design. Use language a medicinal chemist can understand.
+        what this means for drug design only for binding_physical provenance. \
+        Otherwise return diagnostic-only language and state that binding/design claims are unavailable.
         """
 
     public init() {
@@ -107,6 +112,17 @@ public actor VibrationalInterpreterActor {
 
     /// Interpret vibrational mode data.
     public func interpret(context: VibrationalContext) async throws -> VibrationalInsight {
+        let validity = context.scientificProvenance?.claimValidity ?? .proxyOnly
+        if validity != .bindingPhysical {
+            return VibrationalInsight(
+                dominantMotionDescription: validity == .canonicalPhysical
+                    ? "Canonical vibrational-mode diagnostic; no matched association cycle is available."
+                    : "Proxy-only vibrational-mode diagnostic; physical units and binding interpretation are unavailable.",
+                bindingImpact: "Binding impact is unavailable without binding_physical provenance.",
+                designImplication: "Molecular and lead-optimization guidance is unavailable.",
+                isEntropicallyDriven: false
+            )
+        }
         var prompt = buildPrompt(context: context)
         if estimateTokenCount(prompt) > 3800 {
             let truncated = VibrationalContext(
@@ -115,11 +131,12 @@ public actor VibrationalInterpreterActor {
                 temperature: context.temperature,
                 topModes: Array(context.topModes.prefix(3)),
                 totalModeCount: context.totalModeCount,
-                bindingRestrictsMotion: context.bindingRestrictsMotion
+                bindingRestrictsMotion: context.bindingRestrictsMotion,
+                scientificProvenance: context.scientificProvenance
             )
             prompt = buildPrompt(context: truncated)
         }
-        return try await session.respond(to: prompt, generating: VibrationalInsight.self)
+        return try await session.respond(to: prompt, generating: VibrationalInsight.self).content
     }
 
     private func estimateTokenCount(_ text: String) -> Int {
@@ -183,6 +200,24 @@ public struct RuleBasedVibrationalInterpreter: Sendable {
 
     /// Interpret vibrational mode data using threshold logic.
     public func interpret(context: VibrationalContext) -> CrossPlatformVibrationalInsight {
+        let validity = context.scientificProvenance?.claimValidity ?? .proxyOnly
+        if validity != .bindingPhysical {
+            let diagnostic: String
+            if let top = context.topModes.first {
+                diagnostic = validity == .canonicalPhysical
+                    ? "Canonical vibrational diagnostic: mode \(top.index) is dominant; binding impact is unavailable without a matched association cycle."
+                    : "Proxy-only mode diagnostic: mode \(top.index) is dominant at reported frequency \(String(format: "%.1f", top.frequencyCm)); physical binding interpretation is unavailable."
+            } else {
+                diagnostic = "No significant diagnostic vibrational modes detected."
+            }
+            return CrossPlatformVibrationalInsight(
+                dominantMotionDescription: diagnostic,
+                bindingImpact: "Binding impact is unavailable without binding_physical provenance.",
+                designImplication: "Molecular and lead-optimization guidance is unavailable.",
+                isEntropicallyDriven: false
+            )
+        }
+
         guard !context.topModes.isEmpty else {
             return CrossPlatformVibrationalInsight(
                 dominantMotionDescription: "No significant vibrational modes detected.",

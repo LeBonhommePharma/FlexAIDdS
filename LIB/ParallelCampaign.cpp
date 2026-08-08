@@ -74,6 +74,23 @@ using Clock = std::chrono::steady_clock;
 }
 #endif  // boltzmann_consensus_eigen
 
+// NON-PHYSICAL SURROGATE — placeholder only.
+//
+// This is a hardcoded linear function of ligand composition (heavy atoms,
+// rotatable bonds, rings) plus a model-index and temperature nudge. It never
+// touches the receptor, the pose, or the scoring function, so it carries no
+// energy domain at all: it is not a docking score, not a contact-function
+// value, and emphatically not a binding free energy in kcal/mol.
+//
+// It exists so the three-level parallel campaign skeleton can be exercised
+// while the GA is still reachable only through top.cpp's globals (see the
+// "Level 2" comment in run_campaign). Every consumer of the values it produces
+// must present them as `surrogate_*` on a model scale — never as dG, ΔG,
+// affinity, Kd, Ki or potency (see LIB/statmech.h ScientificProvenance:
+// no calibrated energy domain and no sha256 receipt ⇒ ProxyOnly).
+//
+// When a real per-model dock is wired in, replace this function AND re-audit
+// the labels in run_campaign/write_results_csv/write_top_hits below.
 static double surrogate_model_dock_score(const LigandResult& lr,
                                          int model_idx,
                                          double temperature_K) {
@@ -221,7 +238,12 @@ CampaignSummary run_campaign(
     std::ofstream csv;
     if (config.stream_results && !config.results_csv.empty()) {
         csv.open(config.results_csv);
-        csv << "rank,name,dG_consensus,dG_best,dG_corrected,dG_mean,dG_stddev,"
+        // Score columns are named `surrogate_*`, not dG_*: they are fed by
+        // surrogate_model_dock_score(), a composition-only placeholder with no
+        // energy domain. Renaming them back to dG_* would re-assert a binding
+        // free-energy claim this pipeline cannot support.
+        csv << "rank,name,surrogate_consensus,surrogate_best,surrogate_corrected,"
+            << "surrogate_mean,surrogate_stddev,"
             << "best_model,n_atoms,n_rotatable,n_rings,mw,time_sec,status\n";
     }
 
@@ -402,7 +424,9 @@ CampaignSummary run_campaign(
     printf("  Backend:     %s, %d CPU threads\n",
            summary.gpu_backend.c_str(), summary.cpu_threads_used);
     if (!summary.top_hits.empty()) {
-        printf("  Best hit:    %s (dG = %.3f kcal/mol)\n",
+        // Never "dG = ... kcal/mol": the ranking key is a non-physical surrogate.
+        printf("  Best hit:    %s (surrogate score = %.3f "
+               "[model scale, NOT kcal/mol; claim_validity=proxy_only])\n",
                summary.top_hits[0].name.c_str(),
                summary.top_hits[0].dG_corrected);
     }
@@ -424,8 +448,12 @@ CampaignSummary run_campaign(
 void write_results_csv(const std::string& path,
                        const std::vector<LigandResult>& results) {
     std::ofstream csv(path);
-    csv << "rank,name,dG_consensus,dG_best,dG_corrected,dG_mean,dG_stddev,"
-        << "best_model,n_atoms,n_rotatable,n_rings,mw,ref_entropy_corr,time_sec,status\n";
+    // See run_campaign: `surrogate_*` naming is deliberate — these columns hold
+    // composition-only placeholder scores, not binding free energies.
+    csv << "rank,name,surrogate_consensus,surrogate_best,surrogate_corrected,"
+        << "surrogate_mean,surrogate_stddev,"
+        << "best_model,n_atoms,n_rotatable,n_rings,mw,"
+        << "ref_entropy_corr_modelscale,time_sec,status\n";
 
     // Sort by dG_corrected
     std::vector<std::reference_wrapper<const LigandResult>> sorted(results.begin(), results.end());
@@ -467,14 +495,17 @@ void write_top_hits(const std::string& output_dir,
         std::string filename = output_dir + "/rank_" + std::to_string(i + 1) +
                                "_" + r.name + ".pdb";
         std::ofstream pdb(filename);
+        // REMARK labels carry the same firewall as the CSV: surrogate scores on
+        // a model scale, explicitly stamped proxy_only, never kcal/mol.
         pdb << "REMARK  FlexAIDdS Campaign Result\n"
             << "REMARK  Rank: " << (i + 1) << "\n"
             << "REMARK  Name: " << r.name << "\n"
-            << "REMARK  dG_corrected: " << r.dG_corrected << " kcal/mol\n"
-            << "REMARK  dG_consensus: " << r.dG_consensus << " kcal/mol\n"
-            << "REMARK  dG_best:      " << r.dG_best << " kcal/mol\n"
-            << "REMARK  Best model:   " << (r.best_model + 1) << "\n"
-            << "REMARK  Ref entropy:  " << r.ref_entropy_correction << " kcal/mol\n"
+            << "REMARK  claim_validity: proxy_only (non-physical surrogate score)\n"
+            << "REMARK  surrogate_corrected: " << r.dG_corrected << " [model scale]\n"
+            << "REMARK  surrogate_consensus: " << r.dG_consensus << " [model scale]\n"
+            << "REMARK  surrogate_best:      " << r.dG_best << " [model scale]\n"
+            << "REMARK  Best model:          " << (r.best_model + 1) << "\n"
+            << "REMARK  Ref entropy term:    " << r.ref_entropy_correction << " [model scale]\n"
             << "REMARK  Atoms: " << r.n_atoms
             << "  Rotatable: " << r.n_rotatable
             << "  Rings: " << r.n_rings

@@ -170,7 +170,13 @@ public actor DockingRunner {
             occupiedBins: occupiedBins,
             totalBins: totalBins,
             perModeEntropy: perModeEntropy,
-            dominantBins: dominantBins
+            dominantBins: dominantBins,
+            // Real C++ evidence, already downgraded by the bridge when an
+            // unreceipted entropy correction was folded into delta_G. Never
+            // substitute a locally constructed proxy record here: that would
+            // manufacture metadata the engine did not assert.
+            scientificProvenance: ScientificProvenance(
+                from: thermoResult.scientific_provenance)
         )
     }
 
@@ -217,6 +223,9 @@ public actor DockingRunner {
             if let modeRef = fx_population_get_mode(pop, Int32(i)) {
                 var result = BindingModeResult(from: fx_mode_info(modeRef))
                 result.thermodynamics = ThermodynamicResult(from: fx_mode_thermodynamics(modeRef))
+                result.poses = (0..<Int(fx_mode_size(modeRef))).map { poseIndex in
+                    PoseResult(from: fx_mode_get_pose(modeRef, Int32(poseIndex)))
+                }
                 modes.append(result)
             }
         }

@@ -9,6 +9,7 @@
 
 import React from 'react';
 import type { RefereeVerdict, RefereeFinding, RefereeSeverity } from '@bonhomme/shared';
+import { refereeAllowsPhysicalAffinity } from './claimPresentation.js';
 
 // ─── Severity color mapping ────────────────────────────────────────────────
 
@@ -177,6 +178,22 @@ export function RefereePanel({ verdict, title = 'Thermodynamic Referee', compact
     );
   }
 
+  const bindingPhysical = refereeAllowsPhysicalAffinity(verdict);
+  const displayedVerdict: RefereeVerdict = bindingPhysical
+    ? verdict
+    : {
+        findings: [{
+          title: 'Physical affinity unavailable',
+          detail: 'This result is an ensemble/CF diagnostic only. Binding-physical provenance is absent or unavailable, so physical affinity and energy-unit claims are suppressed.',
+          severity: 'warning',
+          category: 'affinity',
+        }],
+        overallTrustworthy: false,
+        recommendedAction: 'Treat values as ensemble/CF diagnostics and supply valid SHA-256 artifact identities for calibrated energy, ensemble measure, and the matched association cycle.',
+        confidence: Math.min(verdict.confidence, 0.3),
+        claimSource: verdict.claimSource,
+      };
+
   return (
     <div
       style={{
@@ -196,17 +213,17 @@ export function RefereePanel({ verdict, title = 'Thermodynamic Referee', compact
         }}
       >
         <h3 style={{ margin: 0, fontSize: '16px', fontWeight: 600 }}>{title}</h3>
-        <TrustBadge trustworthy={verdict.overallTrustworthy} />
+        <TrustBadge trustworthy={displayedVerdict.overallTrustworthy} />
       </div>
 
       {/* Confidence bar */}
       <div style={{ marginBottom: '12px' }}>
-        <ConfidenceBar confidence={verdict.confidence} />
+        <ConfidenceBar confidence={displayedVerdict.confidence} />
       </div>
 
       {/* Findings */}
       <div style={{ marginBottom: '12px' }}>
-        {verdict.findings.map((finding, i) => (
+        {displayedVerdict.findings.map((finding, i) => (
           <FindingCard key={i} finding={finding} />
         ))}
       </div>
@@ -217,13 +234,13 @@ export function RefereePanel({ verdict, title = 'Thermodynamic Referee', compact
           style={{
             padding: '10px 14px',
             borderRadius: '8px',
-            backgroundColor: verdict.overallTrustworthy ? '#e8f5e9' : '#fff3e0',
-            border: `1px solid ${verdict.overallTrustworthy ? '#c8e6c9' : '#ffe0b2'}`,
+            backgroundColor: displayedVerdict.overallTrustworthy ? '#e8f5e9' : '#fff3e0',
+            border: `1px solid ${displayedVerdict.overallTrustworthy ? '#c8e6c9' : '#ffe0b2'}`,
             fontSize: '13px',
             lineHeight: 1.4,
           }}
         >
-          <strong>Recommended Action:</strong> {verdict.recommendedAction}
+          <strong>Recommended Action:</strong> {displayedVerdict.recommendedAction}
         </div>
       )}
     </div>

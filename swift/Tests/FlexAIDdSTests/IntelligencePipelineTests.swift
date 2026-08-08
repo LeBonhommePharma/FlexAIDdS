@@ -75,13 +75,25 @@ final class IntelligencePipelineTests: XCTestCase {
         )
     }
 
-    private func makeCleftFeatures() -> CleftFeatures {
+    private func makeCleftFeatures(
+        scientificProvenance: ScientificProvenance? = nil
+    ) -> CleftFeatures {
         CleftFeatures(
             volume: 500, depth: 7.0, sphereCount: 25,
             maxSphereRadius: 3.5, hydrophobicFraction: 0.55,
-            anchorResidueCount: 6, elongation: 0.4, solventExposure: 0.25
+            anchorResidueCount: 6, elongation: 0.4, solventExposure: 0.25,
+            scientificProvenance: scientificProvenance
         )
     }
+
+    private static let pipelineBindingProvenance = ScientificProvenance(
+        energyDomain: .calibratedKcalPerMol,
+        ensembleMeasure: .enumeratedMicrostates,
+        referenceState: .matchedAssociationCycle,
+        energyProvenance: "sha256:e638aaee2a68410cdc827397b2aa095cf227090f494f535748c756ac49e6da3c",
+        measureProvenance: "sha256:7b27545430c950e8f5b4ba83ae3e2ad5e9fe32b83b625d8efea0e668af2782f4",
+        referenceProvenance: "sha256:01d26f66e709d388d7b971de6204680694e7cca10b1570506a5738c6909a6442"
+    )
 
     // MARK: - Pipeline Tests
 
@@ -124,13 +136,25 @@ final class IntelligencePipelineTests: XCTestCase {
         let pipeline = IntelligencePipeline()
         let result = pipeline.analyze(
             dockingResult: makeDockingResult(),
-            cleftFeatures: makeCleftFeatures()
+            cleftFeatures: makeCleftFeatures(
+                scientificProvenance: Self.pipelineBindingProvenance)
         )
 
         XCTAssertNotNil(result.cleftAssessment,
                         "Should produce cleft assessment when CleftFeatures is provided")
         // Volume 500, depth 7.0, hydrophobic 0.55, anchors 6, low solvent exposure
         XCTAssertEqual(result.cleftAssessment?.druggability, .high)
+    }
+
+    func testPipelineCleftAssessmentFailsClosedWithoutProvenance() {
+        let pipeline = IntelligencePipeline()
+        let result = pipeline.analyze(
+            dockingResult: makeDockingResult(),
+            cleftFeatures: makeCleftFeatures()
+        )
+
+        // Same geometry, no evidence: no druggability tier may be issued.
+        XCTAssertEqual(result.cleftAssessment?.druggability, .unavailable)
     }
 
     func testPipelineWithEmptyBindingModes() {

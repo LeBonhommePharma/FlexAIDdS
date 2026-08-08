@@ -111,14 +111,24 @@ ReferenceEntropyCorrection compute_reference_correction(
     c.T_dS_cratic   = cra.T_S_cratic;
     c.T_dS_total    = c.T_dS_receptor + c.T_dS_ligand + c.T_dS_cratic;
 
-    printf("--- Reference entropy correction (T=%.0fK) ---\n", temperature_K);
-    printf("  Receptor conf entropy  -TΔS_rec  = %8.3f kcal/mol (%d models)\n",
+    // Claim firewall (see LIB/statmech.h ScientificProvenance).
+    //
+    // `receptor_model_energies` are uncalibrated model scores — in the only
+    // wired caller (ParallelCampaign) they are literally surrogate placeholder
+    // values. Feeding them through a kB/T expression produces a MODEL-SCALE
+    // diagnostic, not a calibrated kcal/mol reference-state correction, so no
+    // physical unit may be printed here. Numbers and line order are unchanged;
+    // only the labels and the unit wording are proxy-scoped.
+    printf("--- Reference-state entropy proxy correction (T parameter = %.0f K) ---\n",
+           temperature_K);
+    printf("  claim_validity: proxy_only (uncalibrated model scores in, model scale out)\n");
+    printf("  Receptor conf term     -T*dS_rec-like = %8.3f [model scale] (%d models)\n",
            c.T_dS_receptor, static_cast<int>(receptor_model_energies.size()));
-    printf("  Ligand solution        -TΔS_lig  = %8.3f kcal/mol (%d rot bonds)\n",
+    printf("  Ligand solution term   -T*dS_lig-like = %8.3f [model scale] (%d rot bonds)\n",
            c.T_dS_ligand, n_rotatable_bonds);
-    printf("  Cratic correction      -TΔS_cra  = %8.3f kcal/mol\n",
+    printf("  Cratic term            -T*dS_cra-like = %8.3f [model scale]\n",
            c.T_dS_cratic);
-    printf("  Total correction       -TΔS_ref  = %8.3f kcal/mol\n",
+    printf("  Total correction       -T*dS_ref-like = %8.3f [model scale]\n",
            c.T_dS_total);
 
     return c;
@@ -188,14 +198,19 @@ EnsembleConsensusResult compute_ensemble_consensus(
 
     r.dG_consensus = -log_avg / beta;
 
-    printf("--- Ensemble consensus (T=%.0fK, %d models) ---\n",
+    // Claim firewall: `per_model_dG` is an uncalibrated per-model score, so the
+    // log-sum-exp below is a soft-min over model scale — it is not a binding
+    // free energy and must never be printed as ΔG / kcal/mol. Arithmetic and
+    // line order are unchanged; only the labels and units are proxy-scoped.
+    printf("--- Ensemble consensus over per-model proxy scores (T parameter = %.0f K, %d models) ---\n",
            temperature_K, r.n_models);
-    printf("  Best model [%d]     ΔG = %8.3f kcal/mol\n",
+    printf("  Best model [%d]      score-like = %8.3f [model scale]\n",
            r.best_model_idx + 1, r.dG_best);
-    printf("  Worst model        ΔG = %8.3f kcal/mol\n", r.dG_worst);
-    printf("  Mean               ΔG = %8.3f ± %.3f kcal/mol\n",
+    printf("  Worst model         score-like = %8.3f [model scale]\n", r.dG_worst);
+    printf("  Arithmetic mean     score-like = %8.3f ± %.3f [model scale]\n",
            r.dG_mean, r.dG_stddev);
-    printf("  Boltzmann consensus ΔG = %8.3f kcal/mol\n", r.dG_consensus);
+    printf("  Boltzmann-weighted  score-like = %8.3f [model scale; proxy_only]\n",
+           r.dG_consensus);
 
     return r;
 }

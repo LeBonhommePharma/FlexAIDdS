@@ -6,6 +6,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import FlexAIDCore
+import Foundation
 
 // MARK: - Physical Constants
 
@@ -92,8 +93,20 @@ public struct PoseResult: Sendable, Codable, Hashable {
     /// Reachability distance for density-based clustering
     public let reachDist: Float
 
-    /// Complementarity function score (kcal/mol, negative = favorable)
+    /// Complementarity-function score in arbitrary CF units (negative = favorable)
     public let cf: Double
+
+    public init(
+        cf: Double,
+        reachDist: Float,
+        chromIndex: Int = 0,
+        order: Int = 0
+    ) {
+        self.chromIndex = chromIndex
+        self.order = order
+        self.reachDist = reachDist
+        self.cf = cf
+    }
 
     init(from c: FXPoseInfo) {
         self.chromIndex = Int(c.chrom_index)
@@ -105,15 +118,15 @@ public struct PoseResult: Sendable, Codable, Hashable {
 
 // MARK: - Binding Mode
 
-/// Summary of a binding mode (cluster of poses) with thermodynamic properties.
+/// Summary of a binding mode (cluster of poses) with legacy ensemble diagnostics.
 public struct BindingModeResult: Sendable, Codable, Hashable {
     /// Number of poses in this binding mode
     public let size: Int
 
-    /// Helmholtz free energy F = H - TS (kcal/mol)
+    /// Legacy ensemble score; not physical Helmholtz F without provenance.
     public let freeEnergy: Double
 
-    /// Conformational entropy S (kcal mol^-1 K^-1)
+    /// Legacy entropy-like value in the input score domain per kelvin.
     public let entropy: Double
 
     /// Boltzmann-weighted mean energy <E> (kcal/mol)
@@ -125,6 +138,27 @@ public struct BindingModeResult: Sendable, Codable, Hashable {
     /// Full thermodynamic result (when available)
     public var thermodynamics: ThermodynamicResult?
 
+    /// Poses belonging to this binding mode.
+    public internal(set) var poses: [PoseResult]
+
+    public init(
+        freeEnergy: Double,
+        entropy: Double,
+        enthalpy: Double,
+        heatCapacity: Double,
+        size: Int,
+        poses: [PoseResult] = [],
+        thermodynamics: ThermodynamicResult? = nil
+    ) {
+        self.size = size
+        self.freeEnergy = freeEnergy
+        self.entropy = entropy
+        self.enthalpy = enthalpy
+        self.heatCapacity = heatCapacity
+        self.thermodynamics = thermodynamics
+        self.poses = poses
+    }
+
     init(from c: FXBindingModeInfo) {
         self.size = Int(c.size)
         self.freeEnergy = c.free_energy
@@ -132,12 +166,13 @@ public struct BindingModeResult: Sendable, Codable, Hashable {
         self.enthalpy = c.enthalpy
         self.heatCapacity = c.heat_capacity
         self.thermodynamics = nil
+        self.poses = []
     }
 }
 
 // MARK: - Docking Result
 
-/// Complete docking result with binding population thermodynamics.
+/// Complete docking result with binding-population ensemble diagnostics.
 public struct DockingResult: Sendable, Codable {
     /// All binding modes found, sorted by free energy
     public let bindingModes: [BindingModeResult]

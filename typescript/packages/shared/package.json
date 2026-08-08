@@ -14,6 +14,7 @@
   },
   "scripts": {
     "build": "tsc",
+    "test": "npm run build && node --test scientificProvenance.test.mjs",
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {

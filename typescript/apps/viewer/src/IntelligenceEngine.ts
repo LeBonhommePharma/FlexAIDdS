@@ -8,7 +8,17 @@
 // Copyright 2024-2026 Louis-Philippe Morency / NRGlab, Universite de Montreal
 // SPDX-License-Identifier: Apache-2.0
 
-import type { BindingPopulation, HealthCorrelation, ShannonEntropyDecomposition } from '@bonhomme/shared';
+import {
+  allowsBindingClaims,
+  claimValidityForRecord,
+} from '@bonhomme/shared';
+import type {
+  BindingPopulation,
+  ClaimValidity,
+  HealthCorrelation,
+  ShannonEntropyDecomposition,
+  ThermodynamicClaimSource,
+} from '@bonhomme/shared';
 import type { RefereeFinding, RefereeVerdict, RefereeSeverity, RefereeCategory } from '@bonhomme/shared';
 
 /** Confidence level for each analysis bullet. */
@@ -37,6 +47,10 @@ export interface OracleAnalysis {
   overallConfidence: AnalysisConfidence;
   inputSummary: string;
   timestamp: string;
+  /** Derived from evidence, never from a serialized claim label. */
+  claimValidity: ClaimValidity;
+  /** Evidence-bearing source used to re-derive claim validity. */
+  claimSource: ThermodynamicClaimSource;
 }
 
 /** Stored analysis entry for trend tracking. */
@@ -64,6 +78,10 @@ export class IntelligenceEngine {
   ): Promise<OracleAnalysis> {
     const structured: AnalysisBullet[] = [];
     const thermo = population.globalThermodynamics;
+    // Availability and provenance are both required; the strict gate lives in
+    // @bonhomme/shared so this call site cannot soften it.
+    const claimValidity = claimValidityForRecord(thermo);
+    const bindingPhysical = allowsBindingClaims(thermo);
     const decomp: ShannonEntropyDecomposition | undefined = health?.shannonDecomposition;
     const isConverged = decomp?.isConverged ?? false;
 
@@ -74,7 +92,13 @@ export class IntelligenceEngine {
     const fConfidence: AnalysisConfidence =
       energyStable && isConverged ? 'high' : energyStable ? 'moderate' : 'low';
 
-    if (thermo.freeEnergy < -10) {
+    if (!bindingPhysical) {
+      structured.push({
+        text: `Ensemble/CF diagnostic = ${thermo.freeEnergy.toFixed(1)} (source units); physical affinity unavailable because binding_physical provenance is absent.`,
+        confidence: fConfidence,
+        category: 'binding',
+      });
+    } else if (thermo.freeEnergy < -10) {
       structured.push({
         text: `Strong binding affinity (F = ${thermo.freeEnergy.toFixed(1)} kcal/mol)${isConverged ? '' : ' — but entropy has NOT converged, F may shift with more sampling'}.`,
         confidence: fConfidence,
@@ -99,7 +123,9 @@ export class IntelligenceEngine {
       // Convergence check — primary referee concern
       if (!decomp.isConverged) {
         structured.push({
-          text: `Entropy NOT converged (rate = ${decomp.convergenceRate.toFixed(4)}). Increase GA generations or population size before trusting thermodynamic values.`,
+          text: bindingPhysical
+            ? `Entropy NOT converged (rate = ${decomp.convergenceRate.toFixed(4)}). Increase GA generations or population size before trusting thermodynamic values.`
+            : `Entropy NOT converged (rate = ${decomp.convergenceRate.toFixed(4)}). Increase GA generations or population size before interpreting ensemble/CF diagnostics; physical affinity unavailable.`,
           confidence: 'high',
           category: 'entropy',
         });
@@ -110,7 +136,9 @@ export class IntelligenceEngine {
       const sConfPhysical = decomp.configurational * kB;
       if (decomp.vibrational > sConfPhysical * 3.0 && decomp.vibrational > 0.001) {
         structured.push({
-          text: `Vibrational entropy dominates (S_vib = ${decomp.vibrational.toFixed(6)} >> S_conf = ${sConfPhysical.toFixed(6)} kcal/mol/K). Protein backbone flexibility drives entropy — ligand conformational space may be under-explored.`,
+          text: bindingPhysical
+            ? `Vibrational entropy dominates (S_vib = ${decomp.vibrational.toFixed(6)} >> S_conf = ${sConfPhysical.toFixed(6)} kcal/mol/K). Protein backbone flexibility drives entropy — ligand conformational space may be under-explored.`
+            : `Ensemble/CF entropy diagnostic: S_vib = ${decomp.vibrational.toFixed(6)} >> S_conf = ${sConfPhysical.toFixed(6)} (source units). Physical affinity unavailable; physical energy units are not authorized.`,
           confidence: 'high',
           category: 'entropy',
         });
@@ -147,7 +175,9 @@ export class IntelligenceEngine {
       if (decomp.isConverged && structured.filter((b) => b.category === 'entropy').length === 0) {
         const modeCount = population.modes.length;
         structured.push({
-          text: `Shannon entropy converged: S_conf = ${decomp.configurational.toFixed(4)} nats, S_vib = ${decomp.vibrational.toFixed(6)} kcal/mol/K across ${modeCount} modes (${decomp.hardwareBackend} backend).`,
+          text: bindingPhysical
+            ? `Shannon entropy converged: S_conf = ${decomp.configurational.toFixed(4)} nats, S_vib = ${decomp.vibrational.toFixed(6)} kcal/mol/K across ${modeCount} modes (${decomp.hardwareBackend} backend).`
+            : `Ensemble/CF entropy diagnostic converged: S_conf = ${decomp.configurational.toFixed(4)} nats, S_vib = ${decomp.vibrational.toFixed(6)} (source units) across ${modeCount} modes (${decomp.hardwareBackend} backend); physical affinity unavailable.`,
           confidence: 'high',
           category: 'entropy',
         });
@@ -159,19 +189,25 @@ export class IntelligenceEngine {
 
       if (population.isCollapsed) {
         structured.push({
-          text: `Entropy collapsed to ${modeCount} mode(s) — high specificity but check for enthalpy-entropy compensation.`,
+          text: bindingPhysical
+            ? `Entropy collapsed to ${modeCount} mode(s) — high specificity but check for enthalpy-entropy compensation.`
+            : `Ensemble/CF diagnostic collapsed to ${modeCount} mode(s). Physical affinity unavailable; do not infer specificity or enthalpy-entropy compensation.`,
           confidence: sConfidence,
           category: 'entropy',
         });
       } else if (population.shannonS > 0.5) {
         structured.push({
-          text: `High conformational entropy (S = ${population.shannonS.toFixed(4)}) — population still exploring. More sampling may refine.`,
+          text: bindingPhysical
+            ? `High conformational entropy (S = ${population.shannonS.toFixed(4)}) — population still exploring. More sampling may refine.`
+            : `High ensemble/CF configurational diagnostic (S slot = ${population.shannonS.toFixed(4)} source units) — population still exploring; physical affinity unavailable.`,
           confidence: 'moderate',
           category: 'entropy',
         });
       } else {
         structured.push({
-          text: `Moderate entropy with ${modeCount} binding modes — population converging. Enable ShannonThermoStack for decomposed referee analysis.`,
+          text: bindingPhysical
+            ? `Moderate entropy with ${modeCount} binding modes — population converging. Enable ShannonThermoStack for decomposed referee analysis.`
+            : `Moderate ensemble/CF entropy diagnostic across ${modeCount} modes. Physical affinity unavailable; enable ShannonThermoStack for decomposed diagnostic analysis.`,
           confidence: sConfidence,
           category: 'entropy',
         });
@@ -181,7 +217,9 @@ export class IntelligenceEngine {
     // Bullet 3: Enthalpy-entropy compensation detection
     if (thermo.freeEnergy < -5 && thermo.entropy > 0.01) {
       structured.push({
-        text: `Enthalpy-entropy compensation: strong binding (F = ${thermo.freeEnergy.toFixed(1)}) offset by conformational flexibility (S = ${thermo.entropy.toFixed(4)}). Net \u0394G may be less favorable than F alone suggests.`,
+        text: bindingPhysical
+          ? `Enthalpy-entropy compensation: strong binding (F = ${thermo.freeEnergy.toFixed(1)}) offset by conformational flexibility (S = ${thermo.entropy.toFixed(4)}). Net \u0394G may be less favorable than F alone suggests.`
+          : `Ensemble/CF diagnostic co-variation: score = ${thermo.freeEnergy.toFixed(1)}, entropy slot = ${thermo.entropy.toFixed(4)} (source units). Physical affinity unavailable; this does not establish enthalpy-entropy compensation.`,
         confidence: 'moderate',
         category: 'binding',
       });
@@ -200,9 +238,13 @@ export class IntelligenceEngine {
 
       let modText = `${mods.length} target modification(s) (${modSummary})`;
       if (deltaF !== 0 || deltaS !== 0) {
-        modText += ` — net population shift: \u0394F=${deltaF.toFixed(2)} kcal/mol, \u0394S=${deltaS.toFixed(4)} kcal/mol/K`;
+        modText += bindingPhysical
+          ? ` — net population shift: \u0394F=${deltaF.toFixed(2)} kcal/mol, \u0394S=${deltaS.toFixed(4)} kcal/mol/K`
+          : ` — net ensemble/CF diagnostic shift: score=${deltaF.toFixed(2)}, entropy=${deltaS.toFixed(4)} (source units); physical affinity unavailable`;
       }
-      modText += '. Population recalculated with PTM/glycan effects on the binding landscape.';
+      modText += bindingPhysical
+        ? '. Population recalculated with PTM/glycan effects on the binding landscape.'
+        : '. Population diagnostics recalculated with PTM/glycan inputs.';
 
       structured.push({
         text: modText,
@@ -241,9 +283,13 @@ export class IntelligenceEngine {
     }
 
     const overallConfidence = IntelligenceEngine.computeOverallConfidence(structured);
-    let inputSummary = `T=${thermo.temperature}K, F=${thermo.freeEnergy.toFixed(2)} kcal/mol`;
+    let inputSummary = bindingPhysical
+      ? `T=${thermo.temperature}K, F=${thermo.freeEnergy.toFixed(2)} kcal/mol`
+      : `T=${thermo.temperature}K, diagnostic=${thermo.freeEnergy.toFixed(2)} source-units, physical-affinity=unavailable`;
     if (decomp) {
-      inputSummary += `, S_conf=${decomp.configurational.toFixed(4)}nats, S_vib=${decomp.vibrational.toFixed(6)}kcal/mol/K`;
+      inputSummary += bindingPhysical
+        ? `, S_conf=${decomp.configurational.toFixed(4)}nats, S_vib=${decomp.vibrational.toFixed(6)}kcal/mol/K`
+        : `, S_conf=${decomp.configurational.toFixed(4)}nats, S_vib-diagnostic=${decomp.vibrational.toFixed(6)} source-units`;
       inputSummary += decomp.isConverged ? ' [converged]' : ' [not converged]';
     }
 
@@ -253,6 +299,11 @@ export class IntelligenceEngine {
       overallConfidence,
       inputSummary,
       timestamp: new Date().toISOString(),
+      claimValidity,
+      claimSource: {
+        available: thermo.available,
+        scientificProvenance: thermo.scientificProvenance,
+      },
     };
 
     // Record for trend tracking
@@ -273,18 +324,26 @@ export class IntelligenceEngine {
     const previous = IntelligenceEngine.lastAnalysis(campaignKey);
     if (!previous) return null;
 
-    // Parse free energy from input summaries for delta comparison
-    const extractF = (summary: string): number | null => {
-      const match = summary.match(/F=(-?[\d.]+)/);
+    // Parse the unchanged numeric slot from physical or diagnostic summaries.
+    const extractScore = (summary: string): number | null => {
+      const match = summary.match(/(?:F|diagnostic)=(-?[\d.]+)/);
       return match ? parseFloat(match[1]) : null;
     };
 
-    const prevF = extractF(previous.inputSummary);
-    const currF = extractF(current.inputSummary);
+    const prevF = extractScore(previous.inputSummary);
+    const currF = extractScore(current.inputSummary);
 
     if (prevF !== null && currF !== null) {
       const delta = currF - prevF;
       const improved = delta < 0;
+      if (!allowsBindingClaims(previous.claimSource)
+        || !allowsBindingClaims(current.claimSource)) {
+        return {
+          text: `Compared to previous run: ensemble/CF diagnostic shift = ${delta.toFixed(2)} source units (${improved ? 'decreased' : 'increased'}); physical affinity unavailable.`,
+          confidence: Math.abs(delta) > 1.0 ? 'high' : 'moderate',
+          category: 'trend',
+        };
+      }
       return {
         text: `Compared to previous run: \u0394F = ${delta.toFixed(2)} kcal/mol (${improved ? 'improved' : 'worsened'} binding).`,
         confidence: Math.abs(delta) > 1.0 ? 'high' : 'moderate',
@@ -347,8 +406,9 @@ export class RuleBasedReferee {
     health?: HealthCorrelation,
   ): RefereeVerdict {
     const findings: RefereeFinding[] = [];
-    let trustworthy = true;
     const thermo = population.globalThermodynamics;
+    const bindingPhysical = allowsBindingClaims(thermo);
+    let trustworthy = bindingPhysical;
     const decomp: ShannonEntropyDecomposition | undefined = health?.shannonDecomposition;
     const kB = 0.001987206;
 
@@ -358,14 +418,18 @@ export class RuleBasedReferee {
         trustworthy = false;
         findings.push({
           title: 'Entropy not converged',
-          detail: `Shannon entropy has not reached a plateau (rate = ${decomp.convergenceRate.toFixed(4)}). Increase GA generations before trusting F or S values.`,
+          detail: bindingPhysical
+            ? `Shannon entropy has not reached a plateau (rate = ${decomp.convergenceRate.toFixed(4)}). Increase GA generations before trusting F or S values.`
+            : `Shannon entropy has not reached a plateau (rate = ${decomp.convergenceRate.toFixed(4)}). Increase GA generations before interpreting ensemble/CF diagnostics; physical affinity unavailable.`,
           severity: 'critical',
           category: 'convergence',
         });
       } else {
         findings.push({
           title: 'Entropy converged',
-          detail: `Shannon entropy plateau reached on ${decomp.hardwareBackend} backend. Thermodynamic values are reliable.`,
+          detail: bindingPhysical
+            ? `Shannon entropy plateau reached on ${decomp.hardwareBackend} backend. Thermodynamic values are reliable.`
+            : `Shannon entropy plateau reached on ${decomp.hardwareBackend} backend for the ensemble/CF diagnostic. Physical affinity unavailable without binding_physical provenance.`,
           severity: 'pass',
           category: 'convergence',
         });
@@ -406,7 +470,9 @@ export class RuleBasedReferee {
       if (decomp.vibrational > sConfPhysical * 3.0 && decomp.vibrational > 0.001) {
         findings.push({
           title: 'Vibrational entropy dominates',
-          detail: `S_vib (${decomp.vibrational.toFixed(6)}) >> S_conf (${sConfPhysical.toFixed(6)}) kcal/mol/K. Protein backbone flexibility drives entropy; ligand conformational space may be under-explored.`,
+          detail: bindingPhysical
+            ? `S_vib (${decomp.vibrational.toFixed(6)}) >> S_conf (${sConfPhysical.toFixed(6)}) kcal/mol/K. Protein backbone flexibility drives entropy; ligand conformational space may be under-explored.`
+            : `Ensemble/CF entropy diagnostic: S_vib (${decomp.vibrational.toFixed(6)}) >> S_conf (${sConfPhysical.toFixed(6)}) in source units. Physical affinity unavailable; physical energy units are not authorized.`,
           severity: 'warning',
           category: 'entropyBalance',
         });
@@ -432,8 +498,10 @@ export class RuleBasedReferee {
     // 5. Enthalpy-entropy compensation
     if (thermo.freeEnergy < -5 && thermo.entropy > 0.01) {
       findings.push({
-        title: 'Enthalpy-entropy compensation',
-        detail: `Strong binding (F = ${thermo.freeEnergy.toFixed(1)} kcal/mol) offset by conformational flexibility (S = ${thermo.entropy.toFixed(4)}). Net \u0394G may be less favorable than F alone suggests.`,
+        title: bindingPhysical ? 'Enthalpy-entropy compensation' : 'Diagnostic co-variation only',
+        detail: bindingPhysical
+          ? `Strong binding (F = ${thermo.freeEnergy.toFixed(1)} kcal/mol) offset by conformational flexibility (S = ${thermo.entropy.toFixed(4)}). Net \u0394G may be less favorable than F alone suggests.`
+          : `Ensemble/CF diagnostic score ${thermo.freeEnergy.toFixed(1)} co-varies with entropy slot ${thermo.entropy.toFixed(4)} (source units). Physical affinity unavailable; compensation is not established.`,
         severity: 'advisory',
         category: 'compensation',
       });
@@ -441,7 +509,14 @@ export class RuleBasedReferee {
 
     // 6. Binding affinity
     const converged = decomp?.isConverged ?? false;
-    if (thermo.freeEnergy < -10) {
+    if (!bindingPhysical) {
+      findings.push({
+        title: 'Physical affinity unavailable',
+        detail: `Ensemble/CF diagnostic = ${thermo.freeEnergy.toFixed(1)} (source units). Missing binding_physical provenance; do not interpret this value as a physical association free energy.`,
+        severity: 'warning',
+        category: 'affinity',
+      });
+    } else if (thermo.freeEnergy < -10) {
       findings.push({
         title: 'Strong binding affinity',
         detail: `F = ${thermo.freeEnergy.toFixed(1)} kcal/mol${converged ? ' (converged)' : ' — convergence not confirmed'}.`,
@@ -466,7 +541,9 @@ export class RuleBasedReferee {
 
     // Recommendation
     let recommendedAction: string;
-    if (!trustworthy) {
+    if (!bindingPhysical) {
+      recommendedAction = 'Physical affinity unavailable. Treat values as ensemble/CF diagnostics and supply calibrated energy, ensemble-measure, and matched association-cycle SHA-256 artifact identities.';
+    } else if (!trustworthy) {
       recommendedAction = 'Do not trust current thermodynamic values. Increase GA generations and population size, then re-run.';
     } else if (!decomp) {
       recommendedAction = 'Enable ShannonThermoStack for decomposed entropy analysis.';
@@ -486,6 +563,10 @@ export class RuleBasedReferee {
       overallTrustworthy: trustworthy,
       recommendedAction,
       confidence,
+      claimSource: {
+        available: thermo.available,
+        scientificProvenance: thermo.scientificProvenance,
+      },
     };
   }
 }

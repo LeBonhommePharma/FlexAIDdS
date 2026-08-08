@@ -7,23 +7,64 @@
 // Copyright 2024-2026 Louis-Philippe Morency / NRGlab, Universite de Montreal
 // SPDX-License-Identifier: Apache-2.0
 
+// The SDK does not own the claim firewall. `@bonhomme/shared` holds the only
+// implementation of the provenance vocabulary, the strict availability gate
+// and the wire normalizer; the SDK re-exports them so an SDK consumer and a
+// viewer consumer can never reach different verdicts on the same payload.
+export {
+  SCIENTIFIC_PROVENANCE_SCHEMA_VERSION,
+  PROXY_ONLY_PROVENANCE,
+  hasArtifactSha256,
+  hasStrictAvailability,
+  normalizeScientificProvenance,
+  deriveClaimValidity,
+  claimValidityForRecord,
+  allowsCanonicalClaims,
+  allowsBindingClaims,
+  normalizeAvailability,
+  normalizeThermodynamicRecord,
+  normalizeDockingRecord,
+  claimValidityForWireRecord,
+} from '@bonhomme/shared';
+
+export type {
+  EnergyDomain,
+  EnsembleMeasure,
+  ReferenceState,
+  ClaimValidity,
+  ScientificProvenance,
+  ThermodynamicClaimSource,
+  UnavailableReason,
+  NormalizedThermodynamicRecord,
+  NormalizedBindingMode,
+  NormalizedDockingRecord,
+} from '@bonhomme/shared';
+
+import type { EnergyDomain, ScientificProvenance } from '@bonhomme/shared';
+
 /** Full thermodynamic analysis of a conformational ensemble. */
 export interface ThermodynamicResult {
+  /** Whether the source actually supplied thermodynamic moments. */
+  available?: boolean;
+  /** Machine-readable reason when thermodynamic moments are unavailable. */
+  unavailableReason?: string;
+  /** Scientific provenance; absent legacy metadata is proxy-only. */
+  scientificProvenance?: ScientificProvenance;
   /** Temperature in Kelvin */
   temperature: number;
   /** Natural log of the partition function ln(Z) */
   logZ: number;
-  /** Helmholtz free energy F = -kT ln Z (kcal/mol) */
+  /** F-like value; physical kcal/mol only when provenance authorizes it. */
   freeEnergy: number;
-  /** Boltzmann-weighted mean energy <E> (kcal/mol) */
+  /** Weighted mean in the declared energy domain. */
   meanEnergy: number;
   /** Mean squared energy <E^2> */
   meanEnergySq: number;
-  /** Heat capacity C_v */
+  /** C_v-like diagnostic; physical units require calibrated provenance. */
   heatCapacity: number;
-  /** Conformational entropy S (kcal mol^-1 K^-1) */
+  /** S-like diagnostic; physical units require calibrated provenance. */
   entropy: number;
-  /** Standard deviation of energy (kcal/mol) */
+  /** Standard deviation in the declared energy domain. */
   stdEnergy: number;
 }
 
@@ -67,7 +108,7 @@ export interface PoseResult {
   order: number;
   /** Reachability distance */
   reachDist: number;
-  /** Complementarity function score (kcal/mol) */
+  /** Complementarity-function score in arbitrary CF units. */
   cf: number;
 }
 
@@ -75,8 +116,15 @@ export interface PoseResult {
 export interface BindingModeResult {
   /** Number of poses in this mode */
   size: number;
-  /** Helmholtz free energy F (kcal/mol) */
+  /**
+   * Legacy score slot. Raw result loaders populate this with a CF proxy and set
+   * `thermodynamicsAvailable` false; do not interpret it as physical F.
+   */
   freeEnergy: number;
+  /** True only when the source supplied an actual thermodynamic record. */
+  thermodynamicsAvailable?: boolean;
+  /** Domain of `freeEnergy` when no thermodynamic record is available. */
+  scoreDomain?: EnergyDomain;
   /** Conformational entropy S (kcal mol^-1 K^-1) */
   entropy: number;
   /** Boltzmann-weighted mean energy (kcal/mol) */
@@ -95,6 +143,8 @@ export interface DockingResult {
   globalThermodynamics: ThermodynamicResult;
   /** Temperature (K) */
   temperature: number;
+  /** False when a legacy/raw result file did not declare temperature. */
+  temperatureKnown?: boolean;
   /** GA population size */
   populationSize: number;
   /** ISO 8601 timestamp */

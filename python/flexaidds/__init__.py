@@ -44,6 +44,11 @@ from .thermodynamics import (
     StatMechEngine,
     Thermodynamics,
     ThermodynamicBreakdown,
+    EnergyDomain,
+    EnsembleMeasure,
+    ReferenceState,
+    ClaimValidity,
+    ScientificProvenance,
     kB_kcal,
     kB_SI,
     deltaG_standard_to_Kd_M,
@@ -91,10 +96,10 @@ try:
         kB_kcal,  # noqa: F811  (more precise C++ value)
         kB_SI,    # noqa: F811
     )
-    # Override pure-Python engines/types with the compiled implementations.
-    from ._core import StatMechEngine as StatMechEngine  # noqa: F811
-    from ._core import Thermodynamics as Thermodynamics  # noqa: F811
-    from ._core import ThermodynamicBreakdown as ThermodynamicBreakdown  # noqa: F811
+    # Keep the public thermodynamics/provenance façade stable across installs.
+    # ``thermodynamics.StatMechEngine`` delegates numerical work to this native
+    # module when available, while retaining one serializable Python contract.
+    # Direct native types remain available explicitly under ``flexaidds._core``.
     from ._core import ENCoMEngine as ENCoMEngine  # noqa: F811
     from ._core import NormalMode as NormalMode  # noqa: F811
     from ._core import VibrationalEntropy as VibrationalEntropy  # noqa: F811
@@ -288,6 +293,12 @@ __all__ = [
     # Thermodynamics (pure-Python or C++ override)
     "StatMechEngine",
     "Thermodynamics",
+    "ThermodynamicBreakdown",
+    "EnergyDomain",
+    "EnsembleMeasure",
+    "ReferenceState",
+    "ClaimValidity",
+    "ScientificProvenance",
     "kB_kcal",
     "kB_SI",
     # Availability flag

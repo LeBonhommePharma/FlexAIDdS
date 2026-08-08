@@ -7,14 +7,24 @@
 // Copyright 2024-2026 Louis-Philippe Morency / NRGlab, Universite de Montreal
 // SPDX-License-Identifier: Apache-2.0
 
-import type { CleftFeatures } from '@bonhomme/shared';
+import { allowsBindingClaims, claimValidityForRecord } from '@bonhomme/shared';
+import type { CleftFeatures, ThermodynamicClaimSource } from '@bonhomme/shared';
 import type { DruggabilityTier, CleftAssessment } from '@bonhomme/shared';
 
 export class CleftAnalyzer {
   /**
-   * Assess druggability of a binding cleft using geometric thresholds.
+   * Score a binding cleft from pocket geometry.
+   *
+   * "Druggable" and "suggested ligand" are potency claims about a molecule
+   * that has not been measured, so they are only spoken when `claimSource`
+   * carries binding-physical evidence. Without it the same geometric score is
+   * reported as a shape diagnostic. The threshold arithmetic is identical in
+   * both cases — only the language changes.
    */
-  static assess(cleft: CleftFeatures): CleftAssessment {
+  static assess(
+    cleft: CleftFeatures,
+    claimSource?: ThermodynamicClaimSource,
+  ): CleftAssessment {
     const warnings: string[] = [];
     let score = 0.0;
 
@@ -45,10 +55,10 @@ export class CleftAnalyzer {
     } else if (cleft.depth > 3.0) {
       score += 0.1;
     } else {
-      warnings.push(`Shallow pocket (${cleft.depth.toFixed(1)} A) — binding may be transient.`);
+      warnings.push(`Shallow pocket (${cleft.depth.toFixed(1)} A) — geometry may not constrain docked poses.`);
     }
 
-    // Solvent exposure (lower is better for binding)
+    // Solvent exposure (lower generally gives a more enclosed docking cleft)
     if (cleft.solventExposure < 0.3) {
       score += 0.15;
     } else if (cleft.solventExposure > 0.6) {
@@ -74,14 +84,25 @@ export class CleftAnalyzer {
       druggability = 'undruggable';
     }
 
+    const bindingPhysical = allowsBindingClaims(claimSource);
+    const claimValidity = claimValidityForRecord(claimSource);
+
     // Summary
     const volumeDesc = cleft.volume < 400 ? 'Small' : cleft.volume < 800 ? 'Medium' : 'Large';
     const shapeDesc = cleft.elongation < 0.3 ? 'spherical' : cleft.elongation < 0.7 ? 'oval' : 'elongated';
-    const summary = `${volumeDesc} ${shapeDesc} pocket (${cleft.volume.toFixed(0)} A^3, ${(cleft.hydrophobicFraction * 100).toFixed(0)}% hydrophobic, ${cleft.anchorResidueCount} anchor residues). Druggability: ${druggability}.`;
+    const geometry = `${volumeDesc} ${shapeDesc} pocket (${cleft.volume.toFixed(0)} A^3, ${(cleft.hydrophobicFraction * 100).toFixed(0)}% hydrophobic, ${cleft.anchorResidueCount} anchor residues).`;
+    const summary = bindingPhysical
+      ? `${geometry} Druggability: ${druggability}.`
+      : `${geometry} Geometric enclosure score: ${druggability} (shape diagnostic, source units). Druggability and physical affinity are unavailable without binding-physical provenance.`;
 
     // Suggested ligand properties
     let suggestedLigandProperties: string;
-    if (cleft.hydrophobicFraction > 0.6) {
+    if (!bindingPhysical) {
+      suggestedLigandProperties =
+        'Unavailable: ligand-property guidance is a potency claim and requires '
+        + 'binding-physical provenance. Pocket shape and polarity above are '
+        + 'geometric diagnostics only.';
+    } else if (cleft.hydrophobicFraction > 0.6) {
       suggestedLigandProperties = 'Lipophilic compounds, MW 300-500 Da, LogP > 2';
     } else if (cleft.hydrophobicFraction < 0.4) {
       suggestedLigandProperties = 'Polar compounds with H-bond donors/acceptors, MW 200-400 Da';
@@ -89,6 +110,13 @@ export class CleftAnalyzer {
       suggestedLigandProperties = 'Balanced compounds, MW 300-500 Da, 2-3 H-bond acceptors';
     }
 
-    return { druggability, summary, suggestedLigandProperties, warnings };
+    return {
+      druggability,
+      summary,
+      suggestedLigandProperties,
+      warnings,
+      claimValidity,
+      claimSource,
+    };
   }
 }

@@ -1,5 +1,11 @@
 # Entropy Audit Report
 
+**Status**: TEMPLATE — NOT AN AUDIT RESULT
+All values and verdict choices below are placeholders. A populated copy must not
+be described as complete, published, validated, verified, or reproducible until
+its linked JSON report and separate provenance record pass
+`scripts/validate_thermo_claims.py`.
+
 **Audit ID**: AUD-YYYY-NNN  
 **Target**: [Receptor] + [Ligand]  
 **Engine**: FlexAIDdS / [Other]  
@@ -23,7 +29,7 @@
 **Gate 5 (Partition Convergence)**: [PASSED / FAILED] — delta_logZ = X.XXe-YY  
 **Gate 6 (F/S Cross-check)**: [PASSED / FAILED] — max deviation = X.XX kcal/mol
 
-**Overall Verdict**: [REPRODUCIBLE / MINOR DISCREPANCY / SIGNIFICANT DEVIATION]
+**Overall Verdict**: [UNVERIFIED / MINOR DISCREPANCY / SIGNIFICANT DEVIATION / REPRODUCIBLE only with deposited evidence]
 
 ---
 
@@ -36,7 +42,7 @@
 - **Host / Hardware**: `...`
 - **Docking binary / version**: `...`
 
-**Raw ensemble digest** (optional, for high-reproducibility audits): `sha256:...`
+**Raw ensemble digest** (placeholder; a published quantitative audit requires a provenance receipt here): `[sha256 of the deposited ensemble]`
 
 ---
 
@@ -54,18 +60,18 @@
 ```json
 {
   "total_sampled": {
-    "logZ_total_sampled": -45.237,
-    "F_config_kcal_mol": -13.42,
-    "H_eff_kcal_mol": -16.81,
-    "S_config_kcal_mol_K": 0.0113
+    "logZ_total_sampled": null,
+    "F_config_kcal_mol": null,
+    "H_eff_kcal_mol": null,
+    "S_config_kcal_mol_K": null
   },
-  "temperature_K": 300.0,
-  "n_samples_raw": 12480,
+  "temperature_K": null,
+  "n_samples_raw": null,
   "provenance": { ... }
 }
 ```
 
-(Full signed JSON sidecar attached as `audit-report-*.json`.)
+(A completed report requires a provenance receipt: link the real JSON sidecar and the separate provenance JSON here.)
 
 ---
 
@@ -93,16 +99,12 @@
 
 ## 7. Signature
 
-**Content hash (SHA-256 of canonical JSON)**: `...`
+**Content hash (SHA-256 of canonical JSON)**: `[computed 64-hex digest; never a placeholder]`
 
-**Auditor signature** (optional GPG or equivalent):  
-```
------BEGIN PGP SIGNATURE-----
-...
------END PGP SIGNATURE-----
-```
+**Auditor signature** (optional GPG or equivalent): attach a real detached
+signature, or omit this field. Never publish placeholder signature armor.
 
-**Report URL** (permanent): `https://entropy.help/audits/AUD-YYYY-NNN`
+**Report URL** (permanent, only after artifact publication): `[repository-backed URL]`
 
 ---
 

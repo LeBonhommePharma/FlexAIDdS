@@ -33,6 +33,7 @@ import numpy as np
 from dataclasses import dataclass, field
 
 from .models import PoseResult
+from .thermodynamics import ScientificProvenance
 
 _NUMERIC_RE = re.compile(r"^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?$")
 
@@ -428,9 +429,81 @@ def _first_float(remarks: Dict[str, Any], *keys: str) -> Optional[float]:
     """
     for key in keys:
         value = remarks.get(key)
+        if isinstance(value, bool):
+            # ``True``/``False`` are not numeric measurements; never silently
+            # promote a flag into a thermodynamic quantity.
+            continue
         if isinstance(value, (int, float)):
             return float(value)
     return None
+
+
+# REMARK keys carrying schema-v2 provenance.  ``thermo_claim_validity`` is
+# deliberately NOT part of this set: validity is always re-derived locally from
+# the source evidence, so a file can never self-authorize a physical claim.
+_PROVENANCE_REMARK_KEYS = (
+    "thermo_schema_version",
+    "thermo_energy_domain",
+    "thermo_ensemble_measure",
+    "thermo_reference_state",
+    "thermo_energy_provenance",
+    "thermo_measure_provenance",
+    "thermo_reference_provenance",
+)
+
+
+def _first_present(remarks: Dict[str, Any], *keys: str, default: Any = None) -> Any:
+    """Return the value of the first REMARK key that is present."""
+    for key in keys:
+        if key in remarks:
+            return remarks[key]
+    return default
+
+
+def _provenance_from_remarks(remarks: Dict[str, Any]) -> ScientificProvenance:
+    """Rebuild schema-v2 provenance from the REMARK evidence fields.
+
+    Only the *source* fields (schema version, energy domain, ensemble measure,
+    reference state and the three sha256 receipts) are read.  Claim validity is
+    recomputed from them by :class:`ScientificProvenance`; any serialized
+    ``thermo_claim_validity`` in the file is informational and ignored, so a
+    hostile or stale PDB cannot promote a CF proxy into a physical claim.
+
+    Absence of the whole block fails closed to the unclassified (proxy-only)
+    default.
+    """
+    if not any(key in remarks for key in _PROVENANCE_REMARK_KEYS):
+        return ScientificProvenance()
+    return ScientificProvenance.from_dict(
+        {
+            # Missing/typed-wrong versions collapse to 0 inside from_dict,
+            # which can never satisfy the schema_version == 2 predicate.
+            "schema_version": _first_present(
+                remarks, "thermo_schema_version", "schema_version", default=0
+            ),
+            "energy_domain": _first_present(
+                remarks, "thermo_energy_domain", "energy_domain"
+            ),
+            "ensemble_measure": _first_present(
+                remarks, "thermo_ensemble_measure", "ensemble_measure"
+            ),
+            "reference_state": _first_present(
+                remarks, "thermo_reference_state", "reference_state"
+            ),
+            "energy_provenance": _first_present(
+                remarks, "thermo_energy_provenance", "energy_provenance", default=""
+            ),
+            "measure_provenance": _first_present(
+                remarks, "thermo_measure_provenance", "measure_provenance", default=""
+            ),
+            "reference_provenance": _first_present(
+                remarks,
+                "thermo_reference_provenance",
+                "reference_provenance",
+                default="",
+            ),
+        }
+    )
 
 
 def parse_pose_result(path: Path) -> PoseResult:
@@ -439,12 +512,19 @@ def parse_pose_result(path: Path) -> PoseResult:
     Reads the file, extracts all REMARK fields, infers the binding-mode ID
     and pose rank, then returns a fully populated (immutable) ``PoseResult``.
 
+    Schema-v2 firewall REMARKs (``thermo_schema_version``,
+    ``thermo_energy_domain``, ``thermo_ensemble_measure``,
+    ``thermo_reference_state`` and the sha256 evidence receipts) are lifted into
+    :attr:`PoseResult.scientific_provenance`.  Claim validity is re-derived from
+    those source fields, never read from ``thermo_claim_validity``.
+
     Args:
         path: Absolute or relative path to the PDB output file.
 
     Returns:
         :class:`~flexaidds.models.PoseResult` with all available fields
-        populated from the PDB REMARK section.
+        populated from the PDB REMARK section.  Numeric energy-like fields are
+        proxy diagnostics unless the parsed provenance authorizes otherwise.
     """
     text = path.read_text(encoding="utf-8", errors="ignore")
     remarks = parse_remark_map(text.splitlines())
@@ -472,11 +552,15 @@ def parse_pose_result(path: Path) -> PoseResult:
         rmsd_raw=_first_float(remarks, "rmsd_raw", "rmsd", "rmsd_unsym"),
         rmsd_sym=_first_float(remarks, "rmsd_sym", "rmsd_symmetric", "sym_rmsd"),
         free_energy=_first_float(remarks, "free_energy", "f"),
+        proxy_free_energy=_first_float(remarks, "proxy_free_energy"),
+        # `soft_beta_G` is lowercased by _normalize_key; keep both spellings.
+        soft_beta_G=_first_float(remarks, "soft_beta_g", "soft_beta_G"),
         enthalpy=_first_float(remarks, "enthalpy", "h", "mean_energy"),
         entropy=_first_float(remarks, "entropy", "s"),
         heat_capacity=_first_float(remarks, "heat_capacity", "cv"),
         std_energy=_first_float(remarks, "std_energy", "sigma_energy"),
         temperature=_first_float(remarks, "temperature", "temp"),
+        scientific_provenance=_provenance_from_remarks(remarks),
         remarks=remarks,
     )
 

@@ -14,6 +14,8 @@ import FlexAIDdS
 
 /// Summary of docking results for a single target.
 public struct TargetDockingSummary: Sendable, Codable {
+    /// Evidence governing whether this target supports binding/selectivity claims.
+    public let scientificProvenance: ScientificProvenance?
     /// Target name (e.g., "5HT2A", "D2R")
     public let targetName: String
     /// Best free energy across modes (kcal/mol)
@@ -33,7 +35,9 @@ public struct TargetDockingSummary: Sendable, Codable {
 
     public init(targetName: String, bestFreeEnergy: Double, modeCount: Int,
                 sConf: Double, sVib: Double, isConverged: Bool,
-                cavityVolume: Double?, populationSize: Int) {
+                cavityVolume: Double?, populationSize: Int,
+                scientificProvenance: ScientificProvenance? = nil) {
+        self.scientificProvenance = scientificProvenance
         self.targetName = targetName
         self.bestFreeEnergy = bestFreeEnergy
         self.modeCount = modeCount
@@ -66,6 +70,26 @@ public struct SelectivityContext: Sendable, Codable {
     public let targets: [TargetDockingSummary]
     /// Pre-computed pairwise ΔΔG values
     public let deltaDeltas: [DeltaDeltaG]
+
+    public var allowsBindingClaims: Bool {
+        targets.count >= 2 && targets.allSatisfy {
+            $0.scientificProvenance?.claimValidity == .bindingPhysical
+        }
+    }
+
+    /// Weakest claim across the compared targets. A selectivity statement is
+    /// only as strong as the least-evidenced target in the comparison.
+    public var claimValidity: ClaimValidity {
+        guard targets.count >= 2 else { return .proxyOnly }
+        if allowsBindingClaims { return .bindingPhysical }
+        if targets.allSatisfy({
+            let validity = $0.scientificProvenance?.claimValidity ?? .proxyOnly
+            return validity == .canonicalPhysical || validity == .bindingPhysical
+        }) {
+            return .canonicalPhysical
+        }
+        return .proxyOnly
+    }
 
     public init(ligandName: String, targets: [TargetDockingSummary]) {
         self.ligandName = ligandName
@@ -107,8 +131,15 @@ public enum SelectivityDriver: String, Sendable, Codable {
 public struct SelectivityAnalysis: Sendable, Codable {
     /// Preferred target name
     public var preferredTarget: String
-    /// ΔΔG between preferred and second-best target
+    /// Retained numeric compatibility field: the raw score difference between
+    /// the two best targets. It is a physical ΔΔG in kcal/mol ONLY when
+    /// `deltaGClaimValidity` is `binding_physical`; otherwise it is an
+    /// input-scale proxy diagnostic and must never be presented as affinity,
+    /// potency, Kd or Ki.
     public var deltaG: Double
+    /// Fail-closed marker for `deltaG`, written deterministically by the
+    /// analyst after generation. The model never authors this value.
+    public var deltaGClaimValidity: String
     /// What drives the selectivity
     public var driver: SelectivityDriver
     /// Plain-English explanation
@@ -127,7 +158,8 @@ public actor SelectivityAnalystActor {
         You are a pharmacology advisor analyzing drug-target selectivity from \
         molecular docking results. All energies and entropies are pre-computed. \
         Explain which target is preferred, what drives selectivity (enthalpy vs entropy), \
-        and how to modify the ligand to shift selectivity. Be concise and cite \
+        and how to modify the ligand only when every target is binding_physical. \
+        Otherwise state that physical selectivity and optimization are unavailable. Be concise and cite \
         specific ΔΔG values. This is for psychopharmacology (serotonin/dopamine receptors).
         """
 
@@ -137,6 +169,16 @@ public actor SelectivityAnalystActor {
 
     /// Analyze selectivity across targets.
     public func analyze(context: SelectivityContext) async throws -> SelectivityAnalysis {
+        if !context.allowsBindingClaims {
+            return SelectivityAnalysis(
+                preferredTarget: "unavailable",
+                deltaG: context.deltaDeltas.first?.ddg ?? 0,
+                deltaGClaimValidity: context.claimValidity.rawValue,
+                driver: .inconclusive,
+                explanation: "Physical target selectivity and ΔΔG are unavailable; retained score differences are proxy diagnostics only.",
+                designSuggestion: "Molecular and selectivity optimization are unavailable until every target has binding_physical provenance."
+            )
+        }
         var prompt = buildPrompt(context: context)
         if estimateTokenCount(prompt) > 3800 {
             // Truncate to first 2 targets
@@ -146,7 +188,12 @@ public actor SelectivityAnalystActor {
             )
             prompt = buildPrompt(context: truncated)
         }
-        return try await session.respond(to: prompt, generating: SelectivityAnalysis.self)
+        var analysis = try await session.respond(
+            to: prompt, generating: SelectivityAnalysis.self).content
+        // Overwrite the generated marker: claim validity is decided by the
+        // evidence gate above, never by the language model.
+        analysis.deltaGClaimValidity = context.claimValidity.rawValue
+        return analysis
     }
 
     private func estimateTokenCount(_ text: String) -> Int {
@@ -194,19 +241,53 @@ public enum CrossPlatformSelectivityDriver: String, Sendable, Codable {
 /// Platform-independent selectivity analysis.
 public struct CrossPlatformSelectivityAnalysis: Sendable, Codable {
     public let preferredTarget: String
+
+    /// Retained numeric compatibility field: the raw score difference between
+    /// the two best targets. Physical ΔΔG in kcal/mol ONLY when
+    /// `deltaGClaimValidity == .bindingPhysical`; otherwise an input-scale
+    /// proxy diagnostic that must never be read as affinity or potency.
     public let deltaG: Double
+
+    /// Fail-closed claim marker travelling with `deltaG`. Defaults to
+    /// proxy-only, including for records decoded from older payloads that
+    /// predate this field.
+    public let deltaGClaimValidity: ClaimValidity
+
+    /// Whether `deltaG` may be presented as a physical binding quantity.
+    public var isDeltaGPhysical: Bool { deltaGClaimValidity == .bindingPhysical }
+
+    /// Presentation-safe unit label for `deltaG`.
+    public var deltaGUnitLabel: String {
+        isDeltaGPhysical ? "kcal/mol" : "input-scale units (proxy diagnostic)"
+    }
+
     public let driver: CrossPlatformSelectivityDriver
     public let explanation: String
     public let designSuggestion: String
 
     public init(preferredTarget: String, deltaG: Double,
                 driver: CrossPlatformSelectivityDriver,
-                explanation: String, designSuggestion: String) {
+                explanation: String, designSuggestion: String,
+                deltaGClaimValidity: ClaimValidity = .proxyOnly) {
         self.preferredTarget = preferredTarget
         self.deltaG = deltaG
+        self.deltaGClaimValidity = deltaGClaimValidity
         self.driver = driver
         self.explanation = explanation
         self.designSuggestion = designSuggestion
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        preferredTarget = try container.decode(String.self, forKey: .preferredTarget)
+        deltaG = try container.decode(Double.self, forKey: .deltaG)
+        driver = try container.decode(
+            CrossPlatformSelectivityDriver.self, forKey: .driver)
+        explanation = try container.decode(String.self, forKey: .explanation)
+        designSuggestion = try container.decode(String.self, forKey: .designSuggestion)
+        // A missing or hostile marker must never upgrade the retained number.
+        deltaGClaimValidity = (try? container.decodeIfPresent(
+            ClaimValidity.self, forKey: .deltaGClaimValidity)) ?? .proxyOnly
     }
 }
 
@@ -231,7 +312,8 @@ public struct RuleBasedSelectivityAnalyst: Sendable {
                 deltaG: 0,
                 driver: .inconclusive,
                 explanation: "Only one target available — selectivity analysis requires at least two targets.",
-                designSuggestion: "Dock against additional targets for selectivity analysis."
+                designSuggestion: "Dock against additional targets for selectivity analysis.",
+                deltaGClaimValidity: .proxyOnly
             )
         }
 
@@ -239,6 +321,17 @@ public struct RuleBasedSelectivityAnalyst: Sendable {
         let preferred = sorted[0]
         let second = sorted[1]
         let ddg = preferred.bestFreeEnergy - second.bestFreeEnergy
+
+        guard context.allowsBindingClaims else {
+            return CrossPlatformSelectivityAnalysis(
+                preferredTarget: "unavailable",
+                deltaG: ddg,
+                driver: .inconclusive,
+                explanation: "Physical target selectivity and ΔΔG are unavailable. Raw score difference \(String(format: "%.2f", ddg)) is retained as a proxy input-scale diagnostic only.",
+                designSuggestion: "Molecular and selectivity optimization are unavailable until every target has binding_physical provenance.",
+                deltaGClaimValidity: context.claimValidity
+            )
+        }
 
         // Determine driver
         let kB = 0.001987206
@@ -294,7 +387,8 @@ public struct RuleBasedSelectivityAnalyst: Sendable {
                 deltaG: ddg,
                 driver: .inconclusive,
                 explanation: explanation + " Note: \(notConverged.joined(separator: ", ")) not converged — selectivity assessment unreliable.",
-                designSuggestion: "Achieve convergence at all targets before selectivity-driven optimization."
+                designSuggestion: "Achieve convergence at all targets before selectivity-driven optimization.",
+                deltaGClaimValidity: context.claimValidity
             )
         }
 
@@ -303,7 +397,8 @@ public struct RuleBasedSelectivityAnalyst: Sendable {
             deltaG: ddg,
             driver: driver,
             explanation: explanation,
-            designSuggestion: suggestion
+            designSuggestion: suggestion,
+            deltaGClaimValidity: context.claimValidity
         )
     }
 }

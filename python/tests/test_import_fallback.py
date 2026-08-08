@@ -176,8 +176,42 @@ def test_has_core_true_when_extension_loads():
         # Pure-Python-only types must still be available.
         assert flexaidds.TemperatureScanPoint is not None
         assert flexaidds.DeltaCpFit is not None
-        # Compiled engines should be the ones from _core.
-        assert flexaidds.StatMechEngine is flexaidds._core.StatMechEngine
+        # The public API remains the serializable Python façade while its
+        # numerical backend is the compiled engine.
+        thermo_module = importlib.import_module("flexaidds.thermodynamics")
+        assert flexaidds.StatMechEngine is thermo_module.StatMechEngine
+        assert flexaidds.Thermodynamics is thermo_module.Thermodynamics
+        assert (
+            flexaidds.ThermodynamicBreakdown
+            is thermo_module.ThermodynamicBreakdown
+        )
+        assert (
+            flexaidds.ScientificProvenance
+            is thermo_module.ScientificProvenance
+        )
+        engine = flexaidds.StatMechEngine(300.0)
+        assert isinstance(engine._engine, core.StatMechEngine)
+
+        # Direct low-level bindings carry the same fail-closed predicates.
+        provenance = core.ScientificProvenance()
+        provenance.energy_domain = core.EnergyDomain.CALIBRATED_KCAL_PER_MOL
+        provenance.ensemble_measure = core.EnsembleMeasure.ENUMERATED_MICROSTATES
+        provenance.reference_state = core.ReferenceState.MATCHED_ASSOCIATION_CYCLE
+        provenance.energy_provenance = "\u00a0\u2003"
+        provenance.measure_provenance = "sha256:d4735e3a265e16eee03f59718b9b5d03019c07d8b6c51f90da3a666eec13ab35"
+        provenance.reference_provenance = "sha256:4e07408562bedb8b60ce05c1decfe3ad16b72230967de01f640b7e4729b49fce"
+        assert provenance.is_proxy_only()
+        assert not provenance.allows_canonical_physical_claim()
+
+        provenance.energy_provenance = "sha256:6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b"
+        native_engine = core.StatMechEngine(300.0, provenance)
+        native_engine.add_sample(-10.0)
+        native_result = native_engine.compute()
+        native_breakdown = native_engine.compute_breakdown()
+        assert native_result.allows_binding_physical_claim()
+        assert not native_result.is_proxy_only()
+        assert native_breakdown.allows_binding_physical_claim()
+        assert not native_breakdown.is_proxy_only()
     finally:
         for k in list(sys.modules):
             if k == "flexaidds" or k.startswith("flexaidds."):

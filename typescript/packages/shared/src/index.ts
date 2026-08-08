@@ -11,6 +11,12 @@ export type {
   TargetModification,
   HealthCorrelation,
   ShannonEntropyDecomposition,
+  EnergyDomain,
+  EnsembleMeasure,
+  ReferenceState,
+  ClaimValidity,
+  ScientificProvenance,
+  ThermodynamicClaimSource,
 } from './BindingPopulation.js';
 
 export type {
@@ -81,4 +87,36 @@ export type {
   SelectivityContext,
 } from './SelectivityContext.js';
 
-export { serializePopulation, deserializePopulation } from './BindingPopulation.js';
+export {
+  serializePopulation,
+  deserializePopulation,
+} from './BindingPopulation.js';
+
+// Single source of truth for the claim firewall. Do not re-implement any of
+// these predicates at a call site — import them from here.
+export {
+  SCIENTIFIC_PROVENANCE_SCHEMA_VERSION,
+  PROXY_ONLY_PROVENANCE,
+  hasArtifactSha256,
+  hasStrictAvailability,
+  normalizeScientificProvenance,
+  deriveClaimValidity,
+  claimValidityForRecord,
+  allowsCanonicalClaims,
+  allowsBindingClaims,
+} from './scientificProvenance.js';
+
+// The one runtime boundary for untrusted producer payloads.
+export {
+  normalizeAvailability,
+  normalizeThermodynamicRecord,
+  normalizeDockingRecord,
+  claimValidityForWireRecord,
+} from './wireNormalization.js';
+
+export type {
+  UnavailableReason,
+  NormalizedThermodynamicRecord,
+  NormalizedBindingMode,
+  NormalizedDockingRecord,
+} from './wireNormalization.js';

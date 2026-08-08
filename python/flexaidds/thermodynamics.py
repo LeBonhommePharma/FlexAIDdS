@@ -6,6 +6,8 @@ Provides Pythonic wrappers around C++ StatMechEngine with NumPy integration.
 from __future__ import annotations
 
 import math
+import re
+from enum import Enum
 from typing import Any, Dict, List, Optional, Tuple
 from dataclasses import dataclass, field
 
@@ -28,9 +30,314 @@ else:
     kB_SI = 1.380649e-23
 
 
+class EnergyDomain(str, Enum):
+    """Scientific meaning and units of the values used as ensemble energies."""
+
+    UNCLASSIFIED = "unclassified"
+    CF_ARBITRARY_UNITS = "cf_arbitrary_units"
+    CALIBRATED_KCAL_PER_MOL = "calibrated_kcal_per_mol"
+    MODEL_SCALE = "model_scale"
+
+
+class EnsembleMeasure(str, Enum):
+    """Measure represented by the states entering the partition sum."""
+
+    UNCLASSIFIED = "unclassified"
+    OPTIMIZER_SAMPLES = "optimizer_samples"
+    ENUMERATED_MICROSTATES = "enumerated_microstates"
+    WEIGHTED_QUADRATURE = "weighted_quadrature"
+
+
+class ReferenceState(str, Enum):
+    """Reference-state coverage available for interpreting a free energy."""
+
+    NONE = "none"
+    BOUND_ONLY = "bound_only"
+    MATCHED_ASSOCIATION_CYCLE = "matched_association_cycle"
+
+
+class ClaimValidity(str, Enum):
+    """Strongest scientific claim supported by the attached provenance."""
+
+    PROXY_ONLY = "proxy_only"
+    CANONICAL_PHYSICAL = "canonical_physical"
+    BINDING_PHYSICAL = "binding_physical"
+
+
+def _coerce_enum(value: Any, enum_type: type[Enum], default: Enum) -> Enum:
+    """Return a known enum member, falling closed to *default* on bad input."""
+    if isinstance(value, enum_type):
+        return value
+    try:
+        return enum_type(value)
+    except (TypeError, ValueError):
+        return default
+
+
+_SHA256_RECEIPT_RE = re.compile(r"sha256:([0-9a-fA-F]{64})\Z")
+_KNOWN_EMPTY_OR_FILLER_DIGESTS = {
+    "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "3f7a9c2b1e4d5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a",
+}
+
+
+def _has_artifact_sha256(value: str) -> bool:
+    """Whether *value* is a nontrivial structured SHA-256 artifact identity."""
+    match = _SHA256_RECEIPT_RE.fullmatch(value)
+    if match is None:
+        return False
+    digest = match.group(1).lower()
+    return len(set(digest)) >= 3 and digest not in _KNOWN_EMPTY_OR_FILLER_DIGESTS
+
+
+@dataclass(frozen=True)
+class ScientificProvenance:
+    """Evidence needed to interpret ensemble statistics as physical quantities.
+
+    Claim validity is always derived from these fields.  A serialized
+    ``claim_validity`` value is informational only and is never trusted when
+    deserializing.
+
+    The dataclass is ``frozen`` on purpose: ``__post_init__`` normalisation
+    (type-strict schema version, enum coercion, non-string receipt rejection)
+    is the only path that writes these fields, so it cannot be bypassed by
+    assigning a hostile value after construction.
+    """
+
+    schema_version: int = 2
+    energy_domain: EnergyDomain = EnergyDomain.UNCLASSIFIED
+    ensemble_measure: EnsembleMeasure = EnsembleMeasure.UNCLASSIFIED
+    reference_state: ReferenceState = ReferenceState.NONE
+    energy_provenance: str = ""
+    measure_provenance: str = ""
+    reference_provenance: str = ""
+
+    def __post_init__(self) -> None:
+        # Frozen dataclass: normalisation must go through object.__setattr__.
+        def _set(name: str, value: Any) -> None:
+            object.__setattr__(self, name, value)
+
+        # Schema authorization is type-strict: bool, float, and numeric strings
+        # are not equivalent to the version-2 integer in an untrusted payload.
+        if isinstance(self.schema_version, bool) or not isinstance(
+            self.schema_version, int
+        ):
+            _set("schema_version", 0)
+        _set(
+            "energy_domain",
+            _coerce_enum(self.energy_domain, EnergyDomain, EnergyDomain.UNCLASSIFIED),
+        )
+        _set(
+            "ensemble_measure",
+            _coerce_enum(
+                self.ensemble_measure, EnsembleMeasure, EnsembleMeasure.UNCLASSIFIED
+            ),
+        )
+        _set(
+            "reference_state",
+            _coerce_enum(self.reference_state, ReferenceState, ReferenceState.NONE),
+        )
+        # Do not stringify hostile/non-string evidence (for example ``[1]`` or
+        # ``True``) into a printable token that could authorize a claim.
+        for _field in (
+            "energy_provenance",
+            "measure_provenance",
+            "reference_provenance",
+        ):
+            value = getattr(self, _field)
+            _set(_field, value if isinstance(value, str) else "")
+
+    def allows_canonical_claims(self) -> bool:
+        """Whether the metadata supports canonical physical-ensemble claims."""
+        return (
+            self.schema_version == 2
+            and self.energy_domain is EnergyDomain.CALIBRATED_KCAL_PER_MOL
+            and self.ensemble_measure
+            in {
+                EnsembleMeasure.ENUMERATED_MICROSTATES,
+                EnsembleMeasure.WEIGHTED_QUADRATURE,
+            }
+            and _has_artifact_sha256(self.energy_provenance)
+            and _has_artifact_sha256(self.measure_provenance)
+        )
+
+    def allows_binding_claims(self) -> bool:
+        """Whether a matched association cycle supports binding claims."""
+        return (
+            self.allows_canonical_claims()
+            and self.reference_state is ReferenceState.MATCHED_ASSOCIATION_CYCLE
+            and _has_artifact_sha256(self.reference_provenance)
+        )
+
+    def allows_canonical_physical_claim(self) -> bool:
+        """Cross-language alias for :meth:`allows_canonical_claims`."""
+        return self.allows_canonical_claims()
+
+    def allows_binding_physical_claim(self) -> bool:
+        """Cross-language alias for :meth:`allows_binding_claims`."""
+        return self.allows_binding_claims()
+
+    def is_proxy_only(self) -> bool:
+        """Whether only proxy-level interpretation is currently justified."""
+        return self.claim_validity is ClaimValidity.PROXY_ONLY
+
+    @property
+    def claim_validity(self) -> ClaimValidity:
+        """Strongest claim supported by the current metadata."""
+        if self.allows_binding_claims():
+            return ClaimValidity.BINDING_PHYSICAL
+        if self.allows_canonical_claims():
+            return ClaimValidity.CANONICAL_PHYSICAL
+        return ClaimValidity.PROXY_ONLY
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Serialize source metadata plus derived, human-readable validity."""
+        return {
+            "schema_version": self.schema_version,
+            "energy_domain": self.energy_domain.value,
+            "ensemble_measure": self.ensemble_measure.value,
+            "reference_state": self.reference_state.value,
+            "energy_provenance": self.energy_provenance,
+            "measure_provenance": self.measure_provenance,
+            "reference_provenance": self.reference_provenance,
+            "claim_validity": self.claim_validity.value,
+        }
+
+    @classmethod
+    def from_dict(cls, data: Optional[Dict[str, Any]]) -> "ScientificProvenance":
+        """Deserialize evidence fields while ignoring claimed validity."""
+        if not isinstance(data, dict):
+            return cls()
+
+        # A metadata payload without an explicit schema cannot authorize a
+        # physical claim. Legacy Thermodynamics payloads bypass this helper
+        # and receive the unclassified default provenance instead.
+        raw_version = data.get("schema_version", 0)
+        schema_version = (
+            raw_version
+            if isinstance(raw_version, int) and not isinstance(raw_version, bool)
+            else 0
+        )
+
+        return cls(
+            schema_version=schema_version,
+            energy_domain=data.get("energy_domain", EnergyDomain.UNCLASSIFIED),
+            ensemble_measure=data.get(
+                "ensemble_measure", EnsembleMeasure.UNCLASSIFIED
+            ),
+            reference_state=data.get("reference_state", ReferenceState.NONE),
+            energy_provenance=data.get("energy_provenance", ""),
+            measure_provenance=data.get("measure_provenance", ""),
+            reference_provenance=data.get("reference_provenance", ""),
+        )
+
+
+_SCIENTIFIC_PROVENANCE_KEYS = {
+    "schema_version",
+    "energy_domain",
+    "ensemble_measure",
+    "reference_state",
+    "energy_provenance",
+    "measure_provenance",
+    "reference_provenance",
+}
+
+
+def _provenance_from_payload(data: Dict[str, Any]) -> ScientificProvenance:
+    """Read the nested v2 shape, with defensive support for flat metadata."""
+    nested = data.get("scientific_provenance")
+    if isinstance(nested, dict):
+        return ScientificProvenance.from_dict(nested)
+    if any(key in data for key in _SCIENTIFIC_PROVENANCE_KEYS):
+        return ScientificProvenance.from_dict(data)
+    return ScientificProvenance()
+
+
+def _coerce_provenance(value: Any) -> ScientificProvenance:
+    """Normalize public provenance inputs without allowing fail-open values."""
+    if isinstance(value, ScientificProvenance):
+        return value
+    if isinstance(value, dict):
+        return ScientificProvenance.from_dict(value)
+    return ScientificProvenance()
+
+
+def _provenance_for_breakdown(
+    source: ScientificProvenance,
+    G_vib_kcal_mol: float,
+    G_natural_kcal_mol: float,
+    G_other_kcal_mol: float,
+    has_vib: bool,
+    has_natural: bool,
+    has_other: bool,
+) -> ScientificProvenance:
+    """Python mirror of C++ ``statmech::provenance_for_breakdown``.
+
+    Vibrational / NATURaL / other correction terms do not carry independent
+    sha256 receipts, so their presence (flag set *or* value non-zero) forces the
+    aggregate ledger back to the unclassified, proxy-only default even when the
+    configurational ensemble itself is calibrated.  No numeric field changes.
+    """
+    has_unreceipted_correction = (
+        bool(has_vib)
+        or bool(has_natural)
+        or bool(has_other)
+        or G_vib_kcal_mol != 0.0
+        or G_natural_kcal_mol != 0.0
+        or G_other_kcal_mol != 0.0
+    )
+    return ScientificProvenance() if has_unreceipted_correction else source
+
+
+def _to_native_provenance(provenance: ScientificProvenance):
+    """Translate the Python provenance into the pybind ``_core`` struct.
+
+    Returns ``None`` when ``_core`` is absent or predates the schema-v2
+    bindings; callers then leave the native engine at its own fail-closed
+    default rather than fabricating a witness.
+    """
+    if _core is None or not hasattr(_core, "ScientificProvenance"):
+        return None
+    try:
+        native = _core.ScientificProvenance()
+        native.schema_version = int(provenance.schema_version)
+        # Member names are identical on both sides of the binding by contract.
+        native.energy_domain = getattr(
+            _core.EnergyDomain, provenance.energy_domain.name
+        )
+        native.ensemble_measure = getattr(
+            _core.EnsembleMeasure, provenance.ensemble_measure.name
+        )
+        native.reference_state = getattr(
+            _core.ReferenceState, provenance.reference_state.name
+        )
+        native.energy_provenance = provenance.energy_provenance
+        native.measure_provenance = provenance.measure_provenance
+        native.reference_provenance = provenance.reference_provenance
+        return native
+    except (AttributeError, TypeError, ValueError):
+        return None
+
+
+def _apply_native_provenance(engine: Any, provenance: ScientificProvenance) -> bool:
+    """Push *provenance* onto a native engine; ``False`` if unsupported."""
+    native = _to_native_provenance(provenance)
+    if native is None or not hasattr(engine, "set_provenance"):
+        return False
+    try:
+        engine.set_provenance(native)
+        return True
+    except (AttributeError, TypeError, ValueError):
+        return False
+
+
 @dataclass
 class Thermodynamics:
     """Complete thermodynamic properties of a conformational ensemble.
+
+    Numeric fields use physical units only when ``provenance`` authorizes a
+    canonical physical claim. Otherwise they are proxy diagnostics in the
+    declared input domain.
     
     Attributes:
         temperature: Temperature in Kelvin
@@ -41,6 +348,7 @@ class Thermodynamics:
         heat_capacity: Cv = (⟨E²⟩ - ⟨E⟩²) / (kT²) (kcal mol⁻¹ K⁻¹)
         entropy: Configurational entropy S = (⟨E⟩ - F) / T (kcal mol⁻¹ K⁻¹)
         std_energy: Standard deviation of energy σ_E (kcal/mol)
+        provenance: Scientific interpretation and claim-validity metadata
     """
     temperature: float
     log_Z: float
@@ -50,16 +358,45 @@ class Thermodynamics:
     heat_capacity: float
     entropy: float
     std_energy: float
+    provenance: ScientificProvenance = field(default_factory=ScientificProvenance)
+
+    def __post_init__(self) -> None:
+        self.provenance = _coerce_provenance(self.provenance)
     
     @property
     def binding_free_energy(self) -> float:
-        """Alias for free_energy (common in docking context)."""
+        """Numeric alias for free_energy; not authorization for a binding claim."""
         return self.free_energy
     
     @property
     def entropy_term(self) -> float:
-        """Entropic contribution to free energy: TΔS (kcal/mol)."""
+        """Numeric T*S term; physical units require calibrated provenance."""
         return self.temperature * self.entropy
+
+    @property
+    def claim_validity(self) -> ClaimValidity:
+        """Strongest scientific claim supported by this result's provenance."""
+        return self.provenance.claim_validity
+
+    def allows_canonical_claims(self) -> bool:
+        """Whether this result supports canonical physical-ensemble claims."""
+        return self.provenance.allows_canonical_claims()
+
+    def allows_binding_claims(self) -> bool:
+        """Whether this result supports physical binding claims."""
+        return self.provenance.allows_binding_claims()
+
+    def allows_canonical_physical_claim(self) -> bool:
+        """Cross-language alias for :meth:`allows_canonical_claims`."""
+        return self.allows_canonical_claims()
+
+    def allows_binding_physical_claim(self) -> bool:
+        """Cross-language alias for :meth:`allows_binding_claims`."""
+        return self.allows_binding_claims()
+
+    def is_proxy_only(self) -> bool:
+        """Whether only proxy-level interpretation is currently justified."""
+        return self.claim_validity is ClaimValidity.PROXY_ONLY
     
     def __repr__(self) -> str:
         return (
@@ -69,7 +406,7 @@ class Thermodynamics:
         )
 
     def to_dict(self) -> dict:
-        """Convert to dictionary for serialization (includes all fields for roundtrip)."""
+        """Serialize legacy numeric keys plus interpretation metadata."""
         return {
             'temperature_K': self.temperature,
             'log_Z': self.log_Z,
@@ -77,8 +414,9 @@ class Thermodynamics:
             'enthalpy_kcal_mol': self.mean_energy,
             'mean_energy_sq': self.mean_energy_sq,
             'entropy_kcal_mol_K': self.entropy,
-            'heat_capacity_kcal_mol_K2': self.heat_capacity,
+            'heat_capacity_kcal_mol_K': self.heat_capacity,
             'std_energy_kcal_mol': self.std_energy,
+            'scientific_provenance': self.provenance.to_dict(),
         }
 
     @classmethod
@@ -108,15 +446,29 @@ class Thermodynamics:
                 return float(data[raw])
             return default
 
+        if "heat_capacity_kcal_mol_K" in data:
+            heat_capacity = float(data["heat_capacity_kcal_mol_K"])
+        elif "heat_capacity_kcal_mol_K2" in data:
+            # Legacy schema used K2 even though Cv is kcal mol^-1 K^-1.
+            heat_capacity = float(data["heat_capacity_kcal_mol_K2"])
+        elif "heat_capacity" in data:
+            heat_capacity = float(data["heat_capacity"])
+        else:
+            raise KeyError(
+                "Missing required key: expected 'heat_capacity_kcal_mol_K', "
+                "legacy 'heat_capacity_kcal_mol_K2', or 'heat_capacity'"
+            )
+
         return cls(
             temperature=_get("temperature_K", "temperature"),
             log_Z=_get("log_Z", "log_Z"),
             free_energy=_get("free_energy_kcal_mol", "free_energy"),
             mean_energy=_get("enthalpy_kcal_mol", "mean_energy"),
             mean_energy_sq=_get_opt("mean_energy_sq", "mean_energy_sq"),
-            heat_capacity=_get("heat_capacity_kcal_mol_K2", "heat_capacity"),
+            heat_capacity=heat_capacity,
             entropy=_get("entropy_kcal_mol_K", "entropy"),
             std_energy=_get("std_energy_kcal_mol", "std_energy"),
+            provenance=_provenance_from_payload(data),
         )
 
 
@@ -130,7 +482,8 @@ class Thermodynamics:
 class ThermodynamicBreakdown:
     """Auditable thermodynamic ledger for a binding mode or ensemble.
 
-    All quantities follow the invariants in docs/dev/thermo_invariants.md.
+    All quantities follow the arithmetic in docs/dev/thermo_invariants.md;
+    legacy unit-bearing names are physical only when provenance authorizes it.
     G_total = G_config + G_vib + G_natural + G_other (always defined).
 
     This is the shape emitted under "thermodynamics" in JSON output (Task 2+).
@@ -164,6 +517,48 @@ class ThermodynamicBreakdown:
 
     # Task 6: Standard-state affinity calibration (safe / experimental)
     affinity: Optional[Dict[str, Any]] = None
+    provenance: ScientificProvenance = field(default_factory=ScientificProvenance)
+
+    def __post_init__(self) -> None:
+        # Mirrors C++ statmech::provenance_for_breakdown: correction terms carry
+        # no independent artifact receipt, so any correction downgrades the
+        # aggregate ledger to proxy-only. Numeric fields are left untouched.
+        # Applied here so every construction path (direct, from_thermodynamics,
+        # from_dict, compute_breakdown) goes through the same gate.
+        self.provenance = _provenance_for_breakdown(
+            _coerce_provenance(self.provenance),
+            self.G_vib_kcal_mol,
+            self.G_natural_kcal_mol,
+            self.G_other_kcal_mol,
+            self.has_vib,
+            self.has_natural,
+            self.has_other,
+        )
+
+    @property
+    def claim_validity(self) -> ClaimValidity:
+        """Strongest scientific claim supported by this ledger."""
+        return self.provenance.claim_validity
+
+    def allows_canonical_claims(self) -> bool:
+        """Whether this ledger supports canonical physical-ensemble claims."""
+        return self.provenance.allows_canonical_claims()
+
+    def allows_binding_claims(self) -> bool:
+        """Whether this ledger supports physical binding claims."""
+        return self.provenance.allows_binding_claims()
+
+    def allows_canonical_physical_claim(self) -> bool:
+        """Cross-language alias for :meth:`allows_canonical_claims`."""
+        return self.allows_canonical_claims()
+
+    def allows_binding_physical_claim(self) -> bool:
+        """Cross-language alias for :meth:`allows_binding_claims`."""
+        return self.allows_binding_claims()
+
+    def is_proxy_only(self) -> bool:
+        """Whether only proxy-level interpretation is currently justified."""
+        return self.claim_validity is ClaimValidity.PROXY_ONLY
 
     def to_dict(self) -> Dict[str, Any]:
         """Exact JSON shape required by roadmap (no legacy aliases here)."""
@@ -184,6 +579,7 @@ class ThermodynamicBreakdown:
             "components_complete": self.components_complete,
             "component_means": self.component_means,
             "affinity": self.affinity,
+            "scientific_provenance": self.provenance.to_dict(),
         }
 
     @classmethod
@@ -211,6 +607,7 @@ class ThermodynamicBreakdown:
             component_means={},
             component_sum_kcal_mol=0.0,
             components_complete=False,
+            provenance=thermo.provenance,
         )
         return b
 
@@ -239,6 +636,7 @@ class ThermodynamicBreakdown:
             component_sum_kcal_mol=float(g("component_sum_kcal_mol", 0.0)),
             components_complete=bool(g("components_complete", False)),
             affinity=g("affinity", None),
+            provenance=_provenance_from_payload(data),
         )
 
 
@@ -331,12 +729,23 @@ class _PyStatMechEngine:
     Uses the log-sum-exp trick for numerical stability.
     """
 
-    def __init__(self, temperature_K: float) -> None:
+    def __init__(self, temperature_K: float,
+                 provenance: Optional[ScientificProvenance] = None) -> None:
         self._T = float(temperature_K)
         if self._T <= 0.0:
             raise ValueError("StatMechEngine: temperature must be > 0")
         self._beta = 1.0 / (kB_kcal * self._T)
         self._states: List[Tuple[float, float]] = []
+        self._provenance = _coerce_provenance(provenance)
+
+    @property
+    def provenance(self) -> ScientificProvenance:
+        """Scientific provenance attached to computed results."""
+        return self._provenance
+
+    def set_provenance(self, provenance: ScientificProvenance) -> None:
+        """Attach interpretation metadata without changing numerical results."""
+        self._provenance = _coerce_provenance(provenance)
 
     # ------------------------------------------------------------------
     # sample accumulation
@@ -403,6 +812,7 @@ class _PyStatMechEngine:
             heat_capacity=heat_capacity,
             entropy=entropy,
             std_energy=std_e,
+            provenance=self._provenance,
         )
 
     def compute_breakdown(
@@ -431,6 +841,7 @@ class _PyStatMechEngine:
             has_vib=has_vib,
             has_natural=has_natural,
             has_other=has_other,
+            provenance=self._provenance,
         )
 
     def component_averages(self, components: List[EnergyComponents]) -> ComponentAverages:
@@ -482,33 +893,53 @@ class _PyStatMechEngine:
 class StatMechEngine:
     """Statistical mechanics engine for conformational ensembles.
 
-    Computes partition functions, free energies, entropies, and heat capacities
-    from sampled configurations using canonical ensemble formalism.
+    Computes canonical-formula ensemble statistics. Physical interpretation
+    requires calibrated-energy and ensemble-measure provenance.
 
     Example:
         >>> engine = StatMechEngine(temperature_K=300.0)
-        >>> engine.add_samples([-10.5, -9.8, -10.2, -11.0])  # energies in kcal/mol
+        >>> engine.add_samples([-10.5, -9.8, -10.2, -11.0])
         >>> thermo = engine.compute()
-        >>> print(f"Free energy: {thermo.free_energy:.2f} kcal/mol")
-        >>> print(f"Entropy: {thermo.entropy:.5f} kcal/(mol·K)")
+        >>> print(f"F-like ensemble value: {thermo.free_energy:.2f}")
+        >>> print(thermo.claim_validity.value)
     """
 
-    def __init__(self, temperature_K: float = 300.0):
+    def __init__(self, temperature_K: float = 300.0,
+                 provenance: Optional[ScientificProvenance] = None):
         """Initialize engine at specified temperature.
 
         Args:
             temperature_K: Simulation temperature in Kelvin (default 300K)
+            provenance: Scientific interpretation metadata. Defaults fail closed.
         """
+        self._provenance = _coerce_provenance(provenance)
         if _core is not None:
             self._engine = _core.StatMechEngine(temperature_K)
+            # The native engine stamps its own provenance onto every result it
+            # produces; without this the witness would be silently dropped and
+            # C++-side ledgers would disagree with the Python view.
+            _apply_native_provenance(self._engine, self._provenance)
         else:
-            self._engine = _PyStatMechEngine(temperature_K)
+            self._engine = _PyStatMechEngine(temperature_K, self._provenance)
+
+    @property
+    def provenance(self) -> ScientificProvenance:
+        """Scientific provenance attached to computed results."""
+        return self._provenance
+
+    def set_provenance(self, provenance: ScientificProvenance) -> None:
+        """Attach interpretation metadata without changing numerical results."""
+        self._provenance = _coerce_provenance(provenance)
+        if isinstance(self._engine, _PyStatMechEngine):
+            self._engine.set_provenance(self._provenance)
+        else:
+            _apply_native_provenance(self._engine, self._provenance)
     
     def add_sample(self, energy: float, multiplicity: int = 1) -> None:
         """Add a single sampled configuration.
         
         Args:
-            energy: Configuration energy in kcal/mol (negative = favorable)
+            energy: Value in the domain declared by ``provenance``
             multiplicity: Degeneracy/sampling count (default 1)
         """
         self._engine.add_sample(energy, multiplicity)
@@ -517,7 +948,7 @@ class StatMechEngine:
         """Add multiple configurations from a sequence or NumPy array.
 
         Args:
-            energies: Iterable of configuration energies (kcal/mol)
+            energies: Iterable of values in the declared energy domain
         """
         if np is not None:
             energies = np.asarray(energies, dtype=np.float64)
@@ -540,6 +971,7 @@ class StatMechEngine:
             heat_capacity=thermo_cpp.heat_capacity,
             entropy=thermo_cpp.entropy,
             std_energy=thermo_cpp.std_energy,
+            provenance=self._provenance,
         )
 
     def compute_breakdown(
@@ -583,6 +1015,7 @@ class StatMechEngine:
                     else None
                 ),
                 has_components=getattr(result, "has_components", False),
+                provenance=self._provenance,
             )
 
         thermo = self.compute()
@@ -602,6 +1035,7 @@ class StatMechEngine:
             has_vib=has_vib,
             has_natural=has_natural,
             has_other=has_other,
+            provenance=self._provenance,
         )
 
     def component_averages(self, components: List[EnergyComponents]) -> ComponentAverages:

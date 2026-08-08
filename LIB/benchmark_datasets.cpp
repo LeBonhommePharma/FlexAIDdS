@@ -140,8 +140,21 @@ static void print_itc_table(const dataset::BenchmarkReport& report,
     }
     if (!has_itc) return;
 
+    // Claim firewall. The `predicted_*` side of every pair below comes from the
+    // uncalibrated contact-function optimizer (EnergyDomain =
+    // ContactFunctionArbitraryUnits, EnsembleMeasure = OptimizerSamples, no
+    // sha256 receipt ⇒ ProxyOnly per LIB/statmech.h). Correlating a proxy
+    // against experiment is a legitimate diagnostic — the correlation
+    // coefficients are dimensionless and unaffected by the missing calibration
+    // — but the proxy columns themselves must not be presented as physical
+    // thermodynamics. Only the labels/units change here; the statistics are
+    // computed from exactly the same inputs as before.
     printf("\n");
-    printf("  ITC Thermodynamic Validation\n");
+    printf("  ITC correlation diagnostic — CF-proxy predictions vs experiment\n");
+    printf("  claim_validity: proxy_only. Predicted values are uncalibrated\n");
+    printf("  contact-function diagnostics in arbitrary units, not kcal/mol; only\n");
+    printf("  the dimensionless correlations below are interpretable. No ΔG, ΔH,\n");
+    printf("  TΔS, Kd, Ki or affinity value is claimed for the predicted side.\n");
     printf("  ─────────────────────────────────────────────────────────────\n");
 
     // Collect ITC pairs
@@ -167,30 +180,35 @@ static void print_itc_table(const dataset::BenchmarkReport& report,
         }
     }
 
+    // Row labels name the PROXY channel that was correlated against the
+    // experimental ITC column, e.g. "ΔG-like proxy" = predicted_dG (CF units)
+    // vs experimental ΔG (kcal/mol). Cell width is 16 columns; keep the label
+    // ≤ 14 display columns so the box stays aligned.
     printf("  ┌────────────────┬──────────┬──────────┬──────────┐\n");
-    printf("  │ Property       │ Pearson  │ Spearman │ Kendall  │\n");
+    printf("  │ Proxy channel  │ Pearson  │ Spearman │ Kendall  │\n");
     printf("  ├────────────────┼──────────┼──────────┼──────────┤\n");
 
     if (exp_dG.size() >= 3) {
-        printf("  │ ΔG (kcal/mol)  │ %8.3f │ %8.3f │ %8.3f │\n",
+        printf("  │ ΔG-like proxy  │ %8.3f │ %8.3f │ %8.3f │\n",
                dataset::compute_pearson_r(pred_dG, exp_dG),
                dataset::compute_spearman_rho(pred_dG, exp_dG),
                dataset::compute_kendall_tau(pred_dG, exp_dG));
     }
     if (exp_dH.size() >= 3) {
-        printf("  │ ΔH (kcal/mol)  │ %8.3f │ %8.3f │ %8.3f │\n",
+        printf("  │ ΔH-like proxy  │ %8.3f │ %8.3f │ %8.3f │\n",
                dataset::compute_pearson_r(pred_dH, exp_dH),
                dataset::compute_spearman_rho(pred_dH, exp_dH),
                dataset::compute_kendall_tau(pred_dH, exp_dH));
     }
     if (exp_TdS.size() >= 3) {
-        printf("  │ TΔS (kcal/mol) │ %8.3f │ %8.3f │ %8.3f │\n",
+        printf("  │ TΔS-like proxy │ %8.3f │ %8.3f │ %8.3f │\n",
                dataset::compute_pearson_r(pred_TdS, exp_TdS),
                dataset::compute_spearman_rho(pred_TdS, exp_TdS),
                dataset::compute_kendall_tau(pred_TdS, exp_TdS));
     }
 
     printf("  └────────────────┴──────────┴──────────┴──────────┘\n");
+    printf("  Correlation only — proxy columns are in arbitrary CF units.\n");
     printf("\n");
 }
 

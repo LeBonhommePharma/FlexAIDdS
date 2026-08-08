@@ -1,6 +1,6 @@
 # B1.1: Register entropy.help Domain + Configure DNS
 
-**Status (as of 2026-05-27)**: Domain appears available.
+**Status**: Historical setup plan; current domain availability, ownership, DNS, and deployment are unverified in this repository.
 
 **Recommended Path**:
 1. Register on Namecheap (fastest + possible first-year discount)
@@ -118,6 +118,6 @@ Once the domain is live:
 
 ---
 
-**Current date note**: As of late May 2026, the domain was confirmed available via WHOIS. Move quickly.
+**Historical note**: A May 2026 planning pass described the domain as available, but no registry receipt is deposited here. Re-check availability before acting.
 
-Once registered, this task (B1.1) will be complete and we can move to final launch polish and announcements.
+Only a registrar receipt plus live DNS/HTTPS checks can establish completion; this document is not that evidence.

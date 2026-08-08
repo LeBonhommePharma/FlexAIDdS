@@ -5,6 +5,7 @@ Priority 4 coverage.  No C++ extension needed.
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -257,13 +258,27 @@ class TestDockingResultToRecords:
         assert len(records) == 2
 
     def test_record_keys(self):
+        # Schema v2 deliberately widens this record: the claim-firewall fields
+        # (proxy_free_energy, soft_beta_G, scientific_provenance) must travel
+        # with every serialised mode, so exact set equality is asserted against
+        # the widened contract rather than relaxed to a subset check.
         record = self._make_result().to_records()[0]
         expected = {
-            "mode_id", "rank", "n_poses", "free_energy", "enthalpy",
-            "entropy", "heat_capacity", "std_energy", "best_cf",
-            "temperature", "thermodynamics", "best_pose_path",
+            "mode_id", "rank", "n_poses", "free_energy", "proxy_free_energy",
+            "soft_beta_G", "enthalpy", "entropy", "heat_capacity",
+            "std_energy", "best_cf", "temperature", "scientific_provenance",
+            "thermodynamics", "best_pose_path",
         }
         assert expected == set(record.keys())
+
+    def test_record_provenance_is_serialisable_mapping(self):
+        record = self._make_result().to_records()[0]
+        prov = record["scientific_provenance"]
+        assert isinstance(prov, dict)
+        # Default (unclassified) evidence must stay proxy-only.
+        assert prov["claim_validity"] == "proxy_only"
+        # Records feed json.dumps / csv / pandas — no dataclass objects.
+        json.dumps(record)
 
     def test_record_values_mode1(self):
         record = self._make_result().to_records()[0]
@@ -621,10 +636,13 @@ class TestDockingResultToCsv:
         import io
         text = self._make_result().to_csv()
         reader = csv_mod.DictReader(io.StringIO(text))
+        # Mirrors to_records(): the schema-v2 firewall columns are part of the
+        # CSV contract so downstream consumers cannot lose the provenance.
         expected_cols = {
-            "mode_id", "rank", "n_poses", "free_energy", "enthalpy",
-            "entropy", "heat_capacity", "std_energy", "best_cf",
-            "temperature", "thermodynamics", "best_pose_path",
+            "mode_id", "rank", "n_poses", "free_energy", "proxy_free_energy",
+            "soft_beta_G", "enthalpy", "entropy", "heat_capacity",
+            "std_energy", "best_cf", "temperature", "scientific_provenance",
+            "thermodynamics", "best_pose_path",
         }
         assert expected_cols == set(reader.fieldnames)
 

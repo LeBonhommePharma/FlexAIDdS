@@ -13,9 +13,15 @@
     }
   },
   "scripts": {
+    "prebuild": "tsc -p ../shared",
     "build": "tsc",
+    "pretest": "tsc -p ../shared",
     "test": "vitest run",
+    "pretypecheck": "tsc -p ../shared",
     "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@bonhomme/shared": "0.1.0"
   },
   "devDependencies": {
     "typescript": "^5.4",

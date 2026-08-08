@@ -76,6 +76,46 @@ def test_kB_kcal_value():
     assert abs(kB_kcal - 0.001987206) < 1e-8
 
 
+def test_package_exports_stable_thermodynamics_facade():
+    """Top-level thermodynamics types must not depend on extension presence."""
+    import flexaidds
+    from flexaidds import thermodynamics as thermo_module
+
+    for name in (
+        "StatMechEngine",
+        "Thermodynamics",
+        "ThermodynamicBreakdown",
+        "EnergyDomain",
+        "EnsembleMeasure",
+        "ReferenceState",
+        "ClaimValidity",
+        "ScientificProvenance",
+    ):
+        assert getattr(flexaidds, name) is getattr(thermo_module, name)
+
+
+@needs_core
+def test_public_facade_delegates_to_native_engine_with_provenance():
+    """Compiled installs retain the Python schema while using native math."""
+    import flexaidds
+    from flexaidds import _core
+
+    provenance = flexaidds.ScientificProvenance(
+        energy_domain=flexaidds.EnergyDomain.CALIBRATED_KCAL_PER_MOL,
+        ensemble_measure=flexaidds.EnsembleMeasure.ENUMERATED_MICROSTATES,
+        energy_provenance="sha256:6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b",
+        measure_provenance="sha256:d4735e3a265e16eee03f59718b9b5d03019c07d8b6c51f90da3a666eec13ab35",
+    )
+    engine = flexaidds.StatMechEngine(300.0, provenance)
+    engine.add_sample(-10.0)
+    result = engine.compute()
+
+    assert isinstance(engine._engine, _core.StatMechEngine)
+    assert isinstance(result, flexaidds.Thermodynamics)
+    assert result.allows_canonical_claims()
+    assert result.to_dict()["scientific_provenance"]["schema_version"] == 2
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Thermodynamics dataclass
 # ─────────────────────────────────────────────────────────────────────────────
@@ -103,8 +143,10 @@ class TestThermodynamicsDataclass:
         t = self._make()
         d = t.to_dict()
         for key in ("temperature_K", "free_energy_kcal_mol",
-                    "entropy_kcal_mol_K", "heat_capacity_kcal_mol_K2"):
+                    "entropy_kcal_mol_K", "heat_capacity_kcal_mol_K",
+                    "scientific_provenance"):
             assert key in d
+        assert "heat_capacity_kcal_mol_K2" not in d
 
     def test_to_dict_values(self):
         t = self._make(temperature=310.0, free_energy=-11.5)

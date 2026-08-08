@@ -23,9 +23,70 @@ public actor FlexAIDRunner {
     private let engineRef: FXStatMechEngineRef
 
     /// Create a new statistical mechanics engine at the given temperature.
-    /// - Parameter temperature: Temperature in Kelvin (default: 300.0 K)
-    public init(temperature: Double = 300.0) {
-        self.engineRef = fx_statmech_create(temperature)
+    /// Numeric inputs are unclassified unless the producer explicitly supplies
+    /// provenance; no energy domain or ensemble measure is inferred.
+    public init(
+        temperature: Double = 300.0,
+        scientificProvenance: ScientificProvenance? = nil
+    ) {
+        guard let engine = fx_statmech_create(temperature) else {
+            preconditionFailure("Failed to create StatMechEngine")
+        }
+        self.engineRef = engine
+        if let provenance = scientificProvenance {
+            let schemaVersion = Int32(exactly: provenance.schemaVersion) ?? 0
+            let energyProvenance = Self.bridgeEvidence(provenance.energyProvenance)
+            let measureProvenance = Self.bridgeEvidence(provenance.measureProvenance)
+            let referenceProvenance = Self.bridgeEvidence(provenance.referenceProvenance)
+            energyProvenance.withCString { energyEvidence in
+                measureProvenance.withCString { measureEvidence in
+                    referenceProvenance.withCString { referenceEvidence in
+                        fx_statmech_set_scientific_provenance(
+                            engine,
+                            schemaVersion,
+                            Self.cEnergyDomain(provenance.energyDomain),
+                            Self.cEnsembleMeasure(provenance.ensembleMeasure),
+                            Self.cReferenceState(provenance.referenceState),
+                            energyEvidence,
+                            measureEvidence,
+                            referenceEvidence
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    /// C strings cannot preserve bytes after an embedded NUL. Empty the field
+    /// instead of allowing a hostile prefix to become an authoritative receipt.
+    private nonisolated static func bridgeEvidence(_ value: String) -> String {
+        value.utf8.contains(0) ? "" : value
+    }
+
+    private nonisolated static func cEnergyDomain(_ value: EnergyDomain) -> Int32 {
+        switch value {
+        case .unclassified: return Int32(FX_ENERGY_DOMAIN_UNCLASSIFIED)
+        case .cfArbitraryUnits: return Int32(FX_ENERGY_DOMAIN_CF_ARBITRARY_UNITS)
+        case .calibratedKcalPerMol: return Int32(FX_ENERGY_DOMAIN_CALIBRATED_KCAL_PER_MOL)
+        case .modelScale: return Int32(FX_ENERGY_DOMAIN_MODEL_SCALE)
+        }
+    }
+
+    private nonisolated static func cEnsembleMeasure(_ value: EnsembleMeasure) -> Int32 {
+        switch value {
+        case .unclassified: return Int32(FX_ENSEMBLE_MEASURE_UNCLASSIFIED)
+        case .optimizerSamples: return Int32(FX_ENSEMBLE_MEASURE_OPTIMIZER_SAMPLES)
+        case .enumeratedMicrostates: return Int32(FX_ENSEMBLE_MEASURE_ENUMERATED_MICROSTATES)
+        case .weightedQuadrature: return Int32(FX_ENSEMBLE_MEASURE_WEIGHTED_QUADRATURE)
+        }
+    }
+
+    private nonisolated static func cReferenceState(_ value: ReferenceState) -> Int32 {
+        switch value {
+        case .none: return Int32(FX_REFERENCE_STATE_NONE)
+        case .boundOnly: return Int32(FX_REFERENCE_STATE_BOUND_ONLY)
+        case .matchedAssociationCycle: return Int32(FX_REFERENCE_STATE_MATCHED_ASSOCIATION_CYCLE)
+        }
     }
 
     deinit {
@@ -36,7 +97,7 @@ public actor FlexAIDRunner {
 
     /// Add a sampled conformation to the ensemble.
     /// - Parameters:
-    ///   - energy: Energy in kcal/mol (negative = favorable)
+    ///   - energy: Value in the explicitly declared energy domain (negative = favorable)
     ///   - multiplicity: Degeneracy / sampling count (default: 1)
     public func addSample(energy: Double, multiplicity: Int = 1) {
         fx_statmech_add_sample(engineRef, energy, Int32(multiplicity))
@@ -69,9 +130,11 @@ public actor FlexAIDRunner {
         return Array(UnsafeBufferPointer(start: ptr, count: Int(count)))
     }
 
-    /// Compute relative binding free energy (Delta-G) vs a reference ensemble.
+    /// Compute an ensemble free-energy difference vs a reference ensemble.
+    /// This is not a binding ΔG claim unless both results carry a validated,
+    /// matched association-cycle provenance.
     /// - Parameter reference: Another FlexAIDRunner with a reference ensemble
-    /// - Returns: Delta-G in kcal/mol
+    /// - Returns: Difference in the declared energy domain
     public func deltaG(relativeTo reference: FlexAIDRunner) async -> Double {
         let refEngine = await reference.engineRef
         return fx_statmech_delta_G(engineRef, refEngine)
