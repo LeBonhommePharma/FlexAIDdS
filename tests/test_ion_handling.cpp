@@ -330,25 +330,45 @@ static void build_synthetic(atom* atoms, resid* residues) {
     memset(atoms,   0, sizeof(atom)  * (N_PROT + 2));
     memset(residues,0, sizeof(resid) * (N_PROT + 2));
 
-    // Protein Cα residues — zigzag ±1 Å in Y so pseudo-bond axes are non-collinear
-    // (avoids degenerate linear chain where all cross products are zero)
+    // Protein Cα residues — a genuinely three-dimensional (helical) chain.
+    //
+    // A straight chain is degenerate because every Jacobian cross product
+    // vanishes. A PLANAR chain (the previous Y-zigzag at z = 0) is degenerate
+    // too, for a subtler reason: torsions about in-plane bond axes displace
+    // atoms perpendicular to the plane, which is orthogonal to every in-plane
+    // contact vector, so no contact LENGTH changes to first order and the
+    // distance-based ENM Hessian is identically zero. Real backbones are never
+    // planar; giving the test chain a rise in Z restores a well-conditioned
+    // spectrum and keeps the ion-stiffening effect measurable.
+    // Geometry is a real α-helix (2.3 Å radius, 1.5 Å rise, ~100°/residue),
+    // which gives the canonical 3.8 Å Cα–Cα spacing AND brings i→i+3 / i+4
+    // pairs inside the 9 Å contact cutoff. Both properties matter: an extended
+    // chain has only sequential (i, i+1) contacts, and the distance between the
+    // two atoms that DEFINE a pseudo-bond cannot change when that bond rotates,
+    // so a chain without longer-range contacts has an identically zero
+    // torsional Hessian.
+    const float TURN = 1.74532925f;  // ~100° per residue
+    const float RADIUS = 2.3f;
+    const float RISE = 1.5f;
     for (int i = 1; i <= N_PROT; ++i) {
         residues[i].type = 0;   // ATOM / protein
         strncpy(residues[i].name, "ALA", 3); residues[i].name[3] = '\0';
         alloc_res(&residues[i], i, i);
 
+        const float t = static_cast<float>(i - 1);
         strncpy(atoms[i].name, " CA ", 4); atoms[i].name[4] = '\0';
         atoms[i].ofres   = i;
         atoms[i].radius  = 1.88f;   // aliphatic C (pre-assigned)
-        atoms[i].coor[0] = static_cast<float>(i - 1) * CA_SPACING;
-        atoms[i].coor[1] = (i % 2 == 0) ? 1.0f : -1.0f;  // zigzag: non-linear
-        atoms[i].coor[2] = 0.0f;
+        atoms[i].coor[0] = RISE * t;
+        atoms[i].coor[1] = RADIUS * std::cos(t * TURN);
+        atoms[i].coor[2] = RADIUS * std::sin(t * TURN);
     }
 
     // MG ion (HETATM, residue N_PROT+1) — placed 6 Å from last Cα along X
     const int mg_idx = N_PROT + 1;
-    const float last_ca_x = static_cast<float>(N_PROT - 1) * CA_SPACING;
-    const float last_ca_y = (N_PROT % 2 == 0) ? 1.0f : -1.0f;
+    const float last_ca_x = atoms[N_PROT].coor[0];
+    const float last_ca_y = atoms[N_PROT].coor[1];
+    const float last_ca_z = atoms[N_PROT].coor[2];
 
     residues[mg_idx].type = 1;  // HETATM
     strncpy(residues[mg_idx].name, "MG ", 3); residues[mg_idx].name[3] = '\0';
@@ -358,8 +378,8 @@ static void build_synthetic(atom* atoms, resid* residues) {
     atoms[mg_idx].ofres   = mg_idx;
     atoms[mg_idx].radius  = MG_RADIUS;
     atoms[mg_idx].coor[0] = last_ca_x + MG_DIST;
-    atoms[mg_idx].coor[1] = last_ca_y;   // same Y as last Cα → center-to-center = MG_DIST
-    atoms[mg_idx].coor[2] = 0.0f;
+    atoms[mg_idx].coor[1] = last_ca_y;   // same Y/Z as last Cα → center-to-center = MG_DIST
+    atoms[mg_idx].coor[2] = last_ca_z;
 }
 
 static void free_synthetic(resid* residues) {
@@ -481,18 +501,6 @@ TEST(TENCoMIonContact, IonReducesBFactorNearIon) {
 
     // The last Cα (closest to Mg) should be stiffer with the ion present
     const int last = static_cast<int>(bf_ion.size()) - 1;
-    {
-        double mx_i = 0, mx_n = 0;
-        for (float v : bf_ion) mx_i = std::max<double>(mx_i, v);
-        for (float v : bf_no_ion) mx_n = std::max<double>(mx_n, v);
-        const auto& mi = tenm_with_ion.modes();
-        double lmin = mi.empty()?-1:mi.front().eigenvalue, lmax = mi.empty()?-1:mi.back().eigenvalue;
-        std::cout << "PROBE bf_size=" << bf_ion.size() << " n_modes=" << mi.size()
-                  << " n_bonds=" << tenm_with_ion.n_bonds()
-                  << " lam_min=" << lmin << " lam_max=" << lmax
-                  << " max_bf_ion=" << mx_i << " max_bf_noion=" << mx_n
-                  << " bf_ion[last]=" << bf_ion[last] << std::endl;
-    }
     EXPECT_LT(bf_ion[last], bf_no_ion[last])
         << "Residue adjacent to Mg should have lower B-factor with ion present";
 

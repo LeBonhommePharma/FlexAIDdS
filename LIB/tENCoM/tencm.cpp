@@ -613,7 +613,27 @@ TorsionalENM::jac(int bond_k, int atom_i) const noexcept
 
 // ─── assemble_hessian ───────────────────────────────────────────────────────
 //
-// H_kl = Σ_{contacts} k_ij [(J_k(i)-J_k(j)) · (J_l(i)-J_l(j))]
+// H_kl = Σ_{contacts} k_ij [û_ij·ΔJ_k][û_ij·ΔJ_l],  ΔJ_k = J_k(i) − J_k(j)
+//
+// The elastic-network potential is a sum of SPRINGS ALONG the contact vector:
+//
+//     V = ½ Σ_ij k_ij [ û_ij · (δr_i − δr_j) ]²          (Tirion / Delarue-Sanejouand)
+//
+// not a sum over the full displacement difference. Projecting onto the unit
+// vector û_ij is what makes the model rotationally invariant: a rigid rotation
+// of a fragment moves both atoms but does not change |r_i − r_j|, so it must
+// cost zero energy.
+//
+// This previously accumulated k_ij (ΔJ_k · ΔJ_l) — the unprojected form, which
+// is a different (GNM-like) potential that charges energy for pure rotations.
+// Because a torsional Jacobian gives J_k(i) = e_k × (r_i − p_k), any contact
+// whose two atoms are both downstream of bond k has ΔJ_k = e_k × r_ij, and
+// û_ij·ΔJ_k = (e_k × r_ij)·r_ij/|r_ij| ≡ 0 — a true stiffness of exactly zero
+// that the unprojected form scored as large and positive. The effect is not
+// subtle: it over-stiffens the spectrum by more than an order of magnitude and
+// reorders the modes, so the "lowest-frequency collective modes" were not the
+// softest real motions. build_from_ligand() in this same file already uses the
+// correct k·û⊗û form.
 //
 // Hardware acceleration:
 //   Eigen → use Map<MatrixXd> for BLAS-level accumulation
@@ -650,25 +670,38 @@ void TorsionalENM::assemble_hessian()
         const int tid = omp_get_thread_num();
         auto& Ht = thread_H[tid];
         const int C = static_cast<int>(contacts_.size());
+        // Per-bond projection û_ij·ΔJ_k, reused across the (k,l) pair loop.
+        std::vector<double> proj(static_cast<std::size_t>(M));
 
         #pragma omp for schedule(dynamic, 8)
         for (int ci = 0; ci < C; ++ci) {
             const auto& c = contacts_[ci];
             const float kij = c.k;
 
+            // Unit vector along the contact at the reference geometry.
+            const auto& ri = ca_[static_cast<std::size_t>(c.i)];
+            const auto& rj = ca_[static_cast<std::size_t>(c.j)];
+            const double rx = static_cast<double>(ri[0]) - rj[0];
+            const double ry = static_cast<double>(ri[1]) - rj[1];
+            const double rz = static_cast<double>(ri[2]) - rj[2];
+            const double rlen = std::sqrt(rx*rx + ry*ry + rz*rz);
+            if (!(rlen > 1e-6)) continue;   // coincident nodes: no spring direction
+            const double ux = rx / rlen, uy = ry / rlen, uz = rz / rlen;
+
             for (int k = 0; k < M; ++k) {
                 const auto& jki = J[k * N + c.i];
                 const auto& jkj = J[k * N + c.j];
-                float djk[3] = { jki[0]-jkj[0], jki[1]-jkj[1], jki[2]-jkj[2] };
+                proj[static_cast<std::size_t>(k)] =
+                    ux * (static_cast<double>(jki[0]) - jkj[0]) +
+                    uy * (static_cast<double>(jki[1]) - jkj[1]) +
+                    uz * (static_cast<double>(jki[2]) - jkj[2]);
+            }
 
+            for (int k = 0; k < M; ++k) {
+                const double kp = static_cast<double>(kij) * proj[static_cast<std::size_t>(k)];
+                if (kp == 0.0) continue;
                 for (int l = k; l < M; ++l) {
-                    const auto& jli = J[l * N + c.i];
-                    const auto& jlj = J[l * N + c.j];
-                    float djl[3] = { jli[0]-jlj[0], jli[1]-jlj[1], jli[2]-jlj[2] };
-
-                    double contrib = kij * static_cast<double>(
-                        djk[0]*djl[0] + djk[1]*djl[1] + djk[2]*djl[2]);
-
+                    const double contrib = kp * proj[static_cast<std::size_t>(l)];
                     Ht(k, l) += contrib;
                     if (l != k) Ht(l, k) += contrib;
                 }
@@ -681,21 +714,34 @@ void TorsionalENM::assemble_hessian()
 
     #else
     // Serial Eigen path
+    std::vector<double> proj(static_cast<std::size_t>(M));
     for (const auto& c : contacts_) {
         const float kij = c.k;
+
+        // Unit vector along the contact at the reference geometry.
+        const auto& ri = ca_[static_cast<std::size_t>(c.i)];
+        const auto& rj = ca_[static_cast<std::size_t>(c.j)];
+        const double rx = static_cast<double>(ri[0]) - rj[0];
+        const double ry = static_cast<double>(ri[1]) - rj[1];
+        const double rz = static_cast<double>(ri[2]) - rj[2];
+        const double rlen = std::sqrt(rx*rx + ry*ry + rz*rz);
+        if (!(rlen > 1e-6)) continue;   // coincident nodes: no spring direction
+        const double ux = rx / rlen, uy = ry / rlen, uz = rz / rlen;
+
         for (int k = 0; k < M; ++k) {
             const auto& jki = J[k * N + c.i];
             const auto& jkj = J[k * N + c.j];
-            float djk[3] = { jki[0]-jkj[0], jki[1]-jkj[1], jki[2]-jkj[2] };
+            proj[static_cast<std::size_t>(k)] =
+                ux * (static_cast<double>(jki[0]) - jkj[0]) +
+                uy * (static_cast<double>(jki[1]) - jkj[1]) +
+                uz * (static_cast<double>(jki[2]) - jkj[2]);
+        }
 
+        for (int k = 0; k < M; ++k) {
+            const double kp = static_cast<double>(kij) * proj[static_cast<std::size_t>(k)];
+            if (kp == 0.0) continue;
             for (int l = k; l < M; ++l) {
-                const auto& jli = J[l * N + c.i];
-                const auto& jlj = J[l * N + c.j];
-                float djl[3] = { jli[0]-jlj[0], jli[1]-jlj[1], jli[2]-jlj[2] };
-
-                double contrib = kij * static_cast<double>(
-                    djk[0]*djl[0] + djk[1]*djl[1] + djk[2]*djl[2]);
-
+                const double contrib = kp * proj[static_cast<std::size_t>(l)];
                 H(k, l) += contrib;
                 if (l != k) H(l, k) += contrib;
             }
@@ -950,18 +996,38 @@ std::vector<float> TorsionalENM::bfactors(float temperature) const
     // modes and let the λ >= 1e-8 guard drop numerically singular ones. (Skipping
     // 6 here dropped the 6 softest real backbone torsions.)
     const int SKIP = 0;
-    const int M_end = std::min(M, SKIP + N_MODES);
+    const int M_end = M;
     const double BF_SCALE = 8.0 * std::numbers::pi * std::numbers::pi / 3.0;
 
     // Output only protein Cα B-factors; ion nodes are excluded (zero Jacobian).
     std::vector<float> bf(static_cast<std::size_t>(Np), 0.0f);
 
-    // Pre-compute per-mode: kBT / λ_m (skip modes with tiny eigenvalue)
+    // Pre-compute per-mode: kBT / λ_m for the softest N_MODES modes that are
+    // not numerically singular.
+    //
+    // Selection walks the whole (ascending) spectrum and keeps modes until
+    // N_MODES real ones have been collected, rather than taking the fixed
+    // window [0, N_MODES) and discarding the singular entries inside it. The
+    // projected Hessian has a genuine null space — a rotation that turns a
+    // fragment rigidly changes no contact length and costs exactly zero — and
+    // those null modes sit at the soft end of the spectrum. With a fixed
+    // window the entire budget could be consumed by them, leaving nothing to
+    // sum and yielding uniformly zero B-factors.
+    //
+    // The singularity floor is relative to the stiffest mode: eigenvalues are
+    // model-scale (k0-dependent), so a fixed 1e-8 absolute cut means different
+    // things for different structures and spring constants.
+    const double lam_max = modes_.empty() ? 0.0 : modes_.back().eigenvalue;
+    const double lam_floor = std::max(1e-8, lam_max * 1e-9);
+
     std::vector<double> inv_stiffness(static_cast<std::size_t>(M), 0.0);
-    for (int m = SKIP; m < M_end; ++m) {
-        double lam = modes_[static_cast<std::size_t>(m)].eigenvalue;
-        if (lam >= 1e-8)
+    int kept = 0;
+    for (int m = SKIP; m < M_end && kept < N_MODES; ++m) {
+        const double lam = modes_[static_cast<std::size_t>(m)].eigenvalue;
+        if (lam >= lam_floor) {
             inv_stiffness[static_cast<std::size_t>(m)] = kBT / lam;
+            ++kept;
+        }
     }
 
 #if defined(_OPENMP) && !defined(TENCM_NO_OMP)
