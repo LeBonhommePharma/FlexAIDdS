@@ -83,10 +83,17 @@ static std::vector<Probe> generate_probes(
     const int n = static_cast<int>(idx.size());
 
 #ifdef _OPENMP
-    // Each thread collects into a local vector, merged later
+    // Per-iteration buckets, concatenated in ascending ii order after the
+    // parallel region. The merge order must not depend on thread arrival:
+    // probe order fixes generate_grid()'s cleftgrid index assignment, and
+    // that index is GA gene 0, so a thread-arrival-ordered merge decorrelates
+    // the whole search run-to-run and across thread counts (see
+    // determinism_cleft/FINDING_cleft_grid_nondeterminism.md). Bucketing by
+    // ii reproduces the serial (ascending ii, ascending jj) order bit-exactly
+    // at any thread count and any schedule.
+    std::vector<std::vector<Probe>> buckets(static_cast<size_t>(n));
     #pragma omp parallel
     {
-        std::vector<Probe> local;
         #pragma omp for schedule(dynamic, 64) nowait
         for (int ii = 0; ii < n; ++ii) {
             int i = idx[ii];
@@ -122,12 +129,12 @@ static std::vector<Probe> generate_probes(
                     pr.radius -= p.probe_shrink_step;
                 }
                 if (pr.radius < p.probe_radius_min) keep = false;
-                if (keep) local.push_back(pr);
+                if (keep) buckets[ii].push_back(pr);
             }
         }
-        #pragma omp critical
-        probes.insert(probes.end(), local.begin(), local.end());
     }
+    for (int ii = 0; ii < n; ++ii)
+        probes.insert(probes.end(), buckets[ii].begin(), buckets[ii].end());
 #else
     for (int ii = 0; ii < n; ++ii) {
         int i = idx[ii];
@@ -166,16 +173,13 @@ static std::vector<Probe> generate_probes(
     }
 #endif
 
-    // DETERMINISTIC ORDER (opt-in): OpenMP merges probes in thread-arrival order; the
-    // downstream single-linkage cluster_probes() is order-sensitive, so with
-    // --omp-threads > 1 the SURFNET cleft grid is non-deterministic run-to-run.
-    // Sorting by a canonical geometric key makes cleft detection
-    // thread-count/schedule-independent (and removes the TSan-flagged shared-vector
-    // merge races). GATED OFF BY DEFAULT: the sort reorders probe tie-breaks even in
-    // serial, which changes single-thread poses and would invalidate prior
-    // single-thread benchmark numbers (the canonical protocol is --omp-threads 1).
-    // Enable with FLEXAIDDS_CLEFT_SORT=1 when running multi-threaded cleft detection.
-    // See CLEFTSORT_AB_VERDICT.md.
+    // CANONICAL GEOMETRIC ORDER (opt-in). Since the ascending-ii bucket merge
+    // above, probe order is already deterministic and thread-count-invariant
+    // (identical to the serial branch), so this sort is NOT needed for
+    // reproducibility. It remains as an opt-in alternative canonical order:
+    // it reorders probe tie-breaks relative to the serial order, which changes
+    // poses (1G9V 5.13 -> 7.54 A single-thread) and would invalidate prior
+    // benchmark numbers if flipped on. See CLEFTSORT_AB_VERDICT.md.
     {
         const char* cs = std::getenv("FLEXAIDDS_CLEFT_SORT");
         if (cs && cs[0] == '1') {
