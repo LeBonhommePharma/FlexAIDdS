@@ -33,6 +33,7 @@ static bool           s_cuda_ready = false;
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
+#include <cstdlib>
 #include <numeric>
 #include <vector>
 
@@ -149,6 +150,28 @@ static double entropy_from_counts(const int* counts, int num_bins, int total) {
     return -(prob * lp).sum();
 }
 
+// ─── bin index ───────────────────────────────────────────────────────────────
+//
+// The clamp is applied in DOUBLE, before the narrowing conversion.
+//
+// With a raw min/max support every value satisfied 0 <= (v-min)*inv_bw <=
+// num_bins, so casting first and clamping the int was safe. Once the support can
+// be a robust fence (see robust_support below), out-of-fence values are
+// arbitrarily far outside it: a tight bulk plus one clash pose at 1e4 produces a
+// raw index above 5e10, and converting that to int is undefined behaviour. In
+// practice x86-64 cvttsd2si yields INT_MIN, which then clamps to bin 0 — placing
+// the clash pose ON TOP OF the bulk, collapsing the histogram to a single
+// occupied bin and firing the very gate the fence exists to protect — while ARM
+// saturates to INT_MAX and lands it in the top bin. Clamping in double removes
+// both the undefined behaviour and the platform divergence.
+static inline int bin_index(double v, double min_v, double inv_bw, int num_bins) noexcept
+{
+    const double t = (v - min_v) * inv_bw;
+    if (!(t > 0.0)) return 0;                      // also catches NaN
+    const double top = static_cast<double>(num_bins - 1);
+    return (t >= top) ? num_bins - 1 : static_cast<int>(t);
+}
+
 // ─── AVX-512 private histogram ────────────────────────────────────────────────
 #ifdef __AVX512F__
 static void histogram_avx512(const double* values, int n,
@@ -159,10 +182,17 @@ static void histogram_avx512(const double* values, int n,
     __m512d vmin   = _mm512_set1_pd(min_v);
     __m512d vinvbw = _mm512_set1_pd(inv_bw);
 
+    const __m512d vlo = _mm512_setzero_pd();
+    const __m512d vhi = _mm512_set1_pd(static_cast<double>(num_bins - 1));
     for (; i + 7 < n; i += 8) {
         __m512d ve   = _mm512_loadu_pd(values + i);
         __m512d vrel = _mm512_fmadd_pd(ve, vinvbw,
                            _mm512_mul_pd(_mm512_set1_pd(-min_v), vinvbw));
+        // Clamp in double BEFORE narrowing: with a fenced support vrel can fall
+        // far outside [0, num_bins), and converting that to int32 is UB (and
+        // lands the value in the wrong edge bin). _mm512_max_pd also maps NaN
+        // to the lower bound here.
+        vrel = _mm512_min_pd(_mm512_max_pd(vrel, vlo), vhi);
         // Convert 8 doubles → 8 int32 (truncate)
         __m256i v32 = _mm512_cvttpd_epi32(vrel);
         alignas(32) int tmp[8];
@@ -172,11 +202,8 @@ static void histogram_avx512(const double* values, int n,
             priv[b]++;
         }
     }
-    for (; i < n; ++i) {
-        int b = static_cast<int>((values[i] - min_v) * inv_bw);
-        b = std::min(std::max(b, 0), num_bins - 1);
-        priv[b]++;
-    }
+    for (; i < n; ++i)
+        priv[bin_index(values[i], min_v, inv_bw, num_bins)]++;
 }
 #endif // __AVX512F__
 
@@ -194,15 +221,30 @@ static void histogram_avx512(const double* values, int n,
 // clamps the bin index, so they land in the edge bins and still carry their
 // probability mass.
 //
-// The trigger is deliberately conservative. For any distribution whose range is
-// a small multiple of its IQR — uniform (range = 2·IQR), Gaussian (~4-6·IQR for
-// realistic n), and every well-behaved population — the fence never engages and
-// the estimator is bit-identical to the previous behaviour.
+// Engagement is range/IQR based, and the RAW range is not itself robust, so
+// which samples trigger the fence is tail-dependent rather than merely
+// "pathological". Measured firing rates: 0% on Gaussian (n = 1e3 and 1e5),
+// uniform and exponential — those are bit-identical to the previous estimator —
+// but ~100% on heavy-tailed samples (Student-t, lognormal repulsive tails) and
+// on any population carrying clash/wall poses, where H rises by 1.5–2.3 nats.
+// That is the intended repair, but it is a real shift in the GA collapse gate's
+// operating point, so it is exposed as an A/B arm: set FLEXAIDDS_SHANNON_ROBUST=0
+// to restore the previous raw min/max support bit-for-bit.
 namespace {
 
 constexpr std::size_t kRobustMinSamples  = 8;    // below this, quartiles are meaningless
-constexpr double      kRobustTriggerIQR  = 20.0; // engage only on true pathology
+constexpr double      kRobustTriggerIQR  = 20.0; // engage only well outside the bulk
 constexpr double      kRobustFenceIQR    = 3.0;  // Tukey "far out" fence
+
+bool robust_support_enabled()
+{
+    static const bool enabled = [] {
+        const char* e = std::getenv("FLEXAIDDS_SHANNON_ROBUST");
+        return !(e && std::atoi(e) == 0);
+    }();
+    return enabled;
+}
+
 
 // Returns true (and fills lo/hi) when a robust support should replace [min,max].
 bool robust_support(const std::vector<double>& values,
@@ -211,6 +253,7 @@ bool robust_support(const std::vector<double>& values,
 {
     const std::size_t n = values.size();
     if (n < kRobustMinSamples) return false;
+    if (!robust_support_enabled()) return false;
 
     std::vector<double> scratch(values);
     auto quantile = [&scratch, n](double f) {
@@ -233,7 +276,11 @@ bool robust_support(const std::vector<double>& values,
 
     lo = q1 - kRobustFenceIQR * iqr;
     hi = q3 + kRobustFenceIQR * iqr;
-    return (hi - lo) > 1e-12;
+    // Must clear the +1e-10 bin-width floor applied by the caller, not merely be
+    // nonzero: a fence narrower than num_bins*1e-10 is swallowed by that epsilon,
+    // so every bulk sample collapses into bin 0 and the fence silently does
+    // nothing while still paying for the copy and forfeiting the GPU path.
+    return (hi - lo) > 1e-9;
 }
 
 }  // namespace
@@ -337,8 +384,7 @@ if (n > GPU_DISPATCH_THRESHOLD) {
         #pragma omp parallel for schedule(static)
         for (int i = 0; i < n; ++i) {
             int tid = omp_get_thread_num();
-            int b   = static_cast<int>((values[i] - min_v) * inv_bw);
-            t_bins(tid, std::min(std::max(b, 0), num_bins - 1))++;
+            t_bins(tid, bin_index(values[i], min_v, inv_bw, num_bins))++;
         }
         Eigen::VectorXi col_sums = t_bins.colwise().sum();
         for (int b = 0; b < num_bins; ++b) bins[b] = col_sums(b);
@@ -346,10 +392,8 @@ if (n > GPU_DISPATCH_THRESHOLD) {
 
 // ── 5. Scalar ─────────────────────────────────────────────────────────────────
 #else
-    for (int i = 0; i < n; ++i) {
-        int b = static_cast<int>((values[i] - min_v) * inv_bw);
-        bins[std::min(std::max(b, 0), num_bins - 1)]++;
-    }
+    for (int i = 0; i < n; ++i)
+        bins[bin_index(values[i], min_v, inv_bw, num_bins)]++;
 #endif
 
     return entropy_from_counts(bins.data(), num_bins, n);

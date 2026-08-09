@@ -505,7 +505,15 @@ PYBIND11_MODULE(_core, m) {
                     strncpy(residues[i+1].name, "ALA", 4);
                 }
 
-                self.build(atoms.data(), residues.data() + 1, n, cutoff, k0);
+                // Pass the base pointer, NOT residues.data() + 1. build() ->
+                // extract_ca() indexes residue[1 .. res_cnt] itself, which is
+                // exactly where the loop above wrote fatm/latm. Offsetting by one
+                // shifted every lookup up by a residue — silently dropping the
+                // first one (a 20-residue helix built as 19) — and made the final
+                // read residues[n+1], one past the end of the vector, where
+                // residue[ri].fatm[0] dereferences an uninitialised pointer and
+                // segfaults.
+                self.build(atoms.data(), residues.data(), n, cutoff, k0);
 
                 // Clean up malloc'd fatm/latm
                 for (int i = 0; i < n; ++i) {

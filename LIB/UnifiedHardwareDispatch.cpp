@@ -477,8 +477,13 @@ double UnifiedHardwareDispatch::shannon_avx512_omp(const std::vector<double>& va
 
     #pragma omp parallel
     {
+        // Chunk on the team size actually granted, not omp_get_max_threads()
+        // read outside the region: when the runtime hands out fewer threads
+        // than the maximum, a max-derived chunk leaves the tail of the sample
+        // unvisited while the normalisation still divides by the full count,
+        // silently dropping samples. Same fix as ShannonThermoStack.cpp.
         int tid   = omp_get_thread_num();
-        int chunk = (n + n_threads - 1) / n_threads;
+        int chunk = (n + omp_get_num_threads() - 1) / omp_get_num_threads();
         int start = tid * chunk;
         int end   = std::min(start + chunk, n);
 

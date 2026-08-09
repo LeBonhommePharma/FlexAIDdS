@@ -1014,6 +1014,33 @@ TEST(RobustBinning, GaussianDataIsUnaffectedByTheFence) {
     EXPECT_NEAR(H, H_ref, 1e-12);
 }
 
+TEST(RobustBinning, FarOutlierLandsInTheTopBinNotOnTopOfTheBulk) {
+    // Regression for a narrowing-conversion defect the fence introduced.
+    //
+    // With a fenced support, an outlier's raw bin index is unbounded: a tight
+    // bulk plus a clash pose at 1e4 produces an index far above INT_MAX, and
+    // converting that to int is undefined behaviour. x86-64 cvttsd2si yields
+    // INT_MIN, which clamps to bin 0 — putting the clash pose ON TOP OF the
+    // bulk, collapsing the histogram to one occupied bin (H = 0) and firing the
+    // very gate the fence exists to protect — while ARM saturates to INT_MAX
+    // and lands it in the top bin. n >= kRobustMinSamples so the fence engages.
+    std::vector<double> energies;
+    energies.reserve(100);
+    for (int i = 0; i < 99; ++i)
+        energies.push_back(-100.0 + 1.0e-6 * static_cast<double>(i));
+    energies.push_back(1.0e4);
+
+    const double H = compute_shannon_entropy(energies, DEFAULT_HIST_BINS);
+
+    // The fence resolves the bulk across several bins and isolates the clash
+    // pose, so H must sit well clear of the collapse gates and below the ln N
+    // ceiling. If the outlier's index were converted while out of int32 range
+    // and clamped to bin 0, it would merge into the bulk and H would fall.
+    EXPECT_TRUE(std::isfinite(H));
+    EXPECT_GT(H, kHSC_soft_nats) << "H=" << H;
+    EXPECT_LT(H, std::log(static_cast<double>(DEFAULT_HIST_BINS)) + 1e-12);
+}
+
 TEST(RobustBinning, DegenerateAndTinySamplesUnchanged) {
     // All-identical input still has exactly zero entropy.
     EXPECT_DOUBLE_EQ(compute_shannon_entropy(std::vector<double>(50, 7.0), 20), 0.0);
