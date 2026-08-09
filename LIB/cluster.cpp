@@ -3,6 +3,7 @@
 #include "simd_distance.h"
 #include "statmech.h"
 #include "SoftBetaFreeEnergy.h"
+#include "EnvFlags.h"
 #include "ClusterRepMode.h"
 #include "TargetServer.h"
 #include <cmath>
@@ -188,10 +189,10 @@ void cluster(FA_Global* FA, GB_Global* GB, VC_Global* VC, chromosome* chrom, gen
 		Clus_TCF[num_of_clusters] = chrom[j].app_evalue;
 		Clus_ACF[num_of_clusters] = chrom[j].app_evalue;
 		if (FA->temperature > 0 && FA->beta > 0.0) {
-			static const bool legacy_acf = [] {
-				const char* e = std::getenv("FLEXAIDDS_ELECT_LEGACY_ACF");
-				return e && std::atoi(e) != 0;
-			}();
+			// Same env parser and same semantics as BindingMode.cpp, so the
+			// two election paths cannot disagree about which arm is active.
+			static const bool legacy_acf =
+				flexaids::env_bool("FLEXAIDDS_ELECT_LEGACY_ACF");
 			std::vector<double> member_energies;
 			member_energies.reserve(static_cast<size_t>(num_chrom));
 			for (int k = 0; k < num_chrom; ++k) {
@@ -202,8 +203,9 @@ void cluster(FA_Global* FA, GB_Global* GB, VC_Global* VC, chromosome* chrom, gen
 			Clus_ACF[num_of_clusters] =
 				legacy_acf
 					? flexaids::soft_beta::acf(member_energies, T_soft)
-					: flexaids::soft_beta::free_energy_strict(member_energies,
-					                                          T_soft).G;
+					: flexaids::soft_beta::free_energy_strict(
+					      member_energies, T_soft,
+					      flexaids::soft_beta::StrictRerankMode::UniqueGeometry).G;
 		}
 		num_of_clusters++;
 

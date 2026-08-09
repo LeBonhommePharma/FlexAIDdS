@@ -6,6 +6,7 @@
 
 #include <gtest/gtest.h>
 #include "../LIB/ShannonThermoStack/ShannonThermoStack.h"
+#include "../LIB/UnifiedHardwareDispatch.h"
 #include "../LIB/statmech.h"
 #include "../LIB/tENCoM/tencm.h"
 #include <cmath>
@@ -1064,6 +1065,47 @@ TEST(RobustBinning, CollapseThresholdScalesWithSupport) {
     EXPECT_LT(collapse_threshold_nats(DEFAULT_HIST_BINS, kHSC_soft_frac_of_max),
               kHSC_soft_nats);
     EXPECT_DOUBLE_EQ(collapse_threshold_nats(1), 0.0);
+}
+
+// ===========================================================================
+// ONE ESTIMATOR, TWO DISPATCH SHELLS
+//
+// shannon_thermo::compute_shannon_entropy and
+// UnifiedHardwareDispatch::compute_shannon_entropy are separate dispatch
+// shells over the same quantity. They each used to derive their own support
+// and bin index, so once one gained the robust fence the two disagreed by
+// ~2 nats on the same input — enough to land on opposite sides of the collapse
+// gate. Both now share ShannonBinning.h; these tests pin that they agree.
+// ===========================================================================
+
+TEST(EstimatorParity, AgreesWithUnifiedDispatchOnCleanData) {
+    std::mt19937 rng(2024);
+    std::normal_distribution<double> dist(-50.0, 8.0);
+    std::vector<double> values(1000);
+    for (auto& v : values) v = dist(rng);
+
+    const double H_stack = compute_shannon_entropy(values, DEFAULT_HIST_BINS);
+    const double H_disp  = hw::UnifiedHardwareDispatch::instance()
+                               .compute_shannon_entropy(values, DEFAULT_HIST_BINS,
+                                                        hw::Backend::SCALAR);
+    EXPECT_NEAR(H_stack, H_disp, 1e-12);
+}
+
+TEST(EstimatorParity, AgreesWithUnifiedDispatchWhenTheFenceEngages) {
+    // The case that used to split them: the fence engages for one estimator
+    // only, so they straddled the collapse gate.
+    std::vector<double> energies;
+    energies.reserve(100);
+    for (int i = 0; i < 99; ++i)
+        energies.push_back(-100.0 + 0.5 * static_cast<double>(i));
+    energies.push_back(1.0e4);
+
+    const double H_stack = compute_shannon_entropy(energies, DEFAULT_HIST_BINS);
+    const double H_disp  = hw::UnifiedHardwareDispatch::instance()
+                               .compute_shannon_entropy(energies, DEFAULT_HIST_BINS,
+                                                        hw::Backend::SCALAR);
+    EXPECT_NEAR(H_stack, H_disp, 1e-12);
+    EXPECT_GT(H_stack, kHSC_soft_nats);  // and both clear the gate
 }
 
 // ===========================================================================

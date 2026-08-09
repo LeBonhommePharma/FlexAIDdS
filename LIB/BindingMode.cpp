@@ -1,4 +1,5 @@
 #include "BindingMode.h"
+#include "EnvFlags.h"
 #include "fast_optics.hpp"
 #include "SoftBetaFreeEnergy.h"
 #include "RngSeed.h"
@@ -374,10 +375,10 @@ static double election_pb_scale(const FA_Global* FA)
 // path bit-identically (shared A/B control with cluster.cpp).
 static bool use_legacy_acf_election()
 {
-	static const bool legacy = [] {
-		const char* e = std::getenv("FLEXAIDDS_ELECT_LEGACY_ACF");
-		return e && std::atoi(e) != 0;
-	}();
+	// flexaids::env_bool (LIB/EnvFlags.h) accepts 1/true/yes/on. The previous
+	// std::atoi parse silently read FLEXAIDDS_ELECT_LEGACY_ACF=true as 0, i.e.
+	// as selecting the OPPOSITE arm of this A/B control.
+	static const bool legacy = flexaids::env_bool("FLEXAIDDS_ELECT_LEGACY_ACF");
 	return legacy;
 }
 
@@ -1339,7 +1340,7 @@ double BindingMode::compute_vibrational_correction() const
 	// structural NULL on RMSD success by construction. This arm exists to
 	// confirm that null empirically (it can only shift the reported predicted_dG
 	// column, not which pose is emitted).
-	static const bool no_tencom = (std::getenv("FLEXAIDDS_NO_TENCOM") != nullptr);
+	static const bool no_tencom = flexaids::env_bool("FLEXAIDDS_NO_TENCOM");
 	if (no_tencom) return 0.0;
 
 	if (!this->Population->FA->normal_modes) return 0.0;

@@ -224,7 +224,10 @@ struct ModeCandidate {
 };
 
 /// Soft-β free energy of one mode (local Z over members only).
-/// Default uses free_energy_strict (duplicate-invariant LogMeanExp).
+/// Default uses free_energy_strict in UniqueGeometry mode — NOT LogMeanExp, as
+/// this comment claimed while the code below passed UniqueGeometry. Every
+/// caller now names the mode explicitly (cluster.cpp, BindingMode.cpp) so the
+/// election paths cannot silently diverge if this default is ever changed.
 /// Pass use_strict=false only for classic ACF diagnostic comparisons.
 inline FreeEnergy mode_free_energy(const ModeCandidate& m,
                                    SoftT T_soft,

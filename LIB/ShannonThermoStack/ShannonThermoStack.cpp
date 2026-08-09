@@ -9,6 +9,7 @@
 //
 // Eigen is used for vectorised log() / probability array ops on all CPU paths.
 #include "ShannonThermoStack.h"
+#include "ShannonBinning.h"
 
 #ifdef FLEXAIDS_HAS_METAL_SHANNON
 #  include "ShannonMetalBridge.h"
@@ -150,28 +151,6 @@ static double entropy_from_counts(const int* counts, int num_bins, int total) {
     return -(prob * lp).sum();
 }
 
-// ─── bin index ───────────────────────────────────────────────────────────────
-//
-// The clamp is applied in DOUBLE, before the narrowing conversion.
-//
-// With a raw min/max support every value satisfied 0 <= (v-min)*inv_bw <=
-// num_bins, so casting first and clamping the int was safe. Once the support can
-// be a robust fence (see robust_support below), out-of-fence values are
-// arbitrarily far outside it: a tight bulk plus one clash pose at 1e4 produces a
-// raw index above 5e10, and converting that to int is undefined behaviour. In
-// practice x86-64 cvttsd2si yields INT_MIN, which then clamps to bin 0 — placing
-// the clash pose ON TOP OF the bulk, collapsing the histogram to a single
-// occupied bin and firing the very gate the fence exists to protect — while ARM
-// saturates to INT_MAX and lands it in the top bin. Clamping in double removes
-// both the undefined behaviour and the platform divergence.
-static inline int bin_index(double v, double min_v, double inv_bw, int num_bins) noexcept
-{
-    const double t = (v - min_v) * inv_bw;
-    if (!(t > 0.0)) return 0;                      // also catches NaN
-    const double top = static_cast<double>(num_bins - 1);
-    return (t >= top) ? num_bins - 1 : static_cast<int>(t);
-}
-
 // ─── AVX-512 private histogram ────────────────────────────────────────────────
 #ifdef __AVX512F__
 static void histogram_avx512(const double* values, int n,
@@ -206,84 +185,6 @@ static void histogram_avx512(const double* values, int n,
         priv[bin_index(values[i], min_v, inv_bw, num_bins)]++;
 }
 #endif // __AVX512F__
-
-// ─── robust histogram support ────────────────────────────────────────────────
-//
-// The histogram support is normally the sample's own [min, max]. That makes a
-// single extreme value rescale every bin: one clash/wall pose (evalue ~1e4) in
-// an otherwise diverse population pushes every real sample into bin 0, so H
-// reads ~0.08 bits and the caller's collapse gate fires on a population that
-// has not collapsed at all.
-//
-// When the raw range is pathologically wider than the bulk of the sample, the
-// support is instead taken from a Tukey far-out fence around the interquartile
-// range. Values outside the fence are not discarded: every histogram path
-// clamps the bin index, so they land in the edge bins and still carry their
-// probability mass.
-//
-// Engagement is range/IQR based, and the RAW range is not itself robust, so
-// which samples trigger the fence is tail-dependent rather than merely
-// "pathological". Measured firing rates: 0% on Gaussian (n = 1e3 and 1e5),
-// uniform and exponential — those are bit-identical to the previous estimator —
-// but ~100% on heavy-tailed samples (Student-t, lognormal repulsive tails) and
-// on any population carrying clash/wall poses, where H rises by 1.5–2.3 nats.
-// That is the intended repair, but it is a real shift in the GA collapse gate's
-// operating point, so it is exposed as an A/B arm: set FLEXAIDDS_SHANNON_ROBUST=0
-// to restore the previous raw min/max support bit-for-bit.
-namespace {
-
-constexpr std::size_t kRobustMinSamples  = 8;    // below this, quartiles are meaningless
-constexpr double      kRobustTriggerIQR  = 20.0; // engage only well outside the bulk
-constexpr double      kRobustFenceIQR    = 3.0;  // Tukey "far out" fence
-
-bool robust_support_enabled()
-{
-    static const bool enabled = [] {
-        const char* e = std::getenv("FLEXAIDDS_SHANNON_ROBUST");
-        return !(e && std::atoi(e) == 0);
-    }();
-    return enabled;
-}
-
-
-// Returns true (and fills lo/hi) when a robust support should replace [min,max].
-bool robust_support(const std::vector<double>& values,
-                    double raw_min, double raw_max,
-                    double& lo, double& hi)
-{
-    const std::size_t n = values.size();
-    if (n < kRobustMinSamples) return false;
-    if (!robust_support_enabled()) return false;
-
-    std::vector<double> scratch(values);
-    auto quantile = [&scratch, n](double f) {
-        const std::size_t idx =
-            static_cast<std::size_t>(f * static_cast<double>(n - 1));
-        // nth_element is valid on any permutation, so successive calls on the
-        // same (partially reordered) buffer still return the correct element.
-        std::nth_element(scratch.begin(),
-                         scratch.begin() + static_cast<std::ptrdiff_t>(idx),
-                         scratch.end());
-        return scratch[idx];
-    };
-
-    const double q1  = quantile(0.25);
-    const double q3  = quantile(0.75);
-    const double iqr = q3 - q1;
-    if (!(iqr > 0.0) || !std::isfinite(iqr)) return false;
-
-    if ((raw_max - raw_min) <= kRobustTriggerIQR * iqr) return false;
-
-    lo = q1 - kRobustFenceIQR * iqr;
-    hi = q3 + kRobustFenceIQR * iqr;
-    // Must clear the +1e-10 bin-width floor applied by the caller, not merely be
-    // nonzero: a fence narrower than num_bins*1e-10 is swallowed by that epsilon,
-    // so every bulk sample collapses into bin 0 and the fence silently does
-    // nothing while still paying for the copy and forfeiting the GPU path.
-    return (hi - lo) > 1e-9;
-}
-
-}  // namespace
 
 // ─── compute_shannon_entropy ─────────────────────────────────────────────────
 
