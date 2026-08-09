@@ -94,10 +94,90 @@ def check_hardcoded_paths(tracked: list[str]) -> list[str]:
     return errors
 
 
+SCIENCE_PATHS_FILE = "docs/SCIENCE_CRITICAL_PATHS.txt"
+# Stacks that cannot affect docked coordinates. Bundling one of these with a
+# science-critical change is what made PR #405 unreviewable.
+NON_ENGINE_STACKS = ("typescript/", "swift/", "site/")
+
+
+def _load_science_globs(repo_root: Path) -> list[str]:
+    path = repo_root / SCIENCE_PATHS_FILE
+    if not path.exists():
+        return []
+    globs = []
+    for line in path.read_text(encoding="utf-8").splitlines():
+        line = line.split("#", 1)[0].strip()
+        if line:
+            globs.append(line)
+    return globs
+
+
+def _changed_files(base: str = "origin/main") -> tuple[list[str], str | None]:
+    """Files changed vs the merge base. Returns (files, skip_reason)."""
+    import subprocess
+
+    try:
+        mb = subprocess.run(["git", "merge-base", base, "HEAD"],
+                            capture_output=True, text=True, timeout=30)
+        if mb.returncode != 0:
+            # depth-1 clone: no common ancestor available. FAIL LOUD, not open.
+            return [], (f"cannot compute merge-base against {base} "
+                        "(shallow clone? needs actions/checkout fetch-depth: 0)")
+        out = subprocess.run(["git", "diff", "--name-only", mb.stdout.strip(), "HEAD"],
+                             capture_output=True, text=True, timeout=30)
+        if out.returncode != 0:
+            return [], "git diff failed"
+        return [f for f in out.stdout.splitlines() if f], None
+    except Exception as exc:  # noqa: BLE001
+        return [], f"git unavailable: {exc}"
+
+
+def check_science_bundling(repo_root: Path) -> list[str]:
+    """A science-critical change must not be bundled with a non-engine stack.
+
+    Rationale: PR #405 was 138 files across LIB/ + typescript/ + swift/ + python/
+    under a title reading as metadata-only. Its coordinates were in fact
+    byte-identical, so it was correctly provenance-only -- but establishing that
+    took a day. This does not forbid such work; it forces it to be split so each
+    half is reviewable on its own terms.
+    """
+    import fnmatch
+
+    globs = _load_science_globs(repo_root)
+    if not globs:
+        return []
+    changed, skip = _changed_files()
+    if skip:
+        print(f"  NOTE: science-bundling check skipped -- {skip}")
+        return []
+    if not changed:
+        return []
+
+    science = [f for f in changed
+               if any(fnmatch.fnmatch(f, g) for g in globs)]
+    if not science:
+        return []
+    foreign = [f for f in changed if f.startswith(NON_ENGINE_STACKS)]
+    if not foreign:
+        return []
+    return [
+        "science-critical change bundled with a non-engine stack; split the PR.\n"
+        f"      science-critical: {', '.join(sorted(science)[:5])}"
+        f"{' ...' if len(science) > 5 else ''}\n"
+        f"      non-engine:       {', '.join(sorted(foreign)[:5])}"
+        f"{' ...' if len(foreign) > 5 else ''}\n"
+        f"      (rule: {SCIENCE_PATHS_FILE}; a change that can move docked "
+        "coordinates must be reviewable on its own)"
+    ]
+
+
 def main() -> int:
     print("=== FlexAIDdS Repository Hygiene Check ===\n")
     tracked = git_tracked_files()
-    errors = check_tracked_env_files(tracked) + check_hardcoded_paths(tracked)
+    repo_root = Path(__file__).resolve().parent.parent
+    errors = (check_tracked_env_files(tracked)
+              + check_hardcoded_paths(tracked)
+              + check_science_bundling(repo_root))
 
     if errors:
         print("FAIL: repository hygiene violations:\n", file=sys.stderr)
