@@ -1,6 +1,8 @@
-# Scoring in FlexAID∆S: CF, ΔG_eff, and the Thermodynamic Engine
+# Scoring in FlexAID∆S: CF proxies and ensemble diagnostics
 
-This document gives a complete account of the cost function, the NRGDock energy matrix, the thermodynamic ensemble scoring layer, and the physical filters applied to pose ranking in FlexAID∆S. The intended audience is a computational chemist or structural biologist who wants to understand exactly what the numbers mean.
+This document describes the cost function, NRGDock matrix, score-space ensemble
+diagnostics, and their current integration boundaries. Names such as `dG_eff`
+and `G_bind` are legacy wire fields, not evidence of physical free energy.
 
 ---
 
@@ -72,92 +74,79 @@ For **C.1 → C.2** (type 2): C.1 (sp carbon, type 1) has 10 live entries in the
 
 ---
 
-## 3. ΔG_eff: The Ensemble Free Energy
+## 3. Score-space ensemble transform (legacy name: `dG_eff`)
 
-### 3.1 Motivation
-
-The GA optimizes CF and converges a population toward the low-CF region of pose space. At the end of a run, that population is not a single pose but a distribution: many structurally similar low-CF members near the converged basin, plus some outliers from earlier generations. The question is: how should this distribution be collapsed to a single ranking score for the binding mode?
-
-The classical answer is: take the best (lowest CF) member. This answer is wrong in two important ways. First, it discards information about the width of the basin — a narrow funnel and a broad flat plateau can produce the same minimum CF but have very different thermodynamic meanings. Second, it is noisy — the single-lowest member is sensitive to sampling fluctuations, particularly for flexible ligands with many near-degenerate torsion combinations.
-
-ΔG_eff addresses both problems by treating the GA population as an empirical sample from a Boltzmann distribution and computing a free energy directly.
-
-### 3.2 Formal Derivation
-
-Define the Boltzmann weight of pose i in the converged population:
+The GA produces optimizer-selected CF records, not an enumerated equilibrium
+ensemble. FlexAIDdS applies the following soft-min transform to some retained
+records:
 
 ```
-P_i = exp(−CF_i / T_eff) / Z
-Z   = Σ_j exp(−CF_j / T_eff)
+p_i       = exp(-CF_i / T_eff) / sum_j exp(-CF_j / T_eff)
+H_sample  = -sum_i p_i ln(p_i)
+G_tilde   = <CF>_p - T_eff H_sample
 ```
 
-where T_eff is an effective temperature in CF units (default: 0.596). Then:
+`T_eff` is expressed in the internal CF scale. `G_tilde` is useful as a
+ranking/diagnostic proxy, but it is **not** a Helmholtz free energy or binding
+free energy: CF is uncalibrated, the GA population has no canonical measure,
+and exact K-fold duplication of the deposited records changes `G_tilde` by
+`-T_eff ln(K)`. Sampling budget, deduplication, and cluster cardinality can
+therefore change the value without changing the represented molecular states.
 
-```
-⟨CF⟩ = Σ_i P_i · CF_i       # Boltzmann-weighted mean CF (enthalpy proxy)
-H     = −Σ_i P_i · ln P_i   # Shannon entropy of the pose distribution (nats)
-ΔG_eff = ⟨CF⟩ − T_eff · H
-```
+The historical field name `dG_eff` remains in some output for compatibility.
+New consumers must inspect schema-v2 scientific provenance and report this
+quantity as a CF/optimizer-sample proxy unless a separately validated energy
+calibration and ensemble measure are supplied.
 
-This is formally analogous to the Helmholtz free energy F = ⟨E⟩ − TS, with T_eff playing the role of temperature and H (Shannon entropy of the pose distribution) playing the role of thermodynamic entropy S. The CF plays the role of energy.
+### 3.1 Recorded effective-temperature conventions
 
-The term −T_eff · H is negative (since H ≥ 0 and T_eff > 0), so it lowers ΔG_eff relative to ⟨CF⟩. A broader population (high H) gets a larger entropy bonus, but only if that breadth is real sampling diversity around a genuine basin. Critically, if the population is broad because it has converged to a false minimum — a flat region of CF space — then ⟨CF⟩ will also be high (poorly complementary), and the entropy bonus will not be large enough to overcome the large ⟨CF⟩. The two terms compete in exactly the right way to discriminate genuine narrow funnels from false flat plateaus.
+The code contains score-space constants such as `T_eff = 0.596` and the legacy
+`T = 21` reporting convention. These are CF-scale parameters, not temperatures
+in kelvin and not a conversion from CF to kcal/mol. Their empirical usefulness
+must be established by a versioned benchmark receipt; this document does not
+promote them to calorimetric calibration.
 
-### 3.3 The Two Calibrations
+### 3.2 Shannon/tENCoM composition status
 
-ΔG_eff is computed at two temperatures:
+The legacy `G_bind` and `ShannonThermoStack` output mixes a CF proxy, Shannon
+entropy of optimizer records, and a model-scale tENCoM diagnostic. The current
+implementation does not provide a matched `Q_RL/(Q_R Q_L)` association cycle,
+standard-state term, or validated unit conversion. It must therefore be
+reported as `proxy_only`, never as physical `Delta G`, affinity, `Kd`, or `Ki`.
 
-**T_eff = 0.596 (CF units)** — the scoring temperature. This is calibrated to the FlexAID CF scale: at T_eff = 0.596, the Boltzmann distribution over the GA population is genuinely dispersed (not collapsed to a near-delta function) while still being sensitive to the ~10 CF-unit range that separates good from poor poses on the Astex benchmark. This value was empirically tuned; at lower T the distribution collapses and ΔG_eff → min CF; at higher T the distribution flattens and ΔG_eff → ⟨CF⟩ uniformly.
+The legacy stack also receives a configurational free-energy value that already
+contains `-T S_config` and subtracts a Shannon term again. Until the composition
+path is repaired and independently tested, its numeric `deltaG` field is not an
+additive thermodynamic ledger.
 
-**T = 21 (internal CF units, "kT_ISMB")** — the ISMB 2017 reporting calibration. This is a broader temperature at which the Boltzmann pose distribution is genuinely flat and the Shannon entropy H is close to log(N) for N population members. The T=21 pair (mean_CF_T21, dG_eff_T21) are *diagnostic reporting quantities only* — they do not enter G_bind or GA selection. They appear in output as `_T21` suffixed fields and in the ThermoWhiteboard I_ES, binding_regime, and CF_r2s diagnostics. Per the whiteboard, T=21 is baked into the *definition* of the left-hand quantities (ΔG₂₁, P_i(T=21)) — it is not a substitution; it names the specific observable.
+### 3.3 Impossibility predicate status
 
-### 3.4 G_bind: The Full Thermodynamic Free Energy
-
-ΔG_eff is the *pose-population* free energy (configurational). The full binding free energy reported as `G_bind` additionally includes tENCoM vibrational entropy:
-
-```
-G_bind = T_eff · ⟨CF⟩_raw  −  TdS_shannon  +  TdS_vib
-```
-
-where:
-- `T_eff · ⟨CF⟩_raw` — T_eff-weighted extensive enthalpy proxy (using the raw, un-normalized CF mean)
-- `TdS_shannon` = T_eff · H — configurational entropy cost of the pose distribution (positive = unfavorable; a broad distribution costs entropy)
-- `TdS_vib` = tencom_scale × (H_rep_bound − H_rep_ref) — vibrational entropy change upon binding, from the tENCoM elastic-network model. A negative value means the bound complex is *more rigid* than the separated receptor + ligand (entropy loss on binding); a positive value means binding softens the receptor (entropy gain). Physical values are typically in the range −5 to +5 nats; values outside this range are clamped.
-
-The sign convention follows the standard thermodynamic convention: ΔG = ΔH − TΔS, where TΔS_shannon is the *cost* of configurational ordering (positive for a broad distribution that narrows upon binding) and TΔS_vib is the vibrational contribution (sign from actual receptor rigidification: negative if the receptor becomes more rigid, i.e., ΔS_vib < 0 means entropy loss, making it +TdS_vib in the G expression since G = H − TΔS).
-
-This version of G_bind was restored from v88 (91.7% Astex-BCD) after a regression in v100 that inadvertently (1) attenuated the VCT signal by dividing by n_heavy (~12× attenuation), (2) flipped the sign of TdS_shannon, and (3) flipped the sign of TdS_vib, reducing accuracy to 9.4%.
-
-### 3.5 Thermodynamic Impossibility Gate
-
-When `FLEXAIDDS_THERMO_SCORE=1`, a physics filter is applied before election:
-
-```
-if ΔH > 0  AND  ΔS < 0:
-    ΔG_eff ← +1000  (sentinel)
-```
-
-The reasoning is thermodynamic: from ΔG = ΔH − TΔS, if ΔH > 0 (endothermic) and ΔS < 0 (entropy loss), then −TΔS > 0 for every T > 0, making ΔG strictly positive at all physically realizable temperatures. Such a binding configuration cannot be spontaneous. Rather than propagating a nonsensical score through the clustering election, the gate assigns a large positive sentinel (+1000 CF units) so downstream clustering can never elect this configuration rank-0.
-
-The ΔS source for this test is `TdS_vib` (the tENCoM vibrational entropy), because the population Shannon entropy H is always ≥ 0 by definition (each term −P_i ln P_i is non-negative for 0 < P_i ≤ 1), which would make the ΔS < 0 branch of the gate unreachable if H were used. TdS_vib is the only ΔS contribution in the engine that takes negative values (observed range: −1.86 to −1.95 nats on 1SG0/2GBP/1OF1 in test runs), so it is the physically meaningful discriminator for this gate.
-
-The gate is a **zero-cost no-op when disabled**: the flag is read once (function-local static) and short-circuits before any per-pose iteration. In default benchmarking mode, the gate is off and the sentinel is never assigned.
+The predicate `dH > 0 && dS < 0` is mathematically valid only when both inputs
+are commensurate state-function differences for the same physical cycle. The
+current production inputs do not satisfy that contract. Moreover, the computed
+sentinel is printed in the GA diagnostics but is not consumed by the later
+exact-CF rescore, sort, or clustering path. `FLEXAIDDS_THERMO_SCORE=1` therefore
+does **not** currently enforce a physics filter on elected poses.
 
 ---
 
-## 4. T_eff = 0.596: Calibration
+## 4. Effective-temperature provenance
 
-The value T_eff = 0.596 deserves explicit justification because it is not a physical temperature in kelvin — it is in the CF scoring unit system, which is an internal, dimensionless scale calibrated to PDB statistics.
-
-The CF scale is such that a typical good pose (RMSD ≤ 2 Å, correct binding mode on the Astex set) scores approximately −30 to −50 CF units for CF.com, while the worst clashing decoys can score +100 or more. The energy *range* that needs to be meaningfully Boltzmann-weighted is roughly 50 CF units. For a Boltzmann factor to distinguish scores 10 CF units apart, T_eff must be on the order of 10 / ln(10) ≈ 4 CF units. At T_eff = 0.596, exp(−10/0.596) ≈ 10^{−7}, which would make the distribution nearly a delta function — except that the GA population is not drawn from a flat prior; it is already concentrated near the low-CF basin by the selection pressure. At the values actually seen in the converged population (spread of ~5–15 CF units around the basin), T_eff = 0.596 produces a distribution with H ≈ 2–5 nats, which is empirically the range where the entropy bonus discriminates true minima from false ones.
-
-The complementary calibration at T = 21 corresponds to the ISMB 2017 whiteboard, where the reference temperature was set to produce ΔG values in the −10 to +10 range for the ITC-187 calorimetry benchmark, matching the kcal/mol scale of experimental ΔG measurements. These are not the same calibration — one is a scoring temperature for internal ranking; the other is a reporting temperature for comparing to calorimetry.
+`T_eff = 0.596` and `T = 21` are historical CF-scale conventions. A numerical
+constant that makes a score distribution convenient does not establish an
+energy calibration. Any future statement that either convention predicts
+calorimetric values must identify the calibration dataset, exact protocol and
+code SHA, fixed denominator, held-out validation, uncertainty, and artifact
+receipt. In the absence of that bundle, both values remain score parameters.
 
 ---
 
 ## 5. Cluster Election and Spread Guard
 
-After the GA converges and the CF population is scored thermodynamically, `cluster.cpp` groups poses by RMSD and elects a representative from each cluster. The default election criterion is the cluster head's CF (or ΔG_eff when `FLEXAIDDS_THERMO_SCORE=1`).
+After the GA converges, the retained chromosomes are exactly rescored by CF,
+sorted, and passed to clustering. Although thermodynamic-looking diagnostics
+may be computed during the GA, the current top-level rescore boundary does not
+promote their sentinel or `dG_eff` field into final clustering/election.
 
 The **two-gate spread guard** (`FLEXAIDDS_CLUSTER_SPREAD_MAX`) optionally demotes the rank-0 cluster head when *all three* of the following conditions hold simultaneously:
 
@@ -165,23 +154,25 @@ The **two-gate spread guard** (`FLEXAIDDS_CLUSTER_SPREAD_MAX`) optionally demote
 2. **Minority population**: The rank-0 cluster holds less than `cluster_pop_min_fraction` (default 0.35) of the merged population across restarts. A dominant true minimum would attract most of the population.
 3. **No restart consensus**: Fewer than `cluster_consensus_k` (default 3) independent restarts converge within `cluster_consensus_tau` (default 2.0 Å) of the rank-0 head. If rank-0 is a real minimum, independent restarts should find it reproducibly.
 
-The three conditions are conjunctive: all must be true for demotion to occur. This was learned from experience: an earlier single-gate version (isolation alone) demoted valid shallow-binding-mode clusters and cost 11 targets on the Astex benchmark (64/85, a 24-point regression). The three-gate version restores all those targets while still catching genuine false minima.
+The three conditions are conjunctive. Any accuracy statement about this guard
+belongs in a fixed-denominator benchmark receipt, not in the scoring contract.
 
 ---
 
 ## 6. Reporting Reference
 
-The key fields in the output `[THERMO]` block and their derivation:
+Legacy `[THERMO]` fields are retained for compatibility. Their current domain
+and safe interpretation are:
 
 | Field | Derivation | Notes |
 |:------|:-----------|:------|
-| `G_bind` | T_eff · ⟨CF⟩_raw − TdS_shannon + TdS_vib | Primary G score; includes vibrational term |
-| `H_vct` | ⟨CF⟩ / n_heavy | Intensive; per-heavy-atom enthalpy proxy (ITC-comparable) |
-| `H_vct_raw` | ⟨CF⟩ = Σ P_i · CF_i | Extensive; enters G_bind directly |
-| `TdS_shannon` | T_eff · (−Σ P_i ln P_i) | Configurational entropy cost |
-| `TdS_vib` | tencom_scale · (H_rep_bound − H_rep_ref) | Vibrational ΔS from tENCoM |
-| `dG_eff` | ⟨CF⟩ − T_eff · H at T_eff | Pose-population free energy at T_eff=0.596 |
-| `dG_eff_T21` | ⟨CF⟩ − 21 · H at T=21 | Reporting-only; ISMB 2017 calibration |
-| `I_ES` | (ΔH + TΔS) / (ΔH − TΔS) at T=21 | Enthalpy-entropy index ∈ [−1, +1] |
-| `binding_regime` | classify(ΔH, ΔS, T=21) | `no_binding`, `enthalpy_driven`, `both_favorable`, `entropy_driven`, `borderline` |
-| `thermo_impossible` | ΔH > 0 ∧ ΔS < 0 | Gate verdict; forces dG_eff → +1000 when true |
+| `G_bind` | mixed legacy composition | `proxy_only`; not binding free energy |
+| `H_vct` | ⟨CF⟩ / n_heavy | per-heavy-atom CF diagnostic; not calorimetric enthalpy |
+| `H_vct_raw` | ⟨CF⟩ = Σ P_i · CF_i | CF-domain weighted mean |
+| `TdS_shannon` | T_eff · (−Σ P_i ln P_i) | optimizer-sample Shannon diagnostic |
+| `TdS_vib` | scaled difference of model-spectrum Shannon diagnostics | model scale; unmatched reference cycle |
+| `dG_eff` | ⟨CF⟩ − T_eff · H | CF-domain soft-min proxy |
+| `dG_eff_T21` | ⟨CF⟩ − 21 · H | legacy CF-domain reporting proxy |
+| `I_ES` | ratio of proxy terms | diagnostic only; forbidden for ranking or physical claims |
+| `binding_regime` | classification of proxy terms | label only; not a binding-state verdict |
+| `thermo_impossible` | predicate over non-commensurate proxy terms | diagnostic only; not wired to final election |

@@ -4,6 +4,16 @@
 // SPDX-License-Identifier: Apache-2.0
 
 export type {
+  EnergyDomain,
+  EnsembleMeasure,
+  ReferenceState,
+  ClaimValidity,
+  ScientificProvenance,
+  ThermodynamicClaimSource,
+  UnavailableReason,
+  NormalizedThermodynamicRecord,
+  NormalizedBindingMode,
+  NormalizedDockingRecord,
   ThermodynamicResult,
   VibrationalEntropyResult,
   WHAMBinResult,
@@ -16,6 +26,26 @@ export type {
   DeviceCapability,
 } from './types.js';
 
+export {
+  SCIENTIFIC_PROVENANCE_SCHEMA_VERSION,
+  PROXY_ONLY_PROVENANCE,
+  hasArtifactSha256,
+  hasStrictAvailability,
+  normalizeScientificProvenance,
+  deriveClaimValidity,
+  claimValidityForRecord,
+  allowsCanonicalClaims,
+  allowsBindingClaims,
+  normalizeAvailability,
+  normalizeThermodynamicRecord,
+  normalizeDockingRecord,
+  claimValidityForWireRecord,
+} from './types.js';
+
 export { StatMechEngine } from './StatMechEngine.js';
-export { parseResultFile, parseDockingResultJSON } from './resultLoader.js';
+export {
+  parseResultFile,
+  parseDockingResultJSON,
+  adoptDockingPayload,
+} from './resultLoader.js';
 export { kB_kcal, kB_SI, hbar_SI, NA } from './constants.js';

@@ -9,9 +9,11 @@
 import React, { useRef, useEffect } from 'react';
 import type { BindingPopulation } from '@bonhomme/shared';
 import { createPluginUI } from 'molstar/lib/mol-plugin-ui';
+import { renderReact18 } from 'molstar/lib/mol-plugin-ui/react18';
 import { DefaultPluginUISpec } from 'molstar/lib/mol-plugin-ui/spec';
 import type { PluginUIContext } from 'molstar/lib/mol-plugin-ui/context';
 import 'molstar/lib/mol-plugin-ui/skin/light.scss';
+import { populationAllowsPhysicalAffinity } from './claimPresentation.js';
 
 /**
  * Interpolate between burgundy red and purple blue based on Boltzmann weight.
@@ -42,6 +44,7 @@ interface MolstarViewerProps {
 export function MolstarViewer({ population, pdbData }: MolstarViewerProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const pluginRef = useRef<PluginUIContext | null>(null);
+  const bindingPhysical = populationAllowsPhysicalAffinity(population);
 
   // Initialize Mol* plugin UI
   useEffect(() => {
@@ -52,6 +55,7 @@ export function MolstarViewer({ population, pdbData }: MolstarViewerProps) {
     const init = async () => {
       const plugin = await createPluginUI({
         target: containerRef.current!,
+        render: renderReact18,
         spec: {
           ...DefaultPluginUISpec(),
           layout: {
@@ -106,10 +110,11 @@ export function MolstarViewer({ population, pdbData }: MolstarViewerProps) {
       />
       {population.modes.length > 0 && (
         <div style={{ display: 'flex', gap: '1rem', marginTop: '0.5rem', fontSize: '0.85em' }}>
-          <span>Boltzmann weight scale:</span>
+          <span>{bindingPhysical ? 'Boltzmann weight scale:' : 'Ensemble/CF diagnostic weight scale:'}</span>
           <span style={{ color: populationColorHex(1.0) }}>High (burgundy)</span>
           <span style={{ color: populationColorHex(0.5) }}>Medium</span>
           <span style={{ color: populationColorHex(0.0) }}>Low (purple)</span>
+          {!bindingPhysical && <span>Physical affinity unavailable</span>}
         </div>
       )}
     </div>

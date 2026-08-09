@@ -19,14 +19,37 @@ final class ThermoRefereeTests: XCTestCase {
     private func makeThermo(
         freeEnergy: Double = -8.0, entropy: Double = 0.005,
         temperature: Double = 298.15, stdEnergy: Double = 1.0,
-        heatCapacity: Double = 0.1, meanEnergy: Double = -7.0
+        heatCapacity: Double = 0.1, meanEnergy: Double = -7.0,
+        scientificProvenance: ScientificProvenance? = nil
     ) -> ThermodynamicResult {
         ThermodynamicResult(
             temperature: temperature, logZ: 10.0,
             freeEnergy: freeEnergy, meanEnergy: meanEnergy,
             meanEnergySq: meanEnergy * meanEnergy + stdEnergy * stdEnergy,
             heatCapacity: heatCapacity, entropy: entropy,
-            stdEnergy: stdEnergy
+            stdEnergy: stdEnergy,
+            scientificProvenance: scientificProvenance
+        )
+    }
+
+    private var bindingPhysicalProvenance: ScientificProvenance {
+        ScientificProvenance(
+            energyDomain: .calibratedKcalPerMol,
+            ensembleMeasure: .enumeratedMicrostates,
+            referenceState: .matchedAssociationCycle,
+            energyProvenance: "sha256:e638aaee2a68410cdc827397b2aa095cf227090f494f535748c756ac49e6da3c",
+            measureProvenance: "sha256:7b27545430c950e8f5b4ba83ae3e2ad5e9fe32b83b625d8efea0e668af2782f4",
+            referenceProvenance: "sha256:01d26f66e709d388d7b971de6204680694e7cca10b1570506a5738c6909a6442"
+        )
+    }
+
+    private var canonicalPhysicalProvenance: ScientificProvenance {
+        ScientificProvenance(
+            energyDomain: .calibratedKcalPerMol,
+            ensembleMeasure: .enumeratedMicrostates,
+            referenceState: .boundOnly,
+            energyProvenance: "sha256:e638aaee2a68410cdc827397b2aa095cf227090f494f535748c756ac49e6da3c",
+            measureProvenance: "sha256:7b27545430c950e8f5b4ba83ae3e2ad5e9fe32b83b625d8efea0e668af2782f4"
         )
     }
 
@@ -164,13 +187,34 @@ final class ThermoRefereeTests: XCTestCase {
         let decomp = makeDecomp()
         let score = makeScore(decomposition: decomp)
         // F < -5 and S > 0.01 triggers compensation
-        let thermo = makeThermo(freeEnergy: -12.0, entropy: 0.02)
+        let thermo = makeThermo(
+            freeEnergy: -12.0,
+            entropy: 0.02,
+            scientificProvenance: bindingPhysicalProvenance
+        )
 
         let verdict = referee.referee(thermodynamics: thermo, entropyScore: score)
 
         let compFinding = verdict.findings.first { $0.category == "compensation" }
         XCTAssertNotNil(compFinding, "Should detect enthalpy-entropy compensation")
         XCTAssertEqual(compFinding?.severity, "advisory")
+    }
+
+    func testRuleBasedReferee_proxySuppressesCompensationAndNetDeltaG() {
+        let referee = RuleBasedReferee()
+        let score = makeScore(decomposition: makeDecomp())
+        let thermo = makeThermo(freeEnergy: -12.0, entropy: 0.02)
+
+        let verdict = referee.referee(thermodynamics: thermo, entropyScore: score)
+        let output = (verdict.findings.map(\.detail) + [verdict.recommendedAction])
+            .joined(separator: " ")
+            .lowercased()
+
+        XCTAssertNil(verdict.findings.first { $0.category == "compensation" })
+        XCTAssertFalse(output.contains("net δg"))
+        XCTAssertFalse(output.contains("strong binding"))
+        XCTAssertTrue(output.contains("proxy diagnostic"))
+        XCTAssertTrue(output.contains("unavailable"))
     }
 
     // MARK: - No Decomposition Tests
@@ -190,11 +234,48 @@ final class ThermoRefereeTests: XCTestCase {
 
     // MARK: - Affinity Tests
 
-    func testRuleBasedReferee_strongAffinity_converged() {
+    func testRuleBasedReferee_proxySuppressesAffinityClaim() {
+        let referee = RuleBasedReferee()
+        let score = makeScore(decomposition: makeDecomp(isConverged: true))
+        let thermo = makeThermo(freeEnergy: -15.0)
+
+        let verdict = referee.referee(thermodynamics: thermo, entropyScore: score)
+
+        XCTAssertNil(verdict.findings.first { $0.category == "affinity" })
+        let provenanceFinding = verdict.findings.first { $0.category == "provenance" }
+        XCTAssertNotNil(provenanceFinding)
+        XCTAssertTrue(provenanceFinding?.title.contains("unavailable") ?? false)
+    }
+
+    func testRuleBasedReferee_canonicalIsPhysicalButBindingUnavailable() {
+        let referee = RuleBasedReferee()
+        let score = makeScore(decomposition: makeDecomp(isConverged: true))
+        let thermo = makeThermo(
+            freeEnergy: -15.0,
+            scientificProvenance: canonicalPhysicalProvenance
+        )
+
+        let verdict = referee.referee(thermodynamics: thermo, entropyScore: score)
+        let output = (verdict.findings.map(\.detail) + [verdict.recommendedAction])
+            .joined(separator: " ")
+            .lowercased()
+
+        XCTAssertEqual(thermo.claimValidity, .canonicalPhysical)
+        XCTAssertNil(verdict.findings.first { $0.category == "affinity" })
+        XCTAssertTrue(output.contains("canonical"))
+        XCTAssertTrue(output.contains("binding affinity") && output.contains("unavailable"))
+        XCTAssertFalse(output.contains("proxy diagnostic"))
+        XCTAssertFalse(output.contains("input-scale"))
+    }
+
+    func testRuleBasedReferee_strongAffinityRequiresMatchedCycle() {
         let referee = RuleBasedReferee()
         let decomp = makeDecomp(isConverged: true)
         let score = makeScore(decomposition: decomp)
-        let thermo = makeThermo(freeEnergy: -15.0)
+        let thermo = makeThermo(
+            freeEnergy: -15.0,
+            scientificProvenance: bindingPhysicalProvenance
+        )
 
         let verdict = referee.referee(thermodynamics: thermo, entropyScore: score)
 
@@ -208,7 +289,10 @@ final class ThermoRefereeTests: XCTestCase {
         let referee = RuleBasedReferee()
         let decomp = makeDecomp(isConverged: true)
         let score = makeScore(decomposition: decomp)
-        let thermo = makeThermo(freeEnergy: -2.0)
+        let thermo = makeThermo(
+            freeEnergy: -2.0,
+            scientificProvenance: bindingPhysicalProvenance
+        )
 
         let verdict = referee.referee(thermodynamics: thermo, entropyScore: score)
 
@@ -280,14 +364,14 @@ final class ThermoRefereeTests: XCTestCase {
         let referee = RuleBasedReferee()
         let decomp = makeDecomp(isConverged: false)
         let score = makeScore(decomposition: decomp)
-        let thermo = makeThermo()
+        let thermo = makeThermo(scientificProvenance: bindingPhysicalProvenance)
 
         let verdict = referee.referee(thermodynamics: thermo, entropyScore: score)
 
         XCTAssertTrue(verdict.recommendedAction.contains("Do not trust"))
     }
 
-    func testRuleBasedReferee_reliableRecommendation() {
+    func testRuleBasedReferee_proxyRecommendationIsDiagnosticOnly() {
         let referee = RuleBasedReferee()
         let decomp = makeDecomp(isConverged: true)
         let score = makeScore(decomposition: decomp)
@@ -295,6 +379,78 @@ final class ThermoRefereeTests: XCTestCase {
 
         let verdict = referee.referee(thermodynamics: thermo, entropyScore: score)
 
-        XCTAssertTrue(verdict.recommendedAction.contains("reliable") || verdict.recommendedAction.contains("Proceed"))
+        XCTAssertTrue(verdict.recommendedAction.contains("Proxy diagnostic only"))
+        XCTAssertTrue(verdict.recommendedAction.contains("unavailable"))
+        XCTAssertFalse(verdict.recommendedAction.contains("optimization of the ligand"))
+        XCTAssertFalse(verdict.recommendedAction.contains("lead optimization"))
+    }
+
+    func testRuleBasedReferee_bindingPhysicalPermitsLeadOptimization() {
+        let referee = RuleBasedReferee()
+        let score = makeScore(decomposition: makeDecomp(isConverged: true))
+        let thermo = makeThermo(
+            freeEnergy: -8.0,
+            scientificProvenance: bindingPhysicalProvenance
+        )
+
+        let verdict = referee.referee(thermodynamics: thermo, entropyScore: score)
+
+        XCTAssertTrue(verdict.recommendedAction.contains("lead optimization"))
+    }
+
+    func testRuleBasedOracle_proxyNeverEmitsAffinityNetDeltaGOrOptimization() {
+        let oracle = RuleBasedOracle()
+        // shannonS must be below BindingEntropyScore.isCollapsed's 0.1
+        // threshold for the collapse branch under test to be reachable.
+        let score = makeScore(decomposition: nil, bindingModeCount: 1, shannonS: 0.05)
+        let thermo = makeThermo(freeEnergy: -15.0, entropy: 0.02)
+
+        let analysis = oracle.analyze(thermodynamics: thermo, entropyScore: score)
+        let output = analysis.bullets.joined(separator: " ").lowercased()
+
+        XCTAssertTrue(output.contains("binding affinity unavailable"))
+        XCTAssertTrue(output.contains("sampling collapse"))
+        XCTAssertFalse(output.contains("strong binding"))
+        XCTAssertFalse(output.contains("net δg"))
+        XCTAssertFalse(output.contains("structural optimization"))
+        XCTAssertTrue(analysis.inputSummary.contains("proxy_F"))
+        XCTAssertTrue(analysis.inputSummary.contains("input-scale"))
+        XCTAssertFalse(analysis.inputSummary.contains("kcal/mol"))
+    }
+
+    func testRuleBasedOracle_bindingPhysicalPermitsAffinityAndCompensation() {
+        let oracle = RuleBasedOracle()
+        let thermo = makeThermo(
+            freeEnergy: -15.0,
+            entropy: 0.02,
+            scientificProvenance: bindingPhysicalProvenance
+        )
+
+        let analysis = oracle.analyze(thermodynamics: thermo)
+        let output = analysis.bullets.joined(separator: " ").lowercased()
+
+        XCTAssertTrue(output.contains("strong binding affinity"))
+        XCTAssertTrue(output.contains("net δg"))
+        XCTAssertTrue(analysis.inputSummary.contains("kcal/mol"))
+    }
+
+    func testRuleBasedOracle_canonicalUsesPhysicalUnitsWithoutBindingClaim() {
+        let oracle = RuleBasedOracle()
+        let thermo = makeThermo(
+            freeEnergy: -15.0,
+            entropy: 0.02,
+            scientificProvenance: canonicalPhysicalProvenance
+        )
+
+        let analysis = oracle.analyze(thermodynamics: thermo)
+        let output = analysis.bullets.joined(separator: " ").lowercased()
+
+        XCTAssertTrue(output.contains("canonical"))
+        XCTAssertTrue(output.contains("binding affinity unavailable"))
+        XCTAssertFalse(output.contains("strong binding"))
+        XCTAssertFalse(output.contains("net δg"))
+        XCTAssertTrue(analysis.inputSummary.contains("canonical_F"))
+        XCTAssertTrue(analysis.inputSummary.contains("kcal/mol"))
+        XCTAssertFalse(analysis.inputSummary.contains("proxy_F"))
     }
 }

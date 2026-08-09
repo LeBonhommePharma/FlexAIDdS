@@ -1,81 +1,95 @@
 # entropy.help
 
-## The Public Thermodynamic Audit Layer for Molecular Docking
+## Concept Note for a Planned Public Audit Layer
 
-For more than thirty years, molecular docking has been built on an incomplete foundation. The overwhelming majority of scoring functions—those powering AutoDock Vina, Glide, GOLD, rDock, and most commercial platforms—rank ligands by enthalpy (ΔH) or by empirical proxies that largely ignore the entropic contribution to binding. The governing equation of molecular recognition,
+**Status: draft and unverified.** No completed entropy.help audit, deposited
+ensemble, or provenance-backed quantitative result is present in this repository
+as of this revision. The cases below are proposed evaluation targets, not
+published findings.
 
-**ΔG = ΔH − TΔS,**
+Molecular docking mixes several distinct objects that are too often described
+with the same thermodynamic vocabulary. A search engine may rank poses with an
+empirical or contact-function score. A finite sampled ensemble can support a
+reproducible weighting calculation. Experimental binding free energy additionally
+depends on physical energy calibration, state definitions, concentration,
+solvent, and bound/unbound reference terms. Those layers are related, but they
+are not interchangeable.
 
-has been treated as aspirational rather than operational. The result is a persistent, systemic “entropy gap”: predictions that appear decisive on a computer screen but systematically diverge from experimental affinities whenever conformational freedom, solvent release, or receptor flexibility contributes meaningfully to ΔG.
+entropy.help is a proposal for making those distinctions inspectable.
 
-This is not a rounding error. It is a thirty-year blind spot that affects which compounds are advanced, which targets are declared “druggable,” and ultimately which molecules reach patients.
+### Proposed Scope
 
-### The Fix: Total Sampled Partition Function + F_config + S_config
+For a deposited pose ensemble, an audit would attempt to reconstruct the exact
+finite-sample calculation declared by the producer:
 
-entropy.help exists to close that gap with transparent, first-principles thermodynamics.
+- the sampled states and multiplicities;
+- the energy or score supplied for each state;
+- the weighting convention and temperature-like parameter;
+- the source revision, binary/input digests, command, seeds, and timestamps; and
+- any separate configurational, vibrational, solvation, concentration, or
+  reference-state terms.
 
-The core construct is the **Total Sampled Partition Function** (Z_sampled) assembled directly from the complete conformational ensemble generated during docking—every pose, every multiplicity, every energy evaluated by the underlying contact function. From this single, auditable quantity flow two physically grounded observables:
+For physically calibrated energies, a canonical calculation may use
 
-**F_config = −kT ln Z_sampled**  
-(configurational Helmholtz free energy)
+**F_config = -kT ln Z_sampled**
 
-**S_config = −k_B Σ p_i ln p_i**  
-(equivalently S_config = (⟨E⟩ − F_config) / T)
+and
 
-These are not post-hoc additives or neural-network corrections. They are the direct thermodynamic consequences of the sampled ensemble under the canonical distribution. When vibrational entropy (tENCoM), solvation, and reference-state corrections are layered on top, the resulting ΔG recovers experimental binding modes and affinities with substantially higher fidelity than enthalpy-only rankings.
+**S_config = -k_B sum_i p_i ln p_i.**
 
-In head-to-head comparisons on neurological targets, inclusion of S_config rescued the crystallographically correct pose in **92 %** of cases where pure enthalpy scoring placed the ligand in the wrong pocket or in a non-native conformation. Average entropic correction magnitudes exceeded 3 kcal/mol—well beyond the threshold that changes lead-selection decisions.
+For FlexAIDdS GA output, however, the CF/contact-function score is a ranking
+proxy unless a separate calibration establishes physical energy units. Applying
+the same algebra to CF values can produce a useful finite-sample *score-space
+diagnostic*, but it does not by itself establish physical F, S, or binding ΔG.
 
-### Public Audit as the Credibility Solution
+### What a Public Record Would Require
 
-The deeper problem is not merely technical; it is epistemic. When two docking engines disagree on the “best” molecule for a target, or when a top-ranked pose proves inactive in the wet lab, there is no independent, physics-based authority to consult. Reproducibility suffers. Trust erodes. Medicinal chemists learn to discount computational rankings.
+A future audit may be promoted from `PLANNED_UNVERIFIED` only when the repository
+contains, at minimum:
 
-entropy.help supplies that authority as a public good.
+1. a machine-readable JSON report;
+2. a human-readable Markdown summary;
+3. a separate provenance record with source and binary/input identity; and
+4. the ensemble or durable receipt needed to verify every reported digest and
+   recompute the declared quantities.
 
-By publishing complete thermodynamic ledgers—log Z, F_config, S_config, Boltzmann populations, heat capacity, and explicit uncertainty—for every audited complex, we create a growing, version-controlled corpus of reference cases. Any researcher, company, or regulator can request an audit, inspect the raw ledger, and compare it against their internal workflow. The methodology is open. The data are open. The only requirement is a willingness to expose assumptions to scrutiny.
+The repository validator rejects missing artifact links, placeholder signatures
+or digests, and completion/publication/reproducibility language without that
+evidence. Passing the validator establishes artifact presence and claim hygiene;
+it is not, by itself, scientific validation of the method.
 
-This is not another benchmarking exercise. It is the beginning of a standing, independent thermodynamic validation service for the entire docking community—starting with FlexAIDdS and expanding to any engine willing to expose its sampled ensemble.
+### Planned, Unverified Candidate Cases
 
-### Seed Reference Audits
+The following candidates are retained as a prospective test matrix. They have no
+result values or outcome claims in the current repository:
 
-The first seven public audits establish the initial corpus and demonstrate both the scale of the entropy gap and the corrective power of the partition-function approach:
+1. μ-Opioid receptor + fentanyl — proposed psychopharmacology case study.
+2. HIV-1 protease + darunavir — proposed flexible-ligand case study.
+3. CDK2 + dinaciclib — proposed kinase case study.
+4. BACE1 + verubecestat — proposed alternative-pocket case study.
+5. ITC-187 — proposed comparison set, conditional on a licensed, traceable
+   experimental-data source and matched thermodynamic definitions.
+6. CASF-2016 — proposed docking/scoring benchmark, with pose generation and
+   thermodynamic claims reported separately.
+7. Thrombin + dabigatran — proposed negative-control case.
 
-1. **μ-Opioid receptor + fentanyl** (psychopharmacology case study)  
-   Enthalpy-only scoring selected a decoy pose (RMSD 8.3 Å, apparent ΔG −14.2 kcal/mol). Full entropy correction recovered the correct binding mode (RMSD 1.2 Å, ΔG −10.8 kcal/mol; experimental −11.1 kcal/mol).
+These entries are hypotheses about useful validation coverage. They are not
+evidence that entropy-aware ranking rescues poses, improves affinity correlation,
+or reproduces experiment.
 
-2. **HIV-1 protease + darunavir**  
-   Rank rescue from 3 → 1; entropic contribution ΔΔG_entropy = −2.8 kcal/mol.
+### Request a Candidate Audit
 
-3. **CDK2 + dinaciclib** (oncology)  
-   Dramatic correction: enthalpy rank 5 → free-energy rank 1; ΔΔG_entropy = −4.1 kcal/mol.
+The coordination issue accepts candidate datasets and methodology discussion:
 
-4. **BACE1 + verubecestat** (Alzheimer’s)  
-   Rank 2 → 1; ΔΔG_entropy = −1.7 kcal/mol.
-
-5. **ITC-187 calorimetry gold-standard set**  
-   187 complexes with complete experimental decomposition (ΔG, ΔH, −TΔS). Entropy-aware scoring yields Pearson r ≈ 0.93 with measured affinities and systematically rescues the entropy-driven binders that enthalpy-only methods underrank.
-
-6. **CASF-2016 core set**  
-   Enrichment and pose-prediction benchmarks showing consistent gains in both virtual-screening power and top-ranked binding-mode accuracy once S_config is included.
-
-7. **Thrombin + dabigatran** (negative-control case)  
-   Minimal entropic correction when the dominant pose is already enthalpically unique; rank remains unchanged—confirming that the framework does not artificially inflate entropy on rigid systems.
-
-All seven audits, together with the underlying sampled ensembles and code, are available for independent reproduction.
-
-### Request an Entropy Audit
-
-The long-term credibility of computational docking depends on our collective willingness to make its thermodynamic assumptions falsifiable.
-
-**Request an Entropy Audit** through the public coordination hub:  
 https://github.com/LeBonhommePharma/FlexAIDdS/issues/219
 
-Whether you use FlexAIDdS, another open engine, or a proprietary platform, we will compute and publish a complete, auditable thermodynamic profile grounded in the Total Sampled Partition Function. Every result becomes part of the permanent public record.
-
-The 30-year entropy gap does not have to remain a permanent feature of drug discovery.
-
-With transparent, physics-grounded public audits, we can finally begin ranking molecules by the quantity that actually determines whether they bind: ΔG.
+Submitting a request does not create a completed audit or guarantee publication.
+Any future result must remain scoped to its deposited artifacts and must preserve
+the boundary between CF/contact-function scoring proxies, ensemble-derived
+estimates, and experimentally validated thermodynamic quantities.
 
 ---
 
-*entropy.help* is an independent thermodynamic validation initiative seeded by the FlexAIDdS project. It operates under open-science principles and welcomes participation from the broader computational chemistry and medicinal chemistry communities.
+*entropy.help* is a draft open-science initiative seeded by the FlexAIDdS
+project. The point is not to manufacture authority; it is to make claims
+falsifiable by attaching them to inspectable inputs, calculations, and receipts.

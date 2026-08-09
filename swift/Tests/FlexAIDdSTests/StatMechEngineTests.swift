@@ -22,6 +22,9 @@ final class StatMechEngineTests: XCTestCase {
         let result = await runner.compute()
 
         XCTAssertEqual(result.temperature, 300.0, accuracy: 1e-10)
+        XCTAssertEqual(result.scientificProvenance?.energyDomain, .unclassified)
+        XCTAssertEqual(result.scientificProvenance?.ensembleMeasure, .unclassified)
+        XCTAssertEqual(result.claimValidity, .proxyOnly)
         // Free energy should be lower than both energies (entropy contribution)
         XCTAssertLessThan(result.freeEnergy, -8.0)
         // Mean energy should be between the two
@@ -82,10 +85,12 @@ final class StatMechEngineTests: XCTestCase {
     func testClearResetsSamples() async {
         let runner = FlexAIDRunner(temperature: 300.0)
         await runner.addSample(energy: -10.0)
-        XCTAssertEqual(await runner.sampleCount, 1)
+        let countBeforeClear = await runner.sampleCount
+        XCTAssertEqual(countBeforeClear, 1)
 
         await runner.clear()
-        XCTAssertEqual(await runner.sampleCount, 0)
+        let countAfterClear = await runner.sampleCount
+        XCTAssertEqual(countAfterClear, 0)
     }
 
     // MARK: - Static Functions
@@ -117,10 +122,12 @@ final class StatMechEngineTests: XCTestCase {
 
     func testTemperatureAndBeta() async {
         let runner = FlexAIDRunner(temperature: 300.0)
-        XCTAssertEqual(await runner.temperature, 300.0, accuracy: 1e-10)
+        let temperature = await runner.temperature
+        XCTAssertEqual(temperature, 300.0, accuracy: 1e-10)
 
         let expectedBeta = 1.0 / (kBkcal * 300.0)
-        XCTAssertEqual(await runner.beta, expectedBeta, accuracy: 1e-6)
+        let beta = await runner.beta
+        XCTAssertEqual(beta, expectedBeta, accuracy: 1e-6)
     }
 
     // MARK: - Boltzmann LUT
@@ -170,5 +177,74 @@ final class StatMechEngineTests: XCTestCase {
         let decoded = try JSONDecoder().decode(ThermodynamicResult.self, from: encoded)
 
         XCTAssertEqual(result, decoded)
+    }
+
+    func testExplicitProxyProvenanceRoundTripsAcrossCBridge() async {
+        let runner = FlexAIDRunner(
+            temperature: 300.0,
+            scientificProvenance: .proxyContactFunction
+        )
+        await runner.addSample(energy: -5.0)
+
+        let result = await runner.compute()
+
+        XCTAssertEqual(result.scientificProvenance, .proxyContactFunction)
+        XCTAssertEqual(result.claimValidity, .proxyOnly)
+    }
+
+    func testExplicitPhysicalProvenanceRoundTripsAcrossCBridge() async {
+        let provenance = ScientificProvenance(
+            energyDomain: .calibratedKcalPerMol,
+            ensembleMeasure: .enumeratedMicrostates,
+            referenceState: .matchedAssociationCycle,
+            energyProvenance: "sha256:e638aaee2a68410cdc827397b2aa095cf227090f494f535748c756ac49e6da3c",
+            measureProvenance: "sha256:7b27545430c950e8f5b4ba83ae3e2ad5e9fe32b83b625d8efea0e668af2782f4",
+            referenceProvenance: "sha256:01d26f66e709d388d7b971de6204680694e7cca10b1570506a5738c6909a6442"
+        )
+        let runner = FlexAIDRunner(
+            temperature: 300.0,
+            scientificProvenance: provenance
+        )
+        await runner.addSample(energy: -5.0)
+
+        let result = await runner.compute()
+
+        XCTAssertEqual(result.scientificProvenance, provenance)
+        XCTAssertEqual(result.claimValidity, .bindingPhysical)
+    }
+
+    func testOutOfRangeSchemaFailsClosedAcrossCBridge() async {
+        let provenance = ScientificProvenance(
+            schemaVersion: Int.max,
+            energyDomain: .calibratedKcalPerMol,
+            ensembleMeasure: .enumeratedMicrostates,
+            energyProvenance: "sha256:e638aaee2a68410cdc827397b2aa095cf227090f494f535748c756ac49e6da3c",
+            measureProvenance: "sha256:7b27545430c950e8f5b4ba83ae3e2ad5e9fe32b83b625d8efea0e668af2782f4"
+        )
+        let runner = FlexAIDRunner(scientificProvenance: provenance)
+        await runner.addSample(energy: -5.0)
+
+        let result = await runner.compute()
+
+        XCTAssertEqual(result.scientificProvenance?.schemaVersion, 0)
+        XCTAssertEqual(result.claimValidity, .proxyOnly)
+    }
+
+    func testEmbeddedNULCannotAuthorizeAcrossCBridge() async {
+        let provenance = ScientificProvenance(
+            energyDomain: .calibratedKcalPerMol,
+            ensembleMeasure: .enumeratedMicrostates,
+            referenceState: .matchedAssociationCycle,
+            energyProvenance: "sha256:e638aaee2a68410cdc827397b2aa095cf227090f494f535748c756ac49e6da3c\0junk",
+            measureProvenance: "sha256:7b27545430c950e8f5b4ba83ae3e2ad5e9fe32b83b625d8efea0e668af2782f4",
+            referenceProvenance: "sha256:01d26f66e709d388d7b971de6204680694e7cca10b1570506a5738c6909a6442"
+        )
+        let runner = FlexAIDRunner(scientificProvenance: provenance)
+        await runner.addSample(energy: -5.0)
+
+        let result = await runner.compute()
+
+        XCTAssertEqual(result.scientificProvenance?.energyProvenance, "")
+        XCTAssertEqual(result.claimValidity, .proxyOnly)
     }
 }

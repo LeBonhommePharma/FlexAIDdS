@@ -8,6 +8,7 @@
 
 #include "FXGA.h"
 #include "FXStatMechEngine.h"
+#include "FXStatMechBridgeInternal.hpp"
 
 // C++ core headers
 #include "gaboom.h"
@@ -508,16 +509,7 @@ extern "C" FXThermodynamics fx_mode_thermodynamics(FXBindingModeRef mode) {
     FXThermodynamics fx = {};
     if (!mode || !mode->mode) return fx;
 
-    auto t = mode->mode->get_thermodynamics();
-    fx.temperature    = t.temperature;
-    fx.log_Z          = t.log_Z;
-    fx.free_energy    = t.free_energy;
-    fx.mean_energy    = t.mean_energy;
-    fx.mean_energy_sq = t.mean_energy_sq;
-    fx.heat_capacity  = t.heat_capacity;
-    fx.entropy        = t.entropy;
-    fx.std_energy     = t.std_energy;
-    return fx;
+    return fx_thermodynamics_from_cpp(mode->mode->get_thermodynamics());
 }
 
 extern "C" double* fx_mode_boltzmann_weights(FXBindingModeRef mode, int* out_count) {
@@ -574,9 +566,18 @@ extern "C" FXWHAMBin* fx_mode_free_energy_profile(FXBindingModeRef mode,
 
 // ─── ShannonThermoStack bridge ──────────────────────────────────────────────
 
-// Helper: populate FXShannonThermoResult from a FullThermoResult + histogram data
+// Helper: populate FXShannonThermoResult from a FullThermoResult + histogram data.
+//
+// `source_provenance` is the evidence of the configurational ensemble that
+// produced `full`. It is copied verbatim — the bridge never manufactures
+// provenance. Because ShannonThermoStack folds an entropy correction that
+// carries no independent artifact receipt into `deltaG`, a non-zero correction
+// downgrades the record to a default-constructed (proxy-only)
+// ScientificProvenance. This mirrors statmech.cpp's provenance_for_breakdown
+// and leaves every numeric field unchanged.
 static void fill_shannon_result(FXShannonThermoResult* result,
                                  const shannon_thermo::FullThermoResult& full,
+                                 const statmech::ScientificProvenance& source_provenance,
                                  const std::vector<double>& log_weights,
                                  bool converged, double convergence_rate) {
     result->shannon_entropy       = full.shannonEntropy;
@@ -585,6 +586,12 @@ static void fill_shannon_result(FXShannonThermoResult* result,
     result->delta_G               = full.deltaG;
     result->is_converged          = converged ? 1 : 0;
     result->convergence_rate      = convergence_rate;
+
+    const bool has_unreceipted_correction =
+        full.torsionalVibEntropy != 0.0 || full.entropyContribution != 0.0;
+    result->scientific_provenance = fx_scientific_provenance_from_cpp(
+        has_unreceipted_correction ? statmech::ScientificProvenance{}
+                                   : source_provenance);
 
     // Build histogram from log_weights for the result struct
     int num_bins = shannon_thermo::DEFAULT_HIST_BINS;
@@ -668,11 +675,8 @@ extern "C" int fx_ga_get_shannon_thermo(FXGAContextRef context, FXShannonThermoR
 
     // Build TorsionalENM if backbone data available (may be empty)
     tencm::TorsionalENM tencm_model;
-    if (context->FA && context->atoms && context->FA->atm_cnt_real > 0) {
-        tencm_model.build(context->atoms, context->FA->atm_cnt_real,
-                          context->FA->temperature > 0
-                              ? static_cast<double>(context->FA->temperature)
-                              : shannon_thermo::TEMPERATURE_K);
+    if (context->FA && context->atoms && context->residue && context->FA->res_cnt > 0) {
+        tencm_model.build(context->atoms, context->residue, context->FA->res_cnt);
     }
 
     // Get base ΔG from StatMechEngine
@@ -696,7 +700,8 @@ extern "C" int fx_ga_get_shannon_thermo(FXGAContextRef context, FXShannonThermoR
     double convergence_rate = (log_weights.size() > 1) ? 1.0 / log_weights.size() : 1.0;
 
     std::memset(result, 0, sizeof(FXShannonThermoResult));
-    fill_shannon_result(result, full, log_weights, converged, convergence_rate);
+    fill_shannon_result(result, full, thermo.provenance, log_weights,
+                        converged, convergence_rate);
 
     return 1;
 }
@@ -748,8 +753,8 @@ extern "C" int fx_ga_recompute_shannon_at_temperature(FXGAContextRef context,
 
     // Build TorsionalENM at new temperature
     tencm::TorsionalENM tencm_model;
-    if (context->FA && context->atoms && context->FA->atm_cnt_real > 0) {
-        tencm_model.build(context->atoms, context->FA->atm_cnt_real, temperature_K);
+    if (context->FA && context->atoms && context->residue && context->FA->res_cnt > 0) {
+        tencm_model.build(context->atoms, context->residue, context->FA->res_cnt);
     }
 
     auto thermo = temp_engine.compute();
@@ -762,7 +767,8 @@ extern "C" int fx_ga_recompute_shannon_at_temperature(FXGAContextRef context,
     double convergence_rate = (log_weights.size() > 1) ? 1.0 / log_weights.size() : 1.0;
 
     std::memset(result, 0, sizeof(FXShannonThermoResult));
-    fill_shannon_result(result, full, log_weights, converged, convergence_rate);
+    fill_shannon_result(result, full, thermo.provenance, log_weights,
+                        converged, convergence_rate);
 
     return 1;
 }

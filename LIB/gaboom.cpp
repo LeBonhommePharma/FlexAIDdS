@@ -1450,7 +1450,7 @@ int GA(FA_Global* FA, GB_Global* GB,VC_Global* VC,chromosome** chrom,chromosome*
 
 	QuickSort((*chrom),0,GB->num_chrom-1,true);
 
-	// ── ThermodynamicEngine: G_bind = H_vct + TdS_shannon − TdS_vib ──
+	// ── Legacy mixed-domain thermodynamic diagnostics (proxy-only) ──
 	if (FA->thermo_engine_enabled && FA->thermo_engine != nullptr) {
 		std::vector<std::vector<float>> gene_pop(GB->num_chrom,
 			std::vector<float>(GB->num_genes));
@@ -1522,7 +1522,8 @@ int GA(FA_Global* FA, GB_Global* GB,VC_Global* VC,chromosome** chrom,chromosome*
 			gene_pop, cf_pop, FA->H_rep_bound_complex, thermo_n_heavy,
 			FA->thermo_report_T);
 
-		printf("[THERMO] G_bind=%.6f H_vct=%.6f H_vct_raw=%.6f n_heavy=%d "
+		printf("[THERMO] claim_validity=proxy_only energy_domain=cf_arbitrary_units "
+		       "ensemble_measure=optimizer_samples G_bind=%.6f H_vct=%.6f H_vct_raw=%.6f n_heavy=%d "
 		       "TdS_shannon=%.6f TdS_vib=%.6f D_vib=%.6f compensation=%.6f\n",
 		       FA->thermo_result.G_bind,
 		       FA->thermo_result.H_vct,
@@ -1544,10 +1545,9 @@ int GA(FA_Global* FA, GB_Global* GB,VC_Global* VC,chromosome** chrom,chromosome*
 		       FA->thermo_result.CF_r2s,
 		       FA->thermo_result.binding_regime.c_str());
 
-		// ΔG_eff = <CF> − T·H over the Boltzmann pose population, at both
-		// calibrations (T_eff and report_T). Reporting-only unless
-		// FLEXAIDDS_THERMO_SCORE=1, which promotes dG_eff to the ranking
-		// criterion in place of min(CF).
+		// dG_eff = <CF> - T*H over optimizer records at two score-scale
+		// parameters. Even when FLEXAIDDS_THERMO_SCORE=1 computes the legacy
+		// sentinel, the later exact-CF rescore/clustering path does not consume it.
 		printf("[THERMO3] dG_eff=%.6f mean_CF=%.6f H=%.6f T_eff=%.6f | "
 		       "dG_eff_T21=%.6f mean_CF_T21=%.6f H_T21=%.6f report_T=%.6f | "
 		       "n_poses=%d thermo_score=%d\n",
@@ -1563,7 +1563,7 @@ int GA(FA_Global* FA, GB_Global* GB,VC_Global* VC,chromosome** chrom,chromosome*
 		       flexaids::thermo_score_enabled() ? 1 : 0);
 
 		if (flexaids::thermo_score_enabled()) {
-			printf("[THERMO_GATE_SUMMARY] impossible=%d n_impossible_poses=%d "
+			printf("[THERMO_GATE_SUMMARY] enforced_in_final_election=0 impossible=%d n_impossible_poses=%d "
 			       "gate_dS=%.4f dG_eff=%.6f\n",
 			       FA->thermo_result.thermo_impossible ? 1 : 0,
 			       FA->thermo_result.n_impossible_poses,
@@ -1609,7 +1609,8 @@ int GA(FA_Global* FA, GB_Global* GB,VC_Global* VC,chromosome** chrom,chromosome*
 	// Thermodynamic analysis of the final conformational ensemble
 	if(n_chrom_snapshot > 0) {
 		double T_K = (FA->temperature > 0) ? static_cast<double>(FA->temperature) : GA_DEFAULT_TEMPERATURE_K;
-		statmech::StatMechEngine sme(T_K);
+		statmech::StatMechEngine sme(
+			T_K, statmech::make_contact_function_optimizer_provenance());
 		for(int s = 0; s < n_chrom_snapshot; ++s)
 			sme.add_sample((*chrom_snapshot)[s].evalue);
 
@@ -1623,7 +1624,8 @@ int GA(FA_Global* FA, GB_Global* GB,VC_Global* VC,chromosome** chrom,chromosome*
 			auto sc_indices = foptics.extractSuperCluster(fast_optics::ClusterMode::SUPER_CLUSTER_ONLY);
 
 			if (!sc_indices.empty() && sc_indices.size() < static_cast<size_t>(n_chrom_snapshot)) {
-				statmech::StatMechEngine sme_filtered(T_K);
+				statmech::StatMechEngine sme_filtered(
+					T_K, statmech::make_contact_function_optimizer_provenance());
 				for (size_t idx : sc_indices)
 					sme_filtered.add_sample((*chrom_snapshot)[idx].evalue);
 
@@ -1634,33 +1636,29 @@ int GA(FA_Global* FA, GB_Global* GB,VC_Global* VC,chromosome** chrom,chromosome*
 		}
 
 		statmech::Thermodynamics td = sme.compute();
-		printf("--- Thermodynamics (T = %.1f K, N = %d conformers) ---\n",
+		printf("--- CF-proxy ensemble diagnostics (T parameter = %.1f K, N = %d records) ---\n",
 		       td.temperature, n_chrom_snapshot);
-		printf("  Helmholtz free energy  F  = %10.4f kcal/mol\n", td.free_energy);
-		printf("  Mean energy          <E>  = %10.4f kcal/mol\n", td.mean_energy);
-		printf("  Energy std dev        σ_E = %10.4f kcal/mol\n", td.std_energy);
-		printf("  Heat capacity         C_v = %10.4f kcal/(mol·K)\n", td.heat_capacity);
-		printf("  Entropy (conf)        S   = %10.6f kcal/(mol·K)\n", td.entropy);
+		printf("  claim_validity            = proxy_only\n");
+		printf("  F-like proxy          F~  = %10.4f [legacy transform]\n", td.free_energy);
+		printf("  Mean CF proxy       <CF>  = %10.4f [CF units]\n", td.mean_energy);
+		printf("  CF std dev          sigma = %10.4f [CF units]\n", td.std_energy);
+		printf("  C_v-like diagnostic       = %10.4f [proxy scale]\n", td.heat_capacity);
+		printf("  S-like diagnostic         = %10.6f [proxy scale/K]\n", td.entropy);
 
 		// ── Enthalpy-Entropy Index (Williams et al. 2017, Drug Discov. Today) ──
 		// I_EE = (ΔH + T·ΔS) / ΔG   — diagnostic only, never for ranking
 		{
 			const statmech::ThermodynamicBreakdown bd = sme.compute_breakdown();
 			if (bd.has_I_EE) {
-				printf("  Enthalpy-Entropy Idx  I_EE= %10.4f  [Williams 2017]\n", bd.I_EE);
-				const char* regime =
-					(bd.I_EE > 1.05)  ? "entropy-assisted" :
-					(bd.I_EE < 0.95 && bd.I_EE >= 0.0) ? "entropy-opposed" :
-					(bd.I_EE < 0.0)   ? "entropy-driven (rare)" :
-					                    "pure enthalpy";
-				printf("                        (%s)\n", regime);
+				printf("  Legacy H/S ratio      I_EE= %10.4f  [proxy_only; diagnostic]\n",
+				       bd.I_EE);
 			}
 		}
 
 		// ── Kirchhoff ΔG(T) extrapolation (Robertson & Murphy 1997) ────────
 		// Activated only when DSF/TSA Tm has been supplied via dsf_Tm_K.
 		// ΔG(T) = ΔHm(1 − T/Tm) − ΔCp[(Tm − T) + T·ln(T/Tm)]
-		if (FA->dsf_Tm_K > 0.0) {
+		if (FA->dsf_Tm_K > 0.0 && td.allows_canonical_physical_claim()) {
 			thermal_extrap::KirchhoffInput kin;
 			kin.Tm_K     = FA->dsf_Tm_K;
 			kin.delta_Hm = (FA->dsf_delta_Hm != 0.0)
@@ -1683,6 +1681,8 @@ int GA(FA_Global* FA, GB_Global* GB,VC_Global* VC,chromosome** chrom,chromosome*
 			printf("  ΔG(%.1f K)             = %10.4f kcal/mol\n", T_target, kr.delta_G);
 			printf("  ΔH(%.1f K)             = %10.4f kcal/mol\n", T_target, kr.delta_H);
 			printf("  T·ΔS(%.1f K)           = %10.4f kcal/mol\n", T_target, kr.T_delta_S);
+		} else if (FA->dsf_Tm_K > 0.0) {
+			printf("--- Kirchhoff extrapolation unavailable: CF proxy lacks calibrated energy/measure provenance ---\n");
 		}
 
 		// ── Phase 2.5: TurboQuant ensemble compression ──────────────
@@ -1789,11 +1789,11 @@ int GA(FA_Global* FA, GB_Global* GB,VC_Global* VC,chromosome** chrom,chromosome*
 					shannon_thermo::run_shannon_thermo_stack(
 						sme, tencm_model, td.free_energy, T_K);
 
-				printf("--- ShannonThermoStack (vibrational entropy integration) ---\n");
+				printf("--- ShannonThermoStack legacy mixed-domain diagnostic (proxy_only) ---\n");
 				printf("  Shannon conf entropy    = %10.4f nats\n", ftr.shannonEntropy);
-				printf("  Torsional vib entropy   = %10.6f kcal/(mol·K)\n", ftr.torsionalVibEntropy);
-				printf("  Entropy contribution    = %10.4f kcal/mol (-TΔS)\n", ftr.entropyContribution);
-				printf("  Total ΔG (F + vib corr) = %10.4f kcal/mol\n", ftr.deltaG);
+				printf("  Torsional vib diagnostic= %10.6f [model scale/K]\n", ftr.torsionalVibEntropy);
+				printf("  Entropy contribution    = %10.4f [mixed proxy scale]\n", ftr.entropyContribution);
+				printf("  Legacy deltaG field     = %10.4f [proxy; configurational entropy is double-counted]\n", ftr.deltaG);
 			}
 		}
 	}
@@ -1818,7 +1818,7 @@ int GA(FA_Global* FA, GB_Global* GB,VC_Global* VC,chromosome** chrom,chromosome*
 				printf("--- NATURaL Co-translational DualAssembly (%zu growth steps) ---\n",
 				       trajectory.size());
 				if (!trajectory.empty()) {
-					printf("  Final ΔG (co-translational) = %10.4f kcal/mol\n",
+					printf("  Final co-translational diagnostic = %10.4f [model scale; proxy_only]\n",
 					       engine.final_deltaG());
 					FA->natural_deltaG = engine.final_deltaG();
 
@@ -3271,23 +3271,24 @@ void calculate_fitness(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* chr
 		/* SMFREE — soft-β CF sampling with niche sharing (ensemble layer 3).
 		   Selection uses β_sel = 1/T (same as ACF clustering), NOT physical
 		   1/(kB·T). Niche share is gene-space calc_rmsp unless FLEXAIDDS_NICHE_CARTESIAN=1
-		   (G4.2 Cartesian ligand heavy-atom RMSD). Physical StatMech compute() is
-		   diagnostic only. Reproducibility: same β as election.
+		   (G4.2 Cartesian ligand heavy-atom RMSD). The kB-based CF transform is
+		   proxy-only and diagnostic. Reproducibility: same β_sel as election.
 		*/
 		if (FA->temperature > 0) {
 			const double T = static_cast<double>(FA->temperature);
 			double beta_sel = 0.0;
 			(void)ensemble::soft_selection_beta(T, &beta_sel);
-			statmech::StatMechEngine engine(T);
+			statmech::StatMechEngine engine(
+				T, statmech::make_contact_function_optimizer_provenance());
 
 			// Feed all chromosome energies into the engine.
 			for (int si = 0; si < GB->num_chrom; si++) {
 				engine.add_sample(chrom[si].evalue);
 			}
 
-			// Compute ensemble thermodynamics (physical β = 1/kBT) and
+			// Compute the legacy CF ensemble transform (β_num = 1/kBT) and
 			// SELECTION weights (β_sel = 1/T, matching the clustering
-			// convention FA->beta). Using the physical β here would collapse
+			// convention FA->beta). Using β_num here would collapse
 			// selection to a zero-temperature argmax (e^{βΔCF} with β≈1.68),
 			// killing the thermal diversity SMFREE is meant to inject. See P1.
 			auto thermo = engine.compute();

@@ -32,7 +32,9 @@ class Pose:
     
     Attributes:
         index: Pose index in GA population
-        energy: Binding energy (CF score) in kcal/mol
+        energy: CF/contact-function scoring proxy for the pose. Arbitrary
+            CF units unless the attached provenance declares a calibrated
+            energy domain; not a binding free energy.
         rmsd: RMSD to reference structure (if available)
         coordinates: Atomic coordinates (Nx3 array)
         boltzmann_weight: Statistical weight in ensemble
@@ -77,13 +79,16 @@ class BindingMode:
     Example:
         >>> mode = results.binding_modes[0]  # top-ranked mode
         >>> thermo = mode.get_thermodynamics()
-        >>> print(f"ΔG = {thermo.free_energy:.2f} kcal/mol")
-        >>> print(f"ΔH = {thermo.mean_energy:.2f}, TΔS = {thermo.entropy_term:.2f}")
+        >>> # Units follow thermo.provenance; CF-domain input stays proxy-only.
+        >>> print(thermo.claim_validity.value)
+        >>> print(f"F-like = {thermo.free_energy:.2f} "
+        ...       f"H-like = {thermo.mean_energy:.2f} "
+        ...       f"T*S-like = {thermo.entropy_term:.2f}")
 
         >>> # Fold in ligand torsional entropy from QM/CG dihedral profiles:
         >>> mode.set_torsional_profiles([qm_scan_bond0, qm_scan_bond1],
         ...                             dihedral_angles_rad=[phi0, phi1])
-        >>> mode.torsional_free_energy  # kcal/mol (energy + confinement −TΔS)
+        >>> mode.torsional_free_energy  # DiFT model scale (energy + confinement −TΔS)
     """
 
     def __init__(self, cpp_binding_mode=None, temperature: float = 300.0):
@@ -189,7 +194,10 @@ TorsionalPotential` (from a QM scan or a Boltzmann-inverted coarse-grained
 
     @property
     def torsional_score(self) -> TorsionalScore:
-        """Decomposed torsional contribution (kcal/mol) of the attached bonds.
+        """Decomposed torsional contribution of the attached bonds.
+
+        Reported on the DiFT potential's own model scale; it is not an
+        independently calibrated physical free energy.
 
         ``energy`` is Σ V_tors,b(φ_b) relative to each well minimum (zero unless
         representative dihedral angles were supplied); ``minus_TS`` is the
@@ -219,7 +227,7 @@ TorsionalPotential` (from a QM scan or a Boltzmann-inverted coarse-grained
 
     @property
     def torsional_free_energy(self) -> float:
-        """Torsional free-energy contribution ΔG_tors (kcal/mol).
+        """Torsional free-energy-like contribution (DiFT model scale).
 
         ``Σ_b [V_tors,b(φ_b) − T·S_tors,b]`` — energy at the representative
         dihedral state plus the confinement entropy penalty. Zero when no
@@ -229,7 +237,7 @@ TorsionalPotential` (from a QM scan or a Boltzmann-inverted coarse-grained
 
     @property
     def torsional_entropy(self) -> float:
-        """Torsional entropy S_tors (kcal mol⁻¹ K⁻¹), ≤ 0 (a confinement loss).
+        """Torsional entropy-like term S_tors (DiFT model scale per K), ≤ 0.
 
         Derived from the same Fourier spectra as the torsional energy; zero
         when no DiFT potentials are attached.
@@ -281,7 +289,11 @@ TorsionalPotential` (from a QM scan or a Boltzmann-inverted coarse-grained
 
     @property
     def free_energy(self) -> float:
-        """Helmholtz free energy F = -kT ln Z (kcal/mol), incl. torsional term."""
+        """F = -kT ln Z over the pose ensemble, incl. the torsional term.
+
+        Physical units require calibrated provenance; CF-domain input makes
+        this a proxy diagnostic in its own scale, not a binding ΔG.
+        """
         if self._cpp_mode:
             base = self._cpp_mode.get_free_energy()
         else:
@@ -290,7 +302,7 @@ TorsionalPotential` (from a QM scan or a Boltzmann-inverted coarse-grained
 
     @property
     def enthalpy(self) -> float:
-        """Boltzmann-weighted average energy ⟨E⟩ (kcal/mol), incl. torsional."""
+        """Boltzmann-weighted mean ⟨E⟩ in the declared energy domain."""
         if self._cpp_mode:
             base = self._cpp_mode.compute_enthalpy()
         else:
@@ -299,7 +311,7 @@ TorsionalPotential` (from a QM scan or a Boltzmann-inverted coarse-grained
 
     @property
     def entropy(self) -> float:
-        """Entropy S (kcal mol⁻¹ K⁻¹) — configurational plus torsional."""
+        """S-like value per K in the declared energy domain (config + torsional)."""
         if self._cpp_mode:
             base = self._cpp_mode.compute_entropy()
         else:
@@ -388,7 +400,8 @@ class BindingPopulation:
         where p_i are Boltzmann probabilities.
 
         Returns:
-            Shannon entropy in kcal/mol/K
+            Shannon entropy scaled by kB; physical units require calibrated
+            provenance on the underlying energies.
         """
         import math
 
@@ -417,12 +430,13 @@ class BindingPopulation:
         return shannon_S
 
     def get_deltaG_matrix(self) -> List[List[float]]:
-        """ΔG matrix between all pairs of binding modes.
+        """Pairwise difference matrix of the modes' F-like values.
 
         matrix[i][j] = F_i - F_j. Anti-symmetric: matrix[i][j] = -matrix[j][i].
 
         Returns:
-            n x n matrix of pairwise ΔG values (kcal/mol)
+            n x n matrix of F_i - F_j differences in the declared energy
+            domain; a physical ΔΔG only under calibrated provenance.
         """
         n = len(self._modes)
         energies = [m.free_energy for m in self._modes]
@@ -459,7 +473,8 @@ class Docking:
         >>> docking = Docking("config.inp")
         >>> results = docking.run()
         >>> top_mode = results.binding_modes[0]
-        >>> print(f"Best ΔG: {top_mode.free_energy:.2f} kcal/mol")
+        >>> # Proxy diagnostic unless provenance authorizes physical units.
+        >>> print(f"Best F-like value: {top_mode.free_energy:.2f}")
     """
     
     def __init__(self, config_file: str):

@@ -1,4 +1,5 @@
 #include "BindingMode.h"
+#include "EnvFlags.h"
 #include "fast_optics.hpp"
 #include "SoftBetaFreeEnergy.h"
 #include "RngSeed.h"
@@ -167,7 +168,9 @@ double BindingPopulation::compute_delta_G(const BindingMode& mode1, const Bindin
 
 statmech::StatMechEngine BindingPopulation::get_global_ensemble() const
 {
-	statmech::StatMechEngine global_engine(static_cast<double>(this->Temperature));
+	statmech::StatMechEngine global_engine(
+		static_cast<double>(this->Temperature),
+		statmech::make_contact_function_optimizer_provenance());
 
 	// Build the population-level ensemble from raw microstates exactly once.
 	// Do not feed per-mode Boltzmann probabilities back as multiplicities here:
@@ -216,7 +219,9 @@ statmech::StatMechEngine BindingPopulation::get_super_cluster_ensemble() const
 	if (sc_indices.empty())
 		return get_global_ensemble();  // fallback if extraction yields nothing
 
-	statmech::StatMechEngine sc_engine(static_cast<double>(this->Temperature));
+	statmech::StatMechEngine sc_engine(
+		static_cast<double>(this->Temperature),
+		statmech::make_contact_function_optimizer_provenance());
 	for (size_t idx : sc_indices)
 		sc_engine.add_sample(all_energies[idx], 1.0);
 
@@ -279,7 +284,8 @@ std::vector<std::vector<double>> BindingPopulation::get_deltaG_matrix() const
 // public constructor *non-overloadable*
 BindingMode::BindingMode(BindingPopulation* pop)
 	: Population(pop),
-	  engine_(pop ? static_cast<double>(pop->Temperature) : 298.15),
+	  engine_(pop ? static_cast<double>(pop->Temperature) : 298.15,
+	          statmech::make_contact_function_optimizer_provenance()),
 	  thermo_cache_valid_(false),
 	  vib_correction_cache_(0.0),
 	  vib_cache_valid_(false),
@@ -298,9 +304,9 @@ void BindingMode::add_Pose(Pose& pose)
 
 
 /// === Cache rebuild infrastructure (Phase 1 + CCBM) ===
-/// Uses pose.total_energy() (= CF + receptor_strain) for the true
-/// multi-conformer free energy: F = -kT ln Σ_{r,i} exp(-β(E_CF(r,i) + E_strain(r)))
-/// Physical-kB path used for diagnostic ledger + force_cf_rank_emission ranking.
+/// Uses pose.total_energy() (= CF + receptor_strain) for the CF-proxy ensemble
+/// transform. The scientific provenance remains proxy-only because CF is not
+/// calibrated to kcal/mol and GA records do not define a canonical measure.
 void BindingMode::rebuild_engine() const
 {
 	if (thermo_cache_valid_)
@@ -350,6 +356,41 @@ static double election_pb_scale(const FA_Global* FA)
 	return (elect_w / search_w) - 1.0;                 // additive factor on stored cf.pb_clash
 }
 
+// Duplicate-invariant soft-β for mode ranking.
+//
+// G̃ = Emin − T·ln Z with Z summed over MEMBERS, so multiplicity alone lowers
+// G̃: at T = 300 every doubling of a mode's population buys ~300·ln2 ≈ 208 CF
+// units, which exceeds the entire CF spread on most Astex targets. The ranking
+// then reduces to a popularity contest over GA cluster occupancy — a
+// convergence artifact of selection/elitism/sharing, not a thermodynamic
+// degeneracy, since the duplicated members are re-emitted copies of the same
+// geometry rather than distinct microstates.
+//
+// LIB/cluster.cpp:168-207 already fixed exactly this for the CF-clustering
+// election; free_energy_strict(UniqueGeometry) collapses exact-CF duplicates
+// before applying the identical free energy. Same units, same T — the ranking
+// changes only where multiplicity was the deciding term.
+//
+// Set FLEXAIDDS_ELECT_LEGACY_ACF=1 to restore the legacy multiplicity-inflated
+// path bit-identically (shared A/B control with cluster.cpp).
+static bool use_legacy_acf_election()
+{
+	// flexaids::env_bool (LIB/EnvFlags.h) accepts 1/true/yes/on. The previous
+	// std::atoi parse silently read FLEXAIDDS_ELECT_LEGACY_ACF=true as 0, i.e.
+	// as selecting the OPPOSITE arm of this A/B control.
+	static const bool legacy = flexaids::env_bool("FLEXAIDDS_ELECT_LEGACY_ACF");
+	return legacy;
+}
+
+static flexaids::soft_beta::FreeEnergy soft_beta_mode_free_energy(
+	const std::vector<double>& energies, double T_soft)
+{
+	if (use_legacy_acf_election())
+		return flexaids::soft_beta::free_energy(energies, T_soft);
+	return flexaids::soft_beta::free_energy_strict(
+		energies, T_soft, flexaids::soft_beta::StrictRerankMode::UniqueGeometry);
+}
+
 static std::vector<double> soft_beta_mode_energies(const std::vector<Pose>& poses,
                                                    double pb_elect_factor)
 {
@@ -376,10 +417,12 @@ double BindingMode::compute_enthalpy() const
 	}
 	// Soft-β H̃ over mode members only (≡ SoftBetaFreeEnergy / cluster ACF / DatasetRunner).
 	// Local re-normalization — not global PartitionFunction weights.
+	// Uses the same duplicate-invariant measure as compute_energy() so that
+	// H̃, S̃ and G̃ are all reported over one consistent set of microstates.
 	if (!Population || Poses.empty())
 		return 0.0;
 	const double T = static_cast<double>(Population->Temperature);
-	return flexaids::soft_beta::free_energy(soft_beta_mode_energies(Poses, election_pb_scale(Population->FA)), T).H;
+	return soft_beta_mode_free_energy(soft_beta_mode_energies(Poses, election_pb_scale(Population->FA)), T).H;
 }
 
 
@@ -391,10 +434,12 @@ double BindingMode::compute_entropy() const
 		return engine_.compute().entropy;
 	}
 	// Soft-β S̃ = −Σ p_i ln p_i over mode members (nats). Same T as ACF / 3Dsig.
+	// Duplicate-invariant measure: with exact-CF clones collapsed, S̃ reports
+	// the spread of distinct member energies rather than GA copy number.
 	if (!Population || Poses.empty())
 		return 0.0;
 	const double T = static_cast<double>(Population->Temperature);
-	return flexaids::soft_beta::free_energy(soft_beta_mode_energies(Poses, election_pb_scale(Population->FA)), T).S;
+	return soft_beta_mode_free_energy(soft_beta_mode_energies(Poses, election_pb_scale(Population->FA)), T).S;
 }
 
 
@@ -414,7 +459,7 @@ double BindingMode::compute_energy() const
 	if (!Population)
 		return 0.0;
 	const double T = static_cast<double>(Population->Temperature);
-	const auto fe = flexaids::soft_beta::free_energy(soft_beta_mode_energies(Poses, election_pb_scale(Population->FA)), T);
+	const auto fe = soft_beta_mode_free_energy(soft_beta_mode_energies(Poses, election_pb_scale(Population->FA)), T);
 	const double nat_dg =
 		(Population->FA) ? Population->FA->natural_deltaG : 0.0;
 	return fe.G + compute_vibrational_correction() + nat_dg;
@@ -425,12 +470,27 @@ double BindingMode::compute_energy() const
 statmech::Thermodynamics BindingMode::get_thermodynamics() const
 {
 	rebuild_engine();
-	statmech::Thermodynamics td = engine_.compute();
-	// Phase 3: include vibrational free energy correction in reported free energy
-	td.free_energy += compute_vibrational_correction();
-	// NATURaL: include co-translational ΔG (0.0 if assume_folded or not computed)
-	td.free_energy += (Population && Population->FA) ? Population->FA->natural_deltaG : 0.0;
-	return td;
+	// Return the configurational ensemble ledger unmodified.
+	//
+	// This previously added the vibrational and NATURaL corrections to
+	// `free_energy` alone, which silently broke the ledger's own identity:
+	// `entropy` is defined as (mean_energy - free_energy)/T, so shifting F
+	// without shifting H or S left a struct in which F != H - T*S. Consumers
+	// that recomputed any one field from the other two therefore disagreed
+	// with the struct they were handed.
+	//
+	// Corrections are not discarded — they are reported through
+	// get_thermodynamic_breakdown(), which carries them in dedicated
+	// G_vib_kcal_mol / G_natural_kcal_mol fields and downgrades the aggregate
+	// provenance to proxy-only because neither correction has an independent
+	// artifact receipt.
+	//
+	// Ordering is unaffected: both corrections are pose-independent constants
+	// for a given receptor (the vibrational cache is explicitly documented as
+	// such, and natural_deltaG is a single FA_Global field), so they cancel in
+	// every free-energy difference and never entered the ranking objective,
+	// which is compute_energy().
+	return engine_.compute();
 }
 
 statmech::ThermodynamicBreakdown BindingMode::get_thermodynamic_breakdown() const
@@ -736,11 +796,13 @@ void BindingMode::output_BindingMode(int num_result, char* end_strfile, char* tm
 	{
 		double vib_corr = this->compute_vibrational_correction();
 		if (std::abs(vib_corr) > 1e-12) {
-			snprintf(tmpremark, MAX_REMARK, "REMARK Vibrational correction (ENCoM heuristic): %10.4f kcal/mol\n", vib_corr);
+			snprintf(tmpremark, MAX_REMARK, "REMARK Vibrational diagnostic (ENCoM model scale; proxy_only): %10.4f\n", vib_corr);
 			safe_remark_cat(remark, tmpremark, &remark_len);
 		}
 	}
-	// Canonical thermodynamic ledger for plugin / load_results (audited fields only)
+	// CF-proxy ensemble ledger for plugin / load_results. Legacy numeric field
+	// names are preserved for migration, but explicit domain metadata prevents
+	// consumers from promoting them to physical thermodynamic claims.
 	{
 		const statmech::Thermodynamics td = this->get_thermodynamics();
 		double T = 300.0;
@@ -749,9 +811,22 @@ void BindingMode::output_BindingMode(int num_result, char* end_strfile, char* tm
 		} else if (this->Population && this->Population->Temperature > 0) {
 			T = static_cast<double>(this->Population->Temperature);
 		}
+		snprintf(tmpremark, MAX_REMARK, "REMARK thermo_schema_version = 2\n");
+		safe_remark_cat(remark, tmpremark, &remark_len);
+		snprintf(tmpremark, MAX_REMARK, "REMARK thermo_claim_validity = proxy_only\n");
+		safe_remark_cat(remark, tmpremark, &remark_len);
+		snprintf(tmpremark, MAX_REMARK, "REMARK thermo_energy_domain = cf_arbitrary_units\n");
+		safe_remark_cat(remark, tmpremark, &remark_len);
+		snprintf(tmpremark, MAX_REMARK, "REMARK thermo_ensemble_measure = optimizer_samples\n");
+		safe_remark_cat(remark, tmpremark, &remark_len);
+		snprintf(tmpremark, MAX_REMARK, "REMARK thermo_reference_state = bound_only\n");
+		safe_remark_cat(remark, tmpremark, &remark_len);
+		snprintf(tmpremark, MAX_REMARK, "REMARK proxy_free_energy = %.6f\n", td.free_energy);
+		safe_remark_cat(remark, tmpremark, &remark_len);
+		// Deprecated compatibility key; see thermo_claim_validity above.
 		snprintf(tmpremark, MAX_REMARK, "REMARK free_energy = %.6f\n", td.free_energy);
 		safe_remark_cat(remark, tmpremark, &remark_len);
-		// Ranking objective (soft-β G̃); free_energy above is physical StatMech ledger.
+		// Ranking objective (soft-β G̃); independent of the proxy ledger above.
 		snprintf(tmpremark, MAX_REMARK, "REMARK soft_beta_G = %.6f\n", this->compute_energy());
 		safe_remark_cat(remark, tmpremark, &remark_len);
 		snprintf(tmpremark, MAX_REMARK, "REMARK enthalpy = %.6f\n", td.mean_energy);
@@ -892,6 +967,19 @@ void BindingMode::output_dynamic_BindingMode(int num_result, char* end_strfile, 
 			snprintf(tmpremark, MAX_REMARK, "REMARK Binding Mode:%d Best CF in Binding Mode:%8.5f Binding Mode Frequency:%d\n",
 				num_result, this->Poses.empty() ? 0.0 : this->Poses.front().CF, this->get_BindingMode_size());
 			safe_remark_cat(remark, tmpremark, &remark_len);
+			snprintf(tmpremark, MAX_REMARK, "REMARK thermo_schema_version = 2\n");
+			safe_remark_cat(remark, tmpremark, &remark_len);
+			snprintf(tmpremark, MAX_REMARK, "REMARK thermo_claim_validity = proxy_only\n");
+			safe_remark_cat(remark, tmpremark, &remark_len);
+			snprintf(tmpremark, MAX_REMARK, "REMARK thermo_energy_domain = cf_arbitrary_units\n");
+			safe_remark_cat(remark, tmpremark, &remark_len);
+			snprintf(tmpremark, MAX_REMARK, "REMARK thermo_ensemble_measure = optimizer_samples\n");
+			safe_remark_cat(remark, tmpremark, &remark_len);
+			snprintf(tmpremark, MAX_REMARK, "REMARK thermo_reference_state = bound_only\n");
+			safe_remark_cat(remark, tmpremark, &remark_len);
+			snprintf(tmpremark, MAX_REMARK, "REMARK proxy_free_energy = %.6f\n", td.free_energy);
+			safe_remark_cat(remark, tmpremark, &remark_len);
+			// Deprecated compatibility key; see thermo_claim_validity above.
 			snprintf(tmpremark, MAX_REMARK, "REMARK free_energy = %.6f\n", td.free_energy);
 			safe_remark_cat(remark, tmpremark, &remark_len);
 			snprintf(tmpremark, MAX_REMARK, "REMARK soft_beta_G = %.6f\n", this->compute_energy());
@@ -1252,7 +1340,7 @@ double BindingMode::compute_vibrational_correction() const
 	// structural NULL on RMSD success by construction. This arm exists to
 	// confirm that null empirically (it can only shift the reported predicted_dG
 	// column, not which pose is emitted).
-	static const bool no_tencom = (std::getenv("FLEXAIDDS_NO_TENCOM") != nullptr);
+	static const bool no_tencom = flexaids::env_bool("FLEXAIDDS_NO_TENCOM");
 	if (no_tencom) return 0.0;
 
 	if (!this->Population->FA->normal_modes) return 0.0;
@@ -1260,33 +1348,24 @@ double BindingMode::compute_vibrational_correction() const
 	// Return cached value if still valid
 	if (this->vib_cache_valid_) return this->vib_correction_cache_;
 
-	std::vector<encom::NormalMode> modes;
-	int mode_count = this->Population->FA->normal_modes;
-	const atom* atoms = this->Population->atoms;
-
-	if (atoms && atoms[0].eigen)
-	{
-		for (int m = 0; m < mode_count; ++m)
-		{
-			if (!atoms[0].eigen[m]) continue;
-			encom::NormalMode mode;
-			mode.index = m + 1;
-			mode.eigenvalue = static_cast<double>(atoms[0].eigen[m][0]);
-			mode.frequency = std::sqrt(std::abs(mode.eigenvalue));
-			modes.push_back(mode);
-		}
-	}
-
-	if (modes.empty()) {
-		this->vib_correction_cache_ = 0.0;
-		this->vib_cache_valid_ = true;
-		return 0.0;
-	}
-
-	double T = static_cast<double>(this->Population->Temperature);
-	encom::VibrationalEntropy vs = encom::ENCoMEngine::compute_vibrational_entropy(modes, T);
-
-	this->vib_correction_cache_ = -T * vs.S_vib_kcal_mol_K;
+	// ── Fail closed: no valid eigenvalue channel exists ──────────────────────
+	// This path previously read atoms[0].eigen[m][0] as if it were the m-th
+	// eigenvalue. It is not. `atom::eigen` (flexaid.h) stores normal-mode
+	// eigenVECTORS: assign_eigen.cpp allocates eigen[m] as three floats holding
+	// the x/y/z displacement components, and it only ever populates real atoms
+	// (its residue loop starts at index 1). Atom index 0 is a sentinel whose
+	// eigen pointer is explicitly NULL (read_pdb.cpp:38), so the old guard made
+	// this function return 0.0 for every production run; the nonzero branch was
+	// reachable only from a fabricated test layout that allocated one float on
+	// atom 0. Reinterpreting an eigenvector x-component as an eigenvalue would
+	// invent a vibrational entropy the model never computed.
+	//
+	// Until a real eigenvalue channel is wired (ENCoM/tENCoM exposing its
+	// spectrum directly, rather than the per-atom eigenvector grid), this
+	// correction is unavailable and must be zero. Returning zero preserves
+	// production behaviour exactly: the value it replaces was already 0.0 on
+	// every real path, so ranking, clustering, and output order are unchanged.
+	this->vib_correction_cache_ = 0.0;
 	this->vib_cache_valid_ = true;
-	return this->vib_correction_cache_;
+	return 0.0;
 }

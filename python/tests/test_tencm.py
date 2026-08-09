@@ -86,6 +86,63 @@ class TestTorsionalENM:
         assert "not built" in repr(tenm)
 
 
+# ── C++ binding contract ─────────────────────────────────────────────────────
+#
+# TorsionalENM.build_from_pdb drives the compiled engine through
+# is_built/n_residues/n_bonds/modes. Those are bound as METHODS in
+# _core.cpp, so they must be CALLED. Reading them as attributes yields a
+# bound method object — always truthy, so a failed build reported success —
+# and iterating the "modes" attribute raised TypeError. These tests pin the
+# binding shape the wrapper depends on.
+
+class TestTorsionalENMCppBinding:
+    def _core_or_skip(self):
+        try:
+            from flexaidds import _core
+        except ImportError:
+            pytest.skip("compiled _core extension not available")
+        # conftest.pytest_sessionstart injects a stub module so the pure-Python
+        # surface is importable without a compiled extension. The import above
+        # therefore succeeds, and the stub carries a TorsionalENM attribute, so
+        # neither guard fires — but every stub class raises on construction.
+        # Detect the documented marker instead of discovering it via RuntimeError.
+        if getattr(_core, "_FLEXAIDDS_CORE_STUB", False):
+            pytest.skip("compiled _core extension not built (conftest stub active)")
+        if not hasattr(_core, "TorsionalENM"):
+            pytest.skip("_core built without TorsionalENM")
+        return _core
+
+    def test_engine_accessors_are_callables(self):
+        _core = self._core_or_skip()
+        engine = _core.TorsionalENM()
+        for name in ("is_built", "n_residues", "n_bonds", "modes"):
+            attr = getattr(engine, name)
+            assert callable(attr), (
+                f"_core.TorsionalENM.{name} is no longer a method; "
+                "flexaidds/tencm.py calls it and must be updated together"
+            )
+
+    def test_unbuilt_engine_reports_false_when_called(self):
+        # The regression: `if engine.is_built:` on an unbuilt engine was True
+        # because a bound method is always truthy.
+        _core = self._core_or_skip()
+        engine = _core.TorsionalENM()
+        assert bool(getattr(engine, "is_built")) is True  # the trap
+        assert engine.is_built() is False                 # the truth
+
+    def test_build_uses_cpp_path_and_populates_modes(self):
+        _core = self._core_or_skip()
+        path = _write_synthetic_pdb(20)
+        try:
+            tenm = TorsionalENM()
+            tenm.build_from_pdb(path)
+            assert tenm.is_built
+            assert tenm.n_modes > 0
+            assert all(m.eigenvalue == m.eigenvalue for m in tenm.modes)  # no NaN
+        finally:
+            os.unlink(path)
+
+
 # ── Shannon Entropy Tests ────────────────────────────────────────────────────
 
 class TestShannonEntropy:

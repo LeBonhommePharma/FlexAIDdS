@@ -1,18 +1,30 @@
 # entropy.help Documentation
 
-This directory contains the public documentation and templates for the entropy.help thermodynamic audit service.
+This directory contains draft documentation, templates, and a planning registry for the proposed entropy.help thermodynamic-claims audit workflow.
+
+**Evidence status:** no completed, published, validated, or reproducible entropy.help audit is present in this checkout. `PLANNED_UNVERIFIED` and `EXAMPLE_UNVERIFIED` records are non-claiming scaffolds.
 
 ## Contents
 
-- `MANIFESTO.md` — Core 1–2 page statement of purpose and technical approach (C1.1)
-- `audit-report-template.md` — Canonical human-readable template for published audits (B4.1)
-- `audit-report-example.json` — Example signed sidecar JSON (matches the ThermodynamicOutput schema defined in A1.1)
+- `MANIFESTO.md` — Draft statement of purpose and scientific boundaries
+- `THERMODYNAMIC_OUTPUT_SCHEMA.md` — Proposed, not-yet-certified output contract
+- `audit-report-template.md` — Non-claiming human-readable report template
+- `audit-report-example.json` — Synthetic null-valued schema example; it is unsigned and is not an audit result
+- `audits/audits.json` — Planning registry; entries stay `PLANNED_UNVERIFIED` until artifacts exist
 
 ## Status
 
-These artifacts are the initial public foundation for the entropy.help launch (7-day sprint, feature/thermo-ledger).
+These artifacts are pre-publication planning material. They do not establish that a TotalSampledPartitionFunction path is integrated, that CF/contact-function scores have physical energy units, or that any entropy correction improves docking or affinity prediction.
 
-Further automation (B3.1 manual audit pipeline, D1.1 automated submission) will consume the template and example.
+A status of complete, published, validated, or reproducible requires a provenance record: the registry entry has to link an on-disk JSON report, a Markdown summary, and a separate provenance JSON. The underlying ensemble or durable receipt has to be available wherever a digest or quantitative result is claimed.
+
+Run the fail-closed claims check with:
+
+```bash
+python3 scripts/validate_thermo_claims.py
+```
+
+The validator checks artifact presence and obvious placeholder/fake cryptographic fields. A passing result is a documentation/provenance gate, not proof of physical thermodynamic validity.
 
 ## Coordination
 

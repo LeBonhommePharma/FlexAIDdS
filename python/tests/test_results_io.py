@@ -374,3 +374,284 @@ def test_subdirectory_pdb_files_loaded(tmp_path: Path) -> None:
     result = load_results(tmp_path)
     assert result.n_modes == 1
     assert result.binding_modes[0].best_cf == -17.0
+
+
+# ===========================================================================
+# Chunk 0 — statistical-mechanics claim firewall (loader side)
+#
+# C++ is the single source of truth for this vocabulary (LIB/statmech.h,
+# kScientificProvenanceSchemaVersion = 2).  These tests pin the Python loader
+# to it: the emitted election field must drive mode order, and no PDB may
+# self-authorize a physical claim.
+# ===========================================================================
+
+from flexaidds.thermodynamics import (  # noqa: E402
+    ClaimValidity,
+    EnergyDomain,
+    EnsembleMeasure,
+    ReferenceState,
+)
+
+# Structurally valid, non-filler receipts (>= 3 distinct nibbles, 64 hex).
+_ENERGY_RECEIPT = "sha256:" + "1a2b3c4d5e6f7089" * 4
+_MEASURE_RECEIPT = "sha256:" + "9f8e7d6c5b4a3021" * 4
+_REFERENCE_RECEIPT = "sha256:" + "0badc0de1234abcd" * 4
+
+
+def _proxy_firewall_remarks() -> list[str]:
+    """The exact block the C++ engine emits today (always proxy-only)."""
+    return [
+        "thermo_schema_version = 2",
+        "thermo_claim_validity = proxy_only",
+        "thermo_energy_domain = cf_arbitrary_units",
+        "thermo_ensemble_measure = optimizer_samples",
+        "thermo_reference_state = bound_only",
+    ]
+
+
+def test_firewall_remarks_are_lifted_into_typed_provenance(tmp_path: Path) -> None:
+    _write_pdb(
+        tmp_path / "binding_mode_1_pose_1.pdb",
+        [
+            "binding_mode = 1",
+            "pose_rank = 1",
+            "CF = -42.5",
+            *_proxy_firewall_remarks(),
+            "proxy_free_energy = -41.0",
+            "free_energy = -41.0",
+            "soft_beta_G = -12.5",
+            "enthalpy = -40.0",
+            "temperature = 300.0",
+        ],
+    )
+
+    mode = load_results(tmp_path).binding_modes[0]
+    prov = mode.scientific_provenance
+
+    assert prov.schema_version == 2
+    assert prov.energy_domain is EnergyDomain.CF_ARBITRARY_UNITS
+    assert prov.ensemble_measure is EnsembleMeasure.OPTIMIZER_SAMPLES
+    assert prov.reference_state is ReferenceState.BOUND_ONLY
+    assert mode.claim_validity is ClaimValidity.PROXY_ONLY
+    assert mode.proxy_free_energy == pytest.approx(-41.0)
+    assert mode.soft_beta_G == pytest.approx(-12.5)
+    # Pose-level fields carry the same evidence.
+    assert mode.poses[0].soft_beta_G == pytest.approx(-12.5)
+    assert mode.poses[0].claim_validity is ClaimValidity.PROXY_ONLY
+
+
+def test_emitted_soft_beta_G_order_beats_legacy_free_energy_order(
+    tmp_path: Path,
+) -> None:
+    """Election order wins when soft_beta_G disagrees with free_energy.
+
+    Mode 1 has the better (lower) legacy free_energy; mode 2 has the better
+    (lower) emitted election objective.  The loader must reproduce the engine's
+    election, so mode 2 must be rank 1.
+    """
+    _write_pdb(
+        tmp_path / "binding_mode_1_pose_1.pdb",
+        [
+            "binding_mode = 1",
+            "pose_rank = 1",
+            "CF = -42.5",
+            *_proxy_firewall_remarks(),
+            "proxy_free_energy = -90.0",
+            "free_energy = -90.0",   # legacy says mode 1 is best
+            "soft_beta_G = -1.0",    # election says mode 1 is worst
+            "temperature = 300.0",
+        ],
+    )
+    _write_pdb(
+        tmp_path / "binding_mode_2_pose_1.pdb",
+        [
+            "binding_mode = 2",
+            "pose_rank = 1",
+            "CF = -35.0",
+            *_proxy_firewall_remarks(),
+            "proxy_free_energy = -10.0",
+            "free_energy = -10.0",
+            "soft_beta_G = -99.0",   # election winner
+            "temperature = 300.0",
+        ],
+    )
+
+    result = load_results(tmp_path)
+    ranked = {m.rank: m.mode_id for m in result.binding_modes}
+
+    assert ranked[1] == 2
+    assert ranked[2] == 1
+    assert result.top_mode().mode_id == 2
+    assert result.top_mode().soft_beta_G == pytest.approx(-99.0)
+
+
+def test_legacy_free_energy_order_is_unchanged_without_election_field(
+    tmp_path: Path,
+) -> None:
+    """No soft_beta_G anywhere -> byte-for-byte the historical ordering."""
+    _write_pdb(
+        tmp_path / "binding_mode_1_pose_1.pdb",
+        ["binding_mode = 1", "pose_rank = 1", "CF = -42.5", "free_energy = -10.0"],
+    )
+    _write_pdb(
+        tmp_path / "binding_mode_2_pose_1.pdb",
+        ["binding_mode = 2", "pose_rank = 1", "CF = -35.0", "free_energy = -90.0"],
+    )
+
+    result = load_results(tmp_path)
+    ranked = {m.rank: m.mode_id for m in result.binding_modes}
+
+    assert ranked[1] == 2  # lowest legacy free_energy
+    assert ranked[2] == 1
+    assert all(m.soft_beta_G is None for m in result.binding_modes)
+
+
+@pytest.mark.parametrize(
+    "hostile_remarks",
+    [
+        # A file that simply declares itself physical.
+        ["thermo_claim_validity = binding_physical"],
+        # Full physical vocabulary but wrong schema version.
+        [
+            "thermo_schema_version = 1",
+            "thermo_claim_validity = binding_physical",
+            "thermo_energy_domain = calibrated_kcal_per_mol",
+            "thermo_ensemble_measure = enumerated_microstates",
+            "thermo_reference_state = matched_association_cycle",
+            f"thermo_energy_provenance = {_ENERGY_RECEIPT}",
+            f"thermo_measure_provenance = {_MEASURE_RECEIPT}",
+            f"thermo_reference_provenance = {_REFERENCE_RECEIPT}",
+        ],
+        # Correct schema, but prose instead of receipts.
+        [
+            "thermo_schema_version = 2",
+            "thermo_claim_validity = binding_physical",
+            "thermo_energy_domain = calibrated_kcal_per_mol",
+            "thermo_ensemble_measure = enumerated_microstates",
+            "thermo_reference_state = matched_association_cycle",
+            "thermo_energy_provenance = calibrated by the authors",
+            "thermo_measure_provenance = exhaustive enumeration",
+            "thermo_reference_provenance = matched cycle",
+        ],
+        # Known-bad digests: empty-content SHA-256 and the historical filler.
+        [
+            "thermo_schema_version = 2",
+            "thermo_energy_domain = calibrated_kcal_per_mol",
+            "thermo_ensemble_measure = enumerated_microstates",
+            "thermo_reference_state = matched_association_cycle",
+            "thermo_energy_provenance = sha256:"
+            "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "thermo_measure_provenance = sha256:"
+            "3f7a9c2b1e4d5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a",
+            f"thermo_reference_provenance = {_REFERENCE_RECEIPT}",
+        ],
+        # Single-nibble filler digest (fewer than 3 distinct hex values).
+        [
+            "thermo_schema_version = 2",
+            "thermo_energy_domain = calibrated_kcal_per_mol",
+            "thermo_ensemble_measure = weighted_quadrature",
+            "thermo_reference_state = matched_association_cycle",
+            "thermo_energy_provenance = sha256:" + "a" * 64,
+            f"thermo_measure_provenance = {_MEASURE_RECEIPT}",
+            f"thermo_reference_provenance = {_REFERENCE_RECEIPT}",
+        ],
+        # Booleans / numbers where evidence strings belong.
+        [
+            "thermo_schema_version = true",
+            "thermo_energy_domain = calibrated_kcal_per_mol",
+            "thermo_ensemble_measure = enumerated_microstates",
+            "thermo_reference_state = matched_association_cycle",
+            "thermo_energy_provenance = 1",
+            "thermo_measure_provenance = true",
+            "thermo_reference_provenance = 0",
+        ],
+        # Unknown vocabulary must not be treated as an unlock.
+        [
+            "thermo_schema_version = 2",
+            "thermo_energy_domain = experimental_free_energy",
+            "thermo_ensemble_measure = magic_sampler",
+            "thermo_reference_state = assumed_standard_state",
+            f"thermo_energy_provenance = {_ENERGY_RECEIPT}",
+            f"thermo_measure_provenance = {_MEASURE_RECEIPT}",
+            f"thermo_reference_provenance = {_REFERENCE_RECEIPT}",
+        ],
+    ],
+)
+def test_hostile_pdb_cannot_self_authorize_a_physical_claim(
+    tmp_path: Path, hostile_remarks: list[str]
+) -> None:
+    _write_pdb(
+        tmp_path / "binding_mode_1_pose_1.pdb",
+        ["binding_mode = 1", "pose_rank = 1", "CF = -42.5", *hostile_remarks],
+    )
+
+    mode = load_results(tmp_path).binding_modes[0]
+
+    assert mode.claim_validity is ClaimValidity.PROXY_ONLY
+    assert not mode.scientific_provenance.allows_canonical_claims()
+    assert not mode.scientific_provenance.allows_binding_claims()
+    assert mode.poses[0].claim_validity is ClaimValidity.PROXY_ONLY
+
+
+def test_absent_firewall_block_fails_closed(tmp_path: Path) -> None:
+    _write_pdb(
+        tmp_path / "binding_mode_1_pose_1.pdb",
+        ["binding_mode = 1", "pose_rank = 1", "CF = -42.5", "free_energy = -41.0"],
+    )
+
+    mode = load_results(tmp_path).binding_modes[0]
+
+    assert mode.scientific_provenance.schema_version == 2  # dataclass default
+    assert mode.scientific_provenance.energy_domain is EnergyDomain.UNCLASSIFIED
+    assert mode.claim_validity is ClaimValidity.PROXY_ONLY
+    assert mode.proxy_free_energy is None
+    assert mode.soft_beta_G is None
+
+
+def test_mode_provenance_is_the_weakest_of_its_poses(tmp_path: Path) -> None:
+    """Disagreeing pose evidence collapses the mode to the proxy-only default."""
+    _write_pdb(
+        tmp_path / "binding_mode_1_pose_1.pdb",
+        ["binding_mode = 1", "pose_rank = 1", "CF = -42.5", *_proxy_firewall_remarks()],
+    )
+    _write_pdb(
+        tmp_path / "binding_mode_1_pose_2.pdb",
+        [
+            "binding_mode = 1",
+            "pose_rank = 2",
+            "CF = -39.0",
+            "thermo_schema_version = 2",
+            "thermo_energy_domain = model_scale",
+            "thermo_ensemble_measure = optimizer_samples",
+            "thermo_reference_state = none",
+        ],
+    )
+
+    mode = load_results(tmp_path).binding_modes[0]
+
+    assert mode.scientific_provenance.energy_domain is EnergyDomain.UNCLASSIFIED
+    assert mode.claim_validity is ClaimValidity.PROXY_ONLY
+
+
+@pytest.mark.parametrize("hostile_value", ["true", "false", "null", "[]", "None"])
+def test_boolean_or_junk_energy_remark_is_not_a_measurement(
+    tmp_path: Path, hostile_value: str
+) -> None:
+    """``free_energy = true`` must stay absent, never become 1.0."""
+    _write_pdb(
+        tmp_path / "binding_mode_1_pose_1.pdb",
+        [
+            "binding_mode = 1",
+            "pose_rank = 1",
+            "CF = -42.5",
+            f"free_energy = {hostile_value}",
+            f"soft_beta_G = {hostile_value}",
+            f"proxy_free_energy = {hostile_value}",
+        ],
+    )
+
+    pose = load_results(tmp_path).binding_modes[0].poses[0]
+
+    assert pose.free_energy is None
+    assert pose.soft_beta_G is None
+    assert pose.proxy_free_energy is None

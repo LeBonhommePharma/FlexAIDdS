@@ -58,7 +58,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--best-only",
         "--best-mode",
         action="store_true",
-        help="Print *only* the single best BindingMode (rank 1 by free_energy from full thermo ledger) + key fields/PDB pointer. Ideal for the exact 'best BindingMode' answer at precise T.",
+        help="Print *only* the rank-1 BindingMode (ranked by the engine-emitted soft_beta_G election objective, falling back to the legacy ensemble transform) + key fields/PDB pointer.",
     )
     parser.add_argument(
         "--check-update",
@@ -81,15 +81,29 @@ def _fmt(value: object, width: int = 10, precision: int = 3) -> str:
     return str(value).rjust(width)
 
 
+def _unit_suffix(modes) -> str:
+    """Return a unit label only when provenance authorizes physical units.
+
+    Unauthorized ensembles are proxy diagnostics in the declared input domain,
+    so they must not be labelled kcal/mol.
+    """
+    if modes and all(
+        m.scientific_provenance.allows_canonical_claims() for m in modes
+    ):
+        return "kcal/mol"
+    return "proxy"
+
+
 def _print_table(result, top_n: Optional[int]) -> None:
     modes = result.binding_modes
     if top_n is not None and top_n > 0:
         modes = modes[:top_n]
 
+    unit = _unit_suffix(modes)
     header = (
         f"{'Mode':>5}  {'Rank':>5}  {'N_poses':>7}  "
-        f"{'F (kcal/mol)':>14}  {'H (kcal/mol)':>14}  "
-        f"{'S (kcal/mol·K)':>16}  {'Best CF':>10}"
+        f"{f'F ({unit})':>14}  {f'H ({unit})':>14}  "
+        f"{f'S ({unit}/K)':>16}  {'Best CF':>10}"
     )
     separator = "-" * len(header)
     print(separator)
@@ -148,9 +162,20 @@ def main() -> int:
         if top is None:
             print("No binding modes found.")
             return 1
-        print(f"Best BindingMode (lowest free_energy / full thermo ledger at T={result.temperature} K):")
+        # The election objective (soft_beta_G) is what the engine ranked on;
+        # free_energy is a legacy ensemble transform whose units/interpretation
+        # are gated by provenance, so it is not described as a free energy here.
+        print(
+            "Best BindingMode (engine election objective soft_beta_G, "
+            f"falling back to the legacy ensemble transform; T={result.temperature} K):"
+        )
         print(f"  mode_id={top.mode_id} rank={top.rank} n_poses={top.n_poses}")
-        print(f"  free_energy={top.free_energy} enthalpy={top.enthalpy} entropy={top.entropy}")
+        print(f"  claim_validity={top.claim_validity.value}")
+        print(
+            f"  soft_beta_G={top.soft_beta_G} "
+            f"proxy_free_energy={top.proxy_free_energy} free_energy={top.free_energy}"
+        )
+        print(f"  enthalpy={top.enthalpy} entropy={top.entropy}")
         print(f"  temperature={top.temperature} best_cf={top.best_cf}")
         # Suggest the artifact path (common layout)
         print(f"  (Look for corresponding *_mode_{top.mode_id}_*.pdb or rank 1 pose in {result.source_dir} subdirs for full REMARK thermo + coords)")

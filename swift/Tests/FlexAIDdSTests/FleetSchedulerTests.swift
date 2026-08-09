@@ -8,6 +8,9 @@
 import XCTest
 @testable import FleetScheduler
 @testable import FlexAIDdS
+#if canImport(CryptoKit)
+import CryptoKit
+#endif
 
 final class FleetSchedulerTests: XCTestCase {
 
@@ -84,8 +87,6 @@ final class FleetSchedulerTests: XCTestCase {
 
     #if canImport(CryptoKit)
     func testEncryptionRoundTrip() throws {
-        import CryptoKit
-
         let key = SymmetricKey(size: .bits256)
 
         let chunk = WorkChunk(

@@ -23,7 +23,7 @@ export class ConvergenceAnalyzer {
     if (progress < 0.2) {
       return {
         advice: 'continueRun',
-        reasoning: `Run is early (${(progress * 100).toFixed(0)}% complete). Allow more exploration time.`,
+        reasoning: `Ensemble/CF diagnostic run is early (${(progress * 100).toFixed(0)}% complete). Allow more exploration time; physical affinity unavailable.`,
         estimatedGenerationsRemaining: snapshot.maxGenerations - snapshot.currentGeneration,
         confidence: 0.7,
       };
@@ -34,14 +34,14 @@ export class ConvergenceAnalyzer {
       if (snapshot.populationSize < 200) {
         return {
           advice: 'increasePopulation',
-          reasoning: `Diversity collapsed with only ${snapshot.populationSize} chromosomes. Increase population to maintain exploration.`,
+          reasoning: `Diversity collapsed in the ensemble/CF diagnostic with only ${snapshot.populationSize} chromosomes. Increase population to maintain exploration; physical affinity unavailable.`,
           estimatedGenerationsRemaining: null,
           confidence: 0.8,
         };
       }
       return {
         advice: 'increaseMutationRate',
-        reasoning: `Diversity collapsed at generation ${snapshot.currentGeneration} despite ${snapshot.populationSize} chromosomes. Increase mutation rate to escape local minimum.`,
+        reasoning: `Diversity collapsed in the ensemble/CF diagnostic at generation ${snapshot.currentGeneration} despite ${snapshot.populationSize} chromosomes. Increase mutation rate to escape the scoring-proxy local minimum; physical affinity unavailable.`,
         estimatedGenerationsRemaining: null,
         confidence: 0.75,
       };
@@ -51,7 +51,7 @@ export class ConvergenceAnalyzer {
     if (stagnationRatio > 0.25 && !snapshot.isImproving) {
       return {
         advice: 'stopEarly',
-        reasoning: `No improvement for ${snapshot.generationsSinceImprovement} generations (${(stagnationRatio * 100).toFixed(0)}% of run). Best fitness ${snapshot.bestFitness.toFixed(2)} kcal/mol is likely the global optimum.`,
+        reasoning: `No improvement for ${snapshot.generationsSinceImprovement} generations (${(stagnationRatio * 100).toFixed(0)}% of run). Best ensemble/CF diagnostic ${snapshot.bestFitness.toFixed(2)} arbitrary units is likely stable for this GA run; physical affinity unavailable.`,
         estimatedGenerationsRemaining: 0,
         confidence: 0.85,
       };
@@ -62,7 +62,7 @@ export class ConvergenceAnalyzer {
       const remaining = snapshot.maxGenerations - snapshot.currentGeneration;
       return {
         advice: 'continueRun',
-        reasoning: `Fitness still improving. Best: ${snapshot.bestFitness.toFixed(2)} kcal/mol. ${remaining} generations remaining.`,
+        reasoning: `Ensemble/CF diagnostic still improving. Best: ${snapshot.bestFitness.toFixed(2)} arbitrary units; physical affinity unavailable. ${remaining} generations remaining.`,
         estimatedGenerationsRemaining: remaining,
         confidence: 0.8,
       };
@@ -71,7 +71,7 @@ export class ConvergenceAnalyzer {
     // Default: continue but with low confidence
     return {
       advice: 'continueRun',
-      reasoning: `Run at ${(progress * 100).toFixed(0)}% progress. Fitness plateaued but diversity maintained — may still improve.`,
+      reasoning: `Ensemble/CF diagnostic run at ${(progress * 100).toFixed(0)}% progress. Diagnostic fitness plateaued but diversity is maintained and may still improve; physical affinity unavailable.`,
       estimatedGenerationsRemaining: snapshot.maxGenerations - snapshot.currentGeneration,
       confidence: 0.5,
     };

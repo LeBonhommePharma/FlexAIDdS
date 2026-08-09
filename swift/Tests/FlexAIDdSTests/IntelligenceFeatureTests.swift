@@ -11,6 +11,15 @@ import XCTest
 @testable import FlexAIDdS
 @testable import Intelligence
 
+private let intelligenceBindingProvenance = ScientificProvenance(
+    energyDomain: .calibratedKcalPerMol,
+    ensembleMeasure: .enumeratedMicrostates,
+    referenceState: .matchedAssociationCycle,
+    energyProvenance: "sha256:e638aaee2a68410cdc827397b2aa095cf227090f494f535748c756ac49e6da3c",
+    measureProvenance: "sha256:7b27545430c950e8f5b4ba83ae3e2ad5e9fe32b83b625d8efea0e668af2782f4",
+    referenceProvenance: "sha256:01d26f66e709d388d7b971de6204680694e7cca10b1570506a5738c6909a6442"
+)
+
 // MARK: - BindingModeNarrator Tests
 
 final class BindingModeNarratorTests: XCTestCase {
@@ -27,7 +36,11 @@ final class BindingModeNarratorTests: XCTestCase {
         )
     }
 
-    private func makeContext(modes: [ModeProfile], temperature: Double = 298.15) -> PreComputedModeContext {
+    private func makeContext(
+        modes: [ModeProfile],
+        temperature: Double = 298.15,
+        scientificProvenance: ScientificProvenance? = intelligenceBindingProvenance
+    ) -> PreComputedModeContext {
         let entropies = modes.map(\.entropy)
         let imbalance: Double = {
             guard entropies.count >= 2,
@@ -43,7 +56,8 @@ final class BindingModeNarratorTests: XCTestCase {
             globalFreeEnergy: modes.first?.freeEnergy ?? 0,
             modes: modes,
             entropyImbalance: imbalance,
-            dominantModeIndex: 0
+            dominantModeIndex: 0,
+            scientificProvenance: scientificProvenance
         )
     }
 
@@ -101,23 +115,71 @@ final class BindingModeNarratorTests: XCTestCase {
         XCTAssertTrue(result.modeDescriptions.isEmpty)
         XCTAssertTrue(result.selectivityInsight.contains("No dominant mode"))
     }
+
+    func testProxyModeNarrativeSuppressesPhysicalAndOptimizationClaims() {
+        let narrator = RuleBasedModeNarrator()
+        let context = makeContext(
+            modes: [makeMode(entropy: 0.1, enthalpy: -20)],
+            scientificProvenance: nil
+        )
+
+        let result = narrator.narrate(context: context)
+        let output = (result.modeDescriptions.flatMap { [$0.characterization, $0.optimizationHint] }
+            + [result.selectivityInsight]).joined(separator: " ").lowercased()
+
+        XCTAssertTrue(output.contains("optimizer cluster diagnostic"))
+        XCTAssertTrue(output.contains("unavailable"))
+        XCTAssertFalse(output.contains("kcal/mol"))
+        XCTAssertFalse(output.contains("affinity needs boosting"))
+        XCTAssertFalse(output.contains("focus sar optimization"))
+    }
 }
 
 // MARK: - CleftAssessor Tests
 
 final class CleftAssessorTests: XCTestCase {
 
+    // Druggability tiers and ligand-property prescriptions are drug-design
+    // claims, so the tiering logic is only reachable with binding_physical
+    // evidence. Tests that exercise the tiers supply it explicitly.
     private func makeCleft(
         volume: Double = 500, depth: Double = 8.0, sphereCount: Int = 50,
         maxSphereRadius: Double = 3.0, hydrophobicFraction: Double = 0.6,
-        anchorResidueCount: Int = 6, elongation: Double = 0.4, solventExposure: Double = 0.2
+        anchorResidueCount: Int = 6, elongation: Double = 0.4, solventExposure: Double = 0.2,
+        provenance: ScientificProvenance? = intelligenceBindingProvenance
     ) -> CleftFeatures {
         CleftFeatures(
             volume: volume, depth: depth, sphereCount: sphereCount,
             maxSphereRadius: maxSphereRadius, hydrophobicFraction: hydrophobicFraction,
             anchorResidueCount: anchorResidueCount, elongation: elongation,
-            solventExposure: solventExposure
+            solventExposure: solventExposure,
+            scientificProvenance: provenance
         )
+    }
+
+    func testDrugDesignClaimsUnavailableWithoutProvenance() {
+        let assessor = RuleBasedCleftAssessor()
+        // Default (no provenance) must fail closed: no tier, no prescription.
+        let cleft = makeCleft(volume: 600, depth: 10.0, hydrophobicFraction: 0.6,
+                              anchorResidueCount: 8, solventExposure: 0.15,
+                              provenance: nil)
+
+        XCTAssertEqual(cleft.claimValidity, .proxyOnly)
+        XCTAssertFalse(cleft.allowsDrugDesignClaims)
+
+        let result = assessor.assess(cleft: cleft)
+        XCTAssertEqual(result.druggability, .unavailable)
+        XCTAssertTrue(result.suggestedLigandProperties.contains("unavailable"))
+        XCTAssertFalse(result.summary.contains("Druggability: high"))
+    }
+
+    func testProxyProvenanceStillFailsClosed() {
+        let assessor = RuleBasedCleftAssessor()
+        // CF-optimizer provenance is structurally proxy-only.
+        let cleft = makeCleft(provenance: .proxyContactFunction)
+
+        XCTAssertEqual(cleft.claimValidity, .proxyOnly)
+        XCTAssertEqual(assessor.assess(cleft: cleft).druggability, .unavailable)
     }
 
     func testHighDruggability() {
@@ -201,6 +263,38 @@ final class ConvergenceCoachTests: XCTestCase {
 
         XCTAssertEqual(result.advice, .continueRun)
         XCTAssertTrue(result.reasoning.contains("early"))
+    }
+
+    func testGAFitnessIsNeverLabelledKcalPerMolWithoutProvenance() {
+        let coach = RuleBasedConvergenceCoach()
+        // GA fitness is a raw contact-function objective. Without calibrated,
+        // receipted provenance it must not be presented in kcal/mol.
+        let snapshot = makeSnapshot(currentGeneration: 800,
+                                    generationsSinceImprovement: 300,
+                                    isImproving: false)
+
+        XCTAssertEqual(snapshot.claimValidity, .proxyOnly)
+        XCTAssertEqual(snapshot.fitnessUnitLabel, "CF arbitrary units")
+
+        let result = coach.coach(snapshot: snapshot)
+        XCTAssertFalse(result.reasoning.contains("kcal/mol"))
+        XCTAssertTrue(result.reasoning.contains("CF arbitrary units"))
+    }
+
+    func testGAFitnessKcalPerMolRequiresCalibratedProvenance() {
+        let coach = RuleBasedConvergenceCoach()
+        let snapshot = GAProgressSnapshot(
+            currentGeneration: 800, maxGenerations: 1000,
+            bestFitness: -8.0, meanFitness: -5.0, populationDiversity: 2.5,
+            generationsSinceImprovement: 300,
+            fitnessTrajectory: [-7.0, -7.5, -8.0],
+            diversityTrajectory: [3.0, 2.8, 2.5],
+            isImproving: false, isDiversityCollapsed: false, populationSize: 300,
+            scientificProvenance: intelligenceBindingProvenance
+        )
+
+        XCTAssertEqual(snapshot.claimValidity, .bindingPhysical)
+        XCTAssertTrue(coach.coach(snapshot: snapshot).reasoning.contains("kcal/mol"))
     }
 
     func testStopEarly() {
@@ -452,7 +546,8 @@ final class VibrationalInterpreterTests: XCTestCase {
     private func makeContext(
         topModes: [NormalModeSummary]? = nil, totalSVib: Double = 0.001,
         totalSConf: Double = 2.0, vibrationalDominance: Double = 1.5,
-        temperature: Double = 298.15, bindingRestrictsMotion: Bool = false
+        temperature: Double = 298.15, bindingRestrictsMotion: Bool = false,
+        scientificProvenance: ScientificProvenance? = intelligenceBindingProvenance
     ) -> VibrationalContext {
         VibrationalContext(
             totalSVib: totalSVib, totalSConf: totalSConf,
@@ -460,7 +555,8 @@ final class VibrationalInterpreterTests: XCTestCase {
             temperature: temperature,
             topModes: topModes ?? [makeMode()],
             totalModeCount: 20,
-            bindingRestrictsMotion: bindingRestrictsMotion
+            bindingRestrictsMotion: bindingRestrictsMotion,
+            scientificProvenance: scientificProvenance
         )
     }
 
@@ -509,6 +605,25 @@ final class VibrationalInterpreterTests: XCTestCase {
 
         XCTAssertTrue(result.dominantMotionDescription.contains("No significant"))
     }
+
+    func testProxyVibrationalOutputIsDiagnosticAndUnavailable() {
+        let interpreter = RuleBasedVibrationalInterpreter()
+        let context = makeContext(
+            vibrationalDominance: 10,
+            bindingRestrictsMotion: true,
+            scientificProvenance: nil
+        )
+
+        let result = interpreter.interpret(context: context)
+        let output = [result.dominantMotionDescription, result.bindingImpact, result.designImplication]
+            .joined(separator: " ").lowercased()
+
+        XCTAssertTrue(output.contains("proxy-only") && output.contains("diagnostic"))
+        XCTAssertTrue(output.contains("unavailable"))
+        XCTAssertFalse(output.contains("kcal/mol"))
+        XCTAssertFalse(output.contains("standard lead optimization appropriate"))
+        XCTAssertFalse(result.isEntropicallyDriven)
+    }
 }
 
 // MARK: - SelectivityAnalyst Tests
@@ -518,12 +633,14 @@ final class SelectivityAnalystTests: XCTestCase {
     private func makeTarget(
         name: String = "5HT2A", bestFreeEnergy: Double = -10.0,
         modeCount: Int = 5, sConf: Double = 2.5, sVib: Double = 0.001,
-        isConverged: Bool = true, cavityVolume: Double? = 500, populationSize: Int = 300
+        isConverged: Bool = true, cavityVolume: Double? = 500, populationSize: Int = 300,
+        scientificProvenance: ScientificProvenance? = intelligenceBindingProvenance
     ) -> TargetDockingSummary {
         TargetDockingSummary(
             targetName: name, bestFreeEnergy: bestFreeEnergy, modeCount: modeCount,
             sConf: sConf, sVib: sVib, isConverged: isConverged,
-            cavityVolume: cavityVolume, populationSize: populationSize
+            cavityVolume: cavityVolume, populationSize: populationSize,
+            scientificProvenance: scientificProvenance
         )
     }
 
@@ -541,6 +658,44 @@ final class SelectivityAnalystTests: XCTestCase {
         XCTAssertEqual(result.preferredTarget, "5HT2A")
         XCTAssertEqual(result.driver, .enthalpic)
         XCTAssertTrue(result.explanation.contains("enthalpy-driven"))
+        XCTAssertEqual(result.deltaGClaimValidity, .bindingPhysical)
+        XCTAssertTrue(result.isDeltaGPhysical)
+        XCTAssertEqual(result.deltaGUnitLabel, "kcal/mol")
+    }
+
+    func testRetainedDeltaGIsMarkedUnavailableWithoutProvenance() {
+        let analyst = RuleBasedSelectivityAnalyst()
+        // One un-evidenced target is enough to disqualify the comparison.
+        let context = SelectivityContext(
+            ligandName: "psilocin",
+            targets: [
+                makeTarget(name: "5HT2A", bestFreeEnergy: -15.0),
+                makeTarget(name: "D2R", bestFreeEnergy: -8.0,
+                           scientificProvenance: nil)
+            ]
+        )
+        let result = analyst.analyze(context: context)
+
+        XCTAssertEqual(result.preferredTarget, "unavailable")
+        XCTAssertEqual(result.deltaGClaimValidity, .proxyOnly)
+        XCTAssertFalse(result.isDeltaGPhysical)
+        XCTAssertFalse(result.deltaGUnitLabel.contains("kcal/mol"))
+        // The number itself is retained for compatibility, unchanged.
+        XCTAssertEqual(result.deltaG, -7.0, accuracy: 1e-9)
+    }
+
+    func testDecodedDeltaGMarkerFailsClosedWhenAbsent() throws {
+        // A payload predating the marker must not be read as physical.
+        let json = """
+        {"preferredTarget":"5HT2A","deltaG":-2.5,"driver":"enthalpic",
+         "explanation":"x","designSuggestion":"y"}
+        """.data(using: .utf8)!
+        let decoded = try JSONDecoder().decode(
+            CrossPlatformSelectivityAnalysis.self, from: json)
+
+        XCTAssertEqual(decoded.deltaG, -2.5, accuracy: 1e-10)
+        XCTAssertEqual(decoded.deltaGClaimValidity, .proxyOnly)
+        XCTAssertFalse(decoded.isDeltaGPhysical)
     }
 
     func testEntropicDriver() {
@@ -618,6 +773,26 @@ final class SelectivityAnalystTests: XCTestCase {
         XCTAssertEqual(decoded.deltaDeltas[0].targetB, "D2R")
         XCTAssertEqual(decoded.deltaDeltas[0].ddg, -2.0, accuracy: 1e-10)
     }
+
+    func testProxySelectivitySuppressesPreferenceDeltaGAndOptimizationClaims() {
+        let analyst = RuleBasedSelectivityAnalyst()
+        let context = SelectivityContext(
+            ligandName: "hostile",
+            targets: [
+                makeTarget(name: "A", bestFreeEnergy: -50, scientificProvenance: nil),
+                makeTarget(name: "B", bestFreeEnergy: 50, scientificProvenance: nil),
+            ]
+        )
+
+        let result = analyst.analyze(context: context)
+        let output = [result.explanation, result.designSuggestion].joined(separator: " ").lowercased()
+
+        XCTAssertEqual(result.preferredTarget, "unavailable")
+        XCTAssertEqual(result.driver, .inconclusive)
+        XCTAssertTrue(output.contains("proxy") && output.contains("unavailable"))
+        XCTAssertFalse(output.contains("enthalpy-driven selectivity"))
+        XCTAssertFalse(output.contains("improve affinity"))
+    }
 }
 
 // MARK: - CampaignJournalist Tests
@@ -626,12 +801,14 @@ final class CampaignJournalistTests: XCTestCase {
 
     private func makeRun(
         index: Int = 0, freeEnergy: Double = -8.0, entropy: Double = 0.005,
-        isConverged: Bool = true, modeCount: Int = 3, confidence: String = "high"
+        isConverged: Bool = true, modeCount: Int = 3, confidence: String = "high",
+        scientificProvenance: ScientificProvenance? = intelligenceBindingProvenance
     ) -> RunSnapshot {
         RunSnapshot(
             runIndex: index, freeEnergy: freeEnergy, entropy: entropy,
             isConverged: isConverged, modeCount: modeCount,
-            confidence: confidence, timestamp: Date()
+            confidence: confidence, timestamp: Date(),
+            scientificProvenance: scientificProvenance
         )
     }
 
@@ -701,6 +878,25 @@ final class CampaignJournalistTests: XCTestCase {
 
         XCTAssertEqual(result.runCount, 0)
         XCTAssertTrue(result.progressNarrative.contains("No runs"))
+    }
+
+    func testProxyCampaignSuppressesAffinityUnitsAndLeadOptimization() {
+        let journalist = RuleBasedCampaignJournalist()
+        let runs = [
+            makeRun(index: 0, freeEnergy: -5, scientificProvenance: nil),
+            makeRun(index: 1, freeEnergy: -10, scientificProvenance: nil),
+        ]
+        let result = journalist.summarize(
+            context: CampaignContext(campaignKey: "hostile", runs: runs)
+        )
+        let output = [result.progressNarrative, result.bestResult, result.nextStepRecommendation]
+            .joined(separator: " ").lowercased()
+
+        XCTAssertTrue(output.contains("proxy") && output.contains("unavailable"))
+        XCTAssertFalse(output.contains("binding affinity improved"))
+        XCTAssertFalse(output.contains("kcal/mol"))
+        XCTAssertFalse(output.contains("proceed with lead optimization"))
+        XCTAssertFalse(result.readyForPublication)
     }
 }
 
@@ -786,6 +982,39 @@ final class LigandFitCriticTests: XCTestCase {
 
         XCTAssertEqual(result.confidenceInTopPose, 0.0)
         XCTAssertTrue(result.topPoseSummary.contains("No poses"))
+    }
+
+    func testPoseScoresAreNotKcalPerMolWithoutProvenance() {
+        let critic = RuleBasedLigandFitCritic()
+        let poses = [
+            makePose(rank: 0, cfScore: -10.0, boltzmannWeight: 0.7, rmsdToCentroid: 0.5),
+            makePose(rank: 1, cfScore: -8.0, boltzmannWeight: 0.2, rmsdToCentroid: 1.0)
+        ]
+        let context = makeContext(poses: poses)
+
+        XCTAssertEqual(context.claimValidity, .proxyOnly)
+        XCTAssertEqual(context.energyUnitLabel, "CF arbitrary units")
+
+        let result = critic.evaluate(context: context)
+        XCTAssertFalse(result.topPoseSummary.contains("kcal/mol"))
+        XCTAssertTrue(result.medicinalChemistryNote.contains("unavailable"))
+    }
+
+    func testMedicinalChemistryAdviceRequiresBindingProvenance() {
+        let critic = RuleBasedLigandFitCritic()
+        let poses = [
+            makePose(rank: 0, cfScore: -10.0, boltzmannWeight: 0.7, rmsdToCentroid: 0.5),
+            makePose(rank: 1, cfScore: -8.0, boltzmannWeight: 0.2, rmsdToCentroid: 0.6)
+        ]
+        let context = PoseQualityContext(
+            modeIndex: 0, topPoses: poses, totalPoses: poses.count,
+            modeFreeEnergy: -8.0,
+            scientificProvenance: intelligenceBindingProvenance
+        )
+
+        let result = critic.evaluate(context: context)
+        XCTAssertTrue(result.topPoseSummary.contains("kcal/mol"))
+        XCTAssertFalse(result.medicinalChemistryNote.contains("unavailable"))
     }
 
     func testSpearmanCorrelationPerfect() {

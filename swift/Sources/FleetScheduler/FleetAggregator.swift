@@ -15,7 +15,9 @@ import FlexAIDdS
 /// A pose extracted from a ChunkResult for cross-device merging.
 public struct AggregatedPose: Sendable, Codable, Hashable, Identifiable {
     public let id: UUID
-    /// Energy (kcal/mol, negative = favorable)
+    /// Energy-like scalar in the declared energy domain of the aggregation
+    /// (see `FleetAggregator.scientificProvenance`). Fleet chunks carry raw
+    /// optimizer scores, so this is not kcal/mol unless provenance says so.
     public let energy: Double
     /// Source chunk ID
     public let sourceChunkID: UUID
@@ -52,15 +54,26 @@ public struct AggregatedBindingMode: Sendable, Codable, Identifiable {
     public let thermodynamics: ModeThermodynamics
 
     /// Per-mode thermodynamic summary.
+    ///
+    /// These are the same identities the C++ engine evaluates, so they are
+    /// bound by the same claim firewall: the arithmetic is valid for any
+    /// finite scalar list, but physical units require provenance.
     public struct ModeThermodynamics: Sendable, Codable {
-        /// Helmholtz free energy F = -kT ln Z_mode (kcal/mol)
+        /// Evidence for the values below. Missing metadata fails closed.
+        public let scientificProvenance: ScientificProvenance?
+        /// F = -kT ln Z_mode in the declared energy domain.
         public let freeEnergy: Double
-        /// Conformational entropy S = (<E> - F) / T
+        /// S = (<E> - F) / T in the declared energy domain per kelvin.
         public let entropy: Double
-        /// Boltzmann-weighted mean energy <E>
+        /// Boltzmann-weighted mean energy <E> in the declared energy domain.
         public let meanEnergy: Double
         /// Boltzmann weight of this mode in the global ensemble
         public let globalWeight: Double
+
+        /// Strongest claim supported by the declared provenance.
+        public var claimValidity: ClaimValidity {
+            scientificProvenance?.claimValidity ?? .proxyOnly
+        }
     }
 }
 
@@ -82,14 +95,33 @@ public struct FleetAggregationResult: Sendable, Codable {
     public let jobID: UUID
 
     /// Global thermodynamic summary.
+    ///
+    /// Mirrors `FlexAIDdS.ThermodynamicResult`: numeric fields are always
+    /// computed, physical interpretation is gated on provenance.
     public struct GlobalThermodynamics: Sendable, Codable {
+        /// Evidence for the values below. Missing metadata fails closed.
+        public let scientificProvenance: ScientificProvenance?
         public let temperature: Double
         public let logZ: Double
+        /// Declared-domain values; kcal/mol only for calibrated provenance.
         public let freeEnergy: Double
         public let meanEnergy: Double
         public let entropy: Double
         public let heatCapacity: Double
         public let stdEnergy: Double
+
+        /// Strongest claim supported by the declared provenance.
+        public var claimValidity: ClaimValidity {
+            scientificProvenance?.claimValidity ?? .proxyOnly
+        }
+
+        public var allowsCanonicalClaims: Bool {
+            claimValidity == .canonicalPhysical || claimValidity == .bindingPhysical
+        }
+
+        public var allowsBindingClaims: Bool {
+            claimValidity == .bindingPhysical
+        }
     }
 }
 
@@ -111,14 +143,26 @@ public struct FleetAggregationResult: Sendable, Codable {
 public final class FleetAggregator: Sendable {
     /// Temperature (K) for Boltzmann weighting
     public let temperature: Double
+
+    /// Evidence describing the energy domain and ensemble measure of the
+    /// ingested chunk energies. Fleet chunks are optimizer output, so the
+    /// default is `nil` — proxy-only — and a caller must supply the real
+    /// record from the producing engine to unlock physical presentation.
+    /// This aggregator never manufactures provenance for its own output.
+    public let scientificProvenance: ScientificProvenance?
+
     /// Boltzmann constant (kcal mol^-1 K^-1)
     private let kB: Double = 0.001987204
 
     private let _poses: LockedBox<[AggregatedPose]> = .init([])
     private let _chunkIDs: LockedBox<Set<UUID>> = .init([])
 
-    public init(temperature: Double = 298.15) {
+    public init(
+        temperature: Double = 298.15,
+        scientificProvenance: ScientificProvenance? = nil
+    ) {
         self.temperature = temperature
+        self.scientificProvenance = scientificProvenance
     }
 
     /// Number of ingested poses.
@@ -369,6 +413,7 @@ public final class FleetAggregator: Sendable {
         let globalWeight = exp(modeLogZ - globalLogZ)
 
         return AggregatedBindingMode.ModeThermodynamics(
+            scientificProvenance: scientificProvenance,
             freeEnergy: freeEnergy,
             entropy: entropy,
             meanEnergy: meanE,
@@ -397,6 +442,7 @@ public final class FleetAggregator: Sendable {
         let stdEnergy = sqrt(max(0, variance))
 
         return FleetAggregationResult.GlobalThermodynamics(
+            scientificProvenance: scientificProvenance,
             temperature: temperature,
             logZ: logZ,
             freeEnergy: freeEnergy,

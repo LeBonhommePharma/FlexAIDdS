@@ -46,12 +46,147 @@ namespace statmech {
 // Threshold above which OpenMP parallelisation pays off for reductions.
 [[maybe_unused]] static constexpr std::size_t OMP_THRESHOLD = 4096;
 
+// ─── scientific provenance / claim validity ─────────────────────────────────
+
+namespace {
+
+bool has_artifact_sha256(const std::string& value) noexcept {
+    constexpr char prefix[] = "sha256:";
+    constexpr char historical_filler[] =
+        "3f7a9c2b1e4d5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a";
+    constexpr char empty_artifact_sha256[] =
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
+    constexpr std::size_t prefix_length = sizeof(prefix) - 1;
+    if (value.size() != prefix_length + 64)
+        return false;
+    for (std::size_t index = 0; index < prefix_length; ++index) {
+        if (value[index] != prefix[index])
+            return false;
+    }
+
+    bool seen[16] = {};
+    std::size_t distinct = 0;
+    bool is_historical_filler = true;
+    bool is_empty_artifact = true;
+    for (std::size_t index = 0; index < 64; ++index) {
+        const char character = value[prefix_length + index];
+        unsigned int nibble = 0;
+        if (character >= '0' && character <= '9')
+            nibble = static_cast<unsigned int>(character - '0');
+        else if (character >= 'a' && character <= 'f')
+            nibble = static_cast<unsigned int>(character - 'a' + 10);
+        else if (character >= 'A' && character <= 'F')
+            nibble = static_cast<unsigned int>(character - 'A' + 10);
+        else
+            return false;
+
+        if (!seen[nibble]) {
+            seen[nibble] = true;
+            ++distinct;
+        }
+        const char filler_character = historical_filler[index];
+        const unsigned int filler_nibble =
+            filler_character <= '9'
+                ? static_cast<unsigned int>(filler_character - '0')
+                : static_cast<unsigned int>(filler_character - 'a' + 10);
+        is_historical_filler = is_historical_filler && nibble == filler_nibble;
+        const char empty_character = empty_artifact_sha256[index];
+        const unsigned int empty_nibble =
+            empty_character <= '9'
+                ? static_cast<unsigned int>(empty_character - '0')
+                : static_cast<unsigned int>(empty_character - 'a' + 10);
+        is_empty_artifact = is_empty_artifact && nibble == empty_nibble;
+    }
+    return distinct >= 3 && !is_historical_filler && !is_empty_artifact;
+}
+
+ScientificProvenance provenance_for_breakdown(
+    const ScientificProvenance& source,
+    double G_vib_kcal_mol,
+    double G_natural_kcal_mol,
+    double G_other_kcal_mol,
+    bool has_vib,
+    bool has_natural,
+    bool has_other)
+{
+    // Correction terms do not yet carry independent artifact receipts. Any
+    // supplied correction therefore makes the aggregate ledger proxy-only,
+    // even when the configurational ensemble itself has physical provenance.
+    // The numerical fields remain unchanged.
+    const bool has_unreceipted_correction =
+        has_vib || has_natural || has_other ||
+        G_vib_kcal_mol != 0.0 ||
+        G_natural_kcal_mol != 0.0 ||
+        G_other_kcal_mol != 0.0;
+    return has_unreceipted_correction ? ScientificProvenance{} : source;
+}
+
+} // namespace
+
+bool ScientificProvenance::allows_canonical_physical_claim() const noexcept {
+    if (schema_version != kScientificProvenanceSchemaVersion)
+        return false;
+
+    const bool calibrated_energy =
+        energy_domain == EnergyDomain::CalibratedKcalPerMol &&
+        has_artifact_sha256(energy_provenance);
+    const bool physical_measure =
+        (ensemble_measure == EnsembleMeasure::EnumeratedMicrostates ||
+         ensemble_measure == EnsembleMeasure::WeightedQuadrature) &&
+        has_artifact_sha256(measure_provenance);
+
+    return calibrated_energy && physical_measure;
+}
+
+bool ScientificProvenance::allows_binding_physical_claim() const noexcept {
+    return allows_canonical_physical_claim() &&
+           reference_state == ReferenceState::MatchedAssociationCycle &&
+           has_artifact_sha256(reference_provenance);
+}
+
+bool ScientificProvenance::is_proxy_only() const noexcept {
+    return claim_validity() == ClaimValidity::ProxyOnly;
+}
+
+ClaimValidity ScientificProvenance::claim_validity() const noexcept {
+    if (allows_binding_physical_claim())
+        return ClaimValidity::BindingPhysical;
+    if (allows_canonical_physical_claim())
+        return ClaimValidity::CanonicalPhysical;
+    return ClaimValidity::ProxyOnly;
+}
+
+ScientificProvenance make_contact_function_optimizer_provenance(
+    ReferenceState reference_state)
+{
+    ScientificProvenance provenance;
+    provenance.energy_domain = EnergyDomain::ContactFunctionArbitraryUnits;
+    provenance.ensemble_measure = EnsembleMeasure::OptimizerSamples;
+    provenance.reference_state = reference_state;
+    provenance.energy_provenance =
+        "FlexAID Voronoi/contact-function score; no kcal/mol calibration";
+    provenance.measure_provenance =
+        "optimizer-selected, deduplicated and/or clustered GA pose records";
+    provenance.reference_provenance =
+        reference_state == ReferenceState::BoundOnly
+            ? "bound pose ensemble only"
+            : "no matched association-cycle artifact";
+    return provenance;
+}
+
 // ─── construction ────────────────────────────────────────────────────────────
 
 StatMechEngine::StatMechEngine(double temperature_K)
+    : StatMechEngine(temperature_K, ScientificProvenance{})
+{
+}
+
+StatMechEngine::StatMechEngine(double temperature_K,
+                               ScientificProvenance provenance)
     : T_(temperature_K)
     , beta_(1.0 / (kB_kcal * temperature_K))
     , beta_selection_(1.0 / temperature_K)   // 1/T convention for GA/cluster selection (P1)
+    , provenance_(provenance)
 {
     if (temperature_K <= 0.0)
         throw std::invalid_argument("StatMechEngine: temperature must be > 0");
@@ -173,6 +308,7 @@ Thermodynamics StatMechEngine::compute() const {
     th.heat_capacity  = var / (kB_kcal * T_ * T_);
     th.entropy        = (E_avg - th.free_energy) / T_;
     th.std_energy     = std::sqrt(std::max(0.0, var));
+    th.provenance     = provenance_;
     return th;
 }
 
@@ -230,6 +366,7 @@ Thermodynamics StatMechEngine::compute_at_temperature(double T_K) const
     th.heat_capacity  = var / (kB_kcal * T_K * T_K);
     th.entropy        = (E_avg - th.free_energy) / T_K;
     th.std_energy     = std::sqrt(std::max(0.0, var));
+    th.provenance     = provenance_;
     return th;
 }
 
@@ -252,6 +389,14 @@ ThermodynamicBreakdown StatMechEngine::compute_breakdown(
     b.minus_T_S_config_kcal_mol = th.free_energy - th.mean_energy;
     b.Cv_kcal_mol_K = th.heat_capacity;
     b.sigma_E_kcal_mol = th.std_energy;
+    b.provenance = provenance_for_breakdown(
+        th.provenance,
+        G_vib_kcal_mol,
+        G_natural_kcal_mol,
+        G_other_kcal_mol,
+        has_vib,
+        has_natural,
+        has_other);
     b.G_vib_kcal_mol = G_vib_kcal_mol;
     b.G_natural_kcal_mol = G_natural_kcal_mol;
     b.G_other_kcal_mol = G_other_kcal_mol;
@@ -635,6 +780,12 @@ void StatMechEngine::merge(const StatMechEngine& other) {
         throw std::invalid_argument("Cannot merge engines at different temperatures");
     ensemble_.insert(ensemble_.end(),
                      other.ensemble_.begin(), other.ensemble_.end());
+
+    // A merged physical claim is safe only when both source ensembles carry
+    // exactly the same provenance witness. Numeric merging is unchanged; a
+    // mismatch only downgrades interpretation to the fail-closed default.
+    if (provenance_ != other.provenance_)
+        provenance_ = ScientificProvenance{};
 }
 
 void StatMechEngine::merge_samples(std::span<const double> energies,
@@ -643,6 +794,22 @@ void StatMechEngine::merge_samples(std::span<const double> energies,
         throw std::invalid_argument("energies and multiplicities must have same size");
     for (size_t i = 0; i < energies.size(); ++i)
         ensemble_.push_back({energies[i], multiplicities[i]});
+
+    // Raw arrays carry no provenance witness. merge(const StatMechEngine&)
+    // can compare two witnesses and downgrade on mismatch; this transport
+    // (MPI / deserialization) has nothing to compare against, so a receiving
+    // engine cannot attest that the injected samples came from the calibrated
+    // source its own witness describes. Fail closed rather than let unattested
+    // energies inherit an authorizing witness.
+    //
+    // Deliberately scoped to engines that could actually authorize a claim: an
+    // already-proxy-only witness keeps its descriptive domain/measure strings,
+    // so every current CF/contact-function path — including ParallelDock's
+    // aggregation — is byte-for-byte unaffected in both numerics and emitted
+    // metadata. Callers that can independently attest the transported samples
+    // must re-declare the witness explicitly via set_provenance().
+    if (!energies.empty() && !provenance_.is_proxy_only())
+        provenance_ = ScientificProvenance{};
 }
 
 std::vector<double> StatMechEngine::serialize_energies() const {
@@ -672,13 +839,9 @@ ThermodynamicBreakdown StatMechEngine::make_breakdown(
     double G_other_kcal_mol,   bool has_other)
 {
     ThermodynamicBreakdown b;
-    if (engine.size() == 0) {
-        // Return zeroed struct with temperature; caller must not use for math
-        b.temperature_K = engine.temperature();
-        return b;
-    }
-
-    const auto th = engine.compute();   // reuse proven compute() path
+    // Reuse compute()'s fail-closed empty-ensemble contract. A zero-filled
+    // ledger is not a valid substitute for missing thermodynamic moments.
+    const auto th = engine.compute();
 
     b.temperature_K = th.temperature;
 
@@ -689,6 +852,14 @@ ThermodynamicBreakdown StatMechEngine::make_breakdown(
     b.minus_T_S_config_kcal_mol = th.free_energy - th.mean_energy;
     b.Cv_kcal_mol_K = th.heat_capacity;
     b.sigma_E_kcal_mol = th.std_energy;
+    b.provenance = provenance_for_breakdown(
+        th.provenance,
+        G_vib_kcal_mol,
+        G_natural_kcal_mol,
+        G_other_kcal_mol,
+        has_vib,
+        has_natural,
+        has_other);
 
     b.G_vib_kcal_mol = G_vib_kcal_mol;
     b.G_natural_kcal_mol = G_natural_kcal_mol;

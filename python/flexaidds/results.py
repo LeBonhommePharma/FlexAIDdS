@@ -10,19 +10,22 @@ Typical usage::
 
     result = load_results("/path/to/docking/output")
     top = result.top_mode()
-    print(f"Best ΔG: {top.free_energy:.2f} kcal/mol  (mode {top.mode_id})")
+    # Units and interpretation come from the parsed provenance, not from the
+    # field name: current FlexAID output is a CF-domain proxy, not ΔG_bind.
+    print(f"{top.claim_validity.value}: F-like value {top.free_energy:.2f}")
 """
 
 from __future__ import annotations
 
 import json
 from collections import defaultdict
+from dataclasses import replace
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
 from .io import parse_pose_result
 from .models import BindingModeResult, DockingResult, PoseResult
-from .thermodynamics import StatMechEngine
+from .thermodynamics import ScientificProvenance, StatMechEngine
 
 _PDB_SUFFIXES = {".pdb", ".ent"}
 # Default temperature when REMARKs omit T (K). Used only for labelled
@@ -83,6 +86,23 @@ def _mode_frequency(poses: Sequence[PoseResult]) -> Optional[int]:
             if isinstance(value, int):
                 return value
     return len(poses) if poses else None
+
+
+def _mode_provenance(poses: Sequence[PoseResult]) -> ScientificProvenance:
+    """Aggregate pose provenance fail-closed.
+
+    A mode-level claim may only be as strong as its weakest member, so the
+    shared provenance is adopted **only** when every pose in the mode carries
+    the identical evidence.  Any disagreement (or an empty mode) collapses to
+    the unclassified, proxy-only default.
+    """
+    if not poses:
+        return ScientificProvenance()
+    first = poses[0].scientific_provenance
+    for pose in poses[1:]:
+        if pose.scientific_provenance != first:
+            return ScientificProvenance()
+    return first
 
 
 def _mode_metadata(poses: Sequence[PoseResult]) -> Dict[str, object]:
@@ -213,6 +233,9 @@ def _build_mode(mode_id: int, poses: Sequence[PoseResult], rank: int = 1) -> Bin
         best_pose = ordered[0]
 
     free_energy = _mode_metric(ordered, "free_energy")
+    proxy_free_energy = _mode_metric(ordered, "proxy_free_energy")
+    soft_beta_G = _mode_metric(ordered, "soft_beta_G")
+    provenance = _mode_provenance(ordered)
     enthalpy = _mode_metric(ordered, "enthalpy")
     entropy = _mode_metric(ordered, "entropy")
     heat_capacity = _mode_metric(ordered, "heat_capacity")
@@ -248,6 +271,8 @@ def _build_mode(mode_id: int, poses: Sequence[PoseResult], rank: int = 1) -> Bin
         rank=rank,
         poses=list(ordered),
         free_energy=free_energy,
+        proxy_free_energy=proxy_free_energy,
+        soft_beta_G=soft_beta_G,
         enthalpy=enthalpy,
         entropy=entropy,
         heat_capacity=heat_capacity,
@@ -255,6 +280,7 @@ def _build_mode(mode_id: int, poses: Sequence[PoseResult], rank: int = 1) -> Bin
         best_cf=best_pose.cf if best_pose else None,
         frequency=_mode_frequency(ordered),
         temperature=temperature,
+        scientific_provenance=provenance,
         metadata=metadata,
     )
 
@@ -263,16 +289,21 @@ def load_results(path: str | Path) -> DockingResult:
     """Load all docking results from a FlexAID∆S output directory.
 
     Recursively scans *path* for PDB files, parses their REMARK headers to
-    extract thermodynamic quantities and cluster assignments, then assembles
-    the results into a :class:`~flexaidds.models.DockingResult`.
+    extract ensemble diagnostics, schema-v2 provenance and cluster
+    assignments, then assembles the results into a
+    :class:`~flexaidds.models.DockingResult`.
+
+    Mode order reproduces the engine's own election: modes are ranked by the
+    emitted ``soft_beta_G`` objective when any mode carries it, and by the
+    legacy free-energy transform otherwise.
 
     Args:
         path: Path to the directory containing docking result PDB files.
             May be a string or :class:`pathlib.Path`; ``~`` is expanded.
 
     Returns:
-        :class:`~flexaidds.models.DockingResult` containing all discovered
-        binding modes, sorted by ``mode_id``.
+        :class:`~flexaidds.models.DockingResult` whose ``binding_modes`` are
+        ordered best-first with 1-based ``rank`` stamped on each mode.
 
     Raises:
         FileNotFoundError: If *path* does not exist.
@@ -282,7 +313,9 @@ def load_results(path: str | Path) -> DockingResult:
 
         result = load_results("output/run1")
         for mode in result.binding_modes:
-            print(mode.mode_id, mode.free_energy, mode.n_poses)
+            # Interpretation is gated by mode.claim_validity, not by the name
+            # of the field; CF-domain output is proxy-only.
+            print(mode.mode_id, mode.claim_validity.value, mode.soft_beta_G)
     """
     root = Path(path).expanduser().resolve()
     if not root.exists():
@@ -314,29 +347,32 @@ def load_results(path: str | Path) -> DockingResult:
     # Build modes (initially with rank=1, will be corrected after sorting)
     modes = [_build_mode(mode_id, poses, rank=1) for mode_id, poses in sorted(grouped.items())]
 
-    # Sort modes by ensemble free-energy estimate F (lowest first); fallback mode_id
-    modes_sorted = sorted(
-        modes,
-        key=lambda m: (m.free_energy is None, m.free_energy, m.mode_id)
-    )
-
-    # Assign correct ranks (1-based, 1 = best)
-    modes_with_ranks = [
-        BindingModeResult(
-            mode_id=m.mode_id,
-            rank=rank,
-            poses=m.poses,
-            free_energy=m.free_energy,
-            enthalpy=m.enthalpy,
-            entropy=m.entropy,
-            heat_capacity=m.heat_capacity,
-            std_energy=m.std_energy,
-            best_cf=m.best_cf,
-            frequency=m.frequency,
-            temperature=m.temperature,
-            metadata=m.metadata,
+    # Mode ordering.  When the engine emitted its own election objective
+    # (soft_beta_G) we must reproduce the engine's ranking rather than re-rank
+    # on the legacy free-energy transform.  When no mode carries the election
+    # field (legacy output) the historical free-energy order is preserved
+    # byte-for-byte so old result directories load unchanged.
+    if any(m.soft_beta_G is not None for m in modes):
+        def _order_key(m: BindingModeResult):
+            return (
+                m.soft_beta_G is None,
+                m.soft_beta_G if m.soft_beta_G is not None else float("inf"),
+                m.free_energy is None,
+                m.free_energy if m.free_energy is not None else float("inf"),
+                m.mode_id,
+            )
+        modes_sorted = sorted(modes, key=_order_key)
+    else:
+        modes_sorted = sorted(
+            modes,
+            key=lambda m: (m.free_energy is None, m.free_energy, m.mode_id)
         )
-        for rank, m in enumerate(modes_sorted, start=1)
+
+    # Assign correct ranks (1-based, 1 = best).  `replace` keeps every field of
+    # the mode (including provenance and the schema-v2 numerics) so new fields
+    # can never be silently dropped by this re-stamp.
+    modes_with_ranks = [
+        replace(m, rank=rank) for rank, m in enumerate(modes_sorted, start=1)
     ]
 
     temperature = next((m.temperature for m in modes_with_ranks if m.temperature is not None), None)

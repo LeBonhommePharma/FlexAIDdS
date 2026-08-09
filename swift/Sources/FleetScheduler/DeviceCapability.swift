@@ -54,6 +54,30 @@ public struct DeviceCapability: Sendable, Codable, Hashable {
         case critical
     }
 
+    public init(
+        deviceID: String,
+        model: String,
+        estimatedTFLOPS: Double,
+        hasGPU: Bool,
+        availableMemoryGB: Double,
+        thermalState: ThermalState,
+        batteryLevel: Double? = nil,
+        isCharging: Bool = true,
+        computeWeight: Double,
+        snapshotAt: Date = Date()
+    ) {
+        self.deviceID = deviceID
+        self.model = model
+        self.estimatedTFLOPS = estimatedTFLOPS
+        self.hasGPU = hasGPU
+        self.availableMemoryGB = availableMemoryGB
+        self.thermalState = thermalState
+        self.batteryLevel = batteryLevel
+        self.isCharging = isCharging
+        self.computeWeight = computeWeight
+        self.snapshotAt = snapshotAt
+    }
+
     /// Detect capabilities of the current device.
     public static func current() -> DeviceCapability {
         let processInfo = ProcessInfo.processInfo

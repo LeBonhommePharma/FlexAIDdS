@@ -14,16 +14,33 @@ import FlexAIDCore
 /// - Entropy: S = (<E> - F) / T
 /// - Heat capacity: C_v = (<E^2> - <E>^2) / (kT^2)
 public struct ThermodynamicResult: Sendable, Codable, Hashable {
+    /// Scientific provenance. Missing legacy metadata fails closed to proxy-only.
+    public let scientificProvenance: ScientificProvenance?
+
+    /// Strongest claim supported by the declared provenance.
+    public var claimValidity: ClaimValidity {
+        scientificProvenance?.claimValidity ?? .proxyOnly
+    }
+
+    public var allowsCanonicalClaims: Bool {
+        claimValidity == .canonicalPhysical || claimValidity == .bindingPhysical
+    }
+
+    public var allowsBindingClaims: Bool {
+        claimValidity == .bindingPhysical
+    }
+
     /// Temperature in Kelvin
     public let temperature: Double
 
     /// Natural log of the partition function ln(Z)
     public let logZ: Double
 
-    /// Helmholtz free energy F = -kT ln Z (kcal/mol)
+    /// Helmholtz-like F = -kT ln Z in the declared energy domain.
+    /// Units are kcal/mol only for calibrated provenance.
     public let freeEnergy: Double
 
-    /// Boltzmann-weighted mean energy <E> (kcal/mol)
+    /// Boltzmann-weighted mean energy <E> in the declared energy domain.
     public let meanEnergy: Double
 
     /// Mean squared energy <E^2>
@@ -32,14 +49,16 @@ public struct ThermodynamicResult: Sendable, Codable, Hashable {
     /// Heat capacity C_v = (<E^2> - <E>^2) / (kT^2)
     public let heatCapacity: Double
 
-    /// Conformational entropy S = (<E> - F) / T (kcal mol^-1 K^-1)
+    /// Conformational entropy-like value S = (<E> - F) / T in the declared
+    /// energy domain per kelvin; physical kcal mol^-1 K^-1 requires calibration.
     public let entropy: Double
 
-    /// Standard deviation of energy sigma_E (kcal/mol)
+    /// Standard deviation in the declared energy domain.
     public let stdEnergy: Double
 
     /// Initialize from a C FXThermodynamics struct
     init(from c: FXThermodynamics) {
+        self.scientificProvenance = ScientificProvenance(from: c.scientific_provenance)
         self.temperature = c.temperature
         self.logZ = c.log_Z
         self.freeEnergy = c.free_energy
@@ -54,8 +73,10 @@ public struct ThermodynamicResult: Sendable, Codable, Hashable {
     public init(
         temperature: Double, logZ: Double, freeEnergy: Double,
         meanEnergy: Double, meanEnergySq: Double,
-        heatCapacity: Double, entropy: Double, stdEnergy: Double
+        heatCapacity: Double, entropy: Double, stdEnergy: Double,
+        scientificProvenance: ScientificProvenance? = nil
     ) {
+        self.scientificProvenance = scientificProvenance
         self.temperature = temperature
         self.logZ = logZ
         self.freeEnergy = freeEnergy

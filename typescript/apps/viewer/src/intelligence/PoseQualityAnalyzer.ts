@@ -7,6 +7,7 @@
 // Copyright 2024-2026 Louis-Philippe Morency / NRGlab, Universite de Montreal
 // SPDX-License-Identifier: Apache-2.0
 
+import { allowsBindingClaims } from '@bonhomme/shared';
 import type { PoseQualityContext } from '@bonhomme/shared';
 import type { PoseQualityReport } from '@bonhomme/shared';
 
@@ -23,20 +24,28 @@ export class PoseQualityAnalyzer {
    * Evaluate pose quality using threshold logic.
    */
   static evaluate(context: PoseQualityContext): PoseQualityReport {
+    const bindingPhysical = allowsBindingClaims({
+      available: context.thermodynamicsAvailable,
+      scientificProvenance: context.scientificProvenance,
+    });
     if (context.topPoses.length === 0) {
       return {
         topPoseSummary: 'No poses available for this binding mode.',
         poseConsensus: 'weak',
         scoreWeightAlignment: 'No data available.',
         confidenceInTopPose: 0.0,
-        medicinalChemistryNote: 'No poses to evaluate. Check docking parameters and re-run.',
+        medicinalChemistryNote: bindingPhysical
+          ? 'No poses to evaluate. Check docking parameters and re-run.'
+          : 'No ensemble/CF diagnostic poses to evaluate; physical affinity unavailable.',
       };
     }
 
     const top = context.topPoses[0];
 
     // Top pose summary
-    const topPoseSummary = `Pose ${top.rank + 1} (CF = ${top.cfScore.toFixed(1)} kcal/mol) carries ${(top.boltzmannWeight * 100).toFixed(0)}% Boltzmann weight at RMSD ${top.rmsdToCentroid.toFixed(1)} A from mode centroid.`;
+    const topPoseSummary = bindingPhysical
+      ? `Pose ${top.rank + 1} (CF diagnostic = ${top.cfScore.toFixed(1)} arbitrary units) carries ${(top.boltzmannWeight * 100).toFixed(0)}% Boltzmann weight at RMSD ${top.rmsdToCentroid.toFixed(1)} A from mode centroid.`
+      : `Pose ${top.rank + 1} (ensemble/CF diagnostic = ${top.cfScore.toFixed(1)} arbitrary units) carries ${(top.boltzmannWeight * 100).toFixed(0)}% diagnostic weight at RMSD ${top.rmsdToCentroid.toFixed(1)} A from mode centroid; physical affinity unavailable.`;
 
     // Consensus
     let poseConsensus: string;
@@ -53,11 +62,17 @@ export class PoseQualityAnalyzer {
     // Score-weight alignment
     let scoreWeightAlignment: string;
     if (context.scoreWeightCorrelation > HIGH_CORRELATION) {
-      scoreWeightAlignment = 'Well aligned — best CF scores correspond to highest Boltzmann weights. Entropy and enthalpy agree.';
+      scoreWeightAlignment = bindingPhysical
+        ? 'Well aligned — best CF scores correspond to highest Boltzmann weights. Entropy and enthalpy agree.'
+        : 'Well aligned ensemble/CF diagnostic — CF ordering matches diagnostic weights; physical affinity unavailable.';
     } else if (context.scoreWeightCorrelation > MODERATE_CORRELATION) {
-      scoreWeightAlignment = 'Partially aligned — some entropy-enthalpy tension in pose ranking.';
+      scoreWeightAlignment = bindingPhysical
+        ? 'Partially aligned — some entropy-enthalpy tension in pose ranking.'
+        : 'Partially aligned ensemble/CF diagnostic — CF ordering and diagnostic weights differ.';
     } else {
-      scoreWeightAlignment = 'Misaligned — entropy fights enthalpy. The energetically best pose is not the most thermodynamically populated. Consider ensemble-averaged analysis.';
+      scoreWeightAlignment = bindingPhysical
+        ? 'Misaligned — entropy fights enthalpy. The energetically best pose is not the most thermodynamically populated. Consider ensemble-averaged analysis.'
+        : 'Misaligned ensemble/CF diagnostic — the best CF score is not the highest diagnostic-weight pose. Physical affinity unavailable.';
     }
 
     // Confidence
@@ -70,7 +85,9 @@ export class PoseQualityAnalyzer {
 
     // Medicinal chemistry note
     let medicinalChemistryNote: string;
-    if (poseConsensus === 'strong' && context.scoreWeightAligned) {
+    if (!bindingPhysical) {
+      medicinalChemistryNote = 'Use the pose geometry as an ensemble/CF diagnostic only. Physical affinity unavailable until binding_physical provenance is supplied.';
+    } else if (poseConsensus === 'strong' && context.scoreWeightAligned) {
       medicinalChemistryNote = 'High-confidence binding pose. The predicted geometry is suitable for structure-based design and interaction analysis.';
     } else if (poseConsensus === 'ambiguous') {
       medicinalChemistryNote = 'Multiple competing poses with similar weights. Consider whether the ligand has internal symmetry or if the binding site accommodates multiple orientations. Validate with experimental data before committing to a single geometry.';

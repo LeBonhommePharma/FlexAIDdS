@@ -452,22 +452,14 @@ extension FleetScheduler {
             ))
         }
 
-        // Affinity
-        if thermo.freeEnergy < -10 {
-            findings.append(CrossPlatformRefereeFinding(
-                title: "Strong aggregated binding",
-                detail: "F = \(String(format: "%.1f", thermo.freeEnergy)) kcal/mol across fleet — promising lead.",
-                severity: "pass",
-                category: "affinity"
-            ))
-        } else if thermo.freeEnergy > -5 {
-            findings.append(CrossPlatformRefereeFinding(
-                title: "Weak aggregated binding",
-                detail: "F = \(String(format: "%.1f", thermo.freeEnergy)) kcal/mol — consider structural optimization.",
-                severity: "warning",
-                category: "affinity"
-            ))
-        }
+        // Fleet aggregation currently carries no calibrated energy/measure/
+        // reference provenance, so it cannot support an affinity claim.
+        findings.append(CrossPlatformRefereeFinding(
+            title: "Aggregated affinity unavailable",
+            detail: "Fleet F is an ensemble-score diagnostic; a calibrated matched association cycle was not supplied.",
+            severity: "advisory",
+            category: "provenance"
+        ))
 
         let action = trustworthy
             ? "Fleet results reliable. Proceed with full FOPTICS re-clustering."

@@ -3,16 +3,21 @@
 // Copyright 2024-2026 Louis-Philippe Morency / NRGlab, Universite de Montreal
 // SPDX-License-Identifier: Apache-2.0
 
+import type {
+  ClaimValidity,
+  ThermodynamicClaimSource,
+} from './BindingPopulation.js';
+
 /** Driver of selectivity between targets. */
 export type SelectivityDriver = 'enthalpic' | 'entropic' | 'mixed' | 'inconclusive';
 
-/** Delta-delta-G between two targets. */
+/** Numeric difference between two target ensemble scores. */
 export interface DeltaDeltaG {
   /** First target identifier */
   targetA: string;
   /** Second target identifier */
   targetB: string;
-  /** Delta-delta-G value (kcal/mol) */
+  /** Score difference; physical delta-delta-G only for binding-physical inputs. */
   ddg: number;
 }
 
@@ -20,7 +25,7 @@ export interface DeltaDeltaG {
 export interface SelectivityAnalysis {
   /** Preferred target identifier */
   preferredTarget: string;
-  /** Free energy of binding to preferred target (kcal/mol) */
+  /** Numeric difference between the top two target scores. */
   deltaG: number;
   /** Thermodynamic driver of selectivity */
   driver: SelectivityDriver;
@@ -28,4 +33,8 @@ export interface SelectivityAnalysis {
   explanation: string;
   /** Suggestion for improving selectivity by design */
   designSuggestion: string;
+  /** Derived scientific claim level for the target comparison. */
+  claimValidity?: ClaimValidity;
+  /** Evidence-bearing target sources; UI consumers must re-derive validity. */
+  claimSources?: ThermodynamicClaimSource[];
 }

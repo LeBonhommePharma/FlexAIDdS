@@ -15,6 +15,10 @@ import type { ConvergenceCoaching, GAAdvice } from '@bonhomme/shared';
 import type { SelectivityAnalysis, SelectivityDriver } from '@bonhomme/shared';
 import type { PoseQualityReport } from '@bonhomme/shared';
 import { RefereePanel } from './RefereePanel.js';
+import {
+  cleftAllowsDruggabilityClaim,
+  selectivityAllowsPhysicalAffinity,
+} from './claimPresentation.js';
 
 // ─── Props ──────────────────────────────────────────────────────────────────
 
@@ -145,13 +149,24 @@ function BindingModesSection({ narrative }: { narrative: BindingModeNarrative })
 
 // ─── Section: Cleft Assessment ──────────────────────────────────────────────
 
+const DIAGNOSTIC_BADGE = { bg: '#f5f5f5', text: '#616161' };
+
 function CleftSection({ assessment }: { assessment: CleftAssessment }) {
-  const colors = DRUGGABILITY_COLORS[assessment.druggability];
+  // The tier itself is the druggability claim; without binding-physical
+  // evidence it is presented as a shape diagnostic, not a verdict.
+  const druggabilityClaimed = cleftAllowsDruggabilityClaim(assessment);
+  const colors = druggabilityClaimed
+    ? DRUGGABILITY_COLORS[assessment.druggability]
+    : DIAGNOSTIC_BADGE;
   return (
     <div style={{ marginBottom: '16px' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
-        <SectionHeader title="Pocket Quality" />
-        <Badge label={assessment.druggability} bg={colors.bg} text={colors.text} />
+        <SectionHeader title={druggabilityClaimed ? 'Pocket Quality' : 'Pocket Geometry'} />
+        <Badge
+          label={druggabilityClaimed ? assessment.druggability : 'geometry diagnostic'}
+          bg={colors.bg}
+          text={colors.text}
+        />
       </div>
       <DetailText text={assessment.summary} />
       <p style={{ margin: '4px 0', fontSize: '12px', color: '#555' }}>
@@ -193,20 +208,46 @@ function ConvergenceSection({ coaching }: { coaching: ConvergenceCoaching }) {
 
 // ─── Section: Selectivity ───────────────────────────────────────────────────
 
+/** Fixed text shown instead of producer prose that we cannot vouch for. */
+const PROXY_SELECTIVITY_EXPLANATION =
+  'Target ordering is an ensemble/CF diagnostic. Physical affinity, potency '
+  + 'and selectivity are unavailable: the supplied records do not carry '
+  + 'binding-physical provenance.';
+const PROXY_SELECTIVITY_SUGGESTION =
+  'Supply calibrated energy, ensemble-measure and matched association-cycle '
+  + 'SHA-256 artifact identities for both targets before any affinity-driven '
+  + 'design decision.';
+
 function SelectivitySection({ analysis }: { analysis: SelectivityAnalysis }) {
-  const colors = DRIVER_COLORS[analysis.driver];
+  const bindingPhysical = selectivityAllowsPhysicalAffinity(analysis);
+  const displayedDriver = bindingPhysical ? analysis.driver : 'inconclusive';
+  const colors = DRIVER_COLORS[displayedDriver];
+  // `explanation` / `designSuggestion` are free text from whoever produced the
+  // payload. For proxy data they are the most likely place for an unbacked
+  // affinity or potency claim to leak into the UI, so they are replaced
+  // wholesale rather than annotated.
+  const explanation = bindingPhysical
+    ? analysis.explanation
+    : PROXY_SELECTIVITY_EXPLANATION;
+  const designSuggestion = bindingPhysical
+    ? analysis.designSuggestion
+    : PROXY_SELECTIVITY_SUGGESTION;
   return (
     <div style={{ marginBottom: '16px' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
-        <SectionHeader title="Selectivity" />
-        <Badge label={analysis.driver} bg={colors.bg} text={colors.text} />
+        <SectionHeader title={bindingPhysical ? 'Selectivity' : 'Target Ensemble / CF Diagnostic'} />
+        <Badge label={bindingPhysical ? analysis.driver : 'diagnostic'} bg={colors.bg} text={colors.text} />
       </div>
       <p style={{ margin: '4px 0', fontSize: '13px', color: '#333' }}>
-        <strong>Preferred:</strong> {analysis.preferredTarget} (DDG = {analysis.deltaG.toFixed(2)} kcal/mol)
+        <strong>{bindingPhysical ? 'Preferred:' : 'Top diagnostic rank:'}</strong>{' '}
+        {analysis.preferredTarget}{' '}
+        {bindingPhysical
+          ? `(DDG = ${analysis.deltaG.toFixed(2)} kcal/mol)`
+          : `(ensemble/CF diagnostic difference = ${analysis.deltaG.toFixed(2)} source units; physical affinity unavailable)`}
       </p>
-      <DetailText text={analysis.explanation} />
+      <DetailText text={explanation} />
       <p style={{ margin: '4px 0', fontSize: '12px', color: '#555', fontStyle: 'italic' }}>
-        {analysis.designSuggestion}
+        {designSuggestion}
       </p>
     </div>
   );

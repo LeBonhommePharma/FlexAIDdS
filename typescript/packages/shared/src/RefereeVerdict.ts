@@ -6,6 +6,8 @@
 // Copyright 2024-2026 Louis-Philippe Morency / NRGlab, Universite de Montreal
 // SPDX-License-Identifier: Apache-2.0
 
+import type { ThermodynamicClaimSource } from './BindingPopulation.js';
+
 /** Severity level for a referee finding. */
 export type RefereeSeverity = 'pass' | 'advisory' | 'warning' | 'critical';
 
@@ -41,6 +43,8 @@ export interface RefereeVerdict {
   recommendedAction: string;
   /** Confidence in the verdict (0.0-1.0) */
   confidence: number;
+  /** Evidence-bearing source; consumers must derive validity from it. */
+  claimSource?: ThermodynamicClaimSource;
 }
 
 /** Temperature sensitivity analysis result. */

@@ -7,6 +7,7 @@
 // Copyright 2024-2026 Louis-Philippe Morency / NRGlab, Universite de Montreal
 // SPDX-License-Identifier: Apache-2.0
 
+import { allowsBindingClaims } from '@bonhomme/shared';
 import type { BindingPopulation } from '@bonhomme/shared';
 import type { ModeDescription, BindingModeNarrative } from '@bonhomme/shared';
 
@@ -30,7 +31,8 @@ export class BindingModeAnalyzer {
    */
   static analyze(population: BindingPopulation): BindingModeNarrative {
     const profiles = BindingModeAnalyzer.buildProfiles(population);
-    const descriptions = profiles.map((mode) => BindingModeAnalyzer.describeMode(mode));
+    const bindingPhysical = allowsBindingClaims(population.globalThermodynamics);
+    const descriptions = profiles.map((mode) => BindingModeAnalyzer.describeMode(mode, bindingPhysical));
 
     // Find dominant mode (highest Boltzmann weight)
     const dominantIdx = profiles.reduce(
@@ -41,9 +43,13 @@ export class BindingModeAnalyzer {
     const dominant = profiles[dominantIdx];
     let selectivityInsight: string;
     if (dominant) {
-      selectivityInsight = `Mode ${dominant.index + 1} dominates (${(dominant.boltzmannWeight * 100).toFixed(0)}% weight). Focus SAR optimization on this binding geometry.`;
+      selectivityInsight = bindingPhysical
+        ? `Mode ${dominant.index + 1} dominates (${(dominant.boltzmannWeight * 100).toFixed(0)}% weight). Focus SAR optimization on this binding geometry.`
+        : `Mode ${dominant.index + 1} dominates the ensemble/CF diagnostic (${(dominant.boltzmannWeight * 100).toFixed(0)}% diagnostic weight). Physical affinity unavailable; retain this ordering only as a pose-ensemble diagnostic.`;
     } else {
-      selectivityInsight = 'No dominant mode — population is diverse across geometries.';
+      selectivityInsight = bindingPhysical
+        ? 'No dominant mode — population is diverse across geometries.'
+        : 'No dominant mode in the ensemble/CF diagnostic; physical affinity unavailable.';
     }
 
     const confidence = profiles.length >= 2 ? 0.8 : 0.5;
@@ -73,7 +79,7 @@ export class BindingModeAnalyzer {
     });
   }
 
-  private static describeMode(mode: ModeProfile): ModeDescription {
+  private static describeMode(mode: ModeProfile, bindingPhysical: boolean): ModeDescription {
     // Driving force
     let driving: string;
     if (mode.isEntropyDriven) {
@@ -86,6 +92,18 @@ export class BindingModeAnalyzer {
 
     // Tightness
     const tightness = mode.poseCount < 5 ? 'tight cluster' : mode.poseCount < 20 ? 'moderate cluster' : 'broad ensemble';
+
+    if (!bindingPhysical) {
+      const diagnosticDriver = mode.isEntropyDriven
+        ? 'high entropy-slot influence'
+        : mode.isEnthalpyDriven
+          ? 'high direct-score influence'
+          : 'balanced score/entropy slots';
+      return {
+        characterization: `Mode ${mode.index + 1}: ${tightness} (${mode.poseCount} poses), ensemble/CF diagnostic = ${mode.freeEnergy.toFixed(1)} (source units), ${diagnosticDriver}. Diagnostic weight ${(mode.boltzmannWeight * 100).toFixed(0)}%.`,
+        optimizationHint: 'Physical affinity unavailable; validate calibrated energy, ensemble measure, and matched association-cycle artifacts before potency or selectivity claims.',
+      };
+    }
 
     const characterization = `Mode ${mode.index + 1}: ${tightness} (${mode.poseCount} poses), F = ${mode.freeEnergy.toFixed(1)} kcal/mol, ${driving}. Boltzmann weight ${(mode.boltzmannWeight * 100).toFixed(0)}%.`;
 

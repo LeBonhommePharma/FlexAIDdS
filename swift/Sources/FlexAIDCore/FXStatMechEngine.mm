@@ -6,17 +6,10 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include "FXStatMechEngine.h"
-#include "statmech.h"
+#include "FXStatMechBridgeInternal.hpp"
 
 #include <vector>
 #include <cstring>
-
-// ─── Opaque implementation ──────────────────────────────────────────────────
-
-struct FXStatMechEngineImpl {
-    statmech::StatMechEngine engine;
-    explicit FXStatMechEngineImpl(double T) : engine(T) {}
-};
 
 // ─── Memory helpers ─────────────────────────────────────────────────────────
 
@@ -32,21 +25,6 @@ extern "C" void fx_free_pose_infos(FXPoseInfo* ptr) {
     delete[] ptr;
 }
 
-// ─── Helper: C++ Thermodynamics → C FXThermodynamics ────────────────────────
-
-static FXThermodynamics to_fx(const statmech::Thermodynamics& t) {
-    FXThermodynamics fx;
-    fx.temperature    = t.temperature;
-    fx.log_Z          = t.log_Z;
-    fx.free_energy    = t.free_energy;
-    fx.mean_energy    = t.mean_energy;
-    fx.mean_energy_sq = t.mean_energy_sq;
-    fx.heat_capacity  = t.heat_capacity;
-    fx.entropy        = t.entropy;
-    fx.std_energy     = t.std_energy;
-    return fx;
-}
-
 // ─── Lifecycle ──────────────────────────────────────────────────────────────
 
 extern "C" FXStatMechEngineRef fx_statmech_create(double temperature_K) {
@@ -55,6 +33,29 @@ extern "C" FXStatMechEngineRef fx_statmech_create(double temperature_K) {
 
 extern "C" void fx_statmech_destroy(FXStatMechEngineRef engine) {
     delete engine;
+}
+
+extern "C" void fx_statmech_set_scientific_provenance(
+    FXStatMechEngineRef engine,
+    int32_t schema_version,
+    int32_t energy_domain,
+    int32_t ensemble_measure,
+    int32_t reference_state,
+    const char* energy_provenance,
+    const char* measure_provenance,
+    const char* reference_provenance
+) {
+    if (!engine) return;
+
+    statmech::ScientificProvenance provenance;
+    provenance.schema_version = schema_version;
+    provenance.energy_domain = statmech_energy_domain_from_fx(energy_domain);
+    provenance.ensemble_measure = statmech_ensemble_measure_from_fx(ensemble_measure);
+    provenance.reference_state = statmech_reference_state_from_fx(reference_state);
+    provenance.energy_provenance = energy_provenance ? energy_provenance : "";
+    provenance.measure_provenance = measure_provenance ? measure_provenance : "";
+    provenance.reference_provenance = reference_provenance ? reference_provenance : "";
+    engine->engine.set_provenance(provenance);
 }
 
 // ─── Sample management ──────────────────────────────────────────────────────
@@ -78,7 +79,7 @@ extern "C" FXThermodynamics fx_statmech_compute(FXStatMechEngineRef engine) {
         FXThermodynamics empty = {};
         return empty;
     }
-    return to_fx(engine->engine.compute());
+    return fx_thermodynamics_from_cpp(engine->engine.compute());
 }
 
 extern "C" double* fx_statmech_boltzmann_weights(FXStatMechEngineRef engine, int* out_count) {

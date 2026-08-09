@@ -9,6 +9,7 @@
 //
 // Eigen is used for vectorised log() / probability array ops on all CPU paths.
 #include "ShannonThermoStack.h"
+#include "ShannonBinning.h"
 
 #ifdef FLEXAIDS_HAS_METAL_SHANNON
 #  include "ShannonMetalBridge.h"
@@ -32,6 +33,8 @@ static bool           s_cuda_ready = false;
 
 #include <algorithm>
 #include <cmath>
+#include <cstddef>
+#include <cstdlib>
 #include <numeric>
 #include <vector>
 
@@ -158,10 +161,17 @@ static void histogram_avx512(const double* values, int n,
     __m512d vmin   = _mm512_set1_pd(min_v);
     __m512d vinvbw = _mm512_set1_pd(inv_bw);
 
+    const __m512d vlo = _mm512_setzero_pd();
+    const __m512d vhi = _mm512_set1_pd(static_cast<double>(num_bins - 1));
     for (; i + 7 < n; i += 8) {
         __m512d ve   = _mm512_loadu_pd(values + i);
         __m512d vrel = _mm512_fmadd_pd(ve, vinvbw,
                            _mm512_mul_pd(_mm512_set1_pd(-min_v), vinvbw));
+        // Clamp in double BEFORE narrowing: with a fenced support vrel can fall
+        // far outside [0, num_bins), and converting that to int32 is UB (and
+        // lands the value in the wrong edge bin). _mm512_max_pd also maps NaN
+        // to the lower bound here.
+        vrel = _mm512_min_pd(_mm512_max_pd(vrel, vlo), vhi);
         // Convert 8 doubles → 8 int32 (truncate)
         __m256i v32 = _mm512_cvttpd_epi32(vrel);
         alignas(32) int tmp[8];
@@ -171,11 +181,8 @@ static void histogram_avx512(const double* values, int n,
             priv[b]++;
         }
     }
-    for (; i < n; ++i) {
-        int b = static_cast<int>((values[i] - min_v) * inv_bw);
-        b = std::min(std::max(b, 0), num_bins - 1);
-        priv[b]++;
-    }
+    for (; i < n; ++i)
+        priv[bin_index(values[i], min_v, inv_bw, num_bins)]++;
 }
 #endif // __AVX512F__
 
@@ -189,6 +196,15 @@ double compute_shannon_entropy(const std::vector<double>& values, int num_bins) 
     double min_v = *it_min;
     double max_v = *it_max;
     if (max_v - min_v < 1e-12) return 0.0;
+
+    // Outlier-robust support; see robust_support() above.
+    double rob_lo = 0.0, rob_hi = 0.0;
+    const bool robust = robust_support(values, min_v, max_v, rob_lo, rob_hi);
+    if (robust) {
+        min_v = rob_lo;
+        max_v = rob_hi;
+    }
+
     double bin_width = (max_v - min_v) / num_bins + 1e-10;
     double inv_bw    = 1.0 / bin_width;
     int    n         = static_cast<int>(values.size());
@@ -216,7 +232,12 @@ if (n > GPU_DISPATCH_THRESHOLD) {
 
 // ── 2. Metal ──────────────────────────────────────────────────────────────────
 #ifdef FLEXAIDS_HAS_METAL_SHANNON
-    return ShannonMetalBridge::compute_shannon_entropy_metal(values, num_bins);
+    // The Metal bridge derives the histogram support internally from the raw
+    // sample, so it cannot honour a robust fence. When one is active, fall
+    // through to the CPU paths rather than silently returning the
+    // outlier-dominated value the fence exists to prevent.
+    if (!robust)
+        return ShannonMetalBridge::compute_shannon_entropy_metal(values, num_bins);
 #endif
 } // GPU_DISPATCH_THRESHOLD
 
@@ -229,8 +250,15 @@ if (n > GPU_DISPATCH_THRESHOLD) {
         Eigen::MatrixXi t_bins = Eigen::MatrixXi::Zero(n_threads, num_bins);
         #pragma omp parallel
         {
+            // Chunking must use the team size actually granted, not
+            // omp_get_max_threads(). When the runtime hands out fewer threads
+            // than the maximum (nested regions, dynamic teams, an active
+            // num_threads clause), a max-derived chunk leaves the tail of the
+            // sample unvisited while the normalisation below still divides by
+            // the full count — silently dropping samples from the histogram.
+            const int nt = omp_get_num_threads();
             int tid    = omp_get_thread_num();
-            int chunk  = (n + n_threads - 1) / n_threads;
+            int chunk  = (n + nt - 1) / nt;
             int start  = tid * chunk;
             int end_i  = std::min(start + chunk, n);
             if (start < end_i) {
@@ -257,8 +285,7 @@ if (n > GPU_DISPATCH_THRESHOLD) {
         #pragma omp parallel for schedule(static)
         for (int i = 0; i < n; ++i) {
             int tid = omp_get_thread_num();
-            int b   = static_cast<int>((values[i] - min_v) * inv_bw);
-            t_bins(tid, std::min(std::max(b, 0), num_bins - 1))++;
+            t_bins(tid, bin_index(values[i], min_v, inv_bw, num_bins))++;
         }
         Eigen::VectorXi col_sums = t_bins.colwise().sum();
         for (int b = 0; b < num_bins; ++b) bins[b] = col_sums(b);
@@ -266,10 +293,8 @@ if (n > GPU_DISPATCH_THRESHOLD) {
 
 // ── 5. Scalar ─────────────────────────────────────────────────────────────────
 #else
-    for (int i = 0; i < n; ++i) {
-        int b = static_cast<int>((values[i] - min_v) * inv_bw);
-        bins[std::min(std::max(b, 0), num_bins - 1)]++;
-    }
+    for (int i = 0; i < n; ++i)
+        bins[bin_index(values[i], min_v, inv_bw, num_bins)]++;
 #endif
 
     return entropy_from_counts(bins.data(), num_bins, n);
@@ -359,11 +384,28 @@ FullThermoResult run_shannon_thermo_stack(
     double S_vib        = tencm_model.is_built()
                           ? compute_torsional_vibrational_entropy(tencm_model.modes(), temperature_K)
                           : 0.0;
-    // Shannon H is in nats (natural log). Convert to physical units:
+    // Shannon H is in nats (natural log). Converting to physical units:
     //     S_conf [kcal/(mol·K)] = k_B · H [nats]
+    //
+    // ⚠ That unit label is only earned when the weights w_i came from a
+    // calibrated physical energy scale. The engine's provenance is the
+    // authority, and a CF/contact-function optimizer ensemble is proxy-only:
+    // its weights are a softmax over arbitrary units, so k_B is dimensionally
+    // meaningless here and -T·k_B·H is not a kcal/mol free-energy term.
+    //
+    // The numbers below are deliberately left unchanged. This branch's
+    // provenance contract (statmech.h) is explicit that the metadata "never
+    // participates in energy evaluation, weighting, ranking, or sorting", and
+    // this ΔG is consumed by the GA. Gating the arithmetic on provenance would
+    // silently drop an entropy term from production docking output — a
+    // science-affecting change that belongs in a benchmarked A/B, not in a
+    // labeling fix. The calibration status is surfaced in the report instead,
+    // so a reader can tell whether "kcal/mol" is a claim or a placeholder.
+    const bool calibrated =
+        stat_engine.provenance().allows_canonical_physical_claim();
     double S_conf_phys  = S_conf_nats * kB_kcal;
 
-    // The torsional ENCoM path is currently model-scale only. Keep S_vib in
+    // The torsional ENCoM path is separately model-scale only. Keep S_vib in
     // the result/report as a relative flexibility diagnostic, but do not fold it
     // into kcal/mol free-energy terms until a calibrated frequency path reaches
     // this stack.
@@ -388,7 +430,10 @@ FullThermoResult run_shannon_thermo_stack(
         std::string("ShannonThermoStack[") + hw +
         "+Eigen"
         "]: S_conf=" + std::to_string(S_conf_nats) +
-        " nats, S_vib_heuristic=" + std::to_string(S_vib) +
+        (calibrated
+             ? " nats (calibrated energy scale; -T·S is kcal/mol)"
+             : " nats (proxy-only ensemble; -T·S in CF a.u., kcal/mol label unearned)") +
+        ", S_vib_heuristic=" + std::to_string(S_vib) +
         " kcal/mol/K (model-scale heuristic; excluded from dG), ΔG=" +
         std::to_string(final_dG) + " kcal/mol";
 

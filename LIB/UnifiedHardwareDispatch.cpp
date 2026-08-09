@@ -7,6 +7,7 @@
 // Apache-2.0 (c) 2026 Le Bonhomme Pharma / NRGlab
 
 #include "UnifiedHardwareDispatch.h"
+#include "ShannonThermoStack/ShannonBinning.h"
 #include "simd_distance.h"
 #ifdef FLEXAIDS_USE_WEBGPU
 #include "../src/backends/webgpu/webgpu_eval.h"
@@ -386,26 +387,27 @@ static double entropy_from_hist(const int* counts, int num_bins, int total) {
 }
 
 double UnifiedHardwareDispatch::shannon_scalar(const std::vector<double>& values, int num_bins) {
-    double min_v = *std::min_element(values.begin(), values.end());
-    double max_v = *std::max_element(values.begin(), values.end());
-    if (max_v - min_v < 1e-12) return 0.0;
+    // Shared support (incl. the outlier-robust fence) so this estimator cannot
+    // drift from shannon_thermo::compute_shannon_entropy — see ShannonBinning.h.
+    double min_v = 0.0, max_v = 0.0;
+    if (!shannon_thermo::histogram_support(values, min_v, max_v)) return 0.0;
     double bin_width = (max_v - min_v) / num_bins + 1e-10;
     double inv_bw    = 1.0 / bin_width;
     int    n         = static_cast<int>(values.size());
 
     std::vector<int> bins(num_bins, 0);
     for (int i = 0; i < n; ++i) {
-        int b = static_cast<int>((values[i] - min_v) * inv_bw);
-        bins[std::min(std::max(b, 0), num_bins - 1)]++;
+        bins[shannon_thermo::bin_index(values[i], min_v, inv_bw, num_bins)]++;
     }
     return entropy_from_hist(bins.data(), num_bins, n);
 }
 
 double UnifiedHardwareDispatch::shannon_openmp(const std::vector<double>& values, int num_bins) {
 #ifdef _OPENMP
-    double min_v = *std::min_element(values.begin(), values.end());
-    double max_v = *std::max_element(values.begin(), values.end());
-    if (max_v - min_v < 1e-12) return 0.0;
+    // Shared support (incl. the outlier-robust fence) so this estimator cannot
+    // drift from shannon_thermo::compute_shannon_entropy — see ShannonBinning.h.
+    double min_v = 0.0, max_v = 0.0;
+    if (!shannon_thermo::histogram_support(values, min_v, max_v)) return 0.0;
     double bin_width = (max_v - min_v) / num_bins + 1e-10;
     double inv_bw    = 1.0 / bin_width;
     int    n         = static_cast<int>(values.size());
@@ -415,8 +417,7 @@ double UnifiedHardwareDispatch::shannon_openmp(const std::vector<double>& values
     #pragma omp parallel for schedule(static)
     for (int i = 0; i < n; ++i) {
         int tid = omp_get_thread_num();
-        int b   = static_cast<int>((values[i] - min_v) * inv_bw);
-        t_bins[tid][std::min(std::max(b, 0), num_bins - 1)]++;
+        t_bins[tid][shannon_thermo::bin_index(values[i], min_v, inv_bw, num_bins)]++;
     }
     std::vector<int> bins(num_bins, 0);
     for (auto& tb : t_bins)
@@ -429,9 +430,10 @@ double UnifiedHardwareDispatch::shannon_openmp(const std::vector<double>& values
 
 double UnifiedHardwareDispatch::shannon_avx512(const std::vector<double>& values, int num_bins) {
 #ifdef __AVX512F__
-    double min_v = *std::min_element(values.begin(), values.end());
-    double max_v = *std::max_element(values.begin(), values.end());
-    if (max_v - min_v < 1e-12) return 0.0;
+    // Shared support (incl. the outlier-robust fence) so this estimator cannot
+    // drift from shannon_thermo::compute_shannon_entropy — see ShannonBinning.h.
+    double min_v = 0.0, max_v = 0.0;
+    if (!shannon_thermo::histogram_support(values, min_v, max_v)) return 0.0;
     double bin_width = (max_v - min_v) / num_bins + 1e-10;
     double inv_bw    = 1.0 / bin_width;
     int    n         = static_cast<int>(values.size());
@@ -445,6 +447,10 @@ double UnifiedHardwareDispatch::shannon_avx512(const std::vector<double>& values
     for (; i + 7 < n; i += 8) {
         __m512d ve   = _mm512_loadu_pd(values.data() + i);
         __m512d vrel = _mm512_mul_pd(_mm512_sub_pd(ve, vmin), vinvbw);
+        // Clamp in double BEFORE narrowing (see ShannonBinning.h): with a fenced
+        // support vrel can fall far outside [0, num_bins) and the convert is UB.
+        vrel = _mm512_min_pd(_mm512_max_pd(vrel, _mm512_setzero_pd()),
+                             _mm512_set1_pd(static_cast<double>(num_bins - 1)));
         __m256i v32  = _mm512_cvttpd_epi32(vrel);
         alignas(32) int tmp[8];
         _mm256_storeu_si256(reinterpret_cast<__m256i*>(tmp), v32);
@@ -454,8 +460,7 @@ double UnifiedHardwareDispatch::shannon_avx512(const std::vector<double>& values
         }
     }
     for (; i < n; ++i) {
-        int b = static_cast<int>((values[i] - min_v) * inv_bw);
-        bins[std::min(std::max(b, 0), num_bins - 1)]++;
+        bins[shannon_thermo::bin_index(values[i], min_v, inv_bw, num_bins)]++;
     }
     return entropy_from_hist(bins.data(), num_bins, n);
 #else
@@ -465,9 +470,10 @@ double UnifiedHardwareDispatch::shannon_avx512(const std::vector<double>& values
 
 double UnifiedHardwareDispatch::shannon_avx512_omp(const std::vector<double>& values, int num_bins) {
 #if defined(__AVX512F__) && defined(_OPENMP)
-    double min_v = *std::min_element(values.begin(), values.end());
-    double max_v = *std::max_element(values.begin(), values.end());
-    if (max_v - min_v < 1e-12) return 0.0;
+    // Shared support (incl. the outlier-robust fence) so this estimator cannot
+    // drift from shannon_thermo::compute_shannon_entropy — see ShannonBinning.h.
+    double min_v = 0.0, max_v = 0.0;
+    if (!shannon_thermo::histogram_support(values, min_v, max_v)) return 0.0;
     double bin_width = (max_v - min_v) / num_bins + 1e-10;
     double inv_bw    = 1.0 / bin_width;
     int    n         = static_cast<int>(values.size());
@@ -477,8 +483,13 @@ double UnifiedHardwareDispatch::shannon_avx512_omp(const std::vector<double>& va
 
     #pragma omp parallel
     {
+        // Chunk on the team size actually granted, not omp_get_max_threads()
+        // read outside the region: when the runtime hands out fewer threads
+        // than the maximum, a max-derived chunk leaves the tail of the sample
+        // unvisited while the normalisation still divides by the full count,
+        // silently dropping samples. Same fix as ShannonThermoStack.cpp.
         int tid   = omp_get_thread_num();
-        int chunk = (n + n_threads - 1) / n_threads;
+        int chunk = (n + omp_get_num_threads() - 1) / omp_get_num_threads();
         int start = tid * chunk;
         int end   = std::min(start + chunk, n);
 
@@ -489,6 +500,9 @@ double UnifiedHardwareDispatch::shannon_avx512_omp(const std::vector<double>& va
         for (; i + 7 < end; i += 8) {
             __m512d ve   = _mm512_loadu_pd(values.data() + i);
             __m512d vrel = _mm512_mul_pd(_mm512_sub_pd(ve, vmin), vinvbw);
+            // Clamp in double BEFORE narrowing (see ShannonBinning.h).
+            vrel = _mm512_min_pd(_mm512_max_pd(vrel, _mm512_setzero_pd()),
+                                 _mm512_set1_pd(static_cast<double>(num_bins - 1)));
             __m256i v32  = _mm512_cvttpd_epi32(vrel);
             alignas(32) int tmp[8];
             _mm256_storeu_si256(reinterpret_cast<__m256i*>(tmp), v32);
@@ -497,10 +511,8 @@ double UnifiedHardwareDispatch::shannon_avx512_omp(const std::vector<double>& va
                 t_bins[tid][b]++;
             }
         }
-        for (; i < end; ++i) {
-            int b = static_cast<int>((values[i] - min_v) * inv_bw);
-            t_bins[tid][std::min(std::max(b, 0), num_bins - 1)]++;
-        }
+        for (; i < end; ++i)
+            t_bins[tid][shannon_thermo::bin_index(values[i], min_v, inv_bw, num_bins)]++;
     }
     std::vector<int> bins(num_bins, 0);
     for (auto& tb : t_bins)

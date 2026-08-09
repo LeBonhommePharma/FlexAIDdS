@@ -17,6 +17,7 @@
 
 import Foundation
 import FlexAIDdS
+import FlexAIDCore
 
 #if canImport(FoundationModels)
 import FoundationModels
@@ -39,7 +40,7 @@ struct RecomputeAtTemperatureTool: Tool {
         """
 
     @Generable
-    struct Input: Sendable {
+    struct Arguments: Sendable {
         /// Target temperature in Kelvin (typically 280-320 K)
         var temperature: Double
     }
@@ -47,8 +48,10 @@ struct RecomputeAtTemperatureTool: Tool {
     @Generable
     struct Output: Sendable {
         var shannonEntropy: Double      // nats
-        var vibrationalEntropy: Double  // kcal/mol/K
-        var deltaG: Double              // kcal/mol
+        // Declared-domain values. Physical kcal/mol requires the bridge record
+        // to authorize a canonical claim; otherwise these are proxy diagnostics.
+        var vibrationalEntropy: Double
+        var deltaG: Double
         var isConverged: Bool
         var report: String
     }
@@ -56,10 +59,10 @@ struct RecomputeAtTemperatureTool: Tool {
     /// Reference to the GA context for recomputation.
     let gaContext: FXGAContextRef
 
-    func call(_ input: Input) async throws -> Output {
+    func call(arguments: Arguments) async throws -> Output {
         var result = FXShannonThermoResult()
         let success = fx_ga_recompute_shannon_at_temperature(
-            gaContext, input.temperature, &result)
+            gaContext, arguments.temperature, &result)
 
         guard success != 0 else {
             return Output(
@@ -69,12 +72,19 @@ struct RecomputeAtTemperatureTool: Tool {
             )
         }
 
+        // The bridge carries the engine's own evidence for delta_G. kcal/mol
+        // may only be spoken when that evidence authorizes a canonical claim.
+        let provenance = ScientificProvenance(from: result.scientific_provenance)
+        let energyUnits = provenance.allowsCanonicalPhysicalClaim
+            ? "kcal/mol"
+            : "input-scale units (proxy diagnostic, not kcal/mol)"
+
         return Output(
             shannonEntropy: result.shannon_entropy,
             vibrationalEntropy: result.torsional_vib_entropy,
             deltaG: result.delta_G,
             isConverged: result.is_converged != 0,
-            report: "Recomputed at \(input.temperature) K: ΔG = \(String(format: "%.3f", result.delta_G)) kcal/mol, S_conf = \(String(format: "%.4f", result.shannon_entropy)) nats"
+            report: "Recomputed at \(arguments.temperature) K: ledger value = \(String(format: "%.3f", result.delta_G)) \(energyUnits), S_conf = \(String(format: "%.4f", result.shannon_entropy)) nats [claim_validity=\(provenance.claimValidity.rawValue)]"
         )
     }
 }
@@ -93,7 +103,7 @@ struct PerModeEntropyTool: Tool {
         """
 
     @Generable
-    struct Input: Sendable {
+    struct Arguments: Sendable {
         /// Maximum number of modes to return (0 = all)
         var maxModes: Int
     }
@@ -106,8 +116,8 @@ struct PerModeEntropyTool: Tool {
 
     let gaContext: FXGAContextRef
 
-    func call(_ input: Input) async throws -> Output {
-        let maxModes = input.maxModes > 0 ? input.maxModes : 100
+    func call(arguments: Arguments) async throws -> Output {
+        let maxModes = arguments.maxModes > 0 ? arguments.maxModes : 100
         var entropies = [Double](repeating: 0, count: maxModes)
         let count = fx_ga_per_mode_shannon(gaContext, &entropies, Int32(maxModes))
 
@@ -140,34 +150,41 @@ struct PerModeEntropyTool: Tool {
 struct HelmholtzCalculatorTool: Tool {
     let name = "helmholtz_free_energy"
     let description = """
-        Compute Helmholtz free energy F = -kT ln Z from energy values at a given \
-        temperature. Use this to verify free energy calculations or compute F \
-        for a subset of poses. Returns F in kcal/mol.
+        Compute F = -kT ln Z from an ad-hoc list of energy values at a given \
+        temperature. The list carries no calibration or ensemble-measure \
+        evidence, so the result is a proxy diagnostic in the input scale — \
+        never a physical free energy, affinity or potency.
         """
 
     @Generable
-    struct Input: Sendable {
+    struct Arguments: Sendable {
         /// Temperature in Kelvin
         var temperature: Double
-        /// Up to 10 representative energy values (kcal/mol) to compute F from
+        /// Up to 10 representative energy values, in the caller's own scale
         var energies: [Double]
     }
 
     @Generable
     struct Output: Sendable {
-        var freeEnergy: Double   // kcal/mol
+        /// F = -kT ln Z in the input scale. Ad-hoc energy lists can never
+        /// satisfy the calibrated-energy + ensemble-measure predicate, so this
+        /// value is structurally proxy-only.
+        var freeEnergy: Double
         var report: String
     }
 
-    func call(_ input: Input) async throws -> Output {
-        guard !input.energies.isEmpty else {
+    func call(arguments: Arguments) async throws -> Output {
+        guard !arguments.energies.isEmpty else {
             return Output(freeEnergy: 0, report: "No energies provided")
         }
 
-        let F = FlexAIDRunner.helmholtz(energies: input.energies, temperature: input.temperature)
+        let F = FlexAIDRunner.helmholtz(
+            energies: arguments.energies,
+            temperature: arguments.temperature
+        )
         return Output(
             freeEnergy: F,
-            report: "F = \(String(format: "%.3f", F)) kcal/mol from \(input.energies.count) samples at \(input.temperature) K"
+            report: "F = \(String(format: "%.3f", F)) input-scale units (proxy diagnostic, not kcal/mol) from \(arguments.energies.count) samples at \(arguments.temperature) K"
         )
     }
 }
@@ -181,19 +198,22 @@ struct VibrationalEntropyTool: Tool {
     let name = "vibrational_entropy"
     let description = """
         Compute ENCoM vibrational entropy from normal mode eigenvalues using \
-        the Schlitter formula. Returns S_vib in kcal/mol/K and the number of \
-        non-trivial modes. Use this to assess the vibrational entropy contribution.
+        the Schlitter formula, plus the number of non-trivial modes. The \
+        eigenvalues carry no calibration receipt, so S_vib is a proxy \
+        diagnostic in the input scale per kelvin and cannot support a binding \
+        or potency claim.
         """
 
     @Generable
-    struct Input: Sendable {
+    struct Arguments: Sendable {
         /// Temperature in Kelvin
         var temperature: Double
     }
 
     @Generable
     struct Output: Sendable {
-        var vibrationalEntropy: Double  // kcal/mol/K
+        /// S_vib in the input scale per kelvin; proxy-only without a receipt.
+        var vibrationalEntropy: Double
         var modeCount: Int
         var effectiveFrequency: Double  // rad/s
         var report: String
@@ -202,7 +222,7 @@ struct VibrationalEntropyTool: Tool {
     /// Cached eigenvalues from the docking run.
     let eigenvalues: [Double]
 
-    func call(_ input: Input) async throws -> Output {
+    func call(arguments: Arguments) async throws -> Output {
         guard !eigenvalues.isEmpty else {
             return Output(
                 vibrationalEntropy: 0, modeCount: 0, effectiveFrequency: 0,
@@ -211,13 +231,13 @@ struct VibrationalEntropyTool: Tool {
         }
 
         let result = ENCoMRunner.computeVibrationalEntropy(
-            eigenvalues: eigenvalues, temperature: input.temperature)
+            eigenvalues: eigenvalues, temperature: arguments.temperature)
 
         return Output(
             vibrationalEntropy: result.entropy,
             modeCount: result.modeCount,
             effectiveFrequency: result.effectiveFrequency,
-            report: "S_vib = \(String(format: "%.6f", result.entropy)) kcal/mol/K from \(result.modeCount) modes at \(input.temperature) K"
+            report: "S_vib = \(String(format: "%.6f", result.entropy)) input-scale units/K (proxy diagnostic, not kcal/mol/K) from \(result.modeCount) modes at \(arguments.temperature) K"
         )
     }
 }

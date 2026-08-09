@@ -1,14 +1,23 @@
-// StatMechEngine.ts — TypeScript wrapper for the WASM StatMechEngine
+// StatMechEngine.ts — pure-TypeScript statistical-mechanics diagnostics
 //
 // Provides a TypeScript-native API matching the Swift FlexAIDRunner.
-// Can operate in two modes:
-//   1. WASM mode: calls the compiled C++ engine (requires flexaidds.wasm)
-//   2. Pure JS mode: implements the math in TypeScript (no WASM needed)
+//
+// WASM IS NOT SUPPORTED. There is no compiled-C++ path behind this class and
+// nothing here is provenance-equivalent to LIB/statmech.cpp: results carry
+// whatever provenance the caller supplies, which for current FlexAID output is
+// proxy-only. Do not advertise a WASM/native mode until one exists and can
+// emit sha256 artifact receipts.
 //
 // Copyright 2024-2026 Louis-Philippe Morency / NRGlab, Universite de Montreal
 // SPDX-License-Identifier: Apache-2.0
 
-import type { ThermodynamicResult, TIPoint, WHAMBinResult } from './types.js';
+import {
+  PROXY_ONLY_PROVENANCE,
+  type ScientificProvenance,
+  type ThermodynamicResult,
+  type TIPoint,
+  type WHAMBinResult,
+} from './types.js';
 import { kB_kcal } from './constants.js';
 
 interface State {
@@ -28,17 +37,32 @@ interface State {
  * engine.addSample(-10.0);
  * engine.addSample(-8.0, 2);
  * const result = engine.compute();
- * console.log(`Free energy: ${result.freeEnergy} kcal/mol`);
+ * console.log(`Ensemble F-like value: ${result.freeEnergy}`);
  * ```
  */
 export class StatMechEngine {
   private readonly T: number;
   private readonly beta: number;
   private ensemble: State[] = [];
+  private provenanceValue: ScientificProvenance;
 
-  constructor(temperatureK: number = 300.0) {
+  constructor(
+    temperatureK: number = 300.0,
+    provenance: ScientificProvenance = PROXY_ONLY_PROVENANCE,
+  ) {
     this.T = temperatureK;
     this.beta = 1.0 / (kB_kcal * temperatureK);
+    this.provenanceValue = { ...provenance };
+  }
+
+  /** Scientific interpretation attached to computed results. */
+  get provenance(): ScientificProvenance {
+    return { ...this.provenanceValue };
+  }
+
+  /** Replace interpretation metadata without changing numerical state. */
+  setProvenance(provenance: ScientificProvenance): void {
+    this.provenanceValue = { ...provenance };
   }
 
   /** Add a sampled conformation to the ensemble. */
@@ -65,6 +89,9 @@ export class StatMechEngine {
   compute(): ThermodynamicResult {
     if (this.ensemble.length === 0) {
       return {
+        available: false,
+        unavailableReason: 'empty_ensemble',
+        scientificProvenance: { ...this.provenanceValue },
         temperature: this.T, logZ: 0, freeEnergy: 0,
         meanEnergy: 0, meanEnergySq: 0,
         heatCapacity: 0, entropy: 0, stdEnergy: 0,
@@ -97,6 +124,8 @@ export class StatMechEngine {
     const stdEnergy = Math.sqrt(Math.max(0, variance));
 
     return {
+      available: true,
+      scientificProvenance: { ...this.provenanceValue },
       temperature: this.T,
       logZ,
       freeEnergy,

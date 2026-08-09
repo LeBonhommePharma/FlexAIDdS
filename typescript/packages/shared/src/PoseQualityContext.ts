@@ -3,11 +3,13 @@
 // Copyright 2024-2026 Louis-Philippe Morency / NRGlab, Universite de Montreal
 // SPDX-License-Identifier: Apache-2.0
 
+import type { ScientificProvenance } from './BindingPopulation.js';
+
 /** Summary of a single pose for quality analysis. */
 export interface PoseProfile {
   /** Rank within the binding mode (0 = best) */
   rank: number;
-  /** Complementarity function score (kcal/mol, negative = favorable) */
+  /** Complementarity-function diagnostic in arbitrary CF units. */
   cfScore: number;
   /** Boltzmann weight (fraction, 0.0-1.0) */
   boltzmannWeight: number;
@@ -33,6 +35,10 @@ export interface PoseQualityContext {
   scoreWeightAligned: boolean;
   /** Spearman rank correlation between CF score and Boltzmann weight (top 5) */
   scoreWeightCorrelation: number;
-  /** Mode free energy (kcal/mol) */
+  /** Mode score; physical free energy only with supporting provenance. */
   modeFreeEnergy: number;
+  /** False when the source did not supply thermodynamic moments. */
+  thermodynamicsAvailable?: boolean;
+  /** Scientific provenance for the mode thermodynamic record. */
+  scientificProvenance?: ScientificProvenance;
 }

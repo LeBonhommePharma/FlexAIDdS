@@ -13,18 +13,42 @@ import FlexAIDdS
 
 /// Health-entropy snapshot for a single analysis session.
 public struct HealthEntropySnapshot: Sendable, Codable {
+    /// Evidence governing the docking-side values below. Health metrics are
+    /// instrument readings and are unaffected; `shannonS` and `freeEnergy`
+    /// are only physical when this record authorizes a canonical claim.
+    public let scientificProvenance: ScientificProvenance?
+
+    /// Strongest claim supported by the declared provenance.
+    public var claimValidity: ClaimValidity {
+        scientificProvenance?.claimValidity ?? .proxyOnly
+    }
+
+    /// Unit label for `freeEnergy`.
+    public var energyUnitLabel: String {
+        claimValidity == .proxyOnly ? "input-scale units" : "kcal/mol"
+    }
+
+    /// Unit label for `shannonS`.
+    public var entropyUnitLabel: String {
+        claimValidity == .proxyOnly ? "input-scale units/K" : "kcal/mol/K"
+    }
+
     public let hrvSDNN: Double?        // ms
     public let restingHR: Double?      // bpm
     public let sleepHours: Double?
-    public let shannonS: Double        // kcal/mol/K
+    /// Entropy-like diagnostic in the declared energy domain per kelvin.
+    public let shannonS: Double
     public let isConverged: Bool
     public let modeCount: Int
-    public let freeEnergy: Double      // kcal/mol
+    /// Free-energy-like diagnostic in the declared energy domain.
+    public let freeEnergy: Double
     public let timestamp: Date
 
     public init(hrvSDNN: Double?, restingHR: Double?, sleepHours: Double?,
                 shannonS: Double, isConverged: Bool, modeCount: Int,
-                freeEnergy: Double, timestamp: Date = Date()) {
+                freeEnergy: Double, timestamp: Date = Date(),
+                scientificProvenance: ScientificProvenance? = nil) {
+        self.scientificProvenance = scientificProvenance
         self.hrvSDNN = hrvSDNN
         self.restingHR = restingHR
         self.sleepHours = sleepHours
@@ -106,7 +130,7 @@ public actor HealthEntropyInsightActor {
             )
             prompt = buildPrompt(context: truncated)
         }
-        return try await session.respond(to: prompt, generating: HealthEntropyInsight.self)
+        return try await session.respond(to: prompt, generating: HealthEntropyInsight.self).content
     }
 
     private func estimateTokenCount(_ text: String) -> Int {
@@ -116,8 +140,9 @@ public actor HealthEntropyInsightActor {
     private func buildPrompt(context: HealthEntropyContext) -> String {
         let c = context.current
         var p = "Analyze this health-entropy correlation. Produce a HealthEntropyInsight.\n"
-        p += "Current analysis: F=\(String(format: "%.2f", c.freeEnergy))kcal/mol, "
-        p += "S=\(String(format: "%.4f", c.shannonS)), \(c.modeCount) modes, "
+        p += "Claim validity: \(c.claimValidity.rawValue) (docking values are diagnostics, not affinities)\n"
+        p += "Current analysis: F=\(String(format: "%.2f", c.freeEnergy)) \(c.energyUnitLabel), "
+        p += "S=\(String(format: "%.4f", c.shannonS)) \(c.entropyUnitLabel), \(c.modeCount) modes, "
         p += "converged=\(c.isConverged)\n"
 
         var metrics: [String] = []
@@ -211,6 +236,10 @@ public struct RuleBasedHealthEntropyInsight: Sendable {
             quality = "Results are valid but review with fresh eyes — acute stress may affect subjective interpretation."
         } else {
             quality = "Results are reliable and health state supports good analytical judgment."
+        }
+        if c.claimValidity == .proxyOnly {
+            // The docking side of this correlation is an optimizer diagnostic.
+            quality += " Docking values here are proxy diagnostics in \(c.energyUnitLabel), not physical free energies or affinities."
         }
 
         let confidence: Double

@@ -16,6 +16,8 @@
 
 import Foundation
 import FlexAIDdS
+import FlexAIDCore
+import HealthIntegration
 
 // MARK: - Referee Configuration
 
@@ -42,6 +44,9 @@ public struct RefereeConfiguration: Sendable {
 /// All thermodynamic data pre-computed on CPU/GPU before prompting the model.
 /// The LLM never does arithmetic — it only interprets pre-digested values.
 public struct PreComputedThermoContext: Sendable, Codable {
+    /// Derived scientific validity; never supplied or overridden by an LLM.
+    public let claimValidity: ClaimValidity
+
     // Global ensemble
     public let temperature: Double
     public let freeEnergy: Double
@@ -88,6 +93,7 @@ public actor ThermoReferee {
     private let config: RefereeConfiguration
     private var gaContext: FXGAContextRef?
     private var eigenvalues: [Double]
+    private var latestClaimValidity: ClaimValidity = .proxyOnly
 
     /// Referee system instructions — concise to fit within 4K token budget.
     /// All computation results are pre-digested; the model only interprets.
@@ -102,9 +108,10 @@ public actor ThermoReferee {
         3. ENTROPY BALANCE: Is S_vib >> S_conf? If so, backbone flexibility dominates and \
            ligand conformational space is under-explored.
         4. MODE BALANCE: Does one binding mode absorb most entropy? May indicate kinetic trapping.
-        5. COMPENSATION: Large |F| with large S suggests enthalpy-entropy compensation — \
-           net ΔG may be less favorable.
-        6. AFFINITY: Assess binding strength from F and convergence status.
+        5. COMPENSATION: Only for binding_physical results, large |F| with large S may suggest \
+           enthalpy-entropy compensation and a less favorable net ΔG.
+        6. CLAIM DOMAIN: Assess physical binding affinity only when claimValidity is binding_physical. \
+           Otherwise describe F as a proxy ensemble diagnostic and state that affinity is unavailable.
 
         Be concise. Each finding should have a clear severity (pass/advisory/warning/critical) \
         and actionable recommendation. Set overallTrustworthy=false if convergence or \
@@ -129,8 +136,8 @@ public actor ThermoReferee {
                 tools.append(VibrationalEntropyTool(eigenvalues: eigenvalues))
             }
             self.session = LanguageModelSession(
-                instructions: Self.refereeInstructions,
-                tools: tools
+                tools: tools,
+                instructions: Self.refereeInstructions
             )
         } else {
             self.session = LanguageModelSession(
@@ -151,6 +158,41 @@ public actor ThermoReferee {
         entropyScore: BindingEntropyScore,
         campaignKey: String? = nil
     ) async throws -> RefereeVerdict {
+        latestClaimValidity = thermodynamics.claimValidity
+        if !thermodynamics.allowsBindingClaims {
+            let isCanonical = thermodynamics.allowsCanonicalClaims
+            let verdict = RefereeVerdict(
+                findings: [RefereeFinding(
+                    title: "Binding affinity unavailable",
+                    detail: isCanonical
+                        ? "This canonical_physical result supports calibrated canonical-ensemble interpretation, but no matched association cycle is available."
+                        : "This proxy_only result is an input-scale sampling diagnostic; no calibrated matched association cycle is available.",
+                    severity: .advisory,
+                    category: .recommendation
+                )],
+                overallTrustworthy: false,
+                recommendedAction: isCanonical
+                    ? "Use canonical-ensemble and convergence diagnostics only. Binding-affinity and molecular-optimization guidance are unavailable."
+                    : "Use input-scale convergence and sampling diagnostics only. Binding-affinity and molecular-optimization guidance are unavailable.",
+                confidence: 1.0
+            )
+            if let key = campaignKey ?? config.campaignKey {
+                let analysis = OracleAnalysis(
+                    structuredBullets: [AnalysisBullet(
+                        text: isCanonical
+                            ? "Binding affinity unavailable: canonical-ensemble result without a matched association cycle."
+                            : "Binding affinity unavailable: proxy-only sampling diagnostic.",
+                        confidence: .high,
+                        category: .provenance
+                    )],
+                    inputSummary: "claim_validity=\(thermodynamics.claimValidity.rawValue) [binding unavailable]",
+                    overallConfidence: .high
+                )
+                await AnalysisHistory.shared.record(key: key, analysis: analysis, source: "referee")
+            }
+            return verdict
+        }
+
         guard let session else {
             throw RefereeError.sessionUnavailable
         }
@@ -162,7 +204,10 @@ public actor ThermoReferee {
         let prompt = try buildRefereePrompt(context: context)
 
         // Step 3: Request structured verdict via @Generable guided generation
-        let verdict = try await session.respond(to: prompt, generating: RefereeVerdict.self)
+        let verdict = try await session.respond(
+            to: prompt,
+            generating: RefereeVerdict.self
+        ).content
 
         // Step 4: Record for trend tracking
         if let key = campaignKey ?? config.campaignKey {
@@ -187,6 +232,11 @@ public actor ThermoReferee {
     /// Ask a follow-up question about the last verdict.
     /// The FoundationModels session retains full context including tool call history.
     public func followUp(_ question: String) async throws -> String {
+        if latestClaimValidity != .bindingPhysical {
+            return latestClaimValidity == .canonicalPhysical
+                ? "Binding affinity, net ΔG, and molecular-optimization guidance are unavailable for the current canonical-ensemble result because it lacks a matched association cycle."
+                : "Binding affinity, net ΔG, and molecular-optimization guidance are unavailable for the current proxy-only result. Only input-scale sampling and convergence diagnostics are supported."
+        }
         guard let session else { throw RefereeError.sessionUnavailable }
         let response = try await session.respond(to: question)
         return response.content
@@ -198,6 +248,17 @@ public actor ThermoReferee {
         thermodynamics: ThermodynamicResult,
         entropyScore: BindingEntropyScore
     ) async throws -> TemperatureSensitivity {
+        latestClaimValidity = thermodynamics.claimValidity
+        if !thermodynamics.allowsBindingClaims {
+            return TemperatureSensitivity(
+                isSensitive: false,
+                assessment: thermodynamics.allowsCanonicalClaims
+                    ? "Binding temperature sensitivity is unavailable: canonical thermodynamics lack a matched association cycle."
+                    : "Binding temperature sensitivity is unavailable for a proxy-only sampling diagnostic.",
+                recommendedTempRange: "Unavailable without calibrated matched-association provenance."
+            )
+        }
+
         guard let session else { throw RefereeError.sessionUnavailable }
 
         let context = preCompute(thermodynamics: thermodynamics, entropyScore: entropyScore)
@@ -209,7 +270,10 @@ public actor ThermoReferee {
             to check how results change.
             """
 
-        return try await session.respond(to: prompt, generating: TemperatureSensitivity.self)
+        return try await session.respond(
+            to: prompt,
+            generating: TemperatureSensitivity.self
+        ).content
     }
 
     /// Compare two docking campaigns and produce a structured verdict.
@@ -217,6 +281,18 @@ public actor ThermoReferee {
         current: ThermodynamicResult, currentScore: BindingEntropyScore,
         previous: ThermodynamicResult, previousScore: BindingEntropyScore
     ) async throws -> ComparativeVerdict {
+        latestClaimValidity = current.allowsBindingClaims && previous.allowsBindingClaims
+            ? .bindingPhysical
+            : .proxyOnly
+        if !current.allowsBindingClaims || !previous.allowsBindingClaims {
+            return ComparativeVerdict(
+                bindingTrend: "unavailable",
+                convergenceTrend: "Sampling diagnostics may be compared separately.",
+                summary: "Binding-affinity and molecular-optimization comparisons require binding_physical provenance for both runs.",
+                improved: false
+            )
+        }
+
         guard let session else { throw RefereeError.sessionUnavailable }
 
         let curCtx = preCompute(thermodynamics: current, entropyScore: currentScore)
@@ -231,7 +307,10 @@ public actor ThermoReferee {
             ΔF = \(String(format: "%.3f", curCtx.freeEnergy - prevCtx.freeEnergy)) kcal/mol
             """
 
-        return try await session.respond(to: prompt, generating: ComparativeVerdict.self)
+        return try await session.respond(
+            to: prompt,
+            generating: ComparativeVerdict.self
+        ).content
     }
 
     // MARK: - Pre-Computation (CPU/GPU, no LLM)
@@ -261,6 +340,7 @@ public actor ThermoReferee {
         }()
 
         return PreComputedThermoContext(
+            claimValidity: thermodynamics.claimValidity,
             temperature: thermodynamics.temperature,
             freeEnergy: thermodynamics.freeEnergy,
             entropy: thermodynamics.entropy,
@@ -282,7 +362,9 @@ public actor ThermoReferee {
             perModeEntropy: perModeEntropy,
             modeEntropyImbalance: modeEntropyImbalance,
             bestModeFreeEnergy: entropyScore.bestFreeEnergy,
-            hasEnthalpyEntropyCompensation: thermodynamics.freeEnergy < -5 && thermodynamics.entropy > 0.01,
+            hasEnthalpyEntropyCompensation: thermodynamics.allowsBindingClaims
+                && thermodynamics.freeEnergy < -5
+                && thermodynamics.entropy > 0.01,
             hrvSDNN: entropyScore.hrvSDNN,
             sleepHours: entropyScore.sleepHours
         )
@@ -301,6 +383,7 @@ public actor ThermoReferee {
         var p = """
             Referee this docking result. Produce a RefereeVerdict with up to \(config.maxFindings) findings.
 
+            Claim validity: \(context.claimValidity.rawValue)
             T=\(context.temperature)K, F=\(String(format: "%.2f", context.freeEnergy))kcal/mol, \
             <E>=\(String(format: "%.2f", context.meanEnergy))kcal/mol, σ=\(String(format: "%.2f", context.stdEnergy))kcal/mol
             S_conf=\(String(format: "%.4f", context.sConf))nats (\(String(format: "%.6f", context.sConfPhysical))kcal/mol/K), \
@@ -424,16 +507,26 @@ public struct RuleBasedReferee: Sendable {
         if let d = decomp {
             if !d.isConverged {
                 trustworthy = false
+                let detail = thermodynamics.allowsBindingClaims
+                    ? "Shannon entropy has not reached a plateau (rate = \(String(format: "%.4f", d.convergenceRate))). Increase GA generations before trusting F or S values."
+                    : thermodynamics.allowsCanonicalClaims
+                        ? "Shannon entropy has not reached a plateau (rate = \(String(format: "%.4f", d.convergenceRate))). Increase sampling before trusting canonical F or S; binding affinity remains unavailable."
+                        : "Shannon entropy has not reached a plateau (rate = \(String(format: "%.4f", d.convergenceRate))). Increase GA generations before using this input-scale sampling diagnostic; binding affinity remains unavailable."
                 findings.append(CrossPlatformRefereeFinding(
                     title: "Entropy not converged",
-                    detail: "Shannon entropy has not reached a plateau (rate = \(String(format: "%.4f", d.convergenceRate))). Increase GA generations before trusting F or S values.",
+                    detail: detail,
                     severity: "critical",
                     category: "convergence"
                 ))
             } else {
+                let detail = thermodynamics.allowsBindingClaims
+                    ? "Shannon entropy plateau reached on \(d.hardwareBackend) backend. Physical thermodynamic interpretation is supported by the declared binding provenance."
+                    : thermodynamics.allowsCanonicalClaims
+                        ? "Shannon entropy plateau reached on \(d.hardwareBackend) backend. Canonical thermodynamic interpretation is supported, but binding affinity remains unavailable."
+                        : "Shannon entropy plateau reached on \(d.hardwareBackend) backend. The optimizer-sampling diagnostic is converged, but binding affinity remains unavailable."
                 findings.append(CrossPlatformRefereeFinding(
                     title: "Entropy converged",
-                    detail: "Shannon entropy plateau reached on \(d.hardwareBackend) backend. Thermodynamic values are reliable.",
+                    detail: detail,
                     severity: "pass",
                     category: "convergence"
                 ))
@@ -497,7 +590,9 @@ public struct RuleBasedReferee: Sendable {
         }
 
         // 5. Enthalpy-entropy compensation
-        if thermodynamics.freeEnergy < -5 && thermodynamics.entropy > 0.01 {
+        if thermodynamics.allowsBindingClaims
+            && thermodynamics.freeEnergy < -5
+            && thermodynamics.entropy > 0.01 {
             findings.append(CrossPlatformRefereeFinding(
                 title: "Enthalpy-entropy compensation",
                 detail: "Strong binding (F = \(String(format: "%.1f", thermodynamics.freeEnergy)) kcal/mol) offset by conformational flexibility (S = \(String(format: "%.4f", thermodynamics.entropy))). Net ΔG may be less favorable than F alone suggests.",
@@ -506,9 +601,19 @@ public struct RuleBasedReferee: Sendable {
             ))
         }
 
-        // 6. Binding affinity
+        // 6. Binding claims are forbidden unless a matched, calibrated
+        // association cycle is present. Legacy/CF results fail closed.
         let converged = decomp?.isConverged ?? false
-        if thermodynamics.freeEnergy < -10 {
+        if !thermodynamics.allowsBindingClaims {
+            findings.append(CrossPlatformRefereeFinding(
+                title: "Binding affinity unavailable",
+                detail: thermodynamics.allowsCanonicalClaims
+                    ? "The result supports canonical-ensemble thermodynamics, but no matched association cycle was supplied."
+                    : "The result is a proxy-only input-scale ensemble diagnostic; no calibrated matched association cycle was supplied.",
+                severity: "advisory",
+                category: "provenance"
+            ))
+        } else if thermodynamics.freeEnergy < -10 {
             findings.append(CrossPlatformRefereeFinding(
                 title: "Strong binding affinity",
                 detail: "F = \(String(format: "%.1f", thermodynamics.freeEnergy)) kcal/mol\(converged ? " (converged)" : " — convergence not confirmed").",
@@ -533,7 +638,17 @@ public struct RuleBasedReferee: Sendable {
 
         // Recommendation
         let action: String
-        if !trustworthy {
+        if !thermodynamics.allowsBindingClaims {
+            if !trustworthy {
+                action = thermodynamics.allowsCanonicalClaims
+                    ? "Improve sampling before interpreting canonical thermodynamics. Binding affinity and molecular optimization are unavailable."
+                    : "Proxy diagnostic only: improve sampling before interpreting the optimizer landscape. Binding affinity and molecular optimization are unavailable."
+            } else {
+                action = thermodynamics.allowsCanonicalClaims
+                    ? "Canonical thermodynamics only. Binding affinity and molecular optimization are unavailable without a matched association cycle."
+                    : "Proxy diagnostic only. Binding affinity and molecular optimization are unavailable without a calibrated matched association cycle."
+            }
+        } else if !trustworthy {
             action = "Do not trust current thermodynamic values. Increase GA generations and population size, then re-run."
         } else if decomp == nil {
             action = "Enable ShannonThermoStack for decomposed entropy analysis."
@@ -558,8 +673,6 @@ public struct RuleBasedReferee: Sendable {
 }
 
 // MARK: - DockingRunner + Referee Convenience
-
-import HealthIntegration
 
 extension DockingRunner {
     /// Run the GA, extract Shannon decomposition, and produce a referee verdict in one call.
@@ -601,7 +714,12 @@ extension DockingRunner {
 extension PreComputedThermoContext {
     /// Compact summary string for OracleAnalysis.inputSummary.
     var summaryString: String {
-        var s = "T=\(temperature)K, F=\(String(format: "%.2f", freeEnergy))kcal/mol"
+        var s: String
+        if claimValidity == .bindingPhysical {
+            s = "T=\(temperature)K, F=\(String(format: "%.2f", freeEnergy))kcal/mol"
+        } else {
+            s = "T=\(temperature)K, proxy_F=\(String(format: "%.2f", freeEnergy)) input-scale"
+        }
         s += ", S_conf=\(String(format: "%.4f", sConf))nats, S_vib=\(String(format: "%.6f", sVib))kcal/mol/K"
         s += isConverged ? " [converged]" : " [not converged]"
         return s

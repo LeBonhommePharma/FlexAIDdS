@@ -14,6 +14,7 @@
 // =============================================================================
 
 #include "DatasetRunner.h"
+#include "DatasetThermoLog.h"
 #include "AsyncPipeline.h"
 #include "BenchmarkRunner.h"
 #include "ProtocolConfig.h"
@@ -6531,9 +6532,11 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
         bool have_shannon_conf_nats = false;
         float h_final_parsed = 0.0f;
         bool have_h_final = false;
+        DatasetThermoLog thermo_log;
         if (stdout_file.is_open()) {
             std::string line;
             while (std::getline(stdout_file, line)) {
+                thermo_log.consume(line);
                 // "n_chrom_snapshot=N" — total individuals evaluated
                 if (line.find("n_chrom_snapshot=") != std::string::npos) {
                     auto pos = line.find('=');
@@ -6560,41 +6563,6 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                         try {
                             long skipped = std::stol(line.substr(pos+8));
                             total_evals = std::max(total_evals, clashed_count + skipped);
-                        } catch (...) {}
-                    }
-                }
-                // "  Helmholtz free energy  F  = N kcal/mol"
-                // NOTE: must match the EXACT string emitted by gaboom.cpp:780
-                // ("Helmholtz free energy  F"). The previous pattern "Free energy F"
-                // never matched (case + spacing), so free_energy_F stayed 0 and the
-                // entire ΔG/ΔH/TΔS decomposition was silenced (MEGA bug, 2026-06-06).
-                if (line.find("Helmholtz free energy") != std::string::npos) {
-                    auto pos = line.find('=');
-                    if (pos != std::string::npos) {
-                        try {
-                            free_energy_F = std::stof(line.substr(pos+1));
-                            have_free_energy = true;
-                        }
-                        catch (...) {}
-                    }
-                }
-                // "  Mean energy          <E>  = N kcal/mol"
-                if (line.find("Mean energy") != std::string::npos) {
-                    auto pos = line.find('=');
-                    if (pos != std::string::npos) {
-                        try {
-                            mean_energy_E = std::stof(line.substr(pos+1));
-                            have_mean_energy = true;
-                        } catch (...) {}
-                    }
-                }
-                // "  Entropy (conf)        S   = N kcal/(mol·K)"
-                if (line.find("Entropy (conf)") != std::string::npos) {
-                    auto pos = line.find('=');
-                    if (pos != std::string::npos) {
-                        try {
-                            entropy_conf_S = std::stof(line.substr(pos+1));
-                            have_entropy_conf = true;
                         } catch (...) {}
                     }
                 }
@@ -6713,6 +6681,12 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                 }
             }
         }
+        free_energy_F = thermo_log.free_energy;
+        have_free_energy = thermo_log.have_free_energy;
+        mean_energy_E = thermo_log.mean_energy;
+        have_mean_energy = thermo_log.have_mean_energy;
+        entropy_conf_S = thermo_log.configurational_entropy;
+        have_entropy_conf = thermo_log.have_configurational_entropy;
 
         // ── Parse [NATIVE_CF] from stderr.log ────────────────────────────────
         // Line format (emitted by native_score.cpp):
@@ -6764,7 +6738,7 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
             std::cerr << "  [STUCK] " << entry.pdb_id
                       << "  clash=" << std::fixed << std::setprecision(1)
                       << (result.clash_rate * 100.0f) << "%"
-                      << "  F=" << free_energy_F << " kcal/mol"
+                      << "  F~=" << free_energy_F << " [proxy scale]"
                       << "  — likely bad SDF bonds or grid placement\n";
         }
 
@@ -7979,7 +7953,23 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
         }
         if (entries[i].has_affinity() && r.predicted_dG != 0.0f) {
             exp_affinities.push_back(entries[i].experimental_affinity);
-            pred_affinities.push_back(-r.predicted_dG / 1.3636); // convert to pKd
+            // NOT a pKd. predicted_dG is a CF/contact-function proxy in
+            // arbitrary units with no validated kcal/mol calibration, so the
+            // 1.3636 kcal/mol-per-log-unit factor does not convert it into an
+            // affinity — applying it only rescales a proxy and then names the
+            // result after a physical quantity it has no claim to.
+            //
+            // The arithmetic is retained verbatim because Pearson r is
+            // invariant (up to sign) under an affine rescale of one variable:
+            // dropping the divisor would leave report.pearson_r numerically
+            // identical while changing nothing about what is actually being
+            // measured. Only the naming is corrected, so the reported
+            // correlation is bit-for-bit unchanged.
+            //
+            // What this correlation means: how well the proxy ORDERS targets
+            // against experiment. It is not evidence of calibrated affinity
+            // prediction, and no pKd may be reported from it.
+            pred_affinities.push_back(-r.predicted_dG / 1.3636); // proxy score, monotone rescale only
         }
     }
 
@@ -8092,14 +8082,18 @@ void DatasetRunner::write_report(const BenchmarkReport& report,
             std::isfinite(report.spearman_rho) &&
             std::isfinite(report.kendall_tau)) {
             ofs << std::setprecision(3);
-            ofs << "| Pearson r | " << report.pearson_r << " |\n";
-            ofs << "| Spearman ρ | " << report.spearman_rho << " |\n";
-            ofs << "| Kendall τ | " << report.kendall_tau << " |\n";
+            ofs << "| Pearson r (proxy vs experiment) | " << report.pearson_r << " |\n";
+            ofs << "| Spearman ρ (proxy vs experiment) | " << report.spearman_rho << " |\n";
+            ofs << "| Kendall τ (proxy vs experiment) | " << report.kendall_tau << " |\n";
         } else {
-            ofs << "| Pearson r | NA |\n";
-            ofs << "| Spearman ρ | NA |\n";
-            ofs << "| Kendall τ | NA |\n";
+            ofs << "| Pearson r (proxy vs experiment) | NA |\n";
+            ofs << "| Spearman ρ (proxy vs experiment) | NA |\n";
+            ofs << "| Kendall τ (proxy vs experiment) | NA |\n";
         }
+        ofs << "\nCorrelations relate the **CF-proxy** `predicted_dG` (arbitrary units, "
+               "monotonically rescaled) to experimental affinity. They measure how well the "
+               "proxy *orders* targets; they are **not** evidence of calibrated affinity "
+               "prediction, and no pKd is derived from them.\n";
         ofs << "\n";
 
         // Per-system results table
