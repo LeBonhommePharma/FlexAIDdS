@@ -2,7 +2,39 @@
 
 **Date:** 2026-08-09
 **Engine:** `build_tests/FlexAIDdS` (working tree at `c5395779` + uncommitted audit instrumentation)
-**Status:** root cause reproduced on 2 targets; a working fix already exists in-tree, gated OFF
+**Status:** **FIXED** — serial-order bucket merge in `generate_probes` (see below); root cause
+reproduced on 2 targets beforehand
+
+---
+
+## FIX (landed 2026-08-09, this branch)
+
+`CleftDetector::generate_probes` now collects probes into per-iteration buckets
+(`buckets[ii]`) and concatenates them in ascending `ii` after the parallel region,
+instead of appending per-thread vectors under `omp critical` in thread-arrival order.
+The merged order is the serial (ascending `ii`, ascending `jj`) order **bit-exactly, at
+any thread count and any schedule** — so single-thread numbers are untouched and
+multi-thread runs converge onto them. This is deliberately NOT the `FLEXAIDDS_CLEFT_SORT`
+geometric sort, which imposes a *different* canonical order and changes serial poses.
+
+### Validation (default gates, `FLEXAID_SEED=12345`, 200 chrom × 30 gen, oracle mode)
+
+| check | result |
+|---|---|
+| 1GPK serial unchanged | pre-fix t1 grid `aa1a261f` poses `ca0860fe` == post-fix t1, **bit-exact** |
+| 1GPK thread invariance | post-fix t4 (idle ×2) == t1 |
+| 1GPK under load | post-fix t4 ×6 with 6 CPU hogs → **1 distinct grid, 1 pose set** (pre-fix: 2 of 6) |
+| 1G9V serial unchanged | pre-fix t1 grid `63c17a6d` poses `485a29b0` == post-fix t1, **bit-exact** |
+| 1G9V thread invariance + load | post-fix t4 ×3 under load == t1, grids and poses (pre-fix: 4 distinct grids of 6) |
+| tests | `test_cleft_cavity` 16/16 PASSED incl. `CleftAnnotationTest.DeterministicOrdering` |
+
+Consequences:
+- **Single-thread campaigns: bit-exact unchanged. No re-run needed.**
+- **Multi-thread campaigns: corrected onto the single-thread answer.** Any headline
+  produced at `--omp-threads > 1` before this fix reflects a permuted search space and
+  should be re-run.
+- `FLEXAIDDS_CLEFT_SORT` is no longer needed for reproducibility; it remains as an
+  opt-in alternative canonical order (still changes serial tie-breaks — leave OFF).
 
 ---
 
