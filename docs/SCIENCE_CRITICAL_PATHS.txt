@@ -1,0 +1,81 @@
+# Science-critical paths — a change here can move docked coordinates or scores.
+#
+# Consumed by scripts/check_repo_hygiene.py (anti-bundling lint). A PR touching
+# any path below must declare `Science-Impact:` in its body and must not also
+# touch a non-engine stack (typescript/, swift/, site/) in the same commit.
+#
+# Format: one glob per line, '#' comments, blank lines ignored. Matched against
+# repo-relative paths with fnmatch.
+#
+# WHY THIS FILE EXISTS
+#   PR #405 was 138 files spanning LIB/, typescript/, swift/ and python/ under
+#   the title "add fail-closed thermodynamic claim provenance". Its coordinates
+#   turned out byte-identical, so it was correctly provenance-only -- but nobody
+#   could tell that from the title, the diff, or CI, and it cost a day of
+#   investigation to establish. The lint exists to force such a change to be
+#   split and declared, not to forbid it.
+
+# ── scoring / energy ──────────────────────────────────────────────────────────
+LIB/vcfunction.cpp
+LIB/cffunction.cpp
+LIB/spfunction.cpp
+LIB/Vcontacts.cpp
+LIB/Vcontacts.h
+LIB/VoronoiCFBatch.h
+LIB/SoftBetaFreeEnergy.h
+
+# ── search / GA ───────────────────────────────────────────────────────────────
+LIB/gaboom.cpp
+LIB/gaboom.h
+LIB/ic2cf.cpp
+LIB/ic_bounds.cpp
+LIB/buildlist.cpp
+LIB/buildcc.cpp
+
+# ── binding-site construction: probe order IS gene 0 (see #403) ───────────────
+LIB/CleftDetector.cpp
+LIB/CleftDetector.h
+LIB/generate_grid.cpp
+LIB/CavityDetect/*
+
+# ── clustering / election ─────────────────────────────────────────────────────
+LIB/cluster.cpp
+LIB/BindingMode.cpp
+LIB/BindingMode.h
+LIB/FOPTICS.cpp
+LIB/DensityPeak_Cluster.cpp
+
+# ── thermodynamics / entropy ──────────────────────────────────────────────────
+LIB/statmech.cpp
+LIB/statmech.h
+LIB/ReferenceEntropy.cpp
+LIB/ShannonThermoStack/*
+LIB/encom.cpp
+LIB/tENCoM/*
+
+# ── typing and atom parameters: a mis-typed atom silently changes every CF ────
+LIB/assign_types.cpp
+LIB/assign_radii.cpp
+LIB/assign_radii_types.cpp
+LIB/read_coor.cpp
+LIB/Mol2Reader.cpp
+LIB/SdfReader.cpp
+*.dat
+
+# ── defaults and config: a flipped default is a science change with no diff ───
+#    (config_defaults.h holds diversity_collapse_threshold; ProtocolConfig
+#     decides election mode, restarts, seeding)
+LIB/config_defaults.h
+LIB/config_parser.cpp
+LIB/ProtocolConfig.cpp
+LIB/ProtocolConfig.h
+LIB/flexaid.h
+LIB/top.cpp
+
+# ── harness: decides what is run and what is reported ─────────────────────────
+LIB/DatasetRunner.cpp
+LIB/benchmark_datasets.cpp
+
+# ── build: -march=native and -ffast-math make the binary a function of the CPU
+CMakeLists.txt
+cmake/*

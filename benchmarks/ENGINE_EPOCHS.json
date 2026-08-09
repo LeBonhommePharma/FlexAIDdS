@@ -1,0 +1,103 @@
+{
+  "_README": [
+    "Append-only ledger of engine BEHAVIOUR boundaries. A new epoch opens whenever a",
+    "merged change moves docked coordinates. Campaign results from different epochs are",
+    "NOT comparable and must never be pooled or quoted against each other.",
+    "",
+    "KEYED ON binary_sha256, NOT git_commit. Only 25 RUN_RECEIPT.json files on this",
+    "machine carry a commit at all, and LIB/BindingMode.cpp:739 emits a FLEXAID.dirty",
+    "flag precisely because dirty builds happen. The binary hash is the only identifier",
+    "that is always available and always true.",
+    "",
+    "'coordinates' means md5 of ^(ATOM|HETATM) lines of the rank-0 elected pose. NEVER",
+    "whole-file: BindingMode.cpp:739 stamps commit/dirty/seed into REMARKs on every",
+    "build, so whole-file hashing has a ~100% false-positive rate.",
+    "",
+    "To append: add an entry, never edit or delete one. If you cannot establish an",
+    "epoch for a historical campaign, mark it UNKNOWN rather than guessing."
+  ],
+
+  "fingerprint_definition": {
+    "what": "md5 of ^(ATOM|HETATM) lines of the rank-0 elected pose, per target",
+    "targets": ["1GPK", "1G9V", "1HNN", "1GM8", "1HP0"],
+    "conditions": "FLEXAID_SEED=12345, FLEXAIDDS_PARALLEL_RESTARTS=0, oracle site, --data-dir set",
+    "excluded": [
+      "REMARK lines (carry FLEXAID.commit / dirty / seed - change every build)",
+      "wall_time_s",
+      "*_pose_path columns (absolute paths)",
+      "posebusters_input_sha256 (embeds an absolute path on SDF line 1)",
+      ".rrd column 2 (cluster label - still run-to-run unstable post-#403)"
+    ]
+  },
+
+  "epochs": [
+    {
+      "epoch": 0,
+      "opened_at": "repository inception",
+      "closed_at": "dfb134f5",
+      "label": "thread-permuted cleft grid",
+      "reproducible": false,
+      "why": [
+        "CleftDetector::generate_probes merged SURFNET probes under omp critical in",
+        "thread-arrival order. The probe order fixes generate_grid()'s cleftgrid index",
+        "assignment, and that index IS GA gene 0 (ic_bounds.cpp:15, ic2cf.cpp:100-105).",
+        "Measured: 6 identical 4-thread runs under CPU load gave 2 distinct grids on",
+        "1GPK and 4 distinct on 1G9V. Results at --omp-threads>1 are draws from a",
+        "distribution, NOT measurements."
+      ],
+      "verdict": "Any multi-threaded number from this epoch is void. This includes the 39.3% (v2) and 43.5% Astex-84 campaigns. Single-thread results are valid.",
+      "campaigns": ["astex84_v2 (39.3% top-1) - VOID", "astex84 baseline (43.5%) - VOID"]
+    },
+    {
+      "epoch": 1,
+      "opened_at": "dfb134f5",
+      "opened_by": "PR #403 - deterministic probe merge order in CleftDetector::generate_probes",
+      "label": "deterministic, thread-count-invariant cleft grid",
+      "reproducible": true,
+      "coordinates_changed": true,
+      "why": [
+        "Per-iteration buckets concatenated ascending after the parallel region,",
+        "reproducing the serial (ascending ii, ascending jj) order bit-exactly at any",
+        "thread count and any schedule."
+      ],
+      "evidence": {
+        "single_thread_vs_epoch_0": "bit-exact unchanged (1GPK f0bfe158, 1G9V b99f51b5)",
+        "thread_invariance": "1-thread == 4-thread coordinates on 1GPK, 1G9V, 1HNN, 1GM8, 1HP0",
+        "under_load": "6 runs at 4 threads -> 1 grid, 1 pose set",
+        "tests": "test_cleft_cavity 16/16 incl. CleftAnnotationTest.DeterministicOrdering"
+      },
+      "verdict": "Multi-thread results become comparable to the single-thread canon for the first time. Epoch-0 single-thread numbers remain valid and comparable to this epoch."
+    }
+  ],
+
+  "_not_epoch_boundaries": [
+    {
+      "commit": "6244e305",
+      "pr": 405,
+      "title": "Fix: add fail-closed thermodynamic claim provenance (Chunk 0)",
+      "classification": "provenance-only",
+      "note": [
+        "138 files, 20114 insertions, spanning LIB/ + typescript/ + swift/ + python/.",
+        "Initially misreported (by Claude Code) as a silent science change. It is NOT.",
+        "Docked coordinates are byte-identical across ea044869 -> aff69d2f -> main:",
+        "1GPK f0bfe158, 1G9V b99f51b5. The entire difference is six added REMARK",
+        "thermo_* lines. The misreport came from hashing whole .pdb files including",
+        "headers - the exact failure this ledger's fingerprint_definition forbids.",
+        "All seven statmech commits are pose-inert: five touch no hot-path file, and",
+        "the two that do change only print labels and REMARKs."
+      ]
+    },
+    {
+      "commit": "9035cf34",
+      "pr": 408,
+      "title": "reconcile emitted CF.app and .mcf head with the recomputed score",
+      "classification": "score-only, conditional",
+      "note": [
+        "Coordinate-inert absent a phantom (verified 1GPK/1G9V). Where a phantom IS",
+        "present it changes the emitted CF.app and .mcf head, which feeds the pooled",
+        "selector and the G=H-T*S mode ranking - so it can change the elected pose on",
+        "affected targets. Treat a campaign spanning this commit with care."
+      ]
+    }
+  ]
+}
