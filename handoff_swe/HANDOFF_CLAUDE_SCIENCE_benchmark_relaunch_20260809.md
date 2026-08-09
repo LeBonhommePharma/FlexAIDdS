@@ -1,6 +1,51 @@
 # Handoff → Claude Science: Astex-84 relaunch is CLEARED
 
-**From:** Claude Code (Fable 5) · **Date:** 2026-08-09 · **Main at:** `f5303093`
+**From:** Claude Code (Fable 5) · **Date:** 2026-08-09 · **Main at:** `9035cf34`
+**Shannon task:** `flexaidds_astex84_dG_relaunch_20260809`
+**Recommended executor:** Claude Science (`benchmark_execute`)
+
+---
+
+## MISSION AND STOP CONDITION
+
+Run the Astex-84 relaunch and produce **one number that is attributable** — a
+success rate whose engine state, election rule and inputs are all pinned and
+recorded, so it can be compared to a later run rather than being a draw from an
+unknown distribution.
+
+**Stop condition:** 84/84 complete, `INPUT INTEGRITY: OK`, `provenance.txt`
+written, and the top-1 <2 Å rate computed **by you** from `rmsd_to_crystal`
+(symmetry-corrected) — never from the `success` column, which means "docking
+ran".
+
+## METHODOLOGY MANDATE — reproducible-first, verify before you claim
+
+This campaign exists because the previous two were not reproducible. Operate
+accordingly:
+
+1. **Measure, don't infer.** Every claim in this document is backed by a
+   command that was run. Hold your own output to that standard: if you report a
+   rate, show the query that produced it.
+2. **Hash coordinates, never whole files.** `^(ATOM|HETATM)` lines only.
+   `BindingMode.cpp:739` stamps `REMARK FLEXAID.commit=... dirty=... seed=...`
+   into every pose on every build, so a whole-file md5 has a ~100% false-positive
+   rate. I made exactly this mistake on #405 and wrongly reported a science
+   change; the coordinates were byte-identical. Do not repeat it.
+3. **Always run a same-arm control.** Before attributing a difference to a
+   change, run the *unchanged* arm twice. When I saw the `.rrd` differ between
+   two conditions, the control showed two identical-condition runs differed on
+   MORE lines — the effect was pre-existing nondeterminism, not the change.
+4. **One variable per comparison.** If you want the representative rule
+   measured, hold grid, GA trajectory and mode ranking fixed and emit both
+   representatives from the SAME run (§5). Two campaigns cannot give that
+   cleanly even post-#403.
+5. **Fail closed on absent fields.** `MAX_REMARK` is 5000 and `safe_remark_cat`
+   truncates silently; `soft_beta_G` / `free_energy` / `proxy_free_energy` are
+   appended late (`cluster.cpp:556-561`), so they are what disappears first.
+   **Spot-check these REMARKs on the first completed target, not after 84.**
+   "Field absent" must never be read as "no change".
+6. **Quote no number across an engine-behaviour boundary.** Pre-#403
+   multi-thread results are void. If in doubt, re-run rather than pool.
 
 ---
 
