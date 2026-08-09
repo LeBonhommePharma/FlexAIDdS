@@ -452,6 +452,7 @@ void cluster(FA_Global* FA, GB_Global* GB, VC_Global* VC, chromosome* chrom, gen
 		// substitute a stale search score.
 		cf=ic2cf(FA,VC,atoms,residue,cleftgrid,GB->num_genes,FA->opt_par);
 		const double emitted_cf = get_cf_evalue(&cf, FA);
+		const double emitted_app = get_apparent_cf_evalue(&cf);
 		const double score_delta = std::abs(emitted_cf - chrom[Clus_TOP[j]].evalue);
 		const bool score_pose_consistent = std::isfinite(emitted_cf) &&
 		                                   score_delta <= 1e-4;
@@ -461,6 +462,17 @@ void cluster(FA_Global* FA, GB_Global* GB, VC_Global* VC, chromosome* chrom, gen
 			        "delta=%.8f\n",
 			        j, chrom[Clus_TOP[j]].evalue, emitted_cf, score_delta);
 		}
+		// Bug 5 (1HP0 CF=-1700): a GA-time transient can leave chrom.evalue /
+		// chrom.app_evalue as a spurious large-NEGATIVE phantom that is far more
+		// favorable than any clean re-score of the emitted geometry. REMARK CF=
+		// already reports the recomputed emitted_cf, but REMARK CF.app and the
+		// .mcf sidecar still carried the stored app_evalue — and the DatasetRunner
+		// pooled selector reads the .mcf, so the phantom was elected as best_score
+		// (dragging in a wrong pose). When the stored score is pose-inconsistent,
+		// substitute the recomputed apparent CF everywhere the phantom leaked.
+		const double emit_app_value = score_pose_consistent
+		                              ? chrom[Clus_TOP[j]].app_evalue
+		                              : emitted_app;
 
 		size_t remark_len = 0;
 		remark[0] = '\0';
@@ -477,7 +489,7 @@ void cluster(FA_Global* FA, GB_Global* GB, VC_Global* VC, chromosome* chrom, gen
 		snprintf(tmpremark, MAX_REMARK, "REMARK CF.pose_score_consistent=%s\n",
 		         score_pose_consistent ? "true" : "false");
 		safe_remark_cat(remark, tmpremark, &remark_len);
-		snprintf(tmpremark, MAX_REMARK, "REMARK CF.app=%8.5f\n",chrom[Clus_TOP[j]].app_evalue);
+		snprintf(tmpremark, MAX_REMARK, "REMARK CF.app=%8.5f\n", emit_app_value);
 		safe_remark_cat(remark, tmpremark, &remark_len);
 
 		// P2 provenance — emitted ONLY for non-default modes so the default
@@ -616,8 +628,11 @@ void cluster(FA_Global* FA, GB_Global* GB, VC_Global* VC, chromosome* chrom, gen
 				mcf_path = mcf_path.substr(0, mcf_path.size() - 4) + ".mcf";
 			FILE* mf = fopen(mcf_path.c_str(), "w");
 			if (mf) {
-				// Head chromosome (guaranteed first so member_cfs[0] == head CF)
-				fprintf(mf, "%.6f\n", chrom[Clus_TOP[j]].app_evalue);
+				// Head chromosome (guaranteed first so member_cfs[0] == head CF).
+				// Use the pose-consistent apparent CF (emit_app_value): a phantom
+				// stored app_evalue (Bug 5, 1HP0) must not reach the pooled
+				// selector, which reads member_cfs[0] from this sidecar.
+				fprintf(mf, "%.6f\n", emit_app_value);
 				// Members: scan all chromosomes assigned to this cluster head
 				for (int k = 0; k < num_chrom; ++k) {
 					if (k != Clus_TOP[j] && Clus_GAPOP[k] == Clus_TOP[j])
