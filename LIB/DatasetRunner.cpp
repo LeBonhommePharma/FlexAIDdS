@@ -6325,6 +6325,21 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
             // ── end rotamer pre-relaxation ──────────────────────────────────
 
             std::ostringstream cmd;
+            // Cleft-ranking audit: when FLEXAIDDS_CLEFT_DUMP is set to any non-empty,
+            // non-"0" value, forward it to the engine as a PER-TARGET path so each
+            // target writes its own sphere sidecar instead of overwriting one file.
+            // The engine treats it as an output path (see CleftDetector.cpp). The env
+            // block here is an explicit allow-list, so without this the variable never
+            // reaches the engine. Diagnostic only — no effect on scoring or selection.
+            {
+                const char* cleft_dump_env = std::getenv("FLEXAIDDS_CLEFT_DUMP");
+                if (cleft_dump_env && cleft_dump_env[0] != '\0' &&
+                    std::strcmp(cleft_dump_env, "0") != 0) {
+                    cmd << "FLEXAIDDS_CLEFT_DUMP="
+                        << shell_quote(out_dir + "/" + entry.pdb_id + "_clefts.tsv")
+                        << " ";
+                }
+            }
             if (!entry.cleft_sphere_path.empty() && fs::exists(entry.cleft_sphere_path)) {
                 cmd << "FLEXAIDDS_CLEFT_SPHERE_FILE="
                     << shell_quote(entry.cleft_sphere_path) << " ";
@@ -8202,6 +8217,11 @@ void DatasetRunner::write_report(const BenchmarkReport& report,
                "native_pose_seeded,native_pose_seed_fraction,protocol_claim_eligible,"
                "cf_native,best_cluster_rmsd,conditional_scanned_pool_ceiling,best_cluster_idx,"
                "seed_echo,pose_source,"
+               // The row writer below emits election_mode/consensus_count/rank0_demoted here
+               // (see the per-target header, which already lists them). Omitting them made the
+               // header 3 fields short of every row, so pandas promoted the surplus to an index
+               // and shifted every named column left by 3 -- silently, without an error.
+               "election_mode,consensus_count,rank0_demoted,"
                "cf_top1_pose_path,cf_top1_score,cf_top1_rmsd,cf_top1_pose_sha256,"
                "entropy_top1_pose_path,entropy_top1_score,entropy_top1_rmsd,entropy_top1_pose_sha256,"
                "H_rep_rank0,H_pop,H_rep_mean,D_vib";

@@ -265,16 +265,57 @@ sphere* detect_cleft(const atom* atoms, const resid* /*residue*/,
     // ── Layer 2: ligandable top-K (not largest void only) ───────────────────
     // Score each cluster meeting min_cluster_size by volume×enclosure proxy
     // (ensemble::ligandable_score). Keep top_k_clefts; fallback to largest.
+    //
+    // Cleft-ranking audit sidecar (FLEXAIDDS_CLEFT_DUMP=<path>): write every probe
+    // sphere of every scored cluster as label/x/y/z/radius TSV. Summary statistics
+    // cannot answer "is the cognate cleft in the candidate set" -- a bounding-box
+    // diagonal is not a pocket radius (observed 1.8-92.5 A, some larger than the
+    // protein) and a centroid can sit far outside an elongated cleft that does
+    // enclose the ligand. The only sound test is min sphere-to-ligand-atom distance,
+    // which needs the spheres themselves. Diagnostic only: opt-in via env, writes to
+    // a separate file, and feeds nothing back into scoring or selection.
+    // NOTE: detect_clefts() runs MORE THAN ONCE per target (per receptor conformer /
+    // restart) and cluster labels are not stable across invocations. Truncating here
+    // would leave only the last pass, so the sidecar would disagree with the
+    // accumulated log (observed: 32 scored vs 32 dumped labels, only 5 shared).
+    // Append instead, and stamp each row with an invocation id so an analysis can
+    // pair spheres with the matching log block.
+    static int cleft_dump_invocation = 0;
+    const int this_invocation = cleft_dump_invocation++;
+    std::FILE* cleft_dump = nullptr;
+    if (const char* dump_path = std::getenv("FLEXAIDDS_CLEFT_DUMP")) {
+        if (dump_path[0] != '\0') {
+            const bool fresh = (this_invocation == 0);
+            cleft_dump = std::fopen(dump_path, fresh ? "w" : "a");
+            if (cleft_dump) {
+                if (fresh)
+                    std::fprintf(cleft_dump,
+                                 "invocation\tlabel\tligandable_score\tx\ty\tz\tradius\n");
+            } else {
+                std::fprintf(stderr,
+                             "WARNING: [CLEFT_DUMP] could not open %s for write\n",
+                             dump_path);
+            }
+        }
+    }
     std::vector<std::pair<int, double>> scored;
     scored.reserve(freq.size());
     for (auto& kv : freq) {
         if (kv.second < params.min_cluster_size) continue;
         double sum_r = 0.0, minx = 1e30, miny = 1e30, minz = 1e30;
         double maxx = -1e30, maxy = -1e30, maxz = -1e30;
+        // Cleft-ranking audit: accumulate the cluster centroid so the log can be
+        // matched against the crystal-ligand centroid offline. Diagnostic only --
+        // sum_x/y/z feed nothing but the printf below, so scoring, cleft selection
+        // and CF remain bit-identical.
+        double sum_x = 0.0, sum_y = 0.0, sum_z = 0.0;
         int n = 0;
         for (int i = 0; i < static_cast<int>(probes.size()); ++i) {
             if (labels[i] != kv.first) continue;
             sum_r += probes[i].radius;
+            sum_x += (double)probes[i].center[0];
+            sum_y += (double)probes[i].center[1];
+            sum_z += (double)probes[i].center[2];
             minx = std::min(minx, (double)probes[i].center[0]);
             miny = std::min(miny, (double)probes[i].center[1]);
             minz = std::min(minz, (double)probes[i].center[2]);
@@ -289,8 +330,34 @@ sphere* detect_cleft(const atom* atoms, const resid* /*residue*/,
         const double bbox_diag = std::sqrt(dx * dx + dy * dy + dz * dz);
         const double s = ensemble::ligandable_score(n, mean_r, bbox_diag);
         scored.emplace_back(kv.first, s);
-        printf("CleftDetector: cluster label=%d n=%d ligandable_score=%.3f\n",
-               kv.first, n, s);
+        printf("CleftDetector: cluster label=%d n=%d ligandable_score=%.3f "
+               "centroid=%.3f,%.3f,%.3f bbox_diag=%.3f mean_r=%.3f\n",
+               kv.first, n, s,
+               sum_x / static_cast<double>(n),
+               sum_y / static_cast<double>(n),
+               sum_z / static_cast<double>(n),
+               bbox_diag, mean_r);
+        // Emit this cluster's spheres WITH its ligandable_score, so the sidecar is
+        // self-contained. Cluster labels are NOT comparable across engine processes
+        // (the runner invokes the engine more than once per target and labels are
+        // reassigned), so an analysis must never join the sidecar to stdout.log by
+        // label -- doing so silently pairs unrelated clusters. Written here rather
+        // than in the accumulation loop above because `s` is only known now.
+        if (cleft_dump) {
+            for (int i = 0; i < static_cast<int>(probes.size()); ++i) {
+                if (labels[i] != kv.first) continue;
+                std::fprintf(cleft_dump, "%d\t%d\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\n",
+                             this_invocation, kv.first, s,
+                             (double)probes[i].center[0],
+                             (double)probes[i].center[1],
+                             (double)probes[i].center[2],
+                             (double)probes[i].radius);
+            }
+        }
+    }
+    if (cleft_dump) {
+        std::fclose(cleft_dump);
+        cleft_dump = nullptr;
     }
 
     std::set<int> kept_labels;

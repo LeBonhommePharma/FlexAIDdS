@@ -1382,6 +1382,122 @@ int GA(FA_Global* FA, GB_Global* GB,VC_Global* VC,chromosome** chrom,chromosome*
 			}
 		}
 
+		// ── IP-6: per-generation any-pose RMSD trace (.gentrace.tsv) ────────────
+		// WHY THIS EXISTS
+		//   The terminal .pop.tsv / .rrd dumps are a snapshot of the FINAL
+		//   population only. A restart that samples a near-native pose at
+		//   generation 12 and loses it to selection pressure by generation 50 is
+		//   indistinguishable, in those files, from a restart that never sampled
+		//   one at all. On the 2026-08-06 Astex-85 dock-once campaign that
+		//   ambiguity covers 72 of 84 targets: they are reported "search-limited"
+		//   when the true failure may be convergence/retention inside the GA.
+		//   1R1H is the existence proof -- its 5 restarts have terminal population
+		//   minima 11.23 / 9.86 / 1.78 / 10.24 / 10.79 A, so the basin is reachable
+		//   but usually lost.
+		//
+		// WHAT IT RECORDS
+		//   Every generation, the MINIMUM RMSD over the ENTIRE live population,
+		//   plus the CF of that pose and the CF of the population's best-scoring
+		//   member. Deliberately unfiltered: selecting by CF first would hide
+		//   exactly the case under test (a near-native pose the objective ranks
+		//   badly). best_rmsd_so_far makes "was it ever visited" a single column.
+		//
+		// COST
+		//   2 calc_rmsd calls per chromosome per generation (raw + symmetry).
+		//   Gated OFF by default; opt in with FLEXAIDDS_GENTRACE=1, and thin with
+		//   FLEXAIDDS_GENTRACE_EVERY=N to trace every Nth generation. Requires
+		//   refstructure==1 (a native pose to measure against) -- audit only,
+		//   never the benchmark hot path.
+		if (FA->refstructure == 1) {
+			static const int gentrace_every = [](){
+				const char* on = std::getenv("FLEXAIDDS_GENTRACE");
+				if (!on || on[0] == '\0' || std::atoi(on) == 0) return 0;
+				const char* ev = std::getenv("FLEXAIDDS_GENTRACE_EVERY");
+				const int n = (ev && std::atoi(ev) > 0) ? std::atoi(ev) : 1;
+				return n;
+			}();
+			if (gentrace_every > 0 && ((i + 1) % gentrace_every == 0 || i == 0)) {
+				// thread_local, not static: GA() runs inside an OpenMP parallel-for
+				// under --parallel-dock (ParallelDock.cpp:115), where plain statics
+				// would be a data race and two threads would clobber one file.
+				// The thread id in the filename keeps per-subgrid traces separate.
+				thread_local FILE*  gt_fp        = nullptr;
+				thread_local double gt_best_raw  = 1e9;
+				thread_local double gt_best_sym  = 1e9;
+				thread_local int    gt_best_gen  = -1;
+				if (!gt_fp) {
+					char gt_path[MAX_PATH__];
+#ifdef _OPENMP
+					const int gt_tid = omp_in_parallel() ? omp_get_thread_num() : -1;
+#else
+					const int gt_tid = -1;
+#endif
+					if (gt_tid >= 0)
+						snprintf(gt_path, MAX_PATH__, "%s.t%d.gentrace.tsv",
+						         FA->rrgfile, gt_tid);
+					else
+						snprintf(gt_path, MAX_PATH__, "%s.gentrace.tsv", FA->rrgfile);
+					gt_fp = fopen(gt_path, "w");
+					if (gt_fp) {
+						fprintf(gt_fp, "generation\tn_chrom\tmin_rmsd_raw\tmin_rmsd_sym\t"
+						               "cf_of_min_rmsd\tbest_cf\trmsd_of_best_cf\t"
+						               "best_rmsd_raw_so_far\tgen_of_best\n");
+						fprintf(stdout, "[GENTRACE] writing %s (every %d gen)\n",
+						        gt_path, gentrace_every);
+					} else {
+						fprintf(stderr, "WARNING: [GENTRACE] cannot open %s\n", gt_path);
+					}
+				}
+				if (gt_fp) {
+					// STATE HYGIENE. calc_rmsd() is not a pure function: it writes
+					// atoms[].dis/ang/dih, calls buildcc() to rebuild atoms[].coor,
+					// may call alter_mode() on atoms[]/residue[], and writes
+					// residue[].rot for rotamer genes. cluster.cpp's DUMP_POP can
+					// ignore that ("runs last: only frees follow"); here the GA
+					// continues for another generation, so every mutated field must
+					// be put back. GB->num_genes == FA->npar (gaboom.cpp:281), so
+					// one length covers opt_par.
+					std::vector<double> saved_par(FA->opt_par,
+					                              FA->opt_par + GB->num_genes);
+					std::vector<int> saved_rot(static_cast<size_t>(FA->res_cnt) + 1);
+					for (int r = 1; r <= FA->res_cnt; ++r) saved_rot[r] = residue[r].rot;
+					double min_raw = 1e9, min_sym = 1e9, cf_at_min = 0.0;
+					double best_cf = 1e9, rmsd_at_best_cf = 0.0;
+					for (int c = 0; c < GB->num_chrom; ++c) {
+						for (int g = 0; g < GB->num_genes; ++g)
+							FA->opt_par[g] = (*chrom)[c].genes[g].to_ic;
+						bool Hung = false;
+						const double rr = calc_rmsd(FA, atoms, residue, *cleftgrid,
+						                            FA->npar, FA->opt_par, Hung);
+						Hung = true;
+						const double rs = calc_rmsd(FA, atoms, residue, *cleftgrid,
+						                            FA->npar, FA->opt_par, Hung);
+						const double cf = (*chrom)[c].evalue;
+						if (rr < min_raw) { min_raw = rr; min_sym = rs; cf_at_min = cf; }
+						if (cf < best_cf) { best_cf = cf; rmsd_at_best_cf = rr; }
+					}
+					if (min_raw < gt_best_raw) {
+						gt_best_raw = min_raw; gt_best_sym = min_sym; gt_best_gen = i + 1;
+					}
+					fprintf(gt_fp,
+					        "%d\t%d\t%.5f\t%.5f\t%.5f\t%.5f\t%.5f\t%.5f\t%d\n",
+					        i + 1, GB->num_chrom, min_raw, min_sym, cf_at_min,
+					        best_cf, rmsd_at_best_cf, gt_best_raw, gt_best_gen);
+					fflush(gt_fp);   // partial trace survives a timeout kill
+
+					// Restore in reverse order of mutation: opt_par, then rotamers,
+					// then re-derive atoms[] geometry from the restored opt_par via
+					// the same code path that perturbed it. The final calc_rmsd call
+					// is discarded -- it is invoked for its buildcc() side effect.
+					std::copy(saved_par.begin(), saved_par.end(), FA->opt_par);
+					for (int r = 1; r <= FA->res_cnt; ++r) residue[r].rot = saved_rot[r];
+					(void)calc_rmsd(FA, atoms, residue, *cleftgrid,
+					                FA->npar, FA->opt_par, false);
+					(void)gt_best_sym;
+				}
+			}
+		}
+
 		// ── Record generation wall-clock ──
 		{
 			auto _t1_gen = std::chrono::steady_clock::now();
