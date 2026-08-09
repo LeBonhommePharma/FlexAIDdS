@@ -8208,6 +8208,11 @@ void DatasetRunner::write_report(const BenchmarkReport& report,
                "native_pose_seeded,native_pose_seed_fraction,protocol_claim_eligible,"
                "cf_native,best_cluster_rmsd,conditional_scanned_pool_ceiling,best_cluster_idx,"
                "seed_echo,pose_source,"
+               // The row writer below emits election_mode/consensus_count/rank0_demoted
+               // here. Omitting them left the header 3 fields short of every row, so
+               // pandas promoted the surplus to an index and shifted every named column
+               // from cf_top1_pose_path onward left by 3 -- silently, without an error.
+               "election_mode,consensus_count,rank0_demoted,"
                "cf_top1_pose_path,cf_top1_score,cf_top1_rmsd,cf_top1_pose_sha256,"
                "entropy_top1_pose_path,entropy_top1_score,entropy_top1_rmsd,entropy_top1_pose_sha256,"
                "H_rep_rank0,H_pop,H_rep_mean,D_vib";
