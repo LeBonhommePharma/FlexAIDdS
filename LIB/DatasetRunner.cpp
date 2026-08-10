@@ -34,6 +34,7 @@
 #include <array>
 #include <cassert>
 #include <cmath>
+#include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <cctype>
@@ -387,6 +388,30 @@ void SubprocessGuard::kill_all() {
 size_t SubprocessGuard::active_count() const {
     std::lock_guard<std::mutex> lock(const_cast<std::mutex&>(mtx_));
     return pids_.size();
+}
+
+// =============================================================================
+// Restart launch throttling — SCHEDULING ONLY (contract in DatasetRunner.h)
+// =============================================================================
+
+int fold_restart_return_codes(const std::vector<RestartResult>& results,
+                              int fallback) {
+    int ret = fallback;
+    for (const auto& r : results) {
+        if (r.ri == 0) ret = r.ret;        // canonical restart sets the base
+        else if (r.ret != 0) ret = r.ret;  // any later failure overrides it
+    }
+    return ret;
+}
+
+int restart_concurrency_cap(int cpu_budget, int omp_per_worker,
+                            int num_workers, int env_override) {
+    if (env_override == 0) return 0;             // unlimited (legacy fan-out)
+    if (env_override > 0)  return env_override;  // explicit operator cap
+    if (cpu_budget <= 0)   return 1;             // unknown budget → serialize
+    const int per_child =
+        std::max(1, omp_per_worker) * std::max(1, num_workers);
+    return std::max(1, cpu_budget / per_child);
 }
 
 // =============================================================================
@@ -5838,9 +5863,37 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                 pid_t pid;
                 int   ri;
                 std::chrono::steady_clock::time_point launch_t;
+                int   ret{-1};       ///< exit code, filled in at reap time
+                bool  reaped{false}; ///< guards against double-waiting a pid
             };
             std::vector<RestartPid> par_pids;
             auto par_wall_start = std::chrono::steady_clock::now();
+
+            // Reap one restart child. Each restart keeps its OWN full
+            // per_job_timeout_s budget, measured from ITS OWN fork — identical
+            // to the unthrottled drain loop. Idempotent: safe to call again
+            // from the final drain after the launch window already reaped it.
+            auto reap_restart = [&](RestartPid& rp) {
+                if (rp.reaped) return;
+                int ri_ret = -1;
+                if (rp.pid > 0) {
+                    auto elapsed_s = static_cast<int>(
+                        std::chrono::duration_cast<std::chrono::seconds>(
+                            std::chrono::steady_clock::now() - rp.launch_t).count());
+                    int remaining = std::max(1,
+                        config.per_job_timeout_s - elapsed_s);
+                    ri_ret = proc_guard_->wait_with_timeout(rp.pid, remaining);
+                }
+                rp.ret    = ri_ret;
+                rp.reaped = true;
+            };
+
+            // ── Sliding launch window (CPU-oversubscription fix) ─────────────
+            // par_max_inflight < 0 = not yet resolved (needs omp_per_worker,
+            // which is computed further down inside the loop body).
+            // par_reap_cursor = FIFO index of the next entry to reap for a slot.
+            int    par_max_inflight = -1;
+            size_t par_reap_cursor  = 0;
 
             for (int ri = 0; ri < n_restarts; ri++) {
                 const std::string ri_dir    = (ri == 0) ? out_dir
@@ -6175,13 +6228,19 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
             //   2. floor(parent OMP_NUM_THREADS / num_workers)
             //   3. floor(hardware_concurrency()  / num_workers)
             //   minimum 1 in all cases.
+            // `omp_budget_base` is hoisted out of the branch below (pure
+            // computation, identical value) so the restart-concurrency cap can
+            // reuse the very same CPU budget the per-worker split was taken
+            // from.  omp_per_worker itself is UNCHANGED — thread count is
+            // science-affecting in this engine and must never be tuned here.
+            const char* env_omp = std::getenv("OMP_NUM_THREADS");
+            const int omp_budget_base = (env_omp && std::atoi(env_omp) > 0)
+                ? std::atoi(env_omp)
+                : static_cast<int>(std::thread::hardware_concurrency());
             int omp_per_worker = config.omp_threads_per_worker;
             if (omp_per_worker <= 0) {
-                const char* env_omp = std::getenv("OMP_NUM_THREADS");
-                int base = (env_omp && std::atoi(env_omp) > 0)
-                    ? std::atoi(env_omp)
-                    : static_cast<int>(std::thread::hardware_concurrency());
-                omp_per_worker = std::max(1, base / std::max(1, config.num_threads));
+                omp_per_worker = std::max(1,
+                    omp_budget_base / std::max(1, config.num_threads));
             }
 
             // ── Blind the initial placement (Bug #1 fix) ─────────────────
@@ -6417,8 +6476,36 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                 << ">" << shell_quote(ri_dir + "/stdout.log");
 
             if (parallel_restarts) {
-                // ── Parallel mode: fork now, wait after all restarts launched ──
-                // The config/cmd is fully built above; just fork and move on.
+                // ── Parallel mode: fork inside a bounded launch window ────────
+                // Every parent-side artifact for this restart (dock_config.json,
+                // blinded ligand, receptor prep) has already been written above,
+                // in exactly the same order as the unthrottled path. ONLY the
+                // fork is gated, so no child's inputs can change.
+                if (par_max_inflight < 0) {
+                    par_max_inflight = restart_concurrency_cap(
+                        omp_budget_base, omp_per_worker, config.num_threads,
+                        protocol_cfg_.max_concurrent_restarts);
+                    char capbuf[32];
+                    if (par_max_inflight > 0)
+                        std::snprintf(capbuf, sizeof capbuf, "%d", par_max_inflight);
+                    else
+                        std::snprintf(capbuf, sizeof capbuf, "unlimited");
+                    fprintf(stderr,
+                        "[PARALLEL-RESTART] %s: launch window = %s concurrent "
+                        "restart(s) (cpu_budget=%d omp/worker=%d workers=%d)\n",
+                        entry.pdb_id.c_str(), capbuf,
+                        omp_budget_base, omp_per_worker, config.num_threads);
+                }
+                // Free a slot before forking. Reaping is FIFO in launch order,
+                // so par_pids stays ordered by ri and the failure fold below is
+                // bit-for-bit what the unthrottled drain produced.
+                while (par_max_inflight > 0 &&
+                       par_reap_cursor < par_pids.size() &&
+                       static_cast<int>(par_pids.size() - par_reap_cursor)
+                           >= par_max_inflight) {
+                    reap_restart(par_pids[par_reap_cursor]);
+                    ++par_reap_cursor;
+                }
                 pid_t rp = proc_guard_->fork_exec(cmd.str());
                 par_pids.push_back({rp, ri, std::chrono::steady_clock::now()});
                 if (rp < 0) {
@@ -6453,19 +6540,17 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
             // Remaining timeout = per_job_timeout - elapsed since that restart's
             // fork, ensuring no restart silently outlives the budget.
             if (parallel_restarts && !par_pids.empty()) {
+                // par_pids is in launch order (== ri order); entries already
+                // reaped by the launch window are no-ops here and contribute
+                // their recorded exit code, so the fold sees the identical
+                // sequence of (ri, ret) pairs the unthrottled path produced.
+                std::vector<RestartResult> restart_rets;
+                restart_rets.reserve(par_pids.size());
                 for (auto& rp : par_pids) {
-                    int ri_ret = -1;
-                    if (rp.pid > 0) {
-                        auto elapsed_s = static_cast<int>(
-                            std::chrono::duration_cast<std::chrono::seconds>(
-                                std::chrono::steady_clock::now() - rp.launch_t).count());
-                        int remaining = std::max(1,
-                            config.per_job_timeout_s - elapsed_s);
-                        ri_ret = proc_guard_->wait_with_timeout(rp.pid, remaining);
-                    }
-                    if (rp.ri == 0) ret = ri_ret;
-                    else if (ri_ret != 0) ret = ri_ret;
+                    reap_restart(rp);
+                    restart_rets.push_back({rp.ri, rp.ret});
                 }
+                ret = fold_restart_return_codes(restart_rets, ret);
                 // Wall time = elapsed from first fork to last finish.
                 result.wall_time_s = std::chrono::duration<double>(
                     std::chrono::steady_clock::now() - par_wall_start).count();

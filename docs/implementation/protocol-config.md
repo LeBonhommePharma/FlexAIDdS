@@ -63,6 +63,7 @@ start; the C++ path is a superset (adds `protocol_config`, hashes, git, schema).
 | `FLEXAIDDS_SEED_BASE` | `seed_base` | `0` |
 | `FLEXAIDDS_RESTARTS` | `restarts` | `5` |
 | `FLEXAIDDS_PARALLEL_RESTARTS` | `parallel_restarts` | `restarts > 1` |
+| `FLEXAIDDS_MAX_CONCURRENT_RESTARTS` | `max_concurrent_restarts` | `-1` (auto) |
 | `FLEXAIDDS_VCT_R0` | `vct_r0` | `7.0` |
 | `FLEXAIDDS_VCT_NORM` | `vct_normalize_contacts` | off |
 | `FLEXAIDDS_VCT_ENTROPY_WEIGHT` | `vct_entropy_weight` | `0.0` |
@@ -169,12 +170,48 @@ All former FLEXAIDDS_* overrides go through ProtocolConfig.
 6. Document each migrated var and drop it from Residual.
 7. Do not change pose ranking / clustering order without an explicit request + feature flag.
 
+## Restart concurrency throttle (`FLEXAIDDS_MAX_CONCURRENT_RESTARTS`)
+
+`omp_per_worker` divides the CPU budget by the number of concurrent **workers**
+(`config.num_threads`) — but the parallel-restart path forks every restart of a
+target at once, and each child inherits `OMP_NUM_THREADS=omp_per_worker`. Actual
+demand was therefore
+
+```
+workers × n_restarts × (cpu_budget / workers)  =  n_restarts × cpu_budget
+```
+
+i.e. the restart fan-out was never in the budget denominator, so a 10-restart
+target oversubscribed the machine 10×.
+
+`restart_concurrency_cap()` (`LIB/DatasetRunner.h`) bounds how many restart
+children may be alive at once:
+
+| `FLEXAIDDS_MAX_CONCURRENT_RESTARTS` | behaviour |
+|---|---|
+| unset (`-1`) | auto — `cpu_budget / (omp_per_worker × workers)`, floor 1 |
+| `0` | unlimited (legacy pre-fix fan-out) |
+| `N > 0` | explicit cap of `N` |
+
+The launcher uses a **sliding window**: it reaps in FIFO launch order to free a
+slot before forking the next restart. This is a **scheduling-only** change —
+`OMP_NUM_THREADS` is untouched (thread count is science-affecting in this
+engine), each restart keeps its own config, seed, output prefix, and its own
+full `per_job_timeout_s` measured from its own fork. Per-restart exit codes are
+recorded at reap time and folded by `fold_restart_return_codes()`, which
+preserves the historical rule exactly: restart 0's code is the base and any
+non-zero code from restarts 1..n-1 overrides it.
+
 ## Tests
 
 ```bash
 cmake -B build -DBUILD_TESTING=ON -DCMAKE_BUILD_TYPE=Release
 cmake --build build --target test_protocol_config -j
 ctest --test-dir build -R ProtocolConfigTests --output-on-failure
+
+# Restart throttle: cap arithmetic, failure-fold equivalence, live window bound
+cmake --build build --target test_dataset_runner -j
+ctest --test-dir build -R DatasetRunnerTests --output-on-failure
 ```
 
 

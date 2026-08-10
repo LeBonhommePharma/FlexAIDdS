@@ -63,6 +63,7 @@ struct ClearProtocolEnv {
         : seed_base("FLEXAIDDS_SEED_BASE", nullptr)
         , restarts("FLEXAIDDS_RESTARTS", nullptr)
         , parallel("FLEXAIDDS_PARALLEL_RESTARTS", nullptr)
+        , max_conc("FLEXAIDDS_MAX_CONCURRENT_RESTARTS", nullptr)
         , vct_r0("FLEXAIDDS_VCT_R0", nullptr)
         , vct_norm("FLEXAIDDS_VCT_NORM", nullptr)
         , vct_ew("FLEXAIDDS_VCT_ENTROPY_WEIGHT", nullptr)
@@ -121,7 +122,7 @@ struct ClearProtocolEnv {
         , elect_tau("FLEXAIDDS_ELECTION_SCORE_TAU", nullptr)
         , elect_sing("FLEXAIDDS_ELECTION_INCLUDE_SINGLETONS", nullptr) {}
 
-    ScopedEnv seed_base, restarts, parallel, vct_r0, vct_norm, vct_ew,
+    ScopedEnv seed_base, restarts, parallel, max_conc, vct_r0, vct_norm, vct_ew,
               sharing, boom, n_elite, shannon, thermo, t_eff, tencom,
               data_dir, oracle_dir, oracle_site, cleft, cf_win, cluster,
               seed_elit, seed_delta, freqsel, freq_a, freq_r, consensus,
@@ -256,6 +257,37 @@ TEST(ProtocolConfig, PresenceFlagsAndParallelRestarts) {
     // Explicit parallel=1 but restarts==1 → parallel stays false.
     EXPECT_FALSE(cfg.parallel_restarts);
     EXPECT_TRUE(cfg.parallel_restarts_explicit);
+}
+
+TEST(ProtocolConfig, MaxConcurrentRestartsFromEnvAndJsonRoundTrip) {
+    {   // Unset → -1 ("auto": derive the cap from the CPU budget).
+        ClearProtocolEnv clear;
+        EXPECT_EQ(flexaids::ProtocolConfig::from_env().max_concurrent_restarts, -1);
+    }
+    {   // 0 → unlimited, i.e. the legacy unbounded restart fan-out.
+        ClearProtocolEnv clear;
+        ScopedEnv mc("FLEXAIDDS_MAX_CONCURRENT_RESTARTS", "0");
+        EXPECT_EQ(flexaids::ProtocolConfig::from_env().max_concurrent_restarts, 0);
+    }
+    {   // Explicit positive cap passes through.
+        ClearProtocolEnv clear;
+        ScopedEnv mc("FLEXAIDDS_MAX_CONCURRENT_RESTARTS", "3");
+        EXPECT_EQ(flexaids::ProtocolConfig::from_env().max_concurrent_restarts, 3);
+    }
+    {   // Junk negatives normalize to -1 rather than becoming a bogus cap.
+        ClearProtocolEnv clear;
+        ScopedEnv mc("FLEXAIDDS_MAX_CONCURRENT_RESTARTS", "-7");
+        EXPECT_EQ(flexaids::ProtocolConfig::from_env().max_concurrent_restarts, -1);
+    }
+    {   // Survives the RUN_RECEIPT JSON round-trip (provenance for the knob).
+        ClearProtocolEnv clear;
+        ScopedEnv mc("FLEXAIDDS_MAX_CONCURRENT_RESTARTS", "2");
+        const auto a = flexaids::ProtocolConfig::from_env();
+        const std::string json = a.to_json();
+        EXPECT_NE(json.find("\"max_concurrent_restarts\":2"), std::string::npos);
+        const auto b = flexaids::ProtocolConfig::from_json(json);
+        EXPECT_EQ(b.max_concurrent_restarts, a.max_concurrent_restarts);
+    }
 }
 
 TEST(ProtocolConfig, Chunk2PoseAndBudgetKnobs) {

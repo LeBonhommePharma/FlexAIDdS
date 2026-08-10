@@ -1954,3 +1954,151 @@ TEST(EmittedClusterHeads, RejectsNonDigitSuffixes) {
 
     fs::remove_all(dir);
 }
+
+// =============================================================================
+// Restart launch throttling (CPU-oversubscription fix)
+//
+// These cover the PURE-SCHEDULING contract: the sliding launch window bounds
+// how many restart children run at once, without changing any child's inputs
+// or the failure-propagation semantics the rest of the pipeline depends on.
+// =============================================================================
+
+TEST(RestartThrottle, CapArithmeticMatchesCpuBudget) {
+    // Legacy / opt-out: 0 means "unlimited", regardless of the budget.
+    EXPECT_EQ(restart_concurrency_cap(11, 5, 2, 0), 0);
+
+    // Explicit operator override wins over the derived value.
+    EXPECT_EQ(restart_concurrency_cap(11, 5, 2, 4), 4);
+
+    // Auto (env unset, -1). The observed defect configuration: 11 cores split
+    // across 2 workers => 5 OMP threads each. 2 workers * 5 threads already
+    // saturates the host, so restarts must serialize (cap 1) rather than
+    // multiply demand by n_restarts.
+    EXPECT_EQ(restart_concurrency_cap(11, 5, 2, -1), 1);
+
+    // Under-allocated threads leave genuine headroom for concurrent restarts.
+    EXPECT_EQ(restart_concurrency_cap(11, 2, 2, -1), 2);   // 11 / 4
+    EXPECT_EQ(restart_concurrency_cap(12, 1, 3, -1), 4);   // 12 / 3
+    EXPECT_EQ(restart_concurrency_cap(16, 2, 1, -1), 8);   // 16 / 2
+
+    // Floor of 1: never returns 0 (which would mean "unlimited") from auto.
+    EXPECT_EQ(restart_concurrency_cap(4, 8, 4, -1), 1);
+    EXPECT_EQ(restart_concurrency_cap(1, 64, 64, -1), 1);
+
+    // Degenerate inputs must not divide by zero or go negative.
+    EXPECT_EQ(restart_concurrency_cap(0, 0, 0, -1), 1);
+    EXPECT_EQ(restart_concurrency_cap(-1, 4, 2, -1), 1);
+    EXPECT_GE(restart_concurrency_cap(11, 0, 0, -1), 1);
+}
+
+TEST(RestartThrottle, FoldPreservesAnyFailureWins) {
+    // All restarts succeeded → success.
+    EXPECT_EQ(fold_restart_return_codes(
+        {{0, 0}, {1, 0}, {2, 0}}, 99), 0);
+
+    // Restart 0 sets the base code.
+    EXPECT_EQ(fold_restart_return_codes(
+        {{0, 7}, {1, 0}, {2, 0}}, 99), 7);
+
+    // ONE failed restart poisons the whole target, even when restart 0 was
+    // fine. This is what drives docking_completed=false downstream.
+    EXPECT_EQ(fold_restart_return_codes(
+        {{0, 0}, {1, 0}, {2, 3}}, 99), 3);
+
+    // Timeout (-1 from wait_with_timeout) propagates like any other failure.
+    EXPECT_EQ(fold_restart_return_codes(
+        {{0, 0}, {1, -1}, {2, 0}}, 99), -1);
+
+    // LAST non-zero wins among restarts 1..n-1 — not first-failure-wins.
+    EXPECT_EQ(fold_restart_return_codes(
+        {{0, 0}, {1, 2}, {2, 0}, {3, 5}}, 99), 5);
+
+    // Restart 0 is order-sensitive: it unconditionally overwrites whatever
+    // came before it. par_pids must therefore stay in launch order (ri order),
+    // which is exactly what FIFO reaping in the launch window guarantees.
+    EXPECT_EQ(fold_restart_return_codes(
+        {{1, 4}, {0, 0}}, 99), 0);
+    EXPECT_EQ(fold_restart_return_codes(
+        {{0, 0}, {1, 4}}, 99), 4);
+
+    // Empty (no restarts forked) leaves the caller's value untouched.
+    EXPECT_EQ(fold_restart_return_codes({}, 99), 99);
+}
+
+#ifndef _MSC_VER
+// Drives REAL child processes through the same sliding-window algorithm the
+// runner uses, and proves (a) no more than `cap` children are ever un-reaped,
+// and (b) the window actually serializes — wall time scales with n/cap.
+TEST(RestartThrottle, SlidingWindowBoundsLiveChildren) {
+    SubprocessGuard guard;
+
+    struct Slot {
+        pid_t pid;
+        int   ri;
+        std::chrono::steady_clock::time_point launch_t;
+        int   ret{-1};
+        bool  reaped{false};
+    };
+
+    const int n_restarts = 6;
+    const int cap        = restart_concurrency_cap(/*cpu_budget=*/8,
+                                                   /*omp_per_worker=*/2,
+                                                   /*num_workers=*/2,
+                                                   /*env_override=*/-1);
+    ASSERT_EQ(cap, 2);
+
+    std::vector<Slot> slots;
+    size_t reap_cursor = 0;
+    size_t max_inflight_seen = 0;
+
+    auto reap = [&](Slot& s) {
+        if (s.reaped) return;
+        int r = -1;
+        if (s.pid > 0) r = guard.wait_with_timeout(s.pid, 60);
+        s.ret    = r;
+        s.reaped = true;
+    };
+
+    const auto t0 = std::chrono::steady_clock::now();
+    for (int ri = 0; ri < n_restarts; ri++) {
+        while (cap > 0 && reap_cursor < slots.size() &&
+               static_cast<int>(slots.size() - reap_cursor) >= cap) {
+            reap(slots[reap_cursor]);
+            ++reap_cursor;
+        }
+        pid_t pid = guard.fork_exec("sleep 1");
+        ASSERT_GT(pid, 0) << "fork_exec failed for ri=" << ri;
+        slots.push_back({pid, ri, std::chrono::steady_clock::now()});
+
+        // active_count() = registered-but-unreaped children. A pid is only
+        // forgotten after its child has exited, so this is an UPPER bound on
+        // the number actually alive; bounding it bounds real concurrency.
+        max_inflight_seen = std::max(max_inflight_seen, guard.active_count());
+        EXPECT_LE(static_cast<int>(guard.active_count()), cap)
+            << "launch window exceeded at ri=" << ri;
+    }
+
+    std::vector<RestartResult> rets;
+    for (auto& s : slots) {
+        reap(s);
+        rets.push_back({s.ri, s.ret});
+    }
+    const double elapsed_s =
+        std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
+
+    // Every restart ran, in launch order, and all succeeded.
+    ASSERT_EQ(rets.size(), static_cast<size_t>(n_restarts));
+    for (int ri = 0; ri < n_restarts; ri++) {
+        EXPECT_EQ(rets[static_cast<size_t>(ri)].ri, ri);
+        EXPECT_EQ(rets[static_cast<size_t>(ri)].ret, 0);
+    }
+    EXPECT_EQ(fold_restart_return_codes(rets, 42), 0);
+    EXPECT_EQ(static_cast<int>(max_inflight_seen), cap);
+
+    // 6 x `sleep 1` at 2-at-a-time cannot finish faster than ~3 s; the
+    // unthrottled fan-out would land near 1 s. Generous lower bound to stay
+    // robust on a loaded machine (which only ever makes this slower).
+    EXPECT_GE(elapsed_s, 2.5) << "window did not actually serialize";
+    EXPECT_EQ(guard.active_count(), 0u);
+}
+#endif  // !_MSC_VER
