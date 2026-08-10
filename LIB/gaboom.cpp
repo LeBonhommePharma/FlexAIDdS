@@ -3147,7 +3147,11 @@ void calculate_fitness(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* chr
 			ws.tl_atoms.assign(n_thr, std::vector<atom>(atoms, atoms + natm + 1));
 			ws.tl_res.assign(n_thr, std::vector<resid>(residue, residue + nres + 1));
 			ws.tl_fa.assign(n_thr, *FA);
-			ws.tl_contacts.assign(n_thr, std::vector<int>(MAX_ATOM_NUMBER, 0));
+			// CONTACTS_BUFFER_SIZE: stamps + the trailing epoch slot (flexaid.h).
+			// This buffer is RESIDENT across generations while tl_fa[t] below is
+			// re-snapshotted from *FA every generation; the epoch must therefore
+			// live here, in the buffer, and not in the FA_Global copy.
+			ws.tl_contacts.assign(n_thr, std::vector<int>(CONTACTS_BUFFER_SIZE, 0));
 			ws.tl_contrib.assign(n_thr, std::vector<float>(nctb, 0.0f));
 			ws.tl_optres.assign(n_thr, std::vector<OptRes>(FA->optres, FA->optres + nopt));
 			ws.tl_vc.assign(n_thr, *VC);
@@ -3180,6 +3184,11 @@ void calculate_fitness(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* chr
 			// change between generations), then redirect FA scratch to the
 			// resident per-thread buffers.
 			tl_fa[t] = *FA;
+			// NOTE: this snapshot rewinds every scalar in tl_fa[t] to the master
+			// FA's value once per generation. Nothing that must stay monotonic
+			// against a RESIDENT buffer may live in FA_Global — the contacts
+			// epoch lives inside tl_contacts[t] itself for exactly this reason
+			// (flexaid.h, tests/test_contacts_epoch.cpp).
 			tl_fa[t].contacts      = tl_contacts[t].data();
 			tl_fa[t].contributions = tl_contrib[t].data();
 			tl_fa[t].optres        = tl_optres[t].data();
@@ -3956,7 +3965,8 @@ void populate_chromosomes(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* 
 		std::vector<std::vector<atom>>   p_atoms(n_thr, std::vector<atom>(atoms, atoms + natm + 1));
 		std::vector<std::vector<resid>>  p_res(n_thr, std::vector<resid>(residue, residue + nres + 1));
 		std::vector<FA_Global>           p_fa(n_thr, *FA);
-		std::vector<std::vector<int>>    p_contacts(n_thr, std::vector<int>(MAX_ATOM_NUMBER, 0));
+		// CONTACTS_BUFFER_SIZE: stamps + the trailing epoch slot (flexaid.h).
+		std::vector<std::vector<int>>    p_contacts(n_thr, std::vector<int>(CONTACTS_BUFFER_SIZE, 0));
 		std::vector<std::vector<float>>  p_contrib(n_thr, std::vector<float>(nctb, 0.0f));
 		std::vector<std::vector<OptRes>> p_optres(n_thr,
 		    std::vector<OptRes>(FA->optres, FA->optres + nopt));

@@ -73,3 +73,20 @@ targets. Keep `FLEXAIDDS_PARALLEL_REPRODUCE` OFF until both are resolved.
 
 All other merged optimizations (contacts memset->epoch, hoist rigid index, precompute
 PoseBust vdW radius) are verified bit-identical to main with default flags (10/10 parity).
+
+> ⚠️ **Read "with default flags" literally.** For `FLEXAIDDS_CONTACTS_EPOCH` the default is OFF,
+> so the 10/10 parity run exercised the legacy memset path and said **nothing** about the epoch
+> path. With the flag ON the optimization was in fact **incorrect**: the epoch counter lived in
+> `FA_Global`, which the threaded GA re-snapshots from the master every generation
+> (`gaboom.cpp`, `tl_fa[t] = *FA;`) while the stamp buffer it points at stays resident across
+> generations. The counter therefore rewound at every generation boundary against stale
+> high-water stamps, contacts were silently skipped, and CF came out wrong.
+>
+> Fixed by moving the counter **inside** the buffer it stamps (`CONTACTS_EPOCH_SLOT`, see
+> `flexaid.h`), so a struct copy can no longer separate the two. Regression coverage:
+> `tests/test_contacts_epoch.cpp` plus the paired `WILL_FAIL` target that re-creates the
+> pre-fix layout. The flag remains **default OFF** pending the ON-vs-OFF parity evidence
+> required by `METHODOLOGY.md` §1.
+>
+> **Lesson for this table: a parity run with a flag OFF is not evidence about the flag ON.**
+> Any future entry here must state which arm was actually exercised.

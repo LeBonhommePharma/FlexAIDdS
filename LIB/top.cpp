@@ -463,7 +463,9 @@ int main(int argc, char **argv){
 	// all-zero once here to match the epoch-0-means-"never touched" invariant.
 	// Legacy mode still memsets it every call, so the zero-fill costs nothing
 	// extra there (one-time, at startup, vs. the malloc it replaces).
-	FA->contacts = (int*)calloc(MAX_ATOM_NUMBER,sizeof(int));
+	// CONTACTS_BUFFER_SIZE (not MAX_ATOM_NUMBER): the trailing slot carries the
+	// epoch counter — see flexaid.h.
+	FA->contacts = (int*)calloc(CONTACTS_BUFFER_SIZE,sizeof(int));
 	if(FA->contacts == NULL){
 		fprintf(stderr,"ERROR: Could not allocate memory for contacts\n");
 		Terminate(2);
