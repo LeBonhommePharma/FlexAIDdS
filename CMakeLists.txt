@@ -29,6 +29,16 @@ endif()
 
 project(FlexAID VERSION 2.0.0 LANGUAGES ${_ENABLED_LANGUAGES})
 
+# ── Editor/tooling support: emit compile_commands.json ────────────────────
+# Emits a JSON description of the compile line for each translation unit.
+# It affects no compiler invocation and produces no object code, so builds
+# and results are byte-identical with it on or off.
+#
+# Without it, clangd/IDEs fall back to a default C++ standard and report the
+# engine's C++23 usage (std::optional, std::span, std::filesystem) as errors
+# across LIB/ — hundreds of phantom diagnostics that mask real ones.
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON CACHE BOOL "Emit compile_commands.json for clangd/IDEs" FORCE)
+
 # ── Embed git provenance in binary ────────────────────────────────────────
 execute_process(
     COMMAND git -C "${CMAKE_SOURCE_DIR}" status --porcelain
