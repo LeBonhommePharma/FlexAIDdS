@@ -26,6 +26,11 @@ struct ProtocolConfig {
     /// Env FLEXAIDDS_PARALLEL_RESTARTS: if unset, defaults to (restarts > 1).
     bool parallel_restarts{true};
     bool parallel_restarts_explicit{false}; ///< true if env overrode default
+    /// Cap on restart child processes alive at once (scheduling only — never
+    /// changes docked coordinates). FLEXAIDDS_MAX_CONCURRENT_RESTARTS:
+    /// -1 = auto (derive from the CPU budget), 0 = unlimited (legacy fan-out
+    /// that oversubscribed the host by n_restarts x), >0 = explicit cap.
+    int max_concurrent_restarts{-1};
 
     // ── VCT / scoring knobs ──────────────────────────────────────────────
     double vct_r0{7.0};               ///< FLEXAIDDS_VCT_R0

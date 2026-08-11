@@ -285,6 +285,7 @@ FlexAID∆S exposes its scientific innovations as environment-variable flags so 
 | `FLEXAIDDS_EVAL_SCALE_DIHEDRAL` | `1` | GA budget scaling: 1=pop-scale (default), 0=gen-scale, -1=fixed |
 | `FLEXAIDDS_RESTARTS` | `5` | Number of independent GA restarts per target |
 | `FLEXAIDDS_PARALLEL_RESTARTS` | ON | Launch restart workers concurrently |
+| `FLEXAIDDS_MAX_CONCURRENT_RESTARTS` | auto | Cap on restart children alive at once. Auto = `cpu_budget / (omp_per_worker × workers)`, min 1. `0` = unlimited (legacy, oversubscribes by `n_restarts×`). Scheduling only — results are unaffected |
 | `FLEXAIDDS_USE_SHANNON` | OFF | Presence-gated GA monitor that pools ligand ANM mode eigenvalues across cluster representatives and reports an ω-space Shannon diagnostic. The eigenvalues never enter CF, fitness, or election |
 | `FLEXAIDDS_RING_FLEX` | OFF | Enable non-aromatic ring pucker sampling (LigandRingFlex) |
 | `FLEXAIDDS_HBOND_WEIGHT` | `-2.5` | Hydrogen-bond term coefficient |

@@ -452,6 +452,47 @@ private:
 };
 
 // =============================================================================
+// Restart launch throttling — SCHEDULING ONLY
+//
+// These helpers decide *when* restart child processes are forked. They never
+// touch a child's config, seed, output prefix, or OMP_NUM_THREADS, so they
+// cannot move a docked coordinate or a score.
+// =============================================================================
+
+/// One restart's exit code, recorded in launch order.
+struct RestartResult {
+    int ri{0};    ///< restart index (0 = the canonical restart)
+    int ret{-1};  ///< exit code; -1 = signal / timeout / fork failure
+};
+
+/// Fold per-restart exit codes into a single target-level return code.
+///
+/// Preserves the historical propagation rule EXACTLY: restart 0's code sets the
+/// base, and ANY non-zero code from restarts 1..n-1 overrides it (so the last
+/// non-zero failure wins). One failed restart therefore still poisons the whole
+/// target, which is what makes `docking_completed` false downstream.
+/// `fallback` is returned unchanged when `results` is empty.
+int fold_restart_return_codes(const std::vector<RestartResult>& results,
+                              int fallback);
+
+/// How many restart children may be alive concurrently.
+///
+/// `omp_per_worker` already divides the CPU budget by the number of concurrent
+/// workers, but the parallel-restart path forks every restart of a target at
+/// once and each child inherits `OMP_NUM_THREADS=omp_per_worker`. Real demand
+/// was therefore `workers * n_restarts * omp_per_worker` — the restart fan-out
+/// was never in the denominator. This bounds it so that
+/// `cap * omp_per_worker * num_workers ~= cpu_budget`.
+///
+/// `env_override` (FLEXAIDDS_MAX_CONCURRENT_RESTARTS):
+///   < 0 → auto-derive from the CPU budget
+///   = 0 → unlimited (legacy pre-fix fan-out)
+///   > 0 → explicit cap
+/// Returns 0 for "unlimited"; otherwise >= 1.
+int restart_concurrency_cap(int cpu_budget, int omp_per_worker,
+                            int num_workers, int env_override);
+
+// =============================================================================
 // Atom structure for ligand extraction
 // =============================================================================
 

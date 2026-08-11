@@ -103,6 +103,12 @@ ProtocolConfig ProtocolConfig::from_env() {
         cfg.parallel_restarts = (cfg.restarts > 1);
     }
 
+    // Scheduling-only knob: bound how many restart children run at once.
+    // Negative values normalize to -1 ("auto"); 0 keeps the legacy fan-out.
+    if (auto n = env_opt_int("FLEXAIDDS_MAX_CONCURRENT_RESTARTS")) {
+        cfg.max_concurrent_restarts = std::max(-1, *n);
+    }
+
     if (auto v = env_opt_double("FLEXAIDDS_VCT_R0")) {
         cfg.vct_r0 = *v;
     }
@@ -332,6 +338,7 @@ std::string ProtocolConfig::to_json() const {
     o << "\"seed_base\":" << seed_base << ',';
     o << "\"restarts\":" << restarts << ',';
     json_bool(o, "parallel_restarts", parallel_restarts);
+    o << "\"max_concurrent_restarts\":" << max_concurrent_restarts << ',';
     o << "\"vct_r0\":" << vct_r0 << ',';
     json_bool(o, "vct_normalize_contacts", vct_normalize_contacts);
     o << "\"vct_entropy_weight\":" << vct_entropy_weight << ',';
@@ -430,6 +437,9 @@ ProtocolConfig ProtocolConfig::from_json(const std::string& json_text) {
         cfg.restarts = std::max(1, root["restarts"].as_int(5));
     if (!root["parallel_restarts"].is_null())
         cfg.parallel_restarts = root["parallel_restarts"].as_bool(true);
+    if (!root["max_concurrent_restarts"].is_null())
+        cfg.max_concurrent_restarts =
+            std::max(-1, root["max_concurrent_restarts"].as_int(-1));
     if (!root["vct_r0"].is_null())
         cfg.vct_r0 = root["vct_r0"].as_double(7.0);
     if (!root["vct_normalize_contacts"].is_null())
