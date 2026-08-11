@@ -2256,6 +2256,29 @@ flexaids_add_unit_test(test_protocol_config
         add_test(NAME CompareEnergyMatricesTests COMMAND test_compare_energy_matrices)
     endif()
 
+    # test_contacts_epoch — FLEXAIDDS_CONTACTS_EPOCH stamp-buffer invariant.
+    #   Pins the generation-boundary rewind: FA_Global is re-snapshotted from the
+    #   master every generation (gaboom.cpp) while the contacts stamp buffer stays
+    #   resident, so the epoch counter must live inside the buffer, not the struct.
+    #   Header-only under test — no engine sources needed.
+    flexaids_add_unit_test(test_contacts_epoch
+        SOURCES
+            tests/test_contacts_epoch.cpp
+        TEST_NAME ContactsEpochTests
+    )
+
+    # Same source compiled against the PRE-FIX layout (epoch carried by the
+    # per-thread struct instead of by the buffer). Registered WILL_FAIL: it must
+    # detect the corruption. This is what stops the test above from silently
+    # decaying into one that would pass on the broken code too.
+    flexaids_add_unit_test(test_contacts_epoch_prefix_layout
+        SOURCES
+            tests/test_contacts_epoch.cpp
+        DEFINES CONTACTS_EPOCH_PREFIX_LAYOUT=1
+        TEST_NAME ContactsEpochPrefixLayoutDetected
+    )
+    set_tests_properties(ContactsEpochPrefixLayoutDetected PROPERTIES WILL_FAIL TRUE)
+
     # test_ion_handling — assign_radii / assign_types HETATM + ion coverage
     #                     + tENCoM ion contact surface (TmContSct) tests
     flexaids_add_unit_test(test_ion_handling

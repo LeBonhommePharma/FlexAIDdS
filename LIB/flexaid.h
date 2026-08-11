@@ -34,6 +34,7 @@
 #include "ThermodynamicEngine.h"
 #include <map>
 #include <cstdint>
+#include <climits>
 
 #include "flexaid_exception.h"
 
@@ -64,6 +65,13 @@ static inline void safe_remark_cat(char* remark, const char* src, size_t* cur_le
 #define MAX_RING_FLEX 16            // max non-aromatic/sugar rings per ligand (LigandRingFlex Phase 2)
 //#define MAX_FLEX_BONDS 20           // max number of flexible bonds for het groups
 #define MAX_ATOM_NUMBER 100000      // Max PDB atom number for contacts/num_atm arrays
+// FA_Global::contacts layout — see the epoch helpers further down in this file:
+//   [0 .. MAX_ATOM_NUMBER-1] : per-atom "already visited this eval" stamps
+//   [CONTACTS_EPOCH_SLOT]    : the epoch counter that stamps them
+// EVERY allocator of a contacts buffer must allocate CONTACTS_BUFFER_SIZE ints,
+// zero-initialized (epoch 0 == "this buffer has never been stamped").
+#define CONTACTS_EPOCH_SLOT  MAX_ATOM_NUMBER
+#define CONTACTS_BUFFER_SIZE (MAX_ATOM_NUMBER + 1)
 #define MAX_GRID_POINTS 1000        // Total number of points to anchor ligand
 #define MAX_NORMAL_GRID 5000        // max number of grid points in normal grid
 #define MAX_SPHERE_POINTS 610       // Total number of points in atom surface sphere 
@@ -73,6 +81,59 @@ static inline void safe_remark_cat(char* remark, const char* src, size_t* cur_le
 #define MBNDS 4                     // max number of cov bonds an atom can have 
 #define MAX_BONDED 20               // max number of bonded atom list
 #define MAX_PAR 100                 // max number of parameters for simplex optimization, not used at the moment
+
+// ── FLEXAIDDS_CONTACTS_EPOCH: epoch / stamp-buffer pairing invariant ─────────
+//
+// FA_Global::contacts holds a per-atom "already visited this eval" flag.  In the
+// default (legacy) path vcfunction() memsets the whole array every evaluation.
+// Under FLEXAIDDS_CONTACTS_EPOCH that O(MAX_ATOM_NUMBER) memset is replaced by
+// an O(1) epoch bump: a slot stamped with the *current* epoch means "visited",
+// any other value means "unset".
+//
+// INVARIANT (mirrors LIB/Vcontacts.cpp:1816 box_stamp/box_epoch):
+//   1. the epoch counter and the buffer it stamps share a lifetime;
+//   2. the counter is strictly monotonic with respect to its OWN buffer;
+//   3. any reset of the counter is accompanied by zeroing that buffer.
+//
+// The counter therefore lives INSIDE the buffer (slot CONTACTS_EPOCH_SLOT) and
+// NOT in FA_Global.  This is load-bearing, not stylistic:
+//
+//   FA_Global is shallow-copied per worker thread, and that copy is REFRESHED
+//   at every generation boundary (LIB/gaboom.cpp `tl_fa[t] = *FA;`) while the
+//   stamp buffer it is re-pointed at (ParEvalWS::tl_contacts) is allocated ONCE
+//   and stays resident across generations.  A counter stored in FA_Global was
+//   rewound by that refresh while the buffer still held the previous
+//   generation's high-water stamps, so stale stamps aliased live epoch values,
+//   contacts were silently treated as already-visited and skipped, and CF came
+//   out wrong with no error and no diagnostic.
+//
+//   Keeping the counter in the buffer makes that entire class of bug
+//   unrepresentable: a struct copy carries the pointer, so the counter can
+//   never be separated from the stamps it guards, and zeroing the buffer
+//   necessarily zeroes the counter.
+//
+// Regression coverage: tests/test_contacts_epoch.cpp.
+
+// Begin a new evaluation on `contacts`; returns the epoch to stamp with.
+inline int contacts_epoch_begin(int* contacts)
+{
+	int& epoch = contacts[CONTACTS_EPOCH_SLOT];
+	// Wraparound guard.  An int epoch could in principle repeat a stale stamp
+	// after ~2^31 evals (never reached in one restart, but this keeps
+	// arbitrarily long campaigns correct).  Per invariant 3 the rewind zeroes
+	// the stamps as well, so no stale stamp can survive it.
+	if(epoch >= INT_MAX - 1){
+		memset(contacts, 0, CONTACTS_BUFFER_SIZE*sizeof(int));
+		epoch = 0;
+	}
+	return ++epoch;
+}
+
+// Epoch currently stamping `contacts` (0 == never stamped).
+inline int contacts_epoch_current(const int* contacts)
+{
+	return contacts[CONTACTS_EPOCH_SLOT];
+}
 #define MAX_ROTLIBSIZE 500
 #define MAXFLXSC 100
 #define MAX_CLOSE_DIST 10
@@ -523,11 +584,13 @@ struct FA_Global_struct{
 	int   translational;                 // flag indicating if translation degrees of freedom are enabled
 	int   refstructure;                  // reference structure for rmsd calculation
   
-	int* contacts;                       // matrix used for not calculating the same interaction twice
-	int  contacts_epoch;                 // FLEXAIDDS_CONTACTS_EPOCH: monotonic per-eval stamp used to
-	                                     // O(1)-clear FA->contacts instead of memset(); see vcfunction.cpp.
-	                                     // Zero-initialized by FA_Global{} value-init; travels with the
-	                                     // contacts pointer on every FA_Global copy (per-thread workspaces).
+	int* contacts;                       // matrix used for not calculating the same interaction twice.
+	                                     // CONTACTS_BUFFER_SIZE ints, zero-initialized. Slot
+	                                     // CONTACTS_EPOCH_SLOT carries the FLEXAIDDS_CONTACTS_EPOCH
+	                                     // counter — do NOT add an epoch field to this struct: it is
+	                                     // shallow-copied per thread and re-snapshotted every
+	                                     // generation, which rewinds any counter stored here while the
+	                                     // stamp buffer stays resident. See contacts_epoch_begin().
 	struct energy_matrix* energy_matrix;        // potential energy parameters
 	int   ntypes;	                     // number of atom types
 	int   tspoints;                      // actual number of sphere points

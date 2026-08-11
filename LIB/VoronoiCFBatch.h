@@ -107,7 +107,10 @@ struct ThreadWorkspace {
 
         atoms        .assign(ref_atoms,   ref_atoms   + natm);
         residue      .assign(ref_residue, ref_residue + nres);
-        contacts     .assign(100000, 0);
+        // CONTACTS_BUFFER_SIZE: stamps + the trailing epoch slot (flexaid.h).
+        // Allocated together with `fa` below so the epoch and the stamps it
+        // guards share this workspace's lifetime.
+        contacts     .assign(CONTACTS_BUFFER_SIZE, 0);
         contributions.assign(static_cast<std::size_t>(nctb), 0.0f);
         optres       .assign(FA->optres,  FA->optres  + nopt);
         calc         .resize(static_cast<std::size_t>(natmr));
