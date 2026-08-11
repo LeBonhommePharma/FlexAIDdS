@@ -1,0 +1,12 @@
+# clangd configuration for FlexAIDdS.
+#
+# CompilationDatabase points clangd at the compile_commands.json that CMake
+# emits into build/ (CMAKE_EXPORT_COMPILE_COMMANDS, set in CMakeLists.txt).
+#
+# The -std fallback matters for a fresh clone that has not been configured yet:
+# without it clangd assumes an older standard and reports every use of
+# std::optional / std::span / std::filesystem across LIB/ as an error.
+CompileFlags:
+  CompilationDatabase: build
+  Add:
+    - -std=c++23
