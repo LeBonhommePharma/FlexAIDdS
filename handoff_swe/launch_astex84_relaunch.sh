@@ -45,7 +45,13 @@ grep -q "omp critical" "$REPO/LIB/CleftDetector.cpp" \
 
 cp "$REPO/build_tests/FlexAIDdS" "$REPO/build_tests/benchmark_datasets" "$OUT/bin/"
 # stage the runtime data files the engine resolves relative to its binary
-cp "$REPO"/build_tests/*.dat "$OUT/bin/" 2>/dev/null || true
+cp "$REPO"/build_tests/*.dat "$REPO"/build_tests/*.def "$OUT/bin/" 2>/dev/null || true
+# fail closed: the engine resolves AMINO.def / NUCLEOTIDES.def next to its binary and
+# aborts with exit code 8 before docking if they are absent — which yields a 13-second
+# "rc=0" campaign with 84 result rows, 0 poses and a 0.0% rate that looks like a result.
+for f in AMINO.def NUCLEOTIDES.def MC_st0r5.2_6.dat; do
+  [ -s "$OUT/bin/$f" ] || fail "runtime data file $f missing from $OUT/bin — engine would abort (exit 8)"
+done
 
 # ── Campaign environment ─────────────────────────────────────────────────────
 export FLEXAID_SEED=12345
