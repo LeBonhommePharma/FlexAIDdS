@@ -12,6 +12,7 @@
 #include <climits>
 #include <vector>
 #include <unordered_map>
+#include <type_traits>
 
 #define DEBUG_LEVEL 0
 
@@ -177,6 +178,88 @@ static const double wal_stiff = [](){
 static const bool contacts_epoch_mode =
     (std::getenv("FLEXAIDDS_CONTACTS_EPOCH") != nullptr);
 
+// FLEXAIDDS_RIGID_FASTPATH (truthy, default OFF): walk only Calc[] indices
+// with score==true. List comes from VC->scorable_list / n_scorable when the
+// sibling fields exist, else vc_scorable_indices(). OFF or a missing list
+// keeps the original O(N) atom walk bit-identical.
+static const bool rigid_fastpath = [](){
+    const char* s = std::getenv("FLEXAIDDS_RIGID_FASTPATH");
+    return s && s[0] != '\0' && s[0] != '0';
+}();
+
+// provided by Vcontacts.cpp (sibling). Weak stubs keep this TU linkable
+// until those helpers land; a strong definition in Vcontacts.cpp wins.
+#if defined(__GNUC__) || defined(__clang__)
+__attribute__((weak))
+#endif
+const int* vc_scorable_indices(int* n)
+{
+    if (n) *n = 0;
+    return nullptr;
+}
+#if defined(__GNUC__) || defined(__clang__)
+__attribute__((weak))
+#endif
+bool vc_fastpath_active()
+{
+    return false;
+}
+
+namespace {
+template<typename T, typename = void>
+struct vc_has_scorable_fields : std::false_type {};
+
+template<typename T>
+struct vc_has_scorable_fields<T, std::void_t<
+    decltype(std::declval<T&>().scorable_list),
+    decltype(std::declval<T&>().n_scorable)>> : std::true_type {};
+
+template<typename VC_T>
+const int* vcfunction_scorable_list_impl(VC_T* VC, int* n)
+{
+    *n = 0;
+    if constexpr (vc_has_scorable_fields<VC_T>::value) {
+        if (VC->n_scorable > 0 && VC->scorable_list) {
+            *n = VC->n_scorable;
+            return VC->scorable_list;
+        }
+    }
+    int hn = 0;
+    const int* h = vc_scorable_indices(&hn);
+    if (h && hn > 0) {
+        *n = hn;
+        return h;
+    }
+    return nullptr;
+}
+
+inline const int* vcfunction_scorable_list(VC_Global* VC, int* n)
+{
+    return vcfunction_scorable_list_impl(VC, n);
+}
+
+// Null Calc[i].atom for score==true. Fastpath walks the scorable list when
+// the flag is on and a list is available; otherwise the original O(N) loop.
+inline void vc_null_scorable_atoms(VC_Global* VC, int atm_cnt_real, bool use_list)
+{
+    int n = 0;
+    const int* idx = use_list ? vcfunction_scorable_list(VC, &n) : nullptr;
+    if (idx && n > 0) {
+        for (int k = 0; k < n; ++k) {
+            const int i = idx[k];
+            if (i >= 0 && i < atm_cnt_real)
+                VC->Calc[i].atom = NULL;
+        }
+        return;
+    }
+    for(int i=0;i<atm_cnt_real;i++){
+        if(VC->Calc[i].score){
+            VC->Calc[i].atom = NULL;
+        }
+    }
+}
+} // namespace
+
 double vcfunction(FA_Global* FA,VC_Global* VC,atom* atoms,resid* residue, std::vector<std::pair<int,int> > & intraclashes, bool* error)
 {
 	int    rnum=0;
@@ -248,11 +331,7 @@ double vcfunction(FA_Global* FA,VC_Global* VC,atom* atoms,resid* residue, std::v
 	if(rv < 0){
 		*error = true;
 		
-		for(int i=0;i<FA->atm_cnt_real;i++){
-			if(VC->Calc[i].score){
-				VC->Calc[i].atom = NULL;
-			}
-		}
+		vc_null_scorable_atoms(VC, FA->atm_cnt_real, rigid_fastpath);
 		
 		if(!FA->vindex){ free(VC->box); }
 		
@@ -265,7 +344,14 @@ double vcfunction(FA_Global* FA,VC_Global* VC,atom* atoms,resid* residue, std::v
 		}
 	}
 	
-	for(int i=0; i<FA->atm_cnt_real; ++i) {
+	int fp_n = 0;
+	const int* fp_idx = nullptr;
+	if (rigid_fastpath)
+		fp_idx = vcfunction_scorable_list(VC, &fp_n);
+	const bool use_fp = (fp_idx != nullptr && fp_n > 0);
+
+	for(int k=0; k<(use_fp ? fp_n : FA->atm_cnt_real); ++k) {
+		const int i = use_fp ? fp_idx[k] : k;
 		if(VC->Calc[i].atom == NULL) continue;
 		
 		cfstr* cfs = NULL;
@@ -1345,11 +1431,7 @@ double vcfunction(FA_Global* FA,VC_Global* VC,atom* atoms,resid* residue, std::v
 		}
 	}
 
-	for(int i=0;i<FA->atm_cnt_real;i++){
-		if(VC->Calc[i].score){
-			VC->Calc[i].atom = NULL;
-		}
-	}
+	vc_null_scorable_atoms(VC, FA->atm_cnt_real, rigid_fastpath);
 
 	if(!FA->vindex){ free(VC->box); }
 	

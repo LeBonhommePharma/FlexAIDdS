@@ -3125,6 +3125,9 @@ void calculate_fitness(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* chr
 			std::vector<std::vector<vertex>>      tl_poly;
 			std::vector<std::vector<plane>>       tl_cont;
 			std::vector<std::vector<edgevector>>  tl_vedge;
+			// Per-thread Calc[] indices with score==true (sibling VC_Global
+			// fields: scorable_list, n_scorable, scorable_cap, fastpath_used).
+			std::vector<std::vector<int>>         tl_scorable;
 		};
 		static ParEvalWS ws;   // resident across generations (serial init: GA
 		                       // parallelism lives strictly inside this loop).
@@ -3166,6 +3169,7 @@ void calculate_fitness(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* chr
 			ws.tl_poly.assign(n_thr, std::vector<vertex>(MAX_POLY));
 			ws.tl_cont.assign(n_thr, std::vector<plane>(MAX_PT));
 			ws.tl_vedge.assign(n_thr, std::vector<edgevector>(MAX_POLY));
+			ws.tl_scorable.assign(n_thr, std::vector<int>(natmr, 0));
 		}
 
 		// Aliases keep the eval loop below identical to the previous per-call form.
@@ -3178,6 +3182,22 @@ void calculate_fitness(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* chr
 		auto& tl_contlist= ws.tl_contlist; auto& tl_ptorder  = ws.tl_ptorder;
 		auto& tl_centerpt= ws.tl_centerpt; auto& tl_poly     = ws.tl_poly;
 		auto& tl_cont    = ws.tl_cont;     auto& tl_vedge    = ws.tl_vedge;
+		auto& tl_scorable= ws.tl_scorable;
+
+		// Wire per-thread scorable-list scratch. Sibling adds these four
+		// fields at the end of VC_Global; the generic lambda keeps this
+		// block compiling if the header has not landed yet.
+		auto wire_scorable = [](auto& vc, int* buf, int cap) {
+			if constexpr (requires {
+				vc.scorable_list; vc.n_scorable;
+				vc.scorable_cap; vc.fastpath_used;
+			}) {
+				vc.scorable_list = buf;
+				vc.n_scorable = 0;
+				vc.scorable_cap = cap;
+				vc.fastpath_used = 0;
+			}
+		};
 
 		for (int t = 0; t < n_thr; ++t) {
 			// Refresh the cheap live FA snapshot each generation (scalar state may
@@ -3208,6 +3228,7 @@ void calculate_fitness(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* chr
 			tl_vc[t].poly      = tl_poly[t].data();
 			tl_vc[t].cont      = tl_cont[t].data();
 			tl_vc[t].vedge     = tl_vedge[t].data();
+			wire_scorable(tl_vc[t], tl_scorable[t].data(), natmr);
 			// Keep the reference-calculation retry path enabled in GA workers.
 			// The direct native probe uses recalc=1; forcing 0 here caused the
 			// same pose to fall into the non-convergence penalty path.
