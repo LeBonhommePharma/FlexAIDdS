@@ -5,6 +5,7 @@
 #include "niche_hash.h"
 #include "ca_rec_flat.h"
 #include "pprop.h"
+#include "get_yval.h"
 
 #include <cstdlib>
 #include <vector>
@@ -88,6 +89,79 @@ TEST(CaRecFlat, SkipFirstThenEachIndexOnce) {
     EXPECT_EQ(seen[0], 1);
     EXPECT_EQ(seen[1], 0);
     EXPECT_NE(seen[0], seen[1]);
+}
+
+TEST(CaRecFlat, MoreThan100ContactsMatchesUncappedWalkAndCf) {
+    // S5: MAX_CONT is 100. A 120-contact chain must not drop a prefix.
+    constexpr int kN = 120;
+    std::vector<ca_struct> rec(kN);
+    for (int i = 0; i < kN; ++i) {
+        rec[i].prev = (i == 0) ? -1 : i - 1;
+        rec[i].atom = 1000 + i;
+        rec[i].area = 0.1 * (i + 1);
+        rec[i].dist = 3.0;
+    }
+    int ca_index[1] = {kN - 1};
+
+    std::vector<int> legacy;
+    int curr = ca_index[0];
+    while (curr != -1) {
+        legacy.push_back(curr);
+        curr = rec[curr].prev;
+    }
+    ASSERT_EQ(legacy.size(), static_cast<size_t>(kN));
+
+    int too_small[100];
+    EXPECT_EQ(flexaids::flatten_ca_rec(ca_index, rec.data(), 0, too_small, 100),
+              -kN);
+
+    std::vector<int> flat;
+    const int n = flexaids::flatten_ca_rec_all(ca_index, rec.data(), 0, flat);
+    ASSERT_EQ(n, kN);
+    ASSERT_EQ(flat.size(), legacy.size());
+    for (int i = 0; i < kN; ++i) EXPECT_EQ(flat[i], legacy[i]);
+
+#ifdef _WIN32
+    _putenv_s("FLEXAIDDS_CA_REC_FLAT", "1");
+#else
+    setenv("FLEXAIDDS_CA_REC_FLAT", "1", 1);
+#endif
+    EXPECT_TRUE(flexaids::ca_rec_flat_enabled());
+#ifdef _WIN32
+    _putenv_s("FLEXAIDDS_GET_YVAL_LUT", "");
+#else
+    unsetenv("FLEXAIDDS_GET_YVAL_LUT");
+#endif
+
+    energy_values ev{};
+    ev.next_value = nullptr;
+    std::vector<float> xs{0.f, 1.f};
+    std::vector<float> ys{0.f, 10.f};
+    std::vector<float> sl{(10.f - 0.f) / 1.f};
+    energy_matrix em{};
+    em.weight = 0;
+    em.energy_values = &ev;
+    em.flat_n = 2;
+    em.flat_x = xs.data();
+    em.flat_y = ys.data();
+    em.flat_slope = sl.data();
+    constexpr double kSurfA = 50.0;
+
+    auto cf_of = [&](const std::vector<int>& idx) {
+        double cf = 0.0;
+        for (int id : idx)
+            cf += get_yval(&em, rec[id].area / kSurfA);
+        return cf;
+    };
+    EXPECT_DOUBLE_EQ(cf_of(flat), cf_of(legacy));
+    EXPECT_NE(cf_of(std::vector<int>(legacy.begin(), legacy.begin() + 100)),
+              cf_of(legacy));
+
+#ifdef _WIN32
+    _putenv_s("FLEXAIDDS_CA_REC_FLAT", "");
+#else
+    unsetenv("FLEXAIDDS_CA_REC_FLAT");
+#endif
 }
 
 TEST(PProp, RankFractionAndCap) {

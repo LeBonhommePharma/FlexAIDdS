@@ -237,6 +237,30 @@ TEST(RngSeedTest, LazyThreadRngThreeStreamInterleaveKeepsEachSequence) {
     EXPECT_NE(g0, f0);
 }
 
+TEST(RngSeedTest, VoronoiKeyedJitterIndependentOfRngStreamFix) {
+    unset_test_env("FLEXAIDDS_RNG_STREAM_FIX");
+    unset_test_env("FLEXAIDDS_VORONOI_KEYED_JITTER");
+    flexaids_rng::set_master_seed(12345);
+    EXPECT_FALSE(flexaids_rng::voronoi_keyed_jitter_enabled());
+    {
+        ScopedEnv fix("FLEXAIDDS_RNG_STREAM_FIX", "1");
+        flexaids_rng::set_master_seed(12345);
+        EXPECT_TRUE(flexaids_rng::rng_stream_fix_enabled());
+        EXPECT_FALSE(flexaids_rng::voronoi_keyed_jitter_enabled());
+    }
+    flexaids_rng::set_master_seed(12345);
+    {
+        ScopedEnv jit("FLEXAIDDS_VORONOI_KEYED_JITTER", "1");
+        flexaids_rng::set_master_seed(12345);
+        EXPECT_TRUE(flexaids_rng::voronoi_keyed_jitter_enabled());
+        EXPECT_FALSE(flexaids_rng::rng_stream_fix_enabled());
+    }
+    {
+        ScopedEnv off("FLEXAIDDS_VORONOI_KEYED_JITTER", "off");
+        EXPECT_FALSE(flexaids_rng::voronoi_keyed_jitter_enabled());
+    }
+}
+
 TEST(RngSeedTest, KeyedJitterDependsOnPoseAtomNotDrawOrder) {
     ScopedEnv seed("FLEXAID_SEED", "12345");
     flexaids_rng::set_master_seed(12345);

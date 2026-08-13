@@ -149,4 +149,32 @@ private:
     FullDockCallback  dock_cb_;
 };
 
+/// Fail-closed join: every screen keep name must match a library name.
+/// On mismatch or empty keep, `resolved` is cleared and the function
+/// returns false — the campaign must abort and must not write a screened
+/// `_results.csv`. No first-N split-library fallback.
+inline bool resolve_prefilter_keep(const std::vector<std::string>& keep,
+                                   const std::vector<std::string>& library_names,
+                                   std::vector<std::string>& resolved)
+{
+    resolved.clear();
+    if (keep.empty()) return false;
+    resolved.reserve(keep.size());
+    for (const auto& name : keep) {
+        bool found = false;
+        for (const auto& lib : library_names) {
+            if (lib == name) {
+                resolved.push_back(lib);
+                found = true;
+                break;
+            }
+        }
+        if (!found) {
+            resolved.clear();
+            return false;
+        }
+    }
+    return true;
+}
+
 } // namespace nrgrank

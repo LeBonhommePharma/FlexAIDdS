@@ -1,6 +1,7 @@
 #include "Vcontacts.h"
 #include "soft_wall.h"
 #include "RngSeed.h"
+#include "EnvFlags.h"
 #include "fileio.h"
 #include <algorithm>
 #include <cstdlib>
@@ -21,14 +22,6 @@
 // is implied; subsequent evals with a stable grid rebuild Calclist from a
 // rigid per-box snapshot + current scorable atoms (atmi-sorted per box).
 namespace {
-
-static bool rigid_fastpath_requested() {
-	const char* e = std::getenv("FLEXAIDDS_RIGID_FASTPATH");
-	return e && e[0] && e[0] != '0';
-}
-
-const bool kHoistReceptorIndexEnv =
-	(std::getenv("FLEXAIDDS_HOIST_RECEPTOR_INDEX") != nullptr);
 
 struct ScoSlot {
 	int calc_idx;
@@ -845,8 +838,8 @@ RESTART:
 				origcoor[2] = VC->Calc[atomzero].atom->coor[2];
 				
 				// perturb atom coordinates (deterministic when ga.seed/FLEXAID_SEED set)
-				if (flexaids_rng::rng_stream_fix_enabled()) {
-					// F2: key on pose+atom identity, not the scheduling thread.
+				if (flexaids_rng::voronoi_keyed_jitter_enabled()) {
+					// Independent of FLEXAIDDS_RNG_STREAM_FIX (D6).
 					const int anum = VC->Calc[atomzero].atom
 						? VC->Calc[atomzero].atom->number : atomzero;
 					const std::uint64_t id = flexaids_rng::pose_atom_identity(
@@ -2102,8 +2095,9 @@ atomindex* index_protein(FA_Global* FA,atom* atoms,resid* residue,atomsas* Calc,
 	// reproduces today's results bit-for-bit unless the flag is set.
 	// FLEXAIDDS_RIGID_FASTPATH implies hoist; HOIST still works alone when
 	// FASTPATH is off.
-	const bool fastpath_on = rigid_fastpath_requested();
-	const bool hoist_receptor_index = kHoistReceptorIndexEnv || fastpath_on;
+	const bool fastpath_on = flexaids::rigid_fastpath_requested();
+	const bool hoist_receptor_index =
+		flexaids::hoist_receptor_index_env() || fastpath_on;
 	g_fastpath_on = fastpath_on;
 	g_fastpath_used = false;
 	if(!fastpath_on){

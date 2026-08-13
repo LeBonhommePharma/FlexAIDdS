@@ -267,25 +267,27 @@ CampaignSummary run_campaign(
             tcfg.output_dir, static_cast<int>(screen_ligs.size()), tcfg.top_n,
             false, "campaign-coarse-prefilter");
 
+        std::vector<std::string> lib_names;
+        lib_names.reserve(lig_lib.ligands.size());
+        for (const auto& e : lig_lib.ligands) lib_names.push_back(e.name);
+        std::vector<std::string> resolved;
+        if (!nrgrank::resolve_prefilter_keep(keep, lib_names, resolved)) {
+            std::fprintf(stderr,
+                "[CAMPAIGN] ERROR: --coarse-prefilter screen names did not "
+                "match library stems 1:1; aborting (no unranked prefix).\n");
+            summary.failed = lig_lib.total;
+            summary.total_ligands = lig_lib.total;
+            return summary;
+        }
         std::vector<library::LigandEntry> filtered;
-        filtered.reserve(keep.size());
-        for (const auto& name : keep) {
+        filtered.reserve(resolved.size());
+        for (const auto& name : resolved) {
             for (const auto& e : lig_lib.ligands) {
                 if (e.name == name) {
                     filtered.push_back(e);
                     break;
                 }
             }
-        }
-        if (filtered.empty()) {
-            // Name schemes can differ (MOL2 title vs file stem). Fall back to
-            // first top_n library entries in Stage-1 order when possible.
-            std::fprintf(stderr,
-                "[CAMPAIGN] WARNING: coarse names did not match library stems; "
-                "keeping first %d split-library entries.\n", tcfg.top_n);
-            const int nkeep = std::min(tcfg.top_n, lig_lib.total);
-            filtered.assign(lig_lib.ligands.begin(),
-                            lig_lib.ligands.begin() + nkeep);
         }
         lig_lib.ligands.swap(filtered);
         lig_lib.total = static_cast<int>(lig_lib.ligands.size());

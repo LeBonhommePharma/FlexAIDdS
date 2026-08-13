@@ -138,6 +138,13 @@ inline std::mt19937 make_thread_rng(std::uint64_t stream = 0)
 // The flag is re-read on seed-epoch change rather than on every call: the hot
 // path stays an atomic load plus a compare, and a test can flip the variable
 // and call set_master_seed() to pick it up.
+/// Voronoi hull-failure jitter source. DEFAULT OFF, independent of
+/// FLEXAIDDS_RNG_STREAM_FIX so an A/B of either gate stays single-variable.
+inline bool voronoi_keyed_jitter_enabled() noexcept
+{
+    return flexaids::env_bool("FLEXAIDDS_VORONOI_KEYED_JITTER", false);
+}
+
 inline bool rng_stream_fix_enabled()
 {
     thread_local std::uint64_t flag_epoch = ~0ULL;

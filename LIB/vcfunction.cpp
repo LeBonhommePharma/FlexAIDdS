@@ -7,6 +7,7 @@
 #include "GISTGrid.h"
 #include "ProtocolConfig.h"
 #include "ca_rec_flat.h"
+#include "EnvFlags.h"
 #include <cmath>
 #include <cstdlib>
 #include <cstring>
@@ -179,14 +180,7 @@ static const double wal_stiff = [](){
 static const bool contacts_epoch_mode =
     (std::getenv("FLEXAIDDS_CONTACTS_EPOCH") != nullptr);
 
-// FLEXAIDDS_RIGID_FASTPATH (truthy, default OFF): walk only Calc[] indices
-// with score==true. List comes from VC->scorable_list / n_scorable when the
-// sibling fields exist, else vc_scorable_indices(). OFF or a missing list
-// keeps the original O(N) atom walk bit-identical.
-static const bool rigid_fastpath = [](){
-    const char* s = std::getenv("FLEXAIDDS_RIGID_FASTPATH");
-    return s && s[0] != '\0' && s[0] != '0';
-}();
+// FLEXAIDDS_RIGID_FASTPATH: live getenv via env_bool (no pre-main snapshot).
 
 // provided by Vcontacts.cpp (sibling). Weak stubs keep this TU linkable
 // until those helpers land; a strong definition in Vcontacts.cpp wins.
@@ -332,7 +326,8 @@ double vcfunction(FA_Global* FA,VC_Global* VC,atom* atoms,resid* residue, std::v
 	if(rv < 0){
 		*error = true;
 		
-		vc_null_scorable_atoms(VC, FA->atm_cnt_real, rigid_fastpath);
+		vc_null_scorable_atoms(VC, FA->atm_cnt_real,
+		                       flexaids::rigid_fastpath_requested());
 		
 		if(!FA->vindex){ free(VC->box); }
 		
@@ -347,7 +342,7 @@ double vcfunction(FA_Global* FA,VC_Global* VC,atom* atoms,resid* residue, std::v
 	
 	int fp_n = 0;
 	const int* fp_idx = nullptr;
-	if (rigid_fastpath)
+	if (flexaids::rigid_fastpath_requested())
 		fp_idx = vcfunction_scorable_list(VC, &fp_n);
 	const bool use_fp = (fp_idx != nullptr && fp_n > 0);
 
@@ -472,12 +467,24 @@ double vcfunction(FA_Global* FA,VC_Global* VC,atom* atoms,resid* residue, std::v
 		// Only touched when the term is enabled (weight != 0) — zero overhead OFF.
 		double pd_hb = 0.0, pd_elec = 0.0, pd_mc = 0.0;
 		int currindex = VC->ca_index[i];
-		int flat_idx[MAX_CONT];
+		int flat_stack[MAX_CONT];
+		std::vector<int> flat_heap;
+		int* flat_idx = nullptr;
 		int nflat = 0, flat_k = 0;
 		const bool use_flat = flexaids::ca_rec_flat_enabled();
 		if (use_flat) {
-			nflat = flexaids::flatten_ca_rec(VC->ca_index, VC->ca_rec, i,
-			                                flat_idx, MAX_CONT);
+			const int nneed = flexaids::ca_rec_chain_len(VC->ca_index, VC->ca_rec, i);
+			if (nneed > MAX_CONT) {
+				flat_heap.resize(static_cast<std::size_t>(nneed));
+				flat_idx = flat_heap.data();
+				nflat = flexaids::flatten_ca_rec(VC->ca_index, VC->ca_rec, i,
+				                                flat_idx, nneed);
+			} else {
+				flat_idx = flat_stack;
+				nflat = flexaids::flatten_ca_rec(VC->ca_index, VC->ca_rec, i,
+				                                flat_idx, MAX_CONT);
+			}
+			if (nflat < 0) nflat = 0;
 			currindex = (nflat > 0) ? flat_idx[0] : -1;
 			flat_k = 1;
 		}
@@ -1444,7 +1451,8 @@ double vcfunction(FA_Global* FA,VC_Global* VC,atom* atoms,resid* residue, std::v
 		}
 	}
 
-	vc_null_scorable_atoms(VC, FA->atm_cnt_real, rigid_fastpath);
+	vc_null_scorable_atoms(VC, FA->atm_cnt_real,
+	                       flexaids::rigid_fastpath_requested());
 
 	if(!FA->vindex){ free(VC->box); }
 	
