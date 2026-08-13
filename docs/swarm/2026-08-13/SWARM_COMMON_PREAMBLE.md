@@ -69,6 +69,14 @@ enter any report, PR description, or message.
       lane's branch.
  R10. If a gate cannot be met, say so plainly and hand back. A lane that reports "could not
       measure" is useful; a lane that reports an unmeasured number is worse than silence.
+ R11. Every new FLEXAIDDS_* boolean gate MUST use flexaids::env_bool (LIB/EnvFlags.h).
+      Do not hand-roll atoi, presence-only, or "not 0/n/f" parsers. Under atoi,
+      FLEXAIDDS_ELECT_LEGACY_ACF=true parses as 0 and silently selects the OPPOSITE arm.
+      An A/B control that silently means its own negation is worse than no control.
+ R12. Before editing a lane's files, read then write
+      $FLEXAIDDS_LOCAL_ROOT/workorders/CLAIMED_<lane>.txt
+      (one line: branch TAB ISO-8601 timestamp). If another claim already holds those
+      files, STOP. Do not commit CLAIMED_*.txt — the drop box is the local mirror.
 
 ## 6. Paths
   source   : /Users/lp.more/Projects/FlexAIDdS        (main @ aa15464e)

@@ -91,6 +91,8 @@ cmake on that Mac is `/opt/homebrew/bin/cmake` (often not on PATH).
 - **R8** Stay in the lane's OWNED files. Forbidden paths stay forbidden.
 - **R9** One branch per lane, names below. Do not merge.
 - **R10** If a gate cannot be met, say so. "Could not measure" is useful.
+- **R11** New `FLEXAIDDS_*` boolean gates use `flexaids::env_bool` (`LIB/EnvFlags.h`) only.
+- **R12** Before editing, read/write `$FLEXAIDDS_LOCAL_ROOT/workorders/CLAIMED_<lane>.txt`. If another claim holds the files, stop. Do not commit those files.
 
 Also: Apache-2.0 only. No GPL. Parity per `METHODOLOGY.md` §1 for anything that
 could move a score. Separate CF scoring proxy from thermodynamic ΔG language.

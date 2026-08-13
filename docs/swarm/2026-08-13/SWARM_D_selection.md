@@ -40,6 +40,14 @@ FORBIDDEN OUTRIGHT:
     LIB/SdfReader.cpp (A), LIB/config_parser.cpp (A/B)
 You merge FIRST because you are smallest and fully offline-verifiable. Lane E rebases onto you.
 
+## PRE-EXISTING — F5 NaN rank guard (do not re-implement)
+`FLEXAIDDS_NAN_RANK_GUARD` in `LIB/gaboom.h` (QS_ASC / QS_DSC only) is already
+in tree, DEFAULT OFF, parsed by `flexaids::env_bool`. PR #420 landed it gated.
+You own the *question* of whether enabling it changes the 15-target selection
+envelope — report that from `score_canonical.py`. Do not turn it on from other
+lanes. Do not revert the `EnvFlags.h` include. `LIB/gaboom.cpp` stays FORBIDDEN
+for D1–D4; this is not a license to edit gaboom.cpp.
+
 ## THE WORK
 Fix D1-D4, each behind its own env gate, all default OFF:
     FLEXAIDDS_DROP_SENTINEL_POSES, FLEXAIDDS_REP_MINCF,
