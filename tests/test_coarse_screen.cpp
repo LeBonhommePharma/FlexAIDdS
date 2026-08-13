@@ -24,8 +24,10 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
+#include <limits>
 #include <numeric>
 #include <vector>
 
@@ -664,6 +666,72 @@ TEST(TwoStageScreener, UnifiedCsvAndReceipt) {
     auto names = TwoStageScreener::top_names(results, 2);
     EXPECT_EQ(names.size(), 2u);
     std::filesystem::remove_all(cfg.output_dir);
+}
+
+TEST(TwoStageScreener, Stage2ScoreLessPutsFiniteBeforeNan) {
+    TwoStageResult a, b, c;
+    a.full_dock_score = -2.f; a.coarse_rank = 3;
+    b.full_dock_score = -1.f; b.coarse_rank = 1;
+    c.full_dock_score = std::numeric_limits<float>::quiet_NaN(); c.coarse_rank = 2;
+    EXPECT_TRUE(stage2_score_less(a, b));
+    EXPECT_FALSE(stage2_score_less(b, a));
+    EXPECT_TRUE(stage2_score_less(a, c));
+    EXPECT_TRUE(stage2_score_less(b, c));
+    EXPECT_FALSE(stage2_score_less(c, a));
+    EXPECT_FALSE(stage2_score_less(c, c));
+}
+
+TEST(TwoStageScreener, PpropMixedKeepDropSortsFiniteFirst) {
+    auto atoms   = make_test_target();
+    auto spheres = make_test_spheres();
+
+    TwoStageScreener ts;
+    TwoStageConfig cfg;
+    cfg.coarse.use_clash = false;
+    cfg.coarse.rotations_per_axis = 4;
+    cfg.top_n = 3;
+    cfg.write_coarse_csv = false;
+    ts.set_config(cfg);
+    ts.prepare_target(atoms, spheres);
+    ts.set_full_dock_callback([](const ScreenLigand&, const ScreenResult& cr) {
+        return cr.score;
+    });
+
+#ifdef _WIN32
+    _putenv_s("FLEXAIDDS_PPROP_MAX", "0.4");
+#else
+    setenv("FLEXAIDDS_PPROP_MAX", "0.4", 1);
+#endif
+    std::vector<ScreenLigand> ligs;
+    for (int i = 0; i < 5; ++i)
+        ligs.push_back(make_test_ligand("lig_" + std::to_string(i)));
+    auto results = ts.run(ligs);
+#ifdef _WIN32
+    _putenv_s("FLEXAIDDS_PPROP_MAX", "");
+#else
+    unsetenv("FLEXAIDDS_PPROP_MAX");
+#endif
+
+    ASSERT_EQ(results.size(), 5u);
+    int finite = 0, nan = 0;
+    for (int i = 0; i < 3; ++i) {
+        if (std::isfinite(results[static_cast<size_t>(i)].full_dock_score)) {
+            ++finite;
+            EXPECT_GT(results[static_cast<size_t>(i)].full_rank, 0);
+        } else {
+            ++nan;
+            EXPECT_EQ(results[static_cast<size_t>(i)].full_rank, 0);
+        }
+    }
+    EXPECT_GE(finite, 1);
+    EXPECT_GE(nan, 1);
+    // Total order: no finite after a NaN in the Stage-2 window.
+    bool saw_nan = false;
+    for (int i = 0; i < 3; ++i) {
+        const bool is_nan = !std::isfinite(results[static_cast<size_t>(i)].full_dock_score);
+        if (saw_nan) EXPECT_TRUE(is_nan);
+        if (is_nan) saw_nan = true;
+    }
 }
 
 TEST(TwoStageScreener, MiniEnrichmentRecoversActives) {

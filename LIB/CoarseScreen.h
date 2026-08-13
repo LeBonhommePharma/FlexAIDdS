@@ -187,7 +187,7 @@ public:
     int cf_ny() const { return grid_.ny(); }
     int cf_nz() const { return grid_.nz(); }
 
-    // ── Ligand screening (rank_molecules.py equivalent) ──
+    // ── Ligand screening (paper §2 rotations × anchors) ──
 
     /// Screen a batch of ligands. Returns results sorted by score (best first).
     /// Thread-safe: uses OpenMP internally, but do not call concurrently.

@@ -70,3 +70,18 @@ TEST(GetYval, OutOfRangeFallsBackToScan) {
     EXPECT_DOUBLE_EQ(get_yval(&p.em, 1.5), get_yval_scan(&p.em, 1.5));
     unset_env("FLEXAIDDS_GET_YVAL_LUT");
 }
+
+TEST(GetYval, TwoMatricesLutCopiesUnderLock) {
+    set_env("FLEXAIDDS_GET_YVAL_LUT", "1");
+    Piecewise a, b;
+    b.ys = {0.f, 20.f, 8.f};
+    b.sl = {(20.f - 0.f) / 0.5f, (8.f - 20.f) / 0.5f};
+    // Inserting a second key must not invalidate interpolation of the first.
+    const double a0 = get_yval(&a.em, 0.25);
+    const double b0 = get_yval(&b.em, 0.25);
+    const double a1 = get_yval(&a.em, 0.25);
+    EXPECT_DOUBLE_EQ(a0, a1);
+    EXPECT_NEAR(a0, get_yval_scan(&a.em, 0.25), 0.1);
+    EXPECT_NEAR(b0, get_yval_scan(&b.em, 0.25), 0.1);
+    unset_env("FLEXAIDDS_GET_YVAL_LUT");
+}

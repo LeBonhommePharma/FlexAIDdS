@@ -113,14 +113,17 @@ std::vector<TwoStageResult> TwoStageScreener::run(
                 ? "callback" : config_.stage2_kind_label;
         }
 
-        // Re-sort top-N by full dock score
-        std::sort(results.begin(), results.begin() + n_stage2,
-                  [](const TwoStageResult& a, const TwoStageResult& b) {
-                      return a.full_dock_score < b.full_dock_score;
-                  });
+        // Re-sort top-N by full dock score. NaN (pProp-dropped / missing
+        // callback) sorts last via stage2_score_less — not operator< on NaN.
+        std::sort(results.begin(), results.begin() + n_stage2, stage2_score_less);
 
-        for (int i = 0; i < n_stage2; ++i)
-            results[i].full_rank = i + 1;
+        int docked_rank = 0;
+        for (int i = 0; i < n_stage2; ++i) {
+            if (std::isfinite(results[i].full_dock_score))
+                results[i].full_rank = ++docked_rank;
+            else
+                results[i].full_rank = 0;
+        }
 
         auto t2_end = chr::steady_clock::now();
         if (config_.verbose) {
