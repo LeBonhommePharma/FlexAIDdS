@@ -39,6 +39,9 @@ jobs:
           plugin_marketplaces: 'https://github.com/anthropics/claude-code.git'
           plugins: 'code-review@claude-code-plugins'
           prompt: '/code-review:code-review ${{ github.repository }}/pull/${{ github.event.pull_request.number }}'
-          # See https://github.com/anthropics/claude-code-action/blob/main/docs/usage.md
-          # or https://code.claude.com/docs/en/cli-reference for available options
+          # Cursor cloud/background agents open PRs as cursor[bot]. The action
+          # rejects Bot actors unless listed here. Do NOT use '*' — on a public
+          # repo that would let arbitrary GitHub Apps invoke the reviewer with a
+          # prompt they control. See anthropics/claude-code-action docs/security.md.
+          allowed_bots: cursor,cursor[bot]
 

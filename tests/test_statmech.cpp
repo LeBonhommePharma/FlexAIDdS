@@ -6,9 +6,11 @@
 #include <gtest/gtest.h>
 #include "../LIB/statmech.h"
 #include <cmath>
+#include <limits>
 #include <vector>
 #include <numeric>
 #include <random>
+#include <stdexcept>
 
 using namespace statmech;
 
@@ -1564,6 +1566,71 @@ TEST_F(StatMechEngineTest, JointEnsemble_ProbabilitiesSumToOne) {
     sum_p = 0.0;
     for (double pi : res.ligand_population) sum_p += pi;
     EXPECT_NEAR(sum_p, 1.0, 1e-9);
+}
+
+TEST_F(StatMechEngineTest, JointEnsemble_MutualInformationNonNegativeAndCorrectSign) {
+    // Two receptors × two ligands. Diagonal microstates are strongly favoured,
+    // so I(R;L) must be > 0 and equal to S_R + S_L − S_joint (nats).
+    std::vector<JointMicrostate> states(4);
+    states[0].receptor_conformer_id = 0;
+    states[0].ligand_pose_id = 0;
+    states[0].energy.total = -20.0;
+    states[1].receptor_conformer_id = 0;
+    states[1].ligand_pose_id = 1;
+    states[1].energy.total = 0.0;
+    states[2].receptor_conformer_id = 1;
+    states[2].ligand_pose_id = 0;
+    states[2].energy.total = 0.0;
+    states[3].receptor_conformer_id = 1;
+    states[3].ligand_pose_id = 1;
+    states[3].energy.total = -20.0;
+    for (auto& s : states) s.log_multiplicity = 0.0;
+
+    auto res = StatMechEngine::compute_joint_ensemble(states, 300.0);
+
+    const double kB = statmech::kB_kcal;
+    const double S_R = res.S_receptor_kcal_mol_K / kB;
+    const double S_L = res.S_ligand_kcal_mol_K / kB;
+    const double S_J = res.S_joint_kcal_mol_K / kB;
+    EXPECT_GE(res.mutual_information_dimensionless, -1e-12);
+    EXPECT_NEAR(res.mutual_information_dimensionless, S_R + S_L - S_J, 1e-9);
+    EXPECT_GT(res.mutual_information_dimensionless, 0.5);
+}
+
+TEST_F(StatMechEngineTest, ZeroMultiplicityThrowsRatherThanNaN) {
+    StatMechEngine eng(300.0);
+    eng.add_sample(-10.0, 0.0);
+    EXPECT_THROW(eng.compute(), std::runtime_error);
+    EXPECT_THROW(eng.compute_at_temperature(310.0), std::runtime_error);
+}
+
+TEST_F(StatMechEngineTest, MixedZeroMultiplicityStillComputes) {
+    StatMechEngine eng(300.0);
+    eng.add_sample(-10.0, 0.0);
+    eng.add_sample(-11.0, 1.0);
+    const auto th = eng.compute();
+    EXPECT_TRUE(std::isfinite(th.free_energy));
+    EXPECT_TRUE(std::isfinite(th.heat_capacity));
+    EXPECT_GE(th.heat_capacity, 0.0);
+}
+
+TEST_F(StatMechEngineTest, NegativeAndNaNMultiplicityAreClamped) {
+    StatMechEngine eng(300.0);
+    eng.add_sample(-10.0, -1.0);
+    eng.add_sample(-11.0, std::numeric_limits<double>::quiet_NaN());
+    eng.add_sample(-12.0, 1.0);
+    const auto th = eng.compute();
+    EXPECT_TRUE(std::isfinite(th.free_energy));
+    EXPECT_GE(th.heat_capacity, 0.0);
+}
+
+TEST_F(StatMechEngineTest, NonFiniteEnergyThrowsRatherThanPoisonedCv) {
+    StatMechEngine eng(300.0);
+    eng.add_sample(std::numeric_limits<double>::quiet_NaN(), 1.0);
+    EXPECT_THROW(eng.compute(), std::runtime_error);
+    StatMechEngine eng2(300.0);
+    eng2.add_sample(-std::numeric_limits<double>::infinity(), 1.0);
+    EXPECT_THROW(eng2.compute_at_temperature(310.0), std::runtime_error);
 }
 
 // ===========================================================================
