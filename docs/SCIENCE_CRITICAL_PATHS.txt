@@ -1,8 +1,10 @@
 # Science-critical paths — a change here can move docked coordinates or scores.
 #
-# Consumed by scripts/check_repo_hygiene.py (anti-bundling lint). A PR touching
-# any path below must declare `Science-Impact:` in its body and must not also
-# touch a non-engine stack (typescript/, swift/, site/) in the same commit.
+# Consumed by scripts/check_repo_hygiene.py (anti-bundling lint) and
+# scripts/classify_diff.py. A PR touching any path below must declare
+# `Science-Impact:` in its body, must not also touch a non-engine stack
+# (typescript/, swift/, site/), and must not also touch docs/swarm/ or
+# docs/audit/ (those are a separate pack PR).
 #
 # Format: one glob per line, '#' comments, blank lines ignored. Matched against
 # repo-relative paths with fnmatch.
@@ -23,6 +25,10 @@ LIB/Vcontacts.cpp
 LIB/Vcontacts.h
 LIB/VoronoiCFBatch.h
 LIB/SoftBetaFreeEnergy.h
+
+# ── RNG: stream identity changes sampled poses (F1) ───────────────────────────
+LIB/RngSeed.h
+LIB/EnvFlags.h
 
 # ── search / GA ───────────────────────────────────────────────────────────────
 LIB/gaboom.cpp

@@ -2,6 +2,23 @@
 
 What changed and why.
 
+## Change class (pick **one** primary)
+
+- [ ] **Fix** — bug; default path unchanged, or fail-closed
+- [ ] **Science enhancement** — opt-in; env-gated **OFF** (`flexaids::env_bool`)
+- [ ] **Engine/code** — LIB/src behavior that is not a science gate
+- [ ] **Docs / audit / swarm pack** — `docs/swarm/`, `docs/audit/` (own PR; do not mix with LIB)
+- [ ] **Benchmark harness / frozen referee**
+- [ ] **CI / hygiene**
+
+Run `python3 scripts/classify_diff.py` on this branch. If it prints `VERDICT: MIXED`, split the PR.
+
+## Science-Impact
+
+- [ ] none (cannot move docked coordinates or CF ranking)
+- [ ] gated OFF — flag name: `FLEXAIDDS_…`
+- [ ] default-path (requires METHODOLOGY.md §1 parity)
+
 ## Scope
 
 - [ ] Core 1.0 supported surface
