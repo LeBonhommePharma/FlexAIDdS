@@ -47,6 +47,15 @@ const char* reason(const char* name);
 /// Print every known gate: name, requested, active, value, reason-if-disabled.
 void dump(FILE* out);
 
+/// Push the resolved registry into the process environment so existing
+/// `getenv("FLEXAIDDS_*")` call sites honour the overlay and exclusions
+/// without being rewritten. Does not delete any flag from the API:
+///   * active but unset  → setenv(name, "1") (overlay / implications)
+///   * requested but inactive → unsetenv(name) (mutual-exclusion loser)
+/// Compile-time -D gates are never written. Individual env vars that are
+/// already set and still active are left untouched.
+void apply_to_environ();
+
 /// Convenience: same as active("FLEXAIDDS_RIGID_FASTPATH"). Default OFF.
 inline bool rigid_fastpath() { return active("FLEXAIDDS_RIGID_FASTPATH"); }
 

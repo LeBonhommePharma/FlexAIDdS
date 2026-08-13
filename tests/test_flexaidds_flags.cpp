@@ -169,3 +169,24 @@ TEST_F(FlexaiddsFlagsEnv, OverlayAliasesAreCaseInsensitive) {
     EXPECT_TRUE(flexaidds::flags::active("FLEXAIDDS_RIGID_FASTPATH"));
     EXPECT_TRUE(flexaidds::flags::active("FLEXAIDDS_RNG_STREAM_FIX"));
 }
+
+TEST_F(FlexaiddsFlagsEnv, ApplyToEnvironPublishesOverlayAndHidesLoser) {
+    set_env("FLEXAIDDS_FLAGS", "fastpath");
+    set_env("FLEXAIDDS_WAL_COERCIVE", "1");
+    set_env("FLEXAIDDS_SOFTCORE_WAL", "1");
+    set_env("FLEXAIDDS_CLEFT_SORT", "1");
+    resolve_env();
+    flexaidds::flags::apply_to_environ();
+
+    const char* fp = std::getenv("FLEXAIDDS_RIGID_FASTPATH");
+    ASSERT_NE(fp, nullptr);
+    EXPECT_STREQ(fp, "1");
+    const char* hoist = std::getenv("FLEXAIDDS_HOIST_RECEPTOR_INDEX");
+    ASSERT_NE(hoist, nullptr);
+    EXPECT_STREQ(hoist, "1");
+    EXPECT_EQ(std::getenv("FLEXAIDDS_SOFTCORE_WAL"), nullptr);
+    EXPECT_EQ(std::getenv("FLEXAIDDS_CLEFT_SORT"), nullptr);
+    EXPECT_STREQ(std::getenv("FLEXAIDDS_WAL_COERCIVE"), "1");
+    EXPECT_TRUE(flexaidds::flags::requested("FLEXAIDDS_SOFTCORE_WAL"));
+    EXPECT_FALSE(flexaidds::flags::active("FLEXAIDDS_SOFTCORE_WAL"));
+}

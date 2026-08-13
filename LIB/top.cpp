@@ -36,6 +36,7 @@
 #include "ProtocolConfig.h"
 #include "shell_exec.h"
 #include "UnifiedHardwareDispatch.h"
+#include "flexaidds_flags.h"
 #if defined(FLEXAIDDS_ENABLE_REDOCK)
 #include "DatasetRunner.h"
 #endif
@@ -454,6 +455,10 @@ int main(int argc, char **argv){
 		fprintf(stderr,"ERROR: Could not allocate memory for FA || GB || VC\n");
 		Terminate(2);
 	}
+	// Honour FLEXAIDDS_FLAGS=… overlay + mutual-exclusion losers before any
+	// later getenv() in scoring/search. Does not remove knobs — losers are
+	// unset in the environment so legacy call sites follow the winner.
+	flexaidds::flags::apply_to_environ();
 	GB->metal_batch_n = 2;  // N=2: safe batch size verified
 	// MIF/RefLig/GridPrio non-zero defaults (pointers already NULL via value-init)
 	FA->mif_temperature = 300.0f;

@@ -4004,6 +4004,7 @@ void populate_chromosomes(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* 
 		std::vector<std::vector<vertex>>     p_poly(n_thr, std::vector<vertex>(MAX_POLY));
 		std::vector<std::vector<plane>>      p_cont(n_thr, std::vector<plane>(MAX_PT));
 		std::vector<std::vector<edgevector>> p_vedge(n_thr, std::vector<edgevector>(MAX_POLY));
+		std::vector<std::vector<int>>        p_scorable(n_thr, std::vector<int>(natmr, 0));
 
 		for (int t = 0; t < n_thr; ++t) {
 			p_fa[t].contacts      = p_contacts[t].data();
@@ -4012,6 +4013,10 @@ void populate_chromosomes(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* 
 			p_vc[t].Calc      = p_calc[t].data();
 			p_vc[t].Calclist  = p_calclist[t].data();
 			p_vc[t].ca_index  = p_caidx[t].data();
+			p_vc[t].scorable_list = p_scorable[t].data();
+			p_vc[t].n_scorable = 0;
+			p_vc[t].scorable_cap = natmr;
+			p_vc[t].fastpath_used = 0;
 			p_vc[t].ca_rec    = p_carec[t].data();
 			p_vc[t].seed      = p_seed[t].data();
 			p_vc[t].contlist  = p_contlist[t].data();

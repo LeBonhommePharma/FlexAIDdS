@@ -6,6 +6,7 @@
 #include "flexaidds_flags.h"
 
 #include <cctype>
+#include <cstdlib>
 #include <cstring>
 #include <mutex>
 #include <string>
@@ -570,6 +571,31 @@ void dump(FILE* out) {
     resolve_once();
     std::lock_guard<std::mutex> lock(g_mu);
     dump_locked(out);
+}
+
+void apply_to_environ() {
+    resolve_once();
+    std::lock_guard<std::mutex> lock(g_mu);
+    for (const Gate& g : g_reg.gates) {
+        if (g.kind == Kind::Compile) continue;
+        if (std::strcmp(g.name, "FLEXAIDDS_FLAGS") == 0) continue;
+        if (std::strcmp(g.name, "FLEXAIDDS_FLAGS_DUMP") == 0) continue;
+        if (g.active) {
+            if (!env_raw(g.name) || g.kind == Kind::Bool) {
+                // Overlay / implication: publish a value existing getenv() sites see.
+                // Do not overwrite a caller-supplied non-empty value.
+                if (!env_raw(g.name) || env_raw(g.name)[0] == '\0') {
+                    const char* v = g.value.empty() ? "1" : g.value.c_str();
+                    setenv(g.name, v, 0);
+                }
+            }
+        } else if (g.requested && (g.kind == Kind::Bool || g.kind == Kind::Enum)) {
+            // Mutual-exclusion loser or superseded gate: hide from getenv()
+            // so legacy call sites follow the winner. The flag stays in the
+            // registry (requested() remains true).
+            unsetenv(g.name);
+        }
+    }
 }
 
 }  // namespace flags
