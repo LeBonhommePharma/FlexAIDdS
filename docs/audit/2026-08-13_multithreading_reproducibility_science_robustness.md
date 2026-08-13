@@ -57,7 +57,11 @@ engine's resilience to a non-finite score.
 | **F8** | Low | Multithreading | `UnifiedHardwareDispatch::detect()` guarded by a non-atomic `detected_` flag; a data race if the first dispatch call ever happens concurrently. |
 | **F9** | Low | Test coverage | The only `lazy_thread_rng` test repeats a *single* stream, so it cannot catch F1; it gives false confidence in stream independence. |
 
-Positive/no-action-needed observations are collected in §4.
+An automated breadth sweep (three independent read-only passes) corroborated F1–F9 and added
+**F10–F24** — see §8. The highest-impact additions are **F10** (Critical, but scoped to the
+experimental `ParallelDock` concurrent-GA mode: a shared function-`static` eval workspace and shallow
+region copies) and **F13** (an inverted mutual-information sign in the experimental joint-ensemble
+API). Positive/no-action-needed observations are collected in §4.
 
 ---
 
@@ -251,9 +255,10 @@ Every engine target is compiled with:
 
 `-ffast-math` enables FP reassociation (`-fassociative-math`), FMA contraction, reciprocal
 approximations, and `-fno-signed-zeros`. Combined with the runtime SIMD-width dispatch (scalar vs
-AVX2 vs AVX-512 vs NEON tails, all with different associativity) and the optional
-`-march=native`/`-mcpu=native` tuning (`FLEXAIDS_MCPU_NATIVE` defaults **ON** on Apple arm64,
-`FlexAIDOptions.cmake:81`), the exact CF score and its tie-breaks can differ across compilers,
+AVX2 vs AVX-512 vs NEON tails, all with different associativity) and the native-arch tuning — which is **on by default for the shipped binary**: `BUILD_FLEXAIDDS_FAST`
+defaults **ON** (`CMakeLists.txt:821`) and adds `-flto` + `-march=native`/`-mcpu=native` + `-DNDEBUG`
+to the `FlexAIDdS` target on any host (`:869-873`), and `FLEXAIDS_MCPU_NATIVE` defaults **ON** for
+`flexaid_core` (`FlexAIDOptions.cmake:81`) — the exact CF score and its tie-breaks can differ across compilers,
 optimisation levels, SIMD paths, and machines. This is consistent with `REPRODUCIBILITY.md`'s
 "agree within floating-point rounding" caveat, but it is worth stating precisely because CF ties
 decide pose order.
@@ -486,3 +491,177 @@ independently and reproducibly (the reproduction in F1 is a ready-made assertion
 | F1 reproduction (compiled vs `LIB/RngSeed.h`) | Confirmed: interleaved streams freeze at their first draw |
 
 No engine sources were modified; this audit is analysis only.
+
+---
+
+## 8. Addendum — automated breadth sweep (corroboration + new findings)
+
+Three read-only exploration passes independently swept the tree for the same three axes. They
+**corroborated F1–F9** (all three flagged the thread-salted RNG + Vcontacts jitter, the OpenMP
+partition-sum reductions, `-ffast-math`, and the NaN-in-ranking hazard), and surfaced additional
+concrete issues. The items below were **verified first-hand** against the cited lines before being
+recorded here.
+
+### F10 — Concurrent-GA (`ParallelDock`) path has structural data races (Critical for that mode)
+
+The single-GA OpenMP eval is well-engineered, but `ParallelDock` runs *many* full `GA()` instances
+concurrently (`ParallelDock.cpp:115` `#pragma omp parallel for`), and several process-global pieces
+of GA state are not isolated per instance:
+
+- **`static ParEvalWS ws`** (`gaboom.cpp:3129`) is a function-static evaluation workspace, explicitly
+  documented as "resident across generations … GA parallelism lives strictly inside this loop." Under
+  concurrent `GA()` calls each instance sees a different `ws.fa`/`ws.atoms`, fails the `ws_valid`
+  check, and executes `ws = ParEvalWS{}` (full reallocation, `:3140-3142`) while another thread is
+  indexing into it → heap corruption / wrong CF / crash.
+- **Shallow FA/VC copy** in `create_workspace` (`ParallelDock.cpp:63-72`) leaves `optres`,
+  `contacts`, `Calc`, DEE lists, etc. pointing at shared master arrays.
+- **`omp_set_num_threads(2)`** (`gaboom.cpp:218-220`) and the global `srand`/`set_master_seed`
+  (`:360-361`) are process-global side effects invoked from every concurrent GA.
+- **DEE update is gated on `!omp_in_parallel()`** (`ic2cf.cpp`), so under `ParallelDock`'s outer
+  parallel region FlexDEE pruning silently never runs — a different search than the serial dock.
+- **`atoms_copy` sized `atm_cnt`** rather than `atm_cnt+1` (`ParallelDock.cpp:69`) against the
+  engine's 1-based atom convention (reported off-by-one; medium confidence).
+
+**Impact.** Confined to the experimental octree grid-decomposition mode (not the published restart
+path, which is process-isolated). In that mode: crashes, torn scores, non-reproducible search.
+**Recommendation.** Make `ParEvalWS` non-static (thread/instance-local), deep-copy the region
+workspace, and drive per-region seeds/threads locally — or run regions as subprocesses like the
+DatasetRunner restart loop.
+
+### F11 — TOCTOU race in classic clustering (High)
+
+`cluster.cpp:145-167` checks `Clus_GAPOP[i] == -1` *outside* the `#pragma omp critical`, then assigns
+inside it; two threads can both pass the check and double-assign the same index, double-decrementing
+`n_unclus` and inflating `Clus_FRE`. **Impact:** wrong/non-reproducible cluster sizes when the classic
+clustering path runs multi-threaded.
+
+### F12 — Population-init eval omits the `metal_coord` reset (Medium, correctness)
+
+The steady-state eval clears `cf.metal_coord` in its per-thread reset (`gaboom.cpp:3290-3303`), but
+the population-init eval's reset block (`:4087-4099`) does **not**. A stale metal-coordination term
+can leak into the initial-population CF for metal-containing ligands. **Recommendation:** add the
+`metal_coord = 0.0` reset to the populate path for parity with the steady-state path.
+
+### F13 — `compute_joint_ensemble` mutual-information sign is inverted (High, experimental API)
+
+```1065:1066:LIB/statmech.cpp
+    // Step 5: Mutual information I(R;L) = S_joint - S_receptor - S_ligand  (in nats, dimensionless after scaling)
+    result.mutual_information_dimensionless = S_joint - S_receptor - S_ligand;
+```
+
+Mutual information is `I(R;L) = S_R + S_L − S_joint ≥ 0`; the code computes its negation.
+`BindingMode.cpp:1256-1257` uses the correct sign, so the two APIs disagree. **Impact:** the
+experimental joint-ensemble MI is negated (and would print negative "information"). **Recommendation:**
+flip to `S_receptor + S_ligand − S_joint`; add a test asserting `I ≥ 0`.
+
+### F14 — `BindingMode` energy sort has no tie-break → nondeterministic elected mode (Medium)
+
+`EnergyComparator` (`BindingMode.h:250-260`) compares cached energy with a strict `<` and no secondary
+key. `BindingModes` is ordered with `std::sort` (`BindingMode.cpp:100`), which is not stable, so when
+two modes share a cached free energy the "top" (elected) mode is implementation-/order-dependent.
+**Impact:** which pose is emitted rank-0 can flip on ties across std::sort implementations or input
+order. **Recommendation:** add a deterministic secondary key (e.g. representative CF then a stable id)
+or use `std::stable_sort`.
+
+### F15 — `geometry.cpp` bond angle: unclamped `acos`, unguarded zero denominator (Medium, NaN source)
+
+```127:128:LIB/geometry.cpp
+  cosa /= sqrt(absu*absv);
+  cosa = (float)(acos(cosa)*180.0/PI);
+```
+
+If two bond vectors are (near-)collinear/degenerate, `absu*absv` can be 0 (→ Inf) and FP error can push
+`cosa` outside `[-1,1]` (→ `acos` returns NaN). `Vcontacts.cpp:1607-1612` and `hbond_potential.h:40-41`
+clamp; this shared helper does not. This is a concrete route to a non-finite geometric term feeding the
+CF — i.e. an upstream producer of the NaN that F5's `QuickSort` cannot then order. **Recommendation:**
+guard the denominator and `std::clamp(cosa, -1.0, 1.0)` before `acos`.
+
+### F16 — Two β conventions on the same scale; physical `kB` must not touch CF units (Medium)
+
+The GA/cluster/soft-β layers use `β = 1/T` over the unitless CF landscape (`read_input.cpp:253-258`,
+deliberately — folding in `kB_kcal` over-sharpens weights ~503× at 300 K), while `StatMechEngine`
+defaults to physical `β = 1/(kB·T)` (`statmech.cpp:186-188`) and also exposes `selection_weights()`
+at `β = 1/T`. The hazard is calling the physical-`β` `compute()` on CF-unit energies and printing the
+result as a kcal/mol ledger. This is a labelling/consistency risk rather than an arithmetic bug — the
+claim firewall marks such output proxy-only — but the two "temperatures" (`thermo_T_eff = 0.596`
+CF-units vs Kelvin `TEMPER`) are easy to cross. **Recommendation:** assert at the call site which β a
+given ensemble was built for, and keep CF-scored ensembles on `selection_weights()`/`β=1/T`.
+
+### F17 — `boltzmann_pmf` and other thermo entry points: empty-bin and `T≤0` gaps (Medium)
+
+`boltzmann_pmf` (the deprecated-name "WHAM", `statmech.cpp:626-732`) assigns empty bins `F=0` (so an
+unvisited bin looks like a ground state), never uses `f_old` in the estimator (the "self-consistency"
+iteration only measures convergence), and does not guard `T≤0` (`:640`). `helmholtz` (`:573-576`),
+`init_replicas` (`:591-595`) and `compute_joint_ensemble` (`:994`) likewise compute `β=1/(kB·T)`
+without a `T>0` check, unlike the engine ctor. **Impact:** misleading PMF on sparse coordinates; Inf β
+/ NaN thermodynamics at `T=0`. **Recommendation:** guard `T>0` uniformly; mark empty PMF bins as
+undefined rather than 0.
+
+### F18 — Grand-canonical sums are hash-order- and overflow-sensitive (Medium)
+
+`GrandPartitionFunction` accumulates `log_Xi` and per-ligand sums by iterating `std::unordered_map`
+(`GrandPartitionFunction.cpp:130-136, 287-298`); non-associative `sum += exp(...)` over hash order
+makes `log_Xi`/`p_bind` values (not the final `dG`-sorted rank) depend on insertion/hash order.
+Separately, `MultiSiteGPF.cpp:167-174` leaves log-space to form `exp(log_xi)−1`, which overflows to
+Inf once `log_Xi ≳ 700` (strong binding). **Impact:** competitive-binding ledger noise; Inf multi-site
+cooperativity. The single-ligand canonical Astex path is unaffected (GPF unused). **Recommendation:**
+accumulate in a fixed key order and keep the `Ξ−1` correction in log-space (`log1p(-exp(-log_xi))`
+form).
+
+### F19 — Python result aggregation depends on filesystem order (Medium)
+
+`python/flexaidds/docking.py:742-747` discovers pose PDBs ordered by `st_mtime`, and
+`python/flexaidds/figures.py:195` consumes an **unsorted** `rglob`. Which pose is treated as primary,
+or which audit JSON "wins", therefore depends on filesystem timestamps/enumeration rather than
+rank/name. **Recommendation:** sort by rank/name explicitly at these sites (the C++ batch/`results.py`
+paths already sort).
+
+### F20 — PoseBusters temp path collides under same-process concurrency (Medium, claim gate)
+
+`LIB/PoseBust/ChecksChemistry.cpp:483-486` builds an InChI temp file from `getpid()`, so two PoseBust
+checks in the *same* process (concurrent docks) can clobber one SDF and flip the PB pass/fail — which
+is a benchmark **claim gate**, not the CF search. **Recommendation:** include a thread id / unique
+counter (or `mkstemp`) in the temp name.
+
+### F21 — tENCoM/ENCoM absolute vibrational entropy is model-scale, and `tencom_diff` abs-folds negative modes (Low, scientific caveat)
+
+Absolute `S_vib` in `ShannonThermoStack.cpp:332-359` combines a model-scale `ω = √λ` with SI `ħ`, so
+the absolute magnitude is heuristic (~0.06 kcal/mol/K per mode offset); only *differences* cancel the
+scale. `tENCoM/tencom_diff.cpp:25-27` sets `frequency = √|λ|`, folding indefinite/negative Hessian
+eigenvalues into real frequencies rather than filtering them. There is also a floor inconsistency:
+`sample()` uses an absolute `λ<1e-8` cut (`tencm.cpp:906`) while `bfactors()` uses a relative floor
+(`:1020-1021`). **Recommendation:** treat absolute `S_vib` as proxy unless calibrated; filter negative
+λ (don't `abs`); unify the soft-mode floor.
+
+### F22 — FOPTICS clustering draws the (F1-affected) thread RNG (Low)
+
+`FOPTICS.cpp:15,846` uses `lazy_thread_rng`/`RandomDouble` for random splits, so cluster membership —
+and therefore the OPTICS representative selected as the elected pose (`BindingMode.cpp:640-650`) — is
+subject to the F1 multiplexing defect and the thread-count salt when run under OpenMP.
+
+### F23 — `simd_distance.h` Boltzmann helper lacks the max-shift (Low, latent)
+
+`simd_distance.h:485-486` computes `exp(-β·E)` with no `E_min` shift (unlike the production
+`compute_boltzmann_batch`). Harmless where currently used, but a latent overflow/underflow footgun if
+reused on raw CF energies.
+
+### F24 — Default (unseeded) master seed is wall-clock `time(0)` (Low, expected)
+
+With neither `ga.seed` nor `FLEXAID_SEED` set, the GA seeds from `time(0)` (`gaboom.cpp:349-361`).
+Expected behaviour, but worth stating: reproducibility requires an explicit seed, and the effective
+seed is recorded in the pose REMARK. (`srand` there is vestigial — no `rand()` consumers exist in
+`LIB/`.)
+
+### Corroboration & scope notes
+
+- All three sweeps independently confirmed there are **no unsynchronised shared writes in the
+  single-GA OpenMP eval** (per-`tid` scratch + `default(none)`), and that `SharedPosePool`,
+  `TargetServer`, `GrandPartitionFunction`, `InStreamClustering`, and the thread pools are
+  mutex/atomic-correct — matching §4.
+- The net reproducibility contract is: **bit-identical docking holds only under `FLEXAID_SEED` +
+  `OMP_NUM_THREADS=1` + `FLEXAIDDS_PARALLEL_REPRODUCE` off + identical binary/flags/host.**
+  `FLEXAID_DETERMINISTIC` pins only the main CF eval loop to one thread; it does not cover the niche
+  loops, clustering, FOPTICS RNG, the thermo OpenMP reductions, or host math flags.
+- Prioritisation update: **F10 (ParallelDock) and F13 (MI sign)** join **F1/F5** as the items with the
+  clearest correctness impact; F10 is Critical but scoped to the experimental grid-decomposition mode.
+
