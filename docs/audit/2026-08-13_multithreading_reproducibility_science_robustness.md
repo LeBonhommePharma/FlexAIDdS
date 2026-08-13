@@ -80,6 +80,10 @@ API). Positive/no-action-needed observations are collected in §4.
 - **Build:** `CMakeLists.txt` and `cmake/FlexAIDOptions.cmake` FP/optimisation flags.
 - **Execution:** clean configure + build; `ctest` 89/89; Python `pytest` 1253 passed; standalone
   RNG reproduction compiled against `LIB/RngSeed.h`.
+- **Test-quality follow-up:** a green `ctest` does not imply the findings above are tested. See
+  [`2026-08-13_test_coverage_quality.md`](2026-08-13_test_coverage_quality.md) — F1/F5/F13 have
+  tests that execute the buggy functions on inputs that cannot fail, and 94 `TEST()` cases in
+  `build_sources.ignore` never run.
 
 ---
 
@@ -664,4 +668,16 @@ seed is recorded in the pose REMARK. (`srand` there is vestigial — no `rand()`
   loops, clustering, FOPTICS RNG, the thermo OpenMP reductions, or host math flags.
 - Prioritisation update: **F10 (ParallelDock) and F13 (MI sign)** join **F1/F5** as the items with the
   clearest correctness impact; F10 is Critical but scoped to the experimental grid-decomposition mode.
+
+---
+
+## 9. Test coverage quality (pointer)
+
+A follow-up pass rebuilt this branch (`ctest` **89/89** again) and asked whether that green run is
+real protection or inflated counts. Short answer: **mixed**. StatMech identities, the claim
+firewall, and several numeric regressions are real gates. The suite does **not** catch F1, F5, F10,
+F13, or F14; the existing RNG / QuickSort / `compute_joint_ensemble` tests give false confidence.
+Full inventory, the F1–F24 “would this test fail?” table, and concrete fluff citations:
+
+**[`2026-08-13_test_coverage_quality.md`](2026-08-13_test_coverage_quality.md)**
 
