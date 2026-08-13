@@ -26,6 +26,7 @@
 
 #include "flexaid.h"
 #include "Vcontacts.h"
+#include "EnvFlags.h"  // flexaids::env_bool — for the NAN_RANK_GUARD gate below
 
 // Forward declaration for re-entrant GA context
 struct GAContext;
@@ -41,8 +42,61 @@ namespace target { class TargetServer; }
 #define SAVE_CHROM_FRACTION 0.05
 
 #define QS_TYPE double
-#define QS_ASC(a,b) ((a)-(b))
-#define QS_DSC(a,b) ((b)-(a))
+// FLEXAIDDS_NAN_RANK_GUARD — DEFAULT OFF.
+//
+// NaN/Inf are unordered under IEEE subtraction, so a NaN CF can be elected
+// rank-0. The guard treats non-finite as worst: last in ascending energy, last
+// in descending fitness. Finite-vs-finite is unchanged either way, so the flag
+// only moves poses in runs that actually produce a non-finite CF.
+//
+// CF ranking and election are LANE D territory and lane D has not started.
+// This ships gated OFF so lane D inherits the switch instead of colliding with
+// a moved default. Turning it on changes which pose can be elected.
+// Read once per process, not per comparison: QS_ASC/QS_DSC run in the
+// QuickSort inner loop, where a getenv() scan of environ would be a real cost.
+// Exposed as a reference so a test can flip it deterministically regardless of
+// gtest ordering; production code should only ever read it.
+inline bool& flexaids_nan_rank_guard_flag()
+{
+	// flexaids::env_bool is the repo's one parser for these switches. A
+	// hand-rolled "not 0/n/f" test would read FLEXAIDDS_NAN_RANK_GUARD=off as
+	// ON — a knob documented OFF silently being ON is the exact failure this
+	// gate exists to prevent.
+	static bool enabled = [] {
+		const char* e = getenv("FLEXAIDDS_NAN_RANK_GUARD"); // DEFAULT OFF
+		if (e == nullptr || e[0] == '\0') return false;
+		return flexaids::env_bool("FLEXAIDDS_NAN_RANK_GUARD", false);
+	}();
+	return enabled;
+}
+
+inline bool flexaids_nan_rank_guard_enabled()
+{
+	return flexaids_nan_rank_guard_flag();
+}
+
+inline QS_TYPE flexaids_qs_asc(QS_TYPE a, QS_TYPE b)
+{
+	if (!flexaids_nan_rank_guard_enabled()) return a - b;
+	const bool af = std::isfinite(a);
+	const bool bf = std::isfinite(b);
+	if (af && bf) return a - b;
+	if (af) return static_cast<QS_TYPE>(-1);
+	if (bf) return static_cast<QS_TYPE>(1);
+	return static_cast<QS_TYPE>(0);
+}
+inline QS_TYPE flexaids_qs_dsc(QS_TYPE a, QS_TYPE b)
+{
+	if (!flexaids_nan_rank_guard_enabled()) return b - a;
+	const bool af = std::isfinite(a);
+	const bool bf = std::isfinite(b);
+	if (af && bf) return b - a;
+	if (af) return static_cast<QS_TYPE>(-1);
+	if (bf) return static_cast<QS_TYPE>(1);
+	return static_cast<QS_TYPE>(0);
+}
+#define QS_ASC(a,b) flexaids_qs_asc((a),(b))
+#define QS_DSC(a,b) flexaids_qs_dsc((a),(b))
 #define K(i,j,n) (n*(n-1)/2) - (n-i)*((n-i)-1)/2 + j - i - 1
 //#define K(i,j,n) ( (i < j) ? (i*n+j) : (j*n+i) )
 
