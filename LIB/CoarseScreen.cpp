@@ -1,15 +1,10 @@
-// CoarseScreen.cpp — NRGRank coarse-grained screening for FlexAIDdS
+// CoarseScreen.cpp — coarse-grained cube screening for FlexAIDdS
 //
-// Full C++20 translation of:
-//   - process_target.py: build_index_cubes(), get_cf_list(), load_ligand_test_dots(),
-//     clean_binding_site_grid(), get_clash_per_dot()
-//   - rank_molecules.py: center_coords(), rotate_ligand(), get_cf(), get_cf_main(),
-//     get_cf_with_clash(), get_cf_main_clash()
-//
-// Reference:
-//   DesCôteaux T, Mailhot O, Najmanovich RJ. "NRGRank: Coarse-grained
-//   structurally-informed ultra-massive virtual screening."
-//   bioRxiv 2025.02.17.638675.
+// Reimplemented from the published method (DesCôteaux, Mailhot, Najmanovich,
+// bioRxiv 2025.02.17.638675v2, doi 10.1101/2025.02.17.638675;
+// supplementary data Zenodo 10.5281/zenodo.16861024), clean-room per
+// docs/licensing/clean-room-policy.md. Apache-2.0. Not a translation of
+// NRGlab/NRGRank source (that tree is GPL-3.0 and is not a dependency).
 //
 // SPDX-License-Identifier: Apache-2.0
 
@@ -225,8 +220,7 @@ void CoarseScreener::build_grid() {
     grid_.build(target_atoms_, config_.cell_width);
 }
 
-// ───── CF precomputation (get_cf_list kernel) ──────────────────────────
-// This is the core hot loop from process_target.py, translated faithfully.
+// ───── CF precomputation (paper cube × type kernel) ────────────────────
 // 6 nested loops: x,y,z grid × atom_types × 3³ neighbors × atoms_in_cell
 
 void CoarseScreener::precompute_cf() {
@@ -560,7 +554,7 @@ std::vector<std::array<float,9>> CoarseScreener::generate_rotations(int per_axis
 }
 
 // ═══════════════════════════════════════════════════════════════════════
-//  Pose scoring — get_cf() from rank_molecules.py
+//  Pose scoring — cube lookup at a translated/rotated ligand pose
 // ═══════════════════════════════════════════════════════════════════════
 
 float CoarseScreener::score_pose(const float* coords, const int* atom_types,
