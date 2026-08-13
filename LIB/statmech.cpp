@@ -215,9 +215,10 @@ Thermodynamics StatMechEngine::compute() const {
     const std::size_t N = ensemble_.size();
     bool any_positive_multiplicity = false;
     for (std::size_t i = 0; i < N; ++i) {
+        if (!std::isfinite(ensemble_[i].energy))
+            throw std::runtime_error("StatMechEngine::compute: non-finite sample energy");
         if (std::isfinite(ensemble_[i].count) && ensemble_[i].count > 0.0) {
             any_positive_multiplicity = true;
-            break;
         }
     }
     if (!any_positive_multiplicity)
@@ -338,9 +339,10 @@ Thermodynamics StatMechEngine::compute_at_temperature(double T_K) const
     const std::size_t N = ensemble_.size();
     bool any_positive_multiplicity = false;
     for (std::size_t i = 0; i < N; ++i) {
+        if (!std::isfinite(ensemble_[i].energy))
+            throw std::runtime_error("StatMechEngine::compute_at_temperature: non-finite sample energy");
         if (std::isfinite(ensemble_[i].count) && ensemble_[i].count > 0.0) {
             any_positive_multiplicity = true;
-            break;
         }
     }
     if (!any_positive_multiplicity)

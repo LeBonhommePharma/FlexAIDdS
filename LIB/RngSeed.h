@@ -123,6 +123,8 @@ inline std::mt19937& lazy_thread_rng(std::uint64_t stream)
     thread_local std::uint64_t cached_epoch = ~0ULL;
     // std::map: insert of a new stream must not invalidate references held
     // by callers (auto& rng = lazy_thread_rng(id)). unordered_map rehash can.
+    // Do not hold a reference across set_master_seed(): that bumps g_seed_epoch
+    // and this function clears the map.
     thread_local std::map<std::uint64_t, std::mt19937> rngs;
 
     const std::uint64_t epoch = g_seed_epoch.load(std::memory_order_acquire);

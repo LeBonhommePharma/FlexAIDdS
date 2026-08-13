@@ -6,6 +6,7 @@
 #include <gtest/gtest.h>
 #include "../LIB/statmech.h"
 #include <cmath>
+#include <limits>
 #include <vector>
 #include <numeric>
 #include <random>
@@ -1611,6 +1612,25 @@ TEST_F(StatMechEngineTest, MixedZeroMultiplicityStillComputes) {
     EXPECT_TRUE(std::isfinite(th.free_energy));
     EXPECT_TRUE(std::isfinite(th.heat_capacity));
     EXPECT_GE(th.heat_capacity, 0.0);
+}
+
+TEST_F(StatMechEngineTest, NegativeAndNaNMultiplicityAreClamped) {
+    StatMechEngine eng(300.0);
+    eng.add_sample(-10.0, -1.0);
+    eng.add_sample(-11.0, std::numeric_limits<double>::quiet_NaN());
+    eng.add_sample(-12.0, 1.0);
+    const auto th = eng.compute();
+    EXPECT_TRUE(std::isfinite(th.free_energy));
+    EXPECT_GE(th.heat_capacity, 0.0);
+}
+
+TEST_F(StatMechEngineTest, NonFiniteEnergyThrowsRatherThanPoisonedCv) {
+    StatMechEngine eng(300.0);
+    eng.add_sample(std::numeric_limits<double>::quiet_NaN(), 1.0);
+    EXPECT_THROW(eng.compute(), std::runtime_error);
+    StatMechEngine eng2(300.0);
+    eng2.add_sample(-std::numeric_limits<double>::infinity(), 1.0);
+    EXPECT_THROW(eng2.compute_at_temperature(310.0), std::runtime_error);
 }
 
 // ===========================================================================
