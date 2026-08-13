@@ -23,7 +23,16 @@ OUTPUT
 """
 import argparse, collections, csv, glob, json, os, re, sys
 
-CACHE_DEFAULT = "/Users/lp.more/flexaidds_results/cache_v2/astex_diverse"
+def _cache_default():
+    env = os.environ.get("FLEXAIDDS_CACHE_V2")
+    if env:
+        return env
+    results = os.environ.get("FLEXAIDDS_RESULTS")
+    if results:
+        return os.path.join(results, "cache_v2", "astex_diverse")
+    return ""
+
+CACHE_DEFAULT = _cache_default()
 DENOM_DEFAULT = 84   # 2HR7 excluded: its "ligand" is PEG (CCD P33); no cognate ligand exists.
 
 def die(msg):
@@ -160,6 +169,8 @@ if __name__ == "__main__":
     if not a.run and not a.frozen: die("give --run <dir> or --frozen <csv>")
     if a.run:
         if not os.path.isdir(a.run): die(f"not a directory: {a.run}")
+        if not a.cache:
+            die("give --cache <astex_diverse dir> or set FLEXAIDDS_CACHE_V2 / FLEXAIDDS_RESULTS")
         per, label = score_run(a.run, a.cache, a.denominator), os.path.basename(a.run.rstrip("/"))
     else:
         if not os.path.exists(a.frozen): die(f"no such file: {a.frozen}")

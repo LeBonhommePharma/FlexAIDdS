@@ -15,6 +15,7 @@ uniform fix passes the first three and breaks the fourth.
 from __future__ import annotations
 
 import os
+import shutil
 from pathlib import Path
 
 import pytest
@@ -74,14 +75,15 @@ def test_bare_binary_name_is_NOT_absolutised(tmp_path):
 
 def test_bare_name_on_PATH_still_resolves(tmp_path):
     """A bare name that PATH *can* resolve becomes absolute, via PATH -- not cwd."""
-    import shutil
-
-    if shutil.which("sh") is None:  # pragma: no cover - POSIX runners have sh
+    which = shutil.which("sh")
+    if which is None:  # pragma: no cover - POSIX runners have sh
         pytest.skip("no 'sh' on PATH")
     r = _runner(tmp_path, binary="sh")
     assert os.path.isabs(r.binary)
     assert Path(r.binary).exists()
-    assert Path(r.binary).name == "sh"
+    # Ubuntu's /bin/sh is often a symlink to dash; compare the resolved PATH
+    # lookup, not the requested basename.
+    assert Path(r.binary).resolve() == Path(which).resolve()
 
 
 def test_relative_binary_with_separator_is_absolutised(tmp_path, monkeypatch):
