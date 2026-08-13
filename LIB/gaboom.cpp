@@ -11,6 +11,7 @@
 #include "ensemble_pipeline.h"
 #include "ProtocolConfig.h"
 #include "niche_distance.h"
+#include "niche_hash.h"
 #include "new_search_arch.h"
 
 #include <random>
@@ -3382,13 +3383,46 @@ void calculate_fitness(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* chr
 			if (n_lig_atoms < 1) n_lig_atoms = 1;
 		}
 		std::vector<double> pshare_out(static_cast<size_t>(GB->num_chrom), 1.0);
+		const bool niche_hash = niche_cart && flexaids::niche_hash_enabled();
+		std::vector<float> niche_cents;
+		std::unordered_map<flexaids::NicheCell, std::vector<int>, flexaids::NicheCellHash> niche_map;
+		if (niche_hash) {
+			niche_cents.assign(static_cast<size_t>(GB->num_chrom) * 3, 0.f);
+			for (int c = 0; c < GB->num_chrom; ++c) {
+				const float* xyz = &lig_xyz[static_cast<size_t>(c) * kCoordStride];
+				float sx = 0.f, sy = 0.f, sz = 0.f;
+				for (int a = 0; a < n_lig_atoms; ++a) {
+					sx += xyz[a * 3 + 0];
+					sy += xyz[a * 3 + 1];
+					sz += xyz[a * 3 + 2];
+				}
+				const float inv = n_lig_atoms > 0 ? 1.f / static_cast<float>(n_lig_atoms) : 0.f;
+				niche_cents[static_cast<size_t>(c) * 3 + 0] = sx * inv;
+				niche_cents[static_cast<size_t>(c) * 3 + 1] = sy * inv;
+				niche_cents[static_cast<size_t>(c) * 3 + 2] = sz * inv;
+			}
+			niche_map = flexaids::niche_hash_build(
+				niche_cents.data(), GB->num_chrom, static_cast<float>(GB->sig_share));
+		}
 #ifdef _OPENMP
 #pragma omp parallel for schedule(dynamic) default(none) \
-	shared(chrom, GB, FA, cleftgrid, niche_cart, lig_xyz, n_lig_atoms, pshare_out)
+	shared(chrom, GB, FA, cleftgrid, niche_cart, lig_xyz, n_lig_atoms, pshare_out, \
+	       niche_hash, niche_cents, niche_map)
 #endif
 		for(int pi=0; pi<GB->num_chrom; pi++){
 			double pshare = 0.0;
-			for(int pj=0; pj<GB->num_chrom; pj++){
+			std::vector<int> neigh;
+			if (niche_hash) {
+				const float* c = &niche_cents[static_cast<size_t>(pi) * 3];
+				flexaids::niche_hash_neighbors(
+					niche_map,
+					flexaids::niche_cell_of(c[0], c[1], c[2],
+					                       static_cast<float>(GB->sig_share)),
+					neigh);
+			}
+			const int n_j = niche_hash ? static_cast<int>(neigh.size()) : GB->num_chrom;
+			for(int jk=0; jk<n_j; jk++){
+				const int pj = niche_hash ? neigh[static_cast<size_t>(jk)] : jk;
 				double prmsp = 0.0;
 				if (niche_cart) {
 					const float* a = &lig_xyz[static_cast<size_t>(pi) * kCoordStride];

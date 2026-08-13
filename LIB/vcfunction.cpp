@@ -6,6 +6,7 @@
 #include "metal_coordination.h"
 #include "GISTGrid.h"
 #include "ProtocolConfig.h"
+#include "ca_rec_flat.h"
 #include <cmath>
 #include <cstdlib>
 #include <cstring>
@@ -471,7 +472,16 @@ double vcfunction(FA_Global* FA,VC_Global* VC,atom* atoms,resid* residue, std::v
 		// Only touched when the term is enabled (weight != 0) — zero overhead OFF.
 		double pd_hb = 0.0, pd_elec = 0.0, pd_mc = 0.0;
 		int currindex = VC->ca_index[i];
-		
+		int flat_idx[MAX_CONT];
+		int nflat = 0, flat_k = 0;
+		const bool use_flat = flexaids::ca_rec_flat_enabled();
+		if (use_flat) {
+			nflat = flexaids::flatten_ca_rec(VC->ca_index, VC->ca_rec, i,
+			                                flat_idx, MAX_CONT);
+			currindex = (nflat > 0) ? flat_idx[0] : -1;
+			flat_k = 1;
+		}
+
 		while(currindex != -1) {
 			
 			double radB  = (double)VC->Calc[VC->ca_rec[currindex].atom].atom->radius;
@@ -879,7 +889,11 @@ double vcfunction(FA_Global* FA,VC_Global* VC,atom* atoms,resid* residue, std::v
 #endif
 
 			// skip to next contact
-			currindex = VC->ca_rec[currindex].prev;
+			if (use_flat) {
+				currindex = (flat_k < nflat) ? flat_idx[flat_k++] : -1;
+			} else {
+				currindex = VC->ca_rec[currindex].prev;
+			}
 		}
 		
 		//    printf("Atom[%d]=%d has %d contacts\n",VC->Calc[i].,VC->Calc[i].atom->number,contnum);

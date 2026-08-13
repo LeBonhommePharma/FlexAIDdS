@@ -1618,6 +1618,11 @@ flexaids_add_unit_test(test_protocol_config
             tests/test_log_sum_exp.cpp
         TEST_NAME FixedOrderLseTests
     )
+    flexaids_add_unit_test(test_chunk5_layout
+        SOURCES
+            tests/test_chunk5_layout.cpp
+        TEST_NAME Chunk5LayoutTests
+    )
 
     # test_rigid_fastpath — FLEXAIDDS_RIGID_FASTPATH bit-identity
     # (index_protein + Vcontacts + calc_region; same isolated link as test_vcontacts)

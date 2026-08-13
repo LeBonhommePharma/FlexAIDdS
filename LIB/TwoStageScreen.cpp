@@ -6,6 +6,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include "TwoStageScreen.h"
+#include "pprop.h"
 
 #include <algorithm>
 #include <chrono>
@@ -101,6 +102,8 @@ std::vector<TwoStageResult> TwoStageScreener::run(
             name_to_idx[ligands[i].name] = i;
 
         for (int i = 0; i < n_stage2; ++i) {
+            if (!flexaids::pprop_keep(results[i].coarse_rank, n_results))
+                continue;
             auto it = name_to_idx.find(results[i].coarse_result.name);
             if (it == name_to_idx.end()) continue;
 
@@ -203,8 +206,12 @@ std::vector<std::string> TwoStageScreener::top_names(
     std::vector<std::string> names;
     const int n = std::min(std::max(top_n, 0), static_cast<int>(results.size()));
     names.reserve(static_cast<size_t>(n));
-    for (int i = 0; i < n; ++i)
+    const int ntot = static_cast<int>(results.size());
+    for (int i = 0; i < ntot && static_cast<int>(names.size()) < n; ++i) {
+        if (!flexaids::pprop_keep(results[static_cast<size_t>(i)].coarse_rank, ntot))
+            continue;
         names.push_back(results[static_cast<size_t>(i)].coarse_result.name);
+    }
     return names;
 }
 
