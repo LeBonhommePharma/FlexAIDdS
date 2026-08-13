@@ -221,6 +221,8 @@ Backend UnifiedHardwareDispatch::best_backend(KernelType kernel) const {
             // legacy GPU evaluators consume raw FlexAID internal-coordinate
             // genes as Cartesian translations and only return partial CF terms,
             // so they are not benchmark-parity safe for pose search.
+            // Chunk 6 (2026-08-13): keep CPU until a measured Astex-85 A/B
+            // after full buildcc decode — docs/implementation/GPU_FITNESS_DECISION.md
             return select_cpu_backend();
 
         case KernelType::SHANNON_ENTROPY:
