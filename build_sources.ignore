@@ -171,12 +171,8 @@ src/backends/webgpu/webgpu_eval.h
 # orphan; no build output changes from listing it. Introduced by #371.
 tests/rmsd_crosscheck_engine.h
 
-# Orphans silenced 2026-08-13 to unblock C++ CI (blocks all C++ core + macOS jobs
-# at cmake configure via ValidateSources.cmake:112). Both are header-only files
-# included transitively, not standalone build units:
-#   - LIB/EnvFlags.h            <- cluster.cpp, BindingMode.cpp, ShannonBinning.h
-#   - ShannonThermoStack/ShannonBinning.h <- ShannonThermoStack.cpp, UnifiedHardwareDispatch.cpp
-# Introduced by #405 (fail-closed thermodynamic claim provenance), which added the
-# headers but did not list them here. No build output changes from listing them.
-LIB/EnvFlags.h
-LIB/ShannonThermoStack/ShannonBinning.h
+# EnvFlags.h and ShannonThermoStack/ShannonBinning.h are header-only and are
+# #include'd from compiled TUs (BindingMode.cpp, cluster.cpp, ShannonThermoStack.cpp,
+# UnifiedHardwareDispatch.cpp). scripts/validate_sources.py counts quoted includes
+# from CMake-referenced translation units, so they must not live in this ignore
+# list — an ignore entry is a permanent blind spot for real orphans.
