@@ -6,6 +6,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include "TwoStageScreen.h"
+#include "pprop.h"
 
 #include <algorithm>
 #include <chrono>
@@ -14,6 +15,7 @@
 #include <filesystem>
 #include <fstream>
 #include <numeric>
+#include <unordered_map>
 
 namespace nrgrank {
 
@@ -100,21 +102,28 @@ std::vector<TwoStageResult> TwoStageScreener::run(
             name_to_idx[ligands[i].name] = i;
 
         for (int i = 0; i < n_stage2; ++i) {
+            if (!flexaids::pprop_keep(results[i].coarse_rank, n_results))
+                continue;
             auto it = name_to_idx.find(results[i].coarse_result.name);
             if (it == name_to_idx.end()) continue;
 
             const auto& lig = ligands[it->second];
             results[i].full_dock_score = dock_cb_(lig, results[i].coarse_result);
+            results[i].stage2_kind = config_.stage2_kind_label.empty()
+                ? "callback" : config_.stage2_kind_label;
         }
 
-        // Re-sort top-N by full dock score
-        std::sort(results.begin(), results.begin() + n_stage2,
-                  [](const TwoStageResult& a, const TwoStageResult& b) {
-                      return a.full_dock_score < b.full_dock_score;
-                  });
+        // Re-sort top-N by full dock score. NaN (pProp-dropped / missing
+        // callback) sorts last via stage2_score_less — not operator< on NaN.
+        std::sort(results.begin(), results.begin() + n_stage2, stage2_score_less);
 
-        for (int i = 0; i < n_stage2; ++i)
-            results[i].full_rank = i + 1;
+        int docked_rank = 0;
+        for (int i = 0; i < n_stage2; ++i) {
+            if (std::isfinite(results[i].full_dock_score))
+                results[i].full_rank = ++docked_rank;
+            else
+                results[i].full_rank = 0;
+        }
 
         auto t2_end = chr::steady_clock::now();
         if (config_.verbose) {
@@ -141,6 +150,72 @@ void TwoStageScreener::write_csv(const std::string& path,
              << r.best_position.y << ","
              << r.best_position.z << "\n";
     }
+}
+
+void TwoStageScreener::write_unified_csv(const std::string& path,
+                                         const std::vector<TwoStageResult>& results) {
+    namespace fs = std::filesystem;
+    std::error_code ec;
+    fs::create_directories(fs::path(path).parent_path(), ec);
+    std::ofstream fout(path);
+    if (!fout.is_open()) return;
+
+    fout << "coarse_rank,name,coarse_score,stage2_score,stage2_rmsd,stage2_rank,stage2_kind\n";
+    for (const auto& r : results) {
+        fout << r.coarse_rank << ","
+             << "\"" << r.coarse_result.name << "\","
+             << r.coarse_result.score << ",";
+        if (std::isfinite(r.full_dock_score)) fout << r.full_dock_score;
+        fout << ",";
+        if (std::isfinite(r.rmsd)) fout << r.rmsd;
+        fout << ","
+             << r.full_rank << ","
+             << r.stage2_kind << "\n";
+    }
+}
+
+bool TwoStageScreener::write_screen_receipt(const std::string& output_dir,
+                                            int n_ligands,
+                                            int top_n,
+                                            bool stage2_callback,
+                                            const std::string& extra_mode) {
+    namespace fs = std::filesystem;
+    std::error_code ec;
+    fs::create_directories(output_dir, ec);
+    const std::string path = output_dir + "/RUN_RECEIPT.json";
+    std::ofstream fout(path);
+    if (!fout.is_open()) return false;
+    const char* mode = extra_mode.empty()
+        ? (stage2_callback ? "two-stage-screen" : "coarse-screen")
+        : extra_mode.c_str();
+    fout << "{\n"
+         << "  \"schema\": \"flexaidds_screen_receipt/1\",\n"
+         << "  \"mode\": \"" << mode << "\",\n"
+         << "  \"n_ligands\": " << n_ligands << ",\n"
+         << "  \"top_n\": " << top_n << ",\n"
+         << "  \"stage2_callback\": " << (stage2_callback ? "true" : "false") << ",\n"
+         << "  \"score_claim\": \"CF/contact-function scoring proxy (coarse); "
+            "stage2 is callback/surrogate unless a real GA dock is wired\",\n"
+         << "  \"method_doi\": \"10.1101/2025.02.17.638675\",\n"
+         << "  \"zenodo_doi\": \"10.5281/zenodo.16861024\",\n"
+         << "  \"matrix\": \"MC_5p_norm_P10_M2_2 (constexpr LIB/nrgrank_matrix.h)\",\n"
+         << "  \"license_note\": \"clean-room Apache-2.0; NRGlab/NRGRank GPL source is not a dependency\"\n"
+         << "}\n";
+    return true;
+}
+
+std::vector<std::string> TwoStageScreener::top_names(
+        const std::vector<TwoStageResult>& results, int top_n) {
+    std::vector<std::string> names;
+    const int n = std::min(std::max(top_n, 0), static_cast<int>(results.size()));
+    names.reserve(static_cast<size_t>(n));
+    const int ntot = static_cast<int>(results.size());
+    for (int i = 0; i < ntot && static_cast<int>(names.size()) < n; ++i) {
+        if (!flexaids::pprop_keep(results[static_cast<size_t>(i)].coarse_rank, ntot))
+            continue;
+        names.push_back(results[static_cast<size_t>(i)].coarse_result.name);
+    }
+    return names;
 }
 
 } // namespace nrgrank

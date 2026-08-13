@@ -9,6 +9,7 @@
 #include "UnifiedHardwareDispatch.h"
 #include "ShannonThermoStack/ShannonBinning.h"
 #include "simd_distance.h"
+#include "log_sum_exp.h"
 #ifdef FLEXAIDS_USE_WEBGPU
 #include "../src/backends/webgpu/webgpu_eval.h"
 #endif
@@ -220,6 +221,8 @@ Backend UnifiedHardwareDispatch::best_backend(KernelType kernel) const {
             // legacy GPU evaluators consume raw FlexAID internal-coordinate
             // genes as Cartesian translations and only return partial CF terms,
             // so they are not benchmark-parity safe for pose search.
+            // Chunk 6 (2026-08-13): keep CPU until a measured Astex-85 A/B
+            // after full buildcc decode — docs/implementation/GPU_FITNESS_DECISION.md
             return select_cpu_backend();
 
         case KernelType::SHANNON_ENTROPY:
@@ -902,6 +905,9 @@ BoltzmannBatchResult UnifiedHardwareDispatch::compute_boltzmann_batch(
 double UnifiedHardwareDispatch::log_sum_exp_dispatch(std::span<const double> values) {
     if (values.empty())
         return -std::numeric_limits<double>::infinity();
+
+    if (flexaids::fixed_order_lse_enabled())
+        return flexaids::log_sum_exp_fixed_order(values);
 
     if (!detected_) detect();
 

@@ -162,6 +162,10 @@ struct VC_Global_struct{
 	char       showbonded;            // = Y or N.
 	char       normalize;             // = Y or N. normalize areas to area of sphere.
 	char       radfilename[MAX_PATH__];  // custom name for radii.dat file including path ADDED RJN 28.04.2008
+	int        *scorable_list;   // Calc[] indices with score==true; owned by caller or thread workspace
+	int         n_scorable;
+	int         scorable_cap;
+	int         fastpath_used;   // 1 if this eval took the incremental path
 	// --------------------- function prototypes ----------------------
 };
 typedef struct VC_Global_struct VC_Global;
@@ -193,6 +197,13 @@ int     get_contlist4(atom*,int, contactlist *, int, float, int, atomsas*, const
 void    save_seeds(int*,const plane *, const vertex *, int, int);
 void    get_firstvert(const int*,const plane *, int *, int *, int *, int, int);
 std::string  generate_dim_sig(float* global_min, int dim);
+
+// FLEXAIDDS_RIGID_FASTPATH bookkeeping (default OFF). Thread-local list is
+// always populated when the flag is on; vc_publish_scorable copies it into
+// VC->scorable_list when the caller provided a buffer (gaboom workspace).
+void        vc_publish_scorable(VC_Global* VC);
+const int*  vc_scorable_indices(int* n);
+bool        vc_fastpath_active();
 // ========================================================================
 
 /*

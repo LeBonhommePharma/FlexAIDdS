@@ -6,12 +6,14 @@
 #include "metal_coordination.h"
 #include "GISTGrid.h"
 #include "ProtocolConfig.h"
+#include "ca_rec_flat.h"
 #include <cmath>
 #include <cstdlib>
 #include <cstring>
 #include <climits>
 #include <vector>
 #include <unordered_map>
+#include <type_traits>
 
 #define DEBUG_LEVEL 0
 
@@ -177,6 +179,88 @@ static const double wal_stiff = [](){
 static const bool contacts_epoch_mode =
     (std::getenv("FLEXAIDDS_CONTACTS_EPOCH") != nullptr);
 
+// FLEXAIDDS_RIGID_FASTPATH (truthy, default OFF): walk only Calc[] indices
+// with score==true. List comes from VC->scorable_list / n_scorable when the
+// sibling fields exist, else vc_scorable_indices(). OFF or a missing list
+// keeps the original O(N) atom walk bit-identical.
+static const bool rigid_fastpath = [](){
+    const char* s = std::getenv("FLEXAIDDS_RIGID_FASTPATH");
+    return s && s[0] != '\0' && s[0] != '0';
+}();
+
+// provided by Vcontacts.cpp (sibling). Weak stubs keep this TU linkable
+// until those helpers land; a strong definition in Vcontacts.cpp wins.
+#if defined(__GNUC__) || defined(__clang__)
+__attribute__((weak))
+#endif
+const int* vc_scorable_indices(int* n)
+{
+    if (n) *n = 0;
+    return nullptr;
+}
+#if defined(__GNUC__) || defined(__clang__)
+__attribute__((weak))
+#endif
+bool vc_fastpath_active()
+{
+    return false;
+}
+
+namespace {
+template<typename T, typename = void>
+struct vc_has_scorable_fields : std::false_type {};
+
+template<typename T>
+struct vc_has_scorable_fields<T, std::void_t<
+    decltype(std::declval<T&>().scorable_list),
+    decltype(std::declval<T&>().n_scorable)>> : std::true_type {};
+
+template<typename VC_T>
+const int* vcfunction_scorable_list_impl(VC_T* VC, int* n)
+{
+    *n = 0;
+    if constexpr (vc_has_scorable_fields<VC_T>::value) {
+        if (VC->n_scorable > 0 && VC->scorable_list) {
+            *n = VC->n_scorable;
+            return VC->scorable_list;
+        }
+    }
+    int hn = 0;
+    const int* h = vc_scorable_indices(&hn);
+    if (h && hn > 0) {
+        *n = hn;
+        return h;
+    }
+    return nullptr;
+}
+
+inline const int* vcfunction_scorable_list(VC_Global* VC, int* n)
+{
+    return vcfunction_scorable_list_impl(VC, n);
+}
+
+// Null Calc[i].atom for score==true. Fastpath walks the scorable list when
+// the flag is on and a list is available; otherwise the original O(N) loop.
+inline void vc_null_scorable_atoms(VC_Global* VC, int atm_cnt_real, bool use_list)
+{
+    int n = 0;
+    const int* idx = use_list ? vcfunction_scorable_list(VC, &n) : nullptr;
+    if (idx && n > 0) {
+        for (int k = 0; k < n; ++k) {
+            const int i = idx[k];
+            if (i >= 0 && i < atm_cnt_real)
+                VC->Calc[i].atom = NULL;
+        }
+        return;
+    }
+    for(int i=0;i<atm_cnt_real;i++){
+        if(VC->Calc[i].score){
+            VC->Calc[i].atom = NULL;
+        }
+    }
+}
+} // namespace
+
 double vcfunction(FA_Global* FA,VC_Global* VC,atom* atoms,resid* residue, std::vector<std::pair<int,int> > & intraclashes, bool* error)
 {
 	int    rnum=0;
@@ -248,11 +332,7 @@ double vcfunction(FA_Global* FA,VC_Global* VC,atom* atoms,resid* residue, std::v
 	if(rv < 0){
 		*error = true;
 		
-		for(int i=0;i<FA->atm_cnt_real;i++){
-			if(VC->Calc[i].score){
-				VC->Calc[i].atom = NULL;
-			}
-		}
+		vc_null_scorable_atoms(VC, FA->atm_cnt_real, rigid_fastpath);
 		
 		if(!FA->vindex){ free(VC->box); }
 		
@@ -265,7 +345,14 @@ double vcfunction(FA_Global* FA,VC_Global* VC,atom* atoms,resid* residue, std::v
 		}
 	}
 	
-	for(int i=0; i<FA->atm_cnt_real; ++i) {
+	int fp_n = 0;
+	const int* fp_idx = nullptr;
+	if (rigid_fastpath)
+		fp_idx = vcfunction_scorable_list(VC, &fp_n);
+	const bool use_fp = (fp_idx != nullptr && fp_n > 0);
+
+	for(int k=0; k<(use_fp ? fp_n : FA->atm_cnt_real); ++k) {
+		const int i = use_fp ? fp_idx[k] : k;
 		if(VC->Calc[i].atom == NULL) continue;
 		
 		cfstr* cfs = NULL;
@@ -385,7 +472,16 @@ double vcfunction(FA_Global* FA,VC_Global* VC,atom* atoms,resid* residue, std::v
 		// Only touched when the term is enabled (weight != 0) — zero overhead OFF.
 		double pd_hb = 0.0, pd_elec = 0.0, pd_mc = 0.0;
 		int currindex = VC->ca_index[i];
-		
+		int flat_idx[MAX_CONT];
+		int nflat = 0, flat_k = 0;
+		const bool use_flat = flexaids::ca_rec_flat_enabled();
+		if (use_flat) {
+			nflat = flexaids::flatten_ca_rec(VC->ca_index, VC->ca_rec, i,
+			                                flat_idx, MAX_CONT);
+			currindex = (nflat > 0) ? flat_idx[0] : -1;
+			flat_k = 1;
+		}
+
 		while(currindex != -1) {
 			
 			double radB  = (double)VC->Calc[VC->ca_rec[currindex].atom].atom->radius;
@@ -455,7 +551,8 @@ double vcfunction(FA_Global* FA,VC_Global* VC,atom* atoms,resid* residue, std::v
 					       cfs_atom.com, cfs_atom.wal);
 
 #endif
-					currindex = VC->ca_rec[currindex].prev;
+					currindex = flexaids::ca_rec_next(use_flat, currindex, VC->ca_rec,
+					                                 flat_idx, nflat, flat_k);
 					continue;	  
 				}
 			}
@@ -464,7 +561,8 @@ double vcfunction(FA_Global* FA,VC_Global* VC,atom* atoms,resid* residue, std::v
 			   ? (FA->contacts[VC->Calc[VC->ca_rec[currindex].atom].atom->number] == contacts_epoch_current(FA->contacts))
 			   : (FA->contacts[VC->Calc[VC->ca_rec[currindex].atom].atom->number] != 0)){
 				//printf("%d already calculated\n",VC->Calc[VC->ca_rec[currindex].atom].atom->number );
-				currindex = VC->ca_rec[currindex].prev;
+				currindex = flexaids::ca_rec_next(use_flat, currindex, VC->ca_rec,
+				                                 flat_idx, nflat, flat_k);
 				continue;
 			}
 			
@@ -793,7 +891,8 @@ double vcfunction(FA_Global* FA,VC_Global* VC,atom* atoms,resid* residue, std::v
 #endif
 
 			// skip to next contact
-			currindex = VC->ca_rec[currindex].prev;
+			currindex = flexaids::ca_rec_next(use_flat, currindex, VC->ca_rec,
+			                                 flat_idx, nflat, flat_k);
 		}
 		
 		//    printf("Atom[%d]=%d has %d contacts\n",VC->Calc[i].,VC->Calc[i].atom->number,contnum);
@@ -1345,11 +1444,7 @@ double vcfunction(FA_Global* FA,VC_Global* VC,atom* atoms,resid* residue, std::v
 		}
 	}
 
-	for(int i=0;i<FA->atm_cnt_real;i++){
-		if(VC->Calc[i].score){
-			VC->Calc[i].atom = NULL;
-		}
-	}
+	vc_null_scorable_atoms(VC, FA->atm_cnt_real, rigid_fastpath);
 
 	if(!FA->vindex){ free(VC->box); }
 	
@@ -1357,27 +1452,4 @@ double vcfunction(FA_Global* FA,VC_Global* VC,atom* atoms,resid* residue, std::v
   
 }
 
-/* A2 perf: flat-array piecewise-linear interpolation replaces linked-list walk.
-   Boundary logic matches the original:
-     ra < fx[0]            → 0 (no left-bound data)
-     ra in [fx[i], fx[i+1]) → linear interpolation using precomputed slope
-     ra >= fx[n-1]         → fy[n-1] (no right-bound data; clamp to last y)
-   Linear scan over n (typically 5–15 breakpoints) is cache-friendlier than
-   branching binary search at this scale. */
-double get_yval(struct energy_matrix* em, double relative_area)
-{
-	if(!em->energy_values) return 0.0;
-	// single-scalar weight case (no linked-list walk needed either way)
-	if(em->weight) return (double)em->energy_values->y;
-	// flat-array path
-	const int n = em->flat_n;
-	if(n == 0) return 0.0;
-	const float ra = (float)relative_area;
-	const float* fx = em->flat_x;
-	const float* fy = em->flat_y;
-	if(ra < fx[0]) return 0.0;                   // below first breakpoint
-	if(ra >= fx[n-1]) return (double)fy[n-1];    // at or beyond last breakpoint
-	int i = 0;
-	while(i < n-2 && ra >= fx[i+1]) ++i;         // find segment (n small → linear scan)
-	return (double)(fy[i] + em->flat_slope[i] * (ra - fx[i]));
-}
+// get_yval lives in get_yval.cpp (scan + opt-in LUT).

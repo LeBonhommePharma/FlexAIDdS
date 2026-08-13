@@ -11,6 +11,7 @@
 #include "ensemble_pipeline.h"
 #include "ProtocolConfig.h"
 #include "niche_distance.h"
+#include "niche_hash.h"
 #include "new_search_arch.h"
 
 #include <random>
@@ -2182,11 +2183,7 @@ int reproduce(FA_Global* FA,GB_Global* GB,VC_Global* VC, chromosome* chrom, cons
 	// defaults OFF with parity holding when it is OFF. The drift allowance that
 	// would unblock it is a maintainer decision, not one this change can grant
 	// itself. Set FLEXAIDDS_PARALLEL_REPRODUCE=1 to opt in and benchmark it.
-	static const bool parallel_reproduce_eval = [](){
-		const char* env = std::getenv("FLEXAIDDS_PARALLEL_REPRODUCE");
-		if (env && env[0] != '\0') return env[0] != '0';  // explicit override
-		return false;                                      // default OFF (§1)
-	}();
+	static const bool parallel_reproduce_eval = flexaids::parallel_reproduce_enabled();
 
 	// Multi-chain VCT normalisation (see GA() comment for rationale)
 	const int n_receptor_chains = count_receptor_chains(FA, residue);
@@ -3125,6 +3122,9 @@ void calculate_fitness(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* chr
 			std::vector<std::vector<vertex>>      tl_poly;
 			std::vector<std::vector<plane>>       tl_cont;
 			std::vector<std::vector<edgevector>>  tl_vedge;
+			// Per-thread Calc[] indices with score==true (sibling VC_Global
+			// fields: scorable_list, n_scorable, scorable_cap, fastpath_used).
+			std::vector<std::vector<int>>         tl_scorable;
 		};
 		static ParEvalWS ws;   // resident across generations (serial init: GA
 		                       // parallelism lives strictly inside this loop).
@@ -3166,6 +3166,7 @@ void calculate_fitness(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* chr
 			ws.tl_poly.assign(n_thr, std::vector<vertex>(MAX_POLY));
 			ws.tl_cont.assign(n_thr, std::vector<plane>(MAX_PT));
 			ws.tl_vedge.assign(n_thr, std::vector<edgevector>(MAX_POLY));
+			ws.tl_scorable.assign(n_thr, std::vector<int>(natmr, 0));
 		}
 
 		// Aliases keep the eval loop below identical to the previous per-call form.
@@ -3178,6 +3179,22 @@ void calculate_fitness(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* chr
 		auto& tl_contlist= ws.tl_contlist; auto& tl_ptorder  = ws.tl_ptorder;
 		auto& tl_centerpt= ws.tl_centerpt; auto& tl_poly     = ws.tl_poly;
 		auto& tl_cont    = ws.tl_cont;     auto& tl_vedge    = ws.tl_vedge;
+		auto& tl_scorable= ws.tl_scorable;
+
+		// Wire per-thread scorable-list scratch. Sibling adds these four
+		// fields at the end of VC_Global; the generic lambda keeps this
+		// block compiling if the header has not landed yet.
+		auto wire_scorable = [](auto& vc, int* buf, int cap) {
+			if constexpr (requires {
+				vc.scorable_list; vc.n_scorable;
+				vc.scorable_cap; vc.fastpath_used;
+			}) {
+				vc.scorable_list = buf;
+				vc.n_scorable = 0;
+				vc.scorable_cap = cap;
+				vc.fastpath_used = 0;
+			}
+		};
 
 		for (int t = 0; t < n_thr; ++t) {
 			// Refresh the cheap live FA snapshot each generation (scalar state may
@@ -3208,6 +3225,7 @@ void calculate_fitness(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* chr
 			tl_vc[t].poly      = tl_poly[t].data();
 			tl_vc[t].cont      = tl_cont[t].data();
 			tl_vc[t].vedge     = tl_vedge[t].data();
+			wire_scorable(tl_vc[t], tl_scorable[t].data(), natmr);
 			// Keep the reference-calculation retry path enabled in GA workers.
 			// The direct native probe uses recalc=1; forcing 0 here caused the
 			// same pose to fall into the non-convergence penalty path.
@@ -3365,13 +3383,46 @@ void calculate_fitness(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* chr
 			if (n_lig_atoms < 1) n_lig_atoms = 1;
 		}
 		std::vector<double> pshare_out(static_cast<size_t>(GB->num_chrom), 1.0);
+		const bool niche_hash = niche_cart && flexaids::niche_hash_enabled();
+		std::vector<float> niche_cents;
+		std::unordered_map<flexaids::NicheCell, std::vector<int>, flexaids::NicheCellHash> niche_map;
+		if (niche_hash) {
+			niche_cents.assign(static_cast<size_t>(GB->num_chrom) * 3, 0.f);
+			for (int c = 0; c < GB->num_chrom; ++c) {
+				const float* xyz = &lig_xyz[static_cast<size_t>(c) * kCoordStride];
+				float sx = 0.f, sy = 0.f, sz = 0.f;
+				for (int a = 0; a < n_lig_atoms; ++a) {
+					sx += xyz[a * 3 + 0];
+					sy += xyz[a * 3 + 1];
+					sz += xyz[a * 3 + 2];
+				}
+				const float inv = n_lig_atoms > 0 ? 1.f / static_cast<float>(n_lig_atoms) : 0.f;
+				niche_cents[static_cast<size_t>(c) * 3 + 0] = sx * inv;
+				niche_cents[static_cast<size_t>(c) * 3 + 1] = sy * inv;
+				niche_cents[static_cast<size_t>(c) * 3 + 2] = sz * inv;
+			}
+			niche_map = flexaids::niche_hash_build(
+				niche_cents.data(), GB->num_chrom, static_cast<float>(GB->sig_share));
+		}
 #ifdef _OPENMP
 #pragma omp parallel for schedule(dynamic) default(none) \
-	shared(chrom, GB, FA, cleftgrid, niche_cart, lig_xyz, n_lig_atoms, pshare_out)
+	shared(chrom, GB, FA, cleftgrid, niche_cart, lig_xyz, n_lig_atoms, pshare_out, \
+	       niche_hash, niche_cents, niche_map)
 #endif
 		for(int pi=0; pi<GB->num_chrom; pi++){
 			double pshare = 0.0;
-			for(int pj=0; pj<GB->num_chrom; pj++){
+			std::vector<int> neigh;
+			if (niche_hash) {
+				const float* c = &niche_cents[static_cast<size_t>(pi) * 3];
+				flexaids::niche_hash_neighbors(
+					niche_map,
+					flexaids::niche_cell_of(c[0], c[1], c[2],
+					                       static_cast<float>(GB->sig_share)),
+					neigh);
+			}
+			const int n_j = niche_hash ? static_cast<int>(neigh.size()) : GB->num_chrom;
+			for(int jk=0; jk<n_j; jk++){
+				const int pj = niche_hash ? neigh[static_cast<size_t>(jk)] : jk;
 				double prmsp = 0.0;
 				if (niche_cart) {
 					const float* a = &lig_xyz[static_cast<size_t>(pi) * kCoordStride];
@@ -3983,6 +4034,7 @@ void populate_chromosomes(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* 
 		std::vector<std::vector<vertex>>     p_poly(n_thr, std::vector<vertex>(MAX_POLY));
 		std::vector<std::vector<plane>>      p_cont(n_thr, std::vector<plane>(MAX_PT));
 		std::vector<std::vector<edgevector>> p_vedge(n_thr, std::vector<edgevector>(MAX_POLY));
+		std::vector<std::vector<int>>        p_scorable(n_thr, std::vector<int>(natmr, 0));
 
 		for (int t = 0; t < n_thr; ++t) {
 			p_fa[t].contacts      = p_contacts[t].data();
@@ -3991,6 +4043,10 @@ void populate_chromosomes(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* 
 			p_vc[t].Calc      = p_calc[t].data();
 			p_vc[t].Calclist  = p_calclist[t].data();
 			p_vc[t].ca_index  = p_caidx[t].data();
+			p_vc[t].scorable_list = p_scorable[t].data();
+			p_vc[t].n_scorable = 0;
+			p_vc[t].scorable_cap = natmr;
+			p_vc[t].fastpath_used = 0;
 			p_vc[t].ca_rec    = p_carec[t].data();
 			p_vc[t].seed      = p_seed[t].data();
 			p_vc[t].contlist  = p_contlist[t].data();

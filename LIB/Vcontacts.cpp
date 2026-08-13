@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <cstdlib>
 #include <cstdint>
+#include <cstring>
 #include <cmath>
 #include <vector>
 #include <random>
@@ -13,6 +14,381 @@
 #include "AtomSoA.h"  // atom_soa::distance2_1x4 (ISA-portable 4-wide kernel)
 #include <cmath>     // fabs
 #endif
+
+// ── FLEXAIDDS_RIGID_FASTPATH (default OFF) ─────────────────────────────────
+// Incremental spatial index for a rigid receptor. When OFF, index_protein /
+// Vcontacts / calc_region take the legacy bodies unchanged. When ON, hoist
+// is implied; subsequent evals with a stable grid rebuild Calclist from a
+// rigid per-box snapshot + current scorable atoms (atmi-sorted per box).
+namespace {
+
+static bool rigid_fastpath_requested() {
+	const char* e = std::getenv("FLEXAIDDS_RIGID_FASTPATH");
+	return e && e[0] && e[0] != '0';
+}
+
+const bool kHoistReceptorIndexEnv =
+	(std::getenv("FLEXAIDDS_HOIST_RECEPTOR_INDEX") != nullptr);
+
+struct ScoSlot {
+	int calc_idx;
+	int resi;
+	int offset;
+	int natoms;
+};
+
+struct OptresId {
+	int rnum;
+	int type;
+	int tot;
+};
+
+struct FastpathCache {
+	bool valid = false;
+	std::string sig;
+	int dim = 0;
+	int dim3 = 0;
+	int calc_cnt = 0;
+	int atmcnt = 0;
+	float rigid_raw_min[3] = {0.f, 0.f, 0.f};
+	float rigid_raw_max[3] = {0.f, 0.f, 0.f};
+	bool has_rigid = false;
+	std::vector<int> rigid_list;
+	std::vector<int> rigid_first;
+	std::vector<int> rigid_nument;
+	std::vector<ScoSlot> slots;
+	std::vector<OptresId> optres;
+	atomindex* box_ptr = nullptr;
+};
+
+thread_local FastpathCache g_fp;
+thread_local std::vector<int> g_scorable;
+thread_local bool g_fastpath_on = false;
+thread_local bool g_fastpath_used = false;
+thread_local std::string g_prev_sig;
+thread_local std::vector<uint32_t> g_box_stamp;
+thread_local uint32_t g_box_epoch = 0;
+
+bool fa_must_invalidate(const FA_Global* FA)
+{
+	if(!FA) return true;
+	if(FA->multi_model || FA->n_models > 1) return true;
+	if(FA->map_par){
+		for(int p = 0; p < FA->npar; ++p){
+			if(FA->map_par[p].typ == 3) return true;
+		}
+	}
+	return false;
+}
+
+bool optres_identity_changed(const FA_Global* FA)
+{
+	if(!FA) return true;
+	if(FA->num_optres != (int)g_fp.optres.size()) return true;
+	if(FA->num_optres > 0 && !FA->optres) return true;
+	for(int j = 0; j < FA->num_optres; ++j){
+		if(FA->optres[j].rnum != g_fp.optres[j].rnum) return true;
+		if(FA->optres[j].type != g_fp.optres[j].type) return true;
+		if(FA->optres[j].tot  != g_fp.optres[j].tot)  return true;
+	}
+	return false;
+}
+
+void capture_optres_identity(const FA_Global* FA)
+{
+	g_fp.optres.clear();
+	if(!FA || !FA->optres || FA->num_optres <= 0) return;
+	g_fp.optres.reserve((size_t)FA->num_optres);
+	for(int j = 0; j < FA->num_optres; ++j){
+		g_fp.optres.push_back({FA->optres[j].rnum, FA->optres[j].type, FA->optres[j].tot});
+	}
+}
+
+bool rebind_scorable_slots(FA_Global* FA, atom* atoms, resid* residue,
+                           atomsas* Calc, int atmcnt)
+{
+	for(const ScoSlot& s : g_fp.slots){
+		if(s.calc_idx < 0 || s.calc_idx >= g_fp.calc_cnt) return false;
+		if(s.resi < 1 || s.resi > FA->res_cnt) return false;
+		if(!residue[s.resi].fatm || !residue[s.resi].latm) return false;
+		const int rot = residue[s.resi].rot;
+		const int fatm = residue[s.resi].fatm[rot];
+		const int latm = residue[s.resi].latm[rot];
+		if(latm - fatm + 1 != s.natoms) return false;
+		const int atmi = fatm + s.offset;
+		if(atmi < 0 || atmi >= atmcnt || atmi > latm) return false;
+		atomsas& C = Calc[s.calc_idx];
+		C.atom = &atoms[atmi];
+		C.residue = &residue[s.resi];
+		C.ca_index = -1;
+		C.done = 'N';
+		C.exposed = true;
+		C.SAS = 0.0;
+		C.vol = 0.0;
+		C.source = '\0';
+		C.score = atoms[atmi].optres != NULL;
+		if(!C.score) return false;
+	}
+	return true;
+}
+
+void expand_bbox_atom(const float* coor, float* global_min, float* global_max, int* alter)
+{
+	for(int j = 0; j < 3; ++j){
+		if(coor[j] < global_min[j]){
+			global_min[j] = coor[j];
+			*alter = 1;
+		}else if(coor[j] > global_max[j]){
+			global_max[j] = coor[j];
+			*alter = 1;
+		}
+	}
+}
+
+int clamp_box_index(const atomsas& C, const float* global_min, int dim, int dim2)
+{
+	int cx = (int)((C.atom->coor[0] - global_min[0]) / CELLSIZE);
+	int cy = (int)((C.atom->coor[1] - global_min[1]) / CELLSIZE);
+	int cz = (int)((C.atom->coor[2] - global_min[2]) / CELLSIZE);
+	if(cx < 0) cx = 0; else if(cx >= dim) cx = dim - 1;
+	if(cy < 0) cy = 0; else if(cy >= dim) cy = dim - 1;
+	if(cz < 0) cz = 0; else if(cz >= dim) cz = dim - 1;
+	return cx * dim2 + cy * dim + cz;
+}
+
+void capture_rigid_snapshot(FA_Global* FA, atom* atoms, resid* residue,
+                            atomsas* Calc, const int* Calclist, const atomindex* box,
+                            int calc_cnt, int dim, int dim3, const std::string& sig,
+                            int atmcnt)
+{
+	g_fp.valid = true;
+	g_fp.sig = sig;
+	g_fp.dim = dim;
+	g_fp.dim3 = dim3;
+	g_fp.calc_cnt = calc_cnt;
+	g_fp.atmcnt = atmcnt;
+	g_fp.box_ptr = const_cast<atomindex*>(box);
+	capture_optres_identity(FA);
+
+	g_fp.has_rigid = false;
+	g_fp.slots.clear();
+	g_fp.slots.reserve((size_t)calc_cnt);
+	for(int i = 0; i < calc_cnt; ++i){
+		if(!Calc[i].atom || !Calc[i].residue) continue;
+		if(Calc[i].score){
+			const int resi = (int)(Calc[i].residue - residue);
+			const int atmi = (int)(Calc[i].atom - atoms);
+			if(resi < 1 || resi > FA->res_cnt) continue;
+			if(!residue[resi].fatm || !residue[resi].latm) continue;
+			const int rot = residue[resi].rot;
+			const int fatm = residue[resi].fatm[rot];
+			const int latm = residue[resi].latm[rot];
+			g_fp.slots.push_back({i, resi, atmi - fatm, latm - fatm + 1});
+		}else{
+			const float* c = Calc[i].atom->coor;
+			if(!g_fp.has_rigid){
+				g_fp.has_rigid = true;
+				g_fp.rigid_raw_min[0] = c[0];
+				g_fp.rigid_raw_min[1] = c[1];
+				g_fp.rigid_raw_min[2] = c[2];
+				g_fp.rigid_raw_max[0] = c[0];
+				g_fp.rigid_raw_max[1] = c[1];
+				g_fp.rigid_raw_max[2] = c[2];
+			}else{
+				for(int j = 0; j < 3; ++j){
+					if(c[j] < g_fp.rigid_raw_min[j]) g_fp.rigid_raw_min[j] = c[j];
+					if(c[j] > g_fp.rigid_raw_max[j]) g_fp.rigid_raw_max[j] = c[j];
+				}
+			}
+		}
+	}
+
+	g_fp.rigid_list.clear();
+	g_fp.rigid_first.assign((size_t)dim3, 0);
+	g_fp.rigid_nument.assign((size_t)dim3, 0);
+	g_fp.rigid_list.reserve((size_t)calc_cnt);
+	g_scorable.clear();
+	g_scorable.reserve(g_fp.slots.size());
+	for(int boxi = 0; boxi < dim3; ++boxi){
+		g_fp.rigid_first[boxi] = (int)g_fp.rigid_list.size();
+		const int first = box[boxi].first;
+		const int n = box[boxi].nument;
+		for(int k = 0; k < n; ++k){
+			const int atmi = Calclist[first + k];
+			if(atmi < 0 || atmi >= calc_cnt) continue;
+			if(Calc[atmi].score) g_scorable.push_back(atmi);
+			else g_fp.rigid_list.push_back(atmi);
+		}
+		g_fp.rigid_nument[boxi] = (int)g_fp.rigid_list.size() - g_fp.rigid_first[boxi];
+	}
+}
+
+bool try_rigid_fastpath(FA_Global* FA, atom* atoms, resid* residue, atomsas* Calc,
+                        int* Calclist, int* dim, int atmcnt, atomindex* prev_box,
+                        std::map<std::string, atomindex*>& indexed,
+                        int* calc_count_out, atomindex** box_out)
+{
+	if(!g_fp.valid || !FA || !atoms || !residue || !Calc || !Calclist || !dim || !box_out)
+		return false;
+	if(atmcnt != g_fp.atmcnt) return false;
+	if(fa_must_invalidate(FA)) return false;
+	if(optres_identity_changed(FA)) return false;
+	if(!rebind_scorable_slots(FA, atoms, residue, Calc, atmcnt)) return false;
+
+	int alter = 0;
+	float global_min[3], global_max[3];
+	for(int j = 0; j < 3; ++j){
+		global_min[j] = (int)FA->globalmin[j] + 1.0f;
+		global_max[j] = (int)FA->globalmax[j] + 1.0f;
+	}
+	if(g_fp.has_rigid){
+		expand_bbox_atom(g_fp.rigid_raw_min, global_min, global_max, &alter);
+		expand_bbox_atom(g_fp.rigid_raw_max, global_min, global_max, &alter);
+	}
+	for(const ScoSlot& s : g_fp.slots){
+		if(!Calc[s.calc_idx].atom) return false;
+		expand_bbox_atom(Calc[s.calc_idx].atom->coor, global_min, global_max, &alter);
+	}
+
+	float max_width = FA->maxwidth;
+	if(alter){
+		for(int j = 0; j < 3; ++j){
+			global_min[j] = global_min[j] < 0.0f ? (int)global_min[j] - 1.0f : (int)global_min[j] + 1.0f;
+			global_max[j] = global_max[j] < 0.0f ? (int)global_max[j] - 1.0f : (int)global_max[j] + 1.0f;
+			const float diff = global_max[j] - global_min[j];
+			if(diff > max_width) max_width = diff;
+		}
+	}
+	if(max_width > 1000.0f) return false;
+
+	*dim = (int)(max_width / CELLSIZE) + 1;
+	const int dim2 = (*dim) * (*dim);
+	const int dim3 = (*dim) * (*dim) * (*dim);
+	const std::string sig = generate_dim_sig(global_min, *dim);
+	if(sig != g_prev_sig || dim3 != g_fp.dim3 || *dim != g_fp.dim) return false;
+
+	atomindex* box = nullptr;
+	if(!FA->vindex){
+		box = (atomindex*)malloc((size_t)dim3 * sizeof(atomindex));
+		if(!box){
+			fprintf(stderr,"ERROR: memory allocation error for box\n");
+			Terminate(2);
+		}
+	}else{
+		auto it = indexed.find(sig);
+		if(it == indexed.end()) return false;
+		if(it->second != prev_box) return false;
+		box = it->second;
+	}
+
+	const int calc_cnt = g_fp.calc_cnt;
+	if(calc_count_out) *calc_count_out = calc_cnt;
+
+	// get_contlist4 skips neighbors with done=='Y'; leftover rigid stamps
+	// from the previous eval would drop contacts. Reset everyone.
+	for(int i = 0; i < calc_cnt; ++i) Calc[i].done = 'N';
+
+	if((int)g_box_stamp.size() < dim3) g_box_stamp.assign((size_t)dim3, 0u);
+	if(++g_box_epoch == 0u){
+		std::fill(g_box_stamp.begin(), g_box_stamp.end(), 0u);
+		g_box_epoch = 1u;
+	}
+	const uint32_t ep = g_box_epoch;
+
+	std::vector<int> sco;
+	sco.reserve(g_fp.slots.size());
+	for(const ScoSlot& s : g_fp.slots){
+		atomsas& C = Calc[s.calc_idx];
+		C.boxnum = clamp_box_index(C, global_min, *dim, dim2);
+		sco.push_back(s.calc_idx);
+	}
+	std::stable_sort(sco.begin(), sco.end(),
+		[&](int a, int b){ return Calc[a].boxnum < Calc[b].boxnum; });
+
+	for(int boxi = 0; boxi < dim3; ++boxi){
+		if(g_fp.rigid_nument[boxi] > 0){
+			box[boxi].nument = g_fp.rigid_nument[boxi];
+			g_box_stamp[boxi] = ep;
+		}
+	}
+	for(int idx : sco){
+		const int boxi = Calc[idx].boxnum;
+		if(boxi < 0 || boxi >= dim3) continue;
+		if(g_box_stamp[boxi] != ep){
+			box[boxi].nument = 0;
+			g_box_stamp[boxi] = ep;
+		}
+		++box[boxi].nument;
+	}
+
+	int startind = 0;
+	for(int boxi = 0; boxi < dim3; ++boxi){
+		box[boxi].first = startind;
+		startind += (g_box_stamp[boxi] == ep) ? box[boxi].nument : 0;
+	}
+	for(int boxi = 0; boxi < dim3; ++boxi){
+		box[boxi].nument = 0;
+	}
+
+	g_scorable.clear();
+	g_scorable.reserve(sco.size());
+	int si = 0;
+	const int ns = (int)sco.size();
+	for(int boxi = 0; boxi < dim3; ++boxi){
+		int ri = 0;
+		const int rn = g_fp.rigid_nument[boxi];
+		const int rbase = g_fp.rigid_first[boxi];
+		while(ri < rn || (si < ns && Calc[sco[si]].boxnum == boxi)){
+			int pick;
+			if(ri >= rn){
+				pick = sco[si++];
+			}else if(si >= ns || Calc[sco[si]].boxnum != boxi){
+				pick = g_fp.rigid_list[rbase + ri++];
+			}else if(g_fp.rigid_list[rbase + ri] < sco[si]){
+				pick = g_fp.rigid_list[rbase + ri++];
+			}else{
+				pick = sco[si++];
+			}
+			Calclist[box[boxi].first + box[boxi].nument] = pick;
+			++box[boxi].nument;
+			if(Calc[pick].score) g_scorable.push_back(pick);
+		}
+	}
+
+	g_fp.box_ptr = box;
+	g_prev_sig = sig;
+	g_fastpath_used = true;
+	*box_out = box;
+	return true;
+}
+
+} // namespace
+
+void vc_publish_scorable(VC_Global* VC)
+{
+	if(!VC) return;
+	VC->fastpath_used = g_fastpath_used ? 1 : 0;
+	const int n = (int)g_scorable.size();
+	if(VC->scorable_list && VC->scorable_cap >= n){
+		if(n > 0){
+			std::memcpy(VC->scorable_list, g_scorable.data(), (size_t)n * sizeof(int));
+		}
+		VC->n_scorable = n;
+	}else{
+		VC->n_scorable = 0;
+	}
+}
+
+const int* vc_scorable_indices(int* n)
+{
+	if(n) *n = (int)g_scorable.size();
+	return g_scorable.empty() ? nullptr : g_scorable.data();
+}
+
+bool vc_fastpath_active()
+{
+	return g_fastpath_on && !g_scorable.empty();
+}
 
 // Vcontacts calculates the SAS only for the residue sent in argument
 int Vcontacts(FA_Global* FA,atom* atoms,resid* residue,VC_Global* VC,
@@ -32,18 +408,45 @@ int Vcontacts(FA_Global* FA,atom* atoms,resid* residue,VC_Global* VC,
 				&VC->dim,FA->atm_cnt_real,prev_box,indexed,&VC->calc_count);
 	
 	prev_box = VC->box;
+	vc_publish_scorable(VC);
 	
 	const int calc_count = VC->calc_count > 0 ? VC->calc_count : FA->atm_cnt_real;
-	for(int i=0; i<calc_count; ++i) {
-		VC->ca_index[i] = -1;   //initialize pointer array
-		VC->seed[i*3] = -1;
+	int n_sco = 0;
+	const int* sco = vc_scorable_indices(&n_sco);
+	// Scorable-only reset is safe once the incremental index has run
+	// (rigid ca_index/seed already written to -1 on the first full path).
+	// First eval and non_scorable (omit_buried) keep the 0..N loops.
+	const bool use_sco = (VC->fastpath_used && !non_scorable &&
+	                      sco != nullptr && n_sco > 0);
 
-		if(VC->Calc[i].score){
-			if(non_scorable){
-				// make scorable as buried to omit them
-				VC->Calc[i].exposed = false;
-			}else{
-				VC->Calc[i].exposed = true;
+	if(use_sco){
+		for(int k=0; k<n_sco; ++k){
+			const int i = sco[k];
+			if(i < 0 || i >= calc_count) continue;
+			VC->ca_index[i] = -1;   //initialize pointer array
+			VC->seed[i*3] = -1;
+
+			if(VC->Calc[i].score){
+				if(non_scorable){
+					// make scorable as buried to omit them
+					VC->Calc[i].exposed = false;
+				}else{
+					VC->Calc[i].exposed = true;
+				}
+			}
+		}
+	}else{
+		for(int i=0; i<calc_count; ++i) {
+			VC->ca_index[i] = -1;   //initialize pointer array
+			VC->seed[i*3] = -1;
+
+			if(VC->Calc[i].score){
+				if(non_scorable){
+					// make scorable as buried to omit them
+					VC->Calc[i].exposed = false;
+				}else{
+					VC->Calc[i].exposed = true;
+				}
 			}
 		}
 	}
@@ -71,11 +474,21 @@ int Vcontacts(FA_Global* FA,atom* atoms,resid* residue,VC_Global* VC,
 		}
 		if(*clash_value >= CLASH_THRESHOLD){ return(-2); }
 
-		for(int i=0; i<calc_count; ++i) {
-			VC->Calc[i].done = 'N';
+		if(use_sco){
+			for(int k=0; k<n_sco; ++k){
+				const int i = sco[k];
+				if(i < 0 || i >= calc_count) continue;
+				VC->Calc[i].done = 'N';
+				VC->ca_index[i] = -1;   //initialize pointer array
+				VC->seed[i*3] = -1;
+			}
+		}else{
+			for(int i=0; i<calc_count; ++i) {
+				VC->Calc[i].done = 'N';
 			
-			VC->ca_index[i] = -1;   //initialize pointer array
-			VC->seed[i*3] = -1;
+				VC->ca_index[i] = -1;   //initialize pointer array
+				VC->seed[i*3] = -1;
+			}
 		}
 	}
 	
@@ -106,6 +519,59 @@ int calc_region(FA_Global* FA,VC_Global* VC,atom* atoms,int atmcnt,bool non_scor
 	  printf("================================\n");
 	  printf("Calculating SAS for residue [%d]\n", resnum);
 	*/
+
+	auto process_atomzero = [&](int az) -> int {
+		boxi = VC->Calc[az].boxnum;
+		(void)boxi;
+		(void)surfatom;
+
+		//printf("Get_contacts for %d\n",VC->Calc[az].atom->number);
+		rado = VC->Calc[az].atom->radius + Rw;
+
+		NC = get_contlist4(atoms,az, VC->contlist, atmcnt, rado, VC->dim,
+				   VC->Calc, VC->Calclist, VC->box,VC->ca_rec, VC->ca_index,
+				   NULL, 0.0, 0.0f, 0.0f, NULL, NULL);
+
+		// invalid write/read when NC = 0
+		// because planeA is negative subscript
+		if(NC == 0){
+			VC->Calc[az].SAS = -1.0;
+			return 0;
+		}
+
+		NV = voronoi_poly2(VC,az, VC->cont, rado, NC, VC->contlist);
+
+		// could not generate polyhedron
+		// because of clashing atom
+		if(NV == -1){
+			return(-1);
+		}
+
+		surfatom = order_faces(az, VC->poly, VC->centerpt, rado, NC, NV, VC->cont, VC->ptorder);
+
+		calc_areas(VC->poly, VC->centerpt, rado, NC, NV, VC->cont, VC->ptorder, &VC->Calc[az]);
+
+		save_areas(VC->cont, VC->contlist, NC, az, VC->Calc,&VC->ca_recsize, &VC->numcarec, &VC->ca_rec, VC->ca_index);
+
+		//min_areas(VC->ca_rec, VC->Calc, &VC->Calc[az], FA->vcontacts_self_consistency);
+		return 0;
+	};
+
+	// Fastpath: walk the scorable list (Calclist order) instead of
+	// Calclist[0..atmcnt) + skip !score. non_scorable (omit_buried) keeps
+	// the full walk so rigid SAS is still computed.
+	if(!non_scorable && vc_fastpath_active()){
+		int n_sco = 0;
+		const int* sco = vc_scorable_indices(&n_sco);
+		if(sco && n_sco > 0){
+			for(int k=0; k<n_sco; ++k){
+				atomzero = sco[k];
+				if(atomzero < 0 || atomzero >= atmcnt){continue;}
+				if(process_atomzero(atomzero) == -1) return(-1);
+			}
+			return(0);
+		}
+	}
     
 	for(i=0;i<atmcnt;++i) {
 		// ============= atom contact calculations =============
@@ -115,10 +581,6 @@ int calc_region(FA_Global* FA,VC_Global* VC,atom* atoms,int atmcnt,bool non_scor
 		// Vcontacts()): an out-of-range atom index here would read past the
 		// Calc array. Skip rather than dereference garbage.
 		if(atomzero < 0 || atomzero >= atmcnt){continue;}
-
-		boxi = VC->Calc[atomzero].boxnum;
-		(void)boxi;
-		(void)surfatom;
 
 		if(non_scorable){
 			if(VC->Calc[atomzero].score){
@@ -131,37 +593,8 @@ int calc_region(FA_Global* FA,VC_Global* VC,atom* atoms,int atmcnt,bool non_scor
 				continue;
 			}
 		}
-		
-		//printf("Get_contacts for %d\n",VC->Calc[atomzero].atom->number);
-		rado = VC->Calc[atomzero].atom->radius + Rw;
-		
-		NC = get_contlist4(atoms,atomzero, VC->contlist, atmcnt, rado, VC->dim,
-				   VC->Calc, VC->Calclist, VC->box,VC->ca_rec, VC->ca_index,
-				   NULL, 0.0, 0.0f, 0.0f, NULL, NULL);
-		
-		// invalid write/read when NC = 0
-		// because planeA is negative subscript
-		if(NC == 0){
-			VC->Calc[atomzero].SAS = -1.0;
-			continue;
-		}
-		
-		NV = voronoi_poly2(VC,atomzero, VC->cont, rado, NC, VC->contlist);
-		
-		// could not generate polyhedron
-		// because of clashing atom
-		if(NV == -1){
-			return(-1);
-		}
-		
-		surfatom = order_faces(atomzero, VC->poly, VC->centerpt, rado, NC, NV, VC->cont, VC->ptorder);    
-        
-		calc_areas(VC->poly, VC->centerpt, rado, NC, NV, VC->cont, VC->ptorder, &VC->Calc[atomzero]);                
-        
-		save_areas(VC->cont, VC->contlist, NC, atomzero, VC->Calc,&VC->ca_recsize, &VC->numcarec, &VC->ca_rec, VC->ca_index);
-        
-		//min_areas(VC->ca_rec, VC->Calc, &VC->Calc[atomzero], FA->vcontacts_self_consistency);
-		
+
+		if(process_atomzero(atomzero) == -1) return(-1);
 	}
 	
 	return(0);
@@ -412,11 +845,22 @@ RESTART:
 				origcoor[2] = VC->Calc[atomzero].atom->coor[2];
 				
 				// perturb atom coordinates (deterministic when ga.seed/FLEXAID_SEED set)
-				thread_local std::uniform_real_distribution<float> vc_dist(-0.005f, 0.005f);
-				auto& vc_rng = flexaids_rng::lazy_thread_rng(0x0C0A11ULL);
-				VC->Calc[atomzero].atom->coor[0] += vc_dist(vc_rng);
-				VC->Calc[atomzero].atom->coor[1] += vc_dist(vc_rng);
-				VC->Calc[atomzero].atom->coor[2] += vc_dist(vc_rng);
+				if (flexaids_rng::rng_stream_fix_enabled()) {
+					// F2: key on pose+atom identity, not the scheduling thread.
+					const int anum = VC->Calc[atomzero].atom
+						? VC->Calc[atomzero].atom->number : atomzero;
+					const std::uint64_t id = flexaids_rng::pose_atom_identity(
+						anum, origcoor[0], origcoor[1], origcoor[2]);
+					VC->Calc[atomzero].atom->coor[0] += flexaids_rng::keyed_jitter(id, 0);
+					VC->Calc[atomzero].atom->coor[1] += flexaids_rng::keyed_jitter(id, 1);
+					VC->Calc[atomzero].atom->coor[2] += flexaids_rng::keyed_jitter(id, 2);
+				} else {
+					thread_local std::uniform_real_distribution<float> vc_dist(-0.005f, 0.005f);
+					auto& vc_rng = flexaids_rng::lazy_thread_rng(0x0C0A11ULL);
+					VC->Calc[atomzero].atom->coor[0] += vc_dist(vc_rng);
+					VC->Calc[atomzero].atom->coor[1] += vc_dist(vc_rng);
+					VC->Calc[atomzero].atom->coor[2] += vc_dist(vc_rng);
+				}
                 
 				// *** NEW ***
                 
@@ -1656,9 +2100,22 @@ atomindex* index_protein(FA_Global* FA,atom* atoms,resid* residue,atomsas* Calc,
 	// we skip the per-eval reset+recompute of boxnum for rigid atoms whenever the
 	// grid signature matches the previous eval. Gated OFF by default so main
 	// reproduces today's results bit-for-bit unless the flag is set.
-	static const bool hoist_receptor_index =
-		(std::getenv("FLEXAIDDS_HOIST_RECEPTOR_INDEX") != nullptr);
-	static thread_local std::string prev_sig;
+	// FLEXAIDDS_RIGID_FASTPATH implies hoist; HOIST still works alone when
+	// FASTPATH is off.
+	const bool fastpath_on = rigid_fastpath_requested();
+	const bool hoist_receptor_index = kHoistReceptorIndexEnv || fastpath_on;
+	g_fastpath_on = fastpath_on;
+	g_fastpath_used = false;
+	if(!fastpath_on){
+		g_fp.valid = false;
+		g_scorable.clear();
+	}else{
+		atomindex* fp_box = nullptr;
+		if(try_rigid_fastpath(FA, atoms, residue, Calc, Calclist, dim, atmcnt,
+		                      prev_box, indexed, calc_count_out, &fp_box)){
+			return fp_box;
+		}
+	}
 
 	rot=0;
 	i=0;
@@ -1760,7 +2217,7 @@ atomindex* index_protein(FA_Global* FA,atom* atoms,resid* residue,atomsas* Calc,
 	// `sig` encodes (int)global_min[0..2] and dim; after the bounding-box
 	// normalization above global_min is integer-valued, so an unchanged sig means
 	// an identical grid origin and extent -> identical cell for any fixed atom.
-	const bool grid_changed = (sig != prev_sig);
+	const bool grid_changed = (sig != g_prev_sig);
 	std::map<std::string, atomindex*>::iterator it;
 	if(!FA->vindex){
 		box = (atomindex*)malloc(dim3*sizeof(atomindex));
@@ -1813,11 +2270,9 @@ atomindex* index_protein(FA_Global* FA,atom* atoms,resid* residue,atomsas* Calc,
 	// This removes the 8*dim3-byte memset in exchange for ~calc_cnt stamp
 	// writes — a win on the typical sparse grid, neutral when dense, and
 	// bit-identical box assignment (no numeric change).
-	static thread_local std::vector<uint32_t> box_stamp;
-	static thread_local uint32_t box_epoch = 0;
-	if((int)box_stamp.size() < dim3){ box_stamp.assign(dim3, 0u); }
-	if(++box_epoch == 0u){ std::fill(box_stamp.begin(), box_stamp.end(), 0u); box_epoch = 1u; }
-	const uint32_t _ep = box_epoch;
+	if((int)g_box_stamp.size() < dim3){ g_box_stamp.assign(dim3, 0u); }
+	if(++g_box_epoch == 0u){ std::fill(g_box_stamp.begin(), g_box_stamp.end(), 0u); g_box_epoch = 1u; }
+	const uint32_t _ep = g_box_epoch;
 
 	int calc_cnt = i;  // Use actual count of initialized atoms, not total atmcnt
 	if(calc_count_out != NULL){
@@ -1857,7 +2312,7 @@ atomindex* index_protein(FA_Global* FA,atom* atoms,resid* residue,atomsas* Calc,
 		if (_boxnum >= 0 && _boxnum < dim3) {
 			// Lazy zero: first touch of this box this epoch resets its (stale)
 			// count before we start accumulating into it.
-			if(box_stamp[_boxnum] != _ep){ box[_boxnum].nument = 0; box_stamp[_boxnum] = _ep; }
+			if(g_box_stamp[_boxnum] != _ep){ box[_boxnum].nument = 0; g_box_stamp[_boxnum] = _ep; }
 			++box[_boxnum].nument;
 		}
 	}
@@ -1868,7 +2323,7 @@ atomindex* index_protein(FA_Global* FA,atom* atoms,resid* residue,atomsas* Calc,
 		box[boxi].first = startind;
 		// Unstamped boxes were never touched this epoch, so their `nument` is
 		// stale (no memset) — treat it as 0 for the prefix sum.
-		startind += (box_stamp[boxi] == _ep) ? box[boxi].nument : 0;
+		startind += (g_box_stamp[boxi] == _ep) ? box[boxi].nument : 0;
 	}
     
 	// clear array (needed for recounting index)
@@ -1887,7 +2342,11 @@ atomindex* index_protein(FA_Global* FA,atom* atoms,resid* residue,atomsas* Calc,
 
 	// Remember this eval's grid signature so the next call can decide whether a
 	// cached rigid-atom box is still valid (see grid_changed above).
-	prev_sig = sig;
+	g_prev_sig = sig;
+	if(fastpath_on){
+		capture_rigid_snapshot(FA, atoms, residue, Calc, Calclist, box,
+		                       calc_cnt, *dim, dim3, sig, atmcnt);
+	}
 
 	return box;
 }

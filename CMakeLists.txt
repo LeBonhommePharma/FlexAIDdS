@@ -1607,6 +1607,44 @@ flexaids_add_unit_test(test_protocol_config
     flexaids_configure_msvc_test(test_vcontacts)
     add_test(NAME VcontactsTests COMMAND test_vcontacts)
 
+    flexaids_add_unit_test(test_get_yval_lut
+        SOURCES
+            tests/test_get_yval_lut.cpp
+            LIB/get_yval.cpp
+        TEST_NAME GetYvalLutTests
+    )
+    flexaids_add_unit_test(test_log_sum_exp
+        SOURCES
+            tests/test_log_sum_exp.cpp
+        TEST_NAME FixedOrderLseTests
+    )
+    flexaids_add_unit_test(test_chunk5_layout
+        SOURCES
+            tests/test_chunk5_layout.cpp
+        TEST_NAME Chunk5LayoutTests
+    )
+
+    # test_rigid_fastpath — FLEXAIDDS_RIGID_FASTPATH bit-identity
+    # (index_protein + Vcontacts + calc_region; same isolated link as test_vcontacts)
+    add_executable(test_rigid_fastpath
+        tests/test_rigid_fastpath.cpp
+        tests/stubs.cpp
+        LIB/Vcontacts.cpp
+        LIB/geometry.cpp
+    )
+    target_include_directories(test_rigid_fastpath PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/LIB)
+    target_link_libraries(test_rigid_fastpath PRIVATE GTest::gtest_main)
+    if(MSVC)
+        target_compile_options(test_rigid_fastpath PRIVATE /O2)
+    else()
+        target_compile_options(test_rigid_fastpath PRIVATE -O2)
+    endif()
+    if(FLEXAIDS_USE_OPENMP AND OpenMP_CXX_FOUND)
+        target_link_libraries(test_rigid_fastpath PRIVATE OpenMP::OpenMP_CXX)
+    endif()
+    flexaids_configure_msvc_test(test_rigid_fastpath)
+    add_test(NAME RigidFastpathBitIdentity COMMAND test_rigid_fastpath)
+
     # test_vcontacts_geometry — convex-hull geometry functions (test_point, add_vedge, etc.)
     add_executable(test_vcontacts_geometry
         tests/test_vcontacts_geometry.cpp
@@ -2278,6 +2316,16 @@ flexaids_add_unit_test(test_protocol_config
         TEST_NAME ContactsEpochPrefixLayoutDetected
     )
     set_tests_properties(ContactsEpochPrefixLayoutDetected PROPERTIES WILL_FAIL TRUE)
+
+    # test_flexaidds_flags — unified FLEXAIDDS_* / FLEXAID_* / FLEXAIDS_* gate
+    #   overlay (resolve / exclusion / FLEXAIDDS_FLAGS / dump). Isolated from
+    #   engine sources; does not remove any existing option.
+    flexaids_add_unit_test(test_flexaidds_flags
+        SOURCES
+            tests/test_flexaidds_flags.cpp
+            LIB/flexaidds_flags.cpp
+        TEST_NAME FlexaiddsFlagsTests
+    )
 
     # test_ion_handling — assign_radii / assign_types HETATM + ion coverage
     #                     + tENCoM ion contact surface (TmContSct) tests

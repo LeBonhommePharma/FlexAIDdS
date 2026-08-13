@@ -67,6 +67,14 @@ struct CampaignConfig {
 
     // P3 grand canonical: default concentration forwarded for TargetServer/GPF when multi-ligand campaign uses grand paths
     double default_conc_M     = 1.0;
+
+    // Optional Stage-1 cube prefilter (default OFF). When true, the ligand
+    // library is coarse-screened and only top_n names are docked. Requires a
+    // MOL2 target + cleft/site PDB. Does not change scoring of kept ligands.
+    bool coarse_prefilter = false;
+    int  coarse_prefilter_top_n = 100;
+    std::string coarse_target_mol2;
+    std::string coarse_cleft_pdb;
 };
 
 // ─── Per-ligand result ──────────────────────────────────────────────────────

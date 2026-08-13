@@ -1,9 +1,10 @@
-// CoarseScreen.h — NRGRank coarse-grained screening for FlexAIDdS
+// CoarseScreen.h — coarse-grained cube screening for FlexAIDdS
 //
-// C++20 translation of NRGRank's process_target.py + rank_molecules.py.
-//   DesCôteaux T, Mailhot O, Najmanovich RJ. "NRGRank: Coarse-grained
-//   structurally-informed ultra-massive virtual screening."
-//   bioRxiv 2025.02.17.638675.
+// Reimplemented from the published method (DesCôteaux, Mailhot, Najmanovich,
+// bioRxiv 2025.02.17.638675v2, doi 10.1101/2025.02.17.638675;
+// supplementary data Zenodo 10.5281/zenodo.16861024), clean-room per
+// docs/licensing/clean-room-policy.md. Apache-2.0. Independent of any
+// third-party source tree; not a dependency and not a translation.
 //
 // Pipeline:
 //   1. Build index-cube grid (cell_width=6.56 Å) from target atoms
@@ -163,7 +164,7 @@ public:
     void set_config(const CoarseScreenConfig& cfg) { config_ = cfg; }
     const CoarseScreenConfig& config() const { return config_; }
 
-    // ── Target preparation (process_target.py equivalent) ──
+    // ── Target preparation (paper §2 cube/anchor construction) ──
 
     /// Load target from MOL2 file
     bool load_target_mol2(const std::string& path);
@@ -186,7 +187,7 @@ public:
     int cf_ny() const { return grid_.ny(); }
     int cf_nz() const { return grid_.nz(); }
 
-    // ── Ligand screening (rank_molecules.py equivalent) ──
+    // ── Ligand screening (paper §2 rotations × anchors) ──
 
     /// Screen a batch of ligands. Returns results sorted by score (best first).
     /// Thread-safe: uses OpenMP internally, but do not call concurrently.
