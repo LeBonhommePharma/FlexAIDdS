@@ -765,6 +765,26 @@ TEST(TwoStageScreener, MiniEnrichmentRecoversActives) {
     EXPECT_TRUE(n1.rfind("ACT_", 0) == 0) << "top2=" << n1;
 }
 
+TEST(TwoStageScreen, PrefilterKeepFailsClosedOnNameMismatch) {
+    std::vector<std::string> keep{"SCREEN_A", "SCREEN_B"};
+    std::vector<std::string> lib{"file_stem_1", "file_stem_2"};
+    std::vector<std::string> resolved;
+    EXPECT_FALSE(resolve_prefilter_keep(keep, lib, resolved));
+    EXPECT_TRUE(resolved.empty());
+
+    std::vector<std::string> mixed{"SCREEN_A", "file_stem_1"};
+    EXPECT_FALSE(resolve_prefilter_keep(keep, mixed, resolved));
+    EXPECT_TRUE(resolved.empty());
+
+    std::vector<std::string> ok_lib{"SCREEN_B", "SCREEN_A", "OTHER"};
+    ASSERT_TRUE(resolve_prefilter_keep(keep, ok_lib, resolved));
+    ASSERT_EQ(resolved.size(), 2u);
+    EXPECT_EQ(resolved[0], "SCREEN_A");
+    EXPECT_EQ(resolved[1], "SCREEN_B");
+
+    EXPECT_FALSE(resolve_prefilter_keep({}, lib, resolved));
+}
+
 TEST(NRGRankMatrix, ProvenancePinsPublishedName) {
     // Self-consistency pin. Do not fetch GPL upstream bytes to "verify".
     double sum = 0.0;

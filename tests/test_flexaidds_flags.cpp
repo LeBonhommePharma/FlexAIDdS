@@ -5,12 +5,15 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include "flexaidds_flags.h"
+#include "EnvFlags.h"
 
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <gtest/gtest.h>
 #include <string>
+#include <utility>
+#include <vector>
 
 namespace {
 
@@ -47,6 +50,11 @@ protected:
             "FLEXAIDDS_CONTACTS_EPOCH",
             "FLEXAIDDS_PARALLEL_REPRODUCE",
             "FLEXAIDDS_RNG_STREAM_FIX",
+            "FLEXAIDDS_VORONOI_KEYED_JITTER",
+            "FLEXAIDDS_GET_YVAL_LUT",
+            "FLEXAIDDS_CA_REC_FLAT",
+            "FLEXAIDDS_NICHE_HASH",
+            "FLEXAIDDS_FIXED_ORDER_LSE",
             "FLEXAID_DETERMINISTIC",
             "FLEXAID_SEED",
             "FLEXAIDDS_FORCE_CPU",
@@ -84,6 +92,62 @@ std::string dump_to_string() {
 }
 
 }  // namespace
+
+TEST_F(FlexaiddsFlagsEnv, TruthTableOffFalseNoNeverEnable) {
+    // B2: one parser through env_bool, flags::active (env_truthy), and the
+    // engine reader flexaids::rigid_fastpath_requested().
+    const std::vector<std::pair<const char*, bool>> kCases = {
+        {"off", false}, {"false", false}, {"no", false}, {"0", false},
+        {"", false},
+        {"1", true}, {"true", true}, {"on", true}, {"yes", true},
+        {"OFF", false}, {"False", false}, {"NO", false},
+        {"TRUE", true}, {"On", true}, {"Yes", true},
+    };
+    for (const auto& [val, expect_on] : kCases) {
+        if (val[0] == '\0') clear_env("FLEXAIDDS_RIGID_FASTPATH");
+        else set_env("FLEXAIDDS_RIGID_FASTPATH", val);
+        resolve_env();
+        EXPECT_EQ(flexaids::env_bool_str(val, false), expect_on)
+            << "env_bool_str(" << val << ")";
+        EXPECT_EQ(flexaids::env_bool("FLEXAIDDS_RIGID_FASTPATH", false), expect_on)
+            << "env_bool(" << val << ")";
+        EXPECT_EQ(flexaidds::flags::active("FLEXAIDDS_RIGID_FASTPATH"), expect_on)
+            << "flags::active(" << val << ")";
+        EXPECT_EQ(flexaids::rigid_fastpath_requested(), expect_on)
+            << "rigid_fastpath_requested(" << val << ")";
+        // Overlay parser is shared: another acceleration gate must agree.
+        if (val[0] == '\0') clear_env("FLEXAIDDS_GET_YVAL_LUT");
+        else set_env("FLEXAIDDS_GET_YVAL_LUT", val);
+        resolve_env();
+        EXPECT_EQ(flexaidds::flags::active("FLEXAIDDS_GET_YVAL_LUT"), expect_on)
+            << "GET_YVAL_LUT flags::active(" << val << ")";
+        clear_env("FLEXAIDDS_GET_YVAL_LUT");
+    }
+}
+
+TEST_F(FlexaiddsFlagsEnv, OverlayApplyReachesEngineReaders) {
+    // B1: no individual env; overlay implies fastpath+hoist; after
+    // apply_to_environ the live engine readers must see ON.
+    set_env("FLEXAIDDS_FLAGS", "fastpath");
+    resolve_env();
+    flexaidds::flags::apply_to_environ();
+    EXPECT_TRUE(flexaidds::flags::active("FLEXAIDDS_RIGID_FASTPATH"));
+    EXPECT_TRUE(flexaidds::flags::active("FLEXAIDDS_HOIST_RECEPTOR_INDEX"));
+    ASSERT_NE(std::getenv("FLEXAIDDS_RIGID_FASTPATH"), nullptr);
+    ASSERT_NE(std::getenv("FLEXAIDDS_HOIST_RECEPTOR_INDEX"), nullptr);
+    EXPECT_TRUE(flexaids::rigid_fastpath_requested());
+    EXPECT_TRUE(flexaids::hoist_receptor_index_env());
+    EXPECT_TRUE(flexaids::env_bool("FLEXAIDDS_RIGID_FASTPATH", false));
+}
+
+TEST_F(FlexaiddsFlagsEnv, VoronoiKeyedJitterDefaultOffIndependentOfRngFix) {
+    resolve_env();
+    EXPECT_FALSE(flexaidds::flags::active("FLEXAIDDS_VORONOI_KEYED_JITTER"));
+    set_env("FLEXAIDDS_RNG_STREAM_FIX", "1");
+    resolve_env();
+    EXPECT_TRUE(flexaidds::flags::active("FLEXAIDDS_RNG_STREAM_FIX"));
+    EXPECT_FALSE(flexaidds::flags::active("FLEXAIDDS_VORONOI_KEYED_JITTER"));
+}
 
 TEST_F(FlexaiddsFlagsEnv, DefaultRigidFastpathInactive) {
     resolve_env();

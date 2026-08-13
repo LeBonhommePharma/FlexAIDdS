@@ -26,10 +26,10 @@
 
 namespace flexaids {
 
-/// Parse a FLEXAIDDS_* boolean switch. Unset/empty/unparseable → `fallback`.
-inline bool env_bool(const char* name, bool fallback = false) noexcept
+/// Parse a boolean string (already retrieved from the environment).
+/// Unset / empty / unparseable → `fallback`. `off`/`false`/`no`/`0` are OFF.
+inline bool env_bool_str(const char* raw, bool fallback = false) noexcept
 {
-    const char* raw = std::getenv(name);
     if (raw == nullptr) return fallback;
 
     // Trim surrounding whitespace; shell exports pick it up more often than
@@ -54,6 +54,25 @@ inline bool env_bool(const char* name, bool fallback = false) noexcept
         return false;
 
     return fallback;
+}
+
+/// Parse a FLEXAIDDS_* boolean switch. Unset/empty/unparseable → `fallback`.
+inline bool env_bool(const char* name, bool fallback = false) noexcept
+{
+    return env_bool_str(std::getenv(name), fallback);
+}
+
+/// Engine reader for FLEXAIDDS_RIGID_FASTPATH. Re-reads getenv (no pre-main
+/// snapshot) so apply_to_environ() overlays are visible.
+inline bool rigid_fastpath_requested() noexcept
+{
+    return env_bool("FLEXAIDDS_RIGID_FASTPATH", false);
+}
+
+/// Engine reader for FLEXAIDDS_HOIST_RECEPTOR_INDEX. Live getenv, default OFF.
+inline bool hoist_receptor_index_env() noexcept
+{
+    return env_bool("FLEXAIDDS_HOIST_RECEPTOR_INDEX", false);
 }
 
 /// FLEXAIDDS_PARALLEL_REPRODUCE — DEFAULT OFF (METHODOLOGY §1).

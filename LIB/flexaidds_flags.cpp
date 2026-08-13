@@ -4,6 +4,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include "flexaidds_flags.h"
+#include "EnvFlags.h"
 
 #include <cctype>
 #include <cstdlib>
@@ -50,10 +51,10 @@ std::string norm_key(const char* s) {
     return o;
 }
 
-// Truthiness: unset / empty / leading '0' → off; any other non-empty → on.
-// Matches existing gates that test `e && e[0] != '\0' && e[0] != '0'`.
+// One parser: off/false/no/0/empty/unset → OFF; 1/true/on/yes → ON.
+// Unparseable values do not flip a gate (fallback false).
 bool env_truthy(const char* e) {
-    return e && e[0] != '\0' && e[0] != '0';
+    return flexaids::env_bool_str(e, false);
 }
 
 const char* env_raw(const char* name) {
@@ -102,6 +103,7 @@ void seed_runtime_gates() {
         "FLEXAIDDS_CA_REC_FLAT",
         "FLEXAIDDS_PARALLEL_REPRODUCE",
         "FLEXAIDDS_RNG_STREAM_FIX",
+        "FLEXAIDDS_VORONOI_KEYED_JITTER",
         "FLEXAID_DETERMINISTIC",
         "FLEXAIDDS_FORCE_CPU",
         "FLEXAIDDS_FORCE_RIGID",
@@ -265,6 +267,8 @@ void seed_runtime_gates() {
     add_alias("fastpath", "FLEXAIDDS_RIGID_FASTPATH");
     add_alias("rng-stream-fix", "FLEXAIDDS_RNG_STREAM_FIX");
     add_alias("rng_stream_fix", "FLEXAIDDS_RNG_STREAM_FIX");
+    add_alias("keyed-jitter", "FLEXAIDDS_VORONOI_KEYED_JITTER");
+    add_alias("keyed_jitter", "FLEXAIDDS_VORONOI_KEYED_JITTER");
 }
 
 void add_compile(const char* name, bool on, const char* note) {

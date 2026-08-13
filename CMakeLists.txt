@@ -1621,6 +1621,7 @@ flexaids_add_unit_test(test_protocol_config
     flexaids_add_unit_test(test_chunk5_layout
         SOURCES
             tests/test_chunk5_layout.cpp
+            LIB/get_yval.cpp
         TEST_NAME Chunk5LayoutTests
     )
 
