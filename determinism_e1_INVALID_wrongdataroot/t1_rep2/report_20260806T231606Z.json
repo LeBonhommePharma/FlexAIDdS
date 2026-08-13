@@ -1,0 +1,67 @@
+{
+  "generated_at": "2026-08-06T23:16:06.469001Z",
+  "git_sha": "033aac16",
+  "host": "LPmore.local",
+  "runner_info": {
+    "python": "3.14.6",
+    "platform": "darwin",
+    "cpu_count": "11",
+    "flexaidds_version": "2.0.2"
+  },
+  "temperature": 300.0,
+  "binary": "/Users/lp.more/Projects/FlexAIDdS/ab_mac_20260806T133329/wt_post_cpu/build/FlexAID",
+  "full_command": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/run.py --dataset astex_diverse --tier 1 --results-dir /Users/lp.more/Projects/FlexAIDdS/determinism_e1/t1_rep2 --datasets-dir /Users/lp.more/Projects/FlexAIDdS/benchmarks/datasets --workers 1 --omp-threads 1 --verbose",
+  "datasets": [
+    {
+      "dataset": "astex_diverse",
+      "tier": 1,
+      "timestamp": "2026-08-06T22:56:32.834189Z",
+      "git_sha": "033aac16",
+      "host": "LPmore.local",
+      "binary": "/Users/lp.more/Projects/FlexAIDdS/ab_mac_20260806T133329/wt_post_cpu/build/FlexAID",
+      "temperature": 300.0,
+      "full_command": "/Users/lp.more/Projects/FlexAIDdS/benchmarks/run.py --dataset astex_diverse --tier 1 --results-dir /Users/lp.more/Projects/FlexAIDdS/determinism_e1/t1_rep2 --datasets-dir /Users/lp.more/Projects/FlexAIDdS/benchmarks/datasets --workers 1 --omp-threads 1 --verbose",
+      "duration_seconds": 1173.6297714579996,
+      "targets_attempted": 4,
+      "targets_completed": 4,
+      "targets_failed": 0,
+      "metrics": {
+        "entropy_rescue_rate": 0.0,
+        "docking_power_top1": 0.0,
+        "docking_power_top3": 0.0
+      },
+      "ci_95": {},
+      "regression_flags": {
+        "docking_power_top1": true,
+        "docking_power_top3": true,
+        "entropy_rescue_rate": true
+      },
+      "expected_baselines": {
+        "docking_power_top1": 0.7,
+        "docking_power_top3": 0.85,
+        "mean_rmsd": 2.3,
+        "median_rmsd": 1.95,
+        "entropy_rescue_rate": 0.3
+      },
+      "published_baselines": {
+        "docking_power_top1": 0.452
+      },
+      "published_source": "Gaudreault & Najmanovich 2015 JCIM Table 2 (Astex native FLRP, ideal subset, top-1)",
+      "dry_run": false,
+      "grand_summary": {},
+      "flexaid_crashes": 3,
+      "total_poses": 1,
+      "entry_exit_codes": {
+        "1mq6/1MQ6_ligand": -15,
+        "1q4g/1Q4G_ligand": -9,
+        "1tt1/1TT1_ligand": -9
+      },
+      "inconclusive_metrics": [
+        "mean_rmsd",
+        "median_rmsd"
+      ],
+      "newly_executed": 4,
+      "resumed": 0
+    }
+  ]
+}

@@ -1,0 +1,13 @@
+{
+  "target_id": "1mq6",
+  "structural_state": "holo",
+  "duration_seconds": 110.62894370801223,
+  "cost_cpu_seconds": 110.63,
+  "error": "",
+  "poses": [],
+  "success": false,
+  "grand_log_Z": null,
+  "grand_xi": null,
+  "conc_M": 1.0,
+  "timestamp": "2026-08-06T23:15:25.151927Z"
+}

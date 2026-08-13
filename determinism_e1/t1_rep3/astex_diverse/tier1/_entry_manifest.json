@@ -1,0 +1,32 @@
+{
+  "dataset": "astex_diverse",
+  "tier": 1,
+  "timestamp": "2026-08-07T01:49:08.842338Z",
+  "omp_threads": 1,
+  "n_workers_used": 1,
+  "completed": [
+    "1gpk",
+    "1mq6"
+  ],
+  "failed": [],
+  "total_attempted": 2,
+  "timings": {
+    "per_entry_wall_seconds": {
+      "1gpk_holo": 572.87,
+      "1mq6_holo": 1336.75
+    },
+    "per_entry_cost_cpu_seconds": {
+      "1gpk_holo": 572.87,
+      "1mq6_holo": 1336.75
+    },
+    "summary": {
+      "num_timed_entries": 2,
+      "total_entry_wall_seconds": 1909.62,
+      "mean_entry_seconds": 954.81,
+      "median_entry_seconds": 1336.75,
+      "p90_entry_seconds": 1336.75,
+      "estimated_total_cost_cpu_seconds": 1909.62,
+      "cost_model": "wall_time * omp_threads (simple upper-bound CPU-second estimate)"
+    }
+  }
+}

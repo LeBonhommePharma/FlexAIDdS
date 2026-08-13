@@ -1,0 +1,27 @@
+{
+  "target_id": "1gpk",
+  "structural_state": "holo",
+  "duration_seconds": 1019.8836858340073,
+  "cost_cpu_seconds": 1019.88,
+  "error": "",
+  "poses": [
+    {
+      "target_id": "1gpk",
+      "ligand_id": "1GPK_ligand",
+      "pose_rank": 1,
+      "rmsd": -1.0,
+      "enthalpy_score": -616219.91275,
+      "entropy_correction": 0.0,
+      "total_score": -616219.91275,
+      "is_active": false,
+      "exp_affinity": null,
+      "structural_state": "holo",
+      "ensemble_log_Z": null
+    }
+  ],
+  "success": true,
+  "grand_log_Z": null,
+  "grand_xi": null,
+  "conc_M": 1.0,
+  "timestamp": "2026-08-06T23:13:34.520134Z"
+}
