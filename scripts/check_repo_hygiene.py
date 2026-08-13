@@ -4,9 +4,13 @@
 Fails when:
 - tracked files match secret/env patterns (.env, .env.local, etc.)
 - agent/skill instruction files contain machine-specific absolute paths
+- a science-critical engine path is bundled with a swarm/audit pack (or a
+  non-engine product stack)
 
 Run:
   python3 scripts/check_repo_hygiene.py
+  python3 scripts/classify_diff.py              # vs origin/main
+  python3 scripts/classify_diff.py A B          # git diff --name-only A B
 """
 from __future__ import annotations
 
@@ -99,6 +103,20 @@ SCIENCE_PATHS_FILE = "docs/SCIENCE_CRITICAL_PATHS.txt"
 # Stacks that cannot affect docked coordinates. Bundling one of these with a
 # science-critical change is what made PR #405 unreviewable.
 NON_ENGINE_STACKS = ("typescript/", "swift/", "site/")
+# Handoff packs / audit write-ups drown engine diffs (PR #420: 16 swarm files
+# vs 3 LIB files). Split: engine PR vs pack PR. Tests next to LIB are fine.
+SCIENCE_PACK_PREFIXES = ("docs/swarm/", "docs/audit/")
+
+CHANGE_CLASSES = (
+    "engine_critical",
+    "engine_other",
+    "tests",
+    "science_pack",
+    "benchmark",
+    "ci_hygiene",
+    "docs_other",
+    "other",
+)
 
 
 def _load_science_globs(repo_root: Path) -> list[str]:
@@ -131,6 +149,38 @@ def _changed_files(base: str = "origin/main") -> tuple[list[str], str | None]:
         return [f for f in out.stdout.splitlines() if f], None
     except Exception as exc:  # noqa: BLE001
         return [], f"git unavailable: {exc}"
+
+
+def classify_path(rel: str, science_globs: list[str]) -> str:
+    """Bucket a repo-relative path. engine_critical uses SCIENCE_CRITICAL_PATHS."""
+    rel = rel.replace("\\", "/")
+    if any(fnmatch.fnmatch(rel, g) for g in science_globs):
+        return "engine_critical"
+    if rel.startswith(SCIENCE_PACK_PREFIXES):
+        return "science_pack"
+    if rel.startswith("benchmarks/"):
+        return "benchmark"
+    if rel.startswith("tests/") or "/tests/" in rel or rel.startswith("python/tests/"):
+        return "tests"
+    if rel.startswith("LIB/") or rel.startswith("src/"):
+        return "engine_other"
+    if rel.startswith((".github/", "cmake/", "scripts/")) or rel in {
+        "CMakeLists.txt",
+        "build_sources.ignore",
+        ".gitignore",
+        ".pre-commit-config.yaml",
+    }:
+        return "ci_hygiene"
+    if rel.startswith("docs/") or rel.endswith(".md"):
+        return "docs_other"
+    return "other"
+
+
+def classify_paths(files: list[str], science_globs: list[str]) -> dict[str, list[str]]:
+    buckets = {k: [] for k in CHANGE_CLASSES}
+    for rel in files:
+        buckets[classify_path(rel, science_globs)].append(rel)
+    return buckets
 
 
 def check_science_bundling(repo_root: Path) -> list[str]:
@@ -172,6 +222,35 @@ def check_science_bundling(repo_root: Path) -> list[str]:
     ]
 
 
+def check_science_pack_bundling(repo_root: Path) -> list[str]:
+    """Engine-critical paths must not share a PR with swarm/audit packs.
+
+    PR #420 mixed gated LIB/RngSeed.h+gaboom.h with docs/swarm/ (frozen CSV).
+    Both were useful; neither is reviewable in the same diff. Split them.
+    """
+    globs = _load_science_globs(repo_root)
+    if not globs:
+        return []
+    changed, skip = _changed_files()
+    if skip or not changed:
+        return []
+    buckets = classify_paths(changed, globs)
+    engine = buckets["engine_critical"]
+    pack = buckets["science_pack"]
+    if not engine or not pack:
+        return []
+    return [
+        "science-critical engine change bundled with a swarm/audit pack; split the PR.\n"
+        f"      engine-critical: {', '.join(sorted(engine)[:5])}"
+        f"{' ...' if len(engine) > 5 else ''}\n"
+        f"      science pack:    {', '.join(sorted(pack)[:5])}"
+        f"{' ...' if len(pack) > 5 else ''}\n"
+        "      engine/bugfix PR stays in LIB/+tests; pack PR stays under "
+        "docs/swarm/ or docs/audit/. "
+        "python3 scripts/classify_diff.py prints the buckets."
+    ]
+
+
 # Regenerable run scratch that must never sit at the repo root — A/B benchmark
 # output, stray worktrees. Belongs under $FLEXAIDDS_LOCAL_ROOT (~/flexaidds_results).
 ROOT_ARTIFACT_GLOBS = ("ab_mac_*", "ab_*", "wt_pre_*", "wt_post_*")
@@ -195,6 +274,7 @@ def main() -> int:
     errors = (check_tracked_env_files(tracked)
               + check_hardcoded_paths(tracked)
               + check_science_bundling(repo_root)
+              + check_science_pack_bundling(repo_root)
               + check_root_artifacts(repo_root))
 
     if errors:
