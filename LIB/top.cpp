@@ -369,11 +369,16 @@ static void print_usage(const char* progname) {
 	printf("                             default <PDBid>_redock with --redock)\n");
 	printf("  --backend <cpu|metal|webgpu>  GPU compute backend for CF scoring (default: cpu)\n");
 	printf("  --rigid                    Fast rigid-body screening\n");
-	printf("  --screen                   NRGRank coarse-grained screening mode\n");
+	printf("  --screen                   Coarse-grained cube screening (Stage 1)\n");
 	printf("  --screen-top-n <N>         Return top N from coarse screen (default: 100)\n");
+	printf("  --screen-dock              Stage 2 hook on top-N (default OFF; surrogate\n");
+	printf("                             unless a real GA callback is registered)\n");
+	printf("  --screen-target-mol2 <f>   MOL2 target for cube screen / prefilter\n");
 	printf("  --parallel-dock            Grid-decomposed parallel docking (ParallelDock)\n");
 	printf("  --parallel-dock-regions <N> Number of spatial regions (default: 128)\n");
 	printf("  --campaign                 Parallel virtual screening campaign mode\n");
+	printf("  --coarse-prefilter         Campaign: cube-screen library, dock top-N only\n");
+	printf("  --coarse-prefilter-top-n N Top-N for --coarse-prefilter (default: 100)\n");
 	printf("  --folded                   Skip NATURaL chain growth\n");
 	printf("  --legacy                   Legacy 3-file input mode\n");
 	printf("  --redock <PDBid>           Cognate redock from RCSB PDB ID\n");
@@ -757,12 +762,16 @@ int main(int argc, char **argv){
 	bool use_rigid = false;
 	bool use_folded = false;
 	bool use_screen = false;
+	bool use_screen_dock = false;
 	int  screen_top_n = 100;
 	std::string screen_receptor_path;  // populated in auto-detect path for --screen
 	std::string screen_ligand_path;
+	std::string screen_target_mol2;
 	bool use_parallel_dock = false;
 	int  parallel_dock_regions = 128;
 	bool use_campaign = false;
+	bool use_coarse_prefilter = false;
+	int  coarse_prefilter_top_n = 100;
 	std::string config_path;
 	std::string output_prefix = "flexaid_out";
 	std::string cached_grid_path;  // Strategy A: .rrg grid cache path from "grid_file" JSON key
@@ -899,8 +908,13 @@ int main(int argc, char **argv){
 			}
 			if (arg == "--rigid")  { use_rigid = true;  continue; }
 			if (arg == "--screen") { use_screen = true; continue; }
+			if (arg == "--screen-dock") { use_screen_dock = true; continue; }
 			if (arg == "--screen-top-n") {
 				if (a + 1 < argc) screen_top_n = std::atoi(argv[++a]);
+				continue;
+			}
+			if (arg == "--screen-target-mol2") {
+				if (a + 1 < argc) screen_target_mol2 = argv[++a];
 				continue;
 			}
 			if (arg == "--parallel-dock") { use_parallel_dock = true; continue; }
@@ -909,6 +923,11 @@ int main(int argc, char **argv){
 				continue;
 			}
 			if (arg == "--campaign") { use_campaign = true; continue; }
+			if (arg == "--coarse-prefilter") { use_coarse_prefilter = true; continue; }
+			if (arg == "--coarse-prefilter-top-n") {
+				if (a + 1 < argc) coarse_prefilter_top_n = std::atoi(argv[++a]);
+				continue;
+			}
 			if (arg == "--folded") { use_folded = true; continue; }
 			if (arg == "--conc" || arg == "--concentration") {
 				if (a + 1 < argc) user_conc_M = std::atof(argv[++a]);
@@ -2730,6 +2749,14 @@ int main(int argc, char **argv){
 				use_rigid, use_folded
 			);
 			ccfg.default_conc_M = user_conc_M;  // P3: forward --conc for grand canonical in campaign path
+			ccfg.coarse_prefilter = use_coarse_prefilter;
+			ccfg.coarse_prefilter_top_n = coarse_prefilter_top_n;
+			ccfg.coarse_target_mol2 = screen_target_mol2;
+			{
+				const flexaids::ProtocolConfig camp_proto = flexaids::ProtocolConfig::from_env();
+				ccfg.coarse_cleft_pdb = camp_proto.oracle_site.empty()
+					? camp_proto.cleft_sphere_file : camp_proto.oracle_site;
+			}
 			auto summary = campaign::run_campaign(ccfg,
 				[](int done, int total, const campaign::LigandResult& lr) {
 					printf("\r  [%d/%d] %s: score_proxy=%.2f (%.1fs)",
@@ -2741,25 +2768,21 @@ int main(int argc, char **argv){
 			       summary.successful, summary.total_ligands, summary.throughput_per_hour);
 			n_chrom_snapshot = summary.successful;
 		} else if (use_screen) {
-			// ── CoarseScreen: NRGRank coarse-grained screening ──
-			printf("=== CoarseScreen mode: NRGRank ultra-fast screening (top %d) ===\n", screen_top_n);
+			// ── CoarseScreen / optional Stage-2 hook (default: Stage 1 only) ──
+			printf("=== CoarseScreen mode: cube screening (top %d)%s ===\n",
+			       screen_top_n, use_screen_dock ? " + Stage-2 hook" : "");
 
-			nrgrank::CoarseScreenConfig scfg;
-			scfg.top_n = screen_top_n;
-
-			nrgrank::CoarseScreener screener;
-			screener.set_config(scfg);
-
-			// Load target atoms from receptor MOL2
-			auto screen_target = nrgrank::parse_target_mol2(screen_receptor_path);
+			const std::string target_mol2 = !screen_target_mol2.empty()
+				? screen_target_mol2 : screen_receptor_path;
+			auto screen_target = nrgrank::parse_target_mol2(target_mol2);
 			if (screen_target.empty()) {
 				fprintf(stderr, "[SCREEN] ERROR: could not parse target atoms from %s\n",
-				        screen_receptor_path.c_str());
-				fprintf(stderr, "[SCREEN]   --screen requires a receptor in MOL2 format.\n");
+				        target_mol2.c_str());
+				fprintf(stderr, "[SCREEN]   --screen requires a receptor in MOL2 format "
+				        "(or --screen-target-mol2).\n");
 				Terminate(1);
 			}
 
-			// Locate binding site PDB: prefer FLEXAIDDS_ORACLE_SITE, then FLEXAIDDS_CLEFT_SPHERE_FILE
 			const flexaids::ProtocolConfig screen_proto = flexaids::ProtocolConfig::from_env();
 			std::string site_pdb_path = screen_proto.oracle_site;
 			if (site_pdb_path.empty()) site_pdb_path = screen_proto.cleft_sphere_file;
@@ -2771,15 +2794,6 @@ int main(int argc, char **argv){
 				        "set FLEXAIDDS_ORACLE_SITE or FLEXAIDDS_CLEFT_SPHERE_FILE.\n");
 			}
 
-			screener.prepare_target(screen_target, screen_spheres);
-			if (!screener.is_prepared()) {
-				fprintf(stderr, "[SCREEN] ERROR: target preparation failed.\n");
-				Terminate(1);
-			}
-			printf("[SCREEN] Target prepared: %d anchors\n",
-			       static_cast<int>(screener.num_anchors()));
-
-			// Load ligands from screen_ligand_path (SDF or MOL2)
 			std::vector<nrgrank::ScreenLigand> screen_ligands;
 			{
 				const std::string ext = [&]() {
@@ -2798,22 +2812,54 @@ int main(int argc, char **argv){
 				        screen_ligand_path.c_str());
 				Terminate(1);
 			}
-			printf("[SCREEN] Screening %d ligands...\n",
+
+			nrgrank::TwoStageScreener ts;
+			nrgrank::TwoStageConfig tcfg;
+			tcfg.top_n = screen_top_n;
+			tcfg.coarse.top_n = screen_top_n;
+			tcfg.write_coarse_csv = true;
+			tcfg.output_dir = output_prefix + "_screen";
+			tcfg.verbose = true;
+			tcfg.stage2_kind_label = "surrogate";
+			ts.set_config(tcfg);
+			ts.prepare_target(screen_target, screen_spheres);
+			if (!ts.coarse_screener().is_prepared()) {
+				fprintf(stderr, "[SCREEN] ERROR: target preparation failed.\n");
+				Terminate(1);
+			}
+			printf("[SCREEN] Target prepared: %d anchors; screening %d ligands...\n",
+			       static_cast<int>(ts.coarse_screener().num_anchors()),
 			       static_cast<int>(screen_ligands.size()));
 
-			// Run coarse screen — returns top_n sorted by score (best first)
-			auto screen_results = screener.screen(screen_ligands);
-
-			// Print ranked results
-			printf("\n%-6s  %-10s  %s\n", "Rank", "Score", "Name");
-			printf("------  ----------  ----\n");
-			for (int i = 0; i < static_cast<int>(screen_results.size()); ++i) {
-				printf("%-6d  %-10.3f  %s\n", i + 1,
-				       screen_results[i].score,
-				       screen_results[i].name.c_str());
+			if (use_screen_dock) {
+				// Composition placeholder — same honesty as ParallelCampaign's
+				// surrogate_model_dock_score. Not a Voronoi CF and not ΔG.
+				ts.set_full_dock_callback(
+					[](const nrgrank::ScreenLigand& lig,
+					   const nrgrank::ScreenResult&) {
+						return static_cast<float>(
+							-0.04 * static_cast<double>(lig.atoms.size()));
+					});
 			}
 
-			n_chrom_snapshot = static_cast<int>(screen_results.size());
+			auto staged = ts.run(screen_ligands);
+			nrgrank::TwoStageScreener::write_unified_csv(
+				tcfg.output_dir + "/unified.csv", staged);
+			nrgrank::TwoStageScreener::write_screen_receipt(
+				tcfg.output_dir,
+				static_cast<int>(screen_ligands.size()),
+				screen_top_n,
+				use_screen_dock);
+
+			printf("\n%-6s  %-10s  %s\n", "Rank", "Score", "Name");
+			printf("------  ----------  ----\n");
+			for (int i = 0; i < static_cast<int>(staged.size()); ++i) {
+				printf("%-6d  %-10.3f  %s\n", i + 1,
+				       staged[static_cast<size_t>(i)].coarse_result.score,
+				       staged[static_cast<size_t>(i)].coarse_result.name.c_str());
+			}
+
+			n_chrom_snapshot = static_cast<int>(staged.size());
 		} else {
 			// ── Standard single search run (GA default; CMA-ES opt-in) ──
 			// FLEXAIDDS_CMAES_BEGIN

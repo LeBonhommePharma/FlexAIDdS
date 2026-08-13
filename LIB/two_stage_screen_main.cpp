@@ -190,10 +190,19 @@ int main(int argc, char** argv) {
         }
     }
 
+    TwoStageScreener::write_unified_csv(o.out_dir + "/unified.csv", results);
+    TwoStageScreener::write_screen_receipt(
+        o.out_dir, static_cast<int>(ligands.size()), o.top_n,
+        /*stage2_callback=*/false,
+        o.two_stage ? "flexaid_screen-two-stage" : "flexaid_screen");
+
     std::printf("Screening complete: %zu ligands scored, top %d kept for GA.\n"
                 "  coarse CSV : %s/coarse_screen.csv\n"
+                "  unified CSV: %s/unified.csv\n"
+                "  receipt    : %s/RUN_RECEIPT.json\n"
                 "  top-N list : %s\n",
-                results.size(), n_keep, o.out_dir.c_str(), top_path.c_str());
+                results.size(), n_keep, o.out_dir.c_str(), o.out_dir.c_str(),
+                o.out_dir.c_str(), top_path.c_str());
     std::printf("Best candidate: %s (coarse CF = %.4f)\n",
                 results[0].coarse_result.name.c_str(),
                 results[0].coarse_result.score);

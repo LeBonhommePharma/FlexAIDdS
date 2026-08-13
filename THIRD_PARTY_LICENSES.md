@@ -144,22 +144,17 @@ Python Software Foundation License Version 2
 **Project:** NRGlab/NRGRank  
 **License:** GNU General Public License v3.0  
 **Source:** https://github.com/NRGlab/NRGRank (NOT INCLUDED AS DEPENDENCY)  
-**Paper:** Gaudreault et al. (bioRxiv preprint, 2024 - citation pending publication)
+**Paper:** DesCôteaux T, Mailhot O, Najmanovich RJ. *NRGRank: Coarse-grained structurally-informed ultra-massive virtual screening.* bioRxiv 2025.02.17.638675v2. doi:[10.1101/2025.02.17.638675](https://doi.org/10.1101/2025.02.17.638675)  
+**Supplementary data:** Zenodo [10.5281/zenodo.16861024](https://doi.org/10.5281/zenodo.16861024) (CC-BY-4.0 dataset: DUD-E sites/scores — not GPL source, not the energy matrix)
 
 **Relationship to FlexAID∆S:**
-- **Scientific inspiration:** NRGRank's cube screening algorithm informed FreeNRG design
-- **No code dependency:** FlexAID∆S and FreeNRG do NOT import, link to, or incorporate NRGRank code
-- **Clean-room implementation:** Methods reimplemented from published equations under Apache-2.0
-- **License isolation:** GPL-3.0 does not propagate to FlexAID∆S (see clean-room policy)
-
-**Why NRGRank is not a dependency:**
-- Copyright protects *expression* (code), not *ideas* (algorithms)
-- Published scientific methods are not copyrightable
-- Independent implementation from mathematical descriptions avoids GPL contamination
-- FlexAID∆S maintains full Apache-2.0 permissiveness
+- **Published method only:** cube/anchor screening described in the paper is reimplemented in `LIB/CoarseScreen.*` / `LIB/TwoStageScreen.*` under Apache-2.0
+- **No code dependency:** this tree does not import, link, vendor, or translate NRGlab/NRGRank source (`process_target.py` / `rank_molecules.py` are not inputs)
+- **Clean-room:** `docs/licensing/clean_room_policy.md`
+- **License isolation:** GPL-3.0 does not propagate
 
 **Citation in Scientific Work:**
-> "The ultra-HTS cube screening method was inspired by NRGRank (Gaudreault et al., bioRxiv 2024). FlexAID∆S reimplements this approach from first principles with Shannon entropy extensions."
+> "Coarse cube screening follows the published NRGRank method (DesCôteaux, Mailhot, Najmanovich, bioRxiv 2025.02.17.638675v2) and was reimplemented from the paper under Apache-2.0; the GPL NRGRank codebase is not a dependency."
 
 ---
 

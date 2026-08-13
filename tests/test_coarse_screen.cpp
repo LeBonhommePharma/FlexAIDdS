@@ -12,10 +12,8 @@
 //   9. TwoStageScreener pipeline
 //  10. MOL2/SDF file parsing round-trip
 //
-// Reference:
-//   DesCôteaux T, Mailhot O, Najmanovich RJ. "NRGRank: Coarse-grained
-//   structurally-informed ultra-massive virtual screening."
-//   bioRxiv 2025.02.17.638675.
+// Method (clean-room): DesCôteaux, Mailhot, Najmanovich,
+// bioRxiv 2025.02.17.638675v2; Zenodo 10.5281/zenodo.16861024.
 //
 // SPDX-License-Identifier: Apache-2.0
 
@@ -616,4 +614,95 @@ TEST(TwoStageScreener, CSVOutput) {
 
     // Clean up
     std::filesystem::remove_all(cfg.output_dir);
+}
+
+TEST(TwoStageScreener, UnifiedCsvAndReceipt) {
+    auto atoms   = make_test_target();
+    auto spheres = make_test_spheres();
+
+    TwoStageScreener ts;
+    TwoStageConfig cfg;
+    cfg.coarse.use_clash = false;
+    cfg.coarse.rotations_per_axis = 4;
+    cfg.top_n = 2;
+    cfg.output_dir = "/tmp/test_screen_unified";
+    cfg.write_coarse_csv = false;
+    cfg.stage2_kind_label = "surrogate";
+    ts.set_config(cfg);
+    ts.prepare_target(atoms, spheres);
+    ts.set_full_dock_callback([](const ScreenLigand&, const ScreenResult& cr) {
+        return cr.score - 1.0f;
+    });
+
+    std::vector<ScreenLigand> ligs;
+    ligs.push_back(make_test_ligand("act_A"));
+    ligs.push_back(make_test_ligand("act_B"));
+    ligs.push_back(make_test_ligand("dec_C"));
+
+    auto results = ts.run(ligs);
+    ASSERT_EQ(results.size(), 3u);
+    TwoStageScreener::write_unified_csv(cfg.output_dir + "/unified.csv", results);
+    ASSERT_TRUE(TwoStageScreener::write_screen_receipt(
+        cfg.output_dir, static_cast<int>(ligs.size()), cfg.top_n, true));
+
+    std::ifstream csv(cfg.output_dir + "/unified.csv");
+    ASSERT_TRUE(csv.is_open());
+    std::string header;
+    std::getline(csv, header);
+    EXPECT_NE(header.find("coarse_rank"), std::string::npos);
+    EXPECT_NE(header.find("stage2_score"), std::string::npos);
+    EXPECT_NE(header.find("stage2_kind"), std::string::npos);
+
+    std::ifstream rec(cfg.output_dir + "/RUN_RECEIPT.json");
+    ASSERT_TRUE(rec.is_open());
+    std::string body((std::istreambuf_iterator<char>(rec)),
+                     std::istreambuf_iterator<char>());
+    EXPECT_NE(body.find("10.1101/2025.02.17.638675"), std::string::npos);
+    EXPECT_NE(body.find("10.5281/zenodo.16861024"), std::string::npos);
+    EXPECT_NE(body.find("stage2_callback"), std::string::npos);
+
+    auto names = TwoStageScreener::top_names(results, 2);
+    EXPECT_EQ(names.size(), 2u);
+    std::filesystem::remove_all(cfg.output_dir);
+}
+
+TEST(TwoStageScreener, MiniEnrichmentRecoversActives) {
+    auto atoms   = make_test_target();
+    auto spheres = make_test_spheres();
+
+    CoarseScreener cs;
+    CoarseScreenConfig cfg;
+    cfg.use_clash = false;
+    cfg.rotations_per_axis = 4;
+    cfg.top_n = 2;
+    cs.set_config(cfg);
+    cs.prepare_target(atoms, spheres);
+
+    std::vector<ScreenLigand> ligs;
+    ligs.push_back(make_test_ligand("ACT_1"));
+    ligs.push_back(make_test_ligand("ACT_2"));
+    for (int i = 0; i < 8; ++i) {
+        ScreenLigand dec;
+        dec.name = "DEC_" + std::to_string(i);
+        // Far dummy atom: should be out of the pocket / sentinel-ish
+        dec.atoms.push_back({{400.f + float(i), 400.f, 400.f}, 39});
+        ligs.push_back(dec);
+    }
+
+    auto results = cs.screen(ligs);
+    ASSERT_GE(results.size(), 2u);
+    std::string n0 = results[0].name;
+    std::string n1 = results[1].name;
+    EXPECT_TRUE(n0.rfind("ACT_", 0) == 0) << "top1=" << n0;
+    EXPECT_TRUE(n1.rfind("ACT_", 0) == 0) << "top2=" << n1;
+}
+
+TEST(NRGRankMatrix, ProvenancePinsPublishedName) {
+    // Self-consistency pin. Do not fetch GPL upstream bytes to "verify".
+    double sum = 0.0;
+    for (int i = 0; i < MATRIX_DIM; ++i)
+        for (int j = 0; j < MATRIX_DIM; ++j)
+            sum += kEnergyMatrix[i][j];
+    EXPECT_NEAR(kEnergyMatrix[1][2], -170.52, 0.01);
+    EXPECT_LT(sum, 0.0);  // net attractive table
 }

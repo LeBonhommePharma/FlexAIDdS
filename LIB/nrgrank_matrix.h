@@ -1,9 +1,12 @@
-// nrgrank_matrix.h — NRGRank 41×41 SYBYL pairwise energy matrix (constexpr)
+// nrgrank_matrix.h — 41×41 SYBYL pairwise energy matrix (constexpr)
 //
-// Matrix: MC_5p_norm_P10_M2_2_multiplied_2
-// From: NRGRank (DesCôteaux T, Mailhot O, Najmanovich RJ.
-//       NRGRank: Coarse-grained structurally-informed ultra-massive
-//       virtual screening. bioRxiv 2025.02.17.638675.)
+// Published matrix name: MC_5p_norm_P10_M2_2 (in-repo spelling
+// MC_5p_norm_P10_M2_2_multiplied_2). Values are a clean-room constexpr
+// table for the published method (DesCôteaux, Mailhot, Najmanovich,
+// bioRxiv 2025.02.17.638675v2, doi 10.1101/2025.02.17.638675;
+// Zenodo 10.5281/zenodo.16861024 is CC-BY-4.0 supplementary scores/sites,
+// not this matrix). Do not import NRGlab/NRGRank (GPL-3.0) to "verify"
+// bytes — see docs/licensing/clean-room-policy.md.
 //
 // 41×41 matrix indexed [0..40][0..40].
 // Row/column 0 is unused (padding).  Types 1–39 are SYBYL atom types:
