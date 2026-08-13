@@ -10,6 +10,7 @@ Run:
 """
 from __future__ import annotations
 
+import fnmatch
 import re
 import subprocess
 import sys
@@ -171,13 +172,30 @@ def check_science_bundling(repo_root: Path) -> list[str]:
     ]
 
 
+# Regenerable run scratch that must never sit at the repo root — A/B benchmark
+# output, stray worktrees. Belongs under $FLEXAIDDS_LOCAL_ROOT (~/flexaidds_results).
+ROOT_ARTIFACT_GLOBS = ("ab_mac_*", "ab_*", "wt_pre_*", "wt_post_*")
+
+
+def check_root_artifacts(repo_root: Path) -> list[str]:
+    errors: list[str] = []
+    for entry in sorted(repo_root.iterdir()):
+        if entry.is_dir() and any(fnmatch.fnmatch(entry.name, g) for g in ROOT_ARTIFACT_GLOBS):
+            errors.append(
+                f"root run-artifact directory '{entry.name}/' must not live in the repo; "
+                f"move it under $FLEXAIDDS_LOCAL_ROOT (~/flexaidds_results) or delete it"
+            )
+    return errors
+
+
 def main() -> int:
     print("=== FlexAIDdS Repository Hygiene Check ===\n")
     tracked = git_tracked_files()
     repo_root = Path(__file__).resolve().parent.parent
     errors = (check_tracked_env_files(tracked)
               + check_hardcoded_paths(tracked)
-              + check_science_bundling(repo_root))
+              + check_science_bundling(repo_root)
+              + check_root_artifacts(repo_root))
 
     if errors:
         print("FAIL: repository hygiene violations:\n", file=sys.stderr)

@@ -49,6 +49,15 @@ repos:
       - id: mixed-line-ending
         args: ['--fix=lf']
 
+  - repo: local
+    hooks:
+      - id: repo-hygiene
+        name: FlexAIDdS repo hygiene
+        entry: python3 scripts/check_repo_hygiene.py
+        language: system
+        pass_filenames: false
+        always_run: true
+
   - repo: https://github.com/pre-commit/mirrors-clang-format
     rev: v19.1.7
     hooks:
