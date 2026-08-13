@@ -213,6 +213,16 @@ Thermodynamics StatMechEngine::compute() const {
         throw std::runtime_error("StatMechEngine::compute: empty ensemble");
 
     const std::size_t N = ensemble_.size();
+    bool any_positive_multiplicity = false;
+    for (std::size_t i = 0; i < N; ++i) {
+        if (!std::isfinite(ensemble_[i].energy))
+            throw std::runtime_error("StatMechEngine::compute: non-finite sample energy");
+        if (std::isfinite(ensemble_[i].count) && ensemble_[i].count > 0.0) {
+            any_positive_multiplicity = true;
+        }
+    }
+    if (!any_positive_multiplicity)
+        throw std::runtime_error("StatMechEngine::compute: no positive-multiplicity samples");
 
     // Build array of log-weights:  w_i = ln(n_i) − β E_i
     std::vector<double> log_w(N);
@@ -222,7 +232,9 @@ Thermodynamics StatMechEngine::compute() const {
         Eigen::ArrayXd counts(static_cast<Eigen::Index>(N));
         Eigen::ArrayXd energies(static_cast<Eigen::Index>(N));
         for (std::size_t i = 0; i < N; ++i) {
-            counts(static_cast<Eigen::Index>(i))   = ensemble_[i].count;
+            double n = ensemble_[i].count;
+            if (!std::isfinite(n) || n < 0.0) n = 0.0;
+            counts(static_cast<Eigen::Index>(i))   = n;
             energies(static_cast<Eigen::Index>(i)) = ensemble_[i].energy;
         }
         Eigen::ArrayXd lw = counts.log() - beta_ * energies;
@@ -305,7 +317,7 @@ Thermodynamics StatMechEngine::compute() const {
     th.free_energy    = -kT * lnZ;
     th.mean_energy    = E_avg;
     th.mean_energy_sq = E2_avg;
-    th.heat_capacity  = var / (kB_kcal * T_ * T_);
+    th.heat_capacity  = std::max(0.0, var) / (kB_kcal * T_ * T_);
     th.entropy        = (E_avg - th.free_energy) / T_;
     th.std_energy     = std::sqrt(std::max(0.0, var));
     th.provenance     = provenance_;
@@ -325,6 +337,16 @@ Thermodynamics StatMechEngine::compute_at_temperature(double T_K) const
 
     const double beta_T = 1.0 / (kB_kcal * T_K);
     const std::size_t N = ensemble_.size();
+    bool any_positive_multiplicity = false;
+    for (std::size_t i = 0; i < N; ++i) {
+        if (!std::isfinite(ensemble_[i].energy))
+            throw std::runtime_error("StatMechEngine::compute_at_temperature: non-finite sample energy");
+        if (std::isfinite(ensemble_[i].count) && ensemble_[i].count > 0.0) {
+            any_positive_multiplicity = true;
+        }
+    }
+    if (!any_positive_multiplicity)
+        throw std::runtime_error("StatMechEngine::compute_at_temperature: no positive-multiplicity samples");
 
     // log-weights at the requested temperature
     std::vector<double> log_w(N);
@@ -332,7 +354,9 @@ Thermodynamics StatMechEngine::compute_at_temperature(double T_K) const
         Eigen::ArrayXd counts(static_cast<Eigen::Index>(N));
         Eigen::ArrayXd energies(static_cast<Eigen::Index>(N));
         for (std::size_t i = 0; i < N; ++i) {
-            counts(static_cast<Eigen::Index>(i))   = ensemble_[i].count;
+            double n = ensemble_[i].count;
+            if (!std::isfinite(n) || n < 0.0) n = 0.0;
+            counts(static_cast<Eigen::Index>(i))   = n;
             energies(static_cast<Eigen::Index>(i)) = ensemble_[i].energy;
         }
         Eigen::Map<Eigen::ArrayXd>(log_w.data(), static_cast<Eigen::Index>(N)) =
@@ -363,7 +387,7 @@ Thermodynamics StatMechEngine::compute_at_temperature(double T_K) const
     th.free_energy    = -kT * lnZ;
     th.mean_energy    = E_avg;
     th.mean_energy_sq = E2_avg;
-    th.heat_capacity  = var / (kB_kcal * T_K * T_K);
+    th.heat_capacity  = std::max(0.0, var) / (kB_kcal * T_K * T_K);
     th.entropy        = (E_avg - th.free_energy) / T_K;
     th.std_energy     = std::sqrt(std::max(0.0, var));
     th.provenance     = provenance_;
@@ -1062,8 +1086,11 @@ JointEnsembleResult StatMechEngine::compute_joint_ensemble(
     }
     result.S_ligand_kcal_mol_K = kB_kcal * S_ligand;
 
-    // Step 5: Mutual information I(R;L) = S_joint - S_receptor - S_ligand  (in nats, dimensionless after scaling)
-    result.mutual_information_dimensionless = S_joint - S_receptor - S_ligand;
+    // Step 5: Mutual information I(R;L) = S_R + S_L − S_joint (nats).
+    // The previous S_joint − S_R − S_L sign was the negation of I.
+    result.mutual_information_dimensionless = S_receptor + S_ligand - S_joint;
+    if (result.mutual_information_dimensionless < 0.0)
+        result.mutual_information_dimensionless = 0.0;
 
     // Fallback detection
     bool has_real_receptor_ids = false;

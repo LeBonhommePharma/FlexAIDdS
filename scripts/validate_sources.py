@@ -10,6 +10,11 @@ This is the primary "idiot-proof" mechanism for the repository. It catches
 the most common cause of mysterious link failures when adding new .cpp/.cu/.mm
 files.
 
+A header is also referenced when a compiled translation unit (or a header
+already reached from one) has ``#include "X.h"``. Angle-bracket includes are
+ignored. That is how header-only utilities such as ``EnvFlags.h`` stay off the
+orphan list without growing ``build_sources.ignore``.
+
 Usage (standalone):
     python scripts/validate_sources.py --root . --strict
     python scripts/validate_sources.py --warn-only
@@ -217,6 +222,88 @@ def collect_referenced_names(root: Path) -> Set[str]:
     return referenced
 
 
+# Quoted includes only. Angle brackets are system / third-party.
+_INCLUDE_RE = re.compile(r'^\s*#\s*include\s+"([^"]+)"', re.MULTILINE)
+_COMPILABLE_EXTS = {".cpp", ".cc", ".c", ".cu", ".mm", ".hip"}
+_HEADER_EXTS = {".h", ".hpp", ".hxx", ".cuh", ".inl"}
+
+
+def _path_is_referenced(path: Path, root: Path, referenced: Set[str]) -> bool:
+    name = path.name
+    try:
+        rel = path.relative_to(root).as_posix()
+    except ValueError:
+        rel = path.as_posix()
+    return name in referenced or rel in referenced
+
+
+def _resolve_quoted_include(inc: str, from_file: Path, root: Path,
+                            by_name: Dict[str, List[Path]]) -> Optional[Path]:
+    """Resolve ``#include "inc"`` relative to the including file, then LIB/src/tests."""
+    inc = inc.replace("\\", "/")
+    direct = (from_file.parent / inc)
+    if direct.is_file():
+        return direct.resolve()
+    for base in (root, root / "LIB", root / "src", root / "tests"):
+        cand = base / inc
+        if cand.is_file():
+            return cand.resolve()
+    hits = by_name.get(Path(inc).name, [])
+    if len(hits) == 1:
+        return hits[0].resolve()
+    return None
+
+
+def collect_include_closure(
+    root: Path,
+    candidates: List[Path],
+    referenced: Set[str],
+) -> Set[str]:
+    """Names/paths reached by ``#include "..."`` from compiled, CMake-referenced TUs.
+
+    A header included from a compiled translation unit is not orphaned, even
+    when it never appears in CMakeLists.txt / setup.py. Closure is transitive
+    through headers so ``#include "Foo.h"`` that itself includes ``Bar.h``
+    counts ``Bar.h`` too.
+    """
+    by_name: Dict[str, List[Path]] = {}
+    for p in candidates:
+        by_name.setdefault(p.name, []).append(p)
+
+    extra: Set[str] = set()
+    queue: List[Path] = []
+    seen: Set[Path] = set()
+
+    for p in candidates:
+        if p.suffix.lower() in _COMPILABLE_EXTS and _path_is_referenced(p, root, referenced):
+            queue.append(p)
+
+    while queue:
+        cur = queue.pop()
+        resolved_cur = cur.resolve()
+        if resolved_cur in seen:
+            continue
+        seen.add(resolved_cur)
+        try:
+            text = cur.read_text(encoding="utf-8", errors="ignore")
+        except OSError:
+            continue
+        for match in _INCLUDE_RE.finditer(text):
+            resolved = _resolve_quoted_include(match.group(1), cur, root, by_name)
+            if resolved is None:
+                continue
+            try:
+                rel = resolved.relative_to(root.resolve()).as_posix()
+            except ValueError:
+                continue
+            extra.add(resolved.name)
+            extra.add(rel)
+            if resolved.suffix.lower() in _HEADER_EXTS | _COMPILABLE_EXTS and resolved not in seen:
+                queue.append(resolved)
+
+    return extra
+
+
 def validate_sources(
     root: Path | str = ".",
     *,
@@ -238,6 +325,7 @@ def validate_sources(
     ignore_patterns = load_ignore_patterns(root, Path(ignore_file) if ignore_file else None)
 
     referenced = collect_referenced_names(root)
+    referenced |= collect_include_closure(root, candidates, referenced)
     result.referenced_files = referenced
 
     for cand in candidates:

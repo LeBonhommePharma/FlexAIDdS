@@ -170,3 +170,9 @@ src/backends/webgpu/webgpu_eval.h
 # already listed in the test_dataset_runner target (CMakeLists.txt). Header-only
 # orphan; no build output changes from listing it. Introduced by #371.
 tests/rmsd_crosscheck_engine.h
+
+# EnvFlags.h and ShannonThermoStack/ShannonBinning.h are header-only and are
+# #include'd from compiled TUs (BindingMode.cpp, cluster.cpp, ShannonThermoStack.cpp,
+# UnifiedHardwareDispatch.cpp). scripts/validate_sources.py counts quoted includes
+# from CMake-referenced translation units, so they must not live in this ignore
+# list — an ignore entry is a permanent blind spot for real orphans.
