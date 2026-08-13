@@ -154,3 +154,8 @@ flexaid_out.rrg
 
 # Claude Code agent worktrees (ephemeral, per-session)
 .claude/
+
+
+# A/B benchmark harness scratch (worktrees + logs) — regenerable, never source
+ab_mac_*/
+ab_*/
