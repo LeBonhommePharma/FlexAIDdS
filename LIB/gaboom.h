@@ -41,8 +41,29 @@ namespace target { class TargetServer; }
 #define SAVE_CHROM_FRACTION 0.05
 
 #define QS_TYPE double
-#define QS_ASC(a,b) ((a)-(b))
-#define QS_DSC(a,b) ((b)-(a))
+// NaN/Inf are unordered under IEEE subtraction, so a NaN CF could be elected
+// rank-0. Treat non-finite as worst: last in ascending energy, last in
+// descending fitness. Finite-vs-finite stays a-b / b-a.
+inline QS_TYPE flexaids_qs_asc(QS_TYPE a, QS_TYPE b)
+{
+	const bool af = std::isfinite(a);
+	const bool bf = std::isfinite(b);
+	if (af && bf) return a - b;
+	if (af) return static_cast<QS_TYPE>(-1);
+	if (bf) return static_cast<QS_TYPE>(1);
+	return static_cast<QS_TYPE>(0);
+}
+inline QS_TYPE flexaids_qs_dsc(QS_TYPE a, QS_TYPE b)
+{
+	const bool af = std::isfinite(a);
+	const bool bf = std::isfinite(b);
+	if (af && bf) return b - a;
+	if (af) return static_cast<QS_TYPE>(-1);
+	if (bf) return static_cast<QS_TYPE>(1);
+	return static_cast<QS_TYPE>(0);
+}
+#define QS_ASC(a,b) flexaids_qs_asc((a),(b))
+#define QS_DSC(a,b) flexaids_qs_dsc((a),(b))
 #define K(i,j,n) (n*(n-1)/2) - (n-i)*((n-i)-1)/2 + j - i - 1
 //#define K(i,j,n) ( (i < j) ? (i*n+j) : (j*n+i) )
 

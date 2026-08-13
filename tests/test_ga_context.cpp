@@ -109,6 +109,49 @@ TEST(RngSeedTest, LazyThreadRngRespectsMasterSeedEpoch) {
     EXPECT_NE(a, c);
 }
 
+TEST(RngSeedTest, LazyThreadRngKeepsIndependentStreams) {
+    // Interleaving two stream ids on one thread must not re-seed a shared
+    // generator. Stream A after a B draw must continue A's sequence.
+    constexpr std::uint64_t kGa = 0x9A800DULL;
+    constexpr std::uint64_t kPucker = 0x5A6A9ULL;
+    std::uniform_real_distribution<double> dist(0.0, 1.0);
+
+    flexaids_rng::set_master_seed(11);
+    const double a0 = dist(flexaids_rng::lazy_thread_rng(kGa));
+    const double b0 = dist(flexaids_rng::lazy_thread_rng(kPucker));
+    const double a1 = dist(flexaids_rng::lazy_thread_rng(kGa));
+
+    flexaids_rng::set_master_seed(11);
+    const double a0_only = dist(flexaids_rng::lazy_thread_rng(kGa));
+    const double a1_only = dist(flexaids_rng::lazy_thread_rng(kGa));
+
+    EXPECT_DOUBLE_EQ(a0, a0_only);
+    EXPECT_DOUBLE_EQ(a1, a1_only);
+    EXPECT_NE(a1, a0);
+    EXPECT_NE(b0, a0);
+}
+
+TEST(RngSeedTest, LazyThreadRngHeldReferenceSurvivesNewStream) {
+    // Callers keep auto& rng across other stream lookups (SugarPucker,
+    // Vcontacts). Insert must not invalidate that reference.
+    constexpr std::uint64_t kGa = 0x9A800DULL;
+    constexpr std::uint64_t kPucker = 0x5A6A9ULL;
+    std::uniform_real_distribution<double> dist(0.0, 1.0);
+
+    flexaids_rng::set_master_seed(11);
+    auto& ga = flexaids_rng::lazy_thread_rng(kGa);
+    const double a0 = dist(ga);
+    (void)dist(flexaids_rng::lazy_thread_rng(kPucker));
+    const double a1 = dist(ga);
+
+    flexaids_rng::set_master_seed(11);
+    auto& ga_only = flexaids_rng::lazy_thread_rng(kGa);
+    const double b0 = dist(ga_only);
+    const double b1 = dist(ga_only);
+    EXPECT_DOUBLE_EQ(a0, b0);
+    EXPECT_DOUBLE_EQ(a1, b1);
+}
+
 #ifdef FLEXAIDS_USE_CUDA
 TEST(GPUContextPoolTest, SingletonInstance) {
     auto& pool1 = GPUContextPool::instance();

@@ -13,6 +13,7 @@
 #include <cmath>
 #include <cstdlib>
 #include <cstring>
+#include <limits>
 #include <vector>
 #include <algorithm>
 #include <numeric>
@@ -357,6 +358,23 @@ TEST_F(QuickSortTest, DuplicateValues) {
 
     QuickSort(ca.data(), 0, N - 1, true);
     verifyAscendingEnergy(ca, N);
+}
+
+TEST_F(QuickSortTest, NonFiniteEnergySortsLast) {
+    const int N = 4;
+    ChromArray ca(N, 1);
+    ca[0].evalue = std::numeric_limits<double>::quiet_NaN();
+    ca[1].evalue = -10.0;
+    ca[2].evalue = std::numeric_limits<double>::infinity();
+    ca[3].evalue = -5.0;
+
+    QuickSort(ca.data(), 0, N - 1, true);
+
+    EXPECT_TRUE(std::isfinite(ca[0].evalue));
+    EXPECT_TRUE(std::isfinite(ca[1].evalue));
+    EXPECT_DOUBLE_EQ(ca[0].evalue, -10.0);
+    EXPECT_DOUBLE_EQ(ca[1].evalue, -5.0);
+    EXPECT_FALSE(std::isfinite(ca[2].evalue) && std::isfinite(ca[3].evalue));
 }
 
 // ===========================================================================

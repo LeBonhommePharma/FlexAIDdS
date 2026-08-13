@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <cstdlib>
 #include <random>
+#include <map>
 
 #ifdef _OPENMP
 #include <omp.h>
@@ -114,20 +115,26 @@ inline std::mt19937 make_thread_rng(std::uint64_t stream = 0)
     return std::mt19937(seed_from_env_or_random(stream ^ salt));
 }
 
-// Re-seeds when set_master_seed() bumps g_seed_epoch (e.g. ga.seed applied).
+// One generator per logical stream on this thread. A single cached generator
+// that re-seeds on stream switch collapses interleaved streams to a repeating
+// first draw (F1). Epoch bump (set_master_seed) still rebuilds the map.
 inline std::mt19937& lazy_thread_rng(std::uint64_t stream)
 {
-    thread_local std::uint64_t cached_stream = ~0ULL;
-    thread_local std::uint64_t cached_epoch  = ~0ULL;
-    thread_local std::mt19937 rng = make_thread_rng(stream);
+    thread_local std::uint64_t cached_epoch = ~0ULL;
+    // std::map: insert of a new stream must not invalidate references held
+    // by callers (auto& rng = lazy_thread_rng(id)). unordered_map rehash can.
+    thread_local std::map<std::uint64_t, std::mt19937> rngs;
 
     const std::uint64_t epoch = g_seed_epoch.load(std::memory_order_acquire);
-    if (cached_stream != stream || cached_epoch != epoch) {
-        rng = make_thread_rng(stream);
-        cached_stream = stream;
+    if (cached_epoch != epoch) {
+        rngs.clear();
         cached_epoch = epoch;
     }
-    return rng;
+    auto it = rngs.find(stream);
+    if (it == rngs.end()) {
+        it = rngs.emplace(stream, make_thread_rng(stream)).first;
+    }
+    return it->second;
 }
 
 } // namespace flexaids_rng
