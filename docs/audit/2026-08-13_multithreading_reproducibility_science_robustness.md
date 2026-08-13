@@ -429,6 +429,15 @@ independently and reproducibly (the reproduction in F1 is a ready-made assertion
   (`:1027-1044`).
 - **`Vcontacts` scratch** uses `static thread_local` (`:24, :1817`) and once-only `static const`
   env caches (`:1659, :2050`) — thread-safe.
+- **`SharedPosePool` is fully synchronised** — all mutating/reading methods take `mtx_`, move-assign
+  locks both mutexes in address order to avoid deadlock, and `publish` **rejects non-finite energies**
+  (`SharedPosePool.cpp:56`) with a comment noting it uses `DBL_MAX` rather than `infinity`
+  "(UB under `-ffast-math`/`-ffinite-math-only`)" (`:106`). This is precisely the finite-check pattern
+  that F5's `QuickSort` path lacks and should adopt.
+- **`TargetServer` / grand partition function concurrency is correct.** `create_session` uses an
+  atomic id counter; `register_result` protects `knowledge_` under `knowledge_mtx_`
+  (`TargetServer.cpp:60-68`) and delegates to `GrandPartitionFunction`, which has its own
+  `mutable std::mutex mtx_` (`GrandPartitionFunction.h:192`). No unsynchronised shared writes found.
 - **Published restart determinism.** Per-restart process isolation with distinct deterministic seeds
   (`DatasetRunner.cpp:177-181`, restart subprocesses at `:5844-5860`) is the model reproducibility
   pattern here.
