@@ -11,6 +11,7 @@ set(FLEXAID_CORE_SOURCES
     assign_shift.cpp
     buildic.cpp
     Vcontacts.cpp
+    flexaidds_flags.cpp
     ic2cf.cpp
     vcfunction.cpp
     create_rebuild_list.cpp

@@ -2279,6 +2279,16 @@ flexaids_add_unit_test(test_protocol_config
     )
     set_tests_properties(ContactsEpochPrefixLayoutDetected PROPERTIES WILL_FAIL TRUE)
 
+    # test_flexaidds_flags — unified FLEXAIDDS_* / FLEXAID_* / FLEXAIDS_* gate
+    #   overlay (resolve / exclusion / FLEXAIDDS_FLAGS / dump). Isolated from
+    #   engine sources; does not remove any existing option.
+    flexaids_add_unit_test(test_flexaidds_flags
+        SOURCES
+            tests/test_flexaidds_flags.cpp
+            LIB/flexaidds_flags.cpp
+        TEST_NAME FlexaiddsFlagsTests
+    )
+
     # test_ion_handling — assign_radii / assign_types HETATM + ion coverage
     #                     + tENCoM ion contact surface (TmContSct) tests
     flexaids_add_unit_test(test_ion_handling
