@@ -9,6 +9,7 @@
 #include "UnifiedHardwareDispatch.h"
 #include "ShannonThermoStack/ShannonBinning.h"
 #include "simd_distance.h"
+#include "log_sum_exp.h"
 #ifdef FLEXAIDS_USE_WEBGPU
 #include "../src/backends/webgpu/webgpu_eval.h"
 #endif
@@ -902,6 +903,9 @@ BoltzmannBatchResult UnifiedHardwareDispatch::compute_boltzmann_batch(
 double UnifiedHardwareDispatch::log_sum_exp_dispatch(std::span<const double> values) {
     if (values.empty())
         return -std::numeric_limits<double>::infinity();
+
+    if (flexaids::fixed_order_lse_enabled())
+        return flexaids::log_sum_exp_fixed_order(values);
 
     if (!detected_) detect();
 

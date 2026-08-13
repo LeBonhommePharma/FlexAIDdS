@@ -1439,27 +1439,4 @@ double vcfunction(FA_Global* FA,VC_Global* VC,atom* atoms,resid* residue, std::v
   
 }
 
-/* A2 perf: flat-array piecewise-linear interpolation replaces linked-list walk.
-   Boundary logic matches the original:
-     ra < fx[0]            → 0 (no left-bound data)
-     ra in [fx[i], fx[i+1]) → linear interpolation using precomputed slope
-     ra >= fx[n-1]         → fy[n-1] (no right-bound data; clamp to last y)
-   Linear scan over n (typically 5–15 breakpoints) is cache-friendlier than
-   branching binary search at this scale. */
-double get_yval(struct energy_matrix* em, double relative_area)
-{
-	if(!em->energy_values) return 0.0;
-	// single-scalar weight case (no linked-list walk needed either way)
-	if(em->weight) return (double)em->energy_values->y;
-	// flat-array path
-	const int n = em->flat_n;
-	if(n == 0) return 0.0;
-	const float ra = (float)relative_area;
-	const float* fx = em->flat_x;
-	const float* fy = em->flat_y;
-	if(ra < fx[0]) return 0.0;                   // below first breakpoint
-	if(ra >= fx[n-1]) return (double)fy[n-1];    // at or beyond last breakpoint
-	int i = 0;
-	while(i < n-2 && ra >= fx[i+1]) ++i;         // find segment (n small → linear scan)
-	return (double)(fy[i] + em->flat_slope[i] * (ra - fx[i]));
-}
+// get_yval lives in get_yval.cpp (scan + opt-in LUT).

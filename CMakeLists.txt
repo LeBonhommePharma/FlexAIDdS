@@ -1607,6 +1607,18 @@ flexaids_add_unit_test(test_protocol_config
     flexaids_configure_msvc_test(test_vcontacts)
     add_test(NAME VcontactsTests COMMAND test_vcontacts)
 
+    flexaids_add_unit_test(test_get_yval_lut
+        SOURCES
+            tests/test_get_yval_lut.cpp
+            LIB/get_yval.cpp
+        TEST_NAME GetYvalLutTests
+    )
+    flexaids_add_unit_test(test_log_sum_exp
+        SOURCES
+            tests/test_log_sum_exp.cpp
+        TEST_NAME FixedOrderLseTests
+    )
+
     # test_rigid_fastpath — FLEXAIDDS_RIGID_FASTPATH bit-identity
     # (index_protein + Vcontacts + calc_region; same isolated link as test_vcontacts)
     add_executable(test_rigid_fastpath
