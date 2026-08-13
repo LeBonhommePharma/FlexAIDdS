@@ -414,8 +414,14 @@ int main(int argc, char **argv){
 	#ifdef _WIN32
 	char *pch;                               // for finding base path
 	#endif
-	char end_strfile[MAX_PATH__];
-	char tmp_end_strfile[MAX_PATH__];
+	// Initialized so the output prefix is always a valid C string. Every
+	// assignment below (legacy argv[4], legacy_files[2], output_prefix) is
+	// CONDITIONAL, so an unrecognized invocation used to leave these
+	// uninitialized. A `end_strfile ? ... : "flexaid"` guard downstream could
+	// never catch that — the address of an array is never null — so the
+	// fallback has to live here, in the value.
+	char end_strfile[MAX_PATH__] = "flexaid";
+	char tmp_end_strfile[MAX_PATH__] = "";
 
 	int memchrom=0;
 
@@ -3068,7 +3074,11 @@ int main(int argc, char **argv){
 				}
 				// P5: write sidecar .grand.txt for richer output (Xi, p_bind per ligand)
 				char grandfile[512];
-				snprintf(grandfile, sizeof(grandfile), "%s.grand.txt", end_strfile ? end_strfile : "flexaid");
+				// end_strfile is a stack array, so it is never null; it is
+				// initialized to "flexaid" at declaration, which is where the
+				// fallback belongs. -Wpointer-bool-conversion flagged the old
+				// ternary as always-true, and it was.
+				snprintf(grandfile, sizeof(grandfile), "%s.grand.txt", end_strfile);
 				FILE* gf = fopen(grandfile, "w");
 				if (gf) {
 					fprintf(gf, "# Grand canonical summary (P3/P5)\n");
