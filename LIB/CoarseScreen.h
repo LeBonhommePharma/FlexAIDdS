@@ -3,8 +3,8 @@
 // Reimplemented from the published method (DesCôteaux, Mailhot, Najmanovich,
 // bioRxiv 2025.02.17.638675v2, doi 10.1101/2025.02.17.638675;
 // supplementary data Zenodo 10.5281/zenodo.16861024), clean-room per
-// docs/licensing/clean-room-policy.md. Apache-2.0. Not a translation of
-// NRGlab/NRGRank source (that tree is GPL-3.0 and is not a dependency).
+// docs/licensing/clean-room-policy.md. Apache-2.0. Independent of any
+// third-party source tree; not a dependency and not a translation.
 //
 // Pipeline:
 //   1. Build index-cube grid (cell_width=6.56 Å) from target atoms

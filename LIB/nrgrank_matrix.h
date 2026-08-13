@@ -5,7 +5,7 @@
 // table for the published method (DesCôteaux, Mailhot, Najmanovich,
 // bioRxiv 2025.02.17.638675v2, doi 10.1101/2025.02.17.638675;
 // Zenodo 10.5281/zenodo.16861024 is CC-BY-4.0 supplementary scores/sites,
-// not this matrix). Do not import NRGlab/NRGRank (GPL-3.0) to "verify"
+// not this matrix). Do not import third-party source trees to "verify"
 // bytes — see docs/licensing/clean-room-policy.md.
 //
 // 41×41 matrix indexed [0..40][0..40].
