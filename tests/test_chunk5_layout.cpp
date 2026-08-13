@@ -64,6 +64,32 @@ TEST(CaRecFlat, WalkOrderMatchesPrevChain) {
     EXPECT_EQ(out[2], 0);
 }
 
+TEST(CaRecFlat, SkipFirstThenEachIndexOnce) {
+    // Same walk vcfunction uses: flatten, take first, then ca_rec_next on skip.
+    ca_struct rec[3]{};
+    rec[0].prev = -1;
+    rec[1].prev = 0;
+    rec[2].prev = 1;
+    int ca_index[1] = {2};
+    int flat[8];
+    const int nflat = flexaids::flatten_ca_rec(ca_index, rec, 0, flat, 8);
+    ASSERT_EQ(nflat, 3);
+    int flat_k = 1;
+    int curr = flat[0];
+    EXPECT_EQ(curr, 2);
+    // Skip the first node (bonded / already-seen continue path).
+    curr = flexaids::ca_rec_next(true, curr, rec, flat, nflat, flat_k);
+    std::vector<int> seen;
+    while (curr != -1) {
+        seen.push_back(curr);
+        curr = flexaids::ca_rec_next(true, curr, rec, flat, nflat, flat_k);
+    }
+    ASSERT_EQ(seen.size(), 2u);
+    EXPECT_EQ(seen[0], 1);
+    EXPECT_EQ(seen[1], 0);
+    EXPECT_NE(seen[0], seen[1]);
+}
+
 TEST(PProp, RankFractionAndCap) {
     EXPECT_DOUBLE_EQ(flexaids::pprop(1, 10), 0.1);
     EXPECT_DOUBLE_EQ(flexaids::delta_pprop(0.2, 0.5), -0.3);

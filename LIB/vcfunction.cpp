@@ -551,7 +551,8 @@ double vcfunction(FA_Global* FA,VC_Global* VC,atom* atoms,resid* residue, std::v
 					       cfs_atom.com, cfs_atom.wal);
 
 #endif
-					currindex = VC->ca_rec[currindex].prev;
+					currindex = flexaids::ca_rec_next(use_flat, currindex, VC->ca_rec,
+					                                 flat_idx, nflat, flat_k);
 					continue;	  
 				}
 			}
@@ -560,7 +561,8 @@ double vcfunction(FA_Global* FA,VC_Global* VC,atom* atoms,resid* residue, std::v
 			   ? (FA->contacts[VC->Calc[VC->ca_rec[currindex].atom].atom->number] == contacts_epoch_current(FA->contacts))
 			   : (FA->contacts[VC->Calc[VC->ca_rec[currindex].atom].atom->number] != 0)){
 				//printf("%d already calculated\n",VC->Calc[VC->ca_rec[currindex].atom].atom->number );
-				currindex = VC->ca_rec[currindex].prev;
+				currindex = flexaids::ca_rec_next(use_flat, currindex, VC->ca_rec,
+				                                 flat_idx, nflat, flat_k);
 				continue;
 			}
 			
@@ -889,11 +891,8 @@ double vcfunction(FA_Global* FA,VC_Global* VC,atom* atoms,resid* residue, std::v
 #endif
 
 			// skip to next contact
-			if (use_flat) {
-				currindex = (flat_k < nflat) ? flat_idx[flat_k++] : -1;
-			} else {
-				currindex = VC->ca_rec[currindex].prev;
-			}
+			currindex = flexaids::ca_rec_next(use_flat, currindex, VC->ca_rec,
+			                                 flat_idx, nflat, flat_k);
 		}
 		
 		//    printf("Atom[%d]=%d has %d contacts\n",VC->Calc[i].,VC->Calc[i].atom->number,contnum);

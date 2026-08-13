@@ -31,4 +31,18 @@ inline int flatten_ca_rec(const int* ca_index, const ca_struct* ca_rec,
     return n;
 }
 
+/// Next ca_rec index after `curr`. Used by every continue/advance in
+/// vcfunction so a skip cannot leave flat_k stale and revisit a node.
+/// When `use_flat`, `flat_k` is the next unread slot in `flat_idx`.
+inline int ca_rec_next(bool use_flat, int curr, const ca_struct* ca_rec,
+                       const int* flat_idx, int nflat, int& flat_k)
+{
+    if (use_flat) {
+        if (!flat_idx || flat_k >= nflat) return -1;
+        return flat_idx[flat_k++];
+    }
+    if (!ca_rec || curr < 0) return -1;
+    return ca_rec[curr].prev;
+}
+
 }  // namespace flexaids

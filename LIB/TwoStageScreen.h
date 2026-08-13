@@ -17,6 +17,7 @@
 
 #include "CoarseScreen.h"
 
+#include <cmath>
 #include <functional>
 #include <limits>
 #include <string>
@@ -70,6 +71,19 @@ struct TwoStageResult {
     /// Never claim this field is a thermodynamic ΔG.
     std::string stage2_kind;
 };
+
+/// Total order for Stage-2 scores: finite before NaN; NaNs by coarse_rank.
+/// Used by TwoStageScreener::run so pProp-dropped rows cannot break sort.
+inline bool stage2_score_less(const TwoStageResult& a, const TwoStageResult& b)
+{
+    const bool a_nan = !std::isfinite(a.full_dock_score);
+    const bool b_nan = !std::isfinite(b.full_dock_score);
+    if (a_nan != b_nan) return !a_nan && b_nan;
+    if (a_nan) return a.coarse_rank < b.coarse_rank;
+    if (a.full_dock_score != b.full_dock_score)
+        return a.full_dock_score < b.full_dock_score;
+    return a.coarse_rank < b.coarse_rank;
+}
 
 /// Callback for Stage 2 docking. Receives the ligand and coarse result,
 /// returns the full docking score. This allows plugging in the existing
