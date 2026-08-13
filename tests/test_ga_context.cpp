@@ -29,6 +29,19 @@ static void unset_test_env(const char* key) {
 #endif
 }
 
+// Sets an env var for one test and always clears it, including when an
+// assertion fails part-way. Tests share a process, so a leaked behaviour flag
+// would silently flip whichever test ran next.
+namespace {
+struct ScopedEnv {
+    const char* key;
+    ScopedEnv(const char* k, const char* v) : key(k) { set_test_env(k, v); }
+    ~ScopedEnv() { unset_test_env(key); }
+    ScopedEnv(const ScopedEnv&) = delete;
+    ScopedEnv& operator=(const ScopedEnv&) = delete;
+};
+}  // namespace
+
 TEST(GAContextTest, DefaultConstruction) {
     GAContext ctx;
     EXPECT_EQ(ctx.gen_id, 0);
@@ -109,9 +122,46 @@ TEST(RngSeedTest, LazyThreadRngRespectsMasterSeedEpoch) {
     EXPECT_NE(a, c);
 }
 
+TEST(RngSeedTest, LazyThreadRngDefaultOffReproducesLegacySequence) {
+    // DEFAULT OFF must be the pre-fix behaviour bit-for-bit, because every
+    // frozen reference number in this repo was produced under it.
+    //
+    // Legacy semantics: ONE generator per thread, re-seeded whenever the
+    // requested stream differs from the cached one. So interleaving streams
+    // collapses each to its FIRST draw forever — that collapse is the thing
+    // being asserted, not a nicety.
+    unset_test_env("FLEXAIDDS_RNG_STREAM_FIX");
+    constexpr std::uint64_t kGa = 0x9A800DULL;
+    constexpr std::uint64_t kVcontacts = 0x0C0A11ULL;
+    std::uniform_real_distribution<double> dist(0.0, 1.0);
+
+    set_test_env("FLEXAID_SEED", "12345");
+    flexaids_rng::set_master_seed(12345);  // bumps the epoch: flag is re-read
+
+    const double a0 = dist(flexaids_rng::lazy_thread_rng(kGa));
+    const double b0 = dist(flexaids_rng::lazy_thread_rng(kVcontacts));
+    const double a1 = dist(flexaids_rng::lazy_thread_rng(kGa));
+
+    // Absolute check: each draw equals the FIRST draw of a freshly seeded
+    // generator for that stream.
+    std::mt19937 ref_ga = flexaids_rng::make_thread_rng(kGa);
+    std::mt19937 ref_vc = flexaids_rng::make_thread_rng(kVcontacts);
+    const double first_ga = dist(ref_ga);
+    const double first_vc = dist(ref_vc);
+
+    EXPECT_DOUBLE_EQ(a0, first_ga);
+    EXPECT_DOUBLE_EQ(b0, first_vc);
+    EXPECT_DOUBLE_EQ(a1, first_ga) << "OFF must re-seed on stream switch";
+    EXPECT_DOUBLE_EQ(a1, a0) << "legacy collapse to first draw not reproduced";
+
+    unset_test_env("FLEXAID_SEED");
+}
+
 TEST(RngSeedTest, LazyThreadRngKeepsIndependentStreams) {
+    // Opt-in path: FLEXAIDDS_RNG_STREAM_FIX=1.
     // Interleaving two stream ids on one thread must not re-seed a shared
     // generator. Stream A after a B draw must continue A's sequence.
+    ScopedEnv fix("FLEXAIDDS_RNG_STREAM_FIX", "1");
     constexpr std::uint64_t kGa = 0x9A800DULL;
     constexpr std::uint64_t kPucker = 0x5A6A9ULL;
     std::uniform_real_distribution<double> dist(0.0, 1.0);
@@ -132,8 +182,10 @@ TEST(RngSeedTest, LazyThreadRngKeepsIndependentStreams) {
 }
 
 TEST(RngSeedTest, LazyThreadRngHeldReferenceSurvivesNewStream) {
+    // Opt-in path: FLEXAIDDS_RNG_STREAM_FIX=1.
     // Callers keep auto& rng across other stream lookups (SugarPucker,
     // Vcontacts). Insert must not invalidate that reference.
+    ScopedEnv fix("FLEXAIDDS_RNG_STREAM_FIX", "1");
     constexpr std::uint64_t kGa = 0x9A800DULL;
     constexpr std::uint64_t kPucker = 0x5A6A9ULL;
     std::uniform_real_distribution<double> dist(0.0, 1.0);

@@ -1,5 +1,7 @@
 #pragma once
 
+#include "EnvFlags.h"  // flexaids::env_bool — one parser for FLEXAIDDS_* switches
+
 #include <atomic>
 #include <cstdint>
 #include <cstdlib>
@@ -115,22 +117,74 @@ inline std::mt19937 make_thread_rng(std::uint64_t stream = 0)
     return std::mt19937(seed_from_env_or_random(stream ^ salt));
 }
 
-// One generator per logical stream on this thread. A single cached generator
-// that re-seeds on stream switch collapses interleaved streams to a repeating
-// first draw (F1). Epoch bump (set_master_seed) still rebuilds the map.
+// FLEXAIDDS_RNG_STREAM_FIX — DEFAULT OFF.
+//
+// OFF reproduces the historical single-generator behaviour bit-for-bit. That
+// behaviour is defective: three streams interleave on one thread (GA 0x9A800D,
+// Vcontacts 0x0C0A11 inside chromosome evaluation, FOPTICS 0xF0701C5) and the
+// generator re-seeds on every stream switch, so each stream collapses to its
+// first draw forever. It is nonetheless the behaviour every frozen reference
+// number in this repo was produced under, so it remains the default until a
+// baseline re-run retires it. Enabling this flag changes the draw sequence for
+// a given FLEXAID_SEED and therefore invalidates comparison against those
+// numbers.
+//
+// Parsed by flexaids::env_bool (EnvFlags.h), the repo's one parser for these
+// switches. A hand-rolled "not 0/n/f" test would read FLEXAIDDS_RNG_STREAM_FIX=off
+// as ON — a knob documented OFF silently being ON is the exact failure this
+// gate exists to prevent.
+//
+// The flag is re-read on seed-epoch change rather than on every call: the hot
+// path stays an atomic load plus a compare, and a test can flip the variable
+// and call set_master_seed() to pick it up.
+inline bool rng_stream_fix_enabled()
+{
+    thread_local std::uint64_t flag_epoch = ~0ULL;
+    thread_local bool flag = false;
+
+    const std::uint64_t epoch = g_seed_epoch.load(std::memory_order_acquire);
+    if (flag_epoch != epoch) {
+        const char* raw = std::getenv("FLEXAIDDS_RNG_STREAM_FIX"); // DEFAULT OFF
+        flag = (raw != nullptr && raw[0] != '\0')
+            ? flexaids::env_bool("FLEXAIDDS_RNG_STREAM_FIX", false)
+            : false;
+        flag_epoch = epoch;
+    }
+    return flag;
+}
+
 inline std::mt19937& lazy_thread_rng(std::uint64_t stream)
 {
-    thread_local std::uint64_t cached_epoch = ~0ULL;
+    const std::uint64_t epoch = g_seed_epoch.load(std::memory_order_acquire);
+
+    if (!rng_stream_fix_enabled()) {
+        // ---- LEGACY PATH (default) — byte-identical to the pre-fix code. ----
+        // One generator per thread, re-seeded whenever the requested stream
+        // differs from the cached one. Do not "improve" this branch: its exact
+        // draw sequence is the project baseline.
+        thread_local std::uint64_t cached_stream = ~0ULL;
+        thread_local std::uint64_t cached_epoch  = ~0ULL;
+        thread_local std::mt19937 rng = make_thread_rng(stream);
+
+        if (cached_stream != stream || cached_epoch != epoch) {
+            rng = make_thread_rng(stream);
+            cached_stream = stream;
+            cached_epoch = epoch;
+        }
+        return rng;
+    }
+
+    // ---- STREAM-FIX PATH (opt-in) — one generator per logical stream. ----
     // std::map: insert of a new stream must not invalidate references held
     // by callers (auto& rng = lazy_thread_rng(id)). unordered_map rehash can.
     // Do not hold a reference across set_master_seed(): that bumps g_seed_epoch
     // and this function clears the map.
+    thread_local std::uint64_t fix_cached_epoch = ~0ULL;
     thread_local std::map<std::uint64_t, std::mt19937> rngs;
 
-    const std::uint64_t epoch = g_seed_epoch.load(std::memory_order_acquire);
-    if (cached_epoch != epoch) {
+    if (fix_cached_epoch != epoch) {
         rngs.clear();
-        cached_epoch = epoch;
+        fix_cached_epoch = epoch;
     }
     auto it = rngs.find(stream);
     if (it == rngs.end()) {

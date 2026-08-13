@@ -1,7 +1,11 @@
 # FlexAIDdS swarm pack — 2026-08-13
 
-Canonical Claude Science handoff. Lane briefs match the tarball (`SHA256SUMS.txt`).
-`score_canonical.py` is the same referee with a portable cache default (see below).
+**Canonical copy: `docs/swarm/2026-08-13/` in the FlexAIDdS git repository.**
+Lane briefs, the frozen pose CSV, and `score_canonical.py` are sourced there.
+
+`$FLEXAIDDS_LOCAL_ROOT/workorders/` (default `~/flexaidds_results/workorders/`)
+is a **mirror**, not the source. If the two disagree, trust the in-repo tree
+and refresh the mirror. Do not edit the mirror and copy back.
 
 | If you are… | Start here |
 |-------------|------------|
