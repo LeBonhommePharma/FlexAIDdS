@@ -5,6 +5,7 @@
 #include <atomic>
 #include <cstdint>
 #include <cstdlib>
+#include <cstring>
 #include <random>
 #include <map>
 
@@ -191,6 +192,42 @@ inline std::mt19937& lazy_thread_rng(std::uint64_t stream)
         it = rngs.emplace(stream, make_thread_rng(stream)).first;
     }
     return it->second;
+}
+
+// Pose/atom identity for Voronoi hull-failure jitter (F2).
+// Quantized from the atom's integer PDB number and the three coordinates
+// *before* perturbation so two threads that fail the hull on the same pose
+// apply the same displacement. Independent of omp_get_thread_num().
+inline std::uint64_t pose_atom_identity(int atom_number,
+                                        float x, float y, float z)
+{
+    std::uint32_t bx = 0, by = 0, bz = 0;
+    std::memcpy(&bx, &x, sizeof(bx));
+    std::memcpy(&by, &y, sizeof(by));
+    std::memcpy(&bz, &z, sizeof(bz));
+    const std::uint64_t id =
+        (static_cast<std::uint64_t>(static_cast<std::uint32_t>(atom_number)) << 32)
+        ^ static_cast<std::uint64_t>(bx)
+        ^ (static_cast<std::uint64_t>(by) << 11)
+        ^ (static_cast<std::uint64_t>(bz) << 22);
+    return splitmix64(id);
+}
+
+// Deterministic jitter in [-amp, amp] for axis 0/1/2. Uses the master /
+// FLEXAID_SEED when set; does not consume lazy_thread_rng (so it cannot
+// race with GA/FOPTICS streams or depend on draw order).
+inline float keyed_jitter(std::uint64_t identity, int axis, float amp = 0.005f)
+{
+    std::uint64_t seed = 0;
+    if (g_has_master_seed.load(std::memory_order_acquire))
+        seed = g_master_seed.load(std::memory_order_relaxed);
+    else
+        (void)env_seed(seed);
+    const std::uint64_t h = splitmix64(
+        seed ^ identity ^ (0xA11E0000ULL + static_cast<std::uint64_t>(axis)));
+    const float u = static_cast<float>(
+        static_cast<std::uint32_t>(h >> 40) * (1.0 / 16777216.0));
+    return (2.f * u - 1.f) * amp;
 }
 
 } // namespace flexaids_rng

@@ -845,11 +845,22 @@ RESTART:
 				origcoor[2] = VC->Calc[atomzero].atom->coor[2];
 				
 				// perturb atom coordinates (deterministic when ga.seed/FLEXAID_SEED set)
-				thread_local std::uniform_real_distribution<float> vc_dist(-0.005f, 0.005f);
-				auto& vc_rng = flexaids_rng::lazy_thread_rng(0x0C0A11ULL);
-				VC->Calc[atomzero].atom->coor[0] += vc_dist(vc_rng);
-				VC->Calc[atomzero].atom->coor[1] += vc_dist(vc_rng);
-				VC->Calc[atomzero].atom->coor[2] += vc_dist(vc_rng);
+				if (flexaids_rng::rng_stream_fix_enabled()) {
+					// F2: key on pose+atom identity, not the scheduling thread.
+					const int anum = VC->Calc[atomzero].atom
+						? VC->Calc[atomzero].atom->number : atomzero;
+					const std::uint64_t id = flexaids_rng::pose_atom_identity(
+						anum, origcoor[0], origcoor[1], origcoor[2]);
+					VC->Calc[atomzero].atom->coor[0] += flexaids_rng::keyed_jitter(id, 0);
+					VC->Calc[atomzero].atom->coor[1] += flexaids_rng::keyed_jitter(id, 1);
+					VC->Calc[atomzero].atom->coor[2] += flexaids_rng::keyed_jitter(id, 2);
+				} else {
+					thread_local std::uniform_real_distribution<float> vc_dist(-0.005f, 0.005f);
+					auto& vc_rng = flexaids_rng::lazy_thread_rng(0x0C0A11ULL);
+					VC->Calc[atomzero].atom->coor[0] += vc_dist(vc_rng);
+					VC->Calc[atomzero].atom->coor[1] += vc_dist(vc_rng);
+					VC->Calc[atomzero].atom->coor[2] += vc_dist(vc_rng);
+				}
                 
 				// *** NEW ***
                 

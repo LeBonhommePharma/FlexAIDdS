@@ -2182,11 +2182,7 @@ int reproduce(FA_Global* FA,GB_Global* GB,VC_Global* VC, chromosome* chrom, cons
 	// defaults OFF with parity holding when it is OFF. The drift allowance that
 	// would unblock it is a maintainer decision, not one this change can grant
 	// itself. Set FLEXAIDDS_PARALLEL_REPRODUCE=1 to opt in and benchmark it.
-	static const bool parallel_reproduce_eval = [](){
-		const char* env = std::getenv("FLEXAIDDS_PARALLEL_REPRODUCE");
-		if (env && env[0] != '\0') return env[0] != '0';  // explicit override
-		return false;                                      // default OFF (§1)
-	}();
+	static const bool parallel_reproduce_eval = flexaids::parallel_reproduce_enabled();
 
 	// Multi-chain VCT normalisation (see GA() comment for rationale)
 	const int n_receptor_chains = count_receptor_chains(FA, residue);

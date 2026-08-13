@@ -56,4 +56,11 @@ inline bool env_bool(const char* name, bool fallback = false) noexcept
     return fallback;
 }
 
+/// FLEXAIDDS_PARALLEL_REPRODUCE — DEFAULT OFF (METHODOLOGY §1).
+/// Explicit 1/true/on opts in; unset/empty/0 stays serial inline eval.
+inline bool parallel_reproduce_enabled() noexcept
+{
+    return env_bool("FLEXAIDDS_PARALLEL_REPRODUCE", false);
+}
+
 }  // namespace flexaids

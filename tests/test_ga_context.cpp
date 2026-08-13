@@ -10,8 +10,10 @@
 #include "GAContext.h"
 #include "GPUContextPool.h"
 #include "RngSeed.h"
+#include "EnvFlags.h"
 
 #include <cstdlib>
+#include <cmath>
 
 static void set_test_env(const char* key, const char* value) {
 #ifdef _WIN32
@@ -202,6 +204,75 @@ TEST(RngSeedTest, LazyThreadRngHeldReferenceSurvivesNewStream) {
     const double b1 = dist(ga_only);
     EXPECT_DOUBLE_EQ(a0, b0);
     EXPECT_DOUBLE_EQ(a1, b1);
+}
+
+TEST(RngSeedTest, LazyThreadRngThreeStreamInterleaveKeepsEachSequence) {
+    // F9: GA / Vcontacts / FOPTICS streams on one thread, FIX=1.
+    ScopedEnv fix("FLEXAIDDS_RNG_STREAM_FIX", "1");
+    constexpr std::uint64_t kGa = 0x9A800DULL;
+    constexpr std::uint64_t kVc = 0x0C0A11ULL;
+    constexpr std::uint64_t kFo = 0xF0701C5ULL;
+    std::uniform_real_distribution<double> dist(0.0, 1.0);
+    flexaids_rng::set_master_seed(12345);
+
+    const double g0 = dist(flexaids_rng::lazy_thread_rng(kGa));
+    const double v0 = dist(flexaids_rng::lazy_thread_rng(kVc));
+    const double f0 = dist(flexaids_rng::lazy_thread_rng(kFo));
+    const double g1 = dist(flexaids_rng::lazy_thread_rng(kGa));
+    const double v1 = dist(flexaids_rng::lazy_thread_rng(kVc));
+
+    flexaids_rng::set_master_seed(12345);
+    const double g0s = dist(flexaids_rng::lazy_thread_rng(kGa));
+    const double g1s = dist(flexaids_rng::lazy_thread_rng(kGa));
+    const double v0s = dist(flexaids_rng::lazy_thread_rng(kVc));
+    const double v1s = dist(flexaids_rng::lazy_thread_rng(kVc));
+    const double f0s = dist(flexaids_rng::lazy_thread_rng(kFo));
+
+    EXPECT_DOUBLE_EQ(g0, g0s);
+    EXPECT_DOUBLE_EQ(g1, g1s);
+    EXPECT_DOUBLE_EQ(v0, v0s);
+    EXPECT_DOUBLE_EQ(v1, v1s);
+    EXPECT_DOUBLE_EQ(f0, f0s);
+    EXPECT_NE(g0, v0);
+    EXPECT_NE(g0, f0);
+}
+
+TEST(RngSeedTest, KeyedJitterDependsOnPoseAtomNotDrawOrder) {
+    ScopedEnv seed("FLEXAID_SEED", "12345");
+    flexaids_rng::set_master_seed(12345);
+    const auto id_a = flexaids_rng::pose_atom_identity(90001, 1.0f, 2.0f, 3.0f);
+    const auto id_b = flexaids_rng::pose_atom_identity(90002, 1.0f, 2.0f, 3.0f);
+    const auto id_a2 = flexaids_rng::pose_atom_identity(90001, 1.0f, 2.0f, 3.0f);
+    EXPECT_EQ(id_a, id_a2);
+    EXPECT_NE(id_a, id_b);
+
+    const float ax0 = flexaids_rng::keyed_jitter(id_a, 0);
+    const float ay0 = flexaids_rng::keyed_jitter(id_a, 1);
+    const float bx0 = flexaids_rng::keyed_jitter(id_b, 0);
+    // Consume the shared thread RNG so a thread-keyed implementation would move.
+    (void)flexaids_rng::lazy_thread_rng(0x0C0A11ULL)();
+    const float ax1 = flexaids_rng::keyed_jitter(id_a, 0);
+    const float ay1 = flexaids_rng::keyed_jitter(id_a, 1);
+
+    EXPECT_FLOAT_EQ(ax0, ax1);
+    EXPECT_FLOAT_EQ(ay0, ay1);
+    EXPECT_NE(ax0, bx0);
+    EXPECT_LE(std::fabs(ax0), 0.005f);
+    EXPECT_LE(std::fabs(ay0), 0.005f);
+}
+
+TEST(EnvFlagsTest, ParallelReproduceDefaultOff) {
+    unset_test_env("FLEXAIDDS_PARALLEL_REPRODUCE");
+    EXPECT_FALSE(flexaids::parallel_reproduce_enabled());
+    {
+        ScopedEnv on("FLEXAIDDS_PARALLEL_REPRODUCE", "1");
+        EXPECT_TRUE(flexaids::parallel_reproduce_enabled());
+    }
+    {
+        ScopedEnv off("FLEXAIDDS_PARALLEL_REPRODUCE", "0");
+        EXPECT_FALSE(flexaids::parallel_reproduce_enabled());
+    }
+    EXPECT_FALSE(flexaids::parallel_reproduce_enabled());
 }
 
 #ifdef FLEXAIDS_USE_CUDA
