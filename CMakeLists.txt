@@ -1607,6 +1607,27 @@ flexaids_add_unit_test(test_protocol_config
     flexaids_configure_msvc_test(test_vcontacts)
     add_test(NAME VcontactsTests COMMAND test_vcontacts)
 
+    # test_rigid_fastpath — FLEXAIDDS_RIGID_FASTPATH bit-identity
+    # (index_protein + Vcontacts + calc_region; same isolated link as test_vcontacts)
+    add_executable(test_rigid_fastpath
+        tests/test_rigid_fastpath.cpp
+        tests/stubs.cpp
+        LIB/Vcontacts.cpp
+        LIB/geometry.cpp
+    )
+    target_include_directories(test_rigid_fastpath PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/LIB)
+    target_link_libraries(test_rigid_fastpath PRIVATE GTest::gtest_main)
+    if(MSVC)
+        target_compile_options(test_rigid_fastpath PRIVATE /O2)
+    else()
+        target_compile_options(test_rigid_fastpath PRIVATE -O2)
+    endif()
+    if(FLEXAIDS_USE_OPENMP AND OpenMP_CXX_FOUND)
+        target_link_libraries(test_rigid_fastpath PRIVATE OpenMP::OpenMP_CXX)
+    endif()
+    flexaids_configure_msvc_test(test_rigid_fastpath)
+    add_test(NAME RigidFastpathBitIdentity COMMAND test_rigid_fastpath)
+
     # test_vcontacts_geometry — convex-hull geometry functions (test_point, add_vedge, etc.)
     add_executable(test_vcontacts_geometry
         tests/test_vcontacts_geometry.cpp
