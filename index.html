@@ -2,10 +2,13 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>FlexAID∆S — Entropy-Driven Molecular Docking · Le Bonhomme Pharma</title>
   <meta name="description" content="FlexAID∆S — entropy-driven molecular docking engine. Genetic algorithms meet statistical mechanics for real-world drug discovery. Pearson r = 0.93 · 92% correct binding mode.">
   <meta name="theme-color" content="#0a0e14">
+  <meta name="color-scheme" content="dark light">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <link rel="canonical" href="https://thebonhomme.com/FlexAIDdS/">
 
   <meta property="og:title" content="FlexAID∆S — Entropy-Driven Molecular Docking Engine">
@@ -18,16 +21,17 @@
   <meta name="twitter:title" content="FlexAID∆S — Entropy-Driven Molecular Docking Engine">
   <meta name="twitter:description" content="Genetic algorithms meet statistical mechanics for real-world drug discovery.">
 
-  <link rel="icon" type="image/svg+xml" href="../assets/favicon-flexaid-ds.svg">
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%230a0e14'/%3E%3Ctext x='16' y='22' text-anchor='middle' font-family='ui-monospace,monospace' font-size='18' font-weight='700' fill='%23FBBF24'%3E∆%3C/text%3E%3C/svg%3E">
 
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@300;400;500;600;700&family=JetBrains+Mono:wght@300;400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/molstar@4.5.0/build/viewer/molstar.css">
 
-  <link rel="stylesheet" href="../theme.css">
+  <link rel="stylesheet" href="theme.css">
+  <link rel="stylesheet" href="interaction.css">
   <link rel="stylesheet" href="styles.css">
-  <script src="../theme.js"></script>
+  <script src="theme.js"></script>
 
   <script src="https://unpkg.com/react@18.3.1/umd/react.production.min.js" crossorigin="anonymous"></script>
   <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js" crossorigin="anonymous"></script>
@@ -40,11 +44,11 @@
   <!-- Semantic markers patched by scripts/update_site_stats.py on every cron run.
        DO NOT remove or rename these spans. sections.jsx reads them at mount time
        to initialise the live commit count and language count in RepoStatsSection. -->
-  <span id="stat-commits" hidden>1744</span>
+  <span id="stat-commits" hidden>2386</span>
   <span id="stat-langs" hidden>15</span>
-  <span id="stat-stars" hidden>9</span>
-  <span id="last-updated" hidden>2026-07-14</span>
-  <span id="latest-release" hidden>v2.0.2</span>
+  <span id="stat-stars" hidden>10</span>
+  <span id="last-updated" hidden>2026-08-14</span>
+  <span id="latest-release" hidden>v2.2.0</span>
 
   <template id="__bundler_thumbnail" data-bg-color="#0a0e14">
     <svg viewBox="0 0 1200 800" xmlns="http://www.w3.org/2000/svg">
@@ -59,8 +63,8 @@
     </svg>
   </template>
 
-  <script src="../assets/flexaid-logo.js"></script>
-  <script src="../assets/molstar-drug-viewer.js"></script>
+  <script src="assets/flexaid-logo.js"></script>
+  <script src="assets/molstar-drug-viewer.js"></script>
   <script src="app.js"></script>
   <script type="text/babel" src="components.jsx"></script>
   <script type="text/babel" src="sections.jsx"></script>
