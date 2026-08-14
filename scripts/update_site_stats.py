@@ -16,6 +16,7 @@ import datetime
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 import urllib.error
@@ -48,6 +49,7 @@ HTML_TARGETS = [
 ]
 
 STATS_JSON_PATH = "site/assets/repo-stats.json"
+PRODUCT_STATS_JSON_PATH = "site/FlexAIDdS/assets/repo-stats.json"
 
 
 def fetch_commit_count(repo: str) -> int | None:
@@ -385,6 +387,15 @@ def update_all(
 
     if json_updated != json_original:
         changed.append(STATS_JSON_PATH)
+
+    os.makedirs(os.path.dirname(PRODUCT_STATS_JSON_PATH), exist_ok=True)
+    product_original = None
+    if os.path.isfile(PRODUCT_STATS_JSON_PATH):
+        with open(PRODUCT_STATS_JSON_PATH, "r", encoding="utf-8") as f:
+            product_original = f.read()
+    shutil.copyfile(STATS_JSON_PATH, PRODUCT_STATS_JSON_PATH)
+    if json_updated != product_original:
+        changed.append(PRODUCT_STATS_JSON_PATH)
 
     return changed
 

@@ -155,6 +155,7 @@ function Nav({ active, onJump }) {
         <a href="/periodic/" onClick={() => setOpen(false)}>Periodic Table</a>
         <a href="/" onClick={() => setOpen(false)}>Home</a>
         <a href="https://github.com/LeBonhommePharma/FlexAIDdS" target="_blank" rel="noreferrer noopener" onClick={() => setOpen(false)}>GitHub</a>
+        <div className="nav-mobile-theme"><span data-theme-mount></span></div>
       </div>
     </nav>
   );
@@ -166,14 +167,19 @@ function ParticleCanvas() {
   useEffect(() => {
     const c = ref.current;
     if (!c) return;
+    const reduce = window.matchMedia("(prefers-reduced-motion: reduce)");
+    if (reduce.matches) return;
     const ctx = c.getContext("2d");
     const palette = ["#22D3EE", "#A78BFA", "#FBBF24"];
     let particles = [];
     let raf = 0;
+    let running = true;
+    const density = () => (window.matchMedia("(max-width: 640px)").matches ? 42000 : 18000);
+    const cap = () => (window.matchMedia("(max-width: 640px)").matches ? 22 : 70);
     const resize = () => {
       c.width = c.offsetWidth;
       c.height = c.offsetHeight;
-      const n = Math.min(70, Math.floor(c.width * c.height / 18000));
+      const n = Math.min(cap(), Math.floor(c.width * c.height / density()));
       particles = Array.from({ length: n }, () => ({
         x: Math.random() * c.width, y: Math.random() * c.height,
         vx: (Math.random() - 0.5) * 0.25, vy: (Math.random() - 0.5) * 0.25,
@@ -183,6 +189,7 @@ function ParticleCanvas() {
       }));
     };
     const step = () => {
+      if (!running) return;
       ctx.clearRect(0, 0, c.width, c.height);
       const t = performance.now() / 1000;
       for (const p of particles) {
@@ -199,10 +206,21 @@ function ParticleCanvas() {
       ctx.globalAlpha = 1;
       raf = requestAnimationFrame(step);
     };
+    const onVis = () => {
+      running = document.visibilityState !== "hidden";
+      if (running) raf = requestAnimationFrame(step);
+      else cancelAnimationFrame(raf);
+    };
     resize();
     window.addEventListener("resize", resize);
+    document.addEventListener("visibilitychange", onVis);
     raf = requestAnimationFrame(step);
-    return () => { cancelAnimationFrame(raf); window.removeEventListener("resize", resize); };
+    return () => {
+      running = false;
+      cancelAnimationFrame(raf);
+      window.removeEventListener("resize", resize);
+      document.removeEventListener("visibilitychange", onVis);
+    };
   }, []);
   return <canvas ref={ref} className="particle-canvas" aria-hidden="true" />;
 }

@@ -28,9 +28,9 @@ permissions:
 jobs:
   deploy-site:
     runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: https://thebonhomme.com/
+    # Pages source for this repo is the gh-pages branch (thebonhomme.com/FlexAIDdS/).
+    # Do not attach the github-pages environment: protection rules have been
+    # rejecting branch "main" before any step runs, so the live site froze.
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
         with:
@@ -49,7 +49,7 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add site/index.html site/FlexAIDdS/index.html site/assets/repo-stats.json
+          git add site/index.html site/FlexAIDdS/index.html site/assets/repo-stats.json site/FlexAIDdS/assets/repo-stats.json
           if ! git diff --staged --quiet; then
             git commit -m "Update: site stats (auto)"
             # Do not fail the whole deploy on non-fast-forward (re-runs on old SHAs, concurrent runs, or races).
@@ -58,20 +58,6 @@ jobs:
           else
             echo "No stats changes to commit"
           fi
-
-      - name: Setup Pages
-        uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6
-
-      - name: Upload artifact
-        uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
-        with:
-          # Project Pages mount is /FlexAIDdS/ — artifact root must be the product site,
-          # not site/index.html (corporate homepage).
-          path: ./site/FlexAIDdS
-
-      - name: Deploy to GitHub Pages
-        id: deployment
-        uses: actions/deploy-pages@cd2ce8fcbc39b97be8ca5fce6e763baed58fa128 # v5
 
       - name: Publish site to gh-pages branch
         run: bash scripts/sync_apex_to_ghpages.sh

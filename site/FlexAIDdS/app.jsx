@@ -28,7 +28,7 @@ function App() {
     <>
       <Nav active={active} onJump={jump} />
       <EntropyMeter />
-      <main style={{ paddingTop: "56px", position: "relative", zIndex: 1 }}>
+      <main style={{ paddingTop: "calc(56px + env(safe-area-inset-top, 0px))", position: "relative", zIndex: 1 }}>
         <HeroSection />
         <ExploreSection />
         <div className="section-divider" />

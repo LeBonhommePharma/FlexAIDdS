@@ -329,7 +329,7 @@ function RepoStatsSection() {
     if (!isNaN(c) && c > 0) setCommits(c);
     if (!isNaN(l) && l > 0) setNumLangs(l);
 
-    fetch("../assets/repo-stats.json", { cache: "no-store" })
+    fetch("assets/repo-stats.json", { cache: "no-store" })
       .then((r) => (r.ok ? r.json() : null))
       .then((data) => { if (data) apply(data); })
       .catch(() => {});

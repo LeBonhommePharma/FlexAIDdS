@@ -1,0 +1,69 @@
+{
+  "commits": 1744,
+  "languageCount": 15,
+  "lastUpdated": "2026-07-14",
+  "languages": [
+    {
+      "id": "cpp",
+      "name": "C++",
+      "percent": 49.1,
+      "color": "#f34b7d"
+    },
+    {
+      "id": "python",
+      "name": "Python",
+      "percent": 25.2,
+      "color": "#3572A5"
+    },
+    {
+      "id": "other",
+      "name": "HTML",
+      "percent": 8.2,
+      "color": "#e34c26"
+    },
+    {
+      "id": "swift",
+      "name": "Swift",
+      "percent": 4.4,
+      "color": "#F05138"
+    },
+    {
+      "id": "other",
+      "name": "Shell",
+      "percent": 3.2,
+      "color": "#89e051"
+    },
+    {
+      "id": "cmake",
+      "name": "CMake",
+      "percent": 2.0,
+      "color": "#8b949e"
+    },
+    {
+      "id": "ts",
+      "name": "TypeScript",
+      "percent": 1.8,
+      "color": "#3178c6"
+    },
+    {
+      "id": "objcpp",
+      "name": "Obj-C++",
+      "percent": 1.5,
+      "color": "#438eff"
+    },
+    {
+      "id": "other",
+      "name": "JavaScript",
+      "percent": 1.3,
+      "color": "#f1e05a"
+    },
+    {
+      "id": "other",
+      "name": "Other",
+      "percent": 3.2,
+      "color": "#555555"
+    }
+  ],
+  "stars": 9,
+  "latestRelease": "v2.0.2"
+}
