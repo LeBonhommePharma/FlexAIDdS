@@ -177,6 +177,17 @@
     return navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1;
   }
 
+  function shouldSkipHeavyHero() {
+    if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      return true;
+    }
+    if (navigator.connection && navigator.connection.saveData) return true;
+    if (window.matchMedia && window.matchMedia('(max-width: 640px)').matches) {
+      return true;
+    }
+    return false;
+  }
+
   function molstarLog(level, message, detail) {
     var fn = console[level] || console.log;
     if (detail !== undefined) fn.call(console, '[molstar] ' + message, detail);
@@ -642,6 +653,12 @@
   }
 
   function startWhenViewerReady() {
+    if (shouldSkipHeavyHero()) {
+      var el = document.getElementById('molstar-viewer');
+      if (el) el.classList.add('molstar-unavailable');
+      molstarLog('info', 'skipping Mol* hero on this viewport / motion preference');
+      return;
+    }
     if (document.getElementById('molstar-viewer')) {
       bootMolstar();
       return;
