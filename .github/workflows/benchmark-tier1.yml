@@ -19,6 +19,17 @@ on:
   pull_request:
     branches:
       - main
+    # Site/docs/hygiene PRs cannot move CF ranking. Skip the 1h Astex
+    # dock on those diffs — the gate still runs on engine/harness changes.
+    # Do not list this workflow file in paths: a path-filter-only edit
+    # would otherwise re-fire the dock (use workflow_dispatch to test YAML).
+    paths:
+      - 'LIB/**'
+      - 'src/**'
+      - 'python/**'
+      - 'benchmarks/**'
+      - 'CMakeLists.txt'
+      - 'cmake/**'
   workflow_dispatch:
     inputs:
       dataset:

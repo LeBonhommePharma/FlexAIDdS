@@ -1,10 +1,26 @@
 name: Code Coverage
 
+# Engine-only: site/docs/hygiene diffs cannot change LIB line coverage.
+# YAML-only edits: use workflow_dispatch (listing this file in paths would
+# re-fire the job on every path-filter tweak).
+
 on:
   push:
     branches: [ main ]
+    paths:
+      - 'LIB/**'
+      - 'src/**'
+      - 'tests/**'
+      - 'CMakeLists.txt'
+      - 'cmake/**'
   pull_request:
     branches: [ main ]
+    paths:
+      - 'LIB/**'
+      - 'src/**'
+      - 'tests/**'
+      - 'CMakeLists.txt'
+      - 'cmake/**'
   workflow_dispatch:
 
 jobs:
