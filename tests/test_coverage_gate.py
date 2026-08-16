@@ -124,8 +124,10 @@ def comment_status(coverage: str | None, threshold: str | None) -> tuple[str, st
         pct = float("nan") if coverage is None or coverage == "" else float(coverage)
     except ValueError:
         pct = float("nan")
-    t_ok = not math.isnan(threshold_n)
-    pct_ok = not math.isnan(pct)
+    # Match coverage.yml github-script: Number.isFinite rejects NaN and ±Infinity.
+    # math.isnan lets inf through, which would false-PASS comment_status("inf", "45").
+    t_ok = math.isfinite(threshold_n)
+    pct_ok = math.isfinite(pct)
     can_judge = available and pct_ok and t_ok
     passed = can_judge and pct >= threshold_n
     if t_ok:
@@ -156,6 +158,18 @@ def test_denominator_includes_dataset_runner_excludes_only_top():
     assert "'*/top.cpp'" in text
     assert "--exclude '*/benchmarks/*'" not in text
     assert "tests/test_dataset_runner.cpp" in text
+
+
+def test_dataset_runner_gtest_target_still_registered():
+    """Ratio gate is inverted for under-covered files: deleting this target
+    would drop DatasetRunner.cpp LF/LH records and raise the percentage.
+    Keep the executable and ctest name in CMakeLists.txt.
+    """
+    cmake = (REPO / "CMakeLists.txt").read_text(encoding="utf-8")
+    assert "add_executable(test_dataset_runner" in cmake
+    assert "tests/test_dataset_runner.cpp" in cmake
+    assert "add_test(NAME DatasetRunnerTests COMMAND test_dataset_runner)" in cmake
+    assert (REPO / "tests" / "test_dataset_runner.cpp").is_file()
 
 
 def test_single_threshold_source_is_45():
@@ -233,6 +247,11 @@ def test_calculate_empty_tracefile_unavailable_still_exports_threshold(
         (None, None, "UNAVAILABLE", ">= ?%"),
         ("47.4", None, "UNAVAILABLE", ">= ?%"),
         ("47.4", "", "UNAVAILABLE", ">= ?%"),
+        ("inf", "45", "UNAVAILABLE", ">= 45%"),
+        ("Infinity", "45", "UNAVAILABLE", ">= 45%"),
+        ("-inf", "45", "UNAVAILABLE", ">= 45%"),
+        ("49.5", "inf", "UNAVAILABLE", ">= ?%"),
+        ("49.5", "Infinity", "UNAVAILABLE", ">= ?%"),
     ],
 )
 def test_comment_status_contract(coverage, threshold, status, target):
